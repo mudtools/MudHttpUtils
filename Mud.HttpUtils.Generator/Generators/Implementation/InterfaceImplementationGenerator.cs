@@ -145,6 +145,9 @@ internal class InterfaceImplementationGenerator
         // 互斥逻辑：HttpClient 优先
         var effectiveTokenManage = !string.IsNullOrEmpty(httpClient) ? null : tokenManage;
 
+        // 缓存 TokenType 获取结果，避免重复调用
+        var tokenType = GetInterfaceTokenType();
+
         return new GenerationConfiguration
         {
             HttpClientOptionsName = _optionsName,
@@ -163,8 +166,8 @@ internal class InterfaceImplementationGenerator
             TokenManagerType = !string.IsNullOrEmpty(effectiveTokenManage)
                 ? TypeSymbolHelper.GetTypeAllDisplayString(_compilation, effectiveTokenManage!)
                 : null,
-            TokenType = GetInterfaceTokenType(),
-            IsUserAccessToken = GetInterfaceTokenType() == "UserAccessToken"
+            TokenType = tokenType,
+            IsUserAccessToken = tokenType == "UserAccessToken"
         };
     }
 

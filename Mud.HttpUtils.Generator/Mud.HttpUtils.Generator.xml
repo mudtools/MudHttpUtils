@@ -1197,20 +1197,6 @@
             特性数据辅助类，提供从特性数据中提取常用类型值的静态方法。
             </summary>
         </member>
-        <member name="M:Mud.CodeGenerator.AttributeDataHelper.IgnoreGenerator(Microsoft.CodeAnalysis.CSharp.Syntax.MemberDeclarationSyntax)">
-            <summary>
-            检查是否应该被忽略生成代码。
-            </summary>
-            <param name="field"></param>
-            <returns></returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.AttributeDataHelper.IgnoreGenerator(Microsoft.CodeAnalysis.ISymbol)">
-            <summary>
-            检查是否应该被忽略生成代码。
-            </summary>
-            <param name="member">符号</param>
-            <returns>如果应该忽略返回true，否则返回false</returns>
-        </member>
         <member name="M:Mud.CodeGenerator.AttributeDataHelper.GetIntValueFromAttribute(Microsoft.CodeAnalysis.AttributeData,System.String,System.Int32)">
             <summary>
             从特性数据中获取整型属性值。
@@ -1550,105 +1536,6 @@
             <summary>
             从属性符号获取属性声明语法节点
             </summary>
-        </member>
-        <member name="T:Mud.CodeGenerator.ErrorHandler">
-            <summary>
-            错误处理器，统一管理代码生成器的错误处理
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.ErrorHandler.ReportError(Microsoft.CodeAnalysis.SourceProductionContext,Microsoft.CodeAnalysis.DiagnosticDescriptor,System.Object[])">
-            <summary>
-            报告错误诊断信息
-            </summary>
-            <param name="context">源生成上下文</param>
-            <param name="descriptor">诊断描述符</param>
-            <param name="args">诊断参数</param>
-        </member>
-        <member name="M:Mud.CodeGenerator.ErrorHandler.ReportWarning(Microsoft.CodeAnalysis.SourceProductionContext,Microsoft.CodeAnalysis.DiagnosticDescriptor,System.Object[])">
-            <summary>
-            报告警告诊断信息
-            </summary>
-            <param name="context">源生成上下文</param>
-            <param name="descriptor">诊断描述符</param>
-            <param name="args">诊断参数</param>
-        </member>
-        <member name="M:Mud.CodeGenerator.ErrorHandler.ReportInfo(Microsoft.CodeAnalysis.SourceProductionContext,Microsoft.CodeAnalysis.DiagnosticDescriptor,System.Object[])">
-            <summary>
-            报告信息诊断信息
-            </summary>
-            <param name="context">源生成上下文</param>
-            <param name="descriptor">诊断描述符</param>
-            <param name="args">诊断参数</param>
-        </member>
-        <member name="M:Mud.CodeGenerator.ErrorHandler.SafeExecute(Microsoft.CodeAnalysis.SourceProductionContext,System.String,System.Action,Microsoft.CodeAnalysis.DiagnosticDescriptor)">
-            <summary>
-            安全执行代码生成操作
-            </summary>
-            <param name="context">源生成上下文</param>
-            <param name="className">类名</param>
-            <param name="action">要执行的操作</param>
-            <param name="errorDescriptor">错误描述符</param>
-        </member>
-        <member name="M:Mud.CodeGenerator.ErrorHandler.SafeExecute``1(Microsoft.CodeAnalysis.SourceProductionContext,System.String,System.Func{``0},Microsoft.CodeAnalysis.DiagnosticDescriptor,``0)">
-            <summary>
-            安全执行代码生成操作并返回结果
-            </summary>
-            <typeparam name="T">返回类型</typeparam>
-            <param name="context">源生成上下文</param>
-            <param name="className">类名</param>
-            <param name="func">要执行的函数</param>
-            <param name="errorDescriptor">错误描述符</param>
-            <param name="defaultValue">默认值</param>
-            <returns>执行结果或默认值</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.ErrorHandler.LogDebug(System.String,System.Object[])">
-            <summary>
-            记录调试信息
-            </summary>
-            <param name="message">调试消息</param>
-            <param name="args">消息参数</param>
-        </member>
-        <member name="M:Mud.CodeGenerator.ErrorHandler.LogInfo(System.String,System.Object[])">
-            <summary>
-            记录信息
-            </summary>
-            <param name="message">信息消息</param>
-            <param name="args">消息参数</param>
-        </member>
-        <member name="M:Mud.CodeGenerator.ErrorHandler.LogWarning(System.String,System.Object[])">
-            <summary>
-            记录警告
-            </summary>
-            <param name="message">警告消息</param>
-            <param name="args">消息参数</param>
-        </member>
-        <member name="M:Mud.CodeGenerator.ErrorHandler.LogError(System.String,System.Object[])">
-            <summary>
-            记录错误
-            </summary>
-            <param name="message">错误消息</param>
-            <param name="args">消息参数</param>
-        </member>
-        <member name="M:Mud.CodeGenerator.ErrorHandler.CreateSafePropertyGenerator``3(``0,System.Func{``1,``2})">
-            <summary>
-            创建安全的属性生成器
-            </summary>
-            <typeparam name="TGenerator">生成器类型</typeparam>
-            <typeparam name="TInput">输入类型</typeparam>
-            <typeparam name="TOutput">输出类型</typeparam>
-            <param name="generator">生成器实例</param>
-            <param name="propertyGenerator">属性生成委托</param>
-            <returns>安全的属性生成委托</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.ErrorHandler.ValidateGenerationResult(Microsoft.CodeAnalysis.SourceProductionContext,Microsoft.CodeAnalysis.SyntaxNode,System.String,Microsoft.CodeAnalysis.DiagnosticDescriptor)">
-            <summary>
-            验证生成结果
-            </summary>
-            <param name="context">源码生成上下文</param>
-            <param name="generatedNode">生成的语法节点</param>
-            <param name="className">类名</param>
-            <param name="failureDescriptor">失败描述符</param>
-            <returns>验证是否通过</returns>
         </member>
         <member name="T:Mud.CodeGenerator.FieldNamingStyle">
             <summary>
@@ -2023,21 +1910,6 @@
         <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.Initialize(Microsoft.CodeAnalysis.IncrementalGeneratorInitializationContext)">
             <inheritdoc/>
         </member>
-        <member name="P:Mud.CodeGenerator.TransitiveCodeGenerator.ClassSuffix">
-            <summary>
-            生成类的后缀名。
-            </summary>
-        </member>
-        <member name="P:Mud.CodeGenerator.TransitiveCodeGenerator.EntitySuffix">
-            <summary>
-            原始实体类的后缀名。
-            </summary>
-        </member>
-        <member name="P:Mud.CodeGenerator.TransitiveCodeGenerator.PropertyNameLowerCaseFirstLetter">
-            <summary>
-            是否将生成的属性名首字母小写，默认为 true
-            </summary>
-        </member>
         <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.GetFileUsingNameSpaces">
             <summary>
             获取生成代码的默认引入的命名空间。
@@ -2057,132 +1929,10 @@
             生成通用的文件头部
             </summary>
         </member>
-        <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.GenCompilationUnitSyntax(Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax,System.String,System.String)">
-            <summary>
-            生成<see cref="T:Microsoft.CodeAnalysis.CSharp.Syntax.CompilationUnitSyntax"/>对象。
-            </summary>
-            <param name="localClass">本地类声明。</param>
-            <param name="localNamespace">本地命名空间。</param>
-            <param name="localClassName">本地类名。</param>
-            <returns></returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.InitEntityPrefixValue(Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptions)">
-            <summary>
-            从项目配置中读取实体后缀名
-            </summary>
-            <param name="options">分析器配置选项。</param>
-        </member>
-        <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.GetProjectFileInfo(Microsoft.CodeAnalysis.IncrementalGeneratorInitializationContext)">
-            <summary>
-            获取项目文件所在路径及项目文件内容。
-            </summary>
-            <param name="context"><see cref="T:Microsoft.CodeAnalysis.IncrementalGeneratorInitializationContext"/>对象。</param>
-            <returns></returns>
-        </member>
         <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.GetXmlDocumentation(Microsoft.CodeAnalysis.SyntaxNode)">
             <summary>
             获取XML文档注释
             </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.GetGeneratorProperty``1(``0)">
-            <summary>
-            获取实体需要生成的属性信息（从配置信息中决定属性名首字母是否大小写）。
-            </summary>
-            <typeparam name="T">成员声明类型。</typeparam>
-            <param name="declarationSyntax">成员声明语法。</param>
-            <returns>属性名和属性类型元组。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.GetGeneratorProperty(Microsoft.CodeAnalysis.IPropertySymbol)">
-            <summary>
-            获取实体需要生成的属性信息。
-            </summary>
-            <param name="propertySymbol">属性符号。</param>
-            <returns>属性名和属性类型元组。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.GetPropertyInfo(Microsoft.CodeAnalysis.CSharp.Syntax.PropertyDeclarationSyntax)">
-            <summary>
-            获取属性信息。
-            </summary>
-            <param name="propertySyntax">属性声明语法。</param>
-            <returns>属性名和属性类型元组。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.GetFieldInfo(Microsoft.CodeAnalysis.CSharp.Syntax.FieldDeclarationSyntax)">
-            <summary>
-            获取字段信息。
-            </summary>
-            <param name="fieldSyntax">字段声明语法。</param>
-            <returns>属性名和属性类型元组。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.ApplyNameCaseConvention(System.String)">
-            <summary>
-            根据配置应用命名大小写约定。
-            </summary>
-            <param name="name">原始名称。</param>
-            <returns>应用约定后的名称。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.GetPropertyName(Microsoft.CodeAnalysis.CSharp.Syntax.FieldDeclarationSyntax)">
-            <summary>
-            获取基于字段声明的属性名（基于字段声明）。
-            </summary>
-            <param name="declarationSyntax">字段声明。</param>
-        </member>
-        <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.GetPropertyName(Microsoft.CodeAnalysis.CSharp.Syntax.PropertyDeclarationSyntax)">
-            <summary>
-            获取首字母小写的属性名（根据配置）。
-            </summary>
-            <param name="declarationSyntax">属性声明。</param>
-            <returns>首字母小写的属性名。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.GetOrgPropertyName(Microsoft.CodeAnalysis.CSharp.Syntax.PropertyDeclarationSyntax)">
-            <summary>
-            获取原始的属性名。
-            </summary>
-            <param name="declarationSyntax">属性声明。</param>
-            <returns>属性名。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.GetFieldName(Microsoft.CodeAnalysis.CSharp.Syntax.FieldDeclarationSyntax)">
-            <summary>
-            获取字段的变量名。
-            </summary>
-            <param name="declarationSyntax">字段声明。</param>
-            <returns>字段变量名。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.GetFieldName(Microsoft.CodeAnalysis.CSharp.Syntax.VariableDeclarationSyntax)">
-            <summary>
-            获取字段的变量名。
-            </summary>
-            <param name="declarationSyntax">变量声明。</param>
-            <returns>字段变量名。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.ToPropertyName(System.String)">
-            <summary>
-            将字段名转换为属性名。
-            </summary>
-            <param name="fieldName">待转换的字段名。</param>
-            <returns>属性名。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.ExtractPropertyNameFromField(System.String)">
-            <summary>
-            从字段名中提取属性名（处理下划线前缀）。
-            </summary>
-            <param name="fieldName">字段名。</param>
-            <returns>提取的属性名。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.IsLikeGenerator``1(``0)">
-            <summary>
-            是否为模糊查询属性。
-            </summary>
-            <typeparam name="T">成员声明类型。</typeparam>
-            <param name="memberDeclaration">成员声明。</param>
-            <returns>是否为模糊查询属性。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.ReportFailureDiagnostic(Microsoft.CodeAnalysis.SourceProductionContext,Microsoft.CodeAnalysis.DiagnosticDescriptor,System.String)">
-            <summary>
-            报告生成失败的诊断信息
-            </summary>
-            <param name="context">源码生成上下文</param>
-            <param name="descriptor">诊断描述符</param>
-            <param name="className">类名</param>
         </member>
         <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.ReportErrorDiagnostic(Microsoft.CodeAnalysis.SourceProductionContext,Microsoft.CodeAnalysis.DiagnosticDescriptor,System.String,System.Exception)">
             <summary>
@@ -2192,14 +1942,6 @@
             <param name="descriptor">诊断描述符</param>
             <param name="className">类名</param>
             <param name="exception">异常信息</param>
-        </member>
-        <member name="M:Mud.CodeGenerator.TransitiveCodeGenerator.ReportWarningDiagnostic(Microsoft.CodeAnalysis.SourceProductionContext,Microsoft.CodeAnalysis.DiagnosticDescriptor,System.String)">
-            <summary>
-            报告警告诊断信息
-            </summary>
-            <param name="context">源码生成上下文</param>
-            <param name="descriptor">诊断描述符</param>
-            <param name="className">类名</param>
         </member>
         <member name="M:Mud.CodeGenerator.TypeSymbolHelper.GetTypeAllDisplayString(Microsoft.CodeAnalysis.Compilation,System.String)">
             <summary>
@@ -2389,45 +2131,6 @@
             </summary>
             <param name="symbol">符号</param>
             <returns>完整限定名称</returns>
-        </member>
-        <member name="T:Mud.CodeGenerator.NamingHelper">
-            <summary>
-            COM包装器命名辅助类，提供统一的命名前缀处理逻辑
-            </summary>
-        </member>
-        <member name="F:Mud.CodeGenerator.NamingHelper.KnownPrefixes">
-            <summary>
-            已知的COM接口前缀及其对应实现类前缀
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.NamingHelper.RemoveInterfacePrefix(System.String)">
-            <summary>
-            从接口类型名中移除已知的前缀
-            </summary>
-            <param name="interfaceTypeName">接口类型名</param>
-            <returns>移除前缀后的类名</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.NamingHelper.RemoveImpPrefix(System.String)">
-            <summary>
-            从实现类类型名中移除已知的前缀
-            </summary>
-            <param name="impTypeName">实现类类型名</param>
-            <returns>移除前缀后的类名</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.NamingHelper.GetOrdinalComType(System.String)">
-            <summary>
-            获取COM类名的Ordinal类型（移除接口前缀）
-            </summary>
-            <param name="ordinalComType">Ordinal COM类型名</param>
-            <returns>移除前缀后的类型名</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.NamingHelper.HasKnownPrefix(System.String,System.Boolean)">
-            <summary>
-            检查类型名是否以已知前缀开头
-            </summary>
-            <param name="typeName">类型名</param>
-            <param name="isInterface">是否为接口类型</param>
-            <returns>如果以已知前缀开头返回true</returns>
         </member>
         <member name="T:Mud.CodeGenerator.SemanticModelCache">
             <summary>

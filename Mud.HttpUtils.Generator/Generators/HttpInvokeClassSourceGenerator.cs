@@ -18,6 +18,8 @@ namespace Mud.HttpUtils;
 [Generator(LanguageNames.CSharp)]
 internal partial class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
 {
+    private const string DefaultHttpClientOptionsName = "HttpClientOptions";
+
     /// <inheritdoc/>
     protected override void ExecuteGenerator(Compilation compilation,
         ImmutableArray<InterfaceDeclarationSyntax?> interfaces,
@@ -27,10 +29,9 @@ internal partial class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGene
         if (compilation == null || interfaces.IsDefaultOrEmpty || configOptionsProvider == null)
             return;
 
-        // 使用局部变量避免实例字段可变性问题
-        var httpClientOptionsName = "HttpClientOptions";
+        var httpClientOptionsName = DefaultHttpClientOptionsName;
         ProjectConfigHelper.ReadProjectOptions(configOptionsProvider.GlobalOptions, "build_property.HttpClientOptionsName",
-           val => httpClientOptionsName = val, "HttpClientOptions");
+           val => httpClientOptionsName = val, DefaultHttpClientOptionsName);
 
         foreach (var interfaceDecl in interfaces)
         {

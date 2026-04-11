@@ -3,6 +3,7 @@
 ################################################################################
 
 /.vs
+/.docs
 /Mud.HttpUtils/obj
 /Mud.HttpUtils.Generator/.vs
 /Mud.HttpUtils.Generator/obj

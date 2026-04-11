@@ -75,7 +75,14 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
                 var classSymbol = semanticModel.GetDeclaredSymbol(eventClass);
 
                 if (classSymbol == null)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        Diagnostics.EventHandlerGenerationError,
+                        eventClass.GetLocation(),
+                        eventClass.Identifier.Text,
+                        "Could not resolve class symbol. This may occur when the class has syntax errors or is in an incomplete state."));
                     continue;
+                }
 
                 // 获取EventHandler特性数据，使用AttributeDataHelper的已有功能
                 var eventHandlerAttribute = AttributeDataHelper.GetAttributeDataFromSymbol(classSymbol, [EventHandlerAttributeName]);
@@ -124,9 +131,7 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
         // 解析特性参数，使用AttributeDataHelper的已有功能
         var handlerNamespace = GetAttributeParameter(eventHandlerAttribute, "HandlerNamespace", "");
         var handlerClassName = GetAttributeParameter(eventHandlerAttribute, "HandlerClassName", "");
-        var eventType = AttributeDataHelper.GetStringValueFromAttribute(eventHandlerAttribute, "EventType", "")
-                   ?? AttributeDataHelper.GetStringValueFromAttributeConstructor(eventHandlerAttribute, "EventType")
-                   ?? "";
+        var eventType = GetAttributeParameter(eventHandlerAttribute, "EventType", "");
         var inheritedFrom = GetAttributeParameter(eventHandlerAttribute, "InheritedFrom", "IdempotentFeishuEventHandler");
         var constructorParams = GetAttributeParameter(eventHandlerAttribute, "ConstructorParameters", "IFeishuEventDeduplicator businessDeduplicator, ILogger logger, IAppKeyAccessor? appKeyAccessor = null");
         var constructorBaseCall = GetAttributeParameter(eventHandlerAttribute, "ConstructorBaseCall", "businessDeduplicator, logger, appKeyAccessor");
@@ -412,15 +417,8 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
         INamedTypeSymbol classSymbol,
         AttributeData eventHandlerAttribute)
     {
-        //var handlerNamespace = GetAttributeParameter(eventHandlerAttribute, "HandlerNamespace", "");
-        //var targetNamespace = !string.IsNullOrEmpty(handlerNamespace)
-        //    ? handlerNamespace
-        //    : GetDefaultNamespace(classSymbol);
-
         var className = GetGeneratedClassName(eventClass, eventHandlerAttribute);
 
-        // 使用命名空间和类名组合，替换点为下划线
-        //var namespacePart = targetNamespace.Replace(".", "_");
         return $"{className}.g.cs";
     }
 

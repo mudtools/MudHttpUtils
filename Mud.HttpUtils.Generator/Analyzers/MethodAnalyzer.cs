@@ -52,7 +52,10 @@ internal static class MethodAnalyzer
                 return MethodAnalysisResult.Invalid;
         }
 
-        var httpMethodAttributeName = httpMethodAttributeData.AttributeClass?.Name ?? "";
+        if (httpMethodAttributeData.AttributeClass == null)
+            return MethodAnalysisResult.Invalid;
+
+        var httpMethodAttributeName = httpMethodAttributeData.AttributeClass.Name;
         var httpMethod = ExtractHttpMethodName(httpMethodAttributeName);
         var urlTemplate = GetAttributeArgumentValueFromAttributeData(httpMethodAttributeData, 0)?.ToString().Trim('"') ?? "";
 
