@@ -1,9 +1,16 @@
 <Solution>
+  <Folder Name="/Src/">
+    <Project Path="Mud.CodeGenerator/Mud.CodeGenerator.shproj" />
+    <Project Path="Mud.HttpUtils.Generator/Mud.HttpUtils.Generator.csproj" />
+    <Project Path="Mud.HttpUtils/Mud.HttpUtils.csproj" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="Tests/Mud.HttpUtils.Generator.Tests/Mud.HttpUtils.Generator.Tests.csproj" />
+    <Project Path="Tests/Mud.HttpUtils.Tests/Mud.HttpUtils.Tests.csproj" />
+  </Folder>
   <Folder Name="/解决方案/">
     <File Path=".editorconfig" />
+    <File Path=".gitignore" />
     <File Path="Directory.Build.props" />
   </Folder>
-  <Project Path="Mud.CodeGenerator/Mud.CodeGenerator.shproj" />
-  <Project Path="Mud.HttpUtils.Generator/Mud.HttpUtils.Generator.csproj" />
-  <Project Path="Mud.HttpUtils/Mud.HttpUtils.csproj" />
 </Solution>

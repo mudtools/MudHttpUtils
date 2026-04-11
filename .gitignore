@@ -1,4 +1,4 @@
-﻿################################################################################
+################################################################################
 # 此 .gitignore 文件已由 Microsoft(R) Visual Studio 自动创建。
 ################################################################################
 
@@ -7,3 +7,8 @@
 /Mud.HttpUtils.Generator/.vs
 /Mud.HttpUtils.Generator/obj
 /bin
+/Tests/bin
+/Tests/Mud.HttpUtils.Generator.Tests/bin
+/Tests/Mud.HttpUtils.Generator.Tests/obj
+/Tests/Mud.HttpUtils.Tests/bin
+/Tests/Mud.HttpUtils.Tests/obj
