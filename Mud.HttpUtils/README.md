@@ -389,15 +389,17 @@ Mud.HttpUtils/
 │   ├── FormContentBodyAttribute.cs # 表单内容特性
 │   ├── FilePathAttribute.cs      # 文件路径特性
 │   ├── TokenAttribute.cs         # Token 特性
-│   ├── IgnoreImplementAttribute.cs
-│   ├── IgnoreGeneratorAttribute.cs
-│   └── GenerateEventHandlerAttribute.cs
+│   ├── IgnoreImplementAttribute.cs # 忽略实现特性
+│   ├── IgnoreGeneratorAttribute.cs # 忽略生成特性
+│   └── GenerateEventHandlerAttribute.cs # 事件处理器生成特性
 ├── Interface/                    # 核心接口
 │   ├── IEnhancedHttpClient.cs    # 增强HTTP客户端接口
 │   ├── IMudAppContext.cs         # 应用上下文接口
 │   ├── IAppManager.cs            # 应用管理器接口
 │   ├── IAppContextSwitcher.cs    # 上下文切换接口
-│   └── EnhancedHttpClient.cs     # HTTP客户端实现
+│   ├── EnhancedHttpClient.cs     # HTTP客户端实现
+│   ├── EnhancedHttpClientLogs.cs # HTTP客户端日志
+│   └── ExceptionUtils.cs         # 异常工具类
 ├── TokenManager/                 # Token 管理
 │   ├── ITokenManager.cs          # Token管理器接口
 │   ├── IUserTokenManager.cs      # 用户Token管理器接口
@@ -411,7 +413,9 @@ Mud.HttpUtils/
 │   └── MessageSanitizer.cs       # 消息清理工具
 ├── TokenType.cs                  # Token类型枚举
 ├── TokenInjectionMode.cs         # Token注入模式枚举
-└── Mud.HttpUtils.csproj
+├── GlobalUsings.cs               # 全局using语句
+├── AssemblyInfo.cs               # 程序集信息
+└── Mud.HttpUtils.csproj          # 项目文件
 ```
 
 ## 依赖项
@@ -514,3 +518,91 @@ Mud.HttpUtils/
 - [Mud.CodeGenerator](../Mud.CodeGenerator/) - 基础代码生成框架
 - [Mud.EntityCodeGenerator](../Mud.EntityCodeGenerator/) - 实体代码生成器
 - [Mud.ServiceCodeGenerator](../Mud.ServiceCodeGenerator/) - 服务代码生成器
+
+## 常见问题
+
+### 1. 如何选择 TokenManage 和 HttpClient 模式？
+
+**TokenManage 模式**：
+
+- 适用于需要自动管理 Token 的场景
+- 生成的代码会自动处理 Token 的获取和注入
+- 需要实现 `ITokenManager` 接口
+
+**HttpClient 模式**：
+
+- 适用于需要更灵活控制 HttpClient 的场景
+- 直接注入自定义的 HttpClient 接口实例
+- 不生成 Token 相关代码，由开发者自行管理
+
+### 2. 如何处理复杂的请求头？
+
+可以使用 `[Header]` 特性在方法或接口级别设置请求头：
+
+```csharp
+[Header("X-API-Key", "your-api-key")]
+[Header("X-Request-ID")]
+public interface IApi
+{
+    [Get("/users")]
+    [Header("X-Custom-Header", "value")]
+    Task<List<User>> GetUsersAsync([Header("X-User-ID")] string userId);
+}
+```
+
+### 3. 如何支持自定义序列化？
+
+实现 `IEnhancedHttpClient` 接口，自定义序列化逻辑：
+
+```csharp
+public class CustomHttpClient : IEnhancedHttpClient
+{
+    private readonly HttpClient _httpClient;
+    private readonly CustomSerializer _serializer;
+
+    public async Task<TResult?> SendAsync<TResult>(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _httpClient.SendAsync(request, cancellationToken);
+        var content = await response.Content.ReadAsStringAsync(cancellationToken);
+        return _serializer.Deserialize<TResult>(content);
+    }
+}
+```
+
+### 4. 如何处理文件上传？
+
+使用 `[FormContent]` 特性和 `IFormContent` 接口：
+
+```csharp
+public class UploadRequest : IFormContent
+{
+    public string FileName { get; set; }
+    public Stream FileContent { get; set; }
+
+    public HttpContent ToHttpContent()
+    {
+        var content = new MultipartFormDataContent();
+        content.Add(new StringContent(FileName), "fileName");
+        content.Add(new StreamContent(FileContent), "file", FileName);
+        return content;
+    }
+}
+
+[Post("/upload")]
+Task<UploadResult> UploadAsync([FormContent] UploadRequest request);
+```
+
+### 5. 如何调试生成的代码？
+
+在项目文件中添加以下配置，保留生成的源代码：
+
+```xml
+<PropertyGroup>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)Generated</CompilerGeneratedFilesOutputPath>
+</PropertyGroup>
+```
+
+生成的代码将保存在 `obj\Debug\net8.0\Generated` 目录下。
