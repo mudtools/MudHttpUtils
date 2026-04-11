@@ -12,3 +12,5 @@
 /Tests/Mud.HttpUtils.Generator.Tests/obj
 /Tests/Mud.HttpUtils.Tests/bin
 /Tests/Mud.HttpUtils.Tests/obj
+/Demos/HttpClientApiDemo/bin
+/Demos/HttpClientApiDemo/obj

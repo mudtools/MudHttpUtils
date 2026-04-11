@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/Demos/">
+    <Project Path="Demos/HttpClientApiDemo/HttpClientApiDemo.csproj" />
+  </Folder>
   <Folder Name="/Src/">
     <Project Path="Mud.CodeGenerator/Mud.CodeGenerator.shproj" />
     <Project Path="Mud.HttpUtils.Generator/Mud.HttpUtils.Generator.csproj" />
