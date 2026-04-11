@@ -20,11 +20,15 @@ Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为
 
 - **内容类型管理**：支持接口级、方法级、参数级的内容类型配置，优先级清晰
 - **请求/响应类型分离**：支持请求和响应使用不同的内容类型（如请求 XML、响应 JSON）
-- **请求体加密**：支持请求体数据加密传输
+- **请求体加密**：支持请求体数据加密传输，支持 JSON 和 XML 两种序列化方式
 - **响应解密**：支持响应数据自动解密
 - **文件下载**：支持大文件下载和二进制数据下载
 - **表单数据**：支持 multipart/form-data 格式
 - **数组查询参数**：支持数组类型的查询参数
+- **继承支持**：支持生成抽象类、类继承、接口继承
+- **事件处理器生成**：通过 `[GenerateEventHandler]` 特性自动生成事件处理器代码
+- **忽略生成**：支持通过 `[IgnoreGenerator]` 和 `[IgnoreImplement]` 特性忽略特定代码生成
+- **XML 序列化**：支持 XML 格式的请求和响应处理
 
 ## 快速开始
 
@@ -314,6 +318,81 @@ public interface IMyApi
 Task<SecureData> GetSecureDataAsync([Body] Request request);
 ```
 
+### 继承支持
+
+支持生成抽象类和类继承：
+
+```csharp
+// 生成抽象类
+[HttpClientApi("https://api.example.com", IsAbstract = true)]
+public interface IBaseApi
+{
+    [Get("/entities/{id}")]
+    Task<Entity> GetEntityAsync([Path] string id);
+}
+
+// 继承自指定基类
+[HttpClientApi("https://api.example.com", InheritedFrom = "BaseApiClass")]
+public interface IUserApi : IBaseApi
+{
+    [Get("/users")]
+    Task<List<User>> GetUsersAsync();
+}
+```
+
+### 事件处理器生成
+
+使用 `[GenerateEventHandler]` 特性自动生成事件处理器代码：
+
+```csharp
+[GenerateEventHandler(
+    EventType = "UserCreatedEvent",
+    HandlerClassName = "UserCreatedEventHandler",
+    HandlerNamespace = "MyApp.Handlers",
+    InheritedFrom = "BaseEventHandler",
+    ConstructorParameters = "ILogger logger, IEmailService emailService",
+    ConstructorBaseCall = "logger"
+)]
+public class UserCreatedEvent
+{
+    public string UserId { get; set; }
+    public string UserName { get; set; }
+}
+```
+
+### 忽略代码生成
+
+#### IgnoreGenerator 特性
+
+忽略属性或字段的代码生成：
+
+```csharp
+public class UserRequest
+{
+    public string Name { get; set; }
+
+    [IgnoreGenerator]
+    public string InternalField { get; set; }  // 不会生成相关代码
+}
+```
+
+#### IgnoreImplement 特性
+
+忽略方法的实现代码生成：
+
+```csharp
+[HttpClientApi("https://api.example.com")]
+public interface ICustomApi
+{
+    [Get("/users")]
+    Task<List<User>> GetUsersAsync();
+
+    [IgnoreImplement]  // 不会生成此方法的实现代码
+    [Post("/internal")]
+    Task InternalMethodAsync([Body] object data);
+}
+```
+
 ## 项目结构
 
 ```
@@ -337,11 +416,38 @@ Mud.HttpUtils.Generator/
 
 ## 依赖项
 
+### Mud.HttpUtils.Generator（代码生成器）
+
 - .NET Standard 2.0
 - Microsoft.CodeAnalysis.Analyzers
 - Microsoft.CodeAnalysis.CSharp
 
+### Mud.HttpUtils（运行时库）
+
+支持多目标框架：
+
+- .NET Standard 2.0
+- .NET 6.0
+- .NET 8.0
+- .NET 10.0
+
+依赖项（按目标框架）：
+
+- **.NET 10.0**: Microsoft.Extensions.Logging.Abstractions 10.0.4
+- **.NET 8.0**: Microsoft.Extensions.Logging.Abstractions 8.0.3
+- **.NET 6.0**: Microsoft.Extensions.Logging.Abstractions 8.0.3, System.Text.Json 8.0.5
+- **.NET Standard 2.0**: Microsoft.Extensions.Logging.Abstractions 8.0.3, System.Text.Json 8.0.5, System.Threading.Tasks.Extensions 4.5.4
+
 ## 版本历史
+
+### 1.8.0
+
+- 新增事件处理器生成功能，通过 `[GenerateEventHandler]` 特性自动生成事件处理器代码
+- 新增继承支持，支持生成抽象类、类继承、接口继承
+- 新增忽略生成功能，支持 `[IgnoreGenerator]` 和 `[IgnoreImplement]` 特性
+- 完善 XML 序列化支持，支持 XML 格式的请求和响应处理
+- 优化请求体加密功能，支持 JSON 和 XML 两种序列化方式
+- 支持多目标框架：netstandard2.0、net6.0、net8.0、net10.0
 
 ### 1.7.0
 
@@ -377,3 +483,34 @@ Mud.HttpUtils.Generator/
 - [Mud.EntityCodeGenerator](../Mud.EntityCodeGenerator/) - 实体代码生成器
 - [Mud.ServiceCodeGenerator](../Mud.ServiceCodeGenerator/) - 服务代码生成器
 
+## 最佳实践
+
+### 1. 接口设计建议
+
+- 使用明确的接口命名，如 `IUserApi`、`IOrderApi`
+- 将相关的 API 方法组织在同一个接口中
+- 为接口添加 XML 注释，提高代码可读性
+
+### 2. 内容类型选择
+
+- **JSON**: 默认推荐，适用于大多数 RESTful API
+- **XML**: 适用于遗留系统或需要严格格式的场景
+- **multipart/form-data**: 适用于文件上传场景
+
+### 3. Token 管理
+
+- 使用接口级 `[Token]` 特性设置默认 Token 类型
+- 对于需要不同 Token 的方法，使用参数级 `[Token]` 特性覆盖
+- 优先使用 `HttpClient` 模式以获得更好的灵活性
+
+### 4. 错误处理
+
+- 所有 API 方法都应返回 `Task<T>` 以支持异步操作
+- 考虑使用 `CancellationToken` 参数支持取消操作
+- 在调用 API 时使用 try-catch 处理可能的异常
+
+### 5. 性能优化
+
+- 合理设置 `Timeout` 值，避免长时间等待
+- 对于大文件下载，使用 `FilePath` 参数直接保存到文件
+- 使用 `ArrayQuery` 特性时，选择合适的分隔符以提高可读性

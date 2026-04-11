@@ -69,7 +69,7 @@ public abstract class DefaultFeishuEventHandler<TEventResult> where TEventResult
     /// 构造函数
     /// </summary>
     /// <param name="logger">日志记录器</param>
-    protected DefaultFeishuEventHandler(IFeishuEventDeduplicator businessDeduplicator, ILogger logger)
+    protected DefaultFeishuEventHandler(IFeishuEventDeduplicator businessDeduplicator, ILogger logger, IAppKeyAccessor? appKeyAccessor = null)
     {
         _logger = logger;
     }
