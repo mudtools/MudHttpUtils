@@ -2,9 +2,8 @@
 # 此 .gitignore 文件已由 Microsoft(R) Visual Studio 自动创建。
 ################################################################################
 
-/.vs/Mud.HttpUtils.slnx/v18
-/.vs/Mud.HttpUtils.slnx/FileContentIndex
+/.vs
 /Mud.HttpUtils/obj
 /Mud.HttpUtils.Generator/.vs
 /Mud.HttpUtils.Generator/obj
-/bin/Debug
+/bin

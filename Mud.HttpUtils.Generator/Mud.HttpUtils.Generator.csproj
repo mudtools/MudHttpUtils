@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFrameworks>netstandard2.0</TargetFrameworks>
+		<Description>Mud HttpUtils 代码生成器是一个基于 Roslyn 的源代码生成器，自动为标记了 [HttpClientApi] 特性的接口生成 HttpClient 实现类。</Description>
+		<Product>Mud Http Utils Code Generator</Product>
+		<PackageId>Mud.HttpUtils.Generator</PackageId>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<GenerateDocumentationFile>True</GenerateDocumentationFile>
+		<DocumentationFile>$(OutputPath)$(AssemblyName).xml</DocumentationFile>
+		<AssemblyName>Mud.HttpUtils.Generator</AssemblyName>
+	</PropertyGroup>
+	<!--开发调试阶段-->
+	<ItemGroup>
+		<None Include="$(OutputPath)\netstandard2.0\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+		<None Include="README.md" Pack="true" PackagePath="\" />
+		<None Include="..\Icon.png" Pack="true" PackagePath="\" />
+	</ItemGroup>
+	<Import Project="..\Mud.CodeGenerator\Mud.CodeGenerator.projitems" Label="Shared" />
+</Project>

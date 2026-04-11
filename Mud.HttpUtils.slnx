@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/解决方案/">
+    <File Path=".editorconfig" />
+    <File Path="Directory.Build.props" />
+  </Folder>
+  <Project Path="Mud.CodeGenerator/Mud.CodeGenerator.shproj" />
+  <Project Path="Mud.HttpUtils.Generator/Mud.HttpUtils.Generator.csproj" />
+  <Project Path="Mud.HttpUtils/Mud.HttpUtils.csproj" />
+</Solution>
