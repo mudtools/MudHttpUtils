@@ -25,6 +25,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Mud.HttpUtils.Generator\Mud.HttpUtils.Generator.csproj" OutputItemType="Analyzer" />
     <ProjectReference Include="..\..\Mud.HttpUtils\Mud.HttpUtils.csproj" />
+    <ProjectReference Include="..\CommonClassLibrary\CommonClassLibrary.csproj" />
   </ItemGroup>
 
 </Project>

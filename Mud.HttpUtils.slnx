@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/Demos/">
+    <Project Path="Demos/CommonClassLibrary/CommonClassLibrary.csproj" />
     <Project Path="Demos/HttpClientApiDemo/HttpClientApiDemo.csproj" />
   </Folder>
   <Folder Name="/Src/">
