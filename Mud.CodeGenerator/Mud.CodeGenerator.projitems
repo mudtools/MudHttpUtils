@@ -11,7 +11,6 @@
   <ItemGroup>
     <Compile Include="$(MSBuildThisFileDirectory)Consts\HttpClientGeneratorConstants.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Diagnostics\Diagnostics.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Extensions\SourceProductionContextExtensions.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Extensions\StringExtensions.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Consts\GeneratedCodeConsts.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Helper\AttributeDataHelper.cs" />

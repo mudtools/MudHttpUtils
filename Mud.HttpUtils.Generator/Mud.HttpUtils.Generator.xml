@@ -1087,19 +1087,6 @@
             <para>所有生成器必须使用此统一类中的诊断描述符，确保错误码唯一且格式一致</para>
             </summary>
         </member>
-        <member name="T:Mud.CodeGenerator.SourceProductionContextExtensions">
-            <summary>
-            <see cref="T:Microsoft.CodeAnalysis.SourceProductionContext"/>类扩展。
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.SourceProductionContextExtensions.AddSource(Microsoft.CodeAnalysis.SourceProductionContext,System.String,Microsoft.CodeAnalysis.CSharp.Syntax.CompilationUnitSyntax)">
-            <summary>
-            将<see cref="T:Microsoft.CodeAnalysis.CSharp.Syntax.CompilationUnitSyntax"/>对象输出至当前项目的源代码中。
-            </summary>
-            <param name="context"><see cref="T:Microsoft.CodeAnalysis.SourceProductionContext"/>对象。</param>
-            <param name="name">代码文件名。</param>
-            <param name="compilationUnit"><see cref="T:Microsoft.CodeAnalysis.CSharp.Syntax.CompilationUnitSyntax"/>对象</param>
-        </member>
         <member name="M:Mud.CodeGenerator.StringExtensions.RemoveInterfacePrefix(System.String)">
             <summary>
             移除接口名前的"I"前缀
