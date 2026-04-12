@@ -290,9 +290,6 @@ internal static class MethodAnalyzer
     }
 
     /// <summary>
-    /// 从方法符号获取HTTP方法特性的ResponseEnableDecrypt值
-    /// </summary>
-    /// <summary>
     /// 查询方法的语法对象
     /// </summary>
     public static MethodDeclarationSyntax? FindMethodSyntax(

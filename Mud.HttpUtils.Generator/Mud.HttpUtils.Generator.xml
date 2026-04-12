@@ -71,9 +71,6 @@
         </member>
         <member name="M:Mud.HttpUtils.Analyzers.MethodAnalyzer.FindMethodSyntax(Microsoft.CodeAnalysis.Compilation,Microsoft.CodeAnalysis.IMethodSymbol,Microsoft.CodeAnalysis.CSharp.Syntax.InterfaceDeclarationSyntax,Microsoft.CodeAnalysis.SemanticModel)">
             <summary>
-            从方法符号获取HTTP方法特性的ResponseEnableDecrypt值
-            </summary>
-            <summary>
             查询方法的语法对象
             </summary>
         </member>
