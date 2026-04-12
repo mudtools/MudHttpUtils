@@ -1575,14 +1575,6 @@
             <param name="style">命名风格</param>
             <returns>生成的私有字段名</returns>
         </member>
-        <member name="M:Mud.CodeGenerator.PrivateFieldNamingHelper.GeneratePrivateFieldName(System.Type,Mud.CodeGenerator.FieldNamingStyle)">
-            <summary>
-            根据类型生成私有字段名（重载版本，接受Type参数）
-            </summary>
-            <param name="type">类型</param>
-            <param name="style">命名风格</param>
-            <returns>生成的私有字段名</returns>
-        </member>
         <member name="M:Mud.CodeGenerator.PrivateFieldNamingHelper.RemoveInterfacePrefix(System.String)">
             <summary>
             移除接口前缀"I"
@@ -1635,48 +1627,12 @@
             清理类型名，只保留有效的标识符字符
             </summary>
         </member>
-        <member name="M:Mud.CodeGenerator.PrivateFieldNamingHelper.GenerateSimplePrivateFieldName(System.String,Mud.CodeGenerator.FieldNamingStyle)">
-            <summary>
-            根据类型名生成私有字段名（简化版本）
-            </summary>
-            <param name="typeName">类型名称</param>
-            <param name="style">命名风格</param>
-            <returns>生成的私有字段名</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.PrivateFieldNamingHelper.GetDefaultName(Mud.CodeGenerator.FieldNamingStyle)">
-            <summary>
-            获取默认字段名（用于空输入的情况）
-            </summary>
-        </member>
         <member name="M:Mud.CodeGenerator.PrivateFieldNamingHelper.GeneratePropertyName(System.String)">
             <summary>
             根据私有字段名生成属性名（支持多种命名风格）
             </summary>
             <param name="fieldName">私有字段名</param>
             <returns>生成的属性名（PascalCase风格）</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.PrivateFieldNamingHelper.GeneratePropertyName(System.String,Mud.CodeGenerator.FieldNamingStyle)">
-            <summary>
-            根据私有字段名生成属性名（支持指定原始字段的命名风格）
-            </summary>
-            <param name="fieldName">私有字段名</param>
-            <param name="originalFieldStyle">原始字段的命名风格</param>
-            <returns>生成的属性名（PascalCase风格）</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.PrivateFieldNamingHelper.TryGeneratePropertyNameFromPrivateField(System.String,System.String@)">
-            <summary>
-            尝试根据私有字段名生成属性名（不会抛出异常）
-            </summary>
-            <param name="fieldName">私有字段名</param>
-            <param name="propertyName">生成的属性名</param>
-            <returns>是否成功生成属性名</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.PrivateFieldNamingHelper.DetectFieldNamingStyle(System.String)">
-            <summary>
-            检测字段的命名风格
-            </summary>
-            <param name="fieldName">字段名</param>
-            <returns>检测到的命名风格</returns>
         </member>
         <member name="M:Mud.CodeGenerator.PrivateFieldNamingHelper.RemovePrivateFieldPrefixes(System.String)">
             <summary>
@@ -1982,19 +1938,6 @@
             <param name="attributeType">特性类型</param>
             <param name="attributeValue">特性值</param>
             <returns>如果接口具有指定特性返回true，否则返回false</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.TypeSymbolHelper.HasPropertyAttribute(Microsoft.CodeAnalysis.INamedTypeSymbol,System.String)">
-            <summary>
-            检查接口是否具有指定的特性（不检查特性值）
-            </summary>
-            <param name="interfaceSymbol">接口符号</param>
-            <param name="attributeType">特性类型</param>
-            <returns>如果接口具有指定特性返回true，否则返回false</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.TypeSymbolHelper.HasPropertyAttribute(Microsoft.CodeAnalysis.IPropertySymbol,System.String)">
-            <summary>
-            判断属性是否具有特定特性
-            </summary>
         </member>
         <member name="M:Mud.CodeGenerator.TypeSymbolHelper.GetImplementationClassName(System.String)">
             <summary>

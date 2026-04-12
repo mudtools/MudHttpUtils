@@ -1,4 +1,4 @@
-﻿// -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
 //  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
@@ -70,48 +70,6 @@ internal static class PrivateFieldNamingHelper
             FieldNamingStyle.PureCamel => ToPureCamel(cleanedName),
             _ => ToUnderscoreCamel(cleanedName)
         };
-    }
-
-    /// <summary>
-    /// 根据类型生成私有字段名（重载版本，接受Type参数）
-    /// </summary>
-    /// <param name="type">类型</param>
-    /// <param name="style">命名风格</param>
-    /// <returns>生成的私有字段名</returns>
-    public static string GeneratePrivateFieldName(Type type, FieldNamingStyle style = FieldNamingStyle.UnderscoreCamel)
-    {
-        if (type == null)
-            throw new ArgumentNullException(nameof(type));
-
-        // 对于内置类型，使用更友好的名称
-        var builtInTypes = new Dictionary<Type, string>
-        {
-            [typeof(string)] = "string",
-            [typeof(int)] = "int",
-            [typeof(bool)] = "bool",
-            [typeof(double)] = "double",
-            [typeof(float)] = "float",
-            [typeof(decimal)] = "decimal",
-            [typeof(long)] = "long",
-            [typeof(short)] = "short",
-            [typeof(byte)] = "byte",
-            [typeof(char)] = "char",
-            [typeof(object)] = "object"
-        };
-
-        if (builtInTypes.TryGetValue(type, out string typeName))
-        {
-            return GeneratePrivateFieldName(typeName, style);
-        }
-
-        // 对于接口类型，移除接口前缀"I"
-        string processedTypeName = type.Name;
-        if (type.IsInterface)
-        {
-            processedTypeName = RemoveInterfacePrefix(processedTypeName);
-        }
-
-        return GeneratePrivateFieldName(processedTypeName, style);
     }
 
     /// <summary>
@@ -331,54 +289,6 @@ internal static class PrivateFieldNamingHelper
     }
 
     /// <summary>
-    /// 根据类型名生成私有字段名（简化版本）
-    /// </summary>
-    /// <param name="typeName">类型名称</param>
-    /// <param name="style">命名风格</param>
-    /// <returns>生成的私有字段名</returns>
-    public static string GenerateSimplePrivateFieldName(string typeName, FieldNamingStyle style = FieldNamingStyle.UnderscoreCamel)
-    {
-        if (string.IsNullOrWhiteSpace(typeName))
-            return GetDefaultName(style);
-
-        // 移除泛型、数组等符号
-        typeName = typeName
-            .Replace("<", "")
-            .Replace(">", "")
-            .Replace("[]", "")
-            .Replace("?", "");
-
-        // 移除接口前缀"I"
-        typeName = RemoveInterfacePrefix(typeName);
-
-        // 根据不同的命名风格生成字段名
-        if (typeName.Length == 0)
-            return GetDefaultName(style);
-
-        return style switch
-        {
-            FieldNamingStyle.MPrefixPascal => "m_" + char.ToUpper(typeName[0], CultureInfo.CurrentCulture) + typeName.Substring(1).ToLower(CultureInfo.CurrentCulture),
-            FieldNamingStyle.UnderscoreCamel => "_" + char.ToLower(typeName[0], CultureInfo.CurrentCulture) + typeName.Substring(1).ToLower(CultureInfo.CurrentCulture),
-            FieldNamingStyle.PureCamel => char.ToLower(typeName[0], CultureInfo.CurrentCulture) + typeName.Substring(1).ToLower(CultureInfo.CurrentCulture),
-            _ => "_" + char.ToLower(typeName[0], CultureInfo.CurrentCulture) + typeName.Substring(1).ToLower(CultureInfo.CurrentCulture)
-        };
-    }
-
-    /// <summary>
-    /// 获取默认字段名（用于空输入的情况）
-    /// </summary>
-    private static string GetDefaultName(FieldNamingStyle style)
-    {
-        return style switch
-        {
-            FieldNamingStyle.MPrefixPascal => "m_Value",
-            FieldNamingStyle.UnderscoreCamel => "_value",
-            FieldNamingStyle.PureCamel => "value",
-            _ => "_value"
-        };
-    }
-
-    /// <summary>
     /// 根据私有字段名生成属性名（支持多种命名风格）
     /// </summary>
     /// <param name="fieldName">私有字段名</param>
@@ -393,80 +303,6 @@ internal static class PrivateFieldNamingHelper
 
         // 转换为PascalCase命名
         return ToPascalCase(cleanedName);
-    }
-
-    /// <summary>
-    /// 根据私有字段名生成属性名（支持指定原始字段的命名风格）
-    /// </summary>
-    /// <param name="fieldName">私有字段名</param>
-    /// <param name="originalFieldStyle">原始字段的命名风格</param>
-    /// <returns>生成的属性名（PascalCase风格）</returns>
-    public static string GeneratePropertyName(string fieldName, FieldNamingStyle originalFieldStyle)
-    {
-        if (string.IsNullOrWhiteSpace(fieldName))
-            throw new ArgumentException("字段名不能为空", nameof(fieldName));
-
-        // 根据原始命名风格进行相应的处理
-        string cleanedName = originalFieldStyle switch
-        {
-            FieldNamingStyle.MPrefixPascal => RemoveMPrefix(fieldName),
-            FieldNamingStyle.UnderscoreCamel => RemoveUnderscorePrefix(fieldName),
-            FieldNamingStyle.PureCamel => fieldName, // 纯camelCase不需要移除前缀
-            _ => RemovePrivateFieldPrefixes(fieldName) // 默认处理所有前缀
-        };
-
-        // 转换为PascalCase命名
-        return ToPascalCase(cleanedName);
-    }
-
-    /// <summary>
-    /// 尝试根据私有字段名生成属性名（不会抛出异常）
-    /// </summary>
-    /// <param name="fieldName">私有字段名</param>
-    /// <param name="propertyName">生成的属性名</param>
-    /// <returns>是否成功生成属性名</returns>
-    public static bool TryGeneratePropertyNameFromPrivateField(string fieldName, out string propertyName)
-    {
-        propertyName = null;
-
-        if (string.IsNullOrWhiteSpace(fieldName))
-            return false;
-
-        try
-        {
-            propertyName = GeneratePropertyName(fieldName);
-            return !string.IsNullOrEmpty(propertyName);
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// 检测字段的命名风格
-    /// </summary>
-    /// <param name="fieldName">字段名</param>
-    /// <returns>检测到的命名风格</returns>
-    public static FieldNamingStyle DetectFieldNamingStyle(string fieldName)
-    {
-        if (string.IsNullOrWhiteSpace(fieldName))
-            return FieldNamingStyle.UnderscoreCamel;
-
-        if (fieldName.StartsWith("m_", StringComparison.CurrentCulture))
-            return FieldNamingStyle.MPrefixPascal;
-
-        if (fieldName.StartsWith("s_", StringComparison.CurrentCulture))
-            return FieldNamingStyle.MPrefixPascal; // s_前缀也视为MPrefix风格
-
-        if (fieldName.StartsWith("_", StringComparison.CurrentCulture))
-            return FieldNamingStyle.UnderscoreCamel;
-
-        // 检查是否为camelCase（首字母小写）
-        if (fieldName.Length > 0 && char.IsLower(fieldName[0]))
-            return FieldNamingStyle.PureCamel;
-
-        return FieldNamingStyle.UnderscoreCamel; // 默认
     }
 
     /// <summary>
