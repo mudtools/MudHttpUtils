@@ -89,7 +89,14 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
     {
         var semanticModel = GetOrCreateSemanticModel(compilation, interfaceSyntax.SyntaxTree);
         if (semanticModel.GetDeclaredSymbol(interfaceSyntax) is not INamedTypeSymbol interfaceSymbol)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.HttpClientApiGenerationError,
+                interfaceSyntax.GetLocation(),
+                interfaceSyntax.Identifier.Text,
+                "Could not resolve interface symbol. This may occur when the interface has syntax errors or is in an incomplete state."));
             return null;
+        }
 
         var httpClientApiAttribute = AttributeDataHelper.GetAttributeDataFromSymbol(interfaceSymbol, HttpClientGeneratorConstants.HttpClientApiAttributeNames);
         if (httpClientApiAttribute == null)

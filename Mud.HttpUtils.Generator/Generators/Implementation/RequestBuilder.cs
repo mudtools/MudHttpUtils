@@ -471,8 +471,8 @@ internal class RequestBuilder
 
         // 再检查命名参数（如 [Body(ContentType = "application/xml")]）
         return bodyAttr.NamedArguments.TryGetValue("ContentType", out var contentTypeArg)
-            ? (contentTypeArg?.ToString() ?? "application/json")
-            : "application/json";
+            ? (contentTypeArg?.ToString() ?? HttpClientGeneratorConstants.DefaultContentType)
+            : HttpClientGeneratorConstants.DefaultContentType;
     }
 
     private bool GetUseStringContentFlag(ParameterAttributeInfo bodyAttr)

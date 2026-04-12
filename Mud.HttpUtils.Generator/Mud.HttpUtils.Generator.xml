@@ -124,6 +124,11 @@
             获取Header特性的Replace设置
             </summary>
         </member>
+        <member name="M:Mud.HttpUtils.Analyzers.MethodAnalyzer.HasAttributeWithName(Microsoft.CodeAnalysis.AttributeData,System.String)">
+            <summary>
+            检查特性是否具有指定的名称（支持带或不带 Attribute 后缀）
+            </summary>
+        </member>
         <member name="T:Mud.HttpUtils.Analyzers.ParameterAnalyzer">
             <summary>
             参数分析器，负责分析方法参数的特性和元数据

@@ -79,7 +79,14 @@ internal class FormContentGenerator : TransitiveCodeGenerator
                 var classSymbol = semanticModel.GetDeclaredSymbol(classDecl);
 
                 if (classSymbol == null)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        Diagnostics.FormContentGenerationError,
+                        classDecl.GetLocation(),
+                        classDecl.Identifier.Text,
+                        "Could not resolve class symbol. This may occur when the class has syntax errors or is in an incomplete state."));
                     continue;
+                }
 
                 // 获取所有标记了 [JsonPropertyName] 的属性
                 var properties = GetJsonPropertyProperties(classSymbol);

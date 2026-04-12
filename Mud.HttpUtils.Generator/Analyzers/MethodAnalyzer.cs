@@ -480,7 +480,7 @@ internal static class MethodAnalyzer
         if (interfaceSymbol != null)
         {
             var headerAttributes = interfaceSymbol.GetAttributes()
-                .Where(attr => attr.AttributeClass?.Name == "HeaderAttribute" || attr.AttributeClass?.Name == "Header");
+                .Where(attr => HasAttributeWithName(attr, "HeaderAttribute"));
 
             foreach (var headerAttr in headerAttributes)
             {
@@ -502,7 +502,7 @@ internal static class MethodAnalyzer
             }
 
             var queryAttributes = interfaceSymbol.GetAttributes()
-                .Where(attr => (attr.AttributeClass?.Name == "QueryAttribute" || attr.AttributeClass?.Name == "Query") &&
+                .Where(attr => HasAttributeWithName(attr, "QueryAttribute") &&
                                attr.ConstructorArguments.Length > 0 &&
                                attr.ConstructorArguments[0].Value?.ToString() == "Authorization");
 
@@ -515,7 +515,7 @@ internal static class MethodAnalyzer
 
             // 处理 Token 特性的注入模式
             var tokenAttributes = interfaceSymbol.GetAttributes()
-                .Where(attr => attr.AttributeClass?.Name == "TokenAttribute" || attr.AttributeClass?.Name == "Token");
+                .Where(attr => HasAttributeWithName(attr, "TokenAttribute"));
 
             foreach (var tokenAttr in tokenAttributes)
             {
@@ -603,5 +603,14 @@ internal static class MethodAnalyzer
     private static bool GetHeaderReplace(AttributeData headerAttr)
     {
         return AttributeDataHelper.GetBoolValueFromAttribute(headerAttr, "Replace", false);
+    }
+
+    /// <summary>
+    /// 检查特性是否具有指定的名称（支持带或不带 Attribute 后缀）
+    /// </summary>
+    private static bool HasAttributeWithName(AttributeData attr, string attributeName)
+    {
+        var name = attr.AttributeClass?.Name;
+        return name == attributeName || name == attributeName.Replace("Attribute", "");
     }
 }
