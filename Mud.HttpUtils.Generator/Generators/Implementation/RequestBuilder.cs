@@ -421,13 +421,22 @@ internal class RequestBuilder
         codeBuilder.AppendLine("            }");
     }
 
+    private static readonly HashSet<string> FormatStringFirstArgAttributes = new HashSet<string>(StringComparer.Ordinal)
+    {
+        HttpClientGeneratorConstants.QueryAttribute,
+        HttpClientGeneratorConstants.ArrayQueryAttribute,
+    };
+
     private string GetFormatString(ParameterAttributeInfo attribute)
     {
         if (attribute.Arguments.Length > 1)
         {
             return attribute.Arguments[1] as string ?? "";
         }
-        else if (attribute.Arguments.Length == 1 && !HttpClientGeneratorConstants.PathAttributes.Contains(attribute.Name))
+
+        if (attribute.Arguments.Length == 1
+            && !HttpClientGeneratorConstants.PathAttributes.Contains(attribute.Name)
+            && !FormatStringFirstArgAttributes.Contains(attribute.Name))
         {
             return attribute.Arguments[0] as string ?? "";
         }
