@@ -48,6 +48,10 @@ internal class InterfaceImplementationGenerator
     public void GenerateCode()
     {
         var configuration = ExtractConfigurationFromAttributes();
+
+        if (!ValidateConfiguration(configuration))
+            return;
+
         var generatorContext = new GeneratorContext(
             _compilation,
             _interfaceSymbol,
@@ -71,6 +75,34 @@ internal class InterfaceImplementationGenerator
         _context.AddSource(
             fileName,
             SourceText.From(_codeBuilder.ToString(), Encoding.UTF8));
+    }
+
+    /// <summary>
+    /// 验证生成配置的合法性
+    /// </summary>
+    private bool ValidateConfiguration(GenerationConfiguration configuration)
+    {
+        if (!string.IsNullOrEmpty(configuration.InheritedFrom))
+        {
+            var hasTokenManager = !string.IsNullOrEmpty(configuration.TokenManager);
+            var validationResult = BaseClassValidator.ValidateBaseClass(
+                _compilation,
+                configuration.InheritedFrom,
+                hasTokenManager,
+                _interfaceSymbol.ContainingNamespace);
+
+            if (!validationResult.IsValid)
+            {
+                _context.ReportDiagnostic(Diagnostic.Create(
+                    Diagnostics.HttpClientApiGenerationError,
+                    _interfaceDecl.GetLocation(),
+                    _interfaceSymbol.Name,
+                    validationResult.ErrorMessage ?? $"基类 '{configuration.InheritedFrom}' 验证失败"));
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -152,11 +184,11 @@ internal class InterfaceImplementationGenerator
         {
             HttpClientOptionsName = _optionsName,
             DefaultContentType = GetHttpClientApiContentTypeFromAttribute(httpClientApiAttribute),
-            TimeoutFromAttribute = AttributeDataHelper.GetIntValueFromAttribute(
+            Timeout = AttributeDataHelper.GetIntValueFromAttribute(
                 httpClientApiAttribute,
                 HttpClientGeneratorConstants.TimeoutProperty,
                 100),
-            BaseAddressFromAttribute = AttributeDataHelper.GetStringValueFromAttributeConstructor(
+            BaseAddress = AttributeDataHelper.GetStringValueFromAttributeConstructor(
                 httpClientApiAttribute,
                 HttpClientGeneratorConstants.BaseAddressProperty),
             IsAbstract = isAbstract,

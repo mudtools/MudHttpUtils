@@ -212,7 +212,7 @@ internal static class BaseClassValidator
                 if (classDecl.Identifier.Text == typeName)
                 {
                     // 获取完整的类型名称
-                    var semanticModel = compilation.GetSemanticModel(syntaxTree);
+                    var semanticModel = SemanticModelCache.GetOrCreate(compilation, syntaxTree);
                     var symbol = semanticModel.GetDeclaredSymbol(classDecl);
                     if (symbol != null)
                     {

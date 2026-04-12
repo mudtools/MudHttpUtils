@@ -137,8 +137,16 @@ internal class RequestBuilder
                 headerName = interfaceHeaderName;
             }
 
-            codeBuilder.AppendLine($"            if (!string.IsNullOrEmpty({param.Name}))");
-            codeBuilder.AppendLine($"                httpRequest.Headers.Add(\"{headerName}\", {param.Name});");
+            var isStringType = TypeDetectionHelper.IsStringType(param.Type);
+            if (isStringType)
+            {
+                codeBuilder.AppendLine($"            if (!string.IsNullOrEmpty({param.Name}))");
+                codeBuilder.AppendLine($"                httpRequest.Headers.Add(\"{headerName}\", {param.Name});");
+            }
+            else
+            {
+                codeBuilder.AppendLine($"            httpRequest.Headers.Add(\"{headerName}\", {param.Name}.ToString());");
+            }
         }
     }
 
@@ -415,17 +423,15 @@ internal class RequestBuilder
 
     private string GetFormatString(ParameterAttributeInfo attribute)
     {
-        // 检查构造函数参数
         if (attribute.Arguments.Length > 1)
         {
             return attribute.Arguments[1] as string ?? "";
         }
-        else if (attribute.Arguments.Length == 1 && HttpClientGeneratorConstants.PathAttributes.Contains(attribute.Name))
+        else if (attribute.Arguments.Length == 1 && !HttpClientGeneratorConstants.PathAttributes.Contains(attribute.Name))
         {
             return attribute.Arguments[0] as string ?? "";
         }
 
-        // 检查命名参数
         return attribute.NamedArguments.TryGetValue("FormatString", out var formatString)
             ? formatString as string
             : null;

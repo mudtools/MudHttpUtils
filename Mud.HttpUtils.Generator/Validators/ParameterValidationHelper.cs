@@ -35,16 +35,16 @@ internal static class ParameterValidationHelper
     /// </summary>
     private static bool ShouldValidateParameter(ParameterInfo param)
     {
-        // 有Body特性的参数在后续单独处理
         if (param.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.BodyAttribute))
             return true;
 
-        // 可空参数不需要验证
         if (param.Type.EndsWith("?", StringComparison.Ordinal))
             return false;
 
-        // 字符串参数需要验证
         if (param.Type.EndsWith("string", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (!TypeDetectionHelper.IsNullableType(param.Type) && !TypeDetectionHelper.IsSimpleType(param.Type))
             return true;
 
         return false;
@@ -55,7 +55,6 @@ internal static class ParameterValidationHelper
     /// </summary>
     private static void GenerateSingleParameterValidation(StringBuilder codeBuilder, ParameterInfo param)
     {
-        // 检查是否有Body特性
         var hasBodyAttr = param.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.BodyAttribute);
 
         if (hasBodyAttr)
@@ -65,12 +64,32 @@ internal static class ParameterValidationHelper
         }
         else if (param.Type.EndsWith("string", StringComparison.OrdinalIgnoreCase))
         {
+            var isPathOrQueryParam = IsPathOrQueryParam(param);
             codeBuilder.AppendLine($"            {param.Name} = {param.Name}.Trim();");
             codeBuilder.AppendLine($"            if (string.IsNullOrEmpty({param.Name}))");
             codeBuilder.AppendLine($"            {{");
             codeBuilder.AppendLine($"                throw new ArgumentNullException(nameof({param.Name}));");
             codeBuilder.AppendLine($"            }}");
-            codeBuilder.AppendLine($"            {param.Name} = Uri.EscapeDataString({param.Name});");
+            if (isPathOrQueryParam)
+            {
+                codeBuilder.AppendLine($"            {param.Name} = Uri.EscapeDataString({param.Name});");
+            }
         }
+        else if (!TypeDetectionHelper.IsNullableType(param.Type) && !TypeDetectionHelper.IsSimpleType(param.Type))
+        {
+            codeBuilder.AppendLine($"            if ({param.Name} == null)");
+            codeBuilder.AppendLine($"                throw new ArgumentNullException(nameof({param.Name}));");
+        }
+    }
+
+    /// <summary>
+    /// 判断参数是否为路径或查询参数（仅这两类需要 URL 编码）
+    /// </summary>
+    private static bool IsPathOrQueryParam(ParameterInfo param)
+    {
+        return param.Attributes.Any(attr =>
+            HttpClientGeneratorConstants.PathAttributes.Contains(attr.Name) ||
+            attr.Name == HttpClientGeneratorConstants.QueryAttribute ||
+            attr.Name == HttpClientGeneratorConstants.ArrayQueryAttribute);
     }
 }

@@ -18,11 +18,7 @@ internal class GenerationConfiguration
 
     public int Timeout { get; set; } = 100;
 
-    public int TimeoutFromAttribute { get; set; } = 100;
-
     public string? BaseAddress { get; set; }
-
-    public string? BaseAddressFromAttribute { get; set; }
 
     public bool IsAbstract { get; set; }
 

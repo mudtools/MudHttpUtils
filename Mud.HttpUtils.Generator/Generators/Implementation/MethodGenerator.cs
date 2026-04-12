@@ -58,8 +58,13 @@ internal class MethodGenerator : ICodeFragmentGenerator
         {
             return TypeSymbolHelper.GetAllMethods(context.InterfaceSymbol, true);
         }
-        catch
+        catch (Exception ex)
         {
+            context.ProductionContext.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.HttpClientApiGenerationError,
+                context.InterfaceDeclaration.GetLocation(),
+                context.InterfaceSymbol.Name,
+                $"解析父接口方法时发生异常，已回退为仅生成当前接口方法: {ex.Message}"));
             return context.InterfaceSymbol.GetMembers().OfType<IMethodSymbol>();
         }
     }

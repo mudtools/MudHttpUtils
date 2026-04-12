@@ -52,14 +52,6 @@ internal class GeneratorContext
 
     public string FieldAccessibility { get; }
 
-    public string LoggerType { get; }
-
-    public string ConstructorLoggerType { get; }
-
-    public string OptionsFieldName { get; }
-
-    public string OptionsParameterName { get; }
-
     public GeneratorContext(
         Compilation compilation,
         INamedTypeSymbol interfaceSymbol,
@@ -78,9 +70,5 @@ internal class GeneratorContext
         ClassName = TypeSymbolHelper.GetImplementationClassName(interfaceSymbol.Name);
         NamespaceName = SyntaxHelper.GetNamespaceName(interfaceDeclaration, HttpClientGeneratorConstants.ImplementationNamespaceSuffix);
         FieldAccessibility = configuration.IsAbstract ? "protected " : "private ";
-        LoggerType = configuration.IsAbstract ? "ILogger" : $"ILogger<{ClassName}>";
-        ConstructorLoggerType = configuration.IsAbstract ? "ILogger" : $"ILogger<{ClassName}>";
-        OptionsFieldName = PrivateFieldNamingHelper.GeneratePrivateFieldName(configuration.HttpClientOptionsName);
-        OptionsParameterName = PrivateFieldNamingHelper.GeneratePrivateFieldName(configuration.HttpClientOptionsName, FieldNamingStyle.PureCamel);
     }
 }

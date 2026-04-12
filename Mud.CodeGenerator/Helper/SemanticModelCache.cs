@@ -37,7 +37,11 @@ internal static class SemanticModelCache
         var innerTable = _cache.GetOrCreateValue(compilation);
 
         if (innerTable.TryGetValue(syntaxTree, out var model))
-            return model;
+        {
+            if (model.Compilation == compilation)
+                return model;
+            innerTable.Remove(syntaxTree);
+        }
 
         var newModel = compilation.GetSemanticModel(syntaxTree);
         innerTable.Add(syntaxTree, newModel);

@@ -355,23 +355,20 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
             return false;
         }
 
-        // 检查是否包含C#关键字
-        var keywords = new[] { "class", "interface", "struct", "enum", "delegate", "abstract", "sealed", "static" };
         var parts = baseClassName.Split(new[] { '.', '<', '>', ',' }, StringSplitOptions.RemoveEmptyEntries);
         foreach (var part in parts)
         {
-            if (keywords.Contains(part, StringComparer.OrdinalIgnoreCase))
+            if (!CSharpCodeValidator.IsValidCSharpIdentifier(part))
             {
                 context.ReportDiagnostic(Diagnostic.Create(
                     Diagnostics.EventHandlerGenerationError,
                     location,
                     baseClassName,
-                    $"Base class name contains C# keyword '{part}'"));
+                    $"Base class name contains invalid identifier '{part}'"));
                 return false;
             }
         }
 
-        // 检查泛型语法
         if (baseClassName.Contains("<") || baseClassName.Contains(">"))
         {
             var openCount = baseClassName.Count(c => c == '<');
@@ -383,21 +380,6 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
                     location,
                     baseClassName,
                     "Invalid generic type syntax: unmatched angle brackets"));
-                return false;
-            }
-        }
-
-        // 检查非法字符
-        var invalidChars = new[] { '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '-', '=', '+', '[', ']', '{', '}', '|', '\\', ';', ':', '"', '\'', '<', '>', '?', '/', ' ' };
-        foreach (var part in parts)
-        {
-            if (part.IndexOfAny(invalidChars) >= 0)
-            {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    Diagnostics.EventHandlerGenerationError,
-                    location,
-                    baseClassName,
-                    $"Base class name contains invalid characters"));
                 return false;
             }
         }

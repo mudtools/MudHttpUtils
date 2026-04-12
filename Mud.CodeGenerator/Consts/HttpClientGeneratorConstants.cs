@@ -13,8 +13,6 @@ namespace Mud.CodeGenerator;
 /// </summary>
 internal static class HttpClientGeneratorConstants
 {
-    // 特性名称
-    public static readonly string[] HttpClientApiWrapAttributeNames = ["HttpClientApiWrapAttribute", "HttpClientApiWrap"];
     public static readonly string[] TokenAttributeNames = ["TokenAttribute", "Token"];
 
     /// <summary>
@@ -65,7 +63,6 @@ internal static class HttpClientGeneratorConstants
     public const string HttpMethodResponseContentTypeProperty = "ResponseContentType";
     public const string HttpMethodResponseEnableDecryptProperty = "ResponseEnableDecrypt";
 
-
     public const string TimeoutProperty = "Timeout";
     public const string RegistryGroupNameProperty = "RegistryGroupName";
     public const string TokenManageProperty = "TokenManage";
@@ -79,9 +76,4 @@ internal static class HttpClientGeneratorConstants
     public const string DefaultWrapSuffix = "Wrap";
     public const string DefaultContentType = "application/json";
     public const string ImplementationNamespaceSuffix = "Internal";
-
-    // HTTP方法常量(分离特性名和方法名)
-    public static readonly string[] HttpMethodAttributeNames =
-        ["GetAttribute", "PostAttribute", "PutAttribute", "DeleteAttribute", "PatchAttribute", "HeadAttribute", "OptionsAttribute"];
-    public static readonly string[] HttpMethodNames = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"];
 }

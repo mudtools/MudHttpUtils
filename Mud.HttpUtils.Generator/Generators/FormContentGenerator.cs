@@ -75,7 +75,7 @@ internal class FormContentGenerator : TransitiveCodeGenerator
 
             try
             {
-                var semanticModel = compilation.GetSemanticModel(classDecl.SyntaxTree);
+                var semanticModel = SemanticModelCache.GetOrCreate(compilation, classDecl.SyntaxTree);
                 var classSymbol = semanticModel.GetDeclaredSymbol(classDecl);
 
                 if (classSymbol == null)

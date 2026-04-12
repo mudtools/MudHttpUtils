@@ -18,12 +18,10 @@
     <Compile Include="$(MSBuildThisFileDirectory)Helper\CSharpCodeValidator.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Helper\StringEscapeHelper.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Helper\TokenHelper.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Helper\ClassHierarchyAnalyzer.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Helper\PrivateFieldHelper.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Helper\ProjectConfigHelper.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Helper\SyntaxHelper.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Helper\TypeDetectionHelper.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Model\ClassHierarchyInfo.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)TransitiveCodeGenerator.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Helper\TypeSymbolHelper.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Helper\SemanticModelCache.cs" />

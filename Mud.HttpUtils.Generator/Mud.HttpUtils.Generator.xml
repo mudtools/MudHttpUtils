@@ -69,12 +69,10 @@
             从方法符号获取HTTP方法特性的ResponseContentType值
             </summary>
         </member>
-        <member name="M:Mud.HttpUtils.Analyzers.MethodAnalyzer.GetResponseEnableDecryptFromSymbol(Microsoft.CodeAnalysis.IMethodSymbol)">
+        <member name="M:Mud.HttpUtils.Analyzers.MethodAnalyzer.FindMethodSyntax(Microsoft.CodeAnalysis.Compilation,Microsoft.CodeAnalysis.IMethodSymbol,Microsoft.CodeAnalysis.CSharp.Syntax.InterfaceDeclarationSyntax,Microsoft.CodeAnalysis.SemanticModel)">
             <summary>
             从方法符号获取HTTP方法特性的ResponseEnableDecrypt值
             </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Analyzers.MethodAnalyzer.FindMethodSyntax(Microsoft.CodeAnalysis.Compilation,Microsoft.CodeAnalysis.IMethodSymbol,Microsoft.CodeAnalysis.CSharp.Syntax.InterfaceDeclarationSyntax,Microsoft.CodeAnalysis.SemanticModel)">
             <summary>
             查询方法的语法对象
             </summary>
@@ -373,6 +371,11 @@
             生成代码入口
             </summary>
         </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.InterfaceImplementationGenerator.ValidateConfiguration(Mud.HttpUtils.Generators.Context.GenerationConfiguration)">
+            <summary>
+            验证生成配置的合法性
+            </summary>
+        </member>
         <member name="M:Mud.HttpUtils.Generators.Implementation.InterfaceImplementationGenerator.InitializeGenerators(Mud.HttpUtils.Generators.Context.GeneratorContext)">
             <summary>
             初始化代码片段生成器
@@ -478,64 +481,14 @@
             <param name="contentType">内容类型字符串</param>
             <returns>如果是XML类型返回true，否则返回false</returns>
         </member>
-        <member name="T:Mud.HttpUtils.Generators.Utils.CodeBuilderExtensions">
+        <member name="T:Mud.HttpUtils.Generators.Implementation.TokenMethodHelper">
             <summary>
-            StringBuilder 扩展方法类，用于代码生成
+            Token 方法生成辅助类，提取 GetTokenAsync 方法的公共前导代码
             </summary>
         </member>
-        <member name="F:Mud.HttpUtils.Generators.Utils.CodeBuilderExtensions.IndentSize">
+        <member name="M:Mud.HttpUtils.Generators.Implementation.TokenMethodHelper.GenerateGetTokenPreamble(System.Text.StringBuilder,System.String)">
             <summary>
-            缩进层级
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Generators.Utils.CodeBuilderExtensions.AppendIndent(System.Text.StringBuilder,System.Int32)">
-            <summary>
-            添加缩进
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Generators.Utils.CodeBuilderExtensions.AppendLineIndent(System.Text.StringBuilder,System.Int32,System.String)">
-            <summary>
-            添加行并缩进
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Generators.Utils.CodeBuilderExtensions.AppendEmptyLine(System.Text.StringBuilder)">
-            <summary>
-            添加空行
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Generators.Utils.CodeBuilderExtensions.StartBlock(System.Text.StringBuilder,System.Int32)">
-            <summary>
-            开始代码块
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Generators.Utils.CodeBuilderExtensions.EndBlock(System.Text.StringBuilder,System.Int32,System.Boolean)">
-            <summary>
-            结束代码块
-            </summary>
-        </member>
-        <member name="T:Mud.HttpUtils.Generators.Utils.ParameterListBuilder">
-            <summary>
-            参数列表构建器，统一处理参数列表生成相关逻辑
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Generators.Utils.ParameterListBuilder.HasAttribute(Mud.HttpUtils.Models.Analysis.ParameterInfo,System.String[])">
-            <summary>
-            检查参数是否具有指定的特性
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Generators.Utils.ParameterListBuilder.FilterParametersByAttribute(System.Collections.Generic.IReadOnlyList{Mud.HttpUtils.Models.Analysis.ParameterInfo},System.String[],System.Boolean)">
-            <summary>
-            根据特性名称过滤参数
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Generators.Utils.ParameterListBuilder.GenerateParameterList(System.Collections.Generic.IReadOnlyList{Mud.HttpUtils.Models.Analysis.ParameterInfo})">
-            <summary>
-            生成方法参数列表字符串
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Generators.Utils.ParameterListBuilder.GenerateCorrectParameterCallList(System.Collections.Generic.IReadOnlyList{Mud.HttpUtils.Models.Analysis.ParameterInfo},System.Collections.Generic.IReadOnlyList{Mud.HttpUtils.Models.Analysis.ParameterInfo},System.String)">
-            <summary>
-            生成正确的参数调用列表，确保token参数替换掉原来标记了[Token]特性的参数位置
+            生成 GetTokenAsync 方法的前导代码（获取 _appContext、tokenType、tokenManager）
             </summary>
         </member>
         <member name="T:Mud.HttpUtils.FormContentGenerator">
@@ -748,16 +701,6 @@
             用于存储接口方法的分析信息，包括 HTTP 方法、URL 模板、参数等。
             </remarks>
         </member>
-        <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.MethodOwnerInterfaceName">
-            <summary>
-            方法实际所属的接口名称（用于引用注释）
-            </summary>
-        </member>
-        <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.CurrentInterfaceName">
-            <summary>
-            当前正在处理的接口名称（用于接口级别的partial方法）
-            </summary>
-        </member>
         <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.IsValid">
             <summary>
             方法是否有效
@@ -795,11 +738,6 @@
             是否忽略生成实现 [IgnoreImplement]
             </summary>
         </member>
-        <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.IgnoreWrapInterface">
-            <summary>
-            是否忽略生成包装接口 [IgnoreWrapInterface]
-            </summary>
-        </member>
         <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.InterfaceAttributes">
             <summary>
             接口特性列表（用于存储Header:Authorization、Query:Authorization等）
@@ -823,11 +761,6 @@
         <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.ResponseContentType">
             <summary>
             响应内容类型（由HTTP方法特性的ResponseContentType指定）
-            </summary>
-        </member>
-        <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.ResponseEnableDecrypt">
-            <summary>
-            响应是否启用解密
             </summary>
         </member>
         <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.BodyEnableEncrypt">
@@ -1050,6 +983,11 @@
             为单个参数生成验证代码
             </summary>
         </member>
+        <member name="M:Mud.HttpUtils.Validators.ParameterValidationHelper.IsPathOrQueryParam(Mud.HttpUtils.Models.Analysis.ParameterInfo)">
+            <summary>
+            判断参数是否为路径或查询参数（仅这两类需要 URL 编码）
+            </summary>
+        </member>
         <member name="T:Mud.HttpUtils.Validators.ValidationResult">
             <summary>
             验证结果
@@ -1140,10 +1078,6 @@
             <summary>
             从特性数据中获取字符串属性值。
             </summary>
-            <param name="attribute">特性数据对象</param>
-            <param name="propertyName">属性名称</param>
-            <param name="defaultValue">默认值，当属性不存在或无法解析时返回此值</param>
-            <returns>解析得到的字符串值或默认值</returns>
         </member>
         <member name="M:Mud.CodeGenerator.AttributeDataHelper.GetStringValueFromAttribute(Microsoft.CodeAnalysis.AttributeData,System.String[],System.Int32,System.String)">
             <summary>
@@ -1167,15 +1101,7 @@
         <member name="M:Mud.CodeGenerator.AttributeDataHelper.GetStringValueFromAttributeConstructor(Microsoft.CodeAnalysis.AttributeData,System.String)">
             <summary>
             从特性数据中获取字符串属性值，同时兼容命名参数和构造函数参数两种方式。
-            优先返回命名参数的值，如果命名参数不存在，则返回构造函数参数的值。
             </summary>
-            <param name="attributeData">特性数据对象</param>
-            <param name="propertyName">属性名称</param>
-            <returns>解析得到的字符串值，如果都未找到则返回 null</returns>
-            <remarks>
-            此方法首先检查命名参数，如果找到非空的值则直接返回。
-            如果命名参数为空，则检查构造函数参数，返回第一个参数的值。
-            </remarks>
         </member>
         <member name="M:Mud.CodeGenerator.AttributeDataHelper.GetAttributeDataFromSymbol(Microsoft.CodeAnalysis.ISymbol,System.String[])">
             <summary>
@@ -1329,66 +1255,6 @@
             </summary>
             <returns>默认Token类型为TenantAccessToken</returns>
         </member>
-        <member name="M:Mud.CodeGenerator.ClassHierarchyAnalyzer.AnalyzeClassHierarchy(Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax,Microsoft.CodeAnalysis.Compilation)">
-            <summary>
-            分析类的完整继承层次结构
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.ClassHierarchyAnalyzer.GetBaseClassPublicPropertyDeclarations(Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax,Microsoft.CodeAnalysis.Compilation,System.Boolean)">
-            <summary>
-            获取基类中的所有公共属性的语法节点（包括继承链中的所有基类）
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.ClassHierarchyAnalyzer.GetBaseClassPublicPropertyDeclarationsGrouped(Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax,Microsoft.CodeAnalysis.Compilation,System.Boolean)">
-            <summary>
-            获取基类公共属性语法节点的分组信息（按声明类型分组）
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.ClassHierarchyAnalyzer.BaseClassHasPropertyDeclaration(Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax,Microsoft.CodeAnalysis.Compilation,System.String,System.Boolean)">
-            <summary>
-            检查基类中是否存在特定名称的属性语法节点
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.ClassHierarchyAnalyzer.GetBaseClassPropertyDeclarationsByType(Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax,Microsoft.CodeAnalysis.Compilation,System.String,System.Boolean)">
-            <summary>
-            获取基类中特定类型的属性语法节点
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.ClassHierarchyAnalyzer.GetInheritanceDepth(Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax,Microsoft.CodeAnalysis.Compilation)">
-            <summary>
-            获取继承深度（从当前类到Object的层级数）
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.ClassHierarchyAnalyzer.InheritsFrom(Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax,Microsoft.CodeAnalysis.Compilation,System.String)">
-            <summary>
-            检查类是否继承自特定类型
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.ClassHierarchyAnalyzer.GetAllImplementedInterfaces(Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax,Microsoft.CodeAnalysis.Compilation)">
-            <summary>
-            获取类的所有实现的接口（包括继承的）
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.ClassHierarchyAnalyzer.CreateNewPropertyDeclarationSyntax(Microsoft.CodeAnalysis.CSharp.Syntax.PropertyDeclarationSyntax)">
-            <summary>
-            创建新的属性声明语法节点，确保它属于当前语法树
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.ClassHierarchyAnalyzer.CreateNewAttributeLists(Microsoft.CodeAnalysis.SyntaxList{Microsoft.CodeAnalysis.CSharp.Syntax.AttributeListSyntax})">
-            <summary>
-            创建新的特性列表，确保所有节点都属于当前语法树
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.ClassHierarchyAnalyzer.ResolvePropertyTypeInSyntax(Microsoft.CodeAnalysis.CSharp.Syntax.PropertyDeclarationSyntax,Microsoft.CodeAnalysis.IPropertySymbol,Microsoft.CodeAnalysis.INamedTypeSymbol)">
-            <summary>
-            解析属性语法节点中的类型，将泛型类型参数替换为具体类型
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.ClassHierarchyAnalyzer.GetPropertyDeclarationSyntax(Microsoft.CodeAnalysis.IPropertySymbol)">
-            <summary>
-            从属性符号获取属性声明语法节点
-            </summary>
-        </member>
         <member name="T:Mud.CodeGenerator.FieldNamingStyle">
             <summary>
             字段命名风格枚举
@@ -1486,16 +1352,6 @@
             移除常见的私有字段前缀
             </summary>
         </member>
-        <member name="M:Mud.CodeGenerator.PrivateFieldNamingHelper.RemoveMPrefix(System.String)">
-            <summary>
-            移除m_前缀
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.PrivateFieldNamingHelper.RemoveUnderscorePrefix(System.String)">
-            <summary>
-            移除_前缀
-            </summary>
-        </member>
         <member name="M:Mud.CodeGenerator.PrivateFieldNamingHelper.ToPascalCase(System.String)">
             <summary>
             转换为PascalCase命名
@@ -1586,11 +1442,6 @@
         <member name="M:Mud.CodeGenerator.TypeDetectionHelper.IsNullableType(System.String)">
             <summary>
             检查是否为可空类型
-            </summary>
-        </member>
-        <member name="T:Mud.CodeGenerator.ClassHierarchyInfo">
-            <summary>
-            类层次结构信息
             </summary>
         </member>
         <member name="T:Mud.CodeGenerator.TransitiveCodeGenerator">
@@ -1767,33 +1618,6 @@
             </summary>
             <param name="typeSymbol">类型符号</param>
             <returns>公共属性列表</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.TypeSymbolHelper.GetPublicMethods(Microsoft.CodeAnalysis.ITypeSymbol)">
-            <summary>
-            获取类型的公共方法列表
-            </summary>
-            <param name="typeSymbol">类型符号</param>
-            <returns>公共方法列表</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.TypeSymbolHelper.GetBasicTypeConvertCode(Microsoft.CodeAnalysis.ITypeSymbol,System.String)">
-            <summary>
-            获取基本类型的转换代码字符串（用于代码生成）
-            </summary>
-            <param name="typeSymbol">类型符号</param>
-            <param name="fieldName">字段名</param>
-            <returns>类型转换代码字符串</returns>
-        </member>
-        <member name="T:Mud.CodeGenerator.SymbolExtensions">
-            <summary>
-            ISymbol 扩展方法
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.SymbolExtensions.GetFullyQualifiedName(Microsoft.CodeAnalysis.ISymbol)">
-            <summary>
-            获取符号的完整限定名称（包含命名空间）
-            </summary>
-            <param name="symbol">符号</param>
-            <returns>完整限定名称</returns>
         </member>
         <member name="T:Mud.CodeGenerator.SemanticModelCache">
             <summary>

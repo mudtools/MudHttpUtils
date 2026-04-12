@@ -323,28 +323,6 @@ internal static class PrivateFieldNamingHelper
         if (fieldName.StartsWith("_", StringComparison.CurrentCulture) && fieldName.Length > 1)
             return fieldName.Substring(1);
 
-        return fieldName; // 没有前缀，直接返回
-    }
-
-    /// <summary>
-    /// 移除m_前缀
-    /// </summary>
-    private static string RemoveMPrefix(string fieldName)
-    {
-        if (!string.IsNullOrEmpty(fieldName) && fieldName.StartsWith("m_", StringComparison.CurrentCulture) && fieldName.Length > 2)
-            return fieldName.Substring(2);
-
-        return fieldName;
-    }
-
-    /// <summary>
-    /// 移除_前缀
-    /// </summary>
-    private static string RemoveUnderscorePrefix(string fieldName)
-    {
-        if (!string.IsNullOrEmpty(fieldName) && fieldName.StartsWith("_", StringComparison.CurrentCulture) && fieldName.Length > 1)
-            return fieldName.Substring(1);
-
         return fieldName;
     }
 

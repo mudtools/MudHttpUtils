@@ -55,17 +55,9 @@ internal static class AttributeDataHelper
     /// <summary>
     /// 从特性数据中获取字符串属性值。
     /// </summary>
-    /// <param name="attribute">特性数据对象</param>
-    /// <param name="propertyName">属性名称</param>
-    /// <param name="defaultValue">默认值，当属性不存在或无法解析时返回此值</param>
-    /// <returns>解析得到的字符串值或默认值</returns>
     public static string? GetStringValueFromAttribute(AttributeData attribute, string propertyName, string? defaultValue = null)
     {
-        if (attribute == null)
-            return defaultValue;
-        var nameArg = attribute.NamedArguments
-            .FirstOrDefault(a => a.Key.Equals(propertyName, StringComparison.OrdinalIgnoreCase));
-        return nameArg.Value.Value?.ToString();
+        return GetStringValueFromAttribute(attribute, [propertyName], -1, defaultValue);
     }
 
     /// <summary>
@@ -125,28 +117,10 @@ internal static class AttributeDataHelper
 
     /// <summary>
     /// 从特性数据中获取字符串属性值，同时兼容命名参数和构造函数参数两种方式。
-    /// 优先返回命名参数的值，如果命名参数不存在，则返回构造函数参数的值。
     /// </summary>
-    /// <param name="attributeData">特性数据对象</param>
-    /// <param name="propertyName">属性名称</param>
-    /// <returns>解析得到的字符串值，如果都未找到则返回 null</returns>
-    /// <remarks>
-    /// 此方法首先检查命名参数，如果找到非空的值则直接返回。
-    /// 如果命名参数为空，则检查构造函数参数，返回第一个参数的值。
-    /// </remarks>
     public static string? GetStringValueFromAttributeConstructor(AttributeData? attributeData, string propertyName)
     {
-        if (attributeData == null)
-            return null;
-
-        var baseAddressArg = GetStringValueFromAttribute(attributeData, propertyName);
-        if (!string.IsNullOrEmpty(baseAddressArg))
-            return baseAddressArg;
-
-        if (attributeData.ConstructorArguments.Length > 0 && attributeData.ConstructorArguments[0].Value is string baseAddress)
-            return baseAddress;
-
-        return null;
+        return GetStringValueFromAttribute(attributeData, [propertyName], 0);
     }
 
     /// <summary>

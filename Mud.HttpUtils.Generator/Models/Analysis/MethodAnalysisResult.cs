@@ -16,16 +16,6 @@ namespace Mud.HttpUtils.Models.Analysis;
 internal class MethodAnalysisResult
 {
     /// <summary>
-    /// 方法实际所属的接口名称（用于引用注释）
-    /// </summary>
-    public string MethodOwnerInterfaceName { get; set; } = string.Empty;
-
-    /// <summary>
-    /// 当前正在处理的接口名称（用于接口级别的partial方法）
-    /// </summary>
-    public string CurrentInterfaceName { get; set; } = string.Empty;
-
-    /// <summary>
     /// 方法是否有效
     /// </summary>
     public bool IsValid { get; set; }
@@ -71,11 +61,6 @@ internal class MethodAnalysisResult
     public bool IgnoreImplement { get; set; }
 
     /// <summary>
-    /// 是否忽略生成包装接口 [IgnoreWrapInterface]
-    /// </summary>
-    public bool IgnoreWrapInterface { get; set; }
-
-    /// <summary>
     /// 接口特性列表（用于存储Header:Authorization、Query:Authorization等）
     /// </summary>
     public HashSet<string> InterfaceAttributes { get; set; } = [];
@@ -99,11 +84,6 @@ internal class MethodAnalysisResult
     /// 响应内容类型（由HTTP方法特性的ResponseContentType指定）
     /// </summary>
     public string? ResponseContentType { get; set; }
-
-    /// <summary>
-    /// 响应是否启用解密
-    /// </summary>
-    public bool ResponseEnableDecrypt { get; set; }
 
     /// <summary>
     /// Body参数是否启用加密

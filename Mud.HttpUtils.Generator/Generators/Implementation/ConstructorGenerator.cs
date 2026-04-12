@@ -311,7 +311,6 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     /// </summary>
     private void GenerateGetTokenAsyncMethod(StringBuilder codeBuilder)
     {
-        // HttpClient 模式下不生成任何 Token 相关方法
         if (_context.HasHttpClient)
             return;
 
@@ -319,14 +318,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// 获取当前应用的访问令牌。");
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine("        /// <returns>返回当前应用的访问令牌。</returns>");
-        codeBuilder.AppendLine($"        {_context.GetTokenAsyncAccessibility} async Task<string> GetTokenAsync()");
-        codeBuilder.AppendLine("        {");
-        codeBuilder.AppendLine("            if(_appContext == null)");
-        codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到当前服务的应用上下文。\");");
-        codeBuilder.AppendLine("            var tokenType = GetTokenType();");
-        codeBuilder.AppendLine("            var tokenManager = _appContext.GetTokenManager(tokenType);");
-        codeBuilder.AppendLine("            if(tokenManager == null)");
-        codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到当前服务的令牌管理器，TokenType: {tokenType}\");");
+        TokenMethodHelper.GenerateGetTokenPreamble(codeBuilder, _context.GetTokenAsyncAccessibility);
         codeBuilder.AppendLine("            var token = await tokenManager.GetTokenAsync();");
         codeBuilder.AppendLine("            if(string.IsNullOrEmpty(token))");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法获取到有效的访问令牌，TokenType: {tokenType}\");");
