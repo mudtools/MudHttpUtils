@@ -5,8 +5,6 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
-using System.Globalization;
-
 namespace Mud.CodeGenerator;
 
 /// <summary>
@@ -14,23 +12,6 @@ namespace Mud.CodeGenerator;
 /// </summary>
 internal static class TokenHelper
 {
-    /// <summary>
-    /// 将Token类型枚举值转换为字符串
-    /// </summary>
-    /// <param name="enumValue">枚举值</param>
-    /// <returns>Token类型字符串</returns>
-    public static string ConvertTokenEnumValueToString(int enumValue)
-    {
-        return enumValue switch
-        {
-            0 => "TenantAccessToken",
-            1 => "UserAccessToken",
-            2 => "AppAccessToken",
-            3 => "Both",
-            _ => "TenantAccessToken"
-        };
-    }
-
     /// <summary>
     /// 从Token特性中提取TokenType值
     /// </summary>

@@ -43,13 +43,4 @@ internal static class SemanticModelCache
         innerTable.Add(syntaxTree, newModel);
         return newModel;
     }
-
-    /// <summary>
-    /// 清除缓存中的所有条目
-    /// </summary>
-    public static void Clear()
-    {
-        // ConditionalWeakTable 不支持直接清除，只能通过 GC 回收
-        // 此方法主要用于测试场景
-    }
 }

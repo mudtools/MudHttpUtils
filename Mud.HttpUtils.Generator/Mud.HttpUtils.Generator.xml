@@ -1111,78 +1111,6 @@
             从类型名中移除"I"前缀（不处理命名空间和可空符号）
             </summary>
         </member>
-        <member name="M:Mud.CodeGenerator.StringExtensions.ToLowerFirstLetter(System.String)">
-            <summary>
-            将首字母小写（根据配置）。
-            </summary>
-            <param name="input">输入字符串。</param>
-            <returns>首字母小写的字符串。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.StringExtensions.ToUpperFirstLetter(System.String)">
-            <summary>
-            将首字母大写（根据配置）。
-            </summary>
-            <param name="input">输入字符串。</param>
-            <returns>首字母大写的字符串。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.StringExtensions.SplitString(System.String,System.Char,System.Func{System.String,System.String})">
-            <summary>
-            使用指定分隔符分割字符串，并可对每个分割结果进行处理
-            </summary>
-            <param name="str">要分割的字符串</param>
-            <param name="splitChar">分隔字符，默认为逗号</param>
-            <param name="processFunc">对每个分割结果进行处理的函数</param>
-            <returns>处理后的字符串数组</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.StringExtensions.RemoveSuffix(System.String,System.String)">
-            <summary>
-            扩展方法：移除字符串末尾指定的后缀字符串（区分大小写）
-            </summary>
-            <param name="str">源字符串</param>
-            <param name="suffix">要移除的后缀字符串</param>
-            <returns>
-            如果字符串以指定后缀结尾，则返回移除后缀后的字符串；
-            否则返回原字符串；如果输入为null或空字符串，或后缀为null，则返回原字符串
-            </returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.StringExtensions.RemoveSuffix(System.String,System.String,System.Boolean)">
-            <summary>
-            扩展方法：移除字符串末尾指定的后缀字符串（可选择是否区分大小写）
-            </summary>
-            <param name="str">源字符串</param>
-            <param name="suffix">要移除的后缀字符串</param>
-            <param name="ignoreCase">是否忽略大小写，默认为false（区分大小写）</param>
-            <returns>
-            如果字符串以指定后缀结尾（根据ignoreCase参数决定是否区分大小写），
-            则返回移除后缀后的字符串；否则返回原字符串
-            </returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.StringExtensions.RemoveSuffix(System.String,System.String,System.StringComparison)">
-            <summary>
-            扩展方法：移除字符串末尾指定的后缀字符串（使用指定的字符串比较选项）
-            </summary>
-            <param name="str">源字符串</param>
-            <param name="suffix">要移除的后缀字符串</param>
-            <param name="comparisonType">字符串比较选项</param>
-            <returns>
-            如果字符串以指定后缀结尾（根据comparisonType参数决定比较方式），
-            则返回移除后缀后的字符串；否则返回原字符串
-            </returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.StringExtensions.ConvertFunctionName(System.String,System.String)">
-            <summary>
-            将函数名转换为指定的格式
-            </summary>
-            <param name="originalFunctionName">原始函数名</param>
-            <returns>转换后的函数名</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.StringExtensions.ConvertFunctionName(System.String,System.String,System.String)">
-            <summary>
-            将函数名转换为指定的格式
-            </summary>
-            <param name="originalFunctionName">原始函数名</param>
-            <returns>转换后的函数名</returns>
-        </member>
         <member name="M:Mud.CodeGenerator.StringExtensions.IndentLines(System.String,System.Int32)">
             <summary>
             为字符串的每一行添加缩进
@@ -1317,17 +1245,6 @@
             扩展性强的 Attribute 参数提取器
             </summary>
         </member>
-        <member name="M:Mud.CodeGenerator.AttributeSyntaxHelper.GetPropertyAttributeValues``1(Microsoft.CodeAnalysis.CSharp.Syntax.PropertyDeclarationSyntax,System.String,System.String,``0)">
-            <summary>
-            获取属性声明上的特性参数值。
-            </summary>
-            <typeparam name="T">参数值类型。</typeparam>
-            <param name="propertyDeclaration">属性声明语法节点。</param>
-            <param name="attributeName">特性名称。</param>
-            <param name="paramName">参数名。</param>
-            <param name="defaultValue">参数默认值。</param>
-            <returns>特性参数值，如果不存在则返回默认值。</returns>
-        </member>
         <member name="M:Mud.CodeGenerator.AttributeSyntaxHelper.GetAttributeSyntaxes``1(``0,System.String)">
             <summary>
             获取成员上标注的指定特性语法节点。
@@ -1337,59 +1254,9 @@
             <param name="attributeName">特性名称。</param>
             <returns>特性语法节点只读集合。</returns>
         </member>
-        <member name="M:Mud.CodeGenerator.AttributeSyntaxHelper.GetAttributeValue``1(System.Collections.Generic.IReadOnlyList{Microsoft.CodeAnalysis.CSharp.Syntax.AttributeSyntax},System.String,``0)">
-            <summary>
-            从特性语法节点集合中获取指定参数的的值。
-            </summary>
-            <typeparam name="T">值类型。</typeparam>
-            <param name="attributes">特性语法节点集合。</param>
-            <param name="paramName">参数名。</param>
-            <param name="defaultValue">参数默认值。</param>
-            <returns>特性参数值。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.AttributeSyntaxHelper.GetPropertyValue(Microsoft.CodeAnalysis.CSharp.Syntax.AttributeSyntax,Microsoft.CodeAnalysis.SemanticModel,System.String,Mud.CodeGenerator.AttributeExtractionOptions)">
-            <summary>
-            从 AttributeSyntax 中获取指定属性的值
-            </summary>
-            <param name="attributeSyntax">特性语法节点</param>
-            <param name="semanticModel">语义模型</param>
-            <param name="propertyName">属性名</param>
-            <param name="options">提取选项</param>
-            <returns>属性值，如果不存在则返回默认值</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.AttributeSyntaxHelper.GetPropertyValue(Microsoft.CodeAnalysis.CSharp.Syntax.AttributeSyntax,System.String,Mud.CodeGenerator.AttributeExtractionOptions)">
-            <summary>
-            从 AttributeSyntax 中获取指定属性的值（不使用语义模型）
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.AttributeSyntaxHelper.GetAllPropertyValues(Microsoft.CodeAnalysis.CSharp.Syntax.AttributeSyntax,Microsoft.CodeAnalysis.SemanticModel,Mud.CodeGenerator.AttributeExtractionOptions)">
-            <summary>
-            从 AttributeSyntax 中获取所有命名属性的值
-            </summary>
-        </member>
         <member name="M:Mud.CodeGenerator.AttributeSyntaxHelper.GetConstructorArgument(Microsoft.CodeAnalysis.CSharp.Syntax.AttributeSyntax,Microsoft.CodeAnalysis.SemanticModel,System.Int32,Mud.CodeGenerator.AttributeExtractionOptions)">
             <summary>
             从 AttributeSyntax 中获取构造函数参数的值
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.AttributeSyntaxHelper.GetAllConstructorArguments(Microsoft.CodeAnalysis.CSharp.Syntax.AttributeSyntax,Microsoft.CodeAnalysis.SemanticModel,Mud.CodeGenerator.AttributeExtractionOptions)">
-            <summary>
-            从 AttributeSyntax 中获取所有构造函数参数的值
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.AttributeSyntaxHelper.HasProperty(Microsoft.CodeAnalysis.CSharp.Syntax.AttributeSyntax,System.String)">
-            <summary>
-            检查 Attribute 是否包含指定属性
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.AttributeSyntaxHelper.ExtractValueFromSyntax(Microsoft.CodeAnalysis.CSharp.Syntax.ExpressionSyntax)">
-            <summary>
-            从表达式语法中提取值。
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.AttributeSyntaxHelper.HandleNumericLiteral(Microsoft.CodeAnalysis.SyntaxToken)">
-            <summary>
-            处理数值字面量，支持多种数值类型
             </summary>
         </member>
         <member name="T:Mud.CodeGenerator.CSharpCodeValidator">
@@ -1461,13 +1328,6 @@
             <summary>
             Token类型转换辅助工具
             </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.TokenHelper.ConvertTokenEnumValueToString(System.Int32)">
-            <summary>
-            将Token类型枚举值转换为字符串
-            </summary>
-            <param name="enumValue">枚举值</param>
-            <returns>Token类型字符串</returns>
         </member>
         <member name="M:Mud.CodeGenerator.TokenHelper.GetTokenTypeFromAttribute(Microsoft.CodeAnalysis.AttributeData)">
             <summary>
@@ -1690,63 +1550,6 @@
             <param name="defaultValue">默认值，当配置中未指定时使用。</param>
             <returns>配置的整数值。</returns>
         </member>
-        <member name="M:Mud.CodeGenerator.SyntaxHelper.IsValidPrivateField(Microsoft.CodeAnalysis.CSharp.Syntax.FieldDeclarationSyntax)">
-            <summary>
-            检查字段是否为有效的私有字段（不能是静态、常量、只读字段）
-            </summary>
-            <param name="fieldDeclaration">字段声明</param>
-            <returns>是否为有效的私有字段</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.SyntaxHelper.FormatCode(System.String)">
-            <summary>
-            格式化代码
-            </summary>
-            <param name="csCode"></param>
-            <returns></returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.SyntaxHelper.GetPropertyType``1(``0)">
-            <summary>
-            获取属性或字段的类型，并确保返回可空类型。
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.SyntaxHelper.IsNullableType(System.String)">
-            <summary>
-            判断类型字符串是否表示可空类型
-            </summary>
-        </member>
-        <member name="M:Mud.CodeGenerator.SyntaxHelper.GetClassAttributeValues``1(Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax,System.String,System.String,``0)">
-            <summary>
-            获取类声明上的特性对象。
-            </summary>
-            <typeparam name="T">需创建的特性类型。</typeparam>
-            <param name="classDeclaration">类声明<see cref="T:Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax"/>对象。</param>
-            <param name="attributeName">注解名。</param>
-            <param name="paramName">参数名。</param>
-            <param name="defaultVal">参数默认值。</param>
-            <returns>返回创建的特性对象。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.SyntaxHelper.GetAttributeSyntaxes(Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax,System.String)">
-            <summary>
-            获取类上的注解。
-            </summary>
-            <param name="classDeclaration">类声明<see cref="T:Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax"/>对象。</param>
-            <param name="attributeName">注解名。</param>
-            <returns>特性语法集合。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.SyntaxHelper.GetTypeSyntaxName(Microsoft.CodeAnalysis.CSharp.Syntax.TypeSyntax)">
-            <summary>
-            获取类型名。
-            </summary>
-            <param name="typeSyntax">类型语法。</param>
-            <returns>类型名称。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.SyntaxHelper.GetClassMemberField(Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax)">
-            <summary>
-            获取类的所有成员字段（含私有、保护、公开）。
-            </summary>
-            <param name="classDeclaration">类声明。</param>
-            <returns>字段声明集合。</returns>
-        </member>
         <member name="M:Mud.CodeGenerator.SyntaxHelper.TryGetParentSyntax``1(Microsoft.CodeAnalysis.SyntaxNode,``0@)">
             <summary>
             获取指定的路径节点名。
@@ -1756,72 +1559,12 @@
             <param name="result"></param>
             <returns></returns>
         </member>
-        <member name="M:Mud.CodeGenerator.SyntaxHelper.GetClassName(Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax)">
-            <summary>
-            获取原始的类名。
-            </summary>
-            <param name="classNode"><see cref="T:Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax"/>对象。</param>
-            <returns>类名。</returns>
-        </member>
         <member name="M:Mud.CodeGenerator.SyntaxHelper.GetNamespaceName(Microsoft.CodeAnalysis.CSharp.Syntax.TypeDeclarationSyntax,System.String)">
             <summary>
             根据<see cref="T:Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax"/>获取当前类所在的命名空间。
             </summary>
             <param name="classNode">类声明语法节点。</param>
             <returns>命名空间名称。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.SyntaxHelper.ClassFullName(Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax)">
-            <summary>
-            获取类的全路径名。
-            </summary>
-            <param name="varClassDec"></param>
-            <returns></returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.SyntaxHelper.GetMethodDeclarationSyntax(System.Text.StringBuilder)">
-            <summary>
-            将字符串解释为<see cref="T:Microsoft.CodeAnalysis.CSharp.Syntax.MethodDeclarationSyntax"/>对象。
-            </summary>
-            <param name="sb">字符串构建器。</param>
-            <returns>方法声明语法。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.SyntaxHelper.GetMethodDeclarationSyntax(System.String)">
-            <summary>
-            将字符串解释为<see cref="T:Microsoft.CodeAnalysis.CSharp.Syntax.MethodDeclarationSyntax"/>对象。
-            </summary>
-            <param name="str">字符串构建器。</param>
-            <returns>方法声明语法。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.SyntaxHelper.GetClassDeclarationSyntax(System.Text.StringBuilder)">
-            <summary>
-            将字符串解释为<see cref="T:Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax"/>对象。
-            </summary>
-            <param name="sb">字符串构建器。</param>
-            <returns>类声明语法。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.SyntaxHelper.GetSyntaxNode``1(System.String,System.String)">
-            <summary>
-            通用方法：解析字符串为指定的语法节点。
-            </summary>
-            <typeparam name="T">语法节点类型。</typeparam>
-            <param name="sb">字符串构建器。</param>
-            <param name="template">代码模板。</param>
-            <returns>语法节点。</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.SyntaxNodeHelper.TryGetParentSyntax``1(Microsoft.CodeAnalysis.SyntaxNode,``0@)">
-            <summary>
-            获取指定的路径节点名。
-            </summary>
-            <typeparam name="T"></typeparam>
-            <param name="syntaxNode"></param>
-            <param name="result"></param>
-            <returns></returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.SyntaxNodeHelper.ClassFullName(Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax)">
-            <summary>
-            获取类的全路径名。
-            </summary>
-            <param name="varClassDec"></param>
-            <returns></returns>
         </member>
         <member name="T:Mud.CodeGenerator.TypeDetectionHelper">
             <summary>
@@ -1930,6 +1673,11 @@
             安全地获取接口的所有基接口（处理设计时可能抛出的异常）
             </summary>
         </member>
+        <member name="M:Mud.CodeGenerator.TypeSymbolHelper.ShouldExcludeInterface(Microsoft.CodeAnalysis.INamedTypeSymbol,System.Collections.Generic.HashSet{System.String})">
+            <summary>
+            检查接口是否应该被排除（支持泛型）
+            </summary>
+        </member>
         <member name="M:Mud.CodeGenerator.TypeSymbolHelper.HasPropertyAttribute(Microsoft.CodeAnalysis.INamedTypeSymbol,System.String,System.String)">
             <summary>
             检查接口是否具有指定的特性
@@ -1948,26 +1696,6 @@
             <remarks>
             如果接口名称以"I"开头且第二个字符为大写，则移除"I"前缀；否则添加"Impl"后缀
             </remarks>
-        </member>
-        <member name="M:Mud.CodeGenerator.TypeSymbolHelper.GetWrapClassName(System.String)">
-            <summary>
-            获取包装类名称
-            </summary>
-            <param name="wrapInterfaceName">包装接口名称</param>
-            <returns>包装类名称</returns>
-        </member>
-        <member name="M:Mud.CodeGenerator.TypeSymbolHelper.GetAllProperties(Microsoft.CodeAnalysis.INamedTypeSymbol,System.Boolean,System.Collections.Generic.IEnumerable{System.String})">
-            <summary>
-            递归获取接口及其所有父接口的所有属性（去重）
-            </summary>
-            <param name="interfaceSymbol">接口符号</param>
-            <param name="includeParentInterfaces">是否包含父接口的属性</param>
-            <param name="excludedInterfaces">要排除的接口名称列表（可选）</param>
-        </member>
-        <member name="M:Mud.CodeGenerator.TypeSymbolHelper.ShouldExcludeInterface(Microsoft.CodeAnalysis.INamedTypeSymbol,System.Collections.Generic.HashSet{System.String})">
-            <summary>
-            检查接口是否应该被排除（支持泛型）
-            </summary>
         </member>
         <member name="M:Mud.CodeGenerator.TypeSymbolHelper.GetTypeFullName(Microsoft.CodeAnalysis.ITypeSymbol)">
             <summary>
@@ -2097,11 +1825,6 @@
             <param name="syntaxTree">语法树</param>
             <returns>语义模型</returns>
             <exception cref="T:System.ArgumentNullException">当 compilation 或 syntaxTree 为 null 时抛出</exception>
-        </member>
-        <member name="M:Mud.CodeGenerator.SemanticModelCache.Clear">
-            <summary>
-            清除缓存中的所有条目
-            </summary>
         </member>
         <member name="T:Mud.CodeGenerator.ArgumentNullExceptionExtensions">
             <summary>

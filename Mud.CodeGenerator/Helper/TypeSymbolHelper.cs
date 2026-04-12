@@ -79,7 +79,7 @@ internal static class TypeSymbolHelper
             return [];
 
         var visitedInterfaces = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
-        var excludedSet = excludedInterfaces?.ToHashSet() ?? new HashSet<string>();
+        var excludedSet = excludedInterfaces != null ? new HashSet<string>(excludedInterfaces) : new HashSet<string>();
         return GetAllRecursive(interfaceSymbol, visitedInterfaces, includeParentInterfaces, excludedSet);
     }
 
@@ -151,6 +151,73 @@ internal static class TypeSymbolHelper
         }
     }
 
+    /// <summary>
+    /// 检查接口是否应该被排除（支持泛型）
+    /// </summary>
+    private static bool ShouldExcludeInterface(
+        INamedTypeSymbol interfaceSymbol,
+        HashSet<string> excludedInterfaces)
+    {
+        if (excludedInterfaces == null || excludedInterfaces.Count == 0)
+            return false;
+
+        try
+        {
+            // 检查各种可能的名称格式
+            var namesToCheck = new List<string>();
+
+            // 安全添加名称，避免在设计时抛出异常
+            try { namesToCheck.Add(interfaceSymbol.Name); } catch { }
+            try { namesToCheck.Add(interfaceSymbol.ToDisplayString()); } catch { }
+            try { namesToCheck.Add(interfaceSymbol.MetadataName); } catch { }
+            try { namesToCheck.Add(interfaceSymbol.ToString()); } catch { }
+
+            // 添加命名空间和名称的组合
+            try
+            {
+                if (!string.IsNullOrEmpty(interfaceSymbol.ContainingNamespace?.Name))
+                {
+                    namesToCheck.Add($"{interfaceSymbol.ContainingNamespace}.{interfaceSymbol.Name}");
+                }
+            }
+            catch { }
+
+            // 检查泛型接口
+            try
+            {
+                if (interfaceSymbol.IsGenericType)
+                {
+                    // 添加泛型定义
+                    var originalDefinition = interfaceSymbol.OriginalDefinition;
+                    try { namesToCheck.Add(originalDefinition.ToDisplayString()); } catch { }
+                    try { namesToCheck.Add(originalDefinition.MetadataName); } catch { }
+
+                    // 添加无参数版本的泛型名称
+                    var genericNameWithoutArity = interfaceSymbol.Name;
+                    if (genericNameWithoutArity.Contains('`'))
+                    {
+                        namesToCheck.Add(genericNameWithoutArity.Substring(0, genericNameWithoutArity.IndexOf('`')));
+                    }
+                }
+            }
+            catch { }
+
+            // 检查是否有匹配的排除项
+            foreach (var name in namesToCheck)
+            {
+                if (excludedInterfaces.Contains(name))
+                    return true;
+            }
+        }
+        catch
+        {
+            // 如果在设计时无法解析接口符号，返回false以继续处理
+            // 编译时会重新检查
+        }
+
+        return false;
+    }
+
     #endregion
 
     #region 属性特性处理
@@ -197,158 +264,6 @@ internal static class TypeSymbolHelper
             : interfaceName + "Impl";
     }
 
-    /// <summary>
-    /// 获取包装类名称
-    /// </summary>
-    /// <param name="wrapInterfaceName">包装接口名称</param>
-    /// <returns>包装类名称</returns>
-    public static string GetWrapClassName(string wrapInterfaceName)
-    {
-        if (string.IsNullOrEmpty(wrapInterfaceName))
-            return "NullOrEmptyWrapInterfaceName";
-
-        if (wrapInterfaceName.StartsWith("I", StringComparison.Ordinal) && wrapInterfaceName.Length > 1)
-        {
-            return wrapInterfaceName.Substring(1);
-        }
-        return wrapInterfaceName + HttpClientGeneratorConstants.DefaultWrapSuffix;
-    }
-
-    #endregion
-
-    #region 获取所有属性列表
-    /// <summary>
-    /// 递归获取接口及其所有父接口的所有属性（去重）
-    /// </summary>
-    /// <param name="interfaceSymbol">接口符号</param>
-    /// <param name="includeParentInterfaces">是否包含父接口的属性</param>
-    /// <param name="excludedInterfaces">要排除的接口名称列表（可选）</param>
-    public static IEnumerable<IPropertySymbol> GetAllProperties(
-        INamedTypeSymbol interfaceSymbol,
-        bool includeParentInterfaces = true,
-        IEnumerable<string> excludedInterfaces = null)
-    {
-        if (interfaceSymbol == null)
-            return [];
-
-        var visitedInterfaces = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
-        var excludedSet = excludedInterfaces?.ToHashSet() ?? new HashSet<string>();
-        return GetAllPropertiesRecursive(interfaceSymbol, visitedInterfaces, includeParentInterfaces, excludedSet);
-    }
-
-    private static IEnumerable<IPropertySymbol> GetAllPropertiesRecursive(
-        INamedTypeSymbol interfaceSymbol,
-        HashSet<INamedTypeSymbol> visitedInterfaces,
-        bool includeParentInterfaces,
-        HashSet<string> excludedInterfaces)
-    {
-        // 避免循环引用
-        if (visitedInterfaces.Contains(interfaceSymbol))
-            yield break;
-
-        visitedInterfaces.Add(interfaceSymbol);
-
-        // 检查当前接口是否在排除列表中
-        if (excludedInterfaces != null && excludedInterfaces.Count > 0)
-        {
-            if (ShouldExcludeInterface(interfaceSymbol, excludedInterfaces))
-            {
-                yield break; // 跳过整个接口及其属性
-            }
-        }
-
-        // 首先处理当前接口的属性
-        foreach (var property in interfaceSymbol.GetMembers().OfType<IPropertySymbol>())
-        {
-            yield return property;
-        }
-
-        // 如果不需要父接口的属性，则直接返回
-        if (!includeParentInterfaces)
-            yield break;
-
-        // 然后递归处理所有父接口
-        var baseInterfaces = SafeGetAllInterfaces(interfaceSymbol);
-        if (baseInterfaces == null)
-            yield break;
-
-        foreach (var baseInterface in baseInterfaces)
-        {
-            foreach (var baseProperty in GetAllPropertiesRecursive(
-                baseInterface,
-                visitedInterfaces,
-                includeParentInterfaces,
-                excludedInterfaces))
-            {
-                yield return baseProperty;
-            }
-        }
-    }
-
-    /// <summary>
-    /// 检查接口是否应该被排除（支持泛型）
-    /// </summary>
-    private static bool ShouldExcludeInterface(
-        INamedTypeSymbol interfaceSymbol,
-        HashSet<string> excludedInterfaces)
-    {
-        if (excludedInterfaces == null || excludedInterfaces.Count == 0)
-            return false;
-
-        try
-        {
-            // 检查各种可能的名称格式
-            var namesToCheck = new List<string>();
-
-            // 安全添加名称，避免在设计时抛出异常
-            try { namesToCheck.Add(interfaceSymbol.Name); } catch { }
-            try { namesToCheck.Add(interfaceSymbol.ToDisplayString()); } catch { }
-            try { namesToCheck.Add(interfaceSymbol.MetadataName); } catch { }
-            try { namesToCheck.Add(interfaceSymbol.ToString()); } catch { }
-
-            // 添加命名空间和名称的组合
-            try
-            {
-                if (!string.IsNullOrEmpty(interfaceSymbol.ContainingNamespace?.Name))
-                {
-                    namesToCheck.Add($"{interfaceSymbol.ContainingNamespace}.{interfaceSymbol.Name}");
-                }
-            } catch { }
-
-            // 检查泛型接口
-            try
-            {
-                if (interfaceSymbol.IsGenericType)
-                {
-                    // 添加泛型定义
-                    var originalDefinition = interfaceSymbol.OriginalDefinition;
-                    try { namesToCheck.Add(originalDefinition.ToDisplayString()); } catch { }
-                    try { namesToCheck.Add(originalDefinition.MetadataName); } catch { }
-
-                    // 添加无参数版本的泛型名称
-                    var genericNameWithoutArity = interfaceSymbol.Name;
-                    if (genericNameWithoutArity.Contains('`'))
-                    {
-                        namesToCheck.Add(genericNameWithoutArity.Substring(0, genericNameWithoutArity.IndexOf('`')));
-                    }
-                }
-            } catch { }
-
-            // 检查是否有匹配的排除项
-            foreach (var name in namesToCheck)
-            {
-                if (excludedInterfaces.Contains(name))
-                    return true;
-            }
-        }
-        catch
-        {
-            // 如果在设计时无法解析接口符号，返回false以继续处理
-            // 编译时会重新检查
-        }
-
-        return false;
-    }
     #endregion
 
     #region Type Display Helpers

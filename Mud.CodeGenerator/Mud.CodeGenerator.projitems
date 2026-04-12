@@ -23,7 +23,6 @@
     <Compile Include="$(MSBuildThisFileDirectory)Helper\PrivateFieldHelper.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Helper\ProjectConfigHelper.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Helper\SyntaxHelper.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)Helper\SyntaxNodeHelper.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Helper\TypeDetectionHelper.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Model\ClassHierarchyInfo.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)TransitiveCodeGenerator.cs" />
