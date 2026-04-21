@@ -40,7 +40,7 @@ internal static class ExceptionUtils
             throw new ArgumentNullException(paramName);
 
         if (string.IsNullOrEmpty(argument))
-            throw new ArgumentNullException(paramName);
+            throw new ArgumentException("值不能为空字符串", paramName);
     }
 #else
     public static void ThrowIfNull<T>(this T? obj, string? paramName = null) where T : class
@@ -61,7 +61,7 @@ internal static class ExceptionUtils
             throw new ArgumentNullException(paramName ?? "argument");
 
         if (string.IsNullOrEmpty(argument))
-            throw new ArgumentNullException(paramName ?? "argument");
+            throw new ArgumentException("值不能为空字符串", paramName ?? "argument");
     }
 #endif
 }

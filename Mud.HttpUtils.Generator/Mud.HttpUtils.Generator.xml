@@ -431,6 +431,11 @@
             生成接口定义的Header代码
             </summary>
         </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.MethodGenerator.ReportAotCompatibilityWarnings(Mud.HttpUtils.Generators.Context.GeneratorContext,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult)">
+            <summary>
+            检查复杂查询参数是否实现 IQueryParameter 接口，未实现时发出 AOT 兼容性警告
+            </summary>
+        </member>
         <member name="T:Mud.HttpUtils.Generators.Implementation.RequestBuilder">
             <summary>
             HTTP 请求构建器，负责生成 HTTP 请求的构建逻辑

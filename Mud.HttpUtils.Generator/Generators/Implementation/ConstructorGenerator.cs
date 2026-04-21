@@ -326,7 +326,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("            var token = await tokenManager.GetTokenAsync();");
         codeBuilder.AppendLine("            if(string.IsNullOrEmpty(token))");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法获取到有效的访问令牌，TokenType: {tokenType}\");");
-        codeBuilder.AppendLine("            return token;");
+        codeBuilder.AppendLine("            return token!;");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
     }

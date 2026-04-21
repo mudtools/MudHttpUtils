@@ -96,14 +96,14 @@ public class ExceptionUtilsTests
     }
 
     [Fact]
-    public void ThrowIfNullOrEmpty_WithEmptyString_ShouldThrowArgumentNullException()
+    public void ThrowIfNullOrEmpty_WithEmptyString_ShouldThrowArgumentException()
     {
         var str = string.Empty;
 
         var act = () => _throwIfNullOrEmptyMethod.Invoke(null, new object?[] { str, "testParam" });
 
         act.Should().Throw<TargetInvocationException>()
-            .WithInnerException<ArgumentNullException>()
+            .WithInnerException<ArgumentException>()
             .WithParameterName("testParam");
     }
 
@@ -137,6 +137,56 @@ public class ExceptionUtilsTests
         act.Should().Throw<TargetInvocationException>()
             .WithInnerException<ArgumentNullException>();
     }
+
+    #endregion
+
+    #region CallerArgumentExpression Tests (NET6_0_OR_GREATER)
+
+#if NET6_0_OR_GREATER
+    [Fact]
+    public void ThrowIfNull_WithCallerArgumentExpression_ShouldCaptureParamName()
+    {
+        string? myVariable = null;
+
+        var act = () => myVariable.ThrowIfNull();
+
+        act.Should().Throw<ArgumentNullException>()
+            .WithParameterName("myVariable");
+    }
+
+    [Fact]
+    public void ThrowIfNull_GenericWithCallerArgumentExpression_ShouldCaptureParamName()
+    {
+        List<string>? myList = null;
+
+        var act = () => myList.ThrowIfNull();
+
+        act.Should().Throw<ArgumentNullException>()
+            .WithParameterName("myList");
+    }
+
+    [Fact]
+    public void ThrowIfNullOrEmpty_WithCallerArgumentExpression_ShouldCaptureParamName()
+    {
+        string? myArgument = null;
+
+        var act = () => myArgument.ThrowIfNullOrEmpty();
+
+        act.Should().Throw<ArgumentNullException>()
+            .WithParameterName("myArgument");
+    }
+
+    [Fact]
+    public void ThrowIfNullOrEmpty_WithEmptyStringAndCallerExpression_ShouldCaptureParamName()
+    {
+        string myEmptyArg = string.Empty;
+
+        var act = () => myEmptyArg.ThrowIfNullOrEmpty();
+
+        act.Should().Throw<ArgumentException>()
+            .WithParameterName("myEmptyArg");
+    }
+#endif
 
     #endregion
 }

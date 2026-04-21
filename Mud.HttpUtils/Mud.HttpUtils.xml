@@ -1071,6 +1071,10 @@
             </summary>
             <remarks>
             此类通过 IHttpClientFactory 创建 HttpClient 实例，解决了直接使用 HttpClient 导致的 Socket 耗尽和 DNS 不刷新问题。
+            <para>
+            注意：IHttpClientFactory 管理 HttpClient 的生命周期，由工厂创建的 HttpClient 实例不应该被手动释放。
+            如果需要刷新 DNS 或更新 HttpClient 配置，请通过 IHttpClientFactory 的配置重新注册。
+            </para>
             推荐在依赖注入场景中使用此类。
             </remarks>
         </member>
@@ -1082,15 +1086,6 @@
             <param name="clientName">Named HttpClient 名称</param>
             <param name="logger">日志记录器（可选）</param>
             <exception cref="T:System.ArgumentNullException">factory 或 clientName 为 null</exception>
-        </member>
-        <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.RecreateClient">
-            <summary>
-            重新创建 HttpClient 实例
-            </summary>
-            <remarks>
-            当需要刷新 HttpClient 配置（如更新 BaseAddress 或超时设置）时调用此方法。
-            注意：调用此方法后，之前的 HttpClient 实例将被释放。
-            </remarks>
         </member>
         <member name="P:Mud.HttpUtils.HttpClientFactoryEnhancedClient.ClientName">
             <summary>
