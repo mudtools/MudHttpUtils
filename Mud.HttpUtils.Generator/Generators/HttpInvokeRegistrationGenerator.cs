@@ -28,12 +28,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         if (compilation == null || interfaces.IsDefaultOrEmpty)
             return;
 
-        // 过滤出有 HttpClientApi 特性的接口
-        var filteredInterfaces = interfaces
-            .Where(i => i != null && HasTargetAttributeSyntax(i, ApiWrapAttributeNames()))
-            .ToImmutableArray();
-
-        var httpClientApis = CollectHttpClientApis(compilation, filteredInterfaces, context);
+        var httpClientApis = CollectHttpClientApis(compilation, interfaces, context);
 
         if (httpClientApis.Count == 0)
             return;

@@ -196,7 +196,7 @@ internal class RequestBuilder
         {
             var propertyName = methodInfo.BodyEncryptPropertyName ?? "data";
             var serializeType = methodInfo.BodyEncryptSerializeType ?? "Json";
-            string httpClient = "_appContext.HttpClient";
+            string httpClient = "_appContext.Value!.HttpClient";
             if (hasHttpClient)
             {
                 httpClient = "_httpClient";
@@ -226,8 +226,7 @@ internal class RequestBuilder
     /// </summary>
     private void GenerateFormContentParameter(StringBuilder codeBuilder, ParameterInfo formContentParam, MethodAnalysisResult methodInfo)
     {
-        // 获取 CancellationToken 参数
-        var cancellationTokenParam = methodInfo.Parameters.FirstOrDefault(p => p.Type.Contains("CancellationToken"));
+        var cancellationTokenParam = methodInfo.Parameters.FirstOrDefault(p => TypeDetectionHelper.IsCancellationToken(p.Type));
         var cancellationTokenArg = cancellationTokenParam?.Name ?? "default";
 
         codeBuilder.AppendLine($"            using var formData = await {formContentParam.Name}.GetFormDataContentAsync({cancellationTokenArg});");
@@ -243,7 +242,7 @@ internal class RequestBuilder
 
         var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
         codeBuilder.AppendLine();
-        string httpClient = "_appContext.HttpClient";
+        string httpClient = "_appContext.Value!.HttpClient";
         if (hasHttpClient)
         {
             httpClient = "_httpClient";
@@ -269,7 +268,7 @@ internal class RequestBuilder
                 }
                 else
                 {
-                    codeBuilder.AppendLine($"            return await {httpClient}.SendAsync<{deserializeType}>(httpRequest{cancellationTokenArg});");
+                    codeBuilder.AppendLine($"            return await {httpClient}.SendAsync<{deserializeType}>(httpRequest, _jsonSerializerOptions{cancellationTokenArg});");
                 }
             }
         }
@@ -409,14 +408,34 @@ internal class RequestBuilder
     {
         codeBuilder.AppendLine($"            if ({param.Name} != null)");
         codeBuilder.AppendLine("            {");
-        codeBuilder.AppendLine($"                var properties = {param.Name}.GetType().GetProperties();");
-        codeBuilder.AppendLine("                foreach (var prop in properties)");
+        codeBuilder.AppendLine($"                if ({param.Name} is IQueryParameter queryParam)");
         codeBuilder.AppendLine("                {");
-        codeBuilder.AppendLine($"                    var value = prop.GetValue({param.Name});");
-        codeBuilder.AppendLine("                    if (value != null)");
+        codeBuilder.AppendLine($"                    foreach (var kvp in queryParam.ToQueryParameters())");
         codeBuilder.AppendLine("                    {");
-        codeBuilder.AppendLine($"                        queryParams.Add(prop.Name, HttpUtility.UrlEncode(value.ToString()));");
+        codeBuilder.AppendLine("                        if (!string.IsNullOrEmpty(kvp.Value))");
+        codeBuilder.AppendLine("                        {");
+        codeBuilder.AppendLine("                            var encodedValue = HttpUtility.UrlEncode(kvp.Value);");
+        codeBuilder.AppendLine("                            queryParams.Add(kvp.Key, encodedValue);");
+        codeBuilder.AppendLine("                        }");
         codeBuilder.AppendLine("                    }");
+        codeBuilder.AppendLine("                }");
+        codeBuilder.AppendLine("                else");
+        codeBuilder.AppendLine("                {");
+        codeBuilder.AppendLine($"#if NET8_0_OR_GREATER");
+        codeBuilder.AppendLine($"#pragma warning disable IL2072 // AOT 警告：参数类型 {param.Type} 未实现 IQueryParameter 接口");
+        codeBuilder.AppendLine($"#endif");
+        codeBuilder.AppendLine($"                    var properties = {param.Name}.GetType().GetProperties();");
+        codeBuilder.AppendLine("                    foreach (var prop in properties)");
+        codeBuilder.AppendLine("                    {");
+        codeBuilder.AppendLine($"                        var value = prop.GetValue({param.Name});");
+        codeBuilder.AppendLine("                        if (value != null)");
+        codeBuilder.AppendLine("                        {");
+        codeBuilder.AppendLine($"                            queryParams.Add(prop.Name, HttpUtility.UrlEncode(value.ToString()));");
+        codeBuilder.AppendLine("                        }");
+        codeBuilder.AppendLine("                    }");
+        codeBuilder.AppendLine($"#if NET8_0_OR_GREATER");
+        codeBuilder.AppendLine($"#pragma warning restore IL2072");
+        codeBuilder.AppendLine($"#endif");
         codeBuilder.AppendLine("                }");
         codeBuilder.AppendLine("            }");
     }

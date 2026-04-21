@@ -38,11 +38,6 @@ internal partial class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGene
             if (interfaceDecl == null)
                 continue;
 
-            // 检查是否有 HttpClientApi 特性（语法级别检查）
-            if (!HasTargetAttributeSyntax(interfaceDecl, ApiWrapAttributeNames()))
-                continue;
-
-            // 使用 Compilation 获取语义模型和符号（比 SyntaxProvider 的 SemanticModel 更可靠）
             var semanticModel = GetOrCreateSemanticModel(compilation, interfaceDecl.SyntaxTree);
             if (semanticModel.GetDeclaredSymbol(interfaceDecl) is not INamedTypeSymbol interfaceSymbol)
             {

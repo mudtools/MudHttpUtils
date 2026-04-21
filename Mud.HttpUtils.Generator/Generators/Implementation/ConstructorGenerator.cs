@@ -64,8 +64,9 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         {
             codeBuilder.AppendLine("        /// <summary>");
             codeBuilder.AppendLine("        /// 应用上下文，用于获取HttpClient和Token管理器。");
+            codeBuilder.AppendLine("        /// 使用 AsyncLocal 确保异步上下文中的线程安全。");
             codeBuilder.AppendLine("        /// </summary>");
-            codeBuilder.AppendLine($"        {_context.FieldAccessibility}IMudAppContext _appContext;");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly AsyncLocal<IMudAppContext?> _appContext = new();");
 
             codeBuilder.AppendLine("        /// <summary>");
             codeBuilder.AppendLine($"        /// 用于HttpClient客户端操作操作使用的的<see cref = \"{_context.Configuration.TokenManagerType}\"/> 令牌管理实例。");
@@ -83,8 +84,9 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         {
             codeBuilder.AppendLine("        /// <summary>");
             codeBuilder.AppendLine("        /// 应用上下文，用于获取HttpClient。");
+            codeBuilder.AppendLine("        /// 使用 AsyncLocal 确保异步上下文中的线程安全。");
             codeBuilder.AppendLine("        /// </summary>");
-            codeBuilder.AppendLine($"        {_context.FieldAccessibility}IMudAppContext _appContext;");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly AsyncLocal<IMudAppContext?> _appContext = new();");
         }
 
 
@@ -185,7 +187,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             if (_context.HasTokenManager)
             {
                 codeBuilder.AppendLine("            _appManager = appManager ?? throw new ArgumentNullException(nameof(appManager));");
-                codeBuilder.AppendLine("            _appContext = appManager.GetDefaultApp();");
+                codeBuilder.AppendLine("            _appContext.Value = appManager.GetDefaultApp();");
             }
             else if (_context.HasHttpClient)
             {
@@ -193,7 +195,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             }
             else
             {
-                codeBuilder.AppendLine("            _appContext = appContext ?? throw new ArgumentNullException(nameof(appContext));");
+                codeBuilder.AppendLine("            _appContext.Value = appContext ?? throw new ArgumentNullException(nameof(appContext));");
             }
         }
 
@@ -279,10 +281,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <returns>返回切换后的应用上下文。</returns>");
         codeBuilder.AppendLine($"        public IMudAppContext UseApp(string appKey)");
         codeBuilder.AppendLine("        {");
-        codeBuilder.AppendLine("            _appContext = _appManager.GetApp(appKey);");
-        codeBuilder.AppendLine("            if(_appContext == null)");
+        codeBuilder.AppendLine("            var context = _appManager.GetApp(appKey);");
+        codeBuilder.AppendLine("            if(context == null)");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到指定的应用上下文，AppKey: {appKey}\");");
-        codeBuilder.AppendLine("            return _appContext;");
+        codeBuilder.AppendLine("            _appContext.Value = context;");
+        codeBuilder.AppendLine("            return context;");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
 
@@ -292,10 +295,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <returns>返回默认的应用上下文。</returns>");
         codeBuilder.AppendLine($"        public IMudAppContext UseDefaultApp()");
         codeBuilder.AppendLine("        {");
-        codeBuilder.AppendLine("            _appContext = _appManager.GetDefaultApp();");
-        codeBuilder.AppendLine("            if(_appContext == null)");
+        codeBuilder.AppendLine("            var context = _appManager.GetDefaultApp();");
+        codeBuilder.AppendLine("            if(context == null)");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到默认的应用上下文。\");");
-        codeBuilder.AppendLine("            return _appContext;");
+        codeBuilder.AppendLine("            _appContext.Value = context;");
+        codeBuilder.AppendLine("            return context;");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
 
@@ -322,7 +326,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("            var token = await tokenManager.GetTokenAsync();");
         codeBuilder.AppendLine("            if(string.IsNullOrEmpty(token))");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法获取到有效的访问令牌，TokenType: {tokenType}\");");
-        codeBuilder.AppendLine("            return token;");
+        codeBuilder.AppendLine("            return token!;");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
     }

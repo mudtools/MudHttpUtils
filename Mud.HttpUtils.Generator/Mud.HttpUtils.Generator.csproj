@@ -9,7 +9,20 @@
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>
 		<DocumentationFile>$(OutputPath)$(AssemblyName).xml</DocumentationFile>
 		<AssemblyName>Mud.HttpUtils.Generator</AssemblyName>
+		<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+		<IsRoslynComponent>true</IsRoslynComponent>
+		<AnalysisLevel>6.0-all</AnalysisLevel>
 	</PropertyGroup>
+	<ItemGroup>
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" PrivateAssets="all" />
+		<PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+	</ItemGroup>
+	<ItemGroup>
+		<InternalsVisibleTo Include="Mud.HttpUtils.Generator.Tests" />
+	</ItemGroup>
 	<!--开发调试阶段-->
 	<ItemGroup>
 		<None Include="$(OutputPath)\netstandard2.0\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />

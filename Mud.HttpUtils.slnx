@@ -5,12 +5,15 @@
   </Folder>
   <Folder Name="/Src/">
     <Project Path="Mud.CodeGenerator/Mud.CodeGenerator.shproj" />
+    <Project Path="Mud.HttpUtils.Abstractions/Mud.HttpUtils.Abstractions.csproj" />
+    <Project Path="Mud.HttpUtils.Attributes/Mud.HttpUtils.Attributes.csproj" />
+    <Project Path="Mud.HttpUtils.Client/Mud.HttpUtils.Client.csproj" />
     <Project Path="Mud.HttpUtils.Generator/Mud.HttpUtils.Generator.csproj" />
     <Project Path="Mud.HttpUtils/Mud.HttpUtils.csproj" />
   </Folder>
   <Folder Name="/Tests/">
+    <Project Path="Tests/Mud.HttpUtils.Client.Tests/Mud.HttpUtils.Client.Tests.csproj" />
     <Project Path="Tests/Mud.HttpUtils.Generator.Tests/Mud.HttpUtils.Generator.Tests.csproj" />
-    <Project Path="Tests/Mud.HttpUtils.Tests/Mud.HttpUtils.Tests.csproj" />
   </Folder>
   <Folder Name="/解决方案/">
     <File Path=".editorconfig" />

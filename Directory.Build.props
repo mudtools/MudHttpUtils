@@ -17,24 +17,14 @@
 		<Authors>Mud Studio</Authors>
 		<Company>Mud Studio</Company>
 		<LangVersion>latest</LangVersion>
-		<NoWarn>CS8618;CS8603;CS8602;CS8601;CS8600;CS8625;CS8604;CS8629;CA1707;CA1021;CA1822;RS1035</NoWarn>
+		<NoWarn>CA1707;CA1021;CA1822;RS1035</NoWarn>
 		<AnalyzerLanguage>cs</AnalyzerLanguage>
 		<InjectIsExternalInitOnLegacy>true</InjectIsExternalInitOnLegacy>
 		<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
 		<EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
 		<CodeAnalysisTreatWarningsAsErrors>false</CodeAnalysisTreatWarningsAsErrors>
-		<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
-		<IsRoslynComponent>true</IsRoslynComponent>
-		<AnalysisLevel>6.0-all</AnalysisLevel>
 		<BaseOutputPath>..\bin</BaseOutputPath>
 	</PropertyGroup>
-	<ItemGroup>
-		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" PrivateAssets="all" />
-		<PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0">
-			<PrivateAssets>all</PrivateAssets>
-			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-		</PackageReference>
-	</ItemGroup>
 	<PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
 		<DocumentationFile>bin\Debug\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
 	</PropertyGroup>

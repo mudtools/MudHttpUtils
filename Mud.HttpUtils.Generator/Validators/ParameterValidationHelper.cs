@@ -35,7 +35,7 @@ internal static class ParameterValidationHelper
     /// </summary>
     private static bool ShouldValidateParameter(ParameterInfo param)
     {
-        if (IsCancellationToken(param.Type))
+        if (TypeDetectionHelper.IsCancellationToken(param.Type))
             return false;
 
         if (param.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.BodyAttribute))
@@ -51,13 +51,6 @@ internal static class ParameterValidationHelper
             return true;
 
         return false;
-    }
-
-    private static bool IsCancellationToken(string typeName)
-    {
-        var name = typeName.TrimEnd('?');
-        return string.Equals(name, "CancellationToken", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(name, "System.Threading.CancellationToken", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

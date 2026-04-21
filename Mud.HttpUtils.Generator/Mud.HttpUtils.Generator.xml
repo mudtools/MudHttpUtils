@@ -431,6 +431,11 @@
             生成接口定义的Header代码
             </summary>
         </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.MethodGenerator.ReportAotCompatibilityWarnings(Mud.HttpUtils.Generators.Context.GeneratorContext,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult)">
+            <summary>
+            检查复杂查询参数是否实现 IQueryParameter 接口，未实现时发出 AOT 兼容性警告
+            </summary>
+        </member>
         <member name="T:Mud.HttpUtils.Generators.Implementation.RequestBuilder">
             <summary>
             HTTP 请求构建器，负责生成 HTTP 请求的构建逻辑
@@ -599,11 +604,6 @@
         <member name="M:Mud.HttpUtils.HttpInvokeBaseSourceGenerator.ExecuteGenerator(Microsoft.CodeAnalysis.Compilation,System.Collections.Immutable.ImmutableArray{Microsoft.CodeAnalysis.CSharp.Syntax.InterfaceDeclarationSyntax},Microsoft.CodeAnalysis.SourceProductionContext,Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptionsProvider)">
             <summary>
             执行源代码生成逻辑
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.HttpInvokeBaseSourceGenerator.HasTargetAttributeSyntax(Microsoft.CodeAnalysis.CSharp.Syntax.InterfaceDeclarationSyntax,System.String[])">
-            <summary>
-            在语法级别检查接口是否有目标特性（不依赖语义模型，编辑模式下更可靠）
             </summary>
         </member>
         <member name="M:Mud.HttpUtils.HttpInvokeBaseSourceGenerator.GetOrCreateSemanticModel(Microsoft.CodeAnalysis.Compilation,Microsoft.CodeAnalysis.SyntaxTree)">
@@ -1439,6 +1439,11 @@
         <member name="M:Mud.CodeGenerator.TypeDetectionHelper.IsNullableType(System.String)">
             <summary>
             检查是否为可空类型
+            </summary>
+        </member>
+        <member name="M:Mud.CodeGenerator.TypeDetectionHelper.IsCancellationToken(System.String)">
+            <summary>
+            检查是否为 CancellationToken 类型
             </summary>
         </member>
         <member name="T:Mud.CodeGenerator.TransitiveCodeGenerator">
