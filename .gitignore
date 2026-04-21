@@ -7,8 +7,16 @@
 /Mud.HttpUtils/obj
 /Mud.HttpUtils.Generator/.vs
 /Mud.HttpUtils.Generator/obj
+/Mud.HttpUtils.Abstractions/obj
+/Mud.HttpUtils.Abstractions/bin
+/Mud.HttpUtils.Attributes/obj
+/Mud.HttpUtils.Attributes/bin
+/Mud.HttpUtils.Client/obj
+/Mud.HttpUtils.Client/bin
 /bin
 /Tests/bin
+/Tests/Mud.HttpUtils.Client.Tests/bin
+/Tests/Mud.HttpUtils.Client.Tests/obj
 /Tests/Mud.HttpUtils.Generator.Tests/bin
 /Tests/Mud.HttpUtils.Generator.Tests/obj
 /Tests/Mud.HttpUtils.Tests/bin

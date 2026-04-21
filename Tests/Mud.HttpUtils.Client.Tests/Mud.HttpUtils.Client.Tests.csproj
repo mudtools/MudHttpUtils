@@ -8,6 +8,8 @@
 		<IsPackable>false</IsPackable>
 		<IsTestProject>true</IsTestProject>
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>
+		<EnableAotAnalyzer>true</EnableAotAnalyzer>
+		<IsAotCompatible>true</IsAotCompatible>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -22,14 +24,11 @@
 			<PrivateAssets>all</PrivateAssets>
 		</PackageReference>
 		<PackageReference Include="FluentAssertions" Version="7.0.0" />
-		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
-		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing.XUnit" Version="1.1.2" />
+		<PackageReference Include="Moq" Version="4.20.72" />
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\..\Mud.HttpUtils.Generator\Mud.HttpUtils.Generator.csproj" />
 		<ProjectReference Include="..\..\Mud.HttpUtils.Client\Mud.HttpUtils.Client.csproj" />
-		<ProjectReference Include="..\..\Mud.HttpUtils.Attributes\Mud.HttpUtils.Attributes.csproj" />
 	</ItemGroup>
 
 </Project>
