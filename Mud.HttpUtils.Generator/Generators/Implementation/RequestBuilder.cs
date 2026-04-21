@@ -196,7 +196,7 @@ internal class RequestBuilder
         {
             var propertyName = methodInfo.BodyEncryptPropertyName ?? "data";
             var serializeType = methodInfo.BodyEncryptSerializeType ?? "Json";
-            string httpClient = "_appContext.HttpClient";
+            string httpClient = "_appContext.Value.HttpClient";
             if (hasHttpClient)
             {
                 httpClient = "_httpClient";
@@ -243,7 +243,7 @@ internal class RequestBuilder
 
         var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
         codeBuilder.AppendLine();
-        string httpClient = "_appContext.HttpClient";
+        string httpClient = "_appContext.Value.HttpClient";
         if (hasHttpClient)
         {
             httpClient = "_httpClient";

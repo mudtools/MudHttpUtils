@@ -983,6 +983,41 @@
             如果对象为null则抛出ArgumentNullException
             </summary>
         </member>
+        <member name="T:Mud.HttpUtils.HttpClientFactoryEnhancedClient">
+            <summary>
+            基于 IHttpClientFactory 的 EnhancedHttpClient 实现
+            </summary>
+            <remarks>
+            此类通过 IHttpClientFactory 创建 HttpClient 实例，解决了直接使用 HttpClient 导致的 Socket 耗尽和 DNS 不刷新问题。
+            推荐在依赖注入场景中使用此类。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.#ctor(System.Net.Http.IHttpClientFactory,System.String,Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.HttpClientFactoryEnhancedClient})">
+            <summary>
+            初始化 HttpClientFactoryEnhancedClient 实例
+            </summary>
+            <param name="factory">IHttpClientFactory 实例</param>
+            <param name="clientName">Named HttpClient 名称</param>
+            <param name="logger">日志记录器（可选）</param>
+            <exception cref="T:System.ArgumentNullException">factory 或 clientName 为 null</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.RecreateClient">
+            <summary>
+            重新创建 HttpClient 实例
+            </summary>
+            <remarks>
+            当需要刷新 HttpClient 配置（如更新 BaseAddress 或超时设置）时调用此方法。
+            注意：调用此方法后，之前的 HttpClient 实例将被释放。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.HttpClientFactoryEnhancedClient.ClientName">
+            <summary>
+            获取当前使用的 HttpClient 名称
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.EncryptContent(System.Object,System.String,Mud.HttpUtils.SerializeType)">
+            <inheritdoc/>
+        </member>
         <member name="T:Mud.HttpUtils.IAppContextSwitcher">
             <summary>
             需要支持多应用切换的HTTP客户端服务的标记接口
@@ -1121,117 +1156,10 @@
             <summary>
             增强的HTTP客户端接口，用于发送各种HTTP请求
             </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.IEnhancedHttpClient.SendAsync``1(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
-            <summary>
-            发送请求并返回指定类型的结果（JSON格式）
-            </summary>
-            <typeparam name="TResult">期望的返回结果类型</typeparam>
-            <param name="request">要发送的HTTP请求消息</param>
-            <param name="cancellationToken">用于取消操作的取消令牌</param>
-            <returns>返回类型为TResult的异步任务，可能为null</returns>
-        </member>
-        <member name="M:Mud.HttpUtils.IEnhancedHttpClient.DownloadAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
-            <summary>
-            下载文件内容并以字节数组形式返回
-            </summary>
-            <param name="request">要发送的HTTP请求消息</param>
-            <param name="cancellationToken">用于取消操作的取消令牌</param>
-            <returns>返回字节数组的异步任务，可能为null</returns>
-        </member>
-        <member name="M:Mud.HttpUtils.IEnhancedHttpClient.DownloadLargeAsync(System.Net.Http.HttpRequestMessage,System.String,System.Boolean,System.Threading.CancellationToken)">
-            <summary>
-            异步下载大文件并保存到指定路径
-            </summary>
-            <param name="request">要发送的HTTP请求消息</param>
-            <param name="filePath">用于保存文件的本地路径</param>
-            <param name="overwrite">是否覆盖已存在的文件</param>
-            <param name="cancellationToken">用于取消操作的取消令牌</param>
-            <returns>表示异步操作的任务</returns>
-        </member>
-        <member name="M:Mud.HttpUtils.IEnhancedHttpClient.SendXmlAsync``1(System.Net.Http.HttpRequestMessage,System.Text.Encoding,System.Threading.CancellationToken)">
-            <summary>
-            发送请求并返回XML反序列化后的结果
-            </summary>
-            <typeparam name="TResult">期望的返回结果类型</typeparam>
-            <param name="request">要发送的HTTP请求消息</param>
-            <param name="encoding">XML编码方式，默认为UTF8</param>
-            <param name="cancellationToken">用于取消操作的取消令牌</param>
-            <returns>返回类型为TResult的异步任务，可能为null</returns>
-        </member>
-        <member name="M:Mud.HttpUtils.IEnhancedHttpClient.PostAsXmlAsync``2(System.String,``0,System.Text.Encoding,System.Threading.CancellationToken)">
-            <summary>
-            发送XML格式的POST请求并反序列化响应
-            </summary>
-            <typeparam name="TRequest">请求数据类型</typeparam>
-            <typeparam name="TResult">响应数据类型</typeparam>
-            <param name="requestUri">请求URI</param>
-            <param name="requestData">要序列化为XML的请求数据</param>
-            <param name="encoding">XML编码方式，默认为UTF8</param>
-            <param name="cancellationToken">用于取消操作的取消令牌</param>
-            <returns>返回类型为TResult的异步任务，可能为null</returns>
-        </member>
-        <member name="M:Mud.HttpUtils.IEnhancedHttpClient.PutAsXmlAsync``2(System.String,``0,System.Text.Encoding,System.Threading.CancellationToken)">
-            <summary>
-            发送XML格式的PUT请求并反序列化响应
-            </summary>
-            <typeparam name="TRequest">请求数据类型</typeparam>
-            <typeparam name="TResult">响应数据类型</typeparam>
-            <param name="requestUri">请求URI</param>
-            <param name="requestData">要序列化为XML的请求数据</param>
-            <param name="encoding">XML编码方式，默认为UTF8</param>
-            <param name="cancellationToken">用于取消操作的取消令牌</param>
-            <returns>返回类型为TResult的异步任务，可能为null</returns>
-        </member>
-        <member name="M:Mud.HttpUtils.IEnhancedHttpClient.GetXmlAsync``1(System.String,System.Text.Encoding,System.Threading.CancellationToken)">
-            <summary>
-            发送简单的GET请求并返回XML反序列化后的结果
-            </summary>
-            <typeparam name="TResult">期望的返回结果类型</typeparam>
-            <param name="requestUri">请求URI</param>
-            <param name="encoding">XML编码方式，默认为UTF8</param>
-            <param name="cancellationToken">用于取消操作的取消令牌</param>
-            <returns>返回类型为TResult的异步任务，可能为null</returns>
-        </member>
-        <member name="M:Mud.HttpUtils.IEnhancedHttpClient.GetAsync``1(System.String,System.Threading.CancellationToken)">
-            <summary>
-            发送简单的GET请求并返回JSON反序列化后的结果
-            </summary>
-            <typeparam name="TResult">期望的返回结果类型</typeparam>
-            <param name="requestUri">请求URI</param>
-            <param name="cancellationToken">用于取消操作的取消令牌</param>
-            <returns>返回类型为TResult的异步任务，可能为null</returns>
-        </member>
-        <member name="M:Mud.HttpUtils.IEnhancedHttpClient.PostAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
-            <summary>
-            发送JSON格式的POST请求并反序列化响应
-            </summary>
-            <typeparam name="TRequest">请求数据类型</typeparam>
-            <typeparam name="TResult">响应数据类型</typeparam>
-            <param name="requestUri">请求URI</param>
-            <param name="requestData">要序列化为JSON的请求数据</param>
-            <param name="cancellationToken">用于取消操作的取消令牌</param>
-            <returns>返回类型为TResult的异步任务，可能为null</returns>
-        </member>
-        <member name="M:Mud.HttpUtils.IEnhancedHttpClient.PutAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
-            <summary>
-            发送JSON格式的PUT请求并反序列化响应
-            </summary>
-            <typeparam name="TRequest">请求数据类型</typeparam>
-            <typeparam name="TResult">响应数据类型</typeparam>
-            <param name="requestUri">请求URI</param>
-            <param name="requestData">要序列化为JSON的请求数据</param>
-            <param name="cancellationToken">用于取消操作的取消令牌</param>
-            <returns>返回类型为TResult的异步任务，可能为null</returns>
-        </member>
-        <member name="M:Mud.HttpUtils.IEnhancedHttpClient.EncryptContent(System.Object,System.String,Mud.HttpUtils.SerializeType)">
-            <summary>
-            将指定内容进行加密处理，并返回加密后的字符串。默认使用JSON序列化方式，可以选择XML序列化。
-            </summary>
-            <param name="content">需要进行加密处理的对象。</param>
-            <param name="propertyName">加密后的属性名。</param>
-            <param name="serializeType">对象的序列化类型。</param>
-            <returns></returns>
+            <remarks>
+            此接口继承自 IJsonHttpClient、IXmlHttpClient 和 IEncryptableHttpClient，
+            提供完整的 HTTP 客户端功能。建议使用更细粒度的接口以提高可测试性和可维护性。
+            </remarks>
         </member>
         <member name="T:Mud.HttpUtils.SerializeType">
             <summary>
@@ -1247,6 +1175,137 @@
             <summary>
             XML序列化，使用System.Xml.Serialization进行序列化和反序列化
             </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.IBaseHttpClient">
+            <summary>
+            基础 HTTP 客户端接口
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IBaseHttpClient.SendAsync``1(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
+            <summary>
+            发送请求并返回指定类型的结果（JSON格式）
+            </summary>
+            <typeparam name="TResult">期望的返回结果类型</typeparam>
+            <param name="request">要发送的HTTP请求消息</param>
+            <param name="cancellationToken">用于取消操作的取消令牌</param>
+            <returns>返回类型为TResult的异步任务，可能为null</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IBaseHttpClient.DownloadAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
+            <summary>
+            下载文件内容并以字节数组形式返回
+            </summary>
+            <param name="request">要发送的HTTP请求消息</param>
+            <param name="cancellationToken">用于取消操作的取消令牌</param>
+            <returns>返回字节数组的异步任务，可能为null</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IBaseHttpClient.DownloadLargeAsync(System.Net.Http.HttpRequestMessage,System.String,System.Boolean,System.Threading.CancellationToken)">
+            <summary>
+            异步下载大文件并保存到指定路径
+            </summary>
+            <param name="request">要发送的HTTP请求消息</param>
+            <param name="filePath">用于保存文件的本地路径</param>
+            <param name="overwrite">是否覆盖已存在的文件</param>
+            <param name="cancellationToken">用于取消操作的取消令牌</param>
+            <returns>表示异步操作的任务</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.IJsonHttpClient">
+            <summary>
+            JSON HTTP 客户端接口
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IJsonHttpClient.GetAsync``1(System.String,System.Threading.CancellationToken)">
+            <summary>
+            发送简单的GET请求并返回JSON反序列化后的结果
+            </summary>
+            <typeparam name="TResult">期望的返回结果类型</typeparam>
+            <param name="requestUri">请求URI</param>
+            <param name="cancellationToken">用于取消操作的取消令牌</param>
+            <returns>返回类型为TResult的异步任务，可能为null</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IJsonHttpClient.PostAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
+            <summary>
+            发送JSON格式的POST请求并反序列化响应
+            </summary>
+            <typeparam name="TRequest">请求数据类型</typeparam>
+            <typeparam name="TResult">响应数据类型</typeparam>
+            <param name="requestUri">请求URI</param>
+            <param name="requestData">要序列化为JSON的请求数据</param>
+            <param name="cancellationToken">用于取消操作的取消令牌</param>
+            <returns>返回类型为TResult的异步任务，可能为null</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IJsonHttpClient.PutAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
+            <summary>
+            发送JSON格式的PUT请求并反序列化响应
+            </summary>
+            <typeparam name="TRequest">请求数据类型</typeparam>
+            <typeparam name="TResult">响应数据类型</typeparam>
+            <param name="requestUri">请求URI</param>
+            <param name="requestData">要序列化为JSON的请求数据</param>
+            <param name="cancellationToken">用于取消操作的取消令牌</param>
+            <returns>返回类型为TResult的异步任务，可能为null</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.IXmlHttpClient">
+            <summary>
+            XML HTTP 客户端接口
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IXmlHttpClient.SendXmlAsync``1(System.Net.Http.HttpRequestMessage,System.Text.Encoding,System.Threading.CancellationToken)">
+            <summary>
+            发送请求并返回XML反序列化后的结果
+            </summary>
+            <typeparam name="TResult">期望的返回结果类型</typeparam>
+            <param name="request">要发送的HTTP请求消息</param>
+            <param name="encoding">XML编码方式，默认为UTF8</param>
+            <param name="cancellationToken">用于取消操作的取消令牌</param>
+            <returns>返回类型为TResult的异步任务，可能为null</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IXmlHttpClient.PostAsXmlAsync``2(System.String,``0,System.Text.Encoding,System.Threading.CancellationToken)">
+            <summary>
+            发送XML格式的POST请求并反序列化响应
+            </summary>
+            <typeparam name="TRequest">请求数据类型</typeparam>
+            <typeparam name="TResult">响应数据类型</typeparam>
+            <param name="requestUri">请求URI</param>
+            <param name="requestData">要序列化为XML的请求数据</param>
+            <param name="encoding">XML编码方式，默认为UTF8</param>
+            <param name="cancellationToken">用于取消操作的取消令牌</param>
+            <returns>返回类型为TResult的异步任务，可能为null</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IXmlHttpClient.PutAsXmlAsync``2(System.String,``0,System.Text.Encoding,System.Threading.CancellationToken)">
+            <summary>
+            发送XML格式的PUT请求并反序列化响应
+            </summary>
+            <typeparam name="TRequest">请求数据类型</typeparam>
+            <typeparam name="TResult">响应数据类型</typeparam>
+            <param name="requestUri">请求URI</param>
+            <param name="requestData">要序列化为XML的请求数据</param>
+            <param name="encoding">XML编码方式，默认为UTF8</param>
+            <param name="cancellationToken">用于取消操作的取消令牌</param>
+            <returns>返回类型为TResult的异步任务，可能为null</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IXmlHttpClient.GetXmlAsync``1(System.String,System.Text.Encoding,System.Threading.CancellationToken)">
+            <summary>
+            发送简单的GET请求并返回XML反序列化后的结果
+            </summary>
+            <typeparam name="TResult">期望的返回结果类型</typeparam>
+            <param name="requestUri">请求URI</param>
+            <param name="encoding">XML编码方式，默认为UTF8</param>
+            <param name="cancellationToken">用于取消操作的取消令牌</param>
+            <returns>返回类型为TResult的异步任务，可能为null</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.IEncryptableHttpClient">
+            <summary>
+            加密 HTTP 客户端接口
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IEncryptableHttpClient.EncryptContent(System.Object,System.String,Mud.HttpUtils.SerializeType)">
+            <summary>
+            将指定内容进行加密处理，并返回加密后的字符串。默认使用JSON序列化方式，可以选择XML序列化。
+            </summary>
+            <param name="content">需要进行加密处理的对象。</param>
+            <param name="propertyName">加密后的属性名。</param>
+            <param name="serializeType">对象的序列化类型。</param>
+            <returns></returns>
         </member>
         <member name="T:Mud.HttpUtils.IMudAppContext">
             <summary>

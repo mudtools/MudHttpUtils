@@ -40,6 +40,8 @@ internal abstract class HttpInvokeBaseSourceGenerator : TransitiveCodeGenerator
 
     protected virtual string[] ApiWrapAttributeNames() => HttpClientGeneratorConstants.HttpClientApiAttributeNames;
 
+    protected virtual string GetFullyQualifiedAttributeName() => "Mud.HttpUtils.Attributes.HttpClientApiAttribute";
+
     #endregion
 
     #region Generator Initialization and Execution
@@ -50,40 +52,19 @@ internal abstract class HttpInvokeBaseSourceGenerator : TransitiveCodeGenerator
     /// <param name="context">初始化上下文</param>
     public override void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        // 使用 SyntaxProvider 进行接口检测（编辑模式下立即响应）
         var syntaxInterfaces = context.SyntaxProvider
-            .CreateSyntaxProvider(
-                predicate: (node, c) =>
-                {
-                    // 基础检查：是否为带特性的接口
-                    if (node is not InterfaceDeclarationSyntax interfaceDecl)
-                        return false;
-
-                    return interfaceDecl.AttributeLists.Count > 0;
-                },
-                transform: (ctx, c) =>
-                {
-                    var interfaceNode = (InterfaceDeclarationSyntax)ctx.Node;
-
-                    // 语法级别检查（编辑模式下最可靠）
-                    if (HasTargetAttributeSyntax(interfaceNode, ApiWrapAttributeNames()))
-                    {
-                        return interfaceNode;
-                    }
-
-                    return null;
-                })
+            .ForAttributeWithMetadataName(
+                fullyQualifiedMetadataName: GetFullyQualifiedAttributeName(),
+                predicate: static (node, _) => node is InterfaceDeclarationSyntax,
+                transform: static (ctx, _) => (InterfaceDeclarationSyntax)ctx.TargetNode)
             .Where(static s => s is not null)
             .Collect();
 
-        // 组合 Compilation 和 AnalyzerConfigOptions
         var compilationAndOptions = context.CompilationProvider
             .Combine(context.AnalyzerConfigOptionsProvider);
 
-        // 将接口列表与编译信息组合
         var completeData = syntaxInterfaces.Combine(compilationAndOptions);
 
-        // 注册源代码生成器
         context.RegisterSourceOutput(completeData,
             (ctx, provider) => ExecuteGenerator(
                 compilation: provider.Right.Left,
@@ -115,50 +96,6 @@ internal abstract class HttpInvokeBaseSourceGenerator : TransitiveCodeGenerator
         ImmutableArray<InterfaceDeclarationSyntax?> interfaces,
         SourceProductionContext context,
         AnalyzerConfigOptionsProvider configOptionsProvider);
-
-    /// <summary>
-    /// 在语法级别检查接口是否有目标特性（不依赖语义模型，编辑模式下更可靠）
-    /// </summary>
-    protected bool HasTargetAttributeSyntax(InterfaceDeclarationSyntax interfaceNode, string[] attributeNames)
-    {
-        foreach (var attributeList in interfaceNode.AttributeLists)
-        {
-            foreach (var attribute in attributeList.Attributes)
-            {
-                // 获取特性名称，处理限定名（如 Mud.Common.CodeGenerator.HttpClientApi）
-                var attributeName = attribute.Name.ToString();
-                var originalName = attributeName;
-
-                // 处理命名空间前缀（取最后一部分）
-                var lastDotIndex = attributeName.LastIndexOf('.');
-                if (lastDotIndex >= 0)
-                {
-                    attributeName = attributeName.Substring(lastDotIndex + 1);
-                }
-
-                // 移除Attribute后缀进行比较
-                if (attributeName.EndsWith("Attribute"))
-                {
-                    attributeName = attributeName.Substring(0, attributeName.Length - 9);
-                }
-
-                foreach (var targetName in attributeNames)
-                {
-                    var cleanTargetName = targetName;
-                    if (cleanTargetName.EndsWith("Attribute"))
-                    {
-                        cleanTargetName = cleanTargetName.Substring(0, cleanTargetName.Length - 9);
-                    }
-
-                    if (attributeName.Equals(cleanTargetName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
-    }
 
     #endregion
 

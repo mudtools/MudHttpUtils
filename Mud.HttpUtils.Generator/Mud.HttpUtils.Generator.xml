@@ -601,11 +601,6 @@
             执行源代码生成逻辑
             </summary>
         </member>
-        <member name="M:Mud.HttpUtils.HttpInvokeBaseSourceGenerator.HasTargetAttributeSyntax(Microsoft.CodeAnalysis.CSharp.Syntax.InterfaceDeclarationSyntax,System.String[])">
-            <summary>
-            在语法级别检查接口是否有目标特性（不依赖语义模型，编辑模式下更可靠）
-            </summary>
-        </member>
         <member name="M:Mud.HttpUtils.HttpInvokeBaseSourceGenerator.GetOrCreateSemanticModel(Microsoft.CodeAnalysis.Compilation,Microsoft.CodeAnalysis.SyntaxTree)">
             <summary>
             获取或创建语义模型，使用共享缓存提高性能
