@@ -1,4 +1,4 @@
-﻿// -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
 //  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
@@ -7,6 +7,10 @@
 
 using System.Xml;
 using System.Xml.Serialization;
+
+#if NET6_0_OR_GREATER
+using System.Diagnostics.CodeAnalysis;
+#endif
 
 namespace Mud.HttpUtils;
 
@@ -21,7 +25,13 @@ public sealed class XmlSerialize
     /// <typeparam name="T">对象类型</typeparam>
     /// <param name="obj">要序列化的对象</param>
     /// <returns>XML字符串</returns>
+#if NET6_0_OR_GREATER
+    public static string Serialize<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
+        T>(T obj)
+#else
     public static string Serialize<T>(T obj)
+#endif
     {
         return Serialize(obj, Encoding.UTF8);
     }
@@ -33,7 +43,13 @@ public sealed class XmlSerialize
     /// <param name="obj">要序列化的对象</param>
     /// <param name="encoding">编码方式</param>
     /// <returns>XML字符串</returns>
+#if NET6_0_OR_GREATER
+    public static string Serialize<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
+        T>(T obj, Encoding encoding)
+#else
     public static string Serialize<T>(T obj, Encoding encoding)
+#endif
     {
         if (obj == null)
             throw new ArgumentNullException(nameof(obj));
@@ -55,9 +71,8 @@ public sealed class XmlSerialize
 
             using var stream = new MemoryStream();
             using var writer = XmlWriter.Create(stream, settings);
-            // 添加命名空间（可选）
             var namespaces = new XmlSerializerNamespaces();
-            namespaces.Add("", ""); // 移除默认命名空间
+            namespaces.Add("", "");
 
             serializer.Serialize(writer, obj, namespaces);
             return encoding.GetString(stream.ToArray());
@@ -78,7 +93,13 @@ public sealed class XmlSerialize
     /// <typeparam name="T">对象类型</typeparam>
     /// <param name="xml">XML字符串</param>
     /// <returns>反序列化后的对象</returns>
+#if NET6_0_OR_GREATER
+    public static T Deserialize<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
+        T>(string xml)
+#else
     public static T Deserialize<T>(string xml)
+#endif
     {
         return Deserialize<T>(xml, Encoding.UTF8);
     }
@@ -90,7 +111,13 @@ public sealed class XmlSerialize
     /// <param name="xml">XML字符串</param>
     /// <param name="encoding">编码方式</param>
     /// <returns>反序列化后的对象</returns>
+#if NET6_0_OR_GREATER
+    public static T Deserialize<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
+        T>(string xml, Encoding encoding)
+#else
     public static T Deserialize<T>(string xml, Encoding encoding)
+#endif
     {
         if (string.IsNullOrEmpty(xml))
             throw new ArgumentNullException(nameof(xml));

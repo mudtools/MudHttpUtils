@@ -25,7 +25,11 @@ internal static class TypeDetectionHelper
             "string" or "int" or "long" or "float" or "double" or "decimal" or "bool"
             or "DateTime" or "System.DateTime" or "Guid" or "System.Guid"
             or "byte" or "sbyte" or "short" or "ushort" or "uint" or "ulong"
-            or "char" => true,
+            or "char"
+            or "DateTimeOffset" or "System.DateTimeOffset"
+            or "TimeSpan" or "System.TimeSpan"
+            or "DateOnly" or "System.DateOnly"
+            or "TimeOnly" or "System.TimeOnly" => true,
             _ when nonNullableTypeName.EndsWith("[]", StringComparison.OrdinalIgnoreCase) => IsSimpleArrayType(nonNullableTypeName),
             _ => false
         };
@@ -75,5 +79,15 @@ internal static class TypeDetectionHelper
         return typeName.EndsWith("?", StringComparison.Ordinal) ||
                typeName.Contains("?<") ||
                typeName.StartsWith("Nullable<", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 检查是否为 CancellationToken 类型
+    /// </summary>
+    public static bool IsCancellationToken(string typeName)
+    {
+        var nonNullableTypeName = typeName.TrimEnd('?');
+        return string.Equals(nonNullableTypeName, "CancellationToken", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(nonNullableTypeName, "System.Threading.CancellationToken", StringComparison.OrdinalIgnoreCase);
     }
 }

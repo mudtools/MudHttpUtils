@@ -1,4 +1,4 @@
-﻿// -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
 //  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
@@ -13,9 +13,12 @@ namespace Mud.HttpUtils;
 /// <summary>
 /// 消息脱敏工具
 /// </summary>
+#if NET7_0_OR_GREATER
+public static partial class MessageSanitizer
+#else
 public static class MessageSanitizer
+#endif
 {
-    // 添加更多常见敏感字段
     private static readonly HashSet<string> SensitiveFields = new(StringComparer.OrdinalIgnoreCase)
     {
         "app_access_token", "appAccessToken", "token", "password", "secret",
@@ -30,16 +33,34 @@ public static class MessageSanitizer
         "passport", "driver_license"
     };
 
-    // 添加敏感字段值模式匹配（正则表达式）
-    private static readonly Regex TokenPattern = new Regex(
-        @"^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$|" +  // Base64格式
-        @"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$|" +  // UUID
-        @"^[A-Za-z0-9_\-]{20,}$",  // 长token格式
+#if NET7_0_OR_GREATER
+    [GeneratedRegex(@"^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$|^[A-Za-z0-9_\-]{20,}$", RegexOptions.IgnoreCase)]
+    private static partial Regex TokenPattern();
+
+    [GeneratedRegex(@"^1[3-9]\d{9}$")]
+    private static partial Regex PhonePattern();
+
+    [GeneratedRegex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
+    private static partial Regex EmailPattern();
+
+    [GeneratedRegex(@"^\d{17}[\dXx]$")]
+    private static partial Regex IdCardPattern();
+#else
+    private static readonly Regex TokenPatternField = new Regex(
+        @"^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$|" +
+        @"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$|" +
+        @"^[A-Za-z0-9_\-]{20,}$",
         RegexOptions.Compiled);
 
-    private static readonly Regex PhonePattern = new Regex(@"^1[3-9]\d{9}$", RegexOptions.Compiled);
-    private static readonly Regex EmailPattern = new Regex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", RegexOptions.Compiled);
-    private static readonly Regex IdCardPattern = new Regex(@"^\d{17}[\dXx]$", RegexOptions.Compiled);
+    private static readonly Regex PhonePatternField = new Regex(@"^1[3-9]\d{9}$", RegexOptions.Compiled);
+    private static readonly Regex EmailPatternField = new Regex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", RegexOptions.Compiled);
+    private static readonly Regex IdCardPatternField = new Regex(@"^\d{17}[\dXx]$", RegexOptions.Compiled);
+
+    private static Regex TokenPattern() => TokenPatternField;
+    private static Regex PhonePattern() => PhonePatternField;
+    private static Regex EmailPattern() => EmailPatternField;
+    private static Regex IdCardPattern() => IdCardPatternField;
+#endif
 
     /// <summary>
     /// 脱敏消息内容（改进版）
@@ -60,14 +81,12 @@ public static class MessageSanitizer
             var sanitized = SanitizeJsonElement(json.RootElement);
             var result = sanitized.ToString();
 
-            // 脱敏后再截断
             return result.Length > maxLength ?
                 result.Substring(0, Math.Min(result.Length, maxLength)) + "..." :
                 result;
         }
         catch (JsonException)
         {
-            // 不是JSON格式，进行文本脱敏
             return SanitizePlainText(message, maxLength);
         }
     }
@@ -77,7 +96,6 @@ public static class MessageSanitizer
     /// </summary>
     private static JsonElement SanitizeJsonElement(JsonElement element, int depth = 0)
     {
-        // 防止深度递归导致栈溢出
         if (depth > 32) return JsonSerializer.Deserialize<JsonElement>("\"***RECURSION_DEPTH_EXCEEDED***\"");
 
         switch (element.ValueKind)
@@ -88,7 +106,6 @@ public static class MessageSanitizer
                 {
                     if (SensitiveFields.Contains(property.Name))
                     {
-                        // 根据字段名选择不同的脱敏策略
                         dict[property.Name] = GetMaskedValue(property.Name, property.Value);
                     }
                     else
@@ -131,32 +148,26 @@ public static class MessageSanitizer
         if (string.IsNullOrEmpty(str))
             return value;
 
-        // 根据不同字段类型采用不同的脱敏策略
         if (fieldName.IndexOf("phone", StringComparison.OrdinalIgnoreCase) >= 0 ||
             fieldName.IndexOf("mobile", StringComparison.OrdinalIgnoreCase) >= 0)
         {
-            // 手机号保留前3后4
             return JsonSerializer.Deserialize<JsonElement>($"\"{MaskPhone(str)}\"");
         }
         else if (fieldName.IndexOf("email", StringComparison.OrdinalIgnoreCase) >= 0 ||
                  fieldName.IndexOf("mail", StringComparison.OrdinalIgnoreCase) >= 0)
         {
-            // 邮箱保留前1位和域名
             return JsonSerializer.Deserialize<JsonElement>($"\"{MaskEmail(str)}\"");
         }
         else if (fieldName.IndexOf("name", StringComparison.OrdinalIgnoreCase) >= 0)
         {
-            // 姓名保留第一个字
             return JsonSerializer.Deserialize<JsonElement>($"\"{MaskName(str)}\"");
         }
         else if (str.Length <= 8)
         {
-            // 短值完全脱敏
             return JsonSerializer.Deserialize<JsonElement>("\"***\"");
         }
         else
         {
-            // 长token保留前4后4
             return JsonSerializer.Deserialize<JsonElement>($"\"{str.Substring(0, 4)}***{str.Substring(str.Length - 4)}\"");
         }
     }
@@ -169,11 +180,10 @@ public static class MessageSanitizer
         if (string.IsNullOrEmpty(value))
             return false;
 
-        // 检查常见敏感数据格式
-        return TokenPattern.IsMatch(value) ||
-               PhonePattern.IsMatch(value) ||
-               EmailPattern.IsMatch(value) ||
-               IdCardPattern.IsMatch(value);
+        return TokenPattern().IsMatch(value) ||
+               PhonePattern().IsMatch(value) ||
+               EmailPattern().IsMatch(value) ||
+               IdCardPattern().IsMatch(value);
     }
 
     /// <summary>
@@ -181,13 +191,12 @@ public static class MessageSanitizer
     /// </summary>
     private static string SanitizePlainText(string text, int maxLength)
     {
-        // 简单的正则替换
         var patterns = new Dictionary<Regex, string>
         {
             [new Regex(@"(?i)(token|password|secret|key)\s*[:=]\s*['\""]?([^'\""\s]{6,})['\""]?")] = "$1: ***",
-            [PhonePattern] = "***",
-            [EmailPattern] = "***",
-            [IdCardPattern] = "***"
+            [PhonePattern()] = "***",
+            [EmailPattern()] = "***",
+            [IdCardPattern()] = "***"
         };
 
         foreach (var pattern in patterns)

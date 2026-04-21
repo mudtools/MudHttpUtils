@@ -1436,6 +1436,11 @@
             检查是否为可空类型
             </summary>
         </member>
+        <member name="M:Mud.CodeGenerator.TypeDetectionHelper.IsCancellationToken(System.String)">
+            <summary>
+            检查是否为 CancellationToken 类型
+            </summary>
+        </member>
         <member name="T:Mud.CodeGenerator.TransitiveCodeGenerator">
             <summary>
             代码生成器基类。
