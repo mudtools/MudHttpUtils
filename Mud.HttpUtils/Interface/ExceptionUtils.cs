@@ -5,6 +5,8 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using System.Runtime.CompilerServices;
+
 namespace Mud.HttpUtils;
 
 internal static class ExceptionUtils
@@ -12,19 +14,27 @@ internal static class ExceptionUtils
     /// <summary>
     /// 如果对象为null则抛出ArgumentNullException
     /// </summary>
-    public static void ThrowIfNull<T>(this T? obj, string? paramName = null) where T : class
+#if NET6_0_OR_GREATER
+    public static void ThrowIfNull<T>(
+        this T? obj,
+        [CallerArgumentExpression(nameof(obj))] string? paramName = null) 
+        where T : class
     {
         if (obj is null)
-            throw new ArgumentNullException(paramName ?? nameof(obj));
+            throw new ArgumentNullException(paramName);
     }
 
-    public static void ThrowIfNull(this object? argument, string? paramName = null)
+    public static void ThrowIfNull(
+        this object? argument,
+        [CallerArgumentExpression(nameof(argument))] string? paramName = null)
     {
         if (argument == null)
             throw new ArgumentNullException(paramName);
     }
 
-    public static void ThrowIfNullOrEmpty(this string? argument, string? paramName = null)
+    public static void ThrowIfNullOrEmpty(
+        this string? argument,
+        [CallerArgumentExpression(nameof(argument))] string? paramName = null)
     {
         if (argument == null)
             throw new ArgumentNullException(paramName);
@@ -32,4 +42,26 @@ internal static class ExceptionUtils
         if (string.IsNullOrEmpty(argument))
             throw new ArgumentNullException(paramName);
     }
+#else
+    public static void ThrowIfNull<T>(this T? obj, string? paramName = null) where T : class
+    {
+        if (obj is null)
+            throw new ArgumentNullException(paramName ?? "obj");
+    }
+
+    public static void ThrowIfNull(this object? argument, string? paramName = null)
+    {
+        if (argument == null)
+            throw new ArgumentNullException(paramName ?? "argument");
+    }
+
+    public static void ThrowIfNullOrEmpty(this string? argument, string? paramName = null)
+    {
+        if (argument == null)
+            throw new ArgumentNullException(paramName ?? "argument");
+
+        if (string.IsNullOrEmpty(argument))
+            throw new ArgumentNullException(paramName ?? "argument");
+    }
+#endif
 }

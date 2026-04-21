@@ -17,7 +17,7 @@
 		<Authors>Mud Studio</Authors>
 		<Company>Mud Studio</Company>
 		<LangVersion>latest</LangVersion>
-		<NoWarn>CS8618;CS8603;CS8602;CS8601;CS8600;CS8625;CS8604;CS8629;CA1707;CA1021;CA1822;RS1035</NoWarn>
+		<NoWarn>CA1707;CA1021;CA1822;RS1035</NoWarn>
 		<AnalyzerLanguage>cs</AnalyzerLanguage>
 		<InjectIsExternalInitOnLegacy>true</InjectIsExternalInitOnLegacy>
 		<GeneratePackageOnBuild>false</GeneratePackageOnBuild>

@@ -56,7 +56,7 @@ public sealed class HttpClientApiAttribute : Attribute
     /// 此属性已被弃用，请使用其他方式配置API端点
     /// </remarks>
     [Obsolete("此属性已被弃用，请使用其他方式配置API端点")]
-    public string BaseAddress { get; private set; }
+    public string? BaseAddress { get; private set; }
 
     /// <summary>
     /// 获取或设置HTTP连接超时时间（秒）
@@ -74,18 +74,18 @@ public sealed class HttpClientApiAttribute : Attribute
     /// <remarks>
     /// 可选属性，用于将生成的HTTP客户端服务分组注册到依赖注入容器中
     /// </remarks>
-    public string RegistryGroupName { get; set; }
+    public string? RegistryGroupName { get; set; }
 
     /// <summary>
     /// 生成的客户端类用于获取WEB API访问令牌的Token管理接口。
     /// </summary>
-    public string TokenManage { get; set; }
+    public string? TokenManage { get; set; }
 
     /// <summary>
     /// 生成的客户端类用于获取HttpClient实例的接口类型。
     /// <para>与 <see cref="TokenManage"/> 互斥，同时定义时此属性优先。</para>
     /// </summary>
-    public string HttpClient { get; set; }
+    public string? HttpClient { get; set; }
 
     /// <summary>
     /// 生成的客户端类是否为抽象类
@@ -95,5 +95,5 @@ public sealed class HttpClientApiAttribute : Attribute
     /// <summary>
     /// 生成的客户端类继承自哪个类
     /// </summary>
-    public string InheritedFrom { get; set; }
+    public string? InheritedFrom { get; set; }
 }

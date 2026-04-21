@@ -21,7 +21,14 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient
     private readonly HttpClient _httpClient;
     private readonly bool _enableLogging;
 
-    // 默认缓冲区大小（80KB）- 比默认的80K稍大，适合文件下载
+    private static readonly JsonSerializerOptions s_defaultJsonSerializerOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
     private const int DefaultBufferSize = 81920;
 
     /// <summary>
@@ -777,8 +784,6 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient
 
         _logger.HttpRequestFailedWithResponse(statusCode, sanitizedContent);
 
-        response.Content.Dispose();
-
 #if NETSTANDARD2_0
         throw new HttpRequestException($"HTTP请求失败: {statusCode} {response.StatusCode} - {errorContent}", null);
 #else
@@ -799,13 +804,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient
     /// </summary>
     private static JsonSerializerOptions GetDefaultJsonSerializerOptions()
     {
-        return new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            WriteIndented = false,
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-        };
+        return s_defaultJsonSerializerOptions;
     }
 
     /// <summary>
