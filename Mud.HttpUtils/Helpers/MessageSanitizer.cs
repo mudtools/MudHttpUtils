@@ -37,6 +37,9 @@ public static class MessageSanitizer
     [GeneratedRegex(@"^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$|^[A-Za-z0-9_\-]{20,}$", RegexOptions.IgnoreCase)]
     private static partial Regex TokenPattern();
 
+    [GeneratedRegex(@"(?i)(token|password|secret|key)\s*[:=]\s*['""]?([^'""\s]{6,})['""]?", RegexOptions.Compiled)]
+    private static partial Regex SensitiveKeyValuePattern();
+
     [GeneratedRegex(@"^1[3-9]\d{9}$")]
     private static partial Regex PhonePattern();
 
@@ -52,11 +55,16 @@ public static class MessageSanitizer
         @"^[A-Za-z0-9_\-]{20,}$",
         RegexOptions.Compiled);
 
+    private static readonly Regex SensitiveKeyValuePatternField = new Regex(
+        @"(?i)(token|password|secret|key)\s*[:=]\s*['""]?([^'""\s]{6,})['""]?",
+        RegexOptions.Compiled);
+
     private static readonly Regex PhonePatternField = new Regex(@"^1[3-9]\d{9}$", RegexOptions.Compiled);
     private static readonly Regex EmailPatternField = new Regex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", RegexOptions.Compiled);
     private static readonly Regex IdCardPatternField = new Regex(@"^\d{17}[\dXx]$", RegexOptions.Compiled);
 
     private static Regex TokenPattern() => TokenPatternField;
+    private static Regex SensitiveKeyValuePattern() => SensitiveKeyValuePatternField;
     private static Regex PhonePattern() => PhonePatternField;
     private static Regex EmailPattern() => EmailPatternField;
     private static Regex IdCardPattern() => IdCardPatternField;
@@ -193,7 +201,7 @@ public static class MessageSanitizer
     {
         var patterns = new Dictionary<Regex, string>
         {
-            [new Regex(@"(?i)(token|password|secret|key)\s*[:=]\s*['\""]?([^'\""\s]{6,})['\""]?")] = "$1: ***",
+            [SensitiveKeyValuePattern()] = "$1: ***",
             [PhonePattern()] = "***",
             [EmailPattern()] = "***",
             [IdCardPattern()] = "***"

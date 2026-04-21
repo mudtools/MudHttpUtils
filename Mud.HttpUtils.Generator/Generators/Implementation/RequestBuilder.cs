@@ -268,7 +268,7 @@ internal class RequestBuilder
                 }
                 else
                 {
-                    codeBuilder.AppendLine($"            return await {httpClient}.SendAsync<{deserializeType}>(httpRequest{cancellationTokenArg});");
+                    codeBuilder.AppendLine($"            return await {httpClient}.SendAsync<{deserializeType}>(httpRequest, _jsonSerializerOptions{cancellationTokenArg});");
                 }
             }
         }

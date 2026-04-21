@@ -49,6 +49,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient
     /// <inheritdoc/>
     public async Task<TResult?> SendAsync<TResult>(
         HttpRequestMessage request,
+        JsonSerializerOptions? jsonSerializerOptions = null,
         CancellationToken cancellationToken = default)
     {
         request.ThrowIfNull();
@@ -61,7 +62,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient
 
             var result = await SendRequestAsync<TResult>(
                 request,
-                jsonSerializerOptions: GetJsonSerializerOptions(),
+                jsonSerializerOptions: jsonSerializerOptions ?? GetJsonSerializerOptions(),
                 cancellationToken: cancellationToken).ConfigureAwait(false);
 
             LogRequestComplete("JSON请求完成", uri);
