@@ -13,6 +13,8 @@
 /Tests/Mud.HttpUtils.Generator.Tests/obj
 /Tests/Mud.HttpUtils.Tests/bin
 /Tests/Mud.HttpUtils.Tests/obj
+/Tests/Mud.HttpUtils.Benchmarks/bin
+/Tests/Mud.HttpUtils.Benchmarks/obj
 /Demos/HttpClientApiDemo/bin
 /Demos/HttpClientApiDemo/obj
 /Demos/CommonClassLibrary/bin

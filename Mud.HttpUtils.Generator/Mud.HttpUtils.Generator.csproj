@@ -10,6 +10,9 @@
 		<DocumentationFile>$(OutputPath)$(AssemblyName).xml</DocumentationFile>
 		<AssemblyName>Mud.HttpUtils.Generator</AssemblyName>
 	</PropertyGroup>
+	<ItemGroup>
+		<InternalsVisibleTo Include="Mud.HttpUtils.Generator.Tests" />
+	</ItemGroup>
 	<!--开发调试阶段-->
 	<ItemGroup>
 		<None Include="$(OutputPath)\netstandard2.0\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />

@@ -9,6 +9,8 @@
 		<Product>Mud Http Utils</Product>
 		<PackageId>Mud.HttpUtils</PackageId>
 		<AssemblyName>Mud.HttpUtils</AssemblyName>
+		<EnableAotAnalyzer>true</EnableAotAnalyzer>
+		<IsAotCompatible>true</IsAotCompatible>
 	</PropertyGroup>
 
 	<!-- 依赖配置 - 按目标框架区分 -->
