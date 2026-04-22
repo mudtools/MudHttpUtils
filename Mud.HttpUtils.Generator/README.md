@@ -2,7 +2,7 @@
 
 ## 概述
 
-Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为标记了 `[HttpClientApi]` 特性的接口生成 HttpClient 实现类。支持多种 HTTP 方法、灵活的参数处理、内容类型管理、Token 认证、请求/响应加密等功能。
+Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为标记了 `[HttpClientApi]` 特性的接口生成 HttpClient 实现类和服务注册代码。支持多种 HTTP 方法、灵活的参数处理、内容类型管理、Token 认证等功能。
 
 ## 功能特性
 
@@ -11,16 +11,16 @@ Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为
 - **自动代码生成**：根据接口定义自动生成 HttpClient 实现
 - **HTTP 方法支持**：支持 GET、POST、PUT、DELETE、PATCH、HEAD、OPTIONS 等 HTTP 方法
 - **参数处理**：自动处理 Path、Query、Header、Body、FormContent 等参数类型
-- **Token 管理**：支持多种 Token 类型（TenantAccessToken、UserAccessToken、AppAccessToken），TokenType 使用字符串类型，解耦强绑定
+- **Token 管理**：支持多种 Token 类型，TokenType 使用字符串类型，解耦强绑定
 - **HttpClient 模式**：支持通过 `HttpClient` 属性直接注入 HttpClient 接口，与 `TokenManage` 互斥
-- **依赖注入**：自动生成服务注册扩展方法
-- **类型安全**：强类型的 API 调用，编译时检查
+- **依赖注入**：自动生成服务注册扩展方法 `AddWebApiHttpClient()`
+- **智能注释**：根据运行模式自动生成 DI 依赖提示注释
 
 ### 高级功能
 
-- **内容类型管理**：支持接口级、方法级、参数级的内容类型配置，优先级清晰
-- **请求/响应类型分离**：支持请求和响应使用不同的内容类型（如请求 XML、响应 JSON）
-- **请求体加密**：支持请求体数据加密传输，支持 JSON 和 XML 两种序列化方式
+- **内容类型管理**：支持接口级、方法级、参数级的内容类型配置
+- **请求/响应类型分离**：支持请求和响应使用不同的内容类型
+- **请求体加密**：支持请求体数据加密传输
 - **响应解密**：支持响应数据自动解密
 - **文件下载**：支持大文件下载和二进制数据下载
 - **表单数据**：支持 multipart/form-data 格式
@@ -28,38 +28,43 @@ Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为
 - **继承支持**：支持生成抽象类、类继承、接口继承
 - **事件处理器生成**：通过 `[GenerateEventHandler]` 特性自动生成事件处理器代码
 - **忽略生成**：支持通过 `[IgnoreGenerator]` 和 `[IgnoreImplement]` 特性忽略特定代码生成
-- **XML 序列化**：支持 XML 格式的请求和响应处理
+
+## 安装
+
+```bash
+dotnet add package Mud.HttpUtils.Generator
+```
+
+> 源代码生成器需配合运行时库 `Mud.HttpUtils` 一起使用。
 
 ## 快速开始
 
 ### 1. 定义 API 接口
 
 ```csharp
-[HttpClientApi("https://api.example.com", Timeout = 60)]
-public interface IExampleApi
+using Mud.HttpUtils.Attributes;
+
+[HttpClientApi(HttpClient = "IEnhancedHttpClient")]
+public interface IUserApi
 {
-    // GET 请求
     [Get("/users/{id}")]
     Task<UserInfo> GetUserAsync([Path] int id);
 
-    // POST 请求（JSON）
     [Post("/users")]
     Task<UserInfo> CreateUserAsync([Body] CreateUserRequest request);
 
-    // GET 请求（查询参数）
     [Get("/users")]
     Task<List<UserInfo>> GetUsersAsync([Query] string? name = null, [Query] int page = 1);
-
-    // 文件下载
-    [Get("/files/{fileId}")]
-    Task DownloadFileAsync([Path] string fileId, [FilePath] string savePath);
 }
 ```
 
 ### 2. 注册服务
 
 ```csharp
-// 在 Program.cs 或 Startup.cs 中
+// 注册 HttpClient + 弹性策略
+services.AddMudHttpUtils("userApi", "https://api.example.com");
+
+// 注册生成器生成的 API 接口实现
 services.AddWebApiHttpClient();
 ```
 
@@ -68,9 +73,9 @@ services.AddWebApiHttpClient();
 ```csharp
 public class UserService
 {
-    private readonly IExampleApi _api;
+    private readonly IUserApi _api;
 
-    public UserService(IExampleApi api)
+    public UserService(IUserApi api)
     {
         _api = api;
     }
@@ -82,18 +87,117 @@ public class UserService
 }
 ```
 
+## 三种运行模式
+
+生成器根据 `[HttpClientApi]` 特性配置生成不同的实现代码：
+
+### 模式一：默认模式（IMudAppContext）
+
+不设置 `TokenManage` 和 `HttpClient` 时，构造函数依赖 `IOptions<JsonSerializerOptions>` 和 `IMudAppContext`。
+
+```csharp
+[HttpClientApi("https://api.example.com")]
+public interface IMyApi { }
+
+// 生成的构造函数：
+// public MyApi(IOptions<JsonSerializerOptions> option, IMudAppContext appContext)
+```
+
+### 模式二：TokenManager 模式
+
+设置 `TokenManage` 时，构造函数依赖 `IOptions<JsonSerializerOptions>` 和指定的 Token 管理器类型。
+
+```csharp
+[HttpClientApi("https://api.example.com", TokenManage = "IFeishuAppManager")]
+public interface IMyApi { }
+
+// 生成的构造函数：
+// public MyApi(IOptions<JsonSerializerOptions> option, IFeishuAppManager appManager)
+```
+
+### 模式三：HttpClient 模式（推荐）
+
+设置 `HttpClient` 时，构造函数依赖 `IOptions<JsonSerializerOptions>` 和指定的 HttpClient 接口类型。不生成 Token 相关代码。
+
+```csharp
+[HttpClientApi(HttpClient = "IEnhancedHttpClient")]
+public interface IMyApi { }
+
+// 生成的构造函数：
+// public MyApi(IOptions<JsonSerializerOptions> option, IEnhancedHttpClient httpClient)
+```
+
+> **注意**：`HttpClient` 与 `TokenManage` 互斥，同时定义时 `HttpClient` 优先。
+
+## 生成的代码
+
+### 实现类
+
+对于接口 `IUserApi`，生成器会生成 `UserApi` 实现类，位于原始接口命名空间的 `.HttpClientApi` 子命名空间下：
+
+```csharp
+namespace MyApp.HttpClientApi
+{
+    internal partial class UserApi : IUserApi
+    {
+        // 构造函数和字段（根据运行模式不同而不同）
+        // 所有接口方法的实现
+    }
+}
+```
+
+### 服务注册扩展方法
+
+生成器会生成 `HttpClientApiExtensions` 类，包含 `AddWebApiHttpClient()` 扩展方法：
+
+```csharp
+public static partial class HttpClientApiExtensions
+{
+    public static IServiceCollection AddWebApiHttpClient(this IServiceCollection services)
+    {
+        // 注册 IUserApi 的 HttpClient 包装实现类（瞬时服务）
+        // 注意：实现类构造函数依赖 IEnhancedHttpClient，请确保已通过 AddMudHttpClient 等方法注册此服务
+        services.AddTransient<global::MyApp.IUserApi, global::MyApp.HttpClientApi.UserApi>();
+        return services;
+    }
+}
+```
+
+#### 智能注释提示
+
+生成器会根据运行模式自动生成 DI 依赖提示：
+
+| 模式 | 生成的注释 |
+|------|-----------|
+| HttpClient | `// 注意：实现类构造函数依赖 IEnhancedHttpClient，请确保已通过 AddMudHttpClient 等方法注册此服务` |
+| TokenManager | `// 注意：实现类构造函数依赖 IFeishuAppManager，请确保已注册此令牌管理器服务` |
+| 默认 | `// 注册 XX 的 HttpClient 包装实现类（瞬时服务）` |
+
+### 注册组
+
+通过 `RegistryGroupName` 可以将多个接口的注册方法分组：
+
+```csharp
+[HttpClientApi("https://api.example.com", RegistryGroupName = "External")]
+public interface IExternalApi { }
+
+[HttpClientApi("https://api.example.com", RegistryGroupName = "External")]
+public interface IAnotherExternalApi { }
+
+// 生成 AddExternalWebApiHttpClient() 方法
+services.AddExternalWebApiHttpClient();
+```
+
 ## 特性详解
 
 ### HttpClientApi 特性
 
-用于标记需要生成 HTTP 客户端实现的接口。
-
 ```csharp
 [HttpClientApi(
-    baseAddress: "https://api.example.com",  // API 基础地址（已弃用）
+    baseAddress: "https://api.example.com",  // API 基础地址
     ContentType = "application/json",        // 默认请求内容类型
     Timeout = 50,                            // 超时时间（秒）
-    TokenManage = "ITokenManager",           // Token 管理器接口
+    TokenManage = "ITokenManager",           // Token 管理器接口（与 HttpClient 互斥）
     HttpClient = "IMyHttpClient",            // HttpClient 接口（与 TokenManage 互斥，优先）
     RegistryGroupName = "Example",           // 注册组名称
     IsAbstract = false,                      // 是否生成抽象类
@@ -102,11 +206,7 @@ public class UserService
 public interface IExampleApi { }
 ```
 
-> **注意**：`HttpClient` 与 `TokenManage` 属性互斥，同时定义时 `HttpClient` 优先。
-
 ### HTTP 方法特性
-
-所有 HTTP 方法特性都支持以下属性：
 
 ```csharp
 [Post(
@@ -118,55 +218,10 @@ public interface IExampleApi { }
 Task<UserInfo> CreateUserAsync([Body] UserRequest request);
 ```
 
-支持的 HTTP 方法：
-
-- `[Get]` - GET 请求
-- `[Post]` - POST 请求
-- `[Put]` - PUT 请求
-- `[Delete]` - DELETE 请求
-- `[Patch]` - PATCH 请求
-- `[Head]` - HEAD 请求
-- `[Options]` - OPTIONS 请求
-
 ### 内容类型优先级
-
-内容类型（ContentType）支持三级配置，优先级从高到低：
 
 ```
 Body 参数级 > 方法级 > 接口级 > 默认值 (application/json)
-```
-
-```csharp
-// 接口级：application/xml
-[HttpClientApi("https://api.example.com", ContentType = "application/xml")]
-public interface IContentTypeApi
-{
-    // 使用接口级设置：application/xml
-    [Post("/api/test1")]
-    Task<Response> Test1Async([Body] Request data);
-
-    // 方法级覆盖：application/json
-    [Post("/api/test2", ContentType = "application/json")]
-    Task<Response> Test2Async([Body] Request data);
-
-    // Body 参数级优先级最高：text/plain
-    [Post("/api/test3", ContentType = "application/json")]
-    Task<Response> Test3Async([Body(ContentType = "text/plain")] Request data);
-}
-```
-
-### 请求/响应类型分离
-
-支持请求和响应使用不同的内容类型：
-
-```csharp
-// 请求 XML，响应 JSON
-[Post("/api/xml-to-json")]
-Task<JsonResponse> PostXmlGetJsonAsync([Body("application/xml")] XmlRequest request);
-
-// 请求 JSON，响应 XML
-[Post("/api/json-to-xml", ResponseContentType = "application/xml")]
-Task<XmlResponse> PostJsonGetXmlAsync([Body] JsonRequest request);
 ```
 
 ### 参数特性
@@ -249,14 +304,6 @@ Task UploadAsync([FormContent] IFormContent formData);
 
 ### Token 认证
 
-`TokenAttribute` 的 `TokenType` 属性使用字符串类型，支持以下值：
-
-- `"TenantAccessToken"` - 租户访问令牌
-- `"UserAccessToken"` - 用户访问令牌
-- `"AppAccessToken"` - 应用访问令牌
-
-使用示例：
-
 ```csharp
 // 接口级设置 Token 类型
 [Token("TenantAccessToken")]
@@ -266,50 +313,15 @@ public interface IMyApi { }
 [Get("/users/{id}")]
 Task<User> GetUserAsync([Path] int id, [Token("UserAccessToken")] string? token = null);
 
-// 使用命名参数
-[Token(TokenType = "AppAccessToken")]
-public interface IAppApi { }
+// Token 注入模式
+[Token("AppAccessToken", InjectionMode = TokenInjectionMode.Header, Name = "Authorization")]
 ```
 
-#### Token 注入模式
+Token 注入模式：
 
-```csharp
-public enum TokenInjectionMode
-{
-    Header,  // 注入到 HTTP Header
-    Query,   // 注入到 URL Query 参数
-    Path     // 注入到 URL Path
-}
-```
-
-```csharp
-[Token("TenantAccessToken", InjectionMode = TokenInjectionMode.Header, Name = "Authorization")]
-```
-
-#### HttpClient 模式
-
-当 `HttpClientApiAttribute` 设置了 `HttpClient` 属性时，生成的代码不会包含 Token 相关的字段和方法，而是直接注入指定的 HttpClient 接口实例：
-
-```csharp
-[HttpClientApi(HttpClient = "IMyHttpClient")]
-public interface IMyApi
-{
-    [Get("/users")]
-    Task<List<User>> GetUsersAsync();
-}
-
-// 生成的代码大致结构：
-// internal partial class MyApi : IMyApi
-// {
-//     private readonly IMyHttpClient _httpClient;
-//     ...
-//     public MyApi(IOptions<JsonSerializerOptions> option, IMyHttpClient httpClient)
-//     {
-//         _httpClient = httpClient;
-//     }
-//     // 不生成 _tokenType、_appManager、GetTokenAsync 等 Token 相关代码
-// }
-```
+- `Header` — 注入到 HTTP Header（默认）
+- `Query` — 注入到 URL Query 参数
+- `Path` — 注入到 URL Path
 
 ### 响应解密
 
@@ -319,8 +331,6 @@ Task<SecureData> GetSecureDataAsync([Body] Request request);
 ```
 
 ### 继承支持
-
-支持生成抽象类和类继承：
 
 ```csharp
 // 生成抽象类
@@ -342,8 +352,6 @@ public interface IUserApi : IBaseApi
 
 ### 事件处理器生成
 
-使用 `[GenerateEventHandler]` 特性自动生成事件处理器代码：
-
 ```csharp
 [GenerateEventHandler(
     EventType = "UserCreatedEvent",
@@ -362,34 +370,19 @@ public class UserCreatedEvent
 
 ### 忽略代码生成
 
-#### IgnoreGenerator 特性
-
-忽略属性或字段的代码生成：
-
 ```csharp
+// 忽略方法实现
+[IgnoreImplement]
+[Post("/internal")]
+Task InternalMethodAsync([Body] object data);
+
+// 忽略属性/字段
 public class UserRequest
 {
     public string Name { get; set; }
 
     [IgnoreGenerator]
-    public string InternalField { get; set; }  // 不会生成相关代码
-}
-```
-
-#### IgnoreImplement 特性
-
-忽略方法的实现代码生成：
-
-```csharp
-[HttpClientApi("https://api.example.com")]
-public interface ICustomApi
-{
-    [Get("/users")]
-    Task<List<User>> GetUsersAsync();
-
-    [IgnoreImplement]  // 不会生成此方法的实现代码
-    [Post("/internal")]
-    Task InternalMethodAsync([Body] object data);
+    public string InternalField { get; set; }
 }
 ```
 
@@ -401,116 +394,71 @@ Mud.HttpUtils.Generator/
 │   ├── MethodAnalyzer.cs         # 方法分析
 │   └── ParameterAnalyzer.cs      # 参数分析
 ├── Generators/                   # 代码生成器
-│   ├── Implementation/
+│   ├── Implementation/           # 实现类生成
+│   │   ├── ConstructorGenerator.cs  # 构造函数生成
 │   │   └── RequestBuilder.cs     # 请求构建
-│   ├── HttpInvokeClassSourceGenerator.cs
-│   └── HttpInvokeRegistrationGenerator.cs
+│   ├── HttpInvokeClassSourceGenerator.cs   # 实现类主生成器
+│   └── HttpInvokeRegistrationGenerator.cs  # 注册代码生成器
 ├── Helpers/                      # 辅助类
 │   ├── MethodHelper.cs
 │   └── AttributeDataHelper.cs
 ├── Models/                       # 数据模型
-│   └── Analysis/
-│       └── MethodAnalysisResult.cs
-└── README.md
+│   ├── Analysis/                 # 分析结果模型
+│   └── Metadata/                 # 元数据模型
+│       ├── HttpClientApiInfo.cs        # API 接口信息（含 HttpClientType/TokenManagerType）
+│       └── HttpClientApiInfoBase.cs    # 基础 API 信息
+└── Validators/                   # 验证器
 ```
 
 ## 依赖项
 
-### Mud.HttpUtils.Generator（代码生成器）
-
 - .NET Standard 2.0
 - Microsoft.CodeAnalysis.Analyzers
 - Microsoft.CodeAnalysis.CSharp
+- Mud.HttpUtils.Abstractions（项目引用）
+- Mud.HttpUtils.Attributes（项目引用）
 
-### Mud.HttpUtils（运行时库）
+## 调试生成的代码
 
-支持多目标框架：
+在项目文件中添加以下配置，保留生成的源代码：
 
-- .NET Standard 2.0
-- .NET 6.0
-- .NET 8.0
-- .NET 10.0
+```xml
+<PropertyGroup>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+</PropertyGroup>
+```
 
-依赖项（按目标框架）：
-
-- **.NET 10.0**: Microsoft.Extensions.Logging.Abstractions 10.0.4
-- **.NET 8.0**: Microsoft.Extensions.Logging.Abstractions 8.0.3
-- **.NET 6.0**: Microsoft.Extensions.Logging.Abstractions 8.0.3, System.Text.Json 8.0.5
-- **.NET Standard 2.0**: Microsoft.Extensions.Logging.Abstractions 8.0.3, System.Text.Json 8.0.5, System.Threading.Tasks.Extensions 4.5.4
+生成的代码位于 `obj/Debug/<tfm>/generated/Mud.HttpUtils.Generator/` 目录下。
 
 ## 版本历史
 
+### 1.9.0
+
+- 注册代码生成新增智能注释提示：HttpClient 模式提示 `AddMudHttpClient`，TokenManager 模式提示注册令牌管理器
+- `HttpClientApiInfo` 新增 `HttpClientType` 和 `TokenManagerType` 属性
+
 ### 1.8.0
 
-- 新增事件处理器生成功能，通过 `[GenerateEventHandler]` 特性自动生成事件处理器代码
-- 新增继承支持，支持生成抽象类、类继承、接口继承
-- 新增忽略生成功能，支持 `[IgnoreGenerator]` 和 `[IgnoreImplement]` 特性
-- 完善 XML 序列化支持，支持 XML 格式的请求和响应处理
-- 优化请求体加密功能，支持 JSON 和 XML 两种序列化方式
-- 支持多目标框架：netstandard2.0、net6.0、net8.0、net10.0
+- 新增事件处理器生成功能
+- 新增继承支持
+- 新增忽略生成功能
+- 支持 .NET 10.0
 
 ### 1.7.0
 
-- `TokenAttribute.TokenType` 从枚举类型改为字符串类型，解耦强绑定
-- `HttpClientApiAttribute` 新增 `HttpClient` 属性，支持直接注入 HttpClient 接口
-- `HttpClient` 与 `TokenManage` 互斥，同时定义时 `HttpClient` 优先
-- HttpClient 模式下不生成 Token 相关的字段和方法
-
-### 1.6.3
-
-- 移除 HttpContentTypeAttribute 特性，简化内容类型管理
-- 扩展 HttpMethodAttribute，新增 ContentType 属性
-- 优化响应内容类型处理逻辑，请求/响应类型完全分离
-- 修复响应 ContentType 错误回退到请求 ContentType 的问题
+- `TokenAttribute.TokenType` 改为字符串类型
+- 新增 `HttpClient` 属性
+- `HttpClient` 与 `TokenManage` 互斥
 
 ### 1.0.0
 
 - 初始版本
 - 从 Mud.ServiceCodeGenerator 项目中独立出来
-- 支持基本的 HTTP API 代码生成功能
-
-## 许可证
-
-本项目遵循 MIT 许可证。详细信息请参见 [LICENSE](../../LICENSE-MIT) 文件。
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request 来改进这个项目。
 
 ## 相关项目
 
-- [Mud.CodeGenerator](../Mud.CodeGenerator/) - 基础代码生成框架
-- [Mud.EntityCodeGenerator](../Mud.EntityCodeGenerator/) - 实体代码生成器
-- [Mud.ServiceCodeGenerator](../Mud.ServiceCodeGenerator/) - 服务代码生成器
-
-## 最佳实践
-
-### 1. 接口设计建议
-
-- 使用明确的接口命名，如 `IUserApi`、`IOrderApi`
-- 将相关的 API 方法组织在同一个接口中
-- 为接口添加 XML 注释，提高代码可读性
-
-### 2. 内容类型选择
-
-- **JSON**: 默认推荐，适用于大多数 RESTful API
-- **XML**: 适用于遗留系统或需要严格格式的场景
-- **multipart/form-data**: 适用于文件上传场景
-
-### 3. Token 管理
-
-- 使用接口级 `[Token]` 特性设置默认 Token 类型
-- 对于需要不同 Token 的方法，使用参数级 `[Token]` 特性覆盖
-- 优先使用 `HttpClient` 模式以获得更好的灵活性
-
-### 4. 错误处理
-
-- 所有 API 方法都应返回 `Task<T>` 以支持异步操作
-- 考虑使用 `CancellationToken` 参数支持取消操作
-- 在调用 API 时使用 try-catch 处理可能的异常
-
-### 5. 性能优化
-
-- 合理设置 `Timeout` 值，避免长时间等待
-- 对于大文件下载，使用 `FilePath` 参数直接保存到文件
-- 使用 `ArrayQuery` 特性时，选择合适的分隔符以提高可读性
+- [Mud.HttpUtils](../Mud.HttpUtils/) - 运行时库（元包）
+- [Mud.HttpUtils.Abstractions](../Mud.HttpUtils.Abstractions/) - 接口定义
+- [Mud.HttpUtils.Attributes](../Mud.HttpUtils.Attributes/) - 特性定义
+- [Mud.HttpUtils.Client](../Mud.HttpUtils.Client/) - 客户端实现
+- [Mud.HttpUtils.Resilience](../Mud.HttpUtils.Resilience/) - 弹性策略
