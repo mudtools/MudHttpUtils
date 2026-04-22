@@ -1,23 +1,67 @@
 namespace Mud.HttpUtils;
 
+/// <summary>
+/// 应用管理器接口，用于管理和访问多个应用上下文。
+/// </summary>
+/// <typeparam name="TAppContext">应用上下文的类型，必须实现 <see cref="IMudAppContext"/> 接口。</typeparam>
 public interface IAppManager<TAppContext>
     where TAppContext : IMudAppContext
 {
+    /// <summary>
+    /// 获取指定应用的 API 上下文切换器。
+    /// </summary>
+    /// <typeparam name="TContextSwitcher">上下文切换器的类型，必须实现 <see cref="IAppContextSwitcher"/> 接口。</typeparam>
+    /// <param name="appKey">应用的唯一标识符。</param>
+    /// <returns>指定应用的上下文切换器实例。</returns>
     TContextSwitcher GetWebApi<TContextSwitcher>(string appKey)
         where TContextSwitcher : IAppContextSwitcher;
 
+    /// <summary>
+    /// 获取默认应用的 API 上下文切换器。
+    /// </summary>
+    /// <typeparam name="TContextSwitcher">上下文切换器的类型，必须实现 <see cref="IAppContextSwitcher"/> 接口。</typeparam>
+    /// <returns>默认应用的上下文切换器实例。</returns>
     TContextSwitcher GetDefalutWebApi<TContextSwitcher>()
         where TContextSwitcher : IAppContextSwitcher;
 
+    /// <summary>
+    /// 获取默认的应用上下文。
+    /// </summary>
+    /// <returns>默认的应用上下文实例。</returns>
     TAppContext GetDefaultApp();
 
+    /// <summary>
+    /// 获取指定应用的应用上下文。
+    /// </summary>
+    /// <param name="appKey">应用的唯一标识符。</param>
+    /// <returns>指定应用的应用上下文实例。</returns>
     TAppContext GetApp(string appKey);
 
+    /// <summary>
+    /// 尝试获取指定应用的应用上下文。
+    /// </summary>
+    /// <param name="appKey">应用的唯一标识符。</param>
+    /// <param name="appContext">当此方法返回时，如果找到应用上下文，则包含获取到的应用上下文；否则为 null。</param>
+    /// <returns>如果成功找到应用上下文，则为 true；否则为 false。</returns>
     bool TryGetApp(string appKey, out TAppContext? appContext);
 
+    /// <summary>
+    /// 获取所有已注册的应用上下文。
+    /// </summary>
+    /// <returns>包含所有应用上下文的 enumerable 集合。</returns>
     IEnumerable<TAppContext> GetAllApps();
 
+    /// <summary>
+    /// 检查是否存在指定标识符的应用。
+    /// </summary>
+    /// <param name="appKey">应用的唯一标识符。</param>
+    /// <returns>如果存在指定应用，则为 true；否则为 false。</returns>
     bool HasApp(string appKey);
 
+    /// <summary>
+    /// 移除指定标识符的应用。
+    /// </summary>
+    /// <param name="appKey">应用的唯一标识符。</param>
+    /// <returns>如果成功移除应用，则为 true；否则为 false。</returns>
     bool RemoveApp(string appKey);
 }
