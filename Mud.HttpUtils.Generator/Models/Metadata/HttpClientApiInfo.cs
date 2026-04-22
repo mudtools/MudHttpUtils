@@ -24,11 +24,15 @@ internal sealed class HttpClientApiInfo : HttpClientApiInfoBase
     /// <param name="baseUrl">API 基础地址</param>
     /// <param name="timeout">超时时间（秒）</param>
     /// <param name="registryGroupName">注册组名称</param>
-    public HttpClientApiInfo(string interfaceName, string implementationName, string namespaceName, string baseUrl, int timeout, string? registryGroupName = null)
+    /// <param name="httpClientType">HttpClient 接口类型名称（与 tokenManager 互斥，优先使用）</param>
+    /// <param name="tokenManagerType">Token 管理器类型名称</param>
+    public HttpClientApiInfo(string interfaceName, string implementationName, string namespaceName, string baseUrl, int timeout, string? registryGroupName = null, string? httpClientType = null, string? tokenManagerType = null)
         : base(namespaceName, baseUrl, timeout, registryGroupName)
     {
         InterfaceName = interfaceName ?? throw new ArgumentNullException(nameof(interfaceName));
         ImplementationName = implementationName ?? throw new ArgumentNullException(nameof(implementationName));
+        HttpClientType = httpClientType;
+        TokenManagerType = tokenManagerType;
     }
 
     /// <summary>
@@ -40,4 +44,21 @@ internal sealed class HttpClientApiInfo : HttpClientApiInfoBase
     /// 实现类名称
     /// </summary>
     public string ImplementationName { get; }
+
+    /// <summary>
+    /// HttpClient 接口类型名称（与 TokenManager 互斥，优先使用）
+    /// </summary>
+    /// <remarks>
+    /// 当 [HttpClientApi(HttpClient = "IBaseHttpClient")] 设置了 HttpClient 属性时，构造函数依赖此类型。
+    /// 需要通过 AddMudHttpClient 等方法在 DI 容器中注册此类型。
+    /// </remarks>
+    public string? HttpClientType { get; }
+
+    /// <summary>
+    /// Token 管理器类型名称
+    /// </summary>
+    /// <remarks>
+    /// 当 [HttpClientApi(TokenManage = "IFeishuAppManager")] 设置了 TokenManage 属性时，构造函数依赖此类型。
+    /// </remarks>
+    public string? TokenManagerType { get; }
 }

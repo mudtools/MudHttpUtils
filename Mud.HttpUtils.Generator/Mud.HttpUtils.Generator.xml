@@ -1500,7 +1500,7 @@
             继承自 HttpClientApiInfoBase，包含 HttpClient API 接口特定的信息
             </remarks>
         </member>
-        <member name="M:Mud.HttpUtils.Models.Metadata.HttpClientApiInfo.#ctor(System.String,System.String,System.String,System.String,System.Int32,System.String)">
+        <member name="M:Mud.HttpUtils.Models.Metadata.HttpClientApiInfo.#ctor(System.String,System.String,System.String,System.String,System.Int32,System.String,System.String,System.String)">
             <summary>
             初始化 HttpClient API 信息
             </summary>
@@ -1510,6 +1510,8 @@
             <param name="baseUrl">API 基础地址</param>
             <param name="timeout">超时时间（秒）</param>
             <param name="registryGroupName">注册组名称</param>
+            <param name="httpClientType">HttpClient 接口类型名称（与 tokenManager 互斥，优先使用）</param>
+            <param name="tokenManagerType">Token 管理器类型名称</param>
         </member>
         <member name="P:Mud.HttpUtils.Models.Metadata.HttpClientApiInfo.InterfaceName">
             <summary>
@@ -1520,6 +1522,23 @@
             <summary>
             实现类名称
             </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Models.Metadata.HttpClientApiInfo.HttpClientType">
+            <summary>
+            HttpClient 接口类型名称（与 TokenManager 互斥，优先使用）
+            </summary>
+            <remarks>
+            当 [HttpClientApi(HttpClient = "IBaseHttpClient")] 设置了 HttpClient 属性时，构造函数依赖此类型。
+            需要通过 AddMudHttpClient 等方法在 DI 容器中注册此类型。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.Models.Metadata.HttpClientApiInfo.TokenManagerType">
+            <summary>
+            Token 管理器类型名称
+            </summary>
+            <remarks>
+            当 [HttpClientApi(TokenManage = "IFeishuAppManager")] 设置了 TokenManage 属性时，构造函数依赖此类型。
+            </remarks>
         </member>
         <member name="T:Mud.HttpUtils.Models.Metadata.HttpClientApiInfoBase">
             <summary>

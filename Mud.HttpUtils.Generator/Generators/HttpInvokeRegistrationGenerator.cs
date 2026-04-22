@@ -115,13 +115,24 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         var implementationName = TypeSymbolHelper.GetImplementationClassName(interfaceSymbol.Name);
         var namespaceName = SyntaxHelper.GetNamespaceName(interfaceSyntax);
 
+        // 提取 HttpClient 和 TokenManager 类型信息，用于生成注册提示注释
+        var httpClient = AttributeDataHelper.GetStringValueFromAttribute(httpClientApiAttribute, HttpClientGeneratorConstants.HttpClientProperty);
+        var tokenManage = AttributeDataHelper.GetStringValueFromAttribute(httpClientApiAttribute, HttpClientGeneratorConstants.TokenManageProperty);
+        // 互斥逻辑：HttpClient 优先，与 InterfaceImplementationGenerator 一致
+        var effectiveTokenManage = !string.IsNullOrEmpty(httpClient) ? null : tokenManage;
+        var tokenManagerType = !string.IsNullOrEmpty(effectiveTokenManage)
+            ? TypeSymbolHelper.GetTypeAllDisplayString(compilation, effectiveTokenManage!)
+            : null;
+
         return new HttpClientApiInfo(
             interfaceSymbol.Name,
             implementationName,
             namespaceName,
             baseUrl,
             timeout,
-            registryGroupName);
+            registryGroupName,
+            httpClient,
+            tokenManagerType);
     }
 
     private (string BaseUrl, int Timeout) ExtractAttributeParameters(AttributeData httpClientApiAttribute)
@@ -302,7 +313,25 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         var fullyQualifiedInterface = $"global::{api.Namespace}.{api.InterfaceName}";
         var fullyQualifiedImplementation = $"global::{api.Namespace}.{HttpClientGeneratorConstants.ImplementationNamespaceSuffix}.{api.ImplementationName}";
 
-        codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 HttpClient 包装实现类（瞬时服务）");
+        // 根据构造函数依赖模式生成不同的注释
+        if (!string.IsNullOrEmpty(api.HttpClientType))
+        {
+            // HttpClient 模式：构造函数依赖 HttpClientType，需要用户自行注册
+            codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 HttpClient 包装实现类（瞬时服务）");
+            codeBuilder.AppendLine($"            // 注意：实现类构造函数依赖 {api.HttpClientType}，请确保已通过 AddMudHttpClient 等方法注册此服务");
+        }
+        else if (!string.IsNullOrEmpty(api.TokenManagerType))
+        {
+            // TokenManager 模式：构造函数依赖 TokenManagerType
+            codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 HttpClient 包装实现类（瞬时服务）");
+            codeBuilder.AppendLine($"            // 注意：实现类构造函数依赖 {api.TokenManagerType}，请确保已注册此令牌管理器服务");
+        }
+        else
+        {
+            // 默认模式：构造函数依赖 IMudAppContext
+            codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 HttpClient 包装实现类（瞬时服务）");
+        }
+
         codeBuilder.AppendLine($"            services.AddTransient<{fullyQualifiedInterface}, {fullyQualifiedImplementation}>();");
     }
 }
