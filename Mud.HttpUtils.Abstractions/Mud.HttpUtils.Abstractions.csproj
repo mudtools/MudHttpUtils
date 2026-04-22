@@ -8,12 +8,9 @@
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>
 		<DocumentationFile>$(OutputPath)$(AssemblyName).xml</DocumentationFile>
-		<EnableAotAnalyzer>true</EnableAotAnalyzer>
-		<IsAotCompatible>true</IsAotCompatible>
+		<EnableAotAnalyzer Condition="'$(TargetFramework)' != 'netstandard2.0'">true</EnableAotAnalyzer>
+		<IsAotCompatible Condition="'$(TargetFramework)' != 'netstandard2.0'">true</IsAotCompatible>
 	</PropertyGroup>
-	<ItemGroup>
-		<PackageReference Include="System.Text.Json" Version="8.0.5" />
-	</ItemGroup>
 	<ItemGroup>
 		<None Include="README.md" Pack="true" PackagePath="\" />
 		<None Include="..\Icon.png" Pack="true" PackagePath="\" />

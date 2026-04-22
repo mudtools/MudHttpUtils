@@ -17,7 +17,7 @@
             <param name="logger">日志记录器</param>
             <exception cref="T:System.ArgumentNullException"></exception>
         </member>
-        <member name="M:Mud.HttpUtils.EnhancedHttpClient.SendAsync``1(System.Net.Http.HttpRequestMessage,System.Text.Json.JsonSerializerOptions,System.Threading.CancellationToken)">
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.SendAsync``1(System.Net.Http.HttpRequestMessage,System.Object,System.Threading.CancellationToken)">
             <inheritdoc/>
         </member>
         <member name="M:Mud.HttpUtils.EnhancedHttpClient.DownloadAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
