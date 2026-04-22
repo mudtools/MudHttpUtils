@@ -4,5 +4,48 @@
         <name>Mud.HttpUtils</name>
     </assembly>
     <members>
+        <member name="T:Mud.HttpUtils.MudHttpServiceCollectionExtensions">
+            <summary>
+            Mud.HttpUtils 一站式服务注册扩展方法，自动组合 Client 和 Resilience 的注册。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.MudHttpServiceCollectionExtensions.AddMudHttpUtils(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,System.Action{System.Net.Http.HttpClient},System.Action{Mud.HttpUtils.Resilience.ResilienceOptions})">
+            <summary>
+            添加 Mud.HttpUtils 完整服务到依赖注入容器，包括 HttpClient 客户端和弹性策略装饰器。
+            </summary>
+            <remarks>
+            此方法会依次执行：<br/>
+            1. 注册 Named HttpClient 和 <see cref="T:Mud.HttpUtils.HttpClientFactoryEnhancedClient"/> 为 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/>。<br/>
+            2. 注册弹性策略选项和策略提供器。<br/>
+            3. 用 <see cref="T:Mud.HttpUtils.Resilience.ResilientHttpClient"/> 装饰 <see cref="T:Mud.HttpUtils.IBaseHttpClient"/>，为其添加重试/超时/熔断策略。
+            </remarks>
+            <param name="services">服务集合。</param>
+            <param name="clientName">Named HttpClient 的名称。</param>
+            <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
+            <param name="configureResilienceOptions">配置弹性策略选项的委托（可选）。</param>
+            <returns>服务集合（链式调用）。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.MudHttpServiceCollectionExtensions.AddMudHttpUtils(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,System.String,System.Action{Mud.HttpUtils.Resilience.ResilienceOptions})">
+            <summary>
+            添加 Mud.HttpUtils 完整服务到依赖注入容器，包括 HttpClient 客户端和弹性策略装饰器，
+            并指定基础地址。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="clientName">Named HttpClient 的名称。</param>
+            <param name="baseAddress">HttpClient 的基础地址。</param>
+            <param name="configureResilienceOptions">配置弹性策略选项的委托（可选）。</param>
+            <returns>服务集合（链式调用）。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.MudHttpServiceCollectionExtensions.AddMudHttpUtils(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,Microsoft.Extensions.Configuration.IConfiguration,System.Action{System.Net.Http.HttpClient},System.String)">
+            <summary>
+            添加 Mud.HttpUtils 完整服务到依赖注入容器，弹性策略从配置文件绑定。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="clientName">Named HttpClient 的名称。</param>
+            <param name="configuration">配置实例。</param>
+            <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
+            <param name="configurationSectionPath">配置文件节点路径。默认 "MudHttpResilience"。</param>
+            <returns>服务集合（链式调用）。</returns>
+        </member>
     </members>
 </doc>

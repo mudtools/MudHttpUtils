@@ -13,6 +13,7 @@
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="Tests/Mud.HttpUtils.Client.Tests/Mud.HttpUtils.Client.Tests.csproj" />
+    <Project Path="Tests/Mud.HttpUtils.Resilience.Tests/Mud.HttpUtils.Resilience.Tests.csproj" />
     <Project Path="Tests/Mud.HttpUtils.Generator.Tests/Mud.HttpUtils.Generator.Tests.csproj" />
     <Project Path="Tests/Mud.HttpUtils.Benchmarks/Mud.HttpUtils.Benchmarks.csproj" />
   </Folder>

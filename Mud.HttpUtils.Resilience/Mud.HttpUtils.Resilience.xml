@@ -301,13 +301,46 @@
             <param name="configureOptions">配置弹性策略选项的委托。</param>
             <returns>服务集合（链式调用）。</returns>
         </member>
-        <member name="M:Mud.HttpUtils.Resilience.ServiceCollectionExtensions.AddMudHttpResilienceFromConfiguration(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String)">
+        <member name="M:Mud.HttpUtils.Resilience.ServiceCollectionExtensions.AddMudHttpResilience(Microsoft.Extensions.DependencyInjection.IServiceCollection,Microsoft.Extensions.Configuration.IConfiguration,System.String)">
             <summary>
-            添加 Mud.HttpUtils.Resilience 弹性策略服务到依赖注入容器，并绑定配置文件中的 "MudHttpResilience" 节点。
+            添加 Mud.HttpUtils.Resilience 弹性策略服务到依赖注入容器，并绑定配置文件中的指定节点。
             </summary>
             <param name="services">服务集合。</param>
+            <param name="configuration">配置实例。</param>
             <param name="configurationSectionPath">配置文件节点路径。默认 "MudHttpResilience"。</param>
             <returns>服务集合（链式调用）。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ServiceCollectionExtensions.AddMudHttpResilienceDecorator(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.Action{Mud.HttpUtils.Resilience.ResilienceOptions})">
+            <summary>
+            注册 <see cref="T:Mud.HttpUtils.Resilience.ResilientHttpClient"/> 装饰器，包装已注册的 <see cref="T:Mud.HttpUtils.IBaseHttpClient"/> 实现，
+            为其添加重试、超时、熔断等弹性策略。
+            </summary>
+            <remarks>
+            此方法会：<br/>
+            1. 注册弹性策略选项和策略提供器（如果尚未注册）。<br/>
+            2. 将已注册的 <see cref="T:Mud.HttpUtils.IBaseHttpClient"/> 服务替换为 <see cref="T:Mud.HttpUtils.Resilience.ResilientHttpClient"/> 装饰器，内部委托给原始实现。
+            </remarks>
+            <param name="services">服务集合。</param>
+            <param name="configureOptions">配置弹性策略选项的委托。</param>
+            <returns>服务集合（链式调用）。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ServiceCollectionExtensions.AddMudHttpResilienceDecorator(Microsoft.Extensions.DependencyInjection.IServiceCollection,Microsoft.Extensions.Configuration.IConfiguration,System.String)">
+            <summary>
+            注册 <see cref="T:Mud.HttpUtils.Resilience.ResilientHttpClient"/> 装饰器，包装已注册的 <see cref="T:Mud.HttpUtils.IBaseHttpClient"/> 实现，
+            从配置文件绑定弹性策略选项。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="configuration">配置实例。</param>
+            <param name="configurationSectionPath">配置文件节点路径。默认 "MudHttpResilience"。</param>
+            <returns>服务集合（链式调用）。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ServiceCollectionExtensions.DecorateService``1(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.Func{``0,System.IServiceProvider,``0})">
+            <summary>
+            手动实现装饰器注册：将已注册的 <typeparamref name="TService"/> 服务替换为装饰器包装。
+            </summary>
+            <typeparam name="TService">要装饰的服务类型。</typeparam>
+            <param name="services">服务集合。</param>
+            <param name="decoratorFactory">装饰器工厂，接收内部实例和 ServiceProvider，返回装饰后实例。</param>
         </member>
         <member name="T:Mud.HttpUtils.Resilience.TimeoutHandler">
             <summary>

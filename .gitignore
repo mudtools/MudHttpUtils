@@ -15,7 +15,6 @@
 /Mud.HttpUtils.Client/bin
 /Mud.HttpUtils.Resilience/obj
 /Mud.HttpUtils.Resilience/bin
-
 /bin
 /Tests/bin
 /Tests/Mud.HttpUtils.Client.Tests/bin
@@ -26,6 +25,8 @@
 /Tests/Mud.HttpUtils.Tests/obj
 /Tests/Mud.HttpUtils.Benchmarks/bin
 /Tests/Mud.HttpUtils.Benchmarks/obj
+/Tests/Mud.HttpUtils.Resilience.Tests/bin
+/Tests/Mud.HttpUtils.Resilience.Tests/obj
 /Demos/HttpClientApiDemo/bin
 /Demos/HttpClientApiDemo/obj
 /Demos/CommonClassLibrary/bin
