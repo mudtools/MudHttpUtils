@@ -83,6 +83,18 @@ internal class InterfaceImplementationGenerator
     /// </summary>
     private bool ValidateConfiguration(GenerationConfiguration configuration)
     {
+        var isValid = true;
+
+        // 校验 HttpClient 和 TokenManage 互斥
+        if (!string.IsNullOrEmpty(configuration.HttpClient) && !string.IsNullOrEmpty(configuration.TokenManager))
+        {
+            _context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.HttpClientAndTokenManagerMutuallyExclusive,
+                _interfaceDecl.GetLocation(),
+                _interfaceSymbol.Name));
+            isValid = false;
+        }
+
         if (!string.IsNullOrEmpty(configuration.InheritedFrom))
         {
             var hasTokenManager = !string.IsNullOrEmpty(configuration.TokenManager);
@@ -99,11 +111,11 @@ internal class InterfaceImplementationGenerator
                     _interfaceDecl.GetLocation(),
                     _interfaceSymbol.Name,
                     validationResult.ErrorMessage ?? $"基类 '{configuration.InheritedFrom}' 验证失败"));
-                return false;
+                isValid = false;
             }
         }
 
-        return true;
+        return isValid;
     }
 
     /// <summary>

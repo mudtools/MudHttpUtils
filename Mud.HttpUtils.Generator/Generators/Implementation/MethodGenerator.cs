@@ -100,6 +100,10 @@ internal class MethodGenerator : ICodeFragmentGenerator
         // 检查复杂查询参数是否实现 IQueryParameter 接口（AOT 兼容性警告）
         ReportAotCompatibilityWarnings(context, methodInfo);
 
+        // 校验 HttpClient 类型与方法调用的兼容性
+        if (!ValidateHttpClientCompatibility(context, methodInfo))
+            return;
+
         var hasTokenManager = !string.IsNullOrEmpty(context.Configuration.TokenManager);
         var hasHttpClient = !string.IsNullOrEmpty(context.Configuration.HttpClient);
         var needsTokenInjection = ShouldInjectToken(methodInfo, hasTokenManager, hasHttpClient);
@@ -260,5 +264,90 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     methodInfo.MethodName ?? "Unknown",
                     param.Type));
         }
+    }
+
+    /// <summary>
+    /// 校验 HttpClient 类型与方法调用的兼容性（加密、XML）
+    /// </summary>
+    private bool ValidateHttpClientCompatibility(GeneratorContext context, MethodAnalysisResult methodInfo)
+    {
+        var httpClientType = context.Configuration.HttpClient;
+        if (string.IsNullOrEmpty(httpClientType))
+            return true;
+
+        var isValid = true;
+
+        // 校验加密兼容性：EnableEncrypt=true 时 HttpClient 必须实现 IEncryptableHttpClient
+        if (methodInfo.BodyEnableEncrypt)
+        {
+            if (!HttpClientTypeSupportsInterface(context.Compilation, httpClientType!, "IEncryptableHttpClient"))
+            {
+                context.ProductionContext.ReportDiagnostic(
+                    Diagnostic.Create(
+                        Diagnostics.HttpClientEncryptNotSupported,
+                        context.InterfaceDeclaration.GetLocation(),
+                        context.InterfaceDeclaration.Identifier.Text,
+                        methodInfo.MethodName ?? "Unknown",
+                        httpClientType));
+                isValid = false;
+            }
+        }
+
+        // 校验 XML 兼容性：XML 请求/响应时 HttpClient 必须实现 IXmlHttpClient
+        var isXmlRequest = IsXmlContentType(methodInfo.BodyContentType);
+        var isXmlResponse = IsXmlContentType(methodInfo.ResponseContentType);
+        if (isXmlRequest || isXmlResponse)
+        {
+            if (!HttpClientTypeSupportsInterface(context.Compilation, httpClientType!, "IXmlHttpClient"))
+            {
+                context.ProductionContext.ReportDiagnostic(
+                    Diagnostic.Create(
+                        Diagnostics.HttpClientXmlNotSupported,
+                        context.InterfaceDeclaration.GetLocation(),
+                        context.InterfaceDeclaration.Identifier.Text,
+                        methodInfo.MethodName ?? "Unknown",
+                        httpClientType));
+                // XML 不兼容是警告级别，不阻止生成
+            }
+        }
+
+        return isValid;
+    }
+
+    /// <summary>
+    /// 检查指定的 HttpClient 类型是否实现了给定的接口
+    /// </summary>
+    private static bool HttpClientTypeSupportsInterface(Compilation compilation, string httpClientType, string interfaceName)
+    {
+        // IEnhancedHttpClient 继承了 IJsonHttpClient 和 IXmlHttpClient，同时 EnhancedHttpClient 实现了 IEncryptableHttpClient
+        if (httpClientType == "IEnhancedHttpClient")
+            return true;
+
+        // IBaseHttpClient 不支持 XML 和加密
+        if (httpClientType == "IBaseHttpClient")
+            return interfaceName == "IJsonHttpClient" || interfaceName == "IBaseHttpClient";
+
+        // 对于其他自定义类型，尝试从编译中解析类型并检查接口
+        var typeSymbol = compilation.GetTypeByMetadataName(httpClientType)
+            ?? compilation.GetTypesByMetadataName(httpClientType).FirstOrDefault();
+
+        if (typeSymbol != null)
+        {
+            return typeSymbol.AllInterfaces.Any(i => i.Name == interfaceName);
+        }
+
+        // 无法解析类型时，默认通过（避免误报）
+        return true;
+    }
+
+    /// <summary>
+    /// 检查内容类型是否为 XML
+    /// </summary>
+    private static bool IsXmlContentType(string? contentType)
+    {
+        if (string.IsNullOrEmpty(contentType))
+            return false;
+
+        return contentType.IndexOf("xml", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 }

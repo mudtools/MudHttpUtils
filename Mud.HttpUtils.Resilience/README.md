@@ -2,7 +2,7 @@
 
 ## 概述
 
-Mud.HttpUtils.Resilience 是 Mud.HttpUtils 的弹性策略扩展包，基于 Polly 提供 HTTP 请求的重试、超时、熔断等弹性策略。通过装饰器模式包装 `IBaseHttpClient`，无需修改现有代码即可为 HTTP 请求添加弹性能力。
+Mud.HttpUtils.Resilience 是 Mud.HttpUtils 的弹性策略扩展包，基于 Polly 提供 HTTP 请求的重试、超时、熔断等弹性策略。通过装饰器模式包装 `IEnhancedHttpClient`，无需修改现有代码即可为 HTTP 请求添加弹性能力。
 
 **可选扩展**，不影响核心包的使用。仅在需要弹性策略时引用。
 
@@ -19,7 +19,7 @@ Mud.HttpUtils.Resilience 是 Mud.HttpUtils 的弹性策略扩展包，基于 Pol
 
 | 类型 | 说明 |
 |------|------|
-| `ResilientHttpClient` | 弹性 HTTP 客户端装饰器，实现 `IBaseHttpClient`，为内部客户端添加 Polly 策略 |
+| `ResilientHttpClient` | 弹性 HTTP 客户端装饰器，实现 `IEnhancedHttpClient`，为内部客户端添加 Polly 策略 |
 | `PollyResiliencePolicyProvider` | 基于 Polly 的策略提供器实现，创建重试/超时/熔断策略 |
 | `IResiliencePolicyProvider` | 策略提供器接口，可自定义实现 |
 
@@ -38,17 +38,8 @@ Mud.HttpUtils.Resilience 是 Mud.HttpUtils 的弹性策略扩展包，基于 Pol
 |------|------|
 | `AddMudHttpResilience(configureOptions)` | 注册弹性策略选项和策略提供器 |
 | `AddMudHttpResilience(configuration, sectionPath)` | 从 IConfiguration 绑定配置 |
-| `AddMudHttpResilienceDecorator(configureOptions)` | 注册装饰器，将 `IBaseHttpClient` 包装为 `ResilientHttpClient` |
+| `AddMudHttpResilienceDecorator(configureOptions)` | 注册装饰器，将 `IEnhancedHttpClient` 包装为 `ResilientHttpClient` |
 | `AddMudHttpResilienceDecorator(configuration, sectionPath)` | 从配置绑定的装饰器注册 |
-
-### 声明式特性（旧版兼容）
-
-| 类型 | 说明 |
-|------|------|
-| `RetryHandler` | 声明式重试策略处理器 |
-| `RetryAttribute` | 重试标注特性 |
-| `TimeoutHandler` | 全局超时策略处理器 |
-| `CircuitBreakerHandler` | 熔断策略处理器 |
 
 ## 安装
 
@@ -92,7 +83,7 @@ services.AddMudHttpResilienceDecorator(options =>
 });
 ```
 
-> **重要**：`AddMudHttpResilienceDecorator` 必须在 `AddMudHttpClient` 之后调用，因为装饰器需要包装已注册的 `IBaseHttpClient`。
+> **重要**：`AddMudHttpResilienceDecorator` 必须在 `AddMudHttpClient` 之后调用，因为装饰器需要包装已注册的 `IEnhancedHttpClient`。
 
 ### 方式三：仅注册策略服务（不使用装饰器）
 
@@ -208,16 +199,18 @@ options.CircuitBreaker.SamplingDurationSeconds = 60; // 采样持续时间（秒
 
 ## 装饰器原理
 
-`ResilientHttpClient` 是 `IBaseHttpClient` 的装饰器，内部流程：
+`ResilientHttpClient` 是 `IEnhancedHttpClient` 的装饰器，内部流程：
 
 ```
-调用方 → ResilientHttpClient → Polly 策略 → 内部 IBaseHttpClient (HttpClientFactoryEnhancedClient)
+调用方 → ResilientHttpClient → Polly 策略 → 内部 IEnhancedHttpClient (HttpClientFactoryEnhancedClient)
 ```
 
 `AddMudHttpResilienceDecorator` 的工作原理：
-1. 从 DI 容器中找到已注册的 `IBaseHttpClient` 描述符
+1. 从 DI 容器中找到已注册的 `IEnhancedHttpClient` 描述符
 2. 移除原始注册
 3. 注册新的工厂，在解析时创建 `ResilientHttpClient` 包装原始实现
+
+> **注意**：`ResilientHttpClient` 实现了 `IEnhancedHttpClient`（包含 JSON/XML 所有方法），所有 HTTP 请求方法均通过 Polly 策略包装。加密方法（`IEncryptableHttpClient.EncryptContent`）不经过弹性策略包装，因为加密是请求前的本地数据转换操作，不涉及网络 I/O。
 
 ## 依赖关系
 

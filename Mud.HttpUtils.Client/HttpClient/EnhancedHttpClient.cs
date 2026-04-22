@@ -15,7 +15,7 @@ namespace Mud.HttpUtils;
 /// <summary>
 /// 增强型HttpClient抽象类，提供了发送HTTP请求和下载文件的基本功能，具体实现由子类完成
 /// </summary>
-public abstract class EnhancedHttpClient : IEnhancedHttpClient
+public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttpClient
 {
     private readonly ILogger _logger;
     private readonly HttpClient _httpClient;

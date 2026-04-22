@@ -493,6 +493,21 @@
             检查复杂查询参数是否实现 IQueryParameter 接口，未实现时发出 AOT 兼容性警告
             </summary>
         </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.MethodGenerator.ValidateHttpClientCompatibility(Mud.HttpUtils.Generators.Context.GeneratorContext,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult)">
+            <summary>
+            校验 HttpClient 类型与方法调用的兼容性（加密、XML）
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.MethodGenerator.HttpClientTypeSupportsInterface(Microsoft.CodeAnalysis.Compilation,System.String,System.String)">
+            <summary>
+            检查指定的 HttpClient 类型是否实现了给定的接口
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.MethodGenerator.IsXmlContentType(System.String)">
+            <summary>
+            检查内容类型是否为 XML
+            </summary>
+        </member>
         <member name="T:Mud.HttpUtils.Generators.Implementation.RequestBuilder">
             <summary>
             HTTP 请求构建器，负责生成 HTTP 请求的构建逻辑

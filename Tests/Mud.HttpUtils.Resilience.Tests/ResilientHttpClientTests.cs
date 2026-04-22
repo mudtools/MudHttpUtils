@@ -19,7 +19,7 @@ public class ResilientHttpClientTests
     [Fact]
     public void Constructor_WithNullPolicyProvider_ShouldThrowArgumentNullException()
     {
-        var mockInner = new Mock<IBaseHttpClient>();
+        var mockInner = new Mock<IEnhancedHttpClient>();
         var act = () => new ResilientHttpClient(mockInner.Object, null!);
 
         act.Should().Throw<ArgumentNullException>()
@@ -29,7 +29,7 @@ public class ResilientHttpClientTests
     [Fact]
     public void Constructor_WithValidArguments_ShouldCreateInstance()
     {
-        var mockInner = new Mock<IBaseHttpClient>();
+        var mockInner = new Mock<IEnhancedHttpClient>();
         var mockPolicyProvider = new Mock<IResiliencePolicyProvider>();
 
         var client = new ResilientHttpClient(mockInner.Object, mockPolicyProvider.Object);
@@ -40,7 +40,7 @@ public class ResilientHttpClientTests
     [Fact]
     public void Constructor_WithLogger_ShouldCreateInstance()
     {
-        var mockInner = new Mock<IBaseHttpClient>();
+        var mockInner = new Mock<IEnhancedHttpClient>();
         var mockPolicyProvider = new Mock<IResiliencePolicyProvider>();
         var mockLogger = new Mock<ILogger<ResilientHttpClient>>();
 

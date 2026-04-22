@@ -120,7 +120,7 @@ public class UserService
 |------|------|
 | `AddMudHttpResilience(configureOptions)` | 仅注册策略服务（不装饰客户端） |
 | `AddMudHttpResilience(configuration, sectionPath)` | 从配置绑定策略 |
-| `AddMudHttpResilienceDecorator(configureOptions)` | 注册装饰器，为 `IBaseHttpClient` 添加弹性策略 |
+| `AddMudHttpResilienceDecorator(configureOptions)` | 注册装饰器，为 `IEnhancedHttpClient` 添加弹性策略 |
 | `AddMudHttpResilienceDecorator(configuration, sectionPath)` | 从配置绑定的装饰器注册 |
 
 > **注意**：`AddMudHttpResilienceDecorator` 必须在 `AddMudHttpClient` 之后调用。
@@ -405,8 +405,8 @@ services.AddMudHttpUtils("myApi", configuration, configureHttpClient: client =>
 | `IBaseHttpClient` | 基础 HTTP 操作（SendAsync、DownloadAsync） |
 | `IJsonHttpClient` | JSON 操作（GetAsync、PostAsJsonAsync） |
 | `IXmlHttpClient` | XML 操作（SendXmlAsync、PostAsXmlAsync） |
-| `IEncryptableHttpClient` | 加密操作（EncryptContent） |
-| `IEnhancedHttpClient` | 组合标记接口，继承上述所有接口 |
+| `IEncryptableHttpClient` | 加密操作（EncryptContent），独立接口 |
+| `IEnhancedHttpClient` | 增强组合接口，继承 IBaseHttpClient、IJsonHttpClient、IXmlHttpClient |
 | `ITokenManager` | 通用令牌管理 |
 | `IUserTokenManager` | 用户令牌管理 |
 | `IMudAppContext` | 应用上下文 |

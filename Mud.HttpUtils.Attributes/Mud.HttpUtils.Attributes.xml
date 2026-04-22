@@ -4,5 +4,11 @@
         <name>Mud.HttpUtils.Attributes</name>
     </assembly>
     <members>
+        <member name="P:Mud.HttpUtils.Attributes.BodyAttribute.RawString">
+            <summary>
+            是否将参数作为原始字符串发送（不进行 JSON 序列化，也不调用 ToString()）。
+            适用于直接发送纯文本或预格式化字符串的场景。
+            </summary>
+        </member>
     </members>
 </doc>

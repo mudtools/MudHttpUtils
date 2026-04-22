@@ -172,6 +172,7 @@ internal class RequestBuilder
 
         var bodyAttr = bodyParam.Attributes.First(a => a.Name == HttpClientGeneratorConstants.BodyAttribute);
         var useStringContent = GetUseStringContentFlag(bodyAttr);
+        var rawString = GetRawStringFlag(bodyAttr);
         var contentType = GetBodyContentType(bodyAttr);
         var hasExplicitContentType = bodyAttr.Arguments.Length > 0 || bodyAttr.NamedArguments.ContainsKey("ContentType");
 
@@ -196,14 +197,19 @@ internal class RequestBuilder
         {
             var propertyName = methodInfo.BodyEncryptPropertyName ?? "data";
             var serializeType = methodInfo.BodyEncryptSerializeType ?? "Json";
-            string httpClient = "_appContext.Value!.HttpClient";
+            // IEnhancedHttpClient 不继承 IEncryptableHttpClient，需要转型调用加密方法
+            string httpClient = "((IEncryptableHttpClient)_appContext.Value!.HttpClient)";
             if (hasHttpClient)
             {
-                httpClient = "_httpClient";
+                httpClient = "((IEncryptableHttpClient)_httpClient)";
             }
 
             codeBuilder.AppendLine($"            var encryptedContent = {httpClient}.EncryptContent({bodyParam.Name}, \"{propertyName}\", SerializeType.{serializeType});");
             codeBuilder.AppendLine($"            httpRequest.Content = new StringContent(encryptedContent, Encoding.UTF8, {contentTypeExpression});");
+        }
+        else if (rawString)
+        {
+            codeBuilder.AppendLine($"            httpRequest.Content = new StringContent({bodyParam.Name}, Encoding.UTF8, {contentTypeExpression});");
         }
         else if (useStringContent)
         {
@@ -515,6 +521,14 @@ internal class RequestBuilder
             return false;
 
         return bool.TryParse(useStringContentArg?.ToString(), out var result) && result;
+    }
+
+    private bool GetRawStringFlag(ParameterAttributeInfo bodyAttr)
+    {
+        if (!bodyAttr.NamedArguments.TryGetValue("RawString", out var rawStringArg))
+            return false;
+
+        return bool.TryParse(rawStringArg?.ToString(), out var result) && result;
     }
 
     /// <summary>

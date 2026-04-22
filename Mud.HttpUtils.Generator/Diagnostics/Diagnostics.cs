@@ -70,6 +70,30 @@ internal static class Diagnostics
         category: "代码生成",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor HttpClientAndTokenManagerMutuallyExclusive = new(
+        id: "HTTPCLIENT007",
+        title: "HttpClient 与 TokenManage 互斥",
+        messageFormat: "接口 {0} 同时指定了 HttpClient 和 TokenManage 属性，两者互斥。请只设置其中一个。",
+        category: "代码生成",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor HttpClientEncryptNotSupported = new(
+        id: "HTTPCLIENT008",
+        title: "HttpClient 类型不支持加密",
+        messageFormat: "接口 {0} 的方法 {1} 启用了加密（EnableEncrypt=true），但指定的 HttpClient 类型 '{2}' 未实现 IEncryptableHttpClient 接口。请使用同时实现了 IEncryptableHttpClient 的类型（如 IEnhancedHttpClient），或移除加密配置。",
+        category: "代码生成",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor HttpClientXmlNotSupported = new(
+        id: "HTTPCLIENT009",
+        title: "HttpClient 类型不支持 XML 请求",
+        messageFormat: "接口 {0} 的方法 {1} 需要 XML 请求/响应，但指定的 HttpClient 类型 '{2}' 未实现 IXmlHttpClient 接口。请使用同时实现了 IXmlHttpClient 的类型（如 IEnhancedHttpClient），或修改方法的内容类型配置。",
+        category: "代码生成",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
     #endregion
 
     #region HttpClient注册生成器诊断信息 (HTTPCLIENTREG001-002)

@@ -4,66 +4,6 @@
         <name>Mud.HttpUtils.Resilience</name>
     </assembly>
     <members>
-        <member name="T:Mud.HttpUtils.Resilience.CircuitBreakerHandler">
-            <summary>
-            熔断策略处理器，当连续失败次数超过阈值时，短时间内快速拒绝请求，防止级联故障。
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Resilience.CircuitBreakerHandler.#ctor(System.Int32,System.TimeSpan,Microsoft.Extensions.Logging.ILogger)">
-            <summary>
-            初始化 CircuitBreakerHandler 实例。
-            </summary>
-            <param name="failureThreshold">触发熔断的连续失败阈值。</param>
-            <param name="breakDuration">熔断持续时间。</param>
-            <param name="logger">日志记录器（可选）。</param>
-            <exception cref="T:System.ArgumentOutOfRangeException">参数无效时抛出。</exception>
-        </member>
-        <member name="P:Mud.HttpUtils.Resilience.CircuitBreakerHandler.State">
-            <summary>
-            当前熔断器状态。
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Resilience.CircuitBreakerHandler.ExecuteAsync``1(System.Func{System.Threading.Tasks.Task{``0}},System.Threading.CancellationToken)">
-            <summary>
-            执行带熔断控制的异步操作。
-            </summary>
-            <typeparam name="TResult">操作返回类型。</typeparam>
-            <param name="operation">需要执行的异步操作。</param>
-            <param name="cancellationToken">取消令牌。</param>
-            <returns>操作结果。</returns>
-            <exception cref="T:Mud.HttpUtils.Resilience.CircuitBreakerOpenException">当熔断器处于开启状态时抛出。</exception>
-        </member>
-        <member name="T:Mud.HttpUtils.Resilience.CircuitState">
-            <summary>
-            熔断器状态枚举。
-            </summary>
-        </member>
-        <member name="F:Mud.HttpUtils.Resilience.CircuitState.Closed">
-            <summary>
-            关闭状态：正常处理请求。
-            </summary>
-        </member>
-        <member name="F:Mud.HttpUtils.Resilience.CircuitState.Open">
-            <summary>
-            开启状态：快速拒绝请求。
-            </summary>
-        </member>
-        <member name="F:Mud.HttpUtils.Resilience.CircuitState.HalfOpen">
-            <summary>
-            半开状态：允许试探请求以检测服务是否恢复。
-            </summary>
-        </member>
-        <member name="T:Mud.HttpUtils.Resilience.CircuitBreakerOpenException">
-            <summary>
-            熔断器开启时抛出的异常。
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Resilience.CircuitBreakerOpenException.#ctor(System.String)">
-            <summary>
-            初始化 CircuitBreakerOpenException 实例。
-            </summary>
-            <param name="message">异常消息。</param>
-        </member>
         <member name="T:Mud.HttpUtils.Resilience.IResiliencePolicyProvider">
             <summary>
             弹性策略提供器接口，负责创建和管理 Polly 弹性策略。
@@ -220,10 +160,18 @@
         </member>
         <member name="T:Mud.HttpUtils.Resilience.ResilientHttpClient">
             <summary>
-            弹性 HTTP 客户端装饰器，为 <see cref="T:Mud.HttpUtils.IBaseHttpClient"/> 实现添加 Polly 弹性策略。
+            弹性 HTTP 客户端装饰器，为 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 实现添加 Polly 弹性策略。
             </summary>
+            <remarks>
+            此装饰器实现了 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 接口，将所有 HTTP 请求方法
+            （JSON、XML、下载等）通过 Polly 弹性策略包装后转发给内部客户端。
+            <para>
+            注意：<see cref="M:Mud.HttpUtils.IEncryptableHttpClient.EncryptContent(System.Object,System.String,Mud.HttpUtils.SerializeType)"/> 方法不经过弹性策略包装，
+            因为加密是请求前的本地数据转换操作，不涉及网络 I/O。
+            </para>
+            </remarks>
         </member>
-        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.#ctor(Mud.HttpUtils.IBaseHttpClient,Mud.HttpUtils.Resilience.IResiliencePolicyProvider,Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.Resilience.ResilientHttpClient})">
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.#ctor(Mud.HttpUtils.IEnhancedHttpClient,Mud.HttpUtils.Resilience.IResiliencePolicyProvider,Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.Resilience.ResilientHttpClient})">
             <summary>
             初始化 ResilientHttpClient 实例。
             </summary>
@@ -241,52 +189,26 @@
         <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.DownloadLargeAsync(System.Net.Http.HttpRequestMessage,System.String,System.Boolean,System.Threading.CancellationToken)">
             <inheritdoc />
         </member>
-        <member name="T:Mud.HttpUtils.Resilience.RetryAttribute">
-            <summary>
-            重试策略特性，用于标注 HTTP 请求方法的重试行为。
-            </summary>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.GetAsync``1(System.String,System.Threading.CancellationToken)">
+            <inheritdoc />
         </member>
-        <member name="P:Mud.HttpUtils.Resilience.RetryAttribute.MaxRetries">
-            <summary>
-            最大重试次数。
-            </summary>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.PostAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
+            <inheritdoc />
         </member>
-        <member name="P:Mud.HttpUtils.Resilience.RetryAttribute.DelayMilliseconds">
-            <summary>
-            重试间隔（毫秒），使用固定间隔策略。
-            </summary>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.PutAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
+            <inheritdoc />
         </member>
-        <member name="P:Mud.HttpUtils.Resilience.RetryAttribute.UseExponentialBackoff">
-            <summary>
-            是否使用指数退避策略。如果为 true，DelayMilliseconds 作为初始间隔。
-            </summary>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.SendXmlAsync``1(System.Net.Http.HttpRequestMessage,System.Text.Encoding,System.Threading.CancellationToken)">
+            <inheritdoc />
         </member>
-        <member name="P:Mud.HttpUtils.Resilience.RetryAttribute.RetryStatusCodes">
-            <summary>
-            需要触发重试的 HTTP 状态码集合。为空时默认对 5xx 和 408/429 重试。
-            </summary>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.PostAsXmlAsync``2(System.String,``0,System.Text.Encoding,System.Threading.CancellationToken)">
+            <inheritdoc />
         </member>
-        <member name="T:Mud.HttpUtils.Resilience.RetryHandler">
-            <summary>
-            重试策略处理器，为 HTTP 请求提供声明式重试能力。
-            </summary>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.PutAsXmlAsync``2(System.String,``0,System.Text.Encoding,System.Threading.CancellationToken)">
+            <inheritdoc />
         </member>
-        <member name="M:Mud.HttpUtils.Resilience.RetryHandler.#ctor(Microsoft.Extensions.Logging.ILogger)">
-            <summary>
-            初始化 RetryHandler 实例。
-            </summary>
-            <param name="logger">日志记录器（可选）</param>
-        </member>
-        <member name="M:Mud.HttpUtils.Resilience.RetryHandler.ExecuteAsync``1(System.Func{System.Threading.Tasks.Task{``0}},Mud.HttpUtils.Resilience.RetryAttribute,System.Threading.CancellationToken)">
-            <summary>
-            执行带重试策略的异步操作。
-            </summary>
-            <typeparam name="TResult">操作返回类型。</typeparam>
-            <param name="operation">需要执行的异步操作。</param>
-            <param name="retryAttribute">重试策略配置。</param>
-            <param name="cancellationToken">取消令牌。</param>
-            <returns>操作结果。</returns>
-            <exception cref="T:System.Net.Http.HttpRequestException">当所有重试均失败时抛出最后一次异常。</exception>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.GetXmlAsync``1(System.String,System.Text.Encoding,System.Threading.CancellationToken)">
+            <inheritdoc />
         </member>
         <member name="T:Mud.HttpUtils.Resilience.ServiceCollectionExtensions">
             <summary>
@@ -312,13 +234,13 @@
         </member>
         <member name="M:Mud.HttpUtils.Resilience.ServiceCollectionExtensions.AddMudHttpResilienceDecorator(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.Action{Mud.HttpUtils.Resilience.ResilienceOptions})">
             <summary>
-            注册 <see cref="T:Mud.HttpUtils.Resilience.ResilientHttpClient"/> 装饰器，包装已注册的 <see cref="T:Mud.HttpUtils.IBaseHttpClient"/> 实现，
+            注册 <see cref="T:Mud.HttpUtils.Resilience.ResilientHttpClient"/> 装饰器，包装已注册的 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 实现，
             为其添加重试、超时、熔断等弹性策略。
             </summary>
             <remarks>
             此方法会：<br/>
             1. 注册弹性策略选项和策略提供器（如果尚未注册）。<br/>
-            2. 将已注册的 <see cref="T:Mud.HttpUtils.IBaseHttpClient"/> 服务替换为 <see cref="T:Mud.HttpUtils.Resilience.ResilientHttpClient"/> 装饰器，内部委托给原始实现。
+            2. 将已注册的 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 服务替换为 <see cref="T:Mud.HttpUtils.Resilience.ResilientHttpClient"/> 装饰器，内部委托给原始实现。
             </remarks>
             <param name="services">服务集合。</param>
             <param name="configureOptions">配置弹性策略选项的委托。</param>
@@ -326,7 +248,7 @@
         </member>
         <member name="M:Mud.HttpUtils.Resilience.ServiceCollectionExtensions.AddMudHttpResilienceDecorator(Microsoft.Extensions.DependencyInjection.IServiceCollection,Microsoft.Extensions.Configuration.IConfiguration,System.String)">
             <summary>
-            注册 <see cref="T:Mud.HttpUtils.Resilience.ResilientHttpClient"/> 装饰器，包装已注册的 <see cref="T:Mud.HttpUtils.IBaseHttpClient"/> 实现，
+            注册 <see cref="T:Mud.HttpUtils.Resilience.ResilientHttpClient"/> 装饰器，包装已注册的 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 实现，
             从配置文件绑定弹性策略选项。
             </summary>
             <param name="services">服务集合。</param>
@@ -341,33 +263,6 @@
             <typeparam name="TService">要装饰的服务类型。</typeparam>
             <param name="services">服务集合。</param>
             <param name="decoratorFactory">装饰器工厂，接收内部实例和 ServiceProvider，返回装饰后实例。</param>
-        </member>
-        <member name="T:Mud.HttpUtils.Resilience.TimeoutHandler">
-            <summary>
-            全局超时策略处理器，为 HTTP 请求提供统一的超时控制。
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Resilience.TimeoutHandler.#ctor(System.TimeSpan)">
-            <summary>
-            初始化 TimeoutHandler 实例。
-            </summary>
-            <param name="timeout">超时时间。</param>
-            <exception cref="T:System.ArgumentOutOfRangeException">timeout 小于或等于零时抛出。</exception>
-        </member>
-        <member name="P:Mud.HttpUtils.Resilience.TimeoutHandler.Timeout">
-            <summary>
-            获取配置的超时时间。
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Resilience.TimeoutHandler.ExecuteAsync``1(System.Func{System.Threading.CancellationToken,System.Threading.Tasks.Task{``0}},System.Threading.CancellationToken)">
-            <summary>
-            执行带超时控制的异步操作。
-            </summary>
-            <typeparam name="TResult">操作返回类型。</typeparam>
-            <param name="operation">需要执行的异步操作。</param>
-            <param name="cancellationToken">外部取消令牌。</param>
-            <returns>操作结果。</returns>
-            <exception cref="T:System.TimeoutException">当操作超时时抛出。</exception>
         </member>
     </members>
 </doc>

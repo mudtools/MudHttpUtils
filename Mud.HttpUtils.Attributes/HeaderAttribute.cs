@@ -32,8 +32,6 @@ public sealed class HeaderAttribute : Attribute
 
     public string? AliasAs { get; set; }
 
-    public bool Escape { get; set; }
-
     public bool Replace { get; set; }
 
     internal bool HasSetValue { get; private set; }

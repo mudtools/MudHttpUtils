@@ -52,11 +52,11 @@ public class ServiceCollectionExtensionsTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        // 装饰器注册阶段就会抛出异常，因为找不到 IBaseHttpClient 注册
+        // 装饰器注册阶段就会抛出异常，因为找不到 IEnhancedHttpClient 注册
         var act = () => services.AddMudHttpResilienceDecorator();
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("*IBaseHttpClient*");
+            .WithMessage("*IEnhancedHttpClient*");
     }
 
     [Fact]
@@ -66,13 +66,13 @@ public class ServiceCollectionExtensionsTests
         services.AddLogging();
 
         // 先注册基础客户端
-        services.AddTransient<IBaseHttpClient, TestHttpClient>();
+        services.AddTransient<IEnhancedHttpClient, TestEnhancedClient>();
 
         // 再添加装饰器
         services.AddMudHttpResilienceDecorator();
 
         using var provider = services.BuildServiceProvider();
-        var client = provider.GetRequiredService<IBaseHttpClient>();
+        var client = provider.GetRequiredService<IEnhancedHttpClient>();
 
         client.Should().NotBeNull();
         client.Should().BeOfType<ResilientHttpClient>();
@@ -84,11 +84,11 @@ public class ServiceCollectionExtensionsTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddTransient<IBaseHttpClient, TestHttpClient>();
+        services.AddTransient<IEnhancedHttpClient, TestEnhancedClient>();
         services.AddMudHttpResilienceDecorator();
 
         using var provider = services.BuildServiceProvider();
-        var client = provider.GetRequiredService<IBaseHttpClient>() as ResilientHttpClient;
+        var client = provider.GetRequiredService<IEnhancedHttpClient>() as ResilientHttpClient;
 
         client.Should().NotBeNull();
     }
@@ -99,7 +99,7 @@ public class ServiceCollectionExtensionsTests
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddTransient<IBaseHttpClient, TestHttpClient>();
+        services.AddTransient<IEnhancedHttpClient, TestEnhancedClient>();
         services.AddMudHttpResilienceDecorator();
 
         using var provider = services.BuildServiceProvider();
@@ -130,19 +130,19 @@ public class ServiceCollectionExtensionsTests
 
         using var provider = services.BuildServiceProvider();
 
-        // IBaseHttpClient 应该是装饰后的 ResilientHttpClient
+        // IEnhancedHttpClient 应该是装饰后的 ResilientHttpClient
+        var enhancedClient = provider.GetRequiredService<IEnhancedHttpClient>();
+        enhancedClient.Should().BeOfType<ResilientHttpClient>();
+
+        // IBaseHttpClient 也应该是装饰后的 ResilientHttpClient（通过 IEnhancedHttpClient 解析）
         var baseClient = provider.GetRequiredService<IBaseHttpClient>();
         baseClient.Should().BeOfType<ResilientHttpClient>();
-
-        // IEnhancedHttpClient 应该是原始的 HttpClientFactoryEnhancedClient
-        var enhancedClient = provider.GetRequiredService<IEnhancedHttpClient>();
-        enhancedClient.Should().BeOfType<HttpClientFactoryEnhancedClient>();
     }
 
     /// <summary>
-    /// 用于测试的 IBaseHttpClient 空实现
+    /// 用于测试的 IEnhancedHttpClient 空实现
     /// </summary>
-    private class TestHttpClient : IBaseHttpClient
+    private class TestEnhancedClient : IEnhancedHttpClient
     {
         public Task<TResult?> SendAsync<TResult>(HttpRequestMessage request, object? jsonSerializerOptions = null, CancellationToken cancellationToken = default)
             => Task.FromResult(default(TResult));
@@ -152,5 +152,26 @@ public class ServiceCollectionExtensionsTests
 
         public Task<FileInfo> DownloadLargeAsync(HttpRequestMessage request, string filePath, bool overwrite = true, CancellationToken cancellationToken = default)
             => Task.FromResult(new FileInfo(filePath));
+
+        public Task<TResult?> GetAsync<TResult>(string requestUri, CancellationToken cancellationToken = default)
+            => Task.FromResult(default(TResult));
+
+        public Task<TResult?> PostAsJsonAsync<TRequest, TResult>(string requestUri, TRequest requestData, CancellationToken cancellationToken = default)
+            => Task.FromResult(default(TResult));
+
+        public Task<TResult?> PutAsJsonAsync<TRequest, TResult>(string requestUri, TRequest requestData, CancellationToken cancellationToken = default)
+            => Task.FromResult(default(TResult));
+
+        public Task<TResult?> SendXmlAsync<TResult>(HttpRequestMessage request, Encoding? encoding = null, CancellationToken cancellationToken = default)
+            => Task.FromResult(default(TResult));
+
+        public Task<TResult?> PostAsXmlAsync<TRequest, TResult>(string requestUri, TRequest requestData, Encoding? encoding = null, CancellationToken cancellationToken = default)
+            => Task.FromResult(default(TResult));
+
+        public Task<TResult?> PutAsXmlAsync<TRequest, TResult>(string requestUri, TRequest requestData, Encoding? encoding = null, CancellationToken cancellationToken = default)
+            => Task.FromResult(default(TResult));
+
+        public Task<TResult?> GetXmlAsync<TResult>(string requestUri, Encoding? encoding = null, CancellationToken cancellationToken = default)
+            => Task.FromResult(default(TResult));
     }
 }

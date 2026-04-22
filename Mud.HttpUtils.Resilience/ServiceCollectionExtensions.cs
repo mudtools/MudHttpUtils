@@ -73,13 +73,13 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// 注册 <see cref="ResilientHttpClient"/> 装饰器，包装已注册的 <see cref="IBaseHttpClient"/> 实现，
+    /// 注册 <see cref="ResilientHttpClient"/> 装饰器，包装已注册的 <see cref="IEnhancedHttpClient"/> 实现，
     /// 为其添加重试、超时、熔断等弹性策略。
     /// </summary>
     /// <remarks>
     /// 此方法会：<br/>
     /// 1. 注册弹性策略选项和策略提供器（如果尚未注册）。<br/>
-    /// 2. 将已注册的 <see cref="IBaseHttpClient"/> 服务替换为 <see cref="ResilientHttpClient"/> 装饰器，内部委托给原始实现。
+    /// 2. 将已注册的 <see cref="IEnhancedHttpClient"/> 服务替换为 <see cref="ResilientHttpClient"/> 装饰器，内部委托给原始实现。
     /// </remarks>
     /// <param name="services">服务集合。</param>
     /// <param name="configureOptions">配置弹性策略选项的委托。</param>
@@ -94,8 +94,8 @@ public static class ServiceCollectionExtensions
         // 确保弹性策略服务已注册
         services.AddMudHttpResilience(configureOptions);
 
-        // 装饰 IBaseHttpClient：将原始实现包装在 ResilientHttpClient 中
-        DecorateService<IBaseHttpClient>(services, (inner, sp) =>
+        // 装饰 IEnhancedHttpClient：将原始实现包装在 ResilientHttpClient 中
+        DecorateService<IEnhancedHttpClient>(services, (inner, sp) =>
         {
             var policyProvider = sp.GetRequiredService<IResiliencePolicyProvider>();
             var logger = sp.GetService<ILogger<ResilientHttpClient>>();
@@ -106,7 +106,7 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// 注册 <see cref="ResilientHttpClient"/> 装饰器，包装已注册的 <see cref="IBaseHttpClient"/> 实现，
+    /// 注册 <see cref="ResilientHttpClient"/> 装饰器，包装已注册的 <see cref="IEnhancedHttpClient"/> 实现，
     /// 从配置文件绑定弹性策略选项。
     /// </summary>
     /// <param name="services">服务集合。</param>
@@ -124,8 +124,8 @@ public static class ServiceCollectionExtensions
         // 确保弹性策略服务已注册（从配置绑定）
         services.AddMudHttpResilience(configuration, configurationSectionPath);
 
-        // 装饰 IBaseHttpClient
-        DecorateService<IBaseHttpClient>(services, (inner, sp) =>
+        // 装饰 IEnhancedHttpClient
+        DecorateService<IEnhancedHttpClient>(services, (inner, sp) =>
         {
             var policyProvider = sp.GetRequiredService<IResiliencePolicyProvider>();
             var logger = sp.GetService<ILogger<ResilientHttpClient>>();
@@ -151,7 +151,7 @@ public static class ServiceCollectionExtensions
         if (wrappedDescriptor == null)
         {
             throw new InvalidOperationException(
-                $"未找到已注册的 {typeof(TService).Name} 服务。请先注册基础客户端（如调用 AddMudHttpClient）后再添加装饰器。");
+                $"未找到已注册的 {typeof(TService).Name} 服务。请先注册增强客户端（如调用 AddMudHttpClient）后再添加装饰器。");
         }
 
         // 移除原始注册

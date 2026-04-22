@@ -16,7 +16,7 @@ public static class MudHttpServiceCollectionExtensions
     /// 此方法会依次执行：<br/>
     /// 1. 注册 Named HttpClient 和 <see cref="HttpClientFactoryEnhancedClient"/> 为 <see cref="IEnhancedHttpClient"/>。<br/>
     /// 2. 注册弹性策略选项和策略提供器。<br/>
-    /// 3. 用 <see cref="Resilience.ResilientHttpClient"/> 装饰 <see cref="IBaseHttpClient"/>，为其添加重试/超时/熔断策略。
+    /// 3. 用 <see cref="Resilience.ResilientHttpClient"/> 装饰 <see cref="IEnhancedHttpClient"/>，为其添加重试/超时/熔断策略。
     /// </remarks>
     /// <param name="services">服务集合。</param>
     /// <param name="clientName">Named HttpClient 的名称。</param>
