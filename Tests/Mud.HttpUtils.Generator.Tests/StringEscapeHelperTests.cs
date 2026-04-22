@@ -21,7 +21,7 @@ public class StringEscapeHelperTests
 
     public StringEscapeHelperTests()
     {
-        _stringEscapeHelperType = TestHelper.GetType("Mud.CodeGenerator.StringEscapeHelper");
+        _stringEscapeHelperType = TestHelper.GetType("Mud.HttpUtils.StringEscapeHelper");
         _escapeStringMethod = TestHelper.GetMethod(_stringEscapeHelperType, "EscapeString");
         _escapeCharMethod = TestHelper.GetMethod(_stringEscapeHelperType, "EscapeChar");
         _normalizeEventTypeMethod = TestHelper.GetMethod(_stringEscapeHelperType, "NormalizeEventType");

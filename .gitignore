@@ -13,6 +13,9 @@
 /Mud.HttpUtils.Attributes/bin
 /Mud.HttpUtils.Client/obj
 /Mud.HttpUtils.Client/bin
+/Mud.HttpUtils.Resilience/obj
+/Mud.HttpUtils.Resilience/bin
+
 /bin
 /Tests/bin
 /Tests/Mud.HttpUtils.Client.Tests/bin

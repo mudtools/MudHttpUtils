@@ -21,7 +21,7 @@ public class TypeSymbolHelperTests
 
     public TypeSymbolHelperTests()
     {
-        _typeSymbolHelperType = TestHelper.GetType("Mud.CodeGenerator.TypeSymbolHelper");
+        _typeSymbolHelperType = TestHelper.GetType("Mud.HttpUtils.TypeSymbolHelper");
         _isAsyncTypeMethod = TestHelper.GetMethod(_typeSymbolHelperType, "IsAsyncType");
         _extractAsyncInnerTypeMethod = TestHelper.GetMethod(_typeSymbolHelperType, "ExtractAsyncInnerType");
         _getTypeFullNameMethod = TestHelper.GetMethod(_typeSymbolHelperType, "GetTypeFullName");

@@ -8,6 +8,7 @@
     <Project Path="Mud.HttpUtils.Attributes/Mud.HttpUtils.Attributes.csproj" />
     <Project Path="Mud.HttpUtils.Client/Mud.HttpUtils.Client.csproj" />
     <Project Path="Mud.HttpUtils.Generator/Mud.HttpUtils.Generator.csproj" />
+    <Project Path="Mud.HttpUtils.Resilience/Mud.HttpUtils.Resilience.csproj" />
     <Project Path="Mud.HttpUtils/Mud.HttpUtils.csproj" />
   </Folder>
   <Folder Name="/Tests/">

@@ -20,7 +20,7 @@ public class CSharpCodeValidatorTests
 
     public CSharpCodeValidatorTests()
     {
-        _csharpCodeValidatorType = TestHelper.GetType("Mud.CodeGenerator.CSharpCodeValidator");
+        _csharpCodeValidatorType = TestHelper.GetType("Mud.HttpUtils.CSharpCodeValidator");
         _isValidCSharpIdentifierMethod = TestHelper.GetMethod(_csharpCodeValidatorType, "IsValidCSharpIdentifier");
         _isValidUrlTemplateMethod = TestHelper.GetMethod(_csharpCodeValidatorType, "IsValidUrlTemplate");
     }
