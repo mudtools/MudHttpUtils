@@ -10,7 +10,7 @@ global using Microsoft.CodeAnalysis.CSharp;
 global using Microsoft.CodeAnalysis.CSharp.Syntax;
 global using Microsoft.CodeAnalysis.Diagnostics;
 global using Microsoft.CodeAnalysis.Text;
-global using Mud.CodeGenerator;
+global using Mud.HttpUtils;
 global using Mud.HttpUtils.Generators.Implementation;
 global using Mud.HttpUtils.Models.Analysis;
 global using Mud.HttpUtils.Models.Metadata;

@@ -6,9 +6,8 @@
 // -----------------------------------------------------------------------
 
 using System.Globalization;
-using System.Text;
 
-namespace Mud.CodeGenerator;
+namespace Mud.HttpUtils;
 
 /// <summary>
 /// 字段命名风格枚举

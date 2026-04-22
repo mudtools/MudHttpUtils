@@ -7,7 +7,7 @@
 
 using System.Reflection;
 
-namespace Mud.CodeGenerator;
+namespace Mud.HttpUtils;
 
 internal sealed class GeneratedCodeConsts
 {

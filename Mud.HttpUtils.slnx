@@ -4,7 +4,6 @@
     <Project Path="Demos/HttpClientApiDemo/HttpClientApiDemo.csproj" />
   </Folder>
   <Folder Name="/Src/">
-    <Project Path="Mud.CodeGenerator/Mud.CodeGenerator.shproj" />
     <Project Path="Mud.HttpUtils.Abstractions/Mud.HttpUtils.Abstractions.csproj" />
     <Project Path="Mud.HttpUtils.Attributes/Mud.HttpUtils.Attributes.csproj" />
     <Project Path="Mud.HttpUtils.Client/Mud.HttpUtils.Client.csproj" />
