@@ -163,11 +163,11 @@
             弹性 HTTP 客户端装饰器，为 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 实现添加 Polly 弹性策略。
             </summary>
             <remarks>
-            此装饰器实现了 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 接口，将所有 HTTP 请求方法
+            此装饰器实现了 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 和 <see cref="T:Mud.HttpUtils.IEncryptableHttpClient"/> 接口，将所有 HTTP 请求方法
             （JSON、XML、下载等）通过 Polly 弹性策略包装后转发给内部客户端。
             <para>
-            注意：<see cref="M:Mud.HttpUtils.IEncryptableHttpClient.EncryptContent(System.Object,System.String,Mud.HttpUtils.SerializeType)"/> 方法不经过弹性策略包装，
-            因为加密是请求前的本地数据转换操作，不涉及网络 I/O。
+            注意：<see cref="M:Mud.HttpUtils.IEncryptableHttpClient.EncryptContent(System.Object,System.String,Mud.HttpUtils.SerializeType)"/> 和 <see cref="M:Mud.HttpUtils.IEncryptableHttpClient.DecryptContent(System.String)"/> 方法不经过弹性策略包装，
+            因为加密/解密是请求前的本地数据转换操作，不涉及网络 I/O。
             </para>
             </remarks>
         </member>
@@ -198,6 +198,12 @@
         <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.PutAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
             <inheritdoc />
         </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.DeleteAsJsonAsync``1(System.String,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.PatchAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
         <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.SendXmlAsync``1(System.Net.Http.HttpRequestMessage,System.Text.Encoding,System.Threading.CancellationToken)">
             <inheritdoc />
         </member>
@@ -208,6 +214,12 @@
             <inheritdoc />
         </member>
         <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.GetXmlAsync``1(System.String,System.Text.Encoding,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.EncryptContent(System.Object,System.String,Mud.HttpUtils.SerializeType)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.DecryptContent(System.String)">
             <inheritdoc />
         </member>
         <member name="T:Mud.HttpUtils.Resilience.ServiceCollectionExtensions">

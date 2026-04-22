@@ -294,8 +294,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
         }
 
         // 校验 XML 兼容性：XML 请求/响应时 HttpClient 必须实现 IXmlHttpClient
-        var isXmlRequest = IsXmlContentType(methodInfo.BodyContentType);
-        var isXmlResponse = IsXmlContentType(methodInfo.ResponseContentType);
+        var isXmlRequest = ContentTypeHelper.IsXmlContentType(methodInfo.BodyContentType);
+        var isXmlResponse = ContentTypeHelper.IsXmlContentType(methodInfo.ResponseContentType);
         if (isXmlRequest || isXmlResponse)
         {
             if (!HttpClientTypeSupportsInterface(context.Compilation, httpClientType!, "IXmlHttpClient"))
@@ -340,14 +340,4 @@ internal class MethodGenerator : ICodeFragmentGenerator
         return true;
     }
 
-    /// <summary>
-    /// 检查内容类型是否为 XML
-    /// </summary>
-    private static bool IsXmlContentType(string? contentType)
-    {
-        if (string.IsNullOrEmpty(contentType))
-            return false;
-
-        return contentType.IndexOf("xml", StringComparison.OrdinalIgnoreCase) >= 0;
-    }
 }

@@ -43,6 +43,7 @@ internal static class MethodAnalyzer
 
         var methodContentType = GetMethodContentTypeFromHttpMethodAttribute(methodSymbol);
         var responseContentType = GetResponseContentTypeFromSymbol(methodSymbol);
+        var responseEnableDecrypt = GetResponseEnableDecryptFromSymbol(methodSymbol);
         var parameters = ParameterAnalyzer.AnalyzeParameters(methodSymbol);
         var (bodyContentType, bodyEnableEncrypt, bodyEncryptSerializeType, bodyEncryptPropertyName) = GetBodyInfoFromParameters(parameters);
         var (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName) = AnalyzeInterfaceAttributes(
@@ -66,6 +67,7 @@ internal static class MethodAnalyzer
             MethodContentType = methodContentType,
             BodyContentType = bodyContentType,
             ResponseContentType = responseContentType,
+            ResponseEnableDecrypt = responseEnableDecrypt,
             BodyEnableEncrypt = bodyEnableEncrypt,
             BodyEncryptSerializeType = bodyEncryptSerializeType,
             BodyEncryptPropertyName = bodyEncryptPropertyName,
@@ -285,6 +287,27 @@ internal static class MethodAnalyzer
             return null;
 
         return AttributeDataHelper.GetStringValueFromAttribute(httpMethodAttr, [HttpClientGeneratorConstants.HttpMethodResponseContentTypeProperty]);
+    }
+
+    /// <summary>
+    /// 从方法符号获取HTTP方法特性的ResponseEnableDecrypt值
+    /// </summary>
+    private static bool GetResponseEnableDecryptFromSymbol(IMethodSymbol methodSymbol)
+    {
+        if (methodSymbol == null)
+            return false;
+
+        var httpMethodAttr = methodSymbol.GetAttributes()
+            .FirstOrDefault(attr => HttpClientGeneratorConstants.SupportedHttpMethods.Contains(attr.AttributeClass?.Name));
+
+        if (httpMethodAttr == null)
+            return false;
+
+        var value = AttributeDataHelper.GetBoolValueFromAttribute(
+            httpMethodAttr,
+            HttpClientGeneratorConstants.HttpMethodResponseEnableDecryptProperty);
+
+        return value;
     }
 
     /// <summary>

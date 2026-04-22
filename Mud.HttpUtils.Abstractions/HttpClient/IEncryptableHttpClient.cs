@@ -1,7 +1,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// 可加密 HTTP 客户端接口，提供内容加密功能。
+/// 可加密 HTTP 客户端接口，提供内容加密和解密功能。
 /// </summary>
 public interface IEncryptableHttpClient
 {
@@ -13,4 +13,11 @@ public interface IEncryptableHttpClient
     /// <param name="serializeType">序列化类型，指定使用 JSON 或 XML 序列化。</param>
     /// <returns>加密后的字符串内容。</returns>
     string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json);
+
+    /// <summary>
+    /// 解密内容字符串。
+    /// </summary>
+    /// <param name="encryptedContent">要解密的字符串内容。</param>
+    /// <returns>解密后的字符串内容。</returns>
+    string DecryptContent(string encryptedContent);
 }

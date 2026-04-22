@@ -6,6 +6,9 @@
 // -----------------------------------------------------------------------
 
 using Microsoft.Extensions.Logging;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 
 namespace Mud.HttpUtils;
 
@@ -60,6 +63,79 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
     /// <inheritdoc/>
     public override string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json)
     {
-        throw new NotImplementedException("HttpClientFactoryEnhancedClient 不支持加密功能。请使用完整的 EnhancedHttpClient 实现或自行实现此方法。");
+        if (content == null)
+            throw new ArgumentNullException(nameof(content));
+        if (string.IsNullOrEmpty(propertyName))
+            throw new ArgumentException("属性名不能为空", nameof(propertyName));
+
+        string serializedContent;
+        if (serializeType == SerializeType.Xml)
+        {
+            serializedContent = XmlSerialize.Serialize(content);
+        }
+        else
+        {
+            serializedContent = JsonSerializer.Serialize(content);
+        }
+
+        var encryptedData = AesEncrypt(serializedContent);
+
+        var result = new Dictionary<string, object>
+        {
+            [propertyName] = encryptedData
+        };
+
+        return JsonSerializer.Serialize(result);
+    }
+
+    /// <inheritdoc/>
+    public override string DecryptContent(string encryptedContent)
+    {
+        if (string.IsNullOrEmpty(encryptedContent))
+            return string.Empty;
+
+        return AesDecrypt(encryptedContent);
+    }
+
+    private static string AesEncrypt(string plainText)
+    {
+        if (string.IsNullOrEmpty(plainText))
+            return string.Empty;
+
+        var key = Encoding.UTF8.GetBytes("MudHttpUtils2025");
+        var iv = Encoding.UTF8.GetBytes("MudHttpUtils2025");
+
+        using var aes = Aes.Create();
+        aes.Key = key;
+        aes.IV = iv;
+        aes.Mode = CipherMode.CBC;
+        aes.Padding = PaddingMode.PKCS7;
+
+        var encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
+        var plainBytes = Encoding.UTF8.GetBytes(plainText);
+        var encryptedBytes = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
+
+        return Convert.ToBase64String(encryptedBytes);
+    }
+
+    private static string AesDecrypt(string cipherText)
+    {
+        if (string.IsNullOrEmpty(cipherText))
+            return string.Empty;
+
+        var key = Encoding.UTF8.GetBytes("MudHttpUtils2025");
+        var iv = Encoding.UTF8.GetBytes("MudHttpUtils2025");
+
+        using var aes = Aes.Create();
+        aes.Key = key;
+        aes.IV = iv;
+        aes.Mode = CipherMode.CBC;
+        aes.Padding = PaddingMode.PKCS7;
+
+        var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
+        var cipherBytes = Convert.FromBase64String(cipherText);
+        var plainBytes = decryptor.TransformFinalBlock(cipherBytes, 0, cipherBytes.Length);
+
+        return Encoding.UTF8.GetString(plainBytes);
     }
 }

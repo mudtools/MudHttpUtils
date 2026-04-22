@@ -101,6 +101,11 @@ internal class MethodAnalysisResult
     public string? BodyEncryptPropertyName { get; set; }
 
     /// <summary>
+    /// 响应是否启用解密
+    /// </summary>
+    public bool ResponseEnableDecrypt { get; set; }
+
+    /// <summary>
     /// 接口级Token注入模式（Header/Query/Path）
     /// </summary>
     public string? InterfaceTokenInjectionMode { get; set; }

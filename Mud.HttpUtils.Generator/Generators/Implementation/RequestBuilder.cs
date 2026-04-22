@@ -191,18 +191,13 @@ internal class RequestBuilder
                 : "GetMediaType(_defaultContentType)";
         }
 
-        var isXmlContentType = IsXmlContentType(effectiveContentType ?? contentType);
+        var isXmlContentType = ContentTypeHelper.IsXmlContentType(effectiveContentType ?? contentType);
 
         if (methodInfo.BodyEnableEncrypt)
         {
             var propertyName = methodInfo.BodyEncryptPropertyName ?? "data";
             var serializeType = methodInfo.BodyEncryptSerializeType ?? "Json";
-            // IEnhancedHttpClient 不继承 IEncryptableHttpClient，需要转型调用加密方法
-            string httpClient = "((IEncryptableHttpClient)_appContext.Value!.HttpClient)";
-            if (hasHttpClient)
-            {
-                httpClient = "((IEncryptableHttpClient)_httpClient)";
-            }
+            string httpClient = hasHttpClient ? "_httpClient" : "_appContext.Value!.HttpClient";
 
             codeBuilder.AppendLine($"            var encryptedContent = {httpClient}.EncryptContent({bodyParam.Name}, \"{propertyName}\", SerializeType.{serializeType});");
             codeBuilder.AppendLine($"            httpRequest.Content = new StringContent(encryptedContent, Encoding.UTF8, {contentTypeExpression});");
@@ -266,16 +261,30 @@ internal class RequestBuilder
             else
             {
                 var responseContentType = methodInfo.ResponseContentType;
-                var isXmlResponse = IsXmlContentType(responseContentType);
+                var isXmlResponse = ContentTypeHelper.IsXmlContentType(responseContentType);
+                var resultVariable = $"__result_{methodInfo.MethodName}";
 
                 if (isXmlResponse)
                 {
-                    codeBuilder.AppendLine($"            return await {httpClient}.SendXmlAsync<{deserializeType}>(httpRequest, null{cancellationTokenArg});");
+                    codeBuilder.AppendLine($"            var {resultVariable} = await {httpClient}.SendXmlAsync<{deserializeType}>(httpRequest, null{cancellationTokenArg});");
                 }
                 else
                 {
-                    codeBuilder.AppendLine($"            return await {httpClient}.SendAsync<{deserializeType}>(httpRequest, _jsonSerializerOptions{cancellationTokenArg});");
+                    codeBuilder.AppendLine($"            var {resultVariable} = await {httpClient}.SendAsync<{deserializeType}>(httpRequest, _jsonSerializerOptions{cancellationTokenArg});");
                 }
+
+                if (methodInfo.ResponseEnableDecrypt)
+                {
+                    string encryptableClient = hasHttpClient ? "_httpClient" : "_appContext.Value!.HttpClient";
+
+                    codeBuilder.AppendLine($"            if (!string.IsNullOrEmpty({resultVariable}))");
+                    codeBuilder.AppendLine($"            {{");
+                    codeBuilder.AppendLine($"                var decryptedJson = {encryptableClient}.DecryptContent({resultVariable}!.ToString()!);");
+                    codeBuilder.AppendLine($"                {resultVariable} = JsonSerializer.Deserialize<{deserializeType}>(decryptedJson, _jsonSerializerOptions);");
+                    codeBuilder.AppendLine($"            }}");
+                }
+
+                codeBuilder.AppendLine($"            return {resultVariable};");
             }
         }
     }
@@ -529,20 +538,6 @@ internal class RequestBuilder
             return false;
 
         return bool.TryParse(rawStringArg?.ToString(), out var result) && result;
-    }
-
-    /// <summary>
-    /// 检查内容类型是否为XML
-    /// </summary>
-    /// <param name="contentType">内容类型字符串</param>
-    /// <returns>如果是XML类型返回true，否则返回false</returns>
-    private bool IsXmlContentType(string? contentType)
-    {
-        if (string.IsNullOrEmpty(contentType))
-            return false;
-
-        // 检查是否包含xml（不区分大小写）
-        return contentType.IndexOf("xml", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
     #endregion

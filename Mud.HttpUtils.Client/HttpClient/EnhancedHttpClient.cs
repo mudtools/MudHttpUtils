@@ -347,6 +347,65 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
     }
 
+    /// <inheritdoc/>
+    public async Task<TResult?> DeleteAsJsonAsync<TResult>(
+        string requestUri,
+        CancellationToken cancellationToken = default)
+    {
+        requestUri.ThrowIfNull();
+
+        try
+        {
+            LogRequestStart("发送JSON DELETE请求", requestUri);
+
+            using var request = new HttpRequestMessage(HttpMethod.Delete, requestUri);
+            var result = await SendRequestAsync<TResult>(
+                request,
+                jsonSerializerOptions: GetJsonSerializerOptions(),
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            LogRequestComplete("JSON DELETE请求完成", requestUri);
+            return result;
+        }
+        catch (Exception ex) when (LogRequestError("JSON DELETE请求失败", requestUri, ex))
+        {
+            throw;
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<TResult?> PatchAsJsonAsync<TRequest, TResult>(
+        string requestUri,
+        TRequest requestData,
+        CancellationToken cancellationToken = default)
+    {
+        requestUri.ThrowIfNull();
+        requestData.ThrowIfNull();
+
+        try
+        {
+            LogRequestStart("发送JSON PATCH请求", requestUri);
+
+            var content = JsonSerializer.Serialize(requestData, GetJsonSerializerOptions());
+            using var request = new HttpRequestMessage(new HttpMethod("PATCH"), requestUri)
+            {
+                Content = new StringContent(content, Encoding.UTF8, "application/json")
+            };
+
+            var result = await SendRequestAsync<TResult>(
+                request,
+                jsonSerializerOptions: GetJsonSerializerOptions(),
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            LogRequestComplete("JSON PATCH请求完成", requestUri);
+            return result;
+        }
+        catch (Exception ex) when (LogRequestError("JSON PATCH请求失败", requestUri, ex))
+        {
+            throw;
+        }
+    }
+
     #endregion
 
     #region 核心请求处理方法
@@ -563,6 +622,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
     /// <inheritdoc/>
     public abstract string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json);
+
+    /// <inheritdoc/>
+    public abstract string DecryptContent(string encryptedContent);
 
     #region 下载处理方法
 

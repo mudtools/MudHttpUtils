@@ -69,6 +69,11 @@
             从方法符号获取HTTP方法特性的ResponseContentType值
             </summary>
         </member>
+        <member name="M:Mud.HttpUtils.Analyzers.MethodAnalyzer.GetResponseEnableDecryptFromSymbol(Microsoft.CodeAnalysis.IMethodSymbol)">
+            <summary>
+            从方法符号获取HTTP方法特性的ResponseEnableDecrypt值
+            </summary>
+        </member>
         <member name="M:Mud.HttpUtils.Analyzers.MethodAnalyzer.FindMethodSyntax(Microsoft.CodeAnalysis.Compilation,Microsoft.CodeAnalysis.IMethodSymbol,Microsoft.CodeAnalysis.CSharp.Syntax.InterfaceDeclarationSyntax,Microsoft.CodeAnalysis.SemanticModel)">
             <summary>
             查询方法的语法对象
@@ -503,11 +508,6 @@
             检查指定的 HttpClient 类型是否实现了给定的接口
             </summary>
         </member>
-        <member name="M:Mud.HttpUtils.Generators.Implementation.MethodGenerator.IsXmlContentType(System.String)">
-            <summary>
-            检查内容类型是否为 XML
-            </summary>
-        </member>
         <member name="T:Mud.HttpUtils.Generators.Implementation.RequestBuilder">
             <summary>
             HTTP 请求构建器，负责生成 HTTP 请求的构建逻辑
@@ -547,13 +547,6 @@
             <summary>
             生成请求执行
             </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Generators.Implementation.RequestBuilder.IsXmlContentType(System.String)">
-            <summary>
-            检查内容类型是否为XML
-            </summary>
-            <param name="contentType">内容类型字符串</param>
-            <returns>如果是XML类型返回true，否则返回false</returns>
         </member>
         <member name="T:Mud.HttpUtils.Generators.Implementation.TokenMethodHelper">
             <summary>
@@ -885,6 +878,18 @@
             从 AttributeSyntax 中获取构造函数参数的值
             </summary>
         </member>
+        <member name="T:Mud.HttpUtils.ContentTypeHelper">
+            <summary>
+            内容类型辅助工具类，提供内容类型相关的共享方法。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.ContentTypeHelper.IsXmlContentType(System.String)">
+            <summary>
+            检查内容类型是否为 XML
+            </summary>
+            <param name="contentType">内容类型字符串</param>
+            <returns>如果是 XML 类型返回 true，否则返回 false</returns>
+        </member>
         <member name="T:Mud.HttpUtils.CSharpCodeValidator">
             <summary>
             C# 代码验证工具类
@@ -922,108 +927,6 @@
         <member name="M:Mud.HttpUtils.CSharpCodeValidator.ReportInvalidRegistryGroupName(Microsoft.CodeAnalysis.SourceProductionContext,Microsoft.CodeAnalysis.Location,System.String)">
             <summary>
             报告无效的RegistryGroupName诊断信息
-            </summary>
-        </member>
-        <member name="T:Mud.HttpUtils.FieldNamingStyle">
-            <summary>
-            字段命名风格枚举
-            </summary>
-        </member>
-        <member name="F:Mud.HttpUtils.FieldNamingStyle.MPrefixPascal">
-            <summary>
-            m_前缀 + Pascal风格 (例如: m_UserService)
-            </summary>
-        </member>
-        <member name="F:Mud.HttpUtils.FieldNamingStyle.UnderscoreCamel">
-            <summary>
-            _前缀 + camelCase风格 (例如: _userService)
-            </summary>
-        </member>
-        <member name="F:Mud.HttpUtils.FieldNamingStyle.PureCamel">
-            <summary>
-            纯camelCase风格 (例如: userService)
-            </summary>
-        </member>
-        <member name="T:Mud.HttpUtils.PrivateFieldNamingHelper">
-            <summary>
-            私有字段命名工具类
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.PrivateFieldNamingHelper.GeneratePrivateFieldName(System.String,Mud.HttpUtils.FieldNamingStyle)">
-            <summary>
-            根据类型名生成私有字段名（支持多种命名风格）
-            </summary>
-            <param name="typeName">类型名称</param>
-            <param name="style">命名风格</param>
-            <returns>生成的私有字段名</returns>
-        </member>
-        <member name="M:Mud.HttpUtils.PrivateFieldNamingHelper.RemoveInterfacePrefix(System.String)">
-            <summary>
-            移除接口前缀"I"
-            </summary>
-            <param name="typeName">类型名称</param>
-            <returns>移除前缀后的类型名称</returns>
-        </member>
-        <member name="M:Mud.HttpUtils.PrivateFieldNamingHelper.ToMPrefixPascal(System.String)">
-            <summary>
-            m_前缀 + Pascal风格
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.PrivateFieldNamingHelper.ToUnderscoreCamel(System.String)">
-            <summary>
-            _前缀 + camelCase风格
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.PrivateFieldNamingHelper.ToPureCamel(System.String)">
-            <summary>
-            纯camelCase风格
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.PrivateFieldNamingHelper.ToCamelCase(System.String)">
-            <summary>
-            转换为camelCase命名
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.PrivateFieldNamingHelper.EnsureProperCamelCase(System.String)">
-            <summary>
-            确保已经是camelCase的字符串中后续单词首字母大写
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.PrivateFieldNamingHelper.RemoveGenericParameters(System.String)">
-            <summary>
-            移除泛型参数
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.PrivateFieldNamingHelper.RemoveArrayBrackets(System.String)">
-            <summary>
-            移除数组括号
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.PrivateFieldNamingHelper.RemoveNullableSymbol(System.String)">
-            <summary>
-            移除可空类型符号
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.PrivateFieldNamingHelper.CleanTypeName(System.String)">
-            <summary>
-            清理类型名，只保留有效的标识符字符
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.PrivateFieldNamingHelper.GeneratePropertyName(System.String)">
-            <summary>
-            根据私有字段名生成属性名（支持多种命名风格）
-            </summary>
-            <param name="fieldName">私有字段名</param>
-            <returns>生成的属性名（PascalCase风格）</returns>
-        </member>
-        <member name="M:Mud.HttpUtils.PrivateFieldNamingHelper.RemovePrivateFieldPrefixes(System.String)">
-            <summary>
-            移除常见的私有字段前缀
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.PrivateFieldNamingHelper.ToPascalCase(System.String)">
-            <summary>
-            转换为PascalCase命名
             </summary>
         </member>
         <member name="M:Mud.HttpUtils.ProjectConfigHelper.ReadConfigValue(Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptions,System.String,System.String)">
@@ -1417,6 +1320,11 @@
         <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.BodyEncryptPropertyName">
             <summary>
             Body加密后数据包装属性名
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.ResponseEnableDecrypt">
+            <summary>
+            响应是否启用解密
             </summary>
         </member>
         <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.InterfaceTokenInjectionMode">

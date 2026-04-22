@@ -66,7 +66,7 @@ public class HttpClientFactoryEnhancedClientTests
     }
 
     [Fact]
-    public void EncryptContent_ShouldThrowNotImplementedException()
+    public void EncryptContent_WithNullContent_ShouldThrowArgumentNullException()
     {
         var mockFactory = new Mock<IHttpClientFactory>();
         mockFactory.Setup(f => f.CreateClient("testClient"))
@@ -74,10 +74,57 @@ public class HttpClientFactoryEnhancedClientTests
 
         var client = new HttpClientFactoryEnhancedClient(mockFactory.Object, "testClient");
 
-        var act = () => client.EncryptContent(new object());
+        var act = () => client.EncryptContent(null!);
 
-        act.Should().Throw<NotImplementedException>()
-            .WithMessage("*HttpClientFactoryEnhancedClient*");
+        act.Should().Throw<ArgumentNullException>()
+            .WithParameterName("content");
+    }
+
+    [Fact]
+    public void EncryptContent_WithEmptyPropertyName_ShouldThrowArgumentException()
+    {
+        var mockFactory = new Mock<IHttpClientFactory>();
+        mockFactory.Setup(f => f.CreateClient("testClient"))
+            .Returns(new HttpClient());
+
+        var client = new HttpClientFactoryEnhancedClient(mockFactory.Object, "testClient");
+
+        var act = () => client.EncryptContent(new object(), "");
+
+        act.Should().Throw<ArgumentException>()
+            .WithParameterName("propertyName");
+    }
+
+    [Fact]
+    public void EncryptContent_WithJsonSerializeType_ShouldReturnEncryptedJson()
+    {
+        var mockFactory = new Mock<IHttpClientFactory>();
+        mockFactory.Setup(f => f.CreateClient("testClient"))
+            .Returns(new HttpClient());
+
+        var client = new HttpClientFactoryEnhancedClient(mockFactory.Object, "testClient");
+        var testData = new { Name = "Test", Value = 42 };
+
+        var result = client.EncryptContent(testData, "data", SerializeType.Json);
+
+        result.Should().NotBeNullOrEmpty();
+        result.Should().Contain("\"data\"");
+    }
+
+    [Fact]
+    public void EncryptContent_WithDefaultPropertyName_ShouldUseData()
+    {
+        var mockFactory = new Mock<IHttpClientFactory>();
+        mockFactory.Setup(f => f.CreateClient("testClient"))
+            .Returns(new HttpClient());
+
+        var client = new HttpClientFactoryEnhancedClient(mockFactory.Object, "testClient");
+        var testData = new { Name = "Test" };
+
+        var result = client.EncryptContent(testData);
+
+        result.Should().NotBeNullOrEmpty();
+        result.Should().Contain("\"data\"");
     }
 
     [Fact]
@@ -103,5 +150,57 @@ public class HttpClientFactoryEnhancedClientTests
         var client = new HttpClientFactoryEnhancedClient(mockFactory.Object, "testClient", mockLogger.Object);
 
         client.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void DecryptContent_WithEmptyString_ShouldReturnEmptyString()
+    {
+        var mockFactory = new Mock<IHttpClientFactory>();
+        mockFactory.Setup(f => f.CreateClient("testClient"))
+            .Returns(new HttpClient());
+
+        var client = new HttpClientFactoryEnhancedClient(mockFactory.Object, "testClient");
+
+        var result = client.DecryptContent(string.Empty);
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void DecryptContent_WithNull_ShouldReturnEmptyString()
+    {
+        var mockFactory = new Mock<IHttpClientFactory>();
+        mockFactory.Setup(f => f.CreateClient("testClient"))
+            .Returns(new HttpClient());
+
+        var client = new HttpClientFactoryEnhancedClient(mockFactory.Object, "testClient");
+
+        var result = client.DecryptContent(null!);
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void EncryptContent_AndDecryptContent_ShouldReturnOriginalData()
+    {
+        var mockFactory = new Mock<IHttpClientFactory>();
+        mockFactory.Setup(f => f.CreateClient("testClient"))
+            .Returns(new HttpClient());
+
+        var client = new HttpClientFactoryEnhancedClient(mockFactory.Object, "testClient");
+        var originalData = new { Name = "Test", Value = 42 };
+
+        var encrypted = client.EncryptContent(originalData, "data", SerializeType.Json);
+
+        encrypted.Should().NotBeNullOrEmpty();
+        encrypted.Should().Contain("\"data\"");
+
+        var encryptedObj = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(encrypted);
+        encryptedObj.Should().NotBeNull();
+        encryptedObj.Should().ContainKey("data");
+
+        var decrypted = client.DecryptContent(encryptedObj!["data"]);
+        decrypted.Should().Contain("Test");
+        decrypted.Should().Contain("42");
     }
 }

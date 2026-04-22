@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Polly;
+using System.Text;
 
 namespace Mud.HttpUtils.Resilience;
 
@@ -8,14 +9,14 @@ namespace Mud.HttpUtils.Resilience;
 /// 弹性 HTTP 客户端装饰器，为 <see cref="IEnhancedHttpClient"/> 实现添加 Polly 弹性策略。
 /// </summary>
 /// <remarks>
-/// 此装饰器实现了 <see cref="IEnhancedHttpClient"/> 接口，将所有 HTTP 请求方法
+/// 此装饰器实现了 <see cref="IEnhancedHttpClient"/> 和 <see cref="IEncryptableHttpClient"/> 接口，将所有 HTTP 请求方法
 /// （JSON、XML、下载等）通过 Polly 弹性策略包装后转发给内部客户端。
 /// <para>
-/// 注意：<see cref="IEncryptableHttpClient.EncryptContent"/> 方法不经过弹性策略包装，
-/// 因为加密是请求前的本地数据转换操作，不涉及网络 I/O。
+/// 注意：<see cref="IEncryptableHttpClient.EncryptContent"/> 和 <see cref="IEncryptableHttpClient.DecryptContent"/> 方法不经过弹性策略包装，
+/// 因为加密/解密是请求前的本地数据转换操作，不涉及网络 I/O。
 /// </para>
 /// </remarks>
-public sealed class ResilientHttpClient : IEnhancedHttpClient
+public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpClient
 {
     private readonly IEnhancedHttpClient _innerClient;
     private readonly IResiliencePolicyProvider _policyProvider;
@@ -121,6 +122,31 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient
             cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async Task<TResult?> DeleteAsJsonAsync<TResult>(
+        string requestUri,
+        CancellationToken cancellationToken = default)
+    {
+        var policy = _policyProvider.GetCombinedPolicy<TResult?>();
+
+        return await policy.ExecuteAsync(
+            async ct => await _innerClient.DeleteAsJsonAsync<TResult>(requestUri, ct).ConfigureAwait(false),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<TResult?> PatchAsJsonAsync<TRequest, TResult>(
+        string requestUri,
+        TRequest requestData,
+        CancellationToken cancellationToken = default)
+    {
+        var policy = _policyProvider.GetCombinedPolicy<TResult?>();
+
+        return await policy.ExecuteAsync(
+            async ct => await _innerClient.PatchAsJsonAsync<TRequest, TResult>(requestUri, requestData, ct).ConfigureAwait(false),
+            cancellationToken).ConfigureAwait(false);
+    }
+
     #endregion
 
     #region IXmlHttpClient
@@ -177,6 +203,32 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient
         return await policy.ExecuteAsync(
             async ct => await _innerClient.GetXmlAsync<TResult>(requestUri, encoding, ct).ConfigureAwait(false),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    #endregion
+
+    #region IEncryptableHttpClient
+
+    /// <inheritdoc />
+    public string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json)
+    {
+        if (_innerClient is IEncryptableHttpClient encryptableClient)
+        {
+            return encryptableClient.EncryptContent(content, propertyName, serializeType);
+        }
+
+        throw new InvalidOperationException($"内部客户端 '{_innerClient.GetType().Name}' 未实现 IEncryptableHttpClient 接口，无法执行加密操作。");
+    }
+
+    /// <inheritdoc />
+    public string DecryptContent(string encryptedContent)
+    {
+        if (_innerClient is IEncryptableHttpClient encryptableClient)
+        {
+            return encryptableClient.DecryptContent(encryptedContent);
+        }
+
+        throw new InvalidOperationException($"内部客户端 '{_innerClient.GetType().Name}' 未实现 IEncryptableHttpClient 接口，无法执行解密操作。");
     }
 
     #endregion

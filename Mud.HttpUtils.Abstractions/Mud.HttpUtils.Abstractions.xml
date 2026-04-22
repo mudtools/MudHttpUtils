@@ -152,7 +152,7 @@
         </member>
         <member name="T:Mud.HttpUtils.IEncryptableHttpClient">
             <summary>
-            可加密 HTTP 客户端接口，提供内容加密功能。
+            可加密 HTTP 客户端接口，提供内容加密和解密功能。
             </summary>
         </member>
         <member name="M:Mud.HttpUtils.IEncryptableHttpClient.EncryptContent(System.Object,System.String,Mud.HttpUtils.SerializeType)">
@@ -164,17 +164,20 @@
             <param name="serializeType">序列化类型，指定使用 JSON 或 XML 序列化。</param>
             <returns>加密后的字符串内容。</returns>
         </member>
+        <member name="M:Mud.HttpUtils.IEncryptableHttpClient.DecryptContent(System.String)">
+            <summary>
+            解密内容字符串。
+            </summary>
+            <param name="encryptedContent">要解密的字符串内容。</param>
+            <returns>解密后的字符串内容。</returns>
+        </member>
         <member name="T:Mud.HttpUtils.IEnhancedHttpClient">
             <summary>
-            增强型 HTTP 客户端接口，整合了 JSON 和 XML 功能。
+            增强型 HTTP 客户端接口，整合了 JSON、XML 和加密功能。
             </summary>
             <remarks>
-            此接口继承了 <see cref="T:Mud.HttpUtils.IJsonHttpClient"/> 和 <see cref="T:Mud.HttpUtils.IXmlHttpClient"/>，
-            提供了全面的 HTTP 通信能力，包括 JSON/XML 数据处理。
-            <para>
-            加密功能由独立的 <see cref="T:Mud.HttpUtils.IEncryptableHttpClient"/> 接口提供，
-            需要加密能力的客户端应同时实现该接口。
-            </para>
+            此接口继承了 <see cref="T:Mud.HttpUtils.IJsonHttpClient"/>、<see cref="T:Mud.HttpUtils.IXmlHttpClient"/> 和 <see cref="T:Mud.HttpUtils.IEncryptableHttpClient"/>，
+            提供了全面的 HTTP 通信能力，包括 JSON/XML 数据处理和加密/解密功能。
             </remarks>
         </member>
         <member name="T:Mud.HttpUtils.IJsonHttpClient">
@@ -205,6 +208,26 @@
         <member name="M:Mud.HttpUtils.IJsonHttpClient.PutAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
             <summary>
             异步发送 PUT 请求，将请求数据序列化为 JSON 并返回 JSON 反序列化后的结果。
+            </summary>
+            <typeparam name="TRequest">请求数据的类型。</typeparam>
+            <typeparam name="TResult">响应数据的类型。</typeparam>
+            <param name="requestUri">请求的 URI。</param>
+            <param name="requestData">要发送的请求数据。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>反序列化后的响应结果任务。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IJsonHttpClient.DeleteAsJsonAsync``1(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步发送 DELETE 请求并返回 JSON 反序列化后的结果。
+            </summary>
+            <typeparam name="TResult">响应数据的类型。</typeparam>
+            <param name="requestUri">请求的 URI。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>反序列化后的响应结果任务。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IJsonHttpClient.PatchAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
+            <summary>
+            异步发送 PATCH 请求，将请求数据序列化为 JSON 并返回 JSON 反序列化后的结果。
             </summary>
             <typeparam name="TRequest">请求数据的类型。</typeparam>
             <typeparam name="TResult">响应数据的类型。</typeparam>

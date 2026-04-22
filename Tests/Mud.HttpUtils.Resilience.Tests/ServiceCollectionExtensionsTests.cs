@@ -162,6 +162,12 @@ public class ServiceCollectionExtensionsTests
         public Task<TResult?> PutAsJsonAsync<TRequest, TResult>(string requestUri, TRequest requestData, CancellationToken cancellationToken = default)
             => Task.FromResult(default(TResult));
 
+        public Task<TResult?> DeleteAsJsonAsync<TResult>(string requestUri, CancellationToken cancellationToken = default)
+            => Task.FromResult(default(TResult));
+
+        public Task<TResult?> PatchAsJsonAsync<TRequest, TResult>(string requestUri, TRequest requestData, CancellationToken cancellationToken = default)
+            => Task.FromResult(default(TResult));
+
         public Task<TResult?> SendXmlAsync<TResult>(HttpRequestMessage request, Encoding? encoding = null, CancellationToken cancellationToken = default)
             => Task.FromResult(default(TResult));
 
@@ -173,5 +179,11 @@ public class ServiceCollectionExtensionsTests
 
         public Task<TResult?> GetXmlAsync<TResult>(string requestUri, Encoding? encoding = null, CancellationToken cancellationToken = default)
             => Task.FromResult(default(TResult));
+
+        public string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json)
+            => string.Empty;
+
+        public string DecryptContent(string encryptedContent)
+            => string.Empty;
     }
 }
