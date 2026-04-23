@@ -147,6 +147,12 @@ public class ServiceCollectionExtensionsTests
         public Task<TResult?> SendAsync<TResult>(HttpRequestMessage request, object? jsonSerializerOptions = null, CancellationToken cancellationToken = default)
             => Task.FromResult(default(TResult));
 
+        public Task<HttpResponseMessage> SendRawAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
+            => Task.FromResult(new HttpResponseMessage());
+
+        public Task<Stream> SendStreamAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
+            => Task.FromResult<Stream>(new MemoryStream());
+
         public Task<byte[]?> DownloadAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
             => Task.FromResult<byte[]?>(null);
 
@@ -163,6 +169,9 @@ public class ServiceCollectionExtensionsTests
             => Task.FromResult(default(TResult));
 
         public Task<TResult?> DeleteAsJsonAsync<TResult>(string requestUri, CancellationToken cancellationToken = default)
+            => Task.FromResult(default(TResult));
+
+        public Task<TResult?> DeleteAsJsonAsync<TRequest, TResult>(string requestUri, TRequest requestData, CancellationToken cancellationToken = default)
             => Task.FromResult(default(TResult));
 
         public Task<TResult?> PatchAsJsonAsync<TRequest, TResult>(string requestUri, TRequest requestData, CancellationToken cancellationToken = default)

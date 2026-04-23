@@ -206,7 +206,7 @@ internal class FormContentGenerator : TransitiveCodeGenerator
     }
 
     /// <summary>
-    /// 获取所有标记了 [JsonPropertyName] 的属性信息
+    /// 获取所有标记了 [JsonPropertyName] 的属性信息，以及未标记但公开的属性。
     /// </summary>
     /// <param name="classSymbol">类符号</param>
     /// <returns>属性信息列表</returns>
@@ -216,21 +216,22 @@ internal class FormContentGenerator : TransitiveCodeGenerator
 
         foreach (var propertySymbol in classSymbol.GetMembers().OfType<IPropertySymbol>())
         {
-            // 查找 [JsonPropertyName] 特性
+            if (propertySymbol.DeclaredAccessibility != Accessibility.Public)
+                continue;
+
+            if (propertySymbol.IsStatic || propertySymbol.IsIndexer)
+                continue;
+
             var jsonPropertyAttr = propertySymbol.GetAttributes()
                 .FirstOrDefault(a => a.AttributeClass?.Name == JsonPropertyNameAttributeName);
 
-            if (jsonPropertyAttr == null)
-                continue;
+            var jsonPropertyName = jsonPropertyAttr != null
+                ? GetJsonPropertyName(jsonPropertyAttr)
+                : propertySymbol.Name;
 
-            // 获取 JSON 属性名
-            var jsonPropertyName = GetJsonPropertyName(jsonPropertyAttr);
-
-            // 检查是否有 [FilePath] 特性
             var hasFilePathAttr = propertySymbol.GetAttributes()
                 .Any(a => a.AttributeClass?.Name == FilePathAttributeName);
 
-            // 判断是否为可空类型
             var isNullable = propertySymbol.Type.NullableAnnotation == NullableAnnotation.Annotated;
 
             properties.Add(new PropertyInfo(

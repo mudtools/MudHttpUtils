@@ -21,6 +21,16 @@ public interface IAppManager<TAppContext>
     /// </summary>
     /// <typeparam name="TContextSwitcher">上下文切换器的类型，必须实现 <see cref="IAppContextSwitcher"/> 接口。</typeparam>
     /// <returns>默认应用的上下文切换器实例。</returns>
+    TContextSwitcher GetDefaultWebApi<TContextSwitcher>()
+        where TContextSwitcher : IAppContextSwitcher;
+
+    /// <summary>
+    /// 获取默认应用的 API 上下文切换器。
+    /// </summary>
+    /// <typeparam name="TContextSwitcher">上下文切换器的类型，必须实现 <see cref="IAppContextSwitcher"/> 接口。</typeparam>
+    /// <returns>默认应用的上下文切换器实例。</returns>
+    /// <remarks>此方法已重命名为 <see cref="GetDefaultWebApi{TContextSwitcher}"/>，将在未来版本中移除。</remarks>
+    [Obsolete("请使用 GetDefaultWebApi<TContextSwitcher>() 替代。此方法将在未来版本中移除。")]
     TContextSwitcher GetDefalutWebApi<TContextSwitcher>()
         where TContextSwitcher : IAppContextSwitcher;
 
@@ -64,4 +74,21 @@ public interface IAppManager<TAppContext>
     /// <param name="appKey">应用的唯一标识符。</param>
     /// <returns>如果成功移除应用，则为 true；否则为 false。</returns>
     bool RemoveApp(string appKey);
+
+    /// <summary>
+    /// 注册或更新应用上下文。
+    /// </summary>
+    /// <param name="appKey">应用的唯一标识符。</param>
+    /// <param name="appContext">应用上下文实例。</param>
+    /// <param name="isDefault">是否设为默认应用。</param>
+    void RegisterApp(string appKey, TAppContext appContext, bool isDefault = false);
+
+    /// <summary>
+    /// 异步注册或更新应用上下文。
+    /// </summary>
+    /// <param name="appKey">应用的唯一标识符。</param>
+    /// <param name="appContext">应用上下文实例。</param>
+    /// <param name="isDefault">是否设为默认应用。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    Task RegisterAppAsync(string appKey, TAppContext appContext, bool isDefault = false, CancellationToken cancellationToken = default);
 }

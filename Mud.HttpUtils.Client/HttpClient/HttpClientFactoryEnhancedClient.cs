@@ -6,8 +6,6 @@
 // -----------------------------------------------------------------------
 
 using Microsoft.Extensions.Logging;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 
 namespace Mud.HttpUtils;
@@ -27,22 +25,26 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
 {
     private readonly IHttpClientFactory _factory;
     private readonly string _clientName;
+    private readonly IEncryptionProvider? _encryptionProvider;
 
     /// <summary>
     /// 初始化 HttpClientFactoryEnhancedClient 实例
     /// </summary>
     /// <param name="factory">IHttpClientFactory 实例</param>
     /// <param name="clientName">Named HttpClient 名称</param>
+    /// <param name="encryptionProvider">加密提供器（可选）</param>
     /// <param name="logger">日志记录器（可选）</param>
     /// <exception cref="ArgumentNullException">factory 或 clientName 为 null</exception>
     public HttpClientFactoryEnhancedClient(
         IHttpClientFactory factory,
         string clientName,
+        IEncryptionProvider? encryptionProvider = null,
         ILogger<HttpClientFactoryEnhancedClient>? logger = null)
         : base(CreateClient(factory, clientName), logger)
     {
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
         _clientName = clientName ?? throw new ArgumentNullException(nameof(clientName));
+        _encryptionProvider = encryptionProvider;
     }
 
     private static HttpClient CreateClient(IHttpClientFactory factory, string name)
@@ -68,6 +70,11 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
         if (string.IsNullOrEmpty(propertyName))
             throw new ArgumentException("属性名不能为空", nameof(propertyName));
 
+        if (_encryptionProvider == null)
+            throw new InvalidOperationException(
+                "未配置加密提供器。请通过 AddMudHttpClient 注册时配置 AesEncryptionOptions，" +
+                "或注册自定义 IEncryptionProvider 实现。");
+
         string serializedContent;
         if (serializeType == SerializeType.Xml)
         {
@@ -78,7 +85,7 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
             serializedContent = JsonSerializer.Serialize(content);
         }
 
-        var encryptedData = AesEncrypt(serializedContent);
+        var encryptedData = _encryptionProvider.Encrypt(serializedContent);
 
         var result = new Dictionary<string, object>
         {
@@ -94,48 +101,11 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
         if (string.IsNullOrEmpty(encryptedContent))
             return string.Empty;
 
-        return AesDecrypt(encryptedContent);
-    }
+        if (_encryptionProvider == null)
+            throw new InvalidOperationException(
+                "未配置加密提供器。请通过 AddMudHttpClient 注册时配置 AesEncryptionOptions，" +
+                "或注册自定义 IEncryptionProvider 实现。");
 
-    private static string AesEncrypt(string plainText)
-    {
-        if (string.IsNullOrEmpty(plainText))
-            return string.Empty;
-
-        var key = Encoding.UTF8.GetBytes("MudHttpUtils2025");
-        var iv = Encoding.UTF8.GetBytes("MudHttpUtils2025");
-
-        using var aes = Aes.Create();
-        aes.Key = key;
-        aes.IV = iv;
-        aes.Mode = CipherMode.CBC;
-        aes.Padding = PaddingMode.PKCS7;
-
-        var encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
-        var plainBytes = Encoding.UTF8.GetBytes(plainText);
-        var encryptedBytes = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
-
-        return Convert.ToBase64String(encryptedBytes);
-    }
-
-    private static string AesDecrypt(string cipherText)
-    {
-        if (string.IsNullOrEmpty(cipherText))
-            return string.Empty;
-
-        var key = Encoding.UTF8.GetBytes("MudHttpUtils2025");
-        var iv = Encoding.UTF8.GetBytes("MudHttpUtils2025");
-
-        using var aes = Aes.Create();
-        aes.Key = key;
-        aes.IV = iv;
-        aes.Mode = CipherMode.CBC;
-        aes.Padding = PaddingMode.PKCS7;
-
-        var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
-        var cipherBytes = Convert.FromBase64String(cipherText);
-        var plainBytes = decryptor.TransformFinalBlock(cipherBytes, 0, cipherBytes.Length);
-
-        return Encoding.UTF8.GetString(plainBytes);
+        return _encryptionProvider.Decrypt(encryptedContent);
     }
 }

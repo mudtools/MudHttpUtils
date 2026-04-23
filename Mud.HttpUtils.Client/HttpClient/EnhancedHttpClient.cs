@@ -30,6 +30,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     };
 
     private const int DefaultBufferSize = 81920;
+    private const int MaxDebugLogBodyLength = 32768;
 
     /// <summary>
     /// 初始化增强型HttpClient实例
@@ -128,6 +129,62 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             return fileInfo;
         }
         catch (Exception ex) when (LogRequestError($"大文件下载失败: {filePath}", uri, ex))
+        {
+            throw;
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<HttpResponseMessage> SendRawAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken = default)
+    {
+        request.ThrowIfNull();
+
+        var uri = request.RequestUri?.ToString() ?? "[No URI]";
+
+        try
+        {
+            LogRequestStart("发送原始HTTP请求", uri);
+
+            var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+
+            LogRequestComplete("原始HTTP请求完成", uri);
+            return response;
+        }
+        catch (Exception ex) when (LogRequestError("原始HTTP请求失败", uri, ex))
+        {
+            throw;
+        }
+    }
+
+    /// <inheritdoc/>
+    public async Task<Stream> SendStreamAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken = default)
+    {
+        request.ThrowIfNull();
+
+        var uri = request.RequestUri?.ToString() ?? "[No URI]";
+
+        try
+        {
+            LogRequestStart("发送流式HTTP请求", uri);
+
+            var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+
+            await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
+
+#if NETSTANDARD2_0
+            var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+#else
+            var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+#endif
+
+            LogRequestComplete("流式HTTP请求完成", uri);
+            return stream;
+        }
+        catch (Exception ex) when (LogRequestError("流式HTTP请求失败", uri, ex))
         {
             throw;
         }
@@ -374,6 +431,39 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     }
 
     /// <inheritdoc/>
+    public async Task<TResult?> DeleteAsJsonAsync<TRequest, TResult>(
+        string requestUri,
+        TRequest requestData,
+        CancellationToken cancellationToken = default)
+    {
+        requestUri.ThrowIfNull();
+        requestData.ThrowIfNull();
+
+        try
+        {
+            LogRequestStart("发送带Body的JSON DELETE请求", requestUri);
+
+            var content = JsonSerializer.Serialize(requestData, GetJsonSerializerOptions());
+            using var request = new HttpRequestMessage(HttpMethod.Delete, requestUri)
+            {
+                Content = new StringContent(content, Encoding.UTF8, "application/json")
+            };
+
+            var result = await SendRequestAsync<TResult>(
+                request,
+                jsonSerializerOptions: GetJsonSerializerOptions(),
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            LogRequestComplete("带Body的JSON DELETE请求完成", requestUri);
+            return result;
+        }
+        catch (Exception ex) when (LogRequestError("带Body的JSON DELETE请求失败", requestUri, ex))
+        {
+            throw;
+        }
+    }
+
+    /// <inheritdoc/>
     public async Task<TResult?> PatchAsJsonAsync<TRequest, TResult>(
         string requestUri,
         TRequest requestData,
@@ -454,7 +544,6 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
             if (_enableLogging && _logger.IsEnabled(LogLevel.Debug))
             {
-                // 调试模式下，复制流以便记录原始响应
                 var memoryStream = new MemoryStream();
 #if NETSTANDARD2_0
                 await stream.CopyToAsync(memoryStream).ConfigureAwait(false);
@@ -463,13 +552,27 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 #endif
                 memoryStream.Position = 0;
 
+                string rawResponse;
+                if (memoryStream.Length > MaxDebugLogBodyLength)
+                {
+                    var buffer = new byte[MaxDebugLogBodyLength];
 #if NETSTANDARD2_0
-                using var reader = new StreamReader(memoryStream, Encoding.UTF8);
-                var rawResponse = await reader.ReadToEndAsync().ConfigureAwait(false);
+                    await memoryStream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
 #else
-                using var reader = new StreamReader(memoryStream, Encoding.UTF8, leaveOpen: true);
-                var rawResponse = await reader.ReadToEndAsync().ConfigureAwait(false);
+                    await memoryStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
 #endif
+                    rawResponse = Encoding.UTF8.GetString(buffer) + $"...[已截断，总长度: {memoryStream.Length} 字节]";
+                }
+                else
+                {
+#if NETSTANDARD2_0
+                    using var reader = new StreamReader(memoryStream, Encoding.UTF8);
+                    rawResponse = await reader.ReadToEndAsync().ConfigureAwait(false);
+#else
+                    using var reader = new StreamReader(memoryStream, Encoding.UTF8, leaveOpen: true);
+                    rawResponse = await reader.ReadToEndAsync().ConfigureAwait(false);
+#endif
+                }
                 _logger.JsonResponseBodyRaw(requestUri!, rawResponse);
 
                 memoryStream.Position = 0;

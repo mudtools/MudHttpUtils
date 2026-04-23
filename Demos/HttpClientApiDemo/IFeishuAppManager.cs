@@ -27,11 +27,6 @@ public class FeishuAppContext : IMudAppContext
     /// <returns></returns>
     public ITokenManager GetTokenManager(string tokenType) => throw new NotImplementedException();
 
-    public void Dispose()
-    {
-        throw new NotImplementedException();
-    }
-
     /// <summary>
     /// 租户令牌管理器
     /// </summary>

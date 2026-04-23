@@ -1,25 +1,16 @@
-// -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
-//  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
-//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
-//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
-// -----------------------------------------------------------------------
-
 using System.Reflection;
 
 namespace Mud.HttpUtils.Tests;
 
-/// <summary>
-/// UrlValidator URL验证工具单元测试
-/// </summary>
 public class UrlValidatorTests
 {
     private readonly Type _urlValidatorType;
     private readonly MethodInfo _validateUrlMethod;
     private readonly MethodInfo _validateBaseUrlMethod;
-    private readonly MethodInfo _isFeishuDomainMethod;
+    private readonly MethodInfo _configureAllowedDomainsMethod;
     private readonly MethodInfo _getAllowedDomainsMethod;
     private readonly MethodInfo _addAllowedDomainMethod;
+    private readonly MethodInfo _removeAllowedDomainMethod;
     private readonly MethodInfo _clearDnsCacheMethod;
 
     public UrlValidatorTests()
@@ -27,10 +18,18 @@ public class UrlValidatorTests
         _urlValidatorType = typeof(HttpClientUtils).Assembly.GetType("Mud.HttpUtils.UrlValidator")!;
         _validateUrlMethod = _urlValidatorType.GetMethod("ValidateUrl", BindingFlags.Public | BindingFlags.Static)!;
         _validateBaseUrlMethod = _urlValidatorType.GetMethod("ValidateBaseUrl", BindingFlags.Public | BindingFlags.Static)!;
-        _isFeishuDomainMethod = _urlValidatorType.GetMethod("IsFeishuDomain", BindingFlags.NonPublic | BindingFlags.Static)!;
+        _configureAllowedDomainsMethod = _urlValidatorType.GetMethod("ConfigureAllowedDomains", BindingFlags.Public | BindingFlags.Static)!;
         _getAllowedDomainsMethod = _urlValidatorType.GetMethod("GetAllowedDomains", BindingFlags.Public | BindingFlags.Static)!;
         _addAllowedDomainMethod = _urlValidatorType.GetMethod("AddAllowedDomain", BindingFlags.Public | BindingFlags.Static)!;
+        _removeAllowedDomainMethod = _urlValidatorType.GetMethod("RemoveAllowedDomain", BindingFlags.Public | BindingFlags.Static)!;
         _clearDnsCacheMethod = _urlValidatorType.GetMethod("ClearDnsCache", BindingFlags.Public | BindingFlags.Static)!;
+
+        ResetAllowedDomains();
+    }
+
+    private void ResetAllowedDomains()
+    {
+        _configureAllowedDomainsMethod.Invoke(null, new object[] { Array.Empty<string>() });
     }
 
     #region ValidateUrl Tests
@@ -66,7 +65,7 @@ public class UrlValidatorTests
     [Fact]
     public void ValidateUrl_WithHttpProtocol_ShouldThrowInvalidOperationException()
     {
-        var httpUrl = "http://open.feishu.cn/api/test";
+        var httpUrl = "http://api.example.com/api/test";
 
         var act = () => _validateUrlMethod.Invoke(null, new object?[] { httpUrl, false });
 
@@ -78,7 +77,7 @@ public class UrlValidatorTests
     [Fact]
     public void ValidateUrl_WithNonStandardPort_ShouldThrowInvalidOperationException()
     {
-        var urlWithPort = "https://open.feishu.cn:8443/api/test";
+        var urlWithPort = "https://api.example.com:8443/api/test";
 
         var act = () => _validateUrlMethod.Invoke(null, new object?[] { urlWithPort, false });
 
@@ -88,21 +87,23 @@ public class UrlValidatorTests
     }
 
     [Fact]
-    public void ValidateUrl_WithNonFeishuDomain_ShouldThrowInvalidOperationException()
+    public void ValidateUrl_WithoutWhitelistAndNoAllowFlag_ShouldThrowInvalidOperationException()
     {
-        var nonFeishuUrl = "https://example.com/api/test";
+        ResetAllowedDomains();
+        var url = "https://example.com/api/test";
 
-        var act = () => _validateUrlMethod.Invoke(null, new object?[] { nonFeishuUrl, false });
+        var act = () => _validateUrlMethod.Invoke(null, new object?[] { url, false });
 
         act.Should().Throw<TargetInvocationException>()
             .WithInnerException<InvalidOperationException>()
-            .WithMessage("*不在飞书官方白名单中*");
+            .WithMessage("*未配置域名白名单*");
     }
 
     [Fact]
-    public void ValidateUrl_WithValidFeishuUrl_ShouldNotThrow()
+    public void ValidateUrl_WithWhitelistedDomain_ShouldNotThrow()
     {
-        var validUrl = "https://open.feishu.cn/api/test";
+        _configureAllowedDomainsMethod.Invoke(null, new object[] { new[] { "example.com" } });
+        var validUrl = "https://example.com/api/test";
 
         var act = () => _validateUrlMethod.Invoke(null, new object?[] { validUrl, false });
 
@@ -110,9 +111,10 @@ public class UrlValidatorTests
     }
 
     [Fact]
-    public void ValidateUrl_WithValidLarkSuiteUrl_ShouldNotThrow()
+    public void ValidateUrl_WithSubdomainOfWhitelistedDomain_ShouldNotThrow()
     {
-        var validUrl = "https://open.larksuite.com/api/test";
+        _configureAllowedDomainsMethod.Invoke(null, new object[] { new[] { "example.com" } });
+        var validUrl = "https://api.example.com/api/test";
 
         var act = () => _validateUrlMethod.Invoke(null, new object?[] { validUrl, false });
 
@@ -120,18 +122,22 @@ public class UrlValidatorTests
     }
 
     [Fact]
-    public void ValidateUrl_WithSubdomainOfFeishu_ShouldNotThrow()
+    public void ValidateUrl_WithNonWhitelistedDomain_ShouldThrowInvalidOperationException()
     {
-        var validUrl = "https://api.open.feishu.cn/api/test";
+        _configureAllowedDomainsMethod.Invoke(null, new object[] { new[] { "example.com" } });
+        var url = "https://other.com/api/test";
 
-        var act = () => _validateUrlMethod.Invoke(null, new object?[] { validUrl, false });
+        var act = () => _validateUrlMethod.Invoke(null, new object?[] { url, false });
 
-        act.Should().NotThrow();
+        act.Should().Throw<TargetInvocationException>()
+            .WithInnerException<InvalidOperationException>()
+            .WithMessage("*不在白名单中*");
     }
 
     [Fact]
     public void ValidateUrl_WithCustomDomainAndAllowFlag_ShouldNotThrow()
     {
+        ResetAllowedDomains();
         var customUrl = "https://www.microsoft.com/api/test";
 
         var act = () => _validateUrlMethod.Invoke(null, new object?[] { customUrl, true });
@@ -195,9 +201,10 @@ public class UrlValidatorTests
     }
 
     [Fact]
-    public void ValidateBaseUrl_WithValidBaseUrl_ShouldNotThrow()
+    public void ValidateBaseUrl_WithWhitelistedBaseUrl_ShouldNotThrow()
     {
-        var validBaseUrl = "https://open.feishu.cn";
+        _configureAllowedDomainsMethod.Invoke(null, new object[] { new[] { "example.com" } });
+        var validBaseUrl = "https://example.com";
 
         var act = () => _validateBaseUrlMethod.Invoke(null, new object?[] { validBaseUrl, false });
 
@@ -206,21 +213,47 @@ public class UrlValidatorTests
 
     #endregion
 
-    #region IsFeishuDomain Tests
+    #region ConfigureAllowedDomains Tests
 
-    [Theory]
-    [InlineData("open.feishu.cn", true)]
-    [InlineData("open.larksuite.com", true)]
-    [InlineData("larksuite.com", true)]
-    [InlineData("feishu.cn", true)]
-    [InlineData("api.open.feishu.cn", true)]
-    [InlineData("example.com", false)]
-    [InlineData("google.com", false)]
-    public void IsFeishuDomain_WithVariousDomains_ShouldReturnExpectedResult(string domain, bool expected)
+    [Fact]
+    public void ConfigureAllowedDomains_WithNullDomains_ShouldThrowArgumentNullException()
     {
-        var result = (bool)_isFeishuDomainMethod.Invoke(null, new object[] { domain })!;
+        var act = () => _configureAllowedDomainsMethod.Invoke(null, new object?[] { null });
 
-        result.Should().Be(expected);
+        act.Should().Throw<TargetInvocationException>()
+            .WithInnerException<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void ConfigureAllowedDomains_ShouldReplaceExistingDomains()
+    {
+        _configureAllowedDomainsMethod.Invoke(null, new object[] { new[] { "domain1.com", "domain2.com" } });
+
+        var result = (IReadOnlyCollection<string>)_getAllowedDomainsMethod.Invoke(null, null)!;
+        result.Should().Contain("domain1.com");
+        result.Should().Contain("domain2.com");
+    }
+
+    [Fact]
+    public void ConfigureAllowedDomains_WithEmptyCollection_ShouldClearWhitelist()
+    {
+        _configureAllowedDomainsMethod.Invoke(null, new object[] { new[] { "example.com" } });
+        _configureAllowedDomainsMethod.Invoke(null, new object[] { Array.Empty<string>() });
+
+        var result = (IReadOnlyCollection<string>)_getAllowedDomainsMethod.Invoke(null, null)!;
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ConfigureAllowedDomains_ShouldIgnoreWhitespaceDomains()
+    {
+        _configureAllowedDomainsMethod.Invoke(null, new object[] { new[] { "example.com", "  ", "", "other.com" } });
+
+        var result = (IReadOnlyCollection<string>)_getAllowedDomainsMethod.Invoke(null, null)!;
+        result.Should().Contain("example.com");
+        result.Should().Contain("other.com");
+        result.Should().NotContain("");
+        result.Should().NotContain("  ");
     }
 
     #endregion
@@ -228,15 +261,13 @@ public class UrlValidatorTests
     #region GetAllowedDomains Tests
 
     [Fact]
-    public void GetAllowedDomains_ShouldReturnFeishuDomains()
+    public void GetAllowedDomains_WithNoConfiguredDomains_ShouldReturnEmpty()
     {
+        ResetAllowedDomains();
+
         var result = (IReadOnlyCollection<string>)_getAllowedDomainsMethod.Invoke(null, null)!;
 
-        result.Should().NotBeEmpty();
-        result.Should().Contain("open.feishu.cn");
-        result.Should().Contain("open.larksuite.com");
-        result.Should().Contain("larksuite.com");
-        result.Should().Contain("feishu.cn");
+        result.Should().BeEmpty();
     }
 
     #endregion
@@ -246,6 +277,7 @@ public class UrlValidatorTests
     [Fact]
     public void AddAllowedDomain_WithValidDomain_ShouldAddToWhitelist()
     {
+        ResetAllowedDomains();
         var customDomain = "custom.example.com";
 
         _addAllowedDomainMethod.Invoke(null, new object[] { customDomain });
@@ -267,6 +299,31 @@ public class UrlValidatorTests
     public void AddAllowedDomain_WithEmptyDomain_ShouldThrowArgumentNullException()
     {
         var act = () => _addAllowedDomainMethod.Invoke(null, new object?[] { string.Empty });
+
+        act.Should().Throw<TargetInvocationException>()
+            .WithInnerException<ArgumentNullException>();
+    }
+
+    #endregion
+
+    #region RemoveAllowedDomain Tests
+
+    [Fact]
+    public void RemoveAllowedDomain_WithExistingDomain_ShouldRemoveFromWhitelist()
+    {
+        _configureAllowedDomainsMethod.Invoke(null, new object[] { new[] { "example.com", "other.com" } });
+
+        _removeAllowedDomainMethod.Invoke(null, new object[] { "example.com" });
+
+        var allowedDomains = (IReadOnlyCollection<string>)_getAllowedDomainsMethod.Invoke(null, null)!;
+        allowedDomains.Should().NotContain("example.com");
+        allowedDomains.Should().Contain("other.com");
+    }
+
+    [Fact]
+    public void RemoveAllowedDomain_WithNullDomain_ShouldThrowArgumentNullException()
+    {
+        var act = () => _removeAllowedDomainMethod.Invoke(null, new object?[] { null });
 
         act.Should().Throw<TargetInvocationException>()
             .WithInnerException<ArgumentNullException>();

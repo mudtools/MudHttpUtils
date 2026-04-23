@@ -1,16 +1,37 @@
-// -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
-//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。
-//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
-//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们承担任何责任！
-// -----------------------------------------------------------------------
-
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Mud.HttpUtils.Tests;
 
 public class HttpClientFactoryEnhancedClientTests
 {
+    private static IEncryptionProvider CreateTestEncryptionProvider()
+    {
+        var options = new AesEncryptionOptions
+        {
+            Key = Convert.FromBase64String("MTIzNDU2Nzg5MDEyMzQ1Ng=="),
+            IV = Convert.FromBase64String("MTIzNDU2Nzg5MDEyMzQ1Ng==")
+        };
+        return new DefaultAesEncryptionProvider(Options.Create(options));
+    }
+
+    private HttpClientFactoryEnhancedClient CreateClientWithEncryption()
+    {
+        var mockFactory = new Mock<IHttpClientFactory>();
+        mockFactory.Setup(f => f.CreateClient("testClient"))
+            .Returns(new HttpClient());
+        return new HttpClientFactoryEnhancedClient(
+            mockFactory.Object, "testClient", CreateTestEncryptionProvider());
+    }
+
+    private HttpClientFactoryEnhancedClient CreateClientWithoutEncryption()
+    {
+        var mockFactory = new Mock<IHttpClientFactory>();
+        mockFactory.Setup(f => f.CreateClient("testClient"))
+            .Returns(new HttpClient());
+        return new HttpClientFactoryEnhancedClient(mockFactory.Object, "testClient");
+    }
+
     [Fact]
     public void Constructor_WithNullFactory_ShouldThrowArgumentNullException()
     {
@@ -43,11 +64,7 @@ public class HttpClientFactoryEnhancedClientTests
     [Fact]
     public void Constructor_WithValidArguments_ShouldCreateInstance()
     {
-        var mockFactory = new Mock<IHttpClientFactory>();
-        mockFactory.Setup(f => f.CreateClient("testClient"))
-            .Returns(new HttpClient());
-
-        var client = new HttpClientFactoryEnhancedClient(mockFactory.Object, "testClient");
+        var client = CreateClientWithoutEncryption();
 
         client.Should().NotBeNull();
         client.ClientName.Should().Be("testClient");
@@ -68,11 +85,7 @@ public class HttpClientFactoryEnhancedClientTests
     [Fact]
     public void EncryptContent_WithNullContent_ShouldThrowArgumentNullException()
     {
-        var mockFactory = new Mock<IHttpClientFactory>();
-        mockFactory.Setup(f => f.CreateClient("testClient"))
-            .Returns(new HttpClient());
-
-        var client = new HttpClientFactoryEnhancedClient(mockFactory.Object, "testClient");
+        var client = CreateClientWithEncryption();
 
         var act = () => client.EncryptContent(null!);
 
@@ -83,11 +96,7 @@ public class HttpClientFactoryEnhancedClientTests
     [Fact]
     public void EncryptContent_WithEmptyPropertyName_ShouldThrowArgumentException()
     {
-        var mockFactory = new Mock<IHttpClientFactory>();
-        mockFactory.Setup(f => f.CreateClient("testClient"))
-            .Returns(new HttpClient());
-
-        var client = new HttpClientFactoryEnhancedClient(mockFactory.Object, "testClient");
+        var client = CreateClientWithEncryption();
 
         var act = () => client.EncryptContent(new object(), "");
 
@@ -96,13 +105,32 @@ public class HttpClientFactoryEnhancedClientTests
     }
 
     [Fact]
+    public void EncryptContent_WithoutProvider_ShouldThrowInvalidOperationException()
+    {
+        var client = CreateClientWithoutEncryption();
+        var testData = new { Name = "Test", Value = 42 };
+
+        var act = () => client.EncryptContent(testData, "data", SerializeType.Json);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*未配置加密提供器*");
+    }
+
+    [Fact]
+    public void DecryptContent_WithoutProvider_ShouldThrowInvalidOperationException()
+    {
+        var client = CreateClientWithoutEncryption();
+
+        var act = () => client.DecryptContent("somedata");
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*未配置加密提供器*");
+    }
+
+    [Fact]
     public void EncryptContent_WithJsonSerializeType_ShouldReturnEncryptedJson()
     {
-        var mockFactory = new Mock<IHttpClientFactory>();
-        mockFactory.Setup(f => f.CreateClient("testClient"))
-            .Returns(new HttpClient());
-
-        var client = new HttpClientFactoryEnhancedClient(mockFactory.Object, "testClient");
+        var client = CreateClientWithEncryption();
         var testData = new { Name = "Test", Value = 42 };
 
         var result = client.EncryptContent(testData, "data", SerializeType.Json);
@@ -114,11 +142,7 @@ public class HttpClientFactoryEnhancedClientTests
     [Fact]
     public void EncryptContent_WithDefaultPropertyName_ShouldUseData()
     {
-        var mockFactory = new Mock<IHttpClientFactory>();
-        mockFactory.Setup(f => f.CreateClient("testClient"))
-            .Returns(new HttpClient());
-
-        var client = new HttpClientFactoryEnhancedClient(mockFactory.Object, "testClient");
+        var client = CreateClientWithEncryption();
         var testData = new { Name = "Test" };
 
         var result = client.EncryptContent(testData);
@@ -147,7 +171,7 @@ public class HttpClientFactoryEnhancedClientTests
             .Returns(new HttpClient());
         var mockLogger = new Mock<ILogger<HttpClientFactoryEnhancedClient>>();
 
-        var client = new HttpClientFactoryEnhancedClient(mockFactory.Object, "testClient", mockLogger.Object);
+        var client = new HttpClientFactoryEnhancedClient(mockFactory.Object, "testClient", logger: mockLogger.Object);
 
         client.Should().NotBeNull();
     }
@@ -155,11 +179,7 @@ public class HttpClientFactoryEnhancedClientTests
     [Fact]
     public void DecryptContent_WithEmptyString_ShouldReturnEmptyString()
     {
-        var mockFactory = new Mock<IHttpClientFactory>();
-        mockFactory.Setup(f => f.CreateClient("testClient"))
-            .Returns(new HttpClient());
-
-        var client = new HttpClientFactoryEnhancedClient(mockFactory.Object, "testClient");
+        var client = CreateClientWithEncryption();
 
         var result = client.DecryptContent(string.Empty);
 
@@ -169,11 +189,7 @@ public class HttpClientFactoryEnhancedClientTests
     [Fact]
     public void DecryptContent_WithNull_ShouldReturnEmptyString()
     {
-        var mockFactory = new Mock<IHttpClientFactory>();
-        mockFactory.Setup(f => f.CreateClient("testClient"))
-            .Returns(new HttpClient());
-
-        var client = new HttpClientFactoryEnhancedClient(mockFactory.Object, "testClient");
+        var client = CreateClientWithEncryption();
 
         var result = client.DecryptContent(null!);
 
@@ -183,11 +199,7 @@ public class HttpClientFactoryEnhancedClientTests
     [Fact]
     public void EncryptContent_AndDecryptContent_ShouldReturnOriginalData()
     {
-        var mockFactory = new Mock<IHttpClientFactory>();
-        mockFactory.Setup(f => f.CreateClient("testClient"))
-            .Returns(new HttpClient());
-
-        var client = new HttpClientFactoryEnhancedClient(mockFactory.Object, "testClient");
+        var client = CreateClientWithEncryption();
         var originalData = new { Name = "Test", Value = 42 };
 
         var encrypted = client.EncryptContent(originalData, "data", SerializeType.Json);
@@ -202,5 +214,14 @@ public class HttpClientFactoryEnhancedClientTests
         var decrypted = client.DecryptContent(encryptedObj!["data"]);
         decrypted.Should().Contain("Test");
         decrypted.Should().Contain("42");
+    }
+
+    [Fact]
+    public void Constructor_WithEncryptionProvider_ShouldCreateInstance()
+    {
+        var client = CreateClientWithEncryption();
+
+        client.Should().NotBeNull();
+        client.ClientName.Should().Be("testClient");
     }
 }

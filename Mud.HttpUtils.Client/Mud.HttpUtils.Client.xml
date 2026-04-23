@@ -4,6 +4,42 @@
         <name>Mud.HttpUtils.Client</name>
     </assembly>
     <members>
+        <member name="T:Mud.HttpUtils.DefaultAesEncryptionProvider">
+            <summary>
+            默认 AES 加密提供程序实现，使用 AES 对称加密算法进行数据加密和解密。
+            </summary>
+            <remarks>
+            该类使用 CBC 模式和 PKCS7 填充方式，通过配置的密钥和初始化向量进行加密操作。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultAesEncryptionProvider.#ctor(Microsoft.Extensions.Options.IOptions{Mud.HttpUtils.AesEncryptionOptions})">
+            <summary>
+            初始化 <see cref="T:Mud.HttpUtils.DefaultAesEncryptionProvider"/> 类的新实例。
+            </summary>
+            <param name="options">AES 加密选项的配置。</param>
+            <exception cref="T:System.ArgumentNullException">当 options 为 null 时抛出。</exception>
+            <exception cref="T:System.InvalidOperationException">当加密选项验证失败时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultAesEncryptionProvider.Encrypt(System.String)">
+            <summary>
+            使用 AES 算法加密明文数据。
+            </summary>
+            <param name="plainText">要加密的明文数据。</param>
+            <returns>加密后的 Base64 编码密文字符串。</returns>
+            <remarks>
+            如果输入为空或 null，则返回空字符串。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultAesEncryptionProvider.Decrypt(System.String)">
+            <summary>
+            使用 AES 算法解密密文数据。
+            </summary>
+            <param name="cipherText">要解密的 Base64 编码密文字符串。</param>
+            <returns>解密后的明文字符串。</returns>
+            <remarks>
+            如果输入为空或 null，则返回空字符串。
+            </remarks>
+        </member>
         <member name="M:Mud.HttpUtils.ExceptionUtils.ThrowIfNull``1(``0,System.String)">
             <summary>
             如果对象为null则抛出ArgumentNullException
@@ -44,9 +80,9 @@
             <code>RegexOptions.IgnoreCase</code><br/>
             Explanation:<br/>
             <code>
+            ○ Match if at the beginning of the string.<br/>
             ○ Match with 3 alternative expressions, atomically.<br/>
                 ○ Match a sequence of expressions.<br/>
-                    ○ Match if at the beginning of the string.<br/>
                     ○ Loop greedily any number of times.<br/>
                         ○ Match a character in the set [+/-9A-Za-z\u212A] exactly 4 times.<br/>
                     ○ Optional (greedy).<br/>
@@ -59,20 +95,18 @@
                                 ○ Match '='.<br/>
                     ○ Match if at the end of the string or if before an ending newline.<br/>
                 ○ Match a sequence of expressions.<br/>
-                    ○ Match if at the beginning of the string.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 8 times.<br/>
+                    ○ Match a hexadecimal digit exactly 8 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 12 times.<br/>
+                    ○ Match a hexadecimal digit exactly 12 times.<br/>
                     ○ Match if at the end of the string or if before an ending newline.<br/>
                 ○ Match a sequence of expressions.<br/>
-                    ○ Match if at the beginning of the string.<br/>
-                    ○ Match a character in the set [-0-9A-Z_a-z\u212A] atomically at least 20 times.<br/>
+                    ○ Match a character in the set [\-0-9A-Z_a-z\u212A] atomically at least 20 times.<br/>
                     ○ Match if at the end of the string or if before an ending newline.<br/>
             </code>
             </remarks>
@@ -195,24 +229,15 @@
             URL 验证工具类，用于防止 SSRF（服务端请求伪造）攻击
             </summary>
         </member>
-        <member name="F:Mud.HttpUtils.UrlValidator.FeishuDomains">
+        <member name="M:Mud.HttpUtils.UrlValidator.ConfigureAllowedDomains(System.Collections.Generic.IEnumerable{System.String})">
             <summary>
-            飞书官方域名白名单（只读集合）
+            配置允许的域名白名单（替换默认白名单）
             </summary>
-        </member>
-        <member name="F:Mud.HttpUtils.UrlValidator._privateNetworks">
-            <summary>
-            预编译的私有 IP 地址范围（提高检查性能）
-            </summary>
-        </member>
-        <member name="F:Mud.HttpUtils.UrlValidator._dnsCache">
-            <summary>
-            DNS 解析缓存，减少重复解析（线程安全）
-            </summary>
+            <param name="domains">允许的域名集合</param>
         </member>
         <member name="M:Mud.HttpUtils.UrlValidator.ValidateUrl(System.String,System.Boolean)">
             <summary>
-            验证 URL 是否为飞书官方域名且不包含私有 IP 地址
+            验证 URL 是否安全（在白名单域名内且不包含私有 IP 地址）
             </summary>
             <param name="url">要验证的 URL</param>
             <param name="allowCustomBaseUrls">是否允许自定义基础 URL（默认为 false）</param>
@@ -226,41 +251,15 @@
             </summary>
             <param name="baseUrl">基础 URL</param>
             <param name="allowCustomBaseUrls">是否允许自定义基础 URL</param>
-            <exception cref="T:System.InvalidOperationException">当基础 URL 不安全时抛出</exception>
         </member>
-        <member name="M:Mud.HttpUtils.UrlValidator.IsFeishuDomain(System.String)">
+        <member name="M:Mud.HttpUtils.UrlValidator.IsAllowedDomain(System.String)">
             <summary>
-            检查主机名是否为飞书官方域名
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.UrlValidator.IsPrivateIpAddressAsync(System.String)">
-            <summary>
-            异步检查主机名是否为私有 IP 地址
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.UrlValidator.IsPrivateIpAddress(System.String)">
-            <summary>
-            检查主机名是否为私有 IP 地址（同步版本，仅供内部使用）
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.UrlValidator.IsPrivateIpAddress(System.Net.IPAddress)">
-            <summary>
-            检查 IP 地址是否为私有地址
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.UrlValidator.IsInternalDomain(System.String)">
-            <summary>
-            检查是否为内网域名（如 .local, .internal, .lan 等）
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.UrlValidator.IsStandardHttpsPort(System.Uri)">
-            <summary>
-            检查是否为标准 HTTPS 端口
+            检查主机名是否在允许的域名白名单中
             </summary>
         </member>
         <member name="M:Mud.HttpUtils.UrlValidator.GetAllowedDomains">
             <summary>
-            获取飞书官方域名白名单
+            获取当前允许的域名白名单
             </summary>
         </member>
         <member name="M:Mud.HttpUtils.UrlValidator.AddAllowedDomain(System.String)">
@@ -268,24 +267,14 @@
             添加自定义域名到白名单（运行时扩展）
             </summary>
         </member>
+        <member name="M:Mud.HttpUtils.UrlValidator.RemoveAllowedDomain(System.String)">
+            <summary>
+            从白名单中移除域名
+            </summary>
+        </member>
         <member name="M:Mud.HttpUtils.UrlValidator.ClearDnsCache">
             <summary>
             清除 DNS 缓存
-            </summary>
-        </member>
-        <member name="T:Mud.HttpUtils.IPNetwork">
-            <summary>
-            IP 网络范围辅助类（用于 CIDR 检查）
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.IPNetwork.Contains(System.Net.IPAddress)">
-            <summary>
-            检查 IP 地址是否在此网络范围内
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.IPNetwork.CreateMask(System.Int32,System.Int32)">
-            <summary>
-            创建网络掩码
             </summary>
         </member>
         <member name="T:Mud.HttpUtils.XmlSerialize">
@@ -327,6 +316,22 @@
             <param name="encoding">编码方式</param>
             <returns>反序列化后的对象</returns>
         </member>
+        <member name="T:Mud.HttpUtils.AsyncEnumerableExtensions">
+            <summary>
+            IBaseHttpClient 的 IAsyncEnumerable 扩展方法
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.AsyncEnumerableExtensions.SendAsAsyncEnumerable``1(Mud.HttpUtils.IBaseHttpClient,System.Net.Http.HttpRequestMessage,System.Object,System.Threading.CancellationToken)">
+            <summary>
+            发送 HTTP 请求并以 IAsyncEnumerable 流式返回 NDJSON 响应中的每一行数据。
+            </summary>
+            <typeparam name="T">每行数据的类型。</typeparam>
+            <param name="client">HTTP 客户端。</param>
+            <param name="request">HTTP 请求消息。</param>
+            <param name="jsonSerializerOptions">JSON 序列化选项。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>流式返回的异步枚举。</returns>
+        </member>
         <member name="T:Mud.HttpUtils.EnhancedHttpClient">
             <summary>
             增强型HttpClient抽象类，提供了发送HTTP请求和下载文件的基本功能，具体实现由子类完成
@@ -347,6 +352,12 @@
             <inheritdoc/>
         </member>
         <member name="M:Mud.HttpUtils.EnhancedHttpClient.DownloadLargeAsync(System.Net.Http.HttpRequestMessage,System.String,System.Boolean,System.Threading.CancellationToken)">
+            <inheritdoc/>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.SendRawAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
+            <inheritdoc/>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.SendStreamAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
             <inheritdoc/>
         </member>
         <member name="M:Mud.HttpUtils.EnhancedHttpClient.SendXmlAsync``1(System.Net.Http.HttpRequestMessage,System.Text.Encoding,System.Threading.CancellationToken)">
@@ -371,6 +382,9 @@
             <inheritdoc/>
         </member>
         <member name="M:Mud.HttpUtils.EnhancedHttpClient.DeleteAsJsonAsync``1(System.String,System.Threading.CancellationToken)">
+            <inheritdoc/>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.DeleteAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
             <inheritdoc/>
         </member>
         <member name="M:Mud.HttpUtils.EnhancedHttpClient.PatchAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
@@ -591,12 +605,13 @@
             推荐在依赖注入场景中使用此类。
             </remarks>
         </member>
-        <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.#ctor(System.Net.Http.IHttpClientFactory,System.String,Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.HttpClientFactoryEnhancedClient})">
+        <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.#ctor(System.Net.Http.IHttpClientFactory,System.String,Mud.HttpUtils.IEncryptionProvider,Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.HttpClientFactoryEnhancedClient})">
             <summary>
             初始化 HttpClientFactoryEnhancedClient 实例
             </summary>
             <param name="factory">IHttpClientFactory 实例</param>
             <param name="clientName">Named HttpClient 名称</param>
+            <param name="encryptionProvider">加密提供器（可选）</param>
             <param name="logger">日志记录器（可选）</param>
             <exception cref="T:System.ArgumentNullException">factory 或 clientName 为 null</exception>
         </member>
@@ -611,6 +626,17 @@
         <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.DecryptContent(System.String)">
             <inheritdoc/>
         </member>
+        <member name="T:Mud.HttpUtils.HttpClientResolver">
+            <summary>
+            命名 HTTP 客户端解析器的默认实现
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientResolver.GetClient(System.String)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientResolver.TryGetClient(System.String,Mud.HttpUtils.IEnhancedHttpClient@)">
+            <inheritdoc />
+        </member>
         <member name="T:Mud.HttpUtils.HttpClientServiceCollectionExtensions">
             <summary>
             Mud.HttpUtils.Client 服务注册扩展方法。
@@ -623,6 +649,18 @@
             </summary>
             <param name="services">服务集合。</param>
             <param name="clientName">Named HttpClient 的名称。</param>
+            <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpClient(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,System.Action{Mud.HttpUtils.AesEncryptionOptions},System.Action{System.Net.Http.HttpClient})">
+            <summary>
+            添加基于 <see cref="T:System.Net.Http.IHttpClientFactory"/> 的 <see cref="T:Mud.HttpUtils.HttpClientFactoryEnhancedClient"/> 到依赖注入容器，
+            并注册为 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 服务，同时配置 AES 加密选项。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="clientName">Named HttpClient 的名称。</param>
+            <param name="configureEncryption">配置 AES 加密选项的委托。</param>
             <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
             <returns>服务集合（链式调用）。</returns>
             <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
@@ -812,6 +850,9 @@
         </member>
         <member name="M:System.Text.RegularExpressions.Generated.Utilities.StackPush(System.Int32[]@,System.Int32@,System.Int32,System.Int32)">
             <summary>Pushes 2 values onto the backtracking stack.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_asciiLettersAndDigitsAndDashUnderscoreKelvinSign">
+            <summary>Supports searching for characters in or not in "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyzK".</summary>
         </member>
         <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_nonAscii_2BDDE98808630E9B520E3AD9F33E4A0D939EAAED4FF3C3CC86415C934044BB2B">
             <summary>Supports searching for characters in or not in "CKSYcksyK".</summary>

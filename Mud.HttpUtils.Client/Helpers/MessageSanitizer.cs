@@ -28,9 +28,14 @@ public static class MessageSanitizer
         "email", "mail",
         "id_card", "idcard", "id_number", "idNumber",
         "card_no", "card_number", "bank_card", "bankCard",
-        "real_name", "realName", "name",
+        "real_name", "realName",
         "address", "住址",
         "passport", "driver_license"
+    };
+
+    private static readonly HashSet<string> NameSensitiveFields = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "real_name", "realName", "name"
     };
 
 #if NET7_0_OR_GREATER
@@ -113,6 +118,10 @@ public static class MessageSanitizer
                 foreach (var property in element.EnumerateObject())
                 {
                     if (SensitiveFields.Contains(property.Name))
+                    {
+                        dict[property.Name] = GetMaskedValue(property.Name, property.Value);
+                    }
+                    else if (NameSensitiveFields.Contains(property.Name))
                     {
                         dict[property.Name] = GetMaskedValue(property.Name, property.Value);
                     }

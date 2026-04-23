@@ -208,5 +208,67 @@ public class MessageSanitizerTests
         result.Should().Contain("100");
     }
 
+    [Fact]
+    public void Sanitize_WithNameField_ShouldMaskAsNameNotAsToken()
+    {
+        var json = @"{""name"":""张三""}";
+
+        var result = MessageSanitizer.Sanitize(json);
+
+        result.Should().NotBeEquivalentTo(json);
+        result.Should().NotContain("张三");
+    }
+
+    [Fact]
+    public void Sanitize_WithFieldNameContainingName_ShouldNotOverMask()
+    {
+        var json = @"{""file_name"":""report.pdf""}";
+
+        var result = MessageSanitizer.Sanitize(json);
+
+        result.Should().Contain("report.pdf");
+    }
+
+    [Fact]
+    public void Sanitize_WithRealNameField_ShouldMaskAsName()
+    {
+        var json = @"{""realName"":""李四""}";
+
+        var result = MessageSanitizer.Sanitize(json);
+
+        result.Should().NotBeEquivalentTo(json);
+        result.Should().NotContain("李四");
+    }
+
+    [Fact]
+    public void Sanitize_WithAddressField_ShouldMaskValue()
+    {
+        var json = @"{""address"":""北京市朝阳区某某路123号""}";
+
+        var result = MessageSanitizer.Sanitize(json);
+
+        result.Should().NotContain("北京市朝阳区某某路123号");
+    }
+
+    [Fact]
+    public void Sanitize_WithPassportField_ShouldMaskValue()
+    {
+        var json = @"{""passport"":""E12345678""}";
+
+        var result = MessageSanitizer.Sanitize(json);
+
+        result.Should().NotContain("E12345678");
+    }
+
+    [Fact]
+    public void Sanitize_WithDriverLicenseField_ShouldMaskValue()
+    {
+        var json = @"{""driver_license"":""110101199001011234""}";
+
+        var result = MessageSanitizer.Sanitize(json);
+
+        result.Should().NotContain("110101199001011234");
+    }
+
     #endregion
 }

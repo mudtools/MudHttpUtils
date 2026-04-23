@@ -10,4 +10,9 @@ public class TestTokenManager : ITokenManager
     {
         return Task.FromResult("Bearer test-access-token");
     }
+
+    public Task<string> GetOrRefreshTokenAsync(CancellationToken cancellationToken = default)
+    {
+        return GetTokenAsync(cancellationToken);
+    }
 }

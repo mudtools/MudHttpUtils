@@ -313,25 +313,33 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         var fullyQualifiedInterface = $"global::{api.Namespace}.{api.InterfaceName}";
         var fullyQualifiedImplementation = $"global::{api.Namespace}.{HttpClientGeneratorConstants.ImplementationNamespaceSuffix}.{api.ImplementationName}";
 
-        // 根据构造函数依赖模式生成不同的注释
         if (!string.IsNullOrEmpty(api.HttpClientType))
         {
-            // HttpClient 模式：构造函数依赖 HttpClientType，需要用户自行注册
             codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 HttpClient 包装实现类（瞬时服务）");
             codeBuilder.AppendLine($"            // 注意：实现类构造函数依赖 {api.HttpClientType}，请确保已通过 AddMudHttpClient 等方法注册此服务");
         }
         else if (!string.IsNullOrEmpty(api.TokenManagerType))
         {
-            // TokenManager 模式：构造函数依赖 TokenManagerType
             codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 HttpClient 包装实现类（瞬时服务）");
             codeBuilder.AppendLine($"            // 注意：实现类构造函数依赖 {api.TokenManagerType}，请确保已注册此令牌管理器服务");
         }
         else
         {
-            // 默认模式：构造函数依赖 IMudAppContext
             codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 HttpClient 包装实现类（瞬时服务）");
         }
 
+        var httpClientName = $"{api.InterfaceName}_HttpClient";
+        var timeoutSeconds = api.Timeout;
+        var timeoutMs = timeoutSeconds * 1000;
+
+        codeBuilder.AppendLine($"            services.AddHttpClient(\"{httpClientName}\", client =>");
+        codeBuilder.AppendLine($"            {{");
+        codeBuilder.AppendLine($"                client.Timeout = TimeSpan.FromMilliseconds({timeoutMs});");
+        if (!string.IsNullOrEmpty(api.BaseUrl))
+        {
+            codeBuilder.AppendLine($"                client.BaseAddress = new Uri(\"{api.BaseUrl}\");");
+        }
+        codeBuilder.AppendLine($"            }});");
         codeBuilder.AppendLine($"            services.AddTransient<{fullyQualifiedInterface}, {fullyQualifiedImplementation}>();");
     }
 }

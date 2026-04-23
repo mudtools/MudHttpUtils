@@ -16,6 +16,22 @@ public interface IBaseHttpClient
     Task<TResult?> SendAsync<TResult>(HttpRequestMessage request, object? jsonSerializerOptions = null, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 异步发送 HTTP 请求并返回原始的 <see cref="HttpResponseMessage"/>。
+    /// </summary>
+    /// <param name="request">HTTP 请求消息。</param>
+    /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+    /// <returns>原始 HTTP 响应消息任务。</returns>
+    Task<HttpResponseMessage> SendRawAsync(HttpRequestMessage request, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 异步发送 HTTP 请求并返回响应流。
+    /// </summary>
+    /// <param name="request">HTTP 请求消息。</param>
+    /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+    /// <returns>包含响应流的任务。</returns>
+    Task<Stream> SendStreamAsync(HttpRequestMessage request, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 异步下载数据并返回字节数组。
     /// </summary>
     /// <param name="request">HTTP 请求消息。</param>

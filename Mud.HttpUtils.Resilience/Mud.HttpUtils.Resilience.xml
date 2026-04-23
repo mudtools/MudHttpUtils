@@ -189,6 +189,12 @@
         <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.DownloadLargeAsync(System.Net.Http.HttpRequestMessage,System.String,System.Boolean,System.Threading.CancellationToken)">
             <inheritdoc />
         </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.SendRawAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.SendStreamAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
         <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.GetAsync``1(System.String,System.Threading.CancellationToken)">
             <inheritdoc />
         </member>
@@ -199,6 +205,9 @@
             <inheritdoc />
         </member>
         <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.DeleteAsJsonAsync``1(System.String,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.DeleteAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
             <inheritdoc />
         </member>
         <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.PatchAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
