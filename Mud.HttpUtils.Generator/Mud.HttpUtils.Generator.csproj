@@ -7,10 +7,10 @@
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>
-		<DocumentationFile>$(OutputPath)$(AssemblyName).xml</DocumentationFile>
 		<AssemblyName>Mud.HttpUtils.Generator</AssemblyName>
 		<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
 		<IsRoslynComponent>true</IsRoslynComponent>
+		<DocumentationFile>$(OutputPath)\bin\$(AssemblyName).xml</DocumentationFile>
 		<AnalysisLevel>6.0-all</AnalysisLevel>
 	</PropertyGroup>
 	<ItemGroup>

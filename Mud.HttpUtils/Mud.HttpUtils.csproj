@@ -4,7 +4,7 @@
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>
-		<DocumentationFile>$(OutputPath)$(AssemblyName).xml</DocumentationFile>
+		<DocumentationFile>$(OutputPath)\bin\$(AssemblyName).xml</DocumentationFile>
 		<Description>Mud HttpUtils 运行时库（向后兼容元包），自动引用 Abstractions、Attributes 和 Client 子模块。</Description>
 		<Product>Mud Http Utils</Product>
 		<PackageId>Mud.HttpUtils</PackageId>
