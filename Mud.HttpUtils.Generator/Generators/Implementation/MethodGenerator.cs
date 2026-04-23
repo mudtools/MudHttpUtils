@@ -97,9 +97,6 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         if (methodInfo.IgnoreGenerator) return;
 
-        // 检查复杂查询参数是否实现 IQueryParameter 接口（AOT 兼容性警告）
-        ReportAotCompatibilityWarnings(context, methodInfo);
-
         // 校验 HttpClient 类型与方法调用的兼容性
         if (!ValidateHttpClientCompatibility(context, methodInfo))
             return;
@@ -242,28 +239,6 @@ internal class MethodGenerator : ICodeFragmentGenerator
     private string GetTokenHeaderName(MethodAnalysisResult methodInfo)
     {
         return _requestBuilder.GetTokenHeaderName(methodInfo) ?? "Authorization";
-    }
-
-    /// <summary>
-    /// 检查复杂查询参数是否实现 IQueryParameter 接口，未实现时发出 AOT 兼容性警告
-    /// </summary>
-    private void ReportAotCompatibilityWarnings(GeneratorContext context, MethodAnalysisResult methodInfo)
-    {
-        var complexQueryParams = methodInfo.Parameters
-            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.QueryAttribute))
-            .Where(p => !TypeDetectionHelper.IsSimpleType(p.Type))
-            .ToList();
-
-        foreach (var param in complexQueryParams)
-        {
-            context.ProductionContext.ReportDiagnostic(
-                Diagnostic.Create(
-                    Diagnostics.HttpClientAotCompatibilityWarning,
-                    context.InterfaceDeclaration.GetLocation(),
-                    context.InterfaceDeclaration.Identifier.Text,
-                    methodInfo.MethodName ?? "Unknown",
-                    param.Type));
-        }
     }
 
     /// <summary>

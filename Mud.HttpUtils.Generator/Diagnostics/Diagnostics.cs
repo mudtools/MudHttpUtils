@@ -63,14 +63,6 @@ internal static class Diagnostics
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
-    public static readonly DiagnosticDescriptor HttpClientAotCompatibilityWarning = new(
-        id: "HTTPCLIENT006",
-        title: "AOT兼容性警告",
-        messageFormat: "接口 {0} 的方法 {1} 中复杂查询参数类型 '{2}' 未实现 IQueryParameter 接口，在 AOT/Trim 模式下可能失败。建议实现 IQueryParameter 接口或使用简单参数替代。",
-        category: "代码生成",
-        DiagnosticSeverity.Warning,
-        isEnabledByDefault: true);
-
     public static readonly DiagnosticDescriptor HttpClientAndTokenManagerMutuallyExclusive = new(
         id: "HTTPCLIENT007",
         title: "HttpClient 与 TokenManage 互斥",
