@@ -15,7 +15,6 @@ internal sealed class GeneratedCodeConsts
 
     public static string HttpGeneratedCodeAttribute => $"[global::System.CodeDom.Compiler.GeneratedCode(\"Mud.HttpUtils.Generator\", \"{GetAssemblyVersion()}\")]";
 
-    public static string IgnoreGeneratorAttribute = "IgnoreGeneratorAttribute";
     /// <summary>
     /// 获取当前程序集的版本号
     /// </summary>

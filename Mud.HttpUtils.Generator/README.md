@@ -2,19 +2,20 @@
 
 ## 概述
 
-Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为标记了 `[HttpClientApi]` 特性的接口生成 HttpClient 实现类和服务注册代码。支持多种 HTTP 方法、灵活的参数处理、内容类型管理、Token 认证等功能。
+Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为标记了 `[HttpClientApi]` 特性的接口生成 HttpClient 实现类和服务注册代码。支持多种 HTTP 方法、灵活的参数处理、内容类型管理、Token 认证、请求体加密、流式响应等功能。
 
 ## 功能特性
 
 ### 核心功能
 
 - **自动代码生成**：根据接口定义自动生成 HttpClient 实现
-- **HTTP 方法支持**：支持 GET、POST、PUT、DELETE、PATCH、HEAD、OPTIONS 等 HTTP 方法
+- **HTTP 方法支持**：支持 GET、POST、PUT、DELETE（含请求体）、PATCH、HEAD、OPTIONS 等 HTTP 方法
 - **参数处理**：自动处理 Path、Query、Header、Body、FormContent 等参数类型
 - **Token 管理**：支持多种 Token 类型，TokenType 使用字符串类型，解耦强绑定
 - **HttpClient 模式**：支持通过 `HttpClient` 属性直接注入 HttpClient 接口，与 `TokenManage` 互斥
 - **依赖注入**：自动生成服务注册扩展方法 `AddWebApiHttpClient()`
 - **智能注释**：根据运行模式自动生成 DI 依赖提示注释
+- **Timeout 生效**：`[HttpClientApi(Timeout = N)]` 中的 `Timeout` 属性大于 0 时，生成器会在注册代码中生成 `client.Timeout` 设置
 
 ### 高级功能
 
@@ -23,11 +24,12 @@ Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为
 - **请求体加密**：支持请求体数据加密传输
 - **响应解密**：支持响应数据自动解密
 - **文件下载**：支持大文件下载和二进制数据下载
-- **表单数据**：支持 multipart/form-data 格式
+- **表单数据**：支持 multipart/form-data 格式，支持 `[JsonPropertyName]` 属性名映射
 - **数组查询参数**：支持数组类型的查询参数
+- **原始字符串请求体**：支持 `[Body(RawString = true)]` 直接发送原始字符串
 - **继承支持**：支持生成抽象类、类继承、接口继承
 - **事件处理器生成**：通过 `[GenerateEventHandler]` 特性自动生成事件处理器代码
-- **忽略生成**：支持通过 `[IgnoreGenerator]` 和 `[IgnoreImplement]` 特性忽略特定代码生成
+- **忽略生成**：支持通过 `[IgnoreGenerator]` 特性忽略特定代码生成（可标注接口、方法、属性、字段）
 
 ## 安装
 
@@ -163,15 +165,37 @@ public static partial class HttpClientApiExtensions
 }
 ```
 
+#### Timeout 配置生成
+
+当 `[HttpClientApi(Timeout = N)]` 中 `Timeout > 0` 时，生成器会在注册方法中添加 `client.Timeout` 设置：
+
+```csharp
+[HttpClientApi(HttpClient = "IEnhancedHttpClient", Timeout = 50)]
+public interface IMyApi { }
+
+// 生成的注册代码：
+services.AddTransient<global::MyApp.IMyApi>(sp =>
+{
+    var httpClient = sp.GetRequiredService<global::Mud.HttpUtils.IEnhancedHttpClient>();
+    var client = httpClient as global::Mud.HttpUtils.HttpClientFactoryEnhancedClient;
+    if (client != null)
+    {
+        var innerClient = client.Client;
+        innerClient.Timeout = TimeSpan.FromMilliseconds(50000);
+    }
+    return new global::MyApp.HttpClientApi.MyApi(option, httpClient);
+});
+```
+
 #### 智能注释提示
 
 生成器会根据运行模式自动生成 DI 依赖提示：
 
-| 模式 | 生成的注释 |
-|------|-----------|
-| HttpClient | `// 注意：实现类构造函数依赖 IEnhancedHttpClient，请确保已通过 AddMudHttpClient 等方法注册此服务` |
-| TokenManager | `// 注意：实现类构造函数依赖 IFeishuAppManager，请确保已注册此令牌管理器服务` |
-| 默认 | `// 注册 XX 的 HttpClient 包装实现类（瞬时服务）` |
+| 模式           | 生成的注释                                                                  |
+| ------------ | ---------------------------------------------------------------------- |
+| HttpClient   | `// 注意：实现类构造函数依赖 IEnhancedHttpClient，请确保已通过 AddMudHttpClient 等方法注册此服务` |
+| TokenManager | `// 注意：实现类构造函数依赖 IFeishuAppManager，请确保已注册此令牌管理器服务`                     |
+| 默认           | `// 注册 XX 的 HttpClient 包装实现类（瞬时服务）`                                    |
 
 ### 注册组
 
@@ -196,7 +220,7 @@ services.AddExternalWebApiHttpClient();
 [HttpClientApi(
     baseAddress: "https://api.example.com",  // API 基础地址
     ContentType = "application/json",        // 默认请求内容类型
-    Timeout = 50,                            // 超时时间（秒）
+    Timeout = 50,                            // 超时时间（秒），0 表示不设置
     TokenManage = "ITokenManager",           // Token 管理器接口（与 HttpClient 互斥）
     HttpClient = "IMyHttpClient",            // HttpClient 接口（与 TokenManage 互斥，优先）
     RegistryGroupName = "Example",           // 注册组名称
@@ -276,7 +300,6 @@ Task<User> CreateUserAsync([Body("application/xml")] UserRequest request);
 [Post("/users")]
 Task<User> CreateUserAsync(
     [Body(
-        ContentType = "application/json",
         EnableEncrypt = true,
         EncryptSerializeType = SerializeType.Json,
         EncryptPropertyName = "data"
@@ -301,6 +324,8 @@ Task DownloadFileAsync([Path] string fileId, [FilePath(BufferSize = 81920)] stri
 [Post("/upload")]
 Task UploadAsync([FormContent] IFormContent formData);
 ```
+
+> `FormContentGenerator` 支持 `[JsonPropertyName]` 特性，当属性标记了 `[JsonPropertyName("custom_name")]` 时，生成的表单字段名使用 `custom_name` 而非 C# 属性名。
 
 ### Token 认证
 
@@ -371,8 +396,13 @@ public class UserCreatedEvent
 ### 忽略代码生成
 
 ```csharp
+// 忽略接口生成（跳过实现类和注册代码）
+[IgnoreGenerator]
+[HttpClientApi("https://api.example.com")]
+public interface IInternalApi { }
+
 // 忽略方法实现
-[IgnoreImplement]
+[IgnoreGenerator]
 [Post("/internal")]
 Task InternalMethodAsync([Body] object data);
 
@@ -397,15 +427,17 @@ Mud.HttpUtils.Generator/
 │   ├── Implementation/           # 实现类生成
 │   │   ├── ConstructorGenerator.cs  # 构造函数生成
 │   │   └── RequestBuilder.cs     # 请求构建
+│   ├── FormContentGenerator.cs   # FormContent 生成器（支持 JsonPropertyName）
 │   ├── HttpInvokeClassSourceGenerator.cs   # 实现类主生成器
-│   └── HttpInvokeRegistrationGenerator.cs  # 注册代码生成器
+│   └── HttpInvokeRegistrationGenerator.cs  # 注册代码生成器（含 Timeout 配置）
 ├── Helpers/                      # 辅助类
-│   ├── MethodHelper.cs
-│   └── AttributeDataHelper.cs
+│   ├── AttributeDataHelper.cs    # 特性数据辅助
+│   ├── AttributeSyntaxHelper.cs  # 特性语法辅助
+│   └── ...
 ├── Models/                       # 数据模型
 │   ├── Analysis/                 # 分析结果模型
 │   └── Metadata/                 # 元数据模型
-│       ├── HttpClientApiInfo.cs        # API 接口信息（含 HttpClientType/TokenManagerType）
+│       ├── HttpClientApiInfo.cs        # API 接口信息（含 HttpClientType/TokenManagerType/Timeout）
 │       └── HttpClientApiInfoBase.cs    # 基础 API 信息
 └── Validators/                   # 验证器
 ```
@@ -432,25 +464,18 @@ Mud.HttpUtils.Generator/
 
 ## 版本历史
 
-### 1.9.0
+### 2.0.0
 
 - 注册代码生成新增智能注释提示：HttpClient 模式提示 `AddMudHttpClient`，TokenManager 模式提示注册令牌管理器
 - `HttpClientApiInfo` 新增 `HttpClientType` 和 `TokenManagerType` 属性
-
-### 1.8.0
-
 - 新增事件处理器生成功能
 - 新增继承支持
 - 新增忽略生成功能
-- 支持 .NET 10.0
-
-### 1.7.0
-
 - `TokenAttribute.TokenType` 改为字符串类型
 - 新增 `HttpClient` 属性
 - `HttpClient` 与 `TokenManage` 互斥
 
-### 1.0.0
+### 1.7.0
 
 - 初始版本
 - 从 Mud.ServiceCodeGenerator 项目中独立出来
@@ -462,3 +487,4 @@ Mud.HttpUtils.Generator/
 - [Mud.HttpUtils.Attributes](../Mud.HttpUtils.Attributes/) - 特性定义
 - [Mud.HttpUtils.Client](../Mud.HttpUtils.Client/) - 客户端实现
 - [Mud.HttpUtils.Resilience](../Mud.HttpUtils.Resilience/) - 弹性策略
+

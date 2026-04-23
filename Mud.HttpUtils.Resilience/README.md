@@ -19,9 +19,10 @@ Mud.HttpUtils.Resilience 是 Mud.HttpUtils 的弹性策略扩展包，基于 Pol
 
 | 类型 | 说明 |
 |------|------|
-| `ResilientHttpClient` | 弹性 HTTP 客户端装饰器，实现 `IEnhancedHttpClient`，为内部客户端添加 Polly 策略 |
+| `ResilientHttpClient` | 弹性 HTTP 客户端装饰器，实现 `IEnhancedHttpClient` 和 `IEncryptableHttpClient`，为内部客户端添加 Polly 策略 |
 | `PollyResiliencePolicyProvider` | 基于 Polly 的策略提供器实现，创建重试/超时/熔断策略 |
 | `IResiliencePolicyProvider` | 策略提供器接口，可自定义实现 |
+| `HttpRequestMessageCloner` | HTTP 请求消息克隆工具，确保重试时请求可安全复用 |
 
 ### 配置选项
 
@@ -202,15 +203,49 @@ options.CircuitBreaker.SamplingDurationSeconds = 60; // 采样持续时间（秒
 `ResilientHttpClient` 是 `IEnhancedHttpClient` 的装饰器，内部流程：
 
 ```
-调用方 → ResilientHttpClient → Polly 策略 → 内部 IEnhancedHttpClient (HttpClientFactoryEnhancedClient)
+调用方 → ResilientHttpClient → Polly 策略 → 请求克隆 → 内部 IEnhancedHttpClient (HttpClientFactoryEnhancedClient)
 ```
+
+### 请求克隆机制
+
+`ResilientHttpClient` 在每次执行请求前会通过 `HttpRequestMessageCloner` 克隆原始请求，确保重试时不会因 `HttpRequestMessage` 已被消费而失败。克隆内容包括：
+
+- HTTP 方法和请求 URI
+- 请求头（Headers）
+- 请求体内容（Content）及 Content Headers
+- HTTP 版本（Version）
+- 请求选项（Options，仅 .NET 5+）
+
+> `HttpRequestMessage` 在发送后不可重复使用（`Content` 流已被消费），因此克隆是重试策略正确工作的关键。
 
 `AddMudHttpResilienceDecorator` 的工作原理：
 1. 从 DI 容器中找到已注册的 `IEnhancedHttpClient` 描述符
 2. 移除原始注册
 3. 注册新的工厂，在解析时创建 `ResilientHttpClient` 包装原始实现
 
-> **注意**：`ResilientHttpClient` 实现了 `IEnhancedHttpClient`（包含 JSON/XML 所有方法），所有 HTTP 请求方法均通过 Polly 策略包装。加密方法（`IEncryptableHttpClient.EncryptContent`）不经过弹性策略包装，因为加密是请求前的本地数据转换操作，不涉及网络 I/O。
+> **注意**：`ResilientHttpClient` 实现了 `IEnhancedHttpClient`（包含 JSON/XML 所有方法），所有 HTTP 请求方法均通过 Polly 策略包装。加密方法（`IEncryptableHttpClient.EncryptContent`/`DecryptContent`）不经过弹性策略包装，因为加密是请求前的本地数据转换操作，不涉及网络 I/O。
+
+## 支持的 HTTP 方法
+
+`ResilientHttpClient` 为以下所有方法提供弹性策略包装：
+
+| 方法 | 说明 |
+|------|------|
+| `SendAsync<TResult>` | 通用 HTTP 请求 |
+| `SendRawAsync` | 原始 HttpResponseMessage 响应 |
+| `SendStreamAsync` | 响应流 |
+| `GetAsync<TResult>` | GET 请求 |
+| `PostAsJsonAsync<TRequest, TResult>` | POST JSON 请求 |
+| `PutAsJsonAsync<TRequest, TResult>` | PUT JSON 请求 |
+| `DeleteAsJsonAsync<TResult>` | DELETE 请求 |
+| `DeleteAsJsonAsync<TRequest, TResult>` | 带请求体的 DELETE 请求 |
+| `PatchAsJsonAsync<TRequest, TResult>` | PATCH JSON 请求 |
+| `SendXmlAsync<TResult>` | XML 请求 |
+| `PostAsXmlAsync<TRequest, TResult>` | POST XML 请求 |
+| `PutAsXmlAsync<TRequest, TResult>` | PUT XML 请求 |
+| `GetXmlAsync<TResult>` | GET XML 请求 |
+| `DownloadAsync` | 下载字节数组 |
+| `DownloadLargeAsync` | 大文件下载 |
 
 ## 依赖关系
 
@@ -231,3 +266,4 @@ options.CircuitBreaker.SamplingDurationSeconds = 60; // 采样持续时间（秒
 - **可选扩展**：不影响核心包的使用，按需引用
 - **配置驱动**：所有策略参数均可通过代码或配置文件灵活配置
 - **策略可组合**：可单独使用重试、超时、熔断，也可组合使用
+- **请求安全复用**：通过请求克隆机制确保重试时请求可安全发送

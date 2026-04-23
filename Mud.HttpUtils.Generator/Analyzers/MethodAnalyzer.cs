@@ -61,7 +61,7 @@ internal static class MethodAnalyzer
             AsyncInnerReturnType = TypeSymbolHelper.ExtractAsyncInnerType(methodSymbol.ReturnType),
             IsAsyncMethod = TypeSymbolHelper.IsAsyncType(methodSymbol.ReturnType),
             Parameters = parameters,
-            IgnoreImplement = HasMethodAttribute(methodSymbol, HttpClientGeneratorConstants.IgnoreImplementAttributeNames),
+            IgnoreGenerator = HasMethodAttribute(methodSymbol, HttpClientGeneratorConstants.IgnoreGeneratorAttributeNames),
             InterfaceAttributes = interfaceAttributes,
             InterfaceHeaderAttributes = interfaceHeaderAttributes,
             MethodContentType = methodContentType,

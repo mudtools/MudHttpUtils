@@ -95,7 +95,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             return;
         }
 
-        if (methodInfo.IgnoreImplement) return;
+        if (methodInfo.IgnoreGenerator) return;
 
         // 检查复杂查询参数是否实现 IQueryParameter 接口（AOT 兼容性警告）
         ReportAotCompatibilityWarnings(context, methodInfo);

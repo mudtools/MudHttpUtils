@@ -15,15 +15,7 @@ internal static class HttpClientGeneratorConstants
 {
     public static readonly string[] TokenAttributeNames = ["TokenAttribute", "Token"];
 
-    /// <summary>
-    /// 忽略生成实现的特性名称数组
-    /// </summary>
-    public static readonly string[] IgnoreImplementAttributeNames = ["IgnoreImplementAttribute", "IgnoreImplement"];
-
-    /// <summary>
-    /// 忽略生成包装接口的特性名称数组
-    /// </summary>
-    public static readonly string[] IgnoreWrapInterfaceAttributeNames = ["IgnoreWrapInterfaceAttribute", "IgnoreWrapInterface"];
+    public static readonly string[] IgnoreGeneratorAttributeNames = ["IgnoreGeneratorAttribute", "IgnoreGenerator"];
 
     /// <summary>
     /// HttpClientApi特性名称数组

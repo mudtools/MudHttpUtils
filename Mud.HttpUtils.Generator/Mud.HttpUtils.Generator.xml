@@ -175,16 +175,6 @@
             生成器常量配置
             </summary>
         </member>
-        <member name="F:Mud.HttpUtils.HttpClientGeneratorConstants.IgnoreImplementAttributeNames">
-            <summary>
-            忽略生成实现的特性名称数组
-            </summary>
-        </member>
-        <member name="F:Mud.HttpUtils.HttpClientGeneratorConstants.IgnoreWrapInterfaceAttributeNames">
-            <summary>
-            忽略生成包装接口的特性名称数组
-            </summary>
-        </member>
         <member name="F:Mud.HttpUtils.HttpClientGeneratorConstants.HttpClientApiAttributeNames">
             <summary>
             HttpClientApi特性名称数组
@@ -1277,9 +1267,9 @@
             方法参数列表
             </summary>
         </member>
-        <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.IgnoreImplement">
+        <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.IgnoreGenerator">
             <summary>
-            是否忽略生成实现 [IgnoreImplement]
+            是否忽略代码生成 [IgnoreGenerator]
             </summary>
         </member>
         <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.InterfaceAttributes">

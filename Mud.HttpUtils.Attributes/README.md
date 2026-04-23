@@ -25,7 +25,7 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 | `GetAttribute` | GET 请求 | Method |
 | `PostAttribute` | POST 请求 | Method |
 | `PutAttribute` | PUT 请求 | Method |
-| `DeleteAttribute` | DELETE 请求 | Method |
+| `DeleteAttribute` | DELETE 请求（支持带请求体） | Method |
 | `PatchAttribute` | PATCH 请求 | Method |
 | `HeadAttribute` | HEAD 请求 | Method |
 | `OptionsAttribute` | OPTIONS 请求 | Method |
@@ -56,8 +56,7 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 
 | 特性 | 用途 | 目标 |
 |------|------|------|
-| `IgnoreImplementAttribute` | 忽略实现生成 | Method |
-| `IgnoreGeneratorAttribute` | 忽略代码生成 | Interface / Method / Property |
+| `IgnoreGeneratorAttribute` | 忽略代码生成 | Interface / Method / Property / Field |
 
 ### 事件处理特性
 
@@ -88,6 +87,9 @@ public interface IUserApi
 
     [Post("/users")]
     Task<UserInfo> CreateUserAsync([Body] CreateUserRequest request);
+
+    [Delete("/users/{id}")]
+    Task<bool> DeleteUserAsync([Path] int id, [Body] DeleteReason reason);
 
     [Get("/users")]
     Task<List<UserInfo>> SearchUsersAsync([Query] string keyword);
@@ -129,7 +131,7 @@ public interface IHttpClientApi { }
 |------|------|--------|------|
 | `BaseAddress` | `string` | — | API 基础地址（构造函数参数） |
 | `ContentType` | `string` | `"application/json"` | 默认请求内容类型 |
-| `Timeout` | `int` | `0` | 超时时间（秒），0 表示不设置 |
+| `Timeout` | `int` | `0` | 超时时间（秒），0 表示不设置，大于 0 时生成器会生成 `client.Timeout` 设置代码 |
 | `TokenManage` | `string?` | `null` | Token 管理器接口类型全名 |
 | `HttpClient` | `string?` | `null` | HttpClient 接口类型全名 |
 | `RegistryGroupName` | `string?` | `null` | 注册组名称，影响生成的注册方法名 |
@@ -144,15 +146,41 @@ public interface IHttpClientApi { }
 | `EnableEncrypt` | `bool` | `false` | 是否启用加密 |
 | `EncryptSerializeType` | `SerializeType` | `Json` | 加密序列化类型 |
 | `EncryptPropertyName` | `string` | `"data"` | 加密后的属性名 |
-| `RawString` | `bool` | `false` | 是否作为原始字符串发送 |
+| `RawString` | `bool` | `false` | 是否作为原始字符串发送（不进行 JSON 序列化） |
+
+### RawString 用法
+
+当需要直接发送纯文本或预格式化字符串时，使用 `RawString = true`：
+
+```csharp
+[Post("/api/content")]
+Task PostContentAsync([Body(RawString = true)] string content);
+```
+
+此时 `content` 参数将直接作为请求体发送，不会进行 JSON 序列化（不会添加引号），也不会调用 `ToString()`。
 
 ## TokenAttribute 详解
 
 | 属性 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `TokenType` | `string` | `"TenantAccessToken"` | Token 类型标识 |
+| `TokenType` | `string` | `"TenantAccessToken"` | Token 类型标识符（建议使用 `TokenTypes` 常量类） |
 | `InjectionMode` | `TokenInjectionMode` | `Header` | Token 注入模式 |
 | `Name` | `string?` | `null` | 自定义 Header/Query 名称 |
+
+### 使用 TokenTypes 常量
+
+```csharp
+using Mud.HttpUtils;
+
+[Token(TokenTypes.TenantAccessToken)]
+public interface IFeishuApi { }
+
+[Get("/users/{id}")]
+Task<User> GetUserAsync(
+    [Path] int id,
+    [Token(TokenTypes.UserAccessToken)] string? token = null
+);
+```
 
 ## 设计原则
 

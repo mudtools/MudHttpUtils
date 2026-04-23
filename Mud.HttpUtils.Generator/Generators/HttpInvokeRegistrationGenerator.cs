@@ -97,8 +97,8 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
             return null;
 
         // 检查是否标记为忽略实现
-        var ignoreImplementAttribute = AttributeDataHelper.GetAttributeDataFromSymbol(interfaceSymbol, HttpClientGeneratorConstants.IgnoreImplementAttributeNames);
-        if (ignoreImplementAttribute != null)
+        var ignoreGeneratorAttribute = AttributeDataHelper.GetAttributeDataFromSymbol(interfaceSymbol, HttpClientGeneratorConstants.IgnoreGeneratorAttributeNames);
+        if (ignoreGeneratorAttribute != null)
             return null;
 
         var isAbstract = AttributeDataHelper.GetBoolValueFromAttribute(httpClientApiAttribute, HttpClientGeneratorConstants.IsAbstractProperty, false);

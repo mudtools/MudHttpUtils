@@ -56,9 +56,9 @@ internal class MethodAnalysisResult
     public IReadOnlyList<ParameterInfo> Parameters { get; set; } = [];
 
     /// <summary>
-    /// 是否忽略生成实现 [IgnoreImplement]
+    /// 是否忽略代码生成 [IgnoreGenerator]
     /// </summary>
-    public bool IgnoreImplement { get; set; }
+    public bool IgnoreGenerator { get; set; }
 
     /// <summary>
     /// 接口特性列表（用于存储Header:Authorization、Query:Authorization等）

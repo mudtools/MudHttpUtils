@@ -1,6 +1,6 @@
 namespace Mud.HttpUtils.Attributes;
 
-[AttributeUsage(AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.Method, AllowMultiple = false)]
+[AttributeUsage(AttributeTargets.Interface | AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
 public sealed class IgnoreGeneratorAttribute : Attribute
 {
 }
