@@ -3,12 +3,11 @@
 		<TargetFrameworks>netstandard2.0;net6.0;net8.0;net10.0</TargetFrameworks>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
-		<GenerateDocumentationFile>True</GenerateDocumentationFile>
-		<DocumentationFile>$(OutputPath)\bin\$(AssemblyName).xml</DocumentationFile>
-		<Description>Mud HttpUtils 运行时库（向后兼容元包），自动引用 Abstractions、Attributes 和 Client 子模块。</Description>
+		<IncludeBuildOutput>false</IncludeBuildOutput>
+		<SuppressDependenciesWhenPacking>false</SuppressDependenciesWhenPacking>
+		<Description>Mud HttpUtils 元包，自动引用 Abstractions、Attributes、Client 和 Resilience 子模块。</Description>
 		<Product>Mud Http Utils</Product>
 		<PackageId>Mud.HttpUtils</PackageId>
-		<AssemblyName>Mud.HttpUtils</AssemblyName>
 	</PropertyGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\Mud.HttpUtils.Abstractions\Mud.HttpUtils.Abstractions.csproj" />

@@ -5,6 +5,7 @@
 /.vs
 /.docs
 /Mud.HttpUtils/obj
+/Mud.HttpUtils/bin
 /Mud.HttpUtils.Generator/.vs
 /Mud.HttpUtils.Generator/obj
 /Mud.HttpUtils.Abstractions/obj
@@ -40,3 +41,4 @@
 /Demos/CommonClassLibrary/bin
 /Demos/CommonClassLibrary/obj
 /Demos/bin
+/artifacts
