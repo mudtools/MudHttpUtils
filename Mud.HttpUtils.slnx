@@ -2,6 +2,8 @@
   <Folder Name="/Demos/">
     <Project Path="Demos/CommonClassLibrary/CommonClassLibrary.csproj" />
     <Project Path="Demos/HttpClientApiDemo/HttpClientApiDemo.csproj" />
+    <Project Path="Demos/HttpClientDemo/HttpClientDemo.csproj" />
+    <Project Path="Demos/ResilienceDemo/ResilienceDemo.csproj" />
   </Folder>
   <Folder Name="/Src/">
     <Project Path="Mud.HttpUtils.Abstractions/Mud.HttpUtils.Abstractions.csproj" />

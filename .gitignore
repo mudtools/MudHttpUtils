@@ -33,6 +33,10 @@
 /Tests/Mud.HttpUtils.Resilience.Tests/TestResults
 /Demos/HttpClientApiDemo/bin
 /Demos/HttpClientApiDemo/obj
+/Demos/HttpClientDemo/bin
+/Demos/HttpClientDemo/obj
+/Demos/ResilienceDemo/bin
+/Demos/ResilienceDemo/obj
 /Demos/CommonClassLibrary/bin
 /Demos/CommonClassLibrary/obj
 /Demos/bin
