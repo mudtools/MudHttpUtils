@@ -80,22 +80,6 @@ internal static class TokenHelper
     }
 
     /// <summary>
-    /// 生成带Scopes的GetOrRefreshTokenAsync调用代码
-    /// </summary>
-    /// <param name="scopes">Scopes数组</param>
-    /// <returns>生成的调用代码字符串</returns>
-    public static string GenerateTokenGetCode(string[] scopes)
-    {
-        if (scopes.Length == 0)
-        {
-            return "await tokenManager.GetOrRefreshTokenAsync(cancellationToken)";
-        }
-
-        var scopesArray = string.Join(", ", scopes.Select(s => $"\"{s}\""));
-        return $"await tokenManager.GetOrRefreshTokenAsync(new[] {{ {scopesArray} }}, cancellationToken)";
-    }
-
-    /// <summary>
     /// 获取默认Token类型字符串
     /// </summary>
     /// <returns>默认Token类型为TenantAccessToken</returns>

@@ -201,6 +201,8 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
             }
             _userLocks.Clear();
         }
+
+        base.Dispose(disposing);
     }
 
     /// <summary>

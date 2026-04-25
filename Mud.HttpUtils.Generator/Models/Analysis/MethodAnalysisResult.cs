@@ -120,6 +120,12 @@ internal class MethodAnalysisResult
     /// </summary>
     public string? InterfaceTokenScopes { get; set; }
 
+    /// <summary>
+    /// 方法级Token作用域（Scopes），从方法上的 [Token(Scopes = "...")] 特性获取。
+    /// 方法级 Scopes 优先于接口级 Scopes。
+    /// </summary>
+    public string? MethodTokenScopes { get; set; }
+
     public bool CacheEnabled { get; set; }
 
     public int CacheDurationSeconds { get; set; } = 300;

@@ -5,12 +5,13 @@ namespace Mud.HttpUtils;
 /// <summary>
 /// 令牌管理器抽象基类，提供并发安全的令牌刷新实现。
 /// </summary>
-public abstract class TokenManagerBase : ITokenManager
+public abstract class TokenManagerBase : ITokenManager, IDisposable
 {
-    private readonly SemaphoreSlim _refreshLock = new(1, 1);
-    private string? _cachedToken;
-    private long _tokenExpireTime;
-    private readonly ConcurrentDictionary<string, (string? Token, long ExpireTime)> _scopedTokens = new();
+    private readonly ConcurrentDictionary<string, (string? Token, long ExpireTime)> _tokenCache = new();
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _scopeLocks = new();
+    private readonly Timer _cleanupTimer;
+    private const string DefaultScopeKey = "default";
+    private const int CleanupIntervalSeconds = 300;
 
     /// <summary>
     /// 令牌刷新失败事件。
@@ -33,6 +34,18 @@ public abstract class TokenManagerBase : ITokenManager
     /// </summary>
     protected virtual int ExpireThresholdSeconds => 300;
 
+    /// <summary>
+    /// 获取作用域缓存的最大容量，默认 64。超过此容量时将清理过期条目。
+    /// </summary>
+    protected virtual int MaxScopeCacheSize => 64;
+
+    protected TokenManagerBase()
+    {
+        _cleanupTimer = new Timer(CleanupExpiredTokens, null,
+            TimeSpan.FromSeconds(CleanupIntervalSeconds),
+            TimeSpan.FromSeconds(CleanupIntervalSeconds));
+    }
+
     /// <inheritdoc />
     public abstract Task<string> GetTokenAsync(CancellationToken cancellationToken = default);
 
@@ -45,23 +58,7 @@ public abstract class TokenManagerBase : ITokenManager
     /// <inheritdoc />
     public async Task<string> GetOrRefreshTokenAsync(CancellationToken cancellationToken = default)
     {
-        if (IsTokenValid())
-            return _cachedToken!;
-
-        await _refreshLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            if (IsTokenValid())
-                return _cachedToken!;
-
-            var token = await RefreshTokenWithRetryAsync(cancellationToken).ConfigureAwait(false);
-            UpdateCachedToken(token);
-            return _cachedToken!;
-        }
-        finally
-        {
-            _refreshLock.Release();
-        }
+        return await GetOrRefreshTokenAsync((string[]?)null, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -69,22 +66,25 @@ public abstract class TokenManagerBase : ITokenManager
     {
         var scopeKey = GetScopeKey(scopes);
 
-        if (IsScopedTokenValid(scopeKey))
-            return _scopedTokens[scopeKey].Token!;
+        if (IsTokenValid(scopeKey))
+            return _tokenCache[scopeKey].Token!;
 
-        await _refreshLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var scopeLock = _scopeLocks.GetOrAdd(scopeKey, _ => new SemaphoreSlim(1, 1));
+        await scopeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (IsScopedTokenValid(scopeKey))
-                return _scopedTokens[scopeKey].Token!;
+            if (IsTokenValid(scopeKey))
+                return _tokenCache[scopeKey].Token!;
 
-            var token = await RefreshTokenWithScopesAsync(scopes, cancellationToken).ConfigureAwait(false);
-            UpdateScopedToken(scopeKey, token);
-            return _scopedTokens[scopeKey].Token!;
+            var token = scopes == null || scopes.Length == 0
+                ? await RefreshTokenWithRetryAsync(cancellationToken).ConfigureAwait(false)
+                : await RefreshTokenWithScopesAndRetryAsync(scopes, cancellationToken).ConfigureAwait(false);
+            UpdateToken(scopeKey, token);
+            return _tokenCache[scopeKey].Token!;
         }
         finally
         {
-            _refreshLock.Release();
+            scopeLock.Release();
         }
     }
 
@@ -115,7 +115,7 @@ public abstract class TokenManagerBase : ITokenManager
     protected virtual string GetScopeKey(string[]? scopes)
     {
         if (scopes == null || scopes.Length == 0)
-            return "default";
+            return DefaultScopeKey;
 
         return string.Join(",", scopes.OrderBy(s => s));
     }
@@ -126,8 +126,7 @@ public abstract class TokenManagerBase : ITokenManager
     /// <param name="token">凭证令牌。</param>
     protected void UpdateCachedToken(CredentialToken token)
     {
-        _cachedToken = token?.AccessToken;
-        _tokenExpireTime = token?.Expire ?? 0;
+        UpdateToken(DefaultScopeKey, token);
     }
 
     /// <summary>
@@ -137,7 +136,7 @@ public abstract class TokenManagerBase : ITokenManager
     /// <param name="token">凭证令牌。</param>
     protected void UpdateScopedToken(string scopeKey, CredentialToken token)
     {
-        _scopedTokens[scopeKey] = (token?.AccessToken, token?.Expire ?? 0);
+        UpdateToken(scopeKey, token);
     }
 
     /// <summary>
@@ -147,8 +146,7 @@ public abstract class TokenManagerBase : ITokenManager
     /// <param name="expireTime">过期时间（Unix 时间戳，毫秒）。</param>
     protected void SetCachedToken(string accessToken, long expireTime)
     {
-        _cachedToken = accessToken;
-        _tokenExpireTime = expireTime;
+        _tokenCache[DefaultScopeKey] = (accessToken, expireTime);
     }
 
     /// <summary>
@@ -158,6 +156,16 @@ public abstract class TokenManagerBase : ITokenManager
     protected virtual void OnRefreshFailed(TokenRefreshFailedEventArgs e)
     {
         RefreshFailed?.Invoke(this, e);
+    }
+
+    private void UpdateToken(string scopeKey, CredentialToken token)
+    {
+        _tokenCache[scopeKey] = (token?.AccessToken, token?.Expire ?? 0);
+
+        if (_tokenCache.Count > MaxScopeCacheSize)
+        {
+            CleanupExpiredTokens(null);
+        }
     }
 
     private async Task<CredentialToken> RefreshTokenWithRetryAsync(CancellationToken cancellationToken)
@@ -200,19 +208,49 @@ public abstract class TokenManagerBase : ITokenManager
         throw lastException ?? new InvalidOperationException("令牌刷新失败");
     }
 
-    private bool IsTokenValid()
+    private async Task<CredentialToken> RefreshTokenWithScopesAndRetryAsync(string[] scopes, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrEmpty(_cachedToken) || _tokenExpireTime <= 0)
-            return false;
+        var retryCount = 0;
+        Exception? lastException = null;
 
-        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var thresholdMs = ExpireThresholdSeconds * 1000L;
-        return _tokenExpireTime - thresholdMs > now;
+        while (retryCount <= MaxRefreshRetryCount)
+        {
+            try
+            {
+                return await RefreshTokenWithScopesAsync(scopes, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                lastException = ex;
+                var eventArgs = new TokenRefreshFailedEventArgs(ex, tokenType: null, retryCount);
+
+                OnRefreshFailed(eventArgs);
+
+                if (!string.IsNullOrEmpty(eventArgs.FallbackToken))
+                {
+                    return new CredentialToken
+                    {
+                        AccessToken = eventArgs.FallbackToken,
+                        Expire = DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeMilliseconds()
+                    };
+                }
+
+                if (!eventArgs.ShouldRetry || retryCount >= MaxRefreshRetryCount)
+                {
+                    throw;
+                }
+
+                retryCount++;
+                await Task.Delay(RefreshRetryDelayMilliseconds, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        throw lastException ?? new InvalidOperationException("令牌刷新失败");
     }
 
-    private bool IsScopedTokenValid(string scopeKey)
+    private bool IsTokenValid(string scopeKey)
     {
-        if (!_scopedTokens.TryGetValue(scopeKey, out var entry))
+        if (!_tokenCache.TryGetValue(scopeKey, out var entry))
             return false;
 
         if (string.IsNullOrEmpty(entry.Token) || entry.ExpireTime <= 0)
@@ -221,5 +259,55 @@ public abstract class TokenManagerBase : ITokenManager
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var thresholdMs = ExpireThresholdSeconds * 1000L;
         return entry.ExpireTime - thresholdMs > now;
+    }
+
+    private void CleanupExpiredTokens(object? state)
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var thresholdMs = ExpireThresholdSeconds * 1000L;
+
+        foreach (var kvp in _tokenCache)
+        {
+            if (kvp.Key == DefaultScopeKey)
+                continue;
+
+            if (kvp.Value.ExpireTime - thresholdMs <= now)
+            {
+                _tokenCache.TryRemove(kvp.Key, out _);
+
+                if (_scopeLocks.TryRemove(kvp.Key, out var lockObj))
+                {
+                    lockObj.Dispose();
+                }
+            }
+        }
+    }
+
+    private bool _disposed;
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+
+        if (disposing)
+        {
+            _cleanupTimer?.Dispose();
+
+            foreach (var scopeLock in _scopeLocks.Values)
+            {
+                scopeLock?.Dispose();
+            }
+            _scopeLocks.Clear();
+            _tokenCache.Clear();
+        }
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
     }
 }

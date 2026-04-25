@@ -126,7 +126,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         if (needsTokenInjection)
         {
-            var scopes = TokenHelper.ParseScopes(methodInfo.InterfaceTokenScopes);
+            var effectiveScopes = methodInfo.MethodTokenScopes ?? methodInfo.InterfaceTokenScopes;
+            var scopes = TokenHelper.ParseScopes(effectiveScopes);
             if (scopes.Length > 0)
             {
                 var scopesArray = string.Join(", ", scopes.Select(s => $"\"{s}\""));

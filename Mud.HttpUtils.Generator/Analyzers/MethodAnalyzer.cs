@@ -53,6 +53,8 @@ internal static class MethodAnalyzer
 
         var (cacheEnabled, cacheDurationSeconds, cacheKeyTemplate, cacheVaryByUser) = AnalyzeCacheAttribute(methodSymbol);
 
+        var methodTokenScopes = AnalyzeMethodTokenScopes(methodSymbol);
+
         return new MethodAnalysisResult
         {
             IsValid = true,
@@ -76,6 +78,7 @@ internal static class MethodAnalyzer
             InterfaceTokenInjectionMode = interfaceTokenInjectionMode,
             InterfaceTokenName = interfaceTokenName,
             InterfaceTokenScopes = interfaceTokenScopes,
+            MethodTokenScopes = methodTokenScopes,
             CacheEnabled = cacheEnabled,
             CacheDurationSeconds = cacheDurationSeconds,
             CacheKeyTemplate = cacheKeyTemplate,
@@ -587,6 +590,17 @@ internal static class MethodAnalyzer
     private static string GetHeaderName(AttributeData headerAttr)
     {
         return AttributeDataHelper.GetStringValueFromAttribute(headerAttr, ["AliasAs", "Name"], 0, "Unknown") ?? "Unknown";
+    }
+
+    /// <summary>
+    /// 分析方法级别的 Token Scopes
+    /// </summary>
+    private static string? AnalyzeMethodTokenScopes(IMethodSymbol methodSymbol)
+    {
+        var tokenAttr = methodSymbol.GetAttributes()
+            .FirstOrDefault(attr => HasAttributeWithName(attr, "TokenAttribute"));
+
+        return tokenAttr != null ? GetTokenScopes(tokenAttr) : null;
     }
 
     /// <summary>

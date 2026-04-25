@@ -210,6 +210,22 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         return _cachedToken;
     }
 
+    protected override async Task<CredentialToken> RefreshTokenWithScopesAsync(string[]? scopes, CancellationToken cancellationToken)
+    {
+        if (_cachedToken?.RefreshToken != null)
+        {
+            _cachedToken = await RefreshTokenByRefreshTokenAsync(
+                _cachedToken.RefreshToken, cancellationToken).ConfigureAwait(false);
+            UpdateCachedToken(_cachedToken);
+            return _cachedToken;
+        }
+
+        _cachedToken = await GetTokenByClientCredentialsAsync(scopes, cancellationToken)
+            .ConfigureAwait(false);
+        UpdateCachedToken(_cachedToken);
+        return _cachedToken;
+    }
+
     /// <inheritdoc/>
     public override async Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
     {
