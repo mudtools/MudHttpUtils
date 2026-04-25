@@ -2,7 +2,7 @@
 
 ## 概述
 
-Mud.HttpUtils.Client 是 Mud.HttpUtils 的客户端实现层，提供 `EnhancedHttpClient` 抽象基类、`HttpClientFactoryEnhancedClient` 工厂集成实现、`DefaultAesEncryptionProvider` 加密实现、`HttpClientResolver` 命名客户端解析器，以及 DI 服务注册扩展方法。
+Mud.HttpUtils.Client 是 Mud.HttpUtils 的客户端实现层，提供 `IEnhancedHttpClient` 的默认实现、加密提供程序、令牌管理器基类、应用上下文、安全认证、日志脱敏、缓存等核心功能。
 
 ## 目标框架
 
@@ -13,67 +13,74 @@ Mud.HttpUtils.Client 是 Mud.HttpUtils 的客户端实现层，提供 `EnhancedH
 
 ## 包含内容
 
-### 核心实现
+### HTTP 客户端实现
 
-| 类型                                | 说明                                                                |
-| --------------------------------- | ----------------------------------------------------------------- |
-| `EnhancedHttpClient`              | 抽象基类，实现 `IEnhancedHttpClient` 接口，提供 JSON/XML 请求、文件下载、流式响应、日志记录等功能 |
-| `HttpClientFactoryEnhancedClient` | 基于 `IHttpClientFactory` 的实现，支持加密提供程序注入，解决 Socket 耗尽和 DNS 刷新问题     |
-| `HttpClientResolver`              | `IHttpClientResolver` 的默认实现，支持按名称解析命名客户端                          |
-| `DefaultAesEncryptionProvider`    | `IEncryptionProvider` 的默认 AES 实现，使用 CBC 模式和 PKCS7 填充              |
-| `EnhancedHttpClientLogs`          | `LoggerMessage` 高性能日志定义                                           |
+| 类 | 说明 |
+|-----|------|
+| `EnhancedHttpClient` | `IEnhancedHttpClient` 默认实现，封装 `System.Net.Http.HttpClient`，支持请求/响应拦截器、基地址动态切换 |
+| `DirectEnhancedHttpClient` | 直接构造的增强客户端，支持加密操作 |
+| `HttpClientFactoryEnhancedClient` | 基于 `IHttpClientFactory` 的增强客户端，支持基地址动态切换 |
+| `HttpClientResolver` | `IHttpClientResolver` 默认实现，管理命名客户端注册与解析 |
 
-### 扩展方法
+### 基地址动态切换
 
-| 类型                          | 说明                                                             |
-| --------------------------- | -------------------------------------------------------------- |
-| `AsyncEnumerableExtensions` | `IBaseHttpClient` 的 `IAsyncEnumerable<T>` 流式响应扩展（仅 .NET 6+ 可用） |
-
-### DI 服务注册
-
-| 方法                                                                       | 说明                                                                                                  |
-| ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
-| `AddMudHttpClient(clientName, configureHttpClient)`                      | 注册 Named HttpClient 和 `HttpClientFactoryEnhancedClient` 为 `IEnhancedHttpClient` / `IBaseHttpClient` |
-| `AddMudHttpClient(clientName, baseAddress)`                              | 带基础地址的便捷重载                                                                                          |
-| `AddMudHttpClient(clientName, configureEncryption, configureHttpClient)` | 带加密配置的重载，同时注册 `IEncryptionProvider`                                                                 |
-
-> `AddMudHttpClient` 同时注册 `IHttpClientResolver` 为单例服务，支持多命名客户端场景。
-
-### 工具类
-
-| 类型                 | 说明                           |
-| ------------------ | ---------------------------- |
-| `HttpClientUtils`  | HTTP 客户端扩展方法（文件内容创建等）        |
-| `MessageSanitizer` | 敏感信息脱敏工具（支持姓名字段、减少误判）        |
-| `UrlValidator`     | URL 安全验证工具（可配置域名白名单、SSRF 防护） |
-| `XmlSerialize`     | XML 序列化/反序列化工具               |
-| `ExceptionUtils`   | 参数校验扩展方法                     |
-
-## 安装
-
-```xml
-<PackageReference Include="Mud.HttpUtils.Client" Version="1.7.0" />
-```
-
-## 使用方法
-
-### 方式一：通过 DI 注册（推荐）
-
-使用 `AddMudHttpClient` 注册基于 `IHttpClientFactory` 的增强客户端：
+`EnhancedHttpClient` 和 `HttpClientFactoryEnhancedClient` 均实现了 `WithBaseAddress` 方法，支持运行时动态切换基地址：
 
 ```csharp
-// 基础注册
-services.AddMudHttpClient("myApi", client =>
-{
-    client.BaseAddress = new Uri("https://api.example.com");
-    client.Timeout = TimeSpan.FromSeconds(60);
-});
+var userClient = httpClient.WithBaseAddress("https://user-api.example.com");
+var orderClient = httpClient.WithBaseAddress("https://order-api.example.com");
 
-// 或使用基础地址便捷重载
-services.AddMudHttpClient("myApi", "https://api.example.com");
+// 获取当前基地址
+var baseAddress = httpClient.BaseAddress;
 ```
 
-#### 带加密配置的注册
+> `WithBaseAddress` 创建新的客户端实例，不影响原客户端。新客户端继承原客户端的超时设置和默认请求头。
+
+### 文件上传进度报告
+
+| 类 | 说明 |
+|-----|------|
+| `ProgressableStreamContent` | 支持进度报告的 `HttpContent` 实现，用于文件上传场景 |
+
+```csharp
+var content = new ProgressableStreamContent(
+    fileContent,
+    new Progress<long>(bytesRead => Console.WriteLine($"已上传: {bytesRead} 字节")),
+    bufferSize: 8192
+);
+```
+
+> `ProgressableStreamContent` 在序列化流时通过 `IProgress<long>` 报告已发送字节数，适用于大文件上传进度监控。
+
+### 请求/响应拦截器
+
+| 类 | 说明 |
+|-----|------|
+| `IHttpRequestInterceptor` | 请求拦截器接口 |
+| `IHttpResponseInterceptor` | 响应拦截器接口 |
+
+拦截器按 `Order` 属性排序执行，`Order` 值小的先执行。
+
+### 响应缓存
+
+| 类 | 说明 |
+|-----|------|
+| `CacheResponseInterceptor` | 响应缓存拦截器，实现 `IHttpResponseInterceptor`，配合 `CacheAttribute` 使用 |
+| `MemoryHttpResponseCache` | 基于 `IMemoryCache` 的内存响应缓存，实现 `IHttpResponseCache` |
+
+```csharp
+// 注册缓存拦截器
+services.AddSingleton<IHttpResponseCache, MemoryHttpResponseCache>();
+services.AddSingleton<IHttpResponseInterceptor, CacheResponseInterceptor>();
+```
+
+> `CacheResponseInterceptor` 的 `Order` 为 100，确保在其他拦截器之后执行。`MemoryHttpResponseCache` 使用 `IMemoryCache` 作为底层存储，支持绝对过期和滑动过期。
+
+### 加密提供程序
+
+| 类 | 说明 |
+|-----|------|
+| `DefaultAesEncryptionProvider` | `IEncryptionProvider` 默认实现，使用 AES-CBC 模式加密 |
 
 ```csharp
 services.AddMudHttpClient("myApi", encryption =>
@@ -86,193 +93,167 @@ services.AddMudHttpClient("myApi", encryption =>
 });
 ```
 
-注册后即可在构造函数中注入 `IEnhancedHttpClient` 或 `IBaseHttpClient`：
+> 密钥长度支持 AES-128（16 字节）、AES-192（24 字节）、AES-256（32 字节）。`AesEncryptionOptions.Validate()` 方法在启动时验证密钥和 IV 的有效性。
+
+### 安全认证提供程序
+
+| 类 | 说明 |
+|-----|------|
+| `DefaultApiKeyProvider` | `IApiKeyProvider` 默认实现，从 `IConfiguration` 读取 API Key |
+| `DefaultHmacSignatureProvider` | `IHmacSignatureProvider` 默认实现，使用 HMAC-SHA256 算法 |
 
 ```csharp
-public class UserService
-{
-    private readonly IEnhancedHttpClient _httpClient;
+// API Key 认证
+services.AddSingleton<IApiKeyProvider, DefaultApiKeyProvider>();
 
-    public UserService(IEnhancedHttpClient httpClient)
-    {
-        _httpClient = httpClient;
-    }
-
-    public async Task<User?> GetUserAsync(int id)
-    {
-        return await _httpClient.GetAsync<User>($"/users/{id}");
-    }
-}
+// HMAC 签名认证
+services.AddSingleton<IHmacSignatureProvider, DefaultHmacSignatureProvider>();
 ```
 
-> **注意**：`AddMudHttpClient` 将 `HttpClientFactoryEnhancedClient` 同时注册为 `IEnhancedHttpClient` 和 `IBaseHttpClient`。如果后续使用 `AddMudHttpResilienceDecorator`，装饰器会自动替换 `IBaseHttpClient` 注册。
+> `DefaultApiKeyProvider` 从 `IConfiguration` 的 `ApiKey` 或 `ApiKeys:Default` 键读取密钥。`DefaultHmacSignatureProvider` 使用 HMAC-SHA256 算法对请求内容计算签名，签名结果以 Base64 编码。
 
-### 方式二：多命名客户端场景
+### 日志脱敏
 
-在需要同时调用多个不同 API 的场景下，使用 `IHttpClientResolver` 按名称获取客户端：
+| 类 | 说明 |
+|-----|------|
+| `DefaultSensitiveDataMasker` | `ISensitiveDataMasker` 默认实现，支持 `Hide`、`Mask`、`TypeOnly` 三种脱敏模式 |
 
 ```csharp
-// 注册多个客户端
-services.AddMudHttpClient("userApi", "https://user-api.example.com");
-services.AddMudHttpClient("orderApi", "https://order-api.example.com");
+services.AddSingleton<ISensitiveDataMasker, DefaultSensitiveDataMasker>();
 
-// 通过 IHttpClientResolver 动态获取
-public class MultiApiService
+// 使用
+var masker = serviceProvider.GetRequiredService<ISensitiveDataMasker>();
+var masked = masker.Mask("13800138000", SensitiveDataMaskMode.Mask, 3, 4);
+// 结果: "138****8000"
+
+var maskedObj = masker.MaskObject(userRequest);
+// 自动识别 [SensitiveData] 标记的属性并脱敏
+```
+
+### 令牌管理
+
+| 类 | 说明 |
+|-----|------|
+| `TokenManagerBase` | 令牌管理器抽象基类，提供并发安全的令牌刷新 |
+| `UserTokenManagerBase` | 用户令牌管理器抽象基类，提供用户级并发安全刷新和缓存容量控制 |
+| `TokenRefreshHostedService` | 令牌后台刷新服务，实现 `IHostedService` 和 `ITokenRefreshBackgroundService` |
+
+```csharp
+// 自定义令牌管理器
+public class MyTokenManager : TokenManagerBase
 {
-    private readonly IHttpClientResolver _resolver;
-
-    public MultiApiService(IHttpClientResolver resolver)
+    protected override async Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken ct)
     {
-        _resolver = resolver;
-    }
-
-    public async Task CallUserApiAsync()
-    {
-        var client = _resolver.GetClient("userApi");
-        await client.GetAsync<User>("/users/1");
-    }
-
-    public async Task CallOrderApiAsync()
-    {
-        if (_resolver.TryGetClient("orderApi", out var client))
+        var response = await FetchTokenAsync(ct);
+        return new CredentialToken
         {
-            await client.GetAsync<Order>("/orders/1");
-        }
-    }
-}
-```
-
-### 方式三：流式响应（IAsyncEnumerable）
-
-在 .NET 6+ 环境下，支持通过 `IAsyncEnumerable<T>` 流式处理 NDJSON 响应：
-
-```csharp
-public class StreamService
-{
-    private readonly IBaseHttpClient _httpClient;
-
-    public StreamService(IBaseHttpClient httpClient)
-    {
-        _httpClient = httpClient;
-    }
-
-    public async IAsyncEnumerable<ChatMessage> StreamChatAsync([EnumeratorCancellation] CancellationToken ct)
-    {
-        var request = new HttpRequestMessage(HttpMethod.Post, "/chat/stream");
-        await foreach (var message in _httpClient.SendAsAsyncEnumerable<ChatMessage>(request, cancellationToken: ct))
-        {
-            yield return message;
-        }
-    }
-}
-```
-
-### 方式四：原始响应与流响应
-
-```csharp
-// 获取原始 HttpResponseMessage
-var response = await _httpClient.SendRawAsync(request);
-
-// 获取响应流
-var stream = await _httpClient.SendStreamAsync(request);
-```
-
-### 方式五：DELETE 请求带请求体
-
-```csharp
-// DELETE 请求带 JSON 请求体
-var result = await _httpClient.DeleteAsJsonAsync<DeleteReason, bool>("/users/1", new DeleteReason { Cause = "test" });
-```
-
-### 方式六：直接继承 EnhancedHttpClient
-
-如果需要更细粒度的控制，可以继承 `EnhancedHttpClient`：
-
-```csharp
-public class MyApiClient : EnhancedHttpClient
-{
-    public MyApiClient(HttpClient httpClient, ILogger<MyApiClient>? logger = null)
-        : base(httpClient, logger) { }
-
-    protected override JsonSerializerOptions? GetJsonSerializerOptions()
-    {
-        return new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+            AccessToken = response.AccessToken,
+            Expire = response.ExpireTime
         };
     }
-}
-```
 
-### 方式七：配合 IHttpClientFactory 手动注册
-
-```csharp
-services.AddHttpClient("myApi", client =>
-{
-    client.BaseAddress = new Uri("https://api.example.com");
-});
-
-services.AddTransient<IMyApi>(sp =>
-{
-    var factory = sp.GetRequiredService<IHttpClientFactory>();
-    var logger = sp.GetService<ILogger<MyApiClient>>();
-    return new MyApiClient(factory, "myApi", logger);
-});
-```
-
-### 与 Generator 生成的代码配合
-
-当使用 `[HttpClientApi(HttpClient = "IEnhancedHttpClient")]` 时，生成的实现类构造函数依赖对应的接口。需要先通过 `AddMudHttpClient` 注册：
-
-```csharp
-[HttpClientApi(HttpClient = "IEnhancedHttpClient")]
-public interface IUserApi
-{
-    [Get("/users/{id}")]
-    Task<User> GetUserAsync([Path] int id);
+    public override Task<string> GetTokenAsync(CancellationToken ct = default)
+        => GetOrRefreshTokenAsync(ct);
 }
 
-// 注册服务
-services.AddMudHttpClient("userApi", "https://api.example.com");
-services.AddWebApiHttpClient(); // 注册生成器生成的 API 接口实现
+// 注册后台刷新服务
+services.Configure<TokenRefreshBackgroundOptions>(options =>
+{
+    options.Enabled = true;
+    options.RefreshIntervalSeconds = 3500;
+    options.InitialDelaySeconds = 30;
+});
+services.AddHostedService<TokenRefreshHostedService>();
 ```
 
-### URL 安全验证配置
+> `TokenManagerBase` 使用 `SemaphoreSlim(1, 1)` 确保同一时刻只有一个线程执行令牌刷新。`UserTokenManagerBase` 使用 `IMemoryCache` 管理用户令牌缓存，支持 `MaxCacheSize` 限制和自动过期清理。`TokenRefreshHostedService` 支持配置 `InitialDelaySeconds`（初始延迟）和 `RefreshIntervalSeconds`（刷新间隔）。
 
-`UrlValidator` 默认不包含任何域名白名单，需要通过 `ConfigureAllowedDomains` 配置允许的域名：
+### 应用上下文
+
+| 类 | 说明 |
+|-----|------|
+| `DefaultAppManager<T>` | `IAppManager<T>` 默认实现，管理多应用上下文 |
+| `DefaultAppContext` | `IMudAppContext` 默认实现 |
 
 ```csharp
-UrlValidator.ConfigureAllowedDomains(["api.example.com", "cdn.example.com"]);
+// 多应用管理
+services.AddSingleton<IAppManager<FeishuContext>, DefaultAppManager<FeishuContext>>();
+
+// 监听配置变更
+var appManager = serviceProvider.GetRequiredService<IAppManager<FeishuContext>>();
+appManager.ConfigurationChanged += (sender, args) =>
+{
+    Console.WriteLine($"应用 {args.AppId} 配置已变更");
+};
 ```
 
-### 自定义加密提供程序
+> `DefaultAppManager<T>` 新增 `ConfigurationChanged` 事件，支持应用配置热更新通知。`IMudAppContext` 新增 `GetService<T>()` 方法，支持从应用上下文中解析 DI 服务。
 
-当默认的 AES 加密不满足需求时，可注册自定义 `IEncryptionProvider`：
+### 工具类
 
-```csharp
-services.AddSingleton<IEncryptionProvider, MyCustomEncryptionProvider>();
-services.AddMudHttpClient("myApi", "https://api.example.com");
-```
+| 类型 | 说明 |
+|------|------|
+| `XmlSerialize` | XML 序列化/反序列化工具 |
+| `HttpClientUtils` | HTTP 客户端扩展方法 |
+| `UrlValidator` | URL 安全验证工具（可配置域名白名单） |
+| `MessageSanitizer` | 敏感信息脱敏工具（优化字段检测，减少误判） |
 
-## 依赖关系
-
-- `Mud.HttpUtils.Abstractions`（项目引用）
-- `Microsoft.Extensions.Logging.Abstractions`
-- `Microsoft.Extensions.Http`
-
-| 目标框架           | 额外依赖                                                    |
-| -------------- | ------------------------------------------------------- |
-| netstandard2.0 | `System.Text.Json`, `System.Threading.Tasks.Extensions` |
-| net6.0         | `System.Text.Json`                                      |
-
-## AOT 兼容性
-
-本模块已配置 AOT 分析器和兼容性标记，支持 Native AOT 发布场景。
+## 安装
 
 ```xml
-<EnableAotAnalyzer>true</EnableAotAnalyzer>
-<IsAotCompatible>true</IsAotCompatible>
+<PackageReference Include="Mud.HttpUtils.Client" Version="x.x.x" />
 ```
 
-> **注意**：`AsyncEnumerableExtensions` 仅在 .NET 6+ 可用，因为 `IAsyncEnumerable<T>` 不支持 netstandard2.0。
+## DI 服务注册
 
+### AddMudHttpClient — 注册客户端
+
+| 重载 | 说明 |
+|------|------|
+| `AddMudHttpClient(clientName, configureHttpClient)` | 注册 Named HttpClient 和 `IEnhancedHttpClient` |
+| `AddMudHttpClient(clientName, baseAddress)` | 带基础地址的便捷重载 |
+| `AddMudHttpClient(clientName, configureEncryption, configureHttpClient)` | 带加密配置的重载，同时注册 `IEncryptionProvider` |
+
+> `AddMudHttpClient` 同时注册 `IHttpClientResolver` 为单例服务，支持多命名客户端场景。
+
+### 注册安全认证服务
+
+```csharp
+// API Key 认证
+services.AddSingleton<IApiKeyProvider, DefaultApiKeyProvider>();
+
+// HMAC 签名认证
+services.AddSingleton<IHmacSignatureProvider, DefaultHmacSignatureProvider>();
+```
+
+### 注册缓存服务
+
+```csharp
+services.AddMemoryCache();
+services.AddSingleton<IHttpResponseCache, MemoryHttpResponseCache>();
+services.AddSingleton<IHttpResponseInterceptor, CacheResponseInterceptor>();
+```
+
+### 注册日志脱敏服务
+
+```csharp
+services.AddSingleton<ISensitiveDataMasker, DefaultSensitiveDataMasker>();
+```
+
+## 依赖项
+
+| 包 | 说明 |
+|----|------|
+| `Mud.HttpUtils.Abstractions` | 接口定义 |
+| `Microsoft.Extensions.Http` | `IHttpClientFactory` 支持 |
+| `Microsoft.Extensions.Logging.Abstractions` | 日志抽象 |
+| `Microsoft.Extensions.Options` | 选项模式 |
+| `Microsoft.Extensions.Caching.Memory` | 内存缓存（`UserTokenManagerBase`、`MemoryHttpResponseCache`） |
+
+## 设计原则
+
+- **默认实现可替换**：所有核心接口均提供默认实现，但可通过 DI 替换为自定义实现
+- **线程安全**：`TokenManagerBase`、`UserTokenManagerBase`、`HttpClientResolver` 均实现并发安全
+- **资源管理**：`EnhancedHttpClient` 实现 `IDisposable`，正确释放 `HttpClient` 资源
+- **可观测性**：所有关键操作均通过 `ILogger` 记录日志，支持结构化日志
+- **性能优先**：使用 `SemaphoreSlim` 替代 `lock`、使用 `IMemoryCache` 替代 `ConcurrentDictionary`、支持大文件上传进度报告

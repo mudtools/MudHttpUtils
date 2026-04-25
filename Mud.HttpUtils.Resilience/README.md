@@ -2,9 +2,7 @@
 
 ## 概述
 
-Mud.HttpUtils.Resilience 是 Mud.HttpUtils 的弹性策略扩展包，基于 Polly 提供 HTTP 请求的重试、超时、熔断等弹性策略。通过装饰器模式包装 `IEnhancedHttpClient`，无需修改现有代码即可为 HTTP 请求添加弹性能力。
-
-**可选扩展**，不影响核心包的使用。仅在需要弹性策略时引用。
+Mud.HttpUtils.Resilience 是 Mud.HttpUtils 的弹性策略层，基于 Polly 提供重试、超时、熔断策略，通过装饰器模式增强 `IEnhancedHttpClient`。
 
 ## 目标框架
 
@@ -15,32 +13,91 @@ Mud.HttpUtils.Resilience 是 Mud.HttpUtils 的弹性策略扩展包，基于 Pol
 
 ## 包含内容
 
-### 核心类型
+### 核心类
 
-| 类型 | 说明 |
-|------|------|
-| `ResilientHttpClient` | 弹性 HTTP 客户端装饰器，实现 `IEnhancedHttpClient` 和 `IEncryptableHttpClient`，为内部客户端添加 Polly 策略 |
-| `PollyResiliencePolicyProvider` | 基于 Polly 的策略提供器实现，创建重试/超时/熔断策略 |
-| `IResiliencePolicyProvider` | 策略提供器接口，可自定义实现 |
-| `HttpRequestMessageCloner` | HTTP 请求消息克隆工具，确保重试时请求可安全复用 |
+| 类 | 说明 |
+|-----|------|
+| `ResilientHttpClient` | `IEnhancedHttpClient` 的弹性装饰器，组合重试/超时/熔断策略 |
+| `PollyResiliencePolicyProvider` | 基于 Polly 的策略提供器，根据 `ResilienceOptions` 创建策略 |
+| `HttpRequestMessageCloner` | HTTP 请求消息克隆工具，确保重试安全 |
+| `ResilienceOptions` | 弹性策略配置选项 |
 
-### 配置选项
+### 策略组合顺序
 
-| 类型 | 说明 |
-|------|------|
-| `ResilienceOptions` | 弹性策略总配置，包含重试、超时、熔断三个子配置 |
-| `RetryOptions` | 重试策略配置（次数、间隔、指数退避、状态码筛选） |
-| `TimeoutOptions` | 超时策略配置（超时秒数） |
-| `CircuitBreakerOptions` | 熔断策略配置（失败阈值、熔断持续时间） |
+组合策略执行顺序：**重试（外层） → 熔断 → 超时（内层）**
 
-### DI 服务注册
+- 每次请求先经过超时策略限制
+- 超时的请求会被熔断器统计
+- 重试策略在所有内层策略之外
 
-| 方法 | 说明 |
-|------|------|
-| `AddMudHttpResilience(configureOptions)` | 注册弹性策略选项和策略提供器 |
-| `AddMudHttpResilience(configuration, sectionPath)` | 从 IConfiguration 绑定配置 |
-| `AddMudHttpResilienceDecorator(configureOptions)` | 注册装饰器，将 `IEnhancedHttpClient` 包装为 `ResilientHttpClient` |
-| `AddMudHttpResilienceDecorator(configuration, sectionPath)` | 从配置绑定的装饰器注册 |
+### 请求克隆与大小限制
+
+`HttpRequestMessageCloner` 用于在重试时克隆请求消息（因为 `HttpRequestMessage` 不可重用）。新增内容大小限制功能：
+
+```csharp
+// 默认最大克隆大小为 10MB
+public const long DefaultMaxContentSize = 10 * 1024 * 1024;
+
+// 克隆时检查大小
+var cloned = await HttpRequestMessageCloner.CloneAsync(request, maxContentSize: 10 * 1024 * 1024);
+```
+
+> 当请求体大小超过 `MaxCloneContentSize` 时，`ResilientHttpClient` 会自动跳过重试策略，避免克隆大请求体的性能开销。适用于大文件上传等场景。
+
+### 重试回调机制
+
+`RetryOptions` 新增 `RetryCallback` 属性，支持在每次重试前执行自定义逻辑：
+
+```csharp
+services.AddMudHttpUtils("myApi", "https://api.example.com", options =>
+{
+    options.Retry.MaxRetryAttempts = 3;
+    options.Retry.RetryCallback = (retryCount, exception, delay) =>
+    {
+        Console.WriteLine($"第 {retryCount} 次重试，延迟 {delay.TotalMilliseconds}ms，异常: {exception.Message}");
+        return Task.CompletedTask;
+    };
+});
+```
+
+> `RetryCallback` 签名为 `Func<int, Exception, TimeSpan, Task>`，参数分别为：重试次数、触发的异常、下次重试前的延迟时间。可用于日志记录、指标收集、动态调整重试策略等。
+
+## 配置选项
+
+### ResilienceOptions
+
+| 属性 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `Retry` | `RetryOptions` | — | 重试策略配置 |
+| `Timeout` | `TimeoutOptions` | — | 超时策略配置 |
+| `CircuitBreaker` | `CircuitBreakerOptions` | — | 熔断策略配置 |
+| `MaxCloneContentSize` | `long` | `10485760` (10MB) | 请求克隆的最大内容大小（字节），-1 表示不限制 |
+
+### RetryOptions
+
+| 属性 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `Enabled` | `bool` | `true` | 是否启用重试策略 |
+| `MaxRetryAttempts` | `int` | `3` | 最大重试次数 |
+| `DelayMilliseconds` | `int` | `1000` | 基础延迟时间（毫秒） |
+| `UseExponentialBackoff` | `bool` | `true` | 是否使用指数退避 |
+| `RetryStatusCodes` | `int[]` | `[408, 429, 500, 502, 503, 504]` | 触发重试的 HTTP 状态码 |
+| `RetryCallback` | `Func<int, Exception, TimeSpan, Task>?` | `null` | 重试回调函数 |
+
+### TimeoutOptions
+
+| 属性 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `Enabled` | `bool` | `true` | 是否启用超时策略 |
+| `TimeoutSeconds` | `int` | `30` | 超时时间（秒） |
+
+### CircuitBreakerOptions
+
+| 属性 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `Enabled` | `bool` | `false` | 是否启用熔断策略 |
+| `FailureThreshold` | `int` | `5` | 触发熔断的连续失败次数 |
+| `BreakDurationSeconds` | `int` | `30` | 熔断持续时间（秒） |
 
 ## 安装
 
@@ -48,91 +105,57 @@ Mud.HttpUtils.Resilience 是 Mud.HttpUtils 的弹性策略扩展包，基于 Pol
 <PackageReference Include="Mud.HttpUtils.Resilience" Version="x.x.x" />
 ```
 
-## 使用方法
+## 使用方式
 
-### 方式一：一站式注册（推荐，通过元包 `Mud.HttpUtils`）
-
-最简单的方式，一步完成 Client + Resilience 注册：
+### 代码配置
 
 ```csharp
-// 安装元包：Mud.HttpUtils
-services.AddMudHttpUtils("myApi", "https://api.example.com", options =>
-{
-    options.Retry.MaxRetryAttempts = 3;
-    options.Retry.DelayMilliseconds = 1000;
-    options.Timeout.TimeoutSeconds = 30;
-    options.CircuitBreaker.Enabled = true;
-    options.CircuitBreaker.FailureThreshold = 5;
-});
-```
-
-### 方式二：手动组合 Client + Resilience
-
-分别安装 `Mud.HttpUtils.Client` 和 `Mud.HttpUtils.Resilience`，手动组合：
-
-```csharp
-// 1. 注册基础客户端
-services.AddMudHttpClient("myApi", "https://api.example.com");
-
-// 2. 注册弹性装饰器
 services.AddMudHttpResilienceDecorator(options =>
 {
+    // 重试策略
+    options.Retry.Enabled = true;
     options.Retry.MaxRetryAttempts = 3;
+    options.Retry.DelayMilliseconds = 1000;
     options.Retry.UseExponentialBackoff = true;
+    options.Retry.RetryStatusCodes = [408, 429, 500, 502, 503, 504];
+    options.Retry.RetryCallback = (retryCount, ex, delay) =>
+    {
+        logger.LogWarning("HTTP 请求重试 {RetryCount}，延迟 {Delay}ms", retryCount, delay.TotalMilliseconds);
+        return Task.CompletedTask;
+    };
+
+    // 超时策略
+    options.Timeout.Enabled = true;
     options.Timeout.TimeoutSeconds = 30;
+
+    // 熔断策略
     options.CircuitBreaker.Enabled = true;
+    options.CircuitBreaker.FailureThreshold = 5;
+    options.CircuitBreaker.BreakDurationSeconds = 30;
+
+    // 请求克隆大小限制
+    options.MaxCloneContentSize = 10 * 1024 * 1024; // 10MB
 });
 ```
 
-> **重要**：`AddMudHttpResilienceDecorator` 必须在 `AddMudHttpClient` 之后调用，因为装饰器需要包装已注册的 `IEnhancedHttpClient`。
-
-### 方式三：仅注册策略服务（不使用装饰器）
-
-如果只需要策略提供器（例如手动应用策略），可以单独注册：
+### 配置文件绑定
 
 ```csharp
-services.AddMudHttpResilience(options =>
-{
-    options.Retry.MaxRetryAttempts = 3;
-});
-
-// 然后在代码中注入 IResiliencePolicyProvider
-public class MyService
-{
-    private readonly IResiliencePolicyProvider _policyProvider;
-
-    public MyService(IResiliencePolicyProvider policyProvider)
-    {
-        _policyProvider = policyProvider;
-    }
-
-    public async Task<T?> ExecuteWithResilienceAsync<T>(Func<Task<T?>> action)
-    {
-        var policy = _policyProvider.GetCombinedPolicy<T>();
-        return await policy.ExecuteAsync(() => action());
-    }
-}
-```
-
-### 从配置文件绑定
-
-支持从 `IConfiguration` 绑定弹性策略配置：
-
-```csharp
-services.AddMudHttpResilienceDecorator(configuration, "MyResilience");
+services.AddMudHttpResilienceDecorator(configuration, "MudHttpResilience");
 ```
 
 对应 `appsettings.json`：
 
 ```json
 {
-  "MyResilience": {
+  "MudHttpResilience": {
+    "MaxCloneContentSize": 10485760,
     "Retry": {
       "Enabled": true,
       "MaxRetryAttempts": 3,
       "DelayMilliseconds": 1000,
       "UseExponentialBackoff": true,
-      "RetryStatusCodes": [ 408, 429, 500, 502, 503, 504 ]
+      "RetryStatusCodes": [408, 429, 500, 502, 503, 504]
     },
     "Timeout": {
       "Enabled": true,
@@ -141,129 +164,67 @@ services.AddMudHttpResilienceDecorator(configuration, "MyResilience");
     "CircuitBreaker": {
       "Enabled": true,
       "FailureThreshold": 5,
-      "BreakDurationSeconds": 30,
-      "SamplingDurationSeconds": 60
+      "BreakDurationSeconds": 30
     }
   }
 }
 ```
 
-## 策略详解
-
-### 重试策略
-
-- 默认启用，最多重试 3 次
-- 支持固定间隔和指数退避两种模式
-- 默认对以下状态码触发重试：408、429、500、502、503、504
-- 可自定义 `RetryStatusCodes`
+### 一站式注册
 
 ```csharp
-options.Retry.Enabled = true;
-options.Retry.MaxRetryAttempts = 5;           // 最大重试次数
-options.Retry.DelayMilliseconds = 2000;        // 初始间隔（毫秒）
-options.Retry.UseExponentialBackoff = true;    // 指数退避
-options.Retry.RetryStatusCodes = [408, 429, 500, 502, 503, 504];
+services.AddMudHttpUtils("myApi", "https://api.example.com", options =>
+{
+    options.Retry.MaxRetryAttempts = 3;
+    options.Timeout.TimeoutSeconds = 30;
+    options.MaxCloneContentSize = 5 * 1024 * 1024; // 5MB
+});
 ```
 
-### 超时策略
+### 大文件上传场景
 
-- 默认启用，30 秒超时
-- 使用悲观超时策略（`TimeoutStrategy.Pessimistic`），确保请求一定会被取消
+对于大文件上传等场景，建议禁用重试或增大克隆限制：
 
 ```csharp
-options.Timeout.Enabled = true;
-options.Timeout.TimeoutSeconds = 60;
+// 方式一：增大克隆限制
+options.MaxCloneContentSize = 100 * 1024 * 1024; // 100MB
+
+// 方式二：禁用重试
+options.Retry.Enabled = false;
+
+// 方式三：不限制（不推荐）
+options.MaxCloneContentSize = -1;
 ```
 
-### 熔断策略
+> 当请求体大小超过 `MaxCloneContentSize` 时，`ResilientHttpClient` 会记录警告日志并跳过重试，直接发送请求。
 
-- 默认关闭
-- 连续失败达到阈值后开启熔断，在熔断期间快速拒绝请求
-- 熔断持续时间后进入半开状态，允许试探请求
-
-```csharp
-options.CircuitBreaker.Enabled = true;
-options.CircuitBreaker.FailureThreshold = 5;       // 触发熔断的连续失败次数
-options.CircuitBreaker.BreakDurationSeconds = 30;   // 熔断持续时间（秒）
-options.CircuitBreaker.SamplingDurationSeconds = 60; // 采样持续时间（秒）
-```
-
-### 策略组合顺序
-
-组合策略的执行顺序为：**重试（外层） → 熔断 → 超时（内层）**
-
-这意味着：
-1. 每次请求先经过超时策略限制
-2. 超时的请求会被熔断器统计
-3. 被熔断的请求不会触发重试
-4. 重试策略在所有内层策略之外，可对失败请求进行重试
-
-## 装饰器原理
-
-`ResilientHttpClient` 是 `IEnhancedHttpClient` 的装饰器，内部流程：
-
-```
-调用方 → ResilientHttpClient → Polly 策略 → 请求克隆 → 内部 IEnhancedHttpClient (HttpClientFactoryEnhancedClient)
-```
-
-### 请求克隆机制
-
-`ResilientHttpClient` 在每次执行请求前会通过 `HttpRequestMessageCloner` 克隆原始请求，确保重试时不会因 `HttpRequestMessage` 已被消费而失败。克隆内容包括：
-
-- HTTP 方法和请求 URI
-- 请求头（Headers）
-- 请求体内容（Content）及 Content Headers
-- HTTP 版本（Version）
-- 请求选项（Options，仅 .NET 5+）
-
-> `HttpRequestMessage` 在发送后不可重复使用（`Content` 流已被消费），因此克隆是重试策略正确工作的关键。
-
-`AddMudHttpResilienceDecorator` 的工作原理：
-1. 从 DI 容器中找到已注册的 `IEnhancedHttpClient` 描述符
-2. 移除原始注册
-3. 注册新的工厂，在解析时创建 `ResilientHttpClient` 包装原始实现
-
-> **注意**：`ResilientHttpClient` 实现了 `IEnhancedHttpClient`（包含 JSON/XML 所有方法），所有 HTTP 请求方法均通过 Polly 策略包装。加密方法（`IEncryptableHttpClient.EncryptContent`/`DecryptContent`）不经过弹性策略包装，因为加密是请求前的本地数据转换操作，不涉及网络 I/O。
-
-## 支持的 HTTP 方法
-
-`ResilientHttpClient` 为以下所有方法提供弹性策略包装：
+## DI 服务注册方法
 
 | 方法 | 说明 |
 |------|------|
-| `SendAsync<TResult>` | 通用 HTTP 请求 |
-| `SendRawAsync` | 原始 HttpResponseMessage 响应 |
-| `SendStreamAsync` | 响应流 |
-| `GetAsync<TResult>` | GET 请求 |
-| `PostAsJsonAsync<TRequest, TResult>` | POST JSON 请求 |
-| `PutAsJsonAsync<TRequest, TResult>` | PUT JSON 请求 |
-| `DeleteAsJsonAsync<TResult>` | DELETE 请求 |
-| `DeleteAsJsonAsync<TRequest, TResult>` | 带请求体的 DELETE 请求 |
-| `PatchAsJsonAsync<TRequest, TResult>` | PATCH JSON 请求 |
-| `SendXmlAsync<TResult>` | XML 请求 |
-| `PostAsXmlAsync<TRequest, TResult>` | POST XML 请求 |
-| `PutAsXmlAsync<TRequest, TResult>` | PUT XML 请求 |
-| `GetXmlAsync<TResult>` | GET XML 请求 |
-| `DownloadAsync` | 下载字节数组 |
-| `DownloadLargeAsync` | 大文件下载 |
+| `AddMudHttpResilience(configureOptions)` | 仅注册策略服务（不装饰客户端） |
+| `AddMudHttpResilience(configuration, sectionPath)` | 从配置绑定策略 |
+| `AddMudHttpResilienceDecorator(configureOptions)` | 注册装饰器，为 `IEnhancedHttpClient` 添加弹性策略 |
+| `AddMudHttpResilienceDecorator(configuration, sectionPath)` | 从配置绑定的装饰器注册 |
+| `AddMudHttpUtils(clientName, configureHttpClient, configureResilienceOptions)` | 一站式注册 Client + Resilience |
 
-## 依赖关系
+> **注意**：`AddMudHttpResilienceDecorator` 必须在 `AddMudHttpClient` 之后调用。
 
-- `Mud.HttpUtils.Abstractions`（项目引用）
-- `Polly`（>= 8.6.6）
-- `Microsoft.Extensions.Logging.Abstractions`
-- `Microsoft.Extensions.DependencyInjection.Abstractions`
-- `Microsoft.Extensions.Configuration.Abstractions`
-- `Microsoft.Extensions.Options.ConfigurationExtensions`
+## 依赖项
 
-| 目标框架 | 额外依赖 |
-|---------|---------|
-| netstandard2.0 | `System.Threading.Tasks.Extensions` |
+| 包 | 说明 |
+|----|------|
+| `Mud.HttpUtils.Abstractions` | 接口定义 |
+| `Mud.HttpUtils.Client` | 客户端实现（装饰器目标） |
+| `Polly` | 弹性策略库 |
+| `Microsoft.Extensions.Logging.Abstractions` | 日志抽象 |
+| `Microsoft.Extensions.Options` | 选项模式 |
 
 ## 设计原则
 
-- **装饰器模式**：不修改原始客户端实现，通过装饰器添加弹性能力
-- **可选扩展**：不影响核心包的使用，按需引用
-- **配置驱动**：所有策略参数均可通过代码或配置文件灵活配置
-- **策略可组合**：可单独使用重试、超时、熔断，也可组合使用
-- **请求安全复用**：通过请求克隆机制确保重试时请求可安全发送
+- **装饰器模式**：`ResilientHttpClient` 装饰 `IEnhancedHttpClient`，不修改原始实现
+- **策略组合**：通过 Polly PolicyWrap 组合多种策略，执行顺序可控
+- **安全重试**：通过 `HttpRequestMessageCloner` 克隆请求消息，确保重试安全
+- **性能保护**：通过 `MaxCloneContentSize` 限制克隆大小，避免大请求体的克隆开销
+- **可观测性**：通过 `RetryCallback` 支持自定义重试回调，便于日志记录和指标收集
+- **配置灵活**：支持代码配置和配置文件绑定

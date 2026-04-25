@@ -2,7 +2,7 @@
 
 ## 概述
 
-Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为标记了 `[HttpClientApi]` 特性的接口生成 HttpClient 实现类和服务注册代码。支持多种 HTTP 方法、灵活的参数处理、内容类型管理、Token 认证、请求体加密、流式响应等功能。
+Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为标记了 `[HttpClientApi]` 特性的接口生成 HttpClient 实现类和服务注册代码。支持多种 HTTP 方法、灵活的参数处理、内容类型管理、Token 认证（含 API Key / HMAC 签名模式）、请求体加密、流式响应、缓存、日志脱敏等功能。
 
 ## 功能特性
 
@@ -24,12 +24,17 @@ Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为
 - **请求体加密**：支持请求体数据加密传输
 - **响应解密**：支持响应数据自动解密
 - **文件下载**：支持大文件下载和二进制数据下载
+- **文件上传进度**：支持通过 `IFormContent` 的 `ToHttpContentAsync(IProgress<long>)` 报告上传进度
 - **表单数据**：支持 multipart/form-data 格式，支持 `[JsonPropertyName]` 属性名映射
 - **数组查询参数**：支持数组类型的查询参数
 - **原始字符串请求体**：支持 `[Body(RawString = true)]` 直接发送原始字符串
 - **继承支持**：支持生成抽象类、类继承、接口继承
 - **事件处理器生成**：通过 `[GenerateEventHandler]` 特性自动生成事件处理器代码
 - **忽略生成**：支持通过 `[IgnoreGenerator]` 特性忽略特定代码生成（可标注接口、方法、属性、字段）
+- **缓存支持**：识别 `[Cache]` 特性，配合 `CacheResponseInterceptor` 实现响应缓存
+- **安全认证**：识别 `TokenInjectionMode.ApiKey` 和 `TokenInjectionMode.HmacSignature` 模式
+- **日志脱敏**：识别 `[SensitiveData]` 特性，配合 `ISensitiveDataMasker` 实现日志脱敏
+- **Token Scopes**：识别 `[Token(Scopes = "...")]` 特性，支持 OAuth2 令牌作用域
 
 ## 安装
 
@@ -323,9 +328,13 @@ Task DownloadFileAsync([Path] string fileId, [FilePath(BufferSize = 81920)] stri
 ```csharp
 [Post("/upload")]
 Task UploadAsync([FormContent] IFormContent formData);
+
+// 带上传进度
+[Post("/upload")]
+Task UploadAsync([FormContent] IFormContent formData, IProgress<long>? progress = null);
 ```
 
-> `FormContentGenerator` 支持 `[JsonPropertyName]` 特性，当属性标记了 `[JsonPropertyName("custom_name")]` 时，生成的表单字段名使用 `custom_name` 而非 C# 属性名。
+> `FormContentGenerator` 支持 `[JsonPropertyName]` 特性，当属性标记了 `[JsonPropertyName("custom_name")]` 时，生成的表单字段名使用 `custom_name` 而非 C# 属性名。`IFormContent.ToHttpContentAsync(IProgress<long>?)` 支持上传进度报告。
 
 ### Token 认证
 
@@ -340,13 +349,51 @@ Task<User> GetUserAsync([Path] int id, [Token("UserAccessToken")] string? token 
 
 // Token 注入模式
 [Token("AppAccessToken", InjectionMode = TokenInjectionMode.Header, Name = "Authorization")]
+
+// Token 作用域
+[Token("UserAccessToken", Scopes = "user:read,user:write")]
 ```
 
 Token 注入模式：
 
-- `Header` — 注入到 HTTP Header（默认）
-- `Query` — 注入到 URL Query 参数
-- `Path` — 注入到 URL Path
+| 模式 | 说明 |
+|------|------|
+| `Header` | 注入到 HTTP Header（默认） |
+| `Query` | 注入到 URL Query 参数 |
+| `Path` | 注入到 URL Path |
+| `ApiKey` | API Key 认证，通过 `IApiKeyProvider` 获取密钥注入到请求头 |
+| `HmacSignature` | HMAC 签名认证，通过 `IHmacSignatureProvider` 计算签名注入到请求头 |
+
+### 缓存支持
+
+```csharp
+[Get("/users/{id}")]
+[Cache(60, VaryByUser = true)]
+Task<User> GetUserAsync([Path] int id);
+
+[Get("/config")]
+[Cache(300, CacheKeyTemplate = "config:{0}", UseSlidingExpiration = true, Priority = CachePriority.High)]
+Task<Config> GetConfigAsync();
+```
+
+> `[Cache]` 特性标记的方法，配合 `CacheResponseInterceptor` 实现响应缓存。`CacheAttribute` 支持 `DurationSeconds`、`CacheKeyTemplate`、`VaryByUser`、`UseSlidingExpiration`、`Priority` 属性。
+
+### 日志脱敏
+
+```csharp
+public class UserRequest
+{
+    public string Name { get; set; }
+
+    [SensitiveData(MaskMode = SensitiveDataMaskMode.Mask, PrefixLength = 3, SuffixLength = 4)]
+    public string IdCard { get; set; }
+
+    [SensitiveData(MaskMode = SensitiveDataMaskMode.Hide)]
+    public string Password { get; set; }
+}
+```
+
+> `[SensitiveData]` 特性标记的属性，配合 `ISensitiveDataMasker` 在日志输出时自动脱敏。支持 `Hide`（完全隐藏）、`Mask`（部分遮盖）、`TypeOnly`（仅显示类型）三种脱敏模式。
 
 ### 响应解密
 
@@ -474,6 +521,11 @@ Mud.HttpUtils.Generator/
 - `TokenAttribute.TokenType` 改为字符串类型
 - 新增 `HttpClient` 属性
 - `HttpClient` 与 `TokenManage` 互斥
+- 新增 `TokenInjectionMode.ApiKey` 和 `TokenInjectionMode.HmacSignature` 安全认证模式
+- 新增 `[Cache]` 特性识别，配合 `CacheResponseInterceptor` 实现响应缓存
+- 新增 `[SensitiveData]` 特性识别，配合 `ISensitiveDataMasker` 实现日志脱敏
+- 新增 `TokenAttribute.Scopes` 属性，支持 OAuth2 令牌作用域
+- 新增 `IFormContent.ToHttpContentAsync(IProgress<long>?)` 上传进度报告支持
 
 ### 1.7.0
 
@@ -487,4 +539,3 @@ Mud.HttpUtils.Generator/
 - [Mud.HttpUtils.Attributes](../Mud.HttpUtils.Attributes/) - 特性定义
 - [Mud.HttpUtils.Client](../Mud.HttpUtils.Client/) - 客户端实现
 - [Mud.HttpUtils.Resilience](../Mud.HttpUtils.Resilience/) - 弹性策略
-

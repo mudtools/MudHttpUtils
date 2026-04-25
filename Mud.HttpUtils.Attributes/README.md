@@ -48,9 +48,21 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 | `ArrayQueryAttribute` | 数组查询参数 | Parameter | `Separator` |
 | `HeaderAttribute` | 请求头参数 | Parameter | `Name` |
 | `BodyAttribute` | 请求体参数 | Parameter | `ContentType`, `EnableEncrypt`, `EncryptSerializeType`, `EncryptPropertyName`, `RawString` |
-| `TokenAttribute` | 令牌参数 | Parameter | `TokenType`, `InjectionMode`, `Name` |
+| `TokenAttribute` | 令牌参数 | Parameter / Interface | `TokenType`, `InjectionMode`, `Name`, `Scopes` |
 | `FilePathAttribute` | 文件路径参数 | Parameter | `BufferSize` |
 | `FormContentAttribute` | 表单内容参数 | Parameter / Class | — |
+
+### 缓存特性
+
+| 特性 | 用途 | 目标 | 关键属性 |
+|------|------|------|---------|
+| `CacheAttribute` | 响应缓存标注 | Method | `DurationSeconds`, `CacheKeyTemplate`, `VaryByUser`, `UseSlidingExpiration`, `Priority` |
+
+### 安全与脱敏特性
+
+| 特性 | 用途 | 目标 | 关键属性 |
+|------|------|------|---------|
+| `SensitiveDataAttribute` | 标记敏感数据属性 | Property / Parameter | `MaskMode`, `PrefixLength`, `SuffixLength` |
 
 ### 控制特性
 
@@ -157,8 +169,6 @@ public interface IHttpClientApi { }
 Task PostContentAsync([Body(RawString = true)] string content);
 ```
 
-此时 `content` 参数将直接作为请求体发送，不会进行 JSON 序列化（不会添加引号），也不会调用 `ToString()`。
-
 ## TokenAttribute 详解
 
 | 属性 | 类型 | 默认值 | 说明 |
@@ -166,6 +176,8 @@ Task PostContentAsync([Body(RawString = true)] string content);
 | `TokenType` | `string` | `"TenantAccessToken"` | Token 类型标识符（建议使用 `TokenTypes` 常量类） |
 | `InjectionMode` | `TokenInjectionMode` | `Header` | Token 注入模式 |
 | `Name` | `string?` | `null` | 自定义 Header/Query 名称 |
+| `Scopes` | `string?` | `null` | 令牌作用域，多个作用域用逗号分隔 |
+| `Replace` | `bool` | `true` | 是否替换已有 Header |
 
 ### 使用 TokenTypes 常量
 
@@ -182,9 +194,87 @@ Task<User> GetUserAsync(
 );
 ```
 
+### Token 注入模式
+
+| 模式 | 值 | 说明 |
+|------|---|------|
+| `Header` | 0 | 注入到 HTTP Header（默认） |
+| `Query` | 1 | 注入到 URL Query 参数 |
+| `Path` | 2 | 注入到 URL Path |
+| `ApiKey` | 3 | API Key 认证，通过 `IApiKeyProvider` 获取密钥注入到请求头 |
+| `HmacSignature` | 4 | HMAC 签名认证，通过 `IHmacSignatureProvider` 计算签名注入到请求头 |
+
+```csharp
+// API Key 认证模式
+[Token("ApiKey", InjectionMode = TokenInjectionMode.ApiKey, Name = "X-API-Key")]
+public interface IApiKeyApi { }
+
+// HMAC 签名认证模式
+[Token("Hmac", InjectionMode = TokenInjectionMode.HmacSignature)]
+public interface IHmacApi { }
+```
+
+### Token Scopes
+
+```csharp
+// 指定令牌作用域
+[Token(TokenTypes.UserAccessToken, Scopes = "user:read,user:write")]
+public interface IScopedApi { }
+```
+
+## CacheAttribute 详解
+
+| 属性 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `DurationSeconds` | `int` | `300` | 缓存持续时间（秒） |
+| `CacheKeyTemplate` | `string?` | `null` | 缓存键模板 |
+| `VaryByUser` | `bool` | `false` | 是否按用户区分缓存 |
+| `UseSlidingExpiration` | `bool` | `false` | 是否使用滑动过期 |
+| `Priority` | `CachePriority` | `Normal` | 缓存优先级（`Low` / `Normal` / `High` / `NeverRemove`） |
+
+```csharp
+[Get("/users/{id}")]
+[Cache(60, VaryByUser = true)]
+Task<User> GetUserAsync([Path] int id);
+
+[Get("/config")]
+[Cache(300, CacheKeyTemplate = "config:{0}", UseSlidingExpiration = true, Priority = CachePriority.High)]
+Task<Config> GetConfigAsync();
+```
+
+## SensitiveDataAttribute 详解
+
+| 属性 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `MaskMode` | `SensitiveDataMaskMode` | `Mask` | 脱敏模式 |
+| `PrefixLength` | `int` | `2` | 前缀保留长度（`Mask` 模式） |
+| `SuffixLength` | `int` | `2` | 后缀保留长度（`Mask` 模式） |
+
+脱敏模式说明：
+
+| 模式 | 说明 | 示例 |
+|------|------|------|
+| `Hide` | 完全隐藏 | `"***"` |
+| `Mask` | 部分遮盖 | `"张***01"` |
+| `TypeOnly` | 仅显示类型 | `"[String]"` |
+
+```csharp
+public class UserRequest
+{
+    public string Name { get; set; }
+
+    [SensitiveData(MaskMode = SensitiveDataMaskMode.Mask, PrefixLength = 3, SuffixLength = 4)]
+    public string IdCard { get; set; }
+
+    [SensitiveData(MaskMode = SensitiveDataMaskMode.Hide)]
+    public string Password { get; set; }
+}
+```
+
 ## 设计原则
 
 - **轻量级**：仅依赖 Abstractions，无其他传递依赖
 - **netstandard2.0 兼容性**：确保在尽可能多的项目中可用
 - **特性属性类型均为基础类型**：`string`、`int`、`bool`、`enum`，无复杂依赖
 - **与生成器解耦**：特性可在不引用生成器的项目中使用，便于接口定义共享
+- **安全优先**：内置 `SensitiveDataAttribute` 支持敏感数据脱敏，`CacheAttribute` 支持缓存控制

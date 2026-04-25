@@ -4,10 +4,10 @@
 
 Mud.HttpUtils 是 Mud.HttpUtils 生态的**元包（Metapackage）**，自动引用以下子模块：
 
-- **Mud.HttpUtils.Abstractions** — 接口定义（`IEnhancedHttpClient`、`ITokenManager`、`IEncryptionProvider`、`ITokenStore`、`IHttpClientResolver` 等）
-- **Mud.HttpUtils.Attributes** — 特性标注（`[HttpClientApi]`、`[Get]`、`[Body]`、`[Token]` 等）
-- **Mud.HttpUtils.Client** — 客户端实现（`EnhancedHttpClient`、`HttpClientFactoryEnhancedClient`、`DefaultAesEncryptionProvider`、`HttpClientResolver`）
-- **Mud.HttpUtils.Resilience** — 弹性策略（重试、超时、熔断，基于 Polly）
+- **Mud.HttpUtils.Abstractions** — 接口定义（`IEnhancedHttpClient`、`ITokenManager`、`IEncryptionProvider`、`ITokenStore`、`IHttpClientResolver`、`IApiKeyProvider`、`IHmacSignatureProvider`、`ISensitiveDataMasker`、`IHttpResponseCache`、`IFormContent` 等）
+- **Mud.HttpUtils.Attributes** — 特性标注（`[HttpClientApi]`、`[Get]`、`[Body]`、`[Token]`、`[Cache]`、`[SensitiveData]` 等）
+- **Mud.HttpUtils.Client** — 客户端实现（`EnhancedHttpClient`、`HttpClientFactoryEnhancedClient`、`DefaultAesEncryptionProvider`、`DefaultApiKeyProvider`、`DefaultHmacSignatureProvider`、`DefaultSensitiveDataMasker`、`CacheResponseInterceptor`、`MemoryHttpResponseCache`、`TokenRefreshHostedService`）
+- **Mud.HttpUtils.Resilience** — 弹性策略（重试、超时、熔断，基于 Polly，支持请求克隆大小限制和重试回调）
 
 同时提供**一站式 DI 服务注册**扩展方法 `AddMudHttpUtils`，一步完成 Client + Resilience 注册。
 
@@ -234,6 +234,145 @@ public class MultiApiService
 }
 ```
 
+## 基地址动态切换
+
+`IEnhancedHttpClient` 支持 `WithBaseAddress` 方法，在运行时动态切换基地址：
+
+```csharp
+var userClient = httpClient.WithBaseAddress("https://user-api.example.com");
+var orderClient = httpClient.WithBaseAddress("https://order-api.example.com");
+
+// 获取当前基地址
+var baseAddress = httpClient.BaseAddress;
+```
+
+> `WithBaseAddress` 创建新的客户端实例，不影响原客户端。新客户端继承原客户端的超时设置和默认请求头。
+
+## 安全认证
+
+### API Key 认证
+
+```csharp
+// 定义 API
+[Token("ApiKey", InjectionMode = TokenInjectionMode.ApiKey, Name = "X-API-Key")]
+public interface IApiKeyApi
+{
+    [Get("/data")]
+    Task<Data> GetDataAsync();
+}
+
+// 注册服务
+services.AddSingleton<IApiKeyProvider, DefaultApiKeyProvider>();
+```
+
+> `DefaultApiKeyProvider` 从 `IConfiguration` 的 `ApiKey` 或 `ApiKeys:Default` 键读取密钥。可替换为自定义实现（如从 Vault 读取）。
+
+### HMAC 签名认证
+
+```csharp
+// 定义 API
+[Token("Hmac", InjectionMode = TokenInjectionMode.HmacSignature)]
+public interface IHmacApi
+{
+    [Post("/webhook")]
+    Task PostWebhookAsync([Body] WebhookPayload payload);
+}
+
+// 注册服务
+services.AddSingleton<IHmacSignatureProvider, DefaultHmacSignatureProvider>();
+```
+
+> `DefaultHmacSignatureProvider` 使用 HMAC-SHA256 算法对请求内容计算签名，签名结果以 Base64 编码。可替换为自定义实现。
+
+## 响应缓存
+
+```csharp
+// 定义带缓存的 API
+[HttpClientApi(HttpClient = "IEnhancedHttpClient")]
+public interface IConfigApi
+{
+    [Get("/config/{key}")]
+    [Cache(300, CacheKeyTemplate = "config:{key}", UseSlidingExpiration = true)]
+    Task<Config> GetConfigAsync([Path] string key);
+}
+
+// 注册缓存服务
+services.AddMemoryCache();
+services.AddSingleton<IHttpResponseCache, MemoryHttpResponseCache>();
+services.AddSingleton<IHttpResponseInterceptor, CacheResponseInterceptor>();
+```
+
+> `CacheAttribute` 支持 `DurationSeconds`、`CacheKeyTemplate`、`VaryByUser`、`UseSlidingExpiration`、`Priority` 属性。`MemoryHttpResponseCache` 使用 `IMemoryCache` 作为底层存储，可替换为 Redis 等分布式缓存。
+
+## 日志脱敏
+
+```csharp
+// 定义包含敏感数据的请求类
+public class UserRequest
+{
+    public string Name { get; set; }
+
+    [SensitiveData(MaskMode = SensitiveDataMaskMode.Mask, PrefixLength = 3, SuffixLength = 4)]
+    public string IdCard { get; set; }
+
+    [SensitiveData(MaskMode = SensitiveDataMaskMode.Hide)]
+    public string Password { get; set; }
+}
+
+// 注册脱敏服务
+services.AddSingleton<ISensitiveDataMasker, DefaultSensitiveDataMasker>();
+
+// 使用
+var masker = serviceProvider.GetRequiredService<ISensitiveDataMasker>();
+var masked = masker.Mask("13800138000", SensitiveDataMaskMode.Mask, 3, 4);
+// 结果: "138****8000"
+```
+
+> `SensitiveDataAttribute` 支持 `Hide`（完全隐藏）、`Mask`（部分遮盖）、`TypeOnly`（仅显示类型）三种脱敏模式。`DefaultSensitiveDataMasker.MaskObject` 方法自动识别标记了 `[SensitiveData]` 的属性并脱敏。
+
+## 文件上传进度报告
+
+```csharp
+// 定义上传 API
+[HttpClientApi(HttpClient = "IEnhancedHttpClient")]
+public interface IUploadApi
+{
+    [Post("/upload")]
+    Task<UploadResult> UploadAsync([FormContent] IFormContent formData);
+}
+
+// 实现带进度的表单内容
+public class FileFormContent : IFormContent
+{
+    private readonly string _filePath;
+
+    public FileFormContent(string filePath) => _filePath = filePath;
+
+    public HttpContent ToHttpContent()
+    {
+        var content = new MultipartFormDataContent();
+        var fileBytes = File.ReadAllBytes(_filePath);
+        content.Add(new ByteArrayContent(fileBytes), "file", Path.GetFileName(_filePath));
+        return content;
+    }
+
+    public async Task<HttpContent> ToHttpContentAsync(IProgress<long>? progress = null, CancellationToken cancellationToken = default)
+    {
+        var content = new MultipartFormDataContent();
+        var fileStream = File.OpenRead(_filePath);
+        var streamContent = new StreamContent(fileStream);
+        var progressable = new ProgressableStreamContent(streamContent, progress);
+        content.Add(progressable, "file", Path.GetFileName(_filePath));
+        return await Task.FromResult(content);
+    }
+}
+
+// 使用
+var progress = new Progress<long>(bytes => Console.WriteLine($"已上传: {bytes} 字节"));
+var formData = new FileFormContent(@"C:\large-file.zip");
+var result = await uploadApi.UploadAsync(formData);
+```
+
 ## 特性详解
 
 ### HttpClientApi 特性
@@ -329,13 +468,38 @@ Task<User> GetUserAsync(
 
 // Token 注入模式
 [Token(TokenTypes.AppAccessToken, InjectionMode = TokenInjectionMode.Header, Name = "Authorization")]
+
+// Token 作用域
+[Token(TokenTypes.UserAccessToken, Scopes = "user:read,user:write")]
 ```
 
 Token 注入模式：
 
-- `Header` — 注入到 HTTP Header（默认）
-- `Query` — 注入到 URL Query 参数
-- `Path` — 注入到 URL Path
+| 模式 | 说明 |
+|------|------|
+| `Header` | 注入到 HTTP Header（默认） |
+| `Query` | 注入到 URL Query 参数 |
+| `Path` | 注入到 URL Path |
+| `ApiKey` | API Key 认证，通过 `IApiKeyProvider` 获取密钥注入到请求头 |
+| `HmacSignature` | HMAC 签名认证，通过 `IHmacSignatureProvider` 计算签名注入到请求头 |
+
+### CacheAttribute 详解
+
+| 属性 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `DurationSeconds` | `int` | `300` | 缓存持续时间（秒） |
+| `CacheKeyTemplate` | `string?` | `null` | 缓存键模板 |
+| `VaryByUser` | `bool` | `false` | 是否按用户区分缓存 |
+| `UseSlidingExpiration` | `bool` | `false` | 是否使用滑动过期 |
+| `Priority` | `CachePriority` | `Normal` | 缓存优先级（`Low` / `Normal` / `High` / `NeverRemove`） |
+
+### SensitiveDataAttribute 详解
+
+| 属性 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `MaskMode` | `SensitiveDataMaskMode` | `Mask` | 脱敏模式 |
+| `PrefixLength` | `int` | `2` | 前缀保留长度（`Mask` 模式） |
+| `SuffixLength` | `int` | `2` | 后缀保留长度（`Mask` 模式） |
 
 ### 内容类型优先级
 
@@ -353,7 +517,7 @@ Task<SecureData> GetSecureDataAsync([Body] Request request);
 ### 文件上传与下载
 
 ```csharp
-// 文件上传（multipart/form-data，支持 JsonPropertyName 属性名映射）
+// 文件上传（multipart/form-data，支持 JsonPropertyName 属性名映射和上传进度报告）
 [Post("/upload")]
 Task<UploadResult> UploadAsync([FormContent] IFormContent formData);
 
@@ -494,6 +658,7 @@ services.AddMudHttpClient("myApi", "https://api.example.com");
 | `ICurrentUserId` | 当前用户标识，提供 `GetCurrentUserIdAsync` 方法 |
 | `ITokenStore` | 令牌持久化存储契约，支持分布式缓存或数据库持久化 |
 | `IUserTokenStore` | 用户级令牌持久化存储契约，继承 `ITokenStore`，按用户标识隔离 |
+| `ITokenRefreshBackgroundService` | 令牌后台刷新服务契约 |
 | `TokenManagerBase` | 令牌管理器抽象基类，提供并发安全的令牌刷新实现 |
 | `UserTokenManagerBase` | 用户令牌管理器抽象基类，提供并发安全的用户级令牌刷新实现 |
 | `TokenTypes` | 令牌类型常量类，提供标准化的令牌类型标识符 |
@@ -531,12 +696,35 @@ public class MyTokenManager : TokenManagerBase
 
     protected override async Task<TokenInfo> RefreshTokenCoreAsync(string tokenType, CancellationToken ct)
     {
-        // 实现令牌刷新逻辑
         var newToken = await FetchNewTokenAsync(tokenType, ct);
         await _tokenStore.SetAccessTokenAsync(tokenType, newToken.AccessToken, newToken.ExpiresIn, ct);
         return newToken;
     }
 }
+```
+
+### 令牌后台刷新服务
+
+```csharp
+services.Configure<TokenRefreshBackgroundOptions>(options =>
+{
+    options.Enabled = true;
+    options.RefreshIntervalSeconds = 3500;
+    options.InitialDelaySeconds = 30;
+    options.MaxRetryAttempts = 3;
+});
+services.AddHostedService<TokenRefreshHostedService>();
+```
+
+### 用户令牌缓存配置
+
+```csharp
+services.Configure<UserTokenCacheOptions>(options =>
+{
+    options.MaxCacheSize = 1000;
+    options.CleanupIntervalSeconds = 300;
+    options.RefreshAheadSeconds = 300;
+});
 ```
 
 ## 弹性策略配置
@@ -552,6 +740,11 @@ services.AddMudHttpUtils("myApi", "https://api.example.com", options =>
     options.Retry.DelayMilliseconds = 1000;
     options.Retry.UseExponentialBackoff = true;
     options.Retry.RetryStatusCodes = [408, 429, 500, 502, 503, 504];
+    options.Retry.RetryCallback = (retryCount, ex, delay) =>
+    {
+        logger.LogWarning("HTTP 请求重试 {RetryCount}，延迟 {Delay}ms", retryCount, delay.TotalMilliseconds);
+        return Task.CompletedTask;
+    };
 
     // 超时策略
     options.Timeout.Enabled = true;
@@ -561,6 +754,9 @@ services.AddMudHttpUtils("myApi", "https://api.example.com", options =>
     options.CircuitBreaker.Enabled = true;
     options.CircuitBreaker.FailureThreshold = 5;
     options.CircuitBreaker.BreakDurationSeconds = 30;
+
+    // 请求克隆大小限制（大文件上传场景建议增大或禁用重试）
+    options.MaxCloneContentSize = 10 * 1024 * 1024; // 10MB
 });
 ```
 
@@ -578,6 +774,7 @@ services.AddMudHttpUtils("myApi", configuration, configureHttpClient: client =>
 ```json
 {
   "MudHttpResilience": {
+    "MaxCloneContentSize": 10485760,
     "Retry": {
       "Enabled": true,
       "MaxRetryAttempts": 3,
@@ -605,6 +802,47 @@ services.AddMudHttpUtils("myApi", configuration, configureHttpClient: client =>
 - 超时的请求会被熔断器统计
 - 重试策略在所有内层策略之外
 
+### 大文件上传场景
+
+对于大文件上传等场景，建议禁用重试或增大克隆限制：
+
+```csharp
+// 方式一：增大克隆限制
+options.MaxCloneContentSize = 100 * 1024 * 1024; // 100MB
+
+// 方式二：禁用重试
+options.Retry.Enabled = false;
+
+// 方式三：不限制（不推荐）
+options.MaxCloneContentSize = -1;
+```
+
+> 当请求体大小超过 `MaxCloneContentSize` 时，`ResilientHttpClient` 会记录警告日志并跳过重试，直接发送请求。
+
+## 应用上下文
+
+### 多应用管理
+
+```csharp
+// 注册多应用管理器
+services.AddSingleton<IAppManager<FeishuContext>, DefaultAppManager<FeishuContext>>();
+
+// 监听配置变更
+var appManager = serviceProvider.GetRequiredService<IAppManager<FeishuContext>>();
+appManager.ConfigurationChanged += (sender, args) =>
+{
+    Console.WriteLine($"应用 {args.AppId} 配置已变更");
+};
+```
+
+### 从上下文解析服务
+
+```csharp
+// IMudAppContext.GetService<T>() 支持从应用上下文中解析 DI 服务
+var apiKeyProvider = appContext.GetService<IApiKeyProvider>();
+var hmacProvider = appContext.GetService<IHmacSignatureProvider>();
+```
+
 ## 核心接口
 
 | 接口 | 说明 |
@@ -613,14 +851,21 @@ services.AddMudHttpUtils("myApi", configuration, configureHttpClient: client =>
 | `IJsonHttpClient` | JSON 操作（GetAsync、PostAsJsonAsync、DeleteAsJsonAsync 带请求体） |
 | `IXmlHttpClient` | XML 操作（SendXmlAsync、PostAsXmlAsync） |
 | `IEncryptableHttpClient` | 加密操作（EncryptContent、DecryptContent），独立接口 |
-| `IEnhancedHttpClient` | 增强组合接口，继承 IBaseHttpClient、IJsonHttpClient、IXmlHttpClient、IEncryptableHttpClient |
+| `IEnhancedHttpClient` | 增强组合接口，继承 IBaseHttpClient、IJsonHttpClient、IXmlHttpClient、IEncryptableHttpClient，支持 WithBaseAddress |
 | `IHttpClientResolver` | 命名客户端解析（GetClient、TryGetClient） |
+| `IFormContent` | 表单内容（ToHttpContent、ToHttpContentAsync 支持上传进度） |
 | `IEncryptionProvider` | 加密提供程序（Encrypt、Decrypt） |
+| `IApiKeyProvider` | API Key 提供器（GetApiKeyAsync） |
+| `IHmacSignatureProvider` | HMAC 签名提供器（GenerateSignatureAsync、VerifySignatureAsync） |
+| `ISensitiveDataMasker` | 敏感数据脱敏器（Mask、MaskObject） |
+| `IHttpResponseCache` | 响应缓存契约（TryGet、Set、Remove） |
 | `ITokenManager` | 通用令牌管理 |
 | `IUserTokenManager` | 用户令牌管理 |
 | `ITokenStore` | 令牌持久化存储契约 |
 | `IUserTokenStore` | 用户级令牌持久化存储契约 |
-| `IMudAppContext` | 应用上下文 |
+| `ITokenRefreshBackgroundService` | 令牌后台刷新服务契约 |
+| `IMudAppContext` | 应用上下文（含 GetService<T>） |
+| `IAppManager<T>` | 多应用管理器（含 ConfigurationChanged 事件） |
 
 ## 工具类
 
@@ -630,7 +875,8 @@ services.AddMudHttpUtils("myApi", configuration, configureHttpClient: client =>
 | `HttpClientUtils` | HTTP 客户端扩展方法 |
 | `UrlValidator` | URL 安全验证工具（可配置域名白名单） |
 | `MessageSanitizer` | 敏感信息脱敏工具（优化字段检测，减少误判） |
-| `HttpRequestMessageCloner` | HTTP 请求消息克隆工具（确保重试安全） |
+| `HttpRequestMessageCloner` | HTTP 请求消息克隆工具（确保重试安全，支持大小限制） |
+| `ProgressableStreamContent` | 支持进度报告的 HttpContent（文件上传场景） |
 
 ## 最佳实践
 
@@ -669,7 +915,32 @@ services.AddMudHttpUtils("myApi", "https://api.example.com", options =>
 UrlValidator.ConfigureAllowedDomains(["api.example.com", "cdn.example.com"]);
 ```
 
-### 5. 调试生成的代码
+### 5. 使用日志脱敏
+
+对包含敏感信息的请求/响应类标记 `[SensitiveData]` 特性：
+
+```csharp
+public class LoginRequest
+{
+    [SensitiveData(MaskMode = SensitiveDataMaskMode.Mask, PrefixLength = 2, SuffixLength = 2)]
+    public string Phone { get; set; }
+
+    [SensitiveData(MaskMode = SensitiveDataMaskMode.Hide)]
+    public string Password { get; set; }
+}
+```
+
+### 6. 大文件上传禁用重试
+
+大文件上传场景建议禁用重试或增大 `MaxCloneContentSize`：
+
+```csharp
+options.MaxCloneContentSize = 100 * 1024 * 1024; // 100MB
+// 或
+options.Retry.Enabled = false;
+```
+
+### 7. 调试生成的代码
 
 ```xml
 <PropertyGroup>
@@ -690,6 +961,22 @@ UrlValidator.ConfigureAllowedDomains(["api.example.com", "cdn.example.com"]);
 
 ## 版本历史
 
+### 2.0.0
+
+- 新增安全认证：`IApiKeyProvider` / `DefaultApiKeyProvider`、`IHmacSignatureProvider` / `DefaultHmacSignatureProvider`
+- 新增 `TokenInjectionMode.ApiKey` 和 `TokenInjectionMode.HmacSignature` 认证模式
+- 新增日志脱敏：`ISensitiveDataMasker` / `DefaultSensitiveDataMasker`、`SensitiveDataAttribute`
+- 新增响应缓存：`IHttpResponseCache` / `MemoryHttpResponseCache`、`CacheResponseInterceptor`、`CacheAttribute` 增强
+- 新增文件上传进度报告：`ProgressableStreamContent`、`IFormContent.ToHttpContentAsync(IProgress<long>)`
+- 新增基地址动态切换：`IEnhancedHttpClient.WithBaseAddress`、`BaseAddress` 属性
+- 新增请求克隆大小限制：`ResilienceOptions.MaxCloneContentSize`、`HttpRequestMessageCloner` 大小检查
+- 新增重试回调机制：`RetryOptions.RetryCallback`
+- 新增令牌作用域支持：`TokenAttribute.Scopes`
+- 新增令牌后台刷新服务：`TokenRefreshHostedService`、`TokenRefreshBackgroundOptions`
+- 新增用户令牌缓存配置：`UserTokenCacheOptions`、`UserTokenManagerBase` 使用 `IMemoryCache`
+- 新增应用配置热更新通知：`IAppManager<T>.ConfigurationChanged` 事件
+- 新增 `IMudAppContext.GetService<T>()` 服务解析
+
 ### 1.9.0
 
 - 新增 `AddMudHttpClient` DI 注册方法（含加密配置重载）
@@ -697,41 +984,3 @@ UrlValidator.ConfigureAllowedDomains(["api.example.com", "cdn.example.com"]);
 - 新增 `AddMudHttpUtils` 一站式注册方法
 - 新增 `ResilientHttpClient` 装饰器，基于 Polly 的重试/超时/熔断策略
 - 新增 `PollyResiliencePolicyProvider` 策略提供器
-- 新增 `IEncryptionProvider` 加密提供程序接口和 `DefaultAesEncryptionProvider` 默认实现
-- 新增 `AesEncryptionOptions` AES 加密配置选项
-- 新增 `IHttpClientResolver` 命名客户端解析接口和 `HttpClientResolver` 实现
-- 新增 `ITokenStore` / `IUserTokenStore` 令牌持久化存储契约
-- 新增 `TokenManagerBase` / `UserTokenManagerBase` 令牌管理器抽象基类
-- 新增 `TokenTypes` 令牌类型常量类
-- 新增 `HttpRequestMessageCloner` 请求克隆工具
-- 新增 `BodyAttribute.RawString` 原始字符串请求体支持
-- 新增 DELETE 请求带请求体支持（`DeleteAsJsonAsync<TRequest, TResult>`）
-- 新增 `IAsyncEnumerable<T>` 流式响应扩展（.NET 6+）
-- 新增 `SendRawAsync` / `SendStreamAsync` 原始响应与流响应
-- `UrlValidator` 改为可配置域名白名单，移除硬编码域名
-- `MessageSanitizer` 优化字段检测，减少姓名字段误判
-- `FormContentGenerator` 支持 `[JsonPropertyName]` 属性名映射
-- 生成器注册代码新增智能注释提示
-- 生成器 `Timeout` 属性生效，生成 `client.Timeout` 设置
-- 元包新增引用 `Mud.HttpUtils.Resilience`
-
-### 1.8.0
-
-- 新增事件处理器生成功能
-- 新增继承支持
-- 新增忽略生成功能
-- 支持 .NET 10.0
-
-### 1.7.0
-
-- `TokenAttribute.TokenType` 改为字符串类型
-- 新增 `HttpClient` 属性
-- 优化 Token 管理机制
-
-## 相关项目
-
-- [Mud.HttpUtils.Abstractions](../Mud.HttpUtils.Abstractions/) - 接口定义
-- [Mud.HttpUtils.Attributes](../Mud.HttpUtils.Attributes/) - 特性定义
-- [Mud.HttpUtils.Client](../Mud.HttpUtils.Client/) - 客户端实现
-- [Mud.HttpUtils.Resilience](../Mud.HttpUtils.Resilience/) - 弹性策略
-- [Mud.HttpUtils.Generator](../Mud.HttpUtils.Generator/) - 源代码生成器
