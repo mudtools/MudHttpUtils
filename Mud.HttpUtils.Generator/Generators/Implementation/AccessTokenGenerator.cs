@@ -36,6 +36,9 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
 
         // 生成 GetTokenAsync 方法
         GenerateGetTokenAsyncMethod(codeBuilder);
+
+        // 生成带 Scopes 的 GetTokenAsync 方法
+        GenerateGetTokenAsyncWithScopesMethod(codeBuilder);
     }
 
     /// <summary>
@@ -63,6 +66,44 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("            if(string.IsNullOrEmpty(CurrentUserId))");
         codeBuilder.AppendLine("            {");
         codeBuilder.AppendLine("                var token = await tokenManager.GetTokenAsync();");
+        codeBuilder.AppendLine("                if(string.IsNullOrEmpty(token))");
+        codeBuilder.AppendLine("                    throw new InvalidOperationException($\"无法获取到有效的访问令牌，TokenType: {tokenType}\");");
+        codeBuilder.AppendLine("                return token!;");
+        codeBuilder.AppendLine("            }");
+        codeBuilder.AppendLine("            if(tokenManager is IUserTokenManager userTokenManager)");
+        codeBuilder.AppendLine("            {");
+        codeBuilder.AppendLine("                var token = await userTokenManager.GetTokenAsync(CurrentUserId);");
+        codeBuilder.AppendLine("                if(string.IsNullOrEmpty(token))");
+        codeBuilder.AppendLine("                    throw new InvalidOperationException($\"无法获取到有效的访问令牌，TokenType: {tokenType}\");");
+        codeBuilder.AppendLine("                return token!;");
+        codeBuilder.AppendLine("            }");
+        codeBuilder.AppendLine("            throw new InvalidOperationException($\"当前令牌管理器不是IUserTokenManager，获取用户令牌失败。\");");
+        codeBuilder.AppendLine("        }");
+        codeBuilder.AppendLine();
+    }
+
+    /// <summary>
+    /// 生成带 Scopes 的 GetTokenAsync 方法
+    /// </summary>
+    private void GenerateGetTokenAsyncWithScopesMethod(StringBuilder codeBuilder)
+    {
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// 获取指定作用域的访问令牌。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        /// <param name=\"scopes\">令牌作用域数组。</param>");
+        codeBuilder.AppendLine("        /// <returns>返回访问令牌</returns>");
+        codeBuilder.AppendLine($"        public async Task<string> GetTokenAsync(string[]? scopes)");
+        codeBuilder.AppendLine("        {");
+        codeBuilder.AppendLine("            var appContext = _appContext.Value;");
+        codeBuilder.AppendLine("            if(appContext == null)");
+        codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到当前服务的应用上下文。\");");
+        codeBuilder.AppendLine("            var tokenType = GetTokenType();");
+        codeBuilder.AppendLine("            var tokenManager = appContext.GetTokenManager(tokenType);");
+        codeBuilder.AppendLine("            if(tokenManager == null)");
+        codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到当前服务的令牌管理器，TokenType: {tokenType}\");");
+        codeBuilder.AppendLine("            if(string.IsNullOrEmpty(CurrentUserId))");
+        codeBuilder.AppendLine("            {");
+        codeBuilder.AppendLine("                var token = await tokenManager.GetOrRefreshTokenAsync(scopes);");
         codeBuilder.AppendLine("                if(string.IsNullOrEmpty(token))");
         codeBuilder.AppendLine("                    throw new InvalidOperationException($\"无法获取到有效的访问令牌，TokenType: {tokenType}\");");
         codeBuilder.AppendLine("                return token!;");

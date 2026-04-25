@@ -66,7 +66,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                             retryOptions.DelayMilliseconds * Math.Pow(2, retryAttempt - 1),
                             60000))
                     : TimeSpan.FromMilliseconds(retryOptions.DelayMilliseconds),
-                onRetry: (outcome, timeSpan, retryCount, context) =>
+                onRetryAsync: async (outcome, timeSpan, retryCount, context) =>
                 {
                     _logger.LogWarning(
                         outcome.Exception,
@@ -74,6 +74,18 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                         timeSpan.TotalMilliseconds,
                         retryCount,
                         retryOptions.MaxRetryAttempts);
+
+                    if (retryOptions.OnRetry != null)
+                    {
+                        try
+                        {
+                            await retryOptions.OnRetry(outcome.Exception, retryCount, timeSpan).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex, "重试回调执行失败");
+                        }
+                    }
                 });
     }
 

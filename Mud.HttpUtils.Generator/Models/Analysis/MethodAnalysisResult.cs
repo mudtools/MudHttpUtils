@@ -115,6 +115,11 @@ internal class MethodAnalysisResult
     /// </summary>
     public string? InterfaceTokenName { get; set; }
 
+    /// <summary>
+    /// 接口级Token作用域（Scopes），从 [Token(Scopes = "...")] 特性获取
+    /// </summary>
+    public string? InterfaceTokenScopes { get; set; }
+
     public bool CacheEnabled { get; set; }
 
     public int CacheDurationSeconds { get; set; } = 300;

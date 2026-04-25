@@ -50,6 +50,17 @@ public class RetryOptions
     /// 需要触发重试的 HTTP 状态码集合。为空时使用默认值（408, 429, 5xx）。
     /// </summary>
     public int[]? RetryStatusCodes { get; set; }
+
+    /// <summary>
+    /// 获取或设置重试前的回调委托。
+    /// </summary>
+    /// <remarks>
+    /// 回调参数：
+    /// - Exception: 导致重试的异常（可能为 null）
+    /// - int: 当前重试次数（从 1 开始）
+    /// - TimeSpan: 本次重试的延迟时间
+    /// </remarks>
+    public Func<Exception?, int, TimeSpan, Task>? OnRetry { get; set; }
 }
 
 /// <summary>

@@ -5,6 +5,7 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using System.Linq;
 using Mud.HttpUtils.Analyzers;
 using Mud.HttpUtils.Generators.Base;
 using Mud.HttpUtils.Generators.Context;
@@ -125,7 +126,16 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         if (needsTokenInjection)
         {
-            codeBuilder.AppendLine($"            var access_token = await GetTokenAsync();");
+            var scopes = TokenHelper.ParseScopes(methodInfo.InterfaceTokenScopes);
+            if (scopes.Length > 0)
+            {
+                var scopesArray = string.Join(", ", scopes.Select(s => $"\"{s}\""));
+                codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(new[] {{ {scopesArray} }});");
+            }
+            else
+            {
+                codeBuilder.AppendLine($"            var access_token = await GetTokenAsync();");
+            }
         }
 
         ParameterValidationHelper.GenerateParameterValidation(codeBuilder, methodInfo.Parameters);

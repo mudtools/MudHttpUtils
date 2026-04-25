@@ -89,6 +89,83 @@ public class TokenManagerBaseTests
         act.Should().Throw<ArgumentNullException>().WithParameterName("exception");
     }
 
+    [Fact]
+    public async Task GetOrRefreshTokenAsync_WithScopes_ReturnsScopedToken()
+    {
+        var manager = new ScopedTokenManager();
+
+        var token = await manager.GetOrRefreshTokenAsync(new[] { "read", "write" });
+
+        token.Should().Be("scoped-token:read,write");
+    }
+
+    [Fact]
+    public async Task GetOrRefreshTokenAsync_WithScopes_CachesByScopeKey()
+    {
+        var manager = new ScopedTokenManager();
+
+        var token1 = await manager.GetOrRefreshTokenAsync(new[] { "read" });
+        var token2 = await manager.GetOrRefreshTokenAsync(new[] { "read" });
+
+        token1.Should().Be(token2);
+        manager.RefreshCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetOrRefreshTokenAsync_WithDifferentScopes_RefreshesSeparately()
+    {
+        var manager = new ScopedTokenManager();
+
+        var token1 = await manager.GetOrRefreshTokenAsync(new[] { "read" });
+        var token2 = await manager.GetOrRefreshTokenAsync(new[] { "write" });
+
+        token1.Should().Be("scoped-token:read");
+        token2.Should().Be("scoped-token:write");
+        manager.RefreshCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task GetOrRefreshTokenAsync_WithNullScopes_UsesDefaultKey()
+    {
+        var manager = new ScopedTokenManager();
+
+        var token = await manager.GetOrRefreshTokenAsync((string[]?)null);
+
+        token.Should().Be("scoped-token:default");
+    }
+
+    [Fact]
+    public async Task GetOrRefreshTokenAsync_WithEmptyScopes_UsesDefaultKey()
+    {
+        var manager = new ScopedTokenManager();
+
+        var token = await manager.GetOrRefreshTokenAsync(Array.Empty<string>());
+
+        token.Should().Be("scoped-token:default");
+    }
+
+    [Fact]
+    public async Task GetTokenAsync_WithScopes_DelegatesToBaseImplementation()
+    {
+        var manager = new ScopedTokenManager();
+
+        var token = await manager.GetTokenAsync(new[] { "read" });
+
+        token.Should().Be("scoped-token:read");
+    }
+
+    [Fact]
+    public async Task GetOrRefreshTokenAsync_ScopesOrderIndependent()
+    {
+        var manager = new ScopedTokenManager();
+
+        var token1 = await manager.GetOrRefreshTokenAsync(new[] { "write", "read" });
+        var token2 = await manager.GetOrRefreshTokenAsync(new[] { "read", "write" });
+
+        token1.Should().Be(token2);
+        manager.RefreshCount.Should().Be(1);
+    }
+
     private class TestTokenManager : TokenManagerBase
     {
         private readonly CredentialToken _initialToken;
@@ -129,5 +206,37 @@ public class TokenManagerBaseTests
 
         protected override Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
             => throw new InvalidOperationException("Token refresh failed");
+    }
+
+    private class ScopedTokenManager : TokenManagerBase
+    {
+        public int RefreshCount { get; private set; }
+
+        public override Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
+            => GetOrRefreshTokenAsync(cancellationToken);
+
+        public override Task<string> GetTokenAsync(string[]? scopes, CancellationToken cancellationToken = default)
+            => GetOrRefreshTokenAsync(scopes, cancellationToken);
+
+        protected override Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
+        {
+            RefreshCount++;
+            return Task.FromResult(new CredentialToken
+            {
+                AccessToken = "scoped-token:default",
+                Expire = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds()
+            });
+        }
+
+        protected override Task<CredentialToken> RefreshTokenWithScopesAsync(string[]? scopes, CancellationToken cancellationToken)
+        {
+            RefreshCount++;
+            var scopeKey = GetScopeKey(scopes);
+            return Task.FromResult(new CredentialToken
+            {
+                AccessToken = $"scoped-token:{scopeKey}",
+                Expire = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds()
+            });
+        }
     }
 }

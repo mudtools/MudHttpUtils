@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace Mud.HttpUtils;
 
 /// <summary>
@@ -8,6 +10,7 @@ public abstract class TokenManagerBase : ITokenManager
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private string? _cachedToken;
     private long _tokenExpireTime;
+    private readonly ConcurrentDictionary<string, (string? Token, long ExpireTime)> _scopedTokens = new();
 
     /// <summary>
     /// 令牌刷新失败事件。
@@ -34,6 +37,12 @@ public abstract class TokenManagerBase : ITokenManager
     public abstract Task<string> GetTokenAsync(CancellationToken cancellationToken = default);
 
     /// <inheritdoc />
+    public virtual Task<string> GetTokenAsync(string[]? scopes, CancellationToken cancellationToken = default)
+    {
+        return GetTokenAsync(cancellationToken);
+    }
+
+    /// <inheritdoc />
     public async Task<string> GetOrRefreshTokenAsync(CancellationToken cancellationToken = default)
     {
         if (IsTokenValid())
@@ -55,12 +64,61 @@ public abstract class TokenManagerBase : ITokenManager
         }
     }
 
+    /// <inheritdoc />
+    public virtual async Task<string> GetOrRefreshTokenAsync(string[]? scopes, CancellationToken cancellationToken = default)
+    {
+        var scopeKey = GetScopeKey(scopes);
+
+        if (IsScopedTokenValid(scopeKey))
+            return _scopedTokens[scopeKey].Token!;
+
+        await _refreshLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (IsScopedTokenValid(scopeKey))
+                return _scopedTokens[scopeKey].Token!;
+
+            var token = await RefreshTokenWithScopesAsync(scopes, cancellationToken).ConfigureAwait(false);
+            UpdateScopedToken(scopeKey, token);
+            return _scopedTokens[scopeKey].Token!;
+        }
+        finally
+        {
+            _refreshLock.Release();
+        }
+    }
+
     /// <summary>
     /// 刷新令牌的核心实现，由子类实现具体的刷新逻辑。
     /// </summary>
     /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
     /// <returns>刷新后的凭证令牌。</returns>
     protected abstract Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 刷新指定作用域的令牌。默认实现忽略 scopes 调用 <see cref="RefreshTokenCoreAsync"/>，
+    /// 子类可重写此方法以支持基于 Scope 的令牌刷新。
+    /// </summary>
+    /// <param name="scopes">令牌作用域数组。</param>
+    /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+    /// <returns>刷新后的凭证令牌。</returns>
+    protected virtual Task<CredentialToken> RefreshTokenWithScopesAsync(string[]? scopes, CancellationToken cancellationToken)
+    {
+        return RefreshTokenCoreAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// 生成作用域缓存键。默认实现将 scopes 排序后用逗号连接，null 或空数组返回 "default"。
+    /// </summary>
+    /// <param name="scopes">令牌作用域数组。</param>
+    /// <returns>缓存键字符串。</returns>
+    protected virtual string GetScopeKey(string[]? scopes)
+    {
+        if (scopes == null || scopes.Length == 0)
+            return "default";
+
+        return string.Join(",", scopes.OrderBy(s => s));
+    }
 
     /// <summary>
     /// 更新缓存的令牌信息。
@@ -70,6 +128,16 @@ public abstract class TokenManagerBase : ITokenManager
     {
         _cachedToken = token?.AccessToken;
         _tokenExpireTime = token?.Expire ?? 0;
+    }
+
+    /// <summary>
+    /// 更新指定作用域的缓存令牌信息。
+    /// </summary>
+    /// <param name="scopeKey">作用域缓存键。</param>
+    /// <param name="token">凭证令牌。</param>
+    protected void UpdateScopedToken(string scopeKey, CredentialToken token)
+    {
+        _scopedTokens[scopeKey] = (token?.AccessToken, token?.Expire ?? 0);
     }
 
     /// <summary>
@@ -140,5 +208,18 @@ public abstract class TokenManagerBase : ITokenManager
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var thresholdMs = ExpireThresholdSeconds * 1000L;
         return _tokenExpireTime - thresholdMs > now;
+    }
+
+    private bool IsScopedTokenValid(string scopeKey)
+    {
+        if (!_scopedTokens.TryGetValue(scopeKey, out var entry))
+            return false;
+
+        if (string.IsNullOrEmpty(entry.Token) || entry.ExpireTime <= 0)
+            return false;
+
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var thresholdMs = ExpireThresholdSeconds * 1000L;
+        return entry.ExpireTime - thresholdMs > now;
     }
 }

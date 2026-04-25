@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Mud.HttpUtils.Resilience;
 
 namespace Mud.HttpUtils.Resilience.Tests;
@@ -115,5 +116,95 @@ public class PollyResiliencePolicyProviderTests
         var policy = provider.GetCombinedPolicy<object>();
 
         policy.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task RetryPolicy_WithOnRetryCallback_InvokesCallback()
+    {
+        var callbackInvocations = new List<(Exception? Ex, int RetryCount, TimeSpan Delay)>();
+        var options = new ResilienceOptions
+        {
+            Retry =
+            {
+                Enabled = true,
+                MaxRetryAttempts = 2,
+                DelayMilliseconds = 1,
+                OnRetry = (ex, retryCount, delay) =>
+                {
+                    callbackInvocations.Add((ex, retryCount, delay));
+                    return Task.CompletedTask;
+                }
+            }
+        };
+        var provider = new PollyResiliencePolicyProvider(options);
+
+        var policy = provider.GetRetryPolicy<HttpResponseMessage>();
+
+        Func<Task<HttpResponseMessage>> action = () =>
+            throw new HttpRequestException("test error");
+
+        var act = async () => await policy.ExecuteAsync(action);
+
+        await act.Should().ThrowAsync<HttpRequestException>();
+        callbackInvocations.Should().HaveCount(2);
+        callbackInvocations[0].RetryCount.Should().Be(1);
+        callbackInvocations[1].RetryCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task RetryPolicy_OnRetryCallbackThrows_DoesNotPropagate()
+    {
+        var options = new ResilienceOptions
+        {
+            Retry =
+            {
+                Enabled = true,
+                MaxRetryAttempts = 1,
+                DelayMilliseconds = 1,
+                OnRetry = (ex, retryCount, delay) => throw new InvalidOperationException("callback error")
+            }
+        };
+        var provider = new PollyResiliencePolicyProvider(Options.Create(options));
+
+        var policy = provider.GetRetryPolicy<HttpResponseMessage>();
+
+        Func<Task<HttpResponseMessage>> action = () =>
+            throw new HttpRequestException("test error");
+
+        var act = async () => await policy.ExecuteAsync(action);
+
+        await act.Should().ThrowAsync<HttpRequestException>();
+    }
+
+    [Fact]
+    public async Task RetryPolicy_WithoutOnRetryCallback_WorksNormally()
+    {
+        var options = new ResilienceOptions
+        {
+            Retry =
+            {
+                Enabled = true,
+                MaxRetryAttempts = 1,
+                DelayMilliseconds = 1
+            }
+        };
+        var provider = new PollyResiliencePolicyProvider(options);
+
+        var policy = provider.GetRetryPolicy<HttpResponseMessage>();
+
+        Func<Task<HttpResponseMessage>> action = () =>
+            throw new HttpRequestException("test error");
+
+        var act = async () => await policy.ExecuteAsync(action);
+
+        await act.Should().ThrowAsync<HttpRequestException>();
+    }
+
+    [Fact]
+    public void RetryOptions_OnRetry_DefaultIsNull()
+    {
+        var options = new RetryOptions();
+
+        options.OnRetry.Should().BeNull();
     }
 }

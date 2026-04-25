@@ -11,8 +11,18 @@ public class TestTokenManager : ITokenManager
         return Task.FromResult("Bearer test-access-token");
     }
 
+    public Task<string> GetTokenAsync(string[]? scopes, CancellationToken cancellationToken = default)
+    {
+        return GetTokenAsync(cancellationToken);
+    }
+
     public Task<string> GetOrRefreshTokenAsync(CancellationToken cancellationToken = default)
     {
         return GetTokenAsync(cancellationToken);
+    }
+
+    public Task<string> GetOrRefreshTokenAsync(string[]? scopes, CancellationToken cancellationToken = default)
+    {
+        return GetOrRefreshTokenAsync(cancellationToken);
     }
 }

@@ -46,7 +46,7 @@ internal static class MethodAnalyzer
         var responseEnableDecrypt = GetResponseEnableDecryptFromSymbol(methodSymbol);
         var parameters = ParameterAnalyzer.AnalyzeParameters(methodSymbol);
         var (bodyContentType, bodyEnableEncrypt, bodyEncryptSerializeType, bodyEncryptPropertyName) = GetBodyInfoFromParameters(parameters);
-        var (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName) = AnalyzeInterfaceAttributes(
+        var (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName, interfaceTokenScopes) = AnalyzeInterfaceAttributes(
             compilation,
             interfaceDecl,
             semanticModel);
@@ -75,6 +75,7 @@ internal static class MethodAnalyzer
             BodyEncryptPropertyName = bodyEncryptPropertyName,
             InterfaceTokenInjectionMode = interfaceTokenInjectionMode,
             InterfaceTokenName = interfaceTokenName,
+            InterfaceTokenScopes = interfaceTokenScopes,
             CacheEnabled = cacheEnabled,
             CacheDurationSeconds = cacheDurationSeconds,
             CacheKeyTemplate = cacheKeyTemplate,
@@ -453,7 +454,7 @@ internal static class MethodAnalyzer
     /// <summary>
     /// 分析接口特性
     /// </summary>
-    private static (HashSet<string> interfaceAttributes, List<InterfaceHeaderAttributeInfo> interfaceHeaderAttributes, string? interfaceTokenInjectionMode, string? interfaceTokenName)
+    private static (HashSet<string> interfaceAttributes, List<InterfaceHeaderAttributeInfo> interfaceHeaderAttributes, string? interfaceTokenInjectionMode, string? interfaceTokenName, string? interfaceTokenScopes)
         AnalyzeInterfaceAttributes(Compilation compilation, InterfaceDeclarationSyntax interfaceDecl, SemanticModel? semanticModel)
     {
         var model = semanticModel ?? SemanticModelCache.GetOrCreate(compilation, interfaceDecl.SyntaxTree);
@@ -462,6 +463,7 @@ internal static class MethodAnalyzer
         var interfaceHeaderAttributes = new List<InterfaceHeaderAttributeInfo>();
         string? interfaceTokenInjectionMode = null;
         string? interfaceTokenName = null;
+        string? interfaceTokenScopes = null;
 
         if (interfaceSymbol != null)
         {
@@ -507,16 +509,18 @@ internal static class MethodAnalyzer
             {
                 var injectionMode = GetTokenInjectionMode(tokenAttr);
                 var tokenName = GetTokenName(tokenAttr);
+                var tokenScopes = GetTokenScopes(tokenAttr);
                 if (!string.IsNullOrEmpty(injectionMode))
                 {
                     interfaceTokenInjectionMode = injectionMode;
                     interfaceTokenName = tokenName;
+                    interfaceTokenScopes = tokenScopes;
                     interfaceAttributes.Add($"Token:{injectionMode}:{tokenName}");
                 }
             }
         }
 
-        return (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName);
+        return (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName, interfaceTokenScopes);
     }
 
     /// <summary>
@@ -550,6 +554,25 @@ internal static class MethodAnalyzer
         foreach (var namedArg in tokenAttr.NamedArguments)
         {
             if (namedArg.Key == HttpClientGeneratorConstants.TokenNameProperty)
+            {
+                return namedArg.Value.Value?.ToString();
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 获取Token特性的Scopes值
+    /// </summary>
+    private static string? GetTokenScopes(AttributeData tokenAttr)
+    {
+        if (tokenAttr == null)
+            return null;
+
+        foreach (var namedArg in tokenAttr.NamedArguments)
+        {
+            if (namedArg.Key == "Scopes")
             {
                 return namedArg.Value.Value?.ToString();
             }
