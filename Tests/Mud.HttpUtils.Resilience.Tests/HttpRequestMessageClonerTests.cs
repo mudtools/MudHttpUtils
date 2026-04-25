@@ -101,4 +101,44 @@ public class HttpRequestMessageClonerTests
         var originalContent = await original.Content!.ReadAsStringAsync();
         originalContent.Should().Be(content);
     }
+
+    [Fact]
+    public async Task CloneAsync_WithMaxContentSize_ExceedsLimit_Throws()
+    {
+        var largeData = new byte[1000];
+        var original = new HttpRequestMessage(HttpMethod.Post, "https://api.example.com/test")
+        {
+            Content = new ByteArrayContent(largeData)
+        };
+
+        var act = async () => await HttpRequestMessageCloner.CloneAsync(original, 500);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task CloneAsync_WithMaxContentSize_WithinLimit_Succeeds()
+    {
+        var smallData = new byte[100];
+        var original = new HttpRequestMessage(HttpMethod.Post, "https://api.example.com/test")
+        {
+            Content = new ByteArrayContent(smallData)
+        };
+
+        var clone = await HttpRequestMessageCloner.CloneAsync(original, 500);
+
+        clone.Should().NotBeNull();
+        clone.Content.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task CloneAsync_WithNoContent_AndMaxContentSize_Succeeds()
+    {
+        var original = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/test");
+
+        var clone = await HttpRequestMessageCloner.CloneAsync(original, 500);
+
+        clone.Should().NotBeNull();
+        clone.Content.Should().BeNull();
+    }
 }

@@ -200,5 +200,13 @@ public class ServiceCollectionExtensionsTests
 
         public byte[] DecryptBytes(byte[] encryptedData)
             => encryptedData ?? Array.Empty<byte>();
+
+        public Uri? BaseAddress => null;
+
+        public IEnhancedHttpClient WithBaseAddress(string baseAddress)
+            => throw new NotImplementedException();
+
+        public IEnhancedHttpClient WithBaseAddress(Uri baseAddress)
+            => throw new NotImplementedException();
     }
 }

@@ -21,6 +21,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
     private readonly IEnhancedHttpClient _innerClient;
     private readonly IResiliencePolicyProvider _policyProvider;
     private readonly ILogger _logger;
+    private readonly ResilienceOptions? _options;
 
     /// <summary>
     /// 初始化 ResilientHttpClient 实例。
@@ -28,15 +29,38 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
     /// <param name="innerClient">内部 HTTP 客户端。</param>
     /// <param name="policyProvider">弹性策略提供器。</param>
     /// <param name="logger">日志记录器（可选）。</param>
+    /// <param name="options">弹性策略配置选项（可选）。</param>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
     public ResilientHttpClient(
         IEnhancedHttpClient innerClient,
         IResiliencePolicyProvider policyProvider,
-        ILogger<ResilientHttpClient>? logger = null)
+        ILogger<ResilientHttpClient>? logger = null,
+        ResilienceOptions? options = null)
     {
         _innerClient = innerClient ?? throw new ArgumentNullException(nameof(innerClient));
         _policyProvider = policyProvider ?? throw new ArgumentNullException(nameof(policyProvider));
         _logger = logger ?? NullLogger<ResilientHttpClient>.Instance;
+        _options = options;
+    }
+
+    private long MaxCloneContentSize => _options?.MaxCloneContentSize ?? HttpRequestMessageCloner.DefaultMaxContentSize;
+
+    private bool ShouldSkipRetry(HttpRequestMessage request)
+    {
+        if (_options == null || _options.MaxCloneContentSize < 0)
+            return false;
+
+        var contentLength = request.Content?.Headers.ContentLength;
+        if (contentLength.HasValue && contentLength.Value > MaxCloneContentSize)
+        {
+            _logger.LogWarning(
+                "请求体大小 ({ContentLength} 字节) 超过克隆限制 ({MaxSize} 字节)，跳过重试策略",
+                contentLength.Value,
+                MaxCloneContentSize);
+            return true;
+        }
+
+        return false;
     }
 
     #region IBaseHttpClient
@@ -47,12 +71,17 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         object? jsonSerializerOptions = null,
         CancellationToken cancellationToken = default)
     {
+        if (ShouldSkipRetry(request))
+        {
+            return await _innerClient.SendAsync<TResult>(request, jsonSerializerOptions, cancellationToken).ConfigureAwait(false);
+        }
+
         var policy = _policyProvider.GetCombinedPolicy<TResult?>();
 
         return await policy.ExecuteAsync(
             async ct =>
             {
-                var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request).ConfigureAwait(false);
+                var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request, MaxCloneContentSize).ConfigureAwait(false);
                 try
                 {
                     return await _innerClient.SendAsync<TResult>(clonedRequest, jsonSerializerOptions, ct).ConfigureAwait(false);
@@ -75,7 +104,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         return await policy.ExecuteAsync(
             async ct =>
             {
-                var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request).ConfigureAwait(false);
+                var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request, MaxCloneContentSize).ConfigureAwait(false);
                 try
                 {
                     return await _innerClient.DownloadAsync(clonedRequest, ct).ConfigureAwait(false);
@@ -100,7 +129,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         return await policy.ExecuteAsync(
             async ct =>
             {
-                var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request).ConfigureAwait(false);
+                var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request, MaxCloneContentSize).ConfigureAwait(false);
                 try
                 {
                     return await _innerClient.DownloadLargeAsync(clonedRequest, filePath, overwrite, ct).ConfigureAwait(false);
@@ -123,7 +152,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         return await policy.ExecuteAsync(
             async ct =>
             {
-                var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request).ConfigureAwait(false);
+                var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request, MaxCloneContentSize).ConfigureAwait(false);
                 try
                 {
                     return await _innerClient.SendRawAsync(clonedRequest, ct).ConfigureAwait(false);
@@ -146,7 +175,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         return await policy.ExecuteAsync(
             async ct =>
             {
-                var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request).ConfigureAwait(false);
+                var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request, MaxCloneContentSize).ConfigureAwait(false);
                 try
                 {
                     return await _innerClient.SendStreamAsync(clonedRequest, ct).ConfigureAwait(false);
@@ -254,7 +283,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         return await policy.ExecuteAsync(
             async ct =>
             {
-                var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request).ConfigureAwait(false);
+                var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request, MaxCloneContentSize).ConfigureAwait(false);
                 try
                 {
                     return await _innerClient.SendXmlAsync<TResult>(clonedRequest, encoding, ct).ConfigureAwait(false);
@@ -354,6 +383,32 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         }
 
         throw new InvalidOperationException($"内部客户端 '{_innerClient.GetType().Name}' 未实现 IEncryptableHttpClient 接口，无法执行解密操作。");
+    }
+
+    #endregion
+
+    #region IEnhancedHttpClient 基地址支持
+
+    /// <inheritdoc />
+    public Uri? BaseAddress => _innerClient.BaseAddress;
+
+    /// <inheritdoc />
+    public IEnhancedHttpClient WithBaseAddress(string baseAddress)
+    {
+        if (string.IsNullOrWhiteSpace(baseAddress))
+            throw new ArgumentException("基地址不能为空", nameof(baseAddress));
+
+        return WithBaseAddress(new Uri(baseAddress));
+    }
+
+    /// <inheritdoc />
+    public IEnhancedHttpClient WithBaseAddress(Uri baseAddress)
+    {
+        if (baseAddress == null)
+            throw new ArgumentNullException(nameof(baseAddress));
+
+        var innerWithNewBase = _innerClient.WithBaseAddress(baseAddress);
+        return new ResilientHttpClient(innerWithNewBase, _policyProvider, _logger as ILogger<ResilientHttpClient>, _options);
     }
 
     #endregion

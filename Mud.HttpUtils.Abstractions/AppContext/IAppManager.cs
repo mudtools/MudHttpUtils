@@ -91,4 +91,9 @@ public interface IAppManager<TAppContext>
     /// <param name="isDefault">是否设为默认应用。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     Task RegisterAppAsync(string appKey, TAppContext appContext, bool isDefault = false, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 应用配置变更事件。
+    /// </summary>
+    event EventHandler<AppConfigurationChangedEventArgs> ConfigurationChanged;
 }

@@ -99,7 +99,8 @@ public static class ServiceCollectionExtensions
         {
             var policyProvider = sp.GetRequiredService<IResiliencePolicyProvider>();
             var logger = sp.GetService<ILogger<ResilientHttpClient>>();
-            return new ResilientHttpClient(inner, policyProvider, logger);
+            var options = sp.GetService<IOptions<ResilienceOptions>>()?.Value;
+            return new ResilientHttpClient(inner, policyProvider, logger, options);
         });
 
         return services;
@@ -129,7 +130,8 @@ public static class ServiceCollectionExtensions
         {
             var policyProvider = sp.GetRequiredService<IResiliencePolicyProvider>();
             var logger = sp.GetService<ILogger<ResilientHttpClient>>();
-            return new ResilientHttpClient(inner, policyProvider, logger);
+            var options = sp.GetService<IOptions<ResilienceOptions>>()?.Value;
+            return new ResilientHttpClient(inner, policyProvider, logger, options);
         });
 
         return services;

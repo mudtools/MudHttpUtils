@@ -19,6 +19,15 @@ public class ResilienceOptions
     /// 熔断策略配置。
     /// </summary>
     public CircuitBreakerOptions CircuitBreaker { get; set; } = new();
+
+    /// <summary>
+    /// 获取或设置请求克隆的最大内容大小（字节），默认 10MB。
+    /// </summary>
+    /// <remarks>
+    /// 超过此大小的请求将跳过重试策略，避免克隆开销。
+    /// 设置为 -1 表示不限制大小（不推荐）。
+    /// </remarks>
+    public long MaxCloneContentSize { get; set; } = 10 * 1024 * 1024;
 }
 
 /// <summary>

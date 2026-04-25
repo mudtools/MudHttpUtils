@@ -9,4 +9,22 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public interface IEnhancedHttpClient : IBaseHttpClient, IJsonHttpClient, IXmlHttpClient, IEncryptableHttpClient
 {
+    /// <summary>
+    /// 创建带新基地址的客户端副本。
+    /// </summary>
+    /// <param name="baseAddress">新的基地址。</param>
+    /// <returns>新的客户端实例。</returns>
+    IEnhancedHttpClient WithBaseAddress(string baseAddress);
+
+    /// <summary>
+    /// 创建带新基地址的客户端副本。
+    /// </summary>
+    /// <param name="baseAddress">新的基地址。</param>
+    /// <returns>新的客户端实例。</returns>
+    IEnhancedHttpClient WithBaseAddress(Uri baseAddress);
+
+    /// <summary>
+    /// 获取当前客户端的基地址。
+    /// </summary>
+    Uri? BaseAddress { get; }
 }

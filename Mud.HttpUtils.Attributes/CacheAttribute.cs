@@ -13,4 +13,16 @@ public sealed class CacheAttribute : Attribute
     public string? CacheKeyTemplate { get; set; }
 
     public bool VaryByUser { get; set; }
+
+    public bool UseSlidingExpiration { get; set; }
+
+    public CachePriority Priority { get; set; } = CachePriority.Normal;
+}
+
+public enum CachePriority
+{
+    Low,
+    Normal,
+    High,
+    NeverRemove
 }

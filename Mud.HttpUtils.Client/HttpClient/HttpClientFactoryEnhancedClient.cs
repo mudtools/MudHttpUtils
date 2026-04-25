@@ -26,6 +26,10 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
     private readonly IHttpClientFactory _factory;
     private readonly string _clientName;
     private readonly IEncryptionProvider? _encryptionProvider;
+    private readonly ILogger? _logger;
+    private readonly IEnumerable<IHttpRequestInterceptor>? _requestInterceptors;
+    private readonly IEnumerable<IHttpResponseInterceptor>? _responseInterceptors;
+    private readonly Uri? _overrideBaseAddress;
 
     /// <summary>
     /// 初始化 HttpClientFactoryEnhancedClient 实例
@@ -36,6 +40,7 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
     /// <param name="logger">日志记录器（可选）</param>
     /// <param name="requestInterceptors">请求拦截器集合（可选）。</param>
     /// <param name="responseInterceptors">响应拦截器集合（可选）。</param>
+    /// <param name="overrideBaseAddress">覆盖的基地址（可选）。</param>
     /// <exception cref="ArgumentNullException">factory 或 clientName 为 null</exception>
     public HttpClientFactoryEnhancedClient(
         IHttpClientFactory factory,
@@ -43,28 +48,68 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
         IEncryptionProvider? encryptionProvider = null,
         ILogger<HttpClientFactoryEnhancedClient>? logger = null,
         IEnumerable<IHttpRequestInterceptor>? requestInterceptors = null,
-        IEnumerable<IHttpResponseInterceptor>? responseInterceptors = null)
-        : base(CreateClient(factory, clientName), logger, requestInterceptors, responseInterceptors)
+        IEnumerable<IHttpResponseInterceptor>? responseInterceptors = null,
+        Uri? overrideBaseAddress = null)
+        : base(CreateClient(factory, clientName, overrideBaseAddress), logger, requestInterceptors, responseInterceptors)
     {
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
         _clientName = clientName ?? throw new ArgumentNullException(nameof(clientName));
         _encryptionProvider = encryptionProvider;
+        _logger = logger;
+        _requestInterceptors = requestInterceptors;
+        _responseInterceptors = responseInterceptors;
+        _overrideBaseAddress = overrideBaseAddress;
     }
 
-    private static HttpClient CreateClient(IHttpClientFactory factory, string name)
+    private static HttpClient CreateClient(IHttpClientFactory factory, string name, Uri? overrideBaseAddress)
     {
         if (factory == null)
             throw new ArgumentNullException(nameof(factory));
         if (string.IsNullOrEmpty(name))
             throw new ArgumentNullException(nameof(name));
 
-        return factory.CreateClient(name);
+        var httpClient = factory.CreateClient(name);
+
+        if (overrideBaseAddress != null)
+        {
+            httpClient.BaseAddress = overrideBaseAddress;
+        }
+
+        return httpClient;
     }
 
     /// <summary>
     /// 获取当前使用的 HttpClient 名称
     /// </summary>
     public string ClientName => _clientName;
+
+    /// <inheritdoc />
+    public override Uri? BaseAddress => _overrideBaseAddress ?? base.BaseAddress;
+
+    /// <inheritdoc />
+    public override IEnhancedHttpClient WithBaseAddress(string baseAddress)
+    {
+        if (string.IsNullOrWhiteSpace(baseAddress))
+            throw new ArgumentException("基地址不能为空", nameof(baseAddress));
+
+        return WithBaseAddress(new Uri(baseAddress));
+    }
+
+    /// <inheritdoc />
+    public override IEnhancedHttpClient WithBaseAddress(Uri baseAddress)
+    {
+        if (baseAddress == null)
+            throw new ArgumentNullException(nameof(baseAddress));
+
+        return new HttpClientFactoryEnhancedClient(
+            _factory,
+            _clientName,
+            _encryptionProvider,
+            _logger as ILogger<HttpClientFactoryEnhancedClient>,
+            _requestInterceptors,
+            _responseInterceptors,
+            baseAddress);
+    }
 
     /// <inheritdoc/>
     public override string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json)
