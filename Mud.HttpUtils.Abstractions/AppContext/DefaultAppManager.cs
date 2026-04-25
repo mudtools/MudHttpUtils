@@ -1,0 +1,172 @@
+using System.Collections.Concurrent;
+
+namespace Mud.HttpUtils;
+
+/// <summary>
+/// 应用管理器的默认实现，提供线程安全的应用上下文管理。
+/// </summary>
+/// <typeparam name="TAppContext">应用上下文类型。</typeparam>
+public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
+    where TAppContext : IMudAppContext
+{
+    private readonly ConcurrentDictionary<string, TAppContext> _apps = new();
+    private string? _defaultAppKey;
+    private readonly object _defaultAppLock = new();
+
+    /// <summary>
+    /// 应用配置变更事件。
+    /// </summary>
+    public event EventHandler<AppConfigurationChangedEventArgs>? ConfigurationChanged;
+
+    /// <inheritdoc />
+    public TAppContext GetApp(string appKey)
+    {
+        if (string.IsNullOrWhiteSpace(appKey))
+            throw new ArgumentException("应用标识不能为空", nameof(appKey));
+
+        if (_apps.TryGetValue(appKey, out var context))
+            return context;
+
+        throw new InvalidOperationException($"未找到应用标识为 '{appKey}' 的应用上下文。请先调用 RegisterApp 注册应用。");
+    }
+
+    /// <inheritdoc />
+    public bool TryGetApp(string appKey, out TAppContext? appContext)
+    {
+        if (string.IsNullOrWhiteSpace(appKey))
+        {
+            appContext = default;
+            return false;
+        }
+
+        return _apps.TryGetValue(appKey, out appContext);
+    }
+
+    /// <inheritdoc />
+    public void RegisterApp(string appKey, TAppContext appContext, bool isDefault = false)
+    {
+        if (string.IsNullOrWhiteSpace(appKey))
+            throw new ArgumentException("应用标识不能为空", nameof(appKey));
+        if (appContext == null)
+            throw new ArgumentNullException(nameof(appContext));
+
+        var isUpdate = _apps.ContainsKey(appKey);
+        _apps[appKey] = appContext;
+
+        if (isDefault)
+        {
+            lock (_defaultAppLock)
+            {
+                _defaultAppKey = appKey;
+            }
+        }
+
+        OnConfigurationChanged(new AppConfigurationChangedEventArgs(
+            appKey,
+            isUpdate ? AppConfigurationChangeType.Updated : AppConfigurationChangeType.Added));
+    }
+
+    /// <inheritdoc />
+    public async Task RegisterAppAsync(string appKey, TAppContext appContext, bool isDefault = false, CancellationToken cancellationToken = default)
+    {
+        await Task.Run(() => RegisterApp(appKey, appContext, isDefault), cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public bool RemoveApp(string appKey)
+    {
+        if (string.IsNullOrWhiteSpace(appKey))
+            return false;
+
+        var removed = _apps.TryRemove(appKey, out _);
+
+        if (removed)
+        {
+            lock (_defaultAppLock)
+            {
+                if (_defaultAppKey == appKey)
+                    _defaultAppKey = null;
+            }
+
+            OnConfigurationChanged(new AppConfigurationChangedEventArgs(
+                appKey, AppConfigurationChangeType.Removed));
+        }
+
+        return removed;
+    }
+
+    /// <inheritdoc />
+    public TAppContext GetDefaultApp()
+    {
+        lock (_defaultAppLock)
+        {
+            if (string.IsNullOrEmpty(_defaultAppKey))
+                throw new InvalidOperationException("未设置默认应用。请在注册应用时设置 isDefault = true。");
+
+            return GetApp(_defaultAppKey);
+        }
+    }
+
+    /// <inheritdoc />
+    public IEnumerable<TAppContext> GetAllApps()
+    {
+        return _apps.Values;
+    }
+
+    /// <inheritdoc />
+    public bool HasApp(string appKey)
+    {
+        if (string.IsNullOrWhiteSpace(appKey))
+            return false;
+
+        return _apps.ContainsKey(appKey);
+    }
+
+    /// <inheritdoc />
+    public TContextSwitcher GetWebApi<TContextSwitcher>(string appKey)
+        where TContextSwitcher : IAppContextSwitcher
+    {
+        var context = GetApp(appKey);
+        return CreateContextSwitcher<TContextSwitcher>(context);
+    }
+
+    /// <inheritdoc />
+    public TContextSwitcher GetDefaultWebApi<TContextSwitcher>()
+        where TContextSwitcher : IAppContextSwitcher
+    {
+        var context = GetDefaultApp();
+        return CreateContextSwitcher<TContextSwitcher>(context);
+    }
+
+    /// <inheritdoc />
+    [Obsolete("请使用 GetDefaultWebApi<TContextSwitcher>() 替代。此方法将在未来版本中移除。")]
+    public TContextSwitcher GetDefalutWebApi<TContextSwitcher>()
+        where TContextSwitcher : IAppContextSwitcher
+    {
+        return GetDefaultWebApi<TContextSwitcher>();
+    }
+
+    /// <summary>
+    /// 触发配置变更事件。
+    /// </summary>
+    /// <param name="e">事件参数。</param>
+    protected virtual void OnConfigurationChanged(AppConfigurationChangedEventArgs e)
+    {
+        ConfigurationChanged?.Invoke(this, e);
+    }
+
+    private static TContextSwitcher CreateContextSwitcher<TContextSwitcher>(TAppContext context)
+        where TContextSwitcher : IAppContextSwitcher
+    {
+        try
+        {
+            return (TContextSwitcher)Activator.CreateInstance(typeof(TContextSwitcher), context)!;
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"无法创建类型 {typeof(TContextSwitcher).Name} 的实例。" +
+                $"请确保该类型有接受 {typeof(TAppContext).Name} 参数的公共构造函数。", ex);
+        }
+    }
+}

@@ -7,19 +7,19 @@
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Mud.HttpUtils;
 
-/// <summary>
-/// 增强型HttpClient抽象类，提供了发送HTTP请求和下载文件的基本功能，具体实现由子类完成
-/// </summary>
 public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttpClient
 {
     private readonly ILogger _logger;
     private readonly HttpClient _httpClient;
     private readonly bool _enableLogging;
+    private readonly IHttpRequestInterceptor[] _requestInterceptors;
+    private readonly IHttpResponseInterceptor[] _responseInterceptors;
 
     private static readonly JsonSerializerOptions s_defaultJsonSerializerOptions = new()
     {
@@ -37,12 +37,20 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// </summary>
     /// <param name="httpClient">HttpClient实例</param>
     /// <param name="logger">日志记录器</param>
+    /// <param name="requestInterceptors">请求拦截器集合（可选）。</param>
+    /// <param name="responseInterceptors">响应拦截器集合（可选）。</param>
     /// <exception cref="ArgumentNullException"></exception>
-    protected EnhancedHttpClient(HttpClient httpClient, ILogger? logger = null)
+    protected EnhancedHttpClient(
+        HttpClient httpClient,
+        ILogger? logger = null,
+        IEnumerable<IHttpRequestInterceptor>? requestInterceptors = null,
+        IEnumerable<IHttpResponseInterceptor>? responseInterceptors = null)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _logger = logger ?? NullLogger.Instance;
         _enableLogging = _logger != NullLogger.Instance;
+        _requestInterceptors = requestInterceptors?.OrderBy(i => i.Order).ToArray() ?? Array.Empty<IHttpRequestInterceptor>();
+        _responseInterceptors = responseInterceptors?.OrderBy(i => i.Order).ToArray() ?? Array.Empty<IHttpResponseInterceptor>();
     }
 
     #region IEnhancedHttpClient 接口实现
@@ -521,9 +529,13 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
         try
         {
+            await ExecuteRequestInterceptorsAsync(httpRequestMessage, cancellationToken).ConfigureAwait(false);
+
             using var response = await _httpClient.SendAsync(httpRequestMessage,
                                             HttpCompletionOption.ResponseHeadersRead,
                                             cancellationToken).ConfigureAwait(false);
+
+            await ExecuteResponseInterceptorsAsync(response, cancellationToken).ConfigureAwait(false);
 
             await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
 
@@ -652,9 +664,13 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
         try
         {
+            await ExecuteRequestInterceptorsAsync(httpRequestMessage, cancellationToken).ConfigureAwait(false);
+
             using var response = await _httpClient.SendAsync(httpRequestMessage,
                                         HttpCompletionOption.ResponseHeadersRead,
                                         cancellationToken).ConfigureAwait(false);
+
+            await ExecuteResponseInterceptorsAsync(response, cancellationToken).ConfigureAwait(false);
 
             await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
 
@@ -728,6 +744,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
     /// <inheritdoc/>
     public abstract string DecryptContent(string encryptedContent);
+
+    /// <inheritdoc/>
+    public abstract byte[] EncryptBytes(byte[] data);
+
+    /// <inheritdoc/>
+    public abstract byte[] DecryptBytes(byte[] encryptedData);
 
     #region 下载处理方法
 
@@ -1030,6 +1052,32 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             _logger.HttpClientError(errorMessage, uri, ex);
         }
         return false; // 始终返回false，异常会被重新抛出
+    }
+
+    #endregion
+
+    #region 拦截器执行方法
+
+    /// <summary>
+    /// 执行请求拦截器。
+    /// </summary>
+    private async Task ExecuteRequestInterceptorsAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        for (var i = 0; i < _requestInterceptors.Length; i++)
+        {
+            await _requestInterceptors[i].OnRequestAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// 执行响应拦截器。
+    /// </summary>
+    private async Task ExecuteResponseInterceptorsAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        for (var i = 0; i < _responseInterceptors.Length; i++)
+        {
+            await _responseInterceptors[i].OnResponseAsync(response, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     #endregion

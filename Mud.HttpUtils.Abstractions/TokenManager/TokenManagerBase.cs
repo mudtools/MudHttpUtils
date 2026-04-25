@@ -10,6 +10,21 @@ public abstract class TokenManagerBase : ITokenManager
     private long _tokenExpireTime;
 
     /// <summary>
+    /// 令牌刷新失败事件。
+    /// </summary>
+    public event EventHandler<TokenRefreshFailedEventArgs>? RefreshFailed;
+
+    /// <summary>
+    /// 获取令牌刷新失败时的最大重试次数，默认 0（不重试）。
+    /// </summary>
+    protected virtual int MaxRefreshRetryCount => 0;
+
+    /// <summary>
+    /// 获取令牌刷新重试间隔（毫秒），默认 1000ms。
+    /// </summary>
+    protected virtual int RefreshRetryDelayMilliseconds => 1000;
+
+    /// <summary>
     /// 获取令牌过期提前量（秒），默认 300 秒（5 分钟）。
     /// 令牌在此时间内即将过期时将触发自动刷新。
     /// </summary>
@@ -30,7 +45,7 @@ public abstract class TokenManagerBase : ITokenManager
             if (IsTokenValid())
                 return _cachedToken!;
 
-            var token = await RefreshTokenCoreAsync(cancellationToken).ConfigureAwait(false);
+            var token = await RefreshTokenWithRetryAsync(cancellationToken).ConfigureAwait(false);
             UpdateCachedToken(token);
             return _cachedToken!;
         }
@@ -66,6 +81,55 @@ public abstract class TokenManagerBase : ITokenManager
     {
         _cachedToken = accessToken;
         _tokenExpireTime = expireTime;
+    }
+
+    /// <summary>
+    /// 触发令牌刷新失败事件。
+    /// </summary>
+    /// <param name="e">事件参数。</param>
+    protected virtual void OnRefreshFailed(TokenRefreshFailedEventArgs e)
+    {
+        RefreshFailed?.Invoke(this, e);
+    }
+
+    private async Task<CredentialToken> RefreshTokenWithRetryAsync(CancellationToken cancellationToken)
+    {
+        var retryCount = 0;
+        Exception? lastException = null;
+
+        while (retryCount <= MaxRefreshRetryCount)
+        {
+            try
+            {
+                return await RefreshTokenCoreAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                lastException = ex;
+                var eventArgs = new TokenRefreshFailedEventArgs(ex, tokenType: null, retryCount);
+
+                OnRefreshFailed(eventArgs);
+
+                if (!string.IsNullOrEmpty(eventArgs.FallbackToken))
+                {
+                    return new CredentialToken
+                    {
+                        AccessToken = eventArgs.FallbackToken,
+                        Expire = DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeMilliseconds()
+                    };
+                }
+
+                if (!eventArgs.ShouldRetry || retryCount >= MaxRefreshRetryCount)
+                {
+                    throw;
+                }
+
+                retryCount++;
+                await Task.Delay(RefreshRetryDelayMilliseconds, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        throw lastException ?? new InvalidOperationException("令牌刷新失败");
     }
 
     private bool IsTokenValid()

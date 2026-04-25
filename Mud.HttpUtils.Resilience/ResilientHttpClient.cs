@@ -334,5 +334,27 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         throw new InvalidOperationException($"内部客户端 '{_innerClient.GetType().Name}' 未实现 IEncryptableHttpClient 接口，无法执行解密操作。");
     }
 
+    /// <inheritdoc />
+    public byte[] EncryptBytes(byte[] data)
+    {
+        if (_innerClient is IEncryptableHttpClient encryptableClient)
+        {
+            return encryptableClient.EncryptBytes(data);
+        }
+
+        throw new InvalidOperationException($"内部客户端 '{_innerClient.GetType().Name}' 未实现 IEncryptableHttpClient 接口，无法执行加密操作。");
+    }
+
+    /// <inheritdoc />
+    public byte[] DecryptBytes(byte[] encryptedData)
+    {
+        if (_innerClient is IEncryptableHttpClient encryptableClient)
+        {
+            return encryptableClient.DecryptBytes(encryptedData);
+        }
+
+        throw new InvalidOperationException($"内部客户端 '{_innerClient.GetType().Name}' 未实现 IEncryptableHttpClient 接口，无法执行解密操作。");
+    }
+
     #endregion
 }

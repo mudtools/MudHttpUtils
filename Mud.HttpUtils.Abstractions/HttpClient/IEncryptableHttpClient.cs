@@ -20,4 +20,18 @@ public interface IEncryptableHttpClient
     /// <param name="encryptedContent">要解密的字符串内容。</param>
     /// <returns>解密后的字符串内容。</returns>
     string DecryptContent(string encryptedContent);
+
+    /// <summary>
+    /// 加密二进制数据。
+    /// </summary>
+    /// <param name="data">要加密的二进制数据。</param>
+    /// <returns>加密后的二进制数据。</returns>
+    byte[] EncryptBytes(byte[] data);
+
+    /// <summary>
+    /// 解密二进制数据。
+    /// </summary>
+    /// <param name="encryptedData">要解密的二进制数据。</param>
+    /// <returns>解密后的二进制数据。</returns>
+    byte[] DecryptBytes(byte[] encryptedData);
 }

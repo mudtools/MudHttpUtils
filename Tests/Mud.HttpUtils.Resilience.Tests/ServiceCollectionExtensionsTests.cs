@@ -194,5 +194,11 @@ public class ServiceCollectionExtensionsTests
 
         public string DecryptContent(string encryptedContent)
             => string.Empty;
+
+        public byte[] EncryptBytes(byte[] data)
+            => data ?? Array.Empty<byte>();
+
+        public byte[] DecryptBytes(byte[] encryptedData)
+            => encryptedData ?? Array.Empty<byte>();
     }
 }

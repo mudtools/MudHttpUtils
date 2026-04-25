@@ -163,9 +163,11 @@ internal class MethodGenerator : ICodeFragmentGenerator
     {
         var cancellationTokenParam = methodInfo.Parameters.FirstOrDefault(
             p => TypeDetectionHelper.IsCancellationToken(p.Type));
-        var paramValue = cancellationTokenParam?.Name;
 
-        return paramValue != null ? $", cancellationToken: {paramValue}" : "";
+        if (cancellationTokenParam != null)
+            return $", cancellationToken: {cancellationTokenParam.Name}";
+
+        return ", cancellationToken: default";
     }
 
     /// <summary>

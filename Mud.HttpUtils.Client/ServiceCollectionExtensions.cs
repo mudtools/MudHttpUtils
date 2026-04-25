@@ -38,7 +38,9 @@ public static class HttpClientServiceCollectionExtensions
             var factory = sp.GetRequiredService<IHttpClientFactory>();
             var logger = sp.GetService<ILogger<HttpClientFactoryEnhancedClient>>();
             var encryptionProvider = sp.GetService<IEncryptionProvider>();
-            return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, logger);
+            var requestInterceptors = sp.GetServices<IHttpRequestInterceptor>();
+            var responseInterceptors = sp.GetServices<IHttpResponseInterceptor>();
+            return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, logger, requestInterceptors, responseInterceptors);
         });
 
         services.TryAddTransient<IBaseHttpClient>(sp => sp.GetRequiredService<IEnhancedHttpClient>());

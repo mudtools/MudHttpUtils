@@ -9,11 +9,47 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 {
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _userLocks = new();
     private readonly ConcurrentDictionary<string, UserTokenInfo> _userTokenCache = new();
+    private long _cacheAccessCounter;
+    private int _evictionGate;
 
     /// <summary>
     /// 获取用户令牌过期提前量（秒），默认 300 秒（5 分钟）。
     /// </summary>
-    protected virtual int UserExpireThresholdSeconds => 300;
+    protected virtual int UserExpireThresholdSeconds => _cacheOptions?.ExpireThresholdSeconds ?? 300;
+
+    /// <summary>
+    /// 获取用户令牌缓存的最大容量，默认 10000。
+    /// 当缓存数量超过此值时，将自动淘汰过期令牌和最久未访问的令牌。
+    /// </summary>
+    protected virtual int MaxUserTokenCacheSize => _cacheOptions?.SizeLimit ?? 10000;
+
+    private readonly UserTokenCacheOptions? _cacheOptions;
+    private Timer? _cleanupTimer;
+
+    /// <summary>
+    /// 初始化用户令牌管理器基类。
+    /// </summary>
+    protected UserTokenManagerBase()
+    {
+    }
+
+    /// <summary>
+    /// 初始化用户令牌管理器基类，使用指定的缓存配置选项。
+    /// </summary>
+    /// <param name="cacheOptions">缓存配置选项。</param>
+    protected UserTokenManagerBase(UserTokenCacheOptions? cacheOptions)
+    {
+        _cacheOptions = cacheOptions;
+
+        if (_cacheOptions?.CleanupIntervalSeconds > 0)
+        {
+            _cleanupTimer = new Timer(
+                _ => CleanupExpiredUserTokens(),
+                null,
+                TimeSpan.FromSeconds(_cacheOptions.CleanupIntervalSeconds),
+                TimeSpan.FromSeconds(_cacheOptions.CleanupIntervalSeconds));
+        }
+    }
 
     /// <inheritdoc />
     public abstract Task<string?> GetTokenAsync(string? userId, CancellationToken cancellationToken = default);
@@ -62,7 +98,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
             var refreshedInfo = await RefreshUserTokenAsync(userId, cancellationToken).ConfigureAwait(false);
             if (refreshedInfo != null)
             {
-                _userTokenCache[userId] = refreshedInfo;
+                UpdateUserTokenCache(userId, refreshedInfo);
                 return refreshedInfo.AccessToken;
             }
 
@@ -81,8 +117,13 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// <param name="tokenInfo">用户令牌信息。</param>
     protected void UpdateUserTokenCache(string userId, UserTokenInfo tokenInfo)
     {
-        if (!string.IsNullOrEmpty(userId) && tokenInfo != null)
-            _userTokenCache[userId] = tokenInfo;
+        if (string.IsNullOrEmpty(userId) || tokenInfo == null)
+            return;
+
+        tokenInfo.LastAccessTime = Interlocked.Increment(ref _cacheAccessCounter);
+        _userTokenCache[userId] = tokenInfo;
+
+        TryEvictIfOverCapacity();
     }
 
     /// <summary>
@@ -118,6 +159,48 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         }
     }
 
+    /// <summary>
+    /// 获取当前缓存中的用户令牌数量。
+    /// </summary>
+    protected int CachedUserTokenCount => _userTokenCache.Count;
+
+    private void TryEvictIfOverCapacity()
+    {
+        if (_userTokenCache.Count <= MaxUserTokenCacheSize)
+            return;
+
+        if (Interlocked.CompareExchange(ref _evictionGate, 1, 0) != 0)
+            return;
+
+        try
+        {
+            CleanupExpiredUserTokens();
+
+            if (_userTokenCache.Count > MaxUserTokenCacheSize)
+            {
+                var entriesToRemove = _userTokenCache
+                    .OrderBy(kvp => kvp.Value.LastAccessTime)
+                    .Take(_userTokenCache.Count - MaxUserTokenCacheSize)
+                    .ToList();
+
+                foreach (var entry in entriesToRemove)
+                {
+                    if (_userTokenCache.TryRemove(entry.Key, out _))
+                    {
+                        if (_userLocks.TryRemove(entry.Key, out var userLock))
+                        {
+                            userLock.Dispose();
+                        }
+                    }
+                }
+            }
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _evictionGate, 0);
+        }
+    }
+
     private bool IsUserTokenValid(UserTokenInfo? tokenInfo)
     {
         if (tokenInfo == null || string.IsNullOrEmpty(tokenInfo.AccessToken))
@@ -128,7 +211,12 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
     private UserTokenInfo? GetUserTokenFromCache(string userId)
     {
-        _userTokenCache.TryGetValue(userId, out var tokenInfo);
-        return tokenInfo;
+        if (_userTokenCache.TryGetValue(userId, out var tokenInfo))
+        {
+            tokenInfo.LastAccessTime = Interlocked.Increment(ref _cacheAccessCounter);
+            return tokenInfo;
+        }
+
+        return null;
     }
 }

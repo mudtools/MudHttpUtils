@@ -76,4 +76,44 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider
 
         return Encoding.UTF8.GetString(plainBytes);
     }
+
+    /// <summary>
+    /// 使用 AES 算法加密二进制数据。
+    /// </summary>
+    /// <param name="data">要加密的二进制数据。</param>
+    /// <returns>加密后的二进制数据。</returns>
+    public byte[] EncryptBytes(byte[] data)
+    {
+        if (data == null)
+            throw new ArgumentNullException(nameof(data));
+
+        using var aes = Aes.Create();
+        aes.Key = _options.Key;
+        aes.IV = _options.IV;
+        aes.Mode = CipherMode.CBC;
+        aes.Padding = PaddingMode.PKCS7;
+
+        var encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
+        return encryptor.TransformFinalBlock(data, 0, data.Length);
+    }
+
+    /// <summary>
+    /// 使用 AES 算法解密二进制数据。
+    /// </summary>
+    /// <param name="encryptedData">要解密的二进制数据。</param>
+    /// <returns>解密后的二进制数据。</returns>
+    public byte[] DecryptBytes(byte[] encryptedData)
+    {
+        if (encryptedData == null)
+            throw new ArgumentNullException(nameof(encryptedData));
+
+        using var aes = Aes.Create();
+        aes.Key = _options.Key;
+        aes.IV = _options.IV;
+        aes.Mode = CipherMode.CBC;
+        aes.Padding = PaddingMode.PKCS7;
+
+        var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
+        return decryptor.TransformFinalBlock(encryptedData, 0, encryptedData.Length);
+    }
 }

@@ -56,6 +56,11 @@ public class UserTokenInfo
     public DateTime? LastRefreshedAt { get; set; }
 
     /// <summary>
+    /// 获取或设置最后一次访问时间（单调递增计数器），用于 LRU 缓存淘汰策略。
+    /// </summary>
+    public long LastAccessTime { get; set; }
+
+    /// <summary>
     /// 获取或设置消息描述。
     /// </summary>
     public string? Msg { get; set; }

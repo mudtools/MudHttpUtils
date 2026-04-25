@@ -34,13 +34,17 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
     /// <param name="clientName">Named HttpClient 名称</param>
     /// <param name="encryptionProvider">加密提供器（可选）</param>
     /// <param name="logger">日志记录器（可选）</param>
+    /// <param name="requestInterceptors">请求拦截器集合（可选）。</param>
+    /// <param name="responseInterceptors">响应拦截器集合（可选）。</param>
     /// <exception cref="ArgumentNullException">factory 或 clientName 为 null</exception>
     public HttpClientFactoryEnhancedClient(
         IHttpClientFactory factory,
         string clientName,
         IEncryptionProvider? encryptionProvider = null,
-        ILogger<HttpClientFactoryEnhancedClient>? logger = null)
-        : base(CreateClient(factory, clientName), logger)
+        ILogger<HttpClientFactoryEnhancedClient>? logger = null,
+        IEnumerable<IHttpRequestInterceptor>? requestInterceptors = null,
+        IEnumerable<IHttpResponseInterceptor>? responseInterceptors = null)
+        : base(CreateClient(factory, clientName), logger, requestInterceptors, responseInterceptors)
     {
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
         _clientName = clientName ?? throw new ArgumentNullException(nameof(clientName));
@@ -107,5 +111,33 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
                 "或注册自定义 IEncryptionProvider 实现。");
 
         return _encryptionProvider.Decrypt(encryptedContent);
+    }
+
+    /// <inheritdoc/>
+    public override byte[] EncryptBytes(byte[] data)
+    {
+        if (data == null)
+            throw new ArgumentNullException(nameof(data));
+
+        if (_encryptionProvider == null)
+            throw new InvalidOperationException(
+                "未配置加密提供器。请通过 AddMudHttpClient 注册时配置 AesEncryptionOptions，" +
+                "或注册自定义 IEncryptionProvider 实现。");
+
+        return _encryptionProvider.EncryptBytes(data);
+    }
+
+    /// <inheritdoc/>
+    public override byte[] DecryptBytes(byte[] encryptedData)
+    {
+        if (encryptedData == null)
+            throw new ArgumentNullException(nameof(encryptedData));
+
+        if (_encryptionProvider == null)
+            throw new InvalidOperationException(
+                "未配置加密提供器。请通过 AddMudHttpClient 注册时配置 AesEncryptionOptions，" +
+                "或注册自定义 IEncryptionProvider 实现。");
+
+        return _encryptionProvider.DecryptBytes(encryptedData);
     }
 }
