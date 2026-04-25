@@ -36,6 +36,8 @@ internal class GeneratorContext
 
     public bool HasTokenType => !string.IsNullOrEmpty(Configuration.TokenType);
 
+    public bool HasCache { get; set; }
+
     /// <summary>
     /// 接口是否有继承其他接口
     /// </summary>
@@ -70,5 +72,22 @@ internal class GeneratorContext
         ClassName = TypeSymbolHelper.GetImplementationClassName(interfaceSymbol.Name);
         NamespaceName = SyntaxHelper.GetNamespaceName(interfaceDeclaration, HttpClientGeneratorConstants.ImplementationNamespaceSuffix);
         FieldAccessibility = configuration.IsAbstract ? "protected " : "private ";
+
+        HasCache = DetectCacheUsage(interfaceSymbol);
+    }
+
+    private static bool DetectCacheUsage(INamedTypeSymbol interfaceSymbol)
+    {
+        try
+        {
+            var allMethods = TypeSymbolHelper.GetAllMethods(interfaceSymbol, true);
+            return allMethods.Any(method =>
+                method.GetAttributes().Any(attr =>
+                    HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name)));
+        }
+        catch
+        {
+            return false;
+        }
     }
 }

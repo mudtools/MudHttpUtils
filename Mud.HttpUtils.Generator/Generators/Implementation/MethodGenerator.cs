@@ -17,17 +17,16 @@ namespace Mud.HttpUtils.Generators.Implementation;
 internal class MethodGenerator : ICodeFragmentGenerator
 {
     private readonly RequestBuilder _requestBuilder;
+    private GeneratorContext _context;
 
     public MethodGenerator()
     {
         _requestBuilder = new RequestBuilder();
     }
 
-    /// <summary>
-    /// 生成方法实现代码
-    /// </summary>
     public void Generate(StringBuilder codeBuilder, GeneratorContext context)
     {
+        _context = context;
         IEnumerable<IMethodSymbol> methodsToGenerate = GetMethodsToGenerate(context);
         var isAbstractClass = context.Configuration.IsAbstract;
 
@@ -38,6 +37,11 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 continue;
 
             GenerateMethodImplementation(codeBuilder, context, methodSymbol, isAbstractClass);
+
+            if (HasCacheAttribute(methodSymbol))
+            {
+                context.HasCache = true;
+            }
         }
     }
 
@@ -97,7 +101,6 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         if (methodInfo.IgnoreGenerator) return;
 
-        // 校验 HttpClient 类型与方法调用的兼容性
         if (!ValidateHttpClientCompatibility(context, methodInfo))
             return;
 
@@ -129,6 +132,21 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         codeBuilder.AppendLine();
 
+        if (methodInfo.CacheEnabled)
+        {
+            GenerateCacheWrappedMethod(codeBuilder, methodInfo, hasHttpClient);
+        }
+        else
+        {
+            GenerateDirectMethod(codeBuilder, methodInfo, hasHttpClient, needsTokenInjection);
+        }
+
+        codeBuilder.AppendLine("        }");
+        codeBuilder.AppendLine();
+    }
+
+    private void GenerateDirectMethod(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection)
+    {
         var urlCode = _requestBuilder.BuildUrlString(methodInfo);
         codeBuilder.AppendLine(urlCode);
 
@@ -146,14 +164,90 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         if (methodInfo.InterfaceHeaderAttributes?.Any() == true)
         {
-            GenerateInterfaceHeaders(codeBuilder, context, methodInfo);
+            GenerateInterfaceHeaders(codeBuilder, _context, methodInfo);
         }
 
         var cancellationTokenArg = GetCancellationTokenParams(methodInfo);
         _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, cancellationTokenArg, hasHttpClient);
+    }
 
-        codeBuilder.AppendLine("        }");
+    private void GenerateCacheWrappedMethod(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, bool hasHttpClient)
+    {
+        var cacheKeyExpression = GenerateCacheKeyExpression(methodInfo);
+        codeBuilder.AppendLine($"            var __cacheKey = {cacheKeyExpression};");
+
+        var cancellationTokenParam = methodInfo.Parameters.FirstOrDefault(
+            p => TypeDetectionHelper.IsCancellationToken(p.Type));
+        var cancellationTokenArg = cancellationTokenParam?.Name ?? "default";
+
+        var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
+
+        codeBuilder.AppendLine($"            return await _cacheProvider.GetOrFetchAsync<{deserializeType}>(__cacheKey,");
+        codeBuilder.AppendLine($"                async () =>");
+        codeBuilder.AppendLine($"                {{");
+
+        var urlCode = _requestBuilder.BuildUrlString(methodInfo);
+        codeBuilder.AppendLine($"                    {urlCode.TrimStart()}");
+
+        GenerateCacheInnerQueryParameters(codeBuilder, methodInfo);
+        _requestBuilder.GenerateRequestSetup(codeBuilder, methodInfo);
+        _requestBuilder.GenerateHeaderParameters(codeBuilder, methodInfo);
         codeBuilder.AppendLine();
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient);
+
+        if (methodInfo.InterfaceHeaderAttributes?.Any() == true)
+        {
+            GenerateInterfaceHeaders(codeBuilder, _context, methodInfo);
+        }
+
+        var innerCancellationTokenArg = GetCancellationTokenParams(methodInfo);
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, innerCancellationTokenArg, hasHttpClient);
+
+        codeBuilder.AppendLine($"                }},");
+        codeBuilder.AppendLine($"                TimeSpan.FromSeconds({methodInfo.CacheDurationSeconds}),");
+        codeBuilder.AppendLine($"                {cancellationTokenArg});");
+    }
+
+    private string GenerateCacheKeyExpression(MethodAnalysisResult methodInfo)
+    {
+        var varyPrefix = methodInfo.CacheVaryByUser
+            ? "\"user:\" + (CurrentUserId ?? \"anonymous\") + \":\" + "
+            : "";
+
+        if (!string.IsNullOrEmpty(methodInfo.CacheKeyTemplate))
+        {
+            return $"{varyPrefix}$\"{methodInfo.CacheKeyTemplate}\"";
+        }
+
+        var keyBuilder = new StringBuilder();
+        keyBuilder.Append($"{varyPrefix}$\"{methodInfo.MethodName}");
+
+        foreach (var param in methodInfo.Parameters)
+        {
+            if (!TypeDetectionHelper.IsCancellationToken(param.Type))
+            {
+                keyBuilder.Append($":{{{param.Name}}}");
+            }
+        }
+
+        keyBuilder.Append("\"");
+        return keyBuilder.ToString();
+    }
+
+    private void GenerateCacheInnerQueryParameters(StringBuilder codeBuilder, MethodAnalysisResult methodInfo)
+    {
+        var queryParams = methodInfo.Parameters
+            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.QueryAttribute))
+            .ToList();
+
+        var arrayQueryParams = methodInfo.Parameters
+            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.ArrayQueryAttribute))
+            .ToList();
+
+        if (!queryParams.Any() && !arrayQueryParams.Any())
+            return;
+
+        _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
     }
 
     /// <summary>
@@ -315,6 +409,12 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         // 无法解析类型时，默认通过（避免误报）
         return true;
+    }
+
+    private static bool HasCacheAttribute(IMethodSymbol methodSymbol)
+    {
+        return methodSymbol.GetAttributes()
+            .Any(attr => HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name));
     }
 
 }

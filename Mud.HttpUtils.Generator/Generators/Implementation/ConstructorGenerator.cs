@@ -94,6 +94,24 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// 用于HttpClient客户端操作的内容类型。");
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly string _defaultContentType = \"{_context.Configuration.DefaultContentType}\";");
+
+        if (_context.HasCache)
+        {
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// HTTP响应缓存提供器，用于缓存接口方法的响应结果。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IHttpResponseCache _cacheProvider;");
+
+            if (!_context.Configuration.IsUserAccessToken)
+            {
+                codeBuilder.AppendLine();
+                codeBuilder.AppendLine("        /// <summary>");
+                codeBuilder.AppendLine("        /// 当前用户ID，用于缓存键的用户隔离。");
+                codeBuilder.AppendLine("        /// </summary>");
+                codeBuilder.AppendLine("        public string? CurrentUserId { get; set; }");
+            }
+        }
+
         codeBuilder.AppendLine();
     }
 
@@ -118,6 +136,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         else
         {
             codeBuilder.AppendLine("        /// <param name=\"appContext\">应用上下文</param>");
+        }
+
+        if (_context.HasCache)
+        {
+            codeBuilder.AppendLine("        /// <param name=\"cacheProvider\">HTTP响应缓存提供器</param>");
         }
     }
 
@@ -144,6 +167,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             parameters.Add("IMudAppContext appContext");
         }
 
+        if (_context.HasCache)
+        {
+            parameters.Add("IHttpResponseCache cacheProvider");
+        }
+
         var signature = $"        public {className}({string.Join(", ", parameters)})";
         codeBuilder.Append(signature);
 
@@ -164,6 +192,10 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             else
             {
                 baseParameters.Add("appContext");
+            }
+            if (_context.HasCache)
+            {
+                baseParameters.Add("cacheProvider");
             }
             codeBuilder.AppendLine($" : base({string.Join(", ", baseParameters)})");
         }
@@ -196,6 +228,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             else
             {
                 codeBuilder.AppendLine("            _appContext.Value = appContext ?? throw new ArgumentNullException(nameof(appContext));");
+            }
+
+            if (_context.HasCache)
+            {
+                codeBuilder.AppendLine("            _cacheProvider = cacheProvider ?? throw new ArgumentNullException(nameof(cacheProvider));");
             }
         }
 

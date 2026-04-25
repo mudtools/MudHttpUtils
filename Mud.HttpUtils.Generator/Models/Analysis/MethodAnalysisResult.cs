@@ -115,6 +115,14 @@ internal class MethodAnalysisResult
     /// </summary>
     public string? InterfaceTokenName { get; set; }
 
+    public bool CacheEnabled { get; set; }
+
+    public int CacheDurationSeconds { get; set; } = 300;
+
+    public string? CacheKeyTemplate { get; set; }
+
+    public bool CacheVaryByUser { get; set; }
+
     /// <summary>
     /// 获取最终的内容类型（Body参数级 > 方法级）
     /// <para>如果都未定义则返回null，调用方应使用接口级默认值（从HttpClientApi特性获取）</para>

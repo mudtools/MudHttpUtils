@@ -63,6 +63,13 @@ internal static class HttpClientGeneratorConstants
     public const string InheritedFromProperty = "InheritedFrom";
     public const string BaseAddressProperty = "BaseAddress";
 
+    public static readonly string[] CacheAttributeNames = ["CacheAttribute", "Cache"];
+
+    // Cache相关命名参数
+    public const string CacheDurationSecondsProperty = "DurationSeconds";
+    public const string CacheKeyTemplateProperty = "CacheKeyTemplate";
+    public const string CacheVaryByUserProperty = "VaryByUser";
+
     // 默认值
     public const string DefaultTokenManageInterface = "ITokenManage";
     public const string DefaultWrapSuffix = "Wrap";

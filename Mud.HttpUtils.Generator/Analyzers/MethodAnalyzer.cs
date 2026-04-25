@@ -51,6 +51,8 @@ internal static class MethodAnalyzer
             interfaceDecl,
             semanticModel);
 
+        var (cacheEnabled, cacheDurationSeconds, cacheKeyTemplate, cacheVaryByUser) = AnalyzeCacheAttribute(methodSymbol);
+
         return new MethodAnalysisResult
         {
             IsValid = true,
@@ -72,7 +74,11 @@ internal static class MethodAnalyzer
             BodyEncryptSerializeType = bodyEncryptSerializeType,
             BodyEncryptPropertyName = bodyEncryptPropertyName,
             InterfaceTokenInjectionMode = interfaceTokenInjectionMode,
-            InterfaceTokenName = interfaceTokenName
+            InterfaceTokenName = interfaceTokenName,
+            CacheEnabled = cacheEnabled,
+            CacheDurationSeconds = cacheDurationSeconds,
+            CacheKeyTemplate = cacheKeyTemplate,
+            CacheVaryByUser = cacheVaryByUser
         };
     }
 
@@ -592,5 +598,31 @@ internal static class MethodAnalyzer
     {
         var name = attr.AttributeClass?.Name;
         return name == attributeName || name == attributeName.Replace("Attribute", "");
+    }
+
+    private static (bool enabled, int durationSeconds, string? keyTemplate, bool varyByUser) AnalyzeCacheAttribute(IMethodSymbol methodSymbol)
+    {
+        var cacheAttr = methodSymbol.GetAttributes()
+            .FirstOrDefault(attr => HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name));
+
+        if (cacheAttr == null)
+            return (false, 300, null, false);
+
+        var durationSeconds = AttributeDataHelper.GetIntValueFromAttribute(
+            cacheAttr, HttpClientGeneratorConstants.CacheDurationSecondsProperty, 300);
+
+        if (cacheAttr.ConstructorArguments.Length > 0 &&
+            cacheAttr.ConstructorArguments[0].Value is int constructorDuration)
+        {
+            durationSeconds = constructorDuration;
+        }
+
+        var keyTemplate = AttributeDataHelper.GetStringValueFromAttribute(
+            cacheAttr, [HttpClientGeneratorConstants.CacheKeyTemplateProperty]);
+
+        var varyByUser = AttributeDataHelper.GetBoolValueFromAttribute(
+            cacheAttr, HttpClientGeneratorConstants.CacheVaryByUserProperty);
+
+        return (true, durationSeconds, keyTemplate, varyByUser);
     }
 }
