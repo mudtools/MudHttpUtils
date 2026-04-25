@@ -12,6 +12,7 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
 {
     private readonly ITokenManager _tokenManager;
     private readonly ILogger _logger;
+    private readonly TokenRefreshBackgroundOptions _options;
     private readonly TimeSpan _refreshInterval;
     private readonly TimeSpan _retryDelay;
     private Timer? _timer;
@@ -29,9 +30,9 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
         ILogger<TokenRefreshBackgroundService>? logger = null)
     {
         _tokenManager = tokenManager ?? throw new ArgumentNullException(nameof(tokenManager));
-        var opts = options ?? new TokenRefreshBackgroundOptions();
-        _refreshInterval = TimeSpan.FromSeconds(opts.RefreshIntervalSeconds);
-        _retryDelay = TimeSpan.FromSeconds(opts.RetryDelaySeconds);
+        _options = options ?? new TokenRefreshBackgroundOptions();
+        _refreshInterval = TimeSpan.FromSeconds(_options.RefreshIntervalSeconds);
+        _retryDelay = TimeSpan.FromSeconds(_options.RetryDelaySeconds);
         _logger = logger ?? NullLogger<TokenRefreshBackgroundService>.Instance;
     }
 
@@ -54,6 +55,12 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
     {
         if (_disposed)
             throw new ObjectDisposedException(nameof(TokenRefreshBackgroundService));
+
+        if (!_options.Enabled)
+        {
+            _logger.LogInformation("令牌主动刷新后台服务已禁用");
+            return Task.CompletedTask;
+        }
 
         _timer = new Timer(
             RefreshTokenCallback,
@@ -92,6 +99,12 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
         catch (Exception ex)
         {
             _logger.LogError(ex, "令牌主动刷新失败，将在 {RetryDelay}秒 后重试", _retryDelay.TotalSeconds);
+
+            if (_options.StopOnError)
+            {
+                _logger.LogCritical("令牌主动刷新失败且配置为停止服务，后台服务将终止");
+                _timer?.Change(Timeout.Infinite, Timeout.Infinite);
+            }
         }
     }
 

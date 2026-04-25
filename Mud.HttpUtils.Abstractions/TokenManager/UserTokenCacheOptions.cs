@@ -22,4 +22,16 @@ public class UserTokenCacheOptions
     /// 定期清理过期的用户令牌缓存和对应的锁资源。
     /// </summary>
     public int CleanupIntervalSeconds { get; set; } = 300;
+
+    /// <summary>
+    /// 滑动过期时间（秒），默认 3600 秒（1 小时）。
+    /// 如果在此时间内未访问缓存条目，该条目将被自动移除。
+    /// </summary>
+    public int SlidingExpirationSeconds { get; set; } = 3600;
+
+    /// <summary>
+    /// 缓存压缩百分比，默认 0.2（20%）。
+    /// 当缓存达到容量限制时，将按此比例压缩（移除）条目。
+    /// </summary>
+    public double CompactionPercentage { get; set; } = 0.2;
 }

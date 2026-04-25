@@ -100,4 +100,45 @@ public class TokenRefreshBackgroundServiceTests
 
         service.Dispose();
     }
+
+    [Fact]
+    public async Task StartAsync_WhenDisabled_DoesNotStartTimer()
+    {
+        var tokenManager = new Mock<ITokenManager>();
+        tokenManager.Setup(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-token");
+
+        var service = new TokenRefreshBackgroundService(
+            tokenManager.Object,
+            new TokenRefreshBackgroundOptions
+            {
+                Enabled = false,
+                RefreshIntervalSeconds = 1
+            });
+
+        await service.StartAsync();
+        await Task.Delay(1500);
+
+        tokenManager.Verify(
+            m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()),
+            Times.Never);
+
+        service.Dispose();
+    }
+
+    [Fact]
+    public void Options_DefaultEnabled_IsTrue()
+    {
+        var options = new TokenRefreshBackgroundOptions();
+
+        options.Enabled.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Options_DefaultStopOnError_IsFalse()
+    {
+        var options = new TokenRefreshBackgroundOptions();
+
+        options.StopOnError.Should().BeFalse();
+    }
 }

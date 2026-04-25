@@ -23,6 +23,12 @@ public sealed class TokenRefreshHostedService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (!_options.Enabled)
+        {
+            _logger.LogInformation("令牌主动刷新后台服务已禁用");
+            return;
+        }
+
         _logger.LogInformation("令牌主动刷新后台服务已启动，刷新间隔: {Interval}秒", _options.RefreshIntervalSeconds);
 
         while (!stoppingToken.IsCancellationRequested)
@@ -48,6 +54,13 @@ public sealed class TokenRefreshHostedService : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "令牌主动刷新失败，将在 {RetryDelay}秒 后重试", _options.RetryDelaySeconds);
+
+                if (_options.StopOnError)
+                {
+                    _logger.LogCritical("令牌主动刷新失败且配置为停止服务，后台服务将终止");
+                    throw;
+                }
+
                 try
                 {
                     await Task.Delay(TimeSpan.FromSeconds(_options.RetryDelaySeconds), stoppingToken);

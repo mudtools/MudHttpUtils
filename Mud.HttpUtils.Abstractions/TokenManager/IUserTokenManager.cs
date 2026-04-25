@@ -3,7 +3,7 @@ namespace Mud.HttpUtils;
 /// <summary>
 /// 用户令牌管理器接口，提供用户级别的令牌管理功能。
 /// </summary>
-public interface IUserTokenManager : ITokenManager
+public interface IUserTokenManager : ITokenManager, IDisposable
 {
     /// <summary>
     /// 异步获取指定用户的访问令牌。

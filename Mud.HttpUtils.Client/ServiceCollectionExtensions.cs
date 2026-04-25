@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -129,6 +130,36 @@ public static class HttpClientServiceCollectionExtensions
         {
             services.AddOptions<TokenRefreshBackgroundOptions>();
         }
+
+#if NET6_0_OR_GREATER
+        services.AddHostedService<TokenRefreshHostedService>();
+#else
+        services.AddSingleton<ITokenRefreshBackgroundService, TokenRefreshBackgroundService>();
+#endif
+
+        return services;
+    }
+
+    /// <summary>
+    /// 添加令牌主动刷新后台服务到依赖注入容器，从配置文件绑定选项。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <param name="configuration">配置实例。</param>
+    /// <param name="configurationSectionPath">配置节点路径，默认 "TokenRefreshBackground"。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+    public static IServiceCollection AddTokenRefreshBackgroundService(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        string configurationSectionPath = TokenRefreshBackgroundOptions.SectionName)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+        if (configuration == null)
+            throw new ArgumentNullException(nameof(configuration));
+
+        services.AddOptions<TokenRefreshBackgroundOptions>()
+            .Bind(configuration.GetSection(configurationSectionPath));
 
 #if NET6_0_OR_GREATER
         services.AddHostedService<TokenRefreshHostedService>();

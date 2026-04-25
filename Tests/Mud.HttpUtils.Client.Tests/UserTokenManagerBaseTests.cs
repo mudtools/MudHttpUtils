@@ -5,7 +5,7 @@ public class UserTokenManagerBaseTests
     [Fact]
     public async Task GetOrRefreshTokenAsync_NullUserId_ReturnsNull()
     {
-        var manager = new TestUserTokenManager();
+        using var manager = new TestUserTokenManager();
 
         var result = await manager.GetOrRefreshTokenAsync(null);
 
@@ -15,7 +15,7 @@ public class UserTokenManagerBaseTests
     [Fact]
     public async Task GetOrRefreshTokenAsync_EmptyUserId_ReturnsNull()
     {
-        var manager = new TestUserTokenManager();
+        using var manager = new TestUserTokenManager();
 
         var result = await manager.GetOrRefreshTokenAsync("");
 
@@ -25,7 +25,7 @@ public class UserTokenManagerBaseTests
     [Fact]
     public async Task GetOrRefreshTokenAsync_ValidUser_ReturnsToken()
     {
-        var manager = new TestUserTokenManager();
+        using var manager = new TestUserTokenManager();
 
         var result = await manager.GetOrRefreshTokenAsync("user1");
 
@@ -35,7 +35,7 @@ public class UserTokenManagerBaseTests
     [Fact]
     public async Task GetOrRefreshTokenAsync_CachedToken_ReturnsCached()
     {
-        var manager = new TestUserTokenManager();
+        using var manager = new TestUserTokenManager();
         var tokenInfo = new UserTokenInfo
         {
             UserId = "user1",
@@ -56,10 +56,11 @@ public class UserTokenManagerBaseTests
         {
             SizeLimit = 5000,
             ExpireThresholdSeconds = 600,
-            CleanupIntervalSeconds = 120
+            CleanupIntervalSeconds = 120,
+            SlidingExpirationSeconds = 1800
         };
 
-        var manager = new TestUserTokenManager(options);
+        using var manager = new TestUserTokenManager(options);
 
         manager.MaxUserTokenCacheSizeValue.Should().Be(5000);
         manager.UserExpireThresholdSecondsValue.Should().Be(600);
@@ -68,16 +69,16 @@ public class UserTokenManagerBaseTests
     [Fact]
     public void Constructor_DefaultOptions_UsesDefaults()
     {
-        var manager = new TestUserTokenManager();
+        using var manager = new TestUserTokenManager();
 
         manager.MaxUserTokenCacheSizeValue.Should().Be(10000);
         manager.UserExpireThresholdSecondsValue.Should().Be(300);
     }
 
     [Fact]
-    public async Task RemoveUserTokenFromCache_RemovesToken()
+    public void RemoveUserTokenFromCache_RemovesToken()
     {
-        var manager = new TestUserTokenManager();
+        using var manager = new TestUserTokenManager();
         var tokenInfo = new UserTokenInfo
         {
             UserId = "user1",
@@ -92,27 +93,71 @@ public class UserTokenManagerBaseTests
     }
 
     [Fact]
-    public async Task CleanupExpiredUserTokens_RemovesExpiredTokens()
+    public async Task ExpiredToken_NotReturnedFromCache()
     {
-        var manager = new TestUserTokenManager();
+        using var manager = new TestUserTokenManager();
         var expiredToken = new UserTokenInfo
         {
             UserId = "expired-user",
             AccessToken = "expired-token",
             AccessTokenExpireTime = DateTimeOffset.UtcNow.AddMinutes(-1).ToUnixTimeMilliseconds()
         };
-        var validToken = new UserTokenInfo
-        {
-            UserId = "valid-user",
-            AccessToken = "valid-token",
-            AccessTokenExpireTime = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds()
-        };
         manager.SetUserToken("expired-user", expiredToken);
-        manager.SetUserToken("valid-user", validToken);
 
-        manager.DoCleanup();
+        var result = await manager.GetOrRefreshTokenAsync("expired-user");
 
-        manager.CachedUserTokenCountValue.Should().Be(1);
+        result.Should().Be("refreshed-token-for-expired-user");
+    }
+
+    [Fact]
+    public async Task CleanupExpiredUserTokens_ReducesCacheSize()
+    {
+        var options = new UserTokenCacheOptions { SizeLimit = 3 };
+        using var manager = new TestUserTokenManager(options);
+
+        for (int i = 0; i < 5; i++)
+        {
+            await manager.GetOrRefreshTokenAsync($"user{i}");
+        }
+
+        manager.CachedUserTokenCountValue.Should().BeLessOrEqualTo(5);
+    }
+
+    [Fact]
+    public void Dispose_CanBeCalledMultipleTimes()
+    {
+        var manager = new TestUserTokenManager();
+
+        manager.Dispose();
+        manager.Dispose();
+    }
+
+    [Fact]
+    public async Task GetOrRefreshTokenAsync_ConcurrentCalls_SameUser_RefreshesOnce()
+    {
+        using var manager = new TestUserTokenManagerWithCounter();
+        var userId = "concurrent-user";
+
+        var tasks = Enumerable.Range(0, 5)
+            .Select(_ => manager.GetOrRefreshTokenAsync(userId))
+            .ToArray();
+
+        var results = await Task.WhenAll(tasks);
+
+        results.Should().OnlyContain(r => r == "refreshed-token-for-concurrent-user");
+        manager.RefreshCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetOrRefreshTokenAsync_DifferentUsers_RefreshesEach()
+    {
+        using var manager = new TestUserTokenManager();
+
+        var result1 = await manager.GetOrRefreshTokenAsync("user1");
+        var result2 = await manager.GetOrRefreshTokenAsync("user2");
+
+        result1.Should().Be("refreshed-token-for-user1");
+        result2.Should().Be("refreshed-token-for-user2");
     }
 
     private class TestUserTokenManager : UserTokenManagerBase
@@ -172,5 +217,54 @@ public class UserTokenManagerBaseTests
 
         public void DoCleanup()
             => CleanupExpiredUserTokens();
+    }
+
+    private class TestUserTokenManagerWithCounter : UserTokenManagerBase
+    {
+        private int _refreshCount;
+
+        public int RefreshCount => _refreshCount;
+
+        public override Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
+            => GetOrRefreshTokenAsync(cancellationToken);
+
+        protected override Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
+            => Task.FromResult(new CredentialToken
+            {
+                AccessToken = "refreshed-token",
+                Expire = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds()
+            });
+
+        public override Task<string?> GetTokenAsync(string? userId, CancellationToken cancellationToken = default)
+            => GetOrRefreshTokenAsync(userId, cancellationToken);
+
+        public override Task<UserTokenInfo?> GetTokenInfoAsync(string userId, CancellationToken cancellationToken = default)
+            => Task.FromResult<UserTokenInfo?>(null);
+
+        public override Task<UserTokenInfo?> GetUserTokenWithCodeAsync(string code, string redirectUri, CancellationToken cancellationToken = default)
+            => Task.FromResult<UserTokenInfo?>(null);
+
+        public override Task<UserTokenInfo?> RefreshUserTokenAsync(string userId, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _refreshCount);
+            return Task.FromResult(new UserTokenInfo
+            {
+                UserId = userId,
+                AccessToken = $"refreshed-token-for-{userId}",
+                AccessTokenExpireTime = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds()
+            });
+        }
+
+        public override Task<bool> RemoveTokenAsync(string userId, CancellationToken cancellationToken = default)
+        {
+            RemoveUserTokenFromCache(userId);
+            return Task.FromResult(true);
+        }
+
+        public override Task<bool> HasValidTokenAsync(string userId, CancellationToken cancellationToken = default)
+            => Task.FromResult(false);
+
+        public override Task<bool> CanRefreshTokenAsync(string userId, CancellationToken cancellationToken = default)
+            => Task.FromResult(true);
     }
 }

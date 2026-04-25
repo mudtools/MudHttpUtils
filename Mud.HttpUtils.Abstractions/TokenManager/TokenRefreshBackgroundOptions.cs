@@ -11,6 +11,11 @@ public class TokenRefreshBackgroundOptions
     public const string SectionName = "TokenRefreshBackground";
 
     /// <summary>
+    /// 获取或设置是否启用后台刷新，默认 true。
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
     /// 刷新间隔（秒），默认 300 秒（5 分钟）。
     /// </summary>
     public int RefreshIntervalSeconds { get; set; } = 300;
@@ -24,4 +29,9 @@ public class TokenRefreshBackgroundOptions
     /// 刷新失败后重试延迟（秒），默认 60 秒（1 分钟）。
     /// </summary>
     public int RetryDelaySeconds { get; set; } = 60;
+
+    /// <summary>
+    /// 获取或设置刷新失败时是否停止服务，默认 false。
+    /// </summary>
+    public bool StopOnError { get; set; } = false;
 }
