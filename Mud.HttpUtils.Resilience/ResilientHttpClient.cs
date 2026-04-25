@@ -99,6 +99,11 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         HttpRequestMessage request,
         CancellationToken cancellationToken = default)
     {
+        if (ShouldSkipRetry(request))
+        {
+            return await _innerClient.DownloadAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+
         var policy = _policyProvider.GetCombinedPolicy<byte[]?>();
 
         return await policy.ExecuteAsync(
@@ -124,6 +129,11 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         bool overwrite = true,
         CancellationToken cancellationToken = default)
     {
+        if (ShouldSkipRetry(request))
+        {
+            return await _innerClient.DownloadLargeAsync(request, filePath, overwrite, cancellationToken).ConfigureAwait(false);
+        }
+
         var policy = _policyProvider.GetCombinedPolicy<FileInfo>();
 
         return await policy.ExecuteAsync(
@@ -147,6 +157,11 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         HttpRequestMessage request,
         CancellationToken cancellationToken = default)
     {
+        if (ShouldSkipRetry(request))
+        {
+            return await _innerClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+
         var policy = _policyProvider.GetCombinedPolicy<HttpResponseMessage>();
 
         return await policy.ExecuteAsync(
@@ -170,6 +185,11 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         HttpRequestMessage request,
         CancellationToken cancellationToken = default)
     {
+        if (ShouldSkipRetry(request))
+        {
+            return await _innerClient.SendStreamAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+
         var policy = _policyProvider.GetCombinedPolicy<Stream>();
 
         return await policy.ExecuteAsync(
@@ -278,6 +298,11 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         Encoding? encoding = null,
         CancellationToken cancellationToken = default)
     {
+        if (ShouldSkipRetry(request))
+        {
+            return await _innerClient.SendXmlAsync<TResult>(request, encoding, cancellationToken).ConfigureAwait(false);
+        }
+
         var policy = _policyProvider.GetCombinedPolicy<TResult?>();
 
         return await policy.ExecuteAsync(

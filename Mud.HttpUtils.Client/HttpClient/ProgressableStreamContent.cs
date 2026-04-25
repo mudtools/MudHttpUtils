@@ -25,28 +25,25 @@ public class ProgressableStreamContent : HttpContent
         var buffer = new byte[_bufferSize];
         long totalBytesRead = 0;
 
-#if NETSTANDARD2_0
         using var contentStream = await _content.ReadAsStreamAsync().ConfigureAwait(false);
-#else
-        using var contentStream = await _content.ReadAsStreamAsync().ConfigureAwait(false);
-#endif
 
         while (true)
         {
 #if NETSTANDARD2_0
             var bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
 #else
-            var bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
+            var bytesRead = await contentStream.ReadAsync(buffer.AsMemory()).ConfigureAwait(false);
 #endif
 
             if (bytesRead == 0)
                 break;
 
             totalBytesRead += bytesRead;
+
 #if NETSTANDARD2_0
             await stream.WriteAsync(buffer, 0, bytesRead).ConfigureAwait(false);
 #else
-            await stream.WriteAsync(buffer, 0, bytesRead).ConfigureAwait(false);
+            await stream.WriteAsync(buffer.AsMemory(0, bytesRead)).ConfigureAwait(false);
 #endif
 
             _progress?.Report(totalBytesRead);

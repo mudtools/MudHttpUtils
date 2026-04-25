@@ -17,6 +17,8 @@ internal sealed class DirectEnhancedHttpClient : EnhancedHttpClient
         _encryptionProvider = encryptionProvider;
     }
 
+    protected override IEncryptionProvider? EncryptionProvider => _encryptionProvider;
+
     public override string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json)
     {
         if (content == null)

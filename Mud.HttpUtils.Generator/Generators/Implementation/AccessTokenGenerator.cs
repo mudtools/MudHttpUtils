@@ -39,6 +39,12 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
 
         // 生成带 Scopes 的 GetTokenAsync 方法
         GenerateGetTokenAsyncWithScopesMethod(codeBuilder);
+
+        // 生成 GetApiKeyAsync 方法
+        GenerateGetApiKeyAsyncMethod(codeBuilder);
+
+        // 生成 ApplyHmacSignatureAsync 方法
+        GenerateApplyHmacSignatureAsyncMethod(codeBuilder);
     }
 
     /// <summary>
@@ -112,6 +118,47 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("            if(string.IsNullOrEmpty(scopedToken))");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法获取到有效的访问令牌，TokenType: {tokenType}\");");
         codeBuilder.AppendLine("            return scopedToken!;");
+        codeBuilder.AppendLine("        }");
+        codeBuilder.AppendLine();
+    }
+
+    private void GenerateGetApiKeyAsyncMethod(StringBuilder codeBuilder)
+    {
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// 获取 API Key。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        /// <param name=\"keyName\">API Key 名称（可选）。</param>");
+        codeBuilder.AppendLine("        /// <returns>返回 API Key</returns>");
+        codeBuilder.AppendLine("        public async Task<string> GetApiKeyAsync(string? keyName = null)");
+        codeBuilder.AppendLine("        {");
+        codeBuilder.AppendLine("            var appContext = _appContext.Value;");
+        codeBuilder.AppendLine("            if(appContext == null)");
+        codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到当前服务的应用上下文。\");");
+        codeBuilder.AppendLine("            var apiKeyProvider = appContext.GetService<IApiKeyProvider>();");
+        codeBuilder.AppendLine("            if(apiKeyProvider == null)");
+        codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到 IApiKeyProvider 服务，请先注册 ApiKey 提供器。\");");
+        codeBuilder.AppendLine("            return await apiKeyProvider.GetApiKeyAsync(keyName);");
+        codeBuilder.AppendLine("        }");
+        codeBuilder.AppendLine();
+    }
+
+    private void GenerateApplyHmacSignatureAsyncMethod(StringBuilder codeBuilder)
+    {
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// 为 HTTP 请求应用 HMAC 签名。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        /// <param name=\"request\">HTTP 请求消息。</param>");
+        codeBuilder.AppendLine("        public async Task ApplyHmacSignatureAsync(HttpRequestMessage request)");
+        codeBuilder.AppendLine("        {");
+        codeBuilder.AppendLine("            var appContext = _appContext.Value;");
+        codeBuilder.AppendLine("            if(appContext == null)");
+        codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到当前服务的应用上下文。\");");
+        codeBuilder.AppendLine("            var hmacProvider = appContext.GetService<IHmacSignatureProvider>();");
+        codeBuilder.AppendLine("            if(hmacProvider == null)");
+        codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到 IHmacSignatureProvider 服务，请先注册 HMAC 签名提供器。\");");
+        codeBuilder.AppendLine("            var secretKey = await GetApiKeyAsync(\"HmacSecretKey\");");
+        codeBuilder.AppendLine("            var signature = await hmacProvider.GenerateSignatureAsync(request, secretKey);");
+        codeBuilder.AppendLine("            request.Headers.Add(\"X-Hmac-Signature\", signature);");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
     }

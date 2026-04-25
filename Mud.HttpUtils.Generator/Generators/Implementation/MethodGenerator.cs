@@ -126,16 +126,33 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         if (needsTokenInjection)
         {
-            var effectiveScopes = methodInfo.MethodTokenScopes ?? methodInfo.InterfaceTokenScopes;
-            var scopes = TokenHelper.ParseScopes(effectiveScopes);
-            if (scopes.Length > 0)
+            var injectionMode = methodInfo.InterfaceTokenInjectionMode;
+
+            if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModeApiKey)
             {
-                var scopesArray = string.Join(", ", scopes.Select(s => $"\"{s}\""));
-                codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(new[] {{ {scopesArray} }});");
+                var apiKeyName = methodInfo.InterfaceTokenName;
+                if (!string.IsNullOrEmpty(apiKeyName))
+                    codeBuilder.AppendLine($"            var access_token = await GetApiKeyAsync(\"{apiKeyName}\");");
+                else
+                    codeBuilder.AppendLine($"            var access_token = await GetApiKeyAsync();");
+            }
+            else if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModeHmacSignature)
+            {
+                codeBuilder.AppendLine($"            await ApplyHmacSignatureAsync(httpRequest);");
             }
             else
             {
-                codeBuilder.AppendLine($"            var access_token = await GetTokenAsync();");
+                var effectiveScopes = methodInfo.MethodTokenScopes ?? methodInfo.InterfaceTokenScopes;
+                var scopes = TokenHelper.ParseScopes(effectiveScopes);
+                if (scopes.Length > 0)
+                {
+                    var scopesArray = string.Join(", ", scopes.Select(s => $"\"{s}\""));
+                    codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(new[] {{ {scopesArray} }});");
+                }
+                else
+                {
+                    codeBuilder.AppendLine($"            var access_token = await GetTokenAsync();");
+                }
             }
         }
 
@@ -167,7 +184,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine();
         _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient);
 
-        if (needsTokenInjection && IsTokenHeaderMode(methodInfo))
+        if (needsTokenInjection && (IsTokenHeaderMode(methodInfo) || IsTokenApiKeyMode(methodInfo)))
         {
             var headerName = GetTokenHeaderName(methodInfo);
             codeBuilder.AppendLine($"            httpRequest.Headers.Add(\"{headerName}\", access_token);");
@@ -341,6 +358,12 @@ internal class MethodGenerator : ICodeFragmentGenerator
             return methodInfo.InterfaceTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeHeader;
 
         return methodInfo.InterfaceAttributes?.Any(attr => attr.StartsWith("Header:", StringComparison.Ordinal)) == true;
+    }
+
+    private bool IsTokenApiKeyMode(MethodAnalysisResult methodInfo)
+    {
+        return !string.IsNullOrEmpty(methodInfo.InterfaceTokenInjectionMode) &&
+               methodInfo.InterfaceTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeApiKey;
     }
 
     private string GetTokenHeaderName(MethodAnalysisResult methodInfo)

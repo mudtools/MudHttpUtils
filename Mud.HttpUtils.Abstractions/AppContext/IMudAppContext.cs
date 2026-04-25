@@ -14,15 +14,9 @@ namespace Mud.HttpUtils;
 /// </summary>
 public interface IMudAppContext
 {
-    /// <summary>
-    /// 获取增强型 HTTP 客户端实例，用于执行 HTTP 请求。
-    /// </summary>
     IEnhancedHttpClient HttpClient { get; }
 
-    /// <summary>
-    /// 获取指定类型的令牌管理器。
-    /// </summary>
-    /// <param name="tokenType">令牌类型标识符。</param>
-    /// <returns>对应类型的令牌管理器实例。</returns>
     ITokenManager GetTokenManager(string tokenType);
+
+    T? GetService<T>() where T : class;
 }

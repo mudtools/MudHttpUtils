@@ -31,6 +31,8 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
     private readonly IEnumerable<IHttpResponseInterceptor>? _responseInterceptors;
     private readonly Uri? _overrideBaseAddress;
 
+    protected override IEncryptionProvider? EncryptionProvider => _encryptionProvider;
+
     /// <summary>
     /// 初始化 HttpClientFactoryEnhancedClient 实例
     /// </summary>

@@ -21,6 +21,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     private readonly IHttpRequestInterceptor[] _requestInterceptors;
     private readonly IHttpResponseInterceptor[] _responseInterceptors;
 
+    protected virtual IEncryptionProvider? EncryptionProvider => null;
+
     private static readonly JsonSerializerOptions s_defaultJsonSerializerOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -1113,7 +1115,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             newClient.DefaultRequestHeaders.TryAddWithoutValidation(header.Key, header.Value);
         }
 
-        return new DirectEnhancedHttpClient(newClient, _logger, _requestInterceptors, _responseInterceptors);
+        return new DirectEnhancedHttpClient(newClient, _logger, _requestInterceptors, _responseInterceptors, EncryptionProvider);
     }
 
     #endregion

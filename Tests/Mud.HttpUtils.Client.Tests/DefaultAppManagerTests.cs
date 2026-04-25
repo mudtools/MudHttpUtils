@@ -195,5 +195,7 @@ public class DefaultAppManagerTests
         public IEnhancedHttpClient HttpClient => throw new NotImplementedException();
 
         public ITokenManager GetTokenManager(string tokenType = "") => null!;
+
+        public T? GetService<T>() where T : class => null;
     }
 }

@@ -1,5 +1,4 @@
 using FluentAssertions;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Moq;
 
@@ -8,12 +7,12 @@ namespace Mud.HttpUtils.Client.Tests;
 public class CacheResponseInterceptorTests
 {
     private readonly CacheResponseInterceptor _interceptor;
-    private readonly IMemoryCache _cache;
+    private readonly MemoryHttpResponseCache _cache;
     private readonly Mock<ILogger<CacheResponseInterceptor>> _loggerMock;
 
     public CacheResponseInterceptorTests()
     {
-        _cache = new MemoryCache(new MemoryCacheOptions());
+        _cache = new MemoryHttpResponseCache();
         _loggerMock = new Mock<ILogger<CacheResponseInterceptor>>();
         _interceptor = new CacheResponseInterceptor(_cache, _loggerMock.Object);
     }
@@ -82,27 +81,5 @@ public class CacheResponseInterceptorTests
 
         result.Should().BeTrue();
         value.Should().Be("sliding-value");
-    }
-
-    [Fact]
-    public void Set_WithHighPriority_StoresValue()
-    {
-        _interceptor.Set("high-key", "high-value", 60, priority: CacheItemPriority.High);
-
-        var result = _interceptor.TryGetCached<string>("high-key", out var value);
-
-        result.Should().BeTrue();
-        value.Should().Be("high-value");
-    }
-
-    [Fact]
-    public void TryGetCached_WrongType_ReturnsFalse()
-    {
-        _interceptor.Set("int-key", 42, 60);
-
-        var result = _interceptor.TryGetCached<string>("int-key", out var value);
-
-        result.Should().BeFalse();
-        value.Should().BeNull();
     }
 }

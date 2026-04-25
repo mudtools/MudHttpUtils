@@ -191,4 +191,67 @@ public static class HttpClientServiceCollectionExtensions
 
         return services;
     }
+
+    public static IServiceCollection AddSensitiveDataMasker<TMasker>(
+        this IServiceCollection services)
+        where TMasker : class, ISensitiveDataMasker
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        services.TryAddSingleton<ISensitiveDataMasker, TMasker>();
+        return services;
+    }
+
+    public static IServiceCollection AddSensitiveDataMasker(
+        this IServiceCollection services)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        services.TryAddSingleton<ISensitiveDataMasker, DefaultSensitiveDataMasker>();
+        return services;
+    }
+
+    public static IServiceCollection AddHmacSignatureProvider<TProvider>(
+        this IServiceCollection services)
+        where TProvider : class, IHmacSignatureProvider
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        services.TryAddSingleton<IHmacSignatureProvider, TProvider>();
+        return services;
+    }
+
+    public static IServiceCollection AddHmacSignatureProvider(
+        this IServiceCollection services)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        services.TryAddSingleton<IHmacSignatureProvider, DefaultHmacSignatureProvider>();
+        return services;
+    }
+
+    public static IServiceCollection AddApiKeyProvider<TProvider>(
+        this IServiceCollection services)
+        where TProvider : class, IApiKeyProvider
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        services.TryAddSingleton<IApiKeyProvider, TProvider>();
+        return services;
+    }
+
+    public static IServiceCollection AddApiKeyProvider(
+        this IServiceCollection services)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        services.TryAddSingleton<IApiKeyProvider, DefaultApiKeyProvider>();
+        return services;
+    }
 }

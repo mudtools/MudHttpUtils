@@ -266,6 +266,8 @@ internal static class MethodAnalyzer
                 0 => HttpClientGeneratorConstants.TokenInjectionModeHeader,
                 1 => HttpClientGeneratorConstants.TokenInjectionModeQuery,
                 2 => HttpClientGeneratorConstants.TokenInjectionModePath,
+                3 => HttpClientGeneratorConstants.TokenInjectionModeApiKey,
+                4 => HttpClientGeneratorConstants.TokenInjectionModeHmacSignature,
                 _ => HttpClientGeneratorConstants.TokenInjectionModeHeader
             };
         }
@@ -278,6 +280,8 @@ internal static class MethodAnalyzer
             "Header" => HttpClientGeneratorConstants.TokenInjectionModeHeader,
             "Query" => HttpClientGeneratorConstants.TokenInjectionModeQuery,
             "Path" => HttpClientGeneratorConstants.TokenInjectionModePath,
+            "ApiKey" => HttpClientGeneratorConstants.TokenInjectionModeApiKey,
+            "HmacSignature" => HttpClientGeneratorConstants.TokenInjectionModeHmacSignature,
             _ => HttpClientGeneratorConstants.TokenInjectionModeHeader
         };
     }
