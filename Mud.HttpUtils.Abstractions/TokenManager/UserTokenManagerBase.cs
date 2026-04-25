@@ -19,11 +19,6 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     protected virtual int UserExpireThresholdSeconds => _cacheOptions.ExpireThresholdSeconds;
 
     /// <summary>
-    /// 获取用户令牌缓存的最大容量，默认 10000。
-    /// </summary>
-    protected virtual int MaxUserTokenCacheSize => _cacheOptions.SizeLimit;
-
-    /// <summary>
     /// 初始化用户令牌管理器基类。
     /// </summary>
     protected UserTokenManagerBase() : this(null)
@@ -183,12 +178,19 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         return _userTokenCache.Get<UserTokenInfo>(userId);
     }
 
+    private bool _disposed;
+
     /// <summary>
     /// 释放资源。
     /// </summary>
     /// <param name="disposing">是否释放托管资源。</param>
     protected virtual void Dispose(bool disposing)
     {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+
         if (disposing)
         {
             _userTokenCache?.Dispose();

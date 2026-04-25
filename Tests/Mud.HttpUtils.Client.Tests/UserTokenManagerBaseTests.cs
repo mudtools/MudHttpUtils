@@ -62,7 +62,6 @@ public class UserTokenManagerBaseTests
 
         using var manager = new TestUserTokenManager(options);
 
-        manager.MaxUserTokenCacheSizeValue.Should().Be(5000);
         manager.UserExpireThresholdSecondsValue.Should().Be(600);
     }
 
@@ -71,7 +70,6 @@ public class UserTokenManagerBaseTests
     {
         using var manager = new TestUserTokenManager();
 
-        manager.MaxUserTokenCacheSizeValue.Should().Be(10000);
         manager.UserExpireThresholdSecondsValue.Should().Be(300);
     }
 
@@ -110,7 +108,7 @@ public class UserTokenManagerBaseTests
     }
 
     [Fact]
-    public async Task CleanupExpiredUserTokens_ReducesCacheSize()
+    public async Task CacheSizeLimit_EnforcedWhenExceeded()
     {
         var options = new UserTokenCacheOptions { SizeLimit = 3 };
         using var manager = new TestUserTokenManager(options);
@@ -166,7 +164,6 @@ public class UserTokenManagerBaseTests
 
         public TestUserTokenManager(UserTokenCacheOptions options) : base(options) { }
 
-        public int MaxUserTokenCacheSizeValue => MaxUserTokenCacheSize;
         public int UserExpireThresholdSecondsValue => UserExpireThresholdSeconds;
         public int CachedUserTokenCountValue => CachedUserTokenCount;
 
