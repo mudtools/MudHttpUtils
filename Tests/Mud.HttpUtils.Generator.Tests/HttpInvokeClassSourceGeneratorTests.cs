@@ -215,6 +215,55 @@ namespace TestNamespace
         diagnostics.Should().BeEmpty();
     }
 
+    [Fact]
+    public void Generator_WithBasicAuthTokenInjection_ShouldGenerateCorrectCode()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [HttpClientApi(TokenManage = nameof(ITestTokenManager), TokenInjectionMode = TokenInjectionMode.BasicAuth)]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var compilation = CreateCompilation(source);
+        var driver = CSharpGeneratorDriver.Create(new MockGenerator());
+
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Generator_WithBasicAuthTokenInjectionOnMethod_ShouldGenerateCorrectCode()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [HttpClientApi(TokenManage = nameof(ITestTokenManager))]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        [TokenHeader(TokenInjectionMode = TokenInjectionMode.BasicAuth)]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var compilation = CreateCompilation(source);
+        var driver = CSharpGeneratorDriver.Create(new MockGenerator());
+
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
+
+        diagnostics.Should().BeEmpty();
+    }
+
     private class MockGenerator : ISourceGenerator
     {
         public void Initialize(GeneratorInitializationContext context)

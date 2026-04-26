@@ -41,27 +41,11 @@ public static class HttpClientServiceCollectionExtensions
 
         if (setAsDefault)
         {
-            services.AddTransient<IEnhancedHttpClient>(sp =>
-            {
-                var factory = sp.GetRequiredService<IHttpClientFactory>();
-                var logger = sp.GetService<ILogger<HttpClientFactoryEnhancedClient>>();
-                var encryptionProvider = sp.GetService<IEncryptionProvider>();
-                var requestInterceptors = sp.GetServices<IHttpRequestInterceptor>();
-                var responseInterceptors = sp.GetServices<IHttpResponseInterceptor>();
-                return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, logger, requestInterceptors, responseInterceptors);
-            });
+            services.AddTransient<IEnhancedHttpClient>(sp => CreateEnhancedClient(sp, clientName));
         }
         else
         {
-            services.TryAddTransient<IEnhancedHttpClient>(sp =>
-            {
-                var factory = sp.GetRequiredService<IHttpClientFactory>();
-                var logger = sp.GetService<ILogger<HttpClientFactoryEnhancedClient>>();
-                var encryptionProvider = sp.GetService<IEncryptionProvider>();
-                var requestInterceptors = sp.GetServices<IHttpRequestInterceptor>();
-                var responseInterceptors = sp.GetServices<IHttpResponseInterceptor>();
-                return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, logger, requestInterceptors, responseInterceptors);
-            });
+            services.TryAddTransient<IEnhancedHttpClient>(sp => CreateEnhancedClient(sp, clientName));
         }
 
         services.TryAddTransient<IBaseHttpClient>(sp => sp.GetRequiredService<IEnhancedHttpClient>());
@@ -270,5 +254,15 @@ public static class HttpClientServiceCollectionExtensions
 
         services.TryAddSingleton<IApiKeyProvider, DefaultApiKeyProvider>();
         return services;
+    }
+
+    private static HttpClientFactoryEnhancedClient CreateEnhancedClient(IServiceProvider sp, string clientName)
+    {
+        var factory = sp.GetRequiredService<IHttpClientFactory>();
+        var logger = sp.GetService<ILogger<HttpClientFactoryEnhancedClient>>();
+        var encryptionProvider = sp.GetService<IEncryptionProvider>();
+        var requestInterceptors = sp.GetServices<IHttpRequestInterceptor>();
+        var responseInterceptors = sp.GetServices<IHttpResponseInterceptor>();
+        return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, logger, requestInterceptors, responseInterceptors);
     }
 }

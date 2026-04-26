@@ -220,4 +220,119 @@ public class AesEncryptionProviderTests
     }
 
     #endregion
+
+    #region DefaultAesEncryptionProvider.Dispose Tests
+
+    private static DefaultAesEncryptionProvider CreateDisposableProvider(byte[]? key = null, byte[]? iv = null)
+    {
+        var options = new AesEncryptionOptions
+        {
+            Key = key ?? Convert.FromBase64String("MTIzNDU2Nzg5MDEyMzQ1Ng=="),
+            IV = iv ?? Convert.FromBase64String("MTIzNDU2Nzg5MDEyMzQ1Ng==")
+        };
+        return new DefaultAesEncryptionProvider(Options.Create(options));
+    }
+
+    [Fact]
+    public void Dispose_CalledOnce_ShouldNotThrow()
+    {
+        var provider = CreateDisposableProvider();
+
+        var act = () => provider.Dispose();
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Dispose_CalledMultipleTimes_ShouldNotThrow()
+    {
+        var provider = CreateDisposableProvider();
+
+        provider.Dispose();
+        var act = () => provider.Dispose();
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void Encrypt_AfterDispose_ShouldThrowObjectDisposedException()
+    {
+        var provider = CreateDisposableProvider();
+        provider.Dispose();
+
+        var act = () => provider.Encrypt("test");
+
+        act.Should().Throw<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public void Decrypt_AfterDispose_ShouldThrowObjectDisposedException()
+    {
+        var provider = CreateDisposableProvider();
+        var encrypted = provider.Encrypt("test");
+        provider.Dispose();
+
+        var act = () => provider.Decrypt(encrypted);
+
+        act.Should().Throw<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public void EncryptBytes_AfterDispose_ShouldThrowObjectDisposedException()
+    {
+        var provider = CreateDisposableProvider();
+        provider.Dispose();
+
+        var act = () => provider.EncryptBytes(new byte[16]);
+
+        act.Should().Throw<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public void DecryptBytes_AfterDispose_ShouldThrowObjectDisposedException()
+    {
+        var provider = CreateDisposableProvider();
+        var encrypted = provider.EncryptBytes(new byte[16]);
+        provider.Dispose();
+
+        var act = () => provider.DecryptBytes(encrypted);
+
+        act.Should().Throw<ObjectDisposedException>();
+    }
+
+    #endregion
+
+    #region AesEncryptionOptions.ClearSensitiveData Tests
+
+    [Fact]
+    public void ClearSensitiveData_ShouldZeroOutKeyAndIV()
+    {
+        var options = new AesEncryptionOptions
+        {
+            Key = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 },
+            IV = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 }
+        };
+
+        options.ClearSensitiveData();
+
+        options.Key.Should().BeEmpty();
+        options.IV.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ClearSensitiveData_CalledMultipleTimes_ShouldNotThrow()
+    {
+        var options = new AesEncryptionOptions
+        {
+            Key = new byte[16],
+            IV = new byte[16]
+        };
+
+        options.ClearSensitiveData();
+        var act = () => options.ClearSensitiveData();
+
+        act.Should().NotThrow();
+    }
+
+    #endregion
 }

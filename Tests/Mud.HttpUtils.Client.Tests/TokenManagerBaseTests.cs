@@ -372,4 +372,90 @@ public class TokenManagerBaseTests
         protected override Task<CredentialToken> RefreshTokenWithScopesAsync(string[]? scopes, CancellationToken cancellationToken)
             => throw new InvalidOperationException("Scoped token refresh failed");
     }
+
+    [Fact]
+    public async Task InvalidateTokenAsync_DefaultScope_RemovesCachedToken()
+    {
+        var manager = new ScopedTokenManager();
+        var token = await manager.GetOrRefreshTokenAsync();
+        token.Should().Be("scoped-token:default");
+        manager.RefreshCount.Should().Be(1);
+
+        var result = await manager.InvalidateTokenAsync();
+        result.IsEmpty.Should().BeFalse();
+        result.AccessToken.Should().Be("scoped-token:default");
+
+        var newToken = await manager.GetOrRefreshTokenAsync();
+        newToken.Should().Be("scoped-token:default");
+        manager.RefreshCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task InvalidateTokenAsync_WithScopes_RemovesScopedToken()
+    {
+        var manager = new ScopedTokenManager();
+        var token = await manager.GetOrRefreshTokenAsync(new[] { "read" });
+        token.Should().Be("scoped-token:read");
+        manager.RefreshCount.Should().Be(1);
+
+        var result = await manager.InvalidateTokenAsync(new[] { "read" });
+        result.IsEmpty.Should().BeFalse();
+        result.AccessToken.Should().Be("scoped-token:read");
+
+        var newToken = await manager.GetOrRefreshTokenAsync(new[] { "read" });
+        newToken.Should().Be("scoped-token:read");
+        manager.RefreshCount.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task InvalidateTokenAsync_NonExistentScope_ReturnsEmptyTokenResult()
+    {
+        var manager = new ScopedTokenManager();
+
+        var result = await manager.InvalidateTokenAsync(new[] { "nonexistent" });
+
+        result.IsEmpty.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task InvalidateTokenAsync_OneScope_DoesNotAffectOtherScopes()
+    {
+        var manager = new ScopedTokenManager();
+        await manager.GetOrRefreshTokenAsync(new[] { "read" });
+        await manager.GetOrRefreshTokenAsync(new[] { "write" });
+        manager.RefreshCount.Should().Be(2);
+
+        await manager.InvalidateTokenAsync(new[] { "read" });
+
+        var writeToken = await manager.GetOrRefreshTokenAsync(new[] { "write" });
+        writeToken.Should().Be("scoped-token:write");
+        manager.RefreshCount.Should().Be(2);
+
+        var readToken = await manager.GetOrRefreshTokenAsync(new[] { "read" });
+        readToken.Should().Be("scoped-token:read");
+        manager.RefreshCount.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task InvalidateTokenAsync_AfterDispose_ThrowsObjectDisposedException()
+    {
+        var manager = new ScopedTokenManager();
+        manager.Dispose();
+
+        var act = async () => await manager.InvalidateTokenAsync();
+
+        await act.Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public async Task GetOrRefreshTokenAsync_AfterDispose_ThrowsObjectDisposedException()
+    {
+        var manager = new ScopedTokenManager();
+        await manager.GetOrRefreshTokenAsync();
+        manager.Dispose();
+
+        var act = async () => await manager.GetOrRefreshTokenAsync();
+
+        await act.Should().ThrowAsync<ObjectDisposedException>();
+    }
 }

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using Microsoft.Extensions.Options;
+using Mud.HttpUtils.Encryption;
 
 namespace Mud.HttpUtils;
 
@@ -23,6 +24,7 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
         options.Value.Validate();
         _key = (byte[])options.Value.Key.Clone();
         _iv = (byte[])options.Value.IV.Clone();
+        options.Value.ClearSensitiveData();
     }
 
     /// <summary>
@@ -131,17 +133,9 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
             return;
 
         _disposed = true;
-        ClearBytes(_key);
-        ClearBytes(_iv);
+        SecurityHelper.ClearBytes(_key);
+        SecurityHelper.ClearBytes(_iv);
         _key = Array.Empty<byte>();
         _iv = Array.Empty<byte>();
-    }
-
-    private static void ClearBytes(byte[] bytes)
-    {
-        for (var i = 0; i < bytes.Length; i++)
-        {
-            bytes[i] = 0;
-        }
     }
 }

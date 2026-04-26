@@ -7,6 +7,12 @@ public sealed class HttpClientApiAttribute : Attribute
     {
     }
 
+    [Obsolete("此构造函数已被弃用，请使用 AddMudHttpClient(clientName, baseAddress) 配置基地址。", error: true)]
+    public HttpClientApiAttribute(string baseAddress)
+    {
+        BaseAddress = baseAddress;
+    }
+
     public string ContentType { get; set; } = "application/json";
 
     [Obsolete("此属性已被弃用，请使用 AddMudHttpClient(clientName, baseAddress) 配置基地址。", error: true)]

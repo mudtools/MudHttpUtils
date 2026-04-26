@@ -42,5 +42,6 @@ public interface ITokenManager
     /// </summary>
     /// <param name="scopes">令牌作用域数组，为 null 时使默认作用域的令牌失效。</param>
     /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
-    Task InvalidateTokenAsync(string[]? scopes = null, CancellationToken cancellationToken = default);
+    /// <returns>失效前的令牌信息，如果缓存中没有令牌则返回 <see cref="TokenResult.Empty"/>。</returns>
+    Task<TokenResult> InvalidateTokenAsync(string[]? scopes = null, CancellationToken cancellationToken = default);
 }

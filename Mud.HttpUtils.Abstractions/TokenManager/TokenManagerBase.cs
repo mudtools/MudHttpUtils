@@ -93,28 +93,26 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     }
 
     /// <inheritdoc />
-    public virtual async Task InvalidateTokenAsync(string[]? scopes = null, CancellationToken cancellationToken = default)
+    public virtual async Task<TokenResult> InvalidateTokenAsync(string[]? scopes = null, CancellationToken cancellationToken = default)
     {
         if (_disposed)
             throw new ObjectDisposedException(GetType().Name);
 
         var scopeKey = GetScopeKey(scopes);
+        var scopeLock = _scopeLocks.GetOrAdd(scopeKey, _ => new SemaphoreSlim(1, 1));
 
-        if (_scopeLocks.TryGetValue(scopeKey, out var scopeLock))
+        await scopeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            await scopeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                _tokenCache.TryRemove(scopeKey, out _);
-            }
-            finally
-            {
-                scopeLock.Release();
-            }
+            _tokenCache.TryRemove(scopeKey, out var removed);
+            if (string.IsNullOrEmpty(removed.Token))
+                return TokenResult.Empty;
+
+            return new TokenResult(removed.Token!, removed.ExpireTime, scopeKey);
         }
-        else
+        finally
         {
-            _tokenCache.TryRemove(scopeKey, out _);
+            scopeLock.Release();
         }
     }
 

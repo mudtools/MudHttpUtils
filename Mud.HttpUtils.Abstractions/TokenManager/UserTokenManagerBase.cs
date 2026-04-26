@@ -165,6 +165,30 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// </summary>
     protected int CachedUserTokenCount => _userTokenCache is MemoryCache mc ? mc.Count : 0;
 
+    /// <inheritdoc />
+    public override async Task<TokenResult> InvalidateTokenAsync(string[]? scopes = null, CancellationToken cancellationToken = default)
+    {
+        var result = await base.InvalidateTokenAsync(scopes, cancellationToken).ConfigureAwait(false);
+
+        CleanupExpiredUserTokens();
+
+        return result;
+    }
+
+    /// <summary>
+    /// 使指定用户的缓存令牌失效。
+    /// </summary>
+    /// <param name="userId">用户标识。</param>
+    /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+    public virtual Task InvalidateUserTokenAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(userId))
+            return Task.CompletedTask;
+
+        RemoveUserTokenFromCache(userId);
+        return Task.CompletedTask;
+    }
+
     private bool IsUserTokenValid(UserTokenInfo? tokenInfo)
     {
         if (tokenInfo == null || string.IsNullOrEmpty(tokenInfo.AccessToken))

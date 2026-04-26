@@ -1,9 +1,11 @@
+using Mud.HttpUtils.Encryption;
+
 namespace Mud.HttpUtils;
 
 /// <summary>
 /// AES 加密选项类，用于配置 AES 加密算法的密钥和初始化向量。
 /// </summary>
-public class AesEncryptionOptions : IDisposable
+public class AesEncryptionOptions
 {
     /// <summary>
     /// 配置节的名称，用于从配置文件中读取 AES 加密配置。
@@ -56,23 +58,14 @@ public class AesEncryptionOptions : IDisposable
 
     /// <summary>
     /// 安全清除密钥和初始化向量，防止敏感数据残留在内存中。
+    /// 注意：此方法会清零 Key 和 IV 数组，调用后此实例将不可用。
+    /// 通常不需要手动调用，因为 DefaultAesEncryptionProvider 会在构造时克隆密钥。
     /// </summary>
-    public void Dispose()
+    public void ClearSensitiveData()
     {
-        ClearBytes(_key);
-        ClearBytes(_iv);
+        SecurityHelper.ClearBytes(_key);
+        SecurityHelper.ClearBytes(_iv);
         _key = null;
         _iv = null;
-    }
-
-    private static void ClearBytes(byte[]? bytes)
-    {
-        if (bytes == null)
-            return;
-
-        for (var i = 0; i < bytes.Length; i++)
-        {
-            bytes[i] = 0;
-        }
     }
 }
