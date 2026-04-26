@@ -73,6 +73,23 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     }
 
     /// <inheritdoc />
+    public void UpdateApp(string appKey, TAppContext appContext)
+    {
+        if (string.IsNullOrWhiteSpace(appKey))
+            throw new ArgumentException("应用标识不能为空", nameof(appKey));
+        if (appContext == null)
+            throw new ArgumentNullException(nameof(appContext));
+
+        if (!_apps.ContainsKey(appKey))
+            throw new InvalidOperationException($"未找到应用标识为 '{appKey}' 的应用上下文，无法更新。请先调用 RegisterApp 注册应用。");
+
+        _apps[appKey] = appContext;
+
+        OnConfigurationChanged(new AppConfigurationChangedEventArgs(
+            appKey, AppConfigurationChangeType.Updated));
+    }
+
+    /// <inheritdoc />
     public bool RemoveApp(string appKey)
     {
         if (string.IsNullOrWhiteSpace(appKey))

@@ -18,5 +18,12 @@ public interface IMudAppContext
 
     ITokenManager GetTokenManager(string tokenType);
 
+    /// <summary>
+    /// 获取指定类型的令牌管理器，提供类型安全的访问。
+    /// </summary>
+    /// <typeparam name="T">令牌管理器类型，必须实现 ITokenManager。</typeparam>
+    /// <returns>指定类型的令牌管理器实例。</returns>
+    T GetTokenManager<T>() where T : class, ITokenManager;
+
     T? GetService<T>() where T : class;
 }

@@ -55,15 +55,24 @@ internal static class MethodAnalyzer
 
         var methodTokenScopes = AnalyzeMethodTokenScopes(methodSymbol);
 
+        var tokenParameterName = parameters
+            .FirstOrDefault(p => p.Attributes.Any(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.Name)))?
+            .Name;
+
+        var returnTypeFullName = TypeSymbolHelper.GetTypeFullName(methodSymbol.ReturnType);
+        var isAsyncEnumerable = TypeDetectionHelper.IsAsyncEnumerableType(returnTypeFullName, out var asyncEnumerableElementType);
+
         return new MethodAnalysisResult
         {
             IsValid = true,
             MethodName = methodSymbol.Name,
             HttpMethod = httpMethod,
             UrlTemplate = urlTemplate,
-            ReturnType = TypeSymbolHelper.GetTypeFullName(methodSymbol.ReturnType),
+            ReturnType = returnTypeFullName,
             AsyncInnerReturnType = TypeSymbolHelper.ExtractAsyncInnerType(methodSymbol.ReturnType),
             IsAsyncMethod = TypeSymbolHelper.IsAsyncType(methodSymbol.ReturnType),
+            IsAsyncEnumerableReturn = isAsyncEnumerable,
+            AsyncEnumerableElementType = asyncEnumerableElementType,
             Parameters = parameters,
             IgnoreGenerator = HasMethodAttribute(methodSymbol, HttpClientGeneratorConstants.IgnoreGeneratorAttributeNames),
             InterfaceAttributes = interfaceAttributes,
@@ -79,6 +88,7 @@ internal static class MethodAnalyzer
             InterfaceTokenName = interfaceTokenName,
             InterfaceTokenScopes = interfaceTokenScopes,
             MethodTokenScopes = methodTokenScopes,
+            TokenParameterName = tokenParameterName,
             CacheEnabled = cacheEnabled,
             CacheDurationSeconds = cacheDurationSeconds,
             CacheKeyTemplate = cacheKeyTemplate,

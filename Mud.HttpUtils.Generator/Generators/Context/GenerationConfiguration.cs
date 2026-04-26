@@ -26,6 +26,12 @@ internal class GenerationConfiguration
 
     public string? TokenManager { get; set; }
 
+    /// <summary>
+    /// 从特性中提取的原始 TokenManager 值（未经过互斥处理），
+    /// 用于在 ValidateConfiguration 中正确检测 HttpClient 与 TokenManager 的互斥冲突。
+    /// </summary>
+    public string? RawTokenManager { get; set; }
+
     public string? TokenManagerType { get; set; }
 
     /// <summary>

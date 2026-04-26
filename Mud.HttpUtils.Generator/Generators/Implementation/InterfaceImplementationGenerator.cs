@@ -85,8 +85,7 @@ internal class InterfaceImplementationGenerator
     {
         var isValid = true;
 
-        // 校验 HttpClient 和 TokenManage 互斥
-        if (!string.IsNullOrEmpty(configuration.HttpClient) && !string.IsNullOrEmpty(configuration.TokenManager))
+        if (!string.IsNullOrEmpty(configuration.HttpClient) && !string.IsNullOrEmpty(configuration.RawTokenManager))
         {
             _context.ReportDiagnostic(Diagnostic.Create(
                 Diagnostics.HttpClientAndTokenManagerMutuallyExclusive,
@@ -187,10 +186,8 @@ internal class InterfaceImplementationGenerator
             httpClientApiAttribute,
             HttpClientGeneratorConstants.TokenManageProperty);
 
-        // 互斥逻辑：HttpClient 优先
         var effectiveTokenManage = !string.IsNullOrEmpty(httpClient) ? null : tokenManage;
 
-        // 缓存 TokenType 获取结果，避免重复调用
         var tokenType = GetInterfaceTokenType();
 
         var baseAddress = AttributeDataHelper.GetStringValueFromAttributeConstructor(
@@ -218,6 +215,7 @@ internal class InterfaceImplementationGenerator
             InheritedFrom = inheritedFrom,
             HttpClient = httpClient,
             TokenManager = effectiveTokenManage,
+            RawTokenManager = tokenManage,
             TokenManagerType = !string.IsNullOrEmpty(effectiveTokenManage)
                 ? TypeSymbolHelper.GetTypeAllDisplayString(_compilation, effectiveTokenManage!)
                 : null,

@@ -15,7 +15,10 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     private readonly HttpClient _httpClient;
     private readonly OAuth2Options _options;
     private readonly ILogger _logger;
-    private CredentialToken? _cachedToken;
+    private readonly ISecretProvider? _secretProvider;
+    private volatile CredentialToken? _cachedToken;
+    private string? _resolvedClientSecret;
+    private volatile bool _clientSecretResolved;
 
     private static readonly JsonSerializerOptions s_jsonOptions = new()
     {
@@ -29,14 +32,57 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// <param name="httpClient">HttpClient 实例。</param>
     /// <param name="options">OAuth2 配置选项。</param>
     /// <param name="logger">日志记录器（可选）。</param>
+    /// <param name="secretProvider">安全密钥提供程序（可选）。</param>
     public StandardOAuth2TokenManager(
         HttpClient httpClient,
         IOptions<OAuth2Options> options,
-        ILogger<StandardOAuth2TokenManager>? logger = null)
+        ILogger<StandardOAuth2TokenManager>? logger = null,
+        ISecretProvider? secretProvider = null)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? NullLogger<StandardOAuth2TokenManager>.Instance;
+        _secretProvider = secretProvider;
+    }
+
+    /// <summary>
+    /// 获取有效的 ClientSecret，优先从 ISecretProvider 获取，回退到配置值。
+    /// </summary>
+    private async Task<string> GetClientSecretAsync(CancellationToken cancellationToken = default)
+    {
+        if (_clientSecretResolved)
+            return _resolvedClientSecret ?? _options.ClientSecret;
+
+        if (_secretProvider != null && !string.IsNullOrEmpty(_options.ClientSecretProviderName))
+        {
+            var secret = await _secretProvider.GetSecretAsync(_options.ClientSecretProviderName).ConfigureAwait(false);
+            if (!string.IsNullOrEmpty(secret))
+            {
+                _resolvedClientSecret = secret;
+                _clientSecretResolved = true;
+                return secret;
+            }
+        }
+
+        _clientSecretResolved = true;
+        return _options.ClientSecret;
+    }
+
+    /// <summary>
+    /// 校验端点是否满足 HTTPS 要求。
+    /// </summary>
+    private void ValidateEndpointHttps(string endpoint, string endpointName)
+    {
+        if (!_options.RequireHttps)
+            return;
+
+        if (!string.IsNullOrEmpty(endpoint) &&
+            !endpoint.StartsWith("https://", StringComparison.OrdinalIgnoreCase) &&
+            !endpoint.StartsWith("http://localhost", StringComparison.OrdinalIgnoreCase) &&
+            !endpoint.StartsWith("http://127.0.0.1", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException($"{endpointName} 必须使用 HTTPS 协议: {endpoint}。若需在开发环境使用 HTTP，请设置 OAuth2Options.RequireHttps = false。");
+        }
     }
 
     /// <inheritdoc/>
@@ -196,34 +242,44 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// <inheritdoc/>
     protected override async Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
     {
-        if (_cachedToken?.RefreshToken != null)
+        var current = _cachedToken;
+        CredentialToken newToken;
+
+        if (current?.RefreshToken != null)
         {
-            _cachedToken = await RefreshTokenByRefreshTokenAsync(
-                _cachedToken.RefreshToken, cancellationToken).ConfigureAwait(false);
-            UpdateCachedToken(_cachedToken);
-            return _cachedToken;
+            newToken = await RefreshTokenByRefreshTokenAsync(
+                current.RefreshToken, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            newToken = await GetTokenByClientCredentialsAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
         }
 
-        _cachedToken = await GetTokenByClientCredentialsAsync(cancellationToken: cancellationToken)
-            .ConfigureAwait(false);
-        UpdateCachedToken(_cachedToken);
-        return _cachedToken;
+        UpdateCachedToken(newToken);
+        _cachedToken = newToken;
+        return newToken;
     }
 
     protected override async Task<CredentialToken> RefreshTokenWithScopesAsync(string[]? scopes, CancellationToken cancellationToken)
     {
-        if (_cachedToken?.RefreshToken != null)
+        var current = _cachedToken;
+        CredentialToken newToken;
+
+        if (current?.RefreshToken != null)
         {
-            _cachedToken = await RefreshTokenByRefreshTokenAsync(
-                _cachedToken.RefreshToken, cancellationToken).ConfigureAwait(false);
-            UpdateCachedToken(_cachedToken);
-            return _cachedToken;
+            newToken = await RefreshTokenByRefreshTokenAsync(
+                current.RefreshToken, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            newToken = await GetTokenByClientCredentialsAsync(scopes, cancellationToken)
+                .ConfigureAwait(false);
         }
 
-        _cachedToken = await GetTokenByClientCredentialsAsync(scopes, cancellationToken)
-            .ConfigureAwait(false);
-        UpdateCachedToken(_cachedToken);
-        return _cachedToken;
+        UpdateCachedToken(newToken);
+        _cachedToken = newToken;
+        return newToken;
     }
 
     /// <inheritdoc/>
@@ -239,13 +295,14 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// <returns>凭证令牌。</returns>
     public async Task<CredentialToken> GetOrRefreshCredentialTokenAsync(CancellationToken cancellationToken = default)
     {
-        if (_cachedToken != null && _cachedToken.Expire > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
+        var cached = _cachedToken;
+        if (cached != null && cached.Expire > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
         {
-            return _cachedToken;
+            return cached;
         }
 
-        _cachedToken = await RefreshTokenCoreAsync(cancellationToken).ConfigureAwait(false);
-        return _cachedToken;
+        var refreshed = await RefreshTokenCoreAsync(cancellationToken).ConfigureAwait(false);
+        return refreshed;
     }
 
     private async Task<CredentialToken> RequestTokenAsync(
@@ -270,14 +327,16 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         if (tokenResponse == null)
             throw new InvalidOperationException("令牌响应反序列化失败");
 
-        _cachedToken = new CredentialToken
+        var newToken = new CredentialToken
         {
             AccessToken = tokenResponse.AccessToken ?? string.Empty,
             RefreshToken = tokenResponse.RefreshToken,
             Expire = CalculateExpire(tokenResponse.ExpiresIn)
         };
 
-        return _cachedToken;
+        _cachedToken = newToken;
+
+        return newToken;
     }
 
     private async Task<CredentialToken> RequestTokenWithClientAuthAsync(
@@ -303,14 +362,16 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         if (tokenResponse == null)
             throw new InvalidOperationException("令牌响应反序列化失败");
 
-        _cachedToken = new CredentialToken
+        var newToken2 = new CredentialToken
         {
             AccessToken = tokenResponse.AccessToken ?? string.Empty,
             RefreshToken = tokenResponse.RefreshToken,
             Expire = CalculateExpire(tokenResponse.ExpiresIn)
         };
 
-        return _cachedToken;
+        _cachedToken = newToken2;
+
+        return newToken2;
     }
 
     private void ApplyClientAuthentication(HttpRequestMessage request)
@@ -318,8 +379,12 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         if (string.IsNullOrWhiteSpace(_options.ClientId))
             return;
 
+        var clientSecret = _clientSecretResolved
+            ? (_resolvedClientSecret ?? _options.ClientSecret)
+            : _options.ClientSecret;
+
         var credentials = Convert.ToBase64String(
-            Encoding.UTF8.GetBytes($"{_options.ClientId}:{_options.ClientSecret}"));
+            Encoding.UTF8.GetBytes($"{_options.ClientId}:{clientSecret}"));
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
     }
 
@@ -327,6 +392,8 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     {
         if (string.IsNullOrWhiteSpace(_options.TokenEndpoint))
             throw new InvalidOperationException("未配置令牌端点 (TokenEndpoint)");
+
+        ValidateEndpointHttps(_options.TokenEndpoint, "令牌端点 (TokenEndpoint)");
     }
 
     private static long CalculateExpire(long? expiresIn)

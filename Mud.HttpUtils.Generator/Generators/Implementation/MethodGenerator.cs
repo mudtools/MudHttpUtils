@@ -114,7 +114,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine($"        /// <inheritdoc />");
         codeBuilder.AppendLine($"        /// </summary>");
         codeBuilder.AppendLine($"        {GeneratedCodeConsts.HttpGeneratedCodeAttribute}");
-        var asyncKeyword = methodInfo.IsAsyncMethod ? "async " : "";
+        var asyncKeyword = (methodInfo.IsAsyncMethod || methodInfo.IsAsyncEnumerableReturn) ? "async " : "";
         var virtualKeyword = isVirtual ? "virtual " : "";
         var returnTypeFormat = SymbolDisplayFormat.FullyQualifiedFormat
             .WithMiscellaneousOptions(
@@ -127,6 +127,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         if (needsTokenInjection)
         {
             var injectionMode = methodInfo.InterfaceTokenInjectionMode;
+            var tokenParamName = methodInfo.TokenParameterName;
 
             if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModeApiKey)
             {
@@ -144,14 +145,29 @@ internal class MethodGenerator : ICodeFragmentGenerator
             {
                 var effectiveScopes = methodInfo.MethodTokenScopes ?? methodInfo.InterfaceTokenScopes;
                 var scopes = TokenHelper.ParseScopes(effectiveScopes);
-                if (scopes.Length > 0)
+                if (!string.IsNullOrEmpty(tokenParamName))
                 {
-                    var scopesArray = string.Join(", ", scopes.Select(s => $"\"{s}\""));
-                    codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(new[] {{ {scopesArray} }});");
+                    if (scopes.Length > 0)
+                    {
+                        var scopesArray = string.Join(", ", scopes.Select(s => $"\"{s}\""));
+                        codeBuilder.AppendLine($"            var access_token = !string.IsNullOrEmpty({tokenParamName}) ? {tokenParamName} : await GetTokenAsync(new[] {{ {scopesArray} }});");
+                    }
+                    else
+                    {
+                        codeBuilder.AppendLine($"            var access_token = !string.IsNullOrEmpty({tokenParamName}) ? {tokenParamName} : await GetTokenAsync();");
+                    }
                 }
                 else
                 {
-                    codeBuilder.AppendLine($"            var access_token = await GetTokenAsync();");
+                    if (scopes.Length > 0)
+                    {
+                        var scopesArray = string.Join(", ", scopes.Select(s => $"\"{s}\""));
+                        codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(new[] {{ {scopesArray} }});");
+                    }
+                    else
+                    {
+                        codeBuilder.AppendLine($"            var access_token = await GetTokenAsync();");
+                    }
                 }
                 codeBuilder.AppendLine($"            var basicCredentials = System.Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(access_token));");
             }
@@ -159,14 +175,29 @@ internal class MethodGenerator : ICodeFragmentGenerator
             {
                 var effectiveScopes = methodInfo.MethodTokenScopes ?? methodInfo.InterfaceTokenScopes;
                 var scopes = TokenHelper.ParseScopes(effectiveScopes);
-                if (scopes.Length > 0)
+                if (!string.IsNullOrEmpty(tokenParamName))
                 {
-                    var scopesArray = string.Join(", ", scopes.Select(s => $"\"{s}\""));
-                    codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(new[] {{ {scopesArray} }});");
+                    if (scopes.Length > 0)
+                    {
+                        var scopesArray = string.Join(", ", scopes.Select(s => $"\"{s}\""));
+                        codeBuilder.AppendLine($"            var access_token = !string.IsNullOrEmpty({tokenParamName}) ? {tokenParamName} : await GetTokenAsync(new[] {{ {scopesArray} }});");
+                    }
+                    else
+                    {
+                        codeBuilder.AppendLine($"            var access_token = !string.IsNullOrEmpty({tokenParamName}) ? {tokenParamName} : await GetTokenAsync();");
+                    }
                 }
                 else
                 {
-                    codeBuilder.AppendLine($"            var access_token = await GetTokenAsync();");
+                    if (scopes.Length > 0)
+                    {
+                        var scopesArray = string.Join(", ", scopes.Select(s => $"\"{s}\""));
+                        codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(new[] {{ {scopesArray} }});");
+                    }
+                    else
+                    {
+                        codeBuilder.AppendLine($"            var access_token = await GetTokenAsync();");
+                    }
                 }
             }
         }

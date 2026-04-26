@@ -51,6 +51,16 @@ internal class MethodAnalysisResult
     public string AsyncInnerReturnType { get; set; } = string.Empty;
 
     /// <summary>
+    /// 返回类型是否为 IAsyncEnumerable{T}
+    /// </summary>
+    public bool IsAsyncEnumerableReturn { get; set; }
+
+    /// <summary>
+    /// IAsyncEnumerable{T} 的元素类型（仅当 IsAsyncEnumerableReturn 为 true 时有效）
+    /// </summary>
+    public string? AsyncEnumerableElementType { get; set; }
+
+    /// <summary>
     /// 方法参数列表
     /// </summary>
     public IReadOnlyList<ParameterInfo> Parameters { get; set; } = [];
@@ -125,6 +135,12 @@ internal class MethodAnalysisResult
     /// 方法级 Scopes 优先于接口级 Scopes。
     /// </summary>
     public string? MethodTokenScopes { get; set; }
+
+    /// <summary>
+    /// 方法参数中标记了 [Token] 特性的参数名称。
+    /// 当存在此参数时，生成代码应优先使用参数值，仅在参数值为空时回退到 GetTokenAsync()。
+    /// </summary>
+    public string? TokenParameterName { get; set; }
 
     public bool CacheEnabled { get; set; }
 

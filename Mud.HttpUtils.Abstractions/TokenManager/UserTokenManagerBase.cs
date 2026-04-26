@@ -75,7 +75,10 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
         var cachedInfo = GetUserTokenFromCache(userId!);
         if (IsUserTokenValid(cachedInfo))
+        {
+            TryCleanupUserLock(userId!);
             return cachedInfo!.AccessToken;
+        }
 
         var userLock = _userLocks.GetOrAdd(userId, _ => new SemaphoreSlim(1, 1));
         await userLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -157,6 +160,61 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         if (_userTokenCache is MemoryCache memoryCache)
         {
             memoryCache.Compact(_cacheOptions.CompactionPercentage);
+        }
+
+        CleanupOrphanedLocks();
+    }
+
+    /// <summary>
+    /// 清理孤立的锁资源：缓存中已不存在的用户对应的锁。
+    /// 此方法作为 RegisterPostEvictionCallback 的兜底机制，
+    /// 确保在低内存压力场景下锁资源也能被及时释放。
+    /// </summary>
+    protected void CleanupOrphanedLocks()
+    {
+        var orphanedKeys = new List<string>();
+
+        foreach (var kvp in _userLocks)
+        {
+            if (!_userTokenCache.TryGetValue(kvp.Key, out _))
+            {
+                if (kvp.Value.CurrentCount == 1)
+                    orphanedKeys.Add(kvp.Key);
+            }
+        }
+
+        foreach (var key in orphanedKeys)
+        {
+            if (_userLocks.TryRemove(key, out var userLock))
+            {
+                userLock.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
+    /// 尝试清理指定用户的锁资源。
+    /// 当缓存命中且锁处于空闲状态时，主动释放锁以避免内存泄漏。
+    /// </summary>
+    /// <param name="userId">用户标识。</param>
+    private void TryCleanupUserLock(string userId)
+    {
+        if (!_userLocks.TryGetValue(userId, out var userLock))
+            return;
+
+        if (userLock.CurrentCount != 1)
+            return;
+
+        if (_userLocks.TryRemove(userId, out var removedLock))
+        {
+            try
+            {
+                removedLock.Dispose();
+            }
+            catch
+            {
+                _userLocks.TryAdd(userId, removedLock);
+            }
         }
     }
 

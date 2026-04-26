@@ -93,6 +93,14 @@ public interface IAppManager<TAppContext>
     Task RegisterAppAsync(string appKey, TAppContext appContext, bool isDefault = false, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 更新已注册应用的上下文。如果应用不存在则抛出异常。
+    /// 与 RegisterApp 不同，此方法语义上明确表示更新操作，便于调用方区分新增和更新场景。
+    /// </summary>
+    /// <param name="appKey">应用的唯一标识符。</param>
+    /// <param name="appContext">新的应用上下文实例。</param>
+    void UpdateApp(string appKey, TAppContext appContext);
+
+    /// <summary>
     /// 应用配置变更事件。
     /// </summary>
     event EventHandler<AppConfigurationChangedEventArgs> ConfigurationChanged;

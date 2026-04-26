@@ -34,6 +34,9 @@ internal static class HttpClientGeneratorConstants
     public const string BodyAttribute = "BodyAttribute";
     public const string FormContentAttribute = "FormContentAttribute";
     public const string FilePathAttribute = "FilePathAttribute";
+    public const string UploadAttribute = "UploadAttribute";
+    public const string MultipartFormAttribute = "MultipartFormAttribute";
+    public const string FormAttribute = "FormAttribute";
 
     // Token注入模式
     public const string TokenInjectionModeHeader = "Header";

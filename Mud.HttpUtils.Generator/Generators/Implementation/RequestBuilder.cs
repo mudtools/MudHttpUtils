@@ -161,9 +161,32 @@ internal class RequestBuilder
         var formContentParam = methodInfo.Parameters
             .FirstOrDefault(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.FormContentAttribute));
 
+        var multipartFormParam = methodInfo.Parameters
+            .FirstOrDefault(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.MultipartFormAttribute));
+
+        var uploadParams = methodInfo.Parameters
+            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.UploadAttribute))
+            .ToList();
+
+        var formParams = methodInfo.Parameters
+            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.FormAttribute))
+            .ToList();
+
         if (formContentParam != null)
         {
             GenerateFormContentParameter(codeBuilder, formContentParam, methodInfo);
+            return;
+        }
+
+        if (multipartFormParam != null || uploadParams.Any())
+        {
+            GenerateMultipartFormDataParameter(codeBuilder, methodInfo, multipartFormParam, uploadParams);
+            return;
+        }
+
+        if (formParams.Any() && multipartFormParam == null && !uploadParams.Any())
+        {
+            GenerateUrlEncodedFormParameter(codeBuilder, formParams);
             return;
         }
 
@@ -235,6 +258,118 @@ internal class RequestBuilder
     }
 
     /// <summary>
+    /// 生成 URL 编码的表单参数（用于 [Form] 特性）
+    /// </summary>
+    private void GenerateUrlEncodedFormParameter(StringBuilder codeBuilder, List<ParameterInfo> formParams)
+    {
+        codeBuilder.AppendLine("            var __formParameters = new Dictionary<string, string>();");
+
+        foreach (var formParam in formParams)
+        {
+            var formAttr = formParam.Attributes.First(a => a.Name == HttpClientGeneratorConstants.FormAttribute);
+            var fieldName = GetFormFieldName(formAttr, formParam.Name);
+
+            codeBuilder.AppendLine($"            if ({formParam.Name} != null)");
+            codeBuilder.AppendLine("            {");
+            codeBuilder.AppendLine($"                __formParameters[\"{fieldName}\"] = {formParam.Name}.ToString() ?? \"\";");
+            codeBuilder.AppendLine("            }");
+        }
+
+        codeBuilder.AppendLine("            httpRequest.Content = new System.Net.Http.FormUrlEncodedContent(__formParameters);");
+    }
+
+    /// <summary>
+    /// 生成 MultipartFormDataContent 参数（用于 [MultipartForm] 和 [Upload] 特性）
+    /// </summary>
+    private void GenerateMultipartFormDataParameter(StringBuilder codeBuilder, MethodAnalysisResult methodInfo,
+        ParameterInfo? multipartFormParam, List<ParameterInfo> uploadParams)
+    {
+        codeBuilder.AppendLine("            using var __multipartContent = new System.Net.Http.MultipartFormDataContent();");
+
+        if (multipartFormParam != null)
+        {
+            var formProperties = methodInfo.Parameters
+                .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.FormAttribute))
+                .ToList();
+
+            foreach (var formProp in formProperties)
+            {
+                var formAttr = formProp.Attributes.First(a => a.Name == HttpClientGeneratorConstants.FormAttribute);
+                var fieldName = GetFormFieldName(formAttr, formProp.Name);
+                codeBuilder.AppendLine($"            if ({formProp.Name} != null)");
+                codeBuilder.AppendLine("            {");
+                codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StringContent({formProp.Name}.ToString() ?? \"\"), \"{fieldName}\");");
+                codeBuilder.AppendLine("            }");
+            }
+        }
+
+        foreach (var uploadParam in uploadParams)
+        {
+            var uploadAttr = uploadParam.Attributes.First(a => a.Name == HttpClientGeneratorConstants.UploadAttribute);
+            var fieldName = GetUploadFieldName(uploadAttr, uploadParam.Name);
+            var fileName = GetUploadFileName(uploadAttr);
+            var contentType = GetUploadContentType(uploadAttr);
+
+            if (!string.IsNullOrEmpty(contentType))
+            {
+                codeBuilder.AppendLine($"            if ({uploadParam.Name} != null)");
+                codeBuilder.AppendLine("            {");
+                codeBuilder.AppendLine($"                var __{uploadParam.Name}Content = new System.Net.Http.StreamContent({uploadParam.Name});");
+                codeBuilder.AppendLine($"                __{uploadParam.Name}Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(\"{contentType}\");");
+                if (!string.IsNullOrEmpty(fileName))
+                    codeBuilder.AppendLine($"                __multipartContent.Add(__{uploadParam.Name}Content, \"{fieldName}\", \"{fileName}\");");
+                else
+                    codeBuilder.AppendLine($"                __multipartContent.Add(__{uploadParam.Name}Content, \"{fieldName}\");");
+                codeBuilder.AppendLine("            }");
+            }
+            else
+            {
+                codeBuilder.AppendLine($"            if ({uploadParam.Name} != null)");
+                codeBuilder.AppendLine("            {");
+                if (!string.IsNullOrEmpty(fileName))
+                    codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StreamContent({uploadParam.Name}), \"{fieldName}\", \"{fileName}\");");
+                else
+                    codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StreamContent({uploadParam.Name}), \"{fieldName}\");");
+                codeBuilder.AppendLine("            }");
+            }
+        }
+
+        codeBuilder.AppendLine("            httpRequest.Content = __multipartContent;");
+    }
+
+    private static string GetUploadFieldName(ParameterAttributeInfo uploadAttr, string paramName)
+    {
+        if (uploadAttr.NamedArguments.TryGetValue("FieldName", out var fieldName) && fieldName is string fn && !string.IsNullOrEmpty(fn))
+            return fn;
+        if (uploadAttr.Arguments.Length > 0 && uploadAttr.Arguments[0] is string argFn && !string.IsNullOrEmpty(argFn))
+            return argFn;
+        return paramName;
+    }
+
+    private static string? GetUploadFileName(ParameterAttributeInfo uploadAttr)
+    {
+        if (uploadAttr.NamedArguments.TryGetValue("FileName", out var fileName) && fileName is string fn && !string.IsNullOrEmpty(fn))
+            return fn;
+        return null;
+    }
+
+    private static string? GetUploadContentType(ParameterAttributeInfo uploadAttr)
+    {
+        if (uploadAttr.NamedArguments.TryGetValue("ContentType", out var ct) && ct is string s && !string.IsNullOrEmpty(s))
+            return s;
+        return null;
+    }
+
+    private static string GetFormFieldName(ParameterAttributeInfo formAttr, string paramName)
+    {
+        if (formAttr.NamedArguments.TryGetValue("FieldName", out var fieldName) && fieldName is string fn && !string.IsNullOrEmpty(fn))
+            return fn;
+        if (formAttr.Arguments.Length > 0 && formAttr.Arguments[0] is string argFn && !string.IsNullOrEmpty(argFn))
+            return argFn;
+        return paramName;
+    }
+
+    /// <summary>
     /// 生成请求执行
     /// </summary>
     public void GenerateRequestExecution(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, string cancellationTokenArg, bool hasHttpClient)
@@ -248,6 +383,19 @@ internal class RequestBuilder
         {
             httpClient = "_httpClient";
         }
+
+        if (methodInfo.IsAsyncEnumerableReturn && !string.IsNullOrEmpty(methodInfo.AsyncEnumerableElementType))
+        {
+            var elementType = methodInfo.AsyncEnumerableElementType;
+            var cancellationTokenParam = methodInfo.Parameters.FirstOrDefault(p => TypeDetectionHelper.IsCancellationToken(p.Type));
+            var cancellationTokenName = cancellationTokenParam?.Name ?? "default";
+            codeBuilder.AppendLine($"            await foreach (var __item in {httpClient}.SendAsAsyncEnumerable<{elementType}>(httpRequest, _jsonSerializerOptions, {cancellationTokenName}))");
+            codeBuilder.AppendLine("            {");
+            codeBuilder.AppendLine("                yield return __item;");
+            codeBuilder.AppendLine("            }");
+            return;
+        }
+
         if (filePathParam != null)
         {
             codeBuilder.AppendLine($"            await {httpClient}.DownloadLargeAsync(httpRequest, {filePathParam.Name}{cancellationTokenArg});");

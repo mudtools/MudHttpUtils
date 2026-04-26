@@ -90,4 +90,28 @@ internal static class TypeDetectionHelper
         return string.Equals(nonNullableTypeName, "CancellationToken", StringComparison.OrdinalIgnoreCase)
             || string.Equals(nonNullableTypeName, "System.Threading.CancellationToken", StringComparison.OrdinalIgnoreCase);
     }
+
+    /// <summary>
+    /// 检查是否为 IAsyncEnumerable{T} 类型，并提取元素类型
+    /// </summary>
+    /// <param name="typeName">类型名称字符串</param>
+    /// <param name="elementType">提取的元素类型（如果匹配）</param>
+    /// <returns>是否为 IAsyncEnumerable{T} 类型</returns>
+    public static bool IsAsyncEnumerableType(string typeName, out string? elementType)
+    {
+        elementType = null;
+
+        var match = System.Text.RegularExpressions.Regex.Match(
+            typeName,
+            @"^IAsyncEnumerable<(.+)>$",
+            System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        if (match.Success)
+        {
+            elementType = match.Groups[1].Value;
+            return true;
+        }
+
+        return false;
+    }
 }

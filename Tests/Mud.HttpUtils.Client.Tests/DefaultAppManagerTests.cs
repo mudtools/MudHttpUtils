@@ -196,6 +196,8 @@ public class DefaultAppManagerTests
 
         public ITokenManager GetTokenManager(string tokenType = "") => null!;
 
+        public T GetTokenManager<T>() where T : class, ITokenManager => throw new NotImplementedException();
+
         public T? GetService<T>() where T : class => null;
     }
 }
