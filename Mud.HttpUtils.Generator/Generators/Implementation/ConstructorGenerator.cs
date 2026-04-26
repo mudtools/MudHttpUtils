@@ -40,18 +40,6 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     /// </summary>
     private void GenerateClassFields(StringBuilder codeBuilder)
     {
-        // HttpClient 模式下不生成 Token 相关字段
-        if (!_context.HasHttpClient && (!string.IsNullOrEmpty(_context.Configuration.TokenType) || _context.HasTokenManager))
-        {
-            var tokenType = string.IsNullOrEmpty(_context.Configuration.TokenType)
-                ? TokenHelper.GetDefaultTokenType()
-                : _context.Configuration.TokenType;
-            codeBuilder.AppendLine("        /// <summary>");
-            codeBuilder.AppendLine("        /// Token类型，用于标识使用的Token类型。");
-            codeBuilder.AppendLine("        /// </summary>");
-            codeBuilder.AppendLine($"        private readonly string _tokenType = \"{tokenType}\";");
-        }
-
         if (_context.HasInheritedFrom) return;
 
 
@@ -284,23 +272,10 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
 
     private void GenerateGetTokenTypeMethod(StringBuilder codeBuilder)
     {
-        // HttpClient 模式下不生成 Token 相关方法
-        if (_context.HasHttpClient)
+        if (!TokenMethodHelper.ShouldGenerateTokenMethods(_context))
             return;
 
-        if (string.IsNullOrEmpty(_context.Configuration.TokenType) && string.IsNullOrEmpty(_context.Configuration.TokenManager))
-            return;
-
-        string accessibility = _context.Configuration.IsAbstract ? "virtual" : "override";
-        if (!_context.HasInheritedFrom && !_context.Configuration.IsAbstract)
-            accessibility = "virtual";
-
-        codeBuilder.AppendLine("        /// <summary>");
-        codeBuilder.AppendLine("        /// 获取用于远程API访问的Token令牌类型。");
-        codeBuilder.AppendLine("        /// </summary>");
-        codeBuilder.AppendLine("        /// <returns>返回Token令牌类型。</returns>");
-        codeBuilder.AppendLine($"        protected {accessibility} string GetTokenType() => _tokenType;");
-        codeBuilder.AppendLine();
+        TokenMethodHelper.GenerateGetTokenTypeFieldAndMethod(codeBuilder, _context);
     }
 
     private void GenerateUseAppMethod(StringBuilder codeBuilder)

@@ -1,4 +1,4 @@
-namespace HttpClientApiTest.HttpClientApiTestApis;
+﻿namespace HttpClientApiTest.HttpClientApiTestApis;
 
 
 using HttpClientApiTest.Models;
@@ -8,7 +8,7 @@ using HttpClientApiTest.Models;
 /// ContentType 真实场景测试接口
 /// 模拟实际开发中常见的API使用场景
 /// </summary>
-[HttpClientApi("https://api.mudtools.cn/")]
+[HttpClientApi()]
 public interface IContentTypeRealWorldApi
 {
     /// <summary>

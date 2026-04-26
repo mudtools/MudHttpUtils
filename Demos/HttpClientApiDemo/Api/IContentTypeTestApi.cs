@@ -1,11 +1,11 @@
-namespace HttpClientApiTest.Api;
+﻿namespace HttpClientApiTest.Api;
 /// <summary>
 /// 用于测试 ContentType 的优先级功能
 /// 测试场景：
 /// 1. 接口级特性 vs 方法级特性（方法级优先）
 /// 2. 默认值回退
 /// </summary>
-[HttpClientApi("https://api.mudtools.cn/", ContentType = "application/xml")]
+[HttpClientApi(ContentType = "application/xml")]
 public interface IContentTypeTestApi
 {
     /// <summary>
@@ -50,7 +50,7 @@ public interface IContentTypeTestApi
 /// 测试场景：
 /// 接口和方法均未定义 ContentType
 /// </summary>
-[HttpClientApi("https://api.example2.com")]
+[HttpClientApi()]
 public interface IContentTypeWebApiDefaultTestApi
 {
     /// <summary>
@@ -67,7 +67,7 @@ public interface IContentTypeWebApiDefaultTestApi
 /// 测试场景：
 /// Body 参数的 ContentType 优先级最高
 /// </summary>
-[HttpClientApi("https://api.example3.com", ContentType = "application/xml")]
+[HttpClientApi(ContentType = "application/xml")]
 public interface IContentTypeBodyPriorityTestApi
 {
     /// <summary>

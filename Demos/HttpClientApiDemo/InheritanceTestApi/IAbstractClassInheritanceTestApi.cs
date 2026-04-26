@@ -1,4 +1,4 @@
-// -----------------------------------------------------------------------
+﻿// -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
 //  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
@@ -10,7 +10,7 @@ namespace HttpClientApiTest.InheritanceTestApi;
 /// 抽象类继承测试基础接口
 /// 定义抽象方法，不能直接实例化
 /// </summary>
-[HttpClientApi("https://api.mudtools.cn/", Timeout = 60, IsAbstract = true)]
+[HttpClientApi(Timeout = 60, IsAbstract = true)]
 public interface IAbstractClassBaseTestApi
 {
     /// <summary>
@@ -50,7 +50,7 @@ public interface IAbstractClassBaseTestApi
 /// 具体产品服务接口
 /// 继承自抽象基接口，实现所有抽象方法
 /// </summary>
-[HttpClientApi("https://api.mudtools.cn/", Timeout = 90, TokenManage = "IFeishuAppManager", RegistryGroupName = "ConcreteProductService")]
+[HttpClientApi(Timeout = 90, TokenManage = "IFeishuAppManager", RegistryGroupName = "ConcreteProductService")]
 [Header("X-Service-Type", "concrete-product")]
 public interface IConcreteProductServiceTestApi : IAbstractClassBaseTestApi
 {
@@ -83,7 +83,7 @@ public interface IConcreteProductServiceTestApi : IAbstractClassBaseTestApi
 /// 高级产品服务接口
 /// 继承自具体产品服务接口，进一步扩展功能
 /// </summary>
-[HttpClientApi("https://api.mudtools.cn/", Timeout = 120, TokenManage = "IFeishuAppManager", RegistryGroupName = "AdvancedProductService")]
+[HttpClientApi(Timeout = 120, TokenManage = "IFeishuAppManager", RegistryGroupName = "AdvancedProductService")]
 [Header("X-Service-Type", "advanced-product")]
 [Header("X-Advanced-Features", "enabled")]
 public interface IAdvancedProductServiceTestApi : IConcreteProductServiceTestApi

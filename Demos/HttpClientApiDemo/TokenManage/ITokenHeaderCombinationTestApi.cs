@@ -1,4 +1,4 @@
-// -----------------------------------------------------------------------
+﻿// -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
 //  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
@@ -10,7 +10,7 @@ namespace HttpClientApiTest.TokenHeaderTestApi;
 /// Token和Header特性组合测试接口
 /// 用于测试[Token]和[Header]特性组合使用的各种场景
 /// </summary>
-[HttpClientApi("https://api.mudtools.cn/", Timeout = 90, TokenManage = "IFeishuAppManager", RegistryGroupName = "TokenHeaderCombination")]
+[HttpClientApi(Timeout = 90, TokenManage = "IFeishuAppManager", RegistryGroupName = "TokenHeaderCombination")]
 public interface ITokenHeaderCombinationTestApi
 {
     /// <summary>

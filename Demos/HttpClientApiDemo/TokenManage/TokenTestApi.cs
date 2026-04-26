@@ -1,10 +1,10 @@
-
+﻿
 namespace HttpClientApiTest.Api;
 
 /// <summary>
 /// Token特性测试接口 - 使用 AppAccessToken
 /// </summary>
-[HttpClientApi("https://api.example.com")]
+[HttpClientApi()]
 [Token("AppAccessToken")]
 public interface IAppTokenService
 {
@@ -15,7 +15,7 @@ public interface IAppTokenService
 /// <summary>
 /// Token特性测试接口 - 使用 TenantAccessToken（默认）
 /// </summary>
-[HttpClientApi("https://api.example.com")]
+[HttpClientApi()]
 [Token]
 public interface ITenantTokenService
 {
@@ -26,7 +26,7 @@ public interface ITenantTokenService
 /// <summary>
 /// 无 Token 特性的接口
 /// </summary>
-[HttpClientApi("https://api.example.com")]
+[HttpClientApi()]
 public interface INoTokenService
 {
     [Get("/api/data")]

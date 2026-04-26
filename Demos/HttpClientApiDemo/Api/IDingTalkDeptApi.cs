@@ -1,4 +1,4 @@
-// -----------------------------------------------------------------------
+﻿// -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
 //  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
@@ -13,7 +13,7 @@ using HttpClientApiTest.WebApi;
 /// 钉钉部门API测试接口
 /// 测试各种部门相关的API功能，包括不同Token类型、参数位置等场景
 /// </summary>
-[HttpClientApi("https://api.dingtalk.com", Timeout = 60, TokenManage = "IFeishuAppManager", RegistryGroupName = "Dingtalk")]
+[HttpClientApi(Timeout = 60, TokenManage = "IFeishuAppManager", RegistryGroupName = "Dingtalk")]
 [Header("Authorization")]
 public interface IDingTalkDeptApi
 {

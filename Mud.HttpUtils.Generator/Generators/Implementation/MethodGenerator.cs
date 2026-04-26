@@ -140,6 +140,21 @@ internal class MethodGenerator : ICodeFragmentGenerator
             {
                 codeBuilder.AppendLine($"            await ApplyHmacSignatureAsync(httpRequest);");
             }
+            else if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModeBasicAuth)
+            {
+                var effectiveScopes = methodInfo.MethodTokenScopes ?? methodInfo.InterfaceTokenScopes;
+                var scopes = TokenHelper.ParseScopes(effectiveScopes);
+                if (scopes.Length > 0)
+                {
+                    var scopesArray = string.Join(", ", scopes.Select(s => $"\"{s}\""));
+                    codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(new[] {{ {scopesArray} }});");
+                }
+                else
+                {
+                    codeBuilder.AppendLine($"            var access_token = await GetTokenAsync();");
+                }
+                codeBuilder.AppendLine($"            var basicCredentials = System.Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(access_token));");
+            }
             else
             {
                 var effectiveScopes = methodInfo.MethodTokenScopes ?? methodInfo.InterfaceTokenScopes;
@@ -188,6 +203,10 @@ internal class MethodGenerator : ICodeFragmentGenerator
         {
             var headerName = GetTokenHeaderName(methodInfo);
             codeBuilder.AppendLine($"            httpRequest.Headers.Add(\"{headerName}\", access_token);");
+        }
+        else if (needsTokenInjection && IsTokenBasicAuthMode(methodInfo))
+        {
+            codeBuilder.AppendLine($"            httpRequest.Headers.Add(\"Authorization\", $\"Basic {{basicCredentials}}\");");
         }
 
         if (methodInfo.InterfaceHeaderAttributes?.Any() == true)
@@ -364,6 +383,12 @@ internal class MethodGenerator : ICodeFragmentGenerator
     {
         return !string.IsNullOrEmpty(methodInfo.InterfaceTokenInjectionMode) &&
                methodInfo.InterfaceTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeApiKey;
+    }
+
+    private bool IsTokenBasicAuthMode(MethodAnalysisResult methodInfo)
+    {
+        return !string.IsNullOrEmpty(methodInfo.InterfaceTokenInjectionMode) &&
+               methodInfo.InterfaceTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeBasicAuth;
     }
 
     private string GetTokenHeaderName(MethodAnalysisResult methodInfo)

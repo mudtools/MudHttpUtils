@@ -1,4 +1,4 @@
-// -----------------------------------------------------------------------
+﻿// -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
 //  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
@@ -10,7 +10,7 @@ namespace HttpClientApiTest.InheritanceTestApi;
 /// 密封类继承测试基础接口
 /// 定义可被密封类实现的基础方法
 /// </summary>
-[HttpClientApi("https://api.mudtools.cn/", Timeout = 60)]
+[HttpClientApi(Timeout = 60)]
 public interface ISealedClassBaseTestApi
 {
     /// <summary>
@@ -50,7 +50,7 @@ public interface ISealedClassBaseTestApi
 /// 密封类继承测试扩展接口
 /// 扩展自ISealedClassBaseTestApi，添加更多功能
 /// </summary>
-[HttpClientApi("https://api.mudtools.cn/", Timeout = 90)]
+[HttpClientApi(Timeout = 90)]
 public interface ISealedClassExtendedTestApi : ISealedClassBaseTestApi
 {
     /// <summary>

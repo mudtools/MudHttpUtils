@@ -1,4 +1,4 @@
-﻿using HttpClientApiTest.Api;
+using HttpClientApiTest.Api;
 
 namespace HttpClientApiTest;
 

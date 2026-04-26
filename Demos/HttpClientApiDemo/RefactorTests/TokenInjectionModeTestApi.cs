@@ -1,4 +1,4 @@
-using HttpClientApiTest.Models;
+﻿using HttpClientApiTest.Models;
 
 namespace HttpClientApiTest.RefactorTests;
 
@@ -6,7 +6,7 @@ namespace HttpClientApiTest.RefactorTests;
 /// Token注入模式测试接口
 /// 测试TokenAttribute的InjectionMode属性在Header、Query、Path三种模式下的代码生成
 /// </summary>
-[HttpClientApi("https://api.test.com/", TokenManage = "IFeishuAppManager", RegistryGroupName = "TokenInjectionMode")]
+[HttpClientApi(TokenManage = "IFeishuAppManager", RegistryGroupName = "TokenInjectionMode")]
 [Token("TenantAccessToken", InjectionMode = TokenInjectionMode.Header, Name = "Authorization")]
 public interface ITokenHeaderModeTestApi
 {
@@ -29,7 +29,7 @@ public interface ITokenHeaderModeTestApi
 /// Token Query模式测试接口
 /// 测试Token写入URL查询参数的场景
 /// </summary>
-[HttpClientApi("https://api.test.com/", TokenManage = "IFeishuAppManager", RegistryGroupName = "TokenInjectionMode")]
+[HttpClientApi(TokenManage = "IFeishuAppManager", RegistryGroupName = "TokenInjectionMode")]
 [Token("TenantAccessToken", InjectionMode = TokenInjectionMode.Query, Name = "access_token")]
 public interface ITokenQueryModeTestApi
 {
@@ -51,7 +51,7 @@ public interface ITokenQueryModeTestApi
 /// Token Path模式测试接口
 /// 测试Token写入URL路径参数的场景
 /// </summary>
-[HttpClientApi("https://api.test.com/", TokenManage = "IFeishuAppManager", RegistryGroupName = "TokenInjectionMode")]
+[HttpClientApi(TokenManage = "IFeishuAppManager", RegistryGroupName = "TokenInjectionMode")]
 [Token("TenantAccessToken", InjectionMode = TokenInjectionMode.Path, Name = "token")]
 public interface ITokenPathModeTestApi
 {
@@ -73,7 +73,7 @@ public interface ITokenPathModeTestApi
 /// Token自定义名称测试接口
 /// 测试TokenAttribute.Name属性的自定义值
 /// </summary>
-[HttpClientApi("https://api.test.com/", TokenManage = "IFeishuAppManager", RegistryGroupName = "TokenInjectionMode")]
+[HttpClientApi(TokenManage = "IFeishuAppManager", RegistryGroupName = "TokenInjectionMode")]
 [Token("UserAccessToken", InjectionMode = TokenInjectionMode.Header, Name = "X-Api-Key")]
 public interface ITokenCustomNameTestApi
 {

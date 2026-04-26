@@ -1,4 +1,4 @@
-using HttpClientApiTest.Models;
+﻿using HttpClientApiTest.Models;
 
 namespace HttpClientApiTest.RefactorTests;
 
@@ -6,7 +6,7 @@ namespace HttpClientApiTest.RefactorTests;
 /// 请求/响应类型分离测试接口
 /// 测试BodyAttribute设置请求类型、HttpMethod特性设置响应类型的场景
 /// </summary>
-[HttpClientApi("https://api.test.com/", RegistryGroupName = "ContentTypeSeparation")]
+[HttpClientApi(RegistryGroupName = "ContentTypeSeparation")]
 public interface IRequestResponseTypeTestApi
 {
     /// <summary>
@@ -64,7 +64,7 @@ public interface IRequestResponseTypeTestApi
 /// 响应类型优先级测试接口
 /// 验证ResponseContentType > 默认JSON的优先级
 /// </summary>
-[HttpClientApi("https://api.test.com/", ContentType = "application/xml", RegistryGroupName = "ContentTypePriority")]
+[HttpClientApi(ContentType = "application/xml", RegistryGroupName = "ContentTypePriority")]
 public interface IResponseTypePriorityTestApi
 {
     /// <summary>

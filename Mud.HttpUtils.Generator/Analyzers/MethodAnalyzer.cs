@@ -268,6 +268,7 @@ internal static class MethodAnalyzer
                 2 => HttpClientGeneratorConstants.TokenInjectionModePath,
                 3 => HttpClientGeneratorConstants.TokenInjectionModeApiKey,
                 4 => HttpClientGeneratorConstants.TokenInjectionModeHmacSignature,
+                5 => HttpClientGeneratorConstants.TokenInjectionModeBasicAuth,
                 _ => HttpClientGeneratorConstants.TokenInjectionModeHeader
             };
         }
@@ -282,6 +283,7 @@ internal static class MethodAnalyzer
             "Path" => HttpClientGeneratorConstants.TokenInjectionModePath,
             "ApiKey" => HttpClientGeneratorConstants.TokenInjectionModeApiKey,
             "HmacSignature" => HttpClientGeneratorConstants.TokenInjectionModeHmacSignature,
+            "BasicAuth" => HttpClientGeneratorConstants.TokenInjectionModeBasicAuth,
             _ => HttpClientGeneratorConstants.TokenInjectionModeHeader
         };
     }

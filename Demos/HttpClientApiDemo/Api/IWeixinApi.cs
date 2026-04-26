@@ -7,7 +7,7 @@ using Mud.HttpUtils.Attributes;
 /// 测试QueryToken特性，用于将Token作为URL查询参数传递
 /// 示例URL: https://api.weixin.qq.com/cgi-bin/user/tag/get?access_token=ACCESS_TOKEN
 /// </summary>
-[HttpClientApi("https://api.weixin.qq.com", Timeout = 30, TokenManage = nameof(IFeishuAppManager), RegistryGroupName = "Weixin")]
+[HttpClientApi(Timeout = 30, TokenManage = nameof(IFeishuAppManager), RegistryGroupName = "Weixin")]
 [Token(TokenType = "UserAccessToken", Name = "provider_access_token", InjectionMode = TokenInjectionMode.Header)]
 public interface IWeixinApi
 {

@@ -1,4 +1,4 @@
-// -----------------------------------------------------------------------
+﻿// -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
 //  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
@@ -10,7 +10,7 @@ namespace HttpClientApiTest.InheritanceTestApi;
 /// 虚方法继承测试基础接口
 /// 定义可被重写的基础方法
 /// </summary>
-[HttpClientApi("https://api.mudtools.cn/", Timeout = 60, IsAbstract = true)]
+[HttpClientApi(Timeout = 60, IsAbstract = true)]
 public interface IVirtualMethodBaseTestApi
 {
     /// <summary>
@@ -42,7 +42,7 @@ public interface IVirtualMethodBaseTestApi
 /// 虚方法继承测试接口
 /// 继承自IVirtualMethodBaseTestApi，重写部分方法
 /// </summary>
-[HttpClientApi("https://api.mudtools.cn/", Timeout = 90, TokenManage = "IFeishuAppManager", RegistryGroupName = "VirtualMethod")]
+[HttpClientApi(Timeout = 90, TokenManage = "IFeishuAppManager", RegistryGroupName = "VirtualMethod")]
 [Header("X-Virtual-Method", "true")]
 public interface IVirtualMethodInheritanceTestApi : IVirtualMethodBaseTestApi
 {
@@ -75,7 +75,7 @@ public interface IVirtualMethodInheritanceTestApi : IVirtualMethodBaseTestApi
 /// 虚方法继承测试子接口
 /// 继承自IVirtualMethodInheritanceTestApi，进一步重写方法
 /// </summary>
-[HttpClientApi("https://api.mudtools.cn/", Timeout = 120, TokenManage = "IFeishuAppManager", RegistryGroupName = "VirtualMethodChild")]
+[HttpClientApi(Timeout = 120, TokenManage = "IFeishuAppManager", RegistryGroupName = "VirtualMethodChild")]
 [Header("X-Virtual-Method", "child")]
 [Header("X-Child-Header", "child-value")]
 public interface IVirtualMethodChildInheritanceTestApi : IVirtualMethodInheritanceTestApi

@@ -10,6 +10,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     private readonly ConcurrentDictionary<string, (string? Token, long ExpireTime)> _tokenCache = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _scopeLocks = new();
     private readonly Timer _cleanupTimer;
+    private readonly object _cleanupLock = new();
     private const string DefaultScopeKey = "default";
     private const int CleanupIntervalSeconds = 300;
 
@@ -64,6 +65,9 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// <inheritdoc />
     public virtual async Task<string> GetOrRefreshTokenAsync(string[]? scopes, CancellationToken cancellationToken = default)
     {
+        if (_disposed)
+            throw new ObjectDisposedException(GetType().Name);
+
         var scopeKey = GetScopeKey(scopes);
 
         if (IsTokenValid(scopeKey))
@@ -85,6 +89,32 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         finally
         {
             scopeLock.Release();
+        }
+    }
+
+    /// <inheritdoc />
+    public virtual async Task InvalidateTokenAsync(string[]? scopes = null, CancellationToken cancellationToken = default)
+    {
+        if (_disposed)
+            throw new ObjectDisposedException(GetType().Name);
+
+        var scopeKey = GetScopeKey(scopes);
+
+        if (_scopeLocks.TryGetValue(scopeKey, out var scopeLock))
+        {
+            await scopeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                _tokenCache.TryRemove(scopeKey, out _);
+            }
+            finally
+            {
+                scopeLock.Release();
+            }
+        }
+        else
+        {
+            _tokenCache.TryRemove(scopeKey, out _);
         }
     }
 
@@ -263,21 +293,30 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
     private void CleanupExpiredTokens(object? state)
     {
-        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var thresholdMs = ExpireThresholdSeconds * 1000L;
+        if (_disposed)
+            return;
 
-        foreach (var kvp in _tokenCache)
+        lock (_cleanupLock)
         {
-            if (kvp.Key == DefaultScopeKey)
-                continue;
+            if (_disposed)
+                return;
 
-            if (kvp.Value.ExpireTime - thresholdMs <= now)
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var thresholdMs = ExpireThresholdSeconds * 1000L;
+
+            foreach (var kvp in _tokenCache)
             {
-                _tokenCache.TryRemove(kvp.Key, out _);
+                if (kvp.Key == DefaultScopeKey)
+                    continue;
 
-                if (_scopeLocks.TryRemove(kvp.Key, out var lockObj))
+                if (kvp.Value.ExpireTime - thresholdMs <= now)
                 {
-                    lockObj.Dispose();
+                    _tokenCache.TryRemove(kvp.Key, out _);
+
+                    if (_scopeLocks.TryRemove(kvp.Key, out var lockObj))
+                    {
+                        lockObj.Dispose();
+                    }
                 }
             }
         }
@@ -294,7 +333,11 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
         if (disposing)
         {
-            _cleanupTimer?.Dispose();
+            lock (_cleanupLock)
+            {
+                _cleanupTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+                _cleanupTimer?.Dispose();
+            }
 
             foreach (var scopeLock in _scopeLocks.Values)
             {

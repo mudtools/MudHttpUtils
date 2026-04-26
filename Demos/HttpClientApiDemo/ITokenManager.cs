@@ -25,4 +25,9 @@ public class TestTokenManager : ITokenManager
     {
         return GetOrRefreshTokenAsync(cancellationToken);
     }
+
+    public Task InvalidateTokenAsync(string[]? scopes = null, CancellationToken cancellationToken = default)
+    {
+        return Task.CompletedTask;
+    }
 }

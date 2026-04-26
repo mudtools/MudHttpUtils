@@ -41,6 +41,7 @@ internal static class HttpClientGeneratorConstants
     public const string TokenInjectionModePath = "Path";
     public const string TokenInjectionModeApiKey = "ApiKey";
     public const string TokenInjectionModeHmacSignature = "HmacSignature";
+    public const string TokenInjectionModeBasicAuth = "BasicAuth";
 
     // Body加密相关命名参数
     public const string BodyEnableEncryptProperty = "EnableEncrypt";

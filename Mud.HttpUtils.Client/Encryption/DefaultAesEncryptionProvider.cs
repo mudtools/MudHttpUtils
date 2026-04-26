@@ -9,20 +9,20 @@ namespace Mud.HttpUtils;
 /// <remarks>
 /// 该类使用 CBC 模式和 PKCS7 填充方式，通过配置的密钥和初始化向量进行加密操作。
 /// </remarks>
-public sealed class DefaultAesEncryptionProvider : IEncryptionProvider
+public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposable
 {
-    private readonly AesEncryptionOptions _options;
+    private byte[] _key;
+    private byte[] _iv;
+    private bool _disposed;
 
-    /// <summary>
-    /// 初始化 <see cref="DefaultAesEncryptionProvider"/> 类的新实例。
-    /// </summary>
-    /// <param name="options">AES 加密选项的配置。</param>
-    /// <exception cref="ArgumentNullException">当 options 为 null 时抛出。</exception>
-    /// <exception cref="InvalidOperationException">当加密选项验证失败时抛出。</exception>
     public DefaultAesEncryptionProvider(IOptions<AesEncryptionOptions> options)
     {
-        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
-        _options.Validate();
+        if (options?.Value == null)
+            throw new ArgumentNullException(nameof(options));
+
+        options.Value.Validate();
+        _key = (byte[])options.Value.Key.Clone();
+        _iv = (byte[])options.Value.IV.Clone();
     }
 
     /// <summary>
@@ -38,9 +38,11 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider
         if (string.IsNullOrEmpty(plainText))
             return string.Empty;
 
+        if (_disposed) throw new ObjectDisposedException(nameof(DefaultAesEncryptionProvider));
+
         using var aes = Aes.Create();
-        aes.Key = _options.Key;
-        aes.IV = _options.IV;
+        aes.Key = _key;
+        aes.IV = _iv;
         aes.Mode = CipherMode.CBC;
         aes.Padding = PaddingMode.PKCS7;
 
@@ -64,9 +66,11 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider
         if (string.IsNullOrEmpty(cipherText))
             return string.Empty;
 
+        if (_disposed) throw new ObjectDisposedException(nameof(DefaultAesEncryptionProvider));
+
         using var aes = Aes.Create();
-        aes.Key = _options.Key;
-        aes.IV = _options.IV;
+        aes.Key = _key;
+        aes.IV = _iv;
         aes.Mode = CipherMode.CBC;
         aes.Padding = PaddingMode.PKCS7;
 
@@ -87,9 +91,11 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider
         if (data == null)
             throw new ArgumentNullException(nameof(data));
 
+        if (_disposed) throw new ObjectDisposedException(nameof(DefaultAesEncryptionProvider));
+
         using var aes = Aes.Create();
-        aes.Key = _options.Key;
-        aes.IV = _options.IV;
+        aes.Key = _key;
+        aes.IV = _iv;
         aes.Mode = CipherMode.CBC;
         aes.Padding = PaddingMode.PKCS7;
 
@@ -107,13 +113,35 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider
         if (encryptedData == null)
             throw new ArgumentNullException(nameof(encryptedData));
 
+        if (_disposed) throw new ObjectDisposedException(nameof(DefaultAesEncryptionProvider));
+
         using var aes = Aes.Create();
-        aes.Key = _options.Key;
-        aes.IV = _options.IV;
+        aes.Key = _key;
+        aes.IV = _iv;
         aes.Mode = CipherMode.CBC;
         aes.Padding = PaddingMode.PKCS7;
 
         var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
         return decryptor.TransformFinalBlock(encryptedData, 0, encryptedData.Length);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+        ClearBytes(_key);
+        ClearBytes(_iv);
+        _key = Array.Empty<byte>();
+        _iv = Array.Empty<byte>();
+    }
+
+    private static void ClearBytes(byte[] bytes)
+    {
+        for (var i = 0; i < bytes.Length; i++)
+        {
+            bytes[i] = 0;
+        }
     }
 }

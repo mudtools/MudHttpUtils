@@ -7,14 +7,39 @@
 
 namespace Mud.HttpUtils.Generators.Implementation;
 
-/// <summary>
-/// Token 方法生成辅助类，提取 GetTokenAsync 方法的公共前导代码
-/// </summary>
+using Mud.HttpUtils.Generators.Context;
+
 internal static class TokenMethodHelper
 {
-    /// <summary>
-    /// 生成 GetTokenAsync 方法的前导代码（获取 _appContext、tokenType、tokenManager）
-    /// </summary>
+    public static bool ShouldGenerateTokenMethods(GeneratorContext context)
+    {
+        return !context.HasHttpClient && context.HasTokenManager;
+    }
+
+    public static void GenerateGetTokenTypeFieldAndMethod(StringBuilder codeBuilder, GeneratorContext context)
+    {
+        if (!ShouldGenerateTokenMethods(context))
+            return;
+
+        var tokenType = string.IsNullOrEmpty(context.Configuration.TokenType)
+            ? TokenHelper.GetDefaultTokenType()
+            : context.Configuration.TokenType;
+
+        codeBuilder.AppendLine($"        private readonly string _tokenType = \"{tokenType}\";");
+        codeBuilder.AppendLine();
+
+        string accessibility = context.Configuration.IsAbstract ? "virtual" : "override";
+        if (!context.HasInheritedFrom && !context.Configuration.IsAbstract)
+            accessibility = "virtual";
+
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// 获取用于远程API访问的Token令牌类型。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        /// <returns>返回Token令牌类型。</returns>");
+        codeBuilder.AppendLine($"        protected {accessibility} string GetTokenType() => _tokenType;");
+        codeBuilder.AppendLine();
+    }
+
     public static void GenerateGetTokenPreamble(StringBuilder codeBuilder, string accessibility)
     {
         codeBuilder.AppendLine($"        {accessibility} async Task<string> GetTokenAsync()");

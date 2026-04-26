@@ -86,6 +86,14 @@ internal static class Diagnostics
         category: "代码生成",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor HttpClientApiBaseAddressObsolete = new(
+        id: "HTTPCLIENT010",
+        title: "HttpClientApiAttribute.BaseAddress 已弃用",
+        messageFormat: "接口 {0} 使用了 HttpClientApiAttribute 的 BaseAddress 参数，该参数已弃用。请改用 AddMudHttpClient(clientName, baseAddress) 配置基地址。",
+        category: "代码生成",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
     #endregion
 
     #region HttpClient注册生成器诊断信息 (HTTPCLIENTREG001-002)

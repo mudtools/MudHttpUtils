@@ -21,12 +21,14 @@ public static class HttpClientServiceCollectionExtensions
     /// <param name="services">服务集合。</param>
     /// <param name="clientName">Named HttpClient 的名称。</param>
     /// <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
-    /// <returns>服务集合（链式调用）。</returns>
+    /// <param name="setAsDefault">是否将此客户端设为 IEnhancedHttpClient 的默认实现。</param>
+    /// <returns><see cref="IHttpClientBuilder"/>（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
-    public static IServiceCollection AddMudHttpClient(
+    public static IHttpClientBuilder AddMudHttpClient(
         this IServiceCollection services,
         string clientName,
-        Action<HttpClient>? configureHttpClient = null)
+        Action<HttpClient>? configureHttpClient = null,
+        bool setAsDefault = false)
     {
         if (services == null)
             throw new ArgumentNullException(nameof(services));
@@ -37,20 +39,35 @@ public static class HttpClientServiceCollectionExtensions
             ? services.AddHttpClient(clientName, configureHttpClient)
             : services.AddHttpClient(clientName);
 
-        services.TryAddTransient<IEnhancedHttpClient>(sp =>
+        if (setAsDefault)
         {
-            var factory = sp.GetRequiredService<IHttpClientFactory>();
-            var logger = sp.GetService<ILogger<HttpClientFactoryEnhancedClient>>();
-            var encryptionProvider = sp.GetService<IEncryptionProvider>();
-            var requestInterceptors = sp.GetServices<IHttpRequestInterceptor>();
-            var responseInterceptors = sp.GetServices<IHttpResponseInterceptor>();
-            return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, logger, requestInterceptors, responseInterceptors);
-        });
+            services.AddTransient<IEnhancedHttpClient>(sp =>
+            {
+                var factory = sp.GetRequiredService<IHttpClientFactory>();
+                var logger = sp.GetService<ILogger<HttpClientFactoryEnhancedClient>>();
+                var encryptionProvider = sp.GetService<IEncryptionProvider>();
+                var requestInterceptors = sp.GetServices<IHttpRequestInterceptor>();
+                var responseInterceptors = sp.GetServices<IHttpResponseInterceptor>();
+                return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, logger, requestInterceptors, responseInterceptors);
+            });
+        }
+        else
+        {
+            services.TryAddTransient<IEnhancedHttpClient>(sp =>
+            {
+                var factory = sp.GetRequiredService<IHttpClientFactory>();
+                var logger = sp.GetService<ILogger<HttpClientFactoryEnhancedClient>>();
+                var encryptionProvider = sp.GetService<IEncryptionProvider>();
+                var requestInterceptors = sp.GetServices<IHttpRequestInterceptor>();
+                var responseInterceptors = sp.GetServices<IHttpResponseInterceptor>();
+                return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, logger, requestInterceptors, responseInterceptors);
+            });
+        }
 
         services.TryAddTransient<IBaseHttpClient>(sp => sp.GetRequiredService<IEnhancedHttpClient>());
         services.TryAddSingleton<IHttpClientResolver, HttpClientResolver>();
 
-        return services;
+        return httpClientBuilder;
     }
 
     /// <summary>
@@ -61,9 +78,9 @@ public static class HttpClientServiceCollectionExtensions
     /// <param name="clientName">Named HttpClient 的名称。</param>
     /// <param name="configureEncryption">配置 AES 加密选项的委托。</param>
     /// <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
-    /// <returns>服务集合（链式调用）。</returns>
+    /// <returns><see cref="IHttpClientBuilder"/>（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
-    public static IServiceCollection AddMudHttpClient(
+    public static IHttpClientBuilder AddMudHttpClient(
         this IServiceCollection services,
         string clientName,
         Action<AesEncryptionOptions> configureEncryption,
@@ -87,9 +104,9 @@ public static class HttpClientServiceCollectionExtensions
     /// <param name="services">服务集合。</param>
     /// <param name="clientName">Named HttpClient 的名称。</param>
     /// <param name="baseAddress">HttpClient 的基础地址。</param>
-    /// <returns>服务集合（链式调用）。</returns>
+    /// <returns><see cref="IHttpClientBuilder"/>（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
-    public static IServiceCollection AddMudHttpClient(
+    public static IHttpClientBuilder AddMudHttpClient(
         this IServiceCollection services,
         string clientName,
         string baseAddress)

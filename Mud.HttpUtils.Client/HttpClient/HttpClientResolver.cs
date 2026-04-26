@@ -42,7 +42,11 @@ public sealed class HttpClientResolver : IHttpClientResolver
         {
             var logger = _serviceProvider.GetService<ILogger<HttpClientFactoryEnhancedClient>>();
             var encryptionProvider = _serviceProvider.GetService<IEncryptionProvider>();
-            var enhancedClient = new HttpClientFactoryEnhancedClient(_httpClientFactory, clientName, encryptionProvider, logger);
+            var requestInterceptors = _serviceProvider.GetServices<IHttpRequestInterceptor>();
+            var responseInterceptors = _serviceProvider.GetServices<IHttpResponseInterceptor>();
+            var enhancedClient = new HttpClientFactoryEnhancedClient(
+                _httpClientFactory, clientName, encryptionProvider, logger,
+                requestInterceptors, responseInterceptors);
             client = enhancedClient;
             return true;
         }

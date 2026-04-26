@@ -29,4 +29,9 @@ public enum TokenInjectionMode
     /// HMAC 签名认证（计算请求签名并注入到请求头）。
     /// </summary>
     HmacSignature = 4,
+
+    /// <summary>
+    /// HTTP Basic 认证（将凭据编码为 Base64 注入到 Authorization 头）。
+    /// </summary>
+    BasicAuth = 5,
 }

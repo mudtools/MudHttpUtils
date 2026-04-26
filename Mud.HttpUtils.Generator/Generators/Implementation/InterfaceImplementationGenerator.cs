@@ -193,6 +193,18 @@ internal class InterfaceImplementationGenerator
         // 缓存 TokenType 获取结果，避免重复调用
         var tokenType = GetInterfaceTokenType();
 
+        var baseAddress = AttributeDataHelper.GetStringValueFromAttributeConstructor(
+            httpClientApiAttribute,
+            HttpClientGeneratorConstants.BaseAddressProperty);
+
+        if (!string.IsNullOrEmpty(baseAddress))
+        {
+            _context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.HttpClientApiBaseAddressObsolete,
+                _interfaceDecl.GetLocation(),
+                _interfaceSymbol.Name));
+        }
+
         return new GenerationConfiguration
         {
             HttpClientOptionsName = _optionsName,
@@ -201,9 +213,7 @@ internal class InterfaceImplementationGenerator
                 httpClientApiAttribute,
                 HttpClientGeneratorConstants.TimeoutProperty,
                 100),
-            BaseAddress = AttributeDataHelper.GetStringValueFromAttributeConstructor(
-                httpClientApiAttribute,
-                HttpClientGeneratorConstants.BaseAddressProperty),
+            BaseAddress = baseAddress,
             IsAbstract = isAbstract,
             InheritedFrom = inheritedFrom,
             HttpClient = httpClient,

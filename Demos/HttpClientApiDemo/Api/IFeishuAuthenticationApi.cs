@@ -6,7 +6,7 @@ using System.Text.Json.Serialization;
 /// 飞书认证授权API测试接口
 /// 测试飞书认证相关的API功能，包括获取tenant_access_token和app_access_token
 /// </summary>
-[HttpClientApi("https://api.dingtalk.com", HttpClient = nameof(IEnhancedHttpClient), Timeout = 60, RegistryGroupName = "Feishu")]
+[HttpClientApi(HttpClient = nameof(IEnhancedHttpClient), Timeout = 60, RegistryGroupName = "Feishu")]
 public interface IFeishuAuthenticationApi
 {
     /// <summary>

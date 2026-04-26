@@ -1,4 +1,4 @@
-using HttpClientApiTest.Models;
+﻿using HttpClientApiTest.Models;
 
 namespace HttpClientApiTest.RefactorTests;
 
@@ -6,7 +6,7 @@ namespace HttpClientApiTest.RefactorTests;
 /// Body加密功能测试接口
 /// 测试BodyAttribute的EnableEncrypt、EncryptSerializeType、EncryptPropertyName属性
 /// </summary>
-[HttpClientApi("https://api.test.com/", TokenManage = "IFeishuAppManager", RegistryGroupName = "BodyEncryption")]
+[HttpClientApi(TokenManage = "IFeishuAppManager", RegistryGroupName = "BodyEncryption")]
 [Token("TenantAccessToken", InjectionMode = TokenInjectionMode.Header)]
 public interface IBodyEncryptionTestApi
 {
@@ -55,7 +55,7 @@ public interface IBodyEncryptionTestApi
 /// <summary>
 /// 加密功能边界测试接口
 /// </summary>
-[HttpClientApi("https://api.test.com/", RegistryGroupName = "BodyEncryptionEdge")]
+[HttpClientApi(RegistryGroupName = "BodyEncryptionEdge")]
 public interface IBodyEncryptionEdgeCaseTestApi
 {
     /// <summary>

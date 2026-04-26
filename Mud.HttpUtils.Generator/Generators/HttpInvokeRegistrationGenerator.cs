@@ -106,6 +106,14 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
             return null;
 
         var (baseUrl, timeout) = ExtractAttributeParameters(httpClientApiAttribute);
+
+        if (!string.IsNullOrEmpty(baseUrl))
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.HttpClientApiBaseAddressObsolete,
+                interfaceSyntax.GetLocation(),
+                interfaceSymbol.Name));
+        }
         var registryGroupName = AttributeDataHelper.GetStringValueFromAttribute(httpClientApiAttribute, HttpClientGeneratorConstants.RegistryGroupNameProperty);
 
         // 验证 RegistryGroupName

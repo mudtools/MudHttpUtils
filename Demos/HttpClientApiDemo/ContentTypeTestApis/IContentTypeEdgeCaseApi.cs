@@ -1,4 +1,4 @@
-namespace HttpClientApiTest.HttpClientApiTestApis;
+﻿namespace HttpClientApiTest.HttpClientApiTestApis;
 
 
 using HttpClientApiTest.Models;
@@ -8,7 +8,7 @@ using HttpClientApiTest.Models;
 /// ContentType 边界情况测试接口
 /// 测试各种边界情况和特殊场景
 /// </summary>
-[HttpClientApi("https://api.mudtools.cn/")]
+[HttpClientApi()]
 public interface IContentTypeEdgeCaseApi
 {
     /// <summary>

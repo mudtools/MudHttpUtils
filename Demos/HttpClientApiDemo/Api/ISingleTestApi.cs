@@ -10,7 +10,7 @@ namespace HttpClientApiTest.Api;
 /// 单例API测试接口
 /// 测试各种API功能场景，包括路径参数格式化、查询参数命名、Token类型、文件下载等
 /// </summary>
-[HttpClientApi("https://api.dingtalk.com", Timeout = 60, TokenManage = nameof(IFeishuAppManager), RegistryGroupName = "Test", ContentType = "application/xml")]
+[HttpClientApi(Timeout = 60, TokenManage = nameof(IFeishuAppManager), RegistryGroupName = "Test", ContentType = "application/xml")]
 [Token("TenantAccessToken")]
 public interface ISingleTestApi
 {

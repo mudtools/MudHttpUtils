@@ -1,4 +1,4 @@
-// -----------------------------------------------------------------------
+﻿// -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
 //  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
@@ -10,7 +10,7 @@ namespace HttpClientApiTest.InheritanceTestApi;
 /// 基础功能接口
 /// 定义基本的API操作功能
 /// </summary>
-[HttpClientApi("https://api.mudtools.cn/", IsAbstract = true)]
+[HttpClientApi(IsAbstract = true)]
 public interface IBaseFunctionApi
 {
     /// <summary>
@@ -34,7 +34,7 @@ public interface IBaseFunctionApi
 /// 高级功能接口
 /// 定义高级的API操作功能
 /// </summary>
-[HttpClientApi("https://api.mudtools.cn/", IsAbstract = true)]
+[HttpClientApi(IsAbstract = true)]
 public interface IAdvancedFunctionApi
 {
     /// <summary>
@@ -58,7 +58,7 @@ public interface IAdvancedFunctionApi
 /// 综合功能接口
 /// 同时继承自基础功能接口和高级功能接口，展示接口多继承
 /// </summary>
-[HttpClientApi("https://api.mudtools.cn/", Timeout = 90, TokenManage = "IFeishuAppManager", RegistryGroupName = "CompositeInheritance")]
+[HttpClientApi(Timeout = 90, TokenManage = "IFeishuAppManager", RegistryGroupName = "CompositeInheritance")]
 [Header("X-Function-Type", "composite")]
 public interface ICompositeFunctionApi : IBaseFunctionApi, IAdvancedFunctionApi
 {
@@ -83,7 +83,7 @@ public interface ICompositeFunctionApi : IBaseFunctionApi, IAdvancedFunctionApi
 /// 扩展功能接口
 /// 继承自综合功能接口，展示多层接口继承
 /// </summary>
-[HttpClientApi("https://api.mudtools.cn/", Timeout = 120, TokenManage = "IFeishuAppManager", RegistryGroupName = "ExtendedInheritance")]
+[HttpClientApi(Timeout = 120, TokenManage = "IFeishuAppManager", RegistryGroupName = "ExtendedInheritance")]
 [Header("X-Function-Type", "extended")]
 public interface IExtendedFunctionApi : ICompositeFunctionApi
 {
