@@ -109,8 +109,18 @@ public class DefaultHmacSignatureProvider : IHmacSignatureProvider
 
         var expectedSignature = await GenerateSignatureAsync(request, secretKey, cancellationToken).ConfigureAwait(false);
 
-        var signatureBytes = Convert.FromBase64String(signature);
-        var expectedBytes = Convert.FromBase64String(expectedSignature);
+        byte[] signatureBytes;
+        byte[] expectedBytes;
+
+        try
+        {
+            signatureBytes = Convert.FromBase64String(signature);
+            expectedBytes = Convert.FromBase64String(expectedSignature);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
 
 #if NETSTANDARD2_0
         return FixedTimeEquals(signatureBytes, expectedBytes);

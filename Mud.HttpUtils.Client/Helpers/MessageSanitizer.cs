@@ -134,10 +134,10 @@ public static class MessageSanitizer
             case JsonValue val when val.TryGetValue(out string? str):
                 if (IsSensitiveString(str))
                     return "***";
-                return node;
+                return JsonValue.Create(str);
 
             default:
-                return node;
+                return node.DeepClone();
         }
     }
 
@@ -149,22 +149,14 @@ public static class MessageSanitizer
         if (string.IsNullOrEmpty(str))
             return value;
 
-        if (fieldName.IndexOf("phone", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            fieldName.IndexOf("mobile", StringComparison.OrdinalIgnoreCase) >= 0)
-        {
+        if (IsPhoneField(fieldName))
             return MaskPhone(str);
-        }
 
-        if (fieldName.IndexOf("email", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            fieldName.IndexOf("mail", StringComparison.OrdinalIgnoreCase) >= 0)
-        {
+        if (IsEmailField(fieldName))
             return MaskEmail(str);
-        }
 
-        if (fieldName.IndexOf("name", StringComparison.OrdinalIgnoreCase) >= 0)
-        {
+        if (NameSensitiveFields.Contains(fieldName))
             return MaskName(str);
-        }
 
         if (str.Length <= 8)
             return "***";
@@ -199,6 +191,20 @@ public static class MessageSanitizer
         }
 
         return text.Length > maxLength ? text.Substring(0, Math.Min(text.Length, maxLength)) + "..." : text;
+    }
+
+    private static bool IsPhoneField(string fieldName)
+    {
+        return fieldName.Equals("phone", StringComparison.OrdinalIgnoreCase) ||
+               fieldName.Equals("mobile", StringComparison.OrdinalIgnoreCase) ||
+               fieldName.Equals("tel", StringComparison.OrdinalIgnoreCase) ||
+               fieldName.Equals("telephone", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsEmailField(string fieldName)
+    {
+        return fieldName.Equals("email", StringComparison.OrdinalIgnoreCase) ||
+               fieldName.Equals("mail", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string MaskPhone(string phone)

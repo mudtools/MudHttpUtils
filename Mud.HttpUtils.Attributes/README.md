@@ -46,11 +46,14 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 | `PathAttribute` | 路径参数 | Parameter | `Name` |
 | `QueryAttribute` | 查询参数 | Parameter | `Name`, `Encode` |
 | `ArrayQueryAttribute` | 数组查询参数 | Parameter | `Separator` |
-| `HeaderAttribute` | 请求头参数 | Parameter | `Name` |
-| `BodyAttribute` | 请求体参数 | Parameter | `ContentType`, `EnableEncrypt`, `EncryptSerializeType`, `EncryptPropertyName`, `RawString` |
-| `TokenAttribute` | 令牌参数 | Parameter / Interface | `TokenType`, `InjectionMode`, `Name`, `Scopes` |
+| `HeaderAttribute` | 请求头参数 | Parameter / Method / Interface | `Name`, `Value`, `AliasAs`, `Replace` |
+| `BodyAttribute` | 请求体参数 | Parameter | `ContentType`, `EnableEncrypt`, `EncryptSerializeType`, `EncryptPropertyName`, `RawString`, `UseStringContent` |
+| `TokenAttribute` | 令牌参数 | Parameter / Interface / Method | `TokenType`, `InjectionMode`, `Name`, `Scopes`, `Replace` |
 | `FilePathAttribute` | 文件路径参数 | Parameter | `BufferSize` |
 | `FormContentAttribute` | 表单内容参数 | Parameter / Class | — |
+| `FormAttribute` | 表单字段（URL编码） | Parameter | `FieldName` |
+| `MultipartFormAttribute` | 多部分表单字段 | Parameter | — |
+| `UploadAttribute` | 文件上传参数 | Parameter | `FieldName`, `FileName`, `ContentType` |
 
 ### 缓存特性
 
@@ -123,11 +126,11 @@ public interface IUserApi
 
 ```csharp
 // 模式一：默认模式（构造函数依赖 IMudAppContext）
-[HttpClientApi("https://api.example.com")]
+[HttpClientApi]
 public interface IDefaultApi { }
 
 // 模式二：TokenManager 模式（构造函数依赖指定的 Token 管理器）
-[HttpClientApi("https://api.example.com", TokenManage = "IFeishuAppManager")]
+[HttpClientApi(TokenManage = "IFeishuAppManager")]
 public interface ITokenApi { }
 
 // 模式三：HttpClient 模式（构造函数依赖指定的 HttpClient 接口，推荐）
@@ -136,14 +139,14 @@ public interface IHttpClientApi { }
 ```
 
 > **注意**：`HttpClient` 与 `TokenManage` 互斥，同时定义时 `HttpClient` 优先。
+> `BaseAddress` 构造函数和属性已废弃，请通过 `AddMudHttpClient(clientName, baseAddress)` 配置基地址。
 
 ### 全部属性
 
 | 属性 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `BaseAddress` | `string` | — | API 基础地址（构造函数参数） |
 | `ContentType` | `string` | `"application/json"` | 默认请求内容类型 |
-| `Timeout` | `int` | `0` | 超时时间（秒），0 表示不设置，大于 0 时生成器会生成 `client.Timeout` 设置代码 |
+| `Timeout` | `int` | `50` | 超时时间（秒），生成器会在注册代码中生成 `client.Timeout` 设置 |
 | `TokenManage` | `string?` | `null` | Token 管理器接口类型全名 |
 | `HttpClient` | `string?` | `null` | HttpClient 接口类型全名 |
 | `RegistryGroupName` | `string?` | `null` | 注册组名称，影响生成的注册方法名 |
@@ -158,7 +161,8 @@ public interface IHttpClientApi { }
 | `EnableEncrypt` | `bool` | `false` | 是否启用加密 |
 | `EncryptSerializeType` | `SerializeType` | `Json` | 加密序列化类型 |
 | `EncryptPropertyName` | `string` | `"data"` | 加密后的属性名 |
-| `RawString` | `bool` | `false` | 是否作为原始字符串发送（不进行 JSON 序列化） |
+| `RawString` | `bool` | `false` | 是否作为原始字符串发送（不进行 JSON 序列化，也不调用 ToString()） |
+| `UseStringContent` | `bool` | `false` | 是否将参数作为字符串内容发送（调用 ToString()） |
 
 ### RawString 用法
 
@@ -167,6 +171,15 @@ public interface IHttpClientApi { }
 ```csharp
 [Post("/api/content")]
 Task PostContentAsync([Body(RawString = true)] string content);
+```
+
+### UseStringContent 用法
+
+当需要将对象调用 `ToString()` 后作为字符串内容发送时：
+
+```csharp
+[Post("/api/text")]
+Task SendTextAsync([Body(UseStringContent = true)] object message);
 ```
 
 ## TokenAttribute 详解
@@ -220,6 +233,11 @@ public interface IHmacApi { }
 // 指定令牌作用域
 [Token(TokenTypes.UserAccessToken, Scopes = "user:read,user:write")]
 public interface IScopedApi { }
+
+// 方法级别令牌
+[Get("/api/user/profile")]
+[Token("UserAccessToken", Scopes = "user:read")]
+Task<Profile> GetProfileAsync();
 ```
 
 ## CacheAttribute 详解
@@ -240,6 +258,86 @@ Task<User> GetUserAsync([Path] int id);
 [Get("/config")]
 [Cache(300, CacheKeyTemplate = "config:{0}", UseSlidingExpiration = true, Priority = CachePriority.High)]
 Task<Config> GetConfigAsync();
+```
+
+## HeaderAttribute 详解
+
+`HeaderAttribute` 支持应用到参数、方法或接口级别：
+
+| 属性 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `Name` | `string?` | `null` | 请求头名称 |
+| `Value` | `object?` | `null` | 请求头值（方法/接口级别使用） |
+| `AliasAs` | `string?` | `null` | 别名，用于映射到不同的请求头名称 |
+| `Replace` | `bool` | `false` | 是否替换已有的同名请求头 |
+
+```csharp
+// 参数级别
+[Get("/api/users")]
+Task<List<User>> GetUsersAsync([Header("X-API-Key")] string apiKey);
+
+// 方法级别（添加固定请求头）
+[Get("/api/users")]
+[Header("Accept", "application/json")]
+[Header("X-Request-Source", "Web")]
+Task<List<User>> GetUsersAsync();
+
+// 接口级别（所有方法自动携带）
+[HttpClientApi]
+[Header("X-API-Version", "v2")]
+public interface IUserApi { }
+```
+
+## FormAttribute 详解
+
+用于 `application/x-www-form-urlencoded` 请求，标记参数作为表单字段：
+
+| 属性 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `FieldName` | `string?` | `null` | 表单字段名称，未设置时使用参数名 |
+
+```csharp
+[Post("/api/login")]
+Task<LoginResult> LoginAsync(
+    [Form("username")] string user,
+    [Form("password")] string pass);
+```
+
+## MultipartFormAttribute 详解
+
+用于 `multipart/form-data` 请求，标记参数作为多部分表单字段：
+
+```csharp
+[Post("/api/upload")]
+Task<UploadResult> UploadFileAsync(
+    [MultipartForm] IFormFile file,
+    [MultipartForm] string description);
+```
+
+## UploadAttribute 详解
+
+专用于文件上传场景，支持自定义字段名、文件名和内容类型：
+
+| 属性 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `FieldName` | `string?` | `null` | 表单字段名称，未设置时使用参数名 |
+| `FileName` | `string?` | `null` | 上传的文件名，未设置时使用原始文件名 |
+| `ContentType` | `string?` | `null` | 文件内容类型（MIME），未设置时自动检测 |
+
+```csharp
+// 基本文件上传
+[Post("/api/upload")]
+Task<UploadResult> UploadAsync([Upload] IFormFile file);
+
+// 自定义字段名和文件名
+[Post("/api/upload")]
+Task<UploadResult> UploadDocumentAsync(
+    [Upload(FieldName = "document", FileName = "report.pdf")] IFormFile file);
+
+// 指定内容类型
+[Post("/api/upload")]
+Task<UploadResult> UploadImageAsync(
+    [Upload(ContentType = "image/png")] IFormFile image);
 ```
 
 ## SensitiveDataAttribute 详解

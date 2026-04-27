@@ -4,8 +4,8 @@
 
 Mud.HttpUtils 是 Mud.HttpUtils 生态的**元包（Metapackage）**，自动引用以下子模块：
 
-- **Mud.HttpUtils.Abstractions** — 接口定义（`IEnhancedHttpClient`、`ITokenManager`、`IEncryptionProvider`、`ITokenStore`、`IHttpClientResolver`、`IApiKeyProvider`、`IHmacSignatureProvider`、`ISensitiveDataMasker`、`IHttpResponseCache`、`IFormContent` 等）
-- **Mud.HttpUtils.Attributes** — 特性标注（`[HttpClientApi]`、`[Get]`、`[Body]`、`[Token]`、`[Cache]`、`[SensitiveData]` 等）
+- **Mud.HttpUtils.Abstractions** — 接口定义（`IEnhancedHttpClient`、`ITokenManager`、`IEncryptionProvider`、`ITokenStore`、`IHttpClientResolver`、`IApiKeyProvider`、`IHmacSignatureProvider`、`ISecretProvider`、`ISensitiveDataMasker`、`IHttpResponseCache`、`IFormContent` 等）
+- **Mud.HttpUtils.Attributes** — 特性标注（`[HttpClientApi]`、`[Get]`、`[Body]`、`[Token]`、`[Cache]`、`[SensitiveData]`、`[Form]`、`[MultipartForm]`、`[Upload]` 等）
 - **Mud.HttpUtils.Client** — 客户端实现（`EnhancedHttpClient`、`HttpClientFactoryEnhancedClient`、`DefaultAesEncryptionProvider`、`DefaultApiKeyProvider`、`DefaultHmacSignatureProvider`、`DefaultSensitiveDataMasker`、`CacheResponseInterceptor`、`MemoryHttpResponseCache`、`TokenRefreshHostedService`）
 - **Mud.HttpUtils.Resilience** — 弹性策略（重试、超时、熔断，基于 Polly，支持请求克隆大小限制和重试回调）
 
@@ -121,6 +121,7 @@ public class UserService
 | `AddMudHttpUtils(clientName, configureHttpClient, configureResilienceOptions)` | 注册 Client + Resilience 装饰器 |
 | `AddMudHttpUtils(clientName, baseAddress, configureResilienceOptions)` | 带基础地址的便捷重载 |
 | `AddMudHttpUtils(clientName, configuration, configureHttpClient, sectionPath)` | 从配置文件绑定弹性策略 |
+| `AddMudHttpUtils(clientName, configureEncryption, configureHttpClient, configureResilienceOptions)` | 带 AES 加密配置的重载 |
 
 ### AddMudHttpClient — 仅注册客户端
 
@@ -150,7 +151,7 @@ public class UserService
 适用于飞书/钉钉等需要 Token 自动管理的场景。生成的实现类构造函数依赖 `IMudAppContext`。
 
 ```csharp
-[HttpClientApi("https://open.feishu.cn")]
+[HttpClientApi]
 [Token(TokenTypes.TenantAccessToken)]
 public interface IFeishuApi
 {
@@ -168,7 +169,7 @@ services.AddWebApiHttpClient();
 适用于需要自定义 Token 管理器的场景。生成的实现类构造函数依赖指定的 Token 管理器类型。
 
 ```csharp
-[HttpClientApi("https://api.example.com", TokenManage = "IFeishuAppManager")]
+[HttpClientApi(TokenManage = "IFeishuAppManager")]
 public interface IMyApi
 {
     [Get("/data")]
@@ -379,9 +380,8 @@ var result = await uploadApi.UploadAsync(formData);
 
 ```csharp
 [HttpClientApi(
-    baseAddress: "https://api.example.com",  // API 基础地址
     ContentType = "application/json",        // 默认请求内容类型
-    Timeout = 50,                            // 超时时间（秒），0 表示不设置
+    Timeout = 50,                            // 超时时间（秒），默认 50
     TokenManage = "ITokenManager",           // Token 管理器接口
     HttpClient = "IMyHttpClient",            // HttpClient 接口（与 TokenManage 互斥，优先）
     RegistryGroupName = "Example",           // 注册组名称
@@ -391,7 +391,8 @@ var result = await uploadApi.UploadAsync(formData);
 public interface IExampleApi { }
 ```
 
-> `Timeout > 0` 时，生成器会在注册代码中生成 `client.Timeout` 设置，使 Timeout 属性真正生效。
+> `BaseAddress` 构造函数和属性已废弃，请通过 `AddMudHttpClient(clientName, baseAddress)` 配置基地址。
+> 生成器会在注册代码中生成 `client.Timeout` 设置，使 Timeout 属性真正生效。
 
 ### HTTP 方法特性
 
@@ -424,11 +425,14 @@ Task<UserInfo> CreateUserAsync([Body] UserRequest request);
 | `[Path]` | URL 路径参数 | `[Get("/users/{id}")]` + `[Path] int id` |
 | `[Query]` | URL 查询参数 | `[Query] string? name` |
 | `[ArrayQuery]` | 数组查询参数 | `[ArrayQuery] int[] ids` |
-| `[Header]` | HTTP 请求头 | `[Header("X-API-Key")] string apiKey` |
+| `[Header]` | HTTP 请求头（支持参数/方法/接口级别） | `[Header("X-API-Key")] string apiKey` |
 | `[Body]` | 请求体 | `[Body] UserRequest request` |
 | `[FormContent]` | 表单数据 | `[FormContent] IFormContent formData` |
+| `[Form]` | 表单字段（URL编码） | `[Form("username")] string user` |
+| `[MultipartForm]` | 多部分表单字段 | `[MultipartForm] IFormFile file` |
+| `[Upload]` | 文件上传参数 | `[Upload(FieldName = "doc")] IFormFile file` |
 | `[FilePath]` | 文件下载路径 | `[FilePath] string savePath` |
-| `[Token]` | Token 认证 | `[Token(TokenTypes.UserAccessToken)] string token` |
+| `[Token]` | Token 认证（支持参数/接口/方法级别） | `[Token(TokenTypes.UserAccessToken)] string token` |
 
 ### BodyAttribute 详解
 
@@ -438,12 +442,17 @@ Task<UserInfo> CreateUserAsync([Body] UserRequest request);
 | `EnableEncrypt` | `bool` | `false` | 是否启用加密 |
 | `EncryptSerializeType` | `SerializeType` | `Json` | 加密序列化类型 |
 | `EncryptPropertyName` | `string` | `"data"` | 加密后的属性名 |
-| `RawString` | `bool` | `false` | 是否作为原始字符串发送（不进行 JSON 序列化） |
+| `RawString` | `bool` | `false` | 是否作为原始字符串发送（不进行 JSON 序列化，也不调用 ToString()） |
+| `UseStringContent` | `bool` | `false` | 是否将参数作为字符串内容发送（调用 ToString()） |
 
 ```csharp
 // 原始字符串内容
 [Post("/content")]
 Task PostContentAsync([Body(RawString = true)] string content);
+
+// 字符串内容（调用 ToString()）
+[Post("/text")]
+Task SendTextAsync([Body(UseStringContent = true)] object message);
 
 // 启用加密
 [Post("/secure")]
