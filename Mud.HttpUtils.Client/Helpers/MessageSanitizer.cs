@@ -6,13 +6,11 @@
 // -----------------------------------------------------------------------
 
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
 namespace Mud.HttpUtils;
 
-/// <summary>
-/// 消息脱敏工具
-/// </summary>
 #if NET7_0_OR_GREATER
 public static partial class MessageSanitizer
 #else
@@ -75,9 +73,6 @@ public static class MessageSanitizer
     private static Regex IdCardPattern() => IdCardPatternField;
 #endif
 
-    /// <summary>
-    /// 脱敏消息内容（改进版）
-    /// </summary>
     public static string Sanitize(string message, int maxLength = 500)
     {
         if (string.IsNullOrWhiteSpace(message))
@@ -85,18 +80,20 @@ public static class MessageSanitizer
 
         try
         {
-            using var json = JsonDocument.Parse(message, new JsonDocumentOptions
+            var jsonNode = JsonNode.Parse(message, new JsonNodeOptions
             {
-                AllowTrailingCommas = true,
-                CommentHandling = JsonCommentHandling.Skip
+                PropertyNameCaseInsensitive = true
             });
 
-            var sanitized = SanitizeJsonElement(json.RootElement);
-            var result = sanitized.ToString();
+            if (jsonNode == null)
+                return SanitizePlainText(message, maxLength);
 
-            return result.Length > maxLength ?
-                result.Substring(0, Math.Min(result.Length, maxLength)) + "..." :
-                result;
+            var sanitized = SanitizeJsonNode(jsonNode, 0);
+            var result = sanitized?.ToJsonString() ?? "{}";
+
+            return result.Length > maxLength
+                ? result.Substring(0, Math.Min(result.Length, maxLength)) + "..."
+                : result;
         }
         catch (JsonException)
         {
@@ -104,94 +101,69 @@ public static class MessageSanitizer
         }
     }
 
-    /// <summary>
-    /// 递归脱敏JSON元素（优化性能版）
-    /// </summary>
-    private static JsonElement SanitizeJsonElement(JsonElement element, int depth = 0)
+    private static JsonNode? SanitizeJsonNode(JsonNode? node, int depth)
     {
-        if (depth > 32) return JsonSerializer.Deserialize<JsonElement>("\"***RECURSION_DEPTH_EXCEEDED***\"");
+        if (node == null || depth > 32)
+            return "***RECURSION_DEPTH_EXCEEDED***";
 
-        switch (element.ValueKind)
+        switch (node)
         {
-            case JsonValueKind.Object:
-                var dict = new Dictionary<string, JsonElement>();
-                foreach (var property in element.EnumerateObject())
+            case JsonObject obj:
+                var newObj = new JsonObject();
+                foreach (var property in obj)
                 {
-                    if (SensitiveFields.Contains(property.Name))
+                    if (SensitiveFields.Contains(property.Key) || NameSensitiveFields.Contains(property.Key))
                     {
-                        dict[property.Name] = GetMaskedValue(property.Name, property.Value);
-                    }
-                    else if (NameSensitiveFields.Contains(property.Name))
-                    {
-                        dict[property.Name] = GetMaskedValue(property.Name, property.Value);
+                        newObj[property.Key] = GetMaskedJsonValue(property.Key, property.Value);
                     }
                     else
                     {
-                        dict[property.Name] = SanitizeJsonElement(property.Value, depth + 1);
+                        newObj[property.Key] = SanitizeJsonNode(property.Value, depth + 1);
                     }
                 }
-                return JsonSerializer.SerializeToElement(dict);
+                return newObj;
 
-            case JsonValueKind.Array:
-                var list = new List<JsonElement>();
-                foreach (var item in element.EnumerateArray())
+            case JsonArray arr:
+                var newArr = new JsonArray();
+                foreach (var item in arr)
                 {
-                    list.Add(SanitizeJsonElement(item, depth + 1));
+                    newArr.Add(SanitizeJsonNode(item, depth + 1));
                 }
-                return JsonSerializer.SerializeToElement(list);
+                return newArr;
 
-            case JsonValueKind.String:
-                var strValue = element.GetString();
-                if (IsSensitiveString(strValue))
-                {
-                    return JsonSerializer.Deserialize<JsonElement>("\"***\"");
-                }
-                return element;
+            case JsonValue val when val.TryGetValue(out string? str):
+                if (IsSensitiveString(str))
+                    return "***";
+                return JsonValue.Create(str);
 
             default:
-                return element;
+                return node.DeepClone();
         }
     }
 
-    /// <summary>
-    /// 根据字段名获取脱敏值
-    /// </summary>
-    private static JsonElement GetMaskedValue(string fieldName, JsonElement value)
+    private static JsonNode? GetMaskedJsonValue(string fieldName, JsonNode? value)
     {
-        if (value.ValueKind != JsonValueKind.String)
-            return JsonSerializer.Deserialize<JsonElement>("\"***\"");
+        if (value is not JsonValue val || !val.TryGetValue(out string? str))
+            return "***";
 
-        var str = value.GetString();
         if (string.IsNullOrEmpty(str))
             return value;
 
-        if (fieldName.IndexOf("phone", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            fieldName.IndexOf("mobile", StringComparison.OrdinalIgnoreCase) >= 0)
-        {
-            return JsonSerializer.Deserialize<JsonElement>($"\"{MaskPhone(str)}\"");
-        }
-        else if (fieldName.IndexOf("email", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                 fieldName.IndexOf("mail", StringComparison.OrdinalIgnoreCase) >= 0)
-        {
-            return JsonSerializer.Deserialize<JsonElement>($"\"{MaskEmail(str)}\"");
-        }
-        else if (fieldName.IndexOf("name", StringComparison.OrdinalIgnoreCase) >= 0)
-        {
-            return JsonSerializer.Deserialize<JsonElement>($"\"{MaskName(str)}\"");
-        }
-        else if (str.Length <= 8)
-        {
-            return JsonSerializer.Deserialize<JsonElement>("\"***\"");
-        }
-        else
-        {
-            return JsonSerializer.Deserialize<JsonElement>($"\"{str.Substring(0, 4)}***{str.Substring(str.Length - 4)}\"");
-        }
+        if (IsPhoneField(fieldName))
+            return MaskPhone(str);
+
+        if (IsEmailField(fieldName))
+            return MaskEmail(str);
+
+        if (NameSensitiveFields.Contains(fieldName))
+            return MaskName(str);
+
+        if (str.Length <= 8)
+            return "***";
+
+        return $"{str.Substring(0, 4)}***{str.Substring(str.Length - 4)}";
     }
 
-    /// <summary>
-    /// 判断字符串是否为敏感信息（改进版）
-    /// </summary>
     private static bool IsSensitiveString(string? value)
     {
         if (string.IsNullOrEmpty(value))
@@ -203,9 +175,6 @@ public static class MessageSanitizer
                IdCardPattern().IsMatch(value);
     }
 
-    /// <summary>
-    /// 纯文本脱敏（用于非JSON格式）
-    /// </summary>
     private static string SanitizePlainText(string text, int maxLength)
     {
         var patterns = new Dictionary<Regex, string>
@@ -222,6 +191,20 @@ public static class MessageSanitizer
         }
 
         return text.Length > maxLength ? text.Substring(0, Math.Min(text.Length, maxLength)) + "..." : text;
+    }
+
+    private static bool IsPhoneField(string fieldName)
+    {
+        return fieldName.Equals("phone", StringComparison.OrdinalIgnoreCase) ||
+               fieldName.Equals("mobile", StringComparison.OrdinalIgnoreCase) ||
+               fieldName.Equals("tel", StringComparison.OrdinalIgnoreCase) ||
+               fieldName.Equals("telephone", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsEmailField(string fieldName)
+    {
+        return fieldName.Equals("email", StringComparison.OrdinalIgnoreCase) ||
+               fieldName.Equals("mail", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string MaskPhone(string phone)

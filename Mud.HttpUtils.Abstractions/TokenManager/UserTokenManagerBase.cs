@@ -1,5 +1,12 @@
-using System.Collections.Concurrent;
+// -----------------------------------------------------------------------
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// -----------------------------------------------------------------------
+
 using Microsoft.Extensions.Caching.Memory;
+using System.Collections.Concurrent;
 
 namespace Mud.HttpUtils;
 
@@ -80,7 +87,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
             return cachedInfo!.AccessToken;
         }
 
-        var userLock = _userLocks.GetOrAdd(userId, _ => new SemaphoreSlim(1, 1));
+        var userLock = _userLocks.GetOrAdd(userId!, _ => new SemaphoreSlim(1, 1));
         await userLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -88,10 +95,10 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
             if (IsUserTokenValid(cachedInfo))
                 return cachedInfo!.AccessToken;
 
-            var refreshedInfo = await RefreshUserTokenAsync(userId, cancellationToken).ConfigureAwait(false);
+            var refreshedInfo = await RefreshUserTokenAsync(userId!, cancellationToken).ConfigureAwait(false);
             if (refreshedInfo != null)
             {
-                UpdateUserTokenCache(userId, refreshedInfo);
+                UpdateUserTokenCache(userId!, refreshedInfo);
                 return refreshedInfo.AccessToken;
             }
 
@@ -266,7 +273,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// 释放资源。
     /// </summary>
     /// <param name="disposing">是否释放托管资源。</param>
-    protected virtual void Dispose(bool disposing)
+    protected override void Dispose(bool disposing)
     {
         if (_disposed)
             return;
@@ -290,7 +297,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// <summary>
     /// 释放资源。
     /// </summary>
-    public void Dispose()
+    public override void Dispose()
     {
         Dispose(true);
         GC.SuppressFinalize(this);

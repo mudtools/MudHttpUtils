@@ -109,6 +109,12 @@ public interface IUserApi
 
     [Delete("/users/{id}")]
     Task<bool> DeleteUserAsync([Path] int id);
+
+    [Post("/upload")]
+    Task<UploadResult> UploadAsync([Upload] IFormFile file);
+
+    [Post("/login")]
+    Task<LoginResult> LoginAsync([Form("username")] string user, [Form("password")] string pass);
 }
 ```
 
@@ -164,12 +170,16 @@ public class UserService
 | `[Path]` | URL 路径参数 | `[Get("/users/{id}")]` + `[Path] int id` |
 | `[Query]` | URL 查询参数 | `[Query] string? name` |
 | `[ArrayQuery]` | 数组查询参数 | `[ArrayQuery] int[] ids` |
-| `[Header]` | HTTP 请求头 | `[Header("X-API-Key")] string apiKey` |
+| `[Header]` | HTTP 请求头（支持参数/方法/接口级别） | `[Header("X-API-Key")] string apiKey` |
 | `[Body]` | 请求体 | `[Body] UserRequest request` |
 | `[Body(RawString = true)]` | 原始字符串请求体 | `[Body(RawString = true)] string content` |
+| `[Body(UseStringContent = true)]` | 字符串内容请求体 | `[Body(UseStringContent = true)] string content` |
 | `[FormContent]` | 表单数据 | `[FormContent] IFormContent formData` |
+| `[Form]` | 表单字段（`application/x-www-form-urlencoded`） | `[Form("username")] string user` |
+| `[MultipartForm]` | 多部分表单字段（`multipart/form-data`） | `[MultipartForm] IFormFile file` |
+| `[Upload]` | 文件上传参数（支持自定义字段名/文件名/内容类型） | `[Upload(FieldName = "doc")] IFormFile file` |
 | `[FilePath]` | 文件下载路径 | `[FilePath] string savePath` |
-| `[Token]` | Token 认证 | `[Token(TokenTypes.UserAccessToken)] string token` |
+| `[Token]` | Token 认证（支持参数/接口/方法级别） | `[Token(TokenTypes.UserAccessToken)] string token` |
 
 #### 内容类型管理
 
@@ -178,6 +188,29 @@ public class UserService
 ```
 Body 参数级 > 方法级 > 接口级 > 默认值 (application/json)
 ```
+
+#### 请求头（Header）
+
+`[Header]` 特性支持应用到参数、方法或接口级别：
+
+```csharp
+// 参数级别
+[Get("/users")]
+Task<List<User>> GetUsersAsync([Header("X-API-Key")] string apiKey);
+
+// 方法级别（添加固定请求头）
+[Get("/users")]
+[Header("Accept", "application/json")]
+[Header("X-Request-Source", "Web")]
+Task<List<User>> GetUsersAsync();
+
+// 接口级别（所有方法自动携带）
+[HttpClientApi]
+[Header("X-API-Version", "v2")]
+public interface IUserApi { }
+```
+
+`HeaderAttribute` 支持 `AliasAs`（别名映射）和 `Replace`（替换模式）属性。
 
 #### 弹性策略
 
@@ -236,7 +269,7 @@ public interface IApi { }
 [Get("/users/{id}")]
 Task<User> GetUserAsync([Path] int id, [Token(TokenTypes.UserAccessToken)] string? token = null);
 
-// Token 注入模式：Header（默认）、Query、Path
+// Token 注入模式：Header（默认）、Query、Path、ApiKey、HmacSignature
 [Token(TokenTypes.AppAccessToken, InjectionMode = TokenInjectionMode.Header, Name = "Authorization")]
 ```
 

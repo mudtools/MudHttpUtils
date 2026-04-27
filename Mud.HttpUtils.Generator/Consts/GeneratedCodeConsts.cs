@@ -13,24 +13,26 @@ internal sealed class GeneratedCodeConsts
 {
     public const string CompilerGeneratedAttribute = "[global::System.Runtime.CompilerServices.CompilerGenerated]";
 
+    private static string? s_cachedVersion;
+
     public static string HttpGeneratedCodeAttribute => $"[global::System.CodeDom.Compiler.GeneratedCode(\"Mud.HttpUtils.Generator\", \"{GetAssemblyVersion()}\")]";
 
-    /// <summary>
-    /// 获取当前程序集的版本号
-    /// </summary>
-    /// <returns>程序集版本号字符串</returns>
     private static string GetAssemblyVersion()
     {
+        if (s_cachedVersion != null)
+            return s_cachedVersion;
+
         try
         {
             var assembly = Assembly.GetExecutingAssembly();
             var version = assembly.GetName().Version ?? new Version(1, 0, 0);
-            return $"{version.Major}.{version.Minor}.{version.Build}";
+            s_cachedVersion = $"{version.Major}.{version.Minor}.{version.Build}";
         }
         catch
         {
-            // 如果获取失败，返回默认版本号
-            return "1.2.5";
+            s_cachedVersion = "1.2.5";
         }
+
+        return s_cachedVersion;
     }
 }

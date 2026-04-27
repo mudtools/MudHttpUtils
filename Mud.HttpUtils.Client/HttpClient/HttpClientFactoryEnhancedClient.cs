@@ -30,6 +30,7 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
     private readonly IEnumerable<IHttpRequestInterceptor>? _requestInterceptors;
     private readonly IEnumerable<IHttpResponseInterceptor>? _responseInterceptors;
     private readonly Uri? _overrideBaseAddress;
+    private readonly ISensitiveDataMasker? _sensitiveDataMasker;
 
     protected override IEncryptionProvider? EncryptionProvider => _encryptionProvider;
 
@@ -51,8 +52,9 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
         ILogger<HttpClientFactoryEnhancedClient>? logger = null,
         IEnumerable<IHttpRequestInterceptor>? requestInterceptors = null,
         IEnumerable<IHttpResponseInterceptor>? responseInterceptors = null,
-        Uri? overrideBaseAddress = null)
-        : base(CreateClient(factory, clientName, overrideBaseAddress), logger, requestInterceptors, responseInterceptors)
+        Uri? overrideBaseAddress = null,
+        ISensitiveDataMasker? sensitiveDataMasker = null)
+        : base(CreateClient(factory, clientName, overrideBaseAddress), logger, requestInterceptors, responseInterceptors, sensitiveDataMasker)
     {
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
         _clientName = clientName ?? throw new ArgumentNullException(nameof(clientName));
@@ -61,6 +63,7 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
         _requestInterceptors = requestInterceptors;
         _responseInterceptors = responseInterceptors;
         _overrideBaseAddress = overrideBaseAddress;
+        _sensitiveDataMasker = sensitiveDataMasker;
     }
 
     private static HttpClient CreateClient(IHttpClientFactory factory, string name, Uri? overrideBaseAddress)
@@ -110,7 +113,8 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
             _logger as ILogger<HttpClientFactoryEnhancedClient>,
             _requestInterceptors,
             _responseInterceptors,
-            baseAddress);
+            baseAddress,
+            _sensitiveDataMasker);
     }
 
     /// <inheritdoc/>

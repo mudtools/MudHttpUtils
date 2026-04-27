@@ -10,7 +10,7 @@ Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为
 
 - **自动代码生成**：根据接口定义自动生成 HttpClient 实现
 - **HTTP 方法支持**：支持 GET、POST、PUT、DELETE（含请求体）、PATCH、HEAD、OPTIONS 等 HTTP 方法
-- **参数处理**：自动处理 Path、Query、Header、Body、FormContent 等参数类型
+- **参数处理**：自动处理 Path、Query、Header、Body、FormContent、Form、MultipartForm、Upload 等参数类型
 - **Token 管理**：支持多种 Token 类型，TokenType 使用字符串类型，解耦强绑定
 - **HttpClient 模式**：支持通过 `HttpClient` 属性直接注入 HttpClient 接口，与 `TokenManage` 互斥
 - **依赖注入**：自动生成服务注册扩展方法 `AddWebApiHttpClient()`
@@ -27,7 +27,7 @@ Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为
 - **文件上传进度**：支持通过 `IFormContent` 的 `ToHttpContentAsync(IProgress<long>)` 报告上传进度
 - **表单数据**：支持 multipart/form-data 格式，支持 `[JsonPropertyName]` 属性名映射
 - **数组查询参数**：支持数组类型的查询参数
-- **原始字符串请求体**：支持 `[Body(RawString = true)]` 直接发送原始字符串
+- **原始字符串请求体**：支持 `[Body(RawString = true)]` 直接发送原始字符串，支持 `[Body(UseStringContent = true)]` 发送字符串内容
 - **继承支持**：支持生成抽象类、类继承、接口继承
 - **事件处理器生成**：通过 `[GenerateEventHandler]` 特性自动生成事件处理器代码
 - **忽略生成**：支持通过 `[IgnoreGenerator]` 特性忽略特定代码生成（可标注接口、方法、属性、字段）
@@ -103,7 +103,7 @@ public class UserService
 不设置 `TokenManage` 和 `HttpClient` 时，构造函数依赖 `IOptions<JsonSerializerOptions>` 和 `IMudAppContext`。
 
 ```csharp
-[HttpClientApi("https://api.example.com")]
+[HttpClientApi]
 public interface IMyApi { }
 
 // 生成的构造函数：
@@ -115,7 +115,7 @@ public interface IMyApi { }
 设置 `TokenManage` 时，构造函数依赖 `IOptions<JsonSerializerOptions>` 和指定的 Token 管理器类型。
 
 ```csharp
-[HttpClientApi("https://api.example.com", TokenManage = "IFeishuAppManager")]
+[HttpClientApi(TokenManage = "IFeishuAppManager")]
 public interface IMyApi { }
 
 // 生成的构造函数：
@@ -207,10 +207,10 @@ services.AddTransient<global::MyApp.IMyApi>(sp =>
 通过 `RegistryGroupName` 可以将多个接口的注册方法分组：
 
 ```csharp
-[HttpClientApi("https://api.example.com", RegistryGroupName = "External")]
+[HttpClientApi(RegistryGroupName = "External")]
 public interface IExternalApi { }
 
-[HttpClientApi("https://api.example.com", RegistryGroupName = "External")]
+[HttpClientApi(RegistryGroupName = "External")]
 public interface IAnotherExternalApi { }
 
 // 生成 AddExternalWebApiHttpClient() 方法
@@ -223,9 +223,8 @@ services.AddExternalWebApiHttpClient();
 
 ```csharp
 [HttpClientApi(
-    baseAddress: "https://api.example.com",  // API 基础地址
     ContentType = "application/json",        // 默认请求内容类型
-    Timeout = 50,                            // 超时时间（秒），0 表示不设置
+    Timeout = 50,                            // 超时时间（秒），默认 50
     TokenManage = "ITokenManager",           // Token 管理器接口（与 HttpClient 互斥）
     HttpClient = "IMyHttpClient",            // HttpClient 接口（与 TokenManage 互斥，优先）
     RegistryGroupName = "Example",           // 注册组名称
@@ -234,6 +233,8 @@ services.AddExternalWebApiHttpClient();
 )]
 public interface IExampleApi { }
 ```
+
+> `BaseAddress` 构造函数和属性已废弃，请通过 `AddMudHttpClient(clientName, baseAddress)` 配置基地址。
 
 ### HTTP 方法特性
 
@@ -314,6 +315,46 @@ Task<User> CreateUserAsync(
 // 原始字符串内容
 [Post("/content")]
 Task PostContentAsync([Body(RawString = true)] string content);
+
+// 字符串内容（调用 ToString()）
+[Post("/text")]
+Task SendTextAsync([Body(UseStringContent = true)] object message);
+```
+
+#### Form 参数（URL 编码表单字段）
+
+```csharp
+[Post("/api/login")]
+Task<LoginResult> LoginAsync(
+    [Form("username")] string user,
+    [Form("password")] string pass);
+```
+
+#### MultipartForm 参数（多部分表单字段）
+
+```csharp
+[Post("/api/upload")]
+Task<UploadResult> UploadFileAsync(
+    [MultipartForm] IFormFile file,
+    [MultipartForm] string description);
+```
+
+#### Upload 参数（文件上传）
+
+```csharp
+// 基本文件上传
+[Post("/api/upload")]
+Task<UploadResult> UploadAsync([Upload] IFormFile file);
+
+// 自定义字段名和文件名
+[Post("/api/upload")]
+Task<UploadResult> UploadDocumentAsync(
+    [Upload(FieldName = "document", FileName = "report.pdf")] IFormFile file);
+
+// 指定内容类型
+[Post("/api/upload")]
+Task<UploadResult> UploadImageAsync(
+    [Upload(ContentType = "image/png")] IFormFile image);
 ```
 
 #### FilePath 参数（文件下载）
@@ -342,6 +383,11 @@ Task UploadAsync([FormContent] IFormContent formData, IProgress<long>? progress 
 // 接口级设置 Token 类型
 [Token("TenantAccessToken")]
 public interface IMyApi { }
+
+// 方法级设置 Token 类型
+[Get("/api/user/profile")]
+[Token("UserAccessToken", Scopes = "user:read")]
+Task<Profile> GetProfileAsync();
 
 // 参数级设置 Token 类型
 [Get("/users/{id}")]
@@ -406,7 +452,7 @@ Task<SecureData> GetSecureDataAsync([Body] Request request);
 
 ```csharp
 // 生成抽象类
-[HttpClientApi("https://api.example.com", IsAbstract = true)]
+[HttpClientApi(IsAbstract = true)]
 public interface IBaseApi
 {
     [Get("/entities/{id}")]
@@ -414,7 +460,7 @@ public interface IBaseApi
 }
 
 // 继承自指定基类
-[HttpClientApi("https://api.example.com", InheritedFrom = "BaseApiClass")]
+[HttpClientApi(InheritedFrom = "BaseApiClass")]
 public interface IUserApi : IBaseApi
 {
     [Get("/users")]
@@ -445,7 +491,7 @@ public class UserCreatedEvent
 ```csharp
 // 忽略接口生成（跳过实现类和注册代码）
 [IgnoreGenerator]
-[HttpClientApi("https://api.example.com")]
+[HttpClientApi]
 public interface IInternalApi { }
 
 // 忽略方法实现

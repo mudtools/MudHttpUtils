@@ -7,12 +7,42 @@
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Mud.HttpUtils;
 
+/// <summary>
+/// 增强型HTTP客户端基类,提供JSON/XML序列化、文件下载、请求/响应拦截器、日志记录等功能。
+/// </summary>
+/// <remarks>
+/// <para>此类实现了 <see cref="IEnhancedHttpClient"/> 和 <see cref="IEncryptableHttpClient"/> 接口,提供了丰富的HTTP请求方法。</para>
+/// <para>主要功能包括:</para>
+/// <list type="bullet">
+///   <item>JSON请求/响应的自动序列化和反序列化</item>
+///   <item>XML请求/响应的自动序列化和反序列化</item>
+///   <item>文件下载(小文件和大文件流式下载)</item>
+///   <item>请求和响应拦截器支持</item>
+///   <item>详细的日志记录</item>
+///   <item>内容加密/解密支持</item>
+///   <item>URL验证和错误处理</item>
+/// </list>
+/// </remarks>
+/// <example>
+/// <code>
+/// public class MyHttpClient : EnhancedHttpClient
+/// {
+///     public MyHttpClient(HttpClient httpClient, ILogger logger)
+///         : base(httpClient, logger)
+///     {
+///     }
+///
+///     // 实现加密相关方法...
+/// }
+/// </code>
+/// </example>
+/// <seealso cref="IEnhancedHttpClient"/>
+/// <seealso cref="IEncryptableHttpClient"/>
 public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttpClient
 {
     private readonly ILogger _logger;
@@ -20,7 +50,15 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     private readonly bool _enableLogging;
     private readonly IHttpRequestInterceptor[] _requestInterceptors;
     private readonly IHttpResponseInterceptor[] _responseInterceptors;
+    private readonly ISensitiveDataMasker? _sensitiveDataMasker;
 
+    /// <summary>
+    /// 获取加密提供程序。子类可重写此属性以提供加密功能。
+    /// </summary>
+    /// <remarks>
+    /// 默认返回 <c>null</c>,表示不启用加密功能。子类可以重写此属性返回具体的 <see cref="IEncryptionProvider"/> 实现。
+    /// </remarks>
+    /// <value>加密提供程序实例,如果未启用加密则为 <c>null</c>。</value>
     protected virtual IEncryptionProvider? EncryptionProvider => null;
 
     private static readonly JsonSerializerOptions s_defaultJsonSerializerOptions = new()
@@ -33,6 +71,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
     private const int DefaultBufferSize = 81920;
     private const int MaxDebugLogBodyLength = 32768;
+    private const int MaxErrorContentLength = 10240;
 
     /// <summary>
     /// 初始化增强型HttpClient实例
@@ -46,18 +85,28 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         HttpClient httpClient,
         ILogger? logger = null,
         IEnumerable<IHttpRequestInterceptor>? requestInterceptors = null,
-        IEnumerable<IHttpResponseInterceptor>? responseInterceptors = null)
+        IEnumerable<IHttpResponseInterceptor>? responseInterceptors = null,
+        ISensitiveDataMasker? sensitiveDataMasker = null)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _logger = logger ?? NullLogger.Instance;
         _enableLogging = _logger != NullLogger.Instance;
         _requestInterceptors = requestInterceptors?.OrderBy(i => i.Order).ToArray() ?? Array.Empty<IHttpRequestInterceptor>();
         _responseInterceptors = responseInterceptors?.OrderBy(i => i.Order).ToArray() ?? Array.Empty<IHttpResponseInterceptor>();
+        _sensitiveDataMasker = sensitiveDataMasker;
     }
 
     #region IEnhancedHttpClient 接口实现
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="IBaseHttpClient.SendAsync{TResult}"/>
+    /// <param name="request">HTTP请求消息。</param>
+    /// <param name="jsonSerializerOptions">JSON序列化选项,如果为null则使用默认选项。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <typeparam name="TResult">响应结果的类型。</typeparam>
+    /// <returns>反序列化后的响应结果。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> 为 null。</exception>
+    /// <exception cref="HttpRequestException">HTTP请求失败时抛出。</exception>
+    /// <exception cref="JsonException">JSON反序列化失败时抛出。</exception>
     public async Task<TResult?> SendAsync<TResult>(
         HttpRequestMessage request,
         object? jsonSerializerOptions = null,
@@ -85,7 +134,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="IBaseHttpClient.DownloadAsync"/>
+    /// <param name="request">HTTP请求消息。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>文件内容的字节数组。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> 为 null。</exception>
+    /// <exception cref="HttpRequestException">HTTP请求失败时抛出。</exception>
     public async Task<byte[]?> DownloadAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken = default)
@@ -111,7 +165,16 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="IBaseHttpClient.DownloadLargeAsync"/>
+    /// <param name="request">HTTP请求消息。</param>
+    /// <param name="filePath">保存文件的路径。</param>
+    /// <param name="overwrite">是否覆盖已存在的文件,默认为true。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>下载完成后的文件信息。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> 为 null。</exception>
+    /// <exception cref="ArgumentException"><paramref name="filePath"/> 为空或仅包含空白字符。</exception>
+    /// <exception cref="IOException">当 <paramref name="overwrite"/> 为 false 且文件已存在时抛出。</exception>
+    /// <exception cref="HttpRequestException">HTTP请求失败时抛出。</exception>
     public async Task<FileInfo> DownloadLargeAsync(
         HttpRequestMessage request,
         string filePath,
@@ -144,7 +207,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="IBaseHttpClient.SendRawAsync"/>
+    /// <param name="request">HTTP请求消息。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>HTTP响应消息。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> 为 null。</exception>
+    /// <exception cref="HttpRequestException">HTTP请求失败时抛出。</exception>
     public async Task<HttpResponseMessage> SendRawAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken = default)
@@ -168,7 +236,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="IBaseHttpClient.SendStreamAsync"/>
+    /// <param name="request">HTTP请求消息。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>响应内容流。调用者负责释放此流。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> 为 null。</exception>
+    /// <exception cref="HttpRequestException">HTTP请求失败时抛出。</exception>
     public async Task<Stream> SendStreamAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken = default)
@@ -204,7 +277,15 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
     #region XML 序列化支持
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="IXmlHttpClient.SendXmlAsync{TResult}"/>
+    /// <param name="request">HTTP请求消息。</param>
+    /// <param name="encoding">XML编码方式,默认为UTF-8。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <typeparam name="TResult">响应结果的类型。</typeparam>
+    /// <returns>XML反序列化后的响应结果。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> 为 null。</exception>
+    /// <exception cref="InvalidOperationException">XML反序列化失败时抛出。</exception>
+    /// <exception cref="HttpRequestException">HTTP请求失败时抛出。</exception>
     public async Task<TResult?> SendXmlAsync<TResult>(
         HttpRequestMessage request,
         Encoding? encoding = null,
@@ -232,7 +313,17 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="IXmlHttpClient.PostAsXmlAsync{TRequest,TResult}"/>
+    /// <param name="requestUri">请求URI。</param>
+    /// <param name="requestData">请求数据对象。</param>
+    /// <param name="encoding">XML编码方式,默认为UTF-8。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <typeparam name="TRequest">请求数据的类型。</typeparam>
+    /// <typeparam name="TResult">响应结果的类型。</typeparam>
+    /// <returns>XML反序列化后的响应结果。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="requestUri"/> 或 <paramref name="requestData"/> 为 null。</exception>
+    /// <exception cref="InvalidOperationException">XML序列化或反序列化失败时抛出。</exception>
+    /// <exception cref="HttpRequestException">HTTP请求失败时抛出。</exception>
     public async Task<TResult?> PostAsXmlAsync<TRequest, TResult>(
         string requestUri,
         TRequest requestData,
@@ -263,7 +354,17 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="IXmlHttpClient.PutAsXmlAsync{TRequest,TResult}"/>
+    /// <param name="requestUri">请求URI。</param>
+    /// <param name="requestData">请求数据对象。</param>
+    /// <param name="encoding">XML编码方式,默认为UTF-8。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <typeparam name="TRequest">请求数据的类型。</typeparam>
+    /// <typeparam name="TResult">响应结果的类型。</typeparam>
+    /// <returns>XML反序列化后的响应结果。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="requestUri"/> 或 <paramref name="requestData"/> 为 null。</exception>
+    /// <exception cref="InvalidOperationException">XML序列化或反序列化失败时抛出。</exception>
+    /// <exception cref="HttpRequestException">HTTP请求失败时抛出。</exception>
     public async Task<TResult?> PutAsXmlAsync<TRequest, TResult>(
         string requestUri,
         TRequest requestData,
@@ -294,7 +395,15 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="IXmlHttpClient.GetXmlAsync{TResult}"/>
+    /// <param name="requestUri">请求URI。</param>
+    /// <param name="encoding">XML编码方式,默认为UTF-8。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <typeparam name="TResult">响应结果的类型。</typeparam>
+    /// <returns>XML反序列化后的响应结果。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="requestUri"/> 为 null。</exception>
+    /// <exception cref="InvalidOperationException">XML反序列化失败时抛出。</exception>
+    /// <exception cref="HttpRequestException">HTTP请求失败时抛出。</exception>
     public async Task<TResult?> GetXmlAsync<TResult>(
         string requestUri,
         Encoding? encoding = null,
@@ -322,7 +431,14 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
     #region JSON 辅助方法
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="IJsonHttpClient.GetAsync{TResult}"/>
+    /// <param name="requestUri">请求URI。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <typeparam name="TResult">响应结果的类型。</typeparam>
+    /// <returns>JSON反序列化后的响应结果。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="requestUri"/> 为 null。</exception>
+    /// <exception cref="JsonException">JSON反序列化失败时抛出。</exception>
+    /// <exception cref="HttpRequestException">HTTP请求失败时抛出。</exception>
     public async Task<TResult?> GetAsync<TResult>(
         string requestUri,
         CancellationToken cancellationToken = default)
@@ -348,7 +464,16 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="IJsonHttpClient.PostAsJsonAsync{TRequest,TResult}"/>
+    /// <param name="requestUri">请求URI。</param>
+    /// <param name="requestData">请求数据对象。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <typeparam name="TRequest">请求数据的类型。</typeparam>
+    /// <typeparam name="TResult">响应结果的类型。</typeparam>
+    /// <returns>JSON反序列化后的响应结果。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="requestUri"/> 或 <paramref name="requestData"/> 为 null。</exception>
+    /// <exception cref="JsonException">JSON序列化或反序列化失败时抛出。</exception>
+    /// <exception cref="HttpRequestException">HTTP请求失败时抛出。</exception>
     public async Task<TResult?> PostAsJsonAsync<TRequest, TResult>(
         string requestUri,
         TRequest requestData,
@@ -381,7 +506,16 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="IJsonHttpClient.PutAsJsonAsync{TRequest,TResult}"/>
+    /// <param name="requestUri">请求URI。</param>
+    /// <param name="requestData">请求数据对象。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <typeparam name="TRequest">请求数据的类型。</typeparam>
+    /// <typeparam name="TResult">响应结果的类型。</typeparam>
+    /// <returns>JSON反序列化后的响应结果。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="requestUri"/> 或 <paramref name="requestData"/> 为 null。</exception>
+    /// <exception cref="JsonException">JSON序列化或反序列化失败时抛出。</exception>
+    /// <exception cref="HttpRequestException">HTTP请求失败时抛出。</exception>
     public async Task<TResult?> PutAsJsonAsync<TRequest, TResult>(
         string requestUri,
         TRequest requestData,
@@ -414,7 +548,14 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="IJsonHttpClient.DeleteAsJsonAsync{TResult}"/>
+    /// <param name="requestUri">请求URI。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <typeparam name="TResult">响应结果的类型。</typeparam>
+    /// <returns>JSON反序列化后的响应结果。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="requestUri"/> 为 null。</exception>
+    /// <exception cref="JsonException">JSON反序列化失败时抛出。</exception>
+    /// <exception cref="HttpRequestException">HTTP请求失败时抛出。</exception>
     public async Task<TResult?> DeleteAsJsonAsync<TResult>(
         string requestUri,
         CancellationToken cancellationToken = default)
@@ -440,7 +581,16 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="IJsonHttpClient.DeleteAsJsonAsync{TRequest,TResult}"/>
+    /// <param name="requestUri">请求URI。</param>
+    /// <param name="requestData">请求数据对象。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <typeparam name="TRequest">请求数据的类型。</typeparam>
+    /// <typeparam name="TResult">响应结果的类型。</typeparam>
+    /// <returns>JSON反序列化后的响应结果。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="requestUri"/> 或 <paramref name="requestData"/> 为 null。</exception>
+    /// <exception cref="JsonException">JSON序列化或反序列化失败时抛出。</exception>
+    /// <exception cref="HttpRequestException">HTTP请求失败时抛出。</exception>
     public async Task<TResult?> DeleteAsJsonAsync<TRequest, TResult>(
         string requestUri,
         TRequest requestData,
@@ -473,7 +623,16 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="IJsonHttpClient.PatchAsJsonAsync{TRequest,TResult}"/>
+    /// <param name="requestUri">请求URI。</param>
+    /// <param name="requestData">请求数据对象。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <typeparam name="TRequest">请求数据的类型。</typeparam>
+    /// <typeparam name="TResult">响应结果的类型。</typeparam>
+    /// <returns>JSON反序列化后的响应结果。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="requestUri"/> 或 <paramref name="requestData"/> 为 null。</exception>
+    /// <exception cref="JsonException">JSON序列化或反序列化失败时抛出。</exception>
+    /// <exception cref="HttpRequestException">HTTP请求失败时抛出。</exception>
     public async Task<TResult?> PatchAsJsonAsync<TRequest, TResult>(
         string requestUri,
         TRequest requestData,
@@ -558,12 +717,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
             if (_enableLogging && _logger.IsEnabled(LogLevel.Debug))
             {
-                var memoryStream = new MemoryStream();
-#if NETSTANDARD2_0
-                await stream.CopyToAsync(memoryStream).ConfigureAwait(false);
-#else
-                await stream.CopyToAsync(memoryStream, cancellationToken).ConfigureAwait(false);
-#endif
+                using var memoryStream = new MemoryStream();
+                await CopyUpToAsync(stream, memoryStream, MaxDebugLogBodyLength + 1, cancellationToken).ConfigureAwait(false);
                 memoryStream.Position = 0;
 
                 string rawResponse;
@@ -741,16 +896,26 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
     #endregion
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="IEncryptableHttpClient.EncryptContent"/>
+    /// <param name="content">要加密的内容对象。</param>
+    /// <param name="propertyName">加密后JSON中的属性名,默认为"data"。</param>
+    /// <param name="serializeType">序列化类型,支持JSON和XML。</param>
+    /// <returns>加密后的字符串。</returns>
     public abstract string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json);
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="IEncryptableHttpClient.DecryptContent"/>
+    /// <param name="encryptedContent">要解密的加密字符串。</param>
+    /// <returns>解密后的原始字符串。</returns>
     public abstract string DecryptContent(string encryptedContent);
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="IEncryptableHttpClient.EncryptBytes"/>
+    /// <param name="data">要加密的字节数组。</param>
+    /// <returns>加密后的字节数组。</returns>
     public abstract byte[] EncryptBytes(byte[] data);
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="IEncryptableHttpClient.DecryptBytes"/>
+    /// <param name="encryptedData">要解密的加密字节数组。</param>
+    /// <returns>解密后的原始字节数组。</returns>
     public abstract byte[] DecryptBytes(byte[] encryptedData);
 
     #region 下载处理方法
@@ -956,11 +1121,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
         try
         {
-#if NETSTANDARD2_0
-            errorContent = await response.Content.ReadAsStringAsync();
-#else
-            errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-#endif
+            errorContent = await ReadErrorContentWithLimitAsync(response, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -969,7 +1130,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
 
         var sanitizedContent = _enableLogging
-            ? MessageSanitizer.Sanitize(errorContent, maxLength: 200)
+            ? SanitizeContent(errorContent, maxLength: 200)
             : "[日志未启用]";
 
         _logger.HttpRequestFailedWithResponse(statusCode, sanitizedContent);
@@ -978,6 +1139,33 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         throw new HttpRequestException($"HTTP请求失败: {statusCode} {response.StatusCode} - {errorContent}", null);
 #else
         throw new HttpRequestException($"HTTP请求失败: {statusCode} {response.StatusCode} - {errorContent}", null, response.StatusCode);
+#endif
+    }
+
+    private async Task<string> ReadErrorContentWithLimitAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var contentLength = response.Content.Headers.ContentLength;
+
+        if (contentLength.HasValue && contentLength.Value > MaxErrorContentLength)
+        {
+#if NETSTANDARD2_0
+            using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+#else
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+#endif
+            var buffer = new byte[MaxErrorContentLength];
+#if NETSTANDARD2_0
+            var bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
+#else
+            var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, MaxErrorContentLength), cancellationToken).ConfigureAwait(false);
+#endif
+            return Encoding.UTF8.GetString(buffer, 0, bytesRead) + "...[已截断]";
+        }
+
+#if NETSTANDARD2_0
+        return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+#else
+        return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 #endif
     }
 
@@ -995,6 +1183,33 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     private static JsonSerializerOptions GetDefaultJsonSerializerOptions()
     {
         return s_defaultJsonSerializerOptions;
+    }
+
+    /// <summary>
+    /// 从源流复制最多 maxBytes 字节到目标流。
+    /// </summary>
+    private static async Task CopyUpToAsync(Stream source, Stream destination, int maxBytes, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[81920];
+        var totalRead = 0;
+
+        while (totalRead < maxBytes)
+        {
+            var toRead = Math.Min(buffer.Length, maxBytes - totalRead);
+#if NETSTANDARD2_0
+            var bytesRead = await source.ReadAsync(buffer, 0, toRead).ConfigureAwait(false);
+#else
+            var bytesRead = await source.ReadAsync(buffer.AsMemory(0, toRead), cancellationToken).ConfigureAwait(false);
+#endif
+            if (bytesRead == 0) break;
+
+#if NETSTANDARD2_0
+            await destination.WriteAsync(buffer, 0, bytesRead).ConfigureAwait(false);
+#else
+            await destination.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken).ConfigureAwait(false);
+#endif
+            totalRead += bytesRead;
+        }
     }
 
     /// <summary>
@@ -1030,6 +1245,17 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     #endregion
 
     #region 日志辅助方法
+
+    private string SanitizeContent(string content, int maxLength = 200)
+    {
+        if (_sensitiveDataMasker != null)
+        {
+            var masked = _sensitiveDataMasker.Mask(content);
+            return masked.Length > maxLength ? masked.Substring(0, maxLength) + "..." : masked;
+        }
+
+        return MessageSanitizer.Sanitize(content, maxLength: maxLength);
+    }
 
     private void LogRequestStart(string operation, string uri)
     {
@@ -1086,10 +1312,13 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
     #region IEnhancedHttpClient 基地址支持
 
-    /// <inheritdoc />
+    /// <inheritdoc cref="IEnhancedHttpClient.BaseAddress"/>
     public virtual Uri? BaseAddress => _httpClient.BaseAddress;
 
-    /// <inheritdoc />
+    /// <inheritdoc cref="IEnhancedHttpClient.WithBaseAddress(string)"/>
+    /// <param name="baseAddress">基地址字符串。</param>
+    /// <returns>新的 <see cref="IEnhancedHttpClient"/> 实例。</returns>
+    /// <exception cref="ArgumentException"><paramref name="baseAddress"/> 为空或仅包含空白字符。</exception>
     public virtual IEnhancedHttpClient WithBaseAddress(string baseAddress)
     {
         if (string.IsNullOrWhiteSpace(baseAddress))
@@ -1098,7 +1327,10 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         return WithBaseAddress(new Uri(baseAddress));
     }
 
-    /// <inheritdoc />
+    /// <inheritdoc cref="IEnhancedHttpClient.WithBaseAddress(Uri)"/>
+    /// <param name="baseAddress">基地址URI。</param>
+    /// <returns>新的 <see cref="IEnhancedHttpClient"/> 实例。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="baseAddress"/> 为 null。</exception>
     public virtual IEnhancedHttpClient WithBaseAddress(Uri baseAddress)
     {
         if (baseAddress == null)
@@ -1115,7 +1347,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             newClient.DefaultRequestHeaders.TryAddWithoutValidation(header.Key, header.Value);
         }
 
-        return new DirectEnhancedHttpClient(newClient, _logger, _requestInterceptors, _responseInterceptors, EncryptionProvider);
+        return new DirectEnhancedHttpClient(newClient, _logger, _requestInterceptors, _responseInterceptors, EncryptionProvider, _sensitiveDataMasker);
     }
 
     #endregion

@@ -109,7 +109,10 @@ public class CircuitBreakerOptions
     public int BreakDurationSeconds { get; set; } = 30;
 
     /// <summary>
-    /// 半开状态下允许的试探请求数量。默认 1。
+    /// 采样窗口时间（秒）。默认 60。
+    /// 在此时间窗口内统计失败率，用于高级熔断策略。
+    /// 注意：当前基于 Polly v7 的实现使用连续失败计数模式，此属性暂未生效。
+    /// 升级至 Polly v8 后将启用基于采样窗口的高级熔断策略。
     /// </summary>
     public int SamplingDurationSeconds { get; set; } = 60;
 }

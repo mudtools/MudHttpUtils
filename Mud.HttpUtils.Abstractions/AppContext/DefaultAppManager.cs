@@ -1,3 +1,10 @@
+// -----------------------------------------------------------------------
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// -----------------------------------------------------------------------
+
 using System.Collections.Concurrent;
 
 namespace Mud.HttpUtils;
@@ -10,6 +17,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     where TAppContext : IMudAppContext
 {
     private readonly ConcurrentDictionary<string, TAppContext> _apps = new();
+    private readonly ConcurrentDictionary<Type, Func<TAppContext, IAppContextSwitcher>> _switcherFactories = new();
     private string? _defaultAppKey;
     private readonly object _defaultAppLock = new();
 
@@ -69,7 +77,8 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     /// <inheritdoc />
     public async Task RegisterAppAsync(string appKey, TAppContext appContext, bool isDefault = false, CancellationToken cancellationToken = default)
     {
-        await Task.Run(() => RegisterApp(appKey, appContext, isDefault), cancellationToken).ConfigureAwait(false);
+        RegisterApp(appKey, appContext, isDefault);
+        await Task.CompletedTask.ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -80,7 +89,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
         if (appContext == null)
             throw new ArgumentNullException(nameof(appContext));
 
-        if (!_apps.ContainsKey(appKey))
+        if (!_apps.TryGetValue(appKey, out _))
             throw new InvalidOperationException($"未找到应用标识为 '{appKey}' 的应用上下文，无法更新。请先调用 RegisterApp 注册应用。");
 
         _apps[appKey] = appContext;
@@ -120,7 +129,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
             if (string.IsNullOrEmpty(_defaultAppKey))
                 throw new InvalidOperationException("未设置默认应用。请在注册应用时设置 isDefault = true。");
 
-            return GetApp(_defaultAppKey);
+            return GetApp(_defaultAppKey!);
         }
     }
 
@@ -172,18 +181,36 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
         ConfigurationChanged?.Invoke(this, e);
     }
 
-    private static TContextSwitcher CreateContextSwitcher<TContextSwitcher>(TAppContext context)
+    private TContextSwitcher CreateContextSwitcher<TContextSwitcher>(TAppContext context)
         where TContextSwitcher : IAppContextSwitcher
     {
+        var switcherType = typeof(TContextSwitcher);
+
+        if (_switcherFactories.TryGetValue(switcherType, out var factory))
+        {
+            return (TContextSwitcher)factory(context);
+        }
+
         try
         {
-            return (TContextSwitcher)Activator.CreateInstance(typeof(TContextSwitcher), context)!;
+            return (TContextSwitcher)Activator.CreateInstance(switcherType, context)!;
         }
         catch (Exception ex)
         {
             throw new InvalidOperationException(
-                $"无法创建类型 {typeof(TContextSwitcher).Name} 的实例。" +
-                $"请确保该类型有接受 {typeof(TAppContext).Name} 参数的公共构造函数。", ex);
+                $"无法创建类型 {switcherType.Name} 的实例。" +
+                $"请确保该类型有接受 {typeof(TAppContext).Name} 参数的公共构造函数，" +
+                $"或通过 RegisterSwitcherFactory 注册工厂委托。", ex);
         }
+    }
+
+    /// <inheritdoc/>
+    public void RegisterSwitcherFactory<TContextSwitcher>(Func<TAppContext, TContextSwitcher> factory)
+        where TContextSwitcher : IAppContextSwitcher
+    {
+        if (factory == null)
+            throw new ArgumentNullException(nameof(factory));
+
+        _switcherFactories[typeof(TContextSwitcher)] = ctx => factory(ctx);
     }
 }

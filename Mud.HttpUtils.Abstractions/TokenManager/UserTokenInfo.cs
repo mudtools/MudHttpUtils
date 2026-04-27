@@ -1,3 +1,10 @@
+// -----------------------------------------------------------------------
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// -----------------------------------------------------------------------
+
 namespace Mud.HttpUtils;
 
 /// <summary>
@@ -114,13 +121,13 @@ public class UserTokenInfo
             OpenId = openId,
             UnionId = unionId,
             AccessToken = token?.AccessToken,
-            AccessTokenExpireTime = token.Expire,
-            RefreshToken = token.RefreshToken,
-            RefreshTokenExpireTime = token.RefreshTokenExpire,
-            Scope = token.Scope,
+            AccessTokenExpireTime = token?.Expire ?? 0,
+            RefreshToken = token?.RefreshToken,
+            RefreshTokenExpireTime = token?.RefreshTokenExpire ?? 0,
+            Scope = token?.Scope,
             CreatedAt = DateTime.UtcNow,
-            Code = token.Code,
-            Msg = token.Msg,
+            Code = token?.Code ?? 0,
+            Msg = token?.Msg,
         };
     }
 
@@ -140,13 +147,13 @@ public class UserTokenInfo
             OpenId = openId,
             UnionId = unionId,
             AccessToken = token?.AccessToken,
-            AccessTokenExpireTime = token.AccessTokenExpireTime,
-            RefreshToken = token.RefreshToken,
-            RefreshTokenExpireTime = token.RefreshTokenExpireTime,
-            Scope = token.Scope,
+            AccessTokenExpireTime = token?.AccessTokenExpireTime ?? 0,
+            RefreshToken = token?.RefreshToken,
+            RefreshTokenExpireTime = token?.RefreshTokenExpireTime ?? 0,
+            Scope = token?.Scope,
             CreatedAt = DateTime.UtcNow,
-            Code = token.Code,
-            Msg = token.Msg,
+            Code = token?.Code ?? 0,
+            Msg = token?.Msg,
         };
     }
 
@@ -157,15 +164,15 @@ public class UserTokenInfo
     public void UpdateFromCredentialToken(CredentialToken token)
     {
         AccessToken = token?.AccessToken;
-        AccessTokenExpireTime = token.Expire;
-        if (!string.IsNullOrEmpty(token.RefreshToken))
+        AccessTokenExpireTime = token?.Expire ?? 0;
+        if (!string.IsNullOrEmpty(token?.RefreshToken))
         {
-            RefreshToken = token.RefreshToken;
-            RefreshTokenExpireTime = token.RefreshTokenExpire;
+            RefreshToken = token?.RefreshToken;
+            RefreshTokenExpireTime = token?.RefreshTokenExpire ?? 0;
         }
-        if (!string.IsNullOrEmpty(token.Scope))
+        if (!string.IsNullOrEmpty(token?.Scope))
         {
-            Scope = token.Scope;
+            Scope = token?.Scope;
         }
         LastRefreshedAt = DateTime.UtcNow;
     }
@@ -177,15 +184,15 @@ public class UserTokenInfo
     public void UpdateFromCredentialToken(UserTokenInfo token)
     {
         AccessToken = token?.AccessToken;
-        AccessTokenExpireTime = token.AccessTokenExpireTime;
-        if (!string.IsNullOrEmpty(token.RefreshToken))
+        AccessTokenExpireTime = token?.AccessTokenExpireTime ?? 0;
+        if (!string.IsNullOrEmpty(token?.RefreshToken))
         {
-            RefreshToken = token.RefreshToken;
-            RefreshTokenExpireTime = token.RefreshTokenExpireTime;
+            RefreshToken = token?.RefreshToken;
+            RefreshTokenExpireTime = token?.RefreshTokenExpireTime ?? 0;
         }
-        if (!string.IsNullOrEmpty(token.Scope))
+        if (!string.IsNullOrEmpty(token?.Scope))
         {
-            Scope = token.Scope;
+            Scope = token?.Scope;
         }
         LastRefreshedAt = DateTime.UtcNow;
     }

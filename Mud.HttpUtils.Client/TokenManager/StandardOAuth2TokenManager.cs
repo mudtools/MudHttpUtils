@@ -16,8 +16,9 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     private readonly OAuth2Options _options;
     private readonly ILogger _logger;
     private readonly ISecretProvider? _secretProvider;
-    private volatile CredentialToken? _cachedToken;
-    private volatile string? _resolvedClientSecret;
+    private readonly object _credentialTokenLock = new();
+    private CredentialToken? _cachedCredentialToken;
+    private string? _resolvedClientSecret;
     private volatile bool _clientSecretResolved;
 
     private static readonly JsonSerializerOptions s_jsonOptions = new()
@@ -242,13 +243,14 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// <inheritdoc/>
     protected override async Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
     {
-        var current = _cachedToken;
+        var currentToken = GetCurrentCachedToken();
+
         CredentialToken newToken;
 
-        if (current?.RefreshToken != null)
+        if (currentToken?.RefreshToken != null)
         {
             newToken = await RefreshTokenByRefreshTokenAsync(
-                current.RefreshToken, cancellationToken).ConfigureAwait(false);
+                currentToken.RefreshToken, cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -256,20 +258,21 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
                 .ConfigureAwait(false);
         }
 
-        UpdateCachedToken(newToken);
-        _cachedToken = newToken;
+        UpdateCredentialToken(newToken);
+
         return newToken;
     }
 
     protected override async Task<CredentialToken> RefreshTokenWithScopesAsync(string[]? scopes, CancellationToken cancellationToken)
     {
-        var current = _cachedToken;
+        var currentToken = GetCurrentCachedToken();
+
         CredentialToken newToken;
 
-        if (current?.RefreshToken != null)
+        if (currentToken?.RefreshToken != null)
         {
             newToken = await RefreshTokenByRefreshTokenAsync(
-                current.RefreshToken, cancellationToken).ConfigureAwait(false);
+                currentToken.RefreshToken, cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -277,8 +280,8 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
                 .ConfigureAwait(false);
         }
 
-        UpdateCachedToken(newToken);
-        _cachedToken = newToken;
+        UpdateCredentialToken(newToken);
+
         return newToken;
     }
 
@@ -295,10 +298,11 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// <returns>凭证令牌。</returns>
     public async Task<CredentialToken> GetOrRefreshCredentialTokenAsync(CancellationToken cancellationToken = default)
     {
-        var cached = _cachedToken;
-        if (cached != null && cached.Expire > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
+        var currentToken = GetCurrentCachedToken();
+
+        if (currentToken != null && currentToken.Expire > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
         {
-            return cached;
+            return currentToken;
         }
 
         var refreshed = await RefreshTokenCoreAsync(cancellationToken).ConfigureAwait(false);
@@ -327,6 +331,11 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         if (tokenResponse == null)
             throw new InvalidOperationException("令牌响应反序列化失败");
 
+        if (!string.IsNullOrEmpty(tokenResponse.Error))
+            throw new InvalidOperationException(
+                $"OAuth2 令牌请求失败: {tokenResponse.Error}" +
+                (string.IsNullOrEmpty(tokenResponse.ErrorDescription) ? "" : $" - {tokenResponse.ErrorDescription}"));
+
         var newToken = new CredentialToken
         {
             AccessToken = tokenResponse.AccessToken ?? string.Empty,
@@ -334,7 +343,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
             Expire = CalculateExpire(tokenResponse.ExpiresIn)
         };
 
-        _cachedToken = newToken;
+        UpdateCredentialToken(newToken);
 
         return newToken;
     }
@@ -362,6 +371,11 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         if (tokenResponse == null)
             throw new InvalidOperationException("令牌响应反序列化失败");
 
+        if (!string.IsNullOrEmpty(tokenResponse.Error))
+            throw new InvalidOperationException(
+                $"OAuth2 令牌请求失败: {tokenResponse.Error}" +
+                (string.IsNullOrEmpty(tokenResponse.ErrorDescription) ? "" : $" - {tokenResponse.ErrorDescription}"));
+
         var newToken2 = new CredentialToken
         {
             AccessToken = tokenResponse.AccessToken ?? string.Empty,
@@ -369,7 +383,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
             Expire = CalculateExpire(tokenResponse.ExpiresIn)
         };
 
-        _cachedToken = newToken2;
+        UpdateCredentialToken(newToken2);
 
         return newToken2;
     }
@@ -386,6 +400,24 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         var credentials = Convert.ToBase64String(
             Encoding.UTF8.GetBytes($"{_options.ClientId}:{clientSecret}"));
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
+    }
+
+    private CredentialToken? GetCurrentCachedToken()
+    {
+        lock (_credentialTokenLock)
+        {
+            return _cachedCredentialToken;
+        }
+    }
+
+    private void UpdateCredentialToken(CredentialToken token)
+    {
+        UpdateCachedToken(token);
+
+        lock (_credentialTokenLock)
+        {
+            _cachedCredentialToken = token;
+        }
     }
 
     private void ValidateTokenEndpoint()
@@ -422,5 +454,11 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 
         [JsonPropertyName("scope")]
         public string? Scope { get; set; }
+
+        [JsonPropertyName("error")]
+        public string? Error { get; set; }
+
+        [JsonPropertyName("error_description")]
+        public string? ErrorDescription { get; set; }
     }
 }

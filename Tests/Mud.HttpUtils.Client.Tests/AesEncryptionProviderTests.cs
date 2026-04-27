@@ -91,14 +91,14 @@ public class AesEncryptionProviderTests
     }
 
     [Fact]
-    public void Encrypt_SameTextTwice_ShouldReturnSameResult()
+    public void Encrypt_SameTextTwice_ShouldReturnDifferentCiphertext()
     {
         var provider = CreateProvider();
 
         var result1 = provider.Encrypt("test");
         var result2 = provider.Encrypt("test");
 
-        result1.Should().Be(result2);
+        result1.Should().NotBe(result2);
     }
 
     [Fact]
@@ -200,17 +200,19 @@ public class AesEncryptionProviderTests
     }
 
     [Fact]
-    public void Validate_WithNullIV_ShouldThrowInvalidOperationException()
+    public void Validate_WithNullIV_ShouldNotThrow()
     {
         var options = new AesEncryptionOptions
         {
             Key = new byte[16],
+#pragma warning disable CS0618
             IV = null!
+#pragma warning restore CS0618
         };
 
         var act = () => options.Validate();
 
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().NotThrow();
     }
 
     [Fact]
