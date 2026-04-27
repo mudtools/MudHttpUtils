@@ -87,7 +87,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
             return cachedInfo!.AccessToken;
         }
 
-        var userLock = _userLocks.GetOrAdd(userId, _ => new SemaphoreSlim(1, 1));
+        var userLock = _userLocks.GetOrAdd(userId!, _ => new SemaphoreSlim(1, 1));
         await userLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -95,10 +95,10 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
             if (IsUserTokenValid(cachedInfo))
                 return cachedInfo!.AccessToken;
 
-            var refreshedInfo = await RefreshUserTokenAsync(userId, cancellationToken).ConfigureAwait(false);
+            var refreshedInfo = await RefreshUserTokenAsync(userId!, cancellationToken).ConfigureAwait(false);
             if (refreshedInfo != null)
             {
-                UpdateUserTokenCache(userId, refreshedInfo);
+                UpdateUserTokenCache(userId!, refreshedInfo);
                 return refreshedInfo.AccessToken;
             }
 
@@ -273,7 +273,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// 释放资源。
     /// </summary>
     /// <param name="disposing">是否释放托管资源。</param>
-    protected virtual void Dispose(bool disposing)
+    protected override void Dispose(bool disposing)
     {
         if (_disposed)
             return;
@@ -297,7 +297,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// <summary>
     /// 释放资源。
     /// </summary>
-    public void Dispose()
+    public override void Dispose()
     {
         Dispose(true);
         GC.SuppressFinalize(this);
