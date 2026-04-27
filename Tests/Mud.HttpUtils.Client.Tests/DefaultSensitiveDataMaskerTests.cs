@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Mud.HttpUtils.Attributes;
+using System.Text.Json;
 
 namespace Mud.HttpUtils.Client.Tests;
 
@@ -96,11 +97,121 @@ public class DefaultSensitiveDataMaskerTests
         result.Should().Contain("visible");
     }
 
+    [Fact]
+    public void MaskObject_CircularReference_ReturnsCycleMarker()
+    {
+        var obj = new CircularObject { Name = "parent" };
+        obj.Child = obj;
+
+        var result = _masker.MaskObject(obj);
+
+        result.Should().Contain("[循环引用]");
+    }
+
+    [Fact]
+    public void MaskObject_DeepNesting_ReturnsDepthLimitMarker()
+    {
+        var root = new NestedObject { Name = "level0" };
+        var current = root;
+        for (int i = 1; i <= 10; i++)
+        {
+            current.Child = new NestedObject { Name = $"level{i}" };
+            current = current.Child;
+        }
+
+        var result = _masker.MaskObject(root);
+
+        result.Should().Contain("[深度超限]");
+    }
+
+    [Fact]
+    public void MaskObject_MultipleCircularReferences_HandledCorrectly()
+    {
+        var a = new CircularObject { Name = "A" };
+        var b = new CircularObject { Name = "B" };
+        a.Child = b;
+        b.Child = a;
+
+        var result = _masker.MaskObject(a);
+
+        result.Should().Contain("A");
+        result.Should().Contain("B");
+        result.Should().Contain("[循环引用]");
+    }
+
+    [Fact]
+    public void MaskObject_GuidType_ReturnsToString()
+    {
+        var guid = Guid.Parse("550e8400-e29b-41d4-a716-446655440000");
+        var result = _masker.MaskObject(guid);
+
+        result.Should().Contain("550e8400");
+    }
+
+    [Fact]
+    public void MaskObject_DateTimeOffsetType_ReturnsToString()
+    {
+        var dto = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var result = _masker.MaskObject(dto);
+
+        result.Should().Contain("2024");
+    }
+
+    [Fact]
+    public void MaskObject_EnumType_ReturnsToString()
+    {
+        var result = _masker.MaskObject(SensitiveDataMaskMode.Mask);
+
+        result.Should().Be("Mask");
+    }
+
+    [Fact]
+    public void MaskObject_ConcurrentCalls_NoException()
+    {
+        var obj = new TestSensitiveObject
+        {
+            Name = "Concurrent",
+            Secret = "SecretValue",
+            Public = "PublicValue"
+        };
+
+        var tasks = Enumerable.Range(0, 20)
+            .Select(_ => Task.Run(() => _masker.MaskObject(obj)));
+
+        var results = Task.WhenAll(tasks).GetAwaiter().GetResult();
+
+        foreach (var result in results)
+        {
+            result.Should().NotBeNull();
+            result.Should().Contain("Concurrent");
+            result.Should().NotContain("SecretValue");
+        }
+    }
+
+    [Fact]
+    public void MaskObject_SimpleTypes_ReturnsDirectly()
+    {
+        _masker.MaskObject(TimeSpan.FromMinutes(5)).Should().Contain("5");
+        _masker.MaskObject(123.45m).Should().Contain("123");
+    }
+
     private class TestSensitiveObject
     {
         public string Name { get; set; } = "";
         [SensitiveData(MaskMode = SensitiveDataMaskMode.Hide)]
         public string Secret { get; set; } = "";
         public string Public { get; set; } = "";
+    }
+
+    private class CircularObject
+    {
+        public string Name { get; set; } = "";
+        public CircularObject? Child { get; set; }
+    }
+
+    private class NestedObject
+    {
+        public string Name { get; set; } = "";
+        public NestedObject? Child { get; set; }
     }
 }

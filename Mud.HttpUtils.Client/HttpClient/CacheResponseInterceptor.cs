@@ -83,7 +83,7 @@ public class CacheResponseInterceptor : ICacheResponseInterceptor
     /// <param name="cacheKey">缓存键。</param>
     /// <param name="value">要缓存的值。如果为 null,则不执行缓存操作。</param>
     /// <param name="durationSeconds">缓存持续时间(秒)。</param>
-    /// <param name="useSlidingExpiration">是否使用滑动过期时间。当前实现未使用此参数。</param>
+    /// <param name="useSlidingExpiration">是否使用滑动过期时间。为 true 时，每次访问将重置过期时间。</param>
     /// <remarks>
     /// 此方法会记录缓存设置的日志。
     /// </remarks>
@@ -92,8 +92,8 @@ public class CacheResponseInterceptor : ICacheResponseInterceptor
         if (value == null)
             return;
 
-        _cache.Set(cacheKey, value, TimeSpan.FromSeconds(durationSeconds));
-        _logger.LogDebug("已缓存: {CacheKey}, 持续 {Duration} 秒", cacheKey, durationSeconds);
+        _cache.Set(cacheKey, value, TimeSpan.FromSeconds(durationSeconds), useSlidingExpiration);
+        _logger.LogDebug("已缓存: {CacheKey}, 持续 {Duration} 秒, 滑动过期: {UseSliding}", cacheKey, durationSeconds, useSlidingExpiration);
     }
 
     /// <summary>

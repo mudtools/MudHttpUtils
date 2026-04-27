@@ -16,8 +16,8 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     private readonly OAuth2Options _options;
     private readonly ILogger _logger;
     private readonly ISecretProvider? _secretProvider;
-    private readonly object _tokenLock = new();
-    private CredentialToken? _cachedToken;
+    private readonly object _credentialTokenLock = new();
+    private CredentialToken? _cachedCredentialToken;
     private string? _resolvedClientSecret;
     private volatile bool _clientSecretResolved;
 
@@ -243,18 +243,14 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// <inheritdoc/>
     protected override async Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
     {
-        CredentialToken? current;
-        lock (_tokenLock)
-        {
-            current = _cachedToken;
-        }
+        var currentToken = GetCurrentCachedToken();
 
         CredentialToken newToken;
 
-        if (current?.RefreshToken != null)
+        if (currentToken?.RefreshToken != null)
         {
             newToken = await RefreshTokenByRefreshTokenAsync(
-                current.RefreshToken, cancellationToken).ConfigureAwait(false);
+                currentToken.RefreshToken, cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -262,30 +258,21 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
                 .ConfigureAwait(false);
         }
 
-        UpdateCachedToken(newToken);
-
-        lock (_tokenLock)
-        {
-            _cachedToken = newToken;
-        }
+        UpdateCredentialToken(newToken);
 
         return newToken;
     }
 
     protected override async Task<CredentialToken> RefreshTokenWithScopesAsync(string[]? scopes, CancellationToken cancellationToken)
     {
-        CredentialToken? current;
-        lock (_tokenLock)
-        {
-            current = _cachedToken;
-        }
+        var currentToken = GetCurrentCachedToken();
 
         CredentialToken newToken;
 
-        if (current?.RefreshToken != null)
+        if (currentToken?.RefreshToken != null)
         {
             newToken = await RefreshTokenByRefreshTokenAsync(
-                current.RefreshToken, cancellationToken).ConfigureAwait(false);
+                currentToken.RefreshToken, cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -293,12 +280,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
                 .ConfigureAwait(false);
         }
 
-        UpdateCachedToken(newToken);
-
-        lock (_tokenLock)
-        {
-            _cachedToken = newToken;
-        }
+        UpdateCredentialToken(newToken);
 
         return newToken;
     }
@@ -316,15 +298,11 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// <returns>凭证令牌。</returns>
     public async Task<CredentialToken> GetOrRefreshCredentialTokenAsync(CancellationToken cancellationToken = default)
     {
-        CredentialToken? cached;
-        lock (_tokenLock)
-        {
-            cached = _cachedToken;
-        }
+        var currentToken = GetCurrentCachedToken();
 
-        if (cached != null && cached.Expire > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
+        if (currentToken != null && currentToken.Expire > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
         {
-            return cached;
+            return currentToken;
         }
 
         var refreshed = await RefreshTokenCoreAsync(cancellationToken).ConfigureAwait(false);
@@ -365,10 +343,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
             Expire = CalculateExpire(tokenResponse.ExpiresIn)
         };
 
-        lock (_tokenLock)
-        {
-            _cachedToken = newToken;
-        }
+        UpdateCredentialToken(newToken);
 
         return newToken;
     }
@@ -408,10 +383,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
             Expire = CalculateExpire(tokenResponse.ExpiresIn)
         };
 
-        lock (_tokenLock)
-        {
-            _cachedToken = newToken2;
-        }
+        UpdateCredentialToken(newToken2);
 
         return newToken2;
     }
@@ -428,6 +400,24 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         var credentials = Convert.ToBase64String(
             Encoding.UTF8.GetBytes($"{_options.ClientId}:{clientSecret}"));
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
+    }
+
+    private CredentialToken? GetCurrentCachedToken()
+    {
+        lock (_credentialTokenLock)
+        {
+            return _cachedCredentialToken;
+        }
+    }
+
+    private void UpdateCredentialToken(CredentialToken token)
+    {
+        UpdateCachedToken(token);
+
+        lock (_credentialTokenLock)
+        {
+            _cachedCredentialToken = token;
+        }
     }
 
     private void ValidateTokenEndpoint()

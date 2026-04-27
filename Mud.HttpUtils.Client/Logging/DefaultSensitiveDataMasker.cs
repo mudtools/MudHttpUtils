@@ -9,6 +9,7 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Text.Encodings.Web;
 
 namespace Mud.HttpUtils;
 
@@ -60,6 +61,11 @@ public class DefaultSensitiveDataMasker : ISensitiveDataMasker
     /// 最大掩码深度，防止递归处理嵌套对象时发生栈溢出。
     /// </summary>
     private const int MaxMaskDepth = 5;
+
+    private static readonly JsonSerializerOptions s_jsonOptions = new()
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
 
     /// <summary>
     /// 属性掩码信息缓存，使用类型作为键，避免重复反射开销。
@@ -216,17 +222,17 @@ public class DefaultSensitiveDataMasker : ISensitiveDataMasker
             return "null";
 
         if (depth > MaxMaskDepth)
-            return "\"[深度超限]\"";
+            return "[深度超限]";
 
         var type = obj.GetType();
 
-        if (type.IsPrimitive || type == typeof(string) || type == typeof(DateTime) || type == typeof(decimal))
+        if (IsSimpleType(type))
         {
             return obj.ToString() ?? "null";
         }
 
         if (!visited.Add(obj))
-            return "\"[循环引用]\"";
+            return "[循环引用]";
 
         try
         {
@@ -251,7 +257,8 @@ public class DefaultSensitiveDataMasker : ISensitiveDataMasker
                 }
                 else if (value != null && info.IsComplexType)
                 {
-                    maskedObject[info.Property.Name] = MaskObjectInternal(value, depth + 1, visited);
+                    var maskedValue = MaskObjectInternal(value, depth + 1, visited);
+                    maskedObject[info.Property.Name] = maskedValue;
                 }
                 else
                 {
@@ -259,12 +266,31 @@ public class DefaultSensitiveDataMasker : ISensitiveDataMasker
                 }
             }
 
-            return JsonSerializer.Serialize(maskedObject);
+            return JsonSerializer.Serialize(maskedObject, s_jsonOptions);
         }
         finally
         {
             visited.Remove(obj);
         }
+    }
+
+    private static bool IsSimpleType(Type type)
+    {
+        if (type.IsPrimitive)
+            return true;
+
+        if (type.IsEnum)
+            return true;
+
+        return type == typeof(string)
+            || type == typeof(decimal)
+            || type == typeof(DateTime)
+            || type == typeof(DateTimeOffset)
+            || type == typeof(TimeSpan)
+            || type == typeof(Guid)
+            || type == typeof(Uri)
+            || type == typeof(byte[])
+            || type == typeof(Type);
     }
 
     /// <summary>
@@ -285,59 +311,12 @@ public class DefaultSensitiveDataMasker : ISensitiveDataMasker
         return defaultValue;
     }
 
-#if NET6_0_OR_GREATER
-    /// <summary>
-    /// 引用相等性比较器，用于检测对象循环引用。
-    /// 基于 <see cref="ReferenceEqualityComparer"/> 实现。
-    /// </summary>
     private sealed class ReferenceEqualityComparer : IEqualityComparer<object>
     {
-        /// <summary>
-        /// 单例实例。
-        /// </summary>
-        public static readonly ReferenceEqualityComparer Instance = new();
-        
-        /// <summary>
-        /// 比较两个对象是否引用相等。
-        /// </summary>
-        /// <param name="x">第一个对象。</param>
-        /// <param name="y">第二个对象。</param>
-        /// <returns>如果两个对象引用相同则返回 true，否则返回 false。</returns>
-        public new bool Equals(object? x, object? y) => ReferenceEquals(x, y);
-        
-        /// <summary>
-        /// 获取对象的哈希码，基于运行时引用。
-        /// </summary>
-        /// <param name="obj">要获取哈希码的对象。</param>
-        /// <returns>对象的运行时哈希码。</returns>
-        public int GetHashCode(object obj) => RuntimeHelpers.GetHashCode(obj);
-    }
-#else
-    /// <summary>
-    /// 引用相等性比较器，用于检测对象循环引用。
-    /// 兼容 .NET Standard 2.0 的实现。
-    /// </summary>
-    private sealed class ReferenceEqualityComparer : IEqualityComparer<object>
-    {
-        /// <summary>
-        /// 单例实例。
-        /// </summary>
         public static readonly ReferenceEqualityComparer Instance = new();
 
-        /// <summary>
-        /// 比较两个对象是否引用相等。
-        /// </summary>
-        /// <param name="x">第一个对象。</param>
-        /// <param name="y">第二个对象。</param>
-        /// <returns>如果两个对象引用相同则返回 true，否则返回 false。</returns>
         public new bool Equals(object? x, object? y) => ReferenceEquals(x, y);
 
-        /// <summary>
-        /// 获取对象的哈希码，基于运行时引用。
-        /// </summary>
-        /// <param name="obj">要获取哈希码的对象。</param>
-        /// <returns>对象的运行时哈希码。</returns>
         public int GetHashCode(object obj) => RuntimeHelpers.GetHashCode(obj);
     }
-#endif
 }

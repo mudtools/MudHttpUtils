@@ -31,6 +31,16 @@ public interface IHttpResponseCache
     void Set<T>(string key, T? value, TimeSpan absoluteExpirationRelativeToNow);
 
     /// <summary>
+    /// 设置缓存，支持滑动过期策略。
+    /// </summary>
+    /// <typeparam name="T">响应类型。</typeparam>
+    /// <param name="key">缓存键。</param>
+    /// <param name="value">缓存值。</param>
+    /// <param name="expirationRelativeToNow">相对于当前时间的过期时间。</param>
+    /// <param name="useSlidingExpiration">是否使用滑动过期策略。为 true 时，每次访问将重置过期时间。</param>
+    void Set<T>(string key, T? value, TimeSpan expirationRelativeToNow, bool useSlidingExpiration);
+
+    /// <summary>
     /// 移除指定键的缓存。
     /// </summary>
     /// <param name="key">缓存键。</param>

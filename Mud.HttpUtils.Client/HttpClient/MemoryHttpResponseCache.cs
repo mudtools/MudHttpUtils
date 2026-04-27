@@ -40,6 +40,12 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
             if (entry.ExpireTime > DateTimeOffset.UtcNow)
             {
                 entry.LastAccessTime = Interlocked.Increment(ref _accessCounter);
+
+                if (entry.UseSlidingExpiration && entry.SlidingWindow > TimeSpan.Zero)
+                {
+                    entry.ExpireTime = DateTimeOffset.UtcNow.Add(entry.SlidingWindow);
+                }
+
                 value = (T?)entry.Value;
                 return true;
             }
@@ -54,6 +60,12 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
     /// <inheritdoc />
     public void Set<T>(string key, T? value, TimeSpan absoluteExpirationRelativeToNow)
     {
+        Set(key, value, absoluteExpirationRelativeToNow, useSlidingExpiration: false);
+    }
+
+    /// <inheritdoc />
+    public void Set<T>(string key, T? value, TimeSpan expirationRelativeToNow, bool useSlidingExpiration)
+    {
         if (key == null)
             throw new ArgumentNullException(nameof(key));
 
@@ -64,8 +76,10 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
 
         _cache[key] = new CacheEntry(
             value!,
-            DateTimeOffset.UtcNow.Add(absoluteExpirationRelativeToNow),
-            Interlocked.Increment(ref _accessCounter));
+            DateTimeOffset.UtcNow.Add(expirationRelativeToNow),
+            Interlocked.Increment(ref _accessCounter),
+            useSlidingExpiration,
+            useSlidingExpiration ? expirationRelativeToNow : default);
     }
 
     /// <inheritdoc />
@@ -107,11 +121,6 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
         finally
         {
             fetchLock.Release();
-
-            if (_fetchLocks.TryRemove(key, out var removedLock) && removedLock == fetchLock)
-            {
-                removedLock.Dispose();
-            }
         }
     }
 
@@ -139,6 +148,12 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
 
         _disposed = true;
         _cleanupTimer?.Dispose();
+
+        foreach (var kvp in _fetchLocks)
+        {
+            kvp.Value.Dispose();
+        }
+        _fetchLocks.Clear();
         _cache.Clear();
     }
 
@@ -150,6 +165,14 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
             if (kvp.Value.ExpireTime <= now)
             {
                 _cache.TryRemove(kvp.Key, out _);
+            }
+        }
+
+        foreach (var kvp in _fetchLocks)
+        {
+            if (!_cache.ContainsKey(kvp.Key) && _fetchLocks.TryRemove(kvp.Key, out var removedLock))
+            {
+                removedLock.Dispose();
             }
         }
     }
@@ -188,14 +211,19 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
     private sealed class CacheEntry
     {
         public object Value { get; }
-        public DateTimeOffset ExpireTime { get; }
+        public DateTimeOffset ExpireTime { get; set; }
         public long LastAccessTime { get; set; }
+        public bool UseSlidingExpiration { get; }
+        public TimeSpan SlidingWindow { get; }
 
-        public CacheEntry(object value, DateTimeOffset expireTime, long lastAccessTime)
+        public CacheEntry(object value, DateTimeOffset expireTime, long lastAccessTime,
+            bool useSlidingExpiration = false, TimeSpan slidingWindow = default)
         {
             Value = value;
             ExpireTime = expireTime;
             LastAccessTime = lastAccessTime;
+            UseSlidingExpiration = useSlidingExpiration;
+            SlidingWindow = slidingWindow;
         }
     }
 }

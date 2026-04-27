@@ -34,8 +34,9 @@ internal sealed class DirectEnhancedHttpClient : EnhancedHttpClient
         ILogger? logger = null,
         IEnumerable<IHttpRequestInterceptor>? requestInterceptors = null,
         IEnumerable<IHttpResponseInterceptor>? responseInterceptors = null,
-        IEncryptionProvider? encryptionProvider = null)
-        : base(httpClient, logger, requestInterceptors, responseInterceptors)
+        IEncryptionProvider? encryptionProvider = null,
+        ISensitiveDataMasker? sensitiveDataMasker = null)
+        : base(httpClient, logger, requestInterceptors, responseInterceptors, sensitiveDataMasker)
     {
         _encryptionProvider = encryptionProvider;
     }

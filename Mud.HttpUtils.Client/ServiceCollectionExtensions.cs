@@ -368,6 +368,7 @@ public static class HttpClientServiceCollectionExtensions
         var encryptionProvider = sp.GetService<IEncryptionProvider>();
         var requestInterceptors = sp.GetServices<IHttpRequestInterceptor>();
         var responseInterceptors = sp.GetServices<IHttpResponseInterceptor>();
-        return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, logger, requestInterceptors, responseInterceptors);
+        var sensitiveDataMasker = sp.GetService<ISensitiveDataMasker>();
+        return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, logger, requestInterceptors, responseInterceptors, sensitiveDataMasker: sensitiveDataMasker);
     }
 }

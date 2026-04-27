@@ -77,7 +77,8 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     /// <inheritdoc />
     public async Task RegisterAppAsync(string appKey, TAppContext appContext, bool isDefault = false, CancellationToken cancellationToken = default)
     {
-        await Task.Run(() => RegisterApp(appKey, appContext, isDefault), cancellationToken).ConfigureAwait(false);
+        RegisterApp(appKey, appContext, isDefault);
+        await Task.CompletedTask.ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -88,7 +89,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
         if (appContext == null)
             throw new ArgumentNullException(nameof(appContext));
 
-        if (!_apps.ContainsKey(appKey))
+        if (!_apps.TryGetValue(appKey, out _))
             throw new InvalidOperationException($"未找到应用标识为 '{appKey}' 的应用上下文，无法更新。请先调用 RegisterApp 注册应用。");
 
         _apps[appKey] = appContext;

@@ -50,6 +50,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     private readonly bool _enableLogging;
     private readonly IHttpRequestInterceptor[] _requestInterceptors;
     private readonly IHttpResponseInterceptor[] _responseInterceptors;
+    private readonly ISensitiveDataMasker? _sensitiveDataMasker;
 
     /// <summary>
     /// 获取加密提供程序。子类可重写此属性以提供加密功能。
@@ -84,13 +85,15 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         HttpClient httpClient,
         ILogger? logger = null,
         IEnumerable<IHttpRequestInterceptor>? requestInterceptors = null,
-        IEnumerable<IHttpResponseInterceptor>? responseInterceptors = null)
+        IEnumerable<IHttpResponseInterceptor>? responseInterceptors = null,
+        ISensitiveDataMasker? sensitiveDataMasker = null)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _logger = logger ?? NullLogger.Instance;
         _enableLogging = _logger != NullLogger.Instance;
         _requestInterceptors = requestInterceptors?.OrderBy(i => i.Order).ToArray() ?? Array.Empty<IHttpRequestInterceptor>();
         _responseInterceptors = responseInterceptors?.OrderBy(i => i.Order).ToArray() ?? Array.Empty<IHttpResponseInterceptor>();
+        _sensitiveDataMasker = sensitiveDataMasker;
     }
 
     #region IEnhancedHttpClient 接口实现
@@ -1127,7 +1130,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
 
         var sanitizedContent = _enableLogging
-            ? MessageSanitizer.Sanitize(errorContent, maxLength: 200)
+            ? SanitizeContent(errorContent, maxLength: 200)
             : "[日志未启用]";
 
         _logger.HttpRequestFailedWithResponse(statusCode, sanitizedContent);
@@ -1243,6 +1246,17 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
     #region 日志辅助方法
 
+    private string SanitizeContent(string content, int maxLength = 200)
+    {
+        if (_sensitiveDataMasker != null)
+        {
+            var masked = _sensitiveDataMasker.Mask(content);
+            return masked.Length > maxLength ? masked.Substring(0, maxLength) + "..." : masked;
+        }
+
+        return MessageSanitizer.Sanitize(content, maxLength: maxLength);
+    }
+
     private void LogRequestStart(string operation, string uri)
     {
         if (_enableLogging && _logger.IsEnabled(LogLevel.Debug))
@@ -1333,7 +1347,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             newClient.DefaultRequestHeaders.TryAddWithoutValidation(header.Key, header.Value);
         }
 
-        return new DirectEnhancedHttpClient(newClient, _logger, _requestInterceptors, _responseInterceptors, EncryptionProvider);
+        return new DirectEnhancedHttpClient(newClient, _logger, _requestInterceptors, _responseInterceptors, EncryptionProvider, _sensitiveDataMasker);
     }
 
     #endregion
