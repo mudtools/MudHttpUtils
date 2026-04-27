@@ -70,6 +70,22 @@ services.AddWebApiHttpClient();
 **带加密配置的注册**：
 
 ```csharp
+// 方式一：使用 AddMudHttpUtils 一站式注册（含加密 + 弹性策略）
+services.AddMudHttpUtils("myApi", encryption =>
+{
+    encryption.Key = Convert.FromBase64String("your-base64-key");
+    encryption.IV = Convert.FromBase64String("your-base64-iv");
+}, client =>
+{
+    client.BaseAddress = new Uri("https://api.example.com");
+}, options =>
+{
+    options.Retry.MaxRetryAttempts = 3;
+    options.Timeout.TimeoutSeconds = 30;
+});
+services.AddWebApiHttpClient();
+
+// 方式二：分步注册
 services.AddMudHttpClient("myApi", encryption =>
 {
     encryption.Key = Convert.FromBase64String("your-base64-key");
@@ -427,6 +443,8 @@ Task<UserInfo> CreateUserAsync([Body] UserRequest request);
 | `[ArrayQuery]` | 数组查询参数 | `[ArrayQuery] int[] ids` |
 | `[Header]` | HTTP 请求头（支持参数/方法/接口级别） | `[Header("X-API-Key")] string apiKey` |
 | `[Body]` | 请求体 | `[Body] UserRequest request` |
+| `[Body(RawString = true)]` | 原始字符串请求体 | `[Body(RawString = true)] string content` |
+| `[Body(UseStringContent = true)]` | 字符串内容请求体 | `[Body(UseStringContent = true)] string content` |
 | `[FormContent]` | 表单数据 | `[FormContent] IFormContent formData` |
 | `[Form]` | 表单字段（URL编码） | `[Form("username")] string user` |
 | `[MultipartForm]` | 多部分表单字段 | `[MultipartForm] IFormFile file` |
@@ -553,7 +571,7 @@ Task<bool> DeleteUserAsync(
 
 ```csharp
 // 生成抽象类
-[HttpClientApi("https://api.example.com", IsAbstract = true)]
+[HttpClientApi(IsAbstract = true)]
 public interface IBaseApi
 {
     [Get("/entities/{id}")]
@@ -561,7 +579,7 @@ public interface IBaseApi
 }
 
 // 继承自指定基类
-[HttpClientApi("https://api.example.com", InheritedFrom = "BaseApiClass")]
+[HttpClientApi(InheritedFrom = "BaseApiClass")]
 public interface IUserApi : IBaseApi
 {
     [Get("/users")]
@@ -590,7 +608,7 @@ public class UserCreatedEvent
 ```csharp
 // 忽略接口生成（跳过实现类和注册代码）
 [IgnoreGenerator]
-[HttpClientApi("https://api.example.com")]
+[HttpClientApi]
 public interface IInternalApi { }
 
 // 忽略方法实现
@@ -866,6 +884,7 @@ var hmacProvider = appContext.GetService<IHmacSignatureProvider>();
 | `IEncryptionProvider` | 加密提供程序（Encrypt、Decrypt） |
 | `IApiKeyProvider` | API Key 提供器（GetApiKeyAsync） |
 | `IHmacSignatureProvider` | HMAC 签名提供器（GenerateSignatureAsync、VerifySignatureAsync） |
+| `ISecretProvider` | 安全密钥提供器（GetSecretAsync） |
 | `ISensitiveDataMasker` | 敏感数据脱敏器（Mask、MaskObject） |
 | `IHttpResponseCache` | 响应缓存契约（TryGet、Set、Remove） |
 | `ITokenManager` | 通用令牌管理 |

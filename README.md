@@ -175,9 +175,6 @@ public class UserService
 | `[Body(RawString = true)]` | 原始字符串请求体 | `[Body(RawString = true)] string content` |
 | `[Body(UseStringContent = true)]` | 字符串内容请求体 | `[Body(UseStringContent = true)] string content` |
 | `[FormContent]` | 表单数据 | `[FormContent] IFormContent formData` |
-| `[Form]` | 表单字段（URL编码） | `[Form("username")] string user` |
-| `[MultipartForm]` | 多部分表单字段 | `[MultipartForm] IFormFile file` |
-| `[Upload]` | 文件上传参数 | `[Upload(FieldName = "doc")] IFormFile file` |
 | `[Form]` | 表单字段（`application/x-www-form-urlencoded`） | `[Form("username")] string user` |
 | `[MultipartForm]` | 多部分表单字段（`multipart/form-data`） | `[MultipartForm] IFormFile file` |
 | `[Upload]` | 文件上传参数（支持自定义字段名/文件名/内容类型） | `[Upload(FieldName = "doc")] IFormFile file` |
@@ -272,7 +269,7 @@ public interface IApi { }
 [Get("/users/{id}")]
 Task<User> GetUserAsync([Path] int id, [Token(TokenTypes.UserAccessToken)] string? token = null);
 
-// Token 注入模式：Header（默认）、Query、Path
+// Token 注入模式：Header（默认）、Query、Path、ApiKey、HmacSignature
 [Token(TokenTypes.AppAccessToken, InjectionMode = TokenInjectionMode.Header, Name = "Authorization")]
 ```
 
