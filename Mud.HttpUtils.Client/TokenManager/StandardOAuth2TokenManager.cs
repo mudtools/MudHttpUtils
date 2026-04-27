@@ -17,7 +17,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     private readonly ILogger _logger;
     private readonly ISecretProvider? _secretProvider;
     private volatile CredentialToken? _cachedToken;
-    private string? _resolvedClientSecret;
+    private volatile string? _resolvedClientSecret;
     private volatile bool _clientSecretResolved;
 
     private static readonly JsonSerializerOptions s_jsonOptions = new()

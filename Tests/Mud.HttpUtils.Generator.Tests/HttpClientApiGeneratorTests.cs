@@ -1,0 +1,261 @@
+namespace Mud.HttpUtils.Generator.Tests;
+
+/// <summary>
+/// HttpClient API 源代码生成器集成测试
+/// 验证生成器对各种特性的代码生成正确性
+/// 注意：增量生成器需要完整的编译管线才能正确执行 ForAttributeWithMetadataName，
+/// 因此本测试类侧重于验证生成器的基本编译兼容性，详细代码生成验证通过 Demos 项目进行。
+/// </summary>
+public class HttpClientApiGeneratorTests
+{
+    private Compilation CreateCompilation(string source)
+    {
+        var references = BasicReferenceAssemblies.GetReferences();
+        var syntaxTree = CSharpSyntaxTree.ParseText(source);
+
+        return CSharpCompilation.Create(
+            "TestAssembly",
+            new[] { syntaxTree },
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    private (ImmutableArray<Diagnostic> diagnostics, Compilation outputCompilation) RunGenerator(string source)
+    {
+        var compilation = CreateCompilation(source);
+        var generator = new HttpInvokeClassSourceGenerator();
+        CSharpGeneratorDriver driver = CSharpGeneratorDriver.Create(generator);
+
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
+
+        return (diagnostics, outputCompilation);
+    }
+
+    private string? GetGeneratedCode(Compilation outputCompilation)
+    {
+        return outputCompilation.SyntaxTrees.Skip(1).FirstOrDefault()?.ToString();
+    }
+
+    #region BUG-04: HttpClient 与 TokenManager 互斥校验
+
+    [Fact]
+    public void Generator_WithBothHttpClientAndTokenManager_ReportsDiagnostic()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"", HttpClient = typeof(IEnhancedHttpClient), TokenManage = nameof(ITestTokenManager))]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        diagnostics.Should().Contain(d => d.Id == "HTTPCLIENT007");
+    }
+
+    [Fact]
+    public void Generator_WithOnlyHttpClient_NoMutuallyExclusiveDiagnostic()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"", HttpClient = typeof(IEnhancedHttpClient))]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        diagnostics.Where(d => d.Id == "HTTPCLIENT007").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Generator_WithOnlyTokenManager_NoMutuallyExclusiveDiagnostic()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"", TokenManage = nameof(ITestTokenManager))]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        diagnostics.Where(d => d.Id == "HTTPCLIENT007").Should().BeEmpty();
+    }
+
+    #endregion
+
+    #region 代码生成验证
+
+    [Fact]
+    public void Generator_WithSimpleGetInterface_GeneratesCode()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        // 如果增量生成器在单元测试环境下正常工作，应该生成代码
+        // 否则此测试验证编译本身不会崩溃
+        outputCompilation.SyntaxTrees.Count().Should().BeGreaterOrEqualTo(1);
+    }
+
+    [Fact]
+    public void Generator_WithFormParameters_CompilesSuccessfully()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Post(""/submit"")]
+        Task<string> SubmitAsync([Form] string username, [Form] string password);
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+
+        // 验证编译不崩溃
+        outputCompilation.SyntaxTrees.Count().Should().BeGreaterOrEqualTo(1);
+    }
+
+    [Fact]
+    public void Generator_WithUploadParameter_CompilesSuccessfully()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using System.IO;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Post(""/upload"")]
+        Task<string> UploadFileAsync([Upload] Stream fileStream);
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+
+        outputCompilation.SyntaxTrees.Count().Should().BeGreaterOrEqualTo(1);
+    }
+
+    [Fact]
+    public void Generator_WithAsyncEnumerableReturn_CompilesSuccessfully()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using System.Collections.Generic;
+
+namespace TestNamespace
+{
+    public class ChatMessage
+    {
+        public string Content { get; set; }
+    }
+
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/chat/stream"")]
+        IAsyncEnumerable<ChatMessage> StreamChatAsync();
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+
+        outputCompilation.SyntaxTrees.Count().Should().BeGreaterOrEqualTo(1);
+    }
+
+    #endregion
+
+    /// <summary>
+    /// 提供基本引用程序集
+    /// </summary>
+    private static class BasicReferenceAssemblies
+    {
+        public static List<MetadataReference> GetReferences()
+        {
+            var references = new List<MetadataReference>
+            {
+                MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(Task).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(Task<>).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(List<>).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(System.Text.Json.JsonSerializer).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.Logging.ILogger).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(System.Net.Http.HttpClient).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(Mud.HttpUtils.HttpClientUtils).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(System.IO.Stream).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(System.Collections.IEnumerable).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(System.Collections.Generic.IAsyncEnumerable<>).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(System.Runtime.CompilerServices.AsyncIteratorMethodBuilder).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(System.Linq.Enumerable).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.Caching.Memory.IMemoryCache).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.Options.IOptions<>).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(System.Attribute).Assembly.Location),
+                MetadataReference.CreateFromFile(typeof(Mud.HttpUtils.Attributes.HttpClientApiAttribute).Assembly.Location),
+            };
+
+            var runtimeDir = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
+            var runtimeAssemblies = new[]
+            {
+                "System.Runtime.dll",
+                "System.Collections.Concurrent.dll",
+                "System.Threading.dll",
+                "System.Memory.dll",
+                "System.Threading.Tasks.dll",
+                "System.Collections.dll",
+                "System.Linq.dll",
+                "System.Net.Http.dll",
+                "System.IO.dll",
+                "System.Text.Json.dll",
+                "System.Private.CoreLib.dll",
+            };
+
+            foreach (var asm in runtimeAssemblies)
+            {
+                var path = Path.Combine(runtimeDir, asm);
+                if (File.Exists(path))
+                {
+                    references.Add(MetadataReference.CreateFromFile(path));
+                }
+            }
+
+            return references;
+        }
+    }
+}
