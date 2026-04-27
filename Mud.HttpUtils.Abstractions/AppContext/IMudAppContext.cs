@@ -39,7 +39,6 @@ namespace Mud.HttpUtils;
 /// var customService = appContext.GetService&lt;ICustomService&gt;();
 /// </code>
 /// </example>
-/// <seealso cref="IAppManager"/>
 /// <seealso cref="IEnhancedHttpClient"/>
 /// <seealso cref="ITokenManager"/>
 public interface IMudAppContext

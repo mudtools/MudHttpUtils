@@ -47,6 +47,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// </summary>
     protected virtual int MaxScopeCacheSize => 64;
 
+    /// <inheritdoc />
     protected TokenManagerBase()
     {
         _cleanupTimer = new Timer(CleanupExpiredTokens, null,
@@ -328,7 +329,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     }
 
     private bool _disposed;
-
+    /// <inheritdoc />
     protected virtual void Dispose(bool disposing)
     {
         if (_disposed)
@@ -352,7 +353,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             _tokenCache.Clear();
         }
     }
-
+    /// <inheritdoc />
     public void Dispose()
     {
         Dispose(true);

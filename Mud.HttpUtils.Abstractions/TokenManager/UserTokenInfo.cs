@@ -121,13 +121,13 @@ public class UserTokenInfo
             OpenId = openId,
             UnionId = unionId,
             AccessToken = token?.AccessToken,
-            AccessTokenExpireTime = token.Expire,
-            RefreshToken = token.RefreshToken,
-            RefreshTokenExpireTime = token.RefreshTokenExpire,
-            Scope = token.Scope,
+            AccessTokenExpireTime = token?.Expire ?? 0,
+            RefreshToken = token?.RefreshToken,
+            RefreshTokenExpireTime = token?.RefreshTokenExpire ?? 0,
+            Scope = token?.Scope,
             CreatedAt = DateTime.UtcNow,
-            Code = token.Code,
-            Msg = token.Msg,
+            Code = token?.Code ?? 0,
+            Msg = token?.Msg,
         };
     }
 
@@ -147,13 +147,13 @@ public class UserTokenInfo
             OpenId = openId,
             UnionId = unionId,
             AccessToken = token?.AccessToken,
-            AccessTokenExpireTime = token.AccessTokenExpireTime,
-            RefreshToken = token.RefreshToken,
-            RefreshTokenExpireTime = token.RefreshTokenExpireTime,
-            Scope = token.Scope,
+            AccessTokenExpireTime = token?.AccessTokenExpireTime ?? 0,
+            RefreshToken = token?.RefreshToken,
+            RefreshTokenExpireTime = token?.RefreshTokenExpireTime ?? 0,
+            Scope = token?.Scope,
             CreatedAt = DateTime.UtcNow,
-            Code = token.Code,
-            Msg = token.Msg,
+            Code = token?.Code ?? 0,
+            Msg = token?.Msg,
         };
     }
 
@@ -164,15 +164,15 @@ public class UserTokenInfo
     public void UpdateFromCredentialToken(CredentialToken token)
     {
         AccessToken = token?.AccessToken;
-        AccessTokenExpireTime = token.Expire;
-        if (!string.IsNullOrEmpty(token.RefreshToken))
+        AccessTokenExpireTime = token?.Expire ?? 0;
+        if (!string.IsNullOrEmpty(token?.RefreshToken))
         {
-            RefreshToken = token.RefreshToken;
-            RefreshTokenExpireTime = token.RefreshTokenExpire;
+            RefreshToken = token?.RefreshToken;
+            RefreshTokenExpireTime = token?.RefreshTokenExpire ?? 0;
         }
-        if (!string.IsNullOrEmpty(token.Scope))
+        if (!string.IsNullOrEmpty(token?.Scope))
         {
-            Scope = token.Scope;
+            Scope = token?.Scope;
         }
         LastRefreshedAt = DateTime.UtcNow;
     }
@@ -184,15 +184,15 @@ public class UserTokenInfo
     public void UpdateFromCredentialToken(UserTokenInfo token)
     {
         AccessToken = token?.AccessToken;
-        AccessTokenExpireTime = token.AccessTokenExpireTime;
-        if (!string.IsNullOrEmpty(token.RefreshToken))
+        AccessTokenExpireTime = token?.AccessTokenExpireTime ?? 0;
+        if (!string.IsNullOrEmpty(token?.RefreshToken))
         {
-            RefreshToken = token.RefreshToken;
-            RefreshTokenExpireTime = token.RefreshTokenExpireTime;
+            RefreshToken = token?.RefreshToken;
+            RefreshTokenExpireTime = token?.RefreshTokenExpireTime ?? 0;
         }
-        if (!string.IsNullOrEmpty(token.Scope))
+        if (!string.IsNullOrEmpty(token?.Scope))
         {
-            Scope = token.Scope;
+            Scope = token?.Scope;
         }
         LastRefreshedAt = DateTime.UtcNow;
     }

@@ -203,6 +203,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
         }
     }
 
+    /// <inheritdoc/>
     public void RegisterSwitcherFactory<TContextSwitcher>(Func<TAppContext, TContextSwitcher> factory)
         where TContextSwitcher : IAppContextSwitcher
     {

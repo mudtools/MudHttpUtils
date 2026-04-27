@@ -1,8 +1,14 @@
+// -----------------------------------------------------------------------
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// -----------------------------------------------------------------------
+
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 #if NET6_0_OR_GREATER
 using Microsoft.Extensions.Hosting;
 #endif
@@ -193,6 +199,23 @@ public static class HttpClientServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// 注册自定义的敏感数据掩码器实现到依赖注入容器。
+    /// </summary>
+    /// <typeparam name="TMasker">敏感数据掩码器的实现类型，必须实现 <see cref="ISensitiveDataMasker"/> 接口。</typeparam>
+    /// <param name="services">服务集合。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
+    /// <remarks>
+    /// 敏感数据掩码器用于在日志记录和错误消息中隐藏敏感信息（如密码、令牌、密钥等）。
+    /// 使用此方法可以注册自定义的掩码器实现，以覆盖默认的掩码行为。
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// // 注册自定义敏感数据掩码器
+    /// services.AddSensitiveDataMasker&lt;CustomSensitiveDataMasker&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddSensitiveDataMasker<TMasker>(
         this IServiceCollection services)
         where TMasker : class, ISensitiveDataMasker
@@ -204,6 +227,22 @@ public static class HttpClientServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// 注册默认的敏感数据掩码器到依赖注入容器。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
+    /// <remarks>
+    /// 此方法注册 <see cref="DefaultSensitiveDataMasker"/> 作为默认的敏感数据掩码器实现。
+    /// 敏感数据掩码器用于在日志记录和错误消息中隐藏敏感信息（如密码、令牌、密钥等）。
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// // 注册默认敏感数据掩码器
+    /// services.AddSensitiveDataMasker();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddSensitiveDataMasker(
         this IServiceCollection services)
     {
@@ -214,6 +253,23 @@ public static class HttpClientServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// 注册自定义的 HMAC 签名提供者实现到依赖注入容器。
+    /// </summary>
+    /// <typeparam name="TProvider">HMAC 签名提供者的实现类型，必须实现 <see cref="IHmacSignatureProvider"/> 接口。</typeparam>
+    /// <param name="services">服务集合。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
+    /// <remarks>
+    /// HMAC 签名提供者用于生成和验证 HTTP 请求的 HMAC 签名，以确保请求的完整性和真实性。
+    /// 使用此方法可以注册自定义的签名提供者实现。
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// // 注册自定义 HMAC 签名提供者
+    /// services.AddHmacSignatureProvider&lt;CustomHmacSignatureProvider&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddHmacSignatureProvider<TProvider>(
         this IServiceCollection services)
         where TProvider : class, IHmacSignatureProvider
@@ -225,6 +281,22 @@ public static class HttpClientServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// 注册默认的 HMAC 签名提供者到依赖注入容器。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
+    /// <remarks>
+    /// 此方法注册 <see cref="DefaultHmacSignatureProvider"/> 作为默认的 HMAC 签名提供者实现。
+    /// HMAC 签名提供者用于生成和验证 HTTP 请求的 HMAC 签名。
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// // 注册默认 HMAC 签名提供者
+    /// services.AddHmacSignatureProvider();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddHmacSignatureProvider(
         this IServiceCollection services)
     {
@@ -235,6 +307,23 @@ public static class HttpClientServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// 注册自定义的 API 密钥提供者实现到依赖注入容器。
+    /// </summary>
+    /// <typeparam name="TProvider">API 密钥提供者的实现类型，必须实现 <see cref="IApiKeyProvider"/> 接口。</typeparam>
+    /// <param name="services">服务集合。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
+    /// <remarks>
+    /// API 密钥提供者用于获取 API 密钥，支持多种密钥存储和管理策略。
+    /// 使用此方法可以注册自定义的密钥提供者实现。
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// // 注册自定义 API 密钥提供者
+    /// services.AddApiKeyProvider&lt;CustomApiKeyProvider&gt;();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddApiKeyProvider<TProvider>(
         this IServiceCollection services)
         where TProvider : class, IApiKeyProvider
@@ -246,6 +335,22 @@ public static class HttpClientServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// 注册默认的 API 密钥提供者到依赖注入容器。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
+    /// <remarks>
+    /// 此方法注册 <see cref="DefaultApiKeyProvider"/> 作为默认的 API 密钥提供者实现。
+    /// API 密钥提供者用于获取 API 密钥。
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// // 注册默认 API 密钥提供者
+    /// services.AddApiKeyProvider();
+    /// </code>
+    /// </example>
     public static IServiceCollection AddApiKeyProvider(
         this IServiceCollection services)
     {

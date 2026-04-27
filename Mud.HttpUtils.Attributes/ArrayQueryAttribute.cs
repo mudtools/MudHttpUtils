@@ -1,3 +1,13 @@
+// -----------------------------------------------------------------------
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// -----------------------------------------------------------------------
+
+
+namespace Mud.HttpUtils.Attributes;
+
 /// <summary>
 /// 标记参数或方法作为数组查询参数。
 /// </summary>
@@ -7,19 +17,6 @@
 /// 支持自定义参数名称和分隔符配置。
 /// </para>
 /// </remarks>
-/// <example>
-/// <code>
-/// // 数组作为多个查询参数（如 ?ids=1&ids=2&ids=3）
-/// [Get("/api/users")]
-/// Task&lt;List&lt;User&gt;&gt; GetUsersByIdsAsync([ArrayQuery("ids")] int[] ids);
-/// 
-/// // 使用分隔符（如 ?ids=1,2,3）
-/// [Get("/api/products")]
-/// Task&lt;List&lt;Product&gt;&gt; GetProductsAsync([ArrayQuery("ids", ",")] int[] ids);
-/// </code>
-/// </example>
-namespace Mud.HttpUtils.Attributes;
-
 [AttributeUsage(AttributeTargets.Method | AttributeTargets.Interface | AttributeTargets.Parameter, AllowMultiple = true)]
 public sealed class ArrayQueryAttribute : Attribute
 {
