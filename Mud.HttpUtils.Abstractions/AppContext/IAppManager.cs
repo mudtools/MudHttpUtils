@@ -104,4 +104,12 @@ public interface IAppManager<TAppContext>
     /// 应用配置变更事件。
     /// </summary>
     event EventHandler<AppConfigurationChangedEventArgs> ConfigurationChanged;
+
+    /// <summary>
+    /// 注册上下文切换器工厂委托，避免运行时反射创建实例。
+    /// </summary>
+    /// <typeparam name="TContextSwitcher">上下文切换器类型。</typeparam>
+    /// <param name="factory">工厂委托。</param>
+    void RegisterSwitcherFactory<TContextSwitcher>(Func<TAppContext, TContextSwitcher> factory)
+        where TContextSwitcher : IAppContextSwitcher;
 }

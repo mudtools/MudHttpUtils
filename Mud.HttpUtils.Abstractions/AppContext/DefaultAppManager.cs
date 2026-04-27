@@ -10,6 +10,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     where TAppContext : IMudAppContext
 {
     private readonly ConcurrentDictionary<string, TAppContext> _apps = new();
+    private readonly ConcurrentDictionary<Type, Func<TAppContext, IAppContextSwitcher>> _switcherFactories = new();
     private string? _defaultAppKey;
     private readonly object _defaultAppLock = new();
 
@@ -120,7 +121,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
             if (string.IsNullOrEmpty(_defaultAppKey))
                 throw new InvalidOperationException("未设置默认应用。请在注册应用时设置 isDefault = true。");
 
-            return GetApp(_defaultAppKey);
+            return GetApp(_defaultAppKey!);
         }
     }
 
@@ -172,18 +173,35 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
         ConfigurationChanged?.Invoke(this, e);
     }
 
-    private static TContextSwitcher CreateContextSwitcher<TContextSwitcher>(TAppContext context)
+    private TContextSwitcher CreateContextSwitcher<TContextSwitcher>(TAppContext context)
         where TContextSwitcher : IAppContextSwitcher
     {
+        var switcherType = typeof(TContextSwitcher);
+
+        if (_switcherFactories.TryGetValue(switcherType, out var factory))
+        {
+            return (TContextSwitcher)factory(context);
+        }
+
         try
         {
-            return (TContextSwitcher)Activator.CreateInstance(typeof(TContextSwitcher), context)!;
+            return (TContextSwitcher)Activator.CreateInstance(switcherType, context)!;
         }
         catch (Exception ex)
         {
             throw new InvalidOperationException(
-                $"无法创建类型 {typeof(TContextSwitcher).Name} 的实例。" +
-                $"请确保该类型有接受 {typeof(TAppContext).Name} 参数的公共构造函数。", ex);
+                $"无法创建类型 {switcherType.Name} 的实例。" +
+                $"请确保该类型有接受 {typeof(TAppContext).Name} 参数的公共构造函数，" +
+                $"或通过 RegisterSwitcherFactory 注册工厂委托。", ex);
         }
+    }
+
+    public void RegisterSwitcherFactory<TContextSwitcher>(Func<TAppContext, TContextSwitcher> factory)
+        where TContextSwitcher : IAppContextSwitcher
+    {
+        if (factory == null)
+            throw new ArgumentNullException(nameof(factory));
+
+        _switcherFactories[typeof(TContextSwitcher)] = ctx => factory(ctx);
     }
 }

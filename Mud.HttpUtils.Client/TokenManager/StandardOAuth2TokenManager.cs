@@ -16,7 +16,8 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     private readonly OAuth2Options _options;
     private readonly ILogger _logger;
     private readonly ISecretProvider? _secretProvider;
-    private volatile CredentialToken? _cachedToken;
+    private readonly object _tokenLock = new();
+    private CredentialToken? _cachedToken;
     private string? _resolvedClientSecret;
     private volatile bool _clientSecretResolved;
 
@@ -242,7 +243,12 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// <inheritdoc/>
     protected override async Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
     {
-        var current = _cachedToken;
+        CredentialToken? current;
+        lock (_tokenLock)
+        {
+            current = _cachedToken;
+        }
+
         CredentialToken newToken;
 
         if (current?.RefreshToken != null)
@@ -257,13 +263,23 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         }
 
         UpdateCachedToken(newToken);
-        _cachedToken = newToken;
+
+        lock (_tokenLock)
+        {
+            _cachedToken = newToken;
+        }
+
         return newToken;
     }
 
     protected override async Task<CredentialToken> RefreshTokenWithScopesAsync(string[]? scopes, CancellationToken cancellationToken)
     {
-        var current = _cachedToken;
+        CredentialToken? current;
+        lock (_tokenLock)
+        {
+            current = _cachedToken;
+        }
+
         CredentialToken newToken;
 
         if (current?.RefreshToken != null)
@@ -278,7 +294,12 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         }
 
         UpdateCachedToken(newToken);
-        _cachedToken = newToken;
+
+        lock (_tokenLock)
+        {
+            _cachedToken = newToken;
+        }
+
         return newToken;
     }
 
@@ -295,7 +316,12 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// <returns>凭证令牌。</returns>
     public async Task<CredentialToken> GetOrRefreshCredentialTokenAsync(CancellationToken cancellationToken = default)
     {
-        var cached = _cachedToken;
+        CredentialToken? cached;
+        lock (_tokenLock)
+        {
+            cached = _cachedToken;
+        }
+
         if (cached != null && cached.Expire > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
         {
             return cached;
@@ -327,6 +353,11 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         if (tokenResponse == null)
             throw new InvalidOperationException("令牌响应反序列化失败");
 
+        if (!string.IsNullOrEmpty(tokenResponse.Error))
+            throw new InvalidOperationException(
+                $"OAuth2 令牌请求失败: {tokenResponse.Error}" +
+                (string.IsNullOrEmpty(tokenResponse.ErrorDescription) ? "" : $" - {tokenResponse.ErrorDescription}"));
+
         var newToken = new CredentialToken
         {
             AccessToken = tokenResponse.AccessToken ?? string.Empty,
@@ -334,7 +365,10 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
             Expire = CalculateExpire(tokenResponse.ExpiresIn)
         };
 
-        _cachedToken = newToken;
+        lock (_tokenLock)
+        {
+            _cachedToken = newToken;
+        }
 
         return newToken;
     }
@@ -362,6 +396,11 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         if (tokenResponse == null)
             throw new InvalidOperationException("令牌响应反序列化失败");
 
+        if (!string.IsNullOrEmpty(tokenResponse.Error))
+            throw new InvalidOperationException(
+                $"OAuth2 令牌请求失败: {tokenResponse.Error}" +
+                (string.IsNullOrEmpty(tokenResponse.ErrorDescription) ? "" : $" - {tokenResponse.ErrorDescription}"));
+
         var newToken2 = new CredentialToken
         {
             AccessToken = tokenResponse.AccessToken ?? string.Empty,
@@ -369,7 +408,10 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
             Expire = CalculateExpire(tokenResponse.ExpiresIn)
         };
 
-        _cachedToken = newToken2;
+        lock (_tokenLock)
+        {
+            _cachedToken = newToken2;
+        }
 
         return newToken2;
     }
@@ -422,5 +464,11 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 
         [JsonPropertyName("scope")]
         public string? Scope { get; set; }
+
+        [JsonPropertyName("error")]
+        public string? Error { get; set; }
+
+        [JsonPropertyName("error_description")]
+        public string? ErrorDescription { get; set; }
     }
 }

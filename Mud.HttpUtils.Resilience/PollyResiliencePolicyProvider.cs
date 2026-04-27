@@ -5,6 +5,7 @@ using Polly;
 using Polly.CircuitBreaker;
 using Polly.Retry;
 using Polly.Timeout;
+using System.Collections.Concurrent;
 
 namespace Mud.HttpUtils.Resilience;
 
@@ -15,6 +16,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 {
     private readonly ResilienceOptions _options;
     private readonly ILogger _logger;
+    private readonly ConcurrentDictionary<Type, object> _policyCache = new();
 
     /// <summary>
     /// 初始化 PollyResiliencePolicyProvider 实例。
@@ -43,7 +45,22 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     }
 
     /// <inheritdoc />
+    private sealed class PolicyCacheKey
+    {
+        public Type ResultType { get; }
+        public string PolicyKind { get; }
+        public PolicyCacheKey(Type resultType, string policyKind) { ResultType = resultType; PolicyKind = policyKind; }
+        public override bool Equals(object? obj) => obj is PolicyCacheKey other && ResultType == other.ResultType && PolicyKind == other.PolicyKind;
+        public override int GetHashCode() => HashCode.Combine(ResultType, PolicyKind);
+    }
+
     public IAsyncPolicy<TResult> GetRetryPolicy<TResult>()
+    {
+        var key = new PolicyCacheKey(typeof(TResult), "retry");
+        return (IAsyncPolicy<TResult>)_policyCache.GetOrAdd(key, _ => BuildRetryPolicy<TResult>());
+    }
+
+    private IAsyncPolicy<TResult> BuildRetryPolicy<TResult>()
     {
         var retryOptions = _options.Retry;
 
@@ -92,6 +109,12 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     /// <inheritdoc />
     public IAsyncPolicy<TResult> GetTimeoutPolicy<TResult>()
     {
+        var key = new PolicyCacheKey(typeof(TResult), "timeout");
+        return (IAsyncPolicy<TResult>)_policyCache.GetOrAdd(key, _ => BuildTimeoutPolicy<TResult>());
+    }
+
+    private IAsyncPolicy<TResult> BuildTimeoutPolicy<TResult>()
+    {
         var timeoutOptions = _options.Timeout;
 
         if (!timeoutOptions.Enabled)
@@ -113,6 +136,12 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 
     /// <inheritdoc />
     public IAsyncPolicy<TResult> GetCircuitBreakerPolicy<TResult>()
+    {
+        var key = new PolicyCacheKey(typeof(TResult), "circuitBreaker");
+        return (IAsyncPolicy<TResult>)_policyCache.GetOrAdd(key, _ => BuildCircuitBreakerPolicy<TResult>());
+    }
+
+    private IAsyncPolicy<TResult> BuildCircuitBreakerPolicy<TResult>()
     {
         var cbOptions = _options.CircuitBreaker;
 

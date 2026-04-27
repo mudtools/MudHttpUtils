@@ -8,6 +8,7 @@ namespace Mud.HttpUtils;
 public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
 {
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new();
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _fetchLocks = new();
     private readonly Timer? _cleanupTimer;
     private readonly int _maxCacheSize;
     private long _accessCounter;
@@ -87,14 +88,31 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
         if (TryGet<T>(key, out var cachedValue))
             return cachedValue;
 
-        var result = await fetchFunc().ConfigureAwait(false);
-
-        if (result != null)
+        var fetchLock = _fetchLocks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        await fetchLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            Set(key, result, expiration);
-        }
+            if (TryGet<T>(key, out cachedValue))
+                return cachedValue;
 
-        return result;
+            var result = await fetchFunc().ConfigureAwait(false);
+
+            if (result != null)
+            {
+                Set(key, result, expiration);
+            }
+
+            return result;
+        }
+        finally
+        {
+            fetchLock.Release();
+
+            if (_fetchLocks.TryRemove(key, out var removedLock) && removedLock == fetchLock)
+            {
+                removedLock.Dispose();
+            }
+        }
     }
 
     /// <inheritdoc />
