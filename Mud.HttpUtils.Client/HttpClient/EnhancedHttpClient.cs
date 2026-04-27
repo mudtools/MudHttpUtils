@@ -7,7 +7,6 @@
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -96,7 +95,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
     #region IEnhancedHttpClient 接口实现
 
-    /// <inheritdoc cref="IEnhancedHttpClient.SendAsync{TResult}"/>
+    /// <inheritdoc cref="IBaseHttpClient.SendAsync{TResult}"/>
     /// <param name="request">HTTP请求消息。</param>
     /// <param name="jsonSerializerOptions">JSON序列化选项,如果为null则使用默认选项。</param>
     /// <param name="cancellationToken">取消令牌。</param>
@@ -132,7 +131,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
     }
 
-    /// <inheritdoc cref="IEnhancedHttpClient.DownloadAsync"/>
+    /// <inheritdoc cref="IBaseHttpClient.DownloadAsync"/>
     /// <param name="request">HTTP请求消息。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>文件内容的字节数组。</returns>
@@ -163,7 +162,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
     }
 
-    /// <inheritdoc cref="IEnhancedHttpClient.DownloadLargeAsync"/>
+    /// <inheritdoc cref="IBaseHttpClient.DownloadLargeAsync"/>
     /// <param name="request">HTTP请求消息。</param>
     /// <param name="filePath">保存文件的路径。</param>
     /// <param name="overwrite">是否覆盖已存在的文件,默认为true。</param>
@@ -205,7 +204,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
     }
 
-    /// <inheritdoc cref="IEnhancedHttpClient.SendRawAsync"/>
+    /// <inheritdoc cref="IBaseHttpClient.SendRawAsync"/>
     /// <param name="request">HTTP请求消息。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>HTTP响应消息。</returns>
@@ -234,7 +233,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
     }
 
-    /// <inheritdoc cref="IEnhancedHttpClient.SendStreamAsync"/>
+    /// <inheritdoc cref="IBaseHttpClient.SendStreamAsync"/>
     /// <param name="request">HTTP请求消息。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>响应内容流。调用者负责释放此流。</returns>

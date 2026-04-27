@@ -70,40 +70,14 @@ public class DefaultSensitiveDataMasker : ISensitiveDataMasker
     /// </remarks>
     private static readonly ConcurrentDictionary<Type, PropertyMaskInfo[]> s_propertyCache = new();
 
-    /// <summary>
-    /// 属性掩码信息，包含属性的元数据和掩码配置。
-    /// </summary>
     private sealed class PropertyMaskInfo
     {
-        /// <summary>
-        /// 获取或设置属性信息。
-        /// </summary>
-        public PropertyInfo Property { get; init; } = null!;
-
-        /// <summary>
-        /// 获取或设置一个值，该值指示此属性是否为敏感数据（标记了 SensitiveDataAttribute 的字符串属性）。
-        /// </summary>
-        public bool IsSensitive { get; init; }
-
-        /// <summary>
-        /// 获取或设置掩码模式。
-        /// </summary>
-        public SensitiveDataMaskMode MaskMode { get; init; }
-
-        /// <summary>
-        /// 获取或设置掩码模式下保留的前缀字符数量。
-        /// </summary>
-        public int PrefixLength { get; init; }
-
-        /// <summary>
-        /// 获取或设置掩码模式下保留的后缀字符数量。
-        /// </summary>
-        public int SuffixLength { get; init; }
-
-        /// <summary>
-        /// 获取或设置一个值，该值指示此属性是否为复杂类型（需要递归处理）。
-        /// </summary>
-        public bool IsComplexType { get; init; }
+        public PropertyInfo Property { get; set; } = null!;
+        public bool IsSensitive { get; set; }
+        public SensitiveDataMaskMode MaskMode { get; set; }
+        public int PrefixLength { get; set; }
+        public int SuffixLength { get; set; }
+        public bool IsComplexType { get; set; }
     }
 
     /// <summary>

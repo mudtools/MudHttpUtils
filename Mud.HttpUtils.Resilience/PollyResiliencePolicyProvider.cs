@@ -16,7 +16,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 {
     private readonly ResilienceOptions _options;
     private readonly ILogger _logger;
-    private readonly ConcurrentDictionary<Type, object> _policyCache = new();
+    private readonly ConcurrentDictionary<PolicyCacheKey, object> _policyCache = new();
 
     /// <summary>
     /// 初始化 PollyResiliencePolicyProvider 实例。
@@ -51,7 +51,13 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
         public string PolicyKind { get; }
         public PolicyCacheKey(Type resultType, string policyKind) { ResultType = resultType; PolicyKind = policyKind; }
         public override bool Equals(object? obj) => obj is PolicyCacheKey other && ResultType == other.ResultType && PolicyKind == other.PolicyKind;
-        public override int GetHashCode() => HashCode.Combine(ResultType, PolicyKind);
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                return (ResultType.GetHashCode() * 397) ^ (PolicyKind?.GetHashCode() ?? 0);
+            }
+        }
     }
 
     public IAsyncPolicy<TResult> GetRetryPolicy<TResult>()
