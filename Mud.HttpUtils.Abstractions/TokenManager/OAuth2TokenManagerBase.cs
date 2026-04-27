@@ -25,6 +25,60 @@ public abstract class OAuth2TokenManagerBase : TokenManagerBase
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 通过授权码和 PKCE 验证获取令牌（Authorization Code Flow with PKCE）。
+    /// </summary>
+    /// <param name="code">授权码。</param>
+    /// <param name="redirectUri">重定向 URI。</param>
+    /// <param name="codeVerifier">PKCE code_verifier。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>令牌信息。</returns>
+    public virtual Task<CredentialToken> GetTokenByAuthorizationCodeWithPkceAsync(
+        string code,
+        string redirectUri,
+        string codeVerifier,
+        CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("PKCE flow is not supported by this token manager.");
+    }
+
+    /// <summary>
+    /// 生成 PKCE code_verifier 和 code_challenge。
+    /// </summary>
+    /// <param name="codeVerifier">生成的 code_verifier。</param>
+    /// <param name="codeChallenge">生成的 code_challenge。</param>
+    /// <param name="method">PKCE 方法（S256 或 plain），默认 S256。</param>
+    public virtual void GeneratePkceChallenge(out string codeVerifier, out string codeChallenge, string method = "S256")
+    {
+        var bytes = new byte[32];
+        using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+        {
+            rng.GetBytes(bytes);
+        }
+        codeVerifier = Base64UrlEncode(bytes);
+
+        if (string.Equals(method, "S256", StringComparison.OrdinalIgnoreCase))
+        {
+            using (var sha256 = System.Security.Cryptography.SHA256.Create())
+            {
+                var hash = sha256.ComputeHash(System.Text.Encoding.ASCII.GetBytes(codeVerifier));
+                codeChallenge = Base64UrlEncode(hash);
+            }
+        }
+        else
+        {
+            codeChallenge = codeVerifier;
+        }
+    }
+
+    private static string Base64UrlEncode(byte[] data)
+    {
+        return Convert.ToBase64String(data)
+            .TrimEnd('=')
+            .Replace('+', '-')
+            .Replace('/', '_');
+    }
+
+    /// <summary>
     /// 通过客户端凭证获取令牌（Client Credentials Flow）。
     /// </summary>
     /// <param name="scopes">请求的权限范围。</param>

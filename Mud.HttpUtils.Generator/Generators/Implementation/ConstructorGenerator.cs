@@ -315,6 +315,8 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
 
+        GenerateBeginScopeMethod(codeBuilder);
+
         // 用户令牌由 AccessTokenGenerator 生成，其他令牌在这里生成通用版本
         if (_context.Configuration.IsUserAccessToken)
             return;
@@ -339,6 +341,52 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("            if(string.IsNullOrEmpty(token))");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法获取到有效的访问令牌，TokenType: {tokenType}\");");
         codeBuilder.AppendLine("            return token!;");
+        codeBuilder.AppendLine("        }");
+        codeBuilder.AppendLine();
+    }
+
+    private void GenerateBeginScopeMethod(StringBuilder codeBuilder)
+    {
+        if (_context.HasHttpClient)
+            return;
+
+        if (!_context.HasTokenManager)
+            return;
+
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// 创建一个应用上下文作用域，切换到指定的应用上下文，并在作用域结束时自动恢复之前的上下文。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        /// <param name=\"appKey\">应用的唯一标识符。</param>");
+        codeBuilder.AppendLine("        /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>");
+        codeBuilder.AppendLine("        public IDisposable BeginScope(string appKey)");
+        codeBuilder.AppendLine("        {");
+        codeBuilder.AppendLine("            var previous = _appContext.Value;");
+        codeBuilder.AppendLine("            UseApp(appKey);");
+        codeBuilder.AppendLine("            return new AppContextScope(previous, _appContext);");
+        codeBuilder.AppendLine("        }");
+        codeBuilder.AppendLine();
+
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// 应用上下文作用域，释放时恢复之前的上下文。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        private sealed class AppContextScope : IDisposable");
+        codeBuilder.AppendLine("        {");
+        codeBuilder.AppendLine("            private readonly IMudAppContext? _previous;");
+        codeBuilder.AppendLine("            private readonly AsyncLocal<IMudAppContext?> _context;");
+        codeBuilder.AppendLine("            private bool _disposed;");
+        codeBuilder.AppendLine();
+        codeBuilder.AppendLine("            public AppContextScope(IMudAppContext? previous, AsyncLocal<IMudAppContext?> context)");
+        codeBuilder.AppendLine("            {");
+        codeBuilder.AppendLine("                _previous = previous;");
+        codeBuilder.AppendLine("                _context = context;");
+        codeBuilder.AppendLine("            }");
+        codeBuilder.AppendLine();
+        codeBuilder.AppendLine("            public void Dispose()");
+        codeBuilder.AppendLine("            {");
+        codeBuilder.AppendLine("                if (_disposed) return;");
+        codeBuilder.AppendLine("                _disposed = true;");
+        codeBuilder.AppendLine("                _context.Value = _previous;");
+        codeBuilder.AppendLine("            }");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
     }

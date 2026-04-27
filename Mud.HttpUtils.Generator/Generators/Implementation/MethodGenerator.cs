@@ -239,6 +239,11 @@ internal class MethodGenerator : ICodeFragmentGenerator
         {
             codeBuilder.AppendLine($"            httpRequest.Headers.Add(\"Authorization\", $\"Basic {{basicCredentials}}\");");
         }
+        else if (needsTokenInjection && IsTokenCookieMode(methodInfo))
+        {
+            var cookieName = !string.IsNullOrEmpty(methodInfo.InterfaceTokenName) ? methodInfo.InterfaceTokenName : "access_token";
+            codeBuilder.AppendLine($"            httpRequest.Headers.Add(\"Cookie\", \"{cookieName}=\" + access_token);");
+        }
 
         if (methodInfo.InterfaceHeaderAttributes?.Any() == true)
         {
@@ -420,6 +425,12 @@ internal class MethodGenerator : ICodeFragmentGenerator
     {
         return !string.IsNullOrEmpty(methodInfo.InterfaceTokenInjectionMode) &&
                methodInfo.InterfaceTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeBasicAuth;
+    }
+
+    private bool IsTokenCookieMode(MethodAnalysisResult methodInfo)
+    {
+        return !string.IsNullOrEmpty(methodInfo.InterfaceTokenInjectionMode) &&
+               methodInfo.InterfaceTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeCookie;
     }
 
     private string GetTokenHeaderName(MethodAnalysisResult methodInfo)

@@ -318,11 +318,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                 if (kvp.Value.ExpireTime - thresholdMs <= now)
                 {
                     _tokenCache.TryRemove(kvp.Key, out _);
-
-                    if (_scopeLocks.TryRemove(kvp.Key, out var lockObj))
-                    {
-                        lockObj.Dispose();
-                    }
+                    _scopeLocks.TryRemove(kvp.Key, out _);
                 }
             }
         }

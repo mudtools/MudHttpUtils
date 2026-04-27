@@ -41,4 +41,9 @@ public enum TokenInjectionMode
     /// HTTP Basic 认证（将凭据编码为 Base64 注入到 Authorization 头）。
     /// </summary>
     BasicAuth = 5,
+
+    /// <summary>
+    /// 将令牌注入到 HTTP 请求的 Cookie 中。
+    /// </summary>
+    Cookie = 6,
 }
