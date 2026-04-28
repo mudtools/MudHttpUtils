@@ -298,15 +298,17 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// <returns>凭证令牌。</returns>
     public async Task<CredentialToken> GetOrRefreshCredentialTokenAsync(CancellationToken cancellationToken = default)
     {
+        var accessToken = await GetOrRefreshTokenAsync(cancellationToken).ConfigureAwait(false);
+
         var currentToken = GetCurrentCachedToken();
-
-        if (currentToken != null && currentToken.Expire > DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
-        {
+        if (currentToken != null)
             return currentToken;
-        }
 
-        var refreshed = await RefreshTokenCoreAsync(cancellationToken).ConfigureAwait(false);
-        return refreshed;
+        return new CredentialToken
+        {
+            AccessToken = accessToken,
+            Expire = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds()
+        };
     }
 
     private async Task<CredentialToken> RequestTokenAsync(

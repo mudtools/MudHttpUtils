@@ -26,6 +26,23 @@ public interface IAppContextSwitcher
     IMudAppContext UseDefaultApp();
 
     /// <summary>
+    /// 创建一个应用上下文作用域，切换到指定的应用上下文，并在作用域结束时自动恢复之前的上下文。
+    /// 使用 <c>using</c> 语句确保上下文恢复，避免 <see cref="UseApp"/> 导致的 <see cref="AsyncLocal{T}"/> 上下文泄漏。
+    /// </summary>
+    /// <param name="appKey">应用的唯一标识符。</param>
+    /// <returns>一个 <see cref="IDisposable"/> 对象，释放时恢复之前的上下文。</returns>
+    /// <example>
+    /// <code>
+    /// using (api.BeginScope("AppA"))
+    /// {
+    ///     // 在此作用域内，所有请求使用 AppA 的上下文
+    ///     await api.GetDataAsync();
+    /// } // 作用域结束，自动恢复之前的上下文
+    /// </code>
+    /// </example>
+    IDisposable BeginScope(string appKey);
+
+    /// <summary>
     /// 异步获取当前应用上下文的访问令牌。
     /// </summary>
     /// <returns>包含访问令牌的字符串任务。</returns>

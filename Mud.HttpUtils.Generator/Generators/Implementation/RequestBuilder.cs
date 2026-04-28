@@ -180,11 +180,11 @@ internal class RequestBuilder
 
         if (multipartFormParam != null || uploadParams.Any())
         {
-            GenerateMultipartFormDataParameter(codeBuilder, methodInfo, multipartFormParam, uploadParams);
+            GenerateMultipartFormDataParameter(codeBuilder, methodInfo, multipartFormParam, uploadParams, formParams);
             return;
         }
 
-        if (formParams.Any() && multipartFormParam == null && !uploadParams.Any())
+        if (formParams.Any())
         {
             GenerateUrlEncodedFormParameter(codeBuilder, formParams);
             return;
@@ -282,17 +282,14 @@ internal class RequestBuilder
     /// 生成 MultipartFormDataContent 参数（用于 [MultipartForm] 和 [Upload] 特性）
     /// </summary>
     private void GenerateMultipartFormDataParameter(StringBuilder codeBuilder, MethodAnalysisResult methodInfo,
-        ParameterInfo? multipartFormParam, List<ParameterInfo> uploadParams)
+        ParameterInfo? multipartFormParam, List<ParameterInfo> uploadParams, List<ParameterInfo> formParams)
     {
         codeBuilder.AppendLine("            using var __multipartContent = new System.Net.Http.MultipartFormDataContent();");
 
-        if (multipartFormParam != null)
+        // 处理 [Form] 参数：无论是 [MultipartForm] 还是 [Upload] 存在时，[Form] 参数都应加入 multipart
+        if (multipartFormParam != null || uploadParams.Any())
         {
-            var formProperties = methodInfo.Parameters
-                .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.FormAttribute))
-                .ToList();
-
-            foreach (var formProp in formProperties)
+            foreach (var formProp in formParams)
             {
                 var formAttr = formProp.Attributes.First(a => a.Name == HttpClientGeneratorConstants.FormAttribute);
                 var fieldName = GetFormFieldName(formAttr, formProp.Name);

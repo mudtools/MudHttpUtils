@@ -80,6 +80,9 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         if (string.IsNullOrEmpty(userId))
             return null;
 
+        if (_disposed)
+            throw new ObjectDisposedException(GetType().Name);
+
         var cachedInfo = GetUserTokenFromCache(userId!);
         if (IsUserTokenValid(cachedInfo))
         {
@@ -135,9 +138,9 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
         cacheEntryOptions.RegisterPostEvictionCallback((key, value, reason, state) =>
         {
-            if (key is string userKey && _userLocks.TryRemove(userKey, out var userLock))
+            if (key is string userKey)
             {
-                userLock.Dispose();
+                _userLocks.TryRemove(userKey, out _);
             }
         });
 
@@ -151,11 +154,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     protected void RemoveUserTokenFromCache(string userId)
     {
         _userTokenCache.Remove(userId);
-
-        if (_userLocks.TryRemove(userId, out var userLock))
-        {
-            userLock.Dispose();
-        }
+        _userLocks.TryRemove(userId, out _);
     }
 
     /// <summary>
@@ -192,10 +191,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
         foreach (var key in orphanedKeys)
         {
-            if (_userLocks.TryRemove(key, out var userLock))
-            {
-                userLock.Dispose();
-            }
+            _userLocks.TryRemove(key, out _);
         }
     }
 
@@ -212,17 +208,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         if (userLock.CurrentCount != 1)
             return;
 
-        if (_userLocks.TryRemove(userId, out var removedLock))
-        {
-            try
-            {
-                removedLock.Dispose();
-            }
-            catch
-            {
-                _userLocks.TryAdd(userId, removedLock);
-            }
-        }
+        _userLocks.TryRemove(userId, out _);
     }
 
     /// <summary>

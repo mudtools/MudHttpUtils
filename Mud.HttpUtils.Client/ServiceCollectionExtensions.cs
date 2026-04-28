@@ -56,6 +56,8 @@ public static class HttpClientServiceCollectionExtensions
 
         services.TryAddTransient<IBaseHttpClient>(sp => sp.GetRequiredService<IEnhancedHttpClient>());
         services.TryAddSingleton<IHttpClientResolver, HttpClientResolver>();
+        services.TryAddSingleton<IHttpResponseCache>(sp =>
+            new MemoryHttpResponseCache(1000, 60));
 
         return httpClientBuilder;
     }
