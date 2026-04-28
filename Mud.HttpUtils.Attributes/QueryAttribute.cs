@@ -76,6 +76,15 @@ public sealed class QueryAttribute : Attribute
     public string? FormatString { get; set; }
 
     /// <summary>
+    /// 获取或设置格式化字符串的别名属性，等效于 <see cref="FormatString"/>。
+    /// </summary>
+    public string? Format
+    {
+        get => FormatString;
+        set => FormatString = value;
+    }
+
+    /// <summary>
     /// 获取或设置参数的别名，用于映射到不同的查询参数名。
     /// </summary>
     public string? AliasAs { get; set; }

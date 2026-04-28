@@ -67,16 +67,11 @@ internal static class ParameterValidationHelper
         }
         else if (param.Type.EndsWith("string", StringComparison.OrdinalIgnoreCase))
         {
-            var isPathOrQueryParam = IsPathOrQueryParam(param);
             codeBuilder.AppendLine($"            {param.Name} = {param.Name}.Trim();");
             codeBuilder.AppendLine($"            if (string.IsNullOrEmpty({param.Name}))");
             codeBuilder.AppendLine($"            {{");
             codeBuilder.AppendLine($"                throw new ArgumentNullException(nameof({param.Name}));");
             codeBuilder.AppendLine($"            }}");
-            if (isPathOrQueryParam && ShouldUrlEncode(param))
-            {
-                codeBuilder.AppendLine($"            {param.Name} = Uri.EscapeDataString({param.Name});");
-            }
         }
         else if (!TypeDetectionHelper.IsNullableType(param.Type) && !TypeDetectionHelper.IsSimpleType(param.Type))
         {
@@ -85,28 +80,5 @@ internal static class ParameterValidationHelper
         }
     }
 
-    /// <summary>
-    /// 判断参数是否为路径或查询参数（仅这两类需要 URL 编码）
-    /// </summary>
-    private static bool IsPathOrQueryParam(ParameterInfo param)
-    {
-        return param.Attributes.Any(attr =>
-            HttpClientGeneratorConstants.PathAttributes.Contains(attr.Name) ||
-            attr.Name == HttpClientGeneratorConstants.QueryAttribute ||
-            attr.Name == HttpClientGeneratorConstants.ArrayQueryAttribute);
-    }
 
-    /// <summary>
-    /// 判断路径参数是否应进行 URL 编码（检查 [Path(UrlEncode = false)] 设置）
-    /// </summary>
-    private static bool ShouldUrlEncode(ParameterInfo param)
-    {
-        var pathAttr = param.Attributes.FirstOrDefault(attr =>
-            HttpClientGeneratorConstants.PathAttributes.Contains(attr.Name));
-
-        if (pathAttr != null && pathAttr.NamedArguments.TryGetValue("UrlEncode", out var value) && value is bool urlEncode)
-            return urlEncode;
-
-        return true;
-    }
 }

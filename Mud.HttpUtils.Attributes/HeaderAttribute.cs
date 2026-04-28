@@ -119,6 +119,15 @@ public sealed class HeaderAttribute : Attribute
     public string? FormatString { get; set; }
 
     /// <summary>
+    /// 获取或设置格式化字符串的别名属性，等效于 <see cref="FormatString"/>。
+    /// </summary>
+    public string? Format
+    {
+        get => FormatString;
+        set => FormatString = value;
+    }
+
+    /// <summary>
     /// 获取一个值，该值指示是否已设置 <see cref="Value"/> 属性。
     /// </summary>
     internal bool HasSetValue { get; private set; }

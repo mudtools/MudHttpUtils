@@ -114,4 +114,18 @@ internal static class TypeDetectionHelper
 
         return false;
     }
+
+    /// <summary>
+    /// 检查是否为 IDictionary 类型
+    /// </summary>
+    public static bool IsDictionaryType(string typeName)
+    {
+        var nonNullableTypeName = typeName.TrimEnd('?');
+        return nonNullableTypeName.StartsWith("IDictionary<", StringComparison.Ordinal) ||
+               nonNullableTypeName.StartsWith("Dictionary<", StringComparison.Ordinal) ||
+               nonNullableTypeName.StartsWith("System.Collections.Generic.IDictionary<", StringComparison.Ordinal) ||
+               nonNullableTypeName.StartsWith("System.Collections.Generic.Dictionary<", StringComparison.Ordinal) ||
+               nonNullableTypeName.StartsWith("IReadOnlyDictionary<", StringComparison.Ordinal) ||
+               nonNullableTypeName.StartsWith("System.Collections.Generic.IReadOnlyDictionary<", StringComparison.Ordinal);
+    }
 }

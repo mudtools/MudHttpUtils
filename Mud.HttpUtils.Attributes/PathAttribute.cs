@@ -87,6 +87,15 @@ public sealed class PathAttribute : Attribute
     public string? FormatString { get; set; }
 
     /// <summary>
+    /// 获取或设置格式化字符串的别名属性，等效于 <see cref="FormatString"/>。
+    /// </summary>
+    public string? Format
+    {
+        get => FormatString;
+        set => FormatString = value;
+    }
+
+    /// <summary>
     /// 获取或设置一个值，该值指示是否对路径参数值进行 URL 编码。
     /// </summary>
     /// <value>默认为 true（启用 URL 编码）。</value>

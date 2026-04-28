@@ -28,6 +28,7 @@ namespace Mud.HttpUtils;
 /// catch (ApiException ex)
 /// {
 ///     Console.WriteLine($"请求失败: {ex.StatusCode}");
+///     Console.WriteLine($"请求URI: {ex.RequestUri}");
 ///     Console.WriteLine($"错误内容: {ex.Content}");
 /// }
 /// </code>
@@ -51,12 +52,41 @@ public class ApiException : Exception
     /// </summary>
     /// <param name="statusCode">HTTP 状态码。</param>
     /// <param name="content">响应内容。</param>
+    /// <param name="requestUri">请求 URI。</param>
+    public ApiException(HttpStatusCode statusCode, string? content, string? requestUri)
+        : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}) for request: {requestUri}.")
+    {
+        StatusCode = statusCode;
+        Content = content;
+        RequestUri = requestUri;
+    }
+
+    /// <summary>
+    /// 初始化 <see cref="ApiException"/> 类的新实例。
+    /// </summary>
+    /// <param name="statusCode">HTTP 状态码。</param>
+    /// <param name="content">响应内容。</param>
     /// <param name="innerException">内部异常。</param>
     public ApiException(HttpStatusCode statusCode, string? content, Exception innerException)
         : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}).", innerException)
     {
         StatusCode = statusCode;
         Content = content;
+    }
+
+    /// <summary>
+    /// 初始化 <see cref="ApiException"/> 类的新实例。
+    /// </summary>
+    /// <param name="statusCode">HTTP 状态码。</param>
+    /// <param name="content">响应内容。</param>
+    /// <param name="requestUri">请求 URI。</param>
+    /// <param name="innerException">内部异常。</param>
+    public ApiException(HttpStatusCode statusCode, string? content, string? requestUri, Exception innerException)
+        : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}) for request: {requestUri}.", innerException)
+    {
+        StatusCode = statusCode;
+        Content = content;
+        RequestUri = requestUri;
     }
 
     /// <summary>
@@ -68,4 +98,52 @@ public class ApiException : Exception
     /// 获取响应内容。
     /// </summary>
     public string? Content { get; }
+
+    /// <summary>
+    /// 获取请求 URI。
+    /// </summary>
+    public string? RequestUri { get; }
+
+    /// <summary>
+    /// 尝试将响应内容反序列化为指定类型。
+    /// </summary>
+    /// <typeparam name="T">目标类型。</typeparam>
+    /// <param name="deserialize">反序列化函数，接受 JSON 字符串并返回反序列化的对象。</param>
+    /// <param name="result">反序列化结果。如果反序列化失败，则为 <c>default</c>。</param>
+    /// <returns>如果反序列化成功，则为 <c>true</c>；否则为 <c>false</c>。</returns>
+    public bool TryDeserializeContent<T>(Func<string, T?> deserialize, out T? result)
+    {
+        result = default;
+
+        if (string.IsNullOrEmpty(Content) || deserialize == null)
+            return false;
+
+        try
+        {
+            result = deserialize(Content);
+            return result is not null;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 将响应内容反序列化为指定类型。
+    /// </summary>
+    /// <typeparam name="T">目标类型。</typeparam>
+    /// <param name="deserialize">反序列化函数，接受 JSON 字符串并返回反序列化的对象。</param>
+    /// <returns>反序列化的结果。</returns>
+    /// <exception cref="InvalidOperationException">当内容为空或反序列化函数为 null 时抛出。</exception>
+    public T? DeserializeContent<T>(Func<string, T?> deserialize)
+    {
+        if (string.IsNullOrEmpty(Content))
+            throw new InvalidOperationException("Cannot deserialize null or empty content.");
+
+        if (deserialize == null)
+            throw new ArgumentNullException(nameof(deserialize));
+
+        return deserialize(Content);
+    }
 }
