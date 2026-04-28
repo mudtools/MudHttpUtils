@@ -73,7 +73,7 @@ internal static class ParameterValidationHelper
             codeBuilder.AppendLine($"            {{");
             codeBuilder.AppendLine($"                throw new ArgumentNullException(nameof({param.Name}));");
             codeBuilder.AppendLine($"            }}");
-            if (isPathOrQueryParam)
+            if (isPathOrQueryParam && ShouldUrlEncode(param))
             {
                 codeBuilder.AppendLine($"            {param.Name} = Uri.EscapeDataString({param.Name});");
             }
@@ -94,5 +94,19 @@ internal static class ParameterValidationHelper
             HttpClientGeneratorConstants.PathAttributes.Contains(attr.Name) ||
             attr.Name == HttpClientGeneratorConstants.QueryAttribute ||
             attr.Name == HttpClientGeneratorConstants.ArrayQueryAttribute);
+    }
+
+    /// <summary>
+    /// 判断路径参数是否应进行 URL 编码（检查 [Path(UrlEncode = false)] 设置）
+    /// </summary>
+    private static bool ShouldUrlEncode(ParameterInfo param)
+    {
+        var pathAttr = param.Attributes.FirstOrDefault(attr =>
+            HttpClientGeneratorConstants.PathAttributes.Contains(attr.Name));
+
+        if (pathAttr != null && pathAttr.NamedArguments.TryGetValue("UrlEncode", out var value) && value is bool urlEncode)
+            return urlEncode;
+
+        return true;
     }
 }

@@ -45,4 +45,9 @@ internal class GenerationConfiguration
     /// 是否为用户访问令牌 (UserAccessToken)
     /// </summary>
     public bool IsUserAccessToken { get; set; }
+
+    /// <summary>
+    /// 接口的基础路径前缀（从 [BasePath] 特性获取）
+    /// </summary>
+    public string? BasePath { get; set; }
 }

@@ -202,6 +202,8 @@ internal class InterfaceImplementationGenerator
                 _interfaceSymbol.Name));
         }
 
+        var basePath = ExtractBasePath();
+
         return new GenerationConfiguration
         {
             HttpClientOptionsName = _optionsName,
@@ -220,7 +222,8 @@ internal class InterfaceImplementationGenerator
                 ? TypeSymbolHelper.GetTypeAllDisplayString(_compilation, effectiveTokenManage!)
                 : null,
             TokenType = tokenType,
-            IsUserAccessToken = tokenType == "UserAccessToken"
+            IsUserAccessToken = tokenType == "UserAccessToken",
+            BasePath = basePath
         };
     }
 
@@ -246,5 +249,19 @@ internal class InterfaceImplementationGenerator
             _interfaceSymbol,
             HttpClientGeneratorConstants.TokenAttributeNames);
         return TokenHelper.GetTokenTypeFromAttribute(tokenAttribute);
+    }
+
+    /// <summary>
+    /// 从接口的 [BasePath] 特性中提取基础路径前缀
+    /// </summary>
+    private string? ExtractBasePath()
+    {
+        var basePathAttr = _interfaceSymbol.GetAttributes()
+            .FirstOrDefault(attr => attr.AttributeClass?.Name == "BasePathAttribute" || attr.AttributeClass?.Name == "BasePath");
+
+        if (basePathAttr == null || basePathAttr.ConstructorArguments.Length == 0)
+            return null;
+
+        return basePathAttr.ConstructorArguments[0].Value?.ToString();
     }
 }

@@ -95,6 +95,30 @@ public sealed class HeaderAttribute : Attribute
     public bool Replace { get; set; }
 
     /// <summary>
+    /// 获取或设置格式化字符串，用于格式化请求头值。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 支持以下格式化方式：
+    /// <list type="bullet">
+    /// <item>如果格式包含 {0}，则使用 string.Format 格式化</item>
+    /// <item>如果参数实现 IFormattable，则调用 ToString(format, CultureInfo.InvariantCulture)</item>
+    /// <item>否则调用 ToString()</item>
+    /// </list>
+    /// </para>
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// // GUID 格式化
+    /// [Header("X-Request-Id", FormatString = "N")]
+    /// 
+    /// // 日期格式化
+    /// [Header("X-Timestamp", FormatString = "yyyy-MM-ddTHH:mm:ssZ")]
+    /// </code>
+    /// </example>
+    public string? FormatString { get; set; }
+
+    /// <summary>
     /// 获取一个值，该值指示是否已设置 <see cref="Value"/> 属性。
     /// </summary>
     internal bool HasSetValue { get; private set; }

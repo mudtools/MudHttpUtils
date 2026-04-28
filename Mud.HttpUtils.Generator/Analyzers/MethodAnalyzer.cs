@@ -59,6 +59,8 @@ internal static class MethodAnalyzer
             .FirstOrDefault(p => p.Attributes.Any(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.Name)))?
             .Name;
 
+        var allowAnyStatusCode = AnalyzeAllowAnyStatusCode(methodSymbol, interfaceDecl, compilation, semanticModel);
+
         var returnTypeFullName = TypeSymbolHelper.GetTypeFullName(methodSymbol.ReturnType);
         var isAsyncEnumerable = TypeDetectionHelper.IsAsyncEnumerableType(returnTypeFullName, out var asyncEnumerableElementType);
 
@@ -89,6 +91,7 @@ internal static class MethodAnalyzer
             InterfaceTokenScopes = interfaceTokenScopes,
             MethodTokenScopes = methodTokenScopes,
             TokenParameterName = tokenParameterName,
+            AllowAnyStatusCode = allowAnyStatusCode,
             CacheEnabled = cacheEnabled,
             CacheDurationSeconds = cacheDurationSeconds,
             CacheKeyTemplate = cacheKeyTemplate,
@@ -470,6 +473,32 @@ internal static class MethodAnalyzer
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// 分析方法是否标记了 [AllowAnyStatusCode] 特性。
+    /// 方法级特性优先于接口级特性。
+    /// </summary>
+    private static bool AnalyzeAllowAnyStatusCode(
+        IMethodSymbol methodSymbol,
+        InterfaceDeclarationSyntax interfaceDecl,
+        Compilation compilation,
+        SemanticModel? semanticModel)
+    {
+        var methodHasAttr = methodSymbol.GetAttributes()
+            .Any(attr => HttpClientGeneratorConstants.AllowAnyStatusCodeAttributeNames.Contains(attr.AttributeClass?.Name));
+
+        if (methodHasAttr)
+            return true;
+
+        var model = semanticModel ?? SemanticModelCache.GetOrCreate(compilation, interfaceDecl.SyntaxTree);
+        var interfaceSymbol = model.GetDeclaredSymbol(interfaceDecl) as INamedTypeSymbol;
+
+        if (interfaceSymbol == null)
+            return false;
+
+        return interfaceSymbol.GetAttributes()
+            .Any(attr => HttpClientGeneratorConstants.AllowAnyStatusCodeAttributeNames.Contains(attr.AttributeClass?.Name));
     }
 
     /// <summary>

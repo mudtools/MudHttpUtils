@@ -142,6 +142,12 @@ internal class MethodAnalysisResult
     /// </summary>
     public string? TokenParameterName { get; set; }
 
+    /// <summary>
+    /// 是否允许任何状态码（不抛出异常）。
+    /// 从 [AllowAnyStatusCode] 特性获取，方法级优先于接口级。
+    /// </summary>
+    public bool AllowAnyStatusCode { get; set; }
+
     public bool CacheEnabled { get; set; }
 
     public int CacheDurationSeconds { get; set; } = 300;

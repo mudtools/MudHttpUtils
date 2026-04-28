@@ -221,7 +221,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
     private void GenerateDirectMethod(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection)
     {
-        var urlCode = _requestBuilder.BuildUrlString(methodInfo);
+        var basePath = _context.Configuration.BasePath;
+        var urlCode = _requestBuilder.BuildUrlString(methodInfo, basePath);
         codeBuilder.AppendLine(urlCode);
 
         _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
@@ -256,7 +257,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine($"                async () =>");
         codeBuilder.AppendLine($"                {{");
 
-        var urlCode = _requestBuilder.BuildUrlString(methodInfo);
+        var basePath = _context.Configuration.BasePath;
+        var urlCode = _requestBuilder.BuildUrlString(methodInfo, basePath);
         codeBuilder.AppendLine($"                    {urlCode.TrimStart()}");
 
         GenerateCacheInnerQueryParameters(codeBuilder, methodInfo);

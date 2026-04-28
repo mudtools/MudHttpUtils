@@ -37,6 +37,8 @@ internal static class HttpClientGeneratorConstants
     public const string UploadAttribute = "UploadAttribute";
     public const string MultipartFormAttribute = "MultipartFormAttribute";
     public const string FormAttribute = "FormAttribute";
+    public const string QueryMapAttribute = "QueryMapAttribute";
+    public const string RawQueryStringAttribute = "RawQueryStringAttribute";
 
     // Token注入模式
     public const string TokenInjectionModeHeader = "Header";
@@ -69,6 +71,10 @@ internal static class HttpClientGeneratorConstants
     public const string IsAbstractProperty = "IsAbstract";
     public const string InheritedFromProperty = "InheritedFrom";
     public const string BaseAddressProperty = "BaseAddress";
+
+    public static readonly string[] BasePathAttributeNames = ["BasePathAttribute", "BasePath"];
+
+    public static readonly string[] AllowAnyStatusCodeAttributeNames = ["AllowAnyStatusCodeAttribute", "AllowAnyStatusCode"];
 
     public static readonly string[] CacheAttributeNames = ["CacheAttribute", "Cache"];
 

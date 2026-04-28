@@ -16,41 +16,97 @@ internal class RequestBuilder
     /// <summary>
     /// 生成 URL 字符串
     /// </summary>
-    public string BuildUrlString(MethodAnalysisResult methodInfo)
+    public string BuildUrlString(MethodAnalysisResult methodInfo, string? basePath = null)
     {
         var pathParams = methodInfo.Parameters
             .Where(p => p.Attributes.Any(attr => HttpClientGeneratorConstants.PathAttributes.Contains(attr.Name)))
             .ToList();
 
         var urlTemplate = methodInfo.UrlTemplate;
+
+        // 规则1：如果是绝对 URL，直接使用
+        if (urlTemplate.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            urlTemplate.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildUrlWithPlaceholders(urlTemplate, pathParams, methodInfo);
+        }
+
+        // 规则2：如果以 / 开头，忽略 BasePath
+        if (urlTemplate.StartsWith("/"))
+        {
+            return BuildUrlWithPlaceholders(urlTemplate, pathParams, methodInfo);
+        }
+
+        // 规则3：正常情况，拼接 BasePath
+        if (!string.IsNullOrEmpty(basePath))
+        {
+            var normalizedBasePath = basePath.TrimEnd('/');
+            var normalizedUrlTemplate = urlTemplate;
+            var combinedPath = $"{normalizedBasePath}/{normalizedUrlTemplate}";
+            return BuildUrlWithPlaceholders(combinedPath, pathParams, methodInfo);
+        }
+
+        return BuildUrlWithPlaceholders(urlTemplate, pathParams, methodInfo);
+    }
+
+    /// <summary>
+    /// 生成带占位符替换的 URL 字符串
+    /// </summary>
+    private string BuildUrlWithPlaceholders(string urlTemplate, List<ParameterInfo> pathParams, MethodAnalysisResult? methodInfo = null)
+    {
         var interpolatedUrl = urlTemplate;
         var hasPathParams = pathParams.Any();
-        var isTokenPathMode = methodInfo.InterfaceTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModePath;
 
-        // 处理 Token Path 模式：将 URL 中的 {tokenName} 替换为 access_token
-        if (isTokenPathMode && !string.IsNullOrEmpty(methodInfo.InterfaceTokenName))
+        if (methodInfo != null)
         {
-            var tokenPlaceholder = $"{{{methodInfo.InterfaceTokenName}}}";
-            if (interpolatedUrl.Contains(tokenPlaceholder))
+            var isTokenPathMode = methodInfo.InterfaceTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModePath;
+            if (isTokenPathMode && !string.IsNullOrEmpty(methodInfo.InterfaceTokenName))
             {
-                interpolatedUrl = interpolatedUrl.Replace(tokenPlaceholder, "{access_token}");
+                var tokenPlaceholder = $"{{{methodInfo.InterfaceTokenName}}}";
+                if (interpolatedUrl.Contains(tokenPlaceholder))
+                {
+                    interpolatedUrl = interpolatedUrl.Replace(tokenPlaceholder, "{access_token}");
+                }
             }
         }
 
-        // 处理路径参数插值
         if (hasPathParams)
         {
             foreach (var param in pathParams)
             {
-                if (interpolatedUrl.Contains($"{{{param.Name}}}"))
+                var pathAttr = param.Attributes.First(a => HttpClientGeneratorConstants.PathAttributes.Contains(a.Name));
+                var placeholderName = GetPathParameterName(pathAttr, param.Name);
+
+                if (interpolatedUrl.Contains($"{{{placeholderName}}}"))
                 {
-                    var formatString = GetFormatString(param.Attributes.First(a => HttpClientGeneratorConstants.PathAttributes.Contains(a.Name)));
-                    interpolatedUrl = FormatUrlParameter(interpolatedUrl, param.Name, formatString);
+                    var formatString = GetFormatString(pathAttr);
+                    var urlEncode = GetUrlEncodeValue(pathAttr);
+                    interpolatedUrl = FormatUrlParameter(interpolatedUrl, placeholderName, formatString, urlEncode, param.Name);
                 }
             }
         }
 
         return $"            var url = $\"{interpolatedUrl}\";";
+    }
+
+    /// <summary>
+    /// 获取路径参数的占位符名称
+    /// </summary>
+    private static string GetPathParameterName(ParameterAttributeInfo pathAttr, string paramName)
+    {
+        if (pathAttr.NamedArguments.TryGetValue("Name", out var nameValue) && nameValue is string name && !string.IsNullOrEmpty(name))
+            return name;
+        return paramName;
+    }
+
+    /// <summary>
+    /// 获取路径参数的 UrlEncode 值
+    /// </summary>
+    private static bool GetUrlEncodeValue(ParameterAttributeInfo pathAttr)
+    {
+        if (pathAttr.NamedArguments.TryGetValue("UrlEncode", out var value) && value is bool urlEncode)
+            return urlEncode;
+        return true;
     }
 
     /// <summary>
@@ -130,6 +186,7 @@ internal class RequestBuilder
         {
             var headerAttr = param.Attributes.First(a => a.Name == HttpClientGeneratorConstants.HeaderAttribute);
             var headerName = headerAttr.Arguments.FirstOrDefault()?.ToString() ?? param.Name;
+            var formatString = GetFormatString(headerAttr);
 
             var isTokenParam = param.Attributes.Any(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.Name));
             if (isTokenParam && !string.IsNullOrEmpty(interfaceHeaderName))
@@ -145,7 +202,10 @@ internal class RequestBuilder
             }
             else
             {
-                codeBuilder.AppendLine($"            httpRequest.Headers.Add(\"{headerName}\", {param.Name}.ToString());");
+                var formatExpression = !string.IsNullOrEmpty(formatString)
+                    ? $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{formatString}}}\", {param.Name})"
+                    : $"{param.Name}.ToString()";
+                codeBuilder.AppendLine($"            httpRequest.Headers.Add(\"{headerName}\", {formatExpression});");
             }
         }
     }
@@ -405,33 +465,148 @@ internal class RequestBuilder
             }
             else
             {
-                var responseContentType = methodInfo.ResponseContentType;
-                var isXmlResponse = ContentTypeHelper.IsXmlContentType(responseContentType);
-                var resultVariable = $"__result_{methodInfo.MethodName}";
+                var isResponseType = IsResponseType(deserializeType, out var responseInnerType);
 
-                if (isXmlResponse)
+                if (isResponseType)
                 {
-                    codeBuilder.AppendLine($"            var {resultVariable} = await {httpClient}.SendXmlAsync<{deserializeType}>(httpRequest, null{cancellationTokenArg});");
+                    GenerateResponseExecution(codeBuilder, methodInfo, httpClient, cancellationTokenArg, responseInnerType);
+                }
+                else if (methodInfo.AllowAnyStatusCode)
+                {
+                    GenerateAllowAnyStatusCodeExecution(codeBuilder, methodInfo, httpClient, cancellationTokenArg, deserializeType);
                 }
                 else
                 {
-                    codeBuilder.AppendLine($"            var {resultVariable} = await {httpClient}.SendAsync<{deserializeType}>(httpRequest, _jsonSerializerOptions{cancellationTokenArg});");
+                    GenerateStandardExecution(codeBuilder, methodInfo, httpClient, cancellationTokenArg, deserializeType);
                 }
-
-                if (methodInfo.ResponseEnableDecrypt)
-                {
-                    string encryptableClient = hasHttpClient ? "_httpClient" : "_appContext.Value!.HttpClient";
-
-                    codeBuilder.AppendLine($"            if (!string.IsNullOrEmpty({resultVariable}))");
-                    codeBuilder.AppendLine($"            {{");
-                    codeBuilder.AppendLine($"                var decryptedJson = {encryptableClient}.DecryptContent({resultVariable}!.ToString()!);");
-                    codeBuilder.AppendLine($"                {resultVariable} = JsonSerializer.Deserialize<{deserializeType}>(decryptedJson, _jsonSerializerOptions);");
-                    codeBuilder.AppendLine($"            }}");
-                }
-
-                codeBuilder.AppendLine($"            return {resultVariable};");
             }
         }
+    }
+
+    /// <summary>
+    /// 检测返回类型是否为 Response&lt;T&gt;，并提取内部类型 T
+    /// </summary>
+    private static bool IsResponseType(string type, out string innerType)
+    {
+        innerType = string.Empty;
+
+        if (type.StartsWith("Response<", StringComparison.Ordinal) ||
+            type.StartsWith("Mud.HttpUtils.Response<", StringComparison.Ordinal) ||
+            type.StartsWith("Mud.HttpUtils.HttpClient.Response<", StringComparison.Ordinal))
+        {
+            var startIdx = type.IndexOf('<');
+            var endIdx = type.LastIndexOf('>');
+            if (startIdx >= 0 && endIdx > startIdx)
+            {
+                innerType = type.Substring(startIdx + 1, endIdx - startIdx - 1);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 生成 Response&lt;T&gt; 返回类型的执行代码
+    /// </summary>
+    private void GenerateResponseExecution(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, string httpClient, string cancellationTokenArg, string innerType)
+    {
+        codeBuilder.AppendLine($"            using var __httpResponse = await {httpClient}.SendRawAsync(httpRequest{cancellationTokenArg});");
+        codeBuilder.AppendLine($"            var __statusCode = __httpResponse.StatusCode;");
+        codeBuilder.AppendLine($"            var __rawContent = await __httpResponse.Content.ReadAsStringAsync();");
+        codeBuilder.AppendLine($"            var __responseHeaders = __httpResponse.Headers.ToDictionary(h => h.Key, h => h.Value.ToList());");
+
+        codeBuilder.AppendLine($"            if ((int)__statusCode >= 200 && (int)__statusCode <= 299)");
+        codeBuilder.AppendLine($"            {{");
+
+        var isVoidType = innerType == "void" || innerType == "System.Void";
+        if (!isVoidType)
+        {
+            codeBuilder.AppendLine($"                var __content = System.Text.Json.JsonSerializer.Deserialize<{innerType}>(__rawContent, _jsonSerializerOptions);");
+            codeBuilder.AppendLine($"                return new Mud.HttpUtils.Response<{innerType}>(__statusCode, __content, __rawContent, __responseHeaders);");
+        }
+        else
+        {
+            codeBuilder.AppendLine($"                return new Mud.HttpUtils.Response<{innerType}>(__statusCode, default, __rawContent, __responseHeaders);");
+        }
+
+        codeBuilder.AppendLine($"            }}");
+        codeBuilder.AppendLine($"            else");
+        codeBuilder.AppendLine($"            {{");
+        codeBuilder.AppendLine($"                return new Mud.HttpUtils.Response<{innerType}>(__statusCode, __rawContent, __responseHeaders);");
+        codeBuilder.AppendLine($"            }}");
+    }
+
+    /// <summary>
+    /// 生成 AllowAnyStatusCode 模式的执行代码（非 Response&lt;T&gt; 返回类型）
+    /// </summary>
+    private void GenerateAllowAnyStatusCodeExecution(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, string httpClient, string cancellationTokenArg, string deserializeType)
+    {
+        var responseContentType = methodInfo.ResponseContentType;
+        var isXmlResponse = ContentTypeHelper.IsXmlContentType(responseContentType);
+
+        if (isXmlResponse)
+        {
+            codeBuilder.AppendLine($"            var __result = await {httpClient}.SendXmlAsync<{deserializeType}>(httpRequest, null{cancellationTokenArg});");
+        }
+        else
+        {
+            codeBuilder.AppendLine($"            var __result = await {httpClient}.SendAsync<{deserializeType}>(httpRequest, _jsonSerializerOptions{cancellationTokenArg});");
+        }
+
+        if (methodInfo.ResponseEnableDecrypt)
+        {
+            string encryptableClient = httpClient;
+            codeBuilder.AppendLine($"            if (!string.IsNullOrEmpty(__result))");
+            codeBuilder.AppendLine($"            {{");
+            codeBuilder.AppendLine($"                var decryptedJson = {encryptableClient}.DecryptContent(__result!.ToString()!);");
+            codeBuilder.AppendLine($"                __result = JsonSerializer.Deserialize<{deserializeType}>(decryptedJson, _jsonSerializerOptions);");
+            codeBuilder.AppendLine($"            }}");
+        }
+
+        codeBuilder.AppendLine($"            return __result;");
+    }
+
+    /// <summary>
+    /// 生成标准模式的执行代码（默认行为，错误状态码抛出 ApiException）
+    /// </summary>
+    private void GenerateStandardExecution(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, string httpClient, string cancellationTokenArg, string deserializeType)
+    {
+        var responseContentType = methodInfo.ResponseContentType;
+        var isXmlResponse = ContentTypeHelper.IsXmlContentType(responseContentType);
+        var resultVariable = $"__result_{methodInfo.MethodName}";
+
+        codeBuilder.AppendLine($"            using var __httpResponse = await {httpClient}.SendRawAsync(httpRequest{cancellationTokenArg});");
+
+        codeBuilder.AppendLine($"            if (!__httpResponse.IsSuccessStatusCode)");
+        codeBuilder.AppendLine($"            {{");
+        codeBuilder.AppendLine($"                var __errorContent = await __httpResponse.Content.ReadAsStringAsync();");
+        codeBuilder.AppendLine($"                throw new Mud.HttpUtils.ApiException(__httpResponse.StatusCode, __errorContent);");
+        codeBuilder.AppendLine($"            }}");
+
+        var rawContentVar = $"__rawContent_{methodInfo.MethodName}";
+        codeBuilder.AppendLine($"            var {rawContentVar} = await __httpResponse.Content.ReadAsStringAsync();");
+
+        if (isXmlResponse)
+        {
+            codeBuilder.AppendLine($"            var {resultVariable} = ({deserializeType}?)new System.Xml.Serialization.XmlSerializer(typeof({deserializeType})).Deserialize(new System.IO.StringReader({rawContentVar}));");
+        }
+        else
+        {
+            codeBuilder.AppendLine($"            var {resultVariable} = System.Text.Json.JsonSerializer.Deserialize<{deserializeType}>({rawContentVar}, _jsonSerializerOptions);");
+        }
+
+        if (methodInfo.ResponseEnableDecrypt)
+        {
+            string encryptableClient = httpClient;
+            codeBuilder.AppendLine($"            if (!string.IsNullOrEmpty({resultVariable}))");
+            codeBuilder.AppendLine($"            {{");
+            codeBuilder.AppendLine($"                var decryptedJson = {encryptableClient}.DecryptContent({resultVariable}!.ToString()!);");
+            codeBuilder.AppendLine($"                {resultVariable} = JsonSerializer.Deserialize<{deserializeType}>(decryptedJson, _jsonSerializerOptions);");
+            codeBuilder.AppendLine($"            }}");
+        }
+
+        codeBuilder.AppendLine($"            return {resultVariable};");
     }
 
     #region 辅助方法
@@ -471,11 +646,19 @@ internal class RequestBuilder
         return null;
     }
 
-    private string FormatUrlParameter(string url, string paramName, string? formatString)
+    private string FormatUrlParameter(string url, string placeholderName, string? formatString, bool urlEncode, string paramName)
     {
-        return string.IsNullOrEmpty(formatString)
-            ? url
-            : url.Replace($"{{{paramName}}}", $"{{{paramName}.ToString(\"{formatString}\")}}");
+        if (string.IsNullOrEmpty(formatString))
+        {
+            return url.Replace($"{{{placeholderName}}}", $"{{{paramName}}}");
+        }
+
+        if (formatString.Contains("{0}"))
+        {
+            return url.Replace($"{{{placeholderName}}}", $"{{string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{formatString}\", {paramName})}}");
+        }
+
+        return url.Replace($"{{{placeholderName}}}", $"{{string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{formatString}}}\", {paramName})}}");
     }
 
     private void GenerateSingleQueryParameter(StringBuilder codeBuilder, ParameterInfo param)
@@ -606,8 +789,20 @@ internal class RequestBuilder
         HttpClientGeneratorConstants.ArrayQueryAttribute,
     };
 
+    private static readonly HashSet<string> FirstArgIsNameAttributes = new HashSet<string>(StringComparer.Ordinal)
+    {
+        HttpClientGeneratorConstants.HeaderAttribute,
+    };
+
     private string GetFormatString(ParameterAttributeInfo attribute)
     {
+        if (FirstArgIsNameAttributes.Contains(attribute.Name))
+        {
+            return attribute.NamedArguments.TryGetValue("FormatString", out var formatString)
+                ? formatString as string
+                : null;
+        }
+
         if (attribute.Arguments.Length > 1)
         {
             return attribute.Arguments[1] as string ?? "";
@@ -620,8 +815,8 @@ internal class RequestBuilder
             return attribute.Arguments[0] as string ?? "";
         }
 
-        return attribute.NamedArguments.TryGetValue("FormatString", out var formatString)
-            ? formatString as string
+        return attribute.NamedArguments.TryGetValue("FormatString", out var fs)
+            ? fs as string
             : null;
     }
 
