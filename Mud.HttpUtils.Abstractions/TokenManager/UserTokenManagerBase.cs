@@ -248,7 +248,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         return tokenInfo.IsAccessTokenValid(UserExpireThresholdSeconds);
     }
 
-    private UserTokenInfo? GetUserTokenFromCache(string userId)
+    protected UserTokenInfo? GetUserTokenFromCache(string userId)
     {
         return _userTokenCache.Get<UserTokenInfo>(userId);
     }
