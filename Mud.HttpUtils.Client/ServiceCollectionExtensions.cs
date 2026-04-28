@@ -9,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 #if NET6_0_OR_GREATER
 using Microsoft.Extensions.Hosting;
 #endif
@@ -30,6 +31,9 @@ public static class HttpClientServiceCollectionExtensions
     /// <param name="setAsDefault">是否将此客户端设为 IEnhancedHttpClient 的默认实现。</param>
     /// <returns><see cref="IHttpClientBuilder"/>（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+#pragma warning disable CS0419 // Ambiguous reference in cref attribute
+    [Obsolete("在多应用场景下不推荐使用 setAsDefault。请使用 AddNamedMudHttpClient 并通过 IHttpClientResolver 按名称获取客户端。")]
+#pragma warning restore CS0419
     public static IHttpClientBuilder AddMudHttpClient(
         this IServiceCollection services,
         string clientName,
@@ -45,6 +49,111 @@ public static class HttpClientServiceCollectionExtensions
             ? services.AddHttpClient(clientName, configureHttpClient)
             : services.AddHttpClient(clientName);
 
+        RegisterNamedClient(services, clientName, setAsDefault);
+
+        return httpClientBuilder;
+    }
+
+    /// <summary>
+    /// 添加命名 HTTP 客户端，推荐在多应用场景下使用。
+    /// 客户端应通过 <see cref="IHttpClientResolver"/> 按名称获取，而不是直接注入 <see cref="IEnhancedHttpClient"/>。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <param name="clientName">Named HttpClient 的名称。</param>
+    /// <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
+    /// <returns><see cref="IHttpClientBuilder"/>（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+    public static IHttpClientBuilder AddNamedMudHttpClient(
+        this IServiceCollection services,
+        string clientName,
+        Action<HttpClient>? configureHttpClient = null)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+        if (string.IsNullOrWhiteSpace(clientName))
+            throw new ArgumentNullException(nameof(clientName));
+
+        var httpClientBuilder = configureHttpClient != null
+            ? services.AddHttpClient(clientName, configureHttpClient)
+            : services.AddHttpClient(clientName);
+
+        RegisterNamedClient(services, clientName, setAsDefault: false);
+
+        return httpClientBuilder;
+    }
+
+    /// <summary>
+    /// 添加命名 HTTP 客户端，同时配置 AES 加密选项。推荐在多应用场景下使用。
+    /// 客户端应通过 <see cref="IHttpClientResolver"/> 按名称获取，而不是直接注入 <see cref="IEnhancedHttpClient"/>。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <param name="clientName">Named HttpClient 的名称。</param>
+    /// <param name="configureEncryption">配置 AES 加密选项的委托。</param>
+    /// <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
+    /// <returns><see cref="IHttpClientBuilder"/>（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+    public static IHttpClientBuilder AddNamedMudHttpClient(
+        this IServiceCollection services,
+        string clientName,
+        Action<AesEncryptionOptions> configureEncryption,
+        Action<HttpClient>? configureHttpClient = null)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+        if (configureEncryption == null)
+            throw new ArgumentNullException(nameof(configureEncryption));
+
+        services.Configure(configureEncryption);
+        services.TryAddSingleton<IEncryptionProvider, DefaultAesEncryptionProvider>();
+
+        return services.AddNamedMudHttpClient(clientName, configureHttpClient);
+    }
+
+    /// <summary>
+    /// 添加命名 HTTP 客户端，同时配置 HttpClient 的基础地址。推荐在多应用场景下使用。
+    /// 客户端应通过 <see cref="IHttpClientResolver"/> 按名称获取，而不是直接注入 <see cref="IEnhancedHttpClient"/>。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <param name="clientName">Named HttpClient 的名称。</param>
+    /// <param name="baseAddress">HttpClient 的基础地址。</param>
+    /// <returns><see cref="IHttpClientBuilder"/>（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+    public static IHttpClientBuilder AddNamedMudHttpClient(
+        this IServiceCollection services,
+        string clientName,
+        string baseAddress)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+        if (string.IsNullOrWhiteSpace(clientName))
+            throw new ArgumentNullException(nameof(clientName));
+        if (string.IsNullOrWhiteSpace(baseAddress))
+            throw new ArgumentNullException(nameof(baseAddress));
+
+        return services.AddNamedMudHttpClient(clientName, client =>
+        {
+            client.BaseAddress = new Uri(baseAddress);
+        });
+    }
+
+    private static void RegisterNamedClient(
+        IServiceCollection services,
+        string clientName,
+        bool setAsDefault)
+    {
+#if NET8_0_OR_GREATER
+        services.AddKeyedTransient<IEnhancedHttpClient>(
+            clientName,
+            (sp, key) => CreateEnhancedClient(sp, (string)key));
+#endif
+
+        services.Configure<EnhancedHttpClientFactoryOptions>(options =>
+        {
+            options.ClientFactories[clientName] = sp => CreateEnhancedClient(sp, clientName);
+        });
+
+        services.TryAddSingleton<IEnhancedHttpClientFactory, EnhancedHttpClientFactory>();
+
         if (setAsDefault)
         {
             services.AddTransient<IEnhancedHttpClient>(sp => CreateEnhancedClient(sp, clientName));
@@ -58,8 +167,6 @@ public static class HttpClientServiceCollectionExtensions
         services.TryAddSingleton<IHttpClientResolver, HttpClientResolver>();
         services.TryAddSingleton<IHttpResponseCache>(sp =>
             new MemoryHttpResponseCache(1000, 60));
-
-        return httpClientBuilder;
     }
 
     /// <summary>
@@ -72,6 +179,7 @@ public static class HttpClientServiceCollectionExtensions
     /// <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
     /// <returns><see cref="IHttpClientBuilder"/>（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+#pragma warning disable CS0618 // Type or member is obsolete
     public static IHttpClientBuilder AddMudHttpClient(
         this IServiceCollection services,
         string clientName,
@@ -88,6 +196,7 @@ public static class HttpClientServiceCollectionExtensions
 
         return services.AddMudHttpClient(clientName, configureHttpClient);
     }
+#pragma warning restore CS0618
 
     /// <summary>
     /// 添加基于 <see cref="IHttpClientFactory"/> 的 <see cref="HttpClientFactoryEnhancedClient"/> 到依赖注入容器，
@@ -98,6 +207,7 @@ public static class HttpClientServiceCollectionExtensions
     /// <param name="baseAddress">HttpClient 的基础地址。</param>
     /// <returns><see cref="IHttpClientBuilder"/>（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+#pragma warning disable CS0618 // Type or member is obsolete
     public static IHttpClientBuilder AddMudHttpClient(
         this IServiceCollection services,
         string clientName,
@@ -115,6 +225,7 @@ public static class HttpClientServiceCollectionExtensions
             client.BaseAddress = new Uri(baseAddress);
         });
     }
+#pragma warning restore CS0618
 
     /// <summary>
     /// 添加令牌主动刷新后台服务到依赖注入容器。
