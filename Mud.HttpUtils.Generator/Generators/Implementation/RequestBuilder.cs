@@ -68,6 +68,15 @@ internal class RequestBuilder
                     interpolatedUrl = interpolatedUrl.Replace(tokenPlaceholder, "{access_token}");
                 }
             }
+
+            foreach (var pathParam in methodInfo.InterfacePathParameters)
+            {
+                var placeholder = $"{{{pathParam.Name}}}";
+                if (interpolatedUrl.Contains(placeholder))
+                {
+                    interpolatedUrl = interpolatedUrl.Replace(placeholder, pathParam.Value ?? "");
+                }
+            }
         }
 
         if (hasPathParams)
@@ -122,9 +131,17 @@ internal class RequestBuilder
             .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.ArrayQueryAttribute))
             .ToList();
 
+        var queryMapParams = methodInfo.Parameters
+            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.QueryMapAttribute))
+            .ToList();
+
+        var rawQueryStringParams = methodInfo.Parameters
+            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.RawQueryStringAttribute))
+            .ToList();
+
         var hasTokenQuery = ShouldGenerateTokenQuery(methodInfo);
 
-        if (!queryParams.Any() && !arrayQueryParams.Any() && !hasTokenQuery)
+        if (!queryParams.Any() && !arrayQueryParams.Any() && !queryMapParams.Any() && !rawQueryStringParams.Any() && !hasTokenQuery)
             return;
 
         codeBuilder.AppendLine($"            var queryParams = HttpUtility.ParseQueryString(string.Empty);");
@@ -139,16 +156,34 @@ internal class RequestBuilder
             GenerateArrayQueryParameter(codeBuilder, param);
         }
 
+        foreach (var param in queryMapParams)
+        {
+            GenerateQueryMapParameter(codeBuilder, param);
+        }
+
         if (hasTokenQuery)
         {
             var tokenQueryName = GetTokenQueryName(methodInfo);
             codeBuilder.AppendLine($"            queryParams.Add(\"{tokenQueryName}\", access_token);");
         }
 
+        foreach (var interfaceQuery in methodInfo.InterfaceQueryParameters)
+        {
+            if (!string.IsNullOrEmpty(interfaceQuery.Name) && interfaceQuery.Value != null)
+            {
+                codeBuilder.AppendLine($"            queryParams.Add(\"{interfaceQuery.Name}\", \"{interfaceQuery.Value}\");");
+            }
+        }
+
         codeBuilder.AppendLine("            if (queryParams.Count > 0)");
         codeBuilder.AppendLine("            {");
         codeBuilder.AppendLine("                url += \"?\" + queryParams.ToString();");
         codeBuilder.AppendLine("            }");
+
+        foreach (var param in rawQueryStringParams)
+        {
+            GenerateRawQueryStringParameter(codeBuilder, param);
+        }
     }
 
     /// <summary>
@@ -182,11 +217,14 @@ internal class RequestBuilder
 
         string? interfaceHeaderName = GetTokenHeaderName(methodInfo);
 
+        var headerMergeMode = methodInfo.HeaderMergeMode;
+
         foreach (var param in headerParams)
         {
             var headerAttr = param.Attributes.First(a => a.Name == HttpClientGeneratorConstants.HeaderAttribute);
             var headerName = headerAttr.Arguments.FirstOrDefault()?.ToString() ?? param.Name;
             var formatString = GetFormatString(headerAttr);
+            var replace = headerAttr.NamedArguments.TryGetValue("Replace", out var replaceVal) && replaceVal is true;
 
             var isTokenParam = param.Attributes.Any(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.Name));
             if (isTokenParam && !string.IsNullOrEmpty(interfaceHeaderName))
@@ -195,17 +233,39 @@ internal class RequestBuilder
             }
 
             var isStringType = TypeDetectionHelper.IsStringType(param.Type);
+            var shouldReplace = replace || headerMergeMode == "Replace";
+            var shouldIgnore = headerMergeMode == "Ignore";
+
+            if (shouldIgnore)
+                continue;
+
             if (isStringType)
             {
                 codeBuilder.AppendLine($"            if (!string.IsNullOrEmpty({param.Name}))");
-                codeBuilder.AppendLine($"                httpRequest.Headers.Add(\"{headerName}\", {param.Name});");
+                if (shouldReplace)
+                {
+                    codeBuilder.AppendLine($"                httpRequest.Headers.Remove(\"{headerName}\");");
+                    codeBuilder.AppendLine($"                httpRequest.Headers.Add(\"{headerName}\", {param.Name});");
+                }
+                else
+                {
+                    codeBuilder.AppendLine($"                httpRequest.Headers.Add(\"{headerName}\", {param.Name});");
+                }
             }
             else
             {
                 var formatExpression = !string.IsNullOrEmpty(formatString)
                     ? $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{formatString}}}\", {param.Name})"
                     : $"{param.Name}.ToString()";
-                codeBuilder.AppendLine($"            httpRequest.Headers.Add(\"{headerName}\", {formatExpression});");
+                if (shouldReplace)
+                {
+                    codeBuilder.AppendLine($"            httpRequest.Headers.Remove(\"{headerName}\");");
+                    codeBuilder.AppendLine($"            httpRequest.Headers.Add(\"{headerName}\", {formatExpression});");
+                }
+                else
+                {
+                    codeBuilder.AppendLine($"            httpRequest.Headers.Add(\"{headerName}\", {formatExpression});");
+                }
             }
         }
     }
@@ -276,6 +336,18 @@ internal class RequestBuilder
 
         var isXmlContentType = ContentTypeHelper.IsXmlContentType(effectiveContentType ?? contentType);
 
+        var effectiveSerializationMethod = methodInfo.SerializationMethod;
+        if (!hasExplicitContentType && effectiveSerializationMethod == "Xml")
+        {
+            isXmlContentType = true;
+            contentTypeExpression = "\"application/xml\"";
+        }
+        else if (!hasExplicitContentType && effectiveSerializationMethod == "FormUrlEncoded")
+        {
+            GenerateUrlEncodedBodyParameter(codeBuilder, bodyParam);
+            return;
+        }
+
         if (methodInfo.BodyEnableEncrypt)
         {
             var propertyName = methodInfo.BodyEncryptPropertyName ?? "data";
@@ -336,6 +408,33 @@ internal class RequestBuilder
         }
 
         codeBuilder.AppendLine("            httpRequest.Content = new System.Net.Http.FormUrlEncodedContent(__formParameters);");
+    }
+
+    /// <summary>
+    /// 生成 URL 编码的 Body 参数（用于 [SerializationMethod(FormUrlEncoded)] + [Body]）
+    /// </summary>
+    private void GenerateUrlEncodedBodyParameter(StringBuilder codeBuilder, ParameterInfo bodyParam)
+    {
+        codeBuilder.AppendLine($"            if ({bodyParam.Name} != null)");
+        codeBuilder.AppendLine("            {");
+        codeBuilder.AppendLine($"#if NET8_0_OR_GREATER");
+        codeBuilder.AppendLine($"#pragma warning disable IL2072");
+        codeBuilder.AppendLine($"#endif");
+        codeBuilder.AppendLine($"                var __bodyFormParams = new Dictionary<string, string>();");
+        codeBuilder.AppendLine($"                var __bodyProperties = {bodyParam.Name}.GetType().GetProperties();");
+        codeBuilder.AppendLine($"                foreach (var __prop in __bodyProperties)");
+        codeBuilder.AppendLine("                {");
+        codeBuilder.AppendLine($"                    var __val = __prop.GetValue({bodyParam.Name});");
+        codeBuilder.AppendLine("                    if (__val != null)");
+        codeBuilder.AppendLine("                    {");
+        codeBuilder.AppendLine("                        __bodyFormParams[__prop.Name] = __val.ToString() ?? \"\";");
+        codeBuilder.AppendLine("                    }");
+        codeBuilder.AppendLine("                }");
+        codeBuilder.AppendLine("                httpRequest.Content = new System.Net.Http.FormUrlEncodedContent(__bodyFormParams);");
+        codeBuilder.AppendLine($"#if NET8_0_OR_GREATER");
+        codeBuilder.AppendLine($"#pragma warning restore IL2072");
+        codeBuilder.AppendLine($"#endif");
+        codeBuilder.AppendLine("            }");
     }
 
     /// <summary>
@@ -780,6 +879,116 @@ internal class RequestBuilder
         codeBuilder.AppendLine($"#pragma warning restore IL2072");
         codeBuilder.AppendLine($"#endif");
         codeBuilder.AppendLine("                }");
+        codeBuilder.AppendLine("            }");
+    }
+
+    /// <summary>
+    /// 生成 QueryMap 参数代码
+    /// </summary>
+    private void GenerateQueryMapParameter(StringBuilder codeBuilder, ParameterInfo param)
+    {
+        var queryMapAttr = param.Attributes.First(a => a.Name == HttpClientGeneratorConstants.QueryMapAttribute);
+        var separator = "_";
+        if (queryMapAttr.NamedArguments.TryGetValue("PropertySeparator", out var sepValue) && sepValue is string sep && !string.IsNullOrEmpty(sep))
+            separator = sep;
+
+        var urlEncode = true;
+        if (queryMapAttr.NamedArguments.TryGetValue("UrlEncode", out var encValue) && encValue is bool enc)
+            urlEncode = enc;
+
+        var includeNullValues = false;
+        if (queryMapAttr.NamedArguments.TryGetValue("IncludeNullValues", out var incNull) && incNull is bool inc)
+            includeNullValues = inc;
+
+        var encodeMethod = urlEncode ? "HttpUtility.UrlEncode" : "";
+
+        codeBuilder.AppendLine($"            if ({param.Name} != null)");
+        codeBuilder.AppendLine("            {");
+        codeBuilder.AppendLine($"                if ({param.Name} is IQueryParameter queryParam_{param.Name})");
+        codeBuilder.AppendLine("                {");
+        codeBuilder.AppendLine($"                    foreach (var kvp in queryParam_{param.Name}.ToQueryParameters())");
+        codeBuilder.AppendLine("                    {");
+        if (includeNullValues)
+        {
+            if (urlEncode)
+            {
+                codeBuilder.AppendLine($"                        var encodedValue_{param.Name} = kvp.Value != null ? HttpUtility.UrlEncode(kvp.Value) : null;");
+                codeBuilder.AppendLine($"                        queryParams.Add(kvp.Key, encodedValue_{param.Name});");
+            }
+            else
+            {
+                codeBuilder.AppendLine($"                        queryParams.Add(kvp.Key, kvp.Value);");
+            }
+        }
+        else
+        {
+            codeBuilder.AppendLine("                        if (!string.IsNullOrEmpty(kvp.Value))");
+            codeBuilder.AppendLine("                        {");
+            if (urlEncode)
+            {
+                codeBuilder.AppendLine("                            var encodedValue = HttpUtility.UrlEncode(kvp.Value);");
+                codeBuilder.AppendLine("                            queryParams.Add(kvp.Key, encodedValue);");
+            }
+            else
+            {
+                codeBuilder.AppendLine("                            queryParams.Add(kvp.Key, kvp.Value);");
+            }
+            codeBuilder.AppendLine("                        }");
+        }
+        codeBuilder.AppendLine("                    }");
+        codeBuilder.AppendLine("                }");
+        codeBuilder.AppendLine("                else");
+        codeBuilder.AppendLine("                {");
+        codeBuilder.AppendLine($"#if NET8_0_OR_GREATER");
+        codeBuilder.AppendLine($"#pragma warning disable IL2072");
+        codeBuilder.AppendLine($"#endif");
+        codeBuilder.AppendLine($"                    var properties_{param.Name} = {param.Name}.GetType().GetProperties();");
+        codeBuilder.AppendLine($"                    foreach (var prop in properties_{param.Name})");
+        codeBuilder.AppendLine("                    {");
+        codeBuilder.AppendLine($"                        var value_{param.Name} = prop.GetValue({param.Name});");
+        if (includeNullValues)
+        {
+            if (urlEncode)
+            {
+                codeBuilder.AppendLine($"                        var encodedValue_{param.Name} = value_{param.Name} != null ? HttpUtility.UrlEncode(value_{param.Name}.ToString()) : null;");
+                codeBuilder.AppendLine($"                        queryParams.Add(prop.Name, encodedValue_{param.Name});");
+            }
+            else
+            {
+                codeBuilder.AppendLine($"                        queryParams.Add(prop.Name, value_{param.Name}?.ToString());");
+            }
+        }
+        else
+        {
+            codeBuilder.AppendLine($"                        if (value_{param.Name} != null)");
+            codeBuilder.AppendLine("                        {");
+            if (urlEncode)
+            {
+                codeBuilder.AppendLine($"                            queryParams.Add(prop.Name, HttpUtility.UrlEncode(value_{param.Name}.ToString()));");
+            }
+            else
+            {
+                codeBuilder.AppendLine($"                            queryParams.Add(prop.Name, value_{param.Name}.ToString());");
+            }
+            codeBuilder.AppendLine("                        }");
+        }
+        codeBuilder.AppendLine("                    }");
+        codeBuilder.AppendLine($"#if NET8_0_OR_GREATER");
+        codeBuilder.AppendLine($"#pragma warning restore IL2072");
+        codeBuilder.AppendLine($"#endif");
+        codeBuilder.AppendLine("                }");
+        codeBuilder.AppendLine("            }");
+    }
+
+    /// <summary>
+    /// 生成 RawQueryString 参数代码
+    /// </summary>
+    private void GenerateRawQueryStringParameter(StringBuilder codeBuilder, ParameterInfo param)
+    {
+        codeBuilder.AppendLine($"            if (!string.IsNullOrEmpty({param.Name}))");
+        codeBuilder.AppendLine("            {");
+        codeBuilder.AppendLine("                var separator = url.Contains('?') ? \"&\" : \"?\";");
+        codeBuilder.AppendLine($"                url += separator + {param.Name};");
         codeBuilder.AppendLine("            }");
     }
 

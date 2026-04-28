@@ -60,6 +60,9 @@ internal static class MethodAnalyzer
             .Name;
 
         var allowAnyStatusCode = AnalyzeAllowAnyStatusCode(methodSymbol, interfaceDecl, compilation, semanticModel);
+        var (interfaceQueryParams, interfacePathParams) = AnalyzeInterfaceQueryPathAttributes(interfaceDecl, compilation, semanticModel);
+        var headerMergeMode = AnalyzeHeaderMergeMode(methodSymbol, interfaceDecl, compilation, semanticModel);
+        var serializationMethod = AnalyzeSerializationMethod(methodSymbol, interfaceDecl, compilation, semanticModel);
 
         var returnTypeFullName = TypeSymbolHelper.GetTypeFullName(methodSymbol.ReturnType);
         var isAsyncEnumerable = TypeDetectionHelper.IsAsyncEnumerableType(returnTypeFullName, out var asyncEnumerableElementType);
@@ -92,6 +95,10 @@ internal static class MethodAnalyzer
             MethodTokenScopes = methodTokenScopes,
             TokenParameterName = tokenParameterName,
             AllowAnyStatusCode = allowAnyStatusCode,
+            InterfaceQueryParameters = interfaceQueryParams,
+            InterfacePathParameters = interfacePathParams,
+            HeaderMergeMode = headerMergeMode,
+            SerializationMethod = serializationMethod,
             CacheEnabled = cacheEnabled,
             CacheDurationSeconds = cacheDurationSeconds,
             CacheKeyTemplate = cacheKeyTemplate,
@@ -473,6 +480,122 @@ internal static class MethodAnalyzer
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// 分析接口的 [InterfaceQuery] 和 [InterfacePath] 特性
+    /// </summary>
+    private static (List<InterfaceQueryParameterInfo> queryParams, List<InterfacePathParameterInfo> pathParams)
+        AnalyzeInterfaceQueryPathAttributes(InterfaceDeclarationSyntax interfaceDecl, Compilation compilation, SemanticModel? semanticModel)
+    {
+        var queryParams = new List<InterfaceQueryParameterInfo>();
+        var pathParams = new List<InterfacePathParameterInfo>();
+
+        var model = semanticModel ?? SemanticModelCache.GetOrCreate(compilation, interfaceDecl.SyntaxTree);
+        var interfaceSymbol = model.GetDeclaredSymbol(interfaceDecl) as INamedTypeSymbol;
+
+        if (interfaceSymbol == null)
+            return (queryParams, pathParams);
+
+        foreach (var attr in interfaceSymbol.GetAttributes())
+        {
+            if (HttpClientGeneratorConstants.InterfaceQueryAttributeNames.Contains(attr.AttributeClass?.Name))
+            {
+                var name = attr.ConstructorArguments.Length > 0 ? attr.ConstructorArguments[0].Value?.ToString() : null;
+                var value = attr.ConstructorArguments.Length > 1 ? attr.ConstructorArguments[1].Value?.ToString() : null;
+                if (!string.IsNullOrEmpty(name))
+                {
+                    queryParams.Add(new InterfaceQueryParameterInfo { Name = name, Value = value });
+                }
+            }
+            else if (HttpClientGeneratorConstants.InterfacePathAttributeNames.Contains(attr.AttributeClass?.Name))
+            {
+                var name = attr.ConstructorArguments.Length > 0 ? attr.ConstructorArguments[0].Value?.ToString() : null;
+                var value = attr.ConstructorArguments.Length > 1 ? attr.ConstructorArguments[1].Value?.ToString() : null;
+                if (!string.IsNullOrEmpty(name))
+                {
+                    pathParams.Add(new InterfacePathParameterInfo { Name = name, Value = value });
+                }
+            }
+        }
+
+        return (queryParams, pathParams);
+    }
+
+    /// <summary>
+    /// 分析头部合并模式（方法级优先于接口级）
+    /// </summary>
+    private static string AnalyzeHeaderMergeMode(IMethodSymbol methodSymbol, InterfaceDeclarationSyntax interfaceDecl, Compilation compilation, SemanticModel? semanticModel)
+    {
+        var methodAttr = methodSymbol.GetAttributes()
+            .FirstOrDefault(attr => HttpClientGeneratorConstants.HeaderMergeAttributeNames.Contains(attr.AttributeClass?.Name));
+
+        if (methodAttr != null)
+        {
+            var mode = methodAttr.ConstructorArguments.Length > 0
+                ? methodAttr.ConstructorArguments[0].Value?.ToString()
+                : null;
+            if (!string.IsNullOrEmpty(mode))
+                return mode;
+        }
+
+        var model = semanticModel ?? SemanticModelCache.GetOrCreate(compilation, interfaceDecl.SyntaxTree);
+        var interfaceSymbol = model.GetDeclaredSymbol(interfaceDecl) as INamedTypeSymbol;
+
+        if (interfaceSymbol != null)
+        {
+            var interfaceAttr = interfaceSymbol.GetAttributes()
+                .FirstOrDefault(attr => HttpClientGeneratorConstants.HeaderMergeAttributeNames.Contains(attr.AttributeClass?.Name));
+
+            if (interfaceAttr != null)
+            {
+                var mode = interfaceAttr.ConstructorArguments.Length > 0
+                    ? interfaceAttr.ConstructorArguments[0].Value?.ToString()
+                    : null;
+                if (!string.IsNullOrEmpty(mode))
+                    return mode;
+            }
+        }
+
+        return "Append";
+    }
+
+    /// <summary>
+    /// 分析序列化方法（方法级优先于接口级）
+    /// </summary>
+    private static string AnalyzeSerializationMethod(IMethodSymbol methodSymbol, InterfaceDeclarationSyntax interfaceDecl, Compilation compilation, SemanticModel? semanticModel)
+    {
+        var methodAttr = methodSymbol.GetAttributes()
+            .FirstOrDefault(attr => HttpClientGeneratorConstants.SerializationMethodAttributeNames.Contains(attr.AttributeClass?.Name));
+
+        if (methodAttr != null)
+        {
+            var method = methodAttr.ConstructorArguments.Length > 0
+                ? methodAttr.ConstructorArguments[0].Value?.ToString()
+                : null;
+            if (!string.IsNullOrEmpty(method))
+                return method;
+        }
+
+        var model = semanticModel ?? SemanticModelCache.GetOrCreate(compilation, interfaceDecl.SyntaxTree);
+        var interfaceSymbol = model.GetDeclaredSymbol(interfaceDecl) as INamedTypeSymbol;
+
+        if (interfaceSymbol != null)
+        {
+            var interfaceAttr = interfaceSymbol.GetAttributes()
+                .FirstOrDefault(attr => HttpClientGeneratorConstants.SerializationMethodAttributeNames.Contains(attr.AttributeClass?.Name));
+
+            if (interfaceAttr != null)
+            {
+                var method = interfaceAttr.ConstructorArguments.Length > 0
+                    ? interfaceAttr.ConstructorArguments[0].Value?.ToString()
+                    : null;
+                if (!string.IsNullOrEmpty(method))
+                    return method;
+            }
+        }
+
+        return "Json";
     }
 
     /// <summary>

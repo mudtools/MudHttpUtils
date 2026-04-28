@@ -78,6 +78,11 @@ internal static class HttpClientGeneratorConstants
 
     public static readonly string[] CacheAttributeNames = ["CacheAttribute", "Cache"];
 
+    public static readonly string[] InterfaceQueryAttributeNames = ["InterfaceQueryAttribute", "InterfaceQuery"];
+    public static readonly string[] InterfacePathAttributeNames = ["InterfacePathAttribute", "InterfacePath"];
+    public static readonly string[] HeaderMergeAttributeNames = ["HeaderMergeAttribute", "HeaderMerge"];
+    public static readonly string[] SerializationMethodAttributeNames = ["SerializationMethodAttribute", "SerializationMethod"];
+
     // Cache相关命名参数
     public const string CacheDurationSecondsProperty = "DurationSeconds";
     public const string CacheKeyTemplateProperty = "CacheKeyTemplate";

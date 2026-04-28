@@ -148,6 +148,26 @@ internal class MethodAnalysisResult
     /// </summary>
     public bool AllowAnyStatusCode { get; set; }
 
+    /// <summary>
+    /// 接口级查询参数列表（从 [InterfaceQuery] 特性获取）
+    /// </summary>
+    public List<InterfaceQueryParameterInfo> InterfaceQueryParameters { get; set; } = [];
+
+    /// <summary>
+    /// 接口级路径参数列表（从 [InterfacePath] 特性获取）
+    /// </summary>
+    public List<InterfacePathParameterInfo> InterfacePathParameters { get; set; } = [];
+
+    /// <summary>
+    /// 头部合并模式（从 [HeaderMerge] 特性获取，方法级优先于接口级）
+    /// </summary>
+    public string HeaderMergeMode { get; set; } = "Append";
+
+    /// <summary>
+    /// 序列化方法（从 [SerializationMethod] 特性获取，方法级优先于接口级）
+    /// </summary>
+    public string SerializationMethod { get; set; } = "Json";
+
     public bool CacheEnabled { get; set; }
 
     public int CacheDurationSeconds { get; set; } = 300;
