@@ -208,7 +208,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         if (methodInfo.CacheEnabled)
         {
-            GenerateCacheWrappedMethod(codeBuilder, methodInfo, hasHttpClient);
+            GenerateCacheWrappedMethod(codeBuilder, methodInfo, hasHttpClient, needsTokenInjection);
         }
         else
         {
@@ -230,20 +230,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine();
         _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient);
 
-        if (needsTokenInjection && (IsTokenHeaderMode(methodInfo) || IsTokenApiKeyMode(methodInfo)))
-        {
-            var headerName = GetTokenHeaderName(methodInfo);
-            codeBuilder.AppendLine($"            httpRequest.Headers.Add(\"{headerName}\", access_token);");
-        }
-        else if (needsTokenInjection && IsTokenBasicAuthMode(methodInfo))
-        {
-            codeBuilder.AppendLine($"            httpRequest.Headers.Add(\"Authorization\", $\"Basic {{basicCredentials}}\");");
-        }
-        else if (needsTokenInjection && IsTokenCookieMode(methodInfo))
-        {
-            var cookieName = !string.IsNullOrEmpty(methodInfo.InterfaceTokenName) ? methodInfo.InterfaceTokenName : "access_token";
-            codeBuilder.AppendLine($"            httpRequest.Headers.Add(\"Cookie\", \"{cookieName}=\" + access_token);");
-        }
+        GenerateTokenInjection(codeBuilder, methodInfo, needsTokenInjection, "            ");
 
         if (methodInfo.InterfaceHeaderAttributes?.Any() == true)
         {
@@ -254,7 +241,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, cancellationTokenArg, hasHttpClient);
     }
 
-    private void GenerateCacheWrappedMethod(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, bool hasHttpClient)
+    private void GenerateCacheWrappedMethod(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection)
     {
         var cacheKeyExpression = GenerateCacheKeyExpression(methodInfo);
         codeBuilder.AppendLine($"            var __cacheKey = {cacheKeyExpression};");
@@ -277,6 +264,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
         _requestBuilder.GenerateHeaderParameters(codeBuilder, methodInfo);
         codeBuilder.AppendLine();
         _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient);
+
+        GenerateTokenInjection(codeBuilder, methodInfo, needsTokenInjection, "                    ");
 
         if (methodInfo.InterfaceHeaderAttributes?.Any() == true)
         {
@@ -436,6 +425,27 @@ internal class MethodGenerator : ICodeFragmentGenerator
     private string GetTokenHeaderName(MethodAnalysisResult methodInfo)
     {
         return _requestBuilder.GetTokenHeaderName(methodInfo) ?? "Authorization";
+    }
+
+    private void GenerateTokenInjection(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, bool needsTokenInjection, string indent)
+    {
+        if (!needsTokenInjection)
+            return;
+
+        if (IsTokenHeaderMode(methodInfo) || IsTokenApiKeyMode(methodInfo))
+        {
+            var headerName = GetTokenHeaderName(methodInfo);
+            codeBuilder.AppendLine($"{indent}httpRequest.Headers.Add(\"{headerName}\", access_token);");
+        }
+        else if (IsTokenBasicAuthMode(methodInfo))
+        {
+            codeBuilder.AppendLine($"{indent}httpRequest.Headers.Add(\"Authorization\", $\"Basic {{basicCredentials}}\");");
+        }
+        else if (IsTokenCookieMode(methodInfo))
+        {
+            var cookieName = !string.IsNullOrEmpty(methodInfo.InterfaceTokenName) ? methodInfo.InterfaceTokenName : "access_token";
+            codeBuilder.AppendLine($"{indent}httpRequest.Headers.Add(\"Cookie\", \"{cookieName}=\" + access_token);");
+        }
     }
 
     /// <summary>

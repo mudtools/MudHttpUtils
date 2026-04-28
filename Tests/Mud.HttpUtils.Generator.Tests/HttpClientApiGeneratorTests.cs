@@ -43,10 +43,11 @@ public class HttpClientApiGeneratorTests
     {
         var source = @"
 using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(""https://api.example.com"", HttpClient = typeof(IEnhancedHttpClient), TokenManage = nameof(ITestTokenManager))]
+    [HttpClientApi(HttpClient = ""IEnhancedHttpClient"", TokenManage = ""ITestTokenManager"")]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -54,9 +55,13 @@ namespace TestNamespace
     }
 }";
 
-        var (diagnostics, _) = RunGenerator(source);
+        var compilation = CreateCompilation(source);
+        var generator = new HttpInvokeClassSourceGenerator();
+        CSharpGeneratorDriver driver = CSharpGeneratorDriver.Create(generator);
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
 
-        diagnostics.Should().Contain(d => d.Id == "HTTPCLIENT007");
+        diagnostics.Should().Contain(d => d.Id == "HTTPCLIENT007",
+            "同时指定 HttpClient 和 TokenManage 时应报告 HTTPCLIENT007 互斥诊断");
     }
 
     [Fact]
@@ -64,10 +69,11 @@ namespace TestNamespace
     {
         var source = @"
 using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(""https://api.example.com"", HttpClient = typeof(IEnhancedHttpClient))]
+    [HttpClientApi(HttpClient = ""IEnhancedHttpClient"")]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -85,10 +91,11 @@ namespace TestNamespace
     {
         var source = @"
 using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(""https://api.example.com"", TokenManage = nameof(ITestTokenManager))]
+    [HttpClientApi(TokenManage = ""ITestTokenManager"")]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -244,6 +251,7 @@ namespace TestNamespace
                 "System.IO.dll",
                 "System.Text.Json.dll",
                 "System.Private.CoreLib.dll",
+                "netstandard.dll",
             };
 
             foreach (var asm in runtimeAssemblies)

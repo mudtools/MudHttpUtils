@@ -298,17 +298,13 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// <returns>凭证令牌。</returns>
     public async Task<CredentialToken> GetOrRefreshCredentialTokenAsync(CancellationToken cancellationToken = default)
     {
-        var accessToken = await GetOrRefreshTokenAsync(cancellationToken).ConfigureAwait(false);
+        await GetOrRefreshTokenAsync(cancellationToken).ConfigureAwait(false);
 
         var currentToken = GetCurrentCachedToken();
         if (currentToken != null)
             return currentToken;
 
-        return new CredentialToken
-        {
-            AccessToken = accessToken,
-            Expire = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds()
-        };
+        throw new InvalidOperationException("令牌刷新成功但无法获取凭证令牌信息。");
     }
 
     private async Task<CredentialToken> RequestTokenAsync(
@@ -355,6 +351,8 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         CancellationToken cancellationToken)
     {
         ValidateTokenEndpoint();
+
+        await GetClientSecretAsync(cancellationToken).ConfigureAwait(false);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, _options.TokenEndpoint);
         request.Content = new FormUrlEncodedContent(parameters);
