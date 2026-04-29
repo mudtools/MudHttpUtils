@@ -370,7 +370,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            private readonly IMudAppContext? _previous;");
         codeBuilder.AppendLine("            private readonly AsyncLocal<IMudAppContext?> _context;");
-        codeBuilder.AppendLine("            private volatile bool _disposed;");
+        codeBuilder.AppendLine("            private int _disposed;");
         codeBuilder.AppendLine();
         codeBuilder.AppendLine("            public AppContextScope(IMudAppContext? previous, AsyncLocal<IMudAppContext?> context)");
         codeBuilder.AppendLine("            {");
@@ -380,9 +380,10 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine();
         codeBuilder.AppendLine("            public void Dispose()");
         codeBuilder.AppendLine("            {");
-        codeBuilder.AppendLine("                if (_disposed) return;");
-        codeBuilder.AppendLine("                _disposed = true;");
-        codeBuilder.AppendLine("                _context.Value = _previous;");
+        codeBuilder.AppendLine("                if (System.Threading.Interlocked.CompareExchange(ref _disposed, 1, 0) == 0)");
+        codeBuilder.AppendLine("                {");
+        codeBuilder.AppendLine("                    _context.Value = _previous;");
+        codeBuilder.AppendLine("                }");
         codeBuilder.AppendLine("            }");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();

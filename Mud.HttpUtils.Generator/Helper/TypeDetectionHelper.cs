@@ -82,6 +82,27 @@ internal static class TypeDetectionHelper
     }
 
     /// <summary>
+    /// 检查是否为值类型（不包含可空类型）
+    /// </summary>
+    public static bool IsValueType(string typeName)
+    {
+        var nonNullableTypeName = typeName.TrimEnd('?');
+        return nonNullableTypeName switch
+        {
+            "int" or "long" or "float" or "double" or "decimal" or "bool"
+            or "byte" or "sbyte" or "short" or "ushort" or "uint" or "ulong"
+            or "char"
+            or "DateTime" or "System.DateTime"
+            or "DateTimeOffset" or "System.DateTimeOffset"
+            or "TimeSpan" or "System.TimeSpan"
+            or "DateOnly" or "System.DateOnly"
+            or "TimeOnly" or "System.TimeOnly"
+            or "Guid" or "System.Guid" => true,
+            _ => false
+        };
+    }
+
+    /// <summary>
     /// 检查是否为 CancellationToken 类型
     /// </summary>
     public static bool IsCancellationToken(string typeName)

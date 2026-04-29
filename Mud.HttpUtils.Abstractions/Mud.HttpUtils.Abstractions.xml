@@ -255,6 +255,22 @@
             <typeparam name="TContextSwitcher">上下文切换器类型。</typeparam>
             <param name="factory">工厂委托。</param>
         </member>
+        <member name="T:Mud.HttpUtils.IAsyncInitializable">
+            <summary>
+            异步初始化接口，用于支持应用上下文在注册时执行异步初始化操作。
+            </summary>
+            <remarks>
+            当 <see cref="T:Mud.HttpUtils.IMudAppContext"/> 的实现类同时实现此接口时，
+            <see cref="T:Mud.HttpUtils.IAppManager`1"/> 的 <c>RegisterAppAsync</c> 方法将自动调用初始化逻辑。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.IAsyncInitializable.InitializeAsync(System.Threading.CancellationToken)">
+            <summary>
+            执行异步初始化操作。
+            </summary>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>表示异步初始化操作的任务。</returns>
+        </member>
         <member name="T:Mud.HttpUtils.ICurrentUserId">
             <summary>
             当前用户 ID 接口，用于获取和设置当前用户的唯一标识符。
@@ -1729,6 +1745,21 @@
             </summary>
             <param name="tokenType">令牌类型标识符。</param>
             <param name="cancellationToken">取消令牌。</param>
+        </member>
+        <member name="T:Mud.HttpUtils.IEncryptedTokenStore">
+            <summary>
+            加密令牌持久化存储契约。
+            实现此接口的存储必须对令牌进行加密后存储，并在读取时解密。
+            </summary>
+            <remarks>
+            当安全要求较高时（如存储 OAuth2 令牌、用户访问令牌等），应使用此接口替代 <see cref="T:Mud.HttpUtils.ITokenStore"/>。
+            实现类应使用 <see cref="T:Mud.HttpUtils.IEncryptionProvider"/> 或其他加密机制确保令牌在存储介质中的安全性。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.IEncryptedTokenStore.IsEncryptionEnabled">
+            <summary>
+            获取一个值，指示此存储实例是否已启用加密。
+            </summary>
         </member>
         <member name="T:Mud.HttpUtils.IUserTokenStore">
             <summary>

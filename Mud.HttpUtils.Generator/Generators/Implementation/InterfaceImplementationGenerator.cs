@@ -93,6 +93,15 @@ internal class InterfaceImplementationGenerator
     {
         var isValid = true;
 
+        if (_interfaceSymbol.IsGenericType)
+        {
+            _context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.HttpClientApiGenericInterfaceNotSupported,
+                _interfaceDecl.GetLocation(),
+                _interfaceSymbol.Name));
+            isValid = false;
+        }
+
         if (!string.IsNullOrEmpty(configuration.HttpClient) && !string.IsNullOrEmpty(configuration.RawTokenManager))
         {
             _context.ReportDiagnostic(Diagnostic.Create(
@@ -194,7 +203,7 @@ internal class InterfaceImplementationGenerator
             httpClientApiAttribute,
             HttpClientGeneratorConstants.TokenManageProperty);
 
-        var effectiveTokenManage = !string.IsNullOrEmpty(httpClient) ? null : tokenManage;
+        var effectiveTokenManage = !string.IsNullOrWhiteSpace(httpClient) ? null : tokenManage;
 
         var tokenType = GetInterfaceTokenType();
 
@@ -220,7 +229,6 @@ internal class InterfaceImplementationGenerator
                 httpClientApiAttribute,
                 HttpClientGeneratorConstants.TimeoutProperty,
                 100),
-            BaseAddress = baseAddress,
             IsAbstract = isAbstract,
             InheritedFrom = inheritedFrom,
             HttpClient = httpClient,
@@ -289,22 +297,25 @@ internal class InterfaceImplementationGenerator
     private static void GenerateFlattenObjectHelper(StringBuilder codeBuilder)
     {
         codeBuilder.AppendLine();
+        codeBuilder.AppendLine("        private const int MaxFlattenRecursionDepth = 10;");
+        codeBuilder.AppendLine();
+        codeBuilder.AppendLine("        private static readonly System.Collections.Concurrent.ConcurrentDictionary<System.Type, System.Reflection.PropertyInfo[]> __propertyCache = new();");
+        codeBuilder.AppendLine();
         codeBuilder.AppendLine("        private static void FlattenObjectToQueryParams(");
         codeBuilder.AppendLine("            object obj,");
         codeBuilder.AppendLine("            string prefix,");
         codeBuilder.AppendLine("            string separator,");
         codeBuilder.AppendLine("            System.Collections.Specialized.NameValueCollection __queryParams,");
-        codeBuilder.AppendLine("            bool urlEncode,");
         codeBuilder.AppendLine("            bool includeNullValues,");
         codeBuilder.AppendLine("            bool useJsonSerialization,");
         codeBuilder.AppendLine("            int __depth = 0)");
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            if (obj == null) throw new ArgumentNullException(nameof(obj));");
-        codeBuilder.AppendLine("            if (__depth > 10) throw new InvalidOperationException($\"Maximum recursion depth exceeded while flattening object of type {obj.GetType().Name}. This may be caused by a circular reference.\");");
+        codeBuilder.AppendLine("            if (__depth > MaxFlattenRecursionDepth) throw new InvalidOperationException(\"Maximum recursion depth exceeded while flattening object of type \" + obj.GetType().Name + \". This may be caused by a circular reference.\");");
         codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
         codeBuilder.AppendLine("#pragma warning disable IL2072");
         codeBuilder.AppendLine("#endif");
-        codeBuilder.AppendLine("            var __properties = obj.GetType().GetProperties();");
+        codeBuilder.AppendLine("            var __properties = __propertyCache.GetOrAdd(obj.GetType(), t => t.GetProperties());");
         codeBuilder.AppendLine("            foreach (var __prop in __properties)");
         codeBuilder.AppendLine("            {");
         codeBuilder.AppendLine("                var __value = __prop.GetValue(obj);");
@@ -326,9 +337,6 @@ internal class InterfaceImplementationGenerator
         codeBuilder.AppendLine("                    else");
         codeBuilder.AppendLine("                        __stringValue = __value.ToString() ?? string.Empty;");
         codeBuilder.AppendLine();
-        codeBuilder.AppendLine("                    if (urlEncode)");
-        codeBuilder.AppendLine("                        __stringValue = HttpUtility.UrlEncode(__stringValue);");
-        codeBuilder.AppendLine();
         codeBuilder.AppendLine("                    __queryParams.Add(__key, __stringValue);");
         codeBuilder.AppendLine("                }");
         codeBuilder.AppendLine("                else if (__value is IQueryParameter __queryParam)");
@@ -338,16 +346,13 @@ internal class InterfaceImplementationGenerator
         codeBuilder.AppendLine("                        var __subKey = string.IsNullOrEmpty(prefix) ? __kvp.Key : prefix + separator + __kvp.Key;");
         codeBuilder.AppendLine("                        if (includeNullValues || !string.IsNullOrEmpty(__kvp.Value))");
         codeBuilder.AppendLine("                        {");
-        codeBuilder.AppendLine("                            string __val = __kvp.Value ?? string.Empty;");
-        codeBuilder.AppendLine("                            if (urlEncode && !string.IsNullOrEmpty(__val))");
-        codeBuilder.AppendLine("                                __val = HttpUtility.UrlEncode(__val);");
-        codeBuilder.AppendLine("                            __queryParams.Add(__subKey, __val);");
+        codeBuilder.AppendLine("                            __queryParams.Add(__subKey, __kvp.Value ?? string.Empty);");
         codeBuilder.AppendLine("                        }");
         codeBuilder.AppendLine("                    }");
         codeBuilder.AppendLine("                }");
         codeBuilder.AppendLine("                else");
         codeBuilder.AppendLine("                {");
-        codeBuilder.AppendLine("                    FlattenObjectToQueryParams(__value, __key, separator, __queryParams, urlEncode, includeNullValues, useJsonSerialization, __depth + 1);");
+        codeBuilder.AppendLine("                    FlattenObjectToQueryParams(__value, __key, separator, __queryParams, includeNullValues, useJsonSerialization, __depth + 1);");
         codeBuilder.AppendLine("                }");
         codeBuilder.AppendLine("            }");
         codeBuilder.AppendLine("#if NET6_0_OR_GREATER");

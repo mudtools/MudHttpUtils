@@ -1163,6 +1163,11 @@
             检查是否为可空类型
             </summary>
         </member>
+        <member name="M:Mud.HttpUtils.TypeDetectionHelper.IsValueType(System.String)">
+            <summary>
+            检查是否为值类型（不包含可空类型）
+            </summary>
+        </member>
         <member name="M:Mud.HttpUtils.TypeDetectionHelper.IsCancellationToken(System.String)">
             <summary>
             检查是否为 CancellationToken 类型

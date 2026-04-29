@@ -15,9 +15,10 @@ namespace Mud.HttpUtils;
 public abstract class TokenManagerBase : ITokenManager, IDisposable
 {
     private readonly ConcurrentDictionary<string, (string? Token, long ExpireTime)> _tokenCache = new();
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _scopeLocks = new();
+    private readonly ConcurrentDictionary<string, Lazy<SemaphoreSlim>> _scopeLocks = new();
     private readonly Timer _cleanupTimer;
     private readonly object _cleanupLock = new();
+    private volatile bool _disposed;
     private const string DefaultScopeKey = "default";
     private const int CleanupIntervalSeconds = 300;
 
@@ -81,10 +82,13 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         if (IsTokenValid(scopeKey))
             return _tokenCache[scopeKey].Token!;
 
-        var scopeLock = _scopeLocks.GetOrAdd(scopeKey, _ => new SemaphoreSlim(1, 1));
+        var scopeLock = _scopeLocks.GetOrAdd(scopeKey, _ => new Lazy<SemaphoreSlim>(() => new SemaphoreSlim(1, 1), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
         await scopeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (_disposed)
+                throw new ObjectDisposedException(GetType().Name);
+
             if (IsTokenValid(scopeKey))
                 return _tokenCache[scopeKey].Token!;
 
@@ -107,11 +111,14 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             throw new ObjectDisposedException(GetType().Name);
 
         var scopeKey = GetScopeKey(scopes);
-        var scopeLock = _scopeLocks.GetOrAdd(scopeKey, _ => new SemaphoreSlim(1, 1));
+        var scopeLock = _scopeLocks.GetOrAdd(scopeKey, _ => new Lazy<SemaphoreSlim>(() => new SemaphoreSlim(1, 1), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
 
         await scopeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            if (_disposed)
+                throw new ObjectDisposedException(GetType().Name);
+
             _tokenCache.TryRemove(scopeKey, out var removed);
             if (string.IsNullOrEmpty(removed.Token))
                 return TokenResult.Empty;
@@ -318,13 +325,16 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                 if (kvp.Value.ExpireTime - thresholdMs <= now)
                 {
                     _tokenCache.TryRemove(kvp.Key, out _);
-                    _scopeLocks.TryRemove(kvp.Key, out _);
+                    if (_scopeLocks.TryRemove(kvp.Key, out var lazyLock))
+                    {
+                        if (lazyLock.IsValueCreated)
+                            lazyLock.Value.Dispose();
+                    }
                 }
             }
         }
     }
 
-    private bool _disposed;
     /// <inheritdoc />
     protected virtual void Dispose(bool disposing)
     {
@@ -341,9 +351,10 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                 _cleanupTimer?.Dispose();
             }
 
-            foreach (var scopeLock in _scopeLocks.Values)
+            foreach (var lazyLock in _scopeLocks.Values)
             {
-                scopeLock?.Dispose();
+                if (lazyLock.IsValueCreated)
+                    lazyLock.Value.Dispose();
             }
             _scopeLocks.Clear();
             _tokenCache.Clear();

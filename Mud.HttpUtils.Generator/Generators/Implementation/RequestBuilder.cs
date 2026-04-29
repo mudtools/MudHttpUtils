@@ -41,7 +41,7 @@ internal class RequestBuilder
         if (!string.IsNullOrEmpty(basePath))
         {
             var normalizedBasePath = basePath.TrimEnd('/');
-            var normalizedUrlTemplate = urlTemplate;
+            var normalizedUrlTemplate = urlTemplate.TrimStart('/');
             var combinedPath = $"{normalizedBasePath}/{normalizedUrlTemplate}";
             return BuildUrlWithPlaceholders(combinedPath, pathParams, methodInfo);
         }
@@ -74,7 +74,8 @@ internal class RequestBuilder
                 var placeholder = $"{{{pathParam.Name}}}";
                 if (interpolatedUrl.Contains(placeholder))
                 {
-                    interpolatedUrl = interpolatedUrl.Replace(placeholder, Uri.EscapeDataString(pathParam.Value ?? ""));
+                    var escapedValue = Uri.EscapeDataString(pathParam.Value ?? "");
+                    interpolatedUrl = interpolatedUrl.Replace(placeholder, escapedValue);
                 }
             }
 
@@ -270,7 +271,7 @@ internal class RequestBuilder
 
             if (isStringType)
             {
-                codeBuilder.AppendLine($"            if (!string.IsNullOrEmpty({param.Name}))");
+                codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({param.Name}))");
                 if (shouldReplace)
                 {
                     codeBuilder.AppendLine($"                __httpRequest.Headers.Remove(\"{headerName}\");");
@@ -384,25 +385,30 @@ internal class RequestBuilder
             string httpClient = hasHttpClient ? "_httpClient" : "_appContext.Value!.HttpClient";
 
             codeBuilder.AppendLine($"            var __encryptedContent = {httpClient}.EncryptContent({bodyParam.Name}, \"{propertyName}\", SerializeType.{serializeType});");
-            codeBuilder.AppendLine($"            __httpRequest.Content = new StringContent(__encryptedContent, Encoding.UTF8, {contentTypeExpression});");
+            codeBuilder.AppendLine($"            using var __encryptedStrContent = new StringContent(__encryptedContent, Encoding.UTF8, {contentTypeExpression});");
+            codeBuilder.AppendLine($"            __httpRequest.Content = __encryptedStrContent;");
         }
         else if (rawString)
         {
-            codeBuilder.AppendLine($"            __httpRequest.Content = new StringContent({bodyParam.Name}, Encoding.UTF8, {contentTypeExpression});");
+            codeBuilder.AppendLine($"            using var __rawStrContent = new StringContent({bodyParam.Name}, Encoding.UTF8, {contentTypeExpression});");
+            codeBuilder.AppendLine($"            __httpRequest.Content = __rawStrContent;");
         }
         else if (useStringContent)
         {
-            codeBuilder.AppendLine($"            __httpRequest.Content = new StringContent({bodyParam.Name}.ToString() ?? \"\", Encoding.UTF8, {contentTypeExpression});");
+            codeBuilder.AppendLine($"            using var __useStrContent = new StringContent({bodyParam.Name}.ToString() ?? \"\", Encoding.UTF8, {contentTypeExpression});");
+            codeBuilder.AppendLine($"            __httpRequest.Content = __useStrContent;");
         }
         else if (isXmlContentType)
         {
             codeBuilder.AppendLine($"            var __xmlContent = XmlSerialize.Serialize({bodyParam.Name});");
-            codeBuilder.AppendLine($"            __httpRequest.Content = new StringContent(__xmlContent, Encoding.UTF8, {contentTypeExpression});");
+            codeBuilder.AppendLine($"            using var __xmlStrContent = new StringContent(__xmlContent, Encoding.UTF8, {contentTypeExpression});");
+            codeBuilder.AppendLine($"            __httpRequest.Content = __xmlStrContent;");
         }
         else
         {
             codeBuilder.AppendLine($"            var __jsonContent = JsonSerializer.Serialize({bodyParam.Name}, _jsonSerializerOptions);");
-            codeBuilder.AppendLine($"            __httpRequest.Content = new StringContent(__jsonContent, Encoding.UTF8, {contentTypeExpression});");
+            codeBuilder.AppendLine($"            using var __jsonStrContent = new StringContent(__jsonContent, Encoding.UTF8, {contentTypeExpression});");
+            codeBuilder.AppendLine($"            __httpRequest.Content = __jsonStrContent;");
         }
     }
 
@@ -436,7 +442,8 @@ internal class RequestBuilder
             codeBuilder.AppendLine("            }");
         }
 
-        codeBuilder.AppendLine("            __httpRequest.Content = new System.Net.Http.FormUrlEncodedContent(__formParameters);");
+        codeBuilder.AppendLine("            using var __formContent = new System.Net.Http.FormUrlEncodedContent(__formParameters);");
+        codeBuilder.AppendLine("            __httpRequest.Content = __formContent;");
     }
 
     /// <summary>
@@ -459,7 +466,8 @@ internal class RequestBuilder
         codeBuilder.AppendLine("                        __bodyFormParams[__prop.Name] = __val.ToString() ?? \"\";");
         codeBuilder.AppendLine("                    }");
         codeBuilder.AppendLine("                }");
-        codeBuilder.AppendLine("                __httpRequest.Content = new System.Net.Http.FormUrlEncodedContent(__bodyFormParams);");
+        codeBuilder.AppendLine("                using var __bodyFormContent = new System.Net.Http.FormUrlEncodedContent(__bodyFormParams);");
+        codeBuilder.AppendLine("                __httpRequest.Content = __bodyFormContent;");
         codeBuilder.AppendLine($"#if NET6_0_OR_GREATER");
         codeBuilder.AppendLine($"#pragma warning restore IL2072");
         codeBuilder.AppendLine($"#endif");
@@ -472,7 +480,7 @@ internal class RequestBuilder
     private void GenerateMultipartFormDataParameter(StringBuilder codeBuilder, MethodAnalysisResult methodInfo,
         ParameterInfo? multipartFormParam, List<ParameterInfo> uploadParams, List<ParameterInfo> formParams)
     {
-        codeBuilder.AppendLine("            var __multipartContent = new System.Net.Http.MultipartFormDataContent();");
+        codeBuilder.AppendLine("            using var __multipartContent = new System.Net.Http.MultipartFormDataContent();");
 
         // 处理 [Form] 参数：无论是 [MultipartForm] 还是 [Upload] 存在时，[Form] 参数都应加入 multipart
         if (multipartFormParam != null || uploadParams.Any())
@@ -654,7 +662,16 @@ internal class RequestBuilder
         var isVoidType = innerType == "void" || innerType == "System.Void";
         if (!isVoidType)
         {
-            codeBuilder.AppendLine($"                var __content = System.Text.Json.JsonSerializer.Deserialize<{innerType}>(__rawContent, _jsonSerializerOptions);");
+            var innerTypeWithoutNullable = innerType.EndsWith("?", StringComparison.OrdinalIgnoreCase) ? innerType : innerType + "?";
+            codeBuilder.AppendLine($"                {innerTypeWithoutNullable} __content;");
+            codeBuilder.AppendLine($"                try");
+            codeBuilder.AppendLine($"                {{");
+            codeBuilder.AppendLine($"                    __content = System.Text.Json.JsonSerializer.Deserialize<{innerType}>(__rawContent, _jsonSerializerOptions);");
+            codeBuilder.AppendLine($"                }}");
+            codeBuilder.AppendLine($"                catch (System.Text.Json.JsonException ex)");
+            codeBuilder.AppendLine($"                {{");
+            codeBuilder.AppendLine($"                    return new Mud.HttpUtils.Response<{innerType}>(__statusCode, default, \"Failed to deserialize JSON response: \" + ex.Message + \". Raw content: \" + __rawContent, __responseHeaders);");
+            codeBuilder.AppendLine($"                }}");
             codeBuilder.AppendLine($"                return new Mud.HttpUtils.Response<{innerType}>(__statusCode, __content, __rawContent, __responseHeaders);");
         }
         else
@@ -736,14 +753,35 @@ internal class RequestBuilder
         codeBuilder.AppendLine($"            var {rawContentVar} = await __httpResponse.Content.ReadAsStringAsync().ConfigureAwait(false);");
         codeBuilder.AppendLine("#endif");
 
-
+        var deserializeTypeWithoutNullable = deserializeType.EndsWith("?", StringComparison.OrdinalIgnoreCase) ? deserializeType.TrimEnd('?') : deserializeType;
         if (isXmlResponse)
         {
-            codeBuilder.AppendLine($"            var {resultVariable} = ({deserializeType}?)new System.Xml.Serialization.XmlSerializer(typeof({deserializeType})).Deserialize(new System.IO.StringReader({rawContentVar}));");
+            codeBuilder.AppendLine($"            {deserializeTypeWithoutNullable} {resultVariable};");
+            codeBuilder.AppendLine($"            try");
+            codeBuilder.AppendLine($"            {{");
+            codeBuilder.AppendLine($"                var __deserializedObj = new System.Xml.Serialization.XmlSerializer(typeof({deserializeType})).Deserialize(new System.IO.StringReader({rawContentVar}));");
+            codeBuilder.AppendLine($"                {resultVariable} = __deserializedObj is {deserializeType} __typed ? __typed : throw new System.InvalidOperationException(\"Failed to deserialize XML response to type \" + typeof({deserializeType}).Name);");
+            codeBuilder.AppendLine($"            }}");
+            codeBuilder.AppendLine($"            catch (System.InvalidOperationException ex) when (ex.Message.StartsWith(\"Failed to deserialize XML\"))");
+            codeBuilder.AppendLine($"            {{");
+            codeBuilder.AppendLine($"                throw;");
+            codeBuilder.AppendLine($"            }}");
+            codeBuilder.AppendLine($"            catch (System.Exception ex) when (ex is System.InvalidOperationException or System.Xml.XmlException)");
+            codeBuilder.AppendLine($"            {{");
+            codeBuilder.AppendLine($"                throw new Mud.HttpUtils.ApiException(__httpResponse.StatusCode, \"Failed to deserialize XML response: \" + ex.Message + \". Raw content: \" + {rawContentVar}, __httpRequest.RequestUri?.ToString());");
+            codeBuilder.AppendLine($"            }}");
         }
         else
         {
-            codeBuilder.AppendLine($"            var {resultVariable} = System.Text.Json.JsonSerializer.Deserialize<{deserializeType}>({rawContentVar}, _jsonSerializerOptions);");
+            codeBuilder.AppendLine($"            {deserializeTypeWithoutNullable} {resultVariable};");
+            codeBuilder.AppendLine($"            try");
+            codeBuilder.AppendLine($"            {{");
+            codeBuilder.AppendLine($"                {resultVariable} = System.Text.Json.JsonSerializer.Deserialize<{deserializeType}>({rawContentVar}, _jsonSerializerOptions);");
+            codeBuilder.AppendLine($"            }}");
+            codeBuilder.AppendLine($"            catch (System.Text.Json.JsonException ex)");
+            codeBuilder.AppendLine($"            {{");
+            codeBuilder.AppendLine($"                throw new Mud.HttpUtils.ApiException(__httpResponse.StatusCode, \"Failed to deserialize JSON response: \" + ex.Message + \". Raw content: \" + {rawContentVar}, __httpRequest.RequestUri?.ToString());");
+            codeBuilder.AppendLine($"            }}");
         }
 
         if (methodInfo.ResponseEnableDecrypt)
@@ -867,15 +905,14 @@ internal class RequestBuilder
             codeBuilder.AppendLine("                {");
             codeBuilder.AppendLine($"                    if (__item != null)");
             codeBuilder.AppendLine("                    {");
-            codeBuilder.AppendLine($"                        var __encodedValue = HttpUtility.UrlEncode(__item.ToString());");
-            codeBuilder.AppendLine($"                        __queryParams.Add(\"{paramName}\", __encodedValue);");
+            codeBuilder.AppendLine($"                        __queryParams.Add(\"{paramName}\", __item.ToString());");
             codeBuilder.AppendLine("                    }");
             codeBuilder.AppendLine("                }");
         }
         else
         {
             // 使用分隔符连接格式：user_ids=id0;id1;id2
-            codeBuilder.AppendLine($"                var __joinedValues = string.Join(\"{separator}\", {param.Name}.Where(__item => __item != null).Select(__item => HttpUtility.UrlEncode(__item.ToString())));");
+            codeBuilder.AppendLine($"                var __joinedValues = string.Join(\"{separator}\", {param.Name}.Where(__item => __item != null).Select(__item => __item.ToString()));");
             codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", __joinedValues);");
         }
 
@@ -889,16 +926,15 @@ internal class RequestBuilder
             // 处理数组类型：使用默认分号分隔符格式
             codeBuilder.AppendLine($"            if ({param.Name} != null && {param.Name}.Any())");
             codeBuilder.AppendLine("            {");
-            codeBuilder.AppendLine($"                var __joinedValues = string.Join(\";\", {param.Name}.Where(__item => __item != null).Select(__item => HttpUtility.UrlEncode(__item.ToString())));");
+            codeBuilder.AppendLine($"                var __joinedValues = string.Join(\";\", {param.Name}.Where(__item => __item != null).Select(__item => __item.ToString()));");
             codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", __joinedValues);");
             codeBuilder.AppendLine("            }");
         }
         else if (TypeDetectionHelper.IsStringType(param.Type))
         {
-            codeBuilder.AppendLine($"            if (!string.IsNullOrEmpty({param.Name}))");
+            codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({param.Name}))");
             codeBuilder.AppendLine("            {");
-            codeBuilder.AppendLine($"                var __encodedValue = HttpUtility.UrlEncode({param.Name});");
-            codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", __encodedValue);");
+            codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", {param.Name});");
             codeBuilder.AppendLine("            }");
         }
         else
@@ -911,12 +947,21 @@ internal class RequestBuilder
                    : ".Value.ToString()";
                 codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", {param.Name}{formatExpression});");
             }
-            else
+            else if (TypeDetectionHelper.IsValueType(param.Type))
             {
                 var formatExpression = !string.IsNullOrEmpty(formatString)
                   ? $".ToString(\"{formatString}\")"
                   : ".ToString()";
                 codeBuilder.AppendLine($"            __queryParams.Add(\"{paramName}\", {param.Name}{formatExpression});");
+            }
+            else
+            {
+                // 引用类型需要 null 检查
+                var formatExpression = !string.IsNullOrEmpty(formatString)
+                  ? $".ToString(\"{formatString}\")"
+                  : ".ToString()";
+                codeBuilder.AppendLine($"            if ({param.Name} != null)");
+                codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", {param.Name}{formatExpression});");
             }
         }
     }
@@ -931,14 +976,13 @@ internal class RequestBuilder
         codeBuilder.AppendLine("                    {");
         codeBuilder.AppendLine("                        if (!string.IsNullOrEmpty(__kvp.Value))");
         codeBuilder.AppendLine("                        {");
-        codeBuilder.AppendLine("                            var __encodedValue = HttpUtility.UrlEncode(__kvp.Value);");
-        codeBuilder.AppendLine("                            __queryParams.Add(__kvp.Key, __encodedValue);");
+        codeBuilder.AppendLine("                            __queryParams.Add(__kvp.Key, __kvp.Value);");
         codeBuilder.AppendLine("                        }");
         codeBuilder.AppendLine("                    }");
         codeBuilder.AppendLine("                }");
         codeBuilder.AppendLine("                else");
         codeBuilder.AppendLine("                {");
-        codeBuilder.AppendLine($"                    FlattenObjectToQueryParams({param.Name}, \"\", \"_\", __queryParams, true, false, false);");
+        codeBuilder.AppendLine($"                    FlattenObjectToQueryParams({param.Name}, \"\", \"_\", __queryParams, false, false);");
         codeBuilder.AppendLine("                }");
         codeBuilder.AppendLine("            }");
     }
@@ -1000,7 +1044,7 @@ internal class RequestBuilder
             codeBuilder.AppendLine($"                else");
             codeBuilder.AppendLine("                {");
             var useJson = serializationMethod == "Json" ? "true" : "false";
-            codeBuilder.AppendLine($"                    FlattenObjectToQueryParams({param.Name}, \"\", \"{separator}\", __queryParams, {urlEncode.ToString().ToLowerInvariant()}, {includeNullValues.ToString().ToLowerInvariant()}, {useJson});");
+            codeBuilder.AppendLine($"                    FlattenObjectToQueryParams({param.Name}, \"\", \"{separator}\", __queryParams, {includeNullValues.ToString().ToLowerInvariant()}, {useJson});");
             codeBuilder.AppendLine("                }");
         }
 
@@ -1019,27 +1063,13 @@ internal class RequestBuilder
     {
         if (serializationMethod == "Json")
         {
-            if (urlEncode)
-            {
-                codeBuilder.AppendLine($"{indent}var __jsonValue_{param.Name} = System.Text.Json.JsonSerializer.Serialize({valueExpression});");
-                codeBuilder.AppendLine($"{indent}__queryParams.Add({keyExpression}, HttpUtility.UrlEncode(__jsonValue_{param.Name}));");
-            }
-            else
-            {
-                codeBuilder.AppendLine($"{indent}__queryParams.Add({keyExpression}, System.Text.Json.JsonSerializer.Serialize({valueExpression}));");
-            }
+            // NameValueCollection.ToString() 会自动 URL 编码，无需手动编码
+            codeBuilder.AppendLine($"{indent}var __jsonValue_{param.Name} = System.Text.Json.JsonSerializer.Serialize({valueExpression});");
+            codeBuilder.AppendLine($"{indent}__queryParams.Add({keyExpression}, __jsonValue_{param.Name});");
         }
         else
         {
-            if (urlEncode)
-            {
-                codeBuilder.AppendLine($"{indent}var __encodedValue_{param.Name} = {valueExpression} != null ? HttpUtility.UrlEncode({valueExpression}.ToString()) : null;");
-                codeBuilder.AppendLine($"{indent}__queryParams.Add({keyExpression}, __encodedValue_{param.Name});");
-            }
-            else
-            {
-                codeBuilder.AppendLine($"{indent}__queryParams.Add({keyExpression}, {valueExpression}?.ToString());");
-            }
+            codeBuilder.AppendLine($"{indent}__queryParams.Add({keyExpression}, {valueExpression}?.ToString());");
         }
     }
 
@@ -1070,30 +1100,16 @@ internal class RequestBuilder
 
         if (property.Type == "string" || property.Type == "System.String")
         {
-            codeBuilder.AppendLine($"            if (!string.IsNullOrEmpty({property.Name}))");
+            codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({property.Name}))");
             codeBuilder.AppendLine("            {");
-            if (property.UrlEncode)
-            {
-                codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", HttpUtility.UrlEncode({property.Name}));");
-            }
-            else
-            {
-                codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", {property.Name});");
-            }
+            codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", {property.Name});");
             codeBuilder.AppendLine("            }");
         }
         else
         {
             codeBuilder.AppendLine($"            if ({property.Name} != null)");
             codeBuilder.AppendLine("            {");
-            if (property.UrlEncode)
-            {
-                codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", HttpUtility.UrlEncode({property.Name}{formatExpression}));");
-            }
-            else
-            {
-                codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", {property.Name}{formatExpression});");
-            }
+            codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", {property.Name}{formatExpression});");
             codeBuilder.AppendLine("            }");
         }
     }
@@ -1103,10 +1119,10 @@ internal class RequestBuilder
     /// </summary>
     private void GenerateRawQueryStringParameter(StringBuilder codeBuilder, ParameterInfo param)
     {
-        codeBuilder.AppendLine($"            if (!string.IsNullOrEmpty({param.Name}))");
+        codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({param.Name}))");
         codeBuilder.AppendLine("            {");
         codeBuilder.AppendLine($"                var __rawQS = {param.Name}.TrimStart('?', '&').TrimEnd('&');");
-        codeBuilder.AppendLine("                if (!string.IsNullOrEmpty(__rawQS))");
+        codeBuilder.AppendLine("                if (!string.IsNullOrWhiteSpace(__rawQS))");
         codeBuilder.AppendLine("                {");
         codeBuilder.AppendLine("                    var __separator = __url.Contains('?') ? \"&\" : \"?\";");
         codeBuilder.AppendLine("                    __url += __separator + __rawQS;");

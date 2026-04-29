@@ -77,8 +77,17 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     /// <inheritdoc />
     public async Task RegisterAppAsync(string appKey, TAppContext appContext, bool isDefault = false, CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(appKey))
+            throw new ArgumentException("应用标识不能为空", nameof(appKey));
+        if (appContext == null)
+            throw new ArgumentNullException(nameof(appContext));
+
+        if (appContext is IAsyncInitializable asyncInitializable)
+        {
+            await asyncInitializable.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         RegisterApp(appKey, appContext, isDefault);
-        await Task.CompletedTask.ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -191,17 +200,10 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
             return (TContextSwitcher)factory(context);
         }
 
-        try
-        {
-            return (TContextSwitcher)Activator.CreateInstance(switcherType, context)!;
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException(
-                $"无法创建类型 {switcherType.Name} 的实例。" +
-                $"请确保该类型有接受 {typeof(TAppContext).Name} 参数的公共构造函数，" +
-                $"或通过 RegisterSwitcherFactory 注册工厂委托。", ex);
-        }
+        throw new InvalidOperationException(
+            $"无法创建类型 {switcherType.Name} 的实例，因为未注册对应的工厂委托。" +
+            $"请通过 appManager.RegisterSwitcherFactory<{switcherType.Name}>(ctx => new {switcherType.Name}(ctx)) 注册工厂委托。" +
+            $"使用工厂委托而非反射可以提升性能并支持 AOT 兼容。");
     }
 
     /// <inheritdoc/>

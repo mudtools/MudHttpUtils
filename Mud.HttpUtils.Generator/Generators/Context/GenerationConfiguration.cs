@@ -18,8 +18,6 @@ internal class GenerationConfiguration
 
     public int Timeout { get; set; } = 100;
 
-    public string? BaseAddress { get; set; }
-
     public bool IsAbstract { get; set; }
 
     public string? InheritedFrom { get; set; }

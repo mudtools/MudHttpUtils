@@ -131,6 +131,8 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <returns>返回 API Key</returns>");
         codeBuilder.AppendLine("        public async Task<string> GetApiKeyAsync(string? keyName = null)");
         codeBuilder.AppendLine("        {");
+        codeBuilder.AppendLine("            if (keyName != null && string.IsNullOrWhiteSpace(keyName))");
+        codeBuilder.AppendLine("                throw new System.ArgumentException(\"API Key name cannot be whitespace.\", nameof(keyName));");
         codeBuilder.AppendLine("            var appContext = _appContext.Value;");
         codeBuilder.AppendLine("            if(appContext == null)");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到当前服务的应用上下文。\");");
