@@ -262,37 +262,9 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
 
         if (_context.HasInheritedFrom) return;
 
-        GenerateGetMediaTypeMethod(codeBuilder);
         GenerateUseAppMethod(codeBuilder);
     }
 
-    /// <summary>
-    /// 生成 GetMediaType 方法
-    /// </summary>
-    private void GenerateGetMediaTypeMethod(StringBuilder codeBuilder)
-    {
-        codeBuilder.AppendLine("        /// <summary>");
-        codeBuilder.AppendLine("        /// 从Content-Type字符串中提取媒体类型部分，去除字符集信息。");
-        codeBuilder.AppendLine("        /// </summary>");
-        codeBuilder.AppendLine("        /// <param name=\"contentType\">完整的Content-Type字符串</param>");
-        codeBuilder.AppendLine("        /// <returns>媒体类型部分</returns>");
-        codeBuilder.AppendLine($"        {_context.FieldAccessibility}string GetMediaType(string contentType)");
-        codeBuilder.AppendLine("        {");
-        codeBuilder.AppendLine("            if (string.IsNullOrEmpty(contentType))");
-        codeBuilder.AppendLine("                return _defaultContentType;");
-        codeBuilder.AppendLine();
-        codeBuilder.AppendLine("            // Content-Type可能包含字符集信息，如 \"application/json; charset=utf-8\"");
-        codeBuilder.AppendLine("            // 需要分号前的媒体类型部分");
-        codeBuilder.AppendLine("            var semicolonIndex = contentType.IndexOf(';');");
-        codeBuilder.AppendLine("            if (semicolonIndex >= 0)");
-        codeBuilder.AppendLine("            {");
-        codeBuilder.AppendLine("                return contentType.Substring(0, semicolonIndex).Trim();");
-        codeBuilder.AppendLine("            }");
-        codeBuilder.AppendLine();
-        codeBuilder.AppendLine("            return contentType.Trim();");
-        codeBuilder.AppendLine("        }");
-        codeBuilder.AppendLine();
-    }
 
 
     private void GenerateGetTokenTypeMethod(StringBuilder codeBuilder)

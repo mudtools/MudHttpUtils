@@ -156,7 +156,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             }
             else if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModeHmacSignature)
             {
-                codeBuilder.AppendLine($"            await ApplyHmacSignatureAsync(httpRequest);");
+                codeBuilder.AppendLine($"            await ApplyHmacSignatureAsync(__httpRequest);");
             }
             else if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModeBasicAuth)
             {
@@ -186,7 +186,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                         codeBuilder.AppendLine($"            var access_token = await GetTokenAsync();");
                     }
                 }
-                codeBuilder.AppendLine($"            var basicCredentials = System.Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(access_token));");
+                codeBuilder.AppendLine($"            var __basicCredentials = System.Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(access_token));");
             }
             else
             {
@@ -394,14 +394,14 @@ internal class MethodGenerator : ICodeFragmentGenerator
             if (interfaceHeader.Replace)
             {
                 codeBuilder.AppendLine($"            // 替换接口定义的Header: {interfaceHeader.Name}");
-                codeBuilder.AppendLine($"            if (httpRequest.Headers.Contains(\"{interfaceHeader.Name}\"))");
-                codeBuilder.AppendLine($"                httpRequest.Headers.Remove(\"{interfaceHeader.Name}\");");
-                codeBuilder.AppendLine($"            httpRequest.Headers.Add(\"{interfaceHeader.Name}\", \"{escapedHeaderValue}\");");
+                codeBuilder.AppendLine($"            if (__httpRequest.Headers.Contains(\"{interfaceHeader.Name}\"))");
+                codeBuilder.AppendLine($"                __httpRequest.Headers.Remove(\"{interfaceHeader.Name}\");");
+                codeBuilder.AppendLine($"            __httpRequest.Headers.Add(\"{interfaceHeader.Name}\", \"{escapedHeaderValue}\");");
             }
             else
             {
                 codeBuilder.AppendLine($"            // 添加接口定义的Header: {interfaceHeader.Name}");
-                codeBuilder.AppendLine($"            httpRequest.Headers.Add(\"{interfaceHeader.Name}\", \"{escapedHeaderValue}\");");
+                codeBuilder.AppendLine($"            __httpRequest.Headers.Add(\"{interfaceHeader.Name}\", \"{escapedHeaderValue}\");");
             }
         }
     }
@@ -462,16 +462,16 @@ internal class MethodGenerator : ICodeFragmentGenerator
         if (IsTokenHeaderMode(methodInfo) || IsTokenApiKeyMode(methodInfo))
         {
             var headerName = GetTokenHeaderName(methodInfo);
-            codeBuilder.AppendLine($"{indent}httpRequest.Headers.Add(\"{headerName}\", access_token);");
+            codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"{headerName}\", access_token);");
         }
         else if (IsTokenBasicAuthMode(methodInfo))
         {
-            codeBuilder.AppendLine($"{indent}httpRequest.Headers.Add(\"Authorization\", $\"Basic {{basicCredentials}}\");");
+            codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"Authorization\", $\"Basic {{__basicCredentials}}\");");
         }
         else if (IsTokenCookieMode(methodInfo))
         {
             var cookieName = !string.IsNullOrEmpty(methodInfo.InterfaceTokenName) ? methodInfo.InterfaceTokenName : "access_token";
-            codeBuilder.AppendLine($"{indent}httpRequest.Headers.Add(\"Cookie\", \"{cookieName}=\" + access_token);");
+            codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"Cookie\", \"{cookieName}=\" + access_token);");
         }
     }
 

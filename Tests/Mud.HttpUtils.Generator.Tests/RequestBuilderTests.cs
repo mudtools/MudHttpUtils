@@ -272,6 +272,56 @@ public class RequestBuilderTests
 
     #endregion
 
+    #region InterfaceQueryProperty 验证
+
+    [Fact]
+    public void GenerateQueryParameters_InterfaceStringQueryProperty_NoRedundantNullCheck()
+    {
+        // string 类型的 InterfaceQuery 属性不应生成外层 != null 检查
+        var methodInfo = CreateMethodInfo("/search");
+        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
+        {
+            new()
+            {
+                Name = "Keyword", Type = "string", AttributeType = "Query",
+                ParameterName = "keyword"
+            }
+        };
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        // string 类型：直接使用 IsNullOrEmpty，不需要外层 != null
+        code.Should().Contain("if (!string.IsNullOrEmpty(Keyword))");
+        code.Should().NotMatchRegex(@"if \(Keyword != null\)\s*\{\s*if \(!string\.IsNullOrEmpty\(Keyword\)\)",
+            "string 类型不应生成冗余的外层 != null 检查");
+    }
+
+    [Fact]
+    public void GenerateQueryParameters_InterfaceIntQueryProperty_GeneratesNullCheck()
+    {
+        // 非 string 类型的 InterfaceQuery 属性需要 null 检查
+        var methodInfo = CreateMethodInfo("/search");
+        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
+        {
+            new()
+            {
+                Name = "Page", Type = "int", AttributeType = "Query",
+                ParameterName = "page"
+            }
+        };
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        // 非 string 类型：需要外层 null 检查
+        code.Should().Contain("if (Page != null)");
+    }
+
+    #endregion
+
     #region 辅助方法
 
     private static MethodAnalysisResult CreateMethodInfo(string urlTemplate, List<ParameterInfo>? parameters = null)

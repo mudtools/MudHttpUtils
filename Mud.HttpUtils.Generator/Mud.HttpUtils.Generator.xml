@@ -441,11 +441,6 @@
             生成辅助方法
             </summary>
         </member>
-        <member name="M:Mud.HttpUtils.Generators.Implementation.ConstructorGenerator.GenerateGetMediaTypeMethod(System.Text.StringBuilder)">
-            <summary>
-            生成 GetMediaType 方法
-            </summary>
-        </member>
         <member name="M:Mud.HttpUtils.Generators.Implementation.ConstructorGenerator.GenerateGetTokenAsyncMethod(System.Text.StringBuilder)">
             <summary>
             生成通用的 GetTokenAsync 方法（租户令牌、应用令牌）
