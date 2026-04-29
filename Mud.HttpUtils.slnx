@@ -1,5 +1,7 @@
 <Solution>
   <Folder Name="/Demos/">
+    <Project Path="Demos/CommonClassPubliceLibrary/CommonClassPubliceLibrary.csproj" Id="228e153e-0ac6-4d1d-a34c-38a35d1d40ba" />
+    <Project Path="Demos/CommonClassLibrary.Share/CommonClassLibrary.Share.shproj" Id="53f9a9c3-3728-41b9-afe9-51ff9194496b" />
     <Project Path="Demos/CommonClassLibrary/CommonClassLibrary.csproj" />
     <Project Path="Demos/HttpClientApiDemo/HttpClientApiDemo.csproj" />
     <Project Path="Demos/HttpClientDemo/HttpClientDemo.csproj" />
@@ -14,10 +16,10 @@
     <Project Path="Mud.HttpUtils/Mud.HttpUtils.csproj" />
   </Folder>
   <Folder Name="/Tests/">
-    <Project Path="Tests/Mud.HttpUtils.Client.Tests/Mud.HttpUtils.Client.Tests.csproj" />
-    <Project Path="Tests/Mud.HttpUtils.Resilience.Tests/Mud.HttpUtils.Resilience.Tests.csproj" />
-    <Project Path="Tests/Mud.HttpUtils.Generator.Tests/Mud.HttpUtils.Generator.Tests.csproj" />
     <Project Path="Tests/Mud.HttpUtils.Benchmarks/Mud.HttpUtils.Benchmarks.csproj" />
+    <Project Path="Tests/Mud.HttpUtils.Client.Tests/Mud.HttpUtils.Client.Tests.csproj" />
+    <Project Path="Tests/Mud.HttpUtils.Generator.Tests/Mud.HttpUtils.Generator.Tests.csproj" />
+    <Project Path="Tests/Mud.HttpUtils.Resilience.Tests/Mud.HttpUtils.Resilience.Tests.csproj" />
   </Folder>
   <Folder Name="/解决方案/">
     <File Path=".editorconfig" />

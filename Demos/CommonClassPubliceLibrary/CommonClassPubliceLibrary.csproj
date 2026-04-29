@@ -1,0 +1,15 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <Import Project="..\Demos\CommonClassLibrary.Share\CommonClassLibrary.Share.projitems" Label="Shared" />
+
+  <ItemGroup>
+    <PackageReference Include="Mud.HttpUtils" Version="1.7.0" />
+  </ItemGroup>
+
+</Project>

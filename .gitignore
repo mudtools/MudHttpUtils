@@ -40,6 +40,8 @@
 /Demos/ResilienceDemo/obj
 /Demos/CommonClassLibrary/bin
 /Demos/CommonClassLibrary/obj
+/Demos/CommonClassPubliceLibrary/bin
+/Demos/CommonClassPubliceLibrary/obj
 /Demos/bin
 /.trae
 /artifacts
