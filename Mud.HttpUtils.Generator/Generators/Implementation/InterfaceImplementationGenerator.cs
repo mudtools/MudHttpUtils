@@ -298,6 +298,7 @@ internal class InterfaceImplementationGenerator
         codeBuilder.AppendLine("            bool includeNullValues,");
         codeBuilder.AppendLine("            bool useJsonSerialization)");
         codeBuilder.AppendLine("        {");
+        codeBuilder.AppendLine("            if (obj == null) throw new ArgumentNullException(nameof(obj));");
         codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
         codeBuilder.AppendLine("#pragma warning disable IL2072");
         codeBuilder.AppendLine("#endif");

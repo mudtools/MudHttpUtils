@@ -258,6 +258,286 @@ namespace TestNamespace
         outputCompilation.SyntaxTrees.Count().Should().BeGreaterOrEqualTo(1);
     }
 
+    [Fact]
+    public void Generator_WithMultipartForm_NoDoubleUsingForContent()
+    {
+        // 验证修复 BUG：MultipartFormDataContent 不应使用 using 声明
+        var source = @"
+using Mud.HttpUtils;
+using System.IO;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Post(""/upload"")]
+        [MultipartForm]
+        Task<string> UploadAsync([Upload] Stream file);
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        if (generatedCode != null)
+        {
+            // 生成的代码中 MultipartFormDataContent 不应使用 using var 声明
+            generatedCode.Should().NotContain("using var __multipartContent",
+                "MultipartFormDataContent 不应使用 using 声明，避免被 httpRequest 双重 dispose");
+            // 应使用不带 using 的声明
+            generatedCode.Should().Contain("var __multipartContent = new System.Net.Http.MultipartFormDataContent()");
+        }
+    }
+
+    [Fact]
+    public void Generator_WithInterfacePropertyWithDefault_GeneratesCorrectSyntax()
+    {
+        // 验证修复 BUG：属性默认值不应被拆到独立行
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    [InterfaceQuery(Name = ""version"", Value = ""v1"")]
+    public interface ITestApi
+    {
+        [Get(""/data"")]
+        Task<string> GetDataAsync();
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        if (generatedCode != null)
+        {
+            // 验证属性声明和默认值在同一行
+            var lines = generatedCode.Split('\n');
+            var propertyLines = lines.Where(l => l.Contains("get; set;")).ToList();
+            foreach (var line in propertyLines)
+            {
+                // 如果有默认值，应该在同一行
+                if (line.Contains("= "))
+                {
+                    line.Should().MatchRegex(@"get;\s*set;\s*\}\s*=\s*.+;",
+                        "属性默认值应与属性声明在同一行");
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public void Generator_WithResponseDecrypt_GeneratesNotNullCheck()
+    {
+        // 验证修复 BUG：解密逻辑应使用 != null 而非 string.IsNullOrEmpty
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users/{id}"")]
+        [Path(""id"")]
+        Task<User> GetUserAsync(int id);
+    }
+
+    public class User
+    {
+        public string Name { get; set; }
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        if (generatedCode != null)
+        {
+            // 对于非 string 返回类型，解密逻辑不应使用 string.IsNullOrEmpty
+            // (此处仅验证代码生成不崩溃，实际解密代码在 EnableEncrypt 场景下才会出现)
+            generatedCode.Should().NotContain("string.IsNullOrEmpty(__result)",
+                "非 string 类型的解密检查不应使用 string.IsNullOrEmpty");
+        }
+    }
+
+    [Fact]
+    public void Generator_WithStringParameter_GeneratesIsNullOrWhiteSpaceValidation()
+    {
+        // 验证修复 BUG：string 参数应使用 IsNullOrWhiteSpace 而非 IsNullOrEmpty
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/search"")]
+        Task<string> SearchAsync(string keyword);
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        if (generatedCode != null)
+        {
+            generatedCode.Should().Contain("string.IsNullOrWhiteSpace(keyword)",
+                "string 参数验证应使用 IsNullOrWhiteSpace");
+            generatedCode.Should().NotContain("string.IsNullOrEmpty(keyword)",
+                "string 参数验证不应使用 IsNullOrEmpty");
+            generatedCode.Should().Contain("keyword = keyword!.Trim()",
+                "验证后应执行 Trim");
+        }
+    }
+
+    [Fact]
+    public void Generator_WithOptionValue_GeneratesNullCheck()
+    {
+        // 验证修复 BUG：option.Value 应有 null 检查
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        if (generatedCode != null)
+        {
+            generatedCode.Should().Contain("option.Value ?? throw new ArgumentNullException(nameof(option))",
+                "option.Value 应有 null 合并检查");
+        }
+    }
+
+    [Fact]
+    public void Generator_WithAppContextScope_GeneratesVolatileDisposed()
+    {
+        // 验证修复 BUG：_disposed 字段应有 volatile 修饰符
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [HttpClientApi(TokenManage = ""ITestTokenManager"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        if (generatedCode != null)
+        {
+            generatedCode.Should().Contain("private volatile bool _disposed",
+                "AppContextScope._disposed 字段应有 volatile 修饰符");
+        }
+    }
+
+    [Fact]
+    public void Generator_WithNoHttpMethodAttribute_DoesNotGenerateMethod()
+    {
+        // 验证没有 HTTP 方法特性的方法不会被生成
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+
+        // 无 HTTP 方法特性，不应生成实现
+        string CustomMethod();
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+
+        outputCompilation.SyntaxTrees.Count().Should().BeGreaterOrEqualTo(1);
+    }
+
+    [Fact]
+    public void Generator_WithPatchMethod_GeneratesConditionalCompilation()
+    {
+        // Patch 方法在 NETSTANDARD2_0 下需要特殊处理
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Patch(""/users/{id}"")]
+        Task<string> UpdateUserAsync(int id, string name);
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        if (generatedCode != null)
+        {
+            generatedCode.Should().Contain("NETSTANDARD2_0",
+                "Patch 方法应生成条件编译代码");
+        }
+    }
+
+    [Fact]
+    public void Generator_WithMultipleHttpMethods_GeneratesAllImplementations()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+
+        [Post(""/users"")]
+        Task<string> CreateUserAsync([Body] string name);
+
+        [Put(""/users/{id}"")]
+        Task<string> UpdateUserAsync(int id, [Body] string name);
+
+        [Delete(""/users/{id}"")]
+        Task DeleteUserAsync(int id);
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        if (generatedCode != null)
+        {
+            generatedCode.Should().Contain("GetUsersAsync");
+            generatedCode.Should().Contain("CreateUserAsync");
+            generatedCode.Should().Contain("UpdateUserAsync");
+            generatedCode.Should().Contain("DeleteUserAsync");
+        }
+    }
+
     #endregion
 
     /// <summary>

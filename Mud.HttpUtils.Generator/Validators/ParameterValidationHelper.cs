@@ -67,11 +67,11 @@ internal static class ParameterValidationHelper
         }
         else if (param.Type.EndsWith("string", StringComparison.OrdinalIgnoreCase))
         {
-            codeBuilder.AppendLine($"            {param.Name} = {param.Name}.Trim();");
-            codeBuilder.AppendLine($"            if (string.IsNullOrEmpty({param.Name}))");
+            codeBuilder.AppendLine($"            if (string.IsNullOrWhiteSpace({param.Name}))");
             codeBuilder.AppendLine($"            {{");
             codeBuilder.AppendLine($"                throw new ArgumentNullException(nameof({param.Name}));");
             codeBuilder.AppendLine($"            }}");
+            codeBuilder.AppendLine($"            {param.Name} = {param.Name}!.Trim();");
         }
         else if (!TypeDetectionHelper.IsNullableType(param.Type) && !TypeDetectionHelper.IsSimpleType(param.Type))
         {

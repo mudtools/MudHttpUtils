@@ -74,7 +74,7 @@ internal class RequestBuilder
                 var placeholder = $"{{{pathParam.Name}}}";
                 if (interpolatedUrl.Contains(placeholder))
                 {
-                    interpolatedUrl = interpolatedUrl.Replace(placeholder, pathParam.Value ?? "");
+                    interpolatedUrl = interpolatedUrl.Replace(placeholder, Uri.EscapeDataString(pathParam.Value ?? ""));
                 }
             }
 
@@ -414,7 +414,7 @@ internal class RequestBuilder
         var cancellationTokenParam = methodInfo.Parameters.FirstOrDefault(p => TypeDetectionHelper.IsCancellationToken(p.Type));
         var cancellationTokenArg = cancellationTokenParam?.Name ?? "default";
 
-        codeBuilder.AppendLine($"            using var formData = await {formContentParam.Name}.GetFormDataContentAsync({cancellationTokenArg});");
+        codeBuilder.AppendLine($"            var formData = await {formContentParam.Name}.GetFormDataContentAsync({cancellationTokenArg});");
         codeBuilder.AppendLine($"            httpRequest.Content = formData;");
     }
 
@@ -472,7 +472,7 @@ internal class RequestBuilder
     private void GenerateMultipartFormDataParameter(StringBuilder codeBuilder, MethodAnalysisResult methodInfo,
         ParameterInfo? multipartFormParam, List<ParameterInfo> uploadParams, List<ParameterInfo> formParams)
     {
-        codeBuilder.AppendLine("            using var __multipartContent = new System.Net.Http.MultipartFormDataContent();");
+        codeBuilder.AppendLine("            var __multipartContent = new System.Net.Http.MultipartFormDataContent();");
 
         // 处理 [Form] 参数：无论是 [MultipartForm] 还是 [Upload] 存在时，[Form] 参数都应加入 multipart
         if (multipartFormParam != null || uploadParams.Any())
@@ -689,9 +689,10 @@ internal class RequestBuilder
         if (methodInfo.ResponseEnableDecrypt)
         {
             string encryptableClient = httpClient;
-            codeBuilder.AppendLine($"            if (!string.IsNullOrEmpty(__result))");
+            codeBuilder.AppendLine($"            if (__result != null)");
             codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                var decryptedJson = {encryptableClient}.DecryptContent(__result!.ToString()!);");
+            codeBuilder.AppendLine($"                var __rawJson = JsonSerializer.Serialize(__result, _jsonSerializerOptions);");
+            codeBuilder.AppendLine($"                var decryptedJson = {encryptableClient}.DecryptContent(__rawJson);");
             codeBuilder.AppendLine($"                __result = JsonSerializer.Deserialize<{deserializeType}>(decryptedJson, _jsonSerializerOptions);");
             codeBuilder.AppendLine($"            }}");
         }
@@ -748,9 +749,10 @@ internal class RequestBuilder
         if (methodInfo.ResponseEnableDecrypt)
         {
             string encryptableClient = httpClient;
-            codeBuilder.AppendLine($"            if (!string.IsNullOrEmpty({resultVariable}))");
+            codeBuilder.AppendLine($"            if ({resultVariable} != null)");
             codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                var decryptedJson = {encryptableClient}.DecryptContent({resultVariable}!.ToString()!);");
+            codeBuilder.AppendLine($"                var __rawJson = JsonSerializer.Serialize({resultVariable}, _jsonSerializerOptions);");
+            codeBuilder.AppendLine($"                var decryptedJson = {encryptableClient}.DecryptContent(__rawJson);");
             codeBuilder.AppendLine($"                {resultVariable} = JsonSerializer.Deserialize<{deserializeType}>(decryptedJson, _jsonSerializerOptions);");
             codeBuilder.AppendLine($"            }}");
         }

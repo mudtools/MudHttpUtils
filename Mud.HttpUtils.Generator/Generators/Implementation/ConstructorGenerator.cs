@@ -1,6 +1,6 @@
 // -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
-//  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
@@ -116,14 +116,12 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
 
         foreach (var property in properties)
         {
-            codeBuilder.AppendLine($"        public {property.Type} {property.Name} {{ get; set; }}");
-
+            var propLine = $"        public {property.Type} {property.Name} {{ get; set; }}";
             if (!string.IsNullOrEmpty(property.DefaultValue))
             {
-                codeBuilder.Append($" = {property.DefaultValue};");
+                propLine += $" = {property.DefaultValue}";
             }
-
-            codeBuilder.AppendLine();
+            codeBuilder.AppendLine(propLine);
         }
 
         codeBuilder.AppendLine("        #endregion");
@@ -229,7 +227,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
 
         if (!_context.HasInheritedFrom)
         {
-            codeBuilder.AppendLine("            _jsonSerializerOptions = option.Value;");
+            codeBuilder.AppendLine("            _jsonSerializerOptions = option.Value ?? throw new ArgumentNullException(nameof(option));");
 
             if (_context.HasTokenManager)
             {
@@ -400,7 +398,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            private readonly IMudAppContext? _previous;");
         codeBuilder.AppendLine("            private readonly AsyncLocal<IMudAppContext?> _context;");
-        codeBuilder.AppendLine("            private bool _disposed;");
+        codeBuilder.AppendLine("            private volatile bool _disposed;");
         codeBuilder.AppendLine();
         codeBuilder.AppendLine("            public AppContextScope(IMudAppContext? previous, AsyncLocal<IMudAppContext?> context)");
         codeBuilder.AppendLine("            {");
