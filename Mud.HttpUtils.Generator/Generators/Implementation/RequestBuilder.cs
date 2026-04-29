@@ -77,6 +77,26 @@ internal class RequestBuilder
                     interpolatedUrl = interpolatedUrl.Replace(placeholder, pathParam.Value ?? "");
                 }
             }
+
+            foreach (var interfacePathProp in methodInfo.InterfaceProperties.Where(p => p.AttributeType == "Path"))
+            {
+                var placeholder = $"{{{interfacePathProp.ParameterName}}}";
+                if (interpolatedUrl.Contains(placeholder))
+                {
+                    var formatExpression = !string.IsNullOrEmpty(interfacePathProp.Format)
+                        ? $".ToString(\"{interfacePathProp.Format}\")"
+                        : ".ToString()";
+
+                    if (interfacePathProp.UrlEncode)
+                    {
+                        interpolatedUrl = interpolatedUrl.Replace(placeholder, $"{{System.Uri.EscapeDataString({interfacePathProp.Name}{formatExpression})}}");
+                    }
+                    else
+                    {
+                        interpolatedUrl = interpolatedUrl.Replace(placeholder, $"{{{interfacePathProp.Name}{formatExpression}}}");
+                    }
+                }
+            }
         }
 
         if (hasPathParams)
@@ -141,10 +161,19 @@ internal class RequestBuilder
 
         var hasTokenQuery = ShouldGenerateTokenQuery(methodInfo);
 
-        if (!queryParams.Any() && !arrayQueryParams.Any() && !queryMapParams.Any() && !rawQueryStringParams.Any() && !hasTokenQuery)
+        var interfaceQueryProperties = methodInfo.InterfaceProperties
+            .Where(p => p.AttributeType == "Query")
+            .ToList();
+
+        if (!queryParams.Any() && !arrayQueryParams.Any() && !queryMapParams.Any() && !rawQueryStringParams.Any() && !hasTokenQuery && !interfaceQueryProperties.Any())
             return;
 
         codeBuilder.AppendLine($"            var queryParams = HttpUtility.ParseQueryString(string.Empty);");
+
+        foreach (var interfaceQueryProp in interfaceQueryProperties)
+        {
+            GenerateInterfaceQueryProperty(codeBuilder, interfaceQueryProp);
+        }
 
         foreach (var param in queryParams)
         {
@@ -923,6 +952,14 @@ internal class RequestBuilder
         if (queryMapAttr.NamedArguments.TryGetValue("IncludeNullValues", out var incNull) && incNull is bool inc)
             includeNullValues = inc;
 
+        var serializationMethod = "ToString";
+        if (queryMapAttr.NamedArguments.TryGetValue("SerializationMethod", out var serValue))
+        {
+            var serInt = serValue as int? ?? 0;
+            if (serInt == 1)
+                serializationMethod = "Json";
+        }
+
         var isDictionaryType = TypeDetectionHelper.IsDictionaryType(param.Type);
 
         codeBuilder.AppendLine($"            if ({param.Name} != null)");
@@ -930,7 +967,7 @@ internal class RequestBuilder
 
         if (isDictionaryType)
         {
-            GenerateDictionaryQueryMap(codeBuilder, param, urlEncode, includeNullValues);
+            GenerateDictionaryQueryMap(codeBuilder, param, urlEncode, includeNullValues, serializationMethod);
         }
         else
         {
@@ -940,109 +977,104 @@ internal class RequestBuilder
             codeBuilder.AppendLine("                    {");
             if (includeNullValues)
             {
-                if (urlEncode)
-                {
-                    codeBuilder.AppendLine($"                        var encodedValue_{param.Name} = kvp.Value != null ? HttpUtility.UrlEncode(kvp.Value) : null;");
-                    codeBuilder.AppendLine($"                        queryParams.Add(kvp.Key, encodedValue_{param.Name});");
-                }
-                else
-                {
-                    codeBuilder.AppendLine($"                        queryParams.Add(kvp.Key, kvp.Value);");
-                }
+                GenerateQueryMapValueAddition(codeBuilder, param, urlEncode, serializationMethod, "kvp.Key", "kvp.Value");
             }
             else
             {
                 codeBuilder.AppendLine("                        if (!string.IsNullOrEmpty(kvp.Value))");
                 codeBuilder.AppendLine("                        {");
-                if (urlEncode)
-                {
-                    codeBuilder.AppendLine("                            var encodedValue = HttpUtility.UrlEncode(kvp.Value);");
-                    codeBuilder.AppendLine("                            queryParams.Add(kvp.Key, encodedValue);");
-                }
-                else
-                {
-                    codeBuilder.AppendLine("                            queryParams.Add(kvp.Key, kvp.Value);");
-                }
+                GenerateQueryMapValueAddition(codeBuilder, param, urlEncode, serializationMethod, "kvp.Key", "kvp.Value", "                            ");
                 codeBuilder.AppendLine("                        }");
             }
             codeBuilder.AppendLine("                    }");
             codeBuilder.AppendLine("                }");
-            codeBuilder.AppendLine("                else");
+            codeBuilder.AppendLine($"                else");
             codeBuilder.AppendLine("                {");
-            codeBuilder.AppendLine($"#if NET8_0_OR_GREATER");
-            codeBuilder.AppendLine($"#pragma warning disable IL2072");
-            codeBuilder.AppendLine($"#endif");
-            codeBuilder.AppendLine($"                    var properties_{param.Name} = {param.Name}.GetType().GetProperties();");
-            codeBuilder.AppendLine($"                    foreach (var prop in properties_{param.Name})");
-            codeBuilder.AppendLine("                    {");
-            codeBuilder.AppendLine($"                        var value_{param.Name} = prop.GetValue({param.Name});");
-            if (includeNullValues)
-            {
-                if (urlEncode)
-                {
-                    codeBuilder.AppendLine($"                        var encodedValue_{param.Name} = value_{param.Name} != null ? HttpUtility.UrlEncode(value_{param.Name}.ToString()) : null;");
-                    codeBuilder.AppendLine($"                        queryParams.Add(prop.Name, encodedValue_{param.Name});");
-                }
-                else
-                {
-                    codeBuilder.AppendLine($"                        queryParams.Add(prop.Name, value_{param.Name}?.ToString());");
-                }
-            }
-            else
-            {
-                codeBuilder.AppendLine($"                        if (value_{param.Name} != null)");
-                codeBuilder.AppendLine("                        {");
-                if (urlEncode)
-                {
-                    codeBuilder.AppendLine($"                            queryParams.Add(prop.Name, HttpUtility.UrlEncode(value_{param.Name}.ToString()));");
-                }
-                else
-                {
-                    codeBuilder.AppendLine($"                            queryParams.Add(prop.Name, value_{param.Name}.ToString());");
-                }
-                codeBuilder.AppendLine("                        }");
-            }
-            codeBuilder.AppendLine("                    }");
-            codeBuilder.AppendLine($"#if NET8_0_OR_GREATER");
-            codeBuilder.AppendLine($"#pragma warning restore IL2072");
-            codeBuilder.AppendLine($"#endif");
+            var useJson = serializationMethod == "Json" ? "true" : "false";
+            codeBuilder.AppendLine($"                    FlattenObjectToQueryParams({param.Name}, \"\", \"{separator}\", queryParams, {urlEncode.ToString().ToLowerInvariant()}, {includeNullValues.ToString().ToLowerInvariant()}, {useJson});");
             codeBuilder.AppendLine("                }");
         }
 
         codeBuilder.AppendLine("            }");
     }
 
-    private void GenerateDictionaryQueryMap(StringBuilder codeBuilder, ParameterInfo param, bool urlEncode, bool includeNullValues)
+    private void GenerateQueryMapValueAddition(
+        StringBuilder codeBuilder,
+        ParameterInfo param,
+        bool urlEncode,
+        string serializationMethod,
+        string keyExpression,
+        string valueExpression,
+        string indent = "                        ",
+        string? separator = null)
+    {
+        if (serializationMethod == "Json")
+        {
+            if (urlEncode)
+            {
+                codeBuilder.AppendLine($"{indent}var jsonValue_{param.Name} = System.Text.Json.JsonSerializer.Serialize({valueExpression});");
+                codeBuilder.AppendLine($"{indent}queryParams.Add({keyExpression}, HttpUtility.UrlEncode(jsonValue_{param.Name}));");
+            }
+            else
+            {
+                codeBuilder.AppendLine($"{indent}queryParams.Add({keyExpression}, System.Text.Json.JsonSerializer.Serialize({valueExpression}));");
+            }
+        }
+        else
+        {
+            if (urlEncode)
+            {
+                codeBuilder.AppendLine($"{indent}var encodedValue_{param.Name} = {valueExpression} != null ? HttpUtility.UrlEncode({valueExpression}.ToString()) : null;");
+                codeBuilder.AppendLine($"{indent}queryParams.Add({keyExpression}, encodedValue_{param.Name});");
+            }
+            else
+            {
+                codeBuilder.AppendLine($"{indent}queryParams.Add({keyExpression}, {valueExpression}?.ToString());");
+            }
+        }
+    }
+
+    private void GenerateDictionaryQueryMap(StringBuilder codeBuilder, ParameterInfo param, bool urlEncode, bool includeNullValues, string serializationMethod = "ToString")
     {
         codeBuilder.AppendLine($"                foreach (var kvp_{param.Name} in {param.Name})");
         codeBuilder.AppendLine("                {");
         if (includeNullValues)
         {
-            if (urlEncode)
-            {
-                codeBuilder.AppendLine($"                    var encodedValue_{param.Name} = kvp_{param.Name}.Value != null ? HttpUtility.UrlEncode(kvp_{param.Name}.Value?.ToString()) : null;");
-                codeBuilder.AppendLine($"                    queryParams.Add(kvp_{param.Name}.Key, encodedValue_{param.Name});");
-            }
-            else
-            {
-                codeBuilder.AppendLine($"                    queryParams.Add(kvp_{param.Name}.Key, kvp_{param.Name}.Value?.ToString());");
-            }
+            GenerateQueryMapValueAddition(codeBuilder, param, urlEncode, serializationMethod, $"kvp_{param.Name}.Key", $"kvp_{param.Name}.Value", "                    ");
         }
         else
         {
             codeBuilder.AppendLine($"                    if (kvp_{param.Name}.Value != null)");
             codeBuilder.AppendLine("                    {");
-            if (urlEncode)
-            {
-                codeBuilder.AppendLine($"                        queryParams.Add(kvp_{param.Name}.Key, HttpUtility.UrlEncode(kvp_{param.Name}.Value.ToString()));");
-            }
-            else
-            {
-                codeBuilder.AppendLine($"                        queryParams.Add(kvp_{param.Name}.Key, kvp_{param.Name}.Value.ToString());");
-            }
+            GenerateQueryMapValueAddition(codeBuilder, param, urlEncode, serializationMethod, $"kvp_{param.Name}.Key", $"kvp_{param.Name}.Value", "                        ");
             codeBuilder.AppendLine("                    }");
         }
         codeBuilder.AppendLine("                }");
+    }
+
+    private void GenerateInterfaceQueryProperty(StringBuilder codeBuilder, InterfacePropertyInfo property)
+    {
+        var paramName = property.ParameterName ?? property.Name;
+        var formatExpression = !string.IsNullOrEmpty(property.Format)
+            ? $".ToString(\"{property.Format}\")"
+            : ".ToString()";
+
+        codeBuilder.AppendLine($"            if ({property.Name} != null)");
+        codeBuilder.AppendLine("            {");
+
+        if (property.Type == "string" || property.Type == "System.String")
+        {
+            codeBuilder.AppendLine($"                if (!string.IsNullOrEmpty({property.Name}))");
+            codeBuilder.AppendLine("                {");
+            codeBuilder.AppendLine($"                    queryParams.Add(\"{paramName}\", {property.Name});");
+            codeBuilder.AppendLine("                }");
+        }
+        else
+        {
+            codeBuilder.AppendLine($"                queryParams.Add(\"{paramName}\", {property.Name}{formatExpression});");
+        }
+
+        codeBuilder.AppendLine("            }");
     }
 
     /// <summary>

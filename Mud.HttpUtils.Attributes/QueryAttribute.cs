@@ -37,7 +37,7 @@ namespace Mud.HttpUtils.Attributes;
 /// Task&lt;List&lt;User&gt;&gt; SearchAsync([Query("q", AliasAs = "keyword")] string search);
 /// </code>
 /// </example>
-[AttributeUsage(AttributeTargets.Method | AttributeTargets.Interface | AttributeTargets.Parameter, AllowMultiple = true)]
+[AttributeUsage(AttributeTargets.Method | AttributeTargets.Interface | AttributeTargets.Parameter | AttributeTargets.Property, AllowMultiple = true)]
 public sealed class QueryAttribute : Attribute
 {
     /// <summary>

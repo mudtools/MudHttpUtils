@@ -29,6 +29,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     {
         var className = context.ClassName;
         GenerateClassFields(codeBuilder);
+        GenerateInterfaceProperties(codeBuilder);
         GenerateConstructorDocumentation(codeBuilder, className);
         GenerateConstructorSignature(codeBuilder, className);
         GenerateConstructorBody(codeBuilder);
@@ -100,6 +101,32 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             }
         }
 
+        codeBuilder.AppendLine();
+    }
+
+    private void GenerateInterfaceProperties(StringBuilder codeBuilder)
+    {
+        var properties = _context.InterfaceProperties;
+        if (properties.Count == 0)
+            return;
+
+        codeBuilder.AppendLine();
+        codeBuilder.AppendLine("        #region Interface Properties");
+        codeBuilder.AppendLine();
+
+        foreach (var property in properties)
+        {
+            codeBuilder.AppendLine($"        public {property.Type} {property.Name} {{ get; set; }}");
+
+            if (!string.IsNullOrEmpty(property.DefaultValue))
+            {
+                codeBuilder.Append($" = {property.DefaultValue};");
+            }
+
+            codeBuilder.AppendLine();
+        }
+
+        codeBuilder.AppendLine("        #endregion");
         codeBuilder.AppendLine();
     }
 

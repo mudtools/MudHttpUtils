@@ -24,3 +24,23 @@ internal class InterfacePathParameterInfo
     public string Name { get; set; } = string.Empty;
     public string? Value { get; set; }
 }
+
+/// <summary>
+/// 接口级动态属性信息（标记 [Query] 或 [Path] 的接口属性）
+/// </summary>
+internal class InterfacePropertyInfo
+{
+    public string Name { get; set; } = string.Empty;
+
+    public string Type { get; set; } = string.Empty;
+
+    public string AttributeType { get; set; } = string.Empty;
+
+    public string? ParameterName { get; set; }
+
+    public string? Format { get; set; }
+
+    public bool UrlEncode { get; set; } = true;
+
+    public string? DefaultValue { get; set; }
+}

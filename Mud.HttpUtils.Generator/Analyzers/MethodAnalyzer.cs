@@ -61,6 +61,7 @@ internal static class MethodAnalyzer
 
         var allowAnyStatusCode = AnalyzeAllowAnyStatusCode(methodSymbol, interfaceDecl, compilation, semanticModel);
         var (interfaceQueryParams, interfacePathParams) = AnalyzeInterfaceQueryPathAttributes(interfaceDecl, compilation, semanticModel);
+        var interfaceProperties = AnalyzeInterfaceProperties(interfaceDecl, compilation, semanticModel);
         var headerMergeMode = AnalyzeHeaderMergeMode(methodSymbol, interfaceDecl, compilation, semanticModel);
         var serializationMethod = AnalyzeSerializationMethod(methodSymbol, interfaceDecl, compilation, semanticModel);
 
@@ -97,6 +98,7 @@ internal static class MethodAnalyzer
             AllowAnyStatusCode = allowAnyStatusCode,
             InterfaceQueryParameters = interfaceQueryParams,
             InterfacePathParameters = interfacePathParams,
+            InterfaceProperties = interfaceProperties,
             HeaderMergeMode = headerMergeMode,
             SerializationMethod = serializationMethod,
             CacheEnabled = cacheEnabled,
@@ -520,6 +522,79 @@ internal static class MethodAnalyzer
         }
 
         return (queryParams, pathParams);
+    }
+
+    internal static List<InterfacePropertyInfo> AnalyzeInterfaceProperties(InterfaceDeclarationSyntax interfaceDecl, Compilation compilation, SemanticModel? semanticModel)
+    {
+        var properties = new List<InterfacePropertyInfo>();
+
+        var model = semanticModel ?? SemanticModelCache.GetOrCreate(compilation, interfaceDecl.SyntaxTree);
+        var interfaceSymbol = model.GetDeclaredSymbol(interfaceDecl) as INamedTypeSymbol;
+
+        if (interfaceSymbol == null)
+            return properties;
+
+        foreach (var property in interfaceSymbol.GetMembers().OfType<IPropertySymbol>())
+        {
+            var queryAttr = property.GetAttributes()
+                .FirstOrDefault(attr => attr.AttributeClass?.Name == "QueryAttribute");
+
+            var pathAttr = property.GetAttributes()
+                .FirstOrDefault(attr => attr.AttributeClass?.Name == "PathAttribute");
+
+            if (queryAttr != null)
+            {
+                properties.Add(CreatePropertyInfo(property, queryAttr, "Query"));
+            }
+            else if (pathAttr != null)
+            {
+                properties.Add(CreatePropertyInfo(property, pathAttr, "Path"));
+            }
+        }
+
+        return properties;
+    }
+
+    private static InterfacePropertyInfo CreatePropertyInfo(IPropertySymbol property, AttributeData attribute, string attributeType)
+    {
+        var propertyInfo = new InterfacePropertyInfo
+        {
+            Name = property.Name,
+            Type = TypeSymbolHelper.GetTypeFullName(property.Type),
+            AttributeType = attributeType
+        };
+
+        if (attribute.ConstructorArguments.Length > 0)
+        {
+            propertyInfo.ParameterName = attribute.ConstructorArguments[0].Value?.ToString();
+        }
+
+        foreach (var namedArg in attribute.NamedArguments)
+        {
+            switch (namedArg.Key)
+            {
+                case "Name":
+                    propertyInfo.ParameterName = namedArg.Value.Value?.ToString();
+                    break;
+                case "FormatString":
+                    propertyInfo.Format = namedArg.Value.Value?.ToString();
+                    break;
+                case "Format":
+                    propertyInfo.Format = namedArg.Value.Value?.ToString();
+                    break;
+                case "UrlEncode":
+                    if (namedArg.Value.Value is bool urlEncode)
+                        propertyInfo.UrlEncode = urlEncode;
+                    break;
+            }
+        }
+
+        if (string.IsNullOrEmpty(propertyInfo.ParameterName))
+        {
+            propertyInfo.ParameterName = property.Name;
+        }
+
+        return propertyInfo;
     }
 
     /// <summary>

@@ -110,6 +110,57 @@ namespace TestNamespace
 
     #endregion
 
+    #region BUG-03: Response<T> + Cache 组合警告
+
+    [Fact]
+    public void Generator_WithCacheAndResponseType_ReportsWarning()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        [Cache(60)]
+        Task<Response<string>> GetUsersAsync();
+    }
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        diagnostics.Should().Contain(d => d.Id == "HTTPCLIENT011",
+            "使用 Response<T> 返回类型与 Cache 特性组合时应报告 HTTPCLIENT011 警告");
+    }
+
+    [Fact]
+    public void Generator_WithCacheButNoResponseType_NoWarning()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        [Cache(60)]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        diagnostics.Where(d => d.Id == "HTTPCLIENT011").Should().BeEmpty();
+    }
+
+    #endregion
+
     #region 代码生成验证
 
     [Fact]

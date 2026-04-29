@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main, develop ]
+  pull_request:
+    branches: [ master, main, develop ]
+  workflow_dispatch:
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_NOLOGO: true
+  NUGET_XML_DOC_MODE: skip
+
+jobs:
+  # ──────────────────────────────────────────────
+  # 单元测试
+  # ──────────────────────────────────────────────
+  test:
+    name: 单元测试
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        test_project:
+          - Tests/Mud.HttpUtils.Generator.Tests/Mud.HttpUtils.Generator.Tests.csproj
+          - Tests/Mud.HttpUtils.Client.Tests/Mud.HttpUtils.Client.Tests.csproj
+          - Tests/Mud.HttpUtils.Resilience.Tests/Mud.HttpUtils.Resilience.Tests.csproj
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Restore dependencies
+        run: dotnet restore ${{ matrix.test_project }}
+
+      - name: Build
+        run: dotnet build ${{ matrix.test_project }} --no-restore --configuration Release
+
+      - name: Run tests
+        run: dotnet test ${{ matrix.test_project }} --no-build --configuration Release --logger "github;verbosity=detailed"
+
+  # ──────────────────────────────────────────────
+  # Demo 项目构建
+  # ──────────────────────────────────────────────
+  build-demos:
+    name: Demo 构建
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        demo_project:
+          - Demos/HttpClientApiDemo/HttpClientApiDemo.csproj
+          - Demos/HttpClientDemo/HttpClientDemo.csproj
+          - Demos/ResilienceDemo/ResilienceDemo.csproj
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Restore dependencies
+        run: dotnet restore ${{ matrix.demo_project }}
+
+      - name: Build
+        run: dotnet build ${{ matrix.demo_project }} --no-restore --configuration Release
+
+  # ──────────────────────────────────────────────
+  # 主项目及子包构建与发布
+  # ──────────────────────────────────────────────
+  build-and-pack:
+    name: 构建与发布
+    runs-on: ubuntu-latest
+    needs: [ test ]
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            6.0.x
+            8.0.x
+            10.0.x
+
+      - name: Restore dependencies
+        run: dotnet restore Mud.HttpUtils.slnx
+
+      - name: Build solution
+        run: dotnet build Mud.HttpUtils.slnx --no-restore --configuration Release
+
+      - name: Pack Abstractions
+        run: dotnet pack Mud.HttpUtils.Abstractions/Mud.HttpUtils.Abstractions.csproj --no-build --configuration Release --output artifacts
+
+      - name: Pack Attributes
+        run: dotnet pack Mud.HttpUtils.Attributes/Mud.HttpUtils.Attributes.csproj --no-build --configuration Release --output artifacts
+
+      - name: Pack Client
+        run: dotnet pack Mud.HttpUtils.Client/Mud.HttpUtils.Client.csproj --no-build --configuration Release --output artifacts
+
+      - name: Pack Resilience
+        run: dotnet pack Mud.HttpUtils.Resilience/Mud.HttpUtils.Resilience.csproj --no-build --configuration Release --output artifacts
+
+      - name: Pack Mud.HttpUtils (meta package)
+        run: dotnet pack Mud.HttpUtils/Mud.HttpUtils.csproj --no-build --configuration Release --output artifacts
+
+      - name: Pack Generator
+        run: dotnet pack Mud.HttpUtils.Generator/Mud.HttpUtils.Generator.csproj --no-build --configuration Release --output artifacts
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: artifacts/*.nupkg
+          retention-days: 30
+
+  # ──────────────────────────────────────────────
+  # 发布到 NuGet（仅 tag 触发）
+  # ──────────────────────────────────────────────
+  publish-nuget:
+    name: 发布到 NuGet
+    runs-on: ubuntu-latest
+    needs: [ build-and-pack ]
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: nuget-packages
+          path: artifacts
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish to NuGet
+        run: dotnet nuget push artifacts/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate

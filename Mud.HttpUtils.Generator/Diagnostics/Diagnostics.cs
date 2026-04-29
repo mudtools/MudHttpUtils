@@ -94,6 +94,14 @@ internal static class Diagnostics
         category: "代码生成",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor CacheWithResponseTypeWarning = new(
+        id: "HTTPCLIENT011",
+        title: "Cache 与 Response<T> 返回类型组合使用警告",
+        messageFormat: "接口 {0} 的方法 {1} 同时使用了 [Cache] 特性和 Response<T> 返回类型。缓存会存储整个 Response<T> 对象（包括 StatusCode 和 Headers），可能导致后续请求返回过期的状态码和响应头。建议使用普通返回类型或移除缓存。",
+        category: "代码生成",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
     #endregion
 
     #region HttpClient注册生成器诊断信息 (HTTPCLIENTREG001-002)

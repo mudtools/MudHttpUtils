@@ -120,7 +120,7 @@ public class ApiException : Exception
 
         try
         {
-            result = deserialize(Content);
+            result = deserialize(Content!);
             return result is not null;
         }
         catch
@@ -144,6 +144,6 @@ public class ApiException : Exception
         if (deserialize == null)
             throw new ArgumentNullException(nameof(deserialize));
 
-        return deserialize(Content);
+        return deserialize(Content!);
     }
 }

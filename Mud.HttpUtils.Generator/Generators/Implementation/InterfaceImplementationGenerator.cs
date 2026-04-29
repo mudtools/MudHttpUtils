@@ -5,6 +5,7 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using Mud.HttpUtils.Analyzers;
 using Mud.HttpUtils.Generators.Base;
 using Mud.HttpUtils.Generators.Context;
 
@@ -60,11 +61,18 @@ internal class InterfaceImplementationGenerator
             _context,
             configuration);
 
+        AnalyzeAndSetInterfaceProperties(generatorContext);
+
         var generators = InitializeGenerators(generatorContext);
 
         foreach (var generator in generators)
         {
             generator.Generate(_codeBuilder, generatorContext);
+        }
+
+        if (generatorContext.HasQueryMap)
+        {
+            GenerateFlattenObjectHelper(_codeBuilder);
         }
 
         _codeBuilder.AppendLine("    }");
@@ -263,5 +271,85 @@ internal class InterfaceImplementationGenerator
             return null;
 
         return basePathAttr.ConstructorArguments[0].Value?.ToString();
+    }
+
+    private void AnalyzeAndSetInterfaceProperties(GeneratorContext context)
+    {
+        var interfaceProperties = MethodAnalyzer.AnalyzeInterfaceProperties(
+            _interfaceDecl,
+            _compilation,
+            _semanticModel);
+
+        if (interfaceProperties.Count > 0)
+        {
+            context.InterfaceProperties = interfaceProperties;
+        }
+    }
+
+    private static void GenerateFlattenObjectHelper(StringBuilder codeBuilder)
+    {
+        codeBuilder.AppendLine();
+        codeBuilder.AppendLine("        private static void FlattenObjectToQueryParams(");
+        codeBuilder.AppendLine("            object obj,");
+        codeBuilder.AppendLine("            string prefix,");
+        codeBuilder.AppendLine("            string separator,");
+        codeBuilder.AppendLine("            System.Collections.Specialized.NameValueCollection queryParams,");
+        codeBuilder.AppendLine("            bool urlEncode,");
+        codeBuilder.AppendLine("            bool includeNullValues,");
+        codeBuilder.AppendLine("            bool useJsonSerialization)");
+        codeBuilder.AppendLine("        {");
+        codeBuilder.AppendLine("#if NET8_0_OR_GREATER");
+        codeBuilder.AppendLine("#pragma warning disable IL2072");
+        codeBuilder.AppendLine("#endif");
+        codeBuilder.AppendLine("            var properties = obj.GetType().GetProperties();");
+        codeBuilder.AppendLine("            foreach (var prop in properties)");
+        codeBuilder.AppendLine("            {");
+        codeBuilder.AppendLine("                var value = prop.GetValue(obj);");
+        codeBuilder.AppendLine("                var key = string.IsNullOrEmpty(prefix) ? prop.Name : prefix + separator + prop.Name;");
+        codeBuilder.AppendLine();
+        codeBuilder.AppendLine("                if (value == null)");
+        codeBuilder.AppendLine("                {");
+        codeBuilder.AppendLine("                    if (includeNullValues)");
+        codeBuilder.AppendLine("                        queryParams.Add(key, null);");
+        codeBuilder.AppendLine("                    continue;");
+        codeBuilder.AppendLine("                }");
+        codeBuilder.AppendLine();
+        codeBuilder.AppendLine("                var type = value.GetType();");
+        codeBuilder.AppendLine("                if (type.IsPrimitive || value is string || value is decimal || type.IsEnum || value is System.DateTime || value is System.DateTimeOffset || value is System.Guid)");
+        codeBuilder.AppendLine("                {");
+        codeBuilder.AppendLine("                    string stringValue;");
+        codeBuilder.AppendLine("                    if (useJsonSerialization)");
+        codeBuilder.AppendLine("                        stringValue = System.Text.Json.JsonSerializer.Serialize(value);");
+        codeBuilder.AppendLine("                    else");
+        codeBuilder.AppendLine("                        stringValue = value.ToString() ?? string.Empty;");
+        codeBuilder.AppendLine();
+        codeBuilder.AppendLine("                    if (urlEncode)");
+        codeBuilder.AppendLine("                        stringValue = HttpUtility.UrlEncode(stringValue);");
+        codeBuilder.AppendLine();
+        codeBuilder.AppendLine("                    queryParams.Add(key, stringValue);");
+        codeBuilder.AppendLine("                }");
+        codeBuilder.AppendLine("                else if (value is IQueryParameter queryParam)");
+        codeBuilder.AppendLine("                {");
+        codeBuilder.AppendLine("                    foreach (var kvp in queryParam.ToQueryParameters())");
+        codeBuilder.AppendLine("                    {");
+        codeBuilder.AppendLine("                        var subKey = string.IsNullOrEmpty(prefix) ? kvp.Key : prefix + separator + kvp.Key;");
+        codeBuilder.AppendLine("                        if (includeNullValues || !string.IsNullOrEmpty(kvp.Value))");
+        codeBuilder.AppendLine("                        {");
+        codeBuilder.AppendLine("                            string val = kvp.Value ?? string.Empty;");
+        codeBuilder.AppendLine("                            if (urlEncode && !string.IsNullOrEmpty(val))");
+        codeBuilder.AppendLine("                                val = HttpUtility.UrlEncode(val);");
+        codeBuilder.AppendLine("                            queryParams.Add(subKey, val);");
+        codeBuilder.AppendLine("                        }");
+        codeBuilder.AppendLine("                    }");
+        codeBuilder.AppendLine("                }");
+        codeBuilder.AppendLine("                else");
+        codeBuilder.AppendLine("                {");
+        codeBuilder.AppendLine("                    FlattenObjectToQueryParams(value, key, separator, queryParams, urlEncode, includeNullValues, useJsonSerialization);");
+        codeBuilder.AppendLine("                }");
+        codeBuilder.AppendLine("            }");
+        codeBuilder.AppendLine("#if NET8_0_OR_GREATER");
+        codeBuilder.AppendLine("#pragma warning restore IL2072");
+        codeBuilder.AppendLine("#endif");
+        codeBuilder.AppendLine("        }");
     }
 }

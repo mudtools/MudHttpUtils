@@ -159,6 +159,11 @@ internal class MethodAnalysisResult
     public List<InterfacePathParameterInfo> InterfacePathParameters { get; set; } = [];
 
     /// <summary>
+    /// 接口级动态属性列表（从标记 [Query] 或 [Path] 的接口属性获取）
+    /// </summary>
+    public List<InterfacePropertyInfo> InterfaceProperties { get; set; } = [];
+
+    /// <summary>
     /// 头部合并模式（从 [HeaderMerge] 特性获取，方法级优先于接口级）
     /// </summary>
     public string HeaderMergeMode { get; set; } = "Append";

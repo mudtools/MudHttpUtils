@@ -38,6 +38,10 @@ internal class GeneratorContext
 
     public bool HasCache { get; set; }
 
+    public bool HasQueryMap { get; set; }
+
+    public List<InterfacePropertyInfo> InterfaceProperties { get; set; } = [];
+
     /// <summary>
     /// 接口是否有继承其他接口
     /// </summary>

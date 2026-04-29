@@ -43,6 +43,11 @@ internal class MethodGenerator : ICodeFragmentGenerator
             {
                 context.HasCache = true;
             }
+
+            if (HasQueryMapAttribute(methodSymbol))
+            {
+                context.HasQueryMap = true;
+            }
         }
     }
 
@@ -104,6 +109,18 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         if (!ValidateHttpClientCompatibility(context, methodInfo))
             return;
+
+        if (methodInfo.CacheEnabled && IsResponseType(methodInfo))
+        {
+            var methodSyntax = methodSymbol.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
+            var location = methodSyntax?.GetLocation() ?? context.InterfaceDeclaration.GetLocation();
+            context.ProductionContext.ReportDiagnostic(
+                Diagnostic.Create(
+                    Diagnostics.CacheWithResponseTypeWarning,
+                    location,
+                    context.InterfaceSymbol.Name,
+                    methodSymbol.Name));
+        }
 
         var hasTokenManager = !string.IsNullOrEmpty(context.Configuration.TokenManager);
         var hasHttpClient = !string.IsNullOrEmpty(context.Configuration.HttpClient);
@@ -318,7 +335,15 @@ internal class MethodGenerator : ICodeFragmentGenerator
             .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.ArrayQueryAttribute))
             .ToList();
 
-        if (!queryParams.Any() && !arrayQueryParams.Any())
+        var queryMapParams = methodInfo.Parameters
+            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.QueryMapAttribute))
+            .ToList();
+
+        var rawQueryStringParams = methodInfo.Parameters
+            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.RawQueryStringAttribute))
+            .ToList();
+
+        if (!queryParams.Any() && !arrayQueryParams.Any() && !queryMapParams.Any() && !rawQueryStringParams.Any())
             return;
 
         _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
@@ -528,6 +553,21 @@ internal class MethodGenerator : ICodeFragmentGenerator
     {
         return methodSymbol.GetAttributes()
             .Any(attr => HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name));
+    }
+
+    private static bool HasQueryMapAttribute(IMethodSymbol methodSymbol)
+    {
+        return methodSymbol.Parameters
+            .Any(p => p.GetAttributes()
+                .Any(attr => attr.AttributeClass?.Name == HttpClientGeneratorConstants.QueryMapAttribute));
+    }
+
+    private static bool IsResponseType(MethodAnalysisResult methodInfo)
+    {
+        var type = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
+        return type.StartsWith("Response<", StringComparison.Ordinal) ||
+               type.StartsWith("Mud.HttpUtils.Response<", StringComparison.Ordinal) ||
+               type.StartsWith("Mud.HttpUtils.HttpClient.Response<", StringComparison.Ordinal);
     }
 
 }
