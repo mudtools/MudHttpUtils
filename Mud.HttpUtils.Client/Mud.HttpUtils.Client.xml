@@ -1,0 +1,1986 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>Mud.HttpUtils.Client</name>
+    </assembly>
+    <members>
+        <member name="T:Mud.HttpUtils.DefaultAesEncryptionProvider">
+            <summary>
+            默认 AES 加密提供程序实现，使用 AES 对称加密算法进行数据加密和解密。
+            </summary>
+            <remarks>
+            该类使用 CBC 模式和 PKCS7 填充方式。每次加密时随机生成 IV，并将 IV 附加到密文前（前 16 字节），
+            以确保相同明文不会产生相同密文，满足语义安全性要求。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultAesEncryptionProvider.Encrypt(System.String)">
+            <summary>
+            使用 AES 算法加密明文数据。每次加密随机生成 IV，IV 附加在密文前。
+            </summary>
+            <param name="plainText">要加密的明文数据。</param>
+            <returns>加密后的 Base64 编码密文字符串（含前缀 IV）。</returns>
+            <remarks>
+            如果输入为空或 null，则返回空字符串。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultAesEncryptionProvider.Decrypt(System.String)">
+            <summary>
+            使用 AES 算法解密密文数据。从密文前 16 字节提取 IV。
+            </summary>
+            <param name="cipherText">要解密的 Base64 编码密文字符串（含前缀 IV）。</param>
+            <returns>解密后的明文字符串。</returns>
+            <remarks>
+            如果输入为空或 null，则返回空字符串。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultAesEncryptionProvider.EncryptBytes(System.Byte[])">
+            <summary>
+            使用 AES 算法加密二进制数据。每次加密随机生成 IV，IV 附加在密文前。
+            </summary>
+            <param name="data">要加密的二进制数据。</param>
+            <returns>加密后的二进制数据（含前缀 IV）。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultAesEncryptionProvider.DecryptBytes(System.Byte[])">
+            <summary>
+            使用 AES 算法解密二进制数据。从密文前 16 字节提取 IV。
+            </summary>
+            <param name="encryptedData">要解密的二进制数据（含前缀 IV）。</param>
+            <returns>解密后的二进制数据。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.ExceptionUtils.ThrowIfNull``1(``0,System.String)">
+            <summary>
+            如果对象为null则抛出ArgumentNullException
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.HttpClientUtils">
+            <summary>
+            HttpClient 工具类，提供根据请求对象构建 MultipartFormDataContent 和根据文件路径获取 ByteArrayContent 的方法，支持异步操作和取消功能。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientUtils.GetByteArrayContentAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            根据文件路径异步获取 ByteArrayContent 对象
+            </summary>
+            <param name="filePath">文件路径</param>
+            <param name="cancellationToken">取消令牌</param>
+            <returns>包含文件内容的 ByteArrayContent 对象</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientUtils.CreateFileContent(System.String,System.Byte[])">
+            <summary>
+            创建包含文件数据的 ByteArrayContent 对象，并设置适当的内容类型头
+            </summary>
+            <param name="fileName">文件名，用于确定内容类型</param>
+            <param name="fileBytes">文件二进制数据</param>
+            <returns>配置好的 ByteArrayContent 对象</returns>
+            <exception cref="T:System.ArgumentNullException">当 fileName 或 fileBytes 为 null 或空字符串时抛出</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.MessageSanitizer.TokenPattern">
+            <remarks>
+            Pattern:<br/>
+            <code>^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$|^[A-Za-z0-9_\\-]{20,}$</code><br/>
+            Options:<br/>
+            <code>RegexOptions.IgnoreCase</code><br/>
+            Explanation:<br/>
+            <code>
+            ○ Match if at the beginning of the string.<br/>
+            ○ Match with 3 alternative expressions, atomically.<br/>
+                ○ Match a sequence of expressions.<br/>
+                    ○ Loop greedily any number of times.<br/>
+                        ○ Match a character in the set [+/-9A-Za-z\u212A] exactly 4 times.<br/>
+                    ○ Optional (greedy).<br/>
+                        ○ Match with 2 alternative expressions.<br/>
+                            ○ Match a sequence of expressions.<br/>
+                                ○ Match a character in the set [+/-9A-Za-z\u212A] exactly 2 times.<br/>
+                                ○ Match the string "==".<br/>
+                            ○ Match a sequence of expressions.<br/>
+                                ○ Match a character in the set [+/-9A-Za-z\u212A] exactly 3 times.<br/>
+                                ○ Match '='.<br/>
+                    ○ Match if at the end of the string or if before an ending newline.<br/>
+                ○ Match a sequence of expressions.<br/>
+                    ○ Match a hexadecimal digit exactly 8 times.<br/>
+                    ○ Match '-'.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
+                    ○ Match '-'.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
+                    ○ Match '-'.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
+                    ○ Match '-'.<br/>
+                    ○ Match a hexadecimal digit exactly 12 times.<br/>
+                    ○ Match if at the end of the string or if before an ending newline.<br/>
+                ○ Match a sequence of expressions.<br/>
+                    ○ Match a character in the set [\-0-9A-Z_a-z\u212A] atomically at least 20 times.<br/>
+                    ○ Match if at the end of the string or if before an ending newline.<br/>
+            </code>
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.MessageSanitizer.SensitiveKeyValuePattern">
+            <remarks>
+            Pattern:<br/>
+            <code>(?i)(token|password|secret|key)\\s*[:=]\\s*['"]?([^'"\\s]{6,})['"]?</code><br/>
+            Options:<br/>
+            <code>RegexOptions.Compiled</code><br/>
+            Explanation:<br/>
+            <code>
+            ○ 1st capture group.<br/>
+                ○ Match with 4 alternative expressions.<br/>
+                    ○ Match a sequence of expressions.<br/>
+                        ○ Match a character in the set [Tt].<br/>
+                        ○ Match a character in the set [Oo].<br/>
+                        ○ Match a character in the set [Kk\u212A].<br/>
+                        ○ Match a character in the set [Ee].<br/>
+                        ○ Match a character in the set [Nn].<br/>
+                    ○ Match a sequence of expressions.<br/>
+                        ○ Match a character in the set [Pp].<br/>
+                        ○ Match a character in the set [Aa].<br/>
+                        ○ Match a character in the set [Ss] exactly 2 times.<br/>
+                        ○ Match a character in the set [Ww].<br/>
+                        ○ Match a character in the set [Oo].<br/>
+                        ○ Match a character in the set [Rr].<br/>
+                        ○ Match a character in the set [Dd].<br/>
+                    ○ Match a sequence of expressions.<br/>
+                        ○ Match a character in the set [Ss].<br/>
+                        ○ Match a character in the set [Ee].<br/>
+                        ○ Match a character in the set [Cc].<br/>
+                        ○ Match a character in the set [Rr].<br/>
+                        ○ Match a character in the set [Ee].<br/>
+                        ○ Match a character in the set [Tt].<br/>
+                    ○ Match a sequence of expressions.<br/>
+                        ○ Match a character in the set [Kk\u212A].<br/>
+                        ○ Match a character in the set [Ee].<br/>
+                        ○ Match a character in the set [Yy].<br/>
+            ○ Match a whitespace character atomically any number of times.<br/>
+            ○ Match a character in the set [:=].<br/>
+            ○ Match a whitespace character greedily any number of times.<br/>
+            ○ Match a character in the set ["'] greedily, optionally.<br/>
+            ○ 2nd capture group.<br/>
+                ○ Match a character in the set [^"'\s] greedily at least 6 times.<br/>
+            ○ Match a character in the set ["'] atomically, optionally.<br/>
+            </code>
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.MessageSanitizer.PhonePattern">
+            <remarks>
+            Pattern:<br/>
+            <code>^1[3-9]\\d{9}$</code><br/>
+            Explanation:<br/>
+            <code>
+            ○ Match if at the beginning of the string.<br/>
+            ○ Match '1'.<br/>
+            ○ Match a character in the set [3-9].<br/>
+            ○ Match a Unicode digit exactly 9 times.<br/>
+            ○ Match if at the end of the string or if before an ending newline.<br/>
+            </code>
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.MessageSanitizer.EmailPattern">
+            <remarks>
+            Pattern:<br/>
+            <code>^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$</code><br/>
+            Explanation:<br/>
+            <code>
+            ○ Match if at the beginning of the string.<br/>
+            ○ Match a character in the set [^@\s] atomically at least once.<br/>
+            ○ Match '@'.<br/>
+            ○ Match a character in the set [^@\s] greedily at least once.<br/>
+            ○ Match '.'.<br/>
+            ○ Match a character in the set [^@\s] atomically at least once.<br/>
+            ○ Match if at the end of the string or if before an ending newline.<br/>
+            </code>
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.MessageSanitizer.IdCardPattern">
+            <remarks>
+            Pattern:<br/>
+            <code>^\\d{17}[\\dXx]$</code><br/>
+            Explanation:<br/>
+            <code>
+            ○ Match if at the beginning of the string.<br/>
+            ○ Match a Unicode digit exactly 17 times.<br/>
+            ○ Match a character in the set [Xx\d].<br/>
+            ○ Match if at the end of the string or if before an ending newline.<br/>
+            </code>
+            </remarks>
+        </member>
+        <member name="T:Mud.HttpUtils.UrlValidator">
+            <summary>
+            URL 验证工具类，用于防止 SSRF（服务端请求伪造）攻击
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.UrlValidator.ConfigureAllowedDomains(System.Collections.Generic.IEnumerable{System.String})">
+            <summary>
+            配置允许的域名白名单（替换默认白名单）
+            </summary>
+            <param name="domains">允许的域名集合</param>
+        </member>
+        <member name="M:Mud.HttpUtils.UrlValidator.ValidateUrl(System.String,System.Boolean)">
+            <summary>
+            验证 URL 是否安全（在白名单域名内且不包含私有 IP 地址）
+            </summary>
+            <param name="url">要验证的 URL</param>
+            <param name="allowCustomBaseUrls">是否允许自定义基础 URL（默认为 false）</param>
+            <exception cref="T:System.ArgumentNullException">URL 为空时抛出</exception>
+            <exception cref="T:System.ArgumentException">URL 格式无效时抛出</exception>
+            <exception cref="T:System.InvalidOperationException">当 URL 不在白名单或包含私有 IP 时抛出</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.UrlValidator.ValidateBaseUrl(System.String,System.Boolean)">
+            <summary>
+            验证基础 URL 配置
+            </summary>
+            <param name="baseUrl">基础 URL</param>
+            <param name="allowCustomBaseUrls">是否允许自定义基础 URL</param>
+        </member>
+        <member name="M:Mud.HttpUtils.UrlValidator.IsAllowedDomain(System.String)">
+            <summary>
+            检查主机名是否在允许的域名白名单中
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.UrlValidator.GetAllowedDomains">
+            <summary>
+            获取当前允许的域名白名单
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.UrlValidator.AddAllowedDomain(System.String)">
+            <summary>
+            添加自定义域名到白名单（运行时扩展）
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.UrlValidator.RemoveAllowedDomain(System.String)">
+            <summary>
+            从白名单中移除域名
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.UrlValidator.ClearDnsCache">
+            <summary>
+            清除 DNS 缓存
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.XmlSerialize">
+            <summary>
+            Xml序列化工具类，提供对象与XML字符串之间的转换功能
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.XmlSerialize.Serialize``1(``0)">
+            <summary>
+            将对象序列化为XML字符串
+            </summary>
+            <typeparam name="T">对象类型</typeparam>
+            <param name="obj">要序列化的对象</param>
+            <returns>XML字符串</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.XmlSerialize.Serialize``1(``0,System.Text.Encoding)">
+            <summary>
+            将对象序列化为XML字符串（指定编码）
+            </summary>
+            <typeparam name="T">对象类型</typeparam>
+            <param name="obj">要序列化的对象</param>
+            <param name="encoding">编码方式</param>
+            <returns>XML字符串</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.XmlSerialize.Deserialize``1(System.String)">
+            <summary>
+            从XML字符串反序列化为对象
+            </summary>
+            <typeparam name="T">对象类型</typeparam>
+            <param name="xml">XML字符串</param>
+            <returns>反序列化后的对象</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.XmlSerialize.Deserialize``1(System.String,System.Text.Encoding)">
+            <summary>
+            从XML字符串反序列化为对象（指定编码）
+            </summary>
+            <typeparam name="T">对象类型</typeparam>
+            <param name="xml">XML字符串</param>
+            <param name="encoding">编码方式</param>
+            <returns>反序列化后的对象</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.AsyncEnumerableExtensions">
+            <summary>
+            IBaseHttpClient 的 IAsyncEnumerable 扩展方法
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.AsyncEnumerableExtensions.SendAsAsyncEnumerable``1(Mud.HttpUtils.IBaseHttpClient,System.Net.Http.HttpRequestMessage,System.Object,System.Threading.CancellationToken)">
+            <summary>
+            发送 HTTP 请求并以 IAsyncEnumerable 流式返回 NDJSON 响应中的每一行数据。
+            </summary>
+            <typeparam name="T">每行数据的类型。</typeparam>
+            <param name="client">HTTP 客户端。</param>
+            <param name="request">HTTP 请求消息。</param>
+            <param name="jsonSerializerOptions">JSON 序列化选项。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>流式返回的异步枚举。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.CacheResponseInterceptor">
+            <summary>
+            HTTP响应缓存拦截器,用于实现HTTP响应的缓存管理功能。
+            </summary>
+            <remarks>
+            <para>此类实现了 <see cref="T:Mud.HttpUtils.IHttpResponseInterceptor"/> 接口,提供了响应缓存的能力。</para>
+            <para>主要功能:</para>
+            <list type="bullet">
+              <item>从缓存中获取已缓存的响应数据</item>
+              <item>将响应数据存储到缓存中,支持设置过期时间</item>
+              <item>移除指定的缓存项</item>
+              <item>记录缓存操作的日志</item>
+            </list>
+            <para>缓存拦截器的顺序为100,可以在请求管道中适当位置执行。</para>
+            </remarks>
+            <seealso cref="T:Mud.HttpUtils.IHttpResponseInterceptor"/>
+            <seealso cref="T:Mud.HttpUtils.IHttpResponseCache"/>
+        </member>
+        <member name="M:Mud.HttpUtils.CacheResponseInterceptor.#ctor(Mud.HttpUtils.IHttpResponseCache,Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.CacheResponseInterceptor})">
+            <summary>
+            初始化 <see cref="T:Mud.HttpUtils.CacheResponseInterceptor"/> 类的新实例。
+            </summary>
+            <param name="cache">HTTP响应缓存实例。</param>
+            <param name="logger">日志记录器。</param>
+            <exception cref="T:System.ArgumentNullException"><paramref name="cache"/> 或 <paramref name="logger"/> 为 null。</exception>
+        </member>
+        <member name="P:Mud.HttpUtils.CacheResponseInterceptor.Order">
+            <summary>
+            获取拦截器的执行顺序。
+            </summary>
+            <value>拦截器顺序值,默认为100。</value>
+            <remarks>
+            较小的值表示拦截器会更早执行。此拦截器的顺序为100。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.CacheResponseInterceptor.OnResponseAsync(System.Net.Http.HttpResponseMessage,System.Threading.CancellationToken)">
+            <inheritdoc/>
+            <remarks>
+            此方法当前实现为空操作,仅返回已完成的任务。
+            可以重写此方法以实现自定义的响应处理逻辑。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.CacheResponseInterceptor.TryGetCached``1(System.String,``0@)">
+            <summary>
+            尝试从缓存中获取指定键的值。
+            </summary>
+            <typeparam name="T">缓存值的类型。</typeparam>
+            <param name="cacheKey">缓存键。</param>
+            <param name="value">当返回时,如果找到缓存则包含缓存的值;否则为类型的默认值。</param>
+            <returns>如果成功从缓存中获取值,则为 <c>true</c>;否则为 <c>false</c>。</returns>
+            <remarks>
+            此方法会记录缓存命中或未命中的日志。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.CacheResponseInterceptor.Set``1(System.String,``0,System.Int32,System.Boolean)">
+            <summary>
+            将值存储到缓存中。
+            </summary>
+            <typeparam name="T">要缓存的值的类型。</typeparam>
+            <param name="cacheKey">缓存键。</param>
+            <param name="value">要缓存的值。如果为 null,则不执行缓存操作。</param>
+            <param name="durationSeconds">缓存持续时间(秒)。</param>
+            <param name="useSlidingExpiration">是否使用滑动过期时间。为 true 时，每次访问将重置过期时间。</param>
+            <remarks>
+            此方法会记录缓存设置的日志。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.CacheResponseInterceptor.Remove(System.String)">
+            <summary>
+            从缓存中移除指定键的值。
+            </summary>
+            <param name="cacheKey">要移除的缓存键。</param>
+            <remarks>
+            此方法会记录缓存移除的日志。
+            </remarks>
+        </member>
+        <member name="T:Mud.HttpUtils.DirectEnhancedHttpClient">
+            <summary>
+            直接增强型HTTP客户端实现,提供加密/解密功能的具体实现。
+            </summary>
+            <remarks>
+            <para>此类继承自 <see cref="T:Mud.HttpUtils.EnhancedHttpClient"/>,是增强型HTTP客户端的直接实现。</para>
+            <para>主要特点:</para>
+            <list type="bullet">
+              <item>实现了加密/解密相关的方法,支持内容加密和字节加密</item>
+              <item>通过依赖注入的方式接收 <see cref="T:Mud.HttpUtils.IEncryptionProvider"/> 实例</item>
+              <item>当未配置加密提供器时,调用加密方法会抛出 <see cref="T:System.InvalidOperationException"/></item>
+            </list>
+            </remarks>
+            <seealso cref="T:Mud.HttpUtils.EnhancedHttpClient"/>
+            <seealso cref="T:Mud.HttpUtils.IEncryptionProvider"/>
+        </member>
+        <member name="M:Mud.HttpUtils.DirectEnhancedHttpClient.#ctor(System.Net.Http.HttpClient,Microsoft.Extensions.Logging.ILogger,System.Collections.Generic.IEnumerable{Mud.HttpUtils.IHttpRequestInterceptor},System.Collections.Generic.IEnumerable{Mud.HttpUtils.IHttpResponseInterceptor},Mud.HttpUtils.IEncryptionProvider,Mud.HttpUtils.ISensitiveDataMasker)">
+            <summary>
+            初始化 <see cref="T:Mud.HttpUtils.DirectEnhancedHttpClient"/> 类的新实例。
+            </summary>
+            <param name="httpClient">HTTP客户端实例。</param>
+            <param name="logger">日志记录器,可选。</param>
+            <param name="requestInterceptors">请求拦截器集合,可选。</param>
+            <param name="responseInterceptors">响应拦截器集合,可选。</param>
+            <param name="encryptionProvider">加密提供器实例,可选。</param>
+            <exception cref="T:System.ArgumentNullException"><paramref name="httpClient"/> 为 null。</exception>
+        </member>
+        <member name="P:Mud.HttpUtils.DirectEnhancedHttpClient.EncryptionProvider">
+            <inheritdoc/>
+        </member>
+        <member name="M:Mud.HttpUtils.DirectEnhancedHttpClient.EncryptContent(System.Object,System.String,Mud.HttpUtils.SerializeType)">
+            <inheritdoc/>
+            <remarks>
+            此方法使用 <see cref="M:Mud.HttpUtils.IEncryptionProvider.Encrypt(System.String)"/> 对序列化后的JSON内容进行加密。
+            如果未配置加密提供器,将抛出 <see cref="T:System.InvalidOperationException"/>。
+            </remarks>
+            <exception cref="T:System.ArgumentNullException"><paramref name="content"/> 为 null。</exception>
+            <exception cref="T:System.ArgumentException"><paramref name="propertyName"/> 为空或 null。</exception>
+            <exception cref="T:System.InvalidOperationException">未配置加密提供器。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.DirectEnhancedHttpClient.DecryptContent(System.String)">
+            <inheritdoc/>
+            <remarks>
+            此方法使用 <see cref="M:Mud.HttpUtils.IEncryptionProvider.Decrypt(System.String)"/> 对加密内容进行解密。
+            如果输入为空或 null,将返回空字符串。
+            如果未配置加密提供器,将抛出 <see cref="T:System.InvalidOperationException"/>。
+            </remarks>
+            <exception cref="T:System.InvalidOperationException">未配置加密提供器。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.DirectEnhancedHttpClient.EncryptBytes(System.Byte[])">
+            <inheritdoc/>
+            <remarks>
+            此方法使用 <see cref="M:Mud.HttpUtils.IEncryptionProvider.EncryptBytes(System.Byte[])"/> 对字节数组进行加密。
+            如果未配置加密提供器,将抛出 <see cref="T:System.InvalidOperationException"/>。
+            </remarks>
+            <exception cref="T:System.ArgumentNullException"><paramref name="data"/> 为 null。</exception>
+            <exception cref="T:System.InvalidOperationException">未配置加密提供器。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.DirectEnhancedHttpClient.DecryptBytes(System.Byte[])">
+            <inheritdoc/>
+            <remarks>
+            此方法使用 <see cref="M:Mud.HttpUtils.IEncryptionProvider.DecryptBytes(System.Byte[])"/> 对加密的字节数组进行解密。
+            如果未配置加密提供器,将抛出 <see cref="T:System.InvalidOperationException"/>。
+            </remarks>
+            <exception cref="T:System.ArgumentNullException"><paramref name="encryptedData"/> 为 null。</exception>
+            <exception cref="T:System.InvalidOperationException">未配置加密提供器。</exception>
+        </member>
+        <member name="T:Mud.HttpUtils.EnhancedHttpClient">
+             <summary>
+             增强型HTTP客户端基类,提供JSON/XML序列化、文件下载、请求/响应拦截器、日志记录等功能。
+             </summary>
+             <remarks>
+             <para>此类实现了 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 和 <see cref="T:Mud.HttpUtils.IEncryptableHttpClient"/> 接口,提供了丰富的HTTP请求方法。</para>
+             <para>主要功能包括:</para>
+             <list type="bullet">
+               <item>JSON请求/响应的自动序列化和反序列化</item>
+               <item>XML请求/响应的自动序列化和反序列化</item>
+               <item>文件下载(小文件和大文件流式下载)</item>
+               <item>请求和响应拦截器支持</item>
+               <item>详细的日志记录</item>
+               <item>内容加密/解密支持</item>
+               <item>URL验证和错误处理</item>
+             </list>
+             </remarks>
+             <example>
+             <code>
+             public class MyHttpClient : EnhancedHttpClient
+             {
+                 public MyHttpClient(HttpClient httpClient, ILogger logger)
+                     : base(httpClient, logger)
+                 {
+                 }
+            
+                 // 实现加密相关方法...
+             }
+             </code>
+             </example>
+             <seealso cref="T:Mud.HttpUtils.IEnhancedHttpClient"/>
+             <seealso cref="T:Mud.HttpUtils.IEncryptableHttpClient"/>
+        </member>
+        <member name="P:Mud.HttpUtils.EnhancedHttpClient.EncryptionProvider">
+            <summary>
+            获取加密提供程序。子类可重写此属性以提供加密功能。
+            </summary>
+            <remarks>
+            默认返回 <c>null</c>,表示不启用加密功能。子类可以重写此属性返回具体的 <see cref="T:Mud.HttpUtils.IEncryptionProvider"/> 实现。
+            </remarks>
+            <value>加密提供程序实例,如果未启用加密则为 <c>null</c>。</value>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.#ctor(System.Net.Http.HttpClient,Microsoft.Extensions.Logging.ILogger,System.Collections.Generic.IEnumerable{Mud.HttpUtils.IHttpRequestInterceptor},System.Collections.Generic.IEnumerable{Mud.HttpUtils.IHttpResponseInterceptor},Mud.HttpUtils.ISensitiveDataMasker)">
+            <summary>
+            初始化增强型HttpClient实例
+            </summary>
+            <param name="httpClient">HttpClient实例</param>
+            <param name="logger">日志记录器</param>
+            <param name="requestInterceptors">请求拦截器集合（可选）。</param>
+            <param name="responseInterceptors">响应拦截器集合（可选）。</param>
+            <exception cref="T:System.ArgumentNullException"></exception>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.SendAsync``1(System.Net.Http.HttpRequestMessage,System.Object,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:Mud.HttpUtils.IBaseHttpClient.SendAsync``1(System.Net.Http.HttpRequestMessage,System.Object,System.Threading.CancellationToken)"/>
+            <param name="request">HTTP请求消息。</param>
+            <param name="jsonSerializerOptions">JSON序列化选项,如果为null则使用默认选项。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <typeparam name="TResult">响应结果的类型。</typeparam>
+            <returns>反序列化后的响应结果。</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="request"/> 为 null。</exception>
+            <exception cref="T:System.Net.Http.HttpRequestException">HTTP请求失败时抛出。</exception>
+            <exception cref="T:System.Text.Json.JsonException">JSON反序列化失败时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.DownloadAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:Mud.HttpUtils.IBaseHttpClient.DownloadAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)"/>
+            <param name="request">HTTP请求消息。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>文件内容的字节数组。</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="request"/> 为 null。</exception>
+            <exception cref="T:System.Net.Http.HttpRequestException">HTTP请求失败时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.DownloadLargeAsync(System.Net.Http.HttpRequestMessage,System.String,System.Boolean,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:Mud.HttpUtils.IBaseHttpClient.DownloadLargeAsync(System.Net.Http.HttpRequestMessage,System.String,System.Boolean,System.Threading.CancellationToken)"/>
+            <param name="request">HTTP请求消息。</param>
+            <param name="filePath">保存文件的路径。</param>
+            <param name="overwrite">是否覆盖已存在的文件,默认为true。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>下载完成后的文件信息。</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="request"/> 为 null。</exception>
+            <exception cref="T:System.ArgumentException"><paramref name="filePath"/> 为空或仅包含空白字符。</exception>
+            <exception cref="T:System.IO.IOException">当 <paramref name="overwrite"/> 为 false 且文件已存在时抛出。</exception>
+            <exception cref="T:System.Net.Http.HttpRequestException">HTTP请求失败时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.SendRawAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:Mud.HttpUtils.IBaseHttpClient.SendRawAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)"/>
+            <param name="request">HTTP请求消息。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>HTTP响应消息。</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="request"/> 为 null。</exception>
+            <exception cref="T:System.Net.Http.HttpRequestException">HTTP请求失败时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.SendStreamAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:Mud.HttpUtils.IBaseHttpClient.SendStreamAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)"/>
+            <param name="request">HTTP请求消息。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>响应内容流。调用者负责释放此流。</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="request"/> 为 null。</exception>
+            <exception cref="T:System.Net.Http.HttpRequestException">HTTP请求失败时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.SendXmlAsync``1(System.Net.Http.HttpRequestMessage,System.Text.Encoding,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:Mud.HttpUtils.IXmlHttpClient.SendXmlAsync``1(System.Net.Http.HttpRequestMessage,System.Text.Encoding,System.Threading.CancellationToken)"/>
+            <param name="request">HTTP请求消息。</param>
+            <param name="encoding">XML编码方式,默认为UTF-8。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <typeparam name="TResult">响应结果的类型。</typeparam>
+            <returns>XML反序列化后的响应结果。</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="request"/> 为 null。</exception>
+            <exception cref="T:System.InvalidOperationException">XML反序列化失败时抛出。</exception>
+            <exception cref="T:System.Net.Http.HttpRequestException">HTTP请求失败时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.PostAsXmlAsync``2(System.String,``0,System.Text.Encoding,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:Mud.HttpUtils.IXmlHttpClient.PostAsXmlAsync``2(System.String,``0,System.Text.Encoding,System.Threading.CancellationToken)"/>
+            <param name="requestUri">请求URI。</param>
+            <param name="requestData">请求数据对象。</param>
+            <param name="encoding">XML编码方式,默认为UTF-8。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <typeparam name="TRequest">请求数据的类型。</typeparam>
+            <typeparam name="TResult">响应结果的类型。</typeparam>
+            <returns>XML反序列化后的响应结果。</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="requestUri"/> 或 <paramref name="requestData"/> 为 null。</exception>
+            <exception cref="T:System.InvalidOperationException">XML序列化或反序列化失败时抛出。</exception>
+            <exception cref="T:System.Net.Http.HttpRequestException">HTTP请求失败时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.PutAsXmlAsync``2(System.String,``0,System.Text.Encoding,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:Mud.HttpUtils.IXmlHttpClient.PutAsXmlAsync``2(System.String,``0,System.Text.Encoding,System.Threading.CancellationToken)"/>
+            <param name="requestUri">请求URI。</param>
+            <param name="requestData">请求数据对象。</param>
+            <param name="encoding">XML编码方式,默认为UTF-8。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <typeparam name="TRequest">请求数据的类型。</typeparam>
+            <typeparam name="TResult">响应结果的类型。</typeparam>
+            <returns>XML反序列化后的响应结果。</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="requestUri"/> 或 <paramref name="requestData"/> 为 null。</exception>
+            <exception cref="T:System.InvalidOperationException">XML序列化或反序列化失败时抛出。</exception>
+            <exception cref="T:System.Net.Http.HttpRequestException">HTTP请求失败时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.GetXmlAsync``1(System.String,System.Text.Encoding,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:Mud.HttpUtils.IXmlHttpClient.GetXmlAsync``1(System.String,System.Text.Encoding,System.Threading.CancellationToken)"/>
+            <param name="requestUri">请求URI。</param>
+            <param name="encoding">XML编码方式,默认为UTF-8。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <typeparam name="TResult">响应结果的类型。</typeparam>
+            <returns>XML反序列化后的响应结果。</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="requestUri"/> 为 null。</exception>
+            <exception cref="T:System.InvalidOperationException">XML反序列化失败时抛出。</exception>
+            <exception cref="T:System.Net.Http.HttpRequestException">HTTP请求失败时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.GetAsync``1(System.String,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:Mud.HttpUtils.IJsonHttpClient.GetAsync``1(System.String,System.Threading.CancellationToken)"/>
+            <param name="requestUri">请求URI。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <typeparam name="TResult">响应结果的类型。</typeparam>
+            <returns>JSON反序列化后的响应结果。</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="requestUri"/> 为 null。</exception>
+            <exception cref="T:System.Text.Json.JsonException">JSON反序列化失败时抛出。</exception>
+            <exception cref="T:System.Net.Http.HttpRequestException">HTTP请求失败时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.PostAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:Mud.HttpUtils.IJsonHttpClient.PostAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)"/>
+            <param name="requestUri">请求URI。</param>
+            <param name="requestData">请求数据对象。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <typeparam name="TRequest">请求数据的类型。</typeparam>
+            <typeparam name="TResult">响应结果的类型。</typeparam>
+            <returns>JSON反序列化后的响应结果。</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="requestUri"/> 或 <paramref name="requestData"/> 为 null。</exception>
+            <exception cref="T:System.Text.Json.JsonException">JSON序列化或反序列化失败时抛出。</exception>
+            <exception cref="T:System.Net.Http.HttpRequestException">HTTP请求失败时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.PutAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:Mud.HttpUtils.IJsonHttpClient.PutAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)"/>
+            <param name="requestUri">请求URI。</param>
+            <param name="requestData">请求数据对象。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <typeparam name="TRequest">请求数据的类型。</typeparam>
+            <typeparam name="TResult">响应结果的类型。</typeparam>
+            <returns>JSON反序列化后的响应结果。</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="requestUri"/> 或 <paramref name="requestData"/> 为 null。</exception>
+            <exception cref="T:System.Text.Json.JsonException">JSON序列化或反序列化失败时抛出。</exception>
+            <exception cref="T:System.Net.Http.HttpRequestException">HTTP请求失败时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.DeleteAsJsonAsync``1(System.String,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:Mud.HttpUtils.IJsonHttpClient.DeleteAsJsonAsync``1(System.String,System.Threading.CancellationToken)"/>
+            <param name="requestUri">请求URI。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <typeparam name="TResult">响应结果的类型。</typeparam>
+            <returns>JSON反序列化后的响应结果。</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="requestUri"/> 为 null。</exception>
+            <exception cref="T:System.Text.Json.JsonException">JSON反序列化失败时抛出。</exception>
+            <exception cref="T:System.Net.Http.HttpRequestException">HTTP请求失败时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.DeleteAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:Mud.HttpUtils.IJsonHttpClient.DeleteAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)"/>
+            <param name="requestUri">请求URI。</param>
+            <param name="requestData">请求数据对象。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <typeparam name="TRequest">请求数据的类型。</typeparam>
+            <typeparam name="TResult">响应结果的类型。</typeparam>
+            <returns>JSON反序列化后的响应结果。</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="requestUri"/> 或 <paramref name="requestData"/> 为 null。</exception>
+            <exception cref="T:System.Text.Json.JsonException">JSON序列化或反序列化失败时抛出。</exception>
+            <exception cref="T:System.Net.Http.HttpRequestException">HTTP请求失败时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.PatchAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:Mud.HttpUtils.IJsonHttpClient.PatchAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)"/>
+            <param name="requestUri">请求URI。</param>
+            <param name="requestData">请求数据对象。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <typeparam name="TRequest">请求数据的类型。</typeparam>
+            <typeparam name="TResult">响应结果的类型。</typeparam>
+            <returns>JSON反序列化后的响应结果。</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="requestUri"/> 或 <paramref name="requestData"/> 为 null。</exception>
+            <exception cref="T:System.Text.Json.JsonException">JSON序列化或反序列化失败时抛出。</exception>
+            <exception cref="T:System.Net.Http.HttpRequestException">HTTP请求失败时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.SendRequestAsync``1(System.Net.Http.HttpRequestMessage,System.Text.Json.JsonSerializerOptions,System.Threading.CancellationToken)">
+            <summary>
+            发送HTTP请求并反序列化JSON响应结果
+            </summary>
+            <typeparam name="TResult">响应结果的类型</typeparam>
+            <param name="httpRequestMessage">HTTP请求消息</param>
+            <param name="jsonSerializerOptions">JSON序列化选项</param>
+            <param name="cancellationToken">取消令牌</param>
+            <returns>反序列化后的响应结果</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.SendXmlRequestAsync``1(System.Net.Http.HttpRequestMessage,System.Text.Encoding,System.Threading.CancellationToken)">
+            <summary>
+            发送HTTP请求并反序列化XML响应结果
+            </summary>
+            <typeparam name="TResult">响应结果的类型</typeparam>
+            <param name="httpRequestMessage">HTTP请求消息</param>
+            <param name="encoding">XML编码方式</param>
+            <param name="cancellationToken">取消令牌</param>
+            <returns>反序列化后的响应结果</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.EncryptContent(System.Object,System.String,Mud.HttpUtils.SerializeType)">
+            <inheritdoc cref="M:Mud.HttpUtils.IEncryptableHttpClient.EncryptContent(System.Object,System.String,Mud.HttpUtils.SerializeType)"/>
+            <param name="content">要加密的内容对象。</param>
+            <param name="propertyName">加密后JSON中的属性名,默认为"data"。</param>
+            <param name="serializeType">序列化类型,支持JSON和XML。</param>
+            <returns>加密后的字符串。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.DecryptContent(System.String)">
+            <inheritdoc cref="M:Mud.HttpUtils.IEncryptableHttpClient.DecryptContent(System.String)"/>
+            <param name="encryptedContent">要解密的加密字符串。</param>
+            <returns>解密后的原始字符串。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.EncryptBytes(System.Byte[])">
+            <inheritdoc cref="M:Mud.HttpUtils.IEncryptableHttpClient.EncryptBytes(System.Byte[])"/>
+            <param name="data">要加密的字节数组。</param>
+            <returns>加密后的字节数组。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.DecryptBytes(System.Byte[])">
+            <inheritdoc cref="M:Mud.HttpUtils.IEncryptableHttpClient.DecryptBytes(System.Byte[])"/>
+            <param name="encryptedData">要解密的加密字节数组。</param>
+            <returns>解密后的原始字节数组。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.DownloadFileAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
+            <summary>
+            下载文件内容并以字节数组形式返回
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.DownloadLargeFileAsync(System.Net.Http.HttpRequestMessage,System.String,System.Int32,System.Boolean,System.Threading.CancellationToken)">
+            <summary>
+            下载大文件并保存到指定路径
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.ValidateUrl(System.String)">
+            <summary>
+            验证URL的有效性
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.EnsureSuccessStatusCodeAsync(System.Net.Http.HttpResponseMessage,System.Threading.CancellationToken)">
+            <summary>
+            确保HTTP响应状态码表示成功
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.GetJsonSerializerOptions">
+            <summary>
+            获取JSON序列化选项（可被子类重写）
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.GetDefaultJsonSerializerOptions">
+            <summary>
+            获取默认的JSON序列化选项
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.CopyUpToAsync(System.IO.Stream,System.IO.Stream,System.Int32,System.Threading.CancellationToken)">
+            <summary>
+            从源流复制最多 maxBytes 字节到目标流。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.SerializeToXml``1(``0,System.Text.Encoding)">
+            <summary>
+            将对象序列化为XML字符串
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.DeserializeFromXml``1(System.String,System.Text.Encoding)">
+            <summary>
+            从XML字符串反序列化为对象
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.ExecuteRequestInterceptorsAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
+            <summary>
+            执行请求拦截器。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.ExecuteResponseInterceptorsAsync(System.Net.Http.HttpResponseMessage,System.Threading.CancellationToken)">
+            <summary>
+            执行响应拦截器。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.EnhancedHttpClient.BaseAddress">
+            <inheritdoc cref="P:Mud.HttpUtils.IEnhancedHttpClient.BaseAddress"/>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.WithBaseAddress(System.String)">
+            <inheritdoc cref="M:Mud.HttpUtils.IEnhancedHttpClient.WithBaseAddress(System.String)"/>
+            <param name="baseAddress">基地址字符串。</param>
+            <returns>新的 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 实例。</returns>
+            <exception cref="T:System.ArgumentException"><paramref name="baseAddress"/> 为空或仅包含空白字符。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.WithBaseAddress(System.Uri)">
+            <inheritdoc cref="M:Mud.HttpUtils.IEnhancedHttpClient.WithBaseAddress(System.Uri)"/>
+            <param name="baseAddress">基地址URI。</param>
+            <returns>新的 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 实例。</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="baseAddress"/> 为 null。</exception>
+        </member>
+        <member name="T:Mud.HttpUtils.EnhancedHttpClientFactoryOptions">
+            <summary>
+            增强型 HTTP 客户端工厂的配置选项，存储按名称注册的客户端工厂委托。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.EnhancedHttpClientFactoryOptions.ClientFactories">
+            <summary>
+            获取按客户端名称索引的工厂委托字典。
+            键为客户端名称，值为创建 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 实例的工厂委托。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.EnhancedHttpClientLogs">
+            <summary>
+            LoggerMessage 委托定义，用于高性能日志记录
+            </summary>
+            <remarks>
+            使用 LoggerMessage.Define 创建的委托可以避免：
+            1. 值类型装箱
+            2. 不必要的数组分配
+            3. 在日志级别未启用时的字符串格式化
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.JsonResponseBodyEmpty(Microsoft.Extensions.Logging.ILogger,System.String)">
+            <summary>
+            记录JSON响应内容为空
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.JsonResponseBodyRaw(Microsoft.Extensions.Logging.ILogger,System.String,System.String)">
+            <summary>
+            记录原始JSON响应内容
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.JsonDeserializeSuccess(Microsoft.Extensions.Logging.ILogger,System.String,System.String)">
+            <summary>
+            记录JSON反序列化成功
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.XmlResponseBodyEmpty(Microsoft.Extensions.Logging.ILogger,System.String)">
+            <summary>
+            记录XML响应内容为空
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.XmlResponseBodyRaw(Microsoft.Extensions.Logging.ILogger,System.String,System.String)">
+            <summary>
+            记录原始XML响应内容
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.XmlDeserializeSuccess(Microsoft.Extensions.Logging.ILogger,System.String,System.String)">
+            <summary>
+            记录XML反序列化成功
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.HttpClientOperation(Microsoft.Extensions.Logging.ILogger,System.String,System.String)">
+            <summary>
+            记录HttpClient操作
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.FileExistsWillOverwrite(Microsoft.Extensions.Logging.ILogger,System.String)">
+            <summary>
+            记录文件已存在将被覆盖
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.DownloadFileStarted(Microsoft.Extensions.Logging.ILogger,System.String,System.Double,System.String)">
+            <summary>
+            记录开始下载文件
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.DownloadFileCompleted(Microsoft.Extensions.Logging.ILogger,System.String,System.Double)">
+            <summary>
+            记录文件下载完成
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.HttpRequestCancelled(Microsoft.Extensions.Logging.ILogger,System.String,System.Exception)">
+            <summary>
+            记录HTTP请求被取消
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.DownloadFileLarge(Microsoft.Extensions.Logging.ILogger,System.String,System.Double)">
+            <summary>
+            记录下载文件较大警告
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.CleanupPartialFileFailed(Microsoft.Extensions.Logging.ILogger,System.String,System.Exception)">
+            <summary>
+            记录清理部分下载文件失败
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.ReadErrorResponseFailed(Microsoft.Extensions.Logging.ILogger,System.Exception)">
+            <summary>
+            记录读取错误响应失败
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.JsonDeserializeFailedDetailed(Microsoft.Extensions.Logging.ILogger,System.String,System.String,System.String,System.String,System.Exception)">
+            <summary>
+            记录JSON反序列化失败（详细信息）
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.JsonDeserializeFailedSimple(Microsoft.Extensions.Logging.ILogger,System.String,System.String,System.Exception)">
+            <summary>
+            记录JSON反序列化失败（简单信息）
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.HttpRequestFailedWithStatusCode(Microsoft.Extensions.Logging.ILogger,System.String,System.Int32,System.Exception)">
+            <summary>
+            记录HTTP请求失败（带状态码）
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.HttpRequestFailedSimple(Microsoft.Extensions.Logging.ILogger,System.String,System.Exception)">
+            <summary>
+            记录HTTP请求失败（简单信息）
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.HttpRequestTimeout(Microsoft.Extensions.Logging.ILogger,System.String,System.Double,System.Exception)">
+            <summary>
+            记录HTTP请求超时
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.HttpRequestFailedWithExceptionType(Microsoft.Extensions.Logging.ILogger,System.String,System.String,System.Exception)">
+            <summary>
+            记录HTTP请求失败（带异常类型）
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.XmlDeserializeFailed(Microsoft.Extensions.Logging.ILogger,System.String,System.String,System.String,System.Exception)">
+            <summary>
+            记录XML反序列化失败
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.FileDownloadFailed(Microsoft.Extensions.Logging.ILogger,System.String,System.Exception)">
+            <summary>
+            记录文件下载失败
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.LargeFileDownloadFailed(Microsoft.Extensions.Logging.ILogger,System.String,System.String,System.Exception)">
+            <summary>
+            记录大文件下载失败
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.HttpRequestFailedWithResponse(Microsoft.Extensions.Logging.ILogger,System.Int32,System.String)">
+            <summary>
+            记录HTTP请求失败（带响应）
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientLogs.HttpClientError(Microsoft.Extensions.Logging.ILogger,System.String,System.String,System.Exception)">
+            <summary>
+            记录HttpClient错误
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.HttpClientFactoryEnhancedClient">
+            <summary>
+            基于 IHttpClientFactory 的 EnhancedHttpClient 实现
+            </summary>
+            <remarks>
+            此类通过 IHttpClientFactory 创建 HttpClient 实例，解决了直接使用 HttpClient 导致的 Socket 耗尽和 DNS 不刷新问题。
+            <para>
+            注意：IHttpClientFactory 管理 HttpClient 的生命周期，由工厂创建的 HttpClient 实例不应该被手动释放。
+            如果需要刷新 DNS 或更新 HttpClient 配置，请通过 IHttpClientFactory 的配置重新注册。
+            </para>
+            推荐在依赖注入场景中使用此类。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.#ctor(System.Net.Http.IHttpClientFactory,System.String,Mud.HttpUtils.IEncryptionProvider,Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.HttpClientFactoryEnhancedClient},System.Collections.Generic.IEnumerable{Mud.HttpUtils.IHttpRequestInterceptor},System.Collections.Generic.IEnumerable{Mud.HttpUtils.IHttpResponseInterceptor},System.Uri,Mud.HttpUtils.ISensitiveDataMasker)">
+            <summary>
+            初始化 HttpClientFactoryEnhancedClient 实例
+            </summary>
+            <param name="factory">IHttpClientFactory 实例</param>
+            <param name="clientName">Named HttpClient 名称</param>
+            <param name="encryptionProvider">加密提供器（可选）</param>
+            <param name="logger">日志记录器（可选）</param>
+            <param name="requestInterceptors">请求拦截器集合（可选）。</param>
+            <param name="responseInterceptors">响应拦截器集合（可选）。</param>
+            <param name="overrideBaseAddress">覆盖的基地址（可选）。</param>
+            <exception cref="T:System.ArgumentNullException">factory 或 clientName 为 null</exception>
+        </member>
+        <member name="P:Mud.HttpUtils.HttpClientFactoryEnhancedClient.ClientName">
+            <summary>
+            获取当前使用的 HttpClient 名称
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.HttpClientFactoryEnhancedClient.BaseAddress">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.WithBaseAddress(System.String)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.WithBaseAddress(System.Uri)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.EncryptContent(System.Object,System.String,Mud.HttpUtils.SerializeType)">
+            <inheritdoc/>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.DecryptContent(System.String)">
+            <inheritdoc/>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.EncryptBytes(System.Byte[])">
+            <inheritdoc/>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.DecryptBytes(System.Byte[])">
+            <inheritdoc/>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientResolver.GetClient(System.String)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientResolver.TryGetClient(System.String,Mud.HttpUtils.IEnhancedHttpClient@)">
+            <inheritdoc />
+        </member>
+        <member name="T:Mud.HttpUtils.MemoryHttpResponseCache">
+            <summary>
+            基于内存的 HTTP 响应缓存默认实现，支持 LRU 淘汰策略。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryHttpResponseCache.#ctor(System.Int32,System.Int32)">
+            <summary>
+            初始化 MemoryHttpResponseCache 实例。
+            </summary>
+            <param name="maxCacheSize">最大缓存条目数，默认 1000。</param>
+            <param name="cleanupIntervalSeconds">清理间隔（秒），默认 60 秒。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryHttpResponseCache.TryGet``1(System.String,``0@)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryHttpResponseCache.Set``1(System.String,``0,System.TimeSpan)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryHttpResponseCache.Set``1(System.String,``0,System.TimeSpan,System.Boolean)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryHttpResponseCache.Remove(System.String)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryHttpResponseCache.GetOrFetchAsync``1(System.String,System.Func{System.Threading.Tasks.Task{``0}},System.TimeSpan,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryHttpResponseCache.RemoveAsync(System.String)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryHttpResponseCache.ClearAsync">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryHttpResponseCache.Dispose">
+            <summary>
+            释放资源。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.ProgressableStreamContent">
+            <summary>
+            支持上传进度报告的HTTP内容包装器。
+            </summary>
+            <remarks>
+            <para>此类继承自 <see cref="T:System.Net.Http.HttpContent"/>,用于包装现有的 <see cref="T:System.Net.Http.HttpContent"/> 实例,
+            并在数据上传过程中提供进度报告功能。</para>
+            <para>主要用途:</para>
+            <list type="bullet">
+              <item>大文件上传时显示进度条</item>
+              <item>监控HTTP请求体的上传进度</item>
+              <item>实现上传速度计算和预计剩余时间</item>
+            </list>
+            <para>此类通过读取内部内容的流,并在每次写入时报告已传输的字节数来实现进度跟踪。</para>
+            </remarks>
+            <example>
+            <code>
+            var progress = new Progress&lt;long&gt;(bytes =&gt; 
+                Console.WriteLine($"已上传: {bytes} 字节"));
+            
+            using var fileContent = new StreamContent(File.OpenRead("largefile.zip"));
+            using var progressContent = new ProgressableStreamContent(fileContent, progress);
+            
+            var response = await httpClient.PostAsync("/upload", progressContent);
+            </code>
+            </example>
+            <seealso cref="T:System.Net.Http.HttpContent"/>
+            <seealso cref="T:System.IProgress`1"/>
+        </member>
+        <member name="M:Mud.HttpUtils.ProgressableStreamContent.#ctor(System.Net.Http.HttpContent,System.IProgress{System.Int64},System.Int32)">
+            <summary>
+            初始化 <see cref="T:Mud.HttpUtils.ProgressableStreamContent"/> 类的新实例。
+            </summary>
+            <param name="content">要包装的HTTP内容。</param>
+            <param name="progress">进度报告回调。如果为 null,则不报告进度。</param>
+            <param name="bufferSize">缓冲区大小(字节),默认为4096。</param>
+            <exception cref="T:System.ArgumentNullException"><paramref name="content"/> 为 null。</exception>
+            <remarks>
+            构造函数会复制原始内容的所有头部信息到包装器中。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.ProgressableStreamContent.SerializeToStreamAsync(System.IO.Stream,System.Net.TransportContext)">
+            <summary>
+            将HTTP内容序列化到流中,并在传输过程中报告进度。
+            </summary>
+            <param name="stream">目标流,内容将被写入此流。</param>
+            <param name="context">传输上下文。</param>
+            <returns>表示异步序列化操作的任务。</returns>
+            <remarks>
+            此方法通过缓冲区读取内部内容的流,并在每次写入目标流后报告累计已传输的字节数。
+            进度报告通过 <see cref="M:System.IProgress`1.Report(`0)"/> 方法实现。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.ProgressableStreamContent.TryComputeLength(System.Int64@)">
+            <summary>
+            尝试计算内容的长度。
+            </summary>
+            <param name="length">当返回时,包含内容的长度(如果可计算);否则为 -1。</param>
+            <returns>如果可以计算内容长度,则为 <c>true</c>;否则为 <c>false</c>。</returns>
+            <remarks>
+            此方法从内部内容的 <see cref="!:HttpContentHeaders.ContentLength"/> 头部获取长度信息。
+            如果内部内容未指定 Content-Length,则返回 <c>false</c>。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.ProgressableStreamContent.Dispose(System.Boolean)">
+            <summary>
+            释放由 <see cref="T:System.Net.Http.HttpContent"/> 使用的非托管资源,并可选择释放托管资源。
+            </summary>
+            <param name="disposing">如果为 <c>true</c>,则释放托管和非托管资源;如果为 <c>false</c>,则仅释放非托管资源。</param>
+            <remarks>
+            此方法会处置内部包装的 <see cref="T:System.Net.Http.HttpContent"/> 实例。
+            </remarks>
+        </member>
+        <member name="T:Mud.HttpUtils.DefaultSensitiveDataMasker">
+            <summary>
+            默认的敏感数据掩码器实现，提供高效的字符串掩码和对象敏感字段掩码功能。
+            </summary>
+            <remarks>
+            <para>
+            该类实现了 <see cref="T:Mud.HttpUtils.ISensitiveDataMasker"/> 接口，支持多种掩码模式：
+            完全隐藏、部分掩码和仅显示类型信息。
+            </para>
+            <para>
+            对于对象掩码，该类使用反射遍历对象属性，并识别标记有 <c>SensitiveDataAttribute</c> 的属性进行掩码处理。
+            实现了属性信息缓存机制（使用 <see cref="T:System.Collections.Concurrent.ConcurrentDictionary`2"/>）以提高性能，
+            避免重复反射开销。同时支持递归处理嵌套对象，并具备循环引用检测和深度限制保护。
+            </para>
+            <para>
+            该类是线程安全的，可以在多线程环境中安全使用。
+            </para>
+            </remarks>
+            <example>
+            使用示例：
+            <code>
+            var masker = new DefaultSensitiveDataMasker();
+            
+            // 字符串掩码
+            var masked = masker.Mask("1234567890", SensitiveDataMaskMode.Mask, 2, 2);
+            // 输出: "12***90"
+            
+            // 对象掩码（属性标记了 [SensitiveData] 的会被自动掩码）
+            var user = new { Username = "john", Password = "secret123" };
+            var maskedObj = masker.MaskObject(user);
+            // 输出: JSON 格式，其中标记为敏感的字段会被掩码处理
+            </code>
+            </example>
+        </member>
+        <member name="F:Mud.HttpUtils.DefaultSensitiveDataMasker.MaskString">
+            <summary>
+            掩码字符串常量，用于替换敏感数据。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.DefaultSensitiveDataMasker.SensitiveDataAttributeName">
+            <summary>
+            敏感数据特性名称常量，用于反射识别敏感属性。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.DefaultSensitiveDataMasker.MaxMaskDepth">
+            <summary>
+            最大掩码深度，防止递归处理嵌套对象时发生栈溢出。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.DefaultSensitiveDataMasker.s_propertyCache">
+            <summary>
+            属性掩码信息缓存，使用类型作为键，避免重复反射开销。
+            </summary>
+            <remarks>
+            该缓存在应用程序生命周期内持续存在，使用弱引用的对象不会导致内存泄漏，
+            因为缓存的键是 Type 对象，而 Type 对象在应用程序域中是单例的。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultSensitiveDataMasker.GetOrCreatePropertyInfos(System.Type)">
+            <summary>
+            获取或创建类型的属性掩码信息数组，使用缓存机制提高性能。
+            </summary>
+            <param name="type">要获取属性信息的类型。</param>
+            <returns>该类型的属性掩码信息数组。</returns>
+            <remarks>
+            <para>
+            该方法使用 <see cref="M:System.Collections.Concurrent.ConcurrentDictionary`2.GetOrAdd(`0,System.Func{`0,`1})"/> 实现线程安全的缓存。
+            首次访问某个类型时会进行反射分析，后续访问将直接从缓存中获取，避免重复反射开销。
+            </para>
+            <para>
+            对于每个属性，会检测：
+            <list type="bullet">
+            <item><description>是否标记了 SensitiveDataAttribute 特性</description></item>
+            <item><description>是否为字符串类型（只有字符串类型可以标记为敏感）</description></item>
+            <item><description>是否为复杂类型（需要递归处理）</description></item>
+            </list>
+            </para>
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultSensitiveDataMasker.Mask(System.String,Mud.HttpUtils.SensitiveDataMaskMode,System.Int32,System.Int32)">
+            <summary>
+            对字符串值进行敏感数据掩码处理。
+            </summary>
+            <param name="value">需要进行掩码处理的原始字符串值。</param>
+            <param name="mode">掩码模式，控制如何显示掩码后的数据。默认为 <see cref="F:Mud.HttpUtils.SensitiveDataMaskMode.Mask"/>。</param>
+            <param name="prefixLength">在掩码模式下，保留的前缀字符数量。默认为 2。</param>
+            <param name="suffixLength">在掩码模式下，保留的后缀字符数量。默认为 2。</param>
+            <returns>经过掩码处理后的字符串。如果输入为 null 或空字符串，则返回掩码常量。</returns>
+            <remarks>
+            <para>
+            当 <paramref name="mode"/> 为 <see cref="F:Mud.HttpUtils.SensitiveDataMaskMode.Hide"/> 时，返回固定的掩码字符串。
+            </para>
+            <para>
+            当 <paramref name="mode"/> 为 <see cref="F:Mud.HttpUtils.SensitiveDataMaskMode.Mask"/> 时，保留指定长度的前缀和后缀，
+            中间部分替换为掩码字符串。如果字符串长度不足以保留前缀和后缀，则返回完整掩码。
+            </para>
+            <para>
+            当 <paramref name="mode"/> 为 <see cref="F:Mud.HttpUtils.SensitiveDataMaskMode.TypeOnly"/> 时，返回包含类型和长度信息的字符串。
+            </para>
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultSensitiveDataMasker.MaskObject(System.Object)">
+            <summary>
+            对对象进行敏感数据掩码处理，返回 JSON 格式的掩码后对象表示。
+            </summary>
+            <param name="obj">需要进行掩码处理的对象实例。</param>
+            <returns>经过掩码处理后的对象 JSON 字符串表示。</returns>
+            <remarks>
+            该方法会递归遍历对象的所有公共属性，对标记有 <c>SensitiveDataAttribute</c> 的字符串属性进行掩码处理。
+            使用引用相等性检测来避免循环引用问题，并限制最大递归深度以防止栈溢出。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultSensitiveDataMasker.MaskObjectInternal(System.Object,System.Int32,System.Collections.Generic.HashSet{System.Object})">
+            <summary>
+            内部递归方法，用于执行对象掩码处理。
+            </summary>
+            <param name="obj">当前要处理的对象。</param>
+            <param name="depth">当前递归深度，用于防止无限递归。</param>
+            <param name="visited">已访问对象集合，用于检测循环引用。</param>
+            <returns>掩码处理后的对象 JSON 字符串表示。</returns>
+            <remarks>
+            该方法处理以下情况：
+            <list type="bullet">
+            <item><description>null 对象：返回 "null" 字符串</description></item>
+            <item><description>超过最大深度：返回 "[深度超限]" 标记</description></item>
+            <item><description>基本类型：直接转换为字符串</description></item>
+            <item><description>循环引用：返回 "[循环引用]" 标记</description></item>
+            <item><description>复杂对象：递归处理所有公共属性</description></item>
+            </list>
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultSensitiveDataMasker.GetNamedArgument``1(System.Reflection.CustomAttributeData,System.String,``0)">
+            <summary>
+            从自定义特性数据中获取命名参数值。
+            </summary>
+            <typeparam name="T">参数值的类型。</typeparam>
+            <param name="attr">自定义特性数据。</param>
+            <param name="name">参数名称。</param>
+            <param name="defaultValue">默认值，当参数不存在或值为 null 时使用。</param>
+            <returns>特性参数的值，如果不存在则返回默认值。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.DefaultApiKeyProvider">
+            <summary>
+            默认的 API Key 提供者实现，从 IConfiguration 配置中读取 API Key。
+            </summary>
+            <remarks>
+            <para>
+            该类实现了 <see cref="T:Mud.HttpUtils.IApiKeyProvider"/> 接口，支持从应用程序配置中获取 API Key。
+            配置键格式为：
+            <list type="bullet">
+            <item><description>未指定 keyName 时：<c>"ApiKey"</c></description></item>
+            <item><description>指定 keyName 时：<c>"ApiKeys:{keyName}"</c></description></item>
+            </list>
+            </para>
+            <para>
+            该提供者适用于简单的 API Key 管理场景，支持多命名 API Key 配置。
+            </para>
+            </remarks>
+            <example>
+            配置示例（appsettings.json）：
+            <code>
+            {
+              "ApiKey": "your-default-api-key",
+              "ApiKeys": {
+                "ServiceA": "key-for-service-a",
+                "ServiceB": "key-for-service-b"
+              }
+            }
+            </code>
+            
+            使用示例：
+            <code>
+            // 获取默认 API Key
+            var defaultKey = await provider.GetApiKeyAsync();
+            
+            // 获取命名 API Key
+            var serviceAKey = await provider.GetApiKeyAsync("ServiceA");
+            </code>
+            </example>
+        </member>
+        <member name="F:Mud.HttpUtils.DefaultApiKeyProvider._configuration">
+            <summary>
+            配置实例，用于读取 API Key 配置。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultApiKeyProvider.#ctor(Microsoft.Extensions.Configuration.IConfiguration)">
+            <summary>
+            初始化 <see cref="T:Mud.HttpUtils.DefaultApiKeyProvider"/> 类的新实例。
+            </summary>
+            <param name="configuration">配置实例，用于读取 API Key 配置。</param>
+            <exception cref="T:System.ArgumentNullException">当 <paramref name="configuration"/> 为 null 时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultApiKeyProvider.GetApiKeyAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步获取 API Key。
+            </summary>
+            <param name="keyName">API Key 的名称。如果为 null 或空字符串，则使用默认配置键 "ApiKey"。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>包含 API Key 的任务。</returns>
+            <exception cref="T:System.InvalidOperationException">当配置中找不到指定的 API Key 时抛出。</exception>
+            <remarks>
+            <para>
+            该方法根据 <paramref name="keyName"/> 参数确定配置键：
+            <list type="bullet">
+            <item><description>如果 <paramref name="keyName"/> 为 null 或空，使用配置键 <c>"ApiKey"</c></description></item>
+            <item><description>如果 <paramref name="keyName"/> 有值，使用配置键 <c>"ApiKeys:{keyName}"</c></description></item>
+            </list>
+            </para>
+            <para>
+            该方法是同步实现的，包装在 Task 中以符合异步接口要求。
+            </para>
+            </remarks>
+        </member>
+        <member name="T:Mud.HttpUtils.DefaultHmacSignatureProvider">
+            <summary>
+            默认的 HMAC 签名提供者实现，使用 HMAC-SHA256 算法生成和验证请求签名。
+            </summary>
+            <remarks>
+            <para>
+            该类实现了 <see cref="T:Mud.HttpUtils.IHmacSignatureProvider"/> 接口，用于 HTTP 请求的 HMAC 签名生成和验证。
+            签名算法使用 HMAC-SHA256，确保请求的完整性和来源可信性。
+            </para>
+            <para>
+            签名串构建规则：
+            <list type="number">
+            <item><description>HTTP 方法（大写）</description></item>
+            <item><description>请求路径</description></item>
+            <item><description>排序后的查询参数（按字典序）</description></item>
+            <item><description>请求体内容的 Base64 编码（如果有）</description></item>
+            </list>
+            各部分之间使用换行符（\n）分隔。
+            </para>
+            <para>
+            该实现包含定时比较（constant-time comparison）功能，防止时序攻击（timing attack）。
+            在 .NET Standard 2.0 环境下使用自定义实现，在更高版本中使用 
+            <see cref="M:System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(System.ReadOnlySpan{System.Byte},System.ReadOnlySpan{System.Byte})"/>。
+            </para>
+            </remarks>
+            <example>
+            使用示例：
+            <code>
+            var provider = new DefaultHmacSignatureProvider();
+            
+            // 生成签名
+            var signature = await provider.GenerateSignatureAsync(request, secretKey);
+            
+            // 验证签名
+            var isValid = await provider.VerifySignatureAsync(request, signature, secretKey);
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultHmacSignatureProvider.GenerateSignatureAsync(System.Net.Http.HttpRequestMessage,System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步生成 HTTP 请求的 HMAC 签名。
+            </summary>
+            <param name="request">要签名的 HTTP 请求消息。</param>
+            <param name="secretKey">用于签名的密钥。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>Base64 编码的 HMAC-SHA256 签名。</returns>
+            <exception cref="T:System.ArgumentNullException">当 <paramref name="request"/> 为 null 时抛出。</exception>
+            <exception cref="T:System.ArgumentException">当 <paramref name="secretKey"/> 为空时抛出。</exception>
+            <remarks>
+            <para>
+            签名生成过程：
+            <list type="number">
+            <item><description>构建签名串（包含方法、路径、查询参数、请求体）</description></item>
+            <item><description>使用 HMAC-SHA256 和密钥对签名串进行哈希计算</description></item>
+            <item><description>将哈希结果转换为 Base64 字符串</description></item>
+            </list>
+            </para>
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultHmacSignatureProvider.VerifySignatureAsync(System.Net.Http.HttpRequestMessage,System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步验证 HTTP 请求的签名是否有效。
+            </summary>
+            <param name="request">要验证的 HTTP 请求消息。</param>
+            <param name="signature">要验证的签名字符串（Base64 编码）。</param>
+            <param name="secretKey">用于验证的密钥。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>如果签名有效则返回 true，否则返回 false。</returns>
+            <remarks>
+            <para>
+            验证过程：
+            <list type="number">
+            <item><description>使用相同的算法重新生成预期签名</description></item>
+            <item><description>使用定时比较（constant-time comparison）对比提供的签名和预期签名</description></item>
+            </list>
+            </para>
+            <para>
+            使用定时比较可以防止时序攻击，确保比较操作的时间不依赖于签名的匹配程度。
+            </para>
+            </remarks>
+        </member>
+        <!-- Badly formed XML comment ignored for member "M:Mud.HttpUtils.DefaultHmacSignatureProvider.BuildSignatureStringAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)" -->
+        <member name="T:Mud.HttpUtils.HttpClientServiceCollectionExtensions">
+            <summary>
+            Mud.HttpUtils.Client 服务注册扩展方法。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpClient(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,System.Action{System.Net.Http.HttpClient},System.Boolean)">
+            <summary>
+            添加基于 <see cref="T:System.Net.Http.IHttpClientFactory"/> 的 <see cref="T:Mud.HttpUtils.HttpClientFactoryEnhancedClient"/> 到依赖注入容器，
+            并注册为 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 服务。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="clientName">Named HttpClient 的名称。</param>
+            <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
+            <param name="setAsDefault">是否将此客户端设为 IEnhancedHttpClient 的默认实现。在多应用场景下不推荐使用，请改用 <see cref="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddNamedMudHttpClient(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,System.Action{System.Net.Http.HttpClient})"/> 并通过 <see cref="T:Mud.HttpUtils.IHttpClientResolver"/> 按名称获取客户端。</param>
+            <returns><see cref="T:Microsoft.Extensions.DependencyInjection.IHttpClientBuilder"/>（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddNamedMudHttpClient(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,System.Action{System.Net.Http.HttpClient})">
+            <summary>
+            添加命名 HTTP 客户端，推荐在多应用场景下使用。
+            客户端应通过 <see cref="T:Mud.HttpUtils.IHttpClientResolver"/> 按名称获取，而不是直接注入 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/>。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="clientName">Named HttpClient 的名称。</param>
+            <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
+            <returns><see cref="T:Microsoft.Extensions.DependencyInjection.IHttpClientBuilder"/>（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddNamedMudHttpClient(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,System.Action{Mud.HttpUtils.AesEncryptionOptions},System.Action{System.Net.Http.HttpClient})">
+            <summary>
+            添加命名 HTTP 客户端，同时配置 AES 加密选项。推荐在多应用场景下使用。
+            客户端应通过 <see cref="T:Mud.HttpUtils.IHttpClientResolver"/> 按名称获取，而不是直接注入 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/>。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="clientName">Named HttpClient 的名称。</param>
+            <param name="configureEncryption">配置 AES 加密选项的委托。</param>
+            <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
+            <returns><see cref="T:Microsoft.Extensions.DependencyInjection.IHttpClientBuilder"/>（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddNamedMudHttpClient(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,System.String)">
+            <summary>
+            添加命名 HTTP 客户端，同时配置 HttpClient 的基础地址。推荐在多应用场景下使用。
+            客户端应通过 <see cref="T:Mud.HttpUtils.IHttpClientResolver"/> 按名称获取，而不是直接注入 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/>。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="clientName">Named HttpClient 的名称。</param>
+            <param name="baseAddress">HttpClient 的基础地址。</param>
+            <returns><see cref="T:Microsoft.Extensions.DependencyInjection.IHttpClientBuilder"/>（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpClient(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,System.Action{Mud.HttpUtils.AesEncryptionOptions},System.Action{System.Net.Http.HttpClient})">
+            <summary>
+            添加基于 <see cref="T:System.Net.Http.IHttpClientFactory"/> 的 <see cref="T:Mud.HttpUtils.HttpClientFactoryEnhancedClient"/> 到依赖注入容器，
+            并注册为 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 服务，同时配置 AES 加密选项。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="clientName">Named HttpClient 的名称。</param>
+            <param name="configureEncryption">配置 AES 加密选项的委托。</param>
+            <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
+            <returns><see cref="T:Microsoft.Extensions.DependencyInjection.IHttpClientBuilder"/>（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpClient(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,System.String)">
+            <summary>
+            添加基于 <see cref="T:System.Net.Http.IHttpClientFactory"/> 的 <see cref="T:Mud.HttpUtils.HttpClientFactoryEnhancedClient"/> 到依赖注入容器，
+            并注册为 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 服务，同时配置 HttpClient 的基础地址。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="clientName">Named HttpClient 的名称。</param>
+            <param name="baseAddress">HttpClient 的基础地址。</param>
+            <returns><see cref="T:Microsoft.Extensions.DependencyInjection.IHttpClientBuilder"/>（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddTokenRefreshBackgroundService(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.Action{Mud.HttpUtils.TokenRefreshBackgroundOptions})">
+            <summary>
+            添加令牌主动刷新后台服务到依赖注入容器。
+            netstandard2.0 使用 Timer 实现，.NET 6+ 使用 BackgroundService 实现。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="configureOptions">配置刷新选项的委托（可选）。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddTokenRefreshBackgroundService(Microsoft.Extensions.DependencyInjection.IServiceCollection,Microsoft.Extensions.Configuration.IConfiguration,System.String)">
+            <summary>
+            添加令牌主动刷新后台服务到依赖注入容器，从配置文件绑定选项。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="configuration">配置实例。</param>
+            <param name="configurationSectionPath">配置节点路径，默认 "TokenRefreshBackground"。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddHttpResponseCache(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.Int32,System.Int32)">
+            <summary>
+            添加 HTTP 响应缓存服务到依赖注入容器。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="maxCacheSize">最大缓存条目数，默认 1000。</param>
+            <param name="cleanupIntervalSeconds">清理间隔（秒），默认 60 秒。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddSensitiveDataMasker``1(Microsoft.Extensions.DependencyInjection.IServiceCollection)">
+            <summary>
+            注册自定义的敏感数据掩码器实现到依赖注入容器。
+            </summary>
+            <typeparam name="TMasker">敏感数据掩码器的实现类型，必须实现 <see cref="T:Mud.HttpUtils.ISensitiveDataMasker"/> 接口。</typeparam>
+            <param name="services">服务集合。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
+            <remarks>
+            敏感数据掩码器用于在日志记录和错误消息中隐藏敏感信息（如密码、令牌、密钥等）。
+            使用此方法可以注册自定义的掩码器实现，以覆盖默认的掩码行为。
+            </remarks>
+            <example>
+            <code>
+            // 注册自定义敏感数据掩码器
+            services.AddSensitiveDataMasker&lt;CustomSensitiveDataMasker&gt;();
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddSensitiveDataMasker(Microsoft.Extensions.DependencyInjection.IServiceCollection)">
+            <summary>
+            注册默认的敏感数据掩码器到依赖注入容器。
+            </summary>
+            <param name="services">服务集合。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
+            <remarks>
+            此方法注册 <see cref="T:Mud.HttpUtils.DefaultSensitiveDataMasker"/> 作为默认的敏感数据掩码器实现。
+            敏感数据掩码器用于在日志记录和错误消息中隐藏敏感信息（如密码、令牌、密钥等）。
+            </remarks>
+            <example>
+            <code>
+            // 注册默认敏感数据掩码器
+            services.AddSensitiveDataMasker();
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddHmacSignatureProvider``1(Microsoft.Extensions.DependencyInjection.IServiceCollection)">
+            <summary>
+            注册自定义的 HMAC 签名提供者实现到依赖注入容器。
+            </summary>
+            <typeparam name="TProvider">HMAC 签名提供者的实现类型，必须实现 <see cref="T:Mud.HttpUtils.IHmacSignatureProvider"/> 接口。</typeparam>
+            <param name="services">服务集合。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
+            <remarks>
+            HMAC 签名提供者用于生成和验证 HTTP 请求的 HMAC 签名，以确保请求的完整性和真实性。
+            使用此方法可以注册自定义的签名提供者实现。
+            </remarks>
+            <example>
+            <code>
+            // 注册自定义 HMAC 签名提供者
+            services.AddHmacSignatureProvider&lt;CustomHmacSignatureProvider&gt;();
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddHmacSignatureProvider(Microsoft.Extensions.DependencyInjection.IServiceCollection)">
+            <summary>
+            注册默认的 HMAC 签名提供者到依赖注入容器。
+            </summary>
+            <param name="services">服务集合。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
+            <remarks>
+            此方法注册 <see cref="T:Mud.HttpUtils.DefaultHmacSignatureProvider"/> 作为默认的 HMAC 签名提供者实现。
+            HMAC 签名提供者用于生成和验证 HTTP 请求的 HMAC 签名。
+            </remarks>
+            <example>
+            <code>
+            // 注册默认 HMAC 签名提供者
+            services.AddHmacSignatureProvider();
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddApiKeyProvider``1(Microsoft.Extensions.DependencyInjection.IServiceCollection)">
+            <summary>
+            注册自定义的 API 密钥提供者实现到依赖注入容器。
+            </summary>
+            <typeparam name="TProvider">API 密钥提供者的实现类型，必须实现 <see cref="T:Mud.HttpUtils.IApiKeyProvider"/> 接口。</typeparam>
+            <param name="services">服务集合。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
+            <remarks>
+            API 密钥提供者用于获取 API 密钥，支持多种密钥存储和管理策略。
+            使用此方法可以注册自定义的密钥提供者实现。
+            </remarks>
+            <example>
+            <code>
+            // 注册自定义 API 密钥提供者
+            services.AddApiKeyProvider&lt;CustomApiKeyProvider&gt;();
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddApiKeyProvider(Microsoft.Extensions.DependencyInjection.IServiceCollection)">
+            <summary>
+            注册默认的 API 密钥提供者到依赖注入容器。
+            </summary>
+            <param name="services">服务集合。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
+            <remarks>
+            此方法注册 <see cref="T:Mud.HttpUtils.DefaultApiKeyProvider"/> 作为默认的 API 密钥提供者实现。
+            API 密钥提供者用于获取 API 密钥。
+            </remarks>
+            <example>
+            <code>
+            // 注册默认 API 密钥提供者
+            services.AddApiKeyProvider();
+            </code>
+            </example>
+        </member>
+        <member name="T:Mud.HttpUtils.OAuth2Options">
+            <summary>
+            OAuth2 配置选项。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.OAuth2Options.SectionName">
+            <summary>
+            配置节的名称。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OAuth2Options.ClientId">
+            <summary>
+            客户端 ID。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OAuth2Options.ClientSecret">
+            <summary>
+            客户端密钥。建议优先使用 <see cref="P:Mud.HttpUtils.OAuth2Options.ClientSecretProviderName"/> 从安全存储获取。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OAuth2Options.ClientSecretProviderName">
+            <summary>
+            客户端密钥的安全提供程序名称。
+            当设置此值时，将通过 <see cref="T:Mud.HttpUtils.ISecretProvider"/> 从安全存储中获取 ClientSecret，
+            而非使用明文配置的 <see cref="P:Mud.HttpUtils.OAuth2Options.ClientSecret"/>。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OAuth2Options.TokenEndpoint">
+            <summary>
+            令牌端点。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OAuth2Options.RevocationEndpoint">
+            <summary>
+            撤销端点。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OAuth2Options.IntrospectionEndpoint">
+            <summary>
+            内省端点。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OAuth2Options.RequireHttps">
+            <summary>
+            是否强制使用 HTTPS 端点。当设置为 true 时，如果端点不是 HTTPS 将抛出异常。
+            默认为 true。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.StandardOAuth2TokenManager">
+            <summary>
+            标准 OAuth2 令牌管理器实现，支持 Authorization Code、Client Credentials、
+            Resource Owner Password Credentials、Refresh Token 等标准流程。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.StandardOAuth2TokenManager.#ctor(System.Net.Http.HttpClient,Microsoft.Extensions.Options.IOptions{Mud.HttpUtils.OAuth2Options},Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.StandardOAuth2TokenManager},Mud.HttpUtils.ISecretProvider)">
+            <summary>
+            初始化 StandardOAuth2TokenManager 实例。
+            </summary>
+            <param name="httpClient">HttpClient 实例。</param>
+            <param name="options">OAuth2 配置选项。</param>
+            <param name="logger">日志记录器（可选）。</param>
+            <param name="secretProvider">安全密钥提供程序（可选）。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.StandardOAuth2TokenManager.GetClientSecretAsync(System.Threading.CancellationToken)">
+            <summary>
+            获取有效的 ClientSecret，优先从 ISecretProvider 获取，回退到配置值。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.StandardOAuth2TokenManager.ValidateEndpointHttps(System.String,System.String)">
+            <summary>
+            校验端点是否满足 HTTPS 要求。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.StandardOAuth2TokenManager.GetTokenByAuthorizationCodeAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <inheritdoc/>
+        </member>
+        <member name="M:Mud.HttpUtils.StandardOAuth2TokenManager.GetTokenByClientCredentialsAsync(System.String[],System.Threading.CancellationToken)">
+            <inheritdoc/>
+        </member>
+        <member name="M:Mud.HttpUtils.StandardOAuth2TokenManager.RefreshTokenByRefreshTokenAsync(System.String,System.Threading.CancellationToken)">
+            <inheritdoc/>
+        </member>
+        <member name="M:Mud.HttpUtils.StandardOAuth2TokenManager.GetTokenByPasswordAsync(System.String,System.String,System.String[],System.Threading.CancellationToken)">
+            <inheritdoc/>
+        </member>
+        <member name="M:Mud.HttpUtils.StandardOAuth2TokenManager.RevokeTokenAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <inheritdoc/>
+        </member>
+        <member name="M:Mud.HttpUtils.StandardOAuth2TokenManager.IntrospectTokenAsync(System.String,System.Threading.CancellationToken)">
+            <inheritdoc/>
+        </member>
+        <member name="M:Mud.HttpUtils.StandardOAuth2TokenManager.RefreshTokenCoreAsync(System.Threading.CancellationToken)">
+            <inheritdoc/>
+        </member>
+        <member name="M:Mud.HttpUtils.StandardOAuth2TokenManager.GetTokenAsync(System.Threading.CancellationToken)">
+            <inheritdoc/>
+        </member>
+        <member name="M:Mud.HttpUtils.StandardOAuth2TokenManager.GetOrRefreshCredentialTokenAsync(System.Threading.CancellationToken)">
+            <summary>
+            获取或刷新令牌，返回完整的凭证令牌信息。
+            </summary>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>凭证令牌。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.TokenRefreshBackgroundService">
+            <summary>
+            令牌主动刷新后台服务，定期检查并刷新即将过期的令牌。
+            实现 <see cref="T:Mud.HttpUtils.ITokenRefreshBackgroundService"/> 接口，兼容 netstandard2.0。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.TokenRefreshBackgroundService.#ctor(Mud.HttpUtils.ITokenManager,Mud.HttpUtils.TokenRefreshBackgroundOptions,Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.TokenRefreshBackgroundService})">
+            <summary>
+            初始化 TokenRefreshBackgroundService 实例。
+            </summary>
+            <param name="tokenManager">令牌管理器。</param>
+            <param name="options">后台刷新配置选项。</param>
+            <param name="logger">日志记录器（可选）。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.TokenRefreshBackgroundService.#ctor(Mud.HttpUtils.ITokenManager,Microsoft.Extensions.Options.IOptions{Mud.HttpUtils.TokenRefreshBackgroundOptions},Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.TokenRefreshBackgroundService})">
+            <summary>
+            初始化 TokenRefreshBackgroundService 实例，使用 IOptions 配置。
+            </summary>
+            <param name="tokenManager">令牌管理器。</param>
+            <param name="options">后台刷新配置选项（IOptions 模式）。</param>
+            <param name="logger">日志记录器（可选）。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.TokenRefreshBackgroundService.StartAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.TokenRefreshBackgroundService.StopAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.TokenRefreshBackgroundService.Dispose">
+            <summary>
+            释放资源。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.TokenRefreshHostedService">
+            <summary>
+            令牌主动刷新后台服务,用于定时自动刷新访问令牌。
+            </summary>
+            <remarks>
+            <para>此类继承自 <see cref="T:Microsoft.Extensions.Hosting.BackgroundService"/>,是一个ASP.NET Core托管服务,
+            在应用程序后台运行,定时刷新令牌以确保令牌始终有效。</para>
+            <para>主要功能:</para>
+            <list type="bullet">
+              <item>按配置的间隔定时刷新令牌</item>
+              <item>支持错误重试机制</item>
+              <item>支持错误时停止服务的配置选项</item>
+              <item>完整的日志记录</item>
+              <item>优雅的服务启动和停止</item>
+            </list>
+            <para>此服务仅在 .NET 6.0 或更高版本中可用。</para>
+            </remarks>
+            <example>
+            <code>
+            // 在 Program.cs 或 Startup.cs 中注册服务
+            builder.Services.AddTokenRefreshBackgroundService(options =>
+            {
+                options.Enabled = true;
+                options.RefreshIntervalSeconds = 300; // 5分钟
+                options.RetryDelaySeconds = 30;
+                options.StopOnError = false;
+            });
+            </code>
+            </example>
+            <seealso cref="T:Microsoft.Extensions.Hosting.BackgroundService"/>
+            <seealso cref="T:Mud.HttpUtils.ITokenManager"/>
+            <seealso cref="T:Mud.HttpUtils.TokenRefreshBackgroundOptions"/>
+        </member>
+        <member name="M:Mud.HttpUtils.TokenRefreshHostedService.#ctor(Mud.HttpUtils.ITokenManager,Microsoft.Extensions.Options.IOptions{Mud.HttpUtils.TokenRefreshBackgroundOptions},Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.TokenRefreshHostedService})">
+            <summary>
+            初始化 <see cref="T:Mud.HttpUtils.TokenRefreshHostedService"/> 类的新实例。
+            </summary>
+            <param name="tokenManager">令牌管理器实例。</param>
+            <param name="options">令牌刷新后台服务配置选项。</param>
+            <param name="logger">日志记录器。</param>
+            <exception cref="T:System.ArgumentNullException"><paramref name="tokenManager"/>、<paramref name="options"/> 或 <paramref name="logger"/> 为 null。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.TokenRefreshHostedService.ExecuteAsync(System.Threading.CancellationToken)">
+            <summary>
+            执行后台服务的主要逻辑,定时刷新令牌。
+            </summary>
+            <param name="stoppingToken">用于监控是否请求停止服务的取消令牌。</param>
+            <returns>表示后台服务执行操作的任务。</returns>
+            <remarks>
+            <para>此方法实现了一个定时循环,按照配置的间隔调用 <see cref="M:Mud.HttpUtils.ITokenManager.GetOrRefreshTokenAsync(System.Threading.CancellationToken)"/> 刷新令牌。</para>
+            <para>异常处理策略:</para>
+            <list type="number">
+              <item><see cref="T:System.OperationCanceledException"/>: 服务正常停止时捕获,优雅退出</item>
+              <item><see cref="T:System.ObjectDisposedException"/>: 令牌管理器已释放时捕获,停止刷新</item>
+              <item>其他异常: 记录错误日志,根据配置决定是否重试或停止服务</item>
+            </list>
+            <para>如果 <see cref="P:Mud.HttpUtils.TokenRefreshBackgroundOptions.StopOnError"/> 为 <c>true</c>,刷新失败时将抛出异常终止服务。</para>
+            </remarks>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.TokenPattern_0">
+            <summary>Custom <see cref="T:System.Text.RegularExpressions.Regex"/>-derived type for the TokenPattern method.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.TokenPattern_0.Instance">
+            <summary>Cached, thread-safe singleton instance.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.TokenPattern_0.#ctor">
+            <summary>Initializes the instance.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.TokenPattern_0.RunnerFactory">
+            <summary>Provides a factory for creating <see cref="T:System.Text.RegularExpressions.RegexRunner"/> instances to be used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.TokenPattern_0.RunnerFactory.CreateInstance">
+            <summary>Creates an instance of a <see cref="T:System.Text.RegularExpressions.RegexRunner"/> used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.TokenPattern_0.RunnerFactory.Runner">
+            <summary>Provides the runner that contains the custom logic implementing the specified regular expression.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.TokenPattern_0.RunnerFactory.Runner.Scan(System.ReadOnlySpan{System.Char})">
+            <summary>Scan the <paramref name="inputSpan"/> starting from base.runtextstart for the next match.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.TokenPattern_0.RunnerFactory.Runner.TryFindNextPossibleStartingPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Search <paramref name="inputSpan"/> starting from base.runtextpos for the next location a match could possibly start.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if a possible match was found; false if no more matches are possible.</returns>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.TokenPattern_0.RunnerFactory.Runner.TryMatchAtCurrentPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Determine whether <paramref name="inputSpan"/> at base.runtextpos is a match for the regular expression.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if the regular expression matches at the current position; otherwise, false.</returns>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1">
+            <summary>Custom <see cref="T:System.Text.RegularExpressions.Regex"/>-derived type for the SensitiveKeyValuePattern method.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.Instance">
+            <summary>Cached, thread-safe singleton instance.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.#ctor">
+            <summary>Initializes the instance.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.RunnerFactory">
+            <summary>Provides a factory for creating <see cref="T:System.Text.RegularExpressions.RegexRunner"/> instances to be used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.RunnerFactory.CreateInstance">
+            <summary>Creates an instance of a <see cref="T:System.Text.RegularExpressions.RegexRunner"/> used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.RunnerFactory.Runner">
+            <summary>Provides the runner that contains the custom logic implementing the specified regular expression.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.RunnerFactory.Runner.Scan(System.ReadOnlySpan{System.Char})">
+            <summary>Scan the <paramref name="inputSpan"/> starting from base.runtextstart for the next match.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.RunnerFactory.Runner.TryFindNextPossibleStartingPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Search <paramref name="inputSpan"/> starting from base.runtextpos for the next location a match could possibly start.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if a possible match was found; false if no more matches are possible.</returns>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.RunnerFactory.Runner.TryMatchAtCurrentPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Determine whether <paramref name="inputSpan"/> at base.runtextpos is a match for the regular expression.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if the regular expression matches at the current position; otherwise, false.</returns>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.PhonePattern_2">
+            <summary>Custom <see cref="T:System.Text.RegularExpressions.Regex"/>-derived type for the PhonePattern method.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.PhonePattern_2.Instance">
+            <summary>Cached, thread-safe singleton instance.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.PhonePattern_2.#ctor">
+            <summary>Initializes the instance.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.PhonePattern_2.RunnerFactory">
+            <summary>Provides a factory for creating <see cref="T:System.Text.RegularExpressions.RegexRunner"/> instances to be used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.PhonePattern_2.RunnerFactory.CreateInstance">
+            <summary>Creates an instance of a <see cref="T:System.Text.RegularExpressions.RegexRunner"/> used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.PhonePattern_2.RunnerFactory.Runner">
+            <summary>Provides the runner that contains the custom logic implementing the specified regular expression.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.PhonePattern_2.RunnerFactory.Runner.Scan(System.ReadOnlySpan{System.Char})">
+            <summary>Scan the <paramref name="inputSpan"/> starting from base.runtextstart for the next match.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.PhonePattern_2.RunnerFactory.Runner.TryFindNextPossibleStartingPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Search <paramref name="inputSpan"/> starting from base.runtextpos for the next location a match could possibly start.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if a possible match was found; false if no more matches are possible.</returns>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.PhonePattern_2.RunnerFactory.Runner.TryMatchAtCurrentPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Determine whether <paramref name="inputSpan"/> at base.runtextpos is a match for the regular expression.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if the regular expression matches at the current position; otherwise, false.</returns>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.EmailPattern_3">
+            <summary>Custom <see cref="T:System.Text.RegularExpressions.Regex"/>-derived type for the EmailPattern method.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.EmailPattern_3.Instance">
+            <summary>Cached, thread-safe singleton instance.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.EmailPattern_3.#ctor">
+            <summary>Initializes the instance.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.EmailPattern_3.RunnerFactory">
+            <summary>Provides a factory for creating <see cref="T:System.Text.RegularExpressions.RegexRunner"/> instances to be used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.EmailPattern_3.RunnerFactory.CreateInstance">
+            <summary>Creates an instance of a <see cref="T:System.Text.RegularExpressions.RegexRunner"/> used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.EmailPattern_3.RunnerFactory.Runner">
+            <summary>Provides the runner that contains the custom logic implementing the specified regular expression.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.EmailPattern_3.RunnerFactory.Runner.Scan(System.ReadOnlySpan{System.Char})">
+            <summary>Scan the <paramref name="inputSpan"/> starting from base.runtextstart for the next match.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.EmailPattern_3.RunnerFactory.Runner.TryFindNextPossibleStartingPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Search <paramref name="inputSpan"/> starting from base.runtextpos for the next location a match could possibly start.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if a possible match was found; false if no more matches are possible.</returns>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.EmailPattern_3.RunnerFactory.Runner.TryMatchAtCurrentPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Determine whether <paramref name="inputSpan"/> at base.runtextpos is a match for the regular expression.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if the regular expression matches at the current position; otherwise, false.</returns>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.IdCardPattern_4">
+            <summary>Custom <see cref="T:System.Text.RegularExpressions.Regex"/>-derived type for the IdCardPattern method.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.IdCardPattern_4.Instance">
+            <summary>Cached, thread-safe singleton instance.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.IdCardPattern_4.#ctor">
+            <summary>Initializes the instance.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.IdCardPattern_4.RunnerFactory">
+            <summary>Provides a factory for creating <see cref="T:System.Text.RegularExpressions.RegexRunner"/> instances to be used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.IdCardPattern_4.RunnerFactory.CreateInstance">
+            <summary>Creates an instance of a <see cref="T:System.Text.RegularExpressions.RegexRunner"/> used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.IdCardPattern_4.RunnerFactory.Runner">
+            <summary>Provides the runner that contains the custom logic implementing the specified regular expression.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.IdCardPattern_4.RunnerFactory.Runner.Scan(System.ReadOnlySpan{System.Char})">
+            <summary>Scan the <paramref name="inputSpan"/> starting from base.runtextstart for the next match.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.IdCardPattern_4.RunnerFactory.Runner.TryFindNextPossibleStartingPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Search <paramref name="inputSpan"/> starting from base.runtextpos for the next location a match could possibly start.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if a possible match was found; false if no more matches are possible.</returns>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.IdCardPattern_4.RunnerFactory.Runner.TryMatchAtCurrentPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Determine whether <paramref name="inputSpan"/> at base.runtextpos is a match for the regular expression.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if the regular expression matches at the current position; otherwise, false.</returns>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.Utilities">
+            <summary>Helper methods used by generated <see cref="T:System.Text.RegularExpressions.Regex"/>-derived implementations.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_defaultTimeout">
+            <summary>Default timeout value set in <see cref="T:System.AppContext"/>, or <see cref="F:System.Text.RegularExpressions.Regex.InfiniteMatchTimeout"/> if none was set.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_hasTimeout">
+            <summary>Whether <see cref="F:System.Text.RegularExpressions.Generated.Utilities.s_defaultTimeout"/> is non-infinite.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.Utilities.StackPush(System.Int32[]@,System.Int32@,System.Int32)">
+            <summary>Pushes 1 value onto the backtracking stack.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.Utilities.StackPush(System.Int32[]@,System.Int32@,System.Int32,System.Int32)">
+            <summary>Pushes 2 values onto the backtracking stack.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_asciiLettersAndDigitsAndDashUnderscoreKelvinSign">
+            <summary>Supports searching for characters in or not in "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyzK".</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_nonAscii_2BDDE98808630E9B520E3AD9F33E4A0D939EAAED4FF3C3CC86415C934044BB2B">
+            <summary>Supports searching for characters in or not in "CKSYcksyK".</summary>
+        </member>
+    </members>
+</doc>
