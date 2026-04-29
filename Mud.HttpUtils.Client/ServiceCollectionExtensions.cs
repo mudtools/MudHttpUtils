@@ -28,12 +28,9 @@ public static class HttpClientServiceCollectionExtensions
     /// <param name="services">服务集合。</param>
     /// <param name="clientName">Named HttpClient 的名称。</param>
     /// <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
-    /// <param name="setAsDefault">是否将此客户端设为 IEnhancedHttpClient 的默认实现。</param>
+    /// <param name="setAsDefault">是否将此客户端设为 IEnhancedHttpClient 的默认实现。在多应用场景下不推荐使用，请改用 <see cref="AddNamedMudHttpClient"/> 并通过 <see cref="IHttpClientResolver"/> 按名称获取客户端。</param>
     /// <returns><see cref="IHttpClientBuilder"/>（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
-#pragma warning disable CS0419 // Ambiguous reference in cref attribute
-    [Obsolete("在多应用场景下不推荐使用 setAsDefault。请使用 AddNamedMudHttpClient 并通过 IHttpClientResolver 按名称获取客户端。")]
-#pragma warning restore CS0419
     public static IHttpClientBuilder AddMudHttpClient(
         this IServiceCollection services,
         string clientName,
@@ -179,7 +176,6 @@ public static class HttpClientServiceCollectionExtensions
     /// <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
     /// <returns><see cref="IHttpClientBuilder"/>（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
-#pragma warning disable CS0618 // Type or member is obsolete
     public static IHttpClientBuilder AddMudHttpClient(
         this IServiceCollection services,
         string clientName,
@@ -196,7 +192,6 @@ public static class HttpClientServiceCollectionExtensions
 
         return services.AddMudHttpClient(clientName, configureHttpClient);
     }
-#pragma warning restore CS0618
 
     /// <summary>
     /// 添加基于 <see cref="IHttpClientFactory"/> 的 <see cref="HttpClientFactoryEnhancedClient"/> 到依赖注入容器，
@@ -207,7 +202,6 @@ public static class HttpClientServiceCollectionExtensions
     /// <param name="baseAddress">HttpClient 的基础地址。</param>
     /// <returns><see cref="IHttpClientBuilder"/>（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
-#pragma warning disable CS0618 // Type or member is obsolete
     public static IHttpClientBuilder AddMudHttpClient(
         this IServiceCollection services,
         string clientName,
@@ -225,7 +219,6 @@ public static class HttpClientServiceCollectionExtensions
             client.BaseAddress = new Uri(baseAddress);
         });
     }
-#pragma warning restore CS0618
 
     /// <summary>
     /// 添加令牌主动刷新后台服务到依赖注入容器。

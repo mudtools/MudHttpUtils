@@ -1,11 +1,8 @@
-using System.Collections.Concurrent;
-
 namespace Mud.HttpUtils;
 
 public sealed class HttpClientResolver : IHttpClientResolver
 {
     private readonly IEnhancedHttpClientFactory _clientFactory;
-    private readonly ConcurrentDictionary<string, IEnhancedHttpClient> _clientCache = new(StringComparer.Ordinal);
 
     public HttpClientResolver(IEnhancedHttpClientFactory clientFactory)
     {
@@ -35,7 +32,7 @@ public sealed class HttpClientResolver : IHttpClientResolver
 
         try
         {
-            client = _clientCache.GetOrAdd(clientName, _clientFactory.CreateClient);
+            client = _clientFactory.CreateClient(clientName);
             return true;
         }
         catch (InvalidOperationException)
