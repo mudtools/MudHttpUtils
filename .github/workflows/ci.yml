@@ -45,7 +45,7 @@ jobs:
         run: dotnet build ${{ matrix.test_project }} --no-restore --configuration Release
 
       - name: Run tests
-        run: dotnet test ${{ matrix.test_project }} --no-build --configuration Release --logger "github;verbosity=detailed"
+        run: dotnet test ${{ matrix.test_project }} --no-build --configuration Release --logger "console;verbosity=detailed"
 
   # ──────────────────────────────────────────────
   # Demo 项目构建
