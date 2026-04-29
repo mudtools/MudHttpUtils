@@ -925,9 +925,9 @@ internal class RequestBuilder
     {
         codeBuilder.AppendLine($"            if ({param.Name} != null)");
         codeBuilder.AppendLine("            {");
-        codeBuilder.AppendLine($"                if ({param.Name} is IQueryParameter __queryParam)");
+        codeBuilder.AppendLine($"                if ({param.Name} is IQueryParameter __queryParam_{param.Name})");
         codeBuilder.AppendLine("                {");
-        codeBuilder.AppendLine($"                    foreach (var __kvp in __queryParam.ToQueryParameters())");
+        codeBuilder.AppendLine($"                    foreach (var __kvp in __queryParam_{param.Name}.ToQueryParameters())");
         codeBuilder.AppendLine("                    {");
         codeBuilder.AppendLine("                        if (!string.IsNullOrEmpty(__kvp.Value))");
         codeBuilder.AppendLine("                        {");
@@ -938,21 +938,7 @@ internal class RequestBuilder
         codeBuilder.AppendLine("                }");
         codeBuilder.AppendLine("                else");
         codeBuilder.AppendLine("                {");
-        codeBuilder.AppendLine($"#if NET6_0_OR_GREATER");
-        codeBuilder.AppendLine($"#pragma warning disable IL2072 // AOT 警告：参数类型 {param.Type} 未实现 IQueryParameter 接口");
-        codeBuilder.AppendLine($"#endif");
-        codeBuilder.AppendLine($"                    var __properties = {param.Name}.GetType().GetProperties();");
-        codeBuilder.AppendLine("                    foreach (var __prop in __properties)");
-        codeBuilder.AppendLine("                    {");
-        codeBuilder.AppendLine($"                        var __value = __prop.GetValue({param.Name});");
-        codeBuilder.AppendLine("                        if (__value != null)");
-        codeBuilder.AppendLine("                        {");
-        codeBuilder.AppendLine($"                            __queryParams.Add(__prop.Name, HttpUtility.UrlEncode(__value.ToString()));");
-        codeBuilder.AppendLine("                        }");
-        codeBuilder.AppendLine("                    }");
-        codeBuilder.AppendLine($"#if NET6_0_OR_GREATER");
-        codeBuilder.AppendLine($"#pragma warning restore IL2072");
-        codeBuilder.AppendLine($"#endif");
+        codeBuilder.AppendLine($"                    FlattenObjectToQueryParams({param.Name}, \"\", \"_\", __queryParams, true, false, false);");
         codeBuilder.AppendLine("                }");
         codeBuilder.AppendLine("            }");
     }
@@ -1084,18 +1070,30 @@ internal class RequestBuilder
 
         if (property.Type == "string" || property.Type == "System.String")
         {
-            // string 类型：IsNullOrEmpty 已包含 null 检查，无需外层 != null
             codeBuilder.AppendLine($"            if (!string.IsNullOrEmpty({property.Name}))");
             codeBuilder.AppendLine("            {");
-            codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", {property.Name});");
+            if (property.UrlEncode)
+            {
+                codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", HttpUtility.UrlEncode({property.Name}));");
+            }
+            else
+            {
+                codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", {property.Name});");
+            }
             codeBuilder.AppendLine("            }");
         }
         else
         {
-            // 非 string 类型：需要外层 null 检查以避免 ToString() 抛出 NRE
             codeBuilder.AppendLine($"            if ({property.Name} != null)");
             codeBuilder.AppendLine("            {");
-            codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", {property.Name}{formatExpression});");
+            if (property.UrlEncode)
+            {
+                codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", HttpUtility.UrlEncode({property.Name}{formatExpression}));");
+            }
+            else
+            {
+                codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", {property.Name}{formatExpression});");
+            }
             codeBuilder.AppendLine("            }");
         }
     }

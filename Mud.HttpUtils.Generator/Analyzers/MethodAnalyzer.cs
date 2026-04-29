@@ -534,6 +534,9 @@ internal static class MethodAnalyzer
         if (interfaceSymbol == null)
             return properties;
 
+        var propertyDecls = interfaceDecl.Members.OfType<PropertyDeclarationSyntax>()
+            .ToDictionary(p => p.Identifier.Text, p => p);
+
         foreach (var property in interfaceSymbol.GetMembers().OfType<IPropertySymbol>())
         {
             var queryAttr = property.GetAttributes()
@@ -542,20 +545,23 @@ internal static class MethodAnalyzer
             var pathAttr = property.GetAttributes()
                 .FirstOrDefault(attr => attr.AttributeClass?.Name == "PathAttribute");
 
+            PropertyDeclarationSyntax? propertyDecl = null;
+            propertyDecls.TryGetValue(property.Name, out propertyDecl);
+
             if (queryAttr != null)
             {
-                properties.Add(CreatePropertyInfo(property, queryAttr, "Query"));
+                properties.Add(CreatePropertyInfo(property, queryAttr, "Query", propertyDecl, model));
             }
             else if (pathAttr != null)
             {
-                properties.Add(CreatePropertyInfo(property, pathAttr, "Path"));
+                properties.Add(CreatePropertyInfo(property, pathAttr, "Path", propertyDecl, model));
             }
         }
 
         return properties;
     }
 
-    private static InterfacePropertyInfo CreatePropertyInfo(IPropertySymbol property, AttributeData attribute, string attributeType)
+    private static InterfacePropertyInfo CreatePropertyInfo(IPropertySymbol property, AttributeData attribute, string attributeType, PropertyDeclarationSyntax? propertyDecl, SemanticModel model)
     {
         var propertyInfo = new InterfacePropertyInfo
         {
@@ -592,6 +598,23 @@ internal static class MethodAnalyzer
         if (string.IsNullOrEmpty(propertyInfo.ParameterName))
         {
             propertyInfo.ParameterName = property.Name;
+        }
+
+        if (propertyDecl?.Initializer != null)
+        {
+            var constantValue = model.GetConstantValue(propertyDecl.Initializer.Value);
+            if (constantValue.HasValue && constantValue.Value != null)
+            {
+                propertyInfo.DefaultValue = TypeConverter.GetDefaultValueLiteral(property.Type, constantValue.Value);
+            }
+            else
+            {
+                propertyInfo.DefaultValue = propertyDecl.Initializer.Value.ToString();
+            }
+        }
+        else if (property.Type.IsValueType)
+        {
+            propertyInfo.DefaultValue = "default";
         }
 
         return propertyInfo;

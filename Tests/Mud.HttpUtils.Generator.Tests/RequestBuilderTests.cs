@@ -322,6 +322,506 @@ public class RequestBuilderTests
 
     #endregion
 
+    #region QueryMap 参数测试
+
+    [Fact]
+    public void GenerateQueryParameters_WithQueryMapParameter_GeneratesFlattenCall()
+    {
+        var methodInfo = CreateMethodInfo("/search", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "criteria", Type = "SearchCriteria",
+                Attributes = [new ParameterAttributeInfo { Name = "QueryMapAttribute" }]
+            }
+        });
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("FlattenObjectToQueryParams");
+        code.Should().Contain("criteria");
+    }
+
+    [Fact]
+    public void GenerateQueryParameters_WithQueryMapDictionary_GeneratesForEach()
+    {
+        var methodInfo = CreateMethodInfo("/search", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "filters", Type = "System.Collections.Generic.IDictionary<string, object>",
+                Attributes = [new ParameterAttributeInfo { Name = "QueryMapAttribute" }]
+            }
+        });
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("foreach");
+        code.Should().Contain("filters");
+    }
+
+    [Fact]
+    public void GenerateQueryParameters_WithQueryMapCustomSeparator_UsesSeparator()
+    {
+        var methodInfo = CreateMethodInfo("/search", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "criteria", Type = "SearchCriteria",
+                Attributes = [new ParameterAttributeInfo
+                {
+                    Name = "QueryMapAttribute",
+                    NamedArguments = new Dictionary<string, object?> { ["PropertySeparator"] = "." }
+                }]
+            }
+        });
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain(".");
+    }
+
+    [Fact]
+    public void GenerateQueryParameters_WithQueryMapUrlEncodeFalse_NoEncoding()
+    {
+        var methodInfo = CreateMethodInfo("/search", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "criteria", Type = "SearchCriteria",
+                Attributes = [new ParameterAttributeInfo
+                {
+                    Name = "QueryMapAttribute",
+                    NamedArguments = new Dictionary<string, object?> { ["UrlEncode"] = false }
+                }]
+            }
+        });
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("FlattenObjectToQueryParams");
+        code.Should().Contain("false");
+    }
+
+    [Fact]
+    public void GenerateQueryParameters_WithQueryMapJsonSerialization_UsesJsonSerializer()
+    {
+        var methodInfo = CreateMethodInfo("/search", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "criteria", Type = "SearchCriteria",
+                Attributes = [new ParameterAttributeInfo
+                {
+                    Name = "QueryMapAttribute",
+                    NamedArguments = new Dictionary<string, object?> { ["SerializationMethod"] = 1 }
+                }]
+            }
+        });
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("FlattenObjectToQueryParams");
+        code.Should().Contain("true");
+    }
+
+    #endregion
+
+    #region RawQueryString 参数测试
+
+    [Fact]
+    public void GenerateQueryParameters_WithRawQueryString_GeneratesAppendLogic()
+    {
+        var methodInfo = CreateMethodInfo("/search", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "extraQuery", Type = "string",
+                Attributes = [new ParameterAttributeInfo { Name = "RawQueryStringAttribute" }]
+            }
+        });
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("extraQuery");
+        code.Should().Contain("TrimStart");
+        code.Should().Contain("TrimEnd");
+    }
+
+    [Fact]
+    public void GenerateQueryParameters_WithRawQueryString_TrimsLeadingQuestionMark()
+    {
+        var methodInfo = CreateMethodInfo("/search", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "extraQuery", Type = "string",
+                Attributes = [new ParameterAttributeInfo { Name = "RawQueryStringAttribute" }]
+            }
+        });
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("TrimStart('?', '&')");
+        code.Should().Contain("TrimEnd('&')");
+    }
+
+    #endregion
+
+    #region InterfaceQueryProperty UrlEncode 测试
+
+    [Fact]
+    public void GenerateQueryParameters_InterfaceStringQueryProperty_UrlEncodeTrue_GeneratesUrlEncode()
+    {
+        var methodInfo = CreateMethodInfo("/search");
+        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
+        {
+            new()
+            {
+                Name = "Keyword", Type = "string", AttributeType = "Query",
+                ParameterName = "keyword", UrlEncode = true
+            }
+        };
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("HttpUtility.UrlEncode(Keyword)");
+    }
+
+    [Fact]
+    public void GenerateQueryParameters_InterfaceStringQueryProperty_UrlEncodeFalse_NoEncoding()
+    {
+        var methodInfo = CreateMethodInfo("/search");
+        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
+        {
+            new()
+            {
+                Name = "Keyword", Type = "string", AttributeType = "Query",
+                ParameterName = "keyword", UrlEncode = false
+            }
+        };
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        code.Should().NotContain("HttpUtility.UrlEncode(Keyword)");
+        code.Should().Contain("__queryParams.Add(\"keyword\", Keyword)");
+    }
+
+    [Fact]
+    public void GenerateQueryParameters_InterfaceIntQueryProperty_UrlEncodeTrue_GeneratesUrlEncode()
+    {
+        var methodInfo = CreateMethodInfo("/search");
+        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
+        {
+            new()
+            {
+                Name = "Page", Type = "int?", AttributeType = "Query",
+                ParameterName = "page", UrlEncode = true
+            }
+        };
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("HttpUtility.UrlEncode(Page");
+    }
+
+    [Fact]
+    public void GenerateQueryParameters_InterfaceIntQueryProperty_UrlEncodeFalse_NoEncoding()
+    {
+        var methodInfo = CreateMethodInfo("/search");
+        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
+        {
+            new()
+            {
+                Name = "Page", Type = "int?", AttributeType = "Query",
+                ParameterName = "page", UrlEncode = false
+            }
+        };
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        code.Should().NotContain("HttpUtility.UrlEncode(Page");
+    }
+
+    #endregion
+
+    #region HeaderMergeMode 测试
+
+    [Fact]
+    public void GenerateHeaderParameters_HeaderMergeModeIgnore_SkipsMethodHeaders()
+    {
+        var methodInfo = CreateMethodInfo("/users", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "authToken", Type = "string",
+                Attributes = [new ParameterAttributeInfo { Name = "HeaderAttribute", Arguments = new object?[] { "Authorization" } }]
+            }
+        });
+        methodInfo.HeaderMergeMode = "Ignore";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateHeaderParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        code.Should().NotContain("__httpRequest.Headers.Add(\"Authorization\"");
+    }
+
+    [Fact]
+    public void GenerateHeaderParameters_HeaderMergeModeReplace_GeneratesRemoveAndAdd()
+    {
+        var methodInfo = CreateMethodInfo("/users", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "authToken", Type = "string",
+                Attributes = [new ParameterAttributeInfo { Name = "HeaderAttribute", Arguments = new object?[] { "Authorization" } }]
+            }
+        });
+        methodInfo.HeaderMergeMode = "Replace";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateHeaderParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("__httpRequest.Headers.Remove(\"Authorization\")");
+        code.Should().Contain("__httpRequest.Headers.Add(\"Authorization\"");
+    }
+
+    [Fact]
+    public void GenerateHeaderParameters_HeaderMergeModeAppend_GeneratesAddOnly()
+    {
+        var methodInfo = CreateMethodInfo("/users", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "authToken", Type = "string",
+                Attributes = [new ParameterAttributeInfo { Name = "HeaderAttribute", Arguments = new object?[] { "Authorization" } }]
+            }
+        });
+        methodInfo.HeaderMergeMode = "Append";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateHeaderParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("__httpRequest.Headers.Add(\"Authorization\"");
+        code.Should().NotContain("__httpRequest.Headers.Remove(\"Authorization\")");
+    }
+
+    [Fact]
+    public void GenerateHeaderParameters_HeaderReplaceAttribute_GeneratesRemoveAndAdd()
+    {
+        var methodInfo = CreateMethodInfo("/users", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "authToken", Type = "string",
+                Attributes = [new ParameterAttributeInfo
+                {
+                    Name = "HeaderAttribute",
+                    Arguments = new object?[] { "Authorization" },
+                    NamedArguments = new Dictionary<string, object?> { ["Replace"] = true }
+                }]
+            }
+        });
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateHeaderParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("__httpRequest.Headers.Remove(\"Authorization\")");
+        code.Should().Contain("__httpRequest.Headers.Add(\"Authorization\"");
+    }
+
+    #endregion
+
+    #region Format 属性测试 (Query)
+
+    [Fact]
+    public void GenerateQueryParameters_QueryWithFormat_GeneratesToStringFormat()
+    {
+        var methodInfo = CreateMethodInfo("/search", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "date", Type = "DateTime",
+                Attributes = [new ParameterAttributeInfo
+                {
+                    Name = "QueryAttribute",
+                    NamedArguments = new Dictionary<string, object?> { ["Format"] = "yyyy-MM-dd" }
+                }]
+            }
+        });
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("yyyy-MM-dd");
+        code.Should().Contain("ToString");
+    }
+
+    #endregion
+
+    #region Format 属性测试 (Header)
+
+    [Fact]
+    public void GenerateHeaderParameters_HeaderWithFormat_GeneratesStringFormat()
+    {
+        var methodInfo = CreateMethodInfo("/users", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "modifiedSince", Type = "DateTime",
+                Attributes = [new ParameterAttributeInfo
+                {
+                    Name = "HeaderAttribute",
+                    Arguments = new object?[] { "If-Modified-Since" },
+                    NamedArguments = new Dictionary<string, object?> { ["FormatString"] = "R" }
+                }]
+            }
+        });
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateHeaderParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("If-Modified-Since");
+        code.Should().Contain("Format");
+    }
+
+    #endregion
+
+    #region Response<T> 生成代码测试
+
+    [Fact]
+    public void GenerateRequestExecution_WithResponseType_GeneratesResponseWrapper()
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.ReturnType = "Task<Response<string>>";
+        methodInfo.AsyncInnerReturnType = "Response<string>";
+        methodInfo.IsAsyncMethod = true;
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("SendRawAsync");
+        code.Should().Contain("Mud.HttpUtils.Response<string>");
+        code.Should().Contain("__statusCode");
+        code.Should().Contain("__rawContent");
+        code.Should().Contain("__responseHeaders");
+    }
+
+    [Fact]
+    public void GenerateRequestExecution_WithResponseType_SuccessPath_DeserializesContent()
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.ReturnType = "Task<Response<User>>";
+        methodInfo.AsyncInnerReturnType = "Response<User>";
+        methodInfo.IsAsyncMethod = true;
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("JsonSerializer.Deserialize<User>");
+        code.Should().Contain("Mud.HttpUtils.Response<User>");
+    }
+
+    [Fact]
+    public void GenerateRequestExecution_WithResponseType_ErrorPath_UsesErrorConstructor()
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.ReturnType = "Task<Response<string>>";
+        methodInfo.AsyncInnerReturnType = "Response<string>";
+        methodInfo.IsAsyncMethod = true;
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("else");
+        code.Should().Contain("new Mud.HttpUtils.Response<string>(__statusCode, __rawContent, __responseHeaders)");
+    }
+
+    #endregion
+
+    #region AllowAnyStatusCode 生成代码测试
+
+    [Fact]
+    public void GenerateRequestExecution_WithAllowAnyStatusCode_GeneratesSendAsync()
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.AllowAnyStatusCode = true;
+        methodInfo.AsyncInnerReturnType = "string";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("SendAsync<string>");
+        code.Should().NotContain("SendRawAsync");
+    }
+
+    [Fact]
+    public void GenerateRequestExecution_WithoutAllowAnyStatusCode_GeneratesErrorCheck()
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.AllowAnyStatusCode = false;
+        methodInfo.AsyncInnerReturnType = "string";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("IsSuccessStatusCode");
+        code.Should().Contain("ApiException");
+    }
+
+    #endregion
+
+    #region SerializationMethod 测试
+
+    [Fact]
+    public void GenerateRequestExecution_WithXmlResponse_UseXmlSerializer()
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.AsyncInnerReturnType = "string";
+        methodInfo.ResponseContentType = "application/xml";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("XmlSerializer");
+    }
+
+    #endregion
+
     #region 辅助方法
 
     private static MethodAnalysisResult CreateMethodInfo(string urlTemplate, List<ParameterInfo>? parameters = null)

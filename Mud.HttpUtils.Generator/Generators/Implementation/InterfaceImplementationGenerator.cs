@@ -296,9 +296,11 @@ internal class InterfaceImplementationGenerator
         codeBuilder.AppendLine("            System.Collections.Specialized.NameValueCollection __queryParams,");
         codeBuilder.AppendLine("            bool urlEncode,");
         codeBuilder.AppendLine("            bool includeNullValues,");
-        codeBuilder.AppendLine("            bool useJsonSerialization)");
+        codeBuilder.AppendLine("            bool useJsonSerialization,");
+        codeBuilder.AppendLine("            int __depth = 0)");
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            if (obj == null) throw new ArgumentNullException(nameof(obj));");
+        codeBuilder.AppendLine("            if (__depth > 10) throw new InvalidOperationException($\"Maximum recursion depth exceeded while flattening object of type {obj.GetType().Name}. This may be caused by a circular reference.\");");
         codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
         codeBuilder.AppendLine("#pragma warning disable IL2072");
         codeBuilder.AppendLine("#endif");
@@ -345,7 +347,7 @@ internal class InterfaceImplementationGenerator
         codeBuilder.AppendLine("                }");
         codeBuilder.AppendLine("                else");
         codeBuilder.AppendLine("                {");
-        codeBuilder.AppendLine("                    FlattenObjectToQueryParams(__value, __key, separator, __queryParams, urlEncode, includeNullValues, useJsonSerialization);");
+        codeBuilder.AppendLine("                    FlattenObjectToQueryParams(__value, __key, separator, __queryParams, urlEncode, includeNullValues, useJsonSerialization, __depth + 1);");
         codeBuilder.AppendLine("                }");
         codeBuilder.AppendLine("            }");
         codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
