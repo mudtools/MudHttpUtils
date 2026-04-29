@@ -446,7 +446,7 @@ internal class RequestBuilder
     {
         codeBuilder.AppendLine($"            if ({bodyParam.Name} != null)");
         codeBuilder.AppendLine("            {");
-        codeBuilder.AppendLine($"#if NET8_0_OR_GREATER");
+        codeBuilder.AppendLine($"#if NET6_0_OR_GREATER");
         codeBuilder.AppendLine($"#pragma warning disable IL2072");
         codeBuilder.AppendLine($"#endif");
         codeBuilder.AppendLine($"                var __bodyFormParams = new Dictionary<string, string>();");
@@ -460,7 +460,7 @@ internal class RequestBuilder
         codeBuilder.AppendLine("                    }");
         codeBuilder.AppendLine("                }");
         codeBuilder.AppendLine("                httpRequest.Content = new System.Net.Http.FormUrlEncodedContent(__bodyFormParams);");
-        codeBuilder.AppendLine($"#if NET8_0_OR_GREATER");
+        codeBuilder.AppendLine($"#if NET6_0_OR_GREATER");
         codeBuilder.AppendLine($"#pragma warning restore IL2072");
         codeBuilder.AppendLine($"#endif");
         codeBuilder.AppendLine("            }");
@@ -642,9 +642,9 @@ internal class RequestBuilder
         codeBuilder.AppendLine($"            using var __httpResponse = await {httpClient}.SendRawAsync(httpRequest{cancellationTokenArg});");
         codeBuilder.AppendLine($"            var __statusCode = __httpResponse.StatusCode;");
         codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
-        codeBuilder.AppendLine($"            var __rawContent = await __httpResponse.Content.ReadAsStringAsync({GetCancellationTokenArgument(cancellationTokenArg)});");
+        codeBuilder.AppendLine($"            var __rawContent = await __httpResponse.Content.ReadAsStringAsync({GetCancellationTokenArgument(cancellationTokenArg)}).ConfigureAwait(false);");
         codeBuilder.AppendLine("#else");
-        codeBuilder.AppendLine($"            var __rawContent = await __httpResponse.Content.ReadAsStringAsync();");
+        codeBuilder.AppendLine($"            var __rawContent = await __httpResponse.Content.ReadAsStringAsync().ConfigureAwait(false);");
         codeBuilder.AppendLine("#endif");
         codeBuilder.AppendLine($"            var __responseHeaders = __httpResponse.Headers.ToDictionary(h => h.Key, h => h.Value.ToList());");
 
@@ -720,9 +720,9 @@ internal class RequestBuilder
         codeBuilder.AppendLine($"            if (!__httpResponse.IsSuccessStatusCode)");
         codeBuilder.AppendLine($"            {{");
         codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
-        codeBuilder.AppendLine($"               var __errorContent = await __httpResponse.Content.ReadAsStringAsync({GetCancellationTokenArgument(cancellationTokenArg)});");
+        codeBuilder.AppendLine($"               var __errorContent = await __httpResponse.Content.ReadAsStringAsync({GetCancellationTokenArgument(cancellationTokenArg)}).ConfigureAwait(false);");
         codeBuilder.AppendLine("#else");
-        codeBuilder.AppendLine($"               var __errorContent = await __httpResponse.Content.ReadAsStringAsync();");
+        codeBuilder.AppendLine($"               var __errorContent = await __httpResponse.Content.ReadAsStringAsync().ConfigureAwait(false);");
         codeBuilder.AppendLine("#endif");
         codeBuilder.AppendLine($"                throw new Mud.HttpUtils.ApiException(__httpResponse.StatusCode, __errorContent, httpRequest.RequestUri?.ToString());");
         codeBuilder.AppendLine($"            }}");
@@ -730,9 +730,9 @@ internal class RequestBuilder
         var rawContentVar = $"__rawContent_{methodInfo.MethodName}";
 
         codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
-        codeBuilder.AppendLine($"            var {rawContentVar} = await __httpResponse.Content.ReadAsStringAsync({GetCancellationTokenArgument(cancellationTokenArg)});");
+        codeBuilder.AppendLine($"            var {rawContentVar} = await __httpResponse.Content.ReadAsStringAsync({GetCancellationTokenArgument(cancellationTokenArg)}).ConfigureAwait(false);");
         codeBuilder.AppendLine("#else");
-        codeBuilder.AppendLine($"            var {rawContentVar} = await __httpResponse.Content.ReadAsStringAsync();");
+        codeBuilder.AppendLine($"            var {rawContentVar} = await __httpResponse.Content.ReadAsStringAsync().ConfigureAwait(false);");
         codeBuilder.AppendLine("#endif");
 
 
@@ -936,7 +936,7 @@ internal class RequestBuilder
         codeBuilder.AppendLine("                }");
         codeBuilder.AppendLine("                else");
         codeBuilder.AppendLine("                {");
-        codeBuilder.AppendLine($"#if NET8_0_OR_GREATER");
+        codeBuilder.AppendLine($"#if NET6_0_OR_GREATER");
         codeBuilder.AppendLine($"#pragma warning disable IL2072 // AOT 警告：参数类型 {param.Type} 未实现 IQueryParameter 接口");
         codeBuilder.AppendLine($"#endif");
         codeBuilder.AppendLine($"                    var properties = {param.Name}.GetType().GetProperties();");
@@ -948,7 +948,7 @@ internal class RequestBuilder
         codeBuilder.AppendLine($"                            queryParams.Add(prop.Name, HttpUtility.UrlEncode(value.ToString()));");
         codeBuilder.AppendLine("                        }");
         codeBuilder.AppendLine("                    }");
-        codeBuilder.AppendLine($"#if NET8_0_OR_GREATER");
+        codeBuilder.AppendLine($"#if NET6_0_OR_GREATER");
         codeBuilder.AppendLine($"#pragma warning restore IL2072");
         codeBuilder.AppendLine($"#endif");
         codeBuilder.AppendLine("                }");
