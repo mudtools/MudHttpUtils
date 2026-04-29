@@ -1,9 +1,11 @@
 <Solution>
   <Folder Name="/Demos/">
-    <Project Path="Demos/CommonClassPubliceLibrary/CommonClassPubliceLibrary.csproj" Id="228e153e-0ac6-4d1d-a34c-38a35d1d40ba" />
     <Project Path="Demos/CommonClassLibrary.Share/CommonClassLibrary.Share.shproj" Id="53f9a9c3-3728-41b9-afe9-51ff9194496b" />
     <Project Path="Demos/CommonClassLibrary/CommonClassLibrary.csproj" />
+    <Project Path="Demos/CommonClassPubliceLibrary/CommonClassPubliceLibrary.csproj" Id="228e153e-0ac6-4d1d-a34c-38a35d1d40ba" />
+    <Project Path="Demos/HttpClientApiDemo.Share/HttpClientApiDemo.Share.shproj" Id="f07dbdd5-6caf-4d8a-aa39-bfaffb6a4f13" />
     <Project Path="Demos/HttpClientApiDemo/HttpClientApiDemo.csproj" />
+    <Project Path="Demos/HttpClientApiPublicDemo/HttpClientApiPublicDemo.csproj" Id="fd484f33-9086-4c78-825f-9ac1a9fb9502" />
     <Project Path="Demos/HttpClientDemo/HttpClientDemo.csproj" />
     <Project Path="Demos/ResilienceDemo/ResilienceDemo.csproj" />
   </Folder>

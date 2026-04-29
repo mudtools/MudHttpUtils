@@ -80,6 +80,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// <param name="logger">日志记录器</param>
     /// <param name="requestInterceptors">请求拦截器集合（可选）。</param>
     /// <param name="responseInterceptors">响应拦截器集合（可选）。</param>
+    /// <param name="sensitiveDataMasker">敏感数据掩码器（可选）。</param>
     /// <exception cref="ArgumentNullException"></exception>
     protected EnhancedHttpClient(
         HttpClient httpClient,

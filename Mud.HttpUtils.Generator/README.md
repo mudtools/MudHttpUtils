@@ -35,6 +35,12 @@ Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为
 - **安全认证**：识别 `TokenInjectionMode.ApiKey` 和 `TokenInjectionMode.HmacSignature` 模式
 - **日志脱敏**：识别 `[SensitiveData]` 特性，配合 `ISensitiveDataMasker` 实现日志脱敏
 - **Token Scopes**：识别 `[Token(Scopes = "...")]` 特性，支持 OAuth2 令牌作用域
+- **Base Path 支持**：识别 `[BasePath]` 特性，支持接口级统一路径前缀，支持占位符
+- **接口级动态属性**：识别接口上标记 `[Query]`/`[Path]` 的属性，生成实现类属性并应用于所有方法
+- **QueryMap 参数映射**：识别 `[QueryMap]` 特性，将对象/字典展开为查询参数，支持序列化控制和属性分隔符
+- **RawQueryString**：识别 `[RawQueryString]` 特性，直接传递原始查询字符串
+- **Response\<T\> 包装类型**：支持返回 `Response<T>` 类型，同时提供响应内容和元数据
+- **编译诊断**：检测 `Response<T>` + `[Cache]` 组合并发出 HTTPCLIENT011 警告
 
 ## 安装
 
@@ -424,6 +430,156 @@ Task<Config> GetConfigAsync();
 
 > `[Cache]` 特性标记的方法，配合 `CacheResponseInterceptor` 实现响应缓存。`CacheAttribute` 支持 `DurationSeconds`、`CacheKeyTemplate`、`VaryByUser`、`UseSlidingExpiration`、`Priority` 属性。
 
+> **注意**：不建议将 `Response<T>` 返回类型与 `[Cache]` 特性组合使用。缓存会存储整个 `Response<T>` 对象（包括 StatusCode 和 ResponseHeaders），可能导致后续请求返回过期的状态码和响应头。生成器会对此组合发出 HTTPCLIENT011 编译警告。
+
+### Base Path 支持
+
+```csharp
+[HttpClientApi(HttpClient = "IEnhancedHttpClient")]
+[BasePath("api/v1")]
+public interface IUserApi
+{
+    [Get("users/{id}")]       // 实际路径: /api/v1/users/{id}
+    Task<User> GetUserAsync([Path] int id);
+
+    [Get("/admin/users")]     // 以 / 开头，忽略 BasePath，实际路径: /admin/users
+    Task<List<User>> GetAllUsersAsync();
+}
+```
+
+URL 构建规则：
+
+| 情况 | 实际路径 |
+|------|---------|
+| 正常 | `[Base Address] + [Base Path] + [Method Path]` |
+| Method Path 以 `/` 开头 | `[Base Address] + [Method Path]`（忽略 Base Path） |
+| Method Path 是绝对 URL | `[Method Path]`（忽略 Base Address 和 Base Path） |
+
+> Base Path 可以包含占位符（如 `{tenantId}`），通过接口级 `[Path]` 属性或方法参数提供值。
+
+### 接口级动态属性
+
+支持在接口上定义 `[Query]` 或 `[Path]` 属性，生成的实现类将包含对应的可读写属性，属性值应用于接口的所有方法：
+
+```csharp
+[HttpClientApi(HttpClient = "IEnhancedHttpClient")]
+[BasePath("{tenantId}/api/v1")]
+public interface ITenantApi
+{
+    [Path("tenantId")]
+    string TenantId { get; set; }
+
+    [Query("apiKey")]
+    string ApiKey { get; set; }
+
+    [Query("locale")]
+    string? Locale { get; set; }
+
+    [Get("users")]
+    Task<List<User>> GetUsersAsync();
+
+    [Get("users/{id}")]
+    Task<User> GetUserAsync([Path] int id);
+}
+```
+
+生成的实现类包含对应的属性：
+
+```csharp
+internal partial class TenantApi : ITenantApi
+{
+    public string TenantId { get; set; }
+    public string ApiKey { get; set; }
+    public string? Locale { get; set; }
+
+    // 每个方法请求时自动附加接口属性值
+}
+```
+
+> **优先级**：方法参数优先级高于接口属性。如果方法参数与接口属性同名，方法参数值会覆盖接口属性值。接口属性值为 null 时跳过该参数。
+
+### QueryMap 参数映射
+
+`[QueryMap]` 支持将对象属性或字典键值对展开为 URL 查询参数：
+
+```csharp
+// POCO 对象展开
+public class SearchCriteria
+{
+    public string? Keyword { get; set; }
+    public int Page { get; set; }
+    public int PageSize { get; set; }
+}
+
+[Get("/api/search")]
+Task<SearchResult> SearchAsync([QueryMap] SearchCriteria criteria);
+
+// 字典类型
+[Get("/api/search")]
+Task<SearchResult> SearchAsync([QueryMap] IDictionary<string, object> filters);
+
+// 自定义序列化
+[Get("/api/search")]
+Task<SearchResult> SearchAsync(
+    [QueryMap(PropertySeparator = ".", SerializationMethod = QuerySerializationMethod.Json)]
+    SearchCriteria criteria);
+```
+
+`QueryMapAttribute` 属性：
+
+| 属性 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `PropertySeparator` | `string` | `"_"` | 嵌套属性名称分隔符 |
+| `SerializationMethod` | `QuerySerializationMethod` | `ToString` | 序列化方法（`ToString` / `Json`） |
+| `UrlEncode` | `bool` | `true` | 是否对查询参数值进行 URL 编码 |
+| `IncludeNullValues` | `bool` | `false` | 是否包含值为 null 的属性 |
+
+> `[QueryMap]` 可与普通 `[Query]` 参数混合使用。对于嵌套对象，生成器会递归展开属性，使用 `PropertySeparator` 连接属性名。
+
+### RawQueryString 原始查询字符串
+
+```csharp
+[Get("/api/search")]
+Task<SearchResult> SearchAsync([RawQueryString] string queryString);
+
+// 调用: api.SearchAsync("keyword=test&page=1");
+// 生成: /api/search?keyword=test&page=1
+```
+
+> `[RawQueryString]` 直接附加原始字符串到 URL，不做任何编码或处理。`PrependQuestionMark` 属性控制是否添加 `?` 前缀（默认 `true`）。
+
+### Response\<T\> 包装类型
+
+`Response<T>` 类型同时返回响应内容和元数据（状态码、响应头）：
+
+```csharp
+[Get("/users/{id}")]
+Task<Response<User>> GetUserAsync([Path] int id);
+
+// 使用
+var response = await api.GetUserAsync(1);
+if (response.IsSuccessStatusCode)
+{
+    var user = response.Content;          // 响应内容
+}
+else
+{
+    var error = response.ErrorContent;    // 错误内容
+}
+var status = response.StatusCode;         // HTTP 状态码
+var headers = response.ResponseHeaders;   // 响应头
+```
+
+> `Response<T>` 支持 `AllowAnyStatusCodeAttribute`，即使响应状态码表示错误也不会抛出异常。支持 `GetContentOrThrow()` 方法在错误时抛出 `ApiException`。
+
+### 编译诊断
+
+生成器提供以下编译诊断：
+
+| 诊断 ID | 级别 | 说明 |
+|---------|------|------|
+| HTTPCLIENT011 | Warning | `Response<T>` 返回类型与 `[Cache]` 特性组合使用，可能导致缓存过期的状态码和响应头 |
+
 ### 日志脱敏
 
 ```csharp
@@ -572,6 +728,14 @@ Mud.HttpUtils.Generator/
 - 新增 `[SensitiveData]` 特性识别，配合 `ISensitiveDataMasker` 实现日志脱敏
 - 新增 `TokenAttribute.Scopes` 属性，支持 OAuth2 令牌作用域
 - 新增 `IFormContent.ToHttpContentAsync(IProgress<long>?)` 上传进度报告支持
+- 新增 `[BasePath]` 特性识别，支持接口级统一路径前缀
+- 新增接口级动态属性支持，识别接口上标记 `[Query]`/`[Path]` 的属性
+- 新增 `[QueryMap]` 参数映射，支持对象/字典展开为查询参数，支持 `PropertySeparator` 和 `SerializationMethod`
+- 新增 `[RawQueryString]` 原始查询字符串参数支持
+- 新增 `Response<T>` 包装类型支持
+- 新增 HTTPCLIENT011 编译诊断：检测 `Response<T>` + `[Cache]` 组合
+- 修复缓存方法参数缺失 QueryMap/RawQueryString 的问题
+- 修复 QueryMap 的 SerializationMethod 和 PropertySeparator 未生效的问题
 
 ### 1.7.0
 

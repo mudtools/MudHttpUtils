@@ -1,0 +1,62 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <MSBuildAllProjects Condition="'$(MSBuildVersion)' == '' Or '$(MSBuildVersion)' &lt; '16.0'">$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
+    <HasSharedItems>true</HasSharedItems>
+    <SharedGUID>f07dbdd5-6caf-4d8a-aa39-bfaffb6a4f13</SharedGUID>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration">
+    <Import_RootNamespace>HttpClientApiDemo.Share</Import_RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)Api\IContentTypeTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Api\IDingTalkDeptApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Api\IDingTalkUserApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Api\IFeishuAuthenticationApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Api\IFeishuUserApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Api\IFileUploadTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Api\Internal\DingTalkDeptApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Api\ISingleTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Api\IWeixinApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)ContentTypeTestApis\IContentTypeDefaultTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)ContentTypeTestApis\IContentTypeEdgeCaseApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)ContentTypeTestApis\IContentTypePriorityTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)ContentTypeTestApis\IContentTypeRealWorldApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)ContentTypeTestApis\IContentTypeUsageTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)EventHandlerTestClasses.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)GlobalUsings.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)IFeishuAppManager.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InheritanceTestApi\IAbstractClassInheritanceTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InheritanceTestApi\IBaseInheritanceTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InheritanceTestApi\IClassInheritanceTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InheritanceTestApi\IInterfaceInheritanceTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InheritanceTestApi\IMultiLevelInheritanceTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InheritanceTestApi\ISealedClassInheritanceTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InheritanceTestApi\ISingleInheritanceTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)InheritanceTestApi\IVirtualMethodInheritanceTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Models\DeptModels.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Models\FeishuModels.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Models\FormContentGeneratorTest.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Models\FormContentModels.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Models\ImageUpdateResult.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Models\RefactorTestModels.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Models\TestModels.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Models\UploadImageRequest.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Models\UserModels.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)RefactorTests\BodyEncryptionTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)RefactorTests\RequestResponseTypeTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)RefactorTests\TokenInjectionModeTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)TestTokenManager.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)TokenManage\IHeaderFeatureTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)TokenManage\ITestTokenApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)TokenManage\ITestTokenQueryApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)TokenManage\ITokenFeatureTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)TokenManage\ITokenHeaderCombinationTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)TokenManage\ITokenHeaderHttpMethodsTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)TokenManage\TokenTestApi.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)ContentTypeTestApis\VerifyGeneratedCode.ps1" />
+    <None Include="$(MSBuildThisFileDirectory)README.md" />
+  </ItemGroup>
+</Project>

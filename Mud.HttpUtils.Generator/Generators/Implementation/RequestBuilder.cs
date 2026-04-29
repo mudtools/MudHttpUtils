@@ -1,6 +1,6 @@
 // -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
-//  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
@@ -641,7 +641,11 @@ internal class RequestBuilder
     {
         codeBuilder.AppendLine($"            using var __httpResponse = await {httpClient}.SendRawAsync(httpRequest{cancellationTokenArg});");
         codeBuilder.AppendLine($"            var __statusCode = __httpResponse.StatusCode;");
+        codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
+        codeBuilder.AppendLine($"            var __rawContent = await __httpResponse.Content.ReadAsStringAsync({GetCancellationTokenArgument(cancellationTokenArg)});");
+        codeBuilder.AppendLine("#else");
         codeBuilder.AppendLine($"            var __rawContent = await __httpResponse.Content.ReadAsStringAsync();");
+        codeBuilder.AppendLine("#endif");
         codeBuilder.AppendLine($"            var __responseHeaders = __httpResponse.Headers.ToDictionary(h => h.Key, h => h.Value.ToList());");
 
         codeBuilder.AppendLine($"            if ((int)__statusCode >= 200 && (int)__statusCode <= 299)");
@@ -695,6 +699,13 @@ internal class RequestBuilder
         codeBuilder.AppendLine($"            return __result;");
     }
 
+    private string GetCancellationTokenArgument(string cancellationTokenArg)
+    {
+        if (string.IsNullOrEmpty(cancellationTokenArg))
+            return string.Empty;
+        return cancellationTokenArg.Remove(0, 1);
+    }
+
     /// <summary>
     /// 生成标准模式的执行代码（默认行为，错误状态码抛出 ApiException）
     /// </summary>
@@ -708,12 +719,22 @@ internal class RequestBuilder
 
         codeBuilder.AppendLine($"            if (!__httpResponse.IsSuccessStatusCode)");
         codeBuilder.AppendLine($"            {{");
-        codeBuilder.AppendLine($"                var __errorContent = await __httpResponse.Content.ReadAsStringAsync();");
+        codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
+        codeBuilder.AppendLine($"               var __errorContent = await __httpResponse.Content.ReadAsStringAsync({GetCancellationTokenArgument(cancellationTokenArg)});");
+        codeBuilder.AppendLine("#else");
+        codeBuilder.AppendLine($"               var __errorContent = await __httpResponse.Content.ReadAsStringAsync();");
+        codeBuilder.AppendLine("#endif");
         codeBuilder.AppendLine($"                throw new Mud.HttpUtils.ApiException(__httpResponse.StatusCode, __errorContent, httpRequest.RequestUri?.ToString());");
         codeBuilder.AppendLine($"            }}");
 
         var rawContentVar = $"__rawContent_{methodInfo.MethodName}";
+
+        codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
+        codeBuilder.AppendLine($"            var {rawContentVar} = await __httpResponse.Content.ReadAsStringAsync({GetCancellationTokenArgument(cancellationTokenArg)});");
+        codeBuilder.AppendLine("#else");
         codeBuilder.AppendLine($"            var {rawContentVar} = await __httpResponse.Content.ReadAsStringAsync();");
+        codeBuilder.AppendLine("#endif");
+
 
         if (isXmlResponse)
         {

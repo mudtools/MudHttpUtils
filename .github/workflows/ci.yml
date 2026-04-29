@@ -58,6 +58,7 @@ jobs:
       matrix:
         demo_project:
           - Demos/HttpClientApiDemo/HttpClientApiDemo.csproj
+          - Demos/HttpClientApiPublicDemo/HttpClientApiPublicDemo.csproj
           - Demos/HttpClientDemo/HttpClientDemo.csproj
           - Demos/ResilienceDemo/ResilienceDemo.csproj
 

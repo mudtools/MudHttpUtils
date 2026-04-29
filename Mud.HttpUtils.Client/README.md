@@ -76,6 +76,8 @@ services.AddSingleton<IHttpResponseInterceptor, CacheResponseInterceptor>();
 
 > `CacheResponseInterceptor` 的 `Order` 为 100，确保在其他拦截器之后执行。`MemoryHttpResponseCache` 使用 `IMemoryCache` 作为底层存储，支持绝对过期和滑动过期。
 
+> **注意**：不建议将 `Response<T>` 返回类型与 `[Cache]` 特性组合使用。缓存会存储整个 `Response<T>` 对象（包括 StatusCode 和 ResponseHeaders），可能导致后续请求返回过期的状态码和响应头。源代码生成器会对此组合发出 HTTPCLIENT011 编译警告。
+
 ### 加密提供程序
 
 | 类 | 说明 |
