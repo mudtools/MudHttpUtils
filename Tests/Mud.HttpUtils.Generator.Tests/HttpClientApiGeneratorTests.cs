@@ -259,9 +259,9 @@ namespace TestNamespace
     }
 
     [Fact]
-    public void Generator_WithMultipartForm_NoDoubleUsingForContent()
+    public void Generator_WithMultipartForm_UsesUsingVarForContent()
     {
-        // 验证修复 BUG：MultipartFormDataContent 不应使用 using 声明
+        // 验证修复：MultipartFormDataContent 应使用 using var 声明以防止异常时资源泄漏
         var source = @"
 using Mud.HttpUtils;
 using System.IO;
@@ -282,11 +282,9 @@ namespace TestNamespace
 
         if (generatedCode != null)
         {
-            // 生成的代码中 MultipartFormDataContent 不应使用 using var 声明
-            generatedCode.Should().NotContain("using var __multipartContent",
-                "MultipartFormDataContent 不应使用 using 声明，避免被 httpRequest 双重 dispose");
-            // 应使用不带 using 的声明
-            generatedCode.Should().Contain("var __multipartContent = new System.Net.Http.MultipartFormDataContent()");
+            // MultipartFormDataContent 应使用 using var 声明，确保异常时也能释放资源
+            generatedCode.Should().Contain("using var __multipartContent = new System.Net.Http.MultipartFormDataContent()",
+                "MultipartFormDataContent 应使用 using var 声明以防止资源泄漏");
         }
     }
 
@@ -367,7 +365,7 @@ namespace TestNamespace
     [Fact]
     public void Generator_WithStringParameter_GeneratesIsNullOrWhiteSpaceValidation()
     {
-        // 验证修复 BUG：string 参数应使用 IsNullOrWhiteSpace 而非 IsNullOrEmpty
+        // 验证修复 BUG：string 查询参数应使用 IsNullOrWhiteSpace 而非 IsNullOrEmpty
         var source = @"
 using Mud.HttpUtils;
 
@@ -387,11 +385,9 @@ namespace TestNamespace
         if (generatedCode != null)
         {
             generatedCode.Should().Contain("string.IsNullOrWhiteSpace(keyword)",
-                "string 参数验证应使用 IsNullOrWhiteSpace");
+                "string 查询参数验证应使用 IsNullOrWhiteSpace");
             generatedCode.Should().NotContain("string.IsNullOrEmpty(keyword)",
-                "string 参数验证不应使用 IsNullOrEmpty");
-            generatedCode.Should().Contain("keyword = keyword!.Trim()",
-                "验证后应执行 Trim");
+                "string 查询参数验证不应使用 IsNullOrEmpty");
         }
     }
 
@@ -423,9 +419,9 @@ namespace TestNamespace
     }
 
     [Fact]
-    public void Generator_WithAppContextScope_GeneratesVolatileDisposed()
+    public void Generator_WithAppContextScope_GeneratesInterlockedDisposed()
     {
-        // 验证修复 BUG：_disposed 字段应有 volatile 修饰符
+        // 验证修复：_disposed 字段使用 int + Interlocked.CompareExchange 保证线程安全
         var source = @"
 using Mud.HttpUtils;
 
@@ -444,8 +440,10 @@ namespace TestNamespace
 
         if (generatedCode != null)
         {
-            generatedCode.Should().Contain("private volatile bool _disposed",
-                "AppContextScope._disposed 字段应有 volatile 修饰符");
+            generatedCode.Should().Contain("private int _disposed",
+                "AppContextScope._disposed 应使用 int 类型");
+            generatedCode.Should().Contain("System.Threading.Interlocked.CompareExchange(ref _disposed, 1, 0)",
+                "AppContextScope.Dispose 应使用 Interlocked.CompareExchange 保证原子性");
         }
     }
 

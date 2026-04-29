@@ -1388,8 +1388,16 @@
             返回类型显示字符串
             </summary>
         </member>
-        <!-- Badly formed XML comment ignored for member "P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.IsAsyncMethod" -->
-        <!-- Badly formed XML comment ignored for member "P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.AsyncInnerReturnType" -->
+        <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.IsAsyncMethod">
+            <summary>
+            是否是异步方法（返回类型为 Task 或 Task{T}）
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.AsyncInnerReturnType">
+            <summary>
+            异步方法的内部返回类型（如果是 Task{T}，这里是 T；如果是 Task，这里是 void）
+            </summary>
+        </member>
         <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.IsAsyncEnumerableReturn">
             <summary>
             返回类型是否为 IAsyncEnumerable{T}

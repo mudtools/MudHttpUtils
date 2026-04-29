@@ -647,6 +647,9 @@ internal class RequestBuilder
     /// </summary>
     private void GenerateResponseExecution(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, string httpClient, string cancellationTokenArg, string innerType)
     {
+        var responseContentType = methodInfo.ResponseContentType;
+        var isXmlResponse = ContentTypeHelper.IsXmlContentType(responseContentType);
+
         codeBuilder.AppendLine($"            using var __httpResponse = await {httpClient}.SendRawAsync(__httpRequest{cancellationTokenArg});");
         codeBuilder.AppendLine($"            var __statusCode = __httpResponse.StatusCode;");
         codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
@@ -666,11 +669,32 @@ internal class RequestBuilder
             codeBuilder.AppendLine($"                {innerTypeWithoutNullable} __content;");
             codeBuilder.AppendLine($"                try");
             codeBuilder.AppendLine($"                {{");
-            codeBuilder.AppendLine($"                    __content = System.Text.Json.JsonSerializer.Deserialize<{innerType}>(__rawContent, _jsonSerializerOptions);");
+
+            if (isXmlResponse)
+            {
+                codeBuilder.AppendLine($"                    var __deserializedObj = new System.Xml.Serialization.XmlSerializer(typeof({innerType})).Deserialize(new System.IO.StringReader(__rawContent));");
+                codeBuilder.AppendLine($"                    __content = __deserializedObj is {innerType} __typed ? __typed : default;");
+            }
+            else
+            {
+                codeBuilder.AppendLine($"                    __content = System.Text.Json.JsonSerializer.Deserialize<{innerType}>(__rawContent, _jsonSerializerOptions);");
+            }
+
             codeBuilder.AppendLine($"                }}");
-            codeBuilder.AppendLine($"                catch (System.Text.Json.JsonException ex)");
-            codeBuilder.AppendLine($"                {{");
-            codeBuilder.AppendLine($"                    return new Mud.HttpUtils.Response<{innerType}>(__statusCode, default, \"Failed to deserialize JSON response: \" + ex.Message + \". Raw content: \" + __rawContent, __responseHeaders);");
+
+            if (isXmlResponse)
+            {
+                codeBuilder.AppendLine($"                catch (System.Exception ex) when (ex is System.InvalidOperationException or System.Xml.XmlException)");
+                codeBuilder.AppendLine($"                {{");
+                codeBuilder.AppendLine($"                    return new Mud.HttpUtils.Response<{innerType}>(__statusCode, default, \"Failed to deserialize XML response: \" + ex.Message + \". Raw content: \" + __rawContent, __responseHeaders);");
+            }
+            else
+            {
+                codeBuilder.AppendLine($"                catch (System.Text.Json.JsonException ex)");
+                codeBuilder.AppendLine($"                {{");
+                codeBuilder.AppendLine($"                    return new Mud.HttpUtils.Response<{innerType}>(__statusCode, default, \"Failed to deserialize JSON response: \" + ex.Message + \". Raw content: \" + __rawContent, __responseHeaders);");
+            }
+
             codeBuilder.AppendLine($"                }}");
             codeBuilder.AppendLine($"                return new Mud.HttpUtils.Response<{innerType}>(__statusCode, __content, __rawContent, __responseHeaders);");
         }
@@ -997,10 +1021,6 @@ internal class RequestBuilder
         if (queryMapAttr.NamedArguments.TryGetValue("PropertySeparator", out var sepValue) && sepValue is string sep && !string.IsNullOrEmpty(sep))
             separator = sep;
 
-        var urlEncode = true;
-        if (queryMapAttr.NamedArguments.TryGetValue("UrlEncode", out var encValue) && encValue is bool enc)
-            urlEncode = enc;
-
         var includeNullValues = false;
         if (queryMapAttr.NamedArguments.TryGetValue("IncludeNullValues", out var incNull) && incNull is bool inc)
             includeNullValues = inc;
@@ -1020,7 +1040,7 @@ internal class RequestBuilder
 
         if (isDictionaryType)
         {
-            GenerateDictionaryQueryMap(codeBuilder, param, urlEncode, includeNullValues, serializationMethod);
+            GenerateDictionaryQueryMap(codeBuilder, param, includeNullValues, serializationMethod);
         }
         else
         {
@@ -1030,13 +1050,13 @@ internal class RequestBuilder
             codeBuilder.AppendLine("                    {");
             if (includeNullValues)
             {
-                GenerateQueryMapValueAddition(codeBuilder, param, urlEncode, serializationMethod, "kvp.Key", "kvp.Value");
+                GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, "kvp.Key", "kvp.Value");
             }
             else
             {
                 codeBuilder.AppendLine("                        if (!string.IsNullOrEmpty(kvp.Value))");
                 codeBuilder.AppendLine("                        {");
-                GenerateQueryMapValueAddition(codeBuilder, param, urlEncode, serializationMethod, "kvp.Key", "kvp.Value", "                            ");
+                GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, "kvp.Key", "kvp.Value", "                            ");
                 codeBuilder.AppendLine("                        }");
             }
             codeBuilder.AppendLine("                    }");
@@ -1054,7 +1074,6 @@ internal class RequestBuilder
     private void GenerateQueryMapValueAddition(
         StringBuilder codeBuilder,
         ParameterInfo param,
-        bool urlEncode,
         string serializationMethod,
         string keyExpression,
         string valueExpression,
@@ -1073,19 +1092,19 @@ internal class RequestBuilder
         }
     }
 
-    private void GenerateDictionaryQueryMap(StringBuilder codeBuilder, ParameterInfo param, bool urlEncode, bool includeNullValues, string serializationMethod = "ToString")
+    private void GenerateDictionaryQueryMap(StringBuilder codeBuilder, ParameterInfo param, bool includeNullValues, string serializationMethod = "ToString")
     {
         codeBuilder.AppendLine($"                foreach (var kvp_{param.Name} in {param.Name})");
         codeBuilder.AppendLine("                {");
         if (includeNullValues)
         {
-            GenerateQueryMapValueAddition(codeBuilder, param, urlEncode, serializationMethod, $"kvp_{param.Name}.Key", $"kvp_{param.Name}.Value", "                    ");
+            GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, $"kvp_{param.Name}.Key", $"kvp_{param.Name}.Value", "                    ");
         }
         else
         {
             codeBuilder.AppendLine($"                    if (kvp_{param.Name}.Value != null)");
             codeBuilder.AppendLine("                    {");
-            GenerateQueryMapValueAddition(codeBuilder, param, urlEncode, serializationMethod, $"kvp_{param.Name}.Key", $"kvp_{param.Name}.Value", "                        ");
+            GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, $"kvp_{param.Name}.Key", $"kvp_{param.Name}.Value", "                        ");
             codeBuilder.AppendLine("                    }");
         }
         codeBuilder.AppendLine("                }");

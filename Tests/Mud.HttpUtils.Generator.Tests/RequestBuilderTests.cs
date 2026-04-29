@@ -277,7 +277,7 @@ public class RequestBuilderTests
     [Fact]
     public void GenerateQueryParameters_InterfaceStringQueryProperty_NoRedundantNullCheck()
     {
-        // string 类型的 InterfaceQuery 属性不应生成外层 != null 检查
+        // string 类型的 InterfaceQuery 属性使用 IsNullOrWhiteSpace，不需要外层 != null 检查
         var methodInfo = CreateMethodInfo("/search");
         methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
         {
@@ -292,9 +292,9 @@ public class RequestBuilderTests
         _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
         var code = codeBuilder.ToString();
 
-        // string 类型：直接使用 IsNullOrEmpty，不需要外层 != null
-        code.Should().Contain("if (!string.IsNullOrEmpty(Keyword))");
-        code.Should().NotMatchRegex(@"if \(Keyword != null\)\s*\{\s*if \(!string\.IsNullOrEmpty\(Keyword\)\)",
+        // string 类型：直接使用 IsNullOrWhiteSpace，不需要外层 != null
+        code.Should().Contain("if (!string.IsNullOrWhiteSpace(Keyword))");
+        code.Should().NotMatchRegex(@"if \(Keyword != null\)\s*\{\s*if \(!string\.IsNullOrWhiteSpace\(Keyword\)\)",
             "string 类型不应生成冗余的外层 != null 检查");
     }
 
@@ -487,6 +487,7 @@ public class RequestBuilderTests
     [Fact]
     public void GenerateQueryParameters_InterfaceStringQueryProperty_UrlEncodeTrue_GeneratesUrlEncode()
     {
+        // UrlEncode 属性不再生成手动编码，NameValueCollection.ToString() 自动处理
         var methodInfo = CreateMethodInfo("/search");
         methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
         {
@@ -501,7 +502,8 @@ public class RequestBuilderTests
         _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
         var code = codeBuilder.ToString();
 
-        code.Should().Contain("HttpUtility.UrlEncode(Keyword)");
+        // NameValueCollection.ToString() 自动编码，不再需要手动 HttpUtility.UrlEncode
+        code.Should().Contain("__queryParams.Add(\"keyword\", Keyword)");
     }
 
     [Fact]
@@ -528,6 +530,7 @@ public class RequestBuilderTests
     [Fact]
     public void GenerateQueryParameters_InterfaceIntQueryProperty_UrlEncodeTrue_GeneratesUrlEncode()
     {
+        // UrlEncode 属性不再生成手动编码，NameValueCollection.ToString() 自动处理
         var methodInfo = CreateMethodInfo("/search");
         methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
         {
@@ -542,7 +545,8 @@ public class RequestBuilderTests
         _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
         var code = codeBuilder.ToString();
 
-        code.Should().Contain("HttpUtility.UrlEncode(Page");
+        // NameValueCollection.ToString() 自动编码，不再需要手动 HttpUtility.UrlEncode
+        code.Should().Contain("__queryParams.Add(\"page\", Page");
     }
 
     [Fact]
