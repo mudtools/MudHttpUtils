@@ -5,7 +5,7 @@
 Mud.HttpUtils 是 Mud.HttpUtils 生态的**元包（Metapackage）**，自动引用以下子模块：
 
 - **Mud.HttpUtils.Abstractions** — 接口定义（`IEnhancedHttpClient`、`ITokenManager`、`IEncryptionProvider`、`ITokenStore`、`IHttpClientResolver`、`IApiKeyProvider`、`IHmacSignatureProvider`、`ISecretProvider`、`ISensitiveDataMasker`、`IHttpResponseCache`、`IFormContent` 等）
-- **Mud.HttpUtils.Attributes** — 特性标注（`[HttpClientApi]`、`[Get]`、`[Body]`、`[Token]`、`[Cache]`、`[SensitiveData]`、`[Form]`、`[MultipartForm]`、`[Upload]` 等）
+- **Mud.HttpUtils.Attributes** — 特性标注（`[HttpClientApi]`、`[Get]`、`[Body]`、`[Token]`、`[Cache]`、`[SensitiveData]`、`[Form]`、`[MultipartForm]`、`[Upload]`、`[QueryMap]`、`[RawQueryString]`、`[BasePath]` 等）
 - **Mud.HttpUtils.Client** — 客户端实现（`EnhancedHttpClient`、`HttpClientFactoryEnhancedClient`、`DefaultAesEncryptionProvider`、`DefaultApiKeyProvider`、`DefaultHmacSignatureProvider`、`DefaultSensitiveDataMasker`、`CacheResponseInterceptor`、`MemoryHttpResponseCache`、`TokenRefreshHostedService`）
 - **Mud.HttpUtils.Resilience** — 弹性策略（重试、超时、熔断，基于 Polly，支持请求克隆大小限制和重试回调）
 
@@ -440,6 +440,8 @@ Task<UserInfo> CreateUserAsync([Body] UserRequest request);
 |-----|------|------|
 | `[Path]` | URL 路径参数 | `[Get("/users/{id}")]` + `[Path] int id` |
 | `[Query]` | URL 查询参数 | `[Query] string? name` |
+| `[QueryMap]` | 查询参数映射（对象/字典展开） | `[QueryMap] SearchCriteria criteria` |
+| `[RawQueryString]` | 原始查询字符串 | `[RawQueryString] string qs` |
 | `[ArrayQuery]` | 数组查询参数 | `[ArrayQuery] int[] ids` |
 | `[Header]` | HTTP 请求头（支持参数/方法/接口级别） | `[Header("X-API-Key")] string apiKey` |
 | `[Body]` | 请求体 | `[Body] UserRequest request` |
@@ -566,6 +568,105 @@ Task<bool> DeleteUserAsync(
     [Body] DeleteReason reason
 );
 ```
+
+### Base Path 支持
+
+支持在接口级别定义统一的路径前缀：
+
+```csharp
+[HttpClientApi(HttpClient = "IEnhancedHttpClient")]
+[BasePath("api/v1")]
+public interface IUserApi
+{
+    [Get("users/{id}")]       // 实际路径: /api/v1/users/{id}
+    Task<User> GetUserAsync([Path] int id);
+
+    [Get("/admin/users")]     // 以 / 开头，忽略 BasePath，实际路径: /admin/users
+    Task<List<User>> GetAllUsersAsync();
+}
+```
+
+> Base Path 可以包含占位符（如 `{tenantId}`），通过接口级 `[Path]` 属性或方法参数提供值。
+
+### 接口级动态属性
+
+支持在接口上定义 `[Query]` 或 `[Path]` 属性，作为所有方法的默认参数：
+
+```csharp
+[HttpClientApi(HttpClient = "IEnhancedHttpClient")]
+[BasePath("{tenantId}/api/v1")]
+public interface ITenantApi
+{
+    [Path("tenantId")]
+    string TenantId { get; set; }
+
+    [Query("apiKey")]
+    string ApiKey { get; set; }
+
+    [Get("users")]
+    Task<List<User>> GetUsersAsync();
+}
+
+// 使用
+var api = serviceProvider.GetRequiredService<ITenantApi>();
+api.TenantId = "tenant-123";
+api.ApiKey = "my-api-key";
+await api.GetUsersAsync();
+// 实际请求: /tenant-123/api/v1/users?apiKey=my-api-key
+```
+
+> 方法参数优先级高于接口属性。接口属性值为 null 时跳过该参数。
+
+### QueryMap 参数映射
+
+将对象属性或字典键值对展开为 URL 查询参数：
+
+```csharp
+public class SearchCriteria
+{
+    public string? Keyword { get; set; }
+    public int Page { get; set; }
+}
+
+[Get("/api/search")]
+Task<SearchResult> SearchAsync([QueryMap] SearchCriteria criteria);
+
+// 字典类型
+[Get("/api/search")]
+Task<SearchResult> SearchAsync([QueryMap] IDictionary<string, object> filters);
+
+// 自定义序列化
+[Get("/api/search")]
+Task<SearchResult> SearchAsync(
+    [QueryMap(PropertySeparator = ".", SerializationMethod = QuerySerializationMethod.Json)]
+    SearchCriteria criteria);
+```
+
+### RawQueryString 原始查询字符串
+
+```csharp
+[Get("/api/search")]
+Task<SearchResult> SearchAsync([RawQueryString] string queryString);
+```
+
+### Response\<T\> 包装类型
+
+`Response<T>` 类型同时返回响应内容和元数据：
+
+```csharp
+[Get("/users/{id}")]
+Task<Response<User>> GetUserAsync([Path] int id);
+
+var response = await api.GetUserAsync(1);
+if (response.IsSuccessStatusCode)
+{
+    var user = response.Content;
+}
+var status = response.StatusCode;
+var headers = response.ResponseHeaders;
+```
+
+> 不建议将 `Response<T>` 与 `[Cache]` 组合使用，生成器会发出 HTTPCLIENT011 编译警告。
 
 ### 继承支持
 

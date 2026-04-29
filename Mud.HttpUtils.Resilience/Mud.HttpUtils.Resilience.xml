@@ -1,0 +1,274 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>Mud.HttpUtils.Resilience</name>
+    </assembly>
+    <members>
+        <member name="T:Mud.HttpUtils.Resilience.IResiliencePolicyProvider">
+            <summary>
+            弹性策略提供器接口，负责创建和管理 Polly 弹性策略。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.IResiliencePolicyProvider.GetRetryPolicy``1">
+            <summary>
+            获取或创建重试策略。
+            </summary>
+            <typeparam name="TResult">策略返回类型。</typeparam>
+            <returns>重试策略实例。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.IResiliencePolicyProvider.GetTimeoutPolicy``1">
+            <summary>
+            获取或创建超时策略。
+            </summary>
+            <typeparam name="TResult">策略返回类型。</typeparam>
+            <returns>超时策略实例。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.IResiliencePolicyProvider.GetCircuitBreakerPolicy``1">
+            <summary>
+            获取或创建熔断策略。
+            </summary>
+            <typeparam name="TResult">策略返回类型。</typeparam>
+            <returns>熔断策略实例。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.IResiliencePolicyProvider.GetCombinedPolicy``1">
+            <summary>
+            获取组合策略（重试 + 超时 + 熔断）。
+            </summary>
+            <typeparam name="TResult">策略返回类型。</typeparam>
+            <returns>组合策略实例。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider">
+            <summary>
+            基于 Polly 的弹性策略提供器实现。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.#ctor(Microsoft.Extensions.Options.IOptions{Mud.HttpUtils.Resilience.ResilienceOptions},Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider})">
+            <summary>
+            初始化 PollyResiliencePolicyProvider 实例。
+            </summary>
+            <param name="options">弹性策略配置选项。</param>
+            <param name="logger">日志记录器（可选）。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.#ctor(Mud.HttpUtils.Resilience.ResilienceOptions,Microsoft.Extensions.Logging.ILogger)">
+            <summary>
+            初始化 PollyResiliencePolicyProvider 实例（用于无 DI 场景）。
+            </summary>
+            <param name="options">弹性策略配置选项。</param>
+            <param name="logger">日志记录器（可选）。</param>
+        </member>
+        <member name="T:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.PolicyCacheKey">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetTimeoutPolicy``1">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetCircuitBreakerPolicy``1">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetCombinedPolicy``1">
+            <inheritdoc />
+        </member>
+        <member name="T:Mud.HttpUtils.Resilience.ResilienceOptions">
+            <summary>
+            Mud.HttpUtils.Resilience 弹性策略配置选项。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.ResilienceOptions.Retry">
+            <summary>
+            重试策略配置。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.ResilienceOptions.Timeout">
+            <summary>
+            超时策略配置。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.ResilienceOptions.CircuitBreaker">
+            <summary>
+            熔断策略配置。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.ResilienceOptions.MaxCloneContentSize">
+            <summary>
+            获取或设置请求克隆的最大内容大小（字节），默认 10MB。
+            </summary>
+            <remarks>
+            超过此大小的请求将跳过重试策略，避免克隆开销。
+            设置为 -1 表示不限制大小（不推荐）。
+            </remarks>
+        </member>
+        <member name="T:Mud.HttpUtils.Resilience.RetryOptions">
+            <summary>
+            重试策略配置选项。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.RetryOptions.Enabled">
+            <summary>
+            是否启用重试策略。默认 true。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.RetryOptions.MaxRetryAttempts">
+            <summary>
+            最大重试次数。默认 3。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.RetryOptions.DelayMilliseconds">
+            <summary>
+            初始重试间隔（毫秒）。默认 1000。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.RetryOptions.UseExponentialBackoff">
+            <summary>
+            是否使用指数退避策略。默认 true。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.RetryOptions.RetryStatusCodes">
+            <summary>
+            需要触发重试的 HTTP 状态码集合。为空时使用默认值（408, 429, 5xx）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.RetryOptions.OnRetry">
+            <summary>
+            获取或设置重试前的回调委托。
+            </summary>
+            <remarks>
+            回调参数：
+            - Exception: 导致重试的异常（可能为 null）
+            - int: 当前重试次数（从 1 开始）
+            - TimeSpan: 本次重试的延迟时间
+            </remarks>
+        </member>
+        <member name="T:Mud.HttpUtils.Resilience.TimeoutOptions">
+            <summary>
+            超时策略配置选项。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.TimeoutOptions.Enabled">
+            <summary>
+            是否启用超时策略。默认 true。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.TimeoutOptions.TimeoutSeconds">
+            <summary>
+            全局超时时间（秒）。默认 30。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.Resilience.CircuitBreakerOptions">
+            <summary>
+            熔断策略配置选项。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.CircuitBreakerOptions.Enabled">
+            <summary>
+            是否启用熔断策略。默认 false。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.CircuitBreakerOptions.FailureThreshold">
+            <summary>
+            触发熔断的连续失败阈值。默认 5。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.CircuitBreakerOptions.BreakDurationSeconds">
+            <summary>
+            熔断持续时间（秒）。默认 30。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.CircuitBreakerOptions.SamplingDurationSeconds">
+            <summary>
+            采样窗口时间（秒）。默认 60。
+            在此时间窗口内统计失败率，用于高级熔断策略。
+            注意：当前基于 Polly v7 的实现使用连续失败计数模式，此属性暂未生效。
+            升级至 Polly v8 后将启用基于采样窗口的高级熔断策略。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.Resilience.ResilientHttpClient">
+            <summary>
+            弹性 HTTP 客户端装饰器，为 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 实现添加 Polly 弹性策略。
+            </summary>
+            <remarks>
+            此装饰器实现了 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 和 <see cref="T:Mud.HttpUtils.IEncryptableHttpClient"/> 接口，将所有 HTTP 请求方法
+            （JSON、XML、下载等）通过 Polly 弹性策略包装后转发给内部客户端。
+            <para>
+            注意：<see cref="M:Mud.HttpUtils.IEncryptableHttpClient.EncryptContent(System.Object,System.String,Mud.HttpUtils.SerializeType)"/> 和 <see cref="M:Mud.HttpUtils.IEncryptableHttpClient.DecryptContent(System.String)"/> 方法不经过弹性策略包装，
+            因为加密/解密是请求前的本地数据转换操作，不涉及网络 I/O。
+            </para>
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.#ctor(Mud.HttpUtils.IEnhancedHttpClient,Mud.HttpUtils.Resilience.IResiliencePolicyProvider,Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.Resilience.ResilientHttpClient},Mud.HttpUtils.Resilience.ResilienceOptions)">
+            <summary>
+            初始化 ResilientHttpClient 实例。
+            </summary>
+            <param name="innerClient">内部 HTTP 客户端。</param>
+            <param name="policyProvider">弹性策略提供器。</param>
+            <param name="logger">日志记录器（可选）。</param>
+            <param name="options">弹性策略配置选项（可选）。</param>
+            <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.SendAsync``1(System.Net.Http.HttpRequestMessage,System.Object,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.DownloadAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.DownloadLargeAsync(System.Net.Http.HttpRequestMessage,System.String,System.Boolean,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.SendRawAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.SendStreamAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.GetAsync``1(System.String,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.PostAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.PutAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.DeleteAsJsonAsync``1(System.String,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.DeleteAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.PatchAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.SendXmlAsync``1(System.Net.Http.HttpRequestMessage,System.Text.Encoding,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.PostAsXmlAsync``2(System.String,``0,System.Text.Encoding,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.PutAsXmlAsync``2(System.String,``0,System.Text.Encoding,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.GetXmlAsync``1(System.String,System.Text.Encoding,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.EncryptContent(System.Object,System.String,Mud.HttpUtils.SerializeType)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.DecryptContent(System.String)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.EncryptBytes(System.Byte[])">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.DecryptBytes(System.Byte[])">
+            <inheritdoc />
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.ResilientHttpClient.BaseAddress">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.WithBaseAddress(System.String)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.WithBaseAddress(System.Uri)">
+            <inheritdoc />
+        </member>
+    </members>
+</doc>
