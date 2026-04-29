@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <MSBuildAllProjects Condition="'$(MSBuildVersion)' == '' Or '$(MSBuildVersion)' &lt; '16.0'">$(MSBuildAllProjects);$(MSBuildThisFileFullPath)</MSBuildAllProjects>
@@ -39,10 +39,17 @@
     <Compile Include="$(MSBuildThisFileDirectory)Models\FormContentGeneratorTest.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Models\FormContentModels.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Models\ImageUpdateResult.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Models\NewFeatureModels.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Models\RefactorTestModels.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Models\TestModels.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Models\UploadImageRequest.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Models\UserModels.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)NewFeatureTests\BasePathTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)NewFeatureTests\CombinedFeatureTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)NewFeatureTests\InterfacePropertyTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)NewFeatureTests\QueryMapTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)NewFeatureTests\RawQueryStringTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)NewFeatureTests\ResponseTypeTestApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)RefactorTests\BodyEncryptionTestApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)RefactorTests\RequestResponseTypeTestApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)RefactorTests\TokenInjectionModeTestApi.cs" />

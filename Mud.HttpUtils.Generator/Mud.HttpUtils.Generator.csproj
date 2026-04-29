@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
-		<TargetFrameworks>netstandard2.0</TargetFrameworks>
+		<TargetFramework>netstandard2.0</TargetFramework>
 		<Description>Mud HttpUtils 代码生成器是一个基于 Roslyn 的源代码生成器，自动为标记了 [HttpClientApi] 特性的接口生成 HttpClient 实现类。</Description>
 		<Product>Mud Http Utils Code Generator</Product>
 		<PackageId>Mud.HttpUtils.Generator</PackageId>
