@@ -1,0 +1,15 @@
+<Project>
+  <!--
+    Mud.HttpUtils.Generator 源代码生成器自动配置
+    此文件由 NuGet 包自动导入，确保生成器被正确配置为 Roslyn 分析器。
+    用户无需在 PackageReference 中手动添加 PrivateAssets / OutputItemType / ReferenceOutputAssembly。
+  -->
+
+  <!-- 将 PackageReference 配置为源代码生成器模式 -->
+  <ItemGroup Condition="'$(DisableMudHttpUtilsGenerator)' != 'true'">
+    <PackageReference Update="Mud.HttpUtils.Generator"
+                      PrivateAssets="all"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>
