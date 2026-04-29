@@ -8,7 +8,7 @@
 		<Description>Mud HttpUtils 元包，自动引用 Abstractions、Attributes、Client 和 Resilience 子模块。</Description>
 		<Product>Mud Http Utils</Product>
 		<PackageId>Mud.HttpUtils</PackageId>
-		<DocumentationFile>$(OutputPath)\bin\$(AssemblyName).xml</DocumentationFile>
+		<DocumentationFile>$(OutputPath)$(AssemblyName).xml</DocumentationFile>
 	</PropertyGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\Mud.HttpUtils.Abstractions\Mud.HttpUtils.Abstractions.csproj" />

@@ -10,7 +10,7 @@
 		<AssemblyName>Mud.HttpUtils.Generator</AssemblyName>
 		<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
 		<IsRoslynComponent>true</IsRoslynComponent>
-		<DocumentationFile>$(OutputPath)\bin\$(AssemblyName).xml</DocumentationFile>
+		<DocumentationFile>$(OutputPath)$(AssemblyName).xml</DocumentationFile>
 		<AnalysisLevel>6.0-all</AnalysisLevel>
 	</PropertyGroup>
 	<ItemGroup>
@@ -29,7 +29,7 @@
 	</ItemGroup>
 	<!--开发调试阶段-->
 	<ItemGroup>
-		<None Include="$(OutputPath)\netstandard2.0\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+		<None Include="$(OutputPath)$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
 		<None Include="README.md" Pack="true" PackagePath="\" />
 		<None Include="..\Icon.png" Pack="true" PackagePath="\" />
 	</ItemGroup>

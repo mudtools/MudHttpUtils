@@ -1,0 +1,2650 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>Mud.HttpUtils.Abstractions</name>
+    </assembly>
+    <members>
+        <member name="T:Mud.HttpUtils.AppConfigurationChangedEventArgs">
+            <summary>
+            应用配置变更事件参数。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.AppConfigurationChangedEventArgs.#ctor(System.String,Mud.HttpUtils.AppConfigurationChangeType)">
+            <summary>
+            初始化应用配置变更事件参数。
+            </summary>
+            <param name="appKey">应用标识。</param>
+            <param name="changeType">变更类型。</param>
+        </member>
+        <member name="P:Mud.HttpUtils.AppConfigurationChangedEventArgs.AppKey">
+            <summary>
+            应用标识。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.AppConfigurationChangedEventArgs.ChangeType">
+            <summary>
+            变更类型。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.AppConfigurationChangedEventArgs.Timestamp">
+            <summary>
+            变更时间戳。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.AppConfigurationChangeType">
+            <summary>
+            应用配置变更类型。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.AppConfigurationChangeType.Added">
+            <summary>
+            添加新应用。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.AppConfigurationChangeType.Updated">
+            <summary>
+            更新现有应用。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.AppConfigurationChangeType.Removed">
+            <summary>
+            移除应用。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.DefaultAppManager`1">
+            <summary>
+            应用管理器的默认实现，提供线程安全的应用上下文管理。
+            </summary>
+            <typeparam name="TAppContext">应用上下文类型。</typeparam>
+        </member>
+        <member name="E:Mud.HttpUtils.DefaultAppManager`1.ConfigurationChanged">
+            <summary>
+            应用配置变更事件。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultAppManager`1.GetApp(System.String)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultAppManager`1.TryGetApp(System.String,`0@)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultAppManager`1.RegisterApp(System.String,`0,System.Boolean)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultAppManager`1.RegisterAppAsync(System.String,`0,System.Boolean,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultAppManager`1.UpdateApp(System.String,`0)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultAppManager`1.RemoveApp(System.String)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultAppManager`1.GetDefaultApp">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultAppManager`1.GetAllApps">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultAppManager`1.HasApp(System.String)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultAppManager`1.GetWebApi``1(System.String)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultAppManager`1.GetDefaultWebApi``1">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultAppManager`1.GetDefalutWebApi``1">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultAppManager`1.OnConfigurationChanged(Mud.HttpUtils.AppConfigurationChangedEventArgs)">
+            <summary>
+            触发配置变更事件。
+            </summary>
+            <param name="e">事件参数。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultAppManager`1.RegisterSwitcherFactory``1(System.Func{`0,``0})">
+            <inheritdoc/>
+        </member>
+        <member name="T:Mud.HttpUtils.IAppContextSwitcher">
+            <summary>
+            应用上下文切换器接口，用于在不同的应用上下文之间切换和管理令牌。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IAppContextSwitcher.UseApp(System.String)">
+            <summary>
+            切换到指定的应用上下文。
+            </summary>
+            <param name="appKey">应用的唯一标识符。</param>
+            <returns>切换后的应用上下文实例。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IAppContextSwitcher.UseDefaultApp">
+            <summary>
+            切换到默认的应用上下文。
+            </summary>
+            <returns>默认的应用上下文实例。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IAppContextSwitcher.BeginScope(System.String)">
+            <summary>
+            创建一个应用上下文作用域，切换到指定的应用上下文，并在作用域结束时自动恢复之前的上下文。
+            使用 <c>using</c> 语句确保上下文恢复，避免 <see cref="M:Mud.HttpUtils.IAppContextSwitcher.UseApp(System.String)"/> 导致的 <see cref="T:System.Threading.AsyncLocal`1"/> 上下文泄漏。
+            </summary>
+            <param name="appKey">应用的唯一标识符。</param>
+            <returns>一个 <see cref="T:System.IDisposable"/> 对象，释放时恢复之前的上下文。</returns>
+            <example>
+            <code>
+            using (api.BeginScope("AppA"))
+            {
+                // 在此作用域内，所有请求使用 AppA 的上下文
+                await api.GetDataAsync();
+            } // 作用域结束，自动恢复之前的上下文
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.IAppContextSwitcher.GetTokenAsync">
+            <summary>
+            异步获取当前应用上下文的访问令牌。
+            </summary>
+            <returns>包含访问令牌的字符串任务。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.IAppManager`1">
+            <summary>
+            应用管理器接口，用于管理和访问多个应用上下文。
+            </summary>
+            <typeparam name="TAppContext">应用上下文的类型，必须实现 <see cref="T:Mud.HttpUtils.IMudAppContext"/> 接口。</typeparam>
+        </member>
+        <member name="M:Mud.HttpUtils.IAppManager`1.GetWebApi``1(System.String)">
+            <summary>
+            获取指定应用的 API 上下文切换器。
+            </summary>
+            <typeparam name="TContextSwitcher">上下文切换器的类型，必须实现 <see cref="T:Mud.HttpUtils.IAppContextSwitcher"/> 接口。</typeparam>
+            <param name="appKey">应用的唯一标识符。</param>
+            <returns>指定应用的上下文切换器实例。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IAppManager`1.GetDefaultWebApi``1">
+            <summary>
+            获取默认应用的 API 上下文切换器。
+            </summary>
+            <typeparam name="TContextSwitcher">上下文切换器的类型，必须实现 <see cref="T:Mud.HttpUtils.IAppContextSwitcher"/> 接口。</typeparam>
+            <returns>默认应用的上下文切换器实例。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IAppManager`1.GetDefalutWebApi``1">
+            <summary>
+            获取默认应用的 API 上下文切换器。
+            </summary>
+            <typeparam name="TContextSwitcher">上下文切换器的类型，必须实现 <see cref="T:Mud.HttpUtils.IAppContextSwitcher"/> 接口。</typeparam>
+            <returns>默认应用的上下文切换器实例。</returns>
+            <remarks>此方法已重命名为 <see cref="M:Mud.HttpUtils.IAppManager`1.GetDefaultWebApi``1"/>，将在未来版本中移除。</remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.IAppManager`1.GetDefaultApp">
+            <summary>
+            获取默认的应用上下文。
+            </summary>
+            <returns>默认的应用上下文实例。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IAppManager`1.GetApp(System.String)">
+            <summary>
+            获取指定应用的应用上下文。
+            </summary>
+            <param name="appKey">应用的唯一标识符。</param>
+            <returns>指定应用的应用上下文实例。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IAppManager`1.TryGetApp(System.String,`0@)">
+            <summary>
+            尝试获取指定应用的应用上下文。
+            </summary>
+            <param name="appKey">应用的唯一标识符。</param>
+            <param name="appContext">当此方法返回时，如果找到应用上下文，则包含获取到的应用上下文；否则为 null。</param>
+            <returns>如果成功找到应用上下文，则为 true；否则为 false。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IAppManager`1.GetAllApps">
+            <summary>
+            获取所有已注册的应用上下文。
+            </summary>
+            <returns>包含所有应用上下文的 enumerable 集合。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IAppManager`1.HasApp(System.String)">
+            <summary>
+            检查是否存在指定标识符的应用。
+            </summary>
+            <param name="appKey">应用的唯一标识符。</param>
+            <returns>如果存在指定应用，则为 true；否则为 false。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IAppManager`1.RemoveApp(System.String)">
+            <summary>
+            移除指定标识符的应用。
+            </summary>
+            <param name="appKey">应用的唯一标识符。</param>
+            <returns>如果成功移除应用，则为 true；否则为 false。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IAppManager`1.RegisterApp(System.String,`0,System.Boolean)">
+            <summary>
+            注册或更新应用上下文。
+            </summary>
+            <param name="appKey">应用的唯一标识符。</param>
+            <param name="appContext">应用上下文实例。</param>
+            <param name="isDefault">是否设为默认应用。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.IAppManager`1.RegisterAppAsync(System.String,`0,System.Boolean,System.Threading.CancellationToken)">
+            <summary>
+            异步注册或更新应用上下文。
+            </summary>
+            <param name="appKey">应用的唯一标识符。</param>
+            <param name="appContext">应用上下文实例。</param>
+            <param name="isDefault">是否设为默认应用。</param>
+            <param name="cancellationToken">取消令牌。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.IAppManager`1.UpdateApp(System.String,`0)">
+            <summary>
+            更新已注册应用的上下文。如果应用不存在则抛出异常。
+            与 RegisterApp 不同，此方法语义上明确表示更新操作，便于调用方区分新增和更新场景。
+            </summary>
+            <param name="appKey">应用的唯一标识符。</param>
+            <param name="appContext">新的应用上下文实例。</param>
+        </member>
+        <member name="E:Mud.HttpUtils.IAppManager`1.ConfigurationChanged">
+            <summary>
+            应用配置变更事件。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IAppManager`1.RegisterSwitcherFactory``1(System.Func{`0,``0})">
+            <summary>
+            注册上下文切换器工厂委托，避免运行时反射创建实例。
+            </summary>
+            <typeparam name="TContextSwitcher">上下文切换器类型。</typeparam>
+            <param name="factory">工厂委托。</param>
+        </member>
+        <member name="T:Mud.HttpUtils.ICurrentUserId">
+            <summary>
+            当前用户 ID 接口，用于获取和设置当前用户的唯一标识符。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.ICurrentUserId.CurrentUserId">
+            <summary>
+            获取或设置当前用户的唯一标识符。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.IMudAppContext">
+            <summary>
+            Mud HTTP 工具应用上下文接口，定义了应用上下文的基本功能。
+            <para>
+            生命周期说明：
+            <list type="bullet">
+              <item>由 IAppManager 创建的上下文实例的生命周期由 IAppManager 管理</item>
+              <item>通过 UseApp/UseDefaultApp 切换的上下文不需要调用者释放</item>
+              <item>上下文中的 HttpClient 由 IHttpClientFactory 管理生命周期</item>
+              <item>ITokenManager 通常为单例或瞬态，不需要由上下文释放</item>
+            </list>
+            </para>
+            </summary>
+            <remarks>
+            该接口是多租户应用的核心抽象，提供了访问HTTP客户端、令牌管理器和其他服务的统一入口。
+            实现类应确保线程安全性，特别是在多租户场景下正确隔离不同应用的数据。
+            </remarks>
+            <example>
+            <code>
+            // 获取当前应用上下文
+            var appContext = serviceProvider.GetRequiredService&lt;IMudAppContext&gt;();
+            
+            // 使用HTTP客户端发送请求
+            var response = await appContext.HttpClient.GetAsync("api/data");
+            
+            // 获取特定类型的令牌管理器
+            var tokenManager = appContext.GetTokenManager&lt;IOAuth2TokenManager&gt;();
+            var token = await tokenManager.GetTokenAsync();
+            
+            // 获取自定义服务
+            var customService = appContext.GetService&lt;ICustomService&gt;();
+            </code>
+            </example>
+            <seealso cref="T:Mud.HttpUtils.IEnhancedHttpClient"/>
+            <seealso cref="T:Mud.HttpUtils.ITokenManager"/>
+        </member>
+        <member name="P:Mud.HttpUtils.IMudAppContext.HttpClient">
+            <summary>
+            获取增强的HTTP客户端实例，用于发送HTTP请求。
+            </summary>
+            <value>实现了 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 接口的HTTP客户端。</value>
+            <remarks>
+            该HTTP客户端由 IHttpClientFactory 管理生命周期，支持拦截器、缓存、加密等功能。
+            在多租户场景下，该客户端已配置了对应应用的特定设置（如BaseAddress、默认头等）。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.IMudAppContext.GetTokenManager(System.String)">
+            <summary>
+            获取指定类型的令牌管理器。
+            </summary>
+            <param name="tokenType">令牌类型标识符，用于区分不同类型的令牌（如 "access_token", "refresh_token" 等）。</param>
+            <returns>指定类型的令牌管理器实例。</returns>
+            <exception cref="T:System.ArgumentException">当指定的 tokenType 未注册或无效时抛出。</exception>
+            <exception cref="T:System.InvalidOperationException">当令牌管理器未正确配置时抛出。</exception>
+            <remarks>
+            该方法返回非类型安全的令牌管理器实例。对于类型安全的访问，建议使用泛型版本的 <see cref="M:Mud.HttpUtils.IMudAppContext.GetTokenManager``1"/> 方法。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.IMudAppContext.GetTokenManager``1">
+            <summary>
+            获取指定类型的令牌管理器，提供类型安全的访问。
+            </summary>
+            <typeparam name="T">令牌管理器类型，必须实现 <see cref="T:Mud.HttpUtils.ITokenManager"/> 接口。</typeparam>
+            <returns>指定类型的令牌管理器实例。</returns>
+            <exception cref="T:System.InvalidOperationException">当指定的类型未注册或无法解析时抛出。</exception>
+            <remarks>
+            泛型版本提供了编译时类型检查，推荐使用此方法以避免运行时类型转换错误。
+            </remarks>
+            <example>
+            <code>
+            // 获取OAuth2令牌管理器
+            var oauth2Manager = appContext.GetTokenManager&lt;IOAuth2TokenManager&gt;();
+            
+            // 获取自定义令牌管理器
+            var customManager = appContext.GetTokenManager&lt;ICustomTokenManager&gt;();
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.IMudAppContext.GetService``1">
+            <summary>
+            从应用上下文中获取指定类型的服务实例。
+            </summary>
+            <typeparam name="T">要获取的服务类型。</typeparam>
+            <returns>指定类型的服务实例；如果服务未注册则返回 <c>null</c>。</returns>
+            <remarks>
+            该方法提供了一种访问与当前应用上下文关联的自定义服务的方式。
+            返回的服务实例的生命周期由依赖注入容器管理。
+            如果服务未注册，此方法返回 <c>null</c> 而不是抛出异常。
+            </remarks>
+            <example>
+            <code>
+            // 获取可选服务
+            var optionalService = appContext.GetService&lt;IOptionalService&gt;();
+            if (optionalService != null)
+            {
+                // 使用服务
+            }
+            </code>
+            </example>
+        </member>
+        <member name="T:Mud.HttpUtils.AesEncryptionOptions">
+            <summary>
+            AES 加密选项类，用于配置 AES 加密算法的密钥。
+            </summary>
+            <remarks>
+            从 v1.8.0 起，IV 不再需要配置，加密时会自动随机生成 IV 并附加到密文前。
+            保留 IV 属性仅为向后兼容，新代码无需设置 IV。
+            </remarks>
+        </member>
+        <member name="F:Mud.HttpUtils.AesEncryptionOptions.SectionName">
+            <summary>
+            配置节的名称，用于从配置文件中读取 AES 加密配置。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.AesEncryptionOptions.Key">
+            <summary>
+            获取或设置 AES 加密密钥。
+            </summary>
+            <remarks>
+            密钥长度必须为 16、24 或 32 字节（对应 AES-128、AES-192 或 AES-256）。
+            Getter 返回密钥的副本，防止外部代码直接访问原始数据。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.AesEncryptionOptions.IV">
+            <summary>
+            获取或设置 AES 加密的初始化向量（IV）。
+            </summary>
+            <remarks>
+            从 v1.8.0 起，IV 不再需要配置，加密时会自动随机生成。
+            保留此属性仅为向后兼容。Getter 返回 IV 的副本。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.AesEncryptionOptions.Validate">
+            <summary>
+            验证 AES 加密选项的有效性。
+            </summary>
+            <exception cref="T:System.InvalidOperationException">
+            当密钥长度不是 16、24 或 32 字节时抛出。
+            </exception>
+        </member>
+        <member name="M:Mud.HttpUtils.AesEncryptionOptions.ClearSensitiveData">
+            <summary>
+            安全清除密钥和初始化向量，防止敏感数据残留在内存中。
+            注意：此方法会清零 Key 和 IV 数组，调用后此实例将不可用。
+            通常不需要手动调用，因为 DefaultAesEncryptionProvider 会在构造时克隆密钥。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.IEncryptionProvider">
+            <summary>
+            加密提供程序接口，定义加密和解密操作的标准方法。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IEncryptionProvider.Encrypt(System.String)">
+            <summary>
+            加密明文数据。
+            </summary>
+            <param name="plainText">要加密的明文数据。</param>
+            <returns>加密后的密文字符串。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IEncryptionProvider.Decrypt(System.String)">
+            <summary>
+            解密密文数据。
+            </summary>
+            <param name="cipherText">要解密的密文数据。</param>
+            <returns>解密后的明文字符串。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IEncryptionProvider.EncryptBytes(System.Byte[])">
+            <summary>
+            加密二进制数据。
+            </summary>
+            <param name="data">要加密的二进制数据。</param>
+            <returns>加密后的二进制数据。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IEncryptionProvider.DecryptBytes(System.Byte[])">
+            <summary>
+            解密二进制数据。
+            </summary>
+            <param name="encryptedData">要解密的二进制数据。</param>
+            <returns>解密后的二进制数据。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.ApiException">
+            <summary>
+            表示 HTTP API 调用失败时抛出的异常。
+            </summary>
+            <remarks>
+            <para>
+            当 HTTP 响应的状态码表示错误（4xx 或 5xx）时，如果方法未标记
+            <see cref="!:AllowAnyStatusCodeAttribute"/> 且返回类型不是 <see cref="T:Mud.HttpUtils.Response`1"/>，
+            则会抛出此异常。
+            </para>
+            </remarks>
+            <example>
+            <code>
+            try
+            {
+                var user = await api.GetUserAsync(1);
+            }
+            catch (ApiException ex)
+            {
+                Console.WriteLine($"请求失败: {ex.StatusCode}");
+                Console.WriteLine($"请求URI: {ex.RequestUri}");
+                Console.WriteLine($"错误内容: {ex.Content}");
+            }
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.ApiException.#ctor(System.Net.HttpStatusCode,System.String)">
+            <summary>
+            初始化 <see cref="T:Mud.HttpUtils.ApiException"/> 类的新实例。
+            </summary>
+            <param name="statusCode">HTTP 状态码。</param>
+            <param name="content">响应内容。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.ApiException.#ctor(System.Net.HttpStatusCode,System.String,System.String)">
+            <summary>
+            初始化 <see cref="T:Mud.HttpUtils.ApiException"/> 类的新实例。
+            </summary>
+            <param name="statusCode">HTTP 状态码。</param>
+            <param name="content">响应内容。</param>
+            <param name="requestUri">请求 URI。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.ApiException.#ctor(System.Net.HttpStatusCode,System.String,System.Exception)">
+            <summary>
+            初始化 <see cref="T:Mud.HttpUtils.ApiException"/> 类的新实例。
+            </summary>
+            <param name="statusCode">HTTP 状态码。</param>
+            <param name="content">响应内容。</param>
+            <param name="innerException">内部异常。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.ApiException.#ctor(System.Net.HttpStatusCode,System.String,System.String,System.Exception)">
+            <summary>
+            初始化 <see cref="T:Mud.HttpUtils.ApiException"/> 类的新实例。
+            </summary>
+            <param name="statusCode">HTTP 状态码。</param>
+            <param name="content">响应内容。</param>
+            <param name="requestUri">请求 URI。</param>
+            <param name="innerException">内部异常。</param>
+        </member>
+        <member name="P:Mud.HttpUtils.ApiException.StatusCode">
+            <summary>
+            获取 HTTP 状态码。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.ApiException.Content">
+            <summary>
+            获取响应内容。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.ApiException.RequestUri">
+            <summary>
+            获取请求 URI。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.ApiException.TryDeserializeContent``1(System.Func{System.String,``0},``0@)">
+            <summary>
+            尝试将响应内容反序列化为指定类型。
+            </summary>
+            <typeparam name="T">目标类型。</typeparam>
+            <param name="deserialize">反序列化函数，接受 JSON 字符串并返回反序列化的对象。</param>
+            <param name="result">反序列化结果。如果反序列化失败，则为 <c>default</c>。</param>
+            <returns>如果反序列化成功，则为 <c>true</c>；否则为 <c>false</c>。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.ApiException.DeserializeContent``1(System.Func{System.String,``0})">
+            <summary>
+            将响应内容反序列化为指定类型。
+            </summary>
+            <typeparam name="T">目标类型。</typeparam>
+            <param name="deserialize">反序列化函数，接受 JSON 字符串并返回反序列化的对象。</param>
+            <returns>反序列化的结果。</returns>
+            <exception cref="T:System.InvalidOperationException">当内容为空或反序列化函数为 null 时抛出。</exception>
+        </member>
+        <member name="T:Mud.HttpUtils.IBaseHttpClient">
+            <summary>
+            基础 HTTP 客户端接口，定义了 HTTP 请求的基本操作方法。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IBaseHttpClient.SendAsync``1(System.Net.Http.HttpRequestMessage,System.Object,System.Threading.CancellationToken)">
+            <summary>
+            异步发送 HTTP 请求并返回反序列化后的结果。
+            </summary>
+            <typeparam name="TResult">响应数据的类型。</typeparam>
+            <param name="request">HTTP 请求消息。</param>
+            <param name="jsonSerializerOptions">JSON 序列化选项，用于控制反序列化行为。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>反序列化后的响应结果任务。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IBaseHttpClient.SendRawAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
+            <summary>
+            异步发送 HTTP 请求并返回原始的 <see cref="T:System.Net.Http.HttpResponseMessage"/>。
+            </summary>
+            <param name="request">HTTP 请求消息。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>原始 HTTP 响应消息任务。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IBaseHttpClient.SendStreamAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
+            <summary>
+            异步发送 HTTP 请求并返回响应流。
+            </summary>
+            <param name="request">HTTP 请求消息。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>包含响应流的任务。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IBaseHttpClient.DownloadAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
+            <summary>
+            异步下载数据并返回字节数组。
+            </summary>
+            <param name="request">HTTP 请求消息。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>包含下载数据的字节数组任务。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IBaseHttpClient.DownloadLargeAsync(System.Net.Http.HttpRequestMessage,System.String,System.Boolean,System.Threading.CancellationToken)">
+            <summary>
+            异步下载大型文件到指定路径。
+            </summary>
+            <param name="request">HTTP 请求消息。</param>
+            <param name="filePath">文件保存的目标路径。</param>
+            <param name="overwrite">如果目标文件已存在，是否覆盖。默认为 true。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>下载的文件信息任务。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.ICacheResponseInterceptor">
+            <summary>
+            缓存响应拦截器接口，继承自 <see cref="T:Mud.HttpUtils.IHttpResponseInterceptor"/>，提供HTTP响应的缓存管理能力。
+            </summary>
+            <remarks>
+            该接口实现了响应缓存的完整生命周期管理，包括缓存的读取、写入和删除操作。
+            支持绝对过期和滑动过期两种策略，适用于需要减少重复HTTP请求、提高响应速度的场景。
+            <para>
+            实现注意事项：
+            <list type="bullet">
+              <item>缓存实现应该是线程安全的</item>
+              <item>应考虑内存使用限制，避免缓存过大导致内存溢出</item>
+              <item>对于敏感数据，应谨慎使用缓存或进行加密处理</item>
+            </list>
+            </para>
+            </remarks>
+            <example>
+            <code>
+            // 在拦截器中使用缓存
+            public class MyCacheInterceptor : ICacheResponseInterceptor
+            {
+                public async Task InterceptResponseAsync(HttpResponseMessage response, CancellationToken ct)
+                {
+                    if (TryGetCached(response.RequestMessage.RequestUri.ToString(), out string? cachedResponse))
+                    {
+                        // 使用缓存的响应
+                        response.Content = new StringContent(cachedResponse);
+                    }
+                    else
+                    {
+                        // 发送请求并缓存结果
+                        var content = await response.Content.ReadAsStringAsync(ct);
+                        Set(response.RequestMessage.RequestUri.ToString(), content, 300); // 缓存5分钟
+                    }
+                }
+            }
+            </code>
+            </example>
+            <seealso cref="T:Mud.HttpUtils.IHttpResponseInterceptor"/>
+            <seealso cref="T:Mud.HttpUtils.IHttpResponseCache"/>
+        </member>
+        <member name="M:Mud.HttpUtils.ICacheResponseInterceptor.TryGetCached``1(System.String,``0@)">
+            <summary>
+            尝试从缓存中获取指定键的值。
+            </summary>
+            <typeparam name="T">缓存值的类型。</typeparam>
+            <param name="cacheKey">缓存键，用于唯一标识缓存项。</param>
+            <param name="value">当找到缓存项时，包含缓存的值；否则为 <c>default(T)</c>。</param>
+            <returns>如果找到缓存项则为 <c>true</c>；否则为 <c>false</c>。</returns>
+            <remarks>
+            该方法不会抛出异常，即使缓存键不存在或类型不匹配也会安全返回 <c>false</c>。
+            </remarks>
+            <example>
+            <code>
+            if (cacheInterceptor.TryGetCached("user_profile_123", out UserProfile? profile))
+            {
+                // 使用缓存的用户资料
+                Console.WriteLine($"从缓存加载: {profile.Name}");
+            }
+            else
+            {
+                // 缓存未命中，需要从数据源加载
+            }
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.ICacheResponseInterceptor.Set``1(System.String,``0,System.Int32,System.Boolean)">
+            <summary>
+            将值存储到缓存中。
+            </summary>
+            <typeparam name="T">要缓存的值的类型。</typeparam>
+            <param name="cacheKey">缓存键，用于唯一标识缓存项。</param>
+            <param name="value">要缓存的值。</param>
+            <param name="durationSeconds">缓存持续时间（秒）。</param>
+            <param name="useSlidingExpiration">
+            是否使用滑动过期策略。
+            <para>
+            当设置为 <c>true</c> 时，每次访问缓存项都会重置过期时间；
+            当设置为 <c>false</c> 时，缓存项将在固定的绝对时间后过期。
+            </para>
+            </param>
+            <remarks>
+            如果缓存键已存在，新值将覆盖旧值。
+            对于大型对象或敏感数据，请谨慎使用缓存。
+            </remarks>
+            <example>
+            <code>
+            // 绝对过期：5分钟后过期
+            cacheInterceptor.Set("api_response", responseData, 300);
+            
+            // 滑动过期：最后一次访问后5分钟过期
+            cacheInterceptor.Set("user_session", sessionData, 300, useSlidingExpiration: true);
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.ICacheResponseInterceptor.Remove(System.String)">
+            <summary>
+            从缓存中移除指定键的缓存项。
+            </summary>
+            <param name="cacheKey">要移除的缓存项的键。</param>
+            <remarks>
+            如果缓存键不存在，该方法不会抛出异常，而是静默完成。
+            通常在数据更新或失效时使用此方法清除旧缓存。
+            </remarks>
+            <example>
+            <code>
+            // 用户资料更新后，清除缓存
+            cacheInterceptor.Remove("user_profile_123");
+            
+            // 批量清除相关缓存
+            cacheInterceptor.Remove("api_users_list");
+            cacheInterceptor.Remove("api_users_count");
+            </code>
+            </example>
+        </member>
+        <member name="T:Mud.HttpUtils.IEncryptableHttpClient">
+            <summary>
+            可加密 HTTP 客户端接口，提供内容加密和解密功能。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IEncryptableHttpClient.EncryptContent(System.Object,System.String,Mud.HttpUtils.SerializeType)">
+            <summary>
+            加密内容对象。
+            </summary>
+            <param name="content">要加密的内容对象。</param>
+            <param name="propertyName">加密数据所在的属性名称，默认为 "data"。</param>
+            <param name="serializeType">序列化类型，指定使用 JSON 或 XML 序列化。</param>
+            <returns>加密后的字符串内容。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IEncryptableHttpClient.DecryptContent(System.String)">
+            <summary>
+            解密内容字符串。
+            </summary>
+            <param name="encryptedContent">要解密的字符串内容。</param>
+            <returns>解密后的字符串内容。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IEncryptableHttpClient.EncryptBytes(System.Byte[])">
+            <summary>
+            加密二进制数据。
+            </summary>
+            <param name="data">要加密的二进制数据。</param>
+            <returns>加密后的二进制数据。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IEncryptableHttpClient.DecryptBytes(System.Byte[])">
+            <summary>
+            解密二进制数据。
+            </summary>
+            <param name="encryptedData">要解密的二进制数据。</param>
+            <returns>解密后的二进制数据。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.IEnhancedHttpClient">
+            <summary>
+            增强型 HTTP 客户端接口，整合了 JSON、XML 和加密功能。
+            </summary>
+            <remarks>
+            此接口继承了 <see cref="T:Mud.HttpUtils.IJsonHttpClient"/>、<see cref="T:Mud.HttpUtils.IXmlHttpClient"/> 和 <see cref="T:Mud.HttpUtils.IEncryptableHttpClient"/>，
+            提供了全面的 HTTP 通信能力，包括 JSON/XML 数据处理和加密/解密功能。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.IEnhancedHttpClient.WithBaseAddress(System.String)">
+            <summary>
+            创建带新基地址的客户端副本。
+            </summary>
+            <param name="baseAddress">新的基地址。</param>
+            <returns>新的客户端实例。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IEnhancedHttpClient.WithBaseAddress(System.Uri)">
+            <summary>
+            创建带新基地址的客户端副本。
+            </summary>
+            <param name="baseAddress">新的基地址。</param>
+            <returns>新的客户端实例。</returns>
+        </member>
+        <member name="P:Mud.HttpUtils.IEnhancedHttpClient.BaseAddress">
+            <summary>
+            获取当前客户端的基地址。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.IEnhancedHttpClientFactory">
+            <summary>
+            增强型 HTTP 客户端工厂接口，用于按名称创建 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 实例。
+            </summary>
+            <remarks>
+            此工厂负责缓存客户端实例，确保同一名称返回同一客户端。
+            在 .NET 8+ 上通过 Keyed Service 解析客户端，在低版本上通过配置的工厂字典创建。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.IEnhancedHttpClientFactory.CreateClient(System.String)">
+            <summary>
+            根据客户端名称创建或获取缓存的 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 实例。
+            </summary>
+            <param name="clientName">Named HttpClient 的名称。</param>
+            <returns>对应的 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 实例。</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="clientName"/> 为 null 或空白时抛出。</exception>
+            <exception cref="T:System.InvalidOperationException">指定名称的客户端未注册时抛出。</exception>
+        </member>
+        <member name="T:Mud.HttpUtils.IFormContent">
+            <summary>
+            表单内容接口，定义了将表单数据转换为 HTTP 内容的标准方法。
+            </summary>
+            <remarks>
+            该接口用于封装各种类型的表单数据（如 application/x-www-form-urlencoded、multipart/form-data 等），
+            并提供同步和异步两种方式将其转换为 <see cref="T:System.Net.Http.HttpContent"/> 对象。
+            <para>
+            实现此接口的类可以支持进度报告功能，适用于需要上传大文件或显示上传进度的场景。
+            </para>
+            </remarks>
+            <example>
+            <code>
+            // 实现一个简单的表单内容
+            public class SimpleFormContent : IFormContent
+            {
+                private readonly Dictionary&lt;string, string&gt; _formData;
+                
+                public SimpleFormContent(Dictionary&lt;string, string&gt; formData)
+                {
+                    _formData = formData;
+                }
+                
+                public HttpContent ToHttpContent()
+                {
+                    return new FormUrlEncodedContent(_formData);
+                }
+                
+                public Task&lt;HttpContent&gt; ToHttpContentAsync(IProgress&lt;long&gt;? progress = null, CancellationToken cancellationToken = default)
+                {
+                    // 对于简单表单，同步和异步实现相同
+                    return Task.FromResult(ToHttpContent());
+                }
+            }
+            
+            // 使用示例
+            var formData = new Dictionary&lt;string, string&gt;
+            {
+                { "username", "john" },
+                { "email", "john@example.com" }
+            };
+            var formContent = new SimpleFormContent(formData);
+            var httpContent = formContent.ToHttpContent();
+            </code>
+            </example>
+            <seealso cref="T:System.Net.Http.HttpContent"/>
+        </member>
+        <member name="M:Mud.HttpUtils.IFormContent.ToHttpContent">
+            <summary>
+            将表单数据转换为 HTTP 内容对象（同步方法）。
+            </summary>
+            <returns>表示表单数据的 <see cref="T:System.Net.Http.HttpContent"/> 实例。</returns>
+            <remarks>
+            此方法适用于小型表单数据的快速转换。对于大型数据或需要进度报告的场景，建议使用异步方法 <see cref="M:Mud.HttpUtils.IFormContent.ToHttpContentAsync(System.IProgress{System.Int64},System.Threading.CancellationToken)"/>。
+            <para>
+            实现应确保返回的 <see cref="T:System.Net.Http.HttpContent"/> 对象具有正确的 Content-Type 头（如 "application/x-www-form-urlencoded" 或 "multipart/form-data"）。
+            </para>
+            </remarks>
+            <exception cref="T:System.InvalidOperationException">当表单数据格式不正确或无法转换时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.IFormContent.ToHttpContentAsync(System.IProgress{System.Int64},System.Threading.CancellationToken)">
+            <summary>
+            将表单数据异步转换为 HTTP 内容对象，支持进度报告。
+            </summary>
+            <param name="progress">可选的进度报告器，用于报告转换过程的进度（以字节为单位）。</param>
+            <param name="cancellationToken">用于取消操作的取消令牌。</param>
+            <returns>表示表单数据的 <see cref="T:System.Net.Http.HttpContent"/> 实例的异步任务。</returns>
+            <remarks>
+            此方法适用于大型表单数据或文件上传场景，支持进度报告以便用户界面能够显示上传进度。
+            <para>
+            如果不需要进度报告，可以将 <paramref name="progress"/> 参数设置为 <c>null</c>。
+            </para>
+            <para>
+            实现应考虑取消令牌的状态，在操作被取消时抛出 <see cref="T:System.OperationCanceledException"/>。
+            </para>
+            </remarks>
+            <example>
+            <code>
+            // 带进度报告的异步转换
+            var progress = new Progress&lt;long&gt;(bytesProcessed =>
+            {
+                Console.WriteLine($"已处理: {bytesProcessed} 字节");
+            });
+            
+            var httpContent = await formContent.ToHttpContentAsync(progress, cancellationToken);
+            </code>
+            </example>
+            <exception cref="T:System.OperationCanceledException">当操作被取消时抛出。</exception>
+            <exception cref="T:System.InvalidOperationException">当表单数据格式不正确或无法转换时抛出。</exception>
+        </member>
+        <member name="T:Mud.HttpUtils.IHttpClientResolver">
+            <summary>
+            命名 HTTP 客户端解析器接口，用于按名称获取 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 实例。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IHttpClientResolver.GetClient(System.String)">
+            <summary>
+            根据客户端名称获取 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 实例。
+            </summary>
+            <param name="clientName">Named HttpClient 的名称。</param>
+            <returns>对应的 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 实例。</returns>
+            <exception cref="T:System.InvalidOperationException">当指定名称的客户端未注册时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.IHttpClientResolver.TryGetClient(System.String,Mud.HttpUtils.IEnhancedHttpClient@)">
+            <summary>
+            尝试根据客户端名称获取 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 实例。
+            </summary>
+            <param name="clientName">Named HttpClient 的名称。</param>
+            <param name="client">获取到的客户端实例。</param>
+            <returns>如果成功获取，则为 true；否则为 false。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.IHttpRequestInterceptor">
+            <summary>
+            HTTP 请求拦截器接口，用于在请求发送前执行自定义逻辑。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.IHttpRequestInterceptor.Order">
+            <summary>
+            拦截器执行顺序，数值越小越先执行。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IHttpRequestInterceptor.OnRequestAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
+            <summary>
+            在请求发送前执行。
+            </summary>
+            <param name="request">HTTP 请求消息。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>异步任务。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.IHttpResponseCache">
+            <summary>
+            HTTP 响应缓存接口，提供请求结果的缓存功能。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IHttpResponseCache.TryGet``1(System.String,``0@)">
+            <summary>
+            尝试从缓存中获取响应。
+            </summary>
+            <typeparam name="T">响应类型。</typeparam>
+            <param name="key">缓存键。</param>
+            <param name="value">缓存值。</param>
+            <returns>是否命中缓存。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IHttpResponseCache.Set``1(System.String,``0,System.TimeSpan)">
+            <summary>
+            设置缓存。
+            </summary>
+            <typeparam name="T">响应类型。</typeparam>
+            <param name="key">缓存键。</param>
+            <param name="value">缓存值。</param>
+            <param name="absoluteExpirationRelativeToNow">相对于当前时间的绝对过期时间。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.IHttpResponseCache.Set``1(System.String,``0,System.TimeSpan,System.Boolean)">
+            <summary>
+            设置缓存，支持滑动过期策略。
+            </summary>
+            <typeparam name="T">响应类型。</typeparam>
+            <param name="key">缓存键。</param>
+            <param name="value">缓存值。</param>
+            <param name="expirationRelativeToNow">相对于当前时间的过期时间。</param>
+            <param name="useSlidingExpiration">是否使用滑动过期策略。为 true 时，每次访问将重置过期时间。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.IHttpResponseCache.Remove(System.String)">
+            <summary>
+            移除指定键的缓存。
+            </summary>
+            <param name="key">缓存键。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.IHttpResponseCache.GetOrFetchAsync``1(System.String,System.Func{System.Threading.Tasks.Task{``0}},System.TimeSpan,System.Threading.CancellationToken)">
+            <summary>
+            尝试从缓存中获取响应，如果缓存未命中则执行获取函数并缓存结果。
+            </summary>
+            <typeparam name="T">响应类型。</typeparam>
+            <param name="key">缓存键。</param>
+            <param name="fetchFunc">缓存未命中时执行的数据获取函数。</param>
+            <param name="expiration">缓存过期时间。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>缓存或获取的响应数据。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IHttpResponseCache.RemoveAsync(System.String)">
+            <summary>
+            异步移除指定键的缓存。
+            </summary>
+            <param name="key">缓存键。</param>
+            <returns>异步任务。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IHttpResponseCache.ClearAsync">
+            <summary>
+            清空所有缓存。
+            </summary>
+            <returns>异步任务。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.IHttpResponseInterceptor">
+            <summary>
+            HTTP 响应拦截器接口，用于在响应接收后执行自定义逻辑。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.IHttpResponseInterceptor.Order">
+            <summary>
+            拦截器执行顺序，数值越小越先执行。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IHttpResponseInterceptor.OnResponseAsync(System.Net.Http.HttpResponseMessage,System.Threading.CancellationToken)">
+            <summary>
+            在响应接收后执行。
+            </summary>
+            <param name="response">HTTP 响应消息。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>异步任务。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.IHttpSender">
+            <summary>
+            轻量级 HTTP 发送器接口，仅组合基础 HTTP 操作和 JSON 序列化能力。
+            适用于不需要 XML 处理和加密功能的场景，遵循接口隔离原则。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.IJsonHttpClient">
+            <summary>
+            JSON HTTP 客户端接口，提供基于 JSON 数据格式的 HTTP 请求方法。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IJsonHttpClient.GetAsync``1(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步发送 GET 请求并返回 JSON 反序列化后的结果。
+            </summary>
+            <typeparam name="TResult">响应数据的类型。</typeparam>
+            <param name="requestUri">请求的 URI。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>反序列化后的响应结果任务。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IJsonHttpClient.PostAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
+            <summary>
+            异步发送 POST 请求，将请求数据序列化为 JSON 并返回 JSON 反序列化后的结果。
+            </summary>
+            <typeparam name="TRequest">请求数据的类型。</typeparam>
+            <typeparam name="TResult">响应数据的类型。</typeparam>
+            <param name="requestUri">请求的 URI。</param>
+            <param name="requestData">要发送的请求数据。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>反序列化后的响应结果任务。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IJsonHttpClient.PutAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
+            <summary>
+            异步发送 PUT 请求，将请求数据序列化为 JSON 并返回 JSON 反序列化后的结果。
+            </summary>
+            <typeparam name="TRequest">请求数据的类型。</typeparam>
+            <typeparam name="TResult">响应数据的类型。</typeparam>
+            <param name="requestUri">请求的 URI。</param>
+            <param name="requestData">要发送的请求数据。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>反序列化后的响应结果任务。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IJsonHttpClient.DeleteAsJsonAsync``1(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步发送 DELETE 请求并返回 JSON 反序列化后的结果。
+            </summary>
+            <typeparam name="TResult">响应数据的类型。</typeparam>
+            <param name="requestUri">请求的 URI。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>反序列化后的响应结果任务。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IJsonHttpClient.DeleteAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
+            <summary>
+            异步发送带请求体的 DELETE 请求，将请求数据序列化为 JSON 并返回 JSON 反序列化后的结果。
+            </summary>
+            <typeparam name="TRequest">请求数据的类型。</typeparam>
+            <typeparam name="TResult">响应数据的类型。</typeparam>
+            <param name="requestUri">请求的 URI。</param>
+            <param name="requestData">要发送的请求数据。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>反序列化后的响应结果任务。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IJsonHttpClient.PatchAsJsonAsync``2(System.String,``0,System.Threading.CancellationToken)">
+            <summary>
+            异步发送 PATCH 请求，将请求数据序列化为 JSON 并返回 JSON 反序列化后的结果。
+            </summary>
+            <typeparam name="TRequest">请求数据的类型。</typeparam>
+            <typeparam name="TResult">响应数据的类型。</typeparam>
+            <param name="requestUri">请求的 URI。</param>
+            <param name="requestData">要发送的请求数据。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>反序列化后的响应结果任务。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.IQueryParameter">
+            <summary>
+            查询参数接口，用于将对象转换为 HTTP 查询参数键值对。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IQueryParameter.ToQueryParameters">
+            <summary>
+            将对象转换为查询参数键值对集合。
+            </summary>
+            <returns>包含查询参数的键值对 enumerable 集合。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.IXmlHttpClient">
+            <summary>
+            XML HTTP 客户端接口，提供基于 XML 数据格式的 HTTP 请求方法。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IXmlHttpClient.SendXmlAsync``1(System.Net.Http.HttpRequestMessage,System.Text.Encoding,System.Threading.CancellationToken)">
+            <summary>
+            异步发送 HTTP 请求并返回 XML 反序列化后的结果。
+            </summary>
+            <typeparam name="TResult">响应数据的类型。</typeparam>
+            <param name="request">HTTP 请求消息。</param>
+            <param name="encoding">XML 内容的编码方式，默认为 null。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>反序列化后的响应结果任务。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IXmlHttpClient.PostAsXmlAsync``2(System.String,``0,System.Text.Encoding,System.Threading.CancellationToken)">
+            <summary>
+            异步发送 POST 请求，将请求数据序列化为 XML 并返回 XML 反序列化后的结果。
+            </summary>
+            <typeparam name="TRequest">请求数据的类型。</typeparam>
+            <typeparam name="TResult">响应数据的类型。</typeparam>
+            <param name="requestUri">请求的 URI。</param>
+            <param name="requestData">要发送的请求数据。</param>
+            <param name="encoding">XML 内容的编码方式，默认为 null。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>反序列化后的响应结果任务。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IXmlHttpClient.PutAsXmlAsync``2(System.String,``0,System.Text.Encoding,System.Threading.CancellationToken)">
+            <summary>
+            异步发送 PUT 请求，将请求数据序列化为 XML 并返回 XML 反序列化后的结果。
+            </summary>
+            <typeparam name="TRequest">请求数据的类型。</typeparam>
+            <typeparam name="TResult">响应数据的类型。</typeparam>
+            <param name="requestUri">请求的 URI。</param>
+            <param name="requestData">要发送的请求数据。</param>
+            <param name="encoding">XML 内容的编码方式，默认为 null。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>反序列化后的响应结果任务。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IXmlHttpClient.GetXmlAsync``1(System.String,System.Text.Encoding,System.Threading.CancellationToken)">
+            <summary>
+            异步发送 GET 请求并返回 XML 反序列化后的结果。
+            </summary>
+            <typeparam name="TResult">响应数据的类型。</typeparam>
+            <param name="requestUri">请求的 URI。</param>
+            <param name="encoding">XML 内容的编码方式，默认为 null。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>反序列化后的响应结果任务。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.Response`1">
+            <summary>
+            表示 HTTP 响应的包装类型，同时提供响应内容和原始 HTTP 响应信息。
+            </summary>
+            <typeparam name="T">响应内容的类型。</typeparam>
+            <remarks>
+            <para>
+            当方法返回类型为 <see cref="T:Mud.HttpUtils.Response`1"/> 时，即使响应状态码表示错误（如 4xx、5xx），
+            也不会抛出异常，而是将状态码和错误信息存储在 <see cref="T:Mud.HttpUtils.Response`1"/> 对象中。
+            这允许调用者自行决定如何处理错误响应。
+            </para>
+            <para>
+            使用 <see cref="!:AllowAnyStatusCodeAttribute"/> 标记接口或方法时，
+            返回类型应使用 <see cref="T:Mud.HttpUtils.Response`1"/> 以获取完整的响应信息。
+            </para>
+            </remarks>
+            <example>
+            <code>
+            [AllowAnyStatusCode]
+            [Get("/api/users/{id}")]
+            Task&lt;Response&lt;User&gt;&gt; GetUserAsync(int id);
+            
+            // 使用示例
+            var response = await api.GetUserAsync(1);
+            if (response.StatusCode == HttpStatusCode.OK)
+            {
+                var user = response.Content; // 访问反序列化的内容
+            }
+            else
+            {
+                var error = response.ErrorContent; // 访问原始错误响应内容
+            }
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.Response`1.#ctor(System.Net.HttpStatusCode,`0,System.String,System.Collections.Generic.Dictionary{System.String,System.Collections.Generic.List{System.String}})">
+            <summary>
+            初始化表示成功响应的 <see cref="T:Mud.HttpUtils.Response`1"/> 实例。
+            </summary>
+            <param name="statusCode">HTTP 状态码。</param>
+            <param name="content">反序列化的响应内容。</param>
+            <param name="rawContent">原始响应内容字符串。</param>
+            <param name="responseHeaders">响应头。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.Response`1.#ctor(System.Net.HttpStatusCode,System.String,System.Collections.Generic.Dictionary{System.String,System.Collections.Generic.List{System.String}})">
+            <summary>
+            初始化表示错误响应的 <see cref="T:Mud.HttpUtils.Response`1"/> 实例。
+            </summary>
+            <param name="statusCode">HTTP 状态码。</param>
+            <param name="errorContent">错误响应内容字符串。</param>
+            <param name="responseHeaders">响应头。</param>
+        </member>
+        <member name="P:Mud.HttpUtils.Response`1.StatusCode">
+            <summary>
+            获取 HTTP 状态码。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Response`1.Content">
+            <summary>
+            获取反序列化的响应内容。当响应表示错误时，此值为 <c>default</c>。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Response`1.RawContent">
+            <summary>
+            获取原始响应内容字符串。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Response`1.ErrorContent">
+            <summary>
+            获取错误响应内容。当响应成功时，此值为 <c>null</c>。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Response`1.ResponseHeaders">
+            <summary>
+            获取响应头集合。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Response`1.IsSuccessStatusCode">
+            <summary>
+            获取一个值，该值指示响应是否成功（状态码在 200-299 范围内）。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Response`1.GetContentOrThrow">
+            <summary>
+            获取响应内容。如果响应不成功，则抛出 <see cref="T:Mud.HttpUtils.ApiException"/>。
+            </summary>
+            <returns>反序列化的响应内容。</returns>
+            <exception cref="T:Mud.HttpUtils.ApiException">当响应状态码表示错误时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.Response`1.op_Implicit(Mud.HttpUtils.Response{`0})~`0">
+            <summary>
+            隐式转换为响应内容。
+            </summary>
+            <remarks>
+            当响应成功时返回 <see cref="P:Mud.HttpUtils.Response`1.Content"/>，否则返回 <c>default</c>。
+            </remarks>
+        </member>
+        <member name="T:Mud.HttpUtils.SerializeType">
+            <summary>
+            序列化类型枚举，指定数据序列化的格式。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.SerializeType.Json">
+            <summary>
+            JSON 序列化格式。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.SerializeType.Xml">
+            <summary>
+            XML 序列化格式。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.SensitiveDataMaskMode">
+            <summary>
+            敏感数据掩码模式枚举，定义了在日志中如何处理敏感数据的显示方式。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.SensitiveDataMaskMode.Hide">
+            <summary>
+            隐藏模式：完全隐藏敏感数据，通常显示为固定占位符（如 "***" 或 "[REDACTED]"）。
+            适用于高度敏感的信息，如密码、密钥等。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.SensitiveDataMaskMode.Mask">
+            <summary>
+            掩码模式：部分显示敏感数据，保留前缀和后缀，中间部分用掩码字符替换。
+            例如：信用卡号 "1234567890123456" 可能显示为 "12**********3456"。
+            这是默认模式，平衡了安全性和调试便利性。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.SensitiveDataMaskMode.TypeOnly">
+            <summary>
+            仅类型模式：不显示任何实际数据，只显示数据类型信息。
+            例如：可能显示为 "[String: 16 chars]" 或 "[CreditCard]"。
+            适用于需要知道数据类型但完全不需要查看实际值的场景。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.ISensitiveDataMasker">
+            <summary>
+            敏感数据掩码器接口，用于在日志记录和监控中保护敏感信息。
+            实现此接口的类可以对字符串值或对象中的敏感字段进行掩码处理，
+            防止敏感数据（如密码、令牌、信用卡号等）泄露到日志文件中。
+            </summary>
+            <remarks>
+            <para>
+            该接口通常与日志系统集成，在记录 HTTP 请求/响应、认证信息等场景中使用。
+            可以通过 <see cref="!:SensitiveDataAttribute"/> 特性标记需要掩码的字段或属性。
+            </para>
+            <para>
+            实现者应该考虑性能影响，因为掩码操作可能在高频日志记录中被调用。
+            </para>
+            </remarks>
+            <example>
+            使用示例：
+            <code>
+            public class MySensitiveDataMasker : ISensitiveDataMasker
+            {
+                public string Mask(string value, SensitiveDataMaskMode mode = SensitiveDataMaskMode.Mask, int prefixLength = 2, int suffixLength = 2)
+                {
+                    if (string.IsNullOrEmpty(value)) return value;
+                    
+                    return mode switch
+                    {
+                        SensitiveDataMaskMode.Hide => "***",
+                        SensitiveDataMaskMode.Mask => value.Length > prefixLength + suffixLength 
+                            ? value.Substring(0, prefixLength) + new string('*', value.Length - prefixLength - suffixLength) + value.Substring(value.Length - suffixLength)
+                            : new string('*', value.Length),
+                        SensitiveDataMaskMode.TypeOnly => $"[String: {value.Length} chars]",
+                        _ => value
+                    };
+                }
+                
+                public string MaskObject(object obj)
+                {
+                    // 实现对象掩码逻辑...
+                }
+            }
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.ISensitiveDataMasker.Mask(System.String,Mud.HttpUtils.SensitiveDataMaskMode,System.Int32,System.Int32)">
+            <summary>
+            对字符串值进行敏感数据掩码处理。
+            </summary>
+            <param name="value">需要进行掩码处理的原始字符串值。</param>
+            <param name="mode">掩码模式，控制如何显示掩码后的数据。默认为 <see cref="F:Mud.HttpUtils.SensitiveDataMaskMode.Mask"/>。</param>
+            <param name="prefixLength">在掩码模式下，保留的前缀字符数量。默认为 2。</param>
+            <param name="suffixLength">在掩码模式下，保留的后缀字符数量。默认为 2。</param>
+            <returns>经过掩码处理后的字符串。如果输入为 null 或空字符串，则返回原值。</returns>
+            <remarks>
+            <para>
+            当 <paramref name="mode"/> 为 <see cref="F:Mud.HttpUtils.SensitiveDataMaskMode.Hide"/> 时，
+            <paramref name="prefixLength"/> 和 <paramref name="suffixLength"/> 参数将被忽略。
+            </para>
+            <para>
+            当 <paramref name="mode"/> 为 <see cref="F:Mud.HttpUtils.SensitiveDataMaskMode.TypeOnly"/> 时，
+            所有参数都将被忽略，只返回类型信息。
+            </para>
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.ISensitiveDataMasker.MaskObject(System.Object)">
+            <summary>
+            对对象进行敏感数据掩码处理，通常用于序列化前的对象处理。
+            </summary>
+            <param name="obj">需要进行掩码处理的对象实例。</param>
+            <returns>经过掩码处理后的对象表示形式（通常为 JSON 字符串或其他序列化格式）。</returns>
+            <remarks>
+            <para>
+            此方法会递归检查对象的所有属性，并对标记为敏感数据的属性进行掩码处理。
+            通常与反射和序列化机制配合使用。
+            </para>
+            <para>
+            对于复杂对象，实现者应该注意循环引用和性能问题。
+            建议在实现中使用缓存机制来提高重复对象的处理效率。
+            </para>
+            </remarks>
+            <exception cref="T:System.ArgumentNullException">当 <paramref name="obj"/> 为 null 时可能抛出。</exception>
+        </member>
+        <member name="T:Mud.HttpUtils.IApiKeyProvider">
+            <summary>
+            API 密钥提供者接口，用于获取 API 密钥。
+            </summary>
+            <remarks>
+            该接口提供了一种标准化的方式来获取 API 密钥，支持多种密钥存储和管理策略。
+            实现可以从配置文件、环境变量、密钥管理服务（如 Azure Key Vault、AWS Secrets Manager）等来源获取密钥。
+            <para>
+            适用场景：
+            <list type="bullet">
+              <item>第三方 API 认证（需要 API Key 的服务）</item>
+              <item>多租户应用中的密钥管理</item>
+              <item>密钥轮换和动态更新</item>
+            </list>
+            </para>
+            <para>
+            安全注意事项：
+            <list type="bullet">
+              <item>API 密钥应安全存储，不应硬编码在代码中</item>
+              <item>建议使用密钥管理服务来存储敏感密钥</item>
+              <item>定期轮换密钥以降低泄露风险</item>
+              <item>通过 HTTPS 传输密钥，防止中间人攻击</item>
+            </list>
+            </para>
+            </remarks>
+            <example>
+            <code>
+            // 实现一个简单的 API 密钥提供者
+            public class ConfigurationApiKeyProvider : IApiKeyProvider
+            {
+                private readonly IConfiguration _configuration;
+                
+                public ConfigurationApiKeyProvider(IConfiguration configuration)
+                {
+                    _configuration = configuration;
+                }
+                
+                public Task&lt;string&gt; GetApiKeyAsync(string? keyName = null, CancellationToken cancellationToken = default)
+                {
+                    var key = _configuration.GetValue&lt;string&gt;($"ApiKeys:{keyName ?? "Default"}");
+                    return Task.FromResult(key ?? throw new InvalidOperationException("API Key not found"));
+                }
+            }
+            
+            // 使用示例
+            var provider = new ConfigurationApiKeyProvider(configuration);
+            var apiKey = await provider.GetApiKeyAsync("PaymentService");
+            httpClient.DefaultRequestHeaders.Add("X-API-Key", apiKey);
+            </code>
+            </example>
+            <seealso cref="T:Mud.HttpUtils.ISecretProvider"/>
+            <seealso cref="T:Mud.HttpUtils.IHmacSignatureProvider"/>
+        </member>
+        <member name="M:Mud.HttpUtils.IApiKeyProvider.GetApiKeyAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步获取 API 密钥。
+            </summary>
+            <param name="keyName">可选的密钥名称，用于区分不同的 API 密钥。如果为 <c>null</c>，则返回默认密钥。</param>
+            <param name="cancellationToken">用于取消操作的取消令牌。</param>
+            <returns>API 密钥字符串。</returns>
+            <exception cref="T:System.InvalidOperationException">当找不到指定的 API 密钥时抛出。</exception>
+            <exception cref="T:System.OperationCanceledException">当操作被取消时抛出。</exception>
+            <remarks>
+            此方法支持多种密钥获取策略：
+            <list type="bullet">
+              <item>如果 <paramref name="keyName"/> 为 <c>null</c> 或空，则返回默认密钥</item>
+              <item>如果指定了 <paramref name="keyName"/>，则返回对应名称的密钥</item>
+              <item>实现可以支持密钥缓存，避免频繁访问密钥存储</item>
+            </list>
+            <para>
+            密钥的格式和认证方式由具体的 API 服务决定，常见的认证方式包括：
+            <list type="bullet">
+              <item>HTTP Header：<c>X-API-Key</c>、<c>Authorization: ApiKey {key}</c></item>
+              <item>查询参数：<c>?api_key={key}</c></item>
+              <item>请求体中的特定字段</item>
+            </list>
+            </para>
+            </remarks>
+            <example>
+            <code>
+            // 获取默认 API 密钥
+            var defaultKey = await apiKeyProvider.GetApiKeyAsync();
+            
+            // 获取指定名称的 API 密钥
+            var paymentKey = await apiKeyProvider.GetApiKeyAsync("PaymentService");
+            var analyticsKey = await apiKeyProvider.GetApiKeyAsync("AnalyticsService");
+            
+            // 在 HTTP 请求中使用
+            var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/data");
+            request.Headers.Add("X-API-Key", paymentKey);
+            </code>
+            </example>
+        </member>
+        <member name="T:Mud.HttpUtils.IHmacSignatureProvider">
+            <summary>
+            HMAC 签名提供者接口，用于生成和验证 HTTP 请求的 HMAC 签名。
+            </summary>
+            <remarks>
+            HMAC（Hash-based Message Authentication Code）是一种基于哈希函数和密钥的消息认证码，
+            用于验证消息的完整性和真实性。该接口提供了异步的签名生成和验证功能。
+            <para>
+            适用场景：
+            <list type="bullet">
+              <item>API 请求的身份验证和防篡改</item>
+              <item>Webhook 回调的签名验证</item>
+              <item>敏感操作的安全认证</item>
+            </list>
+            </para>
+            <para>
+            安全注意事项：
+            <list type="bullet">
+              <item>密钥应妥善保管，不应硬编码在代码中</item>
+              <item>建议使用 HTTPS 传输，防止签名被截获</item>
+              <item>定期轮换密钥以提高安全性</item>
+            </list>
+            </para>
+            </remarks>
+            <example>
+            <code>
+            // 实现 HMAC 签名提供者
+            public class HmacSha256SignatureProvider : IHmacSignatureProvider
+            {
+                public async Task&lt;string&gt; GenerateSignatureAsync(HttpRequestMessage request, string secretKey, CancellationToken cancellationToken = default)
+                {
+                    // 构建待签名字符串
+                    var stringToSign = $"{request.Method}\n{request.RequestUri}\n{await request.Content.ReadAsStringAsync(cancellationToken)}";
+                    
+                    // 使用 HMAC-SHA256 生成签名
+                    using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secretKey));
+                    var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(stringToSign));
+                    return Convert.ToBase64String(hash);
+                }
+                
+                public async Task&lt;bool&gt; VerifySignatureAsync(HttpRequestMessage request, string signature, string secretKey, CancellationToken cancellationToken = default)
+                {
+                    var expectedSignature = await GenerateSignatureAsync(request, secretKey, cancellationToken);
+                    return expectedSignature == signature;
+                }
+            }
+            
+            // 使用示例
+            var provider = new HmacSha256SignatureProvider();
+            var signature = await provider.GenerateSignatureAsync(request, "my-secret-key");
+            request.Headers.Add("X-Signature", signature);
+            </code>
+            </example>
+            <seealso cref="T:Mud.HttpUtils.ISecretProvider"/>
+            <seealso cref="T:Mud.HttpUtils.IApiKeyProvider"/>
+        </member>
+        <member name="M:Mud.HttpUtils.IHmacSignatureProvider.GenerateSignatureAsync(System.Net.Http.HttpRequestMessage,System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步生成 HTTP 请求的 HMAC 签名。
+            </summary>
+            <param name="request">要签名的 HTTP 请求消息。</param>
+            <param name="secretKey">用于生成签名的密钥。</param>
+            <param name="cancellationToken">用于取消操作的取消令牌。</param>
+            <returns>生成的 HMAC 签名（通常为 Base64 编码的字符串）。</returns>
+            <exception cref="T:System.ArgumentNullException">当 <paramref name="request"/> 或 <paramref name="secretKey"/> 为 <c>null</c> 时抛出。</exception>
+            <exception cref="T:System.InvalidOperationException">当请求格式不正确或无法生成签名时抛出。</exception>
+            <remarks>
+            签名通常基于请求的多个部分组成，包括：
+            <list type="bullet">
+              <item>HTTP 方法（GET、POST 等）</item>
+              <item>请求 URI</item>
+              <item>请求体内容</item>
+              <item>时间戳（防止重放攻击）</item>
+            </list>
+            <para>
+            具体的签名算法和组成规则应由实现方定义，并在客户端和服务端保持一致。
+            </para>
+            </remarks>
+            <example>
+            <code>
+            // 生成请求签名
+            var request = new HttpRequestMessage(HttpMethod.Post, "https://api.example.com/data");
+            request.Content = new StringContent("{\"key\":\"value\"}", Encoding.UTF8, "application/json");
+            
+            var signature = await signatureProvider.GenerateSignatureAsync(request, "my-secret-key");
+            Console.WriteLine($"签名: {signature}");
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.IHmacSignatureProvider.VerifySignatureAsync(System.Net.Http.HttpRequestMessage,System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步验证 HTTP 请求的 HMAC 签名。
+            </summary>
+            <param name="request">要验证的 HTTP 请求消息。</param>
+            <param name="signature">要验证的签名值。</param>
+            <param name="secretKey">用于验证签名的密钥。</param>
+            <param name="cancellationToken">用于取消操作的取消令牌。</param>
+            <returns>如果签名验证成功则为 <c>true</c>；否则为 <c>false</c>。</returns>
+            <exception cref="T:System.ArgumentNullException">当 <paramref name="request"/>、<paramref name="signature"/> 或 <paramref name="secretKey"/> 为 <c>null</c> 时抛出。</exception>
+            <remarks>
+            此方法用于验证请求在传输过程中是否被篡改，以及请求是否来自合法的发送方。
+            <para>
+            验证过程：
+            <list type="number">
+              <item>使用相同的算法和密钥重新计算签名</item>
+              <item>将计算出的签名与提供的签名进行比较</item>
+              <item>如果匹配则验证成功，否则验证失败</item>
+            </list>
+            </para>
+            <para>
+            为防止时序攻击（timing attack），应使用恒定时间比较算法来比较签名。
+            </para>
+            </remarks>
+            <example>
+            <code>
+            // 验证请求签名
+            var signature = Request.Headers["X-Signature"];
+            var isValid = await signatureProvider.VerifySignatureAsync(request, signature, "my-secret-key");
+            
+            if (isValid)
+            {
+                Console.WriteLine("签名验证成功");
+            }
+            else
+            {
+                Console.WriteLine("签名验证失败，请求可能被篡改");
+            }
+            </code>
+            </example>
+        </member>
+        <member name="T:Mud.HttpUtils.ISecretProvider">
+            <summary>
+            安全密钥提供程序接口，用于从安全存储中获取敏感配置（如 ClientSecret）。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.ISecretProvider.GetSecretAsync(System.String)">
+            <summary>
+            根据名称获取密钥值。
+            </summary>
+            <param name="name">密钥名称。</param>
+            <returns>密钥值，如果未找到则返回 null。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.CredentialToken">
+            <summary>
+            凭证令牌类，用于存储从认证服务器获取的令牌信息。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.CredentialToken.Msg">
+            <summary>
+            获取或设置消息描述。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.CredentialToken.Code">
+            <summary>
+            获取或设置响应状态码。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.CredentialToken.Expire">
+            <summary>
+            获取或设置令牌的过期时间（Unix 时间戳，毫秒）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.CredentialToken.AccessToken">
+            <summary>
+            获取或设置访问令牌。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.CredentialToken.RefreshToken">
+            <summary>
+            获取或设置刷新令牌，用于获取新的访问令牌。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.CredentialToken.RefreshTokenExpire">
+            <summary>
+            获取或设置刷新令牌的过期时间（Unix 时间戳，毫秒）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.CredentialToken.Scope">
+            <summary>
+            获取或设置令牌的作用域。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.ITokenManager">
+            <summary>
+            令牌管理器接口，提供获取访问令牌的基本功能。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.ITokenManager.GetTokenAsync(System.Threading.CancellationToken)">
+            <summary>
+            异步获取访问令牌。
+            </summary>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>包含访问令牌的字符串。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.ITokenManager.GetTokenAsync(System.String[],System.Threading.CancellationToken)">
+            <summary>
+            异步获取指定作用域的访问令牌。
+            </summary>
+            <param name="scopes">令牌作用域数组。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>包含访问令牌的字符串。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.ITokenManager.GetOrRefreshTokenAsync(System.Threading.CancellationToken)">
+            <summary>
+            异步获取有效的访问令牌，如果令牌已过期或即将过期则自动刷新。
+            此方法保证并发安全：多个并发调用只会触发一次刷新操作。
+            </summary>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>包含有效访问令牌的字符串。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.ITokenManager.GetOrRefreshTokenAsync(System.String[],System.Threading.CancellationToken)">
+            <summary>
+            异步获取指定作用域的有效访问令牌，如果令牌已过期或即将过期则自动刷新。
+            此方法保证并发安全：多个并发调用只会触发一次刷新操作。
+            </summary>
+            <param name="scopes">令牌作用域数组。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>包含有效访问令牌的字符串。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.ITokenManager.InvalidateTokenAsync(System.String[],System.Threading.CancellationToken)">
+            <summary>
+            使指定作用域的缓存令牌失效，下次获取时将强制刷新。
+            </summary>
+            <param name="scopes">令牌作用域数组，为 null 时使默认作用域的令牌失效。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>失效前的令牌信息，如果缓存中没有令牌则返回 <see cref="P:Mud.HttpUtils.TokenResult.Empty"/>。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.ITokenRefreshBackgroundService">
+            <summary>
+            令牌主动刷新后台服务接口。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.ITokenRefreshBackgroundService.StartAsync(System.Threading.CancellationToken)">
+            <summary>
+            启动后台令牌刷新。
+            </summary>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>异步任务。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.ITokenRefreshBackgroundService.StopAsync(System.Threading.CancellationToken)">
+            <summary>
+            停止后台令牌刷新。
+            </summary>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>异步任务。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.ITokenStore">
+            <summary>
+            令牌持久化存储契约，定义令牌的保存和读取操作。
+            </summary>
+            <remarks>
+            实现此接口以将令牌持久化到分布式缓存、数据库或其他存储介质中，
+            从而在应用重启或跨实例部署时保持令牌状态。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.ITokenStore.GetAccessTokenAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步获取指定令牌类型的访问令牌。
+            </summary>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>访问令牌字符串，如果不存在则返回 null。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.ITokenStore.SetAccessTokenAsync(System.String,System.String,System.Int64,System.Threading.CancellationToken)">
+            <summary>
+            异步保存指定令牌类型的访问令牌。
+            </summary>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="accessToken">访问令牌。</param>
+            <param name="expiresInSeconds">令牌有效时长（秒）。</param>
+            <param name="cancellationToken">取消令牌。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.ITokenStore.GetRefreshTokenAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步获取指定令牌类型的刷新令牌。
+            </summary>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>刷新令牌字符串，如果不存在则返回 null。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.ITokenStore.SetRefreshTokenAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步保存指定令牌类型的刷新令牌。
+            </summary>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="refreshToken">刷新令牌。</param>
+            <param name="cancellationToken">取消令牌。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.ITokenStore.RemoveAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步移除指定令牌类型的所有令牌数据。
+            </summary>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="cancellationToken">取消令牌。</param>
+        </member>
+        <member name="T:Mud.HttpUtils.IUserTokenStore">
+            <summary>
+            用户级令牌持久化存储契约，支持按用户标识隔离令牌数据。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IUserTokenStore.GetAccessTokenAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步获取指定用户和令牌类型的访问令牌。
+            </summary>
+            <param name="userId">用户唯一标识符。</param>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>访问令牌字符串，如果不存在则返回 null。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IUserTokenStore.SetAccessTokenAsync(System.String,System.String,System.String,System.Int64,System.Threading.CancellationToken)">
+            <summary>
+            异步保存指定用户和令牌类型的访问令牌。
+            </summary>
+            <param name="userId">用户唯一标识符。</param>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="accessToken">访问令牌。</param>
+            <param name="expiresInSeconds">令牌有效时长（秒）。</param>
+            <param name="cancellationToken">取消令牌。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.IUserTokenStore.GetRefreshTokenAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步获取指定用户和令牌类型的刷新令牌。
+            </summary>
+            <param name="userId">用户唯一标识符。</param>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>刷新令牌字符串，如果不存在则返回 null。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IUserTokenStore.SetRefreshTokenAsync(System.String,System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步保存指定用户和令牌类型的刷新令牌。
+            </summary>
+            <param name="userId">用户唯一标识符。</param>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="refreshToken">刷新令牌。</param>
+            <param name="cancellationToken">取消令牌。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.IUserTokenStore.RemoveAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步移除指定用户和令牌类型的所有令牌数据。
+            </summary>
+            <param name="userId">用户唯一标识符。</param>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="cancellationToken">取消令牌。</param>
+        </member>
+        <member name="T:Mud.HttpUtils.IUserTokenManager">
+            <summary>
+            用户令牌管理器接口，提供用户级别的令牌管理功能。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IUserTokenManager.GetTokenAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步获取指定用户的访问令牌。
+            </summary>
+            <param name="userId">用户的唯一标识符。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>包含访问令牌的字符串任务，如果未找到则返回 null。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IUserTokenManager.GetTokenInfoAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步获取指定用户的令牌详细信息。
+            </summary>
+            <param name="userId">用户的唯一标识符。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>包含用户令牌信息的任务，如果未找到则返回 null。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IUserTokenManager.GetUserTokenWithCodeAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            通过授权码异步获取用户令牌信息。
+            </summary>
+            <param name="code">授权码。</param>
+            <param name="redirectUri">重定向 URI。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>包含用户令牌信息的任务，如果失败则返回 null。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IUserTokenManager.RefreshUserTokenAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步刷新指定用户的令牌。
+            </summary>
+            <param name="userId">用户的唯一标识符。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>包含刷新后的用户令牌信息的任务，如果失败则返回 null。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IUserTokenManager.RemoveTokenAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步移除指定用户的令牌。
+            </summary>
+            <param name="userId">用户的唯一标识符。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>如果成功移除令牌，则为 true；否则为 false。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IUserTokenManager.HasValidTokenAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步检查指定用户是否拥有有效的令牌。
+            </summary>
+            <param name="userId">用户的唯一标识符。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>如果用户拥有有效令牌，则为 true；否则为 false。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IUserTokenManager.CanRefreshTokenAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步检查指定用户是否可以刷新令牌。
+            </summary>
+            <param name="userId">用户的唯一标识符。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>如果用户可以刷新令牌，则为 true；否则为 false。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IUserTokenManager.GetOrRefreshTokenAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步获取指定用户的有效访问令牌，如果令牌已过期或即将过期则自动刷新。
+            此方法保证并发安全：同一 userId 的多个并发调用只会触发一次刷新操作。
+            </summary>
+            <param name="userId">用户的唯一标识符。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>包含有效访问令牌的字符串，如果未找到则返回 null。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.OAuth2TokenManagerBase">
+            <summary>
+            OAuth2 令牌管理器抽象基类，封装标准 OAuth2 流程。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.OAuth2TokenManagerBase.GetTokenByAuthorizationCodeAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            通过授权码获取令牌（Authorization Code Flow）。
+            </summary>
+            <param name="code">授权码。</param>
+            <param name="redirectUri">重定向 URI。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>令牌信息。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.OAuth2TokenManagerBase.GetTokenByAuthorizationCodeWithPkceAsync(System.String,System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            通过授权码和 PKCE 验证获取令牌（Authorization Code Flow with PKCE）。
+            </summary>
+            <param name="code">授权码。</param>
+            <param name="redirectUri">重定向 URI。</param>
+            <param name="codeVerifier">PKCE code_verifier。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>令牌信息。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.OAuth2TokenManagerBase.GeneratePkceChallenge(System.String@,System.String@,System.String)">
+            <summary>
+            生成 PKCE code_verifier 和 code_challenge。
+            </summary>
+            <param name="codeVerifier">生成的 code_verifier。</param>
+            <param name="codeChallenge">生成的 code_challenge。</param>
+            <param name="method">PKCE 方法（S256 或 plain），默认 S256。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.OAuth2TokenManagerBase.GetTokenByClientCredentialsAsync(System.String[],System.Threading.CancellationToken)">
+            <summary>
+            通过客户端凭证获取令牌（Client Credentials Flow）。
+            </summary>
+            <param name="scopes">请求的权限范围。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>令牌信息。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.OAuth2TokenManagerBase.RefreshTokenByRefreshTokenAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            通过刷新令牌获取新的访问令牌（Refresh Token Flow）。
+            </summary>
+            <param name="refreshToken">刷新令牌。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>令牌信息。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.OAuth2TokenManagerBase.GetTokenByPasswordAsync(System.String,System.String,System.String[],System.Threading.CancellationToken)">
+            <summary>
+            通过资源所有者密码凭证获取令牌（Resource Owner Password Credentials Flow）。
+            </summary>
+            <param name="username">用户名。</param>
+            <param name="password">密码。</param>
+            <param name="scopes">请求的权限范围。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>令牌信息。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.OAuth2TokenManagerBase.RevokeTokenAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            撤销令牌。
+            </summary>
+            <param name="token">要撤销的令牌。</param>
+            <param name="tokenTypeHint">令牌类型提示（access_token 或 refresh_token）。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>是否成功撤销。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.OAuth2TokenManagerBase.IntrospectTokenAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            内省令牌（Token Introspection）。
+            </summary>
+            <param name="token">要内省的令牌。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>令牌内省结果。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.TokenInjectionMode">
+            <summary>
+            令牌注入模式枚举，指定令牌在 HTTP 请求中的注入位置。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.TokenInjectionMode.Header">
+            <summary>
+            将令牌注入到 HTTP 请求头中。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.TokenInjectionMode.Query">
+            <summary>
+            将令牌注入到 HTTP 请求的查询参数中。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.TokenInjectionMode.Path">
+            <summary>
+            将令牌注入到 HTTP 请求的路径中。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.TokenInjectionMode.ApiKey">
+            <summary>
+            API Key 认证（注入到请求头）。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.TokenInjectionMode.HmacSignature">
+            <summary>
+            HMAC 签名认证（计算请求签名并注入到请求头）。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.TokenInjectionMode.BasicAuth">
+            <summary>
+            HTTP Basic 认证（将凭据编码为 Base64 注入到 Authorization 头）。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.TokenInjectionMode.Cookie">
+            <summary>
+            将令牌注入到 HTTP 请求的 Cookie 中。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.TokenIntrospectionResult">
+            <summary>
+            令牌内省结果。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenIntrospectionResult.Active">
+            <summary>
+            令牌是否有效。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenIntrospectionResult.Scopes">
+            <summary>
+            令牌的权限范围。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenIntrospectionResult.ClientId">
+            <summary>
+            客户端 ID。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenIntrospectionResult.Username">
+            <summary>
+            用户名。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenIntrospectionResult.TokenType">
+            <summary>
+            令牌类型。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenIntrospectionResult.Exp">
+            <summary>
+            过期时间（Unix 时间戳，秒）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenIntrospectionResult.Iat">
+            <summary>
+            签发时间（Unix 时间戳，秒）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenIntrospectionResult.Nbf">
+            <summary>
+            生效时间（Unix 时间戳，秒）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenIntrospectionResult.Sub">
+            <summary>
+            主题（通常是用户 ID）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenIntrospectionResult.Aud">
+            <summary>
+            受众。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenIntrospectionResult.Iss">
+            <summary>
+            签发者。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenIntrospectionResult.Jti">
+            <summary>
+            JWT ID。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.TokenManagerBase">
+            <summary>
+            令牌管理器抽象基类，提供并发安全的令牌刷新实现。
+            </summary>
+        </member>
+        <member name="E:Mud.HttpUtils.TokenManagerBase.RefreshFailed">
+            <summary>
+            令牌刷新失败事件。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenManagerBase.MaxRefreshRetryCount">
+            <summary>
+            获取令牌刷新失败时的最大重试次数，默认 0（不重试）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenManagerBase.RefreshRetryDelayMilliseconds">
+            <summary>
+            获取令牌刷新重试间隔（毫秒），默认 1000ms。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenManagerBase.ExpireThresholdSeconds">
+            <summary>
+            获取令牌过期提前量（秒），默认 300 秒（5 分钟）。
+            令牌在此时间内即将过期时将触发自动刷新。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenManagerBase.MaxScopeCacheSize">
+            <summary>
+            获取作用域缓存的最大容量，默认 64。超过此容量时将清理过期条目。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.TokenManagerBase.#ctor">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.TokenManagerBase.GetTokenAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.TokenManagerBase.GetTokenAsync(System.String[],System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.TokenManagerBase.GetOrRefreshTokenAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.TokenManagerBase.GetOrRefreshTokenAsync(System.String[],System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.TokenManagerBase.InvalidateTokenAsync(System.String[],System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.TokenManagerBase.RefreshTokenCoreAsync(System.Threading.CancellationToken)">
+            <summary>
+            刷新令牌的核心实现，由子类实现具体的刷新逻辑。
+            </summary>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>刷新后的凭证令牌。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.TokenManagerBase.RefreshTokenWithScopesAsync(System.String[],System.Threading.CancellationToken)">
+            <summary>
+            刷新指定作用域的令牌。默认实现忽略 scopes 调用 <see cref="M:Mud.HttpUtils.TokenManagerBase.RefreshTokenCoreAsync(System.Threading.CancellationToken)"/>，
+            子类可重写此方法以支持基于 Scope 的令牌刷新。
+            </summary>
+            <param name="scopes">令牌作用域数组。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>刷新后的凭证令牌。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.TokenManagerBase.GetScopeKey(System.String[])">
+            <summary>
+            生成作用域缓存键。默认实现将 scopes 排序后用逗号连接，null 或空数组返回 "default"。
+            </summary>
+            <param name="scopes">令牌作用域数组。</param>
+            <returns>缓存键字符串。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.TokenManagerBase.UpdateCachedToken(Mud.HttpUtils.CredentialToken)">
+            <summary>
+            更新缓存的令牌信息。
+            </summary>
+            <param name="token">凭证令牌。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.TokenManagerBase.UpdateScopedToken(System.String,Mud.HttpUtils.CredentialToken)">
+            <summary>
+            更新指定作用域的缓存令牌信息。
+            </summary>
+            <param name="scopeKey">作用域缓存键。</param>
+            <param name="token">凭证令牌。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.TokenManagerBase.SetCachedToken(System.String,System.Int64)">
+            <summary>
+            设置缓存的令牌信息（用于初始化或外部更新）。
+            </summary>
+            <param name="accessToken">访问令牌。</param>
+            <param name="expireTime">过期时间（Unix 时间戳，毫秒）。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.TokenManagerBase.OnRefreshFailed(Mud.HttpUtils.TokenRefreshFailedEventArgs)">
+            <summary>
+            触发令牌刷新失败事件。
+            </summary>
+            <param name="e">事件参数。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.TokenManagerBase.Dispose(System.Boolean)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.TokenManagerBase.Dispose">
+            <inheritdoc />
+        </member>
+        <member name="T:Mud.HttpUtils.TokenRefreshBackgroundOptions">
+            <summary>
+            令牌主动刷新后台服务配置选项。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.TokenRefreshBackgroundOptions.SectionName">
+            <summary>
+            配置节的名称。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenRefreshBackgroundOptions.Enabled">
+            <summary>
+            获取或设置是否启用后台刷新，默认 false。
+            需要显式设置为 true 以启用令牌主动刷新后台服务。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenRefreshBackgroundOptions.RefreshIntervalSeconds">
+            <summary>
+            刷新间隔（秒），默认 300 秒（5 分钟）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenRefreshBackgroundOptions.RefreshBeforeExpirySeconds">
+            <summary>
+            令牌过期前提前刷新时间（秒），默认 600 秒（10 分钟）。
+            此值用于配合后台服务判断令牌是否即将过期，当前由 TokenManagerBase.ExpireThresholdSeconds 控制。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenRefreshBackgroundOptions.RetryDelaySeconds">
+            <summary>
+            刷新失败后重试延迟（秒），默认 60 秒（1 分钟）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenRefreshBackgroundOptions.StopOnError">
+            <summary>
+            获取或设置刷新失败时是否停止服务，默认 false。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.TokenRefreshFailedEventArgs">
+            <summary>
+            令牌刷新失败事件参数。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.TokenRefreshFailedEventArgs.#ctor(System.Exception,System.String,System.Int32)">
+            <summary>
+            初始化令牌刷新失败事件参数。
+            </summary>
+            <param name="exception">导致刷新失败的异常。</param>
+            <param name="tokenType">令牌类型。</param>
+            <param name="retryCount">已重试次数。</param>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenRefreshFailedEventArgs.Exception">
+            <summary>
+            导致刷新失败的异常。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenRefreshFailedEventArgs.TokenType">
+            <summary>
+            令牌类型。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenRefreshFailedEventArgs.RetryCount">
+            <summary>
+            已重试次数。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenRefreshFailedEventArgs.Timestamp">
+            <summary>
+            失败时间戳。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenRefreshFailedEventArgs.ShouldRetry">
+            <summary>
+            是否应该重试（由事件处理器设置）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenRefreshFailedEventArgs.FallbackToken">
+            <summary>
+            降级令牌（由事件处理器设置，用于降级策略）。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.TokenResult">
+            <summary>
+            令牌结果结构体，封装了令牌获取操作的结果信息。
+            </summary>
+            <remarks>
+            该结构体是不可变的（readonly struct），用于安全地传递令牌信息。
+            包含访问令牌、过期时间和作用域等核心信息。
+            <para>
+            适用场景：
+            <list type="bullet">
+              <item>令牌管理器返回令牌信息</item>
+              <item>令牌刷新操作的结果传递</item>
+              <item>令牌有效性检查和过期判断</item>
+            </list>
+            </para>
+            </remarks>
+            <example>
+            <code>
+            // 创建令牌结果
+            var tokenResult = new TokenResult("access_token_123", DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds(), "read write");
+            
+            // 检查是否为空
+            if (!tokenResult.IsEmpty)
+            {
+                Console.WriteLine($"令牌: {tokenResult.AccessToken}");
+            }
+            
+            // 检查是否即将过期（默认5分钟内）
+            if (tokenResult.IsExpiringSoon())
+            {
+                Console.WriteLine("令牌即将过期，需要刷新");
+            }
+            
+            // 使用静态空值
+            var emptyResult = TokenResult.Empty;
+            </code>
+            </example>
+            <seealso cref="T:Mud.HttpUtils.CredentialToken"/>
+            <seealso cref="T:Mud.HttpUtils.ITokenManager"/>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenResult.AccessToken">
+            <summary>
+            获取访问令牌字符串。
+            </summary>
+            <value>访问令牌，用于API认证的Bearer令牌。</value>
+            <remarks>
+            此属性永远不会为 <c>null</c>，在构造函数中会进行空值检查。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenResult.ExpireTime">
+            <summary>
+            获取令牌的过期时间（Unix时间戳，毫秒）。
+            </summary>
+            <value>过期时间的Unix时间戳（毫秒），0表示无过期时间。</value>
+            <remarks>
+            该值表示令牌失效的绝对时间点。可以使用 <see cref="M:Mud.HttpUtils.TokenResult.IsExpiringSoon(System.Int32)"/> 方法检查是否即将过期。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenResult.Scope">
+            <summary>
+            获取令牌的作用域。
+            </summary>
+            <value>令牌的作用域，可能为 <c>null</c>。</value>
+            <remarks>
+            作用域定义了令牌的权限范围，例如 "read", "write", "admin" 等。
+            不同的认证系统可能使用不同的作用域格式。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenResult.IsEmpty">
+            <summary>
+            获取一个值，指示令牌结果是否为空。
+            </summary>
+            <value>如果 <see cref="P:Mud.HttpUtils.TokenResult.AccessToken"/> 为 <c>null</c> 或空字符串，则为 <c>true</c>；否则为 <c>false</c>。</value>
+            <remarks>
+            此属性提供了一种快速检查令牌结果是否有效的方法。
+            通常用于判断令牌获取操作是否成功。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.TokenResult.#ctor(System.String,System.Int64,System.String)">
+            <summary>
+            初始化 <see cref="T:Mud.HttpUtils.TokenResult"/> 结构体的新实例。
+            </summary>
+            <param name="accessToken">访问令牌，不能为 <c>null</c>。</param>
+            <param name="expireTime">过期时间（Unix时间戳，毫秒）。</param>
+            <param name="scope">可选的令牌作用域。</param>
+            <exception cref="T:System.ArgumentNullException">当 <paramref name="accessToken"/> 为 <c>null</c> 时抛出。</exception>
+            <remarks>
+            构造函数会验证 <paramref name="accessToken"/> 参数，确保其不为 <c>null</c>。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenResult.Empty">
+            <summary>
+            获取一个空的令牌结果实例。
+            </summary>
+            <value>表示空令牌结果的 <see cref="T:Mud.HttpUtils.TokenResult"/> 实例。</value>
+            <remarks>
+            此静态属性返回一个默认的 <see cref="T:Mud.HttpUtils.TokenResult"/> 实例，其 <see cref="P:Mud.HttpUtils.TokenResult.AccessToken"/> 为 <c>null</c>。
+            通常用于表示令牌获取失败或无效的情况。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.TokenResult.FromCredentialToken(Mud.HttpUtils.CredentialToken)">
+            <summary>
+            从 <see cref="T:Mud.HttpUtils.CredentialToken"/> 创建 <see cref="T:Mud.HttpUtils.TokenResult"/> 实例。
+            </summary>
+            <param name="token">凭据令牌对象。</param>
+            <returns>
+            如果 <paramref name="token"/> 为 <c>null</c> 或其 <see cref="P:Mud.HttpUtils.CredentialToken.AccessToken"/> 为空，则返回 <see cref="P:Mud.HttpUtils.TokenResult.Empty"/>；
+            否则返回包含令牌信息的 <see cref="T:Mud.HttpUtils.TokenResult"/> 实例。
+            </returns>
+            <remarks>
+            此方法提供了一种从 <see cref="T:Mud.HttpUtils.CredentialToken"/> 转换为 <see cref="T:Mud.HttpUtils.TokenResult"/> 的便捷方式。
+            </remarks>
+            <example>
+            <code>
+            var credentialToken = new CredentialToken { AccessToken = "token123", Expire = 1234567890, Scope = "read" };
+            var result = TokenResult.FromCredentialToken(credentialToken);
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.TokenResult.IsExpiringSoon(System.Int32)">
+            <summary>
+            检查令牌是否即将过期。
+            </summary>
+            <param name="thresholdSeconds">过期阈值（秒），默认为 300 秒（5分钟）。</param>
+            <returns>如果令牌将在指定的阈值时间内过期，则为 <c>true</c>；否则为 <c>false</c>。</returns>
+            <remarks>
+            此方法用于判断令牌是否需要在过期前进行刷新。
+            <para>
+            特殊处理：
+            <list type="bullet">
+              <item>如果 <see cref="P:Mud.HttpUtils.TokenResult.ExpireTime"/> 为 0 或负数，则认为令牌即将过期</item>
+              <item>比较基于当前UTC时间与过期时间的差值</item>
+            </list>
+            </para>
+            </remarks>
+            <example>
+            <code>
+            // 检查是否在5分钟内过期
+            if (tokenResult.IsExpiringSoon(300))
+            {
+                // 刷新令牌
+            }
+            
+            // 检查是否在1分钟内过期
+            if (tokenResult.IsExpiringSoon(60))
+            {
+                // 立即刷新令牌
+            }
+            </code>
+            </example>
+        </member>
+        <member name="T:Mud.HttpUtils.TokenTypes">
+            <summary>
+            令牌类型常量定义，提供标准化的令牌类型标识符。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.TokenTypes.TenantAccessToken">
+            <summary>
+            应用级别的访问令牌（如飞书的 TenantAccessToken）。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.TokenTypes.UserAccessToken">
+            <summary>
+            用户级别的访问令牌（如飞书的 UserAccessToken）。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.TokenTypes.Bearer">
+            <summary>
+            Bearer 认证方案前缀。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.TokenTypes.Basic">
+            <summary>
+            Basic 认证方案前缀。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.UserTokenCacheOptions">
+            <summary>
+            用户令牌缓存配置选项。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.UserTokenCacheOptions.SizeLimit">
+            <summary>
+            缓存容量限制（用户数量），默认 10000。
+            当缓存数量超过此值时，将自动淘汰过期令牌和最久未访问的令牌。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.UserTokenCacheOptions.ExpireThresholdSeconds">
+            <summary>
+            用户令牌过期提前量（秒），默认 300 秒（5 分钟）。
+            令牌在此时间内即将过期时将触发自动刷新。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.UserTokenCacheOptions.CleanupIntervalSeconds">
+            <summary>
+            缓存清理间隔（秒），默认 300 秒（5 分钟）。
+            定期清理过期的用户令牌缓存和对应的锁资源。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.UserTokenCacheOptions.SlidingExpirationSeconds">
+            <summary>
+            滑动过期时间（秒），默认 3600 秒（1 小时）。
+            如果在此时间内未访问缓存条目，该条目将被自动移除。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.UserTokenCacheOptions.CompactionPercentage">
+            <summary>
+            缓存压缩百分比，默认 0.2（20%）。
+            当缓存达到容量限制时，将按此比例压缩（移除）条目。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.UserTokenInfo">
+            <summary>
+            用户令牌信息类，用于存储和管理用户级别的令牌数据。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.UserTokenInfo.UserId">
+            <summary>
+            获取或设置用户的唯一标识符。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.UserTokenInfo.OpenId">
+            <summary>
+            获取或设置用户的 OpenId（第三方平台用户标识）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.UserTokenInfo.UnionId">
+            <summary>
+            获取或设置用户的 UnionId（跨应用统一用户标识）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.UserTokenInfo.AccessToken">
+            <summary>
+            获取或设置访问令牌。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.UserTokenInfo.AccessTokenExpireTime">
+            <summary>
+            获取或设置访问令牌的过期时间（Unix 时间戳，毫秒）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.UserTokenInfo.RefreshToken">
+            <summary>
+            获取或设置刷新令牌，用于获取新的访问令牌。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.UserTokenInfo.RefreshTokenExpireTime">
+            <summary>
+            获取或设置刷新令牌的过期时间（Unix 时间戳，毫秒）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.UserTokenInfo.Scope">
+            <summary>
+            获取或设置令牌的作用域。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.UserTokenInfo.CreatedAt">
+            <summary>
+            获取或设置令牌的创建时间。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.UserTokenInfo.LastRefreshedAt">
+            <summary>
+            获取或设置最后一次刷新令牌的时间。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.UserTokenInfo.LastAccessTime">
+            <summary>
+            获取或设置最后一次访问时间（单调递增计数器），用于 LRU 缓存淘汰策略。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.UserTokenInfo.Msg">
+            <summary>
+            获取或设置消息描述。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.UserTokenInfo.Code">
+            <summary>
+            获取或设置响应状态码。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenInfo.IsAccessTokenValid(System.Int32)">
+            <summary>
+            检查访问令牌是否有效。
+            </summary>
+            <param name="thresholdSeconds">过期阈值（秒），默认 300 秒（5 分钟）。</param>
+            <returns>如果访问令牌有效，则为 true；否则为 false。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenInfo.IsRefreshTokenValid">
+            <summary>
+            检查刷新令牌是否有效。
+            </summary>
+            <returns>如果刷新令牌有效，则为 true；否则为 false。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenInfo.FromCredentialToken(Mud.HttpUtils.CredentialToken,System.String,System.String,System.String)">
+            <summary>
+            从凭证令牌创建用户令牌信息。
+            </summary>
+            <param name="token">凭证令牌对象。</param>
+            <param name="userId">用户的唯一标识符。</param>
+            <param name="openId">用户的 OpenId（可选）。</param>
+            <param name="unionId">用户的 UnionId（可选）。</param>
+            <returns>新创建的用户令牌信息实例。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenInfo.FromCredentialToken(Mud.HttpUtils.UserTokenInfo,System.String,System.String,System.String)">
+            <summary>
+            从现有用户令牌信息创建新的用户令牌信息。
+            </summary>
+            <param name="token">现有的用户令牌信息对象。</param>
+            <param name="userId">用户的唯一标识符。</param>
+            <param name="openId">用户的 OpenId（可选）。</param>
+            <param name="unionId">用户的 UnionId（可选）。</param>
+            <returns>新创建的用户令牌信息实例。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenInfo.UpdateFromCredentialToken(Mud.HttpUtils.CredentialToken)">
+            <summary>
+            使用凭证令牌更新当前用户令牌信息。
+            </summary>
+            <param name="token">凭证令牌对象。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenInfo.UpdateFromCredentialToken(Mud.HttpUtils.UserTokenInfo)">
+            <summary>
+            使用现有用户令牌信息更新当前用户令牌信息。
+            </summary>
+            <param name="token">现有的用户令牌信息对象。</param>
+        </member>
+        <member name="T:Mud.HttpUtils.UserTokenManagerBase">
+            <summary>
+            用户令牌管理器抽象基类，提供并发安全的用户级令牌刷新实现。
+            使用 IMemoryCache 管理用户令牌缓存，支持容量限制、滑动过期和自动清理。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.UserTokenManagerBase.UserExpireThresholdSeconds">
+            <summary>
+            获取用户令牌过期提前量（秒），默认 300 秒（5 分钟）。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.#ctor">
+            <summary>
+            初始化用户令牌管理器基类。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.#ctor(Mud.HttpUtils.UserTokenCacheOptions)">
+            <summary>
+            初始化用户令牌管理器基类，使用指定的缓存配置选项。
+            </summary>
+            <param name="cacheOptions">缓存配置选项。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.GetTokenAsync(System.String,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.GetTokenInfoAsync(System.String,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.GetUserTokenWithCodeAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.RefreshUserTokenAsync(System.String,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.RemoveTokenAsync(System.String,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.HasValidTokenAsync(System.String,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.CanRefreshTokenAsync(System.String,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.GetOrRefreshTokenAsync(System.String,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.UpdateUserTokenCache(System.String,Mud.HttpUtils.UserTokenInfo)">
+            <summary>
+            更新用户令牌缓存。
+            </summary>
+            <param name="userId">用户标识。</param>
+            <param name="tokenInfo">用户令牌信息。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.RemoveUserTokenFromCache(System.String)">
+            <summary>
+            从缓存中移除用户令牌。
+            </summary>
+            <param name="userId">用户标识。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.CleanupExpiredUserTokens">
+            <summary>
+            清理所有过期的用户令牌缓存和对应的锁资源。
+            使用 IMemoryCache 后，过期条目会自动清理，此方法主要用于手动触发压缩。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.CleanupOrphanedLocks">
+            <summary>
+            清理孤立的锁资源：缓存中已不存在的用户对应的锁。
+            此方法作为 RegisterPostEvictionCallback 的兜底机制，
+            确保在低内存压力场景下锁资源也能被及时释放。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.TryCleanupUserLock(System.String)">
+            <summary>
+            尝试清理指定用户的锁资源。
+            当缓存命中且锁处于空闲状态时，主动释放锁以避免内存泄漏。
+            </summary>
+            <param name="userId">用户标识。</param>
+        </member>
+        <member name="P:Mud.HttpUtils.UserTokenManagerBase.CachedUserTokenCount">
+            <summary>
+            获取当前缓存中的用户令牌数量（近似值）。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.InvalidateTokenAsync(System.String[],System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.InvalidateUserTokenAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            使指定用户的缓存令牌失效。
+            </summary>
+            <param name="userId">用户标识。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.Dispose(System.Boolean)">
+            <summary>
+            释放资源。
+            </summary>
+            <param name="disposing">是否释放托管资源。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.Dispose">
+            <summary>
+            释放资源。
+            </summary>
+        </member>
+    </members>
+</doc>
