@@ -44,7 +44,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 context.HasCache = true;
             }
 
-            if (HasQueryMapAttribute(methodSymbol))
+            if (HasQueryMapAttribute(methodSymbol) || HasComplexQueryParameter(methodSymbol))
             {
                 context.HasQueryMap = true;
             }
@@ -560,6 +560,14 @@ internal class MethodGenerator : ICodeFragmentGenerator
         return methodSymbol.Parameters
             .Any(p => p.GetAttributes()
                 .Any(attr => attr.AttributeClass?.Name == HttpClientGeneratorConstants.QueryMapAttribute));
+    }
+
+    private static bool HasComplexQueryParameter(IMethodSymbol methodSymbol)
+    {
+        return methodSymbol.Parameters
+            .Any(p => p.GetAttributes()
+                .Any(attr => attr.AttributeClass?.Name == HttpClientGeneratorConstants.QueryAttribute) &&
+                !TypeDetectionHelper.IsSimpleType(TypeSymbolHelper.GetTypeFullName(p.Type)));
     }
 
     private static bool IsResponseType(MethodAnalysisResult methodInfo)
