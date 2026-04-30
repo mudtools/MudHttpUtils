@@ -95,9 +95,19 @@ public class TokenHelperTests
     }
 
     [Fact]
-    public void GetTokenManagerKeyFromAttribute_ConstructorArg_SecondPriority()
+    public void GetTokenManagerKeyFromAttribute_ConstructorArg_ThirdPriority()
     {
         var attrData = CreateAttributeData("[Token(\"ConstructorValue\", TokenType = \"NamedType\")]");
+
+        var result = TokenHelper.GetTokenManagerKeyFromAttribute(attrData);
+
+        result.Should().Be("NamedType");
+    }
+
+    [Fact]
+    public void GetTokenManagerKeyFromAttribute_ConstructorArgFallback_WhenNoNamedTokenType()
+    {
+        var attrData = CreateAttributeData("[Token(\"ConstructorValue\")]");
 
         var result = TokenHelper.GetTokenManagerKeyFromAttribute(attrData);
 
@@ -105,13 +115,13 @@ public class TokenHelperTests
     }
 
     [Fact]
-    public void GetTokenManagerKeyFromAttribute_NamedTokenType_ThirdPriority()
+    public void GetTokenManagerKeyFromAttribute_NamedTokenType_SecondPriority()
     {
         var attrData = CreateAttributeData("[Token(TokenType = \"NamedType\")]");
 
         var result = TokenHelper.GetTokenManagerKeyFromAttribute(attrData);
 
-        result.Should().Be("TenantAccessToken");
+        result.Should().Be("NamedType");
     }
 
     [Fact]

@@ -63,6 +63,14 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
                 codeBuilder.AppendLine("            set => Mud.HttpUtils.Client.DefaultCurrentUserContext.SetUserId(value);");
                 codeBuilder.AppendLine("        }");
             }
+            else if (_context.Configuration.AnyMethodRequiresUserId)
+            {
+                codeBuilder.AppendLine();
+                codeBuilder.AppendLine("        /// <summary>");
+                codeBuilder.AppendLine("        /// 当前用户ID，委托给 ICurrentUserContext.UserId。");
+                codeBuilder.AppendLine("        /// </summary>");
+                codeBuilder.AppendLine("        public string? CurrentUserId => _currentUserContext.UserId;");
+            }
 
             codeBuilder.AppendLine();
             return;
@@ -142,13 +150,20 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("            set => Mud.HttpUtils.Client.DefaultCurrentUserContext.SetUserId(value);");
             codeBuilder.AppendLine("        }");
         }
-        else if (_context.HasCacheVaryByUser && !_context.Configuration.AnyMethodRequiresUserId)
+        else if (_context.Configuration.AnyMethodRequiresUserId)
+        {
+            codeBuilder.AppendLine();
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 当前用户ID，委托给 ICurrentUserContext.UserId。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine("        public string? CurrentUserId => _currentUserContext.UserId;");
+        }
+        else if (_context.HasCacheVaryByUser)
         {
             codeBuilder.AppendLine();
             codeBuilder.AppendLine("        /// <summary>");
             codeBuilder.AppendLine("        /// 当前用户ID，用于缓存键的用户隔离。");
             codeBuilder.AppendLine("        /// </summary>");
-            codeBuilder.AppendLine("        [System.Obsolete(\"请改用 ICurrentUserContext 注入获取用户 ID。\")]");
             codeBuilder.AppendLine("        public string? CurrentUserId { get; set; }");
         }
 
@@ -263,6 +278,10 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             {
                 baseParameters.Add("appManager");
                 baseParameters.Add("tokenProvider");
+                if (_context.Configuration.AnyMethodRequiresUserId)
+                {
+                    baseParameters.Add("currentUserContext");
+                }
             }
             else if (_context.HasHttpClient)
             {
@@ -348,7 +367,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         if (!TokenMethodHelper.ShouldGenerateTokenMethods(_context))
             return;
 
-        TokenMethodHelper.GenerateGetTokenTypeFieldAndMethod(codeBuilder, _context);
+        TokenMethodHelper.GenerateTokenManagerKeyFieldAndMethod(codeBuilder, _context);
     }
 
     private void GenerateUseAppMethod(StringBuilder codeBuilder)

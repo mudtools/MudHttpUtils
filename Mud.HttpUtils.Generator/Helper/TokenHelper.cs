@@ -89,8 +89,8 @@ internal static class TokenHelper
     /// <summary>
     /// 从Token特性中提取TokenManagerKey值，按优先级解析：
     /// 1. 显式设置的 TokenManagerKey 命名参数
-    /// 2. 构造函数参数（向后兼容，旧写法 [Token("TenantAccessToken")]）
-    /// 3. TokenType 命名参数值
+    /// 2. TokenType 命名参数（显式指定的 TokenType 优先于构造函数默认值）
+    /// 3. 构造函数参数（向后兼容，旧写法 [Token("TenantAccessToken")]）
     /// 4. 返回 null（由调用方使用默认值）
     /// </summary>
     /// <param name="tokenAttribute">Token特性数据</param>
@@ -105,17 +105,17 @@ internal static class TokenHelper
         if (namedKey != null)
             return namedKey.ToString();
 
+        var namedTokenType = tokenAttribute.NamedArguments
+            .FirstOrDefault(na => na.Key.Equals("TokenType", StringComparison.OrdinalIgnoreCase)).Value.Value;
+        if (namedTokenType != null)
+            return namedTokenType.ToString();
+
         if (tokenAttribute.ConstructorArguments.Length > 0)
         {
             var constructorValue = tokenAttribute.ConstructorArguments[0].Value;
             if (constructorValue != null)
                 return constructorValue.ToString();
         }
-
-        var namedTokenType = tokenAttribute.NamedArguments
-            .FirstOrDefault(na => na.Key.Equals("TokenType", StringComparison.OrdinalIgnoreCase)).Value.Value;
-        if (namedTokenType != null)
-            return namedTokenType.ToString();
 
         return null;
     }

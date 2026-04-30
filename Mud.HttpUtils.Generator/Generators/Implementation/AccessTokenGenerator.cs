@@ -79,7 +79,7 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
                 : TokenHelper.GetDefaultTokenType();
 
         var requiresUserId = _context.Configuration.RequiresUserId ?? _context.Configuration.IsUserAccessToken;
-        var userIdArg = requiresUserId && _context.Configuration.AnyMethodRequiresUserId
+        var userIdArg = requiresUserId
             ? "_currentUserContext.UserId"
             : "null";
 

@@ -16,7 +16,7 @@ internal static class TokenMethodHelper
         return !context.HasHttpClient && context.HasTokenManager;
     }
 
-    public static void GenerateGetTokenTypeFieldAndMethod(StringBuilder codeBuilder, GeneratorContext context)
+    public static void GenerateTokenManagerKeyFieldAndMethod(StringBuilder codeBuilder, GeneratorContext context)
     {
         if (!ShouldGenerateTokenMethods(context))
             return;
