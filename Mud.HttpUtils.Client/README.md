@@ -15,12 +15,12 @@ Mud.HttpUtils.Client 是 Mud.HttpUtils 的客户端实现层，提供 `IEnhanced
 
 ### HTTP 客户端实现
 
-| 类 | 说明 |
-|-----|------|
-| `EnhancedHttpClient` | `IEnhancedHttpClient` 默认实现，封装 `System.Net.Http.HttpClient`，支持请求/响应拦截器、基地址动态切换 |
-| `DirectEnhancedHttpClient` | 直接构造的增强客户端，支持加密操作 |
-| `HttpClientFactoryEnhancedClient` | 基于 `IHttpClientFactory` 的增强客户端，支持基地址动态切换 |
-| `HttpClientResolver` | `IHttpClientResolver` 默认实现，管理命名客户端注册与解析 |
+| 类                                | 说明                                                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `EnhancedHttpClient`              | `IEnhancedHttpClient` 默认实现，封装 `System.Net.Http.HttpClient`，支持请求/响应拦截器、基地址动态切换 |
+| `DirectEnhancedHttpClient`        | 直接构造的增强客户端，支持加密操作                                                                     |
+| `HttpClientFactoryEnhancedClient` | 基于 `IHttpClientFactory` 的增强客户端，支持基地址动态切换                                             |
+| `HttpClientResolver`              | `IHttpClientResolver` 默认实现，管理命名客户端注册与解析                                               |
 
 ### 基地址动态切换
 
@@ -38,8 +38,8 @@ var baseAddress = httpClient.BaseAddress;
 
 ### 文件上传进度报告
 
-| 类 | 说明 |
-|-----|------|
+| 类                          | 说明                                                |
+| --------------------------- | --------------------------------------------------- |
 | `ProgressableStreamContent` | 支持进度报告的 `HttpContent` 实现，用于文件上传场景 |
 
 ```csharp
@@ -54,19 +54,19 @@ var content = new ProgressableStreamContent(
 
 ### 请求/响应拦截器
 
-| 类 | 说明 |
-|-----|------|
-| `IHttpRequestInterceptor` | 请求拦截器接口 |
+| 类                         | 说明           |
+| -------------------------- | -------------- |
+| `IHttpRequestInterceptor`  | 请求拦截器接口 |
 | `IHttpResponseInterceptor` | 响应拦截器接口 |
 
 拦截器按 `Order` 属性排序执行，`Order` 值小的先执行。
 
 ### 响应缓存
 
-| 类 | 说明 |
-|-----|------|
+| 类                         | 说明                                                                        |
+| -------------------------- | --------------------------------------------------------------------------- |
 | `CacheResponseInterceptor` | 响应缓存拦截器，实现 `IHttpResponseInterceptor`，配合 `CacheAttribute` 使用 |
-| `MemoryHttpResponseCache` | 基于 `IMemoryCache` 的内存响应缓存，实现 `IHttpResponseCache` |
+| `MemoryHttpResponseCache`  | 基于 `IMemoryCache` 的内存响应缓存，实现 `IHttpResponseCache`               |
 
 ```csharp
 // 注册缓存拦截器
@@ -80,8 +80,8 @@ services.AddSingleton<IHttpResponseInterceptor, CacheResponseInterceptor>();
 
 ### 加密提供程序
 
-| 类 | 说明 |
-|-----|------|
+| 类                             | 说明                                                  |
+| ------------------------------ | ----------------------------------------------------- |
 | `DefaultAesEncryptionProvider` | `IEncryptionProvider` 默认实现，使用 AES-CBC 模式加密 |
 
 ```csharp
@@ -99,10 +99,10 @@ services.AddMudHttpClient("myApi", encryption =>
 
 ### 安全认证提供程序
 
-| 类 | 说明 |
-|-----|------|
-| `DefaultApiKeyProvider` | `IApiKeyProvider` 默认实现，从 `IConfiguration` 读取 API Key |
-| `DefaultHmacSignatureProvider` | `IHmacSignatureProvider` 默认实现，使用 HMAC-SHA256 算法 |
+| 类                             | 说明                                                         |
+| ------------------------------ | ------------------------------------------------------------ |
+| `DefaultApiKeyProvider`        | `IApiKeyProvider` 默认实现，从 `IConfiguration` 读取 API Key |
+| `DefaultHmacSignatureProvider` | `IHmacSignatureProvider` 默认实现，使用 HMAC-SHA256 算法     |
 
 ```csharp
 // API Key 认证
@@ -116,8 +116,8 @@ services.AddSingleton<IHmacSignatureProvider, DefaultHmacSignatureProvider>();
 
 ### 日志脱敏
 
-| 类 | 说明 |
-|-----|------|
+| 类                           | 说明                                                                          |
+| ---------------------------- | ----------------------------------------------------------------------------- |
 | `DefaultSensitiveDataMasker` | `ISensitiveDataMasker` 默认实现，支持 `Hide`、`Mask`、`TypeOnly` 三种脱敏模式 |
 
 ```csharp
@@ -134,11 +134,13 @@ var maskedObj = masker.MaskObject(userRequest);
 
 ### 令牌管理
 
-| 类 | 说明 |
-|-----|------|
-| `TokenManagerBase` | 令牌管理器抽象基类，提供并发安全的令牌刷新 |
-| `UserTokenManagerBase` | 用户令牌管理器抽象基类，提供用户级并发安全刷新和缓存容量控制 |
-| `TokenRefreshHostedService` | 令牌后台刷新服务，实现 `IHostedService` 和 `ITokenRefreshBackgroundService` |
+| 类                          | 说明                                                                         |
+| --------------------------- | ---------------------------------------------------------------------------- |
+| `TokenManagerBase`          | 令牌管理器抽象基类，提供并发安全的令牌刷新                                   |
+| `UserTokenManagerBase`      | 用户令牌管理器抽象基类，提供用户级并发安全刷新和缓存容量控制                 |
+| `TokenRefreshHostedService` | 令牌后台刷新服务，实现 `IHostedService` 和 `ITokenRefreshBackgroundService`  |
+| `DefaultTokenProvider`      | `ITokenProvider` 默认实现，通过 `IMudAppContext` 获取令牌管理器并获取令牌    |
+| `DefaultCurrentUserContext` | `ICurrentUserContext` 默认实现，使用 `AsyncLocal` 实现线程安全的用户 ID 传播 |
 
 ```csharp
 // 自定义令牌管理器
@@ -170,12 +172,16 @@ services.AddHostedService<TokenRefreshHostedService>();
 
 > `TokenManagerBase` 使用 `SemaphoreSlim(1, 1)` 确保同一时刻只有一个线程执行令牌刷新。`UserTokenManagerBase` 使用 `IMemoryCache` 管理用户令牌缓存，支持 `MaxCacheSize` 限制和自动过期清理。`TokenRefreshHostedService` 支持配置 `InitialDelaySeconds`（初始延迟）和 `RefreshIntervalSeconds`（刷新间隔）。
 
+> `DefaultTokenProvider` 是 `ITokenProvider` 的默认实现，通过 `IMudAppContext` 获取令牌管理器并获取令牌。它不持有 `IMudAppContext` 引用，而是通过方法参数逐调用接收，以确保生成代码中 `UseApp()`/`UseDefaultApp()` 上下文切换的正确性。当 `TokenRequest.UserId` 非空时，自动使用 `IUserTokenManager` 获取用户级令牌。
+
+> `DefaultCurrentUserContext` 使用 `AsyncLocal` 确保用户 ID 在异步上下文中正确传播。适用于非 Web 场景或需要手动设置用户 ID 的场景。在 ASP.NET Core 应用中，建议替换为基于 `HttpContext` 的实现。通过 `DefaultCurrentUserContext.SetUserId(userId)` 静态方法设置当前用户 ID。
+
 ### 应用上下文
 
-| 类 | 说明 |
-|-----|------|
+| 类                     | 说明                                        |
+| ---------------------- | ------------------------------------------- |
 | `DefaultAppManager<T>` | `IAppManager<T>` 默认实现，管理多应用上下文 |
-| `DefaultAppContext` | `IMudAppContext` 默认实现 |
+| `DefaultAppContext`    | `IMudAppContext` 默认实现                   |
 
 ```csharp
 // 多应用管理
@@ -193,11 +199,11 @@ appManager.ConfigurationChanged += (sender, args) =>
 
 ### 工具类
 
-| 类型 | 说明 |
-|------|------|
-| `XmlSerialize` | XML 序列化/反序列化工具 |
-| `HttpClientUtils` | HTTP 客户端扩展方法 |
-| `UrlValidator` | URL 安全验证工具（可配置域名白名单） |
+| 类型               | 说明                                       |
+| ------------------ | ------------------------------------------ |
+| `XmlSerialize`     | XML 序列化/反序列化工具                    |
+| `HttpClientUtils`  | HTTP 客户端扩展方法                        |
+| `UrlValidator`     | URL 安全验证工具（可配置域名白名单）       |
 | `MessageSanitizer` | 敏感信息脱敏工具（优化字段检测，减少误判） |
 
 ## 安装
@@ -210,10 +216,10 @@ appManager.ConfigurationChanged += (sender, args) =>
 
 ### AddMudHttpClient — 注册客户端
 
-| 重载 | 说明 |
-|------|------|
-| `AddMudHttpClient(clientName, configureHttpClient)` | 注册 Named HttpClient 和 `IEnhancedHttpClient` |
-| `AddMudHttpClient(clientName, baseAddress)` | 带基础地址的便捷重载 |
+| 重载                                                                     | 说明                                             |
+| ------------------------------------------------------------------------ | ------------------------------------------------ |
+| `AddMudHttpClient(clientName, configureHttpClient)`                      | 注册 Named HttpClient 和 `IEnhancedHttpClient`   |
+| `AddMudHttpClient(clientName, baseAddress)`                              | 带基础地址的便捷重载                             |
 | `AddMudHttpClient(clientName, configureEncryption, configureHttpClient)` | 带加密配置的重载，同时注册 `IEncryptionProvider` |
 
 > `AddMudHttpClient` 同时注册 `IHttpClientResolver` 为单例服务，支持多命名客户端场景。
@@ -244,13 +250,13 @@ services.AddSingleton<ISensitiveDataMasker, DefaultSensitiveDataMasker>();
 
 ## 依赖项
 
-| 包 | 说明 |
-|----|------|
-| `Mud.HttpUtils.Abstractions` | 接口定义 |
-| `Microsoft.Extensions.Http` | `IHttpClientFactory` 支持 |
-| `Microsoft.Extensions.Logging.Abstractions` | 日志抽象 |
-| `Microsoft.Extensions.Options` | 选项模式 |
-| `Microsoft.Extensions.Caching.Memory` | 内存缓存（`UserTokenManagerBase`、`MemoryHttpResponseCache`） |
+| 包                                          | 说明                                                          |
+| ------------------------------------------- | ------------------------------------------------------------- |
+| `Mud.HttpUtils.Abstractions`                | 接口定义                                                      |
+| `Microsoft.Extensions.Http`                 | `IHttpClientFactory` 支持                                     |
+| `Microsoft.Extensions.Logging.Abstractions` | 日志抽象                                                      |
+| `Microsoft.Extensions.Options`              | 选项模式                                                      |
+| `Microsoft.Extensions.Caching.Memory`       | 内存缓存（`UserTokenManagerBase`、`MemoryHttpResponseCache`） |
 
 ## 设计原则
 

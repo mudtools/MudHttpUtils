@@ -48,6 +48,9 @@ MudHttpUtils/
 │   ├── IEnhancedHttpClient           # 增强客户端组合接口
 │   ├── IEncryptionProvider           # 加密提供程序接口
 │   ├── ITokenManager                 # 令牌管理接口
+│   ├── ITokenProvider                # Token 提供器接口（统一封装 Token 获取逻辑）
+│   ├── ICurrentUserContext           # 当前用户上下文接口（线程安全的用户 ID 传播）
+│   ├── TokenRequest                  # Token 请求参数
 │   ├── ITokenStore / IUserTokenStore # 令牌持久化存储契约
 │   ├── IHttpClientResolver           # 命名客户端解析接口
 │   ├── TokenManagerBase              # 令牌管理器抽象基类
@@ -169,23 +172,23 @@ public class UserService
 
 #### 参数类型
 
-| 特性 | 说明 | 示例 |
-|-----|------|------|
-| `[Path]` | URL 路径参数 | `[Get("/users/{id}")]` + `[Path] int id` |
-| `[Query]` | URL 查询参数 | `[Query] string? name` |
-| `[QueryMap]` | 查询参数映射（对象/字典展开为查询参数） | `[QueryMap] SearchCriteria criteria` |
-| `[ArrayQuery]` | 数组查询参数 | `[ArrayQuery] int[] ids` |
-| `[RawQueryString]` | 原始查询字符串 | `[RawQueryString] string queryString` |
-| `[Header]` | HTTP 请求头（支持参数/方法/接口级别） | `[Header("X-API-Key")] string apiKey` |
-| `[Body]` | 请求体 | `[Body] UserRequest request` |
-| `[Body(RawString = true)]` | 原始字符串请求体 | `[Body(RawString = true)] string content` |
-| `[Body(UseStringContent = true)]` | 字符串内容请求体 | `[Body(UseStringContent = true)] string content` |
-| `[FormContent]` | 表单数据 | `[FormContent] IFormContent formData` |
-| `[Form]` | 表单字段（`application/x-www-form-urlencoded`） | `[Form("username")] string user` |
-| `[MultipartForm]` | 多部分表单字段（`multipart/form-data`） | `[MultipartForm] IFormFile file` |
-| `[Upload]` | 文件上传参数（支持自定义字段名/文件名/内容类型） | `[Upload(FieldName = "doc")] IFormFile file` |
-| `[FilePath]` | 文件下载路径 | `[FilePath] string savePath` |
-| `[Token]` | Token 认证（支持参数/接口/方法级别） | `[Token(TokenTypes.UserAccessToken)] string token` |
+| 特性                              | 说明                                             | 示例                                               |
+| --------------------------------- | ------------------------------------------------ | -------------------------------------------------- |
+| `[Path]`                          | URL 路径参数                                     | `[Get("/users/{id}")]` + `[Path] int id`           |
+| `[Query]`                         | URL 查询参数                                     | `[Query] string? name`                             |
+| `[QueryMap]`                      | 查询参数映射（对象/字典展开为查询参数）          | `[QueryMap] SearchCriteria criteria`               |
+| `[ArrayQuery]`                    | 数组查询参数                                     | `[ArrayQuery] int[] ids`                           |
+| `[RawQueryString]`                | 原始查询字符串                                   | `[RawQueryString] string queryString`              |
+| `[Header]`                        | HTTP 请求头（支持参数/方法/接口级别）            | `[Header("X-API-Key")] string apiKey`              |
+| `[Body]`                          | 请求体                                           | `[Body] UserRequest request`                       |
+| `[Body(RawString = true)]`        | 原始字符串请求体                                 | `[Body(RawString = true)] string content`          |
+| `[Body(UseStringContent = true)]` | 字符串内容请求体                                 | `[Body(UseStringContent = true)] string content`   |
+| `[FormContent]`                   | 表单数据                                         | `[FormContent] IFormContent formData`              |
+| `[Form]`                          | 表单字段（`application/x-www-form-urlencoded`）  | `[Form("username")] string user`                   |
+| `[MultipartForm]`                 | 多部分表单字段（`multipart/form-data`）          | `[MultipartForm] IFormFile file`                   |
+| `[Upload]`                        | 文件上传参数（支持自定义字段名/文件名/内容类型） | `[Upload(FieldName = "doc")] IFormFile file`       |
+| `[FilePath]`                      | 文件下载路径                                     | `[FilePath] string savePath`                       |
+| `[Token]`                         | Token 认证（支持参数/接口/方法级别）             | `[Token(TokenTypes.UserAccessToken)] string token` |
 
 #### 内容类型管理
 
@@ -222,11 +225,11 @@ public interface IUserApi { }
 
 基于 Polly 的弹性策略，通过装饰器模式包装 HTTP 客户端：
 
-| 策略 | 默认状态 | 说明 |
-|------|---------|------|
-| 重试 | 启用 | 默认 3 次重试，支持指数退避 |
-| 超时 | 启用 | 默认 30 秒，悲观超时策略 |
-| 熔断 | 关闭 | 连续失败阈值触发，支持半开状态 |
+| 策略 | 默认状态 | 说明                           |
+| ---- | -------- | ------------------------------ |
+| 重试 | 启用     | 默认 3 次重试，支持指数退避    |
+| 超时 | 启用     | 默认 30 秒，悲观超时策略       |
+| 熔断 | 关闭     | 连续失败阈值触发，支持半开状态 |
 
 策略组合顺序：**重试（外层） → 熔断 → 超时（内层）**
 
@@ -247,20 +250,28 @@ services.AddMudHttpUtils("myApi", "https://api.example.com", options =>
 ```json
 {
   "MudHttpResilience": {
-    "Retry": { "Enabled": true, "MaxRetryAttempts": 3, "UseExponentialBackoff": true },
+    "Retry": {
+      "Enabled": true,
+      "MaxRetryAttempts": 3,
+      "UseExponentialBackoff": true
+    },
     "Timeout": { "Enabled": true, "TimeoutSeconds": 30 },
-    "CircuitBreaker": { "Enabled": true, "FailureThreshold": 5, "BreakDurationSeconds": 30 }
+    "CircuitBreaker": {
+      "Enabled": true,
+      "FailureThreshold": 5,
+      "BreakDurationSeconds": 30
+    }
   }
 }
 ```
 
 #### 三种运行模式
 
-| 模式 | 配置 | 构造函数依赖 | 适用场景 |
-|------|------|-------------|---------|
+| 模式                   | 配置                                 | 构造函数依赖                                             | 适用场景                         |
+| ---------------------- | ------------------------------------ | -------------------------------------------------------- | -------------------------------- |
 | **HttpClient（推荐）** | `HttpClient = "IEnhancedHttpClient"` | `IOptions<JsonSerializerOptions>`, `IEnhancedHttpClient` | 通用场景，配合 `AddMudHttpUtils` |
-| **TokenManager** | `TokenManage = "IFeishuAppManager"` | `IOptions<JsonSerializerOptions>`, Token 管理器 | 飞书/钉钉等需要 Token 管理 |
-| **默认** | 无 | `IOptions<JsonSerializerOptions>`, `IMudAppContext` | 遗留场景 |
+| **TokenManager**       | `TokenManage = "IFeishuAppManager"`  | `IOptions<JsonSerializerOptions>`, Token 管理器          | 飞书/钉钉等需要 Token 管理       |
+| **默认**               | 无                                   | `IOptions<JsonSerializerOptions>`, `IMudAppContext`      | 遗留场景                         |
 
 > `HttpClient` 与 `TokenManage` 互斥，同时定义时 `HttpClient` 优先。
 
@@ -277,6 +288,14 @@ Task<User> GetUserAsync([Path] int id, [Token(TokenTypes.UserAccessToken)] strin
 
 // Token 注入模式：Header（默认）、Query、Path、ApiKey、HmacSignature
 [Token(TokenTypes.AppAccessToken, InjectionMode = TokenInjectionMode.Header, Name = "Authorization")]
+
+// 使用 RequiresUserId 自动获取用户级令牌
+[Token(TokenTypes.UserAccessToken, RequiresUserId = true)]
+public interface IUserApi { }
+
+// 使用 TokenManagerKey 解耦业务概念和技术查找键
+[Token(TokenType = "UserAccessToken", TokenManagerKey = "FeishuUser")]
+public interface IFeishuUserApi { }
 ```
 
 #### 加密支持
@@ -312,6 +331,9 @@ Task<SecureData> GetSecureDataAsync([Body] Request request);
 // 核心接口
 ITokenManager          // 通用令牌管理
 IUserTokenManager      // 用户令牌管理
+ITokenProvider         // Token 提供器（统一封装 Token 获取逻辑）
+ICurrentUserContext     // 当前用户上下文（线程安全的用户 ID 传播，替代 CurrentUserId 属性）
+TokenRequest           // Token 请求参数（TokenManagerKey, UserId, Scopes）
 ITokenStore            // 令牌持久化存储契约
 IUserTokenStore        // 用户级令牌持久化存储契约
 TokenManagerBase       // 令牌管理器抽象基类（并发安全刷新）
@@ -324,6 +346,16 @@ public class MyTokenManager : TokenManagerBase
     protected override Task<TokenInfo?> GetCachedTokenAsync(string tokenType, CancellationToken ct) { }
     protected override Task<TokenInfo> RefreshTokenCoreAsync(string tokenType, CancellationToken ct) { }
 }
+
+// 使用 RequiresUserId 自动获取用户级令牌
+[HttpClientApi(TokenManage = "IFeishuAppManager")]
+[Token(TokenType = "UserAccessToken", RequiresUserId = true)]
+public interface IFeishuUserApi { }
+// 生成的构造函数自动注入 ICurrentUserContext，CurrentUserId 属性委托给 _currentUserContext.UserId
+
+// 使用 TokenManagerKey 解耦业务概念和技术查找键
+[Token(TokenType = "UserAccessToken", TokenManagerKey = "FeishuUser")]
+public interface IFeishuContactApi { }
 ```
 
 #### 多命名客户端
@@ -430,12 +462,12 @@ Task<SearchResult> SearchAsync([QueryMap] IDictionary<string, object> filters);
 
 `QueryMapAttribute` 属性：
 
-| 属性 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `PropertySeparator` | `string` | `"_"` | 嵌套属性名称分隔符 |
+| 属性                  | 类型                       | 默认值     | 说明                              |
+| --------------------- | -------------------------- | ---------- | --------------------------------- |
+| `PropertySeparator`   | `string`                   | `"_"`      | 嵌套属性名称分隔符                |
 | `SerializationMethod` | `QuerySerializationMethod` | `ToString` | 序列化方法（`ToString` / `Json`） |
-| `UrlEncode` | `bool` | `true` | 是否对查询参数值进行 URL 编码 |
-| `IncludeNullValues` | `bool` | `false` | 是否包含值为 null 的属性 |
+| `UrlEncode`           | `bool`                     | `true`     | 是否对查询参数值进行 URL 编码     |
+| `IncludeNullValues`   | `bool`                     | `false`    | 是否包含值为 null 的属性          |
 
 #### Base Path 支持
 
@@ -488,25 +520,25 @@ public class UserCreatedEvent { }
 
 ### 📚 详细文档
 
-| 包名 | 说明 | 文档 |
-|-----|------|------|
-| Mud.HttpUtils | 元包，一站式引用 + DI 注册 | [README](Mud.HttpUtils/README.md) |
-| Mud.HttpUtils.Abstractions | 接口定义，零依赖 | [README](Mud.HttpUtils.Abstractions/README.md) |
-| Mud.HttpUtils.Attributes | 特性标注 | [README](Mud.HttpUtils.Attributes/README.md) |
-| Mud.HttpUtils.Client | 客户端实现 | [README](Mud.HttpUtils.Client/README.md) |
-| Mud.HttpUtils.Resilience | 弹性策略 | [README](Mud.HttpUtils.Resilience/README.md) |
-| Mud.HttpUtils.Generator | 源代码生成器 | [README](Mud.HttpUtils.Generator/README.md) |
+| 包名                       | 说明                       | 文档                                           |
+| -------------------------- | -------------------------- | ---------------------------------------------- |
+| Mud.HttpUtils              | 元包，一站式引用 + DI 注册 | [README](Mud.HttpUtils/README.md)              |
+| Mud.HttpUtils.Abstractions | 接口定义，零依赖           | [README](Mud.HttpUtils.Abstractions/README.md) |
+| Mud.HttpUtils.Attributes   | 特性标注                   | [README](Mud.HttpUtils.Attributes/README.md)   |
+| Mud.HttpUtils.Client       | 客户端实现                 | [README](Mud.HttpUtils.Client/README.md)       |
+| Mud.HttpUtils.Resilience   | 弹性策略                   | [README](Mud.HttpUtils.Resilience/README.md)   |
+| Mud.HttpUtils.Generator    | 源代码生成器               | [README](Mud.HttpUtils.Generator/README.md)    |
 
 ### 📦 NuGet 包
 
-| 包名 | 说明 | NuGet |
-|-----|------|-------|
-| Mud.HttpUtils | 元包：Abstractions + Attributes + Client + Resilience | [![NuGet](https://img.shields.io/nuget/v/Mud.HttpUtils.svg)](https://www.nuget.org/packages/Mud.HttpUtils/) |
-| Mud.HttpUtils.Abstractions | 纯接口定义，零依赖 | [![NuGet](https://img.shields.io/nuget/v/Mud.HttpUtils.Abstractions.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Abstractions/) |
-| Mud.HttpUtils.Attributes | 特性定义 | [![NuGet](https://img.shields.io/nuget/v/Mud.HttpUtils.Attributes.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Attributes/) |
-| Mud.HttpUtils.Client | 客户端实现 + DI 注册 | [![NuGet](https://img.shields.io/nuget/v/Mud.HttpUtils.Client.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Client/) |
-| Mud.HttpUtils.Resilience | 弹性策略（Polly） | [![NuGet](https://img.shields.io/nuget/v/Mud.HttpUtils.Resilience.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Resilience/) |
-| Mud.HttpUtils.Generator | 源代码生成器 | [![NuGet](https://img.shields.io/nuget/v/Mud.HttpUtils.Generator.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Generator/) |
+| 包名                       | 说明                                                  | NuGet                                                                                                                                 |
+| -------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Mud.HttpUtils              | 元包：Abstractions + Attributes + Client + Resilience | [![NuGet](https://img.shields.io/nuget/v/Mud.HttpUtils.svg)](https://www.nuget.org/packages/Mud.HttpUtils/)                           |
+| Mud.HttpUtils.Abstractions | 纯接口定义，零依赖                                    | [![NuGet](https://img.shields.io/nuget/v/Mud.HttpUtils.Abstractions.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Abstractions/) |
+| Mud.HttpUtils.Attributes   | 特性定义                                              | [![NuGet](https://img.shields.io/nuget/v/Mud.HttpUtils.Attributes.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Attributes/)     |
+| Mud.HttpUtils.Client       | 客户端实现 + DI 注册                                  | [![NuGet](https://img.shields.io/nuget/v/Mud.HttpUtils.Client.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Client/)             |
+| Mud.HttpUtils.Resilience   | 弹性策略（Polly）                                     | [![NuGet](https://img.shields.io/nuget/v/Mud.HttpUtils.Resilience.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Resilience/)     |
+| Mud.HttpUtils.Generator    | 源代码生成器                                          | [![NuGet](https://img.shields.io/nuget/v/Mud.HttpUtils.Generator.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Generator/)       |
 
 ### 🧪 测试
 
@@ -620,14 +652,14 @@ public class UserService
 
 ### 📚 Documentation
 
-| Package | Description | Docs |
-|---------|-------------|------|
-| Mud.HttpUtils | Metapackage + DI registration | [README](Mud.HttpUtils/README.md) |
+| Package                    | Description                              | Docs                                           |
+| -------------------------- | ---------------------------------------- | ---------------------------------------------- |
+| Mud.HttpUtils              | Metapackage + DI registration            | [README](Mud.HttpUtils/README.md)              |
 | Mud.HttpUtils.Abstractions | Interface definitions, zero dependencies | [README](Mud.HttpUtils.Abstractions/README.md) |
-| Mud.HttpUtils.Attributes | Attribute annotations | [README](Mud.HttpUtils.Attributes/README.md) |
-| Mud.HttpUtils.Client | Client implementation | [README](Mud.HttpUtils.Client/README.md) |
-| Mud.HttpUtils.Resilience | Resilience policies (Polly) | [README](Mud.HttpUtils.Resilience/README.md) |
-| Mud.HttpUtils.Generator | Source code generator | [README](Mud.HttpUtils.Generator/README.md) |
+| Mud.HttpUtils.Attributes   | Attribute annotations                    | [README](Mud.HttpUtils.Attributes/README.md)   |
+| Mud.HttpUtils.Client       | Client implementation                    | [README](Mud.HttpUtils.Client/README.md)       |
+| Mud.HttpUtils.Resilience   | Resilience policies (Polly)              | [README](Mud.HttpUtils.Resilience/README.md)   |
+| Mud.HttpUtils.Generator    | Source code generator                    | [README](Mud.HttpUtils.Generator/README.md)    |
 
 ### 🤝 Contributing
 

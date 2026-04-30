@@ -51,7 +51,7 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 | `ArrayQueryAttribute`     | 数组查询参数                  | Parameter                      | `Separator`                                                                                                    |
 | `HeaderAttribute`         | 请求头参数                    | Parameter / Method / Interface | `Name`, `Value`, `AliasAs`, `Replace`                                                                          |
 | `BodyAttribute`           | 请求体参数                    | Parameter                      | `ContentType`, `EnableEncrypt`, `EncryptSerializeType`, `EncryptPropertyName`, `RawString`, `UseStringContent` |
-| `TokenAttribute`          | 令牌参数                      | Parameter / Interface / Method | `TokenType`, `InjectionMode`, `Name`, `Scopes`, `Replace`                                                      |
+| `TokenAttribute`          | 令牌参数                      | Parameter / Interface / Method | `TokenType`, `InjectionMode`, `Name`, `Scopes`, `Replace`, `TokenManagerKey`, `RequiresUserId`                 |
 | `FilePathAttribute`       | 文件路径参数                  | Parameter                      | `BufferSize`                                                                                                   |
 | `FormContentAttribute`    | 表单内容参数                  | Parameter / Class              | —                                                                                                              |
 | `FormAttribute`           | 表单字段（URL 编码）          | Parameter                      | `FieldName`                                                                                                    |
@@ -187,13 +187,19 @@ Task SendTextAsync([Body(UseStringContent = true)] object message);
 
 ## TokenAttribute 详解
 
-| 属性            | 类型                 | 默认值                | 说明                                             |
-| --------------- | -------------------- | --------------------- | ------------------------------------------------ |
-| `TokenType`     | `string`             | `"TenantAccessToken"` | Token 类型标识符（建议使用 `TokenTypes` 常量类） |
-| `InjectionMode` | `TokenInjectionMode` | `Header`              | Token 注入模式                                   |
-| `Name`          | `string?`            | `null`                | 自定义 Header/Query 名称                         |
-| `Scopes`        | `string?`            | `null`                | 令牌作用域，多个作用域用逗号分隔                 |
-| `Replace`       | `bool`               | `true`                | 是否替换已有 Header                              |
+| 属性              | 类型                 | 默认值                | 说明                                                        |
+| ----------------- | -------------------- | --------------------- | ----------------------------------------------------------- |
+| `TokenType`       | `string`             | `"TenantAccessToken"` | Token 类型标识符（建议使用 `TokenTypes` 常量类）            |
+| `InjectionMode`   | `TokenInjectionMode` | `Header`              | Token 注入模式                                              |
+| `Name`            | `string?`            | `null`                | 自定义 Header/Query 名称                                    |
+| `Scopes`          | `string?`            | `null`                | 令牌作用域，多个作用域用逗号分隔                            |
+| `Replace`         | `bool`               | `true`                | 是否替换已有 Header                                         |
+| `TokenManagerKey` | `string?`            | `null`                | 令牌管理器查找键，用于解耦业务概念（TokenType）和技术查找键 |
+| `RequiresUserId`  | `bool`               | `false`               | 是否需要用户 ID，为 true 时通过 `ICurrentUserContext` 获取  |
+
+> **TokenManagerKey**：当指定此值时，代码生成器将使用此键而非 `TokenType` 从 `IMudAppContext` 中查找令牌管理器。此属性用于解耦业务概念和技术查找键，例如多个不同的 `TokenType` 可以映射到同一个 `TokenManager`。如果未指定，则使用 `TokenType` 作为查找键。
+
+> **RequiresUserId**：当设置为 `true` 时，生成的代码将通过 `ICurrentUserContext` 获取当前用户 ID，并将其传递给 `ITokenProvider` 以获取用户级令牌。如果未显式指定，则根据 `TokenType` 自动推断：`TokenType` 为 `"UserAccessToken"` 时默认为 `true`，否则默认为 `false`。
 
 ### 使用 TokenTypes 常量
 
@@ -241,6 +247,31 @@ public interface IScopedApi { }
 [Get("/api/user/profile")]
 [Token("UserAccessToken", Scopes = "user:read")]
 Task<Profile> GetProfileAsync();
+```
+
+### TokenManagerKey 使用
+
+```csharp
+// 使用 TokenManagerKey 解耦业务概念和技术查找键
+[Token(TokenType = "UserAccessToken", TokenManagerKey = "FeishuUser")]
+public interface IFeishuUserApi { }
+
+// 多个不同的 TokenType 映射到同一个 TokenManager
+[Token(TokenType = "UserAccessToken", TokenManagerKey = "FeishuUser")]
+public interface IFeishuContactApi { }
+```
+
+### RequiresUserId 使用
+
+```csharp
+// 显式指定需要用户 ID
+[Token(TokenType = "CustomToken", RequiresUserId = true)]
+public interface ICustomUserApi { }
+
+// 方法级别覆盖接口的 RequiresUserId
+[Get("/api/public-data")]
+[Token(RequiresUserId = false)]
+Task<PublicData> GetPublicDataAsync();
 ```
 
 ## CacheAttribute 详解

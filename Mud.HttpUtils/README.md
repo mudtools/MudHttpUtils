@@ -132,31 +132,31 @@ public class UserService
 
 ### AddMudHttpUtils — 一站式注册
 
-| 重载 | 说明 |
-|------|------|
-| `AddMudHttpUtils(clientName, configureHttpClient, configureResilienceOptions)` | 注册 Client + Resilience 装饰器 |
-| `AddMudHttpUtils(clientName, baseAddress, configureResilienceOptions)` | 带基础地址的便捷重载 |
-| `AddMudHttpUtils(clientName, configuration, configureHttpClient, sectionPath)` | 从配置文件绑定弹性策略 |
-| `AddMudHttpUtils(clientName, configureEncryption, configureHttpClient, configureResilienceOptions)` | 带 AES 加密配置的重载 |
+| 重载                                                                                                | 说明                            |
+| --------------------------------------------------------------------------------------------------- | ------------------------------- |
+| `AddMudHttpUtils(clientName, configureHttpClient, configureResilienceOptions)`                      | 注册 Client + Resilience 装饰器 |
+| `AddMudHttpUtils(clientName, baseAddress, configureResilienceOptions)`                              | 带基础地址的便捷重载            |
+| `AddMudHttpUtils(clientName, configuration, configureHttpClient, sectionPath)`                      | 从配置文件绑定弹性策略          |
+| `AddMudHttpUtils(clientName, configureEncryption, configureHttpClient, configureResilienceOptions)` | 带 AES 加密配置的重载           |
 
 ### AddMudHttpClient — 仅注册客户端
 
-| 重载 | 说明 |
-|------|------|
-| `AddMudHttpClient(clientName, configureHttpClient)` | 注册 Named HttpClient 和 `IEnhancedHttpClient` |
-| `AddMudHttpClient(clientName, baseAddress)` | 带基础地址的便捷重载 |
+| 重载                                                                     | 说明                                             |
+| ------------------------------------------------------------------------ | ------------------------------------------------ |
+| `AddMudHttpClient(clientName, configureHttpClient)`                      | 注册 Named HttpClient 和 `IEnhancedHttpClient`   |
+| `AddMudHttpClient(clientName, baseAddress)`                              | 带基础地址的便捷重载                             |
 | `AddMudHttpClient(clientName, configureEncryption, configureHttpClient)` | 带加密配置的重载，同时注册 `IEncryptionProvider` |
 
 > `AddMudHttpClient` 同时注册 `IHttpClientResolver` 为单例服务，支持多命名客户端场景。
 
 ### AddMudHttpResilience / AddMudHttpResilienceDecorator — 弹性策略
 
-| 方法 | 说明 |
-|------|------|
-| `AddMudHttpResilience(configureOptions)` | 仅注册策略服务（不装饰客户端） |
-| `AddMudHttpResilience(configuration, sectionPath)` | 从配置绑定策略 |
-| `AddMudHttpResilienceDecorator(configureOptions)` | 注册装饰器，为 `IEnhancedHttpClient` 添加弹性策略 |
-| `AddMudHttpResilienceDecorator(configuration, sectionPath)` | 从配置绑定的装饰器注册 |
+| 方法                                                        | 说明                                              |
+| ----------------------------------------------------------- | ------------------------------------------------- |
+| `AddMudHttpResilience(configureOptions)`                    | 仅注册策略服务（不装饰客户端）                    |
+| `AddMudHttpResilience(configuration, sectionPath)`          | 从配置绑定策略                                    |
+| `AddMudHttpResilienceDecorator(configureOptions)`           | 注册装饰器，为 `IEnhancedHttpClient` 添加弹性策略 |
+| `AddMudHttpResilienceDecorator(configuration, sectionPath)` | 从配置绑定的装饰器注册                            |
 
 > **注意**：`AddMudHttpResilienceDecorator` 必须在 `AddMudHttpClient` 之后调用。
 
@@ -182,15 +182,21 @@ services.AddWebApiHttpClient();
 
 ### 模式二：TokenManager 模式
 
-适用于需要自定义 Token 管理器的场景。生成的实现类构造函数依赖指定的 Token 管理器类型。
+适用于需要自定义 Token 管理器的场景。生成的实现类构造函数依赖指定的 Token 管理器类型、`ITokenProvider`（统一 Token 获取逻辑）和 `ICurrentUserContext`（当 `RequiresUserId = true` 时）。
 
 ```csharp
 [HttpClientApi(TokenManage = "IFeishuAppManager")]
+[Token(TokenType = "UserAccessToken", RequiresUserId = true)]
 public interface IMyApi
 {
     [Get("/data")]
     Task<Data> GetDataAsync();
 }
+
+// 生成的构造函数：
+// public MyApi(IOptions<JsonSerializerOptions> option, IFeishuAppManager appManager, ITokenProvider tokenProvider, ICurrentUserContext currentUserContext)
+// 生成的属性：
+// public string? CurrentUserId => _currentUserContext.UserId;
 
 // 注册
 services.AddSingleton<IFeishuAppManager, FeishuAppManager>();
@@ -412,15 +418,15 @@ public interface IExampleApi { }
 
 ### HTTP 方法特性
 
-| 特性 | 说明 |
-|-----|------|
-| `[Get]` | GET 请求 |
-| `[Post]` | POST 请求 |
-| `[Put]` | PUT 请求 |
-| `[Delete]` | DELETE 请求（支持带请求体） |
-| `[Patch]` | PATCH 请求 |
-| `[Head]` | HEAD 请求 |
-| `[Options]` | OPTIONS 请求 |
+| 特性        | 说明                        |
+| ----------- | --------------------------- |
+| `[Get]`     | GET 请求                    |
+| `[Post]`    | POST 请求                   |
+| `[Put]`     | PUT 请求                    |
+| `[Delete]`  | DELETE 请求（支持带请求体） |
+| `[Patch]`   | PATCH 请求                  |
+| `[Head]`    | HEAD 请求                   |
+| `[Options]` | OPTIONS 请求                |
 
 所有 HTTP 方法特性支持以下属性：
 
@@ -436,34 +442,34 @@ Task<UserInfo> CreateUserAsync([Body] UserRequest request);
 
 ### 参数特性
 
-| 特性 | 说明 | 示例 |
-|-----|------|------|
-| `[Path]` | URL 路径参数 | `[Get("/users/{id}")]` + `[Path] int id` |
-| `[Query]` | URL 查询参数 | `[Query] string? name` |
-| `[QueryMap]` | 查询参数映射（对象/字典展开） | `[QueryMap] SearchCriteria criteria` |
-| `[RawQueryString]` | 原始查询字符串 | `[RawQueryString] string qs` |
-| `[ArrayQuery]` | 数组查询参数 | `[ArrayQuery] int[] ids` |
-| `[Header]` | HTTP 请求头（支持参数/方法/接口级别） | `[Header("X-API-Key")] string apiKey` |
-| `[Body]` | 请求体 | `[Body] UserRequest request` |
-| `[Body(RawString = true)]` | 原始字符串请求体 | `[Body(RawString = true)] string content` |
-| `[Body(UseStringContent = true)]` | 字符串内容请求体 | `[Body(UseStringContent = true)] string content` |
-| `[FormContent]` | 表单数据 | `[FormContent] IFormContent formData` |
-| `[Form]` | 表单字段（URL编码） | `[Form("username")] string user` |
-| `[MultipartForm]` | 多部分表单字段 | `[MultipartForm] IFormFile file` |
-| `[Upload]` | 文件上传参数 | `[Upload(FieldName = "doc")] IFormFile file` |
-| `[FilePath]` | 文件下载路径 | `[FilePath] string savePath` |
-| `[Token]` | Token 认证（支持参数/接口/方法级别） | `[Token(TokenTypes.UserAccessToken)] string token` |
+| 特性                              | 说明                                  | 示例                                               |
+| --------------------------------- | ------------------------------------- | -------------------------------------------------- |
+| `[Path]`                          | URL 路径参数                          | `[Get("/users/{id}")]` + `[Path] int id`           |
+| `[Query]`                         | URL 查询参数                          | `[Query] string? name`                             |
+| `[QueryMap]`                      | 查询参数映射（对象/字典展开）         | `[QueryMap] SearchCriteria criteria`               |
+| `[RawQueryString]`                | 原始查询字符串                        | `[RawQueryString] string qs`                       |
+| `[ArrayQuery]`                    | 数组查询参数                          | `[ArrayQuery] int[] ids`                           |
+| `[Header]`                        | HTTP 请求头（支持参数/方法/接口级别） | `[Header("X-API-Key")] string apiKey`              |
+| `[Body]`                          | 请求体                                | `[Body] UserRequest request`                       |
+| `[Body(RawString = true)]`        | 原始字符串请求体                      | `[Body(RawString = true)] string content`          |
+| `[Body(UseStringContent = true)]` | 字符串内容请求体                      | `[Body(UseStringContent = true)] string content`   |
+| `[FormContent]`                   | 表单数据                              | `[FormContent] IFormContent formData`              |
+| `[Form]`                          | 表单字段（URL编码）                   | `[Form("username")] string user`                   |
+| `[MultipartForm]`                 | 多部分表单字段                        | `[MultipartForm] IFormFile file`                   |
+| `[Upload]`                        | 文件上传参数                          | `[Upload(FieldName = "doc")] IFormFile file`       |
+| `[FilePath]`                      | 文件下载路径                          | `[FilePath] string savePath`                       |
+| `[Token]`                         | Token 认证（支持参数/接口/方法级别）  | `[Token(TokenTypes.UserAccessToken)] string token` |
 
 ### BodyAttribute 详解
 
-| 属性 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `ContentType` | `string?` | `null` | 请求体内容类型（优先级最高） |
-| `EnableEncrypt` | `bool` | `false` | 是否启用加密 |
-| `EncryptSerializeType` | `SerializeType` | `Json` | 加密序列化类型 |
-| `EncryptPropertyName` | `string` | `"data"` | 加密后的属性名 |
-| `RawString` | `bool` | `false` | 是否作为原始字符串发送（不进行 JSON 序列化，也不调用 ToString()） |
-| `UseStringContent` | `bool` | `false` | 是否将参数作为字符串内容发送（调用 ToString()） |
+| 属性                   | 类型            | 默认值   | 说明                                                              |
+| ---------------------- | --------------- | -------- | ----------------------------------------------------------------- |
+| `ContentType`          | `string?`       | `null`   | 请求体内容类型（优先级最高）                                      |
+| `EnableEncrypt`        | `bool`          | `false`  | 是否启用加密                                                      |
+| `EncryptSerializeType` | `SerializeType` | `Json`   | 加密序列化类型                                                    |
+| `EncryptPropertyName`  | `string`        | `"data"` | 加密后的属性名                                                    |
+| `RawString`            | `bool`          | `false`  | 是否作为原始字符串发送（不进行 JSON 序列化，也不调用 ToString()） |
+| `UseStringContent`     | `bool`          | `false`  | 是否将参数作为字符串内容发送（调用 ToString()）                   |
 
 ```csharp
 // 原始字符串内容
@@ -488,6 +494,11 @@ Task<Response> PostSecureAsync(
 [Token(TokenTypes.TenantAccessToken)]
 public interface IMyApi { }
 
+// 方法级 Token
+[Get("/api/user/profile")]
+[Token(TokenTypes.UserAccessToken, Scopes = "user:read")]
+Task<Profile> GetProfileAsync();
+
 // 参数级设置 Token 类型
 [Get("/users/{id}")]
 Task<User> GetUserAsync(
@@ -500,35 +511,43 @@ Task<User> GetUserAsync(
 
 // Token 作用域
 [Token(TokenTypes.UserAccessToken, Scopes = "user:read,user:write")]
+
+// 使用 RequiresUserId 自动获取用户级令牌
+[Token(TokenTypes.UserAccessToken, RequiresUserId = true)]
+public interface IUserApi { }
+
+// 使用 TokenManagerKey 解耦业务概念和技术查找键
+[Token(TokenType = "UserAccessToken", TokenManagerKey = "FeishuUser")]
+public interface IFeishuUserApi { }
 ```
 
 Token 注入模式：
 
-| 模式 | 说明 |
-|------|------|
-| `Header` | 注入到 HTTP Header（默认） |
-| `Query` | 注入到 URL Query 参数 |
-| `Path` | 注入到 URL Path |
-| `ApiKey` | API Key 认证，通过 `IApiKeyProvider` 获取密钥注入到请求头 |
+| 模式            | 说明                                                              |
+| --------------- | ----------------------------------------------------------------- |
+| `Header`        | 注入到 HTTP Header（默认）                                        |
+| `Query`         | 注入到 URL Query 参数                                             |
+| `Path`          | 注入到 URL Path                                                   |
+| `ApiKey`        | API Key 认证，通过 `IApiKeyProvider` 获取密钥注入到请求头         |
 | `HmacSignature` | HMAC 签名认证，通过 `IHmacSignatureProvider` 计算签名注入到请求头 |
 
 ### CacheAttribute 详解
 
-| 属性 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `DurationSeconds` | `int` | `300` | 缓存持续时间（秒） |
-| `CacheKeyTemplate` | `string?` | `null` | 缓存键模板 |
-| `VaryByUser` | `bool` | `false` | 是否按用户区分缓存 |
-| `UseSlidingExpiration` | `bool` | `false` | 是否使用滑动过期 |
-| `Priority` | `CachePriority` | `Normal` | 缓存优先级（`Low` / `Normal` / `High` / `NeverRemove`） |
+| 属性                   | 类型            | 默认值   | 说明                                                    |
+| ---------------------- | --------------- | -------- | ------------------------------------------------------- |
+| `DurationSeconds`      | `int`           | `300`    | 缓存持续时间（秒）                                      |
+| `CacheKeyTemplate`     | `string?`       | `null`   | 缓存键模板                                              |
+| `VaryByUser`           | `bool`          | `false`  | 是否按用户区分缓存                                      |
+| `UseSlidingExpiration` | `bool`          | `false`  | 是否使用滑动过期                                        |
+| `Priority`             | `CachePriority` | `Normal` | 缓存优先级（`Low` / `Normal` / `High` / `NeverRemove`） |
 
 ### SensitiveDataAttribute 详解
 
-| 属性 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `MaskMode` | `SensitiveDataMaskMode` | `Mask` | 脱敏模式 |
-| `PrefixLength` | `int` | `2` | 前缀保留长度（`Mask` 模式） |
-| `SuffixLength` | `int` | `2` | 后缀保留长度（`Mask` 模式） |
+| 属性           | 类型                    | 默认值 | 说明                        |
+| -------------- | ----------------------- | ------ | --------------------------- |
+| `MaskMode`     | `SensitiveDataMaskMode` | `Mask` | 脱敏模式                    |
+| `PrefixLength` | `int`                   | `2`    | 前缀保留长度（`Mask` 模式） |
+| `SuffixLength` | `int`                   | `2`    | 后缀保留长度（`Mask` 模式） |
 
 ### 内容类型优先级
 
@@ -779,17 +798,17 @@ services.AddMudHttpClient("myApi", "https://api.example.com");
 
 ### 核心接口
 
-| 接口 / 类 | 说明 |
-|-----------|------|
-| `ITokenManager` | 通用令牌管理，提供 `GetTokenAsync`、`GetOrRefreshTokenAsync` 方法 |
-| `IUserTokenManager` | 用户令牌管理，继承 `ITokenManager`，提供用户级令牌获取与刷新 |
-| `ICurrentUserId` | 当前用户标识，提供 `GetCurrentUserIdAsync` 方法 |
-| `ITokenStore` | 令牌持久化存储契约，支持分布式缓存或数据库持久化 |
-| `IUserTokenStore` | 用户级令牌持久化存储契约，继承 `ITokenStore`，按用户标识隔离 |
-| `ITokenRefreshBackgroundService` | 令牌后台刷新服务契约 |
-| `TokenManagerBase` | 令牌管理器抽象基类，提供并发安全的令牌刷新实现 |
-| `UserTokenManagerBase` | 用户令牌管理器抽象基类，提供并发安全的用户级令牌刷新实现 |
-| `TokenTypes` | 令牌类型常量类，提供标准化的令牌类型标识符 |
+| 接口 / 类                        | 说明                                                              |
+| -------------------------------- | ----------------------------------------------------------------- |
+| `ITokenManager`                  | 通用令牌管理，提供 `GetTokenAsync`、`GetOrRefreshTokenAsync` 方法 |
+| `IUserTokenManager`              | 用户令牌管理，继承 `ITokenManager`，提供用户级令牌获取与刷新      |
+| `ICurrentUserId`                 | 当前用户标识，提供 `GetCurrentUserIdAsync` 方法                   |
+| `ITokenStore`                    | 令牌持久化存储契约，支持分布式缓存或数据库持久化                  |
+| `IUserTokenStore`                | 用户级令牌持久化存储契约，继承 `ITokenStore`，按用户标识隔离      |
+| `ITokenRefreshBackgroundService` | 令牌后台刷新服务契约                                              |
+| `TokenManagerBase`               | 令牌管理器抽象基类，提供并发安全的令牌刷新实现                    |
+| `UserTokenManagerBase`           | 用户令牌管理器抽象基类，提供并发安全的用户级令牌刷新实现          |
+| `TokenTypes`                     | 令牌类型常量类，提供标准化的令牌类型标识符                        |
 
 ### 使用 TokenTypes 常量
 
@@ -973,39 +992,39 @@ var hmacProvider = appContext.GetService<IHmacSignatureProvider>();
 
 ## 核心接口
 
-| 接口 | 说明 |
-|------|------|
-| `IBaseHttpClient` | 基础 HTTP 操作（SendAsync、SendRawAsync、SendStreamAsync、DownloadAsync） |
-| `IJsonHttpClient` | JSON 操作（GetAsync、PostAsJsonAsync、DeleteAsJsonAsync 带请求体） |
-| `IXmlHttpClient` | XML 操作（SendXmlAsync、PostAsXmlAsync） |
-| `IEncryptableHttpClient` | 加密操作（EncryptContent、DecryptContent），独立接口 |
-| `IEnhancedHttpClient` | 增强组合接口，继承 IBaseHttpClient、IJsonHttpClient、IXmlHttpClient、IEncryptableHttpClient，支持 WithBaseAddress |
-| `IHttpClientResolver` | 命名客户端解析（GetClient、TryGetClient） |
-| `IFormContent` | 表单内容（ToHttpContent、ToHttpContentAsync 支持上传进度） |
-| `IEncryptionProvider` | 加密提供程序（Encrypt、Decrypt） |
-| `IApiKeyProvider` | API Key 提供器（GetApiKeyAsync） |
-| `IHmacSignatureProvider` | HMAC 签名提供器（GenerateSignatureAsync、VerifySignatureAsync） |
-| `ISecretProvider` | 安全密钥提供器（GetSecretAsync） |
-| `ISensitiveDataMasker` | 敏感数据脱敏器（Mask、MaskObject） |
-| `IHttpResponseCache` | 响应缓存契约（TryGet、Set、Remove） |
-| `ITokenManager` | 通用令牌管理 |
-| `IUserTokenManager` | 用户令牌管理 |
-| `ITokenStore` | 令牌持久化存储契约 |
-| `IUserTokenStore` | 用户级令牌持久化存储契约 |
-| `ITokenRefreshBackgroundService` | 令牌后台刷新服务契约 |
-| `IMudAppContext` | 应用上下文（含 GetService<T>） |
-| `IAppManager<T>` | 多应用管理器（含 ConfigurationChanged 事件） |
+| 接口                             | 说明                                                                                                              |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `IBaseHttpClient`                | 基础 HTTP 操作（SendAsync、SendRawAsync、SendStreamAsync、DownloadAsync）                                         |
+| `IJsonHttpClient`                | JSON 操作（GetAsync、PostAsJsonAsync、DeleteAsJsonAsync 带请求体）                                                |
+| `IXmlHttpClient`                 | XML 操作（SendXmlAsync、PostAsXmlAsync）                                                                          |
+| `IEncryptableHttpClient`         | 加密操作（EncryptContent、DecryptContent），独立接口                                                              |
+| `IEnhancedHttpClient`            | 增强组合接口，继承 IBaseHttpClient、IJsonHttpClient、IXmlHttpClient、IEncryptableHttpClient，支持 WithBaseAddress |
+| `IHttpClientResolver`            | 命名客户端解析（GetClient、TryGetClient）                                                                         |
+| `IFormContent`                   | 表单内容（ToHttpContent、ToHttpContentAsync 支持上传进度）                                                        |
+| `IEncryptionProvider`            | 加密提供程序（Encrypt、Decrypt）                                                                                  |
+| `IApiKeyProvider`                | API Key 提供器（GetApiKeyAsync）                                                                                  |
+| `IHmacSignatureProvider`         | HMAC 签名提供器（GenerateSignatureAsync、VerifySignatureAsync）                                                   |
+| `ISecretProvider`                | 安全密钥提供器（GetSecretAsync）                                                                                  |
+| `ISensitiveDataMasker`           | 敏感数据脱敏器（Mask、MaskObject）                                                                                |
+| `IHttpResponseCache`             | 响应缓存契约（TryGet、Set、Remove）                                                                               |
+| `ITokenManager`                  | 通用令牌管理                                                                                                      |
+| `IUserTokenManager`              | 用户令牌管理                                                                                                      |
+| `ITokenStore`                    | 令牌持久化存储契约                                                                                                |
+| `IUserTokenStore`                | 用户级令牌持久化存储契约                                                                                          |
+| `ITokenRefreshBackgroundService` | 令牌后台刷新服务契约                                                                                              |
+| `IMudAppContext`                 | 应用上下文（含 GetService<T>）                                                                                    |
+| `IAppManager<T>`                 | 多应用管理器（含 ConfigurationChanged 事件）                                                                      |
 
 ## 工具类
 
-| 类型 | 说明 |
-|------|------|
-| `XmlSerialize` | XML 序列化/反序列化工具 |
-| `HttpClientUtils` | HTTP 客户端扩展方法 |
-| `UrlValidator` | URL 安全验证工具（可配置域名白名单） |
-| `MessageSanitizer` | 敏感信息脱敏工具（优化字段检测，减少误判） |
-| `HttpRequestMessageCloner` | HTTP 请求消息克隆工具（确保重试安全，支持大小限制） |
-| `ProgressableStreamContent` | 支持进度报告的 HttpContent（文件上传场景） |
+| 类型                        | 说明                                                |
+| --------------------------- | --------------------------------------------------- |
+| `XmlSerialize`              | XML 序列化/反序列化工具                             |
+| `HttpClientUtils`           | HTTP 客户端扩展方法                                 |
+| `UrlValidator`              | URL 安全验证工具（可配置域名白名单）                |
+| `MessageSanitizer`          | 敏感信息脱敏工具（优化字段检测，减少误判）          |
+| `HttpRequestMessageCloner`  | HTTP 请求消息克隆工具（确保重试安全，支持大小限制） |
+| `ProgressableStreamContent` | 支持进度报告的 HttpContent（文件上传场景）          |
 
 ## 最佳实践
 
@@ -1081,12 +1100,12 @@ options.Retry.Enabled = false;
 
 ## 依赖项
 
-| 子模块 | 说明 |
-|--------|------|
-| Mud.HttpUtils.Abstractions | 纯接口定义，零外部依赖 |
-| Mud.HttpUtils.Attributes | 特性标注，仅依赖 Abstractions |
-| Mud.HttpUtils.Client | 客户端实现，依赖 Microsoft.Extensions.Http |
-| Mud.HttpUtils.Resilience | 弹性策略，依赖 Polly |
+| 子模块                     | 说明                                       |
+| -------------------------- | ------------------------------------------ |
+| Mud.HttpUtils.Abstractions | 纯接口定义，零外部依赖                     |
+| Mud.HttpUtils.Attributes   | 特性标注，仅依赖 Abstractions              |
+| Mud.HttpUtils.Client       | 客户端实现，依赖 Microsoft.Extensions.Http |
+| Mud.HttpUtils.Resilience   | 弹性策略，依赖 Polly                       |
 
 ## 版本历史
 

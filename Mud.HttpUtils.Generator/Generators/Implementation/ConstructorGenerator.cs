@@ -278,10 +278,6 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             {
                 baseParameters.Add("appManager");
                 baseParameters.Add("tokenProvider");
-                if (_context.Configuration.AnyMethodRequiresUserId)
-                {
-                    baseParameters.Add("currentUserContext");
-                }
             }
             else if (_context.HasHttpClient)
             {

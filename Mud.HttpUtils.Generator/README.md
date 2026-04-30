@@ -118,14 +118,16 @@ public interface IMyApi { }
 
 ### 模式二：TokenManager 模式
 
-设置 `TokenManage` 时，构造函数依赖 `IOptions<JsonSerializerOptions>` 和指定的 Token 管理器类型。
+设置 `TokenManage` 时，构造函数依赖 `IOptions<JsonSerializerOptions>`、指定的 Token 管理器类型、`ITokenProvider`（可选）和 `ICurrentUserContext`（当 `RequiresUserId = true` 时）。
 
 ```csharp
 [HttpClientApi(TokenManage = "IFeishuAppManager")]
 public interface IMyApi { }
 
 // 生成的构造函数：
-// public MyApi(IOptions<JsonSerializerOptions> option, IFeishuAppManager appManager)
+// public MyApi(IOptions<JsonSerializerOptions> option, IFeishuAppManager appManager, ITokenProvider tokenProvider)
+// 当 RequiresUserId = true 时：
+// public MyApi(IOptions<JsonSerializerOptions> option, IFeishuAppManager appManager, ITokenProvider tokenProvider, ICurrentUserContext currentUserContext)
 ```
 
 ### 模式三：HttpClient 模式（推荐）
@@ -202,11 +204,11 @@ services.AddTransient<global::MyApp.IMyApi>(sp =>
 
 生成器会根据运行模式自动生成 DI 依赖提示：
 
-| 模式           | 生成的注释                                                                  |
-| ------------ | ---------------------------------------------------------------------- |
+| 模式         | 生成的注释                                                                                        |
+| ------------ | ------------------------------------------------------------------------------------------------- |
 | HttpClient   | `// 注意：实现类构造函数依赖 IEnhancedHttpClient，请确保已通过 AddMudHttpClient 等方法注册此服务` |
 | TokenManager | `// 注意：实现类构造函数依赖 IFeishuAppManager，请确保已注册此令牌管理器服务`                     |
-| 默认           | `// 注册 XX 的 HttpClient 包装实现类（瞬时服务）`                                    |
+| 默认         | `// 注册 XX 的 HttpClient 包装实现类（瞬时服务）`                                                 |
 
 ### 注册组
 
@@ -241,6 +243,8 @@ public interface IExampleApi { }
 ```
 
 > `BaseAddress` 构造函数和属性已废弃，请通过 `AddMudHttpClient(clientName, baseAddress)` 配置基地址。
+
+> TokenManager 模式下，生成器会自动注入 `ITokenProvider` 用于统一 Token 获取。当 `[Token(RequiresUserId = true)]` 时，还会自动注入 `ICurrentUserContext` 并生成只读属性 `CurrentUserId => _currentUserContext.UserId`。
 
 ### HTTP 方法特性
 
@@ -404,16 +408,29 @@ Task<User> GetUserAsync([Path] int id, [Token("UserAccessToken")] string? token 
 
 // Token 作用域
 [Token("UserAccessToken", Scopes = "user:read,user:write")]
+
+// 使用 TokenManagerKey 解耦业务概念和技术查找键
+[Token(TokenType = "UserAccessToken", TokenManagerKey = "FeishuUser")]
+public interface IFeishuUserApi { }
+
+// 使用 RequiresUserId 指定需要用户 ID
+[Token(TokenType = "UserAccessToken", RequiresUserId = true)]
+public interface IUserApi { }
+
+// 方法级别覆盖 RequiresUserId
+[Get("/api/public-data")]
+[Token(RequiresUserId = false)]
+Task<PublicData> GetPublicDataAsync();
 ```
 
 Token 注入模式：
 
-| 模式 | 说明 |
-|------|------|
-| `Header` | 注入到 HTTP Header（默认） |
-| `Query` | 注入到 URL Query 参数 |
-| `Path` | 注入到 URL Path |
-| `ApiKey` | API Key 认证，通过 `IApiKeyProvider` 获取密钥注入到请求头 |
+| 模式            | 说明                                                              |
+| --------------- | ----------------------------------------------------------------- |
+| `Header`        | 注入到 HTTP Header（默认）                                        |
+| `Query`         | 注入到 URL Query 参数                                             |
+| `Path`          | 注入到 URL Path                                                   |
+| `ApiKey`        | API Key 认证，通过 `IApiKeyProvider` 获取密钥注入到请求头         |
 | `HmacSignature` | HMAC 签名认证，通过 `IHmacSignatureProvider` 计算签名注入到请求头 |
 
 ### 缓存支持
@@ -449,11 +466,11 @@ public interface IUserApi
 
 URL 构建规则：
 
-| 情况 | 实际路径 |
-|------|---------|
-| 正常 | `[Base Address] + [Base Path] + [Method Path]` |
+| 情况                    | 实际路径                                           |
+| ----------------------- | -------------------------------------------------- |
+| 正常                    | `[Base Address] + [Base Path] + [Method Path]`     |
 | Method Path 以 `/` 开头 | `[Base Address] + [Method Path]`（忽略 Base Path） |
-| Method Path 是绝对 URL | `[Method Path]`（忽略 Base Address 和 Base Path） |
+| Method Path 是绝对 URL  | `[Method Path]`（忽略 Base Address 和 Base Path）  |
 
 > Base Path 可以包含占位符（如 `{tenantId}`），通过接口级 `[Path]` 属性或方法参数提供值。
 
@@ -527,12 +544,12 @@ Task<SearchResult> SearchAsync(
 
 `QueryMapAttribute` 属性：
 
-| 属性 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `PropertySeparator` | `string` | `"_"` | 嵌套属性名称分隔符 |
+| 属性                  | 类型                       | 默认值     | 说明                              |
+| --------------------- | -------------------------- | ---------- | --------------------------------- |
+| `PropertySeparator`   | `string`                   | `"_"`      | 嵌套属性名称分隔符                |
 | `SerializationMethod` | `QuerySerializationMethod` | `ToString` | 序列化方法（`ToString` / `Json`） |
-| `UrlEncode` | `bool` | `true` | 是否对查询参数值进行 URL 编码 |
-| `IncludeNullValues` | `bool` | `false` | 是否包含值为 null 的属性 |
+| `UrlEncode`           | `bool`                     | `true`     | 是否对查询参数值进行 URL 编码     |
+| `IncludeNullValues`   | `bool`                     | `false`    | 是否包含值为 null 的属性          |
 
 > `[QueryMap]` 可与普通 `[Query]` 参数混合使用。对于嵌套对象，生成器会递归展开属性，使用 `PropertySeparator` 连接属性名。
 
@@ -576,8 +593,8 @@ var headers = response.ResponseHeaders;   // 响应头
 
 生成器提供以下编译诊断：
 
-| 诊断 ID | 级别 | 说明 |
-|---------|------|------|
+| 诊断 ID       | 级别    | 说明                                                                              |
+| ------------- | ------- | --------------------------------------------------------------------------------- |
 | HTTPCLIENT011 | Warning | `Response<T>` 返回类型与 `[Cache]` 特性组合使用，可能导致缓存过期的状态码和响应头 |
 
 ### 日志脱敏
