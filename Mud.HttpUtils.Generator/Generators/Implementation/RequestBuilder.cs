@@ -170,6 +170,7 @@ internal class RequestBuilder
             return;
 
         codeBuilder.AppendLine($"            var __queryParams = HttpUtility.ParseQueryString(string.Empty);");
+        codeBuilder.AppendLine("            var __rawQueryPairs = new System.Collections.Generic.List<string>();");
 
         foreach (var interfaceQueryProp in interfaceQueryProperties)
         {
@@ -208,6 +209,10 @@ internal class RequestBuilder
         codeBuilder.AppendLine("            if (__queryParams.Count > 0)");
         codeBuilder.AppendLine("            {");
         codeBuilder.AppendLine("                __url += \"?\" + __queryParams.ToString();");
+        codeBuilder.AppendLine("            }");
+        codeBuilder.AppendLine("            if (__rawQueryPairs.Count > 0)");
+        codeBuilder.AppendLine("            {");
+        codeBuilder.AppendLine("                __url += (__url.Contains(\"?\") ? \"&\" : \"?\") + string.Join(\"&\", __rawQueryPairs);");
         codeBuilder.AppendLine("            }");
 
         foreach (var param in rawQueryStringParams)
@@ -734,46 +739,64 @@ internal class RequestBuilder
     /// </summary>
     private void GenerateAllowAnyStatusCodeExecution(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, string httpClient, string cancellationTokenArg, string deserializeType)
     {
+        var isVoidType = deserializeType == "void" || deserializeType == "System.Void";
+
+        codeBuilder.AppendLine($"            using var __httpResponse = await {httpClient}.SendRawAsync(__httpRequest{cancellationTokenArg}).ConfigureAwait(false);");
+
+        if (isVoidType)
+            return;
+
         var responseContentType = methodInfo.ResponseContentType;
         var isXmlResponse = ContentTypeHelper.IsXmlContentType(responseContentType);
+        var resultVariable = $"__result_{methodInfo.MethodName}";
 
+        var rawContentVar = $"__rawContent_{methodInfo.MethodName}";
+
+        codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
+        codeBuilder.AppendLine($"            var {rawContentVar} = await __httpResponse.Content.ReadAsStringAsync({GetCancellationTokenArgument(cancellationTokenArg)}).ConfigureAwait(false);");
+        codeBuilder.AppendLine("#else");
+        codeBuilder.AppendLine($"            var {rawContentVar} = await __httpResponse.Content.ReadAsStringAsync().ConfigureAwait(false);");
+        codeBuilder.AppendLine("#endif");
+
+        var deserializeTypeWithoutNullable = deserializeType.EndsWith("?", StringComparison.OrdinalIgnoreCase) ? deserializeType.TrimEnd('?') : deserializeType;
         if (isXmlResponse)
         {
-            codeBuilder.AppendLine($"            {deserializeType} __result;");
+            codeBuilder.AppendLine($"            {deserializeTypeWithoutNullable} {resultVariable};");
             codeBuilder.AppendLine($"            try");
             codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                __result = await {httpClient}.SendXmlAsync<{deserializeType}>(__httpRequest, null{cancellationTokenArg}).ConfigureAwait(false);");
+            codeBuilder.AppendLine($"                var __deserializedObj = new System.Xml.Serialization.XmlSerializer(typeof({deserializeType})).Deserialize(new System.IO.StringReader({rawContentVar}));");
+            codeBuilder.AppendLine($"                {resultVariable} = __deserializedObj is {deserializeType} __typed ? __typed : default;");
             codeBuilder.AppendLine($"            }}");
             codeBuilder.AppendLine($"            catch (System.Exception ex) when (ex is System.InvalidOperationException or System.Xml.XmlException)");
             codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                throw new Mud.HttpUtils.ApiException(System.Net.HttpStatusCode.UnprocessableEntity, \"Failed to deserialize XML response: \" + ex.Message, __httpRequest.RequestUri?.ToString());");
+            codeBuilder.AppendLine($"                throw new Mud.HttpUtils.ApiException(__httpResponse.StatusCode, \"Failed to deserialize XML response: \" + ex.Message + \". Raw content: \" + {rawContentVar}, __httpRequest.RequestUri?.ToString());");
             codeBuilder.AppendLine($"            }}");
         }
         else
         {
-            codeBuilder.AppendLine($"            {deserializeType} __result;");
+            codeBuilder.AppendLine($"            {deserializeTypeWithoutNullable} {resultVariable};");
             codeBuilder.AppendLine($"            try");
             codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                __result = await {httpClient}.SendAsync<{deserializeType}>(__httpRequest, _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false);");
+            codeBuilder.AppendLine($"                {resultVariable} = System.Text.Json.JsonSerializer.Deserialize<{deserializeType}>({rawContentVar}, _jsonSerializerOptions);");
             codeBuilder.AppendLine($"            }}");
             codeBuilder.AppendLine($"            catch (System.Text.Json.JsonException ex)");
             codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                throw new Mud.HttpUtils.ApiException(System.Net.HttpStatusCode.UnprocessableEntity, \"Failed to deserialize JSON response: \" + ex.Message, __httpRequest.RequestUri?.ToString());");
+            codeBuilder.AppendLine($"                throw new Mud.HttpUtils.ApiException(__httpResponse.StatusCode, \"Failed to deserialize JSON response: \" + ex.Message + \". Raw content: \" + {rawContentVar}, __httpRequest.RequestUri?.ToString());");
             codeBuilder.AppendLine($"            }}");
         }
 
         if (methodInfo.ResponseEnableDecrypt)
         {
             string encryptableClient = httpClient;
-            codeBuilder.AppendLine($"            if (__result != null)");
+            codeBuilder.AppendLine($"            if ({resultVariable} != null)");
             codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                var __rawJson = JsonSerializer.Serialize(__result, _jsonSerializerOptions);");
+            codeBuilder.AppendLine($"                var __rawJson = JsonSerializer.Serialize({resultVariable}, _jsonSerializerOptions);");
             codeBuilder.AppendLine($"                var __decryptedJson = {encryptableClient}.DecryptContent(__rawJson);");
-            codeBuilder.AppendLine($"                __result = JsonSerializer.Deserialize<{deserializeType}>(__decryptedJson, _jsonSerializerOptions);");
+            codeBuilder.AppendLine($"                {resultVariable} = JsonSerializer.Deserialize<{deserializeType}>(__decryptedJson, _jsonSerializerOptions);");
             codeBuilder.AppendLine($"            }}");
         }
 
-        codeBuilder.AppendLine($"            return __result;");
+        codeBuilder.AppendLine($"            return {resultVariable};");
     }
 
     private string GetCancellationTokenArgument(string cancellationTokenArg)
@@ -788,9 +811,7 @@ internal class RequestBuilder
     /// </summary>
     private void GenerateStandardExecution(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, string httpClient, string cancellationTokenArg, string deserializeType)
     {
-        var responseContentType = methodInfo.ResponseContentType;
-        var isXmlResponse = ContentTypeHelper.IsXmlContentType(responseContentType);
-        var resultVariable = $"__result_{methodInfo.MethodName}";
+        var isVoidType = deserializeType == "void" || deserializeType == "System.Void";
 
         codeBuilder.AppendLine($"            using var __httpResponse = await {httpClient}.SendRawAsync(__httpRequest{cancellationTokenArg}).ConfigureAwait(false);");
 
@@ -803,6 +824,13 @@ internal class RequestBuilder
         codeBuilder.AppendLine("#endif");
         codeBuilder.AppendLine($"                throw new Mud.HttpUtils.ApiException(__httpResponse.StatusCode, __errorContent, __httpRequest.RequestUri?.ToString());");
         codeBuilder.AppendLine($"            }}");
+
+        if (isVoidType)
+            return;
+
+        var responseContentType = methodInfo.ResponseContentType;
+        var isXmlResponse = ContentTypeHelper.IsXmlContentType(responseContentType);
+        var resultVariable = $"__result_{methodInfo.MethodName}";
 
         var rawContentVar = $"__rawContent_{methodInfo.MethodName}";
 
@@ -1068,6 +1096,10 @@ internal class RequestBuilder
                 serializationMethod = "Json";
         }
 
+        var urlEncode = true;
+        if (queryMapAttr.NamedArguments.TryGetValue("UrlEncode", out var ueValue) && ueValue is bool ue)
+            urlEncode = ue;
+
         var isDictionaryType = TypeDetectionHelper.IsDictionaryType(param.Type);
 
         var outerIndent = "            ";
@@ -1085,7 +1117,7 @@ internal class RequestBuilder
 
         if (isDictionaryType)
         {
-            GenerateDictionaryQueryMap(codeBuilder, param, includeNullValues, serializationMethod, innerIndent);
+            GenerateDictionaryQueryMap(codeBuilder, param, includeNullValues, serializationMethod, innerIndent, urlEncode);
         }
         else
         {
@@ -1095,13 +1127,13 @@ internal class RequestBuilder
             codeBuilder.AppendLine($"{innerIndent}    {{");
             if (includeNullValues)
             {
-                GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, "kvp.Key", "kvp.Value", $"{innerIndent}        ");
+                GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, "kvp.Key", "kvp.Value", $"{innerIndent}        ", urlEncode);
             }
             else
             {
                 codeBuilder.AppendLine($"{innerIndent}        if (!string.IsNullOrEmpty(kvp.Value))");
                 codeBuilder.AppendLine($"{innerIndent}        {{");
-                GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, "kvp.Key", "kvp.Value", $"{innerIndent}            ");
+                GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, "kvp.Key", "kvp.Value", $"{innerIndent}            ", urlEncode);
                 codeBuilder.AppendLine($"{innerIndent}        }}");
             }
             codeBuilder.AppendLine($"{innerIndent}    }}");
@@ -1109,7 +1141,9 @@ internal class RequestBuilder
             codeBuilder.AppendLine($"{innerIndent}else");
             codeBuilder.AppendLine($"{innerIndent}{{");
             var useJson = serializationMethod == "Json" ? "true" : "false";
-            codeBuilder.AppendLine($"{innerIndent}    FlattenObjectToQueryParams({param.Name}, \"\", \"{separator}\", __queryParams, {includeNullValues.ToString().ToLowerInvariant()}, {useJson});");
+            var urlEncodeStr = urlEncode.ToString().ToLowerInvariant();
+            var rawPairsArg = urlEncode ? "" : ", __rawQueryPairs";
+            codeBuilder.AppendLine($"{innerIndent}    FlattenObjectToQueryParams({param.Name}, \"\", \"{separator}\", __queryParams, {includeNullValues.ToString().ToLowerInvariant()}, {useJson}, {urlEncodeStr}{rawPairsArg});");
             codeBuilder.AppendLine($"{innerIndent}}}");
         }
 
@@ -1126,33 +1160,47 @@ internal class RequestBuilder
         string keyExpression,
         string valueExpression,
         string indent = "                        ",
-        string? separator = null)
+        bool urlEncode = true)
     {
-        if (serializationMethod == "Json")
+        if (!urlEncode)
         {
-            // NameValueCollection.ToString() 会自动 URL 编码，无需手动编码
-            codeBuilder.AppendLine($"{indent}var __jsonValue_{param.Name} = System.Text.Json.JsonSerializer.Serialize({valueExpression});");
-            codeBuilder.AppendLine($"{indent}__queryParams.Add({keyExpression}, __jsonValue_{param.Name});");
+            if (serializationMethod == "Json")
+            {
+                codeBuilder.AppendLine($"{indent}var __jsonValue_{param.Name} = System.Text.Json.JsonSerializer.Serialize({valueExpression});");
+                codeBuilder.AppendLine($"{indent}__rawQueryPairs.Add(System.Uri.EscapeDataString({keyExpression}) + \"=\" + __jsonValue_{param.Name});");
+            }
+            else
+            {
+                codeBuilder.AppendLine($"{indent}__rawQueryPairs.Add(System.Uri.EscapeDataString({keyExpression}) + \"=\" + ({valueExpression}?.ToString() ?? string.Empty));");
+            }
         }
         else
         {
-            codeBuilder.AppendLine($"{indent}__queryParams.Add({keyExpression}, {valueExpression}?.ToString());");
+            if (serializationMethod == "Json")
+            {
+                codeBuilder.AppendLine($"{indent}var __jsonValue_{param.Name} = System.Text.Json.JsonSerializer.Serialize({valueExpression});");
+                codeBuilder.AppendLine($"{indent}__queryParams.Add({keyExpression}, __jsonValue_{param.Name});");
+            }
+            else
+            {
+                codeBuilder.AppendLine($"{indent}__queryParams.Add({keyExpression}, {valueExpression}?.ToString());");
+            }
         }
     }
 
-    private void GenerateDictionaryQueryMap(StringBuilder codeBuilder, ParameterInfo param, bool includeNullValues, string serializationMethod = "ToString", string indent = "                ")
+    private void GenerateDictionaryQueryMap(StringBuilder codeBuilder, ParameterInfo param, bool includeNullValues, string serializationMethod = "ToString", string indent = "                ", bool urlEncode = true)
     {
         codeBuilder.AppendLine($"{indent}foreach (var kvp_{param.Name} in {param.Name})");
         codeBuilder.AppendLine($"{indent}{{");
         if (includeNullValues)
         {
-            GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, $"kvp_{param.Name}.Key", $"kvp_{param.Name}.Value", $"{indent}    ");
+            GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, $"kvp_{param.Name}.Key", $"kvp_{param.Name}.Value", $"{indent}    ", urlEncode);
         }
         else
         {
             codeBuilder.AppendLine($"{indent}    if (kvp_{param.Name}.Value != null)");
             codeBuilder.AppendLine($"{indent}    {{");
-            GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, $"kvp_{param.Name}.Key", $"kvp_{param.Name}.Value", $"{indent}        ");
+            GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, $"kvp_{param.Name}.Key", $"kvp_{param.Name}.Value", $"{indent}        ", urlEncode);
             codeBuilder.AppendLine($"{indent}    }}");
         }
         codeBuilder.AppendLine($"{indent}}}");

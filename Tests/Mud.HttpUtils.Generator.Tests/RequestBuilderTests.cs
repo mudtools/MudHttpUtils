@@ -777,7 +777,7 @@ public class RequestBuilderTests
     #region AllowAnyStatusCode 生成代码测试
 
     [Fact]
-    public void GenerateRequestExecution_WithAllowAnyStatusCode_GeneratesSendAsync()
+    public void GenerateRequestExecution_WithAllowAnyStatusCode_GeneratesSendRawAsync()
     {
         var methodInfo = CreateMethodInfo("/users");
         methodInfo.AllowAnyStatusCode = true;
@@ -787,8 +787,9 @@ public class RequestBuilderTests
         _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
         var code = codeBuilder.ToString();
 
-        code.Should().Contain("SendAsync<string>");
-        code.Should().NotContain("SendRawAsync");
+        code.Should().Contain("SendRawAsync");
+        code.Should().NotContain("IsSuccessStatusCode");
+        code.Should().NotContain("SendAsync<string>");
     }
 
     [Fact]
@@ -804,6 +805,77 @@ public class RequestBuilderTests
 
         code.Should().Contain("IsSuccessStatusCode");
         code.Should().Contain("ApiException");
+    }
+
+    [Fact]
+    public void GenerateRequestExecution_AllowAnyStatusCode_WithXmlResponse_GeneratesSendRawAsync()
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.AllowAnyStatusCode = true;
+        methodInfo.AsyncInnerReturnType = "string";
+        methodInfo.ResponseContentType = "application/xml";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("SendRawAsync");
+        code.Should().Contain("XmlSerializer");
+        code.Should().NotContain("IsSuccessStatusCode");
+        code.Should().NotContain("SendXmlAsync");
+    }
+
+    [Fact]
+    public void GenerateRequestExecution_AllowAnyStatusCode_ReadsContentAndDeserializes()
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.AllowAnyStatusCode = true;
+        methodInfo.AsyncInnerReturnType = "string";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("SendRawAsync");
+        code.Should().Contain("ReadAsStringAsync");
+        code.Should().Contain("JsonSerializer.Deserialize");
+        code.Should().NotContain("IsSuccessStatusCode");
+    }
+
+    [Fact]
+    public void GenerateRequestExecution_AllowAnyStatusCode_WithVoidReturn_SendsWithoutDeserialization()
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.AllowAnyStatusCode = true;
+        methodInfo.AsyncInnerReturnType = "void";
+        methodInfo.IsAsyncMethod = true;
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("SendRawAsync");
+        code.Should().NotContain("ReadAsStringAsync");
+        code.Should().NotContain("JsonSerializer.Deserialize");
+        code.Should().NotContain("return");
+    }
+
+    [Fact]
+    public void GenerateRequestExecution_StandardExecution_WithVoidReturn_SendsWithoutDeserialization()
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.AllowAnyStatusCode = false;
+        methodInfo.AsyncInnerReturnType = "void";
+        methodInfo.IsAsyncMethod = true;
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("SendRawAsync");
+        code.Should().Contain("IsSuccessStatusCode");
+        code.Should().NotContain("JsonSerializer.Deserialize");
+        code.Should().NotContain("return");
     }
 
     #endregion
