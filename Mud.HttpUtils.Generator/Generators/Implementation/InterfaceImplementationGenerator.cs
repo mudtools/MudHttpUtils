@@ -324,7 +324,7 @@ internal class InterfaceImplementationGenerator
         codeBuilder.AppendLine("                if (__value == null)");
         codeBuilder.AppendLine("                {");
         codeBuilder.AppendLine("                    if (includeNullValues)");
-        codeBuilder.AppendLine("                        __queryParams.Add(__key, null);");
+        codeBuilder.AppendLine("                        __queryParams.Add(__key, string.Empty);");
         codeBuilder.AppendLine("                    continue;");
         codeBuilder.AppendLine("                }");
         codeBuilder.AppendLine();

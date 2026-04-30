@@ -19,9 +19,9 @@ public class ParameterValidationHelperTests
     #region string 参数验证
 
     [Fact]
-    public void GenerateParameterValidation_NonNullableString_GeneratesIsNullOrWhiteSpaceAndTrim()
+    public void GenerateParameterValidation_NonNullableString_GeneratesIsNullOrWhiteSpaceCheck()
     {
-        // 非空 string 参数应生成 IsNullOrWhiteSpace 检查 + Trim
+        // 非空 string 参数应生成 IsNullOrWhiteSpace 检查
         var parameters = new List<ParameterInfo>
         {
             new() { Name = "name", Type = "string", Attributes = [] }
@@ -31,8 +31,7 @@ public class ParameterValidationHelperTests
 
         code.Should().Contain("string.IsNullOrWhiteSpace(name)");
         code.Should().Contain("throw new ArgumentNullException(nameof(name))");
-        code.Should().Contain("name = name!.Trim()");
-        // 不应包含 IsNullOrEmpty（已改用 IsNullOrWhiteSpace）
+        code.Should().NotContain("name!.Trim()");
         code.Should().NotContain("string.IsNullOrEmpty(name)");
     }
 
@@ -43,6 +42,20 @@ public class ParameterValidationHelperTests
         var parameters = new List<ParameterInfo>
         {
             new() { Name = "name", Type = "string?", Attributes = [] }
+        };
+
+        var code = BuildValidationCode(parameters).ToString();
+
+        code.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GenerateParameterValidation_StringWithNullDefault_NoValidationGenerated()
+    {
+        // string 参数默认值为 null 时不应生成强制非空验证
+        var parameters = new List<ParameterInfo>
+        {
+            new() { Name = "name", Type = "string", Attributes = [], HasDefaultValue = true, DefaultValue = null }
         };
 
         var code = BuildValidationCode(parameters).ToString();
@@ -173,7 +186,7 @@ public class ParameterValidationHelperTests
 
         var code = BuildValidationCode(parameters).ToString();
 
-        // keyword (string) -> IsNullOrWhiteSpace + Trim
+        // keyword (string) -> IsNullOrWhiteSpace
         code.Should().Contain("string.IsNullOrWhiteSpace(keyword)");
         // page (int) -> 不验证
         code.Should().NotContain("page");

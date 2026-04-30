@@ -121,7 +121,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             var propLine = $"        public {property.Type} {property.Name} {{ get; set; }}";
             if (!string.IsNullOrEmpty(property.DefaultValue))
             {
-                propLine += $" = {property.DefaultValue}";
+                propLine += $" = {property.DefaultValue};";
+            }
+            else if (property.AttributeType == "Path" && (property.Type == "string" || property.Type == "String"))
+            {
+                propLine += " = string.Empty;";
             }
             codeBuilder.AppendLine(propLine);
         }

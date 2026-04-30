@@ -46,10 +46,18 @@ internal static class ParameterValidationHelper
             return false;
 
         if (param.Type.EndsWith("string", StringComparison.OrdinalIgnoreCase))
+        {
+            if (param.HasDefaultValue && param.DefaultValue == null)
+                return false;
             return true;
+        }
 
         if (!TypeDetectionHelper.IsNullableType(param.Type) && !TypeDetectionHelper.IsSimpleType(param.Type))
+        {
+            if (param.HasDefaultValue && param.DefaultValue == null)
+                return false;
             return true;
+        }
 
         return false;
     }
@@ -72,7 +80,6 @@ internal static class ParameterValidationHelper
             codeBuilder.AppendLine($"            {{");
             codeBuilder.AppendLine($"                throw new ArgumentNullException(nameof({param.Name}));");
             codeBuilder.AppendLine($"            }}");
-            codeBuilder.AppendLine($"            {param.Name} = {param.Name}!.Trim();");
         }
         else if (!TypeDetectionHelper.IsNullableType(param.Type) && !TypeDetectionHelper.IsSimpleType(param.Type))
         {

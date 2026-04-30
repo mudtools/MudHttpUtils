@@ -141,6 +141,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine($"        public {virtualKeyword}{asyncKeyword}{returnType} {methodSymbol.Name}({TypeSymbolHelper.GetParameterList(methodSymbol)})");
         codeBuilder.AppendLine("        {");
 
+        ParameterValidationHelper.GenerateParameterValidation(codeBuilder, methodInfo.Parameters);
+
         if (needsTokenInjection)
         {
             var injectionMode = methodInfo.InterfaceTokenInjectionMode;
@@ -150,13 +152,13 @@ internal class MethodGenerator : ICodeFragmentGenerator
             {
                 var apiKeyName = methodInfo.InterfaceTokenName;
                 if (!string.IsNullOrEmpty(apiKeyName))
-                    codeBuilder.AppendLine($"            var access_token = await GetApiKeyAsync(\"{apiKeyName}\");");
+                    codeBuilder.AppendLine($"            var access_token = await GetApiKeyAsync(\"{apiKeyName}\").ConfigureAwait(false);");
                 else
-                    codeBuilder.AppendLine($"            var access_token = await GetApiKeyAsync();");
+                    codeBuilder.AppendLine($"            var access_token = await GetApiKeyAsync().ConfigureAwait(false);");
             }
             else if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModeHmacSignature)
             {
-                codeBuilder.AppendLine($"            await ApplyHmacSignatureAsync(__httpRequest);");
+                codeBuilder.AppendLine($"            await ApplyHmacSignatureAsync(__httpRequest).ConfigureAwait(false);");
             }
             else if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModeBasicAuth)
             {
@@ -167,11 +169,11 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     if (scopes.Length > 0)
                     {
                         var scopesArray = string.Join(", ", scopes.Select(s => $"\"{s}\""));
-                        codeBuilder.AppendLine($"            var access_token = !string.IsNullOrEmpty({tokenParamName}) ? {tokenParamName} : await GetTokenAsync(new[] {{ {scopesArray} }});");
+                        codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({tokenParamName}) ? {tokenParamName} : await GetTokenAsync(new[] {{ {scopesArray} }}).ConfigureAwait(false);");
                     }
                     else
                     {
-                        codeBuilder.AppendLine($"            var access_token = !string.IsNullOrEmpty({tokenParamName}) ? {tokenParamName} : await GetTokenAsync();");
+                        codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({tokenParamName}) ? {tokenParamName} : await GetTokenAsync().ConfigureAwait(false);");
                     }
                 }
                 else
@@ -179,11 +181,11 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     if (scopes.Length > 0)
                     {
                         var scopesArray = string.Join(", ", scopes.Select(s => $"\"{s}\""));
-                        codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(new[] {{ {scopesArray} }});");
+                        codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(new[] {{ {scopesArray} }}).ConfigureAwait(false);");
                     }
                     else
                     {
-                        codeBuilder.AppendLine($"            var access_token = await GetTokenAsync();");
+                        codeBuilder.AppendLine($"            var access_token = await GetTokenAsync().ConfigureAwait(false);");
                     }
                 }
                 codeBuilder.AppendLine($"            var __basicCredentials = System.Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(access_token));");
@@ -197,11 +199,11 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     if (scopes.Length > 0)
                     {
                         var scopesArray = string.Join(", ", scopes.Select(s => $"\"{s}\""));
-                        codeBuilder.AppendLine($"            var access_token = !string.IsNullOrEmpty({tokenParamName}) ? {tokenParamName} : await GetTokenAsync(new[] {{ {scopesArray} }});");
+                        codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({tokenParamName}) ? {tokenParamName} : await GetTokenAsync(new[] {{ {scopesArray} }}).ConfigureAwait(false);");
                     }
                     else
                     {
-                        codeBuilder.AppendLine($"            var access_token = !string.IsNullOrEmpty({tokenParamName}) ? {tokenParamName} : await GetTokenAsync();");
+                        codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({tokenParamName}) ? {tokenParamName} : await GetTokenAsync().ConfigureAwait(false);");
                     }
                 }
                 else
@@ -209,17 +211,15 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     if (scopes.Length > 0)
                     {
                         var scopesArray = string.Join(", ", scopes.Select(s => $"\"{s}\""));
-                        codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(new[] {{ {scopesArray} }});");
+                        codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(new[] {{ {scopesArray} }}).ConfigureAwait(false);");
                     }
                     else
                     {
-                        codeBuilder.AppendLine($"            var access_token = await GetTokenAsync();");
+                        codeBuilder.AppendLine($"            var access_token = await GetTokenAsync().ConfigureAwait(false);");
                     }
                 }
             }
         }
-
-        ParameterValidationHelper.GenerateParameterValidation(codeBuilder, methodInfo.Parameters);
 
         codeBuilder.AppendLine();
 
@@ -296,13 +296,13 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         codeBuilder.AppendLine($"                }},");
         codeBuilder.AppendLine($"                TimeSpan.FromSeconds({methodInfo.CacheDurationSeconds}),");
-        codeBuilder.AppendLine($"                {cancellationTokenArg});");
+        codeBuilder.AppendLine($"                {cancellationTokenArg}).ConfigureAwait(false);");
     }
 
     private string GenerateCacheKeyExpression(MethodAnalysisResult methodInfo)
     {
         var varyPrefix = methodInfo.CacheVaryByUser
-            ? "\"user:\" + (CurrentUserId ?? \"anonymous\") + \":\" + "
+            ? "\"user:\" + (CurrentUserId ?? \"anonymous\") + \"|\" + "
             : "";
 
         if (!string.IsNullOrEmpty(methodInfo.CacheKeyTemplate))
@@ -317,7 +317,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         {
             if (!TypeDetectionHelper.IsCancellationToken(param.Type))
             {
-                keyBuilder.Append($":{{{param.Name}}}");
+                keyBuilder.Append($"|{{{param.Name}}}");
             }
         }
 

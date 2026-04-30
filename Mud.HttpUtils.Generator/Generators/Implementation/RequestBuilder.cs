@@ -271,15 +271,30 @@ internal class RequestBuilder
 
             if (isStringType)
             {
-                codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({param.Name}))");
-                if (shouldReplace)
+                if (param.IsValidated)
                 {
-                    codeBuilder.AppendLine($"                __httpRequest.Headers.Remove(\"{headerName}\");");
-                    codeBuilder.AppendLine($"                __httpRequest.Headers.Add(\"{headerName}\", {param.Name});");
+                    if (shouldReplace)
+                    {
+                        codeBuilder.AppendLine($"            __httpRequest.Headers.Remove(\"{headerName}\");");
+                        codeBuilder.AppendLine($"            __httpRequest.Headers.Add(\"{headerName}\", {param.Name});");
+                    }
+                    else
+                    {
+                        codeBuilder.AppendLine($"            __httpRequest.Headers.Add(\"{headerName}\", {param.Name});");
+                    }
                 }
                 else
                 {
-                    codeBuilder.AppendLine($"                __httpRequest.Headers.Add(\"{headerName}\", {param.Name});");
+                    codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({param.Name}))");
+                    if (shouldReplace)
+                    {
+                        codeBuilder.AppendLine($"                __httpRequest.Headers.Remove(\"{headerName}\");");
+                        codeBuilder.AppendLine($"                __httpRequest.Headers.Add(\"{headerName}\", {param.Name});");
+                    }
+                    else
+                    {
+                        codeBuilder.AppendLine($"                __httpRequest.Headers.Add(\"{headerName}\", {param.Name});");
+                    }
                 }
             }
             else
@@ -420,7 +435,7 @@ internal class RequestBuilder
         var cancellationTokenParam = methodInfo.Parameters.FirstOrDefault(p => TypeDetectionHelper.IsCancellationToken(p.Type));
         var cancellationTokenArg = cancellationTokenParam?.Name ?? "default";
 
-        codeBuilder.AppendLine($"            var __formData = await {formContentParam.Name}.GetFormDataContentAsync({cancellationTokenArg});");
+        codeBuilder.AppendLine($"            using var __formData = await {formContentParam.Name}.GetFormDataContentAsync({cancellationTokenArg}).ConfigureAwait(false);");
         codeBuilder.AppendLine($"            __httpRequest.Content = __formData;");
     }
 
@@ -507,7 +522,7 @@ internal class RequestBuilder
             {
                 codeBuilder.AppendLine($"            if ({uploadParam.Name} != null)");
                 codeBuilder.AppendLine("            {");
-                codeBuilder.AppendLine($"                var __{uploadParam.Name}Content = new System.Net.Http.StreamContent({uploadParam.Name});");
+                codeBuilder.AppendLine($"                using var __{uploadParam.Name}Content = new System.Net.Http.StreamContent({uploadParam.Name});");
                 codeBuilder.AppendLine($"                __{uploadParam.Name}Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(\"{contentType}\");");
                 if (!string.IsNullOrEmpty(fileName))
                     codeBuilder.AppendLine($"                __multipartContent.Add(__{uploadParam.Name}Content, \"{fieldName}\", \"{fileName}\");");
@@ -591,13 +606,13 @@ internal class RequestBuilder
 
         if (filePathParam != null)
         {
-            codeBuilder.AppendLine($"            await {httpClient}.DownloadLargeAsync(__httpRequest, {filePathParam.Name}{cancellationTokenArg});");
+            codeBuilder.AppendLine($"            await {httpClient}.DownloadLargeAsync(__httpRequest, {filePathParam.Name}{cancellationTokenArg}).ConfigureAwait(false);");
         }
         else
         {
             if (TypeDetectionHelper.IsByteArrayType(deserializeType))
             {
-                codeBuilder.AppendLine($"            return await {httpClient}.DownloadAsync(__httpRequest{cancellationTokenArg});");
+                codeBuilder.AppendLine($"            return await {httpClient}.DownloadAsync(__httpRequest{cancellationTokenArg}).ConfigureAwait(false);");
             }
             else
             {
@@ -650,7 +665,7 @@ internal class RequestBuilder
         var responseContentType = methodInfo.ResponseContentType;
         var isXmlResponse = ContentTypeHelper.IsXmlContentType(responseContentType);
 
-        codeBuilder.AppendLine($"            using var __httpResponse = await {httpClient}.SendRawAsync(__httpRequest{cancellationTokenArg});");
+        codeBuilder.AppendLine($"            using var __httpResponse = await {httpClient}.SendRawAsync(__httpRequest{cancellationTokenArg}).ConfigureAwait(false);");
         codeBuilder.AppendLine($"            var __statusCode = __httpResponse.StatusCode;");
         codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
         codeBuilder.AppendLine($"            var __rawContent = await __httpResponse.Content.ReadAsStringAsync({GetCancellationTokenArgument(cancellationTokenArg)}).ConfigureAwait(false);");
@@ -720,11 +735,27 @@ internal class RequestBuilder
 
         if (isXmlResponse)
         {
-            codeBuilder.AppendLine($"            var __result = await {httpClient}.SendXmlAsync<{deserializeType}>(__httpRequest, null{cancellationTokenArg});");
+            codeBuilder.AppendLine($"            {deserializeType} __result;");
+            codeBuilder.AppendLine($"            try");
+            codeBuilder.AppendLine($"            {{");
+            codeBuilder.AppendLine($"                __result = await {httpClient}.SendXmlAsync<{deserializeType}>(__httpRequest, null{cancellationTokenArg}).ConfigureAwait(false);");
+            codeBuilder.AppendLine($"            }}");
+            codeBuilder.AppendLine($"            catch (System.Exception ex) when (ex is System.InvalidOperationException or System.Xml.XmlException)");
+            codeBuilder.AppendLine($"            {{");
+            codeBuilder.AppendLine($"                throw new Mud.HttpUtils.ApiException(System.Net.HttpStatusCode.UnprocessableEntity, \"Failed to deserialize XML response: \" + ex.Message, __httpRequest.RequestUri?.ToString());");
+            codeBuilder.AppendLine($"            }}");
         }
         else
         {
-            codeBuilder.AppendLine($"            var __result = await {httpClient}.SendAsync<{deserializeType}>(__httpRequest, _jsonSerializerOptions{cancellationTokenArg});");
+            codeBuilder.AppendLine($"            {deserializeType} __result;");
+            codeBuilder.AppendLine($"            try");
+            codeBuilder.AppendLine($"            {{");
+            codeBuilder.AppendLine($"                __result = await {httpClient}.SendAsync<{deserializeType}>(__httpRequest, _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false);");
+            codeBuilder.AppendLine($"            }}");
+            codeBuilder.AppendLine($"            catch (System.Text.Json.JsonException ex)");
+            codeBuilder.AppendLine($"            {{");
+            codeBuilder.AppendLine($"                throw new Mud.HttpUtils.ApiException(System.Net.HttpStatusCode.UnprocessableEntity, \"Failed to deserialize JSON response: \" + ex.Message, __httpRequest.RequestUri?.ToString());");
+            codeBuilder.AppendLine($"            }}");
         }
 
         if (methodInfo.ResponseEnableDecrypt)
@@ -757,7 +788,7 @@ internal class RequestBuilder
         var isXmlResponse = ContentTypeHelper.IsXmlContentType(responseContentType);
         var resultVariable = $"__result_{methodInfo.MethodName}";
 
-        codeBuilder.AppendLine($"            using var __httpResponse = await {httpClient}.SendRawAsync(__httpRequest{cancellationTokenArg});");
+        codeBuilder.AppendLine($"            using var __httpResponse = await {httpClient}.SendRawAsync(__httpRequest{cancellationTokenArg}).ConfigureAwait(false);");
 
         codeBuilder.AppendLine($"            if (!__httpResponse.IsSuccessStatusCode)");
         codeBuilder.AppendLine($"            {{");
