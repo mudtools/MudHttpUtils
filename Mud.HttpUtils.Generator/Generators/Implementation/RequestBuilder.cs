@@ -259,7 +259,11 @@ internal class RequestBuilder
             var isTokenParam = param.Attributes.Any(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.Name));
             if (isTokenParam && !string.IsNullOrEmpty(interfaceHeaderName))
             {
-                headerName = interfaceHeaderName;
+                var hasExplicitHeaderName = headerAttr.Arguments.Length > 0 && !string.IsNullOrEmpty(headerAttr.Arguments[0]?.ToString());
+                if (!hasExplicitHeaderName)
+                {
+                    headerName = interfaceHeaderName;
+                }
             }
 
             var isStringType = TypeDetectionHelper.IsStringType(param.Type);
