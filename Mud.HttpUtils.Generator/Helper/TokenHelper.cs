@@ -85,4 +85,39 @@ internal static class TokenHelper
     {
         return "TenantAccessToken";
     }
+
+    /// <summary>
+    /// 从Token特性中提取TokenManagerKey值
+    /// </summary>
+    /// <param name="tokenAttribute">Token特性数据</param>
+    /// <returns>TokenManagerKey字符串，未找到时返回null</returns>
+    public static string? GetTokenManagerKeyFromAttribute(AttributeData? tokenAttribute)
+    {
+        if (tokenAttribute == null)
+            return null;
+
+        var namedArg = tokenAttribute.NamedArguments
+            .FirstOrDefault(na => na.Key.Equals("TokenManagerKey", StringComparison.OrdinalIgnoreCase)).Value.Value;
+
+        return namedArg?.ToString();
+    }
+
+    /// <summary>
+    /// 从Token特性中提取RequiresUserId值
+    /// </summary>
+    /// <param name="tokenAttribute">Token特性数据</param>
+    /// <returns>是否需要UserId，未指定时返回null</returns>
+    public static bool? GetRequiresUserIdFromAttribute(AttributeData? tokenAttribute)
+    {
+        if (tokenAttribute == null)
+            return null;
+
+        var namedArg = tokenAttribute.NamedArguments
+            .FirstOrDefault(na => na.Key.Equals("RequiresUserId", StringComparison.OrdinalIgnoreCase)).Value.Value;
+
+        if (namedArg != null)
+            return (bool)namedArg;
+
+        return null;
+    }
 }

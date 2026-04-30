@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Mud.HttpUtils.Client;
 #if NET6_0_OR_GREATER
 using Microsoft.Extensions.Hosting;
 #endif
@@ -464,6 +465,114 @@ public static class HttpClientServiceCollectionExtensions
             throw new ArgumentNullException(nameof(services));
 
         services.TryAddSingleton<IApiKeyProvider, DefaultApiKeyProvider>();
+        return services;
+    }
+
+    /// <summary>
+    /// 注册自定义的令牌提供者实现到依赖注入容器。
+    /// </summary>
+    /// <typeparam name="TProvider">令牌提供者的实现类型，必须实现 <see cref="ITokenProvider"/> 接口。</typeparam>
+    /// <param name="services">服务集合。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
+    /// <remarks>
+    /// 令牌提供者用于获取 HTTP 请求所需的认证令牌，支持多种令牌获取和管理策略。
+    /// 使用此方法可以注册自定义的令牌提供者实现。
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// // 注册自定义令牌提供者
+    /// services.AddTokenProvider&lt;CustomTokenProvider&gt;();
+    /// </code>
+    /// </example>
+    public static IServiceCollection AddTokenProvider<TProvider>(
+        this IServiceCollection services)
+        where TProvider : class, ITokenProvider
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        services.TryAddSingleton<ITokenProvider, TProvider>();
+        return services;
+    }
+
+    /// <summary>
+    /// 注册默认的令牌提供者到依赖注入容器。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
+    /// <remarks>
+    /// 此方法注册 <see cref="DefaultTokenProvider"/> 作为默认的令牌提供者实现。
+    /// 令牌提供者用于获取 HTTP 请求所需的认证令牌。
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// // 注册默认令牌提供者
+    /// services.AddTokenProvider();
+    /// </code>
+    /// </example>
+    public static IServiceCollection AddTokenProvider(
+        this IServiceCollection services)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        services.TryAddSingleton<ITokenProvider, DefaultTokenProvider>();
+        return services;
+    }
+
+    /// <summary>
+    /// 注册自定义的当前用户上下文实现到依赖注入容器。
+    /// </summary>
+    /// <typeparam name="TContext">当前用户上下文的实现类型，必须实现 <see cref="ICurrentUserContext"/> 接口。</typeparam>
+    /// <param name="services">服务集合。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
+    /// <remarks>
+    /// 当前用户上下文用于获取当前请求的用户信息，支持多种用户上下文获取策略。
+    /// 使用此方法可以注册自定义的用户上下文实现。
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// // 注册自定义当前用户上下文
+    /// services.AddCurrentUserContext&lt;CustomUserContext&gt;();
+    /// </code>
+    /// </example>
+    public static IServiceCollection AddCurrentUserContext<TContext>(
+        this IServiceCollection services)
+        where TContext : class, ICurrentUserContext
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        services.TryAddSingleton<ICurrentUserContext, TContext>();
+        return services;
+    }
+
+    /// <summary>
+    /// 注册默认的当前用户上下文到依赖注入容器。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
+    /// <remarks>
+    /// 此方法注册 <see cref="DefaultCurrentUserContext"/> 作为默认的当前用户上下文实现。
+    /// 当前用户上下文用于获取当前请求的用户信息。
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// // 注册默认当前用户上下文
+    /// services.AddCurrentUserContext();
+    /// </code>
+    /// </example>
+    public static IServiceCollection AddCurrentUserContext(
+        this IServiceCollection services)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        services.TryAddSingleton<ICurrentUserContext, DefaultCurrentUserContext>();
         return services;
     }
 

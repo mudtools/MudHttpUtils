@@ -113,6 +113,15 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         }
     }
 
+    /// <inheritdoc />
+    public virtual Task<string?> GetOrRefreshTokenAsync(string? userId, string[]? scopes, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(userId))
+            return Task.FromResult<string?>(null);
+
+        return GetOrRefreshTokenAsync(userId, cancellationToken);
+    }
+
     /// <summary>
     /// 更新用户令牌缓存。
     /// </summary>

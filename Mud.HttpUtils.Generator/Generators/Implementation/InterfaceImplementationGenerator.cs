@@ -63,6 +63,10 @@ internal class InterfaceImplementationGenerator
 
         AnalyzeAndSetInterfaceProperties(generatorContext);
 
+        ComputeAnyMethodRequiresUserId(generatorContext);
+
+        DetectICurrentUserId(generatorContext);
+
         var generators = InitializeGenerators(generatorContext);
 
         foreach (var generator in generators)
@@ -146,8 +150,7 @@ internal class InterfaceImplementationGenerator
             new MethodGenerator()
         };
 
-        // 只有用户令牌才添加 AccessTokenGenerator
-        if (context.Configuration.IsUserAccessToken)
+        if (context.HasTokenManager && !context.HasHttpClient)
         {
             generators.Add(new AccessTokenGenerator(context));
         }
@@ -207,6 +210,9 @@ internal class InterfaceImplementationGenerator
 
         var tokenType = GetInterfaceTokenType();
 
+        var tokenManagerKey = GetInterfaceTokenManagerKey();
+        var requiresUserId = GetInterfaceRequiresUserId();
+
         var baseAddress = AttributeDataHelper.GetStringValueFromAttributeConstructor(
             httpClientApiAttribute,
             HttpClientGeneratorConstants.BaseAddressProperty);
@@ -239,6 +245,8 @@ internal class InterfaceImplementationGenerator
                 : null,
             TokenType = tokenType,
             IsUserAccessToken = tokenType == "UserAccessToken",
+            TokenManagerKey = tokenManagerKey,
+            RequiresUserId = requiresUserId,
             BasePath = basePath
         };
     }
@@ -268,6 +276,28 @@ internal class InterfaceImplementationGenerator
     }
 
     /// <summary>
+    /// 从接口的 Token 特性中提取 TokenManagerKey 值
+    /// </summary>
+    private string? GetInterfaceTokenManagerKey()
+    {
+        var tokenAttribute = AttributeDataHelper.GetAttributeDataFromSymbol(
+            _interfaceSymbol,
+            HttpClientGeneratorConstants.TokenAttributeNames);
+        return TokenHelper.GetTokenManagerKeyFromAttribute(tokenAttribute);
+    }
+
+    /// <summary>
+    /// 从接口的 Token 特性中提取 RequiresUserId 值
+    /// </summary>
+    private bool? GetInterfaceRequiresUserId()
+    {
+        var tokenAttribute = AttributeDataHelper.GetAttributeDataFromSymbol(
+            _interfaceSymbol,
+            HttpClientGeneratorConstants.TokenAttributeNames);
+        return TokenHelper.GetRequiresUserIdFromAttribute(tokenAttribute);
+    }
+
+    /// <summary>
     /// 从接口的 [BasePath] 特性中提取基础路径前缀
     /// </summary>
     private string? ExtractBasePath()
@@ -292,6 +322,67 @@ internal class InterfaceImplementationGenerator
         {
             context.InterfaceProperties = interfaceProperties;
         }
+    }
+
+    /// <summary>
+    /// 计算是否有任何方法需要 UserId，设置 Configuration.AnyMethodRequiresUserId
+    /// </summary>
+    private void ComputeAnyMethodRequiresUserId(GeneratorContext context)
+    {
+        if (!context.HasTokenManager)
+        {
+            context.Configuration.AnyMethodRequiresUserId = false;
+            return;
+        }
+
+        var interfaceRequiresUserId = context.Configuration.RequiresUserId ?? context.Configuration.IsUserAccessToken;
+        if (interfaceRequiresUserId)
+        {
+            context.Configuration.AnyMethodRequiresUserId = true;
+            return;
+        }
+
+        var allMethods = TypeSymbolHelper.GetAllMethods(_interfaceSymbol, true);
+        foreach (var method in allMethods)
+        {
+            var methodRequiresUserId = GetMethodRequiresUserId(method);
+            if (methodRequiresUserId == true)
+            {
+                context.Configuration.AnyMethodRequiresUserId = true;
+                return;
+            }
+        }
+
+        context.Configuration.AnyMethodRequiresUserId = false;
+    }
+
+    /// <summary>
+    /// 检测接口是否继承了 ICurrentUserId 接口
+    /// </summary>
+    private void DetectICurrentUserId(GeneratorContext context)
+    {
+        context.ImplementsICurrentUserId = _interfaceSymbol.AllInterfaces
+            .Any(i => i.Name == "ICurrentUserId");
+    }
+
+    /// <summary>
+    /// 从方法的 Token 特性中提取 RequiresUserId 值
+    /// </summary>
+    private static bool? GetMethodRequiresUserId(IMethodSymbol methodSymbol)
+    {
+        var tokenAttr = methodSymbol.GetAttributes()
+            .FirstOrDefault(attr => attr.AttributeClass?.Name == "TokenAttribute" || attr.AttributeClass?.Name == "Token");
+
+        if (tokenAttr == null)
+            return null;
+
+        var namedArg = tokenAttr.NamedArguments
+            .FirstOrDefault(na => na.Key.Equals("RequiresUserId", StringComparison.OrdinalIgnoreCase)).Value.Value;
+
+        if (namedArg != null)
+            return (bool)namedArg;
+
+        return null;
     }
 
     private static void GenerateFlattenObjectHelper(StringBuilder codeBuilder)

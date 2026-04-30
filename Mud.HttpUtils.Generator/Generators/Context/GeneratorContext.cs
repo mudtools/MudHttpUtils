@@ -40,6 +40,11 @@ internal class GeneratorContext
 
     public bool HasQueryMap { get; set; }
 
+    /// <summary>
+    /// 接口是否继承了 ICurrentUserId 接口
+    /// </summary>
+    public bool ImplementsICurrentUserId { get; set; }
+
     public List<InterfacePropertyInfo> InterfaceProperties { get; set; } = [];
 
     /// <summary>

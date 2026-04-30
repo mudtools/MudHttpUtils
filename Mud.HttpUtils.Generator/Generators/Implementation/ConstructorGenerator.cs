@@ -41,8 +41,32 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     /// </summary>
     private void GenerateClassFields(StringBuilder codeBuilder)
     {
-        if (_context.HasInheritedFrom) return;
+        if (_context.HasInheritedFrom)
+        {
+            if (_context.HasTokenManager && _context.Configuration.AnyMethodRequiresUserId)
+            {
+                codeBuilder.AppendLine("        /// <summary>");
+                codeBuilder.AppendLine("        /// 当前用户上下文，用于获取当前用户ID。");
+                codeBuilder.AppendLine("        /// </summary>");
+                codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly ICurrentUserContext _currentUserContext;");
+            }
 
+            if (_context.ImplementsICurrentUserId && _context.Configuration.AnyMethodRequiresUserId)
+            {
+                codeBuilder.AppendLine();
+                codeBuilder.AppendLine("        /// <summary>");
+                codeBuilder.AppendLine("        /// 当前用户ID（ICurrentUserId 实现），委托给 ICurrentUserContext。");
+                codeBuilder.AppendLine("        /// </summary>");
+                codeBuilder.AppendLine("        public string? CurrentUserId");
+                codeBuilder.AppendLine("        {");
+                codeBuilder.AppendLine("            get => _currentUserContext.UserId;");
+                codeBuilder.AppendLine("            set => Mud.HttpUtils.Client.DefaultCurrentUserContext.SetUserId(value);");
+                codeBuilder.AppendLine("        }");
+            }
+
+            codeBuilder.AppendLine();
+            return;
+        }
 
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine("        /// 用于JSON内容序列化与反序列化操作的<see cref = \"JsonSerializerOptions\"/> 参数实例。");
@@ -61,6 +85,19 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine($"        /// 用于HttpClient客户端操作操作使用的的<see cref = \"{_context.Configuration.TokenManagerType}\"/> 令牌管理实例。");
             codeBuilder.AppendLine("        /// </summary>");
             codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly {_context.Configuration.TokenManagerType} _appManager;");
+
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 令牌提供器，用于获取访问令牌。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly ITokenProvider _tokenProvider;");
+
+            if (_context.Configuration.AnyMethodRequiresUserId)
+            {
+                codeBuilder.AppendLine("        /// <summary>");
+                codeBuilder.AppendLine("        /// 当前用户上下文，用于获取当前用户ID。");
+                codeBuilder.AppendLine("        /// </summary>");
+                codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly ICurrentUserContext _currentUserContext;");
+            }
         }
         else if (_context.HasHttpClient)
         {
@@ -78,7 +115,6 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly AsyncLocal<IMudAppContext?> _appContext = new();");
         }
 
-
         codeBuilder.AppendLine("#pragma warning disable CS0414");
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine("        /// 用于HttpClient客户端操作的内容类型。");
@@ -92,15 +128,19 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("        /// HTTP响应缓存提供器，用于缓存接口方法的响应结果。");
             codeBuilder.AppendLine("        /// </summary>");
             codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IHttpResponseCache _cacheProvider;");
+        }
 
-            if (!_context.Configuration.IsUserAccessToken)
-            {
-                codeBuilder.AppendLine();
-                codeBuilder.AppendLine("        /// <summary>");
-                codeBuilder.AppendLine("        /// 当前用户ID，用于缓存键的用户隔离。");
-                codeBuilder.AppendLine("        /// </summary>");
-                codeBuilder.AppendLine("        public string? CurrentUserId { get; set; }");
-            }
+        if (_context.ImplementsICurrentUserId && _context.Configuration.AnyMethodRequiresUserId)
+        {
+            codeBuilder.AppendLine();
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 当前用户ID（ICurrentUserId 实现），委托给 ICurrentUserContext。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine("        public string? CurrentUserId");
+            codeBuilder.AppendLine("        {");
+            codeBuilder.AppendLine("            get => _currentUserContext.UserId;");
+            codeBuilder.AppendLine("            set => Mud.HttpUtils.Client.DefaultCurrentUserContext.SetUserId(value);");
+            codeBuilder.AppendLine("        }");
         }
 
         codeBuilder.AppendLine();
@@ -147,6 +187,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         if (_context.HasTokenManager)
         {
             codeBuilder.AppendLine("        /// <param name=\"appManager\">应用令牌管理器</param>");
+            codeBuilder.AppendLine("        /// <param name=\"tokenProvider\">令牌提供器</param>");
+            if (_context.Configuration.AnyMethodRequiresUserId)
+            {
+                codeBuilder.AppendLine("        /// <param name=\"currentUserContext\">当前用户上下文</param>");
+            }
         }
         else if (_context.HasHttpClient)
         {
@@ -176,6 +221,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         if (_context.HasTokenManager)
         {
             parameters.Add($"{_context.Configuration.TokenManagerType} appManager");
+            parameters.Add("ITokenProvider tokenProvider");
+            if (_context.Configuration.AnyMethodRequiresUserId)
+            {
+                parameters.Add("ICurrentUserContext currentUserContext");
+            }
         }
         else if (_context.HasHttpClient)
         {
@@ -203,6 +253,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             if (_context.HasTokenManager)
             {
                 baseParameters.Add("appManager");
+                baseParameters.Add("tokenProvider");
             }
             else if (_context.HasHttpClient)
             {
@@ -239,6 +290,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             {
                 codeBuilder.AppendLine("            _appManager = appManager ?? throw new ArgumentNullException(nameof(appManager));");
                 codeBuilder.AppendLine("            _appContext.Value = appManager.GetDefaultApp();");
+                codeBuilder.AppendLine("            _tokenProvider = tokenProvider ?? throw new ArgumentNullException(nameof(tokenProvider));");
+                if (_context.Configuration.AnyMethodRequiresUserId)
+                {
+                    codeBuilder.AppendLine("            _currentUserContext = currentUserContext ?? throw new ArgumentNullException(nameof(currentUserContext));");
+                }
             }
             else if (_context.HasHttpClient)
             {
@@ -254,6 +310,13 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
                 codeBuilder.AppendLine("            _cacheProvider = cacheProvider ?? throw new ArgumentNullException(nameof(cacheProvider));");
             }
         }
+        else
+        {
+            if (_context.HasTokenManager && _context.Configuration.AnyMethodRequiresUserId)
+            {
+                codeBuilder.AppendLine("            _currentUserContext = currentUserContext ?? throw new ArgumentNullException(nameof(currentUserContext));");
+            }
+        }
 
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
@@ -264,16 +327,14 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     /// </summary>
     private void GenerateHelperMethods(StringBuilder codeBuilder)
     {
-        GenerateGetTokenTypeMethod(codeBuilder);
+        GenerateGetTokenManagerKeyMethod(codeBuilder);
 
         if (_context.HasInheritedFrom) return;
 
         GenerateUseAppMethod(codeBuilder);
     }
 
-
-
-    private void GenerateGetTokenTypeMethod(StringBuilder codeBuilder)
+    private void GenerateGetTokenManagerKeyMethod(StringBuilder codeBuilder)
     {
         if (!TokenMethodHelper.ShouldGenerateTokenMethods(_context))
             return;
@@ -283,7 +344,6 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
 
     private void GenerateUseAppMethod(StringBuilder codeBuilder)
     {
-        // HttpClient 模式下不生成任何 Token 相关方法
         if (_context.HasHttpClient)
             return;
 
@@ -319,33 +379,6 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine();
 
         GenerateBeginScopeMethod(codeBuilder);
-
-        // 用户令牌由 AccessTokenGenerator 生成，其他令牌在这里生成通用版本
-        if (_context.Configuration.IsUserAccessToken)
-            return;
-
-        GenerateGetTokenAsyncMethod(codeBuilder);
-    }
-
-    /// <summary>
-    /// 生成通用的 GetTokenAsync 方法（租户令牌、应用令牌）
-    /// </summary>
-    private void GenerateGetTokenAsyncMethod(StringBuilder codeBuilder)
-    {
-        if (_context.HasHttpClient)
-            return;
-
-        codeBuilder.AppendLine("        /// <summary>");
-        codeBuilder.AppendLine("        /// 获取当前应用的访问令牌。");
-        codeBuilder.AppendLine("        /// </summary>");
-        codeBuilder.AppendLine("        /// <returns>返回当前应用的访问令牌。</returns>");
-        TokenMethodHelper.GenerateGetTokenPreamble(codeBuilder, _context.GetTokenAsyncAccessibility);
-        codeBuilder.AppendLine("            var token = await tokenManager.GetTokenAsync();");
-        codeBuilder.AppendLine("            if(string.IsNullOrEmpty(token))");
-        codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法获取到有效的访问令牌，TokenType: {tokenType}\");");
-        codeBuilder.AppendLine("            return token!;");
-        codeBuilder.AppendLine("        }");
-        codeBuilder.AppendLine();
     }
 
     private void GenerateBeginScopeMethod(StringBuilder codeBuilder)
@@ -379,7 +412,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("            private int _disposed;");
         codeBuilder.AppendLine();
         codeBuilder.AppendLine("            public AppContextScope(IMudAppContext? previous, AsyncLocal<IMudAppContext?> context)");
-        codeBuilder.AppendLine("            {");
+        codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("                _previous = previous;");
         codeBuilder.AppendLine("                _context = context;");
         codeBuilder.AppendLine("            }");

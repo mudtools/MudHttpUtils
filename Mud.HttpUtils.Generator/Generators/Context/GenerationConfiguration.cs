@@ -45,6 +45,24 @@ internal class GenerationConfiguration
     public bool IsUserAccessToken { get; set; }
 
     /// <summary>
+    /// 接口级 TokenManagerKey（从 [Token(TokenManagerKey = "...")] 特性获取）。
+    /// 当指定时，使用此键而非 TokenType 从 IMudAppContext 中查找令牌管理器。
+    /// </summary>
+    public string? TokenManagerKey { get; set; }
+
+    /// <summary>
+    /// 接口级是否需要 UserId（从 [Token(RequiresUserId = true)] 特性获取）。
+    /// 当未显式指定时，根据 IsUserAccessToken 自动推断。
+    /// </summary>
+    public bool? RequiresUserId { get; set; }
+
+    /// <summary>
+    /// 是否有任何方法需要 UserId（包括接口级和方法级）。
+    /// 用于决定是否在构造函数中注入 ICurrentUserContext。
+    /// </summary>
+    public bool AnyMethodRequiresUserId { get; set; }
+
+    /// <summary>
     /// 接口的基础路径前缀（从 [BasePath] 特性获取）
     /// </summary>
     public string? BasePath { get; set; }

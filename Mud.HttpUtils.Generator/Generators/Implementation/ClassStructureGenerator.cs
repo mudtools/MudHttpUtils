@@ -1,6 +1,6 @@
 // -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
-//  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
@@ -42,21 +42,21 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("// 此代码由Mud源生成器自动生成，请勿手动修改");
         codeBuilder.AppendLine();
         codeBuilder.AppendLine("#nullable enable");
-        codeBuilder.AppendLine("#pragma warning disable CS8600 // Converting null literal or possible null value to non-nullable type.");
-        codeBuilder.AppendLine("#pragma warning disable CS8601 // Possible null reference assignment.");
-        codeBuilder.AppendLine("#pragma warning disable CS8602 // Null reference value may be assigned to a non-null-reference.");
-        codeBuilder.AppendLine("#pragma warning disable CS8603 // Possible null reference return.");
-        codeBuilder.AppendLine("#pragma warning disable CS8604 // Possible null reference argument for parameter.");
-        codeBuilder.AppendLine("#pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor.");
-        codeBuilder.AppendLine("#pragma warning disable CS8625 // Cannot convert null literal to non-nullable reference type.");
-        codeBuilder.AppendLine("#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member.");
-        codeBuilder.AppendLine("#pragma warning disable CS1570 // XML comment has badly formed XML.");
-        codeBuilder.AppendLine("#pragma warning disable CS1573 // Parameter has no matching param tag in the XML comment.");
-        codeBuilder.AppendLine("#pragma warning disable CS1574 // XML comment has cref attribute that could not be resolved.");
-        codeBuilder.AppendLine("#pragma warning disable CS0419 // Ambiguous reference in cref attribute.");
-        codeBuilder.AppendLine("#pragma warning disable CS1587 // XML comment is not placed on a valid language element.");
-        codeBuilder.AppendLine("#pragma warning disable CS8619 // Nullability of reference types in value doesn't match target type.");
-        codeBuilder.AppendLine("#pragma warning disable CS8620 // Argument cannot be used for parameter due to differences in nullability.");
+        //codeBuilder.AppendLine("#pragma warning disable CS8600 // Converting null literal or possible null value to non-nullable type.");
+        //codeBuilder.AppendLine("#pragma warning disable CS8601 // Possible null reference assignment.");
+        //codeBuilder.AppendLine("#pragma warning disable CS8602 // Null reference value may be assigned to a non-null-reference.");
+        //codeBuilder.AppendLine("#pragma warning disable CS8603 // Possible null reference return.");
+        //codeBuilder.AppendLine("#pragma warning disable CS8604 // Possible null reference argument for parameter.");
+        //codeBuilder.AppendLine("#pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor.");
+        //codeBuilder.AppendLine("#pragma warning disable CS8625 // Cannot convert null literal to non-nullable reference type.");
+        //codeBuilder.AppendLine("#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member.");
+        //codeBuilder.AppendLine("#pragma warning disable CS1570 // XML comment has badly formed XML.");
+        //codeBuilder.AppendLine("#pragma warning disable CS1573 // Parameter has no matching param tag in the XML comment.");
+        //codeBuilder.AppendLine("#pragma warning disable CS1574 // XML comment has cref attribute that could not be resolved.");
+        //codeBuilder.AppendLine("#pragma warning disable CS0419 // Ambiguous reference in cref attribute.");
+        //codeBuilder.AppendLine("#pragma warning disable CS1587 // XML comment is not placed on a valid language element.");
+        //codeBuilder.AppendLine("#pragma warning disable CS8619 // Nullability of reference types in value doesn't match target type.");
+        //codeBuilder.AppendLine("#pragma warning disable CS8620 // Argument cannot be used for parameter due to differences in nullability.");
         foreach (var ns in DefaultUsingNamespaces)
         {
             codeBuilder.AppendLine($"using {ns};");

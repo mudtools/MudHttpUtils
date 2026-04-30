@@ -55,6 +55,8 @@ internal static class MethodAnalyzer
 
         var methodTokenScopes = AnalyzeMethodTokenScopes(methodSymbol);
 
+        var (methodTokenManagerKey, methodRequiresUserId) = AnalyzeMethodTokenExtended(methodSymbol);
+
         var tokenParameterName = parameters
             .FirstOrDefault(p => p.Attributes.Any(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.Name)))?
             .Name;
@@ -95,6 +97,8 @@ internal static class MethodAnalyzer
             InterfaceTokenScopes = interfaceTokenScopes,
             MethodTokenScopes = methodTokenScopes,
             TokenParameterName = tokenParameterName,
+            MethodTokenManagerKey = methodTokenManagerKey,
+            MethodRequiresUserId = methodRequiresUserId,
             AllowAnyStatusCode = allowAnyStatusCode,
             InterfaceQueryParameters = interfaceQueryParams,
             InterfacePathParameters = interfacePathParams,
@@ -869,6 +873,26 @@ internal static class MethodAnalyzer
             .FirstOrDefault(attr => HasAttributeWithName(attr, "TokenAttribute"));
 
         return tokenAttr != null ? GetTokenScopes(tokenAttr) : null;
+    }
+
+    /// <summary>
+    /// 分析方法级别 Token 特性的 TokenManagerKey 和 RequiresUserId
+    /// </summary>
+    private static (string? tokenManagerKey, bool? requiresUserId) AnalyzeMethodTokenExtended(IMethodSymbol methodSymbol)
+    {
+        var tokenAttr = methodSymbol.GetAttributes()
+            .FirstOrDefault(attr => HasAttributeWithName(attr, "TokenAttribute"));
+
+        if (tokenAttr == null)
+            return (null, null);
+
+        var tokenManagerKey = AttributeDataHelper.GetStringValueFromAttribute(tokenAttr, ["TokenManagerKey"]);
+        var requiresUserIdValue = tokenAttr.NamedArguments
+            .FirstOrDefault(na => na.Key.Equals("RequiresUserId", StringComparison.OrdinalIgnoreCase)).Value.Value;
+
+        bool? requiresUserId = requiresUserIdValue != null ? (bool)requiresUserIdValue : null;
+
+        return (tokenManagerKey, requiresUserId);
     }
 
     /// <summary>

@@ -147,6 +147,19 @@ internal class MethodGenerator : ICodeFragmentGenerator
         {
             var injectionMode = methodInfo.InterfaceTokenInjectionMode;
             var tokenParamName = methodInfo.TokenParameterName;
+            var tokenParamHasHeader = methodInfo.Parameters
+                .FirstOrDefault(p => p.Name == tokenParamName)?
+                .Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.HeaderAttribute) == true;
+
+            var tokenManagerKey = TokenMethodHelper.GetMethodTokenManagerKey(_context, methodInfo);
+            var requiresUserId = TokenMethodHelper.MethodRequiresUserId(_context, methodInfo);
+            var effectiveScopes = methodInfo.MethodTokenScopes ?? methodInfo.InterfaceTokenScopes;
+            var scopes = TokenHelper.ParseScopes(effectiveScopes);
+
+            var scopesArg = scopes.Length > 0
+                ? $"new[] {{ {string.Join(", ", scopes.Select(s => $"\"{s}\""))} }}"
+                : "null";
+            var userIdArg = requiresUserId ? "_currentUserContext.UserId" : "null";
 
             if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModeApiKey)
             {
@@ -162,61 +175,25 @@ internal class MethodGenerator : ICodeFragmentGenerator
             }
             else if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModeBasicAuth)
             {
-                var effectiveScopes = methodInfo.MethodTokenScopes ?? methodInfo.InterfaceTokenScopes;
-                var scopes = TokenHelper.ParseScopes(effectiveScopes);
-                if (!string.IsNullOrEmpty(tokenParamName))
+                if (!string.IsNullOrEmpty(tokenParamName) && !tokenParamHasHeader)
                 {
-                    if (scopes.Length > 0)
-                    {
-                        var scopesArray = string.Join(", ", scopes.Select(s => $"\"{s}\""));
-                        codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({tokenParamName}) ? {tokenParamName} : await GetTokenAsync(new[] {{ {scopesArray} }}).ConfigureAwait(false);");
-                    }
-                    else
-                    {
-                        codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({tokenParamName}) ? {tokenParamName} : await GetTokenAsync().ConfigureAwait(false);");
-                    }
+                    codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({tokenParamName}) ? {tokenParamName} : await GetTokenAsync(\"{tokenManagerKey}\", {userIdArg}, {scopesArg}).ConfigureAwait(false);");
                 }
                 else
                 {
-                    if (scopes.Length > 0)
-                    {
-                        var scopesArray = string.Join(", ", scopes.Select(s => $"\"{s}\""));
-                        codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(new[] {{ {scopesArray} }}).ConfigureAwait(false);");
-                    }
-                    else
-                    {
-                        codeBuilder.AppendLine($"            var access_token = await GetTokenAsync().ConfigureAwait(false);");
-                    }
+                    codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(\"{tokenManagerKey}\", {userIdArg}, {scopesArg}).ConfigureAwait(false);");
                 }
                 codeBuilder.AppendLine($"            var __basicCredentials = System.Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(access_token));");
             }
             else
             {
-                var effectiveScopes = methodInfo.MethodTokenScopes ?? methodInfo.InterfaceTokenScopes;
-                var scopes = TokenHelper.ParseScopes(effectiveScopes);
-                if (!string.IsNullOrEmpty(tokenParamName))
+                if (!string.IsNullOrEmpty(tokenParamName) && !tokenParamHasHeader)
                 {
-                    if (scopes.Length > 0)
-                    {
-                        var scopesArray = string.Join(", ", scopes.Select(s => $"\"{s}\""));
-                        codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({tokenParamName}) ? {tokenParamName} : await GetTokenAsync(new[] {{ {scopesArray} }}).ConfigureAwait(false);");
-                    }
-                    else
-                    {
-                        codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({tokenParamName}) ? {tokenParamName} : await GetTokenAsync().ConfigureAwait(false);");
-                    }
+                    codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({tokenParamName}) ? {tokenParamName} : await GetTokenAsync(\"{tokenManagerKey}\", {userIdArg}, {scopesArg}).ConfigureAwait(false);");
                 }
                 else
                 {
-                    if (scopes.Length > 0)
-                    {
-                        var scopesArray = string.Join(", ", scopes.Select(s => $"\"{s}\""));
-                        codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(new[] {{ {scopesArray} }}).ConfigureAwait(false);");
-                    }
-                    else
-                    {
-                        codeBuilder.AppendLine($"            var access_token = await GetTokenAsync().ConfigureAwait(false);");
-                    }
+                    codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(\"{tokenManagerKey}\", {userIdArg}, {scopesArg}).ConfigureAwait(false);");
                 }
             }
         }
@@ -302,7 +279,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
     private string GenerateCacheKeyExpression(MethodAnalysisResult methodInfo)
     {
         var varyPrefix = methodInfo.CacheVaryByUser
-            ? "\"user:\" + (CurrentUserId ?? \"anonymous\") + \"|\" + "
+            ? $"\"user:\" + (_currentUserContext.UserId ?? \"anonymous\") + \"|\" + "
             : "";
 
         if (!string.IsNullOrEmpty(methodInfo.CacheKeyTemplate))

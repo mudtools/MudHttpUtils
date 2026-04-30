@@ -143,6 +143,18 @@ internal class MethodAnalysisResult
     public string? TokenParameterName { get; set; }
 
     /// <summary>
+    /// 方法级 TokenManagerKey（从方法上的 [Token(TokenManagerKey = "...")] 特性获取）。
+    /// 方法级优先于接口级。如果未指定，使用接口级的 TokenManagerKey 或 TokenType。
+    /// </summary>
+    public string? MethodTokenManagerKey { get; set; }
+
+    /// <summary>
+    /// 方法级是否需要 UserId（从方法上的 [Token(RequiresUserId = true/false)] 特性获取）。
+    /// 方法级优先于接口级。如果未指定，使用接口级的 RequiresUserId 推断结果。
+    /// </summary>
+    public bool? MethodRequiresUserId { get; set; }
+
+    /// <summary>
     /// 是否允许任何状态码（不抛出异常）。
     /// 从 [AllowAnyStatusCode] 特性获取，方法级优先于接口级。
     /// </summary>

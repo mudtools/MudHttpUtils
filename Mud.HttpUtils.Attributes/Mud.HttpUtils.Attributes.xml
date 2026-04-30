@@ -1450,6 +1450,28 @@
             [Token(TokenType = "UserAccessToken", Scopes = "user:read,user:write")]
             </example>
         </member>
+        <member name="P:Mud.HttpUtils.Attributes.TokenAttribute.TokenManagerKey">
+            <summary>
+            获取或设置令牌管理器的查找键。
+            当指定此值时，代码生成器将使用此键而非 TokenType 从 IMudAppContext 中查找令牌管理器。
+            </summary>
+            <remarks>
+            此属性用于解耦业务概念（TokenType）和技术查找键（TokenManagerKey）。
+            例如，多个不同的 TokenType 可以映射到同一个 TokenManager。
+            如果未指定，则使用 TokenType 作为查找键。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.Attributes.TokenAttribute.RequiresUserId">
+            <summary>
+            获取或设置一个值，该值指示此令牌是否需要用户 ID。
+            </summary>
+            <remarks>
+            当设置为 true 时，生成的代码将通过 ICurrentUserContext 获取当前用户 ID，
+            并将其传递给 ITokenProvider 以获取用户级令牌。
+            如果未显式指定，则根据 TokenType 自动推断：
+            TokenType 为 "UserAccessToken" 时默认为 true，否则默认为 false。
+            </remarks>
+        </member>
         <member name="T:Mud.HttpUtils.Attributes.UploadAttribute">
             <summary>
             标记参数作为文件上传参数。

@@ -82,4 +82,14 @@ public interface IUserTokenManager : ITokenManager, IDisposable
     /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
     /// <returns>包含有效访问令牌的字符串，如果未找到则返回 null。</returns>
     Task<string?> GetOrRefreshTokenAsync(string? userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 异步获取指定用户和作用域的有效访问令牌，如果令牌已过期或即将过期则自动刷新。
+    /// 此方法保证并发安全：同一 userId 的多个并发调用只会触发一次刷新操作。
+    /// </summary>
+    /// <param name="userId">用户的唯一标识符。</param>
+    /// <param name="scopes">令牌作用域数组。</param>
+    /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+    /// <returns>包含有效访问令牌的字符串，如果未找到则返回 null。</returns>
+    Task<string?> GetOrRefreshTokenAsync(string? userId, string[]? scopes, CancellationToken cancellationToken = default);
 }

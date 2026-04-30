@@ -82,9 +82,9 @@
             <code>RegexOptions.IgnoreCase</code><br/>
             Explanation:<br/>
             <code>
+            ○ Match if at the beginning of the string.<br/>
             ○ Match with 3 alternative expressions, atomically.<br/>
                 ○ Match a sequence of expressions.<br/>
-                    ○ Match if at the beginning of the string.<br/>
                     ○ Loop greedily any number of times.<br/>
                         ○ Match a character in the set [+/-9A-Za-z\u212A] exactly 4 times.<br/>
                     ○ Optional (greedy).<br/>
@@ -97,20 +97,18 @@
                                 ○ Match '='.<br/>
                     ○ Match if at the end of the string or if before an ending newline.<br/>
                 ○ Match a sequence of expressions.<br/>
-                    ○ Match if at the beginning of the string.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 8 times.<br/>
+                    ○ Match a hexadecimal digit exactly 8 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 12 times.<br/>
+                    ○ Match a hexadecimal digit exactly 12 times.<br/>
                     ○ Match if at the end of the string or if before an ending newline.<br/>
                 ○ Match a sequence of expressions.<br/>
-                    ○ Match if at the beginning of the string.<br/>
-                    ○ Match a character in the set [-0-9A-Z_a-z\u212A] atomically at least 20 times.<br/>
+                    ○ Match a character in the set [\-0-9A-Z_a-z\u212A] atomically at least 20 times.<br/>
                     ○ Match if at the end of the string or if before an ending newline.<br/>
             </code>
             </remarks>
@@ -1608,6 +1606,111 @@
             </code>
             </example>
         </member>
+        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddTokenProvider``1(Microsoft.Extensions.DependencyInjection.IServiceCollection)">
+            <summary>
+            注册自定义的令牌提供者实现到依赖注入容器。
+            </summary>
+            <typeparam name="TProvider">令牌提供者的实现类型，必须实现 <see cref="T:Mud.HttpUtils.ITokenProvider"/> 接口。</typeparam>
+            <param name="services">服务集合。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
+            <remarks>
+            令牌提供者用于获取 HTTP 请求所需的认证令牌，支持多种令牌获取和管理策略。
+            使用此方法可以注册自定义的令牌提供者实现。
+            </remarks>
+            <example>
+            <code>
+            // 注册自定义令牌提供者
+            services.AddTokenProvider&lt;CustomTokenProvider&gt;();
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddTokenProvider(Microsoft.Extensions.DependencyInjection.IServiceCollection)">
+            <summary>
+            注册默认的令牌提供者到依赖注入容器。
+            </summary>
+            <param name="services">服务集合。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
+            <remarks>
+            此方法注册 <see cref="T:Mud.HttpUtils.Client.DefaultTokenProvider"/> 作为默认的令牌提供者实现。
+            令牌提供者用于获取 HTTP 请求所需的认证令牌。
+            </remarks>
+            <example>
+            <code>
+            // 注册默认令牌提供者
+            services.AddTokenProvider();
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddCurrentUserContext``1(Microsoft.Extensions.DependencyInjection.IServiceCollection)">
+            <summary>
+            注册自定义的当前用户上下文实现到依赖注入容器。
+            </summary>
+            <typeparam name="TContext">当前用户上下文的实现类型，必须实现 <see cref="T:Mud.HttpUtils.ICurrentUserContext"/> 接口。</typeparam>
+            <param name="services">服务集合。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
+            <remarks>
+            当前用户上下文用于获取当前请求的用户信息，支持多种用户上下文获取策略。
+            使用此方法可以注册自定义的用户上下文实现。
+            </remarks>
+            <example>
+            <code>
+            // 注册自定义当前用户上下文
+            services.AddCurrentUserContext&lt;CustomUserContext&gt;();
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddCurrentUserContext(Microsoft.Extensions.DependencyInjection.IServiceCollection)">
+            <summary>
+            注册默认的当前用户上下文到依赖注入容器。
+            </summary>
+            <param name="services">服务集合。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
+            <remarks>
+            此方法注册 <see cref="T:Mud.HttpUtils.Client.DefaultCurrentUserContext"/> 作为默认的当前用户上下文实现。
+            当前用户上下文用于获取当前请求的用户信息。
+            </remarks>
+            <example>
+            <code>
+            // 注册默认当前用户上下文
+            services.AddCurrentUserContext();
+            </code>
+            </example>
+        </member>
+        <member name="T:Mud.HttpUtils.Client.DefaultCurrentUserContext">
+            <summary>
+            ICurrentUserContext 的默认实现，使用 AsyncLocal 实现线程安全的用户 ID 传播。
+            </summary>
+            <remarks>
+            此实现使用 AsyncLocal 确保用户 ID 在异步上下文中正确传播。
+            适用于非 Web 场景或需要手动设置用户 ID 的场景。
+            在 ASP.NET Core 应用中，建议替换为基于 HttpContext 的实现。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.Client.DefaultCurrentUserContext.UserId">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Client.DefaultCurrentUserContext.SetUserId(System.String)">
+            <summary>
+            设置当前用户 ID。
+            </summary>
+            <param name="userId">用户 ID。</param>
+        </member>
+        <member name="T:Mud.HttpUtils.Client.DefaultTokenProvider">
+            <summary>
+            ITokenProvider 的默认实现，通过 IMudAppContext 获取令牌管理器并获取令牌。
+            </summary>
+            <remarks>
+            此实现复刻了原有代码生成中的 Token 获取逻辑，
+            将其统一到运行时服务中，便于维护和测试。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.Client.DefaultTokenProvider.GetTokenAsync(Mud.HttpUtils.IMudAppContext,Mud.HttpUtils.TokenRequest,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
         <member name="T:Mud.HttpUtils.OAuth2Options">
             <summary>
             OAuth2 配置选项。
@@ -1978,6 +2081,9 @@
         </member>
         <member name="M:System.Text.RegularExpressions.Generated.Utilities.StackPush(System.Int32[]@,System.Int32@,System.Int32,System.Int32)">
             <summary>Pushes 2 values onto the backtracking stack.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_asciiLettersAndDigitsAndDashUnderscoreKelvinSign">
+            <summary>Supports searching for characters in or not in "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyzK".</summary>
         </member>
         <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_nonAscii_2BDDE98808630E9B520E3AD9F33E4A0D939EAAED4FF3C3CC86415C934044BB2B">
             <summary>Supports searching for characters in or not in "CKSYcksyK".</summary>

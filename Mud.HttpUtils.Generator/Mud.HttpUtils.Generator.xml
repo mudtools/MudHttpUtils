@@ -145,6 +145,11 @@
             分析方法级别的 Token Scopes
             </summary>
         </member>
+        <member name="M:Mud.HttpUtils.Analyzers.MethodAnalyzer.AnalyzeMethodTokenExtended(Microsoft.CodeAnalysis.IMethodSymbol)">
+            <summary>
+            分析方法级别 Token 特性的 TokenManagerKey 和 RequiresUserId
+            </summary>
+        </member>
         <member name="M:Mud.HttpUtils.Analyzers.MethodAnalyzer.GetHeaderValue(Microsoft.CodeAnalysis.AttributeData)">
             <summary>
             获取Header特性的值
@@ -354,6 +359,24 @@
             是否为用户访问令牌 (UserAccessToken)
             </summary>
         </member>
+        <member name="P:Mud.HttpUtils.Generators.Context.GenerationConfiguration.TokenManagerKey">
+            <summary>
+            接口级 TokenManagerKey（从 [Token(TokenManagerKey = "...")] 特性获取）。
+            当指定时，使用此键而非 TokenType 从 IMudAppContext 中查找令牌管理器。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Generators.Context.GenerationConfiguration.RequiresUserId">
+            <summary>
+            接口级是否需要 UserId（从 [Token(RequiresUserId = true)] 特性获取）。
+            当未显式指定时，根据 IsUserAccessToken 自动推断。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Generators.Context.GenerationConfiguration.AnyMethodRequiresUserId">
+            <summary>
+            是否有任何方法需要 UserId（包括接口级和方法级）。
+            用于决定是否在构造函数中注入 ICurrentUserContext。
+            </summary>
+        </member>
         <member name="P:Mud.HttpUtils.Generators.Context.GenerationConfiguration.BasePath">
             <summary>
             接口的基础路径前缀（从 [BasePath] 特性获取）
@@ -362,6 +385,11 @@
         <member name="T:Mud.HttpUtils.Generators.Context.GeneratorContext">
             <summary>
             生成上下文
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Generators.Context.GeneratorContext.ImplementsICurrentUserId">
+            <summary>
+            接口是否继承了 ICurrentUserId 接口
             </summary>
         </member>
         <member name="P:Mud.HttpUtils.Generators.Context.GeneratorContext.HasBaseInterfaces">
@@ -378,27 +406,22 @@
         </member>
         <member name="T:Mud.HttpUtils.Generators.Implementation.AccessTokenGenerator">
             <summary>
-            访问令牌生成器，用于生成用户令牌相关的属性和方法
+            访问令牌生成器，用于生成令牌相关的属性和方法
             </summary>
         </member>
         <member name="M:Mud.HttpUtils.Generators.Implementation.AccessTokenGenerator.Generate(System.Text.StringBuilder,Mud.HttpUtils.Generators.Context.GeneratorContext)">
             <summary>
-            生成用户访问令牌相关的属性和方法
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Generators.Implementation.AccessTokenGenerator.GenerateCurrentUserIdProperty(System.Text.StringBuilder)">
-            <summary>
-            生成 CurrentUserId 公共属性
+            生成令牌相关的属性和方法
             </summary>
         </member>
         <member name="M:Mud.HttpUtils.Generators.Implementation.AccessTokenGenerator.GenerateGetTokenAsyncMethod(System.Text.StringBuilder)">
             <summary>
-            生成 GetTokenAsync 方法（用户令牌版本）
+            生成统一的 GetTokenAsync 方法，通过 ITokenProvider 获取令牌
             </summary>
         </member>
-        <member name="M:Mud.HttpUtils.Generators.Implementation.AccessTokenGenerator.GenerateGetTokenAsyncWithScopesMethod(System.Text.StringBuilder)">
+        <member name="M:Mud.HttpUtils.Generators.Implementation.AccessTokenGenerator.GenerateIAppContextSwitcherGetTokenAsyncMethod(System.Text.StringBuilder)">
             <summary>
-            生成带 Scopes 的 GetTokenAsync 方法
+            生成 IAppContextSwitcher.GetTokenAsync() 的无参实现，委托给带参的 GetTokenAsync
             </summary>
         </member>
         <member name="T:Mud.HttpUtils.Generators.Implementation.ClassStructureGenerator">
@@ -441,11 +464,6 @@
             生成辅助方法
             </summary>
         </member>
-        <member name="M:Mud.HttpUtils.Generators.Implementation.ConstructorGenerator.GenerateGetTokenAsyncMethod(System.Text.StringBuilder)">
-            <summary>
-            生成通用的 GetTokenAsync 方法（租户令牌、应用令牌）
-            </summary>
-        </member>
         <member name="T:Mud.HttpUtils.Generators.Implementation.InterfaceImplementationGenerator">
             <summary>
             接口实现生成器（流程编排器）
@@ -486,9 +504,34 @@
             从接口的 Token 特性中提取 TokenType 值
             </summary>
         </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.InterfaceImplementationGenerator.GetInterfaceTokenManagerKey">
+            <summary>
+            从接口的 Token 特性中提取 TokenManagerKey 值
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.InterfaceImplementationGenerator.GetInterfaceRequiresUserId">
+            <summary>
+            从接口的 Token 特性中提取 RequiresUserId 值
+            </summary>
+        </member>
         <member name="M:Mud.HttpUtils.Generators.Implementation.InterfaceImplementationGenerator.ExtractBasePath">
             <summary>
             从接口的 [BasePath] 特性中提取基础路径前缀
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.InterfaceImplementationGenerator.ComputeAnyMethodRequiresUserId(Mud.HttpUtils.Generators.Context.GeneratorContext)">
+            <summary>
+            计算是否有任何方法需要 UserId，设置 Configuration.AnyMethodRequiresUserId
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.InterfaceImplementationGenerator.DetectICurrentUserId(Mud.HttpUtils.Generators.Context.GeneratorContext)">
+            <summary>
+            检测接口是否继承了 ICurrentUserId 接口
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.InterfaceImplementationGenerator.GetMethodRequiresUserId(Microsoft.CodeAnalysis.IMethodSymbol)">
+            <summary>
+            从方法的 Token 特性中提取 RequiresUserId 值
             </summary>
         </member>
         <member name="T:Mud.HttpUtils.Generators.Implementation.MethodGenerator">
@@ -627,6 +670,20 @@
         <member name="M:Mud.HttpUtils.Generators.Implementation.RequestBuilder.GenerateRawQueryStringParameter(System.Text.StringBuilder,Mud.HttpUtils.Models.Analysis.ParameterInfo)">
             <summary>
             生成 RawQueryString 参数代码
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.TokenMethodHelper.MethodRequiresUserId(Mud.HttpUtils.Generators.Context.GeneratorContext,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult)">
+            <summary>
+            判断方法是否需要 UserId。
+            优先使用方法级 RequiresUserId，其次使用接口级 RequiresUserId，
+            最后根据 IsUserAccessToken 自动推断。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.TokenMethodHelper.GetMethodTokenManagerKey(Mud.HttpUtils.Generators.Context.GeneratorContext,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult)">
+            <summary>
+            获取方法的 TokenManagerKey。
+            优先使用方法级 TokenManagerKey，其次使用接口级 TokenManagerKey，
+            最后使用 TokenType。
             </summary>
         </member>
         <member name="T:Mud.HttpUtils.FormContentGenerator">
@@ -1128,6 +1185,20 @@
             </summary>
             <returns>默认Token类型为TenantAccessToken</returns>
         </member>
+        <member name="M:Mud.HttpUtils.TokenHelper.GetTokenManagerKeyFromAttribute(Microsoft.CodeAnalysis.AttributeData)">
+            <summary>
+            从Token特性中提取TokenManagerKey值
+            </summary>
+            <param name="tokenAttribute">Token特性数据</param>
+            <returns>TokenManagerKey字符串，未找到时返回null</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.TokenHelper.GetRequiresUserIdFromAttribute(Microsoft.CodeAnalysis.AttributeData)">
+            <summary>
+            从Token特性中提取RequiresUserId值
+            </summary>
+            <param name="tokenAttribute">Token特性数据</param>
+            <returns>是否需要UserId，未指定时返回null</returns>
+        </member>
         <member name="T:Mud.HttpUtils.TypeDetectionHelper">
             <summary>
             类型检测工具类
@@ -1488,6 +1559,18 @@
             <summary>
             方法参数中标记了 [Token] 特性的参数名称。
             当存在此参数时，生成代码应优先使用参数值，仅在参数值为空时回退到 GetTokenAsync()。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.MethodTokenManagerKey">
+            <summary>
+            方法级 TokenManagerKey（从方法上的 [Token(TokenManagerKey = "...")] 特性获取）。
+            方法级优先于接口级。如果未指定，使用接口级的 TokenManagerKey 或 TokenType。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.MethodRequiresUserId">
+            <summary>
+            方法级是否需要 UserId（从方法上的 [Token(RequiresUserId = true/false)] 特性获取）。
+            方法级优先于接口级。如果未指定，使用接口级的 RequiresUserId 推断结果。
             </summary>
         </member>
         <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.AllowAnyStatusCode">
