@@ -898,6 +898,58 @@ public class RequestBuilderTests
 
     #endregion
 
+    #region ResponseEnableDecrypt 测试
+
+    [Fact]
+    public void GenerateRequestExecution_WithResponseEnableDecrypt_GeneratesDecryptLogic()
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.AsyncInnerReturnType = "string";
+        methodInfo.ResponseEnableDecrypt = true;
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "__client", false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("DecryptContent");
+        code.Should().Contain("JsonSerializer.Serialize");
+        code.Should().Contain("JsonSerializer.Deserialize");
+    }
+
+    [Fact]
+    public void GenerateRequestExecution_WithResponseTypeAndEnableDecrypt_GeneratesDecryptLogic()
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.AsyncInnerReturnType = "Response<string>";
+        methodInfo.ResponseEnableDecrypt = true;
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "__client", false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("DecryptContent");
+        code.Should().Contain("JsonSerializer.Serialize");
+        code.Should().Contain("JsonSerializer.Deserialize");
+    }
+
+    [Fact]
+    public void GenerateRequestExecution_WithAllowAnyStatusCodeAndEnableDecrypt_GeneratesDecryptLogic()
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.AsyncInnerReturnType = "string";
+        methodInfo.AllowAnyStatusCode = true;
+        methodInfo.ResponseEnableDecrypt = true;
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "__client", false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("DecryptContent");
+        code.Should().Contain("SendRawAsync");
+    }
+
+    #endregion
+
     #region 辅助方法
 
     private static MethodAnalysisResult CreateMethodInfo(string urlTemplate, List<ParameterInfo>? parameters = null)

@@ -720,6 +720,17 @@ internal class RequestBuilder
             }
 
             codeBuilder.AppendLine($"                }}");
+
+            if (methodInfo.ResponseEnableDecrypt)
+            {
+                codeBuilder.AppendLine($"                if (__content != null)");
+                codeBuilder.AppendLine($"                {{");
+                codeBuilder.AppendLine($"                    var __rawJson = JsonSerializer.Serialize(__content, _jsonSerializerOptions);");
+                codeBuilder.AppendLine($"                    var __decryptedJson = {httpClient}.DecryptContent(__rawJson);");
+                codeBuilder.AppendLine($"                    __content = JsonSerializer.Deserialize<{innerType}>(__decryptedJson, _jsonSerializerOptions);");
+                codeBuilder.AppendLine($"                }}");
+            }
+
             codeBuilder.AppendLine($"                return new Mud.HttpUtils.Response<{innerType}>(__statusCode, __content, __rawContent, __responseHeaders);");
         }
         else
