@@ -142,6 +142,15 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("            set => Mud.HttpUtils.Client.DefaultCurrentUserContext.SetUserId(value);");
             codeBuilder.AppendLine("        }");
         }
+        else if (_context.HasCacheVaryByUser && !_context.Configuration.AnyMethodRequiresUserId)
+        {
+            codeBuilder.AppendLine();
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 当前用户ID，用于缓存键的用户隔离。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine("        [System.Obsolete(\"请改用 ICurrentUserContext 注入获取用户 ID。\")]");
+            codeBuilder.AppendLine("        public string? CurrentUserId { get; set; }");
+        }
 
         codeBuilder.AppendLine();
     }
@@ -412,7 +421,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("            private int _disposed;");
         codeBuilder.AppendLine();
         codeBuilder.AppendLine("            public AppContextScope(IMudAppContext? previous, AsyncLocal<IMudAppContext?> context)");
-        codeBuilder.AppendLine("        {");
+        codeBuilder.AppendLine("            {");
         codeBuilder.AppendLine("                _previous = previous;");
         codeBuilder.AppendLine("                _context = context;");
         codeBuilder.AppendLine("            }");

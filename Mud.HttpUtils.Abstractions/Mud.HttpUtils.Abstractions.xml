@@ -1817,6 +1817,15 @@
             <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
             <returns>包含访问令牌的字符串任务，如果未找到则返回 null。</returns>
         </member>
+        <member name="M:Mud.HttpUtils.IUserTokenManager.GetTokenAsync(System.String,System.String[],System.Threading.CancellationToken)">
+            <summary>
+            异步获取指定用户和作用域的访问令牌。
+            </summary>
+            <param name="userId">用户的唯一标识符。</param>
+            <param name="scopes">令牌作用域数组。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>包含访问令牌的字符串，如果未找到则返回 null。</returns>
+        </member>
         <member name="M:Mud.HttpUtils.IUserTokenManager.GetTokenInfoAsync(System.String,System.Threading.CancellationToken)">
             <summary>
             异步获取指定用户的令牌详细信息。
@@ -2673,6 +2682,9 @@
             <param name="cacheOptions">缓存配置选项。</param>
         </member>
         <member name="M:Mud.HttpUtils.UserTokenManagerBase.GetTokenAsync(System.String,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.GetTokenAsync(System.String,System.String[],System.Threading.CancellationToken)">
             <inheritdoc />
         </member>
         <member name="M:Mud.HttpUtils.UserTokenManagerBase.GetTokenInfoAsync(System.String,System.Threading.CancellationToken)">

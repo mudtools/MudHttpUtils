@@ -212,6 +212,8 @@ internal class InterfaceImplementationGenerator
 
         var tokenManagerKey = GetInterfaceTokenManagerKey();
         var requiresUserId = GetInterfaceRequiresUserId();
+        var interfaceScopes = GetInterfaceTokenScopes();
+        var interfaceTokenName = GetInterfaceTokenName();
 
         var baseAddress = AttributeDataHelper.GetStringValueFromAttributeConstructor(
             httpClientApiAttribute,
@@ -247,6 +249,8 @@ internal class InterfaceImplementationGenerator
             IsUserAccessToken = tokenType == "UserAccessToken",
             TokenManagerKey = tokenManagerKey,
             RequiresUserId = requiresUserId,
+            InterfaceScopes = interfaceScopes,
+            InterfaceTokenName = interfaceTokenName,
             BasePath = basePath
         };
     }
@@ -295,6 +299,30 @@ internal class InterfaceImplementationGenerator
             _interfaceSymbol,
             HttpClientGeneratorConstants.TokenAttributeNames);
         return TokenHelper.GetRequiresUserIdFromAttribute(tokenAttribute);
+    }
+
+    /// <summary>
+    /// 从接口的 Token 特性中提取 Scopes 值
+    /// </summary>
+    private string? GetInterfaceTokenScopes()
+    {
+        var tokenAttribute = AttributeDataHelper.GetAttributeDataFromSymbol(
+            _interfaceSymbol,
+            HttpClientGeneratorConstants.TokenAttributeNames);
+        return TokenHelper.GetScopesFromAttribute(tokenAttribute);
+    }
+
+    /// <summary>
+    /// 从接口的 Token 特性中提取 Name 值
+    /// </summary>
+    private string? GetInterfaceTokenName()
+    {
+        var tokenAttribute = AttributeDataHelper.GetAttributeDataFromSymbol(
+            _interfaceSymbol,
+            HttpClientGeneratorConstants.TokenAttributeNames);
+        if (tokenAttribute == null)
+            return null;
+        return AttributeDataHelper.GetStringValueFromAttribute(tokenAttribute, ["Name"]);
     }
 
     /// <summary>

@@ -886,7 +886,7 @@ internal static class MethodAnalyzer
         if (tokenAttr == null)
             return (null, null);
 
-        var tokenManagerKey = AttributeDataHelper.GetStringValueFromAttribute(tokenAttr, ["TokenManagerKey"]);
+        var tokenManagerKey = TokenHelper.GetTokenManagerKeyFromAttribute(tokenAttr);
         var requiresUserIdValue = tokenAttr.NamedArguments
             .FirstOrDefault(na => na.Key.Equals("RequiresUserId", StringComparison.OrdinalIgnoreCase)).Value.Value;
 

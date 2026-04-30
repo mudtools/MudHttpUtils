@@ -27,6 +27,10 @@ internal static class TokenMethodHelper
                 ? context.Configuration.TokenType
                 : TokenHelper.GetDefaultTokenType();
 
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// 令牌管理器查找键。保留供子类覆盖使用。");
+        codeBuilder.AppendLine("        /// 新代码应使用 GetTokenAsync(tokenManagerKey, ...) 方法指定查找键。");
+        codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine($"        private readonly string _tokenManagerKey = \"{tokenManagerKey}\";");
         codeBuilder.AppendLine();
 
@@ -36,6 +40,7 @@ internal static class TokenMethodHelper
 
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine("        /// 获取用于远程API访问的Token令牌管理器查找键。");
+        codeBuilder.AppendLine("        /// 保留供子类覆盖使用。新代码应使用 GetTokenAsync(tokenManagerKey, ...) 方法指定查找键。");
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine("        /// <returns>返回Token令牌管理器查找键。</returns>");
         codeBuilder.AppendLine($"        protected {accessibility} string GetTokenManagerKey() => _tokenManagerKey;");

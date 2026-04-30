@@ -377,6 +377,16 @@
             用于决定是否在构造函数中注入 ICurrentUserContext。
             </summary>
         </member>
+        <member name="P:Mud.HttpUtils.Generators.Context.GenerationConfiguration.InterfaceScopes">
+            <summary>
+            接口级 Scopes（从 [Token(Scopes = "...")] 特性获取）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Generators.Context.GenerationConfiguration.InterfaceTokenName">
+            <summary>
+            接口级 Token 注入名称（从 [Token(Name = "...")] 特性获取）。
+            </summary>
+        </member>
         <member name="P:Mud.HttpUtils.Generators.Context.GenerationConfiguration.BasePath">
             <summary>
             接口的基础路径前缀（从 [BasePath] 特性获取）
@@ -512,6 +522,16 @@
         <member name="M:Mud.HttpUtils.Generators.Implementation.InterfaceImplementationGenerator.GetInterfaceRequiresUserId">
             <summary>
             从接口的 Token 特性中提取 RequiresUserId 值
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.InterfaceImplementationGenerator.GetInterfaceTokenScopes">
+            <summary>
+            从接口的 Token 特性中提取 Scopes 值
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.InterfaceImplementationGenerator.GetInterfaceTokenName">
+            <summary>
+            从接口的 Token 特性中提取 Name 值
             </summary>
         </member>
         <member name="M:Mud.HttpUtils.Generators.Implementation.InterfaceImplementationGenerator.ExtractBasePath">
@@ -1187,7 +1207,11 @@
         </member>
         <member name="M:Mud.HttpUtils.TokenHelper.GetTokenManagerKeyFromAttribute(Microsoft.CodeAnalysis.AttributeData)">
             <summary>
-            从Token特性中提取TokenManagerKey值
+            从Token特性中提取TokenManagerKey值，按优先级解析：
+            1. 显式设置的 TokenManagerKey 命名参数
+            2. 构造函数参数（向后兼容，旧写法 [Token("TenantAccessToken")]）
+            3. TokenType 命名参数值
+            4. 返回 null（由调用方使用默认值）
             </summary>
             <param name="tokenAttribute">Token特性数据</param>
             <returns>TokenManagerKey字符串，未找到时返回null</returns>

@@ -38,6 +38,8 @@ internal class GeneratorContext
 
     public bool HasCache { get; set; }
 
+    public bool HasCacheVaryByUser { get; set; }
+
     public bool HasQueryMap { get; set; }
 
     /// <summary>
@@ -83,6 +85,7 @@ internal class GeneratorContext
         FieldAccessibility = configuration.IsAbstract ? "protected " : "private ";
 
         HasCache = DetectCacheUsage(interfaceSymbol);
+        HasCacheVaryByUser = DetectCacheVaryByUser(interfaceSymbol);
     }
 
     private static bool DetectCacheUsage(INamedTypeSymbol interfaceSymbol)
@@ -93,6 +96,26 @@ internal class GeneratorContext
             return allMethods.Any(method =>
                 method.GetAttributes().Any(attr =>
                     HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name)));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool DetectCacheVaryByUser(INamedTypeSymbol interfaceSymbol)
+    {
+        try
+        {
+            var allMethods = TypeSymbolHelper.GetAllMethods(interfaceSymbol, true);
+            return allMethods.Any(method =>
+            {
+                var cacheAttr = method.GetAttributes()
+                    .FirstOrDefault(attr => HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name));
+                if (cacheAttr == null)
+                    return false;
+                return AttributeDataHelper.GetBoolValueFromAttribute(cacheAttr, HttpClientGeneratorConstants.CacheVaryByUserProperty, false);
+            });
         }
         catch
         {

@@ -52,6 +52,12 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     public abstract Task<string?> GetTokenAsync(string? userId, CancellationToken cancellationToken = default);
 
     /// <inheritdoc />
+    public virtual Task<string?> GetTokenAsync(string? userId, string[]? scopes, CancellationToken cancellationToken = default)
+    {
+        return GetTokenAsync(userId, cancellationToken);
+    }
+
+    /// <inheritdoc />
     public abstract Task<UserTokenInfo?> GetTokenInfoAsync(string userId, CancellationToken cancellationToken = default);
 
     /// <inheritdoc />

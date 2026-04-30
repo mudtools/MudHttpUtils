@@ -21,6 +21,15 @@ public interface IUserTokenManager : ITokenManager, IDisposable
     Task<string?> GetTokenAsync(string? userId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 异步获取指定用户和作用域的访问令牌。
+    /// </summary>
+    /// <param name="userId">用户的唯一标识符。</param>
+    /// <param name="scopes">令牌作用域数组。</param>
+    /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+    /// <returns>包含访问令牌的字符串，如果未找到则返回 null。</returns>
+    Task<string?> GetTokenAsync(string? userId, string[]? scopes, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 异步获取指定用户的令牌详细信息。
     /// </summary>
     /// <param name="userId">用户的唯一标识符。</param>

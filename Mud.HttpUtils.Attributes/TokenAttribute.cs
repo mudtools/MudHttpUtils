@@ -45,10 +45,11 @@ public sealed class TokenAttribute : Attribute
     /// <summary>
     /// 初始化 <see cref="TokenAttribute"/> 类的新实例。
     /// </summary>
-    /// <param name="tokenType">令牌类型，默认为 "TenantAccessToken"。</param>
+    /// <param name="tokenType">令牌类型，默认为 "TenantAccessToken"。此值同时设置 TokenType 和 TokenManagerKey（向后兼容）。</param>
     public TokenAttribute(string tokenType = "TenantAccessToken")
     {
         TokenType = tokenType;
+        TokenManagerKey = tokenType;
     }
 
     /// <summary>

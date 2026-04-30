@@ -278,8 +278,12 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
     private string GenerateCacheKeyExpression(MethodAnalysisResult methodInfo)
     {
+        var userIdExpression = _context.Configuration.AnyMethodRequiresUserId
+            ? "_currentUserContext.UserId"
+            : "CurrentUserId";
+
         var varyPrefix = methodInfo.CacheVaryByUser
-            ? $"\"user:\" + (_currentUserContext.UserId ?? \"anonymous\") + \"|\" + "
+            ? $"\"user:\" + ({userIdExpression} ?? \"anonymous\") + \"|\" + "
             : "";
 
         if (!string.IsNullOrEmpty(methodInfo.CacheKeyTemplate))
