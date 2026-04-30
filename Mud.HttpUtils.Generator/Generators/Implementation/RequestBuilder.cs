@@ -686,13 +686,13 @@ internal class RequestBuilder
             {
                 codeBuilder.AppendLine($"                catch (System.Exception ex) when (ex is System.InvalidOperationException or System.Xml.XmlException)");
                 codeBuilder.AppendLine($"                {{");
-                codeBuilder.AppendLine($"                    return new Mud.HttpUtils.Response<{innerType}>(__statusCode, default, \"Failed to deserialize XML response: \" + ex.Message + \". Raw content: \" + __rawContent, __responseHeaders);");
+                codeBuilder.AppendLine($"                    return new Mud.HttpUtils.Response<{innerType}>(__statusCode, \"Failed to deserialize XML response: \" + ex.Message + \". Raw content: \" + __rawContent, __responseHeaders);");
             }
             else
             {
                 codeBuilder.AppendLine($"                catch (System.Text.Json.JsonException ex)");
                 codeBuilder.AppendLine($"                {{");
-                codeBuilder.AppendLine($"                    return new Mud.HttpUtils.Response<{innerType}>(__statusCode, default, \"Failed to deserialize JSON response: \" + ex.Message + \". Raw content: \" + __rawContent, __responseHeaders);");
+                codeBuilder.AppendLine($"                    return new Mud.HttpUtils.Response<{innerType}>(__statusCode, \"Failed to deserialize JSON response: \" + ex.Message + \". Raw content: \" + __rawContent, __responseHeaders);");
             }
 
             codeBuilder.AppendLine($"                }}");
@@ -1035,40 +1035,53 @@ internal class RequestBuilder
 
         var isDictionaryType = TypeDetectionHelper.IsDictionaryType(param.Type);
 
-        codeBuilder.AppendLine($"            if ({param.Name} != null)");
-        codeBuilder.AppendLine("            {");
-
-        if (isDictionaryType)
+        var outerIndent = "            ";
+        var innerIndent = "                ";
+        if (param.IsValidated)
         {
-            GenerateDictionaryQueryMap(codeBuilder, param, includeNullValues, serializationMethod);
+            outerIndent = "            ";
+            innerIndent = "            ";
         }
         else
         {
-            codeBuilder.AppendLine($"                if ({param.Name} is IQueryParameter queryParam_{param.Name})");
-            codeBuilder.AppendLine("                {");
-            codeBuilder.AppendLine($"                    foreach (var kvp in queryParam_{param.Name}.ToQueryParameters())");
-            codeBuilder.AppendLine("                    {");
+            codeBuilder.AppendLine($"{outerIndent}if ({param.Name} != null)");
+            codeBuilder.AppendLine($"{outerIndent}{{");
+        }
+
+        if (isDictionaryType)
+        {
+            GenerateDictionaryQueryMap(codeBuilder, param, includeNullValues, serializationMethod, innerIndent);
+        }
+        else
+        {
+            codeBuilder.AppendLine($"{innerIndent}if ({param.Name} is IQueryParameter queryParam_{param.Name})");
+            codeBuilder.AppendLine($"{innerIndent}{{");
+            codeBuilder.AppendLine($"{innerIndent}    foreach (var kvp in queryParam_{param.Name}.ToQueryParameters())");
+            codeBuilder.AppendLine($"{innerIndent}    {{");
             if (includeNullValues)
             {
-                GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, "kvp.Key", "kvp.Value");
+                GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, "kvp.Key", "kvp.Value", $"{innerIndent}        ");
             }
             else
             {
-                codeBuilder.AppendLine("                        if (!string.IsNullOrEmpty(kvp.Value))");
-                codeBuilder.AppendLine("                        {");
-                GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, "kvp.Key", "kvp.Value", "                            ");
-                codeBuilder.AppendLine("                        }");
+                codeBuilder.AppendLine($"{innerIndent}        if (!string.IsNullOrEmpty(kvp.Value))");
+                codeBuilder.AppendLine($"{innerIndent}        {{");
+                GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, "kvp.Key", "kvp.Value", $"{innerIndent}            ");
+                codeBuilder.AppendLine($"{innerIndent}        }}");
             }
-            codeBuilder.AppendLine("                    }");
-            codeBuilder.AppendLine("                }");
-            codeBuilder.AppendLine($"                else");
-            codeBuilder.AppendLine("                {");
+            codeBuilder.AppendLine($"{innerIndent}    }}");
+            codeBuilder.AppendLine($"{innerIndent}}}");
+            codeBuilder.AppendLine($"{innerIndent}else");
+            codeBuilder.AppendLine($"{innerIndent}{{");
             var useJson = serializationMethod == "Json" ? "true" : "false";
-            codeBuilder.AppendLine($"                    FlattenObjectToQueryParams({param.Name}, \"\", \"{separator}\", __queryParams, {includeNullValues.ToString().ToLowerInvariant()}, {useJson});");
-            codeBuilder.AppendLine("                }");
+            codeBuilder.AppendLine($"{innerIndent}    FlattenObjectToQueryParams({param.Name}, \"\", \"{separator}\", __queryParams, {includeNullValues.ToString().ToLowerInvariant()}, {useJson});");
+            codeBuilder.AppendLine($"{innerIndent}}}");
         }
 
-        codeBuilder.AppendLine("            }");
+        if (!param.IsValidated)
+        {
+            codeBuilder.AppendLine($"{outerIndent}}}");
+        }
     }
 
     private void GenerateQueryMapValueAddition(
@@ -1092,22 +1105,22 @@ internal class RequestBuilder
         }
     }
 
-    private void GenerateDictionaryQueryMap(StringBuilder codeBuilder, ParameterInfo param, bool includeNullValues, string serializationMethod = "ToString")
+    private void GenerateDictionaryQueryMap(StringBuilder codeBuilder, ParameterInfo param, bool includeNullValues, string serializationMethod = "ToString", string indent = "                ")
     {
-        codeBuilder.AppendLine($"                foreach (var kvp_{param.Name} in {param.Name})");
-        codeBuilder.AppendLine("                {");
+        codeBuilder.AppendLine($"{indent}foreach (var kvp_{param.Name} in {param.Name})");
+        codeBuilder.AppendLine($"{indent}{{");
         if (includeNullValues)
         {
-            GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, $"kvp_{param.Name}.Key", $"kvp_{param.Name}.Value", "                    ");
+            GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, $"kvp_{param.Name}.Key", $"kvp_{param.Name}.Value", $"{indent}    ");
         }
         else
         {
-            codeBuilder.AppendLine($"                    if (kvp_{param.Name}.Value != null)");
-            codeBuilder.AppendLine("                    {");
-            GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, $"kvp_{param.Name}.Key", $"kvp_{param.Name}.Value", "                        ");
-            codeBuilder.AppendLine("                    }");
+            codeBuilder.AppendLine($"{indent}    if (kvp_{param.Name}.Value != null)");
+            codeBuilder.AppendLine($"{indent}    {{");
+            GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, $"kvp_{param.Name}.Key", $"kvp_{param.Name}.Value", $"{indent}        ");
+            codeBuilder.AppendLine($"{indent}    }}");
         }
-        codeBuilder.AppendLine("                }");
+        codeBuilder.AppendLine($"{indent}}}");
     }
 
     private void GenerateInterfaceQueryProperty(StringBuilder codeBuilder, InterfacePropertyInfo property)
@@ -1138,15 +1151,28 @@ internal class RequestBuilder
     /// </summary>
     private void GenerateRawQueryStringParameter(StringBuilder codeBuilder, ParameterInfo param)
     {
-        codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({param.Name}))");
-        codeBuilder.AppendLine("            {");
-        codeBuilder.AppendLine($"                var __rawQS = {param.Name}.TrimStart('?', '&').TrimEnd('&');");
-        codeBuilder.AppendLine("                if (!string.IsNullOrWhiteSpace(__rawQS))");
-        codeBuilder.AppendLine("                {");
-        codeBuilder.AppendLine("                    var __separator = __url.Contains('?') ? \"&\" : \"?\";");
-        codeBuilder.AppendLine("                    __url += __separator + __rawQS;");
-        codeBuilder.AppendLine("                }");
-        codeBuilder.AppendLine("            }");
+        var rawQsVar = $"__rawQS_{param.Name}";
+        if (param.IsValidated)
+        {
+            codeBuilder.AppendLine($"            var {rawQsVar} = {param.Name}.TrimStart('?', '&').TrimEnd('&');");
+            codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({rawQsVar}))");
+            codeBuilder.AppendLine("            {");
+            codeBuilder.AppendLine("                var __separator = __url.Contains('?') ? \"&\" : \"?\";");
+            codeBuilder.AppendLine($"                __url += __separator + {rawQsVar};");
+            codeBuilder.AppendLine("            }");
+        }
+        else
+        {
+            codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({param.Name}))");
+            codeBuilder.AppendLine("            {");
+            codeBuilder.AppendLine($"                var {rawQsVar} = {param.Name}.TrimStart('?', '&').TrimEnd('&');");
+            codeBuilder.AppendLine($"                if (!string.IsNullOrWhiteSpace({rawQsVar}))");
+            codeBuilder.AppendLine("                {");
+            codeBuilder.AppendLine("                    var __separator = __url.Contains('?') ? \"&\" : \"?\";");
+            codeBuilder.AppendLine($"                    __url += __separator + {rawQsVar};");
+            codeBuilder.AppendLine("                }");
+            codeBuilder.AppendLine("            }");
+        }
     }
 
     private static readonly HashSet<string> FormatStringFirstArgAttributes = new HashSet<string>(StringComparer.Ordinal)

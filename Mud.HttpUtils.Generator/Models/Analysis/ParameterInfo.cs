@@ -49,4 +49,10 @@ internal class ParameterInfo
     /// 默认值的字面量表示
     /// </summary>
     public string? DefaultValueLiteral { get; set; }
+
+    /// <summary>
+    /// 参数是否已通过参数验证（非空检查）。
+    /// 由 ParameterValidationHelper 设置，用于 RequestBuilder 判断是否需要生成冗余的 null 检查。
+    /// </summary>
+    public bool IsValidated { get; set; }
 }

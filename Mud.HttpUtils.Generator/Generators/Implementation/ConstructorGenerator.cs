@@ -79,10 +79,12 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         }
 
 
+        codeBuilder.AppendLine("#pragma warning disable CS0414");
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine("        /// 用于HttpClient客户端操作的内容类型。");
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly string _defaultContentType = \"{_context.Configuration.DefaultContentType}\";");
+        codeBuilder.AppendLine("#pragma warning restore CS0414");
 
         if (_context.HasCache)
         {

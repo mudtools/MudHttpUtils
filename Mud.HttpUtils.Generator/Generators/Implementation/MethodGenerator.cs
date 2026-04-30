@@ -368,6 +368,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
     /// </summary>
     private void GenerateInterfaceHeaders(StringBuilder codeBuilder, GeneratorContext context, MethodAnalysisResult methodInfo)
     {
+        if (methodInfo.HeaderMergeMode == "Ignore")
+            return;
+
         var hasTokenManager = !string.IsNullOrEmpty(context.Configuration.TokenManager);
         var hasAuthorizationHeader = TypeSymbolHelper.HasPropertyAttribute(
             context.InterfaceSymbol!, "Header", "Authorization");

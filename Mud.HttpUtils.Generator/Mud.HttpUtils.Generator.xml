@@ -1599,6 +1599,12 @@
             默认值的字面量表示
             </summary>
         </member>
+        <member name="P:Mud.HttpUtils.Models.Analysis.ParameterInfo.IsValidated">
+            <summary>
+            参数是否已通过参数验证（非空检查）。
+            由 ParameterValidationHelper 设置，用于 RequestBuilder 判断是否需要生成冗余的 null 检查。
+            </summary>
+        </member>
         <member name="T:Mud.HttpUtils.Models.Metadata.HttpClientApiInfo">
             <summary>
             表示 HttpClient API 的元数据信息

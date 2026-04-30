@@ -26,6 +26,7 @@ internal static class ParameterValidationHelper
             if (ShouldValidateParameter(param))
             {
                 GenerateSingleParameterValidation(codeBuilder, param);
+                param.IsValidated = true;
             }
         }
     }
