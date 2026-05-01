@@ -601,6 +601,16 @@
             <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
             <returns>下载的文件信息任务。</returns>
         </member>
+        <member name="M:Mud.HttpUtils.IBaseHttpClient.SendAsAsyncEnumerable``1(System.Net.Http.HttpRequestMessage,System.Object,System.Threading.CancellationToken)">
+            <summary>
+            异步发送 HTTP 请求并以流式方式返回 IAsyncEnumerable 结果，适用于服务器端事件流（SSE）或 NDJSON 响应。
+            </summary>
+            <typeparam name="TResult">每个响应元素的类型。</typeparam>
+            <param name="request">HTTP 请求消息。</param>
+            <param name="jsonSerializerOptions">JSON 序列化选项，用于控制反序列化行为。</param>
+            <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+            <returns>异步可枚举的响应元素流。</returns>
+        </member>
         <member name="T:Mud.HttpUtils.ICacheResponseInterceptor">
             <summary>
             缓存响应拦截器接口，继承自 <see cref="T:Mud.HttpUtils.IHttpResponseInterceptor"/>，提供HTTP响应的缓存管理能力。
@@ -641,80 +651,6 @@
             </example>
             <seealso cref="T:Mud.HttpUtils.IHttpResponseInterceptor"/>
             <seealso cref="T:Mud.HttpUtils.IHttpResponseCache"/>
-        </member>
-        <member name="M:Mud.HttpUtils.ICacheResponseInterceptor.TryGetCached``1(System.String,``0@)">
-            <summary>
-            尝试从缓存中获取指定键的值。
-            </summary>
-            <typeparam name="T">缓存值的类型。</typeparam>
-            <param name="cacheKey">缓存键，用于唯一标识缓存项。</param>
-            <param name="value">当找到缓存项时，包含缓存的值；否则为 <c>default(T)</c>。</param>
-            <returns>如果找到缓存项则为 <c>true</c>；否则为 <c>false</c>。</returns>
-            <remarks>
-            该方法不会抛出异常，即使缓存键不存在或类型不匹配也会安全返回 <c>false</c>。
-            </remarks>
-            <example>
-            <code>
-            if (cacheInterceptor.TryGetCached("user_profile_123", out UserProfile? profile))
-            {
-                // 使用缓存的用户资料
-                Console.WriteLine($"从缓存加载: {profile.Name}");
-            }
-            else
-            {
-                // 缓存未命中，需要从数据源加载
-            }
-            </code>
-            </example>
-        </member>
-        <member name="M:Mud.HttpUtils.ICacheResponseInterceptor.Set``1(System.String,``0,System.Int32,System.Boolean)">
-            <summary>
-            将值存储到缓存中。
-            </summary>
-            <typeparam name="T">要缓存的值的类型。</typeparam>
-            <param name="cacheKey">缓存键，用于唯一标识缓存项。</param>
-            <param name="value">要缓存的值。</param>
-            <param name="durationSeconds">缓存持续时间（秒）。</param>
-            <param name="useSlidingExpiration">
-            是否使用滑动过期策略。
-            <para>
-            当设置为 <c>true</c> 时，每次访问缓存项都会重置过期时间；
-            当设置为 <c>false</c> 时，缓存项将在固定的绝对时间后过期。
-            </para>
-            </param>
-            <remarks>
-            如果缓存键已存在，新值将覆盖旧值。
-            对于大型对象或敏感数据，请谨慎使用缓存。
-            </remarks>
-            <example>
-            <code>
-            // 绝对过期：5分钟后过期
-            cacheInterceptor.Set("api_response", responseData, 300);
-            
-            // 滑动过期：最后一次访问后5分钟过期
-            cacheInterceptor.Set("user_session", sessionData, 300, useSlidingExpiration: true);
-            </code>
-            </example>
-        </member>
-        <member name="M:Mud.HttpUtils.ICacheResponseInterceptor.Remove(System.String)">
-            <summary>
-            从缓存中移除指定键的缓存项。
-            </summary>
-            <param name="cacheKey">要移除的缓存项的键。</param>
-            <remarks>
-            如果缓存键不存在，该方法不会抛出异常，而是静默完成。
-            通常在数据更新或失效时使用此方法清除旧缓存。
-            </remarks>
-            <example>
-            <code>
-            // 用户资料更新后，清除缓存
-            cacheInterceptor.Remove("user_profile_123");
-            
-            // 批量清除相关缓存
-            cacheInterceptor.Remove("api_users_list");
-            cacheInterceptor.Remove("api_users_count");
-            </code>
-            </example>
         </member>
         <member name="T:Mud.HttpUtils.IEncryptableHttpClient">
             <summary>
@@ -796,6 +732,18 @@
             <returns>对应的 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 实例。</returns>
             <exception cref="T:System.ArgumentNullException"><paramref name="clientName"/> 为 null 或空白时抛出。</exception>
             <exception cref="T:System.InvalidOperationException">指定名称的客户端未注册时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.IEnhancedHttpClientFactory.Invalidate(System.String)">
+            <summary>
+            移除指定名称的客户端缓存，下次调用 <see cref="M:Mud.HttpUtils.IEnhancedHttpClientFactory.CreateClient(System.String)"/> 时将重新创建。
+            </summary>
+            <param name="clientName">Named HttpClient 的名称。</param>
+            <returns>如果成功移除缓存则返回 true，否则返回 false。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IEnhancedHttpClientFactory.InvalidateAll">
+            <summary>
+            清除所有客户端缓存，下次调用 <see cref="M:Mud.HttpUtils.IEnhancedHttpClientFactory.CreateClient(System.String)"/> 时将重新创建。
+            </summary>
         </member>
         <member name="T:Mud.HttpUtils.IFormContent">
             <summary>
@@ -1754,6 +1702,13 @@
             </summary>
             <param name="cancellationToken">取消令牌。</param>
             <returns>异步任务。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.ITokenRefreshBackgroundService.RegisterTokenManager(Mud.HttpUtils.ITokenManager,System.String)">
+            <summary>
+            注册需要后台刷新的令牌管理器。
+            </summary>
+            <param name="tokenManager">令牌管理器实例。</param>
+            <param name="name">令牌管理器名称（可选，用于日志标识）。</param>
         </member>
         <member name="T:Mud.HttpUtils.ITokenStore">
             <summary>

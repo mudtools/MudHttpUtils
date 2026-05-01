@@ -274,6 +274,47 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
     }
 
+    public async IAsyncEnumerable<TResult> SendAsAsyncEnumerable<TResult>(
+        HttpRequestMessage request,
+        object? jsonSerializerOptions = null,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        request.ThrowIfNull();
+
+        var uri = request.RequestUri?.ToString() ?? "[No URI]";
+
+        LogRequestStart("发送流式异步枚举请求", uri);
+
+        var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+
+        await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
+
+#if NETSTANDARD2_0
+        var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+#else
+        var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+#endif
+
+        var options = (jsonSerializerOptions as JsonSerializerOptions) ?? GetJsonSerializerOptions();
+
+        using var reader = new StreamReader(stream);
+
+        while (!reader.EndOfStream)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var line = await reader.ReadLineAsync().ConfigureAwait(false);
+            if (string.IsNullOrEmpty(line))
+                continue;
+
+            var item = JsonSerializer.Deserialize<TResult>(line, options);
+            if (item != null)
+                yield return item;
+        }
+
+        LogRequestComplete("流式异步枚举请求完成", uri);
+    }
+
     #endregion
 
     #region XML 序列化支持

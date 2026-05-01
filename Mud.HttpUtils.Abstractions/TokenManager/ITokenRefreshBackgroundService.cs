@@ -25,4 +25,11 @@ public interface ITokenRefreshBackgroundService
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>异步任务。</returns>
     Task StopAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 注册需要后台刷新的令牌管理器。
+    /// </summary>
+    /// <param name="tokenManager">令牌管理器实例。</param>
+    /// <param name="name">令牌管理器名称（可选，用于日志标识）。</param>
+    void RegisterTokenManager(ITokenManager tokenManager, string? name = null);
 }

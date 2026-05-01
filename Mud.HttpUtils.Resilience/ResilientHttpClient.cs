@@ -65,6 +65,17 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
 
     #region IBaseHttpClient
 
+    public async IAsyncEnumerable<TResult> SendAsAsyncEnumerable<TResult>(
+        HttpRequestMessage request,
+        object? jsonSerializerOptions = null,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await foreach (var item in _innerClient.SendAsAsyncEnumerable<TResult>(request, jsonSerializerOptions, cancellationToken).ConfigureAwait(false))
+        {
+            yield return item;
+        }
+    }
+
     /// <inheritdoc />
     public async Task<TResult?> SendAsync<TResult>(
         HttpRequestMessage request,

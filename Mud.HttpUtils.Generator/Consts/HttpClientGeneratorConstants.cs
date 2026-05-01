@@ -83,6 +83,18 @@ internal static class HttpClientGeneratorConstants
     public static readonly string[] HeaderMergeAttributeNames = ["HeaderMergeAttribute", "HeaderMerge"];
     public static readonly string[] SerializationMethodAttributeNames = ["SerializationMethodAttribute", "SerializationMethod"];
 
+    public static readonly string[] RetryAttributeNames = ["RetryAttribute", "Retry"];
+    public static readonly string[] CircuitBreakerAttributeNames = ["CircuitBreakerAttribute", "CircuitBreaker"];
+    public static readonly string[] TimeoutAttributeNames = ["TimeoutAttribute", "Timeout"];
+
+    // Resilience相关命名参数
+    public const string RetryMaxRetriesProperty = "MaxRetries";
+    public const string RetryDelayMillisecondsProperty = "DelayMilliseconds";
+    public const string RetryUseExponentialBackoffProperty = "UseExponentialBackoff";
+    public const string CircuitBreakerFailureThresholdProperty = "FailureThreshold";
+    public const string CircuitBreakerBreakDurationSecondsProperty = "BreakDurationSeconds";
+    public const string TimeoutMillisecondsProperty = "TimeoutMilliseconds";
+
     // Cache相关命名参数
     public const string CacheDurationSecondsProperty = "DurationSeconds";
     public const string CacheKeyTemplateProperty = "CacheKeyTemplate";

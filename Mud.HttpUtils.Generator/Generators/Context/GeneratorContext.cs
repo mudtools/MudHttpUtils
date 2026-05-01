@@ -40,6 +40,8 @@ internal class GeneratorContext
 
     public bool HasCacheVaryByUser { get; set; }
 
+    public bool HasResilience { get; set; }
+
     public bool HasQueryMap { get; set; }
 
     /// <summary>
@@ -86,6 +88,7 @@ internal class GeneratorContext
 
         HasCache = DetectCacheUsage(interfaceSymbol);
         HasCacheVaryByUser = DetectCacheVaryByUser(interfaceSymbol);
+        HasResilience = DetectResilienceUsage(interfaceSymbol);
     }
 
     private static bool DetectCacheUsage(INamedTypeSymbol interfaceSymbol)
@@ -116,6 +119,23 @@ internal class GeneratorContext
                     return false;
                 return AttributeDataHelper.GetBoolValueFromAttribute(cacheAttr, HttpClientGeneratorConstants.CacheVaryByUserProperty, false);
             });
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool DetectResilienceUsage(INamedTypeSymbol interfaceSymbol)
+    {
+        try
+        {
+            var allMethods = TypeSymbolHelper.GetAllMethods(interfaceSymbol, true);
+            return allMethods.Any(method =>
+                method.GetAttributes().Any(attr =>
+                    HttpClientGeneratorConstants.RetryAttributeNames.Contains(attr.AttributeClass?.Name) ||
+                    HttpClientGeneratorConstants.CircuitBreakerAttributeNames.Contains(attr.AttributeClass?.Name) ||
+                    HttpClientGeneratorConstants.TimeoutAttributeNames.Contains(attr.AttributeClass?.Name)));
         }
         catch
         {

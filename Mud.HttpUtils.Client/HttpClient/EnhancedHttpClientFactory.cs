@@ -40,6 +40,19 @@ internal sealed class EnhancedHttpClientFactory : IEnhancedHttpClientFactory
         return _clientCache.GetOrAdd(clientName, CreateClientCore);
     }
 
+    public bool Invalidate(string clientName)
+    {
+        if (string.IsNullOrWhiteSpace(clientName))
+            throw new ArgumentNullException(nameof(clientName));
+
+        return _clientCache.TryRemove(clientName, out _);
+    }
+
+    public void InvalidateAll()
+    {
+        _clientCache.Clear();
+    }
+
 #if NET6_0_OR_GREATER
     private IEnhancedHttpClient CreateClientCore(string clientName)
     {
