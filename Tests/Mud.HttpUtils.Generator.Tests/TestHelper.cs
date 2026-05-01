@@ -6,12 +6,10 @@
 // -----------------------------------------------------------------------
 
 using System.Reflection;
+using Microsoft.CodeAnalysis;
 
 namespace Mud.HttpUtils.Generator.Tests;
 
-/// <summary>
-/// 测试辅助工具类，用于获取 Mud.HttpUtils.Generator 程序集中的内部类型
-/// </summary>
 public static class TestHelper
 {
     private static readonly Assembly GeneratorAssembly;
@@ -51,5 +49,60 @@ public static class TestHelper
     {
         return type.GetMethod(methodName, bindingFlags)
             ?? throw new InvalidOperationException($"无法在类型 {type.Name} 中找到方法: {methodName}");
+    }
+}
+
+public static class BasicReferenceAssemblies
+{
+    public static List<MetadataReference> GetReferences()
+    {
+        var references = new List<MetadataReference>
+        {
+            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Task).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Task<>).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(List<>).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(System.Text.Json.JsonSerializer).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.Logging.ILogger).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(System.Net.Http.HttpClient).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Mud.HttpUtils.HttpClientUtils).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(System.IO.Stream).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(System.Collections.IEnumerable).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(System.Collections.Generic.IAsyncEnumerable<>).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(System.Runtime.CompilerServices.AsyncIteratorMethodBuilder).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(System.Linq.Enumerable).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.Caching.Memory.IMemoryCache).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.Options.IOptions<>).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(System.Attribute).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Mud.HttpUtils.Attributes.HttpClientApiAttribute).Assembly.Location),
+        };
+
+        var runtimeDir = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
+        var runtimeAssemblies = new[]
+        {
+            "System.Runtime.dll",
+            "System.Collections.Concurrent.dll",
+            "System.Threading.dll",
+            "System.Memory.dll",
+            "System.Threading.Tasks.dll",
+            "System.Collections.dll",
+            "System.Linq.dll",
+            "System.Net.Http.dll",
+            "System.IO.dll",
+            "System.Text.Json.dll",
+            "System.Private.CoreLib.dll",
+            "netstandard.dll",
+        };
+
+        foreach (var asm in runtimeAssemblies)
+        {
+            var path = Path.Combine(runtimeDir, asm);
+            if (File.Exists(path))
+            {
+                references.Add(MetadataReference.CreateFromFile(path));
+            }
+        }
+
+        return references;
     }
 }
