@@ -75,10 +75,18 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     public abstract Task<bool> RemoveTokenAsync(string userId, CancellationToken cancellationToken = default);
 
     /// <inheritdoc />
-    public abstract Task<bool> HasValidTokenAsync(string userId, CancellationToken cancellationToken = default);
+    public virtual Task<bool> HasValidTokenAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var cachedInfo = GetUserTokenFromCache(userId);
+        return Task.FromResult(IsUserTokenValid(cachedInfo));
+    }
 
     /// <inheritdoc />
-    public abstract Task<bool> CanRefreshTokenAsync(string userId, CancellationToken cancellationToken = default);
+    public virtual Task<bool> CanRefreshTokenAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var cachedInfo = GetUserTokenFromCache(userId);
+        return Task.FromResult(cachedInfo?.RefreshToken != null);
+    }
 
     /// <inheritdoc />
     public async Task<string?> GetOrRefreshTokenAsync(string? userId, CancellationToken cancellationToken = default)

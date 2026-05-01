@@ -43,21 +43,9 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
 
         if (_disposed) throw new ObjectDisposedException(nameof(DefaultAesEncryptionProvider));
 
-        using var aes = Aes.Create();
-        aes.Key = _key;
-        aes.Mode = CipherMode.CBC;
-        aes.Padding = PaddingMode.PKCS7;
-
-        aes.GenerateIV();
-        var encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
         var plainBytes = Encoding.UTF8.GetBytes(plainText);
-        var encryptedBytes = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
-
-        var result = new byte[aes.IV.Length + encryptedBytes.Length];
-        Buffer.BlockCopy(aes.IV, 0, result, 0, aes.IV.Length);
-        Buffer.BlockCopy(encryptedBytes, 0, result, aes.IV.Length, encryptedBytes.Length);
-
-        return Convert.ToBase64String(result);
+        var encryptedBytes = EncryptCore(plainBytes);
+        return Convert.ToBase64String(encryptedBytes);
     }
 
     /// <summary>
@@ -76,23 +64,7 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
         if (_disposed) throw new ObjectDisposedException(nameof(DefaultAesEncryptionProvider));
 
         var fullBytes = Convert.FromBase64String(cipherText);
-        if (fullBytes.Length < IvSizeBytes + 1)
-            throw new InvalidOperationException("密文数据格式无效：长度不足");
-
-        using var aes = Aes.Create();
-        aes.Key = _key;
-        aes.Mode = CipherMode.CBC;
-        aes.Padding = PaddingMode.PKCS7;
-
-        var iv = new byte[IvSizeBytes];
-        var cipherBytes = new byte[fullBytes.Length - IvSizeBytes];
-        Buffer.BlockCopy(fullBytes, 0, iv, 0, IvSizeBytes);
-        Buffer.BlockCopy(fullBytes, IvSizeBytes, cipherBytes, 0, cipherBytes.Length);
-        aes.IV = iv;
-
-        var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
-        var plainBytes = decryptor.TransformFinalBlock(cipherBytes, 0, cipherBytes.Length);
-
+        var plainBytes = DecryptCore(fullBytes);
         return Encoding.UTF8.GetString(plainBytes);
     }
 
@@ -108,20 +80,7 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
 
         if (_disposed) throw new ObjectDisposedException(nameof(DefaultAesEncryptionProvider));
 
-        using var aes = Aes.Create();
-        aes.Key = _key;
-        aes.Mode = CipherMode.CBC;
-        aes.Padding = PaddingMode.PKCS7;
-
-        aes.GenerateIV();
-        var encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
-        var encryptedBytes = encryptor.TransformFinalBlock(data, 0, data.Length);
-
-        var result = new byte[aes.IV.Length + encryptedBytes.Length];
-        Buffer.BlockCopy(aes.IV, 0, result, 0, aes.IV.Length);
-        Buffer.BlockCopy(encryptedBytes, 0, result, aes.IV.Length, encryptedBytes.Length);
-
-        return result;
+        return EncryptCore(data);
     }
 
     /// <summary>
@@ -136,22 +95,7 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
 
         if (_disposed) throw new ObjectDisposedException(nameof(DefaultAesEncryptionProvider));
 
-        if (encryptedData.Length < IvSizeBytes + 1)
-            throw new InvalidOperationException("密文数据格式无效：长度不足");
-
-        using var aes = Aes.Create();
-        aes.Key = _key;
-        aes.Mode = CipherMode.CBC;
-        aes.Padding = PaddingMode.PKCS7;
-
-        var iv = new byte[IvSizeBytes];
-        var cipherBytes = new byte[encryptedData.Length - IvSizeBytes];
-        Buffer.BlockCopy(encryptedData, 0, iv, 0, IvSizeBytes);
-        Buffer.BlockCopy(encryptedData, IvSizeBytes, cipherBytes, 0, cipherBytes.Length);
-        aes.IV = iv;
-
-        var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
-        return decryptor.TransformFinalBlock(cipherBytes, 0, cipherBytes.Length);
+        return DecryptCore(encryptedData);
     }
 
     public void Dispose()
@@ -162,5 +106,43 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
         _disposed = true;
         SecurityHelper.ClearBytes(_key);
         _key = Array.Empty<byte>();
+    }
+
+    private byte[] EncryptCore(byte[] plainBytes)
+    {
+        using var aes = Aes.Create();
+        aes.Key = _key;
+        aes.Mode = CipherMode.CBC;
+        aes.Padding = PaddingMode.PKCS7;
+
+        aes.GenerateIV();
+        var encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
+        var encryptedBytes = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
+
+        var result = new byte[aes.IV.Length + encryptedBytes.Length];
+        Buffer.BlockCopy(aes.IV, 0, result, 0, aes.IV.Length);
+        Buffer.BlockCopy(encryptedBytes, 0, result, aes.IV.Length, encryptedBytes.Length);
+
+        return result;
+    }
+
+    private byte[] DecryptCore(byte[] fullBytes)
+    {
+        if (fullBytes.Length < IvSizeBytes + 1)
+            throw new InvalidOperationException("密文数据格式无效：长度不足");
+
+        using var aes = Aes.Create();
+        aes.Key = _key;
+        aes.Mode = CipherMode.CBC;
+        aes.Padding = PaddingMode.PKCS7;
+
+        var iv = new byte[IvSizeBytes];
+        var cipherBytes = new byte[fullBytes.Length - IvSizeBytes];
+        Buffer.BlockCopy(fullBytes, 0, iv, 0, IvSizeBytes);
+        Buffer.BlockCopy(fullBytes, IvSizeBytes, cipherBytes, 0, cipherBytes.Length);
+        aes.IV = iv;
+
+        var decryptor = aes.CreateDecryptor(aes.Key, aes.IV);
+        return decryptor.TransformFinalBlock(cipherBytes, 0, cipherBytes.Length);
     }
 }

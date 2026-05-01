@@ -74,133 +74,6 @@
             <returns>配置好的 ByteArrayContent 对象</returns>
             <exception cref="T:System.ArgumentNullException">当 fileName 或 fileBytes 为 null 或空字符串时抛出</exception>
         </member>
-        <member name="M:Mud.HttpUtils.MessageSanitizer.TokenPattern">
-            <remarks>
-            Pattern:<br/>
-            <code>^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$|^[A-Za-z0-9_\\-]{20,}$</code><br/>
-            Options:<br/>
-            <code>RegexOptions.IgnoreCase</code><br/>
-            Explanation:<br/>
-            <code>
-            ○ Match if at the beginning of the string.<br/>
-            ○ Match with 3 alternative expressions, atomically.<br/>
-                ○ Match a sequence of expressions.<br/>
-                    ○ Loop greedily any number of times.<br/>
-                        ○ Match a character in the set [+/-9A-Za-z\u212A] exactly 4 times.<br/>
-                    ○ Optional (greedy).<br/>
-                        ○ Match with 2 alternative expressions.<br/>
-                            ○ Match a sequence of expressions.<br/>
-                                ○ Match a character in the set [+/-9A-Za-z\u212A] exactly 2 times.<br/>
-                                ○ Match the string "==".<br/>
-                            ○ Match a sequence of expressions.<br/>
-                                ○ Match a character in the set [+/-9A-Za-z\u212A] exactly 3 times.<br/>
-                                ○ Match '='.<br/>
-                    ○ Match if at the end of the string or if before an ending newline.<br/>
-                ○ Match a sequence of expressions.<br/>
-                    ○ Match a hexadecimal digit exactly 8 times.<br/>
-                    ○ Match '-'.<br/>
-                    ○ Match a hexadecimal digit exactly 4 times.<br/>
-                    ○ Match '-'.<br/>
-                    ○ Match a hexadecimal digit exactly 4 times.<br/>
-                    ○ Match '-'.<br/>
-                    ○ Match a hexadecimal digit exactly 4 times.<br/>
-                    ○ Match '-'.<br/>
-                    ○ Match a hexadecimal digit exactly 12 times.<br/>
-                    ○ Match if at the end of the string or if before an ending newline.<br/>
-                ○ Match a sequence of expressions.<br/>
-                    ○ Match a character in the set [\-0-9A-Z_a-z\u212A] atomically at least 20 times.<br/>
-                    ○ Match if at the end of the string or if before an ending newline.<br/>
-            </code>
-            </remarks>
-        </member>
-        <member name="M:Mud.HttpUtils.MessageSanitizer.SensitiveKeyValuePattern">
-            <remarks>
-            Pattern:<br/>
-            <code>(?i)(token|password|secret|key)\\s*[:=]\\s*['"]?([^'"\\s]{6,})['"]?</code><br/>
-            Options:<br/>
-            <code>RegexOptions.Compiled</code><br/>
-            Explanation:<br/>
-            <code>
-            ○ 1st capture group.<br/>
-                ○ Match with 4 alternative expressions.<br/>
-                    ○ Match a sequence of expressions.<br/>
-                        ○ Match a character in the set [Tt].<br/>
-                        ○ Match a character in the set [Oo].<br/>
-                        ○ Match a character in the set [Kk\u212A].<br/>
-                        ○ Match a character in the set [Ee].<br/>
-                        ○ Match a character in the set [Nn].<br/>
-                    ○ Match a sequence of expressions.<br/>
-                        ○ Match a character in the set [Pp].<br/>
-                        ○ Match a character in the set [Aa].<br/>
-                        ○ Match a character in the set [Ss] exactly 2 times.<br/>
-                        ○ Match a character in the set [Ww].<br/>
-                        ○ Match a character in the set [Oo].<br/>
-                        ○ Match a character in the set [Rr].<br/>
-                        ○ Match a character in the set [Dd].<br/>
-                    ○ Match a sequence of expressions.<br/>
-                        ○ Match a character in the set [Ss].<br/>
-                        ○ Match a character in the set [Ee].<br/>
-                        ○ Match a character in the set [Cc].<br/>
-                        ○ Match a character in the set [Rr].<br/>
-                        ○ Match a character in the set [Ee].<br/>
-                        ○ Match a character in the set [Tt].<br/>
-                    ○ Match a sequence of expressions.<br/>
-                        ○ Match a character in the set [Kk\u212A].<br/>
-                        ○ Match a character in the set [Ee].<br/>
-                        ○ Match a character in the set [Yy].<br/>
-            ○ Match a whitespace character atomically any number of times.<br/>
-            ○ Match a character in the set [:=].<br/>
-            ○ Match a whitespace character greedily any number of times.<br/>
-            ○ Match a character in the set ["'] greedily, optionally.<br/>
-            ○ 2nd capture group.<br/>
-                ○ Match a character in the set [^"'\s] greedily at least 6 times.<br/>
-            ○ Match a character in the set ["'] atomically, optionally.<br/>
-            </code>
-            </remarks>
-        </member>
-        <member name="M:Mud.HttpUtils.MessageSanitizer.PhonePattern">
-            <remarks>
-            Pattern:<br/>
-            <code>^1[3-9]\\d{9}$</code><br/>
-            Explanation:<br/>
-            <code>
-            ○ Match if at the beginning of the string.<br/>
-            ○ Match '1'.<br/>
-            ○ Match a character in the set [3-9].<br/>
-            ○ Match a Unicode digit exactly 9 times.<br/>
-            ○ Match if at the end of the string or if before an ending newline.<br/>
-            </code>
-            </remarks>
-        </member>
-        <member name="M:Mud.HttpUtils.MessageSanitizer.EmailPattern">
-            <remarks>
-            Pattern:<br/>
-            <code>^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$</code><br/>
-            Explanation:<br/>
-            <code>
-            ○ Match if at the beginning of the string.<br/>
-            ○ Match a character in the set [^@\s] atomically at least once.<br/>
-            ○ Match '@'.<br/>
-            ○ Match a character in the set [^@\s] greedily at least once.<br/>
-            ○ Match '.'.<br/>
-            ○ Match a character in the set [^@\s] atomically at least once.<br/>
-            ○ Match if at the end of the string or if before an ending newline.<br/>
-            </code>
-            </remarks>
-        </member>
-        <member name="M:Mud.HttpUtils.MessageSanitizer.IdCardPattern">
-            <remarks>
-            Pattern:<br/>
-            <code>^\\d{17}[\\dXx]$</code><br/>
-            Explanation:<br/>
-            <code>
-            ○ Match if at the beginning of the string.<br/>
-            ○ Match a Unicode digit exactly 17 times.<br/>
-            ○ Match a character in the set [Xx\d].<br/>
-            ○ Match if at the end of the string or if before an ending newline.<br/>
-            </code>
-            </remarks>
-        </member>
         <member name="T:Mud.HttpUtils.UrlValidator">
             <summary>
             URL 验证工具类，用于防止 SSRF（服务端请求伪造）攻击
@@ -292,22 +165,6 @@
             <param name="xml">XML字符串</param>
             <param name="encoding">编码方式</param>
             <returns>反序列化后的对象</returns>
-        </member>
-        <member name="T:Mud.HttpUtils.AsyncEnumerableExtensions">
-            <summary>
-            IBaseHttpClient 的 IAsyncEnumerable 扩展方法
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.AsyncEnumerableExtensions.SendAsAsyncEnumerable``1(Mud.HttpUtils.IBaseHttpClient,System.Net.Http.HttpRequestMessage,System.Object,System.Threading.CancellationToken)">
-            <summary>
-            发送 HTTP 请求并以 IAsyncEnumerable 流式返回 NDJSON 响应中的每一行数据。
-            </summary>
-            <typeparam name="T">每行数据的类型。</typeparam>
-            <param name="client">HTTP 客户端。</param>
-            <param name="request">HTTP 请求消息。</param>
-            <param name="jsonSerializerOptions">JSON 序列化选项。</param>
-            <param name="cancellationToken">取消令牌。</param>
-            <returns>流式返回的异步枚举。</returns>
         </member>
         <member name="T:Mud.HttpUtils.CacheResponseInterceptor">
             <summary>
@@ -1104,7 +961,7 @@
             <returns>该类型的属性掩码信息数组。</returns>
             <remarks>
             <para>
-            该方法使用 <see cref="M:System.Collections.Concurrent.ConcurrentDictionary`2.GetOrAdd(`0,System.Func{`0,`1})"/> 实现线程安全的缓存。
+            该方法使用 <see cref="M:System.Collections.Concurrent.ConcurrentDictionary`2.GetOrAdd(`0,`1)"/> 实现线程安全的缓存。
             首次访问某个类型时会进行反射分析，后续访问将直接从缓存中获取，避免重复反射开销。
             </para>
             <para>
@@ -1273,7 +1130,7 @@
             <para>
             该实现包含定时比较（constant-time comparison）功能，防止时序攻击（timing attack）。
             在 .NET Standard 2.0 环境下使用自定义实现，在更高版本中使用 
-            <see cref="M:System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(System.ReadOnlySpan{System.Byte},System.ReadOnlySpan{System.Byte})"/>。
+            <see cref="!:System.Security.Cryptography.CryptographicOperations.FixedTimeEquals"/>。
             </para>
             </remarks>
             <example>
@@ -1329,6 +1186,20 @@
             </para>
             <para>
             使用定时比较可以防止时序攻击，确保比较操作的时间不依赖于签名的匹配程度。
+            </para>
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.DefaultHmacSignatureProvider.FixedTimeEquals(System.Byte[],System.Byte[])">
+            <summary>
+            在 .NET Standard 2.0 环境下实现的定时字节数组比较方法，防止时序攻击。
+            </summary>
+            <param name="left">第一个字节数组。</param>
+            <param name="right">第二个字节数组。</param>
+            <returns>如果两个字节数组完全相同则返回 true，否则返回 false。</returns>
+            <remarks>
+            <para>
+            该方法使用异或（XOR）操作累积比较结果，确保比较时间与数据内容无关。
+            这是防止时序攻击的关键安全措施。
             </para>
             </remarks>
         </member>
@@ -1842,265 +1713,6 @@
             <summary>
             释放资源。
             </summary>
-        </member>
-        <member name="T:Mud.HttpUtils.TokenRefreshHostedService">
-            <summary>
-            令牌主动刷新后台服务,用于定时自动刷新访问令牌。
-            支持注册多个令牌管理器，逐一刷新所有已注册的令牌。
-            </summary>
-            <remarks>
-            <para>此类继承自 <see cref="T:Microsoft.Extensions.Hosting.BackgroundService"/>,是一个ASP.NET Core托管服务,
-            在应用程序后台运行,定时刷新令牌以确保令牌始终有效。</para>
-            <para>主要功能:</para>
-            <list type="bullet">
-              <item>按配置的间隔定时刷新令牌</item>
-              <item>支持错误重试机制</item>
-              <item>支持错误时停止服务的配置选项</item>
-              <item>完整的日志记录</item>
-              <item>优雅的服务启动和停止</item>
-              <item>支持多令牌管理器注册</item>
-            </list>
-            <para>此服务仅在 .NET 6.0 或更高版本中可用。</para>
-            </remarks>
-            <example>
-            <code>
-            // 在 Program.cs 或 Startup.cs 中注册服务
-            builder.Services.AddTokenRefreshBackgroundService(options =>
-            {
-                options.Enabled = true;
-                options.RefreshIntervalSeconds = 300; // 5分钟
-                options.RetryDelaySeconds = 30;
-                options.StopOnError = false;
-            });
-            </code>
-            </example>
-            <seealso cref="T:Microsoft.Extensions.Hosting.BackgroundService"/>
-            <seealso cref="T:Mud.HttpUtils.ITokenManager"/>
-            <seealso cref="T:Mud.HttpUtils.TokenRefreshBackgroundOptions"/>
-        </member>
-        <member name="M:Mud.HttpUtils.TokenRefreshHostedService.#ctor(Microsoft.Extensions.Options.IOptions{Mud.HttpUtils.TokenRefreshBackgroundOptions},Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.TokenRefreshHostedService})">
-            <summary>
-            初始化 <see cref="T:Mud.HttpUtils.TokenRefreshHostedService"/> 类的新实例。
-            </summary>
-            <param name="options">令牌刷新后台服务配置选项。</param>
-            <param name="logger">日志记录器。</param>
-            <exception cref="T:System.ArgumentNullException"><paramref name="options"/> 或 <paramref name="logger"/> 为 null。</exception>
-        </member>
-        <member name="M:Mud.HttpUtils.TokenRefreshHostedService.#ctor(Mud.HttpUtils.ITokenManager,Microsoft.Extensions.Options.IOptions{Mud.HttpUtils.TokenRefreshBackgroundOptions},Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.TokenRefreshHostedService})">
-            <summary>
-            初始化 <see cref="T:Mud.HttpUtils.TokenRefreshHostedService"/> 类的新实例，绑定单个令牌管理器（向后兼容）。
-            </summary>
-            <param name="tokenManager">令牌管理器实例。</param>
-            <param name="options">令牌刷新后台服务配置选项。</param>
-            <param name="logger">日志记录器。</param>
-            <exception cref="T:System.ArgumentNullException"><paramref name="tokenManager"/>、<paramref name="options"/> 或 <paramref name="logger"/> 为 null。</exception>
-        </member>
-        <member name="M:Mud.HttpUtils.TokenRefreshHostedService.RegisterTokenManager(Mud.HttpUtils.ITokenManager,System.String)">
-            <inheritdoc />
-        </member>
-        <member name="M:Mud.HttpUtils.TokenRefreshHostedService.ExecuteAsync(System.Threading.CancellationToken)">
-            <summary>
-            执行后台服务的主要逻辑,定时刷新令牌。
-            </summary>
-            <param name="stoppingToken">用于监控是否请求停止服务的取消令牌。</param>
-            <returns>表示后台服务执行操作的任务。</returns>
-            <remarks>
-            <para>此方法实现了一个定时循环,按照配置的间隔逐一调用所有已注册令牌管理器的 <see cref="M:Mud.HttpUtils.ITokenManager.GetOrRefreshTokenAsync(System.Threading.CancellationToken)"/> 刷新令牌。</para>
-            <para>异常处理策略:</para>
-            <list type="number">
-              <item><see cref="T:System.OperationCanceledException"/>: 服务正常停止时捕获,优雅退出</item>
-              <item><see cref="T:System.ObjectDisposedException"/>: 令牌管理器已释放时捕获,移除该管理器</item>
-              <item>其他异常: 记录错误日志,根据配置决定是否重试或停止服务</item>
-            </list>
-            <para>如果 <see cref="P:Mud.HttpUtils.TokenRefreshBackgroundOptions.StopOnError"/> 为 <c>true</c>,刷新失败时将抛出异常终止服务。</para>
-            </remarks>
-        </member>
-        <member name="M:Mud.HttpUtils.TokenRefreshHostedService.StartAsync(System.Threading.CancellationToken)">
-            <inheritdoc />
-        </member>
-        <member name="M:Mud.HttpUtils.TokenRefreshHostedService.StopAsync(System.Threading.CancellationToken)">
-            <inheritdoc />
-        </member>
-        <member name="T:System.Text.RegularExpressions.Generated.TokenPattern_0">
-            <summary>Custom <see cref="T:System.Text.RegularExpressions.Regex"/>-derived type for the TokenPattern method.</summary>
-        </member>
-        <member name="F:System.Text.RegularExpressions.Generated.TokenPattern_0.Instance">
-            <summary>Cached, thread-safe singleton instance.</summary>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.TokenPattern_0.#ctor">
-            <summary>Initializes the instance.</summary>
-        </member>
-        <member name="T:System.Text.RegularExpressions.Generated.TokenPattern_0.RunnerFactory">
-            <summary>Provides a factory for creating <see cref="T:System.Text.RegularExpressions.RegexRunner"/> instances to be used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.TokenPattern_0.RunnerFactory.CreateInstance">
-            <summary>Creates an instance of a <see cref="T:System.Text.RegularExpressions.RegexRunner"/> used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
-        </member>
-        <member name="T:System.Text.RegularExpressions.Generated.TokenPattern_0.RunnerFactory.Runner">
-            <summary>Provides the runner that contains the custom logic implementing the specified regular expression.</summary>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.TokenPattern_0.RunnerFactory.Runner.Scan(System.ReadOnlySpan{System.Char})">
-            <summary>Scan the <paramref name="inputSpan"/> starting from base.runtextstart for the next match.</summary>
-            <param name="inputSpan">The text being scanned by the regular expression.</param>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.TokenPattern_0.RunnerFactory.Runner.TryFindNextPossibleStartingPosition(System.ReadOnlySpan{System.Char})">
-            <summary>Search <paramref name="inputSpan"/> starting from base.runtextpos for the next location a match could possibly start.</summary>
-            <param name="inputSpan">The text being scanned by the regular expression.</param>
-            <returns>true if a possible match was found; false if no more matches are possible.</returns>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.TokenPattern_0.RunnerFactory.Runner.TryMatchAtCurrentPosition(System.ReadOnlySpan{System.Char})">
-            <summary>Determine whether <paramref name="inputSpan"/> at base.runtextpos is a match for the regular expression.</summary>
-            <param name="inputSpan">The text being scanned by the regular expression.</param>
-            <returns>true if the regular expression matches at the current position; otherwise, false.</returns>
-        </member>
-        <member name="T:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1">
-            <summary>Custom <see cref="T:System.Text.RegularExpressions.Regex"/>-derived type for the SensitiveKeyValuePattern method.</summary>
-        </member>
-        <member name="F:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.Instance">
-            <summary>Cached, thread-safe singleton instance.</summary>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.#ctor">
-            <summary>Initializes the instance.</summary>
-        </member>
-        <member name="T:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.RunnerFactory">
-            <summary>Provides a factory for creating <see cref="T:System.Text.RegularExpressions.RegexRunner"/> instances to be used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.RunnerFactory.CreateInstance">
-            <summary>Creates an instance of a <see cref="T:System.Text.RegularExpressions.RegexRunner"/> used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
-        </member>
-        <member name="T:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.RunnerFactory.Runner">
-            <summary>Provides the runner that contains the custom logic implementing the specified regular expression.</summary>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.RunnerFactory.Runner.Scan(System.ReadOnlySpan{System.Char})">
-            <summary>Scan the <paramref name="inputSpan"/> starting from base.runtextstart for the next match.</summary>
-            <param name="inputSpan">The text being scanned by the regular expression.</param>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.RunnerFactory.Runner.TryFindNextPossibleStartingPosition(System.ReadOnlySpan{System.Char})">
-            <summary>Search <paramref name="inputSpan"/> starting from base.runtextpos for the next location a match could possibly start.</summary>
-            <param name="inputSpan">The text being scanned by the regular expression.</param>
-            <returns>true if a possible match was found; false if no more matches are possible.</returns>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.RunnerFactory.Runner.TryMatchAtCurrentPosition(System.ReadOnlySpan{System.Char})">
-            <summary>Determine whether <paramref name="inputSpan"/> at base.runtextpos is a match for the regular expression.</summary>
-            <param name="inputSpan">The text being scanned by the regular expression.</param>
-            <returns>true if the regular expression matches at the current position; otherwise, false.</returns>
-        </member>
-        <member name="T:System.Text.RegularExpressions.Generated.PhonePattern_2">
-            <summary>Custom <see cref="T:System.Text.RegularExpressions.Regex"/>-derived type for the PhonePattern method.</summary>
-        </member>
-        <member name="F:System.Text.RegularExpressions.Generated.PhonePattern_2.Instance">
-            <summary>Cached, thread-safe singleton instance.</summary>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.PhonePattern_2.#ctor">
-            <summary>Initializes the instance.</summary>
-        </member>
-        <member name="T:System.Text.RegularExpressions.Generated.PhonePattern_2.RunnerFactory">
-            <summary>Provides a factory for creating <see cref="T:System.Text.RegularExpressions.RegexRunner"/> instances to be used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.PhonePattern_2.RunnerFactory.CreateInstance">
-            <summary>Creates an instance of a <see cref="T:System.Text.RegularExpressions.RegexRunner"/> used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
-        </member>
-        <member name="T:System.Text.RegularExpressions.Generated.PhonePattern_2.RunnerFactory.Runner">
-            <summary>Provides the runner that contains the custom logic implementing the specified regular expression.</summary>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.PhonePattern_2.RunnerFactory.Runner.Scan(System.ReadOnlySpan{System.Char})">
-            <summary>Scan the <paramref name="inputSpan"/> starting from base.runtextstart for the next match.</summary>
-            <param name="inputSpan">The text being scanned by the regular expression.</param>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.PhonePattern_2.RunnerFactory.Runner.TryFindNextPossibleStartingPosition(System.ReadOnlySpan{System.Char})">
-            <summary>Search <paramref name="inputSpan"/> starting from base.runtextpos for the next location a match could possibly start.</summary>
-            <param name="inputSpan">The text being scanned by the regular expression.</param>
-            <returns>true if a possible match was found; false if no more matches are possible.</returns>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.PhonePattern_2.RunnerFactory.Runner.TryMatchAtCurrentPosition(System.ReadOnlySpan{System.Char})">
-            <summary>Determine whether <paramref name="inputSpan"/> at base.runtextpos is a match for the regular expression.</summary>
-            <param name="inputSpan">The text being scanned by the regular expression.</param>
-            <returns>true if the regular expression matches at the current position; otherwise, false.</returns>
-        </member>
-        <member name="T:System.Text.RegularExpressions.Generated.EmailPattern_3">
-            <summary>Custom <see cref="T:System.Text.RegularExpressions.Regex"/>-derived type for the EmailPattern method.</summary>
-        </member>
-        <member name="F:System.Text.RegularExpressions.Generated.EmailPattern_3.Instance">
-            <summary>Cached, thread-safe singleton instance.</summary>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.EmailPattern_3.#ctor">
-            <summary>Initializes the instance.</summary>
-        </member>
-        <member name="T:System.Text.RegularExpressions.Generated.EmailPattern_3.RunnerFactory">
-            <summary>Provides a factory for creating <see cref="T:System.Text.RegularExpressions.RegexRunner"/> instances to be used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.EmailPattern_3.RunnerFactory.CreateInstance">
-            <summary>Creates an instance of a <see cref="T:System.Text.RegularExpressions.RegexRunner"/> used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
-        </member>
-        <member name="T:System.Text.RegularExpressions.Generated.EmailPattern_3.RunnerFactory.Runner">
-            <summary>Provides the runner that contains the custom logic implementing the specified regular expression.</summary>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.EmailPattern_3.RunnerFactory.Runner.Scan(System.ReadOnlySpan{System.Char})">
-            <summary>Scan the <paramref name="inputSpan"/> starting from base.runtextstart for the next match.</summary>
-            <param name="inputSpan">The text being scanned by the regular expression.</param>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.EmailPattern_3.RunnerFactory.Runner.TryFindNextPossibleStartingPosition(System.ReadOnlySpan{System.Char})">
-            <summary>Search <paramref name="inputSpan"/> starting from base.runtextpos for the next location a match could possibly start.</summary>
-            <param name="inputSpan">The text being scanned by the regular expression.</param>
-            <returns>true if a possible match was found; false if no more matches are possible.</returns>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.EmailPattern_3.RunnerFactory.Runner.TryMatchAtCurrentPosition(System.ReadOnlySpan{System.Char})">
-            <summary>Determine whether <paramref name="inputSpan"/> at base.runtextpos is a match for the regular expression.</summary>
-            <param name="inputSpan">The text being scanned by the regular expression.</param>
-            <returns>true if the regular expression matches at the current position; otherwise, false.</returns>
-        </member>
-        <member name="T:System.Text.RegularExpressions.Generated.IdCardPattern_4">
-            <summary>Custom <see cref="T:System.Text.RegularExpressions.Regex"/>-derived type for the IdCardPattern method.</summary>
-        </member>
-        <member name="F:System.Text.RegularExpressions.Generated.IdCardPattern_4.Instance">
-            <summary>Cached, thread-safe singleton instance.</summary>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.IdCardPattern_4.#ctor">
-            <summary>Initializes the instance.</summary>
-        </member>
-        <member name="T:System.Text.RegularExpressions.Generated.IdCardPattern_4.RunnerFactory">
-            <summary>Provides a factory for creating <see cref="T:System.Text.RegularExpressions.RegexRunner"/> instances to be used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.IdCardPattern_4.RunnerFactory.CreateInstance">
-            <summary>Creates an instance of a <see cref="T:System.Text.RegularExpressions.RegexRunner"/> used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
-        </member>
-        <member name="T:System.Text.RegularExpressions.Generated.IdCardPattern_4.RunnerFactory.Runner">
-            <summary>Provides the runner that contains the custom logic implementing the specified regular expression.</summary>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.IdCardPattern_4.RunnerFactory.Runner.Scan(System.ReadOnlySpan{System.Char})">
-            <summary>Scan the <paramref name="inputSpan"/> starting from base.runtextstart for the next match.</summary>
-            <param name="inputSpan">The text being scanned by the regular expression.</param>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.IdCardPattern_4.RunnerFactory.Runner.TryFindNextPossibleStartingPosition(System.ReadOnlySpan{System.Char})">
-            <summary>Search <paramref name="inputSpan"/> starting from base.runtextpos for the next location a match could possibly start.</summary>
-            <param name="inputSpan">The text being scanned by the regular expression.</param>
-            <returns>true if a possible match was found; false if no more matches are possible.</returns>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.IdCardPattern_4.RunnerFactory.Runner.TryMatchAtCurrentPosition(System.ReadOnlySpan{System.Char})">
-            <summary>Determine whether <paramref name="inputSpan"/> at base.runtextpos is a match for the regular expression.</summary>
-            <param name="inputSpan">The text being scanned by the regular expression.</param>
-            <returns>true if the regular expression matches at the current position; otherwise, false.</returns>
-        </member>
-        <member name="T:System.Text.RegularExpressions.Generated.Utilities">
-            <summary>Helper methods used by generated <see cref="T:System.Text.RegularExpressions.Regex"/>-derived implementations.</summary>
-        </member>
-        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_defaultTimeout">
-            <summary>Default timeout value set in <see cref="T:System.AppContext"/>, or <see cref="F:System.Text.RegularExpressions.Regex.InfiniteMatchTimeout"/> if none was set.</summary>
-        </member>
-        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_hasTimeout">
-            <summary>Whether <see cref="F:System.Text.RegularExpressions.Generated.Utilities.s_defaultTimeout"/> is non-infinite.</summary>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.Utilities.StackPush(System.Int32[]@,System.Int32@,System.Int32)">
-            <summary>Pushes 1 value onto the backtracking stack.</summary>
-        </member>
-        <member name="M:System.Text.RegularExpressions.Generated.Utilities.StackPush(System.Int32[]@,System.Int32@,System.Int32,System.Int32)">
-            <summary>Pushes 2 values onto the backtracking stack.</summary>
-        </member>
-        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_asciiLettersAndDigitsAndDashUnderscoreKelvinSign">
-            <summary>Supports searching for characters in or not in "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyzK".</summary>
-        </member>
-        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_nonAscii_2BDDE98808630E9B520E3AD9F33E4A0D939EAAED4FF3C3CC86415C934044BB2B">
-            <summary>Supports searching for characters in or not in "CKSYcksyK".</summary>
         </member>
     </members>
 </doc>

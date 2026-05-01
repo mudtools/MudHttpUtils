@@ -97,9 +97,11 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             if (IsTokenValid(scopeKey))
                 return _tokenCache[scopeKey]!.AccessToken!;
 
-            var token = scopes == null || scopes.Length == 0
-                ? await RefreshTokenWithRetryAsync(cancellationToken).ConfigureAwait(false)
-                : await RefreshTokenWithScopesAndRetryAsync(scopes, cancellationToken).ConfigureAwait(false);
+            var token = await RefreshTokenWithRetryCoreAsync(
+                scopes == null || scopes.Length == 0
+                    ? ct => RefreshTokenCoreAsync(ct)
+                    : ct => RefreshTokenWithScopesAsync(scopes, ct),
+                cancellationToken).ConfigureAwait(false);
             UpdateToken(scopeKey, token);
             return _tokenCache[scopeKey]!.AccessToken!;
         }
@@ -227,7 +229,9 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         }
     }
 
-    private async Task<CredentialToken> RefreshTokenWithRetryAsync(CancellationToken cancellationToken)
+    private async Task<CredentialToken> RefreshTokenWithRetryCoreAsync(
+        Func<CancellationToken, Task<CredentialToken>> refreshFunc,
+        CancellationToken cancellationToken)
     {
         var retryCount = 0;
         Exception? lastException = null;
@@ -236,47 +240,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         {
             try
             {
-                return await RefreshTokenCoreAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                lastException = ex;
-                var eventArgs = new TokenRefreshFailedEventArgs(ex, tokenType: null, retryCount);
-
-                OnRefreshFailed(eventArgs);
-
-                if (!string.IsNullOrEmpty(eventArgs.FallbackToken))
-                {
-                    return new CredentialToken
-                    {
-                        AccessToken = eventArgs.FallbackToken,
-                        Expire = DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeMilliseconds()
-                    };
-                }
-
-                if (!eventArgs.ShouldRetry || retryCount >= MaxRefreshRetryCount)
-                {
-                    throw;
-                }
-
-                retryCount++;
-                await Task.Delay(RefreshRetryDelayMilliseconds, cancellationToken).ConfigureAwait(false);
-            }
-        }
-
-        throw lastException ?? new InvalidOperationException("令牌刷新失败");
-    }
-
-    private async Task<CredentialToken> RefreshTokenWithScopesAndRetryAsync(string[] scopes, CancellationToken cancellationToken)
-    {
-        var retryCount = 0;
-        Exception? lastException = null;
-
-        while (retryCount <= MaxRefreshRetryCount)
-        {
-            try
-            {
-                return await RefreshTokenWithScopesAsync(scopes, cancellationToken).ConfigureAwait(false);
+                return await refreshFunc(cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {

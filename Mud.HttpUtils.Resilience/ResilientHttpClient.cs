@@ -63,6 +63,40 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         return false;
     }
 
+    private async Task<TResult> ExecuteWithCloneAsync<TResult>(
+        HttpRequestMessage request,
+        Func<IEnhancedHttpClient, HttpRequestMessage, CancellationToken, Task<TResult>> executeFunc,
+        CancellationToken cancellationToken)
+    {
+        var policy = _policyProvider.GetCombinedPolicy<TResult>();
+
+        return await policy.ExecuteAsync(
+            async ct =>
+            {
+                var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request, MaxCloneContentSize).ConfigureAwait(false);
+                try
+                {
+                    return await executeFunc(_innerClient, clonedRequest, ct).ConfigureAwait(false);
+                }
+                finally
+                {
+                    clonedRequest.Dispose();
+                }
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<TResult> ExecuteWithoutCloneAsync<TResult>(
+        Func<IEnhancedHttpClient, CancellationToken, Task<TResult>> executeFunc,
+        CancellationToken cancellationToken)
+    {
+        var policy = _policyProvider.GetCombinedPolicy<TResult>();
+
+        return await policy.ExecuteAsync(
+            async ct => await executeFunc(_innerClient, ct).ConfigureAwait(false),
+            cancellationToken).ConfigureAwait(false);
+    }
+
     #region IBaseHttpClient
 
     public async IAsyncEnumerable<TResult> SendAsAsyncEnumerable<TResult>(
@@ -87,21 +121,8 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
             return await _innerClient.SendAsync<TResult>(request, jsonSerializerOptions, cancellationToken).ConfigureAwait(false);
         }
 
-        var policy = _policyProvider.GetCombinedPolicy<TResult?>();
-
-        return await policy.ExecuteAsync(
-            async ct =>
-            {
-                var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request, MaxCloneContentSize).ConfigureAwait(false);
-                try
-                {
-                    return await _innerClient.SendAsync<TResult>(clonedRequest, jsonSerializerOptions, ct).ConfigureAwait(false);
-                }
-                finally
-                {
-                    clonedRequest.Dispose();
-                }
-            },
+        return await ExecuteWithCloneAsync(request,
+            (client, req, ct) => client.SendAsync<TResult>(req, jsonSerializerOptions, ct),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -115,21 +136,8 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
             return await _innerClient.DownloadAsync(request, cancellationToken).ConfigureAwait(false);
         }
 
-        var policy = _policyProvider.GetCombinedPolicy<byte[]?>();
-
-        return await policy.ExecuteAsync(
-            async ct =>
-            {
-                var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request, MaxCloneContentSize).ConfigureAwait(false);
-                try
-                {
-                    return await _innerClient.DownloadAsync(clonedRequest, ct).ConfigureAwait(false);
-                }
-                finally
-                {
-                    clonedRequest.Dispose();
-                }
-            },
+        return await ExecuteWithCloneAsync(request,
+            (client, req, ct) => client.DownloadAsync(req, ct),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -145,21 +153,8 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
             return await _innerClient.DownloadLargeAsync(request, filePath, overwrite, cancellationToken).ConfigureAwait(false);
         }
 
-        var policy = _policyProvider.GetCombinedPolicy<FileInfo>();
-
-        return await policy.ExecuteAsync(
-            async ct =>
-            {
-                var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request, MaxCloneContentSize).ConfigureAwait(false);
-                try
-                {
-                    return await _innerClient.DownloadLargeAsync(clonedRequest, filePath, overwrite, ct).ConfigureAwait(false);
-                }
-                finally
-                {
-                    clonedRequest.Dispose();
-                }
-            },
+        return await ExecuteWithCloneAsync(request,
+            (client, req, ct) => client.DownloadLargeAsync(req, filePath, overwrite, ct),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -173,21 +168,8 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
             return await _innerClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
         }
 
-        var policy = _policyProvider.GetCombinedPolicy<HttpResponseMessage>();
-
-        return await policy.ExecuteAsync(
-            async ct =>
-            {
-                var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request, MaxCloneContentSize).ConfigureAwait(false);
-                try
-                {
-                    return await _innerClient.SendRawAsync(clonedRequest, ct).ConfigureAwait(false);
-                }
-                finally
-                {
-                    clonedRequest.Dispose();
-                }
-            },
+        return await ExecuteWithCloneAsync(request,
+            (client, req, ct) => client.SendRawAsync(req, ct),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -201,21 +183,8 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
             return await _innerClient.SendStreamAsync(request, cancellationToken).ConfigureAwait(false);
         }
 
-        var policy = _policyProvider.GetCombinedPolicy<Stream>();
-
-        return await policy.ExecuteAsync(
-            async ct =>
-            {
-                var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request, MaxCloneContentSize).ConfigureAwait(false);
-                try
-                {
-                    return await _innerClient.SendStreamAsync(clonedRequest, ct).ConfigureAwait(false);
-                }
-                finally
-                {
-                    clonedRequest.Dispose();
-                }
-            },
+        return await ExecuteWithCloneAsync(request,
+            (client, req, ct) => client.SendStreamAsync(req, ct),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -228,10 +197,8 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         string requestUri,
         CancellationToken cancellationToken = default)
     {
-        var policy = _policyProvider.GetCombinedPolicy<TResult?>();
-
-        return await policy.ExecuteAsync(
-            async ct => await _innerClient.GetAsync<TResult>(requestUri, ct).ConfigureAwait(false),
+        return await ExecuteWithoutCloneAsync<TResult?>(
+            (client, ct) => client.GetAsync<TResult>(requestUri, ct),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -241,10 +208,8 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         TRequest requestData,
         CancellationToken cancellationToken = default)
     {
-        var policy = _policyProvider.GetCombinedPolicy<TResult?>();
-
-        return await policy.ExecuteAsync(
-            async ct => await _innerClient.PostAsJsonAsync<TRequest, TResult>(requestUri, requestData, ct).ConfigureAwait(false),
+        return await ExecuteWithoutCloneAsync<TResult?>(
+            (client, ct) => client.PostAsJsonAsync<TRequest, TResult>(requestUri, requestData, ct),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -254,10 +219,8 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         TRequest requestData,
         CancellationToken cancellationToken = default)
     {
-        var policy = _policyProvider.GetCombinedPolicy<TResult?>();
-
-        return await policy.ExecuteAsync(
-            async ct => await _innerClient.PutAsJsonAsync<TRequest, TResult>(requestUri, requestData, ct).ConfigureAwait(false),
+        return await ExecuteWithoutCloneAsync<TResult?>(
+            (client, ct) => client.PutAsJsonAsync<TRequest, TResult>(requestUri, requestData, ct),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -266,10 +229,8 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         string requestUri,
         CancellationToken cancellationToken = default)
     {
-        var policy = _policyProvider.GetCombinedPolicy<TResult?>();
-
-        return await policy.ExecuteAsync(
-            async ct => await _innerClient.DeleteAsJsonAsync<TResult>(requestUri, ct).ConfigureAwait(false),
+        return await ExecuteWithoutCloneAsync<TResult?>(
+            (client, ct) => client.DeleteAsJsonAsync<TResult>(requestUri, ct),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -279,10 +240,8 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         TRequest requestData,
         CancellationToken cancellationToken = default)
     {
-        var policy = _policyProvider.GetCombinedPolicy<TResult?>();
-
-        return await policy.ExecuteAsync(
-            async ct => await _innerClient.DeleteAsJsonAsync<TRequest, TResult>(requestUri, requestData, ct).ConfigureAwait(false),
+        return await ExecuteWithoutCloneAsync<TResult?>(
+            (client, ct) => client.DeleteAsJsonAsync<TRequest, TResult>(requestUri, requestData, ct),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -292,10 +251,8 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         TRequest requestData,
         CancellationToken cancellationToken = default)
     {
-        var policy = _policyProvider.GetCombinedPolicy<TResult?>();
-
-        return await policy.ExecuteAsync(
-            async ct => await _innerClient.PatchAsJsonAsync<TRequest, TResult>(requestUri, requestData, ct).ConfigureAwait(false),
+        return await ExecuteWithoutCloneAsync<TResult?>(
+            (client, ct) => client.PatchAsJsonAsync<TRequest, TResult>(requestUri, requestData, ct),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -314,21 +271,8 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
             return await _innerClient.SendXmlAsync<TResult>(request, encoding, cancellationToken).ConfigureAwait(false);
         }
 
-        var policy = _policyProvider.GetCombinedPolicy<TResult?>();
-
-        return await policy.ExecuteAsync(
-            async ct =>
-            {
-                var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request, MaxCloneContentSize).ConfigureAwait(false);
-                try
-                {
-                    return await _innerClient.SendXmlAsync<TResult>(clonedRequest, encoding, ct).ConfigureAwait(false);
-                }
-                finally
-                {
-                    clonedRequest.Dispose();
-                }
-            },
+        return await ExecuteWithCloneAsync(request,
+            (client, req, ct) => client.SendXmlAsync<TResult>(req, encoding, ct),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -339,10 +283,8 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         Encoding? encoding = null,
         CancellationToken cancellationToken = default)
     {
-        var policy = _policyProvider.GetCombinedPolicy<TResult?>();
-
-        return await policy.ExecuteAsync(
-            async ct => await _innerClient.PostAsXmlAsync<TRequest, TResult>(requestUri, requestData, encoding, ct).ConfigureAwait(false),
+        return await ExecuteWithoutCloneAsync<TResult?>(
+            (client, ct) => client.PostAsXmlAsync<TRequest, TResult>(requestUri, requestData, encoding, ct),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -353,10 +295,8 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         Encoding? encoding = null,
         CancellationToken cancellationToken = default)
     {
-        var policy = _policyProvider.GetCombinedPolicy<TResult?>();
-
-        return await policy.ExecuteAsync(
-            async ct => await _innerClient.PutAsXmlAsync<TRequest, TResult>(requestUri, requestData, encoding, ct).ConfigureAwait(false),
+        return await ExecuteWithoutCloneAsync<TResult?>(
+            (client, ct) => client.PutAsXmlAsync<TRequest, TResult>(requestUri, requestData, encoding, ct),
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -366,10 +306,8 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         Encoding? encoding = null,
         CancellationToken cancellationToken = default)
     {
-        var policy = _policyProvider.GetCombinedPolicy<TResult?>();
-
-        return await policy.ExecuteAsync(
-            async ct => await _innerClient.GetXmlAsync<TResult>(requestUri, encoding, ct).ConfigureAwait(false),
+        return await ExecuteWithoutCloneAsync<TResult?>(
+            (client, ct) => client.GetXmlAsync<TResult>(requestUri, encoding, ct),
             cancellationToken).ConfigureAwait(false);
     }
 

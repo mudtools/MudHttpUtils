@@ -353,25 +353,6 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
     private void GenerateCacheInnerQueryParameters(StringBuilder codeBuilder, MethodAnalysisResult methodInfo)
     {
-        var queryParams = methodInfo.Parameters
-            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.QueryAttribute))
-            .ToList();
-
-        var arrayQueryParams = methodInfo.Parameters
-            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.ArrayQueryAttribute))
-            .ToList();
-
-        var queryMapParams = methodInfo.Parameters
-            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.QueryMapAttribute))
-            .ToList();
-
-        var rawQueryStringParams = methodInfo.Parameters
-            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.RawQueryStringAttribute))
-            .ToList();
-
-        if (!queryParams.Any() && !arrayQueryParams.Any() && !queryMapParams.Any() && !rawQueryStringParams.Any())
-            return;
-
         _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
     }
 

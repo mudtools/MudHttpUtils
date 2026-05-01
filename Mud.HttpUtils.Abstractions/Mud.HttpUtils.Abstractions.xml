@@ -1962,6 +1962,7 @@
         <member name="M:Mud.HttpUtils.OAuth2TokenManagerBase.GetTokenByPasswordAsync(System.String,System.String,System.String[],System.Threading.CancellationToken)">
             <summary>
             通过资源所有者密码凭证获取令牌（Resource Owner Password Credentials Flow）。
+            默认不支持，子类可重写此方法以支持 ROPC 流程。
             </summary>
             <param name="username">用户名。</param>
             <param name="password">密码。</param>
@@ -1971,7 +1972,7 @@
         </member>
         <member name="M:Mud.HttpUtils.OAuth2TokenManagerBase.RevokeTokenAsync(System.String,System.String,System.Threading.CancellationToken)">
             <summary>
-            撤销令牌。
+            撤销令牌。默认不支持，子类可重写此方法以支持令牌撤销。
             </summary>
             <param name="token">要撤销的令牌。</param>
             <param name="tokenTypeHint">令牌类型提示（access_token 或 refresh_token）。</param>
@@ -1980,7 +1981,7 @@
         </member>
         <member name="M:Mud.HttpUtils.OAuth2TokenManagerBase.IntrospectTokenAsync(System.String,System.Threading.CancellationToken)">
             <summary>
-            内省令牌（Token Introspection）。
+            内省令牌（Token Introspection）。默认不支持，子类可重写此方法以支持令牌内省。
             </summary>
             <param name="token">要内省的令牌。</param>
             <param name="cancellationToken">取消令牌。</param>

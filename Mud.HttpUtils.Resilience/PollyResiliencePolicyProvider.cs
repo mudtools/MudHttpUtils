@@ -185,12 +185,16 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     /// <inheritdoc />
     public IAsyncPolicy<TResult> GetCombinedPolicy<TResult>()
     {
+        var key = new PolicyCacheKey(typeof(TResult), "combined");
+        return (IAsyncPolicy<TResult>)_policyCache.GetOrAdd(key, _ => BuildCombinedPolicy<TResult>());
+    }
+
+    private IAsyncPolicy<TResult> BuildCombinedPolicy<TResult>()
+    {
         var retryPolicy = GetRetryPolicy<TResult>();
         var timeoutPolicy = GetTimeoutPolicy<TResult>();
         var circuitBreakerPolicy = GetCircuitBreakerPolicy<TResult>();
 
-        // 策略组合顺序：外层 -> 内层
-        // 重试(外层) -> 熔断 -> 超时(内层，最接近实际请求)
         return retryPolicy.WrapAsync(circuitBreakerPolicy).WrapAsync(timeoutPolicy);
     }
 
