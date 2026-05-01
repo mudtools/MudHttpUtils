@@ -31,11 +31,6 @@ internal class ParameterInfo
     public IReadOnlyList<ParameterAttributeInfo> Attributes { get; set; } = [];
 
     /// <summary>
-    /// Token 类型（如果是 Token 参数）
-    /// </summary>
-    public string TokenType { get; set; } = string.Empty;
-
-    /// <summary>
     /// 是否具有默认值
     /// </summary>
     public bool HasDefaultValue { get; set; }

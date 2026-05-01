@@ -493,6 +493,7 @@ public static class HttpClientServiceCollectionExtensions
             throw new ArgumentNullException(nameof(services));
 
         services.TryAddSingleton<ITokenProvider, TProvider>();
+        services.TryAddSingleton<ICurrentUserContext, DefaultCurrentUserContext>();
         return services;
     }
 
@@ -519,6 +520,7 @@ public static class HttpClientServiceCollectionExtensions
             throw new ArgumentNullException(nameof(services));
 
         services.TryAddSingleton<ITokenProvider, DefaultTokenProvider>();
+        services.TryAddSingleton<ICurrentUserContext, DefaultCurrentUserContext>();
         return services;
     }
 

@@ -244,6 +244,7 @@ namespace TestNamespace
     {
         var source = @"
 using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -251,7 +252,7 @@ namespace TestNamespace
     public interface ITestApi
     {
         [Get(""/users"")]
-        [TokenHeader(TokenInjectionMode = TokenInjectionMode.BasicAuth)]
+        [Token(InjectionMode = TokenInjectionMode.BasicAuth)]
         Task<string> GetUsersAsync();
     }
 }";
