@@ -180,11 +180,6 @@
             分析单个参数
             </summary>
         </member>
-        <member name="M:Mud.HttpUtils.Analyzers.ParameterAnalyzer.GetTokenType(Microsoft.CodeAnalysis.IParameterSymbol)">
-            <summary>
-            获取参数的 Token 类型
-            </summary>
-        </member>
         <member name="T:Mud.HttpUtils.Analyzers.TypeConverter">
             <summary>
             类型转换器，负责将类型和值转换为代码中的字面量表示
@@ -1684,11 +1679,6 @@
         <member name="P:Mud.HttpUtils.Models.Analysis.ParameterInfo.Attributes">
             <summary>
             参数特性列表
-            </summary>
-        </member>
-        <member name="P:Mud.HttpUtils.Models.Analysis.ParameterInfo.TokenType">
-            <summary>
-            Token 类型（如果是 Token 参数）
             </summary>
         </member>
         <member name="P:Mud.HttpUtils.Models.Analysis.ParameterInfo.HasDefaultValue">

@@ -16,7 +16,7 @@ using Microsoft.Extensions.Logging;
 /// 此实现不持有 IMudAppContext 引用，而是通过方法参数逐调用接收，
 /// 以确保生成代码中 UseApp()/UseDefaultApp() 上下文切换的正确性。
 /// </remarks>
-public class DefaultTokenProvider : ITokenProvider
+internal sealed class DefaultTokenProvider : ITokenProvider
 {
     private readonly ILogger<DefaultTokenProvider> _logger;
 

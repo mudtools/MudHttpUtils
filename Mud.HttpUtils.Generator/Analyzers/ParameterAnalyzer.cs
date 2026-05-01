@@ -37,8 +37,7 @@ internal static class ParameterAnalyzer
                 Arguments = attr.ConstructorArguments.Select(arg => arg.Value).ToArray(),
                 NamedArguments = attr.NamedArguments.ToDictionary(na => na.Key, na => na.Value.Value)
             }).ToList(),
-            HasDefaultValue = parameter.HasExplicitDefaultValue,
-            TokenType = GetTokenType(parameter)
+            HasDefaultValue = parameter.HasExplicitDefaultValue
         };
 
         if (parameter.HasExplicitDefaultValue)
@@ -48,16 +47,5 @@ internal static class ParameterAnalyzer
         }
 
         return parameterInfo;
-    }
-
-    /// <summary>
-    /// 获取参数的 Token 类型
-    /// </summary>
-    private static string GetTokenType(IParameterSymbol parameter)
-    {
-        var tokenAttribute = parameter.GetAttributes()
-            .FirstOrDefault(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.AttributeClass?.Name));
-
-        return TokenHelper.GetTokenTypeFromAttribute(tokenAttribute) ?? TokenHelper.GetDefaultTokenType();
     }
 }
