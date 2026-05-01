@@ -1102,7 +1102,7 @@ options.Retry.Enabled = false;
 
 | 子模块                     | 说明                                       |
 | -------------------------- | ------------------------------------------ |
-| Mud.HttpUtils.Abstractions | 纯接口定义，零外部依赖                     |
+| Mud.HttpUtils.Abstractions | 纯接口定义，最小外部依赖                   |
 | Mud.HttpUtils.Attributes   | 特性标注，仅依赖 Abstractions              |
 | Mud.HttpUtils.Client       | 客户端实现，依赖 Microsoft.Extensions.Http |
 | Mud.HttpUtils.Resilience   | 弹性策略，依赖 Polly                       |

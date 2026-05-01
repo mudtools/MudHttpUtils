@@ -32,20 +32,20 @@ public class CacheResponseInterceptorTests
     }
 
     [Fact]
-    public void TryGetCached_KeyNotInCache_ReturnsFalse()
+    public void TryGet_KeyNotInCache_ReturnsFalse()
     {
-        var result = _interceptor.TryGetCached<string>("nonexistent", out var value);
+        var result = _interceptor.TryGet<string>("nonexistent", out var value);
 
         result.Should().BeFalse();
         value.Should().BeNull();
     }
 
     [Fact]
-    public void Set_ThenTryGetCached_ReturnsValue()
+    public void Set_ThenTryGet_ReturnsValue()
     {
-        _interceptor.Set("test-key", "test-value", 60);
+        _interceptor.Set("test-key", "test-value", TimeSpan.FromSeconds(60));
 
-        var result = _interceptor.TryGetCached<string>("test-key", out var value);
+        var result = _interceptor.TryGet<string>("test-key", out var value);
 
         result.Should().BeTrue();
         value.Should().Be("test-value");
@@ -54,9 +54,9 @@ public class CacheResponseInterceptorTests
     [Fact]
     public void Set_NullValue_DoesNotCache()
     {
-        _interceptor.Set<string>("null-key", null!, 60);
+        _interceptor.Set<string>("null-key", null, TimeSpan.FromSeconds(60));
 
-        var result = _interceptor.TryGetCached<string>("null-key", out var value);
+        var result = _interceptor.TryGet<string>("null-key", out var value);
 
         result.Should().BeFalse();
     }
@@ -64,10 +64,10 @@ public class CacheResponseInterceptorTests
     [Fact]
     public void Remove_ExistingKey_RemovesFromCache()
     {
-        _interceptor.Set("remove-key", "value", 60);
+        _interceptor.Set("remove-key", "value", TimeSpan.FromSeconds(60));
         _interceptor.Remove("remove-key");
 
-        var result = _interceptor.TryGetCached<string>("remove-key", out var value);
+        var result = _interceptor.TryGet<string>("remove-key", out var value);
 
         result.Should().BeFalse();
     }
@@ -75,9 +75,9 @@ public class CacheResponseInterceptorTests
     [Fact]
     public void Set_WithSlidingExpiration_StoresValue()
     {
-        _interceptor.Set("sliding-key", "sliding-value", 60, useSlidingExpiration: true);
+        _interceptor.Set("sliding-key", "sliding-value", TimeSpan.FromSeconds(60), useSlidingExpiration: true);
 
-        var result = _interceptor.TryGetCached<string>("sliding-key", out var value);
+        var result = _interceptor.TryGet<string>("sliding-key", out var value);
 
         result.Should().BeTrue();
         value.Should().Be("sliding-value");

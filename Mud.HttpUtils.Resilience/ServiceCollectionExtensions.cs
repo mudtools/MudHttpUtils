@@ -117,22 +117,7 @@ public static class ServiceCollectionExtensions
 
     private static void DecorateFactoryEntries(IServiceCollection services)
     {
-        services.Configure<EnhancedHttpClientFactoryOptions>(options =>
-        {
-            var keys = options.ClientFactories.Keys.ToList();
-            foreach (var key in keys)
-            {
-                var originalFactory = options.ClientFactories[key];
-                options.ClientFactories[key] = sp =>
-                {
-                    var inner = originalFactory(sp);
-                    var policyProvider = sp.GetRequiredService<IResiliencePolicyProvider>();
-                    var logger = sp.GetService<ILogger<ResilientHttpClient>>();
-                    var resilienceOptions = sp.GetService<IOptions<ResilienceOptions>>()?.Value;
-                    return new ResilientHttpClient(inner, policyProvider, logger, resilienceOptions);
-                };
-            }
-        });
+        services.AddSingleton<IPostConfigureOptions<EnhancedHttpClientFactoryOptions>, ResilienceDecoratorPostConfigure>();
     }
 
 #if NET8_0_OR_GREATER
@@ -224,6 +209,26 @@ public static class ServiceCollectionExtensions
                     return decoratorFactory(inner, sp);
                 },
                 wrappedDescriptor.Lifetime));
+        }
+    }
+
+    private sealed class ResilienceDecoratorPostConfigure : IPostConfigureOptions<EnhancedHttpClientFactoryOptions>
+    {
+        public void PostConfigure(string? name, EnhancedHttpClientFactoryOptions options)
+        {
+            var keys = options.ClientFactories.Keys.ToList();
+            foreach (var key in keys)
+            {
+                var originalFactory = options.ClientFactories[key];
+                options.ClientFactories[key] = sp =>
+                {
+                    var inner = originalFactory(sp);
+                    var policyProvider = sp.GetRequiredService<IResiliencePolicyProvider>();
+                    var logger = sp.GetService<ILogger<ResilientHttpClient>>();
+                    var resilienceOptions = sp.GetService<IOptions<ResilienceOptions>>()?.Value;
+                    return new ResilientHttpClient(inner, policyProvider, logger, resilienceOptions);
+                };
+            }
         }
     }
 }

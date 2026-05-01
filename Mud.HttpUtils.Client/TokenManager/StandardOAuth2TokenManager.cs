@@ -16,8 +16,6 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     private readonly OAuth2Options _options;
     private readonly ILogger _logger;
     private readonly ISecretProvider? _secretProvider;
-    private readonly object _credentialTokenLock = new();
-    private CredentialToken? _cachedCredentialToken;
     private string? _resolvedClientSecret;
     private volatile bool _clientSecretResolved;
 
@@ -404,20 +402,12 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 
     private CredentialToken? GetCurrentCachedToken()
     {
-        lock (_credentialTokenLock)
-        {
-            return _cachedCredentialToken;
-        }
+        return GetCachedCredentialToken();
     }
 
     private void UpdateCredentialToken(CredentialToken token)
     {
         UpdateCachedToken(token);
-
-        lock (_credentialTokenLock)
-        {
-            _cachedCredentialToken = token;
-        }
     }
 
     private void ValidateTokenEndpoint()

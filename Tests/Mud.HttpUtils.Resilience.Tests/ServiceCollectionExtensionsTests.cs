@@ -144,6 +144,9 @@ public class ServiceCollectionExtensionsTests
     /// </summary>
     private class TestEnhancedClient : IEnhancedHttpClient
     {
+        public async IAsyncEnumerable<TResult> SendAsAsyncEnumerable<TResult>(HttpRequestMessage request, object? jsonSerializerOptions = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        { await Task.CompletedTask; yield break; }
+
         public Task<TResult?> SendAsync<TResult>(HttpRequestMessage request, object? jsonSerializerOptions = null, CancellationToken cancellationToken = default)
             => Task.FromResult(default(TResult));
 

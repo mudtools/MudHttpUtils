@@ -53,7 +53,7 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <returns>返回访问令牌</returns>");
         codeBuilder.AppendLine("        private async Task<string> GetTokenAsync(string tokenManagerKey, string? userId = null, string[]? scopes = null, CancellationToken cancellationToken = default)");
         codeBuilder.AppendLine("        {");
-        codeBuilder.AppendLine("            var appContext = _appContext.Value;");
+        codeBuilder.AppendLine("            var appContext = _appContextSwitcher.Current;");
         codeBuilder.AppendLine("            if(appContext == null)");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到当前服务的应用上下文。\");");
         codeBuilder.AppendLine("            var request = new TokenRequest");
@@ -107,7 +107,7 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            if (keyName != null && string.IsNullOrWhiteSpace(keyName))");
         codeBuilder.AppendLine("                throw new System.ArgumentException(\"API Key name cannot be whitespace.\", nameof(keyName));");
-        codeBuilder.AppendLine("            var appContext = _appContext.Value;");
+        codeBuilder.AppendLine("            var appContext = _appContextSwitcher.Current;");
         codeBuilder.AppendLine("            if(appContext == null)");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到当前服务的应用上下文。\");");
         codeBuilder.AppendLine("            var apiKeyProvider = appContext.GetService<IApiKeyProvider>();");
@@ -126,7 +126,7 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <param name=\"request\">HTTP 请求消息。</param>");
         codeBuilder.AppendLine("        public async Task ApplyHmacSignatureAsync(HttpRequestMessage request)");
         codeBuilder.AppendLine("        {");
-        codeBuilder.AppendLine("            var appContext = _appContext.Value;");
+        codeBuilder.AppendLine("            var appContext = _appContextSwitcher.Current;");
         codeBuilder.AppendLine("            if(appContext == null)");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到当前服务的应用上下文。\");");
         codeBuilder.AppendLine("            var hmacProvider = appContext.GetService<IHmacSignatureProvider>();");

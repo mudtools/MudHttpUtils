@@ -17,4 +17,16 @@ public interface IEnhancedHttpClientFactory
     /// <exception cref="ArgumentNullException"><paramref name="clientName"/> 为 null 或空白时抛出。</exception>
     /// <exception cref="InvalidOperationException">指定名称的客户端未注册时抛出。</exception>
     IEnhancedHttpClient CreateClient(string clientName);
+
+    /// <summary>
+    /// 移除指定名称的客户端缓存，下次调用 <see cref="CreateClient"/> 时将重新创建。
+    /// </summary>
+    /// <param name="clientName">Named HttpClient 的名称。</param>
+    /// <returns>如果成功移除缓存则返回 true，否则返回 false。</returns>
+    bool Invalidate(string clientName);
+
+    /// <summary>
+    /// 清除所有客户端缓存，下次调用 <see cref="CreateClient"/> 时将重新创建。
+    /// </summary>
+    void InvalidateAll();
 }

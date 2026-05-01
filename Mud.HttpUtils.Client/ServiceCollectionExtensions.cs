@@ -575,6 +575,7 @@ public static class HttpClientServiceCollectionExtensions
             throw new ArgumentNullException(nameof(services));
 
         services.TryAddSingleton<ICurrentUserContext, DefaultCurrentUserContext>();
+        services.TryAddSingleton<IAppContextSwitcher, AsyncLocalAppContextSwitcher>();
         return services;
     }
 
@@ -587,5 +588,85 @@ public static class HttpClientServiceCollectionExtensions
         var responseInterceptors = sp.GetServices<IHttpResponseInterceptor>();
         var sensitiveDataMasker = sp.GetService<ISensitiveDataMasker>();
         return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, logger, requestInterceptors, responseInterceptors, sensitiveDataMasker: sensitiveDataMasker);
+    }
+
+    /// <summary>
+    /// 从 IConfiguration 自动绑定多个 HTTP 客户端应用配置。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <param name="configuration">配置实例。</param>
+    /// <param name="sectionPath">配置节点路径，默认 "MudHttpClients"。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+    /// <remarks>
+    /// 配置格式示例（appsettings.json）：
+    /// <code>
+    /// {
+    ///   "MudHttpClients": {
+    ///     "DefaultClientName": "user-api",
+    ///     "Clients": {
+    ///       "user-api": {
+    ///         "BaseAddress": "https://user-api.example.com",
+    ///         "TimeoutSeconds": 30,
+    ///         "DefaultHeaders": { "X-Api-Version": "v1" },
+    ///         "TokenManagerKey": "user-api-token",
+    ///         "TokenInjectionMode": "Header",
+    ///         "TokenScopes": "user.read user.write"
+    ///       },
+    ///       "order-api": {
+    ///         "BaseAddress": "https://order-api.example.com",
+    ///         "TimeoutSeconds": 60,
+    ///         "TokenManagerKey": "order-api-token"
+    ///       }
+    ///     }
+    ///   }
+    /// }
+    /// </code>
+    /// </remarks>
+    public static IServiceCollection AddMudHttpClientsFromConfiguration(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        string sectionPath = MudHttpClientApplicationOptions.SectionName)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+        if (configuration == null)
+            throw new ArgumentNullException(nameof(configuration));
+
+        var section = configuration.GetSection(sectionPath);
+        if (!section.Exists())
+            return services;
+
+        var options = new MudHttpClientApplicationOptions();
+        section.Bind(options);
+
+        foreach (var kvp in options.Clients)
+        {
+            var clientName = kvp.Key;
+            var clientOptions = kvp.Value;
+
+            if (string.IsNullOrWhiteSpace(clientOptions.BaseAddress))
+                continue;
+
+            var isDefault = string.Equals(clientName, options.DefaultClientName, StringComparison.OrdinalIgnoreCase);
+
+            services.AddMudHttpClient(clientName, client =>
+            {
+                client.BaseAddress = new Uri(clientOptions.BaseAddress);
+
+                if (clientOptions.TimeoutSeconds.HasValue)
+                    client.Timeout = TimeSpan.FromSeconds(clientOptions.TimeoutSeconds.Value);
+
+                if (clientOptions.DefaultHeaders != null)
+                {
+                    foreach (var header in clientOptions.DefaultHeaders)
+                    {
+                        client.DefaultRequestHeaders.TryAddWithoutValidation(header.Key, header.Value);
+                    }
+                }
+            }, setAsDefault: isDefault);
+        }
+
+        return services;
     }
 }

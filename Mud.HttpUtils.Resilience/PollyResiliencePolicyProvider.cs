@@ -185,13 +185,126 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     /// <inheritdoc />
     public IAsyncPolicy<TResult> GetCombinedPolicy<TResult>()
     {
+        var key = new PolicyCacheKey(typeof(TResult), "combined");
+        return (IAsyncPolicy<TResult>)_policyCache.GetOrAdd(key, _ => BuildCombinedPolicy<TResult>());
+    }
+
+    private IAsyncPolicy<TResult> BuildCombinedPolicy<TResult>()
+    {
         var retryPolicy = GetRetryPolicy<TResult>();
         var timeoutPolicy = GetTimeoutPolicy<TResult>();
         var circuitBreakerPolicy = GetCircuitBreakerPolicy<TResult>();
 
-        // 策略组合顺序：外层 -> 内层
-        // 重试(外层) -> 熔断 -> 超时(内层，最接近实际请求)
         return retryPolicy.WrapAsync(circuitBreakerPolicy).WrapAsync(timeoutPolicy);
+    }
+
+    public IAsyncPolicy<TResult> GetMethodPolicy<TResult>(
+        bool retryEnabled = false,
+        int maxRetries = 3,
+        int delayMilliseconds = 1000,
+        bool useExponentialBackoff = true,
+        bool circuitBreakerEnabled = false,
+        int failureThreshold = 5,
+        int breakDurationSeconds = 30,
+        bool timeoutEnabled = false,
+        int timeoutMilliseconds = 30000)
+    {
+        var key = new PolicyCacheKey(typeof(TResult),
+            $"method:R={retryEnabled}:{maxRetries}:{delayMilliseconds}:{useExponentialBackoff}:CB={circuitBreakerEnabled}:{failureThreshold}:{breakDurationSeconds}:T={timeoutEnabled}:{timeoutMilliseconds}");
+        return (IAsyncPolicy<TResult>)_policyCache.GetOrAdd(key, _ => BuildMethodPolicy<TResult>(
+            retryEnabled, maxRetries, delayMilliseconds, useExponentialBackoff,
+            circuitBreakerEnabled, failureThreshold, breakDurationSeconds,
+            timeoutEnabled, timeoutMilliseconds));
+    }
+
+    private IAsyncPolicy<TResult> BuildMethodPolicy<TResult>(
+        bool retryEnabled,
+        int maxRetries,
+        int delayMilliseconds,
+        bool useExponentialBackoff,
+        bool circuitBreakerEnabled,
+        int failureThreshold,
+        int breakDurationSeconds,
+        bool timeoutEnabled,
+        int timeoutMilliseconds)
+    {
+        IAsyncPolicy<TResult>? policy = null;
+
+        if (timeoutEnabled)
+        {
+            var timeoutPolicy = Policy.TimeoutAsync<TResult>(
+                TimeSpan.FromMilliseconds(timeoutMilliseconds),
+                TimeoutStrategy.Pessimistic,
+                onTimeoutAsync: (context, timespan, task) =>
+                {
+                    _logger.LogWarning(
+                        "HTTP 请求超时：操作在 {TimeoutMs}ms 内未完成。",
+                        timespan.TotalMilliseconds);
+                    return Task.CompletedTask;
+                });
+            policy = timeoutPolicy;
+        }
+
+        if (circuitBreakerEnabled)
+        {
+            var cbPolicy = Policy
+                .Handle<HttpRequestException>()
+                .Or<TimeoutRejectedException>()
+                .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
+                .CircuitBreakerAsync(
+                    exceptionsAllowedBeforeBreaking: failureThreshold,
+                    durationOfBreak: TimeSpan.FromSeconds(breakDurationSeconds),
+                    onBreak: (exception, duration) =>
+                    {
+                        _logger.LogWarning(
+                            exception,
+                            "熔断器开启：连续失败 {FailureThreshold} 次，将在 {BreakDuration}s 内快速拒绝请求。",
+                            failureThreshold,
+                            duration.TotalSeconds);
+                    },
+                    onReset: () =>
+                    {
+                        _logger.LogInformation("熔断器关闭：服务恢复正常。");
+                    },
+                    onHalfOpen: () =>
+                    {
+                        _logger.LogInformation("熔断器进入半开状态：允许试探请求。");
+                    })
+                .AsAsyncPolicy<TResult>();
+
+            policy = policy != null ? cbPolicy.WrapAsync(policy) : cbPolicy;
+        }
+
+        if (retryEnabled)
+        {
+            var retryStatusCodes = _options.Retry.RetryStatusCodes ?? GetDefaultRetryStatusCodes();
+
+            var retryPolicy = Policy<TResult>
+                .Handle<HttpRequestException>(ex => ShouldRetry(ex, retryStatusCodes))
+                .Or<TimeoutRejectedException>()
+                .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
+                .WaitAndRetryAsync(
+                    maxRetries,
+                    retryAttempt => useExponentialBackoff
+                        ? TimeSpan.FromMilliseconds(
+                            Math.Min(
+                                delayMilliseconds * Math.Pow(2, retryAttempt - 1),
+                                60000))
+                        : TimeSpan.FromMilliseconds(delayMilliseconds),
+                    onRetryAsync: async (outcome, timeSpan, retryCount, context) =>
+                    {
+                        _logger.LogWarning(
+                            outcome.Exception,
+                            "HTTP 请求失败，将在 {DelayMs}ms 后进行第 {RetryCount}/{MaxRetries} 次重试。",
+                            timeSpan.TotalMilliseconds,
+                            retryCount,
+                            maxRetries);
+                    });
+
+            policy = policy != null ? retryPolicy.WrapAsync(policy) : retryPolicy;
+        }
+
+        return policy ?? Policy.NoOpAsync<TResult>();
     }
 
     private static bool ShouldRetry(HttpRequestException exception, int[] retryStatusCodes)

@@ -52,11 +52,11 @@ public class TokenRefreshBackgroundServiceTests
     }
 
     [Fact]
-    public async Task Constructor_WithNullTokenManager_Throws()
+    public async Task Constructor_WithNullTokenManager_DoesNotThrow()
     {
-        var act = () => new TokenRefreshBackgroundService(null!);
+        var act = () => new TokenRefreshBackgroundService();
 
-        act.Should().Throw<ArgumentNullException>().WithParameterName("tokenManager");
+        act.Should().NotThrow();
     }
 
     [Fact]
@@ -237,14 +237,14 @@ public class TokenRefreshHostedServiceTests
     }
 
     [Fact]
-    public void Constructor_WithNullTokenManager_Throws()
+    public void Constructor_WithNullTokenManager_DoesNotThrowForNewConstructor()
     {
         var opts = Options.Create(new TokenRefreshBackgroundOptions());
         var logger = new Mock<ILogger<TokenRefreshHostedService>>();
 
-        var act = () => new TokenRefreshHostedService(null!, opts, logger.Object);
+        var act = () => new TokenRefreshHostedService(opts, logger.Object);
 
-        act.Should().Throw<ArgumentNullException>().WithParameterName("tokenManager");
+        act.Should().NotThrow();
     }
 }
 #endif

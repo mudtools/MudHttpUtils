@@ -100,37 +100,47 @@ public abstract class OAuth2TokenManagerBase : TokenManagerBase
 
     /// <summary>
     /// 通过资源所有者密码凭证获取令牌（Resource Owner Password Credentials Flow）。
+    /// 默认不支持，子类可重写此方法以支持 ROPC 流程。
     /// </summary>
     /// <param name="username">用户名。</param>
     /// <param name="password">密码。</param>
     /// <param name="scopes">请求的权限范围。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>令牌信息。</returns>
-    public abstract Task<CredentialToken> GetTokenByPasswordAsync(
+    public virtual Task<CredentialToken> GetTokenByPasswordAsync(
         string username,
         string password,
         string[]? scopes = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("Resource Owner Password Credentials flow is not supported by this token manager.");
+    }
 
     /// <summary>
-    /// 撤销令牌。
+    /// 撤销令牌。默认不支持，子类可重写此方法以支持令牌撤销。
     /// </summary>
     /// <param name="token">要撤销的令牌。</param>
     /// <param name="tokenTypeHint">令牌类型提示（access_token 或 refresh_token）。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>是否成功撤销。</returns>
-    public abstract Task<bool> RevokeTokenAsync(
+    public virtual Task<bool> RevokeTokenAsync(
         string token,
         string? tokenTypeHint = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("Token revocation is not supported by this token manager.");
+    }
 
     /// <summary>
-    /// 内省令牌（Token Introspection）。
+    /// 内省令牌（Token Introspection）。默认不支持，子类可重写此方法以支持令牌内省。
     /// </summary>
     /// <param name="token">要内省的令牌。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>令牌内省结果。</returns>
-    public abstract Task<TokenIntrospectionResult> IntrospectTokenAsync(
+    public virtual Task<TokenIntrospectionResult> IntrospectTokenAsync(
         string token,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("Token introspection is not supported by this token manager.");
+    }
 }

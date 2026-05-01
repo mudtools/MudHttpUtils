@@ -44,6 +44,11 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 context.HasCache = true;
             }
 
+            if (HasResilienceAttribute(methodSymbol))
+            {
+                context.HasResilience = true;
+            }
+
             if (HasQueryMapAttribute(methodSymbol) || HasComplexQueryParameter(methodSymbol))
             {
                 context.HasQueryMap = true;
@@ -200,9 +205,13 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         codeBuilder.AppendLine();
 
-        if (methodInfo.CacheEnabled)
+        if (methodInfo.CacheEnabled && !methodInfo.IsAsyncEnumerableReturn)
         {
             GenerateCacheWrappedMethod(codeBuilder, methodInfo, hasHttpClient, needsTokenInjection);
+        }
+        else if (HasResilienceEnabled(methodInfo) && !methodInfo.IsAsyncEnumerableReturn)
+        {
+            GenerateResilienceWrappedMethod(codeBuilder, methodInfo, hasHttpClient, needsTokenInjection);
         }
         else
         {
@@ -215,9 +224,45 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
     private void GenerateDirectMethod(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection)
     {
+        GenerateHttpRequestCore(codeBuilder, methodInfo, hasHttpClient, needsTokenInjection, "            ");
+    }
+
+    private bool HasResilienceEnabled(MethodAnalysisResult methodInfo)
+    {
+        return methodInfo.RetryEnabled || methodInfo.CircuitBreakerEnabled || methodInfo.MethodTimeoutEnabled;
+    }
+
+    private void GenerateResilienceWrappedMethod(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection)
+    {
+        var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
+        var cancellationTokenParam = methodInfo.Parameters.FirstOrDefault(p => TypeDetectionHelper.IsCancellationToken(p.Type));
+        var cancellationTokenName = cancellationTokenParam?.Name ?? "default";
+
+        codeBuilder.AppendLine($"            var __resiliencePolicy = _resilienceProvider.GetMethodPolicy<{deserializeType}>(");
+        codeBuilder.AppendLine($"                retryEnabled: {methodInfo.RetryEnabled.ToString().ToLowerInvariant()},");
+        codeBuilder.AppendLine($"                maxRetries: {methodInfo.RetryMaxRetries},");
+        codeBuilder.AppendLine($"                delayMilliseconds: {methodInfo.RetryDelayMilliseconds},");
+        codeBuilder.AppendLine($"                useExponentialBackoff: {methodInfo.RetryUseExponentialBackoff.ToString().ToLowerInvariant()},");
+        codeBuilder.AppendLine($"                circuitBreakerEnabled: {methodInfo.CircuitBreakerEnabled.ToString().ToLowerInvariant()},");
+        codeBuilder.AppendLine($"                failureThreshold: {methodInfo.CircuitBreakerFailureThreshold},");
+        codeBuilder.AppendLine($"                breakDurationSeconds: {methodInfo.CircuitBreakerBreakDurationSeconds},");
+        codeBuilder.AppendLine($"                timeoutEnabled: {methodInfo.MethodTimeoutEnabled.ToString().ToLowerInvariant()},");
+        codeBuilder.AppendLine($"                timeoutMilliseconds: {methodInfo.MethodTimeoutMilliseconds});");
+        codeBuilder.AppendLine();
+
+        codeBuilder.AppendLine($"            return await __resiliencePolicy.ExecuteAsync(async __ct =>");
+        codeBuilder.AppendLine($"            {{");
+
+        GenerateHttpRequestCore(codeBuilder, methodInfo, hasHttpClient, needsTokenInjection, "                ");
+
+        codeBuilder.AppendLine($"            }}, {cancellationTokenName}).ConfigureAwait(false);");
+    }
+
+    private void GenerateHttpRequestCore(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection, string indent)
+    {
         var basePath = _context.Configuration.BasePath;
         var urlCode = _requestBuilder.BuildUrlString(methodInfo, basePath);
-        codeBuilder.AppendLine(urlCode);
+        codeBuilder.AppendLine($"{indent}{urlCode.TrimStart()}");
 
         _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
         _requestBuilder.GenerateRequestSetup(codeBuilder, methodInfo);
@@ -225,7 +270,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine();
         _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient);
 
-        GenerateTokenInjection(codeBuilder, methodInfo, needsTokenInjection, "            ");
+        GenerateTokenInjection(codeBuilder, methodInfo, needsTokenInjection, indent);
 
         if (methodInfo.InterfaceHeaderAttributes?.Any() == true)
         {
@@ -308,25 +353,6 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
     private void GenerateCacheInnerQueryParameters(StringBuilder codeBuilder, MethodAnalysisResult methodInfo)
     {
-        var queryParams = methodInfo.Parameters
-            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.QueryAttribute))
-            .ToList();
-
-        var arrayQueryParams = methodInfo.Parameters
-            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.ArrayQueryAttribute))
-            .ToList();
-
-        var queryMapParams = methodInfo.Parameters
-            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.QueryMapAttribute))
-            .ToList();
-
-        var rawQueryStringParams = methodInfo.Parameters
-            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.RawQueryStringAttribute))
-            .ToList();
-
-        if (!queryParams.Any() && !arrayQueryParams.Any() && !queryMapParams.Any() && !rawQueryStringParams.Any())
-            return;
-
         _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
     }
 
@@ -534,6 +560,15 @@ internal class MethodGenerator : ICodeFragmentGenerator
     {
         return methodSymbol.GetAttributes()
             .Any(attr => HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name));
+    }
+
+    private static bool HasResilienceAttribute(IMethodSymbol methodSymbol)
+    {
+        return methodSymbol.GetAttributes()
+            .Any(attr =>
+                HttpClientGeneratorConstants.RetryAttributeNames.Contains(attr.AttributeClass?.Name) ||
+                HttpClientGeneratorConstants.CircuitBreakerAttributeNames.Contains(attr.AttributeClass?.Name) ||
+                HttpClientGeneratorConstants.TimeoutAttributeNames.Contains(attr.AttributeClass?.Name));
     }
 
     private static bool HasQueryMapAttribute(IMethodSymbol methodSymbol)

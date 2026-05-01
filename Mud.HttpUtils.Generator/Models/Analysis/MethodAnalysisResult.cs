@@ -193,6 +193,24 @@ internal class MethodAnalysisResult
 
     public bool CacheVaryByUser { get; set; }
 
+    public bool RetryEnabled { get; set; }
+
+    public int RetryMaxRetries { get; set; } = 3;
+
+    public int RetryDelayMilliseconds { get; set; } = 1000;
+
+    public bool RetryUseExponentialBackoff { get; set; } = true;
+
+    public bool CircuitBreakerEnabled { get; set; }
+
+    public int CircuitBreakerFailureThreshold { get; set; } = 5;
+
+    public int CircuitBreakerBreakDurationSeconds { get; set; } = 30;
+
+    public bool MethodTimeoutEnabled { get; set; }
+
+    public int MethodTimeoutMilliseconds { get; set; }
+
     /// <summary>
     /// 获取最终的内容类型（Body参数级 > 方法级）
     /// <para>如果都未定义则返回null，调用方应使用接口级默认值（从HttpClientApi特性获取）</para>

@@ -53,6 +53,10 @@ internal static class MethodAnalyzer
 
         var (cacheEnabled, cacheDurationSeconds, cacheKeyTemplate, cacheVaryByUser) = AnalyzeCacheAttribute(methodSymbol);
 
+        var (retryEnabled, retryMaxRetries, retryDelayMilliseconds, retryUseExponentialBackoff) = AnalyzeRetryAttribute(methodSymbol);
+        var (circuitBreakerEnabled, circuitBreakerFailureThreshold, circuitBreakerBreakDurationSeconds) = AnalyzeCircuitBreakerAttribute(methodSymbol);
+        var (methodTimeoutEnabled, methodTimeoutMilliseconds) = AnalyzeTimeoutAttribute(methodSymbol);
+
         var methodTokenScopes = AnalyzeMethodTokenScopes(methodSymbol);
 
         var (methodTokenManagerKey, methodRequiresUserId) = AnalyzeMethodTokenExtended(methodSymbol);
@@ -108,7 +112,16 @@ internal static class MethodAnalyzer
             CacheEnabled = cacheEnabled,
             CacheDurationSeconds = cacheDurationSeconds,
             CacheKeyTemplate = cacheKeyTemplate,
-            CacheVaryByUser = cacheVaryByUser
+            CacheVaryByUser = cacheVaryByUser,
+            RetryEnabled = retryEnabled,
+            RetryMaxRetries = retryMaxRetries,
+            RetryDelayMilliseconds = retryDelayMilliseconds,
+            RetryUseExponentialBackoff = retryUseExponentialBackoff,
+            CircuitBreakerEnabled = circuitBreakerEnabled,
+            CircuitBreakerFailureThreshold = circuitBreakerFailureThreshold,
+            CircuitBreakerBreakDurationSeconds = circuitBreakerBreakDurationSeconds,
+            MethodTimeoutEnabled = methodTimeoutEnabled,
+            MethodTimeoutMilliseconds = methodTimeoutMilliseconds
         };
     }
 
@@ -953,5 +966,79 @@ internal static class MethodAnalyzer
             cacheAttr, HttpClientGeneratorConstants.CacheVaryByUserProperty);
 
         return (true, durationSeconds, keyTemplate, varyByUser);
+    }
+
+    private static (bool enabled, int maxRetries, int delayMilliseconds, bool useExponentialBackoff) AnalyzeRetryAttribute(IMethodSymbol methodSymbol)
+    {
+        var retryAttr = methodSymbol.GetAttributes()
+            .FirstOrDefault(attr => HttpClientGeneratorConstants.RetryAttributeNames.Contains(attr.AttributeClass?.Name));
+
+        if (retryAttr == null)
+            return (false, 3, 1000, true);
+
+        var maxRetries = AttributeDataHelper.GetIntValueFromAttribute(
+            retryAttr, HttpClientGeneratorConstants.RetryMaxRetriesProperty, 3);
+
+        if (retryAttr.ConstructorArguments.Length > 0 &&
+            retryAttr.ConstructorArguments[0].Value is int constructorMaxRetries)
+        {
+            maxRetries = constructorMaxRetries;
+        }
+
+        var delayMilliseconds = AttributeDataHelper.GetIntValueFromAttribute(
+            retryAttr, HttpClientGeneratorConstants.RetryDelayMillisecondsProperty, 1000);
+
+        var useExponentialBackoff = AttributeDataHelper.GetBoolValueFromAttribute(
+            retryAttr, HttpClientGeneratorConstants.RetryUseExponentialBackoffProperty, true);
+
+        return (true, maxRetries, delayMilliseconds, useExponentialBackoff);
+    }
+
+    private static (bool enabled, int failureThreshold, int breakDurationSeconds) AnalyzeCircuitBreakerAttribute(IMethodSymbol methodSymbol)
+    {
+        var cbAttr = methodSymbol.GetAttributes()
+            .FirstOrDefault(attr => HttpClientGeneratorConstants.CircuitBreakerAttributeNames.Contains(attr.AttributeClass?.Name));
+
+        if (cbAttr == null)
+            return (false, 5, 30);
+
+        var failureThreshold = AttributeDataHelper.GetIntValueFromAttribute(
+            cbAttr, HttpClientGeneratorConstants.CircuitBreakerFailureThresholdProperty, 5);
+
+        if (cbAttr.ConstructorArguments.Length > 0 &&
+            cbAttr.ConstructorArguments[0].Value is int constructorThreshold)
+        {
+            failureThreshold = constructorThreshold;
+        }
+
+        var breakDurationSeconds = AttributeDataHelper.GetIntValueFromAttribute(
+            cbAttr, HttpClientGeneratorConstants.CircuitBreakerBreakDurationSecondsProperty, 30);
+
+        return (true, failureThreshold, breakDurationSeconds);
+    }
+
+    private static (bool enabled, int timeoutMilliseconds) AnalyzeTimeoutAttribute(IMethodSymbol methodSymbol)
+    {
+        var timeoutAttr = methodSymbol.GetAttributes()
+            .FirstOrDefault(attr => HttpClientGeneratorConstants.TimeoutAttributeNames.Contains(attr.AttributeClass?.Name));
+
+        if (timeoutAttr == null)
+            return (false, 0);
+
+        var timeoutMilliseconds = 0;
+
+        if (timeoutAttr.ConstructorArguments.Length > 0 &&
+            timeoutAttr.ConstructorArguments[0].Value is int constructorTimeout)
+        {
+            timeoutMilliseconds = constructorTimeout;
+        }
+
+        if (timeoutMilliseconds <= 0)
+        {
+            timeoutMilliseconds = AttributeDataHelper.GetIntValueFromAttribute(
+                timeoutAttr, HttpClientGeneratorConstants.TimeoutMillisecondsProperty, 0);
+        }
+
+        return (true, timeoutMilliseconds);
     }
 }

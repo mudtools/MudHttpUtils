@@ -55,4 +55,14 @@ public interface IBaseHttpClient
     /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
     /// <returns>下载的文件信息任务。</returns>
     Task<FileInfo> DownloadLargeAsync(HttpRequestMessage request, string filePath, bool overwrite = true, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 异步发送 HTTP 请求并以流式方式返回 IAsyncEnumerable 结果，适用于服务器端事件流（SSE）或 NDJSON 响应。
+    /// </summary>
+    /// <typeparam name="TResult">每个响应元素的类型。</typeparam>
+    /// <param name="request">HTTP 请求消息。</param>
+    /// <param name="jsonSerializerOptions">JSON 序列化选项，用于控制反序列化行为。</param>
+    /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+    /// <returns>异步可枚举的响应元素流。</returns>
+    IAsyncEnumerable<TResult> SendAsAsyncEnumerable<TResult>(HttpRequestMessage request, object? jsonSerializerOptions = null, CancellationToken cancellationToken = default);
 }
