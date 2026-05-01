@@ -8,10 +8,15 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// 应用上下文切换器接口，用于在不同的应用上下文之间切换和管理令牌。
+/// 应用上下文切换器接口，用于访问、切换和管理应用上下文及其令牌。
 /// </summary>
 public interface IAppContextSwitcher
 {
+    /// <summary>
+    /// 获取或设置当前的应用上下文。
+    /// </summary>
+    IMudAppContext? Current { get; set; }
+
     /// <summary>
     /// 切换到指定的应用上下文。
     /// </summary>
@@ -27,6 +32,13 @@ public interface IAppContextSwitcher
 
     /// <summary>
     /// 创建一个应用上下文作用域，切换到指定的应用上下文，并在作用域结束时自动恢复之前的上下文。
+    /// </summary>
+    /// <param name="context">要切换到的应用上下文实例。</param>
+    /// <returns>一个 <see cref="IDisposable"/> 对象，释放时恢复之前的上下文。</returns>
+    IDisposable BeginScope(IMudAppContext context);
+
+    /// <summary>
+    /// 创建一个应用上下文作用域，切换到指定应用标识对应的应用上下文，并在作用域结束时自动恢复之前的上下文。
     /// 使用 <c>using</c> 语句确保上下文恢复，避免 <see cref="UseApp"/> 导致的 <see cref="AsyncLocal{T}"/> 上下文泄漏。
     /// </summary>
     /// <param name="appKey">应用的唯一标识符。</param>

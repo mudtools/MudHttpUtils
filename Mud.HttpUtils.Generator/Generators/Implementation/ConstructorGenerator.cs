@@ -84,9 +84,9 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         if (_context.HasTokenManager)
         {
             codeBuilder.AppendLine("        /// <summary>");
-            codeBuilder.AppendLine("        /// 应用上下文访问器，用于获取和设置当前应用上下文。");
+            codeBuilder.AppendLine("        /// 应用上下文切换器，用于获取、设置和切换当前应用上下文。");
             codeBuilder.AppendLine("        /// </summary>");
-            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IAppContextAccessor _appContextAccessor;");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IAppContextSwitcher _appContextSwitcher;");
 
             codeBuilder.AppendLine("        /// <summary>");
             codeBuilder.AppendLine($"        /// 用于HttpClient客户端操作操作使用的的<see cref = \"{_context.Configuration.TokenManagerType}\"/> 令牌管理实例。");
@@ -116,9 +116,9 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         else
         {
             codeBuilder.AppendLine("        /// <summary>");
-            codeBuilder.AppendLine("        /// 应用上下文访问器，用于获取和设置当前应用上下文。");
+            codeBuilder.AppendLine("        /// 应用上下文切换器，用于获取、设置和切换当前应用上下文。");
             codeBuilder.AppendLine("        /// </summary>");
-            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IAppContextAccessor _appContextAccessor;");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IAppContextSwitcher _appContextSwitcher;");
         }
 
         codeBuilder.AppendLine("#pragma warning disable CS0414");
@@ -217,7 +217,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         if (_context.HasTokenManager)
         {
             codeBuilder.AppendLine("        /// <param name=\"appManager\">应用令牌管理器</param>");
-            codeBuilder.AppendLine("        /// <param name=\"appContextAccessor\">应用上下文访问器</param>");
+            codeBuilder.AppendLine("        /// <param name=\"appContextSwitcher\">应用上下文切换器</param>");
             codeBuilder.AppendLine("        /// <param name=\"tokenProvider\">令牌提供器</param>");
             if (_context.Configuration.AnyMethodRequiresUserId)
             {
@@ -231,7 +231,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         else
         {
             codeBuilder.AppendLine("        /// <param name=\"appContext\">应用上下文</param>");
-            codeBuilder.AppendLine("        /// <param name=\"appContextAccessor\">应用上下文访问器</param>");
+            codeBuilder.AppendLine("        /// <param name=\"appContextSwitcher\">应用上下文切换器</param>");
         }
 
         if (_context.HasCache)
@@ -258,7 +258,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         if (_context.HasTokenManager)
         {
             parameters.Add($"{_context.Configuration.TokenManagerType} appManager");
-            parameters.Add("IAppContextAccessor appContextAccessor");
+            parameters.Add("IAppContextSwitcher appContextSwitcher");
             parameters.Add("ITokenProvider tokenProvider");
             if (_context.Configuration.AnyMethodRequiresUserId)
             {
@@ -272,7 +272,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         else
         {
             parameters.Add("IMudAppContext appContext");
-            parameters.Add("IAppContextAccessor appContextAccessor");
+            parameters.Add("IAppContextSwitcher appContextSwitcher");
         }
 
         if (_context.HasCache)
@@ -297,7 +297,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             if (_context.HasTokenManager)
             {
                 baseParameters.Add("appManager");
-                baseParameters.Add("appContextAccessor");
+                baseParameters.Add("appContextSwitcher");
                 baseParameters.Add("tokenProvider");
             }
             else if (_context.HasHttpClient)
@@ -307,7 +307,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             else
             {
                 baseParameters.Add("appContext");
-                baseParameters.Add("appContextAccessor");
+                baseParameters.Add("appContextSwitcher");
             }
             if (_context.HasCache)
             {
@@ -339,8 +339,8 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             if (_context.HasTokenManager)
             {
                 codeBuilder.AppendLine("            _appManager = appManager ?? throw new ArgumentNullException(nameof(appManager));");
-                codeBuilder.AppendLine("            _appContextAccessor = appContextAccessor ?? throw new ArgumentNullException(nameof(appContextAccessor));");
-                codeBuilder.AppendLine("            _appContextAccessor.Current = appManager.GetDefaultApp();");
+                codeBuilder.AppendLine("            _appContextSwitcher = appContextSwitcher ?? throw new ArgumentNullException(nameof(appContextSwitcher));");
+                codeBuilder.AppendLine("            _appContextSwitcher.Current = appManager.GetDefaultApp();");
                 codeBuilder.AppendLine("            _tokenProvider = tokenProvider ?? throw new ArgumentNullException(nameof(tokenProvider));");
                 if (_context.Configuration.AnyMethodRequiresUserId)
                 {
@@ -353,8 +353,8 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             }
             else
             {
-                codeBuilder.AppendLine("            _appContextAccessor = appContextAccessor ?? throw new ArgumentNullException(nameof(appContextAccessor));");
-                codeBuilder.AppendLine("            _appContextAccessor.Current = appContext ?? throw new ArgumentNullException(nameof(appContext));");
+                codeBuilder.AppendLine("            _appContextSwitcher = appContextSwitcher ?? throw new ArgumentNullException(nameof(appContextSwitcher));");
+                codeBuilder.AppendLine("            _appContextSwitcher.Current = appContext ?? throw new ArgumentNullException(nameof(appContext));");
             }
 
             if (_context.HasCache)
@@ -388,6 +388,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
 
         if (_context.HasInheritedFrom) return;
 
+        GenerateIAppContextSwitcherMembers(codeBuilder);
         GenerateUseAppMethod(codeBuilder);
     }
 
@@ -397,6 +398,72 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             return;
 
         TokenMethodHelper.GenerateTokenManagerKeyFieldAndMethod(codeBuilder, _context);
+    }
+
+    private void GenerateIAppContextSwitcherMembers(StringBuilder codeBuilder)
+    {
+        if (_context.HasHttpClient)
+            return;
+
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// 获取或设置当前的应用上下文。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        public IMudAppContext? Current");
+        codeBuilder.AppendLine("        {");
+        codeBuilder.AppendLine("            get => _appContextSwitcher.Current;");
+        codeBuilder.AppendLine("            set => _appContextSwitcher.Current = value;");
+        codeBuilder.AppendLine("        }");
+        codeBuilder.AppendLine();
+
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// 创建一个应用上下文作用域，切换到指定的应用上下文，并在作用域结束时自动恢复之前的上下文。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        /// <param name=\"context\">要切换到的应用上下文实例。</param>");
+        codeBuilder.AppendLine("        /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>");
+        codeBuilder.AppendLine("        public IDisposable BeginScope(IMudAppContext context)");
+        codeBuilder.AppendLine("        {");
+        codeBuilder.AppendLine("            return _appContextSwitcher.BeginScope(context);");
+        codeBuilder.AppendLine("        }");
+        codeBuilder.AppendLine();
+
+        if (_context.HasTokenManager)
+            return;
+
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// 切换到指定的应用上下文。此方法需要 IAppManager 依赖，仅在配置了 TokenManage 的接口上可用。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        public IMudAppContext UseApp(string appKey)");
+        codeBuilder.AppendLine("        {");
+        codeBuilder.AppendLine("            throw new NotSupportedException(\"UseApp 需要配置 TokenManage 才能使用。\");");
+        codeBuilder.AppendLine("        }");
+        codeBuilder.AppendLine();
+
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// 切换到默认的应用上下文。此方法需要 IAppManager 依赖，仅在配置了 TokenManage 的接口上可用。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        public IMudAppContext UseDefaultApp()");
+        codeBuilder.AppendLine("        {");
+        codeBuilder.AppendLine("            throw new NotSupportedException(\"UseDefaultApp 需要配置 TokenManage 才能使用。\");");
+        codeBuilder.AppendLine("        }");
+        codeBuilder.AppendLine();
+
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// 创建一个应用上下文作用域。此方法需要 IAppManager 依赖，仅在配置了 TokenManage 的接口上可用。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        public IDisposable BeginScope(string appKey)");
+        codeBuilder.AppendLine("        {");
+        codeBuilder.AppendLine("            throw new NotSupportedException(\"BeginScope(string) 需要配置 TokenManage 才能使用。\");");
+        codeBuilder.AppendLine("        }");
+        codeBuilder.AppendLine();
+
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// 异步获取当前应用上下文的访问令牌。此方法需要 ITokenProvider 依赖，仅在配置了 TokenManage 的接口上可用。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        public Task<string> GetTokenAsync()");
+        codeBuilder.AppendLine("        {");
+        codeBuilder.AppendLine("            throw new NotSupportedException(\"GetTokenAsync 需要配置 TokenManage 才能使用。\");");
+        codeBuilder.AppendLine("        }");
+        codeBuilder.AppendLine();
     }
 
     private void GenerateUseAppMethod(StringBuilder codeBuilder)
@@ -416,7 +483,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("            var context = _appManager.GetApp(appKey);");
         codeBuilder.AppendLine("            if(context == null)");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到指定的应用上下文，AppKey: {appKey}\");");
-        codeBuilder.AppendLine("            _appContextAccessor.Current = context;");
+        codeBuilder.AppendLine("            _appContextSwitcher.Current = context;");
         codeBuilder.AppendLine("            return context;");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
@@ -430,7 +497,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("            var context = _appManager.GetDefaultApp();");
         codeBuilder.AppendLine("            if(context == null)");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到默认的应用上下文。\");");
-        codeBuilder.AppendLine("            _appContextAccessor.Current = context;");
+        codeBuilder.AppendLine("            _appContextSwitcher.Current = context;");
         codeBuilder.AppendLine("            return context;");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
@@ -456,7 +523,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("            var context = _appManager.GetApp(appKey);");
         codeBuilder.AppendLine("            if(context == null)");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到指定的应用上下文，AppKey: {appKey}\");");
-        codeBuilder.AppendLine("            return _appContextAccessor.BeginScope(context);");
+        codeBuilder.AppendLine("            return _appContextSwitcher.BeginScope(context);");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
     }
