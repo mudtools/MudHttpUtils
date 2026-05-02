@@ -420,6 +420,10 @@ internal class InterfaceImplementationGenerator
         codeBuilder.AppendLine();
         codeBuilder.AppendLine("        private static readonly System.Collections.Concurrent.ConcurrentDictionary<System.Type, System.Reflection.PropertyInfo[]> __propertyCache = new();");
         codeBuilder.AppendLine();
+        codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
+        codeBuilder.AppendLine("        [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(\"Trimming\", \"IL2072:Target parameter return value does not satisfy DynamicallyAccessedMemberTypes requirements\")]");
+        codeBuilder.AppendLine("        [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode(\"QueryMap uses reflection to flatten POCO objects and is not compatible with Native AOT. Consider using IQueryParameter or individual [Query] parameters instead.\")]");
+        codeBuilder.AppendLine("#endif");
         codeBuilder.AppendLine("        private static void FlattenObjectToQueryParams(");
         codeBuilder.AppendLine("            object obj,");
         codeBuilder.AppendLine("            string prefix,");
@@ -433,9 +437,6 @@ internal class InterfaceImplementationGenerator
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            if (obj == null) throw new ArgumentNullException(nameof(obj));");
         codeBuilder.AppendLine("            if (__depth > MaxFlattenRecursionDepth) throw new InvalidOperationException(\"Maximum recursion depth exceeded while flattening object of type \" + obj.GetType().Name + \". This may be caused by a circular reference.\");");
-        codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
-        codeBuilder.AppendLine("#pragma warning disable IL2072");
-        codeBuilder.AppendLine("#endif");
         codeBuilder.AppendLine("            var __properties = __propertyCache.GetOrAdd(obj.GetType(), t => t.GetProperties());");
         codeBuilder.AppendLine("            foreach (var __prop in __properties)");
         codeBuilder.AppendLine("            {");
@@ -489,9 +490,6 @@ internal class InterfaceImplementationGenerator
         codeBuilder.AppendLine("                    FlattenObjectToQueryParams(__value, __key, separator, __queryParams, includeNullValues, useJsonSerialization, urlEncode, rawPairs, __depth + 1);");
         codeBuilder.AppendLine("                }");
         codeBuilder.AppendLine("            }");
-        codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
-        codeBuilder.AppendLine("#pragma warning restore IL2072");
-        codeBuilder.AppendLine("#endif");
         codeBuilder.AppendLine("        }");
     }
 }

@@ -45,8 +45,18 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
 
     private long MaxCloneContentSize => _options?.MaxCloneContentSize ?? HttpRequestMessageCloner.DefaultMaxContentSize;
 
-    private bool ShouldSkipRetry(HttpRequestMessage request)
+    private bool ShouldSkipResilience(HttpRequestMessage request)
     {
+#if NETSTANDARD2_0
+        if (request.Properties.TryGetValue(ResilienceConstants.SkipResiliencePropertyKey, out var skipValue) && skipValue is true)
+#else
+        if (request.Options.TryGetValue(new HttpRequestOptionsKey<bool>(ResilienceConstants.SkipResiliencePropertyKey), out var skipValue) && skipValue)
+#endif
+        {
+            _logger.LogDebug("请求已标记跳过全局弹性策略（方法级弹性策略已激活）");
+            return true;
+        }
+
         if (_options == null || _options.MaxCloneContentSize < 0)
             return false;
 
@@ -116,7 +126,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         object? jsonSerializerOptions = null,
         CancellationToken cancellationToken = default)
     {
-        if (ShouldSkipRetry(request))
+        if (ShouldSkipResilience(request))
         {
             return await _innerClient.SendAsync<TResult>(request, jsonSerializerOptions, cancellationToken).ConfigureAwait(false);
         }
@@ -131,7 +141,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         HttpRequestMessage request,
         CancellationToken cancellationToken = default)
     {
-        if (ShouldSkipRetry(request))
+        if (ShouldSkipResilience(request))
         {
             return await _innerClient.DownloadAsync(request, cancellationToken).ConfigureAwait(false);
         }
@@ -148,7 +158,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         bool overwrite = true,
         CancellationToken cancellationToken = default)
     {
-        if (ShouldSkipRetry(request))
+        if (ShouldSkipResilience(request))
         {
             return await _innerClient.DownloadLargeAsync(request, filePath, overwrite, cancellationToken).ConfigureAwait(false);
         }
@@ -163,7 +173,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         HttpRequestMessage request,
         CancellationToken cancellationToken = default)
     {
-        if (ShouldSkipRetry(request))
+        if (ShouldSkipResilience(request))
         {
             return await _innerClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
         }
@@ -178,7 +188,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         HttpRequestMessage request,
         CancellationToken cancellationToken = default)
     {
-        if (ShouldSkipRetry(request))
+        if (ShouldSkipResilience(request))
         {
             return await _innerClient.SendStreamAsync(request, cancellationToken).ConfigureAwait(false);
         }
@@ -266,7 +276,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         Encoding? encoding = null,
         CancellationToken cancellationToken = default)
     {
-        if (ShouldSkipRetry(request))
+        if (ShouldSkipResilience(request))
         {
             return await _innerClient.SendXmlAsync<TResult>(request, encoding, cancellationToken).ConfigureAwait(false);
         }
