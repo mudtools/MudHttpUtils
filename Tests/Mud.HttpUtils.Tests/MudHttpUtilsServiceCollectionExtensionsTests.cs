@@ -275,6 +275,74 @@ public class MudHttpUtilsServiceCollectionExtensionsTests
 
     #endregion
 
+    #region AddMudHttpUtils (enableResilience bool overload)
+
+    [Fact]
+    public void AddMudHttpUtils_WithEnableResilience_True_RegistersResilienceDecorator()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        services.AddMudHttpUtils("testClient",
+            client => client.BaseAddress = new Uri("https://api.example.com"),
+            enableResilience: true);
+
+        using var serviceProvider = services.BuildServiceProvider();
+        var resolver = serviceProvider.GetRequiredService<IHttpClientResolver>();
+        var client = resolver.GetClient("testClient");
+
+        client.Should().BeOfType<ResilientHttpClient>();
+    }
+
+    [Fact]
+    public void AddMudHttpUtils_WithEnableResilience_False_DoesNotRegisterResilienceDecorator()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        services.AddMudHttpUtils("testClient",
+            client => client.BaseAddress = new Uri("https://api.example.com"),
+            enableResilience: false);
+
+        using var serviceProvider = services.BuildServiceProvider();
+        var resolver = serviceProvider.GetRequiredService<IHttpClientResolver>();
+        var client = resolver.GetClient("testClient");
+
+        client.Should().NotBeOfType<ResilientHttpClient>();
+    }
+
+    [Fact]
+    public void AddMudHttpUtils_WithBaseAddress_EnableResilience_True_RegistersResilienceDecorator()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        services.AddMudHttpUtils("testClient", "https://api.example.com", enableResilience: true);
+
+        using var serviceProvider = services.BuildServiceProvider();
+        var resolver = serviceProvider.GetRequiredService<IHttpClientResolver>();
+        var client = resolver.GetClient("testClient");
+
+        client.Should().BeOfType<ResilientHttpClient>();
+    }
+
+    [Fact]
+    public void AddMudHttpUtils_WithBaseAddress_EnableResilience_False_DoesNotRegisterResilienceDecorator()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        services.AddMudHttpUtils("testClient", "https://api.example.com", enableResilience: false);
+
+        using var serviceProvider = services.BuildServiceProvider();
+        var resolver = serviceProvider.GetRequiredService<IHttpClientResolver>();
+        var client = resolver.GetClient("testClient");
+
+        client.Should().NotBeOfType<ResilientHttpClient>();
+    }
+
+    #endregion
+
     #region Integration: Resolve Client by Name
 
     [Fact]

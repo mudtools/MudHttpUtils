@@ -182,4 +182,76 @@ public class ResilientHttpClientTests
         mockInner.Verify(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()), Times.Once);
         mockPolicyProvider.Verify(p => p.GetCombinedPolicy<HttpResponseMessage>(), Times.Never);
     }
+
+    [Fact]
+    public async Task SendAsync_WithSkipResilienceMarker_SkipsRetryAndCallsInnerDirectly()
+    {
+        var mockInner = new Mock<IEnhancedHttpClient>();
+        mockInner.Setup(c => c.SendAsync<string>(It.IsAny<HttpRequestMessage>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("result");
+        var mockPolicyProvider = new Mock<IResiliencePolicyProvider>();
+        mockPolicyProvider.Setup(p => p.GetCombinedPolicy<string>())
+            .Returns(Polly.Policy.NoOpAsync<string>());
+        var mockLogger = new Mock<ILogger<ResilientHttpClient>>();
+
+        var client = new ResilientHttpClient(mockInner.Object, mockPolicyProvider.Object, mockLogger.Object);
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/test");
+#if NETSTANDARD2_0
+        request.Properties[ResilienceConstants.SkipResiliencePropertyKey] = true;
+#else
+        request.Options.TryAdd(ResilienceConstants.SkipResiliencePropertyKey, true);
+#endif
+
+        await client.SendAsync<string>(request);
+
+        mockInner.Verify(c => c.SendAsync<string>(It.IsAny<HttpRequestMessage>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
+        mockPolicyProvider.Verify(p => p.GetCombinedPolicy<string>(), Times.Never);
+    }
+
+    [Fact]
+    public async Task SendAsync_WithoutSkipResilienceMarker_UsesRetryPolicy()
+    {
+        var mockInner = new Mock<IEnhancedHttpClient>();
+        mockInner.Setup(c => c.SendAsync<string>(It.IsAny<HttpRequestMessage>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("result");
+        var mockPolicyProvider = new Mock<IResiliencePolicyProvider>();
+        mockPolicyProvider.Setup(p => p.GetCombinedPolicy<string>())
+            .Returns(Polly.Policy.NoOpAsync<string>());
+        var mockLogger = new Mock<ILogger<ResilientHttpClient>>();
+
+        var client = new ResilientHttpClient(mockInner.Object, mockPolicyProvider.Object, mockLogger.Object);
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/test");
+
+        await client.SendAsync<string>(request);
+
+        mockPolicyProvider.Verify(p => p.GetCombinedPolicy<string>(), Times.Once);
+    }
+
+    [Fact]
+    public async Task SendRawAsync_WithSkipResilienceMarker_SkipsRetry()
+    {
+        var mockInner = new Mock<IEnhancedHttpClient>();
+        mockInner.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
+        var mockPolicyProvider = new Mock<IResiliencePolicyProvider>();
+        mockPolicyProvider.Setup(p => p.GetCombinedPolicy<HttpResponseMessage>())
+            .Returns(Polly.Policy.NoOpAsync<HttpResponseMessage>());
+        var mockLogger = new Mock<ILogger<ResilientHttpClient>>();
+
+        var client = new ResilientHttpClient(mockInner.Object, mockPolicyProvider.Object, mockLogger.Object);
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/test");
+#if NETSTANDARD2_0
+        request.Properties[ResilienceConstants.SkipResiliencePropertyKey] = true;
+#else
+        request.Options.TryAdd(ResilienceConstants.SkipResiliencePropertyKey, true);
+#endif
+
+        await client.SendRawAsync(request);
+
+        mockInner.Verify(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()), Times.Once);
+        mockPolicyProvider.Verify(p => p.GetCombinedPolicy<HttpResponseMessage>(), Times.Never);
+    }
 }

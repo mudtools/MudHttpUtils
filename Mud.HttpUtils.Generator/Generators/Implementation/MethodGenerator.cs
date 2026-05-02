@@ -269,6 +269,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         if (setSkipResilience)
         {
+            // 此字符串必须与 Mud.HttpUtils.Resilience.ResilienceConstants.SkipResiliencePropertyKey 保持一致。
+            // 由于生成器无法引用 Resilience 程序集，此处使用硬编码字面量。
             codeBuilder.AppendLine($"{indent}#if NETSTANDARD2_0");
             codeBuilder.AppendLine($"{indent}__httpRequest.Properties[\"__Mud_HttpUtils_SkipResilience\"] = true;");
             codeBuilder.AppendLine($"{indent}#else");

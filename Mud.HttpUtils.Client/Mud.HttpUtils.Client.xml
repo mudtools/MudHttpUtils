@@ -103,9 +103,9 @@
             <code>RegexOptions.IgnoreCase</code><br/>
             Explanation:<br/>
             <code>
+            ○ Match if at the beginning of the string.<br/>
             ○ Match with 3 alternative expressions, atomically.<br/>
                 ○ Match a sequence of expressions.<br/>
-                    ○ Match if at the beginning of the string.<br/>
                     ○ Loop greedily any number of times.<br/>
                         ○ Match a character in the set [+/-9A-Za-z\u212A] exactly 4 times.<br/>
                     ○ Optional (greedy).<br/>
@@ -118,20 +118,18 @@
                                 ○ Match '='.<br/>
                     ○ Match if at the end of the string or if before an ending newline.<br/>
                 ○ Match a sequence of expressions.<br/>
-                    ○ Match if at the beginning of the string.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 8 times.<br/>
+                    ○ Match a hexadecimal digit exactly 8 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 12 times.<br/>
+                    ○ Match a hexadecimal digit exactly 12 times.<br/>
                     ○ Match if at the end of the string or if before an ending newline.<br/>
                 ○ Match a sequence of expressions.<br/>
-                    ○ Match if at the beginning of the string.<br/>
-                    ○ Match a character in the set [-0-9A-Z_a-z\u212A] atomically at least 20 times.<br/>
+                    ○ Match a character in the set [\-0-9A-Z_a-z\u212A] atomically at least 20 times.<br/>
                     ○ Match if at the end of the string or if before an ending newline.<br/>
             </code>
             </remarks>
@@ -2265,12 +2263,11 @@
         <member name="M:System.Text.RegularExpressions.Generated.Utilities.StackPush(System.Int32[]@,System.Int32@,System.Int32,System.Int32)">
             <summary>Pushes 2 values onto the backtracking stack.</summary>
         </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_asciiLettersAndDigitsAndDashUnderscoreKelvinSign">
+            <summary>Supports searching for characters in or not in "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyzK".</summary>
+        </member>
         <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_nonAscii_2BDDE98808630E9B520E3AD9F33E4A0D939EAAED4FF3C3CC86415C934044BB2B">
             <summary>Supports searching for characters in or not in "CKSYcksyK".</summary>
-        </member>
-    </members>
-</doc>
-t in "CKSYcksyK".</summary>
         </member>
     </members>
 </doc>
