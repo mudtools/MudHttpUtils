@@ -7,6 +7,7 @@ using Moq.Protected;
 
 namespace Mud.HttpUtils.Tests;
 
+[Collection("UrlValidator Collection")]
 public class EnhancedHttpClientTests : IClassFixture<UrlValidatorFixture>
 {
     private readonly UrlValidatorFixture _fixture;
@@ -14,6 +15,7 @@ public class EnhancedHttpClientTests : IClassFixture<UrlValidatorFixture>
     public EnhancedHttpClientTests(UrlValidatorFixture fixture)
     {
         _fixture = fixture;
+        _fixture.RestoreDomains();
     }
 
     private static TestableEnhancedHttpClient CreateClient(HttpMessageHandler handler, ILogger? logger = null)

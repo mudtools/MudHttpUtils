@@ -261,7 +261,7 @@ public interface ITestApi
     }
 
     [Fact]
-    public void AnalyzeParameter_WithTokenAttribute_SetsTokenType()
+    public void AnalyzeParameter_WithTokenAttribute_ContainsTokenAttributeWithTokenType()
     {
         var source = @"
 using Mud.HttpUtils.Attributes;
@@ -276,7 +276,10 @@ public interface ITestApi
         var result = (List<AnalysisParameterInfo>)AnalyzeParametersMethod.Invoke(null, new object[] { methodSymbol })!;
 
         result.Should().HaveCount(1);
-        result[0].TokenType.Should().NotBeNullOrEmpty();
+        result[0].Attributes.Should().ContainSingle(a => a.Name == "TokenAttribute");
+        var tokenAttr = result[0].Attributes.First(a => a.Name == "TokenAttribute");
+        tokenAttr.NamedArguments.Should().ContainKey("TokenType");
+        tokenAttr.NamedArguments["TokenType"]?.ToString().Should().Be("Bearer");
     }
 
     #endregion

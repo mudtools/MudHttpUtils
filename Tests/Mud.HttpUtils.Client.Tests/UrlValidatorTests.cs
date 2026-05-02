@@ -2,6 +2,7 @@ using System.Reflection;
 
 namespace Mud.HttpUtils.Tests;
 
+[Collection("UrlValidator Collection")]
 public class UrlValidatorTests : IClassFixture<UrlValidatorFixture>, IDisposable
 {
     private readonly Type _urlValidatorType;

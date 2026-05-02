@@ -8,6 +8,7 @@ using Moq.Protected;
 
 namespace Mud.HttpUtils.Tests;
 
+[Collection("UrlValidator Collection")]
 public class AsyncEnumerableExtensionsTests : IClassFixture<UrlValidatorFixture>
 {
     private readonly UrlValidatorFixture _fixture;
@@ -15,6 +16,7 @@ public class AsyncEnumerableExtensionsTests : IClassFixture<UrlValidatorFixture>
     public AsyncEnumerableExtensionsTests(UrlValidatorFixture fixture)
     {
         _fixture = fixture;
+        _fixture.RestoreDomains();
     }
 
     private static Mock<HttpMessageHandler> CreateMockStreamHandler(string ndjsonContent, HttpStatusCode statusCode = HttpStatusCode.OK)
