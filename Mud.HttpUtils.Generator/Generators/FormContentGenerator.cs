@@ -101,9 +101,6 @@ internal class FormContentGenerator : TransitiveCodeGenerator
 
                 if (!string.IsNullOrEmpty(generatedCode))
                 {
-                    //var namespacePart = classSymbol.ContainingNamespace?.IsGlobalNamespace == true
-                    //    ? "global"
-                    //    : classSymbol.ContainingNamespace?.ToDisplayString().Replace(".", "_");
                     var fileName = $"{classSymbol.Name}.g.cs";
                     context.AddSource(fileName, generatedCode);
                 }

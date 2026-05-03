@@ -96,7 +96,6 @@ internal class InterfaceImplementationGenerator
         _codeBuilder.AppendLine("}");
         _codeBuilder.AppendLine();
 
-        //var fileName = $"{generatorContext.NamespaceName}.{generatorContext.ClassName}.g.cs".Replace('.', '_');
         var fileName = $"{generatorContext.ClassName}.g.cs";
         _context.AddSource(
             fileName,
