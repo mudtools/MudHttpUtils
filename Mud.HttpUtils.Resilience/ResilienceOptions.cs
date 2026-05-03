@@ -1,3 +1,5 @@
+using System.ComponentModel;
+
 namespace Mud.HttpUtils.Resilience;
 
 /// <summary>
@@ -27,7 +29,7 @@ public class ResilienceOptions
     /// 超过此大小的请求将跳过重试策略，避免克隆开销。
     /// 设置为 -1 表示不限制大小（不推荐）。
     /// </remarks>
-    public long MaxCloneContentSize { get; set; } = 10 * 1024 * 1024;
+    public long MaxCloneContentSize { get; set; } = HttpRequestMessageCloner.DefaultMaxContentSize;
 }
 
 /// <summary>
@@ -114,5 +116,6 @@ public class CircuitBreakerOptions
     /// 注意：当前基于 Polly v7 的实现使用连续失败计数模式，此属性暂未生效。
     /// 升级至 Polly v8 后将启用基于采样窗口的高级熔断策略。
     /// </summary>
+    [EditorBrowsable(EditorBrowsableState.Never)]
     public int SamplingDurationSeconds { get; set; } = 60;
 }

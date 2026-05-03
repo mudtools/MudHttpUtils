@@ -105,15 +105,8 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         if (isAbstract)
             return null;
 
-        var (baseUrl, timeout) = ExtractAttributeParameters(httpClientApiAttribute);
+        var (_, timeout) = ExtractAttributeParameters(httpClientApiAttribute);
 
-        if (!string.IsNullOrEmpty(baseUrl))
-        {
-            context.ReportDiagnostic(Diagnostic.Create(
-                Diagnostics.HttpClientApiBaseAddressObsolete,
-                interfaceSyntax.GetLocation(),
-                interfaceSymbol.Name));
-        }
         var registryGroupName = AttributeDataHelper.GetStringValueFromAttribute(httpClientApiAttribute, HttpClientGeneratorConstants.RegistryGroupNameProperty);
 
         // 验证 RegistryGroupName
@@ -136,7 +129,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
             interfaceSymbol.Name,
             implementationName,
             namespaceName,
-            baseUrl,
+            string.Empty,
             timeout,
             registryGroupName,
             httpClient,
@@ -145,9 +138,8 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
 
     private (string BaseUrl, int Timeout) ExtractAttributeParameters(AttributeData httpClientApiAttribute)
     {
-        var baseUrl = AttributeDataHelper.GetStringValueFromAttributeConstructor(httpClientApiAttribute, HttpClientGeneratorConstants.BaseAddressProperty) ?? string.Empty;
         var timeout = AttributeDataHelper.GetIntValueFromAttribute(httpClientApiAttribute, HttpClientGeneratorConstants.TimeoutProperty, 100);
-        return (baseUrl, timeout);
+        return (string.Empty, timeout);
     }
 
 

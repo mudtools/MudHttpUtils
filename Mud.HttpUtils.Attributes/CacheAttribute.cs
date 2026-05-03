@@ -70,12 +70,14 @@ public sealed class CacheAttribute : Attribute
     /// <remarks>
     /// 启用后，每次访问缓存项都会重置过期时间。
     /// </remarks>
+    [Obsolete("UseSlidingExpiration 属性暂未被框架使用，将在未来版本中启用。")]
     public bool UseSlidingExpiration { get; set; }
 
     /// <summary>
     /// 获取或设置缓存项的优先级。
     /// </summary>
     /// <value>默认为 <see cref="CachePriority.Normal"/>。</value>
+    [Obsolete("Priority 属性暂未被框架使用，将在未来版本中启用。")]
     public CachePriority Priority { get; set; } = CachePriority.Normal;
 }
 

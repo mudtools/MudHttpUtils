@@ -31,21 +31,22 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
     /// <inheritdoc/>
     public override void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        // 查找标记了[EventHandler]的类声明
-        var eventHandlerClasses = GetClassDeclarationProvider<ClassDeclarationSyntax>(context, [EventHandlerAttributeName]);
+        var eventHandlerClasses = context.SyntaxProvider.ForAttributeWithMetadataName(
+            "Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute",
+            predicate: static (node, _) => node is ClassDeclarationSyntax,
+            transform: static (ctx, _) => ctx);
 
-        // 获取编译信息和分析器配置选项
+        var collected = eventHandlerClasses.Collect();
+
         var compilationWithOptions = context.CompilationProvider
             .Combine(context.AnalyzerConfigOptionsProvider);
 
-        // 组合所有需要的数据：编译信息、类声明、配置选项
-        var completeDataProvider = compilationWithOptions.Combine(eventHandlerClasses);
+        var completeDataProvider = compilationWithOptions.Combine(collected);
 
-        // 注册源代码生成器
         context.RegisterSourceOutput(completeDataProvider,
             (ctx, provider) => ExecuteGenerator(
                 compilation: provider.Left.Left,
-                eventHandlerClasses: provider.Right.Where(c => c != null).ToImmutableArray()!,
+                eventHandlerContexts: provider.Right,
                 context: ctx));
     }
 
@@ -57,23 +58,19 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
     /// <param name="context">源代码生成上下文</param>
     private void ExecuteGenerator(
         Compilation compilation,
-        ImmutableArray<ClassDeclarationSyntax> eventHandlerClasses,
+        ImmutableArray<GeneratorAttributeSyntaxContext> eventHandlerContexts,
         SourceProductionContext context)
     {
-        if (eventHandlerClasses.IsDefaultOrEmpty)
+        if (eventHandlerContexts.IsDefaultOrEmpty)
             return;
 
-        foreach (var eventClass in eventHandlerClasses)
+        foreach (var attrCtx in eventHandlerContexts)
         {
-            if (eventClass == null)
-                continue;
+            var eventClass = (ClassDeclarationSyntax)attrCtx.TargetNode;
+            var classSymbol = (INamedTypeSymbol)attrCtx.TargetSymbol;
 
             try
             {
-                var semanticModel = HttpInvokeBaseSourceGenerator.GetOrCreateSemanticModel(compilation, eventClass.SyntaxTree);
-
-                var classSymbol = semanticModel.GetDeclaredSymbol(eventClass);
-
                 if (classSymbol == null)
                 {
                     context.ReportDiagnostic(Diagnostic.Create(

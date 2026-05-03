@@ -149,46 +149,4 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
 
         return JsonSerializer.Serialize(result);
     }
-
-    /// <inheritdoc/>
-    public override string DecryptContent(string encryptedContent)
-    {
-        if (string.IsNullOrEmpty(encryptedContent))
-            return string.Empty;
-
-        if (_encryptionProvider == null)
-            throw new InvalidOperationException(
-                "未配置加密提供器。请通过 AddMudHttpClient 注册时配置 AesEncryptionOptions，" +
-                "或注册自定义 IEncryptionProvider 实现。");
-
-        return _encryptionProvider.Decrypt(encryptedContent);
-    }
-
-    /// <inheritdoc/>
-    public override byte[] EncryptBytes(byte[] data)
-    {
-        if (data == null)
-            throw new ArgumentNullException(nameof(data));
-
-        if (_encryptionProvider == null)
-            throw new InvalidOperationException(
-                "未配置加密提供器。请通过 AddMudHttpClient 注册时配置 AesEncryptionOptions，" +
-                "或注册自定义 IEncryptionProvider 实现。");
-
-        return _encryptionProvider.EncryptBytes(data);
-    }
-
-    /// <inheritdoc/>
-    public override byte[] DecryptBytes(byte[] encryptedData)
-    {
-        if (encryptedData == null)
-            throw new ArgumentNullException(nameof(encryptedData));
-
-        if (_encryptionProvider == null)
-            throw new InvalidOperationException(
-                "未配置加密提供器。请通过 AddMudHttpClient 注册时配置 AesEncryptionOptions，" +
-                "或注册自定义 IEncryptionProvider 实现。");
-
-        return _encryptionProvider.DecryptBytes(encryptedData);
-    }
 }

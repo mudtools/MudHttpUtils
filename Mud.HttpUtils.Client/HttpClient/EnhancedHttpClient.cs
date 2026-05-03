@@ -943,22 +943,60 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// <param name="propertyName">加密后JSON中的属性名,默认为"data"。</param>
     /// <param name="serializeType">序列化类型,支持JSON和XML。</param>
     /// <returns>加密后的字符串。</returns>
-    public abstract string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json);
+    public virtual string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json)
+    {
+        if (content == null)
+            throw new ArgumentNullException(nameof(content));
+        if (string.IsNullOrEmpty(propertyName))
+            throw new ArgumentException("属性名不能为空", nameof(propertyName));
+
+        if (EncryptionProvider == null)
+            throw new InvalidOperationException("未配置加密提供器。");
+
+        return EncryptionProvider.Encrypt(JsonSerializer.Serialize(content));
+    }
 
     /// <inheritdoc cref="IEncryptableHttpClient.DecryptContent"/>
     /// <param name="encryptedContent">要解密的加密字符串。</param>
     /// <returns>解密后的原始字符串。</returns>
-    public abstract string DecryptContent(string encryptedContent);
+    public virtual string DecryptContent(string encryptedContent)
+    {
+        if (string.IsNullOrEmpty(encryptedContent))
+            return string.Empty;
+
+        if (EncryptionProvider == null)
+            throw new InvalidOperationException("未配置加密提供器。");
+
+        return EncryptionProvider.Decrypt(encryptedContent);
+    }
 
     /// <inheritdoc cref="IEncryptableHttpClient.EncryptBytes"/>
     /// <param name="data">要加密的字节数组。</param>
     /// <returns>加密后的字节数组。</returns>
-    public abstract byte[] EncryptBytes(byte[] data);
+    public virtual byte[] EncryptBytes(byte[] data)
+    {
+        if (data == null)
+            throw new ArgumentNullException(nameof(data));
+
+        if (EncryptionProvider == null)
+            throw new InvalidOperationException("未配置加密提供器。");
+
+        return EncryptionProvider.EncryptBytes(data);
+    }
 
     /// <inheritdoc cref="IEncryptableHttpClient.DecryptBytes"/>
     /// <param name="encryptedData">要解密的加密字节数组。</param>
     /// <returns>解密后的原始字节数组。</returns>
-    public abstract byte[] DecryptBytes(byte[] encryptedData);
+    public virtual byte[] DecryptBytes(byte[] encryptedData)
+    {
+        if (encryptedData == null)
+            throw new ArgumentNullException(nameof(encryptedData));
+
+        if (EncryptionProvider == null)
+            throw new InvalidOperationException("未配置加密提供器。");
+
+        return EncryptionProvider.DecryptBytes(encryptedData);
+    }
 
     #region 下载处理方法
 

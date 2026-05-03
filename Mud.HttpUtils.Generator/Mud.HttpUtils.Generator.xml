@@ -228,7 +228,7 @@
         <member name="M:Mud.HttpUtils.EventHandlerSourceGenerator.Initialize(Microsoft.CodeAnalysis.IncrementalGeneratorInitializationContext)">
             <inheritdoc/>
         </member>
-        <member name="M:Mud.HttpUtils.EventHandlerSourceGenerator.ExecuteGenerator(Microsoft.CodeAnalysis.Compilation,System.Collections.Immutable.ImmutableArray{Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax},Microsoft.CodeAnalysis.SourceProductionContext)">
+        <member name="M:Mud.HttpUtils.EventHandlerSourceGenerator.ExecuteGenerator(Microsoft.CodeAnalysis.Compilation,System.Collections.Immutable.ImmutableArray{Microsoft.CodeAnalysis.GeneratorAttributeSyntaxContext},Microsoft.CodeAnalysis.SourceProductionContext)">
             <summary>
             执行源代码生成逻辑
             </summary>
@@ -712,7 +712,7 @@
         <member name="M:Mud.HttpUtils.FormContentGenerator.Initialize(Microsoft.CodeAnalysis.IncrementalGeneratorInitializationContext)">
             <inheritdoc/>
         </member>
-        <member name="M:Mud.HttpUtils.FormContentGenerator.ExecuteGenerator(Microsoft.CodeAnalysis.Compilation,System.Collections.Immutable.ImmutableArray{Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax},Microsoft.CodeAnalysis.SourceProductionContext)">
+        <member name="M:Mud.HttpUtils.FormContentGenerator.ExecuteGenerator(Microsoft.CodeAnalysis.Compilation,System.Collections.Immutable.ImmutableArray{Microsoft.CodeAnalysis.GeneratorAttributeSyntaxContext},Microsoft.CodeAnalysis.SourceProductionContext)">
             <summary>
             执行源代码生成逻辑
             </summary>
@@ -1804,17 +1804,14 @@
             </summary>
             <returns></returns>
         </member>
-        <member name="M:Mud.HttpUtils.TransitiveCodeGenerator.GetClassDeclarationProvider``1(Microsoft.CodeAnalysis.IncrementalGeneratorInitializationContext,System.String[])">
+        <member name="M:Mud.HttpUtils.TransitiveCodeGenerator.GenerateFileHeader(System.Text.StringBuilder,System.Collections.Generic.IEnumerable{System.String})">
             <summary>
-            根据注解名获取需要进行代码辅助生成的类。
+            生成通用的文件头部
             </summary>
-            <param name="context"><see cref="T:Microsoft.CodeAnalysis.IncrementalGeneratorInitializationContext"/>对象。</param>
-            <param name="attributeNames">需要查找的特性名称数组。</param>
-            <returns></returns>
         </member>
         <member name="M:Mud.HttpUtils.TransitiveCodeGenerator.GenerateFileHeader(System.Text.StringBuilder)">
             <summary>
-            生成通用的文件头部
+            生成通用的文件头部（使用子类提供的命名空间）
             </summary>
         </member>
         <member name="M:Mud.HttpUtils.TransitiveCodeGenerator.GetXmlDocumentation(Microsoft.CodeAnalysis.SyntaxNode)">
