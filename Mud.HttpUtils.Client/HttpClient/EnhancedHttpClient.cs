@@ -817,7 +817,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// <inheritdoc cref="IEncryptableHttpClient.DecryptContent"/>
     /// <param name="encryptedContent">要解密的加密字符串。</param>
     /// <returns>解密后的原始字符串。</returns>
-    public string DecryptContent(string encryptedContent)
+    public virtual string DecryptContent(string encryptedContent)
     {
         if (string.IsNullOrEmpty(encryptedContent))
             return string.Empty;

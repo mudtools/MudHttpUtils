@@ -162,7 +162,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// </summary>
     /// <param name="scopes">令牌作用域数组。</param>
     /// <returns>缓存键字符串。</returns>
-    private string GetScopeKey(string[]? scopes)
+    protected string GetScopeKey(string[]? scopes)
     {
         if (scopes == null || scopes.Length == 0)
             return DefaultScopeKey;

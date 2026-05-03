@@ -31,7 +31,7 @@ public static class MudHttpUtilsServiceCollectionExtensions
         if (configureHttpClient == null)
             throw new ArgumentNullException(nameof(configureHttpClient));
 
-        services.AddNamedMudHttpClient(clientName, configureHttpClient);
+        services.AddMudHttpClient(clientName, configureHttpClient);
 
         if (configureResilienceOptions != null)
         {
@@ -63,7 +63,7 @@ public static class MudHttpUtilsServiceCollectionExtensions
         if (configureHttpClient == null)
             throw new ArgumentNullException(nameof(configureHttpClient));
 
-        services.AddNamedMudHttpClient(clientName, configureHttpClient);
+        services.AddMudHttpClient(clientName, configureHttpClient);
 
         if (enableResilience)
         {
@@ -155,7 +155,7 @@ public static class MudHttpUtilsServiceCollectionExtensions
         if (configureHttpClient == null)
             throw new ArgumentNullException(nameof(configureHttpClient));
 
-        services.AddNamedMudHttpClient(clientName, configureHttpClient);
+        services.AddMudHttpClient(clientName, configureHttpClient);
 
         services.AddMudHttpResilienceDecorator(configuration, resilienceSectionPath);
 
@@ -184,7 +184,7 @@ public static class MudHttpUtilsServiceCollectionExtensions
         if (configureEncryption == null)
             throw new ArgumentNullException(nameof(configureEncryption));
 
-        services.AddNamedMudHttpClient(clientName, configureEncryption, configureHttpClient);
+        services.AddMudHttpClient(clientName, configureEncryption, configureHttpClient);
 
         if (configureResilienceOptions != null)
         {
