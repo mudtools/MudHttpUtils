@@ -124,29 +124,11 @@ public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefresh
             {
                 await Task.Delay(TimeSpan.FromSeconds(_options.RefreshIntervalSeconds), stoppingToken);
 
-                foreach (var kvp in _tokenManagers)
+                var shouldContinue = await TokenRefreshHelper.RefreshAllTokenManagersAsync(
+                    _tokenManagers, _logger, _options, stoppingToken);
+                if (!shouldContinue)
                 {
-                    try
-                    {
-                        _logger.LogDebug("开始主动刷新令牌管理器 {Name}", kvp.Key);
-                        await kvp.Value.GetOrRefreshTokenAsync(stoppingToken);
-                        _logger.LogDebug("令牌管理器 {Name} 主动刷新完成", kvp.Key);
-                    }
-                    catch (ObjectDisposedException)
-                    {
-                        _logger.LogWarning("令牌管理器 {Name} 已释放，移除", kvp.Key);
-                        _tokenManagers.TryRemove(kvp.Key, out _);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "令牌管理器 {Name} 主动刷新失败", kvp.Key);
-
-                        if (_options.StopOnError)
-                        {
-                            _logger.LogCritical("令牌管理器 {Name} 主动刷新失败且配置为停止服务，后台服务将终止", kvp.Key);
-                            throw;
-                        }
-                    }
+                    throw new InvalidOperationException("令牌主动刷新失败且配置为停止服务，后台服务将终止");
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

@@ -305,14 +305,39 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         throw new InvalidOperationException("令牌刷新成功但无法获取凭证令牌信息。");
     }
 
-    private async Task<CredentialToken> RequestTokenAsync(
+    private Task<CredentialToken> RequestTokenAsync(
         Dictionary<string, string> parameters,
+        CancellationToken cancellationToken)
+    {
+        return SendTokenRequestAsync(parameters, useClientAuth: false, cancellationToken);
+    }
+
+    private Task<CredentialToken> RequestTokenWithClientAuthAsync(
+        Dictionary<string, string> parameters,
+        CancellationToken cancellationToken)
+    {
+        return SendTokenRequestAsync(parameters, useClientAuth: true, cancellationToken);
+    }
+
+    private async Task<CredentialToken> SendTokenRequestAsync(
+        Dictionary<string, string> parameters,
+        bool useClientAuth,
         CancellationToken cancellationToken)
     {
         ValidateTokenEndpoint();
 
+        if (useClientAuth)
+        {
+            await GetClientSecretAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         using var request = new HttpRequestMessage(HttpMethod.Post, _options.TokenEndpoint);
         request.Content = new FormUrlEncodedContent(parameters);
+
+        if (useClientAuth)
+        {
+            ApplyClientAuthentication(request);
+        }
 
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
@@ -342,48 +367,6 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         UpdateCredentialToken(newToken);
 
         return newToken;
-    }
-
-    private async Task<CredentialToken> RequestTokenWithClientAuthAsync(
-        Dictionary<string, string> parameters,
-        CancellationToken cancellationToken)
-    {
-        ValidateTokenEndpoint();
-
-        await GetClientSecretAsync(cancellationToken).ConfigureAwait(false);
-
-        using var request = new HttpRequestMessage(HttpMethod.Post, _options.TokenEndpoint);
-        request.Content = new FormUrlEncodedContent(parameters);
-        ApplyClientAuthentication(request);
-
-        using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-
-#if NETSTANDARD2_0
-        var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-#else
-        var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-#endif
-
-        var tokenResponse = JsonSerializer.Deserialize<OAuth2TokenResponse>(json, s_jsonOptions);
-        if (tokenResponse == null)
-            throw new InvalidOperationException("令牌响应反序列化失败");
-
-        if (!string.IsNullOrEmpty(tokenResponse.Error))
-            throw new InvalidOperationException(
-                $"OAuth2 令牌请求失败: {tokenResponse.Error}" +
-                (string.IsNullOrEmpty(tokenResponse.ErrorDescription) ? "" : $" - {tokenResponse.ErrorDescription}"));
-
-        var newToken2 = new CredentialToken
-        {
-            AccessToken = tokenResponse.AccessToken ?? string.Empty,
-            RefreshToken = tokenResponse.RefreshToken,
-            Expire = CalculateExpire(tokenResponse.ExpiresIn)
-        };
-
-        UpdateCredentialToken(newToken2);
-
-        return newToken2;
     }
 
     private void ApplyClientAuthentication(HttpRequestMessage request)

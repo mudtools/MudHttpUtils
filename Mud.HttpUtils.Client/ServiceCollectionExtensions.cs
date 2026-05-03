@@ -47,6 +47,9 @@ public static class HttpClientServiceCollectionExtensions
             ? services.AddHttpClient(clientName, configureHttpClient)
             : services.AddHttpClient(clientName);
 
+        services.TryAddSingleton<IHttpResponseCache>(sp =>
+            new MemoryHttpResponseCache(1000, 60));
+
         RegisterNamedClient(services, clientName, setAsDefault);
 
         return httpClientBuilder;
@@ -61,6 +64,7 @@ public static class HttpClientServiceCollectionExtensions
     /// <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
     /// <returns><see cref="IHttpClientBuilder"/>（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+    [Obsolete("请使用 AddMudHttpClient 替代，AddNamedMudHttpClient 将在未来版本中移除。")]
     public static IHttpClientBuilder AddNamedMudHttpClient(
         this IServiceCollection services,
         string clientName,
@@ -90,6 +94,7 @@ public static class HttpClientServiceCollectionExtensions
     /// <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
     /// <returns><see cref="IHttpClientBuilder"/>（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+    [Obsolete("请使用 AddMudHttpClient 替代，AddNamedMudHttpClient 将在未来版本中移除。")]
     public static IHttpClientBuilder AddNamedMudHttpClient(
         this IServiceCollection services,
         string clientName,
@@ -116,6 +121,7 @@ public static class HttpClientServiceCollectionExtensions
     /// <param name="baseAddress">HttpClient 的基础地址。</param>
     /// <returns><see cref="IHttpClientBuilder"/>（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+    [Obsolete("请使用 AddMudHttpClient 替代，AddNamedMudHttpClient 将在未来版本中移除。")]
     public static IHttpClientBuilder AddNamedMudHttpClient(
         this IServiceCollection services,
         string clientName,
@@ -163,8 +169,6 @@ public static class HttpClientServiceCollectionExtensions
 
         services.TryAddTransient<IBaseHttpClient>(sp => sp.GetRequiredService<IEnhancedHttpClient>());
         services.TryAddSingleton<IHttpClientResolver, HttpClientResolver>();
-        services.TryAddSingleton<IHttpResponseCache>(sp =>
-            new MemoryHttpResponseCache(1000, 60));
     }
 
     /// <summary>
