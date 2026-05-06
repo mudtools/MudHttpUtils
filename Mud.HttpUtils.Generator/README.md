@@ -694,8 +694,13 @@ Mud.HttpUtils.Generator/
 │   │   ├── ConstructorGenerator.cs  # 构造函数生成
 │   │   └── RequestBuilder.cs     # 请求构建
 │   ├── FormContentGenerator.cs   # FormContent 生成器（支持 JsonPropertyName）
-│   ├── HttpInvokeClassSourceGenerator.cs   # 实现类主生成器
-│   └── HttpInvokeRegistrationGenerator.cs  # 注册代码生成器（含 Timeout 配置）
+│   ├── HttpInvokeClassSourceGenerator.cs    # 实现类主生成器
+│   ├── HttpInvokeRegistrationGenerator.cs   # 注册代码生成器（含 Timeout 配置）
+│   ├── InterfaceImplementationGenerator.cs  # 接口实现类生成器
+│   ├── MethodGenerator.cs                   # 方法实现生成器
+│   ├── ConstructorGenerator.cs              # 构造函数生成器
+│   ├── AccessTokenGenerator.cs              # Token 获取代码生成器
+│   └── FormContentGenerator.cs              # FormContent 生成器
 ├── Helpers/                      # 辅助类
 │   ├── AttributeDataHelper.cs    # 特性数据辅助
 │   ├── AttributeSyntaxHelper.cs  # 特性语法辅助

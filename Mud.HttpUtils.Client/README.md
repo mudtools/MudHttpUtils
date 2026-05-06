@@ -141,6 +141,10 @@ var maskedObj = masker.MaskObject(userRequest);
 | `TokenRefreshHostedService` | 令牌后台刷新服务，实现 `IHostedService` 和 `ITokenRefreshBackgroundService`  |
 | `DefaultTokenProvider`      | `ITokenProvider` 默认实现，通过 `IMudAppContext` 获取令牌管理器并获取令牌    |
 | `DefaultCurrentUserContext` | `ICurrentUserContext` 默认实现，使用 `AsyncLocal` 实现线程安全的用户 ID 传播 |
+| `MemoryTokenStore`          | `ITokenStore` 内存默认实现，基于 `ConcurrentDictionary`，线程安全            |
+| `MemoryUserTokenStore`      | `IUserTokenStore` 内存默认实现，按用户 ID 隔离令牌数据                       |
+| `MemoryEncryptedTokenStore` | `IEncryptedTokenStore` 内存默认实现，自动加密/解密令牌数据                   |
+| `DefaultFormContent`        | `IFormContent` 默认实现，基于 `Dictionary<string, string>`                   |
 
 ```csharp
 // 自定义令牌管理器
@@ -175,6 +179,36 @@ services.AddHostedService<TokenRefreshHostedService>();
 > `DefaultTokenProvider` 是 `ITokenProvider` 的默认实现，通过 `IMudAppContext` 获取令牌管理器并获取令牌。它不持有 `IMudAppContext` 引用，而是通过方法参数逐调用接收，以确保生成代码中 `UseApp()`/`UseDefaultApp()` 上下文切换的正确性。当 `TokenRequest.UserId` 非空时，自动使用 `IUserTokenManager` 获取用户级令牌。
 
 > `DefaultCurrentUserContext` 使用 `AsyncLocal` 确保用户 ID 在异步上下文中正确传播。适用于非 Web 场景或需要手动设置用户 ID 的场景。在 ASP.NET Core 应用中，建议替换为基于 `HttpContext` 的实现。通过 `DefaultCurrentUserContext.SetUserId(userId)` 静态方法设置当前用户 ID。
+
+#### 内存令牌存储
+
+```csharp
+// 基础内存存储
+services.AddSingleton<ITokenStore, MemoryTokenStore>();
+
+// 用户级内存存储
+services.AddSingleton<IUserTokenStore, MemoryUserTokenStore>();
+
+// 加密内存存储（需先注册 IEncryptionProvider）
+services.AddSingleton<IEncryptionProvider, DefaultAesEncryptionProvider>(/* 配置密钥 */);
+services.AddSingleton<IEncryptedTokenStore, MemoryEncryptedTokenStore>();
+```
+
+> `MemoryTokenStore` 基于 `ConcurrentDictionary` 实现线程安全的令牌管理，支持过期自动清理。`MemoryUserTokenStore` 为每个用户维护独立的存储空间。`MemoryEncryptedTokenStore` 在存储前自动加密令牌数据，读取时自动解密，适用于对安全性要求较高的场景。
+
+#### 默认表单内容
+
+```csharp
+var formData = new Dictionary<string, string>
+{
+    ["username"] = "admin",
+    ["password"] = "secret"
+};
+var formContent = new DefaultFormContent(formData);
+var httpContent = formContent.ToHttpContent(); // FormUrlEncodedContent
+```
+
+> `DefaultFormContent` 是 `IFormContent` 的默认实现，将字典数据转换为 `FormUrlEncodedContent`。适用于简单的表单提交场景。
 
 ### 应用上下文
 

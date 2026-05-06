@@ -21,6 +21,7 @@ Mud.HttpUtils.Resilience 是 Mud.HttpUtils 的弹性策略层，基于 Polly 提
 | `PollyResiliencePolicyProvider` | 基于 Polly 的策略提供器，根据 `ResilienceOptions` 创建策略 |
 | `HttpRequestMessageCloner` | HTTP 请求消息克隆工具，确保重试安全 |
 | `ResilienceOptions` | 弹性策略配置选项 |
+| `IResiliencePolicyProvider` | 弹性策略提供器接口，支持自定义策略实现 |
 
 ### 策略组合顺序
 

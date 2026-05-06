@@ -72,9 +72,10 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 
 ### 控制特性
 
-| 特性                       | 用途         | 目标                                  |
-| -------------------------- | ------------ | ------------------------------------- |
-| `IgnoreGeneratorAttribute` | 忽略代码生成 | Interface / Method / Property / Field |
+| 特性                           | 用途                   | 目标                                  |
+| ------------------------------ | ---------------------- | ------------------------------------- |
+| `IgnoreGeneratorAttribute`     | 忽略代码生成           | Interface / Method / Property / Field |
+| `AllowAnyStatusCodeAttribute`  | 允许任意 HTTP 状态码   | Method                                |
 
 ### 事件处理特性
 
