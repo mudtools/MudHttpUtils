@@ -6,6 +6,31 @@ public class MemoryUserTokenStore : MemoryTokenStore, IUserTokenStore
 {
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, TokenEntry>> _userStore = new(StringComparer.OrdinalIgnoreCase);
 
+    public override Task<string?> GetAccessTokenAsync(string tokenType, CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("MemoryUserTokenStore 不支持无用户 ID 的操作，请使用带 userId 参数的重载。");
+    }
+
+    public override Task SetAccessTokenAsync(string tokenType, string accessToken, long expiresInSeconds, CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("MemoryUserTokenStore 不支持无用户 ID 的操作，请使用带 userId 参数的重载。");
+    }
+
+    public override Task<string?> GetRefreshTokenAsync(string tokenType, CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("MemoryUserTokenStore 不支持无用户 ID 的操作，请使用带 userId 参数的重载。");
+    }
+
+    public override Task SetRefreshTokenAsync(string tokenType, string refreshToken, CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("MemoryUserTokenStore 不支持无用户 ID 的操作，请使用带 userId 参数的重载。");
+    }
+
+    public override Task RemoveAsync(string tokenType, CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException("MemoryUserTokenStore 不支持无用户 ID 的操作，请使用带 userId 参数的重载。");
+    }
+
     public Task<string?> GetAccessTokenAsync(string userId, string tokenType, CancellationToken cancellationToken = default)
     {
         if (_userStore.TryGetValue(userId, out var userTokens) &&
@@ -66,12 +91,5 @@ public class MemoryUserTokenStore : MemoryTokenStore, IUserTokenStore
         }
 
         return Task.CompletedTask;
-    }
-
-    private sealed class TokenEntry
-    {
-        public string? AccessToken { get; set; }
-        public string? RefreshToken { get; set; }
-        public DateTimeOffset ExpiresAt { get; set; }
     }
 }

@@ -6,7 +6,7 @@ public class MemoryTokenStore : ITokenStore
 {
     private readonly ConcurrentDictionary<string, TokenEntry> _store = new(StringComparer.OrdinalIgnoreCase);
 
-    public Task<string?> GetAccessTokenAsync(string tokenType, CancellationToken cancellationToken = default)
+    public virtual Task<string?> GetAccessTokenAsync(string tokenType, CancellationToken cancellationToken = default)
     {
         if (_store.TryGetValue(tokenType, out var entry) && entry.ExpiresAt > DateTimeOffset.UtcNow)
         {
@@ -16,7 +16,7 @@ public class MemoryTokenStore : ITokenStore
         return Task.FromResult<string?>(null);
     }
 
-    public Task SetAccessTokenAsync(string tokenType, string accessToken, long expiresInSeconds, CancellationToken cancellationToken = default)
+    public virtual Task SetAccessTokenAsync(string tokenType, string accessToken, long expiresInSeconds, CancellationToken cancellationToken = default)
     {
         _store[tokenType] = new TokenEntry
         {
@@ -28,7 +28,7 @@ public class MemoryTokenStore : ITokenStore
         return Task.CompletedTask;
     }
 
-    public Task<string?> GetRefreshTokenAsync(string tokenType, CancellationToken cancellationToken = default)
+    public virtual Task<string?> GetRefreshTokenAsync(string tokenType, CancellationToken cancellationToken = default)
     {
         if (_store.TryGetValue(tokenType, out var entry))
         {
@@ -38,7 +38,7 @@ public class MemoryTokenStore : ITokenStore
         return Task.FromResult<string?>(null);
     }
 
-    public Task SetRefreshTokenAsync(string tokenType, string refreshToken, CancellationToken cancellationToken = default)
+    public virtual Task SetRefreshTokenAsync(string tokenType, string refreshToken, CancellationToken cancellationToken = default)
     {
         _store.AddOrUpdate(tokenType,
             _ => new TokenEntry { RefreshToken = refreshToken },
@@ -51,13 +51,13 @@ public class MemoryTokenStore : ITokenStore
         return Task.CompletedTask;
     }
 
-    public Task RemoveAsync(string tokenType, CancellationToken cancellationToken = default)
+    public virtual Task RemoveAsync(string tokenType, CancellationToken cancellationToken = default)
     {
         _store.TryRemove(tokenType, out _);
         return Task.CompletedTask;
     }
 
-    private sealed class TokenEntry
+    protected sealed class TokenEntry
     {
         public string? AccessToken { get; set; }
         public string? RefreshToken { get; set; }
