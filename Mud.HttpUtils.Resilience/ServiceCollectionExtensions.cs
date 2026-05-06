@@ -21,12 +21,7 @@ public static class ServiceCollectionExtensions
             services.Configure(configureOptions);
         }
 
-        services.TryAddSingleton<IResiliencePolicyProvider>(sp =>
-        {
-            var options = sp.GetRequiredService<IOptions<ResilienceOptions>>();
-            var logger = sp.GetService<ILogger<PollyResiliencePolicyProvider>>();
-            return new PollyResiliencePolicyProvider(options, logger);
-        });
+        services.TryAddSingleton<IResiliencePolicyProvider>(CreatePolicyProvider);
 
         return services;
     }
@@ -44,12 +39,7 @@ public static class ServiceCollectionExtensions
         services.AddOptions<ResilienceOptions>()
             .Bind(configuration.GetSection(configurationSectionPath));
 
-        services.TryAddSingleton<IResiliencePolicyProvider>(sp =>
-        {
-            var options = sp.GetRequiredService<IOptions<ResilienceOptions>>();
-            var logger = sp.GetService<ILogger<PollyResiliencePolicyProvider>>();
-            return new PollyResiliencePolicyProvider(options, logger);
-        });
+        services.TryAddSingleton<IResiliencePolicyProvider>(CreatePolicyProvider);
 
         return services;
     }
@@ -65,21 +55,9 @@ public static class ServiceCollectionExtensions
 
         DecorateFactoryEntries(services);
 #if NET8_0_OR_GREATER
-        DecorateKeyedServices<IEnhancedHttpClient>(services, (inner, sp) =>
-        {
-            var policyProvider = sp.GetRequiredService<IResiliencePolicyProvider>();
-            var logger = sp.GetService<ILogger<ResilientHttpClient>>();
-            var options = sp.GetService<IOptions<ResilienceOptions>>()?.Value;
-            return new ResilientHttpClient(inner, policyProvider, logger, options);
-        });
+        DecorateKeyedServices<IEnhancedHttpClient>(services, CreateResilientClient);
 #endif
-        DecorateService<IEnhancedHttpClient>(services, (inner, sp) =>
-        {
-            var policyProvider = sp.GetRequiredService<IResiliencePolicyProvider>();
-            var logger = sp.GetService<ILogger<ResilientHttpClient>>();
-            var options = sp.GetService<IOptions<ResilienceOptions>>()?.Value;
-            return new ResilientHttpClient(inner, policyProvider, logger, options);
-        });
+        DecorateService<IEnhancedHttpClient>(services, CreateResilientClient);
 
         return services;
     }
@@ -96,21 +74,9 @@ public static class ServiceCollectionExtensions
 
         DecorateFactoryEntries(services);
 #if NET8_0_OR_GREATER
-        DecorateKeyedServices<IEnhancedHttpClient>(services, (inner, sp) =>
-        {
-            var policyProvider = sp.GetRequiredService<IResiliencePolicyProvider>();
-            var logger = sp.GetService<ILogger<ResilientHttpClient>>();
-            var options = sp.GetService<IOptions<ResilienceOptions>>()?.Value;
-            return new ResilientHttpClient(inner, policyProvider, logger, options);
-        });
+        DecorateKeyedServices<IEnhancedHttpClient>(services, CreateResilientClient);
 #endif
-        DecorateService<IEnhancedHttpClient>(services, (inner, sp) =>
-        {
-            var policyProvider = sp.GetRequiredService<IResiliencePolicyProvider>();
-            var logger = sp.GetService<ILogger<ResilientHttpClient>>();
-            var options = sp.GetService<IOptions<ResilienceOptions>>()?.Value;
-            return new ResilientHttpClient(inner, policyProvider, logger, options);
-        });
+        DecorateService<IEnhancedHttpClient>(services, CreateResilientClient);
 
         return services;
     }
@@ -212,6 +178,21 @@ public static class ServiceCollectionExtensions
         }
     }
 
+    private static PollyResiliencePolicyProvider CreatePolicyProvider(IServiceProvider sp)
+    {
+        var options = sp.GetRequiredService<IOptions<ResilienceOptions>>();
+        var logger = sp.GetService<ILogger<PollyResiliencePolicyProvider>>();
+        return new PollyResiliencePolicyProvider(options, logger);
+    }
+
+    private static ResilientHttpClient CreateResilientClient(IEnhancedHttpClient inner, IServiceProvider sp)
+    {
+        var policyProvider = sp.GetRequiredService<IResiliencePolicyProvider>();
+        var logger = sp.GetService<ILogger<ResilientHttpClient>>();
+        var options = sp.GetService<IOptions<ResilienceOptions>>()?.Value;
+        return new ResilientHttpClient(inner, policyProvider, logger, options);
+    }
+
     private sealed class ResilienceDecoratorPostConfigure : IPostConfigureOptions<EnhancedHttpClientFactoryOptions>
     {
         public void PostConfigure(string? name, EnhancedHttpClientFactoryOptions options)
@@ -223,10 +204,7 @@ public static class ServiceCollectionExtensions
                 options.ClientFactories[key] = sp =>
                 {
                     var inner = originalFactory(sp);
-                    var policyProvider = sp.GetRequiredService<IResiliencePolicyProvider>();
-                    var logger = sp.GetService<ILogger<ResilientHttpClient>>();
-                    var resilienceOptions = sp.GetService<IOptions<ResilienceOptions>>()?.Value;
-                    return new ResilientHttpClient(inner, policyProvider, logger, resilienceOptions);
+                    return CreateResilientClient(inner, sp);
                 };
             }
         }

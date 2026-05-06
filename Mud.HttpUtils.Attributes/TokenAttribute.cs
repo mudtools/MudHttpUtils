@@ -81,6 +81,7 @@ public sealed class TokenAttribute : Attribute
     /// <example>
     /// [Token(TokenType = "UserAccessToken", Scopes = "user:read,user:write")]
     /// </example>
+    [Obsolete("Scopes 当前未被生成器处理，将在未来版本中移除或实现。")]
     public string? Scopes { get; set; }
 
     /// <summary>

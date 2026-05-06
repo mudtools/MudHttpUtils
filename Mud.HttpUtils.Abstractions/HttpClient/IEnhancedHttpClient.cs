@@ -14,7 +14,7 @@ namespace Mud.HttpUtils;
 /// 此接口继承了 <see cref="IJsonHttpClient"/>、<see cref="IXmlHttpClient"/> 和 <see cref="IEncryptableHttpClient"/>，
 /// 提供了全面的 HTTP 通信能力，包括 JSON/XML 数据处理和加密/解密功能。
 /// </remarks>
-public interface IEnhancedHttpClient : IHttpSender, IXmlHttpClient, IEncryptableHttpClient
+public interface IEnhancedHttpClient : IBaseHttpClient, IJsonHttpClient, IXmlHttpClient, IEncryptableHttpClient
 {
     /// <summary>
     /// 创建带新基地址的客户端副本。

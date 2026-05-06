@@ -70,18 +70,21 @@ public sealed class CacheAttribute : Attribute
     /// <remarks>
     /// 启用后，每次访问缓存项都会重置过期时间。
     /// </remarks>
+    [Obsolete("UseSlidingExpiration 当前未被生成器处理，将在未来版本中移除或实现。")]
     public bool UseSlidingExpiration { get; set; }
 
     /// <summary>
     /// 获取或设置缓存项的优先级。
     /// </summary>
     /// <value>默认为 <see cref="CachePriority.Normal"/>。</value>
+    [Obsolete("Priority 当前未被生成器处理，将在未来版本中移除或实现。")]
     public CachePriority Priority { get; set; } = CachePriority.Normal;
 }
 
 /// <summary>
 /// 缓存优先级枚举，定义缓存项在内存压力下的保留策略。
 /// </summary>
+[Obsolete("CachePriority 当前未被生成器处理，将在未来版本中移除或实现。")]
 public enum CachePriority
 {
     /// <summary>
