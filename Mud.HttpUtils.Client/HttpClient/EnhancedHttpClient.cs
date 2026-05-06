@@ -824,7 +824,30 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         if (EncryptionProvider == null)
             throw new InvalidOperationException("未配置加密提供器。");
 
-        return EncryptionProvider.Decrypt(encryptedContent);
+        string cipherText = encryptedContent;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(encryptedContent);
+            var root = doc.RootElement;
+
+            if (root.ValueKind == JsonValueKind.Object)
+            {
+                foreach (var property in root.EnumerateObject())
+                {
+                    if (property.Value.ValueKind == JsonValueKind.String)
+                    {
+                        cipherText = property.Value.GetString()!;
+                        break;
+                    }
+                }
+            }
+        }
+        catch (JsonException)
+        {
+        }
+
+        return EncryptionProvider.Decrypt(cipherText);
     }
 
     /// <inheritdoc cref="IEncryptableHttpClient.EncryptBytes"/>

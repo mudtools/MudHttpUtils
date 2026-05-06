@@ -95,6 +95,135 @@
             <returns>配置好的 ByteArrayContent 对象</returns>
             <exception cref="T:System.ArgumentNullException">当 fileName 或 fileBytes 为 null 或空字符串时抛出</exception>
         </member>
+        <member name="M:Mud.HttpUtils.MessageSanitizer.TokenPattern">
+            <remarks>
+            Pattern:<br/>
+            <code>^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$|^[A-Za-z0-9_\\-]{20,}$</code><br/>
+            Options:<br/>
+            <code>RegexOptions.IgnoreCase</code><br/>
+            Explanation:<br/>
+            <code>
+            ○ Match with 3 alternative expressions, atomically.<br/>
+                ○ Match a sequence of expressions.<br/>
+                    ○ Match if at the beginning of the string.<br/>
+                    ○ Loop greedily any number of times.<br/>
+                        ○ Match a character in the set [+/-9A-Za-z\u212A] exactly 4 times.<br/>
+                    ○ Optional (greedy).<br/>
+                        ○ Match with 2 alternative expressions.<br/>
+                            ○ Match a sequence of expressions.<br/>
+                                ○ Match a character in the set [+/-9A-Za-z\u212A] exactly 2 times.<br/>
+                                ○ Match the string "==".<br/>
+                            ○ Match a sequence of expressions.<br/>
+                                ○ Match a character in the set [+/-9A-Za-z\u212A] exactly 3 times.<br/>
+                                ○ Match '='.<br/>
+                    ○ Match if at the end of the string or if before an ending newline.<br/>
+                ○ Match a sequence of expressions.<br/>
+                    ○ Match if at the beginning of the string.<br/>
+                    ○ Match a character in the set [0-9A-Fa-f] exactly 8 times.<br/>
+                    ○ Match '-'.<br/>
+                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match '-'.<br/>
+                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match '-'.<br/>
+                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match '-'.<br/>
+                    ○ Match a character in the set [0-9A-Fa-f] exactly 12 times.<br/>
+                    ○ Match if at the end of the string or if before an ending newline.<br/>
+                ○ Match a sequence of expressions.<br/>
+                    ○ Match if at the beginning of the string.<br/>
+                    ○ Match a character in the set [-0-9A-Z_a-z\u212A] atomically at least 20 times.<br/>
+                    ○ Match if at the end of the string or if before an ending newline.<br/>
+            </code>
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.MessageSanitizer.SensitiveKeyValuePattern">
+            <remarks>
+            Pattern:<br/>
+            <code>(?i)(token|password|secret|key)\\s*[:=]\\s*['"]?([^'"\\s]{6,})['"]?</code><br/>
+            Options:<br/>
+            <code>RegexOptions.Compiled</code><br/>
+            Explanation:<br/>
+            <code>
+            ○ 1st capture group.<br/>
+                ○ Match with 4 alternative expressions.<br/>
+                    ○ Match a sequence of expressions.<br/>
+                        ○ Match a character in the set [Tt].<br/>
+                        ○ Match a character in the set [Oo].<br/>
+                        ○ Match a character in the set [Kk\u212A].<br/>
+                        ○ Match a character in the set [Ee].<br/>
+                        ○ Match a character in the set [Nn].<br/>
+                    ○ Match a sequence of expressions.<br/>
+                        ○ Match a character in the set [Pp].<br/>
+                        ○ Match a character in the set [Aa].<br/>
+                        ○ Match a character in the set [Ss] exactly 2 times.<br/>
+                        ○ Match a character in the set [Ww].<br/>
+                        ○ Match a character in the set [Oo].<br/>
+                        ○ Match a character in the set [Rr].<br/>
+                        ○ Match a character in the set [Dd].<br/>
+                    ○ Match a sequence of expressions.<br/>
+                        ○ Match a character in the set [Ss].<br/>
+                        ○ Match a character in the set [Ee].<br/>
+                        ○ Match a character in the set [Cc].<br/>
+                        ○ Match a character in the set [Rr].<br/>
+                        ○ Match a character in the set [Ee].<br/>
+                        ○ Match a character in the set [Tt].<br/>
+                    ○ Match a sequence of expressions.<br/>
+                        ○ Match a character in the set [Kk\u212A].<br/>
+                        ○ Match a character in the set [Ee].<br/>
+                        ○ Match a character in the set [Yy].<br/>
+            ○ Match a whitespace character atomically any number of times.<br/>
+            ○ Match a character in the set [:=].<br/>
+            ○ Match a whitespace character greedily any number of times.<br/>
+            ○ Match a character in the set ["'] greedily, optionally.<br/>
+            ○ 2nd capture group.<br/>
+                ○ Match a character in the set [^"'\s] greedily at least 6 times.<br/>
+            ○ Match a character in the set ["'] atomically, optionally.<br/>
+            </code>
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.MessageSanitizer.PhonePattern">
+            <remarks>
+            Pattern:<br/>
+            <code>^1[3-9]\\d{9}$</code><br/>
+            Explanation:<br/>
+            <code>
+            ○ Match if at the beginning of the string.<br/>
+            ○ Match '1'.<br/>
+            ○ Match a character in the set [3-9].<br/>
+            ○ Match a Unicode digit exactly 9 times.<br/>
+            ○ Match if at the end of the string or if before an ending newline.<br/>
+            </code>
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.MessageSanitizer.EmailPattern">
+            <remarks>
+            Pattern:<br/>
+            <code>^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$</code><br/>
+            Explanation:<br/>
+            <code>
+            ○ Match if at the beginning of the string.<br/>
+            ○ Match a character in the set [^@\s] atomically at least once.<br/>
+            ○ Match '@'.<br/>
+            ○ Match a character in the set [^@\s] greedily at least once.<br/>
+            ○ Match '.'.<br/>
+            ○ Match a character in the set [^@\s] atomically at least once.<br/>
+            ○ Match if at the end of the string or if before an ending newline.<br/>
+            </code>
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.MessageSanitizer.IdCardPattern">
+            <remarks>
+            Pattern:<br/>
+            <code>^\\d{17}[\\dXx]$</code><br/>
+            Explanation:<br/>
+            <code>
+            ○ Match if at the beginning of the string.<br/>
+            ○ Match a Unicode digit exactly 17 times.<br/>
+            ○ Match a character in the set [Xx\d].<br/>
+            ○ Match if at the end of the string or if before an ending newline.<br/>
+            </code>
+            </remarks>
+        </member>
         <member name="T:Mud.HttpUtils.UrlValidator">
             <summary>
             URL 验证工具类，用于防止 SSRF（服务端请求伪造）攻击
@@ -1489,6 +1618,352 @@
         <member name="M:Mud.HttpUtils.Client.DefaultTokenProvider.GetTokenAsync(Mud.HttpUtils.IMudAppContext,Mud.HttpUtils.TokenRequest,System.Threading.CancellationToken)">
             <inheritdoc />
         </member>
+        <member name="T:Mud.HttpUtils.MemoryEncryptedTokenStore">
+            <summary>
+            基于内存的加密令牌存储实现，提供自动加密/解密功能的令牌存储。
+            </summary>
+            <remarks>
+            <para>
+            此类继承 <see cref="T:Mud.HttpUtils.MemoryTokenStore"/> 并实现 <see cref="T:Mud.HttpUtils.IEncryptedTokenStore"/> 接口，
+            在内存存储的基础上增加了自动加密和解密功能。所有写入的令牌数据都会先经过加密处理，
+            读取时自动解密，确保敏感信息在内存中以密文形式存储。
+            </para>
+            <para>
+            实现特点：
+            <list type="bullet">
+              <item>自动加密：写入令牌时自动调用 <see cref="M:Mud.HttpUtils.IEncryptionProvider.Encrypt(System.String)"/> 加密</item>
+              <item>自动解密：读取令牌时自动调用 <see cref="M:Mud.HttpUtils.IEncryptionProvider.Decrypt(System.String)"/> 解密</item>
+              <item>透明存储：对调用方完全透明，使用方式与普通存储一致</item>
+              <item>继承特性：保留 <see cref="T:Mud.HttpUtils.MemoryTokenStore"/> 的线程安全和过期检查特性</item>
+            </list>
+            </para>
+            <para>
+            注意：加密操作会带来一定的性能开销，适用于对安全性要求较高的场景。
+            如果性能敏感且安全要求不高，可直接使用 <see cref="T:Mud.HttpUtils.MemoryTokenStore"/>。
+            </para>
+            </remarks>
+            <example>
+            <code>
+            // 注册到依赖注入容器
+            services.AddSingleton&lt;IEncryptionProvider, AesEncryptionProvider&gt;();
+            services.AddSingleton&lt;IEncryptedTokenStore, MemoryEncryptedTokenStore&gt;();
+            
+            // 使用存储（加密/解密完全透明）
+            var store = serviceProvider.GetRequiredService&lt;IEncryptedTokenStore&gt;();
+            await store.SetAccessTokenAsync("TenantAccessToken", "sensitive_token", 3600);
+            var token = await store.GetAccessTokenAsync("TenantAccessToken"); // 自动解密返回
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryEncryptedTokenStore.#ctor(Mud.HttpUtils.IEncryptionProvider)">
+            <summary>
+            初始化 <see cref="T:Mud.HttpUtils.MemoryEncryptedTokenStore"/> 类的新实例。
+            </summary>
+            <param name="encryptionProvider">加密提供程序，用于令牌的加密和解密。</param>
+            <exception cref="T:System.ArgumentNullException">当 <paramref name="encryptionProvider"/> 为 null 时抛出。</exception>
+        </member>
+        <member name="P:Mud.HttpUtils.MemoryEncryptedTokenStore.IsEncryptionEnabled">
+            <summary>
+            获取一个值，指示此存储实例是否已启用加密。
+            </summary>
+            <value>始终返回 <c>true</c>。</value>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryEncryptedTokenStore.GetAccessTokenAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步获取指定令牌类型的访问令牌（自动解密）。
+            </summary>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>解密后的访问令牌字符串，如果不存在或已过期则返回 null。</returns>
+            <remarks>
+            此方法先从基类获取加密后的令牌，然后使用 <see cref="T:Mud.HttpUtils.IEncryptionProvider"/> 进行解密。
+            如果存储中不存在该令牌，则直接返回 null 而不进行解密操作。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryEncryptedTokenStore.SetAccessTokenAsync(System.String,System.String,System.Int64,System.Threading.CancellationToken)">
+            <summary>
+            异步保存指定令牌类型的访问令牌（自动加密）。
+            </summary>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="accessToken">访问令牌（明文）。</param>
+            <param name="expiresInSeconds">令牌有效时长（秒）。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <remarks>
+            保存前会使用 <see cref="T:Mud.HttpUtils.IEncryptionProvider"/> 对令牌进行加密，
+            然后将加密后的数据存入基类存储。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryEncryptedTokenStore.GetRefreshTokenAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步获取指定令牌类型的刷新令牌（自动解密）。
+            </summary>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>解密后的刷新令牌字符串，如果不存在则返回 null。</returns>
+            <remarks>
+            此方法先从基类获取加密后的刷新令牌，然后使用 <see cref="T:Mud.HttpUtils.IEncryptionProvider"/> 进行解密。
+            刷新令牌没有过期时间检查，只要存在就会尝试解密并返回。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryEncryptedTokenStore.SetRefreshTokenAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步保存指定令牌类型的刷新令牌（自动加密）。
+            </summary>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="refreshToken">刷新令牌（明文）。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <remarks>
+            保存前会使用 <see cref="T:Mud.HttpUtils.IEncryptionProvider"/> 对刷新令牌进行加密，
+            然后将加密后的数据存入基类存储。
+            </remarks>
+        </member>
+        <member name="T:Mud.HttpUtils.MemoryTokenStore">
+            <summary>
+            基于内存的令牌存储实现，使用 <see cref="!:ConcurrentDictionary"/> 实现线程安全的令牌管理。
+            </summary>
+            <remarks>
+            <para>
+            此类提供 <see cref="T:Mud.HttpUtils.ITokenStore"/> 接口的内存存储实现，适用于单实例应用或开发测试环境。
+            令牌数据存储在内存中，应用重启后数据将丢失。
+            </para>
+            <para>
+            实现特点：
+            <list type="bullet">
+              <item>线程安全：使用 <see cref="!:ConcurrentDictionary"/> 确保并发访问安全</item>
+              <item>过期检查：获取令牌时自动验证过期时间，过期令牌视为不存在</item>
+              <item>刷新令牌保留：设置访问令牌时自动保留已有的刷新令牌</item>
+              <item>大小写不敏感：令牌类型比较不区分大小写</item>
+            </list>
+            </para>
+            </remarks>
+            <example>
+            <code>
+            // 注册到依赖注入容器
+            services.AddSingleton&lt;ITokenStore, MemoryTokenStore&gt;();
+            
+            // 使用存储
+            var store = serviceProvider.GetRequiredService&lt;ITokenStore&gt;();
+            await store.SetAccessTokenAsync("TenantAccessToken", "access_token_value", 3600);
+            var token = await store.GetAccessTokenAsync("TenantAccessToken");
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryTokenStore.GetAccessTokenAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步获取指定令牌类型的访问令牌。
+            </summary>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>访问令牌字符串，如果不存在或已过期则返回 null。</returns>
+            <remarks>
+            此方法会自动检查令牌的过期时间，如果令牌已过期则返回 null 并从存储中移除。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryTokenStore.SetAccessTokenAsync(System.String,System.String,System.Int64,System.Threading.CancellationToken)">
+            <summary>
+            异步保存指定令牌类型的访问令牌。
+            </summary>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="accessToken">访问令牌。</param>
+            <param name="expiresInSeconds">令牌有效时长（秒）。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <remarks>
+            保存访问令牌时会自动保留该令牌类型已有的刷新令牌（如果存在）。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryTokenStore.GetRefreshTokenAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步获取指定令牌类型的刷新令牌。
+            </summary>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>刷新令牌字符串，如果不存在则返回 null。</returns>
+            <remarks>
+            刷新令牌没有过期时间检查，只要存在就会返回。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryTokenStore.SetRefreshTokenAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步保存指定令牌类型的刷新令牌。
+            </summary>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="refreshToken">刷新令牌。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <remarks>
+            如果该令牌类型已存在记录，则会更新其刷新令牌字段，保留其他字段不变。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryTokenStore.RemoveAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步移除指定令牌类型的所有令牌数据。
+            </summary>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <remarks>
+            移除操作会删除该令牌类型的访问令牌、刷新令牌及过期时间信息。
+            </remarks>
+        </member>
+        <member name="T:Mud.HttpUtils.MemoryTokenStore.TokenEntry">
+            <summary>
+            令牌条目内部类，用于存储单个令牌类型的完整信息。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.MemoryTokenStore.TokenEntry.AccessToken">
+            <summary>
+            获取或设置访问令牌。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.MemoryTokenStore.TokenEntry.RefreshToken">
+            <summary>
+            获取或设置刷新令牌。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.MemoryTokenStore.TokenEntry.ExpiresAt">
+            <summary>
+            获取或设置访问令牌的过期时间。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.MemoryUserTokenStore">
+            <summary>
+            基于内存的用户级令牌存储实现，支持按用户标识隔离令牌数据。
+            </summary>
+            <remarks>
+            <para>
+            此类继承 <see cref="T:Mud.HttpUtils.MemoryTokenStore"/> 并实现 <see cref="T:Mud.HttpUtils.IUserTokenStore"/> 接口，
+            提供按用户 ID 隔离的令牌存储能力。每个用户拥有独立的令牌存储空间，
+            不同用户的同名令牌类型互不干扰。
+            </para>
+            <para>
+            实现特点：
+            <list type="bullet">
+              <item>用户隔离：每个用户的令牌存储在独立的字典中</item>
+              <item>线程安全：使用嵌套的 <see cref="!:ConcurrentDictionary"/> 确保并发访问安全</item>
+              <item>过期检查：获取令牌时自动验证过期时间</item>
+              <item>基类方法禁用：无用户 ID 的基类方法会抛出 <see cref="T:System.NotSupportedException"/></item>
+            </list>
+            </para>
+            <para>
+            注意：此类不支持无用户 ID 的令牌操作，所有基类方法（如 <see cref="M:Mud.HttpUtils.MemoryUserTokenStore.GetAccessTokenAsync(System.String,System.Threading.CancellationToken)"/>）
+            都会抛出异常。请始终使用带 <c>userId</c> 参数的重载方法。
+            </para>
+            </remarks>
+            <example>
+            <code>
+            // 注册到依赖注入容器
+            services.AddSingleton&lt;IUserTokenStore, MemoryUserTokenStore&gt;();
+            
+            // 使用存储
+            var store = serviceProvider.GetRequiredService&lt;IUserTokenStore&gt;();
+            await store.SetAccessTokenAsync("user123", "UserAccessToken", "access_token", 3600);
+            var token = await store.GetAccessTokenAsync("user123", "UserAccessToken");
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryUserTokenStore.GetAccessTokenAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            获取指定令牌类型的访问令牌（不支持，请使用带 userId 的重载）。
+            </summary>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>此方法始终抛出 <see cref="T:System.NotSupportedException"/>。</returns>
+            <exception cref="T:System.NotSupportedException">始终抛出，提示使用带 userId 参数的重载。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryUserTokenStore.SetAccessTokenAsync(System.String,System.String,System.Int64,System.Threading.CancellationToken)">
+            <summary>
+            保存指定令牌类型的访问令牌（不支持，请使用带 userId 的重载）。
+            </summary>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="accessToken">访问令牌。</param>
+            <param name="expiresInSeconds">令牌有效时长（秒）。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>此方法始终抛出 <see cref="T:System.NotSupportedException"/>。</returns>
+            <exception cref="T:System.NotSupportedException">始终抛出，提示使用带 userId 参数的重载。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryUserTokenStore.GetRefreshTokenAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            获取指定令牌类型的刷新令牌（不支持，请使用带 userId 的重载）。
+            </summary>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>此方法始终抛出 <see cref="T:System.NotSupportedException"/>。</returns>
+            <exception cref="T:System.NotSupportedException">始终抛出，提示使用带 userId 参数的重载。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryUserTokenStore.SetRefreshTokenAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            保存指定令牌类型的刷新令牌（不支持，请使用带 userId 的重载）。
+            </summary>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="refreshToken">刷新令牌。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>此方法始终抛出 <see cref="T:System.NotSupportedException"/>。</returns>
+            <exception cref="T:System.NotSupportedException">始终抛出，提示使用带 userId 参数的重载。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryUserTokenStore.RemoveAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            移除指定令牌类型的所有令牌数据（不支持，请使用带 userId 的重载）。
+            </summary>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>此方法始终抛出 <see cref="T:System.NotSupportedException"/>。</returns>
+            <exception cref="T:System.NotSupportedException">始终抛出，提示使用带 userId 参数的重载。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryUserTokenStore.GetAccessTokenAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步获取指定用户和令牌类型的访问令牌。
+            </summary>
+            <param name="userId">用户唯一标识符。</param>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>访问令牌字符串，如果不存在或已过期则返回 null。</returns>
+            <remarks>
+            此方法会自动检查令牌的过期时间，如果令牌已过期则返回 null。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryUserTokenStore.SetAccessTokenAsync(System.String,System.String,System.String,System.Int64,System.Threading.CancellationToken)">
+            <summary>
+            异步保存指定用户和令牌类型的访问令牌。
+            </summary>
+            <param name="userId">用户唯一标识符。</param>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="accessToken">访问令牌。</param>
+            <param name="expiresInSeconds">令牌有效时长（秒）。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <remarks>
+            保存访问令牌时会自动保留该用户该令牌类型已有的刷新令牌（如果存在）。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryUserTokenStore.GetRefreshTokenAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步获取指定用户和令牌类型的刷新令牌。
+            </summary>
+            <param name="userId">用户唯一标识符。</param>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>刷新令牌字符串，如果不存在则返回 null。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryUserTokenStore.SetRefreshTokenAsync(System.String,System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步保存指定用户和令牌类型的刷新令牌。
+            </summary>
+            <param name="userId">用户唯一标识符。</param>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="refreshToken">刷新令牌。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <remarks>
+            如果该用户该令牌类型已存在记录，则会更新其刷新令牌字段，保留其他字段不变。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryUserTokenStore.RemoveAsync(System.String,System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步移除指定用户和令牌类型的所有令牌数据。
+            </summary>
+            <param name="userId">用户唯一标识符。</param>
+            <param name="tokenType">令牌类型标识符。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <remarks>
+            移除操作会删除该用户该令牌类型的访问令牌、刷新令牌及过期时间信息。
+            </remarks>
+        </member>
         <member name="T:Mud.HttpUtils.OAuth2Options">
             <summary>
             OAuth2 配置选项。
@@ -1867,6 +2342,184 @@
             <summary>
             释放资源。
             </summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.TokenPattern_0">
+            <summary>Custom <see cref="T:System.Text.RegularExpressions.Regex"/>-derived type for the TokenPattern method.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.TokenPattern_0.Instance">
+            <summary>Cached, thread-safe singleton instance.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.TokenPattern_0.#ctor">
+            <summary>Initializes the instance.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.TokenPattern_0.RunnerFactory">
+            <summary>Provides a factory for creating <see cref="T:System.Text.RegularExpressions.RegexRunner"/> instances to be used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.TokenPattern_0.RunnerFactory.CreateInstance">
+            <summary>Creates an instance of a <see cref="T:System.Text.RegularExpressions.RegexRunner"/> used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.TokenPattern_0.RunnerFactory.Runner">
+            <summary>Provides the runner that contains the custom logic implementing the specified regular expression.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.TokenPattern_0.RunnerFactory.Runner.Scan(System.ReadOnlySpan{System.Char})">
+            <summary>Scan the <paramref name="inputSpan"/> starting from base.runtextstart for the next match.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.TokenPattern_0.RunnerFactory.Runner.TryFindNextPossibleStartingPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Search <paramref name="inputSpan"/> starting from base.runtextpos for the next location a match could possibly start.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if a possible match was found; false if no more matches are possible.</returns>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.TokenPattern_0.RunnerFactory.Runner.TryMatchAtCurrentPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Determine whether <paramref name="inputSpan"/> at base.runtextpos is a match for the regular expression.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if the regular expression matches at the current position; otherwise, false.</returns>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1">
+            <summary>Custom <see cref="T:System.Text.RegularExpressions.Regex"/>-derived type for the SensitiveKeyValuePattern method.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.Instance">
+            <summary>Cached, thread-safe singleton instance.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.#ctor">
+            <summary>Initializes the instance.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.RunnerFactory">
+            <summary>Provides a factory for creating <see cref="T:System.Text.RegularExpressions.RegexRunner"/> instances to be used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.RunnerFactory.CreateInstance">
+            <summary>Creates an instance of a <see cref="T:System.Text.RegularExpressions.RegexRunner"/> used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.RunnerFactory.Runner">
+            <summary>Provides the runner that contains the custom logic implementing the specified regular expression.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.RunnerFactory.Runner.Scan(System.ReadOnlySpan{System.Char})">
+            <summary>Scan the <paramref name="inputSpan"/> starting from base.runtextstart for the next match.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.RunnerFactory.Runner.TryFindNextPossibleStartingPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Search <paramref name="inputSpan"/> starting from base.runtextpos for the next location a match could possibly start.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if a possible match was found; false if no more matches are possible.</returns>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.SensitiveKeyValuePattern_1.RunnerFactory.Runner.TryMatchAtCurrentPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Determine whether <paramref name="inputSpan"/> at base.runtextpos is a match for the regular expression.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if the regular expression matches at the current position; otherwise, false.</returns>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.PhonePattern_2">
+            <summary>Custom <see cref="T:System.Text.RegularExpressions.Regex"/>-derived type for the PhonePattern method.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.PhonePattern_2.Instance">
+            <summary>Cached, thread-safe singleton instance.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.PhonePattern_2.#ctor">
+            <summary>Initializes the instance.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.PhonePattern_2.RunnerFactory">
+            <summary>Provides a factory for creating <see cref="T:System.Text.RegularExpressions.RegexRunner"/> instances to be used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.PhonePattern_2.RunnerFactory.CreateInstance">
+            <summary>Creates an instance of a <see cref="T:System.Text.RegularExpressions.RegexRunner"/> used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.PhonePattern_2.RunnerFactory.Runner">
+            <summary>Provides the runner that contains the custom logic implementing the specified regular expression.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.PhonePattern_2.RunnerFactory.Runner.Scan(System.ReadOnlySpan{System.Char})">
+            <summary>Scan the <paramref name="inputSpan"/> starting from base.runtextstart for the next match.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.PhonePattern_2.RunnerFactory.Runner.TryFindNextPossibleStartingPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Search <paramref name="inputSpan"/> starting from base.runtextpos for the next location a match could possibly start.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if a possible match was found; false if no more matches are possible.</returns>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.PhonePattern_2.RunnerFactory.Runner.TryMatchAtCurrentPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Determine whether <paramref name="inputSpan"/> at base.runtextpos is a match for the regular expression.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if the regular expression matches at the current position; otherwise, false.</returns>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.EmailPattern_3">
+            <summary>Custom <see cref="T:System.Text.RegularExpressions.Regex"/>-derived type for the EmailPattern method.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.EmailPattern_3.Instance">
+            <summary>Cached, thread-safe singleton instance.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.EmailPattern_3.#ctor">
+            <summary>Initializes the instance.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.EmailPattern_3.RunnerFactory">
+            <summary>Provides a factory for creating <see cref="T:System.Text.RegularExpressions.RegexRunner"/> instances to be used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.EmailPattern_3.RunnerFactory.CreateInstance">
+            <summary>Creates an instance of a <see cref="T:System.Text.RegularExpressions.RegexRunner"/> used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.EmailPattern_3.RunnerFactory.Runner">
+            <summary>Provides the runner that contains the custom logic implementing the specified regular expression.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.EmailPattern_3.RunnerFactory.Runner.Scan(System.ReadOnlySpan{System.Char})">
+            <summary>Scan the <paramref name="inputSpan"/> starting from base.runtextstart for the next match.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.EmailPattern_3.RunnerFactory.Runner.TryFindNextPossibleStartingPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Search <paramref name="inputSpan"/> starting from base.runtextpos for the next location a match could possibly start.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if a possible match was found; false if no more matches are possible.</returns>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.EmailPattern_3.RunnerFactory.Runner.TryMatchAtCurrentPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Determine whether <paramref name="inputSpan"/> at base.runtextpos is a match for the regular expression.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if the regular expression matches at the current position; otherwise, false.</returns>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.IdCardPattern_4">
+            <summary>Custom <see cref="T:System.Text.RegularExpressions.Regex"/>-derived type for the IdCardPattern method.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.IdCardPattern_4.Instance">
+            <summary>Cached, thread-safe singleton instance.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.IdCardPattern_4.#ctor">
+            <summary>Initializes the instance.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.IdCardPattern_4.RunnerFactory">
+            <summary>Provides a factory for creating <see cref="T:System.Text.RegularExpressions.RegexRunner"/> instances to be used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.IdCardPattern_4.RunnerFactory.CreateInstance">
+            <summary>Creates an instance of a <see cref="T:System.Text.RegularExpressions.RegexRunner"/> used by methods on <see cref="T:System.Text.RegularExpressions.Regex"/>.</summary>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.IdCardPattern_4.RunnerFactory.Runner">
+            <summary>Provides the runner that contains the custom logic implementing the specified regular expression.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.IdCardPattern_4.RunnerFactory.Runner.Scan(System.ReadOnlySpan{System.Char})">
+            <summary>Scan the <paramref name="inputSpan"/> starting from base.runtextstart for the next match.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.IdCardPattern_4.RunnerFactory.Runner.TryFindNextPossibleStartingPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Search <paramref name="inputSpan"/> starting from base.runtextpos for the next location a match could possibly start.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if a possible match was found; false if no more matches are possible.</returns>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.IdCardPattern_4.RunnerFactory.Runner.TryMatchAtCurrentPosition(System.ReadOnlySpan{System.Char})">
+            <summary>Determine whether <paramref name="inputSpan"/> at base.runtextpos is a match for the regular expression.</summary>
+            <param name="inputSpan">The text being scanned by the regular expression.</param>
+            <returns>true if the regular expression matches at the current position; otherwise, false.</returns>
+        </member>
+        <member name="T:System.Text.RegularExpressions.Generated.Utilities">
+            <summary>Helper methods used by generated <see cref="T:System.Text.RegularExpressions.Regex"/>-derived implementations.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_defaultTimeout">
+            <summary>Default timeout value set in <see cref="T:System.AppContext"/>, or <see cref="F:System.Text.RegularExpressions.Regex.InfiniteMatchTimeout"/> if none was set.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_hasTimeout">
+            <summary>Whether <see cref="F:System.Text.RegularExpressions.Generated.Utilities.s_defaultTimeout"/> is non-infinite.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.Utilities.StackPush(System.Int32[]@,System.Int32@,System.Int32)">
+            <summary>Pushes 1 value onto the backtracking stack.</summary>
+        </member>
+        <member name="M:System.Text.RegularExpressions.Generated.Utilities.StackPush(System.Int32[]@,System.Int32@,System.Int32,System.Int32)">
+            <summary>Pushes 2 values onto the backtracking stack.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_nonAscii_2BDDE98808630E9B520E3AD9F33E4A0D939EAAED4FF3C3CC86415C934044BB2B">
+            <summary>Supports searching for characters in or not in "CKSYcksyK".</summary>
         </member>
     </members>
 </doc>
