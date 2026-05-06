@@ -2,7 +2,8 @@ using System.Reflection;
 
 namespace Mud.HttpUtils.Tests;
 
-public class UrlValidatorTests
+[Collection("UrlValidator Collection")]
+public class UrlValidatorTests : IClassFixture<UrlValidatorFixture>, IDisposable
 {
     private readonly Type _urlValidatorType;
     private readonly MethodInfo _validateUrlMethod;
@@ -12,9 +13,11 @@ public class UrlValidatorTests
     private readonly MethodInfo _addAllowedDomainMethod;
     private readonly MethodInfo _removeAllowedDomainMethod;
     private readonly MethodInfo _clearDnsCacheMethod;
+    private readonly UrlValidatorFixture _fixture;
 
-    public UrlValidatorTests()
+    public UrlValidatorTests(UrlValidatorFixture fixture)
     {
+        _fixture = fixture;
         _urlValidatorType = typeof(HttpClientUtils).Assembly.GetType("Mud.HttpUtils.UrlValidator")!;
         _validateUrlMethod = _urlValidatorType.GetMethod("ValidateUrl", BindingFlags.Public | BindingFlags.Static)!;
         _validateBaseUrlMethod = _urlValidatorType.GetMethod("ValidateBaseUrl", BindingFlags.Public | BindingFlags.Static)!;
@@ -25,6 +28,11 @@ public class UrlValidatorTests
         _clearDnsCacheMethod = _urlValidatorType.GetMethod("ClearDnsCache", BindingFlags.Public | BindingFlags.Static)!;
 
         ResetAllowedDomains();
+    }
+
+    public void Dispose()
+    {
+        _fixture.RestoreDomains();
     }
 
     private void ResetAllowedDomains()

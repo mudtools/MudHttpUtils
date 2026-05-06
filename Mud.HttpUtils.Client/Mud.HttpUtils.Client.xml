@@ -380,43 +380,6 @@
         <member name="P:Mud.HttpUtils.DirectEnhancedHttpClient.EncryptionProvider">
             <inheritdoc/>
         </member>
-        <member name="M:Mud.HttpUtils.DirectEnhancedHttpClient.EncryptContent(System.Object,System.String,Mud.HttpUtils.SerializeType)">
-            <inheritdoc/>
-            <remarks>
-            此方法使用 <see cref="M:Mud.HttpUtils.IEncryptionProvider.Encrypt(System.String)"/> 对序列化后的JSON内容进行加密。
-            如果未配置加密提供器,将抛出 <see cref="T:System.InvalidOperationException"/>。
-            </remarks>
-            <exception cref="T:System.ArgumentNullException"><paramref name="content"/> 为 null。</exception>
-            <exception cref="T:System.ArgumentException"><paramref name="propertyName"/> 为空或 null。</exception>
-            <exception cref="T:System.InvalidOperationException">未配置加密提供器。</exception>
-        </member>
-        <member name="M:Mud.HttpUtils.DirectEnhancedHttpClient.DecryptContent(System.String)">
-            <inheritdoc/>
-            <remarks>
-            此方法使用 <see cref="M:Mud.HttpUtils.IEncryptionProvider.Decrypt(System.String)"/> 对加密内容进行解密。
-            如果输入为空或 null,将返回空字符串。
-            如果未配置加密提供器,将抛出 <see cref="T:System.InvalidOperationException"/>。
-            </remarks>
-            <exception cref="T:System.InvalidOperationException">未配置加密提供器。</exception>
-        </member>
-        <member name="M:Mud.HttpUtils.DirectEnhancedHttpClient.EncryptBytes(System.Byte[])">
-            <inheritdoc/>
-            <remarks>
-            此方法使用 <see cref="M:Mud.HttpUtils.IEncryptionProvider.EncryptBytes(System.Byte[])"/> 对字节数组进行加密。
-            如果未配置加密提供器,将抛出 <see cref="T:System.InvalidOperationException"/>。
-            </remarks>
-            <exception cref="T:System.ArgumentNullException"><paramref name="data"/> 为 null。</exception>
-            <exception cref="T:System.InvalidOperationException">未配置加密提供器。</exception>
-        </member>
-        <member name="M:Mud.HttpUtils.DirectEnhancedHttpClient.DecryptBytes(System.Byte[])">
-            <inheritdoc/>
-            <remarks>
-            此方法使用 <see cref="M:Mud.HttpUtils.IEncryptionProvider.DecryptBytes(System.Byte[])"/> 对加密的字节数组进行解密。
-            如果未配置加密提供器,将抛出 <see cref="T:System.InvalidOperationException"/>。
-            </remarks>
-            <exception cref="T:System.ArgumentNullException"><paramref name="encryptedData"/> 为 null。</exception>
-            <exception cref="T:System.InvalidOperationException">未配置加密提供器。</exception>
-        </member>
         <member name="T:Mud.HttpUtils.EnhancedHttpClient">
              <summary>
              增强型HTTP客户端基类,提供JSON/XML序列化、文件下载、请求/响应拦截器、日志记录等功能。
@@ -695,16 +658,6 @@
             确保HTTP响应状态码表示成功
             </summary>
         </member>
-        <member name="M:Mud.HttpUtils.EnhancedHttpClient.GetJsonSerializerOptions">
-            <summary>
-            获取JSON序列化选项（可被子类重写）
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.EnhancedHttpClient.GetDefaultJsonSerializerOptions">
-            <summary>
-            获取默认的JSON序列化选项
-            </summary>
-        </member>
         <member name="M:Mud.HttpUtils.EnhancedHttpClient.CopyUpToAsync(System.IO.Stream,System.IO.Stream,System.Int32,System.Threading.CancellationToken)">
             <summary>
             从源流复制最多 maxBytes 字节到目标流。
@@ -931,18 +884,6 @@
         </member>
         <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.WithBaseAddress(System.Uri)">
             <inheritdoc />
-        </member>
-        <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.EncryptContent(System.Object,System.String,Mud.HttpUtils.SerializeType)">
-            <inheritdoc/>
-        </member>
-        <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.DecryptContent(System.String)">
-            <inheritdoc/>
-        </member>
-        <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.EncryptBytes(System.Byte[])">
-            <inheritdoc/>
-        </member>
-        <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.DecryptBytes(System.Byte[])">
-            <inheritdoc/>
         </member>
         <member name="M:Mud.HttpUtils.HttpClientResolver.GetClient(System.String)">
             <inheritdoc />
@@ -1369,41 +1310,7 @@
             <param name="services">服务集合。</param>
             <param name="clientName">Named HttpClient 的名称。</param>
             <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
-            <param name="setAsDefault">是否将此客户端设为 IEnhancedHttpClient 的默认实现。在多应用场景下不推荐使用，请改用 <see cref="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddNamedMudHttpClient(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,System.Action{System.Net.Http.HttpClient})"/> 并通过 <see cref="T:Mud.HttpUtils.IHttpClientResolver"/> 按名称获取客户端。</param>
-            <returns><see cref="T:Microsoft.Extensions.DependencyInjection.IHttpClientBuilder"/>（链式调用）。</returns>
-            <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
-        </member>
-        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddNamedMudHttpClient(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,System.Action{System.Net.Http.HttpClient})">
-            <summary>
-            添加命名 HTTP 客户端，推荐在多应用场景下使用。
-            客户端应通过 <see cref="T:Mud.HttpUtils.IHttpClientResolver"/> 按名称获取，而不是直接注入 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/>。
-            </summary>
-            <param name="services">服务集合。</param>
-            <param name="clientName">Named HttpClient 的名称。</param>
-            <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
-            <returns><see cref="T:Microsoft.Extensions.DependencyInjection.IHttpClientBuilder"/>（链式调用）。</returns>
-            <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
-        </member>
-        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddNamedMudHttpClient(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,System.Action{Mud.HttpUtils.AesEncryptionOptions},System.Action{System.Net.Http.HttpClient})">
-            <summary>
-            添加命名 HTTP 客户端，同时配置 AES 加密选项。推荐在多应用场景下使用。
-            客户端应通过 <see cref="T:Mud.HttpUtils.IHttpClientResolver"/> 按名称获取，而不是直接注入 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/>。
-            </summary>
-            <param name="services">服务集合。</param>
-            <param name="clientName">Named HttpClient 的名称。</param>
-            <param name="configureEncryption">配置 AES 加密选项的委托。</param>
-            <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
-            <returns><see cref="T:Microsoft.Extensions.DependencyInjection.IHttpClientBuilder"/>（链式调用）。</returns>
-            <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
-        </member>
-        <member name="M:Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddNamedMudHttpClient(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,System.String)">
-            <summary>
-            添加命名 HTTP 客户端，同时配置 HttpClient 的基础地址。推荐在多应用场景下使用。
-            客户端应通过 <see cref="T:Mud.HttpUtils.IHttpClientResolver"/> 按名称获取，而不是直接注入 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/>。
-            </summary>
-            <param name="services">服务集合。</param>
-            <param name="clientName">Named HttpClient 的名称。</param>
-            <param name="baseAddress">HttpClient 的基础地址。</param>
+            <param name="setAsDefault">是否将此客户端设为 IEnhancedHttpClient 的默认实现。</param>
             <returns><see cref="T:Microsoft.Extensions.DependencyInjection.IHttpClientBuilder"/>（链式调用）。</returns>
             <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
         </member>

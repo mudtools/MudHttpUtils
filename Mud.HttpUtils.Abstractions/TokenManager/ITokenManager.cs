@@ -10,6 +10,14 @@ namespace Mud.HttpUtils;
 /// <summary>
 /// 令牌管理器接口，提供获取访问令牌的基本功能。
 /// </summary>
+/// <remarks>
+/// <b>推荐 DI 生命周期：Singleton。</b>
+/// <para>
+/// <see cref="ITokenManager"/> 的实现类内部维护令牌缓存和并发锁（如 <see cref="TokenManagerBase"/> 使用 SemaphoreSlim），
+/// 应注册为 Singleton 以确保全局共享缓存，避免重复刷新令牌。如果注册为 Scoped 或 Transient，
+/// 每个请求将持有独立的缓存实例，导致并发安全机制失效和冗余的令牌刷新请求。
+/// </para>
+/// </remarks>
 public interface ITokenManager
 {
     /// <summary>

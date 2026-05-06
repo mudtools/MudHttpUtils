@@ -1631,6 +1631,14 @@
             <summary>
             令牌管理器接口，提供获取访问令牌的基本功能。
             </summary>
+            <remarks>
+            <b>推荐 DI 生命周期：Singleton。</b>
+            <para>
+            <see cref="T:Mud.HttpUtils.ITokenManager"/> 的实现类内部维护令牌缓存和并发锁（如 <see cref="T:Mud.HttpUtils.TokenManagerBase"/> 使用 SemaphoreSlim），
+            应注册为 Singleton 以确保全局共享缓存，避免重复刷新令牌。如果注册为 Scoped 或 Transient，
+            每个请求将持有独立的缓存实例，导致并发安全机制失效和冗余的令牌刷新请求。
+            </para>
+            </remarks>
         </member>
         <member name="M:Mud.HttpUtils.ITokenManager.GetTokenAsync(System.Threading.CancellationToken)">
             <summary>
@@ -1775,6 +1783,10 @@
             <summary>
             用户令牌管理器接口，提供用户级别的令牌管理功能。
             </summary>
+            <remarks>
+            <b>推荐 DI 生命周期：Singleton。</b>与 <see cref="T:Mud.HttpUtils.ITokenManager"/> 相同，
+            用户令牌管理器内部维护按 userId 隔离的令牌缓存和并发锁，应注册为 Singleton。
+            </remarks>
         </member>
         <member name="M:Mud.HttpUtils.IUserTokenManager.GetTokenAsync(System.String,System.Threading.CancellationToken)">
             <summary>

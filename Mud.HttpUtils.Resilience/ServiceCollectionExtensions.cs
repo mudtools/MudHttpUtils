@@ -44,6 +44,14 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
+    private static IEnhancedHttpClient CreateResilientDecorator(IEnhancedHttpClient inner, IServiceProvider sp)
+    {
+        var policyProvider = sp.GetRequiredService<IResiliencePolicyProvider>();
+        var logger = sp.GetService<ILogger<ResilientHttpClient>>();
+        var options = sp.GetService<IOptions<ResilienceOptions>>()?.Value;
+        return new ResilientHttpClient(inner, policyProvider, logger, options);
+    }
+
     public static IServiceCollection AddMudHttpResilienceDecorator(
         this IServiceCollection services,
         Action<ResilienceOptions>? configureOptions = null)
@@ -55,9 +63,9 @@ public static class ServiceCollectionExtensions
 
         DecorateFactoryEntries(services);
 #if NET8_0_OR_GREATER
-        DecorateKeyedServices<IEnhancedHttpClient>(services, CreateResilientClient);
+        DecorateKeyedServices<IEnhancedHttpClient>(services, CreateResilientDecorator);
 #endif
-        DecorateService<IEnhancedHttpClient>(services, CreateResilientClient);
+        DecorateService<IEnhancedHttpClient>(services, CreateResilientDecorator);
 
         return services;
     }
@@ -74,9 +82,9 @@ public static class ServiceCollectionExtensions
 
         DecorateFactoryEntries(services);
 #if NET8_0_OR_GREATER
-        DecorateKeyedServices<IEnhancedHttpClient>(services, CreateResilientClient);
+        DecorateKeyedServices<IEnhancedHttpClient>(services, CreateResilientDecorator);
 #endif
-        DecorateService<IEnhancedHttpClient>(services, CreateResilientClient);
+        DecorateService<IEnhancedHttpClient>(services, CreateResilientDecorator);
 
         return services;
     }
@@ -204,7 +212,7 @@ public static class ServiceCollectionExtensions
                 options.ClientFactories[key] = sp =>
                 {
                     var inner = originalFactory(sp);
-                    return CreateResilientClient(inner, sp);
+                    return CreateResilientDecorator(inner, sp);
                 };
             }
         }

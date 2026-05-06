@@ -36,21 +36,22 @@ internal class FormContentGenerator : TransitiveCodeGenerator
     /// <inheritdoc/>
     public override void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        // 查找标记了[FormContent]的类声明
-        var formContentClasses = GetClassDeclarationProvider<ClassDeclarationSyntax>(context, [FormContentAttributeName]);
+        var formContentClasses = context.SyntaxProvider.ForAttributeWithMetadataName(
+            "Mud.HttpUtils.Attributes.FormContentAttribute",
+            predicate: static (node, _) => node is ClassDeclarationSyntax,
+            transform: static (ctx, _) => ctx);
 
-        // 获取编译信息和分析器配置选项
+        var collected = formContentClasses.Collect();
+
         var compilationWithOptions = context.CompilationProvider
             .Combine(context.AnalyzerConfigOptionsProvider);
 
-        // 组合所有需要的数据：编译信息、类声明、配置选项
-        var completeDataProvider = compilationWithOptions.Combine(formContentClasses);
+        var completeDataProvider = compilationWithOptions.Combine(collected);
 
-        // 注册源代码生成器
         context.RegisterSourceOutput(completeDataProvider,
             (ctx, provider) => ExecuteGenerator(
                 compilation: provider.Left.Left,
-                formContentClasses: provider.Right.Where(c => c != null).ToImmutableArray()!,
+                formContentContexts: provider.Right,
                 context: ctx));
     }
 
@@ -62,22 +63,19 @@ internal class FormContentGenerator : TransitiveCodeGenerator
     /// <param name="context">源代码生成上下文</param>
     private void ExecuteGenerator(
         Compilation compilation,
-        ImmutableArray<ClassDeclarationSyntax> formContentClasses,
+        ImmutableArray<GeneratorAttributeSyntaxContext> formContentContexts,
         SourceProductionContext context)
     {
-        if (formContentClasses.IsDefaultOrEmpty)
+        if (formContentContexts.IsDefaultOrEmpty)
             return;
 
-        foreach (var classDecl in formContentClasses)
+        foreach (var attrCtx in formContentContexts)
         {
-            if (classDecl == null)
-                continue;
+            var classDecl = (ClassDeclarationSyntax)attrCtx.TargetNode;
+            var classSymbol = (INamedTypeSymbol)attrCtx.TargetSymbol;
 
             try
             {
-                var semanticModel = SemanticModelCache.GetOrCreate(compilation, classDecl.SyntaxTree);
-                var classSymbol = semanticModel.GetDeclaredSymbol(classDecl);
-
                 if (classSymbol == null)
                 {
                     context.ReportDiagnostic(Diagnostic.Create(
@@ -103,9 +101,6 @@ internal class FormContentGenerator : TransitiveCodeGenerator
 
                 if (!string.IsNullOrEmpty(generatedCode))
                 {
-                    //var namespacePart = classSymbol.ContainingNamespace?.IsGlobalNamespace == true
-                    //    ? "global"
-                    //    : classSymbol.ContainingNamespace?.ToDisplayString().Replace(".", "_");
                     var fileName = $"{classSymbol.Name}.g.cs";
                     context.AddSource(fileName, generatedCode);
                 }

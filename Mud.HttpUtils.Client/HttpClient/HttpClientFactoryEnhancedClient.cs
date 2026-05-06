@@ -6,7 +6,6 @@
 // -----------------------------------------------------------------------
 
 using Microsoft.Extensions.Logging;
-using System.Text.Json;
 
 namespace Mud.HttpUtils;
 
@@ -117,78 +116,4 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
             _sensitiveDataMasker);
     }
 
-    /// <inheritdoc/>
-    public override string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json)
-    {
-        if (content == null)
-            throw new ArgumentNullException(nameof(content));
-        if (string.IsNullOrEmpty(propertyName))
-            throw new ArgumentException("属性名不能为空", nameof(propertyName));
-
-        if (_encryptionProvider == null)
-            throw new InvalidOperationException(
-                "未配置加密提供器。请通过 AddMudHttpClient 注册时配置 AesEncryptionOptions，" +
-                "或注册自定义 IEncryptionProvider 实现。");
-
-        string serializedContent;
-        if (serializeType == SerializeType.Xml)
-        {
-            serializedContent = XmlSerialize.Serialize(content);
-        }
-        else
-        {
-            serializedContent = JsonSerializer.Serialize(content);
-        }
-
-        var encryptedData = _encryptionProvider.Encrypt(serializedContent);
-
-        var result = new Dictionary<string, object>
-        {
-            [propertyName] = encryptedData
-        };
-
-        return JsonSerializer.Serialize(result);
-    }
-
-    /// <inheritdoc/>
-    public override string DecryptContent(string encryptedContent)
-    {
-        if (string.IsNullOrEmpty(encryptedContent))
-            return string.Empty;
-
-        if (_encryptionProvider == null)
-            throw new InvalidOperationException(
-                "未配置加密提供器。请通过 AddMudHttpClient 注册时配置 AesEncryptionOptions，" +
-                "或注册自定义 IEncryptionProvider 实现。");
-
-        return _encryptionProvider.Decrypt(encryptedContent);
-    }
-
-    /// <inheritdoc/>
-    public override byte[] EncryptBytes(byte[] data)
-    {
-        if (data == null)
-            throw new ArgumentNullException(nameof(data));
-
-        if (_encryptionProvider == null)
-            throw new InvalidOperationException(
-                "未配置加密提供器。请通过 AddMudHttpClient 注册时配置 AesEncryptionOptions，" +
-                "或注册自定义 IEncryptionProvider 实现。");
-
-        return _encryptionProvider.EncryptBytes(data);
-    }
-
-    /// <inheritdoc/>
-    public override byte[] DecryptBytes(byte[] encryptedData)
-    {
-        if (encryptedData == null)
-            throw new ArgumentNullException(nameof(encryptedData));
-
-        if (_encryptionProvider == null)
-            throw new InvalidOperationException(
-                "未配置加密提供器。请通过 AddMudHttpClient 注册时配置 AesEncryptionOptions，" +
-                "或注册自定义 IEncryptionProvider 实现。");
-
-        return _encryptionProvider.DecryptBytes(encryptedData);
-    }
 }

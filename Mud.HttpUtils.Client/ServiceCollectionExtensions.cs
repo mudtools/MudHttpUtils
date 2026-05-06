@@ -29,7 +29,7 @@ public static class HttpClientServiceCollectionExtensions
     /// <param name="services">服务集合。</param>
     /// <param name="clientName">Named HttpClient 的名称。</param>
     /// <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
-    /// <param name="setAsDefault">是否将此客户端设为 IEnhancedHttpClient 的默认实现。在多应用场景下不推荐使用，请改用 <see cref="AddNamedMudHttpClient"/> 并通过 <see cref="IHttpClientResolver"/> 按名称获取客户端。</param>
+    /// <param name="setAsDefault">是否将此客户端设为 IEnhancedHttpClient 的默认实现。</param>
     /// <returns><see cref="IHttpClientBuilder"/>（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
     public static IHttpClientBuilder AddMudHttpClient(
@@ -47,91 +47,12 @@ public static class HttpClientServiceCollectionExtensions
             ? services.AddHttpClient(clientName, configureHttpClient)
             : services.AddHttpClient(clientName);
 
+        services.TryAddSingleton<IHttpResponseCache>(sp =>
+            new MemoryHttpResponseCache(1000, 60));
+
         RegisterNamedClient(services, clientName, setAsDefault);
 
         return httpClientBuilder;
-    }
-
-    /// <summary>
-    /// 添加命名 HTTP 客户端，推荐在多应用场景下使用。
-    /// 客户端应通过 <see cref="IHttpClientResolver"/> 按名称获取，而不是直接注入 <see cref="IEnhancedHttpClient"/>。
-    /// </summary>
-    /// <param name="services">服务集合。</param>
-    /// <param name="clientName">Named HttpClient 的名称。</param>
-    /// <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
-    /// <returns><see cref="IHttpClientBuilder"/>（链式调用）。</returns>
-    /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
-    public static IHttpClientBuilder AddNamedMudHttpClient(
-        this IServiceCollection services,
-        string clientName,
-        Action<HttpClient>? configureHttpClient = null)
-    {
-        if (services == null)
-            throw new ArgumentNullException(nameof(services));
-        if (string.IsNullOrWhiteSpace(clientName))
-            throw new ArgumentNullException(nameof(clientName));
-
-        var httpClientBuilder = configureHttpClient != null
-            ? services.AddHttpClient(clientName, configureHttpClient)
-            : services.AddHttpClient(clientName);
-
-        RegisterNamedClient(services, clientName, setAsDefault: false);
-
-        return httpClientBuilder;
-    }
-
-    /// <summary>
-    /// 添加命名 HTTP 客户端，同时配置 AES 加密选项。推荐在多应用场景下使用。
-    /// 客户端应通过 <see cref="IHttpClientResolver"/> 按名称获取，而不是直接注入 <see cref="IEnhancedHttpClient"/>。
-    /// </summary>
-    /// <param name="services">服务集合。</param>
-    /// <param name="clientName">Named HttpClient 的名称。</param>
-    /// <param name="configureEncryption">配置 AES 加密选项的委托。</param>
-    /// <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
-    /// <returns><see cref="IHttpClientBuilder"/>（链式调用）。</returns>
-    /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
-    public static IHttpClientBuilder AddNamedMudHttpClient(
-        this IServiceCollection services,
-        string clientName,
-        Action<AesEncryptionOptions> configureEncryption,
-        Action<HttpClient>? configureHttpClient = null)
-    {
-        if (services == null)
-            throw new ArgumentNullException(nameof(services));
-        if (configureEncryption == null)
-            throw new ArgumentNullException(nameof(configureEncryption));
-
-        services.Configure(configureEncryption);
-        services.TryAddSingleton<IEncryptionProvider, DefaultAesEncryptionProvider>();
-
-        return services.AddNamedMudHttpClient(clientName, configureHttpClient);
-    }
-
-    /// <summary>
-    /// 添加命名 HTTP 客户端，同时配置 HttpClient 的基础地址。推荐在多应用场景下使用。
-    /// 客户端应通过 <see cref="IHttpClientResolver"/> 按名称获取，而不是直接注入 <see cref="IEnhancedHttpClient"/>。
-    /// </summary>
-    /// <param name="services">服务集合。</param>
-    /// <param name="clientName">Named HttpClient 的名称。</param>
-    /// <param name="baseAddress">HttpClient 的基础地址。</param>
-    /// <returns><see cref="IHttpClientBuilder"/>（链式调用）。</returns>
-    /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
-    public static IHttpClientBuilder AddNamedMudHttpClient(
-        this IServiceCollection services,
-        string clientName,
-        string baseAddress)
-    {
-        if (services == null)
-            throw new ArgumentNullException(nameof(services));
-        if (string.IsNullOrWhiteSpace(clientName))
-            throw new ArgumentNullException(nameof(clientName));
-        if (string.IsNullOrWhiteSpace(baseAddress))
-            throw new ArgumentNullException(nameof(baseAddress));
-
-        return services.AddNamedMudHttpClient(clientName, client =>
-        {
-            client.BaseAddress = new Uri(baseAddress);
-        });
     }
 
     private static void RegisterNamedClient(
@@ -163,8 +84,6 @@ public static class HttpClientServiceCollectionExtensions
 
         services.TryAddTransient<IBaseHttpClient>(sp => sp.GetRequiredService<IEnhancedHttpClient>());
         services.TryAddSingleton<IHttpClientResolver, HttpClientResolver>();
-        services.TryAddSingleton<IHttpResponseCache>(sp =>
-            new MemoryHttpResponseCache(1000, 60));
     }
 
     /// <summary>

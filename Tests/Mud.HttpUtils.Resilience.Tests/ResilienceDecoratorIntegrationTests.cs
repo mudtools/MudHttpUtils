@@ -27,7 +27,7 @@ public class ResilienceDecoratorIntegrationTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddNamedMudHttpClient("testClient");
+        services.AddMudHttpClient("testClient");
         services.AddMudHttpResilienceDecorator();
 
         var provider = services.BuildServiceProvider();
@@ -43,8 +43,8 @@ public class ResilienceDecoratorIntegrationTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddNamedMudHttpClient("client1");
-        services.AddNamedMudHttpClient("client2");
+        services.AddMudHttpClient("client1");
+        services.AddMudHttpClient("client2");
         services.AddMudHttpResilienceDecorator();
 
         var provider = services.BuildServiceProvider();
@@ -63,7 +63,7 @@ public class ResilienceDecoratorIntegrationTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddNamedMudHttpClient("testClient");
+        services.AddMudHttpClient("testClient");
 
         var provider = services.BuildServiceProvider();
         var resolver = provider.GetRequiredService<IHttpClientResolver>();
@@ -78,7 +78,7 @@ public class ResilienceDecoratorIntegrationTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddNamedMudHttpClient("testClient");
+        services.AddMudHttpClient("testClient");
         services.AddMudHttpResilienceDecorator(options =>
         {
             options.Retry.Enabled = true;
@@ -111,8 +111,8 @@ public class ResilienceDecoratorIntegrationTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddNamedMudHttpClient("feishu");
-        services.AddNamedMudHttpClient("dingtalk");
+        services.AddMudHttpClient("feishu");
+        services.AddMudHttpClient("dingtalk");
         services.AddMudHttpResilienceDecorator();
 
         var provider = services.BuildServiceProvider();
@@ -144,7 +144,7 @@ public class ResilienceDecoratorIntegrationTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddNamedMudHttpClient("testClient");
+        services.AddMudHttpClient("testClient");
 
         var provider = services.BuildServiceProvider();
         var factory = provider.GetRequiredService<IEnhancedHttpClientFactory>();
@@ -160,7 +160,7 @@ public class ResilienceDecoratorIntegrationTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddNamedMudHttpClient("testClient");
+        services.AddMudHttpClient("testClient");
 
         var provider = services.BuildServiceProvider();
         var factory = provider.GetRequiredService<IEnhancedHttpClientFactory>();
@@ -175,7 +175,7 @@ public class ResilienceDecoratorIntegrationTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddNamedMudHttpClient("testClient");
+        services.AddMudHttpClient("testClient");
         services.AddMudHttpResilienceDecorator();
 
         var provider = services.BuildServiceProvider();
@@ -187,11 +187,11 @@ public class ResilienceDecoratorIntegrationTests
     }
 
     [Fact]
-    public void AddNamedMudHttpClient_WithBaseAddress_ShouldRegisterClient()
+    public void AddMudHttpClient_WithBaseAddress_ShouldRegisterClient()
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddNamedMudHttpClient("testClient", "https://api.example.com");
+        services.AddMudHttpClient("testClient", "https://api.example.com");
 
         var provider = services.BuildServiceProvider();
         var resolver = provider.GetRequiredService<IHttpClientResolver>();
@@ -213,7 +213,7 @@ public class ResilienceDecoratorIntegrationTests
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddNamedMudHttpClient("testClient");
+        services.AddMudHttpClient("testClient");
         services.AddMudHttpResilienceDecorator(config);
 
         var provider = services.BuildServiceProvider();

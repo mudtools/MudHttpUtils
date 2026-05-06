@@ -162,7 +162,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// </summary>
     /// <param name="scopes">令牌作用域数组。</param>
     /// <returns>缓存键字符串。</returns>
-    protected virtual string GetScopeKey(string[]? scopes)
+    protected string GetScopeKey(string[]? scopes)
     {
         if (scopes == null || scopes.Length == 0)
             return DefaultScopeKey;
@@ -214,7 +214,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// 触发令牌刷新失败事件。
     /// </summary>
     /// <param name="e">事件参数。</param>
-    protected virtual void OnRefreshFailed(TokenRefreshFailedEventArgs e)
+    private void OnRefreshFailed(TokenRefreshFailedEventArgs e)
     {
         RefreshFailed?.Invoke(this, e);
     }

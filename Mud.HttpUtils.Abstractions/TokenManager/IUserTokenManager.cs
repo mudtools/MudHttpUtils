@@ -10,6 +10,10 @@ namespace Mud.HttpUtils;
 /// <summary>
 /// 用户令牌管理器接口，提供用户级别的令牌管理功能。
 /// </summary>
+/// <remarks>
+/// <b>推荐 DI 生命周期：Singleton。</b>与 <see cref="ITokenManager"/> 相同，
+/// 用户令牌管理器内部维护按 userId 隔离的令牌缓存和并发锁，应注册为 Singleton。
+/// </remarks>
 public interface IUserTokenManager : ITokenManager, IDisposable
 {
     /// <summary>

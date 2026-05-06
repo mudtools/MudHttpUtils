@@ -117,22 +117,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
         var uri = request.RequestUri?.ToString() ?? "[No URI]";
 
-        try
-        {
-            LogRequestStart("发送JSON请求", uri);
-
-            var result = await SendRequestAsync<TResult>(
+        return await ExecuteWithLoggingAsync(
+            "发送JSON请求", "JSON请求完成", "JSON请求失败", uri,
+            () => SendRequestAsync<TResult>(
                 request,
-                jsonSerializerOptions: (jsonSerializerOptions as JsonSerializerOptions) ?? GetJsonSerializerOptions(),
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            LogRequestComplete("JSON请求完成", uri);
-            return result;
-        }
-        catch (Exception ex) when (LogRequestError("JSON请求失败", uri, ex))
-        {
-            throw;
-        }
+                jsonSerializerOptions: (jsonSerializerOptions as JsonSerializerOptions) ?? s_defaultJsonSerializerOptions,
+                cancellationToken: cancellationToken));
     }
 
     /// <inheritdoc cref="IBaseHttpClient.DownloadAsync"/>
@@ -149,21 +139,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
         var uri = request.RequestUri?.ToString() ?? "[No URI]";
 
-        try
-        {
-            LogRequestStart("下载文件", uri);
-
-            var result = await DownloadFileAsync(
-                request,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            LogRequestComplete("文件下载完成", uri);
-            return result;
-        }
-        catch (Exception ex) when (LogRequestError("文件下载失败", uri, ex))
-        {
-            throw;
-        }
+        return await ExecuteWithLoggingAsync(
+            "下载文件", "文件下载完成", "文件下载失败", uri,
+            () => DownloadFileAsync(request, cancellationToken: cancellationToken));
     }
 
     /// <inheritdoc cref="IBaseHttpClient.DownloadLargeAsync"/>
@@ -189,23 +167,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
         var uri = request.RequestUri?.ToString() ?? "[No URI]";
 
-        try
-        {
-            LogRequestStart($"下载大文件到: {filePath}", uri);
-
-            var fileInfo = await DownloadLargeFileAsync(
-                request,
-                filePath,
-                overwrite: overwrite,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            LogRequestComplete($"大文件下载完成: {filePath}", uri);
-            return fileInfo;
-        }
-        catch (Exception ex) when (LogRequestError($"大文件下载失败: {filePath}", uri, ex))
-        {
-            throw;
-        }
+        return await ExecuteWithLoggingAsync(
+            $"下载大文件到: {filePath}", $"大文件下载完成: {filePath}", $"大文件下载失败: {filePath}", uri,
+            () => DownloadLargeFileAsync(request, filePath, overwrite: overwrite, cancellationToken: cancellationToken));
     }
 
     /// <inheritdoc cref="IBaseHttpClient.SendRawAsync"/>
@@ -222,19 +186,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
         var uri = request.RequestUri?.ToString() ?? "[No URI]";
 
-        try
-        {
-            LogRequestStart("发送原始HTTP请求", uri);
-
-            var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-
-            LogRequestComplete("原始HTTP请求完成", uri);
-            return response;
-        }
-        catch (Exception ex) when (LogRequestError("原始HTTP请求失败", uri, ex))
-        {
-            throw;
-        }
+        return await ExecuteWithLoggingAsync(
+            "发送原始HTTP请求", "原始HTTP请求完成", "原始HTTP请求失败", uri,
+            () => _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken));
     }
 
     /// <inheritdoc cref="IBaseHttpClient.SendStreamAsync"/>
@@ -251,27 +205,21 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
         var uri = request.RequestUri?.ToString() ?? "[No URI]";
 
-        try
-        {
-            LogRequestStart("发送流式HTTP请求", uri);
+        return await ExecuteWithLoggingAsync(
+            "发送流式HTTP请求", "流式HTTP请求完成", "流式HTTP请求失败", uri,
+            async () =>
+            {
+                var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 
-            var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
-
-            await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
+                await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
 
 #if NETSTANDARD2_0
-            var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 #else
-            var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 #endif
-
-            LogRequestComplete("流式HTTP请求完成", uri);
-            return stream;
-        }
-        catch (Exception ex) when (LogRequestError("流式HTTP请求失败", uri, ex))
-        {
-            throw;
-        }
+                return stream;
+            });
     }
 
     public async IAsyncEnumerable<TResult> SendAsAsyncEnumerable<TResult>(
@@ -283,7 +231,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
         var uri = request.RequestUri?.ToString() ?? "[No URI]";
 
-        LogRequestStart("发送流式异步枚举请求", uri);
+        LogOperation("发送流式异步枚举请求", uri);
 
         var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 
@@ -295,7 +243,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 #endif
 
-        var options = (jsonSerializerOptions as JsonSerializerOptions) ?? GetJsonSerializerOptions();
+        var options = (jsonSerializerOptions as JsonSerializerOptions) ?? s_defaultJsonSerializerOptions;
 
         using var reader = new StreamReader(stream);
 
@@ -312,7 +260,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 yield return item;
         }
 
-        LogRequestComplete("流式异步枚举请求完成", uri);
+        LogOperation("流式异步枚举请求完成", uri);
     }
 
     #endregion
@@ -337,22 +285,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
         var uri = request.RequestUri?.ToString() ?? "[No URI]";
 
-        try
-        {
-            LogRequestStart("发送XML请求", uri);
-
-            var result = await SendXmlRequestAsync<TResult>(
-                                request,
-                                encoding,
-                                cancellationToken).ConfigureAwait(false);
-
-            LogRequestComplete("XML请求完成", uri);
-            return result;
-        }
-        catch (Exception ex) when (LogRequestError("XML请求失败", uri, ex))
-        {
-            throw;
-        }
+        return await ExecuteWithLoggingAsync(
+            "发送XML请求", "XML请求完成", "XML请求失败", uri,
+            () => SendXmlRequestAsync<TResult>(request, encoding, cancellationToken));
     }
 
     /// <inheritdoc cref="IXmlHttpClient.PostAsXmlAsync{TRequest,TResult}"/>
@@ -375,25 +310,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         requestUri.ThrowIfNull();
         requestData.ThrowIfNull();
 
-        try
-        {
-            LogRequestStart("发送XML POST请求", requestUri);
-
-            var xmlContent = SerializeToXml(requestData, encoding ?? Encoding.UTF8);
-            using var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
-            {
-                Content = new StringContent(xmlContent, encoding ?? Encoding.UTF8, "application/xml")
-            };
-
-            var result = await SendXmlRequestAsync<TResult>(request, encoding, cancellationToken).ConfigureAwait(false);
-
-            LogRequestComplete("XML POST请求完成", requestUri);
-            return result;
-        }
-        catch (Exception ex) when (LogRequestError("XML POST请求失败", requestUri, ex))
-        {
-            throw;
-        }
+        return await SendXmlWithBodyAsync<TRequest, TResult>(
+            HttpMethod.Post, "发送XML POST请求", "XML POST请求完成", "XML POST请求失败",
+            requestUri, requestData, encoding, cancellationToken);
     }
 
     /// <inheritdoc cref="IXmlHttpClient.PutAsXmlAsync{TRequest,TResult}"/>
@@ -416,25 +335,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         requestUri.ThrowIfNull();
         requestData.ThrowIfNull();
 
-        try
-        {
-            LogRequestStart("发送XML PUT请求", requestUri);
-
-            var xmlContent = SerializeToXml(requestData, encoding ?? Encoding.UTF8);
-            using var request = new HttpRequestMessage(HttpMethod.Put, requestUri)
-            {
-                Content = new StringContent(xmlContent, encoding ?? Encoding.UTF8, "application/xml")
-            };
-
-            var result = await SendXmlRequestAsync<TResult>(request, encoding, cancellationToken).ConfigureAwait(false);
-
-            LogRequestComplete("XML PUT请求完成", requestUri);
-            return result;
-        }
-        catch (Exception ex) when (LogRequestError("XML PUT请求失败", requestUri, ex))
-        {
-            throw;
-        }
+        return await SendXmlWithBodyAsync<TRequest, TResult>(
+            HttpMethod.Put, "发送XML PUT请求", "XML PUT请求完成", "XML PUT请求失败",
+            requestUri, requestData, encoding, cancellationToken);
     }
 
     /// <inheritdoc cref="IXmlHttpClient.GetXmlAsync{TResult}"/>
@@ -453,20 +356,31 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     {
         requestUri.ThrowIfNull();
 
-        try
-        {
-            LogRequestStart("发送XML GET请求", requestUri);
+        return await ExecuteWithLoggingAsync(
+            "发送XML GET请求", "XML GET请求完成", "XML GET请求失败", requestUri,
+            async () =>
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+                return await SendXmlRequestAsync<TResult>(request, encoding, cancellationToken).ConfigureAwait(false);
+            });
+    }
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-            var result = await SendXmlRequestAsync<TResult>(request, encoding, cancellationToken).ConfigureAwait(false);
-
-            LogRequestComplete("XML GET请求完成", requestUri);
-            return result;
-        }
-        catch (Exception ex) when (LogRequestError("XML GET请求失败", requestUri, ex))
-        {
-            throw;
-        }
+    private async Task<TResult?> SendXmlWithBodyAsync<TRequest, TResult>(
+        HttpMethod method, string operation, string completeMsg, string errorMsg,
+        string requestUri, TRequest requestData, Encoding? encoding, CancellationToken cancellationToken)
+    {
+        return await ExecuteWithLoggingAsync(
+            operation, completeMsg, errorMsg, requestUri,
+            async () =>
+            {
+                var enc = encoding ?? Encoding.UTF8;
+                var xmlContent = SerializeToXml(requestData, enc);
+                using var request = new HttpRequestMessage(method, requestUri)
+                {
+                    Content = new StringContent(xmlContent, enc, "application/xml")
+                };
+                return await SendXmlRequestAsync<TResult>(request, encoding, cancellationToken).ConfigureAwait(false);
+            });
     }
 
     #endregion
@@ -487,23 +401,16 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     {
         requestUri.ThrowIfNull();
 
-        try
-        {
-            LogRequestStart("发送JSON GET请求", requestUri);
-
-            using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-            var result = await SendRequestAsync<TResult>(
-                request,
-                jsonSerializerOptions: GetJsonSerializerOptions(),
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            LogRequestComplete("JSON GET请求完成", requestUri);
-            return result;
-        }
-        catch (Exception ex) when (LogRequestError("JSON GET请求失败", requestUri, ex))
-        {
-            throw;
-        }
+        return await ExecuteWithLoggingAsync(
+            "发送JSON GET请求", "JSON GET请求完成", "JSON GET请求失败", requestUri,
+            async () =>
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+                return await SendRequestAsync<TResult>(
+                    request,
+                    jsonSerializerOptions: s_defaultJsonSerializerOptions,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+            });
     }
 
     /// <inheritdoc cref="IJsonHttpClient.PostAsJsonAsync{TRequest,TResult}"/>
@@ -524,28 +431,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         requestUri.ThrowIfNull();
         requestData.ThrowIfNull();
 
-        try
-        {
-            LogRequestStart("发送JSON POST请求", requestUri);
-
-            var content = JsonSerializer.Serialize(requestData, GetJsonSerializerOptions());
-            using var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
-            {
-                Content = new StringContent(content, Encoding.UTF8, "application/json")
-            };
-
-            var result = await SendRequestAsync<TResult>(
-                request,
-                jsonSerializerOptions: GetJsonSerializerOptions(),
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            LogRequestComplete("JSON POST请求完成", requestUri);
-            return result;
-        }
-        catch (Exception ex) when (LogRequestError("JSON POST请求失败", requestUri, ex))
-        {
-            throw;
-        }
+        return await SendJsonWithBodyAsync<TRequest, TResult>(
+            HttpMethod.Post, "发送JSON POST请求", "JSON POST请求完成", "JSON POST请求失败",
+            requestUri, requestData, cancellationToken);
     }
 
     /// <inheritdoc cref="IJsonHttpClient.PutAsJsonAsync{TRequest,TResult}"/>
@@ -566,28 +454,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         requestUri.ThrowIfNull();
         requestData.ThrowIfNull();
 
-        try
-        {
-            LogRequestStart("发送JSON PUT请求", requestUri);
-
-            var content = JsonSerializer.Serialize(requestData, GetJsonSerializerOptions());
-            using var request = new HttpRequestMessage(HttpMethod.Put, requestUri)
-            {
-                Content = new StringContent(content, Encoding.UTF8, "application/json")
-            };
-
-            var result = await SendRequestAsync<TResult>(
-                request,
-                jsonSerializerOptions: GetJsonSerializerOptions(),
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            LogRequestComplete("JSON PUT请求完成", requestUri);
-            return result;
-        }
-        catch (Exception ex) when (LogRequestError("JSON PUT请求失败", requestUri, ex))
-        {
-            throw;
-        }
+        return await SendJsonWithBodyAsync<TRequest, TResult>(
+            HttpMethod.Put, "发送JSON PUT请求", "JSON PUT请求完成", "JSON PUT请求失败",
+            requestUri, requestData, cancellationToken);
     }
 
     /// <inheritdoc cref="IJsonHttpClient.DeleteAsJsonAsync{TResult}"/>
@@ -604,23 +473,16 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     {
         requestUri.ThrowIfNull();
 
-        try
-        {
-            LogRequestStart("发送JSON DELETE请求", requestUri);
-
-            using var request = new HttpRequestMessage(HttpMethod.Delete, requestUri);
-            var result = await SendRequestAsync<TResult>(
-                request,
-                jsonSerializerOptions: GetJsonSerializerOptions(),
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            LogRequestComplete("JSON DELETE请求完成", requestUri);
-            return result;
-        }
-        catch (Exception ex) when (LogRequestError("JSON DELETE请求失败", requestUri, ex))
-        {
-            throw;
-        }
+        return await ExecuteWithLoggingAsync(
+            "发送JSON DELETE请求", "JSON DELETE请求完成", "JSON DELETE请求失败", requestUri,
+            async () =>
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Delete, requestUri);
+                return await SendRequestAsync<TResult>(
+                    request,
+                    jsonSerializerOptions: s_defaultJsonSerializerOptions,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+            });
     }
 
     /// <inheritdoc cref="IJsonHttpClient.DeleteAsJsonAsync{TRequest,TResult}"/>
@@ -641,28 +503,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         requestUri.ThrowIfNull();
         requestData.ThrowIfNull();
 
-        try
-        {
-            LogRequestStart("发送带Body的JSON DELETE请求", requestUri);
-
-            var content = JsonSerializer.Serialize(requestData, GetJsonSerializerOptions());
-            using var request = new HttpRequestMessage(HttpMethod.Delete, requestUri)
-            {
-                Content = new StringContent(content, Encoding.UTF8, "application/json")
-            };
-
-            var result = await SendRequestAsync<TResult>(
-                request,
-                jsonSerializerOptions: GetJsonSerializerOptions(),
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            LogRequestComplete("带Body的JSON DELETE请求完成", requestUri);
-            return result;
-        }
-        catch (Exception ex) when (LogRequestError("带Body的JSON DELETE请求失败", requestUri, ex))
-        {
-            throw;
-        }
+        return await SendJsonWithBodyAsync<TRequest, TResult>(
+            HttpMethod.Delete, "发送带Body的JSON DELETE请求", "带Body的JSON DELETE请求完成", "带Body的JSON DELETE请求失败",
+            requestUri, requestData, cancellationToken);
     }
 
     /// <inheritdoc cref="IJsonHttpClient.PatchAsJsonAsync{TRequest,TResult}"/>
@@ -683,135 +526,43 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         requestUri.ThrowIfNull();
         requestData.ThrowIfNull();
 
-        try
-        {
-            LogRequestStart("发送JSON PATCH请求", requestUri);
+        return await SendJsonWithBodyAsync<TRequest, TResult>(
+            new HttpMethod("PATCH"), "发送JSON PATCH请求", "JSON PATCH请求完成", "JSON PATCH请求失败",
+            requestUri, requestData, cancellationToken);
+    }
 
-            var content = JsonSerializer.Serialize(requestData, GetJsonSerializerOptions());
-            using var request = new HttpRequestMessage(new HttpMethod("PATCH"), requestUri)
+    private async Task<TResult?> SendJsonWithBodyAsync<TRequest, TResult>(
+        HttpMethod method, string operation, string completeMsg, string errorMsg,
+        string requestUri, TRequest requestData, CancellationToken cancellationToken)
+    {
+        return await ExecuteWithLoggingAsync(
+            operation, completeMsg, errorMsg, requestUri,
+            async () =>
             {
-                Content = new StringContent(content, Encoding.UTF8, "application/json")
-            };
-
-            var result = await SendRequestAsync<TResult>(
-                request,
-                jsonSerializerOptions: GetJsonSerializerOptions(),
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            LogRequestComplete("JSON PATCH请求完成", requestUri);
-            return result;
-        }
-        catch (Exception ex) when (LogRequestError("JSON PATCH请求失败", requestUri, ex))
-        {
-            throw;
-        }
+                var content = JsonSerializer.Serialize(requestData, s_defaultJsonSerializerOptions);
+                using var request = new HttpRequestMessage(method, requestUri)
+                {
+                    Content = new StringContent(content, Encoding.UTF8, "application/json")
+                };
+                return await SendRequestAsync<TResult>(
+                    request,
+                    jsonSerializerOptions: s_defaultJsonSerializerOptions,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+            });
     }
 
     #endregion
 
     #region 核心请求处理方法
 
-    /// <summary>
-    /// 发送HTTP请求并反序列化JSON响应结果
-    /// </summary>
-    /// <typeparam name="TResult">响应结果的类型</typeparam>
-    /// <param name="httpRequestMessage">HTTP请求消息</param>
-    /// <param name="jsonSerializerOptions">JSON序列化选项</param>
-    /// <param name="cancellationToken">取消令牌</param>
-    /// <returns>反序列化后的响应结果</returns>
-    protected virtual async Task<TResult?> SendRequestAsync<TResult>(
-        HttpRequestMessage httpRequestMessage,
-        JsonSerializerOptions? jsonSerializerOptions = null,
-        CancellationToken cancellationToken = default)
+    private async Task<TResult?> ExecuteHttpRequestCoreAsync<TResult>(
+        Func<Task<TResult?>> coreAction,
+        string requestUri,
+        CancellationToken cancellationToken)
     {
-        _httpClient.ThrowIfNull();
-        httpRequestMessage.ThrowIfNull();
-
-        string? requestUri = httpRequestMessage.RequestUri?.ToString();
-        ValidateUrl(requestUri);
-
         try
         {
-            await ExecuteRequestInterceptorsAsync(httpRequestMessage, cancellationToken).ConfigureAwait(false);
-
-            using var response = await _httpClient.SendAsync(httpRequestMessage,
-                                            HttpCompletionOption.ResponseHeadersRead,
-                                            cancellationToken).ConfigureAwait(false);
-
-            await ExecuteResponseInterceptorsAsync(response, cancellationToken).ConfigureAwait(false);
-
-            await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
-
-            var contentLength = response.Content.Headers.ContentLength;
-            if (contentLength == 0)
-            {
-                _logger.JsonResponseBodyEmpty(requestUri!);
-                return default;
-            }
-
-#if NETSTANDARD2_0
-            using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
-#else
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-#endif
-
-            var options = jsonSerializerOptions ?? GetDefaultJsonSerializerOptions();
-
-            if (_enableLogging && _logger.IsEnabled(LogLevel.Debug))
-            {
-                using var memoryStream = new MemoryStream();
-                await CopyUpToAsync(stream, memoryStream, MaxDebugLogBodyLength + 1, cancellationToken).ConfigureAwait(false);
-                memoryStream.Position = 0;
-
-                string rawResponse;
-                if (memoryStream.Length > MaxDebugLogBodyLength)
-                {
-                    var buffer = new byte[MaxDebugLogBodyLength];
-#if NETSTANDARD2_0
-                    await memoryStream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
-#else
-                    await memoryStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-#endif
-                    rawResponse = Encoding.UTF8.GetString(buffer) + $"...[已截断，总长度: {memoryStream.Length} 字节]";
-                }
-                else
-                {
-#if NETSTANDARD2_0
-                    using var reader = new StreamReader(memoryStream, Encoding.UTF8);
-                    rawResponse = await reader.ReadToEndAsync().ConfigureAwait(false);
-#else
-                    using var reader = new StreamReader(memoryStream, Encoding.UTF8, leaveOpen: true);
-                    rawResponse = await reader.ReadToEndAsync().ConfigureAwait(false);
-#endif
-                }
-                _logger.JsonResponseBodyRaw(requestUri!, rawResponse);
-
-                memoryStream.Position = 0;
-
-                try
-                {
-                    var result = await JsonSerializer.DeserializeAsync<TResult>(memoryStream, options, cancellationToken).ConfigureAwait(false);
-                    _logger.JsonDeserializeSuccess(requestUri!, typeof(TResult).Name);
-                    return result;
-                }
-                catch (JsonException jsonEx)
-                {
-                    _logger.JsonDeserializeFailedDetailed(requestUri!, typeof(TResult).Name, rawResponse, jsonEx.Path, jsonEx);
-                    throw new JsonException($"反序列化到类型 {typeof(TResult).Name} 失败: {jsonEx.Message}", jsonEx);
-                }
-            }
-            else
-            {
-                try
-                {
-                    return await JsonSerializer.DeserializeAsync<TResult>(stream, options, cancellationToken).ConfigureAwait(false);
-                }
-                catch (JsonException jsonEx)
-                {
-                    _logger.JsonDeserializeFailedSimple(requestUri!, typeof(TResult).Name, jsonEx);
-                    throw new JsonException($"反序列化到类型 {typeof(TResult).Name} 失败: {jsonEx.Message}", jsonEx);
-                }
-            }
+            return await coreAction().ConfigureAwait(false);
         }
         catch (HttpRequestException ex)
         {
@@ -838,6 +589,123 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             _logger.HttpRequestFailedWithExceptionType(requestUri!, ex.GetType().Name, ex);
             throw new HttpRequestException($"HTTP请求处理失败: {ex.Message}", ex);
         }
+    }
+
+    private async Task<HttpResponseMessage> SendAndValidateAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        await ExecuteRequestInterceptorsAsync(request, cancellationToken).ConfigureAwait(false);
+
+        var response = await _httpClient.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken).ConfigureAwait(false);
+
+        await ExecuteResponseInterceptorsAsync(response, cancellationToken).ConfigureAwait(false);
+
+        await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
+
+        return response;
+    }
+
+    /// <summary>
+    /// 发送HTTP请求并反序列化JSON响应结果
+    /// </summary>
+    /// <typeparam name="TResult">响应结果的类型</typeparam>
+    /// <param name="httpRequestMessage">HTTP请求消息</param>
+    /// <param name="jsonSerializerOptions">JSON序列化选项</param>
+    /// <param name="cancellationToken">取消令牌</param>
+    /// <returns>反序列化后的响应结果</returns>
+    private async Task<TResult?> SendRequestAsync<TResult>(
+        HttpRequestMessage httpRequestMessage,
+        JsonSerializerOptions? jsonSerializerOptions = null,
+        CancellationToken cancellationToken = default)
+    {
+        _httpClient.ThrowIfNull();
+        httpRequestMessage.ThrowIfNull();
+
+        string? requestUri = httpRequestMessage.RequestUri?.ToString();
+        ValidateUrl(requestUri);
+
+        return await ExecuteHttpRequestCoreAsync(
+            async () =>
+            {
+                using var response = await SendAndValidateAsync(httpRequestMessage, cancellationToken).ConfigureAwait(false);
+
+                var contentLength = response.Content.Headers.ContentLength;
+                if (contentLength == 0)
+                {
+                    _logger.JsonResponseBodyEmpty(requestUri!);
+                    return default;
+                }
+
+#if NETSTANDARD2_0
+                using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+#else
+                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+#endif
+
+                var options = jsonSerializerOptions ?? s_defaultJsonSerializerOptions;
+
+                if (_enableLogging && _logger.IsEnabled(LogLevel.Debug))
+                {
+                    using var memoryStream = new MemoryStream();
+                    await CopyUpToAsync(stream, memoryStream, MaxDebugLogBodyLength + 1, cancellationToken).ConfigureAwait(false);
+                    memoryStream.Position = 0;
+
+                    string rawResponse;
+                    if (memoryStream.Length > MaxDebugLogBodyLength)
+                    {
+                        var buffer = new byte[MaxDebugLogBodyLength];
+#if NETSTANDARD2_0
+                        await memoryStream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
+#else
+                        await memoryStream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+#endif
+                        rawResponse = Encoding.UTF8.GetString(buffer) + $"...[已截断，总长度: {memoryStream.Length} 字节]";
+                    }
+                    else
+                    {
+#if NETSTANDARD2_0
+                        using var reader = new StreamReader(memoryStream, Encoding.UTF8);
+                        rawResponse = await reader.ReadToEndAsync().ConfigureAwait(false);
+#else
+                        using var reader = new StreamReader(memoryStream, Encoding.UTF8, leaveOpen: true);
+                        rawResponse = await reader.ReadToEndAsync().ConfigureAwait(false);
+#endif
+                    }
+                    _logger.JsonResponseBodyRaw(requestUri!, rawResponse);
+
+                    memoryStream.Position = 0;
+
+                    try
+                    {
+                        var result = await JsonSerializer.DeserializeAsync<TResult>(memoryStream, options, cancellationToken).ConfigureAwait(false);
+                        _logger.JsonDeserializeSuccess(requestUri!, typeof(TResult).Name);
+                        return result;
+                    }
+                    catch (JsonException jsonEx)
+                    {
+                        _logger.JsonDeserializeFailedDetailed(requestUri!, typeof(TResult).Name, rawResponse, jsonEx.Path, jsonEx);
+                        throw new JsonException($"反序列化到类型 {typeof(TResult).Name} 失败: {jsonEx.Message}", jsonEx);
+                    }
+                }
+                else
+                {
+                    try
+                    {
+                        return await JsonSerializer.DeserializeAsync<TResult>(stream, options, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (JsonException jsonEx)
+                    {
+                        _logger.JsonDeserializeFailedSimple(requestUri!, typeof(TResult).Name, jsonEx);
+                        throw new JsonException($"反序列化到类型 {typeof(TResult).Name} 失败: {jsonEx.Message}", jsonEx);
+                    }
+                }
+            },
+            requestUri!,
+            cancellationToken);
     }
 
     /// <summary>
@@ -861,79 +729,49 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
         encoding ??= Encoding.UTF8;
 
-        try
-        {
-            await ExecuteRequestInterceptorsAsync(httpRequestMessage, cancellationToken).ConfigureAwait(false);
-
-            using var response = await _httpClient.SendAsync(httpRequestMessage,
-                                        HttpCompletionOption.ResponseHeadersRead,
-                                        cancellationToken).ConfigureAwait(false);
-
-            await ExecuteResponseInterceptorsAsync(response, cancellationToken).ConfigureAwait(false);
-
-            await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
-
-            var contentLength = response.Content.Headers.ContentLength;
-            if (contentLength == 0)
+        return await ExecuteHttpRequestCoreAsync(
+            async () =>
             {
-                _logger.XmlResponseBodyEmpty(requestUri!);
-                return default;
-            }
+                using var response = await SendAndValidateAsync(httpRequestMessage, cancellationToken).ConfigureAwait(false);
+
+                var contentLength = response.Content.Headers.ContentLength;
+                if (contentLength == 0)
+                {
+                    _logger.XmlResponseBodyEmpty(requestUri!);
+                    return default;
+                }
 
 #if NETSTANDARD2_0
-            var xmlContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                var xmlContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 #else
-            var xmlContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                var xmlContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 #endif
 
-            if (_enableLogging && _logger.IsEnabled(LogLevel.Debug))
-            {
-                _logger.XmlResponseBodyRaw(requestUri!, xmlContent);
-            }
+                if (_enableLogging && _logger.IsEnabled(LogLevel.Debug))
+                {
+                    _logger.XmlResponseBodyRaw(requestUri!, xmlContent);
+                }
 
-            if (string.IsNullOrWhiteSpace(xmlContent))
-            {
-                _logger.XmlResponseBodyEmpty(requestUri!);
-                return default;
-            }
+                if (string.IsNullOrWhiteSpace(xmlContent))
+                {
+                    _logger.XmlResponseBodyEmpty(requestUri!);
+                    return default;
+                }
 
-            try
-            {
-                var result = DeserializeFromXml<TResult>(xmlContent, encoding);
-                _logger.XmlDeserializeSuccess(requestUri!, typeof(TResult).Name);
-                return result;
-            }
-            catch (InvalidOperationException xmlEx)
-            {
-                _logger.XmlDeserializeFailed(requestUri!, typeof(TResult).Name, xmlContent, xmlEx);
-                throw new InvalidOperationException($"XML反序列化到类型 {typeof(TResult).Name} 失败: {xmlEx.Message}", xmlEx);
-            }
-        }
-        catch (HttpRequestException ex)
-        {
-#if !NETSTANDARD2_0
-            var statusCode = ex.StatusCode.HasValue ? (int)ex.StatusCode.Value : 0;
-            _logger.HttpRequestFailedWithStatusCode(requestUri!, statusCode, ex);
-#else
-            _logger.HttpRequestFailedSimple(requestUri!, ex);
-#endif
-            throw;
-        }
-        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
-        {
-            _logger.HttpRequestTimeout(requestUri!, _httpClient.Timeout.TotalSeconds, ex);
-            throw new HttpRequestException($"请求超时: {requestUri}", ex);
-        }
-        catch (TaskCanceledException ex)
-        {
-            _logger.HttpRequestCancelled(requestUri!, ex);
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.HttpRequestFailedWithExceptionType(requestUri!, ex.GetType().Name, ex);
-            throw new HttpRequestException($"HTTP请求处理失败: {ex.Message}", ex);
-        }
+                try
+                {
+                    var result = DeserializeFromXml<TResult>(xmlContent, encoding);
+                    _logger.XmlDeserializeSuccess(requestUri!, typeof(TResult).Name);
+                    return result;
+                }
+                catch (InvalidOperationException xmlEx)
+                {
+                    _logger.XmlDeserializeFailed(requestUri!, typeof(TResult).Name, xmlContent, xmlEx);
+                    throw new InvalidOperationException($"XML反序列化到类型 {typeof(TResult).Name} 失败: {xmlEx.Message}", xmlEx);
+                }
+            },
+            requestUri!,
+            cancellationToken);
     }
 
     #endregion
@@ -943,22 +781,79 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// <param name="propertyName">加密后JSON中的属性名,默认为"data"。</param>
     /// <param name="serializeType">序列化类型,支持JSON和XML。</param>
     /// <returns>加密后的字符串。</returns>
-    public abstract string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json);
+    public virtual string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json)
+    {
+        if (content == null)
+            throw new ArgumentNullException(nameof(content));
+        if (string.IsNullOrEmpty(propertyName))
+            throw new ArgumentException("属性名不能为空", nameof(propertyName));
+
+        if (EncryptionProvider == null)
+            throw new InvalidOperationException(
+                "未配置加密提供器。请通过 AddMudHttpClient 注册时配置 AesEncryptionOptions，" +
+                "或注册自定义 IEncryptionProvider 实现。");
+
+        string serializedContent;
+        if (serializeType == SerializeType.Xml)
+        {
+            serializedContent = XmlSerialize.Serialize(content);
+        }
+        else
+        {
+            serializedContent = JsonSerializer.Serialize(content);
+        }
+
+        var encryptedData = EncryptionProvider.Encrypt(serializedContent);
+
+        var result = new Dictionary<string, object>
+        {
+            [propertyName] = encryptedData
+        };
+
+        return JsonSerializer.Serialize(result);
+    }
 
     /// <inheritdoc cref="IEncryptableHttpClient.DecryptContent"/>
     /// <param name="encryptedContent">要解密的加密字符串。</param>
     /// <returns>解密后的原始字符串。</returns>
-    public abstract string DecryptContent(string encryptedContent);
+    public virtual string DecryptContent(string encryptedContent)
+    {
+        if (string.IsNullOrEmpty(encryptedContent))
+            return string.Empty;
+
+        if (EncryptionProvider == null)
+            throw new InvalidOperationException("未配置加密提供器。");
+
+        return EncryptionProvider.Decrypt(encryptedContent);
+    }
 
     /// <inheritdoc cref="IEncryptableHttpClient.EncryptBytes"/>
     /// <param name="data">要加密的字节数组。</param>
     /// <returns>加密后的字节数组。</returns>
-    public abstract byte[] EncryptBytes(byte[] data);
+    public virtual byte[] EncryptBytes(byte[] data)
+    {
+        if (data == null)
+            throw new ArgumentNullException(nameof(data));
+
+        if (EncryptionProvider == null)
+            throw new InvalidOperationException("未配置加密提供器。");
+
+        return EncryptionProvider.EncryptBytes(data);
+    }
 
     /// <inheritdoc cref="IEncryptableHttpClient.DecryptBytes"/>
     /// <param name="encryptedData">要解密的加密字节数组。</param>
     /// <returns>解密后的原始字节数组。</returns>
-    public abstract byte[] DecryptBytes(byte[] encryptedData);
+    public virtual byte[] DecryptBytes(byte[] encryptedData)
+    {
+        if (encryptedData == null)
+            throw new ArgumentNullException(nameof(encryptedData));
+
+        if (EncryptionProvider == null)
+            throw new InvalidOperationException("未配置加密提供器。");
+
+        return EncryptionProvider.DecryptBytes(encryptedData);
+    }
 
     #region 下载处理方法
 
@@ -1212,22 +1107,6 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     }
 
     /// <summary>
-    /// 获取JSON序列化选项（可被子类重写）
-    /// </summary>
-    protected virtual JsonSerializerOptions? GetJsonSerializerOptions()
-    {
-        return GetDefaultJsonSerializerOptions();
-    }
-
-    /// <summary>
-    /// 获取默认的JSON序列化选项
-    /// </summary>
-    private static JsonSerializerOptions GetDefaultJsonSerializerOptions()
-    {
-        return s_defaultJsonSerializerOptions;
-    }
-
-    /// <summary>
     /// 从源流复制最多 maxBytes 字节到目标流。
     /// </summary>
     private static async Task CopyUpToAsync(Stream source, Stream destination, int maxBytes, CancellationToken cancellationToken)
@@ -1299,15 +1178,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         return MessageSanitizer.Sanitize(content, maxLength: maxLength);
     }
 
-    private void LogRequestStart(string operation, string uri)
-    {
-        if (_enableLogging && _logger.IsEnabled(LogLevel.Debug))
-        {
-            _logger.HttpClientOperation(operation, uri);
-        }
-    }
-
-    private void LogRequestComplete(string operation, string uri)
+    private void LogOperation(string operation, string uri)
     {
         if (_enableLogging && _logger.IsEnabled(LogLevel.Debug))
         {
@@ -1322,6 +1193,23 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             _logger.HttpClientError(errorMessage, uri, ex);
         }
         return false; // 始终返回false，异常会被重新抛出
+    }
+
+    private async Task<T> ExecuteWithLoggingAsync<T>(
+        string operation, string completeMessage, string errorMessage, string uri,
+        Func<Task<T>> action)
+    {
+        try
+        {
+            LogOperation(operation, uri);
+            var result = await action().ConfigureAwait(false);
+            LogOperation(completeMessage, uri);
+            return result;
+        }
+        catch (Exception ex) when (LogRequestError(errorMessage, uri, ex))
+        {
+            throw;
+        }
     }
 
     #endregion

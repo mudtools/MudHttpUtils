@@ -253,12 +253,12 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine($"            return await __resiliencePolicy.ExecuteAsync(async __ct =>");
         codeBuilder.AppendLine($"            {{");
 
-        GenerateHttpRequestCore(codeBuilder, methodInfo, hasHttpClient, needsTokenInjection, "                ");
+        GenerateHttpRequestCore(codeBuilder, methodInfo, hasHttpClient, needsTokenInjection, "                ", setSkipResilience: true);
 
         codeBuilder.AppendLine($"            }}, {cancellationTokenName}).ConfigureAwait(false);");
     }
 
-    private void GenerateHttpRequestCore(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection, string indent)
+    private void GenerateHttpRequestCore(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection, string indent, bool setSkipResilience = false)
     {
         var basePath = _context.Configuration.BasePath;
         var urlCode = _requestBuilder.BuildUrlString(methodInfo, basePath);
@@ -266,6 +266,18 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
         _requestBuilder.GenerateRequestSetup(codeBuilder, methodInfo);
+
+        if (setSkipResilience)
+        {
+            // 此字符串必须与 Mud.HttpUtils.Resilience.ResilienceConstants.SkipResiliencePropertyKey 保持一致。
+            // 由于生成器无法引用 Resilience 程序集，此处使用硬编码字面量。
+            codeBuilder.AppendLine($"{indent}#if NETSTANDARD2_0");
+            codeBuilder.AppendLine($"{indent}__httpRequest.Properties[\"__Mud_HttpUtils_SkipResilience\"] = true;");
+            codeBuilder.AppendLine($"{indent}#else");
+            codeBuilder.AppendLine($"{indent}__httpRequest.Options.TryAdd(\"__Mud_HttpUtils_SkipResilience\", true);");
+            codeBuilder.AppendLine($"{indent}#endif");
+        }
+
         _requestBuilder.GenerateHeaderParameters(codeBuilder, methodInfo);
         codeBuilder.AppendLine();
         _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient);

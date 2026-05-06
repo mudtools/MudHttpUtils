@@ -73,6 +73,7 @@ public sealed class TokenAttribute : Attribute
     /// 获取或设置一个值，该值指示是否替换已有的同名令牌。
     /// </summary>
     /// <value>默认为 true。</value>
+    [Obsolete("Replace 属性暂未被框架使用，将在未来版本中启用。")]
     public bool Replace { get; set; } = true;
 
     /// <summary>

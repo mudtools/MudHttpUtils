@@ -76,14 +76,26 @@ internal class InterfaceImplementationGenerator
 
         if (generatorContext.HasQueryMap)
         {
-            GenerateFlattenObjectHelper(_codeBuilder);
+            _codeBuilder.AppendLine();
+            _codeBuilder.AppendLine("        private static void FlattenObjectToQueryParams(");
+            _codeBuilder.AppendLine("            object obj,");
+            _codeBuilder.AppendLine("            string prefix,");
+            _codeBuilder.AppendLine("            string separator,");
+            _codeBuilder.AppendLine("            System.Collections.Specialized.NameValueCollection queryParams,");
+            _codeBuilder.AppendLine("            bool includeNullValues,");
+            _codeBuilder.AppendLine("            bool useJsonSerialization,");
+            _codeBuilder.AppendLine("            bool urlEncode = true,");
+            _codeBuilder.AppendLine("            System.Collections.Generic.List<string>? rawPairs = null,");
+            _codeBuilder.AppendLine("            int depth = 0)");
+            _codeBuilder.AppendLine("        {");
+            _codeBuilder.AppendLine("            QueryMapHelper.FlattenObjectToQueryParams(obj, prefix, separator, queryParams, includeNullValues, useJsonSerialization, urlEncode, rawPairs, depth);");
+            _codeBuilder.AppendLine("        }");
         }
 
         _codeBuilder.AppendLine("    }");
         _codeBuilder.AppendLine("}");
         _codeBuilder.AppendLine();
 
-        //var fileName = $"{generatorContext.NamespaceName}.{generatorContext.ClassName}.g.cs".Replace('.', '_');
         var fileName = $"{generatorContext.ClassName}.g.cs";
         _context.AddSource(
             fileName,
@@ -214,18 +226,6 @@ internal class InterfaceImplementationGenerator
         var requiresUserId = GetInterfaceRequiresUserId();
         var interfaceScopes = GetInterfaceTokenScopes();
         var interfaceTokenName = GetInterfaceTokenName();
-
-        var baseAddress = AttributeDataHelper.GetStringValueFromAttributeConstructor(
-            httpClientApiAttribute,
-            HttpClientGeneratorConstants.BaseAddressProperty);
-
-        if (!string.IsNullOrEmpty(baseAddress))
-        {
-            _context.ReportDiagnostic(Diagnostic.Create(
-                Diagnostics.HttpClientApiBaseAddressObsolete,
-                _interfaceDecl.GetLocation(),
-                _interfaceSymbol.Name));
-        }
 
         var basePath = ExtractBasePath();
 
@@ -413,85 +413,4 @@ internal class InterfaceImplementationGenerator
         return null;
     }
 
-    private static void GenerateFlattenObjectHelper(StringBuilder codeBuilder)
-    {
-        codeBuilder.AppendLine();
-        codeBuilder.AppendLine("        private const int MaxFlattenRecursionDepth = 10;");
-        codeBuilder.AppendLine();
-        codeBuilder.AppendLine("        private static readonly System.Collections.Concurrent.ConcurrentDictionary<System.Type, System.Reflection.PropertyInfo[]> __propertyCache = new();");
-        codeBuilder.AppendLine();
-        codeBuilder.AppendLine("        private static void FlattenObjectToQueryParams(");
-        codeBuilder.AppendLine("            object obj,");
-        codeBuilder.AppendLine("            string prefix,");
-        codeBuilder.AppendLine("            string separator,");
-        codeBuilder.AppendLine("            System.Collections.Specialized.NameValueCollection __queryParams,");
-        codeBuilder.AppendLine("            bool includeNullValues,");
-        codeBuilder.AppendLine("            bool useJsonSerialization,");
-        codeBuilder.AppendLine("            bool urlEncode = true,");
-        codeBuilder.AppendLine("            System.Collections.Generic.List<string>? rawPairs = null,");
-        codeBuilder.AppendLine("            int __depth = 0)");
-        codeBuilder.AppendLine("        {");
-        codeBuilder.AppendLine("            if (obj == null) throw new ArgumentNullException(nameof(obj));");
-        codeBuilder.AppendLine("            if (__depth > MaxFlattenRecursionDepth) throw new InvalidOperationException(\"Maximum recursion depth exceeded while flattening object of type \" + obj.GetType().Name + \". This may be caused by a circular reference.\");");
-        codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
-        codeBuilder.AppendLine("#pragma warning disable IL2072");
-        codeBuilder.AppendLine("#endif");
-        codeBuilder.AppendLine("            var __properties = __propertyCache.GetOrAdd(obj.GetType(), t => t.GetProperties());");
-        codeBuilder.AppendLine("            foreach (var __prop in __properties)");
-        codeBuilder.AppendLine("            {");
-        codeBuilder.AppendLine("                var __value = __prop.GetValue(obj);");
-        codeBuilder.AppendLine("                var __key = string.IsNullOrEmpty(prefix) ? __prop.Name : prefix + separator + __prop.Name;");
-        codeBuilder.AppendLine();
-        codeBuilder.AppendLine("                if (__value == null)");
-        codeBuilder.AppendLine("                {");
-        codeBuilder.AppendLine("                    if (includeNullValues)");
-        codeBuilder.AppendLine("                    {");
-        codeBuilder.AppendLine("                        if (urlEncode && rawPairs == null)");
-        codeBuilder.AppendLine("                            __queryParams.Add(__key, string.Empty);");
-        codeBuilder.AppendLine("                        else if (rawPairs != null)");
-        codeBuilder.AppendLine("                            rawPairs.Add(System.Uri.EscapeDataString(__key) + \"=\");");
-        codeBuilder.AppendLine("                        else");
-        codeBuilder.AppendLine("                            __queryParams.Add(__key, string.Empty);");
-        codeBuilder.AppendLine("                    }");
-        codeBuilder.AppendLine("                    continue;");
-        codeBuilder.AppendLine("                }");
-        codeBuilder.AppendLine();
-        codeBuilder.AppendLine("                var __type = __value.GetType();");
-        codeBuilder.AppendLine("                if (__type.IsPrimitive || __value is string || __value is decimal || __type.IsEnum || __value is System.DateTime || __value is System.DateTimeOffset || __value is System.Guid)");
-        codeBuilder.AppendLine("                {");
-        codeBuilder.AppendLine("                    string __stringValue;");
-        codeBuilder.AppendLine("                    if (useJsonSerialization)");
-        codeBuilder.AppendLine("                        __stringValue = System.Text.Json.JsonSerializer.Serialize(__value);");
-        codeBuilder.AppendLine("                    else");
-        codeBuilder.AppendLine("                        __stringValue = __value.ToString() ?? string.Empty;");
-        codeBuilder.AppendLine();
-        codeBuilder.AppendLine("                    if (!urlEncode && rawPairs != null)");
-        codeBuilder.AppendLine("                        rawPairs.Add(System.Uri.EscapeDataString(__key) + \"=\" + __stringValue);");
-        codeBuilder.AppendLine("                    else");
-        codeBuilder.AppendLine("                        __queryParams.Add(__key, __stringValue);");
-        codeBuilder.AppendLine("                }");
-        codeBuilder.AppendLine("                else if (__value is IQueryParameter __queryParam)");
-        codeBuilder.AppendLine("                {");
-        codeBuilder.AppendLine("                    foreach (var __kvp in __queryParam.ToQueryParameters())");
-        codeBuilder.AppendLine("                    {");
-        codeBuilder.AppendLine("                        var __subKey = string.IsNullOrEmpty(prefix) ? __kvp.Key : prefix + separator + __kvp.Key;");
-        codeBuilder.AppendLine("                        if (includeNullValues || !string.IsNullOrEmpty(__kvp.Value))");
-        codeBuilder.AppendLine("                        {");
-        codeBuilder.AppendLine("                            if (!urlEncode && rawPairs != null)");
-        codeBuilder.AppendLine("                                rawPairs.Add(System.Uri.EscapeDataString(__subKey) + \"=\" + (__kvp.Value ?? string.Empty));");
-        codeBuilder.AppendLine("                            else");
-        codeBuilder.AppendLine("                                __queryParams.Add(__subKey, __kvp.Value ?? string.Empty);");
-        codeBuilder.AppendLine("                        }");
-        codeBuilder.AppendLine("                    }");
-        codeBuilder.AppendLine("                }");
-        codeBuilder.AppendLine("                else");
-        codeBuilder.AppendLine("                {");
-        codeBuilder.AppendLine("                    FlattenObjectToQueryParams(__value, __key, separator, __queryParams, includeNullValues, useJsonSerialization, urlEncode, rawPairs, __depth + 1);");
-        codeBuilder.AppendLine("                }");
-        codeBuilder.AppendLine("            }");
-        codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
-        codeBuilder.AppendLine("#pragma warning restore IL2072");
-        codeBuilder.AppendLine("#endif");
-        codeBuilder.AppendLine("        }");
-    }
 }

@@ -21,8 +21,6 @@ public class MudHttpClientOptions
 
     public string? TokenInjectionMode { get; set; }
 
-    public string? TokenName { get; set; }
-
     public string? TokenScopes { get; set; }
 
     public bool? AllowAnyStatusCode { get; set; }

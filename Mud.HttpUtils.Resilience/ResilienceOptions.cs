@@ -29,7 +29,7 @@ public class ResilienceOptions
     /// 超过此大小的请求将跳过重试策略，避免克隆开销。
     /// 设置为 -1 表示不限制大小（不推荐）。
     /// </remarks>
-    public long MaxCloneContentSize { get; set; } = 10 * 1024 * 1024;
+    public long MaxCloneContentSize { get; set; } = HttpRequestMessageCloner.DefaultMaxContentSize;
 }
 
 /// <summary>

@@ -127,35 +127,11 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
 
     private async void RefreshTokenCallback(object? state)
     {
-        if (_tokenManagers.IsEmpty)
-            return;
-
-        foreach (var kvp in _tokenManagers)
+        var shouldContinue = await TokenRefreshHelper.RefreshAllTokenManagersAsync(
+            _tokenManagers, _logger, _options, CancellationToken.None).ConfigureAwait(false);
+        if (!shouldContinue)
         {
-            try
-            {
-                var token = await kvp.Value.GetOrRefreshTokenAsync(CancellationToken.None).ConfigureAwait(false);
-                if (!string.IsNullOrEmpty(token))
-                {
-                    _logger.LogDebug("令牌管理器 {Name} 主动刷新成功", kvp.Key);
-                }
-            }
-            catch (ObjectDisposedException)
-            {
-                _logger.LogWarning("令牌管理器 {Name} 已释放，移除并停止刷新", kvp.Key);
-                _tokenManagers.TryRemove(kvp.Key, out _);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "令牌管理器 {Name} 主动刷新失败", kvp.Key);
-
-                if (_options.StopOnError)
-                {
-                    _logger.LogCritical("令牌管理器 {Name} 主动刷新失败且配置为停止服务，后台服务将终止", kvp.Key);
-                    _timer?.Change(Timeout.Infinite, Timeout.Infinite);
-                    return;
-                }
-            }
+            _timer?.Change(Timeout.Infinite, Timeout.Infinite);
         }
     }
 
