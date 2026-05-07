@@ -45,6 +45,16 @@ internal class GeneratorContext
     public bool HasQueryMap { get; set; }
 
     /// <summary>
+    /// 接口中是否有方法使用了 ApiKey 注入模式
+    /// </summary>
+    public bool HasApiKeyInjection { get; set; }
+
+    /// <summary>
+    /// 接口中是否有方法使用了 HmacSignature 注入模式
+    /// </summary>
+    public bool HasHmacSignatureInjection { get; set; }
+
+    /// <summary>
     /// 接口是否继承了 ICurrentUserId 接口
     /// </summary>
     public bool ImplementsICurrentUserId { get; set; }
@@ -89,6 +99,8 @@ internal class GeneratorContext
         HasCache = DetectCacheUsage(interfaceSymbol);
         HasCacheVaryByUser = DetectCacheVaryByUser(interfaceSymbol);
         HasResilience = DetectResilienceUsage(interfaceSymbol);
+        HasApiKeyInjection = DetectApiKeyInjection(interfaceSymbol);
+        HasHmacSignatureInjection = DetectHmacSignatureInjection(interfaceSymbol);
     }
 
     private static bool DetectCacheUsage(INamedTypeSymbol interfaceSymbol)
@@ -141,5 +153,105 @@ internal class GeneratorContext
         {
             return false;
         }
+    }
+
+    private static bool DetectApiKeyInjection(INamedTypeSymbol interfaceSymbol)
+    {
+        try
+        {
+            // 检查接口级 Token 特性
+            var interfaceTokenAttr = interfaceSymbol.GetAttributes()
+                .FirstOrDefault(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.AttributeClass?.Name));
+            if (interfaceTokenAttr != null && IsInjectionMode(interfaceTokenAttr, HttpClientGeneratorConstants.TokenInjectionModeApiKey))
+                return true;
+
+            // 检查方法级 Token 特性
+            var allMethods = TypeSymbolHelper.GetAllMethods(interfaceSymbol, true);
+            return allMethods.Any(method =>
+            {
+                var methodTokenAttr = method.GetAttributes()
+                    .FirstOrDefault(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.AttributeClass?.Name));
+                return methodTokenAttr != null && IsInjectionMode(methodTokenAttr, HttpClientGeneratorConstants.TokenInjectionModeApiKey);
+            });
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool DetectHmacSignatureInjection(INamedTypeSymbol interfaceSymbol)
+    {
+        try
+        {
+            // 检查接口级 Token 特性
+            var interfaceTokenAttr = interfaceSymbol.GetAttributes()
+                .FirstOrDefault(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.AttributeClass?.Name));
+            if (interfaceTokenAttr != null && IsInjectionMode(interfaceTokenAttr, HttpClientGeneratorConstants.TokenInjectionModeHmacSignature))
+                return true;
+
+            // 检查方法级 Token 特性
+            var allMethods = TypeSymbolHelper.GetAllMethods(interfaceSymbol, true);
+            return allMethods.Any(method =>
+            {
+                var methodTokenAttr = method.GetAttributes()
+                    .FirstOrDefault(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.AttributeClass?.Name));
+                return methodTokenAttr != null && IsInjectionMode(methodTokenAttr, HttpClientGeneratorConstants.TokenInjectionModeHmacSignature);
+            });
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 检查 Token 特性的 InjectionMode 是否匹配指定模式
+    /// </summary>
+    private static bool IsInjectionMode(AttributeData tokenAttr, string targetMode)
+    {
+        foreach (var namedArg in tokenAttr.NamedArguments)
+        {
+            if (namedArg.Key == HttpClientGeneratorConstants.TokenInjectionModeProperty)
+            {
+                var modeName = GetTokenInjectionModeName(namedArg.Value.Value);
+                return modeName == targetMode;
+            }
+        }
+        // 未指定 InjectionMode 时默认为 Header，不匹配 ApiKey/HmacSignature
+        return false;
+    }
+
+    /// <summary>
+    /// 从 TypedConstant 获取 TokenInjectionMode 枚举名称
+    /// </summary>
+    private static string GetTokenInjectionModeName(object? value)
+    {
+        if (value == null)
+            return HttpClientGeneratorConstants.TokenInjectionModeHeader;
+
+        var str = value.ToString();
+        if (string.IsNullOrEmpty(str))
+            return HttpClientGeneratorConstants.TokenInjectionModeHeader;
+
+        if (int.TryParse(str, out var num))
+        {
+            return num switch
+            {
+                3 => HttpClientGeneratorConstants.TokenInjectionModeApiKey,
+                4 => HttpClientGeneratorConstants.TokenInjectionModeHmacSignature,
+                _ => HttpClientGeneratorConstants.TokenInjectionModeHeader
+            };
+        }
+
+        var lastDot = str.LastIndexOf('.');
+        var name = lastDot >= 0 ? str.Substring(lastDot + 1) : str;
+
+        return name switch
+        {
+            "ApiKey" => HttpClientGeneratorConstants.TokenInjectionModeApiKey,
+            "HmacSignature" => HttpClientGeneratorConstants.TokenInjectionModeHmacSignature,
+            _ => HttpClientGeneratorConstants.TokenInjectionModeHeader
+        };
     }
 }

@@ -33,9 +33,11 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         GenerateGetTokenAsyncMethod(codeBuilder);
         GenerateIAppContextSwitcherGetTokenAsyncMethod(codeBuilder);
 
-        GenerateGetApiKeyAsyncMethod(codeBuilder);
+        if (_context.HasApiKeyInjection)
+            GenerateGetApiKeyAsyncMethod(codeBuilder);
 
-        GenerateApplyHmacSignatureAsyncMethod(codeBuilder);
+        if (_context.HasHmacSignatureInjection)
+            GenerateApplyHmacSignatureAsyncMethod(codeBuilder);
     }
 
     /// <summary>
@@ -103,7 +105,7 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine("        /// <param name=\"keyName\">API Key 名称（可选）。</param>");
         codeBuilder.AppendLine("        /// <returns>返回 API Key</returns>");
-        codeBuilder.AppendLine("        public async Task<string> GetApiKeyAsync(string? keyName = null)");
+        codeBuilder.AppendLine("        private async Task<string> GetApiKeyAsync(string? keyName = null)");
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            if (keyName != null && string.IsNullOrWhiteSpace(keyName))");
         codeBuilder.AppendLine("                throw new System.ArgumentException(\"API Key name cannot be whitespace.\", nameof(keyName));");
@@ -124,7 +126,7 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// 为 HTTP 请求应用 HMAC 签名。");
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine("        /// <param name=\"request\">HTTP 请求消息。</param>");
-        codeBuilder.AppendLine("        public async Task ApplyHmacSignatureAsync(HttpRequestMessage request)");
+        codeBuilder.AppendLine("        private async Task ApplyHmacSignatureAsync(HttpRequestMessage request)");
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            var appContext = _appContextSwitcher.Current;");
         codeBuilder.AppendLine("            if(appContext == null)");

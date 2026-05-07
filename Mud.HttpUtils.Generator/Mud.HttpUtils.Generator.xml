@@ -392,6 +392,16 @@
             生成上下文
             </summary>
         </member>
+        <member name="P:Mud.HttpUtils.Generators.Context.GeneratorContext.HasApiKeyInjection">
+            <summary>
+            接口中是否有方法使用了 ApiKey 注入模式
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Generators.Context.GeneratorContext.HasHmacSignatureInjection">
+            <summary>
+            接口中是否有方法使用了 HmacSignature 注入模式
+            </summary>
+        </member>
         <member name="P:Mud.HttpUtils.Generators.Context.GeneratorContext.ImplementsICurrentUserId">
             <summary>
             接口是否继承了 ICurrentUserId 接口
@@ -407,6 +417,16 @@
             根据 InheritedFrom 属性值获取 GetTokenAsync 方法的访问修饰符
             - 有值（继承自指定类）：public override
             - 无值：public virtual
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Generators.Context.GeneratorContext.IsInjectionMode(Microsoft.CodeAnalysis.AttributeData,System.String)">
+            <summary>
+            检查 Token 特性的 InjectionMode 是否匹配指定模式
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Generators.Context.GeneratorContext.GetTokenInjectionModeName(System.Object)">
+            <summary>
+            从 TypedConstant 获取 TokenInjectionMode 枚举名称
             </summary>
         </member>
         <member name="T:Mud.HttpUtils.Generators.Implementation.AccessTokenGenerator">
