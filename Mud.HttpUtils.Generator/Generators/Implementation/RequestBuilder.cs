@@ -770,9 +770,10 @@ internal class RequestBuilder
         codeBuilder.AppendLine("#endif");
 
         var deserializeTypeWithoutNullable = deserializeType.EndsWith("?", StringComparison.OrdinalIgnoreCase) ? deserializeType.TrimEnd('?') : deserializeType;
+        var innerTypeWithoutNullable = deserializeType.EndsWith("?", StringComparison.OrdinalIgnoreCase) ? deserializeType : deserializeType + "?";
         if (isXmlResponse)
         {
-            codeBuilder.AppendLine($"            {deserializeTypeWithoutNullable} {resultVariable};");
+            codeBuilder.AppendLine($"            {innerTypeWithoutNullable} {resultVariable};");
             codeBuilder.AppendLine($"            try");
             codeBuilder.AppendLine($"            {{");
             codeBuilder.AppendLine($"                var __deserializedObj = new System.Xml.Serialization.XmlSerializer(typeof({deserializeType})).Deserialize(new System.IO.StringReader({rawContentVar}));");
@@ -785,7 +786,7 @@ internal class RequestBuilder
         }
         else
         {
-            codeBuilder.AppendLine($"            {deserializeTypeWithoutNullable} {resultVariable};");
+            codeBuilder.AppendLine($"            {innerTypeWithoutNullable} {resultVariable};");
             codeBuilder.AppendLine($"            try");
             codeBuilder.AppendLine($"            {{");
             codeBuilder.AppendLine($"                {resultVariable} = System.Text.Json.JsonSerializer.Deserialize<{deserializeType}>({rawContentVar}, _jsonSerializerOptions);");
@@ -852,9 +853,10 @@ internal class RequestBuilder
         codeBuilder.AppendLine("#endif");
 
         var deserializeTypeWithoutNullable = deserializeType.EndsWith("?", StringComparison.OrdinalIgnoreCase) ? deserializeType.TrimEnd('?') : deserializeType;
+        var innerTypeWithoutNullable = deserializeType.EndsWith("?", StringComparison.OrdinalIgnoreCase) ? deserializeType : deserializeType + "?";
         if (isXmlResponse)
         {
-            codeBuilder.AppendLine($"            {deserializeTypeWithoutNullable} {resultVariable};");
+            codeBuilder.AppendLine($"            {innerTypeWithoutNullable} {resultVariable};");
             codeBuilder.AppendLine($"            try");
             codeBuilder.AppendLine($"            {{");
             codeBuilder.AppendLine($"                var __deserializedObj = new System.Xml.Serialization.XmlSerializer(typeof({deserializeType})).Deserialize(new System.IO.StringReader({rawContentVar}));");
@@ -871,7 +873,7 @@ internal class RequestBuilder
         }
         else
         {
-            codeBuilder.AppendLine($"            {deserializeTypeWithoutNullable} {resultVariable};");
+            codeBuilder.AppendLine($"            {innerTypeWithoutNullable} {resultVariable};");
             codeBuilder.AppendLine($"            try");
             codeBuilder.AppendLine($"            {{");
             codeBuilder.AppendLine($"                {resultVariable} = System.Text.Json.JsonSerializer.Deserialize<{deserializeType}>({rawContentVar}, _jsonSerializerOptions);");
