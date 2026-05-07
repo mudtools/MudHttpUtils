@@ -27,7 +27,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     public event EventHandler<AppConfigurationChangedEventArgs>? ConfigurationChanged;
 
     /// <inheritdoc />
-    public TAppContext GetApp(string appKey)
+    public virtual TAppContext GetApp(string appKey)
     {
         if (string.IsNullOrWhiteSpace(appKey))
             throw new ArgumentException("应用标识不能为空", nameof(appKey));
@@ -39,7 +39,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     }
 
     /// <inheritdoc />
-    public bool TryGetApp(string appKey, out TAppContext? appContext)
+    public virtual bool TryGetApp(string appKey, out TAppContext? appContext)
     {
         if (string.IsNullOrWhiteSpace(appKey))
         {
@@ -91,7 +91,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     }
 
     /// <inheritdoc />
-    public void UpdateApp(string appKey, TAppContext appContext)
+    public virtual void UpdateApp(string appKey, TAppContext appContext)
     {
         if (string.IsNullOrWhiteSpace(appKey))
             throw new ArgumentException("应用标识不能为空", nameof(appKey));
@@ -108,7 +108,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     }
 
     /// <inheritdoc />
-    public bool RemoveApp(string appKey)
+    public virtual bool RemoveApp(string appKey)
     {
         if (string.IsNullOrWhiteSpace(appKey))
             return false;
@@ -149,7 +149,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     }
 
     /// <inheritdoc />
-    public bool HasApp(string appKey)
+    public virtual bool HasApp(string appKey)
     {
         if (string.IsNullOrWhiteSpace(appKey))
             return false;
@@ -158,7 +158,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     }
 
     /// <inheritdoc />
-    public TContextSwitcher GetWebApi<TContextSwitcher>(string appKey)
+    public virtual TContextSwitcher GetWebApi<TContextSwitcher>(string appKey)
         where TContextSwitcher : IAppContextSwitcher
     {
         var context = GetApp(appKey);
@@ -166,20 +166,13 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     }
 
     /// <inheritdoc />
-    public TContextSwitcher GetDefaultWebApi<TContextSwitcher>()
+    public virtual TContextSwitcher GetDefaultWebApi<TContextSwitcher>()
         where TContextSwitcher : IAppContextSwitcher
     {
         var context = GetDefaultApp();
         return CreateContextSwitcher<TContextSwitcher>(context);
     }
 
-    /// <inheritdoc />
-    [Obsolete("请使用 GetDefaultWebApi<TContextSwitcher>() 替代。此方法将在未来版本中移除。")]
-    public TContextSwitcher GetDefalutWebApi<TContextSwitcher>()
-        where TContextSwitcher : IAppContextSwitcher
-    {
-        return GetDefaultWebApi<TContextSwitcher>();
-    }
 
     /// <summary>
     /// 触发配置变更事件。

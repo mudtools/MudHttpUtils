@@ -71,7 +71,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     }
 
     /// <inheritdoc />
-    public async Task<string> GetOrRefreshTokenAsync(CancellationToken cancellationToken = default)
+    public virtual async Task<string> GetOrRefreshTokenAsync(CancellationToken cancellationToken = default)
     {
         return await GetOrRefreshTokenAsync((string[]?)null, cancellationToken).ConfigureAwait(false);
     }

@@ -95,9 +95,6 @@
         <member name="M:Mud.HttpUtils.DefaultAppManager`1.GetDefaultWebApi``1">
             <inheritdoc />
         </member>
-        <member name="M:Mud.HttpUtils.DefaultAppManager`1.GetDefalutWebApi``1">
-            <inheritdoc />
-        </member>
         <member name="M:Mud.HttpUtils.DefaultAppManager`1.OnConfigurationChanged(Mud.HttpUtils.AppConfigurationChangedEventArgs)">
             <summary>
             触发配置变更事件。
@@ -180,14 +177,6 @@
             </summary>
             <typeparam name="TContextSwitcher">上下文切换器的类型，必须实现 <see cref="T:Mud.HttpUtils.IAppContextSwitcher"/> 接口。</typeparam>
             <returns>默认应用的上下文切换器实例。</returns>
-        </member>
-        <member name="M:Mud.HttpUtils.IAppManager`1.GetDefalutWebApi``1">
-            <summary>
-            获取默认应用的 API 上下文切换器。
-            </summary>
-            <typeparam name="TContextSwitcher">上下文切换器的类型，必须实现 <see cref="T:Mud.HttpUtils.IAppContextSwitcher"/> 接口。</typeparam>
-            <returns>默认应用的上下文切换器实例。</returns>
-            <remarks>此方法已重命名为 <see cref="M:Mud.HttpUtils.IAppManager`1.GetDefaultWebApi``1"/>，将在未来版本中移除。</remarks>
         </member>
         <member name="M:Mud.HttpUtils.IAppManager`1.GetDefaultApp">
             <summary>

@@ -75,6 +75,9 @@
         <member name="T:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.PolicyCacheKey">
             <inheritdoc />
         </member>
+        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetRetryPolicy``1">
+            <inheritdoc />
+        </member>
         <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetTimeoutPolicy``1">
             <inheritdoc />
         </member>
@@ -82,6 +85,9 @@
             <inheritdoc />
         </member>
         <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetCombinedPolicy``1">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetMethodPolicy``1(System.Boolean,System.Int32,System.Int32,System.Boolean,System.Boolean,System.Int32,System.Int32,System.Boolean,System.Int32)">
             <inheritdoc />
         </member>
         <member name="T:Mud.HttpUtils.Resilience.ResilienceConstants">

@@ -31,15 +31,6 @@ public interface IAppManager<TAppContext>
     TContextSwitcher GetDefaultWebApi<TContextSwitcher>()
         where TContextSwitcher : IAppContextSwitcher;
 
-    /// <summary>
-    /// 获取默认应用的 API 上下文切换器。
-    /// </summary>
-    /// <typeparam name="TContextSwitcher">上下文切换器的类型，必须实现 <see cref="IAppContextSwitcher"/> 接口。</typeparam>
-    /// <returns>默认应用的上下文切换器实例。</returns>
-    /// <remarks>此方法已重命名为 <see cref="GetDefaultWebApi{TContextSwitcher}"/>，将在未来版本中移除。</remarks>
-    [Obsolete("请使用 GetDefaultWebApi<TContextSwitcher>() 替代。此方法将在未来版本中移除。")]
-    TContextSwitcher GetDefalutWebApi<TContextSwitcher>()
-        where TContextSwitcher : IAppContextSwitcher;
 
     /// <summary>
     /// 获取默认的应用上下文。
