@@ -12,12 +12,19 @@ using System.Text.Json;
 
 namespace Mud.HttpUtils;
 
-internal static class QueryMapHelper
+/// <summary>
+/// 查询参数映射辅助类
+/// </summary>
+public static class QueryMapHelper
 {
     private const int MaxFlattenRecursionDepth = 10;
 
     private static readonly ConcurrentDictionary<Type, PropertyInfo[]> PropertyCache = new();
 
+
+    /// <summary>
+    /// 递归解释查询参数对象，将其属性展平为键值对，并添加到 NameValueCollection 中。支持基本类型、字符串、枚举、日期时间、GUID，以及实现了 IQueryParameter 接口的对象。对于复杂对象，会继续递归展平其属性。可以选择是否包含 null 值，是否使用 JSON 序列化，以及是否对键和值进行 URL 编码。
+    /// </summary>
 #if NET6_0_OR_GREATER
     [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2072:Target parameter return value does not satisfy DynamicallyAccessedMemberTypes requirements")]
     [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("QueryMap uses reflection to flatten POCO objects and is not compatible with Native AOT. Consider using IQueryParameter or individual [Query] parameters instead.")]

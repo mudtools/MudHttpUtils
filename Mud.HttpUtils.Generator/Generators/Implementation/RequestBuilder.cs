@@ -689,7 +689,7 @@ internal class RequestBuilder
         var isVoidType = innerType == "void" || innerType == "System.Void";
         if (!isVoidType)
         {
-            var innerTypeWithoutNullable = innerType.EndsWith("?", StringComparison.OrdinalIgnoreCase) ? innerType : innerType + "?";
+            var innerTypeWithoutNullable = GetVariableTypeString(innerType);
             codeBuilder.AppendLine($"                {innerTypeWithoutNullable} __content;");
             codeBuilder.AppendLine($"                try");
             codeBuilder.AppendLine($"                {{");
@@ -745,6 +745,24 @@ internal class RequestBuilder
         codeBuilder.AppendLine($"            }}");
     }
 
+    private string GetVariableTypeString(string type)
+    {
+        if (string.IsNullOrWhiteSpace(type))
+            return type ?? string.Empty;
+
+        // 去掉已有的 ? 后缀
+        var baseType = type.TrimEnd('?');
+
+        // 只有值类型才考虑添加 ?
+        var valueTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "int", "long", "float", "double", "decimal", "bool", "char",
+            "byte", "sbyte", "short", "ushort", "uint", "ulong"
+        };
+
+        return valueTypes.Contains(baseType) ? baseType : baseType + "?";
+    }
+
     /// <summary>
     /// 生成 AllowAnyStatusCode 模式的执行代码（非 Response&lt;T&gt; 返回类型）
     /// </summary>
@@ -770,7 +788,7 @@ internal class RequestBuilder
         codeBuilder.AppendLine("#endif");
 
         var deserializeTypeWithoutNullable = deserializeType.EndsWith("?", StringComparison.OrdinalIgnoreCase) ? deserializeType.TrimEnd('?') : deserializeType;
-        var innerTypeWithoutNullable = deserializeType.EndsWith("?", StringComparison.OrdinalIgnoreCase) ? deserializeType : deserializeType + "?";
+        var innerTypeWithoutNullable = GetVariableTypeString(deserializeType);
         if (isXmlResponse)
         {
             codeBuilder.AppendLine($"            {innerTypeWithoutNullable} {resultVariable};");
@@ -853,7 +871,7 @@ internal class RequestBuilder
         codeBuilder.AppendLine("#endif");
 
         var deserializeTypeWithoutNullable = deserializeType.EndsWith("?", StringComparison.OrdinalIgnoreCase) ? deserializeType.TrimEnd('?') : deserializeType;
-        var innerTypeWithoutNullable = deserializeType.EndsWith("?", StringComparison.OrdinalIgnoreCase) ? deserializeType : deserializeType + "?";
+        var innerTypeWithoutNullable = GetVariableTypeString(deserializeType);
         if (isXmlResponse)
         {
             codeBuilder.AppendLine($"            {innerTypeWithoutNullable} {resultVariable};");
