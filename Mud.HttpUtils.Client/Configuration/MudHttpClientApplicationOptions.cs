@@ -1,67 +1,58 @@
+// -----------------------------------------------------------------------
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// -----------------------------------------------------------------------
+
 namespace Mud.HttpUtils;
 
+/// <summary>
+/// Mud HttpClient 应用程序配置选项
+/// </summary>
+/// <remarks>
+/// <para>用于配置多个命名 HttpClient 实例的全局选项。</para>
+/// <para>配置示例：</para>
+/// <code>
+/// {
+///   "MudHttpClients": {
+///     "DefaultClientName": "Default",
+///     "Clients": {
+///       "Default": {
+///         "BaseAddress": "https://api.example.com",
+///         "TimeoutSeconds": 30
+///       },
+///       "ExternalApi": {
+///         "BaseAddress": "https://external.api.com",
+///         "TimeoutSeconds": 60
+///       }
+///     }
+///   }
+/// }
+/// </code>
+/// </remarks>
 public class MudHttpClientApplicationOptions
 {
+    /// <summary>
+    /// 配置节名称
+    /// </summary>
     public const string SectionName = "MudHttpClients";
 
+    /// <summary>
+    /// 命名的 HttpClient 配置集合
+    /// </summary>
+    /// <remarks>
+    /// 键为客户端名称，值为该客户端的配置选项。
+    /// 客户端名称不区分大小写。
+    /// </remarks>
     public Dictionary<string, MudHttpClientOptions> Clients { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// 默认客户端名称
+    /// </summary>
+    /// <remarks>
+    /// 当未指定特定客户端时使用的默认客户端名称。
+    /// 如果未设置，将使用第一个配置的客户端。
+    /// </remarks>
     public string? DefaultClientName { get; set; }
-}
-
-public class MudHttpClientOptions
-{
-    public string? BaseAddress { get; set; }
-
-    public int? TimeoutSeconds { get; set; }
-
-    public Dictionary<string, string>? DefaultHeaders { get; set; }
-
-    public string? TokenManagerKey { get; set; }
-
-    public string? TokenInjectionMode { get; set; }
-
-    public string? TokenScopes { get; set; }
-
-    public bool? AllowAnyStatusCode { get; set; }
-
-    public string? SerializationMethod { get; set; }
-
-    public MudHttpClientResilienceOptions? Resilience { get; set; }
-}
-
-public class MudHttpClientResilienceOptions
-{
-    public MudHttpClientRetryOptions? Retry { get; set; }
-
-    public MudHttpClientCircuitBreakerOptions? CircuitBreaker { get; set; }
-
-    public MudHttpClientTimeoutOptions? Timeout { get; set; }
-}
-
-public class MudHttpClientRetryOptions
-{
-    public bool Enabled { get; set; }
-
-    public int MaxRetries { get; set; } = 3;
-
-    public int DelayMilliseconds { get; set; } = 1000;
-
-    public bool UseExponentialBackoff { get; set; } = true;
-}
-
-public class MudHttpClientCircuitBreakerOptions
-{
-    public bool Enabled { get; set; }
-
-    public int FailureThreshold { get; set; } = 5;
-
-    public int BreakDurationSeconds { get; set; } = 30;
-}
-
-public class MudHttpClientTimeoutOptions
-{
-    public bool Enabled { get; set; }
-
-    public int TimeoutMilliseconds { get; set; } = 30000;
 }

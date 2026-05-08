@@ -25,6 +25,384 @@
         <member name="M:Mud.HttpUtils.AsyncLocalAppContextSwitcher.GetTokenAsync">
             <inheritdoc/>
         </member>
+        <member name="T:Mud.HttpUtils.MudHttpClientApplicationOptions">
+            <summary>
+            Mud HttpClient 应用程序配置选项
+            </summary>
+            <remarks>
+            <para>用于配置多个命名 HttpClient 实例的全局选项。</para>
+            <para>配置示例：</para>
+            <code>
+            {
+              "MudHttpClients": {
+                "DefaultClientName": "Default",
+                "Clients": {
+                  "Default": {
+                    "BaseAddress": "https://api.example.com",
+                    "TimeoutSeconds": 30
+                  },
+                  "ExternalApi": {
+                    "BaseAddress": "https://external.api.com",
+                    "TimeoutSeconds": 60
+                  }
+                }
+              }
+            }
+            </code>
+            </remarks>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpClientApplicationOptions.SectionName">
+            <summary>
+            配置节名称
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientApplicationOptions.Clients">
+            <summary>
+            命名的 HttpClient 配置集合
+            </summary>
+            <remarks>
+            键为客户端名称，值为该客户端的配置选项。
+            客户端名称不区分大小写。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientApplicationOptions.DefaultClientName">
+            <summary>
+            默认客户端名称
+            </summary>
+            <remarks>
+            当未指定特定客户端时使用的默认客户端名称。
+            如果未设置，将使用第一个配置的客户端。
+            </remarks>
+        </member>
+        <member name="T:Mud.HttpUtils.MudHttpClientCircuitBreakerOptions">
+            <summary>
+            HttpClient 熔断策略配置选项
+            </summary>
+            <remarks>
+            <para>配置熔断器模式，防止故障扩散并给下游服务恢复时间。</para>
+            <para>熔断器有三种状态：</para>
+            <list type="bullet">
+              <item><description>关闭（Closed）：正常处理请求</description></item>
+              <item><description>打开（Open）：快速失败，不发送请求</description></item>
+              <item><description>半开（Half-Open）：尝试恢复，允许少量请求通过</description></item>
+            </list>
+            <para>配置示例：</para>
+            <code>
+            "CircuitBreaker": {
+              "Enabled": true,
+              "FailureThreshold": 5,
+              "BreakDurationSeconds": 30
+            }
+            </code>
+            <para>工作原理：</para>
+            <para>1. 当连续失败次数达到 FailureThreshold 时，熔断器打开</para>
+            <para>2. 熔断器打开期间，所有请求立即失败（不发送到服务端）</para>
+            <para>3. 经过 BreakDurationSeconds 后，熔断器进入半开状态</para>
+            <para>4. 半开状态下，如果请求成功，熔断器关闭；否则重新打开</para>
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientCircuitBreakerOptions.Enabled">
+            <summary>
+            是否启用熔断
+            </summary>
+            <remarks>
+            设置为 true 启用熔断保护机制，false 则禁用。
+            默认值为 false。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientCircuitBreakerOptions.FailureThreshold">
+            <summary>
+            故障阈值
+            </summary>
+            <remarks>
+            在指定时间内发生多少次失败后触发熔断。
+            默认值为 5。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientCircuitBreakerOptions.BreakDurationSeconds">
+            <summary>
+            熔断持续时间（秒）
+            </summary>
+            <remarks>
+            熔断器打开后保持的持续时间，单位为秒。
+            这段时间内所有请求都会快速失败。
+            默认值为 30 秒。
+            </remarks>
+        </member>
+        <member name="T:Mud.HttpUtils.MudHttpClientOptions">
+            <summary>
+            单个 HttpClient 实例的配置选项
+            </summary>
+            <remarks>
+            <para>配置单个命名 HttpClient 的详细选项，包括基地址、超时、默认请求头等。</para>
+            <para>配置示例：</para>
+            <code>
+            "Clients": {
+              "MyApi": {
+                "BaseAddress": "https://api.example.com",
+                "TimeoutSeconds": 30,
+                "DefaultHeaders": {
+                  "X-Api-Key": "my-api-key",
+                  "X-Client-Version": "1.0.0"
+                },
+                "TokenManagerKey": "MyTokenManager",
+                "TokenInjectionMode": "Header",
+                "AllowAnyStatusCode": false
+              }
+            }
+            </code>
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientOptions.BaseAddress">
+            <summary>
+            基础地址
+            </summary>
+            <remarks>
+            HttpClient 请求的基础 URL，例如：https://api.example.com
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientOptions.TimeoutSeconds">
+            <summary>
+            超时时间（秒）
+            </summary>
+            <remarks>
+            请求的超时时间，单位为秒。如果未设置，使用系统默认值（通常为 100 秒）。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientOptions.DefaultHeaders">
+            <summary>
+            默认请求头
+            </summary>
+            <remarks>
+            每个请求都会自动添加的默认 HTTP 头。
+            常用于设置 API 密钥、客户端版本等信息。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientOptions.TokenManagerKey">
+            <summary>
+            Token 管理器键名
+            </summary>
+            <remarks>
+            用于获取访问令牌的 Token 管理器标识。
+            与 <see cref="P:Mud.HttpUtils.MudHttpClientOptions.TokenInjectionMode"/> 配合使用。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientOptions.TokenInjectionMode">
+            <summary>
+            Token 注入模式
+            </summary>
+            <remarks>
+            指定如何将 Token 注入到请求中：
+            <list type="bullet">
+              <item>Header - 通过 Authorization 请求头注入</item>
+              <item>Query - 通过查询参数注入</item>
+              <item>Cookie - 通过 Cookie 注入</item>
+            </list>
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientOptions.TokenScopes">
+            <summary>
+            Token 作用域
+            </summary>
+            <remarks>
+            请求访问令牌时使用的 OAuth 作用域，多个作用域用空格分隔。
+            例如："read write admin"
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientOptions.AllowAnyStatusCode">
+            <summary>
+            允许任意 HTTP 状态码
+            </summary>
+            <remarks>
+            如果设置为 true，HttpClient 不会因非 2xx 状态码抛出异常。
+            适用于需要手动处理错误响应的场景。
+            默认值为 false。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientOptions.SerializationMethod">
+            <summary>
+            序列化方法
+            </summary>
+            <remarks>
+            指定请求/响应内容的序列化方式：
+            <list type="bullet">
+              <item>Json - JSON 序列化（默认）</item>
+              <item>Xml - XML 序列化</item>
+              <item>FormUrlEncoded - URL 编码表单序列化</item>
+            </list>
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientOptions.Resilience">
+            <summary>
+            弹性策略配置
+            </summary>
+            <remarks>
+            配置重试、熔断和超时等弹性策略。
+            详见 <see cref="T:Mud.HttpUtils.MudHttpClientResilienceOptions"/>。
+            </remarks>
+        </member>
+        <member name="T:Mud.HttpUtils.MudHttpClientResilienceOptions">
+            <summary>
+            HttpClient 弹性策略配置选项
+            </summary>
+            <remarks>
+            <para>配置 HTTP 请求的弹性策略，包括重试、熔断和超时保护。</para>
+            <para>这些策略可以帮助应用程序在面对临时故障时保持稳定性和可用性。</para>
+            <para>配置示例：</para>
+            <code>
+            "Resilience": {
+              "Retry": {
+                "Enabled": true,
+                "MaxRetries": 3,
+                "DelayMilliseconds": 1000,
+                "UseExponentialBackoff": true
+              },
+              "CircuitBreaker": {
+                "Enabled": true,
+                "FailureThreshold": 5,
+                "BreakDurationSeconds": 30
+              },
+              "Timeout": {
+                "Enabled": true,
+                "TimeoutMilliseconds": 30000
+              }
+            }
+            </code>
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientResilienceOptions.Retry">
+            <summary>
+            重试策略配置
+            </summary>
+            <remarks>
+            配置请求失败时的自动重试行为。
+            详见 <see cref="T:Mud.HttpUtils.MudHttpClientRetryOptions"/>。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientResilienceOptions.CircuitBreaker">
+            <summary>
+            熔断策略配置
+            </summary>
+            <remarks>
+            配置当故障率达到阈值时的熔断保护行为。
+            熔断期间，请求会快速失败，避免对下游服务造成更大压力。
+            详见 <see cref="T:Mud.HttpUtils.MudHttpClientCircuitBreakerOptions"/>。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientResilienceOptions.Timeout">
+            <summary>
+            超时策略配置
+            </summary>
+            <remarks>
+            配置请求的超时时间限制。
+            与 <see cref="P:Mud.HttpUtils.MudHttpClientOptions.TimeoutSeconds"/> 不同，这是弹性策略层面的超时控制。
+            详见 <see cref="T:Mud.HttpUtils.MudHttpClientTimeoutOptions"/>。
+            </remarks>
+        </member>
+        <member name="T:Mud.HttpUtils.MudHttpClientRetryOptions">
+            <summary>
+            HttpClient 重试策略配置选项
+            </summary>
+            <remarks>
+            <para>配置 HTTP 请求失败时的自动重试行为。</para>
+            <para>重试策略会在遇到临时性故障（如网络超时、5xx 服务器错误）时自动重试请求，提高请求成功率。</para>
+            <para>配置示例：</para>
+            <code>
+            "Retry": {
+              "Enabled": true,
+              "MaxRetries": 3,
+              "DelayMilliseconds": 1000,
+              "UseExponentialBackoff": true
+            }
+            </code>
+            <para>指数退避策略：</para>
+            <para>当 UseExponentialBackoff 为 true 时，重试间隔时间会指数增长：</para>
+            <para>- 第 1 次重试：1000ms</para>
+            <para>- 第 2 次重试：2000ms</para>
+            <para>- 第 3 次重试：4000ms</para>
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientRetryOptions.Enabled">
+            <summary>
+            是否启用重试
+            </summary>
+            <remarks>
+            设置为 true 启用自动重试机制，false 则禁用。
+            默认值为 false。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientRetryOptions.MaxRetries">
+            <summary>
+            最大重试次数
+            </summary>
+            <remarks>
+            请求失败后的最大重试次数。
+            默认值为 3。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientRetryOptions.DelayMilliseconds">
+            <summary>
+            重试延迟时间（毫秒）
+            </summary>
+            <remarks>
+            每次重试前的等待时间，单位为毫秒。
+            当启用指数退避时，这是第一次重试的延迟时间。
+            默认值为 1000（1 秒）。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientRetryOptions.UseExponentialBackoff">
+            <summary>
+            是否使用指数退避策略
+            </summary>
+            <remarks>
+            设置为 true 时，每次重试的延迟时间会指数增长（1x, 2x, 4x, 8x...）。
+            这有助于避免在服务端恢复期间造成流量洪峰。
+            默认值为 true。
+            </remarks>
+        </member>
+        <member name="T:Mud.HttpUtils.MudHttpClientTimeoutOptions">
+            <summary>
+            HttpClient 超时策略配置选项
+            </summary>
+            <remarks>
+            <para>配置 HTTP 请求的超时时间限制，作为弹性策略的一部分。</para>
+            <para>与 <see cref="P:Mud.HttpUtils.MudHttpClientOptions.TimeoutSeconds"/> 不同，这是 Polly 弹性策略层面的超时控制，
+            可以与重试、熔断策略组合使用。</para>
+            <para>配置示例：</para>
+            <code>
+            "Timeout": {
+              "Enabled": true,
+              "TimeoutMilliseconds": 30000
+            }
+            </code>
+            <para>超时策略优先级：</para>
+            <list type="number">
+              <item><description>方法级 [Timeout] 特性（最高优先级）</description></item>
+              <item><description>弹性策略超时（TimeoutMilliseconds）</description></item>
+              <item><description>HttpClient 超时（TimeoutSeconds）</description></item>
+              <item><description>系统默认值（最低优先级）</description></item>
+            </list>
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientTimeoutOptions.Enabled">
+            <summary>
+            是否启用超时策略
+            </summary>
+            <remarks>
+            设置为 true 启用 Polly 超时策略，false 则禁用。
+            默认值为 false。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpClientTimeoutOptions.TimeoutMilliseconds">
+            <summary>
+            超时时间（毫秒）
+            </summary>
+            <remarks>
+            请求的最大允许执行时间，单位为毫秒。
+            超过此时间将触发 <see cref="T:System.TimeoutException"/>。
+            默认值为 30000（30 秒）。
+            </remarks>
+        </member>
         <member name="T:Mud.HttpUtils.DefaultAesEncryptionProvider">
             <summary>
             默认 AES 加密提供程序实现，使用 AES 对称加密算法进行数据加密和解密。
@@ -106,9 +484,9 @@
             <code>RegexOptions.IgnoreCase</code><br/>
             Explanation:<br/>
             <code>
+            ○ Match if at the beginning of the string.<br/>
             ○ Match with 3 alternative expressions, atomically.<br/>
                 ○ Match a sequence of expressions.<br/>
-                    ○ Match if at the beginning of the string.<br/>
                     ○ Loop greedily any number of times.<br/>
                         ○ Match a character in the set [+/-9A-Za-z\u212A] exactly 4 times.<br/>
                     ○ Optional (greedy).<br/>
@@ -121,20 +499,18 @@
                                 ○ Match '='.<br/>
                     ○ Match if at the end of the string or if before an ending newline.<br/>
                 ○ Match a sequence of expressions.<br/>
-                    ○ Match if at the beginning of the string.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 8 times.<br/>
+                    ○ Match a hexadecimal digit exactly 8 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 12 times.<br/>
+                    ○ Match a hexadecimal digit exactly 12 times.<br/>
                     ○ Match if at the end of the string or if before an ending newline.<br/>
                 ○ Match a sequence of expressions.<br/>
-                    ○ Match if at the beginning of the string.<br/>
-                    ○ Match a character in the set [-0-9A-Z_a-z\u212A] atomically at least 20 times.<br/>
+                    ○ Match a character in the set [\-0-9A-Z_a-z\u212A] atomically at least 20 times.<br/>
                     ○ Match if at the end of the string or if before an ending newline.<br/>
             </code>
             </remarks>
@@ -2565,6 +2941,9 @@
         </member>
         <member name="M:System.Text.RegularExpressions.Generated.Utilities.StackPush(System.Int32[]@,System.Int32@,System.Int32,System.Int32)">
             <summary>Pushes 2 values onto the backtracking stack.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_asciiLettersAndDigitsAndDashUnderscoreKelvinSign">
+            <summary>Supports searching for characters in or not in "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyzK".</summary>
         </member>
         <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_nonAscii_2BDDE98808630E9B520E3AD9F33E4A0D939EAAED4FF3C3CC86415C934044BB2B">
             <summary>Supports searching for characters in or not in "CKSYcksyK".</summary>
