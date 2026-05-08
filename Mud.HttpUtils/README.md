@@ -9,7 +9,7 @@ Mud.HttpUtils 是 Mud.HttpUtils 生态的**元包（Metapackage）**，自动引
 - **Mud.HttpUtils.Client** — 客户端实现（`EnhancedHttpClient`、`HttpClientFactoryEnhancedClient`、`DefaultAesEncryptionProvider`、`DefaultApiKeyProvider`、`DefaultHmacSignatureProvider`、`DefaultSensitiveDataMasker`、`CacheResponseInterceptor`、`MemoryHttpResponseCache`、`TokenRefreshHostedService`）
 - **Mud.HttpUtils.Resilience** — 弹性策略（重试、超时、熔断，基于 Polly，支持请求克隆大小限制和重试回调）
 
-同时提供**一站式 DI 服务注册**扩展方法 `AddMudHttpUtils`，一步完成 Client + Resilience 注册。
+同时提供**一站式 DI 服务注册**扩展方法 `AddMudHttpUtils`（位于 `Mud.HttpUtils.Resilience` 包），一步完成 Client + Resilience 注册。
 
 ## 目标框架
 
@@ -53,7 +53,7 @@ public interface IUserApi
 
 ### 2. 注册服务
 
-**推荐方式** — 使用 `AddMudHttpUtils` 一站式注册：
+**推荐方式** — 使用 `AddMudHttpUtils` 一站式注册（需引用 `Mud.HttpUtils.Resilience` 包并 `using Mud.HttpUtils.Resilience;`）：
 
 ```csharp
 // 注册 Client + 弹性装饰器
@@ -130,7 +130,7 @@ public class UserService
 
 ## DI 服务注册方法
 
-### AddMudHttpUtils — 一站式注册
+### AddMudHttpUtils — 一站式注册（位于 Mud.HttpUtils.Resilience 包）
 
 | 重载                                                                                                | 说明                            |
 | --------------------------------------------------------------------------------------------------- | ------------------------------- |
@@ -139,7 +139,7 @@ public class UserService
 | `AddMudHttpUtils(clientName, configuration, configureHttpClient, sectionPath)`                      | 从配置文件绑定弹性策略          |
 | `AddMudHttpUtils(clientName, configureEncryption, configureHttpClient, configureResilienceOptions)` | 带 AES 加密配置的重载           |
 
-### AddMudHttpClient — 仅注册客户端
+### AddMudHttpClient — 仅注册客户端（位于 Mud.HttpUtils.Client 包）
 
 | 重载                                                                     | 说明                                             |
 | ------------------------------------------------------------------------ | ------------------------------------------------ |
@@ -149,7 +149,7 @@ public class UserService
 
 > `AddMudHttpClient` 同时注册 `IHttpClientResolver` 为单例服务，支持多命名客户端场景。
 
-### AddMudHttpResilience / AddMudHttpResilienceDecorator — 弹性策略
+### AddMudHttpResilience / AddMudHttpResilienceDecorator — 弹性策略（位于 Mud.HttpUtils.Resilience 包）
 
 | 方法                                                        | 说明                                              |
 | ----------------------------------------------------------- | ------------------------------------------------- |

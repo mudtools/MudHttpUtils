@@ -208,6 +208,11 @@ options.MaxCloneContentSize = -1;
 | `AddMudHttpResilienceDecorator(configureOptions)` | 注册装饰器，为 `IEnhancedHttpClient` 添加弹性策略 |
 | `AddMudHttpResilienceDecorator(configuration, sectionPath)` | 从配置绑定的装饰器注册 |
 | `AddMudHttpUtils(clientName, configureHttpClient, configureResilienceOptions)` | 一站式注册 Client + Resilience |
+| `AddMudHttpUtils(clientName, configureHttpClient, enableResilience)` | 一站式注册，可选是否启用弹性策略 |
+| `AddMudHttpUtils(clientName, baseAddress, configureResilienceOptions)` | 带基础地址的一站式注册 |
+| `AddMudHttpUtils(clientName, baseAddress, enableResilience)` | 带基础地址的一站式注册，可选是否启用弹性策略 |
+| `AddMudHttpUtils(clientName, configuration, configureHttpClient, sectionPath)` | 从配置绑定弹性策略的一站式注册 |
+| `AddMudHttpUtils(clientName, configureEncryption, configureHttpClient, configureResilienceOptions)` | 带 AES 加密的一站式注册 |
 
 > **注意**：`AddMudHttpResilienceDecorator` 必须在 `AddMudHttpClient` 之后调用。
 

@@ -3,6 +3,7 @@
 		<TargetFrameworks>netstandard2.0;net6.0;net8.0;net10.0</TargetFrameworks>
 		<PackageId>Mud.HttpUtils.Client</PackageId>
 		<Description>Mud HttpUtils 客户端实现，提供 EnhancedHttpClient 和 IHttpClientFactory 集成。</Description>
+		<PackageTags>HttpUtils;HttpClient;WebAPI;IHttpClientFactory;EnhancedHttpClient;加密;脱敏;HMAC;DI;Mud HttpUtils</PackageTags>
 		<Product>Mud Http Utils</Product>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageReadmeFile>README.md</PackageReadmeFile>

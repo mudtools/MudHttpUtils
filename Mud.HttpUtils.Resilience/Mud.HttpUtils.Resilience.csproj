@@ -3,6 +3,7 @@
 		<TargetFrameworks>netstandard2.0;net6.0;net8.0;net10.0</TargetFrameworks>
 		<PackageId>Mud.HttpUtils.Resilience</PackageId>
 		<Description>Mud HttpUtils 弹性策略扩展包，提供重试、超时、熔断等 HTTP 请求弹性策略。</Description>
+		<PackageTags>HttpUtils;HttpClient;WebAPI;弹性;重试;超时;熔断;Polly;Resilience;DI;Mud HttpUtils</PackageTags>
 		<Product>Mud Http Utils</Product>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageReadmeFile>README.md</PackageReadmeFile>

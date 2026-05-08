@@ -3,7 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Mud.HttpUtils.Resilience;
 
-namespace Mud.HttpUtils.Tests;
+namespace Mud.HttpUtils.Resilience.Tests;
 
 public class MudHttpUtilsServiceCollectionExtensionsTests
 {
@@ -12,7 +12,7 @@ public class MudHttpUtilsServiceCollectionExtensionsTests
     [Fact]
     public void AddMudHttpUtils_WithNullServices_ThrowsArgumentNullException()
     {
-        var act = () => MudHttpUtilsServiceCollectionExtensions.AddMudHttpUtils(
+        var act = () => ServiceCollectionExtensions.AddMudHttpUtils(
             null!, "testClient", client => { });
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("services");
@@ -104,7 +104,7 @@ public class MudHttpUtilsServiceCollectionExtensionsTests
     [Fact]
     public void AddMudHttpUtils_WithBaseAddress_NullServices_ThrowsArgumentNullException()
     {
-        var act = () => MudHttpUtilsServiceCollectionExtensions.AddMudHttpUtils(
+        var act = () => ServiceCollectionExtensions.AddMudHttpUtils(
             null!, "testClient", "https://api.example.com");
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("services");
@@ -162,7 +162,7 @@ public class MudHttpUtilsServiceCollectionExtensionsTests
     {
         var configuration = new ConfigurationBuilder().Build();
 
-        var act = () => MudHttpUtilsServiceCollectionExtensions.AddMudHttpUtils(
+        var act = () => ServiceCollectionExtensions.AddMudHttpUtils(
             null!, "testClient", configuration, client => { });
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("services");
@@ -211,7 +211,7 @@ public class MudHttpUtilsServiceCollectionExtensionsTests
     [Fact]
     public void AddMudHttpUtils_WithEncryption_NullServices_ThrowsArgumentNullException()
     {
-        var act = () => MudHttpUtilsServiceCollectionExtensions.AddMudHttpUtils(
+        var act = () => ServiceCollectionExtensions.AddMudHttpUtils(
             null!, "testClient", opts => { }, client => { });
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("services");

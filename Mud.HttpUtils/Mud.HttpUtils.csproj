@@ -6,9 +6,10 @@
 		<IncludeBuildOutput>false</IncludeBuildOutput>
 		<SuppressDependenciesWhenPacking>false</SuppressDependenciesWhenPacking>
 		<Description>Mud HttpUtils 元包，自动引用 Abstractions、Attributes、Client 和 Resilience 子模块。</Description>
+		<PackageTags>HttpUtils;HttpClient;WebAPI;弹性策略;重试;熔断;超时;DI;元包;Mud HttpUtils</PackageTags>
 		<Product>Mud Http Utils</Product>
 		<PackageId>Mud.HttpUtils</PackageId>
-		<DocumentationFile>$(OutputPath)$(AssemblyName).xml</DocumentationFile>
+
 	</PropertyGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\Mud.HttpUtils.Abstractions\Mud.HttpUtils.Abstractions.csproj" />

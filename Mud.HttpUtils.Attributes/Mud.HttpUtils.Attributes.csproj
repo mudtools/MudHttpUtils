@@ -3,6 +3,7 @@
 		<TargetFramework>netstandard2.0</TargetFramework>
 		<PackageId>Mud.HttpUtils.Attributes</PackageId>
 		<Description>Mud HttpUtils 特性定义，提供 HTTP API 声明式标注。</Description>
+		<PackageTags>HttpUtils;HttpClient;WebAPI;特性;Attribute;声明式;REST;Mud HttpUtils</PackageTags>
 		<Product>Mud Http Utils</Product>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageReadmeFile>README.md</PackageReadmeFile>

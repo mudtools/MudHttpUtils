@@ -53,56 +53,33 @@
             <param name="timeoutMilliseconds">超时时间（毫秒）</param>
             <returns>弹性策略实例。</returns>
         </member>
-        <member name="T:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider">
+        <member name="T:Mud.HttpUtils.Resilience.CircuitBreakerOptions">
             <summary>
-            基于 Polly 的弹性策略提供器实现。
+            熔断策略配置选项。
             </summary>
         </member>
-        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.#ctor(Microsoft.Extensions.Options.IOptions{Mud.HttpUtils.Resilience.ResilienceOptions},Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider})">
+        <member name="P:Mud.HttpUtils.Resilience.CircuitBreakerOptions.Enabled">
             <summary>
-            初始化 PollyResiliencePolicyProvider 实例。
-            </summary>
-            <param name="options">弹性策略配置选项。</param>
-            <param name="logger">日志记录器（可选）。</param>
-        </member>
-        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.#ctor(Mud.HttpUtils.Resilience.ResilienceOptions,Microsoft.Extensions.Logging.ILogger)">
-            <summary>
-            初始化 PollyResiliencePolicyProvider 实例（用于无 DI 场景）。
-            </summary>
-            <param name="options">弹性策略配置选项。</param>
-            <param name="logger">日志记录器（可选）。</param>
-        </member>
-        <member name="T:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.PolicyCacheKey">
-            <inheritdoc />
-        </member>
-        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetRetryPolicy``1">
-            <inheritdoc />
-        </member>
-        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetTimeoutPolicy``1">
-            <inheritdoc />
-        </member>
-        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetCircuitBreakerPolicy``1">
-            <inheritdoc />
-        </member>
-        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetCombinedPolicy``1">
-            <inheritdoc />
-        </member>
-        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetMethodPolicy``1(System.Boolean,System.Int32,System.Int32,System.Boolean,System.Boolean,System.Int32,System.Int32,System.Boolean,System.Int32)">
-            <inheritdoc />
-        </member>
-        <member name="T:Mud.HttpUtils.Resilience.ResilienceConstants">
-            <summary>
-            弹性策略相关常量定义。
+            是否启用熔断策略。默认 false。
             </summary>
         </member>
-        <member name="F:Mud.HttpUtils.Resilience.ResilienceConstants.SkipResiliencePropertyKey">
+        <member name="P:Mud.HttpUtils.Resilience.CircuitBreakerOptions.FailureThreshold">
             <summary>
-            用于标记请求已由方法级弹性策略包装，装饰器应跳过全局弹性策略的属性键。
+            触发熔断的连续失败阈值。默认 5。
             </summary>
-            <remarks>
-            当生成的代码使用方法级弹性特性（[Retry]、[CircuitBreaker]、[Timeout]）时，
-            会在 HttpRequestMessage.Properties 中设置此键，以避免与 ResilientHttpClient 装饰器的全局弹性策略产生双重包装。
-            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.CircuitBreakerOptions.BreakDurationSeconds">
+            <summary>
+            熔断持续时间（秒）。默认 30。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.CircuitBreakerOptions.SamplingDurationSeconds">
+            <summary>
+            采样窗口时间（秒）。默认 60。
+            在此时间窗口内统计失败率，用于高级熔断策略。
+            注意：当前基于 Polly v7 的实现使用连续失败计数模式，此属性暂未生效。
+            升级至 Polly v8 后将启用基于采样窗口的高级熔断策略。
+            </summary>
         </member>
         <member name="T:Mud.HttpUtils.Resilience.ResilienceOptions">
             <summary>
@@ -189,33 +166,56 @@
             全局超时时间（秒）。默认 30。
             </summary>
         </member>
-        <member name="T:Mud.HttpUtils.Resilience.CircuitBreakerOptions">
+        <member name="T:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider">
             <summary>
-            熔断策略配置选项。
+            基于 Polly 的弹性策略提供器实现。
             </summary>
         </member>
-        <member name="P:Mud.HttpUtils.Resilience.CircuitBreakerOptions.Enabled">
+        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.#ctor(Microsoft.Extensions.Options.IOptions{Mud.HttpUtils.Resilience.ResilienceOptions},Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider})">
             <summary>
-            是否启用熔断策略。默认 false。
+            初始化 PollyResiliencePolicyProvider 实例。
+            </summary>
+            <param name="options">弹性策略配置选项。</param>
+            <param name="logger">日志记录器（可选）。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.#ctor(Mud.HttpUtils.Resilience.ResilienceOptions,Microsoft.Extensions.Logging.ILogger)">
+            <summary>
+            初始化 PollyResiliencePolicyProvider 实例（用于无 DI 场景）。
+            </summary>
+            <param name="options">弹性策略配置选项。</param>
+            <param name="logger">日志记录器（可选）。</param>
+        </member>
+        <member name="T:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.PolicyCacheKey">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetRetryPolicy``1">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetTimeoutPolicy``1">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetCircuitBreakerPolicy``1">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetCombinedPolicy``1">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetMethodPolicy``1(System.Boolean,System.Int32,System.Int32,System.Boolean,System.Boolean,System.Int32,System.Int32,System.Boolean,System.Int32)">
+            <inheritdoc />
+        </member>
+        <member name="T:Mud.HttpUtils.Resilience.ResilienceConstants">
+            <summary>
+            弹性策略相关常量定义。
             </summary>
         </member>
-        <member name="P:Mud.HttpUtils.Resilience.CircuitBreakerOptions.FailureThreshold">
+        <member name="F:Mud.HttpUtils.Resilience.ResilienceConstants.SkipResiliencePropertyKey">
             <summary>
-            触发熔断的连续失败阈值。默认 5。
+            用于标记请求已由方法级弹性策略包装，装饰器应跳过全局弹性策略的属性键。
             </summary>
-        </member>
-        <member name="P:Mud.HttpUtils.Resilience.CircuitBreakerOptions.BreakDurationSeconds">
-            <summary>
-            熔断持续时间（秒）。默认 30。
-            </summary>
-        </member>
-        <member name="P:Mud.HttpUtils.Resilience.CircuitBreakerOptions.SamplingDurationSeconds">
-            <summary>
-            采样窗口时间（秒）。默认 60。
-            在此时间窗口内统计失败率，用于高级熔断策略。
-            注意：当前基于 Polly v7 的实现使用连续失败计数模式，此属性暂未生效。
-            升级至 Polly v8 后将启用基于采样窗口的高级熔断策略。
-            </summary>
+            <remarks>
+            当生成的代码使用方法级弹性特性（[Retry]、[CircuitBreaker]、[Timeout]）时，
+            会在 HttpRequestMessage.Properties 中设置此键，以避免与 ResilientHttpClient 装饰器的全局弹性策略产生双重包装。
+            </remarks>
         </member>
         <member name="T:Mud.HttpUtils.Resilience.ResilientHttpClient">
             <summary>
@@ -239,6 +239,9 @@
             <param name="logger">日志记录器（可选）。</param>
             <param name="options">弹性策略配置选项（可选）。</param>
             <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.SendAsAsyncEnumerable``1(System.Net.Http.HttpRequestMessage,System.Object,System.Threading.CancellationToken)">
+            <inheritdoc />
         </member>
         <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.SendAsync``1(System.Net.Http.HttpRequestMessage,System.Object,System.Threading.CancellationToken)">
             <inheritdoc />
@@ -305,6 +308,74 @@
         </member>
         <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.WithBaseAddress(System.Uri)">
             <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ServiceCollectionExtensions.AddMudHttpUtils(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,System.Action{System.Net.Http.HttpClient},System.Action{Mud.HttpUtils.Resilience.ResilienceOptions})">
+            <summary>
+            一站式注册 Mud.HttpUtils 服务，包括 HttpClient 和弹性策略装饰器。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="clientName">Named HttpClient 的名称。</param>
+            <param name="configureHttpClient">配置 HttpClient 的委托。</param>
+            <param name="configureResilienceOptions">配置弹性策略选项的委托（可选）。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ServiceCollectionExtensions.AddMudHttpUtils(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,System.Action{System.Net.Http.HttpClient},System.Boolean)">
+            <summary>
+            一站式注册 Mud.HttpUtils 服务，可选择是否启用弹性策略。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="clientName">Named HttpClient 的名称。</param>
+            <param name="configureHttpClient">配置 HttpClient 的委托。</param>
+            <param name="enableResilience">是否启用弹性策略装饰器。启用后将使用默认弹性策略配置（重试3次、超时30秒）。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ServiceCollectionExtensions.AddMudHttpUtils(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,System.String,System.Action{Mud.HttpUtils.Resilience.ResilienceOptions})">
+            <summary>
+            一站式注册 Mud.HttpUtils 服务，使用基础地址配置 HttpClient。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="clientName">Named HttpClient 的名称。</param>
+            <param name="baseAddress">HttpClient 的基础地址。</param>
+            <param name="configureResilienceOptions">配置弹性策略选项的委托（可选）。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ServiceCollectionExtensions.AddMudHttpUtils(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,System.String,System.Boolean)">
+            <summary>
+            一站式注册 Mud.HttpUtils 服务，使用基础地址配置 HttpClient，可选择是否启用弹性策略。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="clientName">Named HttpClient 的名称。</param>
+            <param name="baseAddress">HttpClient 的基础地址。</param>
+            <param name="enableResilience">是否启用弹性策略装饰器。启用后将使用默认弹性策略配置（重试3次、超时30秒）。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ServiceCollectionExtensions.AddMudHttpUtils(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,Microsoft.Extensions.Configuration.IConfiguration,System.Action{System.Net.Http.HttpClient},System.String)">
+            <summary>
+            一站式注册 Mud.HttpUtils 服务，从配置文件绑定弹性策略选项。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="clientName">Named HttpClient 的名称。</param>
+            <param name="configuration">配置实例。</param>
+            <param name="configureHttpClient">配置 HttpClient 的委托。</param>
+            <param name="resilienceSectionPath">弹性策略配置节点路径，默认 "MudHttpResilience"。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ServiceCollectionExtensions.AddMudHttpUtils(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,System.Action{Mud.HttpUtils.AesEncryptionOptions},System.Action{System.Net.Http.HttpClient},System.Action{Mud.HttpUtils.Resilience.ResilienceOptions})">
+            <summary>
+            一站式注册 Mud.HttpUtils 服务，带 AES 加密配置。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="clientName">Named HttpClient 的名称。</param>
+            <param name="configureEncryption">配置 AES 加密选项的委托。</param>
+            <param name="configureHttpClient">配置 HttpClient 的委托。</param>
+            <param name="configureResilienceOptions">配置弹性策略选项的委托（可选）。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
         </member>
     </members>
 </doc>

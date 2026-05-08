@@ -74,7 +74,7 @@ public interface IUserApi
 ### 2. 注册服务
 
 ```csharp
-// 注册 HttpClient + 弹性策略
+// 注册 HttpClient + 弹性策略（需 using Mud.HttpUtils.Resilience;）
 services.AddMudHttpUtils("userApi", "https://api.example.com");
 
 // 注册生成器生成的 API 接口实现
