@@ -279,7 +279,7 @@
         </member>
         <member name="P:Mud.HttpUtils.ICurrentUserId.CurrentUserId">
             <summary>
-            获取或设置当前用户的唯一标识符。
+            获取当前用户的唯一标识符。
             </summary>
         </member>
         <member name="T:Mud.HttpUtils.IMudAppContext">
@@ -955,12 +955,6 @@
             <param name="response">HTTP 响应消息。</param>
             <param name="cancellationToken">取消令牌。</param>
             <returns>异步任务。</returns>
-        </member>
-        <member name="T:Mud.HttpUtils.IHttpSender">
-            <summary>
-            轻量级 HTTP 发送器接口，仅组合基础 HTTP 操作和 JSON 序列化能力。
-            适用于不需要 XML 处理和加密功能的场景，遵循接口隔离原则。
-            </summary>
         </member>
         <member name="T:Mud.HttpUtils.IJsonHttpClient">
             <summary>
