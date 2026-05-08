@@ -1,4 +1,5 @@
 using HttpClientApiTest.Models;
+using Mud.HttpUtils.Attributes.Methods;
 
 namespace HttpClientApiTest.NewFeatureTests;
 
