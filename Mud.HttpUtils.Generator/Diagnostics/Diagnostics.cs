@@ -110,6 +110,22 @@ internal static class Diagnostics
         category: "代码生成",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor HttpClientPathParameterMismatch = new(
+        id: "HTTPCLIENT013",
+        title: "路径参数不匹配",
+        messageFormat: "接口 {0} 的方法 {1} 的 URL 模板 '{2}' 中的路径参数与方法的 [Path] 参数不匹配。{3}",
+        category: "代码生成",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor HttpClientTypeNotFound = new(
+        id: "HTTPCLIENT014",
+        title: "HttpClient 类型未找到",
+        messageFormat: "接口 {0} 指定的 HttpClient 类型 '{1}' 在当前编译中未找到。请确认类型名称是否正确，或确保已通过 AddMudHttpClient 注册了对应的命名客户端。",
+        category: "代码生成",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
     #endregion
 
     #region HttpClient注册生成器诊断信息 (HTTPCLIENTREG001-002)

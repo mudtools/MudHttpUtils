@@ -511,6 +511,65 @@
             获取查询参数的值。
             </summary>
         </member>
+        <member name="T:Mud.HttpUtils.Attributes.SerializationMethod">
+            <summary>
+            序列化方法
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.Attributes.SerializationMethod.Json">
+            <summary>
+            使用 JSON 序列化（默认）
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.Attributes.SerializationMethod.Xml">
+            <summary>
+            使用 XML 序列化
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.Attributes.SerializationMethod.FormUrlEncoded">
+            <summary>
+            使用表单 URL 编码序列化
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.Attributes.SerializationMethodAttribute">
+            <summary>
+            标记接口或方法，指定请求体的默认序列化方法。
+            </summary>
+            <remarks>
+            <para>
+            应用于接口或方法，指定 [Body] 参数的默认序列化方法。
+            方法级特性优先于接口级特性。
+            </para>
+            </remarks>
+            <example>
+            <code>
+            [HttpClientApi]
+            [SerializationMethod(SerializationMethod.Xml)]
+            public interface IXmlApi
+            {
+                [Post("/api/data")]
+                Task SendDataAsync([Body] DataModel data);
+                // 使用 XML 序列化请求体
+            
+                [Post("/api/json-data")]
+                [SerializationMethod(SerializationMethod.Json)]
+                Task SendJsonDataAsync([Body] DataModel data);
+                // 方法级覆盖，使用 JSON 序列化
+            }
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.Attributes.SerializationMethodAttribute.#ctor(Mud.HttpUtils.Attributes.SerializationMethod)">
+            <summary>
+            初始化 <see cref="T:Mud.HttpUtils.Attributes.SerializationMethodAttribute"/> 类的新实例。
+            </summary>
+            <param name="method">序列化方法。</param>
+        </member>
+        <member name="P:Mud.HttpUtils.Attributes.SerializationMethodAttribute.Method">
+            <summary>
+            获取序列化方法。
+            </summary>
+        </member>
         <member name="T:Mud.HttpUtils.Attributes.TokenAttribute">
             <summary>
             标记参数、接口或方法使用令牌（Token）认证。
@@ -1476,65 +1535,6 @@
         <member name="P:Mud.HttpUtils.Attributes.UploadAttribute.ContentType">
             <summary>
             获取或设置文件的内容类型（MIME 类型）。如果未设置，将自动检测。
-            </summary>
-        </member>
-        <member name="T:Mud.HttpUtils.Attributes.SerializationMethod">
-            <summary>
-            序列化方法
-            </summary>
-        </member>
-        <member name="F:Mud.HttpUtils.Attributes.SerializationMethod.Json">
-            <summary>
-            使用 JSON 序列化（默认）
-            </summary>
-        </member>
-        <member name="F:Mud.HttpUtils.Attributes.SerializationMethod.Xml">
-            <summary>
-            使用 XML 序列化
-            </summary>
-        </member>
-        <member name="F:Mud.HttpUtils.Attributes.SerializationMethod.FormUrlEncoded">
-            <summary>
-            使用表单 URL 编码序列化
-            </summary>
-        </member>
-        <member name="T:Mud.HttpUtils.Attributes.SerializationMethodAttribute">
-            <summary>
-            标记接口或方法，指定请求体的默认序列化方法。
-            </summary>
-            <remarks>
-            <para>
-            应用于接口或方法，指定 [Body] 参数的默认序列化方法。
-            方法级特性优先于接口级特性。
-            </para>
-            </remarks>
-            <example>
-            <code>
-            [HttpClientApi]
-            [SerializationMethod(SerializationMethod.Xml)]
-            public interface IXmlApi
-            {
-                [Post("/api/data")]
-                Task SendDataAsync([Body] DataModel data);
-                // 使用 XML 序列化请求体
-            
-                [Post("/api/json-data")]
-                [SerializationMethod(SerializationMethod.Json)]
-                Task SendJsonDataAsync([Body] DataModel data);
-                // 方法级覆盖，使用 JSON 序列化
-            }
-            </code>
-            </example>
-        </member>
-        <member name="M:Mud.HttpUtils.Attributes.SerializationMethodAttribute.#ctor(Mud.HttpUtils.Attributes.SerializationMethod)">
-            <summary>
-            初始化 <see cref="T:Mud.HttpUtils.Attributes.SerializationMethodAttribute"/> 类的新实例。
-            </summary>
-            <param name="method">序列化方法。</param>
-        </member>
-        <member name="P:Mud.HttpUtils.Attributes.SerializationMethodAttribute.Method">
-            <summary>
-            获取序列化方法。
             </summary>
         </member>
     </members>

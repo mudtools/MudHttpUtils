@@ -45,6 +45,16 @@ internal class GeneratorContext
     public bool HasQueryMap { get; set; }
 
     /// <summary>
+    /// 接口中是否有方法使用了 XML 响应类型，需要生成 XmlSerializer 静态缓存字段
+    /// </summary>
+    public bool HasXmlResponse { get; set; }
+
+    /// <summary>
+    /// 需要生成 XmlSerializer 静态缓存字段的类型名称集合（去重）
+    /// </summary>
+    public HashSet<string> XmlResponseTypes { get; set; } = [];
+
+    /// <summary>
     /// 接口中是否有方法使用了 ApiKey 注入模式
     /// </summary>
     public bool HasApiKeyInjection { get; set; }

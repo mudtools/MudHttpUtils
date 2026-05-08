@@ -127,6 +127,11 @@ internal class InterfaceImplementationGenerator
             isValid = false;
         }
 
+        if (!string.IsNullOrEmpty(configuration.HttpClient))
+        {
+            ValidateHttpClientType(configuration.HttpClient);
+        }
+
         if (!string.IsNullOrEmpty(configuration.InheritedFrom))
         {
             var hasTokenManager = !string.IsNullOrEmpty(configuration.TokenManager);
@@ -148,6 +153,43 @@ internal class InterfaceImplementationGenerator
         }
 
         return isValid;
+    }
+
+    private void ValidateHttpClientType(string httpClientType)
+    {
+        if (string.IsNullOrWhiteSpace(httpClientType))
+            return;
+
+        if (httpClientType == "IEnhancedHttpClient" || httpClientType == "IBaseHttpClient")
+            return;
+
+        var typeSymbol = _compilation.GetTypeByMetadataName(httpClientType);
+
+        if (typeSymbol == null)
+        {
+            var candidates = new[]
+            {
+                httpClientType,
+                $"Mud.HttpUtils.{httpClientType}",
+                $"System.Net.Http.{httpClientType}"
+            };
+
+            foreach (var candidate in candidates)
+            {
+                typeSymbol = _compilation.GetTypeByMetadataName(candidate);
+                if (typeSymbol != null)
+                    break;
+            }
+        }
+
+        if (typeSymbol == null)
+        {
+            _context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.HttpClientTypeNotFound,
+                _interfaceDecl.GetLocation(),
+                _interfaceSymbol.Name,
+                httpClientType));
+        }
     }
 
     /// <summary>

@@ -144,20 +144,9 @@ internal class RequestBuilder
     /// </summary>
     public void GenerateQueryParameters(StringBuilder codeBuilder, MethodAnalysisResult methodInfo)
     {
+        var queryBinder = new QueryParameterBinder();
         var queryParams = methodInfo.Parameters
-            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.QueryAttribute))
-            .ToList();
-
-        var arrayQueryParams = methodInfo.Parameters
-            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.ArrayQueryAttribute))
-            .ToList();
-
-        var queryMapParams = methodInfo.Parameters
-            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.QueryMapAttribute))
-            .ToList();
-
-        var rawQueryStringParams = methodInfo.Parameters
-            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.RawQueryStringAttribute))
+            .Where(p => queryBinder.CanBind(p))
             .ToList();
 
         var hasTokenQuery = ShouldGenerateTokenQuery(methodInfo);
@@ -166,7 +155,7 @@ internal class RequestBuilder
             .Where(p => p.AttributeType == "Query")
             .ToList();
 
-        if (!queryParams.Any() && !arrayQueryParams.Any() && !queryMapParams.Any() && !rawQueryStringParams.Any() && !hasTokenQuery && !interfaceQueryProperties.Any())
+        if (!queryParams.Any() && !hasTokenQuery && !interfaceQueryProperties.Any())
             return;
 
         codeBuilder.AppendLine($"            var __queryParams = HttpUtility.ParseQueryString(string.Empty);");
@@ -179,17 +168,7 @@ internal class RequestBuilder
 
         foreach (var param in queryParams)
         {
-            GenerateSingleQueryParameter(codeBuilder, param);
-        }
-
-        foreach (var param in arrayQueryParams)
-        {
-            GenerateArrayQueryParameter(codeBuilder, param);
-        }
-
-        foreach (var param in queryMapParams)
-        {
-            GenerateQueryMapParameter(codeBuilder, param);
+            queryBinder.GenerateBindingCode(codeBuilder, param, methodInfo, "            ");
         }
 
         if (hasTokenQuery)
@@ -214,11 +193,6 @@ internal class RequestBuilder
         codeBuilder.AppendLine("            {");
         codeBuilder.AppendLine("                __url += (__url.Contains(\"?\") ? \"&\" : \"?\") + string.Join(\"&\", __rawQueryPairs);");
         codeBuilder.AppendLine("            }");
-
-        foreach (var param in rawQueryStringParams)
-        {
-            GenerateRawQueryStringParameter(codeBuilder, param);
-        }
     }
 
     /// <summary>
@@ -246,81 +220,14 @@ internal class RequestBuilder
     /// </summary>
     public void GenerateHeaderParameters(StringBuilder codeBuilder, MethodAnalysisResult methodInfo)
     {
+        var headerBinder = new HeaderParameterBinder();
         var headerParams = methodInfo.Parameters
-            .Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.HeaderAttribute))
+            .Where(p => headerBinder.CanBind(p))
             .ToList();
-
-        string? interfaceHeaderName = GetTokenHeaderName(methodInfo);
-
-        var headerMergeMode = methodInfo.HeaderMergeMode;
 
         foreach (var param in headerParams)
         {
-            var headerAttr = param.Attributes.First(a => a.Name == HttpClientGeneratorConstants.HeaderAttribute);
-            var headerName = headerAttr.Arguments.FirstOrDefault()?.ToString() ?? param.Name;
-            var formatString = GetFormatString(headerAttr);
-            var replace = headerAttr.NamedArguments.TryGetValue("Replace", out var replaceVal) && replaceVal is true;
-
-            var isTokenParam = param.Attributes.Any(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.Name));
-            if (isTokenParam && !string.IsNullOrEmpty(interfaceHeaderName))
-            {
-                var hasExplicitHeaderName = headerAttr.Arguments.Length > 0 && !string.IsNullOrEmpty(headerAttr.Arguments[0]?.ToString());
-                if (!hasExplicitHeaderName)
-                {
-                    headerName = interfaceHeaderName;
-                }
-            }
-
-            var isStringType = TypeDetectionHelper.IsStringType(param.Type);
-            var shouldReplace = replace || headerMergeMode == "Replace";
-            var shouldIgnore = headerMergeMode == "Ignore";
-
-            if (shouldIgnore)
-                continue;
-
-            if (isStringType)
-            {
-                if (param.IsValidated)
-                {
-                    if (shouldReplace)
-                    {
-                        codeBuilder.AppendLine($"            __httpRequest.Headers.Remove(\"{headerName}\");");
-                        codeBuilder.AppendLine($"            __httpRequest.Headers.Add(\"{headerName}\", {param.Name});");
-                    }
-                    else
-                    {
-                        codeBuilder.AppendLine($"            __httpRequest.Headers.Add(\"{headerName}\", {param.Name});");
-                    }
-                }
-                else
-                {
-                    codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({param.Name}))");
-                    if (shouldReplace)
-                    {
-                        codeBuilder.AppendLine($"                __httpRequest.Headers.Remove(\"{headerName}\");");
-                        codeBuilder.AppendLine($"                __httpRequest.Headers.Add(\"{headerName}\", {param.Name});");
-                    }
-                    else
-                    {
-                        codeBuilder.AppendLine($"                __httpRequest.Headers.Add(\"{headerName}\", {param.Name});");
-                    }
-                }
-            }
-            else
-            {
-                var formatExpression = !string.IsNullOrEmpty(formatString)
-                    ? $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{formatString}}}\", {param.Name})"
-                    : $"{param.Name}.ToString()";
-                if (shouldReplace)
-                {
-                    codeBuilder.AppendLine($"            __httpRequest.Headers.Remove(\"{headerName}\");");
-                    codeBuilder.AppendLine($"            __httpRequest.Headers.Add(\"{headerName}\", {formatExpression});");
-                }
-                else
-                {
-                    codeBuilder.AppendLine($"            __httpRequest.Headers.Add(\"{headerName}\", {formatExpression});");
-                }
-            }
+            headerBinder.GenerateBindingCode(codeBuilder, param, methodInfo, "            ");
         }
     }
 
@@ -690,13 +597,21 @@ internal class RequestBuilder
         if (!isVoidType)
         {
             var innerTypeWithoutNullable = GetVariableTypeString(innerType);
-            codeBuilder.AppendLine($"                {innerTypeWithoutNullable} __content;");
-            codeBuilder.AppendLine($"                try");
-            codeBuilder.AppendLine($"                {{");
+            var innerTypeWithoutNullableClean = innerType.EndsWith("?", StringComparison.OrdinalIgnoreCase) ? innerType.TrimEnd('?') : innerType;
+
+            if (TypeDetectionHelper.IsStringType(innerTypeWithoutNullableClean))
+            {
+                codeBuilder.AppendLine($"                return new Mud.HttpUtils.Response<{innerType}>(__statusCode, __rawContent, __rawContent, __responseHeaders);");
+            }
+            else
+            {
+                codeBuilder.AppendLine($"                {innerTypeWithoutNullable} __content;");
+                codeBuilder.AppendLine($"                try");
+                codeBuilder.AppendLine($"                {{");
 
             if (isXmlResponse)
             {
-                codeBuilder.AppendLine($"                    var __deserializedObj = new System.Xml.Serialization.XmlSerializer(typeof({innerType})).Deserialize(new System.IO.StringReader(__rawContent));");
+                codeBuilder.AppendLine($"                    var __deserializedObj = {GetXmlSerializerFieldReference(innerType)}.Deserialize(new System.IO.StringReader(__rawContent));");
                 codeBuilder.AppendLine($"                    __content = __deserializedObj is {innerType} __typed ? __typed : default;");
             }
             else
@@ -704,7 +619,7 @@ internal class RequestBuilder
                 codeBuilder.AppendLine($"                    __content = System.Text.Json.JsonSerializer.Deserialize<{innerType}>(__rawContent, _jsonSerializerOptions);");
             }
 
-            codeBuilder.AppendLine($"                }}");
+                codeBuilder.AppendLine($"                }}");
 
             if (isXmlResponse)
             {
@@ -719,7 +634,7 @@ internal class RequestBuilder
                 codeBuilder.AppendLine($"                    return new Mud.HttpUtils.Response<{innerType}>(__statusCode, \"Failed to deserialize JSON response: \" + ex.Message + \". Raw content: \" + __rawContent, __responseHeaders);");
             }
 
-            codeBuilder.AppendLine($"                }}");
+                codeBuilder.AppendLine($"                }}");
 
             if (methodInfo.ResponseEnableDecrypt)
             {
@@ -731,7 +646,8 @@ internal class RequestBuilder
                 codeBuilder.AppendLine($"                }}");
             }
 
-            codeBuilder.AppendLine($"                return new Mud.HttpUtils.Response<{innerType}>(__statusCode, __content, __rawContent, __responseHeaders);");
+                codeBuilder.AppendLine($"                return new Mud.HttpUtils.Response<{innerType}>(__statusCode, __content, __rawContent, __responseHeaders);");
+            }
         }
         else
         {
@@ -789,12 +705,19 @@ internal class RequestBuilder
 
         var deserializeTypeWithoutNullable = deserializeType.EndsWith("?", StringComparison.OrdinalIgnoreCase) ? deserializeType.TrimEnd('?') : deserializeType;
         var innerTypeWithoutNullable = GetVariableTypeString(deserializeType);
+
+        if (TypeDetectionHelper.IsStringType(deserializeTypeWithoutNullable))
+        {
+            codeBuilder.AppendLine($"            return {rawContentVar};");
+            return;
+        }
+
         if (isXmlResponse)
         {
             codeBuilder.AppendLine($"            {innerTypeWithoutNullable} {resultVariable};");
             codeBuilder.AppendLine($"            try");
             codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                var __deserializedObj = new System.Xml.Serialization.XmlSerializer(typeof({deserializeType})).Deserialize(new System.IO.StringReader({rawContentVar}));");
+            codeBuilder.AppendLine($"                var __deserializedObj = {GetXmlSerializerFieldReference(deserializeType)}.Deserialize(new System.IO.StringReader({rawContentVar}));");
             codeBuilder.AppendLine($"                {resultVariable} = __deserializedObj is {deserializeType} __typed ? __typed : default;");
             codeBuilder.AppendLine($"            }}");
             codeBuilder.AppendLine($"            catch (System.Exception ex) when (ex is System.InvalidOperationException or System.Xml.XmlException)");
@@ -872,12 +795,19 @@ internal class RequestBuilder
 
         var deserializeTypeWithoutNullable = deserializeType.EndsWith("?", StringComparison.OrdinalIgnoreCase) ? deserializeType.TrimEnd('?') : deserializeType;
         var innerTypeWithoutNullable = GetVariableTypeString(deserializeType);
+
+        if (TypeDetectionHelper.IsStringType(deserializeTypeWithoutNullable))
+        {
+            codeBuilder.AppendLine($"            return {rawContentVar};");
+            return;
+        }
+
         if (isXmlResponse)
         {
             codeBuilder.AppendLine($"            {innerTypeWithoutNullable} {resultVariable};");
             codeBuilder.AppendLine($"            try");
             codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                var __deserializedObj = new System.Xml.Serialization.XmlSerializer(typeof({deserializeType})).Deserialize(new System.IO.StringReader({rawContentVar}));");
+            codeBuilder.AppendLine($"                var __deserializedObj = {GetXmlSerializerFieldReference(deserializeType)}.Deserialize(new System.IO.StringReader({rawContentVar}));");
             codeBuilder.AppendLine($"                {resultVariable} = __deserializedObj is {deserializeType} __typed ? __typed : throw new System.InvalidOperationException(\"Failed to deserialize XML response to type \" + typeof({deserializeType}).Name);");
             codeBuilder.AppendLine($"            }}");
             codeBuilder.AppendLine($"            catch (System.InvalidOperationException ex) when (ex.Message.StartsWith(\"Failed to deserialize XML\"))");
@@ -1390,6 +1320,19 @@ internal class RequestBuilder
             return false;
 
         return bool.TryParse(rawStringArg?.ToString(), out var result) && result;
+    }
+
+    internal static string GetXmlSerializerFieldReference(string typeName)
+    {
+        var safeName = typeName
+            .Replace("<", "_")
+            .Replace(">", "_")
+            .Replace(",", "_")
+            .Replace(" ", "")
+            .Replace(".", "_")
+            .Replace("[", "_")
+            .Replace("]", "_");
+        return $"_xmlSerializer_{safeName}";
     }
 
     #endregion

@@ -14,7 +14,12 @@ public class Program
 {
     public static void Main(string[] args)
     {
-        BenchmarkRunner.Run<Benchmarks>();
+        var switcher = new BenchmarkSwitcher(new[]
+        {
+            typeof(Benchmarks),
+            typeof(HttpClientBenchmarks)
+        });
+        switcher.Run(args);
     }
 }
 

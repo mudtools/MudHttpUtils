@@ -172,6 +172,16 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("        public string? CurrentUserId { get; set; }");
         }
 
+        if (_context.HasXmlResponse && _context.XmlResponseTypes.Count > 0)
+        {
+            codeBuilder.AppendLine();
+            foreach (var xmlType in _context.XmlResponseTypes.OrderBy(t => t))
+            {
+                var safeFieldName = GetXmlSerializerFieldName(xmlType);
+                codeBuilder.AppendLine($"        private static readonly System.Xml.Serialization.XmlSerializer {safeFieldName} = new System.Xml.Serialization.XmlSerializer(typeof({xmlType}));");
+            }
+        }
+
         codeBuilder.AppendLine();
     }
 
@@ -525,5 +535,18 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("            return _appContextSwitcher.BeginScope(context);");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
+    }
+
+    private static string GetXmlSerializerFieldName(string typeName)
+    {
+        var safeName = typeName
+            .Replace("<", "_")
+            .Replace(">", "_")
+            .Replace(",", "_")
+            .Replace(" ", "")
+            .Replace(".", "_")
+            .Replace("[", "_")
+            .Replace("]", "_");
+        return $"_xmlSerializer_{safeName}";
     }
 }

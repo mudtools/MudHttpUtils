@@ -392,6 +392,16 @@
             生成上下文
             </summary>
         </member>
+        <member name="P:Mud.HttpUtils.Generators.Context.GeneratorContext.HasXmlResponse">
+            <summary>
+            接口中是否有方法使用了 XML 响应类型，需要生成 XmlSerializer 静态缓存字段
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Generators.Context.GeneratorContext.XmlResponseTypes">
+            <summary>
+            需要生成 XmlSerializer 静态缓存字段的类型名称集合（去重）
+            </summary>
+        </member>
         <member name="P:Mud.HttpUtils.Generators.Context.GeneratorContext.HasApiKeyInjection">
             <summary>
             接口中是否有方法使用了 ApiKey 注入模式

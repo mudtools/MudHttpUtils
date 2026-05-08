@@ -37,6 +37,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
             if (!isHttpMethod)
                 continue;
 
+            ValidatePathParameters(context, methodSymbol);
+
             GenerateMethodImplementation(codeBuilder, context, methodSymbol, isAbstractClass);
 
             if (HasCacheAttribute(methodSymbol))
@@ -53,6 +55,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
             {
                 context.HasQueryMap = true;
             }
+
+            TrackXmlResponseType(context, methodSymbol);
         }
     }
 
@@ -604,6 +608,127 @@ internal class MethodGenerator : ICodeFragmentGenerator
         return type.StartsWith("Response<", StringComparison.Ordinal) ||
                type.StartsWith("Mud.HttpUtils.Response<", StringComparison.Ordinal) ||
                type.StartsWith("Mud.HttpUtils.HttpClient.Response<", StringComparison.Ordinal);
+    }
+
+    private static void ValidatePathParameters(GeneratorContext context, IMethodSymbol methodSymbol)
+    {
+        var httpMethodAttr = MethodAnalyzer.FindHttpMethodAttributeFromSymbol(methodSymbol);
+        if (httpMethodAttr == null)
+            return;
+
+        var urlTemplate = MethodAnalyzer.GetAttributeArgumentValueFromAttributeData(httpMethodAttr, 0)?.ToString().Trim('"') ?? "";
+        if (string.IsNullOrEmpty(urlTemplate))
+            return;
+
+        var templatePlaceholders = ExtractPathPlaceholders(urlTemplate);
+        if (templatePlaceholders.Count == 0)
+            return;
+
+        var pathParams = new HashSet<string>(
+            methodSymbol.Parameters
+                .Where(p => p.GetAttributes().Any(attr =>
+                    HttpClientGeneratorConstants.PathAttributes.Contains(attr.AttributeClass?.Name)))
+                .Select(p => p.Name),
+            StringComparer.OrdinalIgnoreCase);
+
+        var missingInMethod = templatePlaceholders
+            .Where(p => !pathParams.Contains(p))
+            .ToList();
+
+        var extraInMethod = pathParams
+            .Where(p => !templatePlaceholders.Contains(p))
+            .ToList();
+
+        if (missingInMethod.Count > 0 || extraInMethod.Count > 0)
+        {
+            var details = new List<string>();
+            if (missingInMethod.Count > 0)
+                details.Add($"URL 模板中的占位符 {{{string.Join("}, {", missingInMethod)}}} 在方法参数中找不到对应的 [Path] 参数");
+            if (extraInMethod.Count > 0)
+                details.Add($"方法参数中的 [Path] 参数 {string.Join(", ", extraInMethod)} 在 URL 模板中找不到对应的占位符");
+
+            var methodSyntax = MethodAnalyzer.FindMethodSyntax(
+                context.Compilation, methodSymbol, context.InterfaceDeclaration, context.SemanticModel);
+
+            context.ProductionContext.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.HttpClientPathParameterMismatch,
+                methodSyntax?.GetLocation() ?? context.InterfaceDeclaration.GetLocation(),
+                context.InterfaceDeclaration.Identifier.Text,
+                methodSymbol.Name,
+                urlTemplate,
+                string.Join("；", details)));
+        }
+    }
+
+    private static HashSet<string> ExtractPathPlaceholders(string urlTemplate)
+    {
+        var placeholders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var span = urlTemplate.AsSpan();
+        for (var i = 0; i < span.Length; i++)
+        {
+            if (span[i] == '{')
+            {
+                var end = span.Slice(i).IndexOf('}');
+                if (end > 1)
+                {
+                    var placeholder = span.Slice(i + 1, end - 1).ToString();
+                    if (!string.IsNullOrEmpty(placeholder))
+                        placeholders.Add(placeholder);
+                    i += end;
+                }
+            }
+        }
+        return placeholders;
+    }
+
+    private static void TrackXmlResponseType(GeneratorContext context, IMethodSymbol methodSymbol)
+    {
+        var methodInfo = MethodAnalyzer.AnalyzeMethod(
+            context.Compilation,
+            methodSymbol,
+            context.InterfaceDeclaration,
+            context.SemanticModel);
+
+        if (!methodInfo.IsValid)
+            return;
+
+        var isXmlResponse = ContentTypeHelper.IsXmlContentType(methodInfo.ResponseContentType);
+        if (!isXmlResponse)
+            return;
+
+        var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
+        if (string.IsNullOrEmpty(deserializeType) || deserializeType == "void" || deserializeType == "System.Void")
+            return;
+
+        if (IsResponseType(methodInfo))
+        {
+            var innerType = ExtractResponseInnerType(deserializeType);
+            if (!string.IsNullOrEmpty(innerType) && innerType != "void" && innerType != "System.Void")
+            {
+                context.XmlResponseTypes.Add(innerType);
+            }
+        }
+        else
+        {
+            context.XmlResponseTypes.Add(deserializeType);
+        }
+
+        context.HasXmlResponse = context.XmlResponseTypes.Count > 0;
+    }
+
+    private static string? ExtractResponseInnerType(string responseType)
+    {
+        var prefix = "Response<";
+        var startIndex = responseType.IndexOf(prefix, StringComparison.Ordinal);
+        if (startIndex < 0)
+            return null;
+
+        startIndex += prefix.Length;
+        var endIndex = responseType.LastIndexOf('>');
+        if (endIndex <= startIndex)
+            return null;
+
+        return responseType.Substring(startIndex, endIndex - startIndex);
     }
 
 }
