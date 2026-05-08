@@ -127,11 +127,18 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
 
     private async void RefreshTokenCallback(object? state)
     {
-        var shouldContinue = await TokenRefreshHelper.RefreshAllTokenManagersAsync(
-            _tokenManagers, _logger, _options, CancellationToken.None).ConfigureAwait(false);
-        if (!shouldContinue)
+        try
         {
-            _timer?.Change(Timeout.Infinite, Timeout.Infinite);
+            var shouldContinue = await TokenRefreshHelper.RefreshAllTokenManagersAsync(
+                _tokenManagers, _logger, _options, CancellationToken.None).ConfigureAwait(false);
+            if (!shouldContinue)
+            {
+                _timer?.Change(Timeout.Infinite, Timeout.Infinite);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogCritical(ex, "令牌后台刷新发生未处理异常，进程可能不稳定");
         }
     }
 

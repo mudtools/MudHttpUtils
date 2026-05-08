@@ -401,11 +401,12 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         ValidateEndpointHttps(_options.TokenEndpoint, "令牌端点 (TokenEndpoint)");
     }
 
-    private static long CalculateExpire(long? expiresIn)
+    private long CalculateExpire(long? expiresIn)
     {
         if (expiresIn.HasValue && expiresIn.Value > 0)
         {
-            return DateTimeOffset.UtcNow.AddSeconds(expiresIn.Value - 60).ToUnixTimeMilliseconds();
+            var safetyMargin = Math.Max(0, _options.ExpirySafetyMarginSeconds);
+            return DateTimeOffset.UtcNow.AddSeconds(expiresIn.Value - safetyMargin).ToUnixTimeMilliseconds();
         }
 
         return DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds();

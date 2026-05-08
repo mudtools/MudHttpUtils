@@ -19,7 +19,10 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     private readonly Timer _cleanupTimer;
     private readonly Timer _lockCleanupTimer;
     private readonly object _cleanupLock = new();
-    private volatile bool _disposed;
+    /// <summary>
+    /// 指示对象是否已释放。
+    /// </summary>
+    protected volatile bool _disposed;
     private const string DefaultScopeKey = "default";
     private const int CleanupIntervalSeconds = 300;
     private const int LockCleanupIntervalSeconds = 600;

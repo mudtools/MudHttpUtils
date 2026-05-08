@@ -276,8 +276,6 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         return _userTokenCache.Get<UserTokenInfo>(userId);
     }
 
-    private bool _disposed;
-
     /// <summary>
     /// 释放资源。
     /// </summary>
@@ -286,8 +284,6 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     {
         if (_disposed)
             return;
-
-        _disposed = true;
 
         if (disposing)
         {
@@ -301,14 +297,5 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         }
 
         base.Dispose(disposing);
-    }
-
-    /// <summary>
-    /// 释放资源。
-    /// </summary>
-    public override void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
     }
 }

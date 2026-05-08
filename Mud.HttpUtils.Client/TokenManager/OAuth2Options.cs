@@ -47,4 +47,11 @@ public class OAuth2Options
     /// 默认为 true。
     /// </summary>
     public bool RequireHttps { get; set; } = true;
+
+    /// <summary>
+    /// 令牌过期安全边际（秒），默认 60 秒。
+    /// 计算令牌过期时间时会从服务器返回的 expires_in 中减去此值，
+    /// 以确保在令牌实际过期前提前刷新，避免因网络延迟导致使用已过期令牌。
+    /// </summary>
+    public int ExpirySafetyMarginSeconds { get; set; } = 60;
 }

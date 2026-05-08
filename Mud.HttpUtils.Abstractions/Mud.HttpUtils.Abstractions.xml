@@ -2092,6 +2092,11 @@
             令牌管理器抽象基类，提供并发安全的令牌刷新实现。
             </summary>
         </member>
+        <member name="F:Mud.HttpUtils.TokenManagerBase._disposed">
+            <summary>
+            指示对象是否已释放。
+            </summary>
+        </member>
         <member name="E:Mud.HttpUtils.TokenManagerBase.RefreshFailed">
             <summary>
             令牌刷新失败事件。
@@ -2190,6 +2195,32 @@
         </member>
         <member name="M:Mud.HttpUtils.TokenManagerBase.Dispose">
             <inheritdoc />
+        </member>
+        <member name="T:Mud.HttpUtils.TokenRecoveryOptions">
+            <summary>
+            令牌恢复配置选项，用于控制 401 响应时的自动令牌刷新与重试行为。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.TokenRecoveryOptions.SectionName">
+            <summary>
+            配置节的名称。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenRecoveryOptions.Enabled">
+            <summary>
+            获取或设置是否启用令牌恢复机制，默认 true。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenRecoveryOptions.RecoveryMaxRetries">
+            <summary>
+            获取或设置令牌恢复的最大重试次数，默认 1。
+            设置为 0 可禁用恢复重试。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenRecoveryOptions.TokenScheme">
+            <summary>
+            获取或设置令牌的认证方案（如 "Bearer"、"Basic"），默认 "Bearer"。
+            </summary>
         </member>
         <member name="T:Mud.HttpUtils.TokenRefreshBackgroundOptions">
             <summary>
