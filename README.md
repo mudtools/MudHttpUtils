@@ -2,8 +2,12 @@
 
 <div align="center">
 
-[![NuGet](https://img.shields.io/nuget/v/Mud.HttpUtils.svg)](https://www.nuget.org/packages/Mud.HttpUtils/)
-[![NuGet](https://img.shields.io/nuget/v/Mud.HttpUtils.Generator.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Generator/)
+[![Mud.HttpUtils](https://img.shields.io/nuget/v/Mud.HttpUtils?label=Mud.HttpUtils "Mud.HttpUtils")](https://www.nuget.org/packages/Mud.HttpUtils/ "Mud.HttpUtils") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils "downloads")](https://www.nuget.org/packages/Mud.HttpUtils/ "downloads")
+[![Mud.HttpUtils.Abstractions](https://img.shields.io/nuget/v/Mud.HttpUtils.Abstractions?label=Mud.HttpUtils.Abstractions "Mud.HttpUtils.Abstractions")](https://www.nuget.org/packages/Mud.HttpUtils.Abstractions/ "Mud.HttpUtils.Abstractions") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Abstractions "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Abstractions/ "downloads")
+[![Mud.HttpUtils.Attributes](https://img.shields.io/nuget/v/Mud.HttpUtils.Attributes?label=Mud.HttpUtils.Attributes "Mud.HttpUtils.Attributes")](https://www.nuget.org/packages/Mud.HttpUtils.Attributes/ "Mud.HttpUtils.Attributes") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Attributes "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Attributes/ "downloads")
+[![Mud.HttpUtils.Client](https://img.shields.io/nuget/v/Mud.HttpUtils.Client?label=Mud.HttpUtils.Client "Mud.HttpUtils.Client")](https://www.nuget.org/packages/Mud.HttpUtils.Client/ "Mud.HttpUtils.Client") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Client "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Client/ "downloads")
+[![Mud.HttpUtils.Resilience](https://img.shields.io/nuget/v/Mud.HttpUtils.Resilience?label=Mud.HttpUtils.Resilience "Mud.HttpUtils.Resilience")](https://www.nuget.org/packages/Mud.HttpUtils.Resilience/ "Mud.HttpUtils.Resilience") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Resilience "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Resilience/ "downloads")
+[![Mud.HttpUtils.Generator](https://img.shields.io/nuget/v/Mud.HttpUtils.Generator?label=Mud.HttpUtils.Generator "Mud.HttpUtils.Generator")](https://www.nuget.org/packages/Mud.HttpUtils.Generator/ "Mud.HttpUtils.Generator") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Generator "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Generator/ "downloads")
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE-MIT)
 
 **基于 Roslyn 的声明式 HTTP 客户端源代码生成器**
@@ -33,14 +37,14 @@ Mud.HttpUtils 是一个基于 Roslyn 源代码生成器的声明式 HTTP 客户�
 
 ### 📦 NuGet 包
 
-| 包名                       | 说明                                                  | NuGet                                                                                                                                 |
-| -------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| Mud.HttpUtils              | 元包：Abstractions + Attributes + Client + Resilience | [![NuGet](https://img.shields.io/nuget/v/Mud.HttpUtils.svg)](https://www.nuget.org/packages/Mud.HttpUtils/)                           |
-| Mud.HttpUtils.Abstractions | 纯接口定义，最小依赖                                  | [![NuGet](https://img.shields.io/nuget/v/Mud.HttpUtils.Abstractions.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Abstractions/) |
-| Mud.HttpUtils.Attributes   | 特性定义                                              | [![NuGet](https://img.shields.io/nuget/v/Mud.HttpUtils.Attributes.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Attributes/)     |
-| Mud.HttpUtils.Client       | 客户端实现 + DI 注册                                  | [![NuGet](https://img.shields.io/nuget/v/Mud.HttpUtils.Client.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Client/)             |
-| Mud.HttpUtils.Resilience   | 弹性策略（Polly）                                     | [![NuGet](https://img.shields.io/nuget/v/Mud.HttpUtils.Resilience.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Resilience/)     |
-| Mud.HttpUtils.Generator    | 源代码生成器                                          | [![NuGet](https://img.shields.io/nuget/v/Mud.HttpUtils.Generator.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Generator/)       |
+| 组件                          | 描述                                                                                             | NuGet                                                                                                                               | 下载                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| **Mud.HttpUtils**              | 元包：Abstractions + Attributes + Client + Resilience                                            | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.svg)](https://www.nuget.org/packages/Mud.HttpUtils/)                           | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.svg)               |
+| **Mud.HttpUtils.Abstractions** | 纯接口定义，最小依赖                                                                             | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Abstractions.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Abstractions/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Abstractions.svg)   |
+| **Mud.HttpUtils.Attributes**   | 特性定义                                                                                         | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Attributes.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Attributes/)     | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Attributes.svg)    |
+| **Mud.HttpUtils.Client**       | 客户端实现 + DI 注册                                                                             | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Client.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Client/)             | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Client.svg)        |
+| **Mud.HttpUtils.Resilience**   | 弹性策略（Polly）                                                                                | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Resilience.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Resilience/)     | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Resilience.svg)     |
+| **Mud.HttpUtils.Generator**   | 源代码生成器                                                                                     | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Generator.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Generator/)       | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Generator.svg)     |
 
 ### 🚀 快速开始
 
