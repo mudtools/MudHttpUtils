@@ -67,6 +67,8 @@ internal class InterfaceImplementationGenerator
 
         DetectICurrentUserId(generatorContext);
 
+        PrecomputeXmlResponseTypes(generatorContext);
+
         var generators = InitializeGenerators(generatorContext);
 
         foreach (var generator in generators)
@@ -433,6 +435,74 @@ internal class InterfaceImplementationGenerator
     {
         context.ImplementsICurrentUserId = _interfaceSymbol.AllInterfaces
             .Any(i => i.Name == "ICurrentUserId");
+    }
+
+    /// <summary>
+    /// 预计算接口方法中使用的 XML 响应类型，以便 ConstructorGenerator 能在生成字段时正确生成 XmlSerializer 静态缓存字段
+    /// </summary>
+    private void PrecomputeXmlResponseTypes(GeneratorContext context)
+    {
+        var methods = TypeSymbolHelper.GetAllMethods(_interfaceSymbol, true);
+        foreach (var method in methods)
+        {
+            var isHttpMethod = MethodAnalyzer.FindHttpMethodAttributeFromSymbol(method) != null;
+            if (!isHttpMethod)
+                continue;
+
+            var methodInfo = MethodAnalyzer.AnalyzeMethod(
+                context.Compilation,
+                method,
+                context.InterfaceDeclaration,
+                context.SemanticModel);
+
+            if (!methodInfo.IsValid)
+                continue;
+
+            var isXmlResponse = ContentTypeHelper.IsXmlContentType(methodInfo.ResponseContentType);
+            if (!isXmlResponse)
+                continue;
+
+            var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
+            if (string.IsNullOrEmpty(deserializeType) || deserializeType == "void" || deserializeType == "System.Void")
+                continue;
+
+            if (IsResponseType(deserializeType))
+            {
+                var innerType = ExtractResponseInnerType(deserializeType);
+                if (!string.IsNullOrEmpty(innerType) && innerType != "void" && innerType != "System.Void")
+                {
+                    context.XmlResponseTypes.Add(innerType);
+                }
+            }
+            else
+            {
+                context.XmlResponseTypes.Add(deserializeType);
+            }
+        }
+
+        context.HasXmlResponse = context.XmlResponseTypes.Count > 0;
+    }
+
+    private static bool IsResponseType(string typeName)
+    {
+        return typeName.StartsWith("Response<", StringComparison.Ordinal) ||
+               typeName.StartsWith("Mud.HttpUtils.Response<", StringComparison.Ordinal) ||
+               typeName.StartsWith("Mud.HttpUtils.HttpClient.Response<", StringComparison.Ordinal);
+    }
+
+    private static string? ExtractResponseInnerType(string responseType)
+    {
+        var prefix = "Response<";
+        var startIndex = responseType.IndexOf(prefix, StringComparison.Ordinal);
+        if (startIndex < 0)
+            return null;
+
+        startIndex += prefix.Length;
+        var endIndex = responseType.LastIndexOf('>');
+        if (endIndex <= startIndex)
+            return null;
+
+        return responseType.Substring(startIndex, endIndex - startIndex);
     }
 
     /// <summary>

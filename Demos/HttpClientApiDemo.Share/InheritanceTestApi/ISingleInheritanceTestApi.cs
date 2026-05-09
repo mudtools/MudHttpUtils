@@ -35,7 +35,7 @@ public interface ISingleInheritanceTestApi : IBaseInheritanceTestApi
     /// 特点：新增方法，不重写基接口方法
     /// </summary>
     [Get("/api/v1/entities/{id}/details")]
-    Task<EntityInfo> GetEntityDetailsAsync(string id, CancellationToken cancellationToken = default);
+    Task<EntityInfo> GetEntityDetailsAsync([Path] string id, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 测试：批量删除实体（单层继承新增方法）

@@ -11,6 +11,9 @@ using System.Text.RegularExpressions;
 
 namespace Mud.HttpUtils;
 
+/// <summary>
+/// 信息脱敏工具类，用于在日志记录或调试过程中隐藏敏感信息，如令牌、密码、个人身份信息等。
+/// </summary>
 #if NET7_0_OR_GREATER
 public static partial class MessageSanitizer
 #else
@@ -73,6 +76,12 @@ public static class MessageSanitizer
     private static Regex IdCardPattern() => IdCardPatternField;
 #endif
 
+    /// <summary>
+    /// 信息脱敏方法，接受一个字符串输入，尝试将其解析为 JSON 对象，并对其中的敏感字段进行脱敏处理。如果解析失败，则对整个字符串进行正则表达式替换以隐藏敏感信息。最终返回脱敏后的字符串，长度超过指定最大值时会被截断并添加省略号。
+    /// </summary>
+    /// <param name="message">要脱敏的消息字符串。</param>
+    /// <param name="maxLength">脱敏后字符串的最大长度，超过该长度将被截断并添加省略号。</param>
+    /// <returns>脱敏后的字符串。</returns>
     public static string Sanitize(string message, int maxLength = 500)
     {
         if (string.IsNullOrWhiteSpace(message))

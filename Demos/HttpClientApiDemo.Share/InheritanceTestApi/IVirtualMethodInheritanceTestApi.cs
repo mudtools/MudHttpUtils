@@ -52,7 +52,7 @@ public interface IVirtualMethodInheritanceTestApi : IVirtualMethodBaseTestApi
     /// 特点：新增方法，使用不同的路径和返回类型
     /// </summary>
     [Get("/api/v2/orders/{id}/details")]
-    Task<OrderDetailInfo> GetOrderDetailsAsync(string id, CancellationToken cancellationToken = default);
+    Task<OrderDetailInfo> GetOrderDetailsAsync([Path] string id, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 测试：高级创建订单（重写基接口方法）
@@ -86,7 +86,7 @@ public interface IVirtualMethodChildInheritanceTestApi : IVirtualMethodInheritan
     /// 特点：新增方法，使用不同的路径和返回类型
     /// </summary>
     [Get("/api/v3/orders/{id}/full-details")]
-    Task<OrderFullDetailInfo> GetOrderFullDetailsAsync(string id, CancellationToken cancellationToken = default);
+    Task<OrderFullDetailInfo> GetOrderFullDetailsAsync([Path] string id, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 测试：批量获取订单详情（新增方法）

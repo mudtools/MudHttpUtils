@@ -631,8 +631,22 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 .Select(p => p.Name),
             StringComparer.OrdinalIgnoreCase);
 
+        // 当 Token 使用 Path 注入模式时，URL 模板中的 Token 占位符应由 Token 注入机制替换，
+        // 不需要对应的 [Path] 参数，因此将 Token 占位符从缺失列表中排除
+        var methodInfo = MethodAnalyzer.AnalyzeMethod(
+            context.Compilation,
+            methodSymbol,
+            context.InterfaceDeclaration,
+            context.SemanticModel);
+        var tokenPathPlaceholders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (methodInfo.IsValid && methodInfo.InterfaceTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModePath
+            && !string.IsNullOrEmpty(methodInfo.InterfaceTokenName))
+        {
+            tokenPathPlaceholders.Add(methodInfo.InterfaceTokenName);
+        }
+
         var missingInMethod = templatePlaceholders
-            .Where(p => !pathParams.Contains(p))
+            .Where(p => !pathParams.Contains(p) && !tokenPathPlaceholders.Contains(p))
             .ToList();
 
         var extraInMethod = pathParams

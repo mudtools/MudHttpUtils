@@ -17,7 +17,7 @@ public interface IFeishuUserApi
     /// <param name="cancellationToken">取消令牌</param>
     /// <returns>用户信息</returns>
     [Get("/open-apis/contact/v3/users/{userId}")]
-    Task<UserInfo?> GetUserAsync(string userId, CancellationToken cancellationToken = default);
+    Task<UserInfo?> GetUserAsync([Path] string userId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 测试：获取用户信息（绝对路径）
@@ -28,7 +28,7 @@ public interface IFeishuUserApi
     /// <param name="cancellationToken">取消令牌</param>
     /// <returns>用户信息</returns>
     [Get("https://api.mudtools.cn/users/{userId}")]
-    Task<UserInfo?> GetUserAbsoluteAsync(string userId, CancellationToken cancellationToken = default);
+    Task<UserInfo?> GetUserAbsoluteAsync([Path] string userId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 测试：获取用户信息（边界测试 - 空用户ID）
@@ -36,7 +36,7 @@ public interface IFeishuUserApi
     /// 特点：使用相对路径，空用户ID
     /// </summary>
     [Get("/open-apis/contact/v3/users/{userId}")]
-    Task<UserInfo?> GetUserWithEmptyIdAsync(string userId = "", CancellationToken cancellationToken = default);
+    Task<UserInfo?> GetUserWithEmptyIdAsync([Path] string userId = "", CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 测试：获取用户信息（边界测试 - 超长用户ID）
@@ -44,7 +44,7 @@ public interface IFeishuUserApi
     /// 特点：使用相对路径，超长用户ID
     /// </summary>
     [Get("/open-apis/contact/v3/users/{userId}")]
-    Task<UserInfo?> GetUserWithLongIdAsync(string userId, CancellationToken cancellationToken = default);
+    Task<UserInfo?> GetUserWithLongIdAsync([Path] string userId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 测试：获取用户信息（边界测试 - 极小用户ID）
@@ -52,7 +52,7 @@ public interface IFeishuUserApi
     /// 特点：使用相对路径，极小用户ID
     /// </summary>
     [Get("/open-apis/contact/v3/users/{userId}")]
-    Task<UserInfo?> GetUserWithMinIdAsync(long userId = 0, CancellationToken cancellationToken = default);
+    Task<UserInfo?> GetUserWithMinIdAsync([Path] long userId = 0, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 测试：获取用户信息（边界测试 - 极大用户ID）
@@ -60,7 +60,7 @@ public interface IFeishuUserApi
     /// 特点：使用相对路径，极大用户ID
     /// </summary>
     [Get("/open-apis/contact/v3/users/{userId}")]
-    Task<UserInfo?> GetUserWithMaxIdAsync(long userId = 9223372036854775807, CancellationToken cancellationToken = default);
+    Task<UserInfo?> GetUserWithMaxIdAsync([Path] long userId = 9223372036854775807, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 测试：搜索用户（边界测试 - 空关键词）
@@ -92,7 +92,7 @@ public interface IFeishuUserApi
     /// 特点：使用相对路径，包含特殊字符的用户ID
     /// </summary>
     [Get("/open-apis/contact/v3/users/{userId}")]
-    Task<UserInfo?> GetUserWithSpecialCharsAsync(string userId, CancellationToken cancellationToken = default);
+    Task<UserInfo?> GetUserWithSpecialCharsAsync([Path] string userId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 测试：获取用户信息（中文ID测试）
@@ -100,7 +100,7 @@ public interface IFeishuUserApi
     /// 特点：使用相对路径，中文用户ID
     /// </summary>
     [Get("/open-apis/contact/v3/users/{userId}")]
-    Task<UserInfo?> GetUserWithChineseIdAsync(string userId, CancellationToken cancellationToken = default);
+    Task<UserInfo?> GetUserWithChineseIdAsync([Path] string userId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 测试：获取用户信息（无效格式测试）
@@ -108,7 +108,7 @@ public interface IFeishuUserApi
     /// 特点：使用相对路径，无效格式的用户ID
     /// </summary>
     [Get("/open-apis/contact/v3/users/{userId}")]
-    Task<UserInfo?> GetUserWithInvalidFormatAsync(int userId, CancellationToken cancellationToken = default);
+    Task<UserInfo?> GetUserWithInvalidFormatAsync([Path] int userId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 测试：创建用户（边界测试 - 空用户信息）
