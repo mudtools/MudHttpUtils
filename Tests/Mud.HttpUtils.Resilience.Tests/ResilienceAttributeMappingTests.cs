@@ -299,9 +299,8 @@ public class ResilienceAttributeMappingTests
         options.CircuitBreaker.Enabled.Should().BeFalse();
         options.CircuitBreaker.FailureThreshold.Should().Be(5);
         options.CircuitBreaker.BreakDurationSeconds.Should().Be(30);
-#pragma warning disable CS0618 // SamplingDurationSeconds 已标记 [Obsolete]，但仍需验证默认值
-        options.CircuitBreaker.SamplingDurationSeconds.Should().Be(60);
-#pragma warning restore CS0618
+        options.CircuitBreaker.SamplingDurationSeconds.Should().Be(0);
+        options.CircuitBreaker.MinimumThroughput.Should().Be(10);
     }
 
     [Fact]

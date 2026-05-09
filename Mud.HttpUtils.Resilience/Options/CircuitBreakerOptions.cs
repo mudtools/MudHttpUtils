@@ -17,6 +17,7 @@ public class CircuitBreakerOptions
 {
     private int _failureThreshold = 5;
     private int _breakDurationSeconds = 30;
+    private int _samplingDurationSeconds;
 
     /// <summary>
     /// 是否启用熔断策略。默认 false。
@@ -24,7 +25,9 @@ public class CircuitBreakerOptions
     public bool Enabled { get; set; } = false;
 
     /// <summary>
-    /// 触发熔断的连续失败阈值。默认 5。必须大于 0。
+    /// 触发熔断的阈值。默认 5。
+    /// <para>当 <see cref="SamplingDurationSeconds"/> 为 0 时，表示连续失败的次数；</para>
+    /// <para>当 <see cref="SamplingDurationSeconds"/> 大于 0 时，表示采样窗口内的失败率百分比（1-100，即 1% 到 100%）。</para>
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">设置小于等于 0 的值时抛出。</exception>
     public int FailureThreshold
@@ -44,12 +47,23 @@ public class CircuitBreakerOptions
     }
 
     /// <summary>
-    /// 采样窗口时间（秒）。默认 60。
-    /// 在此时间窗口内统计失败率，用于高级熔断策略。
-    /// 注意：当前基于 Polly v7 的实现使用连续失败计数模式，此属性暂未生效。
-    /// 升级至 Polly v8 后将启用基于采样窗口的高级熔断策略。
+    /// 采样窗口时间（秒）。默认 0。
+    /// <para>当此值大于 0 时，启用基于采样窗口的高级熔断策略（<see cref="Polly.CircuitBreaker.AdvancedCircuitBreakerAsync"/>）：</para>
+    /// <para>- <see cref="FailureThreshold"/> 表示采样窗口内的失败率百分比（1-100）</para>
+    /// <para>- 在采样窗口内，至少需要 <see cref="MinimumThroughput"/> 次请求才会触发熔断评估</para>
+    /// <para>当此值为 0 时，使用基于连续失败计数的简单熔断策略（<see cref="Polly.CircuitBreaker.CircuitBreakerAsync"/>）：</para>
+    /// <para>- <see cref="FailureThreshold"/> 表示连续失败的次数</para>
     /// </summary>
-    [EditorBrowsable(EditorBrowsableState.Never)]
-    [Obsolete("当前基于 Polly v7 的实现未使用此属性。升级至 Polly v8 后将启用。")]
-    public int SamplingDurationSeconds { get; set; } = 60;
+    public int SamplingDurationSeconds
+    {
+        get => _samplingDurationSeconds;
+        set => _samplingDurationSeconds = value >= 0 ? value : throw new ArgumentOutOfRangeException(nameof(SamplingDurationSeconds), "采样窗口时间不能为负数。");
+    }
+
+    /// <summary>
+    /// 采样窗口内的最小吞吐量。默认 10。
+    /// 仅在 <see cref="SamplingDurationSeconds"/> 大于 0 时生效。
+    /// <para>在采样窗口内，请求数必须达到此值后，才会开始计算失败率。</para>
+    /// </summary>
+    public int MinimumThroughput { get; set; } = 10;
 }

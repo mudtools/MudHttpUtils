@@ -113,7 +113,11 @@ public class Program
             options.CircuitBreaker.Enabled = true;
             options.CircuitBreaker.FailureThreshold = 5;
             options.CircuitBreaker.BreakDurationSeconds = 30;
-            // SamplingDurationSeconds 已标记 [Obsolete]，当前 Polly v7 实现未使用
+            // 启用高级熔断策略：采样窗口 60s 内失败率达 50% 且至少 10 次请求时触发熔断
+            // FailureThreshold 在此模式下表示失败率百分比（1-100）
+            options.CircuitBreaker.SamplingDurationSeconds = 60;
+            options.CircuitBreaker.FailureThreshold = 50; // 50% 失败率
+            options.CircuitBreaker.MinimumThroughput = 10;
         });
     }
 

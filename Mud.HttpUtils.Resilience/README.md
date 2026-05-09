@@ -96,8 +96,14 @@ services.AddMudHttpUtils("myApi", "https://api.example.com", options =>
 | 属性 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `Enabled` | `bool` | `false` | 是否启用熔断策略 |
-| `FailureThreshold` | `int` | `5` | 触发熔断的连续失败次数 |
+| `FailureThreshold` | `int` | `5` | 触发熔断的阈值（含义取决于 `SamplingDurationSeconds`） |
 | `BreakDurationSeconds` | `int` | `30` | 熔断持续时间（秒） |
+| `SamplingDurationSeconds` | `int` | `0` | 采样窗口时间（秒），大于 0 时启用高级熔断策略 |
+| `MinimumThroughput` | `int` | `10` | 采样窗口内最小请求数（仅高级熔断策略生效） |
+
+> **熔断模式说明**：
+> - 当 `SamplingDurationSeconds = 0`（默认）时，使用**简单熔断策略**，`FailureThreshold` 表示连续失败次数
+> - 当 `SamplingDurationSeconds > 0` 时，使用**高级熔断策略**，`FailureThreshold` 表示采样窗口内的失败率百分比（1-100）
 
 ## 安装
 
@@ -168,6 +174,22 @@ services.AddMudHttpResilienceDecorator(configuration, "MudHttpResilience");
   }
 }
 ```
+
+**高级熔断策略**（基于采样窗口的失败率模式）：
+
+```json
+{
+  "CircuitBreaker": {
+    "Enabled": true,
+    "FailureThreshold": 50,
+    "BreakDurationSeconds": 30,
+    "SamplingDurationSeconds": 60,
+    "MinimumThroughput": 10
+  }
+}
+```
+
+> 高级模式下 `FailureThreshold = 50` 表示采样窗口内失败率达 50% 时触发熔断，至少需要 `MinimumThroughput` 次请求。
 
 ### 一站式注册
 

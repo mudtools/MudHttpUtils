@@ -162,6 +162,43 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             return Policy.NoOpAsync<TResult>();
         }
 
+        if (cbOptions.SamplingDurationSeconds > 0)
+        {
+            // 高级熔断策略：基于采样窗口的失败率模式
+            var failureRate = cbOptions.FailureThreshold / 100.0; // 转换为 0.0-1.0
+            if (failureRate > 1.0) failureRate = 1.0;
+
+            return Policy
+                .Handle<HttpRequestException>()
+                .Or<TimeoutRejectedException>()
+                .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
+                .AdvancedCircuitBreakerAsync(
+                    failureThreshold: failureRate,
+                    samplingDuration: TimeSpan.FromSeconds(cbOptions.SamplingDurationSeconds),
+                    minimumThroughput: cbOptions.MinimumThroughput,
+                    durationOfBreak: TimeSpan.FromSeconds(cbOptions.BreakDurationSeconds),
+                    onBreak: (exception, duration) =>
+                    {
+                        _logger.LogWarning(
+                            exception,
+                            "熔断器开启：采样窗口 {SamplingDuration}s 内失败率达 {FailureRate:P0}（至少 {MinimumThroughput} 次请求），将在 {BreakDuration}s 内快速拒绝请求。",
+                            cbOptions.SamplingDurationSeconds,
+                            failureRate,
+                            cbOptions.MinimumThroughput,
+                            duration.TotalSeconds);
+                    },
+                    onReset: () =>
+                    {
+                        _logger.LogInformation("熔断器关闭：服务恢复正常。");
+                    },
+                    onHalfOpen: () =>
+                    {
+                        _logger.LogInformation("熔断器进入半开状态：允许试探请求。");
+                    })
+                .AsAsyncPolicy<TResult>();
+        }
+
+        // 简单熔断策略：基于连续失败计数模式
         return Policy
             .Handle<HttpRequestException>()
             .Or<TimeoutRejectedException>()
@@ -254,32 +291,75 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 
         if (circuitBreakerEnabled)
         {
-            var cbPolicy = Policy
-                .Handle<HttpRequestException>()
-                .Or<TimeoutRejectedException>()
-                .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
-                .CircuitBreakerAsync(
-                    exceptionsAllowedBeforeBreaking: failureThreshold,
-                    durationOfBreak: TimeSpan.FromSeconds(breakDurationSeconds),
-                    onBreak: (exception, duration) =>
-                    {
-                        _logger.LogWarning(
-                            exception,
-                            "熔断器开启：连续失败 {FailureThreshold} 次，将在 {BreakDuration}s 内快速拒绝请求。",
-                            failureThreshold,
-                            duration.TotalSeconds);
-                    },
-                    onReset: () =>
-                    {
-                        _logger.LogInformation("熔断器关闭：服务恢复正常。");
-                    },
-                    onHalfOpen: () =>
-                    {
-                        _logger.LogInformation("熔断器进入半开状态：允许试探请求。");
-                    })
-                .AsAsyncPolicy<TResult>();
+            var cbOptions = _options.CircuitBreaker;
 
-            policy = policy != null ? cbPolicy.WrapAsync(policy) : cbPolicy;
+            if (cbOptions.SamplingDurationSeconds > 0)
+            {
+                // 高级熔断策略：基于采样窗口的失败率模式
+                var failureRate = cbOptions.FailureThreshold / 100.0;
+                if (failureRate > 1.0) failureRate = 1.0;
+
+                var cbPolicy = Policy
+                    .Handle<HttpRequestException>()
+                    .Or<TimeoutRejectedException>()
+                    .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
+                    .AdvancedCircuitBreakerAsync(
+                        failureThreshold: failureRate,
+                        samplingDuration: TimeSpan.FromSeconds(cbOptions.SamplingDurationSeconds),
+                        minimumThroughput: cbOptions.MinimumThroughput,
+                        durationOfBreak: TimeSpan.FromSeconds(breakDurationSeconds),
+                        onBreak: (exception, duration) =>
+                        {
+                            _logger.LogWarning(
+                                exception,
+                                "熔断器开启：采样窗口 {SamplingDuration}s 内失败率达 {FailureRate:P0}（至少 {MinimumThroughput} 次请求），将在 {BreakDuration}s 内快速拒绝请求。",
+                                cbOptions.SamplingDurationSeconds,
+                                failureRate,
+                                cbOptions.MinimumThroughput,
+                                duration.TotalSeconds);
+                        },
+                        onReset: () =>
+                        {
+                            _logger.LogInformation("熔断器关闭：服务恢复正常。");
+                        },
+                        onHalfOpen: () =>
+                        {
+                            _logger.LogInformation("熔断器进入半开状态：允许试探请求。");
+                        })
+                    .AsAsyncPolicy<TResult>();
+
+                policy = policy != null ? cbPolicy.WrapAsync(policy) : cbPolicy;
+            }
+            else
+            {
+                // 简单熔断策略：基于连续失败计数模式
+                var cbPolicy = Policy
+                    .Handle<HttpRequestException>()
+                    .Or<TimeoutRejectedException>()
+                    .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
+                    .CircuitBreakerAsync(
+                        exceptionsAllowedBeforeBreaking: failureThreshold,
+                        durationOfBreak: TimeSpan.FromSeconds(breakDurationSeconds),
+                        onBreak: (exception, duration) =>
+                        {
+                            _logger.LogWarning(
+                                exception,
+                                "熔断器开启：连续失败 {FailureThreshold} 次，将在 {BreakDuration}s 内快速拒绝请求。",
+                                failureThreshold,
+                                duration.TotalSeconds);
+                        },
+                        onReset: () =>
+                        {
+                            _logger.LogInformation("熔断器关闭：服务恢复正常。");
+                        },
+                        onHalfOpen: () =>
+                        {
+                            _logger.LogInformation("熔断器进入半开状态：允许试探请求。");
+                        })
+                    .AsAsyncPolicy<TResult>();
+
+                policy = policy != null ? cbPolicy.WrapAsync(policy) : cbPolicy;
+            }
         }
 
         if (retryEnabled)

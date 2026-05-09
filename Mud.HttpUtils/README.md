@@ -903,6 +903,11 @@ services.AddMudHttpUtils("myApi", "https://api.example.com", options =>
     options.CircuitBreaker.FailureThreshold = 5;
     options.CircuitBreaker.BreakDurationSeconds = 30;
 
+    // 高级熔断策略（基于采样窗口的失败率模式，取消注释启用）
+    // options.CircuitBreaker.SamplingDurationSeconds = 60;
+    // options.CircuitBreaker.FailureThreshold = 50; // 失败率百分比
+    // options.CircuitBreaker.MinimumThroughput = 10;
+
     // 请求克隆大小限制（大文件上传场景建议增大或禁用重试）
     options.MaxCloneContentSize = 10 * 1024 * 1024; // 10MB
 });

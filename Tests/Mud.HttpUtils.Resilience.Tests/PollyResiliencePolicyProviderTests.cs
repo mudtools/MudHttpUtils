@@ -92,6 +92,49 @@ public class PollyResiliencePolicyProviderTests
     }
 
     [Fact]
+    public void GetCircuitBreakerPolicy_WithSamplingDuration_UsesAdvancedCircuitBreaker()
+    {
+        // SamplingDurationSeconds > 0 时应使用高级熔断策略
+        var options = new ResilienceOptions
+        {
+            CircuitBreaker =
+            {
+                Enabled = true,
+                FailureThreshold = 50,
+                BreakDurationSeconds = 30,
+                SamplingDurationSeconds = 60,
+                MinimumThroughput = 10
+            }
+        };
+        var provider = new PollyResiliencePolicyProvider(options);
+
+        var policy = provider.GetCircuitBreakerPolicy<object>();
+
+        policy.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void GetCircuitBreakerPolicy_WithoutSamplingDuration_UsesSimpleCircuitBreaker()
+    {
+        // SamplingDurationSeconds = 0 时应使用简单熔断策略（连续失败计数）
+        var options = new ResilienceOptions
+        {
+            CircuitBreaker =
+            {
+                Enabled = true,
+                FailureThreshold = 5,
+                BreakDurationSeconds = 30,
+                SamplingDurationSeconds = 0
+            }
+        };
+        var provider = new PollyResiliencePolicyProvider(options);
+
+        var policy = provider.GetCircuitBreakerPolicy<object>();
+
+        policy.Should().NotBeNull();
+    }
+
+    [Fact]
     public void GetCombinedPolicy_ShouldReturnNonNullPolicy()
     {
         var options = new ResilienceOptions();
