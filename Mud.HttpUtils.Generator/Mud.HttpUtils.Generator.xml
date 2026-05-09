@@ -707,6 +707,11 @@
             生成 AllowAnyStatusCode 模式的执行代码（非 Response&lt;T&gt; 返回类型）
             </summary>
         </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.RequestBuilder.GetReturnExpression(System.String,System.String)">
+            <summary>
+            生成返回表达式，当反序列化变量类型与方法返回类型不一致时进行适当转换
+            </summary>
+        </member>
         <member name="M:Mud.HttpUtils.Generators.Implementation.RequestBuilder.GenerateStandardExecution(System.Text.StringBuilder,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult,System.String,System.String,System.String)">
             <summary>
             生成标准模式的执行代码（默认行为，错误状态码抛出 ApiException）

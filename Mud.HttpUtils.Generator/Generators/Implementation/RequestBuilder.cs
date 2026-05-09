@@ -669,14 +669,10 @@ internal class RequestBuilder
         // 去掉已有的 ? 后缀
         var baseType = type.TrimEnd('?');
 
-        // 只有值类型才考虑添加 ?
-        var valueTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "int", "long", "float", "double", "decimal", "bool", "char",
-            "byte", "sbyte", "short", "ushort", "uint", "ulong"
-        };
-
-        return valueTypes.Contains(baseType) ? baseType : baseType + "?";
+        // 只有值类型才添加 ? 后缀
+        // JsonSerializer.Deserialize<T>() 返回 T?，对于值类型（如 bool、int），
+        // 变量必须声明为 T? 才能接收返回值；引用类型则始终添加 ? 以匹配 nullable 上下文
+        return baseType + "?";
     }
 
     /// <summary>
@@ -749,7 +745,7 @@ internal class RequestBuilder
             codeBuilder.AppendLine($"            }}");
         }
 
-        codeBuilder.AppendLine($"            return {resultVariable};");
+        codeBuilder.AppendLine($"            return {GetReturnExpression(resultVariable, deserializeType)};");
     }
 
     private string GetCancellationTokenArgument(string cancellationTokenArg)
@@ -757,6 +753,42 @@ internal class RequestBuilder
         if (string.IsNullOrEmpty(cancellationTokenArg))
             return string.Empty;
         return cancellationTokenArg.Remove(0, 1);
+    }
+
+    /// <summary>
+    /// 生成返回表达式，当反序列化变量类型与方法返回类型不一致时进行适当转换
+    /// </summary>
+    private static string GetReturnExpression(string resultVariable, string deserializeType)
+    {
+        if (string.IsNullOrEmpty(deserializeType))
+            return resultVariable;
+
+        // 如果原始返回类型不是可空类型（不以 ? 结尾），
+        // 需要将可空的变量值（T?）转换为非空类型（T）
+        if (!deserializeType.EndsWith("?", StringComparison.OrdinalIgnoreCase))
+        {
+            // 值类型：使用.GetValueOrDefault()，这比强制转换更安全
+            var baseType = deserializeType.TrimEnd('.');
+            var valueTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "int", "long", "float", "double", "decimal", "bool", "char",
+                "byte", "sbyte", "short", "ushort", "uint", "ulong",
+                "System.Int32", "System.Int64", "System.Single", "System.Double",
+                "System.Decimal", "System.Boolean", "System.Char",
+                "System.Byte", "System.SByte", "System.Int16", "System.UInt16",
+                "System.UInt32", "System.UInt64"
+            };
+
+            if (valueTypes.Contains(baseType))
+            {
+                return $"{resultVariable}.GetValueOrDefault()";
+            }
+
+            // 引用类型：使用 ! null-forgiving 操作符
+            return $"{resultVariable}!";
+        }
+
+        return resultVariable;
     }
 
     /// <summary>
@@ -843,7 +875,7 @@ internal class RequestBuilder
             codeBuilder.AppendLine($"            }}");
         }
 
-        codeBuilder.AppendLine($"            return {resultVariable};");
+        codeBuilder.AppendLine($"            return {GetReturnExpression(resultVariable, deserializeType)};");
     }
 
     #region 辅助方法
