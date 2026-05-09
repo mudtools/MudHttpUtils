@@ -29,6 +29,7 @@ namespace Mud.HttpUtils;
 ///   <item><description>系统默认值（最低优先级）</description></item>
 /// </list>
 /// </remarks>
+[Obsolete("此配置类用于配置文件绑定，运行时策略构建使用 TimeoutOptions。将在未来版本中移除，请迁移至 ResilienceOptions。")]
 public class MudHttpClientTimeoutOptions
 {
     /// <summary>

@@ -285,6 +285,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
         if (retryEnabled)
         {
             var retryStatusCodes = _options.Retry.RetryStatusCodes ?? GetDefaultRetryStatusCodes();
+            var onRetryCallback = _options.Retry.OnRetry;
 
             var retryPolicy = Policy<TResult>
                 .Handle<HttpRequestException>(ex => ShouldRetry(ex, retryStatusCodes))
@@ -306,6 +307,18 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                             timeSpan.TotalMilliseconds,
                             retryCount,
                             maxRetries);
+
+                        if (onRetryCallback != null)
+                        {
+                            try
+                            {
+                                await onRetryCallback(outcome.Exception, retryCount, timeSpan);
+                            }
+                            catch (Exception callbackEx)
+                            {
+                                _logger.LogWarning(callbackEx, "OnRetry 回调执行失败。");
+                            }
+                        }
                     });
 
             policy = policy != null ? retryPolicy.WrapAsync(policy) : retryPolicy;

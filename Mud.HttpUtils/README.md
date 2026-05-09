@@ -530,6 +530,8 @@ Token 注入模式：
 | `Path`          | 注入到 URL Path                                                   |
 | `ApiKey`        | API Key 认证，通过 `IApiKeyProvider` 获取密钥注入到请求头         |
 | `HmacSignature` | HMAC 签名认证，通过 `IHmacSignatureProvider` 计算签名注入到请求头 |
+| `BasicAuth`     | HTTP Basic 认证，将凭据编码后注入到 Authorization 请求头          |
+| `Cookie`        | 注入到 Cookie 请求头                                              |
 
 ### CacheAttribute 详解
 
@@ -926,7 +928,8 @@ services.AddMudHttpUtils("myApi", configuration, configureHttpClient: client =>
       "Enabled": true,
       "MaxRetryAttempts": 3,
       "DelayMilliseconds": 1000,
-      "UseExponentialBackoff": true
+      "UseExponentialBackoff": true,
+      "RetryStatusCodes": [408, 429, 500, 502, 503, 504]
     },
     "Timeout": {
       "Enabled": true,
@@ -1154,7 +1157,7 @@ options.Retry.Enabled = false;
 - 新增文件上传进度报告：`ProgressableStreamContent`、`IFormContent.ToHttpContentAsync(IProgress<long>)`
 - 新增基地址动态切换：`IEnhancedHttpClient.WithBaseAddress`、`BaseAddress` 属性
 - 新增请求克隆大小限制：`ResilienceOptions.MaxCloneContentSize`、`HttpRequestMessageCloner` 大小检查
-- 新增重试回调机制：`RetryOptions.RetryCallback`
+- 新增重试回调机制：`RetryOptions.OnRetry`
 - 新增令牌作用域支持：`TokenAttribute.Scopes`
 - 新增令牌后台刷新服务：`TokenRefreshHostedService`、`TokenRefreshBackgroundOptions`
 - 新增用户令牌缓存配置：`UserTokenCacheOptions`、`UserTokenManagerBase` 使用 `IMemoryCache`

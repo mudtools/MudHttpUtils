@@ -119,9 +119,10 @@ internal class QueryParameterBinder : IParameterBinder
 
     private static void GenerateQueryMapParameter(StringBuilder codeBuilder, ParameterInfo param, ParameterAttributeInfo attr, string indent)
     {
-        var separator = attr.NamedArguments.TryGetValue("Separator", out var sep) && sep is string s ? s : ",";
+        var separator = attr.NamedArguments.TryGetValue("PropertySeparator", out var sep) && sep is string s && !string.IsNullOrEmpty(s) ? s : "_";
         var includeNull = attr.NamedArguments.TryGetValue("IncludeNullValues", out var incNull) && incNull is true;
-        var useJson = attr.NamedArguments.TryGetValue("UseJsonSerialization", out var useJ) && useJ is true;
+        var useJson = attr.NamedArguments.TryGetValue("SerializationMethod", out var serMethod)
+            && serMethod is int enumVal && enumVal != 0; // QuerySerializationMethod.ToString = 0, Json = 1
         var urlEncode = !(attr.NamedArguments.TryGetValue("UrlEncode", out var urlEnc) && urlEnc is false);
 
         codeBuilder.AppendLine($"{indent}if ({param.Name} != null)");

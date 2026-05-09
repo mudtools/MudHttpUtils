@@ -13,13 +13,20 @@ namespace Mud.HttpUtils.Resilience;
 /// </summary>
 public class TimeoutOptions
 {
+    private int _timeoutSeconds = 30;
+
     /// <summary>
     /// 是否启用超时策略。默认 true。
     /// </summary>
     public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// 全局超时时间（秒）。默认 30。
+    /// 全局超时时间（秒）。默认 30。必须大于 0。
     /// </summary>
-    public int TimeoutSeconds { get; set; } = 30;
+    /// <exception cref="ArgumentOutOfRangeException">设置小于等于 0 的值时抛出。</exception>
+    public int TimeoutSeconds
+    {
+        get => _timeoutSeconds;
+        set => _timeoutSeconds = value > 0 ? value : throw new ArgumentOutOfRangeException(nameof(TimeoutSeconds), "超时时间必须大于 0 秒。");
+    }
 }

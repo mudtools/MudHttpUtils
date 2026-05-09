@@ -13,20 +13,33 @@ namespace Mud.HttpUtils.Resilience;
 /// </summary>
 public class RetryOptions
 {
+    private int _maxRetryAttempts = 3;
+    private int _delayMilliseconds = 1000;
+
     /// <summary>
     /// 是否启用重试策略。默认 true。
     /// </summary>
     public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// 最大重试次数。默认 3。
+    /// 最大重试次数。默认 3。必须大于等于 0。
     /// </summary>
-    public int MaxRetryAttempts { get; set; } = 3;
+    /// <exception cref="ArgumentOutOfRangeException">设置小于 0 的值时抛出。</exception>
+    public int MaxRetryAttempts
+    {
+        get => _maxRetryAttempts;
+        set => _maxRetryAttempts = value >= 0 ? value : throw new ArgumentOutOfRangeException(nameof(MaxRetryAttempts), "最大重试次数不能为负数。");
+    }
 
     /// <summary>
-    /// 初始重试间隔（毫秒）。默认 1000。
+    /// 初始重试间隔（毫秒）。默认 1000。必须大于等于 0。
     /// </summary>
-    public int DelayMilliseconds { get; set; } = 1000;
+    /// <exception cref="ArgumentOutOfRangeException">设置小于 0 的值时抛出。</exception>
+    public int DelayMilliseconds
+    {
+        get => _delayMilliseconds;
+        set => _delayMilliseconds = value >= 0 ? value : throw new ArgumentOutOfRangeException(nameof(DelayMilliseconds), "重试延迟不能为负数。");
+    }
 
     /// <summary>
     /// 是否使用指数退避策略。默认 true。

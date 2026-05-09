@@ -33,7 +33,11 @@ namespace Mud.HttpUtils;
 ///   }
 /// }
 /// </code>
+/// <para>注意：此配置类用于配置文件绑定场景，运行时弹性策略构建使用
+/// <see cref="Mud.HttpUtils.Resilience.ResilienceOptions"/>。如需通过代码配置弹性策略，
+/// 请使用 <c>AddMudHttpResilienceDecorator</c> 方法。</para>
 /// </remarks>
+[Obsolete("此配置类用于配置文件绑定，运行时策略构建使用 ResilienceOptions。将在未来版本中移除，请迁移至 ResilienceOptions。")]
 public class MudHttpClientResilienceOptions
 {
     /// <summary>

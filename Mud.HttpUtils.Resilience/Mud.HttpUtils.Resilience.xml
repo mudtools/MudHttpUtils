@@ -65,13 +65,15 @@
         </member>
         <member name="P:Mud.HttpUtils.Resilience.CircuitBreakerOptions.FailureThreshold">
             <summary>
-            触发熔断的连续失败阈值。默认 5。
+            触发熔断的连续失败阈值。默认 5。必须大于 0。
             </summary>
+            <exception cref="T:System.ArgumentOutOfRangeException">设置小于等于 0 的值时抛出。</exception>
         </member>
         <member name="P:Mud.HttpUtils.Resilience.CircuitBreakerOptions.BreakDurationSeconds">
             <summary>
-            熔断持续时间（秒）。默认 30。
+            熔断持续时间（秒）。默认 30。必须大于 0。
             </summary>
+            <exception cref="T:System.ArgumentOutOfRangeException">设置小于等于 0 的值时抛出。</exception>
         </member>
         <member name="P:Mud.HttpUtils.Resilience.CircuitBreakerOptions.SamplingDurationSeconds">
             <summary>
@@ -122,13 +124,15 @@
         </member>
         <member name="P:Mud.HttpUtils.Resilience.RetryOptions.MaxRetryAttempts">
             <summary>
-            最大重试次数。默认 3。
+            最大重试次数。默认 3。必须大于等于 0。
             </summary>
+            <exception cref="T:System.ArgumentOutOfRangeException">设置小于 0 的值时抛出。</exception>
         </member>
         <member name="P:Mud.HttpUtils.Resilience.RetryOptions.DelayMilliseconds">
             <summary>
-            初始重试间隔（毫秒）。默认 1000。
+            初始重试间隔（毫秒）。默认 1000。必须大于等于 0。
             </summary>
+            <exception cref="T:System.ArgumentOutOfRangeException">设置小于 0 的值时抛出。</exception>
         </member>
         <member name="P:Mud.HttpUtils.Resilience.RetryOptions.UseExponentialBackoff">
             <summary>
@@ -163,8 +167,9 @@
         </member>
         <member name="P:Mud.HttpUtils.Resilience.TimeoutOptions.TimeoutSeconds">
             <summary>
-            全局超时时间（秒）。默认 30。
+            全局超时时间（秒）。默认 30。必须大于 0。
             </summary>
+            <exception cref="T:System.ArgumentOutOfRangeException">设置小于等于 0 的值时抛出。</exception>
         </member>
         <member name="T:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider">
             <summary>

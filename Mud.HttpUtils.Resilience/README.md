@@ -47,21 +47,20 @@ var cloned = await HttpRequestMessageCloner.CloneAsync(request, maxContentSize: 
 
 ### 重试回调机制
 
-`RetryOptions` 新增 `RetryCallback` 属性，支持在每次重试前执行自定义逻辑：
+`RetryOptions` 提供 `OnRetry` 属性，支持在每次重试前执行自定义逻辑：
 
 ```csharp
 services.AddMudHttpUtils("myApi", "https://api.example.com", options =>
 {
     options.Retry.MaxRetryAttempts = 3;
-    options.Retry.RetryCallback = (retryCount, exception, delay) =>
+    options.Retry.OnRetry = async (exception, retryCount, delay) =>
     {
-        Console.WriteLine($"第 {retryCount} 次重试，延迟 {delay.TotalMilliseconds}ms，异常: {exception.Message}");
-        return Task.CompletedTask;
+        Console.WriteLine($"第 {retryCount} 次重试，延迟 {delay.TotalMilliseconds}ms，异常: {exception?.Message}");
     };
 });
 ```
 
-> `RetryCallback` 签名为 `Func<int, Exception, TimeSpan, Task>`，参数分别为：重试次数、触发的异常、下次重试前的延迟时间。可用于日志记录、指标收集、动态调整重试策略等。
+> `OnRetry` 签名为 `Func<Exception?, int, TimeSpan, Task>`，参数分别为：触发的异常（可能为 null）、重试次数（从 1 开始）、下次重试前的延迟时间。可用于日志记录、指标收集、动态调整重试策略等。
 
 ## 配置选项
 
@@ -83,7 +82,7 @@ services.AddMudHttpUtils("myApi", "https://api.example.com", options =>
 | `DelayMilliseconds` | `int` | `1000` | 基础延迟时间（毫秒） |
 | `UseExponentialBackoff` | `bool` | `true` | 是否使用指数退避 |
 | `RetryStatusCodes` | `int[]` | `[408, 429, 500, 502, 503, 504]` | 触发重试的 HTTP 状态码 |
-| `RetryCallback` | `Func<int, Exception, TimeSpan, Task>?` | `null` | 重试回调函数 |
+| `OnRetry` | `Func<Exception?, int, TimeSpan, Task>?` | `null` | 重试回调函数 |
 
 ### TimeoutOptions
 

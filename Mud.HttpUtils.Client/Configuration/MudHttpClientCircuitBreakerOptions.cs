@@ -32,6 +32,7 @@ namespace Mud.HttpUtils;
 /// <para>3. 经过 BreakDurationSeconds 后，熔断器进入半开状态</para>
 /// <para>4. 半开状态下，如果请求成功，熔断器关闭；否则重新打开</para>
 /// </remarks>
+[Obsolete("此配置类用于配置文件绑定，运行时策略构建使用 CircuitBreakerOptions。将在未来版本中移除，请迁移至 ResilienceOptions。")]
 public class MudHttpClientCircuitBreakerOptions
 {
     /// <summary>

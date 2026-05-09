@@ -65,9 +65,7 @@ public class AesEncryptionOptions
             throw new InvalidOperationException(
                 $"AES Key 长度必须为 16、24 或 32 字节，当前为 {_key?.Length ?? 0} 字节。");
 
-        if (_iv != null && _iv.Length != 0 && _iv.Length != 16)
-            throw new InvalidOperationException(
-                $"AES IV 长度必须为 16 字节，当前为 {_iv.Length} 字节。");
+        // IV 在 v1.8.0 起自动随机生成，不再校验用户设置的 IV
     }
 
     /// <summary>

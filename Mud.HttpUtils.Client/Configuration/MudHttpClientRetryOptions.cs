@@ -28,6 +28,7 @@ namespace Mud.HttpUtils;
 /// <para>- 第 2 次重试：2000ms</para>
 /// <para>- 第 3 次重试：4000ms</para>
 /// </remarks>
+[Obsolete("此配置类用于配置文件绑定，运行时策略构建使用 RetryOptions。将在未来版本中移除，请迁移至 ResilienceOptions。")]
 public class MudHttpClientRetryOptions
 {
     /// <summary>
