@@ -299,7 +299,9 @@ public class ResilienceAttributeMappingTests
         options.CircuitBreaker.Enabled.Should().BeFalse();
         options.CircuitBreaker.FailureThreshold.Should().Be(5);
         options.CircuitBreaker.BreakDurationSeconds.Should().Be(30);
+#pragma warning disable CS0618 // SamplingDurationSeconds 已标记 [Obsolete]，但仍需验证默认值
         options.CircuitBreaker.SamplingDurationSeconds.Should().Be(60);
+#pragma warning restore CS0618
     }
 
     [Fact]
@@ -308,6 +310,77 @@ public class ResilienceAttributeMappingTests
         var options = new ResilienceOptions();
 
         options.MaxCloneContentSize.Should().Be(10 * 1024 * 1024);
+    }
+
+    #endregion
+
+    #region Options Boundary Value Validation
+
+    [Fact]
+    public void RetryOptions_MaxRetryAttempts_NegativeValue_ThrowsArgumentOutOfRangeException()
+    {
+        var options = new RetryOptions();
+        var act = () => options.MaxRetryAttempts = -1;
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*最大重试次数不能为负数*");
+    }
+
+    [Fact]
+    public void RetryOptions_MaxRetryAttempts_ZeroValue_IsAllowed()
+    {
+        var options = new RetryOptions { MaxRetryAttempts = 0 };
+
+        options.MaxRetryAttempts.Should().Be(0);
+    }
+
+    [Fact]
+    public void RetryOptions_DelayMilliseconds_NegativeValue_ThrowsArgumentOutOfRangeException()
+    {
+        var options = new RetryOptions();
+        var act = () => options.DelayMilliseconds = -1;
+
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*重试延迟不能为负数*");
+    }
+
+    [Fact]
+    public void TimeoutOptions_TimeoutSeconds_ZeroOrNegative_ThrowsArgumentOutOfRangeException()
+    {
+        var options = new TimeoutOptions();
+        var actZero = () => options.TimeoutSeconds = 0;
+        var actNegative = () => options.TimeoutSeconds = -1;
+
+        actZero.Should().Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*超时时间必须大于 0 秒*");
+        actNegative.Should().Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*超时时间必须大于 0 秒*");
+    }
+
+    [Fact]
+    public void CircuitBreakerOptions_FailureThreshold_ZeroOrNegative_ThrowsArgumentOutOfRangeException()
+    {
+        var options = new CircuitBreakerOptions();
+        var actZero = () => options.FailureThreshold = 0;
+        var actNegative = () => options.FailureThreshold = -1;
+
+        actZero.Should().Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*故障阈值必须大于 0*");
+        actNegative.Should().Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*故障阈值必须大于 0*");
+    }
+
+    [Fact]
+    public void CircuitBreakerOptions_BreakDurationSeconds_ZeroOrNegative_ThrowsArgumentOutOfRangeException()
+    {
+        var options = new CircuitBreakerOptions();
+        var actZero = () => options.BreakDurationSeconds = 0;
+        var actNegative = () => options.BreakDurationSeconds = -1;
+
+        actZero.Should().Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*熔断持续时间必须大于 0 秒*");
+        actNegative.Should().Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*熔断持续时间必须大于 0 秒*");
     }
 
     #endregion

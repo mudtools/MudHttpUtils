@@ -569,6 +569,9 @@ public static class HttpClientServiceCollectionExtensions
         if (!section.Exists())
             return services;
 
+        // 将配置注册到 DI，以便 CreateEnhancedClient 可以读取 AllowCustomBaseUrls 等属性
+        services.Configure<MudHttpClientApplicationOptions>(section.Bind);
+
         var options = new MudHttpClientApplicationOptions();
         section.Bind(options);
 

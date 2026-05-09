@@ -126,6 +126,10 @@ public class MudHttpClientOptions
     /// <remarks>
     /// 配置重试、熔断和超时等弹性策略。
     /// 详见 <see cref="MudHttpClientResilienceOptions"/>。
+    /// <para>注意：此配置类用于配置文件绑定场景，运行时弹性策略构建请使用
+    /// <see cref="Mud.HttpUtils.Resilience.ResilienceOptions"/>。
+    /// 请通过 <c>AddMudHttpResilienceDecorator</c> 方法配置弹性策略。</para>
     /// </remarks>
+    [Obsolete("此配置用于配置文件绑定，运行时策略构建使用 ResilienceOptions。请通过 AddMudHttpResilienceDecorator 配置弹性策略。")]
     public MudHttpClientResilienceOptions? Resilience { get; set; }
 }

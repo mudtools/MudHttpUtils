@@ -118,10 +118,9 @@ services.AddMudHttpResilienceDecorator(options =>
     options.Retry.DelayMilliseconds = 1000;
     options.Retry.UseExponentialBackoff = true;
     options.Retry.RetryStatusCodes = [408, 429, 500, 502, 503, 504];
-    options.Retry.RetryCallback = (retryCount, ex, delay) =>
+    options.Retry.OnRetry = async (ex, retryCount, delay) =>
     {
         logger.LogWarning("HTTP 请求重试 {RetryCount}，延迟 {Delay}ms", retryCount, delay.TotalMilliseconds);
-        return Task.CompletedTask;
     };
 
     // 超时策略
@@ -231,5 +230,5 @@ options.MaxCloneContentSize = -1;
 - **策略组合**：通过 Polly PolicyWrap 组合多种策略，执行顺序可控
 - **安全重试**：通过 `HttpRequestMessageCloner` 克隆请求消息，确保重试安全
 - **性能保护**：通过 `MaxCloneContentSize` 限制克隆大小，避免大请求体的克隆开销
-- **可观测性**：通过 `RetryCallback` 支持自定义重试回调，便于日志记录和指标收集
+- **可观测性**：通过 `OnRetry` 支持自定义重试回调，便于日志记录和指标收集
 - **配置灵活**：支持代码配置和配置文件绑定

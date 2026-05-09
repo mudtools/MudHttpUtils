@@ -113,7 +113,7 @@ public class Program
             options.CircuitBreaker.Enabled = true;
             options.CircuitBreaker.FailureThreshold = 5;
             options.CircuitBreaker.BreakDurationSeconds = 30;
-            options.CircuitBreaker.SamplingDurationSeconds = 60;
+            // SamplingDurationSeconds 已标记 [Obsolete]，当前 Polly v7 实现未使用
         });
     }
 

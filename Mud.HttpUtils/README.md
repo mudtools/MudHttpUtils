@@ -889,10 +889,9 @@ services.AddMudHttpUtils("myApi", "https://api.example.com", options =>
     options.Retry.DelayMilliseconds = 1000;
     options.Retry.UseExponentialBackoff = true;
     options.Retry.RetryStatusCodes = [408, 429, 500, 502, 503, 504];
-    options.Retry.RetryCallback = (retryCount, ex, delay) =>
+    options.Retry.OnRetry = async (ex, retryCount, delay) =>
     {
         logger.LogWarning("HTTP 请求重试 {RetryCount}，延迟 {Delay}ms", retryCount, delay.TotalMilliseconds);
-        return Task.CompletedTask;
     };
 
     // 超时策略
