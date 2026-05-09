@@ -237,8 +237,50 @@ appManager.ConfigurationChanged += (sender, args) =>
 | ------------------ | ------------------------------------------ |
 | `XmlSerialize`     | XML 序列化/反序列化工具                    |
 | `HttpClientUtils`  | HTTP 客户端扩展方法                        |
-| `UrlValidator`     | URL 安全验证工具（可配置域名白名单）       |
+| `UrlValidator`     | URL 安全验证工具（可配置域名白名单，支持 SSRF 防护） |
 | `MessageSanitizer` | 敏感信息脱敏工具（优化字段检测，减少误判） |
+
+#### URL 安全验证
+
+`UrlValidator` 提供 SSRF（服务端请求伪造）防护，支持以下安全策略：
+
+- **域名白名单**：仅允许访问白名单内的域名（含子域名匹配）
+- **HTTPS 强制**：仅允许 HTTPS 协议和标准端口（443）
+- **私有 IP 检测**：阻止访问 10.x、172.16.x、192.168.x、127.x 等私有地址
+- **内网域名检测**：阻止访问 .local、.internal、.lan 等内网域名
+
+**配置方式一：通过配置文件（推荐）**
+
+```json
+{
+  "MudHttpClients": {
+    "AllowedDomains": [ "api.example.com", "cdn.example.com" ],
+    "Clients": {
+      "Default": {
+        "BaseAddress": "https://api.example.com",
+        "AllowCustomBaseUrls": false
+      },
+      "ExternalApi": {
+        "BaseAddress": "https://external.api.com",
+        "AllowCustomBaseUrls": true
+      }
+    }
+  }
+}
+```
+
+> `AllowCustomBaseUrls` 默认为 `false`，仅允许访问白名单域名。设为 `true` 时放宽域名限制但仍阻止私有 IP 和内网域名。
+
+**配置方式二：通过代码**
+
+```csharp
+// 配置白名单
+UrlValidator.ConfigureAllowedDomains(["api.example.com", "cdn.example.com"]);
+
+// 运行时增删域名
+UrlValidator.AddAllowedDomain("new-api.example.com");
+UrlValidator.RemoveAllowedDomain("old-api.example.com");
+```
 
 ## 安装
 
@@ -257,6 +299,33 @@ appManager.ConfigurationChanged += (sender, args) =>
 | `AddMudHttpClient(clientName, configureEncryption, configureHttpClient)` | 带加密配置的重载，同时注册 `IEncryptionProvider` |
 
 > `AddMudHttpClient` 同时注册 `IHttpClientResolver` 为单例服务，支持多命名客户端场景。
+
+### AddMudHttpClientsFromConfiguration — 从配置文件注册
+
+从 `IConfiguration` 自动绑定多个 HTTP 客户端配置，支持全局域名白名单和自定义 URL 策略：
+
+```json
+{
+  "MudHttpClients": {
+    "AllowedDomains": [ "api.example.com", "cdn.example.com" ],
+    "DefaultClientName": "Default",
+    "Clients": {
+      "Default": {
+        "BaseAddress": "https://api.example.com",
+        "TimeoutSeconds": 30
+      },
+      "ExternalApi": {
+        "BaseAddress": "https://external.api.com",
+        "AllowCustomBaseUrls": true
+      }
+    }
+  }
+}
+```
+
+```csharp
+services.AddMudHttpClientsFromConfiguration(Configuration);
+```
 
 ### 注册安全认证服务
 

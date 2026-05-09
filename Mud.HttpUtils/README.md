@@ -1057,10 +1057,46 @@ services.AddMudHttpUtils("myApi", "https://api.example.com", options =>
 
 ### 4. 配置 URL 安全验证
 
-`UrlValidator` 默认不包含任何域名白名单，需要显式配置：
+`UrlValidator` 默认不包含任何域名白名单，需要显式配置。支持以下两种方式：
+
+**方式一：通过配置文件（推荐）**
+
+在 `appsettings.json` 中配置全局域名白名单，启动时自动应用：
+
+```json
+{
+  "MudHttpClients": {
+    "AllowedDomains": [ "api.example.com", "cdn.example.com" ],
+    "Clients": {
+      "Default": {
+        "BaseAddress": "https://api.example.com"
+      }
+    }
+  }
+}
+```
+
+**方式二：通过代码配置**
 
 ```csharp
 UrlValidator.ConfigureAllowedDomains(["api.example.com", "cdn.example.com"]);
+```
+
+**允许自定义 URL**
+
+默认只允许访问白名单内的域名。如需访问白名单外的 URL，可在客户端配置中设置 `AllowCustomBaseUrls`（仍会阻止私有 IP 和内网域名访问以防范 SSRF）：
+
+```json
+{
+  "MudHttpClients": {
+    "Clients": {
+      "ExternalApi": {
+        "BaseAddress": "https://external.api.com",
+        "AllowCustomBaseUrls": true
+      }
+    }
+  }
+}
 ```
 
 ### 5. 使用日志脱敏
@@ -1124,6 +1160,7 @@ options.Retry.Enabled = false;
 - 新增用户令牌缓存配置：`UserTokenCacheOptions`、`UserTokenManagerBase` 使用 `IMemoryCache`
 - 新增应用配置热更新通知：`IAppManager<T>.ConfigurationChanged` 事件
 - 新增 `IMudAppContext.GetService<T>()` 服务解析
+- 新增 URL 验证配置化：`MudHttpClientOptions.AllowCustomBaseUrls`、`MudHttpClientApplicationOptions.AllowedDomains`、`AddMudHttpClientsFromConfiguration` 自动配置白名单
 
 ### 1.9.0
 

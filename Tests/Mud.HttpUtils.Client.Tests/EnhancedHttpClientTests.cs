@@ -86,6 +86,46 @@ public class EnhancedHttpClientTests : IClassFixture<UrlValidatorFixture>
 
     #endregion
 
+    #region AllowCustomBaseUrls Tests
+
+    [Fact]
+    public async Task SendAsync_WithNonWhitelistedDomain_AndAllowCustomBaseUrlsFalse_ThrowsInvalidOperationException()
+    {
+        var handler = CreateMockHandler("{}", HttpStatusCode.OK);
+        var client = CreateClient(handler.Object);
+
+        // 使用不在白名单中的域名（白名单中只有 api.example.com）
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://other.example.com/test");
+        var act = async () => await client.SendAsync<string>(request);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task SendAsync_WithWhitelistedDomain_AndAllowCustomBaseUrlsFalse_DoesNotThrow()
+    {
+        var json = JsonSerializer.Serialize(new TestData { Name = "Test", Value = 1 });
+        var handler = CreateMockHandler(json, HttpStatusCode.OK);
+        var client = CreateClient(handler.Object);
+
+        // 使用白名单中的域名（UrlValidatorFixture 配置了 api.example.com）
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/test");
+        var act = async () => await client.SendAsync<TestData>(request);
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public void Constructor_WithAllowCustomBaseUrls_CreatesInstance()
+    {
+        var httpClient = new HttpClient { BaseAddress = new Uri("https://api.example.com") };
+        var client = new TestableEnhancedHttpClient(httpClient, allowCustomBaseUrls: true);
+
+        client.Should().NotBeNull();
+    }
+
+    #endregion
+
     #region SendAsync Tests
 
     [Fact]
@@ -604,8 +644,9 @@ public class EnhancedHttpClientTests : IClassFixture<UrlValidatorFixture>
             ILogger? logger = null,
             IEnumerable<IHttpRequestInterceptor>? requestInterceptors = null,
             IEnumerable<IHttpResponseInterceptor>? responseInterceptors = null,
-            ISensitiveDataMasker? sensitiveDataMasker = null)
-            : base(httpClient, logger, requestInterceptors, responseInterceptors, sensitiveDataMasker)
+            ISensitiveDataMasker? sensitiveDataMasker = null,
+            bool allowCustomBaseUrls = false)
+            : base(httpClient, logger, requestInterceptors, responseInterceptors, sensitiveDataMasker, allowCustomBaseUrls)
         {
         }
 

@@ -188,6 +188,40 @@ public class UrlValidatorTests : IClassFixture<UrlValidatorFixture>, IDisposable
             .WithInnerException<InvalidOperationException>();
     }
 
+    [Fact]
+    public void ValidateUrl_WithAllowCustomBaseUrls_AndWhitelistConfigured_NonWhitelistedDomain_ShouldNotThrow()
+    {
+        _configureAllowedDomainsMethod.Invoke(null, new object[] { new[] { "example.com" } });
+        var customUrl = "https://www.microsoft.com/api/test";
+
+        var act = () => _validateUrlMethod.Invoke(null, new object?[] { customUrl, true });
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void ValidateUrl_WithAllowCustomBaseUrls_ButPrivateIp_StillThrowsInvalidOperationException()
+    {
+        var privateUrl = "https://10.0.0.1/api/test";
+
+        var act = () => _validateUrlMethod.Invoke(null, new object?[] { privateUrl, true });
+
+        act.Should().Throw<TargetInvocationException>()
+            .WithInnerException<InvalidOperationException>()
+            .WithMessage("*私有 IP 地址*");
+    }
+
+    [Fact]
+    public void ValidateUrl_WithAllowCustomBaseUrls_ButInternalDomain_StillThrowsInvalidOperationException()
+    {
+        var internalUrl = "https://server.internal/api/test";
+
+        var act = () => _validateUrlMethod.Invoke(null, new object?[] { internalUrl, true });
+
+        act.Should().Throw<TargetInvocationException>()
+            .WithInnerException<InvalidOperationException>();
+    }
+
     #endregion
 
     #region ValidateBaseUrl Tests

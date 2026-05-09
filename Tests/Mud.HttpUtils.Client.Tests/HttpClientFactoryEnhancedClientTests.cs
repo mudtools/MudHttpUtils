@@ -224,4 +224,18 @@ public class HttpClientFactoryEnhancedClientTests
         client.Should().NotBeNull();
         client.ClientName.Should().Be("testClient");
     }
+
+    [Fact]
+    public void Constructor_WithAllowCustomBaseUrls_ShouldCreateInstance()
+    {
+        var mockFactory = new Mock<IHttpClientFactory>();
+        mockFactory.Setup(f => f.CreateClient("testClient"))
+            .Returns(new HttpClient());
+
+        var client = new HttpClientFactoryEnhancedClient(
+            mockFactory.Object, "testClient", allowCustomBaseUrls: true);
+
+        client.Should().NotBeNull();
+        client.ClientName.Should().Be("testClient");
+    }
 }

@@ -572,6 +572,12 @@ public static class HttpClientServiceCollectionExtensions
         var options = new MudHttpClientApplicationOptions();
         section.Bind(options);
 
+        // 自动配置全局域名白名单
+        if (options.AllowedDomains.Count > 0)
+        {
+            UrlValidator.ConfigureAllowedDomains(options.AllowedDomains);
+        }
+
         foreach (var kvp in options.Clients)
         {
             var clientName = kvp.Key;

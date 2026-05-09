@@ -72,6 +72,15 @@ public class DirectEnhancedHttpClientTests
         client.Should().NotBeNull();
     }
 
+    [Fact]
+    public void Constructor_WithAllowCustomBaseUrls_CreatesInstance()
+    {
+        var httpClient = new HttpClient();
+        var client = new DirectEnhancedHttpClient(httpClient, allowCustomBaseUrls: true);
+
+        client.Should().NotBeNull();
+    }
+
     #endregion
 
     #region EncryptContent Tests
