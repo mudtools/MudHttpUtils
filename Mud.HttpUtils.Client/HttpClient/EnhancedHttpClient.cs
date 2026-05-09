@@ -51,6 +51,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     private readonly IHttpRequestInterceptor[] _requestInterceptors;
     private readonly IHttpResponseInterceptor[] _responseInterceptors;
     private readonly ISensitiveDataMasker? _sensitiveDataMasker;
+    private readonly bool _allowCustomBaseUrls;
 
     /// <summary>
     /// 获取加密提供程序。子类可重写此属性以提供加密功能。
@@ -81,13 +82,15 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// <param name="requestInterceptors">请求拦截器集合（可选）。</param>
     /// <param name="responseInterceptors">响应拦截器集合（可选）。</param>
     /// <param name="sensitiveDataMasker">敏感数据掩码器（可选）。</param>
+    /// <param name="allowCustomBaseUrls">是否允许自定义基础URL（可选，默认为 false）。</param>
     /// <exception cref="ArgumentNullException"></exception>
     protected EnhancedHttpClient(
         HttpClient httpClient,
         ILogger? logger = null,
         IEnumerable<IHttpRequestInterceptor>? requestInterceptors = null,
         IEnumerable<IHttpResponseInterceptor>? responseInterceptors = null,
-        ISensitiveDataMasker? sensitiveDataMasker = null)
+        ISensitiveDataMasker? sensitiveDataMasker = null,
+        bool allowCustomBaseUrls = false)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _logger = logger ?? NullLogger.Instance;
@@ -95,6 +98,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         _requestInterceptors = requestInterceptors?.OrderBy(i => i.Order).ToArray() ?? Array.Empty<IHttpRequestInterceptor>();
         _responseInterceptors = responseInterceptors?.OrderBy(i => i.Order).ToArray() ?? Array.Empty<IHttpResponseInterceptor>();
         _sensitiveDataMasker = sensitiveDataMasker;
+        _allowCustomBaseUrls = allowCustomBaseUrls;
     }
 
     #region IEnhancedHttpClient 接口实现
@@ -1045,7 +1049,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         if (Uri.IsWellFormedUriString(url, UriKind.Absolute))
         {
             // 验证绝对URL是否安全
-            UrlValidator.ValidateUrl(url, allowCustomBaseUrls: false);
+            UrlValidator.ValidateUrl(url, allowCustomBaseUrls: _allowCustomBaseUrls);
             return;
         }
 
@@ -1057,7 +1061,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                     "HttpClient未配置BaseAddress，无法使用相对URL");
             }
             // 验证BaseAddress是否安全
-            UrlValidator.ValidateBaseUrl(_httpClient.BaseAddress?.ToString(), allowCustomBaseUrls: false);
+            UrlValidator.ValidateBaseUrl(_httpClient.BaseAddress?.ToString(), allowCustomBaseUrls: _allowCustomBaseUrls);
             return;
         }
 
@@ -1300,7 +1304,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             newClient.DefaultRequestHeaders.TryAddWithoutValidation(header.Key, header.Value);
         }
 
-        return new DirectEnhancedHttpClient(newClient, _logger, _requestInterceptors, _responseInterceptors, EncryptionProvider, _sensitiveDataMasker);
+        return new DirectEnhancedHttpClient(newClient, _logger, _requestInterceptors, _responseInterceptors, EncryptionProvider, _sensitiveDataMasker, _allowCustomBaseUrls);
     }
 
     #endregion

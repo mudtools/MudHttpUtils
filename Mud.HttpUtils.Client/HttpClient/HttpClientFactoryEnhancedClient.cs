@@ -30,6 +30,7 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
     private readonly IEnumerable<IHttpResponseInterceptor>? _responseInterceptors;
     private readonly Uri? _overrideBaseAddress;
     private readonly ISensitiveDataMasker? _sensitiveDataMasker;
+    private readonly bool _allowCustomBaseUrls;
 
     protected override IEncryptionProvider? EncryptionProvider => _encryptionProvider;
 
@@ -43,6 +44,8 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
     /// <param name="requestInterceptors">请求拦截器集合（可选）。</param>
     /// <param name="responseInterceptors">响应拦截器集合（可选）。</param>
     /// <param name="overrideBaseAddress">覆盖的基地址（可选）。</param>
+    /// <param name="sensitiveDataMasker">敏感数据掩码器（可选）。</param>
+    /// <param name="allowCustomBaseUrls">是否允许自定义基础URL（可选，默认为 false）。</param>
     /// <exception cref="ArgumentNullException">factory 或 clientName 为 null</exception>
     public HttpClientFactoryEnhancedClient(
         IHttpClientFactory factory,
@@ -52,8 +55,9 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
         IEnumerable<IHttpRequestInterceptor>? requestInterceptors = null,
         IEnumerable<IHttpResponseInterceptor>? responseInterceptors = null,
         Uri? overrideBaseAddress = null,
-        ISensitiveDataMasker? sensitiveDataMasker = null)
-        : base(CreateClient(factory, clientName, overrideBaseAddress), logger, requestInterceptors, responseInterceptors, sensitiveDataMasker)
+        ISensitiveDataMasker? sensitiveDataMasker = null,
+        bool allowCustomBaseUrls = false)
+        : base(CreateClient(factory, clientName, overrideBaseAddress), logger, requestInterceptors, responseInterceptors, sensitiveDataMasker, allowCustomBaseUrls)
     {
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
         _clientName = clientName ?? throw new ArgumentNullException(nameof(clientName));
@@ -63,6 +67,7 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
         _responseInterceptors = responseInterceptors;
         _overrideBaseAddress = overrideBaseAddress;
         _sensitiveDataMasker = sensitiveDataMasker;
+        _allowCustomBaseUrls = allowCustomBaseUrls;
     }
 
     private static HttpClient CreateClient(IHttpClientFactory factory, string name, Uri? overrideBaseAddress)
@@ -113,7 +118,8 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
             _requestInterceptors,
             _responseInterceptors,
             baseAddress,
-            _sensitiveDataMasker);
+            _sensitiveDataMasker,
+            _allowCustomBaseUrls);
     }
 
 }

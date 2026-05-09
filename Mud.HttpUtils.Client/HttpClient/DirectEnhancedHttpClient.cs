@@ -28,6 +28,8 @@ internal sealed class DirectEnhancedHttpClient : EnhancedHttpClient
     /// <param name="requestInterceptors">请求拦截器集合,可选。</param>
     /// <param name="responseInterceptors">响应拦截器集合,可选。</param>
     /// <param name="encryptionProvider">加密提供器实例,可选。</param>
+    /// <param name="sensitiveDataMasker">敏感数据掩码器,可选。</param>
+    /// <param name="allowCustomBaseUrls">是否允许自定义基础URL,可选,默认为 false。</param>
     /// <exception cref="ArgumentNullException"><paramref name="httpClient"/> 为 null。</exception>
     public DirectEnhancedHttpClient(
         HttpClient httpClient,
@@ -35,8 +37,9 @@ internal sealed class DirectEnhancedHttpClient : EnhancedHttpClient
         IEnumerable<IHttpRequestInterceptor>? requestInterceptors = null,
         IEnumerable<IHttpResponseInterceptor>? responseInterceptors = null,
         IEncryptionProvider? encryptionProvider = null,
-        ISensitiveDataMasker? sensitiveDataMasker = null)
-        : base(httpClient, logger, requestInterceptors, responseInterceptors, sensitiveDataMasker)
+        ISensitiveDataMasker? sensitiveDataMasker = null,
+        bool allowCustomBaseUrls = false)
+        : base(httpClient, logger, requestInterceptors, responseInterceptors, sensitiveDataMasker, allowCustomBaseUrls)
     {
         _encryptionProvider = encryptionProvider;
     }

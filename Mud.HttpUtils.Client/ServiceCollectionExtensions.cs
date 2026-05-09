@@ -506,7 +506,20 @@ public static class HttpClientServiceCollectionExtensions
         var requestInterceptors = sp.GetServices<IHttpRequestInterceptor>();
         var responseInterceptors = sp.GetServices<IHttpResponseInterceptor>();
         var sensitiveDataMasker = sp.GetService<ISensitiveDataMasker>();
-        return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, logger, requestInterceptors, responseInterceptors, sensitiveDataMasker: sensitiveDataMasker);
+
+        // 从配置中读取 AllowCustomBaseUrls
+        bool allowCustomBaseUrls = false;
+        var optionsMonitor = sp.GetService<IOptionsMonitor<MudHttpClientApplicationOptions>>();
+        if (optionsMonitor != null)
+        {
+            var appOptions = optionsMonitor.CurrentValue;
+            if (appOptions.Clients.TryGetValue(clientName, out var clientOptions))
+            {
+                allowCustomBaseUrls = clientOptions.AllowCustomBaseUrls;
+            }
+        }
+
+        return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, logger, requestInterceptors, responseInterceptors, sensitiveDataMasker: sensitiveDataMasker, allowCustomBaseUrls: allowCustomBaseUrls);
     }
 
     /// <summary>

@@ -98,6 +98,16 @@ public class MudHttpClientOptions
     public bool? AllowAnyStatusCode { get; set; }
 
     /// <summary>
+    /// 是否允许自定义基础 URL
+    /// </summary>
+    /// <remarks>
+    /// 如果设置为 true，允许请求白名单域名之外的 URL（仍会检查私有 IP 和内网域名以防范 SSRF）。
+    /// 如果设置为 false（默认），则只允许访问白名单中的域名。
+    /// <para>注意：启用此选项会放宽 URL 验证策略，请确保在受信任的环境中使用。</para>
+    /// </remarks>
+    public bool AllowCustomBaseUrls { get; set; }
+
+    /// <summary>
     /// 序列化方法
     /// </summary>
     /// <remarks>

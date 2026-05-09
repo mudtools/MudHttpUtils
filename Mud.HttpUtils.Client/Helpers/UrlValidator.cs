@@ -6,7 +6,7 @@ namespace Mud.HttpUtils;
 /// <summary>
 /// URL 验证工具类，用于防止 SSRF（服务端请求伪造）攻击
 /// </summary>
-internal static class UrlValidator
+public static class UrlValidator
 {
     private static readonly HashSet<string> _allowedDomains = new(StringComparer.OrdinalIgnoreCase);
 
