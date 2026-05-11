@@ -226,6 +226,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             });
     }
 
+    /// <inheritdoc cref="IBaseHttpClient.SendAsAsyncEnumerable"/>
     public async IAsyncEnumerable<TResult> SendAsAsyncEnumerable<TResult>(
         HttpRequestMessage request,
         object? jsonSerializerOptions = null,

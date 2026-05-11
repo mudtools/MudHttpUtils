@@ -258,6 +258,11 @@
         </member>
         <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.SendAsAsyncEnumerable``1(System.Net.Http.HttpRequestMessage,System.Object,System.Threading.CancellationToken)">
             <inheritdoc />
+            <remarks>
+            流式枚举（SSE/NDJSON）场景中，连接建立阶段可通过克隆请求获得有限的重试安全性，
+            但流式读取阶段无法被 Polly 策略包装（<see cref="T:System.Collections.Generic.IAsyncEnumerable`1"/> 是拉取式流，非 Task 模型）。
+            如需对流式连接建立阶段应用弹性策略，建议在调用方自行包装。
+            </remarks>
         </member>
         <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.SendAsync``1(System.Net.Http.HttpRequestMessage,System.Object,System.Threading.CancellationToken)">
             <inheritdoc />
