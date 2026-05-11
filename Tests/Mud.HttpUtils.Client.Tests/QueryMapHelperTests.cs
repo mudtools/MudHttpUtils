@@ -447,6 +447,74 @@ public class QueryMapHelperTests
 
     #endregion
 
+    #region Nested IQueryParameter Verification
+
+    [Fact]
+    public void FlattenObjectToQueryParams_NestedObjectContainingIQueryParameter_FlattensCorrectly()
+    {
+        var obj = new
+        {
+            Search = new
+            {
+                Name = "test",
+                Filter = (IQueryParameter)new TestQueryParameter(new Dictionary<string, string?>
+                {
+                    ["status"] = "active",
+                    ["role"] = "admin"
+                })
+            }
+        };
+        var queryParams = new NameValueCollection();
+
+        QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, false);
+
+        queryParams["Search.Name"].Should().Be("test");
+        queryParams["Search.Filter.status"].Should().Be("active");
+        queryParams["Search.Filter.role"].Should().Be("admin");
+    }
+
+    [Fact]
+    public void FlattenObjectToQueryParams_DeeplyNestedWithIQueryParameter_FlattensCorrectly()
+    {
+        var obj = new
+        {
+            Level1 = new
+            {
+                Level2 = new
+                {
+                    Query = (IQueryParameter)new TestQueryParameter(new Dictionary<string, string?>
+                    {
+                        ["key"] = "value"
+                    })
+                }
+            }
+        };
+        var queryParams = new NameValueCollection();
+
+        QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, false);
+
+        queryParams["Level1.Level2.Query.key"].Should().Be("value");
+    }
+
+    [Fact]
+    public void FlattenObjectToQueryParams_IQueryParameterWithPrefix_NestedCorrectly()
+    {
+        var obj = new
+        {
+            Filter = (IQueryParameter)new TestQueryParameter(new Dictionary<string, string?>
+            {
+                ["status"] = "active"
+            })
+        };
+        var queryParams = new NameValueCollection();
+
+        QueryMapHelper.FlattenObjectToQueryParams(obj, "ns", "_", queryParams, false, false);
+
+        queryParams["ns_Filter_status"].Should().Be("active");
+    }
+
+    #endregion
+
     private class TestQueryParameter : IQueryParameter
     {
         private readonly Dictionary<string, string?> _params;
