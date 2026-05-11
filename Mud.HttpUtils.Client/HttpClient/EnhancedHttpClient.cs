@@ -228,9 +228,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
     /// <inheritdoc cref="IBaseHttpClient.SendAsAsyncEnumerable"/>
     public async IAsyncEnumerable<TResult> SendAsAsyncEnumerable<TResult>(
-        HttpRequestMessage request,
-        object? jsonSerializerOptions = null,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+     HttpRequestMessage request,
+     object? jsonSerializerOptions = null,
+     [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         request.ThrowIfNull();
 
@@ -243,7 +243,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
 
 #if NETSTANDARD2_0
-        var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+    var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 #else
         var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 #endif
@@ -252,11 +252,15 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
         using var reader = new StreamReader(stream);
 
-        while (!reader.EndOfStream)
+        string? line;
+#if !NET7_0_OR_GREATER
+        while ((line = await reader.ReadLineAsync().ConfigureAwait(false)) != null)
+#else
+        while ((line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)) != null)
+#endif
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var line = await reader.ReadLineAsync().ConfigureAwait(false);
             if (string.IsNullOrEmpty(line))
                 continue;
 
