@@ -77,7 +77,7 @@ public static class BasicReferenceAssemblies
             MetadataReference.CreateFromFile(typeof(Mud.HttpUtils.Attributes.HttpClientApiAttribute).Assembly.Location),
         };
 
-        var runtimeDir = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
+        var runtimeDir = Path.GetDirectoryName(typeof(object).Assembly.Location)!;
         var runtimeAssemblies = new[]
         {
             "System.Runtime.dll",
@@ -88,10 +88,15 @@ public static class BasicReferenceAssemblies
             "System.Collections.dll",
             "System.Linq.dll",
             "System.Net.Http.dll",
+            "System.Net.Primitives.dll",
             "System.IO.dll",
             "System.Text.Json.dll",
             "System.Private.CoreLib.dll",
             "netstandard.dll",
+            "System.ObjectModel.dll",
+            "System.ComponentModel.dll",
+            "System.Diagnostics.Debug.dll",
+            "System.Reflection.dll",
         };
 
         foreach (var asm in runtimeAssemblies)

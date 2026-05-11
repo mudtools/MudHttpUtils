@@ -914,6 +914,9 @@
             <exception cref="T:System.ArgumentNullException"><paramref name="request"/> 为 null。</exception>
             <exception cref="T:System.Net.Http.HttpRequestException">HTTP请求失败时抛出。</exception>
         </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.SendAsAsyncEnumerable``1(System.Net.Http.HttpRequestMessage,System.Object,System.Threading.CancellationToken)">
+            <inheritdoc cref="M:Mud.HttpUtils.IBaseHttpClient.SendAsAsyncEnumerable``1(System.Net.Http.HttpRequestMessage,System.Object,System.Threading.CancellationToken)"/>
+        </member>
         <member name="M:Mud.HttpUtils.EnhancedHttpClient.SendXmlAsync``1(System.Net.Http.HttpRequestMessage,System.Text.Encoding,System.Threading.CancellationToken)">
             <inheritdoc cref="M:Mud.HttpUtils.IXmlHttpClient.SendXmlAsync``1(System.Net.Http.HttpRequestMessage,System.Text.Encoding,System.Threading.CancellationToken)"/>
             <param name="request">HTTP请求消息。</param>

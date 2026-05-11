@@ -85,7 +85,7 @@ public static class QueryMapHelper
             {
                 foreach (var kvp in queryParam.ToQueryParameters())
                 {
-                    var subKey = string.IsNullOrEmpty(prefix) ? kvp.Key : prefix + separator + kvp.Key;
+                    var subKey = string.IsNullOrEmpty(key) ? kvp.Key : key + separator + kvp.Key;
                     if (includeNullValues || !string.IsNullOrEmpty(kvp.Value))
                     {
                         if (!urlEncode && rawPairs != null)
