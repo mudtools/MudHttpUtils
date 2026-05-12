@@ -23,7 +23,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// 指示对象是否已释放。
     /// </summary>
     protected volatile bool _disposed;
-    private const string DefaultScopeKey = "default";
+    protected const string DefaultScopeKey = "default";
     private const int CleanupIntervalSeconds = 300;
     private const int LockCleanupIntervalSeconds = 600;
 
@@ -177,9 +177,10 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// 更新缓存的令牌信息。
     /// </summary>
     /// <param name="token">凭证令牌。</param>
+    [Obsolete("Use UpdateScopedToken(DefaultScopeKey, token) instead.")]
     protected void UpdateCachedToken(CredentialToken token)
     {
-        UpdateToken(DefaultScopeKey, token);
+        UpdateScopedToken(DefaultScopeKey, token);
     }
 
     /// <summary>

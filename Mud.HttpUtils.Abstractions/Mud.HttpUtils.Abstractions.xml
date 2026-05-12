@@ -1974,24 +1974,6 @@
             <param name="cancellationToken">取消令牌。</param>
             <returns>令牌信息。</returns>
         </member>
-        <member name="M:Mud.HttpUtils.OAuth2TokenManagerBase.GetTokenByAuthorizationCodeWithPkceAsync(System.String,System.String,System.String,System.Threading.CancellationToken)">
-            <summary>
-            通过授权码和 PKCE 验证获取令牌（Authorization Code Flow with PKCE）。
-            </summary>
-            <param name="code">授权码。</param>
-            <param name="redirectUri">重定向 URI。</param>
-            <param name="codeVerifier">PKCE code_verifier。</param>
-            <param name="cancellationToken">取消令牌。</param>
-            <returns>令牌信息。</returns>
-        </member>
-        <member name="M:Mud.HttpUtils.OAuth2TokenManagerBase.GeneratePkceChallenge(System.String@,System.String@,System.String)">
-            <summary>
-            生成 PKCE code_verifier 和 code_challenge。
-            </summary>
-            <param name="codeVerifier">生成的 code_verifier。</param>
-            <param name="codeChallenge">生成的 code_challenge。</param>
-            <param name="method">PKCE 方法（S256 或 plain），默认 S256。</param>
-        </member>
         <member name="M:Mud.HttpUtils.OAuth2TokenManagerBase.GetTokenByClientCredentialsAsync(System.String[],System.Threading.CancellationToken)">
             <summary>
             通过客户端凭证获取令牌（Client Credentials Flow）。

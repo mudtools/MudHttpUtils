@@ -251,7 +251,7 @@ public class TokenManagerBaseTests
         public TestTokenManager(string accessToken, long expireTime)
         {
             _initialToken = new CredentialToken { AccessToken = accessToken, Expire = expireTime };
-            UpdateCachedToken(_initialToken);
+            UpdateScopedToken(DefaultScopeKey, _initialToken);
         }
 
         public override Task<string> GetTokenAsync(CancellationToken cancellationToken = default)

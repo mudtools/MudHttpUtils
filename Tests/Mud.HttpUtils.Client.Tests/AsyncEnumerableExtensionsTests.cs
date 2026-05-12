@@ -181,18 +181,6 @@ public class AsyncEnumerableExtensionsTests : IClassFixture<UrlValidatorFixture>
             : base(httpClient, options)
         {
         }
-
-        public override string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json)
-            => throw new NotImplementedException();
-
-        public override string DecryptContent(string encryptedContent)
-            => throw new NotImplementedException();
-
-        public override byte[] EncryptBytes(byte[] data)
-            => throw new NotImplementedException();
-
-        public override byte[] DecryptBytes(byte[] encryptedData)
-            => throw new NotImplementedException();
     }
 }
 #endif

@@ -624,9 +624,6 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         JsonSerializerOptions? jsonSerializerOptions = null,
         CancellationToken cancellationToken = default)
     {
-        _httpClient.ThrowIfNull();
-        httpRequestMessage.ThrowIfNull();
-
         string? requestUri = httpRequestMessage.RequestUri?.ToString();
         ValidateUrl(requestUri);
 
@@ -723,9 +720,6 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         Encoding? encoding = null,
         CancellationToken cancellationToken = default)
     {
-        _httpClient.ThrowIfNull();
-        httpRequestMessage.ThrowIfNull();
-
         string? requestUri = httpRequestMessage.RequestUri?.ToString();
         ValidateUrl(requestUri);
 
@@ -783,7 +777,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// <param name="propertyName">加密后JSON中的属性名,默认为"data"。</param>
     /// <param name="serializeType">序列化类型,支持JSON和XML。</param>
     /// <returns>加密后的字符串。</returns>
-    public virtual string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json)
+    public string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json)
     {
         if (content == null)
             throw new ArgumentNullException(nameof(content));
@@ -818,7 +812,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// <inheritdoc cref="IEncryptableHttpClient.DecryptContent"/>
     /// <param name="encryptedContent">要解密的加密字符串。</param>
     /// <returns>解密后的原始字符串。</returns>
-    public virtual string DecryptContent(string encryptedContent)
+    public string DecryptContent(string encryptedContent)
     {
         if (string.IsNullOrEmpty(encryptedContent))
             return string.Empty;
@@ -847,6 +841,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
         catch (JsonException)
         {
+            // 有意忽略：如果内容不是JSON格式（例如直接是Base64密文），则跳过JSON解析，
+            // 将整个字符串作为密文进行解密。这是一种向后兼容的降级策略。
         }
 
         return EncryptionProvider.Decrypt(cipherText);
@@ -855,7 +851,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// <inheritdoc cref="IEncryptableHttpClient.EncryptBytes"/>
     /// <param name="data">要加密的字节数组。</param>
     /// <returns>加密后的字节数组。</returns>
-    public virtual byte[] EncryptBytes(byte[] data)
+    public byte[] EncryptBytes(byte[] data)
     {
         if (data == null)
             throw new ArgumentNullException(nameof(data));
@@ -869,7 +865,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// <inheritdoc cref="IEncryptableHttpClient.DecryptBytes"/>
     /// <param name="encryptedData">要解密的加密字节数组。</param>
     /// <returns>解密后的原始字节数组。</returns>
-    public virtual byte[] DecryptBytes(byte[] encryptedData)
+    public byte[] DecryptBytes(byte[] encryptedData)
     {
         if (encryptedData == null)
             throw new ArgumentNullException(nameof(encryptedData));
@@ -889,22 +885,15 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         HttpRequestMessage httpRequestMessage,
         CancellationToken cancellationToken = default)
     {
-        _httpClient.ThrowIfNull();
-        httpRequestMessage.ThrowIfNull();
-
         string? requestUri = httpRequestMessage.RequestUri?.ToString();
         ValidateUrl(requestUri);
 
         try
         {
-            using var response = await _httpClient.SendAsync(httpRequestMessage,
-                HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken).ConfigureAwait(false);
-
-            await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
+            using var response = await SendAndValidateAsync(httpRequestMessage, cancellationToken).ConfigureAwait(false);
 
             var contentLength = response.Content.Headers.ContentLength;
-            if (contentLength > 10 * 1024 * 1024) // 10MB警告
+            if (contentLength > 10 * 1024 * 1024)
             {
                 _logger.DownloadFileLarge(requestUri!, contentLength.GetValueOrDefault() / (1024.0 * 1024.0));
             }
@@ -937,9 +926,6 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         bool overwrite = true,
         CancellationToken cancellationToken = default)
     {
-        _httpClient.ThrowIfNull();
-        httpRequestMessage.ThrowIfNull();
-
         if (string.IsNullOrWhiteSpace(filePath))
             throw new ArgumentException("文件路径不能为空", nameof(filePath));
 
@@ -967,11 +953,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 }
             }
 
-            using var response = await _httpClient.SendAsync(httpRequestMessage,
-                HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken).ConfigureAwait(false);
-
-            await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
+            using var response = await SendAndValidateAsync(httpRequestMessage, cancellationToken).ConfigureAwait(false);
 
             var contentLength = response.Content.Headers.ContentLength;
             _logger.DownloadFileStarted(

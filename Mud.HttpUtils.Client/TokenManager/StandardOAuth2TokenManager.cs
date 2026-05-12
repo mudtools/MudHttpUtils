@@ -241,7 +241,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// <inheritdoc/>
     protected override async Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
     {
-        var currentToken = GetCurrentCachedToken();
+        var currentToken = GetCachedCredentialToken();
 
         CredentialToken newToken;
 
@@ -256,14 +256,14 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
                 .ConfigureAwait(false);
         }
 
-        UpdateCredentialToken(newToken);
+        UpdateScopedToken(DefaultScopeKey, newToken);
 
         return newToken;
     }
 
     protected override async Task<CredentialToken> RefreshTokenWithScopesAsync(string[]? scopes, CancellationToken cancellationToken)
     {
-        var currentToken = GetCurrentCachedToken();
+        var currentToken = GetCachedCredentialToken();
 
         CredentialToken newToken;
 
@@ -278,7 +278,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
                 .ConfigureAwait(false);
         }
 
-        UpdateCredentialToken(newToken);
+        UpdateScopedToken(DefaultScopeKey, newToken);
 
         return newToken;
     }
@@ -298,7 +298,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     {
         await GetOrRefreshTokenAsync(cancellationToken).ConfigureAwait(false);
 
-        var currentToken = GetCurrentCachedToken();
+        var currentToken = GetCachedCredentialToken();
         if (currentToken != null)
             return currentToken;
 
@@ -364,7 +364,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
             Expire = CalculateExpire(tokenResponse.ExpiresIn)
         };
 
-        UpdateCredentialToken(newToken);
+        UpdateScopedToken(DefaultScopeKey, newToken);
 
         return newToken;
     }
@@ -381,16 +381,6 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         var credentials = Convert.ToBase64String(
             Encoding.UTF8.GetBytes($"{_options.ClientId}:{clientSecret}"));
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
-    }
-
-    private CredentialToken? GetCurrentCachedToken()
-    {
-        return GetCachedCredentialToken();
-    }
-
-    private void UpdateCredentialToken(CredentialToken token)
-    {
-        UpdateCachedToken(token);
     }
 
     private void ValidateTokenEndpoint()

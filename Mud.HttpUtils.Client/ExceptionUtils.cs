@@ -17,13 +17,14 @@ internal static class ExceptionUtils
 #if NET6_0_OR_GREATER
     public static void ThrowIfNull<T>(
         this T? obj,
-        [CallerArgumentExpression(nameof(obj))] string? paramName = null) 
+        [CallerArgumentExpression(nameof(obj))] string? paramName = null)
         where T : class
     {
         if (obj is null)
             throw new ArgumentNullException(paramName);
     }
 
+    [Obsolete("Use the generic ThrowIfNull<T> overload instead.")]
     public static void ThrowIfNull(
         this object? argument,
         [CallerArgumentExpression(nameof(argument))] string? paramName = null)
@@ -49,6 +50,7 @@ internal static class ExceptionUtils
             throw new ArgumentNullException(paramName ?? "obj");
     }
 
+    [Obsolete("Use the generic ThrowIfNull<T> overload instead.")]
     public static void ThrowIfNull(this object? argument, string? paramName = null)
     {
         if (argument == null)
