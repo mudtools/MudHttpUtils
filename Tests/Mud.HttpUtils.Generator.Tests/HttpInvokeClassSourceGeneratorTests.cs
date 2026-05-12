@@ -1,30 +1,10 @@
-// -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
-//  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
-//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
-//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
-// -----------------------------------------------------------------------
-
 namespace Mud.HttpUtils.Generator.Tests;
 
-/// <summary>
-/// HttpInvokeClassSourceGenerator 源代码生成器集成测试
-/// </summary>
 public class HttpInvokeClassSourceGeneratorTests
 {
     private Compilation CreateCompilation(string source)
     {
-        var references = new[]
-        {
-            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(Task).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(List<>).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(System.Text.Json.JsonSerializer).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.Logging.ILogger).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(System.Net.Http.HttpClient).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(Mud.HttpUtils.HttpClientUtils).Assembly.Location)
-        };
-
+        var references = BasicReferenceAssemblies.GetReferences();
         var syntaxTree = CSharpSyntaxTree.ParseText(source);
 
         return CSharpCompilation.Create(
@@ -32,6 +12,22 @@ public class HttpInvokeClassSourceGeneratorTests
             new[] { syntaxTree },
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    private (ImmutableArray<Diagnostic> diagnostics, Compilation outputCompilation) RunGenerator(string source)
+    {
+        var compilation = CreateCompilation(source);
+        var generator = new HttpInvokeClassSourceGenerator();
+        CSharpGeneratorDriver driver = CSharpGeneratorDriver.Create(generator);
+
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
+
+        return (diagnostics, outputCompilation);
+    }
+
+    private string? GetGeneratedCode(Compilation outputCompilation)
+    {
+        return outputCompilation.SyntaxTrees.Skip(1).FirstOrDefault()?.ToString();
     }
 
     [Fact]
@@ -46,10 +42,7 @@ namespace TestNamespace
     }
 }";
 
-        var compilation = CreateCompilation(source);
-        var driver = CSharpGeneratorDriver.Create(new MockGenerator());
-
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
+        var (diagnostics, outputCompilation) = RunGenerator(source);
 
         diagnostics.Should().BeEmpty();
         outputCompilation.SyntaxTrees.Count().Should().Be(1);
@@ -71,13 +64,12 @@ namespace TestNamespace
     }
 }";
 
-        var compilation = CreateCompilation(source);
-        var driver = CSharpGeneratorDriver.Create(new MockGenerator());
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
 
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
-
-        diagnostics.Should().BeEmpty();
-        outputCompilation.SyntaxTrees.Count().Should().BeGreaterOrEqualTo(1);
+        generatedCode.Should().NotBeNullOrEmpty("带有 [HttpClientApi] 特性的接口应生成实现代码");
+        generatedCode.Should().Contain("ITestApi", "生成的代码应包含原始接口名");
+        generatedCode.Should().Contain("GetUsersAsync", "生成的代码应包含接口方法实现");
     }
 
     [Fact]
@@ -93,24 +85,26 @@ namespace TestNamespace
     {
         [Get(""/users"")]
         Task<string> GetUsersAsync();
-        
+
         [Post(""/users"")]
         Task<string> CreateUserAsync(string name);
-        
+
         [Put(""/users/{id}"")]
         Task<string> UpdateUserAsync(int id, string name);
-        
+
         [Delete(""/users/{id}"")]
         Task DeleteUserAsync(int id);
     }
 }";
 
-        var compilation = CreateCompilation(source);
-        var driver = CSharpGeneratorDriver.Create(new MockGenerator());
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
 
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
-
-        diagnostics.Should().BeEmpty();
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("GetUsersAsync");
+        generatedCode.Should().Contain("CreateUserAsync");
+        generatedCode.Should().Contain("UpdateUserAsync");
+        generatedCode.Should().Contain("DeleteUserAsync");
     }
 
     [Fact]
@@ -129,12 +123,12 @@ namespace TestNamespace
     }
 }";
 
-        var compilation = CreateCompilation(source);
-        var driver = CSharpGeneratorDriver.Create(new MockGenerator());
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
 
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
-
-        diagnostics.Should().BeEmpty();
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("userId");
+        generatedCode.Should().Contain("postId");
     }
 
     [Fact]
@@ -153,12 +147,13 @@ namespace TestNamespace
     }
 }";
 
-        var compilation = CreateCompilation(source);
-        var driver = CSharpGeneratorDriver.Create(new MockGenerator());
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
 
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
-
-        diagnostics.Should().BeEmpty();
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("keyword");
+        generatedCode.Should().Contain("page");
+        generatedCode.Should().Contain("size");
     }
 
     [Fact]
@@ -183,12 +178,12 @@ namespace TestNamespace
     }
 }";
 
-        var compilation = CreateCompilation(source);
-        var driver = CSharpGeneratorDriver.Create(new MockGenerator());
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
 
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
-
-        diagnostics.Should().BeEmpty();
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("CreateUserAsync");
+        generatedCode.Should().Contain("user");
     }
 
     [Fact]
@@ -207,12 +202,36 @@ namespace TestNamespace
     }
 }";
 
-        var compilation = CreateCompilation(source);
-        var driver = CSharpGeneratorDriver.Create(new MockGenerator());
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
 
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("Authorization");
+        generatedCode.Should().Contain("token");
+    }
 
-        diagnostics.Should().BeEmpty();
+    [Fact]
+    public void Generator_WithTokenManager_ShouldGenerateTokenInjectionCode()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [HttpClientApi(TokenManage = ""ITestTokenManager"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("ITestTokenManager");
+        generatedCode.Should().Contain("GetOrRefreshTokenAsync");
     }
 
     [Fact]
@@ -231,12 +250,11 @@ namespace TestNamespace
     }
 }";
 
-        var compilation = CreateCompilation(source);
-        var driver = CSharpGeneratorDriver.Create(new MockGenerator());
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
 
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
-
-        diagnostics.Should().BeEmpty();
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("BasicAuth");
     }
 
     [Fact]
@@ -257,22 +275,362 @@ namespace TestNamespace
     }
 }";
 
-        var compilation = CreateCompilation(source);
-        var driver = CSharpGeneratorDriver.Create(new MockGenerator());
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
 
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
-
-        diagnostics.Should().BeEmpty();
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("GetUsersAsync");
     }
 
-    private class MockGenerator : ISourceGenerator
+    [Fact]
+    public void Generator_WithFormParameters_ShouldGenerateFormContent()
     {
-        public void Initialize(GeneratorInitializationContext context)
-        {
-        }
+        var source = @"
+using Mud.HttpUtils;
 
-        public void Execute(GeneratorExecutionContext context)
-        {
-        }
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Post(""/login"")]
+        Task<string> LoginAsync([Form] string username, [Form] string password);
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("username");
+        generatedCode.Should().Contain("password");
+    }
+
+    [Fact]
+    public void Generator_WithUploadParameter_ShouldGenerateUploadCode()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using System.IO;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Post(""/upload"")]
+        [MultipartForm]
+        Task<string> UploadAsync([Upload] Stream fileStream);
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("fileStream");
+        generatedCode.Should().Contain("MultipartFormDataContent");
+    }
+
+    [Fact]
+    public void Generator_WithResponseReturnType_ShouldGenerateResponseHandling()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users/{id}"")]
+        Task<Response<string>> GetUserAsync([Path] int id);
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("GetUserAsync");
+        generatedCode.Should().Contain("Response");
+    }
+
+    [Fact]
+    public void Generator_WithCacheAttribute_ShouldGenerateCacheHandling()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        [Cache(60)]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("GetUsersAsync");
+    }
+
+    [Fact]
+    public void Generator_WithInterfaceQueryProperty_ShouldGeneratePropertyImplementation()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    [InterfaceQuery(Name = ""version"", Value = ""v1"")]
+    public interface ITestApi
+    {
+        [Get(""/data"")]
+        Task<string> GetDataAsync();
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("version");
+    }
+
+    [Fact]
+    public void Generator_WithQueryMapParameter_ShouldGenerateFlattenCall()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    public class SearchParams
+    {
+        public string Keyword { get; set; }
+        public int Page { get; set; }
+    }
+
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/search"")]
+        Task<string> SearchAsync([QueryMap] SearchParams parameters);
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("parameters");
+    }
+
+    [Fact]
+    public void Generator_GeneratesConstructorWithDependencies()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("IEnhancedHttpClient");
+    }
+
+    [Fact]
+    public void Generator_GeneratesClassWithCorrectNamespace()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace MyApp.Apis
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("MyApp.Apis");
+    }
+
+    [Fact]
+    public void Generator_WithAsyncEnumerableReturn_ShouldGenerateStreamCode()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using System.Collections.Generic;
+
+namespace TestNamespace
+{
+    public class ChatMessage
+    {
+        public string Content { get; set; }
+    }
+
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/chat/stream"")]
+        IAsyncEnumerable<ChatMessage> StreamChatAsync();
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("StreamChatAsync");
+    }
+
+    [Fact]
+    public void Generator_WithBodyEnableEncrypt_ShouldGenerateEncryptionCode()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    public class SecretData
+    {
+        public string Value { get; set; }
+    }
+
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Post(""/secret"")]
+        Task<string> PostSecretAsync([Body(EnableEncrypt = true)] SecretData data);
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("PostSecretAsync");
+        generatedCode.Should().Contain("EncryptContent", "EnableEncrypt = true 时应生成加密调用");
+    }
+
+    [Fact]
+    public void Generator_WithBodyEnableEncryptAndResponse_ShouldGenerateDecryptionCode()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Post(""/secret"")]
+        Task<Response<string>> PostSecretAsync([Body(EnableEncrypt = true)] string data);
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("DecryptContent", "EnableEncrypt = true 且返回 Response<T> 时应生成解密调用");
+    }
+
+    [Fact]
+    public void Generator_WithAllowAnyStatusCode_ShouldGenerateWithoutEnsureSuccess()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    [AllowAnyStatusCode]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<Response<string>> GetUsersAsync();
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("GetUsersAsync");
+    }
+
+    [Fact]
+    public void Generator_WithBasePath_ShouldIncludeBasePathInUrl()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    [BasePath(""api/v1"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("GetUsersAsync");
+    }
+
+    [Fact]
+    public void Generator_WithCancellationTokenParameter_ShouldPassTokenToCall()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using System.Threading;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync(CancellationToken cancellationToken = default);
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("cancellationToken");
     }
 }

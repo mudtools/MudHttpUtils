@@ -1,28 +1,10 @@
-// -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
-//  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
-//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
-//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
-// -----------------------------------------------------------------------
-
 namespace Mud.HttpUtils.Generator.Tests;
 
-/// <summary>
-/// EventHandlerSourceGenerator 事件处理器源代码生成器集成测试
-/// </summary>
 public class EventHandlerSourceGeneratorTests
 {
     private Compilation CreateCompilation(string source)
     {
-        var references = new[]
-        {
-            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(Task).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(List<>).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(Microsoft.Extensions.Logging.ILogger).Assembly.Location),
-            MetadataReference.CreateFromFile(typeof(Mud.HttpUtils.HttpClientUtils).Assembly.Location)
-        };
-
+        var references = BasicReferenceAssemblies.GetReferences();
         var syntaxTree = CSharpSyntaxTree.ParseText(source);
 
         return CSharpCompilation.Create(
@@ -30,6 +12,23 @@ public class EventHandlerSourceGeneratorTests
             new[] { syntaxTree },
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    private (ImmutableArray<Diagnostic> diagnostics, Compilation outputCompilation) RunGenerator(string source)
+    {
+        var compilation = CreateCompilation(source);
+        var generatorType = TestHelper.GetType("Mud.HttpUtils.EventHandlerSourceGenerator");
+        var generator = (IIncrementalGenerator)Activator.CreateInstance(generatorType)!;
+        CSharpGeneratorDriver driver = CSharpGeneratorDriver.Create(generator);
+
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
+
+        return (diagnostics, outputCompilation);
+    }
+
+    private string? GetGeneratedCode(Compilation outputCompilation)
+    {
+        return outputCompilation.SyntaxTrees.Skip(1).FirstOrDefault()?.ToString();
     }
 
     [Fact]
@@ -44,10 +43,7 @@ namespace TestNamespace
     }
 }";
 
-        var compilation = CreateCompilation(source);
-        var driver = CSharpGeneratorDriver.Create(new MockEventHandlerGenerator());
-
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
+        var (diagnostics, outputCompilation) = RunGenerator(source);
 
         diagnostics.Should().BeEmpty();
         outputCompilation.SyntaxTrees.Count().Should().Be(1);
@@ -69,12 +65,13 @@ namespace TestNamespace
     }
 }";
 
-        var compilation = CreateCompilation(source);
-        var driver = CSharpGeneratorDriver.Create(new MockEventHandlerGenerator());
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
 
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
-
-        diagnostics.Should().BeEmpty();
+        generatedCode.Should().NotBeNullOrEmpty("带有 [GenerateEventHandler] 特性的类应生成事件处理器代码");
+        generatedCode.Should().Contain("UserCreatedEventHandler", "类名以 Result 结尾时应移除 Result 后缀并添加 EventHandler");
+        generatedCode.Should().Contain("user.created", "生成的代码应包含 EventType 值");
+        generatedCode.Should().Contain("SupportedEventType", "生成的代码应包含 SupportedEventType 属性");
     }
 
     [Fact]
@@ -92,12 +89,12 @@ namespace TestNamespace
     }
 }";
 
-        var compilation = CreateCompilation(source);
-        var driver = CSharpGeneratorDriver.Create(new MockEventHandlerGenerator());
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
 
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
-
-        diagnostics.Should().BeEmpty();
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("CustomUserUpdateHandler", "应使用自定义 HandlerClassName");
+        generatedCode.Should().Contain("user.updated");
     }
 
     [Fact]
@@ -115,12 +112,11 @@ namespace TestNamespace
     }
 }";
 
-        var compilation = CreateCompilation(source);
-        var driver = CSharpGeneratorDriver.Create(new MockEventHandlerGenerator());
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
 
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
-
-        diagnostics.Should().BeEmpty();
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("CustomNamespace.Handlers", "应使用自定义 HandlerNamespace");
     }
 
     [Fact]
@@ -138,12 +134,34 @@ namespace TestNamespace
     }
 }";
 
-        var compilation = CreateCompilation(source);
-        var driver = CSharpGeneratorDriver.Create(new MockEventHandlerGenerator());
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
 
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("OrderCreatedEventHandler", "类名以 Result 结尾时应移除 Result 后缀");
+        generatedCode.Should().NotContain("OrderCreatedResultEventHandler", "不应保留 Result 后缀");
+    }
 
-        diagnostics.Should().BeEmpty();
+    [Fact]
+    public void Generator_WithNoResultSuffix_ShouldAppendEventHandler()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [GenerateEventHandler(EventType = ""payment.processed"")]
+    public class PaymentProcessed
+    {
+        public string PaymentId { get; set; }
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("PaymentProcessedEventHandler", "类名不以 Result 结尾时应直接添加 EventHandler 后缀");
     }
 
     [Fact]
@@ -162,12 +180,11 @@ namespace TestNamespace
     }
 }";
 
-        var compilation = CreateCompilation(source);
-        var driver = CSharpGeneratorDriver.Create(new MockEventHandlerGenerator());
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
 
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
-
-        diagnostics.Should().BeEmpty();
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("app.table.record.created");
     }
 
     [Fact]
@@ -185,22 +202,129 @@ namespace TestNamespace
     }
 }";
 
-        var compilation = CreateCompilation(source);
-        var driver = CSharpGeneratorDriver.Create(new MockEventHandlerGenerator());
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
 
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
-
-        diagnostics.Should().BeEmpty();
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("FeishuEventHeaderV2", "应包含自定义 HeaderType");
+        generatedCode.Should().Contain("DriveFileEditResult, FeishuEventHeaderV2", "基类应使用双泛型参数");
     }
 
-    private class MockEventHandlerGenerator : ISourceGenerator
+    [Fact]
+    public void Generator_GeneratesAbstractPartialClass()
     {
-        public void Initialize(GeneratorInitializationContext context)
-        {
-        }
+        var source = @"
+using Mud.HttpUtils;
 
-        public void Execute(GeneratorExecutionContext context)
-        {
-        }
+namespace TestNamespace
+{
+    [GenerateEventHandler(EventType = ""test.event"")]
+    public class TestEventResult
+    {
+        public string Data { get; set; }
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("abstract partial class");
+        generatedCode.Should().Contain("TestEventEventHandler");
+    }
+
+    [Fact]
+    public void Generator_GeneratesConstructorWithParameters()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [GenerateEventHandler(
+        EventType = ""user.login"",
+        ConstructorParameters = ""IFeishuEventDeduplicator deduplicator, ILogger logger"",
+        ConstructorBaseCall = ""deduplicator, logger"")]
+    public class UserLoginResult
+    {
+        public string UserId { get; set; }
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("IFeishuEventDeduplicator deduplicator", "构造函数应包含自定义参数");
+        generatedCode.Should().Contain("ILogger logger");
+        generatedCode.Should().Contain(": base(deduplicator, logger)", "构造函数应调用基类构造函数");
+    }
+
+    [Fact]
+    public void Generator_UsesDefaultNamespaceWhenNotSpecified()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace MyApp.Events
+{
+    [GenerateEventHandler(EventType = ""my.event"")]
+    public class MyEventResult
+    {
+        public string Data { get; set; }
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("MyApp.Events", "未指定 HandlerNamespace 时应使用原始类所在命名空间");
+    }
+
+    [Fact]
+    public void Generator_GeneratesCompilerGeneratedAttribute()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [GenerateEventHandler(EventType = ""attr.test"")]
+    public class AttrTestResult
+    {
+        public string Data { get; set; }
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("CompilerGenerated");
+    }
+
+    [Fact]
+    public void Generator_WithInheritedFrom_ShouldUseCustomBaseClass()
+    {
+        var source = @"
+using Mud.HttpUtils;
+
+namespace TestNamespace
+{
+    [GenerateEventHandler(
+        EventType = ""custom.event"",
+        InheritedFrom = ""CustomBaseHandler"")]
+    public class CustomEventResult
+    {
+        public string Data { get; set; }
+    }
+}";
+
+        var (diagnostics, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNullOrEmpty();
+        generatedCode.Should().Contain("CustomBaseHandler<CustomEventResult>", "应使用自定义基类名");
     }
 }

@@ -30,6 +30,7 @@
 		<ProjectReference Include="..\..\Mud.HttpUtils.Client\Mud.HttpUtils.Client.csproj" />
 		<ProjectReference Include="..\..\Mud.HttpUtils.Attributes\Mud.HttpUtils.Attributes.csproj" />
 		<ProjectReference Include="..\..\Mud.HttpUtils.Abstractions\Mud.HttpUtils.Abstractions.csproj" />
+		<ProjectReference Include="..\..\Mud.HttpUtils.Resilience\Mud.HttpUtils.Resilience.csproj" />
 	</ItemGroup>
 
 </Project>
