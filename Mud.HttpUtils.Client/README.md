@@ -134,17 +134,18 @@ var maskedObj = masker.MaskObject(userRequest);
 
 ### 令牌管理
 
-| 类                          | 说明                                                                         |
-| --------------------------- | ---------------------------------------------------------------------------- |
-| `TokenManagerBase`          | 令牌管理器抽象基类，提供并发安全的令牌刷新                                   |
-| `UserTokenManagerBase`      | 用户令牌管理器抽象基类，提供用户级并发安全刷新和缓存容量控制                 |
-| `TokenRefreshHostedService` | 令牌后台刷新服务，实现 `IHostedService` 和 `ITokenRefreshBackgroundService`  |
-| `DefaultTokenProvider`      | `ITokenProvider` 默认实现，通过 `IMudAppContext` 获取令牌管理器并获取令牌    |
-| `DefaultCurrentUserContext` | `ICurrentUserContext` 默认实现，使用 `AsyncLocal` 实现线程安全的用户 ID 传播 |
-| `MemoryTokenStore`          | `ITokenStore` 内存默认实现，基于 `ConcurrentDictionary`，线程安全            |
-| `MemoryUserTokenStore`      | `IUserTokenStore` 内存默认实现，按用户 ID 隔离令牌数据                       |
-| `MemoryEncryptedTokenStore` | `IEncryptedTokenStore` 内存默认实现，自动加密/解密令牌数据                   |
-| `DefaultFormContent`        | `IFormContent` 默认实现，基于 `Dictionary<string, string>`                   |
+| 类                                | 说明                                                                         |
+| --------------------------------- | ---------------------------------------------------------------------------- |
+| `TokenManagerBase`                | 令牌管理器抽象基类，提供并发安全的令牌刷新，支持绝对过期保护                 |
+| `UserTokenManagerBase`            | 用户令牌管理器抽象基类，提供用户级并发安全刷新和缓存容量控制                 |
+| `TokenRefreshHostedService`       | 令牌后台刷新服务，实现 `IHostedService` 和 `ITokenRefreshBackgroundService`  |
+| `TokenRecoveryDelegatingHandler`  | 令牌恢复委托处理器，401 响应时自动刷新令牌并重试，支持多种注入模式           |
+| `DefaultTokenProvider`            | `ITokenProvider` 默认实现，通过 `IMudAppContext` 获取令牌管理器并获取令牌    |
+| `DefaultCurrentUserContext`       | `ICurrentUserContext` 默认实现，使用 `AsyncLocal` 实现线程安全的用户 ID 传播 |
+| `MemoryTokenStore`                | `ITokenStore` 内存默认实现，支持 `GetTokenTypesAsync`、`ClearAsync` 批量操作 |
+| `MemoryUserTokenStore`            | `IUserTokenStore` 内存默认实现，按用户 ID 隔离，支持 `ClearUserAsync` 等     |
+| `MemoryEncryptedTokenStore`       | `IEncryptedTokenStore` 内存默认实现，自动加密/解密令牌数据                   |
+| `DefaultFormContent`              | `IFormContent` 默认实现，基于 `Dictionary<string, string>`                   |
 
 ```csharp
 // 自定义令牌管理器

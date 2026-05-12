@@ -105,9 +105,12 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         }
 
         var userLock = _userLocks.GetOrAdd(userId!, _ => new SemaphoreSlim(1, 1));
-        await userLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var acquired = false;
         try
         {
+            await userLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            acquired = true;
+
             cachedInfo = GetUserTokenFromCache(userId!);
             if (IsUserTokenValid(cachedInfo))
                 return cachedInfo!.AccessToken;
@@ -123,7 +126,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         }
         finally
         {
-            userLock.Release();
+            if (acquired) userLock.Release();
         }
     }
 

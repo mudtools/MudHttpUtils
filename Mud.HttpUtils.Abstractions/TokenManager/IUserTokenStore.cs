@@ -58,4 +58,21 @@ public interface IUserTokenStore : ITokenStore
     /// <param name="tokenType">令牌类型标识符。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     Task RemoveAsync(string userId, string tokenType, CancellationToken cancellationToken = default);
+
+
+    /// <summary>
+    /// 异步获取指定用户的所有令牌类型标识符。
+    /// </summary>
+    /// <param name="userId">用户唯一标识符。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>令牌类型标识符集合。</returns>
+    Task<IEnumerable<string>> GetTokenTypesAsync(string userId, CancellationToken cancellationToken = default);
+
+
+    /// <summary>
+    /// 异步移除指定用户的所有令牌数据。
+    /// </summary>
+    /// <param name="userId">用户唯一标识符。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    Task ClearUserAsync(string userId, CancellationToken cancellationToken = default);
 }

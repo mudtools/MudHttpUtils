@@ -14,7 +14,7 @@ namespace Mud.HttpUtils;
 /// <b>推荐 DI 生命周期：Singleton。</b>与 <see cref="ITokenManager"/> 相同，
 /// 用户令牌管理器内部维护按 userId 隔离的令牌缓存和并发锁，应注册为 Singleton。
 /// </remarks>
-public interface IUserTokenManager : ITokenManager, IDisposable
+public interface IUserTokenManager : ITokenManager
 {
     /// <summary>
     /// 异步获取指定用户的访问令牌。

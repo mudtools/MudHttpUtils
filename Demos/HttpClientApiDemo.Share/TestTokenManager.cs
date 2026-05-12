@@ -37,4 +37,8 @@ public class TestTokenManager : ITokenManager
     {
         return Task.FromResult(TokenResult.Empty);
     }
+
+    public void Dispose()
+    {
+    }
 }

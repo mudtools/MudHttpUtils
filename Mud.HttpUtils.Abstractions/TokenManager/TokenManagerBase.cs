@@ -53,6 +53,12 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// </summary>
     protected virtual int MaxScopeCacheSize => 64;
 
+    /// <summary>
+    /// 获取缓存令牌的最大存活时间（秒），默认 86400 秒（24 小时）。
+    /// 即使远端返回的过期时间异常大，缓存条目也不会超过此时间。
+    /// </summary>
+    protected virtual int MaxCacheLifetimeSeconds => 86400;
+
     /// <inheritdoc />
     protected TokenManagerBase()
     {
@@ -91,9 +97,12 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             return _tokenCache[scopeKey]!.AccessToken!;
 
         var scopeLock = _scopeLocks.GetOrAdd(scopeKey, _ => new Lazy<SemaphoreSlim>(() => new SemaphoreSlim(1, 1), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
-        await scopeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var acquired = false;
         try
         {
+            await scopeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            acquired = true;
+
             if (_disposed)
                 throw new ObjectDisposedException(GetType().Name);
 
@@ -105,12 +114,16 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                     ? ct => RefreshTokenCoreAsync(ct)
                     : ct => RefreshTokenWithScopesAsync(scopes, ct),
                 cancellationToken).ConfigureAwait(false);
+
+            if (token == null || string.IsNullOrEmpty(token.AccessToken))
+                throw new InvalidOperationException($"令牌刷新返回了无效的凭证：AccessToken 为空。（ScopeKey={scopeKey}）");
+
             UpdateToken(scopeKey, token);
             return _tokenCache[scopeKey]!.AccessToken!;
         }
         finally
         {
-            scopeLock.Release();
+            if (acquired) scopeLock.Release();
         }
     }
 
@@ -122,10 +135,12 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
         var scopeKey = GetScopeKey(scopes);
         var scopeLock = _scopeLocks.GetOrAdd(scopeKey, _ => new Lazy<SemaphoreSlim>(() => new SemaphoreSlim(1, 1), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
-
-        await scopeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var acquired = false;
         try
         {
+            await scopeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+            acquired = true;
+
             if (_disposed)
                 throw new ObjectDisposedException(GetType().Name);
 
@@ -137,7 +152,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         }
         finally
         {
-            scopeLock.Release();
+            if (acquired) scopeLock.Release();
         }
     }
 
@@ -229,6 +244,17 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
     private void UpdateToken(string scopeKey, CredentialToken? token)
     {
+        if (token != null && token.Expire > 0)
+        {
+            var maxLifetimeMs = MaxCacheLifetimeSeconds * 1000L;
+            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var effectiveMaxExpire = now + maxLifetimeMs;
+            if (token.Expire > effectiveMaxExpire)
+            {
+                token.Expire = effectiveMaxExpire;
+            }
+        }
+
         _tokenCache[scopeKey] = token;
 
         if (_tokenCache.Count > MaxScopeCacheSize)
@@ -364,8 +390,12 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             lock (_cleanupLock)
             {
                 _cleanupTimer?.Change(Timeout.Infinite, Timeout.Infinite);
-                _cleanupTimer?.Dispose();
                 _lockCleanupTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+            }
+
+            lock (_cleanupLock)
+            {
+                _cleanupTimer?.Dispose();
                 _lockCleanupTimer?.Dispose();
             }
 

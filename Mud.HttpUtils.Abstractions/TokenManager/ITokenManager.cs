@@ -17,8 +17,12 @@ namespace Mud.HttpUtils;
 /// 应注册为 Singleton 以确保全局共享缓存，避免重复刷新令牌。如果注册为 Scoped 或 Transient，
 /// 每个请求将持有独立的缓存实例，导致并发安全机制失效和冗余的令牌刷新请求。
 /// </para>
+/// <para>
+/// 实现类通常持有 <see cref="System.Threading.SemaphoreSlim"/>、<see cref="System.Threading.Timer"/> 等资源，
+/// 因此继承 <see cref="IDisposable"/>。使用者应在适当时机调用 <see cref="IDisposable.Dispose"/> 释放资源。
+/// </para>
 /// </remarks>
-public interface ITokenManager
+public interface ITokenManager : IDisposable
 {
     /// <summary>
     /// 异步获取访问令牌。

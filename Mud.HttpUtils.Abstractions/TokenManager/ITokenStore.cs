@@ -55,5 +55,18 @@ public interface ITokenStore
     /// <param name="tokenType">令牌类型标识符。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     Task RemoveAsync(string tokenType, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 异步获取当前存储中所有令牌类型标识符。
+    /// </summary>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>令牌类型标识符集合。</returns>
+    Task<IEnumerable<string>> GetTokenTypesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 异步移除所有令牌数据。
+    /// </summary>
+    /// <param name="cancellationToken">取消令牌。</param>
+    Task ClearAsync(CancellationToken cancellationToken = default);
 }
 

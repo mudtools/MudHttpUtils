@@ -2273,6 +2273,12 @@
             移除操作会删除该令牌类型的访问令牌、刷新令牌及过期时间信息。
             </remarks>
         </member>
+        <member name="M:Mud.HttpUtils.MemoryTokenStore.GetTokenTypesAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryTokenStore.ClearAsync(System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
         <member name="T:Mud.HttpUtils.MemoryTokenStore.TokenEntry">
             <summary>
             令牌条目内部类，用于存储单个令牌类型的完整信息。
@@ -2307,7 +2313,7 @@
             实现特点：
             <list type="bullet">
               <item>用户隔离：每个用户的令牌存储在独立的字典中</item>
-              <item>线程安全：使用嵌套的 <see cref="!:ConcurrentDictionary"/> 确保并发访问安全</item>
+              <item>线程安全：使用嵌套的 <see cref="T:System.Collections.Concurrent.ConcurrentDictionary`2"/> 确保并发访问安全</item>
               <item>过期检查：获取令牌时自动验证过期时间</item>
               <item>基类方法禁用：无用户 ID 的基类方法会抛出 <see cref="T:System.NotSupportedException"/></item>
             </list>
@@ -2434,6 +2440,27 @@
             移除操作会删除该用户该令牌类型的访问令牌、刷新令牌及过期时间信息。
             </remarks>
         </member>
+        <member name="M:Mud.HttpUtils.MemoryUserTokenStore.GetTokenTypesAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步获取指定用户的所有令牌类型标识符。
+            </summary>
+            <param name="userId">用户唯一标识符。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>令牌类型标识符集合。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryUserTokenStore.ClearUserAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            异步移除指定用户的所有令牌数据。
+            </summary>
+            <param name="userId">用户唯一标识符。</param>
+            <param name="cancellationToken">取消令牌。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.MemoryUserTokenStore.ClearAsync(System.Threading.CancellationToken)">
+            <summary>
+            异步移除所有用户的所有令牌数据。
+            </summary>
+            <param name="cancellationToken">取消令牌。</param>
+        </member>
         <member name="T:Mud.HttpUtils.OAuth2Options">
             <summary>
             OAuth2 配置选项。
@@ -2558,6 +2585,17 @@
               <item>如果收到 401 响应：使缓存令牌失效 → 强制刷新令牌 → 构建新请求并应用令牌 → 重试</item>
               <item>根据 <see cref="P:Mud.HttpUtils.TokenRecoveryOptions.RecoveryMaxRetries"/> 配置重复步骤 3，直到成功或达到最大重试次数</item>
             </list>
+            <para>令牌注入模式感知：</para>
+            <list type="bullet">
+              <item>生成代码通过 <see cref="T:Mud.HttpUtils.TokenRecoveryContext"/> 在请求属性中传递注入模式信息</item>
+              <item>恢复处理器根据注入模式将新令牌应用到正确的位置（Header/Cookie/Query）</item>
+              <item>若无 <see cref="T:Mud.HttpUtils.TokenRecoveryContext"/>，回退到默认的 Authorization Header 行为</item>
+            </list>
+            <para>用户级令牌支持：</para>
+            <list type="bullet">
+              <item>当提供 <see cref="T:Mud.HttpUtils.IUserTokenManager"/> 时，恢复流程使用用户级令牌管理器</item>
+              <item>用户 ID 从 <see cref="P:Mud.HttpUtils.TokenRecoveryContext.UserId"/> 或 <see cref="T:Mud.HttpUtils.ICurrentUserContext"/> 获取</item>
+            </list>
             </remarks>
             <example>
             <code>
@@ -2572,6 +2610,16 @@
             初始化令牌恢复委托处理器。
             </summary>
             <param name="tokenManager">令牌管理器，用于刷新和失效令牌。</param>
+            <param name="options">令牌恢复配置选项（可选）。</param>
+            <param name="logger">日志记录器（可选）。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.TokenRecoveryDelegatingHandler.#ctor(Mud.HttpUtils.ITokenManager,Mud.HttpUtils.IUserTokenManager,Mud.HttpUtils.ICurrentUserContext,Mud.HttpUtils.TokenRecoveryOptions,Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.TokenRecoveryDelegatingHandler})">
+            <summary>
+            初始化令牌恢复委托处理器（支持用户级令牌恢复）。
+            </summary>
+            <param name="tokenManager">令牌管理器，用于刷新和失效令牌。</param>
+            <param name="userTokenManager">用户令牌管理器，用于用户级令牌恢复（可选）。</param>
+            <param name="currentUserContext">当前用户上下文，用于获取用户 ID（可选）。</param>
             <param name="options">令牌恢复配置选项（可选）。</param>
             <param name="logger">日志记录器（可选）。</param>
         </member>

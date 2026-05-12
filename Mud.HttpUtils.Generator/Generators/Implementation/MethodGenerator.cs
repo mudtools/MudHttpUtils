@@ -496,6 +496,52 @@ internal class MethodGenerator : ICodeFragmentGenerator
             var cookieName = !string.IsNullOrEmpty(methodInfo.InterfaceTokenName) ? methodInfo.InterfaceTokenName : "access_token";
             codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"Cookie\", \"{cookieName}=\" + access_token);");
         }
+
+        GenerateTokenRecoveryContext(codeBuilder, methodInfo, indent);
+    }
+
+    private void GenerateTokenRecoveryContext(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, string indent)
+    {
+        var injectionMode = methodInfo.InterfaceTokenInjectionMode ?? HttpClientGeneratorConstants.TokenInjectionModeHeader;
+        var headerName = GetTokenHeaderName(methodInfo);
+        var cookieName = !string.IsNullOrEmpty(methodInfo.InterfaceTokenName) ? methodInfo.InterfaceTokenName : "access_token";
+        var tokenManagerKey = TokenMethodHelper.GetMethodTokenManagerKey(_context, methodInfo);
+        var requiresUserId = TokenMethodHelper.MethodRequiresUserId(_context, methodInfo);
+        var userIdExpr = requiresUserId ? "_currentUserContext.UserId" : "null";
+
+        var injectionModeValue = injectionMode switch
+        {
+            "Header" => "TokenInjectionMode.Header",
+            "Query" => "TokenInjectionMode.Query",
+            "Path" => "TokenInjectionMode.Path",
+            "ApiKey" => "TokenInjectionMode.ApiKey",
+            "HmacSignature" => "TokenInjectionMode.HmacSignature",
+            "BasicAuth" => "TokenInjectionMode.BasicAuth",
+            "Cookie" => "TokenInjectionMode.Cookie",
+            _ => "TokenInjectionMode.Header"
+        };
+
+        codeBuilder.AppendLine($"{indent}#if NETSTANDARD2_0");
+        codeBuilder.AppendLine($"{indent}__httpRequest.Properties[\"__Mud_HttpUtils_TokenRecoveryContext\"] = new Mud.HttpUtils.TokenRecoveryContext");
+        codeBuilder.AppendLine($"{indent}{{");
+        codeBuilder.AppendLine($"{indent}    InjectionMode = {injectionModeValue},");
+        codeBuilder.AppendLine($"{indent}    HeaderName = \"{headerName}\",");
+        codeBuilder.AppendLine($"{indent}    TokenScheme = \"Bearer\",");
+        codeBuilder.AppendLine($"{indent}    CookieName = \"{cookieName}\",");
+        codeBuilder.AppendLine($"{indent}    UserId = {userIdExpr},");
+        codeBuilder.AppendLine($"{indent}    TokenManagerKey = \"{tokenManagerKey}\"");
+        codeBuilder.AppendLine($"{indent}}};");
+        codeBuilder.AppendLine($"{indent}#else");
+        codeBuilder.AppendLine($"{indent}__httpRequest.Options.TryAdd(\"__Mud_HttpUtils_TokenRecoveryContext\", new Mud.HttpUtils.TokenRecoveryContext");
+        codeBuilder.AppendLine($"{indent}{{");
+        codeBuilder.AppendLine($"{indent}    InjectionMode = {injectionModeValue},");
+        codeBuilder.AppendLine($"{indent}    HeaderName = \"{headerName}\",");
+        codeBuilder.AppendLine($"{indent}    TokenScheme = \"Bearer\",");
+        codeBuilder.AppendLine($"{indent}    CookieName = \"{cookieName}\",");
+        codeBuilder.AppendLine($"{indent}    UserId = {userIdExpr},");
+        codeBuilder.AppendLine($"{indent}    TokenManagerKey = \"{tokenManagerKey}\"");
+        codeBuilder.AppendLine($"{indent}}});");
+        codeBuilder.AppendLine($"{indent}#endif");
     }
 
     /// <summary>

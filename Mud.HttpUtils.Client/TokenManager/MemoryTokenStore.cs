@@ -138,6 +138,19 @@ public class MemoryTokenStore : ITokenStore
         return Task.CompletedTask;
     }
 
+    /// <inheritdoc />
+    public virtual Task<IEnumerable<string>> GetTokenTypesAsync(CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<IEnumerable<string>>(_store.Keys.ToList());
+    }
+
+    /// <inheritdoc />
+    public virtual Task ClearAsync(CancellationToken cancellationToken = default)
+    {
+        _store.Clear();
+        return Task.CompletedTask;
+    }
+
     /// <summary>
     /// 令牌条目内部类，用于存储单个令牌类型的完整信息。
     /// </summary>

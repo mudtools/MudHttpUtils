@@ -1,3 +1,10 @@
+// -----------------------------------------------------------------------
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// -----------------------------------------------------------------------
+
 using System.Collections.Concurrent;
 
 namespace Mud.HttpUtils;
@@ -15,7 +22,7 @@ namespace Mud.HttpUtils;
 /// 实现特点：
 /// <list type="bullet">
 ///   <item>用户隔离：每个用户的令牌存储在独立的字典中</item>
-///   <item>线程安全：使用嵌套的 <see cref="ConcurrentDictionary"/> 确保并发访问安全</item>
+///   <item>线程安全：使用嵌套的 <see cref="ConcurrentDictionary{String, TokenEntry}"/> 确保并发访问安全</item>
 ///   <item>过期检查：获取令牌时自动验证过期时间</item>
 ///   <item>基类方法禁用：无用户 ID 的基类方法会抛出 <see cref="NotSupportedException"/></item>
 /// </list>
@@ -209,6 +216,44 @@ public class MemoryUserTokenStore : MemoryTokenStore, IUserTokenStore
             userTokens.TryRemove(tokenType, out _);
         }
 
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// 异步获取指定用户的所有令牌类型标识符。
+    /// </summary>
+    /// <param name="userId">用户唯一标识符。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>令牌类型标识符集合。</returns>
+    public Task<IEnumerable<string>> GetTokenTypesAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        if (_userStore.TryGetValue(userId, out var userTokens))
+        {
+            return Task.FromResult<IEnumerable<string>>([.. userTokens.Keys]);
+        }
+
+        return Task.FromResult<IEnumerable<string>>([]);
+    }
+
+    /// <summary>
+    /// 异步移除指定用户的所有令牌数据。
+    /// </summary>
+    /// <param name="userId">用户唯一标识符。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    public Task ClearUserAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        _userStore.TryRemove(userId, out _);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// 异步移除所有用户的所有令牌数据。
+    /// </summary>
+    /// <param name="cancellationToken">取消令牌。</param>
+    public override Task ClearAsync(CancellationToken cancellationToken = default)
+    {
+        base.ClearAsync(cancellationToken);
+        _userStore.Clear();
         return Task.CompletedTask;
     }
 }
