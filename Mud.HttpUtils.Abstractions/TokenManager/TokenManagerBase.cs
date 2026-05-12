@@ -391,10 +391,6 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             {
                 _cleanupTimer?.Change(Timeout.Infinite, Timeout.Infinite);
                 _lockCleanupTimer?.Change(Timeout.Infinite, Timeout.Infinite);
-            }
-
-            lock (_cleanupLock)
-            {
                 _cleanupTimer?.Dispose();
                 _lockCleanupTimer?.Dispose();
             }

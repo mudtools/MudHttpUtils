@@ -586,6 +586,277 @@ public class TokenRecoveryDelegatingHandlerTests
         capturedContent.Should().BeNull();
     }
 
+    [Fact]
+    public async Task SendAsync_WithTokenRecoveryContext_HeaderMode_UsesContextHeaderName()
+    {
+        var mockTokenManager = new Mock<ITokenManager>();
+        mockTokenManager
+            .Setup(m => m.InvalidateTokenAsync(null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(TokenResult.Empty);
+        mockTokenManager
+            .Setup(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("refreshed-token");
+
+        var callCount = 0;
+        string? capturedCustomHeader = null;
+        var innerHandler = new FakeHttpMessageHandler((request) =>
+        {
+            callCount++;
+            if (callCount == 1)
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            capturedCustomHeader = request.Headers.Contains("X-Api-Key")
+                ? string.Join(",", request.Headers.GetValues("X-Api-Key"))
+                : null;
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+
+        var handler = CreateHandler(mockTokenManager.Object, innerHandler: innerHandler);
+        var invoker = new HttpMessageInvoker(handler);
+
+        var request = CreateRequest();
+        request.Properties[TokenRecoveryContext.PropertyKey] = new TokenRecoveryContext
+        {
+            InjectionMode = TokenInjectionMode.ApiKey,
+            HeaderName = "X-Api-Key",
+            TokenScheme = "Bearer"
+        };
+
+        var response = await invoker.SendAsync(request, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        capturedCustomHeader.Should().Be("refreshed-token");
+    }
+
+    [Fact]
+    public async Task SendAsync_WithTokenRecoveryContext_CookieMode_ReplacesOnlyTargetCookie()
+    {
+        var mockTokenManager = new Mock<ITokenManager>();
+        mockTokenManager
+            .Setup(m => m.InvalidateTokenAsync(null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(TokenResult.Empty);
+        mockTokenManager
+            .Setup(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("refreshed-cookie-token");
+
+        string? capturedCookie = null;
+        var innerHandler = new FakeHttpMessageHandler((request) =>
+        {
+            if (capturedCookie == null)
+            {
+                capturedCookie = request.Headers.Contains("Cookie")
+                    ? string.Join("; ", request.Headers.GetValues("Cookie"))
+                    : null;
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            }
+            capturedCookie = request.Headers.Contains("Cookie")
+                ? string.Join("; ", request.Headers.GetValues("Cookie"))
+                : null;
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+
+        var handler = CreateHandler(mockTokenManager.Object, innerHandler: innerHandler);
+        var invoker = new HttpMessageInvoker(handler);
+
+        var request = CreateRequest();
+        request.Headers.Add("Cookie", "session=abc123; access_token=old-token; lang=en");
+        request.Properties[TokenRecoveryContext.PropertyKey] = new TokenRecoveryContext
+        {
+            InjectionMode = TokenInjectionMode.Cookie,
+            CookieName = "access_token"
+        };
+
+        var response = await invoker.SendAsync(request, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        capturedCookie.Should().Contain("access_token=refreshed-cookie-token");
+        capturedCookie.Should().Contain("session=abc123");
+        capturedCookie.Should().Contain("lang=en");
+    }
+
+    [Fact]
+    public async Task SendAsync_WithTokenRecoveryContext_BasicAuthMode_UsesBasicScheme()
+    {
+        var mockTokenManager = new Mock<ITokenManager>();
+        mockTokenManager
+            .Setup(m => m.InvalidateTokenAsync(null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(TokenResult.Empty);
+        mockTokenManager
+            .Setup(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("user:password");
+
+        string? capturedScheme = null;
+        string? capturedParameter = null;
+        var innerHandler = new FakeHttpMessageHandler((request) =>
+        {
+            if (capturedScheme == null)
+            {
+                capturedScheme = request.Headers.Authorization?.Scheme;
+                capturedParameter = request.Headers.Authorization?.Parameter;
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            }
+            capturedScheme = request.Headers.Authorization?.Scheme;
+            capturedParameter = request.Headers.Authorization?.Parameter;
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+
+        var handler = CreateHandler(mockTokenManager.Object, innerHandler: innerHandler);
+        var invoker = new HttpMessageInvoker(handler);
+
+        var request = CreateRequest();
+        request.Properties[TokenRecoveryContext.PropertyKey] = new TokenRecoveryContext
+        {
+            InjectionMode = TokenInjectionMode.BasicAuth,
+            TokenScheme = "Basic"
+        };
+
+        var response = await invoker.SendAsync(request, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        capturedScheme.Should().Be("Basic");
+        var expectedBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes("user:password"));
+        capturedParameter.Should().Be(expectedBase64);
+    }
+
+    [Fact]
+    public async Task SendAsync_WithTokenRecoveryContext_QueryMode_Returns401()
+    {
+        var mockTokenManager = new Mock<ITokenManager>();
+        mockTokenManager
+            .Setup(m => m.InvalidateTokenAsync(null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(TokenResult.Empty);
+        mockTokenManager
+            .Setup(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("refreshed-token");
+
+        var innerHandler = new FakeHttpMessageHandler((_) =>
+            new HttpResponseMessage(HttpStatusCode.Unauthorized));
+
+        var handler = CreateHandler(mockTokenManager.Object, innerHandler: innerHandler);
+        var invoker = new HttpMessageInvoker(handler);
+
+        var request = CreateRequest();
+        request.Properties[TokenRecoveryContext.PropertyKey] = new TokenRecoveryContext
+        {
+            InjectionMode = TokenInjectionMode.Query,
+            QueryParameterName = "token"
+        };
+
+        var response = await invoker.SendAsync(request, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task SendAsync_WithTokenRecoveryContext_HmacSignatureMode_Returns401()
+    {
+        var mockTokenManager = new Mock<ITokenManager>();
+        mockTokenManager
+            .Setup(m => m.InvalidateTokenAsync(null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(TokenResult.Empty);
+        mockTokenManager
+            .Setup(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("refreshed-token");
+
+        var innerHandler = new FakeHttpMessageHandler((_) =>
+            new HttpResponseMessage(HttpStatusCode.Unauthorized));
+
+        var handler = CreateHandler(mockTokenManager.Object, innerHandler: innerHandler);
+        var invoker = new HttpMessageInvoker(handler);
+
+        var request = CreateRequest();
+        request.Properties[TokenRecoveryContext.PropertyKey] = new TokenRecoveryContext
+        {
+            InjectionMode = TokenInjectionMode.HmacSignature
+        };
+
+        var response = await invoker.SendAsync(request, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task SendAsync_WithUserTokenManager_UsesUserTokenRecoveryPath()
+    {
+        var mockTokenManager = new Mock<ITokenManager>();
+        var mockUserTokenManager = new Mock<IUserTokenManager>();
+        var mockUserContext = new Mock<ICurrentUserContext>();
+
+        mockUserContext.SetupGet(c => c.UserId).Returns("user-123");
+        mockUserTokenManager
+            .Setup(m => m.RemoveTokenAsync("user-123", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        mockUserTokenManager
+            .Setup(m => m.GetOrRefreshTokenAsync("user-123", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("user-refreshed-token");
+
+        var callCount = 0;
+        string? capturedToken = null;
+        var innerHandler = new FakeHttpMessageHandler((request) =>
+        {
+            callCount++;
+            if (callCount == 1)
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            capturedToken = request.Headers.Authorization?.Parameter;
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+
+        var handler = new TokenRecoveryDelegatingHandler(
+            mockTokenManager.Object, mockUserTokenManager.Object, mockUserContext.Object);
+        handler.InnerHandler = innerHandler;
+        var invoker = new HttpMessageInvoker(handler);
+
+        var request = CreateRequest();
+        request.Properties[TokenRecoveryContext.PropertyKey] = new TokenRecoveryContext
+        {
+            InjectionMode = TokenInjectionMode.Header,
+            UserId = "user-123",
+            TokenManagerKey = "UserAccessToken"
+        };
+
+        var response = await invoker.SendAsync(request, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        capturedToken.Should().Be("user-refreshed-token");
+        mockUserTokenManager.Verify(m => m.RemoveTokenAsync("user-123", It.IsAny<CancellationToken>()), Times.Once);
+        mockUserTokenManager.Verify(m => m.GetOrRefreshTokenAsync("user-123", It.IsAny<CancellationToken>()), Times.Once);
+        mockTokenManager.Verify(m => m.InvalidateTokenAsync(It.IsAny<string[]>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SendAsync_WithUserTokenManager_WhenUserTokenRefreshFails_Returns401()
+    {
+        var mockTokenManager = new Mock<ITokenManager>();
+        var mockUserTokenManager = new Mock<IUserTokenManager>();
+        var mockUserContext = new Mock<ICurrentUserContext>();
+
+        mockUserContext.SetupGet(c => c.UserId).Returns("user-123");
+        mockUserTokenManager
+            .Setup(m => m.RemoveTokenAsync("user-123", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        mockUserTokenManager
+            .Setup(m => m.GetOrRefreshTokenAsync("user-123", It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("refresh failed"));
+
+        var innerHandler = new FakeHttpMessageHandler((_) =>
+            new HttpResponseMessage(HttpStatusCode.Unauthorized));
+
+        var handler = new TokenRecoveryDelegatingHandler(
+            mockTokenManager.Object, mockUserTokenManager.Object, mockUserContext.Object);
+        handler.InnerHandler = innerHandler;
+        var invoker = new HttpMessageInvoker(handler);
+
+        var request = CreateRequest();
+        request.Properties[TokenRecoveryContext.PropertyKey] = new TokenRecoveryContext
+        {
+            InjectionMode = TokenInjectionMode.Header,
+            UserId = "user-123"
+        };
+
+        var response = await invoker.SendAsync(request, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
     private sealed class FakeHttpMessageHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _handler;

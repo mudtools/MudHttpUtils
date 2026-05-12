@@ -458,4 +458,114 @@ public class TokenManagerBaseTests
 
         await act.Should().ThrowAsync<ObjectDisposedException>();
     }
+
+    [Fact]
+    public async Task GetOrRefreshTokenAsync_WhenRefreshReturnsNullToken_ThrowsInvalidOperationException()
+    {
+        var manager = new NullReturningTokenManager();
+
+        var act = async () => await manager.GetOrRefreshTokenAsync();
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*AccessToken*空*");
+    }
+
+    [Fact]
+    public async Task GetOrRefreshTokenAsync_WhenRefreshReturnsEmptyAccessToken_ThrowsInvalidOperationException()
+    {
+        var manager = new EmptyAccessTokenTokenManager();
+
+        var act = async () => await manager.GetOrRefreshTokenAsync();
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*AccessToken*空*");
+    }
+
+    [Fact]
+    public async Task GetOrRefreshTokenAsync_MaxCacheLifetimeSeconds_ClampsExpiry()
+    {
+        var manager = new ShortMaxLifetimeTokenManager();
+        var token = await manager.GetOrRefreshTokenAsync();
+
+        token.Should().Be("long-lived-token");
+
+        var cachedInfo = manager.ExposeCachedCredentialToken();
+        cachedInfo.Should().NotBeNull();
+        var maxExpire = DateTimeOffset.UtcNow.AddSeconds(60).ToUnixTimeMilliseconds();
+        cachedInfo!.Expire.Should().BeLessOrEqualTo(maxExpire);
+    }
+
+    [Fact]
+    public async Task GetOrRefreshTokenAsync_CancellationDuringLockWait_DoesNotReleaseUnacquiredLock()
+    {
+        using var cts = new CancellationTokenSource();
+        var manager = new SlowRefreshTokenManager();
+
+        var task1 = manager.GetOrRefreshTokenAsync();
+        cts.Cancel();
+
+        var task2 = manager.GetOrRefreshTokenAsync(cts.Token);
+
+        await task1;
+
+        var act = async () => await task2;
+        await act.Should().ThrowAsync<OperationCanceledException>();
+
+        var token = await manager.GetOrRefreshTokenAsync();
+        token.Should().Be("slow-token");
+    }
+
+    private class NullReturningTokenManager : TokenManagerBase
+    {
+        public override Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
+            => GetOrRefreshTokenAsync(cancellationToken);
+
+        protected override Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
+            => Task.FromResult<CredentialToken>(null!);
+    }
+
+    private class EmptyAccessTokenTokenManager : TokenManagerBase
+    {
+        public override Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
+            => GetOrRefreshTokenAsync(cancellationToken);
+
+        protected override Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
+            => Task.FromResult(new CredentialToken { AccessToken = "", Expire = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds() });
+    }
+
+    private class ShortMaxLifetimeTokenManager : TokenManagerBase
+    {
+        protected override int MaxCacheLifetimeSeconds => 60;
+
+        public override Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
+            => GetOrRefreshTokenAsync(cancellationToken);
+
+        public CredentialToken? ExposeCachedCredentialToken() => GetCachedCredentialToken();
+
+        protected override Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
+            => Task.FromResult(new CredentialToken
+            {
+                AccessToken = "long-lived-token",
+                Expire = DateTimeOffset.UtcNow.AddYears(10).ToUnixTimeMilliseconds()
+            });
+    }
+
+    private class SlowRefreshTokenManager : TokenManagerBase
+    {
+        private int _refreshCount;
+
+        public override Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
+            => GetOrRefreshTokenAsync(cancellationToken);
+
+        protected override async Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _refreshCount);
+            await Task.Delay(500, CancellationToken.None).ConfigureAwait(false);
+            return new CredentialToken
+            {
+                AccessToken = "slow-token",
+                Expire = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds()
+            };
+        }
+    }
 }

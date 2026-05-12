@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -160,7 +161,11 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
             }
 
             var retryRequest = BuildRetryRequest(request, contentBytes, recoveryContext);
-            ApplyTokenToRequest(retryRequest, newToken, recoveryContext);
+            if (!ApplyTokenToRequest(retryRequest, newToken, recoveryContext))
+            {
+                _logger.LogWarning("令牌注入失败（不支持的 InjectionMode），返回 401");
+                return CreateUnauthorizedResponse(request);
+            }
 
             var retryResponse = await base.SendAsync(retryRequest, cancellationToken).ConfigureAwait(false);
 
@@ -196,18 +201,20 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
 #if NETSTANDARD2_0
         return request.Properties.TryGetValue(TokenRecoveryContext.PropertyKey, out var value) ? value as TokenRecoveryContext : null;
 #else
-        return request.Options.TryGetValue(new HttpRequestOptionsKey<TokenRecoveryContext>(TokenRecoveryContext.PropertyKey), out var value)
-            ? value
-            : request.Properties.TryGetValue(TokenRecoveryContext.PropertyKey, out var legacyValue) ? legacyValue as TokenRecoveryContext : null;
+        if (request.Options.TryGetValue(new HttpRequestOptionsKey<TokenRecoveryContext>(TokenRecoveryContext.PropertyKey), out var value))
+            return value;
+        if (request.Properties.TryGetValue(TokenRecoveryContext.PropertyKey, out var legacyValue))
+            return legacyValue as TokenRecoveryContext;
+        return null;
 #endif
     }
 
-    private void ApplyTokenToRequest(HttpRequestMessage request, string token, TokenRecoveryContext? context)
+    private bool ApplyTokenToRequest(HttpRequestMessage request, string token, TokenRecoveryContext? context)
     {
         if (context == null)
         {
             request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(_options.TokenScheme, token);
-            return;
+            return true;
         }
 
         switch (context.InjectionMode)
@@ -222,32 +229,50 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
                 {
                     request.Headers.Add(context.HeaderName, token);
                 }
-                break;
+                return true;
 
             case TokenInjectionMode.ApiKey:
                 request.Headers.Remove(context.HeaderName);
                 request.Headers.Add(context.HeaderName, token);
-                break;
+                return true;
 
             case TokenInjectionMode.BasicAuth:
                 var basicCredentials = System.Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(token));
                 request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", basicCredentials);
-                break;
+                return true;
 
             case TokenInjectionMode.Cookie:
                 var cookieName = !string.IsNullOrEmpty(context.CookieName) ? context.CookieName : "access_token";
                 var cookieValue = $"{cookieName}={token}";
+                var existingCookies = request.Headers.Contains("Cookie")
+                    ? string.Join("; ", request.Headers.GetValues("Cookie"))
+                    : null;
                 request.Headers.Remove("Cookie");
-                request.Headers.Add("Cookie", cookieValue);
-                break;
+                if (existingCookies != null)
+                {
+                    var otherCookies = existingCookies
+                        .Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(c => c.Trim())
+                        .Where(c => !c.StartsWith($"{cookieName}=", StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    if (otherCookies.Count > 0)
+                        otherCookies.Add(cookieValue);
+                    else
+                        otherCookies = null;
+                    request.Headers.Add("Cookie", otherCookies != null ? string.Join("; ", otherCookies) : cookieValue);
+                }
+                else
+                {
+                    request.Headers.Add("Cookie", cookieValue);
+                }
+                return true;
 
             case TokenInjectionMode.Query:
             case TokenInjectionMode.Path:
             case TokenInjectionMode.HmacSignature:
             default:
-                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(context.TokenScheme ?? _options.TokenScheme, token);
-                _logger.LogWarning("令牌恢复不支持 InjectionMode={InjectionMode}，已回退到 Authorization Header 注入", context.InjectionMode);
-                break;
+                _logger.LogWarning("令牌恢复不支持 InjectionMode={InjectionMode}，无法重新注入令牌，返回 401", context.InjectionMode);
+                return false;
         }
     }
 
@@ -284,7 +309,10 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
                 continue;
 
             if (recoveryContext?.InjectionMode == TokenInjectionMode.Cookie && header.Key.Equals("Cookie", StringComparison.OrdinalIgnoreCase))
+            {
+                clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
                 continue;
+            }
 
             clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
         }

@@ -219,4 +219,64 @@ public class MemoryTokenStoreTests
     }
 
     #endregion
+
+    #region GetTokenTypesAsync
+
+    [Fact]
+    public async Task GetTokenTypesAsync_WhenEmpty_ReturnsEmptyCollection()
+    {
+        var store = new MemoryTokenStore();
+
+        var result = await store.GetTokenTypesAsync();
+
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetTokenTypesAsync_WhenTokensExist_ReturnsAllKeys()
+    {
+        var store = new MemoryTokenStore();
+        await store.SetAccessTokenAsync("TokenA", "access_a", 3600);
+        await store.SetAccessTokenAsync("TokenB", "access_b", 3600);
+
+        var result = await store.GetTokenTypesAsync();
+
+        result.Should().Contain("TokenA", "TokenB");
+        result.Count().Should().Be(2);
+    }
+
+    #endregion
+
+    #region ClearAsync
+
+    [Fact]
+    public async Task ClearAsync_RemovesAllTokens()
+    {
+        var store = new MemoryTokenStore();
+        await store.SetAccessTokenAsync("TokenA", "access_a", 3600);
+        await store.SetAccessTokenAsync("TokenB", "access_b", 3600);
+        await store.SetRefreshTokenAsync("TokenA", "refresh_a");
+
+        await store.ClearAsync();
+
+        var tokenA = await store.GetAccessTokenAsync("TokenA");
+        var tokenB = await store.GetAccessTokenAsync("TokenB");
+        var refreshA = await store.GetRefreshTokenAsync("TokenA");
+
+        tokenA.Should().BeNull();
+        tokenB.Should().BeNull();
+        refreshA.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ClearAsync_WhenEmpty_DoesNotThrow()
+    {
+        var store = new MemoryTokenStore();
+
+        var act = async () => await store.ClearAsync();
+
+        await act.Should().NotThrowAsync();
+    }
+
+    #endregion
 }

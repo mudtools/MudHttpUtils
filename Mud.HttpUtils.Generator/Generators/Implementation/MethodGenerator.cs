@@ -521,12 +521,18 @@ internal class MethodGenerator : ICodeFragmentGenerator
             _ => "TokenInjectionMode.Header"
         };
 
+        var tokenScheme = injectionMode switch
+        {
+            "BasicAuth" => "Basic",
+            _ => "Bearer"
+        };
+
         codeBuilder.AppendLine($"{indent}#if NETSTANDARD2_0");
         codeBuilder.AppendLine($"{indent}__httpRequest.Properties[\"__Mud_HttpUtils_TokenRecoveryContext\"] = new Mud.HttpUtils.TokenRecoveryContext");
         codeBuilder.AppendLine($"{indent}{{");
         codeBuilder.AppendLine($"{indent}    InjectionMode = {injectionModeValue},");
         codeBuilder.AppendLine($"{indent}    HeaderName = \"{headerName}\",");
-        codeBuilder.AppendLine($"{indent}    TokenScheme = \"Bearer\",");
+        codeBuilder.AppendLine($"{indent}    TokenScheme = \"{tokenScheme}\",");
         codeBuilder.AppendLine($"{indent}    CookieName = \"{cookieName}\",");
         codeBuilder.AppendLine($"{indent}    UserId = {userIdExpr},");
         codeBuilder.AppendLine($"{indent}    TokenManagerKey = \"{tokenManagerKey}\"");
@@ -536,7 +542,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine($"{indent}{{");
         codeBuilder.AppendLine($"{indent}    InjectionMode = {injectionModeValue},");
         codeBuilder.AppendLine($"{indent}    HeaderName = \"{headerName}\",");
-        codeBuilder.AppendLine($"{indent}    TokenScheme = \"Bearer\",");
+        codeBuilder.AppendLine($"{indent}    TokenScheme = \"{tokenScheme}\",");
         codeBuilder.AppendLine($"{indent}    CookieName = \"{cookieName}\",");
         codeBuilder.AppendLine($"{indent}    UserId = {userIdExpr},");
         codeBuilder.AppendLine($"{indent}    TokenManagerKey = \"{tokenManagerKey}\"");
