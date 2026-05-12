@@ -206,6 +206,10 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         };
     }
 
+    /// <summary>
+    /// 从缓存中获取令牌信息，如果不存在或已过期则返回 null。
+    /// </summary>
+    /// <returns>缓存中的令牌信息，如果不存在或已过期则返回 null。</returns>
     protected CredentialToken? GetCachedCredentialToken()
     {
         if (_tokenCache.TryGetValue(DefaultScopeKey, out var token))

@@ -10,13 +10,8 @@ namespace Mud.HttpUtils;
 /// <summary>
 /// 用户令牌信息类，用于存储和管理用户级别的令牌数据。
 /// </summary>
-public class UserTokenInfo
+public class UserTokenInfo : CurrentUserInfo
 {
-    /// <summary>
-    /// 获取或设置用户的唯一标识符。
-    /// </summary>
-    public string UserId { get; set; } = string.Empty;
-
     /// <summary>
     /// 获取或设置用户的 OpenId（第三方平台用户标识）。
     /// </summary>

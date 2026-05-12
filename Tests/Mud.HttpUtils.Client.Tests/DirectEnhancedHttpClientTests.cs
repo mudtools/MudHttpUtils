@@ -52,7 +52,7 @@ public class DirectEnhancedHttpClientTests
     {
         var httpClient = new HttpClient();
         var logger = new Mock<ILogger>().Object;
-        var client = new DirectEnhancedHttpClient(httpClient, logger: logger);
+        var client = new DirectEnhancedHttpClient(httpClient, new EnhancedHttpClientOptions { Logger = logger });
 
         client.Should().NotBeNull();
     }
@@ -66,8 +66,11 @@ public class DirectEnhancedHttpClientTests
 
         var client = new DirectEnhancedHttpClient(
             httpClient,
-            requestInterceptors: new[] { requestInterceptor },
-            responseInterceptors: new[] { responseInterceptor });
+            new EnhancedHttpClientOptions
+            {
+                RequestInterceptors = new[] { requestInterceptor },
+                ResponseInterceptors = new[] { responseInterceptor }
+            });
 
         client.Should().NotBeNull();
     }
@@ -76,7 +79,7 @@ public class DirectEnhancedHttpClientTests
     public void Constructor_WithAllowCustomBaseUrls_CreatesInstance()
     {
         var httpClient = new HttpClient();
-        var client = new DirectEnhancedHttpClient(httpClient, allowCustomBaseUrls: true);
+        var client = new DirectEnhancedHttpClient(httpClient, new EnhancedHttpClientOptions { AllowCustomBaseUrls = true });
 
         client.Should().NotBeNull();
     }

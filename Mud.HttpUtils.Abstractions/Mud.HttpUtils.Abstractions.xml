@@ -2238,6 +2238,12 @@
             <param name="accessToken">访问令牌。</param>
             <param name="expireTime">过期时间（Unix 时间戳，毫秒）。</param>
         </member>
+        <member name="M:Mud.HttpUtils.TokenManagerBase.GetCachedCredentialToken">
+            <summary>
+            从缓存中获取令牌信息，如果不存在或已过期则返回 null。
+            </summary>
+            <returns>缓存中的令牌信息，如果不存在或已过期则返回 null。</returns>
+        </member>
         <member name="M:Mud.HttpUtils.TokenManagerBase.OnRefreshFailed(Mud.HttpUtils.TokenRefreshFailedEventArgs)">
             <summary>
             触发令牌刷新失败事件。
@@ -2557,14 +2563,19 @@
             Basic 认证方案前缀。
             </summary>
         </member>
+        <member name="T:Mud.HttpUtils.CurrentUserInfo">
+            <summary>
+            当前用户的基本信息类，用于存储和管理当前登录用户的基本信息。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.CurrentUserInfo.UserId">
+            <summary>
+            获取或设置用户的唯一标识符。
+            </summary>
+        </member>
         <member name="T:Mud.HttpUtils.UserTokenInfo">
             <summary>
             用户令牌信息类，用于存储和管理用户级别的令牌数据。
-            </summary>
-        </member>
-        <member name="P:Mud.HttpUtils.UserTokenInfo.UserId">
-            <summary>
-            获取或设置用户的唯一标识符。
             </summary>
         </member>
         <member name="P:Mud.HttpUtils.UserTokenInfo.OpenId">

@@ -15,19 +15,25 @@ namespace Mud.HttpUtils.Client;
 /// 适用于非 Web 场景或需要手动设置用户 ID 的场景。
 /// 在 ASP.NET Core 应用中，建议替换为基于 HttpContext 的实现。
 /// </remarks>
-public class DefaultCurrentUserContext : ICurrentUserContext
+public class DefaultCurrentUserContext<TUser> : ICurrentUserContext
+    where TUser : CurrentUserInfo
 {
-    private static readonly AsyncLocal<string?> _userId = new();
-
-    /// <inheritdoc />
-    public string? UserId => _userId.Value;
+    private static readonly AsyncLocal<TUser?> _user = new();
 
     /// <summary>
-    /// 设置当前用户 ID。
+    /// 获取当前用户信息对象。
     /// </summary>
-    /// <param name="userId">用户 ID。</param>
-    public static void SetUserId(string? userId)
+    public TUser? User => _user.Value;
+
+    /// <inheritdoc />
+    public string? UserId => _user.Value?.UserId;
+
+    /// <summary>
+    /// 设置当前用户信息。
+    /// </summary>
+    /// <param name="user">用户信息对象。</param>
+    public static void SetUser(TUser? user)
     {
-        _userId.Value = userId;
+        _user.Value = user;
     }
 }

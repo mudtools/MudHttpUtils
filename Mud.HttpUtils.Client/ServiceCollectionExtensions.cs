@@ -412,7 +412,7 @@ public static class HttpClientServiceCollectionExtensions
             throw new ArgumentNullException(nameof(services));
 
         services.TryAddSingleton<ITokenProvider, TProvider>();
-        services.TryAddSingleton<ICurrentUserContext, DefaultCurrentUserContext>();
+        services.TryAddSingleton<ICurrentUserContext, DefaultCurrentUserContext<CurrentUserInfo>>();
         return services;
     }
 
@@ -439,7 +439,7 @@ public static class HttpClientServiceCollectionExtensions
             throw new ArgumentNullException(nameof(services));
 
         services.TryAddSingleton<ITokenProvider, DefaultTokenProvider>();
-        services.TryAddSingleton<ICurrentUserContext, DefaultCurrentUserContext>();
+        services.TryAddSingleton<ICurrentUserContext, DefaultCurrentUserContext<CurrentUserInfo>>();
         return services;
     }
 
@@ -493,7 +493,7 @@ public static class HttpClientServiceCollectionExtensions
         if (services == null)
             throw new ArgumentNullException(nameof(services));
 
-        services.TryAddSingleton<ICurrentUserContext, DefaultCurrentUserContext>();
+        services.TryAddSingleton<ICurrentUserContext, DefaultCurrentUserContext<CurrentUserInfo>>();
         services.TryAddSingleton<IAppContextSwitcher, AsyncLocalAppContextSwitcher>();
         return services;
     }
@@ -501,25 +501,27 @@ public static class HttpClientServiceCollectionExtensions
     private static HttpClientFactoryEnhancedClient CreateEnhancedClient(IServiceProvider sp, string clientName)
     {
         var factory = sp.GetRequiredService<IHttpClientFactory>();
-        var logger = sp.GetService<ILogger<HttpClientFactoryEnhancedClient>>();
         var encryptionProvider = sp.GetService<IEncryptionProvider>();
-        var requestInterceptors = sp.GetServices<IHttpRequestInterceptor>();
-        var responseInterceptors = sp.GetServices<IHttpResponseInterceptor>();
-        var sensitiveDataMasker = sp.GetService<ISensitiveDataMasker>();
 
-        // 从配置中读取 AllowCustomBaseUrls
-        bool allowCustomBaseUrls = false;
+        var options = new EnhancedHttpClientOptions
+        {
+            Logger = sp.GetService<ILogger<HttpClientFactoryEnhancedClient>>(),
+            RequestInterceptors = sp.GetServices<IHttpRequestInterceptor>(),
+            ResponseInterceptors = sp.GetServices<IHttpResponseInterceptor>(),
+            SensitiveDataMasker = sp.GetService<ISensitiveDataMasker>()
+        };
+
         var optionsMonitor = sp.GetService<IOptionsMonitor<MudHttpClientApplicationOptions>>();
         if (optionsMonitor != null)
         {
             var appOptions = optionsMonitor.CurrentValue;
             if (appOptions.Clients.TryGetValue(clientName, out var clientOptions))
             {
-                allowCustomBaseUrls = clientOptions.AllowCustomBaseUrls;
+                options.AllowCustomBaseUrls = clientOptions.AllowCustomBaseUrls;
             }
         }
 
-        return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, logger, requestInterceptors, responseInterceptors, sensitiveDataMasker: sensitiveDataMasker, allowCustomBaseUrls: allowCustomBaseUrls);
+        return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, options);
     }
 
     /// <summary>

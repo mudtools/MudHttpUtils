@@ -21,7 +21,7 @@ public class EnhancedHttpClientTests : IClassFixture<UrlValidatorFixture>
     private static TestableEnhancedHttpClient CreateClient(HttpMessageHandler handler, ILogger? logger = null)
     {
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com") };
-        return new TestableEnhancedHttpClient(httpClient, logger);
+        return new TestableEnhancedHttpClient(httpClient, logger != null ? new EnhancedHttpClientOptions { Logger = logger } : null);
     }
 
     #region Constructor Tests
@@ -47,7 +47,7 @@ public class EnhancedHttpClientTests : IClassFixture<UrlValidatorFixture>
     public void Constructor_WithNullLogger_UsesNullLogger()
     {
         var httpClient = new HttpClient();
-        var client = new TestableEnhancedHttpClient(httpClient, logger: null);
+        var client = new TestableEnhancedHttpClient(httpClient, options: null);
 
         client.Should().NotBeNull();
     }
@@ -63,7 +63,7 @@ public class EnhancedHttpClientTests : IClassFixture<UrlValidatorFixture>
 
         var client = new TestableEnhancedHttpClient(
             httpClient,
-            requestInterceptors: new[] { interceptor1.Object, interceptor2.Object });
+            new EnhancedHttpClientOptions { RequestInterceptors = new[] { interceptor1.Object, interceptor2.Object } });
 
         client.Should().NotBeNull();
     }
@@ -79,7 +79,7 @@ public class EnhancedHttpClientTests : IClassFixture<UrlValidatorFixture>
 
         var client = new TestableEnhancedHttpClient(
             httpClient,
-            responseInterceptors: new[] { interceptor1.Object, interceptor2.Object });
+            new EnhancedHttpClientOptions { ResponseInterceptors = new[] { interceptor1.Object, interceptor2.Object } });
 
         client.Should().NotBeNull();
     }
@@ -119,7 +119,7 @@ public class EnhancedHttpClientTests : IClassFixture<UrlValidatorFixture>
     public void Constructor_WithAllowCustomBaseUrls_CreatesInstance()
     {
         var httpClient = new HttpClient { BaseAddress = new Uri("https://api.example.com") };
-        var client = new TestableEnhancedHttpClient(httpClient, allowCustomBaseUrls: true);
+        var client = new TestableEnhancedHttpClient(httpClient, new EnhancedHttpClientOptions { AllowCustomBaseUrls = true });
 
         client.Should().NotBeNull();
     }
@@ -539,7 +539,7 @@ public class EnhancedHttpClientTests : IClassFixture<UrlValidatorFixture>
         var client = CreateClient(handler.Object);
         var clientWithInterceptor = new TestableEnhancedHttpClient(
             new HttpClient(handler.Object) { BaseAddress = new Uri("https://api.example.com") },
-            requestInterceptors: new[] { interceptor.Object });
+            new EnhancedHttpClientOptions { RequestInterceptors = new[] { interceptor.Object } });
 
         var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/test");
         await clientWithInterceptor.SendAsync<TestData>(request);
@@ -556,7 +556,7 @@ public class EnhancedHttpClientTests : IClassFixture<UrlValidatorFixture>
         interceptor.Setup(i => i.Order).Returns(0);
         var clientWithInterceptor = new TestableEnhancedHttpClient(
             new HttpClient(handler.Object) { BaseAddress = new Uri("https://api.example.com") },
-            responseInterceptors: new[] { interceptor.Object });
+            new EnhancedHttpClientOptions { ResponseInterceptors = new[] { interceptor.Object } });
 
         var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/test");
         await clientWithInterceptor.SendAsync<TestData>(request);
@@ -641,12 +641,8 @@ public class EnhancedHttpClientTests : IClassFixture<UrlValidatorFixture>
     {
         public TestableEnhancedHttpClient(
             HttpClient httpClient,
-            ILogger? logger = null,
-            IEnumerable<IHttpRequestInterceptor>? requestInterceptors = null,
-            IEnumerable<IHttpResponseInterceptor>? responseInterceptors = null,
-            ISensitiveDataMasker? sensitiveDataMasker = null,
-            bool allowCustomBaseUrls = false)
-            : base(httpClient, logger, requestInterceptors, responseInterceptors, sensitiveDataMasker, allowCustomBaseUrls)
+            EnhancedHttpClientOptions? options = null)
+            : base(httpClient, options)
         {
         }
 

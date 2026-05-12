@@ -78,27 +78,20 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// 初始化增强型HttpClient实例
     /// </summary>
     /// <param name="httpClient">HttpClient实例</param>
-    /// <param name="logger">日志记录器</param>
-    /// <param name="requestInterceptors">请求拦截器集合（可选）。</param>
-    /// <param name="responseInterceptors">响应拦截器集合（可选）。</param>
-    /// <param name="sensitiveDataMasker">敏感数据掩码器（可选）。</param>
-    /// <param name="allowCustomBaseUrls">是否允许自定义基础URL（可选，默认为 false）。</param>
+    /// <param name="options">配置选项（可选，默认为 null，表示使用默认配置）。</param>
     /// <exception cref="ArgumentNullException"></exception>
     protected EnhancedHttpClient(
         HttpClient httpClient,
-        ILogger? logger = null,
-        IEnumerable<IHttpRequestInterceptor>? requestInterceptors = null,
-        IEnumerable<IHttpResponseInterceptor>? responseInterceptors = null,
-        ISensitiveDataMasker? sensitiveDataMasker = null,
-        bool allowCustomBaseUrls = false)
+        EnhancedHttpClientOptions? options = null)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
-        _logger = logger ?? NullLogger.Instance;
+        options ??= new EnhancedHttpClientOptions();
+        _logger = options.Logger ?? NullLogger.Instance;
         _enableLogging = _logger != NullLogger.Instance;
-        _requestInterceptors = requestInterceptors?.OrderBy(i => i.Order).ToArray() ?? Array.Empty<IHttpRequestInterceptor>();
-        _responseInterceptors = responseInterceptors?.OrderBy(i => i.Order).ToArray() ?? Array.Empty<IHttpResponseInterceptor>();
-        _sensitiveDataMasker = sensitiveDataMasker;
-        _allowCustomBaseUrls = allowCustomBaseUrls;
+        _requestInterceptors = options.RequestInterceptors?.OrderBy(i => i.Order).ToArray() ?? Array.Empty<IHttpRequestInterceptor>();
+        _responseInterceptors = options.ResponseInterceptors?.OrderBy(i => i.Order).ToArray() ?? Array.Empty<IHttpResponseInterceptor>();
+        _sensitiveDataMasker = options.SensitiveDataMasker;
+        _allowCustomBaseUrls = options.AllowCustomBaseUrls;
     }
 
     #region IEnhancedHttpClient 接口实现
@@ -243,7 +236,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
 
 #if NETSTANDARD2_0
-    var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+        var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 #else
         var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 #endif
@@ -1309,7 +1302,14 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             newClient.DefaultRequestHeaders.TryAddWithoutValidation(header.Key, header.Value);
         }
 
-        return new DirectEnhancedHttpClient(newClient, _logger, _requestInterceptors, _responseInterceptors, EncryptionProvider, _sensitiveDataMasker, _allowCustomBaseUrls);
+        return new DirectEnhancedHttpClient(newClient, new EnhancedHttpClientOptions
+        {
+            Logger = _logger,
+            RequestInterceptors = _requestInterceptors,
+            ResponseInterceptors = _responseInterceptors,
+            SensitiveDataMasker = _sensitiveDataMasker,
+            AllowCustomBaseUrls = _allowCustomBaseUrls
+        }, EncryptionProvider);
     }
 
     #endregion

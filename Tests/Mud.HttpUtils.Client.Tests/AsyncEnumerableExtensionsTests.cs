@@ -177,8 +177,8 @@ public class AsyncEnumerableExtensionsTests : IClassFixture<UrlValidatorFixture>
 
     public class TestableEnhancedHttpClient : EnhancedHttpClient
     {
-        public TestableEnhancedHttpClient(HttpClient httpClient, ILogger? logger = null)
-            : base(httpClient, logger)
+        public TestableEnhancedHttpClient(HttpClient httpClient, EnhancedHttpClientOptions? options = null)
+            : base(httpClient, options)
         {
         }
 

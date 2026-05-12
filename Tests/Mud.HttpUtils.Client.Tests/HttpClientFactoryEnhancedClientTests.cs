@@ -171,7 +171,7 @@ public class HttpClientFactoryEnhancedClientTests
             .Returns(new HttpClient());
         var mockLogger = new Mock<ILogger<HttpClientFactoryEnhancedClient>>();
 
-        var client = new HttpClientFactoryEnhancedClient(mockFactory.Object, "testClient", logger: mockLogger.Object);
+        var client = new HttpClientFactoryEnhancedClient(mockFactory.Object, "testClient", options: new EnhancedHttpClientOptions { Logger = mockLogger.Object });
 
         client.Should().NotBeNull();
     }
@@ -233,7 +233,7 @@ public class HttpClientFactoryEnhancedClientTests
             .Returns(new HttpClient());
 
         var client = new HttpClientFactoryEnhancedClient(
-            mockFactory.Object, "testClient", allowCustomBaseUrls: true);
+            mockFactory.Object, "testClient", options: new EnhancedHttpClientOptions { AllowCustomBaseUrls = true });
 
         client.Should().NotBeNull();
         client.ClientName.Should().Be("testClient");

@@ -59,7 +59,7 @@ public abstract class OAuth2TokenManagerBase : TokenManagerBase
         if (string.Equals(method, "S256", StringComparison.OrdinalIgnoreCase))
         {
             using var sha256 = System.Security.Cryptography.SHA256.Create();
-            var hash = sha256.ComputeHash(System.Text.Encoding.ASCII.GetBytes(codeVerifier));
+            var hash = sha256.ComputeHash(Encoding.ASCII.GetBytes(codeVerifier));
             codeChallenge = Base64UrlEncode(hash);
         }
         else

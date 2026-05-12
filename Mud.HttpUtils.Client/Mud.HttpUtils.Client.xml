@@ -253,18 +253,6 @@
             </list>
             </remarks>
         </member>
-        <member name="P:Mud.HttpUtils.MudHttpClientOptions.Resilience">
-            <summary>
-            弹性策略配置
-            </summary>
-            <remarks>
-            配置重试、熔断和超时等弹性策略。
-            详见 <see cref="T:Mud.HttpUtils.MudHttpClientResilienceOptions"/>。
-            <para>注意：此配置类用于配置文件绑定场景，运行时弹性策略构建请使用
-            <see cref="!:Mud.HttpUtils.Resilience.ResilienceOptions"/>。
-            请通过 <c>AddMudHttpResilienceDecorator</c> 方法配置弹性策略。</para>
-            </remarks>
-        </member>
         <member name="T:Mud.HttpUtils.MudHttpClientResilienceOptions">
             <summary>
             HttpClient 弹性策略配置选项
@@ -516,9 +504,9 @@
             <code>RegexOptions.IgnoreCase</code><br/>
             Explanation:<br/>
             <code>
+            ○ Match if at the beginning of the string.<br/>
             ○ Match with 3 alternative expressions, atomically.<br/>
                 ○ Match a sequence of expressions.<br/>
-                    ○ Match if at the beginning of the string.<br/>
                     ○ Loop greedily any number of times.<br/>
                         ○ Match a character in the set [+/-9A-Za-z\u212A] exactly 4 times.<br/>
                     ○ Optional (greedy).<br/>
@@ -531,20 +519,18 @@
                                 ○ Match '='.<br/>
                     ○ Match if at the end of the string or if before an ending newline.<br/>
                 ○ Match a sequence of expressions.<br/>
-                    ○ Match if at the beginning of the string.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 8 times.<br/>
+                    ○ Match a hexadecimal digit exactly 8 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 12 times.<br/>
+                    ○ Match a hexadecimal digit exactly 12 times.<br/>
                     ○ Match if at the end of the string or if before an ending newline.<br/>
                 ○ Match a sequence of expressions.<br/>
-                    ○ Match if at the beginning of the string.<br/>
-                    ○ Match a character in the set [-0-9A-Z_a-z\u212A] atomically at least 20 times.<br/>
+                    ○ Match a character in the set [\-0-9A-Z_a-z\u212A] atomically at least 20 times.<br/>
                     ○ Match if at the end of the string or if before an ending newline.<br/>
             </code>
             </remarks>
@@ -797,17 +783,13 @@
             <seealso cref="T:Mud.HttpUtils.EnhancedHttpClient"/>
             <seealso cref="T:Mud.HttpUtils.IEncryptionProvider"/>
         </member>
-        <member name="M:Mud.HttpUtils.DirectEnhancedHttpClient.#ctor(System.Net.Http.HttpClient,Microsoft.Extensions.Logging.ILogger,System.Collections.Generic.IEnumerable{Mud.HttpUtils.IHttpRequestInterceptor},System.Collections.Generic.IEnumerable{Mud.HttpUtils.IHttpResponseInterceptor},Mud.HttpUtils.IEncryptionProvider,Mud.HttpUtils.ISensitiveDataMasker,System.Boolean)">
+        <member name="M:Mud.HttpUtils.DirectEnhancedHttpClient.#ctor(System.Net.Http.HttpClient,Mud.HttpUtils.EnhancedHttpClientOptions,Mud.HttpUtils.IEncryptionProvider)">
             <summary>
             初始化 <see cref="T:Mud.HttpUtils.DirectEnhancedHttpClient"/> 类的新实例。
             </summary>
             <param name="httpClient">HTTP客户端实例。</param>
-            <param name="logger">日志记录器,可选。</param>
-            <param name="requestInterceptors">请求拦截器集合,可选。</param>
-            <param name="responseInterceptors">响应拦截器集合,可选。</param>
+            <param name="options">配置选项,可选。</param>
             <param name="encryptionProvider">加密提供器实例,可选。</param>
-            <param name="sensitiveDataMasker">敏感数据掩码器,可选。</param>
-            <param name="allowCustomBaseUrls">是否允许自定义基础URL,可选,默认为 false。</param>
             <exception cref="T:System.ArgumentNullException"><paramref name="httpClient"/> 为 null。</exception>
         </member>
         <member name="P:Mud.HttpUtils.DirectEnhancedHttpClient.EncryptionProvider">
@@ -855,16 +837,12 @@
             </remarks>
             <value>加密提供程序实例,如果未启用加密则为 <c>null</c>。</value>
         </member>
-        <member name="M:Mud.HttpUtils.EnhancedHttpClient.#ctor(System.Net.Http.HttpClient,Microsoft.Extensions.Logging.ILogger,System.Collections.Generic.IEnumerable{Mud.HttpUtils.IHttpRequestInterceptor},System.Collections.Generic.IEnumerable{Mud.HttpUtils.IHttpResponseInterceptor},Mud.HttpUtils.ISensitiveDataMasker,System.Boolean)">
+        <member name="M:Mud.HttpUtils.EnhancedHttpClient.#ctor(System.Net.Http.HttpClient,Mud.HttpUtils.EnhancedHttpClientOptions)">
             <summary>
             初始化增强型HttpClient实例
             </summary>
             <param name="httpClient">HttpClient实例</param>
-            <param name="logger">日志记录器</param>
-            <param name="requestInterceptors">请求拦截器集合（可选）。</param>
-            <param name="responseInterceptors">响应拦截器集合（可选）。</param>
-            <param name="sensitiveDataMasker">敏感数据掩码器（可选）。</param>
-            <param name="allowCustomBaseUrls">是否允许自定义基础URL（可选，默认为 false）。</param>
+            <param name="options">配置选项（可选，默认为 null，表示使用默认配置）。</param>
             <exception cref="T:System.ArgumentNullException"></exception>
         </member>
         <member name="M:Mud.HttpUtils.EnhancedHttpClient.SendAsync``1(System.Net.Http.HttpRequestMessage,System.Object,System.Threading.CancellationToken)">
@@ -1282,6 +1260,49 @@
             记录HttpClient错误
             </summary>
         </member>
+        <member name="T:Mud.HttpUtils.EnhancedHttpClientOptions">
+            <summary>
+            增强型HTTP客户端的配置选项。
+            </summary>
+            <remarks>
+            <para>此类封装了 <see cref="T:Mud.HttpUtils.EnhancedHttpClient"/> 的所有可配置参数,避免构造函数参数过多的问题。</para>
+            <para>后续新增配置项只需在此类中添加属性即可,无需修改构造函数签名。</para>
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.EnhancedHttpClientOptions.Logger">
+            <summary>
+            获取或设置日志记录器。
+            </summary>
+            <value>日志记录器实例,默认为 <c>null</c>。</value>
+        </member>
+        <member name="P:Mud.HttpUtils.EnhancedHttpClientOptions.RequestInterceptors">
+            <summary>
+            获取或设置请求拦截器集合。
+            </summary>
+            <value>请求拦截器集合,默认为 <c>null</c>。</value>
+        </member>
+        <member name="P:Mud.HttpUtils.EnhancedHttpClientOptions.ResponseInterceptors">
+            <summary>
+            获取或设置响应拦截器集合。
+            </summary>
+            <value>响应拦截器集合,默认为 <c>null</c>。</value>
+        </member>
+        <member name="P:Mud.HttpUtils.EnhancedHttpClientOptions.SensitiveDataMasker">
+            <summary>
+            获取或设置敏感数据掩码器。
+            </summary>
+            <value>敏感数据掩码器实例,默认为 <c>null</c>。</value>
+        </member>
+        <member name="P:Mud.HttpUtils.EnhancedHttpClientOptions.AllowCustomBaseUrls">
+            <summary>
+            获取或设置是否允许自定义基础URL。
+            </summary>
+            <value>如果允许自定义基础URL则为 <c>true</c>;否则为 <c>false</c>。默认为 <c>false</c>。</value>
+            <remarks>
+            启用此选项允许请求使用与 <see cref="P:System.Net.Http.HttpClient.BaseAddress"/> 不同的域名,
+            但可能带来安全风险(如SSRF攻击),请谨慎使用。
+            </remarks>
+        </member>
         <member name="T:Mud.HttpUtils.HttpClientFactoryEnhancedClient">
             <summary>
             基于 IHttpClientFactory 的 EnhancedHttpClient 实现
@@ -1295,19 +1316,15 @@
             推荐在依赖注入场景中使用此类。
             </remarks>
         </member>
-        <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.#ctor(System.Net.Http.IHttpClientFactory,System.String,Mud.HttpUtils.IEncryptionProvider,Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.HttpClientFactoryEnhancedClient},System.Collections.Generic.IEnumerable{Mud.HttpUtils.IHttpRequestInterceptor},System.Collections.Generic.IEnumerable{Mud.HttpUtils.IHttpResponseInterceptor},System.Uri,Mud.HttpUtils.ISensitiveDataMasker,System.Boolean)">
+        <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.#ctor(System.Net.Http.IHttpClientFactory,System.String,Mud.HttpUtils.IEncryptionProvider,Mud.HttpUtils.EnhancedHttpClientOptions,System.Uri)">
             <summary>
             初始化 HttpClientFactoryEnhancedClient 实例
             </summary>
             <param name="factory">IHttpClientFactory 实例</param>
             <param name="clientName">Named HttpClient 名称</param>
             <param name="encryptionProvider">加密提供器（可选）</param>
-            <param name="logger">日志记录器（可选）</param>
-            <param name="requestInterceptors">请求拦截器集合（可选）。</param>
-            <param name="responseInterceptors">响应拦截器集合（可选）。</param>
+            <param name="options">配置选项（可选）。</param>
             <param name="overrideBaseAddress">覆盖的基地址（可选）。</param>
-            <param name="sensitiveDataMasker">敏感数据掩码器（可选）。</param>
-            <param name="allowCustomBaseUrls">是否允许自定义基础URL（可选，默认为 false）。</param>
             <exception cref="T:System.ArgumentNullException">factory 或 clientName 为 null</exception>
         </member>
         <member name="P:Mud.HttpUtils.HttpClientFactoryEnhancedClient.ClientName">
@@ -1981,7 +1998,7 @@
             <returns>服务集合（链式调用）。</returns>
             <exception cref="T:System.ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
             <remarks>
-            此方法注册 <see cref="T:Mud.HttpUtils.Client.DefaultCurrentUserContext"/> 作为默认的当前用户上下文实现。
+            此方法注册 <see cref="!:DefaultCurrentUserContext"/> 作为默认的当前用户上下文实现。
             当前用户上下文用于获取当前请求的用户信息。
             </remarks>
             <example>
@@ -2026,7 +2043,7 @@
             </code>
             </remarks>
         </member>
-        <member name="T:Mud.HttpUtils.Client.DefaultCurrentUserContext">
+        <member name="T:Mud.HttpUtils.Client.DefaultCurrentUserContext`1">
             <summary>
             ICurrentUserContext 的默认实现，使用 AsyncLocal 实现线程安全的用户 ID 传播。
             </summary>
@@ -2036,16 +2053,30 @@
             在 ASP.NET Core 应用中，建议替换为基于 HttpContext 的实现。
             </remarks>
         </member>
-        <member name="P:Mud.HttpUtils.Client.DefaultCurrentUserContext.UserId">
+        <member name="P:Mud.HttpUtils.Client.DefaultCurrentUserContext`1.User">
+            <summary>
+            获取当前用户信息对象。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Client.DefaultCurrentUserContext`1.UserId">
             <inheritdoc />
         </member>
-        <member name="M:Mud.HttpUtils.Client.DefaultCurrentUserContext.SetUserId(System.String)">
+        <member name="M:Mud.HttpUtils.Client.DefaultCurrentUserContext`1.SetUser(`0)">
             <summary>
-            设置当前用户 ID。
+            设置当前用户信息。
             </summary>
-            <param name="userId">用户 ID。</param>
+            <param name="user">用户信息对象。</param>
         </member>
         <member name="T:Mud.HttpUtils.Client.DefaultTokenProvider">
+            <summary>
+            ITokenProvider 的默认实现，通过 IMudAppContext 获取令牌管理器并获取令牌。
+            </summary>
+            <remarks>
+            此实现不持有 IMudAppContext 引用，而是通过方法参数逐调用接收，
+            以确保生成代码中 UseApp()/UseDefaultApp() 上下文切换的正确性。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.Client.DefaultTokenProvider.#ctor(Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.Client.DefaultTokenProvider})">
             <summary>
             ITokenProvider 的默认实现，通过 IMudAppContext 获取令牌管理器并获取令牌。
             </summary>
@@ -2158,7 +2189,7 @@
         </member>
         <member name="T:Mud.HttpUtils.MemoryTokenStore">
             <summary>
-            基于内存的令牌存储实现，使用 <see cref="!:ConcurrentDictionary"/> 实现线程安全的令牌管理。
+            基于内存的令牌存储实现，使用 <see cref="T:System.Collections.Concurrent.ConcurrentDictionary`2"/> 实现线程安全的令牌管理。
             </summary>
             <remarks>
             <para>
@@ -2168,7 +2199,7 @@
             <para>
             实现特点：
             <list type="bullet">
-              <item>线程安全：使用 <see cref="!:ConcurrentDictionary"/> 确保并发访问安全</item>
+              <item>线程安全：使用 <see cref="T:System.Collections.Concurrent.ConcurrentDictionary`2"/> 确保并发访问安全</item>
               <item>过期检查：获取令牌时自动验证过期时间，过期令牌视为不存在</item>
               <item>刷新令牌保留：设置访问令牌时自动保留已有的刷新令牌</item>
               <item>大小写不敏感：令牌类型比较不区分大小写</item>
@@ -2811,6 +2842,13 @@
             <param name="userId">用户标识。</param>
             <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
         </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.GetUserTokenFromCache(System.String)">
+            <summary>
+            从缓存中获取指定用户的令牌信息。
+            </summary>
+            <param name="userId">用户Id</param>
+            <returns>用户令牌信息，如果不存在则返回 null。</returns>
+        </member>
         <member name="M:Mud.HttpUtils.UserTokenManagerBase.Dispose(System.Boolean)">
             <summary>
             释放资源。
@@ -2991,6 +3029,9 @@
         </member>
         <member name="M:System.Text.RegularExpressions.Generated.Utilities.StackPush(System.Int32[]@,System.Int32@,System.Int32,System.Int32)">
             <summary>Pushes 2 values onto the backtracking stack.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_asciiLettersAndDigitsAndDashUnderscoreKelvinSign">
+            <summary>Supports searching for characters in or not in "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyzK".</summary>
         </member>
         <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_nonAscii_2BDDE98808630E9B520E3AD9F33E4A0D939EAAED4FF3C3CC86415C934044BB2B">
             <summary>Supports searching for characters in or not in "CKSYcksyK".</summary>
