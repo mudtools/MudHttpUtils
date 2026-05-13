@@ -20,11 +20,13 @@ internal sealed class EnhancedHttpClientFactory : IEnhancedHttpClientFactory
 #endif
 
 #if NET6_0_OR_GREATER
+    /// <inheritdoc/>
     public EnhancedHttpClientFactory(IServiceProvider serviceProvider)
     {
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
     }
 #else
+    /// <inheritdoc/>
     public EnhancedHttpClientFactory(IServiceProvider serviceProvider, IOptions<EnhancedHttpClientFactoryOptions> options)
     {
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
@@ -32,6 +34,7 @@ internal sealed class EnhancedHttpClientFactory : IEnhancedHttpClientFactory
     }
 #endif
 
+    /// <inheritdoc/>
     public IEnhancedHttpClient CreateClient(string clientName)
     {
         if (string.IsNullOrWhiteSpace(clientName))
