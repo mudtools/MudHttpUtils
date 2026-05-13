@@ -718,7 +718,48 @@ public class TokenRecoveryDelegatingHandlerTests
     }
 
     [Fact]
-    public async Task SendAsync_WithTokenRecoveryContext_QueryMode_Returns401()
+    public async Task SendAsync_WithTokenRecoveryContext_QueryMode_ReplacesQueryParameter()
+    {
+        var mockTokenManager = new Mock<ITokenManager>();
+        mockTokenManager
+            .Setup(m => m.InvalidateTokenAsync(null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(TokenResult.Empty);
+        mockTokenManager
+            .Setup(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("refreshed-token");
+
+        var callCount = 0;
+        Uri? retryUri = null;
+        var innerHandler = new FakeHttpMessageHandler((request) =>
+        {
+            callCount++;
+            if (callCount == 1)
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            retryUri = request.RequestUri;
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+
+        var handler = CreateHandler(mockTokenManager.Object, innerHandler: innerHandler);
+        var invoker = new HttpMessageInvoker(handler);
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/test?token=old-token&other=value");
+        request.Properties[TokenRecoveryContext.PropertyKey] = new TokenRecoveryContext
+        {
+            InjectionMode = TokenInjectionMode.Query,
+            QueryParameterName = "token"
+        };
+
+        var response = await invoker.SendAsync(request, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        retryUri.Should().NotBeNull();
+        var query = retryUri!.Query;
+        query.Should().Contain("token=refreshed-token");
+        query.Should().Contain("other=value");
+    }
+
+    [Fact]
+    public async Task SendAsync_WithTokenRecoveryContext_QueryMode_MissingParameterName_Returns401()
     {
         var mockTokenManager = new Mock<ITokenManager>();
         mockTokenManager
@@ -738,7 +779,35 @@ public class TokenRecoveryDelegatingHandlerTests
         request.Properties[TokenRecoveryContext.PropertyKey] = new TokenRecoveryContext
         {
             InjectionMode = TokenInjectionMode.Query,
-            QueryParameterName = "token"
+            QueryParameterName = null
+        };
+
+        var response = await invoker.SendAsync(request, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task SendAsync_WithTokenRecoveryContext_PathMode_Returns401()
+    {
+        var mockTokenManager = new Mock<ITokenManager>();
+        mockTokenManager
+            .Setup(m => m.InvalidateTokenAsync(null, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(TokenResult.Empty);
+        mockTokenManager
+            .Setup(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("refreshed-token");
+
+        var innerHandler = new FakeHttpMessageHandler((_) =>
+            new HttpResponseMessage(HttpStatusCode.Unauthorized));
+
+        var handler = CreateHandler(mockTokenManager.Object, innerHandler: innerHandler);
+        var invoker = new HttpMessageInvoker(handler);
+
+        var request = CreateRequest();
+        request.Properties[TokenRecoveryContext.PropertyKey] = new TokenRecoveryContext
+        {
+            InjectionMode = TokenInjectionMode.Path
         };
 
         var response = await invoker.SendAsync(request, CancellationToken.None);

@@ -152,7 +152,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("        public string? CurrentUserId");
             codeBuilder.AppendLine("        {");
             codeBuilder.AppendLine("            get => _currentUserContext.UserId;");
-            codeBuilder.AppendLine("            set => Mud.HttpUtils.Client.DefaultCurrentUserContext.SetUserId(value);");
+            codeBuilder.AppendLine("            set => _currentUserContext.SetUserId(value);");
             codeBuilder.AppendLine("        }");
         }
         else if (_context.Configuration.AnyMethodRequiresUserId)

@@ -174,4 +174,40 @@ public class DefaultTokenProviderTests
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             provider.GetTokenAsync(mockAppContext.Object, request));
     }
+
+    [Fact]
+    public async Task GetTokenAsync_EmptyUserId_UsesTenantPathInsteadOfUserPath()
+    {
+        var provider = new DefaultTokenProvider(_logger);
+        var mockTokenManager = new Mock<ITokenManager>();
+        mockTokenManager.Setup(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("tenant-token");
+
+        var mockAppContext = new Mock<IMudAppContext>();
+        mockAppContext.Setup(c => c.GetTokenManager("UserAccessToken")).Returns(mockTokenManager.Object);
+
+        var request = new TokenRequest { TokenManagerKey = "UserAccessToken", UserId = "" };
+        var result = await provider.GetTokenAsync(mockAppContext.Object, request);
+
+        result.Should().Be("tenant-token");
+        mockTokenManager.Verify(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task GetTokenAsync_NullUserId_UsesTenantPathInsteadOfUserPath()
+    {
+        var provider = new DefaultTokenProvider(_logger);
+        var mockTokenManager = new Mock<ITokenManager>();
+        mockTokenManager.Setup(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("tenant-token");
+
+        var mockAppContext = new Mock<IMudAppContext>();
+        mockAppContext.Setup(c => c.GetTokenManager("UserAccessToken")).Returns(mockTokenManager.Object);
+
+        var request = new TokenRequest { TokenManagerKey = "UserAccessToken", UserId = null };
+        var result = await provider.GetTokenAsync(mockAppContext.Object, request);
+
+        result.Should().Be("tenant-token");
+        mockTokenManager.Verify(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

@@ -1590,6 +1590,49 @@
             <param name="name">密钥名称。</param>
             <returns>密钥值，如果未找到则返回 null。</returns>
         </member>
+        <member name="T:Mud.HttpUtils.ConcurrentDictionaryTokenCache`1">
+            <summary>
+            基于 <see cref="T:System.Collections.Concurrent.ConcurrentDictionary`2"/> 的令牌缓存默认实现。
+            </summary>
+            <typeparam name="T">缓存值类型。</typeparam>
+            <remarks>
+            适用于租户级令牌缓存，过期判断由 <see cref="T:Mud.HttpUtils.TokenManagerBase"/> 的 IsTokenValid 负责，
+            缓存本身不处理过期逻辑。滑动过期和驱逐回调在此实现中为空操作。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.ConcurrentDictionaryTokenCache`1.Count">
+            <inheritdoc />
+        </member>
+        <member name="P:Mud.HttpUtils.ConcurrentDictionaryTokenCache`1.Keys">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.ConcurrentDictionaryTokenCache`1.TryGet(System.String,`0@)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.ConcurrentDictionaryTokenCache`1.Set(System.String,`0)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.ConcurrentDictionaryTokenCache`1.Set(System.String,`0,System.Nullable{System.TimeSpan},System.Nullable{System.TimeSpan},System.Action{System.String})">
+            <inheritdoc />
+            <remarks>
+            ConcurrentDictionary 实现不支持过期策略和驱逐回调，此方法等同于 <see cref="M:Mud.HttpUtils.ConcurrentDictionaryTokenCache`1.Set(System.String,`0)"/>。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.ConcurrentDictionaryTokenCache`1.TryRemove(System.String,`0@)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.ConcurrentDictionaryTokenCache`1.Compact(System.Double)">
+            <inheritdoc />
+            <remarks>
+            ConcurrentDictionary 实现不支持压缩操作，此方法为空操作。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.ConcurrentDictionaryTokenCache`1.Clear">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.ConcurrentDictionaryTokenCache`1.Dispose">
+            <inheritdoc />
+        </member>
         <member name="T:Mud.HttpUtils.CredentialToken">
             <summary>
             凭证令牌类，用于存储从认证服务器获取的令牌信息。
@@ -1649,6 +1692,17 @@
             实现类应确保此属性在异步上下文中正确传播（如使用 AsyncLocal）。
             </remarks>
         </member>
+        <member name="M:Mud.HttpUtils.ICurrentUserContext.SetUserId(System.String)">
+            <summary>
+            设置当前用户的唯一标识符。
+            </summary>
+            <param name="userId">用户标识符，为 null 时清除当前用户。</param>
+            <remarks>
+            此方法用于在非 Web 场景下手动设置当前用户 ID。
+            在 ASP.NET Core 应用中，通常不需要调用此方法，用户 ID 应从 HttpContext 中自动获取。
+            实现类应确保设置的值在异步上下文中正确传播（如使用 AsyncLocal）。
+            </remarks>
+        </member>
         <member name="T:Mud.HttpUtils.IEncryptedTokenStore">
             <summary>
             加密令牌持久化存储契约。
@@ -1663,6 +1717,74 @@
             <summary>
             获取一个值，指示此存储实例是否已启用加密。
             </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.ITokenCache`1">
+            <summary>
+            令牌缓存契约，提供统一的令牌缓存操作接口。
+            </summary>
+            <typeparam name="T">缓存值类型。</typeparam>
+            <remarks>
+            此接口抽象了令牌缓存的底层存储机制，使 <see cref="T:Mud.HttpUtils.TokenManagerBase"/> 和 <see cref="!:UserTokenManagerBase"/>
+            可以使用统一的缓存接口，同时允许替换为自定义实现（如 Redis、数据库等）。
+            <para>
+            默认实现：<see cref="T:Mud.HttpUtils.ConcurrentDictionaryTokenCache`1"/>（基于 ConcurrentDictionary，适用于租户级令牌）。
+            </para>
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.ITokenCache`1.TryGet(System.String,`0@)">
+            <summary>
+            尝试获取指定键的缓存值。
+            </summary>
+            <param name="key">缓存键。</param>
+            <param name="value">获取到的缓存值。</param>
+            <returns>如果找到缓存值则为 true；否则为 false。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.ITokenCache`1.Set(System.String,`0)">
+            <summary>
+            设置指定键的缓存值。
+            </summary>
+            <param name="key">缓存键。</param>
+            <param name="value">缓存值。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.ITokenCache`1.Set(System.String,`0,System.Nullable{System.TimeSpan},System.Nullable{System.TimeSpan},System.Action{System.String})">
+            <summary>
+            设置指定键的缓存值，并指定过期策略。
+            </summary>
+            <param name="key">缓存键。</param>
+            <param name="value">缓存值。</param>
+            <param name="absoluteExpirationRelativeToNow">相对于当前的绝对过期时间。</param>
+            <param name="slidingExpiration">滑动过期时间。</param>
+            <param name="postEvictionCallback">条目被驱逐后的回调，参数为缓存键。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.ITokenCache`1.TryRemove(System.String,`0@)">
+            <summary>
+            尝试移除指定键的缓存值。
+            </summary>
+            <param name="key">缓存键。</param>
+            <param name="removed">被移除的缓存值。</param>
+            <returns>如果成功移除则为 true；否则为 false。</returns>
+        </member>
+        <member name="P:Mud.HttpUtils.ITokenCache`1.Count">
+            <summary>
+            获取缓存中的条目数量。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.ITokenCache`1.Keys">
+            <summary>
+            获取所有缓存键。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.ITokenCache`1.Clear">
+            <summary>
+            清除所有缓存条目。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.ITokenCache`1.Compact(System.Double)">
+            <summary>
+            压缩缓存，移除指定比例的条目。
+            对于不支持压缩的实现，此方法为空操作。
+            </summary>
+            <param name="percentage">要移除的条目比例（0.0 ~ 1.0）。</param>
         </member>
         <member name="T:Mud.HttpUtils.ITokenManager">
             <summary>
@@ -2200,6 +2322,12 @@
         <member name="M:Mud.HttpUtils.TokenManagerBase.#ctor">
             <inheritdoc />
         </member>
+        <member name="M:Mud.HttpUtils.TokenManagerBase.#ctor(Mud.HttpUtils.ITokenCache{Mud.HttpUtils.CredentialToken})">
+            <summary>
+            使用自定义令牌缓存初始化令牌管理器。
+            </summary>
+            <param name="tokenCache">令牌缓存实现。</param>
+        </member>
         <member name="M:Mud.HttpUtils.TokenManagerBase.GetTokenAsync(System.Threading.CancellationToken)">
             <inheritdoc />
         </member>
@@ -2237,12 +2365,6 @@
             </summary>
             <param name="scopes">令牌作用域数组。</param>
             <returns>缓存键字符串。</returns>
-        </member>
-        <member name="M:Mud.HttpUtils.TokenManagerBase.UpdateCachedToken(Mud.HttpUtils.CredentialToken)">
-            <summary>
-            更新缓存的令牌信息。
-            </summary>
-            <param name="token">凭证令牌。</param>
         </member>
         <member name="M:Mud.HttpUtils.TokenManagerBase.UpdateScopedToken(System.String,Mud.HttpUtils.CredentialToken)">
             <summary>

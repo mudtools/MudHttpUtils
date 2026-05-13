@@ -13,77 +13,88 @@ public class DefaultCurrentUserContextTests
     [Fact]
     public void SetUser_SetsUserId()
     {
-        DefaultCurrentUserContext<CurrentUserInfo>.SetUser(new CurrentUserInfo { UserId = "user123" });
-        try
-        {
-            var context = new DefaultCurrentUserContext<CurrentUserInfo>();
-            context.UserId.Should().Be("user123");
-        }
-        finally
-        {
-            DefaultCurrentUserContext<CurrentUserInfo>.SetUser(null);
-        }
+        var context = new DefaultCurrentUserContext<CurrentUserInfo>();
+        context.SetUser(new CurrentUserInfo { UserId = "user123" });
+
+        context.UserId.Should().Be("user123");
     }
 
     [Fact]
     public void SetUser_NullClearsUserId()
     {
-        DefaultCurrentUserContext<CurrentUserInfo>.SetUser(new CurrentUserInfo { UserId = "user123" });
-        DefaultCurrentUserContext<CurrentUserInfo>.SetUser(null);
-        try
-        {
-            var context = new DefaultCurrentUserContext<CurrentUserInfo>();
-            context.UserId.Should().BeNull();
-        }
-        finally
-        {
-            DefaultCurrentUserContext<CurrentUserInfo>.SetUser(null);
-        }
+        var context = new DefaultCurrentUserContext<CurrentUserInfo>();
+        context.SetUser(new CurrentUserInfo { UserId = "user123" });
+        context.SetUser(null);
+
+        context.UserId.Should().BeNull();
+    }
+
+    [Fact]
+    public void SetUserId_SetsUserId()
+    {
+        var context = new DefaultCurrentUserContext<CurrentUserInfo>();
+        context.SetUserId("user456");
+
+        context.UserId.Should().Be("user456");
+    }
+
+    [Fact]
+    public void SetUserId_NullClearsUserId()
+    {
+        var context = new DefaultCurrentUserContext<CurrentUserInfo>();
+        context.SetUserId("user456");
+        context.SetUserId(null);
+
+        context.UserId.Should().BeNull();
     }
 
     [Fact]
     public async Task UserId_FlowsAcrossAsyncContext()
     {
-        DefaultCurrentUserContext<CurrentUserInfo>.SetUser(new CurrentUserInfo { UserId = "async-user" });
-        try
-        {
-            await Task.Yield();
+        var context = new DefaultCurrentUserContext<CurrentUserInfo>();
+        context.SetUser(new CurrentUserInfo { UserId = "async-user" });
 
-            var context = new DefaultCurrentUserContext<CurrentUserInfo>();
-            context.UserId.Should().Be("async-user");
-        }
-        finally
-        {
-            DefaultCurrentUserContext<CurrentUserInfo>.SetUser(null);
-        }
+        await Task.Yield();
+
+        context.UserId.Should().Be("async-user");
     }
 
     [Fact]
     public async Task UserId_IsolatedAcrossTasks()
     {
-        DefaultCurrentUserContext<CurrentUserInfo>.SetUser(null);
+        var context1 = new DefaultCurrentUserContext<CurrentUserInfo>();
+        var context2 = new DefaultCurrentUserContext<CurrentUserInfo>();
 
         var t1 = Task.Run(async () =>
         {
-            DefaultCurrentUserContext<CurrentUserInfo>.SetUser(new CurrentUserInfo { UserId = "task1-user" });
+            context1.SetUser(new CurrentUserInfo { UserId = "task1-user" });
             await Task.Delay(50);
-            var context = new DefaultCurrentUserContext<CurrentUserInfo>();
-            return context.UserId;
+            return context1.UserId;
         });
 
         var t2 = Task.Run(async () =>
         {
-            DefaultCurrentUserContext<CurrentUserInfo>.SetUser(new CurrentUserInfo { UserId = "task2-user" });
+            context2.SetUser(new CurrentUserInfo { UserId = "task2-user" });
             await Task.Delay(50);
-            var context = new DefaultCurrentUserContext<CurrentUserInfo>();
-            return context.UserId;
+            return context2.UserId;
         });
 
         var results = await Task.WhenAll(t1, t2);
 
         results[0].Should().Be("task1-user");
         results[1].Should().Be("task2-user");
+    }
 
-        DefaultCurrentUserContext<CurrentUserInfo>.SetUser(null);
+    [Fact]
+    public void MultipleInstances_AreIsolated()
+    {
+        var context1 = new DefaultCurrentUserContext<CurrentUserInfo>();
+        var context2 = new DefaultCurrentUserContext<CurrentUserInfo>();
+
+        context1.SetUserId("user1");
+        context2.SetUserId("user2");
+
+        context1.UserId.Should().Be("user1");
+        context2.UserId.Should().Be("user2");
     }
 }

@@ -195,12 +195,11 @@ public class UserTokenManagerLockCleanupTests
 
         public void RemoveCacheEntryOnly(string userId)
         {
-            // 通过反射仅移除缓存条目而不触发锁清理
             var cacheField = typeof(UserTokenManagerBase)
                 .GetField("_userTokenCache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (cacheField?.GetValue(this) is Microsoft.Extensions.Caching.Memory.IMemoryCache cache)
+            if (cacheField?.GetValue(this) is ITokenCache<UserTokenInfo> cache)
             {
-                cache.Remove(userId);
+                cache.TryRemove(userId, out _);
             }
         }
     }

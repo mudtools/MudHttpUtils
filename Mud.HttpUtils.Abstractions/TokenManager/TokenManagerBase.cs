@@ -6,6 +6,7 @@
 // -----------------------------------------------------------------------
 
 using System.Collections.Concurrent;
+using System.Linq;
 
 namespace Mud.HttpUtils;
 
@@ -14,7 +15,7 @@ namespace Mud.HttpUtils;
 /// </summary>
 public abstract class TokenManagerBase : ITokenManager, IDisposable
 {
-    private readonly ConcurrentDictionary<string, CredentialToken?> _tokenCache = new();
+    private readonly ITokenCache<CredentialToken?> _tokenCache;
     private readonly ConcurrentDictionary<string, Lazy<SemaphoreSlim>> _scopeLocks = new();
     private readonly Timer _cleanupTimer;
     private readonly Timer _lockCleanupTimer;
@@ -61,7 +62,17 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
     /// <inheritdoc />
     protected TokenManagerBase()
+        : this(new ConcurrentDictionaryTokenCache<CredentialToken?>())
     {
+    }
+
+    /// <summary>
+    /// 使用自定义令牌缓存初始化令牌管理器。
+    /// </summary>
+    /// <param name="tokenCache">令牌缓存实现。</param>
+    protected TokenManagerBase(ITokenCache<CredentialToken?> tokenCache)
+    {
+        _tokenCache = tokenCache ?? throw new ArgumentNullException(nameof(tokenCache));
         _cleanupTimer = new Timer(CleanupExpiredTokens, null,
             TimeSpan.FromSeconds(CleanupIntervalSeconds),
             TimeSpan.FromSeconds(CleanupIntervalSeconds));
@@ -94,7 +105,10 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         var scopeKey = GetScopeKey(scopes);
 
         if (IsTokenValid(scopeKey))
-            return _tokenCache[scopeKey]!.AccessToken!;
+        {
+            _tokenCache.TryGet(scopeKey, out var validToken);
+            return validToken!.AccessToken!;
+        }
 
         var scopeLock = _scopeLocks.GetOrAdd(scopeKey, _ => new Lazy<SemaphoreSlim>(() => new SemaphoreSlim(1, 1), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
         var acquired = false;
@@ -107,7 +121,10 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                 throw new ObjectDisposedException(GetType().Name);
 
             if (IsTokenValid(scopeKey))
-                return _tokenCache[scopeKey]!.AccessToken!;
+            {
+                _tokenCache.TryGet(scopeKey, out var validToken2);
+                return validToken2!.AccessToken!;
+            }
 
             var token = await RefreshTokenWithRetryCoreAsync(
                 scopes == null || scopes.Length == 0
@@ -119,7 +136,8 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                 throw new InvalidOperationException($"令牌刷新返回了无效的凭证：AccessToken 为空。（ScopeKey={scopeKey}）");
 
             UpdateToken(scopeKey, token);
-            return _tokenCache[scopeKey]!.AccessToken!;
+            _tokenCache.TryGet(scopeKey, out var refreshedToken);
+            return refreshedToken!.AccessToken!;
         }
         finally
         {
@@ -189,16 +207,6 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     }
 
     /// <summary>
-    /// 更新缓存的令牌信息。
-    /// </summary>
-    /// <param name="token">凭证令牌。</param>
-    [Obsolete("Use UpdateScopedToken(DefaultScopeKey, token) instead.")]
-    protected void UpdateCachedToken(CredentialToken token)
-    {
-        UpdateScopedToken(DefaultScopeKey, token);
-    }
-
-    /// <summary>
     /// 更新指定作用域的缓存令牌信息。
     /// </summary>
     /// <param name="scopeKey">作用域缓存键。</param>
@@ -215,11 +223,11 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// <param name="expireTime">过期时间（Unix 时间戳，毫秒）。</param>
     protected void SetCachedToken(string accessToken, long expireTime)
     {
-        _tokenCache[DefaultScopeKey] = new CredentialToken
+        _tokenCache.Set(DefaultScopeKey, new CredentialToken
         {
             AccessToken = accessToken,
             Expire = expireTime
-        };
+        });
     }
 
     /// <summary>
@@ -228,7 +236,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// <returns>缓存中的令牌信息，如果不存在或已过期则返回 null。</returns>
     protected CredentialToken? GetCachedCredentialToken()
     {
-        if (_tokenCache.TryGetValue(DefaultScopeKey, out var token))
+        if (_tokenCache.TryGet(DefaultScopeKey, out var token))
             return token;
         return null;
     }
@@ -255,7 +263,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             }
         }
 
-        _tokenCache[scopeKey] = token;
+        _tokenCache.Set(scopeKey, token);
 
         if (_tokenCache.Count > MaxScopeCacheSize)
         {
@@ -307,7 +315,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
     private bool IsTokenValid(string scopeKey)
     {
-        if (!_tokenCache.TryGetValue(scopeKey, out var entry))
+        if (!_tokenCache.TryGet(scopeKey, out var entry))
             return false;
 
         if (entry == null || string.IsNullOrEmpty(entry.AccessToken) || entry.Expire <= 0)
@@ -331,15 +339,15 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var thresholdMs = ExpireThresholdSeconds * 1000L;
 
-            foreach (var kvp in _tokenCache)
+            foreach (var key in _tokenCache.Keys.ToList())
             {
-                if (kvp.Key == DefaultScopeKey)
+                if (key == DefaultScopeKey)
                     continue;
 
-                if (kvp.Value?.Expire - thresholdMs <= now)
+                if (_tokenCache.TryGet(key, out var entry) && entry?.Expire - thresholdMs <= now)
                 {
-                    _tokenCache.TryRemove(kvp.Key, out _);
-                    TryRemoveScopeLock(kvp.Key);
+                    _tokenCache.TryRemove(key, out _);
+                    TryRemoveScopeLock(key);
                 }
             }
         }
@@ -360,7 +368,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                 if (kvp.Key == DefaultScopeKey)
                     continue;
 
-                if (!_tokenCache.ContainsKey(kvp.Key) && kvp.Value.IsValueCreated && kvp.Value.Value.CurrentCount == 1)
+                if (!_tokenCache.TryGet(kvp.Key, out _) && kvp.Value.IsValueCreated && kvp.Value.Value.CurrentCount == 1)
                 {
                     TryRemoveScopeLock(kvp.Key);
                 }

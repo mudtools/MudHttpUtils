@@ -136,6 +136,9 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
 
     private async void RefreshTokenCallback(object? state)
     {
+        if (_disposed)
+            return;
+
         try
         {
             var shouldContinue = await TokenRefreshHelper.RefreshAllTokenManagersAsync(
@@ -160,6 +163,7 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
             return;
 
         _disposed = true;
+        _timer?.Change(Timeout.Infinite, Timeout.Infinite);
         _timer?.Dispose();
     }
 }
