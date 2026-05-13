@@ -104,14 +104,35 @@
         <member name="M:Mud.HttpUtils.DefaultAppManager`1.RegisterSwitcherFactory``1(System.Func{`0,``0})">
             <inheritdoc/>
         </member>
-        <member name="T:Mud.HttpUtils.IAppContextSwitcher">
+        <member name="T:Mud.HttpUtils.IAppContextHolder">
             <summary>
-            应用上下文切换器接口，用于访问、切换和管理应用上下文及其令牌。
+            应用上下文持有器接口，用于持有和传播当前应用上下文。
+            <para>
+            此接口仅包含纯状态操作，不依赖任何外部服务（如 IAppManager 或 ITokenProvider）。
+            运行时实现完整实现此接口，无 NotSupportedException。
+            </para>
             </summary>
         </member>
-        <member name="P:Mud.HttpUtils.IAppContextSwitcher.Current">
+        <member name="P:Mud.HttpUtils.IAppContextHolder.Current">
             <summary>
             获取或设置当前的应用上下文。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IAppContextHolder.BeginScope(Mud.HttpUtils.IMudAppContext)">
+            <summary>
+            创建一个应用上下文作用域，切换到指定的应用上下文，并在作用域结束时自动恢复之前的上下文。
+            </summary>
+            <param name="context">要切换到的应用上下文实例。</param>
+            <returns>一个 <see cref="T:System.IDisposable"/> 对象，释放时恢复之前的上下文。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.IAppContextSwitcher">
+            <summary>
+            应用上下文切换器接口，扩展 <see cref="T:Mud.HttpUtils.IAppContextHolder"/>，提供应用切换和令牌获取能力。
+            <para>
+            此接口的运行时实现需要 <see cref="T:Mud.HttpUtils.IAppManager`1"/> 和 <see cref="T:Mud.HttpUtils.ITokenProvider"/> 依赖，
+            通常由源码生成器生成的类实现。纯状态操作（<see cref="P:Mud.HttpUtils.IAppContextHolder.Current"/>、
+            <see cref="M:Mud.HttpUtils.IAppContextHolder.BeginScope(Mud.HttpUtils.IMudAppContext)"/>）由 <see cref="T:Mud.HttpUtils.IAppContextHolder"/> 提供。
+            </para>
             </summary>
         </member>
         <member name="M:Mud.HttpUtils.IAppContextSwitcher.UseApp(System.String)">
@@ -126,13 +147,6 @@
             切换到默认的应用上下文。
             </summary>
             <returns>默认的应用上下文实例。</returns>
-        </member>
-        <member name="M:Mud.HttpUtils.IAppContextSwitcher.BeginScope(Mud.HttpUtils.IMudAppContext)">
-            <summary>
-            创建一个应用上下文作用域，切换到指定的应用上下文，并在作用域结束时自动恢复之前的上下文。
-            </summary>
-            <param name="context">要切换到的应用上下文实例。</param>
-            <returns>一个 <see cref="T:System.IDisposable"/> 对象，释放时恢复之前的上下文。</returns>
         </member>
         <member name="M:Mud.HttpUtils.IAppContextSwitcher.BeginScope(System.String)">
             <summary>

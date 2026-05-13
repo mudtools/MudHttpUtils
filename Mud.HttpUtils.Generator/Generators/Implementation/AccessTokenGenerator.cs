@@ -31,7 +31,7 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
             return;
 
         GenerateGetTokenAsyncMethod(codeBuilder);
-        GenerateIAppContextSwitcherGetTokenAsyncMethod(codeBuilder);
+        GenerateGetTokenAsyncNoParamMethod(codeBuilder);
 
         if (_context.HasApiKeyInjection)
             GenerateGetApiKeyAsyncMethod(codeBuilder);
@@ -55,7 +55,7 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <returns>返回访问令牌</returns>");
         codeBuilder.AppendLine("        private async Task<string> GetTokenAsync(string tokenManagerKey, string? userId = null, string[]? scopes = null, CancellationToken cancellationToken = default)");
         codeBuilder.AppendLine("        {");
-        codeBuilder.AppendLine("            var appContext = _appContextSwitcher.Current;");
+        codeBuilder.AppendLine("            var appContext = _appContextHolder.Current;");
         codeBuilder.AppendLine("            if(appContext == null)");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到当前服务的应用上下文。\");");
         codeBuilder.AppendLine("            var request = new TokenRequest");
@@ -70,9 +70,9 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
     }
 
     /// <summary>
-    /// 生成 IAppContextSwitcher.GetTokenAsync() 的无参实现，委托给带参的 GetTokenAsync
+    /// 生成 GetTokenAsync() 的无参实现，委托给带参的 GetTokenAsync
     /// </summary>
-    private void GenerateIAppContextSwitcherGetTokenAsyncMethod(StringBuilder codeBuilder)
+    private void GenerateGetTokenAsyncNoParamMethod(StringBuilder codeBuilder)
     {
         var tokenManagerKey = !string.IsNullOrEmpty(_context.Configuration.TokenManagerKey)
             ? _context.Configuration.TokenManagerKey
@@ -88,7 +88,7 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         var accessibility = _context.GetTokenAsyncAccessibility;
 
         codeBuilder.AppendLine("        /// <summary>");
-        codeBuilder.AppendLine("        /// 异步获取当前应用上下文的访问令牌（IAppContextSwitcher 实现）。");
+        codeBuilder.AppendLine("        /// 异步获取当前应用上下文的访问令牌。");
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine("        /// <returns>包含访问令牌的字符串任务。</returns>");
         codeBuilder.AppendLine($"        {accessibility} async Task<string> GetTokenAsync()");
@@ -109,7 +109,7 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            if (keyName != null && string.IsNullOrWhiteSpace(keyName))");
         codeBuilder.AppendLine("                throw new System.ArgumentException(\"API Key name cannot be whitespace.\", nameof(keyName));");
-        codeBuilder.AppendLine("            var appContext = _appContextSwitcher.Current;");
+        codeBuilder.AppendLine("            var appContext = _appContextHolder.Current;");
         codeBuilder.AppendLine("            if(appContext == null)");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到当前服务的应用上下文。\");");
         codeBuilder.AppendLine("            var apiKeyProvider = appContext.GetService<IApiKeyProvider>();");
@@ -128,7 +128,7 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <param name=\"request\">HTTP 请求消息。</param>");
         codeBuilder.AppendLine("        private async Task ApplyHmacSignatureAsync(HttpRequestMessage request)");
         codeBuilder.AppendLine("        {");
-        codeBuilder.AppendLine("            var appContext = _appContextSwitcher.Current;");
+        codeBuilder.AppendLine("            var appContext = _appContextHolder.Current;");
         codeBuilder.AppendLine("            if(appContext == null)");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到当前服务的应用上下文。\");");
         codeBuilder.AppendLine("            var hmacProvider = appContext.GetService<IHmacSignatureProvider>();");

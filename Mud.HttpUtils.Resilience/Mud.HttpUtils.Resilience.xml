@@ -330,6 +330,92 @@
         <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.WithBaseAddress(System.Uri)">
             <inheritdoc />
         </member>
+        <member name="T:Mud.HttpUtils.Resilience.ServiceCollectionExtensions">
+            <summary>
+            提供 Microsoft.Extensions.DependencyInjection 的扩展方法，用于注册 Mud.HttpUtils 弹性策略服务。
+            </summary>
+            <remarks>
+            本类提供以下核心功能：
+            <list type="bullet">
+            <item><description>注册弹性策略提供器（<see cref="T:Mud.HttpUtils.Resilience.IResiliencePolicyProvider"/>）</description></item>
+            <item><description>为 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 添加弹性策略装饰器</description></item>
+            <item><description>一站式注册方法（<c>AddMudHttpUtils</c>）同时配置 HttpClient 和弹性策略</description></item>
+            </list>
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ServiceCollectionExtensions.AddMudHttpResilience(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.Action{Mud.HttpUtils.Resilience.ResilienceOptions})">
+            <summary>
+            注册 Mud.HttpUtils 弹性策略服务，使用委托配置弹性策略选项。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="configureOptions">用于配置 <see cref="T:Mud.HttpUtils.Resilience.ResilienceOptions"/> 的委托（可选）。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="services"/> 为 null 时抛出。</exception>
+            <example>
+            <code>
+            services.AddMudHttpResilience(options =>
+            {
+                options.RetryCount = 3;
+                options.TimeoutSeconds = 30;
+            });
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ServiceCollectionExtensions.AddMudHttpResilience(Microsoft.Extensions.DependencyInjection.IServiceCollection,Microsoft.Extensions.Configuration.IConfiguration,System.String)">
+            <summary>
+            注册 Mud.HttpUtils 弹性策略服务，从配置文件绑定弹性策略选项。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="configuration">配置实例，用于绑定弹性策略选项。</param>
+            <param name="configurationSectionPath">配置文件中弹性策略节点的路径，默认为 "MudHttpResilience"。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="services"/> 或 <paramref name="configuration"/> 为 null 时抛出。</exception>
+            <example>
+            在 appsettings.json 中配置：
+            <code>
+            {
+              "MudHttpResilience": {
+                "RetryCount": 3,
+                "TimeoutSeconds": 30
+              }
+            }
+            </code>
+            然后在代码中：
+            <code>
+            services.AddMudHttpResilience(Configuration);
+            </code>
+            </example>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ServiceCollectionExtensions.AddMudHttpResilienceDecorator(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.Action{Mud.HttpUtils.Resilience.ResilienceOptions})">
+            <summary>
+            为已注册的 IEnhancedHttpClient 服务添加弹性策略装饰器。
+            </summary>
+            <remarks>
+            此方法会装饰所有已注册的 IEnhancedHttpClient 实现，包括通过 AddMudHttpClient 注册的客户端、
+            通过工厂创建的客户端，以及 .NET 8+ 环境下带键的服务注册。
+            调用此方法前，必须先注册 IEnhancedHttpClient 服务。
+            </remarks>
+            <param name="services">服务集合。</param>
+            <param name="configureOptions">用于配置 ResilienceOptions 的委托（可选）。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">services 为 null 时抛出。</exception>
+            <exception cref="T:System.InvalidOperationException">未找到已注册的 IEnhancedHttpClient 服务时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ServiceCollectionExtensions.AddMudHttpResilienceDecorator(Microsoft.Extensions.DependencyInjection.IServiceCollection,Microsoft.Extensions.Configuration.IConfiguration,System.String)">
+            <summary>
+            为已注册的 IEnhancedHttpClient 服务添加弹性策略装饰器，从配置文件绑定弹性策略选项。
+            </summary>
+            <remarks>
+            此方法会装饰所有已注册的 IEnhancedHttpClient 实现。
+            调用此方法前，必须先注册 IEnhancedHttpClient 服务。
+            </remarks>
+            <param name="services">服务集合。</param>
+            <param name="configuration">配置实例，用于绑定弹性策略选项。</param>
+            <param name="configurationSectionPath">配置文件中弹性策略节点的路径，默认为 "MudHttpResilience"。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <exception cref="T:System.ArgumentNullException">services 为 null 时抛出。</exception>
+            <exception cref="T:System.InvalidOperationException">未找到已注册的 IEnhancedHttpClient 服务时抛出。</exception>
+        </member>
         <member name="M:Mud.HttpUtils.Resilience.ServiceCollectionExtensions.AddMudHttpUtils(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.String,System.Action{System.Net.Http.HttpClient},System.Action{Mud.HttpUtils.Resilience.ResilienceOptions})">
             <summary>
             一站式注册 Mud.HttpUtils 服务，包括 HttpClient 和弹性策略装饰器。

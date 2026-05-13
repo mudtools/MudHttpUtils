@@ -454,9 +454,9 @@
             生成统一的 GetTokenAsync 方法，通过 ITokenProvider 获取令牌
             </summary>
         </member>
-        <member name="M:Mud.HttpUtils.Generators.Implementation.AccessTokenGenerator.GenerateIAppContextSwitcherGetTokenAsyncMethod(System.Text.StringBuilder)">
+        <member name="M:Mud.HttpUtils.Generators.Implementation.AccessTokenGenerator.GenerateGetTokenAsyncNoParamMethod(System.Text.StringBuilder)">
             <summary>
-            生成 IAppContextSwitcher.GetTokenAsync() 的无参实现，委托给带参的 GetTokenAsync
+            生成 GetTokenAsync() 的无参实现，委托给带参的 GetTokenAsync
             </summary>
         </member>
         <member name="T:Mud.HttpUtils.Generators.Implementation.ClassStructureGenerator">

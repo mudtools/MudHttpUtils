@@ -9,7 +9,7 @@ namespace Mud.HttpUtils;
 
 
 /// <inheritdoc/>
-public class AsyncLocalAppContextSwitcher : IAppContextSwitcher
+public class AsyncLocalAppContextSwitcher : IAppContextHolder
 {
     private readonly AsyncLocal<IMudAppContext?> _context = new();
 
@@ -18,22 +18,6 @@ public class AsyncLocalAppContextSwitcher : IAppContextSwitcher
     {
         get => _context.Value;
         set => _context.Value = value;
-    }
-
-    /// <inheritdoc/>
-    public IMudAppContext UseApp(string appKey)
-    {
-        throw new NotSupportedException(
-            "UseApp 需要通过生成的 API 实现类调用，该类包含 IAppManager 依赖。" +
-            "请使用生成的接口实现类而非直接使用 AsyncLocalAppContextSwitcher。");
-    }
-
-    /// <inheritdoc/>
-    public IMudAppContext UseDefaultApp()
-    {
-        throw new NotSupportedException(
-            "UseDefaultApp 需要通过生成的 API 实现类调用，该类包含 IAppManager 依赖。" +
-            "请使用生成的接口实现类而非直接使用 AsyncLocalAppContextSwitcher。");
     }
 
     /// <inheritdoc/>
@@ -47,23 +31,6 @@ public class AsyncLocalAppContextSwitcher : IAppContextSwitcher
 
         return new AppContextScope(previous, this);
     }
-
-    /// <inheritdoc/>
-    public IDisposable BeginScope(string appKey)
-    {
-        throw new NotSupportedException(
-            "BeginScope(string) 需要通过生成的 API 实现类调用，该类包含 IAppManager 依赖。" +
-            "请使用生成的接口实现类而非直接使用 AsyncLocalAppContextSwitcher。");
-    }
-
-    /// <inheritdoc/>
-    public Task<string> GetTokenAsync()
-    {
-        throw new NotSupportedException(
-            "GetTokenAsync 需要通过生成的 API 实现类调用，该类包含 ITokenProvider 依赖。" +
-            "请使用生成的接口实现类而非直接使用 AsyncLocalAppContextSwitcher。");
-    }
-
 
     private sealed class AppContextScope : IDisposable
     {

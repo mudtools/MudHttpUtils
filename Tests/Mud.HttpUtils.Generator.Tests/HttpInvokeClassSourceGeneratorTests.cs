@@ -214,10 +214,17 @@ namespace TestNamespace
     public void Generator_WithTokenManager_ShouldGenerateTokenInjectionCode()
     {
         var source = @"
+using Mud.HttpUtils;
 using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
     [HttpClientApi(TokenManage = ""ITestTokenManager"")]
     public interface ITestApi
     {
@@ -243,6 +250,12 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
     [HttpClientApi(TokenManage = ""ITestTokenManager"")]
     [Token(InjectionMode = TokenInjectionMode.BasicAuth)]
     public interface ITestApi
@@ -268,6 +281,12 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
     [HttpClientApi(TokenManage = ""ITestTokenManager"")]
     public interface ITestApi
     {
@@ -455,7 +474,7 @@ namespace TestNamespace
         var generatedCode = GetGeneratedCode(outputCompilation);
 
         generatedCode.Should().NotBeNullOrEmpty();
-        generatedCode.Should().Contain("IAppContextSwitcher");
+        generatedCode.Should().Contain("IAppContextHolder");
     }
 
     [Fact]

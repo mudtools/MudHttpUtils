@@ -142,35 +142,11 @@ public class AsyncLocalAppContextSwitcherTests
     }
 
     [Fact]
-    public void UseApp_ThrowsNotSupportedException()
+    public void Implements_IAppContextHolder()
     {
-        var act = () => _switcher.UseApp("app1");
-
-        act.Should().Throw<NotSupportedException>();
-    }
-
-    [Fact]
-    public void UseDefaultApp_ThrowsNotSupportedException()
-    {
-        var act = () => _switcher.UseDefaultApp();
-
-        act.Should().Throw<NotSupportedException>();
-    }
-
-    [Fact]
-    public void BeginScopeString_ThrowsNotSupportedException()
-    {
-        var act = () => _switcher.BeginScope("app1");
-
-        act.Should().Throw<NotSupportedException>();
-    }
-
-    [Fact]
-    public async Task GetTokenAsync_ThrowsNotSupportedException()
-    {
-        var act = () => _switcher.GetTokenAsync();
-
-        await act.Should().ThrowAsync<NotSupportedException>();
+        var holder = _switcher as IAppContextHolder;
+        holder.Should().NotBeNull();
+        holder.Should().BeSameAs(_switcher);
     }
 
     private static TestAppContext CreateTestContext(string appId) => new(appId);

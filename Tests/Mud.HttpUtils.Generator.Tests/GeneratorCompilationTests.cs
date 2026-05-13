@@ -192,6 +192,12 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
     [HttpClientApi(TokenManage = ""ITestTokenManager"")]
     public interface ITestApi
     {

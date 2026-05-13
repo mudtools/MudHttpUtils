@@ -134,6 +134,12 @@ internal class InterfaceImplementationGenerator
             ValidateHttpClientType(configuration.HttpClient);
         }
 
+        if (!string.IsNullOrEmpty(configuration.TokenManager))
+        {
+            if (!ValidateTokenManagerType(configuration))
+                isValid = false;
+        }
+
         if (!string.IsNullOrEmpty(configuration.InheritedFrom))
         {
             var hasTokenManager = !string.IsNullOrEmpty(configuration.TokenManager);
@@ -192,6 +198,100 @@ internal class InterfaceImplementationGenerator
                 _interfaceSymbol.Name,
                 httpClientType));
         }
+    }
+
+    private bool ValidateTokenManagerType(GenerationConfiguration configuration)
+    {
+        if (string.IsNullOrEmpty(configuration.TokenManager))
+            return true;
+
+        var tokenManagerTypeName = configuration.TokenManager;
+        var tokenManagerType = _compilation.GetTypeByMetadataName(tokenManagerTypeName);
+
+        if (tokenManagerType == null)
+        {
+            var candidates = new[]
+            {
+                tokenManagerTypeName,
+                $"Mud.HttpUtils.{tokenManagerTypeName}",
+            };
+
+            foreach (var candidate in candidates)
+            {
+                tokenManagerType = _compilation.GetTypeByMetadataName(candidate);
+                if (tokenManagerType != null)
+                    break;
+            }
+        }
+
+        if (tokenManagerType == null)
+        {
+            var namespacePrefix = _interfaceSymbol.ContainingNamespace?.ToDisplayString();
+            if (!string.IsNullOrEmpty(namespacePrefix))
+            {
+                tokenManagerType = _compilation.GetTypeByMetadataName($"{namespacePrefix}.{tokenManagerTypeName}");
+            }
+        }
+
+        if (tokenManagerType == null)
+        {
+            _context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.TokenManagerTypeNotFound,
+                _interfaceDecl.GetLocation(),
+                _interfaceSymbol.Name,
+                tokenManagerTypeName));
+            return true;
+        }
+
+        var getDefaultAppMethod = tokenManagerType.GetMembers("GetDefaultApp")
+            .OfType<IMethodSymbol>()
+            .FirstOrDefault(m => m.Parameters.IsEmpty && m.TypeParameters.IsEmpty);
+
+        if (getDefaultAppMethod == null)
+        {
+            _context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.TokenManagerMissingMethod,
+                _interfaceDecl.GetLocation(),
+                _interfaceSymbol.Name,
+                tokenManagerTypeName,
+                "GetDefaultApp()"));
+            return false;
+        }
+
+        var mudAppContextType = _compilation.GetTypeByMetadataName("Mud.HttpUtils.IMudAppContext");
+        if (mudAppContextType != null && getDefaultAppMethod.ReturnType != null)
+        {
+            var returnType = getDefaultAppMethod.ReturnType;
+            if (!SymbolEqualityComparer.Default.Equals(returnType, mudAppContextType) &&
+                returnType.AllInterfaces.All(i => !SymbolEqualityComparer.Default.Equals(i, mudAppContextType)))
+            {
+                _context.ReportDiagnostic(Diagnostic.Create(
+                    Diagnostics.TokenManagerMissingMethod,
+                    _interfaceDecl.GetLocation(),
+                    _interfaceSymbol.Name,
+                    tokenManagerTypeName,
+                    $"GetDefaultApp() 返回类型 '{returnType.ToDisplayString()}' 不是 IMudAppContext 或其子类型"));
+                return false;
+            }
+        }
+
+        var getAppMethod = tokenManagerType.GetMembers("GetApp")
+            .OfType<IMethodSymbol>()
+            .FirstOrDefault(m => m.Parameters.Length == 1 &&
+                m.Parameters[0].Type.SpecialType == SpecialType.System_String);
+
+        if (getAppMethod == null)
+        {
+            _context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.TokenManagerMissingMethod,
+                _interfaceDecl.GetLocation(),
+                _interfaceSymbol.Name,
+                tokenManagerTypeName,
+                "GetApp(string appKey)"));
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
