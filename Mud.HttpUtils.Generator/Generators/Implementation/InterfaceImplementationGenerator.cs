@@ -206,32 +206,7 @@ internal class InterfaceImplementationGenerator
             return true;
 
         var tokenManagerTypeName = configuration.TokenManager;
-        var tokenManagerType = _compilation.GetTypeByMetadataName(tokenManagerTypeName);
-
-        if (tokenManagerType == null)
-        {
-            var candidates = new[]
-            {
-                tokenManagerTypeName,
-                $"Mud.HttpUtils.{tokenManagerTypeName}",
-            };
-
-            foreach (var candidate in candidates)
-            {
-                tokenManagerType = _compilation.GetTypeByMetadataName(candidate);
-                if (tokenManagerType != null)
-                    break;
-            }
-        }
-
-        if (tokenManagerType == null)
-        {
-            var namespacePrefix = _interfaceSymbol.ContainingNamespace?.ToDisplayString();
-            if (!string.IsNullOrEmpty(namespacePrefix))
-            {
-                tokenManagerType = _compilation.GetTypeByMetadataName($"{namespacePrefix}.{tokenManagerTypeName}");
-            }
-        }
+        var tokenManagerType = ResolveType(tokenManagerTypeName);
 
         if (tokenManagerType == null)
         {
@@ -240,12 +215,11 @@ internal class InterfaceImplementationGenerator
                 _interfaceDecl.GetLocation(),
                 _interfaceSymbol.Name,
                 tokenManagerTypeName));
-            return true;
+            return false;
         }
 
-        var getDefaultAppMethod = tokenManagerType.GetMembers("GetDefaultApp")
-            .OfType<IMethodSymbol>()
-            .FirstOrDefault(m => m.Parameters.IsEmpty && m.TypeParameters.IsEmpty);
+        var getDefaultAppMethod = TypeSymbolHelper.GetAllMethods(tokenManagerType, includeParentInterfaces: true)
+            .FirstOrDefault(m => m.Name == "GetDefaultApp" && m.Parameters.IsEmpty && m.TypeParameters.IsEmpty);
 
         if (getDefaultAppMethod == null)
         {
@@ -275,9 +249,8 @@ internal class InterfaceImplementationGenerator
             }
         }
 
-        var getAppMethod = tokenManagerType.GetMembers("GetApp")
-            .OfType<IMethodSymbol>()
-            .FirstOrDefault(m => m.Parameters.Length == 1 &&
+        var getAppMethod = TypeSymbolHelper.GetAllMethods(tokenManagerType, includeParentInterfaces: true)
+            .FirstOrDefault(m => m.Name == "GetApp" && m.Parameters.Length == 1 &&
                 m.Parameters[0].Type.SpecialType == SpecialType.System_String);
 
         if (getAppMethod == null)
@@ -292,6 +265,52 @@ internal class InterfaceImplementationGenerator
         }
 
         return true;
+    }
+
+    private INamedTypeSymbol ResolveType(string typeName)
+    {
+        var type = _compilation.GetTypeByMetadataName(typeName);
+        if (type != null)
+            return type;
+
+        type = _compilation.GetTypeByMetadataName($"Mud.HttpUtils.{typeName}");
+        if (type != null)
+            return type;
+
+        var namespacePrefix = _interfaceSymbol.ContainingNamespace?.ToDisplayString();
+        if (!string.IsNullOrEmpty(namespacePrefix))
+        {
+            type = _compilation.GetTypeByMetadataName($"{namespacePrefix}.{typeName}");
+            if (type != null)
+                return type;
+        }
+
+        foreach (var ns in _compilation.GlobalNamespace.GetNamespaceMembers())
+        {
+            type = FindTypeInNamespace(ns, typeName);
+            if (type != null)
+                return type;
+        }
+
+        return null;
+    }
+
+    private INamedTypeSymbol FindTypeInNamespace(INamespaceSymbol ns, string typeName)
+    {
+        foreach (var member in ns.GetTypeMembers())
+        {
+            if (member.Name == typeName)
+                return member;
+        }
+
+        foreach (var childNs in ns.GetNamespaceMembers())
+        {
+            var found = FindTypeInNamespace(childNs, typeName);
+            if (found != null)
+                return found;
+        }
+
+        return null;
     }
 
     /// <summary>

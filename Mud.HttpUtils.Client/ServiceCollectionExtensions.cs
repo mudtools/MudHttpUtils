@@ -468,6 +468,7 @@ public static class HttpClientServiceCollectionExtensions
             throw new ArgumentNullException(nameof(services));
 
         services.TryAddSingleton<ICurrentUserContext, TContext>();
+        services.TryAddSingleton<IAppContextHolder, AsyncLocalAppContextSwitcher>();
         return services;
     }
 

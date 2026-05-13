@@ -578,7 +578,7 @@ namespace TestNamespace
         var (diagnostics, _) = RunGenerator(source);
 
         diagnostics.Should().Contain(d => d.Id == "HTTPCLIENT015",
-            "TokenManage 指定不存在的类型时应报告 HTTPCLIENT015 警告");
+            "TokenManage 指定不存在的类型时应报告 HTTPCLIENT015 错误");
     }
 
     [Fact]

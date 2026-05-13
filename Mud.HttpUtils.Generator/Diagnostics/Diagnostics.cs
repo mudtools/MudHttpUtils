@@ -132,7 +132,7 @@ internal static class Diagnostics
         title: "TokenManage 类型未找到",
         messageFormat: "接口 {0} 的 TokenManage 属性指定的类型 '{1}' 在当前编译中未找到。请确认类型名称正确，或确保包含该类型的项目已正确引用。",
         category: "代码生成",
-        DiagnosticSeverity.Warning,
+        DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor TokenManagerMissingMethod = new(
