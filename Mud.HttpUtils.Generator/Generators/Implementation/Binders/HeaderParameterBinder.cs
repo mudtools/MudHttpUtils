@@ -100,6 +100,8 @@ internal class HeaderParameterBinder : IParameterBinder
 
     private static string? GetFormatString(ParameterAttributeInfo attr)
     {
-        return attr.NamedArguments.TryGetValue("Format", out var format) && format is string f ? f : null;
+        if (attr.NamedArguments.TryGetValue("FormatString", out var fs) && fs is string f)
+            return f;
+        return attr.NamedArguments.TryGetValue("Format", out var format) && format is string s ? s : null;
     }
 }

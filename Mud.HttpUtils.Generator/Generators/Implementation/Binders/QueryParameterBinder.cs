@@ -119,10 +119,44 @@ internal class QueryParameterBinder : IParameterBinder
 
     private static void GenerateQueryMapParameter(StringBuilder codeBuilder, ParameterInfo param, ParameterAttributeInfo attr, string indent)
     {
+        var isDictionaryType = IsDictionaryType(param.Type);
+
+        if (isDictionaryType)
+        {
+            GenerateDictionaryQueryMapParameter(codeBuilder, param, attr, indent);
+        }
+        else
+        {
+            GenerateObjectQueryMapParameter(codeBuilder, param, attr, indent);
+        }
+    }
+
+    private static void GenerateDictionaryQueryMapParameter(StringBuilder codeBuilder, ParameterInfo param, ParameterAttributeInfo attr, string indent)
+    {
+        var urlEncode = !(attr.NamedArguments.TryGetValue("UrlEncode", out var urlEnc) && urlEnc is false);
+
+        codeBuilder.AppendLine($"{indent}if ({param.Name} != null)");
+        codeBuilder.AppendLine($"{indent}{{");
+        codeBuilder.AppendLine($"{indent}    foreach (var __kvp in {param.Name})");
+        codeBuilder.AppendLine($"{indent}    {{");
+        if (urlEncode)
+        {
+            codeBuilder.AppendLine($"{indent}        __queryParams.Add(__kvp.Key, __kvp.Value?.ToString());");
+        }
+        else
+        {
+            codeBuilder.AppendLine($"{indent}        __rawQueryPairs.Add(__kvp.Key + \"=\" + __kvp.Value?.ToString());");
+        }
+        codeBuilder.AppendLine($"{indent}    }}");
+        codeBuilder.AppendLine($"{indent}}}");
+    }
+
+    private static void GenerateObjectQueryMapParameter(StringBuilder codeBuilder, ParameterInfo param, ParameterAttributeInfo attr, string indent)
+    {
         var separator = attr.NamedArguments.TryGetValue("PropertySeparator", out var sep) && sep is string s && !string.IsNullOrEmpty(s) ? s : "_";
         var includeNull = attr.NamedArguments.TryGetValue("IncludeNullValues", out var incNull) && incNull is true;
         var useJson = attr.NamedArguments.TryGetValue("SerializationMethod", out var serMethod)
-            && serMethod is int enumVal && enumVal != 0; // QuerySerializationMethod.ToString = 0, Json = 1
+            && serMethod is int enumVal && enumVal != 0;
         var urlEncode = !(attr.NamedArguments.TryGetValue("UrlEncode", out var urlEnc) && urlEnc is false);
 
         codeBuilder.AppendLine($"{indent}if ({param.Name} != null)");
@@ -131,12 +165,38 @@ internal class QueryParameterBinder : IParameterBinder
         codeBuilder.AppendLine($"{indent}}}");
     }
 
+    private static bool IsDictionaryType(string type)
+    {
+        return type.StartsWith("System.Collections.Generic.IDictionary", StringComparison.Ordinal) ||
+               type.StartsWith("System.Collections.Generic.Dictionary", StringComparison.Ordinal) ||
+               type.StartsWith("IDictionary<", StringComparison.Ordinal) ||
+               type.StartsWith("Dictionary<", StringComparison.Ordinal);
+    }
+
     private static void GenerateRawQueryStringParameter(StringBuilder codeBuilder, ParameterInfo param, ParameterAttributeInfo attr, string indent)
     {
-        codeBuilder.AppendLine($"{indent}if (!string.IsNullOrWhiteSpace({param.Name}))");
-        codeBuilder.AppendLine($"{indent}{{");
-        codeBuilder.AppendLine($"{indent}    __url += (__url.Contains(\"?\") ? \"&\" : \"?\") + {param.Name};");
-        codeBuilder.AppendLine($"{indent}}}");
+        var rawQsVar = $"__rawQS_{param.Name}";
+        if (param.IsValidated)
+        {
+            codeBuilder.AppendLine($"{indent}var {rawQsVar} = {param.Name}.TrimStart('?', '&').TrimEnd('&');");
+            codeBuilder.AppendLine($"{indent}if (!string.IsNullOrWhiteSpace({rawQsVar}))");
+            codeBuilder.AppendLine($"{indent}{{");
+            codeBuilder.AppendLine($"{indent}    var __separator = __url.Contains('?') ? \"&\" : \"?\";");
+            codeBuilder.AppendLine($"{indent}    __url += __separator + {rawQsVar};");
+            codeBuilder.AppendLine($"{indent}}}");
+        }
+        else
+        {
+            codeBuilder.AppendLine($"{indent}if (!string.IsNullOrWhiteSpace({param.Name}))");
+            codeBuilder.AppendLine($"{indent}{{");
+            codeBuilder.AppendLine($"{indent}    var {rawQsVar} = {param.Name}.TrimStart('?', '&').TrimEnd('&');");
+            codeBuilder.AppendLine($"{indent}    if (!string.IsNullOrWhiteSpace({rawQsVar}))");
+            codeBuilder.AppendLine($"{indent}    {{");
+            codeBuilder.AppendLine($"{indent}        var __separator = __url.Contains('?') ? \"&\" : \"?\";");
+            codeBuilder.AppendLine($"{indent}        __url += __separator + {rawQsVar};");
+            codeBuilder.AppendLine($"{indent}    }}");
+            codeBuilder.AppendLine($"{indent}}}");
+        }
     }
 
     private static string GetQueryParameterName(ParameterAttributeInfo attr, string defaultName)

@@ -52,7 +52,7 @@ namespace TestNamespace
     public void Generator_WithHttpClientApiAttribute_ShouldGenerateImplementation()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -76,7 +76,7 @@ namespace TestNamespace
     public void Generator_WithMultipleMethods_ShouldGenerateAllMethods()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -111,7 +111,7 @@ namespace TestNamespace
     public void Generator_WithPathParameters_ShouldGenerateCorrectCode()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -135,7 +135,7 @@ namespace TestNamespace
     public void Generator_WithQueryParameters_ShouldGenerateCorrectCode()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -160,7 +160,7 @@ namespace TestNamespace
     public void Generator_WithBodyParameter_ShouldGenerateCorrectCode()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -190,7 +190,7 @@ namespace TestNamespace
     public void Generator_WithHeaderParameter_ShouldGenerateCorrectCode()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -214,7 +214,7 @@ namespace TestNamespace
     public void Generator_WithTokenManager_ShouldGenerateTokenInjectionCode()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -231,7 +231,7 @@ namespace TestNamespace
 
         generatedCode.Should().NotBeNullOrEmpty();
         generatedCode.Should().Contain("ITestTokenManager");
-        generatedCode.Should().Contain("GetOrRefreshTokenAsync");
+        generatedCode.Should().Contain("GetTokenAsync");
     }
 
     [Fact]
@@ -239,10 +239,12 @@ namespace TestNamespace
     {
         var source = @"
 using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(TokenManage = nameof(ITestTokenManager), TokenInjectionMode = TokenInjectionMode.BasicAuth)]
+    [HttpClientApi(TokenManage = ""ITestTokenManager"")]
+    [Token(InjectionMode = TokenInjectionMode.BasicAuth)]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -254,7 +256,7 @@ namespace TestNamespace
         var generatedCode = GetGeneratedCode(outputCompilation);
 
         generatedCode.Should().NotBeNullOrEmpty();
-        generatedCode.Should().Contain("BasicAuth");
+        generatedCode.Should().Contain("__basicCredentials");
     }
 
     [Fact]
@@ -266,7 +268,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(TokenManage = nameof(ITestTokenManager))]
+    [HttpClientApi(TokenManage = ""ITestTokenManager"")]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -286,7 +288,7 @@ namespace TestNamespace
     public void Generator_WithFormParameters_ShouldGenerateFormContent()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -310,7 +312,7 @@ namespace TestNamespace
     public void Generator_WithUploadParameter_ShouldGenerateUploadCode()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 using System.IO;
 
 namespace TestNamespace
@@ -336,7 +338,7 @@ namespace TestNamespace
     public void Generator_WithResponseReturnType_ShouldGenerateResponseHandling()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -360,7 +362,7 @@ namespace TestNamespace
     public void Generator_WithCacheAttribute_ShouldGenerateCacheHandling()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -384,13 +386,12 @@ namespace TestNamespace
     public void Generator_WithInterfaceQueryProperty_ShouldGeneratePropertyImplementation()
     {
         var source = @"
-using Mud.HttpUtils;
 using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
     [HttpClientApi(""https://api.example.com"")]
-    [InterfaceQuery(Name = ""version"", Value = ""v1"")]
+    [InterfaceQuery(""version"", ""v1"")]
     public interface ITestApi
     {
         [Get(""/data"")]
@@ -409,7 +410,7 @@ namespace TestNamespace
     public void Generator_WithQueryMapParameter_ShouldGenerateFlattenCall()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -438,7 +439,7 @@ namespace TestNamespace
     public void Generator_GeneratesConstructorWithDependencies()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -454,14 +455,14 @@ namespace TestNamespace
         var generatedCode = GetGeneratedCode(outputCompilation);
 
         generatedCode.Should().NotBeNullOrEmpty();
-        generatedCode.Should().Contain("IEnhancedHttpClient");
+        generatedCode.Should().Contain("IAppContextSwitcher");
     }
 
     [Fact]
     public void Generator_GeneratesClassWithCorrectNamespace()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace MyApp.Apis
 {
@@ -484,7 +485,7 @@ namespace MyApp.Apis
     public void Generator_WithAsyncEnumerableReturn_ShouldGenerateStreamCode()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 using System.Collections.Generic;
 
 namespace TestNamespace
@@ -513,7 +514,7 @@ namespace TestNamespace
     public void Generator_WithBodyEnableEncrypt_ShouldGenerateEncryptionCode()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -543,13 +544,14 @@ namespace TestNamespace
     {
         var source = @"
 using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
     [HttpClientApi(""https://api.example.com"")]
     public interface ITestApi
     {
-        [Post(""/secret"")]
+        [Post(""/secret"", ResponseEnableDecrypt = true)]
         Task<Response<string>> PostSecretAsync([Body(EnableEncrypt = true)] string data);
     }
 }";
@@ -558,14 +560,14 @@ namespace TestNamespace
         var generatedCode = GetGeneratedCode(outputCompilation);
 
         generatedCode.Should().NotBeNullOrEmpty();
-        generatedCode.Should().Contain("DecryptContent", "EnableEncrypt = true 且返回 Response<T> 时应生成解密调用");
+        generatedCode.Should().Contain("DecryptContent", "ResponseEnableDecrypt = true 时应生成解密调用");
     }
 
     [Fact]
     public void Generator_WithAllowAnyStatusCode_ShouldGenerateWithoutEnsureSuccess()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -589,7 +591,6 @@ namespace TestNamespace
     public void Generator_WithBasePath_ShouldIncludeBasePathInUrl()
     {
         var source = @"
-using Mud.HttpUtils;
 using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
@@ -614,7 +615,7 @@ namespace TestNamespace
     public void Generator_WithCancellationTokenParameter_ShouldPassTokenToCall()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 using System.Threading;
 
 namespace TestNamespace
