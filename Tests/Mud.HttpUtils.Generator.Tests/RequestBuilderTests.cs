@@ -812,7 +812,7 @@ public class RequestBuilderTests
     {
         var methodInfo = CreateMethodInfo("/users");
         methodInfo.AllowAnyStatusCode = true;
-        methodInfo.AsyncInnerReturnType = "string";
+        methodInfo.AsyncInnerReturnType = "User";
         methodInfo.ResponseContentType = "application/xml";
 
         var codeBuilder = new StringBuilder();
@@ -820,7 +820,8 @@ public class RequestBuilderTests
         var code = codeBuilder.ToString();
 
         code.Should().Contain("SendRawAsync");
-        code.Should().Contain("XmlSerializer");
+        code.Should().Contain("_xmlSerializer_User");
+        code.Should().Contain("Deserialize");
         code.Should().NotContain("IsSuccessStatusCode");
         code.Should().NotContain("SendXmlAsync");
     }
@@ -830,7 +831,7 @@ public class RequestBuilderTests
     {
         var methodInfo = CreateMethodInfo("/users");
         methodInfo.AllowAnyStatusCode = true;
-        methodInfo.AsyncInnerReturnType = "string";
+        methodInfo.AsyncInnerReturnType = "User";
 
         var codeBuilder = new StringBuilder();
         _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
@@ -886,14 +887,15 @@ public class RequestBuilderTests
     public void GenerateRequestExecution_WithXmlResponse_UseXmlSerializer()
     {
         var methodInfo = CreateMethodInfo("/users");
-        methodInfo.AsyncInnerReturnType = "string";
+        methodInfo.AsyncInnerReturnType = "User";
         methodInfo.ResponseContentType = "application/xml";
 
         var codeBuilder = new StringBuilder();
         _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
         var code = codeBuilder.ToString();
 
-        code.Should().Contain("XmlSerializer");
+        code.Should().Contain("_xmlSerializer_User");
+        code.Should().Contain("Deserialize");
     }
 
     #endregion
@@ -904,7 +906,7 @@ public class RequestBuilderTests
     public void GenerateRequestExecution_WithResponseEnableDecrypt_GeneratesDecryptLogic()
     {
         var methodInfo = CreateMethodInfo("/users");
-        methodInfo.AsyncInnerReturnType = "string";
+        methodInfo.AsyncInnerReturnType = "User";
         methodInfo.ResponseEnableDecrypt = true;
 
         var codeBuilder = new StringBuilder();
@@ -920,7 +922,7 @@ public class RequestBuilderTests
     public void GenerateRequestExecution_WithResponseTypeAndEnableDecrypt_GeneratesDecryptLogic()
     {
         var methodInfo = CreateMethodInfo("/users");
-        methodInfo.AsyncInnerReturnType = "Response<string>";
+        methodInfo.AsyncInnerReturnType = "Response<User>";
         methodInfo.ResponseEnableDecrypt = true;
 
         var codeBuilder = new StringBuilder();
@@ -936,7 +938,7 @@ public class RequestBuilderTests
     public void GenerateRequestExecution_WithAllowAnyStatusCodeAndEnableDecrypt_GeneratesDecryptLogic()
     {
         var methodInfo = CreateMethodInfo("/users");
-        methodInfo.AsyncInnerReturnType = "string";
+        methodInfo.AsyncInnerReturnType = "User";
         methodInfo.AllowAnyStatusCode = true;
         methodInfo.ResponseEnableDecrypt = true;
 

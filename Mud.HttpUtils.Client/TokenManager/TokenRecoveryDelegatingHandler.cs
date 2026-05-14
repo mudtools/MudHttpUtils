@@ -268,7 +268,28 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
                 return true;
 
             case TokenInjectionMode.Query:
+                if (string.IsNullOrEmpty(context.QueryParameterName))
+                {
+                    _logger.LogWarning("Query 模式缺少 QueryParameterName，无法重新注入令牌，返回 401");
+                    return false;
+                }
+
+                var queryUri = request.RequestUri;
+                if (queryUri != null)
+                {
+                    var newQuery = ReplaceQueryParameter(queryUri.Query, context.QueryParameterName, token);
+                    var builder = new UriBuilder(queryUri) { Query = newQuery };
+                    request.RequestUri = builder.Uri;
+                    return true;
+                }
+
+                _logger.LogWarning("Query 模式请求 URI 为空，无法重新注入令牌，返回 401");
+                return false;
+
             case TokenInjectionMode.Path:
+                _logger.LogWarning("Path 模式的令牌恢复需要重建 URL 路径，当前不支持自动恢复，返回 401 (InjectionMode={InjectionMode})", context.InjectionMode);
+                return false;
+
             case TokenInjectionMode.HmacSignature:
             default:
                 _logger.LogWarning("令牌恢复不支持 InjectionMode={InjectionMode}，无法重新注入令牌，返回 401", context.InjectionMode);
@@ -339,5 +360,39 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
             RequestMessage = request,
             Content = new StringContent("令牌刷新失败，无法恢复请求")
         };
+    }
+
+    private static string ReplaceQueryParameter(string? queryString, string paramName, string newValue)
+    {
+        var query = queryString ?? "";
+        if (query.StartsWith("?"))
+            query = query.Substring(1);
+
+        var parameters = query.Split(new[] { '&' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(p =>
+            {
+                var idx = p.IndexOf('=');
+                if (idx < 0) return new { Key = Uri.UnescapeDataString(p), Value = "" };
+                return new { Key = Uri.UnescapeDataString(p.Substring(0, idx)), Value = Uri.UnescapeDataString(p.Substring(idx + 1)) };
+            })
+            .ToList();
+
+        var found = false;
+        for (var i = 0; i < parameters.Count; i++)
+        {
+            if (parameters[i].Key == paramName)
+            {
+                parameters[i] = new { Key = paramName, Value = newValue };
+                found = true;
+                break;
+            }
+        }
+
+        if (!found)
+        {
+            parameters.Add(new { Key = paramName, Value = newValue });
+        }
+
+        return string.Join("&", parameters.Select(p => $"{Uri.EscapeDataString(p.Key)}={Uri.EscapeDataString(p.Value)}"));
     }
 }

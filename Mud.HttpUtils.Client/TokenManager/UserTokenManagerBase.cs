@@ -2,22 +2,21 @@
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
 //  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
-//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！
 // -----------------------------------------------------------------------
 
-using Microsoft.Extensions.Caching.Memory;
 using System.Collections.Concurrent;
 
 namespace Mud.HttpUtils;
 
 /// <summary>
 /// 用户令牌管理器抽象基类，提供并发安全的用户级令牌刷新实现。
-/// 使用 IMemoryCache 管理用户令牌缓存，支持容量限制、滑动过期和自动清理。
+/// 使用 <see cref="ITokenCache{T}"/> 管理用户令牌缓存，支持容量限制、滑动过期和自动清理。
 /// </summary>
 public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 {
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _userLocks = new();
-    private readonly IMemoryCache _userTokenCache;
+    private readonly ITokenCache<UserTokenInfo> _userTokenCache;
     private readonly UserTokenCacheOptions _cacheOptions;
 
     /// <summary>
@@ -28,7 +27,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// <summary>
     /// 初始化用户令牌管理器基类。
     /// </summary>
-    protected UserTokenManagerBase() : this(null)
+    protected UserTokenManagerBase() : this(null, null)
     {
     }
 
@@ -36,16 +35,22 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// 初始化用户令牌管理器基类，使用指定的缓存配置选项。
     /// </summary>
     /// <param name="cacheOptions">缓存配置选项。</param>
-    protected UserTokenManagerBase(UserTokenCacheOptions? cacheOptions)
+    protected UserTokenManagerBase(UserTokenCacheOptions? cacheOptions) : this(null, cacheOptions)
+    {
+    }
+
+    /// <summary>
+    /// 初始化用户令牌管理器基类，使用指定的令牌缓存和缓存配置选项。
+    /// </summary>
+    /// <param name="userTokenCache">用户令牌缓存实现。为 null 时使用默认的 <see cref="MemoryCacheTokenCache{T}"/>。</param>
+    /// <param name="cacheOptions">缓存配置选项。为 null 时使用默认配置。</param>
+    protected UserTokenManagerBase(ITokenCache<UserTokenInfo>? userTokenCache, UserTokenCacheOptions? cacheOptions = null)
     {
         _cacheOptions = cacheOptions ?? new UserTokenCacheOptions();
-
-        _userTokenCache = new MemoryCache(new MemoryCacheOptions
-        {
-            SizeLimit = _cacheOptions.SizeLimit,
-            ExpirationScanFrequency = TimeSpan.FromSeconds(_cacheOptions.CleanupIntervalSeconds),
-            CompactionPercentage = _cacheOptions.CompactionPercentage
-        });
+        _userTokenCache = userTokenCache ?? new MemoryCacheTokenCache<UserTokenInfo>(
+            _cacheOptions.SizeLimit,
+            _cacheOptions.CleanupIntervalSeconds,
+            _cacheOptions.CompactionPercentage);
     }
 
     /// <inheritdoc />
@@ -149,28 +154,21 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         if (string.IsNullOrEmpty(userId) || tokenInfo == null)
             return;
 
-        var cacheEntryOptions = new MemoryCacheEntryOptions
-        {
-            Size = 1,
-            SlidingExpiration = TimeSpan.FromSeconds(_cacheOptions.SlidingExpirationSeconds),
-            Priority = CacheItemPriority.Normal
-        };
-
+        TimeSpan? absoluteExpiration = null;
         var remainingMs = tokenInfo.AccessTokenExpireTime - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         if (remainingMs > 0)
         {
-            cacheEntryOptions.AbsoluteExpirationRelativeToNow = TimeSpan.FromMilliseconds(remainingMs);
+            absoluteExpiration = TimeSpan.FromMilliseconds(remainingMs);
         }
 
-        cacheEntryOptions.RegisterPostEvictionCallback((key, value, reason, state) =>
-        {
-            if (key is string userKey)
-            {
-                _userLocks.TryRemove(userKey, out _);
-            }
-        });
+        var slidingExpiration = TimeSpan.FromSeconds(_cacheOptions.SlidingExpirationSeconds);
 
-        _userTokenCache.Set(userId, tokenInfo, cacheEntryOptions);
+        _userTokenCache.Set(userId, tokenInfo, absoluteExpiration, slidingExpiration, OnUserTokenEvicted);
+    }
+
+    private void OnUserTokenEvicted(string userId)
+    {
+        _userLocks.TryRemove(userId, out _);
     }
 
     /// <summary>
@@ -179,27 +177,23 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// <param name="userId">用户标识。</param>
     protected void RemoveUserTokenFromCache(string userId)
     {
-        _userTokenCache.Remove(userId);
+        _userTokenCache.TryRemove(userId, out _);
         _userLocks.TryRemove(userId, out _);
     }
 
     /// <summary>
     /// 清理所有过期的用户令牌缓存和对应的锁资源。
-    /// 使用 IMemoryCache 后，过期条目会自动清理，此方法主要用于手动触发压缩。
+    /// 使用 ITokenCache 后，过期条目会自动清理，此方法主要用于手动触发压缩。
     /// </summary>
     protected void CleanupExpiredUserTokens()
     {
-        if (_userTokenCache is MemoryCache memoryCache)
-        {
-            memoryCache.Compact(_cacheOptions.CompactionPercentage);
-        }
-
+        _userTokenCache.Compact(_cacheOptions.CompactionPercentage);
         CleanupOrphanedLocks();
     }
 
     /// <summary>
     /// 清理孤立的锁资源：缓存中已不存在的用户对应的锁。
-    /// 此方法作为 RegisterPostEvictionCallback 的兜底机制，
+    /// 此方法作为驱逐回调的兜底机制，
     /// 确保在低内存压力场景下锁资源也能被及时释放。
     /// </summary>
     protected void CleanupOrphanedLocks()
@@ -208,7 +202,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
         foreach (var kvp in _userLocks)
         {
-            if (!_userTokenCache.TryGetValue(kvp.Key, out _))
+            if (!_userTokenCache.TryGet(kvp.Key, out _))
             {
                 if (kvp.Value.CurrentCount == 1)
                     orphanedKeys.Add(kvp.Key);
@@ -240,7 +234,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// <summary>
     /// 获取当前缓存中的用户令牌数量（近似值）。
     /// </summary>
-    protected int CachedUserTokenCount => _userTokenCache is MemoryCache mc ? mc.Count : 0;
+    protected int CachedUserTokenCount => _userTokenCache.Count;
 
     /// <inheritdoc />
     public override async Task<TokenResult> InvalidateTokenAsync(string[]? scopes = null, CancellationToken cancellationToken = default)
@@ -281,7 +275,8 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// <returns>用户令牌信息，如果不存在则返回 null。</returns>
     protected UserTokenInfo? GetUserTokenFromCache(string userId)
     {
-        return _userTokenCache.Get<UserTokenInfo>(userId);
+        _userTokenCache.TryGet(userId, out var tokenInfo);
+        return tokenInfo;
     }
 
     /// <summary>

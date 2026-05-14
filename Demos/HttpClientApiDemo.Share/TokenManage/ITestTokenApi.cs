@@ -134,7 +134,7 @@ public interface ITestTokenApi : ITestBaseTokenApi
 /// Query Authorization测试接口
 /// 测试通过Query参数传递Token的场景
 /// </summary>
-[HttpClientApi(TokenManage = nameof(IFeishuAppManager), InheritedFrom = nameof(TestBaseTokenApi))]
+[HttpClientApi(TokenManage = nameof(IFeishuAppManager), InheritedFrom = "TestBaseTokenApi")]
 [Token(TokenType = "UserAccessToken", Name = "Token", InjectionMode = TokenInjectionMode.Path)]
 public interface ITestUserTokenQueryApi : ITestBaseTokenApi, ICurrentUserId
 {

@@ -170,16 +170,17 @@ services.Configure<TokenRefreshBackgroundOptions>(options =>
 {
     options.Enabled = true;
     options.RefreshIntervalSeconds = 3500;
-    options.InitialDelaySeconds = 30;
+    options.RetryDelaySeconds = 60;
+    options.StopOnError = false;
 });
 services.AddHostedService<TokenRefreshHostedService>();
 ```
 
-> `TokenManagerBase` 使用 `SemaphoreSlim(1, 1)` 确保同一时刻只有一个线程执行令牌刷新。`UserTokenManagerBase` 使用 `IMemoryCache` 管理用户令牌缓存，支持 `MaxCacheSize` 限制和自动过期清理。`TokenRefreshHostedService` 支持配置 `InitialDelaySeconds`（初始延迟）和 `RefreshIntervalSeconds`（刷新间隔）。
+> `TokenManagerBase` 使用 `SemaphoreSlim(1, 1)` 确保同一时刻只有一个线程执行令牌刷新。`UserTokenManagerBase` 使用 `IMemoryCache` 管理用户令牌缓存，支持 `MaxCacheSize` 限制和自动过期清理。`TokenRefreshHostedService` 支持配置 `RefreshIntervalSeconds`（刷新间隔）、`RefreshBeforeExpirySeconds`（过期前提前刷新时间）、`RetryDelaySeconds`（重试延迟）和 `StopOnError`（出错时是否停止）。
 
 > `DefaultTokenProvider` 是 `ITokenProvider` 的默认实现，通过 `IMudAppContext` 获取令牌管理器并获取令牌。它不持有 `IMudAppContext` 引用，而是通过方法参数逐调用接收，以确保生成代码中 `UseApp()`/`UseDefaultApp()` 上下文切换的正确性。当 `TokenRequest.UserId` 非空时，自动使用 `IUserTokenManager` 获取用户级令牌。
 
-> `DefaultCurrentUserContext` 使用 `AsyncLocal` 确保用户 ID 在异步上下文中正确传播。适用于非 Web 场景或需要手动设置用户 ID 的场景。在 ASP.NET Core 应用中，建议替换为基于 `HttpContext` 的实现。通过 `DefaultCurrentUserContext.SetUserId(userId)` 静态方法设置当前用户 ID。
+> `DefaultCurrentUserContext` 使用 `AsyncLocal` 确保用户 ID 在异步上下文中正确传播。适用于非 Web 场景或需要手动设置用户 ID 的场景。在 ASP.NET Core 应用中，建议替换为基于 `HttpContext` 的实现。每个实例拥有独立的 `AsyncLocal` 存储，支持多实例并行使用。通过 `SetUser(TUser? user)` 实例方法设置当前用户对象（`TUser` 须继承 `CurrentUserInfo` 且具有无参构造函数），也可通过 `SetUserId(string? userId)` 方法直接设置用户 ID，`UserId` 属性从用户对象中自动提取。
 
 #### 内存令牌存储
 

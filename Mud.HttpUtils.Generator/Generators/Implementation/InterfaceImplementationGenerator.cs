@@ -134,6 +134,12 @@ internal class InterfaceImplementationGenerator
             ValidateHttpClientType(configuration.HttpClient);
         }
 
+        if (!string.IsNullOrEmpty(configuration.TokenManager))
+        {
+            if (!ValidateTokenManagerType(configuration))
+                isValid = false;
+        }
+
         if (!string.IsNullOrEmpty(configuration.InheritedFrom))
         {
             var hasTokenManager = !string.IsNullOrEmpty(configuration.TokenManager);
@@ -192,6 +198,119 @@ internal class InterfaceImplementationGenerator
                 _interfaceSymbol.Name,
                 httpClientType));
         }
+    }
+
+    private bool ValidateTokenManagerType(GenerationConfiguration configuration)
+    {
+        if (string.IsNullOrEmpty(configuration.TokenManager))
+            return true;
+
+        var tokenManagerTypeName = configuration.TokenManager;
+        var tokenManagerType = ResolveType(tokenManagerTypeName);
+
+        if (tokenManagerType == null)
+        {
+            _context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.TokenManagerTypeNotFound,
+                _interfaceDecl.GetLocation(),
+                _interfaceSymbol.Name,
+                tokenManagerTypeName));
+            return false;
+        }
+
+        var getDefaultAppMethod = TypeSymbolHelper.GetAllMethods(tokenManagerType, includeParentInterfaces: true)
+            .FirstOrDefault(m => m.Name == "GetDefaultApp" && m.Parameters.IsEmpty && m.TypeParameters.IsEmpty);
+
+        if (getDefaultAppMethod == null)
+        {
+            _context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.TokenManagerMissingMethod,
+                _interfaceDecl.GetLocation(),
+                _interfaceSymbol.Name,
+                tokenManagerTypeName,
+                "GetDefaultApp()"));
+            return false;
+        }
+
+        var mudAppContextType = _compilation.GetTypeByMetadataName("Mud.HttpUtils.IMudAppContext");
+        if (mudAppContextType != null && getDefaultAppMethod.ReturnType != null)
+        {
+            var returnType = getDefaultAppMethod.ReturnType;
+            if (!SymbolEqualityComparer.Default.Equals(returnType, mudAppContextType) &&
+                returnType.AllInterfaces.All(i => !SymbolEqualityComparer.Default.Equals(i, mudAppContextType)))
+            {
+                _context.ReportDiagnostic(Diagnostic.Create(
+                    Diagnostics.TokenManagerMissingMethod,
+                    _interfaceDecl.GetLocation(),
+                    _interfaceSymbol.Name,
+                    tokenManagerTypeName,
+                    $"GetDefaultApp() 返回类型 '{returnType.ToDisplayString()}' 不是 IMudAppContext 或其子类型"));
+                return false;
+            }
+        }
+
+        var getAppMethod = TypeSymbolHelper.GetAllMethods(tokenManagerType, includeParentInterfaces: true)
+            .FirstOrDefault(m => m.Name == "GetApp" && m.Parameters.Length == 1 &&
+                m.Parameters[0].Type.SpecialType == SpecialType.System_String);
+
+        if (getAppMethod == null)
+        {
+            _context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.TokenManagerMissingMethod,
+                _interfaceDecl.GetLocation(),
+                _interfaceSymbol.Name,
+                tokenManagerTypeName,
+                "GetApp(string appKey)"));
+            return false;
+        }
+
+        return true;
+    }
+
+    private INamedTypeSymbol ResolveType(string typeName)
+    {
+        var type = _compilation.GetTypeByMetadataName(typeName);
+        if (type != null)
+            return type;
+
+        type = _compilation.GetTypeByMetadataName($"Mud.HttpUtils.{typeName}");
+        if (type != null)
+            return type;
+
+        var namespacePrefix = _interfaceSymbol.ContainingNamespace?.ToDisplayString();
+        if (!string.IsNullOrEmpty(namespacePrefix))
+        {
+            type = _compilation.GetTypeByMetadataName($"{namespacePrefix}.{typeName}");
+            if (type != null)
+                return type;
+        }
+
+        foreach (var ns in _compilation.GlobalNamespace.GetNamespaceMembers())
+        {
+            type = FindTypeInNamespace(ns, typeName);
+            if (type != null)
+                return type;
+        }
+
+        return null;
+    }
+
+    private INamedTypeSymbol FindTypeInNamespace(INamespaceSymbol ns, string typeName)
+    {
+        foreach (var member in ns.GetTypeMembers())
+        {
+            if (member.Name == typeName)
+                return member;
+        }
+
+        foreach (var childNs in ns.GetNamespaceMembers())
+        {
+            var found = FindTypeInNamespace(childNs, typeName);
+            if (found != null)
+                return found;
+        }
+
+        return null;
     }
 
     /// <summary>

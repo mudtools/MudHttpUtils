@@ -25,4 +25,15 @@ public interface ICurrentUserContext
     /// 实现类应确保此属性在异步上下文中正确传播（如使用 AsyncLocal）。
     /// </remarks>
     string? UserId { get; }
+
+    /// <summary>
+    /// 设置当前用户的唯一标识符。
+    /// </summary>
+    /// <param name="userId">用户标识符，为 null 时清除当前用户。</param>
+    /// <remarks>
+    /// 此方法用于在非 Web 场景下手动设置当前用户 ID。
+    /// 在 ASP.NET Core 应用中，通常不需要调用此方法，用户 ID 应从 HttpContext 中自动获取。
+    /// 实现类应确保设置的值在异步上下文中正确传播（如使用 AsyncLocal）。
+    /// </remarks>
+    void SetUserId(string? userId);
 }

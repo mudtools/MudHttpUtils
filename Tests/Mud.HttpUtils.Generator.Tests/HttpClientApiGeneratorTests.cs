@@ -47,6 +47,12 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
     [HttpClientApi(HttpClient = ""IEnhancedHttpClient"", TokenManage = ""ITestTokenManager"")]
     public interface ITestApi
     {
@@ -95,6 +101,12 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
     [HttpClientApi(TokenManage = ""ITestTokenManager"")]
     public interface ITestApi
     {
@@ -427,6 +439,12 @@ using Mud.HttpUtils;
 
 namespace TestNamespace
 {
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
     [HttpClientApi(TokenManage = ""ITestTokenManager"")]
     public interface ITestApi
     {
@@ -534,6 +552,147 @@ namespace TestNamespace
             generatedCode.Should().Contain("UpdateUserAsync");
             generatedCode.Should().Contain("DeleteUserAsync");
         }
+    }
+
+    #endregion
+
+    #region TokenManage 编译时校验 (HTTPCLIENT015/016)
+
+    [Fact]
+    public void Generator_TokenManageTypeNotFound_ReportsHTTPCLIENT015()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(TokenManage = ""INonExistentType"")]
+    public interface ITestApi
+    {
+        [Get(""/secure-data"")]
+        Task<string> GetSecureDataAsync();
+    }
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        diagnostics.Should().Contain(d => d.Id == "HTTPCLIENT015",
+            "TokenManage 指定不存在的类型时应报告 HTTPCLIENT015 错误");
+    }
+
+    [Fact]
+    public void Generator_TokenManageMissingGetDefaultApp_ReportsHTTPCLIENT016()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface IInvalidTokenManager
+    {
+        IMudAppContext GetApp(string appKey);
+    }
+
+    [HttpClientApi(TokenManage = ""IInvalidTokenManager"")]
+    public interface ITestApi
+    {
+        [Get(""/secure-data"")]
+        Task<string> GetSecureDataAsync();
+    }
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        diagnostics.Should().Contain(d => d.Id == "HTTPCLIENT016",
+            "TokenManage 类型缺少 GetDefaultApp() 方法时应报告 HTTPCLIENT016 错误");
+    }
+
+    [Fact]
+    public void Generator_TokenManageMissingGetApp_ReportsHTTPCLIENT016()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface IInvalidTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+    }
+
+    [HttpClientApi(TokenManage = ""IInvalidTokenManager"")]
+    public interface ITestApi
+    {
+        [Get(""/secure-data"")]
+        Task<string> GetSecureDataAsync();
+    }
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        diagnostics.Should().Contain(d => d.Id == "HTTPCLIENT016",
+            "TokenManage 类型缺少 GetApp(string) 方法时应报告 HTTPCLIENT016 错误");
+    }
+
+    [Fact]
+    public void Generator_TokenManageIncompatibleReturnType_ReportsHTTPCLIENT016()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface IInvalidTokenManager
+    {
+        string GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    [HttpClientApi(TokenManage = ""IInvalidTokenManager"")]
+    public interface ITestApi
+    {
+        [Get(""/secure-data"")]
+        Task<string> GetSecureDataAsync();
+    }
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        diagnostics.Should().Contain(d => d.Id == "HTTPCLIENT016",
+            "TokenManage 类型 GetDefaultApp() 返回类型不兼容时应报告 HTTPCLIENT016 错误");
+    }
+
+    [Fact]
+    public void Generator_TokenManageValidType_NoDiagnosticError()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface IValidTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    [HttpClientApi(TokenManage = ""IValidTokenManager"")]
+    public interface ITestApi
+    {
+        [Get(""/secure-data"")]
+        Task<string> GetSecureDataAsync();
+    }
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        diagnostics.Should().NotContain(d => d.Id == "HTTPCLIENT015" || d.Id == "HTTPCLIENT016",
+            "TokenManage 类型合法时不应报告 HTTPCLIENT015 或 HTTPCLIENT016 诊断");
     }
 
     #endregion

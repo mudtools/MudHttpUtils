@@ -13,11 +13,36 @@ using Microsoft.Extensions.Options;
 
 namespace Mud.HttpUtils.Resilience;
 
-// Keep for backward compatibility: AddMudHttpUtils was originally in the metapackage,
-// now migrated here since Resilience already depends on Client.
 
+/// <summary>
+/// 提供 Microsoft.Extensions.DependencyInjection 的扩展方法，用于注册 Mud.HttpUtils 弹性策略服务。
+/// </summary>
+/// <remarks>
+/// 本类提供以下核心功能：
+/// <list type="bullet">
+/// <item><description>注册弹性策略提供器（<see cref="IResiliencePolicyProvider"/>）</description></item>
+/// <item><description>为 <see cref="IEnhancedHttpClient"/> 添加弹性策略装饰器</description></item>
+/// <item><description>一站式注册方法（<c>AddMudHttpUtils</c>）同时配置 HttpClient 和弹性策略</description></item>
+/// </list>
+/// </remarks>
 public static class ServiceCollectionExtensions
 {
+    /// <summary>
+    /// 注册 Mud.HttpUtils 弹性策略服务，使用委托配置弹性策略选项。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <param name="configureOptions">用于配置 <see cref="ResilienceOptions"/> 的委托（可选）。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> 为 null 时抛出。</exception>
+    /// <example>
+    /// <code>
+    /// services.AddMudHttpResilience(options =>
+    /// {
+    ///     options.RetryCount = 3;
+    ///     options.TimeoutSeconds = 30;
+    /// });
+    /// </code>
+    /// </example>
     public static IServiceCollection AddMudHttpResilience(
         this IServiceCollection services,
         Action<ResilienceOptions>? configureOptions = null)
@@ -36,6 +61,29 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// 注册 Mud.HttpUtils 弹性策略服务，从配置文件绑定弹性策略选项。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <param name="configuration">配置实例，用于绑定弹性策略选项。</param>
+    /// <param name="configurationSectionPath">配置文件中弹性策略节点的路径，默认为 "MudHttpResilience"。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> 或 <paramref name="configuration"/> 为 null 时抛出。</exception>
+    /// <example>
+    /// 在 appsettings.json 中配置：
+    /// <code>
+    /// {
+    ///   "MudHttpResilience": {
+    ///     "RetryCount": 3,
+    ///     "TimeoutSeconds": 30
+    ///   }
+    /// }
+    /// </code>
+    /// 然后在代码中：
+    /// <code>
+    /// services.AddMudHttpResilience(Configuration);
+    /// </code>
+    /// </example>
     public static IServiceCollection AddMudHttpResilience(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -61,6 +109,19 @@ public static class ServiceCollectionExtensions
         return new ResilientHttpClient(inner, policyProvider, logger, options);
     }
 
+    /// <summary>
+    /// 为已注册的 IEnhancedHttpClient 服务添加弹性策略装饰器。
+    /// </summary>
+    /// <remarks>
+    /// 此方法会装饰所有已注册的 IEnhancedHttpClient 实现，包括通过 AddMudHttpClient 注册的客户端、
+    /// 通过工厂创建的客户端，以及 .NET 8+ 环境下带键的服务注册。
+    /// 调用此方法前，必须先注册 IEnhancedHttpClient 服务。
+    /// </remarks>
+    /// <param name="services">服务集合。</param>
+    /// <param name="configureOptions">用于配置 ResilienceOptions 的委托（可选）。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">services 为 null 时抛出。</exception>
+    /// <exception cref="InvalidOperationException">未找到已注册的 IEnhancedHttpClient 服务时抛出。</exception>
     public static IServiceCollection AddMudHttpResilienceDecorator(
         this IServiceCollection services,
         Action<ResilienceOptions>? configureOptions = null)
@@ -79,6 +140,19 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// 为已注册的 IEnhancedHttpClient 服务添加弹性策略装饰器，从配置文件绑定弹性策略选项。
+    /// </summary>
+    /// <remarks>
+    /// 此方法会装饰所有已注册的 IEnhancedHttpClient 实现。
+    /// 调用此方法前，必须先注册 IEnhancedHttpClient 服务。
+    /// </remarks>
+    /// <param name="services">服务集合。</param>
+    /// <param name="configuration">配置实例，用于绑定弹性策略选项。</param>
+    /// <param name="configurationSectionPath">配置文件中弹性策略节点的路径，默认为 "MudHttpResilience"。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">services 为 null 时抛出。</exception>
+    /// <exception cref="InvalidOperationException">未找到已注册的 IEnhancedHttpClient 服务时抛出。</exception>
     public static IServiceCollection AddMudHttpResilienceDecorator(
         this IServiceCollection services,
         IConfiguration configuration,

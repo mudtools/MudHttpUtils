@@ -53,7 +53,7 @@ namespace TestNamespace
     public void Generator_WithGenerateEventHandlerAttribute_ShouldGenerateHandler()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -78,7 +78,7 @@ namespace TestNamespace
     public void Generator_WithCustomHandlerName_ShouldUseCustomName()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -101,7 +101,7 @@ namespace TestNamespace
     public void Generator_WithCustomNamespace_ShouldUseCustomNamespace()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -123,7 +123,7 @@ namespace TestNamespace
     public void Generator_WithResultSuffix_ShouldRemoveSuffix()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -146,7 +146,7 @@ namespace TestNamespace
     public void Generator_WithNoResultSuffix_ShouldAppendEventHandler()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -168,7 +168,7 @@ namespace TestNamespace
     public void Generator_WithComplexEventType_ShouldHandleCorrectly()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -191,7 +191,7 @@ namespace TestNamespace
     public void Generator_WithHeaderType_ShouldGenerateHandlerWithHeaderType()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -214,7 +214,7 @@ namespace TestNamespace
     public void Generator_GeneratesAbstractPartialClass()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -237,7 +237,7 @@ namespace TestNamespace
     public void Generator_GeneratesConstructorWithParameters()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -264,7 +264,7 @@ namespace TestNamespace
     public void Generator_UsesDefaultNamespaceWhenNotSpecified()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace MyApp.Events
 {
@@ -286,7 +286,7 @@ namespace MyApp.Events
     public void Generator_GeneratesCompilerGeneratedAttribute()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -308,7 +308,7 @@ namespace TestNamespace
     public void Generator_WithInheritedFrom_ShouldUseCustomBaseClass()
     {
         var source = @"
-using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
