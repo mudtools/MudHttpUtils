@@ -154,7 +154,7 @@ public class MemoryTokenStore : ITokenStore
     /// <summary>
     /// 令牌条目内部类，用于存储单个令牌类型的完整信息。
     /// </summary>
-    protected sealed class TokenEntry
+    internal sealed class TokenEntry
     {
         /// <summary>
         /// 获取或设置访问令牌。

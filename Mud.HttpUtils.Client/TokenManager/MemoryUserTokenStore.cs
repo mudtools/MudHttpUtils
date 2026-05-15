@@ -41,7 +41,7 @@ namespace Mud.HttpUtils;
 /// </example>
 public class MemoryUserTokenStore : IUserTokenStore
 {
-    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, TokenEntry>> _userStore = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, MemoryTokenStore.TokenEntry>> _userStore = new(StringComparer.OrdinalIgnoreCase);
 
     Task<string?> ITokenStore.GetAccessTokenAsync(string tokenType, CancellationToken cancellationToken)
     {
@@ -103,9 +103,9 @@ public class MemoryUserTokenStore : IUserTokenStore
     /// </summary>
     public Task SetAccessTokenAsync(string userId, string tokenType, string accessToken, long expiresInSeconds, CancellationToken cancellationToken = default)
     {
-        var userTokens = _userStore.GetOrAdd(userId, _ => new ConcurrentDictionary<string, TokenEntry>(StringComparer.OrdinalIgnoreCase));
+        var userTokens = _userStore.GetOrAdd(userId, _ => new ConcurrentDictionary<string, MemoryTokenStore.TokenEntry>(StringComparer.OrdinalIgnoreCase));
 
-        userTokens[tokenType] = new TokenEntry
+        userTokens[tokenType] = new MemoryTokenStore.TokenEntry
         {
             AccessToken = accessToken,
             RefreshToken = userTokens.TryGetValue(tokenType, out var existing) ? existing.RefreshToken : null,
@@ -134,10 +134,10 @@ public class MemoryUserTokenStore : IUserTokenStore
     /// </summary>
     public Task SetRefreshTokenAsync(string userId, string tokenType, string refreshToken, CancellationToken cancellationToken = default)
     {
-        var userTokens = _userStore.GetOrAdd(userId, _ => new ConcurrentDictionary<string, TokenEntry>(StringComparer.OrdinalIgnoreCase));
+        var userTokens = _userStore.GetOrAdd(userId, _ => new ConcurrentDictionary<string, MemoryTokenStore.TokenEntry>(StringComparer.OrdinalIgnoreCase));
 
         userTokens.AddOrUpdate(tokenType,
-            _ => new TokenEntry { RefreshToken = refreshToken },
+            _ => new MemoryTokenStore.TokenEntry { RefreshToken = refreshToken },
             (_, existing) =>
             {
                 existing.RefreshToken = refreshToken;
@@ -180,12 +180,5 @@ public class MemoryUserTokenStore : IUserTokenStore
     {
         _userStore.TryRemove(userId, out _);
         return Task.CompletedTask;
-    }
-
-    protected sealed class TokenEntry
-    {
-        public string? AccessToken { get; set; }
-        public string? RefreshToken { get; set; }
-        public DateTimeOffset ExpiresAt { get; set; }
     }
 }

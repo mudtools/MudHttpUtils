@@ -160,12 +160,6 @@ internal static class EnhancedHttpClientLogs
             new EventId(37, nameof(XmlDeserializeFailed)),
             "XML反序列化失败: {Url}\n期望类型: {ExpectedType}\n原始XML响应: {XmlResponse}");
 
-    private static readonly Action<ILogger, string, Exception> s_fileDownloadFailed =
-        LoggerMessage.Define<string>(
-            LogLevel.Error,
-            new EventId(38, nameof(FileDownloadFailed)),
-            "文件下载异常: {Url}");
-
     private static readonly Action<ILogger, string, string, Exception> s_largeFileDownloadFailed =
         LoggerMessage.Define<string, string>(
             LogLevel.Error,
@@ -325,12 +319,6 @@ internal static class EnhancedHttpClientLogs
     /// </summary>
     public static void XmlDeserializeFailed(this ILogger logger, string url, string expectedType, string xmlResponse, Exception exception)
         => s_xmlDeserializeFailed(logger, url, expectedType, xmlResponse, exception);
-
-    /// <summary>
-    /// 记录文件下载失败
-    /// </summary>
-    public static void FileDownloadFailed(this ILogger logger, string url, Exception exception)
-        => s_fileDownloadFailed(logger, url, exception);
 
     /// <summary>
     /// 记录大文件下载失败

@@ -232,8 +232,14 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 #endif
         }
-        catch (HttpRequestException)
+        catch (HttpRequestException ex)
         {
+#if !NETSTANDARD2_0
+            var statusCode = ex.StatusCode.HasValue ? (int)ex.StatusCode.Value : 0;
+            _logger.HttpRequestFailedWithStatusCode(uri, statusCode, ex);
+#else
+            _logger.HttpRequestFailedSimple(uri, ex);
+#endif
             throw;
         }
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
