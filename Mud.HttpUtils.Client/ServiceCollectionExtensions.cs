@@ -440,7 +440,6 @@ public static class HttpClientServiceCollectionExtensions
 
         services.TryAddSingleton<ITokenProvider, DefaultTokenProvider>();
         services.TryAddSingleton<ICurrentUserContext, DefaultCurrentUserContext<CurrentUserInfo>>();
-        services.TryAddSingleton<IAppContextSwitcher, AsyncLocalAppContextSwitcher>();
         return services;
     }
 

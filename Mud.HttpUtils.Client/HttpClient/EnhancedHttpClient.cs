@@ -174,6 +174,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         CancellationToken cancellationToken = default)
     {
         var uri = ValidateAndGetUri(request);
+        ValidateUrl(request.RequestUri?.ToString());
 
         return await ExecuteWithLoggingAsync(
             "发送原始HTTP请求", "原始HTTP请求完成", "原始HTTP请求失败", uri,
@@ -191,6 +192,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         CancellationToken cancellationToken = default)
     {
         var uri = ValidateAndGetUri(request);
+        ValidateUrl(request.RequestUri?.ToString());
 
         return await ExecuteWithLoggingAsync(
             "发送流式HTTP请求", "流式HTTP请求完成", "流式HTTP请求失败", uri,
@@ -216,6 +218,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
      [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var uri = ValidateAndGetUri(request);
+        ValidateUrl(request.RequestUri?.ToString());
 
         LogOperation("发送流式异步枚举请求", uri);
 
@@ -579,9 +582,6 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
-        string? requestUri = request.RequestUri?.ToString();
-        ValidateUrl(requestUri);
-
         await ExecuteRequestInterceptorsAsync(request, cancellationToken).ConfigureAwait(false);
 
         var response = await _httpClient.SendAsync(
@@ -610,6 +610,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         CancellationToken cancellationToken = default)
     {
         string? requestUri = httpRequestMessage.RequestUri?.ToString();
+        ValidateUrl(requestUri);
 
         return await ExecuteHttpRequestCoreAsync(
             async () =>
@@ -705,6 +706,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         CancellationToken cancellationToken = default)
     {
         string? requestUri = httpRequestMessage.RequestUri?.ToString();
+        ValidateUrl(requestUri);
 
         encoding ??= Encoding.UTF8;
 
@@ -868,6 +870,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         CancellationToken cancellationToken = default)
     {
         string? requestUri = httpRequestMessage.RequestUri?.ToString();
+        ValidateUrl(requestUri);
 
         try
         {
@@ -915,6 +918,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
         string? requestUri = httpRequestMessage.RequestUri?.ToString();
         string directoryPath = Path.GetDirectoryName(filePath)!;
+        ValidateUrl(requestUri);
 
         try
         {
@@ -995,7 +999,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
     #region 辅助方法
 
-    private static string ValidateAndGetUri(HttpRequestMessage request)
+    private string ValidateAndGetUri(HttpRequestMessage request)
     {
         request.ThrowIfNull();
         return request.RequestUri?.ToString() ?? "[No URI]";
