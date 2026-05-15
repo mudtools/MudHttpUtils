@@ -80,15 +80,6 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
     public override Uri? BaseAddress => _overrideBaseAddress ?? base.BaseAddress;
 
     /// <inheritdoc />
-    public override IEnhancedHttpClient WithBaseAddress(string baseAddress)
-    {
-        if (string.IsNullOrWhiteSpace(baseAddress))
-            throw new ArgumentException("基地址不能为空", nameof(baseAddress));
-
-        return WithBaseAddress(new Uri(baseAddress));
-    }
-
-    /// <inheritdoc />
     public override IEnhancedHttpClient WithBaseAddress(Uri baseAddress)
     {
         if (baseAddress == null)

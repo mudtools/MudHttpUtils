@@ -3,18 +3,20 @@ namespace Mud.HttpUtils.Client.Tests;
 public class MemoryUserTokenStoreTests
 {
     private readonly MemoryUserTokenStore _store;
+    private readonly ITokenStore _tokenStore;
 
     public MemoryUserTokenStoreTests()
     {
         _store = new MemoryUserTokenStore();
+        _tokenStore = (ITokenStore)_store;
     }
 
-    #region Base Class Methods Throw NotSupportedException
+    #region Explicit ITokenStore Methods Throw NotSupportedException
 
     [Fact]
     public void GetAccessTokenAsync_WithoutUserId_ThrowsNotSupportedException()
     {
-        var act = async () => await _store.GetAccessTokenAsync("TestToken");
+        var act = async () => await _tokenStore.GetAccessTokenAsync("TestToken");
 
         act.Should().ThrowAsync<NotSupportedException>()
             .WithMessage("*userId*");
@@ -23,7 +25,7 @@ public class MemoryUserTokenStoreTests
     [Fact]
     public void SetAccessTokenAsync_WithoutUserId_ThrowsNotSupportedException()
     {
-        var act = async () => await _store.SetAccessTokenAsync("TestToken", "access_123", 3600);
+        var act = async () => await _tokenStore.SetAccessTokenAsync("TestToken", "access_123", 3600);
 
         act.Should().ThrowAsync<NotSupportedException>()
             .WithMessage("*userId*");
@@ -32,7 +34,7 @@ public class MemoryUserTokenStoreTests
     [Fact]
     public void GetRefreshTokenAsync_WithoutUserId_ThrowsNotSupportedException()
     {
-        var act = async () => await _store.GetRefreshTokenAsync("TestToken");
+        var act = async () => await _tokenStore.GetRefreshTokenAsync("TestToken");
 
         act.Should().ThrowAsync<NotSupportedException>()
             .WithMessage("*userId*");
@@ -41,7 +43,7 @@ public class MemoryUserTokenStoreTests
     [Fact]
     public void SetRefreshTokenAsync_WithoutUserId_ThrowsNotSupportedException()
     {
-        var act = async () => await _store.SetRefreshTokenAsync("TestToken", "refresh_456");
+        var act = async () => await _tokenStore.SetRefreshTokenAsync("TestToken", "refresh_456");
 
         act.Should().ThrowAsync<NotSupportedException>()
             .WithMessage("*userId*");
@@ -50,7 +52,7 @@ public class MemoryUserTokenStoreTests
     [Fact]
     public void RemoveAsync_WithoutUserId_ThrowsNotSupportedException()
     {
-        var act = async () => await _store.RemoveAsync("TestToken");
+        var act = async () => await _tokenStore.RemoveAsync("TestToken");
 
         act.Should().ThrowAsync<NotSupportedException>()
             .WithMessage("*userId*");

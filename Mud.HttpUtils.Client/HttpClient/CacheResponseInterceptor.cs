@@ -31,7 +31,7 @@ public class CacheResponseInterceptor : ICacheResponseInterceptor
 
     public int Order => 100;
 
-    public Task OnResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    Task IHttpResponseInterceptor.OnResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         return Task.CompletedTask;
     }
