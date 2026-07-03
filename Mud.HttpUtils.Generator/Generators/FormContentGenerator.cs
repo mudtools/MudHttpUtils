@@ -342,7 +342,7 @@ internal class FormContentGenerator : TransitiveCodeGenerator
 
         sb.AppendLine();
 
-        sb.AppendLine("        return formData!;");
+        sb.AppendLine("        return formData;");
 
         sb.AppendLine("    }");
     }
@@ -370,7 +370,7 @@ internal class FormContentGenerator : TransitiveCodeGenerator
         if (isString)
         {
             // 字符串类型：添加非空判断
-            sb.AppendLine($"        if (!string.IsNullOrEmpty({propertyName}))");
+            sb.AppendLine($"        if (!string.IsNullOrWhiteSpace({propertyName}))");
             sb.AppendLine($"            formData.Add(new StringContent({propertyName}), \"{jsonName}\");");
         }
         else if (isValueType)
@@ -382,7 +382,7 @@ internal class FormContentGenerator : TransitiveCodeGenerator
         {
             // 引用类型：添加 null 检查
             sb.AppendLine($"        if ({propertyName} != null)");
-            sb.AppendLine($"            formData.Add(new StringContent({propertyName}!.ToString()), \"{jsonName}\");");
+            sb.AppendLine($"            formData.Add(new StringContent({propertyName}.ToString()), \"{jsonName}\");");
         }
     }
 
@@ -397,7 +397,7 @@ internal class FormContentGenerator : TransitiveCodeGenerator
         var propertyName = prop.Name;
         var jsonName = prop.JsonName;
 
-        sb.AppendLine($"        if (!string.IsNullOrEmpty({propertyName}))");
+        sb.AppendLine($"        if (!string.IsNullOrWhiteSpace({propertyName}))");
         sb.AppendLine("        {");
 
         if (!string.IsNullOrEmpty(byteArrayPropertyName))

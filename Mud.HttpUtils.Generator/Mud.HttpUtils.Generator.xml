@@ -723,16 +723,6 @@
             生成标准模式的执行代码（默认行为，错误状态码抛出 ApiException）
             </summary>
         </member>
-        <member name="M:Mud.HttpUtils.Generators.Implementation.RequestBuilder.GenerateQueryMapParameter(System.Text.StringBuilder,Mud.HttpUtils.Models.Analysis.ParameterInfo)">
-            <summary>
-            生成 QueryMap 参数代码
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Generators.Implementation.RequestBuilder.GenerateRawQueryStringParameter(System.Text.StringBuilder,Mud.HttpUtils.Models.Analysis.ParameterInfo)">
-            <summary>
-            生成 RawQueryString 参数代码
-            </summary>
-        </member>
         <member name="M:Mud.HttpUtils.Generators.Implementation.TokenMethodHelper.MethodRequiresUserId(Mud.HttpUtils.Generators.Context.GeneratorContext,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult)">
             <summary>
             判断方法是否需要 UserId。

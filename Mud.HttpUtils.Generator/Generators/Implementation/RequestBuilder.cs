@@ -315,7 +315,7 @@ internal class RequestBuilder
         {
             var propertyName = methodInfo.BodyEncryptPropertyName ?? "data";
             var serializeType = methodInfo.BodyEncryptSerializeType ?? "Json";
-            string httpClient = hasHttpClient ? "_httpClient" : "_appContextHolder.Current!.HttpClient";
+            string httpClient = hasHttpClient ? "_httpClient" : "__appContext.HttpClient";
 
             codeBuilder.AppendLine($"            var __encryptedContent = {httpClient}.EncryptContent({bodyParam.Name}, \"{propertyName}\", SerializeType.{serializeType});");
             codeBuilder.AppendLine($"            using var __encryptedStrContent = new StringContent(__encryptedContent, Encoding.UTF8, {contentTypeExpression});");
@@ -369,10 +369,20 @@ internal class RequestBuilder
             var formAttr = formParam.Attributes.First(a => a.Name == HttpClientGeneratorConstants.FormAttribute);
             var fieldName = GetFormFieldName(formAttr, formParam.Name);
 
-            codeBuilder.AppendLine($"            if ({formParam.Name} != null)");
-            codeBuilder.AppendLine("            {");
-            codeBuilder.AppendLine($"                __formParameters[\"{fieldName}\"] = {formParam.Name}.ToString() ?? \"\";");
-            codeBuilder.AppendLine("            }");
+            if (TypeDetectionHelper.IsStringType(formParam.Type))
+            {
+                codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({formParam.Name}))");
+                codeBuilder.AppendLine("            {");
+                codeBuilder.AppendLine($"                __formParameters[\"{fieldName}\"] = {formParam.Name};");
+                codeBuilder.AppendLine("            }");
+            }
+            else
+            {
+                codeBuilder.AppendLine($"            if ({formParam.Name} != null)");
+                codeBuilder.AppendLine("            {");
+                codeBuilder.AppendLine($"                __formParameters[\"{fieldName}\"] = {formParam.Name}.ToString() ?? \"\";");
+                codeBuilder.AppendLine("            }");
+            }
         }
 
         codeBuilder.AppendLine("            using var __formContent = new System.Net.Http.FormUrlEncodedContent(__formParameters);");
@@ -422,10 +432,20 @@ internal class RequestBuilder
             {
                 var formAttr = formProp.Attributes.First(a => a.Name == HttpClientGeneratorConstants.FormAttribute);
                 var fieldName = GetFormFieldName(formAttr, formProp.Name);
-                codeBuilder.AppendLine($"            if ({formProp.Name} != null)");
-                codeBuilder.AppendLine("            {");
-                codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StringContent({formProp.Name}.ToString() ?? \"\"), \"{fieldName}\");");
-                codeBuilder.AppendLine("            }");
+                if (TypeDetectionHelper.IsStringType(formProp.Type))
+                {
+                    codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({formProp.Name}))");
+                    codeBuilder.AppendLine("            {");
+                    codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StringContent({formProp.Name}), \"{fieldName}\");");
+                    codeBuilder.AppendLine("            }");
+                }
+                else
+                {
+                    codeBuilder.AppendLine($"            if ({formProp.Name} != null)");
+                    codeBuilder.AppendLine("            {");
+                    codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StringContent({formProp.Name}.ToString() ?? \"\"), \"{fieldName}\");");
+                    codeBuilder.AppendLine("            }");
+                }
             }
         }
 
@@ -440,7 +460,7 @@ internal class RequestBuilder
             {
                 codeBuilder.AppendLine($"            if ({uploadParam.Name} != null)");
                 codeBuilder.AppendLine("            {");
-                codeBuilder.AppendLine($"                using var __{uploadParam.Name}Content = new System.Net.Http.StreamContent({uploadParam.Name});");
+                codeBuilder.AppendLine($"                var __{uploadParam.Name}Content = new System.Net.Http.StreamContent({uploadParam.Name});");
                 codeBuilder.AppendLine($"                __{uploadParam.Name}Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(\"{contentType}\");");
                 if (!string.IsNullOrEmpty(fileName))
                     codeBuilder.AppendLine($"                __multipartContent.Add(__{uploadParam.Name}Content, \"{fieldName}\", \"{fileName}\");");
@@ -504,11 +524,7 @@ internal class RequestBuilder
 
         var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
         codeBuilder.AppendLine();
-        string httpClient = "_appContextHolder.Current!.HttpClient";
-        if (hasHttpClient)
-        {
-            httpClient = "_httpClient";
-        }
+        string httpClient = hasHttpClient ? "_httpClient" : "__appContext.HttpClient";
 
         if (methodInfo.IsAsyncEnumerableReturn && !string.IsNullOrEmpty(methodInfo.AsyncEnumerableElementType))
         {
@@ -621,7 +637,8 @@ internal class RequestBuilder
 
                 if (isXmlResponse)
                 {
-                    codeBuilder.AppendLine($"                    var __deserializedObj = {GetXmlSerializerFieldReference(innerType)}.Deserialize(new System.IO.StringReader(__rawContent));");
+                    codeBuilder.AppendLine($"                    using var __xmlReader = new System.IO.StringReader(__rawContent);");
+                    codeBuilder.AppendLine($"                    var __deserializedObj = {GetXmlSerializerFieldReference(innerType)}.Deserialize(__xmlReader);");
                     codeBuilder.AppendLine($"                    __content = __deserializedObj is {innerType} __typed ? __typed : default;");
                 }
                 else
@@ -731,7 +748,8 @@ internal class RequestBuilder
             codeBuilder.AppendLine($"            {innerTypeWithoutNullable} {resultVariable};");
             codeBuilder.AppendLine($"            try");
             codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                var __deserializedObj = {GetXmlSerializerFieldReference(deserializeType)}.Deserialize(new System.IO.StringReader({rawContentVar}));");
+            codeBuilder.AppendLine($"                using var __xmlReader = new System.IO.StringReader({rawContentVar});");
+            codeBuilder.AppendLine($"                var __deserializedObj = {GetXmlSerializerFieldReference(deserializeType)}.Deserialize(__xmlReader);");
             codeBuilder.AppendLine($"                {resultVariable} = __deserializedObj is {deserializeType} __typed ? __typed : default;");
             codeBuilder.AppendLine($"            }}");
             codeBuilder.AppendLine($"            catch (System.Exception ex) when (ex is System.InvalidOperationException or System.Xml.XmlException)");
@@ -770,7 +788,7 @@ internal class RequestBuilder
     {
         if (string.IsNullOrEmpty(cancellationTokenArg))
             return string.Empty;
-        return cancellationTokenArg.Remove(0, 1);
+        return cancellationTokenArg.Remove(0, 2);
     }
 
     /// <summary>
@@ -786,7 +804,7 @@ internal class RequestBuilder
         if (!deserializeType.EndsWith("?", StringComparison.OrdinalIgnoreCase))
         {
             // 值类型：使用.GetValueOrDefault()，这比强制转换更安全
-            var baseType = deserializeType.TrimEnd('.');
+            var baseType = deserializeType;
             var valueTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
                 "int", "long", "float", "double", "decimal", "bool", "char",
@@ -857,12 +875,9 @@ internal class RequestBuilder
             codeBuilder.AppendLine($"            {innerTypeWithoutNullable} {resultVariable};");
             codeBuilder.AppendLine($"            try");
             codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                var __deserializedObj = {GetXmlSerializerFieldReference(deserializeType)}.Deserialize(new System.IO.StringReader({rawContentVar}));");
+            codeBuilder.AppendLine($"                using var __xmlReader = new System.IO.StringReader({rawContentVar});");
+            codeBuilder.AppendLine($"                var __deserializedObj = {GetXmlSerializerFieldReference(deserializeType)}.Deserialize(__xmlReader);");
             codeBuilder.AppendLine($"                {resultVariable} = __deserializedObj is {deserializeType} __typed ? __typed : throw new System.InvalidOperationException(\"Failed to deserialize XML response to type \" + typeof({deserializeType}).Name);");
-            codeBuilder.AppendLine($"            }}");
-            codeBuilder.AppendLine($"            catch (System.InvalidOperationException ex) when (ex.Message.StartsWith(\"Failed to deserialize XML\"))");
-            codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                throw;");
             codeBuilder.AppendLine($"            }}");
             codeBuilder.AppendLine($"            catch (System.Exception ex) when (ex is System.InvalidOperationException or System.Xml.XmlException)");
             codeBuilder.AppendLine($"            {{");
@@ -971,252 +986,6 @@ internal class RequestBuilder
         return url.Replace($"{{{placeholderName}}}", $"{{{standardFormatExpr}}}");
     }
 
-    private void GenerateSingleQueryParameter(StringBuilder codeBuilder, ParameterInfo param)
-    {
-        var queryAttr = param.Attributes.First(a => a.Name == HttpClientGeneratorConstants.QueryAttribute);
-        var paramName = GetQueryParameterName(queryAttr, param.Name);
-        var formatString = GetFormatString(queryAttr);
-
-        if (TypeDetectionHelper.IsSimpleType(param.Type))
-        {
-            GenerateSimpleQueryParameter(codeBuilder, param, paramName, formatString);
-        }
-        else
-        {
-            GenerateComplexQueryParameter(codeBuilder, param);
-        }
-    }
-
-    private void GenerateArrayQueryParameter(StringBuilder codeBuilder, ParameterInfo param)
-    {
-        var arrayQueryAttr = param.Attributes.First(a => a.Name == HttpClientGeneratorConstants.ArrayQueryAttribute);
-        var paramName = GetQueryParameterName(arrayQueryAttr, param.Name);
-        var separator = GetArrayQuerySeparator(arrayQueryAttr);
-
-        codeBuilder.AppendLine($"            if ({param.Name} != null && {param.Name}.Any())");
-        codeBuilder.AppendLine("            {");
-
-        if (string.IsNullOrEmpty(separator))
-        {
-            // 使用重复键名格式：user_ids=id0&user_ids=id1&user_ids=id2
-            codeBuilder.AppendLine($"                foreach (var __item in {param.Name})");
-            codeBuilder.AppendLine("                {");
-            codeBuilder.AppendLine($"                    if (__item != null)");
-            codeBuilder.AppendLine("                    {");
-            codeBuilder.AppendLine($"                        __queryParams.Add(\"{paramName}\", __item.ToString());");
-            codeBuilder.AppendLine("                    }");
-            codeBuilder.AppendLine("                }");
-        }
-        else
-        {
-            // 使用分隔符连接格式：user_ids=id0;id1;id2
-            codeBuilder.AppendLine($"                var __joinedValues = string.Join(\"{separator}\", {param.Name}.Where(__item => __item != null).Select(__item => __item.ToString()));");
-            codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", __joinedValues);");
-        }
-
-        codeBuilder.AppendLine("            }");
-    }
-
-    private void GenerateSimpleQueryParameter(StringBuilder codeBuilder, ParameterInfo param, string paramName, string? formatString)
-    {
-        if (TypeDetectionHelper.IsArrayType(param.Type))
-        {
-            // 处理数组类型：使用默认分号分隔符格式
-            codeBuilder.AppendLine($"            if ({param.Name} != null && {param.Name}.Any())");
-            codeBuilder.AppendLine("            {");
-            codeBuilder.AppendLine($"                var __joinedValues = string.Join(\";\", {param.Name}.Where(__item => __item != null).Select(__item => __item.ToString()));");
-            codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", __joinedValues);");
-            codeBuilder.AppendLine("            }");
-        }
-        else if (TypeDetectionHelper.IsStringType(param.Type))
-        {
-            codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({param.Name}))");
-            codeBuilder.AppendLine("            {");
-            codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", {param.Name});");
-            codeBuilder.AppendLine("            }");
-        }
-        else
-        {
-            if (TypeDetectionHelper.IsNullableType(param.Type))
-            {
-                codeBuilder.AppendLine($"            if ({param.Name}.HasValue)");
-                var formatExpression = !string.IsNullOrEmpty(formatString)
-                   ? $".Value.ToString(\"{formatString}\")"
-                   : ".Value.ToString()";
-                codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", {param.Name}{formatExpression});");
-            }
-            else if (TypeDetectionHelper.IsValueType(param.Type))
-            {
-                var formatExpression = !string.IsNullOrEmpty(formatString)
-                  ? $".ToString(\"{formatString}\")"
-                  : ".ToString()";
-                codeBuilder.AppendLine($"            __queryParams.Add(\"{paramName}\", {param.Name}{formatExpression});");
-            }
-            else
-            {
-                // 引用类型需要 null 检查
-                var formatExpression = !string.IsNullOrEmpty(formatString)
-                  ? $".ToString(\"{formatString}\")"
-                  : ".ToString()";
-                codeBuilder.AppendLine($"            if ({param.Name} != null)");
-                codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", {param.Name}{formatExpression});");
-            }
-        }
-    }
-
-    private void GenerateComplexQueryParameter(StringBuilder codeBuilder, ParameterInfo param)
-    {
-        codeBuilder.AppendLine($"            if ({param.Name} != null)");
-        codeBuilder.AppendLine("            {");
-        codeBuilder.AppendLine($"                if ({param.Name} is IQueryParameter __queryParam_{param.Name})");
-        codeBuilder.AppendLine("                {");
-        codeBuilder.AppendLine($"                    foreach (var __kvp in __queryParam_{param.Name}.ToQueryParameters())");
-        codeBuilder.AppendLine("                    {");
-        codeBuilder.AppendLine("                        if (!string.IsNullOrEmpty(__kvp.Value))");
-        codeBuilder.AppendLine("                        {");
-        codeBuilder.AppendLine("                            __queryParams.Add(__kvp.Key, __kvp.Value);");
-        codeBuilder.AppendLine("                        }");
-        codeBuilder.AppendLine("                    }");
-        codeBuilder.AppendLine("                }");
-        codeBuilder.AppendLine("                else");
-        codeBuilder.AppendLine("                {");
-        codeBuilder.AppendLine($"                    FlattenObjectToQueryParams({param.Name}, \"\", \"_\", __queryParams, false, false);");
-        codeBuilder.AppendLine("                }");
-        codeBuilder.AppendLine("            }");
-    }
-
-    /// <summary>
-    /// 生成 QueryMap 参数代码
-    /// </summary>
-    private void GenerateQueryMapParameter(StringBuilder codeBuilder, ParameterInfo param)
-    {
-        var queryMapAttr = param.Attributes.First(a => a.Name == HttpClientGeneratorConstants.QueryMapAttribute);
-        var separator = "_";
-        if (queryMapAttr.NamedArguments.TryGetValue("PropertySeparator", out var sepValue) && sepValue is string sep && !string.IsNullOrEmpty(sep))
-            separator = sep;
-
-        var includeNullValues = false;
-        if (queryMapAttr.NamedArguments.TryGetValue("IncludeNullValues", out var incNull) && incNull is bool inc)
-            includeNullValues = inc;
-
-        var serializationMethod = "ToString";
-        if (queryMapAttr.NamedArguments.TryGetValue("SerializationMethod", out var serValue))
-        {
-            var serInt = serValue as int? ?? 0;
-            if (serInt == 1)
-                serializationMethod = "Json";
-        }
-
-        var urlEncode = true;
-        if (queryMapAttr.NamedArguments.TryGetValue("UrlEncode", out var ueValue) && ueValue is bool ue)
-            urlEncode = ue;
-
-        var isDictionaryType = TypeDetectionHelper.IsDictionaryType(param.Type);
-
-        var outerIndent = "            ";
-        var innerIndent = "                ";
-        if (param.IsValidated)
-        {
-            outerIndent = "            ";
-            innerIndent = "            ";
-        }
-        else
-        {
-            codeBuilder.AppendLine($"{outerIndent}if ({param.Name} != null)");
-            codeBuilder.AppendLine($"{outerIndent}{{");
-        }
-
-        if (isDictionaryType)
-        {
-            GenerateDictionaryQueryMap(codeBuilder, param, includeNullValues, serializationMethod, innerIndent, urlEncode);
-        }
-        else
-        {
-            codeBuilder.AppendLine($"{innerIndent}if ({param.Name} is IQueryParameter queryParam_{param.Name})");
-            codeBuilder.AppendLine($"{innerIndent}{{");
-            codeBuilder.AppendLine($"{innerIndent}    foreach (var kvp in queryParam_{param.Name}.ToQueryParameters())");
-            codeBuilder.AppendLine($"{innerIndent}    {{");
-            if (includeNullValues)
-            {
-                GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, "kvp.Key", "kvp.Value", $"{innerIndent}        ", urlEncode);
-            }
-            else
-            {
-                codeBuilder.AppendLine($"{innerIndent}        if (!string.IsNullOrEmpty(kvp.Value))");
-                codeBuilder.AppendLine($"{innerIndent}        {{");
-                GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, "kvp.Key", "kvp.Value", $"{innerIndent}            ", urlEncode);
-                codeBuilder.AppendLine($"{innerIndent}        }}");
-            }
-            codeBuilder.AppendLine($"{innerIndent}    }}");
-            codeBuilder.AppendLine($"{innerIndent}}}");
-            codeBuilder.AppendLine($"{innerIndent}else");
-            codeBuilder.AppendLine($"{innerIndent}{{");
-            var useJson = serializationMethod == "Json" ? "true" : "false";
-            var urlEncodeStr = urlEncode.ToString().ToLowerInvariant();
-            var rawPairsArg = urlEncode ? "" : ", __rawQueryPairs";
-            codeBuilder.AppendLine($"{innerIndent}    FlattenObjectToQueryParams({param.Name}, \"\", \"{separator}\", __queryParams, {includeNullValues.ToString().ToLowerInvariant()}, {useJson}, {urlEncodeStr}{rawPairsArg});");
-            codeBuilder.AppendLine($"{innerIndent}}}");
-        }
-
-        if (!param.IsValidated)
-        {
-            codeBuilder.AppendLine($"{outerIndent}}}");
-        }
-    }
-
-    private void GenerateQueryMapValueAddition(
-        StringBuilder codeBuilder,
-        ParameterInfo param,
-        string serializationMethod,
-        string keyExpression,
-        string valueExpression,
-        string indent = "                        ",
-        bool urlEncode = true)
-    {
-        if (!urlEncode)
-        {
-            if (serializationMethod == "Json")
-            {
-                codeBuilder.AppendLine($"{indent}var __jsonValue_{param.Name} = System.Text.Json.JsonSerializer.Serialize({valueExpression});");
-                codeBuilder.AppendLine($"{indent}__rawQueryPairs.Add(System.Uri.EscapeDataString({keyExpression}) + \"=\" + __jsonValue_{param.Name});");
-            }
-            else
-            {
-                codeBuilder.AppendLine($"{indent}__rawQueryPairs.Add(System.Uri.EscapeDataString({keyExpression}) + \"=\" + ({valueExpression}?.ToString() ?? string.Empty));");
-            }
-        }
-        else
-        {
-            if (serializationMethod == "Json")
-            {
-                codeBuilder.AppendLine($"{indent}var __jsonValue_{param.Name} = System.Text.Json.JsonSerializer.Serialize({valueExpression});");
-                codeBuilder.AppendLine($"{indent}__queryParams.Add({keyExpression}, __jsonValue_{param.Name});");
-            }
-            else
-            {
-                codeBuilder.AppendLine($"{indent}__queryParams.Add({keyExpression}, {valueExpression}?.ToString());");
-            }
-        }
-    }
-
-    private void GenerateDictionaryQueryMap(StringBuilder codeBuilder, ParameterInfo param, bool includeNullValues, string serializationMethod = "ToString", string indent = "                ", bool urlEncode = true)
-    {
-        codeBuilder.AppendLine($"{indent}foreach (var kvp_{param.Name} in {param.Name})");
-        codeBuilder.AppendLine($"{indent}{{");
-        if (includeNullValues)
-        {
-            GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, $"kvp_{param.Name}.Key", $"kvp_{param.Name}.Value", $"{indent}    ", urlEncode);
-        }
-        else
-        {
-            codeBuilder.AppendLine($"{indent}    if (kvp_{param.Name}.Value != null)");
-            codeBuilder.AppendLine($"{indent}    {{");
-            GenerateQueryMapValueAddition(codeBuilder, param, serializationMethod, $"kvp_{param.Name}.Key", $"kvp_{param.Name}.Value", $"{indent}        ", urlEncode);
-            codeBuilder.AppendLine($"{indent}    }}");
-        }
-        codeBuilder.AppendLine($"{indent}}}");
-    }
-
     private void GenerateInterfaceQueryProperty(StringBuilder codeBuilder, InterfacePropertyInfo property)
     {
         var paramName = property.ParameterName ?? property.Name;
@@ -1236,35 +1005,6 @@ internal class RequestBuilder
             codeBuilder.AppendLine($"            if ({property.Name} != null)");
             codeBuilder.AppendLine("            {");
             codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", {property.Name}{formatExpression});");
-            codeBuilder.AppendLine("            }");
-        }
-    }
-
-    /// <summary>
-    /// 生成 RawQueryString 参数代码
-    /// </summary>
-    private void GenerateRawQueryStringParameter(StringBuilder codeBuilder, ParameterInfo param)
-    {
-        var rawQsVar = $"__rawQS_{param.Name}";
-        if (param.IsValidated)
-        {
-            codeBuilder.AppendLine($"            var {rawQsVar} = {param.Name}.TrimStart('?', '&').TrimEnd('&');");
-            codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({rawQsVar}))");
-            codeBuilder.AppendLine("            {");
-            codeBuilder.AppendLine("                var __separator = __url.Contains('?') ? \"&\" : \"?\";");
-            codeBuilder.AppendLine($"                __url += __separator + {rawQsVar};");
-            codeBuilder.AppendLine("            }");
-        }
-        else
-        {
-            codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({param.Name}))");
-            codeBuilder.AppendLine("            {");
-            codeBuilder.AppendLine($"                var {rawQsVar} = {param.Name}.TrimStart('?', '&').TrimEnd('&');");
-            codeBuilder.AppendLine($"                if (!string.IsNullOrWhiteSpace({rawQsVar}))");
-            codeBuilder.AppendLine("                {");
-            codeBuilder.AppendLine("                    var __separator = __url.Contains('?') ? \"&\" : \"?\";");
-            codeBuilder.AppendLine($"                    __url += __separator + {rawQsVar};");
-            codeBuilder.AppendLine("                }");
             codeBuilder.AppendLine("            }");
         }
     }
@@ -1312,35 +1052,7 @@ internal class RequestBuilder
         return null;
     }
 
-    private string GetQueryParameterName(ParameterAttributeInfo attribute, string defaultName)
-    {
-        if (attribute.Arguments.Length > 0)
-        {
-            var nameArg = attribute.Arguments[0] as string;
-            if (!string.IsNullOrEmpty(nameArg))
-                return nameArg;
-        }
-
-        return attribute.NamedArguments.TryGetValue("Name", out var nameNamedArg)
-            ? nameNamedArg as string ?? defaultName
-            : defaultName;
-    }
-
-    private string? GetArrayQuerySeparator(ParameterAttributeInfo attribute)
-    {
-        // 检查构造函数参数
-        if (attribute.Arguments.Length > 1)
-        {
-            return attribute.Arguments[1] as string;
-        }
-
-        // 检查命名参数
-        return attribute.NamedArguments.TryGetValue("Separator", out var separator)
-            ? separator as string
-            : null;
-    }
-
-    private string GetBodyContentType(ParameterAttributeInfo bodyAttr)
+private string GetBodyContentType(ParameterAttributeInfo bodyAttr)
     {
         // 先检查构造函数参数（如 [Body("application/xml")]）
         if (bodyAttr.Arguments.Length > 0)

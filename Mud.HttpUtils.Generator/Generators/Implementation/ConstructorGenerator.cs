@@ -343,7 +343,9 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
 
         if (!_context.HasInheritedFrom)
         {
-            codeBuilder.AppendLine("            _jsonSerializerOptions = option.Value ?? throw new ArgumentNullException(nameof(option));");
+            codeBuilder.AppendLine("            if (option == null)");
+            codeBuilder.AppendLine("                throw new ArgumentNullException(nameof(option));");
+            codeBuilder.AppendLine("            _jsonSerializerOptions = option.Value ?? throw new InvalidOperationException(\"JsonSerializerOptions 选项值不能为 null。\");");
 
             if (_context.HasTokenManager)
             {

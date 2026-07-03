@@ -107,7 +107,7 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <returns>返回 API Key</returns>");
         codeBuilder.AppendLine("        private async Task<string> GetApiKeyAsync(string? keyName = null)");
         codeBuilder.AppendLine("        {");
-        codeBuilder.AppendLine("            if (keyName != null && string.IsNullOrWhiteSpace(keyName))");
+        codeBuilder.AppendLine("            if (keyName is not null && string.IsNullOrWhiteSpace(keyName))");
         codeBuilder.AppendLine("                throw new System.ArgumentException(\"API Key name cannot be whitespace.\", nameof(keyName));");
         codeBuilder.AppendLine("            var appContext = _appContextHolder.Current;");
         codeBuilder.AppendLine("            if(appContext == null)");
@@ -115,7 +115,7 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("            var apiKeyProvider = appContext.GetService<IApiKeyProvider>();");
         codeBuilder.AppendLine("            if(apiKeyProvider == null)");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到 IApiKeyProvider 服务，请先注册 ApiKey 提供器。\");");
-        codeBuilder.AppendLine("            return await apiKeyProvider.GetApiKeyAsync(keyName);");
+        codeBuilder.AppendLine("            return await apiKeyProvider.GetApiKeyAsync(keyName).ConfigureAwait(false);");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
     }

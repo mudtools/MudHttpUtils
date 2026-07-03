@@ -153,6 +153,12 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         ParameterValidationHelper.GenerateParameterValidation(codeBuilder, methodInfo.Parameters);
 
+        // 捕获应用上下文到局部变量，避免在异步执行过程中 _appContextHolder.Current 被其他线程修改导致 TOCTOU 竞态
+        if (!hasHttpClient)
+        {
+            codeBuilder.AppendLine("            var __appContext = _appContextHolder.Current ?? throw new InvalidOperationException(\"无法找到当前服务的应用上下文。\");");
+        }
+
         if (needsTokenInjection)
         {
             var injectionMode = methodInfo.InterfaceTokenInjectionMode;
@@ -296,7 +302,10 @@ internal class MethodGenerator : ICodeFragmentGenerator
             GenerateInterfaceHeaders(codeBuilder, _context, methodInfo);
         }
 
-        var cancellationTokenArg = GetCancellationTokenParams(methodInfo);
+        // 弹性策略模式下使用策略传入的 __ct，确保超时能取消进行中的 HTTP 请求
+        var cancellationTokenArg = setSkipResilience
+            ? ", cancellationToken: __ct"
+            : GetCancellationTokenParams(methodInfo);
         _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, cancellationTokenArg, hasHttpClient);
     }
 
