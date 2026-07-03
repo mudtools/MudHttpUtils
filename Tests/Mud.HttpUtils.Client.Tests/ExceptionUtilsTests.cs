@@ -16,70 +16,14 @@ public class ExceptionUtilsTests
 {
     private readonly Type _exceptionUtilsType;
     private readonly MethodInfo _throwIfNullGenericMethod;
-    private readonly MethodInfo _throwIfNullMethod;
     private readonly MethodInfo _throwIfNullOrEmptyMethod;
 
     public ExceptionUtilsTests()
     {
         _exceptionUtilsType = typeof(HttpClientUtils).Assembly.GetType("Mud.HttpUtils.ExceptionUtils")!;
         _throwIfNullGenericMethod = _exceptionUtilsType.GetMethod("ThrowIfNull", new[] { typeof(object), typeof(string) })!;
-        _throwIfNullMethod = _exceptionUtilsType.GetMethods(BindingFlags.Static | BindingFlags.Public)
-            .First(m => m.Name == "ThrowIfNull" && m.GetParameters().Length == 2 && m.GetParameters()[0].ParameterType == typeof(object));
         _throwIfNullOrEmptyMethod = _exceptionUtilsType.GetMethod("ThrowIfNullOrEmpty", BindingFlags.Static | BindingFlags.Public)!;
     }
-
-    #region ThrowIfNull Tests
-
-    [Fact]
-    public void ThrowIfNull_WithNullObject_ShouldThrowArgumentNullException()
-    {
-        object? obj = null;
-
-        var act = () => _throwIfNullMethod.Invoke(null, new object?[] { obj, "testParam" });
-
-        act.Should().Throw<TargetInvocationException>()
-            .WithInnerException<ArgumentNullException>()
-            .WithParameterName("testParam");
-    }
-
-    [Fact]
-    public void ThrowIfNull_WithValidObject_ShouldNotThrow()
-    {
-        var obj = new object();
-
-        var act = () => _throwIfNullMethod.Invoke(null, new object?[] { obj, "testParam" });
-
-        act.Should().NotThrow();
-    }
-
-    [Fact]
-    public void ThrowIfNull_WithNullParamName_ShouldThrowArgumentNullException()
-    {
-        object? obj = null;
-
-        var act = () => _throwIfNullMethod.Invoke(null, new object?[] { obj, null });
-
-        act.Should().Throw<TargetInvocationException>()
-            .WithInnerException<ArgumentNullException>();
-    }
-
-    [Fact]
-    public void ThrowIfNull_WithDifferentTypes_ShouldWork()
-    {
-        var stringObj = "test";
-        var intObj = 42;
-        var listObj = new List<int> { 1, 2, 3 };
-
-        var actString = () => _throwIfNullMethod.Invoke(null, new object?[] { stringObj, "stringParam" });
-        var actInt = () => _throwIfNullMethod.Invoke(null, new object?[] { intObj, "intParam" });
-        var actList = () => _throwIfNullMethod.Invoke(null, new object?[] { listObj, "listParam" });
-
-        actString.Should().NotThrow();
-        actInt.Should().NotThrow();
-        actList.Should().NotThrow();
-    }
-
-    #endregion
 
     #region ThrowIfNullOrEmpty Tests
 

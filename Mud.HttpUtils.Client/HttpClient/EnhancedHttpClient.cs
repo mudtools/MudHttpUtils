@@ -110,9 +110,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         object? jsonSerializerOptions = null,
         CancellationToken cancellationToken = default)
     {
-        request.ThrowIfNull();
-
-        var uri = request.RequestUri?.ToString() ?? "[No URI]";
+        var uri = ValidateRequest(request);
 
         return await ExecuteWithLoggingAsync(
             "发送JSON请求", "JSON请求完成", "JSON请求失败", uri,
@@ -132,9 +130,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         HttpRequestMessage request,
         CancellationToken cancellationToken = default)
     {
-        request.ThrowIfNull();
-
-        var uri = request.RequestUri?.ToString() ?? "[No URI]";
+        var uri = ValidateRequest(request);
 
         return await ExecuteWithLoggingAsync(
             "下载文件", "文件下载完成", "文件下载失败", uri,
@@ -157,12 +153,10 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         bool overwrite = true,
         CancellationToken cancellationToken = default)
     {
-        request.ThrowIfNull();
-
         if (string.IsNullOrWhiteSpace(filePath))
             throw new ArgumentException("文件路径不能为空", nameof(filePath));
 
-        var uri = request.RequestUri?.ToString() ?? "[No URI]";
+        var uri = ValidateRequest(request);
 
         return await ExecuteWithLoggingAsync(
             $"下载大文件到: {filePath}", $"大文件下载完成: {filePath}", $"大文件下载失败: {filePath}", uri,
@@ -179,9 +173,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         HttpRequestMessage request,
         CancellationToken cancellationToken = default)
     {
-        request.ThrowIfNull();
-
-        var uri = request.RequestUri?.ToString() ?? "[No URI]";
+        var uri = ValidateRequest(request);
 
         return await ExecuteWithLoggingAsync(
             "发送原始HTTP请求", "原始HTTP请求完成", "原始HTTP请求失败", uri,
@@ -198,9 +190,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         HttpRequestMessage request,
         CancellationToken cancellationToken = default)
     {
-        request.ThrowIfNull();
-
-        var uri = request.RequestUri?.ToString() ?? "[No URI]";
+        var uri = ValidateRequest(request);
 
         return await ExecuteWithLoggingAsync(
             "发送流式HTTP请求", "流式HTTP请求完成", "流式HTTP请求失败", uri,
@@ -225,13 +215,14 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
      object? jsonSerializerOptions = null,
      [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        request.ThrowIfNull();
-
-        var uri = request.RequestUri?.ToString() ?? "[No URI]";
+        var uri = ValidateRequest(request);
 
         LogOperation("发送流式异步枚举请求", uri);
 
-        var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        Stream stream;
+        try
+        {
+            var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 
         // 确保在枚举器被提前放弃时也能释放资源
         // HttpResponseMessage 仅实现 IDisposable，使用 using 确保释放
@@ -244,6 +235,32 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 #else
             var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 #endif
+        }
+        catch (HttpRequestException ex)
+        {
+#if !NETSTANDARD2_0
+            var statusCode = ex.StatusCode.HasValue ? (int)ex.StatusCode.Value : 0;
+            _logger.HttpRequestFailedWithStatusCode(uri, statusCode, ex);
+#else
+            _logger.HttpRequestFailedSimple(uri, ex);
+#endif
+            throw;
+        }
+        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            _logger.HttpRequestTimeout(uri, _httpClient.Timeout.TotalSeconds, ex);
+            throw new HttpRequestException($"请求超时: {uri}", ex);
+        }
+        catch (TaskCanceledException ex)
+        {
+            _logger.HttpRequestCancelled(uri, ex);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
+            throw new HttpRequestException($"HTTP请求处理失败: {ex.Message}", ex);
+        }
 
             var options = (jsonSerializerOptions as JsonSerializerOptions) ?? s_defaultJsonSerializerOptions;
 
@@ -288,9 +305,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         Encoding? encoding = null,
         CancellationToken cancellationToken = default)
     {
-        request.ThrowIfNull();
-
-        var uri = request.RequestUri?.ToString() ?? "[No URI]";
+        var uri = ValidateRequest(request);
 
         return await ExecuteWithLoggingAsync(
             "发送XML请求", "XML请求完成", "XML请求失败", uri,
@@ -410,14 +425,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
         return await ExecuteWithLoggingAsync(
             "发送JSON GET请求", "JSON GET请求完成", "JSON GET请求失败", requestUri,
-            async () =>
-            {
-                using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-                return await SendRequestAsync<TResult>(
-                    request,
-                    jsonSerializerOptions: s_defaultJsonSerializerOptions,
-                    cancellationToken: cancellationToken).ConfigureAwait(false);
-            });
+            () => SendSimpleJsonRequestAsync<TResult>(HttpMethod.Get, requestUri, cancellationToken));
     }
 
     /// <inheritdoc cref="IJsonHttpClient.PostAsJsonAsync{TRequest,TResult}"/>
@@ -482,14 +490,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
         return await ExecuteWithLoggingAsync(
             "发送JSON DELETE请求", "JSON DELETE请求完成", "JSON DELETE请求失败", requestUri,
-            async () =>
-            {
-                using var request = new HttpRequestMessage(HttpMethod.Delete, requestUri);
-                return await SendRequestAsync<TResult>(
-                    request,
-                    jsonSerializerOptions: s_defaultJsonSerializerOptions,
-                    cancellationToken: cancellationToken).ConfigureAwait(false);
-            });
+            () => SendSimpleJsonRequestAsync<TResult>(HttpMethod.Delete, requestUri, cancellationToken));
     }
 
     /// <inheritdoc cref="IJsonHttpClient.DeleteAsJsonAsync{TRequest,TResult}"/>
@@ -556,6 +557,16 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                     jsonSerializerOptions: s_defaultJsonSerializerOptions,
                     cancellationToken: cancellationToken).ConfigureAwait(false);
             });
+    }
+
+    private async Task<TResult?> SendSimpleJsonRequestAsync<TResult>(
+        HttpMethod method, string requestUri, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(method, requestUri);
+        return await SendRequestAsync<TResult>(
+            request,
+            jsonSerializerOptions: s_defaultJsonSerializerOptions,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     #endregion
@@ -630,7 +641,6 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         CancellationToken cancellationToken = default)
     {
         string? requestUri = httpRequestMessage.RequestUri?.ToString();
-        ValidateUrl(requestUri);
 
         return await ExecuteHttpRequestCoreAsync(
             async () =>
@@ -726,7 +736,6 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         CancellationToken cancellationToken = default)
     {
         string? requestUri = httpRequestMessage.RequestUri?.ToString();
-        ValidateUrl(requestUri);
 
         encoding ??= Encoding.UTF8;
 
@@ -844,10 +853,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 }
             }
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
-            // 有意忽略：如果内容不是JSON格式（例如直接是Base64密文），则跳过JSON解析，
-            // 将整个字符串作为密文进行解密。这是一种向后兼容的降级策略。
+            _logger.LogDebug(ex, "解密内容不是JSON格式，将整个字符串作为密文解密");
         }
 
         return EncryptionProvider.Decrypt(cipherText);
@@ -891,9 +899,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         CancellationToken cancellationToken = default)
     {
         string? requestUri = httpRequestMessage.RequestUri?.ToString();
-        ValidateUrl(requestUri);
 
-        try
+        return await ExecuteHttpRequestCoreAsync(async () =>
         {
             using var response = await SendAndValidateAsync(httpRequestMessage, cancellationToken).ConfigureAwait(false);
 
@@ -908,17 +915,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 #else
             return await response.Content.ReadAsByteArrayAsync(cancellationToken);
 #endif
-        }
-        catch (HttpRequestException ex)
-        {
-            _logger.FileDownloadFailed(requestUri!, ex);
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.FileDownloadFailed(requestUri!, ex);
-            throw new HttpRequestException($"文件下载失败: {ex.Message}", ex);
-        }
+        }, requestUri!, cancellationToken);
     }
 
     /// <summary>
@@ -939,7 +936,6 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
         string? requestUri = httpRequestMessage.RequestUri?.ToString();
         string directoryPath = Path.GetDirectoryName(filePath)!;
-        ValidateUrl(requestUri);
 
         try
         {
@@ -1028,6 +1024,14 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     #endregion
 
     #region 辅助方法
+
+    private string ValidateRequest(HttpRequestMessage request)
+    {
+        request.ThrowIfNull();
+        var uri = request.RequestUri?.ToString() ?? "[No URI]";
+        ValidateUrl(request.RequestUri?.ToString());
+        return uri;
+    }
 
     /// <summary>
     /// 验证URL的有效性

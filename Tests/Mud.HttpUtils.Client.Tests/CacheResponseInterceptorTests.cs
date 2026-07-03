@@ -26,9 +26,10 @@ public class CacheResponseInterceptorTests
     [Fact]
     public async Task OnResponseAsync_CompletesSuccessfully()
     {
+        IHttpResponseInterceptor interceptor = _interceptor;
         var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK);
 
-        await _interceptor.OnResponseAsync(response, CancellationToken.None);
+        await interceptor.OnResponseAsync(response, CancellationToken.None);
     }
 
     [Fact]

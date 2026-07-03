@@ -1,8 +1,8 @@
-﻿// -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
-//  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
-//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们承担任何责任！
 // -----------------------------------------------------------------------
 
 using System.Runtime.CompilerServices;
@@ -18,18 +18,8 @@ internal static class ExceptionUtils
     public static void ThrowIfNull<T>(
         this T? obj,
         [CallerArgumentExpression(nameof(obj))] string? paramName = null)
-        where T : class
     {
         if (obj is null)
-            throw new ArgumentNullException(paramName);
-    }
-
-    [Obsolete("Use the generic ThrowIfNull<T> overload instead.")]
-    public static void ThrowIfNull(
-        this object? argument,
-        [CallerArgumentExpression(nameof(argument))] string? paramName = null)
-    {
-        if (argument == null)
             throw new ArgumentNullException(paramName);
     }
 
@@ -44,17 +34,10 @@ internal static class ExceptionUtils
             throw new ArgumentException("值不能为空字符串", paramName);
     }
 #else
-    public static void ThrowIfNull<T>(this T? obj, string? paramName = null) where T : class
+    public static void ThrowIfNull<T>(this T? obj, string? paramName = null)
     {
         if (obj is null)
             throw new ArgumentNullException(paramName ?? "obj");
-    }
-
-    [Obsolete("Use the generic ThrowIfNull<T> overload instead.")]
-    public static void ThrowIfNull(this object? argument, string? paramName = null)
-    {
-        if (argument == null)
-            throw new ArgumentNullException(paramName ?? "argument");
     }
 
     public static void ThrowIfNullOrEmpty(this string? argument, string? paramName = null)
