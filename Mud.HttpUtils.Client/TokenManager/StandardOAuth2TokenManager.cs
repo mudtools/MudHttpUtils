@@ -16,8 +16,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     private readonly OAuth2Options _options;
     private readonly ILogger _logger;
     private readonly ISecretProvider? _secretProvider;
-    private string? _resolvedClientSecret;
-    private volatile bool _clientSecretResolved;
+    private readonly Lazy<Task<string?>> _clientSecretLazy;
 
     private static readonly JsonSerializerOptions s_jsonOptions = new()
     {
@@ -42,29 +41,37 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? NullLogger<StandardOAuth2TokenManager>.Instance;
         _secretProvider = secretProvider;
+        _clientSecretLazy = new Lazy<Task<string?>>(ResolveClientSecretAsync, LazyThreadSafetyMode.ExecutionAndPublication);
+    }
+
+    /// <summary>
+    /// 解析客户端密钥，优先从 ISecretProvider 获取，回退到配置值。
+    /// </summary>
+    private async Task<string?> ResolveClientSecretAsync()
+    {
+        if (_secretProvider != null && !string.IsNullOrEmpty(_options.ClientSecretProviderName))
+        {
+            try
+            {
+                var secret = await _secretProvider.GetSecretAsync(_options.ClientSecretProviderName).ConfigureAwait(false);
+                if (!string.IsNullOrEmpty(secret))
+                    return secret;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "从 ISecretProvider 获取客户端密钥失败，回退到配置值");
+            }
+        }
+
+        return _options.ClientSecret;
     }
 
     /// <summary>
     /// 获取有效的 ClientSecret，优先从 ISecretProvider 获取，回退到配置值。
     /// </summary>
-    private async Task<string> GetClientSecretAsync(CancellationToken cancellationToken = default)
+    private Task<string?> GetClientSecretAsync(CancellationToken cancellationToken = default)
     {
-        if (_clientSecretResolved)
-            return _resolvedClientSecret ?? _options.ClientSecret;
-
-        if (_secretProvider != null && !string.IsNullOrEmpty(_options.ClientSecretProviderName))
-        {
-            var secret = await _secretProvider.GetSecretAsync(_options.ClientSecretProviderName).ConfigureAwait(false);
-            if (!string.IsNullOrEmpty(secret))
-            {
-                _resolvedClientSecret = secret;
-                _clientSecretResolved = true;
-                return secret;
-            }
-        }
-
-        _clientSecretResolved = true;
-        return _options.ClientSecret;
+        return _clientSecretLazy.Value;
     }
 
     /// <summary>
@@ -191,9 +198,10 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, _options.RevocationEndpoint);
-            request.Content = new FormUrlEncodedContent(parameters);
-            ApplyClientAuthentication(request);
+        using var request = new HttpRequestMessage(HttpMethod.Post, _options.RevocationEndpoint);
+        request.Content = new FormUrlEncodedContent(parameters);
+        await GetClientSecretAsync(cancellationToken).ConfigureAwait(false);
+        ApplyClientAuthentication(request);
 
             using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
@@ -223,6 +231,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 
         using var request = new HttpRequestMessage(HttpMethod.Post, _options.IntrospectionEndpoint);
         request.Content = new FormUrlEncodedContent(parameters);
+        await GetClientSecretAsync(cancellationToken).ConfigureAwait(false);
         ApplyClientAuthentication(request);
 
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
@@ -374,8 +383,13 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         if (string.IsNullOrWhiteSpace(_options.ClientId))
             return;
 
-        var clientSecret = _clientSecretResolved
-            ? (_resolvedClientSecret ?? _options.ClientSecret)
+        // ApplyClientAuthentication 是同步方法。
+        // 调用方应确保在调用前已通过 GetClientSecretAsync 触发 Lazy 初始化。
+        // 若 Lazy 未创建（如首次调用），回退到配置值。
+        var clientSecret = _clientSecretLazy.IsValueCreated
+            ? (_clientSecretLazy.Value.Status == TaskStatus.RanToCompletion
+                ? _clientSecretLazy.Value.Result
+                : _options.ClientSecret)
             : _options.ClientSecret;
 
         var credentials = Convert.ToBase64String(

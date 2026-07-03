@@ -37,7 +37,7 @@
             <typeparam name="TResult">策略返回类型。</typeparam>
             <returns>组合策略实例。</returns>
         </member>
-        <member name="M:Mud.HttpUtils.Resilience.IResiliencePolicyProvider.GetMethodPolicy``1(System.Boolean,System.Int32,System.Int32,System.Boolean,System.Boolean,System.Int32,System.Int32,System.Boolean,System.Int32)">
+        <member name="M:Mud.HttpUtils.Resilience.IResiliencePolicyProvider.GetMethodPolicy``1(System.Boolean,System.Int32,System.Int32,System.Boolean,System.Boolean,System.Int32,System.Int32,System.Boolean,System.Int32,System.Int32,System.Int32)">
             <summary>
             根据方法级弹性配置获取策略。
             </summary>
@@ -51,6 +51,15 @@
             <param name="breakDurationSeconds">熔断持续时间（秒）</param>
             <param name="timeoutEnabled">是否启用超时</param>
             <param name="timeoutMilliseconds">超时时间（毫秒）</param>
+            <param name="samplingDurationSeconds">采样窗口时间（秒），0 表示使用简单熔断</param>
+            <param name="minimumThroughput">采样窗口内最小吞吐量</param>
+            <returns>弹性策略实例。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.IResiliencePolicyProvider.GetTimeoutAndCircuitBreakerPolicy``1">
+            <summary>
+            获取仅包含超时和熔断的组合策略（不含重试），适用于大内容请求。
+            </summary>
+            <typeparam name="TResult">策略返回类型。</typeparam>
             <returns>弹性策略实例。</returns>
         </member>
         <member name="T:Mud.HttpUtils.Resilience.CircuitBreakerOptions">
@@ -216,7 +225,10 @@
         <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetCombinedPolicy``1">
             <inheritdoc />
         </member>
-        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetMethodPolicy``1(System.Boolean,System.Int32,System.Int32,System.Boolean,System.Boolean,System.Int32,System.Int32,System.Boolean,System.Int32)">
+        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetMethodPolicy``1(System.Boolean,System.Int32,System.Int32,System.Boolean,System.Boolean,System.Int32,System.Int32,System.Boolean,System.Int32,System.Int32,System.Int32)">
+            <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetTimeoutAndCircuitBreakerPolicy``1">
             <inheritdoc />
         </member>
         <member name="T:Mud.HttpUtils.Resilience.ResilienceConstants">
@@ -255,6 +267,16 @@
             <param name="logger">日志记录器（可选）。</param>
             <param name="options">弹性策略配置选项（可选）。</param>
             <exception cref="T:System.ArgumentNullException">参数为 null 时抛出。</exception>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.ShouldSkipRetry(System.Net.Http.HttpRequestMessage)">
+            <summary>
+            检查请求体是否超过克隆限制，需要跳过重试（但仍保留超时和熔断）。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.ExecuteWithoutRetryAsync``1(System.Net.Http.HttpRequestMessage,System.Func{Mud.HttpUtils.IEnhancedHttpClient,System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken,System.Threading.Tasks.Task{``0}},System.Threading.CancellationToken)">
+            <summary>
+            执行仅包含超时和熔断策略的请求（跳过重试，适用于大内容请求）。
+            </summary>
         </member>
         <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.SendAsAsyncEnumerable``1(System.Net.Http.HttpRequestMessage,System.Object,System.Threading.CancellationToken)">
             <inheritdoc />

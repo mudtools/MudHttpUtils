@@ -207,6 +207,10 @@ internal class MethodAnalysisResult
 
     public int CircuitBreakerBreakDurationSeconds { get; set; } = 30;
 
+public int CircuitBreakerSamplingDurationSeconds { get; set; }
+
+public int CircuitBreakerMinimumThroughput { get; set; } = 10;
+
     public bool MethodTimeoutEnabled { get; set; }
 
     public int MethodTimeoutMilliseconds { get; set; }

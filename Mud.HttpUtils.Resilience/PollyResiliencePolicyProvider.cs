@@ -251,14 +251,16 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
         int failureThreshold = 5,
         int breakDurationSeconds = 30,
         bool timeoutEnabled = false,
-        int timeoutMilliseconds = 30000)
+        int timeoutMilliseconds = 30000,
+        int samplingDurationSeconds = 0,
+        int minimumThroughput = 10)
     {
         var key = new PolicyCacheKey(typeof(TResult),
-            $"method:R={retryEnabled}:{maxRetries}:{delayMilliseconds}:{useExponentialBackoff}:CB={circuitBreakerEnabled}:{failureThreshold}:{breakDurationSeconds}:T={timeoutEnabled}:{timeoutMilliseconds}");
+            $"method:R={retryEnabled}:{maxRetries}:{delayMilliseconds}:{useExponentialBackoff}:CB={circuitBreakerEnabled}:{failureThreshold}:{breakDurationSeconds}:T={timeoutEnabled}:{timeoutMilliseconds}:S={samplingDurationSeconds}:{minimumThroughput}");
         return (IAsyncPolicy<TResult>)_policyCache.GetOrAdd(key, _ => BuildMethodPolicy<TResult>(
             retryEnabled, maxRetries, delayMilliseconds, useExponentialBackoff,
             circuitBreakerEnabled, failureThreshold, breakDurationSeconds,
-            timeoutEnabled, timeoutMilliseconds));
+            timeoutEnabled, timeoutMilliseconds, samplingDurationSeconds, minimumThroughput));
     }
 
     private IAsyncPolicy<TResult> BuildMethodPolicy<TResult>(
@@ -270,7 +272,9 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
         int failureThreshold,
         int breakDurationSeconds,
         bool timeoutEnabled,
-        int timeoutMilliseconds)
+        int timeoutMilliseconds,
+        int samplingDurationSeconds,
+        int minimumThroughput)
     {
         IAsyncPolicy<TResult>? policy = null;
 
@@ -291,12 +295,10 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 
         if (circuitBreakerEnabled)
         {
-            var cbOptions = _options.CircuitBreaker;
-
-            if (cbOptions.SamplingDurationSeconds > 0)
+            if (samplingDurationSeconds > 0)
             {
                 // 高级熔断策略：基于采样窗口的失败率模式
-                var failureRate = cbOptions.FailureThreshold / 100.0;
+                var failureRate = failureThreshold / 100.0;
                 if (failureRate > 1.0) failureRate = 1.0;
 
                 var cbPolicy = Policy
@@ -305,17 +307,17 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                     .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
                     .AdvancedCircuitBreakerAsync(
                         failureThreshold: failureRate,
-                        samplingDuration: TimeSpan.FromSeconds(cbOptions.SamplingDurationSeconds),
-                        minimumThroughput: cbOptions.MinimumThroughput,
+                        samplingDuration: TimeSpan.FromSeconds(samplingDurationSeconds),
+                        minimumThroughput: minimumThroughput,
                         durationOfBreak: TimeSpan.FromSeconds(breakDurationSeconds),
                         onBreak: (exception, duration) =>
                         {
                             _logger.LogWarning(
                                 exception,
                                 "熔断器开启：采样窗口 {SamplingDuration}s 内失败率达 {FailureRate:P0}（至少 {MinimumThroughput} 次请求），将在 {BreakDuration}s 内快速拒绝请求。",
-                                cbOptions.SamplingDurationSeconds,
+                                samplingDurationSeconds,
                                 failureRate,
-                                cbOptions.MinimumThroughput,
+                                minimumThroughput,
                                 duration.TotalSeconds);
                         },
                         onReset: () =>
@@ -407,10 +409,38 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
         return policy ?? Policy.NoOpAsync<TResult>();
     }
 
+    /// <inheritdoc />
+    public IAsyncPolicy<TResult> GetTimeoutAndCircuitBreakerPolicy<TResult>()
+    {
+        var key = new PolicyCacheKey(typeof(TResult), "timeoutAndCircuitBreaker");
+        return (IAsyncPolicy<TResult>)_policyCache.GetOrAdd(key, _ =>
+        {
+            var timeoutPolicy = GetTimeoutPolicy<TResult>();
+            var circuitBreakerPolicy = GetCircuitBreakerPolicy<TResult>();
+            return circuitBreakerPolicy.WrapAsync(timeoutPolicy);
+        });
+    }
+
     private static bool ShouldRetry(HttpRequestException exception, int[] retryStatusCodes)
     {
 #if NETSTANDARD2_0
         // netstandard2.0 的 HttpRequestException 没有 StatusCode 属性
+        // 尝试从 Data 字典获取（由 EnhancedHttpClient.EnsureSuccessStatusCodeAsync 设置）
+        if (exception.Data.Contains("HttpStatusCode") && exception.Data["HttpStatusCode"] is int code)
+        {
+            return retryStatusCodes.Contains(code);
+        }
+
+        // 如果没有状态码信息，回退到不重试客户端错误的保守策略
+        // 仅当异常消息包含可识别的服务器错误状态码时才重试
+        var message = exception.Message ?? string.Empty;
+        foreach (var retryCode in retryStatusCodes)
+        {
+            if (message.Contains($" {retryCode} "))
+                return true;
+        }
+
+        // 无法确定状态码时，保守地重试（保持向后兼容）
         return true;
 #else
         if (exception.StatusCode.HasValue)

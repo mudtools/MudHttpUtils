@@ -168,7 +168,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
     private void OnUserTokenEvicted(string userId)
     {
-        _userLocks.TryRemove(userId, out _);
+        TryRemoveAndDisposeLock(userId);
     }
 
     /// <summary>
@@ -178,7 +178,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     protected void RemoveUserTokenFromCache(string userId)
     {
         _userTokenCache.TryRemove(userId, out _);
-        _userLocks.TryRemove(userId, out _);
+        TryRemoveAndDisposeLock(userId);
     }
 
     /// <summary>
@@ -211,7 +211,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
         foreach (var key in orphanedKeys)
         {
-            _userLocks.TryRemove(key, out _);
+            TryRemoveAndDisposeLock(key);
         }
     }
 
@@ -228,7 +228,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         if (userLock.CurrentCount != 1)
             return;
 
-        _userLocks.TryRemove(userId, out _);
+        TryRemoveAndDisposeLock(userId);
     }
 
     /// <summary>
@@ -258,6 +258,31 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
         RemoveUserTokenFromCache(userId);
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// 安全移除并释放用户锁。
+    /// 使用 TryRemove 确保只有锁的“拥有者”（最后一个引用者）才执行 Dispose，
+    /// 避免在锁正在被使用时释放。
+    /// </summary>
+    private void TryRemoveAndDisposeLock(string userId)
+    {
+        // 尝试移除，只有成功移除的线程才负责 Dispose
+        // 如果移除失败说明锁已被其他线程移除，无需重复 Dispose
+        if (_userLocks.TryRemove(userId, out var lockToDispose))
+        {
+            // 仅在锁空闲时 Dispose；如果锁正在使用中（CurrentCount == 0），
+            // 说明有线程正在持有锁，不安全 Dispose，留待下次清理
+            if (lockToDispose.CurrentCount == 1)
+            {
+                lockToDispose.Dispose();
+            }
+            else
+            {
+                // 锁正在使用中，重新放回字典，等待下次清理
+                _userLocks.TryAdd(userId, lockToDispose);
+            }
+        }
     }
 
     private bool IsUserTokenValid(UserTokenInfo? tokenInfo)

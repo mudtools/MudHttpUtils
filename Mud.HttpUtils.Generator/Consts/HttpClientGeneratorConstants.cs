@@ -91,8 +91,10 @@ internal static class HttpClientGeneratorConstants
     public const string RetryMaxRetriesProperty = "MaxRetries";
     public const string RetryDelayMillisecondsProperty = "DelayMilliseconds";
     public const string RetryUseExponentialBackoffProperty = "UseExponentialBackoff";
-    public const string CircuitBreakerFailureThresholdProperty = "FailureThreshold";
-    public const string CircuitBreakerBreakDurationSecondsProperty = "BreakDurationSeconds";
+public const string CircuitBreakerFailureThresholdProperty = "FailureThreshold";
+public const string CircuitBreakerBreakDurationSecondsProperty = "BreakDurationSeconds";
+public const string CircuitBreakerSamplingDurationSecondsProperty = "SamplingDurationSeconds";
+public const string CircuitBreakerMinimumThroughputProperty = "MinimumThroughput";
     public const string TimeoutMillisecondsProperty = "TimeoutMilliseconds";
 
     // Cache相关命名参数

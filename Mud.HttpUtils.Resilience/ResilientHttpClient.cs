@@ -63,6 +63,14 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
             return true;
         }
 
+        return false;
+    }
+
+    /// <summary>
+    /// 检查请求体是否超过克隆限制，需要跳过重试（但仍保留超时和熔断）。
+    /// </summary>
+    private bool ShouldSkipRetry(HttpRequestMessage request)
+    {
         if (MaxCloneContentSize < 0)
             return false;
 
@@ -70,13 +78,32 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         if (contentLength.HasValue && contentLength.Value > MaxCloneContentSize)
         {
             _logger.LogWarning(
-                "请求体大小 ({ContentLength} 字节) 超过克隆限制 ({MaxSize} 字节)，跳过重试策略",
+                "请求体大小 ({ContentLength} 字节) 超过克隆限制 ({MaxSize} 字节)，跳过重试策略（保留超时和熔断）",
                 contentLength.Value,
                 MaxCloneContentSize);
             return true;
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// 执行仅包含超时和熔断策略的请求（跳过重试，适用于大内容请求）。
+    /// </summary>
+    private async Task<TResult> ExecuteWithoutRetryAsync<TResult>(
+        HttpRequestMessage request,
+        Func<IEnhancedHttpClient, HttpRequestMessage, CancellationToken, Task<TResult>> executeFunc,
+        CancellationToken cancellationToken)
+    {
+        var policy = _policyProvider.GetTimeoutAndCircuitBreakerPolicy<TResult>();
+
+        return await policy.ExecuteAsync(
+            async ct =>
+            {
+                // 大内容请求不克隆，直接使用原始请求
+                return await executeFunc(_innerClient, request, ct).ConfigureAwait(false);
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<TResult> ExecuteWithCloneAsync<TResult>(
@@ -206,6 +233,13 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
             return await _innerClient.SendAsync<TResult>(request, jsonSerializerOptions, cancellationToken).ConfigureAwait(false);
         }
 
+        if (ShouldSkipRetry(request))
+        {
+            return await ExecuteWithoutRetryAsync(request,
+                (client, req, ct) => client.SendAsync<TResult>(req, jsonSerializerOptions, ct),
+                cancellationToken).ConfigureAwait(false);
+        }
+
         return await ExecuteWithCloneAsync(request,
             (client, req, ct) => client.SendAsync<TResult>(req, jsonSerializerOptions, ct),
             cancellationToken).ConfigureAwait(false);
@@ -219,6 +253,13 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         if (ShouldSkipResilience(request))
         {
             return await _innerClient.DownloadAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (ShouldSkipRetry(request))
+        {
+            return await ExecuteWithoutRetryAsync(request,
+                (client, req, ct) => client.DownloadAsync(req, ct),
+                cancellationToken).ConfigureAwait(false);
         }
 
         return await ExecuteDownloadWithResilienceAsync(request,
@@ -238,6 +279,13 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
             return await _innerClient.DownloadLargeAsync(request, filePath, overwrite, cancellationToken).ConfigureAwait(false);
         }
 
+        if (ShouldSkipRetry(request))
+        {
+            return await ExecuteWithoutRetryAsync(request,
+                (client, req, ct) => client.DownloadLargeAsync(req, filePath, overwrite, ct),
+                cancellationToken).ConfigureAwait(false);
+        }
+
         return await ExecuteDownloadWithResilienceAsync(request,
             (client, req, ct) => client.DownloadLargeAsync(req, filePath, overwrite, ct),
             cancellationToken).ConfigureAwait(false);
@@ -253,6 +301,13 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
             return await _innerClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
         }
 
+        if (ShouldSkipRetry(request))
+        {
+            return await ExecuteWithoutRetryAsync(request,
+                (client, req, ct) => client.SendRawAsync(req, ct),
+                cancellationToken).ConfigureAwait(false);
+        }
+
         return await ExecuteWithCloneAsync(request,
             (client, req, ct) => client.SendRawAsync(req, ct),
             cancellationToken).ConfigureAwait(false);
@@ -266,6 +321,13 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         if (ShouldSkipResilience(request))
         {
             return await _innerClient.SendStreamAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (ShouldSkipRetry(request))
+        {
+            return await ExecuteWithoutRetryAsync(request,
+                (client, req, ct) => client.SendStreamAsync(req, ct),
+                cancellationToken).ConfigureAwait(false);
         }
 
         return await ExecuteWithCloneAsync(request,
@@ -354,6 +416,13 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         if (ShouldSkipResilience(request))
         {
             return await _innerClient.SendXmlAsync<TResult>(request, encoding, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (ShouldSkipRetry(request))
+        {
+            return await ExecuteWithoutRetryAsync(request,
+                (client, req, ct) => client.SendXmlAsync<TResult>(req, encoding, ct),
+                cancellationToken).ConfigureAwait(false);
         }
 
         return await ExecuteWithCloneAsync(request,

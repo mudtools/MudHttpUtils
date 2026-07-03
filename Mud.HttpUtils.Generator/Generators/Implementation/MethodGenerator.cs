@@ -251,7 +251,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine($"                failureThreshold: {methodInfo.CircuitBreakerFailureThreshold},");
         codeBuilder.AppendLine($"                breakDurationSeconds: {methodInfo.CircuitBreakerBreakDurationSeconds},");
         codeBuilder.AppendLine($"                timeoutEnabled: {methodInfo.MethodTimeoutEnabled.ToString().ToLowerInvariant()},");
-        codeBuilder.AppendLine($"                timeoutMilliseconds: {methodInfo.MethodTimeoutMilliseconds});");
+        codeBuilder.AppendLine($"                timeoutMilliseconds: {methodInfo.MethodTimeoutMilliseconds},");
+        codeBuilder.AppendLine($"                samplingDurationSeconds: {methodInfo.CircuitBreakerSamplingDurationSeconds},");
+        codeBuilder.AppendLine($"                minimumThroughput: {methodInfo.CircuitBreakerMinimumThroughput});");
         codeBuilder.AppendLine();
 
         codeBuilder.AppendLine($"            return await __resiliencePolicy.ExecuteAsync(async __ct =>");

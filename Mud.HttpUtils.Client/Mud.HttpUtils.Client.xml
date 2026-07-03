@@ -492,9 +492,9 @@
             <code>RegexOptions.IgnoreCase</code><br/>
             Explanation:<br/>
             <code>
+            ○ Match if at the beginning of the string.<br/>
             ○ Match with 3 alternative expressions, atomically.<br/>
                 ○ Match a sequence of expressions.<br/>
-                    ○ Match if at the beginning of the string.<br/>
                     ○ Loop greedily any number of times.<br/>
                         ○ Match a character in the set [+/-9A-Za-z\u212A] exactly 4 times.<br/>
                     ○ Optional (greedy).<br/>
@@ -507,20 +507,18 @@
                                 ○ Match '='.<br/>
                     ○ Match if at the end of the string or if before an ending newline.<br/>
                 ○ Match a sequence of expressions.<br/>
-                    ○ Match if at the beginning of the string.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 8 times.<br/>
+                    ○ Match a hexadecimal digit exactly 8 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 12 times.<br/>
+                    ○ Match a hexadecimal digit exactly 12 times.<br/>
                     ○ Match if at the end of the string or if before an ending newline.<br/>
                 ○ Match a sequence of expressions.<br/>
-                    ○ Match if at the beginning of the string.<br/>
-                    ○ Match a character in the set [-0-9A-Z_a-z\u212A] atomically at least 20 times.<br/>
+                    ○ Match a character in the set [\-0-9A-Z_a-z\u212A] atomically at least 20 times.<br/>
                     ○ Match if at the end of the string or if before an ending newline.<br/>
             </code>
             </remarks>
@@ -1103,6 +1101,17 @@
             <returns>新的 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 实例。</returns>
             <exception cref="T:System.ArgumentNullException"><paramref name="baseAddress"/> 为 null。</exception>
         </member>
+        <member name="T:Mud.HttpUtils.EnhancedHttpClient.DisposableStream">
+            <summary>
+            包装 Stream 和 HttpResponseMessage，确保流被释放时响应消息也被释放。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientFactory.#ctor(System.IServiceProvider)">
+            <inheritdoc/>
+        </member>
+        <member name="M:Mud.HttpUtils.EnhancedHttpClientFactory.CreateClient(System.String)">
+            <inheritdoc/>
+        </member>
         <member name="T:Mud.HttpUtils.EnhancedHttpClientFactoryOptions">
             <summary>
             增强型 HTTP 客户端工厂的配置选项，存储按名称注册的客户端工厂委托。
@@ -1330,6 +1339,18 @@
         </member>
         <member name="M:Mud.HttpUtils.HttpClientFactoryEnhancedClient.WithBaseAddress(System.Uri)">
             <inheritdoc />
+        </member>
+        <member name="T:Mud.HttpUtils.HttpClientResolver">
+            <summary>
+            命名 HTTP 客户端解析器接口，用于按名称获取 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 实例。
+            </summary>
+            <inheritdoc/>
+        </member>
+        <member name="M:Mud.HttpUtils.HttpClientResolver.#ctor(Mud.HttpUtils.IEnhancedHttpClientFactory)">
+            <summary>
+            命名 HTTP 客户端解析器接口，用于按名称获取 <see cref="T:Mud.HttpUtils.IEnhancedHttpClient"/> 实例。
+            </summary>
+            <inheritdoc/>
         </member>
         <member name="M:Mud.HttpUtils.HttpClientResolver.GetClient(System.String)">
             <inheritdoc />
@@ -2524,6 +2545,13 @@
             <summary>
             客户端密钥。建议优先使用 <see cref="P:Mud.HttpUtils.OAuth2Options.ClientSecretProviderName"/> 从安全存储获取。
             </summary>
+            <remarks>
+            <para>安全警告：字符串在 .NET 中不可变，无法被主动清除，可能被内存转储攻击获取。</para>
+            <para>生产环境强烈建议使用 <see cref="P:Mud.HttpUtils.OAuth2Options.ClientSecretProviderName"/> 配合 <see cref="T:Mud.HttpUtils.ISecretProvider"/> 
+            从安全存储（如 Azure Key Vault、HashiCorp Vault）获取密钥，而非使用明文配置。</para>
+            <para>长期计划：在下一个大版本中将引入 <c>SecureClientSecret</c> 属性（byte[] 类型），
+            支持使用后通过 <c>CryptographicOperations.ZeroMemory</c> 清除。</para>
+            </remarks>
         </member>
         <member name="P:Mud.HttpUtils.OAuth2Options.ClientSecretProviderName">
             <summary>
@@ -2574,6 +2602,11 @@
             <param name="options">OAuth2 配置选项。</param>
             <param name="logger">日志记录器（可选）。</param>
             <param name="secretProvider">安全密钥提供程序（可选）。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.StandardOAuth2TokenManager.ResolveClientSecretAsync">
+            <summary>
+            解析客户端密钥，优先从 ISecretProvider 获取，回退到配置值。
+            </summary>
         </member>
         <member name="M:Mud.HttpUtils.StandardOAuth2TokenManager.GetClientSecretAsync(System.Threading.CancellationToken)">
             <summary>
@@ -2669,6 +2702,16 @@
         </member>
         <member name="M:Mud.HttpUtils.TokenRecoveryDelegatingHandler.SendAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
             <inheritdoc />
+        </member>
+        <member name="M:Mud.HttpUtils.TokenRecoveryDelegatingHandler.RefreshTokenWithDedupAsync(System.Threading.CancellationToken)">
+            <summary>
+            执行令牌刷新，使用 ConcurrentDictionary 去重，确保同一时间窗口内多个 401 只触发一次刷新。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.TokenRecoveryDelegatingHandler.RefreshUserTokenWithDedupAsync(System.String,System.Threading.CancellationToken)">
+            <summary>
+            执行用户令牌刷新，使用 ConcurrentDictionary 按 userId 去重。
+            </summary>
         </member>
         <member name="T:Mud.HttpUtils.TokenRefreshBackgroundService">
             <summary>
@@ -2941,6 +2984,13 @@
             <param name="userId">用户标识。</param>
             <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
         </member>
+        <member name="M:Mud.HttpUtils.UserTokenManagerBase.TryRemoveAndDisposeLock(System.String)">
+            <summary>
+            安全移除并释放用户锁。
+            使用 TryRemove 确保只有锁的“拥有者”（最后一个引用者）才执行 Dispose，
+            避免在锁正在被使用时释放。
+            </summary>
+        </member>
         <member name="M:Mud.HttpUtils.UserTokenManagerBase.GetUserTokenFromCache(System.String)">
             <summary>
             从缓存中获取指定用户的令牌信息。
@@ -3128,6 +3178,9 @@
         </member>
         <member name="M:System.Text.RegularExpressions.Generated.Utilities.StackPush(System.Int32[]@,System.Int32@,System.Int32,System.Int32)">
             <summary>Pushes 2 values onto the backtracking stack.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_asciiLettersAndDigitsAndDashUnderscoreKelvinSign">
+            <summary>Supports searching for characters in or not in "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyzK".</summary>
         </member>
         <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_nonAscii_2BDDE98808630E9B520E3AD9F33E4A0D939EAAED4FF3C3CC86415C934044BB2B">
             <summary>Supports searching for characters in or not in "CKSYcksyK".</summary>

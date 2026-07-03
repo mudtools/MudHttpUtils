@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Linq;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -42,6 +43,11 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
     private readonly ICurrentUserContext? _currentUserContext;
     private readonly TokenRecoveryOptions _options;
     private readonly ILogger _logger;
+
+    // 并发刷新去重：同一时间段内多个 401 只触发一次令牌刷新
+    private readonly ConcurrentDictionary<string, Task<string?>> _credentialRefreshTasks = new();
+    private readonly ConcurrentDictionary<string, Task<string?>> _userRefreshTasks = new();
+    private const string CredentialRefreshKey = "__credential";
 
     /// <summary>
     /// 初始化令牌恢复委托处理器。
@@ -115,16 +121,7 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
             {
                 try
                 {
-                    await _userTokenManager.RemoveTokenAsync(recoveryContext!.UserId!, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "用户令牌移除操作失败 (UserId={UserId})", recoveryContext!.UserId);
-                }
-
-                try
-                {
-                    newToken = await _userTokenManager.GetOrRefreshTokenAsync(recoveryContext!.UserId, cancellationToken).ConfigureAwait(false);
+                    newToken = await RefreshUserTokenWithDedupAsync(recoveryContext!.UserId!, cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -136,16 +133,7 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
             {
                 try
                 {
-                    await _tokenManager.InvalidateTokenAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "令牌失效操作失败");
-                }
-
-                try
-                {
-                    newToken = await _tokenManager.GetOrRefreshTokenAsync(cancellationToken).ConfigureAwait(false);
+                    newToken = await RefreshTokenWithDedupAsync(cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -351,6 +339,128 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
 #endif
 
         return clone;
+    }
+
+    /// <summary>
+    /// 执行令牌刷新，使用 ConcurrentDictionary 去重，确保同一时间窗口内多个 401 只触发一次刷新。
+    /// </summary>
+    private async Task<string?> RefreshTokenWithDedupAsync(CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var existing = _credentialRefreshTasks.GetOrAdd(CredentialRefreshKey, tcs.Task);
+
+            if (ReferenceEquals(existing, tcs.Task))
+            {
+                // 当前线程赢得了刷新权
+                try
+                {
+                    // 保持原有行为：InvalidateTokenAsync 失败仅记录日志，不阻止后续刷新
+                    try
+                    {
+                        await _tokenManager.InvalidateTokenAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception invalidateEx)
+                    {
+                        _logger.LogError(invalidateEx, "令牌失效操作失败");
+                    }
+
+                    var token = await _tokenManager.GetOrRefreshTokenAsync(cancellationToken).ConfigureAwait(false);
+                    tcs.SetResult(token);
+                    return token;
+                }
+                catch (Exception ex)
+                {
+                    tcs.SetException(ex);
+                    throw;
+                }
+                finally
+                {
+                    // 延迟移除，让等待中的线程有机会获取结果
+                    _credentialRefreshTasks.TryRemove(CredentialRefreshKey, out _);
+                }
+            }
+            else
+            {
+                // 另一个线程正在刷新，等待其结果
+                try
+                {
+                    var token = await existing.ConfigureAwait(false);
+
+                    // 验证获取到的令牌是否有效（可能在等待期间令牌又被另一个 401 失效了）
+                    if (!string.IsNullOrEmpty(token))
+                        return token;
+
+                    // 令牌为空，重新尝试刷新
+                    _credentialRefreshTasks.TryRemove(CredentialRefreshKey, out _);
+                }
+                catch
+                {
+                    // 刷新线程失败了，清除后重试
+                    _credentialRefreshTasks.TryRemove(CredentialRefreshKey, out _);
+
+                    // 直接抛出，避免无限重试
+                    throw;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 执行用户令牌刷新，使用 ConcurrentDictionary 按 userId 去重。
+    /// </summary>
+    private async Task<string?> RefreshUserTokenWithDedupAsync(string userId, CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var existing = _userRefreshTasks.GetOrAdd(userId, tcs.Task);
+
+            if (ReferenceEquals(existing, tcs.Task))
+            {
+                try
+                {
+                    // 保持原有行为：RemoveTokenAsync 失败仅记录日志，不阻止后续刷新
+                    try
+                    {
+                        await _userTokenManager!.RemoveTokenAsync(userId, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception removeEx)
+                    {
+                        _logger.LogError(removeEx, "用户令牌移除操作失败 (UserId={UserId})", userId);
+                    }
+
+                    var token = await _userTokenManager.GetOrRefreshTokenAsync(userId, cancellationToken).ConfigureAwait(false);
+                    tcs.SetResult(token);
+                    return token;
+                }
+                catch (Exception ex)
+                {
+                    tcs.SetException(ex);
+                    throw;
+                }
+                finally
+                {
+                    _userRefreshTasks.TryRemove(userId, out _);
+                }
+            }
+            else
+            {
+                try
+                {
+                    var token = await existing.ConfigureAwait(false);
+                    if (!string.IsNullOrEmpty(token))
+                        return token;
+                    _userRefreshTasks.TryRemove(userId, out _);
+                }
+                catch
+                {
+                    _userRefreshTasks.TryRemove(userId, out _);
+                    throw;
+                }
+            }
+        }
     }
 
     private static HttpResponseMessage CreateUnauthorizedResponse(HttpRequestMessage request)

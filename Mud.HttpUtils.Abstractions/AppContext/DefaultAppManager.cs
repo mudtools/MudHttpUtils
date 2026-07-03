@@ -133,13 +133,16 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     /// <inheritdoc />
     public TAppContext GetDefaultApp()
     {
+        string? defaultKey;
         lock (_defaultAppLock)
         {
-            if (string.IsNullOrEmpty(_defaultAppKey))
-                throw new InvalidOperationException("未设置默认应用。请在注册应用时设置 isDefault = true。");
-
-            return GetApp(_defaultAppKey!);
+            defaultKey = _defaultAppKey;
         }
+
+        if (string.IsNullOrEmpty(defaultKey))
+            throw new InvalidOperationException("未设置默认应用。请在注册应用时设置 isDefault = true。");
+
+        return GetApp(defaultKey!);
     }
 
     /// <inheritdoc />

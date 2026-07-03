@@ -48,6 +48,8 @@ public interface IResiliencePolicyProvider
     /// <param name="breakDurationSeconds">熔断持续时间（秒）</param>
     /// <param name="timeoutEnabled">是否启用超时</param>
     /// <param name="timeoutMilliseconds">超时时间（毫秒）</param>
+    /// <param name="samplingDurationSeconds">采样窗口时间（秒），0 表示使用简单熔断</param>
+    /// <param name="minimumThroughput">采样窗口内最小吞吐量</param>
     /// <returns>弹性策略实例。</returns>
     IAsyncPolicy<TResult> GetMethodPolicy<TResult>(
         bool retryEnabled = false,
@@ -58,5 +60,14 @@ public interface IResiliencePolicyProvider
         int failureThreshold = 5,
         int breakDurationSeconds = 30,
         bool timeoutEnabled = false,
-        int timeoutMilliseconds = 30000);
+        int timeoutMilliseconds = 30000,
+        int samplingDurationSeconds = 0,
+        int minimumThroughput = 10);
+
+    /// <summary>
+    /// 获取仅包含超时和熔断的组合策略（不含重试），适用于大内容请求。
+    /// </summary>
+    /// <typeparam name="TResult">策略返回类型。</typeparam>
+    /// <returns>弹性策略实例。</returns>
+    IAsyncPolicy<TResult> GetTimeoutAndCircuitBreakerPolicy<TResult>();
 }

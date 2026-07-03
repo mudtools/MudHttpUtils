@@ -215,7 +215,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 #else
                 var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 #endif
-                return stream;
+                return new DisposableStream(stream, response);
             });
     }
 
@@ -233,36 +233,41 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
         var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 
-        await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
+        // 确保在枚举器被提前放弃时也能释放资源
+        // HttpResponseMessage 仅实现 IDisposable，使用 using 确保释放
+        using (response)
+        {
+            await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
 
 #if NETSTANDARD2_0
-        var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+            var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 #else
-        var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 #endif
 
-        var options = (jsonSerializerOptions as JsonSerializerOptions) ?? s_defaultJsonSerializerOptions;
+            var options = (jsonSerializerOptions as JsonSerializerOptions) ?? s_defaultJsonSerializerOptions;
 
-        using var reader = new StreamReader(stream);
+            using var reader = new StreamReader(stream);
 
-        string? line;
+            string? line;
 #if !NET7_0_OR_GREATER
-        while ((line = await reader.ReadLineAsync().ConfigureAwait(false)) != null)
+            while ((line = await reader.ReadLineAsync().ConfigureAwait(false)) != null)
 #else
-        while ((line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)) != null)
+            while ((line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)) != null)
 #endif
-        {
-            cancellationToken.ThrowIfCancellationRequested();
+            {
+                cancellationToken.ThrowIfCancellationRequested();
 
-            if (string.IsNullOrEmpty(line))
-                continue;
+                if (string.IsNullOrEmpty(line))
+                    continue;
 
-            var item = JsonSerializer.Deserialize<TResult>(line, options);
-            if (item != null)
-                yield return item;
+                var item = JsonSerializer.Deserialize<TResult>(line, options);
+                if (item != null)
+                    yield return item;
+            }
+
+            LogOperation("流式异步枚举请求完成", uri);
         }
-
-        LogOperation("流式异步枚举请求完成", uri);
     }
 
     #endregion
@@ -953,6 +958,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 }
             }
 
+            var fileMode = overwrite ? FileMode.Create : FileMode.CreateNew;
+
             using var response = await SendAndValidateAsync(httpRequestMessage, cancellationToken).ConfigureAwait(false);
 
             var contentLength = response.Content.Headers.ContentLength;
@@ -965,7 +972,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             using var contentStream = await response.Content.ReadAsStreamAsync();
             using var fileStream = new FileStream(
                 filePath,
-                FileMode.Create,
+                fileMode,
                 FileAccess.Write,
                 FileShare.None,
                 bufferSize: bufferSize,
@@ -974,7 +981,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken);
             await using var fileStream = new FileStream(
                 filePath,
-                FileMode.Create,
+                fileMode,
                 FileAccess.Write,
                 FileShare.None,
                 bufferSize: bufferSize,
@@ -991,6 +998,13 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
         catch (Exception ex)
         {
+            // 文件已存在不是下载失败，不清理文件
+            // FileMode.CreateNew 在文件已存在时抛出 IOException
+            if (ex is IOException && !overwrite)
+            {
+                throw;
+            }
+
             // 清理部分下载的文件
             try
             {
@@ -1080,9 +1094,13 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         _logger.HttpRequestFailedWithResponse(statusCode, sanitizedContent);
 
 #if NETSTANDARD2_0
-        throw new HttpRequestException($"HTTP请求失败: {statusCode} {response.StatusCode} - {errorContent}", null);
+        var httpEx = new HttpRequestException($"HTTP请求失败: {statusCode} {response.StatusCode} - {errorContent}", null);
+        httpEx.Data["HttpStatusCode"] = statusCode;
+        throw httpEx;
 #else
-        throw new HttpRequestException($"HTTP请求失败: {statusCode} {response.StatusCode} - {errorContent}", null, response.StatusCode);
+        var httpEx = new HttpRequestException($"HTTP请求失败: {statusCode} {response.StatusCode} - {errorContent}", null, response.StatusCode);
+        httpEx.Data["HttpStatusCode"] = statusCode;
+        throw httpEx;
 #endif
     }
 
@@ -1295,4 +1313,66 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     }
 
     #endregion
+
+    /// <summary>
+    /// 包装 Stream 和 HttpResponseMessage，确保流被释放时响应消息也被释放。
+    /// </summary>
+    private sealed class DisposableStream : Stream
+    {
+        private readonly Stream _innerStream;
+        private readonly HttpResponseMessage _response;
+        private bool _disposed;
+
+        public DisposableStream(Stream innerStream, HttpResponseMessage response)
+        {
+            _innerStream = innerStream ?? throw new ArgumentNullException(nameof(innerStream));
+            _response = response ?? throw new ArgumentNullException(nameof(response));
+        }
+
+        public override bool CanRead => _innerStream.CanRead;
+        public override bool CanSeek => _innerStream.CanSeek;
+        public override bool CanWrite => _innerStream.CanWrite;
+        public override long Length => _innerStream.Length;
+        public override long Position { get => _innerStream.Position; set => _innerStream.Position = value; }
+
+        public override void Flush() => _innerStream.Flush();
+        public override int Read(byte[] buffer, int offset, int count) => _innerStream.Read(buffer, offset, count);
+        public override long Seek(long offset, SeekOrigin origin) => _innerStream.Seek(offset, origin);
+        public override void SetLength(long value) => _innerStream.SetLength(value);
+        public override void Write(byte[] buffer, int offset, int count) => _innerStream.Write(buffer, offset, count);
+
+#if !NETSTANDARD2_0
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+            => _innerStream.ReadAsync(buffer, offset, count, cancellationToken);
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+            => _innerStream.ReadAsync(buffer, cancellationToken);
+#endif
+
+        protected override void Dispose(bool disposing)
+        {
+            if (!_disposed)
+            {
+                _disposed = true;
+                if (disposing)
+                {
+                    _innerStream?.Dispose();
+                    _response?.Dispose();
+                }
+            }
+            base.Dispose(disposing);
+        }
+
+#if !NETSTANDARD2_0
+        public override async ValueTask DisposeAsync()
+        {
+            if (!_disposed)
+            {
+                _disposed = true;
+                await _innerStream.DisposeAsync().ConfigureAwait(false);
+                _response?.Dispose();
+            }
+            await base.DisposeAsync().ConfigureAwait(false);
+        }
+#endif
+    }
 }
