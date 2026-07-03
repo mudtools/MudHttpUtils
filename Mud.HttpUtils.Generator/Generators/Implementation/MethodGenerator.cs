@@ -499,7 +499,39 @@ internal class MethodGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"Cookie\", \"{cookieName}=\" + access_token);");
         }
 
-        GenerateTokenRecoveryContext(codeBuilder, methodInfo, indent);
+        if (ShouldGenerateTokenRecoveryContext(methodInfo))
+            GenerateTokenRecoveryContext(codeBuilder, methodInfo, indent);
+    }
+
+    /// <summary>
+    /// 判断是否需要生成 TokenRecoveryContext。
+    /// 仅在非默认场景下生成：恢复处理器的 null 回退已覆盖默认 Header+Authorization+Bearer 场景。
+    /// </summary>
+    private bool ShouldGenerateTokenRecoveryContext(MethodAnalysisResult methodInfo)
+    {
+        var injectionMode = methodInfo.InterfaceTokenInjectionMode ?? HttpClientGeneratorConstants.TokenInjectionModeHeader;
+
+        // Path 和 HmacSignature 模式不被恢复处理器支持，生成上下文无意义
+        if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModePath ||
+            injectionMode == HttpClientGeneratorConstants.TokenInjectionModeHmacSignature)
+            return false;
+
+        // 用户级令牌需要 UserId 才能正确恢复
+        if (TokenMethodHelper.MethodRequiresUserId(_context, methodInfo))
+            return true;
+
+        // 非默认注入模式（Query/Cookie/ApiKey/BasicAuth）需要上下文才能正确恢复
+        if (injectionMode != HttpClientGeneratorConstants.TokenInjectionModeHeader)
+            return true;
+
+        // Header 模式但使用了自定义 Header 名称，需要上下文
+        var headerName = GetTokenHeaderName(methodInfo);
+        if (headerName != "Authorization")
+            return true;
+
+        // 默认场景：Header 模式 + Authorization 头 + 无用户级令牌
+        // 恢复处理器的 null 回退行为与此一致，无需生成上下文
+        return false;
     }
 
     private void GenerateTokenRecoveryContext(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, string indent)
@@ -507,7 +539,6 @@ internal class MethodGenerator : ICodeFragmentGenerator
         var injectionMode = methodInfo.InterfaceTokenInjectionMode ?? HttpClientGeneratorConstants.TokenInjectionModeHeader;
         var headerName = GetTokenHeaderName(methodInfo);
         var cookieName = !string.IsNullOrEmpty(methodInfo.InterfaceTokenName) ? methodInfo.InterfaceTokenName : "access_token";
-        var tokenManagerKey = TokenMethodHelper.GetMethodTokenManagerKey(_context, methodInfo);
         var requiresUserId = TokenMethodHelper.MethodRequiresUserId(_context, methodInfo);
         var userIdExpr = requiresUserId ? "_currentUserContext.UserId" : "null";
 
@@ -529,6 +560,13 @@ internal class MethodGenerator : ICodeFragmentGenerator
             _ => "Bearer"
         };
 
+        // Query 模式需要 QueryParameterName 才能在恢复时重新注入查询参数
+        string? queryParamName = null;
+        if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModeQuery)
+        {
+            queryParamName = _requestBuilder.GetTokenQueryName(methodInfo);
+        }
+
         codeBuilder.AppendLine($"{indent}#if NETSTANDARD2_0");
         codeBuilder.AppendLine($"{indent}__httpRequest.Properties[\"__Mud_HttpUtils_TokenRecoveryContext\"] = new Mud.HttpUtils.TokenRecoveryContext");
         codeBuilder.AppendLine($"{indent}{{");
@@ -536,8 +574,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine($"{indent}    HeaderName = \"{headerName}\",");
         codeBuilder.AppendLine($"{indent}    TokenScheme = \"{tokenScheme}\",");
         codeBuilder.AppendLine($"{indent}    CookieName = \"{cookieName}\",");
-        codeBuilder.AppendLine($"{indent}    UserId = {userIdExpr},");
-        codeBuilder.AppendLine($"{indent}    TokenManagerKey = \"{tokenManagerKey}\"");
+        if (queryParamName != null)
+            codeBuilder.AppendLine($"{indent}    QueryParameterName = \"{queryParamName}\",");
+        codeBuilder.AppendLine($"{indent}    UserId = {userIdExpr}");
         codeBuilder.AppendLine($"{indent}}};");
         codeBuilder.AppendLine($"{indent}#else");
         codeBuilder.AppendLine($"{indent}__httpRequest.Options.TryAdd(\"__Mud_HttpUtils_TokenRecoveryContext\", new Mud.HttpUtils.TokenRecoveryContext");
@@ -546,8 +585,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine($"{indent}    HeaderName = \"{headerName}\",");
         codeBuilder.AppendLine($"{indent}    TokenScheme = \"{tokenScheme}\",");
         codeBuilder.AppendLine($"{indent}    CookieName = \"{cookieName}\",");
-        codeBuilder.AppendLine($"{indent}    UserId = {userIdExpr},");
-        codeBuilder.AppendLine($"{indent}    TokenManagerKey = \"{tokenManagerKey}\"");
+        if (queryParamName != null)
+            codeBuilder.AppendLine($"{indent}    QueryParameterName = \"{queryParamName}\",");
+        codeBuilder.AppendLine($"{indent}    UserId = {userIdExpr}");
         codeBuilder.AppendLine($"{indent}}});");
         codeBuilder.AppendLine($"{indent}#endif");
     }

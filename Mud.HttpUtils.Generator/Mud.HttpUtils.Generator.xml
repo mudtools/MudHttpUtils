@@ -612,6 +612,12 @@
             生成接口定义的Header代码
             </summary>
         </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.MethodGenerator.ShouldGenerateTokenRecoveryContext(Mud.HttpUtils.Models.Analysis.MethodAnalysisResult)">
+            <summary>
+            判断是否需要生成 TokenRecoveryContext。
+            仅在非默认场景下生成：恢复处理器的 null 回退已覆盖默认 Header+Authorization+Bearer 场景。
+            </summary>
+        </member>
         <member name="M:Mud.HttpUtils.Generators.Implementation.MethodGenerator.ValidateHttpClientCompatibility(Mud.HttpUtils.Generators.Context.GeneratorContext,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult)">
             <summary>
             校验 HttpClient 类型与方法调用的兼容性（加密、XML）

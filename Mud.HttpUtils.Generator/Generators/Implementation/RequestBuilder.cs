@@ -907,7 +907,7 @@ internal class RequestBuilder
         return methodInfo.InterfaceAttributes?.Any(attr => attr.StartsWith("Query:", StringComparison.Ordinal)) == true;
     }
 
-    private string GetTokenQueryName(MethodAnalysisResult methodInfo)
+    internal string GetTokenQueryName(MethodAnalysisResult methodInfo)
     {
         if (!string.IsNullOrEmpty(methodInfo.InterfaceTokenName))
             return methodInfo.InterfaceTokenName;
