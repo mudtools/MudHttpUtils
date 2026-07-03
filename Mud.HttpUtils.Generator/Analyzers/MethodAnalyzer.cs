@@ -117,12 +117,12 @@ internal static class MethodAnalyzer
             RetryMaxRetries = retryMaxRetries,
             RetryDelayMilliseconds = retryDelayMilliseconds,
             RetryUseExponentialBackoff = retryUseExponentialBackoff,
-CircuitBreakerEnabled = circuitBreakerEnabled,
-CircuitBreakerFailureThreshold = circuitBreakerFailureThreshold,
-CircuitBreakerBreakDurationSeconds = circuitBreakerBreakDurationSeconds,
-CircuitBreakerSamplingDurationSeconds = circuitBreakerSamplingDurationSeconds,
-CircuitBreakerMinimumThroughput = circuitBreakerMinimumThroughput,
-MethodTimeoutEnabled = methodTimeoutEnabled,
+            CircuitBreakerEnabled = circuitBreakerEnabled,
+            CircuitBreakerFailureThreshold = circuitBreakerFailureThreshold,
+            CircuitBreakerBreakDurationSeconds = circuitBreakerBreakDurationSeconds,
+            CircuitBreakerSamplingDurationSeconds = circuitBreakerSamplingDurationSeconds,
+            CircuitBreakerMinimumThroughput = circuitBreakerMinimumThroughput,
+            MethodTimeoutEnabled = methodTimeoutEnabled,
             MethodTimeoutMilliseconds = methodTimeoutMilliseconds
         };
     }
@@ -996,34 +996,34 @@ MethodTimeoutEnabled = methodTimeoutEnabled,
         return (true, maxRetries, delayMilliseconds, useExponentialBackoff);
     }
 
-private static (bool enabled, int failureThreshold, int breakDurationSeconds, int samplingDurationSeconds, int minimumThroughput) AnalyzeCircuitBreakerAttribute(IMethodSymbol methodSymbol)
-{
-var cbAttr = methodSymbol.GetAttributes()
-.FirstOrDefault(attr => HttpClientGeneratorConstants.CircuitBreakerAttributeNames.Contains(attr.AttributeClass?.Name));
+    private static (bool enabled, int failureThreshold, int breakDurationSeconds, int samplingDurationSeconds, int minimumThroughput) AnalyzeCircuitBreakerAttribute(IMethodSymbol methodSymbol)
+    {
+        var cbAttr = methodSymbol.GetAttributes()
+            .FirstOrDefault(attr => HttpClientGeneratorConstants.CircuitBreakerAttributeNames.Contains(attr.AttributeClass?.Name));
 
-if (cbAttr == null)
-return (false, 5, 30, 0, 10);
+        if (cbAttr == null)
+            return (false, 5, 30, 0, 10);
 
-var failureThreshold = AttributeDataHelper.GetIntValueFromAttribute(
-cbAttr, HttpClientGeneratorConstants.CircuitBreakerFailureThresholdProperty, 5);
+        var failureThreshold = AttributeDataHelper.GetIntValueFromAttribute(
+            cbAttr, HttpClientGeneratorConstants.CircuitBreakerFailureThresholdProperty, 5);
 
-if (cbAttr.ConstructorArguments.Length > 0 &&
-cbAttr.ConstructorArguments[0].Value is int constructorThreshold)
-{
-failureThreshold = constructorThreshold;
-}
+        if (cbAttr.ConstructorArguments.Length > 0 &&
+            cbAttr.ConstructorArguments[0].Value is int constructorThreshold)
+        {
+            failureThreshold = constructorThreshold;
+        }
 
-var breakDurationSeconds = AttributeDataHelper.GetIntValueFromAttribute(
-cbAttr, HttpClientGeneratorConstants.CircuitBreakerBreakDurationSecondsProperty, 30);
+        var breakDurationSeconds = AttributeDataHelper.GetIntValueFromAttribute(
+            cbAttr, HttpClientGeneratorConstants.CircuitBreakerBreakDurationSecondsProperty, 30);
 
-var samplingDurationSeconds = AttributeDataHelper.GetIntValueFromAttribute(
-cbAttr, HttpClientGeneratorConstants.CircuitBreakerSamplingDurationSecondsProperty, 0);
+        var samplingDurationSeconds = AttributeDataHelper.GetIntValueFromAttribute(
+            cbAttr, HttpClientGeneratorConstants.CircuitBreakerSamplingDurationSecondsProperty, 0);
 
-var minimumThroughput = AttributeDataHelper.GetIntValueFromAttribute(
-cbAttr, HttpClientGeneratorConstants.CircuitBreakerMinimumThroughputProperty, 10);
+        var minimumThroughput = AttributeDataHelper.GetIntValueFromAttribute(
+            cbAttr, HttpClientGeneratorConstants.CircuitBreakerMinimumThroughputProperty, 10);
 
-return (true, failureThreshold, breakDurationSeconds, samplingDurationSeconds, minimumThroughput);
-}
+        return (true, failureThreshold, breakDurationSeconds, samplingDurationSeconds, minimumThroughput);
+    }
 
     private static (bool enabled, int timeoutMilliseconds) AnalyzeTimeoutAttribute(IMethodSymbol methodSymbol)
     {

@@ -99,6 +99,8 @@ public class ResilientHttpClientTests
         mockInner.Setup(c => c.SendAsync<string>(It.IsAny<HttpRequestMessage>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("result");
         var mockPolicyProvider = new Mock<IResiliencePolicyProvider>();
+        mockPolicyProvider.Setup(p => p.GetTimeoutAndCircuitBreakerPolicy<string>())
+            .Returns(Polly.Policy.NoOpAsync<string>());
         var mockLogger = new Mock<ILogger<ResilientHttpClient>>();
         var options = new ResilienceOptions { MaxCloneContentSize = 100 };
 
@@ -115,6 +117,7 @@ public class ResilientHttpClientTests
 
         mockInner.Verify(c => c.SendAsync<string>(It.IsAny<HttpRequestMessage>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
         mockPolicyProvider.Verify(p => p.GetCombinedPolicy<string>(), Times.Never);
+        mockPolicyProvider.Verify(p => p.GetTimeoutAndCircuitBreakerPolicy<string>(), Times.Once);
     }
 
     [Fact]
@@ -165,6 +168,8 @@ public class ResilientHttpClientTests
         mockInner.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
         var mockPolicyProvider = new Mock<IResiliencePolicyProvider>();
+        mockPolicyProvider.Setup(p => p.GetTimeoutAndCircuitBreakerPolicy<HttpResponseMessage>())
+            .Returns(Polly.Policy.NoOpAsync<HttpResponseMessage>());
         var mockLogger = new Mock<ILogger<ResilientHttpClient>>();
         var options = new ResilienceOptions { MaxCloneContentSize = 100 };
 
@@ -181,6 +186,7 @@ public class ResilientHttpClientTests
 
         mockInner.Verify(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()), Times.Once);
         mockPolicyProvider.Verify(p => p.GetCombinedPolicy<HttpResponseMessage>(), Times.Never);
+        mockPolicyProvider.Verify(p => p.GetTimeoutAndCircuitBreakerPolicy<HttpResponseMessage>(), Times.Once);
     }
 
     [Fact]

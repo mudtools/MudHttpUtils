@@ -219,21 +219,18 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
         LogOperation("发送流式异步枚举请求", uri);
 
-        Stream stream;
+        Stream? stream = null;
+        HttpResponseMessage? response = null;
         try
         {
-            var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 
-        // 确保在枚举器被提前放弃时也能释放资源
-        // HttpResponseMessage 仅实现 IDisposable，使用 using 确保释放
-        using (response)
-        {
             await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
 
 #if NETSTANDARD2_0
-            var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 #else
-            var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 #endif
         }
         catch (HttpRequestException ex)
@@ -261,9 +258,17 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
             throw new HttpRequestException($"HTTP请求处理失败: {ex.Message}", ex);
         }
+        finally
+        {
+            // 如果 stream 未成功获取（异常被捕获并重新抛出），释放 response 防止泄露
+            if (stream == null)
+                response?.Dispose();
+        }
 
-            var options = (jsonSerializerOptions as JsonSerializerOptions) ?? s_defaultJsonSerializerOptions;
+        var options = (jsonSerializerOptions as JsonSerializerOptions) ?? s_defaultJsonSerializerOptions;
 
+        try
+        {
             using var reader = new StreamReader(stream);
 
             string? line;
@@ -284,6 +289,10 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             }
 
             LogOperation("流式异步枚举请求完成", uri);
+        }
+        finally
+        {
+            response?.Dispose();
         }
     }
 
@@ -1322,28 +1331,28 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// 包装 Stream 和 HttpResponseMessage，确保流被释放时响应消息也被释放。
     /// </summary>
     private sealed class DisposableStream : Stream
+{
+    private readonly Stream _innerStream;
+    private readonly HttpResponseMessage _response;
+    private bool _disposed;
+
+    public DisposableStream(Stream innerStream, HttpResponseMessage response)
     {
-        private readonly Stream _innerStream;
-        private readonly HttpResponseMessage _response;
-        private bool _disposed;
+        _innerStream = innerStream ?? throw new ArgumentNullException(nameof(innerStream));
+        _response = response ?? throw new ArgumentNullException(nameof(response));
+    }
 
-        public DisposableStream(Stream innerStream, HttpResponseMessage response)
-        {
-            _innerStream = innerStream ?? throw new ArgumentNullException(nameof(innerStream));
-            _response = response ?? throw new ArgumentNullException(nameof(response));
-        }
+    public override bool CanRead => _innerStream.CanRead;
+    public override bool CanSeek => _innerStream.CanSeek;
+    public override bool CanWrite => _innerStream.CanWrite;
+    public override long Length => _innerStream.Length;
+    public override long Position { get => _innerStream.Position; set => _innerStream.Position = value; }
 
-        public override bool CanRead => _innerStream.CanRead;
-        public override bool CanSeek => _innerStream.CanSeek;
-        public override bool CanWrite => _innerStream.CanWrite;
-        public override long Length => _innerStream.Length;
-        public override long Position { get => _innerStream.Position; set => _innerStream.Position = value; }
-
-        public override void Flush() => _innerStream.Flush();
-        public override int Read(byte[] buffer, int offset, int count) => _innerStream.Read(buffer, offset, count);
-        public override long Seek(long offset, SeekOrigin origin) => _innerStream.Seek(offset, origin);
-        public override void SetLength(long value) => _innerStream.SetLength(value);
-        public override void Write(byte[] buffer, int offset, int count) => _innerStream.Write(buffer, offset, count);
+    public override void Flush() => _innerStream.Flush();
+    public override int Read(byte[] buffer, int offset, int count) => _innerStream.Read(buffer, offset, count);
+    public override long Seek(long offset, SeekOrigin origin) => _innerStream.Seek(offset, origin);
+    public override void SetLength(long value) => _innerStream.SetLength(value);
+    public override void Write(byte[] buffer, int offset, int count) => _innerStream.Write(buffer, offset, count);
 
 #if !NETSTANDARD2_0
         public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
@@ -1352,19 +1361,19 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             => _innerStream.ReadAsync(buffer, cancellationToken);
 #endif
 
-        protected override void Dispose(bool disposing)
+    protected override void Dispose(bool disposing)
+    {
+        if (!_disposed)
         {
-            if (!_disposed)
+            _disposed = true;
+            if (disposing)
             {
-                _disposed = true;
-                if (disposing)
-                {
-                    _innerStream?.Dispose();
-                    _response?.Dispose();
-                }
+                _innerStream?.Dispose();
+                _response?.Dispose();
             }
-            base.Dispose(disposing);
         }
+        base.Dispose(disposing);
+    }
 
 #if !NETSTANDARD2_0
         public override async ValueTask DisposeAsync()

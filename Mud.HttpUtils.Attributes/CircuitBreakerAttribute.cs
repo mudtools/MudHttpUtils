@@ -1,15 +1,27 @@
 namespace Mud.HttpUtils.Attributes;
 
+/// <summary>
+/// 熔断属性
+/// </summary>
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
 public sealed class CircuitBreakerAttribute : Attribute
 {
+    /// <summary>
+    /// 失败阈值
+    /// </summary>
     public CircuitBreakerAttribute(int failureThreshold = 5)
     {
         FailureThreshold = failureThreshold;
     }
 
+    /// <summary>
+    /// 失败阈值
+    /// </summary>
     public int FailureThreshold { get; set; }
 
+    /// <summary>
+    /// 熔断持续时间（秒）
+    /// </summary>
     public int BreakDurationSeconds { get; set; } = 30;
 
     /// <summary>

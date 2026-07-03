@@ -4,6 +4,26 @@
         <name>Mud.HttpUtils.Attributes</name>
     </assembly>
     <members>
+        <member name="T:Mud.HttpUtils.Attributes.CircuitBreakerAttribute">
+            <summary>
+            熔断属性
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Attributes.CircuitBreakerAttribute.#ctor(System.Int32)">
+            <summary>
+            失败阈值
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Attributes.CircuitBreakerAttribute.FailureThreshold">
+            <summary>
+            失败阈值
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Attributes.CircuitBreakerAttribute.BreakDurationSeconds">
+            <summary>
+            熔断持续时间（秒）
+            </summary>
+        </member>
         <member name="P:Mud.HttpUtils.Attributes.CircuitBreakerAttribute.SamplingDurationSeconds">
             <summary>
             采样窗口时间（秒）。默认 0，表示使用基于连续失败计数的简单熔断策略。
