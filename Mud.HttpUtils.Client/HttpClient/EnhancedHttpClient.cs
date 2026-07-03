@@ -611,6 +611,13 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             _logger.HttpRequestCancelled(requestUri!, ex);
             throw;
         }
+        catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+        {
+            // 纯 OperationCanceledException（非 TaskCanceledException）表示请求被取消，
+            // 直接重新抛出，避免被下面的 catch-all 包装为 HttpRequestException
+            _logger.HttpRequestCancelled(requestUri!, ex);
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.HttpRequestFailedWithExceptionType(requestUri!, ex.GetType().Name, ex);

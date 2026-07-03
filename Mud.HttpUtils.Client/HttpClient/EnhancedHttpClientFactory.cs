@@ -14,7 +14,7 @@ namespace Mud.HttpUtils;
 internal sealed class EnhancedHttpClientFactory : IEnhancedHttpClientFactory
 {
     private readonly IServiceProvider _serviceProvider;
-    private readonly ConcurrentDictionary<string, IEnhancedHttpClient> _clientCache = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, Lazy<IEnhancedHttpClient>> _clientCache = new(StringComparer.Ordinal);
 #if !NET6_0_OR_GREATER
     private readonly IOptions<EnhancedHttpClientFactoryOptions> _options;
 #endif
@@ -40,7 +40,9 @@ internal sealed class EnhancedHttpClientFactory : IEnhancedHttpClientFactory
         if (string.IsNullOrWhiteSpace(clientName))
             throw new ArgumentNullException(nameof(clientName));
 
-        return _clientCache.GetOrAdd(clientName, CreateClientCore);
+        // 使用 Lazy<T> 确保 CreateClientCore 在并发场景下只被调用一次，
+        // 避免 GetOrAdd 的已知竞态导致多余实例创建
+        return _clientCache.GetOrAdd(clientName, name => new Lazy<IEnhancedHttpClient>(() => CreateClientCore(name))).Value;
     }
 
     public bool Invalidate(string clientName)

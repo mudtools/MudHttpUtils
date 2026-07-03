@@ -208,33 +208,49 @@ internal class FormContentGenerator : TransitiveCodeGenerator
     private List<PropertyInfo> GetJsonPropertyProperties(INamedTypeSymbol classSymbol)
     {
         var properties = new List<PropertyInfo>();
+        var seenNames = new HashSet<string>(StringComparer.Ordinal);
 
-        foreach (var propertySymbol in classSymbol.GetMembers().OfType<IPropertySymbol>())
+        // 遍历基类链，收集当前类及所有父类的公开属性
+        var current = classSymbol;
+        while (current != null && current.SpecialType != SpecialType.System_Object)
         {
-            if (propertySymbol.DeclaredAccessibility != Accessibility.Public)
-                continue;
+            foreach (var propertySymbol in current.GetMembers().OfType<IPropertySymbol>())
+            {
+                if (propertySymbol.DeclaredAccessibility != Accessibility.Public)
+                    continue;
 
-            if (propertySymbol.IsStatic || propertySymbol.IsIndexer)
-                continue;
+                if (propertySymbol.IsStatic || propertySymbol.IsIndexer)
+                    continue;
 
-            var jsonPropertyAttr = propertySymbol.GetAttributes()
-                .FirstOrDefault(a => a.AttributeClass?.Name == JsonPropertyNameAttributeName);
+                // 跳过 override 属性（已在声明类中处理）
+                if (propertySymbol.IsOverride)
+                    continue;
 
-            var jsonPropertyName = jsonPropertyAttr != null
-                ? GetJsonPropertyName(jsonPropertyAttr)
-                : propertySymbol.Name;
+                // 去重：同名属性只保留第一个（派生类优先）
+                if (!seenNames.Add(propertySymbol.Name))
+                    continue;
 
-            var hasFilePathAttr = propertySymbol.GetAttributes()
-                .Any(a => a.AttributeClass?.Name == FilePathAttributeName);
+                var jsonPropertyAttr = propertySymbol.GetAttributes()
+                    .FirstOrDefault(a => a.AttributeClass?.Name == JsonPropertyNameAttributeName);
 
-            var isNullable = propertySymbol.Type.NullableAnnotation == NullableAnnotation.Annotated;
+                var jsonPropertyName = jsonPropertyAttr != null
+                    ? GetJsonPropertyName(jsonPropertyAttr)
+                    : propertySymbol.Name;
 
-            properties.Add(new PropertyInfo(
-                propertySymbol.Name,
-                jsonPropertyName,
-                propertySymbol.Type,
-                hasFilePathAttr,
-                isNullable));
+                var hasFilePathAttr = propertySymbol.GetAttributes()
+                    .Any(a => a.AttributeClass?.Name == FilePathAttributeName);
+
+                var isNullable = propertySymbol.Type.NullableAnnotation == NullableAnnotation.Annotated;
+
+                properties.Add(new PropertyInfo(
+                    propertySymbol.Name,
+                    jsonPropertyName,
+                    propertySymbol.Type,
+                    hasFilePathAttr,
+                    isNullable));
+            }
+
+            current = current.BaseType;
         }
 
         return properties;
@@ -247,14 +263,27 @@ internal class FormContentGenerator : TransitiveCodeGenerator
     /// <returns>byte[] 属性名，如果没有则返回 null</returns>
     private string? GetByteArrayPropertyName(INamedTypeSymbol classSymbol)
     {
-        foreach (var propertySymbol in classSymbol.GetMembers().OfType<IPropertySymbol>())
+        // 遍历基类链查找 byte[] 属性
+        var current = classSymbol;
+        while (current != null && current.SpecialType != SpecialType.System_Object)
         {
-            // 判断是否为 byte[] 类型
-            if (propertySymbol.Type is IArrayTypeSymbol arrayType &&
-                arrayType.ElementType.SpecialType == SpecialType.System_Byte)
+            foreach (var propertySymbol in current.GetMembers().OfType<IPropertySymbol>())
             {
-                return propertySymbol.Name;
+                if (propertySymbol.DeclaredAccessibility != Accessibility.Public)
+                    continue;
+
+                if (propertySymbol.IsStatic || propertySymbol.IsIndexer)
+                    continue;
+
+                // 判断是否为 byte[] 类型
+                if (propertySymbol.Type is IArrayTypeSymbol arrayType &&
+                    arrayType.ElementType.SpecialType == SpecialType.System_Byte)
+                {
+                    return propertySymbol.Name;
+                }
             }
+
+            current = current.BaseType;
         }
 
         return null;

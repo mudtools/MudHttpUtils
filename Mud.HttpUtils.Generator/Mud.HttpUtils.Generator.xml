@@ -597,7 +597,7 @@
             函数在哪个接口定义就在哪个生成类中生成，InheritedFrom场景下父接口方法由基类负责
             </summary>
         </member>
-        <member name="M:Mud.HttpUtils.Generators.Implementation.MethodGenerator.GenerateMethodImplementation(System.Text.StringBuilder,Mud.HttpUtils.Generators.Context.GeneratorContext,Microsoft.CodeAnalysis.IMethodSymbol,System.Boolean)">
+        <member name="M:Mud.HttpUtils.Generators.Implementation.MethodGenerator.GenerateMethodImplementation(System.Text.StringBuilder,Mud.HttpUtils.Generators.Context.GeneratorContext,Microsoft.CodeAnalysis.IMethodSymbol,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult,System.Boolean)">
             <summary>
             生成单个方法的实现代码
             </summary>

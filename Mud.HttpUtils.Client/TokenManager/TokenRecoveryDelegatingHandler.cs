@@ -317,6 +317,7 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
             if (recoveryContextHeader != null && header.Key.Equals(recoveryContextHeader, StringComparison.OrdinalIgnoreCase))
                 continue;
 
+            // Cookie 模式下仍需复制原始 Cookie 头，ApplyTokenToRequest 会保留非目标 Cookie 并替换目标 Cookie
             if (recoveryContext?.InjectionMode == TokenInjectionMode.Cookie && header.Key.Equals("Cookie", StringComparison.OrdinalIgnoreCase))
             {
                 clone.Headers.TryAddWithoutValidation(header.Key, header.Value);

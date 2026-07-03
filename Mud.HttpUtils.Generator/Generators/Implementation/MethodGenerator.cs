@@ -37,9 +37,16 @@ internal class MethodGenerator : ICodeFragmentGenerator
             if (!isHttpMethod)
                 continue;
 
-            ValidatePathParameters(context, methodSymbol);
+            // 一次性分析方法并缓存结果，避免 AnalyzeMethod 被重复调用
+            var methodInfo = MethodAnalyzer.AnalyzeMethod(
+                context.Compilation,
+                methodSymbol,
+                context.InterfaceDeclaration,
+                context.SemanticModel);
 
-            GenerateMethodImplementation(codeBuilder, context, methodSymbol, isAbstractClass);
+            ValidatePathParameters(context, methodSymbol, methodInfo);
+
+            GenerateMethodImplementation(codeBuilder, context, methodSymbol, methodInfo, isAbstractClass);
 
             if (HasCacheAttribute(methodSymbol))
             {
@@ -56,7 +63,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 context.HasQueryMap = true;
             }
 
-            TrackXmlResponseType(context, methodSymbol);
+            // TrackXmlResponseType 已移除：PrecomputeXmlResponseTypes 已在 InterfaceImplementationGenerator 中完成相同工作
         }
     }
 
@@ -91,14 +98,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
     /// <summary>
     /// 生成单个方法的实现代码
     /// </summary>
-    private void GenerateMethodImplementation(StringBuilder codeBuilder, GeneratorContext context, IMethodSymbol methodSymbol, bool isVirtual = false)
+    private void GenerateMethodImplementation(StringBuilder codeBuilder, GeneratorContext context, IMethodSymbol methodSymbol, MethodAnalysisResult methodInfo, bool isVirtual = false)
     {
-        var methodInfo = MethodAnalyzer.AnalyzeMethod(
-            context.Compilation,
-            methodSymbol,
-            context.InterfaceDeclaration,
-            context.SemanticModel);
-
         if (!methodInfo.IsValid) return;
 
         if (!string.IsNullOrEmpty(methodInfo.UrlTemplate) &&
@@ -704,7 +705,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                type.StartsWith("Mud.HttpUtils.HttpClient.Response<", StringComparison.Ordinal);
     }
 
-    private static void ValidatePathParameters(GeneratorContext context, IMethodSymbol methodSymbol)
+    private static void ValidatePathParameters(GeneratorContext context, IMethodSymbol methodSymbol, MethodAnalysisResult methodInfo)
     {
         var httpMethodAttr = MethodAnalyzer.FindHttpMethodAttributeFromSymbol(methodSymbol);
         if (httpMethodAttr == null)
@@ -727,11 +728,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         // 当 Token 使用 Path 注入模式时，URL 模板中的 Token 占位符应由 Token 注入机制替换，
         // 不需要对应的 [Path] 参数，因此将 Token 占位符从缺失列表中排除
-        var methodInfo = MethodAnalyzer.AnalyzeMethod(
-            context.Compilation,
-            methodSymbol,
-            context.InterfaceDeclaration,
-            context.SemanticModel);
+        // 使用已缓存的 methodInfo，避免重复调用 AnalyzeMethod
         var tokenPathPlaceholders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (methodInfo.IsValid && methodInfo.InterfaceTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModePath
             && !string.IsNullOrEmpty(methodInfo.InterfaceTokenName))
@@ -787,41 +784,6 @@ internal class MethodGenerator : ICodeFragmentGenerator
             }
         }
         return placeholders;
-    }
-
-    private static void TrackXmlResponseType(GeneratorContext context, IMethodSymbol methodSymbol)
-    {
-        var methodInfo = MethodAnalyzer.AnalyzeMethod(
-            context.Compilation,
-            methodSymbol,
-            context.InterfaceDeclaration,
-            context.SemanticModel);
-
-        if (!methodInfo.IsValid)
-            return;
-
-        var isXmlResponse = ContentTypeHelper.IsXmlContentType(methodInfo.ResponseContentType);
-        if (!isXmlResponse)
-            return;
-
-        var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
-        if (string.IsNullOrEmpty(deserializeType) || deserializeType == "void" || deserializeType == "System.Void")
-            return;
-
-        if (IsResponseType(methodInfo))
-        {
-            var innerType = ExtractResponseInnerType(deserializeType);
-            if (!string.IsNullOrEmpty(innerType) && innerType != "void" && innerType != "System.Void")
-            {
-                context.XmlResponseTypes.Add(innerType);
-            }
-        }
-        else
-        {
-            context.XmlResponseTypes.Add(deserializeType);
-        }
-
-        context.HasXmlResponse = context.XmlResponseTypes.Count > 0;
     }
 
     private static string? ExtractResponseInnerType(string responseType)
