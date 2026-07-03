@@ -1,6 +1,6 @@
 <Project>
 	<PropertyGroup>
-		<Version>2.0.0-rc2</Version>
+		<Version>2.0.0-rc3</Version>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<TreatWarningsAsErrors>false</TreatWarningsAsErrors>
@@ -13,7 +13,7 @@
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<PackageTags>Mud;MudTools;Roslyn;SourceGenerator;CodeGenerator;代码生成器;ASP.NET;ASP.NET Core;.NET;.NET Core;</PackageTags>
 		<NoDefaultExcludes>true</NoDefaultExcludes>
-		<Copyright>© 2019-2025 Mud Studio Co.,Ltd.</Copyright>
+		<Copyright>© 2019-2026 Mud Studio Co.,Ltd.</Copyright>
 		<Authors>Mud Studio</Authors>
 		<Company>Mud Studio</Company>
 		<LangVersion>latest</LangVersion>
