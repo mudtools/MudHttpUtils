@@ -134,8 +134,8 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("            var hmacProvider = appContext.GetService<IHmacSignatureProvider>();");
         codeBuilder.AppendLine("            if(hmacProvider == null)");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到 IHmacSignatureProvider 服务，请先注册 HMAC 签名提供器。\");");
-        codeBuilder.AppendLine("            var secretKey = await GetApiKeyAsync(\"HmacSecretKey\");");
-        codeBuilder.AppendLine("            var signature = await hmacProvider.GenerateSignatureAsync(request, secretKey);");
+        codeBuilder.AppendLine("            var secretKey = await GetApiKeyAsync(\"HmacSecretKey\").ConfigureAwait(false);");
+        codeBuilder.AppendLine("            var signature = await hmacProvider.GenerateSignatureAsync(request, secretKey).ConfigureAwait(false);");
         codeBuilder.AppendLine("            request.Headers.Add(\"X-Hmac-Signature\", signature);");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();

@@ -36,6 +36,11 @@ public class HttpClientApiGeneratorTests
         return outputCompilation.SyntaxTrees.Skip(1).FirstOrDefault()?.ToString();
     }
 
+    private string GetAllGeneratedCode(Compilation outputCompilation)
+    {
+        return string.Join("\n", outputCompilation.SyntaxTrees.Skip(1).Select(t => t.ToString()));
+    }
+
     #region BUG-04: HttpClient 与 TokenManager 互斥校验
 
     [Fact]
@@ -406,7 +411,7 @@ namespace TestNamespace
     [Fact]
     public void Generator_WithOptionValue_GeneratesNullCheck()
     {
-        // 验证修复 BUG：option.Value 应有 null 检查
+        // 验证修复 BUG：option 应先检查 null，再检查 option.Value
         var source = @"
 using Mud.HttpUtils;
 
@@ -425,8 +430,12 @@ namespace TestNamespace
 
         if (generatedCode != null)
         {
-            generatedCode.Should().Contain("option.Value ?? throw new ArgumentNullException(nameof(option))",
-                "option.Value 应有 null 合并检查");
+            generatedCode.Should().Contain("if (option == null)",
+                "应先检查 option 是否为 null");
+            generatedCode.Should().Contain("throw new ArgumentNullException(nameof(option))",
+                "option 为 null 时应抛出 ArgumentNullException");
+            generatedCode.Should().Contain("option.Value ?? throw new InvalidOperationException",
+                "option.Value 为 null 时应抛出 InvalidOperationException");
         }
     }
 
@@ -693,6 +702,221 @@ namespace TestNamespace
 
         diagnostics.Should().NotContain(d => d.Id == "HTTPCLIENT015" || d.Id == "HTTPCLIENT016",
             "TokenManage 类型合法时不应报告 HTTPCLIENT015 或 HTTPCLIENT016 诊断");
+    }
+
+    #endregion
+
+    #region BUG 修复验证：__appContext 捕获（TOCTOU 竞态修复）
+
+    [Fact]
+    public void Generator_WithTokenManage_CapturesAppContextToLocalVariable()
+    {
+        // 验证修复 BUG：在 TokenManage 模式下应捕获 _appContextHolder.Current 到局部变量 __appContext
+        // 避免在异步执行过程中 _appContextHolder.Current 被其他线程修改导致 TOCTOU 竞态
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    [HttpClientApi(TokenManage = ""ITestTokenManager"")]
+    public interface ITestApi
+    {
+        [Get(""/secure-data"")]
+        Task<string> GetSecureDataAsync();
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        if (generatedCode != null)
+        {
+            generatedCode.Should().Contain("var __appContext = _appContextHolder.Current",
+                "TokenManage 模式下应捕获 _appContextHolder.Current 到局部变量 __appContext");
+            generatedCode.Should().Contain("__appContext.HttpClient",
+                "应使用 __appContext.HttpClient 而非 _appContextHolder.Current!.HttpClient");
+            generatedCode.Should().NotContain("_appContextHolder.Current!.HttpClient",
+                "不应直接使用 _appContextHolder.Current!.HttpClient");
+        }
+    }
+
+    [Fact]
+    public void Generator_WithHttpClient_DoesNotGenerateAppContext()
+    {
+        // 验证 HttpClient 属性模式下不需要 __appContext
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(HttpClient = ""MyHttpClient"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        if (generatedCode != null)
+        {
+            generatedCode.Should().NotContain("var __appContext = _appContextHolder.Current",
+                "HttpClient 属性模式下不应生成 __appContext 局部变量");
+        }
+    }
+
+    #endregion
+
+    #region BUG 修复验证：弹性策略 __ct 传递
+
+    [Fact]
+    public void Generator_WithResiliance_PassesPolicyCancellationTokenToSendRawAsync()
+    {
+        // 验证修复 BUG：弹性策略模式下应将 __ct（策略传入的 CancellationToken）传递给 SendRawAsync
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        [Retry(3)]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        if (generatedCode != null)
+        {
+            generatedCode.Should().Contain("cancellationToken: __ct",
+                "弹性策略模式下应将 __ct 传递给 SendRawAsync");
+        }
+    }
+
+    #endregion
+
+    #region BUG 修复验证：XML 反序列化 StringReader 释放
+
+    [Fact]
+    public void Generator_WithXmlResponse_UsesUsingForStringReader()
+    {
+        // 验证修复 BUG：XML 反序列化时应使用 using var 释放 StringReader
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/data"", ResponseContentType = ""application/xml"")]
+        Task<MyXmlData> GetDataAsync();
+    }
+
+    public class MyXmlData
+    {
+        public string Name { get; set; }
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var allGeneratedCode = GetAllGeneratedCode(outputCompilation);
+
+        allGeneratedCode.Should().Contain("using var __xmlReader = new System.IO.StringReader",
+            "XML 反序列化应使用 using var 释放 StringReader");
+    }
+
+    #endregion
+
+    #region BUG 修复验证：FormContent 使用 IsNullOrWhiteSpace
+
+    [Fact]
+    public void Generator_WithFormContentClass_UsesIsNullOrWhiteSpaceForStrings()
+    {
+        // 验证修复 BUG：FormContent 字符串属性应使用 IsNullOrWhiteSpace 而非 IsNullOrEmpty
+        var source = @"
+using System.Text.Json.Serialization;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [FormContent]
+    public class UploadRequest
+    {
+        [JsonPropertyName(""name"")]
+        public string Name { get; set; }
+
+        [JsonPropertyName(""file"")]
+        [FilePath]
+        public string FilePath { get; set; }
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        if (generatedCode != null)
+        {
+            generatedCode.Should().Contain("!string.IsNullOrWhiteSpace(Name)",
+                "FormContent 字符串属性应使用 IsNullOrWhiteSpace");
+            generatedCode.Should().NotContain("string.IsNullOrEmpty(Name)",
+                "FormContent 字符串属性不应使用 IsNullOrEmpty");
+        }
+    }
+
+    #endregion
+
+    #region BUG 修复验证：GetApiKeyAsync 使用 ConfigureAwait(false)
+
+    [Fact]
+    public void Generator_WithApiKeyInjection_UsesConfigureAwaitOnGetApiKeyAsync()
+    {
+        // 验证修复 BUG：GetApiKeyAsync 调用应使用 ConfigureAwait(false)
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    [HttpClientApi(TokenManage = ""ITestTokenManager"", TokenType = ""ApiKey"")]
+    public interface ITestApi
+    {
+        [Get(""/secure-data"")]
+        [Token(InjectionMode = TokenInjectionMode.ApiKey)]
+        Task<string> GetSecureDataAsync();
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        if (generatedCode != null)
+        {
+            generatedCode.Should().Contain("GetApiKeyAsync").And.Contain("ConfigureAwait(false)",
+                "GetApiKeyAsync 调用应使用 ConfigureAwait(false)");
+        }
     }
 
     #endregion
