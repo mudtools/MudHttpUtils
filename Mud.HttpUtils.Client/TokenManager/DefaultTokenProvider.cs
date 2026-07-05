@@ -74,8 +74,7 @@ internal sealed class DefaultTokenProvider(ILogger<DefaultTokenProvider> logger)
 
         if (string.IsNullOrEmpty(token))
         {
-            _logger.LogWarning("获取用户令牌失败，UserId: '{UserId}'，TokenManagerKey: '{TokenManagerKey}'。",
-                request.UserId, request.TokenManagerKey);
+            MudHttpClientLog.UserTokenRetrievalFailed(_logger, request.UserId, request.TokenManagerKey);
             throw new InvalidOperationException(
                 $"获取用户令牌失败，UserId: '{request.UserId}'，TokenManagerKey: '{request.TokenManagerKey}'。");
         }
@@ -100,7 +99,7 @@ internal sealed class DefaultTokenProvider(ILogger<DefaultTokenProvider> logger)
 
         if (string.IsNullOrEmpty(token))
         {
-            _logger.LogWarning("获取令牌失败，TokenManagerKey: '{TokenManagerKey}'。", request.TokenManagerKey);
+            MudHttpClientLog.TokenRetrievalFailed(_logger, request.TokenManagerKey);
             throw new InvalidOperationException(
                 $"获取令牌失败，TokenManagerKey: '{request.TokenManagerKey}'。");
         }

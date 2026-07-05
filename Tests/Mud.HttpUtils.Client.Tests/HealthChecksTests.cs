@@ -14,6 +14,11 @@ namespace Mud.HttpUtils.Client.Tests;
 /// 健康检查单元测试：验证 TokenRefreshHealthCheck / MudCircuitBreakerHealthCheck /
 /// AddMudHttpHealthChecks 注册与判定逻辑。
 /// </summary>
+/// <remarks>
+/// 此测试类与 <see cref="ObservabilityTests"/> 共享静态状态（CircuitBreakerStateObserver / TokenRefreshStatsCollector），
+/// 通过 <see cref="ObservabilityTestCollection"/> 串行执行，避免并发竞态导致状态被相互清空。
+/// </remarks>
+[Collection(ObservabilityTestCollection.Name)]
 public class HealthChecksTests
 {
     // ============ TokenRefreshStatsCollector ============
@@ -494,4 +499,19 @@ public class HealthChecksTests
         var act = () => ((IServiceCollection)null!).AddMudHttpHealthChecks();
         act.Should().Throw<ArgumentNullException>();
     }
+}
+
+/// <summary>
+/// 可观测性测试集合定义。
+/// </summary>
+/// <remarks>
+/// <see cref="HealthChecksTests"/> 与 <see cref="ObservabilityTests"/> 都操作静态状态
+/// （<see cref="CircuitBreakerStateObserver"/> / <see cref="TokenRefreshStatsCollector"/>），
+/// 若并发执行会产生竞态（一个测试的 Clear() 清空另一个测试刚 SetState 的状态）。
+/// 通过此 collection 强制 xUnit 串行执行这两个测试类。
+/// </remarks>
+[CollectionDefinition(Name)]
+public class ObservabilityTestCollection
+{
+    public const string Name = "Observability";
 }

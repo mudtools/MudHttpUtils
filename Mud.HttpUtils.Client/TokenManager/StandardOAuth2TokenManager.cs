@@ -59,7 +59,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "从 ISecretProvider 获取客户端密钥失败，回退到配置值");
+                MudHttpClientLog.SecretProviderFallback(_logger, ex);
             }
         }
 
@@ -209,7 +209,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "令牌撤销失败");
+            MudHttpClientLog.TokenRevocationFailed(_logger, ex);
             return false;
         }
     }

@@ -14,6 +14,11 @@ namespace Mud.HttpUtils.Client.Tests;
 /// 可观测性单元测试：验证 ActivitySource / Meter / CircuitBreakerStateObserver /
 /// MudHttpObservability / TracingDelegatingHandler 在订阅与未订阅场景下的行为。
 /// </summary>
+/// <remarks>
+/// 此测试类与 <see cref="HealthChecksTests"/> 共享静态状态（CircuitBreakerStateObserver / TokenRefreshStatsCollector），
+/// 通过 <see cref="ObservabilityTestCollection"/> 串行执行，避免并发竞态。
+/// </remarks>
+[Collection(ObservabilityTestCollection.Name)]
 public class ObservabilityTests
 {
     // ============ MudHttpActivitySource ============

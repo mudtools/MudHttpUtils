@@ -240,6 +240,22 @@ internal static partial class MudHttpClientLog
     [LoggerMessage(EventId = 149, Level = LogLevel.Warning,
         Message = "令牌注入失败（不支持的 InjectionMode={InjectionMode}），返回 401")]
     public static partial void TokenInjectionUnsupported(ILogger logger, string injectionMode);
+
+    [LoggerMessage(EventId = 152, Level = LogLevel.Warning,
+        Message = "从 ISecretProvider 获取客户端密钥失败，回退到配置值")]
+    public static partial void SecretProviderFallback(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 153, Level = LogLevel.Error,
+        Message = "令牌撤销失败")]
+    public static partial void TokenRevocationFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 154, Level = LogLevel.Warning,
+        Message = "获取用户令牌失败，UserId: '{UserId}'，TokenManagerKey: '{TokenManagerKey}'。")]
+    public static partial void UserTokenRetrievalFailed(ILogger logger, string userId, string? tokenManagerKey);
+
+    [LoggerMessage(EventId = 155, Level = LogLevel.Warning,
+        Message = "获取令牌失败，TokenManagerKey: '{TokenManagerKey}'。")]
+    public static partial void TokenRetrievalFailed(ILogger logger, string? tokenManagerKey);
 #else
     private static readonly Action<ILogger, string, Exception?> s_tokenManagerRegistered =
         LoggerMessage.Define<string>(LogLevel.Debug, new EventId(131, nameof(TokenManagerRegistered)),
@@ -362,6 +378,30 @@ internal static partial class MudHttpClientLog
             "令牌注入失败（不支持的 InjectionMode={InjectionMode}），返回 401");
     public static void TokenInjectionUnsupported(ILogger logger, string injectionMode)
         => s_tokenInjectionUnsupported(logger, injectionMode, null);
+
+    private static readonly Action<ILogger, Exception> s_secretProviderFallback =
+        LoggerMessage.Define(LogLevel.Warning, new EventId(152, nameof(SecretProviderFallback)),
+            "从 ISecretProvider 获取客户端密钥失败，回退到配置值");
+    public static void SecretProviderFallback(ILogger logger, Exception exception)
+        => s_secretProviderFallback(logger, exception);
+
+    private static readonly Action<ILogger, Exception> s_tokenRevocationFailed =
+        LoggerMessage.Define(LogLevel.Error, new EventId(153, nameof(TokenRevocationFailed)),
+            "令牌撤销失败");
+    public static void TokenRevocationFailed(ILogger logger, Exception exception)
+        => s_tokenRevocationFailed(logger, exception);
+
+    private static readonly Action<ILogger, string, string?, Exception?> s_userTokenRetrievalFailed =
+        LoggerMessage.Define<string, string?>(LogLevel.Warning, new EventId(154, nameof(UserTokenRetrievalFailed)),
+            "获取用户令牌失败，UserId: '{UserId}'，TokenManagerKey: '{TokenManagerKey}'。");
+    public static void UserTokenRetrievalFailed(ILogger logger, string userId, string? tokenManagerKey)
+        => s_userTokenRetrievalFailed(logger, userId, tokenManagerKey, null);
+
+    private static readonly Action<ILogger, string?, Exception?> s_tokenRetrievalFailed =
+        LoggerMessage.Define<string?>(LogLevel.Warning, new EventId(155, nameof(TokenRetrievalFailed)),
+            "获取令牌失败，TokenManagerKey: '{TokenManagerKey}'。");
+    public static void TokenRetrievalFailed(ILogger logger, string? tokenManagerKey)
+        => s_tokenRetrievalFailed(logger, tokenManagerKey, null);
 #endif
 
     #endregion

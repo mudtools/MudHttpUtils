@@ -243,58 +243,70 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     {
         var uri = ValidateRequest(request);
 
-        LogOperation("发送流式异步枚举请求", uri);
+        // 可观测性：设置 client_name 供下游 DelegatingHandler 读取
+        MudHttpObservability.SetClientName(request, ClientName);
 
-        Stream? stream = null;
+        // 创建日志作用域（CorrelationId / ClientName / Method / Host）
+        using var scope = _enableLogging
+            ? MudHttpObservability.CreateLoggerScope(_logger, request, ClientName)
+            : null;
+
+        // 若已被 TracingDelegatingHandler 采集，则不重复创建 Activity/指标（去重）
+        var alreadyObserved = MudHttpObservability.IsObserved(request);
+        var activity = alreadyObserved ? null : MudHttpObservability.StartRequestActivity(request, ClientName);
+        var sw = alreadyObserved ? default : ValueStopwatch.StartNew();
+        var recordedSuccess = false;
         HttpResponseMessage? response = null;
+
         try
         {
-            response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            LogOperation("发送流式异步枚举请求", uri);
 
-            await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
+            Stream stream;
+            try
+            {
+                response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+
+                await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
+
+                // 流式响应需要在响应头到达时即记录状态码（响应体可能在 Dispose 后才读取）
+                MudHttpObservability.SetStatusCode(request, (int)response.StatusCode);
+                MudHttpObservability.SetContentLength(request, response.Content.Headers.ContentLength);
 
 #if NETSTANDARD2_0
                 stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 #else
                 stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 #endif
-        }
-        catch (HttpRequestException ex)
-        {
+            }
+            catch (HttpRequestException ex)
+            {
 #if !NETSTANDARD2_0
-            var statusCode = ex.StatusCode.HasValue ? (int)ex.StatusCode.Value : 0;
-            _logger.HttpRequestFailedWithStatusCode(uri, statusCode, ex);
+                var statusCode = ex.StatusCode.HasValue ? (int)ex.StatusCode.Value : 0;
+                _logger.HttpRequestFailedWithStatusCode(uri, statusCode, ex);
 #else
-            _logger.HttpRequestFailedSimple(uri, ex);
+                _logger.HttpRequestFailedSimple(uri, ex);
 #endif
-            throw;
-        }
-        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
-        {
-            _logger.HttpRequestTimeout(uri, _httpClient.Timeout.TotalSeconds, ex);
-            throw new HttpRequestException($"请求超时: {uri}", ex);
-        }
-        catch (TaskCanceledException ex)
-        {
-            _logger.HttpRequestCancelled(uri, ex);
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
-            throw new HttpRequestException($"HTTP请求处理失败: {ex.Message}", ex);
-        }
-        finally
-        {
-            // 如果 stream 未成功获取（异常被捕获并重新抛出），释放 response 防止泄露
-            if (stream == null)
-                response?.Dispose();
-        }
+                throw;
+            }
+            catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                _logger.HttpRequestTimeout(uri, _httpClient.Timeout.TotalSeconds, ex);
+                throw new HttpRequestException($"请求超时: {uri}", ex);
+            }
+            catch (TaskCanceledException ex)
+            {
+                _logger.HttpRequestCancelled(uri, ex);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
+                throw new HttpRequestException($"HTTP请求处理失败: {ex.Message}", ex);
+            }
 
-        var options = (jsonSerializerOptions as JsonSerializerOptions) ?? s_defaultJsonSerializerOptions;
+            var options = (jsonSerializerOptions as JsonSerializerOptions) ?? s_defaultJsonSerializerOptions;
 
-        try
-        {
             using var reader = new StreamReader(stream);
 
             string? line;
@@ -315,10 +327,33 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             }
 
             LogOperation("流式异步枚举请求完成", uri);
+            recordedSuccess = true;
         }
         finally
         {
             response?.Dispose();
+
+            // 记录可观测性指标（仅在未被 DelegatingHandler 采集时）
+            if (!alreadyObserved)
+            {
+                var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
+                if (recordedSuccess)
+                {
+                    MudHttpObservability.RecordSuccessFromRequest(activity, request, elapsedMs, ClientName);
+                }
+                else
+                {
+                    MudHttpObservability.RecordError(
+                        activity,
+                        new InvalidOperationException("流式异步枚举未成功完成"),
+                        elapsedMs,
+                        ClientName,
+                        request);
+                }
+                MudHttpObservability.MarkObserved(request);
+            }
+
+            activity?.Dispose();
         }
     }
 
@@ -342,7 +377,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     {
         var uri = ValidateRequest(request);
 
-        return await ExecuteWithLoggingAsync(
+        return await ExecuteWithObservabilityAsync(
+            request,
             "发送XML请求", "XML请求完成", "XML请求失败", uri,
             () => SendXmlRequestAsync<TResult>(request, encoding, cancellationToken));
     }
@@ -413,31 +449,29 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     {
         requestUri.ThrowIfNull();
 
-        return await ExecuteWithLoggingAsync(
-            "发送XML GET请求", "XML GET请求完成", "XML GET请求失败", requestUri,
-            async () =>
-            {
-                using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-                return await SendXmlRequestAsync<TResult>(request, encoding, cancellationToken).ConfigureAwait(false);
-            });
+        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        var uri = ValidateRequest(request);
+        return await ExecuteWithObservabilityAsync(
+            request,
+            "发送XML GET请求", "XML GET请求完成", "XML GET请求失败", uri,
+            () => SendXmlRequestAsync<TResult>(request, encoding, cancellationToken));
     }
 
     private async Task<TResult?> SendXmlWithBodyAsync<TRequest, TResult>(
         HttpMethod method, string operation, string completeMsg, string errorMsg,
         string requestUri, TRequest requestData, Encoding? encoding, CancellationToken cancellationToken)
     {
-        return await ExecuteWithLoggingAsync(
-            operation, completeMsg, errorMsg, requestUri,
-            async () =>
-            {
-                var enc = encoding ?? Encoding.UTF8;
-                var xmlContent = SerializeToXml(requestData, enc);
-                using var request = new HttpRequestMessage(method, requestUri)
-                {
-                    Content = new StringContent(xmlContent, enc, "application/xml")
-                };
-                return await SendXmlRequestAsync<TResult>(request, encoding, cancellationToken).ConfigureAwait(false);
-            });
+        var enc = encoding ?? Encoding.UTF8;
+        var xmlContent = SerializeToXml(requestData, enc);
+        using var request = new HttpRequestMessage(method, requestUri)
+        {
+            Content = new StringContent(xmlContent, enc, "application/xml")
+        };
+        var uri = ValidateRequest(request);
+        return await ExecuteWithObservabilityAsync(
+            request,
+            operation, completeMsg, errorMsg, uri,
+            () => SendXmlRequestAsync<TResult>(request, encoding, cancellationToken));
     }
 
     #endregion
@@ -458,9 +492,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     {
         requestUri.ThrowIfNull();
 
-        return await ExecuteWithLoggingAsync(
-            "发送JSON GET请求", "JSON GET请求完成", "JSON GET请求失败", requestUri,
-            () => SendSimpleJsonRequestAsync<TResult>(HttpMethod.Get, requestUri, cancellationToken));
+        return await SendSimpleJsonRequestAsync<TResult>(
+            HttpMethod.Get, "发送JSON GET请求", "JSON GET请求完成", "JSON GET请求失败",
+            requestUri, cancellationToken);
     }
 
     /// <inheritdoc cref="IJsonHttpClient.PostAsJsonAsync{TRequest,TResult}"/>
@@ -523,9 +557,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     {
         requestUri.ThrowIfNull();
 
-        return await ExecuteWithLoggingAsync(
-            "发送JSON DELETE请求", "JSON DELETE请求完成", "JSON DELETE请求失败", requestUri,
-            () => SendSimpleJsonRequestAsync<TResult>(HttpMethod.Delete, requestUri, cancellationToken));
+        return await SendSimpleJsonRequestAsync<TResult>(
+            HttpMethod.Delete, "发送JSON DELETE请求", "JSON DELETE请求完成", "JSON DELETE请求失败",
+            requestUri, cancellationToken);
     }
 
     /// <inheritdoc cref="IJsonHttpClient.DeleteAsJsonAsync{TRequest,TResult}"/>
@@ -578,30 +612,34 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         HttpMethod method, string operation, string completeMsg, string errorMsg,
         string requestUri, TRequest requestData, CancellationToken cancellationToken)
     {
-        return await ExecuteWithLoggingAsync(
-            operation, completeMsg, errorMsg, requestUri,
-            async () =>
-            {
-                var content = JsonSerializer.Serialize(requestData, s_defaultJsonSerializerOptions);
-                using var request = new HttpRequestMessage(method, requestUri)
-                {
-                    Content = new StringContent(content, Encoding.UTF8, "application/json")
-                };
-                return await SendRequestAsync<TResult>(
-                    request,
-                    jsonSerializerOptions: s_defaultJsonSerializerOptions,
-                    cancellationToken: cancellationToken).ConfigureAwait(false);
-            });
+        var content = JsonSerializer.Serialize(requestData, s_defaultJsonSerializerOptions);
+        using var request = new HttpRequestMessage(method, requestUri)
+        {
+            Content = new StringContent(content, Encoding.UTF8, "application/json")
+        };
+        var validatedUri = ValidateRequest(request);
+        return await ExecuteWithObservabilityAsync(
+            request,
+            operation, completeMsg, errorMsg, validatedUri,
+            () => SendRequestAsync<TResult>(
+                request,
+                jsonSerializerOptions: s_defaultJsonSerializerOptions,
+                cancellationToken: cancellationToken));
     }
 
     private async Task<TResult?> SendSimpleJsonRequestAsync<TResult>(
-        HttpMethod method, string requestUri, CancellationToken cancellationToken)
+        HttpMethod method, string operation, string completeMsg, string errorMsg,
+        string requestUri, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(method, requestUri);
-        return await SendRequestAsync<TResult>(
+        var validatedUri = ValidateRequest(request);
+        return await ExecuteWithObservabilityAsync(
             request,
-            jsonSerializerOptions: s_defaultJsonSerializerOptions,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+            operation, completeMsg, errorMsg, validatedUri,
+            () => SendRequestAsync<TResult>(
+                request,
+                jsonSerializerOptions: s_defaultJsonSerializerOptions,
+                cancellationToken: cancellationToken));
     }
 
     #endregion
