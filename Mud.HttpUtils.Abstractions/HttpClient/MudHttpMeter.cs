@@ -6,6 +6,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics.Metrics;
+using Mud.HttpUtils.Observability;
 
 namespace Mud.HttpUtils;
 
@@ -136,6 +137,11 @@ public static class CircuitBreakerStateObserver
             return;
 
         s_states[policyKey] = state;
+
+        // 写入 DiagnosticSource 事件，供外部 APM 探针订阅
+        MudHttpDiagnosticListener.Instance.WriteIfEnabled(
+            MudHttpDiagnosticNames.CircuitBreakerStateChanged,
+            () => new CircuitBreakerDiagnosticPayload(policyKey, state.ToString()));
     }
 
     /// <summary>

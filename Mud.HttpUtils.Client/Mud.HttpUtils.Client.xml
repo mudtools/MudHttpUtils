@@ -492,9 +492,9 @@
             <code>RegexOptions.IgnoreCase</code><br/>
             Explanation:<br/>
             <code>
+            ○ Match if at the beginning of the string.<br/>
             ○ Match with 3 alternative expressions, atomically.<br/>
                 ○ Match a sequence of expressions.<br/>
-                    ○ Match if at the beginning of the string.<br/>
                     ○ Loop greedily any number of times.<br/>
                         ○ Match a character in the set [+/-9A-Za-z\u212A] exactly 4 times.<br/>
                     ○ Optional (greedy).<br/>
@@ -507,20 +507,18 @@
                                 ○ Match '='.<br/>
                     ○ Match if at the end of the string or if before an ending newline.<br/>
                 ○ Match a sequence of expressions.<br/>
-                    ○ Match if at the beginning of the string.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 8 times.<br/>
+                    ○ Match a hexadecimal digit exactly 8 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 4 times.<br/>
+                    ○ Match a hexadecimal digit exactly 4 times.<br/>
                     ○ Match '-'.<br/>
-                    ○ Match a character in the set [0-9A-Fa-f] exactly 12 times.<br/>
+                    ○ Match a hexadecimal digit exactly 12 times.<br/>
                     ○ Match if at the end of the string or if before an ending newline.<br/>
                 ○ Match a sequence of expressions.<br/>
-                    ○ Match if at the beginning of the string.<br/>
-                    ○ Match a character in the set [-0-9A-Z_a-z\u212A] atomically at least 20 times.<br/>
+                    ○ Match a character in the set [\-0-9A-Z_a-z\u212A] atomically at least 20 times.<br/>
                     ○ Match if at the end of the string or if before an ending newline.<br/>
             </code>
             </remarks>
@@ -1418,6 +1416,117 @@
             <para>EventId 规划：1-50 EnhancedHttpClient（已分配）；51-100 预留；101-120 Resilience；121-130 Cache；131-150 TokenManager。</para>
             </remarks>
         </member>
+        <member name="T:Mud.HttpUtils.MudHttpHealthChecksExtensions">
+            <summary>
+            Mud.HttpUtils 健康检查服务注册扩展方法。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.MudHttpHealthChecksExtensions.AddMudHttpHealthChecks(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.Action{Mud.HttpUtils.MudHttpHealthChecksOptions})">
+            <summary>
+            添加 Mud.HttpUtils 内置健康检查（令牌刷新 + 熔断器）到依赖注入容器。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="configure">可选的配置委托，可同时配置令牌刷新与熔断器健康检查选项。</param>
+            <returns>服务集合（链式调用）。</returns>
+            <remarks>
+            注册的健康检查：
+            <list type="bullet">
+              <item><c>mud_token_refresh</c>：基于 <see cref="T:Mud.HttpUtils.Observability.TokenRefreshStatsCollector"/> 窗口期失败率判定。</item>
+              <item><c>mud_circuit_breaker</c>：基于 <see cref="T:Mud.HttpUtils.CircuitBreakerStateObserver"/> 当前熔断器状态判定。</item>
+            </list>
+            两个健康检查均标记 <c>mud</c> 标签，可通过 <c>MapHealthChecks("/health")</c> 暴露端点，
+            或使用 <c>MapHealthChecks("/health/mud", new HealthCheckOptions { Predicate = h => h.Tags.Contains("mud") })</c> 单独暴露。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.MudHttpHealthChecksExtensions.AddMudHttpHealthChecks(Microsoft.Extensions.DependencyInjection.IServiceCollection,Microsoft.Extensions.Configuration.IConfiguration,System.String)">
+            <summary>
+            从 <see cref="T:Microsoft.Extensions.Configuration.IConfiguration"/> 绑定健康检查选项并注册。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="configuration">配置实例。</param>
+            <param name="sectionPath">配置节点路径，默认 "MudHttpHealthChecks"。</param>
+            <returns>服务集合（链式调用）。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.MudHttpHealthChecksOptions">
+            <summary>
+            Mud.HttpUtils 健康检查聚合选项。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpHealthChecksOptions.TokenRefresh">
+            <summary>令牌刷新健康检查选项。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.MudHttpHealthChecksOptions.CircuitBreaker">
+            <summary>熔断器健康检查选项。</summary>
+        </member>
+        <member name="T:Mud.HttpUtils.TokenRefreshHealthCheckSettings">
+            <summary>
+            令牌刷新健康检查配置（含失败状态）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenRefreshHealthCheckSettings.WindowSeconds">
+            <summary>统计窗口期（秒），默认 300。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenRefreshHealthCheckSettings.DegradedThreshold">
+            <summary>告警阈值（0~1），默认 0.2。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenRefreshHealthCheckSettings.CriticalThreshold">
+            <summary>临界阈值（0~1），默认 0.5。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenRefreshHealthCheckSettings.MinSampleSize">
+            <summary>最小样本数，默认 5。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.TokenRefreshHealthCheckSettings.FailureStatus">
+            <summary>失败时返回的健康状态，默认 null（由健康检查内部判定）。</summary>
+        </member>
+        <member name="T:Mud.HttpUtils.CircuitBreakerHealthCheckSettings">
+            <summary>
+            熔断器健康检查配置（含失败状态）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.CircuitBreakerHealthCheckSettings.MaxOpenCount">
+            <summary>允许的 Open 状态最大数量，默认 0。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.CircuitBreakerHealthCheckSettings.MaxHalfOpenCount">
+            <summary>允许的 HalfOpen 状态最大数量，默认 0。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.CircuitBreakerHealthCheckSettings.FailureStatus">
+            <summary>失败时返回的健康状态，默认 Unhealthy。</summary>
+        </member>
+        <member name="T:Mud.HttpUtils.MudCircuitBreakerHealthCheck">
+            <summary>
+            熔断器健康检查。
+            基于 <see cref="T:Mud.HttpUtils.CircuitBreakerStateObserver"/> 当前所有熔断器状态判定健康状态：
+            - 任意 Open 数量超过 <see cref="P:Mud.HttpUtils.MudCircuitBreakerHealthCheckOptions.MaxOpenCount"/> → Unhealthy
+            - 任意 HalfOpen 数量超过 <see cref="P:Mud.HttpUtils.MudCircuitBreakerHealthCheckOptions.MaxHalfOpenCount"/> → Degraded
+            - 否则 → Healthy
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudCircuitBreakerHealthCheck.Name">
+            <summary>
+            健康检查名称，注册时使用 <c>mud_circuit_breaker</c>。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.MudCircuitBreakerHealthCheck.CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="T:Mud.HttpUtils.MudCircuitBreakerHealthCheckOptions">
+            <summary>
+            熔断器健康检查选项。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudCircuitBreakerHealthCheckOptions.SectionName">
+            <summary>配置节点路径。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.MudCircuitBreakerHealthCheckOptions.MaxHalfOpenCount">
+            <summary>
+            允许的 HalfOpen 状态最大数量，超过此值则返回 Degraded，默认 0（任何 HalfOpen 都视为 Degraded）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.MudCircuitBreakerHealthCheckOptions.MaxOpenCount">
+            <summary>
+            允许的 Open 状态最大数量，超过此值才返回 Unhealthy，默认 0（任何 Open 都视为 Unhealthy）。
+            </summary>
+        </member>
         <member name="T:Mud.HttpUtils.MudHttpObservability">
             <summary>
             可观测性采集辅助类，统一封装 TracingDelegatingHandler 与 EnhancedHttpClient 兜底路径共用的逻辑。
@@ -1503,6 +1612,48 @@
             创建日志作用域，携带 CorrelationId / ClientName / RequestMethod / RequestHost。
             </summary>
         </member>
+        <member name="T:Mud.HttpUtils.Observability.TokenRefreshHealthCheck">
+            <summary>
+            令牌刷新健康检查。
+            基于 <see cref="T:Mud.HttpUtils.Observability.TokenRefreshStatsCollector"/> 在窗口期内的失败率判定健康状态。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.Observability.TokenRefreshHealthCheck.Name">
+            <summary>
+            健康检查名称，注册时使用 <c>mud_token_refresh</c>。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Observability.TokenRefreshHealthCheck.CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext,System.Threading.CancellationToken)">
+            <inheritdoc />
+        </member>
+        <member name="T:Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions">
+            <summary>
+            令牌刷新健康检查选项。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions.SectionName">
+            <summary>配置节点路径。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions.WindowSeconds">
+            <summary>
+            统计窗口期（秒），默认 300 秒（5 分钟）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions.DegradedThreshold">
+            <summary>
+            告警阈值（失败率 0~1），达到则返回 Degraded，默认 0.2（20%）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions.CriticalThreshold">
+            <summary>
+            临界阈值（失败率 0~1），达到则返回 Unhealthy，默认 0.5（50%）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions.MinSampleSize">
+            <summary>
+            最小样本数，窗口期内总刷新次数低于此值时返回 Healthy，避免冷启动误报，默认 5。
+            </summary>
+        </member>
         <member name="T:Mud.HttpUtils.TracingDelegatingHandler">
             <summary>
             HTTP 出站请求的追踪与指标采集 DelegatingHandler。
@@ -1522,6 +1673,15 @@
         </member>
         <member name="M:Mud.HttpUtils.TracingDelegatingHandler.SendAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
             <inheritdoc />
+        </member>
+        <member name="T:Mud.HttpUtils.HttpRequestDiagnosticPayload">
+            <summary>HTTP 请求开始/停止事件的诊断负载。</summary>
+        </member>
+        <member name="T:Mud.HttpUtils.HttpResponseDiagnosticPayload">
+            <summary>HTTP 请求停止事件的诊断负载（含响应状态码与耗时）。</summary>
+        </member>
+        <member name="T:Mud.HttpUtils.HttpRequestErrorDiagnosticPayload">
+            <summary>HTTP 请求失败事件的诊断负载（含异常）。</summary>
         </member>
         <member name="T:Mud.HttpUtils.ValueStopwatch">
             <summary>
@@ -3215,6 +3375,9 @@
         </member>
         <member name="M:System.Text.RegularExpressions.Generated.Utilities.StackPush(System.Int32[]@,System.Int32@,System.Int32,System.Int32)">
             <summary>Pushes 2 values onto the backtracking stack.</summary>
+        </member>
+        <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_asciiLettersAndDigitsAndDashUnderscoreKelvinSign">
+            <summary>Supports searching for characters in or not in "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyzK".</summary>
         </member>
         <member name="F:System.Text.RegularExpressions.Generated.Utilities.s_nonAscii_2BDDE98808630E9B520E3AD9F33E4A0D939EAAED4FF3C3CC86415C934044BB2B">
             <summary>Supports searching for characters in or not in "CKSYcksyK".</summary>

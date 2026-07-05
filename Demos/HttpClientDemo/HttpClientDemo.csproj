@@ -9,6 +9,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\..\Mud.HttpUtils.Client\Mud.HttpUtils.Client.csproj" />
+		<ProjectReference Include="..\..\Mud.HttpUtils.OpenTelemetry\Mud.HttpUtils.OpenTelemetry.csproj" />
 		<ProjectReference Include="..\..\Mud.HttpUtils.Attributes\Mud.HttpUtils.Attributes.csproj" />
 		<ProjectReference Include="..\..\Mud.HttpUtils.Generator\Mud.HttpUtils.Generator.csproj" OutputItemType="Analyzer" />
 	</ItemGroup>

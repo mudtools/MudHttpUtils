@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Mud.HttpUtils.Observability;
 
 namespace Mud.HttpUtils;
 
@@ -44,6 +45,9 @@ public class CacheResponseInterceptor : ICacheResponseInterceptor
             MudHttpMeter.CacheCounter.Add(1,
                 new KeyValuePair<string, object?>("outcome", "hit"),
                 new KeyValuePair<string, object?>("cache_key", key));
+
+            MudHttpDiagnosticListener.Instance.WriteIfEnabled(MudHttpDiagnosticNames.CacheHit,
+                () => new CacheDiagnosticPayload(key, hit: true));
             return true;
         }
 
@@ -51,6 +55,9 @@ public class CacheResponseInterceptor : ICacheResponseInterceptor
         MudHttpMeter.CacheCounter.Add(1,
             new KeyValuePair<string, object?>("outcome", "miss"),
             new KeyValuePair<string, object?>("cache_key", key));
+
+        MudHttpDiagnosticListener.Instance.WriteIfEnabled(MudHttpDiagnosticNames.CacheMiss,
+            () => new CacheDiagnosticPayload(key, hit: false));
         return false;
     }
 

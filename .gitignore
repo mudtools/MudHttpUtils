@@ -16,8 +16,16 @@
 /Mud.HttpUtils.Client/bin
 /Mud.HttpUtils.Resilience/obj
 /Mud.HttpUtils.Resilience/bin
+/Mud.HttpUtils.OpenTelemetry/obj
+/Mud.HttpUtils.OpenTelemetry/bin
 /bin
 /Tests/bin
+/Tests/Mud.HttpUtils.Client.Tests/bin
+/Tests/Mud.HttpUtils.Client.Tests/obj
+/Tests/Mud.HttpUtils.Client.Tests/TestResults
+/Tests/Mud.HttpUtils.OpenTelemetry.Tests/bin
+/Tests/Mud.HttpUtils.OpenTelemetry.Tests/obj
+/Tests/Mud.HttpUtils.OpenTelemetry.Tests/TestResults
 /Tests/Mud.HttpUtils.Client.Tests/bin
 /Tests/Mud.HttpUtils.Client.Tests/obj
 /Tests/Mud.HttpUtils.Client.Tests/TestResults

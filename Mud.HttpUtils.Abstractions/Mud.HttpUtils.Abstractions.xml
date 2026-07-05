@@ -1340,6 +1340,152 @@
             清空所有状态记录（仅供测试使用）。
             </summary>
         </member>
+        <member name="T:Mud.HttpUtils.Observability.CircuitBreakerDiagnosticPayload">
+            <summary>熔断器状态变更事件的诊断负载。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Observability.CircuitBreakerDiagnosticPayload.PolicyKey">
+            <summary>策略键。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Observability.CircuitBreakerDiagnosticPayload.State">
+            <summary>新状态名称（Open/HalfOpen/Closed）。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Observability.CircuitBreakerDiagnosticPayload.Timestamp">
+            <summary>事件时间戳（UTC）。</summary>
+        </member>
+        <member name="T:Mud.HttpUtils.Observability.TokenRefreshDiagnosticPayload">
+            <summary>令牌刷新完成事件的诊断负载。</summary>
+        </member>
+        <member name="T:Mud.HttpUtils.Observability.CacheDiagnosticPayload">
+            <summary>缓存命中/未命中事件的诊断负载。</summary>
+        </member>
+        <member name="T:Mud.HttpUtils.Observability.MudHttpDiagnosticListener">
+            <summary>
+            Mud.HttpUtils 专用 DiagnosticListener 单例。
+            在关键路径（请求/重试/熔断/令牌刷新/缓存）写入事件，外部 APM 探针可订阅。
+            无订阅者时 <see cref="!:IsEnabled"/> 返回 false，调用方应先检查再构造事件负载，避免无谓分配。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Observability.MudHttpDiagnosticListener.Instance">
+            <summary>
+            单例实例。延迟初始化，第一次访问时创建并自动注册到全局 DiagnosticListener.AllListeners。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Observability.MudHttpDiagnosticListener.HasSubscribers">
+            <summary>
+            是否有任何订阅者（按事件名称过滤）。
+            调用方在构造事件负载前应先检查此属性，避免无订阅者时的分配。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Observability.MudHttpDiagnosticListener.WriteIfEnabled(System.String,System.Func{System.Object})">
+            <summary>
+            当有订阅者时写入事件，否则跳过。
+            </summary>
+            <param name="eventName">事件名称（来自 <see cref="T:Mud.HttpUtils.Observability.MudHttpDiagnosticNames"/>）。</param>
+            <param name="payloadFactory">事件负载工厂，仅在存在订阅者时调用。</param>
+        </member>
+        <member name="T:Mud.HttpUtils.Observability.MudHttpDiagnosticNames">
+            <summary>
+            Mud.HttpUtils DiagnosticSource 事件名称常量。
+            外部 APM 探针可通过 <see cref="P:System.Diagnostics.DiagnosticListener.AllListeners"/> 订阅
+            <see cref="F:Mud.HttpUtils.Observability.MudHttpDiagnosticNames.ListenerName"/> 获取事件。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.Observability.MudHttpDiagnosticNames.ListenerName">
+            <summary>
+            DiagnosticListener 名称，外部订阅者使用此名称过滤。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.Observability.MudHttpDiagnosticNames.RequestStarted">
+            <summary>HTTP 请求开始事件。</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.Observability.MudHttpDiagnosticNames.RequestStopped">
+            <summary>HTTP 请求停止事件（正常完成）。</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.Observability.MudHttpDiagnosticNames.RequestFailed">
+            <summary>HTTP 请求失败事件（抛出异常）。</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.Observability.MudHttpDiagnosticNames.RetryOccurred">
+            <summary>重试发生事件。</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.Observability.MudHttpDiagnosticNames.CircuitBreakerStateChanged">
+            <summary>熔断器状态变更事件。</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.Observability.MudHttpDiagnosticNames.TokenRefreshed">
+            <summary>令牌刷新完成事件。</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.Observability.MudHttpDiagnosticNames.CacheHit">
+            <summary>缓存命中事件。</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.Observability.MudHttpDiagnosticNames.CacheMiss">
+            <summary>缓存未命中事件。</summary>
+        </member>
+        <member name="T:Mud.HttpUtils.Observability.RefreshStats">
+            <summary>
+            令牌刷新统计快照，作为健康检查与运维面板的数据来源。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Observability.RefreshStats.Total">
+            <summary>窗口期内刷新总次数。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Observability.RefreshStats.Failures">
+            <summary>窗口期内失败次数（不含 fallback 降级）。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Observability.RefreshStats.Fallbacks">
+            <summary>窗口期内降级成功次数（fallback token）。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Observability.RefreshStats.Successes">
+            <summary>窗口期内成功次数（不含 fallback）。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Observability.RefreshStats.FailureRate">
+            <summary>失败率（0~1），无数据时为 0。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Observability.RefreshStats.WindowStart">
+            <summary>窗口期起点（UTC）。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Observability.RefreshStats.LastRefreshAt">
+            <summary>最近一次刷新时间（UTC），无记录时为 null。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Observability.RefreshStats.LastFailureAt">
+            <summary>最近一次失败时间（UTC），无记录时为 null。</summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Observability.RefreshStats.ToDictionary">
+            <summary>
+            将统计转换为字典，便于健康检查 <see cref="!:Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult"/> 的 data 字段输出。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.Observability.TokenRefreshStatsCollector">
+            <summary>
+            令牌刷新统计收集器（无锁设计）。
+            基于 <see cref="T:System.Collections.Concurrent.ConcurrentQueue`1"/> 追加事件，读取时按时间窗口线性扫描并裁剪过期项。
+            写入路径零分配除事件结构本身，热路径无锁。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Observability.TokenRefreshStatsCollector.Record(System.Boolean,System.String,System.Double,System.Boolean)">
+            <summary>
+            记录一次令牌刷新事件。
+            </summary>
+            <param name="success">是否成功（fallback 视为成功但需配合 <paramref name="isFallback"/>）。</param>
+            <param name="tokenManagerKey">令牌管理器标识（通常为类型名）。</param>
+            <param name="elapsedMs">本次刷新耗时（毫秒）。</param>
+            <param name="isFallback">是否为降级成功（fallback token）。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.Observability.TokenRefreshStatsCollector.GetSnapshot(System.Int32)">
+            <summary>
+            获取指定窗口期内的统计快照。
+            </summary>
+            <param name="windowSeconds">窗口期（秒），默认 300 秒（5 分钟）。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.Observability.TokenRefreshStatsCollector.Trim">
+            <summary>
+            清理过期事件，避免内存无限增长。
+            写路径每次调用，读路径不调用（避免读路径产生写入）。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Observability.TokenRefreshStatsCollector.Clear">
+            <summary>
+            清空所有统计（仅供测试与运维重置使用）。
+            </summary>
+        </member>
         <member name="T:Mud.HttpUtils.Response`1">
             <summary>
             表示 HTTP 响应的包装类型，同时提供响应内容和原始 HTTP 响应信息。

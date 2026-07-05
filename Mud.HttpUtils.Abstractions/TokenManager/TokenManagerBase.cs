@@ -7,6 +7,7 @@
 
 using System.Collections.Concurrent;
 using System.Linq;
+using Mud.HttpUtils.Observability;
 
 namespace Mud.HttpUtils;
 
@@ -350,6 +351,14 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
         MudHttpMeter.TokenRefreshDuration.Record(elapsedMs,
             new KeyValuePair<string, object?>("token_manager_key", tokenManagerKey ?? "(unknown)"));
+
+        // 同步写入无锁统计收集器，供健康检查使用
+        TokenRefreshStatsCollector.Record(success, tokenManagerKey, elapsedMs, isFallback);
+
+        // 写入 DiagnosticSource 事件，供外部 APM 探针订阅
+        MudHttpDiagnosticListener.Instance.WriteIfEnabled(
+            MudHttpDiagnosticNames.TokenRefreshed,
+            () => new TokenRefreshDiagnosticPayload(tokenManagerKey, success, isFallback, elapsedMs));
     }
 
     private bool IsTokenValid(string scopeKey)

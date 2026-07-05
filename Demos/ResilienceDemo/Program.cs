@@ -9,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Mud.HttpUtils;
+using Mud.HttpUtils.OpenTelemetry;
 using Mud.HttpUtils.Resilience;
 using Polly.CircuitBreaker;
 using ResilienceDemo.Models;
@@ -26,6 +27,7 @@ public class Program
                 Demo2_ResilienceWithDecorator(services);
                 Demo3_ResilienceFromConfiguration(services);
                 Demo4_CustomPolicyComposition(services);
+                Demo5_OpenTelemetryIntegration(services);
             })
             .Build();
 
@@ -36,6 +38,7 @@ public class Program
         await DemoCircuitBreaker(host.Services);
         await DemoDecoratorPattern(host.Services);
         await DemoRequestCloning();
+        await DemoOpenTelemetryIntegration(host.Services);
 
         Console.WriteLine("\n=== 演示完成 ===");
     }
@@ -119,6 +122,30 @@ public class Program
             options.CircuitBreaker.FailureThreshold = 50; // 50% 失败率
             options.CircuitBreaker.MinimumThroughput = 10;
         });
+    }
+
+    /// <summary>
+    /// 演示 OpenTelemetry 与 Resilience 配合使用：一键开启 Tracing + Metrics，
+    /// 弹性策略触发的所有重试、熔断、超时事件均会被 Mud.HttpUtils 的 ActivitySource / Meter 自动采集。
+    /// </summary>
+    private static void Demo5_OpenTelemetryIntegration(IServiceCollection services)
+    {
+        // OTel 默认导出至 http://localhost:4317（OTLP gRPC）
+        // 启动 Jaeger: docker run -d -p 16686:16686 -p 4317:4317 jaegertracing/all-in-one:1.62
+        services.AddMudHttpOpenTelemetry(options =>
+        {
+            // 开发环境使用 5 秒短超时，便于调试
+            options.UseShortExporterTimeout = true;
+
+            // 自定义 ActivitySource（如业务层的源），追加到 Mud 默认配置之后
+            options.ConfigureTracing = tp =>
+            {
+                tp.AddSource("ResilienceDemo.Business");
+            };
+        });
+
+        // 同时注册健康检查（可选），便于通过 /health 端点观察令牌刷新与熔断状态
+        services.AddMudHttpHealthChecks();
     }
 
     #endregion
@@ -293,6 +320,45 @@ public class Program
         Console.WriteLine("    - 请求选项（Options，仅 .NET 5+）");
         Console.WriteLine("  用途：Polly 重试时 HttpRequestMessage 不能重复发送，克隆确保每次重试使用新的请求实例");
         Console.WriteLine("  调用链：调用方 → ResilientHttpClient → Polly 策略 → 请求克隆 → 内部 IEnhancedHttpClient");
+
+        await Task.CompletedTask;
+        Console.WriteLine();
+    }
+
+    #endregion
+
+    #region OpenTelemetry 集成演示
+
+    private static async Task DemoOpenTelemetryIntegration(IServiceProvider services)
+    {
+        Console.WriteLine("--- 6. OpenTelemetry 集成演示 ---");
+
+        Console.WriteLine("  已通过 AddMudHttpOpenTelemetry() 注册以下可观测性采集：");
+        Console.WriteLine("    Tracing:");
+        Console.WriteLine("      - ActivitySource: Mud.HttpUtils.HttpClient（出站请求 span）");
+        Console.WriteLine("      - ActivitySource: System.Net.Http（.NET HttpClient 内置）");
+        Console.WriteLine("      - ActivitySource: Microsoft.AspNetCore（入站请求 span，仅 ASP.NET Core 主机）");
+        Console.WriteLine("    Metrics:");
+        Console.WriteLine("      - Meter: Mud.HttpUtils.HttpClient（含 mud.http.requests/duration/cache/retry/cb 等）");
+        Console.WriteLine("      - Meter: System.Net.Http（.NET 内置 http.client.* 指标）");
+        Console.WriteLine("    Exporter: OTLP gRPC → http://localhost:4317");
+        Console.WriteLine();
+        Console.WriteLine("  部署 Jaeger 接收 OTLP：");
+        Console.WriteLine("    docker run -d -p 16686:16686 -p 4317:4317 jaegertracing/all-in-one:1.62");
+        Console.WriteLine("  启动本 Demo 后访问 http://localhost:16686 查看 Mud.HttpUtils 出站请求 span。");
+        Console.WriteLine();
+        Console.WriteLine("  弹性策略触发的重试/熔断事件也会被记录为 Mud Activity 的属性与事件：");
+        Console.WriteLine("    - mud.http.retry.count：当前请求的重试次数");
+        Console.WriteLine("    - mud.http.circuit_breaker.state：熔断器状态（0=Closed, 1=HalfOpen, 2=Open）");
+        Console.WriteLine("    - DiagnosticSource 事件：RetryOccurred / CircuitBreakerStateChanged / TokenRefreshed / CacheHit|Miss");
+
+        // 验证 OTel 服务已注册
+        var meterProvider = services.GetService<OpenTelemetry.Metrics.MeterProvider>();
+        var tracerProvider = services.GetService<OpenTelemetry.Trace.TracerProvider>();
+        Console.WriteLine();
+        Console.WriteLine($"  MeterProvider 已注册: {meterProvider != null}");
+        Console.WriteLine($"  TracerProvider 已注册: {tracerProvider != null}");
+        Console.WriteLine($"  HealthCheckService 已注册: {services.GetService<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckService>() != null}");
 
         await Task.CompletedTask;
         Console.WriteLine();

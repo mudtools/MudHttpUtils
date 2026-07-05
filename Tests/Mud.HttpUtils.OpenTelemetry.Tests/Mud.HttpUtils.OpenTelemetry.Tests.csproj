@@ -8,8 +8,6 @@
 		<IsPackable>false</IsPackable>
 		<IsTestProject>true</IsTestProject>
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>
-		<EnableAotAnalyzer>true</EnableAotAnalyzer>
-		<IsAotCompatible>true</IsAotCompatible>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -24,14 +22,11 @@
 			<PrivateAssets>all</PrivateAssets>
 		</PackageReference>
 		<PackageReference Include="FluentAssertions" Version="7.0.0" />
-		<PackageReference Include="Moq" Version="4.20.72" />
-		<PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.7" />
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\..\Mud.HttpUtils.Client\Mud.HttpUtils.Client.csproj" />
-		<ProjectReference Include="..\..\Mud.HttpUtils.Abstractions\Mud.HttpUtils.Abstractions.csproj" />
-		<ProjectReference Include="..\..\Mud.HttpUtils.Attributes\Mud.HttpUtils.Attributes.csproj" />
+		<ProjectReference Include="..\..\Mud.HttpUtils.OpenTelemetry\Mud.HttpUtils.OpenTelemetry.csproj" />
 	</ItemGroup>
 
 </Project>

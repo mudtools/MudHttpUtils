@@ -11,6 +11,8 @@ using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Timeout;
 using System.Collections.Concurrent;
+using Mud.HttpUtils.Observability;
+using Mud.HttpUtils.Resilience.Observability;
 
 namespace Mud.HttpUtils.Resilience;
 
@@ -113,6 +115,9 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                         new KeyValuePair<string, object?>("policy_key", policyKey),
                         new KeyValuePair<string, object?>("outcome", "retry"),
                         new KeyValuePair<string, object?>("retry_count", retryCount));
+
+                    MudHttpDiagnosticListener.Instance.WriteIfEnabled(MudHttpDiagnosticNames.RetryOccurred,
+                        () => new RetryDiagnosticPayload(policyKey, retryCount, timeSpan.TotalMilliseconds, outcome.Exception?.GetType().Name));
 
                     if (retryOptions.OnRetry != null)
                     {
@@ -397,6 +402,9 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                             new KeyValuePair<string, object?>("policy_key", policyKey),
                             new KeyValuePair<string, object?>("outcome", "retry"),
                             new KeyValuePair<string, object?>("retry_count", retryCount));
+
+                        MudHttpDiagnosticListener.Instance.WriteIfEnabled(MudHttpDiagnosticNames.RetryOccurred,
+                            () => new RetryDiagnosticPayload(policyKey, retryCount, timeSpan.TotalMilliseconds, outcome.Exception?.GetType().Name));
 
                         if (onRetryCallback != null)
                         {

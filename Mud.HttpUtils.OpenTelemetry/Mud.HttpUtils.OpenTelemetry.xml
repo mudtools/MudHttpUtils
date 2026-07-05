@@ -1,0 +1,105 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>Mud.HttpUtils.OpenTelemetry</name>
+    </assembly>
+    <members>
+        <member name="T:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryExtensions">
+            <summary>
+            Mud.HttpUtils OpenTelemetry 适配包的 DI 扩展方法。
+            </summary>
+            <remarks>
+            <para>通过 <see cref="M:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryExtensions.AddMudHttpOpenTelemetry(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.Action{Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions})"/> 一键启用 Mud.HttpUtils 的分布式追踪与指标采集，
+            并关联 .NET HttpClient 内置的 <c>System.Net.Http</c> ActivitySource。</para>
+            <para>默认导出至本地 OTLP gRPC 端点（<c>http://localhost:4317</c>），
+            通过 <see cref="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.OtlpEndpoint"/> 自定义。</para>
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryExtensions.AddMudHttpOpenTelemetry(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.Action{Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions})">
+            <summary>
+            一键开启 Mud.HttpUtils 的 OpenTelemetry 追踪与指标采集。
+            </summary>
+            <param name="services">服务集合。</param>
+            <param name="configure">可选的配置委托。</param>
+            <returns>返回 <see cref="T:OpenTelemetry.OpenTelemetryBuilder"/>，便于调用方继续追加配置（如其他导出器）。</returns>
+            <exception cref="T:System.ArgumentNullException"><paramref name="services"/> 为 null。</exception>
+            <example>
+            <code>
+            builder.Services.AddMudHttpOpenTelemetry(options =>
+            {
+                options.OtlpEndpoint = new Uri("http://otel-collector:4317");
+                options.EnableAspNetCoreInstrumentation = true;
+            });
+            </code>
+            </example>
+        </member>
+        <member name="T:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions">
+            <summary>
+            Mud.HttpUtils OpenTelemetry 适配包的配置选项。
+            </summary>
+            <remarks>
+            用于 <see cref="M:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryExtensions.AddMudHttpOpenTelemetry(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.Action{Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions})"/> 配置追踪、指标、导出器等。
+            所有开关默认开启，调用方按需关闭。
+            </remarks>
+        </member>
+        <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.EnableTracing">
+            <summary>
+            是否启用追踪（Tracing）。默认 <c>true</c>。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.EnableMetrics">
+            <summary>
+            是否启用指标（Metrics）。默认 <c>true</c>。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.EnableHttpClientInstrumentation">
+            <summary>
+            是否关联 .NET HttpClient 内置的 <c>System.Net.Http</c> ActivitySource 与 Instrumentation。
+            默认 <c>true</c>，用于自动关联出站 HTTP 调用的下游 span。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.EnableAspNetCoreInstrumentation">
+            <summary>
+            是否启用 ASP.NET Core 入站请求的 Instrumentation。默认 <c>true</c>。
+            仅在 ASP.NET Core 主机中生效；控制台应用无效。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.OtlpEndpoint">
+            <summary>
+            OTLP 导出器的 gRPC 端点。默认 <c>http://localhost:4317</c>。
+            设为 <c>null</c> 则不配置 OTLP 导出器，需要调用方自行通过 <c>AddOtlpExporter</c> 等扩展链追加。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.OtlpExportProtocol">
+            <summary>
+            OTLP 导出协议。默认 <c>OtlpExportProtocol.Grpc</c>。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.UseShortExporterTimeout">
+            <summary>
+            是否将 OTLP 导出器的导出超时设为较短时间（5 秒），便于开发调试。默认 <c>false</c>。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ConfigureTracing">
+            <summary>
+            自定义追踪配置委托。在 Mud 默认配置之后执行，可追加/覆盖配置。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ConfigureMetrics">
+            <summary>
+            自定义指标配置委托。在 Mud 默认配置之后执行，可追加/覆盖配置。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.OpenTelemetry.OtlpExportProtocol">
+            <summary>
+            OTLP 导出协议枚举（与 OpenTelemetry.Exporter.OpenTelemetryProtocol.OtlpExportProtocol 一致）。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.OpenTelemetry.OtlpExportProtocol.Grpc">
+            <summary>gRPC 协议（默认）</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.OpenTelemetry.OtlpExportProtocol.HttpProtobuf">
+            <summary>HTTP/Protobuf 协议</summary>
+        </member>
+    </members>
+</doc>

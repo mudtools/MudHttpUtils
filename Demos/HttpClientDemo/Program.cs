@@ -3,6 +3,7 @@ using HttpClientDemo.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Mud.HttpUtils;
+using Mud.HttpUtils.OpenTelemetry;
 
 namespace HttpClientDemo;
 
@@ -16,6 +17,7 @@ public class Program
                 Demo1_BasicRegistration(services);
                 Demo2_EncryptionRegistration(services);
                 Demo3_MultiNamedClients(services);
+                Demo4_OpenTelemetryIntegration(services);
             })
             .Build();
 
@@ -27,6 +29,7 @@ public class Program
         await DemoHttpClientResolver(host.Services);
         await DemoMessageSanitizer();
         await DemoUrlValidator();
+        await DemoOpenTelemetryIntegration(host.Services);
 
         Console.WriteLine("\n=== 演示完成 ===");
     }
@@ -57,6 +60,21 @@ public class Program
     private static void Demo3_MultiNamedClients(IServiceCollection services)
     {
         services.AddMudHttpClient("orderApi", "https://order-api.example.com");
+    }
+
+    /// <summary>
+    /// 演示 OpenTelemetry 一键开启：所有 Mud.HttpUtils 出站 HTTP 请求自动产生 span 与指标，
+    /// 通过 OTLP gRPC 推送至本地 Jaeger（端口 4317）。
+    /// </summary>
+    private static void Demo4_OpenTelemetryIntegration(IServiceCollection services)
+    {
+        // OTel 默认配置：Tracing + Metrics 全开，OTLP gRPC → http://localhost:4317
+        services.AddMudHttpOpenTelemetry(options =>
+        {
+            // 控制台应用无 ASP.NET Core 入站请求，关闭以避免无用 Instrumentation
+            options.EnableAspNetCoreInstrumentation = false;
+            options.UseShortExporterTimeout = true;
+        });
     }
 
     #endregion
@@ -227,6 +245,33 @@ public class Program
         Console.WriteLine("  使用方式：");
         Console.WriteLine("    UrlValidator.ConfigureAllowedDomains([\"api.example.com\"]);");
         Console.WriteLine("    UrlValidator.AddAllowedDomain(\"new-api.example.com\");");
+
+        await Task.CompletedTask;
+        Console.WriteLine();
+    }
+
+    #endregion
+
+    #region OpenTelemetry 集成演示
+
+    private static async Task DemoOpenTelemetryIntegration(IServiceProvider services)
+    {
+        Console.WriteLine("--- 7. OpenTelemetry 一键开启演示 ---");
+
+        Console.WriteLine("  已通过 AddMudHttpOpenTelemetry() 注册可观测性采集：");
+        Console.WriteLine("    - ActivitySource: Mud.HttpUtils.HttpClient");
+        Console.WriteLine("    - Meter: Mud.HttpUtils.HttpClient（mud.http.requests/duration/cache 等）");
+        Console.WriteLine("    - HttpClient Instrumentation: 自动关联 System.Net.Http span");
+        Console.WriteLine("    - OTLP gRPC 导出器: http://localhost:4317");
+        Console.WriteLine();
+        Console.WriteLine("  部署 Jaeger：docker run -d -p 16686:16686 -p 4317:4317 jaegertracing/all-in-one:1.62");
+        Console.WriteLine("  访问 http://localhost:16686 查看 Mud.HttpUtils 出站请求 span");
+        Console.WriteLine();
+
+        var meterProvider = services.GetService<OpenTelemetry.Metrics.MeterProvider>();
+        var tracerProvider = services.GetService<OpenTelemetry.Trace.TracerProvider>();
+        Console.WriteLine($"  MeterProvider 已注册: {meterProvider != null}");
+        Console.WriteLine($"  TracerProvider 已注册: {tracerProvider != null}");
 
         await Task.CompletedTask;
         Console.WriteLine();

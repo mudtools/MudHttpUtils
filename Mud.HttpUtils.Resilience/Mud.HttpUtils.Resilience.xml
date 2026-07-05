@@ -62,6 +62,26 @@
             <typeparam name="TResult">策略返回类型。</typeparam>
             <returns>弹性策略实例。</returns>
         </member>
+        <member name="T:Mud.HttpUtils.Resilience.Observability.RetryDiagnosticPayload">
+            <summary>
+            重试发生事件的诊断负载。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.Observability.RetryDiagnosticPayload.PolicyKey">
+            <summary>策略键。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.Observability.RetryDiagnosticPayload.RetryCount">
+            <summary>重试次数（第几次重试）。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.Observability.RetryDiagnosticPayload.DelayMs">
+            <summary>本次重试延迟（毫秒）。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.Observability.RetryDiagnosticPayload.ExceptionType">
+            <summary>触发重试的异常类型名（可能为 null）。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.Observability.RetryDiagnosticPayload.Timestamp">
+            <summary>事件时间戳（UTC）。</summary>
+        </member>
         <member name="T:Mud.HttpUtils.Resilience.CircuitBreakerOptions">
             <summary>
             熔断策略配置选项。
