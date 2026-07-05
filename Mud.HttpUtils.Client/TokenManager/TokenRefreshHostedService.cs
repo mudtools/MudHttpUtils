@@ -84,7 +84,7 @@ public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefresh
 
         var key = name ?? Guid.NewGuid().ToString("N");
         _tokenManagers[key] = tokenManager;
-        _logger.LogDebug("已注册令牌管理器: {Name}", key);
+        MudHttpClientLog.TokenManagerRegistered(_logger, key);
     }
 
     /// <summary>
@@ -106,17 +106,16 @@ public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefresh
     {
         if (!_options.Enabled)
         {
-            _logger.LogInformation("令牌主动刷新后台服务已禁用");
+            MudHttpClientLog.TokenRefreshServiceDisabled(_logger);
             return;
         }
 
         if (_tokenManagers.IsEmpty)
         {
-            _logger.LogWarning("未注册任何令牌管理器，后台服务不会刷新任何令牌");
+            MudHttpClientLog.TokenRefreshNoManagersRegistered(_logger);
         }
 
-        _logger.LogInformation("令牌主动刷新后台服务已启动，刷新间隔: {Interval}秒，已注册 {Count} 个令牌管理器",
-            _options.RefreshIntervalSeconds, _tokenManagers.Count);
+        MudHttpClientLog.TokenRefreshServiceStarted(_logger, _options.RefreshIntervalSeconds, _tokenManagers.Count);
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -133,12 +132,12 @@ public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefresh
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
-                _logger.LogInformation("令牌主动刷新后台服务正在停止");
+                MudHttpClientLog.TokenRefreshServiceStopping(_logger);
                 break;
             }
             catch (Exception ex) when (!_tokenManagers.IsEmpty)
             {
-                _logger.LogError(ex, "令牌主动刷新失败，将在 {RetryDelay}秒 后重试", _options.RetryDelaySeconds);
+                MudHttpClientLog.TokenRefreshFailedWithRetry(_logger, _options.RetryDelaySeconds, ex);
 
                 try
                 {
@@ -151,7 +150,7 @@ public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefresh
             }
         }
 
-        _logger.LogInformation("令牌主动刷新后台服务已停止");
+        MudHttpClientLog.TokenRefreshServiceStopped(_logger);
     }
 
     /// <inheritdoc />

@@ -40,11 +40,17 @@ public class CacheResponseInterceptor : ICacheResponseInterceptor
     {
         if (_cache.TryGet(key, out value))
         {
-            _logger.LogDebug("从缓存返回: {CacheKey}", key);
+            MudHttpClientLog.CacheHit(_logger, key);
+            MudHttpMeter.CacheCounter.Add(1,
+                new KeyValuePair<string, object?>("outcome", "hit"),
+                new KeyValuePair<string, object?>("cache_key", key));
             return true;
         }
 
         value = default;
+        MudHttpMeter.CacheCounter.Add(1,
+            new KeyValuePair<string, object?>("outcome", "miss"),
+            new KeyValuePair<string, object?>("cache_key", key));
         return false;
     }
 
@@ -59,13 +65,13 @@ public class CacheResponseInterceptor : ICacheResponseInterceptor
             return;
 
         _cache.Set(key, value, expirationRelativeToNow, useSlidingExpiration);
-        _logger.LogDebug("已缓存: {CacheKey}, 持续 {Duration} 秒, 滑动过期: {UseSliding}", key, expirationRelativeToNow.TotalSeconds, useSlidingExpiration);
+        MudHttpClientLog.CacheSet(_logger, key, expirationRelativeToNow.TotalSeconds, useSlidingExpiration);
     }
 
     public void Remove(string key)
     {
         _cache.Remove(key);
-        _logger.LogDebug("已移除缓存: {CacheKey}", key);
+        MudHttpClientLog.CacheRemoved(_logger, key);
     }
 
     public async Task<T?> GetOrFetchAsync<T>(string key, Func<Task<T>> fetchFunc, TimeSpan expiration, CancellationToken cancellationToken = default)

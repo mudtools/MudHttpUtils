@@ -111,8 +111,7 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
 
         for (var retry = 0; retry < _options.RecoveryMaxRetries; retry++)
         {
-            _logger.LogWarning("收到 401 Unauthorized 响应，尝试刷新令牌并重试请求 ({Retry}/{MaxRetries}): {Method} {Uri}",
-                retry + 1, _options.RecoveryMaxRetries, request.Method, request.RequestUri);
+            MudHttpClientLog.TokenRecoveryAttempting(_logger, retry + 1, _options.RecoveryMaxRetries, request.Method.Method, request.RequestUri?.ToString());
 
             var isUserToken = recoveryContext != null && !string.IsNullOrEmpty(recoveryContext.UserId);
             string? newToken = null;
@@ -125,7 +124,7 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "用户令牌刷新失败，无法恢复请求 (UserId={UserId})", recoveryContext!.UserId);
+                    MudHttpClientLog.UserTokenRefreshFailed(_logger, recoveryContext!.UserId!, ex);
                     return CreateUnauthorizedResponse(request);
                 }
             }
@@ -137,21 +136,21 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "令牌刷新失败，无法恢复请求");
+                    MudHttpClientLog.TokenRefreshFailedInRecovery(_logger, ex);
                     return CreateUnauthorizedResponse(request);
                 }
             }
 
             if (string.IsNullOrEmpty(newToken))
             {
-                _logger.LogError("令牌刷新返回空值，无法恢复请求");
+                MudHttpClientLog.TokenRefreshReturnedEmpty(_logger);
                 return CreateUnauthorizedResponse(request);
             }
 
             var retryRequest = BuildRetryRequest(request, contentBytes, recoveryContext);
             if (!ApplyTokenToRequest(retryRequest, newToken, recoveryContext))
             {
-                _logger.LogWarning("令牌注入失败（不支持的 InjectionMode），返回 401");
+                MudHttpClientLog.TokenInjectionUnsupported(_logger, recoveryContext?.InjectionMode.ToString() ?? "default");
                 return CreateUnauthorizedResponse(request);
             }
 
@@ -163,8 +162,7 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
             retryResponse.Dispose();
         }
 
-        _logger.LogWarning("达到最大重试次数 ({MaxRetries}) 后仍收到 401，令牌可能已失效或权限不足: {Method} {Uri}",
-            _options.RecoveryMaxRetries, request.Method, request.RequestUri);
+        MudHttpClientLog.TokenRecoveryExhausted(_logger, _options.RecoveryMaxRetries, request.Method.Method, request.RequestUri?.ToString());
 
         return CreateUnauthorizedResponse(request);
     }
@@ -258,7 +256,7 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
             case TokenInjectionMode.Query:
                 if (string.IsNullOrEmpty(context.QueryParameterName))
                 {
-                    _logger.LogWarning("Query 模式缺少 QueryParameterName，无法重新注入令牌，返回 401");
+                    MudHttpClientLog.TokenInjectionUnsupported(_logger, "Query:MissingParameterName");
                     return false;
                 }
 
@@ -271,16 +269,16 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
                     return true;
                 }
 
-                _logger.LogWarning("Query 模式请求 URI 为空，无法重新注入令牌，返回 401");
+                MudHttpClientLog.TokenInjectionUnsupported(_logger, "Query:NullUri");
                 return false;
 
             case TokenInjectionMode.Path:
-                _logger.LogWarning("Path 模式的令牌恢复需要重建 URL 路径，当前不支持自动恢复，返回 401 (InjectionMode={InjectionMode})", context.InjectionMode);
+                MudHttpClientLog.TokenInjectionUnsupported(_logger, $"Path:{context.InjectionMode}");
                 return false;
 
             case TokenInjectionMode.HmacSignature:
             default:
-                _logger.LogWarning("令牌恢复不支持 InjectionMode={InjectionMode}，无法重新注入令牌，返回 401", context.InjectionMode);
+                MudHttpClientLog.TokenInjectionUnsupported(_logger, context.InjectionMode.ToString());
                 return false;
         }
     }
@@ -364,7 +362,7 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
                     }
                     catch (Exception invalidateEx)
                     {
-                        _logger.LogError(invalidateEx, "令牌失效操作失败");
+                        MudHttpClientLog.TokenInvalidationFailed(_logger, invalidateEx);
                     }
 
                     var token = await _tokenManager.GetOrRefreshTokenAsync(cancellationToken).ConfigureAwait(false);
@@ -429,7 +427,7 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
                     }
                     catch (Exception removeEx)
                     {
-                        _logger.LogError(removeEx, "用户令牌移除操作失败 (UserId={UserId})", userId);
+                        MudHttpClientLog.UserTokenRemovalFailed(_logger, userId, removeEx);
                     }
 
                     var token = await _userTokenManager.GetOrRefreshTokenAsync(userId, cancellationToken).ConfigureAwait(false);

@@ -47,6 +47,11 @@ public static class HttpClientServiceCollectionExtensions
             ? services.AddHttpClient(clientName, configureHttpClient)
             : services.AddHttpClient(clientName);
 
+        // 注册分布式追踪与指标采集 DelegatingHandler
+        // 无 ActivityListener/MeterListener 订阅时零开销，由 IsObserved 标记去重避免与 EnhancedHttpClient 兜底重复
+        // 使用工厂委托避免在某些 DI 容器配置场景下泛型 TryAddTransient 不生效的问题
+        httpClientBuilder.AddHttpMessageHandler(_ => new TracingDelegatingHandler());
+
         services.TryAddSingleton<IHttpResponseCache>(sp =>
             new MemoryHttpResponseCache(1000, 60));
 

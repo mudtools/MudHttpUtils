@@ -59,7 +59,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         if (request.Options.TryGetValue(new HttpRequestOptionsKey<bool>(ResilienceConstants.SkipResiliencePropertyKey), out var skipValue) && skipValue)
 #endif
         {
-            _logger.LogDebug("请求已标记跳过全局弹性策略（方法级弹性策略已激活）");
+            MudHttpClientLog.SkipGlobalResilience(_logger);
             return true;
         }
 
@@ -77,10 +77,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         var contentLength = request.Content?.Headers.ContentLength;
         if (contentLength.HasValue && contentLength.Value > MaxCloneContentSize)
         {
-            _logger.LogWarning(
-                "请求体大小 ({ContentLength} 字节) 超过克隆限制 ({MaxSize} 字节)，跳过重试策略（保留超时和熔断）",
-                contentLength.Value,
-                MaxCloneContentSize);
+            MudHttpClientLog.RequestExceedsCloneLimit(_logger, contentLength.Value, MaxCloneContentSize);
             return true;
         }
 

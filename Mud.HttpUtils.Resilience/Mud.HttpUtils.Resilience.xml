@@ -195,6 +195,12 @@
             <summary>
             基于 Polly 的弹性策略提供器实现。
             </summary>
+            <remarks>
+            此实现使用 Polly v7 经典 API（Policy.Handle&lt;T&gt;().WaitAndRetryAsync）。
+            在 onRetry/onBreak/onReset/onHalfOpen/onTimeout 回调中采集指标（<see cref="T:Mud.HttpUtils.MudHttpMeter"/>）和
+            观察熔断器状态（<see cref="T:Mud.HttpUtils.CircuitBreakerStateObserver"/>），并使用 <see cref="T:Mud.HttpUtils.MudHttpClientLog"/>
+            源生成器日志（EventId 101-110）替代字符串插值日志。
+            </remarks>
         </member>
         <member name="M:Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.#ctor(Microsoft.Extensions.Options.IOptions{Mud.HttpUtils.Resilience.ResilienceOptions},Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider})">
             <summary>

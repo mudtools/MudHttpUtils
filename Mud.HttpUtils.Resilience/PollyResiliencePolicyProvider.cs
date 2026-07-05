@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026
 //  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
@@ -17,11 +17,21 @@ namespace Mud.HttpUtils.Resilience;
 /// <summary>
 /// 基于 Polly 的弹性策略提供器实现。
 /// </summary>
+/// <remarks>
+/// 此实现使用 Polly v7 经典 API（Policy.Handle&lt;T&gt;().WaitAndRetryAsync）。
+/// 在 onRetry/onBreak/onReset/onHalfOpen/onTimeout 回调中采集指标（<see cref="MudHttpMeter"/>）和
+/// 观察熔断器状态（<see cref="CircuitBreakerStateObserver"/>），并使用 <see cref="MudHttpClientLog"/>
+/// 源生成器日志（EventId 101-110）替代字符串插值日志。
+/// </remarks>
 public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 {
     private readonly ResilienceOptions _options;
     private readonly ILogger _logger;
     private readonly ConcurrentDictionary<PolicyCacheKey, object> _policyCache = new();
+
+    private const string PolicyKeyGlobalRetry = "global:retry";
+    private const string PolicyKeyGlobalTimeout = "global:timeout";
+    private const string PolicyKeyGlobalCircuitBreaker = "global:circuitBreaker";
 
     /// <summary>
     /// 初始化 PollyResiliencePolicyProvider 实例。
@@ -82,6 +92,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
         }
 
         var retryStatusCodes = retryOptions.RetryStatusCodes ?? GetDefaultRetryStatusCodes();
+        var policyKey = PolicyKeyGlobalRetry;
 
         return Policy<TResult>
             .Handle<HttpRequestException>(ex => ShouldRetry(ex, retryStatusCodes))
@@ -97,12 +108,11 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                     : TimeSpan.FromMilliseconds(retryOptions.DelayMilliseconds),
                 onRetryAsync: async (outcome, timeSpan, retryCount, context) =>
                 {
-                    _logger.LogWarning(
-                        outcome.Exception,
-                        "HTTP 请求失败，将在 {DelayMs}ms 后进行第 {RetryCount}/{MaxRetries} 次重试。",
-                        timeSpan.TotalMilliseconds,
-                        retryCount,
-                        retryOptions.MaxRetryAttempts);
+                    MudHttpClientLog.RetryAttempting(_logger, timeSpan.TotalMilliseconds, retryCount, retryOptions.MaxRetryAttempts, outcome.Exception);
+                    MudHttpMeter.RetryCounter.Add(1,
+                        new KeyValuePair<string, object?>("policy_key", policyKey),
+                        new KeyValuePair<string, object?>("outcome", "retry"),
+                        new KeyValuePair<string, object?>("retry_count", retryCount));
 
                     if (retryOptions.OnRetry != null)
                     {
@@ -112,7 +122,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogError(ex, "重试回调执行失败");
+                            MudHttpClientLog.RetryCallbackFailed(_logger, ex);
                         }
                     }
                 });
@@ -134,14 +144,17 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             return Policy.NoOpAsync<TResult>();
         }
 
+        var policyKey = PolicyKeyGlobalTimeout;
+
         return Policy.TimeoutAsync<TResult>(
             TimeSpan.FromSeconds(timeoutOptions.TimeoutSeconds),
             TimeoutStrategy.Pessimistic,
             onTimeoutAsync: (context, timespan, task) =>
             {
-                _logger.LogWarning(
-                    "HTTP 请求超时：操作在 {TimeoutSeconds}s 内未完成。",
-                    timespan.TotalSeconds);
+                MudHttpClientLog.RequestTimeout(_logger, timespan.TotalSeconds);
+                MudHttpMeter.RetryCounter.Add(1,
+                    new KeyValuePair<string, object?>("policy_key", policyKey),
+                    new KeyValuePair<string, object?>("outcome", "timeout"));
                 return Task.CompletedTask;
             });
     }
@@ -162,6 +175,8 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             return Policy.NoOpAsync<TResult>();
         }
 
+        var policyKey = PolicyKeyGlobalCircuitBreaker;
+
         if (cbOptions.SamplingDurationSeconds > 0)
         {
             // 高级熔断策略：基于采样窗口的失败率模式
@@ -179,21 +194,18 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                     durationOfBreak: TimeSpan.FromSeconds(cbOptions.BreakDurationSeconds),
                     onBreak: (exception, duration) =>
                     {
-                        _logger.LogWarning(
-                            exception,
-                            "熔断器开启：采样窗口 {SamplingDuration}s 内失败率达 {FailureRate:P0}（至少 {MinimumThroughput} 次请求），将在 {BreakDuration}s 内快速拒绝请求。",
-                            cbOptions.SamplingDurationSeconds,
-                            failureRate,
-                            cbOptions.MinimumThroughput,
-                            duration.TotalSeconds);
+                        MudHttpClientLog.CircuitBreakerOpenedAdvanced(_logger, cbOptions.SamplingDurationSeconds, failureRate, cbOptions.MinimumThroughput, duration.TotalSeconds, exception);
+                        CircuitBreakerStateObserver.SetState(policyKey, CircuitBreakerState.Open);
                     },
                     onReset: () =>
                     {
-                        _logger.LogInformation("熔断器关闭：服务恢复正常。");
+                        MudHttpClientLog.CircuitBreakerClosed(_logger);
+                        CircuitBreakerStateObserver.SetState(policyKey, CircuitBreakerState.Closed);
                     },
                     onHalfOpen: () =>
                     {
-                        _logger.LogInformation("熔断器进入半开状态：允许试探请求。");
+                        MudHttpClientLog.CircuitBreakerHalfOpen(_logger);
+                        CircuitBreakerStateObserver.SetState(policyKey, CircuitBreakerState.HalfOpen);
                     })
                 .AsAsyncPolicy<TResult>();
         }
@@ -208,19 +220,18 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 durationOfBreak: TimeSpan.FromSeconds(cbOptions.BreakDurationSeconds),
                 onBreak: (exception, duration) =>
                 {
-                    _logger.LogWarning(
-                        exception,
-                        "熔断器开启：连续失败 {FailureThreshold} 次，将在 {BreakDuration}s 内快速拒绝请求。",
-                        cbOptions.FailureThreshold,
-                        duration.TotalSeconds);
+                    MudHttpClientLog.CircuitBreakerOpenedSimple(_logger, cbOptions.FailureThreshold, duration.TotalSeconds, exception);
+                    CircuitBreakerStateObserver.SetState(policyKey, CircuitBreakerState.Open);
                 },
                 onReset: () =>
                 {
-                    _logger.LogInformation("熔断器关闭：服务恢复正常。");
+                    MudHttpClientLog.CircuitBreakerClosed(_logger);
+                    CircuitBreakerStateObserver.SetState(policyKey, CircuitBreakerState.Closed);
                 },
                 onHalfOpen: () =>
                 {
-                    _logger.LogInformation("熔断器进入半开状态：允许试探请求。");
+                    MudHttpClientLog.CircuitBreakerHalfOpen(_logger);
+                    CircuitBreakerStateObserver.SetState(policyKey, CircuitBreakerState.HalfOpen);
                 })
             .AsAsyncPolicy<TResult>();
     }
@@ -260,7 +271,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
         return (IAsyncPolicy<TResult>)_policyCache.GetOrAdd(key, _ => BuildMethodPolicy<TResult>(
             retryEnabled, maxRetries, delayMilliseconds, useExponentialBackoff,
             circuitBreakerEnabled, failureThreshold, breakDurationSeconds,
-            timeoutEnabled, timeoutMilliseconds, samplingDurationSeconds, minimumThroughput));
+            timeoutEnabled, timeoutMilliseconds, samplingDurationSeconds, minimumThroughput, key.PolicyKind));
     }
 
     private IAsyncPolicy<TResult> BuildMethodPolicy<TResult>(
@@ -274,7 +285,8 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
         bool timeoutEnabled,
         int timeoutMilliseconds,
         int samplingDurationSeconds,
-        int minimumThroughput)
+        int minimumThroughput,
+        string policyKey)
     {
         IAsyncPolicy<TResult>? policy = null;
 
@@ -285,9 +297,10 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 TimeoutStrategy.Pessimistic,
                 onTimeoutAsync: (context, timespan, task) =>
                 {
-                    _logger.LogWarning(
-                        "HTTP 请求超时：操作在 {TimeoutMs}ms 内未完成。",
-                        timespan.TotalMilliseconds);
+                    MudHttpClientLog.RequestTimeoutMs(_logger, timespan.TotalMilliseconds);
+                    MudHttpMeter.RetryCounter.Add(1,
+                        new KeyValuePair<string, object?>("policy_key", policyKey),
+                        new KeyValuePair<string, object?>("outcome", "timeout"));
                     return Task.CompletedTask;
                 });
             policy = timeoutPolicy;
@@ -312,21 +325,18 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                         durationOfBreak: TimeSpan.FromSeconds(breakDurationSeconds),
                         onBreak: (exception, duration) =>
                         {
-                            _logger.LogWarning(
-                                exception,
-                                "熔断器开启：采样窗口 {SamplingDuration}s 内失败率达 {FailureRate:P0}（至少 {MinimumThroughput} 次请求），将在 {BreakDuration}s 内快速拒绝请求。",
-                                samplingDurationSeconds,
-                                failureRate,
-                                minimumThroughput,
-                                duration.TotalSeconds);
+                            MudHttpClientLog.CircuitBreakerOpenedAdvanced(_logger, samplingDurationSeconds, failureRate, minimumThroughput, duration.TotalSeconds, exception);
+                            CircuitBreakerStateObserver.SetState(policyKey, CircuitBreakerState.Open);
                         },
                         onReset: () =>
                         {
-                            _logger.LogInformation("熔断器关闭：服务恢复正常。");
+                            MudHttpClientLog.CircuitBreakerClosed(_logger);
+                            CircuitBreakerStateObserver.SetState(policyKey, CircuitBreakerState.Closed);
                         },
                         onHalfOpen: () =>
                         {
-                            _logger.LogInformation("熔断器进入半开状态：允许试探请求。");
+                            MudHttpClientLog.CircuitBreakerHalfOpen(_logger);
+                            CircuitBreakerStateObserver.SetState(policyKey, CircuitBreakerState.HalfOpen);
                         })
                     .AsAsyncPolicy<TResult>();
 
@@ -344,19 +354,18 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                         durationOfBreak: TimeSpan.FromSeconds(breakDurationSeconds),
                         onBreak: (exception, duration) =>
                         {
-                            _logger.LogWarning(
-                                exception,
-                                "熔断器开启：连续失败 {FailureThreshold} 次，将在 {BreakDuration}s 内快速拒绝请求。",
-                                failureThreshold,
-                                duration.TotalSeconds);
+                            MudHttpClientLog.CircuitBreakerOpenedSimple(_logger, failureThreshold, duration.TotalSeconds, exception);
+                            CircuitBreakerStateObserver.SetState(policyKey, CircuitBreakerState.Open);
                         },
                         onReset: () =>
                         {
-                            _logger.LogInformation("熔断器关闭：服务恢复正常。");
+                            MudHttpClientLog.CircuitBreakerClosed(_logger);
+                            CircuitBreakerStateObserver.SetState(policyKey, CircuitBreakerState.Closed);
                         },
                         onHalfOpen: () =>
                         {
-                            _logger.LogInformation("熔断器进入半开状态：允许试探请求。");
+                            MudHttpClientLog.CircuitBreakerHalfOpen(_logger);
+                            CircuitBreakerStateObserver.SetState(policyKey, CircuitBreakerState.HalfOpen);
                         })
                     .AsAsyncPolicy<TResult>();
 
@@ -383,12 +392,11 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                         : TimeSpan.FromMilliseconds(delayMilliseconds),
                     onRetryAsync: async (outcome, timeSpan, retryCount, context) =>
                     {
-                        _logger.LogWarning(
-                            outcome.Exception,
-                            "HTTP 请求失败，将在 {DelayMs}ms 后进行第 {RetryCount}/{MaxRetries} 次重试。",
-                            timeSpan.TotalMilliseconds,
-                            retryCount,
-                            maxRetries);
+                        MudHttpClientLog.RetryAttempting(_logger, timeSpan.TotalMilliseconds, retryCount, maxRetries, outcome.Exception);
+                        MudHttpMeter.RetryCounter.Add(1,
+                            new KeyValuePair<string, object?>("policy_key", policyKey),
+                            new KeyValuePair<string, object?>("outcome", "retry"),
+                            new KeyValuePair<string, object?>("retry_count", retryCount));
 
                         if (onRetryCallback != null)
                         {
@@ -398,7 +406,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                             }
                             catch (Exception callbackEx)
                             {
-                                _logger.LogWarning(callbackEx, "OnRetry 回调执行失败。");
+                                MudHttpClientLog.RetryCallbackFailed(_logger, callbackEx);
                             }
                         }
                     });

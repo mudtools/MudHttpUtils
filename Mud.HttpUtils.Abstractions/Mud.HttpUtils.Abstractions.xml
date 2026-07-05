@@ -1151,6 +1151,195 @@
             <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
             <returns>反序列化后的响应结果任务。</returns>
         </member>
+        <member name="T:Mud.HttpUtils.MudHttpActivitySource">
+            <summary>
+            Mud.HttpUtils HTTP 客户端的分布式追踪源。
+            </summary>
+            <remarks>
+            提供 W3C TraceContext 兼容的 ActivitySource，用于跟踪 HTTP 请求的全链路。
+            当无监听器订阅时，<see cref="M:System.Diagnostics.ActivitySource.StartActivity(System.String,System.Diagnostics.ActivityKind)"/> 返回 <c>null</c>，零开销降级。
+            此静态源放在 Abstractions 项目中，以便 TokenManagerBase / EnhancedHttpClient / PollyResiliencePolicyProvider 共用。
+            </remarks>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpActivitySource.Name">
+            <summary>
+            ActivitySource 名称，遵循 OTel 命名约定（反向 DNS + 模块）。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpActivitySource.Version">
+            <summary>
+            ActivitySource 版本，与包版本保持一致。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpActivitySource.Instance">
+            <summary>
+            静态 ActivitySource 实例。在整个进程生命周期内共享。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpActivitySource.ActivityNameRequest">
+            <summary>
+            HTTP 出站请求活动名称。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpActivitySource.ActivityNameTokenRecovery">
+            <summary>
+            令牌恢复活动名称。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.MudHttpActivitySource.Tags">
+            <summary>
+            OTel 语义约定与 Mud 自定义属性的常量集合。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpActivitySource.Tags.HttpMethod">
+            <summary>HTTP 方法（GET/POST/...）</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpActivitySource.Tags.HttpUrl">
+            <summary>完整 URL</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpActivitySource.Tags.HttpScheme">
+            <summary>协议 scheme（http/https）</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpActivitySource.Tags.HttpHost">
+            <summary>主机名</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpActivitySource.Tags.HttpRoute">
+            <summary>路由模板</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpActivitySource.Tags.HttpStatusCode">
+            <summary>HTTP 状态码</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpActivitySource.Tags.HttpResponseContentLength">
+            <summary>响应内容长度（字节）</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpActivitySource.Tags.HttpStatusCodeClass">
+            <summary>状态码类别（1xx/2xx/...）</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpActivitySource.Tags.MudClientName">
+            <summary>Mud 客户端名称（Named HttpClient 名称）</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpActivitySource.Tags.MudCacheHit">
+            <summary>是否命中缓存</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpActivitySource.Tags.MudRetryCount">
+            <summary>重试次数</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpActivitySource.Tags.MudTokenManagerKey">
+            <summary>令牌管理器键</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpActivitySource.Tags.MudCircuitBreakerState">
+            <summary>熔断器状态</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpActivitySource.Tags.MudCorrelationId">
+            <summary>关联 ID</summary>
+        </member>
+        <member name="T:Mud.HttpUtils.MudHttpMeter">
+            <summary>
+            Mud.HttpUtils HTTP 客户端的指标源。
+            </summary>
+            <remarks>
+            提供 Prometheus 兼容的 Meter，包含请求计数、耗时直方图、缓存命中、令牌刷新、重试、熔断器状态等指标。
+            当无 MeterListener 订阅时，Counter/Histogram 的 Add/Record 调用本身已是零开销（.NET Runtime 内联短路）。
+            此静态源放在 Abstractions 项目中，以便 TokenManagerBase / EnhancedHttpClient / PollyResiliencePolicyProvider 共用。
+            </remarks>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpMeter.MeterName">
+            <summary>
+            Meter 名称，遵循 OTel 命名约定。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpMeter.Version">
+            <summary>
+            Meter 版本，与包版本保持一致。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpMeter.Instance">
+            <summary>
+            静态 Meter 实例。在整个进程生命周期内共享。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpMeter.RequestCounter">
+            <summary>
+            HTTP 请求计数（维度：client_name, method, host, status_code, outcome）。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpMeter.RequestDuration">
+            <summary>
+            HTTP 请求耗时直方图（毫秒）。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpMeter.CacheCounter">
+            <summary>
+            HTTP 响应缓存命中/未命中计数（维度：client_name, outcome）。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpMeter.TokenRefreshCounter">
+            <summary>
+            令牌刷新计数（维度：token_manager_key, outcome）。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpMeter.TokenRefreshDuration">
+            <summary>
+            令牌刷新耗时直方图（毫秒）。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpMeter.RetryCounter">
+            <summary>
+            HTTP 请求重试次数（维度：client_name, policy_key）。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpMeter.CircuitBreakerState">
+            <summary>
+            熔断器状态 ObservableGauge（0=Closed, 1=HalfOpen, 2=Open），维度：policy_key。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.CircuitBreakerState">
+            <summary>
+            熔断器状态枚举。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.CircuitBreakerState.Closed">
+            <summary>关闭（正常放行请求）</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.CircuitBreakerState.HalfOpen">
+            <summary>半开（允许试探请求）</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.CircuitBreakerState.Open">
+            <summary>开启（快速拒绝请求）</summary>
+        </member>
+        <member name="T:Mud.HttpUtils.CircuitBreakerStateObserver">
+            <summary>
+            熔断器状态观察器，维护所有 policyKey 的当前状态，供 <see cref="F:Mud.HttpUtils.MudHttpMeter.CircuitBreakerState"/> ObservableGauge 读取。
+            </summary>
+            <remarks>
+            使用 <see cref="T:System.Collections.Concurrent.ConcurrentDictionary`2"/> 实现无锁读写。
+            Polly v7 经典 API 没有原生的状态变化事件，需要在 onBreak/onReset/onHalfOpen 回调中手动调用 <see cref="M:Mud.HttpUtils.CircuitBreakerStateObserver.SetState(System.String,Mud.HttpUtils.CircuitBreakerState)"/>。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.CircuitBreakerStateObserver.SetState(System.String,Mud.HttpUtils.CircuitBreakerState)">
+            <summary>
+            设置指定 policyKey 的熔断器状态。
+            </summary>
+            <param name="policyKey">策略键（由调用方派生，例如 "circuitBreaker" 或 "method:CB=..."）。</param>
+            <param name="state">新的熔断器状态。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.CircuitBreakerStateObserver.RemoveState(System.String)">
+            <summary>
+            移除指定 policyKey 的状态记录。
+            </summary>
+            <param name="policyKey">策略键。</param>
+        </member>
+        <member name="P:Mud.HttpUtils.CircuitBreakerStateObserver.CurrentStates">
+            <summary>
+            获取所有 policyKey 的当前状态，作为 ObservableGauge 的观测值集合。
+            </summary>
+            <returns>观测值集合。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.CircuitBreakerStateObserver.Clear">
+            <summary>
+            清空所有状态记录（仅供测试使用）。
+            </summary>
+        </member>
         <member name="T:Mud.HttpUtils.Response`1">
             <summary>
             表示 HTTP 响应的包装类型，同时提供响应内容和原始 HTTP 响应信息。
@@ -2405,6 +2594,11 @@
             触发令牌刷新失败事件。
             </summary>
             <param name="e">事件参数。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.TokenManagerBase.RecordTokenRefresh(System.Boolean,System.String,System.Double,System.Boolean)">
+            <summary>
+            记录令牌刷新指标（无锁零分配）。
+            </summary>
         </member>
         <member name="M:Mud.HttpUtils.TokenManagerBase.Dispose(System.Boolean)">
             <inheritdoc />

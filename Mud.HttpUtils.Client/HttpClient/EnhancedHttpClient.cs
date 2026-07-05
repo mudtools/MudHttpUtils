@@ -62,6 +62,16 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// <value>加密提供程序实例,如果未启用加密则为 <c>null</c>。</value>
     protected virtual IEncryptionProvider? EncryptionProvider => null;
 
+    /// <summary>
+    /// 获取 Named HttpClient 的客户端名称，用于日志作用域、指标维度、追踪属性。
+    /// </summary>
+    /// <remarks>
+    /// 基类默认返回 <c>null</c>；<see cref="HttpClientFactoryEnhancedClient"/> 重写返回注册的 clientName。
+    /// 用于可观测性维度的客户端区分。
+    /// </remarks>
+    /// <value>客户端名称，如果未通过 IHttpClientFactory 创建则为 <c>null</c>。</value>
+    public virtual string? ClientName => null;
+
     private static readonly JsonSerializerOptions s_defaultJsonSerializerOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -112,7 +122,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     {
         var uri = ValidateRequest(request);
 
-        return await ExecuteWithLoggingAsync(
+        return await ExecuteWithObservabilityAsync(
+            request,
             "发送JSON请求", "JSON请求完成", "JSON请求失败", uri,
             () => SendRequestAsync<TResult>(
                 request,
@@ -132,7 +143,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     {
         var uri = ValidateRequest(request);
 
-        return await ExecuteWithLoggingAsync(
+        return await ExecuteWithObservabilityAsync(
+            request,
             "下载文件", "文件下载完成", "文件下载失败", uri,
             () => DownloadFileAsync(request, cancellationToken: cancellationToken));
     }
@@ -158,7 +170,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
         var uri = ValidateRequest(request);
 
-        return await ExecuteWithLoggingAsync(
+        return await ExecuteWithObservabilityAsync(
+            request,
             $"下载大文件到: {filePath}", $"大文件下载完成: {filePath}", $"大文件下载失败: {filePath}", uri,
             () => DownloadLargeFileAsync(request, filePath, overwrite: overwrite, cancellationToken: cancellationToken));
     }
@@ -175,9 +188,17 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     {
         var uri = ValidateRequest(request);
 
-        return await ExecuteWithLoggingAsync(
+        return await ExecuteWithObservabilityAsync(
+            request,
             "发送原始HTTP请求", "原始HTTP请求完成", "原始HTTP请求失败", uri,
-            () => _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken));
+            async () =>
+            {
+                var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+                // SendRawAsync 不经过 SendAndValidateAsync，需手动存储状态码供指标采集
+                MudHttpObservability.SetStatusCode(request, (int)response.StatusCode);
+                MudHttpObservability.SetContentLength(request, response.Content.Headers.ContentLength);
+                return response;
+            });
     }
 
     /// <inheritdoc cref="IBaseHttpClient.SendStreamAsync"/>
@@ -192,13 +213,18 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     {
         var uri = ValidateRequest(request);
 
-        return await ExecuteWithLoggingAsync(
+        return await ExecuteWithObservabilityAsync(
+            request,
             "发送流式HTTP请求", "流式HTTP请求完成", "流式HTTP请求失败", uri,
             async () =>
             {
                 var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 
                 await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
+
+                // 流式响应需要在响应头到达时即记录状态码（响应体可能在 Dispose 后才读取）
+                MudHttpObservability.SetStatusCode(request, (int)response.StatusCode);
+                MudHttpObservability.SetContentLength(request, response.Content.Headers.ContentLength);
 
 #if NETSTANDARD2_0
                 var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
@@ -637,6 +663,10 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             cancellationToken).ConfigureAwait(false);
 
         await ExecuteResponseInterceptorsAsync(response, cancellationToken).ConfigureAwait(false);
+
+        // 将状态码与内容长度存入请求属性，供 ExecuteWithObservabilityAsync 采集指标使用
+        MudHttpObservability.SetStatusCode(request, (int)response.StatusCode);
+        MudHttpObservability.SetContentLength(request, response.Content.Headers.ContentLength);
 
         await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
 
@@ -1254,6 +1284,55 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         catch (Exception ex) when (LogRequestError(errorMessage, uri, ex))
         {
             throw;
+        }
+    }
+
+    /// <summary>
+    /// 带可观测性采集的请求执行包装。
+    /// 在 <see cref="ExecuteWithLoggingAsync{T}"/> 之外再添加 BeginScope + Activity + 指标采集，
+    /// 覆盖直接 <c>new EnhancedHttpClient(new HttpClient(), ...)</c> 路径（不经 IHttpClientFactory）。
+    /// 与 <see cref="TracingDelegatingHandler"/> 通过 __mud_observed 标记去重。
+    /// </summary>
+    private async Task<T> ExecuteWithObservabilityAsync<T>(
+        HttpRequestMessage request,
+        string operation,
+        string completeMessage,
+        string errorMessage,
+        string uri,
+        Func<Task<T>> action)
+    {
+        // 设置 client_name 到请求属性，供下游 DelegatingHandler 读取
+        MudHttpObservability.SetClientName(request, ClientName);
+
+        using var scope = _enableLogging
+            ? MudHttpObservability.CreateLoggerScope(_logger, request, ClientName)
+            : null;
+
+        // 已被 TracingDelegatingHandler 采集过则跳过 Activity/指标创建（仅执行业务逻辑）
+        if (MudHttpObservability.IsObserved(request))
+        {
+            return await ExecuteWithLoggingAsync(operation, completeMessage, errorMessage, uri, action).ConfigureAwait(false);
+        }
+
+        var activity = MudHttpObservability.StartRequestActivity(request, ClientName);
+        var sw = ValueStopwatch.StartNew();
+
+        try
+        {
+            var result = await ExecuteWithLoggingAsync(operation, completeMessage, errorMessage, uri, action).ConfigureAwait(false);
+            MudHttpObservability.RecordSuccessFromRequest(activity, request, sw.GetElapsedTime().TotalMilliseconds, ClientName);
+            MudHttpObservability.MarkObserved(request);
+            return result;
+        }
+        catch (Exception ex)
+        {
+            MudHttpObservability.RecordError(activity, ex, sw.GetElapsedTime().TotalMilliseconds, ClientName, request);
+            MudHttpObservability.MarkObserved(request);
+            throw;
+        }
+        finally
+        {
+            activity?.Dispose();
         }
     }
 

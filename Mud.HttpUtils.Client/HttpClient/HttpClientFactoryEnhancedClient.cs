@@ -74,7 +74,7 @@ public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
     /// <summary>
     /// 获取当前使用的 HttpClient 名称
     /// </summary>
-    public string ClientName => _clientName;
+    public override string? ClientName => _clientName;
 
     /// <inheritdoc />
     public override Uri? BaseAddress => _overrideBaseAddress ?? base.BaseAddress;

@@ -92,7 +92,7 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
 
         var key = name ?? Guid.NewGuid().ToString("N");
         _tokenManagers[key] = tokenManager;
-        _logger.LogDebug("已注册令牌管理器: {Name}", key);
+        MudHttpClientLog.TokenManagerRegistered(_logger, key);
     }
 
     /// <inheritdoc />
@@ -105,13 +105,13 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
 
         if (!_options.Enabled)
         {
-            _logger.LogInformation("令牌主动刷新后台服务已禁用");
+            MudHttpClientLog.TokenRefreshServiceDisabled(_logger);
             return Task.CompletedTask;
         }
 
         if (_tokenManagers.IsEmpty)
         {
-            _logger.LogWarning("未注册任何令牌管理器，后台服务不会刷新任何令牌");
+            MudHttpClientLog.TokenRefreshNoManagersRegistered(_logger);
         }
 
         _timer = new Timer(
@@ -120,8 +120,7 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
             _refreshInterval,
             _refreshInterval);
 
-        _logger.LogInformation("令牌主动刷新后台服务已启动，刷新间隔: {Interval}秒，已注册 {Count} 个令牌管理器",
-            _refreshInterval.TotalSeconds, _tokenManagers.Count);
+        MudHttpClientLog.TokenRefreshServiceStarted(_logger, _refreshInterval.TotalSeconds, _tokenManagers.Count);
 
         return Task.CompletedTask;
     }
@@ -130,7 +129,7 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
     public Task StopAsync(CancellationToken cancellationToken = default)
     {
         _timer?.Change(Timeout.Infinite, Timeout.Infinite);
-        _logger.LogInformation("令牌主动刷新后台服务已停止");
+        MudHttpClientLog.TokenRefreshServiceStopped(_logger);
         return Task.CompletedTask;
     }
 
@@ -150,7 +149,7 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
         }
         catch (Exception ex)
         {
-            _logger.LogCritical(ex, "令牌后台刷新发生未处理异常，进程可能不稳定");
+            MudHttpClientLog.TokenRefreshUnhandledException(_logger, ex);
         }
     }
 

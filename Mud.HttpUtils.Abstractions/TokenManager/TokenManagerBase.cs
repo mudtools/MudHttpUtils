@@ -278,11 +278,22 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         var retryCount = 0;
         Exception? lastException = null;
 
+        // 可观测性：记录刷新开始时间戳
+        var startTimestamp = Stopwatch.GetTimestamp();
+        var timestampToMs = 1000.0 / Stopwatch.Frequency;
+        string? tokenManagerKey = GetType().Name;
+
         while (retryCount <= MaxRefreshRetryCount)
         {
             try
             {
-                return await refreshFunc(cancellationToken).ConfigureAwait(false);
+                var token = await refreshFunc(cancellationToken).ConfigureAwait(false);
+
+                // 成功路径：记录指标
+                var elapsedMs = (Stopwatch.GetTimestamp() - startTimestamp) * timestampToMs;
+                RecordTokenRefresh(success: true, tokenManagerKey, elapsedMs, isFallback: false);
+
+                return token;
             }
             catch (Exception ex)
             {
@@ -293,6 +304,10 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
                 if (!string.IsNullOrEmpty(eventArgs.FallbackToken))
                 {
+                    // 降级路径：记录指标
+                    var elapsedMs = (Stopwatch.GetTimestamp() - startTimestamp) * timestampToMs;
+                    RecordTokenRefresh(success: true, tokenManagerKey, elapsedMs, isFallback: true);
+
                     return new CredentialToken
                     {
                         AccessToken = eventArgs.FallbackToken,
@@ -302,6 +317,10 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
                 if (!eventArgs.ShouldRetry || retryCount >= MaxRefreshRetryCount)
                 {
+                    // 失败路径：记录指标
+                    var elapsedMs = (Stopwatch.GetTimestamp() - startTimestamp) * timestampToMs;
+                    RecordTokenRefresh(success: false, tokenManagerKey, elapsedMs, isFallback: false);
+
                     throw;
                 }
 
@@ -310,7 +329,27 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             }
         }
 
+        // 最终失败路径
+        var finalElapsedMs = (Stopwatch.GetTimestamp() - startTimestamp) * timestampToMs;
+        RecordTokenRefresh(success: false, tokenManagerKey, finalElapsedMs, isFallback: false);
         throw lastException ?? new InvalidOperationException("令牌刷新失败");
+    }
+
+    /// <summary>
+    /// 记录令牌刷新指标（无锁零分配）。
+    /// </summary>
+    private void RecordTokenRefresh(bool success, string? tokenManagerKey, double elapsedMs, bool isFallback)
+    {
+        var outcome = success
+            ? (isFallback ? "fallback" : "success")
+            : "failure";
+
+        MudHttpMeter.TokenRefreshCounter.Add(1,
+            new KeyValuePair<string, object?>("token_manager_key", tokenManagerKey ?? "(unknown)"),
+            new KeyValuePair<string, object?>("outcome", outcome));
+
+        MudHttpMeter.TokenRefreshDuration.Record(elapsedMs,
+            new KeyValuePair<string, object?>("token_manager_key", tokenManagerKey ?? "(unknown)"));
     }
 
     private bool IsTokenValid(string scopeKey)

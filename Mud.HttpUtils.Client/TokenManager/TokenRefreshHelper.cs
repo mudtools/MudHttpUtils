@@ -18,25 +18,25 @@ internal static class TokenRefreshHelper
         {
             try
             {
-                logger.LogDebug("开始主动刷新令牌管理器 {Name}", kvp.Key);
+                MudHttpClientLog.TokenRefreshStarting(logger, kvp.Key);
                 var token = await kvp.Value.GetOrRefreshTokenAsync(cancellationToken).ConfigureAwait(false);
                 if (!string.IsNullOrEmpty(token))
                 {
-                    logger.LogDebug("令牌管理器 {Name} 主动刷新完成", kvp.Key);
+                    MudHttpClientLog.TokenRefreshCompleted(logger, kvp.Key);
                 }
             }
             catch (ObjectDisposedException)
             {
-                logger.LogWarning("令牌管理器 {Name} 已释放，移除并停止刷新", kvp.Key);
+                MudHttpClientLog.TokenManagerDisposed(logger, kvp.Key);
                 tokenManagers.TryRemove(kvp.Key, out _);
             }
             catch (Exception ex)
             {
-                logger.LogError(ex, "令牌管理器 {Name} 主动刷新失败", kvp.Key);
+                MudHttpClientLog.TokenRefreshFailed(logger, kvp.Key, ex);
 
                 if (options.StopOnError)
                 {
-                    logger.LogCritical("令牌管理器 {Name} 主动刷新失败且配置为停止服务，后台服务将终止", kvp.Key);
+                    MudHttpClientLog.TokenRefreshFailedAndStopped(logger, kvp.Key);
                     return false;
                 }
             }
