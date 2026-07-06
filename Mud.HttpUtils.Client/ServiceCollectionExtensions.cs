@@ -549,14 +549,12 @@ public static class HttpClientServiceCollectionExtensions
     ///         "BaseAddress": "https://user-api.example.com",
     ///         "TimeoutSeconds": 30,
     ///         "DefaultHeaders": { "X-Api-Version": "v1" },
-    ///         "TokenManagerKey": "user-api-token",
-    ///         "TokenInjectionMode": "Header",
-    ///         "TokenScopes": "user.read user.write"
+    ///         "AllowCustomBaseUrls": false
     ///       },
     ///       "order-api": {
     ///         "BaseAddress": "https://order-api.example.com",
     ///         "TimeoutSeconds": 60,
-    ///         "TokenManagerKey": "order-api-token"
+    ///         "AllowCustomBaseUrls": true
     ///       }
     ///     }
     ///   }
