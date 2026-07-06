@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Mud.HttpUtils.Observability;
 
@@ -39,25 +40,62 @@ public class CacheResponseInterceptor : ICacheResponseInterceptor
 
     public bool TryGet<T>(string key, out T? value)
     {
+        // 复用当前 Activity 引用：在同一次 TryGet 调用中 Activity.Current 不会变，
+        // 一次读取即可同时用于读取 client_name 维度和写入 cache.hit tag，避免重复读取与 IsMudActivity 检查
+        var currentActivity = Activity.Current;
+        var isMudActivity = currentActivity != null && MudHttpActivitySource.IsMudActivity(currentActivity);
+
+        // 从当前 Mud Activity 读取 client_name，补全 CacheCounter 的 client_name 维度
+        var clientName = "(default)";
+        if (isMudActivity)
+        {
+            if (currentActivity!.GetTagItem(MudHttpActivitySource.Tags.MudClientName) is string cn && !string.IsNullOrEmpty(cn))
+                clientName = cn;
+        }
+
         if (_cache.TryGet(key, out value))
         {
             MudHttpClientLog.CacheHit(_logger, key);
             MudHttpMeter.CacheCounter.Add(1,
+                new KeyValuePair<string, object?>("client_name", clientName),
                 new KeyValuePair<string, object?>("outcome", "hit"),
                 new KeyValuePair<string, object?>("cache_key", key));
 
-            MudHttpDiagnosticListener.Instance.WriteIfEnabled(MudHttpDiagnosticNames.CacheHit,
-                () => new CacheDiagnosticPayload(key, hit: true));
+            // 将缓存命中写入当前 Activity tag（仅 Mud Activity，避免污染外部 Activity）
+            if (isMudActivity)
+                currentActivity!.SetTag(MudHttpActivitySource.Tags.MudCacheHit, true);
+
+            MudHttpActivitySource.AddActivityEvent(
+                MudHttpDiagnosticNames.CacheHit,
+                () => new CacheDiagnosticPayload(key, hit: true),
+                MudHttpDiagnosticNames.CacheHit,
+                new[]
+                {
+                    new KeyValuePair<string, object?>("cache_key", key),
+                    new KeyValuePair<string, object?>("hit", true),
+                });
             return true;
         }
 
         value = default;
         MudHttpMeter.CacheCounter.Add(1,
+            new KeyValuePair<string, object?>("client_name", clientName),
             new KeyValuePair<string, object?>("outcome", "miss"),
             new KeyValuePair<string, object?>("cache_key", key));
 
-        MudHttpDiagnosticListener.Instance.WriteIfEnabled(MudHttpDiagnosticNames.CacheMiss,
-            () => new CacheDiagnosticPayload(key, hit: false));
+        // 将缓存未命中写入当前 Activity tag（仅 Mud Activity，避免污染外部 Activity）
+        if (isMudActivity)
+            currentActivity!.SetTag(MudHttpActivitySource.Tags.MudCacheHit, false);
+
+        MudHttpActivitySource.AddActivityEvent(
+            MudHttpDiagnosticNames.CacheMiss,
+            () => new CacheDiagnosticPayload(key, hit: false),
+            MudHttpDiagnosticNames.CacheMiss,
+            new[]
+            {
+                new KeyValuePair<string, object?>("cache_key", key),
+                new KeyValuePair<string, object?>("hit", false),
+            });
         return false;
     }
 

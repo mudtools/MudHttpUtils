@@ -116,8 +116,20 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                         new KeyValuePair<string, object?>("outcome", "retry"),
                         new KeyValuePair<string, object?>("retry_count", retryCount));
 
-                    MudHttpDiagnosticListener.Instance.WriteIfEnabled(MudHttpDiagnosticNames.RetryOccurred,
-                        () => new RetryDiagnosticPayload(policyKey, retryCount, timeSpan.TotalMilliseconds, outcome.Exception?.GetType().Name));
+                    // 将重试次数写入当前 Activity tag（Polly 回调在请求 Activity 上下文内执行）
+                    MudHttpObservability.RecordRetryCount(null, retryCount);
+
+                    MudHttpActivitySource.AddActivityEvent(
+                        MudHttpDiagnosticNames.RetryOccurred,
+                        () => new RetryDiagnosticPayload(policyKey, retryCount, timeSpan.TotalMilliseconds, outcome.Exception?.GetType().Name),
+                        MudHttpDiagnosticNames.RetryOccurred,
+                        new[]
+                        {
+                            new KeyValuePair<string, object?>("policy_key", policyKey),
+                            new KeyValuePair<string, object?>("retry_count", retryCount),
+                            new KeyValuePair<string, object?>("delay_ms", timeSpan.TotalMilliseconds),
+                            new KeyValuePair<string, object?>("exception_type", outcome.Exception?.GetType().Name),
+                        });
 
                     if (retryOptions.OnRetry != null)
                     {
@@ -403,8 +415,20 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                             new KeyValuePair<string, object?>("outcome", "retry"),
                             new KeyValuePair<string, object?>("retry_count", retryCount));
 
-                        MudHttpDiagnosticListener.Instance.WriteIfEnabled(MudHttpDiagnosticNames.RetryOccurred,
-                            () => new RetryDiagnosticPayload(policyKey, retryCount, timeSpan.TotalMilliseconds, outcome.Exception?.GetType().Name));
+                        // 将重试次数写入当前 Activity tag（Polly 回调在请求 Activity 上下文内执行）
+                        MudHttpObservability.RecordRetryCount(null, retryCount);
+
+                        MudHttpActivitySource.AddActivityEvent(
+                            MudHttpDiagnosticNames.RetryOccurred,
+                            () => new RetryDiagnosticPayload(policyKey, retryCount, timeSpan.TotalMilliseconds, outcome.Exception?.GetType().Name),
+                            MudHttpDiagnosticNames.RetryOccurred,
+                            new[]
+                            {
+                                new KeyValuePair<string, object?>("policy_key", policyKey),
+                                new KeyValuePair<string, object?>("retry_count", retryCount),
+                                new KeyValuePair<string, object?>("delay_ms", timeSpan.TotalMilliseconds),
+                                new KeyValuePair<string, object?>("exception_type", outcome.Exception?.GetType().Name),
+                            });
 
                         if (onRetryCallback != null)
                         {

@@ -29,9 +29,11 @@ internal static class MudHttpObservability
     private const string RetryCountPropertyKey = "__mud_retry_count";
     private const string StatusCodePropertyKey = "__mud_status_code";
     private const string ContentLengthPropertyKey = "__mud_content_length";
+    private const string CorrelationIdPropertyKey = "__mud_correlation_id";
 
     /// <summary>
     /// 启动 HTTP 请求 Activity；当 ActivitySource 无监听器时返回 <c>null</c>。
+    /// 同时生成 correlationId 并写入 Activity tag 与请求属性，供 logger scope 复用。
     /// </summary>
     public static Activity? StartRequestActivity(HttpRequestMessage request, string? clientName)
     {
@@ -56,6 +58,11 @@ internal static class MudHttpObservability
 
         if (!string.IsNullOrEmpty(clientName))
             activity.SetTag(MudHttpActivitySource.Tags.MudClientName, clientName);
+
+        // 生成 correlationId 并写入 Activity tag 与请求属性，供 logger scope 复用
+        var correlationId = activity.TraceId.ToString();
+        TrySetProperty(request, CorrelationIdPropertyKey, correlationId);
+        activity.SetTag(MudHttpActivitySource.Tags.MudCorrelationId, correlationId);
 
         return activity;
     }
@@ -115,6 +122,10 @@ internal static class MudHttpObservability
 
             if (contentLength.HasValue)
                 activity.SetTag(MudHttpActivitySource.Tags.HttpResponseContentLength, contentLength.Value);
+
+            // 从请求属性读取重试次数并写入 Activity tag（由 Polly onRetry 回调通过 RecordRetryCount 写入）
+            if (request != null && TryGetProperty(request, RetryCountPropertyKey, out var rc) && rc is int retryCount)
+                activity.SetTag(MudHttpActivitySource.Tags.MudRetryCount, retryCount);
 
             if (statusCode >= 400)
                 activity.SetStatus(ActivityStatusCode.Error);
@@ -243,11 +254,17 @@ internal static class MudHttpObservability
     }
 
     /// <summary>
-    /// 设置重试次数到请求属性（供 TracingDelegatingHandler 读取作为 Activity tag）。
+    /// 将重试次数写入请求属性并同步到当前 Activity tag（仅当当前 Activity 属于 MudHttpActivitySource 时）。
+    /// 供 Polly onRetry 回调调用；request 为 null 时仅尝试写入 Activity tag。
     /// </summary>
-    public static void SetRetryCount(HttpRequestMessage request, int retryCount)
+    public static void RecordRetryCount(HttpRequestMessage? request, int retryCount)
     {
-        TrySetProperty(request, RetryCountPropertyKey, retryCount);
+        if (request != null)
+            TrySetProperty(request, RetryCountPropertyKey, retryCount);
+
+        var activity = Activity.Current;
+        if (activity != null && MudHttpActivitySource.IsMudActivity(activity))
+            activity.SetTag(MudHttpActivitySource.Tags.MudRetryCount, retryCount);
     }
 
     /// <summary>
@@ -281,13 +298,21 @@ internal static class MudHttpObservability
 
     /// <summary>
     /// 创建日志作用域，携带 CorrelationId / ClientName / RequestMethod / RequestHost。
+    /// CorrelationId 优先复用 StartRequestActivity 写入请求属性的值，保持日志与 Span 的关联一致。
     /// </summary>
     public static IDisposable? CreateLoggerScope(ILogger logger, HttpRequestMessage request, string? clientName)
     {
         if (logger == null)
             return null;
 
-        var correlationId = Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N");
+        string correlationId;
+        if (TryGetProperty(request, CorrelationIdPropertyKey, out var existing) && existing is string id)
+            correlationId = id;
+        else
+        {
+            correlationId = Activity.Current?.TraceId.ToString() ?? Guid.NewGuid().ToString("N");
+            TrySetProperty(request, CorrelationIdPropertyKey, correlationId);
+        }
 
         return logger.BeginScope(new Dictionary<string, object?>
         {

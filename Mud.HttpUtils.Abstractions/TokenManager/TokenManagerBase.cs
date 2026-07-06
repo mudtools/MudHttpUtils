@@ -6,6 +6,7 @@
 // -----------------------------------------------------------------------
 
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Linq;
 using Mud.HttpUtils.Observability;
 
@@ -345,20 +346,35 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             ? (isFallback ? "fallback" : "success")
             : "failure";
 
+        var tmKey = tokenManagerKey ?? "(unknown)";
+
         MudHttpMeter.TokenRefreshCounter.Add(1,
-            new KeyValuePair<string, object?>("token_manager_key", tokenManagerKey ?? "(unknown)"),
+            new KeyValuePair<string, object?>("token_manager_key", tmKey),
             new KeyValuePair<string, object?>("outcome", outcome));
 
         MudHttpMeter.TokenRefreshDuration.Record(elapsedMs,
-            new KeyValuePair<string, object?>("token_manager_key", tokenManagerKey ?? "(unknown)"));
+            new KeyValuePair<string, object?>("token_manager_key", tmKey));
 
         // 同步写入无锁统计收集器，供健康检查使用
         TokenRefreshStatsCollector.Record(success, tokenManagerKey, elapsedMs, isFallback);
 
-        // 写入 DiagnosticSource 事件，供外部 APM 探针订阅
-        MudHttpDiagnosticListener.Instance.WriteIfEnabled(
+        // 将令牌管理器键写入当前 Activity tag（仅 Mud Activity）
+        var activity = Activity.Current;
+        if (activity != null && MudHttpActivitySource.IsMudActivity(activity))
+            activity.SetTag(MudHttpActivitySource.Tags.MudTokenManagerKey, tmKey);
+
+        // 写入 DiagnosticSource 事件 + Activity Event
+        MudHttpActivitySource.AddActivityEvent(
             MudHttpDiagnosticNames.TokenRefreshed,
-            () => new TokenRefreshDiagnosticPayload(tokenManagerKey, success, isFallback, elapsedMs));
+            () => new TokenRefreshDiagnosticPayload(tokenManagerKey, success, isFallback, elapsedMs),
+            MudHttpDiagnosticNames.TokenRefreshed,
+            new[]
+            {
+                new KeyValuePair<string, object?>("token_manager_key", tmKey),
+                new KeyValuePair<string, object?>("success", success),
+                new KeyValuePair<string, object?>("is_fallback", isFallback),
+                new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+            });
     }
 
     private bool IsTokenValid(string scopeKey)

@@ -6,3 +6,4 @@ global using System.Text;
 global using System.Text.Json;
 global using Mud.HttpUtils;
 global using Mud.HttpUtils.Attributes;
+global using Moq;

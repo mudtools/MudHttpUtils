@@ -3,7 +3,9 @@
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
 // -----------------------------------------------------------------------
 
+using System.Collections.Generic;
 using System.Diagnostics;
+using Mud.HttpUtils.Observability;
 
 namespace Mud.HttpUtils;
 
@@ -41,6 +43,39 @@ public static class MudHttpActivitySource
     /// 令牌恢复活动名称。
     /// </summary>
     public const string ActivityNameTokenRecovery = "Mud.HttpUtils.Token.Recovery";
+
+    /// <summary>
+    /// 在当前 Activity 上记录 Span 事件（同时写入 DiagnosticSource）。
+    /// 仅当当前 Activity 属于 MudHttpActivitySource 时才添加 ActivityEvent，避免污染外部 Activity。
+    /// 无 DiagnosticSource 订阅者时 payloadFactory 不调用，零分配。
+    /// </summary>
+    /// <param name="diagnosticEventName">DiagnosticSource 事件名称（来自 <see cref="MudHttpDiagnosticNames"/>）。</param>
+    /// <param name="diagnosticPayloadFactory">DiagnosticSource 事件负载工厂，仅在存在订阅者时调用。</param>
+    /// <param name="activityEventName">ActivityEvent 名称。</param>
+    /// <param name="tags">ActivityEvent 的标签集合（与 DiagnosticSource 负载字段保持一致）。</param>
+    public static void AddActivityEvent(
+        string diagnosticEventName,
+        Func<object?> diagnosticPayloadFactory,
+        string activityEventName,
+        IEnumerable<KeyValuePair<string, object?>>? tags = null)
+    {
+        // 写入 DiagnosticSource（无订阅者时 payloadFactory 不调用，零分配）
+        MudHttpDiagnosticListener.Instance.WriteIfEnabled(diagnosticEventName, diagnosticPayloadFactory);
+
+        // 写入 Activity Event（仅 Mud Activity，避免污染外部 Activity）
+        var activity = Activity.Current;
+        if (activity != null && IsMudActivity(activity))
+        {
+            var activityTags = tags != null ? new ActivityTagsCollection(tags) : null;
+            activity.AddEvent(new ActivityEvent(activityEventName, tags: activityTags));
+        }
+    }
+
+    /// <summary>
+    /// 判断指定 Activity 是否由 MudHttpActivitySource 创建。
+    /// </summary>
+    public static bool IsMudActivity(Activity activity)
+        => activity.Source == Instance;
 
     /// <summary>
     /// OTel 语义约定与 Mud 自定义属性的常量集合。

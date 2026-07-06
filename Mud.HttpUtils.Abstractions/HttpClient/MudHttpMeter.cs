@@ -5,6 +5,7 @@
 
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Mud.HttpUtils.Observability;
 
@@ -98,6 +99,16 @@ public static class MudHttpMeter
             observeValues: () => CircuitBreakerStateObserver.CurrentStates,
             unit: "{state}",
             description: "熔断器当前状态（0=Closed, 1=HalfOpen, 2=Open）");
+
+    /// <summary>
+    /// 令牌恢复计数（维度：token_manager_key, outcome）。
+    /// 在 TokenRecoveryDelegatingHandler 收到 401 后触发令牌刷新并重试时记录。
+    /// </summary>
+    public static readonly Counter<long> TokenRecoveryCounter =
+        Instance.CreateCounter<long>(
+            "mud.token.recovery",
+            unit: "{operation}",
+            description: "令牌恢复（401 重试）次数与结果");
 }
 
 /// <summary>
@@ -138,10 +149,23 @@ public static class CircuitBreakerStateObserver
 
         s_states[policyKey] = state;
 
-        // 写入 DiagnosticSource 事件，供外部 APM 探针订阅
-        MudHttpDiagnosticListener.Instance.WriteIfEnabled(
+        var stateString = state.ToString();
+
+        // 将熔断器状态写入当前 Activity tag（仅 Mud Activity）
+        var activity = Activity.Current;
+        if (activity != null && MudHttpActivitySource.IsMudActivity(activity))
+            activity.SetTag(MudHttpActivitySource.Tags.MudCircuitBreakerState, stateString);
+
+        // 写入 DiagnosticSource 事件 + Activity Event
+        MudHttpActivitySource.AddActivityEvent(
             MudHttpDiagnosticNames.CircuitBreakerStateChanged,
-            () => new CircuitBreakerDiagnosticPayload(policyKey, state.ToString()));
+            () => new CircuitBreakerDiagnosticPayload(policyKey, stateString),
+            MudHttpDiagnosticNames.CircuitBreakerStateChanged,
+            new[]
+            {
+                new KeyValuePair<string, object?>("policy_key", policyKey),
+                new KeyValuePair<string, object?>("state", stateString),
+            });
     }
 
     /// <summary>

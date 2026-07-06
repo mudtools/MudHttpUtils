@@ -3,6 +3,7 @@
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
 // -----------------------------------------------------------------------
 
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net.Http;
 using Mud.HttpUtils.Observability;
@@ -38,10 +39,17 @@ public sealed class TracingDelegatingHandler : DelegatingHandler
         var clientName = MudHttpObservability.GetClientName(request);
         var activity = MudHttpObservability.StartRequestActivity(request, clientName);
         var sw = ValueStopwatch.StartNew();
-        var diagnostic = MudHttpDiagnosticListener.Instance;
 
-        diagnostic.WriteIfEnabled(MudHttpDiagnosticNames.RequestStarted,
-            () => new HttpRequestDiagnosticPayload(request.Method.Method, request.RequestUri?.ToString(), clientName));
+        MudHttpActivitySource.AddActivityEvent(
+            MudHttpDiagnosticNames.RequestStarted,
+            () => new HttpRequestDiagnosticPayload(request.Method.Method, request.RequestUri?.ToString(), clientName),
+            MudHttpDiagnosticNames.RequestStarted,
+            new[]
+            {
+                new KeyValuePair<string, object?>("method", request.Method.Method),
+                new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
+            });
 
         HttpResponseMessage? response = null;
         try
@@ -51,13 +59,23 @@ public sealed class TracingDelegatingHandler : DelegatingHandler
             MudHttpObservability.RecordResponse(activity, response, elapsedMs, clientName);
             MudHttpObservability.MarkObserved(request);
 
-            diagnostic.WriteIfEnabled(MudHttpDiagnosticNames.RequestStopped,
+            MudHttpActivitySource.AddActivityEvent(
+                MudHttpDiagnosticNames.RequestStopped,
                 () => new HttpResponseDiagnosticPayload(
                     request.Method.Method,
                     request.RequestUri?.ToString(),
                     clientName,
                     (int)response.StatusCode,
-                    elapsedMs));
+                    elapsedMs),
+                MudHttpDiagnosticNames.RequestStopped,
+                new[]
+                {
+                    new KeyValuePair<string, object?>("method", request.Method.Method),
+                    new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                    new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
+                    new KeyValuePair<string, object?>("status_code", (int)response.StatusCode),
+                    new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+                });
 
             return response;
         }
@@ -67,13 +85,23 @@ public sealed class TracingDelegatingHandler : DelegatingHandler
             MudHttpObservability.RecordError(activity, ex, elapsedMs, clientName);
             MudHttpObservability.MarkObserved(request);
 
-            diagnostic.WriteIfEnabled(MudHttpDiagnosticNames.RequestFailed,
+            MudHttpActivitySource.AddActivityEvent(
+                MudHttpDiagnosticNames.RequestFailed,
                 () => new HttpRequestErrorDiagnosticPayload(
                     request.Method.Method,
                     request.RequestUri?.ToString(),
                     clientName,
                     elapsedMs,
-                    ex));
+                    ex),
+                MudHttpDiagnosticNames.RequestFailed,
+                new[]
+                {
+                    new KeyValuePair<string, object?>("method", request.Method.Method),
+                    new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                    new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
+                    new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+                    new KeyValuePair<string, object?>("exception_type", ex.GetType().Name),
+                });
 
             throw;
         }

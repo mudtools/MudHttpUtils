@@ -55,6 +55,9 @@ public static class MudHttpHealthChecksExtensions
             MaxHalfOpenCount = options.CircuitBreaker.MaxHalfOpenCount,
         };
 
+        // 同步保留期：保留期应 >= 健康检查窗口期 + 60 秒缓冲，避免 Trim 误裁剪窗口内数据
+        TokenRefreshStatsCollector.SetRetention(TimeSpan.FromSeconds(options.TokenRefresh.WindowSeconds + 60));
+
         // 注册健康检查
         services.AddHealthChecks()
             .AddCheck<TokenRefreshHealthCheck>(

@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Net.Http.Headers;
 using Microsoft.Extensions.Logging;
+using Mud.HttpUtils.Observability;
 
 namespace Mud.HttpUtils.Client.Tests;
 
@@ -880,6 +881,403 @@ public class ObservabilityTests
     public void TracingHandler_ObservedPropertyKey_Matches_Const()
     {
         TracingDelegatingHandler.ObservedPropertyKey.Should().Be("__mud_observed");
+    }
+
+    // ============ v2 修复：Mud 自定义 Span 属性断言 ============
+
+    [Fact]
+    public void StartRequestActivity_Sets_MudCorrelationId_Tag()
+    {
+        using var listener = CreateMudActivityListener();
+        ActivitySource.AddActivityListener(listener);
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/");
+        using var activity = MudHttpObservability.StartRequestActivity(request, "client_a");
+
+        activity.Should().NotBeNull();
+        var correlationId = activity!.GetTagItem(MudHttpActivitySource.Tags.MudCorrelationId) as string;
+        correlationId.Should().NotBeNullOrEmpty();
+        correlationId.Should().Be(activity.TraceId.ToString());
+
+        // 请求属性中也应保存 correlationId，供 logger scope 复用
+        MudHttpObservability.TryGetProperty(request, "__mud_correlation_id", out var propValue).Should().BeTrue();
+        (propValue as string).Should().Be(correlationId);
+    }
+
+    [Fact]
+    public void RecordRetryCount_Writes_Tag_On_MudActivity()
+    {
+        using var listener = CreateMudActivityListener();
+        ActivitySource.AddActivityListener(listener);
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/");
+        using var activity = MudHttpObservability.StartRequestActivity(request, "client_a");
+
+        MudHttpObservability.RecordRetryCount(request, retryCount: 3);
+
+        activity!.GetTagItem(MudHttpActivitySource.Tags.MudRetryCount).Should().Be(3);
+        // 请求属性也应保存
+        MudHttpObservability.TryGetProperty(request, "__mud_retry_count", out var propValue).Should().BeTrue();
+        propValue.Should().Be(3);
+    }
+
+    [Fact]
+    public void RecordRetryCount_WithNullRequest_OnlyWritesActivityTag()
+    {
+        using var listener = CreateMudActivityListener();
+        ActivitySource.AddActivityListener(listener);
+
+        using var activity = MudHttpActivitySource.Instance.StartActivity("test", ActivityKind.Client);
+        MudHttpObservability.RecordRetryCount(null, retryCount: 2);
+
+        activity!.GetTagItem(MudHttpActivitySource.Tags.MudRetryCount).Should().Be(2);
+    }
+
+    [Fact]
+    public void RecordRetryCount_DoesNotWrite_On_NonMudActivity()
+    {
+        using var nonMudSource = new ActivitySource("Not.Mud.Source", "1.0.0");
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = _ => true,
+            SampleUsingParentId = (ref ActivityCreationOptions<string> _) => ActivitySamplingResult.AllData,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        using var activity = nonMudSource.StartActivity("external", ActivityKind.Client);
+        MudHttpObservability.RecordRetryCount(null, retryCount: 5);
+
+        // 非 Mud Activity 不应被污染
+        activity!.GetTagItem(MudHttpActivitySource.Tags.MudRetryCount).Should().BeNull();
+    }
+
+    [Fact]
+    public void RecordResponse_Propagates_RetryCount_FromRequestProperty_ToActivityTag()
+    {
+        using var listener = CreateMudActivityListener();
+        ActivitySource.AddActivityListener(listener);
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/");
+        using var activity = MudHttpObservability.StartRequestActivity(request, "client_a");
+
+        // 模拟 Polly onRetry 回调写入 retry_count
+        MudHttpObservability.RecordRetryCount(request, retryCount: 2);
+
+        var response = new HttpResponseMessage(HttpStatusCode.OK);
+        MudHttpObservability.RecordResponse(activity, response, elapsedMs: 10.0, clientName: "client_a");
+
+        // RecordResponse 应从请求属性读取 retry_count 并 SetTag
+        activity!.GetTagItem(MudHttpActivitySource.Tags.MudRetryCount).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task TracingHandler_Records_RequestStarted_And_RequestStopped_ActivityEvents()
+    {
+        var startedActivities = new List<Activity>();
+        using var listener = CreateMudActivityListener(a => startedActivities.Add(a));
+        ActivitySource.AddActivityListener(listener);
+
+        var innerHandler = new FakeDelegatingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        var handler = new TracingDelegatingHandler { InnerHandler = innerHandler };
+        using var invoker = new HttpMessageInvoker(handler);
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/");
+        var response = await invoker.SendAsync(request, CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        startedActivities.Should().ContainSingle();
+        var activity = startedActivities[0];
+
+        // Activity.Events 应包含 RequestStarted 与 RequestStopped
+        var events = activity.Events.ToList();
+        events.Should().Contain(e => e.Name == MudHttpDiagnosticNames.RequestStarted);
+        events.Should().Contain(e => e.Name == MudHttpDiagnosticNames.RequestStopped);
+
+        // 验证 RequestStopped 事件的关键 tags
+        var stoppedEvent = events.First(e => e.Name == MudHttpDiagnosticNames.RequestStopped);
+        stoppedEvent.Tags.Should().Contain(t => t.Key == "status_code" && Equals(t.Value, 200));
+        stoppedEvent.Tags.Should().Contain(t => t.Key == "method" && Equals(t.Value, "GET"));
+    }
+
+    [Fact]
+    public async Task TracingHandler_Records_RequestFailed_ActivityEvent_OnException()
+    {
+        var startedActivities = new List<Activity>();
+        using var listener = CreateMudActivityListener(a => startedActivities.Add(a));
+        ActivitySource.AddActivityListener(listener);
+
+        var innerHandler = new FakeDelegatingHandler(_ => throw new HttpRequestException("network error"));
+        var handler = new TracingDelegatingHandler { InnerHandler = innerHandler };
+        using var invoker = new HttpMessageInvoker(handler);
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/");
+        await Assert.ThrowsAsync<HttpRequestException>(() => invoker.SendAsync(request, CancellationToken.None));
+
+        startedActivities.Should().ContainSingle();
+        var events = startedActivities[0].Events.ToList();
+        events.Should().Contain(e => e.Name == MudHttpDiagnosticNames.RequestFailed);
+    }
+
+    // ============ v2 修复：AddActivityEvent 行为断言 ============
+
+    [Fact]
+    public void AddActivityEvent_Writes_Event_On_MudActivity()
+    {
+        using var listener = CreateMudActivityListener();
+        ActivitySource.AddActivityListener(listener);
+
+        using var activity = MudHttpActivitySource.Instance.StartActivity("test", ActivityKind.Client);
+        MudHttpActivitySource.AddActivityEvent(
+            MudHttpDiagnosticNames.RetryOccurred,
+            () => new { policy_key = "policy", retry_count = 1, delay_ms = 100.0 },
+            MudHttpDiagnosticNames.RetryOccurred,
+            new[]
+            {
+                new KeyValuePair<string, object?>("retry_count", 1),
+                new KeyValuePair<string, object?>("delay_ms", 100.0),
+            });
+
+        var events = activity!.Events.ToList();
+        events.Should().ContainSingle();
+        events[0].Name.Should().Be(MudHttpDiagnosticNames.RetryOccurred);
+        events[0].Tags.Should().Contain(t => t.Key == "retry_count" && Equals(t.Value, 1));
+        events[0].Tags.Should().Contain(t => t.Key == "delay_ms" && Equals(t.Value, 100.0));
+    }
+
+    [Fact]
+    public void AddActivityEvent_DoesNotWrite_On_NonMudActivity()
+    {
+        using var nonMudSource = new ActivitySource("Not.Mud.Source", "1.0.0");
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = _ => true,
+            SampleUsingParentId = (ref ActivityCreationOptions<string> _) => ActivitySamplingResult.AllData,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        using var activity = nonMudSource.StartActivity("external", ActivityKind.Client);
+        MudHttpActivitySource.AddActivityEvent(
+            MudHttpDiagnosticNames.RetryOccurred,
+            () => null,
+            MudHttpDiagnosticNames.RetryOccurred,
+            new[] { new KeyValuePair<string, object?>("retry_count", 1) });
+
+        // 非 Mud Activity 不应被添加事件
+        activity!.Events.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void AddActivityEvent_WithNullActivity_DoesNotThrow()
+    {
+        // 没有 Activity.Current 时应安全无副作用
+        MudHttpActivitySource.AddActivityEvent(
+            MudHttpDiagnosticNames.RetryOccurred,
+            () => new { policy_key = "policy", retry_count = 1, delay_ms = 50.0 },
+            MudHttpDiagnosticNames.RetryOccurred,
+            new[] { new KeyValuePair<string, object?>("retry_count", 1) });
+    }
+
+    [Fact]
+    public void IsMudActivity_Returns_True_For_MudActivity_False_For_Others()
+    {
+        using var mudListener = CreateMudActivityListener();
+        ActivitySource.AddActivityListener(mudListener);
+
+        using var nonMudSource = new ActivitySource("Not.Mud.Source", "1.0.0");
+        using var allListener = new ActivityListener
+        {
+            ShouldListenTo = _ => true,
+            SampleUsingParentId = (ref ActivityCreationOptions<string> _) => ActivitySamplingResult.AllData,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData
+        };
+        ActivitySource.AddActivityListener(allListener);
+
+        using var mudActivity = MudHttpActivitySource.Instance.StartActivity("mud", ActivityKind.Client);
+        using var nonMudActivity = nonMudSource.StartActivity("external", ActivityKind.Client);
+
+        MudHttpActivitySource.IsMudActivity(mudActivity!).Should().BeTrue();
+        MudHttpActivitySource.IsMudActivity(nonMudActivity!).Should().BeFalse();
+    }
+
+    // ============ v2 修复：CircuitBreakerStateObserver 同步 Activity tag 与事件 ============
+
+    [Fact]
+    public void CircuitBreakerObserver_SetState_Sets_Activity_Tag_And_Event()
+    {
+        CircuitBreakerStateObserver.Clear();
+        using var listener = CreateMudActivityListener();
+        ActivitySource.AddActivityListener(listener);
+
+        using var activity = MudHttpActivitySource.Instance.StartActivity("test", ActivityKind.Client);
+        CircuitBreakerStateObserver.SetState("policy_test", CircuitBreakerState.Open);
+
+        activity!.GetTagItem(MudHttpActivitySource.Tags.MudCircuitBreakerState).Should().Be("Open");
+        var events = activity.Events.ToList();
+        events.Should().Contain(e => e.Name == MudHttpDiagnosticNames.CircuitBreakerStateChanged);
+        var cbEvent = events.First(e => e.Name == MudHttpDiagnosticNames.CircuitBreakerStateChanged);
+        cbEvent.Tags.Should().Contain(t => t.Key == "policy_key" && Equals(t.Value, "policy_test"));
+        cbEvent.Tags.Should().Contain(t => t.Key == "state" && Equals(t.Value, "Open"));
+
+        CircuitBreakerStateObserver.Clear();
+    }
+
+    [Fact]
+    public void CircuitBreakerObserver_SetState_DoesNotWrite_On_NonMudActivity()
+    {
+        CircuitBreakerStateObserver.Clear();
+        using var nonMudSource = new ActivitySource("Not.Mud.Source", "1.0.0");
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = _ => true,
+            SampleUsingParentId = (ref ActivityCreationOptions<string> _) => ActivitySamplingResult.AllData,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        using var activity = nonMudSource.StartActivity("external", ActivityKind.Client);
+        CircuitBreakerStateObserver.SetState("policy_test", CircuitBreakerState.Open);
+
+        // 非 Mud Activity 不应被污染
+        activity!.GetTagItem(MudHttpActivitySource.Tags.MudCircuitBreakerState).Should().BeNull();
+        activity.Events.Should().BeEmpty();
+
+        CircuitBreakerStateObserver.Clear();
+    }
+
+    // ============ v2 修复：CacheResponseInterceptor Activity tag 与事件 ============
+
+    [Fact]
+    public void CacheInterceptor_TryGetHit_Sets_Activity_Tag_And_CacheHitEvent()
+    {
+        using var listener = CreateMudActivityListener();
+        ActivitySource.AddActivityListener(listener);
+
+        var cache = new MemoryHttpResponseCache();
+        var interceptor = new CacheResponseInterceptor(cache, Mock.Of<ILogger<CacheResponseInterceptor>>());
+        cache.Set("key1", "value1", TimeSpan.FromSeconds(60));
+
+        using var activity = MudHttpActivitySource.Instance.StartActivity("test", ActivityKind.Client);
+        var result = interceptor.TryGet<string>("key1", out var value);
+
+        result.Should().BeTrue();
+        value.Should().Be("value1");
+        activity!.GetTagItem(MudHttpActivitySource.Tags.MudCacheHit).Should().Be(true);
+        var events = activity.Events.ToList();
+        events.Should().Contain(e => e.Name == MudHttpDiagnosticNames.CacheHit);
+    }
+
+    [Fact]
+    public void CacheInterceptor_TryGetMiss_Sets_Activity_Tag_And_CacheMissEvent()
+    {
+        using var listener = CreateMudActivityListener();
+        ActivitySource.AddActivityListener(listener);
+
+        var cache = new MemoryHttpResponseCache();
+        var interceptor = new CacheResponseInterceptor(cache, Mock.Of<ILogger<CacheResponseInterceptor>>());
+
+        using var activity = MudHttpActivitySource.Instance.StartActivity("test", ActivityKind.Client);
+        var result = interceptor.TryGet<string>("absent_key", out var value);
+
+        result.Should().BeFalse();
+        value.Should().BeNull();
+        activity!.GetTagItem(MudHttpActivitySource.Tags.MudCacheHit).Should().Be(false);
+        var events = activity.Events.ToList();
+        events.Should().Contain(e => e.Name == MudHttpDiagnosticNames.CacheMiss);
+    }
+
+    [Fact]
+    public void CacheInterceptor_TryGet_DoesNotWrite_On_NonMudActivity()
+    {
+        using var nonMudSource = new ActivitySource("Not.Mud.Source", "1.0.0");
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = _ => true,
+            SampleUsingParentId = (ref ActivityCreationOptions<string> _) => ActivitySamplingResult.AllData,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var cache = new MemoryHttpResponseCache();
+        var interceptor = new CacheResponseInterceptor(cache, Mock.Of<ILogger<CacheResponseInterceptor>>());
+        cache.Set("k", "v", TimeSpan.FromSeconds(60));
+
+        using var activity = nonMudSource.StartActivity("external", ActivityKind.Client);
+        interceptor.TryGet<string>("k", out _);
+
+        // 非 Mud Activity 不应被污染
+        activity!.GetTagItem(MudHttpActivitySource.Tags.MudCacheHit).Should().BeNull();
+        activity.Events.Should().BeEmpty();
+    }
+
+    // ============ v2 修复：TokenRecoveryCounter 指标 ============
+
+    [Fact]
+    public void Meter_TokenRecoveryCounter_Is_CorrectlyDefined()
+    {
+        MudHttpMeter.TokenRecoveryCounter.Name.Should().Be("mud.token.recovery");
+        MudHttpMeter.TokenRecoveryCounter.Unit.Should().Be("{operation}");
+    }
+
+    [Fact]
+    public void Meter_TokenRecoveryCounter_Add_Captured_By_MeterListener()
+    {
+        var values = new List<long>();
+        using var meterListener = new MeterListener
+        {
+            InstrumentPublished = (instrument, listener) =>
+            {
+                if (instrument.Meter.Name == MudHttpMeter.MeterName)
+                    listener.EnableMeasurementEvents(instrument);
+            }
+        };
+        meterListener.SetMeasurementEventCallback<long>((instrument, value, _, _) =>
+        {
+            if (instrument.Name == "mud.token.recovery")
+                values.Add(value);
+        });
+        meterListener.Start();
+
+        MudHttpMeter.TokenRecoveryCounter.Add(1,
+            new KeyValuePair<string, object?>("token_manager_key", "feishu"),
+            new KeyValuePair<string, object?>("outcome", "success"));
+
+        values.Should().ContainSingle().Which.Should().Be(1);
+    }
+
+    // ============ v2 修复：TokenRefreshStatsCollector 动态保留期 ============
+
+    [Fact]
+    public void TokenRefreshStatsCollector_SetRetention_Expands_Retention()
+    {
+        // 注意：本测试与 HealthChecksTests 共享 ObservabilityTestCollection，串行执行
+        // 不能假定初始保留期为 5 分钟，仅验证扩大行为
+        TokenRefreshStatsCollector.SetRetention(TimeSpan.FromMinutes(30));
+
+        TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(30));
+
+        // 重新设回较小值不应生效（仅允许扩大）
+        TokenRefreshStatsCollector.SetRetention(TimeSpan.FromMinutes(1));
+        TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(30));
+
+        // 负值不应生效
+        TokenRefreshStatsCollector.SetRetention(TimeSpan.Zero);
+        TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(30));
+
+        TokenRefreshStatsCollector.SetRetention(TimeSpan.FromMinutes(60));
+        TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(60));
+    }
+
+    private static ActivityListener CreateMudActivityListener(Action<Activity>? onStarted = null)
+    {
+        return new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == MudHttpActivitySource.Name,
+            SampleUsingParentId = (ref ActivityCreationOptions<string> _) => ActivitySamplingResult.AllData,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStarted = onStarted ?? (_ => { })
+        };
     }
 
     /// <summary>

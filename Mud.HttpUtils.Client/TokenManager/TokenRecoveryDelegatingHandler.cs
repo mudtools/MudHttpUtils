@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Linq;
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -108,63 +109,102 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
         response.Dispose();
 
         var recoveryContext = GetRecoveryContext(request);
+        var isUserTokenRecovery = recoveryContext != null && !string.IsNullOrEmpty(recoveryContext.UserId);
+        var tokenManagerKey = isUserTokenRecovery
+            ? _userTokenManager?.GetType().Name
+            : _tokenManager.GetType().Name;
 
-        for (var retry = 0; retry < _options.RecoveryMaxRetries; retry++)
+        // 创建令牌恢复子 Activity（mud.token.recovery）
+        var recoveryActivity = MudHttpActivitySource.Instance.HasListeners()
+            ? MudHttpActivitySource.Instance.StartActivity(MudHttpActivitySource.ActivityNameTokenRecovery, ActivityKind.Internal)
+            : null;
+        var recoverySw = Stopwatch.StartNew();
+        var recoverySucceeded = false;
+
+        if (recoveryActivity != null)
+            recoveryActivity.SetTag(MudHttpActivitySource.Tags.MudTokenManagerKey, tokenManagerKey);
+
+        try
         {
-            MudHttpClientLog.TokenRecoveryAttempting(_logger, retry + 1, _options.RecoveryMaxRetries, request.Method.Method, request.RequestUri?.ToString());
-
-            var isUserToken = recoveryContext != null && !string.IsNullOrEmpty(recoveryContext.UserId);
-            string? newToken = null;
-
-            if (isUserToken && _userTokenManager != null)
+            for (var retry = 0; retry < _options.RecoveryMaxRetries; retry++)
             {
-                try
+                MudHttpClientLog.TokenRecoveryAttempting(_logger, retry + 1, _options.RecoveryMaxRetries, request.Method.Method, request.RequestUri?.ToString());
+
+                string? newToken = null;
+
+                if (isUserTokenRecovery && _userTokenManager != null)
                 {
-                    newToken = await RefreshUserTokenWithDedupAsync(recoveryContext!.UserId!, cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        newToken = await RefreshUserTokenWithDedupAsync(recoveryContext!.UserId!, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        MudHttpClientLog.UserTokenRefreshFailed(_logger, recoveryContext!.UserId!, ex);
+                        return CreateUnauthorizedResponse(request);
+                    }
                 }
-                catch (Exception ex)
+                else
                 {
-                    MudHttpClientLog.UserTokenRefreshFailed(_logger, recoveryContext!.UserId!, ex);
+                    try
+                    {
+                        newToken = await RefreshTokenWithDedupAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        MudHttpClientLog.TokenRefreshFailedInRecovery(_logger, ex);
+                        return CreateUnauthorizedResponse(request);
+                    }
+                }
+
+                if (string.IsNullOrEmpty(newToken))
+                {
+                    MudHttpClientLog.TokenRefreshReturnedEmpty(_logger);
                     return CreateUnauthorizedResponse(request);
                 }
-            }
-            else
-            {
-                try
+
+                var retryRequest = BuildRetryRequest(request, contentBytes, recoveryContext);
+                if (!ApplyTokenToRequest(retryRequest, newToken, recoveryContext))
                 {
-                    newToken = await RefreshTokenWithDedupAsync(cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    MudHttpClientLog.TokenRefreshFailedInRecovery(_logger, ex);
+                    MudHttpClientLog.TokenInjectionUnsupported(_logger, recoveryContext?.InjectionMode.ToString() ?? "default");
                     return CreateUnauthorizedResponse(request);
                 }
+
+                var retryResponse = await base.SendAsync(retryRequest, cancellationToken).ConfigureAwait(false);
+
+                if (retryResponse.StatusCode != System.Net.HttpStatusCode.Unauthorized)
+                {
+                    recoverySucceeded = true;
+                    return retryResponse;
+                }
+
+                retryResponse.Dispose();
             }
 
-            if (string.IsNullOrEmpty(newToken))
-            {
-                MudHttpClientLog.TokenRefreshReturnedEmpty(_logger);
-                return CreateUnauthorizedResponse(request);
-            }
+            MudHttpClientLog.TokenRecoveryExhausted(_logger, _options.RecoveryMaxRetries, request.Method.Method, request.RequestUri?.ToString());
 
-            var retryRequest = BuildRetryRequest(request, contentBytes, recoveryContext);
-            if (!ApplyTokenToRequest(retryRequest, newToken, recoveryContext))
-            {
-                MudHttpClientLog.TokenInjectionUnsupported(_logger, recoveryContext?.InjectionMode.ToString() ?? "default");
-                return CreateUnauthorizedResponse(request);
-            }
-
-            var retryResponse = await base.SendAsync(retryRequest, cancellationToken).ConfigureAwait(false);
-
-            if (retryResponse.StatusCode != System.Net.HttpStatusCode.Unauthorized)
-                return retryResponse;
-
-            retryResponse.Dispose();
+            return CreateUnauthorizedResponse(request);
         }
+        finally
+        {
+            recoverySw.Stop();
+            var elapsedMs = recoverySw.Elapsed.TotalMilliseconds;
 
-        MudHttpClientLog.TokenRecoveryExhausted(_logger, _options.RecoveryMaxRetries, request.Method.Method, request.RequestUri?.ToString());
+            if (recoveryActivity != null)
+            {
+                recoveryActivity.SetTag("mud.token.recovery.success", recoverySucceeded);
+                recoveryActivity.SetTag("mud.token.recovery.elapsed_ms", elapsedMs);
+                if (!recoverySucceeded)
+                    recoveryActivity.SetStatus(ActivityStatusCode.Error, "Token recovery exhausted");
+                recoveryActivity.Dispose();
+            }
 
-        return CreateUnauthorizedResponse(request);
+            // 记录恢复指标
+            var outcome = recoverySucceeded ? "success" : "failure";
+            MudHttpMeter.TokenRecoveryCounter.Add(1,
+                new KeyValuePair<string, object?>("token_manager_key", tokenManagerKey ?? "(unknown)"),
+                new KeyValuePair<string, object?>("outcome", outcome));
+        }
     }
 
     private bool ShouldAttemptRecovery(HttpRequestMessage request)

@@ -79,7 +79,27 @@ public readonly struct RefreshStats
 public static class TokenRefreshStatsCollector
 {
     private static readonly ConcurrentQueue<RefreshEvent> s_events = new();
-    private static readonly TimeSpan s_retention = TimeSpan.FromMinutes(5);
+    // 保留期：应 >= 健康检查最大窗口期。默认 5 分钟，可通过 SetRetention 调整。
+    private static TimeSpan s_retention = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// 设置保留期（应 >= 健康检查最大窗口期）。仅供宿主初始化时调用。
+    /// 只允许扩大保留期，避免误操作缩小导致健康检查窗口数据丢失。
+    /// </summary>
+    /// <param name="retention">保留期，必须为正值。</param>
+    public static void SetRetention(TimeSpan retention)
+    {
+        if (retention <= TimeSpan.Zero)
+            return;
+        // 仅允许扩大保留期，避免运行时缩小导致正在使用的健康检查窗口数据丢失
+        if (retention > s_retention)
+            s_retention = retention;
+    }
+
+    /// <summary>
+    /// 获取当前保留期（主要用于测试与诊断）。
+    /// </summary>
+    public static TimeSpan CurrentRetention => s_retention;
 
     /// <summary>
     /// 记录一次令牌刷新事件。

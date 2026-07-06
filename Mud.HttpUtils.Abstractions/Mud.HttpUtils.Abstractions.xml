@@ -1186,6 +1186,22 @@
             令牌恢复活动名称。
             </summary>
         </member>
+        <member name="M:Mud.HttpUtils.MudHttpActivitySource.AddActivityEvent(System.String,System.Func{System.Object},System.String,System.Collections.Generic.IEnumerable{System.Collections.Generic.KeyValuePair{System.String,System.Object}})">
+            <summary>
+            在当前 Activity 上记录 Span 事件（同时写入 DiagnosticSource）。
+            仅当当前 Activity 属于 MudHttpActivitySource 时才添加 ActivityEvent，避免污染外部 Activity。
+            无 DiagnosticSource 订阅者时 payloadFactory 不调用，零分配。
+            </summary>
+            <param name="diagnosticEventName">DiagnosticSource 事件名称（来自 <see cref="T:Mud.HttpUtils.Observability.MudHttpDiagnosticNames"/>）。</param>
+            <param name="diagnosticPayloadFactory">DiagnosticSource 事件负载工厂，仅在存在订阅者时调用。</param>
+            <param name="activityEventName">ActivityEvent 名称。</param>
+            <param name="tags">ActivityEvent 的标签集合（与 DiagnosticSource 负载字段保持一致）。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.MudHttpActivitySource.IsMudActivity(System.Diagnostics.Activity)">
+            <summary>
+            判断指定 Activity 是否由 MudHttpActivitySource 创建。
+            </summary>
+        </member>
         <member name="T:Mud.HttpUtils.MudHttpActivitySource.Tags">
             <summary>
             OTel 语义约定与 Mud 自定义属性的常量集合。
@@ -1291,6 +1307,12 @@
         <member name="F:Mud.HttpUtils.MudHttpMeter.CircuitBreakerState">
             <summary>
             熔断器状态 ObservableGauge（0=Closed, 1=HalfOpen, 2=Open），维度：policy_key。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpMeter.TokenRecoveryCounter">
+            <summary>
+            令牌恢复计数（维度：token_manager_key, outcome）。
+            在 TokenRecoveryDelegatingHandler 收到 401 后触发令牌刷新并重试时记录。
             </summary>
         </member>
         <member name="T:Mud.HttpUtils.CircuitBreakerState">
@@ -1458,6 +1480,18 @@
             令牌刷新统计收集器（无锁设计）。
             基于 <see cref="T:System.Collections.Concurrent.ConcurrentQueue`1"/> 追加事件，读取时按时间窗口线性扫描并裁剪过期项。
             写入路径零分配除事件结构本身，热路径无锁。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Observability.TokenRefreshStatsCollector.SetRetention(System.TimeSpan)">
+            <summary>
+            设置保留期（应 >= 健康检查最大窗口期）。仅供宿主初始化时调用。
+            只允许扩大保留期，避免误操作缩小导致健康检查窗口数据丢失。
+            </summary>
+            <param name="retention">保留期，必须为正值。</param>
+        </member>
+        <member name="P:Mud.HttpUtils.Observability.TokenRefreshStatsCollector.CurrentRetention">
+            <summary>
+            获取当前保留期（主要用于测试与诊断）。
             </summary>
         </member>
         <member name="M:Mud.HttpUtils.Observability.TokenRefreshStatsCollector.Record(System.Boolean,System.String,System.Double,System.Boolean)">
