@@ -90,8 +90,6 @@ public static class MudHttpActivitySource
         public const string HttpScheme = "http.scheme";
         /// <summary>主机名</summary>
         public const string HttpHost = "http.host";
-        /// <summary>路由模板</summary>
-        public const string HttpRoute = "http.route";
         /// <summary>HTTP 状态码</summary>
         public const string HttpStatusCode = "http.status_code";
         /// <summary>响应内容长度（字节）</summary>
@@ -112,5 +110,9 @@ public static class MudHttpActivitySource
         public const string MudCircuitBreakerState = "mud.http.circuit_breaker.state";
         /// <summary>关联 ID</summary>
         public const string MudCorrelationId = "mud.correlation_id";
+        /// <summary>令牌恢复是否成功</summary>
+        public const string MudTokenRecoverySuccess = "mud.token.recovery.success";
+        /// <summary>令牌恢复耗时（毫秒）</summary>
+        public const string MudTokenRecoveryElapsedMs = "mud.token.recovery.elapsed_ms";
     }
 }

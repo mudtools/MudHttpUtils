@@ -180,6 +180,18 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 MudHttpMeter.RetryCounter.Add(1,
                     new KeyValuePair<string, object?>("policy_key", policyKey),
                     new KeyValuePair<string, object?>("outcome", "timeout"));
+
+                // 写入 TimeoutOccurred Span 事件，与 RetryOccurred 对称
+                MudHttpActivitySource.AddActivityEvent(
+                    MudHttpDiagnosticNames.TimeoutOccurred,
+                    () => new TimeoutDiagnosticPayload(policyKey, timespan.TotalMilliseconds),
+                    MudHttpDiagnosticNames.TimeoutOccurred,
+                    new[]
+                    {
+                        new KeyValuePair<string, object?>("policy_key", policyKey),
+                        new KeyValuePair<string, object?>("timeout_ms", timespan.TotalMilliseconds),
+                    });
+
                 return Task.CompletedTask;
             });
     }

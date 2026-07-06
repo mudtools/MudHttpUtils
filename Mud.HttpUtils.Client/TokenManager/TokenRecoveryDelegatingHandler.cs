@@ -175,6 +175,8 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
                 if (retryResponse.StatusCode != System.Net.HttpStatusCode.Unauthorized)
                 {
                     recoverySucceeded = true;
+                    // 记录恢复后最终状态码，便于 Jaeger 中快速判断恢复是否获得 2xx
+                    recoveryActivity?.SetTag(MudHttpActivitySource.Tags.HttpStatusCode, (int)retryResponse.StatusCode);
                     return retryResponse;
                 }
 
@@ -192,8 +194,8 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
 
             if (recoveryActivity != null)
             {
-                recoveryActivity.SetTag("mud.token.recovery.success", recoverySucceeded);
-                recoveryActivity.SetTag("mud.token.recovery.elapsed_ms", elapsedMs);
+                recoveryActivity.SetTag(MudHttpActivitySource.Tags.MudTokenRecoverySuccess, recoverySucceeded);
+                recoveryActivity.SetTag(MudHttpActivitySource.Tags.MudTokenRecoveryElapsedMs, elapsedMs);
                 if (!recoverySucceeded)
                     recoveryActivity.SetStatus(ActivityStatusCode.Error, "Token recovery exhausted");
                 recoveryActivity.Dispose();

@@ -13,6 +13,8 @@
             并关联 .NET HttpClient 内置的 <c>System.Net.Http</c> ActivitySource。</para>
             <para>默认导出至本地 OTLP gRPC 端点（<c>http://localhost:4317</c>），
             通过 <see cref="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.OtlpEndpoint"/> 自定义。</para>
+            <para>生产级配置：自动配置 Resource（service.name/version/deployment.environment）、
+            Sampler（ParentBased + TraceIdRatioBased）、可选 Logs 导出、批量导出、自定义 OTLP Headers。</para>
             </remarks>
         </member>
         <member name="M:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryExtensions.AddMudHttpOpenTelemetry(Microsoft.Extensions.DependencyInjection.IServiceCollection,System.Action{Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions})">
@@ -28,7 +30,13 @@
             builder.Services.AddMudHttpOpenTelemetry(options =>
             {
                 options.OtlpEndpoint = new Uri("http://otel-collector:4317");
-                options.EnableAspNetCoreInstrumentation = true;
+                options.ServiceName = "my-service";
+                options.SamplingRatio = 0.1;
+                options.EnableLogging = true;
+                options.OtlpHeaders = new Dictionary&lt;string, string&gt;
+                {
+                    ["Authorization"] = "Bearer my-token"
+                };
             });
             </code>
             </example>
@@ -50,6 +58,11 @@
         <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.EnableMetrics">
             <summary>
             是否启用指标（Metrics）。默认 <c>true</c>。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.EnableLogging">
+            <summary>
+            是否启用 OTLP 日志导出。默认 <c>false</c>（向后兼容；Logs 导出依赖 .NET 8+ 的 ILogger 集成）。
             </summary>
         </member>
         <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.EnableHttpClientInstrumentation">
@@ -80,6 +93,44 @@
             是否将 OTLP 导出器的导出超时设为较短时间（5 秒），便于开发调试。默认 <c>false</c>。
             </summary>
         </member>
+        <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ServiceName">
+            <summary>
+            服务名称，用于 OTel Resource 属性 <c>service.name</c>。默认 <c>"Mud.HttpUtils.Application"</c>。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ServiceVersion">
+            <summary>
+            服务版本，用于 OTel Resource 属性 <c>service.version</c>。
+            默认与 <see cref="F:Mud.HttpUtils.MudHttpActivitySource.Version"/> 一致。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.DeploymentEnvironment">
+            <summary>
+            部署环境，用于 OTel Resource 属性 <c>deployment.environment</c>。默认 <c>"production"</c>。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.SamplingRatio">
+            <summary>
+            采样比率（0.0~1.0），默认 <c>1.0</c>（全采样，向后兼容）。
+            生产环境建议 0.1~0.3。使用 <c>ParentBasedSampler(TraceIdRatioBasedSampler)</c> 策略。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ExportBatchSize">
+            <summary>
+            OTLP 批量导出批量大小。设为 <c>null</c> 使用 SDK 默认值（512）。仅当 <c>>0</c> 时生效。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ExportIntervalMilliseconds">
+            <summary>
+            OTLP 批量导出间隔（毫秒）。设为 <c>null</c> 使用 SDK 默认值（5000ms）。仅当 <c>>0</c> 时生效。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.OtlpHeaders">
+            <summary>
+            自定义 OTLP Headers（如认证头 <c>Authorization: Bearer &lt;token&gt;</c>、<c>X-API-Key</c>）。
+            为 <c>null</c> 或空则不设置额外头。
+            </summary>
+        </member>
         <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ConfigureTracing">
             <summary>
             自定义追踪配置委托。在 Mud 默认配置之后执行，可追加/覆盖配置。
@@ -88,6 +139,11 @@
         <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ConfigureMetrics">
             <summary>
             自定义指标配置委托。在 Mud 默认配置之后执行，可追加/覆盖配置。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ConfigureLogging">
+            <summary>
+            自定义日志配置委托。在 Mud 默认配置之后执行，可追加/覆盖配置。
             </summary>
         </member>
         <member name="T:Mud.HttpUtils.OpenTelemetry.OtlpExportProtocol">

@@ -4,6 +4,7 @@
 // -----------------------------------------------------------------------
 
 using OpenTelemetry;
+using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
 
@@ -27,6 +28,11 @@ public class MudHttpOpenTelemetryOptions
     /// 是否启用指标（Metrics）。默认 <c>true</c>。
     /// </summary>
     public bool EnableMetrics { get; set; } = true;
+
+    /// <summary>
+    /// 是否启用 OTLP 日志导出。默认 <c>false</c>（向后兼容；Logs 导出依赖 .NET 8+ 的 ILogger 集成）。
+    /// </summary>
+    public bool EnableLogging { get; set; } = false;
 
     /// <summary>
     /// 是否关联 .NET HttpClient 内置的 <c>System.Net.Http</c> ActivitySource 与 Instrumentation。
@@ -57,6 +63,44 @@ public class MudHttpOpenTelemetryOptions
     public bool UseShortExporterTimeout { get; set; } = false;
 
     /// <summary>
+    /// 服务名称，用于 OTel Resource 属性 <c>service.name</c>。默认 <c>"Mud.HttpUtils.Application"</c>。
+    /// </summary>
+    public string ServiceName { get; set; } = "Mud.HttpUtils.Application";
+
+    /// <summary>
+    /// 服务版本，用于 OTel Resource 属性 <c>service.version</c>。
+    /// 默认与 <see cref="MudHttpActivitySource.Version"/> 一致。
+    /// </summary>
+    public string ServiceVersion { get; set; } = MudHttpActivitySource.Version;
+
+    /// <summary>
+    /// 部署环境，用于 OTel Resource 属性 <c>deployment.environment</c>。默认 <c>"production"</c>。
+    /// </summary>
+    public string DeploymentEnvironment { get; set; } = "production";
+
+    /// <summary>
+    /// 采样比率（0.0~1.0），默认 <c>1.0</c>（全采样，向后兼容）。
+    /// 生产环境建议 0.1~0.3。使用 <c>ParentBasedSampler(TraceIdRatioBasedSampler)</c> 策略。
+    /// </summary>
+    public double SamplingRatio { get; set; } = 1.0;
+
+    /// <summary>
+    /// OTLP 批量导出批量大小。设为 <c>null</c> 使用 SDK 默认值（512）。仅当 <c>>0</c> 时生效。
+    /// </summary>
+    public int? ExportBatchSize { get; set; }
+
+    /// <summary>
+    /// OTLP 批量导出间隔（毫秒）。设为 <c>null</c> 使用 SDK 默认值（5000ms）。仅当 <c>>0</c> 时生效。
+    /// </summary>
+    public int? ExportIntervalMilliseconds { get; set; }
+
+    /// <summary>
+    /// 自定义 OTLP Headers（如认证头 <c>Authorization: Bearer &lt;token&gt;</c>、<c>X-API-Key</c>）。
+    /// 为 <c>null</c> 或空则不设置额外头。
+    /// </summary>
+    public IDictionary<string, string>? OtlpHeaders { get; set; }
+
+    /// <summary>
     /// 自定义追踪配置委托。在 Mud 默认配置之后执行，可追加/覆盖配置。
     /// </summary>
     public Action<TracerProviderBuilder>? ConfigureTracing { get; set; }
@@ -65,6 +109,11 @@ public class MudHttpOpenTelemetryOptions
     /// 自定义指标配置委托。在 Mud 默认配置之后执行，可追加/覆盖配置。
     /// </summary>
     public Action<MeterProviderBuilder>? ConfigureMetrics { get; set; }
+
+    /// <summary>
+    /// 自定义日志配置委托。在 Mud 默认配置之后执行，可追加/覆盖配置。
+    /// </summary>
+    public Action<LoggerProviderBuilder>? ConfigureLogging { get; set; }
 }
 
 /// <summary>

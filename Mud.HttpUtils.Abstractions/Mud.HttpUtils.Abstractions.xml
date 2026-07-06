@@ -1219,9 +1219,6 @@
         <member name="F:Mud.HttpUtils.MudHttpActivitySource.Tags.HttpHost">
             <summary>主机名</summary>
         </member>
-        <member name="F:Mud.HttpUtils.MudHttpActivitySource.Tags.HttpRoute">
-            <summary>路由模板</summary>
-        </member>
         <member name="F:Mud.HttpUtils.MudHttpActivitySource.Tags.HttpStatusCode">
             <summary>HTTP 状态码</summary>
         </member>
@@ -1248,6 +1245,12 @@
         </member>
         <member name="F:Mud.HttpUtils.MudHttpActivitySource.Tags.MudCorrelationId">
             <summary>关联 ID</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpActivitySource.Tags.MudTokenRecoverySuccess">
+            <summary>令牌恢复是否成功</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.MudHttpActivitySource.Tags.MudTokenRecoveryElapsedMs">
+            <summary>令牌恢复耗时（毫秒）</summary>
         </member>
         <member name="T:Mud.HttpUtils.MudHttpMeter">
             <summary>
@@ -1301,7 +1304,7 @@
         </member>
         <member name="F:Mud.HttpUtils.MudHttpMeter.RetryCounter">
             <summary>
-            HTTP 请求重试次数（维度：client_name, policy_key）。
+            HTTP 请求重试次数（维度：policy_key, outcome, retry_count）。
             </summary>
         </member>
         <member name="F:Mud.HttpUtils.MudHttpMeter.CircuitBreakerState">
@@ -1428,6 +1431,9 @@
         </member>
         <member name="F:Mud.HttpUtils.Observability.MudHttpDiagnosticNames.RetryOccurred">
             <summary>重试发生事件。</summary>
+        </member>
+        <member name="F:Mud.HttpUtils.Observability.MudHttpDiagnosticNames.TimeoutOccurred">
+            <summary>请求超时事件。</summary>
         </member>
         <member name="F:Mud.HttpUtils.Observability.MudHttpDiagnosticNames.CircuitBreakerStateChanged">
             <summary>熔断器状态变更事件。</summary>

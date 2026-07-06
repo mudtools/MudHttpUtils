@@ -52,8 +52,12 @@ internal static class MudHttpObservability
         {
             activity.SetTag(MudHttpActivitySource.Tags.HttpMethod, request.Method.Method);
             activity.SetTag(MudHttpActivitySource.Tags.HttpUrl, uri.ToString());
-            activity.SetTag(MudHttpActivitySource.Tags.HttpScheme, uri.Scheme);
-            activity.SetTag(MudHttpActivitySource.Tags.HttpHost, uri.Host);
+            // 仅绝对 URI 才有 Scheme/Host（相对 URI 在 BaseAddress 设置后由 HttpClient 解析）
+            if (uri.IsAbsoluteUri)
+            {
+                activity.SetTag(MudHttpActivitySource.Tags.HttpScheme, uri.Scheme);
+                activity.SetTag(MudHttpActivitySource.Tags.HttpHost, uri.Host);
+            }
         }
 
         if (!string.IsNullOrEmpty(clientName))
@@ -127,7 +131,8 @@ internal static class MudHttpObservability
             if (request != null && TryGetProperty(request, RetryCountPropertyKey, out var rc) && rc is int retryCount)
                 activity.SetTag(MudHttpActivitySource.Tags.MudRetryCount, retryCount);
 
-            if (statusCode >= 400)
+            // 遵循 OTel HTTP 客户端 span 规范：仅 5xx 与网络错误设为 Error，4xx 为客户端正常业务流（如 401 触发令牌恢复、404 资源不存在）
+            if (statusCode >= 500)
                 activity.SetStatus(ActivityStatusCode.Error);
             else
                 activity.SetStatus(ActivityStatusCode.Ok);
@@ -156,10 +161,22 @@ internal static class MudHttpObservability
         if (activity != null)
         {
             activity.SetStatus(ActivityStatusCode.Error, ex.Message);
-            // 手动设置异常 tag，避免依赖 ActivityExtensions.RecordException（在 netstandard2.0 上可能不可用）
+#if NET8_0_OR_GREATER
+            // .NET 8+ 手动创建标准 exception 事件（符合 OTel Span Exceptions 规范）
+            // 不依赖 ActivityExtensions.RecordException 扩展方法（需要额外引用 System.Diagnostics.DiagnosticSource 包）
+            var exceptionTags = new ActivityTagsCollection
+            {
+                { "exception.type", ex.GetType().FullName },
+                { "exception.message", ex.Message },
+                { "exception.stacktrace", ex.StackTrace },
+            };
+            activity.AddEvent(new ActivityEvent("exception", tags: exceptionTags));
+#else
+            // netstandard2.0 / net6.0 降级为 tag（保持与旧版本兼容）
             activity.SetTag("exception.type", ex.GetType().FullName);
             activity.SetTag("exception.message", ex.Message);
             activity.SetTag("exception.stacktrace", ex.StackTrace);
+#endif
         }
 
         var tags = BuildRequestTags(clientName, request, outcome: "error").ToArray();

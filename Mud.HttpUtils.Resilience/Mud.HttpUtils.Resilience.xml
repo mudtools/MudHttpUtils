@@ -82,6 +82,20 @@
         <member name="P:Mud.HttpUtils.Resilience.Observability.RetryDiagnosticPayload.Timestamp">
             <summary>事件时间戳（UTC）。</summary>
         </member>
+        <member name="T:Mud.HttpUtils.Resilience.Observability.TimeoutDiagnosticPayload">
+            <summary>
+            请求超时事件的诊断负载。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.Observability.TimeoutDiagnosticPayload.PolicyKey">
+            <summary>策略键。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.Observability.TimeoutDiagnosticPayload.TimeoutMs">
+            <summary>超时时长（毫秒）。</summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Resilience.Observability.TimeoutDiagnosticPayload.Timestamp">
+            <summary>事件时间戳（UTC）。</summary>
+        </member>
         <member name="T:Mud.HttpUtils.Resilience.CircuitBreakerOptions">
             <summary>
             熔断策略配置选项。

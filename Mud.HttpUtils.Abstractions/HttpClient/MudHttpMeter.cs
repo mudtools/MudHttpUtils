@@ -82,7 +82,7 @@ public static class MudHttpMeter
             description: "令牌刷新耗时分布");
 
     /// <summary>
-    /// HTTP 请求重试次数（维度：client_name, policy_key）。
+    /// HTTP 请求重试次数（维度：policy_key, outcome, retry_count）。
     /// </summary>
     public static readonly Counter<long> RetryCounter =
         Instance.CreateCounter<long>(

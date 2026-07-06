@@ -37,6 +37,9 @@ public class ObservabilityIntegrationTests : IDisposable
 
     public ObservabilityIntegrationTests()
     {
+        // 配置 URL 白名单，允许路径 B 测试使用 https://api.example.com
+        UrlValidator.AddAllowedDomain("api.example.com");
+
         _server = new TestServer(new WebHostBuilder()
             .ConfigureServices(services => services.AddRouting())
             .Configure(app =>
@@ -246,7 +249,110 @@ public class ObservabilityIntegrationTests : IDisposable
             a.OperationName == MudHttpActivitySource.ActivityNameTokenRecovery);
         recoveryActivity.Should().NotBeNull();
         recoveryActivity!.GetTagItem(MudHttpActivitySource.Tags.MudTokenManagerKey).Should().NotBeNull();
-        recoveryActivity.GetTagItem("mud.token.recovery.success").Should().Be(true);
+        recoveryActivity.GetTagItem(MudHttpActivitySource.Tags.MudTokenRecoverySuccess).Should().Be(true);
+        // G14 修复验证：子 span 应含 http.status_code tag（恢复后最终响应状态码）
+        recoveryActivity.GetTagItem(MudHttpActivitySource.Tags.HttpStatusCode).Should().Be(200);
+    }
+
+    [Fact]
+    public async Task EnhancedHttpClient_DirectPath_Produces_Span_Events()
+    {
+        // 验证路径 B（直接 new EnhancedHttpClient，不经 IHttpClientFactory）的 Span 事件
+        _startedActivities.Clear();
+
+        var innerHandler = new FakeHttpMessageHandler(_ =>
+            new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("ok") });
+
+        using var httpClient = new HttpClient(innerHandler);
+        var enhancedClient = new DirectEnhancedHttpClient(
+            httpClient, new EnhancedHttpClientOptions { AllowCustomBaseUrls = true });
+
+        using var response = await enhancedClient.SendRawAsync(
+            new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/api/test"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // 路径 B 应创建请求 span 并发出 RequestStarted / RequestStopped 事件
+        var requestActivity = _startedActivities.LastOrDefault(a =>
+            a.OperationName == MudHttpActivitySource.ActivityNameRequest);
+        requestActivity.Should().NotBeNull();
+
+        var events = requestActivity!.Events.ToList();
+        events.Should().Contain(e => e.Name == MudHttpDiagnosticNames.RequestStarted);
+        events.Should().Contain(e => e.Name == MudHttpDiagnosticNames.RequestStopped);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.InternalServerError, ActivityStatusCode.Error)]
+    [InlineData(HttpStatusCode.NotFound, ActivityStatusCode.Ok)]
+    public async Task HttpClient_NonSuccess_Sets_Span_Status_Per_Otel_Spec(
+        HttpStatusCode responseStatus, ActivityStatusCode expectedStatus)
+    {
+        // 验证 G10 修复：5xx=Error, 4xx=OK（遵循 OTel HTTP 客户端 span 规范）
+        _startedActivities.Clear();
+
+        var innerHandler = new FakeHttpMessageHandler(_ =>
+            new HttpResponseMessage(responseStatus) { Content = new StringContent("test") });
+
+        using var httpClient = new HttpClient(innerHandler);
+        var enhancedClient = new DirectEnhancedHttpClient(
+            httpClient, new EnhancedHttpClientOptions { AllowCustomBaseUrls = true });
+
+        // SendRawAsync 不调用 EnsureSuccessStatusCodeAsync，4xx/5xx 会正常返回
+        using var response = await enhancedClient.SendRawAsync(
+            new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/api/test"));
+
+        response.StatusCode.Should().Be(responseStatus);
+
+        var requestActivity = _startedActivities.LastOrDefault(a =>
+            a.OperationName == MudHttpActivitySource.ActivityNameRequest);
+        requestActivity.Should().NotBeNull();
+        requestActivity!.Status.Should().Be(expectedStatus);
+        requestActivity.GetTagItem(MudHttpActivitySource.Tags.HttpStatusCode).Should().Be((int)responseStatus);
+    }
+
+    [Fact]
+    public async Task Retry_Policy_Produces_RetryOccurred_Event_With_RetryCount_Tag()
+    {
+        // 验证重试场景端到端：Polly onRetry 回调发出 RetryOccurred 事件 + retry_count tag
+        _startedActivities.Clear();
+
+        var options = new ResilienceOptions
+        {
+            Retry = new RetryOptions
+            {
+                Enabled = true,
+                MaxRetryAttempts = 1,
+                DelayMilliseconds = 1,
+                UseExponentialBackoff = false
+            }
+        };
+        var provider = new PollyResiliencePolicyProvider(options);
+
+        var callCount = 0;
+        // 在 MudHttpActivitySource 创建的 Activity 上下文中执行重试策略
+        using var activity = MudHttpActivitySource.Instance.StartActivity("retry-test", ActivityKind.Client);
+        activity.Should().NotBeNull("应在 ActivityListener 启用时创建 Activity");
+
+        var retryPolicy = provider.GetRetryPolicy<HttpResponseMessage>();
+
+        var result = await retryPolicy.ExecuteAsync(() =>
+        {
+            callCount++;
+            if (callCount == 1)
+                throw new HttpRequestException("simulated failure");
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        });
+
+        result.StatusCode.Should().Be(HttpStatusCode.OK);
+        callCount.Should().Be(2);
+
+        // RetryOccurred 事件应写入当前 Mud Activity
+        var events = activity!.Events.ToList();
+        events.Should().Contain(e => e.Name == MudHttpDiagnosticNames.RetryOccurred);
+        var retryEvent = events.First(e => e.Name == MudHttpDiagnosticNames.RetryOccurred);
+        var retryCountTag = retryEvent.Tags.FirstOrDefault(t => t.Key == "retry_count");
+        retryCountTag.Value.Should().Be(1);
     }
 
     public void Dispose()

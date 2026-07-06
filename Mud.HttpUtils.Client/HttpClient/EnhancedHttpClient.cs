@@ -7,6 +7,7 @@
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Mud.HttpUtils.Observability;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -258,6 +259,21 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         var recordedSuccess = false;
         HttpResponseMessage? response = null;
 
+        // 路径 B 兜底：发出 RequestStarted 事件，与 TracingDelegatingHandler 路径 A 保持一致
+        if (!alreadyObserved)
+        {
+            MudHttpActivitySource.AddActivityEvent(
+                MudHttpDiagnosticNames.RequestStarted,
+                () => new HttpRequestDiagnosticPayload(request.Method.Method, request.RequestUri?.ToString(), ClientName),
+                MudHttpDiagnosticNames.RequestStarted,
+                new[]
+                {
+                    new KeyValuePair<string, object?>("method", request.Method.Method),
+                    new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                    new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
+                });
+        }
+
         try
         {
             LogOperation("发送流式异步枚举请求", uri);
@@ -340,15 +356,47 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 if (recordedSuccess)
                 {
                     MudHttpObservability.RecordSuccessFromRequest(activity, request, elapsedMs, ClientName);
+
+                    // RequestStopped 事件
+                    int statusCode = 0;
+                    if (MudHttpObservability.TryGetProperty(request, "__mud_status_code", out var sc) && sc is int code)
+                        statusCode = code;
+                    MudHttpActivitySource.AddActivityEvent(
+                        MudHttpDiagnosticNames.RequestStopped,
+                        () => new HttpResponseDiagnosticPayload(request.Method.Method, request.RequestUri?.ToString(), ClientName, statusCode, elapsedMs),
+                        MudHttpDiagnosticNames.RequestStopped,
+                        new[]
+                        {
+                            new KeyValuePair<string, object?>("method", request.Method.Method),
+                            new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                            new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
+                            new KeyValuePair<string, object?>("status_code", statusCode),
+                            new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+                        });
                 }
                 else
                 {
+                    var streamEx = new InvalidOperationException("流式异步枚举未成功完成");
                     MudHttpObservability.RecordError(
                         activity,
-                        new InvalidOperationException("流式异步枚举未成功完成"),
+                        streamEx,
                         elapsedMs,
                         ClientName,
                         request);
+
+                    // RequestFailed 事件
+                    MudHttpActivitySource.AddActivityEvent(
+                        MudHttpDiagnosticNames.RequestFailed,
+                        () => new HttpRequestErrorDiagnosticPayload(request.Method.Method, request.RequestUri?.ToString(), ClientName, elapsedMs, streamEx),
+                        MudHttpDiagnosticNames.RequestFailed,
+                        new[]
+                        {
+                            new KeyValuePair<string, object?>("method", request.Method.Method),
+                            new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                            new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
+                            new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+                            new KeyValuePair<string, object?>("exception_type", streamEx.GetType().Name),
+                        });
                 }
                 MudHttpObservability.MarkObserved(request);
             }
@@ -1355,16 +1403,63 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         var activity = MudHttpObservability.StartRequestActivity(request, ClientName);
         var sw = ValueStopwatch.StartNew();
 
+        // 路径 B 兜底：发出 RequestStarted 事件，与 TracingDelegatingHandler 路径 A 保持一致
+        MudHttpActivitySource.AddActivityEvent(
+            MudHttpDiagnosticNames.RequestStarted,
+            () => new HttpRequestDiagnosticPayload(request.Method.Method, request.RequestUri?.ToString(), ClientName),
+            MudHttpDiagnosticNames.RequestStarted,
+            new[]
+            {
+                new KeyValuePair<string, object?>("method", request.Method.Method),
+                new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
+            });
+
         try
         {
             var result = await ExecuteWithLoggingAsync(operation, completeMessage, errorMessage, uri, action).ConfigureAwait(false);
-            MudHttpObservability.RecordSuccessFromRequest(activity, request, sw.GetElapsedTime().TotalMilliseconds, ClientName);
+            var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
+            MudHttpObservability.RecordSuccessFromRequest(activity, request, elapsedMs, ClientName);
+
+            // RequestStopped 事件：从请求属性读取状态码（由 ExecuteWithLoggingAsync 内部 SetStatusCode 写入）
+            int statusCode = 0;
+            if (MudHttpObservability.TryGetProperty(request, "__mud_status_code", out var sc) && sc is int code)
+                statusCode = code;
+            MudHttpActivitySource.AddActivityEvent(
+                MudHttpDiagnosticNames.RequestStopped,
+                () => new HttpResponseDiagnosticPayload(request.Method.Method, request.RequestUri?.ToString(), ClientName, statusCode, elapsedMs),
+                MudHttpDiagnosticNames.RequestStopped,
+                new[]
+                {
+                    new KeyValuePair<string, object?>("method", request.Method.Method),
+                    new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                    new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
+                    new KeyValuePair<string, object?>("status_code", statusCode),
+                    new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+                });
+
             MudHttpObservability.MarkObserved(request);
             return result;
         }
         catch (Exception ex)
         {
-            MudHttpObservability.RecordError(activity, ex, sw.GetElapsedTime().TotalMilliseconds, ClientName, request);
+            var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
+            MudHttpObservability.RecordError(activity, ex, elapsedMs, ClientName, request);
+
+            // RequestFailed 事件
+            MudHttpActivitySource.AddActivityEvent(
+                MudHttpDiagnosticNames.RequestFailed,
+                () => new HttpRequestErrorDiagnosticPayload(request.Method.Method, request.RequestUri?.ToString(), ClientName, elapsedMs, ex),
+                MudHttpDiagnosticNames.RequestFailed,
+                new[]
+                {
+                    new KeyValuePair<string, object?>("method", request.Method.Method),
+                    new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                    new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
+                    new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+                    new KeyValuePair<string, object?>("exception_type", ex.GetType().Name),
+                });
+
             MudHttpObservability.MarkObserved(request);
             throw;
         }

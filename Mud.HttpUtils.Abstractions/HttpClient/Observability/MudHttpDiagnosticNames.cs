@@ -29,6 +29,9 @@ public static class MudHttpDiagnosticNames
     /// <summary>重试发生事件。</summary>
     public const string RetryOccurred = "RetryOccurred";
 
+    /// <summary>请求超时事件。</summary>
+    public const string TimeoutOccurred = "TimeoutOccurred";
+
     /// <summary>熔断器状态变更事件。</summary>
     public const string CircuitBreakerStateChanged = "CircuitBreakerStateChanged";
 

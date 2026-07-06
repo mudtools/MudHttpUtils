@@ -3,10 +3,13 @@
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
 // -----------------------------------------------------------------------
 
+using System.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using OpenTelemetry;
 using OpenTelemetry.Exporter;
+using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
 // 别名避免与我方定义的 OtlpExportProtocol 枚举冲突
@@ -22,6 +25,8 @@ namespace Mud.HttpUtils.OpenTelemetry;
 /// 并关联 .NET HttpClient 内置的 <c>System.Net.Http</c> ActivitySource。</para>
 /// <para>默认导出至本地 OTLP gRPC 端点（<c>http://localhost:4317</c>），
 /// 通过 <see cref="MudHttpOpenTelemetryOptions.OtlpEndpoint"/> 自定义。</para>
+/// <para>生产级配置：自动配置 Resource（service.name/version/deployment.environment）、
+/// Sampler（ParentBased + TraceIdRatioBased）、可选 Logs 导出、批量导出、自定义 OTLP Headers。</para>
 /// </remarks>
 public static class MudHttpOpenTelemetryExtensions
 {
@@ -37,7 +42,13 @@ public static class MudHttpOpenTelemetryExtensions
     /// builder.Services.AddMudHttpOpenTelemetry(options =>
     /// {
     ///     options.OtlpEndpoint = new Uri("http://otel-collector:4317");
-    ///     options.EnableAspNetCoreInstrumentation = true;
+    ///     options.ServiceName = "my-service";
+    ///     options.SamplingRatio = 0.1;
+    ///     options.EnableLogging = true;
+    ///     options.OtlpHeaders = new Dictionary&lt;string, string&gt;
+    ///     {
+    ///         ["Authorization"] = "Bearer my-token"
+    ///     };
     /// });
     /// </code>
     /// </example>
@@ -50,12 +61,23 @@ public static class MudHttpOpenTelemetryExtensions
         var options = new MudHttpOpenTelemetryOptions();
         configure?.Invoke(options);
 
-        var builder = services.AddOpenTelemetry();
+        // 配置 Resource：service.name / service.version / deployment.environment（OTel 规范必需）
+        var builder = services.AddOpenTelemetry()
+            .ConfigureResource(r => r
+                .AddService(serviceName: options.ServiceName, serviceVersion: options.ServiceVersion)
+                .AddAttributes(new[]
+                {
+                    new KeyValuePair<string, object>("deployment.environment", options.DeploymentEnvironment)
+                }));
 
         if (options.EnableTracing)
         {
             builder.WithTracing(tp =>
             {
+                // 采样器：ParentBased + TraceIdRatioBased（继承父采样决策 + 按比率采样）
+                tp.SetSampler(new ParentBasedSampler(
+                    new TraceIdRatioBasedSampler(options.SamplingRatio)));
+
                 // Mud.HttpUtils 自身的 ActivitySource
                 tp.AddSource(MudHttpActivitySource.Name);
 
@@ -92,6 +114,15 @@ public static class MudHttpOpenTelemetryExtensions
             });
         }
 
+        if (options.EnableLogging)
+        {
+            builder.WithLogging(lp =>
+            {
+                ConfigureOtlpExporter(lp, options);
+                options.ConfigureLogging?.Invoke(lp);
+            });
+        }
+
         return builder;
     }
 
@@ -99,30 +130,36 @@ public static class MudHttpOpenTelemetryExtensions
     {
         if (options.OtlpEndpoint is null) return;
 
-        builder.AddOtlpExporter(o =>
-        {
-            o.Endpoint = options.OtlpEndpoint;
-            o.Protocol = MapProtocol(options.OtlpExportProtocol);
-            if (options.UseShortExporterTimeout)
-            {
-                o.TimeoutMilliseconds = 5000;
-            }
-        });
+        builder.AddOtlpExporter(o => ApplyOtlpExporterOptions(o, options));
     }
 
     private static void ConfigureOtlpExporter(MeterProviderBuilder builder, MudHttpOpenTelemetryOptions options)
     {
         if (options.OtlpEndpoint is null) return;
 
-        builder.AddOtlpExporter(o =>
+        builder.AddOtlpExporter(o => ApplyOtlpExporterOptions(o, options));
+    }
+
+    private static void ConfigureOtlpExporter(LoggerProviderBuilder builder, MudHttpOpenTelemetryOptions options)
+    {
+        if (options.OtlpEndpoint is null) return;
+
+        builder.AddOtlpExporter(o => ApplyOtlpExporterOptions(o, options));
+    }
+
+    private static void ApplyOtlpExporterOptions(OtlpExporterOptions o, MudHttpOpenTelemetryOptions options)
+    {
+        o.Endpoint = options.OtlpEndpoint!;
+        o.Protocol = MapProtocol(options.OtlpExportProtocol);
+        if (options.UseShortExporterTimeout)
         {
-            o.Endpoint = options.OtlpEndpoint;
-            o.Protocol = MapProtocol(options.OtlpExportProtocol);
-            if (options.UseShortExporterTimeout)
-            {
-                o.TimeoutMilliseconds = 5000;
-            }
-        });
+            o.TimeoutMilliseconds = 5000;
+        }
+        if (options.OtlpHeaders != null && options.OtlpHeaders.Count > 0)
+        {
+            // OtlpExporterOptions.Headers 接受 "key1=value1,key2=value2" 格式的字符串
+            o.Headers = string.Join(",", options.OtlpHeaders.Select(kv => $"{kv.Key}={kv.Value}"));
+        }
     }
 
     private static OtelOtlpExportProtocol MapProtocol(OtlpExportProtocol protocol)

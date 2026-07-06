@@ -571,8 +571,9 @@ public class ObservabilityTests
     }
 
     [Fact]
-    public void Observability_RecordResponse_With4xx_SetsActivityStatus_Error()
+    public void Observability_RecordResponse_With4xx_SetsActivityStatus_Ok_Per_Otel_Spec()
     {
+        // 遵循 OTel HTTP 客户端 span 规范：4xx 设为 OK（客户端正常业务流，如 404 资源不存在）
         using var listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == MudHttpActivitySource.Name,
@@ -587,7 +588,7 @@ public class ObservabilityTests
 
         MudHttpObservability.RecordResponse(activity, response, elapsedMs: 10.0, clientName: "client_a");
 
-        activity!.Status.Should().Be(ActivityStatusCode.Error);
+        activity!.Status.Should().Be(ActivityStatusCode.Ok);
         activity.GetTagItem(MudHttpActivitySource.Tags.HttpStatusCode).Should().Be(404);
         activity.GetTagItem(MudHttpActivitySource.Tags.HttpStatusCodeClass).Should().Be("4xx");
     }
@@ -615,7 +616,7 @@ public class ObservabilityTests
     }
 
     [Fact]
-    public void Observability_RecordError_SetsActivityStatus_Error_And_Exception_Tags()
+    public void Observability_RecordError_SetsActivityStatus_Error_And_Exception_Event()
     {
         using var listener = new ActivityListener
         {
@@ -655,8 +656,18 @@ public class ObservabilityTests
 
         activity!.Status.Should().Be(ActivityStatusCode.Error);
         activity.StatusDescription.Should().Be("connection refused");
+
+        // .NET 8+ 遵循 OTel Span Exceptions 规范：异常以 exception 事件形式记录
+#if NET8_0_OR_GREATER
+        var exceptionEvent = activity.Events.FirstOrDefault(e => e.Name == "exception");
+        exceptionEvent.Should().NotBeNull();
+        exceptionEvent.Tags.FirstOrDefault(t => t.Key == "exception.type").Value.Should().Be(typeof(InvalidOperationException).FullName);
+        exceptionEvent.Tags.FirstOrDefault(t => t.Key == "exception.message").Value.Should().Be("connection refused");
+#else
+        // netstandard2.0 / net6.0 降级为 tag
         activity.GetTagItem("exception.type").Should().Be(typeof(InvalidOperationException).FullName);
         activity.GetTagItem("exception.message").Should().Be("connection refused");
+#endif
 
         counterValues.Should().ContainSingle().Which.Should().Be(1);
         histogramValues.Should().ContainSingle().Which.Should().Be(5.0);
