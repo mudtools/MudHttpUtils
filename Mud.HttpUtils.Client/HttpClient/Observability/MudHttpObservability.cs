@@ -260,7 +260,16 @@ internal static class MudHttpObservability
     public static void RecordRetryCount(HttpRequestMessage? request, int retryCount)
     {
         if (request != null)
-            TrySetProperty(request, RetryCountPropertyKey, retryCount);
+        {
+            // retry_count 在每次重试时都需要更新（不像 __mud_observed 等只设置一次），
+            // 因此直接设置而非 TrySetProperty.TryAdd（后者在 .NET 5+ 上不会覆盖现有值）
+#if NET5_0_OR_GREATER
+            // HttpRequestOptions 通过 IDictionary<string,object> 接口写入以覆盖现有值
+            ((IDictionary<string, object>)request.Options)[RetryCountPropertyKey] = retryCount;
+#else
+            request.Properties[RetryCountPropertyKey] = retryCount;
+#endif
+        }
 
         var activity = Activity.Current;
         if (activity != null && MudHttpActivitySource.IsMudActivity(activity))

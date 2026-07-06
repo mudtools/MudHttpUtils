@@ -36,6 +36,11 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     private const string PolicyKeyGlobalCircuitBreaker = "global:circuitBreaker";
 
     /// <summary>
+    /// Polly Context 中存储 retry_count 的键，供 ResilientHttpClient 在克隆请求时读取并写入请求属性。
+    /// </summary>
+    internal const string RetryCountContextKey = "__mud_retry_count";
+
+    /// <summary>
     /// 初始化 PollyResiliencePolicyProvider 实例。
     /// </summary>
     /// <param name="options">弹性策略配置选项。</param>
@@ -115,6 +120,9 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                         new KeyValuePair<string, object?>("policy_key", policyKey),
                         new KeyValuePair<string, object?>("outcome", "retry"),
                         new KeyValuePair<string, object?>("retry_count", retryCount));
+
+                    // 将重试次数写入 Polly Context，供 ResilientHttpClient 在克隆请求时读取并写入请求属性
+                    context[RetryCountContextKey] = retryCount;
 
                     // 将重试次数写入当前 Activity tag（Polly 回调在请求 Activity 上下文内执行）
                     MudHttpObservability.RecordRetryCount(null, retryCount);
@@ -414,6 +422,9 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                             new KeyValuePair<string, object?>("policy_key", policyKey),
                             new KeyValuePair<string, object?>("outcome", "retry"),
                             new KeyValuePair<string, object?>("retry_count", retryCount));
+
+                        // 将重试次数写入 Polly Context，供 ResilientHttpClient 在克隆请求时读取并写入请求属性
+                        context[RetryCountContextKey] = retryCount;
 
                         // 将重试次数写入当前 Activity tag（Polly 回调在请求 Activity 上下文内执行）
                         MudHttpObservability.RecordRetryCount(null, retryCount);

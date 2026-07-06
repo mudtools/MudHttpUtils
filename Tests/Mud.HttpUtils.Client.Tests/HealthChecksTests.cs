@@ -8,6 +8,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Mud.HttpUtils.Observability;
 
+// 禁用 Client 测试程序集的 Collection 间并行执行。
+// 原因：MeterListener / ActivityListener 是进程全局的，EnhancedHttpClientTests、
+// TokenManagerBaseTests 等测试类触发的 MudHttpMeter 测量会被 ObservabilityTests
+// 的 MeterListener 捕获，导致 ContainSingle 等精确计数断言偶发失败。
+// 串行执行消除并行干扰，保证指标断言的稳定性。
+[assembly: Xunit.CollectionBehavior(DisableTestParallelization = true)]
+
 namespace Mud.HttpUtils.Client.Tests;
 
 /// <summary>

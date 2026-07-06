@@ -8,6 +8,8 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Text;
+using Polly;
+using Mud.HttpUtils.Observability;
 
 namespace Mud.HttpUtils.Resilience;
 
@@ -110,10 +112,16 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
     {
         var policy = _policyProvider.GetCombinedPolicy<TResult>();
 
+        // 通过 Polly Context 传递 retry_count，在每次克隆请求时写入请求属性，
+        // 供 RecordOutcome 从请求属性读取并同步到 Activity tag（启用 P0 任务 8 请求属性路径）
+        var context = new Context();
         return await policy.ExecuteAsync(
-            async ct =>
+            async (ctx, ct) =>
             {
                 var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request, MaxCloneContentSize).ConfigureAwait(false);
+                // 从 Context 读取 retry_count（首次执行时不存在，重试时由 onRetry 回调写入）
+                if (ctx.TryGetValue(PollyResiliencePolicyProvider.RetryCountContextKey, out var rc) && rc is int retryCount)
+                    MudHttpObservability.RecordRetryCount(clonedRequest, retryCount);
                 try
                 {
                     return await executeFunc(_innerClient, clonedRequest, ct).ConfigureAwait(false);
@@ -123,6 +131,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
                     clonedRequest.Dispose();
                 }
             },
+            context,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -133,10 +142,13 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
     {
         var policy = _policyProvider.GetCombinedPolicy<TResult>();
 
+        var context = new Context();
         return await policy.ExecuteAsync(
-            async ct =>
+            async (ctx, ct) =>
             {
                 var clonedRequest = CloneRequestHeaders(request);
+                if (ctx.TryGetValue(PollyResiliencePolicyProvider.RetryCountContextKey, out var rc) && rc is int retryCount)
+                    MudHttpObservability.RecordRetryCount(clonedRequest, retryCount);
                 try
                 {
                     return await executeFunc(_innerClient, clonedRequest, ct).ConfigureAwait(false);
@@ -146,6 +158,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
                     clonedRequest.Dispose();
                 }
             },
+            context,
             cancellationToken).ConfigureAwait(false);
     }
 
