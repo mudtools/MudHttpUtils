@@ -323,23 +323,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
             var options = (jsonSerializerOptions as JsonSerializerOptions) ?? s_defaultJsonSerializerOptions;
 
-            using var reader = new StreamReader(stream);
-
-            string? line;
-#if !NET7_0_OR_GREATER
-            while ((line = await reader.ReadLineAsync().ConfigureAwait(false)) != null)
-#else
-            while ((line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false)) != null)
-#endif
+            await foreach (var item in ParseNdJsonStreamAsync<TResult>(stream, options, cancellationToken).ConfigureAwait(false))
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                if (string.IsNullOrEmpty(line))
-                    continue;
-
-                var item = JsonSerializer.Deserialize<TResult>(line, options);
-                if (item != null)
-                    yield return item;
+                yield return item;
             }
 
             LogOperation("流式异步枚举请求完成", uri);
@@ -1471,6 +1457,56 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
     #endregion
 
+    #region NDJSON 流式解析
+
+    /// <summary>
+    /// 从 NDJSON 流中逐行解析并异步枚举结果。
+    /// </summary>
+    /// <typeparam name="T">每行数据反序列化的目标类型。</typeparam>
+    /// <param name="stream">包含 NDJSON 内容的流。</param>
+    /// <param name="options">JSON 序列化选项；为 null 时使用 <see cref="JsonSerializer"/> 默认选项。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>流式返回的异步枚举。</returns>
+    /// <remarks>
+    /// 此方法使用 <see cref="StreamReader"/> 读取流。调用方应负责释放底层 <paramref name="stream"/>（StreamReader 释放时也会释放流，重复释放是幂等的）。
+    /// </remarks>
+    internal static async IAsyncEnumerable<T> ParseNdJsonStreamAsync<T>(
+        Stream stream,
+        JsonSerializerOptions? options,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        using var reader = new StreamReader(stream, System.Text.Encoding.UTF8);
+
+        while (true)
+        {
+#if NET7_0_OR_GREATER
+            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+#else
+            cancellationToken.ThrowIfCancellationRequested();
+            var line = await reader.ReadLineAsync().ConfigureAwait(false);
+#endif
+            if (line == null)
+            {
+                yield break;
+            }
+
+            if (string.IsNullOrEmpty(line))
+            {
+                continue;
+            }
+
+            var item = options != null
+                ? JsonSerializer.Deserialize<T>(line, options)
+                : JsonSerializer.Deserialize<T>(line);
+            if (item != null)
+            {
+                yield return item;
+            }
+        }
+    }
+
+    #endregion
+
     #region 拦截器执行方法
 
     /// <summary>
@@ -1550,28 +1586,28 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// 包装 Stream 和 HttpResponseMessage，确保流被释放时响应消息也被释放。
     /// </summary>
     private sealed class DisposableStream : Stream
-{
-    private readonly Stream _innerStream;
-    private readonly HttpResponseMessage _response;
-    private bool _disposed;
-
-    public DisposableStream(Stream innerStream, HttpResponseMessage response)
     {
-        _innerStream = innerStream ?? throw new ArgumentNullException(nameof(innerStream));
-        _response = response ?? throw new ArgumentNullException(nameof(response));
-    }
+        private readonly Stream _innerStream;
+        private readonly HttpResponseMessage _response;
+        private bool _disposed;
 
-    public override bool CanRead => _innerStream.CanRead;
-    public override bool CanSeek => _innerStream.CanSeek;
-    public override bool CanWrite => _innerStream.CanWrite;
-    public override long Length => _innerStream.Length;
-    public override long Position { get => _innerStream.Position; set => _innerStream.Position = value; }
+        public DisposableStream(Stream innerStream, HttpResponseMessage response)
+        {
+            _innerStream = innerStream ?? throw new ArgumentNullException(nameof(innerStream));
+            _response = response ?? throw new ArgumentNullException(nameof(response));
+        }
 
-    public override void Flush() => _innerStream.Flush();
-    public override int Read(byte[] buffer, int offset, int count) => _innerStream.Read(buffer, offset, count);
-    public override long Seek(long offset, SeekOrigin origin) => _innerStream.Seek(offset, origin);
-    public override void SetLength(long value) => _innerStream.SetLength(value);
-    public override void Write(byte[] buffer, int offset, int count) => _innerStream.Write(buffer, offset, count);
+        public override bool CanRead => _innerStream.CanRead;
+        public override bool CanSeek => _innerStream.CanSeek;
+        public override bool CanWrite => _innerStream.CanWrite;
+        public override long Length => _innerStream.Length;
+        public override long Position { get => _innerStream.Position; set => _innerStream.Position = value; }
+
+        public override void Flush() => _innerStream.Flush();
+        public override int Read(byte[] buffer, int offset, int count) => _innerStream.Read(buffer, offset, count);
+        public override long Seek(long offset, SeekOrigin origin) => _innerStream.Seek(offset, origin);
+        public override void SetLength(long value) => _innerStream.SetLength(value);
+        public override void Write(byte[] buffer, int offset, int count) => _innerStream.Write(buffer, offset, count);
 
 #if !NETSTANDARD2_0
         public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
@@ -1580,19 +1616,19 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             => _innerStream.ReadAsync(buffer, cancellationToken);
 #endif
 
-    protected override void Dispose(bool disposing)
-    {
-        if (!_disposed)
+        protected override void Dispose(bool disposing)
         {
-            _disposed = true;
-            if (disposing)
+            if (!_disposed)
             {
-                _innerStream?.Dispose();
-                _response?.Dispose();
+                _disposed = true;
+                if (disposing)
+                {
+                    _innerStream?.Dispose();
+                    _response?.Dispose();
+                }
             }
+            base.Dispose(disposing);
         }
-        base.Dispose(disposing);
-    }
 
 #if !NETSTANDARD2_0
         public override async ValueTask DisposeAsync()

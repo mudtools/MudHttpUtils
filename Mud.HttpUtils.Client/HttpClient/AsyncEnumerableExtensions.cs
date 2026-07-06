@@ -30,30 +30,11 @@ public static class AsyncEnumerableExtensions
 
         await using (stream.ConfigureAwait(false))
         {
-            using var reader = new StreamReader(stream, Encoding.UTF8);
+            var options = jsonSerializerOptions as System.Text.Json.JsonSerializerOptions;
 
-            while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+            await foreach (var item in EnhancedHttpClient.ParseNdJsonStreamAsync<T>(stream, options, cancellationToken).ConfigureAwait(false))
             {
-#if NET7_0_OR_GREATER
-                var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
-#else
-                var line = await reader.ReadLineAsync().ConfigureAwait(false);
-#endif
-                if (string.IsNullOrEmpty(line))
-                    continue;
-
-                T? item;
-                if (jsonSerializerOptions is System.Text.Json.JsonSerializerOptions options)
-                {
-                    item = System.Text.Json.JsonSerializer.Deserialize<T>(line, options);
-                }
-                else
-                {
-                    item = System.Text.Json.JsonSerializer.Deserialize<T>(line);
-                }
-
-                if (item != null)
-                    yield return item;
+                yield return item;
             }
         }
     }

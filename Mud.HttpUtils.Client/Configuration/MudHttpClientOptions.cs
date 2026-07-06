@@ -22,9 +22,7 @@ namespace Mud.HttpUtils;
 ///       "X-Api-Key": "my-api-key",
 ///       "X-Client-Version": "1.0.0"
 ///     },
-///     "TokenManagerKey": "MyTokenManager",
-///     "TokenInjectionMode": "Header",
-///     "AllowAnyStatusCode": false
+///     "AllowCustomBaseUrls": false
 ///   }
 /// }
 /// </code>
@@ -57,47 +55,6 @@ public class MudHttpClientOptions
     public Dictionary<string, string>? DefaultHeaders { get; set; }
 
     /// <summary>
-    /// Token 管理器键名
-    /// </summary>
-    /// <remarks>
-    /// 用于获取访问令牌的 Token 管理器标识。
-    /// 与 <see cref="TokenInjectionMode"/> 配合使用。
-    /// </remarks>
-    public string? TokenManagerKey { get; set; }
-
-    /// <summary>
-    /// Token 注入模式
-    /// </summary>
-    /// <remarks>
-    /// 指定如何将 Token 注入到请求中：
-    /// <list type="bullet">
-    ///   <item>Header - 通过 Authorization 请求头注入</item>
-    ///   <item>Query - 通过查询参数注入</item>
-    ///   <item>Cookie - 通过 Cookie 注入</item>
-    /// </list>
-    /// </remarks>
-    public string? TokenInjectionMode { get; set; }
-
-    /// <summary>
-    /// Token 作用域
-    /// </summary>
-    /// <remarks>
-    /// 请求访问令牌时使用的 OAuth 作用域，多个作用域用空格分隔。
-    /// 例如："read write admin"
-    /// </remarks>
-    public string? TokenScopes { get; set; }
-
-    /// <summary>
-    /// 允许任意 HTTP 状态码
-    /// </summary>
-    /// <remarks>
-    /// 如果设置为 true，HttpClient 不会因非 2xx 状态码抛出异常。
-    /// 适用于需要手动处理错误响应的场景。
-    /// 默认值为 false。
-    /// </remarks>
-    public bool? AllowAnyStatusCode { get; set; }
-
-    /// <summary>
     /// 是否允许自定义基础 URL
     /// </summary>
     /// <remarks>
@@ -106,17 +63,4 @@ public class MudHttpClientOptions
     /// <para>注意：启用此选项会放宽 URL 验证策略，请确保在受信任的环境中使用。</para>
     /// </remarks>
     public bool AllowCustomBaseUrls { get; set; }
-
-    /// <summary>
-    /// 序列化方法
-    /// </summary>
-    /// <remarks>
-    /// 指定请求/响应内容的序列化方式：
-    /// <list type="bullet">
-    ///   <item>Json - JSON 序列化（默认）</item>
-    ///   <item>Xml - XML 序列化</item>
-    ///   <item>FormUrlEncoded - URL 编码表单序列化</item>
-    /// </list>
-    /// </remarks>
-    public string? SerializationMethod { get; set; }
 }

@@ -35,6 +35,5 @@
 		<None Include="$(OutputPath)$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
 		<None Include="README.md" Pack="true" PackagePath="\" />
 		<None Include="..\Icon.png" Pack="true" PackagePath="\" />
-		<None Include="build\Mud.HttpUtils.Generator.props" Pack="true" PackagePath="build\" Visible="false" />
 	</ItemGroup>
 </Project>
