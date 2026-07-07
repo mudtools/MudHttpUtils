@@ -18,7 +18,6 @@ namespace Mud.HttpUtils.Generators.Implementation;
 internal class MethodGenerator : ICodeFragmentGenerator
 {
     private readonly RequestBuilder _requestBuilder;
-    private GeneratorContext _context;
 
     public MethodGenerator()
     {
@@ -27,7 +26,6 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
     public void Generate(StringBuilder codeBuilder, GeneratorContext context)
     {
-        _context = context;
         IEnumerable<IMethodSymbol> methodsToGenerate = GetMethodsToGenerate(context);
         var isAbstractClass = context.Configuration.IsAbstract;
 
@@ -168,8 +166,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 .FirstOrDefault(p => p.Name == tokenParamName)?
                 .Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.HeaderAttribute) == true;
 
-            var tokenManagerKey = TokenMethodHelper.GetMethodTokenManagerKey(_context, methodInfo);
-            var requiresUserId = TokenMethodHelper.MethodRequiresUserId(_context, methodInfo);
+            var tokenManagerKey = TokenMethodHelper.GetMethodTokenManagerKey(context, methodInfo);
+            var requiresUserId = TokenMethodHelper.MethodRequiresUserId(context, methodInfo);
             var effectiveScopes = methodInfo.MethodTokenScopes ?? methodInfo.InterfaceTokenScopes;
             var scopes = TokenHelper.ParseScopes(effectiveScopes);
 
@@ -219,24 +217,24 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         if (methodInfo.CacheEnabled && !methodInfo.IsAsyncEnumerableReturn)
         {
-            GenerateCacheWrappedMethod(codeBuilder, methodInfo, hasHttpClient, needsTokenInjection);
+            GenerateCacheWrappedMethod(codeBuilder, context, methodInfo, hasHttpClient, needsTokenInjection);
         }
         else if (HasResilienceEnabled(methodInfo) && !methodInfo.IsAsyncEnumerableReturn)
         {
-            GenerateResilienceWrappedMethod(codeBuilder, methodInfo, hasHttpClient, needsTokenInjection);
+            GenerateResilienceWrappedMethod(codeBuilder, context, methodInfo, hasHttpClient, needsTokenInjection);
         }
         else
         {
-            GenerateDirectMethod(codeBuilder, methodInfo, hasHttpClient, needsTokenInjection);
+            GenerateDirectMethod(codeBuilder, context, methodInfo, hasHttpClient, needsTokenInjection);
         }
 
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
     }
 
-    private void GenerateDirectMethod(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection)
+    private void GenerateDirectMethod(StringBuilder codeBuilder, GeneratorContext context, MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection)
     {
-        GenerateHttpRequestCore(codeBuilder, methodInfo, hasHttpClient, needsTokenInjection, "            ");
+        GenerateHttpRequestCore(codeBuilder, context, methodInfo, hasHttpClient, needsTokenInjection, "            ");
     }
 
     private bool HasResilienceEnabled(MethodAnalysisResult methodInfo)
@@ -244,7 +242,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         return methodInfo.RetryEnabled || methodInfo.CircuitBreakerEnabled || methodInfo.MethodTimeoutEnabled;
     }
 
-    private void GenerateResilienceWrappedMethod(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection)
+    private void GenerateResilienceWrappedMethod(StringBuilder codeBuilder, GeneratorContext context, MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection)
     {
         var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
         var cancellationTokenParam = methodInfo.Parameters.FirstOrDefault(p => TypeDetectionHelper.IsCancellationToken(p.Type));
@@ -267,14 +265,14 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine($"            return await __resiliencePolicy.ExecuteAsync(async __ct =>");
         codeBuilder.AppendLine($"            {{");
 
-        GenerateHttpRequestCore(codeBuilder, methodInfo, hasHttpClient, needsTokenInjection, "                ", setSkipResilience: true);
+        GenerateHttpRequestCore(codeBuilder, context, methodInfo, hasHttpClient, needsTokenInjection, "                ", setSkipResilience: true);
 
         codeBuilder.AppendLine($"            }}, {cancellationTokenName}).ConfigureAwait(false);");
     }
 
-    private void GenerateHttpRequestCore(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection, string indent, bool setSkipResilience = false)
+    private void GenerateHttpRequestCore(StringBuilder codeBuilder, GeneratorContext context, MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection, string indent, bool setSkipResilience = false)
     {
-        var basePath = _context.Configuration.BasePath;
+        var basePath = context.Configuration.BasePath;
         var urlCode = _requestBuilder.BuildUrlString(methodInfo, basePath);
         codeBuilder.AppendLine($"{indent}{urlCode.TrimStart()}");
 
@@ -296,11 +294,11 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine();
         _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient);
 
-        GenerateTokenInjection(codeBuilder, methodInfo, needsTokenInjection, indent);
+        GenerateTokenInjection(codeBuilder, context, methodInfo, needsTokenInjection, indent);
 
         if (methodInfo.InterfaceHeaderAttributes?.Any() == true)
         {
-            GenerateInterfaceHeaders(codeBuilder, _context, methodInfo);
+            GenerateInterfaceHeaders(codeBuilder, context, methodInfo);
         }
 
         // 弹性策略模式下使用策略传入的 __ct，确保超时能取消进行中的 HTTP 请求
@@ -310,9 +308,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
         _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, cancellationTokenArg, hasHttpClient);
     }
 
-    private void GenerateCacheWrappedMethod(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection)
+    private void GenerateCacheWrappedMethod(StringBuilder codeBuilder, GeneratorContext context, MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection)
     {
-        var cacheKeyExpression = GenerateCacheKeyExpression(methodInfo);
+        var cacheKeyExpression = GenerateCacheKeyExpression(context, methodInfo);
         codeBuilder.AppendLine($"            var __cacheKey = {cacheKeyExpression};");
 
         var cancellationTokenParam = methodInfo.Parameters.FirstOrDefault(
@@ -325,7 +323,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine($"                async () =>");
         codeBuilder.AppendLine($"                {{");
 
-        var basePath = _context.Configuration.BasePath;
+        var basePath = context.Configuration.BasePath;
         var urlCode = _requestBuilder.BuildUrlString(methodInfo, basePath);
         codeBuilder.AppendLine($"                    {urlCode.TrimStart()}");
 
@@ -335,11 +333,11 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine();
         _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient);
 
-        GenerateTokenInjection(codeBuilder, methodInfo, needsTokenInjection, "                    ");
+        GenerateTokenInjection(codeBuilder, context, methodInfo, needsTokenInjection, "                    ");
 
         if (methodInfo.InterfaceHeaderAttributes?.Any() == true)
         {
-            GenerateInterfaceHeaders(codeBuilder, _context, methodInfo);
+            GenerateInterfaceHeaders(codeBuilder, context, methodInfo);
         }
 
         var innerCancellationTokenArg = GetCancellationTokenParams(methodInfo);
@@ -350,9 +348,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine($"                {cancellationTokenArg}).ConfigureAwait(false);");
     }
 
-    private string GenerateCacheKeyExpression(MethodAnalysisResult methodInfo)
+    private string GenerateCacheKeyExpression(GeneratorContext context, MethodAnalysisResult methodInfo)
     {
-        var userIdExpression = _context.Configuration.AnyMethodRequiresUserId
+        var userIdExpression = context.Configuration.AnyMethodRequiresUserId
             ? "_currentUserContext.UserId"
             : "CurrentUserId";
 
@@ -491,7 +489,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         return _requestBuilder.GetTokenHeaderName(methodInfo) ?? "Authorization";
     }
 
-    private void GenerateTokenInjection(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, bool needsTokenInjection, string indent)
+    private void GenerateTokenInjection(StringBuilder codeBuilder, GeneratorContext context, MethodAnalysisResult methodInfo, bool needsTokenInjection, string indent)
     {
         if (!needsTokenInjection)
             return;
@@ -513,15 +511,15 @@ internal class MethodGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"Cookie\", \"{escapedCookieName}=\" + access_token);");
         }
 
-        if (ShouldGenerateTokenRecoveryContext(methodInfo))
-            GenerateTokenRecoveryContext(codeBuilder, methodInfo, indent);
+        if (ShouldGenerateTokenRecoveryContext(context, methodInfo))
+            GenerateTokenRecoveryContext(codeBuilder, context, methodInfo, indent);
     }
 
     /// <summary>
     /// 判断是否需要生成 TokenRecoveryContext。
     /// 仅在非默认场景下生成：恢复处理器的 null 回退已覆盖默认 Header+Authorization+Bearer 场景。
     /// </summary>
-    private bool ShouldGenerateTokenRecoveryContext(MethodAnalysisResult methodInfo)
+    private bool ShouldGenerateTokenRecoveryContext(GeneratorContext context, MethodAnalysisResult methodInfo)
     {
         var injectionMode = methodInfo.InterfaceTokenInjectionMode ?? HttpClientGeneratorConstants.TokenInjectionModeHeader;
 
@@ -531,7 +529,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             return false;
 
         // 用户级令牌需要 UserId 才能正确恢复
-        if (TokenMethodHelper.MethodRequiresUserId(_context, methodInfo))
+        if (TokenMethodHelper.MethodRequiresUserId(context, methodInfo))
             return true;
 
         // 非默认注入模式（Query/Cookie/ApiKey/BasicAuth）需要上下文才能正确恢复
@@ -548,12 +546,12 @@ internal class MethodGenerator : ICodeFragmentGenerator
         return false;
     }
 
-    private void GenerateTokenRecoveryContext(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, string indent)
+    private void GenerateTokenRecoveryContext(StringBuilder codeBuilder, GeneratorContext context, MethodAnalysisResult methodInfo, string indent)
     {
         var injectionMode = methodInfo.InterfaceTokenInjectionMode ?? HttpClientGeneratorConstants.TokenInjectionModeHeader;
         var headerName = GetTokenHeaderName(methodInfo);
         var cookieName = !string.IsNullOrEmpty(methodInfo.InterfaceTokenName) ? methodInfo.InterfaceTokenName : "access_token";
-        var requiresUserId = TokenMethodHelper.MethodRequiresUserId(_context, methodInfo);
+        var requiresUserId = TokenMethodHelper.MethodRequiresUserId(context, methodInfo);
         var userIdExpr = requiresUserId ? "_currentUserContext.UserId" : "null";
 
         // 对所有插入字符串字面量的用户输入进行转义，防止生成代码编译失败

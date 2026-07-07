@@ -291,7 +291,10 @@ internal static class MethodAnalyzer
     }
 
     /// <summary>
-    /// 从TypedConstant获取TokenInjectionMode枚举名称
+    /// 从 TypedConstant 获取 TokenInjectionMode 枚举名称。
+    /// 注意：序号必须与 Mud.HttpUtils.Attributes.TokenInjectionMode 枚举定义保持一致：
+    ///   0 = Header, 1 = Query, 2 = Path, 3 = ApiKey, 4 = HmacSignature, 5 = BasicAuth, 6 = Cookie
+    /// 生成器无法引用包含枚举定义的程序集，因此使用硬编码序号是必要的妥协。
     /// </summary>
     private static string GetTokenInjectionModeName(object? value)
     {

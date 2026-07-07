@@ -299,9 +299,9 @@ public class RequestBuilderTests
     }
 
     [Fact]
-    public void GenerateQueryParameters_InterfaceIntQueryProperty_GeneratesNullCheck()
+    public void GenerateQueryParameters_InterfaceIntQueryProperty_NoNullCheckForNonNullableValueType()
     {
-        // 非 string 类型的 InterfaceQuery 属性需要 null 检查
+        // 非可空值类型（int、long、Guid 等）永远不会为 null，无需生成 null 检查
         var methodInfo = CreateMethodInfo("/search");
         methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
         {
@@ -316,8 +316,53 @@ public class RequestBuilderTests
         _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
         var code = codeBuilder.ToString();
 
-        // 非 string 类型：需要外层 null 检查
+        // 非可空值类型：不应生成 null 检查，直接生成 Add 调用
+        code.Should().Contain("__queryParams.Add(\"page\", Page.ToString());");
+        code.Should().NotContain("if (Page != null)");
+    }
+
+    [Fact]
+    public void GenerateQueryParameters_InterfaceNullableIntQueryProperty_GeneratesNullCheck()
+    {
+        // 可空值类型（int?）可能为 null，需要生成 null 检查
+        var methodInfo = CreateMethodInfo("/search");
+        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
+        {
+            new()
+            {
+                Name = "Page", Type = "int?", AttributeType = "Query",
+                ParameterName = "page"
+            }
+        };
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        // 可空值类型：需要 null 检查
         code.Should().Contain("if (Page != null)");
+    }
+
+    [Fact]
+    public void GenerateQueryParameters_InterfaceReferenceTypeQueryProperty_GeneratesNullCheck()
+    {
+        // 引用类型可能为 null，需要生成 null 检查
+        var methodInfo = CreateMethodInfo("/search");
+        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
+        {
+            new()
+            {
+                Name = "Filter", Type = "FilterCriteria", AttributeType = "Query",
+                ParameterName = "filter"
+            }
+        };
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        // 引用类型：需要 null 检查
+        code.Should().Contain("if (Filter != null)");
     }
 
     #endregion

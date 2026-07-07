@@ -61,7 +61,10 @@
         </member>
         <member name="M:Mud.HttpUtils.Analyzers.MethodAnalyzer.GetTokenInjectionModeName(System.Object)">
             <summary>
-            从TypedConstant获取TokenInjectionMode枚举名称
+            从 TypedConstant 获取 TokenInjectionMode 枚举名称。
+            注意：序号必须与 Mud.HttpUtils.Attributes.TokenInjectionMode 枚举定义保持一致：
+              0 = Header, 1 = Query, 2 = Path, 3 = ApiKey, 4 = HmacSignature, 5 = BasicAuth, 6 = Cookie
+            生成器无法引用包含枚举定义的程序集，因此使用硬编码序号是必要的妥协。
             </summary>
         </member>
         <member name="M:Mud.HttpUtils.Analyzers.MethodAnalyzer.GetResponseContentTypeFromSymbol(Microsoft.CodeAnalysis.IMethodSymbol)">
@@ -623,7 +626,7 @@
             生成接口定义的Header代码
             </summary>
         </member>
-        <member name="M:Mud.HttpUtils.Generators.Implementation.MethodGenerator.ShouldGenerateTokenRecoveryContext(Mud.HttpUtils.Models.Analysis.MethodAnalysisResult)">
+        <member name="M:Mud.HttpUtils.Generators.Implementation.MethodGenerator.ShouldGenerateTokenRecoveryContext(Mud.HttpUtils.Generators.Context.GeneratorContext,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult)">
             <summary>
             判断是否需要生成 TokenRecoveryContext。
             仅在非默认场景下生成：恢复处理器的 null 回退已覆盖默认 Header+Authorization+Bearer 场景。
@@ -1382,6 +1385,17 @@
         <member name="M:Mud.HttpUtils.TypeSymbolHelper.ShouldExcludeInterface(Microsoft.CodeAnalysis.INamedTypeSymbol,System.Collections.Generic.HashSet{System.String})">
             <summary>
             检查接口是否应该被排除（支持泛型）
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.TypeSymbolHelper.SafeGetName(System.Func{System.String})">
+            <summary>
+            安全地获取名称，捕获设计时符号解析异常并记录日志。
+            用于 ShouldExcludeInterface 中尝试多种名称格式的场景。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.TypeSymbolHelper.SafeGetName(System.Func{System.Boolean})">
+            <summary>
+            安全地获取布尔值，捕获设计时符号解析异常并记录日志。
             </summary>
         </member>
         <member name="M:Mud.HttpUtils.TypeSymbolHelper.HasPropertyAttribute(Microsoft.CodeAnalysis.INamedTypeSymbol,System.String,System.String)">

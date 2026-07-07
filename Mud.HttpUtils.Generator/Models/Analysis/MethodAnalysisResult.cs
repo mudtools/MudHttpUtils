@@ -5,6 +5,8 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using System.Diagnostics;
+
 namespace Mud.HttpUtils.Models.Analysis;
 
 /// <summary>
@@ -13,6 +15,7 @@ namespace Mud.HttpUtils.Models.Analysis;
 /// <remarks>
 /// 用于存储接口方法的分析信息，包括 HTTP 方法、URL 模板、参数等。
 /// </remarks>
+[DebuggerDisplay("{MethodName} {HttpMethod} {UrlTemplate}")]
 internal class MethodAnalysisResult
 {
     /// <summary>

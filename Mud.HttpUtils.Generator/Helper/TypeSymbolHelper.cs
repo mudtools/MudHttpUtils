@@ -164,44 +164,35 @@ internal static class TypeSymbolHelper
 
         try
         {
-            // 检查各种可能的名称格式
+            // 收集所有可能的名称格式，使用安全访问器避免单个属性抛出异常时中断整个流程
             var namesToCheck = new List<string>();
 
-            // 安全添加名称，避免在设计时抛出异常
-            try { namesToCheck.Add(interfaceSymbol.Name); } catch { }
-            try { namesToCheck.Add(interfaceSymbol.ToDisplayString()); } catch { }
-            try { namesToCheck.Add(interfaceSymbol.MetadataName); } catch { }
-            try { namesToCheck.Add(interfaceSymbol.ToString()); } catch { }
+            // 基本名称格式
+            AddIfNotNull(namesToCheck, SafeGetName(() => interfaceSymbol.Name));
+            AddIfNotNull(namesToCheck, SafeGetName(() => interfaceSymbol.ToDisplayString()));
+            AddIfNotNull(namesToCheck, SafeGetName(() => interfaceSymbol.MetadataName));
+            AddIfNotNull(namesToCheck, SafeGetName(() => interfaceSymbol.ToString()));
 
-            // 添加命名空间和名称的组合
-            try
+            // 命名空间和名称的组合
+            AddIfNotNull(namesToCheck, SafeGetName(() =>
+                !string.IsNullOrEmpty(interfaceSymbol.ContainingNamespace?.Name)
+                    ? $"{interfaceSymbol.ContainingNamespace}.{interfaceSymbol.Name}"
+                    : null));
+
+            // 泛型接口的名称格式
+            if (SafeGetName(() => interfaceSymbol.IsGenericType) == true)
             {
-                if (!string.IsNullOrEmpty(interfaceSymbol.ContainingNamespace?.Name))
+                var originalDefinition = interfaceSymbol.OriginalDefinition;
+                AddIfNotNull(namesToCheck, SafeGetName(() => originalDefinition.ToDisplayString()));
+                AddIfNotNull(namesToCheck, SafeGetName(() => originalDefinition.MetadataName));
+
+                // 添加无参数版本的泛型名称
+                var genericNameWithoutArity = interfaceSymbol.Name;
+                if (genericNameWithoutArity.Contains('`'))
                 {
-                    namesToCheck.Add($"{interfaceSymbol.ContainingNamespace}.{interfaceSymbol.Name}");
+                    AddIfNotNull(namesToCheck, genericNameWithoutArity.Substring(0, genericNameWithoutArity.IndexOf('`')));
                 }
             }
-            catch { }
-
-            // 检查泛型接口
-            try
-            {
-                if (interfaceSymbol.IsGenericType)
-                {
-                    // 添加泛型定义
-                    var originalDefinition = interfaceSymbol.OriginalDefinition;
-                    try { namesToCheck.Add(originalDefinition.ToDisplayString()); } catch { }
-                    try { namesToCheck.Add(originalDefinition.MetadataName); } catch { }
-
-                    // 添加无参数版本的泛型名称
-                    var genericNameWithoutArity = interfaceSymbol.Name;
-                    if (genericNameWithoutArity.Contains('`'))
-                    {
-                        namesToCheck.Add(genericNameWithoutArity.Substring(0, genericNameWithoutArity.IndexOf('`')));
-                    }
-                }
-            }
-            catch { }
 
             // 检查是否有匹配的排除项
             foreach (var name in namesToCheck)
@@ -218,6 +209,45 @@ internal static class TypeSymbolHelper
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// 安全地获取名称，捕获设计时符号解析异常并记录日志。
+    /// 用于 ShouldExcludeInterface 中尝试多种名称格式的场景。
+    /// </summary>
+    private static string? SafeGetName(Func<string?> accessor)
+    {
+        try
+        {
+            return accessor();
+        }
+        catch (Exception ex)
+        {
+            GeneratorDebugLogger.LogError("SafeGetName", ex);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 安全地获取布尔值，捕获设计时符号解析异常并记录日志。
+    /// </summary>
+    private static bool? SafeGetName(Func<bool> accessor)
+    {
+        try
+        {
+            return accessor();
+        }
+        catch (Exception ex)
+        {
+            GeneratorDebugLogger.LogError("SafeGetName", ex);
+            return null;
+        }
+    }
+
+    private static void AddIfNotNull(List<string> list, string? value)
+    {
+        if (!string.IsNullOrEmpty(value))
+            list.Add(value);
     }
 
     #endregion
