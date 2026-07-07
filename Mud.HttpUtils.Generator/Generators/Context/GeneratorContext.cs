@@ -2,8 +2,10 @@
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
 //  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
-//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// 不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
+
+using Mud.HttpUtils.Analyzers;
 
 namespace Mud.HttpUtils.Generators.Context;
 
@@ -72,6 +74,29 @@ internal class GeneratorContext
     public List<InterfacePropertyInfo> InterfaceProperties { get; set; } = [];
 
     /// <summary>
+    /// 方法分析结果缓存，避免同一方法被 AnalyzeMethod 重复分析。
+    /// 使用 SymbolEqualityComparer.Default 确保符号比较的正确性。
+    /// </summary>
+    public Dictionary<IMethodSymbol, MethodAnalysisResult> MethodAnalysisCache { get; } = new(SymbolEqualityComparer.Default);
+
+    /// <summary>
+    /// 获取或缓存方法分析结果。若缓存命中则复用，否则调用 AnalyzeMethod 并缓存结果。
+    /// </summary>
+    public MethodAnalysisResult GetOrAnalyzeMethod(
+        Compilation compilation,
+        IMethodSymbol methodSymbol,
+        InterfaceDeclarationSyntax interfaceDeclaration,
+        SemanticModel semanticModel)
+    {
+        if (MethodAnalysisCache.TryGetValue(methodSymbol, out var cached))
+            return cached;
+
+        var result = MethodAnalyzer.AnalyzeMethod(compilation, methodSymbol, interfaceDeclaration, semanticModel);
+        MethodAnalysisCache[methodSymbol] = result;
+        return result;
+    }
+
+    /// <summary>
     /// 接口是否有继承其他接口
     /// </summary>
     public bool HasBaseInterfaces => InterfaceSymbol.Interfaces.Length > 0;
@@ -106,33 +131,44 @@ internal class GeneratorContext
         NamespaceName = SyntaxHelper.GetNamespaceName(interfaceDeclaration, HttpClientGeneratorConstants.ImplementationNamespaceSuffix);
         FieldAccessibility = configuration.IsAbstract ? "protected " : "private ";
 
-        HasCache = DetectCacheUsage(interfaceSymbol);
-        HasCacheVaryByUser = DetectCacheVaryByUser(interfaceSymbol);
-        HasResilience = DetectResilienceUsage(interfaceSymbol);
-        HasApiKeyInjection = DetectApiKeyInjection(interfaceSymbol);
-        HasHmacSignatureInjection = DetectHmacSignatureInjection(interfaceSymbol);
+        // 一次性获取所有方法，避免 5 个 Detect 方法各自独立遍历接口方法树
+        List<IMethodSymbol> allMethods;
+        try
+        {
+            allMethods = TypeSymbolHelper.GetAllMethods(interfaceSymbol, true).ToList();
+        }
+        catch (Exception ex)
+        {
+            GeneratorDebugLogger.LogError("GeneratorContext.GetAllMethods", ex);
+            allMethods = new List<IMethodSymbol>();
+        }
+
+        HasCache = DetectCacheUsage(allMethods);
+        HasCacheVaryByUser = DetectCacheVaryByUser(allMethods);
+        HasResilience = DetectResilienceUsage(allMethods);
+        HasApiKeyInjection = DetectApiKeyInjection(interfaceSymbol, allMethods);
+        HasHmacSignatureInjection = DetectHmacSignatureInjection(interfaceSymbol, allMethods);
     }
 
-    private static bool DetectCacheUsage(INamedTypeSymbol interfaceSymbol)
+    private static bool DetectCacheUsage(IReadOnlyList<IMethodSymbol> allMethods)
     {
         try
         {
-            var allMethods = TypeSymbolHelper.GetAllMethods(interfaceSymbol, true);
             return allMethods.Any(method =>
                 method.GetAttributes().Any(attr =>
                     HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name)));
         }
-        catch
+        catch (Exception ex)
         {
+            GeneratorDebugLogger.LogError("DetectCacheUsage", ex);
             return false;
         }
     }
 
-    private static bool DetectCacheVaryByUser(INamedTypeSymbol interfaceSymbol)
+    private static bool DetectCacheVaryByUser(IReadOnlyList<IMethodSymbol> allMethods)
     {
         try
         {
-            var allMethods = TypeSymbolHelper.GetAllMethods(interfaceSymbol, true);
             return allMethods.Any(method =>
             {
                 var cacheAttr = method.GetAttributes()
@@ -142,30 +178,31 @@ internal class GeneratorContext
                 return AttributeDataHelper.GetBoolValueFromAttribute(cacheAttr, HttpClientGeneratorConstants.CacheVaryByUserProperty, false);
             });
         }
-        catch
+        catch (Exception ex)
         {
+            GeneratorDebugLogger.LogError("DetectCacheVaryByUser", ex);
             return false;
         }
     }
 
-    private static bool DetectResilienceUsage(INamedTypeSymbol interfaceSymbol)
+    private static bool DetectResilienceUsage(IReadOnlyList<IMethodSymbol> allMethods)
     {
         try
         {
-            var allMethods = TypeSymbolHelper.GetAllMethods(interfaceSymbol, true);
             return allMethods.Any(method =>
                 method.GetAttributes().Any(attr =>
                     HttpClientGeneratorConstants.RetryAttributeNames.Contains(attr.AttributeClass?.Name) ||
                     HttpClientGeneratorConstants.CircuitBreakerAttributeNames.Contains(attr.AttributeClass?.Name) ||
                     HttpClientGeneratorConstants.TimeoutAttributeNames.Contains(attr.AttributeClass?.Name)));
         }
-        catch
+        catch (Exception ex)
         {
+            GeneratorDebugLogger.LogError("DetectResilienceUsage", ex);
             return false;
         }
     }
 
-    private static bool DetectApiKeyInjection(INamedTypeSymbol interfaceSymbol)
+    private static bool DetectApiKeyInjection(INamedTypeSymbol interfaceSymbol, IReadOnlyList<IMethodSymbol> allMethods)
     {
         try
         {
@@ -175,8 +212,7 @@ internal class GeneratorContext
             if (interfaceTokenAttr != null && IsInjectionMode(interfaceTokenAttr, HttpClientGeneratorConstants.TokenInjectionModeApiKey))
                 return true;
 
-            // 检查方法级 Token 特性
-            var allMethods = TypeSymbolHelper.GetAllMethods(interfaceSymbol, true);
+            // 检查方法级 Token 特性（复用已获取的 allMethods）
             return allMethods.Any(method =>
             {
                 var methodTokenAttr = method.GetAttributes()
@@ -184,13 +220,14 @@ internal class GeneratorContext
                 return methodTokenAttr != null && IsInjectionMode(methodTokenAttr, HttpClientGeneratorConstants.TokenInjectionModeApiKey);
             });
         }
-        catch
+        catch (Exception ex)
         {
+            GeneratorDebugLogger.LogError("DetectApiKeyInjection", ex);
             return false;
         }
     }
 
-    private static bool DetectHmacSignatureInjection(INamedTypeSymbol interfaceSymbol)
+    private static bool DetectHmacSignatureInjection(INamedTypeSymbol interfaceSymbol, IReadOnlyList<IMethodSymbol> allMethods)
     {
         try
         {
@@ -200,8 +237,7 @@ internal class GeneratorContext
             if (interfaceTokenAttr != null && IsInjectionMode(interfaceTokenAttr, HttpClientGeneratorConstants.TokenInjectionModeHmacSignature))
                 return true;
 
-            // 检查方法级 Token 特性
-            var allMethods = TypeSymbolHelper.GetAllMethods(interfaceSymbol, true);
+            // 检查方法级 Token 特性（复用已获取的 allMethods）
             return allMethods.Any(method =>
             {
                 var methodTokenAttr = method.GetAttributes()
@@ -209,8 +245,9 @@ internal class GeneratorContext
                 return methodTokenAttr != null && IsInjectionMode(methodTokenAttr, HttpClientGeneratorConstants.TokenInjectionModeHmacSignature);
             });
         }
-        catch
+        catch (Exception ex)
         {
+            GeneratorDebugLogger.LogError("DetectHmacSignatureInjection", ex);
             return false;
         }
     }

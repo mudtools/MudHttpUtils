@@ -82,8 +82,9 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
                     continue;
                 }
 
-                // 获取EventHandler特性数据，使用AttributeDataHelper的已有功能
-                var eventHandlerAttribute = AttributeDataHelper.GetAttributeDataFromSymbol(classSymbol, [EventHandlerAttributeName]);
+                // 直接使用 ForAttributeWithMetadataName 已提供的 AttributeData，
+                // 避免重新遍历符号特性集合，消除名称匹配不一致风险
+                var eventHandlerAttribute = attrCtx.Attributes.FirstOrDefault();
 
                 if (eventHandlerAttribute == null)
                     continue;
@@ -204,7 +205,7 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
             sb.AppendLine("        /// 默认构造函数");
             sb.AppendLine("        /// </summary>");
 
-            var paramParts = constructorParams.Split(',');
+            var paramParts = SplitRespectingGenerics(constructorParams);
             foreach (var param in paramParts)
             {
                 var trimmedParam = param.Trim();
@@ -248,7 +249,46 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
     }
 
     /// <summary>
-    /// 获取字符串类型的特性参数值
+    /// 按逗号分割构造函数参数字符串，但感知泛型尖括号深度，
+    /// 避免将 Dictionary&lt;string, int&gt; 等泛型参数内部的逗号误判为分隔符。
+    /// </summary>
+    private static List<string> SplitRespectingGenerics(string input)
+    {
+        var result = new List<string>();
+        if (string.IsNullOrEmpty(input))
+            return result;
+
+        var depth = 0;
+        var start = 0;
+        for (var i = 0; i < input.Length; i++)
+        {
+            switch (input[i])
+            {
+                case '<':
+                case '(':
+                case '[':
+                case '{':
+                    depth++;
+                    break;
+                case '>':
+                case ')':
+                case ']':
+                case '}':
+                    if (depth > 0) depth--;
+                    break;
+                case ',' when depth == 0:
+                    result.Add(input.Substring(start, i - start));
+                    start = i + 1;
+                    break;
+            }
+        }
+
+        result.Add(input.Substring(start));
+        return result;
+    }
+
+    /// <summary>
+    /// 获取特性参数值
     /// </summary>
     /// <param name="attribute">特性数据</param>
     /// <param name="parameterName">参数名</param>

@@ -959,8 +959,13 @@ public class RequestBuilderTests
         var code = codeBuilder.ToString();
 
         code.Should().Contain("DecryptContent");
-        code.Should().Contain("JsonSerializer.Serialize");
+        // C1 修复：解密必须在反序列化之前，移除了不可达的"序列化-解密-反序列化"块
+        code.Should().NotContain("JsonSerializer.Serialize");
         code.Should().Contain("JsonSerializer.Deserialize");
+        // 验证解密在反序列化之前执行
+        var decryptIndex = code.IndexOf("DecryptContent", StringComparison.Ordinal);
+        var deserializeIndex = code.IndexOf("JsonSerializer.Deserialize", StringComparison.Ordinal);
+        decryptIndex.Should().BeLessThan(deserializeIndex);
     }
 
     [Fact]
@@ -975,8 +980,13 @@ public class RequestBuilderTests
         var code = codeBuilder.ToString();
 
         code.Should().Contain("DecryptContent");
-        code.Should().Contain("JsonSerializer.Serialize");
+        // C1 修复：解密必须在反序列化之前，移除了不可达的"序列化-解密-反序列化"块
+        code.Should().NotContain("JsonSerializer.Serialize");
         code.Should().Contain("JsonSerializer.Deserialize");
+        // 验证解密在反序列化之前执行
+        var decryptIndex = code.IndexOf("DecryptContent", StringComparison.Ordinal);
+        var deserializeIndex = code.IndexOf("JsonSerializer.Deserialize", StringComparison.Ordinal);
+        decryptIndex.Should().BeLessThan(deserializeIndex);
     }
 
     [Fact]

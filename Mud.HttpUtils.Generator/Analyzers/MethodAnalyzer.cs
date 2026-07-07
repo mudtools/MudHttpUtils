@@ -38,7 +38,7 @@ internal static class MethodAnalyzer
 
         var httpMethodAttributeName = httpMethodAttributeData.AttributeClass.Name;
         var httpMethod = ExtractHttpMethodName(httpMethodAttributeName);
-        var urlTemplate = GetAttributeArgumentValueFromAttributeData(httpMethodAttributeData, 0)?.ToString().Trim('"') ?? "";
+        var urlTemplate = GetAttributeArgumentValueFromAttributeData(httpMethodAttributeData, 0)?.ToString() ?? "";
 
         if (string.IsNullOrEmpty(httpMethod) || string.IsNullOrEmpty(urlTemplate))
             return MethodAnalysisResult.Invalid;
@@ -61,7 +61,7 @@ internal static class MethodAnalyzer
 
         var methodTokenScopes = AnalyzeMethodTokenScopes(methodSymbol);
 
-        var (methodTokenManagerKey, methodRequiresUserId) = AnalyzeMethodTokenExtended(methodSymbol);
+        var (methodTokenManagerKey, methodRequiresUserId, methodTokenInjectionMode) = AnalyzeMethodTokenExtended(methodSymbol);
 
         var tokenParameterName = parameters
             .FirstOrDefault(p => p.Attributes.Any(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.Name)))?
@@ -102,6 +102,7 @@ internal static class MethodAnalyzer
             InterfaceTokenName = interfaceTokenName,
             InterfaceTokenScopes = interfaceTokenScopes,
             MethodTokenScopes = methodTokenScopes,
+            MethodTokenInjectionMode = methodTokenInjectionMode,
             TokenParameterName = tokenParameterName,
             MethodTokenManagerKey = methodTokenManagerKey,
             MethodRequiresUserId = methodRequiresUserId,
@@ -423,11 +424,41 @@ internal static class MethodAnalyzer
                 }
             }
 
-            // 语义分析未精确匹配，回退到第一个候选（名称和参数数量已匹配）
-            return candidates[0];
+            // 语义分析未精确匹配，尝试通过参数类型符号匹配（避免重载误判）
+            foreach (var candidate in candidates)
+            {
+                if (TryMatchByParameterTypes(candidate, methodSymbol))
+                    return candidate;
+            }
+
+            // 无法精确匹配时返回 null，由调用方降级处理（符号侧信息仍可用）
+            return null;
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// 通过参数类型符号匹配方法声明与目标方法符号。
+    /// 用于在语义分析失败时的回退匹配，避免重载方法误判。
+    /// </summary>
+    private static bool TryMatchByParameterTypes(MethodDeclarationSyntax candidate, IMethodSymbol targetSymbol)
+    {
+        var candidateParams = candidate.ParameterList.Parameters;
+        if (candidateParams.Count != targetSymbol.Parameters.Length)
+            return false;
+
+        for (var i = 0; i < candidateParams.Count; i++)
+        {
+            var candidateTypeStr = candidateParams[i].Type?.ToString();
+            var targetTypeStr = targetSymbol.Parameters[i].Type?.ToDisplayString(
+                SymbolDisplayFormat.FullyQualifiedFormat);
+
+            if (!string.Equals(candidateTypeStr, targetTypeStr, StringComparison.Ordinal))
+                return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -569,19 +600,37 @@ internal static class MethodAnalyzer
         if (interfaceSymbol == null)
             return properties;
 
+        // 收集当前接口语法树中的属性声明（基接口的语法节点可能在不同语法树或跨程序集，符号侧统一处理）
         var propertyDecls = interfaceDecl.Members.OfType<PropertyDeclarationSyntax>()
             .ToDictionary(p => p.Identifier.Text, p => p);
 
+        // 遍历当前接口及其所有基接口的属性，确保基接口中定义的 [Query]/[Path] 属性也能被识别
+        var visitedProperties = new HashSet<IPropertySymbol>(SymbolEqualityComparer.Default);
+        CollectInterfaceProperties(interfaceSymbol, propertyDecls, model, properties, visitedProperties);
+
+        return properties;
+    }
+
+    private static void CollectInterfaceProperties(
+        INamedTypeSymbol interfaceSymbol,
+        Dictionary<string, PropertyDeclarationSyntax> propertyDecls,
+        SemanticModel model,
+        List<InterfacePropertyInfo> properties,
+        HashSet<IPropertySymbol> visitedProperties)
+    {
         foreach (var property in interfaceSymbol.GetMembers().OfType<IPropertySymbol>())
         {
+            if (!visitedProperties.Add(property))
+                continue;
+
             var queryAttr = property.GetAttributes()
                 .FirstOrDefault(attr => attr.AttributeClass?.Name == "QueryAttribute");
 
             var pathAttr = property.GetAttributes()
                 .FirstOrDefault(attr => attr.AttributeClass?.Name == "PathAttribute");
 
-            PropertyDeclarationSyntax? propertyDecl = null;
-            propertyDecls.TryGetValue(property.Name, out propertyDecl);
+            // 仅当前接口的语法树中有对应的属性声明；基接口（尤其跨程序集）的属性声明可能不可达，传 null 安全处理
+            propertyDecls.TryGetValue(property.Name, out var propertyDecl);
 
             if (queryAttr != null)
             {
@@ -593,7 +642,48 @@ internal static class MethodAnalyzer
             }
         }
 
-        return properties;
+        // 递归处理所有基接口
+        foreach (var baseInterface in interfaceSymbol.AllInterfaces)
+        {
+            foreach (var property in baseInterface.GetMembers().OfType<IPropertySymbol>())
+            {
+                if (!visitedProperties.Add(property))
+                    continue;
+
+                var queryAttr = property.GetAttributes()
+                    .FirstOrDefault(attr => attr.AttributeClass?.Name == "QueryAttribute");
+
+                var pathAttr = property.GetAttributes()
+                    .FirstOrDefault(attr => attr.AttributeClass?.Name == "PathAttribute");
+
+                // 基接口的语法节点通常不在当前接口的语法树中，传 null
+                PropertyDeclarationSyntax? propertyDecl = null;
+                // 尝试从基接口的语法引用中获取属性声明
+                var syntaxRef = property.DeclaringSyntaxReferences.FirstOrDefault();
+                if (syntaxRef != null)
+                {
+                    try
+                    {
+                        var syntax = syntaxRef.GetSyntax();
+                        if (syntax is PropertyDeclarationSyntax pds)
+                            propertyDecl = pds;
+                    }
+                    catch
+                    {
+                        // 跨程序集引用可能无法获取语法节点，忽略
+                    }
+                }
+
+                if (queryAttr != null)
+                {
+                    properties.Add(CreatePropertyInfo(property, queryAttr, "Query", propertyDecl, model));
+                }
+                else if (pathAttr != null)
+                {
+                    properties.Add(CreatePropertyInfo(property, pathAttr, "Path", propertyDecl, model));
+                }
+            }
+        }
     }
 
     private static InterfacePropertyInfo CreatePropertyInfo(IPropertySymbol property, AttributeData attribute, string attributeType, PropertyDeclarationSyntax? propertyDecl, SemanticModel model)
@@ -788,7 +878,7 @@ internal static class MethodAnalyzer
 
                 interfaceHeaderAttributes.Add(interfaceHeaderAttr);
 
-                var isAuthorizationHeader = AttributeDataHelper.GetStringValueFromAttribute(headerAttr, ["Name"], 0) == "Authorization";
+                var isAuthorizationHeader = AttributeDataHelper.GetStringValueFromAttribute(headerAttr, ["AliasAs", "Name"], 0) == "Authorization";
                 if (isAuthorizationHeader)
                 {
                     interfaceAttributes.Add($"Header:{headerName}");
@@ -909,21 +999,22 @@ internal static class MethodAnalyzer
     /// <summary>
     /// 分析方法级别 Token 特性的 TokenManagerKey 和 RequiresUserId
     /// </summary>
-    private static (string? tokenManagerKey, bool? requiresUserId) AnalyzeMethodTokenExtended(IMethodSymbol methodSymbol)
+    private static (string? tokenManagerKey, bool? requiresUserId, string? injectionMode) AnalyzeMethodTokenExtended(IMethodSymbol methodSymbol)
     {
         var tokenAttr = methodSymbol.GetAttributes()
             .FirstOrDefault(attr => HasAttributeWithName(attr, "TokenAttribute"));
 
         if (tokenAttr == null)
-            return (null, null);
+            return (null, null, null);
 
         var tokenManagerKey = TokenHelper.GetTokenManagerKeyFromAttribute(tokenAttr);
         var requiresUserIdValue = tokenAttr.NamedArguments
             .FirstOrDefault(na => na.Key.Equals("RequiresUserId", StringComparison.OrdinalIgnoreCase)).Value.Value;
 
-        bool? requiresUserId = requiresUserIdValue != null ? (bool)requiresUserIdValue : null;
+        bool? requiresUserId = requiresUserIdValue is bool b ? b : (bool?)null;
+        var injectionMode = GetTokenInjectionMode(tokenAttr);
 
-        return (tokenManagerKey, requiresUserId);
+        return (tokenManagerKey, requiresUserId, injectionMode);
     }
 
     /// <summary>

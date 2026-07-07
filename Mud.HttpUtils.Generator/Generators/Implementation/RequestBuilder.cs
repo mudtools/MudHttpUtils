@@ -160,7 +160,7 @@ internal class RequestBuilder
         if (!queryParams.Any() && !hasTokenQuery && !interfaceQueryProperties.Any() && !hasInterfaceQueryParams)
             return;
 
-        codeBuilder.AppendLine($"            var __queryParams = HttpUtility.ParseQueryString(string.Empty);");
+        codeBuilder.AppendLine($"            var __queryParams = new System.Collections.Specialized.NameValueCollection();");
         codeBuilder.AppendLine("            var __rawQueryPairs = new System.Collections.Generic.List<string>();");
 
         foreach (var interfaceQueryProp in interfaceQueryProperties)
@@ -176,14 +176,14 @@ internal class RequestBuilder
         if (hasTokenQuery)
         {
             var tokenQueryName = GetTokenQueryName(methodInfo);
-            codeBuilder.AppendLine($"            __queryParams.Add(\"{tokenQueryName}\", access_token);");
+            codeBuilder.AppendLine($"            __queryParams.Add(\"{StringEscapeHelper.EscapeString(tokenQueryName)}\", access_token);");
         }
 
         foreach (var interfaceQuery in methodInfo.InterfaceQueryParameters)
         {
             if (!string.IsNullOrEmpty(interfaceQuery.Name) && interfaceQuery.Value != null)
             {
-                codeBuilder.AppendLine($"            __queryParams.Add(\"{interfaceQuery.Name}\", \"{interfaceQuery.Value}\");");
+                codeBuilder.AppendLine($"            __queryParams.Add(\"{StringEscapeHelper.EscapeString(interfaceQuery.Name)}\", \"{StringEscapeHelper.EscapeString(interfaceQuery.Value)}\");");
             }
         }
 
@@ -317,7 +317,7 @@ internal class RequestBuilder
             var serializeType = methodInfo.BodyEncryptSerializeType ?? "Json";
             string httpClient = hasHttpClient ? "_httpClient" : "__appContext.HttpClient";
 
-            codeBuilder.AppendLine($"            var __encryptedContent = {httpClient}.EncryptContent({bodyParam.Name}, \"{propertyName}\", SerializeType.{serializeType});");
+            codeBuilder.AppendLine($"            var __encryptedContent = {httpClient}.EncryptContent({bodyParam.Name}, \"{StringEscapeHelper.EscapeString(propertyName)}\", SerializeType.{serializeType});");
             codeBuilder.AppendLine($"            using var __encryptedStrContent = new StringContent(__encryptedContent, Encoding.UTF8, {contentTypeExpression});");
             codeBuilder.AppendLine($"            __httpRequest.Content = __encryptedStrContent;");
         }
@@ -373,19 +373,19 @@ internal class RequestBuilder
             {
                 codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({formParam.Name}))");
                 codeBuilder.AppendLine("            {");
-                codeBuilder.AppendLine($"                __formParameters[\"{fieldName}\"] = {formParam.Name};");
+                codeBuilder.AppendLine($"                __formParameters[\"{StringEscapeHelper.EscapeString(fieldName)}\"] = {formParam.Name};");
                 codeBuilder.AppendLine("            }");
             }
             else if (TypeDetectionHelper.IsValueType(formParam.Type) && !TypeDetectionHelper.IsNullableType(formParam.Type))
             {
                 // 非可空值类型（int、long、Guid 等）永远不会为 null，无需 null 检查
-                codeBuilder.AppendLine($"            __formParameters[\"{fieldName}\"] = {formParam.Name}.ToString() ?? \"\";");
+                codeBuilder.AppendLine($"            __formParameters[\"{StringEscapeHelper.EscapeString(fieldName)}\"] = {formParam.Name}.ToString() ?? \"\";");
             }
             else
             {
                 codeBuilder.AppendLine($"            if ({formParam.Name} != null)");
                 codeBuilder.AppendLine("            {");
-                codeBuilder.AppendLine($"                __formParameters[\"{fieldName}\"] = {formParam.Name}.ToString() ?? \"\";");
+                codeBuilder.AppendLine($"                __formParameters[\"{StringEscapeHelper.EscapeString(fieldName)}\"] = {formParam.Name}.ToString() ?? \"\";");
                 codeBuilder.AppendLine("            }");
             }
         }
@@ -451,19 +451,19 @@ internal class RequestBuilder
                 {
                     codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({formProp.Name}))");
                     codeBuilder.AppendLine("            {");
-                    codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StringContent({formProp.Name}), \"{fieldName}\");");
+                    codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StringContent({formProp.Name}), \"{StringEscapeHelper.EscapeString(fieldName)}\");");
                     codeBuilder.AppendLine("            }");
                 }
                 else if (TypeDetectionHelper.IsValueType(formProp.Type) && !TypeDetectionHelper.IsNullableType(formProp.Type))
                 {
                     // 非可空值类型（int、long、Guid 等）永远不会为 null，无需 null 检查
-                    codeBuilder.AppendLine($"            __multipartContent.Add(new System.Net.Http.StringContent({formProp.Name}.ToString() ?? \"\"), \"{fieldName}\");");
+                    codeBuilder.AppendLine($"            __multipartContent.Add(new System.Net.Http.StringContent({formProp.Name}.ToString() ?? \"\"), \"{StringEscapeHelper.EscapeString(fieldName)}\");");
                 }
                 else
                 {
                     codeBuilder.AppendLine($"            if ({formProp.Name} != null)");
                     codeBuilder.AppendLine("            {");
-                    codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StringContent({formProp.Name}.ToString() ?? \"\"), \"{fieldName}\");");
+                    codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StringContent({formProp.Name}.ToString() ?? \"\"), \"{StringEscapeHelper.EscapeString(fieldName)}\");");
                     codeBuilder.AppendLine("            }");
                 }
             }
@@ -481,11 +481,11 @@ internal class RequestBuilder
                 codeBuilder.AppendLine($"            if ({uploadParam.Name} != null)");
                 codeBuilder.AppendLine("            {");
                 codeBuilder.AppendLine($"                var __{uploadParam.Name}Content = new System.Net.Http.StreamContent({uploadParam.Name});");
-                codeBuilder.AppendLine($"                __{uploadParam.Name}Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(\"{contentType}\");");
+                codeBuilder.AppendLine($"                __{uploadParam.Name}Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(\"{StringEscapeHelper.EscapeString(contentType)}\");");
                 if (!string.IsNullOrEmpty(fileName))
-                    codeBuilder.AppendLine($"                __multipartContent.Add(__{uploadParam.Name}Content, \"{fieldName}\", \"{fileName}\");");
+                    codeBuilder.AppendLine($"                __multipartContent.Add(__{uploadParam.Name}Content, \"{StringEscapeHelper.EscapeString(fieldName)}\", \"{StringEscapeHelper.EscapeString(fileName)}\");");
                 else
-                    codeBuilder.AppendLine($"                __multipartContent.Add(__{uploadParam.Name}Content, \"{fieldName}\");");
+                    codeBuilder.AppendLine($"                __multipartContent.Add(__{uploadParam.Name}Content, \"{StringEscapeHelper.EscapeString(fieldName)}\");");
                 codeBuilder.AppendLine("            }");
             }
             else
@@ -493,9 +493,9 @@ internal class RequestBuilder
                 codeBuilder.AppendLine($"            if ({uploadParam.Name} != null)");
                 codeBuilder.AppendLine("            {");
                 if (!string.IsNullOrEmpty(fileName))
-                    codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StreamContent({uploadParam.Name}), \"{fieldName}\", \"{fileName}\");");
+                    codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StreamContent({uploadParam.Name}), \"{StringEscapeHelper.EscapeString(fieldName)}\", \"{StringEscapeHelper.EscapeString(fileName)}\");");
                 else
-                    codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StreamContent({uploadParam.Name}), \"{fieldName}\");");
+                    codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StreamContent({uploadParam.Name}), \"{StringEscapeHelper.EscapeString(fieldName)}\");");
                 codeBuilder.AppendLine("            }");
             }
         }
@@ -651,6 +651,12 @@ internal class RequestBuilder
             }
             else
             {
+                // 解密必须在反序列化之前：__rawContent 此时是密文，先解密为明文再反序列化
+                if (methodInfo.ResponseEnableDecrypt)
+                {
+                    codeBuilder.AppendLine($"                __rawContent = {httpClient}.DecryptContent(__rawContent);");
+                }
+
                 codeBuilder.AppendLine($"                {innerTypeWithoutNullable} __content;");
                 codeBuilder.AppendLine($"                try");
                 codeBuilder.AppendLine($"                {{");
@@ -670,7 +676,7 @@ internal class RequestBuilder
 
                 if (isXmlResponse)
                 {
-                    codeBuilder.AppendLine($"                catch (System.Exception ex) when (ex is System.InvalidOperationException or System.Xml.XmlException)");
+                    codeBuilder.AppendLine($"                catch (System.Exception ex) when (ex is System.InvalidOperationException || ex is System.Xml.XmlException)");
                     codeBuilder.AppendLine($"                {{");
                     codeBuilder.AppendLine($"                    return new Mud.HttpUtils.Response<{innerType}>(__statusCode, \"Failed to deserialize XML response: \" + ex.Message + \". Raw content: \" + __rawContent, __responseHeaders);");
                 }
@@ -682,16 +688,6 @@ internal class RequestBuilder
                 }
 
                 codeBuilder.AppendLine($"                }}");
-
-                if (methodInfo.ResponseEnableDecrypt)
-                {
-                    codeBuilder.AppendLine($"                if (__content != null)");
-                    codeBuilder.AppendLine($"                {{");
-                    codeBuilder.AppendLine($"                    var __rawJson = JsonSerializer.Serialize(__content, _jsonSerializerOptions);");
-                    codeBuilder.AppendLine($"                    var __decryptedJson = {httpClient}.DecryptContent(__rawJson);");
-                    codeBuilder.AppendLine($"                    __content = JsonSerializer.Deserialize<{innerType}>(__decryptedJson, _jsonSerializerOptions);");
-                    codeBuilder.AppendLine($"                }}");
-                }
 
                 codeBuilder.AppendLine($"                return new Mud.HttpUtils.Response<{innerType}>(__statusCode, __content, __rawContent, __responseHeaders);");
             }
@@ -763,6 +759,12 @@ internal class RequestBuilder
             return;
         }
 
+        // 解密必须在反序列化之前：rawContentVar 此时是密文，先解密为明文再反序列化
+        if (methodInfo.ResponseEnableDecrypt)
+        {
+            codeBuilder.AppendLine($"            {rawContentVar} = {httpClient}.DecryptContent({rawContentVar});");
+        }
+
         if (isXmlResponse)
         {
             codeBuilder.AppendLine($"            {innerTypeWithoutNullable} {resultVariable};");
@@ -772,7 +774,7 @@ internal class RequestBuilder
             codeBuilder.AppendLine($"                var __deserializedObj = {GetXmlSerializerFieldReference(deserializeType)}.Deserialize(__xmlReader);");
             codeBuilder.AppendLine($"                {resultVariable} = __deserializedObj is {deserializeType} __typed ? __typed : default;");
             codeBuilder.AppendLine($"            }}");
-            codeBuilder.AppendLine($"            catch (System.Exception ex) when (ex is System.InvalidOperationException or System.Xml.XmlException)");
+            codeBuilder.AppendLine($"            catch (System.Exception ex) when (ex is System.InvalidOperationException || ex is System.Xml.XmlException)");
             codeBuilder.AppendLine($"            {{");
             codeBuilder.AppendLine($"                throw new Mud.HttpUtils.ApiException(__httpResponse.StatusCode, \"Failed to deserialize XML response: \" + ex.Message + \". Raw content: \" + {rawContentVar}, __httpRequest.RequestUri?.ToString());");
             codeBuilder.AppendLine($"            }}");
@@ -787,17 +789,6 @@ internal class RequestBuilder
             codeBuilder.AppendLine($"            catch (System.Text.Json.JsonException ex)");
             codeBuilder.AppendLine($"            {{");
             codeBuilder.AppendLine($"                throw new Mud.HttpUtils.ApiException(__httpResponse.StatusCode, \"Failed to deserialize JSON response: \" + ex.Message + \". Raw content: \" + {rawContentVar}, __httpRequest.RequestUri?.ToString());");
-            codeBuilder.AppendLine($"            }}");
-        }
-
-        if (methodInfo.ResponseEnableDecrypt)
-        {
-            string encryptableClient = httpClient;
-            codeBuilder.AppendLine($"            if ({resultVariable} != null)");
-            codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                var __rawJson = JsonSerializer.Serialize({resultVariable}, _jsonSerializerOptions);");
-            codeBuilder.AppendLine($"                var __decryptedJson = {encryptableClient}.DecryptContent(__rawJson);");
-            codeBuilder.AppendLine($"                {resultVariable} = JsonSerializer.Deserialize<{deserializeType}>(__decryptedJson, _jsonSerializerOptions);");
             codeBuilder.AppendLine($"            }}");
         }
 
@@ -823,24 +814,18 @@ internal class RequestBuilder
         // 需要将可空的变量值（T?）转换为非空类型（T）
         if (!deserializeType.EndsWith("?", StringComparison.OrdinalIgnoreCase))
         {
-            // 值类型：使用.GetValueOrDefault()，这比强制转换更安全
             var baseType = deserializeType;
-            var valueTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                "int", "long", "float", "double", "decimal", "bool", "char",
-                "byte", "sbyte", "short", "ushort", "uint", "ulong",
-                "System.Int32", "System.Int64", "System.Single", "System.Double",
-                "System.Decimal", "System.Boolean", "System.Char",
-                "System.Byte", "System.SByte", "System.Int16", "System.UInt16",
-                "System.UInt32", "System.UInt64"
-            };
 
-            if (valueTypes.Contains(baseType))
+            // 值类型：使用 GetValueOrDefault()，这比强制转换更安全
+            // TypeDetectionHelper.IsValueType 覆盖基本值类型 + DateTime/Guid/TimeSpan 等
+            if (TypeDetectionHelper.IsValueType(baseType))
             {
                 return $"{resultVariable}.GetValueOrDefault()";
             }
 
             // 引用类型：使用 ! null-forgiving 操作符
+            // 注意：自定义 struct/enum 不在 IsValueType 列表中时会走此分支，
+            // 若编译失败需在 TypeDetectionHelper.IsValueType 中补充该类型
             return $"{resultVariable}!";
         }
 
@@ -884,6 +869,12 @@ internal class RequestBuilder
         var deserializeTypeWithoutNullable = deserializeType.EndsWith("?", StringComparison.OrdinalIgnoreCase) ? deserializeType.TrimEnd('?') : deserializeType;
         var innerTypeWithoutNullable = GetVariableTypeString(deserializeType);
 
+        // 解密必须在反序列化之前：rawContentVar 此时是密文，先解密为明文再反序列化
+        if (methodInfo.ResponseEnableDecrypt)
+        {
+            codeBuilder.AppendLine($"            {rawContentVar} = {httpClient}.DecryptContent({rawContentVar});");
+        }
+
         if (TypeDetectionHelper.IsStringType(deserializeTypeWithoutNullable))
         {
             codeBuilder.AppendLine($"            return {rawContentVar};");
@@ -899,7 +890,7 @@ internal class RequestBuilder
             codeBuilder.AppendLine($"                var __deserializedObj = {GetXmlSerializerFieldReference(deserializeType)}.Deserialize(__xmlReader);");
             codeBuilder.AppendLine($"                {resultVariable} = __deserializedObj is {deserializeType} __typed ? __typed : throw new System.InvalidOperationException(\"Failed to deserialize XML response to type \" + typeof({deserializeType}).Name);");
             codeBuilder.AppendLine($"            }}");
-            codeBuilder.AppendLine($"            catch (System.Exception ex) when (ex is System.InvalidOperationException or System.Xml.XmlException)");
+            codeBuilder.AppendLine($"            catch (System.Exception ex) when (ex is System.InvalidOperationException || ex is System.Xml.XmlException)");
             codeBuilder.AppendLine($"            {{");
             codeBuilder.AppendLine($"                throw new Mud.HttpUtils.ApiException(__httpResponse.StatusCode, \"Failed to deserialize XML response: \" + ex.Message + \". Raw content: \" + {rawContentVar}, __httpRequest.RequestUri?.ToString());");
             codeBuilder.AppendLine($"            }}");
@@ -914,17 +905,6 @@ internal class RequestBuilder
             codeBuilder.AppendLine($"            catch (System.Text.Json.JsonException ex)");
             codeBuilder.AppendLine($"            {{");
             codeBuilder.AppendLine($"                throw new Mud.HttpUtils.ApiException(__httpResponse.StatusCode, \"Failed to deserialize JSON response: \" + ex.Message + \". Raw content: \" + {rawContentVar}, __httpRequest.RequestUri?.ToString());");
-            codeBuilder.AppendLine($"            }}");
-        }
-
-        if (methodInfo.ResponseEnableDecrypt)
-        {
-            string encryptableClient = httpClient;
-            codeBuilder.AppendLine($"            if ({resultVariable} != null)");
-            codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                var __rawJson = JsonSerializer.Serialize({resultVariable}, _jsonSerializerOptions);");
-            codeBuilder.AppendLine($"                var __decryptedJson = {encryptableClient}.DecryptContent(__rawJson);");
-            codeBuilder.AppendLine($"                {resultVariable} = JsonSerializer.Deserialize<{deserializeType}>(__decryptedJson, _jsonSerializerOptions);");
             codeBuilder.AppendLine($"            }}");
         }
 

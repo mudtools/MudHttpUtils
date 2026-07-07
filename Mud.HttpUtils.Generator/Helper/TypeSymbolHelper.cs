@@ -271,8 +271,7 @@ internal static class TypeSymbolHelper
         return interfaceSymbol.GetAttributes()
                               .Any(attr =>
                                   (attr.AttributeClass?.Name == attributeName || attr.AttributeClass?.Name == attributeType) &&
-                                  attr.ConstructorArguments.Length > 0 &&
-                                  attr.ConstructorArguments[0].Value?.ToString() == attributeValue);
+                                  AttributeDataHelper.GetStringValueFromAttribute(attr, ["AliasAs", "Name"], 0) == attributeValue);
     }
     #endregion
 
@@ -363,23 +362,8 @@ internal static class TypeSymbolHelper
             var commas = new string(',', arrayTypeSymbol.Rank - 1);
             return $"{elementTypeDisplay}[{commas}]";
         }
-        // 处理一维数组（包括交错数组）
-        else
-        {
-            // 对于一维数组，检查元素类型是否也是数组（交错数组）
-            if (arrayTypeSymbol.ElementType is IArrayTypeSymbol)
-            {
-                // 交错数组：int[][], string[][][] 等
-                // 元素类型已经包含了自己的[]，所以这里不需要额外处理
-                // 但需要确保格式正确，例如 int[][] 而不是 int[] []
-                return elementTypeDisplay + "[]";
-            }
-            else
-            {
-                // 普通一维数组
-                return $"{elementTypeDisplay}[]";
-            }
-        }
+
+        return $"{elementTypeDisplay}[]";
     }
 
     #endregion
@@ -475,7 +459,6 @@ internal static class TypeSymbolHelper
             SpecialType.System_IntPtr => true,
             SpecialType.System_UIntPtr => true,
             SpecialType.System_DateTime => true,
-            SpecialType.System_Array => true,
 
             // 引用类型
             SpecialType.System_String => true,
@@ -488,9 +471,6 @@ internal static class TypeSymbolHelper
 
         // 检查是否为 System.Drawing.Color 类型
         if (IsSystemDrawingColor(typeToCheck))
-            return true;
-
-        if (IsObjectArray(typeToCheck))
             return true;
 
         return false;

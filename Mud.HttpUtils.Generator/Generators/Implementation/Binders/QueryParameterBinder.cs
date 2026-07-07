@@ -69,7 +69,7 @@ internal class QueryParameterBinder : IParameterBinder
         {
             codeBuilder.AppendLine($"{indent}if (!string.IsNullOrWhiteSpace({param.Name}))");
             codeBuilder.AppendLine($"{indent}{{");
-            codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{paramName}\", {param.Name});");
+            codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", {param.Name});");
             codeBuilder.AppendLine($"{indent}}}");
         }
         else
@@ -81,7 +81,7 @@ internal class QueryParameterBinder : IParameterBinder
                 var formatExpression = !string.IsNullOrEmpty(formatString)
                     ? $".Value.ToString(\"{formatString}\")"
                     : ".Value.ToString()";
-                codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{paramName}\", {param.Name}{formatExpression});");
+                codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", {param.Name}{formatExpression});");
                 codeBuilder.AppendLine($"{indent}}}");
             }
             else
@@ -89,7 +89,7 @@ internal class QueryParameterBinder : IParameterBinder
                 var formatExpression = !string.IsNullOrEmpty(formatString)
                     ? $".ToString(\"{formatString}\")"
                     : ".ToString()";
-                codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{paramName}\", {param.Name}{formatExpression});");
+                codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", {param.Name}{formatExpression});");
             }
         }
     }
@@ -150,14 +150,14 @@ internal class QueryParameterBinder : IParameterBinder
             // 重复参数模式: query1=val1&query1=val2&query1=val3
             codeBuilder.AppendLine($"{indent}    foreach (var __item in {param.Name}.Where(__item => __item != null))");
             codeBuilder.AppendLine($"{indent}    {{");
-            codeBuilder.AppendLine($"{indent}        __queryParams.Add(\"{paramName}\", __item.ToString());");
+            codeBuilder.AppendLine($"{indent}        __queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", __item.ToString());");
             codeBuilder.AppendLine($"{indent}    }}");
         }
         else
         {
             // 分隔符模式: query1=val1;val2;val3
-            codeBuilder.AppendLine($"{indent}    var __joinedValues = string.Join(\"{effectiveSeparator}\", {param.Name}.Where(__item => __item != null).Select(__item => __item.ToString()));");
-            codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{paramName}\", __joinedValues);");
+            codeBuilder.AppendLine($"{indent}    var __joinedValues = string.Join(\"{StringEscapeHelper.EscapeString(effectiveSeparator)}\", {param.Name}.Where(__item => __item != null).Select(__item => __item.ToString()));");
+            codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", __joinedValues);");
         }
 
         codeBuilder.AppendLine($"{indent}}}");
@@ -207,7 +207,7 @@ internal class QueryParameterBinder : IParameterBinder
 
         codeBuilder.AppendLine($"{indent}if ({param.Name} != null)");
         codeBuilder.AppendLine($"{indent}{{");
-        codeBuilder.AppendLine($"{indent}    FlattenObjectToQueryParams({param.Name}, string.Empty, \"{separator}\", __queryParams, {includeNull.ToString().ToLowerInvariant()}, {useJson.ToString().ToLowerInvariant()}, {urlEncode.ToString().ToLowerInvariant()}, __rawQueryPairs);");
+        codeBuilder.AppendLine($"{indent}    FlattenObjectToQueryParams({param.Name}, string.Empty, \"{StringEscapeHelper.EscapeString(separator)}\", __queryParams, {includeNull.ToString().ToLowerInvariant()}, {useJson.ToString().ToLowerInvariant()}, {urlEncode.ToString().ToLowerInvariant()}, __rawQueryPairs);");
         codeBuilder.AppendLine($"{indent}}}");
     }
 

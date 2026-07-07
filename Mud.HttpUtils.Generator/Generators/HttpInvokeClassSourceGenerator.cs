@@ -15,7 +15,7 @@ namespace Mud.HttpUtils;
 /// <para>支持 HTTP 方法：Get, Post, Put, Delete, Patch, Head, Options。</para>
 /// </summary>
 [Generator(LanguageNames.CSharp)]
-internal partial class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
+internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
 {
     private const string DefaultHttpClientOptionsName = "HttpClientOptions";
 
@@ -34,6 +34,9 @@ internal partial class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGene
 
         foreach (var interfaceDecl in interfaces)
         {
+            if (context.CancellationToken.IsCancellationRequested)
+                return;
+
             if (interfaceDecl == null)
                 continue;
 
@@ -76,6 +79,6 @@ internal partial class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGene
             _ => Diagnostics.HttpClientApiGenerationError
         };
 
-        ReportErrorDiagnostic(context, descriptor, interfaceDecl.Identifier.Text, ex);
+        ReportErrorDiagnostic(context, descriptor, interfaceDecl.Identifier.Text, ex, interfaceDecl.GetLocation());
     }
 }

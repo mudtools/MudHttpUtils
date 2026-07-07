@@ -133,8 +133,8 @@ internal static class TokenHelper
         var namedArg = tokenAttribute.NamedArguments
             .FirstOrDefault(na => na.Key.Equals("RequiresUserId", StringComparison.OrdinalIgnoreCase)).Value.Value;
 
-        if (namedArg != null)
-            return (bool)namedArg;
+        if (namedArg is bool b)
+            return b;
 
         return null;
     }

@@ -102,7 +102,11 @@ internal class FormContentGenerator : TransitiveCodeGenerator
 
                 if (!string.IsNullOrEmpty(generatedCode))
                 {
-                    var fileName = $"{classSymbol.Name}.g.cs";
+                    // 将命名空间编入文件名，避免跨命名空间同名类冲突
+                    var namespacePrefix = string.IsNullOrEmpty(classSymbol.ContainingNamespace?.Name)
+                        ? string.Empty
+                        : $"{classSymbol.ContainingNamespace.Name.Replace('.', '_')}_";
+                    var fileName = $"{namespacePrefix}{classSymbol.Name}.g.cs";
                     context.AddSource(fileName, generatedCode);
                 }
             }

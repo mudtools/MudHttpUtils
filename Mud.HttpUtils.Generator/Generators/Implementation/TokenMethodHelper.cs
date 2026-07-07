@@ -37,7 +37,7 @@ internal static class TokenMethodHelper
         codeBuilder.AppendLine("        /// 令牌管理器查找键。保留供子类覆盖使用。");
         codeBuilder.AppendLine("        /// 新代码应使用 GetTokenAsync(tokenManagerKey, ...) 方法指定查找键。");
         codeBuilder.AppendLine("        /// </summary>");
-        codeBuilder.AppendLine($"        private readonly string _tokenManagerKey = \"{tokenManagerKey}\";");
+        codeBuilder.AppendLine($"        private readonly string _tokenManagerKey = \"{StringEscapeHelper.EscapeString(tokenManagerKey)}\";");
         codeBuilder.AppendLine();
 
         string accessibility = context.Configuration.IsAbstract ? "virtual" : "override";

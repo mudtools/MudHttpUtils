@@ -38,6 +38,7 @@ internal class HeaderParameterBinder : IParameterBinder
         if (shouldIgnore)
             return;
 
+        var escapedHeaderName = StringEscapeHelper.EscapeString(headerName);
         var isStringType = TypeDetectionHelper.IsStringType(parameter.Type);
 
         if (isStringType)
@@ -46,12 +47,12 @@ internal class HeaderParameterBinder : IParameterBinder
             {
                 if (shouldReplace)
                 {
-                    codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Remove(\"{headerName}\");");
-                    codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"{headerName}\", {parameter.Name});");
+                    codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Remove(\"{escapedHeaderName}\");");
+                    codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"{escapedHeaderName}\", {parameter.Name});");
                 }
                 else
                 {
-                    codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"{headerName}\", {parameter.Name});");
+                    codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"{escapedHeaderName}\", {parameter.Name});");
                 }
             }
             else
@@ -59,12 +60,12 @@ internal class HeaderParameterBinder : IParameterBinder
                 codeBuilder.AppendLine($"{indent}if (!string.IsNullOrWhiteSpace({parameter.Name}))");
                 if (shouldReplace)
                 {
-                    codeBuilder.AppendLine($"{indent}    __httpRequest.Headers.Remove(\"{headerName}\");");
-                    codeBuilder.AppendLine($"{indent}    __httpRequest.Headers.Add(\"{headerName}\", {parameter.Name});");
+                    codeBuilder.AppendLine($"{indent}    __httpRequest.Headers.Remove(\"{escapedHeaderName}\");");
+                    codeBuilder.AppendLine($"{indent}    __httpRequest.Headers.Add(\"{escapedHeaderName}\", {parameter.Name});");
                 }
                 else
                 {
-                    codeBuilder.AppendLine($"{indent}    __httpRequest.Headers.Add(\"{headerName}\", {parameter.Name});");
+                    codeBuilder.AppendLine($"{indent}    __httpRequest.Headers.Add(\"{escapedHeaderName}\", {parameter.Name});");
                 }
             }
         }
@@ -75,12 +76,12 @@ internal class HeaderParameterBinder : IParameterBinder
                 : $"{parameter.Name}.ToString()";
             if (shouldReplace)
             {
-                codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Remove(\"{headerName}\");");
-                codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"{headerName}\", {formatExpression});");
+                codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Remove(\"{escapedHeaderName}\");");
+                codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"{escapedHeaderName}\", {formatExpression});");
             }
             else
             {
-                codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"{headerName}\", {formatExpression});");
+                codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"{escapedHeaderName}\", {formatExpression});");
             }
         }
     }

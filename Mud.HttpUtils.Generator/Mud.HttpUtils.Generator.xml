@@ -82,6 +82,12 @@
             查询方法的语法对象
             </summary>
         </member>
+        <member name="M:Mud.HttpUtils.Analyzers.MethodAnalyzer.TryMatchByParameterTypes(Microsoft.CodeAnalysis.CSharp.Syntax.MethodDeclarationSyntax,Microsoft.CodeAnalysis.IMethodSymbol)">
+            <summary>
+            通过参数类型符号匹配方法声明与目标方法符号。
+            用于在语义分析失败时的回退匹配，避免重载方法误判。
+            </summary>
+        </member>
         <member name="M:Mud.HttpUtils.Analyzers.MethodAnalyzer.GetAllBaseInterfaceSyntaxNodes(Microsoft.CodeAnalysis.Compilation,Microsoft.CodeAnalysis.CSharp.Syntax.InterfaceDeclarationSyntax,Microsoft.CodeAnalysis.SemanticModel)">
             <summary>
             获取接口及其所有基接口的语法节点
@@ -249,9 +255,15 @@
             <param name="context">源代码生成上下文</param>
             <returns>生成的事件处理器类代码</returns>
         </member>
+        <member name="M:Mud.HttpUtils.EventHandlerSourceGenerator.SplitRespectingGenerics(System.String)">
+            <summary>
+            按逗号分割构造函数参数字符串，但感知泛型尖括号深度，
+            避免将 Dictionary&lt;string, int&gt; 等泛型参数内部的逗号误判为分隔符。
+            </summary>
+        </member>
         <member name="M:Mud.HttpUtils.EventHandlerSourceGenerator.GetAttributeParameter(Microsoft.CodeAnalysis.AttributeData,System.String,System.String)">
             <summary>
-            获取字符串类型的特性参数值
+            获取特性参数值
             </summary>
             <param name="attribute">特性数据</param>
             <param name="parameterName">参数名</param>
@@ -418,6 +430,17 @@
         <member name="P:Mud.HttpUtils.Generators.Context.GeneratorContext.ImplementsICurrentUserId">
             <summary>
             接口是否继承了 ICurrentUserId 接口
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Generators.Context.GeneratorContext.MethodAnalysisCache">
+            <summary>
+            方法分析结果缓存，避免同一方法被 AnalyzeMethod 重复分析。
+            使用 SymbolEqualityComparer.Default 确保符号比较的正确性。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Generators.Context.GeneratorContext.GetOrAnalyzeMethod(Microsoft.CodeAnalysis.Compilation,Microsoft.CodeAnalysis.IMethodSymbol,Microsoft.CodeAnalysis.CSharp.Syntax.InterfaceDeclarationSyntax,Microsoft.CodeAnalysis.SemanticModel)">
+            <summary>
+            获取或缓存方法分析结果。若缓存命中则复用，否则调用 AnalyzeMethod 并缓存结果。
             </summary>
         </member>
         <member name="P:Mud.HttpUtils.Generators.Context.GeneratorContext.HasBaseInterfaces">
@@ -1131,19 +1154,20 @@
             源生成器调试日志辅助类
             </summary>
             <remarks>
-            使用 [Conditional("DEBUG")] 确保 Release 构建中所有调用（包括字符串插值参数）
+            Log 使用 [Conditional("DEBUG")] 确保 Release 构建中所有调用（包括字符串插值参数）
             都会被编译器完全移除，避免热路径上的隐藏分配开销。
+            LogError 不使用 [Conditional("DEBUG")]，确保 Release 构建中异常不会被静默吞噬。
             </remarks>
         </member>
         <member name="M:Mud.HttpUtils.GeneratorDebugLogger.Log(System.String)">
             <summary>
-            记录调试日志
+            记录调试日志（仅在 DEBUG 构建中生效）
             </summary>
             <param name="message">日志消息</param>
         </member>
         <member name="M:Mud.HttpUtils.GeneratorDebugLogger.LogError(System.String,System.Exception)">
             <summary>
-            记录错误日志
+            记录错误日志（在所有构建配置中生效，使用 Trace 确保 Release 中也可输出）
             </summary>
             <param name="context">错误上下文描述</param>
             <param name="ex">异常对象</param>
@@ -1231,6 +1255,14 @@
             </summary>
             <param name="eventType">原始事件类型值</param>
             <returns>规范化后的字符串字面量</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.StringEscapeHelper.ContainsUnescapedQuote(System.String,System.Char)">
+            <summary>
+            检查字符串中是否包含未转义的指定引号字符
+            </summary>
+            <param name="content">字符串内容</param>
+            <param name="quote">引号字符</param>
+            <returns>如果存在未转义的引号返回 true，否则返回 false</returns>
         </member>
         <member name="M:Mud.HttpUtils.SyntaxHelper.TryGetParentSyntax``1(Microsoft.CodeAnalysis.SyntaxNode,``0@)">
             <summary>
@@ -1675,6 +1707,17 @@
             方法级 Scopes 优先于接口级 Scopes。
             </summary>
         </member>
+        <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.MethodTokenInjectionMode">
+            <summary>
+            方法级 Token 注入模式（从方法上的 [Token(InjectionMode = ...)] 特性获取）。
+            方法级优先于接口级。如果未指定，使用接口级的 InterfaceTokenInjectionMode。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.EffectiveTokenInjectionMode">
+            <summary>
+            获取有效的 Token 注入模式：方法级优先于接口级。
+            </summary>
+        </member>
         <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.TokenParameterName">
             <summary>
             方法参数中标记了 [Token] 特性的参数名称。
@@ -1731,7 +1774,7 @@
             </summary>
             <returns>内容类型字符串，如果都未定义则返回null</returns>
         </member>
-        <member name="P:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.Invalid">
+        <member name="F:Mud.HttpUtils.Models.Analysis.MethodAnalysisResult.Invalid">
             <summary>
             无效的分析结果实例
             </summary>
@@ -1928,6 +1971,16 @@
             <param name="descriptor">诊断描述符</param>
             <param name="className">类名</param>
             <param name="exception">异常信息</param>
+        </member>
+        <member name="M:Mud.HttpUtils.TransitiveCodeGenerator.ReportErrorDiagnostic(Microsoft.CodeAnalysis.SourceProductionContext,Microsoft.CodeAnalysis.DiagnosticDescriptor,System.String,System.Exception,Microsoft.CodeAnalysis.Location)">
+            <summary>
+            报告生成错误的诊断信息（带精确位置）
+            </summary>
+            <param name="context">源码生成上下文</param>
+            <param name="descriptor">诊断描述符</param>
+            <param name="className">类名</param>
+            <param name="exception">异常信息</param>
+            <param name="location">错误位置</param>
         </member>
         <member name="T:Mud.HttpUtils.Validators.BaseClassValidator">
             <summary>

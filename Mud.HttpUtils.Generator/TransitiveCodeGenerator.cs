@@ -18,7 +18,7 @@ public abstract class TransitiveCodeGenerator : IIncrementalGenerator
     public abstract void Initialize(IncrementalGeneratorInitializationContext context);
 
     protected const string CompilerGeneratedAttribute = GeneratedCodeConsts.CompilerGeneratedAttribute;
-    protected string GeneratedCodeAttribute => GeneratedCodeConsts.HttpGeneratedCodeAttribute;
+    protected static string GeneratedCodeAttribute => GeneratedCodeConsts.HttpGeneratedCodeAttribute;
 
 
     /// <summary>
@@ -89,6 +89,24 @@ public abstract class TransitiveCodeGenerator : IIncrementalGenerator
         Exception exception)
     {
         context.ReportDiagnostic(Diagnostic.Create(descriptor, Location.None, className, exception?.Message));
+    }
+
+    /// <summary>
+    /// 报告生成错误的诊断信息（带精确位置）
+    /// </summary>
+    /// <param name="context">源码生成上下文</param>
+    /// <param name="descriptor">诊断描述符</param>
+    /// <param name="className">类名</param>
+    /// <param name="exception">异常信息</param>
+    /// <param name="location">错误位置</param>
+    protected void ReportErrorDiagnostic(
+        SourceProductionContext context,
+        DiagnosticDescriptor descriptor,
+        string className,
+        Exception exception,
+        Location location)
+    {
+        context.ReportDiagnostic(Diagnostic.Create(descriptor, location ?? Location.None, className, exception?.Message));
     }
 
 }

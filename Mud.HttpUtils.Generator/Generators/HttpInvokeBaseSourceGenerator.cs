@@ -26,7 +26,6 @@ internal abstract class HttpInvokeBaseSourceGenerator : TransitiveCodeGenerator
         return
         [
             "System",
-            "System.Web",
             "System.Net.Http",
             "System.Text",
             "System.Text.Json",
@@ -57,7 +56,6 @@ internal abstract class HttpInvokeBaseSourceGenerator : TransitiveCodeGenerator
                 fullyQualifiedMetadataName: GetFullyQualifiedAttributeName(),
                 predicate: static (node, _) => node is InterfaceDeclarationSyntax,
                 transform: static (ctx, _) => (InterfaceDeclarationSyntax)ctx.TargetNode)
-            .Where(static s => s is not null)
             .WithTrackingName("HttpInvokeBase_SyntaxProvider")
             .Collect();
 

@@ -75,11 +75,10 @@ internal static class StringEscapeHelper
             {
                 // 验证内部是否包含相同的未转义引号
                 var innerContent = eventType.Substring(1, eventType.Length - 2);
-                if (!innerContent.Contains(quote))
+                if (!ContainsUnescapedQuote(innerContent, quote))
                     return eventType; // 合法字面量，直接返回
 
-                // 内部包含引号，需要转义后重新包装
-                // 注意：对内部内容进行完整转义（包括引号），但不调用 EscapeString 对已转义结果再次转义
+                // 内部包含未转义引号，需要转义后重新包装
                 var escapedInner = EscapeString(innerContent);
                 // 使用双引号包装，内部的双引号已被 EscapeString 转义
                 return $"\"{escapedInner}\"";
@@ -89,5 +88,30 @@ internal static class StringEscapeHelper
         // 转义特殊字符并包装成字符串字面量
         eventType = EscapeString(eventType);
         return $"\"{eventType}\"";
+    }
+
+    /// <summary>
+    /// 检查字符串中是否包含未转义的指定引号字符
+    /// </summary>
+    /// <param name="content">字符串内容</param>
+    /// <param name="quote">引号字符</param>
+    /// <returns>如果存在未转义的引号返回 true，否则返回 false</returns>
+    private static bool ContainsUnescapedQuote(string content, char quote)
+    {
+        for (int i = 0; i < content.Length; i++)
+        {
+            if (content[i] != quote)
+                continue;
+
+            // 统计前面的连续反斜杠数量
+            int backslashCount = 0;
+            for (int j = i - 1; j >= 0 && content[j] == '\\'; j--)
+                backslashCount++;
+
+            // 偶数个反斜杠表示引号未转义
+            if (backslashCount % 2 == 0)
+                return true;
+        }
+        return false;
     }
 }

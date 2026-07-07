@@ -140,6 +140,17 @@ internal class MethodAnalysisResult
     public string? MethodTokenScopes { get; set; }
 
     /// <summary>
+    /// 方法级 Token 注入模式（从方法上的 [Token(InjectionMode = ...)] 特性获取）。
+    /// 方法级优先于接口级。如果未指定，使用接口级的 InterfaceTokenInjectionMode。
+    /// </summary>
+    public string? MethodTokenInjectionMode { get; set; }
+
+    /// <summary>
+    /// 获取有效的 Token 注入模式：方法级优先于接口级。
+    /// </summary>
+    public string EffectiveTokenInjectionMode => MethodTokenInjectionMode ?? InterfaceTokenInjectionMode ?? "Header";
+
+    /// <summary>
     /// 方法参数中标记了 [Token] 特性的参数名称。
     /// 当存在此参数时，生成代码应优先使用参数值，仅在参数值为空时回退到 GetTokenAsync()。
     /// </summary>
@@ -231,5 +242,5 @@ internal class MethodAnalysisResult
     /// <summary>
     /// 无效的分析结果实例
     /// </summary>
-    public static MethodAnalysisResult Invalid => new() { IsValid = false };
+    public static readonly MethodAnalysisResult Invalid = new() { IsValid = false };
 }

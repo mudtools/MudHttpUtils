@@ -12,7 +12,7 @@ namespace Mud.HttpUtils;
 /// </summary>
 internal static class CSharpCodeValidator
 {
-    private static readonly HashSet<string> CSharpKeywords = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> CSharpKeywords = new(StringComparer.Ordinal)
     {
         "abstract", "as", "base", "bool", "break", "byte", "case", "catch", "char",
         "checked", "class", "const", "continue", "decimal", "default", "delegate",

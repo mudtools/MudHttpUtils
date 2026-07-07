@@ -24,7 +24,7 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
 
     private static readonly string[] DefaultUsingNamespaces =
     [
-        "System", "System.Web", "System.Net.Http", "System.Text",
+        "System", "System.Net.Http", "System.Text",
         "System.Text.Json", "System.Threading.Tasks",
         "Microsoft.Extensions.Logging", "Microsoft.Extensions.Options", "Mud.HttpUtils"
     ];

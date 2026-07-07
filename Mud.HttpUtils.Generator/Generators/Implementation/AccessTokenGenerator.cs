@@ -57,7 +57,7 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            var appContext = _appContextHolder.Current;");
         codeBuilder.AppendLine("            if(appContext == null)");
-        codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到当前服务的应用上下文。\");");
+        codeBuilder.AppendLine("                throw new InvalidOperationException(\"无法找到当前服务的应用上下文。\");");
         codeBuilder.AppendLine("            var request = new TokenRequest");
         codeBuilder.AppendLine("            {");
         codeBuilder.AppendLine("                TokenManagerKey = tokenManagerKey,");
@@ -93,7 +93,7 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <returns>包含访问令牌的字符串任务。</returns>");
         codeBuilder.AppendLine($"        {accessibility} async Task<string> GetTokenAsync()");
         codeBuilder.AppendLine("        {");
-        codeBuilder.AppendLine($"            return await GetTokenAsync(\"{tokenManagerKey}\", {userIdArg}).ConfigureAwait(false);");
+        codeBuilder.AppendLine($"            return await GetTokenAsync(\"{StringEscapeHelper.EscapeString(tokenManagerKey)}\", {userIdArg}).ConfigureAwait(false);");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
     }
@@ -107,14 +107,14 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <returns>返回 API Key</returns>");
         codeBuilder.AppendLine("        private async Task<string> GetApiKeyAsync(string? keyName = null)");
         codeBuilder.AppendLine("        {");
-        codeBuilder.AppendLine("            if (keyName is not null && string.IsNullOrWhiteSpace(keyName))");
+        codeBuilder.AppendLine("            if (keyName != null && string.IsNullOrWhiteSpace(keyName))");
         codeBuilder.AppendLine("                throw new System.ArgumentException(\"API Key name cannot be whitespace.\", nameof(keyName));");
         codeBuilder.AppendLine("            var appContext = _appContextHolder.Current;");
         codeBuilder.AppendLine("            if(appContext == null)");
-        codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到当前服务的应用上下文。\");");
+        codeBuilder.AppendLine("                throw new InvalidOperationException(\"无法找到当前服务的应用上下文。\");");
         codeBuilder.AppendLine("            var apiKeyProvider = appContext.GetService<IApiKeyProvider>();");
         codeBuilder.AppendLine("            if(apiKeyProvider == null)");
-        codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到 IApiKeyProvider 服务，请先注册 ApiKey 提供器。\");");
+        codeBuilder.AppendLine("                throw new InvalidOperationException(\"无法找到 IApiKeyProvider 服务，请先注册 ApiKey 提供器。\");");
         codeBuilder.AppendLine("            return await apiKeyProvider.GetApiKeyAsync(keyName).ConfigureAwait(false);");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
@@ -130,10 +130,10 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            var appContext = _appContextHolder.Current;");
         codeBuilder.AppendLine("            if(appContext == null)");
-        codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到当前服务的应用上下文。\");");
+        codeBuilder.AppendLine("                throw new InvalidOperationException(\"无法找到当前服务的应用上下文。\");");
         codeBuilder.AppendLine("            var hmacProvider = appContext.GetService<IHmacSignatureProvider>();");
         codeBuilder.AppendLine("            if(hmacProvider == null)");
-        codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到 IHmacSignatureProvider 服务，请先注册 HMAC 签名提供器。\");");
+        codeBuilder.AppendLine("                throw new InvalidOperationException(\"无法找到 IHmacSignatureProvider 服务，请先注册 HMAC 签名提供器。\");");
         codeBuilder.AppendLine("            var secretKey = await GetApiKeyAsync(\"HmacSecretKey\").ConfigureAwait(false);");
         codeBuilder.AppendLine("            var signature = await hmacProvider.GenerateSignatureAsync(request, secretKey).ConfigureAwait(false);");
         codeBuilder.AppendLine("            request.Headers.Add(\"X-Hmac-Signature\", signature);");

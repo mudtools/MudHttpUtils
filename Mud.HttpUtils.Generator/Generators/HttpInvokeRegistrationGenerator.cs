@@ -59,6 +59,9 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
 
         foreach (var interfaceSyntax in interfaces)
         {
+            if (context.CancellationToken.IsCancellationRequested)
+                return apiInfos;
+
             if (interfaceSyntax == null)
                 continue;
 
@@ -144,7 +147,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
 
     private void ReportInterfaceProcessingError(SourceProductionContext context, InterfaceDeclarationSyntax interfaceSyntax, Exception ex)
     {
-        ReportErrorDiagnostic(context, Diagnostics.HttpClientRegistrationGenerationError, interfaceSyntax.Identifier.Text, ex);
+        ReportErrorDiagnostic(context, Diagnostics.HttpClientRegistrationGenerationError, interfaceSyntax.Identifier.Text, ex, interfaceSyntax.GetLocation());
     }
 
     private string GenerateSourceCode(Compilation compilation, List<HttpClientApiInfo> apis, SourceProductionContext context)
@@ -329,11 +332,10 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
 
         var httpClientName = $"{api.InterfaceName}_HttpClient";
         var timeoutSeconds = api.Timeout;
-        var timeoutMs = timeoutSeconds * 1000;
 
         codeBuilder.AppendLine($"            services.AddHttpClient(\"{httpClientName}\", client =>");
         codeBuilder.AppendLine($"            {{");
-        codeBuilder.AppendLine($"                client.Timeout = TimeSpan.FromMilliseconds({timeoutMs});");
+        codeBuilder.AppendLine($"                client.Timeout = TimeSpan.FromSeconds({timeoutSeconds});");
         // BaseAddress 应通过 AddMudHttpClient(clientName, baseAddress) 在运行时配置，此处不生成
         codeBuilder.AppendLine($"            }});");
         codeBuilder.AppendLine($"            services.AddTransient<{fullyQualifiedInterface}, {fullyQualifiedImplementation}>();");

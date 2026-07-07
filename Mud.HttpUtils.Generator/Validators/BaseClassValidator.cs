@@ -19,7 +19,7 @@ internal static class BaseClassValidator
     private static bool IsGeneratedClass(string baseClassName)
     {
         // Wrap 类是由代码生成器生成的，执行时无法看到
-        if (baseClassName.Contains("Wrap"))
+        if (baseClassName.EndsWith("Wrap", StringComparison.Ordinal))
             return true;
 
         // 如果基类名称不包含点（即没有命名空间），可能是生成的类（如 Internal 命名空间中的实现类）

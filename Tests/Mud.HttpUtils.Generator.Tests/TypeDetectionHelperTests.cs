@@ -98,6 +98,8 @@ public class TypeDetectionHelperTests
     [InlineData("string?", true)]
     [InlineData("String", true)]
     [InlineData("STRING", true)]
+    [InlineData("System.String", true)]
+    [InlineData("System.String?", true)]
     public void IsStringType_ValidStrings_ReturnsTrue(string typeName, bool expected)
     {
         TypeDetectionHelper.IsStringType(typeName).Should().Be(expected);
@@ -105,8 +107,8 @@ public class TypeDetectionHelperTests
 
     [Theory]
     [InlineData("int", false)]
-    [InlineData("System.String", false)]
     [InlineData("StringBuilder", false)]
+    [InlineData("System.Object", false)]
     public void IsStringType_NonStrings_ReturnsFalse(string typeName, bool expected)
     {
         TypeDetectionHelper.IsStringType(typeName).Should().Be(expected);
@@ -158,11 +160,14 @@ public class TypeDetectionHelperTests
         TypeDetectionHelper.IsNullableType(typeName).Should().Be(expected);
     }
 
-    [Fact]
-    public void IsNullableType_ContainsQuestionMarkAngleBracket_ReturnsTrue()
+    [Theory]
+    [InlineData("List<int>?")]
+    [InlineData("Dictionary<string, int>?")]
+    [InlineData("Response<User>?")]
+    public void IsNullableType_GenericNullableTypes_ReturnsTrue(string typeName)
     {
-        // Contains("?<") 检测像 SomeType?< 这样的泛型可空类型
-        TypeDetectionHelper.IsNullableType("SomeType?<").Should().BeTrue();
+        // 正确的泛型可空语法是 GenericType<T>?，而不是 SomeType?<
+        TypeDetectionHelper.IsNullableType(typeName).Should().BeTrue();
     }
 
     #endregion

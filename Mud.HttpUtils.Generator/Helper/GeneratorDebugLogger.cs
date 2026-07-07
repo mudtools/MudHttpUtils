@@ -13,13 +13,14 @@ namespace Mud.HttpUtils;
 /// 源生成器调试日志辅助类
 /// </summary>
 /// <remarks>
-/// 使用 [Conditional("DEBUG")] 确保 Release 构建中所有调用（包括字符串插值参数）
+/// Log 使用 [Conditional("DEBUG")] 确保 Release 构建中所有调用（包括字符串插值参数）
 /// 都会被编译器完全移除，避免热路径上的隐藏分配开销。
+/// LogError 不使用 [Conditional("DEBUG")]，确保 Release 构建中异常不会被静默吞噬。
 /// </remarks>
 internal static class GeneratorDebugLogger
 {
     /// <summary>
-    /// 记录调试日志
+    /// 记录调试日志（仅在 DEBUG 构建中生效）
     /// </summary>
     /// <param name="message">日志消息</param>
     [Conditional("DEBUG")]
@@ -29,13 +30,12 @@ internal static class GeneratorDebugLogger
     }
 
     /// <summary>
-    /// 记录错误日志
+    /// 记录错误日志（在所有构建配置中生效，使用 Trace 确保 Release 中也可输出）
     /// </summary>
     /// <param name="context">错误上下文描述</param>
     /// <param name="ex">异常对象</param>
-    [Conditional("DEBUG")]
     public static void LogError(string context, Exception ex)
     {
-        Debug.WriteLine($"[{context}] {ex.GetType().Name}: {ex.Message}");
+        Trace.WriteLine($"[GeneratorError][{context}] {ex.GetType().Name}: {ex.Message}");
     }
 }

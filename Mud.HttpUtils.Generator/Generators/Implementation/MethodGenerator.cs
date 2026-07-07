@@ -35,8 +35,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
             if (!isHttpMethod)
                 continue;
 
-            // 一次性分析方法并缓存结果，避免 AnalyzeMethod 被重复调用
-            var methodInfo = MethodAnalyzer.AnalyzeMethod(
+            // 一次性分析方法并缓存结果到 GeneratorContext.MethodAnalysisCache，避免 AnalyzeMethod 被重复调用
+            var methodInfo = context.GetOrAnalyzeMethod(
                 context.Compilation,
                 methodSymbol,
                 context.InterfaceDeclaration,
@@ -160,7 +160,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         if (needsTokenInjection)
         {
-            var injectionMode = methodInfo.InterfaceTokenInjectionMode;
+            var injectionMode = methodInfo.EffectiveTokenInjectionMode;
             var tokenParamName = methodInfo.TokenParameterName;
             var tokenParamHasHeader = methodInfo.Parameters
                 .FirstOrDefault(p => p.Name == tokenParamName)?
@@ -436,7 +436,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
             else
             {
                 codeBuilder.AppendLine($"            // 添加接口定义的Header: {interfaceHeader.Name}");
-                codeBuilder.AppendLine($"            __httpRequest.Headers.Add(\"{escapedHeaderName}\", \"{escapedHeaderValue}\");");
+                // 避免对不允许重复的 Header（如 Authorization）调用 Add 抛出 ArgumentException
+                codeBuilder.AppendLine($"            if (!__httpRequest.Headers.Contains(\"{escapedHeaderName}\"))");
+                codeBuilder.AppendLine($"                __httpRequest.Headers.Add(\"{escapedHeaderName}\", \"{escapedHeaderValue}\");");
             }
         }
     }
@@ -450,7 +452,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
         if (!hasTokenManager)
             return false;
 
-        if (!string.IsNullOrEmpty(methodInfo.InterfaceTokenInjectionMode))
+        if (!string.IsNullOrEmpty(methodInfo.MethodTokenInjectionMode) ||
+            !string.IsNullOrEmpty(methodInfo.InterfaceTokenInjectionMode))
             return true;
 
         return methodInfo.InterfaceAttributes?.Any(attr =>
@@ -460,28 +463,23 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
     private bool IsTokenHeaderMode(MethodAnalysisResult methodInfo)
     {
-        if (!string.IsNullOrEmpty(methodInfo.InterfaceTokenInjectionMode))
-            return methodInfo.InterfaceTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeHeader;
-
-        return methodInfo.InterfaceAttributes?.Any(attr => attr.StartsWith("Header:", StringComparison.Ordinal)) == true;
+        // 使用 EffectiveTokenInjectionMode 确保方法级 InjectionMode 优先于接口级
+        return methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeHeader;
     }
 
     private bool IsTokenApiKeyMode(MethodAnalysisResult methodInfo)
     {
-        return !string.IsNullOrEmpty(methodInfo.InterfaceTokenInjectionMode) &&
-               methodInfo.InterfaceTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeApiKey;
+        return methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeApiKey;
     }
 
     private bool IsTokenBasicAuthMode(MethodAnalysisResult methodInfo)
     {
-        return !string.IsNullOrEmpty(methodInfo.InterfaceTokenInjectionMode) &&
-               methodInfo.InterfaceTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeBasicAuth;
+        return methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeBasicAuth;
     }
 
     private bool IsTokenCookieMode(MethodAnalysisResult methodInfo)
     {
-        return !string.IsNullOrEmpty(methodInfo.InterfaceTokenInjectionMode) &&
-               methodInfo.InterfaceTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeCookie;
+        return methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeCookie;
     }
 
     private string GetTokenHeaderName(MethodAnalysisResult methodInfo)
@@ -521,7 +519,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
     /// </summary>
     private bool ShouldGenerateTokenRecoveryContext(GeneratorContext context, MethodAnalysisResult methodInfo)
     {
-        var injectionMode = methodInfo.InterfaceTokenInjectionMode ?? HttpClientGeneratorConstants.TokenInjectionModeHeader;
+        var injectionMode = methodInfo.EffectiveTokenInjectionMode;
 
         // Path 和 HmacSignature 模式不被恢复处理器支持，生成上下文无意义
         if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModePath ||
@@ -548,7 +546,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
     private void GenerateTokenRecoveryContext(StringBuilder codeBuilder, GeneratorContext context, MethodAnalysisResult methodInfo, string indent)
     {
-        var injectionMode = methodInfo.InterfaceTokenInjectionMode ?? HttpClientGeneratorConstants.TokenInjectionModeHeader;
+        var injectionMode = methodInfo.EffectiveTokenInjectionMode;
         var headerName = GetTokenHeaderName(methodInfo);
         var cookieName = !string.IsNullOrEmpty(methodInfo.InterfaceTokenName) ? methodInfo.InterfaceTokenName : "access_token";
         var requiresUserId = TokenMethodHelper.MethodRequiresUserId(context, methodInfo);
@@ -712,11 +710,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
     private static void ValidatePathParameters(GeneratorContext context, IMethodSymbol methodSymbol, MethodAnalysisResult methodInfo)
     {
-        var httpMethodAttr = MethodAnalyzer.FindHttpMethodAttributeFromSymbol(methodSymbol);
-        if (httpMethodAttr == null)
-            return;
-
-        var urlTemplate = MethodAnalyzer.GetAttributeArgumentValueFromAttributeData(httpMethodAttr, 0)?.ToString().Trim('"') ?? "";
+        var urlTemplate = methodInfo.UrlTemplate;
         if (string.IsNullOrEmpty(urlTemplate))
             return;
 
@@ -735,7 +729,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         // 不需要对应的 [Path] 参数，因此将 Token 占位符从缺失列表中排除
         // 使用已缓存的 methodInfo，避免重复调用 AnalyzeMethod
         var tokenPathPlaceholders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (methodInfo.IsValid && methodInfo.InterfaceTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModePath
+        if (methodInfo.IsValid && methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModePath
             && !string.IsNullOrEmpty(methodInfo.InterfaceTokenName))
         {
             tokenPathPlaceholders.Add(methodInfo.InterfaceTokenName);

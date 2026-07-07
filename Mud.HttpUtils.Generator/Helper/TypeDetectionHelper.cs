@@ -59,7 +59,9 @@ internal static class TypeDetectionHelper
     public static bool IsStringType(string typeName)
     {
         return typeName.Equals("string", StringComparison.OrdinalIgnoreCase) ||
-               typeName.Equals("string?", StringComparison.OrdinalIgnoreCase);
+               typeName.Equals("string?", StringComparison.OrdinalIgnoreCase) ||
+               typeName.Equals("System.String", StringComparison.Ordinal) ||
+               typeName.Equals("System.String?", StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -77,7 +79,6 @@ internal static class TypeDetectionHelper
     public static bool IsNullableType(string typeName)
     {
         return typeName.EndsWith("?", StringComparison.Ordinal) ||
-               typeName.Contains("?<") ||
                typeName.StartsWith("Nullable<", StringComparison.Ordinal);
     }
 
@@ -92,6 +93,7 @@ internal static class TypeDetectionHelper
             "int" or "long" or "float" or "double" or "decimal" or "bool"
             or "byte" or "sbyte" or "short" or "ushort" or "uint" or "ulong"
             or "char"
+            or "nint" or "nuint" or "System.IntPtr" or "System.UIntPtr" or "Half" or "System.Half"
             or "DateTime" or "System.DateTime"
             or "DateTimeOffset" or "System.DateTimeOffset"
             or "TimeSpan" or "System.TimeSpan"
@@ -124,7 +126,7 @@ internal static class TypeDetectionHelper
 
         var match = System.Text.RegularExpressions.Regex.Match(
             typeName,
-            @"^IAsyncEnumerable<(.+)>$",
+            @"^IAsyncEnumerable<(.+)>\??$",
             System.Text.RegularExpressions.RegexOptions.Compiled);
 
         if (match.Success)

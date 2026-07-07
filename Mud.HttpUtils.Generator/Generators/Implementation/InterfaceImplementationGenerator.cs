@@ -568,7 +568,7 @@ internal class InterfaceImplementationGenerator
             if (!isHttpMethod)
                 continue;
 
-            var methodInfo = MethodAnalyzer.AnalyzeMethod(
+            var methodInfo = context.GetOrAnalyzeMethod(
                 context.Compilation,
                 method,
                 context.InterfaceDeclaration,
