@@ -58,6 +58,7 @@ internal abstract class HttpInvokeBaseSourceGenerator : TransitiveCodeGenerator
                 predicate: static (node, _) => node is InterfaceDeclarationSyntax,
                 transform: static (ctx, _) => (InterfaceDeclarationSyntax)ctx.TargetNode)
             .Where(static s => s is not null)
+            .WithTrackingName("HttpInvokeBase_SyntaxProvider")
             .Collect();
 
         var compilationAndOptions = context.CompilationProvider

@@ -765,28 +765,22 @@
             <param name="context">源代码生成上下文</param>
             <returns>验证是否通过</returns>
         </member>
-        <member name="M:Mud.HttpUtils.FormContentGenerator.GenerateFormContentCode(Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax,Microsoft.CodeAnalysis.INamedTypeSymbol,System.Collections.Generic.List{Mud.HttpUtils.FormContentGenerator.PropertyInfo})">
+        <member name="M:Mud.HttpUtils.FormContentGenerator.GenerateFormContentCode(Microsoft.CodeAnalysis.CSharp.Syntax.ClassDeclarationSyntax,Microsoft.CodeAnalysis.INamedTypeSymbol,System.Collections.Generic.List{Mud.HttpUtils.FormContentGenerator.PropertyInfo},System.String)">
             <summary>
             生成 FormContent 代码
             </summary>
             <param name="classDecl">类声明语法</param>
             <param name="classSymbol">类符号</param>
             <param name="properties">属性信息列表</param>
+            <param name="byteArrayPropertyName">byte[] 属性名（如无则为 null）</param>
             <returns>生成的代码</returns>
         </member>
-        <member name="M:Mud.HttpUtils.FormContentGenerator.GetJsonPropertyProperties(Microsoft.CodeAnalysis.INamedTypeSymbol)">
+        <member name="M:Mud.HttpUtils.FormContentGenerator.GetPropertiesAndByteArrayName(Microsoft.CodeAnalysis.INamedTypeSymbol)">
             <summary>
-            获取所有标记了 [JsonPropertyName] 的属性信息，以及未标记但公开的属性。
+            一次性遍历基类链，收集属性信息和 byte[] 属性名
             </summary>
             <param name="classSymbol">类符号</param>
-            <returns>属性信息列表</returns>
-        </member>
-        <member name="M:Mud.HttpUtils.FormContentGenerator.GetByteArrayPropertyName(Microsoft.CodeAnalysis.INamedTypeSymbol)">
-            <summary>
-            查找类中 byte[] 类型的属性名
-            </summary>
-            <param name="classSymbol">类符号</param>
-            <returns>byte[] 属性名，如果没有则返回 null</returns>
+            <returns>属性信息列表和 byte[] 属性名（如无则为 null）</returns>
         </member>
         <member name="M:Mud.HttpUtils.FormContentGenerator.GetJsonPropertyName(Microsoft.CodeAnalysis.AttributeData)">
             <summary>
@@ -949,6 +943,16 @@
             <param name="defaultVal">默认值，当属性不存在或无法解析时返回此值</param>
             <returns>解析得到的整型值或默认值</returns>
         </member>
+        <member name="M:Mud.HttpUtils.AttributeDataHelper.GetAttributeIntValue(Microsoft.CodeAnalysis.AttributeData,System.Int32,System.String,System.Int32)">
+            <summary>
+            从特性中获取整型值，构造函数参数优先于命名参数。
+            </summary>
+            <param name="attribute">特性数据</param>
+            <param name="constructorParameterIndex">构造函数参数索引（-1 表示不检查构造函数）</param>
+            <param name="propertyName">命名参数名称</param>
+            <param name="defaultValue">默认值</param>
+            <returns>整型值：优先返回构造函数参数，其次命名参数，最后默认值</returns>
+        </member>
         <member name="M:Mud.HttpUtils.AttributeDataHelper.GetStringValueFromSymbol(Microsoft.CodeAnalysis.ISymbol,System.String[],System.String,System.String)">
             <summary>
             从<see cref="T:Microsoft.CodeAnalysis.ISymbol"/>对象中获取指定特性的属性值。
@@ -1108,6 +1112,28 @@
             报告无效的RegistryGroupName诊断信息
             </summary>
         </member>
+        <member name="T:Mud.HttpUtils.GeneratorDebugLogger">
+            <summary>
+            源生成器调试日志辅助类
+            </summary>
+            <remarks>
+            使用 [Conditional("DEBUG")] 确保 Release 构建中所有调用（包括字符串插值参数）
+            都会被编译器完全移除，避免热路径上的隐藏分配开销。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.GeneratorDebugLogger.Log(System.String)">
+            <summary>
+            记录调试日志
+            </summary>
+            <param name="message">日志消息</param>
+        </member>
+        <member name="M:Mud.HttpUtils.GeneratorDebugLogger.LogError(System.String,System.Exception)">
+            <summary>
+            记录错误日志
+            </summary>
+            <param name="context">错误上下文描述</param>
+            <param name="ex">异常对象</param>
+        </member>
         <member name="M:Mud.HttpUtils.ProjectConfigHelper.ReadConfigValue(Microsoft.CodeAnalysis.Diagnostics.AnalyzerConfigOptions,System.String,System.String)">
             <summary>
             从项目配置中读取指定的配置信息。
@@ -1149,8 +1175,12 @@
             语义模型缓存管理器，提供线程安全的语义模型缓存功能
             </summary>
             <remarks>
-            使用嵌套 ConditionalWeakTable 实现缓存，以 Compilation 为主键确保 Compilation 变化时缓存自动失效，
-            避免增量编译场景下返回过期的 SemanticModel。当 Compilation 被 GC 回收时，关联的缓存也会自动释放。
+            使用嵌套 ConditionalWeakTable + ConcurrentDictionary 实现缓存：
+            - 外层以 Compilation 为主键的 ConditionalWeakTable，确保 Compilation 变化时缓存自动失效，
+              避免 Incremental 编译场景下返回过期的 SemanticModel；Compilation 被 GC 回收时关联缓存自动释放。
+            - 内层以 SyntaxTree 为键的 ConcurrentDictionary，利用 GetOrAdd 原子操作消除 TOCTOU 竞态。
+              每个 Compilation 持有独立的内层字典，避免跨 Compilation 的 SemanticModel 串用，
+              因此原 ConditionalWeakTable 实现中的 model.Compilation == compilation 校验不再必要。
             </remarks>
         </member>
         <member name="M:Mud.HttpUtils.SemanticModelCache.GetOrCreate(Microsoft.CodeAnalysis.Compilation,Microsoft.CodeAnalysis.SyntaxTree)">
@@ -1445,6 +1475,16 @@
             </summary>
             <param name="typeSymbol">类型符号</param>
             <returns>公共属性列表</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.TypeSymbolHelper.IsResponseType(System.String)">
+            <summary>
+            判断类型名称是否为 Response&lt;T&gt; 类型
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.TypeSymbolHelper.ExtractResponseInnerType(System.String)">
+            <summary>
+            从 Response&lt;T&gt; 类型名称中提取内部类型 T
+            </summary>
         </member>
         <member name="T:Mud.HttpUtils.Models.Analysis.InterfaceHeaderAttributeInfo">
             <summary>

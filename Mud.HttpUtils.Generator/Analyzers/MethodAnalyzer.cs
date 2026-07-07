@@ -5,6 +5,8 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using System.Collections.Concurrent;
+
 namespace Mud.HttpUtils.Analyzers;
 
 /// <summary>
@@ -382,34 +384,44 @@ internal static class MethodAnalyzer
             return null;
 
         var allInterfaces = GetAllBaseInterfaceSyntaxNodes(compilation, interfaceDecl, semanticModel);
+        var targetName = methodSymbol.Name;
+        var targetParamCount = methodSymbol.Parameters.Length;
 
         foreach (var interfaceSyntax in allInterfaces)
         {
-            var method = interfaceSyntax.Members
+            // 先用廉价的名称和参数数量过滤候选集，避免对每个方法都调用昂贵的 GetDeclaredSymbol
+            var candidates = interfaceSyntax.Members
                 .OfType<MethodDeclarationSyntax>()
-                .FirstOrDefault(m =>
+                .Where(m => m.Identifier.Text == targetName &&
+                            m.ParameterList.Parameters.Count == targetParamCount)
+                .ToList();
+
+            if (candidates.Count == 0)
+                continue;
+
+            // 仅对候选方法进行语义分析确认
+            foreach (var candidate in candidates)
+            {
+                try
                 {
-                    try
+                    var model = SemanticModelCache.GetOrCreate(compilation, candidate.SyntaxTree);
+                    var methodSymbolFromSyntax = model.GetDeclaredSymbol(candidate);
+                    var targetSymbol = methodSymbolFromSyntax?.OriginalDefinition ?? methodSymbolFromSyntax;
+                    var sourceSymbol = methodSymbol.OriginalDefinition ?? methodSymbol;
+                    if (targetSymbol?.Equals(sourceSymbol, SymbolEqualityComparer.Default) == true)
                     {
-                        var model = SemanticModelCache.GetOrCreate(compilation, m.SyntaxTree);
-                        var methodSymbolFromSyntax = model.GetDeclaredSymbol(m);
-                        var targetSymbol = methodSymbolFromSyntax?.OriginalDefinition ?? methodSymbolFromSyntax;
-                        var sourceSymbol = methodSymbol.OriginalDefinition ?? methodSymbol;
-                        if (targetSymbol?.Equals(sourceSymbol, SymbolEqualityComparer.Default) == true)
-                        {
-                            return true;
-                        }
+                        return candidate;
                     }
-                    catch
-                    {
-                    }
+                }
+                catch (Exception ex)
+                {
+                    // 语义分析失败，继续尝试下一个候选
+                    GeneratorDebugLogger.LogError("FindMethodSyntax 语义分析", ex);
+                }
+            }
 
-                    return m.Identifier.Text == methodSymbol.Name &&
-                           m.ParameterList.Parameters.Count == methodSymbol.Parameters.Length;
-                });
-
-            if (method != null)
-                return method;
+            // 语义分析未精确匹配，回退到第一个候选（名称和参数数量已匹配）
+            return candidates[0];
         }
 
         return null;
@@ -447,7 +459,7 @@ internal static class MethodAnalyzer
         }
     }
 
-    private static readonly ConditionalWeakTable<Compilation, Dictionary<INamedTypeSymbol, InterfaceDeclarationSyntax?>> _interfaceSyntaxCache = new();
+    private static readonly ConditionalWeakTable<Compilation, ConcurrentDictionary<INamedTypeSymbol, InterfaceDeclarationSyntax?>> _interfaceSyntaxCache = new();
 
     /// <summary>
     /// 获取接口声明语法节点
@@ -456,13 +468,10 @@ internal static class MethodAnalyzer
         Compilation compilation,
         INamedTypeSymbol interfaceSymbol)
     {
-        var innerDict = _interfaceSyntaxCache.GetOrCreateValue(compilation);
-        if (innerDict.TryGetValue(interfaceSymbol, out var cached))
-            return cached;
-
-        var result = FindInterfaceDeclarationSyntax(compilation, interfaceSymbol);
-        innerDict[interfaceSymbol] = result;
-        return result;
+        var innerDict = _interfaceSyntaxCache.GetValue(
+            compilation,
+            _ => new ConcurrentDictionary<INamedTypeSymbol, InterfaceDeclarationSyntax?>(SymbolEqualityComparer.Default));
+        return innerDict.GetOrAdd(interfaceSymbol, symbol => FindInterfaceDeclarationSyntax(compilation, symbol));
     }
 
     /// <summary>
@@ -480,6 +489,10 @@ internal static class MethodAnalyzer
                 return interfaceDecl;
             }
         }
+
+        // 回退路径：DeclaringSyntaxReferences 未找到，可能是跨程序集接口
+        // 遍历所有语法树开销较大，记录日志帮助定位问题
+        GeneratorDebugLogger.Log($"FindInterfaceDeclarationSyntax 回退路径触发: {interfaceSymbol.ToDisplayString()} (DeclaringSyntaxReferences 为空)");
 
         var interfaceName = interfaceSymbol.Name;
         foreach (var syntaxTree in compilation.SyntaxTrees)
@@ -952,14 +965,8 @@ internal static class MethodAnalyzer
         if (cacheAttr == null)
             return (false, 300, null, false);
 
-        var durationSeconds = AttributeDataHelper.GetIntValueFromAttribute(
-            cacheAttr, HttpClientGeneratorConstants.CacheDurationSecondsProperty, 300);
-
-        if (cacheAttr.ConstructorArguments.Length > 0 &&
-            cacheAttr.ConstructorArguments[0].Value is int constructorDuration)
-        {
-            durationSeconds = constructorDuration;
-        }
+        var durationSeconds = AttributeDataHelper.GetAttributeIntValue(
+            cacheAttr, 0, HttpClientGeneratorConstants.CacheDurationSecondsProperty, 300);
 
         var keyTemplate = AttributeDataHelper.GetStringValueFromAttribute(
             cacheAttr, [HttpClientGeneratorConstants.CacheKeyTemplateProperty]);
@@ -978,14 +985,8 @@ internal static class MethodAnalyzer
         if (retryAttr == null)
             return (false, 3, 1000, true);
 
-        var maxRetries = AttributeDataHelper.GetIntValueFromAttribute(
-            retryAttr, HttpClientGeneratorConstants.RetryMaxRetriesProperty, 3);
-
-        if (retryAttr.ConstructorArguments.Length > 0 &&
-            retryAttr.ConstructorArguments[0].Value is int constructorMaxRetries)
-        {
-            maxRetries = constructorMaxRetries;
-        }
+        var maxRetries = AttributeDataHelper.GetAttributeIntValue(
+            retryAttr, 0, HttpClientGeneratorConstants.RetryMaxRetriesProperty, 3);
 
         var delayMilliseconds = AttributeDataHelper.GetIntValueFromAttribute(
             retryAttr, HttpClientGeneratorConstants.RetryDelayMillisecondsProperty, 1000);
@@ -1004,14 +1005,8 @@ internal static class MethodAnalyzer
         if (cbAttr == null)
             return (false, 5, 30, 0, 10);
 
-        var failureThreshold = AttributeDataHelper.GetIntValueFromAttribute(
-            cbAttr, HttpClientGeneratorConstants.CircuitBreakerFailureThresholdProperty, 5);
-
-        if (cbAttr.ConstructorArguments.Length > 0 &&
-            cbAttr.ConstructorArguments[0].Value is int constructorThreshold)
-        {
-            failureThreshold = constructorThreshold;
-        }
+        var failureThreshold = AttributeDataHelper.GetAttributeIntValue(
+            cbAttr, 0, HttpClientGeneratorConstants.CircuitBreakerFailureThresholdProperty, 5);
 
         var breakDurationSeconds = AttributeDataHelper.GetIntValueFromAttribute(
             cbAttr, HttpClientGeneratorConstants.CircuitBreakerBreakDurationSecondsProperty, 30);

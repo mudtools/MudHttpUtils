@@ -105,7 +105,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         if (isAbstract)
             return null;
 
-        var (_, timeout) = ExtractAttributeParameters(httpClientApiAttribute);
+        var timeout = ExtractTimeoutParameter(httpClientApiAttribute);
 
         var registryGroupName = AttributeDataHelper.GetStringValueFromAttribute(httpClientApiAttribute, HttpClientGeneratorConstants.RegistryGroupNameProperty);
 
@@ -136,10 +136,9 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
             tokenManagerType);
     }
 
-    private (string BaseUrl, int Timeout) ExtractAttributeParameters(AttributeData httpClientApiAttribute)
+    private int ExtractTimeoutParameter(AttributeData httpClientApiAttribute)
     {
-        var timeout = AttributeDataHelper.GetIntValueFromAttribute(httpClientApiAttribute, HttpClientGeneratorConstants.TimeoutProperty, 100);
-        return (string.Empty, timeout);
+        return AttributeDataHelper.GetIntValueFromAttribute(httpClientApiAttribute, HttpClientGeneratorConstants.TimeoutProperty, 100);
     }
 
 
@@ -335,10 +334,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         codeBuilder.AppendLine($"            services.AddHttpClient(\"{httpClientName}\", client =>");
         codeBuilder.AppendLine($"            {{");
         codeBuilder.AppendLine($"                client.Timeout = TimeSpan.FromMilliseconds({timeoutMs});");
-        if (!string.IsNullOrEmpty(api.BaseUrl))
-        {
-            codeBuilder.AppendLine($"                client.BaseAddress = new Uri(\"{api.BaseUrl}\");");
-        }
+        // BaseAddress 应通过 AddMudHttpClient(clientName, baseAddress) 在运行时配置，此处不生成
         codeBuilder.AppendLine($"            }});");
         codeBuilder.AppendLine($"            services.AddTransient<{fullyQualifiedInterface}, {fullyQualifiedImplementation}>();");
     }

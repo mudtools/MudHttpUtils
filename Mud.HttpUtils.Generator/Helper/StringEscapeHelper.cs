@@ -76,16 +76,18 @@ internal static class StringEscapeHelper
                 // 验证内部是否包含相同的未转义引号
                 var innerContent = eventType.Substring(1, eventType.Length - 2);
                 if (!innerContent.Contains(quote))
-                    return eventType; // 合法字面量
-                else
-                    // 包含未转义的引号，需要转义
-                    eventType = innerContent.Replace(quote.ToString(), $"\\{quote}");
+                    return eventType; // 合法字面量，直接返回
+
+                // 内部包含引号，需要转义后重新包装
+                // 注意：对内部内容进行完整转义（包括引号），但不调用 EscapeString 对已转义结果再次转义
+                var escapedInner = EscapeString(innerContent);
+                // 使用双引号包装，内部的双引号已被 EscapeString 转义
+                return $"\"{escapedInner}\"";
             }
         }
 
         // 转义特殊字符并包装成字符串字面量
         eventType = EscapeString(eventType);
-
         return $"\"{eventType}\"";
     }
 }

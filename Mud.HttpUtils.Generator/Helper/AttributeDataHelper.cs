@@ -30,6 +30,35 @@ internal static class AttributeDataHelper
     }
 
     /// <summary>
+    /// 从特性中获取整型值，构造函数参数优先于命名参数。
+    /// </summary>
+    /// <param name="attribute">特性数据</param>
+    /// <param name="constructorParameterIndex">构造函数参数索引（-1 表示不检查构造函数）</param>
+    /// <param name="propertyName">命名参数名称</param>
+    /// <param name="defaultValue">默认值</param>
+    /// <returns>整型值：优先返回构造函数参数，其次命名参数，最后默认值</returns>
+    public static int GetAttributeIntValue(
+        AttributeData attribute,
+        int constructorParameterIndex,
+        string propertyName,
+        int defaultValue)
+    {
+        if (attribute == null)
+            return defaultValue;
+
+        // 先检查构造函数参数（优先级更高）
+        if (constructorParameterIndex >= 0 &&
+            attribute.ConstructorArguments.Length > constructorParameterIndex &&
+            attribute.ConstructorArguments[constructorParameterIndex].Value is int constructorValue)
+        {
+            return constructorValue;
+        }
+
+        // 再检查命名参数
+        return GetIntValueFromAttribute(attribute, propertyName, defaultValue);
+    }
+
+    /// <summary>
     /// 从<see cref="ISymbol"/>对象中获取指定特性的属性值。
     /// </summary>
     /// <param name="typeSymbol"><see cref="ISymbol"/>对象</param>

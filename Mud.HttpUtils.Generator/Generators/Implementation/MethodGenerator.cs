@@ -120,7 +120,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
         if (!ValidateHttpClientCompatibility(context, methodInfo))
             return;
 
-        if (methodInfo.CacheEnabled && IsResponseType(methodInfo))
+        if (methodInfo.CacheEnabled && TypeSymbolHelper.IsResponseType(
+                methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType))
         {
             var methodSyntax = methodSymbol.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
             var location = methodSyntax?.GetLocation() ?? context.InterfaceDeclaration.GetLocation();
@@ -424,19 +425,20 @@ internal class MethodGenerator : ICodeFragmentGenerator
             }
 
             var headerValue = interfaceHeader.Value?.ToString() ?? "null";
-            var escapedHeaderValue = headerValue.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            var escapedHeaderName = StringEscapeHelper.EscapeString(interfaceHeader.Name);
+            var escapedHeaderValue = StringEscapeHelper.EscapeString(headerValue);
 
             if (interfaceHeader.Replace)
             {
                 codeBuilder.AppendLine($"            // 替换接口定义的Header: {interfaceHeader.Name}");
-                codeBuilder.AppendLine($"            if (__httpRequest.Headers.Contains(\"{interfaceHeader.Name}\"))");
-                codeBuilder.AppendLine($"                __httpRequest.Headers.Remove(\"{interfaceHeader.Name}\");");
-                codeBuilder.AppendLine($"            __httpRequest.Headers.Add(\"{interfaceHeader.Name}\", \"{escapedHeaderValue}\");");
+                codeBuilder.AppendLine($"            if (__httpRequest.Headers.Contains(\"{escapedHeaderName}\"))");
+                codeBuilder.AppendLine($"                __httpRequest.Headers.Remove(\"{escapedHeaderName}\");");
+                codeBuilder.AppendLine($"            __httpRequest.Headers.Add(\"{escapedHeaderName}\", \"{escapedHeaderValue}\");");
             }
             else
             {
                 codeBuilder.AppendLine($"            // 添加接口定义的Header: {interfaceHeader.Name}");
-                codeBuilder.AppendLine($"            __httpRequest.Headers.Add(\"{interfaceHeader.Name}\", \"{escapedHeaderValue}\");");
+                codeBuilder.AppendLine($"            __httpRequest.Headers.Add(\"{escapedHeaderName}\", \"{escapedHeaderValue}\");");
             }
         }
     }
@@ -497,7 +499,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
         if (IsTokenHeaderMode(methodInfo) || IsTokenApiKeyMode(methodInfo))
         {
             var headerName = GetTokenHeaderName(methodInfo);
-            codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"{headerName}\", access_token);");
+            var escapedHeaderName = StringEscapeHelper.EscapeString(headerName);
+            codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"{escapedHeaderName}\", access_token);");
         }
         else if (IsTokenBasicAuthMode(methodInfo))
         {
@@ -506,7 +509,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
         else if (IsTokenCookieMode(methodInfo))
         {
             var cookieName = !string.IsNullOrEmpty(methodInfo.InterfaceTokenName) ? methodInfo.InterfaceTokenName : "access_token";
-            codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"Cookie\", \"{cookieName}=\" + access_token);");
+            var escapedCookieName = StringEscapeHelper.EscapeString(cookieName);
+            codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"Cookie\", \"{escapedCookieName}=\" + access_token);");
         }
 
         if (ShouldGenerateTokenRecoveryContext(methodInfo))
@@ -552,6 +556,11 @@ internal class MethodGenerator : ICodeFragmentGenerator
         var requiresUserId = TokenMethodHelper.MethodRequiresUserId(_context, methodInfo);
         var userIdExpr = requiresUserId ? "_currentUserContext.UserId" : "null";
 
+        // 对所有插入字符串字面量的用户输入进行转义，防止生成代码编译失败
+        var escapedHeaderName = StringEscapeHelper.EscapeString(headerName);
+        var escapedCookieName = StringEscapeHelper.EscapeString(cookieName);
+        var escapedTokenScheme = StringEscapeHelper.EscapeString(injectionMode == "BasicAuth" ? "Basic" : "Bearer");
+
         var injectionModeValue = injectionMode switch
         {
             "Header" => "TokenInjectionMode.Header",
@@ -564,39 +573,36 @@ internal class MethodGenerator : ICodeFragmentGenerator
             _ => "TokenInjectionMode.Header"
         };
 
-        var tokenScheme = injectionMode switch
-        {
-            "BasicAuth" => "Basic",
-            _ => "Bearer"
-        };
-
         // Query 模式需要 QueryParameterName 才能在恢复时重新注入查询参数
         string? queryParamName = null;
+        string? escapedQueryParamName = null;
         if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModeQuery)
         {
             queryParamName = _requestBuilder.GetTokenQueryName(methodInfo);
+            if (queryParamName != null)
+                escapedQueryParamName = StringEscapeHelper.EscapeString(queryParamName);
         }
 
         codeBuilder.AppendLine($"{indent}#if NETSTANDARD2_0");
         codeBuilder.AppendLine($"{indent}__httpRequest.Properties[\"__Mud_HttpUtils_TokenRecoveryContext\"] = new Mud.HttpUtils.TokenRecoveryContext");
         codeBuilder.AppendLine($"{indent}{{");
         codeBuilder.AppendLine($"{indent}    InjectionMode = {injectionModeValue},");
-        codeBuilder.AppendLine($"{indent}    HeaderName = \"{headerName}\",");
-        codeBuilder.AppendLine($"{indent}    TokenScheme = \"{tokenScheme}\",");
-        codeBuilder.AppendLine($"{indent}    CookieName = \"{cookieName}\",");
-        if (queryParamName != null)
-            codeBuilder.AppendLine($"{indent}    QueryParameterName = \"{queryParamName}\",");
+        codeBuilder.AppendLine($"{indent}    HeaderName = \"{escapedHeaderName}\",");
+        codeBuilder.AppendLine($"{indent}    TokenScheme = \"{escapedTokenScheme}\",");
+        codeBuilder.AppendLine($"{indent}    CookieName = \"{escapedCookieName}\",");
+        if (escapedQueryParamName != null)
+            codeBuilder.AppendLine($"{indent}    QueryParameterName = \"{escapedQueryParamName}\",");
         codeBuilder.AppendLine($"{indent}    UserId = {userIdExpr}");
         codeBuilder.AppendLine($"{indent}}};");
         codeBuilder.AppendLine($"{indent}#else");
         codeBuilder.AppendLine($"{indent}__httpRequest.Options.TryAdd(\"__Mud_HttpUtils_TokenRecoveryContext\", new Mud.HttpUtils.TokenRecoveryContext");
         codeBuilder.AppendLine($"{indent}{{");
         codeBuilder.AppendLine($"{indent}    InjectionMode = {injectionModeValue},");
-        codeBuilder.AppendLine($"{indent}    HeaderName = \"{headerName}\",");
-        codeBuilder.AppendLine($"{indent}    TokenScheme = \"{tokenScheme}\",");
-        codeBuilder.AppendLine($"{indent}    CookieName = \"{cookieName}\",");
-        if (queryParamName != null)
-            codeBuilder.AppendLine($"{indent}    QueryParameterName = \"{queryParamName}\",");
+        codeBuilder.AppendLine($"{indent}    HeaderName = \"{escapedHeaderName}\",");
+        codeBuilder.AppendLine($"{indent}    TokenScheme = \"{escapedTokenScheme}\",");
+        codeBuilder.AppendLine($"{indent}    CookieName = \"{escapedCookieName}\",");
+        if (escapedQueryParamName != null)
+            codeBuilder.AppendLine($"{indent}    QueryParameterName = \"{escapedQueryParamName}\",");
         codeBuilder.AppendLine($"{indent}    UserId = {userIdExpr}");
         codeBuilder.AppendLine($"{indent}}});");
         codeBuilder.AppendLine($"{indent}#endif");
@@ -706,14 +712,6 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 !TypeDetectionHelper.IsSimpleType(TypeSymbolHelper.GetTypeFullName(p.Type)));
     }
 
-    private static bool IsResponseType(MethodAnalysisResult methodInfo)
-    {
-        var type = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
-        return type.StartsWith("Response<", StringComparison.Ordinal) ||
-               type.StartsWith("Mud.HttpUtils.Response<", StringComparison.Ordinal) ||
-               type.StartsWith("Mud.HttpUtils.HttpClient.Response<", StringComparison.Ordinal);
-    }
-
     private static void ValidatePathParameters(GeneratorContext context, IMethodSymbol methodSymbol, MethodAnalysisResult methodInfo)
     {
         var httpMethodAttr = MethodAnalyzer.FindHttpMethodAttributeFromSymbol(methodSymbol);
@@ -793,21 +791,6 @@ internal class MethodGenerator : ICodeFragmentGenerator
             }
         }
         return placeholders;
-    }
-
-    private static string? ExtractResponseInnerType(string responseType)
-    {
-        var prefix = "Response<";
-        var startIndex = responseType.IndexOf(prefix, StringComparison.Ordinal);
-        if (startIndex < 0)
-            return null;
-
-        startIndex += prefix.Length;
-        var endIndex = responseType.LastIndexOf('>');
-        if (endIndex <= startIndex)
-            return null;
-
-        return responseType.Substring(startIndex, endIndex - startIndex);
     }
 
 }

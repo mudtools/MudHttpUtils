@@ -39,7 +39,8 @@ internal class FormContentGenerator : TransitiveCodeGenerator
         var formContentClasses = context.SyntaxProvider.ForAttributeWithMetadataName(
             "Mud.HttpUtils.Attributes.FormContentAttribute",
             predicate: static (node, _) => node is ClassDeclarationSyntax,
-            transform: static (ctx, _) => ctx);
+            transform: static (ctx, _) => ctx)
+            .WithTrackingName("FormContent_SyntaxProvider");
 
         var collected = formContentClasses.Collect();
 
@@ -86,8 +87,8 @@ internal class FormContentGenerator : TransitiveCodeGenerator
                     continue;
                 }
 
-                // 获取所有标记了 [JsonPropertyName] 的属性
-                var properties = GetJsonPropertyProperties(classSymbol);
+                // 一次性遍历基类链，收集属性信息和 byte[] 属性名
+                var (properties, byteArrayPropertyName) = GetPropertiesAndByteArrayName(classSymbol);
 
                 // 验证 [FilePath] 属性数量
                 if (!ValidateFilePathAttribute(classSymbol, properties, context))
@@ -97,7 +98,7 @@ internal class FormContentGenerator : TransitiveCodeGenerator
                 }
 
                 // 生成代码
-                var generatedCode = GenerateFormContentCode(classDecl, classSymbol, properties);
+                var generatedCode = GenerateFormContentCode(classDecl, classSymbol, properties, byteArrayPropertyName);
 
                 if (!string.IsNullOrEmpty(generatedCode))
                 {
@@ -163,19 +164,18 @@ internal class FormContentGenerator : TransitiveCodeGenerator
     /// <param name="classDecl">类声明语法</param>
     /// <param name="classSymbol">类符号</param>
     /// <param name="properties">属性信息列表</param>
+    /// <param name="byteArrayPropertyName">byte[] 属性名（如无则为 null）</param>
     /// <returns>生成的代码</returns>
     private string GenerateFormContentCode(
         ClassDeclarationSyntax classDecl,
         INamedTypeSymbol classSymbol,
-        List<PropertyInfo> properties)
+        List<PropertyInfo> properties,
+        string? byteArrayPropertyName)
     {
         var namespaceName = classSymbol.ContainingNamespace?.IsGlobalNamespace == true
             ? null
             : classSymbol.ContainingNamespace?.ToDisplayString();
         var className = classSymbol.Name;
-
-        // 查找 byte[] 类型的属性名
-        var byteArrayPropertyName = GetByteArrayPropertyName(classSymbol);
 
         var sb = new StringBuilder();
 
@@ -201,14 +201,15 @@ internal class FormContentGenerator : TransitiveCodeGenerator
     }
 
     /// <summary>
-    /// 获取所有标记了 [JsonPropertyName] 的属性信息，以及未标记但公开的属性。
+    /// 一次性遍历基类链，收集属性信息和 byte[] 属性名
     /// </summary>
     /// <param name="classSymbol">类符号</param>
-    /// <returns>属性信息列表</returns>
-    private List<PropertyInfo> GetJsonPropertyProperties(INamedTypeSymbol classSymbol)
+    /// <returns>属性信息列表和 byte[] 属性名（如无则为 null）</returns>
+    private (List<PropertyInfo> properties, string? byteArrayPropertyName) GetPropertiesAndByteArrayName(INamedTypeSymbol classSymbol)
     {
         var properties = new List<PropertyInfo>();
         var seenNames = new HashSet<string>(StringComparer.Ordinal);
+        string? byteArrayPropertyName = null;
 
         // 遍历基类链，收集当前类及所有父类的公开属性
         var current = classSymbol;
@@ -229,6 +230,14 @@ internal class FormContentGenerator : TransitiveCodeGenerator
                 // 去重：同名属性只保留第一个（派生类优先）
                 if (!seenNames.Add(propertySymbol.Name))
                     continue;
+
+                // 检查 byte[] 类型（仅记录第一个匹配的）
+                if (byteArrayPropertyName == null &&
+                    propertySymbol.Type is IArrayTypeSymbol arrayType &&
+                    arrayType.ElementType.SpecialType == SpecialType.System_Byte)
+                {
+                    byteArrayPropertyName = propertySymbol.Name;
+                }
 
                 var jsonPropertyAttr = propertySymbol.GetAttributes()
                     .FirstOrDefault(a => a.AttributeClass?.Name == JsonPropertyNameAttributeName);
@@ -253,40 +262,7 @@ internal class FormContentGenerator : TransitiveCodeGenerator
             current = current.BaseType;
         }
 
-        return properties;
-    }
-
-    /// <summary>
-    /// 查找类中 byte[] 类型的属性名
-    /// </summary>
-    /// <param name="classSymbol">类符号</param>
-    /// <returns>byte[] 属性名，如果没有则返回 null</returns>
-    private string? GetByteArrayPropertyName(INamedTypeSymbol classSymbol)
-    {
-        // 遍历基类链查找 byte[] 属性
-        var current = classSymbol;
-        while (current != null && current.SpecialType != SpecialType.System_Object)
-        {
-            foreach (var propertySymbol in current.GetMembers().OfType<IPropertySymbol>())
-            {
-                if (propertySymbol.DeclaredAccessibility != Accessibility.Public)
-                    continue;
-
-                if (propertySymbol.IsStatic || propertySymbol.IsIndexer)
-                    continue;
-
-                // 判断是否为 byte[] 类型
-                if (propertySymbol.Type is IArrayTypeSymbol arrayType &&
-                    arrayType.ElementType.SpecialType == SpecialType.System_Byte)
-                {
-                    return propertySymbol.Name;
-                }
-            }
-
-            current = current.BaseType;
-        }
-
-        return null;
+        return (properties, byteArrayPropertyName);
     }
 
     /// <summary>

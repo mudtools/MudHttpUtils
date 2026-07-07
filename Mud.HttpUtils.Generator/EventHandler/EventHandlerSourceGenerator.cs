@@ -34,7 +34,8 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
         var eventHandlerClasses = context.SyntaxProvider.ForAttributeWithMetadataName(
             "Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute",
             predicate: static (node, _) => node is ClassDeclarationSyntax,
-            transform: static (ctx, _) => ctx);
+            transform: static (ctx, _) => ctx)
+            .WithTrackingName("EventHandler_SyntaxProvider");
 
         var collected = eventHandlerClasses.Collect();
 
@@ -397,6 +398,16 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
         AttributeData eventHandlerAttribute)
     {
         var className = GetGeneratedClassName(eventClass, eventHandlerAttribute);
+
+        // 包含命名空间信息确保全局唯一，避免不同命名空间下同名类产生文件名冲突
+        var containingNamespace = classSymbol.ContainingNamespace;
+        if (containingNamespace != null && !containingNamespace.IsGlobalNamespace)
+        {
+            var namespaceDisplay = containingNamespace.ToDisplayString();
+            // 将命名空间中的 . 替换为 _，确保文件名合法
+            var safeNamespace = namespaceDisplay.Replace('.', '_');
+            return $"{safeNamespace}_{className}.g.cs";
+        }
 
         return $"{className}.g.cs";
     }

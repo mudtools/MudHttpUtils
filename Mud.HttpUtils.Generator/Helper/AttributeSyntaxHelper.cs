@@ -116,7 +116,7 @@ internal static class AttributeSyntaxHelper
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"语义模型提取失败: {ex.Message}");
+                GeneratorDebugLogger.LogError("语义模型提取失败", ex);
             }
         }
 
@@ -252,7 +252,7 @@ internal static class AttributeSyntaxHelper
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"提取语法值时发生错误: {ex.Message}");
+            GeneratorDebugLogger.LogError("提取语法值", ex);
             return expression.ToString();
         }
     }

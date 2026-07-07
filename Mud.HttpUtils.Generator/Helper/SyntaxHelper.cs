@@ -1,4 +1,4 @@
-﻿// -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
 //  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
@@ -21,22 +21,19 @@ internal static class SyntaxHelper
     {
         result = null;
         if (syntaxNode == null)
-        {
             return false;
-        }
 
-        syntaxNode = syntaxNode.Parent;
-        if (syntaxNode == null)
+        var current = syntaxNode.Parent;
+        while (current != null)
         {
-            return false;
+            if (current is T typedNode)
+            {
+                result = typedNode;
+                return true;
+            }
+            current = current.Parent;
         }
-
-        if (syntaxNode.GetType() == typeof(T))
-        {
-            result = syntaxNode as T;
-            return true;
-        }
-        return TryGetParentSyntax(syntaxNode, out result);
+        return false;
     }
 
     /// <summary>

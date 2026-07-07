@@ -143,10 +143,11 @@ internal static class TypeSymbolHelper
         {
             return interfaceSymbol.AllInterfaces;
         }
-        catch
+        catch (Exception ex)
         {
             // 如果无法访问AllInterfaces属性（例如符号未完全解析），返回null
             // 在设计时这是安全的，因为编译时会重新检查
+            GeneratorDebugLogger.LogError("SafeGetAllInterfaces", ex);
             return null;
         }
     }
@@ -209,10 +210,11 @@ internal static class TypeSymbolHelper
                     return true;
             }
         }
-        catch
+        catch (Exception ex)
         {
             // 如果在设计时无法解析接口符号，返回false以继续处理
             // 编译时会重新检查
+            GeneratorDebugLogger.LogError("ShouldExcludeInterface", ex);
         }
 
         return false;
@@ -687,5 +689,37 @@ internal static class TypeSymbolHelper
             .OfType<IPropertySymbol>()
             .Where(property => property.DeclaredAccessibility == Accessibility.Public);
     }
+    #endregion
+
+    #region Response 类型处理
+
+    /// <summary>
+    /// 判断类型名称是否为 Response&lt;T&gt; 类型
+    /// </summary>
+    public static bool IsResponseType(string typeName)
+    {
+        return typeName.StartsWith("Response<", StringComparison.Ordinal) ||
+               typeName.StartsWith("Mud.HttpUtils.Response<", StringComparison.Ordinal) ||
+               typeName.StartsWith("Mud.HttpUtils.HttpClient.Response<", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 从 Response&lt;T&gt; 类型名称中提取内部类型 T
+    /// </summary>
+    public static string? ExtractResponseInnerType(string responseType)
+    {
+        var prefix = "Response<";
+        var startIndex = responseType.IndexOf(prefix, StringComparison.Ordinal);
+        if (startIndex < 0)
+            return null;
+
+        startIndex += prefix.Length;
+        var endIndex = responseType.LastIndexOf('>');
+        if (endIndex <= startIndex)
+            return null;
+
+        return responseType.Substring(startIndex, endIndex - startIndex);
+    }
+
     #endregion
 }

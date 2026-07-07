@@ -585,9 +585,9 @@ internal class InterfaceImplementationGenerator
             if (string.IsNullOrEmpty(deserializeType) || deserializeType == "void" || deserializeType == "System.Void")
                 continue;
 
-            if (IsResponseType(deserializeType))
+            if (TypeSymbolHelper.IsResponseType(deserializeType))
             {
-                var innerType = ExtractResponseInnerType(deserializeType);
+                var innerType = TypeSymbolHelper.ExtractResponseInnerType(deserializeType);
                 if (!string.IsNullOrEmpty(innerType) && innerType != "void" && innerType != "System.Void")
                 {
                     context.XmlResponseTypes.Add(innerType);
@@ -600,28 +600,6 @@ internal class InterfaceImplementationGenerator
         }
 
         context.HasXmlResponse = context.XmlResponseTypes.Count > 0;
-    }
-
-    private static bool IsResponseType(string typeName)
-    {
-        return typeName.StartsWith("Response<", StringComparison.Ordinal) ||
-               typeName.StartsWith("Mud.HttpUtils.Response<", StringComparison.Ordinal) ||
-               typeName.StartsWith("Mud.HttpUtils.HttpClient.Response<", StringComparison.Ordinal);
-    }
-
-    private static string? ExtractResponseInnerType(string responseType)
-    {
-        var prefix = "Response<";
-        var startIndex = responseType.IndexOf(prefix, StringComparison.Ordinal);
-        if (startIndex < 0)
-            return null;
-
-        startIndex += prefix.Length;
-        var endIndex = responseType.LastIndexOf('>');
-        if (endIndex <= startIndex)
-            return null;
-
-        return responseType.Substring(startIndex, endIndex - startIndex);
     }
 
     /// <summary>
