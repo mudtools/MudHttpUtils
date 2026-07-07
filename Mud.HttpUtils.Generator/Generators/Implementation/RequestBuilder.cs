@@ -376,6 +376,11 @@ internal class RequestBuilder
                 codeBuilder.AppendLine($"                __formParameters[\"{fieldName}\"] = {formParam.Name};");
                 codeBuilder.AppendLine("            }");
             }
+            else if (TypeDetectionHelper.IsValueType(formParam.Type) && !TypeDetectionHelper.IsNullableType(formParam.Type))
+            {
+                // 非可空值类型（int、long、Guid 等）永远不会为 null，无需 null 检查
+                codeBuilder.AppendLine($"            __formParameters[\"{fieldName}\"] = {formParam.Name}.ToString() ?? \"\";");
+            }
             else
             {
                 codeBuilder.AppendLine($"            if ({formParam.Name} != null)");
@@ -394,8 +399,15 @@ internal class RequestBuilder
     /// </summary>
     private void GenerateUrlEncodedBodyParameter(StringBuilder codeBuilder, ParameterInfo bodyParam)
     {
-        codeBuilder.AppendLine($"            if ({bodyParam.Name} != null)");
-        codeBuilder.AppendLine("            {");
+        // 非可空值类型永远不会为 null；已通过 ParameterValidationHelper 验证的参数也无需重复检查
+        var isNonNullableValueType = TypeDetectionHelper.IsValueType(bodyParam.Type) && !TypeDetectionHelper.IsNullableType(bodyParam.Type);
+        var needsNullCheck = !isNonNullableValueType && !bodyParam.IsValidated;
+
+        if (needsNullCheck)
+        {
+            codeBuilder.AppendLine($"            if ({bodyParam.Name} != null)");
+            codeBuilder.AppendLine("            {");
+        }
         codeBuilder.AppendLine($"#if NET6_0_OR_GREATER");
         codeBuilder.AppendLine($"#pragma warning disable IL2072");
         codeBuilder.AppendLine($"#endif");
@@ -414,7 +426,10 @@ internal class RequestBuilder
         codeBuilder.AppendLine($"#if NET6_0_OR_GREATER");
         codeBuilder.AppendLine($"#pragma warning restore IL2072");
         codeBuilder.AppendLine($"#endif");
-        codeBuilder.AppendLine("            }");
+        if (needsNullCheck)
+        {
+            codeBuilder.AppendLine("            }");
+        }
     }
 
     /// <summary>
@@ -438,6 +453,11 @@ internal class RequestBuilder
                     codeBuilder.AppendLine("            {");
                     codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StringContent({formProp.Name}), \"{fieldName}\");");
                     codeBuilder.AppendLine("            }");
+                }
+                else if (TypeDetectionHelper.IsValueType(formProp.Type) && !TypeDetectionHelper.IsNullableType(formProp.Type))
+                {
+                    // 非可空值类型（int、long、Guid 等）永远不会为 null，无需 null 检查
+                    codeBuilder.AppendLine($"            __multipartContent.Add(new System.Net.Http.StringContent({formProp.Name}.ToString() ?? \"\"), \"{fieldName}\");");
                 }
                 else
                 {
@@ -999,6 +1019,11 @@ internal class RequestBuilder
             codeBuilder.AppendLine("            {");
             codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", {property.Name});");
             codeBuilder.AppendLine("            }");
+        }
+        else if (TypeDetectionHelper.IsValueType(property.Type) && !TypeDetectionHelper.IsNullableType(property.Type))
+        {
+            // 非可空值类型（int、long、Guid 等）永远不会为 null，无需 null 检查
+            codeBuilder.AppendLine($"            __queryParams.Add(\"{paramName}\", {property.Name}{formatExpression});");
         }
         else
         {

@@ -39,20 +39,30 @@ internal static class ParameterValidationHelper
         if (TypeDetectionHelper.IsCancellationToken(param.Type))
             return false;
 
-        if (param.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.BodyAttribute))
-            return true;
+        var hasBodyAttr = param.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.BodyAttribute);
 
-        if (param.Type.EndsWith("?", StringComparison.Ordinal))
+        // 非可空值类型（int、long、Guid、DateTime 等）永远不会为 null，无需验证
+        if (TypeDetectionHelper.IsValueType(param.Type) && !TypeDetectionHelper.IsNullableType(param.Type))
             return false;
 
-        if (param.Type.EndsWith("string", StringComparison.OrdinalIgnoreCase))
+        // [Body] 参数：引用类型和可空值类型需要验证（非可空值类型已在上方跳过）
+        if (hasBodyAttr)
+            return true;
+
+        // 可空类型（string?、int?、MyClass? 等）：无需验证
+        if (TypeDetectionHelper.IsNullableType(param.Type))
+            return false;
+
+        // 非可空 string：需要验证
+        if (TypeDetectionHelper.IsStringType(param.Type))
         {
             if (param.HasDefaultValue && param.DefaultValue == null)
                 return false;
             return true;
         }
 
-        if (!TypeDetectionHelper.IsNullableType(param.Type) && !TypeDetectionHelper.IsSimpleType(param.Type))
+        // 非可空、非简单类型的引用类型（如 MyClass）：需要验证
+        if (!TypeDetectionHelper.IsSimpleType(param.Type))
         {
             if (param.HasDefaultValue && param.DefaultValue == null)
                 return false;
@@ -67,25 +77,23 @@ internal static class ParameterValidationHelper
     /// </summary>
     private static void GenerateSingleParameterValidation(StringBuilder codeBuilder, ParameterInfo param)
     {
-        var hasBodyAttr = param.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.BodyAttribute);
-
-        if (hasBodyAttr)
-        {
-            codeBuilder.AppendLine($"            if ({param.Name} == null)");
-            codeBuilder.AppendLine($"                throw new ArgumentNullException(nameof({param.Name}));");
-        }
-        else if (param.Type.EndsWith("string", StringComparison.OrdinalIgnoreCase))
+        // string / string?：使用 IsNullOrWhiteSpace 检查
+        if (TypeDetectionHelper.IsStringType(param.Type))
         {
             codeBuilder.AppendLine($"            if (string.IsNullOrWhiteSpace({param.Name}))");
             codeBuilder.AppendLine($"            {{");
             codeBuilder.AppendLine($"                throw new ArgumentNullException(nameof({param.Name}));");
             codeBuilder.AppendLine($"            }}");
+            return;
         }
-        else if (!TypeDetectionHelper.IsNullableType(param.Type) && !TypeDetectionHelper.IsSimpleType(param.Type))
-        {
-            codeBuilder.AppendLine($"            if ({param.Name} == null)");
-            codeBuilder.AppendLine($"                throw new ArgumentNullException(nameof({param.Name}));");
-        }
+
+        // 非可空值类型（int、long、Guid 等）：永远不会为 null，无需生成验证代码
+        if (TypeDetectionHelper.IsValueType(param.Type) && !TypeDetectionHelper.IsNullableType(param.Type))
+            return;
+
+        // 可空值类型（int?、Guid? 等）和引用类型（MyClass 等）：使用 == null 检查
+        codeBuilder.AppendLine($"            if ({param.Name} == null)");
+        codeBuilder.AppendLine($"                throw new ArgumentNullException(nameof({param.Name}));");
     }
 
 
