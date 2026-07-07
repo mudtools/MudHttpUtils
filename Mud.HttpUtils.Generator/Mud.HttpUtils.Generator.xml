@@ -639,6 +639,34 @@
             生成单个方法的实现代码
             </summary>
         </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.MethodGenerator.GenerateExecutorCall(System.Text.StringBuilder,Mud.HttpUtils.Generators.Context.GeneratorContext,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult,System.Boolean,System.Boolean,System.String)">
+            <summary>
+            统一生成执行器调用代码：构建请求 + 构造 ExecutionDescriptor + 调用执行器。
+            Cache/Resilience 的编排逻辑由运行时执行器（DefaultHttpRequestExecutor）处理。
+            IAsyncEnumerable/byte[]/文件下载等特殊返回类型跳过编排，直接调用对应的执行器方法。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.MethodGenerator.BuildExecutionDescriptorCode(Mud.HttpUtils.Generators.Context.GeneratorContext,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult,System.String)">
+            <summary>
+            构造 ExecutionDescriptor 代码，包含 ResponseDescriptor、CacheOptions、ResilienceExecutionOptions 和 CacheKey。
+            当方法未启用 Cache/Resilience 时，对应字段为 null，执行器走直接执行路径。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.MethodGenerator.GenerateCacheKeyExpression(Mud.HttpUtils.Generators.Context.GeneratorContext,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult)">
+            <summary>
+            生成缓存键表达式（仅当 Cache 启用时调用）。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.MethodGenerator.IsVoidType(System.String)">
+            <summary>
+            判断类型是否为 void。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.MethodGenerator.IsResponseType(System.String,System.String@)">
+            <summary>
+            检测返回类型是否为 Response&lt;T&gt;，并提取内部类型 T。
+            </summary>
+        </member>
         <member name="M:Mud.HttpUtils.Generators.Implementation.MethodGenerator.GetCancellationTokenParams(Mud.HttpUtils.Models.Analysis.MethodAnalysisResult)">
             <summary>
             获取 CancellationToken 参数
@@ -730,34 +758,25 @@
             生成 MultipartFormDataContent 参数（用于 [MultipartForm] 和 [Upload] 特性）
             </summary>
         </member>
-        <member name="M:Mud.HttpUtils.Generators.Implementation.RequestBuilder.GenerateRequestExecution(System.Text.StringBuilder,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult,System.String,System.Boolean)">
+        <member name="M:Mud.HttpUtils.Generators.Implementation.RequestBuilder.GenerateRequestExecution(System.Text.StringBuilder,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult,System.String,System.String)">
             <summary>
-            生成请求执行
+            生成请求执行代码，委托给运行时 IHttpRequestExecutor 统一处理响应反序列化与错误处理。
+            </summary>
+            <param name="executor">执行器变量表达式（HttpClient 模式为 _executor，TokenManager/AppContext 模式为 __executor）。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.RequestBuilder.BuildResponseDescriptorCode(Mud.HttpUtils.Models.Analysis.MethodAnalysisResult,System.String)">
+            <summary>
+            生成 ResponseDescriptor 对象初始化代码
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.RequestBuilder.IsVoidType(System.String)">
+            <summary>
+            判断类型是否为 void
             </summary>
         </member>
         <member name="M:Mud.HttpUtils.Generators.Implementation.RequestBuilder.IsResponseType(System.String,System.String@)">
             <summary>
             检测返回类型是否为 Response&lt;T&gt;，并提取内部类型 T
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Generators.Implementation.RequestBuilder.GenerateResponseExecution(System.Text.StringBuilder,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult,System.String,System.String,System.String)">
-            <summary>
-            生成 Response&lt;T&gt; 返回类型的执行代码
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Generators.Implementation.RequestBuilder.GenerateAllowAnyStatusCodeExecution(System.Text.StringBuilder,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult,System.String,System.String,System.String)">
-            <summary>
-            生成 AllowAnyStatusCode 模式的执行代码（非 Response&lt;T&gt; 返回类型）
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Generators.Implementation.RequestBuilder.GetReturnExpression(System.String,System.String)">
-            <summary>
-            生成返回表达式，当反序列化变量类型与方法返回类型不一致时进行适当转换
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Generators.Implementation.RequestBuilder.GenerateStandardExecution(System.Text.StringBuilder,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult,System.String,System.String,System.String)">
-            <summary>
-            生成标准模式的执行代码（默认行为，错误状态码抛出 ApiException）
             </summary>
         </member>
         <member name="M:Mud.HttpUtils.Generators.Implementation.TokenMethodHelper.MethodRequiresUserId(Mud.HttpUtils.Generators.Context.GeneratorContext,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult)">

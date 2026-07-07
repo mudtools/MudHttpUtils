@@ -111,6 +111,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine($"        /// 用于HttpClient客户端操作的<see cref = \"{_context.Configuration.HttpClient}\"/> 实例。");
             codeBuilder.AppendLine("        /// </summary>");
             codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly {_context.Configuration.HttpClient} _httpClient;");
+
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// HTTP 请求执行器，统一处理响应反序列化和错误处理。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IHttpRequestExecutor _executor;");
         }
         else
         {
@@ -138,9 +143,9 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         if (_context.HasResilience)
         {
             codeBuilder.AppendLine("        /// <summary>");
-            codeBuilder.AppendLine("        /// 弹性策略提供器，用于重试、熔断、超时等弹性策略。");
+            codeBuilder.AppendLine("        /// 弹性策略解析器，用于方法级重试、熔断、超时等弹性策略的运行时编排。");
             codeBuilder.AppendLine("        /// </summary>");
-            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly Mud.HttpUtils.Resilience.IResiliencePolicyProvider _resilienceProvider;");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IResiliencePolicyResolver _resilienceResolver;");
         }
 
         if (_context.ImplementsICurrentUserId && _context.Configuration.AnyMethodRequiresUserId)
@@ -236,6 +241,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         else if (_context.HasHttpClient)
         {
             codeBuilder.AppendLine($"        /// <param name=\"httpClient\">HttpClient实例</param>");
+            codeBuilder.AppendLine("        /// <param name=\"executor\">HTTP请求执行器</param>");
         }
         else
         {
@@ -277,6 +283,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         else if (_context.HasHttpClient)
         {
             parameters.Add($"{_context.Configuration.HttpClient} httpClient");
+            parameters.Add("IHttpRequestExecutor executor");
         }
         else
         {
@@ -291,7 +298,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
 
         if (_context.HasResilience)
         {
-            parameters.Add("Mud.HttpUtils.Resilience.IResiliencePolicyProvider resilienceProvider");
+            parameters.Add("IResiliencePolicyResolver resilienceResolver");
         }
 
         var signature = $"        public {className}({string.Join(", ", parameters)})";
@@ -312,6 +319,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             else if (_context.HasHttpClient)
             {
                 baseParameters.Add("httpClient");
+                baseParameters.Add("executor");
             }
             else
             {
@@ -324,7 +332,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             }
             if (_context.HasResilience)
             {
-                baseParameters.Add("resilienceProvider");
+                baseParameters.Add("resilienceResolver");
             }
             codeBuilder.AppendLine($" : base({string.Join(", ", baseParameters)})");
         }
@@ -361,6 +369,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             else if (_context.HasHttpClient)
             {
                 codeBuilder.AppendLine("            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));");
+                codeBuilder.AppendLine("            _executor = executor ?? throw new ArgumentNullException(nameof(executor));");
             }
             else
             {
@@ -375,7 +384,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
 
             if (_context.HasResilience)
             {
-                codeBuilder.AppendLine("            _resilienceProvider = resilienceProvider ?? throw new ArgumentNullException(nameof(resilienceProvider));");
+                codeBuilder.AppendLine("            _resilienceResolver = resilienceResolver ?? throw new ArgumentNullException(nameof(resilienceResolver));");
             }
         }
         else

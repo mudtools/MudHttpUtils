@@ -156,7 +156,19 @@ internal class MethodGenerator : ICodeFragmentGenerator
         if (!hasHttpClient)
         {
             codeBuilder.AppendLine("            var __appContext = _appContextHolder.Current ?? throw new InvalidOperationException(\"无法找到当前服务的应用上下文。\");");
+            // TokenManager/AppContext 模式下，执行器需基于当前应用上下文的 HttpClient 动态创建。
+            // 在 __appContext 捕获之后立即创建，避免 TOCTOU；执行器本身无状态，每次创建开销可忽略。
+            // 构造函数可选参数 cacheProvider/resilienceResolver 仅在对应字段已生成时传入。
+            var executorArgs = "__appContext.HttpClient";
+            if (context.HasCache)
+                executorArgs += ", _cacheProvider";
+            if (context.HasResilience)
+                executorArgs += context.HasCache ? ", _resilienceResolver" : ", null, _resilienceResolver";
+            codeBuilder.AppendLine($"            var __executor = new Mud.HttpUtils.DefaultHttpRequestExecutor({executorArgs});");
         }
+
+        // 执行器变量表达式：HttpClient 模式使用构造函数注入的 _executor 字段；TokenManager/AppContext 模式使用上面的 __executor 局部变量
+        var executor = hasHttpClient ? "_executor" : "__executor";
 
         if (needsTokenInjection)
         {
@@ -215,139 +227,171 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         codeBuilder.AppendLine();
 
-        if (methodInfo.CacheEnabled && !methodInfo.IsAsyncEnumerableReturn)
-        {
-            GenerateCacheWrappedMethod(codeBuilder, context, methodInfo, hasHttpClient, needsTokenInjection);
-        }
-        else if (HasResilienceEnabled(methodInfo) && !methodInfo.IsAsyncEnumerableReturn)
-        {
-            GenerateResilienceWrappedMethod(codeBuilder, context, methodInfo, hasHttpClient, needsTokenInjection);
-        }
-        else
-        {
-            GenerateDirectMethod(codeBuilder, context, methodInfo, hasHttpClient, needsTokenInjection);
-        }
+        // 统一调用执行器：Cache/Resilience 编排由运行时执行器处理，消除生成器中的三分支互斥逻辑
+        GenerateExecutorCall(codeBuilder, context, methodInfo, hasHttpClient, needsTokenInjection, executor);
 
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
     }
 
-    private void GenerateDirectMethod(StringBuilder codeBuilder, GeneratorContext context, MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection)
-    {
-        GenerateHttpRequestCore(codeBuilder, context, methodInfo, hasHttpClient, needsTokenInjection, "            ");
-    }
-
-    private bool HasResilienceEnabled(MethodAnalysisResult methodInfo)
-    {
-        return methodInfo.RetryEnabled || methodInfo.CircuitBreakerEnabled || methodInfo.MethodTimeoutEnabled;
-    }
-
-    private void GenerateResilienceWrappedMethod(StringBuilder codeBuilder, GeneratorContext context, MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection)
-    {
-        var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
-        var cancellationTokenParam = methodInfo.Parameters.FirstOrDefault(p => TypeDetectionHelper.IsCancellationToken(p.Type));
-        var cancellationTokenName = cancellationTokenParam?.Name ?? "default";
-
-        codeBuilder.AppendLine($"            var __resiliencePolicy = _resilienceProvider.GetMethodPolicy<{deserializeType}>(");
-        codeBuilder.AppendLine($"                retryEnabled: {methodInfo.RetryEnabled.ToString().ToLowerInvariant()},");
-        codeBuilder.AppendLine($"                maxRetries: {methodInfo.RetryMaxRetries},");
-        codeBuilder.AppendLine($"                delayMilliseconds: {methodInfo.RetryDelayMilliseconds},");
-        codeBuilder.AppendLine($"                useExponentialBackoff: {methodInfo.RetryUseExponentialBackoff.ToString().ToLowerInvariant()},");
-        codeBuilder.AppendLine($"                circuitBreakerEnabled: {methodInfo.CircuitBreakerEnabled.ToString().ToLowerInvariant()},");
-        codeBuilder.AppendLine($"                failureThreshold: {methodInfo.CircuitBreakerFailureThreshold},");
-        codeBuilder.AppendLine($"                breakDurationSeconds: {methodInfo.CircuitBreakerBreakDurationSeconds},");
-        codeBuilder.AppendLine($"                timeoutEnabled: {methodInfo.MethodTimeoutEnabled.ToString().ToLowerInvariant()},");
-        codeBuilder.AppendLine($"                timeoutMilliseconds: {methodInfo.MethodTimeoutMilliseconds},");
-        codeBuilder.AppendLine($"                samplingDurationSeconds: {methodInfo.CircuitBreakerSamplingDurationSeconds},");
-        codeBuilder.AppendLine($"                minimumThroughput: {methodInfo.CircuitBreakerMinimumThroughput});");
-        codeBuilder.AppendLine();
-
-        codeBuilder.AppendLine($"            return await __resiliencePolicy.ExecuteAsync(async __ct =>");
-        codeBuilder.AppendLine($"            {{");
-
-        GenerateHttpRequestCore(codeBuilder, context, methodInfo, hasHttpClient, needsTokenInjection, "                ", setSkipResilience: true);
-
-        codeBuilder.AppendLine($"            }}, {cancellationTokenName}).ConfigureAwait(false);");
-    }
-
-    private void GenerateHttpRequestCore(StringBuilder codeBuilder, GeneratorContext context, MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection, string indent, bool setSkipResilience = false)
+    /// <summary>
+    /// 统一生成执行器调用代码：构建请求 + 构造 ExecutionDescriptor + 调用执行器。
+    /// Cache/Resilience 的编排逻辑由运行时执行器（DefaultHttpRequestExecutor）处理。
+    /// IAsyncEnumerable/byte[]/文件下载等特殊返回类型跳过编排，直接调用对应的执行器方法。
+    /// </summary>
+    private void GenerateExecutorCall(StringBuilder codeBuilder, GeneratorContext context,
+        MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection, string executor)
     {
         var basePath = context.Configuration.BasePath;
         var urlCode = _requestBuilder.BuildUrlString(methodInfo, basePath);
-        codeBuilder.AppendLine($"{indent}{urlCode.TrimStart()}");
+        codeBuilder.AppendLine($"            {urlCode.TrimStart()}");
 
         _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
         _requestBuilder.GenerateRequestSetup(codeBuilder, methodInfo);
-
-        if (setSkipResilience)
-        {
-            // 此字符串必须与 Mud.HttpUtils.Resilience.ResilienceConstants.SkipResiliencePropertyKey 保持一致。
-            // 由于生成器无法引用 Resilience 程序集，此处使用硬编码字面量。
-            codeBuilder.AppendLine($"{indent}#if NETSTANDARD2_0");
-            codeBuilder.AppendLine($"{indent}__httpRequest.Properties[\"__Mud_HttpUtils_SkipResilience\"] = true;");
-            codeBuilder.AppendLine($"{indent}#else");
-            codeBuilder.AppendLine($"{indent}__httpRequest.Options.TryAdd(\"__Mud_HttpUtils_SkipResilience\", true);");
-            codeBuilder.AppendLine($"{indent}#endif");
-        }
-
         _requestBuilder.GenerateHeaderParameters(codeBuilder, methodInfo);
         codeBuilder.AppendLine();
         _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient);
 
-        GenerateTokenInjection(codeBuilder, context, methodInfo, needsTokenInjection, indent);
+        GenerateTokenInjection(codeBuilder, context, methodInfo, needsTokenInjection, "            ");
 
         if (methodInfo.InterfaceHeaderAttributes?.Any() == true)
-        {
             GenerateInterfaceHeaders(codeBuilder, context, methodInfo);
-        }
 
-        // 弹性策略模式下使用策略传入的 __ct，确保超时能取消进行中的 HTTP 请求
-        var cancellationTokenArg = setSkipResilience
-            ? ", cancellationToken: __ct"
-            : GetCancellationTokenParams(methodInfo);
-        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, cancellationTokenArg, hasHttpClient);
-    }
-
-    private void GenerateCacheWrappedMethod(StringBuilder codeBuilder, GeneratorContext context, MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection)
-    {
-        var cacheKeyExpression = GenerateCacheKeyExpression(context, methodInfo);
-        codeBuilder.AppendLine($"            var __cacheKey = {cacheKeyExpression};");
-
-        var cancellationTokenParam = methodInfo.Parameters.FirstOrDefault(
-            p => TypeDetectionHelper.IsCancellationToken(p.Type));
-        var cancellationTokenArg = cancellationTokenParam?.Name ?? "default";
-
+        var cancellationTokenArg = GetCancellationTokenParams(methodInfo);
         var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
 
-        codeBuilder.AppendLine($"            return await _cacheProvider.GetOrFetchAsync<{deserializeType}>(__cacheKey,");
-        codeBuilder.AppendLine($"                async () =>");
-        codeBuilder.AppendLine($"                {{");
-
-        var basePath = context.Configuration.BasePath;
-        var urlCode = _requestBuilder.BuildUrlString(methodInfo, basePath);
-        codeBuilder.AppendLine($"                    {urlCode.TrimStart()}");
-
-        GenerateCacheInnerQueryParameters(codeBuilder, methodInfo);
-        _requestBuilder.GenerateRequestSetup(codeBuilder, methodInfo);
-        _requestBuilder.GenerateHeaderParameters(codeBuilder, methodInfo);
-        codeBuilder.AppendLine();
-        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient);
-
-        GenerateTokenInjection(codeBuilder, context, methodInfo, needsTokenInjection, "                    ");
-
-        if (methodInfo.InterfaceHeaderAttributes?.Any() == true)
+        // IAsyncEnumerable — 直接调用执行器流式方法（不经过 Cache/Resilience，与当前行为一致）
+        if (methodInfo.IsAsyncEnumerableReturn && !string.IsNullOrEmpty(methodInfo.AsyncEnumerableElementType))
         {
-            GenerateInterfaceHeaders(codeBuilder, context, methodInfo);
+            var elementType = methodInfo.AsyncEnumerableElementType;
+            var cancellationTokenParam = methodInfo.Parameters
+                .FirstOrDefault(p => TypeDetectionHelper.IsCancellationToken(p.Type));
+            var cancellationTokenName = cancellationTokenParam?.Name ?? "default";
+            codeBuilder.AppendLine($"            await foreach (var __item in {executor}.SendAsAsyncEnumerable<{elementType}>(__httpRequest, _jsonSerializerOptions, {cancellationTokenName}))");
+            codeBuilder.AppendLine("            {");
+            codeBuilder.AppendLine("                yield return __item;");
+            codeBuilder.AppendLine("            }");
+            return;
         }
 
-        var innerCancellationTokenArg = GetCancellationTokenParams(methodInfo);
-        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, innerCancellationTokenArg, hasHttpClient);
+        // 文件路径下载 — 直接调用 DownloadLargeAsync（大文件下载不经过 Cache/Resilience）
+        var filePathParam = methodInfo.Parameters
+            .FirstOrDefault(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.FilePathAttribute));
+        if (filePathParam != null)
+        {
+            codeBuilder.AppendLine($"            await {executor}.DownloadLargeAsync(__httpRequest, {filePathParam.Name}{cancellationTokenArg}).ConfigureAwait(false);");
+            return;
+        }
 
-        codeBuilder.AppendLine($"                }},");
-        codeBuilder.AppendLine($"                TimeSpan.FromSeconds({methodInfo.CacheDurationSeconds}),");
-        codeBuilder.AppendLine($"                {cancellationTokenArg}).ConfigureAwait(false);");
+        // byte[] 下载 — 直接调用 DownloadAsync
+        if (TypeDetectionHelper.IsByteArrayType(deserializeType))
+        {
+            codeBuilder.AppendLine($"            return await {executor}.DownloadAsync(__httpRequest{cancellationTokenArg}).ConfigureAwait(false);");
+            return;
+        }
+
+        // 构造 ExecutionDescriptor 并调用执行器（支持 Cache/Resilience 编排）
+        var executionDescriptor = BuildExecutionDescriptorCode(context, methodInfo, deserializeType);
+
+        // void 返回 — 使用非泛型 ExecuteAsync（支持 Cache/Resilience 编排）
+        if (IsVoidType(deserializeType))
+        {
+            codeBuilder.AppendLine($"            await {executor}.ExecuteAsync(");
+            codeBuilder.AppendLine($"                __httpRequest,");
+            codeBuilder.AppendLine($"                {executionDescriptor}{cancellationTokenArg}).ConfigureAwait(false);");
+            return;
+        }
+
+        if (IsResponseType(deserializeType, out var innerType))
+        {
+            codeBuilder.AppendLine($"            return await {executor}.ExecuteAsResponseAsync<{innerType}>(");
+            codeBuilder.AppendLine($"                __httpRequest,");
+            codeBuilder.AppendLine($"                {executionDescriptor},");
+            codeBuilder.AppendLine($"                _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false);");
+        }
+        else
+        {
+            codeBuilder.AppendLine($"            return await {executor}.ExecuteAsync<{deserializeType}>(");
+            codeBuilder.AppendLine($"                __httpRequest,");
+            codeBuilder.AppendLine($"                {executionDescriptor},");
+            codeBuilder.AppendLine($"                _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false);");
+        }
     }
 
+    /// <summary>
+    /// 构造 ExecutionDescriptor 代码，包含 ResponseDescriptor、CacheOptions、ResilienceExecutionOptions 和 CacheKey。
+    /// 当方法未启用 Cache/Resilience 时，对应字段为 null，执行器走直接执行路径。
+    /// </summary>
+    private string BuildExecutionDescriptorCode(GeneratorContext context, MethodAnalysisResult methodInfo, string deserializeType)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("new ExecutionDescriptor");
+        sb.AppendLine("            {");
+        sb.AppendLine("                Response = new ResponseDescriptor");
+        sb.AppendLine("                {");
+
+        var isResponseType = IsResponseType(deserializeType, out var responseInnerType);
+        sb.AppendLine($"                    AllowAnyStatusCode = {methodInfo.AllowAnyStatusCode.ToString().ToLowerInvariant()},");
+        sb.AppendLine($"                    IsResponseType = {isResponseType.ToString().ToLowerInvariant()},");
+        sb.AppendLine($"                    ResponseContentType = \"{methodInfo.ResponseContentType ?? ""}\",");
+        sb.AppendLine($"                    EnableDecrypt = {methodInfo.ResponseEnableDecrypt.ToString().ToLowerInvariant()},");
+
+        var isVoid = IsVoidType(deserializeType);
+        sb.AppendLine($"                    IsVoidReturn = {isVoid.ToString().ToLowerInvariant()},");
+
+        // XML 序列化器引用
+        var isXml = ContentTypeHelper.IsXmlContentType(methodInfo.ResponseContentType);
+        if (isXml && !isVoid)
+        {
+            var xmlTargetType = isResponseType ? responseInnerType : deserializeType;
+            var xmlFieldRef = RequestBuilder.GetXmlSerializerFieldReference(xmlTargetType);
+            sb.AppendLine($"                    XmlSerializer = {xmlFieldRef},");
+        }
+
+        sb.AppendLine("                },");
+
+        // Cache 配置
+        if (methodInfo.CacheEnabled)
+        {
+            var cacheKeyExpression = GenerateCacheKeyExpression(context, methodInfo);
+            sb.AppendLine("                Cache = new CacheOptions");
+            sb.AppendLine("                {");
+            sb.AppendLine($"                    DurationSeconds = {methodInfo.CacheDurationSeconds},");
+            sb.AppendLine($"                    VaryByUser = {methodInfo.CacheVaryByUser.ToString().ToLowerInvariant()},");
+            if (!string.IsNullOrEmpty(methodInfo.CacheKeyTemplate))
+                sb.AppendLine($"                    KeyTemplate = \"{methodInfo.CacheKeyTemplate}\",");
+            sb.AppendLine("                },");
+            sb.AppendLine($"                CacheKey = {cacheKeyExpression},");
+        }
+
+        // Resilience 配置
+        var hasResilience = methodInfo.RetryEnabled || methodInfo.CircuitBreakerEnabled || methodInfo.MethodTimeoutEnabled;
+        if (hasResilience)
+        {
+            sb.AppendLine("                Resilience = new ResilienceExecutionOptions");
+            sb.AppendLine("                {");
+            sb.AppendLine($"                    RetryEnabled = {methodInfo.RetryEnabled.ToString().ToLowerInvariant()},");
+            sb.AppendLine($"                    MaxRetries = {methodInfo.RetryMaxRetries},");
+            sb.AppendLine($"                    DelayMilliseconds = {methodInfo.RetryDelayMilliseconds},");
+            sb.AppendLine($"                    UseExponentialBackoff = {methodInfo.RetryUseExponentialBackoff.ToString().ToLowerInvariant()},");
+            sb.AppendLine($"                    CircuitBreakerEnabled = {methodInfo.CircuitBreakerEnabled.ToString().ToLowerInvariant()},");
+            sb.AppendLine($"                    FailureThreshold = {methodInfo.CircuitBreakerFailureThreshold},");
+            sb.AppendLine($"                    BreakDurationSeconds = {methodInfo.CircuitBreakerBreakDurationSeconds},");
+            sb.AppendLine($"                    SamplingDurationSeconds = {methodInfo.CircuitBreakerSamplingDurationSeconds},");
+            sb.AppendLine($"                    MinimumThroughput = {methodInfo.CircuitBreakerMinimumThroughput},");
+            sb.AppendLine($"                    TimeoutEnabled = {methodInfo.MethodTimeoutEnabled.ToString().ToLowerInvariant()},");
+            sb.AppendLine($"                    TimeoutMilliseconds = {methodInfo.MethodTimeoutMilliseconds},");
+            sb.AppendLine("                },");
+        }
+
+        sb.AppendLine("            }");
+
+        return sb.ToString().TrimEnd('\n', '\r');
+    }
+
+    /// <summary>
+    /// 生成缓存键表达式（仅当 Cache 启用时调用）。
+    /// </summary>
     private string GenerateCacheKeyExpression(GeneratorContext context, MethodAnalysisResult methodInfo)
     {
         var userIdExpression = context.Configuration.AnyMethodRequiresUserId
@@ -378,9 +422,35 @@ internal class MethodGenerator : ICodeFragmentGenerator
         return keyBuilder.ToString();
     }
 
-    private void GenerateCacheInnerQueryParameters(StringBuilder codeBuilder, MethodAnalysisResult methodInfo)
+    /// <summary>
+    /// 判断类型是否为 void。
+    /// </summary>
+    private static bool IsVoidType(string type)
     {
-        _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
+        return type == "void" || type == "System.Void";
+    }
+
+    /// <summary>
+    /// 检测返回类型是否为 Response&lt;T&gt;，并提取内部类型 T。
+    /// </summary>
+    private static bool IsResponseType(string type, out string innerType)
+    {
+        innerType = string.Empty;
+
+        if (type.StartsWith("Response<", StringComparison.Ordinal) ||
+            type.StartsWith("Mud.HttpUtils.Response<", StringComparison.Ordinal) ||
+            type.StartsWith("Mud.HttpUtils.HttpClient.Response<", StringComparison.Ordinal))
+        {
+            var startIdx = type.IndexOf('<');
+            var endIdx = type.LastIndexOf('>');
+            if (startIdx >= 0 && endIdx > startIdx)
+            {
+                innerType = type.Substring(startIdx + 1, endIdx - startIdx - 1);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

@@ -57,6 +57,8 @@ public static class ServiceCollectionExtensions
         }
 
         services.TryAddSingleton<IResiliencePolicyProvider>(CreatePolicyProvider);
+        // 注册弹性策略解析器，供 IHttpRequestExecutor 在运行时编排方法级弹性策略
+        services.TryAddSingleton<IResiliencePolicyResolver, ResiliencePolicyResolver>();
 
         return services;
     }
@@ -97,6 +99,8 @@ public static class ServiceCollectionExtensions
         services.Configure<ResilienceOptions>(options => configuration.GetSection(configurationSectionPath).Bind(options));
 
         services.TryAddSingleton<IResiliencePolicyProvider>(CreatePolicyProvider);
+        // 注册弹性策略解析器，供 IHttpRequestExecutor 在运行时编排方法级弹性策略
+        services.TryAddSingleton<IResiliencePolicyResolver, ResiliencePolicyResolver>();
 
         return services;
     }

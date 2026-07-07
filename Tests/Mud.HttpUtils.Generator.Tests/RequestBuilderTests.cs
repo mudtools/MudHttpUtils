@@ -767,7 +767,7 @@ public class RequestBuilderTests
     #region Response<T> 生成代码测试
 
     [Fact]
-    public void GenerateRequestExecution_WithResponseType_GeneratesResponseWrapper()
+    public void GenerateRequestExecution_WithResponseType_GeneratesExecutorCall()
     {
         var methodInfo = CreateMethodInfo("/users");
         methodInfo.ReturnType = "Task<Response<string>>";
@@ -775,18 +775,16 @@ public class RequestBuilderTests
         methodInfo.IsAsyncMethod = true;
 
         var codeBuilder = new StringBuilder();
-        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", "__executor");
         var code = codeBuilder.ToString();
 
-        code.Should().Contain("SendRawAsync");
-        code.Should().Contain("Mud.HttpUtils.Response<string>");
-        code.Should().Contain("__statusCode");
-        code.Should().Contain("__rawContent");
-        code.Should().Contain("__responseHeaders");
+        code.Should().Contain("__executor.SendAsResponseAsync<string>");
+        code.Should().Contain("ResponseDescriptor");
+        code.Should().Contain("IsResponseType = true");
     }
 
     [Fact]
-    public void GenerateRequestExecution_WithResponseType_SuccessPath_DeserializesContent()
+    public void GenerateRequestExecution_WithResponseType_PassesJsonSerializerOptions()
     {
         var methodInfo = CreateMethodInfo("/users");
         methodInfo.ReturnType = "Task<Response<User>>";
@@ -794,15 +792,15 @@ public class RequestBuilderTests
         methodInfo.IsAsyncMethod = true;
 
         var codeBuilder = new StringBuilder();
-        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", "__executor");
         var code = codeBuilder.ToString();
 
-        code.Should().Contain("JsonSerializer.Deserialize<User>");
-        code.Should().Contain("Mud.HttpUtils.Response<User>");
+        code.Should().Contain("__executor.SendAsResponseAsync<User>");
+        code.Should().Contain("_jsonSerializerOptions");
     }
 
     [Fact]
-    public void GenerateRequestExecution_WithResponseType_ErrorPath_UsesErrorConstructor()
+    public void GenerateRequestExecution_WithResponseType_SetsIsResponseTypeInDescriptor()
     {
         var methodInfo = CreateMethodInfo("/users");
         methodInfo.ReturnType = "Task<Response<string>>";
@@ -810,11 +808,10 @@ public class RequestBuilderTests
         methodInfo.IsAsyncMethod = true;
 
         var codeBuilder = new StringBuilder();
-        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", "__executor");
         var code = codeBuilder.ToString();
 
-        code.Should().Contain("else");
-        code.Should().Contain("new Mud.HttpUtils.Response<string>(__statusCode, __rawContent, __responseHeaders)");
+        code.Should().Contain("IsResponseType = true");
     }
 
     #endregion
@@ -822,38 +819,37 @@ public class RequestBuilderTests
     #region AllowAnyStatusCode 生成代码测试
 
     [Fact]
-    public void GenerateRequestExecution_WithAllowAnyStatusCode_GeneratesSendRawAsync()
+    public void GenerateRequestExecution_WithAllowAnyStatusCode_SetsDescriptorFlag()
     {
         var methodInfo = CreateMethodInfo("/users");
         methodInfo.AllowAnyStatusCode = true;
         methodInfo.AsyncInnerReturnType = "string";
 
         var codeBuilder = new StringBuilder();
-        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", "__executor");
         var code = codeBuilder.ToString();
 
-        code.Should().Contain("SendRawAsync");
-        code.Should().NotContain("IsSuccessStatusCode");
-        code.Should().NotContain("SendAsync<string>");
+        code.Should().Contain("__executor.SendAndDeserializeAsync<string>");
+        code.Should().Contain("AllowAnyStatusCode = true");
     }
 
     [Fact]
-    public void GenerateRequestExecution_WithoutAllowAnyStatusCode_GeneratesErrorCheck()
+    public void GenerateRequestExecution_WithoutAllowAnyStatusCode_SetsDescriptorFlagFalse()
     {
         var methodInfo = CreateMethodInfo("/users");
         methodInfo.AllowAnyStatusCode = false;
         methodInfo.AsyncInnerReturnType = "string";
 
         var codeBuilder = new StringBuilder();
-        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", "__executor");
         var code = codeBuilder.ToString();
 
-        code.Should().Contain("IsSuccessStatusCode");
-        code.Should().Contain("ApiException");
+        code.Should().Contain("__executor.SendAndDeserializeAsync<string>");
+        code.Should().Contain("AllowAnyStatusCode = false");
     }
 
     [Fact]
-    public void GenerateRequestExecution_AllowAnyStatusCode_WithXmlResponse_GeneratesSendRawAsync()
+    public void GenerateRequestExecution_AllowAnyStatusCode_WithXmlResponse_PassesXmlSerializer()
     {
         var methodInfo = CreateMethodInfo("/users");
         methodInfo.AllowAnyStatusCode = true;
@@ -861,35 +857,31 @@ public class RequestBuilderTests
         methodInfo.ResponseContentType = "application/xml";
 
         var codeBuilder = new StringBuilder();
-        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", "__executor");
         var code = codeBuilder.ToString();
 
-        code.Should().Contain("SendRawAsync");
+        code.Should().Contain("__executor.SendAndDeserializeAsync<User>");
         code.Should().Contain("_xmlSerializer_User");
-        code.Should().Contain("Deserialize");
-        code.Should().NotContain("IsSuccessStatusCode");
-        code.Should().NotContain("SendXmlAsync");
+        code.Should().Contain("XmlSerializer = _xmlSerializer_User");
     }
 
     [Fact]
-    public void GenerateRequestExecution_AllowAnyStatusCode_ReadsContentAndDeserializes()
+    public void GenerateRequestExecution_AllowAnyStatusCode_DeserializesViaExecutor()
     {
         var methodInfo = CreateMethodInfo("/users");
         methodInfo.AllowAnyStatusCode = true;
         methodInfo.AsyncInnerReturnType = "User";
 
         var codeBuilder = new StringBuilder();
-        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", "__executor");
         var code = codeBuilder.ToString();
 
-        code.Should().Contain("SendRawAsync");
-        code.Should().Contain("ReadAsStringAsync");
-        code.Should().Contain("JsonSerializer.Deserialize");
-        code.Should().NotContain("IsSuccessStatusCode");
+        code.Should().Contain("__executor.SendAndDeserializeAsync<User>");
+        code.Should().Contain("_jsonSerializerOptions");
     }
 
     [Fact]
-    public void GenerateRequestExecution_AllowAnyStatusCode_WithVoidReturn_SendsWithoutDeserialization()
+    public void GenerateRequestExecution_AllowAnyStatusCode_WithVoidReturn_CallsSendAsync()
     {
         var methodInfo = CreateMethodInfo("/users");
         methodInfo.AllowAnyStatusCode = true;
@@ -897,17 +889,16 @@ public class RequestBuilderTests
         methodInfo.IsAsyncMethod = true;
 
         var codeBuilder = new StringBuilder();
-        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", "__executor");
         var code = codeBuilder.ToString();
 
-        code.Should().Contain("SendRawAsync");
-        code.Should().NotContain("ReadAsStringAsync");
-        code.Should().NotContain("JsonSerializer.Deserialize");
-        code.Should().NotContain("return");
+        code.Should().Contain("__executor.SendAsync(");
+        code.Should().Contain("IsVoidReturn = true");
+        code.Should().NotContain("SendAndDeserializeAsync");
     }
 
     [Fact]
-    public void GenerateRequestExecution_StandardExecution_WithVoidReturn_SendsWithoutDeserialization()
+    public void GenerateRequestExecution_StandardExecution_WithVoidReturn_CallsSendAsync()
     {
         var methodInfo = CreateMethodInfo("/users");
         methodInfo.AllowAnyStatusCode = false;
@@ -915,13 +906,12 @@ public class RequestBuilderTests
         methodInfo.IsAsyncMethod = true;
 
         var codeBuilder = new StringBuilder();
-        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", "__executor");
         var code = codeBuilder.ToString();
 
-        code.Should().Contain("SendRawAsync");
-        code.Should().Contain("IsSuccessStatusCode");
-        code.Should().NotContain("JsonSerializer.Deserialize");
-        code.Should().NotContain("return");
+        code.Should().Contain("__executor.SendAsync(");
+        code.Should().Contain("IsVoidReturn = true");
+        code.Should().NotContain("SendAndDeserializeAsync");
     }
 
     #endregion
@@ -929,18 +919,18 @@ public class RequestBuilderTests
     #region SerializationMethod 测试
 
     [Fact]
-    public void GenerateRequestExecution_WithXmlResponse_UseXmlSerializer()
+    public void GenerateRequestExecution_WithXmlResponse_PassesXmlSerializerInDescriptor()
     {
         var methodInfo = CreateMethodInfo("/users");
         methodInfo.AsyncInnerReturnType = "User";
         methodInfo.ResponseContentType = "application/xml";
 
         var codeBuilder = new StringBuilder();
-        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", false);
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", "__executor");
         var code = codeBuilder.ToString();
 
         code.Should().Contain("_xmlSerializer_User");
-        code.Should().Contain("Deserialize");
+        code.Should().Contain("XmlSerializer = _xmlSerializer_User");
     }
 
     #endregion
@@ -948,49 +938,37 @@ public class RequestBuilderTests
     #region ResponseEnableDecrypt 测试
 
     [Fact]
-    public void GenerateRequestExecution_WithResponseEnableDecrypt_GeneratesDecryptLogic()
+    public void GenerateRequestExecution_WithResponseEnableDecrypt_SetsDescriptorFlag()
     {
         var methodInfo = CreateMethodInfo("/users");
         methodInfo.AsyncInnerReturnType = "User";
         methodInfo.ResponseEnableDecrypt = true;
 
         var codeBuilder = new StringBuilder();
-        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "__client", false);
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", "__executor");
         var code = codeBuilder.ToString();
 
-        code.Should().Contain("DecryptContent");
-        // C1 修复：解密必须在反序列化之前，移除了不可达的"序列化-解密-反序列化"块
-        code.Should().NotContain("JsonSerializer.Serialize");
-        code.Should().Contain("JsonSerializer.Deserialize");
-        // 验证解密在反序列化之前执行
-        var decryptIndex = code.IndexOf("DecryptContent", StringComparison.Ordinal);
-        var deserializeIndex = code.IndexOf("JsonSerializer.Deserialize", StringComparison.Ordinal);
-        decryptIndex.Should().BeLessThan(deserializeIndex);
+        code.Should().Contain("EnableDecrypt = true");
+        code.Should().Contain("__executor.SendAndDeserializeAsync<User>");
     }
 
     [Fact]
-    public void GenerateRequestExecution_WithResponseTypeAndEnableDecrypt_GeneratesDecryptLogic()
+    public void GenerateRequestExecution_WithResponseTypeAndEnableDecrypt_SetsDescriptorFlag()
     {
         var methodInfo = CreateMethodInfo("/users");
         methodInfo.AsyncInnerReturnType = "Response<User>";
         methodInfo.ResponseEnableDecrypt = true;
 
         var codeBuilder = new StringBuilder();
-        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "__client", false);
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", "__executor");
         var code = codeBuilder.ToString();
 
-        code.Should().Contain("DecryptContent");
-        // C1 修复：解密必须在反序列化之前，移除了不可达的"序列化-解密-反序列化"块
-        code.Should().NotContain("JsonSerializer.Serialize");
-        code.Should().Contain("JsonSerializer.Deserialize");
-        // 验证解密在反序列化之前执行
-        var decryptIndex = code.IndexOf("DecryptContent", StringComparison.Ordinal);
-        var deserializeIndex = code.IndexOf("JsonSerializer.Deserialize", StringComparison.Ordinal);
-        decryptIndex.Should().BeLessThan(deserializeIndex);
+        code.Should().Contain("EnableDecrypt = true");
+        code.Should().Contain("__executor.SendAsResponseAsync<User>");
     }
 
     [Fact]
-    public void GenerateRequestExecution_WithAllowAnyStatusCodeAndEnableDecrypt_GeneratesDecryptLogic()
+    public void GenerateRequestExecution_WithAllowAnyStatusCodeAndEnableDecrypt_SetsDescriptorFlag()
     {
         var methodInfo = CreateMethodInfo("/users");
         methodInfo.AsyncInnerReturnType = "User";
@@ -998,11 +976,12 @@ public class RequestBuilderTests
         methodInfo.ResponseEnableDecrypt = true;
 
         var codeBuilder = new StringBuilder();
-        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "__client", false);
+        _requestBuilder.GenerateRequestExecution(codeBuilder, methodInfo, "", "__executor");
         var code = codeBuilder.ToString();
 
-        code.Should().Contain("DecryptContent");
-        code.Should().Contain("SendRawAsync");
+        code.Should().Contain("EnableDecrypt = true");
+        code.Should().Contain("AllowAnyStatusCode = true");
+        code.Should().Contain("__executor.SendAndDeserializeAsync<User>");
     }
 
     #endregion

@@ -579,7 +579,7 @@ namespace TestNamespace
         var generatedCode = GetGeneratedCode(outputCompilation);
 
         generatedCode.Should().NotBeNullOrEmpty();
-        generatedCode.Should().Contain("DecryptContent", "ResponseEnableDecrypt = true 时应生成解密调用");
+        generatedCode.Should().Contain("EnableDecrypt = true", "ResponseEnableDecrypt = true 时应在 ResponseDescriptor 中设置 EnableDecrypt 标记交由执行器运行时解密");
     }
 
     [Fact]

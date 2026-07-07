@@ -88,6 +88,13 @@ public static class HttpClientServiceCollectionExtensions
         }
 
         services.TryAddTransient<IBaseHttpClient>(sp => sp.GetRequiredService<IEnhancedHttpClient>());
+        // 注册 IHttpRequestExecutor：HttpClient 模式下由生成代码通过构造函数注入。
+        // TokenManager/AppContext 模式下生成代码动态创建执行器，不消费此注册，因此注册本身无害。
+        services.TryAddTransient<IHttpRequestExecutor>(sp =>
+        {
+            var httpClient = sp.GetRequiredService<IEnhancedHttpClient>();
+            return new DefaultHttpRequestExecutor(httpClient);
+        });
         services.TryAddSingleton<IHttpClientResolver, HttpClientResolver>();
     }
 

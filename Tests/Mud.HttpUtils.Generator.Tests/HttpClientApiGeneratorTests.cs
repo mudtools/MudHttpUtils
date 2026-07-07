@@ -782,7 +782,9 @@ namespace TestNamespace
     [Fact]
     public void Generator_WithResiliance_PassesPolicyCancellationTokenToSendRawAsync()
     {
-        // 验证修复 BUG：弹性策略模式下应将 __ct（策略传入的 CancellationToken）传递给 SendRawAsync
+        // 重构后：弹性策略的 CancellationToken 处理由运行时执行器（DefaultHttpRequestExecutor）
+        // 和 ResiliencePolicyResolver 负责。Polly 策略传入的 CT 会传给 coreExecute，确保超时能取消进行中的 HTTP 请求。
+        // 生成器只需将方法的 CT 传给 ExecuteAsync，并在 ExecutionDescriptor 中配置 Resilience。
         var source = @"
 using Mud.HttpUtils;
 using Mud.HttpUtils.Attributes;
@@ -803,8 +805,10 @@ namespace TestNamespace
 
         if (generatedCode != null)
         {
-            generatedCode.Should().Contain("cancellationToken: __ct",
-                "弹性策略模式下应将 __ct 传递给 SendRawAsync");
+            generatedCode.Should().Contain("ExecuteAsync<string>(",
+                "弹性策略模式下应通过 ExecuteAsync 统一调用执行器");
+            generatedCode.Should().Contain("RetryEnabled = true",
+                "ExecutionDescriptor 中应配置 RetryEnabled = true");
         }
     }
 
@@ -838,8 +842,8 @@ namespace TestNamespace
         var (_, outputCompilation) = RunGenerator(source);
         var allGeneratedCode = GetAllGeneratedCode(outputCompilation);
 
-        allGeneratedCode.Should().Contain("using var __xmlReader = new System.IO.StringReader",
-            "XML 反序列化应使用 using var 释放 StringReader");
+        allGeneratedCode.Should().Contain("XmlSerializer = _xmlSerializer_TestNamespace_MyXmlData",
+            "XML 反序列化应通过 ResponseDescriptor.XmlSerializer 将序列化器交由执行器运行时调用");
     }
 
     #endregion

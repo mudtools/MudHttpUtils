@@ -11,6 +11,7 @@ public static class ResilienceConstants
     /// <remarks>
     /// 当生成的代码使用方法级弹性特性（[Retry]、[CircuitBreaker]、[Timeout]）时，
     /// 会在 HttpRequestMessage.Properties 中设置此键，以避免与 ResilientHttpClient 装饰器的全局弹性策略产生双重包装。
+    /// 此常量引用 <see cref="HttpExecutionConstants.SkipResiliencePropertyKey"/> 以保持单一真相源。
     /// </remarks>
-    public const string SkipResiliencePropertyKey = "__Mud_HttpUtils_SkipResilience";
+    public const string SkipResiliencePropertyKey = HttpExecutionConstants.SkipResiliencePropertyKey;
 }

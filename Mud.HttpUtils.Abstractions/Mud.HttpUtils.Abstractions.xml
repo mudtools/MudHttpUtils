@@ -567,6 +567,59 @@
             <returns>反序列化的结果。</returns>
             <exception cref="T:System.InvalidOperationException">当内容为空或反序列化函数为 null 时抛出。</exception>
         </member>
+        <member name="T:Mud.HttpUtils.ExecutionDescriptor">
+            <summary>
+            描述方法的执行模式（缓存、弹性策略），由源生成器在编译期填充。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.ExecutionDescriptor.Response">
+            <summary>
+            响应处理描述符。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.ExecutionDescriptor.Cache">
+            <summary>
+            缓存配置（为 null 表示不启用缓存）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.ExecutionDescriptor.Resilience">
+            <summary>
+            弹性策略配置（为 null 表示不启用方法级弹性策略）。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.ExecutionDescriptor.CacheKey">
+            <summary>
+            缓存键表达式（仅当 Cache 不为 null 时有效）。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.CacheOptions">
+            <summary>
+            缓存配置。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.ResilienceExecutionOptions">
+            <summary>
+            方法级弹性策略执行配置。
+            注意：此类型与 Mud.HttpUtils.Resilience.ResilienceOptions（全局配置）不同，
+            后者包含嵌套的 Retry/Timeout/CircuitBreaker 子对象，用于 DI 配置绑定。
+            本类型为扁平结构，由源生成器从方法特性直接填充。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.HttpExecutionConstants">
+            <summary>
+            HTTP 执行相关常量定义。
+            </summary>
+        </member>
+        <member name="F:Mud.HttpUtils.HttpExecutionConstants.SkipResiliencePropertyKey">
+            <summary>
+            用于标记请求已由方法级弹性策略包装，装饰器应跳过全局弹性策略的属性键。
+            </summary>
+            <remarks>
+            当执行器使用方法级弹性特性（[Retry]、[CircuitBreaker]、[Timeout]）时，
+            会在 HttpRequestMessage 中设置此键，以避免与 ResilientHttpClient 装饰器的全局弹性策略产生双重包装。
+            此常量与 Mud.HttpUtils.Resilience.ResilienceConstants.SkipResiliencePropertyKey 保持一致。
+            </remarks>
+        </member>
         <member name="T:Mud.HttpUtils.IBaseHttpClient">
             <summary>
             基础 HTTP 客户端接口，定义了 HTTP 请求的基本操作方法。
@@ -925,6 +978,69 @@
             <param name="client">获取到的客户端实例。</param>
             <returns>如果成功获取，则为 true；否则为 false。</returns>
         </member>
+        <member name="T:Mud.HttpUtils.IHttpRequestExecutor">
+            <summary>
+            HTTP 请求执行器接口，统一处理响应反序列化、错误处理和执行模式编排。
+            由源生成器生成的代码调用。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IHttpRequestExecutor.SendAndDeserializeAsync``1(System.Net.Http.HttpRequestMessage,Mud.HttpUtils.ResponseDescriptor,System.Object,System.Threading.CancellationToken)">
+            <summary>
+            发送 HTTP 请求并反序列化响应。
+            </summary>
+            <typeparam name="TResult">反序列化目标类型。</typeparam>
+            <param name="request">已构建完成的 HttpRequestMessage（含URL/Header/Body）。</param>
+            <param name="descriptor">响应处理描述符。</param>
+            <param name="jsonSerializerOptions">JSON序列化选项。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>反序列化后的结果。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IHttpRequestExecutor.SendAsResponseAsync``1(System.Net.Http.HttpRequestMessage,Mud.HttpUtils.ResponseDescriptor,System.Object,System.Threading.CancellationToken)">
+            <summary>
+            发送 HTTP 请求并返回 Response{T} 包装结果。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IHttpRequestExecutor.SendAsync(System.Net.Http.HttpRequestMessage,Mud.HttpUtils.ResponseDescriptor,System.Threading.CancellationToken)">
+            <summary>
+            发送 HTTP 请求（无返回值）。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IHttpRequestExecutor.DownloadAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
+            <summary>
+            下载文件并返回字节数组。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IHttpRequestExecutor.DownloadLargeAsync(System.Net.Http.HttpRequestMessage,System.String,System.Threading.CancellationToken)">
+            <summary>
+            下载大文件到指定路径。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IHttpRequestExecutor.SendAsAsyncEnumerable``1(System.Net.Http.HttpRequestMessage,System.Object,System.Threading.CancellationToken)">
+            <summary>
+            以异步枚举方式流式读取响应。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IHttpRequestExecutor.ExecuteAsync``1(System.Net.Http.HttpRequestMessage,Mud.HttpUtils.ExecutionDescriptor,System.Object,System.Threading.CancellationToken)">
+            <summary>
+            发送 HTTP 请求，支持缓存和弹性策略编排。
+            </summary>
+            <typeparam name="TResult">反序列化目标类型。</typeparam>
+            <param name="request">已构建完成的 HttpRequestMessage。</param>
+            <param name="descriptor">执行模式描述符（含响应处理、缓存、弹性策略配置）。</param>
+            <param name="jsonSerializerOptions">JSON序列化选项。</param>
+            <param name="cancellationToken">取消令牌。</param>
+            <returns>反序列化后的结果。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.IHttpRequestExecutor.ExecuteAsResponseAsync``1(System.Net.Http.HttpRequestMessage,Mud.HttpUtils.ExecutionDescriptor,System.Object,System.Threading.CancellationToken)">
+            <summary>
+            发送 HTTP 请求并返回 Response{T}，支持缓存和弹性策略编排。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IHttpRequestExecutor.ExecuteAsync(System.Net.Http.HttpRequestMessage,Mud.HttpUtils.ExecutionDescriptor,System.Threading.CancellationToken)">
+            <summary>
+            发送 HTTP 请求（无返回值），支持缓存和弹性策略编排。
+            </summary>
+        </member>
         <member name="T:Mud.HttpUtils.IHttpRequestInterceptor">
             <summary>
             HTTP 请求拦截器接口，用于在请求发送前执行自定义逻辑。
@@ -1101,6 +1217,25 @@
             将对象转换为查询参数键值对集合。
             </summary>
             <returns>包含查询参数的键值对 enumerable 集合。</returns>
+        </member>
+        <member name="T:Mud.HttpUtils.IResiliencePolicyResolver">
+            <summary>
+            弹性策略解析器接口，解耦执行器与具体弹性策略实现。
+            由 Mud.HttpUtils.Resilience 项目提供实现。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.IResiliencePolicyResolver.ResolvePolicyWrapper``1(Mud.HttpUtils.ResilienceExecutionOptions,System.Net.Http.HttpRequestMessage)">
+            <summary>
+            根据执行配置获取弹性策略包装函数。
+            返回 null 表示无需弹性策略包装。
+            </summary>
+            <remarks>
+            返回的包装函数负责在每次重试时克隆请求（HttpRequestMessage 不可重用），
+            克隆逻辑封装在实现内部，执行器无需感知。
+            </remarks>
+            <param name="options">弹性策略执行配置。</param>
+            <param name="requestTemplate">请求模板，重试时由实现内部克隆后传给 coreExecute。</param>
+            <returns>包装函数；为 null 表示无需弹性策略。</returns>
         </member>
         <member name="T:Mud.HttpUtils.IXmlHttpClient">
             <summary>
@@ -1524,6 +1659,47 @@
         <member name="M:Mud.HttpUtils.Observability.TokenRefreshStatsCollector.Clear">
             <summary>
             清空所有统计（仅供测试与运维重置使用）。
+            </summary>
+        </member>
+        <member name="T:Mud.HttpUtils.ResponseDescriptor">
+            <summary>
+            描述方法的响应处理策略，由源生成器在编译期填充。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.ResponseDescriptor.AllowAnyStatusCode">
+            <summary>
+            是否允许任意状态码（不抛出异常）。
+            对应 [AllowAnyStatusCode] 特性。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.ResponseDescriptor.IsResponseType">
+            <summary>
+            返回类型是否为 Response{T}。
+            为 true 时，执行器构造 Response{T} 包装返回值。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.ResponseDescriptor.ResponseContentType">
+            <summary>
+            响应内容类型（"application/json"、"application/xml" 等）。
+            为 null 时使用默认 JSON。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.ResponseDescriptor.EnableDecrypt">
+            <summary>
+            是否启用响应解密。
+            对应 [Get(ResponseEnableDecrypt = true)] 特性。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.ResponseDescriptor.IsVoidReturn">
+            <summary>
+            是否为 void 返回类型（Task 或 Task&lt;void&gt;）。
+            为 true 时执行器不执行反序列化。
+            </summary>
+        </member>
+        <member name="P:Mud.HttpUtils.ResponseDescriptor.XmlSerializer">
+            <summary>
+            XML 序列化器引用（仅 XML 响应时使用）。
+            由生成器预创建的静态 XmlSerializer 字段。
             </summary>
         </member>
         <member name="T:Mud.HttpUtils.Response`1">

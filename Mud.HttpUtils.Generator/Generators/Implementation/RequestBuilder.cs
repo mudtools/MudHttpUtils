@@ -536,56 +536,117 @@ internal class RequestBuilder
     }
 
     /// <summary>
-    /// 生成请求执行
+    /// 生成请求执行代码，委托给运行时 IHttpRequestExecutor 统一处理响应反序列化与错误处理。
     /// </summary>
-    public void GenerateRequestExecution(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, string cancellationTokenArg, bool hasHttpClient)
+    /// <param name="executor">执行器变量表达式（HttpClient 模式为 _executor，TokenManager/AppContext 模式为 __executor）。</param>
+    public void GenerateRequestExecution(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, string cancellationTokenArg, string executor)
     {
-        var filePathParam = methodInfo.Parameters.Where(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.FilePathAttribute)).FirstOrDefault();
+        var filePathParam = methodInfo.Parameters.FirstOrDefault(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.FilePathAttribute));
 
         var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
         codeBuilder.AppendLine();
-        string httpClient = hasHttpClient ? "_httpClient" : "__appContext.HttpClient";
 
+        // IAsyncEnumerable 返回 — 直接调用执行器流式方法
         if (methodInfo.IsAsyncEnumerableReturn && !string.IsNullOrEmpty(methodInfo.AsyncEnumerableElementType))
         {
             var elementType = methodInfo.AsyncEnumerableElementType;
             var cancellationTokenParam = methodInfo.Parameters.FirstOrDefault(p => TypeDetectionHelper.IsCancellationToken(p.Type));
             var cancellationTokenName = cancellationTokenParam?.Name ?? "default";
-            codeBuilder.AppendLine($"            await foreach (var __item in {httpClient}.SendAsAsyncEnumerable<{elementType}>(__httpRequest, _jsonSerializerOptions, {cancellationTokenName}))");
+            codeBuilder.AppendLine($"            await foreach (var __item in {executor}.SendAsAsyncEnumerable<{elementType}>(__httpRequest, _jsonSerializerOptions, {cancellationTokenName}))");
             codeBuilder.AppendLine("            {");
             codeBuilder.AppendLine("                yield return __item;");
             codeBuilder.AppendLine("            }");
             return;
         }
 
+        // 文件路径下载
         if (filePathParam != null)
         {
-            codeBuilder.AppendLine($"            await {httpClient}.DownloadLargeAsync(__httpRequest, {filePathParam.Name}{cancellationTokenArg}).ConfigureAwait(false);");
+            codeBuilder.AppendLine($"            await {executor}.DownloadLargeAsync(__httpRequest, {filePathParam.Name}{cancellationTokenArg}).ConfigureAwait(false);");
+            return;
+        }
+
+        // byte[] 下载
+        if (TypeDetectionHelper.IsByteArrayType(deserializeType))
+        {
+            codeBuilder.AppendLine($"            return await {executor}.DownloadAsync(__httpRequest{cancellationTokenArg}).ConfigureAwait(false);");
+            return;
+        }
+
+        // 构造 ResponseDescriptor
+        var descriptor = BuildResponseDescriptorCode(methodInfo, deserializeType);
+
+        // 根据返回类型选择执行器方法
+        var isResponseType = IsResponseType(deserializeType, out var responseInnerType);
+
+        if (isResponseType)
+        {
+            codeBuilder.AppendLine($"            return await {executor}.SendAsResponseAsync<{responseInnerType}>(");
+            codeBuilder.AppendLine($"                __httpRequest,");
+            codeBuilder.AppendLine($"                {descriptor},");
+            codeBuilder.AppendLine($"                _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false);");
+        }
+        else if (IsVoidType(deserializeType))
+        {
+            codeBuilder.AppendLine($"            await {executor}.SendAsync(");
+            codeBuilder.AppendLine($"                __httpRequest,");
+            codeBuilder.AppendLine($"                {descriptor}{cancellationTokenArg}).ConfigureAwait(false);");
         }
         else
         {
-            if (TypeDetectionHelper.IsByteArrayType(deserializeType))
-            {
-                codeBuilder.AppendLine($"            return await {httpClient}.DownloadAsync(__httpRequest{cancellationTokenArg}).ConfigureAwait(false);");
-            }
-            else
-            {
-                var isResponseType = IsResponseType(deserializeType, out var responseInnerType);
-
-                if (isResponseType)
-                {
-                    GenerateResponseExecution(codeBuilder, methodInfo, httpClient, cancellationTokenArg, responseInnerType);
-                }
-                else if (methodInfo.AllowAnyStatusCode)
-                {
-                    GenerateAllowAnyStatusCodeExecution(codeBuilder, methodInfo, httpClient, cancellationTokenArg, deserializeType);
-                }
-                else
-                {
-                    GenerateStandardExecution(codeBuilder, methodInfo, httpClient, cancellationTokenArg, deserializeType);
-                }
-            }
+            codeBuilder.AppendLine($"            return await {executor}.SendAndDeserializeAsync<{deserializeType}>(");
+            codeBuilder.AppendLine($"                __httpRequest,");
+            codeBuilder.AppendLine($"                {descriptor},");
+            codeBuilder.AppendLine($"                _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false);");
         }
+    }
+
+    /// <summary>
+    /// 生成 ResponseDescriptor 对象初始化代码
+    /// </summary>
+    private string BuildResponseDescriptorCode(MethodAnalysisResult methodInfo, string deserializeType)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("new ResponseDescriptor");
+        sb.AppendLine("            {");
+        sb.AppendLine($"                AllowAnyStatusCode = {methodInfo.AllowAnyStatusCode.ToString().ToLowerInvariant()},");
+
+        var isResponseType = IsResponseType(deserializeType, out _);
+        sb.AppendLine($"                IsResponseType = {isResponseType.ToString().ToLowerInvariant()},");
+
+        sb.AppendLine($"                ResponseContentType = \"{methodInfo.ResponseContentType ?? ""}\",");
+        sb.AppendLine($"                EnableDecrypt = {methodInfo.ResponseEnableDecrypt.ToString().ToLowerInvariant()},");
+
+        var isVoid = IsVoidType(deserializeType);
+        sb.AppendLine($"                IsVoidReturn = {isVoid.ToString().ToLowerInvariant()},");
+
+        // XML 序列化器引用
+        var isXml = ContentTypeHelper.IsXmlContentType(methodInfo.ResponseContentType);
+        if (isXml && !isVoid && !isResponseType)
+        {
+            var xmlFieldRef = GetXmlSerializerFieldReference(deserializeType);
+            sb.AppendLine($"                XmlSerializer = {xmlFieldRef},");
+        }
+        else if (isXml && !isVoid && isResponseType)
+        {
+            // Response<T> 模式下，XML 序列化器基于内部类型
+            var innerType = deserializeType;
+            IsResponseType(deserializeType, out innerType);
+            var xmlFieldRef = GetXmlSerializerFieldReference(innerType);
+            sb.AppendLine($"                XmlSerializer = {xmlFieldRef},");
+        }
+
+        sb.AppendLine("            }");
+
+        return sb.ToString().TrimEnd('\n', '\r');
+    }
+
+    /// <summary>
+    /// 判断类型是否为 void
+    /// </summary>
+    private static bool IsVoidType(string type)
+    {
+        return type == "void" || type == "System.Void";
     }
 
     /// <summary>
@@ -609,306 +670,6 @@ internal class RequestBuilder
         }
 
         return false;
-    }
-
-    /// <summary>
-    /// 生成 Response&lt;T&gt; 返回类型的执行代码
-    /// </summary>
-    private void GenerateResponseExecution(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, string httpClient, string cancellationTokenArg, string innerType)
-    {
-        var responseContentType = methodInfo.ResponseContentType;
-        var isXmlResponse = ContentTypeHelper.IsXmlContentType(responseContentType);
-
-        codeBuilder.AppendLine($"            using var __httpResponse = await {httpClient}.SendRawAsync(__httpRequest{cancellationTokenArg}).ConfigureAwait(false);");
-        codeBuilder.AppendLine($"            var __statusCode = __httpResponse.StatusCode;");
-        codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
-        codeBuilder.AppendLine($"            var __rawContent = await __httpResponse.Content.ReadAsStringAsync({GetCancellationTokenArgument(cancellationTokenArg)}).ConfigureAwait(false);");
-        codeBuilder.AppendLine("#else");
-        codeBuilder.AppendLine($"            var __rawContent = await __httpResponse.Content.ReadAsStringAsync().ConfigureAwait(false);");
-        codeBuilder.AppendLine("#endif");
-        codeBuilder.AppendLine($"            var __responseHeaders = __httpResponse.Headers.ToDictionary(h => h.Key, h => h.Value.ToList());");
-
-        codeBuilder.AppendLine($"            if ((int)__statusCode >= 200 && (int)__statusCode <= 299)");
-        codeBuilder.AppendLine($"            {{");
-
-        var isVoidType = innerType == "void" || innerType == "System.Void";
-        if (!isVoidType)
-        {
-            var innerTypeWithoutNullable = GetVariableTypeString(innerType);
-            var innerTypeWithoutNullableClean = innerType.EndsWith("?", StringComparison.OrdinalIgnoreCase) ? innerType.TrimEnd('?') : innerType;
-
-            if (TypeDetectionHelper.IsStringType(innerTypeWithoutNullableClean))
-            {
-                if (methodInfo.ResponseEnableDecrypt)
-                {
-                    codeBuilder.AppendLine($"                var __decryptedContent = {httpClient}.DecryptContent(__rawContent);");
-                    codeBuilder.AppendLine($"                return new Mud.HttpUtils.Response<{innerType}>(__statusCode, __decryptedContent, __rawContent, __responseHeaders);");
-                }
-                else
-                {
-                    codeBuilder.AppendLine($"                return new Mud.HttpUtils.Response<{innerType}>(__statusCode, __rawContent, __rawContent, __responseHeaders);");
-                }
-            }
-            else
-            {
-                // 解密必须在反序列化之前：__rawContent 此时是密文，先解密为明文再反序列化
-                if (methodInfo.ResponseEnableDecrypt)
-                {
-                    codeBuilder.AppendLine($"                __rawContent = {httpClient}.DecryptContent(__rawContent);");
-                }
-
-                codeBuilder.AppendLine($"                {innerTypeWithoutNullable} __content;");
-                codeBuilder.AppendLine($"                try");
-                codeBuilder.AppendLine($"                {{");
-
-                if (isXmlResponse)
-                {
-                    codeBuilder.AppendLine($"                    using var __xmlReader = new System.IO.StringReader(__rawContent);");
-                    codeBuilder.AppendLine($"                    var __deserializedObj = {GetXmlSerializerFieldReference(innerType)}.Deserialize(__xmlReader);");
-                    codeBuilder.AppendLine($"                    __content = __deserializedObj is {innerType} __typed ? __typed : default;");
-                }
-                else
-                {
-                    codeBuilder.AppendLine($"                    __content = System.Text.Json.JsonSerializer.Deserialize<{innerType}>(__rawContent, _jsonSerializerOptions);");
-                }
-
-                codeBuilder.AppendLine($"                }}");
-
-                if (isXmlResponse)
-                {
-                    codeBuilder.AppendLine($"                catch (System.Exception ex) when (ex is System.InvalidOperationException || ex is System.Xml.XmlException)");
-                    codeBuilder.AppendLine($"                {{");
-                    codeBuilder.AppendLine($"                    return new Mud.HttpUtils.Response<{innerType}>(__statusCode, \"Failed to deserialize XML response: \" + ex.Message + \". Raw content: \" + __rawContent, __responseHeaders);");
-                }
-                else
-                {
-                    codeBuilder.AppendLine($"                catch (System.Text.Json.JsonException ex)");
-                    codeBuilder.AppendLine($"                {{");
-                    codeBuilder.AppendLine($"                    return new Mud.HttpUtils.Response<{innerType}>(__statusCode, \"Failed to deserialize JSON response: \" + ex.Message + \". Raw content: \" + __rawContent, __responseHeaders);");
-                }
-
-                codeBuilder.AppendLine($"                }}");
-
-                codeBuilder.AppendLine($"                return new Mud.HttpUtils.Response<{innerType}>(__statusCode, __content, __rawContent, __responseHeaders);");
-            }
-        }
-        else
-        {
-            codeBuilder.AppendLine($"                return new Mud.HttpUtils.Response<{innerType}>(__statusCode, default, __rawContent, __responseHeaders);");
-        }
-
-        codeBuilder.AppendLine($"            }}");
-        codeBuilder.AppendLine($"            else");
-        codeBuilder.AppendLine($"            {{");
-        codeBuilder.AppendLine($"                return new Mud.HttpUtils.Response<{innerType}>(__statusCode, __rawContent, __responseHeaders);");
-        codeBuilder.AppendLine($"            }}");
-    }
-
-    private string GetVariableTypeString(string type)
-    {
-        if (string.IsNullOrWhiteSpace(type))
-            return type ?? string.Empty;
-
-        // 去掉已有的 ? 后缀
-        var baseType = type.TrimEnd('?');
-
-        // 只有值类型才添加 ? 后缀
-        // JsonSerializer.Deserialize<T>() 返回 T?，对于值类型（如 bool、int），
-        // 变量必须声明为 T? 才能接收返回值；引用类型则始终添加 ? 以匹配 nullable 上下文
-        return baseType + "?";
-    }
-
-    /// <summary>
-    /// 生成 AllowAnyStatusCode 模式的执行代码（非 Response&lt;T&gt; 返回类型）
-    /// </summary>
-    private void GenerateAllowAnyStatusCodeExecution(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, string httpClient, string cancellationTokenArg, string deserializeType)
-    {
-        var isVoidType = deserializeType == "void" || deserializeType == "System.Void";
-
-        codeBuilder.AppendLine($"            using var __httpResponse = await {httpClient}.SendRawAsync(__httpRequest{cancellationTokenArg}).ConfigureAwait(false);");
-
-        if (isVoidType)
-            return;
-
-        var responseContentType = methodInfo.ResponseContentType;
-        var isXmlResponse = ContentTypeHelper.IsXmlContentType(responseContentType);
-        var resultVariable = $"__result_{methodInfo.MethodName}";
-
-        var rawContentVar = $"__rawContent_{methodInfo.MethodName}";
-
-        codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
-        codeBuilder.AppendLine($"            var {rawContentVar} = await __httpResponse.Content.ReadAsStringAsync({GetCancellationTokenArgument(cancellationTokenArg)}).ConfigureAwait(false);");
-        codeBuilder.AppendLine("#else");
-        codeBuilder.AppendLine($"            var {rawContentVar} = await __httpResponse.Content.ReadAsStringAsync().ConfigureAwait(false);");
-        codeBuilder.AppendLine("#endif");
-
-        var deserializeTypeWithoutNullable = deserializeType.EndsWith("?", StringComparison.OrdinalIgnoreCase) ? deserializeType.TrimEnd('?') : deserializeType;
-        var innerTypeWithoutNullable = GetVariableTypeString(deserializeType);
-
-        if (TypeDetectionHelper.IsStringType(deserializeTypeWithoutNullable))
-        {
-            if (methodInfo.ResponseEnableDecrypt)
-            {
-                codeBuilder.AppendLine($"            var __decryptedContent = {httpClient}.DecryptContent({rawContentVar});");
-                codeBuilder.AppendLine($"            return __decryptedContent;");
-            }
-            else
-            {
-                codeBuilder.AppendLine($"            return {rawContentVar};");
-            }
-            return;
-        }
-
-        // 解密必须在反序列化之前：rawContentVar 此时是密文，先解密为明文再反序列化
-        if (methodInfo.ResponseEnableDecrypt)
-        {
-            codeBuilder.AppendLine($"            {rawContentVar} = {httpClient}.DecryptContent({rawContentVar});");
-        }
-
-        if (isXmlResponse)
-        {
-            codeBuilder.AppendLine($"            {innerTypeWithoutNullable} {resultVariable};");
-            codeBuilder.AppendLine($"            try");
-            codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                using var __xmlReader = new System.IO.StringReader({rawContentVar});");
-            codeBuilder.AppendLine($"                var __deserializedObj = {GetXmlSerializerFieldReference(deserializeType)}.Deserialize(__xmlReader);");
-            codeBuilder.AppendLine($"                {resultVariable} = __deserializedObj is {deserializeType} __typed ? __typed : default;");
-            codeBuilder.AppendLine($"            }}");
-            codeBuilder.AppendLine($"            catch (System.Exception ex) when (ex is System.InvalidOperationException || ex is System.Xml.XmlException)");
-            codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                throw new Mud.HttpUtils.ApiException(__httpResponse.StatusCode, \"Failed to deserialize XML response: \" + ex.Message + \". Raw content: \" + {rawContentVar}, __httpRequest.RequestUri?.ToString());");
-            codeBuilder.AppendLine($"            }}");
-        }
-        else
-        {
-            codeBuilder.AppendLine($"            {innerTypeWithoutNullable} {resultVariable};");
-            codeBuilder.AppendLine($"            try");
-            codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                {resultVariable} = System.Text.Json.JsonSerializer.Deserialize<{deserializeType}>({rawContentVar}, _jsonSerializerOptions);");
-            codeBuilder.AppendLine($"            }}");
-            codeBuilder.AppendLine($"            catch (System.Text.Json.JsonException ex)");
-            codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                throw new Mud.HttpUtils.ApiException(__httpResponse.StatusCode, \"Failed to deserialize JSON response: \" + ex.Message + \". Raw content: \" + {rawContentVar}, __httpRequest.RequestUri?.ToString());");
-            codeBuilder.AppendLine($"            }}");
-        }
-
-        codeBuilder.AppendLine($"            return {GetReturnExpression(resultVariable, deserializeType)};");
-    }
-
-    private string GetCancellationTokenArgument(string cancellationTokenArg)
-    {
-        if (string.IsNullOrEmpty(cancellationTokenArg))
-            return string.Empty;
-        return cancellationTokenArg.Remove(0, 2);
-    }
-
-    /// <summary>
-    /// 生成返回表达式，当反序列化变量类型与方法返回类型不一致时进行适当转换
-    /// </summary>
-    private static string GetReturnExpression(string resultVariable, string deserializeType)
-    {
-        if (string.IsNullOrEmpty(deserializeType))
-            return resultVariable;
-
-        // 如果原始返回类型不是可空类型（不以 ? 结尾），
-        // 需要将可空的变量值（T?）转换为非空类型（T）
-        if (!deserializeType.EndsWith("?", StringComparison.OrdinalIgnoreCase))
-        {
-            var baseType = deserializeType;
-
-            // 值类型：使用 GetValueOrDefault()，这比强制转换更安全
-            // TypeDetectionHelper.IsValueType 覆盖基本值类型 + DateTime/Guid/TimeSpan 等
-            if (TypeDetectionHelper.IsValueType(baseType))
-            {
-                return $"{resultVariable}.GetValueOrDefault()";
-            }
-
-            // 引用类型：使用 ! null-forgiving 操作符
-            // 注意：自定义 struct/enum 不在 IsValueType 列表中时会走此分支，
-            // 若编译失败需在 TypeDetectionHelper.IsValueType 中补充该类型
-            return $"{resultVariable}!";
-        }
-
-        return resultVariable;
-    }
-
-    /// <summary>
-    /// 生成标准模式的执行代码（默认行为，错误状态码抛出 ApiException）
-    /// </summary>
-    private void GenerateStandardExecution(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, string httpClient, string cancellationTokenArg, string deserializeType)
-    {
-        var isVoidType = deserializeType == "void" || deserializeType == "System.Void";
-
-        codeBuilder.AppendLine($"            using var __httpResponse = await {httpClient}.SendRawAsync(__httpRequest{cancellationTokenArg}).ConfigureAwait(false);");
-
-        codeBuilder.AppendLine($"            if (!__httpResponse.IsSuccessStatusCode)");
-        codeBuilder.AppendLine($"            {{");
-        codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
-        codeBuilder.AppendLine($"               var __errorContent = await __httpResponse.Content.ReadAsStringAsync({GetCancellationTokenArgument(cancellationTokenArg)}).ConfigureAwait(false);");
-        codeBuilder.AppendLine("#else");
-        codeBuilder.AppendLine($"               var __errorContent = await __httpResponse.Content.ReadAsStringAsync().ConfigureAwait(false);");
-        codeBuilder.AppendLine("#endif");
-        codeBuilder.AppendLine($"                throw new Mud.HttpUtils.ApiException(__httpResponse.StatusCode, __errorContent, __httpRequest.RequestUri?.ToString());");
-        codeBuilder.AppendLine($"            }}");
-
-        if (isVoidType)
-            return;
-
-        var responseContentType = methodInfo.ResponseContentType;
-        var isXmlResponse = ContentTypeHelper.IsXmlContentType(responseContentType);
-        var resultVariable = $"__result_{methodInfo.MethodName}";
-
-        var rawContentVar = $"__rawContent_{methodInfo.MethodName}";
-
-        codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
-        codeBuilder.AppendLine($"            var {rawContentVar} = await __httpResponse.Content.ReadAsStringAsync({GetCancellationTokenArgument(cancellationTokenArg)}).ConfigureAwait(false);");
-        codeBuilder.AppendLine("#else");
-        codeBuilder.AppendLine($"            var {rawContentVar} = await __httpResponse.Content.ReadAsStringAsync().ConfigureAwait(false);");
-        codeBuilder.AppendLine("#endif");
-
-        var deserializeTypeWithoutNullable = deserializeType.EndsWith("?", StringComparison.OrdinalIgnoreCase) ? deserializeType.TrimEnd('?') : deserializeType;
-        var innerTypeWithoutNullable = GetVariableTypeString(deserializeType);
-
-        // 解密必须在反序列化之前：rawContentVar 此时是密文，先解密为明文再反序列化
-        if (methodInfo.ResponseEnableDecrypt)
-        {
-            codeBuilder.AppendLine($"            {rawContentVar} = {httpClient}.DecryptContent({rawContentVar});");
-        }
-
-        if (TypeDetectionHelper.IsStringType(deserializeTypeWithoutNullable))
-        {
-            codeBuilder.AppendLine($"            return {rawContentVar};");
-            return;
-        }
-
-        if (isXmlResponse)
-        {
-            codeBuilder.AppendLine($"            {innerTypeWithoutNullable} {resultVariable};");
-            codeBuilder.AppendLine($"            try");
-            codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                using var __xmlReader = new System.IO.StringReader({rawContentVar});");
-            codeBuilder.AppendLine($"                var __deserializedObj = {GetXmlSerializerFieldReference(deserializeType)}.Deserialize(__xmlReader);");
-            codeBuilder.AppendLine($"                {resultVariable} = __deserializedObj is {deserializeType} __typed ? __typed : throw new System.InvalidOperationException(\"Failed to deserialize XML response to type \" + typeof({deserializeType}).Name);");
-            codeBuilder.AppendLine($"            }}");
-            codeBuilder.AppendLine($"            catch (System.Exception ex) when (ex is System.InvalidOperationException || ex is System.Xml.XmlException)");
-            codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                throw new Mud.HttpUtils.ApiException(__httpResponse.StatusCode, \"Failed to deserialize XML response: \" + ex.Message + \". Raw content: \" + {rawContentVar}, __httpRequest.RequestUri?.ToString());");
-            codeBuilder.AppendLine($"            }}");
-        }
-        else
-        {
-            codeBuilder.AppendLine($"            {innerTypeWithoutNullable} {resultVariable};");
-            codeBuilder.AppendLine($"            try");
-            codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                {resultVariable} = System.Text.Json.JsonSerializer.Deserialize<{deserializeType}>({rawContentVar}, _jsonSerializerOptions);");
-            codeBuilder.AppendLine($"            }}");
-            codeBuilder.AppendLine($"            catch (System.Text.Json.JsonException ex)");
-            codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                throw new Mud.HttpUtils.ApiException(__httpResponse.StatusCode, \"Failed to deserialize JSON response: \" + ex.Message + \". Raw content: \" + {rawContentVar}, __httpRequest.RequestUri?.ToString());");
-            codeBuilder.AppendLine($"            }}");
-        }
-
-        codeBuilder.AppendLine($"            return {GetReturnExpression(resultVariable, deserializeType)};");
     }
 
     #region 辅助方法

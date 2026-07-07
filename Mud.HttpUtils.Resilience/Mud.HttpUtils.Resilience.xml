@@ -288,7 +288,29 @@
             <remarks>
             当生成的代码使用方法级弹性特性（[Retry]、[CircuitBreaker]、[Timeout]）时，
             会在 HttpRequestMessage.Properties 中设置此键，以避免与 ResilientHttpClient 装饰器的全局弹性策略产生双重包装。
+            此常量引用 <see cref="F:Mud.HttpUtils.HttpExecutionConstants.SkipResiliencePropertyKey"/> 以保持单一真相源。
             </remarks>
+        </member>
+        <member name="T:Mud.HttpUtils.Resilience.ResiliencePolicyResolver">
+            <summary>
+            弹性策略解析器实现，解耦 <see cref="T:Mud.HttpUtils.IHttpRequestExecutor"/> 与具体弹性策略实现。
+            </summary>
+            <remarks>
+            此实现通过 <see cref="T:Mud.HttpUtils.Resilience.IResiliencePolicyProvider"/> 获取 Polly 策略，
+            并在每次重试时克隆请求（HttpRequestMessage 不可重用），
+            克隆逻辑封装在此处，执行器无需感知。
+            </remarks>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResiliencePolicyResolver.#ctor(Mud.HttpUtils.Resilience.IResiliencePolicyProvider,Microsoft.Extensions.Options.IOptions{Mud.HttpUtils.Resilience.ResilienceOptions},Microsoft.Extensions.Logging.ILogger{Mud.HttpUtils.Resilience.ResiliencePolicyResolver})">
+            <summary>
+            初始化 <see cref="T:Mud.HttpUtils.Resilience.ResiliencePolicyResolver"/> 实例。
+            </summary>
+            <param name="policyProvider">弹性策略提供器。</param>
+            <param name="options">弹性策略配置选项（可选，用于获取 MaxCloneContentSize）。</param>
+            <param name="logger">日志记录器（可选）。</param>
+        </member>
+        <member name="M:Mud.HttpUtils.Resilience.ResiliencePolicyResolver.ResolvePolicyWrapper``1(Mud.HttpUtils.ResilienceExecutionOptions,System.Net.Http.HttpRequestMessage)">
+            <inheritdoc/>
         </member>
         <member name="T:Mud.HttpUtils.Resilience.ResilientHttpClient">
             <summary>
