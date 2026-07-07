@@ -1,4 +1,11 @@
-﻿namespace HttpClientApiTest.Api;
+﻿// -----------------------------------------------------------------------
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// -----------------------------------------------------------------------
+
+namespace HttpClientApiTest.Api;
 /// <summary>
 /// 用于测试 ContentType 的优先级功能
 /// 测试场景：
@@ -83,4 +90,29 @@ public interface IContentTypeBodyPriorityTestApi
     /// </summary>
     [Post("/api/priority2")]
     Task<string> TestPriority2Async([Body(ContentType = "application/json")] string data);
+
+
+    [Get("/api/priority2")]
+    Task<string> TestPriority2Async([Query("query1")] string[] array);
+
+    /// <summary>
+    /// 测试 [Query] 数组默认行为（与 Separator = null 相同）
+    /// 预期结果：query1=val1&query1=val2&query1=val3
+    /// </summary>
+    [Get("/api/priority3")]
+    Task<string> TestPriority3Async([Query("query1", Separator = null)] string[] array);
+
+    /// <summary>
+    /// 测试 [Query] 数组使用自定义分隔符
+    /// 预期结果：query1=val1,val2,val3
+    /// </summary>
+    [Get("/api/priority4")]
+    Task<string> TestPriority4Async([Query("query1", Separator = ",")] string[] array);
+
+    /// <summary>
+    /// 测试 [ArrayQuery] 使用 Separator = null 生成重复参数模式
+    /// 预期结果：tags=val1&tags=val2&tags=val3
+    /// </summary>
+    [Get("/api/priority5")]
+    Task<string> TestPriority5Async([ArrayQuery("tags", Separator = null)] string[] array);
 }

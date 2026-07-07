@@ -459,6 +459,17 @@
             生成 GetTokenAsync() 的无参实现，委托给带参的 GetTokenAsync
             </summary>
         </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.QueryParameterBinder.GenerateArrayQueryUrl(System.Text.StringBuilder,Mud.HttpUtils.Models.Analysis.ParameterInfo,System.String,Mud.HttpUtils.Models.Analysis.ParameterAttributeInfo,System.String,System.String)">
+            <summary>
+            生成数组查询参数的 URL 代码，支持分隔符模式和重复参数模式。
+            </summary>
+            <param name="codeBuilder">代码构建器。</param>
+            <param name="param">参数信息。</param>
+            <param name="paramName">查询参数名称。</param>
+            <param name="attr">参数特性信息。</param>
+            <param name="indent">缩进字符串。</param>
+            <param name="defaultSeparator">当 Separator 未显式设置时的默认分隔符。null 表示默认使用重复参数模式（[Query] 的默认行为），非 null 表示使用分隔符模式（[ArrayQuery] 默认 ","）。</param>
+        </member>
         <member name="T:Mud.HttpUtils.Generators.Implementation.ClassStructureGenerator">
             <summary>
             类结构生成器，负责生成类的文件头部、命名空间、类声明

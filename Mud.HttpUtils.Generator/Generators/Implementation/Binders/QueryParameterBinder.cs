@@ -50,7 +50,7 @@ internal class QueryParameterBinder : IParameterBinder
 
         if (TypeDetectionHelper.IsSimpleType(param.Type))
         {
-            GenerateSimpleQueryParameter(codeBuilder, param, paramName, formatString, indent);
+            GenerateSimpleQueryParameter(codeBuilder, param, paramName, formatString, attr, indent);
         }
         else
         {
@@ -58,15 +58,12 @@ internal class QueryParameterBinder : IParameterBinder
         }
     }
 
-    private static void GenerateSimpleQueryParameter(StringBuilder codeBuilder, ParameterInfo param, string paramName, string? formatString, string indent)
+    private static void GenerateSimpleQueryParameter(StringBuilder codeBuilder, ParameterInfo param, string paramName, string? formatString, ParameterAttributeInfo attr, string indent)
     {
         if (TypeDetectionHelper.IsArrayType(param.Type))
         {
-            codeBuilder.AppendLine($"{indent}if ({param.Name} != null && {param.Name}.Any())");
-            codeBuilder.AppendLine($"{indent}{{");
-            codeBuilder.AppendLine($"{indent}    var __joinedValues = string.Join(\";\", {param.Name}.Where(__item => __item != null).Select(__item => __item.ToString()));");
-            codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{paramName}\", __joinedValues);");
-            codeBuilder.AppendLine($"{indent}}}");
+            // [Query] 数组默认使用重复参数模式（与 Separator = null 行为一致）
+            GenerateArrayQueryUrl(codeBuilder, param, paramName, attr, indent, defaultSeparator: null);
         }
         else if (TypeDetectionHelper.IsStringType(param.Type))
         {
@@ -108,12 +105,61 @@ internal class QueryParameterBinder : IParameterBinder
     private static void GenerateArrayQueryParameter(StringBuilder codeBuilder, ParameterInfo param, ParameterAttributeInfo attr, string indent)
     {
         var paramName = attr.Arguments.FirstOrDefault()?.ToString() ?? param.Name;
-        var separator = attr.NamedArguments.TryGetValue("Separator", out var sep) && sep is string s ? s : ",";
+        GenerateArrayQueryUrl(codeBuilder, param, paramName, attr, indent, defaultSeparator: ",");
+    }
+
+    /// <summary>
+    /// 生成数组查询参数的 URL 代码，支持分隔符模式和重复参数模式。
+    /// </summary>
+    /// <param name="codeBuilder">代码构建器。</param>
+    /// <param name="param">参数信息。</param>
+    /// <param name="paramName">查询参数名称。</param>
+    /// <param name="attr">参数特性信息。</param>
+    /// <param name="indent">缩进字符串。</param>
+    /// <param name="defaultSeparator">当 Separator 未显式设置时的默认分隔符。null 表示默认使用重复参数模式（[Query] 的默认行为），非 null 表示使用分隔符模式（[ArrayQuery] 默认 ","）。</param>
+    private static void GenerateArrayQueryUrl(StringBuilder codeBuilder, ParameterInfo param, string paramName, ParameterAttributeInfo attr, string indent, string? defaultSeparator)
+    {
+        // 从构造函数参数或命名参数中解析 Separator
+        // ArrayQueryAttribute 构造函数: (string name, string? separator)
+        // QueryAttribute 通过命名参数 Separator 设置
+        string? separator = null;
+        bool separatorExplicitlySet = false;
+
+        // 检查构造函数参数（ArrayQueryAttribute 的第二个参数）
+        if (attr.Arguments.Length > 1)
+        {
+            separator = attr.Arguments[1]?.ToString();
+            separatorExplicitlySet = true;
+        }
+
+        // 检查命名参数（两种特性都支持）
+        if (!separatorExplicitlySet && attr.NamedArguments.TryGetValue("Separator", out var sepVal))
+        {
+            separator = sepVal as string;
+            separatorExplicitlySet = true;
+        }
+
+        // 计算最终生效的分隔符：显式设置则使用设置的值，未设置则使用默认值
+        var effectiveSeparator = separatorExplicitlySet ? separator : defaultSeparator;
 
         codeBuilder.AppendLine($"{indent}if ({param.Name} != null && {param.Name}.Any())");
         codeBuilder.AppendLine($"{indent}{{");
-        codeBuilder.AppendLine($"{indent}    var __joinedValues = string.Join(\"{separator}\", {param.Name}.Where(__item => __item != null).Select(__item => __item.ToString()));");
-        codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{paramName}\", __joinedValues);");
+
+        if (effectiveSeparator == null)
+        {
+            // 重复参数模式: query1=val1&query1=val2&query1=val3
+            codeBuilder.AppendLine($"{indent}    foreach (var __item in {param.Name}.Where(__item => __item != null))");
+            codeBuilder.AppendLine($"{indent}    {{");
+            codeBuilder.AppendLine($"{indent}        __queryParams.Add(\"{paramName}\", __item.ToString());");
+            codeBuilder.AppendLine($"{indent}    }}");
+        }
+        else
+        {
+            // 分隔符模式: query1=val1;val2;val3
+            codeBuilder.AppendLine($"{indent}    var __joinedValues = string.Join(\"{effectiveSeparator}\", {param.Name}.Where(__item => __item != null).Select(__item => __item.ToString()));");
+            codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{paramName}\", __joinedValues);");
+        }
+
         codeBuilder.AppendLine($"{indent}}}");
     }
 

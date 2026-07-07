@@ -88,4 +88,17 @@ public sealed class QueryAttribute : Attribute
     /// 获取或设置参数的别名，用于映射到不同的查询参数名。
     /// </summary>
     public string? AliasAs { get; set; }
+
+    /// <summary>
+    /// 获取或设置数组元素的分隔符。仅对数组类型参数有效。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 如果设置了分隔符（如 ";"、","），数组将序列化为单个查询参数（如 ?ids=1;2;3）。
+    /// </para>
+    /// <para>
+    /// 如果为 <c>null</c>（默认值），数组将作为多个同名参数发送（如 ?ids=1&amp;ids=2&amp;ids=3）。
+    /// </para>
+    /// </remarks>
+    public string? Separator { get; set; }
 }
