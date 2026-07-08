@@ -79,4 +79,14 @@ internal class GenerationConfiguration
     /// 接口的基础路径前缀（从 [BasePath] 特性获取）
     /// </summary>
     public string? BasePath { get; set; }
+
+    /// <summary>
+    /// 基类接口是否具有缓存方法（用于确定 base(...) 构造函数调用参数）。
+    /// </summary>
+    public bool BaseHasCache { get; set; }
+
+    /// <summary>
+    /// 基类接口是否具有弹性策略方法（用于确定 base(...) 构造函数调用参数）。
+    /// </summary>
+    public bool BaseHasResilience { get; set; }
 }

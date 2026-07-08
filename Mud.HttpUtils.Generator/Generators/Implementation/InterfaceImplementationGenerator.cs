@@ -373,6 +373,56 @@ internal class InterfaceImplementationGenerator
             httpClientApiAttribute,
             HttpClientGeneratorConstants.InheritedFromProperty);
 
+        // 自动检测 InheritedFrom：如果未显式指定，检查是否有带 [HttpClientApi(IsAbstract = true)] 的基接口
+        if (string.IsNullOrEmpty(inheritedFrom))
+        {
+            foreach (var baseInterface in _interfaceSymbol.Interfaces)
+            {
+                var baseApiAttr = baseInterface.GetAttributes()
+                    .FirstOrDefault(attr => HttpClientGeneratorConstants.HttpClientApiAttributeNames.Contains(attr.AttributeClass?.Name));
+                if (baseApiAttr == null) continue;
+
+                var isBaseAbstract = AttributeDataHelper.GetBoolValueFromAttribute(baseApiAttr, HttpClientGeneratorConstants.IsAbstractProperty);
+                if (isBaseAbstract)
+                {
+                    inheritedFrom = TypeSymbolHelper.GetImplementationClassName(baseInterface.Name);
+                    break;
+                }
+            }
+        }
+
+        // 扫描基接口的缓存/弹性策略特性，用于确定 base(...) 构造函数调用参数
+        var baseHasCache = false;
+        var baseHasResilience = false;
+        if (!string.IsNullOrEmpty(inheritedFrom))
+        {
+            foreach (var baseInterface in _interfaceSymbol.AllInterfaces)
+            {
+                var baseApiAttr = baseInterface.GetAttributes()
+                    .FirstOrDefault(attr => HttpClientGeneratorConstants.HttpClientApiAttributeNames.Contains(attr.AttributeClass?.Name));
+                if (baseApiAttr == null) continue;
+
+                try
+                {
+                    var baseMethods = TypeSymbolHelper.GetAllMethods(baseInterface, true);
+                    foreach (var method in baseMethods)
+                    {
+                        if (!baseHasCache && method.GetAttributes().Any(attr =>
+                            HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name)))
+                            baseHasCache = true;
+                        if (!baseHasResilience && method.GetAttributes().Any(attr =>
+                            HttpClientGeneratorConstants.RetryAttributeNames.Contains(attr.AttributeClass?.Name) ||
+                            HttpClientGeneratorConstants.CircuitBreakerAttributeNames.Contains(attr.AttributeClass?.Name) ||
+                            HttpClientGeneratorConstants.TimeoutAttributeNames.Contains(attr.AttributeClass?.Name)))
+                            baseHasResilience = true;
+                        if (baseHasCache && baseHasResilience) break;
+                    }
+                }
+                catch { /* 忽略基接口方法解析异常 */ }
+                if (baseHasCache && baseHasResilience) break;
+            }
+        }
+
         var httpClient = AttributeDataHelper.GetStringValueFromAttribute(
             httpClientApiAttribute,
             HttpClientGeneratorConstants.HttpClientProperty);
@@ -408,6 +458,8 @@ internal class InterfaceImplementationGenerator
             TokenManagerType = !string.IsNullOrEmpty(effectiveTokenManage)
                 ? TypeSymbolHelper.GetTypeAllDisplayString(_compilation, effectiveTokenManage!)
                 : null,
+            BaseHasCache = baseHasCache,
+            BaseHasResilience = baseHasResilience,
             TokenType = tokenType,
             IsUserAccessToken = tokenType == "UserAccessToken",
             TokenManagerKey = tokenManagerKey,

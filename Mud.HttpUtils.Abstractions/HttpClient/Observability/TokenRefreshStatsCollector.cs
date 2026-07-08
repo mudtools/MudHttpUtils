@@ -1,6 +1,8 @@
 // -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2026
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
 using System.Collections.Concurrent;
@@ -10,16 +12,22 @@ namespace Mud.HttpUtils.Observability;
 /// <summary>
 /// 令牌刷新统计快照，作为健康检查与运维面板的数据来源。
 /// </summary>
-public readonly struct RefreshStats
+public readonly struct RefreshStats(
+    int total,
+    int failures,
+    int fallbacks,
+    DateTimeOffset windowStart,
+    DateTimeOffset? lastRefreshAt,
+    DateTimeOffset? lastFailureAt)
 {
     /// <summary>窗口期内刷新总次数。</summary>
-    public int Total { get; }
+    public int Total { get; } = total;
 
     /// <summary>窗口期内失败次数（不含 fallback 降级）。</summary>
-    public int Failures { get; }
+    public int Failures { get; } = failures;
 
     /// <summary>窗口期内降级成功次数（fallback token）。</summary>
-    public int Fallbacks { get; }
+    public int Fallbacks { get; } = fallbacks;
 
     /// <summary>窗口期内成功次数（不含 fallback）。</summary>
     public int Successes => Total - Failures - Fallbacks;
@@ -28,29 +36,13 @@ public readonly struct RefreshStats
     public double FailureRate => Total == 0 ? 0 : (double)Failures / Total;
 
     /// <summary>窗口期起点（UTC）。</summary>
-    public DateTimeOffset WindowStart { get; }
+    public DateTimeOffset WindowStart { get; } = windowStart;
 
     /// <summary>最近一次刷新时间（UTC），无记录时为 null。</summary>
-    public DateTimeOffset? LastRefreshAt { get; }
+    public DateTimeOffset? LastRefreshAt { get; } = lastRefreshAt;
 
     /// <summary>最近一次失败时间（UTC），无记录时为 null。</summary>
-    public DateTimeOffset? LastFailureAt { get; }
-
-    public RefreshStats(
-        int total,
-        int failures,
-        int fallbacks,
-        DateTimeOffset windowStart,
-        DateTimeOffset? lastRefreshAt,
-        DateTimeOffset? lastFailureAt)
-    {
-        Total = total;
-        Failures = failures;
-        Fallbacks = fallbacks;
-        WindowStart = windowStart;
-        LastRefreshAt = lastRefreshAt;
-        LastFailureAt = lastFailureAt;
-    }
+    public DateTimeOffset? LastFailureAt { get; } = lastFailureAt;
 
     /// <summary>
     /// 将统计转换为字典，便于健康检查 <see cref="Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult"/> 的 data 字段输出。
