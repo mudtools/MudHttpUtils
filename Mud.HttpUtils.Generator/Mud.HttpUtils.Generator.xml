@@ -666,6 +666,11 @@
             IAsyncEnumerable/byte[]/文件下载等特殊返回类型跳过编排，直接调用对应的执行器方法。
             </summary>
         </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.MethodGenerator.BuildResponseDescriptorCode(Mud.HttpUtils.Models.Analysis.MethodAnalysisResult,System.String)">
+            <summary>
+            构造 ResponseDescriptor 代码（用于下载场景，不包含 Cache/Resilience 配置）。
+            </summary>
+        </member>
         <member name="M:Mud.HttpUtils.Generators.Implementation.MethodGenerator.BuildExecutionDescriptorCode(Mud.HttpUtils.Generators.Context.GeneratorContext,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult,System.String)">
             <summary>
             构造 ExecutionDescriptor 代码，包含 ResponseDescriptor、CacheOptions、ResilienceExecutionOptions 和 CacheKey。

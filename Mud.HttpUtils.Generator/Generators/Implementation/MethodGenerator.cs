@@ -289,15 +289,35 @@ internal class MethodGenerator : ICodeFragmentGenerator
             if (filePathAttr.NamedArguments.TryGetValue("BufferSize", out var bsVal) && bsVal is int bs && bs > 0)
                 bufferSize = bs;
 
-            codeBuilder.AppendLine($"            await {executor}.DownloadLargeAsync(__httpRequest, {filePathParam.Name}, overwrite: true, bufferSize: {bufferSize}{cancellationTokenArg}).ConfigureAwait(false);");
+            // 构造 ResponseDescriptor 以支持 AllowAnyStatusCode
+            var responseDescriptor = BuildResponseDescriptorCode(methodInfo, deserializeType);
+            codeBuilder.AppendLine($"            await {executor}.DownloadLargeAsync(__httpRequest, {filePathParam.Name}, overwrite: true, bufferSize: {bufferSize},");
+            codeBuilder.AppendLine($"                {responseDescriptor}{cancellationTokenArg}).ConfigureAwait(false);");
             return;
         }
 
-        // byte[] 下载 — 直接调用 DownloadAsync（绕过 Cache/Resilience，与 IAsyncEnumerable 行为一致）
-        // DownloadAsync 返回 byte[]?，但接口声明通常为 Task<byte[]>（非空），使用 null 容忍运算符避免可空性警告
+        // byte[] 下载
         if (TypeDetectionHelper.IsByteArrayType(deserializeType))
         {
-            codeBuilder.AppendLine($"            return (await {executor}.DownloadAsync(__httpRequest{cancellationTokenArg}).ConfigureAwait(false))!;");
+            var hasCacheOrResilience = methodInfo.CacheEnabled ||
+                methodInfo.RetryEnabled || methodInfo.CircuitBreakerEnabled || methodInfo.MethodTimeoutEnabled;
+
+            if (hasCacheOrResilience)
+            {
+                // 启用 Cache/Resilience 时通过 ExecuteAsync 编排（执行器内部对 byte[] 使用 DownloadAsync 而非反序列化）
+                var byteDownloadDescriptor = BuildExecutionDescriptorCode(context, methodInfo, deserializeType);
+                codeBuilder.AppendLine($"            return (await {executor}.ExecuteAsync<{deserializeType}>(");
+                codeBuilder.AppendLine($"                __httpRequest,");
+                codeBuilder.AppendLine($"                {byteDownloadDescriptor},");
+                codeBuilder.AppendLine($"                _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false))!;");
+            }
+            else
+            {
+                // 未启用 Cache/Resilience 时直接调用 DownloadAsync，传递 ResponseDescriptor 以支持 AllowAnyStatusCode
+                var responseDescriptor = BuildResponseDescriptorCode(methodInfo, deserializeType);
+                codeBuilder.AppendLine($"            return (await {executor}.DownloadAsync(__httpRequest,");
+                codeBuilder.AppendLine($"                {responseDescriptor}{cancellationTokenArg}).ConfigureAwait(false))!;");
+            }
             return;
         }
 
@@ -327,6 +347,37 @@ internal class MethodGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine($"                {executionDescriptor},");
             codeBuilder.AppendLine($"                _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false);");
         }
+    }
+
+    /// <summary>
+    /// 构造 ResponseDescriptor 代码（用于下载场景，不包含 Cache/Resilience 配置）。
+    /// </summary>
+    private string BuildResponseDescriptorCode(MethodAnalysisResult methodInfo, string deserializeType)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("new ResponseDescriptor");
+        sb.AppendLine("            {");
+
+        var isResponseType = IsResponseType(deserializeType, out var responseInnerType);
+        sb.AppendLine($"                AllowAnyStatusCode = {methodInfo.AllowAnyStatusCode.ToString().ToLowerInvariant()},");
+        sb.AppendLine($"                IsResponseType = {isResponseType.ToString().ToLowerInvariant()},");
+        sb.AppendLine($"                ResponseContentType = \"{methodInfo.ResponseContentType ?? ""}\",");
+        sb.AppendLine($"                EnableDecrypt = {methodInfo.ResponseEnableDecrypt.ToString().ToLowerInvariant()},");
+
+        var isVoid = IsVoidType(deserializeType);
+        sb.AppendLine($"                IsVoidReturn = {isVoid.ToString().ToLowerInvariant()},");
+
+        // XML 序列化器引用
+        var isXml = ContentTypeHelper.IsXmlContentType(methodInfo.ResponseContentType);
+        if (isXml && !isVoid)
+        {
+            var xmlTargetType = isResponseType ? responseInnerType : deserializeType;
+            var xmlFieldRef = RequestBuilder.GetXmlSerializerFieldReference(xmlTargetType);
+            sb.AppendLine($"                XmlSerializer = {xmlFieldRef},");
+        }
+
+        sb.Append("            }");
+        return sb.ToString();
     }
 
     /// <summary>
@@ -415,7 +466,25 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         if (!string.IsNullOrEmpty(methodInfo.CacheKeyTemplate))
         {
-            return $"{varyPrefix}$\"{methodInfo.CacheKeyTemplate}\"";
+            // 将模板中的位置占位符 {0}, {1}, ... 替换为实际参数名
+            // 按 [Path] 参数顺序映射，若无 Path 参数则按非 CancellationToken 参数顺序映射
+            var orderedParams = methodInfo.Parameters
+                .Where(p => p.Attributes.Any(attr => HttpClientGeneratorConstants.PathAttributes.Contains(attr.Name)))
+                .ToList();
+            if (orderedParams.Count == 0)
+            {
+                orderedParams = methodInfo.Parameters
+                    .Where(p => !TypeDetectionHelper.IsCancellationToken(p.Type))
+                    .ToList();
+            }
+
+            var resolvedTemplate = methodInfo.CacheKeyTemplate;
+            for (var i = 0; i < orderedParams.Count; i++)
+            {
+                resolvedTemplate = resolvedTemplate.Replace($"{{{i}}}", $"{{{orderedParams[i].Name}}}");
+            }
+
+            return $"{varyPrefix}$\"{resolvedTemplate}\"";
         }
 
         var keyBuilder = new StringBuilder();

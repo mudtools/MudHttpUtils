@@ -67,22 +67,18 @@ internal class QueryParameterBinder : IParameterBinder
         }
         else if (TypeDetectionHelper.IsStringType(param.Type))
         {
-            codeBuilder.AppendLine($"{indent}if (!string.IsNullOrWhiteSpace({param.Name}))");
-            codeBuilder.AppendLine($"{indent}{{");
-            codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", {param.Name});");
-            codeBuilder.AppendLine($"{indent}}}");
+            // Add() 内部已跳过 null/空白值，无需外部检查
+            codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", {param.Name});");
         }
         else
         {
             if (TypeDetectionHelper.IsNullableType(param.Type))
             {
-                codeBuilder.AppendLine($"{indent}if ({param.Name}.HasValue)");
-                codeBuilder.AppendLine($"{indent}{{");
+                // 使用 ?. 运算符，Add() 会跳过 null 值
                 var formatExpression = !string.IsNullOrEmpty(formatString)
-                    ? $".Value.ToString(\"{formatString}\")"
-                    : ".Value.ToString()";
-                codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", {param.Name}{formatExpression});");
-                codeBuilder.AppendLine($"{indent}}}");
+                    ? $"?.ToString(\"{formatString}\")"
+                    : "?.ToString()";
+                codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", {param.Name}{formatExpression});");
             }
             else
             {

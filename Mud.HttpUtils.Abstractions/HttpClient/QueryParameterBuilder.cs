@@ -8,39 +8,61 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// 查询参数构建器，用于在生成的代码中收集和拼接 URL 查询参数。
-/// 替代 <see cref="System.Collections.Specialized.NameValueCollection"/>，因为后者
-/// 的 <see cref="object.ToString"/> 不生成 URL 编码的查询字符串。
+/// 查询参数构建器，用于安全地构建 URL 查询字符串。
 /// </summary>
-public sealed class QueryParameterBuilder
+/// <remarks>
+/// 初始化一个新的 <see cref="QueryParameterBuilder"/> 实例，并设置基础 URL。
+/// </remarks>
+/// <param name="baseUrl">基础 URL</param>
+public sealed class QueryParameterBuilder(string baseUrl)
 {
     private readonly List<KeyValuePair<string, string>> _params = new();
+    private readonly string _baseUrl = baseUrl ?? string.Empty;
+    private string? _cachedQueryString;
 
     /// <summary>
-    /// 获取已添加的查询参数数量。
+    /// 获取当前查询参数的数量。
     /// </summary>
     public int Count => _params.Count;
 
     /// <summary>
-    /// 添加一个查询参数。
+    /// 初始化一个新的 <see cref="QueryParameterBuilder"/> 实例，基础 URL 为空。
     /// </summary>
-    /// <param name="name">参数名称。</param>
-    /// <param name="value">参数值（可为 null，将被替换为空字符串）。</param>
+    public QueryParameterBuilder() : this(string.Empty) { }
+
+    /// <summary>
+    /// 创建一个新的 <see cref="QueryParameterBuilder"/> 实例。
+    /// </summary>
+    /// <param name="baseUrl">基础 URL</param>
+    /// <returns></returns>
+    public static QueryParameterBuilder Create(string baseUrl = "") => new(baseUrl);
+
+    /// <summary>
+    /// 添加查询参数（空值将被忽略）。
+    /// </summary>
     public void Add(string name, string? value)
     {
-        _params.Add(new KeyValuePair<string, string>(name, value ?? string.Empty));
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentNullException(nameof(name));
+
+        if (string.IsNullOrWhiteSpace(value))
+            return;
+
+        _params.Add(new KeyValuePair<string, string>(name, value!));
+        _cachedQueryString = null; // 清除缓存
     }
 
     /// <summary>
-    /// 获取指定名称的最后一个参数值（兼容 NameValueCollection 索引器语义）。
+    /// 获取指定名称的最后一个参数值。
     /// </summary>
-    /// <param name="name">参数名称。</param>
-    /// <returns>最后添加的值；如果不存在则返回 null。</returns>
     public string? this[string name]
     {
         get
         {
-            for (var i = _params.Count - 1; i >= 0; i--)
+            if (string.IsNullOrWhiteSpace(name))
+                throw new ArgumentNullException(nameof(name));
+
+            for (int i = _params.Count - 1; i >= 0; i--)
             {
                 if (_params[i].Key == name)
                     return _params[i].Value;
@@ -50,17 +72,54 @@ public sealed class QueryParameterBuilder
     }
 
     /// <summary>
-    /// 生成 URL 编码的查询字符串（key1=value1&amp;key2=value2）。
-    /// 使用 <see cref="Uri.EscapeDataString(string)"/> 进行 URL 编码，兼容所有目标框架且无需 System.Web 依赖。
+    /// 获取指定名称的所有参数值。
     /// </summary>
-    /// <returns>URL 编码的查询字符串；如果没有参数则返回空字符串。</returns>
-    public override string ToString()
+    public IEnumerable<string> GetValues(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentNullException(nameof(name));
+
+        return _params.Where(p => p.Key == name).Select(p => p.Value);
+    }
+
+    /// <summary>
+    /// 构建完整的 URL（包含基础 URL 和查询字符串）。
+    /// </summary>
+    public string Build()
+    {
+        if (_cachedQueryString != null)
+            return _cachedQueryString;
+
+        var query = BuildQueryString();
+        if (string.IsNullOrEmpty(_baseUrl))
+        {
+            _cachedQueryString = query;
+            return _cachedQueryString;
+        }
+
+        // 使用 UriBuilder 安全拼接
+        var uriBuilder = new UriBuilder(_baseUrl);
+        if (!string.IsNullOrEmpty(query))
+        {
+            uriBuilder.Query = string.IsNullOrEmpty(uriBuilder.Query)
+                ? query
+                : uriBuilder.Query.TrimStart('?') + "&" + query;
+        }
+
+        _cachedQueryString = uriBuilder.Uri.ToString();
+        return _cachedQueryString;
+    }
+
+    /// <summary>
+    /// 仅生成查询字符串（key1=value1&amp;key2=value2）。
+    /// </summary>
+    private string BuildQueryString()
     {
         if (_params.Count == 0)
             return string.Empty;
 
-        var sb = new StringBuilder(_params.Count * 32);
-        for (var i = 0; i < _params.Count; i++)
+        var sb = new StringBuilder();
+        for (int i = 0; i < _params.Count; i++)
         {
             if (i > 0)
                 sb.Append('&');
@@ -70,4 +129,9 @@ public sealed class QueryParameterBuilder
         }
         return sb.ToString();
     }
+
+    /// <summary>
+    /// 调试用（不建议用于业务逻辑）。
+    /// </summary>
+    public override string ToString() => Build();
 }

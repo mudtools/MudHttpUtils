@@ -1689,36 +1689,68 @@
         </member>
         <member name="T:Mud.HttpUtils.QueryParameterBuilder">
             <summary>
-            查询参数构建器，用于在生成的代码中收集和拼接 URL 查询参数。
-            替代 <see cref="T:System.Collections.Specialized.NameValueCollection"/>，因为后者
-            的 <see cref="M:System.Object.ToString"/> 不生成 URL 编码的查询字符串。
+            查询参数构建器，用于安全地构建 URL 查询字符串。
             </summary>
+            <remarks>
+            初始化一个新的 <see cref="T:Mud.HttpUtils.QueryParameterBuilder"/> 实例，并设置基础 URL。
+            </remarks>
+            <param name="baseUrl">基础 URL</param>
+        </member>
+        <member name="M:Mud.HttpUtils.QueryParameterBuilder.#ctor(System.String)">
+            <summary>
+            查询参数构建器，用于安全地构建 URL 查询字符串。
+            </summary>
+            <remarks>
+            初始化一个新的 <see cref="T:Mud.HttpUtils.QueryParameterBuilder"/> 实例，并设置基础 URL。
+            </remarks>
+            <param name="baseUrl">基础 URL</param>
         </member>
         <member name="P:Mud.HttpUtils.QueryParameterBuilder.Count">
             <summary>
-            获取已添加的查询参数数量。
+            获取当前查询参数的数量。
             </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.QueryParameterBuilder.#ctor">
+            <summary>
+            初始化一个新的 <see cref="T:Mud.HttpUtils.QueryParameterBuilder"/> 实例，基础 URL 为空。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.QueryParameterBuilder.Create(System.String)">
+            <summary>
+            创建一个新的 <see cref="T:Mud.HttpUtils.QueryParameterBuilder"/> 实例。
+            </summary>
+            <param name="baseUrl">基础 URL</param>
+            <returns></returns>
         </member>
         <member name="M:Mud.HttpUtils.QueryParameterBuilder.Add(System.String,System.String)">
             <summary>
-            添加一个查询参数。
+            添加查询参数（空值将被忽略）。
             </summary>
-            <param name="name">参数名称。</param>
-            <param name="value">参数值（可为 null，将被替换为空字符串）。</param>
         </member>
         <member name="P:Mud.HttpUtils.QueryParameterBuilder.Item(System.String)">
             <summary>
-            获取指定名称的最后一个参数值（兼容 NameValueCollection 索引器语义）。
+            获取指定名称的最后一个参数值。
             </summary>
-            <param name="name">参数名称。</param>
-            <returns>最后添加的值；如果不存在则返回 null。</returns>
+        </member>
+        <member name="M:Mud.HttpUtils.QueryParameterBuilder.GetValues(System.String)">
+            <summary>
+            获取指定名称的所有参数值。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.QueryParameterBuilder.Build">
+            <summary>
+            构建完整的 URL（包含基础 URL 和查询字符串）。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.QueryParameterBuilder.BuildQueryString">
+            <summary>
+            仅生成查询字符串（key1=value1&amp;key2=value2）。
+            </summary>
         </member>
         <member name="M:Mud.HttpUtils.QueryParameterBuilder.ToString">
             <summary>
-            生成 URL 编码的查询字符串（key1=value1&amp;key2=value2）。
-            使用 <see cref="M:System.Uri.EscapeDataString(System.String)"/> 进行 URL 编码，兼容所有目标框架且无需 System.Web 依赖。
+            调试用（不建议用于业务逻辑）。
             </summary>
-            <returns>URL 编码的查询字符串；如果没有参数则返回空字符串。</returns>
         </member>
         <member name="T:Mud.HttpUtils.ResponseDescriptor">
             <summary>

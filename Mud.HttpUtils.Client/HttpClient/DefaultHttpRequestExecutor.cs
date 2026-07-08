@@ -5,6 +5,7 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using System.IO;
 using System.Text.Json;
 using System.Xml.Serialization;
 
@@ -221,8 +222,33 @@ public class DefaultHttpRequestExecutor(
         ResponseDescriptor? descriptor = null,
         CancellationToken cancellationToken = default)
     {
-        await _httpClient.DownloadLargeAsync(request, filePath, overwrite, bufferSize, cancellationToken)
-            .ConfigureAwait(false);
+        // 发送请求并检查状态码（与 DownloadAsync 保持一致的错误处理语义）
+        using var response = await _httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
+
+        var allowAnyStatusCode = descriptor?.AllowAnyStatusCode ?? false;
+        if (!allowAnyStatusCode && !response.IsSuccessStatusCode)
+        {
+            var errorContent = await ReadContentAsync(response, cancellationToken).ConfigureAwait(false);
+            throw new ApiException(response.StatusCode, errorContent, request.RequestUri?.ToString());
+        }
+
+        // 流式写入文件
+        if (overwrite && File.Exists(filePath))
+            File.Delete(filePath);
+
+        var dir = Path.GetDirectoryName(filePath);
+        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            Directory.CreateDirectory(dir);
+
+#if NET6_0_OR_GREATER
+        await using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize, useAsync: true);
+        await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        await contentStream.CopyToAsync(fileStream, bufferSize, cancellationToken).ConfigureAwait(false);
+#else
+        using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize);
+        using var contentStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+        await contentStream.CopyToAsync(fileStream, bufferSize).ConfigureAwait(false);
+#endif
     }
 
     /// <inheritdoc/>
@@ -241,6 +267,17 @@ public class DefaultHttpRequestExecutor(
         object? jsonSerializerOptions,
         CancellationToken cancellationToken = default)
     {
+        // byte[] 下载类型特殊处理：使用 DownloadAsync 而非 JSON 反序列化，支持 Cache/Resilience 编排
+        if (typeof(TResult) == typeof(byte[]))
+        {
+            Func<HttpRequestMessage, CancellationToken, Task<byte[]?>> downloadExecute = (req, ct) =>
+                DownloadAsync(req, descriptor.Response, ct);
+
+            var result = await ExecuteWithOrchestrationAsync<byte[]?>(
+                request, descriptor, cancellationToken, downloadExecute).ConfigureAwait(false);
+            return (TResult?)(object?)result;
+        }
+
         // 构建核心执行函数（接收 request 参数，由弹性策略包装器传入克隆或原始请求）
         Func<HttpRequestMessage, CancellationToken, Task<TResult?>> coreExecute = (req, ct) =>
             SendAndDeserializeAsync<TResult>(req, descriptor.Response, jsonSerializerOptions, ct);

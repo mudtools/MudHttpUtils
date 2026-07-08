@@ -160,7 +160,7 @@ internal class RequestBuilder
         if (!queryParams.Any() && !hasTokenQuery && !interfaceQueryProperties.Any() && !hasInterfaceQueryParams)
             return;
 
-        codeBuilder.AppendLine($"            var __queryParams = new global::Mud.HttpUtils.QueryParameterBuilder();");
+        codeBuilder.AppendLine($"            var __queryParams = global::Mud.HttpUtils.QueryParameterBuilder.Create();");
         codeBuilder.AppendLine("            var __rawQueryPairs = new System.Collections.Generic.List<string>();");
 
         foreach (var interfaceQueryProp in interfaceQueryProperties)
@@ -613,28 +613,27 @@ internal class RequestBuilder
     private void GenerateInterfaceQueryProperty(StringBuilder codeBuilder, InterfacePropertyInfo property)
     {
         var paramName = property.ParameterName ?? property.Name;
-        var formatExpression = !string.IsNullOrEmpty(property.Format)
-            ? $".ToString(\"{property.Format}\")"
-            : ".ToString()";
 
         if (property.Type == "string" || property.Type == "System.String")
         {
-            codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({property.Name}))");
-            codeBuilder.AppendLine("            {");
-            codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", {property.Name});");
-            codeBuilder.AppendLine("            }");
+            // Add() 内部已跳过 null/空白值，无需外部检查
+            codeBuilder.AppendLine($"            __queryParams.Add(\"{paramName}\", {property.Name});");
         }
         else if (TypeDetectionHelper.IsValueType(property.Type) && !TypeDetectionHelper.IsNullableType(property.Type))
         {
-            // 非可空值类型（int、long、Guid 等）永远不会为 null，无需 null 检查
+            // 非可空值类型（int、long、Guid 等）永远不会为 null
+            var formatExpression = !string.IsNullOrEmpty(property.Format)
+                ? $".ToString(\"{property.Format}\")"
+                : ".ToString()";
             codeBuilder.AppendLine($"            __queryParams.Add(\"{paramName}\", {property.Name}{formatExpression});");
         }
         else
         {
-            codeBuilder.AppendLine($"            if ({property.Name} != null)");
-            codeBuilder.AppendLine("            {");
-            codeBuilder.AppendLine($"                __queryParams.Add(\"{paramName}\", {property.Name}{formatExpression});");
-            codeBuilder.AppendLine("            }");
+            // 可空值类型和引用类型：使用 ?. 运算符，Add() 会跳过 null 值
+            var formatExpression = !string.IsNullOrEmpty(property.Format)
+                ? $"?.ToString(\"{property.Format}\")"
+                : "?.ToString()";
+            codeBuilder.AppendLine($"            __queryParams.Add(\"{paramName}\", {property.Name}{formatExpression});");
         }
     }
 
