@@ -56,7 +56,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 context.HasResilience = true;
             }
 
-            if (HasQueryMapAttribute(methodSymbol) || HasComplexQueryParameter(methodSymbol))
+            if (HasQueryMapAttribute(methodSymbol) || HasComplexQueryParameter(methodInfo))
             {
                 context.HasQueryMap = true;
             }
@@ -880,12 +880,13 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 .Any(attr => attr.AttributeClass?.Name == HttpClientGeneratorConstants.QueryMapAttribute));
     }
 
-    private static bool HasComplexQueryParameter(IMethodSymbol methodSymbol)
+    private static bool HasComplexQueryParameter(MethodAnalysisResult methodInfo)
     {
-        return methodSymbol.Parameters
-            .Any(p => p.GetAttributes()
-                .Any(attr => attr.AttributeClass?.Name == HttpClientGeneratorConstants.QueryAttribute) &&
-                !TypeDetectionHelper.IsSimpleType(TypeSymbolHelper.GetTypeFullName(p.Type)));
+        // 基于 methodInfo.Parameters 检查，其中包含实际特性及合成的默认 [Query] 特性，
+        // 确保无属性标注的复杂类型参数也能正确触发 FlattenObjectToQueryParams 辅助方法的生成。
+        return methodInfo.Parameters
+            .Any(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.QueryAttribute) &&
+                !TypeDetectionHelper.IsSimpleType(p.Type));
     }
 
     private static void ValidatePathParameters(GeneratorContext context, IMethodSymbol methodSymbol, MethodAnalysisResult methodInfo)
