@@ -7,11 +7,11 @@
 		<GenerateDocumentationFile>false</GenerateDocumentationFile>
 	</PropertyGroup>
 	<ItemGroup>
-		<PackageReference Include="Mud.HttpUtils" Version="2.0.0-rc4" />
-		<PackageReference Include="Mud.HttpUtils.Resilience" Version="2.0.0-rc4" />
+		<PackageReference Include="Mud.HttpUtils" Version="2.0.0-rc5" />
+		<PackageReference Include="Mud.HttpUtils.Resilience" Version="2.0.0-rc5" />
 	</ItemGroup>
 	<ItemGroup>
-		<PackageReference Include="Mud.HttpUtils.Generator" Version="2.0.0-rc4" PrivateAssets="all" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+		<PackageReference Include="Mud.HttpUtils.Generator" Version="2.0.0-rc5" PrivateAssets="all" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
 	</ItemGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\CommonClassPubliceLibrary\CommonClassPubliceLibrary.csproj" />
