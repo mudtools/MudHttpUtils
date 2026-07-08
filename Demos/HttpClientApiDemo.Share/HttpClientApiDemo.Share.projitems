@@ -46,6 +46,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)Models\UserModels.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)NewFeatureTests\BasePathTestApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)NewFeatureTests\CombinedFeatureTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)NewFeatureTests\IDefaultParameterInferenceApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)NewFeatureTests\InterfacePropertyTestApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)NewFeatureTests\QueryMapTestApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)NewFeatureTests\RawQueryStringTestApi.cs" />
