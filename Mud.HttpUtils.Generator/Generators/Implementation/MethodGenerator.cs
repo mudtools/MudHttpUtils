@@ -141,10 +141,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("            var __appContext = _appContextHolder.Current ?? throw new InvalidOperationException(\"无法找到当前服务的应用上下文。\");");
             // TokenManager/AppContext 模式下，执行器需基于当前应用上下文的 HttpClient 动态创建。
             // 在 __appContext 捕获之后立即创建，避免 TOCTOU；执行器本身无状态，每次创建开销可忽略。
-            // 始终显式传递 cacheProvider/resilienceResolver（无对应字段时传 null），确保执行器能正确编排缓存/弹性策略。
-            var cacheArg = context.HasCache ? "_cacheProvider" : "null";
-            var resilienceArg = context.HasResilience ? "_resilienceResolver" : "null";
-            codeBuilder.AppendLine($"            var __executor = new Mud.HttpUtils.DefaultHttpRequestExecutor(__appContext.HttpClient, {cacheArg}, {resilienceArg});");
+            // 始终引用 _cacheProvider/_resilienceResolver 字段（未声明特性时为可空，由 DI 注入），
+            // 确保执行器能正确编排缓存/弹性策略。
+            codeBuilder.AppendLine("            var __executor = new Mud.HttpUtils.DefaultHttpRequestExecutor(__appContext.HttpClient, _cacheProvider, _resilienceResolver);");
         }
 
         // 执行器变量表达式：HttpClient 模式使用构造函数注入的 _executor 字段；TokenManager/AppContext 模式使用上面的 __executor 局部变量

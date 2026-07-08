@@ -1021,4 +1021,81 @@ namespace TestNamespace
     }
 
     #endregion
+
+    #region BUG 修复验证：TokenManager/AppContext 模式下执行器参数传递
+
+    [Fact]
+    public void Generator_WithTokenManager_NoCacheNoResilience_AcceptsOptionalParamsAndPassesToExecutor()
+    {
+        // 验证 TokenManager 模式下，即使接口未声明 [Cache]/[Retry] 特性，
+        // 生成的构造函数仍接受可选的 cacheProvider/resilienceResolver 参数，
+        // 且方法内的执行器创建引用 _cacheProvider/_resilienceResolver 字段而非 null
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNull();
+        generatedCode.Should().Contain("IHttpResponseCache? cacheProvider = null",
+            "TokenManager 模式下应始终接受可选的 cacheProvider 参数");
+        generatedCode.Should().Contain("IResiliencePolicyResolver? resilienceResolver = null",
+            "TokenManager 模式下应始终接受可选的 resilienceResolver 参数");
+        generatedCode.Should().Contain("readonly IHttpResponseCache? _cacheProvider;",
+            "未声明 [Cache] 特性时应生成可空的 _cacheProvider 字段");
+        generatedCode.Should().Contain("readonly IResiliencePolicyResolver? _resilienceResolver;",
+            "未声明 [Retry] 特性时应生成可空的 _resilienceResolver 字段");
+        generatedCode.Should().Contain("_cacheProvider = cacheProvider;",
+            "未声明 [Cache] 特性时应直接赋值（不抛异常）");
+        generatedCode.Should().Contain("_resilienceResolver = resilienceResolver;",
+            "未声明 [Retry] 特性时应直接赋值（不抛异常）");
+        generatedCode.Should().Contain("new Mud.HttpUtils.DefaultHttpRequestExecutor(__appContext.HttpClient, _cacheProvider, _resilienceResolver)",
+            "方法内执行器创建应引用 _cacheProvider/_resilienceResolver 字段而非 null");
+    }
+
+    [Fact]
+    public void Generator_WithTokenManager_WithCache_GeneratesRequiredCacheParamAndField()
+    {
+        // 验证 TokenManager 模式下，声明 [Cache] 特性时，cacheProvider 为必选参数且字段为非空
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        [Cache(DurationSeconds = 60)]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNull();
+        generatedCode.Should().Contain("IHttpResponseCache cacheProvider",
+            "声明 [Cache] 特性时 cacheProvider 应为必选参数（无默认值）");
+        generatedCode.Should().Contain("IResiliencePolicyResolver? resilienceResolver = null",
+            "未声明 [Retry] 特性时 resilienceResolver 应为可选参数");
+        generatedCode.Should().Contain("readonly IHttpResponseCache _cacheProvider;",
+            "声明 [Cache] 特性时应生成非空 _cacheProvider 字段");
+        generatedCode.Should().Contain("_cacheProvider = cacheProvider ?? throw new ArgumentNullException(nameof(cacheProvider));",
+            "声明 [Cache] 特性时应校验非空");
+    }
+
+    #endregion
 }
