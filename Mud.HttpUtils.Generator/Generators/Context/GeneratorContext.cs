@@ -82,6 +82,12 @@ internal class GeneratorContext
     public Dictionary<IMethodSymbol, MethodAnalysisResult> MethodAnalysisCache { get; } = new(SymbolEqualityComparer.Default);
 
     /// <summary>
+    /// 当前接口（含父接口）的所有方法列表，在构造函数中一次性计算并缓存。
+    /// 避免 MethodGenerator、InterfaceImplementationGenerator 等多处重复调用 TypeSymbolHelper.GetAllMethods。
+    /// </summary>
+    public IReadOnlyList<IMethodSymbol> AllMethods { get; private set; } = [];
+
+    /// <summary>
     /// 获取或缓存方法分析结果。若缓存命中则复用，否则调用 AnalyzeMethod 并缓存结果。
     /// </summary>
     public MethodAnalysisResult GetOrAnalyzeMethod(
@@ -154,6 +160,7 @@ internal class GeneratorContext
             allMethods = new List<IMethodSymbol>();
         }
 
+        AllMethods = allMethods;
         HasCache = DetectCacheUsage(allMethods);
         HasCacheVaryByUser = DetectCacheVaryByUser(allMethods);
         HasResilience = DetectResilienceUsage(allMethods);
@@ -281,35 +288,11 @@ internal class GeneratorContext
     }
 
     /// <summary>
-    /// 从 TypedConstant 获取 TokenInjectionMode 枚举名称
+    /// 从 TypedConstant 获取 TokenInjectionMode 枚举名称。
+    /// 委托至 TokenHelper.GetTokenInjectionModeName 统一实现，覆盖全部 7 种注入模式。
     /// </summary>
     private static string GetTokenInjectionModeName(object? value)
     {
-        if (value == null)
-            return HttpClientGeneratorConstants.TokenInjectionModeHeader;
-
-        var str = value.ToString();
-        if (string.IsNullOrEmpty(str))
-            return HttpClientGeneratorConstants.TokenInjectionModeHeader;
-
-        if (int.TryParse(str, out var num))
-        {
-            return num switch
-            {
-                3 => HttpClientGeneratorConstants.TokenInjectionModeApiKey,
-                4 => HttpClientGeneratorConstants.TokenInjectionModeHmacSignature,
-                _ => HttpClientGeneratorConstants.TokenInjectionModeHeader
-            };
-        }
-
-        var lastDot = str.LastIndexOf('.');
-        var name = lastDot >= 0 ? str.Substring(lastDot + 1) : str;
-
-        return name switch
-        {
-            "ApiKey" => HttpClientGeneratorConstants.TokenInjectionModeApiKey,
-            "HmacSignature" => HttpClientGeneratorConstants.TokenInjectionModeHmacSignature,
-            _ => HttpClientGeneratorConstants.TokenInjectionModeHeader
-        };
+        return TokenHelper.GetTokenInjectionModeName(value);
     }
 }

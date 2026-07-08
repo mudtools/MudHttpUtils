@@ -1,6 +1,6 @@
-// -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
-//  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+﻿// -----------------------------------------------------------------------
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
@@ -73,28 +73,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
     /// </summary>
     private IEnumerable<IMethodSymbol> GetMethodsToGenerate(GeneratorContext context)
     {
-        if (context.HasInheritedFrom)
-        {
-            // 当有基接口名称时，排除基接口及其层级的方法（由基类负责）
-            if (!string.IsNullOrEmpty(context.Configuration.InheritedFromInterfaceName))
-                return TypeSymbolHelper.GetAllMethods(context.InterfaceSymbol, true, [context.Configuration.InheritedFromInterfaceName]);
-
-            return context.InterfaceSymbol.GetMembers().OfType<IMethodSymbol>();
-        }
-
-        try
-        {
-            return TypeSymbolHelper.GetAllMethods(context.InterfaceSymbol, true);
-        }
-        catch (Exception ex)
-        {
-            context.ProductionContext.ReportDiagnostic(Diagnostic.Create(
-                Diagnostics.HttpClientApiGenerationError,
-                context.InterfaceDeclaration.GetLocation(),
-                context.InterfaceSymbol.Name,
-                $"解析父接口方法时发生异常，已回退为仅生成当前接口方法: {ex.Message}"));
-            return context.InterfaceSymbol.GetMembers().OfType<IMethodSymbol>();
-        }
+        return context.AllMethods;
     }
 
     /// <summary>

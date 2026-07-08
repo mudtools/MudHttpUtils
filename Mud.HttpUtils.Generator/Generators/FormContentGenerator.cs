@@ -42,7 +42,7 @@ internal class FormContentGenerator : TransitiveCodeGenerator
         var formContentClasses = context.SyntaxProvider.ForAttributeWithMetadataName(
             "Mud.HttpUtils.Attributes.FormContentAttribute",
             predicate: static (node, _) => node is ClassDeclarationSyntax,
-            transform: static (ctx, _) => ctx)
+            transform: static (ctx, _) => (ClassDeclarationSyntax)ctx.TargetNode)
             .WithTrackingName("FormContent_SyntaxProvider");
 
         var collected = formContentClasses
@@ -60,7 +60,7 @@ internal class FormContentGenerator : TransitiveCodeGenerator
         context.RegisterSourceOutput(completeDataProvider,
             (ctx, provider) => ExecuteGenerator(
                 compilation: provider.Left.Left,
-                formContentContexts: provider.Right,
+                formContentClasses: provider.Right,
                 context: ctx));
     }
 
@@ -72,20 +72,20 @@ internal class FormContentGenerator : TransitiveCodeGenerator
     /// <param name="context">源代码生成上下文</param>
     private void ExecuteGenerator(
         Compilation compilation,
-        ImmutableArray<GeneratorAttributeSyntaxContext> formContentContexts,
+        ImmutableArray<ClassDeclarationSyntax> formContentClasses,
         SourceProductionContext context)
     {
-        if (formContentContexts.IsDefaultOrEmpty)
+        if (formContentClasses.IsDefaultOrEmpty)
             return;
 
-        foreach (var attrCtx in formContentContexts)
+        foreach (var classDecl in formContentClasses)
         {
-            var classDecl = (ClassDeclarationSyntax)attrCtx.TargetNode;
-            // 使用 as + null 检查替代直接强制转换，避免 TargetSymbol 类型不匹配时抛出 InvalidCastException
-
             try
             {
-                if (attrCtx.TargetSymbol is not INamedTypeSymbol classSymbol)
+                var semanticModel = SemanticModelCache.GetOrCreate(compilation, classDecl.SyntaxTree);
+                var classSymbol = semanticModel.GetDeclaredSymbol(classDecl) as INamedTypeSymbol;
+
+                if (classSymbol == null)
                 {
                     context.ReportDiagnostic(Diagnostic.Create(
                         Diagnostics.FormContentGenerationError,
@@ -125,7 +125,7 @@ internal class FormContentGenerator : TransitiveCodeGenerator
                     {
                         fileName = $"{classSymbol.Name}.g.cs";
                     }
-                    context.AddSource(fileName, generatedCode);
+                    context.AddSource(fileName, SourceText.From(generatedCode, Encoding.UTF8));
                 }
             }
             catch (Exception ex)
@@ -135,7 +135,7 @@ internal class FormContentGenerator : TransitiveCodeGenerator
                     Diagnostics.FormContentGenerationError,
                     classDecl.GetLocation(),
                     classDecl.Identifier.Text,
-                    ex.Message));
+                    GeneratorDebugLogger.FormatExceptionMessage(ex)));
             }
         }
     }
@@ -353,7 +353,7 @@ internal class FormContentGenerator : TransitiveCodeGenerator
     private void GeneratePropertyAddCode(StringBuilder sb, PropertyInfo prop)
     {
         var propertyName = prop.Name;
-        var jsonName = prop.JsonName;
+        var escapedJsonName = StringEscapeHelper.EscapeString(prop.JsonName);
         var type = prop.Type;
 
         // 判断是否为字符串类型
@@ -369,18 +369,18 @@ internal class FormContentGenerator : TransitiveCodeGenerator
         {
             // 字符串类型：添加非空判断
             sb.AppendLine($"        if (!string.IsNullOrWhiteSpace({propertyName}))");
-            sb.AppendLine($"            formData.Add(new StringContent({propertyName}), \"{jsonName}\");");
+            sb.AppendLine($"            formData.Add(new StringContent({propertyName}), \"{escapedJsonName}\");");
         }
         else if (isValueType)
         {
             // 值类型：直接添加
-            sb.AppendLine($"        formData.Add(new StringContent({propertyName}.ToString()), \"{jsonName}\");");
+            sb.AppendLine($"        formData.Add(new StringContent({propertyName}.ToString()), \"{escapedJsonName}\");");
         }
         else
         {
             // 引用类型：添加 null 检查
             sb.AppendLine($"        if ({propertyName} != null)");
-            sb.AppendLine($"            formData.Add(new StringContent({propertyName}.ToString()), \"{jsonName}\");");
+            sb.AppendLine($"            formData.Add(new StringContent({propertyName}.ToString()), \"{escapedJsonName}\");");
         }
     }
 
@@ -393,7 +393,7 @@ internal class FormContentGenerator : TransitiveCodeGenerator
     private void GenerateFilePropertyAddCode(StringBuilder sb, PropertyInfo prop, string? byteArrayPropertyName)
     {
         var propertyName = prop.Name;
-        var jsonName = prop.JsonName;
+        var escapedJsonName = StringEscapeHelper.EscapeString(prop.JsonName);
 
         sb.AppendLine($"        if (!string.IsNullOrWhiteSpace({propertyName}))");
         sb.AppendLine("        {");
@@ -409,7 +409,7 @@ internal class FormContentGenerator : TransitiveCodeGenerator
             sb.AppendLine($"            var fileContent = await HttpClientUtils.GetByteArrayContentAsync({propertyName}!);");
         }
 
-        sb.AppendLine($"            formData.Add(fileContent, \"{jsonName}\", Path.GetFileName({propertyName}!));");
+        sb.AppendLine($"            formData.Add(fileContent, \"{escapedJsonName}\", Path.GetFileName({propertyName}!));");
         sb.AppendLine("        }");
     }
 

@@ -1,6 +1,6 @@
 // -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
-//  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
@@ -37,7 +37,8 @@ internal static class Diagnostics
         messageFormat: "生成接口 {0} 的实现时发生错误: {1}",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
+        isEnabledByDefault: true,
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     public static readonly DiagnosticDescriptor HttpClientApiSyntaxError = new(
         id: "HTTPCLIENT003",
@@ -45,7 +46,8 @@ internal static class Diagnostics
         messageFormat: "接口 {0} 的语法分析失败: {1}",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
+        isEnabledByDefault: true,
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     public static readonly DiagnosticDescriptor HttpClientApiParameterError = new(
         id: "HTTPCLIENT004",
@@ -53,7 +55,8 @@ internal static class Diagnostics
         messageFormat: "接口 {0} 的参数配置错误: {1}",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
+        isEnabledByDefault: true,
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     public static readonly DiagnosticDescriptor HttpClientInvalidUrlTemplate = new(
         id: "HTTPCLIENT005",
@@ -61,7 +64,8 @@ internal static class Diagnostics
         messageFormat: "接口 {0} 的URL模板 '{1}' 格式无效: {2}",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
+        isEnabledByDefault: true,
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     public static readonly DiagnosticDescriptor HttpClientAndTokenManagerMutuallyExclusive = new(
         id: "HTTPCLIENT007",
@@ -69,7 +73,8 @@ internal static class Diagnostics
         messageFormat: "接口 {0} 同时指定了 HttpClient 和 TokenManage 属性，两者互斥。请只设置其中一个。",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
+        isEnabledByDefault: true,
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     public static readonly DiagnosticDescriptor HttpClientEncryptNotSupported = new(
         id: "HTTPCLIENT008",
@@ -77,7 +82,8 @@ internal static class Diagnostics
         messageFormat: "接口 {0} 的方法 {1} 启用了加密（EnableEncrypt=true），但指定的 HttpClient 类型 '{2}' 未实现 IEncryptableHttpClient 接口。请使用同时实现了 IEncryptableHttpClient 的类型（如 IEnhancedHttpClient），或移除加密配置。",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
+        isEnabledByDefault: true,
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     public static readonly DiagnosticDescriptor HttpClientXmlNotSupported = new(
         id: "HTTPCLIENT009",
@@ -109,7 +115,8 @@ internal static class Diagnostics
         messageFormat: "接口 {0} 是泛型接口，源生成器不支持为泛型接口生成实现。请将接口改为非泛型接口，或为每个具体类型参数创建独立的非泛型接口。",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
+        isEnabledByDefault: true,
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     public static readonly DiagnosticDescriptor HttpClientPathParameterMismatch = new(
         id: "HTTPCLIENT013",
@@ -117,7 +124,8 @@ internal static class Diagnostics
         messageFormat: "接口 {0} 的方法 {1} 的 URL 模板 '{2}' 中的路径参数与方法的 [Path] 参数不匹配。{3}",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
+        isEnabledByDefault: true,
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     public static readonly DiagnosticDescriptor HttpClientTypeNotFound = new(
         id: "HTTPCLIENT014",
@@ -133,7 +141,8 @@ internal static class Diagnostics
         messageFormat: "接口 {0} 的 TokenManage 属性指定的类型 '{1}' 在当前编译中未找到。请确认类型名称正确，或确保包含该类型的项目已正确引用。",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
+        isEnabledByDefault: true,
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     public static readonly DiagnosticDescriptor TokenManagerMissingMethod = new(
         id: "HTTPCLIENT016",
@@ -141,7 +150,8 @@ internal static class Diagnostics
         messageFormat: "接口 {0} 的 TokenManage 属性指定的类型 '{1}' 缺少必需的方法 '{2}'。TokenManage 类型必须提供 'IMudAppContext GetDefaultApp()' 和 'IMudAppContext GetApp(string appKey)' 方法，或实现 IAppManager<TAppContext> 接口。",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
+        isEnabledByDefault: true,
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
     #endregion
 
     #region HttpClient注册生成器诊断信息 (HTTPCLIENTREG001-002)
@@ -151,7 +161,8 @@ internal static class Diagnostics
         messageFormat: "为接口 {0} 生成HttpClient API注册时发生错误: {1}",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
+        isEnabledByDefault: true,
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     public static readonly DiagnosticDescriptor HttpClientInvalidRegistryGroupName = new(
         id: "HTTPCLIENTREG002",
@@ -159,7 +170,8 @@ internal static class Diagnostics
         messageFormat: "RegistryGroupName '{0}' 不是有效的C#标识符。RegistryGroupName必须以字母或下划线开头，只能包含字母、数字和下划线。",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
+        isEnabledByDefault: true,
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
     #endregion
 
     #region 事件处理器生成器诊断信息 (EHSG001)
@@ -169,7 +181,8 @@ internal static class Diagnostics
         messageFormat: "为类 {0} 生成事件处理器代码时发生错误: {1}",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
+        isEnabledByDefault: true,
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
     #endregion  
 
     #region FormContent生成器诊断信息 (FORM001-003)
@@ -179,7 +192,8 @@ internal static class Diagnostics
         messageFormat: "为类 {0} 生成FormContent代码时发生错误: {1}",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
+        isEnabledByDefault: true,
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     public static readonly DiagnosticDescriptor FormContentNoFilePathAttribute = new(
         id: "FORM002",
@@ -187,7 +201,8 @@ internal static class Diagnostics
         messageFormat: "类 {0} 标记了 [FormContent] 特性，但没有找到任何标记了 [FilePath] 特性的属性。必须且只能有一个属性标记 [FilePath] 特性。",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
+        isEnabledByDefault: true,
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     public static readonly DiagnosticDescriptor FormContentMultipleFilePathAttributes = new(
         id: "FORM003",
@@ -195,6 +210,7 @@ internal static class Diagnostics
         messageFormat: "类 {0} 标记了 [FormContent] 特性，但发现了多个标记了 [FilePath] 特性的属性: {1}。必须且只能有一个属性标记 [FilePath] 特性。",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true);
+        isEnabledByDefault: true,
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
     #endregion
 }

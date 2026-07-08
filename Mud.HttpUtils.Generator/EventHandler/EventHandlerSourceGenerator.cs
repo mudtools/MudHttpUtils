@@ -1,6 +1,6 @@
 // -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
-//  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
@@ -40,7 +40,7 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
         var eventHandlerClasses = context.SyntaxProvider.ForAttributeWithMetadataName(
             "Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute",
             predicate: static (node, _) => node is ClassDeclarationSyntax,
-            transform: static (ctx, _) => ctx)
+            transform: static (ctx, _) => (ClassDeclarationSyntax)ctx.TargetNode)
             .WithTrackingName("EventHandler_SyntaxProvider");
 
         var collected = eventHandlerClasses
@@ -58,7 +58,7 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
         context.RegisterSourceOutput(completeDataProvider,
             (ctx, provider) => ExecuteGenerator(
                 compilation: provider.Left.Left,
-                eventHandlerContexts: provider.Right,
+                eventHandlerClasses: provider.Right,
                 context: ctx));
     }
 
@@ -70,20 +70,19 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
     /// <param name="context">源代码生成上下文</param>
     private void ExecuteGenerator(
         Compilation compilation,
-        ImmutableArray<GeneratorAttributeSyntaxContext> eventHandlerContexts,
+        ImmutableArray<ClassDeclarationSyntax> eventHandlerClasses,
         SourceProductionContext context)
     {
-        if (eventHandlerContexts.IsDefaultOrEmpty)
+        if (eventHandlerClasses.IsDefaultOrEmpty)
             return;
 
-        foreach (var attrCtx in eventHandlerContexts)
+        foreach (var eventClass in eventHandlerClasses)
         {
-            var eventClass = (ClassDeclarationSyntax)attrCtx.TargetNode;
-            // 使用 as + null 检查替代直接强制转换，避免 TargetSymbol 类型不匹配时抛出 InvalidCastException
-            var classSymbol = attrCtx.TargetSymbol as INamedTypeSymbol;
-
             try
             {
+                var semanticModel = SemanticModelCache.GetOrCreate(compilation, eventClass.SyntaxTree);
+                var classSymbol = semanticModel.GetDeclaredSymbol(eventClass) as INamedTypeSymbol;
+
                 if (classSymbol == null)
                 {
                     context.ReportDiagnostic(Diagnostic.Create(
@@ -94,9 +93,10 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
                     continue;
                 }
 
-                // 直接使用 ForAttributeWithMetadataName 已提供的 AttributeData，
-                // 避免重新遍历符号特性集合，消除名称匹配不一致风险
-                var eventHandlerAttribute = attrCtx.Attributes.FirstOrDefault();
+                // 从符号特性中获取 GenerateEventHandler 特性
+                var eventHandlerAttribute = classSymbol.GetAttributes()
+                    .FirstOrDefault(a => a.AttributeClass?.Name == EventHandlerAttributeName ||
+                                         a.AttributeClass?.Name == EventHandlerAttributeName.Replace("Attribute", ""));
 
                 if (eventHandlerAttribute == null)
                     continue;
@@ -107,7 +107,7 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
                 if (!string.IsNullOrEmpty(generatedCode))
                 {
                     var fileName = GenerateUniqueFileName(eventClass, classSymbol, eventHandlerAttribute);
-                    context.AddSource(fileName, generatedCode);
+                    context.AddSource(fileName, SourceText.From(generatedCode, Encoding.UTF8));
                 }
             }
             catch (Exception ex)
@@ -117,7 +117,7 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
                     Diagnostics.EventHandlerGenerationError,
                     eventClass.GetLocation(),
                     eventClass.Identifier.Text,
-                    ex.Message));
+                    GeneratorDebugLogger.FormatExceptionMessage(ex)));
             }
         }
     }

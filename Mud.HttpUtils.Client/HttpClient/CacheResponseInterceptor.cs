@@ -1,6 +1,13 @@
-using System.Diagnostics;
+// -----------------------------------------------------------------------
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// -----------------------------------------------------------------------
+
 using Microsoft.Extensions.Logging;
 using Mud.HttpUtils.Observability;
+using System.Diagnostics;
 
 namespace Mud.HttpUtils;
 
@@ -20,24 +27,21 @@ namespace Mud.HttpUtils;
 /// </remarks>
 /// <seealso cref="IHttpResponseInterceptor"/>
 /// <seealso cref="IHttpResponseCache"/>
-public class CacheResponseInterceptor : ICacheResponseInterceptor
+public class CacheResponseInterceptor(IHttpResponseCache cache, ILogger<CacheResponseInterceptor> logger) : ICacheResponseInterceptor
 {
-    private readonly IHttpResponseCache _cache;
-    private readonly ILogger<CacheResponseInterceptor> _logger;
+    private readonly IHttpResponseCache _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+    private readonly ILogger<CacheResponseInterceptor> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-    public CacheResponseInterceptor(IHttpResponseCache cache, ILogger<CacheResponseInterceptor> logger)
-    {
-        _cache = cache ?? throw new ArgumentNullException(nameof(cache));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    }
-
+    /// <inheritdoc/>
     public int Order => 100;
 
+    /// <inheritdoc/>
     Task IHttpResponseInterceptor.OnResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         return Task.CompletedTask;
     }
 
+    /// <inheritdoc/>
     public bool TryGet<T>(string key, out T? value)
     {
         // 复用当前 Activity 引用：在同一次 TryGet 调用中 Activity.Current 不会变，
@@ -69,11 +73,10 @@ public class CacheResponseInterceptor : ICacheResponseInterceptor
                 MudHttpDiagnosticNames.CacheHit,
                 () => new CacheDiagnosticPayload(key, hit: true),
                 MudHttpDiagnosticNames.CacheHit,
-                new[]
-                {
+                [
                     new KeyValuePair<string, object?>("cache_key", key),
                     new KeyValuePair<string, object?>("hit", true),
-                });
+                ]);
             return true;
         }
 
@@ -91,19 +94,20 @@ public class CacheResponseInterceptor : ICacheResponseInterceptor
             MudHttpDiagnosticNames.CacheMiss,
             () => new CacheDiagnosticPayload(key, hit: false),
             MudHttpDiagnosticNames.CacheMiss,
-            new[]
-            {
+            [
                 new KeyValuePair<string, object?>("cache_key", key),
                 new KeyValuePair<string, object?>("hit", false),
-            });
+            ]);
         return false;
     }
 
+    /// <inheritdoc/>
     public void Set<T>(string key, T? value, TimeSpan absoluteExpirationRelativeToNow)
     {
         Set(key, value, absoluteExpirationRelativeToNow, useSlidingExpiration: false);
     }
 
+    /// <inheritdoc/>
     public void Set<T>(string key, T? value, TimeSpan expirationRelativeToNow, bool useSlidingExpiration)
     {
         if (value == null)
@@ -113,22 +117,26 @@ public class CacheResponseInterceptor : ICacheResponseInterceptor
         MudHttpClientLog.CacheSet(_logger, key, expirationRelativeToNow.TotalSeconds, useSlidingExpiration);
     }
 
+    /// <inheritdoc/>
     public void Remove(string key)
     {
         _cache.Remove(key);
         MudHttpClientLog.CacheRemoved(_logger, key);
     }
 
+    /// <inheritdoc/>
     public async Task<T?> GetOrFetchAsync<T>(string key, Func<Task<T>> fetchFunc, TimeSpan expiration, CancellationToken cancellationToken = default)
     {
         return await _cache.GetOrFetchAsync<T>(key, fetchFunc, expiration, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc/>
     public Task RemoveAsync(string key)
     {
         return _cache.RemoveAsync(key);
     }
 
+    /// <inheritdoc/>
     public Task ClearAsync()
     {
         return _cache.ClearAsync();

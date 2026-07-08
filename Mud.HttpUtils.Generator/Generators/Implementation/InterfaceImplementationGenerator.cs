@@ -272,7 +272,7 @@ internal class InterfaceImplementationGenerator
         return true;
     }
 
-    private INamedTypeSymbol ResolveType(string typeName)
+    private INamedTypeSymbol? ResolveType(string typeName)
     {
         var type = _compilation.GetTypeByMetadataName(typeName);
         if (type != null)
@@ -300,7 +300,7 @@ internal class InterfaceImplementationGenerator
         return null;
     }
 
-    private INamedTypeSymbol FindTypeInNamespace(INamespaceSymbol ns, string typeName)
+    private INamedTypeSymbol? FindTypeInNamespace(INamespaceSymbol ns, string typeName)
     {
         foreach (var member in ns.GetTypeMembers())
         {
@@ -622,11 +622,7 @@ internal class InterfaceImplementationGenerator
             return;
         }
 
-        var allMethods = context.HasInheritedFrom
-            ? (string.IsNullOrEmpty(context.Configuration.InheritedFromInterfaceName)
-                ? _interfaceSymbol.GetMembers().OfType<IMethodSymbol>().ToList()
-                : TypeSymbolHelper.GetAllMethods(_interfaceSymbol, true, [context.Configuration.InheritedFromInterfaceName!]).ToList())
-            : TypeSymbolHelper.GetAllMethods(_interfaceSymbol, true).ToList();
+        var allMethods = context.AllMethods;
         foreach (var method in allMethods)
         {
             var methodRequiresUserId = GetMethodRequiresUserId(method);
@@ -654,11 +650,7 @@ internal class InterfaceImplementationGenerator
     /// </summary>
     private void PrecomputeXmlResponseTypes(GeneratorContext context)
     {
-        var methods = context.HasInheritedFrom
-            ? (string.IsNullOrEmpty(context.Configuration.InheritedFromInterfaceName)
-                ? _interfaceSymbol.GetMembers().OfType<IMethodSymbol>().ToList()
-                : TypeSymbolHelper.GetAllMethods(_interfaceSymbol, true, [context.Configuration.InheritedFromInterfaceName!]).ToList())
-            : TypeSymbolHelper.GetAllMethods(_interfaceSymbol, true);
+        var methods = context.AllMethods;
         foreach (var method in methods)
         {
             var isHttpMethod = MethodAnalyzer.FindHttpMethodAttributeFromSymbol(method) != null;
