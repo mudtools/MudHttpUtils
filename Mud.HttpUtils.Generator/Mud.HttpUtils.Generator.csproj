@@ -11,7 +11,6 @@
 		<AssemblyName>Mud.HttpUtils.Generator</AssemblyName>
 		<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
 		<IsRoslynComponent>true</IsRoslynComponent>
-		<DocumentationFile>$(OutputPath)$(AssemblyName).xml</DocumentationFile>
 		<AnalysisLevel>6.0-all</AnalysisLevel>
 		<!-- 不将构建输出打包到 lib/ 目录，仅通过 analyzers/ 路径分发 -->
 		<IncludeBuildOutput>false</IncludeBuildOutput>

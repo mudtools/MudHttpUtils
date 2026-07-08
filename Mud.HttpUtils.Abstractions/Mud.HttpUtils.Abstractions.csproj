@@ -8,7 +8,6 @@
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>
-		<DocumentationFile>$(OutputPath)$(AssemblyName).xml</DocumentationFile>
 		<EnableAotAnalyzer Condition="'$(TargetFramework)' != 'netstandard2.0'">true</EnableAotAnalyzer>
 		<IsAotCompatible Condition="'$(TargetFramework)' != 'netstandard2.0'">true</IsAotCompatible>
 	</PropertyGroup>

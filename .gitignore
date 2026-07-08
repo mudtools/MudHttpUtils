@@ -61,3 +61,6 @@
 /Demos/bin
 /.trae
 /artifacts
+
+# XML 文档文件（由 GenerateDocumentationFile 生成，应输出到 bin 目录）
+*.xml
