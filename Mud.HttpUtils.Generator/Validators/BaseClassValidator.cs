@@ -131,52 +131,58 @@ internal static class BaseClassValidator
         if (baseClassSymbol.TypeKind != TypeKind.Class)
             return ValidationResult.Error($"'{baseClassName}' 不是类");
 
-        // 验证构造函数
-        var requiredParams = new List<string> { "IEnhancedHttpClient", "IOptions<JsonSerializerOptions>" };
+        // 检查是否为 sealed 类（无法被继承）
+        if (baseClassSymbol.IsSealed)
+            return ValidationResult.Error($"'{baseClassName}' 是密封类（sealed），无法被继承");
+
+        // 检查是否为 static 类（无法被继承）
+        if (baseClassSymbol.IsStatic)
+            return ValidationResult.Error($"'{baseClassName}' 是静态类（static），无法被继承");
+
+        // 验证构造函数：检查是否存在兼容的构造函数
+        // 新执行器架构下，生成器向 base() 传递的参数包括：
+        //   - HttpClient 模式: IBaseHttpClient/IEnhancedHttpClient, IOptions<JsonSerializerOptions>, [IHttpResponseCache], [IResiliencePolicyResolver]
+        //   - TokenManager 模式: ITokenManager, IOptions<JsonSerializerOptions>, [IHttpResponseCache], [IResiliencePolicyResolver]
+        // 验证策略：检查构造函数是否包含必需的参数类型（顺序不敏感，允许额外可选参数）
+        var requiredTypes = new List<string> { "IOptions<JsonSerializerOptions>" };
         if (hasTokenManager)
-            requiredParams.Add("ITokenManager");
+            requiredTypes.Add("ITokenManager");
+        else
+            requiredTypes.Add("IBaseHttpClient"); // IEnhancedHttpClient 继承自 IBaseHttpClient
 
         var hasCompatibleConstructor = baseClassSymbol.Constructors.Any(ctor =>
         {
-            var parameters = ctor.Parameters;
-            if (parameters.Length != requiredParams.Count)
-                return false;
+            var paramTypeStrings = ctor.Parameters.Select(p => p.Type.ToDisplayString()).ToList();
 
-            for (int i = 0; i < requiredParams.Count; i++)
+            foreach (var requiredType in requiredTypes)
             {
-                var paramTypeString = parameters[i].Type.ToDisplayString();
-                var requiredParam = requiredParams[i];
+                var found = paramTypeStrings.Any(paramTypeString =>
+                {
+                    if (requiredType == "IBaseHttpClient")
+                    {
+                        // 接受 IBaseHttpClient 或其派生接口（IEnhancedHttpClient 等）
+                        return paramTypeString.Contains("IBaseHttpClient") ||
+                               paramTypeString.Contains("IEnhancedHttpClient");
+                    }
+                    if (requiredType == "ITokenManager")
+                    {
+                        // 接受 ITokenManager、ITenantTokenManager 或 IUserTokenManager
+                        return paramTypeString.Contains("ITokenManager") ||
+                               paramTypeString.Contains("ITenantTokenManager") ||
+                               paramTypeString.Contains("IUserTokenManager");
+                    }
+                    if (requiredType.Contains("IOptions<JsonSerializerOptions>"))
+                    {
+                        return paramTypeString.Contains("IOptions") &&
+                               paramTypeString.Contains("JsonSerializerOptions");
+                    }
+                    return paramTypeString.Contains(requiredType);
+                });
 
-                // 检查参数类型是否匹配
-                if (requiredParam == "IEnhancedHttpClient")
-                {
-                    if (!paramTypeString.Contains("IEnhancedHttpClient"))
-                        return false;
-                }
-                else if (requiredParam.Contains("IOptions<JsonSerializerOptions>"))
-                {
-                    // 检查是否是IOptions<JsonSerializerOptions>或其完整类型
-                    if (!paramTypeString.Contains("IOptions") && !paramTypeString.Contains("JsonSerializerOptions"))
-                        return false;
-                }
-                else if (requiredParam == "ITokenManager")
-                {
-                    // 检查是否是ITokenManager、ITenantTokenManager或IUserTokenManager
-                    var isTokenManagerCompatible = paramTypeString.Contains("ITokenManager") ||
-                                                    paramTypeString.Contains("ITenantTokenManager") ||
-                                                    paramTypeString.Contains("IUserTokenManager");
-                    if (!isTokenManagerCompatible)
-                        return false;
-                }
-                else
-                {
-                    // 其他参数必须完全包含所需类型名称
-                    if (!paramTypeString.Contains(requiredParam))
-                        return false;
-                }
+                if (!found)
+                    return false;
             }
 
-            // 找到匹配的构造函数，返回true
             return true;
         });
 
@@ -190,7 +196,7 @@ internal static class BaseClassValidator
                 constructorSignatures.Add($"({paramList})");
             }
 
-            return ValidationResult.Error($"基类 '{baseClassName}' 缺少兼容的构造函数。需要: {string.Join(", ", requiredParams)}。可用构造函数: {string.Join("; ", constructorSignatures)}");
+            return ValidationResult.Error($"基类 '{baseClassName}' 缺少兼容的构造函数。需要包含: {string.Join(", ", requiredTypes)}。可用构造函数: {string.Join("; ", constructorSignatures)}");
         }
 
         return ValidationResult.Success();

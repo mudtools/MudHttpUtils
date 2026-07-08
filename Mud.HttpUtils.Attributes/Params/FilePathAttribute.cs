@@ -16,16 +16,28 @@ namespace Mud.HttpUtils.Attributes;
 /// 应用于参数或属性上，指示该字段表示文件路径。在发送请求时会读取文件内容并作为请求体或表单数据发送。
 /// 支持自定义缓冲区大小以优化大文件读取性能。
 /// </para>
+/// <para>
+/// 当用于下载场景（方法返回类型为 void 且存在 [FilePath] 参数时），可控制是否覆盖已存在文件，
+/// 以及通过方法签名中的 <see cref="IProgress{T}"/> 参数接收下载进度回调。
+/// </para>
 /// </remarks>
 /// <example>
 /// <code>
 /// // 上传文件
 /// [Post("/api/upload")]
 /// Task&lt;UploadResult&gt; UploadFileAsync([FilePath] string filePath);
-/// 
+///
 /// // 自定义缓冲区大小（128KB）
 /// [Post("/api/upload-large")]
 /// Task&lt;UploadResult&gt; UploadLargeFileAsync([FilePath(BufferSize = 131072)] string filePath);
+///
+/// // 下载文件，不覆盖已存在文件
+/// [Get("/api/files/{id}")]
+/// Task DownloadAsync(int id, [FilePath(Overwrite = false)] string savePath);
+///
+/// // 下载文件，带进度报告
+/// [Get("/api/files/{id}")]
+/// Task DownloadWithProgressAsync(int id, [FilePath] string savePath, IProgress&lt;long&gt; progress);
 /// </code>
 /// </example>
 [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property, AllowMultiple = false)]
@@ -36,4 +48,10 @@ public sealed class FilePathAttribute : Attribute
     /// </summary>
     /// <value>默认为 81920 字节（80KB）。</value>
     public int BufferSize { get; set; } = 81920;
+
+    /// <summary>
+    /// 获取或设置下载时是否覆盖已存在的文件。
+    /// </summary>
+    /// <value>默认为 true，表示覆盖已存在的文件。设为 false 时，若文件已存在将抛出 IOException。</value>
+    public bool Overwrite { get; set; } = true;
 }

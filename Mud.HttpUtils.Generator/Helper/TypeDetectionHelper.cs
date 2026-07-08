@@ -151,4 +151,33 @@ internal static class TypeDetectionHelper
                nonNullableTypeName.StartsWith("IReadOnlyDictionary<", StringComparison.Ordinal) ||
                nonNullableTypeName.StartsWith("System.Collections.Generic.IReadOnlyDictionary<", StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// 检查是否为 IProgress{T} 类型，并提取元素类型。
+    /// 用于检测下载进度报告参数（如 IProgress&lt;long&gt;）。
+    /// </summary>
+    /// <param name="typeName">类型名称字符串</param>
+    /// <param name="elementType">提取的元素类型（如 "long"）</param>
+    /// <returns>是否为 IProgress{T} 类型</returns>
+    public static bool IsIProgressType(string typeName, out string? elementType)
+    {
+        elementType = null;
+
+        var nonNullableTypeName = typeName.TrimEnd('?');
+
+        // 匹配 IProgress<T> 或 System.IProgress<T> 或 System.Progress<T>
+        if (nonNullableTypeName.StartsWith("IProgress<", StringComparison.Ordinal) ||
+            nonNullableTypeName.StartsWith("System.IProgress<", StringComparison.Ordinal))
+        {
+            var startIdx = nonNullableTypeName.IndexOf('<');
+            var endIdx = nonNullableTypeName.LastIndexOf('>');
+            if (startIdx >= 0 && endIdx > startIdx)
+            {
+                elementType = nonNullableTypeName.Substring(startIdx + 1, endIdx - startIdx - 1).Trim();
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

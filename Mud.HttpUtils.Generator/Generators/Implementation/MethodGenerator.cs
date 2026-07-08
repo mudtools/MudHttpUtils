@@ -283,16 +283,25 @@ internal class MethodGenerator : ICodeFragmentGenerator
             .FirstOrDefault(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.FilePathAttribute));
         if (filePathParam != null)
         {
-            // 从 [FilePath(BufferSize = ...)] 读取缓冲区大小，默认 81920
+            // 从 [FilePath(BufferSize = ..., Overwrite = ...)] 读取配置
             var filePathAttr = filePathParam.Attributes.First(a => a.Name == HttpClientGeneratorConstants.FilePathAttribute);
             var bufferSize = 81920;
             if (filePathAttr.NamedArguments.TryGetValue("BufferSize", out var bsVal) && bsVal is int bs && bs > 0)
                 bufferSize = bs;
 
+            var overwrite = true;
+            if (filePathAttr.NamedArguments.TryGetValue("Overwrite", out var owVal) && owVal is bool ow)
+                overwrite = ow;
+
+            // 检测方法签名中的 IProgress<T> 参数，用于下载进度报告
+            var progressParam = methodInfo.Parameters
+                .FirstOrDefault(p => TypeDetectionHelper.IsIProgressType(p.Type, out _));
+            var progressArg = progressParam != null ? progressParam.Name : "null";
+
             // 构造 ResponseDescriptor 以支持 AllowAnyStatusCode
             var responseDescriptor = BuildResponseDescriptorCode(methodInfo, deserializeType);
-            codeBuilder.AppendLine($"            await {executor}.DownloadLargeAsync(__httpRequest, {filePathParam.Name}, overwrite: true, bufferSize: {bufferSize},");
-            codeBuilder.AppendLine($"                {responseDescriptor}{cancellationTokenArg}).ConfigureAwait(false);");
+            codeBuilder.AppendLine($"            await {executor}.DownloadLargeAsync(__httpRequest, {filePathParam.Name}, overwrite: {overwrite.ToString().ToLowerInvariant()}, bufferSize: {bufferSize},");
+            codeBuilder.AppendLine($"                {responseDescriptor}, progress: {progressArg}{cancellationTokenArg}).ConfigureAwait(false);");
             return;
         }
 
@@ -302,21 +311,42 @@ internal class MethodGenerator : ICodeFragmentGenerator
             var hasCacheOrResilience = methodInfo.CacheEnabled ||
                 methodInfo.RetryEnabled || methodInfo.CircuitBreakerEnabled || methodInfo.MethodTimeoutEnabled;
 
+            // 判断返回类型是否为可空 byte[]?（非可空时使用 ?? Array.Empty<byte>() 确保非空返回）
+            var isNullableByteArray = deserializeType.TrimEnd().EndsWith("?");
+
             if (hasCacheOrResilience)
             {
                 // 启用 Cache/Resilience 时通过 ExecuteAsync 编排（执行器内部对 byte[] 使用 DownloadAsync 而非反序列化）
                 var byteDownloadDescriptor = BuildExecutionDescriptorCode(context, methodInfo, deserializeType);
-                codeBuilder.AppendLine($"            return (await {executor}.ExecuteAsync<{deserializeType}>(");
-                codeBuilder.AppendLine($"                __httpRequest,");
-                codeBuilder.AppendLine($"                {byteDownloadDescriptor},");
-                codeBuilder.AppendLine($"                _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false))!;");
+                if (isNullableByteArray)
+                {
+                    codeBuilder.AppendLine($"            return await {executor}.ExecuteAsync<{deserializeType}>(");
+                    codeBuilder.AppendLine($"                __httpRequest,");
+                    codeBuilder.AppendLine($"                {byteDownloadDescriptor},");
+                    codeBuilder.AppendLine($"                _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false);");
+                }
+                else
+                {
+                    codeBuilder.AppendLine($"            return (await {executor}.ExecuteAsync<{deserializeType}>(");
+                    codeBuilder.AppendLine($"                __httpRequest,");
+                    codeBuilder.AppendLine($"                {byteDownloadDescriptor},");
+                    codeBuilder.AppendLine($"                _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false)) ?? System.Array.Empty<byte>();");
+                }
             }
             else
             {
                 // 未启用 Cache/Resilience 时直接调用 DownloadAsync，传递 ResponseDescriptor 以支持 AllowAnyStatusCode
                 var responseDescriptor = BuildResponseDescriptorCode(methodInfo, deserializeType);
-                codeBuilder.AppendLine($"            return (await {executor}.DownloadAsync(__httpRequest,");
-                codeBuilder.AppendLine($"                {responseDescriptor}{cancellationTokenArg}).ConfigureAwait(false))!;");
+                if (isNullableByteArray)
+                {
+                    codeBuilder.AppendLine($"            return await {executor}.DownloadAsync(__httpRequest,");
+                    codeBuilder.AppendLine($"                {responseDescriptor}{cancellationTokenArg}).ConfigureAwait(false);");
+                }
+                else
+                {
+                    codeBuilder.AppendLine($"            return (await {executor}.DownloadAsync(__httpRequest,");
+                    codeBuilder.AppendLine($"                {responseDescriptor}{cancellationTokenArg}).ConfigureAwait(false)) ?? System.Array.Empty<byte>();");
+                }
             }
             return;
         }

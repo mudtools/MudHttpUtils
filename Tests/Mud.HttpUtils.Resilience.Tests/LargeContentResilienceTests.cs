@@ -92,7 +92,7 @@ public class LargeContentResilienceTests
     public async Task DownloadLargeAsync_LargeContent_SkipsRetryButKeepsTimeoutAndCircuitBreaker()
     {
         var mockInner = new Mock<IEnhancedHttpClient>();
-        mockInner.Setup(c => c.DownloadLargeAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
+        mockInner.Setup(c => c.DownloadLargeAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<IProgress<long>?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FileInfo("test.txt"));
         var mockPolicyProvider = new Mock<IResiliencePolicyProvider>();
         mockPolicyProvider.Setup(p => p.GetTimeoutAndCircuitBreakerPolicy<FileInfo>())

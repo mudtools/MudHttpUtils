@@ -1,4 +1,11 @@
-﻿namespace HttpClientApiTest.Api;
+﻿// -----------------------------------------------------------------------
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// -----------------------------------------------------------------------
+
+namespace HttpClientApiTest.Api;
 /// <summary>
 /// 钉钉用户API测试接口
 /// 测试各种用户相关的API功能，包括不同Token类型、参数位置、数组查询等场景
@@ -28,7 +35,7 @@ public interface IDingTalkUserApi : IAppContextSwitcher
     /// 特点：使用默认Token，ArrayQuery属性
     /// </summary>
     [Get("/api/v1/user")]
-    Task<SysUserInfoOutput> GetUsersAsync([Token][Header("x-token")] string token, [ArrayQuery] string[] ids);
+    Task<SysUserInfoOutput> GetUsersAsync([Token][Header("x-token")] string token, [ArrayQuery(Separator = ";")] string[] ids);
 
     /// <summary>
     /// 测试：获取多个用户信息（自定义ArrayQuery分隔符）

@@ -109,6 +109,26 @@ public static class MudHttpMeter
             "mud.token.recovery",
             unit: "{operation}",
             description: "令牌恢复（401 重试）次数与结果");
+
+    /// <summary>
+    /// 文件下载字节数计数（维度：client_name, outcome）。
+    /// 仅统计响应体下载阶段（不含等待响应头时间）。
+    /// </summary>
+    public static readonly Counter<long> DownloadBytesCounter =
+        Instance.CreateCounter<long>(
+            "mud.http.download.bytes",
+            unit: "{byte}",
+            description: "文件下载字节数");
+
+    /// <summary>
+    /// 文件下载耗时直方图（毫秒，维度：client_name, outcome）。
+    /// 仅测量响应体下载阶段耗时（不含等待响应头时间）。
+    /// </summary>
+    public static readonly Histogram<double> DownloadDuration =
+        Instance.CreateHistogram<double>(
+            "mud.http.download.duration",
+            unit: "ms",
+            description: "文件下载耗时分布（仅响应体下载阶段）");
 }
 
 /// <summary>

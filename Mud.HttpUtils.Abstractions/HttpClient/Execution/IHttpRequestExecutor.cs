@@ -60,12 +60,14 @@ public interface IHttpRequestExecutor
     /// <summary>
     /// 下载大文件到指定路径。
     /// 支持基于 <paramref name="descriptor"/> 的错误处理（非 2xx 状态码抛出 <see cref="ApiException"/>）。
+    /// 支持通过 <paramref name="progress"/> 报告下载进度（累计已接收字节数）。
     /// </summary>
     /// <param name="request">HTTP 请求消息。</param>
     /// <param name="filePath">文件保存路径。</param>
     /// <param name="overwrite">是否覆盖已存在的文件。默认为 true。</param>
     /// <param name="bufferSize">下载缓冲区大小（字节）。默认为 81920（80KB）。</param>
     /// <param name="descriptor">响应处理描述符（用于 AllowAnyStatusCode 控制）。可为 null，null 时默认检查状态码。</param>
+    /// <param name="progress">下载进度回调（报告累计已写入字节数）。可为 null，表示不需要进度报告。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     Task DownloadLargeAsync(
         HttpRequestMessage request,
@@ -73,6 +75,7 @@ public interface IHttpRequestExecutor
         bool overwrite = true,
         int bufferSize = 81920,
         ResponseDescriptor? descriptor = null,
+        IProgress<long>? progress = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

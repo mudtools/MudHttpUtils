@@ -37,3 +37,47 @@ public sealed class CacheDiagnosticPayload(string? key, bool hit)
     public bool Hit { get; } = hit;
     public DateTimeOffset Timestamp { get; } = DateTimeOffset.UtcNow;
 }
+
+/// <summary>文件下载完成事件的诊断负载（响应体下载阶段）。</summary>
+public sealed class DownloadDiagnosticPayload(string method, string? url, string? clientName, long bytes, double elapsedMs)
+{
+    /// <summary>HTTP 方法。</summary>
+    public string Method { get; } = method;
+
+    /// <summary>请求 URL。</summary>
+    public string? Url { get; } = url;
+
+    /// <summary>客户端名称。</summary>
+    public string? ClientName { get; } = clientName;
+
+    /// <summary>下载字节数。</summary>
+    public long Bytes { get; } = bytes;
+
+    /// <summary>下载耗时（毫秒，仅响应体下载阶段）。</summary>
+    public double ElapsedMs { get; } = elapsedMs;
+
+    /// <summary>事件时间戳（UTC）。</summary>
+    public DateTimeOffset Timestamp { get; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>文件下载失败事件的诊断负载（响应体下载阶段抛出异常）。</summary>
+public sealed class DownloadErrorDiagnosticPayload(string method, string? url, string? clientName, double elapsedMs, Exception exception)
+{
+    /// <summary>HTTP 方法。</summary>
+    public string Method { get; } = method;
+
+    /// <summary>请求 URL。</summary>
+    public string? Url { get; } = url;
+
+    /// <summary>客户端名称。</summary>
+    public string? ClientName { get; } = clientName;
+
+    /// <summary>下载耗时（毫秒，仅响应体下载阶段）。</summary>
+    public double ElapsedMs { get; } = elapsedMs;
+
+    /// <summary>异常实例。</summary>
+    public Exception Exception { get; } = exception;
+
+    /// <summary>事件时间戳（UTC）。</summary>
+    public DateTimeOffset Timestamp { get; } = DateTimeOffset.UtcNow;
+}

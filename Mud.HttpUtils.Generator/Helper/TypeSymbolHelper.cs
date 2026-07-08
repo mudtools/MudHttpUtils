@@ -101,6 +101,19 @@ internal static class TypeSymbolHelper
             // 检查简单名称或完整名称是否在排除列表中
             if (ShouldExcludeInterface(interfaceSymbol, excludedInterfaces))
             {
+                // 传递性排除：将当前接口的所有祖先接口也加入排除列表，
+                // 确保多级继承（A→B→C，排除 B 时也排除 A）不会重复生成祖先接口的方法
+                var ancestors = SafeGetAllInterfaces(interfaceSymbol);
+                if (ancestors != null)
+                {
+                    foreach (var ancestor in ancestors)
+                    {
+                        excludedInterfaces.Add(ancestor.Name);
+                        var ancestorDisplay = SafeGetName(() => ancestor.ToDisplayString());
+                        if (ancestorDisplay != null)
+                            excludedInterfaces.Add(ancestorDisplay);
+                    }
+                }
                 yield break; // 跳过整个接口及其方法
             }
         }

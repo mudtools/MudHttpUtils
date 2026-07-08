@@ -53,9 +53,10 @@ public interface IBaseHttpClient
     /// <param name="filePath">文件保存的目标路径。</param>
     /// <param name="overwrite">如果目标文件已存在，是否覆盖。默认为 true。</param>
     /// <param name="bufferSize">下载缓冲区大小（字节）。默认为 81920（80KB）。</param>
+    /// <param name="progress">下载进度回调（报告累计已写入字节数）。可为 null，表示不需要进度报告。</param>
     /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
     /// <returns>下载的文件信息任务。</returns>
-    Task<FileInfo> DownloadLargeAsync(HttpRequestMessage request, string filePath, bool overwrite = true, int bufferSize = 81920, CancellationToken cancellationToken = default);
+    Task<FileInfo> DownloadLargeAsync(HttpRequestMessage request, string filePath, bool overwrite = true, int bufferSize = 81920, IProgress<long>? progress = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 异步发送 HTTP 请求并以流式方式返回 IAsyncEnumerable 结果，适用于服务器端事件流（SSE）或 NDJSON 响应。

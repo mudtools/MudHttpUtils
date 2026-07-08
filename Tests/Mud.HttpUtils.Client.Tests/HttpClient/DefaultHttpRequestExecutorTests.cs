@@ -685,15 +685,65 @@ public class DefaultHttpRequestExecutorTests
     [Fact]
     public async Task DownloadLargeAsync_ShouldDelegateToHttpClient()
     {
+        var data = new byte[] { 1, 2, 3, 4, 5 };
         var mockClient = new Mock<IBaseHttpClient>();
-        mockClient.Setup(c => c.DownloadLargeAsync(
-                It.IsAny<HttpRequestMessage>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new FileInfo("test.txt"));
+        var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(data)
+        };
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
         var executor = new DefaultHttpRequestExecutor(mockClient.Object);
 
-        await executor.DownloadLargeAsync(CreateRequest(), "test.txt");
-        mockClient.Verify(c => c.DownloadLargeAsync(
-            It.IsAny<HttpRequestMessage>(), "test.txt", It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
+        var tempFile = Path.Combine(Path.GetTempPath(), $"mud_test_{Guid.NewGuid():N}.bin");
+        try
+        {
+            await executor.DownloadLargeAsync(CreateRequest(), tempFile);
+
+            // 验证执行器调用了 SendRawAsync
+            mockClient.Verify(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()), Times.Once);
+            // 验证文件内容正确
+            File.Exists(tempFile).Should().BeTrue();
+            (await File.ReadAllBytesAsync(tempFile)).Should().Equal(data);
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public async Task DownloadLargeAsync_WithProgress_ShouldReportBytesWritten()
+    {
+        var data = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 };
+        var mockClient = new Mock<IBaseHttpClient>();
+        var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(data)
+        };
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
+        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+
+        var tempFile = Path.Combine(Path.GetTempPath(), $"mud_test_{Guid.NewGuid():N}.bin");
+        var reportedBytes = new List<long>();
+        var progress = new Progress<long>(b => reportedBytes.Add(b));
+        try
+        {
+            await executor.DownloadLargeAsync(CreateRequest(), tempFile, progress: progress);
+
+            // 验证进度报告至少触发一次，且最终累计等于数据长度
+            reportedBytes.Should().NotBeEmpty();
+            reportedBytes.Last().Should().Be(data.Length);
+            File.Exists(tempFile).Should().BeTrue();
+            (await File.ReadAllBytesAsync(tempFile)).Should().Equal(data);
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+        }
     }
 
     #endregion

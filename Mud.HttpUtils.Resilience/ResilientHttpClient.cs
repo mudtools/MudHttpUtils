@@ -283,22 +283,23 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         string filePath,
         bool overwrite = true,
         int bufferSize = 81920,
+        IProgress<long>? progress = null,
         CancellationToken cancellationToken = default)
     {
         if (ShouldSkipResilience(request))
         {
-            return await _innerClient.DownloadLargeAsync(request, filePath, overwrite, bufferSize, cancellationToken).ConfigureAwait(false);
+            return await _innerClient.DownloadLargeAsync(request, filePath, overwrite, bufferSize, progress, cancellationToken).ConfigureAwait(false);
         }
 
         if (ShouldSkipRetry(request))
         {
             return await ExecuteWithoutRetryAsync(request,
-                (client, req, ct) => client.DownloadLargeAsync(req, filePath, overwrite, bufferSize, ct),
+                (client, req, ct) => client.DownloadLargeAsync(req, filePath, overwrite, bufferSize, progress, ct),
                 cancellationToken).ConfigureAwait(false);
         }
 
         return await ExecuteDownloadWithResilienceAsync(request,
-            (client, req, ct) => client.DownloadLargeAsync(req, filePath, overwrite, bufferSize, ct),
+            (client, req, ct) => client.DownloadLargeAsync(req, filePath, overwrite, bufferSize, progress, ct),
             cancellationToken).ConfigureAwait(false);
     }
 

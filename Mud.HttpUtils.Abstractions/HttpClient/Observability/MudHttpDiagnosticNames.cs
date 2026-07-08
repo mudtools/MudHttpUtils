@@ -45,4 +45,13 @@ public static class MudHttpDiagnosticNames
 
     /// <summary>缓存未命中事件。</summary>
     public const string CacheMiss = "CacheMiss";
+
+    /// <summary>文件下载开始事件（响应体下载阶段，不含等待响应头时间）。</summary>
+    public const string DownloadStarted = "DownloadStarted";
+
+    /// <summary>文件下载完成事件（正常完成）。</summary>
+    public const string DownloadCompleted = "DownloadCompleted";
+
+    /// <summary>文件下载失败事件（响应体下载或写入阶段抛出异常）。</summary>
+    public const string DownloadFailed = "DownloadFailed";
 }

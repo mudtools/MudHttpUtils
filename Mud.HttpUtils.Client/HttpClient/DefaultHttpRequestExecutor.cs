@@ -8,6 +8,7 @@
 using System.IO;
 using System.Text.Json;
 using System.Xml.Serialization;
+using Mud.HttpUtils.Observability;
 
 namespace Mud.HttpUtils;
 
@@ -206,11 +207,28 @@ public class DefaultHttpRequestExecutor(
             throw new ApiException(response.StatusCode, errorContent, request.RequestUri?.ToString());
         }
 
+        // 下载阶段可观测性：测量响应体读取耗时与字节数（HTTP 请求层已由 SendRawAsync 采集）
+        var clientName = MudHttpObservability.GetClientName(request);
+        RecordDownloadStarted(request, clientName);
+        var sw = ValueStopwatch.StartNew();
+
+        try
+        {
 #if NET6_0_OR_GREATER
-        return await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+            var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
 #else
-        return await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+            var bytes = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
 #endif
+            var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
+            RecordDownloadCompleted(request, clientName, bytes?.Length ?? 0, elapsedMs);
+            return bytes;
+        }
+        catch (Exception ex)
+        {
+            var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
+            RecordDownloadFailed(request, clientName, elapsedMs, ex);
+            throw;
+        }
     }
 
     /// <inheritdoc/>
@@ -220,6 +238,7 @@ public class DefaultHttpRequestExecutor(
         bool overwrite = true,
         int bufferSize = 81920,
         ResponseDescriptor? descriptor = null,
+        IProgress<long>? progress = null,
         CancellationToken cancellationToken = default)
     {
         // 发送请求并检查状态码（与 DownloadAsync 保持一致的错误处理语义）
@@ -232,23 +251,96 @@ public class DefaultHttpRequestExecutor(
             throw new ApiException(response.StatusCode, errorContent, request.RequestUri?.ToString());
         }
 
-        // 流式写入文件
-        if (overwrite && File.Exists(filePath))
-            File.Delete(filePath);
+        // 下载阶段可观测性：测量响应体下载与文件写入耗时和字节数（HTTP 请求层已由 SendRawAsync 采集）
+        var clientName = MudHttpObservability.GetClientName(request);
+        RecordDownloadStarted(request, clientName);
+        var sw = ValueStopwatch.StartNew();
 
-        var dir = Path.GetDirectoryName(filePath);
-        if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
-            Directory.CreateDirectory(dir);
+        try
+        {
+            // 流式写入文件
+            if (overwrite && File.Exists(filePath))
+                File.Delete(filePath);
+
+            var dir = Path.GetDirectoryName(filePath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+
+            var totalBytesWritten = 0L;
 
 #if NET6_0_OR_GREATER
-        await using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize, useAsync: true);
-        await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        await contentStream.CopyToAsync(fileStream, bufferSize, cancellationToken).ConfigureAwait(false);
+            await using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize, useAsync: true);
+            await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+
+            // 若调用方未提供 progress 回调，则直接 CopyToAsync，避免每 buffer 的进度报告开销
+            if (progress == null)
+            {
+                await contentStream.CopyToAsync(fileStream, bufferSize, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await CopyToWithProgressAsync(contentStream, fileStream, bufferSize, progress, totalBytesWritten, cancellationToken).ConfigureAwait(false);
+            }
 #else
-        using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize);
-        using var contentStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
-        await contentStream.CopyToAsync(fileStream, bufferSize).ConfigureAwait(false);
+            using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize);
+            using var contentStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+
+            if (progress == null)
+            {
+                await contentStream.CopyToAsync(fileStream, bufferSize).ConfigureAwait(false);
+            }
+            else
+            {
+                await CopyToWithProgressAsync(contentStream, fileStream, bufferSize, progress, totalBytesWritten, cancellationToken).ConfigureAwait(false);
+            }
 #endif
+
+            var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
+            // 通过文件大小获取实际写入字节数（progress == null 分支下 totalBytesWritten 未更新）
+            var bytes = new FileInfo(filePath).Length;
+            RecordDownloadCompleted(request, clientName, bytes, elapsedMs);
+        }
+        catch (Exception ex)
+        {
+            var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
+            RecordDownloadFailed(request, clientName, elapsedMs, ex);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 将源流复制到目标流，并在每个缓冲区写入后报告进度。
+    /// </summary>
+    private static async Task CopyToWithProgressAsync(
+        Stream source,
+        Stream destination,
+        int bufferSize,
+        IProgress<long> progress,
+        long totalBytesWritten,
+        CancellationToken cancellationToken)
+    {
+        var buffer = new byte[bufferSize];
+        int bytesRead;
+
+        while (true)
+        {
+#if NETSTANDARD2_0
+            bytesRead = await source.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
+#else
+            bytesRead = await source.ReadAsync(buffer.AsMemory(0, bufferSize), cancellationToken).ConfigureAwait(false);
+#endif
+            if (bytesRead == 0)
+                break;
+
+#if NETSTANDARD2_0
+            await destination.WriteAsync(buffer, 0, bytesRead, cancellationToken).ConfigureAwait(false);
+#else
+            await destination.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken).ConfigureAwait(false);
+#endif
+
+            totalBytesWritten += bytesRead;
+            progress.Report(totalBytesWritten);
+        }
     }
 
     /// <inheritdoc/>
@@ -410,5 +502,80 @@ public class DefaultHttpRequestExecutor(
         if (string.IsNullOrEmpty(contentType))
             return false;
         return contentType!.IndexOf("xml", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    /// <summary>
+    /// 发出下载开始事件（标记响应体下载阶段开始）。
+    /// </summary>
+    private static void RecordDownloadStarted(HttpRequestMessage request, string? clientName)
+    {
+        MudHttpActivitySource.AddActivityEvent(
+            MudHttpDiagnosticNames.DownloadStarted,
+            () => new DownloadDiagnosticPayload(
+                request.Method.Method, request.RequestUri?.ToString(), clientName, 0, 0),
+            MudHttpDiagnosticNames.DownloadStarted,
+            new[]
+            {
+                new KeyValuePair<string, object?>("method", request.Method.Method),
+                new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
+            });
+    }
+
+    /// <summary>
+    /// 发出下载完成事件并记录字节数/耗时指标。
+    /// </summary>
+    private static void RecordDownloadCompleted(
+        HttpRequestMessage request, string? clientName, long bytes, double elapsedMs)
+    {
+        MudHttpActivitySource.AddActivityEvent(
+            MudHttpDiagnosticNames.DownloadCompleted,
+            () => new DownloadDiagnosticPayload(
+                request.Method.Method, request.RequestUri?.ToString(), clientName, bytes, elapsedMs),
+            MudHttpDiagnosticNames.DownloadCompleted,
+            new[]
+            {
+                new KeyValuePair<string, object?>("method", request.Method.Method),
+                new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
+                new KeyValuePair<string, object?>("bytes", bytes),
+                new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+            });
+
+        var tags = new KeyValuePair<string, object?>[]
+        {
+            new("client_name", clientName ?? "(default)"),
+            new("outcome", "success"),
+        };
+        MudHttpMeter.DownloadBytesCounter.Add(bytes, tags);
+        MudHttpMeter.DownloadDuration.Record(elapsedMs, tags);
+    }
+
+    /// <summary>
+    /// 发出下载失败事件并记录耗时指标（字节数无法确定，不记录）。
+    /// </summary>
+    private static void RecordDownloadFailed(
+        HttpRequestMessage request, string? clientName, double elapsedMs, Exception ex)
+    {
+        MudHttpActivitySource.AddActivityEvent(
+            MudHttpDiagnosticNames.DownloadFailed,
+            () => new DownloadErrorDiagnosticPayload(
+                request.Method.Method, request.RequestUri?.ToString(), clientName, elapsedMs, ex),
+            MudHttpDiagnosticNames.DownloadFailed,
+            new[]
+            {
+                new KeyValuePair<string, object?>("method", request.Method.Method),
+                new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
+                new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+                new KeyValuePair<string, object?>("exception_type", ex.GetType().Name),
+            });
+
+        var tags = new KeyValuePair<string, object?>[]
+        {
+            new("client_name", clientName ?? "(default)"),
+            new("outcome", "error"),
+        };
+        MudHttpMeter.DownloadDuration.Record(elapsedMs, tags);
     }
 }
