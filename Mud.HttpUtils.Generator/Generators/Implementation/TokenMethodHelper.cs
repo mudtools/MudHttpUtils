@@ -40,8 +40,11 @@ internal static class TokenMethodHelper
         codeBuilder.AppendLine($"        private readonly string _tokenManagerKey = \"{StringEscapeHelper.EscapeString(tokenManagerKey)}\";");
         codeBuilder.AppendLine();
 
-        string accessibility = context.Configuration.IsAbstract ? "virtual" : "override";
-        if (!context.HasInheritedFrom && !context.Configuration.IsAbstract)
+        // 基类有 TokenManager 时使用 override，否则使用 virtual
+        string accessibility;
+        if (context.HasInheritedFrom && context.Configuration.BaseHasTokenManager)
+            accessibility = "override";
+        else
             accessibility = "virtual";
 
         codeBuilder.AppendLine("        /// <summary>");

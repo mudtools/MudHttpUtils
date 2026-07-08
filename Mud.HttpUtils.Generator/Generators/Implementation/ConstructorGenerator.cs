@@ -43,12 +43,43 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     {
         if (_context.HasInheritedFrom)
         {
+            // 当基类没有 TokenManager 但派生类有时，需要生成自己的令牌相关字段
+            if (_context.HasTokenManager && !_context.Configuration.BaseHasTokenManager)
+            {
+                codeBuilder.AppendLine("        /// <summary>");
+                codeBuilder.AppendLine($"        /// 用于HttpClient客户端操作操作使用的的<see cref = \"{_context.Configuration.TokenManagerType}\"/> 令牌管理实例。");
+                codeBuilder.AppendLine("        /// </summary>");
+                codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly {_context.Configuration.TokenManagerType} _appManager;");
+
+                codeBuilder.AppendLine("        /// <summary>");
+                codeBuilder.AppendLine("        /// 令牌提供器，用于获取访问令牌。");
+                codeBuilder.AppendLine("        /// </summary>");
+                codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly ITokenProvider _tokenProvider;");
+            }
+
             if (_context.HasTokenManager && _context.Configuration.AnyMethodRequiresUserId)
             {
                 codeBuilder.AppendLine("        /// <summary>");
                 codeBuilder.AppendLine("        /// 当前用户上下文，用于获取当前用户ID。");
                 codeBuilder.AppendLine("        /// </summary>");
                 codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly ICurrentUserContext _currentUserContext;");
+            }
+
+            // 当派生类有新的缓存/弹性策略方法但基类没有时，需要生成自己的字段
+            if (_context.HasCache && !_context.Configuration.BaseHasCache)
+            {
+                codeBuilder.AppendLine("        /// <summary>");
+                codeBuilder.AppendLine("        /// HTTP响应缓存提供器，用于缓存接口方法的响应结果。");
+                codeBuilder.AppendLine("        /// </summary>");
+                codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IHttpResponseCache _cacheProvider;");
+            }
+
+            if (_context.HasResilience && !_context.Configuration.BaseHasResilience)
+            {
+                codeBuilder.AppendLine("        /// <summary>");
+                codeBuilder.AppendLine("        /// 弹性策略解析器，用于方法级重试、烕断、超时等弹性策略的运行时编排。");
+                codeBuilder.AppendLine("        /// </summary>");
+                codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IResiliencePolicyResolver _resilienceResolver;");
             }
 
             if (_context.ImplementsICurrentUserId && _context.Configuration.AnyMethodRequiresUserId)
@@ -253,10 +284,18 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         {
             codeBuilder.AppendLine("        /// <param name=\"cacheProvider\">HTTP响应缓存提供器</param>");
         }
+        else if (_context.HasInheritedFrom && _context.Configuration.BaseHasCache)
+        {
+            codeBuilder.AppendLine("        /// <param name=\"cacheProvider\">HTTP响应缓存提供器（传递给基类）</param>");
+        }
 
         if (_context.HasResilience)
         {
             codeBuilder.AppendLine("        /// <param name=\"resilienceProvider\">弹性策略提供器</param>");
+        }
+        else if (_context.HasInheritedFrom && _context.Configuration.BaseHasResilience)
+        {
+            codeBuilder.AppendLine("        /// <param name=\"resilienceProvider\">弹性策略提供器（传递给基类）</param>");
         }
     }
 
@@ -291,12 +330,16 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             parameters.Add("IAppContextHolder appContextHolder");
         }
 
-        if (_context.HasCache)
+        // 构造函数需要接受 cacheProvider/resilienceResolver 如果派生类自己需要或基类需要
+        var needsCacheParam = _context.HasCache || (_context.HasInheritedFrom && _context.Configuration.BaseHasCache);
+        var needsResilienceParam = _context.HasResilience || (_context.HasInheritedFrom && _context.Configuration.BaseHasResilience);
+
+        if (needsCacheParam)
         {
             parameters.Add("IHttpResponseCache cacheProvider");
         }
 
-        if (_context.HasResilience)
+        if (needsResilienceParam)
         {
             parameters.Add("IResiliencePolicyResolver resilienceResolver");
         }
@@ -312,9 +355,19 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             };
             if (_context.HasTokenManager)
             {
-                baseParameters.Add("appManager");
-                baseParameters.Add("appContextHolder");
-                baseParameters.Add("tokenProvider");
+                if (_context.Configuration.BaseHasTokenManager)
+                {
+                    // 基类有 TokenManager，直接传递令牌参数
+                    baseParameters.Add("appManager");
+                    baseParameters.Add("appContextHolder");
+                    baseParameters.Add("tokenProvider");
+                }
+                else
+                {
+                    // 基类没有 TokenManager，传递 appContext 而非 appManager
+                    baseParameters.Add("appManager.GetDefaultApp()");
+                    baseParameters.Add("appContextHolder");
+                }
             }
             else if (_context.HasHttpClient)
             {
@@ -326,11 +379,12 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
                 baseParameters.Add("appContext");
                 baseParameters.Add("appContextHolder");
             }
-            if (_context.HasCache)
+            // 只传递基类构造函数能接受的参数
+            if (_context.Configuration.BaseHasCache)
             {
                 baseParameters.Add("cacheProvider");
             }
-            if (_context.HasResilience)
+            if (_context.Configuration.BaseHasResilience)
             {
                 baseParameters.Add("resilienceResolver");
             }
@@ -393,6 +447,21 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             {
                 codeBuilder.AppendLine("            _currentUserContext = currentUserContext ?? throw new ArgumentNullException(nameof(currentUserContext));");
             }
+            // 当基类没有 TokenManager 但派生类有时，初始化自己的令牌字段
+            if (_context.HasTokenManager && !_context.Configuration.BaseHasTokenManager)
+            {
+                codeBuilder.AppendLine("            _appManager = appManager ?? throw new ArgumentNullException(nameof(appManager));");
+                codeBuilder.AppendLine("            _tokenProvider = tokenProvider ?? throw new ArgumentNullException(nameof(tokenProvider));");
+            }
+            // 初始化派生类自己的缓存/弹性策略字段（基类没有的部分）
+            if (_context.HasCache && !_context.Configuration.BaseHasCache)
+            {
+                codeBuilder.AppendLine("            _cacheProvider = cacheProvider ?? throw new ArgumentNullException(nameof(cacheProvider));");
+            }
+            if (_context.HasResilience && !_context.Configuration.BaseHasResilience)
+            {
+                codeBuilder.AppendLine("            _resilienceResolver = resilienceResolver ?? throw new ArgumentNullException(nameof(resilienceResolver));");
+            }
         }
 
         codeBuilder.AppendLine("        }");
@@ -406,7 +475,15 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     {
         GenerateGetTokenManagerKeyMethod(codeBuilder);
 
-        if (_context.HasInheritedFrom) return;
+        if (_context.HasInheritedFrom)
+        {
+            // 当基类没有 TokenManager 但派生类有时，需要生成令牌相关的辅助方法
+            if (_context.HasTokenManager && !_context.Configuration.BaseHasTokenManager)
+            {
+                GenerateUseAppMethod(codeBuilder);
+            }
+            return;
+        }
 
         GenerateAppContextMembers(codeBuilder);
         GenerateUseAppMethod(codeBuilder);

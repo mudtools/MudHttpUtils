@@ -1006,19 +1006,25 @@
             发送 HTTP 请求（无返回值）。
             </summary>
         </member>
-        <member name="M:Mud.HttpUtils.IHttpRequestExecutor.DownloadAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
+        <member name="M:Mud.HttpUtils.IHttpRequestExecutor.DownloadAsync(System.Net.Http.HttpRequestMessage,Mud.HttpUtils.ResponseDescriptor,System.Threading.CancellationToken)">
             <summary>
             下载文件并返回字节数组。
+            支持基于 <paramref name="descriptor"/> 的错误处理（非 2xx 状态码抛出 <see cref="T:Mud.HttpUtils.ApiException"/>）。
             </summary>
+            <param name="request">HTTP 请求消息。</param>
+            <param name="descriptor">响应处理描述符（用于 AllowAnyStatusCode 控制）。可为 null，null 时默认检查状态码。</param>
+            <param name="cancellationToken">取消令牌。</param>
         </member>
-        <member name="M:Mud.HttpUtils.IHttpRequestExecutor.DownloadLargeAsync(System.Net.Http.HttpRequestMessage,System.String,System.Boolean,System.Int32,System.Threading.CancellationToken)">
+        <member name="M:Mud.HttpUtils.IHttpRequestExecutor.DownloadLargeAsync(System.Net.Http.HttpRequestMessage,System.String,System.Boolean,System.Int32,Mud.HttpUtils.ResponseDescriptor,System.Threading.CancellationToken)">
             <summary>
             下载大文件到指定路径。
+            支持基于 <paramref name="descriptor"/> 的错误处理（非 2xx 状态码抛出 <see cref="T:Mud.HttpUtils.ApiException"/>）。
             </summary>
             <param name="request">HTTP 请求消息。</param>
             <param name="filePath">文件保存路径。</param>
             <param name="overwrite">是否覆盖已存在的文件。默认为 true。</param>
             <param name="bufferSize">下载缓冲区大小（字节）。默认为 81920（80KB）。</param>
+            <param name="descriptor">响应处理描述符（用于 AllowAnyStatusCode 控制）。可为 null，null 时默认检查状态码。</param>
             <param name="cancellationToken">取消令牌。</param>
         </member>
         <member name="M:Mud.HttpUtils.IHttpRequestExecutor.SendAsAsyncEnumerable``1(System.Net.Http.HttpRequestMessage,System.Object,System.Threading.CancellationToken)">
@@ -1509,6 +1515,9 @@
         <member name="T:Mud.HttpUtils.Observability.CircuitBreakerDiagnosticPayload">
             <summary>熔断器状态变更事件的诊断负载。</summary>
         </member>
+        <member name="M:Mud.HttpUtils.Observability.CircuitBreakerDiagnosticPayload.#ctor(System.String,System.String)">
+            <summary>熔断器状态变更事件的诊断负载。</summary>
+        </member>
         <member name="P:Mud.HttpUtils.Observability.CircuitBreakerDiagnosticPayload.PolicyKey">
             <summary>策略键。</summary>
         </member>
@@ -1521,14 +1530,20 @@
         <member name="T:Mud.HttpUtils.Observability.TokenRefreshDiagnosticPayload">
             <summary>令牌刷新完成事件的诊断负载。</summary>
         </member>
+        <member name="M:Mud.HttpUtils.Observability.TokenRefreshDiagnosticPayload.#ctor(System.String,System.Boolean,System.Boolean,System.Double)">
+            <summary>令牌刷新完成事件的诊断负载。</summary>
+        </member>
         <member name="T:Mud.HttpUtils.Observability.CacheDiagnosticPayload">
+            <summary>缓存命中/未命中事件的诊断负载。</summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Observability.CacheDiagnosticPayload.#ctor(System.String,System.Boolean)">
             <summary>缓存命中/未命中事件的诊断负载。</summary>
         </member>
         <member name="T:Mud.HttpUtils.Observability.MudHttpDiagnosticListener">
             <summary>
             Mud.HttpUtils 专用 DiagnosticListener 单例。
             在关键路径（请求/重试/熔断/令牌刷新/缓存）写入事件，外部 APM 探针可订阅。
-            无订阅者时 <see cref="!:IsEnabled"/> 返回 false，调用方应先检查再构造事件负载，避免无谓分配。
+            无订阅者时 <see cref="P:Mud.HttpUtils.Observability.MudHttpDiagnosticListener.HasSubscribers"/> 返回 false，调用方应先检查再构造事件负载，避免无谓分配。
             </summary>
         </member>
         <member name="P:Mud.HttpUtils.Observability.MudHttpDiagnosticListener.Instance">
@@ -1589,6 +1604,11 @@
             <summary>缓存未命中事件。</summary>
         </member>
         <member name="T:Mud.HttpUtils.Observability.RefreshStats">
+            <summary>
+            令牌刷新统计快照，作为健康检查与运维面板的数据来源。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Observability.RefreshStats.#ctor(System.Int32,System.Int32,System.Int32,System.DateTimeOffset,System.Nullable{System.DateTimeOffset},System.Nullable{System.DateTimeOffset})">
             <summary>
             令牌刷新统计快照，作为健康检查与运维面板的数据来源。
             </summary>

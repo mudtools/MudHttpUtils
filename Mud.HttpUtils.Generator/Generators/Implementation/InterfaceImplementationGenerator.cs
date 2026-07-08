@@ -374,6 +374,8 @@ internal class InterfaceImplementationGenerator
             HttpClientGeneratorConstants.InheritedFromProperty);
 
         // 自动检测 InheritedFrom：如果未显式指定，检查是否有带 [HttpClientApi(IsAbstract = true)] 的基接口
+        var baseHasTokenManager = false;
+        string? inheritedFromInterfaceName = null;
         if (string.IsNullOrEmpty(inheritedFrom))
         {
             foreach (var baseInterface in _interfaceSymbol.Interfaces)
@@ -386,8 +388,36 @@ internal class InterfaceImplementationGenerator
                 if (isBaseAbstract)
                 {
                     inheritedFrom = TypeSymbolHelper.GetImplementationClassName(baseInterface.Name);
+                    inheritedFromInterfaceName = baseInterface.Name;
+
+                    // 检查基接口是否具有 TokenManage
+                    var baseTokenManage = AttributeDataHelper.GetStringValueFromAttribute(baseApiAttr, HttpClientGeneratorConstants.TokenManageProperty);
+                    var baseHttpClient = AttributeDataHelper.GetStringValueFromAttribute(baseApiAttr, HttpClientGeneratorConstants.HttpClientProperty);
+                    baseHasTokenManager = !string.IsNullOrWhiteSpace(baseTokenManage) && string.IsNullOrWhiteSpace(baseHttpClient);
                     break;
                 }
+            }
+        }
+        else
+        {
+            // 显式指定 InheritedFrom 时，通过类名反查基接口以确定 BaseHasTokenManager 和 InheritedFromInterfaceName
+            foreach (var baseInterface in _interfaceSymbol.AllInterfaces)
+            {
+                var baseImplName = TypeSymbolHelper.GetImplementationClassName(baseInterface.Name);
+                if (!string.Equals(baseImplName, inheritedFrom, StringComparison.Ordinal))
+                    continue;
+
+                inheritedFromInterfaceName = baseInterface.Name;
+
+                var baseApiAttr = baseInterface.GetAttributes()
+                    .FirstOrDefault(attr => HttpClientGeneratorConstants.HttpClientApiAttributeNames.Contains(attr.AttributeClass?.Name));
+                if (baseApiAttr != null)
+                {
+                    var baseTokenManage = AttributeDataHelper.GetStringValueFromAttribute(baseApiAttr, HttpClientGeneratorConstants.TokenManageProperty);
+                    var baseHttpClient = AttributeDataHelper.GetStringValueFromAttribute(baseApiAttr, HttpClientGeneratorConstants.HttpClientProperty);
+                    baseHasTokenManager = !string.IsNullOrWhiteSpace(baseTokenManage) && string.IsNullOrWhiteSpace(baseHttpClient);
+                }
+                break;
             }
         }
 
@@ -460,6 +490,8 @@ internal class InterfaceImplementationGenerator
                 : null,
             BaseHasCache = baseHasCache,
             BaseHasResilience = baseHasResilience,
+            BaseHasTokenManager = baseHasTokenManager,
+            InheritedFromInterfaceName = inheritedFromInterfaceName,
             TokenType = tokenType,
             IsUserAccessToken = tokenType == "UserAccessToken",
             TokenManagerKey = tokenManagerKey,
@@ -585,7 +617,11 @@ internal class InterfaceImplementationGenerator
             return;
         }
 
-        var allMethods = TypeSymbolHelper.GetAllMethods(_interfaceSymbol, true);
+        var allMethods = context.HasInheritedFrom
+            ? (string.IsNullOrEmpty(context.Configuration.InheritedFromInterfaceName)
+                ? _interfaceSymbol.GetMembers().OfType<IMethodSymbol>().ToList()
+                : TypeSymbolHelper.GetAllMethods(_interfaceSymbol, true, [context.Configuration.InheritedFromInterfaceName!]).ToList())
+            : TypeSymbolHelper.GetAllMethods(_interfaceSymbol, true).ToList();
         foreach (var method in allMethods)
         {
             var methodRequiresUserId = GetMethodRequiresUserId(method);
@@ -613,7 +649,11 @@ internal class InterfaceImplementationGenerator
     /// </summary>
     private void PrecomputeXmlResponseTypes(GeneratorContext context)
     {
-        var methods = TypeSymbolHelper.GetAllMethods(_interfaceSymbol, true);
+        var methods = context.HasInheritedFrom
+            ? (string.IsNullOrEmpty(context.Configuration.InheritedFromInterfaceName)
+                ? _interfaceSymbol.GetMembers().OfType<IMethodSymbol>().ToList()
+                : TypeSymbolHelper.GetAllMethods(_interfaceSymbol, true, [context.Configuration.InheritedFromInterfaceName!]).ToList())
+            : TypeSymbolHelper.GetAllMethods(_interfaceSymbol, true);
         foreach (var method in methods)
         {
             var isHttpMethod = MethodAnalyzer.FindHttpMethodAttributeFromSymbol(method) != null;

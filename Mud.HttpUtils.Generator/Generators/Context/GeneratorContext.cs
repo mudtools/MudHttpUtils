@@ -102,11 +102,11 @@ internal class GeneratorContext
     public bool HasBaseInterfaces => InterfaceSymbol.Interfaces.Length > 0;
 
     /// <summary>
-    /// 根据 InheritedFrom 属性值获取 GetTokenAsync 方法的访问修饰符
-    /// - 有值（继承自指定类）：public override
-    /// - 无值：public virtual
+    /// 根据 InheritedFrom 和 BaseHasTokenManager 属性值获取 GetTokenAsync 方法的访问修饰符
+    /// - 继承自指定类且基类有 TokenManager：public override
+    /// - 其他情况：public virtual
     /// </summary>
-    public string GetTokenAsyncAccessibility => HasInheritedFrom
+    public string GetTokenAsyncAccessibility => (HasInheritedFrom && Configuration.BaseHasTokenManager)
         ? "public override"
         : "public virtual";
 
@@ -135,7 +135,16 @@ internal class GeneratorContext
         List<IMethodSymbol> allMethods;
         try
         {
-            allMethods = TypeSymbolHelper.GetAllMethods(interfaceSymbol, true).ToList();
+            // 当继承自基类时，只检测当前接口自身定义的方法以及非基接口的方法（父接口方法由基类负责）
+            if (!string.IsNullOrEmpty(configuration.InheritedFrom))
+            {
+                if (!string.IsNullOrEmpty(configuration.InheritedFromInterfaceName))
+                    allMethods = TypeSymbolHelper.GetAllMethods(interfaceSymbol, true, [configuration.InheritedFromInterfaceName]).ToList();
+                else
+                    allMethods = interfaceSymbol.GetMembers().OfType<IMethodSymbol>().ToList();
+            }
+            else
+                allMethods = TypeSymbolHelper.GetAllMethods(interfaceSymbol, true).ToList();
         }
         catch (Exception ex)
         {

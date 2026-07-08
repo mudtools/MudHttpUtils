@@ -67,14 +67,18 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
     /// <summary>
     /// 获取需要生成的方法列表
-    /// - 有 InheritedFrom：只获取当前接口自身定义的方法（父接口方法由基类生成）
+    /// - 有 InheritedFrom：获取当前接口及所有非基接口的方法（基接口方法由基类生成）
     /// - 无 InheritedFrom：获取当前接口及所有父接口的方法（需实现全部接口方法）
-    /// 函数在哪个接口定义就在哪个生成类中生成，InheritedFrom场景下父接口方法由基类负责
+    /// 函数在哪个接口定义就在哪个生成类中生成，InheritedFrom场景下基接口方法由基类负责
     /// </summary>
     private IEnumerable<IMethodSymbol> GetMethodsToGenerate(GeneratorContext context)
     {
         if (context.HasInheritedFrom)
         {
+            // 当有基接口名称时，排除基接口及其层级的方法（由基类负责）
+            if (!string.IsNullOrEmpty(context.Configuration.InheritedFromInterfaceName))
+                return TypeSymbolHelper.GetAllMethods(context.InterfaceSymbol, true, [context.Configuration.InheritedFromInterfaceName]);
+
             return context.InterfaceSymbol.GetMembers().OfType<IMethodSymbol>();
         }
 
@@ -289,10 +293,11 @@ internal class MethodGenerator : ICodeFragmentGenerator
             return;
         }
 
-        // byte[] 下载 — 直接调用 DownloadAsync
+        // byte[] 下载 — 直接调用 DownloadAsync（绕过 Cache/Resilience，与 IAsyncEnumerable 行为一致）
+        // DownloadAsync 返回 byte[]?，但接口声明通常为 Task<byte[]>（非空），使用 null 容忍运算符避免可空性警告
         if (TypeDetectionHelper.IsByteArrayType(deserializeType))
         {
-            codeBuilder.AppendLine($"            return await {executor}.DownloadAsync(__httpRequest{cancellationTokenArg}).ConfigureAwait(false);");
+            codeBuilder.AppendLine($"            return (await {executor}.DownloadAsync(__httpRequest{cancellationTokenArg}).ConfigureAwait(false))!;");
             return;
         }
 

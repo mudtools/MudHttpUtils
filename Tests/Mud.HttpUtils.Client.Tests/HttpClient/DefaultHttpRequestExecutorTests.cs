@@ -669,8 +669,12 @@ public class DefaultHttpRequestExecutorTests
     {
         var data = new byte[] { 1, 2, 3 };
         var mockClient = new Mock<IBaseHttpClient>();
-        mockClient.Setup(c => c.DownloadAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(data);
+        var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(data)
+        };
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
         var executor = new DefaultHttpRequestExecutor(mockClient.Object);
 
         var result = await executor.DownloadAsync(CreateRequest());

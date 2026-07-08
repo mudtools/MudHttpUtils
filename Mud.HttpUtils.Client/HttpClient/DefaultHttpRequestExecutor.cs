@@ -184,11 +184,32 @@ public class DefaultHttpRequestExecutor(
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// 与 <see cref="SendAndDeserializeAsync{TResult}"/> 保持一致的错误处理语义：
+    /// 使用 <see cref="IBaseHttpClient.SendRawAsync"/> 发送请求（绕过底层 EnsureSuccessStatusCode），
+    /// 然后基于 <paramref name="descriptor"/> 决定是否对非 2xx 状态码抛出 <see cref="ApiException"/>。
+    /// 当 <paramref name="descriptor"/> 为 null 时，默认检查状态码（等价于 AllowAnyStatusCode=false）。
+    /// </remarks>
     public async Task<byte[]?> DownloadAsync(
         HttpRequestMessage request,
+        ResponseDescriptor? descriptor = null,
         CancellationToken cancellationToken = default)
     {
-        return await _httpClient.DownloadAsync(request, cancellationToken).ConfigureAwait(false);
+        using var response = await _httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
+
+        // 错误处理：descriptor 为 null 时默认检查状态码，与普通方法语义一致
+        var allowAnyStatusCode = descriptor?.AllowAnyStatusCode ?? false;
+        if (!allowAnyStatusCode && !response.IsSuccessStatusCode)
+        {
+            var errorContent = await ReadContentAsync(response, cancellationToken).ConfigureAwait(false);
+            throw new ApiException(response.StatusCode, errorContent, request.RequestUri?.ToString());
+        }
+
+#if NET6_0_OR_GREATER
+        return await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+#else
+        return await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+#endif
     }
 
     /// <inheritdoc/>
@@ -197,6 +218,7 @@ public class DefaultHttpRequestExecutor(
         string filePath,
         bool overwrite = true,
         int bufferSize = 81920,
+        ResponseDescriptor? descriptor = null,
         CancellationToken cancellationToken = default)
     {
         await _httpClient.DownloadLargeAsync(request, filePath, overwrite, bufferSize, cancellationToken)

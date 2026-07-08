@@ -47,24 +47,32 @@ public interface IHttpRequestExecutor
 
     /// <summary>
     /// 下载文件并返回字节数组。
+    /// 支持基于 <paramref name="descriptor"/> 的错误处理（非 2xx 状态码抛出 <see cref="ApiException"/>）。
     /// </summary>
+    /// <param name="request">HTTP 请求消息。</param>
+    /// <param name="descriptor">响应处理描述符（用于 AllowAnyStatusCode 控制）。可为 null，null 时默认检查状态码。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
     Task<byte[]?> DownloadAsync(
         HttpRequestMessage request,
+        ResponseDescriptor? descriptor = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 下载大文件到指定路径。
+    /// 支持基于 <paramref name="descriptor"/> 的错误处理（非 2xx 状态码抛出 <see cref="ApiException"/>）。
     /// </summary>
     /// <param name="request">HTTP 请求消息。</param>
     /// <param name="filePath">文件保存路径。</param>
     /// <param name="overwrite">是否覆盖已存在的文件。默认为 true。</param>
     /// <param name="bufferSize">下载缓冲区大小（字节）。默认为 81920（80KB）。</param>
+    /// <param name="descriptor">响应处理描述符（用于 AllowAnyStatusCode 控制）。可为 null，null 时默认检查状态码。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     Task DownloadLargeAsync(
         HttpRequestMessage request,
         string filePath,
         bool overwrite = true,
         int bufferSize = 81920,
+        ResponseDescriptor? descriptor = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

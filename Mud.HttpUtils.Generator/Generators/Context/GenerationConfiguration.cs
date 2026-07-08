@@ -89,4 +89,14 @@ internal class GenerationConfiguration
     /// 基类接口是否具有弹性策略方法（用于确定 base(...) 构造函数调用参数）。
     /// </summary>
     public bool BaseHasResilience { get; set; }
+
+    /// <summary>
+    /// 基类是否具有令牌管理（用于确定派生类是否需要生成自己的令牌字段和方法）。
+    /// </summary>
+    public bool BaseHasTokenManager { get; set; }
+
+    /// <summary>
+    /// InheritedFrom 对应的基接口名称（用于排除基接口方法，避免多基接口场景下遗漏方法）。
+    /// </summary>
+    public string? InheritedFromInterfaceName { get; set; }
 }
