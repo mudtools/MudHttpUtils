@@ -11,6 +11,8 @@ Mud.HttpUtils 是 Mud.HttpUtils 生态的**元包（Metapackage）**，自动引
 
 同时提供**一站式 DI 服务注册**扩展方法 `AddMudHttpUtils`（位于 `Mud.HttpUtils.Resilience` 包），一步完成 Client + Resilience 注册。
 
+> **OpenTelemetry 可观测性**：如需分布式追踪与指标采集，请额外安装 `Mud.HttpUtils.OpenTelemetry` 包，通过 `AddMudHttpOpenTelemetry()` 一键开启。
+
 ## 目标框架
 
 - `netstandard2.0`
@@ -459,6 +461,14 @@ Task<UserInfo> CreateUserAsync([Body] UserRequest request);
 | `[Upload]`                        | 文件上传参数                          | `[Upload(FieldName = "doc")] IFormFile file`       |
 | `[FilePath]`                      | 文件下载路径                          | `[FilePath] string savePath`                       |
 | `[Token]`                         | Token 认证（支持参数/接口/方法级别）  | `[Token(TokenTypes.UserAccessToken)] string token` |
+| `[Retry]`                         | 方法级重试策略标注                               | `[Retry(MaxRetries = 3)]`                           |
+| `[Timeout]`                       | 方法级超时策略标注                               | `[Timeout(30000)]`                                  |
+| `[CircuitBreaker]`                | 方法级熔断策略标注                               | `[CircuitBreaker(FailureThreshold = 5)]`            |
+| `[HeaderMerge]`                   | 头部合并模式控制（接口/方法级别）                | `[HeaderMerge(HeaderMergeMode.Replace)]`            |
+| `[SerializationMethod]`           | 请求体序列化方法控制（接口/方法级别）            | `[SerializationMethod(SerializationMethod.Xml)]`    |
+| `[InterfacePath]`                 | 接口级固定路径参数                               | `[InterfacePath("tenantId", "default")]`            |
+| `[InterfaceQuery]`                | 接口级固定查询参数                               | `[InterfaceQuery("version", "2.0")]`               |
+| `[AllowAnyStatusCode]`            | 允许任意 HTTP 状态码（不抛异常）                 | `[AllowAnyStatusCode]`                              |
 
 ### BodyAttribute 详解
 
@@ -532,6 +542,93 @@ Token 注入模式：
 | `HmacSignature` | HMAC 签名认证，通过 `IHmacSignatureProvider` 计算签名注入到请求头 |
 | `BasicAuth`     | HTTP Basic 认证，将凭据编码后注入到 Authorization 请求头          |
 | `Cookie`        | 注入到 Cookie 请求头                                              |
+
+### 默认参数推断
+
+未标注任何 HTTP 参数特性的方法参数，代码生成器会根据参数类型自动推断处理方式：
+
+- **简单类型**（`string`、`int`、`long`、`Guid`、`DateTime` 等及其数组和可空类型）→ 自动作为 `[Query]` 查询参数
+- **复杂类型**（自定义对象、`List<T>`、`Dictionary<K,V>` 等）→ 自动作为 `[Body]` 请求体（JSON 序列化）
+- **特殊类型**（`CancellationToken`、`IProgress<T>`）→ 不参与推断
+
+```csharp
+[HttpClientApi(HttpClient = "IEnhancedHttpClient")]
+public interface IUserApi
+{
+    // string keyword 自动推断为 [Query("keyword")]
+    [Get("users/search")]
+    Task<List<User>> SearchUsersAsync(string keyword, CancellationToken ct = default);
+
+    // User user 自动推断为 [Body]
+    [Post("users")]
+    Task<User> CreateUserAsync(User user, CancellationToken ct = default);
+}
+```
+
+### 头部合并控制
+
+```csharp
+[HttpClientApi]
+[Header("Accept", "application/json")]
+[HeaderMerge(HeaderMergeMode.Replace)]
+public interface IUserApi
+{
+    [Get("/api/users")]
+    [Header("Accept", "text/plain")]
+    Task<string> GetUsersAsTextAsync();
+}
+```
+
+合并模式：`Append`（追加，默认）、`Replace`（替换）、`Ignore`（忽略方法级）。
+
+### 序列化方法控制
+
+```csharp
+[HttpClientApi]
+[SerializationMethod(SerializationMethod.Xml)]
+public interface IXmlApi
+{
+    [Post("/api/data")]
+    Task SendDataAsync([Body] DataModel data);  // XML 序列化
+}
+```
+
+### 接口级固定参数
+
+```csharp
+[HttpClientApi]
+[InterfacePath("tenantId", "default-tenant")]
+[InterfaceQuery("api_version", "2.0")]
+public interface IUserApi
+{
+    [Get("/api/tenants/{tenantId}/users/{userId}")]
+    Task<User> GetUserAsync(int userId);
+    // 实际请求: /api/tenants/default-tenant/users/1?api_version=2.0
+}
+```
+
+### 允许任意状态码
+
+```csharp
+[HttpClientApi]
+[AllowAnyStatusCode]
+public interface IUserApi
+{
+    [Get("/api/users/{id}")]
+    Task<Response<User>> GetUserAsync(int id);
+    // 404 也不抛异常，返回 Response<T> 包含状态码和错误内容
+}
+```
+
+### 弹性策略特性
+
+```csharp
+[Get("/api/data")]
+[Retry(MaxRetries = 3, DelayMilliseconds = 1000, UseExponentialBackoff = true)]
+[Timeout(30000)]
+[CircuitBreaker(FailureThreshold = 5, BreakDurationSeconds = 30)]
+Task<Data> GetDataAsync();
+```
 
 ### CacheAttribute 详解
 
@@ -1150,10 +1247,20 @@ options.Retry.Enabled = false;
 | Mud.HttpUtils.Client       | 客户端实现，依赖 Microsoft.Extensions.Http |
 | Mud.HttpUtils.Resilience   | 弹性策略，依赖 Polly                       |
 
+> 可选安装 `Mud.HttpUtils.OpenTelemetry` 包以获得分布式追踪与指标采集能力。
+
 ## 版本历史
 
 ### 2.0.0
 
+- 新增默认参数推断：未标注特性的参数根据类型自动推断为 `[Query]`（简单类型）或 `[Body]`（复杂类型）
+- 新增弹性策略特性：`RetryAttribute`、`TimeoutAttribute`、`CircuitBreakerAttribute`
+- 新增头部合并控制：`HeaderMergeAttribute`，支持 `Append`/`Replace`/`Ignore` 三种合并模式
+- 新增序列化方法控制：`SerializationMethodAttribute`，支持接口/方法级别指定 JSON/XML/FormUrlEncoded
+- 新增接口级固定参数：`InterfacePathAttribute` 和 `InterfaceQueryAttribute`
+- 新增 `[AllowAnyStatusCode]` 特性，允许任意 HTTP 状态码不抛异常
+- 新增 `TokenInjectionMode.BasicAuth` 和 `TokenInjectionMode.Cookie` 注入模式
+- 新增 `[Query]` 特性 `Separator` 属性，支持数组元素分隔符
 - 新增安全认证：`IApiKeyProvider` / `DefaultApiKeyProvider`、`IHmacSignatureProvider` / `DefaultHmacSignatureProvider`
 - 新增 `TokenInjectionMode.ApiKey` 和 `TokenInjectionMode.HmacSignature` 认证模式
 - 新增日志脱敏：`ISensitiveDataMasker` / `DefaultSensitiveDataMasker`、`SensitiveDataAttribute`

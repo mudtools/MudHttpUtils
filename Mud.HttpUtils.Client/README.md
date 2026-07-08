@@ -20,6 +20,7 @@ Mud.HttpUtils.Client 是 Mud.HttpUtils 的客户端实现层，提供 `IEnhanced
 | `EnhancedHttpClient`              | `IEnhancedHttpClient` 默认实现，封装 `System.Net.Http.HttpClient`，支持请求/响应拦截器、基地址动态切换 |
 | `DirectEnhancedHttpClient`        | 直接构造的增强客户端，支持加密操作                                                                     |
 | `HttpClientFactoryEnhancedClient` | 基于 `IHttpClientFactory` 的增强客户端，支持基地址动态切换                                             |
+| `EnhancedHttpClientFactory`       | `IEnhancedHttpClientFactory` 默认实现，按名称创建并缓存客户端实例，.NET 8+ 通过 Keyed Service 解析    |
 | `HttpClientResolver`              | `IHttpClientResolver` 默认实现，管理命名客户端注册与解析                                               |
 
 ### 基地址动态切换
@@ -65,7 +66,7 @@ var content = new ProgressableStreamContent(
 
 | 类                         | 说明                                                                        |
 | -------------------------- | --------------------------------------------------------------------------- |
-| `CacheResponseInterceptor` | 响应缓存拦截器，实现 `IHttpResponseInterceptor`，配合 `CacheAttribute` 使用 |
+| `CacheResponseInterceptor` | 响应缓存拦截器，实现 `ICacheResponseInterceptor`，配合 `CacheAttribute` 使用 |
 | `MemoryHttpResponseCache`  | 基于 `IMemoryCache` 的内存响应缓存，实现 `IHttpResponseCache`               |
 
 ```csharp
@@ -241,6 +242,38 @@ appManager.ConfigurationChanged += (sender, args) =>
 | `HttpClientUtils`  | HTTP 客户端扩展方法                        |
 | `UrlValidator`     | URL 安全验证工具（可配置域名白名单，支持 SSRF 防护） |
 | `MessageSanitizer` | 敏感信息脱敏工具（优化字段检测，减少误判） |
+
+### HTTP 请求执行器
+
+| 类                        | 说明                                                                                     |
+| ------------------------- | ---------------------------------------------------------------------------------------- |
+| `DefaultHttpRequestExecutor` | `IHttpRequestExecutor` 默认实现，统一处理响应反序列化、错误处理和拦截器调用           |
+
+> `DefaultHttpRequestExecutor` 是生成的 API 实现类与运行时之间的桥梁，负责发送 HTTP 请求、处理响应反序列化、错误状态码异常抛出、拦截器调用等逻辑。
+
+### 健康检查
+
+| 类                          | 说明                                                                                     |
+| --------------------------- | ---------------------------------------------------------------------------------------- |
+| `MudCircuitBreakerHealthCheck` | 熔断器健康检查，报告熔断器当前状态                                                     |
+| `TokenRefreshHealthCheck`    | 令牌刷新健康检查，报告令牌刷新服务状态和最近刷新结果                                   |
+| `TokenRefreshHealthCheckOptions` | 令牌刷新健康检查配置选项                                                             |
+
+```csharp
+// 注册健康检查
+services.AddMudHttpHealthChecks();
+```
+
+> `AddMudHttpHealthChecks()` 扩展方法注册熔断器和令牌刷新健康检查，可配合 ASP.NET Core Health Checks 中间件使用。
+
+### 可观测性
+
+| 类                      | 说明                                                                   |
+| ----------------------- | ---------------------------------------------------------------------- |
+| `TracingDelegatingHandler` | 追踪委托处理器，自动创建 Activity 并记录 HTTP 请求链路信息          |
+| `MudHttpObservability`  | 可观测性辅助工具，提供指标记录和追踪标签管理                          |
+
+> `TracingDelegatingHandler` 作为 `DelegatingHandler` 注入到 HttpClient 管道中，自动创建分布式追踪 Activity 并记录请求方法、URL、状态码、耗时等信息。配合 `Mud.HttpUtils.OpenTelemetry` 包可一键导出到 OTLP 收集器。
 
 #### URL 安全验证
 

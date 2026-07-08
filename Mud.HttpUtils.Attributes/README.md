@@ -64,6 +64,14 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 | ---------------- | ------------ | ------ | --------------------------------------------------------------------------------------- |
 | `CacheAttribute` | 响应缓存标注 | Method | `DurationSeconds`, `CacheKeyTemplate`, `VaryByUser`, `UseSlidingExpiration`, `Priority` |
 
+### 弹性策略特性
+
+| 特性                      | 用途             | 目标   | 关键属性                                                                 |
+| ------------------------- | ---------------- | ------ | ------------------------------------------------------------------------ |
+| `RetryAttribute`          | 方法级重试策略   | Method | `MaxRetries`, `DelayMilliseconds`, `UseExponentialBackoff`               |
+| `TimeoutAttribute`        | 方法级超时策略   | Method | `TimeoutMilliseconds`                                                    |
+| `CircuitBreakerAttribute` | 方法级熔断策略   | Method | `FailureThreshold`, `BreakDurationSeconds`, `SamplingDurationSeconds`, `MinimumThroughput` |
+
 ### 安全与脱敏特性
 
 | 特性                     | 用途             | 目标                 | 关键属性                                   |
@@ -75,7 +83,11 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 | 特性                           | 用途                   | 目标                                  |
 | ------------------------------ | ---------------------- | ------------------------------------- |
 | `IgnoreGeneratorAttribute`     | 忽略代码生成           | Interface / Method / Property / Field |
-| `AllowAnyStatusCodeAttribute`  | 允许任意 HTTP 状态码   | Method                                |
+| `AllowAnyStatusCodeAttribute`  | 允许任意 HTTP 状态码   | Interface / Method                    |
+| `HeaderMergeAttribute`         | 头部合并模式控制       | Interface / Method                    |
+| `SerializationMethodAttribute` | 请求体序列化方法控制   | Interface / Method                    |
+| `InterfacePathAttribute`       | 接口级固定路径参数     | Interface                             |
+| `InterfaceQueryAttribute`      | 接口级固定查询参数     | Interface                             |
 
 ### 事件处理特性
 
@@ -226,6 +238,8 @@ Task<User> GetUserAsync(
 | `Path`          | 2   | 注入到 URL Path                                                   |
 | `ApiKey`        | 3   | API Key 认证，通过 `IApiKeyProvider` 获取密钥注入到请求头         |
 | `HmacSignature` | 4   | HMAC 签名认证，通过 `IHmacSignatureProvider` 计算签名注入到请求头 |
+| `BasicAuth`     | 5   | HTTP Basic 认证，将凭据编码为 Base64 注入到 Authorization 请求头  |
+| `Cookie`        | 6   | 注入到 Cookie 请求头                                              |
 
 ```csharp
 // API Key 认证模式
@@ -542,6 +556,164 @@ await api.GetUsersAsync();
 
 > **优先级**：方法参数优先级高于接口属性。如果方法参数与接口属性同名，方法参数值会覆盖接口属性值。
 
+## RetryAttribute 详解
+
+| 属性                   | 类型   | 默认值 | 说明                   |
+| ---------------------- | ------ | ------ | ---------------------- |
+| `MaxRetries`           | `int`  | `3`    | 最大重试次数           |
+| `DelayMilliseconds`    | `int`  | `1000` | 基础延迟时间（毫秒）   |
+| `UseExponentialBackoff`| `bool` | `true` | 是否使用指数退避       |
+
+```csharp
+[Get("/api/data")]
+[Retry(MaxRetries = 5, DelayMilliseconds = 2000, UseExponentialBackoff = true)]
+Task<Data> GetDataAsync();
+```
+
+## TimeoutAttribute 详解
+
+| 属性                 | 类型  | 说明               |
+| -------------------- | ----- | ------------------ |
+| `TimeoutMilliseconds`| `int` | 超时时间（毫秒）   |
+
+```csharp
+[Get("/api/slow")]
+[Timeout(60000)]  // 60 秒超时
+Task<Data> GetSlowDataAsync();
+```
+
+## CircuitBreakerAttribute 详解
+
+| 属性                     | 类型  | 默认值 | 说明                                                             |
+| ------------------------ | ----- | ------ | ---------------------------------------------------------------- |
+| `FailureThreshold`       | `int` | `5`    | 失败阈值（简单模式为连续失败次数，高级模式为失败率百分比）       |
+| `BreakDurationSeconds`   | `int` | `30`   | 熔断持续时间（秒）                                               |
+| `SamplingDurationSeconds`| `int` | `0`    | 采样窗口时间（秒），大于 0 时启用高级熔断策略                     |
+| `MinimumThroughput`      | `int` | `10`   | 采样窗口内最小请求数（仅高级模式生效）                           |
+
+```csharp
+[Get("/api/unstable")]
+[CircuitBreaker(FailureThreshold = 5, BreakDurationSeconds = 30)]
+Task<Data> GetUnstableDataAsync();
+```
+
+## HeaderMergeAttribute 详解
+
+控制接口级与方法级同名 HTTP 头部的合并策略：
+
+| 模式      | 说明                                       |
+| --------- | ------------------------------------------ |
+| `Append`  | 追加模式：接口级和方法级的同名头部都会被添加（默认） |
+| `Replace` | 替换模式：方法级头部替换接口级同名头部             |
+| `Ignore`  | 忽略模式：方法级头部被忽略，只使用接口级头部       |
+
+```csharp
+[HttpClientApi]
+[Header("Accept", "application/json")]
+[HeaderMerge(HeaderMergeMode.Replace)]
+public interface IUserApi
+{
+    [Get("/api/users")]
+    [Header("Accept", "text/plain")]
+    Task<string> GetUsersAsTextAsync();
+}
+```
+
+## SerializationMethodAttribute 详解
+
+指定接口或方法级别的请求体序列化方式，方法级优先于接口级：
+
+| 值                 | 说明                           |
+| ------------------ | ------------------------------ |
+| `Json`             | 使用 JSON 序列化（默认）       |
+| `Xml`              | 使用 XML 序列化                |
+| `FormUrlEncoded`   | 使用表单 URL 编码序列化        |
+
+```csharp
+[HttpClientApi]
+[SerializationMethod(SerializationMethod.Xml)]
+public interface IXmlApi
+{
+    [Post("/api/data")]
+    Task SendDataAsync([Body] DataModel data);  // XML 序列化
+
+    [Post("/api/json-data")]
+    [SerializationMethod(SerializationMethod.Json)]
+    Task SendJsonDataAsync([Body] DataModel data);  // 方法级覆盖为 JSON
+}
+```
+
+## InterfacePathAttribute 详解
+
+在接口级别添加固定路径参数，自动替换 URL 模板中的占位符：
+
+| 属性   | 类型     | 说明                     |
+| ------ | -------- | ------------------------ |
+| `Name` | `string` | 路径参数名（占位符名称） |
+| `Value`| `string?`| 路径参数值               |
+
+```csharp
+[HttpClientApi]
+[InterfacePath("tenantId", "default-tenant")]
+public interface IUserApi
+{
+    [Get("/api/tenants/{tenantId}/users/{userId}")]
+    Task<User> GetUserAsync(int userId);
+    // 实际请求: /api/tenants/default-tenant/users/123
+}
+```
+
+## InterfaceQueryAttribute 详解
+
+在接口级别添加固定查询参数，自动附加到所有方法的 URL：
+
+| 属性   | 类型     | 说明           |
+| ------ | -------- | -------------- |
+| `Name` | `string` | 查询参数名     |
+| `Value`| `string?`| 查询参数值     |
+
+```csharp
+[HttpClientApi]
+[InterfaceQuery("api_version", "2.0")]
+[InterfaceQuery("client_id", "my-app")]
+public interface IUserApi
+{
+    [Get("/api/users/{id}")]
+    Task<User> GetUserAsync(int id);
+    // 实际请求: /api/users/1?api_version=2.0&client_id=my-app
+}
+```
+
+## QueryAttribute 详解
+
+| 属性           | 类型     | 默认值 | 说明                                                                 |
+| -------------- | -------- | ------ | -------------------------------------------------------------------- |
+| `Name`         | `string?`| `null` | 查询参数名称                                                         |
+| `FormatString` | `string?`| `null` | 格式化字符串（如日期格式 `"yyyy-MM-dd"`）                            |
+| `Format`       | `string?`| `null` | `FormatString` 的别名                                                |
+| `AliasAs`      | `string?`| `null` | 别名，用于映射到不同的查询参数名                                     |
+| `Separator`    | `string?`| `null` | 数组元素分隔符。设置后数组序列化为单个参数（如 `?ids=1;2;3`）；为 null 则多个同名参数 |
+
+```csharp
+// 基本用法
+[Get("/api/users")]
+Task<List<User>> GetUsersAsync([Query] string? keyword, [Query] int page = 1);
+
+// 自定义参数名和格式
+[Get("/api/users")]
+Task<List<User>> GetUsersAsync([Query("page_size")] int pageSize);
+
+// 数组分隔符
+[Get("/api/users")]
+Task<List<User>> GetUsersAsync([Query(Separator = ",")] int[] ids);
+// 生成: /api/users?ids=1,2,3
+
+// 方法级别添加固定查询参数
+[Get("/api/users")]
+[Query("status", "active")]
+Task<List<User>> GetActiveUsersAsync();
+```
+
 ## 设计原则
 
 - **轻量级**：仅依赖 Abstractions，无其他传递依赖
@@ -549,3 +721,5 @@ await api.GetUsersAsync();
 - **特性属性类型均为基础类型**：`string`、`int`、`bool`、`enum`，无复杂依赖
 - **与生成器解耦**：特性可在不引用生成器的项目中使用，便于接口定义共享
 - **安全优先**：内置 `SensitiveDataAttribute` 支持敏感数据脱敏，`CacheAttribute` 支持缓存控制
+- **弹性策略**：内置 `RetryAttribute`、`TimeoutAttribute`、`CircuitBreakerAttribute` 支持方法级弹性策略配置
+- **灵活控制**：`HeaderMergeAttribute`、`SerializationMethodAttribute`、`InterfacePathAttribute`、`InterfaceQueryAttribute` 提供精细化的请求控制

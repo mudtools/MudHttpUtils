@@ -273,7 +273,7 @@ public class RequestBuilderTests
     [Fact]
     public void GenerateQueryParameters_InterfaceStringQueryProperty_NoRedundantNullCheck()
     {
-        // string 类型的 InterfaceQuery 属性使用 IsNullOrWhiteSpace，不需要外层 != null 检查
+        // string 类型的 InterfaceQuery 属性：Add() 内部已跳过 null/空白值，无需外部检查
         var methodInfo = CreateMethodInfo("/search");
         methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
         {
@@ -288,10 +288,10 @@ public class RequestBuilderTests
         _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
         var code = codeBuilder.ToString();
 
-        // string 类型：直接使用 IsNullOrWhiteSpace，不需要外层 != null
-        code.Should().Contain("if (!string.IsNullOrWhiteSpace(Keyword))");
-        code.Should().NotMatchRegex(@"if \(Keyword != null\)\s*\{\s*if \(!string\.IsNullOrWhiteSpace\(Keyword\)\)",
-            "string 类型不应生成冗余的外层 != null 检查");
+        // string 类型：直接生成 Add 调用，Add() 内部跳过 null/空白值
+        code.Should().Contain("__queryParams.Add(\"keyword\", Keyword);");
+        code.Should().NotContain("if (Keyword != null)");
+        code.Should().NotContain("if (!string.IsNullOrWhiteSpace(Keyword))");
     }
 
     [Fact]
@@ -318,9 +318,9 @@ public class RequestBuilderTests
     }
 
     [Fact]
-    public void GenerateQueryParameters_InterfaceNullableIntQueryProperty_GeneratesNullCheck()
+    public void GenerateQueryParameters_InterfaceNullableIntQueryProperty_UsesNullConditionalOperator()
     {
-        // 可空值类型（int?）可能为 null，需要生成 null 检查
+        // 可空值类型（int?）可能为 null，使用 ?. 运算符，Add() 会跳过 null 值
         var methodInfo = CreateMethodInfo("/search");
         methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
         {
@@ -335,14 +335,15 @@ public class RequestBuilderTests
         _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
         var code = codeBuilder.ToString();
 
-        // 可空值类型：需要 null 检查
-        code.Should().Contain("if (Page != null)");
+        // 可空值类型：使用 ?. 运算符，Add() 内部跳过 null 值
+        code.Should().Contain("__queryParams.Add(\"page\", Page?.ToString());");
+        code.Should().NotContain("if (Page != null)");
     }
 
     [Fact]
-    public void GenerateQueryParameters_InterfaceReferenceTypeQueryProperty_GeneratesNullCheck()
+    public void GenerateQueryParameters_InterfaceReferenceTypeQueryProperty_UsesNullConditionalOperator()
     {
-        // 引用类型可能为 null，需要生成 null 检查
+        // 引用类型可能为 null，使用 ?. 运算符，Add() 会跳过 null 值
         var methodInfo = CreateMethodInfo("/search");
         methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
         {
@@ -357,8 +358,9 @@ public class RequestBuilderTests
         _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
         var code = codeBuilder.ToString();
 
-        // 引用类型：需要 null 检查
-        code.Should().Contain("if (Filter != null)");
+        // 引用类型：使用 ?. 运算符，Add() 内部跳过 null 值
+        code.Should().Contain("__queryParams.Add(\"filter\", Filter?.ToString());");
+        code.Should().NotContain("if (Filter != null)");
     }
 
     #endregion

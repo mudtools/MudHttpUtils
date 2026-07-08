@@ -90,6 +90,14 @@
 | 可空复杂类型 | `SysUserInfoOutput? user = null` | `[Body]` 请求体 | 可空复杂类型也推断为请求体 |
 | 无特性+已标注混合 | `[Path] string userId, string name` | `[Path]` + `[Query]` | 已标注特性不受影响，未标注的自动推断 |
 
+### 7. 接口级动态属性测试 (IInterfaceQueryPropertyTestApi)
+
+测试在接口上定义 `[Query]`/`[Path]` 属性，作为所有方法的默认参数：
+
+- **接口级 Query 属性**：在接口上定义 `[Query]` 属性，所有方法自动附加该查询参数
+- **属性优先级**：方法参数优先级高于接口属性，同名时方法参数覆盖接口属性
+- **动态属性读写**：生成的实现类包含对应的可读写属性
+
 ## 项目结构
 
 ```
@@ -108,6 +116,7 @@ HttpClientApiDemo.Share/
 │   ├── IDefaultParameterInferenceApi.cs # 默认参数推断测试
 │   ├── CombinedFeatureTestApi.cs        # 综合功能组合测试
 │   ├── BasePathTestApi.cs               # BasePath测试
+│   ├── InterfacePropertyTestApi.cs      # 接口级动态属性测试
 │   ├── QueryMapTestApi.cs               # QueryMap测试
 │   ├── RawQueryStringTestApi.cs         # RawQueryString测试
 │   └── ResponseTypeTestApi.cs           # Response<T>测试

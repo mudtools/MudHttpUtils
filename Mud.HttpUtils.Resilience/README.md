@@ -19,8 +19,10 @@ Mud.HttpUtils.Resilience 是 Mud.HttpUtils 的弹性策略层，基于 Polly 提
 |-----|------|
 | `ResilientHttpClient` | `IEnhancedHttpClient` 的弹性装饰器，组合重试/超时/熔断策略 |
 | `PollyResiliencePolicyProvider` | 基于 Polly 的策略提供器，根据 `ResilienceOptions` 创建策略 |
+| `ResiliencePolicyResolver` | `IResiliencePolicyResolver` 实现，解耦 `IHttpRequestExecutor` 与具体弹性策略，封装请求克隆逻辑 |
 | `HttpRequestMessageCloner` | HTTP 请求消息克隆工具，确保重试安全 |
 | `ResilienceOptions` | 弹性策略配置选项 |
+| `ResilienceConstants` | 弹性策略常量定义 |
 | `IResiliencePolicyProvider` | 弹性策略提供器接口，支持自定义策略实现 |
 
 ### 策略组合顺序
@@ -252,5 +254,5 @@ options.MaxCloneContentSize = -1;
 - **策略组合**：通过 Polly PolicyWrap 组合多种策略，执行顺序可控
 - **安全重试**：通过 `HttpRequestMessageCloner` 克隆请求消息，确保重试安全
 - **性能保护**：通过 `MaxCloneContentSize` 限制克隆大小，避免大请求体的克隆开销
-- **可观测性**：通过 `OnRetry` 支持自定义重试回调，便于日志记录和指标收集
+- **可观测性**：通过 `OnRetry` 支持自定义重试回调，便于日志记录和指标收集；内置诊断事件负载（`RetryDiagnosticPayload`、`TimeoutDiagnosticPayload`）支持分布式追踪
 - **配置灵活**：支持代码配置和配置文件绑定

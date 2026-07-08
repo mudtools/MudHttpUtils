@@ -40,6 +40,12 @@ Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为
 - **QueryMap 参数映射**：识别 `[QueryMap]` 特性，将对象/字典展开为查询参数，支持序列化控制和属性分隔符
 - **RawQueryString**：识别 `[RawQueryString]` 特性，直接传递原始查询字符串
 - **Response\<T\> 包装类型**：支持返回 `Response<T>` 类型，同时提供响应内容和元数据
+- **默认参数推断**：未标注任何 HTTP 参数特性的参数，根据类型自动推断为 `[Query]`（简单类型）或 `[Body]`（复杂类型）
+- **弹性策略特性**：识别 `[Retry]`、`[Timeout]`、`[CircuitBreaker]` 方法级特性
+- **头部合并控制**：识别 `[HeaderMerge]` 特性，控制接口级与方法级同名头部的合并策略
+- **序列化方法控制**：识别 `[SerializationMethod]` 特性，指定接口或方法级别的请求体序列化方式
+- **接口级固定参数**：识别 `[InterfacePath]` 和 `[InterfaceQuery]` 特性，为接口所有方法自动添加固定路径/查询参数
+- **允许任意状态码**：识别 `[AllowAnyStatusCode]` 特性，错误状态码不抛异常
 - **编译诊断**：检测 `Response<T>` + `[Cache]` 组合并发出 HTTPCLIENT011 警告
 
 ## 安装
@@ -432,6 +438,8 @@ Token 注入模式：
 | `Path`          | 注入到 URL Path                                                   |
 | `ApiKey`        | API Key 认证，通过 `IApiKeyProvider` 获取密钥注入到请求头         |
 | `HmacSignature` | HMAC 签名认证，通过 `IHmacSignatureProvider` 计算签名注入到请求头 |
+| `BasicAuth`     | HTTP Basic 认证，将凭据编码为 Base64 注入到 Authorization 请求头  |
+| `Cookie`        | 注入到 Cookie 请求头                                              |
 
 ### 缓存支持
 
@@ -659,6 +667,108 @@ public class UserCreatedEvent
 }
 ```
 
+### 默认参数推断
+
+未标注任何 HTTP 参数特性的方法参数，代码生成器会根据参数类型自动推断处理方式：
+
+- **简单类型**（`string`、`int`、`long`、`Guid`、`DateTime` 等及其数组和可空类型）→ 自动推断为 `[Query]` 查询参数
+- **复杂类型**（自定义对象、`List<T>`、`Dictionary<K,V>` 等）→ 自动推断为 `[Body]` 请求体（JSON 序列化）
+- **特殊类型**（`CancellationToken`、`IProgress<T>`）→ 不参与推断，保持原有处理
+
+```csharp
+[HttpClientApi(HttpClient = "IEnhancedHttpClient")]
+public interface IUserApi
+{
+    // string keyword 自动推断为 [Query("keyword")]
+    [Get("users/search")]
+    Task<List<User>> SearchUsersAsync(string keyword, CancellationToken ct = default);
+
+    // User user 自动推断为 [Body]
+    [Post("users")]
+    Task<User> CreateUserAsync(User user, CancellationToken ct = default);
+}
+```
+
+### 弹性策略特性
+
+生成器识别方法级别的 `[Retry]`、`[Timeout]`、`[CircuitBreaker]` 特性：
+
+```csharp
+[Get("/api/data")]
+[Retry(MaxRetries = 3, DelayMilliseconds = 1000, UseExponentialBackoff = true)]
+[Timeout(30000)]
+[CircuitBreaker(FailureThreshold = 5, BreakDurationSeconds = 30)]
+Task<Data> GetDataAsync();
+```
+
+### 头部合并控制
+
+通过 `[HeaderMerge]` 控制接口级与方法级同名头部的合并策略：
+
+```csharp
+[HttpClientApi]
+[Header("Accept", "application/json")]
+[HeaderMerge(HeaderMergeMode.Replace)]
+public interface IUserApi
+{
+    [Get("/api/users")]
+    [Header("Accept", "text/plain")]
+    Task<string> GetUsersAsTextAsync();
+    // 方法级 Accept: text/plain 替换接口级 Accept: application/json
+}
+```
+
+合并模式：`Append`（追加，默认）、`Replace`（替换）、`Ignore`（忽略方法级）。
+
+### 序列化方法控制
+
+通过 `[SerializationMethod]` 指定接口或方法级别的请求体序列化方式：
+
+```csharp
+[HttpClientApi]
+[SerializationMethod(SerializationMethod.Xml)]
+public interface IXmlApi
+{
+    [Post("/api/data")]
+    Task SendDataAsync([Body] DataModel data);  // 使用 XML 序列化
+
+    [Post("/api/json-data")]
+    [SerializationMethod(SerializationMethod.Json)]
+    Task SendJsonDataAsync([Body] DataModel data);  // 方法级覆盖，使用 JSON
+}
+```
+
+### 接口级固定参数
+
+`[InterfacePath]` 和 `[InterfaceQuery]` 为接口所有方法自动添加固定路径/查询参数：
+
+```csharp
+[HttpClientApi]
+[InterfacePath("tenantId", "default-tenant")]
+[InterfaceQuery("api_version", "2.0")]
+public interface IUserApi
+{
+    [Get("/api/tenants/{tenantId}/users/{userId}")]
+    Task<User> GetUserAsync(int userId);
+    // 实际请求: /api/tenants/default-tenant/users/1?api_version=2.0
+}
+```
+
+### 允许任意状态码
+
+`[AllowAnyStatusCode]` 标记的接口或方法，错误状态码不抛异常：
+
+```csharp
+[HttpClientApi]
+[AllowAnyStatusCode]
+public interface IUserApi
+{
+    [Get("/api/users/{id}")]
+    Task<Response<User>> GetUserAsync(int id);
+    // 即使 404 也不抛异常，返回 Response<T> 包含状态码和错误内容
+}
+```
+
 ### 忽略代码生成
 
 ```csharp
@@ -737,6 +847,14 @@ Mud.HttpUtils.Generator/
 
 ### 2.0.0
 
+- 新增默认参数推断：未标注特性的参数根据类型自动推断为 `[Query]`（简单类型）或 `[Body]`（复杂类型）
+- 新增弹性策略特性识别：`[Retry]`、`[Timeout]`、`[CircuitBreaker]`
+- 新增头部合并控制：`[HeaderMerge]` 特性，支持 `Append`/`Replace`/`Ignore` 三种合并模式
+- 新增序列化方法控制：`[SerializationMethod]` 特性，支持接口/方法级别指定 JSON/XML/FormUrlEncoded
+- 新增接口级固定参数：`[InterfacePath]` 和 `[InterfaceQuery]` 特性
+- 新增 `[AllowAnyStatusCode]` 特性识别，允许任意 HTTP 状态码不抛异常
+- 新增 `TokenInjectionMode.BasicAuth` 和 `TokenInjectionMode.Cookie` 注入模式
+- 新增 `[Query]` 特性 `Separator` 属性，支持数组元素分隔符
 - 注册代码生成新增智能注释提示：HttpClient 模式提示 `AddMudHttpClient`，TokenManager 模式提示注册令牌管理器
 - `HttpClientApiInfo` 新增 `HttpClientType` 和 `TokenManagerType` 属性
 - 新增事件处理器生成功能
