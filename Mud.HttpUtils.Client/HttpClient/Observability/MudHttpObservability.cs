@@ -215,7 +215,7 @@ internal static class MudHttpObservability
         if (request != null)
         {
             tags.Add(new("method", request.Method.Method));
-            tags.Add(new("host", request.RequestUri?.Host ?? "(unknown)"));
+            tags.Add(new("host", SafeGetHost(request.RequestUri)));
         }
 
         return tags;
@@ -323,6 +323,17 @@ internal static class MudHttpObservability
     }
 
     /// <summary>
+    /// 安全获取 URI 的 Host 属性。
+    /// 相对 URI 不支持 Host 属性访问，此方法避免抛出 <see cref="InvalidOperationException"/>。
+    /// </summary>
+    private static string SafeGetHost(Uri? uri)
+    {
+        if (uri is { IsAbsoluteUri: true } absUri)
+            return absUri.Host;
+        return "(unknown)";
+    }
+
+    /// <summary>
     /// 创建日志作用域，携带 CorrelationId / ClientName / RequestMethod / RequestHost。
     /// CorrelationId 优先复用 StartRequestActivity 写入请求属性的值，保持日志与 Span 的关联一致。
     /// </summary>
@@ -345,7 +356,7 @@ internal static class MudHttpObservability
             ["ClientName"] = clientName ?? "(default)",
             ["CorrelationId"] = correlationId,
             ["RequestMethod"] = request.Method.Method,
-            ["RequestHost"] = request.RequestUri?.Host ?? "(unknown)",
+            ["RequestHost"] = SafeGetHost(request.RequestUri),
         });
     }
 }

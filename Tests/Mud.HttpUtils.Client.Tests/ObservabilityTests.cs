@@ -733,6 +733,20 @@ public class ObservabilityTests
         scope.Should().BeNull();
     }
 
+    [Fact]
+    public void Observability_CreateLoggerScope_WithRelativeUri_ShouldNotThrow()
+    {
+        // 相对 URI 不支持 Host 属性访问，CreateLoggerScope 应安全处理而非抛出 InvalidOperationException
+        var scopeDisposable = new Mock<IDisposable>().Object;
+        var loggerMock = new Mock<ILogger>();
+        loggerMock.Setup(l => l.BeginScope(It.IsAny<object>())).Returns(scopeDisposable);
+        var request = new HttpRequestMessage(HttpMethod.Post, "/open-apis/auth/v3/tenant_access_token/internal");
+
+        using var scope = MudHttpObservability.CreateLoggerScope(loggerMock.Object, request, "feishu_auth");
+        scope.Should().NotBeNull();
+        scope.Should().BeSameAs(scopeDisposable);
+    }
+
     // ============ TracingDelegatingHandler ============
 
     [Fact]
