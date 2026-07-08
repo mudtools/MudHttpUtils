@@ -5,6 +5,7 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using System.Diagnostics.Metrics;
 using System.Xml.Serialization;
 
 namespace Mud.HttpUtils.Client.Tests;
@@ -743,6 +744,164 @@ public class DefaultHttpRequestExecutorTests
         {
             if (File.Exists(tempFile))
                 File.Delete(tempFile);
+        }
+    }
+
+    #endregion
+
+    #region Download Observability
+
+    [Fact]
+    public async Task DownloadAsync_RecordsDownloadBytesAndDurationMetrics()
+    {
+        var data = new byte[] { 1, 2, 3 };
+        var mockClient = new Mock<IBaseHttpClient>();
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(data)
+        };
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
+        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+
+        var capturedBytes = new List<(long Value, KeyValuePair<string, object?>[] Tags)>();
+        var capturedDurations = new List<(double Value, KeyValuePair<string, object?>[] Tags)>();
+        using var meterListener = new MeterListener
+        {
+            InstrumentPublished = (instrument, listener) =>
+            {
+                if (instrument.Meter.Name == MudHttpMeter.MeterName)
+                    listener.EnableMeasurementEvents(instrument);
+            }
+        };
+        meterListener.SetMeasurementEventCallback<long>((instrument, value, tags, _) =>
+        {
+            if (instrument.Name == "mud.http.download.bytes")
+                capturedBytes.Add((value, tags.ToArray()));
+        });
+        meterListener.SetMeasurementEventCallback<double>((instrument, value, tags, _) =>
+        {
+            if (instrument.Name == "mud.http.download.duration")
+                capturedDurations.Add((value, tags.ToArray()));
+        });
+        meterListener.Start();
+
+        var result = await executor.DownloadAsync(CreateRequest());
+
+        result.Should().Equal(data);
+        // 验证下载字节数指标
+        capturedBytes.Should().ContainSingle();
+        capturedBytes[0].Value.Should().Be(3);
+        capturedBytes[0].Tags.Should().Contain(t => t.Key == "outcome" && (string?)t.Value == "success");
+        // 验证下载耗时指标
+        capturedDurations.Should().ContainSingle();
+        capturedDurations[0].Value.Should().BeGreaterThanOrEqualTo(0);
+        capturedDurations[0].Tags.Should().Contain(t => t.Key == "outcome" && (string?)t.Value == "success");
+    }
+
+    [Fact]
+    public async Task DownloadLargeAsync_RecordsDownloadBytesAndDurationMetrics()
+    {
+        var data = new byte[] { 1, 2, 3, 4, 5 };
+        var mockClient = new Mock<IBaseHttpClient>();
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(data)
+        };
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
+        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+
+        var tempFile = Path.Combine(Path.GetTempPath(), $"mud_test_{Guid.NewGuid():N}.bin");
+        var capturedBytes = new List<long>();
+        var capturedDurations = new List<double>();
+        using var meterListener = new MeterListener
+        {
+            InstrumentPublished = (instrument, listener) =>
+            {
+                if (instrument.Meter.Name == MudHttpMeter.MeterName)
+                    listener.EnableMeasurementEvents(instrument);
+            }
+        };
+        meterListener.SetMeasurementEventCallback<long>((instrument, value, _, _) =>
+        {
+            if (instrument.Name == "mud.http.download.bytes")
+                capturedBytes.Add(value);
+        });
+        meterListener.SetMeasurementEventCallback<double>((instrument, value, _, _) =>
+        {
+            if (instrument.Name == "mud.http.download.duration")
+                capturedDurations.Add(value);
+        });
+        meterListener.Start();
+
+        try
+        {
+            await executor.DownloadLargeAsync(CreateRequest(), tempFile);
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+        }
+
+        // 验证下载字节数指标（等于文件大小 = 5）
+        capturedBytes.Should().ContainSingle().Which.Should().Be(5);
+        // 验证下载耗时指标
+        capturedDurations.Should().ContainSingle().Which.Should().BeGreaterThanOrEqualTo(0);
+    }
+
+    [Fact]
+    public async Task DownloadAsync_RecordsErrorMetric_OnDownloadFailure()
+    {
+        // 使用会抛出异常的 HttpContent 模拟下载失败
+        var mockClient = new Mock<IBaseHttpClient>();
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ThrowingByteArrayContent()
+        };
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
+        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+
+        var capturedDurations = new List<(double Value, KeyValuePair<string, object?>[] Tags)>();
+        using var meterListener = new MeterListener
+        {
+            InstrumentPublished = (instrument, listener) =>
+            {
+                if (instrument.Meter.Name == MudHttpMeter.MeterName)
+                    listener.EnableMeasurementEvents(instrument);
+            }
+        };
+        meterListener.SetMeasurementEventCallback<double>((instrument, value, tags, _) =>
+        {
+            if (instrument.Name == "mud.http.download.duration")
+                capturedDurations.Add((value, tags.ToArray()));
+        });
+        meterListener.Start();
+
+        var act = async () => await executor.DownloadAsync(CreateRequest());
+        await act.Should().ThrowAsync<InvalidOperationException>();
+
+        // 验证失败时记录了 outcome=error 的耗时指标
+        capturedDurations.Should().ContainSingle();
+        capturedDurations[0].Value.Should().BeGreaterThanOrEqualTo(0);
+        capturedDurations[0].Tags.Should().Contain(t => t.Key == "outcome" && (string?)t.Value == "error");
+    }
+
+    /// <summary>
+    /// 自定义 HttpContent，其 SerializeToStreamAsync 抛出异常，用于测试下载失败场景。
+    /// HttpContent.ReadAsByteArrayAsync 内部会调用 SerializeToStreamAsync，因此会传播异常。
+    /// </summary>
+    private sealed class ThrowingByteArrayContent : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            Task.FromException(new InvalidOperationException("Simulated download failure"));
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
         }
     }
 

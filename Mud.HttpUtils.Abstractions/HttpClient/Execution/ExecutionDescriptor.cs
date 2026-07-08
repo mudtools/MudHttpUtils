@@ -103,5 +103,5 @@ public sealed class ResilienceExecutionOptions
     /// <summary>
     /// 超时时间（毫秒），默认 5000 毫秒。
     /// </summary>
-    public int TimeoutMilliseconds { get; set; }
+    public int TimeoutMilliseconds { get; set; } = 5000;
 }

@@ -296,8 +296,8 @@ public class DefaultHttpRequestExecutor(
 #endif
 
             var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
-            // 通过文件大小获取实际写入字节数（progress == null 分支下 totalBytesWritten 未更新）
-            var bytes = new FileInfo(filePath).Length;
+            // 通过 fileStream.Position 获取实际写入字节数（避免 FileInfo.Length 因缓冲区未刷新而返回 0）
+            var bytes = fileStream.Position;
             RecordDownloadCompleted(request, clientName, bytes, elapsedMs);
         }
         catch (Exception ex)

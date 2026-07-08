@@ -653,7 +653,7 @@ builder.Services.AddMudHttpOpenTelemetry(options =>
 });
 ```
 
-自动采集 HTTP 请求计数、请求耗时、缓存命中、令牌刷新、重试次数、熔断器状态等指标。
+自动采集 HTTP 请求计数、请求耗时、缓存命中、令牌刷新、重试次数、熔断器状态、下载字节数、下载耗时等指标。
 
 ### 🤝 贡献
 
