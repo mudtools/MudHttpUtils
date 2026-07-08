@@ -210,6 +210,87 @@ public class TokenHelperTests
         result.Should().Be("read,write");
     }
 
+    #region GetTokenInjectionModeName Tests
+
+    [Fact]
+    public void GetTokenInjectionModeName_WithNull_ReturnsHeader()
+    {
+        var result = TokenHelper.GetTokenInjectionModeName(null);
+
+        result.Should().Be("Header");
+    }
+
+    [Fact]
+    public void GetTokenInjectionModeName_WithEmptyString_ReturnsHeader()
+    {
+        var result = TokenHelper.GetTokenInjectionModeName("");
+
+        result.Should().Be("Header");
+    }
+
+    [Theory]
+    [InlineData(0, "Header")]
+    [InlineData(1, "Query")]
+    [InlineData(2, "Path")]
+    [InlineData(3, "ApiKey")]
+    [InlineData(4, "HmacSignature")]
+    [InlineData(5, "BasicAuth")]
+    [InlineData(6, "Cookie")]
+    public void GetTokenInjectionModeName_WithNumericValue_ReturnsCorrectMode(int mode, string expected)
+    {
+        var result = TokenHelper.GetTokenInjectionModeName(mode);
+
+        result.Should().Be(expected);
+    }
+
+    [Fact]
+    public void GetTokenInjectionModeName_WithUnknownNumericValue_ReturnsHeader()
+    {
+        var result = TokenHelper.GetTokenInjectionModeName(99);
+
+        result.Should().Be("Header");
+    }
+
+    [Theory]
+    [InlineData("Header")]
+    [InlineData("Query")]
+    [InlineData("Path")]
+    [InlineData("ApiKey")]
+    [InlineData("HmacSignature")]
+    [InlineData("BasicAuth")]
+    [InlineData("Cookie")]
+    public void GetTokenInjectionModeName_WithEnumNameString_ReturnsCorrectMode(string enumName)
+    {
+        var result = TokenHelper.GetTokenInjectionModeName(enumName);
+
+        result.Should().Be(enumName);
+    }
+
+    [Theory]
+    [InlineData("TokenInjectionMode.Header", "Header")]
+    [InlineData("TokenInjectionMode.Query", "Query")]
+    [InlineData("TokenInjectionMode.ApiKey", "ApiKey")]
+    [InlineData("TokenInjectionMode.HmacSignature", "HmacSignature")]
+    [InlineData("TokenInjectionMode.BasicAuth", "BasicAuth")]
+    [InlineData("TokenInjectionMode.Cookie", "Cookie")]
+    [InlineData("TokenInjectionMode.Path", "Path")]
+    public void GetTokenInjectionModeName_WithFullyQualifiedEnumName_ReturnsCorrectMode(string qualifiedName, string expected)
+    {
+        var result = TokenHelper.GetTokenInjectionModeName(qualifiedName);
+
+        result.Should().Be(expected);
+    }
+
+    [Fact]
+    public void GetTokenInjectionModeName_WithUnknownString_ReturnsHeader()
+    {
+        var result = TokenHelper.GetTokenInjectionModeName("UnknownMode");
+
+        result.Should().Be("Header");
+    }
+
+    #endregion
+
     private static AttributeData? CreateAttributeData(string attributeSource)
     {
         var source = $@"

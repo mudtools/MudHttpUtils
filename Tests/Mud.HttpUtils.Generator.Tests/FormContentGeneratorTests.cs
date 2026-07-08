@@ -82,4 +82,91 @@ public class UploadRequest
     }
 
     #endregion
+
+    #region Code Generation Tests
+
+    [Fact]
+    public void FormContentGenerator_WithValidFormContent_GeneratesCode()
+    {
+        var source = @"
+using System.Text.Json.Serialization;
+using Mud.HttpUtils.Attributes;
+
+[FormContent]
+public class UploadRequest
+{
+    [JsonPropertyName(""user_name"")]
+    public string UserName { get; set; }
+
+    [JsonPropertyName(""file"")]
+    [FilePath]
+    public string FilePath { get; set; }
+}";
+
+        var driver = RunGenerator(source);
+        var results = driver.GetRunResult();
+
+        results.GeneratedTrees.Should().HaveCount(1);
+        var generatedCode = results.GeneratedTrees[0].ToString();
+        generatedCode.Should().Contain("GetFormDataContentAsync");
+        generatedCode.Should().Contain("MultipartFormDataContent");
+        generatedCode.Should().Contain("\"user_name\"");
+        generatedCode.Should().Contain("GetByteArrayContentAsync");
+    }
+
+    [Fact]
+    public void FormContentGenerator_WithSpecialCharsInJsonPropertyName_EscapesCorrectly()
+    {
+        var source = @"
+using System.Text.Json.Serialization;
+using Mud.HttpUtils.Attributes;
+
+[FormContent]
+public class UploadRequest
+{
+    [JsonPropertyName(""test\""name"")]
+    public string Name { get; set; }
+
+    [JsonPropertyName(""file"")]
+    [FilePath]
+    public string FilePath { get; set; }
+}";
+
+        var driver = RunGenerator(source);
+        var results = driver.GetRunResult();
+
+        results.GeneratedTrees.Should().HaveCount(1);
+        var generatedCode = results.GeneratedTrees[0].ToString();
+        // The double quote in the JSON property name should be escaped as \"
+        generatedCode.Should().Contain("\"test\\\"name\"");
+    }
+
+    [Fact]
+    public void FormContentGenerator_WithBackslashInJsonPropertyName_EscapesCorrectly()
+    {
+        var source = @"
+using System.Text.Json.Serialization;
+using Mud.HttpUtils.Attributes;
+
+[FormContent]
+public class UploadRequest
+{
+    [JsonPropertyName(""path\\name"")]
+    public string Name { get; set; }
+
+    [JsonPropertyName(""file"")]
+    [FilePath]
+    public string FilePath { get; set; }
+}";
+
+        var driver = RunGenerator(source);
+        var results = driver.GetRunResult();
+
+        results.GeneratedTrees.Should().HaveCount(1);
+        var generatedCode = results.GeneratedTrees[0].ToString();
+        // The backslash in the JSON property name should be escaped as \\
+        generatedCode.Should().Contain("path\\\\name");
+    }
+
+    #endregion
 }

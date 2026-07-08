@@ -287,14 +287,22 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         {
             codeBuilder.AppendLine("        /// <param name=\"cacheProvider\">HTTP响应缓存提供器（传递给基类）</param>");
         }
+        else if (_context.HasHttpClient && !_context.HasInheritedFrom)
+        {
+            codeBuilder.AppendLine("        /// <param name=\"cacheProvider\">HTTP响应缓存提供器（可选，未声明 [Cache] 特性时由 DI 注入）</param>");
+        }
 
         if (_context.HasResilience)
         {
-            codeBuilder.AppendLine("        /// <param name=\"resilienceProvider\">弹性策略提供器</param>");
+            codeBuilder.AppendLine("        /// <param name=\"resilienceResolver\">弹性策略解析器</param>");
         }
         else if (_context.HasInheritedFrom && _context.Configuration.BaseHasResilience)
         {
-            codeBuilder.AppendLine("        /// <param name=\"resilienceProvider\">弹性策略提供器（传递给基类）</param>");
+            codeBuilder.AppendLine("        /// <param name=\"resilienceResolver\">弹性策略解析器（传递给基类）</param>");
+        }
+        else if (_context.HasHttpClient && !_context.HasInheritedFrom)
+        {
+            codeBuilder.AppendLine("        /// <param name=\"resilienceResolver\">弹性策略解析器（可选，未声明 [Retry]/[CircuitBreaker]/[Timeout] 特性时由 DI 注入）</param>");
         }
     }
 
@@ -336,10 +344,20 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         {
             parameters.Add("IHttpResponseCache cacheProvider");
         }
+        else if (_context.HasHttpClient && !_context.HasInheritedFrom)
+        {
+            // HttpClient 模式下始终接受可选的 cacheProvider，允许 DI 注入的全局缓存服务传递给执行器
+            parameters.Add("IHttpResponseCache? cacheProvider = null");
+        }
 
         if (needsResilienceParam)
         {
             parameters.Add("IResiliencePolicyResolver resilienceResolver");
+        }
+        else if (_context.HasHttpClient && !_context.HasInheritedFrom)
+        {
+            // HttpClient 模式下始终接受可选的 resilienceResolver，允许 DI 注入的全局弹性策略服务传递给执行器
+            parameters.Add("IResiliencePolicyResolver? resilienceResolver = null");
         }
 
         var signature = $"        public {className}({string.Join(", ", parameters)})";
@@ -438,14 +456,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             }
 
             // HttpClient 模式下，在 cache/resilience 字段初始化后创建执行器实例
+            // 始终将 cacheProvider 和 resilienceResolver 传递给执行器，即使接口未声明 [Cache]/[Retry] 特性，
+            // 仍允许通过 DI 注入全局缓存/弹性策略服务
             if (_context.HasHttpClient)
             {
-                var executorArgs = "_httpClient";
-                if (_context.HasCache)
-                    executorArgs += ", _cacheProvider";
-                if (_context.HasResilience)
-                    executorArgs += _context.HasCache ? ", _resilienceResolver" : ", null, _resilienceResolver";
-                codeBuilder.AppendLine($"            _executor = new Mud.HttpUtils.DefaultHttpRequestExecutor({executorArgs});");
+                codeBuilder.AppendLine("            _executor = new Mud.HttpUtils.DefaultHttpRequestExecutor(_httpClient, cacheProvider, resilienceResolver);");
             }
         }
         else

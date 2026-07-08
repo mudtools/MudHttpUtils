@@ -2,7 +2,7 @@
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
 //  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
-// 不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
 using Mud.HttpUtils.Analyzers;
@@ -157,7 +157,14 @@ internal class GeneratorContext
         catch (Exception ex)
         {
             GeneratorDebugLogger.LogError("GeneratorContext.GetAllMethods", ex);
-            allMethods = new List<IMethodSymbol>();
+            // 向用户报告诊断，确保 IDE 错误列表中可见
+            productionContext.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.HttpClientApiGenerationError,
+                interfaceDeclaration.GetLocation(),
+                interfaceSymbol.Name,
+                $"解析接口方法时发生异常，已回退为仅生成当前接口方法: {GeneratorDebugLogger.FormatExceptionMessage(ex)}"));
+            // 回退为仅当前接口自身定义的方法，与原 MethodGenerator.GetMethodsToGenerate 的容错行为一致
+            allMethods = interfaceSymbol.GetMembers().OfType<IMethodSymbol>().ToList();
         }
 
         AllMethods = allMethods;

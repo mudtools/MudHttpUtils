@@ -1,4 +1,4 @@
-﻿// -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
 //  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
@@ -141,13 +141,10 @@ internal class MethodGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("            var __appContext = _appContextHolder.Current ?? throw new InvalidOperationException(\"无法找到当前服务的应用上下文。\");");
             // TokenManager/AppContext 模式下，执行器需基于当前应用上下文的 HttpClient 动态创建。
             // 在 __appContext 捕获之后立即创建，避免 TOCTOU；执行器本身无状态，每次创建开销可忽略。
-            // 构造函数可选参数 cacheProvider/resilienceResolver 仅在对应字段已生成时传入。
-            var executorArgs = "__appContext.HttpClient";
-            if (context.HasCache)
-                executorArgs += ", _cacheProvider";
-            if (context.HasResilience)
-                executorArgs += context.HasCache ? ", _resilienceResolver" : ", null, _resilienceResolver";
-            codeBuilder.AppendLine($"            var __executor = new Mud.HttpUtils.DefaultHttpRequestExecutor({executorArgs});");
+            // 始终显式传递 cacheProvider/resilienceResolver（无对应字段时传 null），确保执行器能正确编排缓存/弹性策略。
+            var cacheArg = context.HasCache ? "_cacheProvider" : "null";
+            var resilienceArg = context.HasResilience ? "_resilienceResolver" : "null";
+            codeBuilder.AppendLine($"            var __executor = new Mud.HttpUtils.DefaultHttpRequestExecutor(__appContext.HttpClient, {cacheArg}, {resilienceArg});");
         }
 
         // 执行器变量表达式：HttpClient 模式使用构造函数注入的 _executor 字段；TokenManager/AppContext 模式使用上面的 __executor 局部变量
@@ -935,9 +932,12 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 var end = span.Slice(i).IndexOf('}');
                 if (end > 1)
                 {
-                    var placeholder = span.Slice(i + 1, end - 1).ToString();
-                    if (!string.IsNullOrEmpty(placeholder))
-                        placeholders.Add(placeholder);
+                    // 先检查 span 是否为空或空白，避免对 "{}" 或 "{ }" 场景分配字符串
+                    var placeholderSpan = span.Slice(i + 1, end - 1);
+                    if (!placeholderSpan.IsEmpty && !placeholderSpan.IsWhiteSpace())
+                    {
+                        placeholders.Add(placeholderSpan.ToString());
+                    }
                     i += end;
                 }
             }
