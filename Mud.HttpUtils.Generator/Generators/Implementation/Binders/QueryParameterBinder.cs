@@ -4,6 +4,53 @@ namespace Mud.HttpUtils.Generators.Implementation;
 
 internal class QueryParameterBinder : IParameterBinder
 {
+    /// <summary>
+    /// 判断参数是否会引用 __queryParams 变量。
+    /// </summary>
+    public static bool UsesQueryParams(ParameterInfo parameter)
+    {
+        // [RawQueryString] 直接修改 __url，不使用 __queryParams
+        if (parameter.Attributes.Any(a => a.Name == HttpClientGeneratorConstants.RawQueryStringAttribute))
+            return false;
+
+        // [QueryMap] 字典类型在 UrlEncode = false 时仅使用 __rawQueryPairs
+        var queryMapAttr = parameter.Attributes.FirstOrDefault(a => a.Name == HttpClientGeneratorConstants.QueryMapAttribute);
+        if (queryMapAttr != null && IsDictionaryType(parameter.Type))
+        {
+            var urlEncode = !(queryMapAttr.NamedArguments.TryGetValue("UrlEncode", out var urlEnc) && urlEnc is false);
+            return urlEncode;
+        }
+
+        // 其余类型（简单 [Query]、[ArrayQuery]、复杂 [Query]、对象 [QueryMap]）均使用 __queryParams
+        return true;
+    }
+
+    /// <summary>
+    /// 判断参数是否会引用 __rawQueryPairs 变量。
+    /// </summary>
+    public static bool UsesRawQueryPairs(ParameterInfo parameter)
+    {
+        // 复杂 [Query] 类型（非简单类型、非数组）通过 FlattenObjectToQueryParams 引用 __rawQueryPairs
+        var queryAttr = parameter.Attributes.FirstOrDefault(a => a.Name == HttpClientGeneratorConstants.QueryAttribute);
+        if (queryAttr != null)
+            return !TypeDetectionHelper.IsSimpleType(parameter.Type) && !TypeDetectionHelper.IsArrayType(parameter.Type);
+
+        // [QueryMap] 对象类型通过 FlattenObjectToQueryParams 引用 __rawQueryPairs
+        var queryMapAttr = parameter.Attributes.FirstOrDefault(a => a.Name == HttpClientGeneratorConstants.QueryMapAttribute);
+        if (queryMapAttr != null)
+        {
+            if (IsDictionaryType(parameter.Type))
+            {
+                // [QueryMap] 字典类型仅在 UrlEncode = false 时引用 __rawQueryPairs
+                return queryMapAttr.NamedArguments.TryGetValue("UrlEncode", out var urlEnc) && urlEnc is false;
+            }
+            return true;
+        }
+
+        // [ArrayQuery]、[RawQueryString]、简单 [Query] 均不使用 __rawQueryPairs
+        return false;
+    }
+
     public bool CanBind(ParameterInfo parameter)
     {
         return parameter.Attributes.Any(attr =>

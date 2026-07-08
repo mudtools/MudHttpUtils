@@ -160,8 +160,15 @@ internal class RequestBuilder
         if (!queryParams.Any() && !hasTokenQuery && !interfaceQueryProperties.Any() && !hasInterfaceQueryParams)
             return;
 
-        codeBuilder.AppendLine($"            var __queryParams = global::Mud.HttpUtils.QueryParameterBuilder.Create();");
-        codeBuilder.AppendLine("            var __rawQueryPairs = new System.Collections.Generic.List<string>();");
+        // 按需声明变量：仅当参数或接口配置实际引用时才生成
+        var needsQueryParams = hasTokenQuery || hasInterfaceQueryParams || interfaceQueryProperties.Any() ||
+            queryParams.Any(QueryParameterBinder.UsesQueryParams);
+        var needsRawQueryPairs = queryParams.Any(QueryParameterBinder.UsesRawQueryPairs);
+
+        if (needsQueryParams)
+            codeBuilder.AppendLine($"            var __queryParams = global::Mud.HttpUtils.QueryParameterBuilder.Create();");
+        if (needsRawQueryPairs)
+            codeBuilder.AppendLine("            var __rawQueryPairs = new System.Collections.Generic.List<string>();");
 
         foreach (var interfaceQueryProp in interfaceQueryProperties)
         {
@@ -187,14 +194,20 @@ internal class RequestBuilder
             }
         }
 
-        codeBuilder.AppendLine("            if (__queryParams.Count > 0)");
-        codeBuilder.AppendLine("            {");
-        codeBuilder.AppendLine("                __url += \"?\" + __queryParams.ToString();");
-        codeBuilder.AppendLine("            }");
-        codeBuilder.AppendLine("            if (__rawQueryPairs.Count > 0)");
-        codeBuilder.AppendLine("            {");
-        codeBuilder.AppendLine("                __url += (__url.Contains(\"?\") ? \"&\" : \"?\") + string.Join(\"&\", __rawQueryPairs);");
-        codeBuilder.AppendLine("            }");
+        if (needsQueryParams)
+        {
+            codeBuilder.AppendLine("            if (__queryParams.Count > 0)");
+            codeBuilder.AppendLine("            {");
+            codeBuilder.AppendLine("                __url += \"?\" + __queryParams.ToString();");
+            codeBuilder.AppendLine("            }");
+        }
+        if (needsRawQueryPairs)
+        {
+            codeBuilder.AppendLine("            if (__rawQueryPairs.Count > 0)");
+            codeBuilder.AppendLine("            {");
+            codeBuilder.AppendLine("                __url += (__url.Contains(\"?\") ? \"&\" : \"?\") + string.Join(\"&\", __rawQueryPairs);");
+            codeBuilder.AppendLine("            }");
+        }
     }
 
     /// <summary>

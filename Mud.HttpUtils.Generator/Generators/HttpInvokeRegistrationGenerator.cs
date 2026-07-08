@@ -319,12 +319,8 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         {
             codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 HttpClient 包装实现类（瞬时服务）");
             codeBuilder.AppendLine($"            // 注意：实现类构造函数依赖 {api.HttpClientType}，请确保已通过 AddMudHttpClient 等方法注册此服务");
-            // HttpClient 模式下，实现类构造函数还需注入 IHttpRequestExecutor。
-            // 使用 TryAddTransient 自动注册默认执行器（若用户未自定义注册）。
-            // DefaultHttpRequestExecutor 构造函数的 cacheProvider 和 resilienceResolver 为可选参数，
-            // DI 容器会在对应服务已注册时自动注入，未注册时使用默认值 null。
+            // 注册 IBaseHttpClient 别名，便于其他服务通过 IBaseHttpClient 接口解析 HttpClient 实例
             codeBuilder.AppendLine("            services.TryAddTransient<global::Mud.HttpUtils.IBaseHttpClient>(sp => sp.GetRequiredService<global::Mud.HttpUtils.IEnhancedHttpClient>());");
-            codeBuilder.AppendLine("            services.TryAddTransient<global::Mud.HttpUtils.IHttpRequestExecutor, global::Mud.HttpUtils.DefaultHttpRequestExecutor>();");
         }
         else if (!string.IsNullOrEmpty(api.TokenManagerType))
         {

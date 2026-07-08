@@ -272,7 +272,6 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         else if (_context.HasHttpClient)
         {
             codeBuilder.AppendLine($"        /// <param name=\"httpClient\">HttpClient实例</param>");
-            codeBuilder.AppendLine("        /// <param name=\"executor\">HTTP请求执行器</param>");
         }
         else
         {
@@ -322,7 +321,6 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         else if (_context.HasHttpClient)
         {
             parameters.Add($"{_context.Configuration.HttpClient} httpClient");
-            parameters.Add("IHttpRequestExecutor executor");
         }
         else
         {
@@ -372,7 +370,6 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             else if (_context.HasHttpClient)
             {
                 baseParameters.Add("httpClient");
-                baseParameters.Add("executor");
             }
             else
             {
@@ -423,7 +420,6 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             else if (_context.HasHttpClient)
             {
                 codeBuilder.AppendLine("            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));");
-                codeBuilder.AppendLine("            _executor = executor ?? throw new ArgumentNullException(nameof(executor));");
             }
             else
             {
@@ -439,6 +435,17 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             if (_context.HasResilience)
             {
                 codeBuilder.AppendLine("            _resilienceResolver = resilienceResolver ?? throw new ArgumentNullException(nameof(resilienceResolver));");
+            }
+
+            // HttpClient 模式下，在 cache/resilience 字段初始化后创建执行器实例
+            if (_context.HasHttpClient)
+            {
+                var executorArgs = "_httpClient";
+                if (_context.HasCache)
+                    executorArgs += ", _cacheProvider";
+                if (_context.HasResilience)
+                    executorArgs += _context.HasCache ? ", _resilienceResolver" : ", null, _resilienceResolver";
+                codeBuilder.AppendLine($"            _executor = new Mud.HttpUtils.DefaultHttpRequestExecutor({executorArgs});");
             }
         }
         else

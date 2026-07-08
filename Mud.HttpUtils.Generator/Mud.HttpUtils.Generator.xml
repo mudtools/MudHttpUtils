@@ -505,6 +505,16 @@
             生成 GetTokenAsync() 的无参实现，委托给带参的 GetTokenAsync
             </summary>
         </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.QueryParameterBinder.UsesQueryParams(Mud.HttpUtils.Models.Analysis.ParameterInfo)">
+            <summary>
+            判断参数是否会引用 __queryParams 变量。
+            </summary>
+        </member>
+        <member name="M:Mud.HttpUtils.Generators.Implementation.QueryParameterBinder.UsesRawQueryPairs(Mud.HttpUtils.Models.Analysis.ParameterInfo)">
+            <summary>
+            判断参数是否会引用 __rawQueryPairs 变量。
+            </summary>
+        </member>
         <member name="M:Mud.HttpUtils.Generators.Implementation.QueryParameterBinder.GenerateArrayQueryUrl(System.Text.StringBuilder,Mud.HttpUtils.Models.Analysis.ParameterInfo,System.String,Mud.HttpUtils.Models.Analysis.ParameterAttributeInfo,System.String,System.String)">
             <summary>
             生成数组查询参数的 URL 代码，支持分隔符模式和重复参数模式。
