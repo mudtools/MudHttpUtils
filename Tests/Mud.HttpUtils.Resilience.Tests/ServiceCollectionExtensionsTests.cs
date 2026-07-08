@@ -159,7 +159,7 @@ public class ServiceCollectionExtensionsTests
         public Task<byte[]?> DownloadAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
             => Task.FromResult<byte[]?>(null);
 
-        public Task<FileInfo> DownloadLargeAsync(HttpRequestMessage request, string filePath, bool overwrite = true, CancellationToken cancellationToken = default)
+        public Task<FileInfo> DownloadLargeAsync(HttpRequestMessage request, string filePath, bool overwrite = true, int bufferSize = 81920, CancellationToken cancellationToken = default)
             => Task.FromResult(new FileInfo(filePath));
 
         public Task<TResult?> GetAsync<TResult>(string requestUri, CancellationToken cancellationToken = default)

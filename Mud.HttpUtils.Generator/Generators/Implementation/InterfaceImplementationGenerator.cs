@@ -83,7 +83,7 @@ internal class InterfaceImplementationGenerator
             _codeBuilder.AppendLine("            object obj,");
             _codeBuilder.AppendLine("            string prefix,");
             _codeBuilder.AppendLine("            string separator,");
-            _codeBuilder.AppendLine("            System.Collections.Specialized.NameValueCollection queryParams,");
+            _codeBuilder.AppendLine("            global::Mud.HttpUtils.QueryParameterBuilder queryParams,");
             _codeBuilder.AppendLine("            bool includeNullValues,");
             _codeBuilder.AppendLine("            bool useJsonSerialization,");
             _codeBuilder.AppendLine("            bool urlEncode = true,");

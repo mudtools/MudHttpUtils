@@ -160,7 +160,7 @@ internal class RequestBuilder
         if (!queryParams.Any() && !hasTokenQuery && !interfaceQueryProperties.Any() && !hasInterfaceQueryParams)
             return;
 
-        codeBuilder.AppendLine($"            var __queryParams = new System.Collections.Specialized.NameValueCollection();");
+        codeBuilder.AppendLine($"            var __queryParams = new global::Mud.HttpUtils.QueryParameterBuilder();");
         codeBuilder.AppendLine("            var __rawQueryPairs = new System.Collections.Generic.List<string>();");
 
         foreach (var interfaceQueryProp in interfaceQueryProperties)

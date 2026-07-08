@@ -5,8 +5,6 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
-using System.Net.Http;
-
 namespace Mud.HttpUtils;
 
 /// <summary>
@@ -57,9 +55,16 @@ public interface IHttpRequestExecutor
     /// <summary>
     /// 下载大文件到指定路径。
     /// </summary>
+    /// <param name="request">HTTP 请求消息。</param>
+    /// <param name="filePath">文件保存路径。</param>
+    /// <param name="overwrite">是否覆盖已存在的文件。默认为 true。</param>
+    /// <param name="bufferSize">下载缓冲区大小（字节）。默认为 81920（80KB）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
     Task DownloadLargeAsync(
         HttpRequestMessage request,
         string filePath,
+        bool overwrite = true,
+        int bufferSize = 81920,
         CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -683,13 +683,13 @@ public class DefaultHttpRequestExecutorTests
     {
         var mockClient = new Mock<IBaseHttpClient>();
         mockClient.Setup(c => c.DownloadLargeAsync(
-                It.IsAny<HttpRequestMessage>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+                It.IsAny<HttpRequestMessage>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FileInfo("test.txt"));
         var executor = new DefaultHttpRequestExecutor(mockClient.Object);
 
         await executor.DownloadLargeAsync(CreateRequest(), "test.txt");
         mockClient.Verify(c => c.DownloadLargeAsync(
-            It.IsAny<HttpRequestMessage>(), "test.txt", It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<HttpRequestMessage>(), "test.txt", It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     #endregion

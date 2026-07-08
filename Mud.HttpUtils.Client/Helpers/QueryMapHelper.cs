@@ -6,7 +6,6 @@
 // -----------------------------------------------------------------------
 
 using System.Collections.Concurrent;
-using System.Collections.Specialized;
 using System.Reflection;
 using System.Text.Json;
 
@@ -23,7 +22,7 @@ public static class QueryMapHelper
 
 
     /// <summary>
-    /// 递归解释查询参数对象，将其属性展平为键值对，并添加到 NameValueCollection 中。支持基本类型、字符串、枚举、日期时间、GUID，以及实现了 IQueryParameter 接口的对象。对于复杂对象，会继续递归展平其属性。可以选择是否包含 null 值，是否使用 JSON 序列化，以及是否对键和值进行 URL 编码。
+    /// 递归解释查询参数对象，将其属性展平为键值对，并添加到 QueryParameterBuilder 中。支持基本类型、字符串、枚举、日期时间、GUID，以及实现了 IQueryParameter 接口的对象。对于复杂对象，会继续递归展平其属性。可以选择是否包含 null 值，是否使用 JSON 序列化，以及是否对键和值进行 URL 编码。
     /// </summary>
 #if NET6_0_OR_GREATER
     [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2072:Target parameter return value does not satisfy DynamicallyAccessedMemberTypes requirements")]
@@ -33,7 +32,7 @@ public static class QueryMapHelper
         object obj,
         string prefix,
         string separator,
-        NameValueCollection queryParams,
+        QueryParameterBuilder queryParams,
         bool includeNullValues,
         bool useJsonSerialization,
         bool urlEncode = true,

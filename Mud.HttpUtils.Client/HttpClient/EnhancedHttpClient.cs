@@ -150,32 +150,34 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             () => DownloadFileAsync(request, cancellationToken: cancellationToken));
     }
 
-    /// <inheritdoc cref="IBaseHttpClient.DownloadLargeAsync"/>
-    /// <param name="request">HTTP请求消息。</param>
-    /// <param name="filePath">保存文件的路径。</param>
-    /// <param name="overwrite">是否覆盖已存在的文件,默认为true。</param>
-    /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>下载完成后的文件信息。</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="request"/> 为 null。</exception>
-    /// <exception cref="ArgumentException"><paramref name="filePath"/> 为空或仅包含空白字符。</exception>
-    /// <exception cref="IOException">当 <paramref name="overwrite"/> 为 false 且文件已存在时抛出。</exception>
-    /// <exception cref="HttpRequestException">HTTP请求失败时抛出。</exception>
-    public async Task<FileInfo> DownloadLargeAsync(
-        HttpRequestMessage request,
-        string filePath,
-        bool overwrite = true,
-        CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrWhiteSpace(filePath))
-            throw new ArgumentException("文件路径不能为空", nameof(filePath));
+/// <inheritdoc cref="IBaseHttpClient.DownloadLargeAsync"/>
+/// <param name="request">HTTP请求消息。</param>
+/// <param name="filePath">保存文件的路径。</param>
+/// <param name="overwrite">是否覆盖已存在的文件,默认为true。</param>
+/// <param name="bufferSize">下载缓冲区大小（字节），默认为 81920。</param>
+/// <param name="cancellationToken">取消令牌。</param>
+/// <returns>下载完成后的文件信息。</returns>
+/// <exception cref="ArgumentNullException"><paramref name="request"/> 为 null。</exception>
+/// <exception cref="ArgumentException"><paramref name="filePath"/> 为空或仅包含空白字符。</exception>
+/// <exception cref="IOException">当 <paramref name="overwrite"/> 为 false 且文件已存在时抛出。</exception>
+/// <exception cref="HttpRequestException">HTTP请求失败时抛出。</exception>
+public async Task<FileInfo> DownloadLargeAsync(
+HttpRequestMessage request,
+string filePath,
+bool overwrite = true,
+int bufferSize = DefaultBufferSize,
+CancellationToken cancellationToken = default)
+{
+if (string.IsNullOrWhiteSpace(filePath))
+throw new ArgumentException("文件路径不能为空", nameof(filePath));
 
-        var uri = ValidateRequest(request);
+var uri = ValidateRequest(request);
 
-        return await ExecuteWithObservabilityAsync(
-            request,
-            $"下载大文件到: {filePath}", $"大文件下载完成: {filePath}", $"大文件下载失败: {filePath}", uri,
-            () => DownloadLargeFileAsync(request, filePath, overwrite: overwrite, cancellationToken: cancellationToken));
-    }
+return await ExecuteWithObservabilityAsync(
+request,
+$"下载大文件到: {filePath}", $"大文件下载完成: {filePath}", $"大文件下载失败: {filePath}", uri,
+() => DownloadLargeFileAsync(request, filePath, bufferSize: bufferSize, overwrite: overwrite, cancellationToken: cancellationToken));
+}
 
     /// <inheritdoc cref="IBaseHttpClient.SendRawAsync"/>
     /// <param name="request">HTTP请求消息。</param>

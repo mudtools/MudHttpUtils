@@ -279,7 +279,13 @@ internal class MethodGenerator : ICodeFragmentGenerator
             .FirstOrDefault(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.FilePathAttribute));
         if (filePathParam != null)
         {
-            codeBuilder.AppendLine($"            await {executor}.DownloadLargeAsync(__httpRequest, {filePathParam.Name}{cancellationTokenArg}).ConfigureAwait(false);");
+            // 从 [FilePath(BufferSize = ...)] 读取缓冲区大小，默认 81920
+            var filePathAttr = filePathParam.Attributes.First(a => a.Name == HttpClientGeneratorConstants.FilePathAttribute);
+            var bufferSize = 81920;
+            if (filePathAttr.NamedArguments.TryGetValue("BufferSize", out var bsVal) && bsVal is int bs && bs > 0)
+                bufferSize = bs;
+
+            codeBuilder.AppendLine($"            await {executor}.DownloadLargeAsync(__httpRequest, {filePathParam.Name}, overwrite: true, bufferSize: {bufferSize}{cancellationTokenArg}).ConfigureAwait(false);");
             return;
         }
 

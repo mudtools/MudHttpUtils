@@ -359,7 +359,7 @@
         <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.DownloadAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">
             <inheritdoc />
         </member>
-        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.DownloadLargeAsync(System.Net.Http.HttpRequestMessage,System.String,System.Boolean,System.Threading.CancellationToken)">
+        <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.DownloadLargeAsync(System.Net.Http.HttpRequestMessage,System.String,System.Boolean,System.Int32,System.Threading.CancellationToken)">
             <inheritdoc />
         </member>
         <member name="M:Mud.HttpUtils.Resilience.ResilientHttpClient.SendRawAsync(System.Net.Http.HttpRequestMessage,System.Threading.CancellationToken)">

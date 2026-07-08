@@ -1,4 +1,3 @@
-using System.Collections.Specialized;
 using System.Text.Json;
 
 namespace Mud.HttpUtils.Client.Tests;
@@ -10,7 +9,7 @@ public class QueryMapHelperTests
     [Fact]
     public void FlattenObjectToQueryParams_NullObj_ThrowsArgumentNullException()
     {
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         var act = () => QueryMapHelper.FlattenObjectToQueryParams(
             null!, "", ".", queryParams, false, false);
@@ -26,7 +25,7 @@ public class QueryMapHelperTests
     public void FlattenObjectToQueryParams_PrimitiveProperties_AddedToCollection()
     {
         var obj = new { Name = "test", Age = 25, Active = true };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, false);
 
@@ -39,7 +38,7 @@ public class QueryMapHelperTests
     public void FlattenObjectToQueryParams_DecimalProperty_AddedToCollection()
     {
         var obj = new { Price = 19.99m };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, false);
 
@@ -50,7 +49,7 @@ public class QueryMapHelperTests
     public void FlattenObjectToQueryParts_EnumProperty_AddedAsString()
     {
         var obj = new { Day = DayOfWeek.Monday };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, false);
 
@@ -62,7 +61,7 @@ public class QueryMapHelperTests
     {
         var date = new DateTime(2024, 1, 15, 10, 30, 0, DateTimeKind.Utc);
         var obj = new { CreatedAt = date };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, false);
 
@@ -74,7 +73,7 @@ public class QueryMapHelperTests
     {
         var guid = Guid.Parse("550e8400-e29b-41d4-a716-446655440000");
         var obj = new { Id = guid };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, false);
 
@@ -85,7 +84,7 @@ public class QueryMapHelperTests
     public void FlattenObjectToQueryParams_StringProperty_AddedToCollection()
     {
         var obj = new { Query = "hello world" };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, false);
 
@@ -97,7 +96,7 @@ public class QueryMapHelperTests
     {
         var dto = new DateTimeOffset(2024, 6, 15, 12, 0, 0, TimeSpan.Zero);
         var obj = new { Timestamp = dto };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, false);
 
@@ -112,7 +111,7 @@ public class QueryMapHelperTests
     public void FlattenObjectToQueryParams_WithPrefix_UsesPrefixInKeys()
     {
         var obj = new { Name = "test" };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "filter", ".", queryParams, false, false);
 
@@ -123,7 +122,7 @@ public class QueryMapHelperTests
     public void FlattenObjectToQueryParams_WithCustomSeparator_UsesSeparatorInKeys()
     {
         var obj = new { Name = "test" };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "filter", "_", queryParams, false, false);
 
@@ -134,7 +133,7 @@ public class QueryMapHelperTests
     public void FlattenObjectToQueryParams_EmptyPrefix_NoPrefixInKeys()
     {
         var obj = new { Name = "test" };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, false);
 
@@ -149,7 +148,7 @@ public class QueryMapHelperTests
     public void FlattenObjectToQueryParams_NullProperty_ExcludeNullValues()
     {
         var obj = new { Name = (string?)null, Age = 25 };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, false);
 
@@ -161,7 +160,7 @@ public class QueryMapHelperTests
     public void FlattenObjectToQueryParams_NullProperty_IncludeNullValues()
     {
         var obj = new { Name = (string?)null, Age = 25 };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, true, false);
 
@@ -177,7 +176,7 @@ public class QueryMapHelperTests
     public void FlattenObjectToQueryParams_UseJsonSerialization_SerializesAsJson()
     {
         var obj = new { Name = "test", Count = 42 };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, true);
 
@@ -189,7 +188,7 @@ public class QueryMapHelperTests
     public void FlattenObjectToQueryParams_JsonSerialization_BoolSerializesAsJson()
     {
         var obj = new { Active = true };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, true);
 
@@ -211,7 +210,7 @@ public class QueryMapHelperTests
                 ["role"] = "admin"
             })
         };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, false);
 
@@ -229,7 +228,7 @@ public class QueryMapHelperTests
                 ["q"] = "search"
             })
         };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "root", "_", queryParams, false, false);
 
@@ -247,7 +246,7 @@ public class QueryMapHelperTests
                 ["empty"] = null
             })
         };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, false);
 
@@ -266,7 +265,7 @@ public class QueryMapHelperTests
                 ["empty"] = null
             })
         };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, true, false);
 
@@ -289,7 +288,7 @@ public class QueryMapHelperTests
                 Age = 25
             }
         };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, false);
 
@@ -310,7 +309,7 @@ public class QueryMapHelperTests
                 }
             }
         };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, false);
 
@@ -328,7 +327,7 @@ public class QueryMapHelperTests
                 Age = 25
             }
         };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, false);
 
@@ -344,7 +343,7 @@ public class QueryMapHelperTests
     public void FlattenObjectToQueryParams_ExceedsMaxDepth_ThrowsInvalidOperationException()
     {
         var depth11Obj = CreateNestedObject(11);
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         var act = () => QueryMapHelper.FlattenObjectToQueryParams(
             depth11Obj, "", ".", queryParams, false, false);
@@ -357,7 +356,7 @@ public class QueryMapHelperTests
     public void FlattenObjectToQueryParams_AtMaxDepth_Succeeds()
     {
         var depth10Obj = CreateNestedObject(9);
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         var act = () => QueryMapHelper.FlattenObjectToQueryParams(
             depth10Obj, "", ".", queryParams, false, false);
@@ -381,7 +380,7 @@ public class QueryMapHelperTests
     public void FlattenObjectToQueryParams_WithRawPairs_AddsToRawPairsList()
     {
         var obj = new { Name = "test", Age = 25 };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
         var rawPairs = new List<string>();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, false, urlEncode: false, rawPairs);
@@ -394,7 +393,7 @@ public class QueryMapHelperTests
     public void FlattenObjectToQueryParams_RawPairsWithNullValue_IncludeNullValues()
     {
         var obj = new { Name = (string?)null };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
         var rawPairs = new List<string>();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, true, false, urlEncode: false, rawPairs);
@@ -406,7 +405,7 @@ public class QueryMapHelperTests
     public void FlattenObjectToQueryParams_RawPairsWithNullValue_ExcludeNullValues()
     {
         var obj = new { Name = (string?)null, Age = 25 };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
         var rawPairs = new List<string>();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, false, urlEncode: false, rawPairs);
@@ -432,7 +431,7 @@ public class QueryMapHelperTests
             Price = 9.99m,
             CreatedAt = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc)
         };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, false);
 
@@ -464,7 +463,7 @@ public class QueryMapHelperTests
                 })
             }
         };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, false);
 
@@ -489,7 +488,7 @@ public class QueryMapHelperTests
                 }
             }
         };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, false, false);
 
@@ -506,7 +505,7 @@ public class QueryMapHelperTests
                 ["status"] = "active"
             })
         };
-        var queryParams = new NameValueCollection();
+        var queryParams = new QueryParameterBuilder();
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "ns", "_", queryParams, false, false);
 

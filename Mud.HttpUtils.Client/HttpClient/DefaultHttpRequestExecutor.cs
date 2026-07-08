@@ -15,29 +15,21 @@ namespace Mud.HttpUtils;
 /// 统一处理响应反序列化、错误处理策略、加密解密等逻辑。
 /// 支持缓存和弹性策略的运行时编排。
 /// </summary>
-public class DefaultHttpRequestExecutor : IHttpRequestExecutor
+/// <remarks>
+/// 初始化 <see cref="DefaultHttpRequestExecutor"/>。
+/// </remarks>
+/// <param name="httpClient">HTTP 客户端实例。</param>
+/// <param name="cacheProvider">HTTP 响应缓存提供器（可选）。</param>
+/// <param name="resilienceResolver">弹性策略解析器（可选）。</param>
+public class DefaultHttpRequestExecutor(
+    IBaseHttpClient httpClient,
+    IHttpResponseCache? cacheProvider = null,
+    IResiliencePolicyResolver? resilienceResolver = null) : IHttpRequestExecutor
 {
-    private readonly IBaseHttpClient _httpClient;
-    private readonly IEncryptableHttpClient? _encryptableClient;
-    private readonly IHttpResponseCache? _cacheProvider;
-    private readonly IResiliencePolicyResolver? _resilienceResolver;
-
-    /// <summary>
-    /// 初始化 <see cref="DefaultHttpRequestExecutor"/>。
-    /// </summary>
-    /// <param name="httpClient">HTTP 客户端实例。</param>
-    /// <param name="cacheProvider">HTTP 响应缓存提供器（可选）。</param>
-    /// <param name="resilienceResolver">弹性策略解析器（可选）。</param>
-    public DefaultHttpRequestExecutor(
-        IBaseHttpClient httpClient,
-        IHttpResponseCache? cacheProvider = null,
-        IResiliencePolicyResolver? resilienceResolver = null)
-    {
-        _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
-        _encryptableClient = httpClient as IEncryptableHttpClient;
-        _cacheProvider = cacheProvider;
-        _resilienceResolver = resilienceResolver;
-    }
+    private readonly IBaseHttpClient _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+    private readonly IEncryptableHttpClient? _encryptableClient = httpClient as IEncryptableHttpClient;
+    private readonly IHttpResponseCache? _cacheProvider = cacheProvider;
+    private readonly IResiliencePolicyResolver? _resilienceResolver = resilienceResolver;
 
     /// <inheritdoc/>
     public async Task<TResult?> SendAndDeserializeAsync<TResult>(
@@ -83,7 +75,7 @@ public class DefaultHttpRequestExecutor : IHttpRequestExecutor
         {
             try
             {
-                using var reader = new System.IO.StringReader(rawContent);
+                using var reader = new StringReader(rawContent);
                 result = xmlSerializer.Deserialize(reader) is TResult typed ? typed : default;
             }
             catch (Exception ex) when (ex is InvalidOperationException || ex is System.Xml.XmlException)
@@ -203,9 +195,11 @@ public class DefaultHttpRequestExecutor : IHttpRequestExecutor
     public async Task DownloadLargeAsync(
         HttpRequestMessage request,
         string filePath,
+        bool overwrite = true,
+        int bufferSize = 81920,
         CancellationToken cancellationToken = default)
     {
-        await _httpClient.DownloadLargeAsync(request, filePath, cancellationToken: cancellationToken)
+        await _httpClient.DownloadLargeAsync(request, filePath, overwrite, bufferSize, cancellationToken)
             .ConfigureAwait(false);
     }
 
