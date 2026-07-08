@@ -758,27 +758,6 @@
             生成 MultipartFormDataContent 参数（用于 [MultipartForm] 和 [Upload] 特性）
             </summary>
         </member>
-        <member name="M:Mud.HttpUtils.Generators.Implementation.RequestBuilder.GenerateRequestExecution(System.Text.StringBuilder,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult,System.String,System.String)">
-            <summary>
-            生成请求执行代码，委托给运行时 IHttpRequestExecutor 统一处理响应反序列化与错误处理。
-            </summary>
-            <param name="executor">执行器变量表达式（HttpClient 模式为 _executor，TokenManager/AppContext 模式为 __executor）。</param>
-        </member>
-        <member name="M:Mud.HttpUtils.Generators.Implementation.RequestBuilder.BuildResponseDescriptorCode(Mud.HttpUtils.Models.Analysis.MethodAnalysisResult,System.String)">
-            <summary>
-            生成 ResponseDescriptor 对象初始化代码
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Generators.Implementation.RequestBuilder.IsVoidType(System.String)">
-            <summary>
-            判断类型是否为 void
-            </summary>
-        </member>
-        <member name="M:Mud.HttpUtils.Generators.Implementation.RequestBuilder.IsResponseType(System.String,System.String@)">
-            <summary>
-            检测返回类型是否为 Response&lt;T&gt;，并提取内部类型 T
-            </summary>
-        </member>
         <member name="M:Mud.HttpUtils.Generators.Implementation.TokenMethodHelper.MethodRequiresUserId(Mud.HttpUtils.Generators.Context.GeneratorContext,Mud.HttpUtils.Models.Analysis.MethodAnalysisResult)">
             <summary>
             判断方法是否需要 UserId。
