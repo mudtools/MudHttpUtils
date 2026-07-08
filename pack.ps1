@@ -35,7 +35,8 @@ $Projects = @(
     "Mud.HttpUtils.Client",
     "Mud.HttpUtils.Resilience",
     "Mud.HttpUtils",
-    "Mud.HttpUtils.Generator"
+    "Mud.HttpUtils.Generator",
+    "Mud.HttpUtils.OpenTelemetry"
 )
 
 # 清理旧的包
