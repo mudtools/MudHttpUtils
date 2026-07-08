@@ -19,16 +19,50 @@ internal static class StringEscapeHelper
     /// <returns>转义后的字符串</returns>
     public static string EscapeString(string value)
     {
-        return value.Replace("\\", "\\\\")
-                    .Replace("\"", "\\\"")
-                    .Replace("\0", "\\0")
-                    .Replace("\a", "\\a")
-                    .Replace("\b", "\\b")
-                    .Replace("\f", "\\f")
-                    .Replace("\n", "\\n")
-                    .Replace("\r", "\\r")
-                    .Replace("\t", "\\t")
-                    .Replace("\v", "\\v");
+        if (string.IsNullOrEmpty(value))
+            return value;
+
+        // 检查是否包含需要转义的字符，避免无转义需求时的 StringBuilder 分配
+        bool needsEscape = false;
+        for (int i = 0; i < value.Length; i++)
+        {
+            if (NeedsEscape(value[i]))
+            {
+                needsEscape = true;
+                break;
+            }
+        }
+
+        if (!needsEscape)
+            return value;
+
+        // 单次遍历完成所有转义，避免链式 Replace 产生的多次中间字符串分配
+        var sb = new StringBuilder(value.Length + 4);
+        foreach (var c in value)
+        {
+            switch (c)
+            {
+                case '\\': sb.Append("\\\\"); break;
+                case '\"': sb.Append("\\\""); break;
+                case '\0': sb.Append("\\0"); break;
+                case '\a': sb.Append("\\a"); break;
+                case '\b': sb.Append("\\b"); break;
+                case '\f': sb.Append("\\f"); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\r': sb.Append("\\r"); break;
+                case '\t': sb.Append("\\t"); break;
+                case '\v': sb.Append("\\v"); break;
+                default: sb.Append(c); break;
+            }
+        }
+        return sb.ToString();
+    }
+
+    private static bool NeedsEscape(char c)
+    {
+        return c == '\\' || c == '\"' || c == '\0' || c == '\a' ||
+               c == '\b' || c == '\f' || c == '\n' || c == '\r' ||
+               c == '\t' || c == '\v';
     }
 
     /// <summary>

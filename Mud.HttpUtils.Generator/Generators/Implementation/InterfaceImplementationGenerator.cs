@@ -98,7 +98,12 @@ internal class InterfaceImplementationGenerator
         _codeBuilder.AppendLine("}");
         _codeBuilder.AppendLine();
 
-        var fileName = $"{generatorContext.ClassName}.g.cs";
+        // 使用命名空间文件夹 + 类名的方式（如 MyApp/Apis/Implementation/UserServiceImpl.g.cs），
+        // 比扁平命名（UserServiceImpl.g.cs）更清晰地反映代码结构，并避免跨命名空间同名接口冲突
+        var namespacePath = generatorContext.NamespaceName.Replace('.', '/');
+        var fileName = string.IsNullOrEmpty(namespacePath)
+            ? $"{generatorContext.ClassName}.g.cs"
+            : $"{namespacePath}/{generatorContext.ClassName}.g.cs";
         _context.AddSource(
             fileName,
             SourceText.From(_codeBuilder.ToString(), Encoding.UTF8));

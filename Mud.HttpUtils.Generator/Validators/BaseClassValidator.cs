@@ -203,10 +203,15 @@ internal static class BaseClassValidator
     }
 
     /// <summary>
-    /// 在编译中搜索类型（按名称匹配）
+    /// 在编译中搜索类型（按名称匹配）。
+    /// 这是最后的回退查找方式，会遍历所有语法树，开销较大。
+    /// 仅在前面的符号查找和命名空间查找均失败时触发。
     /// </summary>
     private static INamedTypeSymbol? FindTypeInCompilation(Compilation compilation, string typeName, string fullTypeName)
     {
+        GeneratorDebugLogger.Log(
+            $"FindTypeInCompilation 回退路径触发: 正在所有语法树中搜索 '{typeName}' (完整名称: {fullTypeName})");
+
         // 遍历所有语法树并查找类型声明
         foreach (var syntaxTree in compilation.SyntaxTrees)
         {

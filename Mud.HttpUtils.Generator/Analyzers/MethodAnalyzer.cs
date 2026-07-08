@@ -29,23 +29,26 @@ internal static class MethodAnalyzer
 
         var methodSyntax = FindMethodSyntax(compilation, methodSymbol, interfaceDecl, semanticModel);
 
-        var httpMethodAttributeData = FindHttpMethodAttributeFromSymbol(methodSymbol);
+        // 一次性获取方法特性列表，避免在后续分析中重复调用 GetAttributes() 产生多次分配
+        var methodAttributes = methodSymbol.GetAttributes();
+
+        var httpMethodAttributeData = FindHttpMethodAttributeFromAttributes(methodAttributes);
         if (httpMethodAttributeData == null)
-            return MethodAnalysisResult.Invalid;
+            return MethodAnalysisResult.CreateInvalid();
 
         if (httpMethodAttributeData.AttributeClass == null)
-            return MethodAnalysisResult.Invalid;
+            return MethodAnalysisResult.CreateInvalid();
 
         var httpMethodAttributeName = httpMethodAttributeData.AttributeClass.Name;
         var httpMethod = ExtractHttpMethodName(httpMethodAttributeName);
         var urlTemplate = GetAttributeArgumentValueFromAttributeData(httpMethodAttributeData, 0)?.ToString() ?? "";
 
         if (string.IsNullOrEmpty(httpMethod) || string.IsNullOrEmpty(urlTemplate))
-            return MethodAnalysisResult.Invalid;
+            return MethodAnalysisResult.CreateInvalid();
 
-        var methodContentType = GetMethodContentTypeFromHttpMethodAttribute(methodSymbol);
-        var responseContentType = GetResponseContentTypeFromSymbol(methodSymbol);
-        var responseEnableDecrypt = GetResponseEnableDecryptFromSymbol(methodSymbol);
+        var methodContentType = GetMethodContentTypeFromAttributes(methodAttributes);
+        var responseContentType = GetResponseContentTypeFromAttributes(methodAttributes);
+        var responseEnableDecrypt = GetResponseEnableDecryptFromAttributes(methodAttributes);
         var parameters = ParameterAnalyzer.AnalyzeParameters(methodSymbol);
         var (bodyContentType, bodyEnableEncrypt, bodyEncryptSerializeType, bodyEncryptPropertyName) = GetBodyInfoFromParameters(parameters);
         var (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName, interfaceTokenScopes) = AnalyzeInterfaceAttributes(
@@ -53,15 +56,15 @@ internal static class MethodAnalyzer
             interfaceDecl,
             semanticModel);
 
-        var (cacheEnabled, cacheDurationSeconds, cacheKeyTemplate, cacheVaryByUser) = AnalyzeCacheAttribute(methodSymbol);
+        var (cacheEnabled, cacheDurationSeconds, cacheKeyTemplate, cacheVaryByUser) = AnalyzeCacheAttribute(methodAttributes);
 
-        var (retryEnabled, retryMaxRetries, retryDelayMilliseconds, retryUseExponentialBackoff) = AnalyzeRetryAttribute(methodSymbol);
-        var (circuitBreakerEnabled, circuitBreakerFailureThreshold, circuitBreakerBreakDurationSeconds, circuitBreakerSamplingDurationSeconds, circuitBreakerMinimumThroughput) = AnalyzeCircuitBreakerAttribute(methodSymbol);
-        var (methodTimeoutEnabled, methodTimeoutMilliseconds) = AnalyzeTimeoutAttribute(methodSymbol);
+        var (retryEnabled, retryMaxRetries, retryDelayMilliseconds, retryUseExponentialBackoff) = AnalyzeRetryAttribute(methodAttributes);
+        var (circuitBreakerEnabled, circuitBreakerFailureThreshold, circuitBreakerBreakDurationSeconds, circuitBreakerSamplingDurationSeconds, circuitBreakerMinimumThroughput) = AnalyzeCircuitBreakerAttribute(methodAttributes);
+        var (methodTimeoutEnabled, methodTimeoutMilliseconds) = AnalyzeTimeoutAttribute(methodAttributes);
 
-        var methodTokenScopes = AnalyzeMethodTokenScopes(methodSymbol);
+        var methodTokenScopes = AnalyzeMethodTokenScopes(methodAttributes);
 
-        var (methodTokenManagerKey, methodRequiresUserId, methodTokenInjectionMode) = AnalyzeMethodTokenExtended(methodSymbol);
+        var (methodTokenManagerKey, methodRequiresUserId, methodTokenInjectionMode) = AnalyzeMethodTokenExtended(methodAttributes);
 
         var tokenParameterName = parameters
             .FirstOrDefault(p => p.Attributes.Any(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.Name)))?
@@ -88,7 +91,7 @@ internal static class MethodAnalyzer
             IsAsyncEnumerableReturn = isAsyncEnumerable,
             AsyncEnumerableElementType = asyncEnumerableElementType,
             Parameters = parameters,
-            IgnoreGenerator = HasMethodAttribute(methodSymbol, HttpClientGeneratorConstants.IgnoreGeneratorAttributeNames),
+            IgnoreGenerator = HasMethodAttribute(methodAttributes, HttpClientGeneratorConstants.IgnoreGeneratorAttributeNames),
             InterfaceAttributes = interfaceAttributes,
             InterfaceHeaderAttributes = interfaceHeaderAttributes,
             MethodContentType = methodContentType,
@@ -156,7 +159,15 @@ internal static class MethodAnalyzer
         if (methodSymbol == null)
             return null;
 
-        return methodSymbol.GetAttributes()
+        return FindHttpMethodAttributeFromAttributes(methodSymbol.GetAttributes());
+    }
+
+    /// <summary>
+    /// 从已缓存的特性列表中查找HTTP方法特性
+    /// </summary>
+    internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableArray<AttributeData> attributes)
+    {
+        return attributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.SupportedHttpMethods.Contains(attr.AttributeClass?.Name));
     }
 
@@ -203,8 +214,15 @@ internal static class MethodAnalyzer
         if (methodSymbol == null)
             return false;
 
-        return methodSymbol.GetAttributes()
-            .Any(attr => attributeNames.Contains(attr.AttributeClass?.Name));
+        return HasMethodAttribute(methodSymbol.GetAttributes(), attributeNames);
+    }
+
+    /// <summary>
+    /// 从已缓存的特性列表中检查是否具有指定的特性
+    /// </summary>
+    private static bool HasMethodAttribute(ImmutableArray<AttributeData> attributes, string[] attributeNames)
+    {
+        return attributes.Any(attr => attributeNames.Contains(attr.AttributeClass?.Name));
     }
 
     /// <summary>
@@ -215,7 +233,15 @@ internal static class MethodAnalyzer
         if (methodSymbol == null)
             return null;
 
-        var httpMethodAttr = methodSymbol.GetAttributes()
+        return GetMethodContentTypeFromAttributes(methodSymbol.GetAttributes());
+    }
+
+    /// <summary>
+    /// 从已缓存的特性列表中获取ContentType值
+    /// </summary>
+    private static string? GetMethodContentTypeFromAttributes(ImmutableArray<AttributeData> attributes)
+    {
+        var httpMethodAttr = attributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.SupportedHttpMethods.Contains(attr.AttributeClass?.Name));
 
         if (httpMethodAttr == null)
@@ -338,14 +364,11 @@ internal static class MethodAnalyzer
     }
 
     /// <summary>
-    /// 从方法符号获取HTTP方法特性的ResponseContentType值
+    /// 从已缓存的特性列表中获取ResponseContentType值
     /// </summary>
-    private static string? GetResponseContentTypeFromSymbol(IMethodSymbol methodSymbol)
+    private static string? GetResponseContentTypeFromAttributes(ImmutableArray<AttributeData> attributes)
     {
-        if (methodSymbol == null)
-            return null;
-
-        var httpMethodAttr = methodSymbol.GetAttributes()
+        var httpMethodAttr = attributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.SupportedHttpMethods.Contains(attr.AttributeClass?.Name));
 
         if (httpMethodAttr == null)
@@ -355,14 +378,11 @@ internal static class MethodAnalyzer
     }
 
     /// <summary>
-    /// 从方法符号获取HTTP方法特性的ResponseEnableDecrypt值
+    /// 从已缓存的特性列表中获取ResponseEnableDecrypt值
     /// </summary>
-    private static bool GetResponseEnableDecryptFromSymbol(IMethodSymbol methodSymbol)
+    private static bool GetResponseEnableDecryptFromAttributes(ImmutableArray<AttributeData> attributes)
     {
-        if (methodSymbol == null)
-            return false;
-
-        var httpMethodAttr = methodSymbol.GetAttributes()
+        var httpMethodAttr = attributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.SupportedHttpMethods.Contains(attr.AttributeClass?.Name));
 
         if (httpMethodAttr == null)
@@ -524,9 +544,18 @@ internal static class MethodAnalyzer
             }
         }
 
-        // 回退路径：DeclaringSyntaxReferences 未找到，可能是跨程序集接口
-        // 遍历所有语法树开销较大，记录日志帮助定位问题
-        GeneratorDebugLogger.Log($"FindInterfaceDeclarationSyntax 回退路径触发: {interfaceSymbol.ToDisplayString()} (DeclaringSyntaxReferences 为空)");
+        // 回退路径：DeclaringSyntaxReferences 未找到
+        // 如果接口符号的所有位置都在元数据中（即来自引用的程序集），则无需遍历源代码语法树
+        if (interfaceSymbol.Locations.Length > 0 && interfaceSymbol.Locations.All(loc => loc.IsInMetadata))
+        {
+            GeneratorDebugLogger.Log(
+                $"FindInterfaceDeclarationSyntax 跳过语法树遍历: {interfaceSymbol.ToDisplayString()} (来自引用程序集)");
+            return null;
+        }
+
+        // 仅在接口可能存在于源代码中时才遍历语法树
+        GeneratorDebugLogger.Log(
+            $"FindInterfaceDeclarationSyntax 回退路径触发: {interfaceSymbol.ToDisplayString()} (DeclaringSyntaxReferences 为空)");
 
         var interfaceName = interfaceSymbol.Name;
         foreach (var syntaxTree in compilation.SyntaxTrees)
@@ -986,22 +1015,22 @@ internal static class MethodAnalyzer
     }
 
     /// <summary>
-    /// 分析方法级别的 Token Scopes
+    /// 从已缓存的特性列表中分析方法级别的 Token Scopes
     /// </summary>
-    private static string? AnalyzeMethodTokenScopes(IMethodSymbol methodSymbol)
+    private static string? AnalyzeMethodTokenScopes(ImmutableArray<AttributeData> attributes)
     {
-        var tokenAttr = methodSymbol.GetAttributes()
+        var tokenAttr = attributes
             .FirstOrDefault(attr => HasAttributeWithName(attr, "TokenAttribute"));
 
         return tokenAttr != null ? GetTokenScopes(tokenAttr) : null;
     }
 
     /// <summary>
-    /// 分析方法级别 Token 特性的 TokenManagerKey 和 RequiresUserId
+    /// 从已缓存的特性列表中分析方法级别 Token 特性的 TokenManagerKey 和 RequiresUserId
     /// </summary>
-    private static (string? tokenManagerKey, bool? requiresUserId, string? injectionMode) AnalyzeMethodTokenExtended(IMethodSymbol methodSymbol)
+    private static (string? tokenManagerKey, bool? requiresUserId, string? injectionMode) AnalyzeMethodTokenExtended(ImmutableArray<AttributeData> attributes)
     {
-        var tokenAttr = methodSymbol.GetAttributes()
+        var tokenAttr = attributes
             .FirstOrDefault(attr => HasAttributeWithName(attr, "TokenAttribute"));
 
         if (tokenAttr == null)
@@ -1051,9 +1080,9 @@ internal static class MethodAnalyzer
         return name == attributeName || name == attributeName.Replace("Attribute", "");
     }
 
-    private static (bool enabled, int durationSeconds, string? keyTemplate, bool varyByUser) AnalyzeCacheAttribute(IMethodSymbol methodSymbol)
+    private static (bool enabled, int durationSeconds, string? keyTemplate, bool varyByUser) AnalyzeCacheAttribute(ImmutableArray<AttributeData> attributes)
     {
-        var cacheAttr = methodSymbol.GetAttributes()
+        var cacheAttr = attributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name));
 
         if (cacheAttr == null)
@@ -1071,9 +1100,9 @@ internal static class MethodAnalyzer
         return (true, durationSeconds, keyTemplate, varyByUser);
     }
 
-    private static (bool enabled, int maxRetries, int delayMilliseconds, bool useExponentialBackoff) AnalyzeRetryAttribute(IMethodSymbol methodSymbol)
+    private static (bool enabled, int maxRetries, int delayMilliseconds, bool useExponentialBackoff) AnalyzeRetryAttribute(ImmutableArray<AttributeData> attributes)
     {
-        var retryAttr = methodSymbol.GetAttributes()
+        var retryAttr = attributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.RetryAttributeNames.Contains(attr.AttributeClass?.Name));
 
         if (retryAttr == null)
@@ -1091,9 +1120,9 @@ internal static class MethodAnalyzer
         return (true, maxRetries, delayMilliseconds, useExponentialBackoff);
     }
 
-    private static (bool enabled, int failureThreshold, int breakDurationSeconds, int samplingDurationSeconds, int minimumThroughput) AnalyzeCircuitBreakerAttribute(IMethodSymbol methodSymbol)
+    private static (bool enabled, int failureThreshold, int breakDurationSeconds, int samplingDurationSeconds, int minimumThroughput) AnalyzeCircuitBreakerAttribute(ImmutableArray<AttributeData> attributes)
     {
-        var cbAttr = methodSymbol.GetAttributes()
+        var cbAttr = attributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.CircuitBreakerAttributeNames.Contains(attr.AttributeClass?.Name));
 
         if (cbAttr == null)
@@ -1114,9 +1143,9 @@ internal static class MethodAnalyzer
         return (true, failureThreshold, breakDurationSeconds, samplingDurationSeconds, minimumThroughput);
     }
 
-    private static (bool enabled, int timeoutMilliseconds) AnalyzeTimeoutAttribute(IMethodSymbol methodSymbol)
+    private static (bool enabled, int timeoutMilliseconds) AnalyzeTimeoutAttribute(ImmutableArray<AttributeData> attributes)
     {
-        var timeoutAttr = methodSymbol.GetAttributes()
+        var timeoutAttr = attributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.TimeoutAttributeNames.Contains(attr.AttributeClass?.Name));
 
         if (timeoutAttr == null)

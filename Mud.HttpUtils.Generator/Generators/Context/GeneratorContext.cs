@@ -76,6 +76,8 @@ internal class GeneratorContext
     /// <summary>
     /// 方法分析结果缓存，避免同一方法被 AnalyzeMethod 重复分析。
     /// 使用 SymbolEqualityComparer.Default 确保符号比较的正确性。
+    /// 注意：此 Dictionary 仅在单线程生成上下文中使用（每个 GeneratorContext 实例对应一个接口的生成），
+    /// 不可跨实例共享或在多线程环境下并发读写。
     /// </summary>
     public Dictionary<IMethodSymbol, MethodAnalysisResult> MethodAnalysisCache { get; } = new(SymbolEqualityComparer.Default);
 

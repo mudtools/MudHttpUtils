@@ -1,11 +1,9 @@
 // -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
-//  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
-
-using System.Collections.Immutable;
 
 namespace Mud.HttpUtils;
 
@@ -15,7 +13,6 @@ namespace Mud.HttpUtils;
 [Generator(LanguageNames.CSharp)]
 internal class FormContentGenerator : TransitiveCodeGenerator
 {
-    private const string FormContentAttributeName = "FormContentAttribute";
     private const string JsonPropertyNameAttributeName = "JsonPropertyNameAttribute";
     private const string FilePathAttributeName = "FilePathAttribute";
 
@@ -34,6 +31,12 @@ internal class FormContentGenerator : TransitiveCodeGenerator
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// 增量管道设计说明：
+    /// 本生成器需要 Compilation 进行语义分析，因此将 CompilationProvider 纳入管道。
+    /// 当编译变化时 ExecuteGenerator 会被重新调用，但 ForAttributeWithMetadataName 的语法过滤
+    /// 确保仅处理带有 [FormContent] 特性的类。
+    /// </remarks>
     public override void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var formContentClasses = context.SyntaxProvider.ForAttributeWithMetadataName(
@@ -42,12 +45,17 @@ internal class FormContentGenerator : TransitiveCodeGenerator
             transform: static (ctx, _) => ctx)
             .WithTrackingName("FormContent_SyntaxProvider");
 
-        var collected = formContentClasses.Collect();
+        var collected = formContentClasses
+            .Collect()
+            .WithTrackingName("FormContent_Collected");
 
         var compilationWithOptions = context.CompilationProvider
-            .Combine(context.AnalyzerConfigOptionsProvider);
+            .Combine(context.AnalyzerConfigOptionsProvider)
+            .WithTrackingName("FormContent_CompilationAndOptions");
 
-        var completeDataProvider = compilationWithOptions.Combine(collected);
+        var completeDataProvider = compilationWithOptions
+            .Combine(collected)
+            .WithTrackingName("FormContent_CompleteData");
 
         context.RegisterSourceOutput(completeDataProvider,
             (ctx, provider) => ExecuteGenerator(
@@ -60,7 +68,7 @@ internal class FormContentGenerator : TransitiveCodeGenerator
     /// 执行源代码生成逻辑
     /// </summary>
     /// <param name="compilation">编译信息</param>
-    /// <param name="formContentClasses">FormContent 类声明数组</param>
+    /// <param name="formContentContexts">FormContent 类声明数组</param>
     /// <param name="context">源代码生成上下文</param>
     private void ExecuteGenerator(
         Compilation compilation,
@@ -73,11 +81,11 @@ internal class FormContentGenerator : TransitiveCodeGenerator
         foreach (var attrCtx in formContentContexts)
         {
             var classDecl = (ClassDeclarationSyntax)attrCtx.TargetNode;
-            var classSymbol = (INamedTypeSymbol)attrCtx.TargetSymbol;
+            // 使用 as + null 检查替代直接强制转换，避免 TargetSymbol 类型不匹配时抛出 InvalidCastException
 
             try
             {
-                if (classSymbol == null)
+                if (attrCtx.TargetSymbol is not INamedTypeSymbol classSymbol)
                 {
                     context.ReportDiagnostic(Diagnostic.Create(
                         Diagnostics.FormContentGenerationError,
@@ -103,10 +111,20 @@ internal class FormContentGenerator : TransitiveCodeGenerator
                 if (!string.IsNullOrEmpty(generatedCode))
                 {
                     // 将命名空间编入文件名，避免跨命名空间同名类冲突
-                    var namespacePrefix = string.IsNullOrEmpty(classSymbol.ContainingNamespace?.Name)
-                        ? string.Empty
-                        : $"{classSymbol.ContainingNamespace.Name.Replace('.', '_')}_";
-                    var fileName = $"{namespacePrefix}{classSymbol.Name}.g.cs";
+                    // 使用完整命名空间文件夹 + 类名（如 MyApp/Models/UserForm.g.cs），
+                    // 比仅用直接命名空间更精确，避免多层命名空间下同名类冲突
+                    var containingNamespace = classSymbol.ContainingNamespace;
+                    string fileName;
+                    if (containingNamespace != null && !containingNamespace.IsGlobalNamespace)
+                    {
+                        var namespaceDisplay = containingNamespace.ToDisplayString();
+                        var folderPath = namespaceDisplay.Replace('.', '/');
+                        fileName = $"{folderPath}/{classSymbol.Name}.g.cs";
+                    }
+                    else
+                    {
+                        fileName = $"{classSymbol.Name}.g.cs";
+                    }
                     context.AddSource(fileName, generatedCode);
                 }
             }

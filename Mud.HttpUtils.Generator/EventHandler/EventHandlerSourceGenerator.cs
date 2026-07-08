@@ -29,6 +29,12 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// 增量管道设计说明：
+    /// 本生成器需要 Compilation 进行语义分析，因此将 CompilationProvider 纳入管道。
+    /// 当编译变化时 ExecuteGenerator 会被重新调用，但 ForAttributeWithMetadataName 的语法过滤
+    /// 确保仅处理带有 [GenerateEventHandler] 特性的类。
+    /// </remarks>
     public override void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var eventHandlerClasses = context.SyntaxProvider.ForAttributeWithMetadataName(
@@ -37,12 +43,17 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
             transform: static (ctx, _) => ctx)
             .WithTrackingName("EventHandler_SyntaxProvider");
 
-        var collected = eventHandlerClasses.Collect();
+        var collected = eventHandlerClasses
+            .Collect()
+            .WithTrackingName("EventHandler_Collected");
 
         var compilationWithOptions = context.CompilationProvider
-            .Combine(context.AnalyzerConfigOptionsProvider);
+            .Combine(context.AnalyzerConfigOptionsProvider)
+            .WithTrackingName("EventHandler_CompilationAndOptions");
 
-        var completeDataProvider = compilationWithOptions.Combine(collected);
+        var completeDataProvider = compilationWithOptions
+            .Combine(collected)
+            .WithTrackingName("EventHandler_CompleteData");
 
         context.RegisterSourceOutput(completeDataProvider,
             (ctx, provider) => ExecuteGenerator(
@@ -68,7 +79,8 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
         foreach (var attrCtx in eventHandlerContexts)
         {
             var eventClass = (ClassDeclarationSyntax)attrCtx.TargetNode;
-            var classSymbol = (INamedTypeSymbol)attrCtx.TargetSymbol;
+            // 使用 as + null 检查替代直接强制转换，避免 TargetSymbol 类型不匹配时抛出 InvalidCastException
+            var classSymbol = attrCtx.TargetSymbol as INamedTypeSymbol;
 
             try
             {
@@ -440,13 +452,15 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
         var className = GetGeneratedClassName(eventClass, eventHandlerAttribute);
 
         // 包含命名空间信息确保全局唯一，避免不同命名空间下同名类产生文件名冲突
+        // 使用命名空间文件夹 + 类名的方式（如 MyApp/Apis/UserEventHandler.g.cs），
+        // 比扁平命名（MyApp_Apis_UserEventHandler.g.cs）更清晰地反映代码结构
         var containingNamespace = classSymbol.ContainingNamespace;
         if (containingNamespace != null && !containingNamespace.IsGlobalNamespace)
         {
             var namespaceDisplay = containingNamespace.ToDisplayString();
-            // 将命名空间中的 . 替换为 _，确保文件名合法
-            var safeNamespace = namespaceDisplay.Replace('.', '_');
-            return $"{safeNamespace}_{className}.g.cs";
+            // 将命名空间中的 . 替换为 /，形成文件夹层级
+            var folderPath = namespaceDisplay.Replace('.', '/');
+            return $"{folderPath}/{className}.g.cs";
         }
 
         return $"{className}.g.cs";
