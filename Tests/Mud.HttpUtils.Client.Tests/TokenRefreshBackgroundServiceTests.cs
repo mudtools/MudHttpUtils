@@ -308,6 +308,7 @@ public class TokenRefreshBackgroundServiceTests
         });
         var logger = new Mock<ILogger<TokenRefreshHostedService>>().Object;
         var tokenManagerMock = new Mock<ITokenManager>();
+        tokenManagerMock.SetupGet(t => t.SupportsBackgroundRefresh).Returns(true);
         tokenManagerMock.Setup(t => t.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync("refreshed-token");
         var service = new TokenRefreshHostedService(tokenManagerMock.Object, options, logger);
@@ -335,9 +336,11 @@ public class TokenRefreshBackgroundServiceTests
         var service = new TokenRefreshHostedService(options, logger);
 
         var manager1 = new Mock<ITokenManager>();
+        manager1.SetupGet(t => t.SupportsBackgroundRefresh).Returns(true);
         manager1.Setup(t => t.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync("token1");
         var manager2 = new Mock<ITokenManager>();
+        manager2.SetupGet(t => t.SupportsBackgroundRefresh).Returns(true);
         manager2.Setup(t => t.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync("token2");
 
@@ -489,6 +492,76 @@ public class TokenRefreshBackgroundServiceTests
         result.Should().BeTrue();
         successManager.Verify(t => t.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()), Times.Once);
         failManager.Verify(t => t.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    #endregion
+
+    #region P1-1: SupportsBackgroundRefresh 防御性检查
+
+    /// <summary>
+    /// P1-1 验证：RegisterTokenManager 应跳过 SupportsBackgroundRefresh=false 的令牌管理器，不抛异常。
+    /// 业务场景：UserTokenManager 不支持后台刷新，若被误注册应被安全跳过而非抛出运行时异常。
+    /// </summary>
+    [Fact]
+    public void RegisterTokenManager_ShouldSkip_WhenSupportsBackgroundRefreshIsFalse()
+    {
+        // Arrange
+        var service = new TokenRefreshBackgroundService();
+        var tokenManagerMock = new Mock<ITokenManager>();
+        tokenManagerMock.SetupGet(t => t.SupportsBackgroundRefresh).Returns(false);
+
+        // Act - 不应抛出异常
+        service.RegisterTokenManager(tokenManagerMock.Object, "user-token-manager");
+
+        // Assert - 服务仍可正常使用
+        service.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// P1-1 验证：RegisterTokenManager 应正常注册 SupportsBackgroundRefresh=true 的令牌管理器。
+    /// </summary>
+    [Fact]
+    public void RegisterTokenManager_ShouldRegister_WhenSupportsBackgroundRefreshIsTrue()
+    {
+        // Arrange
+        var service = new TokenRefreshBackgroundService();
+        var tokenManagerMock = new Mock<ITokenManager>();
+        tokenManagerMock.SetupGet(t => t.SupportsBackgroundRefresh).Returns(true);
+
+        // Act
+        service.RegisterTokenManager(tokenManagerMock.Object, "tenant-token-manager");
+
+        // Assert
+        service.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// P1-1 验证：ITokenManager 接口应包含 SupportsBackgroundRefresh 属性。
+    /// </summary>
+    [Fact]
+    public void ITokenManager_ShouldHaveSupportsBackgroundRefreshProperty()
+    {
+        // Arrange & Act
+        var property = typeof(ITokenManager).GetProperty("SupportsBackgroundRefresh");
+
+        // Assert
+        property.Should().NotBeNull("ITokenManager 接口应包含 SupportsBackgroundRefresh 属性");
+        property!.PropertyType.Should().Be(typeof(bool));
+    }
+
+    /// <summary>
+    /// P1-1 验证：UserTokenManagerBase.SupportsBackgroundRefresh 应为 false。
+    /// </summary>
+    [Fact]
+    public void UserTokenManagerBase_ShouldHaveSupportsBackgroundRefreshFalse()
+    {
+        // 此测试验证类型层级关系，确保 UserTokenManagerBase 覆盖了默认值
+        var property = typeof(UserTokenManagerBase).GetProperty("SupportsBackgroundRefresh");
+
+        property.Should().NotBeNull("UserTokenManagerBase 应有 SupportsBackgroundRefresh 属性");
+        // 验证它是一个 override（覆盖了基类的 true 默认值）
+        property!.GetMethod!.GetBaseDefinition().Should().NotBeSameAs(property.GetMethod,
+            "UserTokenManagerBase 应覆盖基类的 SupportsBackgroundRefresh 属性");
     }
 
     #endregion

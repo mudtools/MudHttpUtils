@@ -154,6 +154,16 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("        /// 应用上下文持有器，用于获取、设置和切换当前应用上下文。");
             codeBuilder.AppendLine("        /// </summary>");
             codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IAppContextHolder _appContextHolder;");
+
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 应用管理器（可选），用于通过 AppKey 查找应用上下文。注册后支持多应用切换。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IAppManager<IMudAppContext>? _appManager;");
+
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 默认应用上下文，在 _appManager 为 null 时作为后备。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IMudAppContext _defaultAppContext;");
         }
 
         codeBuilder.AppendLine("#pragma warning disable CS0414");
@@ -296,6 +306,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         {
             codeBuilder.AppendLine("        /// <param name=\"appContext\">应用上下文</param>");
             codeBuilder.AppendLine("        /// <param name=\"appContextHolder\">应用上下文持有器</param>");
+            codeBuilder.AppendLine("        /// <param name=\"appManager\">应用管理器（可选，注册后支持多应用切换）</param>");
         }
 
         if (_context.HasCache)
@@ -357,6 +368,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         {
             parameters.Add("IMudAppContext appContext");
             parameters.Add("IAppContextHolder appContextHolder");
+            parameters.Add("IAppManager<IMudAppContext>? appManager = null");
         }
 
         // 构造函数需要接受 cacheProvider/resilienceResolver 如果派生类自己需要或基类需要
@@ -468,7 +480,9 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             else
             {
                 codeBuilder.AppendLine("            _appContextHolder = appContextHolder ?? throw new ArgumentNullException(nameof(appContextHolder));");
-                codeBuilder.AppendLine("            _appContextHolder.Current = appContext ?? throw new ArgumentNullException(nameof(appContext));");
+                codeBuilder.AppendLine("            _defaultAppContext = appContext ?? throw new ArgumentNullException(nameof(appContext));");
+                codeBuilder.AppendLine("            _appContextHolder.Current = _defaultAppContext;");
+                codeBuilder.AppendLine("            _appManager = appManager;");
             }
 
             if (_context.HasCache)
@@ -608,8 +622,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         if (_context.HasHttpClient)
             return;
 
-        if (!_context.HasTokenManager)
-            return;
+        var isDefaultMode = !_context.HasTokenManager;
 
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine("        /// 切换到指定的应用上下文。");
@@ -618,6 +631,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        [Obsolete(\"推荐使用 BeginScope(string) 以确保上下文自动恢复。\")]\n");
         codeBuilder.AppendLine($"        public IMudAppContext UseApp(string appKey)");
         codeBuilder.AppendLine("        {");
+        if (isDefaultMode)
+        {
+            codeBuilder.AppendLine("            if (_appManager == null)");
+            codeBuilder.AppendLine("                throw new InvalidOperationException(\"当前模式不支持按 AppKey 切换应用上下文。请注册 IAppManager<IMudAppContext> 服务。\");");
+        }
         codeBuilder.AppendLine("            var context = _appManager.GetApp(appKey);");
         codeBuilder.AppendLine("            if(context == null)");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到指定的应用上下文，AppKey: {appKey}\");");
@@ -633,9 +651,16 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        [Obsolete(\"推荐使用 UseDefaultAppScope() 以确保上下文自动恢复。\")]\n");
         codeBuilder.AppendLine($"        public IMudAppContext UseDefaultApp()");
         codeBuilder.AppendLine("        {");
-        codeBuilder.AppendLine("            var context = _appManager.GetDefaultApp();");
-        codeBuilder.AppendLine("            if(context == null)");
-        codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到默认的应用上下文。\");");
+        if (isDefaultMode)
+        {
+            codeBuilder.AppendLine("            var context = _appManager?.GetDefaultApp() ?? _defaultAppContext;");
+        }
+        else
+        {
+            codeBuilder.AppendLine("            var context = _appManager.GetDefaultApp();");
+            codeBuilder.AppendLine("            if(context == null)");
+            codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到默认的应用上下文。\");");
+        }
         codeBuilder.AppendLine("            _appContextHolder.Current = context;");
         codeBuilder.AppendLine("            return context;");
         codeBuilder.AppendLine("        }");
@@ -649,9 +674,16 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>");
         codeBuilder.AppendLine($"        public IDisposable UseDefaultAppScope()");
         codeBuilder.AppendLine("        {");
-        codeBuilder.AppendLine("            var context = _appManager.GetDefaultApp();");
-        codeBuilder.AppendLine("            if(context == null)");
-        codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到默认的应用上下文。\");");
+        if (isDefaultMode)
+        {
+            codeBuilder.AppendLine("            var context = _appManager?.GetDefaultApp() ?? _defaultAppContext;");
+        }
+        else
+        {
+            codeBuilder.AppendLine("            var context = _appManager.GetDefaultApp();");
+            codeBuilder.AppendLine("            if(context == null)");
+            codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到默认的应用上下文。\");");
+        }
         codeBuilder.AppendLine("            return _appContextHolder.BeginScope(context);");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
@@ -664,8 +696,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         if (_context.HasHttpClient)
             return;
 
-        if (!_context.HasTokenManager)
-            return;
+        var isDefaultMode = !_context.HasTokenManager;
 
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine("        /// 创建一个应用上下文作用域，切换到指定的应用上下文，并在作用域结束时自动恢复之前的上下文。");
@@ -674,6 +705,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>");
         codeBuilder.AppendLine("        public IDisposable BeginScope(string appKey)");
         codeBuilder.AppendLine("        {");
+        if (isDefaultMode)
+        {
+            codeBuilder.AppendLine("            if (_appManager == null)");
+            codeBuilder.AppendLine("                throw new InvalidOperationException(\"当前模式不支持按 AppKey 切换应用上下文。请注册 IAppManager<IMudAppContext> 服务。\");");
+        }
         codeBuilder.AppendLine("            var context = _appManager.GetApp(appKey);");
         codeBuilder.AppendLine("            if(context == null)");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到指定的应用上下文，AppKey: {appKey}\");");

@@ -138,7 +138,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(""https://api.example.com"")]
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -162,7 +162,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(""https://api.example.com"")]
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -185,10 +185,11 @@ namespace TestNamespace
     {
         var source = @"
 using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(""https://api.example.com"")]
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -209,10 +210,11 @@ namespace TestNamespace
     {
         var source = @"
 using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(""https://api.example.com"")]
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
     public interface ITestApi
     {
         [Post(""/submit"")]
@@ -235,7 +237,7 @@ using System.IO;
 
 namespace TestNamespace
 {
-    [HttpClientApi(""https://api.example.com"")]
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
     public interface ITestApi
     {
         [Post(""/upload"")]
@@ -262,7 +264,7 @@ namespace TestNamespace
         public string Content { get; set; }
     }
 
-    [HttpClientApi(""https://api.example.com"")]
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
     public interface ITestApi
     {
         [Get(""/chat/stream"")]
@@ -285,7 +287,7 @@ using System.IO;
 
 namespace TestNamespace
 {
-    [HttpClientApi(""https://api.example.com"")]
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
     public interface ITestApi
     {
         [Post(""/upload"")]
@@ -315,7 +317,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(""https://api.example.com"")]
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
     [InterfaceQuery(Name = ""version"", Value = ""v1"")]
     public interface ITestApi
     {
@@ -350,10 +352,11 @@ namespace TestNamespace
         // 验证修复 BUG：解密逻辑应使用 != null 而非 string.IsNullOrEmpty
         var source = @"
 using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(""https://api.example.com"")]
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
     public interface ITestApi
     {
         [Get(""/users/{id}"")]
@@ -385,10 +388,11 @@ namespace TestNamespace
         // 验证修复 BUG：string 查询参数应使用 IsNullOrWhiteSpace 而非 IsNullOrEmpty
         var source = @"
 using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(""https://api.example.com"")]
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
     public interface ITestApi
     {
         [Get(""/search"")]
@@ -414,10 +418,11 @@ namespace TestNamespace
         // 验证修复 BUG：option 应先检查 null，再检查 option.Value
         var source = @"
 using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(""https://api.example.com"")]
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -480,10 +485,11 @@ namespace TestNamespace
         // 验证没有 HTTP 方法特性的方法不会被生成
         var source = @"
 using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(""https://api.example.com"")]
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -505,10 +511,11 @@ namespace TestNamespace
         // Patch 方法在 NETSTANDARD2_0 下需要特殊处理
         var source = @"
 using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(""https://api.example.com"")]
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
     public interface ITestApi
     {
         [Patch(""/users/{id}"")]
@@ -531,10 +538,11 @@ namespace TestNamespace
     {
         var source = @"
 using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(""https://api.example.com"")]
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -791,7 +799,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(""https://api.example.com"")]
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -826,7 +834,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(""https://api.example.com"")]
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
     public interface ITestApi
     {
         [Get(""/data"", ResponseContentType = ""application/xml"")]
@@ -1101,6 +1109,206 @@ namespace TestNamespace
             "声明 [Cache] 特性时应生成非空 _cacheProvider 字段");
         generatedCode.Should().Contain("_cacheProvider = cacheProvider ?? throw new ArgumentNullException(nameof(cacheProvider));",
             "声明 [Cache] 特性时应校验非空");
+    }
+
+    #endregion
+
+    #region 默认模式下 scope 方法生成验证
+
+    [Fact]
+    public void Generator_WithDefaultMode_GeneratesUseDefaultAppScope()
+    {
+        // 验证默认模式（裸 [HttpClientApi]）下生成 UseDefaultAppScope() 方法
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNull();
+        generatedCode.Should().Contain("public IDisposable UseDefaultAppScope()",
+            "默认模式下应生成 UseDefaultAppScope() 方法");
+        generatedCode.Should().Contain("_appManager?.GetDefaultApp() ?? _defaultAppContext",
+            "默认模式下 UseDefaultAppScope() 应使用 _appManager 回退到 _defaultAppContext");
+    }
+
+    [Fact]
+    public void Generator_WithDefaultMode_GeneratesObsoleteUseApp()
+    {
+        // 验证默认模式下 UseApp(string) 标记 [Obsolete]
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNull();
+        generatedCode.Should().Contain("[Obsolete(\"推荐使用 BeginScope(string) 以确保上下文自动恢复",
+            "默认模式下 UseApp(string) 应标记 [Obsolete]");
+        generatedCode.Should().Contain("public IMudAppContext UseApp(string appKey)",
+            "默认模式下应生成 UseApp(string) 方法");
+    }
+
+    [Fact]
+    public void Generator_WithDefaultMode_GeneratesObsoleteUseDefaultApp()
+    {
+        // 验证默认模式下 UseDefaultApp() 标记 [Obsolete]
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNull();
+        generatedCode.Should().Contain("[Obsolete(\"推荐使用 UseDefaultAppScope() 以确保上下文自动恢复",
+            "默认模式下 UseDefaultApp() 应标记 [Obsolete]");
+        generatedCode.Should().Contain("public IMudAppContext UseDefaultApp()",
+            "默认模式下应生成 UseDefaultApp() 方法");
+    }
+
+    [Fact]
+    public void Generator_WithDefaultMode_GeneratesBeginScopeWithString()
+    {
+        // 验证默认模式下生成 BeginScope(string appKey) 方法
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNull();
+        generatedCode.Should().Contain("public IDisposable BeginScope(string appKey)",
+            "默认模式下应生成 BeginScope(string appKey) 方法");
+        generatedCode.Should().Contain("if (_appManager == null)",
+            "默认模式下 BeginScope(string) 应检查 _appManager 是否为 null");
+    }
+
+    [Fact]
+    public void Generator_WithDefaultMode_GeneratesAppManagerAndDefaultAppContextFields()
+    {
+        // 验证默认模式下生成 _appManager 和 _defaultAppContext 字段
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNull();
+        generatedCode.Should().Contain("readonly IAppManager<IMudAppContext>? _appManager;",
+            "默认模式下应生成可空的 _appManager 字段");
+        generatedCode.Should().Contain("readonly IMudAppContext _defaultAppContext;",
+            "默认模式下应生成 _defaultAppContext 字段");
+    }
+
+    [Fact]
+    public void Generator_WithDefaultMode_AcceptsOptionalAppManagerParameter()
+    {
+        // 验证默认模式构造函数接受可选的 IAppManager<IMudAppContext>? 参数
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNull();
+        generatedCode.Should().Contain("IAppManager<IMudAppContext>? appManager = null",
+            "默认模式构造函数应接受可选的 IAppManager<IMudAppContext>? 参数");
+        generatedCode.Should().Contain("_defaultAppContext = appContext ?? throw new ArgumentNullException(nameof(appContext));",
+            "默认模式构造函数应存储 _defaultAppContext");
+        generatedCode.Should().Contain("_appManager = appManager;",
+            "默认模式构造函数应存储 _appManager");
+    }
+
+    [Fact]
+    public void Generator_WithDefaultMode_UseDefaultAppFallsBackToDefaultAppContext()
+    {
+        // 验证默认模式下 UseDefaultApp() 在 _appManager 为 null 时回退到 _defaultAppContext
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetGeneratedCode(outputCompilation);
+
+        generatedCode.Should().NotBeNull();
+        generatedCode.Should().Contain("_appManager?.GetDefaultApp() ?? _defaultAppContext",
+            "默认模式下 UseDefaultApp() 和 UseDefaultAppScope() 应在 _appManager 为 null 时回退到 _defaultAppContext");
     }
 
     #endregion
