@@ -508,7 +508,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     .ToList();
             }
 
-            var resolvedTemplate = methodInfo.CacheKeyTemplate;
+            // 先转义模板字面量部分（\ 和 "），占位符 {0}、{1} 不含这些字符，转义不影响后续替换
+            var resolvedTemplate = StringEscapeHelper.EscapeString(methodInfo.CacheKeyTemplate!);
             for (var i = 0; i < orderedParams.Count; i++)
             {
                 resolvedTemplate = resolvedTemplate.Replace($"{{{i}}}", $"{{{orderedParams[i].Name}}}");

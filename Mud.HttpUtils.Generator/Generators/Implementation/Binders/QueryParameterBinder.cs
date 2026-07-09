@@ -123,14 +123,14 @@ internal class QueryParameterBinder : IParameterBinder
             {
                 // 使用 ?. 运算符，Add() 会跳过 null 值
                 var formatExpression = !string.IsNullOrEmpty(formatString)
-                    ? $"?.ToString(\"{formatString}\")"
+                    ? $"?.ToString(\"{StringEscapeHelper.EscapeString(formatString)}\")"
                     : "?.ToString()";
                 codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", {param.Name}{formatExpression});");
             }
             else
             {
                 var formatExpression = !string.IsNullOrEmpty(formatString)
-                    ? $".ToString(\"{formatString}\")"
+                    ? $".ToString(\"{StringEscapeHelper.EscapeString(formatString)}\")"
                     : ".ToString()";
                 codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", {param.Name}{formatExpression});");
             }

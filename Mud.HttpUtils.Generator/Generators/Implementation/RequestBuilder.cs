@@ -54,7 +54,8 @@ internal class RequestBuilder
     /// </summary>
     private string BuildUrlWithPlaceholders(string urlTemplate, List<ParameterInfo> pathParams, MethodAnalysisResult? methodInfo = null)
     {
-        var interpolatedUrl = urlTemplate;
+        // 转义 URL 模板中的特殊字符（\ 和 "），占位符 {name} 不含这些字符，转义不影响后续替换
+        var interpolatedUrl = StringEscapeHelper.EscapeString(urlTemplate);
         var hasPathParams = pathParams.Any();
 
         if (methodInfo != null)
@@ -85,7 +86,7 @@ internal class RequestBuilder
                 if (interpolatedUrl.Contains(placeholder))
                 {
                     var formatExpression = !string.IsNullOrEmpty(interfacePathProp.Format)
-                        ? $".ToString(\"{interfacePathProp.Format}\")"
+                        ? $".ToString(\"{StringEscapeHelper.EscapeString(interfacePathProp.Format)}\")"
                         : ".ToString()";
 
                     if (interfacePathProp.UrlEncode)
@@ -607,7 +608,8 @@ internal class RequestBuilder
 
         if (formatString.Contains("{0}"))
         {
-            var formatExpr = $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{formatString}\", {paramName})";
+            var escapedFormat = StringEscapeHelper.EscapeString(formatString);
+            var formatExpr = $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{escapedFormat}\", {paramName})";
             if (urlEncode)
             {
                 return url.Replace($"{{{placeholderName}}}", $"{{Uri.EscapeDataString({formatExpr})}}");
@@ -615,7 +617,8 @@ internal class RequestBuilder
             return url.Replace($"{{{placeholderName}}}", $"{{{formatExpr}}}");
         }
 
-        var standardFormatExpr = $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{formatString}}}\", {paramName})";
+        var escapedStandardFormat = StringEscapeHelper.EscapeString(formatString);
+        var standardFormatExpr = $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{escapedStandardFormat}}}\", {paramName})";
         if (urlEncode)
         {
             return url.Replace($"{{{placeholderName}}}", $"{{Uri.EscapeDataString({standardFormatExpr})}}");
@@ -626,27 +629,28 @@ internal class RequestBuilder
     private void GenerateInterfaceQueryProperty(StringBuilder codeBuilder, InterfacePropertyInfo property)
     {
         var paramName = property.ParameterName ?? property.Name;
+        var escapedParamName = StringEscapeHelper.EscapeString(paramName);
 
         if (property.Type == "string" || property.Type == "System.String")
         {
             // Add() 内部已跳过 null/空白值，无需外部检查
-            codeBuilder.AppendLine($"            __queryParams.Add(\"{paramName}\", {property.Name});");
+            codeBuilder.AppendLine($"            __queryParams.Add(\"{escapedParamName}\", {property.Name});");
         }
         else if (TypeDetectionHelper.IsValueType(property.Type) && !TypeDetectionHelper.IsNullableType(property.Type))
         {
             // 非可空值类型（int、long、Guid 等）永远不会为 null
             var formatExpression = !string.IsNullOrEmpty(property.Format)
-                ? $".ToString(\"{property.Format}\")"
+                ? $".ToString(\"{StringEscapeHelper.EscapeString(property.Format)}\")"
                 : ".ToString()";
-            codeBuilder.AppendLine($"            __queryParams.Add(\"{paramName}\", {property.Name}{formatExpression});");
+            codeBuilder.AppendLine($"            __queryParams.Add(\"{escapedParamName}\", {property.Name}{formatExpression});");
         }
         else
         {
             // 可空值类型和引用类型：使用 ?. 运算符，Add() 会跳过 null 值
             var formatExpression = !string.IsNullOrEmpty(property.Format)
-                ? $"?.ToString(\"{property.Format}\")"
+                ? $"?.ToString(\"{StringEscapeHelper.EscapeString(property.Format)}\")"
                 : "?.ToString()";
-            codeBuilder.AppendLine($"            __queryParams.Add(\"{paramName}\", {property.Name}{formatExpression});");
+            codeBuilder.AppendLine($"            __queryParams.Add(\"{escapedParamName}\", {property.Name}{formatExpression});");
         }
     }
 
