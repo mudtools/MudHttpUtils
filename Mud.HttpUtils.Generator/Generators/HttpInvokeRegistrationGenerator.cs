@@ -19,15 +19,18 @@ namespace Mud.HttpUtils;
 internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
 {
     /// <inheritdoc/>
-    protected override void ExecuteGenerator(Compilation compilation,
-        ImmutableArray<InterfaceDeclarationSyntax?> interfaces,
+    protected override void ExecuteGenerator(
+        ImmutableArray<InterfaceModel> interfaces,
         SourceProductionContext context,
         AnalyzerConfigOptionsProvider configOptionsProvider)
     {
-        if (compilation == null || interfaces.IsDefaultOrEmpty)
+        if (interfaces.IsDefaultOrEmpty)
             return;
 
-        var httpClientApis = CollectHttpClientApis(compilation, interfaces, context);
+        // 所有接口共享同一 Compilation（同一编译单元），从第一个模型的 SemanticModel 取即可
+        var compilation = interfaces[0].Context.SemanticModel.Compilation;
+
+        var httpClientApis = CollectHttpClientApis(interfaces, context);
 
         if (httpClientApis.Count == 0)
             return;
@@ -42,32 +45,29 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         return ["System", "Microsoft.Extensions.DependencyInjection", "Microsoft.Extensions.DependencyInjection.Extensions", "System.Runtime.CompilerServices", "System.Net.Http", "Microsoft.Extensions.Logging"];
     }
 
-    private List<HttpClientApiInfo> CollectHttpClientApis(Compilation compilation, ImmutableArray<InterfaceDeclarationSyntax?> interfaces, SourceProductionContext context)
+    private List<HttpClientApiInfo> CollectHttpClientApis(ImmutableArray<InterfaceModel> interfaces, SourceProductionContext context)
     {
-        return CollectApiInfos<HttpClientApiInfo>(compilation, interfaces, context, (compilation, interfaceSyntax) => ProcessInterface(compilation, interfaceSyntax, context));
+        return CollectApiInfos<HttpClientApiInfo>(interfaces, context, model => ProcessInterface(model, context));
     }
 
     /// <summary>
     /// 通用的 API 信息收集方法，消除重复代码
     /// </summary>
-    private List<T> CollectApiInfos<T>(Compilation compilation,
-        ImmutableArray<InterfaceDeclarationSyntax?> interfaces,
+    private List<T> CollectApiInfos<T>(
+        ImmutableArray<InterfaceModel> interfaces,
         SourceProductionContext context,
-        Func<Compilation, InterfaceDeclarationSyntax, T?> processor)
+        Func<InterfaceModel, T?> processor)
     {
         var apiInfos = new List<T>();
 
-        foreach (var interfaceSyntax in interfaces)
+        foreach (var model in interfaces)
         {
             if (context.CancellationToken.IsCancellationRequested)
                 return apiInfos;
 
-            if (interfaceSyntax == null)
-                continue;
-
             try
             {
-                var apiInfo = processor(compilation, interfaceSyntax);
+                var apiInfo = processor(model);
                 if (apiInfo != null)
                 {
                     apiInfos.Add(apiInfo);
@@ -75,16 +75,19 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
             }
             catch (Exception ex)
             {
-                ReportInterfaceProcessingError(context, interfaceSyntax, ex);
+                ReportInterfaceProcessingError(context, model.Syntax, ex);
             }
         }
 
         return apiInfos;
     }
 
-    private HttpClientApiInfo? ProcessInterface(Compilation compilation, InterfaceDeclarationSyntax interfaceSyntax, SourceProductionContext context)
+    private HttpClientApiInfo? ProcessInterface(InterfaceModel model, SourceProductionContext context)
     {
-        var semanticModel = GetOrCreateSemanticModel(compilation, interfaceSyntax.SyntaxTree);
+        var interfaceSyntax = model.Syntax;
+        var semanticModel = model.Context.SemanticModel;
+        var compilation = semanticModel.Compilation;
+
         if (semanticModel.GetDeclaredSymbol(interfaceSyntax) is not INamedTypeSymbol interfaceSymbol)
         {
             context.ReportDiagnostic(Diagnostic.Create(

@@ -287,6 +287,10 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         else if (_context.HasHttpClient)
         {
             codeBuilder.AppendLine($"        /// <param name=\"httpClient\">HttpClient实例</param>");
+            if (!_context.HasInheritedFrom)
+            {
+                codeBuilder.AppendLine("        /// <param name=\"executor\">HTTP请求执行器，统一处理响应反序列化和错误处理（由 DI 注入，可替换为自定义实现）</param>");
+            }
         }
         else
         {
@@ -344,6 +348,10 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         else if (_context.HasHttpClient)
         {
             parameters.Add($"{_context.Configuration.HttpClient} httpClient");
+            if (!_context.HasInheritedFrom)
+            {
+                parameters.Add("IHttpRequestExecutor executor");
+            }
         }
         else
         {
@@ -403,6 +411,10 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             else if (_context.HasHttpClient)
             {
                 baseParameters.Add("httpClient");
+                if (!_context.Configuration.BaseHasTokenManager)
+                {
+                    baseParameters.Add("executor");
+                }
             }
             else
             {
@@ -443,7 +455,6 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             {
                 codeBuilder.AppendLine("            _appManager = appManager ?? throw new ArgumentNullException(nameof(appManager));");
                 codeBuilder.AppendLine("            _appContextHolder = appContextHolder ?? throw new ArgumentNullException(nameof(appContextHolder));");
-                codeBuilder.AppendLine("            _appContextHolder.Current = appManager.GetDefaultApp();");
                 codeBuilder.AppendLine("            _tokenProvider = tokenProvider ?? throw new ArgumentNullException(nameof(tokenProvider));");
                 if (_context.Configuration.AnyMethodRequiresUserId)
                 {
@@ -478,12 +489,10 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
                 codeBuilder.AppendLine("            _resilienceResolver = resilienceResolver;");
             }
 
-            // HttpClient 模式下，在 cache/resilience 字段初始化后创建执行器实例
-            // 始终将 cacheProvider 和 resilienceResolver 传递给执行器，即使接口未声明 [Cache]/[Retry] 特性，
-            // 仍允许通过 DI 注入全局缓存/弹性策略服务
+            // HttpClient 模式下，通过 DI 注入执行器实例，允许替换为自定义实现
             if (_context.HasHttpClient)
             {
-                codeBuilder.AppendLine("            _executor = new Mud.HttpUtils.DefaultHttpRequestExecutor(_httpClient, cacheProvider, resilienceResolver);");
+                codeBuilder.AppendLine("            _executor = executor ?? throw new ArgumentNullException(nameof(executor));");
             }
         }
         else
@@ -606,6 +615,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// 切换到指定的应用上下文。");
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine("        /// <returns>返回切换后的应用上下文。</returns>");
+        codeBuilder.AppendLine("        [Obsolete(\"推荐使用 BeginScope(string) 以确保上下文自动恢复。\")]\n");
         codeBuilder.AppendLine($"        public IMudAppContext UseApp(string appKey)");
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            var context = _appManager.GetApp(appKey);");
@@ -620,6 +630,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// 切换到默认的应用上下文。");
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine("        /// <returns>返回默认的应用上下文。</returns>");
+        codeBuilder.AppendLine("        [Obsolete(\"推荐使用 UseDefaultAppScope() 以确保上下文自动恢复。\")]\n");
         codeBuilder.AppendLine($"        public IMudAppContext UseDefaultApp()");
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            var context = _appManager.GetDefaultApp();");
@@ -627,6 +638,21 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到默认的应用上下文。\");");
         codeBuilder.AppendLine("            _appContextHolder.Current = context;");
         codeBuilder.AppendLine("            return context;");
+        codeBuilder.AppendLine("        }");
+        codeBuilder.AppendLine();
+
+        // 新增 UseDefaultAppScope 方法
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// 切换到默认应用上下文，并返回作用域以在结束时自动恢复。");
+        codeBuilder.AppendLine("        /// 推荐使用此方法替代 UseDefaultApp()，确保上下文自动恢复。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>");
+        codeBuilder.AppendLine($"        public IDisposable UseDefaultAppScope()");
+        codeBuilder.AppendLine("        {");
+        codeBuilder.AppendLine("            var context = _appManager.GetDefaultApp();");
+        codeBuilder.AppendLine("            if(context == null)");
+        codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到默认的应用上下文。\");");
+        codeBuilder.AppendLine("            return _appContextHolder.BeginScope(context);");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
 

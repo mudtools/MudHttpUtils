@@ -90,10 +90,14 @@ public static class HttpClientServiceCollectionExtensions
         services.TryAddTransient<IBaseHttpClient>(sp => sp.GetRequiredService<IEnhancedHttpClient>());
         // 注册 IHttpRequestExecutor：HttpClient 模式下由生成代码通过构造函数注入。
         // TokenManager/AppContext 模式下生成代码动态创建执行器，不消费此注册，因此注册本身无害。
+        // 工厂同时解析 IHttpResponseCache 和 IResiliencePolicyResolver（可选），
+        // 确保通过 DI 注入的执行器具备与手动创建相同的缓存和弹性策略能力。
         services.TryAddTransient<IHttpRequestExecutor>(sp =>
         {
             var httpClient = sp.GetRequiredService<IEnhancedHttpClient>();
-            return new DefaultHttpRequestExecutor(httpClient);
+            var cacheProvider = sp.GetService<IHttpResponseCache>();
+            var resilienceResolver = sp.GetService<IResiliencePolicyResolver>();
+            return new DefaultHttpRequestExecutor(httpClient, cacheProvider, resilienceResolver);
         });
         services.TryAddSingleton<IHttpClientResolver, HttpClientResolver>();
     }

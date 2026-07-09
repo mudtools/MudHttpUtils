@@ -38,6 +38,9 @@ public class TestTokenManager : ITokenManager
         return Task.FromResult(TokenResult.Empty);
     }
 
+    /// <inheritdoc />
+    public bool SupportsBackgroundRefresh => true;
+
     public void Dispose()
     {
     }

@@ -80,10 +80,15 @@ internal static class TokenHelper
     /// <summary>
     /// 获取默认Token类型字符串
     /// </summary>
-    /// <returns>默认Token类型为TenantAccessToken</returns>
+    /// <returns>默认Token类型为AccessToken（OAuth2 通用类型）</returns>
+    /// <remarks>
+    /// 此处使用字符串字面量而非 <see cref="TokenTypes.AccessToken"/> 常量，
+    /// 因为源生成器项目无法引用 Abstractions 程序集。
+    /// 值必须与 <c>Mud.HttpUtils.TokenTypes.AccessToken</c> 保持一致。
+    /// </remarks>
     public static string GetDefaultTokenType()
     {
-        return "TenantAccessToken";
+        return "AccessToken";
     }
 
     /// <summary>

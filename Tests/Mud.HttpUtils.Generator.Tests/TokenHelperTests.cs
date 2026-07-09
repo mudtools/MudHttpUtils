@@ -61,11 +61,11 @@ public class TokenHelperTests
     }
 
     [Fact]
-    public void GetDefaultTokenType_ReturnsTenantAccessToken()
+    public void GetDefaultTokenType_ReturnsAccessToken()
     {
         var result = TokenHelper.GetDefaultTokenType();
 
-        result.Should().Be("TenantAccessToken");
+        result.Should().Be("AccessToken");
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public class TokenHelperTests
 
         var result = TokenHelper.GetTokenManagerKeyFromAttribute(attrData);
 
-        result.Should().Be("TenantAccessToken");
+        result.Should().Be("AccessToken");
     }
 
     [Fact]

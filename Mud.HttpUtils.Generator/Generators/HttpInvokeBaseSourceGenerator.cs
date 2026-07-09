@@ -49,61 +49,59 @@ internal abstract class HttpInvokeBaseSourceGenerator : TransitiveCodeGenerator
     /// <param name="context">初始化上下文</param>
     /// <remarks>
     /// 增量管道设计说明：
-    /// 本生成器需要在执行阶段访问 Compilation 进行语义分析（GetDeclaredSymbol、GetTypeByMetadataName 等），
-    /// 因此将 CompilationProvider 纳入管道。这意味着当编译发生变化时（如任意源文件被编辑），
-    /// ExecuteGenerator 会被重新调用。增量缓存的优势主要体现在 ForAttributeWithMetadataName 的语法过滤阶段——
-    /// 仅当接口声明具有 [HttpClientApi] 特性时才会被收集，而非遍历所有语法树。
+    /// 语义数据（SemanticModel、Compilation、AttributeData）由 <see cref="GeneratorAttributeSyntaxContext"/>
+    /// 在 transform 阶段一次性捕获，并打包为 <see cref="InterfaceModel"/>。该模型以接口声明的源文本作为指纹
+    /// （<see cref="InterfaceModel.Fingerprint"/>），通过 <see cref="WithComparer"/> 进行增量比较。
+    /// 当接口源文本未变化时，<c>RegisterSourceOutput</c> 不会被触发，从而避免无关文件编辑（如其他类型定义变更）
+    /// 导致的重复生成。
     /// <para>
-    /// 若要进一步优化增量缓存（使 ExecuteGenerator 仅在接口声明实际变化时才被调用），
-    /// 需要将所有语义分析迁移至 ForAttributeWithMetadataName 的 transform 阶段，
-    /// 并将结果以可比较的数据结构传递到 RegisterSourceOutput。这是一项较大的重构工作。
+    /// 相比早期将 <c>CompilationProvider</c> 纳入管道的方案，本设计消除了编译级粒度的重新执行：
+    /// 任意源文件编辑都会改变 Compilation，旧方案下即使目标接口未变也会重新生成。现方案下，
+    /// 仅当被标记的接口声明本身发生变化时才会触发生成。
+    /// </para>
+    /// <para>
+    /// 已接受的权衡：<see cref="InterfaceModel.Context"/> 中的 <see cref="SemanticModel"/> 和
+    /// <see cref="Compilation"/> 在指纹未变化时可能来自上一次编译。若依赖的其他文件发生语义变化
+    /// （如类型实现接口变更），生成器不会重新执行。这对于本生成器是可接受的——生成的代码仅引用类型名称，
+    /// 不依赖类型内部结构。
     /// </para>
     /// </remarks>
     public override void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var syntaxInterfaces = context.SyntaxProvider
+        var interfaceModels = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 fullyQualifiedMetadataName: GetFullyQualifiedAttributeName(),
                 predicate: static (node, _) => node is InterfaceDeclarationSyntax,
-                transform: static (ctx, _) => (InterfaceDeclarationSyntax)ctx.TargetNode)
+                transform: static (ctx, _) => new InterfaceModel(
+                    (InterfaceDeclarationSyntax)ctx.TargetNode,
+                    ctx))
+            .WithComparer(EqualityComparer<InterfaceModel>.Default)
             .WithTrackingName("HttpInvokeBase_SyntaxProvider")
             .Collect()
             .WithTrackingName("HttpInvokeBase_Collected");
 
-        var compilationAndOptions = context.CompilationProvider
+        var completeData = interfaceModels
             .Combine(context.AnalyzerConfigOptionsProvider)
-            .WithTrackingName("HttpInvokeBase_CompilationAndOptions");
-
-        var completeData = syntaxInterfaces
-            .Combine(compilationAndOptions)
             .WithTrackingName("HttpInvokeBase_CompleteData");
 
         context.RegisterSourceOutput(completeData,
             (ctx, provider) => ExecuteGenerator(
-                compilation: provider.Right.Left,
                 interfaces: provider.Left,
                 context: ctx,
-                configOptionsProvider: provider.Right.Right));
+                configOptionsProvider: provider.Right));
     }
 
     /// <summary>
     /// 执行源代码生成逻辑
     /// </summary>
+    /// <param name="interfaces">所有标记目标特性的接口模型。每个 <see cref="InterfaceModel"/> 通过
+    /// <see cref="InterfaceModel.Context"/> 携带 <see cref="SemanticModel"/>（含 <see cref="Compilation"/>）。</param>
+    /// <param name="context">源码生成上下文</param>
+    /// <param name="configOptionsProvider">分析器配置选项</param>
     protected abstract void ExecuteGenerator(
-        Compilation compilation,
-        ImmutableArray<InterfaceDeclarationSyntax?> interfaces,
+        ImmutableArray<InterfaceModel> interfaces,
         SourceProductionContext context,
         AnalyzerConfigOptionsProvider configOptionsProvider);
 
-    #endregion
-
-    #region Semantic Model Cache
-    /// <summary>
-    /// 获取或创建语义模型，使用共享缓存提高性能
-    /// </summary>
-    internal static SemanticModel GetOrCreateSemanticModel(Compilation compilation, SyntaxTree syntaxTree)
-    {
-        return SemanticModelCache.GetOrCreate(compilation, syntaxTree);
-    }
     #endregion
 }

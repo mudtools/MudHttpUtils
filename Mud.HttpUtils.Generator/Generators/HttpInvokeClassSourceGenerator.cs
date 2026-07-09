@@ -20,27 +20,27 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
     private const string DefaultHttpClientOptionsName = "HttpClientOptions";
 
     /// <inheritdoc/>
-    protected override void ExecuteGenerator(Compilation compilation,
-        ImmutableArray<InterfaceDeclarationSyntax?> interfaces,
+    protected override void ExecuteGenerator(
+        ImmutableArray<InterfaceModel> interfaces,
         SourceProductionContext context,
         AnalyzerConfigOptionsProvider configOptionsProvider)
     {
-        if (compilation == null || interfaces.IsDefaultOrEmpty || configOptionsProvider == null)
+        if (interfaces.IsDefaultOrEmpty || configOptionsProvider == null)
             return;
 
         var httpClientOptionsName = DefaultHttpClientOptionsName;
         ProjectConfigHelper.ReadProjectOptions(configOptionsProvider.GlobalOptions, "build_property.HttpClientOptionsName",
            val => httpClientOptionsName = val, DefaultHttpClientOptionsName);
 
-        foreach (var interfaceDecl in interfaces)
+        foreach (var model in interfaces)
         {
             if (context.CancellationToken.IsCancellationRequested)
                 return;
 
-            if (interfaceDecl == null)
-                continue;
+            var interfaceDecl = model.Syntax;
+            var semanticModel = model.Context.SemanticModel;
+            var compilation = semanticModel.Compilation;
 
-            var semanticModel = GetOrCreateSemanticModel(compilation, interfaceDecl.SyntaxTree);
             if (semanticModel.GetDeclaredSymbol(interfaceDecl) is not INamedTypeSymbol interfaceSymbol)
             {
                 continue;

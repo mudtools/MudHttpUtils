@@ -83,6 +83,13 @@ public sealed class TokenRefreshHostedService(
         if (tokenManager == null)
             throw new ArgumentNullException(nameof(tokenManager));
 
+        // 防御性检查：跳过不支持后台刷新的令牌管理器（如 UserTokenManager）
+        if (!tokenManager.SupportsBackgroundRefresh)
+        {
+            _logger.LogWarning("跳过不支持后台刷新的令牌管理器: {Name}", name ?? tokenManager.GetType().Name);
+            return;
+        }
+
         var key = name ?? Guid.NewGuid().ToString("N");
         _tokenManagers[key] = tokenManager;
         MudHttpClientLog.TokenManagerRegistered(_logger, key);

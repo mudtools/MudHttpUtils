@@ -109,6 +109,8 @@ public class TokenInjectionIntegrationTests : IDisposable
         public Task<TokenResult> InvalidateTokenAsync(string[]? scopes = null, CancellationToken cancellationToken = default)
             => Task.FromResult(TokenResult.Empty);
 
+        public bool SupportsBackgroundRefresh => true;
+
         public void Dispose() { }
     }
 }

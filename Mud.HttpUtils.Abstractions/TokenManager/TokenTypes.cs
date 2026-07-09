@@ -10,18 +10,12 @@ namespace Mud.HttpUtils;
 /// <summary>
 /// 令牌类型常量定义，提供标准化的令牌类型标识符。
 /// </summary>
+/// <remarks>
+/// 本类仅定义通用认证方案和 OAuth2 标准令牌类型常量。
+/// 各平台 SDK 应定义各自的令牌类型常量类（如飞书的 <c>FeishuTokenTypes</c>）。
+/// </remarks>
 public static class TokenTypes
 {
-    /// <summary>
-    /// 应用级别的访问令牌（如飞书的 TenantAccessToken）。
-    /// </summary>
-    public const string TenantAccessToken = "TenantAccessToken";
-
-    /// <summary>
-    /// 用户级别的访问令牌（如飞书的 UserAccessToken）。
-    /// </summary>
-    public const string UserAccessToken = "UserAccessToken";
-
     /// <summary>
     /// Bearer 认证方案前缀。
     /// </summary>
@@ -31,4 +25,34 @@ public static class TokenTypes
     /// Basic 认证方案前缀。
     /// </summary>
     public const string Basic = "Basic";
+
+    /// <summary>
+    /// 通用访问令牌（OAuth2 标准 access_token）。
+    /// </summary>
+    public const string AccessToken = "AccessToken";
+
+    /// <summary>
+    /// 通用刷新令牌（OAuth2 标准 refresh_token）。
+    /// </summary>
+    public const string RefreshToken = "RefreshToken";
+
+    /// <summary>
+    /// 应用级别的访问令牌（如飞书的 TenantAccessToken）。
+    /// </summary>
+    /// <remarks>
+    /// 此常量为平台特定令牌类型，已标记为过时。请使用各 SDK 专属的 TokenType 常量类，
+    /// 如 <c>Mud.Feishu.Abstractions.Authentication.FeishuTokenTypes.TenantAccessToken</c>。
+    /// </remarks>
+    [Obsolete("请使用各 SDK 专属的 TokenType 常量类，如 Mud.Feishu.Abstractions.Authentication.FeishuTokenTypes.TenantAccessToken。")]
+    public const string TenantAccessToken = "TenantAccessToken";
+
+    /// <summary>
+    /// 用户级别的访问令牌（如飞书的 UserAccessToken）。
+    /// </summary>
+    /// <remarks>
+    /// 此常量为平台特定令牌类型，已标记为过时。请使用各 SDK 专属的 TokenType 常量类，
+    /// 如 <c>Mud.Feishu.Abstractions.Authentication.FeishuTokenTypes.UserAccessToken</c>。
+    /// </remarks>
+    [Obsolete("请使用各 SDK 专属的 TokenType 常量类，如 Mud.Feishu.Abstractions.Authentication.FeishuTokenTypes.UserAccessToken。")]
+    public const string UserAccessToken = "UserAccessToken";
 }

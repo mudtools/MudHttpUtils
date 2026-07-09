@@ -45,8 +45,8 @@ public sealed class TokenAttribute : Attribute
     /// <summary>
     /// 初始化 <see cref="TokenAttribute"/> 类的新实例。
     /// </summary>
-    /// <param name="tokenType">令牌类型，默认为 "TenantAccessToken"。此值同时设置 TokenType 和 TokenManagerKey（向后兼容）。</param>
-    public TokenAttribute(string tokenType = "TenantAccessToken")
+    /// <param name="tokenType">令牌类型，默认为 <see cref="TokenTypes.AccessToken"/>。此值同时设置 TokenType 和 TokenManagerKey（向后兼容）。</param>
+    public TokenAttribute(string tokenType = TokenTypes.AccessToken)
     {
         TokenType = tokenType;
         TokenManagerKey = tokenType;
@@ -55,8 +55,8 @@ public sealed class TokenAttribute : Attribute
     /// <summary>
     /// 获取或设置令牌类型。
     /// </summary>
-    /// <value>默认为 "TenantAccessToken"。</value>
-    public string TokenType { get; set; } = "TenantAccessToken";
+    /// <value>默认为 <see cref="TokenTypes.AccessToken"/>。</value>
+    public string TokenType { get; set; } = TokenTypes.AccessToken;
 
     /// <summary>
     /// 获取或设置令牌注入模式（请求头、查询参数等）。

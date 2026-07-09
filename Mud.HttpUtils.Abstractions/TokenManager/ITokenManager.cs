@@ -63,4 +63,15 @@ public interface ITokenManager : IDisposable
     /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
     /// <returns>失效前的令牌信息，如果缓存中没有令牌则返回 <see cref="TokenResult.Empty"/>。</returns>
     Task<TokenResult> InvalidateTokenAsync(string[]? scopes = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 指示此令牌管理器是否支持后台主动刷新。
+    /// </summary>
+    /// <remarks>
+    /// 默认为 <c>true</c>。用户令牌管理器（<see cref="UserTokenManagerBase"/>）等
+    /// 通过 OAuth 授权码按需获取令牌的管理器应返回 <c>false</c>。
+    /// 后台刷新服务（<see cref="ITokenRefreshBackgroundService"/>）应检查此属性，
+    /// 避免注册不支持后台刷新的令牌管理器。
+    /// </remarks>
+    bool SupportsBackgroundRefresh { get; }
 }

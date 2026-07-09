@@ -25,6 +25,13 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     protected virtual int UserExpireThresholdSeconds => _cacheOptions.ExpireThresholdSeconds;
 
     /// <summary>
+    /// 用户令牌管理器不支持后台主动刷新。
+    /// 用户令牌通过 OAuth 授权码按需获取，需要指定 userId，
+    /// 不适合后台预热刷新。后台刷新服务应跳过此类令牌管理器。
+    /// </summary>
+    public override bool SupportsBackgroundRefresh => false;
+
+    /// <summary>
     /// 初始化用户令牌管理器基类。
     /// </summary>
     protected UserTokenManagerBase() : this(null, null)

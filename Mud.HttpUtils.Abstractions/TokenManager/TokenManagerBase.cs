@@ -52,6 +52,14 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     protected virtual int ExpireThresholdSeconds => 300;
 
     /// <summary>
+    /// 指示此令牌管理器是否支持后台主动刷新。默认为 <c>true</c>。
+    /// 子类可重写为 <c>false</c> 以声明不支持后台刷新（如用户令牌管理器，
+    /// 其令牌通过 OAuth 授权码按需获取，不适合后台预热刷新）。
+    /// 后台刷新服务应检查此属性，避免注册不支持后台刷新的令牌管理器。
+    /// </summary>
+    public virtual bool SupportsBackgroundRefresh => true;
+
+    /// <summary>
     /// 获取作用域缓存的最大容量，默认 64。超过此容量时将清理过期条目。
     /// </summary>
     protected virtual int MaxScopeCacheSize => 64;

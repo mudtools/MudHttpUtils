@@ -954,8 +954,10 @@ namespace TestNamespace
             "HttpClient 模式下应始终接受可选的 cacheProvider 参数");
         generatedCode.Should().Contain("IResiliencePolicyResolver? resilienceResolver = null",
             "HttpClient 模式下应始终接受可选的 resilienceResolver 参数");
-        generatedCode.Should().Contain("new Mud.HttpUtils.DefaultHttpRequestExecutor(_httpClient, cacheProvider, resilienceResolver)",
-            "执行器应始终接收 cacheProvider 和 resilienceResolver 参数");
+        generatedCode.Should().Contain("IHttpRequestExecutor executor",
+            "HttpClient 模式下应通过 DI 注入 IHttpRequestExecutor");
+        generatedCode.Should().Contain("_executor = executor ?? throw new ArgumentNullException(nameof(executor));",
+            "执行器应通过 DI 注入而非手动创建");
     }
 
     [Fact]
@@ -985,8 +987,10 @@ namespace TestNamespace
             "声明 [Cache] 特性时 cacheProvider 应为必选参数（无默认值）");
         generatedCode.Should().Contain("IResiliencePolicyResolver? resilienceResolver = null",
             "未声明 [Retry] 特性时 resilienceResolver 应为可选参数");
-        generatedCode.Should().Contain("new Mud.HttpUtils.DefaultHttpRequestExecutor(_httpClient, cacheProvider, resilienceResolver)",
-            "执行器应始终接收 cacheProvider 和 resilienceResolver 参数");
+        generatedCode.Should().Contain("IHttpRequestExecutor executor",
+            "HttpClient 模式下应通过 DI 注入 IHttpRequestExecutor");
+        generatedCode.Should().Contain("_executor = executor ?? throw new ArgumentNullException(nameof(executor));",
+            "执行器应通过 DI 注入而非手动创建");
     }
 
     [Fact]
@@ -1016,8 +1020,10 @@ namespace TestNamespace
             "未声明 [Cache] 特性时 cacheProvider 应为可选参数");
         generatedCode.Should().Contain("IResiliencePolicyResolver resilienceResolver",
             "声明 [Retry] 特性时 resilienceResolver 应为必选参数（无默认值）");
-        generatedCode.Should().Contain("new Mud.HttpUtils.DefaultHttpRequestExecutor(_httpClient, cacheProvider, resilienceResolver)",
-            "执行器应始终接收 cacheProvider 和 resilienceResolver 参数");
+        generatedCode.Should().Contain("IHttpRequestExecutor executor",
+            "HttpClient 模式下应通过 DI 注入 IHttpRequestExecutor");
+        generatedCode.Should().Contain("_executor = executor ?? throw new ArgumentNullException(nameof(executor));",
+            "执行器应通过 DI 注入而非手动创建");
     }
 
     #endregion
