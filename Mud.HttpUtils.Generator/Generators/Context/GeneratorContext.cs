@@ -2,7 +2,7 @@
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
 //  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
-// 不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
 using Mud.HttpUtils.Analyzers;
@@ -76,8 +76,16 @@ internal class GeneratorContext
     /// <summary>
     /// 方法分析结果缓存，避免同一方法被 AnalyzeMethod 重复分析。
     /// 使用 SymbolEqualityComparer.Default 确保符号比较的正确性。
+    /// 注意：此 Dictionary 仅在单线程生成上下文中使用（每个 GeneratorContext 实例对应一个接口的生成），
+    /// 不可跨实例共享或在多线程环境下并发读写。
     /// </summary>
     public Dictionary<IMethodSymbol, MethodAnalysisResult> MethodAnalysisCache { get; } = new(SymbolEqualityComparer.Default);
+
+    /// <summary>
+    /// 当前接口（含父接口）的所有方法列表，在构造函数中一次性计算并缓存。
+    /// 避免 MethodGenerator、InterfaceImplementationGenerator 等多处重复调用 TypeSymbolHelper.GetAllMethods。
+    /// </summary>
+    public IReadOnlyList<IMethodSymbol> AllMethods { get; private set; } = [];
 
     /// <summary>
     /// 获取或缓存方法分析结果。若缓存命中则复用，否则调用 AnalyzeMethod 并缓存结果。
@@ -149,9 +157,17 @@ internal class GeneratorContext
         catch (Exception ex)
         {
             GeneratorDebugLogger.LogError("GeneratorContext.GetAllMethods", ex);
-            allMethods = new List<IMethodSymbol>();
+            // 向用户报告诊断，确保 IDE 错误列表中可见
+            productionContext.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.HttpClientApiGenerationError,
+                interfaceDeclaration.GetLocation(),
+                interfaceSymbol.Name,
+                $"解析接口方法时发生异常，已回退为仅生成当前接口方法: {GeneratorDebugLogger.FormatExceptionMessage(ex)}"));
+            // 回退为仅当前接口自身定义的方法，与原 MethodGenerator.GetMethodsToGenerate 的容错行为一致
+            allMethods = interfaceSymbol.GetMembers().OfType<IMethodSymbol>().ToList();
         }
 
+        AllMethods = allMethods;
         HasCache = DetectCacheUsage(allMethods);
         HasCacheVaryByUser = DetectCacheVaryByUser(allMethods);
         HasResilience = DetectResilienceUsage(allMethods);
@@ -279,35 +295,11 @@ internal class GeneratorContext
     }
 
     /// <summary>
-    /// 从 TypedConstant 获取 TokenInjectionMode 枚举名称
+    /// 从 TypedConstant 获取 TokenInjectionMode 枚举名称。
+    /// 委托至 TokenHelper.GetTokenInjectionModeName 统一实现，覆盖全部 7 种注入模式。
     /// </summary>
     private static string GetTokenInjectionModeName(object? value)
     {
-        if (value == null)
-            return HttpClientGeneratorConstants.TokenInjectionModeHeader;
-
-        var str = value.ToString();
-        if (string.IsNullOrEmpty(str))
-            return HttpClientGeneratorConstants.TokenInjectionModeHeader;
-
-        if (int.TryParse(str, out var num))
-        {
-            return num switch
-            {
-                3 => HttpClientGeneratorConstants.TokenInjectionModeApiKey,
-                4 => HttpClientGeneratorConstants.TokenInjectionModeHmacSignature,
-                _ => HttpClientGeneratorConstants.TokenInjectionModeHeader
-            };
-        }
-
-        var lastDot = str.LastIndexOf('.');
-        var name = lastDot >= 0 ? str.Substring(lastDot + 1) : str;
-
-        return name switch
-        {
-            "ApiKey" => HttpClientGeneratorConstants.TokenInjectionModeApiKey,
-            "HmacSignature" => HttpClientGeneratorConstants.TokenInjectionModeHmacSignature,
-            _ => HttpClientGeneratorConstants.TokenInjectionModeHeader
-        };
+        return TokenHelper.GetTokenInjectionModeName(value);
     }
 }

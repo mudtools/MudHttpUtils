@@ -1,6 +1,6 @@
-// -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
-//  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+﻿// -----------------------------------------------------------------------
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
@@ -29,49 +29,55 @@ internal static class MethodAnalyzer
 
         var methodSyntax = FindMethodSyntax(compilation, methodSymbol, interfaceDecl, semanticModel);
 
-        var httpMethodAttributeData = FindHttpMethodAttributeFromSymbol(methodSymbol);
+        // 一次性获取方法特性列表，避免在后续分析中重复调用 GetAttributes() 产生多次分配
+        var methodAttributes = methodSymbol.GetAttributes();
+
+        var httpMethodAttributeData = FindHttpMethodAttributeFromAttributes(methodAttributes);
         if (httpMethodAttributeData == null)
-            return MethodAnalysisResult.Invalid;
+            return MethodAnalysisResult.CreateInvalid();
 
         if (httpMethodAttributeData.AttributeClass == null)
-            return MethodAnalysisResult.Invalid;
+            return MethodAnalysisResult.CreateInvalid();
 
         var httpMethodAttributeName = httpMethodAttributeData.AttributeClass.Name;
         var httpMethod = ExtractHttpMethodName(httpMethodAttributeName);
         var urlTemplate = GetAttributeArgumentValueFromAttributeData(httpMethodAttributeData, 0)?.ToString() ?? "";
 
         if (string.IsNullOrEmpty(httpMethod) || string.IsNullOrEmpty(urlTemplate))
-            return MethodAnalysisResult.Invalid;
+            return MethodAnalysisResult.CreateInvalid();
 
-        var methodContentType = GetMethodContentTypeFromHttpMethodAttribute(methodSymbol);
-        var responseContentType = GetResponseContentTypeFromSymbol(methodSymbol);
-        var responseEnableDecrypt = GetResponseEnableDecryptFromSymbol(methodSymbol);
+        var methodContentType = GetMethodContentTypeFromAttributes(methodAttributes);
+        var responseContentType = GetResponseContentTypeFromAttributes(methodAttributes);
+        var responseEnableDecrypt = GetResponseEnableDecryptFromAttributes(methodAttributes);
         var parameters = ParameterAnalyzer.AnalyzeParameters(methodSymbol);
         var (bodyContentType, bodyEnableEncrypt, bodyEncryptSerializeType, bodyEncryptPropertyName) = GetBodyInfoFromParameters(parameters);
-        var (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName, interfaceTokenScopes) = AnalyzeInterfaceAttributes(
-            compilation,
-            interfaceDecl,
-            semanticModel);
 
-        var (cacheEnabled, cacheDurationSeconds, cacheKeyTemplate, cacheVaryByUser) = AnalyzeCacheAttribute(methodSymbol);
+        // 一次性获取接口符号和接口特性列表，避免 5 个子方法各自独立调用 GetAttributes() 产生多次分配
+        var interfaceModel = semanticModel ?? SemanticModelCache.GetOrCreate(compilation, interfaceDecl.SyntaxTree);
+        var interfaceSymbol = interfaceModel.GetDeclaredSymbol(interfaceDecl) as INamedTypeSymbol;
+        var interfaceAttrs = interfaceSymbol?.GetAttributes() ?? ImmutableArray<AttributeData>.Empty;
 
-        var (retryEnabled, retryMaxRetries, retryDelayMilliseconds, retryUseExponentialBackoff) = AnalyzeRetryAttribute(methodSymbol);
-        var (circuitBreakerEnabled, circuitBreakerFailureThreshold, circuitBreakerBreakDurationSeconds, circuitBreakerSamplingDurationSeconds, circuitBreakerMinimumThroughput) = AnalyzeCircuitBreakerAttribute(methodSymbol);
-        var (methodTimeoutEnabled, methodTimeoutMilliseconds) = AnalyzeTimeoutAttribute(methodSymbol);
+        var (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName, interfaceTokenScopes) = AnalyzeInterfaceAttributes(interfaceAttrs);
 
-        var methodTokenScopes = AnalyzeMethodTokenScopes(methodSymbol);
+        var (cacheEnabled, cacheDurationSeconds, cacheKeyTemplate, cacheVaryByUser) = AnalyzeCacheAttribute(methodAttributes);
 
-        var (methodTokenManagerKey, methodRequiresUserId, methodTokenInjectionMode) = AnalyzeMethodTokenExtended(methodSymbol);
+        var (retryEnabled, retryMaxRetries, retryDelayMilliseconds, retryUseExponentialBackoff) = AnalyzeRetryAttribute(methodAttributes);
+        var (circuitBreakerEnabled, circuitBreakerFailureThreshold, circuitBreakerBreakDurationSeconds, circuitBreakerSamplingDurationSeconds, circuitBreakerMinimumThroughput) = AnalyzeCircuitBreakerAttribute(methodAttributes);
+        var (methodTimeoutEnabled, methodTimeoutMilliseconds) = AnalyzeTimeoutAttribute(methodAttributes);
+
+        var methodTokenScopes = AnalyzeMethodTokenScopes(methodAttributes);
+
+        var (methodTokenManagerKey, methodRequiresUserId, methodTokenInjectionMode) = AnalyzeMethodTokenExtended(methodAttributes);
 
         var tokenParameterName = parameters
             .FirstOrDefault(p => p.Attributes.Any(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.Name)))?
             .Name;
 
-        var allowAnyStatusCode = AnalyzeAllowAnyStatusCode(methodSymbol, interfaceDecl, compilation, semanticModel);
-        var (interfaceQueryParams, interfacePathParams) = AnalyzeInterfaceQueryPathAttributes(interfaceDecl, compilation, semanticModel);
+        var allowAnyStatusCode = AnalyzeAllowAnyStatusCode(methodSymbol, methodAttributes, interfaceAttrs);
+        var (interfaceQueryParams, interfacePathParams) = AnalyzeInterfaceQueryPathAttributes(interfaceAttrs);
         var interfaceProperties = AnalyzeInterfaceProperties(interfaceDecl, compilation, semanticModel);
-        var headerMergeMode = AnalyzeHeaderMergeMode(methodSymbol, interfaceDecl, compilation, semanticModel);
-        var serializationMethod = AnalyzeSerializationMethod(methodSymbol, interfaceDecl, compilation, semanticModel);
+        var headerMergeMode = AnalyzeHeaderMergeMode(methodSymbol, methodAttributes, interfaceAttrs);
+        var serializationMethod = AnalyzeSerializationMethod(methodSymbol, methodAttributes, interfaceAttrs);
 
         var returnTypeFullName = TypeSymbolHelper.GetTypeFullName(methodSymbol.ReturnType);
         var isAsyncEnumerable = TypeDetectionHelper.IsAsyncEnumerableType(returnTypeFullName, out var asyncEnumerableElementType);
@@ -88,7 +94,7 @@ internal static class MethodAnalyzer
             IsAsyncEnumerableReturn = isAsyncEnumerable,
             AsyncEnumerableElementType = asyncEnumerableElementType,
             Parameters = parameters,
-            IgnoreGenerator = HasMethodAttribute(methodSymbol, HttpClientGeneratorConstants.IgnoreGeneratorAttributeNames),
+            IgnoreGenerator = HasMethodAttribute(methodAttributes, HttpClientGeneratorConstants.IgnoreGeneratorAttributeNames),
             InterfaceAttributes = interfaceAttributes,
             InterfaceHeaderAttributes = interfaceHeaderAttributes,
             MethodContentType = methodContentType,
@@ -156,7 +162,15 @@ internal static class MethodAnalyzer
         if (methodSymbol == null)
             return null;
 
-        return methodSymbol.GetAttributes()
+        return FindHttpMethodAttributeFromAttributes(methodSymbol.GetAttributes());
+    }
+
+    /// <summary>
+    /// 从已缓存的特性列表中查找HTTP方法特性
+    /// </summary>
+    internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableArray<AttributeData> attributes)
+    {
+        return attributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.SupportedHttpMethods.Contains(attr.AttributeClass?.Name));
     }
 
@@ -203,8 +217,15 @@ internal static class MethodAnalyzer
         if (methodSymbol == null)
             return false;
 
-        return methodSymbol.GetAttributes()
-            .Any(attr => attributeNames.Contains(attr.AttributeClass?.Name));
+        return HasMethodAttribute(methodSymbol.GetAttributes(), attributeNames);
+    }
+
+    /// <summary>
+    /// 从已缓存的特性列表中检查是否具有指定的特性
+    /// </summary>
+    private static bool HasMethodAttribute(ImmutableArray<AttributeData> attributes, string[] attributeNames)
+    {
+        return attributes.Any(attr => attributeNames.Contains(attr.AttributeClass?.Name));
     }
 
     /// <summary>
@@ -215,7 +236,15 @@ internal static class MethodAnalyzer
         if (methodSymbol == null)
             return null;
 
-        var httpMethodAttr = methodSymbol.GetAttributes()
+        return GetMethodContentTypeFromAttributes(methodSymbol.GetAttributes());
+    }
+
+    /// <summary>
+    /// 从已缓存的特性列表中获取ContentType值
+    /// </summary>
+    private static string? GetMethodContentTypeFromAttributes(ImmutableArray<AttributeData> attributes)
+    {
+        var httpMethodAttr = attributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.SupportedHttpMethods.Contains(attr.AttributeClass?.Name));
 
         if (httpMethodAttr == null)
@@ -293,59 +322,19 @@ internal static class MethodAnalyzer
 
     /// <summary>
     /// 从 TypedConstant 获取 TokenInjectionMode 枚举名称。
-    /// 注意：序号必须与 Mud.HttpUtils.Attributes.TokenInjectionMode 枚举定义保持一致：
-    ///   0 = Header, 1 = Query, 2 = Path, 3 = ApiKey, 4 = HmacSignature, 5 = BasicAuth, 6 = Cookie
-    /// 生成器无法引用包含枚举定义的程序集，因此使用硬编码序号是必要的妥协。
+    /// 委托至 TokenHelper.GetTokenInjectionModeName 统一实现，避免重复代码。
     /// </summary>
     private static string GetTokenInjectionModeName(object? value)
     {
-        if (value == null)
-            return HttpClientGeneratorConstants.TokenInjectionModeHeader;
-
-        var str = value.ToString();
-        if (string.IsNullOrEmpty(str))
-            return HttpClientGeneratorConstants.TokenInjectionModeHeader;
-
-        if (int.TryParse(str, out var num))
-        {
-            return num switch
-            {
-                0 => HttpClientGeneratorConstants.TokenInjectionModeHeader,
-                1 => HttpClientGeneratorConstants.TokenInjectionModeQuery,
-                2 => HttpClientGeneratorConstants.TokenInjectionModePath,
-                3 => HttpClientGeneratorConstants.TokenInjectionModeApiKey,
-                4 => HttpClientGeneratorConstants.TokenInjectionModeHmacSignature,
-                5 => HttpClientGeneratorConstants.TokenInjectionModeBasicAuth,
-                6 => HttpClientGeneratorConstants.TokenInjectionModeCookie,
-                _ => HttpClientGeneratorConstants.TokenInjectionModeHeader
-            };
-        }
-
-        var lastDot = str.LastIndexOf('.');
-        var name = lastDot >= 0 ? str.Substring(lastDot + 1) : str;
-
-        return name switch
-        {
-            "Header" => HttpClientGeneratorConstants.TokenInjectionModeHeader,
-            "Query" => HttpClientGeneratorConstants.TokenInjectionModeQuery,
-            "Path" => HttpClientGeneratorConstants.TokenInjectionModePath,
-            "ApiKey" => HttpClientGeneratorConstants.TokenInjectionModeApiKey,
-            "HmacSignature" => HttpClientGeneratorConstants.TokenInjectionModeHmacSignature,
-            "BasicAuth" => HttpClientGeneratorConstants.TokenInjectionModeBasicAuth,
-            "Cookie" => HttpClientGeneratorConstants.TokenInjectionModeCookie,
-            _ => HttpClientGeneratorConstants.TokenInjectionModeHeader
-        };
+        return TokenHelper.GetTokenInjectionModeName(value);
     }
 
     /// <summary>
-    /// 从方法符号获取HTTP方法特性的ResponseContentType值
+    /// 从已缓存的特性列表中获取ResponseContentType值
     /// </summary>
-    private static string? GetResponseContentTypeFromSymbol(IMethodSymbol methodSymbol)
+    private static string? GetResponseContentTypeFromAttributes(ImmutableArray<AttributeData> attributes)
     {
-        if (methodSymbol == null)
-            return null;
-
-        var httpMethodAttr = methodSymbol.GetAttributes()
+        var httpMethodAttr = attributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.SupportedHttpMethods.Contains(attr.AttributeClass?.Name));
 
         if (httpMethodAttr == null)
@@ -355,14 +344,11 @@ internal static class MethodAnalyzer
     }
 
     /// <summary>
-    /// 从方法符号获取HTTP方法特性的ResponseEnableDecrypt值
+    /// 从已缓存的特性列表中获取ResponseEnableDecrypt值
     /// </summary>
-    private static bool GetResponseEnableDecryptFromSymbol(IMethodSymbol methodSymbol)
+    private static bool GetResponseEnableDecryptFromAttributes(ImmutableArray<AttributeData> attributes)
     {
-        if (methodSymbol == null)
-            return false;
-
-        var httpMethodAttr = methodSymbol.GetAttributes()
+        var httpMethodAttr = attributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.SupportedHttpMethods.Contains(attr.AttributeClass?.Name));
 
         if (httpMethodAttr == null)
@@ -524,9 +510,18 @@ internal static class MethodAnalyzer
             }
         }
 
-        // 回退路径：DeclaringSyntaxReferences 未找到，可能是跨程序集接口
-        // 遍历所有语法树开销较大，记录日志帮助定位问题
-        GeneratorDebugLogger.Log($"FindInterfaceDeclarationSyntax 回退路径触发: {interfaceSymbol.ToDisplayString()} (DeclaringSyntaxReferences 为空)");
+        // 回退路径：DeclaringSyntaxReferences 未找到
+        // 如果接口符号的所有位置都在元数据中（即来自引用的程序集），则无需遍历源代码语法树
+        if (interfaceSymbol.Locations.Length > 0 && interfaceSymbol.Locations.All(loc => loc.IsInMetadata))
+        {
+            GeneratorDebugLogger.Log(
+                $"FindInterfaceDeclarationSyntax 跳过语法树遍历: {interfaceSymbol.ToDisplayString()} (来自引用程序集)");
+            return null;
+        }
+
+        // 仅在接口可能存在于源代码中时才遍历语法树
+        GeneratorDebugLogger.Log(
+            $"FindInterfaceDeclarationSyntax 回退路径触发: {interfaceSymbol.ToDisplayString()} (DeclaringSyntaxReferences 为空)");
 
         var interfaceName = interfaceSymbol.Name;
         foreach (var syntaxTree in compilation.SyntaxTrees)
@@ -554,18 +549,12 @@ internal static class MethodAnalyzer
     /// 分析接口的 [InterfaceQuery] 和 [InterfacePath] 特性
     /// </summary>
     private static (List<InterfaceQueryParameterInfo> queryParams, List<InterfacePathParameterInfo> pathParams)
-        AnalyzeInterfaceQueryPathAttributes(InterfaceDeclarationSyntax interfaceDecl, Compilation compilation, SemanticModel? semanticModel)
+        AnalyzeInterfaceQueryPathAttributes(ImmutableArray<AttributeData> interfaceAttrs)
     {
         var queryParams = new List<InterfaceQueryParameterInfo>();
         var pathParams = new List<InterfacePathParameterInfo>();
 
-        var model = semanticModel ?? SemanticModelCache.GetOrCreate(compilation, interfaceDecl.SyntaxTree);
-        var interfaceSymbol = model.GetDeclaredSymbol(interfaceDecl) as INamedTypeSymbol;
-
-        if (interfaceSymbol == null)
-            return (queryParams, pathParams);
-
-        foreach (var attr in interfaceSymbol.GetAttributes())
+        foreach (var attr in interfaceAttrs)
         {
             if (HttpClientGeneratorConstants.InterfaceQueryAttributeNames.Contains(attr.AttributeClass?.Name))
             {
@@ -748,9 +737,9 @@ internal static class MethodAnalyzer
     /// <summary>
     /// 分析头部合并模式（方法级优先于接口级）
     /// </summary>
-    private static string AnalyzeHeaderMergeMode(IMethodSymbol methodSymbol, InterfaceDeclarationSyntax interfaceDecl, Compilation compilation, SemanticModel? semanticModel)
+    private static string AnalyzeHeaderMergeMode(IMethodSymbol methodSymbol, ImmutableArray<AttributeData> methodAttributes, ImmutableArray<AttributeData> interfaceAttrs)
     {
-        var methodAttr = methodSymbol.GetAttributes()
+        var methodAttr = methodAttributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.HeaderMergeAttributeNames.Contains(attr.AttributeClass?.Name));
 
         if (methodAttr != null)
@@ -762,22 +751,16 @@ internal static class MethodAnalyzer
                 return mode;
         }
 
-        var model = semanticModel ?? SemanticModelCache.GetOrCreate(compilation, interfaceDecl.SyntaxTree);
-        var interfaceSymbol = model.GetDeclaredSymbol(interfaceDecl) as INamedTypeSymbol;
+        var interfaceAttr = interfaceAttrs
+            .FirstOrDefault(attr => HttpClientGeneratorConstants.HeaderMergeAttributeNames.Contains(attr.AttributeClass?.Name));
 
-        if (interfaceSymbol != null)
+        if (interfaceAttr != null)
         {
-            var interfaceAttr = interfaceSymbol.GetAttributes()
-                .FirstOrDefault(attr => HttpClientGeneratorConstants.HeaderMergeAttributeNames.Contains(attr.AttributeClass?.Name));
-
-            if (interfaceAttr != null)
-            {
-                var mode = interfaceAttr.ConstructorArguments.Length > 0
-                    ? interfaceAttr.ConstructorArguments[0].Value?.ToString()
-                    : null;
-                if (!string.IsNullOrEmpty(mode))
-                    return mode;
-            }
+            var mode = interfaceAttr.ConstructorArguments.Length > 0
+                ? interfaceAttr.ConstructorArguments[0].Value?.ToString()
+                : null;
+            if (!string.IsNullOrEmpty(mode))
+                return mode;
         }
 
         return "Append";
@@ -786,9 +769,9 @@ internal static class MethodAnalyzer
     /// <summary>
     /// 分析序列化方法（方法级优先于接口级）
     /// </summary>
-    private static string AnalyzeSerializationMethod(IMethodSymbol methodSymbol, InterfaceDeclarationSyntax interfaceDecl, Compilation compilation, SemanticModel? semanticModel)
+    private static string AnalyzeSerializationMethod(IMethodSymbol methodSymbol, ImmutableArray<AttributeData> methodAttributes, ImmutableArray<AttributeData> interfaceAttrs)
     {
-        var methodAttr = methodSymbol.GetAttributes()
+        var methodAttr = methodAttributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.SerializationMethodAttributeNames.Contains(attr.AttributeClass?.Name));
 
         if (methodAttr != null)
@@ -800,22 +783,16 @@ internal static class MethodAnalyzer
                 return method;
         }
 
-        var model = semanticModel ?? SemanticModelCache.GetOrCreate(compilation, interfaceDecl.SyntaxTree);
-        var interfaceSymbol = model.GetDeclaredSymbol(interfaceDecl) as INamedTypeSymbol;
+        var interfaceAttr = interfaceAttrs
+            .FirstOrDefault(attr => HttpClientGeneratorConstants.SerializationMethodAttributeNames.Contains(attr.AttributeClass?.Name));
 
-        if (interfaceSymbol != null)
+        if (interfaceAttr != null)
         {
-            var interfaceAttr = interfaceSymbol.GetAttributes()
-                .FirstOrDefault(attr => HttpClientGeneratorConstants.SerializationMethodAttributeNames.Contains(attr.AttributeClass?.Name));
-
-            if (interfaceAttr != null)
-            {
-                var method = interfaceAttr.ConstructorArguments.Length > 0
-                    ? interfaceAttr.ConstructorArguments[0].Value?.ToString()
-                    : null;
-                if (!string.IsNullOrEmpty(method))
-                    return method;
-            }
+            var method = interfaceAttr.ConstructorArguments.Length > 0
+                ? interfaceAttr.ConstructorArguments[0].Value?.ToString()
+                : null;
+            if (!string.IsNullOrEmpty(method))
+                return method;
         }
 
         return "Json";
@@ -827,23 +804,16 @@ internal static class MethodAnalyzer
     /// </summary>
     private static bool AnalyzeAllowAnyStatusCode(
         IMethodSymbol methodSymbol,
-        InterfaceDeclarationSyntax interfaceDecl,
-        Compilation compilation,
-        SemanticModel? semanticModel)
+        ImmutableArray<AttributeData> methodAttributes,
+        ImmutableArray<AttributeData> interfaceAttrs)
     {
-        var methodHasAttr = methodSymbol.GetAttributes()
+        var methodHasAttr = methodAttributes
             .Any(attr => HttpClientGeneratorConstants.AllowAnyStatusCodeAttributeNames.Contains(attr.AttributeClass?.Name));
 
         if (methodHasAttr)
             return true;
 
-        var model = semanticModel ?? SemanticModelCache.GetOrCreate(compilation, interfaceDecl.SyntaxTree);
-        var interfaceSymbol = model.GetDeclaredSymbol(interfaceDecl) as INamedTypeSymbol;
-
-        if (interfaceSymbol == null)
-            return false;
-
-        return interfaceSymbol.GetAttributes()
+        return interfaceAttrs
             .Any(attr => HttpClientGeneratorConstants.AllowAnyStatusCodeAttributeNames.Contains(attr.AttributeClass?.Name));
     }
 
@@ -851,19 +821,17 @@ internal static class MethodAnalyzer
     /// 分析接口特性
     /// </summary>
     private static (HashSet<string> interfaceAttributes, List<InterfaceHeaderAttributeInfo> interfaceHeaderAttributes, string? interfaceTokenInjectionMode, string? interfaceTokenName, string? interfaceTokenScopes)
-        AnalyzeInterfaceAttributes(Compilation compilation, InterfaceDeclarationSyntax interfaceDecl, SemanticModel? semanticModel)
+        AnalyzeInterfaceAttributes(ImmutableArray<AttributeData> interfaceAttrs)
     {
-        var model = semanticModel ?? SemanticModelCache.GetOrCreate(compilation, interfaceDecl.SyntaxTree);
-        var interfaceSymbol = model.GetDeclaredSymbol(interfaceDecl) as INamedTypeSymbol;
         var interfaceAttributes = new HashSet<string>();
         var interfaceHeaderAttributes = new List<InterfaceHeaderAttributeInfo>();
         string? interfaceTokenInjectionMode = null;
         string? interfaceTokenName = null;
         string? interfaceTokenScopes = null;
 
-        if (interfaceSymbol != null)
+        if (!interfaceAttrs.IsDefault)
         {
-            var headerAttributes = interfaceSymbol.GetAttributes()
+            var headerAttributes = interfaceAttrs
                 .Where(attr => HasAttributeWithName(attr, "HeaderAttribute"));
 
             foreach (var headerAttr in headerAttributes)
@@ -885,7 +853,7 @@ internal static class MethodAnalyzer
                 }
             }
 
-            var queryAttributes = interfaceSymbol.GetAttributes()
+            var queryAttributes = interfaceAttrs
                 .Where(attr => HasAttributeWithName(attr, "QueryAttribute") &&
                                attr.ConstructorArguments.Length > 0 &&
                                attr.ConstructorArguments[0].Value?.ToString() == "Authorization");
@@ -898,7 +866,7 @@ internal static class MethodAnalyzer
             }
 
             // 处理 Token 特性的注入模式
-            var tokenAttributes = interfaceSymbol.GetAttributes()
+            var tokenAttributes = interfaceAttrs
                 .Where(attr => HasAttributeWithName(attr, "TokenAttribute"));
 
             foreach (var tokenAttr in tokenAttributes)
@@ -986,22 +954,22 @@ internal static class MethodAnalyzer
     }
 
     /// <summary>
-    /// 分析方法级别的 Token Scopes
+    /// 从已缓存的特性列表中分析方法级别的 Token Scopes
     /// </summary>
-    private static string? AnalyzeMethodTokenScopes(IMethodSymbol methodSymbol)
+    private static string? AnalyzeMethodTokenScopes(ImmutableArray<AttributeData> attributes)
     {
-        var tokenAttr = methodSymbol.GetAttributes()
+        var tokenAttr = attributes
             .FirstOrDefault(attr => HasAttributeWithName(attr, "TokenAttribute"));
 
         return tokenAttr != null ? GetTokenScopes(tokenAttr) : null;
     }
 
     /// <summary>
-    /// 分析方法级别 Token 特性的 TokenManagerKey 和 RequiresUserId
+    /// 从已缓存的特性列表中分析方法级别 Token 特性的 TokenManagerKey 和 RequiresUserId
     /// </summary>
-    private static (string? tokenManagerKey, bool? requiresUserId, string? injectionMode) AnalyzeMethodTokenExtended(IMethodSymbol methodSymbol)
+    private static (string? tokenManagerKey, bool? requiresUserId, string? injectionMode) AnalyzeMethodTokenExtended(ImmutableArray<AttributeData> attributes)
     {
-        var tokenAttr = methodSymbol.GetAttributes()
+        var tokenAttr = attributes
             .FirstOrDefault(attr => HasAttributeWithName(attr, "TokenAttribute"));
 
         if (tokenAttr == null)
@@ -1051,9 +1019,9 @@ internal static class MethodAnalyzer
         return name == attributeName || name == attributeName.Replace("Attribute", "");
     }
 
-    private static (bool enabled, int durationSeconds, string? keyTemplate, bool varyByUser) AnalyzeCacheAttribute(IMethodSymbol methodSymbol)
+    private static (bool enabled, int durationSeconds, string? keyTemplate, bool varyByUser) AnalyzeCacheAttribute(ImmutableArray<AttributeData> attributes)
     {
-        var cacheAttr = methodSymbol.GetAttributes()
+        var cacheAttr = attributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name));
 
         if (cacheAttr == null)
@@ -1071,9 +1039,9 @@ internal static class MethodAnalyzer
         return (true, durationSeconds, keyTemplate, varyByUser);
     }
 
-    private static (bool enabled, int maxRetries, int delayMilliseconds, bool useExponentialBackoff) AnalyzeRetryAttribute(IMethodSymbol methodSymbol)
+    private static (bool enabled, int maxRetries, int delayMilliseconds, bool useExponentialBackoff) AnalyzeRetryAttribute(ImmutableArray<AttributeData> attributes)
     {
-        var retryAttr = methodSymbol.GetAttributes()
+        var retryAttr = attributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.RetryAttributeNames.Contains(attr.AttributeClass?.Name));
 
         if (retryAttr == null)
@@ -1091,9 +1059,9 @@ internal static class MethodAnalyzer
         return (true, maxRetries, delayMilliseconds, useExponentialBackoff);
     }
 
-    private static (bool enabled, int failureThreshold, int breakDurationSeconds, int samplingDurationSeconds, int minimumThroughput) AnalyzeCircuitBreakerAttribute(IMethodSymbol methodSymbol)
+    private static (bool enabled, int failureThreshold, int breakDurationSeconds, int samplingDurationSeconds, int minimumThroughput) AnalyzeCircuitBreakerAttribute(ImmutableArray<AttributeData> attributes)
     {
-        var cbAttr = methodSymbol.GetAttributes()
+        var cbAttr = attributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.CircuitBreakerAttributeNames.Contains(attr.AttributeClass?.Name));
 
         if (cbAttr == null)
@@ -1114,9 +1082,9 @@ internal static class MethodAnalyzer
         return (true, failureThreshold, breakDurationSeconds, samplingDurationSeconds, minimumThroughput);
     }
 
-    private static (bool enabled, int timeoutMilliseconds) AnalyzeTimeoutAttribute(IMethodSymbol methodSymbol)
+    private static (bool enabled, int timeoutMilliseconds) AnalyzeTimeoutAttribute(ImmutableArray<AttributeData> attributes)
     {
-        var timeoutAttr = methodSymbol.GetAttributes()
+        var timeoutAttr = attributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.TimeoutAttributeNames.Contains(attr.AttributeClass?.Name));
 
         if (timeoutAttr == null)

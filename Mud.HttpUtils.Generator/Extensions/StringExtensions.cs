@@ -127,6 +127,6 @@ internal static class StringExtensions
         var lines = str.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
         var indentedLines = lines.Select(line => string.IsNullOrEmpty(line) ? line : indent + line);
 
-        return string.Join(Environment.NewLine, indentedLines);
+        return string.Join("\n", indentedLines);
     }
 }

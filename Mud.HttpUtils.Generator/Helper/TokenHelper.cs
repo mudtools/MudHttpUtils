@@ -138,4 +138,50 @@ internal static class TokenHelper
 
         return null;
     }
+
+    /// <summary>
+    /// 从 TypedConstant 获取 TokenInjectionMode 枚举名称。
+    /// 注意：序号必须与 Mud.HttpUtils.Attributes.TokenInjectionMode 枚举定义保持一致：
+    ///   0 = Header, 1 = Query, 2 = Path, 3 = ApiKey, 4 = HmacSignature, 5 = BasicAuth, 6 = Cookie
+    /// 生成器无法引用包含枚举定义的程序集，因此使用硬编码序号是必要的妥协。
+    /// </summary>
+    public static string GetTokenInjectionModeName(object? value)
+    {
+        if (value == null)
+            return HttpClientGeneratorConstants.TokenInjectionModeHeader;
+
+        var str = value.ToString();
+        if (string.IsNullOrEmpty(str))
+            return HttpClientGeneratorConstants.TokenInjectionModeHeader;
+
+        if (int.TryParse(str, out var num))
+        {
+            return num switch
+            {
+                0 => HttpClientGeneratorConstants.TokenInjectionModeHeader,
+                1 => HttpClientGeneratorConstants.TokenInjectionModeQuery,
+                2 => HttpClientGeneratorConstants.TokenInjectionModePath,
+                3 => HttpClientGeneratorConstants.TokenInjectionModeApiKey,
+                4 => HttpClientGeneratorConstants.TokenInjectionModeHmacSignature,
+                5 => HttpClientGeneratorConstants.TokenInjectionModeBasicAuth,
+                6 => HttpClientGeneratorConstants.TokenInjectionModeCookie,
+                _ => HttpClientGeneratorConstants.TokenInjectionModeHeader
+            };
+        }
+
+        var lastDot = str.LastIndexOf('.');
+        var name = lastDot >= 0 ? str.Substring(lastDot + 1) : str;
+
+        return name switch
+        {
+            "Header" => HttpClientGeneratorConstants.TokenInjectionModeHeader,
+            "Query" => HttpClientGeneratorConstants.TokenInjectionModeQuery,
+            "Path" => HttpClientGeneratorConstants.TokenInjectionModePath,
+            "ApiKey" => HttpClientGeneratorConstants.TokenInjectionModeApiKey,
+            "HmacSignature" => HttpClientGeneratorConstants.TokenInjectionModeHmacSignature,
+            "BasicAuth" => HttpClientGeneratorConstants.TokenInjectionModeBasicAuth,
+            "Cookie" => HttpClientGeneratorConstants.TokenInjectionModeCookie,
+            _ => HttpClientGeneratorConstants.TokenInjectionModeHeader
+        };
+    }
 }

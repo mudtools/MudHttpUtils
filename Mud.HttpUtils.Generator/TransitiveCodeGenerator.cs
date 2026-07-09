@@ -88,7 +88,7 @@ public abstract class TransitiveCodeGenerator : IIncrementalGenerator
         string className,
         Exception exception)
     {
-        context.ReportDiagnostic(Diagnostic.Create(descriptor, Location.None, className, exception?.Message));
+        context.ReportDiagnostic(Diagnostic.Create(descriptor, Location.None, className, GeneratorDebugLogger.FormatExceptionMessage(exception)));
     }
 
     /// <summary>
@@ -106,7 +106,7 @@ public abstract class TransitiveCodeGenerator : IIncrementalGenerator
         Exception exception,
         Location location)
     {
-        context.ReportDiagnostic(Diagnostic.Create(descriptor, location ?? Location.None, className, exception?.Message));
+        context.ReportDiagnostic(Diagnostic.Create(descriptor, location ?? Location.None, className, GeneratorDebugLogger.FormatExceptionMessage(exception)));
     }
 
 }

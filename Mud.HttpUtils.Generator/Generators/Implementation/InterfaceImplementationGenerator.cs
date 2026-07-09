@@ -98,7 +98,12 @@ internal class InterfaceImplementationGenerator
         _codeBuilder.AppendLine("}");
         _codeBuilder.AppendLine();
 
-        var fileName = $"{generatorContext.ClassName}.g.cs";
+        // 使用命名空间文件夹 + 类名的方式（如 MyApp/Apis/Implementation/UserServiceImpl.g.cs），
+        // 比扁平命名（UserServiceImpl.g.cs）更清晰地反映代码结构，并避免跨命名空间同名接口冲突
+        var namespacePath = generatorContext.NamespaceName.Replace('.', '/');
+        var fileName = string.IsNullOrEmpty(namespacePath)
+            ? $"{generatorContext.ClassName}.g.cs"
+            : $"{namespacePath}/{generatorContext.ClassName}.g.cs";
         _context.AddSource(
             fileName,
             SourceText.From(_codeBuilder.ToString(), Encoding.UTF8));
@@ -267,7 +272,7 @@ internal class InterfaceImplementationGenerator
         return true;
     }
 
-    private INamedTypeSymbol ResolveType(string typeName)
+    private INamedTypeSymbol? ResolveType(string typeName)
     {
         var type = _compilation.GetTypeByMetadataName(typeName);
         if (type != null)
@@ -295,7 +300,7 @@ internal class InterfaceImplementationGenerator
         return null;
     }
 
-    private INamedTypeSymbol FindTypeInNamespace(INamespaceSymbol ns, string typeName)
+    private INamedTypeSymbol? FindTypeInNamespace(INamespaceSymbol ns, string typeName)
     {
         foreach (var member in ns.GetTypeMembers())
         {
@@ -617,11 +622,7 @@ internal class InterfaceImplementationGenerator
             return;
         }
 
-        var allMethods = context.HasInheritedFrom
-            ? (string.IsNullOrEmpty(context.Configuration.InheritedFromInterfaceName)
-                ? _interfaceSymbol.GetMembers().OfType<IMethodSymbol>().ToList()
-                : TypeSymbolHelper.GetAllMethods(_interfaceSymbol, true, [context.Configuration.InheritedFromInterfaceName!]).ToList())
-            : TypeSymbolHelper.GetAllMethods(_interfaceSymbol, true).ToList();
+        var allMethods = context.AllMethods;
         foreach (var method in allMethods)
         {
             var methodRequiresUserId = GetMethodRequiresUserId(method);
@@ -649,11 +650,7 @@ internal class InterfaceImplementationGenerator
     /// </summary>
     private void PrecomputeXmlResponseTypes(GeneratorContext context)
     {
-        var methods = context.HasInheritedFrom
-            ? (string.IsNullOrEmpty(context.Configuration.InheritedFromInterfaceName)
-                ? _interfaceSymbol.GetMembers().OfType<IMethodSymbol>().ToList()
-                : TypeSymbolHelper.GetAllMethods(_interfaceSymbol, true, [context.Configuration.InheritedFromInterfaceName!]).ToList())
-            : TypeSymbolHelper.GetAllMethods(_interfaceSymbol, true);
+        var methods = context.AllMethods;
         foreach (var method in methods)
         {
             var isHttpMethod = MethodAnalyzer.FindHttpMethodAttributeFromSymbol(method) != null;

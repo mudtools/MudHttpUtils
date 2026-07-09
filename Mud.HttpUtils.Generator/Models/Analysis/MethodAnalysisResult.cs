@@ -240,7 +240,8 @@ internal class MethodAnalysisResult
     }
 
     /// <summary>
-    /// 无效的分析结果实例
+    /// 创建一个无效的分析结果实例。
+    /// 使用工厂方法而非共享静态实例，避免因实例属性被意外修改而影响其他调用方。
     /// </summary>
-    public static readonly MethodAnalysisResult Invalid = new() { IsValid = false };
+    public static MethodAnalysisResult CreateInvalid() => new() { IsValid = false };
 }

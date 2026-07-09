@@ -5,8 +5,6 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
-using System.Collections.Immutable;
-
 namespace Mud.HttpUtils;
 
 /// <summary>
@@ -49,6 +47,18 @@ internal abstract class HttpInvokeBaseSourceGenerator : TransitiveCodeGenerator
     /// 初始化源代码生成器
     /// </summary>
     /// <param name="context">初始化上下文</param>
+    /// <remarks>
+    /// 增量管道设计说明：
+    /// 本生成器需要在执行阶段访问 Compilation 进行语义分析（GetDeclaredSymbol、GetTypeByMetadataName 等），
+    /// 因此将 CompilationProvider 纳入管道。这意味着当编译发生变化时（如任意源文件被编辑），
+    /// ExecuteGenerator 会被重新调用。增量缓存的优势主要体现在 ForAttributeWithMetadataName 的语法过滤阶段——
+    /// 仅当接口声明具有 [HttpClientApi] 特性时才会被收集，而非遍历所有语法树。
+    /// <para>
+    /// 若要进一步优化增量缓存（使 ExecuteGenerator 仅在接口声明实际变化时才被调用），
+    /// 需要将所有语义分析迁移至 ForAttributeWithMetadataName 的 transform 阶段，
+    /// 并将结果以可比较的数据结构传递到 RegisterSourceOutput。这是一项较大的重构工作。
+    /// </para>
+    /// </remarks>
     public override void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var syntaxInterfaces = context.SyntaxProvider
@@ -58,12 +68,15 @@ internal abstract class HttpInvokeBaseSourceGenerator : TransitiveCodeGenerator
                 transform: static (ctx, _) => (InterfaceDeclarationSyntax)ctx.TargetNode)
             .WithTrackingName("HttpInvokeBase_SyntaxProvider")
             .Collect()
-            .WithComparer(InterfaceDeclarationArrayComparer.Instance);
+            .WithTrackingName("HttpInvokeBase_Collected");
 
         var compilationAndOptions = context.CompilationProvider
-            .Combine(context.AnalyzerConfigOptionsProvider);
+            .Combine(context.AnalyzerConfigOptionsProvider)
+            .WithTrackingName("HttpInvokeBase_CompilationAndOptions");
 
-        var completeData = syntaxInterfaces.Combine(compilationAndOptions);
+        var completeData = syntaxInterfaces
+            .Combine(compilationAndOptions)
+            .WithTrackingName("HttpInvokeBase_CompleteData");
 
         context.RegisterSourceOutput(completeData,
             (ctx, provider) => ExecuteGenerator(
@@ -76,16 +89,10 @@ internal abstract class HttpInvokeBaseSourceGenerator : TransitiveCodeGenerator
     /// <summary>
     /// 接口信息结构，包含语法节点和符号
     /// </summary>
-    protected readonly struct InterfaceInfo
+    protected readonly struct InterfaceInfo(InterfaceDeclarationSyntax syntax, INamedTypeSymbol symbol)
     {
-        public readonly InterfaceDeclarationSyntax Syntax;
-        public readonly INamedTypeSymbol Symbol;
-
-        public InterfaceInfo(InterfaceDeclarationSyntax syntax, INamedTypeSymbol symbol)
-        {
-            Syntax = syntax;
-            Symbol = symbol;
-        }
+        public readonly InterfaceDeclarationSyntax Syntax = syntax;
+        public readonly INamedTypeSymbol Symbol = symbol;
     }
 
     /// <summary>
