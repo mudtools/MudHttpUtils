@@ -18,9 +18,14 @@ namespace Mud.HttpUtils;
 /// 注意：IHttpClientFactory 管理 HttpClient 的生命周期，由工厂创建的 HttpClient 实例不应该被手动释放。
 /// 如果需要刷新 DNS 或更新 HttpClient 配置，请通过 IHttpClientFactory 的配置重新注册。
 /// </para>
+/// <para>
+/// M-4 验证结果：基类 <see cref="EnhancedHttpClient"/> 不实现 <c>IDisposable</c>，
+/// 因此 <see cref="HttpClientFactoryEnhancedClient"/> 不会调用 <c>HttpClient.Dispose()</c>，
+/// 不会破坏 IHttpClientFactory 的池化复用机制。此行为正确，无需修复。
+/// </para>
 /// 推荐在依赖注入场景中使用此类。
 /// </remarks>
-public sealed class HttpClientFactoryEnhancedClient : EnhancedHttpClient
+public class HttpClientFactoryEnhancedClient : EnhancedHttpClient
 {
     private readonly IHttpClientFactory _factory;
     private readonly string _clientName;

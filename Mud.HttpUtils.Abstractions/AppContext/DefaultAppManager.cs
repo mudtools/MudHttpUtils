@@ -113,10 +113,26 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
         if (string.IsNullOrWhiteSpace(appKey))
             return false;
 
-        var removed = _apps.TryRemove(appKey, out _);
+        // M-10 修复：移除应用时释放 IDisposable 资源，避免 Timer、SemaphoreSlim 等非托管资源泄漏。
+        // FeishuAppContext 等实现了 IDisposable 的上下文在 RemoveApp 时不会被自动释放，
+        // 长期运行的服务中频繁增删应用会导致句柄泄漏。
+        var removed = _apps.TryRemove(appKey, out var context);
 
         if (removed)
         {
+            // 释放被移除的应用上下文资源
+            if (context is IDisposable disposable)
+            {
+                try
+                {
+                    disposable.Dispose();
+                }
+                catch
+                {
+                    // 释放过程中的异常不应阻止 RemoveApp 的正常完成
+                }
+            }
+
             lock (_defaultAppLock)
             {
                 if (_defaultAppKey == appKey)
@@ -146,7 +162,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     }
 
     /// <inheritdoc />
-    public IEnumerable<TAppContext> GetAllApps()
+    public virtual IEnumerable<TAppContext> GetAllApps()
     {
         return _apps.Values;
     }

@@ -93,7 +93,15 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
             return;
         }
 
-        var options = new MemoryCacheEntryOptions { Size = 1, Priority = CacheItemPriority.Normal };
+        var options = new MemoryCacheEntryOptions { Priority = CacheItemPriority.Normal };
+
+        // M-5 修复：仅在 MemoryCache 配置了 SizeLimit 时才设置 Size。
+        // 当 MemoryCacheOptions.SizeLimit 为 null 时（默认无参构造函数），
+        // 设置 MemoryCacheEntryOptions.Size 会导致 IMemoryCache.Set 抛出 InvalidOperationException。
+        if (_memoryCacheOptions.SizeLimit.HasValue)
+        {
+            options.Size = 1;
+        }
 
         if (slidingExpiration.HasValue)
         {

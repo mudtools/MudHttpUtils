@@ -57,10 +57,30 @@ public class ConcurrentDictionaryTokenCache<T> : ITokenCache<T> where T : class
 
     /// <inheritdoc />
     /// <remarks>
-    /// ConcurrentDictionary 实现不支持压缩操作，此方法为空操作。
+    /// m-2 修复：实现 Compact 方法，按指定百分比移除缓存条目。
+    /// 由于 ConcurrentDictionary 不维护插入顺序且不跟踪过期时间，
+    /// 此方法移除任意选取的条目（适用于内存压力场景的紧急回收）。
     /// </remarks>
     public void Compact(double percentage)
     {
+        if (percentage <= 0)
+            return;
+        if (percentage >= 1.0)
+        {
+            _cache.Clear();
+            return;
+        }
+
+        var targetRemoval = (int)(_cache.Count * percentage);
+        if (targetRemoval <= 0)
+            return;
+
+        // 移除任意选取的条目（ConcurrentDictionary 不维护顺序）
+        var keysToRemove = _cache.Keys.Take(targetRemoval).ToList();
+        foreach (var key in keysToRemove)
+        {
+            _cache.TryRemove(key, out _);
+        }
     }
 
     /// <inheritdoc />
