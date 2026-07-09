@@ -166,15 +166,16 @@ public class MyTokenManager : TokenManagerBase
         => GetOrRefreshTokenAsync(ct);
 }
 
-// 注册后台刷新服务
-services.Configure<TokenRefreshBackgroundOptions>(options =>
+// 注册后台刷新服务（推荐方式）
+// AddTokenRefreshBackgroundService 内部自动注册为 IHostedService 和 ITokenRefreshBackgroundService，
+// 确保两者解析到同一单例实例，消费方可直接注入 ITokenRefreshBackgroundService。
+services.AddTokenRefreshBackgroundService(options =>
 {
     options.Enabled = true;
     options.RefreshIntervalSeconds = 3500;
     options.RetryDelaySeconds = 60;
     options.StopOnError = false;
 });
-services.AddHostedService<TokenRefreshHostedService>();
 ```
 
 > `TokenManagerBase` 使用 `SemaphoreSlim(1, 1)` 确保同一时刻只有一个线程执行令牌刷新。`UserTokenManagerBase` 使用 `IMemoryCache` 管理用户令牌缓存，支持 `MaxCacheSize` 限制和自动过期清理。`TokenRefreshHostedService` 支持配置 `RefreshIntervalSeconds`（刷新间隔）、`RefreshBeforeExpirySeconds`（过期前提前刷新时间）、`RetryDelaySeconds`（重试延迟）和 `StopOnError`（出错时是否停止）。

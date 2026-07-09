@@ -176,11 +176,7 @@ public static class HttpClientServiceCollectionExtensions
             services.AddOptions<TokenRefreshBackgroundOptions>();
         }
 
-#if NET6_0_OR_GREATER
-        services.AddHostedService<TokenRefreshHostedService>();
-#else
-        services.AddSingleton<ITokenRefreshBackgroundService, TokenRefreshBackgroundService>();
-#endif
+        RegisterTokenRefreshService(services);
 
         return services;
     }
@@ -206,13 +202,37 @@ public static class HttpClientServiceCollectionExtensions
         services.AddOptions<TokenRefreshBackgroundOptions>()
             .Bind(configuration.GetSection(configurationSectionPath));
 
+        RegisterTokenRefreshService(services);
+
+        return services;
+    }
+
+    /// <summary>
+    /// 注册令牌刷新后台服务的内部实现。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <remarks>
+    /// <para>NET6+：使用 <see cref="TokenRefreshHostedService"/>（基于 BackgroundService）。</para>
+    /// <para>netstandard2.0：使用 <see cref="TokenRefreshBackgroundService"/>（基于 Timer）。</para>
+    /// <para>
+    /// NET6+ 中，先注册为单例，再通过工厂委托分别注册为 <see cref="Microsoft.Extensions.Hosting.IHostedService"/> 和
+    /// <see cref="ITokenRefreshBackgroundService"/>，确保两个接口解析到同一实例。
+    /// 此前仅注册为 IHostedService，导致无法通过 ITokenRefreshBackgroundService 直接注入，
+    /// 消费方不得不使用 <c>GetServices&lt;IHostedService&gt;().OfType&lt;ITokenRefreshBackgroundService&gt;()</c> 变通方案。
+    /// </para>
+    /// </remarks>
+    private static void RegisterTokenRefreshService(IServiceCollection services)
+    {
 #if NET6_0_OR_GREATER
-        services.AddHostedService<TokenRefreshHostedService>();
+        // 先注册为单例，确保 IHostedService 和 ITokenRefreshBackgroundService 解析到同一实例
+        services.AddSingleton<TokenRefreshHostedService>();
+        // 注册为 IHostedService（生命周期由主机管理）
+        services.AddHostedService(sp => sp.GetRequiredService<TokenRefreshHostedService>());
+        // 同时暴露为 ITokenRefreshBackgroundService，供消费方直接注入
+        services.AddSingleton<ITokenRefreshBackgroundService>(sp => sp.GetRequiredService<TokenRefreshHostedService>());
 #else
         services.AddSingleton<ITokenRefreshBackgroundService, TokenRefreshBackgroundService>();
 #endif
-
-        return services;
     }
 
     /// <summary>

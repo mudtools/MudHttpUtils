@@ -952,14 +952,15 @@ public class MyTokenManager : TokenManagerBase
 ### 令牌后台刷新服务
 
 ```csharp
-services.Configure<TokenRefreshBackgroundOptions>(options =>
+// 推荐方式：使用 AddTokenRefreshBackgroundService 统一注册
+// 内部自动注册为 IHostedService 和 ITokenRefreshBackgroundService（同一单例）
+services.AddTokenRefreshBackgroundService(options =>
 {
     options.Enabled = true;
     options.RefreshIntervalSeconds = 3500;
     options.InitialDelaySeconds = 30;
     options.MaxRetryAttempts = 3;
 });
-services.AddHostedService<TokenRefreshHostedService>();
 ```
 
 ### 用户令牌缓存配置

@@ -1,3 +1,10 @@
+// -----------------------------------------------------------------------
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// -----------------------------------------------------------------------
+
 #if NET6_0_OR_GREATER
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -39,25 +46,19 @@ namespace Mud.HttpUtils;
 /// <seealso cref="BackgroundService"/>
 /// <seealso cref="ITokenManager"/>
 /// <seealso cref="TokenRefreshBackgroundOptions"/>
-public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefreshBackgroundService
+/// <remarks>
+/// 初始化 <see cref="TokenRefreshHostedService"/> 类的新实例。
+/// </remarks>
+/// <param name="options">令牌刷新后台服务配置选项。</param>
+/// <param name="logger">日志记录器。</param>
+/// <exception cref="ArgumentNullException"><paramref name="options"/> 或 <paramref name="logger"/> 为 null。</exception>
+public sealed class TokenRefreshHostedService(
+    IOptions<TokenRefreshBackgroundOptions> options,
+    ILogger<TokenRefreshHostedService> logger) : BackgroundService, ITokenRefreshBackgroundService
 {
     private readonly ConcurrentDictionary<string, ITokenManager> _tokenManagers = new(StringComparer.OrdinalIgnoreCase);
-    private readonly TokenRefreshBackgroundOptions _options;
-    private readonly ILogger<TokenRefreshHostedService> _logger;
-
-    /// <summary>
-    /// 初始化 <see cref="TokenRefreshHostedService"/> 类的新实例。
-    /// </summary>
-    /// <param name="options">令牌刷新后台服务配置选项。</param>
-    /// <param name="logger">日志记录器。</param>
-    /// <exception cref="ArgumentNullException"><paramref name="options"/> 或 <paramref name="logger"/> 为 null。</exception>
-    public TokenRefreshHostedService(
-        IOptions<TokenRefreshBackgroundOptions> options,
-        ILogger<TokenRefreshHostedService> logger)
-    {
-        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    }
+    private readonly TokenRefreshBackgroundOptions _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+    private readonly ILogger<TokenRefreshHostedService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
     /// <summary>
     /// 初始化 <see cref="TokenRefreshHostedService"/> 类的新实例，绑定单个令牌管理器（向后兼容）。
