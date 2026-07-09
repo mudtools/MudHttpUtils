@@ -141,7 +141,6 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
 
         // 解析特性参数，使用AttributeDataHelper的已有功能
         var handlerNamespace = GetAttributeParameter(eventHandlerAttribute, "HandlerNamespace", "");
-        var handlerClassName = GetAttributeParameter(eventHandlerAttribute, "HandlerClassName", "");
         var eventType = GetAttributeParameter(eventHandlerAttribute, "EventType", "");
         var inheritedFrom = GetAttributeParameter(eventHandlerAttribute, "InheritedFrom", "IdempotentFeishuEventHandler");
         var constructorParams = GetAttributeParameter(eventHandlerAttribute, "ConstructorParameters", "IFeishuEventDeduplicator businessDeduplicator, ILogger logger, IAppKeyAccessor? appKeyAccessor = null");
@@ -154,8 +153,9 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
             return string.Empty;
         }
 
-        // 获取生成的类名
-        var generatedClassName = !string.IsNullOrEmpty(handlerClassName) ? handlerClassName : GenerateDefaultHandlerClassName(eventClass.Identifier.Text);
+        // 获取生成的类名（统一通过 GetGeneratedClassName，确保 nameof(...) 表达式被正确处理，
+        // 与 GenerateUniqueFileName 中的文件名生成逻辑保持一致）
+        var generatedClassName = GetGeneratedClassName(eventClass, eventHandlerAttribute);
 
         // 获取命名空间
         var targetNamespace = !string.IsNullOrEmpty(handlerNamespace) ? handlerNamespace : GetDefaultNamespace(classSymbol);

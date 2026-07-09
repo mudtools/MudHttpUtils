@@ -104,7 +104,7 @@ public interface IHttpRequestExecutor
     /// <summary>
     /// 发送 HTTP 请求并返回 Response{T}，支持缓存和弹性策略编排。
     /// </summary>
-    Task<Response<TInner>> ExecuteAsResponseAsync<TInner>(
+    Task<Response<TInner>?> ExecuteAsResponseAsync<TInner>(
         HttpRequestMessage request,
         ExecutionDescriptor descriptor,
         object? jsonSerializerOptions,

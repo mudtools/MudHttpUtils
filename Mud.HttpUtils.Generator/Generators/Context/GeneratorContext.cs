@@ -168,112 +168,87 @@ internal class GeneratorContext
         }
 
         AllMethods = allMethods;
-        HasCache = DetectCacheUsage(allMethods);
-        HasCacheVaryByUser = DetectCacheVaryByUser(allMethods);
-        HasResilience = DetectResilienceUsage(allMethods);
-        HasApiKeyInjection = DetectApiKeyInjection(interfaceSymbol, allMethods);
-        HasHmacSignatureInjection = DetectHmacSignatureInjection(interfaceSymbol, allMethods);
+
+        // 单次遍历检测全部 5 个特性标志，避免 5 个独立 Detect 方法各自遍历 allMethods
+        // 并各自调用 method.GetAttributes() 产生重复分配
+        DetectFeatures(interfaceSymbol, allMethods);
     }
 
-    private static bool DetectCacheUsage(IReadOnlyList<IMethodSymbol> allMethods)
+    /// <summary>
+    /// 单次遍历所有方法，一次性检测 Cache、CacheVaryByUser、Resilience、ApiKeyInjection、HmacSignatureInjection。
+    /// 接口级 Token 特性在循环前检查；方法级特性在单次循环中合并检测，尽早短路退出。
+    /// </summary>
+    private void DetectFeatures(INamedTypeSymbol interfaceSymbol, IReadOnlyList<IMethodSymbol> allMethods)
     {
         try
         {
-            return allMethods.Any(method =>
-                method.GetAttributes().Any(attr =>
-                    HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name)));
-        }
-        catch (Exception ex)
-        {
-            GeneratorDebugLogger.LogError("DetectCacheUsage", ex);
-            return false;
-        }
-    }
-
-    private static bool DetectCacheVaryByUser(IReadOnlyList<IMethodSymbol> allMethods)
-    {
-        try
-        {
-            return allMethods.Any(method =>
-            {
-                var cacheAttr = method.GetAttributes()
-                    .FirstOrDefault(attr => HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name));
-                if (cacheAttr == null)
-                    return false;
-                return AttributeDataHelper.GetBoolValueFromAttribute(cacheAttr, HttpClientGeneratorConstants.CacheVaryByUserProperty, false);
-            });
-        }
-        catch (Exception ex)
-        {
-            GeneratorDebugLogger.LogError("DetectCacheVaryByUser", ex);
-            return false;
-        }
-    }
-
-    private static bool DetectResilienceUsage(IReadOnlyList<IMethodSymbol> allMethods)
-    {
-        try
-        {
-            return allMethods.Any(method =>
-                method.GetAttributes().Any(attr =>
-                    HttpClientGeneratorConstants.RetryAttributeNames.Contains(attr.AttributeClass?.Name) ||
-                    HttpClientGeneratorConstants.CircuitBreakerAttributeNames.Contains(attr.AttributeClass?.Name) ||
-                    HttpClientGeneratorConstants.TimeoutAttributeNames.Contains(attr.AttributeClass?.Name)));
-        }
-        catch (Exception ex)
-        {
-            GeneratorDebugLogger.LogError("DetectResilienceUsage", ex);
-            return false;
-        }
-    }
-
-    private static bool DetectApiKeyInjection(INamedTypeSymbol interfaceSymbol, IReadOnlyList<IMethodSymbol> allMethods)
-    {
-        try
-        {
-            // 检查接口级 Token 特性
+            // 接口级 Token 特性检查（单次调用，不在方法循环内重复）
             var interfaceTokenAttr = interfaceSymbol.GetAttributes()
                 .FirstOrDefault(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.AttributeClass?.Name));
-            if (interfaceTokenAttr != null && IsInjectionMode(interfaceTokenAttr, HttpClientGeneratorConstants.TokenInjectionModeApiKey))
-                return true;
-
-            // 检查方法级 Token 特性（复用已获取的 allMethods）
-            return allMethods.Any(method =>
+            if (interfaceTokenAttr != null)
             {
-                var methodTokenAttr = method.GetAttributes()
-                    .FirstOrDefault(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.AttributeClass?.Name));
-                return methodTokenAttr != null && IsInjectionMode(methodTokenAttr, HttpClientGeneratorConstants.TokenInjectionModeApiKey);
-            });
+                HasApiKeyInjection = IsInjectionMode(interfaceTokenAttr, HttpClientGeneratorConstants.TokenInjectionModeApiKey);
+                HasHmacSignatureInjection = IsInjectionMode(interfaceTokenAttr, HttpClientGeneratorConstants.TokenInjectionModeHmacSignature);
+            }
+
+            // 全部已检出时可短路退出
+            if (HasCacheVaryByUser && HasResilience && HasApiKeyInjection && HasHmacSignatureInjection)
+                return;
+
+            foreach (var method in allMethods)
+            {
+                var methodAttrs = method.GetAttributes();
+
+                // Cache 检测
+                if (!HasCacheVaryByUser)
+                {
+                    var cacheAttr = methodAttrs.FirstOrDefault(attr =>
+                        HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name));
+                    if (cacheAttr != null)
+                    {
+                        HasCache = true;
+                        if (AttributeDataHelper.GetBoolValueFromAttribute(cacheAttr, HttpClientGeneratorConstants.CacheVaryByUserProperty, false))
+                            HasCacheVaryByUser = true;
+                    }
+                }
+                else if (!HasCache)
+                {
+                    // VaryByUser 已检出但 HasCache 尚未标记（理论上 VaryByUser 蕴含 HasCache）
+                    HasCache = methodAttrs.Any(attr =>
+                        HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name));
+                }
+
+                // Resilience 检测
+                if (!HasResilience)
+                {
+                    HasResilience = methodAttrs.Any(attr =>
+                        HttpClientGeneratorConstants.RetryAttributeNames.Contains(attr.AttributeClass?.Name) ||
+                        HttpClientGeneratorConstants.CircuitBreakerAttributeNames.Contains(attr.AttributeClass?.Name) ||
+                        HttpClientGeneratorConstants.TimeoutAttributeNames.Contains(attr.AttributeClass?.Name));
+                }
+
+                // Token 注入模式检测
+                if (!HasApiKeyInjection || !HasHmacSignatureInjection)
+                {
+                    var methodTokenAttr = methodAttrs.FirstOrDefault(attr =>
+                        HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.AttributeClass?.Name));
+                    if (methodTokenAttr != null)
+                    {
+                        if (!HasApiKeyInjection && IsInjectionMode(methodTokenAttr, HttpClientGeneratorConstants.TokenInjectionModeApiKey))
+                            HasApiKeyInjection = true;
+                        if (!HasHmacSignatureInjection && IsInjectionMode(methodTokenAttr, HttpClientGeneratorConstants.TokenInjectionModeHmacSignature))
+                            HasHmacSignatureInjection = true;
+                    }
+                }
+
+                // 全部检出后短路退出
+                if (HasCacheVaryByUser && HasResilience && HasApiKeyInjection && HasHmacSignatureInjection)
+                    return;
+            }
         }
         catch (Exception ex)
         {
-            GeneratorDebugLogger.LogError("DetectApiKeyInjection", ex);
-            return false;
-        }
-    }
-
-    private static bool DetectHmacSignatureInjection(INamedTypeSymbol interfaceSymbol, IReadOnlyList<IMethodSymbol> allMethods)
-    {
-        try
-        {
-            // 检查接口级 Token 特性
-            var interfaceTokenAttr = interfaceSymbol.GetAttributes()
-                .FirstOrDefault(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.AttributeClass?.Name));
-            if (interfaceTokenAttr != null && IsInjectionMode(interfaceTokenAttr, HttpClientGeneratorConstants.TokenInjectionModeHmacSignature))
-                return true;
-
-            // 检查方法级 Token 特性（复用已获取的 allMethods）
-            return allMethods.Any(method =>
-            {
-                var methodTokenAttr = method.GetAttributes()
-                    .FirstOrDefault(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.AttributeClass?.Name));
-                return methodTokenAttr != null && IsInjectionMode(methodTokenAttr, HttpClientGeneratorConstants.TokenInjectionModeHmacSignature);
-            });
-        }
-        catch (Exception ex)
-        {
-            GeneratorDebugLogger.LogError("DetectHmacSignatureInjection", ex);
-            return false;
+            GeneratorDebugLogger.LogError("DetectFeatures", ex);
         }
     }
 

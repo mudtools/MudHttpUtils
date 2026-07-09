@@ -37,21 +37,44 @@ internal static class SyntaxHelper
     }
 
     /// <summary>
-    /// 根据<see cref="ClassDeclarationSyntax"/>获取当前类所在的命名空间。
+    /// 根据<see cref="TypeDeclarationSyntax"/>获取当前类型所在的完整命名空间。
     /// </summary>
-    /// <param name="classNode">类声明语法节点。</param>
-    /// <returns>命名空间名称。</returns>
+    /// <param name="classNode">类型声明语法节点。</param>
+    /// <param name="extNamespace">要追加的扩展命名空间后缀（如 Implementation 子命名空间）。</param>
+    /// <returns>完整命名空间名称。</returns>
+    /// <remarks>
+    /// 正确处理嵌套命名空间块声明（如 <c>namespace A { namespace B { ... } }</c>），
+    /// 从内层到外层逐级拼接，返回完整的限定命名空间 <c>A.B</c>。
+    /// 对于单块声明 <c>namespace A.B.C { }</c>，Name 本身已是完整限定名，直接返回。
+    /// </remarks>
     public static string GetNamespaceName(TypeDeclarationSyntax classNode, string extNamespace = "")
     {
         var result = "";
-        if (TryGetParentSyntax(classNode, out NamespaceDeclarationSyntax namespaceDeclarationSyntax))
+
+        // 从内层到外层收集所有命名空间祖先，用 Stack 保证外层在前
+        var namespaceParts = new Stack<string>();
+        var current = classNode.Parent;
+        while (current != null)
         {
-            result = namespaceDeclarationSyntax.Name.ToString();
+            if (current is NamespaceDeclarationSyntax ns)
+            {
+                // NamespaceDeclarationSyntax.Name 可能本身是限定的（如 A.B），直接使用完整名称
+                namespaceParts.Push(ns.Name.ToString());
+            }
+            else if (current is FileScopedNamespaceDeclarationSyntax fileNs)
+            {
+                // 文件范围命名空间不可嵌套，找到即停止
+                namespaceParts.Push(fileNs.Name.ToString());
+                break;
+            }
+            current = current.Parent;
         }
-        else if (TryGetParentSyntax(classNode, out FileScopedNamespaceDeclarationSyntax fileScopedNamespaceDeclaration))
+
+        if (namespaceParts.Count > 0)
         {
-            result = fileScopedNamespaceDeclaration.Name.ToString();
+            result = string.Join(".", namespaceParts);
         }
+
         if (!string.IsNullOrEmpty(extNamespace))
         {
             if (!string.IsNullOrEmpty(result))

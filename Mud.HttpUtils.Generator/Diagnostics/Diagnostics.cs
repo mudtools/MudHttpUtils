@@ -152,6 +152,14 @@ internal static class Diagnostics
         DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         customTags: WellKnownDiagnosticTags.NotConfigurable);
+
+    public static readonly DiagnosticDescriptor HttpClientTypeUnresolved = new(
+        id: "HTTPCLIENT017",
+        title: "HttpClient 类型无法解析，兼容性校验被跳过",
+        messageFormat: "接口 {0} 的方法 {1} 指定的 HttpClient 类型 '{2}' 无法在编译中解析，加密/XML 兼容性校验已被跳过。请确保类型名称正确（使用完全限定名），否则可能导致生成代码在运行时失败。",
+        category: "代码生成",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
     #endregion
 
     #region HttpClient注册生成器诊断信息 (HTTPCLIENTREG001-002)

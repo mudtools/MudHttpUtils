@@ -738,7 +738,9 @@ private string GetBodyContentType(ParameterAttributeInfo bodyAttr)
             .Replace(" ", "")
             .Replace(".", "_")
             .Replace("[", "_")
-            .Replace("]", "_");
+            .Replace("]", "_")
+            .Replace("+", "_")    // 嵌套类型分隔符（Parent+Child）
+            .Replace("`", "_");   // 泛型 arity 标记（Dictionary`2）
         return $"_xmlSerializer_{safeName}";
     }
 

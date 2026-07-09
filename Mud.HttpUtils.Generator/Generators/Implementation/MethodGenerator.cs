@@ -774,7 +774,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         // 校验加密兼容性：EnableEncrypt=true 时 HttpClient 必须实现 IEncryptableHttpClient
         if (methodInfo.BodyEnableEncrypt)
         {
-            if (!HttpClientTypeSupportsInterface(context.Compilation, httpClientType!, "IEncryptableHttpClient"))
+            if (!HttpClientTypeSupportsInterface(context.Compilation, httpClientType!, "IEncryptableHttpClient", out var encryptTypeResolved))
             {
                 context.ProductionContext.ReportDiagnostic(
                     Diagnostic.Create(
@@ -785,6 +785,16 @@ internal class MethodGenerator : ICodeFragmentGenerator
                         httpClientType));
                 isValid = false;
             }
+            else if (!encryptTypeResolved)
+            {
+                context.ProductionContext.ReportDiagnostic(
+                    Diagnostic.Create(
+                        Diagnostics.HttpClientTypeUnresolved,
+                        context.InterfaceDeclaration.GetLocation(),
+                        context.InterfaceDeclaration.Identifier.Text,
+                        methodInfo.MethodName ?? "Unknown",
+                        httpClientType));
+            }
         }
 
         // 校验 XML 兼容性：XML 请求/响应时 HttpClient 必须实现 IXmlHttpClient
@@ -792,7 +802,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         var isXmlResponse = ContentTypeHelper.IsXmlContentType(methodInfo.ResponseContentType);
         if (isXmlRequest || isXmlResponse)
         {
-            if (!HttpClientTypeSupportsInterface(context.Compilation, httpClientType!, "IXmlHttpClient"))
+            if (!HttpClientTypeSupportsInterface(context.Compilation, httpClientType!, "IXmlHttpClient", out var xmlTypeResolved))
             {
                 context.ProductionContext.ReportDiagnostic(
                     Diagnostic.Create(
@@ -803,6 +813,16 @@ internal class MethodGenerator : ICodeFragmentGenerator
                         httpClientType));
                 // XML 不兼容是警告级别，不阻止生成
             }
+            else if (!xmlTypeResolved)
+            {
+                context.ProductionContext.ReportDiagnostic(
+                    Diagnostic.Create(
+                        Diagnostics.HttpClientTypeUnresolved,
+                        context.InterfaceDeclaration.GetLocation(),
+                        context.InterfaceDeclaration.Identifier.Text,
+                        methodInfo.MethodName ?? "Unknown",
+                        httpClientType));
+            }
         }
 
         return isValid;
@@ -811,15 +831,22 @@ internal class MethodGenerator : ICodeFragmentGenerator
     /// <summary>
     /// 检查指定的 HttpClient 类型是否实现了给定的接口
     /// </summary>
-    private static bool HttpClientTypeSupportsInterface(Compilation compilation, string httpClientType, string interfaceName)
+    /// <param name="typeResolved">返回 true 表示类型已解析并完成了实际校验；false 表示类型无法解析，结果为保守放行。</param>
+    private static bool HttpClientTypeSupportsInterface(Compilation compilation, string httpClientType, string interfaceName, out bool typeResolved)
     {
         // IEnhancedHttpClient 继承了 IJsonHttpClient 和 IXmlHttpClient，同时 EnhancedHttpClient 实现了 IEncryptableHttpClient
         if (httpClientType == "IEnhancedHttpClient")
+        {
+            typeResolved = true;
             return true;
+        }
 
         // IBaseHttpClient 不支持 XML 和加密
         if (httpClientType == "IBaseHttpClient")
+        {
+            typeResolved = true;
             return interfaceName == "IJsonHttpClient" || interfaceName == "IBaseHttpClient";
+        }
 
         // 对于其他自定义类型，尝试从编译中解析类型并检查接口
         var typeSymbol = compilation.GetTypeByMetadataName(httpClientType)
@@ -827,10 +854,12 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         if (typeSymbol != null)
         {
+            typeResolved = true;
             return typeSymbol.AllInterfaces.Any(i => i.Name == interfaceName);
         }
 
-        // 无法解析类型时，默认通过（避免误报）
+        // 无法解析类型时，默认通过（避免误报），但标记为未解析以便调用方输出警告
+        typeResolved = false;
         return true;
     }
 

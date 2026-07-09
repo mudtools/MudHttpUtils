@@ -5,6 +5,7 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using System.Collections.Concurrent;
 using Mud.HttpUtils.Analyzers;
 using Mud.HttpUtils.Generators.Base;
 using Mud.HttpUtils.Generators.Context;
@@ -16,6 +17,12 @@ namespace Mud.HttpUtils.Generators.Implementation;
 /// </summary>
 internal class InterfaceImplementationGenerator
 {
+    /// <summary>
+    /// 类型解析缓存：以 Compilation 为主键的 ConditionalWeakTable，Compilation 变化时自动失效；
+    /// 内层以类型名为键缓存解析结果（包括 null），避免对同一 Compilation 重复执行全局命名空间扫描。
+    /// </summary>
+    private static readonly ConditionalWeakTable<Compilation, ConcurrentDictionary<string, INamedTypeSymbol?>> _typeResolveCache = new();
+
     private readonly Compilation _compilation;
     private readonly InterfaceDeclarationSyntax _interfaceDecl;
     private readonly SourceProductionContext _context;
@@ -136,6 +143,8 @@ internal class InterfaceImplementationGenerator
 
         if (!string.IsNullOrEmpty(configuration.HttpClient))
         {
+            // HttpClient 类型校验仅输出诊断不阻断生成：GetTypeByMetadataName 需要完全限定名，
+            // 用户可能使用短名称引用同编译中的类型，阻断会导致误报。错误诊断已足以提示用户。
             ValidateHttpClientType(configuration.HttpClient);
         }
 
@@ -274,6 +283,14 @@ internal class InterfaceImplementationGenerator
 
     private INamedTypeSymbol? ResolveType(string typeName)
     {
+        // 使用缓存避免对同一 Compilation 重复执行全局命名空间扫描。
+        // 缓存 null 结果（ContainsKey + null value）以跳过已知无法解析的类型名。
+        var innerCache = _typeResolveCache.GetOrCreateValue(_compilation);
+        return innerCache.GetOrAdd(typeName, ResolveTypeUncached);
+    }
+
+    private INamedTypeSymbol? ResolveTypeUncached(string typeName)
+    {
         var type = _compilation.GetTypeByMetadataName(typeName);
         if (type != null)
             return type;
@@ -403,30 +420,10 @@ internal class InterfaceImplementationGenerator
                 }
             }
         }
-        else
-        {
-            // 显式指定 InheritedFrom 时，通过类名反查基接口以确定 BaseHasTokenManager 和 InheritedFromInterfaceName
-            foreach (var baseInterface in _interfaceSymbol.AllInterfaces)
-            {
-                var baseImplName = TypeSymbolHelper.GetImplementationClassName(baseInterface.Name);
-                if (!string.Equals(baseImplName, inheritedFrom, StringComparison.Ordinal))
-                    continue;
 
-                inheritedFromInterfaceName = baseInterface.Name;
-
-                var baseApiAttr = baseInterface.GetAttributes()
-                    .FirstOrDefault(attr => HttpClientGeneratorConstants.HttpClientApiAttributeNames.Contains(attr.AttributeClass?.Name));
-                if (baseApiAttr != null)
-                {
-                    var baseTokenManage = AttributeDataHelper.GetStringValueFromAttribute(baseApiAttr, HttpClientGeneratorConstants.TokenManageProperty);
-                    var baseHttpClient = AttributeDataHelper.GetStringValueFromAttribute(baseApiAttr, HttpClientGeneratorConstants.HttpClientProperty);
-                    baseHasTokenManager = !string.IsNullOrWhiteSpace(baseTokenManage) && string.IsNullOrWhiteSpace(baseHttpClient);
-                }
-                break;
-            }
-        }
-
-        // 扫描基接口的缓存/弹性策略特性，用于确定 base(...) 构造函数调用参数
+        // 合并的 AllInterfaces 单次扫描：显式 InheritedFrom 反查 + Cache/Resilience 基接口特性检测。
+        // auto-detect 分支已设置 inheritedFromInterfaceName，反查逻辑（inheritedFromInterfaceName == null）自动跳过；
+        // 显式分支在此循环中同时完成反查和 Cache/Resilience 扫描，消除原先的两次独立 AllInterfaces 遍历。
         var baseHasCache = false;
         var baseHasResilience = false;
         if (!string.IsNullOrEmpty(inheritedFrom))
@@ -435,26 +432,47 @@ internal class InterfaceImplementationGenerator
             {
                 var baseApiAttr = baseInterface.GetAttributes()
                     .FirstOrDefault(attr => HttpClientGeneratorConstants.HttpClientApiAttributeNames.Contains(attr.AttributeClass?.Name));
-                if (baseApiAttr == null) continue;
 
-                try
+                // 显式 InheritedFrom 反查：通过类名匹配基接口以确定 BaseHasTokenManager 和 InheritedFromInterfaceName
+                if (inheritedFromInterfaceName == null)
                 {
-                    var baseMethods = TypeSymbolHelper.GetAllMethods(baseInterface, true);
-                    foreach (var method in baseMethods)
+                    var baseImplName = TypeSymbolHelper.GetImplementationClassName(baseInterface.Name);
+                    if (string.Equals(baseImplName, inheritedFrom, StringComparison.Ordinal))
                     {
-                        if (!baseHasCache && method.GetAttributes().Any(attr =>
-                            HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name)))
-                            baseHasCache = true;
-                        if (!baseHasResilience && method.GetAttributes().Any(attr =>
-                            HttpClientGeneratorConstants.RetryAttributeNames.Contains(attr.AttributeClass?.Name) ||
-                            HttpClientGeneratorConstants.CircuitBreakerAttributeNames.Contains(attr.AttributeClass?.Name) ||
-                            HttpClientGeneratorConstants.TimeoutAttributeNames.Contains(attr.AttributeClass?.Name)))
-                            baseHasResilience = true;
-                        if (baseHasCache && baseHasResilience) break;
+                        inheritedFromInterfaceName = baseInterface.Name;
+                        if (baseApiAttr != null)
+                        {
+                            var baseTokenManage = AttributeDataHelper.GetStringValueFromAttribute(baseApiAttr, HttpClientGeneratorConstants.TokenManageProperty);
+                            var baseHttpClient = AttributeDataHelper.GetStringValueFromAttribute(baseApiAttr, HttpClientGeneratorConstants.HttpClientProperty);
+                            baseHasTokenManager = !string.IsNullOrWhiteSpace(baseTokenManage) && string.IsNullOrWhiteSpace(baseHttpClient);
+                        }
                     }
                 }
-                catch { /* 忽略基接口方法解析异常 */ }
-                if (baseHasCache && baseHasResilience) break;
+
+                // Cache/Resilience 扫描（需要 baseApiAttr 存在）
+                if (baseApiAttr != null && (!baseHasCache || !baseHasResilience))
+                {
+                    try
+                    {
+                        var baseMethods = TypeSymbolHelper.GetAllMethods(baseInterface, true);
+                        foreach (var method in baseMethods)
+                        {
+                            if (!baseHasCache && method.GetAttributes().Any(attr =>
+                                HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name)))
+                                baseHasCache = true;
+                            if (!baseHasResilience && method.GetAttributes().Any(attr =>
+                                HttpClientGeneratorConstants.RetryAttributeNames.Contains(attr.AttributeClass?.Name) ||
+                                HttpClientGeneratorConstants.CircuitBreakerAttributeNames.Contains(attr.AttributeClass?.Name) ||
+                                HttpClientGeneratorConstants.TimeoutAttributeNames.Contains(attr.AttributeClass?.Name)))
+                                baseHasResilience = true;
+                            if (baseHasCache && baseHasResilience) break;
+                        }
+                    }
+                    catch { /* 忽略基接口方法解析异常 */ }
+                }
+
+                // 反查完成且 Cache/Resilience 全部检出时短路退出
+                if (inheritedFromInterfaceName != null && baseHasCache && baseHasResilience) break;
             }
         }
 

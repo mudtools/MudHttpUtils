@@ -87,15 +87,6 @@ internal abstract class HttpInvokeBaseSourceGenerator : TransitiveCodeGenerator
     }
 
     /// <summary>
-    /// 接口信息结构，包含语法节点和符号
-    /// </summary>
-    protected readonly struct InterfaceInfo(InterfaceDeclarationSyntax syntax, INamedTypeSymbol symbol)
-    {
-        public readonly InterfaceDeclarationSyntax Syntax = syntax;
-        public readonly INamedTypeSymbol Symbol = symbol;
-    }
-
-    /// <summary>
     /// 执行源代码生成逻辑
     /// </summary>
     protected abstract void ExecuteGenerator(
@@ -115,36 +106,4 @@ internal abstract class HttpInvokeBaseSourceGenerator : TransitiveCodeGenerator
         return SemanticModelCache.GetOrCreate(compilation, syntaxTree);
     }
     #endregion
-
-    /// <summary>
-    /// 基于源文本比较 InterfaceDeclarationSyntax 数组，避免引用相等导致的不必要重新生成。
-    /// </summary>
-    private sealed class InterfaceDeclarationArrayComparer : IEqualityComparer<ImmutableArray<InterfaceDeclarationSyntax?>>
-    {
-        public static readonly InterfaceDeclarationArrayComparer Instance = new();
-
-        public bool Equals(ImmutableArray<InterfaceDeclarationSyntax?> x, ImmutableArray<InterfaceDeclarationSyntax?> y)
-        {
-            if (x.Length != y.Length) return false;
-            for (var i = 0; i < x.Length; i++)
-            {
-                if (ReferenceEquals(x[i], y[i])) continue;
-                if (x[i] is null || y[i] is null) return false;
-                if (!string.Equals(x[i]!.ToString(), y[i]!.ToString(), StringComparison.Ordinal))
-                    return false;
-            }
-            return true;
-        }
-
-        public int GetHashCode(ImmutableArray<InterfaceDeclarationSyntax?> obj)
-        {
-            var hash = obj.Length;
-            foreach (var node in obj)
-            {
-                if (node != null)
-                    hash = unchecked(hash * 31 + node.Identifier.Text.GetHashCode());
-            }
-            return hash;
-        }
-    }
 }

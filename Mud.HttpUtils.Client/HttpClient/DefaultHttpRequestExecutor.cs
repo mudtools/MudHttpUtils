@@ -5,10 +5,9 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
-using System.IO;
+using Mud.HttpUtils.Observability;
 using System.Text.Json;
 using System.Xml.Serialization;
-using Mud.HttpUtils.Observability;
 
 namespace Mud.HttpUtils;
 
@@ -143,7 +142,7 @@ public class DefaultHttpRequestExecutor(
                 var isXml = IsXmlContentType(descriptor.ResponseContentType);
                 if (isXml && descriptor.XmlSerializer is XmlSerializer xmlSerializer)
                 {
-                    using var reader = new System.IO.StringReader(rawContent);
+                    using var reader = new StringReader(rawContent);
                     content = xmlSerializer.Deserialize(reader) is TInner typed ? typed : default;
                 }
                 else
@@ -379,7 +378,7 @@ public class DefaultHttpRequestExecutor(
     }
 
     /// <inheritdoc/>
-    public async Task<Response<TInner>> ExecuteAsResponseAsync<TInner>(
+    public async Task<Response<TInner>?> ExecuteAsResponseAsync<TInner>(
         HttpRequestMessage request,
         ExecutionDescriptor descriptor,
         object? jsonSerializerOptions,
@@ -424,7 +423,7 @@ public class DefaultHttpRequestExecutor(
     /// <summary>
     /// 统一的执行编排逻辑：根据 descriptor 应用弹性策略和缓存包装。
     /// </summary>
-    private async Task<TResult> ExecuteWithOrchestrationAsync<TResult>(
+    private async Task<TResult?> ExecuteWithOrchestrationAsync<TResult>(
         HttpRequestMessage request,
         ExecutionDescriptor descriptor,
         CancellationToken cancellationToken,
