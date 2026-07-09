@@ -68,7 +68,8 @@ internal class InterfaceImplementationGenerator
             _context,
             configuration);
 
-        AnalyzeAndSetInterfaceProperties(generatorContext);
+        // InterfaceProperties 已在 GeneratorContext 构造函数中预计算（含基接口 [Query]/[Path] 属性），
+        // 后续 GetOrAnalyzeMethod 会将其作为 cachedInterfaceProperties 传入 AnalyzeMethod，避免重复扫描。
 
         ComputeAnyMethodRequiresUserId(generatorContext);
 
@@ -607,19 +608,6 @@ internal class InterfaceImplementationGenerator
             return null;
 
         return basePathAttr.ConstructorArguments[0].Value?.ToString();
-    }
-
-    private void AnalyzeAndSetInterfaceProperties(GeneratorContext context)
-    {
-        var interfaceProperties = MethodAnalyzer.AnalyzeInterfaceProperties(
-            _interfaceDecl,
-            _compilation,
-            _semanticModel);
-
-        if (interfaceProperties.Count > 0)
-        {
-            context.InterfaceProperties = interfaceProperties;
-        }
     }
 
     /// <summary>

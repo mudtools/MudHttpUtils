@@ -6,6 +6,7 @@
 // -----------------------------------------------------------------------
 
 using System.Collections.Immutable;
+using Mud.HttpUtils.Models;
 
 namespace Mud.HttpUtils;
 
@@ -31,56 +32,63 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
     /// <inheritdoc/>
     /// <remarks>
     /// 增量管道设计说明：
-    /// 本生成器需要 Compilation 进行语义分析，因此将 CompilationProvider 纳入管道。
-    /// 当编译变化时 ExecuteGenerator 会被重新调用，但 ForAttributeWithMetadataName 的语法过滤
-    /// 确保仅处理带有 [GenerateEventHandler] 特性的类。
+    /// 语义数据（SemanticModel、Compilation、AttributeData）由 <see cref="GeneratorAttributeSyntaxContext"/>
+    /// 在 transform 阶段一次性捕获，并打包为 <see cref="ClassModel"/>。该模型以类声明的源文本作为指纹
+    /// （<see cref="ClassModel.Fingerprint"/>），通过 <see cref="WithComparer"/> 进行增量比较。
+    /// 当类源文本未变化时，<c>RegisterSourceOutput</c> 不会被触发，从而避免无关文件编辑
+    /// （如其他类型定义变更）导致的重复生成。
+    /// <para>
+    /// 相比早期将 <c>CompilationProvider</c> 纳入管道的方案，本设计消除了编译级粒度的重新执行：
+    /// 任意源文件编辑都会改变 Compilation，旧方案下即使目标类未变也会重新生成。现方案下，
+    /// 仅当被标记的类声明本身发生变化时才会触发生成。
+    /// </para>
     /// </remarks>
     public override void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var eventHandlerClasses = context.SyntaxProvider.ForAttributeWithMetadataName(
-            "Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute",
-            predicate: static (node, _) => node is ClassDeclarationSyntax,
-            transform: static (ctx, _) => (ClassDeclarationSyntax)ctx.TargetNode)
-            .WithTrackingName("EventHandler_SyntaxProvider");
-
-        var collected = eventHandlerClasses
+        var classModels = context.SyntaxProvider
+            .ForAttributeWithMetadataName(
+                "Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute",
+                predicate: static (node, _) => node is ClassDeclarationSyntax,
+                transform: static (ctx, _) => new ClassModel(
+                    (ClassDeclarationSyntax)ctx.TargetNode,
+                    ctx))
+            .WithComparer(EqualityComparer<ClassModel>.Default)
+            .WithTrackingName("EventHandler_SyntaxProvider")
             .Collect()
             .WithTrackingName("EventHandler_Collected");
 
-        var compilationWithOptions = context.CompilationProvider
+        var completeData = classModels
             .Combine(context.AnalyzerConfigOptionsProvider)
-            .WithTrackingName("EventHandler_CompilationAndOptions");
-
-        var completeDataProvider = compilationWithOptions
-            .Combine(collected)
             .WithTrackingName("EventHandler_CompleteData");
 
-        context.RegisterSourceOutput(completeDataProvider,
+        context.RegisterSourceOutput(completeData,
             (ctx, provider) => ExecuteGenerator(
-                compilation: provider.Left.Left,
-                eventHandlerClasses: provider.Right,
+                classModels: provider.Left,
                 context: ctx));
     }
 
     /// <summary>
     /// 执行源代码生成逻辑
     /// </summary>
-    /// <param name="compilation">编译信息</param>
-    /// <param name="eventHandlerClasses">事件处理器类声明数组</param>
+    /// <param name="classModels">所有标记目标特性的事件处理器类模型。每个 <see cref="ClassModel"/> 通过
+    /// <see cref="ClassModel.Context"/> 携带 <see cref="SemanticModel"/>（含 <see cref="Compilation"/>）。</param>
     /// <param name="context">源代码生成上下文</param>
     private void ExecuteGenerator(
-        Compilation compilation,
-        ImmutableArray<ClassDeclarationSyntax> eventHandlerClasses,
+        ImmutableArray<ClassModel> classModels,
         SourceProductionContext context)
     {
-        if (eventHandlerClasses.IsDefaultOrEmpty)
+        if (classModels.IsDefaultOrEmpty)
             return;
 
-        foreach (var eventClass in eventHandlerClasses)
+        foreach (var model in classModels)
         {
+            if (context.CancellationToken.IsCancellationRequested)
+                return;
+
             try
             {
-                var semanticModel = SemanticModelCache.GetOrCreate(compilation, eventClass.SyntaxTree);
+                var eventClass = model.Syntax;
+                var semanticModel = model.Context.SemanticModel;
                 var classSymbol = semanticModel.GetDeclaredSymbol(eventClass) as INamedTypeSymbol;
 
                 if (classSymbol == null)
@@ -115,8 +123,8 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
                 // 报告生成错误
                 context.ReportDiagnostic(Diagnostic.Create(
                     Diagnostics.EventHandlerGenerationError,
-                    eventClass.GetLocation(),
-                    eventClass.Identifier.Text,
+                    model.Syntax.GetLocation(),
+                    model.Syntax.Identifier.Text,
                     GeneratorDebugLogger.FormatExceptionMessage(ex)));
             }
         }

@@ -633,10 +633,33 @@ internal static class TypeSymbolHelper
     {
         if (typeSymbol is INamedTypeSymbol namedType)
         {
-            return namedType.Name == "Task" && (namedType.TypeArguments.Length == 0 || namedType.TypeArguments.Length == 1) ||
-                   namedType.Name == "ValueTask" && (namedType.TypeArguments.Length == 0 || namedType.TypeArguments.Length == 1);
+            return IsTaskOrValueTask(namedType);
         }
         return false;
+    }
+
+    /// <summary>
+    /// 校验类型符号是否为 <see cref="System.Threading.Tasks.Task"/> 或
+    /// <see cref="System.Threading.Tasks.ValueTask"/>（含泛型版本）。
+    /// </summary>
+    /// <remarks>
+    /// Roslyn 的 <see cref="SpecialType"/> 枚举不包含 Task/ValueTask（它们不属于基础类型系统），
+    /// 因此通过名称 + 命名空间校验，避免用户自定义同名类型（非 <c>System.Threading.Tasks</c>
+    /// 命名空间）被误判为异步类型。
+    /// </remarks>
+    private static bool IsTaskOrValueTask(INamedTypeSymbol namedType)
+    {
+        var originalDef = namedType.OriginalDefinition;
+        var name = originalDef.Name;
+        if (name != "Task" && name != "ValueTask")
+            return false;
+
+        if (originalDef.TypeArguments.Length > 1)
+            return false;
+
+        // 校验命名空间，避免用户自定义同名类型被误判
+        var ns = originalDef.ContainingNamespace?.ToDisplayString();
+        return ns == "System.Threading.Tasks";
     }
 
     /// <summary>
@@ -650,7 +673,7 @@ internal static class TypeSymbolHelper
         {
             // 如果是 Task 或 ValueTask 而不是 Task<T> 或 ValueTask<T>，返回 void
             if (asyncType is INamedTypeSymbol simpleType &&
-                (simpleType.Name == "Task" || simpleType.Name == "ValueTask") &&
+                IsTaskOrValueTask(simpleType) &&
                 simpleType.TypeArguments.Length == 0)
             {
                 return "void";

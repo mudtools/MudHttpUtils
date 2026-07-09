@@ -5,6 +5,8 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using System.Diagnostics;
+
 namespace Mud.HttpUtils.Models;
 
 /// <summary>
@@ -15,9 +17,16 @@ namespace Mud.HttpUtils.Models;
 /// <see cref="GeneratorAttributeSyntaxContext"/>（包含 SemanticModel、Compilation、Attributes）
 /// 打包为一个可比较的单元。
 /// <para>
-/// 增量缓存策略：<see cref="Fingerprint"/> 为接口声明的完整源文本（<see cref="SyntaxNode.ToString"/>），
-/// 用于 <see cref="IEquatable{T}"/> 比较。当接口源文本未变化时，模型视为相同，
-/// <c>RegisterSourceOutput</c> 不会被触发，从而避免无关文件编辑导致的重复生成。
+/// 增量缓存策略：<see cref="Fingerprint"/> 由接口声明的完整源文本（<see cref="SyntaxNode.ToString"/>）
+/// 加上 <c>[HttpClientApi]</c> 特性中影响生成代码的关键命名参数值（HttpClient、TokenManage、
+/// InheritedFrom、IsAbstract 等）组成，用于 <see cref="IEquatable{T}"/> 比较。
+/// 当接口源文本或关键特性配置未变化时，模型视为相同，<c>RegisterSourceOutput</c> 不会被触发，
+/// 从而避免无关文件编辑导致的重复生成。
+/// </para>
+/// <para>
+/// 纳入关键特性值的目的：当用户重命名被引用的类型（如 TokenManager 指向的类型）但未修改接口声明体时，
+/// 仅靠源文本指纹无法感知此变化。将关键特性值纳入指纹后，此类语义变化会触发重新生成，
+/// 确保 <see cref="Context"/> 中的 <see cref="SemanticModel"/> 来自最新编译。
 /// </para>
 /// <para>
 /// 已接受的权衡：<see cref="Context"/> 中的 <see cref="SemanticModel"/> 和 <see cref="Compilation"/>
@@ -26,6 +35,7 @@ namespace Mud.HttpUtils.Models;
 /// 不依赖类型内部结构。
 /// </para>
 /// </remarks>
+[DebuggerDisplay("{Syntax.Identifier.Text} (Fingerprint={Fingerprint?.Length} chars)")]
 internal readonly struct InterfaceModel : IEquatable<InterfaceModel>
 {
     /// <summary>
@@ -39,7 +49,7 @@ internal readonly struct InterfaceModel : IEquatable<InterfaceModel>
     public GeneratorAttributeSyntaxContext Context { get; }
 
     /// <summary>
-    /// 接口声明的完整源文本指纹，用于增量缓存比较。
+    /// 接口声明的指纹，由源文本和 [HttpClientApi] 关键特性值组成，用于增量缓存比较。
     /// </summary>
     public string Fingerprint { get; }
 
@@ -47,7 +57,37 @@ internal readonly struct InterfaceModel : IEquatable<InterfaceModel>
     {
         Syntax = syntax;
         Context = context;
-        Fingerprint = syntax.ToString();
+        Fingerprint = BuildFingerprint(syntax, context);
+    }
+
+    /// <summary>
+    /// 构建指纹：接口声明源文本 + [HttpClientApi] 关键命名参数值。
+    /// 关键属性变更（如 TokenManager 类型重命名）会使指纹变化，触发重新生成，
+    /// 避免 Context 中的 SemanticModel 来自过期编译。
+    /// </summary>
+    private static string BuildFingerprint(InterfaceDeclarationSyntax syntax, GeneratorAttributeSyntaxContext context)
+    {
+        var sourceText = syntax.ToString();
+        if (context.Attributes.IsDefaultOrEmpty)
+            return sourceText;
+
+        // 仅纳入影响生成代码的关键属性，避免过度失效
+        var sb = new StringBuilder(sourceText.Length + 64);
+        sb.Append(sourceText);
+
+        foreach (var attr in context.Attributes)
+        {
+            foreach (var arg in attr.NamedArguments)
+            {
+                if (arg.Key is "HttpClient" or "TokenManage" or "InheritedFrom"
+                    or "IsAbstract" or "ContentType" or "Timeout")
+                {
+                    sb.Append('|').Append(arg.Key).Append('=').Append(arg.Value.Value);
+                }
+            }
+        }
+
+        return sb.ToString();
     }
 
     public bool Equals(InterfaceModel other) =>

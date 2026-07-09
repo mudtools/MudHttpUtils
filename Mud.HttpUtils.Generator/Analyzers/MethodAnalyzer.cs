@@ -1,4 +1,4 @@
-﻿// -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
 //  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
@@ -17,11 +17,17 @@ internal static class MethodAnalyzer
     /// <summary>
     /// 分析函数符号，并返回 MethodAnalysisResult 分析结果
     /// </summary>
+    /// <param name="cachedInterfaceProperties">
+    /// 可选的预计算接口属性列表。当由 <see cref="GeneratorContext"/> 批量调用时传入已缓存的属性，
+    /// 避免 <see cref="AnalyzeInterfaceProperties"/> 对同一接口被每个方法重复调用导致的 O(N×M) 性能退化。
+    /// 传入 null 时将内部计算。
+    /// </param>
     public static MethodAnalysisResult AnalyzeMethod(
         Compilation compilation,
         IMethodSymbol methodSymbol,
         InterfaceDeclarationSyntax interfaceDecl,
-        SemanticModel? semanticModel = null)
+        SemanticModel? semanticModel = null,
+        IReadOnlyList<InterfacePropertyInfo>? cachedInterfaceProperties = null)
     {
         ArgumentNullExceptionExtensions.ThrowIfNull(compilation);
         ArgumentNullExceptionExtensions.ThrowIfNull(methodSymbol);
@@ -75,7 +81,8 @@ internal static class MethodAnalyzer
 
         var allowAnyStatusCode = AnalyzeAllowAnyStatusCode(methodSymbol, methodAttributes, interfaceAttrs);
         var (interfaceQueryParams, interfacePathParams) = AnalyzeInterfaceQueryPathAttributes(interfaceAttrs);
-        var interfaceProperties = AnalyzeInterfaceProperties(interfaceDecl, compilation, semanticModel);
+        // 优先使用调用方预计算的接口属性缓存，避免对同一接口被每个方法重复扫描基接口属性
+        var interfaceProperties = cachedInterfaceProperties ?? AnalyzeInterfaceProperties(interfaceDecl, compilation, semanticModel);
         var headerMergeMode = AnalyzeHeaderMergeMode(methodSymbol, methodAttributes, interfaceAttrs);
         var serializationMethod = AnalyzeSerializationMethod(methodSymbol, methodAttributes, interfaceAttrs);
 
@@ -411,9 +418,11 @@ internal static class MethodAnalyzer
             }
 
             // 语义分析未精确匹配，尝试通过参数类型符号匹配（避免重载误判）
+            // 候选方法位于同一接口声明，共享同一 SyntaxTree，获取一次 SemanticModel
+            var fallbackModel = SemanticModelCache.GetOrCreate(compilation, interfaceSyntax.SyntaxTree);
             foreach (var candidate in candidates)
             {
-                if (TryMatchByParameterTypes(candidate, methodSymbol))
+                if (TryMatchByParameterTypes(candidate, methodSymbol, fallbackModel))
                     return candidate;
             }
 
@@ -428,7 +437,16 @@ internal static class MethodAnalyzer
     /// 通过参数类型符号匹配方法声明与目标方法符号。
     /// 用于在语义分析失败时的回退匹配，避免重载方法误判。
     /// </summary>
-    private static bool TryMatchByParameterTypes(MethodDeclarationSyntax candidate, IMethodSymbol targetSymbol)
+    /// <remarks>
+    /// 使用 <see cref="SemanticModel.GetTypeInfo(SyntaxNode)"/> 获取候选参数的类型符号，
+    /// 通过 <see cref="SymbolEqualityComparer"/> 进行符号相等性比较，
+    /// 而非源文本字符串比较（<see cref="TypeSyntax.ToString"/> 仅返回源代码写法，
+    /// 与 <see cref="ISymbol.ToDisplayString(SymbolDisplayFormat)"/> 的全限定格式不可比，会导致匹配失败）。
+    /// </remarks>
+    private static bool TryMatchByParameterTypes(
+        MethodDeclarationSyntax candidate,
+        IMethodSymbol targetSymbol,
+        SemanticModel semanticModel)
     {
         var candidateParams = candidate.ParameterList.Parameters;
         if (candidateParams.Count != targetSymbol.Parameters.Length)
@@ -436,11 +454,18 @@ internal static class MethodAnalyzer
 
         for (var i = 0; i < candidateParams.Count; i++)
         {
-            var candidateTypeStr = candidateParams[i].Type?.ToString();
-            var targetTypeStr = targetSymbol.Parameters[i].Type?.ToDisplayString(
-                SymbolDisplayFormat.FullyQualifiedFormat);
+            var candidateTypeSyntax = candidateParams[i].Type;
+            if (candidateTypeSyntax == null)
+                return false;
 
-            if (!string.Equals(candidateTypeStr, targetTypeStr, StringComparison.Ordinal))
+            // 使用语义模型获取候选参数的类型符号，与目标符号进行符号级比较
+            var candidateTypeSymbol = semanticModel.GetTypeInfo(candidateTypeSyntax).Type;
+            var targetTypeSymbol = targetSymbol.Parameters[i].Type;
+
+            if (candidateTypeSymbol == null || targetTypeSymbol == null)
+                return false;
+
+            if (!candidateTypeSymbol.Equals(targetTypeSymbol, SymbolEqualityComparer.Default))
                 return false;
         }
 
@@ -519,9 +544,25 @@ internal static class MethodAnalyzer
             return null;
         }
 
-        // 仅在接口可能存在于源代码中时才遍历语法树
+        // 优先从符号的 Locations 直接定位源代码位置，避免全量遍历所有语法树
+        // Locations 包含符号的声明位置，O(Locations) 远小于 O(语法树数 × 节点数)
+        foreach (var location in interfaceSymbol.Locations)
+        {
+            if (location.IsInMetadata || location.SourceTree == null)
+                continue;
+
+            var root = location.SourceTree.GetRoot();
+            var node = root.FindNode(location.SourceSpan, getInnermostNodeForTie: true);
+            if (node is InterfaceDeclarationSyntax directDecl)
+                return directDecl;
+            if (node.FirstAncestorOrSelf<InterfaceDeclarationSyntax>() is { } ancestorDecl)
+                return ancestorDecl;
+        }
+
+        // 最终回退：Locations 未命中源代码位置时，按接口名遍历语法树
+        // 此路径极少触发，保留以确保健壮性
         GeneratorDebugLogger.Log(
-            $"FindInterfaceDeclarationSyntax 回退路径触发: {interfaceSymbol.ToDisplayString()} (DeclaringSyntaxReferences 为空)");
+            $"FindInterfaceDeclarationSyntax 最终回退路径触发: {interfaceSymbol.ToDisplayString()} (DeclaringSyntaxReferences 与 Locations 均未命中)");
 
         var interfaceName = interfaceSymbol.Name;
         foreach (var syntaxTree in compilation.SyntaxTrees)

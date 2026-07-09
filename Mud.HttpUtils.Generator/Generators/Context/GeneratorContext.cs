@@ -71,7 +71,7 @@ internal class GeneratorContext
     /// </summary>
     public bool ImplementsICurrentUserId { get; set; }
 
-    public List<InterfacePropertyInfo> InterfaceProperties { get; set; } = [];
+    public IReadOnlyList<InterfacePropertyInfo> InterfaceProperties { get; set; } = [];
 
     /// <summary>
     /// 方法分析结果缓存，避免同一方法被 AnalyzeMethod 重复分析。
@@ -89,6 +89,7 @@ internal class GeneratorContext
 
     /// <summary>
     /// 获取或缓存方法分析结果。若缓存命中则复用，否则调用 AnalyzeMethod 并缓存结果。
+    /// 传入预计算的 <see cref="InterfaceProperties"/> 以避免 AnalyzeMethod 内部重复扫描基接口属性。
     /// </summary>
     public MethodAnalysisResult GetOrAnalyzeMethod(
         Compilation compilation,
@@ -99,7 +100,9 @@ internal class GeneratorContext
         if (MethodAnalysisCache.TryGetValue(methodSymbol, out var cached))
             return cached;
 
-        var result = MethodAnalyzer.AnalyzeMethod(compilation, methodSymbol, interfaceDeclaration, semanticModel);
+        var result = MethodAnalyzer.AnalyzeMethod(
+            compilation, methodSymbol, interfaceDeclaration, semanticModel,
+            cachedInterfaceProperties: InterfaceProperties);
         MethodAnalysisCache[methodSymbol] = result;
         return result;
     }
@@ -168,6 +171,21 @@ internal class GeneratorContext
         }
 
         AllMethods = allMethods;
+
+        // 预计算接口属性列表（含基接口的 [Query]/[Path] 属性），后续 GetOrAnalyzeMethod 会将其传入
+        // AnalyzeMethod 作为 cachedInterfaceProperties，避免对每个方法重复扫描基接口属性树（O(N×M) -> O(M)）
+        try
+        {
+            InterfaceProperties = MethodAnalyzer.AnalyzeInterfaceProperties(
+                interfaceDeclaration, compilation, semanticModel);
+        }
+        catch (Exception ex)
+        {
+            GeneratorDebugLogger.LogError("GeneratorContext.AnalyzeInterfaceProperties", ex);
+            // 回退为空列表，AnalyzeMethod 内部会在 cachedInterfaceProperties 为 null 时重新计算
+            // 但此处传入空列表表示已知无接口属性，避免重复计算
+            InterfaceProperties = [];
+        }
 
         // 单次遍历检测全部 5 个特性标志，避免 5 个独立 Detect 方法各自遍历 allMethods
         // 并各自调用 method.GetAttributes() 产生重复分配

@@ -320,29 +320,38 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
 
         if (!string.IsNullOrEmpty(api.HttpClientType))
         {
+            // HttpClient 模式：注册命名 HttpClient + 接口→实现映射
             codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 HttpClient 包装实现类（瞬时服务）");
             codeBuilder.AppendLine($"            // 注意：实现类构造函数依赖 {api.HttpClientType}，请确保已通过 AddMudHttpClient 等方法注册此服务");
-            // 注册 IBaseHttpClient 别名，便于其他服务通过 IBaseHttpClient 接口解析 HttpClient 实例
-            codeBuilder.AppendLine("            services.TryAddTransient<global::Mud.HttpUtils.IBaseHttpClient>(sp => sp.GetRequiredService<global::Mud.HttpUtils.IEnhancedHttpClient>());");
+            // IBaseHttpClient 别名注册已由 AddMudHttpClient 内部完成，此处不再重复注册
+
+            var httpClientName = $"{api.InterfaceName}_HttpClient";
+            var timeoutSeconds = api.Timeout;
+            codeBuilder.AppendLine($"            services.AddHttpClient(\"{httpClientName}\", client =>");
+            codeBuilder.AppendLine($"            {{");
+            codeBuilder.AppendLine($"                client.Timeout = TimeSpan.FromSeconds({timeoutSeconds});");
+            codeBuilder.AppendLine($"            }});");
         }
         else if (!string.IsNullOrEmpty(api.TokenManagerType))
         {
-            codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 HttpClient 包装实现类（瞬时服务）");
-            codeBuilder.AppendLine($"            // 注意：实现类构造函数依赖 {api.TokenManagerType}，请确保已注册此令牌管理器服务");
+            // TokenManage 模式：HttpClient 由 IMudAppContext 管理，无需注册命名 HttpClient
+            codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 TokenManage 模式实现类（瞬时服务）");
+            codeBuilder.AppendLine($"            // 注意：HttpClient 由 {api.TokenManagerType} 管理的 IMudAppContext 提供，无需单独注册");
         }
         else
         {
-            codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 HttpClient 包装实现类（瞬时服务）");
+            // 默认模式：注册命名 HttpClient + 接口→实现映射
+            codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的默认实现类（瞬时服务）");
+
+            var httpClientName = $"{api.InterfaceName}_HttpClient";
+            var timeoutSeconds = api.Timeout;
+            codeBuilder.AppendLine($"            services.AddHttpClient(\"{httpClientName}\", client =>");
+            codeBuilder.AppendLine($"            {{");
+            codeBuilder.AppendLine($"                client.Timeout = TimeSpan.FromSeconds({timeoutSeconds});");
+            codeBuilder.AppendLine($"            }});");
         }
 
-        var httpClientName = $"{api.InterfaceName}_HttpClient";
-        var timeoutSeconds = api.Timeout;
-
-        codeBuilder.AppendLine($"            services.AddHttpClient(\"{httpClientName}\", client =>");
-        codeBuilder.AppendLine($"            {{");
-        codeBuilder.AppendLine($"                client.Timeout = TimeSpan.FromSeconds({timeoutSeconds});");
-        // BaseAddress 应通过 AddMudHttpClient(clientName, baseAddress) 在运行时配置，此处不生成
-        codeBuilder.AppendLine($"            }});");
+        // 所有模式都需要注册接口→实现的映射
         codeBuilder.AppendLine($"            services.AddTransient<{fullyQualifiedInterface}, {fullyQualifiedImplementation}>();");
     }
 }
