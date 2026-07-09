@@ -44,6 +44,16 @@ namespace Mud.HttpUtils;
 public interface IMudAppContext
 {
     /// <summary>
+    /// 获取当前应用的唯一标识符（AppKey）。
+    /// </summary>
+    /// <value>应用的唯一标识符字符串。</value>
+    /// <remarks>
+    /// 该标识符在多应用场景下用于区分不同应用，例如在 per-app 弹性策略解析中
+    /// 根据应用键查找对应的弹性策略配置。
+    /// </remarks>
+    string AppKey { get; }
+
+    /// <summary>
     /// 获取增强的HTTP客户端实例，用于发送HTTP请求。
     /// </summary>
     /// <value>实现了 <see cref="IEnhancedHttpClient"/> 接口的HTTP客户端。</value>

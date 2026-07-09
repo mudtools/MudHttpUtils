@@ -160,6 +160,8 @@ public class AsyncLocalAppContextSwitcherTests
             AppId = appId;
         }
 
+        public string AppKey => AppId;
+
         public IEnhancedHttpClient HttpClient => throw new NotImplementedException();
 
         public ITokenManager GetTokenManager(string tokenType = "") => null!;

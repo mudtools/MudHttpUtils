@@ -11,7 +11,7 @@
 		<RepositoryType>git</RepositoryType>
 		<PackageIcon>Icon.png</PackageIcon>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
-		<PackageTags>Mud;MudTools;Roslyn;SourceGenerator;CodeGenerator;代码生成�?ASP.NET;ASP.NET Core;.NET;.NET Core;</PackageTags>
+		<PackageTags>Mud;MudTools;Roslyn;SourceGenerator;CodeGenerator;代码生成器;ASP.NET;ASP.NET Core;.NET;.NET Core;</PackageTags>
 		<NoDefaultExcludes>true</NoDefaultExcludes>
 		<Copyright>© 2019-2026 Mud Studio Co.,Ltd.</Copyright>
 		<Authors>Mud Studio</Authors>

@@ -39,24 +39,19 @@ namespace Mud.HttpUtils.Attributes;
 /// Task&lt;Data&gt; GetDataAsync();
 /// </code>
 /// </example>
+/// <remarks>
+/// 初始化 <see cref="TokenAttribute"/> 类的新实例。
+/// </remarks>
+/// <param name="tokenType">令牌类型，默认为 <see cref="TokenTypes.AccessToken"/>。此值同时设置 TokenType 和 TokenManagerKey（向后兼容）。</param>
 [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Interface | AttributeTargets.Method, AllowMultiple = false)]
-public sealed class TokenAttribute : Attribute
+public sealed class TokenAttribute(string tokenType = TokenTypes.AccessToken) : Attribute
 {
-    /// <summary>
-    /// 初始化 <see cref="TokenAttribute"/> 类的新实例。
-    /// </summary>
-    /// <param name="tokenType">令牌类型，默认为 <see cref="TokenTypes.AccessToken"/>。此值同时设置 TokenType 和 TokenManagerKey（向后兼容）。</param>
-    public TokenAttribute(string tokenType = TokenTypes.AccessToken)
-    {
-        TokenType = tokenType;
-        TokenManagerKey = tokenType;
-    }
 
     /// <summary>
     /// 获取或设置令牌类型。
     /// </summary>
     /// <value>默认为 <see cref="TokenTypes.AccessToken"/>。</value>
-    public string TokenType { get; set; } = TokenTypes.AccessToken;
+    public string TokenType { get; set; } = tokenType;
 
     /// <summary>
     /// 获取或设置令牌注入模式（请求头、查询参数等）。
@@ -68,14 +63,6 @@ public sealed class TokenAttribute : Attribute
     /// 获取或设置令牌参数的名称。在 Header 模式下默认为 "Authorization"，在 Query 模式下可自定义。
     /// </summary>
     public string? Name { get; set; }
-
-    /// <summary>
-    /// 获取或设置一个值，该值指示是否替换已有的同名令牌。
-    /// <para><b>注意：此属性暂未被框架使用，将在未来版本中启用。当前设置此属性无任何效果。</b></para>
-    /// </summary>
-    /// <value>默认为 true。</value>
-    [Obsolete("Replace 属性暂未被框架使用，将在未来版本中启用。")]
-    public bool Replace { get; set; } = true;
 
     /// <summary>
     /// 获取或设置令牌作用域（Scopes），多个作用域用逗号分隔。
@@ -94,7 +81,7 @@ public sealed class TokenAttribute : Attribute
     /// 例如，多个不同的 TokenType 可以映射到同一个 TokenManager。
     /// 如果未指定，则使用 TokenType 作为查找键。
     /// </remarks>
-    public string? TokenManagerKey { get; set; }
+    public string? TokenManagerKey { get; set; } = tokenType;
 
     /// <summary>
     /// 获取或设置一个值，该值指示此令牌是否需要用户 ID。

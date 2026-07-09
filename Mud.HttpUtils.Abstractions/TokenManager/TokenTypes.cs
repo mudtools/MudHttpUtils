@@ -35,24 +35,4 @@ public static class TokenTypes
     /// 通用刷新令牌（OAuth2 标准 refresh_token）。
     /// </summary>
     public const string RefreshToken = "RefreshToken";
-
-    /// <summary>
-    /// 应用级别的访问令牌（如飞书的 TenantAccessToken）。
-    /// </summary>
-    /// <remarks>
-    /// 此常量为平台特定令牌类型，已标记为过时。请使用各 SDK 专属的 TokenType 常量类，
-    /// 如 <c>Mud.Feishu.Abstractions.Authentication.FeishuTokenTypes.TenantAccessToken</c>。
-    /// </remarks>
-    [Obsolete("请使用各 SDK 专属的 TokenType 常量类，如 Mud.Feishu.Abstractions.Authentication.FeishuTokenTypes.TenantAccessToken。")]
-    public const string TenantAccessToken = "TenantAccessToken";
-
-    /// <summary>
-    /// 用户级别的访问令牌（如飞书的 UserAccessToken）。
-    /// </summary>
-    /// <remarks>
-    /// 此常量为平台特定令牌类型，已标记为过时。请使用各 SDK 专属的 TokenType 常量类，
-    /// 如 <c>Mud.Feishu.Abstractions.Authentication.FeishuTokenTypes.UserAccessToken</c>。
-    /// </remarks>
-    [Obsolete("请使用各 SDK 专属的 TokenType 常量类，如 Mud.Feishu.Abstractions.Authentication.FeishuTokenTypes.UserAccessToken。")]
-    public const string UserAccessToken = "UserAccessToken";
 }

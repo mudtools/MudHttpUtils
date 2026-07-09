@@ -12,6 +12,11 @@ namespace HttpClientApiTest;
 public class FeishuAppContext : IMudAppContext
 {
     /// <summary>
+    /// 应用唯一标识
+    /// </summary>
+    public string AppKey { get; set; } = string.Empty;
+
+    /// <summary>
     /// HTTP客户端
     /// </summary>
     /// <remarks>

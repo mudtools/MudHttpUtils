@@ -27,11 +27,8 @@ internal static class TokenMethodHelper
                 ? context.Configuration.TokenType
                 : TokenHelper.GetDefaultTokenType();
 
-        var isExplicitKey = !string.IsNullOrEmpty(context.Configuration.TokenManagerKey);
-        if (!isExplicitKey)
-        {
-            codeBuilder.AppendLine("        #warning Mud.HttpUtils: TokenManagerKey 未显式指定，已从 TokenType 自动推断。建议在 [Token] 特性上显式设置 TokenManagerKey 以确保向后兼容。");
-        }
+        // 从 TokenType 自动推断 TokenManagerKey 是正常且推荐的行为，无需发出 #warning。
+        // TokenManagerKey 仅在需要将多个不同 TokenType 映射到同一令牌管理器时才需显式指定。
 
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine("        /// 令牌管理器查找键。保留供子类覆盖使用。");

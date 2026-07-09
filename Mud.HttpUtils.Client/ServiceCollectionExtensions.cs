@@ -97,7 +97,9 @@ public static class HttpClientServiceCollectionExtensions
             var httpClient = sp.GetRequiredService<IEnhancedHttpClient>();
             var cacheProvider = sp.GetService<IHttpResponseCache>();
             var resilienceResolver = sp.GetService<IResiliencePolicyResolver>();
-            return new DefaultHttpRequestExecutor(httpClient, cacheProvider, resilienceResolver);
+            var appResilienceResolver = sp.GetService<IAppResiliencePolicyResolver>();
+            var appContextHolder = sp.GetService<IAppContextHolder>();
+            return new DefaultHttpRequestExecutor(httpClient, cacheProvider, resilienceResolver, appResilienceResolver, appContextHolder);
         });
         services.TryAddSingleton<IHttpClientResolver, HttpClientResolver>();
     }

@@ -21,16 +21,42 @@ namespace Mud.HttpUtils;
 /// </remarks>
 /// <param name="httpClient">HTTP 客户端实例。</param>
 /// <param name="cacheProvider">HTTP 响应缓存提供器（可选）。</param>
-/// <param name="resilienceResolver">弹性策略解析器（可选）。</param>
+/// <param name="resilienceResolver">全局弹性策略解析器（可选）。</param>
+/// <param name="appResilienceResolver">按应用解析弹性策略的解析器（可选）。优先于 <paramref name="resilienceResolver"/>。</param>
+/// <param name="appContextHolder">应用上下文持有器（可选）。用于在多应用场景下获取当前应用的 AppKey。</param>
 public class DefaultHttpRequestExecutor(
     IBaseHttpClient httpClient,
     IHttpResponseCache? cacheProvider = null,
-    IResiliencePolicyResolver? resilienceResolver = null) : IHttpRequestExecutor
+    IResiliencePolicyResolver? resilienceResolver = null,
+    IAppResiliencePolicyResolver? appResilienceResolver = null,
+    IAppContextHolder? appContextHolder = null) : IHttpRequestExecutor
 {
     private readonly IBaseHttpClient _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
     private readonly IEncryptableHttpClient? _encryptableClient = httpClient as IEncryptableHttpClient;
     private readonly IHttpResponseCache? _cacheProvider = cacheProvider;
     private readonly IResiliencePolicyResolver? _resilienceResolver = resilienceResolver;
+    private readonly IAppResiliencePolicyResolver? _appResilienceResolver = appResilienceResolver;
+    private readonly IAppContextHolder? _appContextHolder = appContextHolder;
+
+    /// <summary>
+    /// 解析当前请求应使用的弹性策略解析器。
+    /// 优先使用 per-app 解析器（如果可用且当前有应用上下文），回退到全局解析器。
+    /// </summary>
+    private IResiliencePolicyResolver? ResolveEffectiveResilienceResolver()
+    {
+        if (_appResilienceResolver != null && _appContextHolder != null)
+        {
+            var currentAppKey = _appContextHolder.Current?.AppKey;
+            if (!string.IsNullOrEmpty(currentAppKey))
+            {
+                var perAppResolver = _appResilienceResolver.ResolveResolver(currentAppKey!);
+                if (perAppResolver != null)
+                    return perAppResolver;
+            }
+        }
+
+        return _resilienceResolver;
+    }
 
     /// <inheritdoc/>
     public async Task<TResult?> SendAndDeserializeAsync<TResult>(
@@ -398,10 +424,11 @@ public class DefaultHttpRequestExecutor(
         CancellationToken cancellationToken = default)
     {
         // void 返回类型：仅应用弹性策略（不缓存无返回值的结果）
-        if (descriptor.Resilience != null && _resilienceResolver != null)
+        var effectiveResolver = ResolveEffectiveResilienceResolver();
+        if (descriptor.Resilience != null && effectiveResolver != null)
         {
             SetSkipResilienceFlag(request);
-            var policyWrapper = _resilienceResolver.ResolvePolicyWrapper<object>(
+            var policyWrapper = effectiveResolver.ResolvePolicyWrapper<object>(
                 descriptor.Resilience, request);
 
             if (policyWrapper != null)
@@ -430,12 +457,13 @@ public class DefaultHttpRequestExecutor(
         Func<HttpRequestMessage, CancellationToken, Task<TResult>> coreExecute)
     {
         // 弹性策略包装（在缓存之前包装，使缓存命中时不触发弹性策略，缓存未命中时弹性策略保护实际请求）
-        if (descriptor.Resilience != null && _resilienceResolver != null)
+        var effectiveResolver = ResolveEffectiveResilienceResolver();
+        if (descriptor.Resilience != null && effectiveResolver != null)
         {
             // 设置 SkipResilience 标记，避免全局弹性策略双重包装
             SetSkipResilienceFlag(request);
 
-            var policyWrapper = _resilienceResolver.ResolvePolicyWrapper<TResult>(
+            var policyWrapper = effectiveResolver.ResolvePolicyWrapper<TResult>(
                 descriptor.Resilience, request);
 
             if (policyWrapper != null)
