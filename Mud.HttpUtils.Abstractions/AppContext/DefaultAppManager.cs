@@ -147,7 +147,11 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     }
 
     /// <inheritdoc />
-    public TAppContext GetDefaultApp()
+    /// <remarks>
+    /// MA-03 修复：标记为 virtual，允许子类（如 FeishuAppManager）override 而非使用 new 隐藏。
+    /// 此前该方法非 virtual，子类使用 new 隐藏后，通过 IAppManager 接口调用时仍执行基类方法，导致 FeishuAppManager 的默认应用解析逻辑被绕过。
+    /// </remarks>
+    public virtual TAppContext GetDefaultApp()
     {
         string? defaultKey;
         lock (_defaultAppLock)

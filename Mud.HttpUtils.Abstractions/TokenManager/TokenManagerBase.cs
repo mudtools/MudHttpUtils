@@ -114,10 +114,10 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
         var scopeKey = GetScopeKey(scopes);
 
-        if (IsTokenValid(scopeKey))
+        // TM-02 修复：使用 TryGetValidToken 合并 IsTokenValid + TryGet 为单次查找，避免冗余的双字典访问
+        if (TryGetValidToken(scopeKey, out var fastToken))
         {
-            _tokenCache.TryGet(scopeKey, out var validToken);
-            return validToken!.AccessToken!;
+            return fastToken!.AccessToken!;
         }
 
         var scopeLock = _scopeLocks.GetOrAdd(scopeKey, _ => new Lazy<SemaphoreSlim>(() => new SemaphoreSlim(1, 1), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
@@ -130,10 +130,9 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             if (_disposed)
                 throw new ObjectDisposedException(GetType().Name);
 
-            if (IsTokenValid(scopeKey))
+            if (TryGetValidToken(scopeKey, out var lockedToken))
             {
-                _tokenCache.TryGet(scopeKey, out var validToken2);
-                return validToken2!.AccessToken!;
+                return lockedToken!.AccessToken!;
             }
 
             var token = await RefreshTokenWithRetryCoreAsync(
@@ -385,8 +384,16 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             });
     }
 
-    private bool IsTokenValid(string scopeKey)
+    /// <summary>
+    /// 尝试获取有效的缓存令牌。TM-02 修复：合并 IsTokenValid + TryGet 为单次查找，
+    /// 避免在 GetOrRefreshTokenAsync 中对缓存进行两次独立的 TryGet 调用。
+    /// </summary>
+    /// <param name="scopeKey">作用域缓存键。</param>
+    /// <param name="token">有效令牌（如果返回 true）。</param>
+    /// <returns>如果存在有效令牌则返回 true，否则返回 false。</returns>
+    private bool TryGetValidToken(string scopeKey, out CredentialToken? token)
     {
+        token = default;
         if (!_tokenCache.TryGet(scopeKey, out var entry))
             return false;
 
@@ -395,7 +402,12 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var thresholdMs = ExpireThresholdSeconds * 1000L;
-        return entry.Expire - thresholdMs > now;
+        if (entry.Expire - thresholdMs > now)
+        {
+            token = entry;
+            return true;
+        }
+        return false;
     }
 
     private void CleanupExpiredTokens(object? state)

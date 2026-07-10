@@ -200,8 +200,8 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         {
         using var request = new HttpRequestMessage(HttpMethod.Post, _options.RevocationEndpoint);
         request.Content = new FormUrlEncodedContent(parameters);
-        await GetClientSecretAsync(cancellationToken).ConfigureAwait(false);
-        ApplyClientAuthentication(request);
+        var clientSecret = await GetClientSecretAsync(cancellationToken).ConfigureAwait(false);
+        ApplyClientAuthentication(request, clientSecret);
 
             using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
@@ -231,8 +231,8 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 
         using var request = new HttpRequestMessage(HttpMethod.Post, _options.IntrospectionEndpoint);
         request.Content = new FormUrlEncodedContent(parameters);
-        await GetClientSecretAsync(cancellationToken).ConfigureAwait(false);
-        ApplyClientAuthentication(request);
+        var introspectSecret = await GetClientSecretAsync(cancellationToken).ConfigureAwait(false);
+        ApplyClientAuthentication(request, introspectSecret);
 
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
@@ -248,48 +248,41 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// TM-03 修复：移除 UpdateScopedToken 调用。此方法仅由 <see cref="TokenManagerBase.GetOrRefreshTokenAsync"/> 通过
+    /// <see cref="TokenManagerBase.RefreshTokenWithRetryCoreAsync"/> 调用，调用方在第 148 行已统一执行 <c>UpdateToken(scopeKey, token)</c>。
+    /// 此前的双重写入导致 <c>MaxCacheLifetimeSeconds</c> 截断逻辑执行两次，且首次写入时未被截断的过大 Expire 值存在短暂缓存窗口。
+    /// </remarks>
     protected override async Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
     {
         var currentToken = GetCachedCredentialToken();
 
-        CredentialToken newToken;
-
         if (currentToken?.RefreshToken != null)
         {
-            newToken = await RefreshTokenByRefreshTokenAsync(
+            return await RefreshTokenByRefreshTokenAsync(
                 currentToken.RefreshToken, cancellationToken).ConfigureAwait(false);
         }
-        else
-        {
-            newToken = await GetTokenByClientCredentialsAsync(cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-        }
 
-        UpdateScopedToken(DefaultScopeKey, newToken);
-
-        return newToken;
+        return await GetTokenByClientCredentialsAsync(cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
     }
 
+    /// <inheritdoc/>
+    /// <remarks>
+    /// TM-03 修复：同 <see cref="RefreshTokenCoreAsync"/>，移除冗余的 UpdateScopedToken 调用。
+    /// </remarks>
     protected override async Task<CredentialToken> RefreshTokenWithScopesAsync(string[]? scopes, CancellationToken cancellationToken)
     {
         var currentToken = GetCachedCredentialToken();
 
-        CredentialToken newToken;
-
         if (currentToken?.RefreshToken != null)
         {
-            newToken = await RefreshTokenByRefreshTokenAsync(
+            return await RefreshTokenByRefreshTokenAsync(
                 currentToken.RefreshToken, cancellationToken).ConfigureAwait(false);
         }
-        else
-        {
-            newToken = await GetTokenByClientCredentialsAsync(scopes, cancellationToken)
-                .ConfigureAwait(false);
-        }
 
-        UpdateScopedToken(DefaultScopeKey, newToken);
-
-        return newToken;
+        return await GetTokenByClientCredentialsAsync(scopes, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -335,17 +328,13 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     {
         ValidateTokenEndpoint();
 
-        if (useClientAuth)
-        {
-            await GetClientSecretAsync(cancellationToken).ConfigureAwait(false);
-        }
-
         using var request = new HttpRequestMessage(HttpMethod.Post, _options.TokenEndpoint);
         request.Content = new FormUrlEncodedContent(parameters);
 
         if (useClientAuth)
         {
-            ApplyClientAuthentication(request);
+            var sendSecret = await GetClientSecretAsync(cancellationToken).ConfigureAwait(false);
+            ApplyClientAuthentication(request, sendSecret);
         }
 
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
@@ -378,19 +367,20 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         return newToken;
     }
 
-    private void ApplyClientAuthentication(HttpRequestMessage request)
+    /// <summary>
+    /// 应用客户端认证信息到 HTTP 请求。
+    /// </summary>
+    /// <param name="request">HTTP 请求消息。</param>
+    /// <param name="clientSecret">已解析的客户端密钥（由调用方通过 <see cref="GetClientSecretAsync"/> 获取后传入）。</param>
+    /// <remarks>
+    /// TM-04 修复：此前此方法通过同步访问 <c>_clientSecretLazy.Value.Result</c> 获取密钥，
+    /// 在 Lazy 初始化的 Task 尚未完成时会阻塞线程，且 fallback 路径存在竞态（Lazy 可能刚好 Faulted）。
+    /// 现改为由调用方异步解析密钥后作为参数传入，消除竞态和阻塞。
+    /// </remarks>
+    private void ApplyClientAuthentication(HttpRequestMessage request, string? clientSecret)
     {
         if (string.IsNullOrWhiteSpace(_options.ClientId))
             return;
-
-        // ApplyClientAuthentication 是同步方法。
-        // 调用方应确保在调用前已通过 GetClientSecretAsync 触发 Lazy 初始化。
-        // 若 Lazy 未创建（如首次调用），回退到配置值。
-        var clientSecret = _clientSecretLazy.IsValueCreated
-            ? (_clientSecretLazy.Value.Status == TaskStatus.RanToCompletion
-                ? _clientSecretLazy.Value.Result
-                : _options.ClientSecret)
-            : _options.ClientSecret;
 
         var credentials = Convert.ToBase64String(
             Encoding.UTF8.GetBytes($"{_options.ClientId}:{clientSecret}"));
