@@ -38,6 +38,16 @@ internal sealed class DefaultTokenProvider(ILogger<DefaultTokenProvider> logger)
             return await GetUserTokenAsync(tokenManager, request, cancellationToken).ConfigureAwait(false);
         }
 
+        // 当 UserId 为空但令牌管理器是 IUserTokenManager 时，说明用户上下文未正确初始化。
+        // 不回退到租户令牌路径（会触发 RefreshTokenCoreAsync 抛出 NotSupportedException），
+        // 而是抛出清晰的错误信息，引导开发者正确设置用户上下文。
+        if (tokenManager is IUserTokenManager)
+        {
+            throw new InvalidOperationException(
+                $"无法获取用户令牌：UserId 为空。请确保在调用用户级 API 之前已通过 SetUser 设置用户上下文。" +
+                $"TokenManagerKey: '{request.TokenManagerKey}'。");
+        }
+
         return await GetTenantTokenAsync(tokenManager, request, cancellationToken).ConfigureAwait(false);
     }
 

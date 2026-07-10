@@ -413,8 +413,9 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
             foreach (var key in _tokenCache.Keys.ToList())
             {
-                if (key == DefaultScopeKey)
-                    continue;
+                // T-2 修复：默认作用域（DefaultScopeKey）令牌过期后也应被定时清理，
+                // 下次访问 GetOrRefreshTokenAsync 时会自动重新获取，不再跳过。
+                // 注意：CleanupUnusedLocks 仍保留对 DefaultScopeKey 的跳过，以避免默认作用域锁被回收。
 
                 if (_tokenCache.TryGet(key, out var entry) && entry?.Expire - thresholdMs <= now)
                 {

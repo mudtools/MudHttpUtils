@@ -20,6 +20,8 @@ namespace Mud.HttpUtils;
 public class ConcurrentDictionaryTokenCache<T> : ITokenCache<T> where T : class
 {
     private readonly ConcurrentDictionary<string, T?> _cache = new();
+    // T-1 修复：记录每个键的最后访问时间（UTC Ticks），用于 Compact 实现 LRU 驱逐，避免活跃令牌被误驱逐
+    private readonly ConcurrentDictionary<string, long> _lastAccess = new();
     private volatile bool _disposed;
 
     /// <inheritdoc />
@@ -31,13 +33,21 @@ public class ConcurrentDictionaryTokenCache<T> : ITokenCache<T> where T : class
     /// <inheritdoc />
     public bool TryGet(string key, out T? value)
     {
-        return _cache.TryGetValue(key, out value);
+        if (_cache.TryGetValue(key, out value))
+        {
+            // T-1 修复：命中时刷新最后访问时间，作为 LRU 驱逐依据
+            _lastAccess[key] = DateTime.UtcNow.Ticks;
+            return true;
+        }
+        return false;
     }
 
     /// <inheritdoc />
     public void Set(string key, T? value)
     {
         _cache[key] = value;
+        // T-1 修复：写入时记录访问时间
+        _lastAccess[key] = DateTime.UtcNow.Ticks;
     }
 
     /// <inheritdoc />
@@ -47,19 +57,24 @@ public class ConcurrentDictionaryTokenCache<T> : ITokenCache<T> where T : class
     public void Set(string key, T? value, TimeSpan? absoluteExpirationRelativeToNow, TimeSpan? slidingExpiration, Action<string>? postEvictionCallback = null)
     {
         _cache[key] = value;
+        // T-1 修复：写入时记录访问时间
+        _lastAccess[key] = DateTime.UtcNow.Ticks;
     }
 
     /// <inheritdoc />
     public bool TryRemove(string key, out T? removed)
     {
-        return _cache.TryRemove(key, out removed);
+        var result = _cache.TryRemove(key, out removed);
+        // T-1 修复：同步清理访问时间记录，避免 _lastAccess 残留导致内存泄漏
+        _lastAccess.TryRemove(key, out _);
+        return result;
     }
 
     /// <inheritdoc />
     /// <remarks>
     /// m-2 修复：实现 Compact 方法，按指定百分比移除缓存条目。
-    /// 由于 ConcurrentDictionary 不维护插入顺序且不跟踪过期时间，
-    /// 此方法移除任意选取的条目（适用于内存压力场景的紧急回收）。
+    /// T-1 修复：基于 <c>_lastAccess</c> 记录的最后访问时间，按 LRU（最久未使用）策略驱逐最旧条目，
+    /// 避免活跃令牌被误驱逐而过期令牌残留。
     /// </remarks>
     public void Compact(double percentage)
     {
@@ -68,6 +83,7 @@ public class ConcurrentDictionaryTokenCache<T> : ITokenCache<T> where T : class
         if (percentage >= 1.0)
         {
             _cache.Clear();
+            _lastAccess.Clear();
             return;
         }
 
@@ -75,11 +91,16 @@ public class ConcurrentDictionaryTokenCache<T> : ITokenCache<T> where T : class
         if (targetRemoval <= 0)
             return;
 
-        // 移除任意选取的条目（ConcurrentDictionary 不维护顺序）
-        var keysToRemove = _cache.Keys.Take(targetRemoval).ToList();
+        // T-1 修复：按最后访问时间升序（最久未使用优先）选取并驱逐，实现 LRU 语义
+        var keysToRemove = _lastAccess
+            .OrderBy(kvp => kvp.Value)
+            .Take(targetRemoval)
+            .Select(kvp => kvp.Key)
+            .ToList();
         foreach (var key in keysToRemove)
         {
             _cache.TryRemove(key, out _);
+            _lastAccess.TryRemove(key, out _);
         }
     }
 
@@ -87,6 +108,8 @@ public class ConcurrentDictionaryTokenCache<T> : ITokenCache<T> where T : class
     public void Clear()
     {
         _cache.Clear();
+        // T-1 修复：同步清空访问时间记录
+        _lastAccess.Clear();
     }
 
     /// <inheritdoc />
@@ -97,5 +120,7 @@ public class ConcurrentDictionaryTokenCache<T> : ITokenCache<T> where T : class
 
         _disposed = true;
         _cache.Clear();
+        // T-1 修复：释放时同步清空访问时间记录
+        _lastAccess.Clear();
     }
 }

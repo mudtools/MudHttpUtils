@@ -450,6 +450,25 @@ public class DefaultHttpRequestExecutor(
     /// <summary>
     /// 统一的执行编排逻辑：根据 descriptor 应用弹性策略和缓存包装。
     /// </summary>
+    /// <remarks>
+    /// A-4 修复：弹性管线语义说明（双层结构，通过 SkipResilience 标记保证弹性策略只应用一次）：
+    /// <para>
+    /// 1. <b>ResilientHttpClient（全局装饰器）</b>——作为最外层装饰器应用全局默认弹性策略；
+    ///    发送前检查 SkipResilience 标记，若已设置则跳过全局弹性包装，直接转发至内层客户端。
+    /// </para>
+    /// <para>
+    /// 2. <b>DefaultHttpRequestExecutor（按应用，即本方法所在层）</b>——按应用解析弹性策略（优先 <c>IAppResiliencePolicyResolver</c>，回退全局 <c>IResiliencePolicyResolver</c>）。
+    ///    在应用弹性包装前，通过 <see cref="SetSkipResilienceFlag"/> 设置 SkipResilience 标记
+    ///    （常量 <c>__Mud_HttpUtils_SkipResilience</c>，见 <see cref="HttpExecutionConstants.SkipResiliencePropertyKey"/>），
+    ///    使外层 ResilientHttpClient 跳过重复包装，避免双重重试。
+    /// </para>
+    /// <para>
+    /// 3. <b>EnhancedHttpClient.SendCoreAsync</b>——实际 HTTP 调用层，由弹性包装器在每次重试时调用。
+    /// </para>
+    /// <para>
+    /// 缓存层位于弹性策略之外：缓存命中时不触发弹性策略，缓存未命中时由弹性策略保护实际请求。
+    /// </para>
+    /// </remarks>
     private async Task<TResult?> ExecuteWithOrchestrationAsync<TResult>(
         HttpRequestMessage request,
         ExecutionDescriptor descriptor,

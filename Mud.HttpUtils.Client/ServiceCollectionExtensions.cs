@@ -52,6 +52,10 @@ public static class HttpClientServiceCollectionExtensions
         // 使用工厂委托避免在某些 DI 容器配置场景下泛型 TryAddTransient 不生效的问题
         httpClientBuilder.AddHttpMessageHandler(_ => new TracingDelegatingHandler());
 
+        // H-3 修复：此处容量(1000)与 TTL(60秒)为硬编码默认值，未通过 IOptions 暴露配置。
+        // 由于使用 TryAddSingleton 注册，用户可通过以下方式覆盖：
+        //   1. 在调用 AddMudHttpClient 之前，手动注册自定义 IHttpResponseCache 实现抢占此默认注册；
+        //   2. 调用 AddHttpResponseCache(maxCacheSize, cleanupIntervalSeconds) 显式指定参数。
         services.TryAddSingleton<IHttpResponseCache>(sp =>
             new MemoryHttpResponseCache(1000, 60));
 

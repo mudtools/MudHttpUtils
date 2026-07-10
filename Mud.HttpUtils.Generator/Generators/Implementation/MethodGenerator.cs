@@ -138,7 +138,17 @@ internal class MethodGenerator : ICodeFragmentGenerator
         // 捕获应用上下文到局部变量，避免在异步执行过程中 _appContextHolder.Current 被其他线程修改导致 TOCTOU 竞态
         if (!hasHttpClient)
         {
-            codeBuilder.AppendLine("            var __appContext = _appContextHolder.Current ?? throw new InvalidOperationException(\"无法找到当前服务的应用上下文。\");");
+            // TokenManager 模式：_appContextHolder.Current 为 null 时回退到默认应用，与 GetTokenAsync 中的回退逻辑保持一致。
+            // Default 模式（无 TokenManager）：构造函数已初始化 _appContextHolder.Current = _defaultAppContext，正常情况下不会为 null，
+            // 保留 throw 作为安全网，防止异常状态下静默使用错误上下文。
+            if (hasTokenManager)
+            {
+                codeBuilder.AppendLine("            var __appContext = _appContextHolder.Current ?? _appManager.GetDefaultApp();");
+            }
+            else
+            {
+                codeBuilder.AppendLine("            var __appContext = _appContextHolder.Current ?? throw new InvalidOperationException(\"无法找到当前服务的应用上下文。\");");
+            }
             // TokenManager/AppContext 模式下，执行器需基于当前应用上下文的 HttpClient 动态创建。
             // 在 __appContext 捕获之后立即创建，避免 TOCTOU；执行器本身无状态，每次创建开销可忽略。
             // 始终引用 _cacheProvider/_resilienceResolver 字段（未声明特性时为可空，由 DI 注入），
@@ -652,7 +662,19 @@ internal class MethodGenerator : ICodeFragmentGenerator
         {
             var headerName = GetTokenHeaderName(methodInfo);
             var escapedHeaderName = StringEscapeHelper.EscapeString(headerName);
-            codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"{escapedHeaderName}\", access_token);");
+
+            // 当 Header 模式使用标准 Authorization 头时，通过 AuthenticationHeaderValue 注入 "Bearer" 方案前缀，
+            // 确保请求头格式为 "Authorization: Bearer <token>" 而非 "Authorization: <token>"。
+            // 这与 TokenRecoveryExecutor.ApplyTokenToRequest 中的恢复行为保持一致。
+            // ApiKey 模式或自定义 Header 名称仍使用 Headers.Add 直接注入原始令牌值。
+            if (IsTokenHeaderMode(methodInfo) && headerName.Equals("Authorization", StringComparison.OrdinalIgnoreCase))
+            {
+                codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(\"Bearer\", access_token);");
+            }
+            else
+            {
+                codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"{escapedHeaderName}\", access_token);");
+            }
         }
         else if (IsTokenBasicAuthMode(methodInfo))
         {
