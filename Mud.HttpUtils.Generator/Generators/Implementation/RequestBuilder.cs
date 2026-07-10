@@ -636,21 +636,35 @@ internal class RequestBuilder
             // Add() 内部已跳过 null/空白值，无需外部检查
             codeBuilder.AppendLine($"            __queryParams.Add(\"{escapedParamName}\", {property.Name});");
         }
-        else if (TypeDetectionHelper.IsValueType(property.Type) && !TypeDetectionHelper.IsNullableType(property.Type))
-        {
-            // 非可空值类型（int、long、Guid 等）永远不会为 null
-            var formatExpression = !string.IsNullOrEmpty(property.Format)
-                ? $".ToString(\"{StringEscapeHelper.EscapeString(property.Format)}\")"
-                : ".ToString()";
-            codeBuilder.AppendLine($"            __queryParams.Add(\"{escapedParamName}\", {property.Name}{formatExpression});");
-        }
         else
         {
-            // 可空值类型和引用类型：使用 ?. 运算符，Add() 会跳过 null 值
-            var formatExpression = !string.IsNullOrEmpty(property.Format)
-                ? $"?.ToString(\"{StringEscapeHelper.EscapeString(property.Format)}\")"
-                : "?.ToString()";
-            codeBuilder.AppendLine($"            __queryParams.Add(\"{escapedParamName}\", {property.Name}{formatExpression});");
+            // 检查是否有类型专用的 Add 重载（如 int?, Guid?, DateTime?, bool? 等）
+            var overloadKind = TypeDetectionHelper.GetQueryAddOverloadKind(property.Type);
+
+            if (overloadKind == TypeDetectionHelper.QueryAddOverloadKind.WithFormat)
+            {
+                // 带格式化参数的重载：Add(name, value, formatString)
+                var formatArg = !string.IsNullOrEmpty(property.Format)
+                    ? $"\"{StringEscapeHelper.EscapeString(property.Format)}\""
+                    : "null";
+                codeBuilder.AppendLine($"            __queryParams.Add(\"{escapedParamName}\", {property.Name}, {formatArg});");
+            }
+            else if (TypeDetectionHelper.IsValueType(property.Type) && !TypeDetectionHelper.IsNullableType(property.Type))
+            {
+                // 非可空值类型（无专用重载，如 byte, char 等）：使用 ToString()
+                var formatExpression = !string.IsNullOrEmpty(property.Format)
+                    ? $".ToString(\"{StringEscapeHelper.EscapeString(property.Format)}\")"
+                    : ".ToString()";
+                codeBuilder.AppendLine($"            __queryParams.Add(\"{escapedParamName}\", {property.Name}{formatExpression});");
+            }
+            else
+            {
+                // 可空值类型和引用类型（无专用重载）：使用 ?.ToString()，Add() 会跳过 null 值
+                var formatExpression = !string.IsNullOrEmpty(property.Format)
+                    ? $"?.ToString(\"{StringEscapeHelper.EscapeString(property.Format)}\")"
+                    : "?.ToString()";
+                codeBuilder.AppendLine($"            __queryParams.Add(\"{escapedParamName}\", {property.Name}{formatExpression});");
+            }
         }
     }
 

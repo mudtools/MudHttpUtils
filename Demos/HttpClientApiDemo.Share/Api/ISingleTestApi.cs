@@ -81,7 +81,7 @@ public interface ISingleTestApi
     /// <param name="token">令牌</param>
     /// <returns></returns>
     [Get("/api/v1/user")]
-    Task<SysUserInfoOutput> GetUser3Async([Query(Name = "bth", FormatString = "yyyy-MM-dd")] DateTime birthday, [Token][Header("x-token")] string token);
+    Task<SysUserInfoOutput> GetUser3Async([Query(Name = "bth", Format = "yyyy-MM-dd")] DateTime birthday, [Token][Header("x-token")] string token);
 
     /// <summary>
     /// 测试：获取部门列表（可选查询参数）

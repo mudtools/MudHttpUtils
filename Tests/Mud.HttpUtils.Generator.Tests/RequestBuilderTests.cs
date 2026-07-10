@@ -298,6 +298,7 @@ public class RequestBuilderTests
     public void GenerateQueryParameters_InterfaceIntQueryProperty_NoNullCheckForNonNullableValueType()
     {
         // 非可空值类型（int、long、Guid 等）永远不会为 null，无需生成 null 检查
+        // int 类型有专用的 Add(string, int?, string?) 重载，将 ToString 转换委托给 QueryParameterBuilder
         var methodInfo = CreateMethodInfo("/search");
         methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
         {
@@ -312,15 +313,17 @@ public class RequestBuilderTests
         _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
         var code = codeBuilder.ToString();
 
-        // 非可空值类型：不应生成 null 检查，直接生成 Add 调用
-        code.Should().Contain("__queryParams.Add(\"page\", Page.ToString());");
+        // 非可空值类型：不应生成 null 检查，使用类型专用重载直接传入值
+        code.Should().Contain("__queryParams.Add(\"page\", Page, null);");
         code.Should().NotContain("if (Page != null)");
+        code.Should().NotContain("Page.ToString()");
     }
 
     [Fact]
     public void GenerateQueryParameters_InterfaceNullableIntQueryProperty_UsesNullConditionalOperator()
     {
-        // 可空值类型（int?）可能为 null，使用 ?. 运算符，Add() 会跳过 null 值
+        // 可空值类型（int?）可能为 null，int 类型有专用的 Add(string, int?, string?) 重载
+        // QueryParameterBuilder 内部处理 null 值，无需外部 ?.ToString()
         var methodInfo = CreateMethodInfo("/search");
         methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
         {
@@ -335,9 +338,10 @@ public class RequestBuilderTests
         _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
         var code = codeBuilder.ToString();
 
-        // 可空值类型：使用 ?. 运算符，Add() 内部跳过 null 值
-        code.Should().Contain("__queryParams.Add(\"page\", Page?.ToString());");
+        // 可空值类型：使用类型专用重载，Add() 内部跳过 null 值
+        code.Should().Contain("__queryParams.Add(\"page\", Page, null);");
         code.Should().NotContain("if (Page != null)");
+        code.Should().NotContain("Page?.ToString()");
     }
 
     [Fact]

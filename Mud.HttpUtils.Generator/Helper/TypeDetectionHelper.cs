@@ -105,6 +105,43 @@ internal static class TypeDetectionHelper
     }
 
     /// <summary>
+    /// 查询参数 Add 重载类型，用于确定 <see cref="QueryParameterBuilder.Add"/> 方法的重载选择。
+    /// </summary>
+    public enum QueryAddOverloadKind
+    {
+        /// <summary>
+        /// 无专用重载，使用 ToString() 回退方案。
+        /// </summary>
+        None,
+
+        /// <summary>
+        /// 带格式化参数的重载 (int, short, long, float, decimal, double, Guid, DateTime, bool)。
+        /// 所有类型专用重载均为 3 参数形式：Add(string, T?, string?)。
+        /// </summary>
+        WithFormat
+    }
+
+    /// <summary>
+    /// 获取查询参数 Add 方法的重载类型。
+    /// </summary>
+    /// <param name="typeName">参数类型名称</param>
+    /// <returns>重载类型枚举</returns>
+    public static QueryAddOverloadKind GetQueryAddOverloadKind(string typeName)
+    {
+        var nonNullableTypeName = typeName.TrimEnd('?');
+        return nonNullableTypeName switch
+        {
+            "int" or "System.Int32" or "short" or "System.Int16" or
+            "long" or "System.Int64" or "float" or "System.Single" or
+            "decimal" or "System.Decimal" or "double" or "System.Double" or
+            "Guid" or "System.Guid" or "DateTime" or "System.DateTime" or
+            "bool" or "System.Boolean"
+                => QueryAddOverloadKind.WithFormat,
+            _ => QueryAddOverloadKind.None
+        };
+    }
+
+    /// <summary>
     /// 检查是否为 CancellationToken 类型
     /// </summary>
     public static bool IsCancellationToken(string typeName)

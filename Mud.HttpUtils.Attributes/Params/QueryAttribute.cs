@@ -60,10 +60,10 @@ public sealed class QueryAttribute : Attribute
     /// 初始化 <see cref="QueryAttribute"/> 类的新实例。
     /// </summary>
     /// <param name="name">查询参数的名称。</param>
-    /// <param name="formatString">格式化字符串，用于格式化参数值。</param>
-    public QueryAttribute(string name, string? formatString)
+    /// <param name="format">格式化字符串，用于格式化参数值。</param>
+    public QueryAttribute(string name, string? format)
         : this(name) =>
-        FormatString = formatString;
+        Format = format;
 
     /// <summary>
     /// 获取或设置查询参数的名称。
@@ -73,16 +73,7 @@ public sealed class QueryAttribute : Attribute
     /// <summary>
     /// 获取或设置格式化字符串，用于格式化参数值（如日期格式 "yyyy-MM-dd"）。
     /// </summary>
-    public string? FormatString { get; set; }
-
-    /// <summary>
-    /// 获取或设置格式化字符串的别名属性，等效于 <see cref="FormatString"/>。
-    /// </summary>
-    public string? Format
-    {
-        get => FormatString;
-        set => FormatString = value;
-    }
+    public string? Format { get; set; }
 
     /// <summary>
     /// 获取或设置参数的别名，用于映射到不同的查询参数名。

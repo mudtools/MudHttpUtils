@@ -119,20 +119,36 @@ internal class QueryParameterBinder : IParameterBinder
         }
         else
         {
-            if (TypeDetectionHelper.IsNullableType(param.Type))
+            // 检查是否有类型专用的 Add 重载（如 int?, Guid?, DateTime?, bool? 等）
+            var overloadKind = TypeDetectionHelper.GetQueryAddOverloadKind(param.Type);
+
+            if (overloadKind == TypeDetectionHelper.QueryAddOverloadKind.WithFormat)
             {
-                // 使用 ?. 运算符，Add() 会跳过 null 值
-                var formatExpression = !string.IsNullOrEmpty(formatString)
-                    ? $"?.ToString(\"{StringEscapeHelper.EscapeString(formatString)}\")"
-                    : "?.ToString()";
-                codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", {param.Name}{formatExpression});");
+                // 带格式化参数的重载：Add(name, value, formatString)
+                // 非可空和可空值类型均可直接传入，QueryParameterBuilder 内部处理 null
+                var formatArg = !string.IsNullOrEmpty(formatString)
+                    ? $"\"{StringEscapeHelper.EscapeString(formatString)}\""
+                    : "null";
+                codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", {param.Name}, {formatArg});");
             }
             else
             {
-                var formatExpression = !string.IsNullOrEmpty(formatString)
-                    ? $".ToString(\"{StringEscapeHelper.EscapeString(formatString)}\")"
-                    : ".ToString()";
-                codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", {param.Name}{formatExpression});");
+                // 无专用重载的类型（如 byte, char, DateTimeOffset, TimeSpan 等）：回退到 ToString()
+                if (TypeDetectionHelper.IsNullableType(param.Type))
+                {
+                    // 使用 ?. 运算符，Add() 会跳过 null 值
+                    var formatExpression = !string.IsNullOrEmpty(formatString)
+                        ? $"?.ToString(\"{StringEscapeHelper.EscapeString(formatString)}\")"
+                        : "?.ToString()";
+                    codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", {param.Name}{formatExpression});");
+                }
+                else
+                {
+                    var formatExpression = !string.IsNullOrEmpty(formatString)
+                        ? $".ToString(\"{StringEscapeHelper.EscapeString(formatString)}\")"
+                        : ".ToString()";
+                    codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", {param.Name}{formatExpression});");
+                }
             }
         }
     }
@@ -191,9 +207,24 @@ internal class QueryParameterBinder : IParameterBinder
         if (effectiveSeparator == null)
         {
             // 重复参数模式: query1=val1&query1=val2&query1=val3
+            // 提取数组元素类型，尝试使用类型专用的 Add 重载
+            var elementType = GetArrayElementType(param.Type);
+            var elementOverloadKind = TypeDetectionHelper.GetQueryAddOverloadKind(elementType);
+
             codeBuilder.AppendLine($"{indent}    foreach (var __item in {param.Name}.Where(__item => __item != null))");
             codeBuilder.AppendLine($"{indent}    {{");
-            codeBuilder.AppendLine($"{indent}        __queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", __item.ToString());");
+
+            if (elementOverloadKind == TypeDetectionHelper.QueryAddOverloadKind.WithFormat)
+            {
+                // 带格式化参数的重载：Add(name, value, null)
+                codeBuilder.AppendLine($"{indent}        __queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", __item, null);");
+            }
+            else
+            {
+                // 无专用重载：回退到 ToString()
+                codeBuilder.AppendLine($"{indent}        __queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", __item.ToString());");
+            }
+
             codeBuilder.AppendLine($"{indent}    }}");
         }
         else
@@ -260,6 +291,20 @@ internal class QueryParameterBinder : IParameterBinder
                type.StartsWith("System.Collections.Generic.Dictionary", StringComparison.Ordinal) ||
                type.StartsWith("IDictionary<", StringComparison.Ordinal) ||
                type.StartsWith("Dictionary<", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 从数组类型名称中提取元素类型名称。
+    /// 例如 "int[]" 返回 "int"，"string[]?" 返回 "string"。
+    /// </summary>
+    private static string GetArrayElementType(string arrayType)
+    {
+        // 去除可空后缀 (如 "int[]?" → "int[]")
+        var type = arrayType.TrimEnd('?');
+        // 去除数组后缀
+        if (type.EndsWith("[]", StringComparison.OrdinalIgnoreCase))
+            return type.Substring(0, type.Length - 2);
+        return type;
     }
 
     private static void GenerateRawQueryStringParameter(StringBuilder codeBuilder, ParameterInfo param, ParameterAttributeInfo attr, string indent)
