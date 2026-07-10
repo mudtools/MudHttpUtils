@@ -7,6 +7,7 @@
 
 using System.Diagnostics.Metrics;
 using System.Xml.Serialization;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Mud.HttpUtils.Client.Tests;
 
@@ -54,30 +55,27 @@ public class DefaultHttpRequestExecutorTests
     #region 构造函数
 
     [Fact]
-    public void Constructor_WithNullHttpClient_ShouldThrowArgumentNullException()
+    public void Constructor_WithNullLogger_ShouldCreateInstanceWithNullLogger()
     {
-        var act = () => new DefaultHttpRequestExecutor(null!);
-        act.Should().Throw<ArgumentNullException>()
-            .WithParameterName("httpClient");
+        var executor = new DefaultHttpRequestExecutor(null!);
+        executor.Should().NotBeNull();
     }
 
     [Fact]
-    public void Constructor_WithOnlyHttpClient_ShouldCreateInstance()
+    public void Constructor_WithOnlyLogger_ShouldCreateInstance()
     {
-        var mockClient = new Mock<IBaseHttpClient>();
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
         executor.Should().NotBeNull();
     }
 
     [Fact]
     public void Constructor_WithAllDependencies_ShouldCreateInstance()
     {
-        var mockClient = new Mock<IBaseHttpClient>();
         var mockCache = new Mock<IHttpResponseCache>();
         var mockResolver = new Mock<IResiliencePolicyResolver>();
 
         var executor = new DefaultHttpRequestExecutor(
-            mockClient.Object, mockCache.Object, mockResolver.Object);
+            NullLogger<DefaultHttpRequestExecutor>.Instance, mockCache.Object, mockResolver.Object);
 
         executor.Should().NotBeNull();
     }
@@ -93,10 +91,10 @@ public class DefaultHttpRequestExecutorTests
         var mockClient = new Mock<IBaseHttpClient>();
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateResponse(content: json));
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var result = await executor.SendAndDeserializeAsync<TestUser>(
-            CreateRequest(), JsonDescriptor(), null);
+            CreateRequest(), mockClient.Object, JsonDescriptor(), null);
 
         result.Should().NotBeNull();
         result!.Id.Should().Be(42);
@@ -109,10 +107,10 @@ public class DefaultHttpRequestExecutorTests
         var mockClient = new Mock<IBaseHttpClient>();
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateResponse(HttpStatusCode.InternalServerError, content: "server error"));
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var act = () => executor.SendAndDeserializeAsync<TestUser>(
-            CreateRequest(), JsonDescriptor(), null);
+            CreateRequest(), mockClient.Object, JsonDescriptor(), null);
 
         var ex = await act.Should().ThrowAsync<ApiException>();
         ex.Which.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
@@ -125,10 +123,10 @@ public class DefaultHttpRequestExecutorTests
         var mockClient = new Mock<IBaseHttpClient>();
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateResponse(HttpStatusCode.BadRequest, content: """{"Id":0}"""));
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var result = await executor.SendAndDeserializeAsync<TestUser>(
-            CreateRequest(), JsonDescriptor(allowAnyStatusCode: true), null);
+            CreateRequest(), mockClient.Object, JsonDescriptor(allowAnyStatusCode: true), null);
 
         result.Should().NotBeNull();
         result!.Id.Should().Be(0);
@@ -140,10 +138,10 @@ public class DefaultHttpRequestExecutorTests
         var mockClient = new Mock<IBaseHttpClient>();
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateResponse(content: """{"ignored":true}"""));
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var result = await executor.SendAndDeserializeAsync<TestUser>(
-            CreateRequest(), JsonDescriptor(isVoid: true), null);
+            CreateRequest(), mockClient.Object, JsonDescriptor(isVoid: true), null);
 
         result.Should().BeNull();
     }
@@ -155,10 +153,10 @@ public class DefaultHttpRequestExecutorTests
         var mockClient = new Mock<IBaseHttpClient>();
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateResponse(content: rawText, contentType: "text/plain"));
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var result = await executor.SendAndDeserializeAsync<string>(
-            CreateRequest(), JsonDescriptor(), null);
+            CreateRequest(), mockClient.Object, JsonDescriptor(), null);
 
         result.Should().Be(rawText);
     }
@@ -174,10 +172,10 @@ public class DefaultHttpRequestExecutorTests
             .Returns(decrypted);
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateResponse(content: encrypted));
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var result = await executor.SendAndDeserializeAsync<TestUser>(
-            CreateRequest(), JsonDescriptor(enableDecrypt: true), null);
+            CreateRequest(), mockClient.Object, JsonDescriptor(enableDecrypt: true), null);
 
         result.Should().NotBeNull();
         result!.Id.Should().Be(7);
@@ -196,10 +194,10 @@ public class DefaultHttpRequestExecutorTests
             .Returns(decrypted);
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateResponse(content: encrypted, contentType: "text/plain"));
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var result = await executor.SendAndDeserializeAsync<string>(
-            CreateRequest(), JsonDescriptor(enableDecrypt: true), null);
+            CreateRequest(), mockClient.Object, JsonDescriptor(enableDecrypt: true), null);
 
         result.Should().Be(decrypted);
     }
@@ -211,13 +209,13 @@ public class DefaultHttpRequestExecutorTests
         var mockClient = new Mock<IBaseHttpClient>();
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateResponse(content: xml, contentType: "application/xml"));
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var descriptor = XmlDescriptor<TestUser>();
         descriptor.XmlSerializer = new XmlSerializer(typeof(TestUser));
 
         var result = await executor.SendAndDeserializeAsync<TestUser>(
-            CreateRequest(), descriptor, null);
+            CreateRequest(), mockClient.Object, descriptor, null);
 
         result.Should().NotBeNull();
         result!.Id.Should().Be(99);
@@ -231,10 +229,10 @@ public class DefaultHttpRequestExecutorTests
         var mockClient = new Mock<IBaseHttpClient>();
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateResponse(content: invalidJson));
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var act = () => executor.SendAndDeserializeAsync<TestUser>(
-            CreateRequest(), JsonDescriptor(), null);
+            CreateRequest(), mockClient.Object, JsonDescriptor(), null);
 
         var ex = await act.Should().ThrowAsync<ApiException>();
         ex.Which.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -248,13 +246,13 @@ public class DefaultHttpRequestExecutorTests
         var mockClient = new Mock<IBaseHttpClient>();
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateResponse(content: invalidXml, contentType: "application/xml"));
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var descriptor = XmlDescriptor<TestUser>();
         descriptor.XmlSerializer = new XmlSerializer(typeof(TestUser));
 
         var act = () => executor.SendAndDeserializeAsync<TestUser>(
-            CreateRequest(), descriptor, null);
+            CreateRequest(), mockClient.Object, descriptor, null);
 
         var ex = await act.Should().ThrowAsync<ApiException>();
         ex.Which.Content.Should().Contain("Failed to deserialize XML response");
@@ -271,10 +269,10 @@ public class DefaultHttpRequestExecutorTests
         var mockClient = new Mock<IBaseHttpClient>();
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateResponse(content: json));
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var response = await executor.SendAsResponseAsync<TestUser>(
-            CreateRequest(), JsonDescriptor(), null);
+            CreateRequest(), mockClient.Object, JsonDescriptor(), null);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.IsSuccessStatusCode.Should().BeTrue();
@@ -290,10 +288,10 @@ public class DefaultHttpRequestExecutorTests
         var mockClient = new Mock<IBaseHttpClient>();
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateResponse(HttpStatusCode.BadRequest, content: errorBody));
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var response = await executor.SendAsResponseAsync<TestUser>(
-            CreateRequest(), JsonDescriptor(), null);
+            CreateRequest(), mockClient.Object, JsonDescriptor(), null);
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.IsSuccessStatusCode.Should().BeFalse();
@@ -308,10 +306,10 @@ public class DefaultHttpRequestExecutorTests
         var mockClient = new Mock<IBaseHttpClient>();
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateResponse(content: rawText, contentType: "text/plain"));
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var response = await executor.SendAsResponseAsync<string>(
-            CreateRequest(), JsonDescriptor(), null);
+            CreateRequest(), mockClient.Object, JsonDescriptor(), null);
 
         response.Content.Should().Be(rawText);
         response.IsSuccessStatusCode.Should().BeTrue();
@@ -328,10 +326,10 @@ public class DefaultHttpRequestExecutorTests
             .Returns(decrypted);
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateResponse(content: encrypted));
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var response = await executor.SendAsResponseAsync<TestUser>(
-            CreateRequest(), JsonDescriptor(enableDecrypt: true), null);
+            CreateRequest(), mockClient.Object, JsonDescriptor(enableDecrypt: true), null);
 
         response.Content!.Id.Should().Be(5);
         response.Content.Name.Should().Be("Eve");
@@ -344,10 +342,10 @@ public class DefaultHttpRequestExecutorTests
         var mockClient = new Mock<IBaseHttpClient>();
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateResponse(content: invalidJson));
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var response = await executor.SendAsResponseAsync<TestUser>(
-            CreateRequest(), JsonDescriptor(), null);
+            CreateRequest(), mockClient.Object, JsonDescriptor(), null);
 
         response.IsSuccessStatusCode.Should().BeTrue();
         response.Content.Should().BeNull();
@@ -364,9 +362,9 @@ public class DefaultHttpRequestExecutorTests
         var mockClient = new Mock<IBaseHttpClient>();
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateResponse());
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
-        await executor.SendAsync(CreateRequest(), JsonDescriptor());
+        await executor.SendAsync(CreateRequest(), mockClient.Object, JsonDescriptor());
         mockClient.Verify(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -376,9 +374,9 @@ public class DefaultHttpRequestExecutorTests
         var mockClient = new Mock<IBaseHttpClient>();
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateResponse(HttpStatusCode.InternalServerError, "error"));
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
-        var act = () => executor.SendAsync(CreateRequest(), JsonDescriptor());
+        var act = () => executor.SendAsync(CreateRequest(), mockClient.Object, JsonDescriptor());
         await act.Should().ThrowAsync<ApiException>();
     }
 
@@ -388,9 +386,9 @@ public class DefaultHttpRequestExecutorTests
         var mockClient = new Mock<IBaseHttpClient>();
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateResponse(HttpStatusCode.BadRequest, "error"));
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
-        await executor.SendAsync(CreateRequest(), JsonDescriptor(allowAnyStatusCode: true));
+        await executor.SendAsync(CreateRequest(), mockClient.Object, JsonDescriptor(allowAnyStatusCode: true));
     }
 
     #endregion
@@ -404,7 +402,7 @@ public class DefaultHttpRequestExecutorTests
         var mockClient = new Mock<IBaseHttpClient>();
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateResponse(content: json));
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var descriptor = new ExecutionDescriptor
         {
@@ -414,7 +412,7 @@ public class DefaultHttpRequestExecutorTests
         };
 
         var result = await executor.ExecuteAsync<TestUser>(
-            CreateRequest(), descriptor, null);
+            CreateRequest(), mockClient.Object, descriptor, null);
 
         result!.Id.Should().Be(10);
         mockClient.Verify(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()), Times.Once);
@@ -440,7 +438,7 @@ public class DefaultHttpRequestExecutorTests
                     fetchedValue = await fetch();
                     return fetchedValue;
                 });
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object, mockCache.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance, mockCache.Object);
 
         var descriptor = new ExecutionDescriptor
         {
@@ -449,7 +447,7 @@ public class DefaultHttpRequestExecutorTests
             CacheKey = "test-key"
         };
 
-        var result = await executor.ExecuteAsync<TestUser>(CreateRequest(), descriptor, null);
+        var result = await executor.ExecuteAsync<TestUser>(CreateRequest(), mockClient.Object, descriptor, null);
 
         result!.Id.Should().Be(20);
         mockCache.Verify(c => c.GetOrFetchAsync(
@@ -470,7 +468,7 @@ public class DefaultHttpRequestExecutorTests
                 It.IsAny<TimeSpan>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(cachedUser);
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object, mockCache.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance, mockCache.Object);
 
         var descriptor = new ExecutionDescriptor
         {
@@ -479,7 +477,7 @@ public class DefaultHttpRequestExecutorTests
             CacheKey = "hit-key"
         };
 
-        var result = await executor.ExecuteAsync<TestUser>(CreateRequest(), descriptor, null);
+        var result = await executor.ExecuteAsync<TestUser>(CreateRequest(), mockClient.Object, descriptor, null);
 
         result!.Id.Should().Be(30);
         result.Name.Should().Be("Cached");
@@ -500,7 +498,7 @@ public class DefaultHttpRequestExecutorTests
             .Returns<ResilienceExecutionOptions, HttpRequestMessage>(
                 (options, requestTemplate) =>
                     (coreExecute, ct) => coreExecute(requestTemplate, ct));
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object, null, mockResolver.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance, null, mockResolver.Object);
 
         var descriptor = new ExecutionDescriptor
         {
@@ -508,7 +506,7 @@ public class DefaultHttpRequestExecutorTests
             Resilience = new ResilienceExecutionOptions { RetryEnabled = true, MaxRetries = 2 }
         };
 
-        var result = await executor.ExecuteAsync<TestUser>(requestTemplateRef, descriptor, null);
+        var result = await executor.ExecuteAsync<TestUser>(requestTemplateRef, mockClient.Object, descriptor, null);
 
         result!.Id.Should().Be(40);
         mockResolver.Verify(r => r.ResolvePolicyWrapper<TestUser>(
@@ -537,7 +535,7 @@ public class DefaultHttpRequestExecutorTests
             .Returns<ResilienceExecutionOptions, HttpRequestMessage>(
                 (options, requestTemplate) =>
                     (coreExecute, ct) => coreExecute(requestTemplate, ct));
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object, mockCache.Object, mockResolver.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance, mockCache.Object, mockResolver.Object);
 
         var descriptor = new ExecutionDescriptor
         {
@@ -547,7 +545,7 @@ public class DefaultHttpRequestExecutorTests
             Resilience = new ResilienceExecutionOptions { RetryEnabled = true, MaxRetries = 1 }
         };
 
-        var result = await executor.ExecuteAsync<TestUser>(CreateRequest(), descriptor, null);
+        var result = await executor.ExecuteAsync<TestUser>(CreateRequest(), mockClient.Object, descriptor, null);
 
         result!.Id.Should().Be(50);
         // 缓存应被调用一次（包裹弹性策略）
@@ -574,7 +572,7 @@ public class DefaultHttpRequestExecutorTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(cachedUser);
         var mockResolver = new Mock<IResiliencePolicyResolver>();
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object, mockCache.Object, mockResolver.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance, mockCache.Object, mockResolver.Object);
 
         var descriptor = new ExecutionDescriptor
         {
@@ -584,7 +582,7 @@ public class DefaultHttpRequestExecutorTests
             Resilience = new ResilienceExecutionOptions { RetryEnabled = true, MaxRetries = 1 }
         };
 
-        var result = await executor.ExecuteAsync<TestUser>(CreateRequest(), descriptor, null);
+        var result = await executor.ExecuteAsync<TestUser>(CreateRequest(), mockClient.Object, descriptor, null);
 
         result!.Id.Should().Be(60);
         // 缓存命中，弹性策略包装器虽然被解析但 fetchFunc 未被调用，因此 HTTP 不会被调用
@@ -601,7 +599,7 @@ public class DefaultHttpRequestExecutorTests
         var mockClient = new Mock<IBaseHttpClient>();
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateResponse());
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var descriptor = new ExecutionDescriptor
         {
@@ -609,7 +607,7 @@ public class DefaultHttpRequestExecutorTests
             Resilience = null
         };
 
-        await executor.ExecuteAsync(CreateRequest(), descriptor);
+        await executor.ExecuteAsync(CreateRequest(), mockClient.Object, descriptor);
 
         mockClient.Verify(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -626,7 +624,7 @@ public class DefaultHttpRequestExecutorTests
             .Returns<ResilienceExecutionOptions, HttpRequestMessage>(
                 (options, requestTemplate) =>
                     (coreExecute, ct) => coreExecute(requestTemplate, ct));
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object, null, mockResolver.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance, null, mockResolver.Object);
 
         var descriptor = new ExecutionDescriptor
         {
@@ -634,7 +632,7 @@ public class DefaultHttpRequestExecutorTests
             Resilience = new ResilienceExecutionOptions { RetryEnabled = true, MaxRetries = 2 }
         };
 
-        await executor.ExecuteAsync(CreateRequest(), descriptor);
+        await executor.ExecuteAsync(CreateRequest(), mockClient.Object, descriptor);
 
         mockResolver.Verify(r => r.ResolvePolicyWrapper<object>(
             It.IsAny<ResilienceExecutionOptions>(), It.IsAny<HttpRequestMessage>()), Times.Once);
@@ -647,7 +645,7 @@ public class DefaultHttpRequestExecutorTests
         var mockClient = new Mock<IBaseHttpClient>();
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(CreateResponse());
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object, null, null);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance, null, null);
 
         var descriptor = new ExecutionDescriptor
         {
@@ -655,7 +653,7 @@ public class DefaultHttpRequestExecutorTests
             Resilience = new ResilienceExecutionOptions { RetryEnabled = true, MaxRetries = 2 }
         };
 
-        await executor.ExecuteAsync(CreateRequest(), descriptor);
+        await executor.ExecuteAsync(CreateRequest(), mockClient.Object, descriptor);
 
         // 无 resolver 时，应回退到直接 SendAsync
         mockClient.Verify(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()), Times.Once);
@@ -676,9 +674,9 @@ public class DefaultHttpRequestExecutorTests
         };
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(response);
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
-        var result = await executor.DownloadAsync(CreateRequest());
+        var result = await executor.DownloadAsync(CreateRequest(), mockClient.Object);
 
         result.Should().Equal(data);
     }
@@ -694,12 +692,12 @@ public class DefaultHttpRequestExecutorTests
         };
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(response);
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var tempFile = Path.Combine(Path.GetTempPath(), $"mud_test_{Guid.NewGuid():N}.bin");
         try
         {
-            await executor.DownloadLargeAsync(CreateRequest(), tempFile);
+            await executor.DownloadLargeAsync(CreateRequest(), mockClient.Object, tempFile);
 
             // 验证执行器调用了 SendRawAsync
             mockClient.Verify(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()), Times.Once);
@@ -725,14 +723,14 @@ public class DefaultHttpRequestExecutorTests
         };
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(response);
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var tempFile = Path.Combine(Path.GetTempPath(), $"mud_test_{Guid.NewGuid():N}.bin");
         var reportedBytes = new List<long>();
         var progress = new Progress<long>(b => reportedBytes.Add(b));
         try
         {
-            await executor.DownloadLargeAsync(CreateRequest(), tempFile, progress: progress);
+            await executor.DownloadLargeAsync(CreateRequest(), mockClient.Object, tempFile, progress: progress);
 
             // 验证进度报告至少触发一次，且最终累计等于数据长度
             reportedBytes.Should().NotBeEmpty();
@@ -762,7 +760,7 @@ public class DefaultHttpRequestExecutorTests
         };
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(response);
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var capturedBytes = new List<(long Value, KeyValuePair<string, object?>[] Tags)>();
         var capturedDurations = new List<(double Value, KeyValuePair<string, object?>[] Tags)>();
@@ -786,7 +784,7 @@ public class DefaultHttpRequestExecutorTests
         });
         meterListener.Start();
 
-        var result = await executor.DownloadAsync(CreateRequest());
+        var result = await executor.DownloadAsync(CreateRequest(), mockClient.Object);
 
         result.Should().Equal(data);
         // 验证下载字节数指标
@@ -810,7 +808,7 @@ public class DefaultHttpRequestExecutorTests
         };
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(response);
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var tempFile = Path.Combine(Path.GetTempPath(), $"mud_test_{Guid.NewGuid():N}.bin");
         var capturedBytes = new List<long>();
@@ -837,7 +835,7 @@ public class DefaultHttpRequestExecutorTests
 
         try
         {
-            await executor.DownloadLargeAsync(CreateRequest(), tempFile);
+            await executor.DownloadLargeAsync(CreateRequest(), mockClient.Object, tempFile);
         }
         finally
         {
@@ -862,7 +860,7 @@ public class DefaultHttpRequestExecutorTests
         };
         mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(response);
-        var executor = new DefaultHttpRequestExecutor(mockClient.Object);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
 
         var capturedDurations = new List<(double Value, KeyValuePair<string, object?>[] Tags)>();
         using var meterListener = new MeterListener
@@ -880,7 +878,7 @@ public class DefaultHttpRequestExecutorTests
         });
         meterListener.Start();
 
-        var act = async () => await executor.DownloadAsync(CreateRequest());
+        var act = async () => await executor.DownloadAsync(CreateRequest(), mockClient.Object);
         await act.Should().ThrowAsync<InvalidOperationException>();
 
         // 验证失败时记录了 outcome=error 的耗时指标

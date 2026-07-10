@@ -11,6 +11,11 @@ namespace Mud.HttpUtils;
 /// HTTP 请求执行器接口，统一处理响应反序列化、错误处理和执行模式编排。
 /// 由源生成器生成的代码调用。
 /// </summary>
+/// <remarks>
+/// 该接口是无状态的：<see cref="IBaseHttpClient"/> 实例通过方法参数逐次传递，
+/// 而非保存在执行器内部。这使得执行器可安全注册为 Singleton，
+/// 在多应用/多租户场景下不存在 TOCTOU 竞态风险。
+/// </remarks>
 public interface IHttpRequestExecutor
 {
     /// <summary>
@@ -18,12 +23,14 @@ public interface IHttpRequestExecutor
     /// </summary>
     /// <typeparam name="TResult">反序列化目标类型。</typeparam>
     /// <param name="request">已构建完成的 HttpRequestMessage（含URL/Header/Body）。</param>
+    /// <param name="httpClient">用于发送请求的 HTTP 客户端实例。</param>
     /// <param name="descriptor">响应处理描述符。</param>
     /// <param name="jsonSerializerOptions">JSON序列化选项。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>反序列化后的结果。</returns>
     Task<TResult?> SendAndDeserializeAsync<TResult>(
         HttpRequestMessage request,
+        IBaseHttpClient httpClient,
         ResponseDescriptor descriptor,
         object? jsonSerializerOptions,
         CancellationToken cancellationToken = default);
@@ -33,6 +40,7 @@ public interface IHttpRequestExecutor
     /// </summary>
     Task<Response<TInner>> SendAsResponseAsync<TInner>(
         HttpRequestMessage request,
+        IBaseHttpClient httpClient,
         ResponseDescriptor descriptor,
         object? jsonSerializerOptions,
         CancellationToken cancellationToken = default);
@@ -42,6 +50,7 @@ public interface IHttpRequestExecutor
     /// </summary>
     Task SendAsync(
         HttpRequestMessage request,
+        IBaseHttpClient httpClient,
         ResponseDescriptor descriptor,
         CancellationToken cancellationToken = default);
 
@@ -50,10 +59,12 @@ public interface IHttpRequestExecutor
     /// 支持基于 <paramref name="descriptor"/> 的错误处理（非 2xx 状态码抛出 <see cref="ApiException"/>）。
     /// </summary>
     /// <param name="request">HTTP 请求消息。</param>
+    /// <param name="httpClient">用于发送请求的 HTTP 客户端实例。</param>
     /// <param name="descriptor">响应处理描述符（用于 AllowAnyStatusCode 控制）。可为 null，null 时默认检查状态码。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     Task<byte[]?> DownloadAsync(
         HttpRequestMessage request,
+        IBaseHttpClient httpClient,
         ResponseDescriptor? descriptor = null,
         CancellationToken cancellationToken = default);
 
@@ -63,6 +74,7 @@ public interface IHttpRequestExecutor
     /// 支持通过 <paramref name="progress"/> 报告下载进度（累计已接收字节数）。
     /// </summary>
     /// <param name="request">HTTP 请求消息。</param>
+    /// <param name="httpClient">用于发送请求的 HTTP 客户端实例。</param>
     /// <param name="filePath">文件保存路径。</param>
     /// <param name="overwrite">是否覆盖已存在的文件。默认为 true。</param>
     /// <param name="bufferSize">下载缓冲区大小（字节）。默认为 81920（80KB）。</param>
@@ -71,6 +83,7 @@ public interface IHttpRequestExecutor
     /// <param name="cancellationToken">取消令牌。</param>
     Task DownloadLargeAsync(
         HttpRequestMessage request,
+        IBaseHttpClient httpClient,
         string filePath,
         bool overwrite = true,
         int bufferSize = 81920,
@@ -83,6 +96,7 @@ public interface IHttpRequestExecutor
     /// </summary>
     IAsyncEnumerable<TElement> SendAsAsyncEnumerable<TElement>(
         HttpRequestMessage request,
+        IBaseHttpClient httpClient,
         object? jsonSerializerOptions,
         CancellationToken cancellationToken = default);
 
@@ -91,12 +105,14 @@ public interface IHttpRequestExecutor
     /// </summary>
     /// <typeparam name="TResult">反序列化目标类型。</typeparam>
     /// <param name="request">已构建完成的 HttpRequestMessage。</param>
+    /// <param name="httpClient">用于发送请求的 HTTP 客户端实例。</param>
     /// <param name="descriptor">执行模式描述符（含响应处理、缓存、弹性策略配置）。</param>
     /// <param name="jsonSerializerOptions">JSON序列化选项。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>反序列化后的结果。</returns>
     Task<TResult?> ExecuteAsync<TResult>(
         HttpRequestMessage request,
+        IBaseHttpClient httpClient,
         ExecutionDescriptor descriptor,
         object? jsonSerializerOptions,
         CancellationToken cancellationToken = default);
@@ -106,6 +122,7 @@ public interface IHttpRequestExecutor
     /// </summary>
     Task<Response<TInner>?> ExecuteAsResponseAsync<TInner>(
         HttpRequestMessage request,
+        IBaseHttpClient httpClient,
         ExecutionDescriptor descriptor,
         object? jsonSerializerOptions,
         CancellationToken cancellationToken = default);
@@ -115,6 +132,7 @@ public interface IHttpRequestExecutor
     /// </summary>
     Task ExecuteAsync(
         HttpRequestMessage request,
+        IBaseHttpClient httpClient,
         ExecutionDescriptor descriptor,
         CancellationToken cancellationToken = default);
 }

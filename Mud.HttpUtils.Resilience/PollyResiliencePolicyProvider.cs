@@ -33,6 +33,14 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 
     private const string PolicyKeyGlobalRetry = "global:retry";
     private const string PolicyKeyGlobalTimeout = "global:timeout";
+
+#if NET6_0_OR_GREATER
+    // M-1 修复：重试抖动随机数生成器（NET6+ 使用线程安全的 Random.Shared）
+#else
+    // M-1 修复：重试抖动随机数生成器（netstandard2.0 使用 ThreadLocal 保证线程安全）
+    private static readonly System.Threading.ThreadLocal<Random> _jitterRandom =
+        new(() => new Random(Guid.NewGuid().GetHashCode()));
+#endif
     private const string PolicyKeyGlobalCircuitBreaker = "global:circuitBreaker";
 
     /// <summary>
@@ -107,12 +115,18 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
             .WaitAndRetryAsync(
                 retryOptions.MaxRetryAttempts,
-                retryAttempt => retryOptions.UseExponentialBackoff
-                    ? TimeSpan.FromMilliseconds(
-                        Math.Min(
+                retryAttempt =>
+                {
+                    // M-1 修复：添加随机抖动(Jitter)，避免高并发下多实例同步重试导致"重试风暴"。
+                    // 退避 = 基础退避 + [0, baseDelay/4) 的随机抖动
+                    var baseDelayMs = retryOptions.UseExponentialBackoff
+                        ? Math.Min(
                             retryOptions.DelayMilliseconds * Math.Pow(2, retryAttempt - 1),
-                            60000))
-                    : TimeSpan.FromMilliseconds(retryOptions.DelayMilliseconds),
+                            60000)
+                        : retryOptions.DelayMilliseconds;
+                    var jitterMs = GetJitterMilliseconds(baseDelayMs);
+                    return TimeSpan.FromMilliseconds(baseDelayMs + jitterMs);
+                },
                 onRetryAsync: async (outcome, timeSpan, retryCount, context) =>
                 {
                     MudHttpClientLog.RetryAttempting(_logger, timeSpan.TotalMilliseconds, retryCount, retryOptions.MaxRetryAttempts, outcome.Exception);
@@ -482,6 +496,27 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             var circuitBreakerPolicy = GetCircuitBreakerPolicy<TResult>();
             return circuitBreakerPolicy.WrapAsync(timeoutPolicy);
         });
+    }
+
+    /// <summary>
+    /// M-1 修复：计算重试退避抖动量，范围为 [0, baseDelayMs/4)。
+    /// 抖动用于避免多实例在高并发下同步重试导致的"重试风暴"（Thundering Herd）。
+    /// </summary>
+    /// <param name="baseDelayMs">基础退避毫秒数。</param>
+    /// <returns>抖动毫秒数。</returns>
+    private static double GetJitterMilliseconds(double baseDelayMs)
+    {
+        var maxJitter = (int)(baseDelayMs / 4);
+        if (maxJitter <= 0)
+        {
+            return 0;
+        }
+
+#if NET6_0_OR_GREATER
+        return Random.Shared.Next(0, maxJitter);
+#else
+        return _jitterRandom.Value!.Next(0, maxJitter);
+#endif
     }
 
     private static bool ShouldRetry(HttpRequestException exception, int[] retryStatusCodes)

@@ -149,15 +149,12 @@ internal class MethodGenerator : ICodeFragmentGenerator
             {
                 codeBuilder.AppendLine("            var __appContext = _appContextHolder.Current ?? throw new InvalidOperationException(\"无法找到当前服务的应用上下文。\");");
             }
-            // TokenManager/AppContext 模式下，执行器需基于当前应用上下文的 HttpClient 动态创建。
-            // 在 __appContext 捕获之后立即创建，避免 TOCTOU；执行器本身无状态，每次创建开销可忽略。
-            // 始终引用 _cacheProvider/_resilienceResolver 字段（未声明特性时为可空，由 DI 注入），
-            // 确保执行器能正确编排缓存/弹性策略。
-            codeBuilder.AppendLine("            var __executor = new Mud.HttpUtils.DefaultHttpRequestExecutor(__appContext.HttpClient, _cacheProvider, _resilienceResolver);");
         }
 
-        // 执行器变量表达式：HttpClient 模式使用构造函数注入的 _executor 字段；TokenManager/AppContext 模式使用上面的 __executor 局部变量
-        var executor = hasHttpClient ? "_executor" : "__executor";
+        // 执行器统一使用 DI 注入的 _executor 字段（所有模式均通过构造函数注入，无状态设计）
+        var executor = "_executor";
+        // HttpClient 表达式：HttpClient 模式使用字段，TokenManager/AppContext 模式使用已捕获的应用上下文
+        var httpClientExpr = hasHttpClient ? "_httpClient" : "__appContext.HttpClient";
 
         if (needsTokenInjection)
         {
@@ -217,7 +214,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine();
 
         // 统一调用执行器：Cache/Resilience 编排由运行时执行器处理，消除生成器中的三分支互斥逻辑
-        GenerateExecutorCall(codeBuilder, context, methodInfo, hasHttpClient, needsTokenInjection, executor);
+        GenerateExecutorCall(codeBuilder, context, methodInfo, hasHttpClient, needsTokenInjection, executor, httpClientExpr);
 
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
@@ -229,7 +226,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
     /// IAsyncEnumerable/byte[]/文件下载等特殊返回类型跳过编排，直接调用对应的执行器方法。
     /// </summary>
     private void GenerateExecutorCall(StringBuilder codeBuilder, GeneratorContext context,
-        MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection, string executor)
+        MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection, string executor, string httpClientExpr)
     {
         var basePath = context.Configuration.BasePath;
         var urlCode = _requestBuilder.BuildUrlString(methodInfo, basePath);
@@ -256,7 +253,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             var cancellationTokenParam = methodInfo.Parameters
                 .FirstOrDefault(p => TypeDetectionHelper.IsCancellationToken(p.Type));
             var cancellationTokenName = cancellationTokenParam?.Name ?? "default";
-            codeBuilder.AppendLine($"            await foreach (var __item in {executor}.SendAsAsyncEnumerable<{elementType}>(__httpRequest, _jsonSerializerOptions, {cancellationTokenName}))");
+            codeBuilder.AppendLine($"            await foreach (var __item in {executor}.SendAsAsyncEnumerable<{elementType}>(__httpRequest, {httpClientExpr}, _jsonSerializerOptions, {cancellationTokenName}))");
             codeBuilder.AppendLine("            {");
             codeBuilder.AppendLine("                yield return __item;");
             codeBuilder.AppendLine("            }");
@@ -285,7 +282,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
             // 构造 ResponseDescriptor 以支持 AllowAnyStatusCode
             var responseDescriptor = BuildResponseDescriptorCode(methodInfo, deserializeType);
-            codeBuilder.AppendLine($"            await {executor}.DownloadLargeAsync(__httpRequest, {filePathParam.Name}, overwrite: {overwrite.ToString().ToLowerInvariant()}, bufferSize: {bufferSize},");
+            codeBuilder.AppendLine($"            await {executor}.DownloadLargeAsync(__httpRequest, {httpClientExpr}, {filePathParam.Name}, overwrite: {overwrite.ToString().ToLowerInvariant()}, bufferSize: {bufferSize},");
             codeBuilder.AppendLine($"                {responseDescriptor}, progress: {progressArg}{cancellationTokenArg}).ConfigureAwait(false);");
             return;
         }
@@ -307,6 +304,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 {
                     codeBuilder.AppendLine($"            return await {executor}.ExecuteAsync<{deserializeType}>(");
                     codeBuilder.AppendLine($"                __httpRequest,");
+                    codeBuilder.AppendLine($"                {httpClientExpr},");
                     codeBuilder.AppendLine($"                {byteDownloadDescriptor},");
                     codeBuilder.AppendLine($"                _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false);");
                 }
@@ -314,6 +312,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 {
                     codeBuilder.AppendLine($"            return (await {executor}.ExecuteAsync<{deserializeType}>(");
                     codeBuilder.AppendLine($"                __httpRequest,");
+                    codeBuilder.AppendLine($"                {httpClientExpr},");
                     codeBuilder.AppendLine($"                {byteDownloadDescriptor},");
                     codeBuilder.AppendLine($"                _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false)) ?? System.Array.Empty<byte>();");
                 }
@@ -324,12 +323,12 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 var responseDescriptor = BuildResponseDescriptorCode(methodInfo, deserializeType);
                 if (isNullableByteArray)
                 {
-                    codeBuilder.AppendLine($"            return await {executor}.DownloadAsync(__httpRequest,");
+                    codeBuilder.AppendLine($"            return await {executor}.DownloadAsync(__httpRequest, {httpClientExpr},");
                     codeBuilder.AppendLine($"                {responseDescriptor}{cancellationTokenArg}).ConfigureAwait(false);");
                 }
                 else
                 {
-                    codeBuilder.AppendLine($"            return (await {executor}.DownloadAsync(__httpRequest,");
+                    codeBuilder.AppendLine($"            return (await {executor}.DownloadAsync(__httpRequest, {httpClientExpr},");
                     codeBuilder.AppendLine($"                {responseDescriptor}{cancellationTokenArg}).ConfigureAwait(false)) ?? System.Array.Empty<byte>();");
                 }
             }
@@ -344,6 +343,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         {
             codeBuilder.AppendLine($"            await {executor}.ExecuteAsync(");
             codeBuilder.AppendLine($"                __httpRequest,");
+            codeBuilder.AppendLine($"                {httpClientExpr},");
             codeBuilder.AppendLine($"                {executionDescriptor}{cancellationTokenArg}).ConfigureAwait(false);");
             return;
         }
@@ -352,6 +352,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         {
             codeBuilder.AppendLine($"            return await {executor}.ExecuteAsResponseAsync<{innerType}>(");
             codeBuilder.AppendLine($"                __httpRequest,");
+            codeBuilder.AppendLine($"                {httpClientExpr},");
             codeBuilder.AppendLine($"                {executionDescriptor},");
             codeBuilder.AppendLine($"                _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false);");
         }
@@ -359,6 +360,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         {
             codeBuilder.AppendLine($"            return await {executor}.ExecuteAsync<{deserializeType}>(");
             codeBuilder.AppendLine($"                __httpRequest,");
+            codeBuilder.AppendLine($"                {httpClientExpr},");
             codeBuilder.AppendLine($"                {executionDescriptor},");
             codeBuilder.AppendLine($"                _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false);");
         }

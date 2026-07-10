@@ -5,6 +5,8 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Mud.HttpUtils.Observability;
 using System.Text.Json;
 using System.Xml.Serialization;
@@ -17,26 +19,30 @@ namespace Mud.HttpUtils;
 /// 支持缓存和弹性策略的运行时编排。
 /// </summary>
 /// <remarks>
+/// 该实现是无状态的：<see cref="IBaseHttpClient"/> 实例通过方法参数逐次传递，
+/// 而非保存在构造函数中。这使得执行器可安全注册为 Singleton，
+/// 在多应用/多租户场景下不存在 TOCTOU 竞态风险。
+/// <para>
 /// 初始化 <see cref="DefaultHttpRequestExecutor"/>。
+/// </para>
 /// </remarks>
-/// <param name="httpClient">HTTP 客户端实例。</param>
+/// <param name="logger">日志记录器。用于记录 HTTP 错误响应内容，便于排查远程 API 返回的错误详情。</param>
 /// <param name="cacheProvider">HTTP 响应缓存提供器（可选）。</param>
 /// <param name="resilienceResolver">全局弹性策略解析器（可选）。</param>
 /// <param name="appResilienceResolver">按应用解析弹性策略的解析器（可选）。优先于 <paramref name="resilienceResolver"/>。</param>
 /// <param name="appContextHolder">应用上下文持有器（可选）。用于在多应用场景下获取当前应用的 AppKey。</param>
 public class DefaultHttpRequestExecutor(
-    IBaseHttpClient httpClient,
+    ILogger<DefaultHttpRequestExecutor> logger,
     IHttpResponseCache? cacheProvider = null,
     IResiliencePolicyResolver? resilienceResolver = null,
     IAppResiliencePolicyResolver? appResilienceResolver = null,
     IAppContextHolder? appContextHolder = null) : IHttpRequestExecutor
 {
-    private readonly IBaseHttpClient _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
-    private readonly IEncryptableHttpClient? _encryptableClient = httpClient as IEncryptableHttpClient;
     private readonly IHttpResponseCache? _cacheProvider = cacheProvider;
     private readonly IResiliencePolicyResolver? _resilienceResolver = resilienceResolver;
     private readonly IAppResiliencePolicyResolver? _appResilienceResolver = appResilienceResolver;
     private readonly IAppContextHolder? _appContextHolder = appContextHolder;
+    private readonly ILogger _logger = logger ?? NullLogger<DefaultHttpRequestExecutor>.Instance;
 
     /// <summary>
     /// 解析当前请求应使用的弹性策略解析器。
@@ -61,17 +67,22 @@ public class DefaultHttpRequestExecutor(
     /// <inheritdoc/>
     public async Task<TResult?> SendAndDeserializeAsync<TResult>(
         HttpRequestMessage request,
+        IBaseHttpClient httpClient,
         ResponseDescriptor descriptor,
         object? jsonSerializerOptions,
         CancellationToken cancellationToken = default)
     {
+        var encryptableClient = httpClient as IEncryptableHttpClient;
+
         // 1. 发送请求
-        using var response = await _httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
+        using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
 
         // 2. 错误处理（非 AllowAnyStatusCode 模式）
         if (!descriptor.AllowAnyStatusCode && !response.IsSuccessStatusCode)
         {
             var errorContent = await ReadContentAsync(response, cancellationToken).ConfigureAwait(false);
+            _logger.LogError("HTTP 请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
+                (int)response.StatusCode, request.RequestUri?.ToString(), errorContent);
             throw new ApiException(response.StatusCode, errorContent, request.RequestUri?.ToString());
         }
 
@@ -85,14 +96,14 @@ public class DefaultHttpRequestExecutor(
         // 5. string 返回类型特殊处理（不经过 JSON 反序列化）
         if (typeof(TResult) == typeof(string))
         {
-            if (descriptor.EnableDecrypt && _encryptableClient != null)
-                rawContent = _encryptableClient.DecryptContent(rawContent);
+            if (descriptor.EnableDecrypt && encryptableClient != null)
+                rawContent = encryptableClient.DecryptContent(rawContent);
             return (TResult)(object)rawContent;
         }
 
         // 6. 解密（在反序列化之前解密原始内容）
-        if (descriptor.EnableDecrypt && _encryptableClient != null)
-            rawContent = _encryptableClient.DecryptContent(rawContent);
+        if (descriptor.EnableDecrypt && encryptableClient != null)
+            rawContent = encryptableClient.DecryptContent(rawContent);
 
         // 7. 反序列化
         var isXml = IsXmlContentType(descriptor.ResponseContentType);
@@ -133,11 +144,14 @@ public class DefaultHttpRequestExecutor(
     /// <inheritdoc/>
     public async Task<Response<TInner>> SendAsResponseAsync<TInner>(
         HttpRequestMessage request,
+        IBaseHttpClient httpClient,
         ResponseDescriptor descriptor,
         object? jsonSerializerOptions,
         CancellationToken cancellationToken = default)
     {
-        using var response = await _httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
+        var encryptableClient = httpClient as IEncryptableHttpClient;
+
+        using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
         var statusCode = response.StatusCode;
         var rawContent = await ReadContentAsync(response, cancellationToken).ConfigureAwait(false);
         var responseHeaders = response.Headers.ToDictionary(h => h.Key, h => h.Value.ToList());
@@ -152,14 +166,14 @@ public class DefaultHttpRequestExecutor(
             if (typeof(TInner) == typeof(string))
             {
                 var strContent = rawContent;
-                if (descriptor.EnableDecrypt && _encryptableClient != null)
-                    strContent = _encryptableClient.DecryptContent(strContent);
+                if (descriptor.EnableDecrypt && encryptableClient != null)
+                    strContent = encryptableClient.DecryptContent(strContent);
                 return new Response<TInner>(statusCode, (TInner)(object)strContent, rawContent, responseHeaders);
             }
 
             // 解密（在反序列化之前解密原始内容）
-            if (descriptor.EnableDecrypt && _encryptableClient != null)
-                rawContent = _encryptableClient.DecryptContent(rawContent);
+            if (descriptor.EnableDecrypt && encryptableClient != null)
+                rawContent = encryptableClient.DecryptContent(rawContent);
 
             // 反序列化
             TInner? content;
@@ -198,14 +212,17 @@ public class DefaultHttpRequestExecutor(
     /// <inheritdoc/>
     public async Task SendAsync(
         HttpRequestMessage request,
+        IBaseHttpClient httpClient,
         ResponseDescriptor descriptor,
         CancellationToken cancellationToken = default)
     {
-        using var response = await _httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
+        using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (!descriptor.AllowAnyStatusCode && !response.IsSuccessStatusCode)
         {
             var errorContent = await ReadContentAsync(response, cancellationToken).ConfigureAwait(false);
+            _logger.LogError("HTTP 请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
+                (int)response.StatusCode, request.RequestUri?.ToString(), errorContent);
             throw new ApiException(response.StatusCode, errorContent, request.RequestUri?.ToString());
         }
     }
@@ -219,16 +236,19 @@ public class DefaultHttpRequestExecutor(
     /// </remarks>
     public async Task<byte[]?> DownloadAsync(
         HttpRequestMessage request,
+        IBaseHttpClient httpClient,
         ResponseDescriptor? descriptor = null,
         CancellationToken cancellationToken = default)
     {
-        using var response = await _httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
+        using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
 
         // 错误处理：descriptor 为 null 时默认检查状态码，与普通方法语义一致
         var allowAnyStatusCode = descriptor?.AllowAnyStatusCode ?? false;
         if (!allowAnyStatusCode && !response.IsSuccessStatusCode)
         {
             var errorContent = await ReadContentAsync(response, cancellationToken).ConfigureAwait(false);
+            _logger.LogError("HTTP 下载请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
+                (int)response.StatusCode, request.RequestUri?.ToString(), errorContent);
             throw new ApiException(response.StatusCode, errorContent, request.RequestUri?.ToString());
         }
 
@@ -259,6 +279,7 @@ public class DefaultHttpRequestExecutor(
     /// <inheritdoc/>
     public async Task DownloadLargeAsync(
         HttpRequestMessage request,
+        IBaseHttpClient httpClient,
         string filePath,
         bool overwrite = true,
         int bufferSize = 81920,
@@ -267,12 +288,14 @@ public class DefaultHttpRequestExecutor(
         CancellationToken cancellationToken = default)
     {
         // 发送请求并检查状态码（与 DownloadAsync 保持一致的错误处理语义）
-        using var response = await _httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
+        using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
 
         var allowAnyStatusCode = descriptor?.AllowAnyStatusCode ?? false;
         if (!allowAnyStatusCode && !response.IsSuccessStatusCode)
         {
             var errorContent = await ReadContentAsync(response, cancellationToken).ConfigureAwait(false);
+            _logger.LogError("HTTP 大文件下载请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
+                (int)response.StatusCode, request.RequestUri?.ToString(), errorContent);
             throw new ApiException(response.StatusCode, errorContent, request.RequestUri?.ToString());
         }
 
@@ -371,15 +394,17 @@ public class DefaultHttpRequestExecutor(
     /// <inheritdoc/>
     public IAsyncEnumerable<TElement> SendAsAsyncEnumerable<TElement>(
         HttpRequestMessage request,
+        IBaseHttpClient httpClient,
         object? jsonSerializerOptions,
         CancellationToken cancellationToken = default)
     {
-        return _httpClient.SendAsAsyncEnumerable<TElement>(request, jsonSerializerOptions, cancellationToken);
+        return httpClient.SendAsAsyncEnumerable<TElement>(request, jsonSerializerOptions, cancellationToken);
     }
 
     /// <inheritdoc/>
     public async Task<TResult?> ExecuteAsync<TResult>(
         HttpRequestMessage request,
+        IBaseHttpClient httpClient,
         ExecutionDescriptor descriptor,
         object? jsonSerializerOptions,
         CancellationToken cancellationToken = default)
@@ -388,7 +413,7 @@ public class DefaultHttpRequestExecutor(
         if (typeof(TResult) == typeof(byte[]))
         {
             Func<HttpRequestMessage, CancellationToken, Task<byte[]?>> downloadExecute = (req, ct) =>
-                DownloadAsync(req, descriptor.Response, ct);
+                DownloadAsync(req, httpClient, descriptor.Response, ct);
 
             var result = await ExecuteWithOrchestrationAsync<byte[]?>(
                 request, descriptor, cancellationToken, downloadExecute).ConfigureAwait(false);
@@ -396,8 +421,9 @@ public class DefaultHttpRequestExecutor(
         }
 
         // 构建核心执行函数（接收 request 参数，由弹性策略包装器传入克隆或原始请求）
+        // httpClient 通过闭包捕获，确保整个弹性策略重试链使用同一个 HttpClient 实例
         Func<HttpRequestMessage, CancellationToken, Task<TResult?>> coreExecute = (req, ct) =>
-            SendAndDeserializeAsync<TResult>(req, descriptor.Response, jsonSerializerOptions, ct);
+            SendAndDeserializeAsync<TResult>(req, httpClient, descriptor.Response, jsonSerializerOptions, ct);
 
         return await ExecuteWithOrchestrationAsync(
             request, descriptor, cancellationToken, coreExecute).ConfigureAwait(false);
@@ -406,12 +432,14 @@ public class DefaultHttpRequestExecutor(
     /// <inheritdoc/>
     public async Task<Response<TInner>?> ExecuteAsResponseAsync<TInner>(
         HttpRequestMessage request,
+        IBaseHttpClient httpClient,
         ExecutionDescriptor descriptor,
         object? jsonSerializerOptions,
         CancellationToken cancellationToken = default)
     {
+        // httpClient 通过闭包捕获，确保整个弹性策略重试链使用同一个 HttpClient 实例
         Func<HttpRequestMessage, CancellationToken, Task<Response<TInner>>> coreExecute = (req, ct) =>
-            SendAsResponseAsync<TInner>(req, descriptor.Response, jsonSerializerOptions, ct);
+            SendAsResponseAsync<TInner>(req, httpClient, descriptor.Response, jsonSerializerOptions, ct);
 
         return await ExecuteWithOrchestrationAsync(
             request, descriptor, cancellationToken, coreExecute).ConfigureAwait(false);
@@ -420,10 +448,12 @@ public class DefaultHttpRequestExecutor(
     /// <inheritdoc/>
     public async Task ExecuteAsync(
         HttpRequestMessage request,
+        IBaseHttpClient httpClient,
         ExecutionDescriptor descriptor,
         CancellationToken cancellationToken = default)
     {
         // void 返回类型：仅应用弹性策略（不缓存无返回值的结果）
+        // httpClient 通过闭包捕获，确保整个弹性策略重试链使用同一个 HttpClient 实例
         var effectiveResolver = ResolveEffectiveResilienceResolver();
         if (descriptor.Resilience != null && effectiveResolver != null)
         {
@@ -435,7 +465,7 @@ public class DefaultHttpRequestExecutor(
             {
                 Func<HttpRequestMessage, CancellationToken, Task<object?>> coreExecute = async (req, ct) =>
                 {
-                    await SendAsync(req, descriptor.Response, ct).ConfigureAwait(false);
+                    await SendAsync(req, httpClient, descriptor.Response, ct).ConfigureAwait(false);
                     return null;
                 };
 
@@ -444,7 +474,7 @@ public class DefaultHttpRequestExecutor(
             }
         }
 
-        await SendAsync(request, descriptor.Response, cancellationToken).ConfigureAwait(false);
+        await SendAsync(request, httpClient, descriptor.Response, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -467,6 +497,10 @@ public class DefaultHttpRequestExecutor(
     /// </para>
     /// <para>
     /// 缓存层位于弹性策略之外：缓存命中时不触发弹性策略，缓存未命中时由弹性策略保护实际请求。
+    /// </para>
+    /// <para>
+    /// <b>无状态设计</b>：<paramref name="coreExecute"/> 通过闭包捕获 <see cref="IBaseHttpClient"/> 实例，
+    /// 确保整个弹性策略重试链使用同一个 HttpClient 实例，避免并发请求间的 TOCTOU 竞态。
     /// </para>
     /// </remarks>
     private async Task<TResult?> ExecuteWithOrchestrationAsync<TResult>(

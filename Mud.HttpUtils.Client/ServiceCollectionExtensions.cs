@@ -9,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Mud.HttpUtils.Client;
 #if NET6_0_OR_GREATER
@@ -92,18 +93,18 @@ public static class HttpClientServiceCollectionExtensions
         }
 
         services.TryAddTransient<IBaseHttpClient>(sp => sp.GetRequiredService<IEnhancedHttpClient>());
-        // 注册 IHttpRequestExecutor：HttpClient 模式下由生成代码通过构造函数注入。
-        // TokenManager/AppContext 模式下生成代码动态创建执行器，不消费此注册，因此注册本身无害。
-        // 工厂同时解析 IHttpResponseCache 和 IResiliencePolicyResolver（可选），
-        // 确保通过 DI 注入的执行器具备与手动创建相同的缓存和弹性策略能力。
+        // 注册 IHttpRequestExecutor：执行器为无状态设计，IBaseHttpClient 通过方法参数逐次传递。
+        // 可安全注册为 Singleton（无 TOCTOU 风险），但保持 Transient 以与旧版兼容。
+        // 工厂解析 IHttpResponseCache、IResiliencePolicyResolver 等可选依赖，
+        // 确保通过 DI 注入的执行器具备缓存和弹性策略能力。
         services.TryAddTransient<IHttpRequestExecutor>(sp =>
         {
-            var httpClient = sp.GetRequiredService<IEnhancedHttpClient>();
+            var logger = sp.GetService<ILogger<DefaultHttpRequestExecutor>>();
             var cacheProvider = sp.GetService<IHttpResponseCache>();
             var resilienceResolver = sp.GetService<IResiliencePolicyResolver>();
             var appResilienceResolver = sp.GetService<IAppResiliencePolicyResolver>();
             var appContextHolder = sp.GetService<IAppContextHolder>();
-            return new DefaultHttpRequestExecutor(httpClient, cacheProvider, resilienceResolver, appResilienceResolver, appContextHolder);
+            return new DefaultHttpRequestExecutor(logger ?? NullLogger<DefaultHttpRequestExecutor>.Instance, cacheProvider, resilienceResolver, appResilienceResolver, appContextHolder);
         });
         services.TryAddSingleton<IHttpClientResolver, HttpClientResolver>();
     }

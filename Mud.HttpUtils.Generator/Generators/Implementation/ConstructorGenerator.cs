@@ -111,6 +111,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly JsonSerializerOptions _jsonSerializerOptions;");
 
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// 日志记录器，用于记录 HTTP 请求执行过程中的错误和调试信息。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly ILogger _logger;");
+
         if (_context.HasTokenManager)
         {
             codeBuilder.AppendLine("        /// <summary>");
@@ -142,11 +147,6 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine($"        /// 用于HttpClient客户端操作的<see cref = \"{_context.Configuration.HttpClient}\"/> 实例。");
             codeBuilder.AppendLine("        /// </summary>");
             codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly {_context.Configuration.HttpClient} _httpClient;");
-
-            codeBuilder.AppendLine("        /// <summary>");
-            codeBuilder.AppendLine("        /// HTTP 请求执行器，统一处理响应反序列化和错误处理。");
-            codeBuilder.AppendLine("        /// </summary>");
-            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IHttpRequestExecutor _executor;");
         }
         else
         {
@@ -165,6 +165,12 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("        /// </summary>");
             codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IMudAppContext _defaultAppContext;");
         }
+
+        // 所有非继承模式均生成 _executor 字段（DI 注入，无状态设计）
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// HTTP 请求执行器，统一处理响应反序列化和错误处理。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IHttpRequestExecutor _executor;");
 
         codeBuilder.AppendLine("#pragma warning disable CS0414");
         codeBuilder.AppendLine("        /// <summary>");
@@ -283,6 +289,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine($"        /// 构建 <see cref = \"{className}\"/> 类的实例。");
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine("        /// <param name=\"option\">Json序列化参数</param>");
+        codeBuilder.AppendLine("        /// <param name=\"logger\">日志记录器（可选）</param>");
 
         if (_context.HasTokenManager)
         {
@@ -293,19 +300,18 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             {
                 codeBuilder.AppendLine("        /// <param name=\"currentUserContext\">当前用户上下文</param>");
             }
+            codeBuilder.AppendLine("        /// <param name=\"executor\">HTTP请求执行器，统一处理响应反序列化和错误处理（由 DI 注入，可替换为自定义实现）</param>");
         }
         else if (_context.HasHttpClient)
         {
             codeBuilder.AppendLine($"        /// <param name=\"httpClient\">HttpClient实例</param>");
-            if (!_context.HasInheritedFrom)
-            {
-                codeBuilder.AppendLine("        /// <param name=\"executor\">HTTP请求执行器，统一处理响应反序列化和错误处理（由 DI 注入，可替换为自定义实现）</param>");
-            }
+            codeBuilder.AppendLine("        /// <param name=\"executor\">HTTP请求执行器，统一处理响应反序列化和错误处理（由 DI 注入，可替换为自定义实现）</param>");
         }
         else
         {
             codeBuilder.AppendLine("        /// <param name=\"appContext\">应用上下文</param>");
             codeBuilder.AppendLine("        /// <param name=\"appContextHolder\">应用上下文持有器</param>");
+            codeBuilder.AppendLine("        /// <param name=\"executor\">HTTP请求执行器，统一处理响应反序列化和错误处理（由 DI 注入，可替换为自定义实现）</param>");
             codeBuilder.AppendLine("        /// <param name=\"appManager\">应用管理器（可选，注册后支持多应用切换）</param>");
         }
 
@@ -355,19 +361,18 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             {
                 parameters.Add("ICurrentUserContext currentUserContext");
             }
+            parameters.Add("IHttpRequestExecutor executor");
         }
         else if (_context.HasHttpClient)
         {
             parameters.Add($"{_context.Configuration.HttpClient} httpClient");
-            if (!_context.HasInheritedFrom)
-            {
-                parameters.Add("IHttpRequestExecutor executor");
-            }
+            parameters.Add("IHttpRequestExecutor executor");
         }
         else
         {
             parameters.Add("IMudAppContext appContext");
             parameters.Add("IAppContextHolder appContextHolder");
+            parameters.Add("IHttpRequestExecutor executor");
             parameters.Add("IAppManager<IMudAppContext>? appManager = null");
         }
 
@@ -395,6 +400,10 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             parameters.Add("IResiliencePolicyResolver? resilienceResolver = null");
         }
 
+        // 非继承模式下在参数列表末尾添加可选的 logger 参数
+        // 继承模式下也添加 logger 参数，用于传递给基类构造函数
+        parameters.Add("ILogger? logger = null");
+
         var signature = $"        public {className}({string.Join(", ", parameters)})";
         codeBuilder.Append(signature);
 
@@ -412,6 +421,8 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
                     baseParameters.Add("appManager");
                     baseParameters.Add("appContextHolder");
                     baseParameters.Add("tokenProvider");
+                    // 注意：currentUserContext 不传递给基类，因为基类可能没有 AnyMethodRequiresUserId。
+                    // 派生类在自己的字段中存储 currentUserContext。
                 }
                 else
                 {
@@ -423,16 +434,14 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             else if (_context.HasHttpClient)
             {
                 baseParameters.Add("httpClient");
-                if (!_context.Configuration.BaseHasTokenManager)
-                {
-                    baseParameters.Add("executor");
-                }
             }
             else
             {
                 baseParameters.Add("appContext");
                 baseParameters.Add("appContextHolder");
             }
+            // 始终传递 executor 给基类（所有模式均接受 executor 参数）
+            baseParameters.Add("executor");
             // 只传递基类构造函数能接受的参数
             if (_context.Configuration.BaseHasCache)
             {
@@ -442,7 +451,8 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             {
                 baseParameters.Add("resilienceResolver");
             }
-            codeBuilder.AppendLine($" : base({string.Join(", ", baseParameters)})");
+            // logger 使用命名参数传递，避免基类可选参数顺序不匹配的问题
+            codeBuilder.AppendLine($" : base({string.Join(", ", baseParameters)}, logger: logger)");
         }
         else
         {
@@ -462,6 +472,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("            if (option == null)");
             codeBuilder.AppendLine("                throw new ArgumentNullException(nameof(option));");
             codeBuilder.AppendLine("            _jsonSerializerOptions = option.Value ?? throw new InvalidOperationException(\"JsonSerializerOptions 选项值不能为 null。\");");
+            codeBuilder.AppendLine("            _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;");
 
             if (_context.HasTokenManager)
             {
@@ -503,11 +514,8 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
                 codeBuilder.AppendLine("            _resilienceResolver = resilienceResolver;");
             }
 
-            // HttpClient 模式下，通过 DI 注入执行器实例，允许替换为自定义实现
-            if (_context.HasHttpClient)
-            {
-                codeBuilder.AppendLine("            _executor = executor ?? throw new ArgumentNullException(nameof(executor));");
-            }
+            // 所有非继承模式下，通过 DI 注入执行器实例，允许替换为自定义实现
+            codeBuilder.AppendLine("            _executor = executor ?? throw new ArgumentNullException(nameof(executor));");
         }
         else
         {
