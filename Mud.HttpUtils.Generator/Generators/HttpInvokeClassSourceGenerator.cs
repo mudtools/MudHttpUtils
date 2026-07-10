@@ -41,7 +41,8 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
             var semanticModel = model.Context.SemanticModel;
             var compilation = semanticModel.Compilation;
 
-            if (semanticModel.GetDeclaredSymbol(interfaceDecl) is not INamedTypeSymbol interfaceSymbol)
+            // 使用 InterfaceModel 中预解析的 Symbol，避免重复调用 GetDeclaredSymbol
+            if (model.Symbol is not INamedTypeSymbol interfaceSymbol)
             {
                 continue;
             }

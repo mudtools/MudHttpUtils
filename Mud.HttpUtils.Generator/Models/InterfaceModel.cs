@@ -15,13 +15,23 @@ namespace Mud.HttpUtils.Models;
 /// <remarks>
 /// 该结构体将 <see cref="InterfaceDeclarationSyntax"/> 与其对应的
 /// <see cref="GeneratorAttributeSyntaxContext"/>（包含 SemanticModel、Compilation、Attributes）
-/// 打包为一个可比较的单元。
+/// 打包为一个可比较的单元，并预解析 <see cref="INamedTypeSymbol"/> 避免下游重复调用
+/// <c>SemanticModel.GetDeclaredSymbol</c>。
 /// <para>
-/// 增量缓存策略：<see cref="Fingerprint"/> 由接口声明的完整源文本（<see cref="SyntaxNode.ToString"/>）
+/// 增量缓存策略：<see cref="Fingerprint"/> 由接口声明的完整源文本（<see cref="SyntaxNode.ToString"/>）、
+/// 接口继承层次（<see cref="BaseListSyntax"/> 中声明的基接口列表）、
 /// 加上 <c>[HttpClientApi]</c> 特性中影响生成代码的关键命名参数值（HttpClient、TokenManage、
 /// InheritedFrom、IsAbstract 等）组成，用于 <see cref="IEquatable{T}"/> 比较。
-/// 当接口源文本或关键特性配置未变化时，模型视为相同，<c>RegisterSourceOutput</c> 不会被触发，
+/// 当接口源文本、继承关系或关键特性配置未变化时，模型视为相同，<c>RegisterSourceOutput</c> 不会被触发，
 /// 从而避免无关文件编辑导致的重复生成。
+/// </para>
+/// <para>
+/// 纳入继承层次的目的：当基接口添加或移除方法时，派生接口的生成代码需要同步更新。
+/// 仅靠源文本指纹无法感知基接口变更（基接口声明在不同文件中），
+/// 将继承的基接口类型名称纳入指纹后，此类语义变化会触发重新生成。
+/// 注意：由于 <see cref="BaseListSyntax"/> 是语法层面的信息（接口声明中 <c>: IBase</c> 部分），
+/// 当用户修改基接口列表时指纹会变化；但当基接口内部添加方法（不修改派生接口声明）时，
+/// 指纹不会变化——这是已接受的权衡。
 /// </para>
 /// <para>
 /// 纳入关键特性值的目的：当用户重命名被引用的类型（如 TokenManager 指向的类型）但未修改接口声明体时，
@@ -49,7 +59,13 @@ internal readonly struct InterfaceModel : IEquatable<InterfaceModel>
     public GeneratorAttributeSyntaxContext Context { get; }
 
     /// <summary>
-    /// 接口声明的指纹，由源文本和 [HttpClientApi] 关键特性值组成，用于增量缓存比较。
+    /// 预解析的接口类型符号，避免下游重复调用 <c>SemanticModel.GetDeclaredSymbol</c>。
+    /// 当接口存在语法错误时可能为 null。
+    /// </summary>
+    public INamedTypeSymbol? Symbol { get; }
+
+    /// <summary>
+    /// 接口声明的指纹，由源文本、继承层次和 [HttpClientApi] 关键特性值组成，用于增量缓存比较。
     /// </summary>
     public string Fingerprint { get; }
 
@@ -57,32 +73,46 @@ internal readonly struct InterfaceModel : IEquatable<InterfaceModel>
     {
         Syntax = syntax;
         Context = context;
+        Symbol = context.SemanticModel.GetDeclaredSymbol(syntax) as INamedTypeSymbol;
         Fingerprint = BuildFingerprint(syntax, context);
     }
 
     /// <summary>
-    /// 构建指纹：接口声明源文本 + [HttpClientApi] 关键命名参数值。
-    /// 关键属性变更（如 TokenManager 类型重命名）会使指纹变化，触发重新生成，
+    /// 构建指纹：接口声明源文本 + 基接口类型列表 + [HttpClientApi] 关键命名参数值。
+    /// 关键属性变更（如 TokenManager 类型重命名）或继承关系变更会使指纹变化，触发重新生成，
     /// 避免 Context 中的 SemanticModel 来自过期编译。
     /// </summary>
     private static string BuildFingerprint(InterfaceDeclarationSyntax syntax, GeneratorAttributeSyntaxContext context)
     {
         var sourceText = syntax.ToString();
-        if (context.Attributes.IsDefaultOrEmpty)
-            return sourceText;
 
-        // 仅纳入影响生成代码的关键属性，避免过度失效
-        var sb = new StringBuilder(sourceText.Length + 64);
+        // 预估容量：源文本 + 基接口信息（约 32 字节/基接口）+ 特性信息（约 128 字节）
+        var baseListCount = syntax.BaseList?.Types.Count ?? 0;
+        var estimatedCapacity = sourceText.Length + (baseListCount * 32) + 128;
+        var sb = new StringBuilder(estimatedCapacity);
         sb.Append(sourceText);
 
-        foreach (var attr in context.Attributes)
+        // 纳入继承层次：当基接口列表变化时（如添加/移除基接口），指纹随之变化
+        if (syntax.BaseList != null)
         {
-            foreach (var arg in attr.NamedArguments)
+            foreach (var baseType in syntax.BaseList.Types)
             {
-                if (arg.Key is "HttpClient" or "TokenManage" or "InheritedFrom"
-                    or "IsAbstract" or "ContentType" or "Timeout")
+                sb.Append('|').Append("Base:").Append(baseType.ToString());
+            }
+        }
+
+        // 仅纳入影响生成代码的关键属性，避免过度失效
+        if (!context.Attributes.IsDefaultOrEmpty)
+        {
+            foreach (var attr in context.Attributes)
+            {
+                foreach (var arg in attr.NamedArguments)
                 {
-                    sb.Append('|').Append(arg.Key).Append('=').Append(arg.Value.Value);
+                    if (arg.Key is "HttpClient" or "TokenManage" or "InheritedFrom"
+                        or "IsAbstract" or "ContentType" or "Timeout")
+                    {
+                        sb.Append('|').Append(arg.Key).Append('=').Append(arg.Value.Value);
+                    }
                 }
             }
         }

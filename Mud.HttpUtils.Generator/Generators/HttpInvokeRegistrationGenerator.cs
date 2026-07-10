@@ -36,7 +36,11 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
             return;
 
         var sourceCode = GenerateSourceCode(compilation, httpClientApis, context);
-        context.AddSource("HttpClientApiExtensions.g.cs", SourceText.From(sourceCode, Encoding.UTF8));
+
+        // 将 AssemblyName 编入 hintName，避免跨程序集场景下可能的文件名冲突
+        var assemblyName = compilation.AssemblyName ?? "Default";
+        var hintName = $"HttpClientApiExtensions.{assemblyName}.g.cs";
+        context.AddSource(hintName, SourceText.From(sourceCode, Encoding.UTF8));
     }
 
     /// <inheritdoc/>
@@ -88,7 +92,8 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         var semanticModel = model.Context.SemanticModel;
         var compilation = semanticModel.Compilation;
 
-        if (semanticModel.GetDeclaredSymbol(interfaceSyntax) is not INamedTypeSymbol interfaceSymbol)
+        // 使用 InterfaceModel 中预解析的 Symbol，避免重复调用 GetDeclaredSymbol
+        if (model.Symbol is not INamedTypeSymbol interfaceSymbol)
         {
             context.ReportDiagnostic(Diagnostic.Create(
                 Diagnostics.HttpClientApiGenerationError,
@@ -139,7 +144,8 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
             timeout,
             registryGroupName,
             httpClient,
-            tokenManagerType);
+            tokenManagerType,
+            interfaceSyntax.GetLocation());
     }
 
     private int ExtractTimeoutParameter(AttributeData httpClientApiAttribute)
@@ -155,8 +161,13 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
 
     private string GenerateSourceCode(Compilation compilation, List<HttpClientApiInfo> apis, SourceProductionContext context)
     {
-        // 预估容量：每个API注册约200字符，基础结构约500字符
-        var estimatedCapacity = 500 + (apis.Count * 200);
+        // 预估容量：基于实际接口命名长度计算，避免缓冲区多次扩容
+        // 每个API注册包含：注释 + AddHttpClient/AddTransient 语句，约 350-500 字符
+        // 基础结构（文件头、命名空间、类声明等）约 800 字符
+        var avgNameLength = apis.Count > 0
+            ? apis.Average(a => (a.Namespace?.Length ?? 0) + a.InterfaceName.Length + a.ImplementationName.Length)
+            : 0;
+        var estimatedCapacity = 800 + (apis.Count * (int)(avgNameLength * 4 + 400));
         var codeBuilder = new StringBuilder(estimatedCapacity);
         GenerateExtensionClass(compilation, codeBuilder, apis, context);
         return codeBuilder.ToString();
@@ -289,7 +300,10 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         // 验证 RegistryGroupName 是否为合法的 C# 标识符
         if (!CSharpCodeValidator.IsValidCSharpIdentifier(groupName))
         {
-            CSharpCodeValidator.ValidateAndReportRegistryGroupName(context, Location.None, groupName);
+            // 使用组内第一个 API 的位置信息，提供更精确的诊断定位
+            var firstApi = apiInfos.FirstOrDefault();
+            var location = firstApi?.Location ?? Location.None;
+            CSharpCodeValidator.ValidateAndReportRegistryGroupName(context, location, groupName);
             return;
         }
 

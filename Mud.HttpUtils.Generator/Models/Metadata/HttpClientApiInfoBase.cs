@@ -5,6 +5,8 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using System.Diagnostics;
+
 namespace Mud.HttpUtils.Models.Metadata;
 
 /// <summary>
@@ -22,12 +24,14 @@ internal abstract class HttpClientApiInfoBase
     /// <param name="baseUrl">API 基础地址（可为空，运行时通过Options配置）</param>
     /// <param name="timeout">超时时间（秒）</param>
     /// <param name="registryGroupName">注册组名称</param>
-    protected HttpClientApiInfoBase(string namespaceName, string? baseUrl, int timeout, string? registryGroupName = null)
+    /// <param name="location">接口声明的源代码位置，用于诊断报告</param>
+    protected HttpClientApiInfoBase(string namespaceName, string? baseUrl, int timeout, string? registryGroupName = null, Location? location = null)
     {
         Namespace = namespaceName ?? throw new ArgumentNullException(nameof(namespaceName));
         BaseUrl = baseUrl;
         Timeout = timeout;
         RegistryGroupName = registryGroupName;
+        Location = location;
     }
 
     /// <summary>
@@ -52,4 +56,9 @@ internal abstract class HttpClientApiInfoBase
     /// 用于按组生成服务注册函数，如果为空则使用默认注册函数
     /// </remarks>
     public string? RegistryGroupName { get; }
+
+    /// <summary>
+    /// 接口声明的源代码位置，用于诊断报告
+    /// </summary>
+    public Location? Location { get; }
 }

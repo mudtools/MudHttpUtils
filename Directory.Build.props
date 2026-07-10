@@ -1,6 +1,6 @@
 <Project>
 	<PropertyGroup>
-		<Version>2.0.0-rc6</Version>
+		<Version>2.0.0-rc7</Version>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<TreatWarningsAsErrors>false</TreatWarningsAsErrors>

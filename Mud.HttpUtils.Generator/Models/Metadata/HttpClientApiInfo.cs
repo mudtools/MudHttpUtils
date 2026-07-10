@@ -29,8 +29,9 @@ internal sealed class HttpClientApiInfo : HttpClientApiInfoBase
     /// <param name="registryGroupName">注册组名称</param>
     /// <param name="httpClientType">HttpClient 接口类型名称（与 tokenManager 互斥，优先使用）</param>
     /// <param name="tokenManagerType">Token 管理器类型名称</param>
-    public HttpClientApiInfo(string interfaceName, string implementationName, string namespaceName, string baseUrl, int timeout, string? registryGroupName = null, string? httpClientType = null, string? tokenManagerType = null)
-        : base(namespaceName, baseUrl, timeout, registryGroupName)
+    /// <param name="location">接口声明的源代码位置，用于诊断报告</param>
+    public HttpClientApiInfo(string interfaceName, string implementationName, string namespaceName, string baseUrl, int timeout, string? registryGroupName = null, string? httpClientType = null, string? tokenManagerType = null, Location? location = null)
+        : base(namespaceName, baseUrl, timeout, registryGroupName, location)
     {
         InterfaceName = interfaceName ?? throw new ArgumentNullException(nameof(interfaceName));
         ImplementationName = implementationName ?? throw new ArgumentNullException(nameof(implementationName));
