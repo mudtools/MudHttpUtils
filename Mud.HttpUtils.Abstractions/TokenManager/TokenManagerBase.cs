@@ -150,8 +150,8 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                 throw new InvalidOperationException($"令牌刷新返回了无效的凭证：AccessToken 为空。（ScopeKey={scopeKey}）");
 
             UpdateToken(scopeKey, token);
-            _tokenCache.TryGet(scopeKey, out var refreshedToken);
-            return refreshedToken!.AccessToken!;
+            // TM-05 修复：token 已是有效凭证，无需再次字典查找，直接返回。
+            return token.AccessToken!;
         }
         finally
         {

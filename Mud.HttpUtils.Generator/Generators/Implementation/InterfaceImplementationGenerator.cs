@@ -57,6 +57,22 @@ internal class InterfaceImplementationGenerator
     {
         var configuration = ExtractConfigurationFromAttributes();
 
+        // GEN-04 修复：当 TokenManagerKey 和 TokenType 均未显式指定时，发出警告诊断。
+        // 生成器会使用默认值（GetDefaultTokenType），多接口共享同一 TokenManager 场景下可能产生注册冲突。
+        // 注意：此处使用 !string.IsNullOrEmpty(configuration.TokenManager) 而非 GeneratorContext.HasTokenManager，
+        // 因为 GeneratorContext 尚未构造（在 ExtractConfigurationFromAttributes 之后、new GeneratorContext 之前）。
+        if (!string.IsNullOrEmpty(configuration.TokenManager)
+            && string.IsNullOrEmpty(configuration.TokenManagerKey)
+            && string.IsNullOrEmpty(configuration.TokenType))
+        {
+            var defaultKeyType = TokenHelper.GetDefaultTokenType();
+            _context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.TokenManagerKeyInferredFromDefault,
+                _interfaceDecl.GetLocation(),
+                _interfaceSymbol.Name,
+                defaultKeyType));
+        }
+
         if (!ValidateConfiguration(configuration))
             return;
 

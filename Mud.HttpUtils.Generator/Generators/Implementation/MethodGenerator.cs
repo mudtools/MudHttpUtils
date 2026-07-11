@@ -143,7 +143,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             // 保留 throw 作为安全网，防止异常状态下静默使用错误上下文。
             if (hasTokenManager)
             {
-                codeBuilder.AppendLine("            var __appContext = _appContextHolder.Current ?? _appManager.GetDefaultApp();");
+                codeBuilder.AppendLine("            var __appContext = _appContextHolder.Current ?? _tokenManager.GetDefaultApp();");
             }
             else
             {

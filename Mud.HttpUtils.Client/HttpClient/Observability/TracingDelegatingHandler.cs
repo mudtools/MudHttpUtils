@@ -27,6 +27,14 @@ public sealed class TracingDelegatingHandler : DelegatingHandler
     /// </summary>
     public const string ObservedPropertyKey = "__mud_observed";
 
+    /// <summary>
+    /// HC-02 修复：共享的无状态单例实例，避免每次请求创建新对象，降低 GC 压力。
+    /// </summary>
+    /// <remarks>
+    /// 本 Handler 不持有任何可变状态（所有数据均从 request 参数获取），可安全跨请求/客户端共享。
+    /// </remarks>
+    public static readonly TracingDelegatingHandler Shared = new();
+
     /// <inheritdoc />
     protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,

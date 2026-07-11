@@ -722,7 +722,9 @@ internal static class MethodAnalyzer
         {
             Name = property.Name,
             Type = TypeSymbolHelper.GetTypeFullName(property.Type),
-            AttributeType = attributeType
+            AttributeType = attributeType,
+            // GEN-05 修复：捕获接口属性是否为只读，用于决定生成的实现属性是否包含 setter。
+            IsReadOnly = property.IsReadOnly
         };
 
         if (attribute.ConstructorArguments.Length > 0)

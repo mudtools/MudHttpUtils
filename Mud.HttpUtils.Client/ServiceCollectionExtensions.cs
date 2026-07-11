@@ -50,15 +50,19 @@ public static class HttpClientServiceCollectionExtensions
 
         // 注册分布式追踪与指标采集 DelegatingHandler
         // 无 ActivityListener/MeterListener 订阅时零开销，由 IsObserved 标记去重避免与 EnhancedHttpClient 兜底重复
-        // 使用工厂委托避免在某些 DI 容器配置场景下泛型 TryAddTransient 不生效的问题
-        httpClientBuilder.AddHttpMessageHandler(_ => new TracingDelegatingHandler());
+        // HC-02 修复：TracingDelegatingHandler 为无状态设计，使用单例实例避免每次请求创建新对象，降低 GC 压力。
+        httpClientBuilder.AddHttpMessageHandler(_ => TracingDelegatingHandler.Shared);
 
-        // H-3 修复：此处容量(1000)与 TTL(60秒)为硬编码默认值，未通过 IOptions 暴露配置。
-        // 由于使用 TryAddSingleton 注册，用户可通过以下方式覆盖：
-        //   1. 在调用 AddMudHttpClient 之前，手动注册自定义 IHttpResponseCache 实现抢占此默认注册；
-        //   2. 调用 AddHttpResponseCache(maxCacheSize, cleanupIntervalSeconds) 显式指定参数。
+        // HC-01 修复：将原硬编码的容量(1000)与 TTL(60秒)改为从 IOptions<MudHttpClientApplicationOptions> 读取，
+        // 支持通过配置文件自定义。仍保持 TryAddSingleton 语义，用户可手动注册 IHttpResponseCache 抢占。
         services.TryAddSingleton<IHttpResponseCache>(sp =>
-            new MemoryHttpResponseCache(1000, 60));
+        {
+            var appOptions = sp.GetService<IOptions<MudHttpClientApplicationOptions>>()?.Value;
+            var cacheOptions = appOptions?.ResponseCache;
+            var maxCacheSize = cacheOptions?.MaxCacheSize ?? 1000;
+            var cleanupInterval = cacheOptions?.CleanupIntervalSeconds ?? 60;
+            return new MemoryHttpResponseCache(maxCacheSize, cleanupInterval);
+        });
 
         RegisterNamedClient(services, clientName, setAsDefault);
 
@@ -94,10 +98,9 @@ public static class HttpClientServiceCollectionExtensions
 
         services.TryAddTransient<IBaseHttpClient>(sp => sp.GetRequiredService<IEnhancedHttpClient>());
         // 注册 IHttpRequestExecutor：执行器为无状态设计，IBaseHttpClient 通过方法参数逐次传递。
-        // 可安全注册为 Singleton（无 TOCTOU 风险），但保持 Transient 以与旧版兼容。
-        // 工厂解析 IHttpResponseCache、IResiliencePolicyResolver 等可选依赖，
-        // 确保通过 DI 注入的执行器具备缓存和弹性策略能力。
-        services.TryAddTransient<IHttpRequestExecutor>(sp =>
+        // HC-04 修复：从 Transient 升级为 Singleton，避免无状态服务在每次解析时重复创建实例。
+        // 依赖项（IHttpResponseCache、IResiliencePolicyResolver 等）均为 Singleton，生命周期匹配。
+        services.TryAddSingleton<IHttpRequestExecutor>(sp =>
         {
             var logger = sp.GetService<ILogger<DefaultHttpRequestExecutor>>();
             var cacheProvider = sp.GetService<IHttpResponseCache>();

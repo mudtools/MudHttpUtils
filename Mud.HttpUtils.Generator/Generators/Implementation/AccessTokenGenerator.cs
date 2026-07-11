@@ -57,7 +57,7 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            // G-1 修复：查询方法不应有写入副作用。移除 _appContextHolder.Current = appContext 赋值，");
         codeBuilder.AppendLine("            // 改为只读回退到默认应用。上下文切换由构造函数初始化或显式 UseApp 调用负责。");
-        codeBuilder.AppendLine("            var appContext = _appContextHolder.Current ?? _appManager.GetDefaultApp();");
+        codeBuilder.AppendLine("            var appContext = _appContextHolder.Current ?? _tokenManager.GetDefaultApp();");
         codeBuilder.AppendLine("            var request = new TokenRequest");
         codeBuilder.AppendLine("            {");
         codeBuilder.AppendLine("                TokenManagerKey = tokenManagerKey,");
@@ -111,7 +111,7 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("                throw new System.ArgumentException(\"API Key name cannot be whitespace.\", nameof(keyName));");
         codeBuilder.AppendLine("            // G-1 修复：查询方法不应有写入副作用。移除 _appContextHolder.Current = appContext 赋值，");
         codeBuilder.AppendLine("            // 改为只读回退到默认应用。上下文切换由构造函数初始化或显式 UseApp 调用负责。");
-        codeBuilder.AppendLine("            var appContext = _appContextHolder.Current ?? _appManager.GetDefaultApp();");
+        codeBuilder.AppendLine("            var appContext = _appContextHolder.Current ?? _tokenManager.GetDefaultApp();");
         codeBuilder.AppendLine("            var apiKeyProvider = appContext.GetService<IApiKeyProvider>();");
         codeBuilder.AppendLine("            if(apiKeyProvider == null)");
         codeBuilder.AppendLine("                throw new InvalidOperationException(\"无法找到 IApiKeyProvider 服务，请先注册 ApiKey 提供器。\");");
@@ -130,7 +130,7 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            // G-1 修复：查询方法不应有写入副作用。移除 _appContextHolder.Current = appContext 赋值，");
         codeBuilder.AppendLine("            // 改为只读回退到默认应用。上下文切换由构造函数初始化或显式 UseApp 调用负责。");
-        codeBuilder.AppendLine("            var appContext = _appContextHolder.Current ?? _appManager.GetDefaultApp();");
+        codeBuilder.AppendLine("            var appContext = _appContextHolder.Current ?? _tokenManager.GetDefaultApp();");
         codeBuilder.AppendLine("            var hmacProvider = appContext.GetService<IHmacSignatureProvider>();");
         codeBuilder.AppendLine("            if(hmacProvider == null)");
         codeBuilder.AppendLine("                throw new InvalidOperationException(\"无法找到 IHmacSignatureProvider 服务，请先注册 HMAC 签名提供器。\");");

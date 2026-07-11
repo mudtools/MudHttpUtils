@@ -43,4 +43,10 @@ internal class InterfacePropertyInfo
     public bool UrlEncode { get; set; } = true;
 
     public string? DefaultValue { get; set; }
+
+    /// <summary>
+    /// GEN-05 修复：指示接口属性是否为只读（仅有 getter）。
+    /// 为 true 时生成的实现属性不生成 setter，保持接口契约一致。
+    /// </summary>
+    public bool IsReadOnly { get; set; }
 }

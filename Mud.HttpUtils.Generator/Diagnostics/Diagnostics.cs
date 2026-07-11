@@ -160,6 +160,14 @@ internal static class Diagnostics
         category: "代码生成",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor TokenManagerKeyInferredFromDefault = new(
+        id: "HTTPCLIENT018",
+        title: "TokenManagerKey 使用默认推断值",
+        messageFormat: "接口 {0} 未显式指定 TokenManagerKey 或 TokenType，生成器将使用默认值 '{1}'。在多接口共享同一 TokenManager 的场景下，可能导致令牌管理器注册冲突。如需隔离不同接口的令牌，请通过 [Token] 特性显式指定 TokenManagerKey 或 TokenType。",
+        category: "代码生成",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
     #endregion
 
     #region HttpClient注册生成器诊断信息 (HTTPCLIENTREG001-002)

@@ -49,7 +49,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
                 codeBuilder.AppendLine("        /// <summary>");
                 codeBuilder.AppendLine($"        /// 用于HttpClient客户端操作操作使用的的<see cref = \"{_context.Configuration.TokenManagerType}\"/> 令牌管理实例。");
                 codeBuilder.AppendLine("        /// </summary>");
-                codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly {_context.Configuration.TokenManagerType} _appManager;");
+                codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly {_context.Configuration.TokenManagerType} _tokenManager;");
 
                 codeBuilder.AppendLine("        /// <summary>");
                 codeBuilder.AppendLine("        /// 令牌提供器，用于获取访问令牌。");
@@ -126,7 +126,8 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("        /// <summary>");
             codeBuilder.AppendLine($"        /// 用于HttpClient客户端操作操作使用的的<see cref = \"{_context.Configuration.TokenManagerType}\"/> 令牌管理实例。");
             codeBuilder.AppendLine("        /// </summary>");
-            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly {_context.Configuration.TokenManagerType} _appManager;");
+            // GEN-01 修复：TokenManager 模式下字段名从 _appManager 改为 _tokenManager，使命名与语义一致。
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly {_context.Configuration.TokenManagerType} _tokenManager;");
 
             codeBuilder.AppendLine("        /// <summary>");
             codeBuilder.AppendLine("        /// 令牌提供器，用于获取访问令牌。");
@@ -172,7 +173,9 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IHttpRequestExecutor _executor;");
 
-        codeBuilder.AppendLine("#pragma warning disable CS0414");
+        // GEN-03 修复：_defaultContentType 字段在 RequestBuilder 生成的方法体中被引用（作为未显式指定 ContentType 时的回退值）。
+        // CS0414 警告源于编译器无法跨生成的分部类检测引用，此处的 #pragma 抑制是有意为之，非无用字段。
+        codeBuilder.AppendLine("#pragma warning disable CS0414 // 字段在生成的 ExecuteAsync 方法体中被引用，编译器跨分部类检测不到引用");
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine("        /// 用于HttpClient客户端操作的内容类型。");
         codeBuilder.AppendLine("        /// </summary>");
@@ -264,12 +267,14 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
 
         foreach (var property in properties)
         {
-            var propLine = $"        public {property.Type} {property.Name} {{ get; set; }}";
+            // GEN-05 修复：接口属性为只读时（仅 getter），生成的实现属性也不生成 setter，保持接口契约一致。
+            var accessor = property.IsReadOnly ? "{ get; }" : "{ get; set; }";
+            var propLine = $"        public {property.Type} {property.Name} {accessor}";
             if (!string.IsNullOrEmpty(property.DefaultValue))
             {
                 propLine += $" = {property.DefaultValue};";
             }
-            else if (property.AttributeType == "Path" && (property.Type == "string" || property.Type == "String"))
+            else if (property.AttributeType == "Path" && (property.Type == "string" || property.Type == "String") && !property.IsReadOnly)
             {
                 propLine += " = string.Empty;";
             }
@@ -476,7 +481,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
 
             if (_context.HasTokenManager)
             {
-                codeBuilder.AppendLine("            _appManager = appManager ?? throw new ArgumentNullException(nameof(appManager));");
+                codeBuilder.AppendLine("            _tokenManager = appManager ?? throw new ArgumentNullException(nameof(appManager));");
                 codeBuilder.AppendLine("            _appContextHolder = appContextHolder ?? throw new ArgumentNullException(nameof(appContextHolder));");
                 codeBuilder.AppendLine("            _tokenProvider = tokenProvider ?? throw new ArgumentNullException(nameof(tokenProvider));");
                 if (_context.Configuration.AnyMethodRequiresUserId)
@@ -526,7 +531,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             // 当基类没有 TokenManager 但派生类有时，初始化自己的令牌字段
             if (_context.HasTokenManager && !_context.Configuration.BaseHasTokenManager)
             {
-                codeBuilder.AppendLine("            _appManager = appManager ?? throw new ArgumentNullException(nameof(appManager));");
+                codeBuilder.AppendLine("            _tokenManager = appManager ?? throw new ArgumentNullException(nameof(appManager));");
                 codeBuilder.AppendLine("            _tokenProvider = tokenProvider ?? throw new ArgumentNullException(nameof(tokenProvider));");
             }
             // 初始化派生类自己的缓存/弹性策略字段（基类没有的部分）
@@ -631,12 +636,15 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             return;
 
         var isDefaultMode = !_context.HasTokenManager;
+        // GEN-01 修复：TokenManager 模式下字段名为 _tokenManager，Default 模式下为 _appManager。
+        var managerField = isDefaultMode ? "_appManager" : "_tokenManager";
 
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine("        /// 切换到指定的应用上下文。");
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine("        /// <returns>返回切换后的应用上下文。</returns>");
-        codeBuilder.AppendLine("        [Obsolete(\"推荐使用 BeginScope(string) 以确保上下文自动恢复。\")]\n");
+        // GEN-02 修复：移除 [Obsolete] 标记。UseApp 仍是 GetWebApi 模式下的有效路径，
+        // BeginScope 用于需要自动恢复的作用域场景，两者并非替代关系而是互补关系。
         codeBuilder.AppendLine($"        public IMudAppContext UseApp(string appKey)");
         codeBuilder.AppendLine("        {");
         if (isDefaultMode)
@@ -644,7 +652,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("            if (_appManager == null)");
             codeBuilder.AppendLine("                throw new InvalidOperationException(\"当前模式不支持按 AppKey 切换应用上下文。请注册 IAppManager<IMudAppContext> 服务。\");");
         }
-        codeBuilder.AppendLine("            var context = _appManager.GetApp(appKey);");
+        codeBuilder.AppendLine($"            var context = {managerField}.GetApp(appKey);");
         codeBuilder.AppendLine("            if(context == null)");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到指定的应用上下文，AppKey: {appKey}\");");
         codeBuilder.AppendLine("            _appContextHolder.Current = context;");
@@ -656,7 +664,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// 切换到默认的应用上下文。");
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine("        /// <returns>返回默认的应用上下文。</returns>");
-        codeBuilder.AppendLine("        [Obsolete(\"推荐使用 UseDefaultAppScope() 以确保上下文自动恢复。\")]\n");
+        // GEN-02 修复：移除 [Obsolete] 标记，理由同上。
         codeBuilder.AppendLine($"        public IMudAppContext UseDefaultApp()");
         codeBuilder.AppendLine("        {");
         if (isDefaultMode)
@@ -665,7 +673,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         }
         else
         {
-            codeBuilder.AppendLine("            var context = _appManager.GetDefaultApp();");
+            codeBuilder.AppendLine($"            var context = {managerField}.GetDefaultApp();");
             codeBuilder.AppendLine("            if(context == null)");
             codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到默认的应用上下文。\");");
         }
@@ -688,7 +696,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         }
         else
         {
-            codeBuilder.AppendLine("            var context = _appManager.GetDefaultApp();");
+            codeBuilder.AppendLine($"            var context = {managerField}.GetDefaultApp();");
             codeBuilder.AppendLine("            if(context == null)");
             codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到默认的应用上下文。\");");
         }
@@ -705,6 +713,8 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             return;
 
         var isDefaultMode = !_context.HasTokenManager;
+        // GEN-01 修复：TokenManager 模式下字段名为 _tokenManager，Default 模式下为 _appManager。
+        var managerField = isDefaultMode ? "_appManager" : "_tokenManager";
 
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine("        /// 创建一个应用上下文作用域，切换到指定的应用上下文，并在作用域结束时自动恢复之前的上下文。");
@@ -718,7 +728,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("            if (_appManager == null)");
             codeBuilder.AppendLine("                throw new InvalidOperationException(\"当前模式不支持按 AppKey 切换应用上下文。请注册 IAppManager<IMudAppContext> 服务。\");");
         }
-        codeBuilder.AppendLine("            var context = _appManager.GetApp(appKey);");
+        codeBuilder.AppendLine($"            var context = {managerField}.GetApp(appKey);");
         codeBuilder.AppendLine("            if(context == null)");
         codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到指定的应用上下文，AppKey: {appKey}\");");
         codeBuilder.AppendLine("            return _appContextHolder.BeginScope(context);");

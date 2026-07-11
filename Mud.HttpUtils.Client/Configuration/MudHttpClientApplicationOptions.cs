@@ -66,4 +66,40 @@ public class MudHttpClientApplicationOptions
     /// <para>如需在运行时动态修改白名单，可使用 <see cref="UrlValidator.AddAllowedDomain"/> 和 <see cref="UrlValidator.RemoveAllowedDomain"/>。</para>
     /// </remarks>
     public List<string> AllowedDomains { get; set; } = [];
+
+    /// <summary>
+    /// HTTP 响应缓存配置
+    /// </summary>
+    /// <remarks>
+    /// <para>HC-01 修复：将原硬编码的 <see cref="MemoryHttpResponseCache"/> 容量(1000)与 TTL(60秒)抽为可配置项。</para>
+    /// <para>仅在未手动注册 <see cref="IHttpResponseCache"/> 实现时生效（TryAddSingleton 语义）。</para>
+    /// <para>配置示例：</para>
+    /// <code>
+    /// {
+    ///   "MudHttpClients": {
+    ///     "ResponseCache": {
+    ///       "MaxCacheSize": 5000,
+    ///       "CleanupIntervalSeconds": 30
+    ///     }
+    ///   }
+    /// }
+    /// </code>
+    /// </remarks>
+    public ResponseCacheOptions ResponseCache { get; set; } = new();
+}
+
+/// <summary>
+/// HTTP 响应缓存配置选项
+/// </summary>
+public class ResponseCacheOptions
+{
+    /// <summary>
+    /// 最大缓存条目数，默认 1000
+    /// </summary>
+    public int MaxCacheSize { get; set; } = 1000;
+
+    /// <summary>
+    /// 清理间隔（秒），默认 60 秒
+    /// </summary>
+    public int CleanupIntervalSeconds { get; set; } = 60;
 }
