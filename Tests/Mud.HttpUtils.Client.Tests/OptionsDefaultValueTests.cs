@@ -5,6 +5,8 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using Microsoft.Extensions.Configuration;
+
 namespace Mud.HttpUtils.Client.Tests;
 
 /// <summary>
@@ -29,6 +31,48 @@ public class OptionsDefaultValueTests
         // RefreshBeforeExpirySeconds 已被删除（死配置）
         var type = typeof(TokenRefreshBackgroundOptions);
         type.GetProperty("RefreshBeforeExpirySeconds").Should().BeNull();
+    }
+
+    [Fact]
+    public void TokenRefreshBackgroundOptions_RefreshIntervalSeconds_SetToZero_Throws()
+    {
+        var act = () => new TokenRefreshBackgroundOptions { RefreshIntervalSeconds = 0 };
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void TokenRefreshBackgroundOptions_RefreshIntervalSeconds_SetToNegative_Throws()
+    {
+        var act = () => new TokenRefreshBackgroundOptions { RefreshIntervalSeconds = -1 };
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void TokenRefreshBackgroundOptions_RefreshIntervalSeconds_SetToPositive_Succeeds()
+    {
+        var options = new TokenRefreshBackgroundOptions { RefreshIntervalSeconds = 600 };
+        options.RefreshIntervalSeconds.Should().Be(600);
+    }
+
+    [Fact]
+    public void TokenRefreshBackgroundOptions_RetryDelaySeconds_SetToZero_Throws()
+    {
+        var act = () => new TokenRefreshBackgroundOptions { RetryDelaySeconds = 0 };
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void TokenRefreshBackgroundOptions_RetryDelaySeconds_SetToNegative_Throws()
+    {
+        var act = () => new TokenRefreshBackgroundOptions { RetryDelaySeconds = -1 };
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void TokenRefreshBackgroundOptions_RetryDelaySeconds_SetToPositive_Succeeds()
+    {
+        var options = new TokenRefreshBackgroundOptions { RetryDelaySeconds = 120 };
+        options.RetryDelaySeconds.Should().Be(120);
     }
 
     [Fact]
@@ -57,6 +101,76 @@ public class OptionsDefaultValueTests
     public void UserTokenCacheOptions_SectionName_HasExpectedValue()
     {
         UserTokenCacheOptions.SectionName.Should().Be("MudHttpUserTokenCache");
+    }
+
+    [Fact]
+    public void UserTokenCacheOptions_SizeLimit_SetToZero_Throws()
+    {
+        var act = () => new UserTokenCacheOptions { SizeLimit = 0 };
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void UserTokenCacheOptions_SizeLimit_SetToNegative_Throws()
+    {
+        var act = () => new UserTokenCacheOptions { SizeLimit = -1 };
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void UserTokenCacheOptions_SizeLimit_SetToPositive_Succeeds()
+    {
+        var options = new UserTokenCacheOptions { SizeLimit = 5000 };
+        options.SizeLimit.Should().Be(5000);
+    }
+
+    [Fact]
+    public void UserTokenCacheOptions_ExpireThresholdSeconds_SetToNegative_Throws()
+    {
+        var act = () => new UserTokenCacheOptions { ExpireThresholdSeconds = -1 };
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void UserTokenCacheOptions_ExpireThresholdSeconds_SetToZero_Succeeds()
+    {
+        var options = new UserTokenCacheOptions { ExpireThresholdSeconds = 0 };
+        options.ExpireThresholdSeconds.Should().Be(0);
+    }
+
+    [Fact]
+    public void UserTokenCacheOptions_CleanupIntervalSeconds_SetToZero_Throws()
+    {
+        var act = () => new UserTokenCacheOptions { CleanupIntervalSeconds = 0 };
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void UserTokenCacheOptions_SlidingExpirationSeconds_SetToZero_Throws()
+    {
+        var act = () => new UserTokenCacheOptions { SlidingExpirationSeconds = 0 };
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void UserTokenCacheOptions_CompactionPercentage_SetToZero_Throws()
+    {
+        var act = () => new UserTokenCacheOptions { CompactionPercentage = 0 };
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void UserTokenCacheOptions_CompactionPercentage_SetAboveOne_Throws()
+    {
+        var act = () => new UserTokenCacheOptions { CompactionPercentage = 1.5 };
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void UserTokenCacheOptions_CompactionPercentage_SetToOne_Succeeds()
+    {
+        var options = new UserTokenCacheOptions { CompactionPercentage = 1.0 };
+        options.CompactionPercentage.Should().Be(1.0);
     }
 
     [Fact]
@@ -197,5 +311,140 @@ public class OptionsDefaultValueTests
 
         var act = () => options.Validate();
         act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void AesEncryptionOptions_IV_Setter_IsObsoleteButDoesNotThrow()
+    {
+        // IV 属性已标记 [Obsolete]，但 setter 仍可调用不抛异常（向后兼容）
+        var options = new AesEncryptionOptions();
+        var iv = new byte[16];
+#pragma warning disable CS0618
+        options.IV = iv;
+#pragma warning restore CS0618
+        // Getter 返回副本
+#pragma warning disable CS0618
+        options.IV.Should().Equal(iv);
+#pragma warning restore CS0618
+    }
+
+    [Fact]
+    public void AesEncryptionOptions_BindFromConfiguration_KeyAsBase64_Succeeds()
+    {
+        // 验证 AesEncryptionOptions 通过 IConfiguration 绑定 byte[] Key
+        var keyBytes = new byte[16] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
+        var keyBase64 = Convert.ToBase64String(keyBytes);
+
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpAesEncryption:Key"] = keyBase64,
+            })
+            .Build();
+
+        var options = new AesEncryptionOptions();
+        config.GetSection("MudHttpAesEncryption").Bind(options);
+
+        // IConfiguration 绑定 byte[] 时将 Base64 字符串解码
+        options.Key.Should().Equal(keyBytes);
+        options.Validate();
+    }
+
+    [Fact]
+    public void OAuth2OptionsValidator_WithEmptyClientId_Fails()
+    {
+        var options = new OAuth2Options
+        {
+            ClientId = "",
+            TokenEndpoint = "https://auth.example.com/token",
+        };
+        var validator = new OAuth2OptionsValidator();
+
+        var result = validator.Validate(null, options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("ClientId");
+    }
+
+    [Fact]
+    public void OAuth2OptionsValidator_WithEmptyTokenEndpoint_Fails()
+    {
+        var options = new OAuth2Options
+        {
+            ClientId = "test-client",
+            TokenEndpoint = "",
+        };
+        var validator = new OAuth2OptionsValidator();
+
+        var result = validator.Validate(null, options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("TokenEndpoint");
+    }
+
+    [Fact]
+    public void OAuth2OptionsValidator_WithHttpTokenEndpointWhenRequireHttps_Fails()
+    {
+        var options = new OAuth2Options
+        {
+            ClientId = "test-client",
+            TokenEndpoint = "http://auth.example.com/token",
+            RequireHttps = true,
+        };
+        var validator = new OAuth2OptionsValidator();
+
+        var result = validator.Validate(null, options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("HTTPS");
+    }
+
+    [Fact]
+    public void OAuth2OptionsValidator_WithHttpTokenEndpointWhenRequireHttpsFalse_Succeeds()
+    {
+        var options = new OAuth2Options
+        {
+            ClientId = "test-client",
+            TokenEndpoint = "http://auth.example.com/token",
+            RequireHttps = false,
+        };
+        var validator = new OAuth2OptionsValidator();
+
+        var result = validator.Validate(null, options);
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void OAuth2OptionsValidator_WithValidOptions_Succeeds()
+    {
+        var options = new OAuth2Options
+        {
+            ClientId = "test-client",
+            TokenEndpoint = "https://auth.example.com/token",
+            RequireHttps = true,
+        };
+        var validator = new OAuth2OptionsValidator();
+
+        var result = validator.Validate(null, options);
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void OAuth2OptionsValidator_WithNegativeExpirySafetyMargin_Fails()
+    {
+        var options = new OAuth2Options
+        {
+            ClientId = "test-client",
+            TokenEndpoint = "https://auth.example.com/token",
+            ExpirySafetyMarginSeconds = -1,
+        };
+        var validator = new OAuth2OptionsValidator();
+
+        var result = validator.Validate(null, options);
+
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("ExpirySafetyMarginSeconds");
     }
 }

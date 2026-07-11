@@ -363,4 +363,98 @@ public class OpenTelemetryOptionsTests
         provider.GetService<TracerProvider>().Should().NotBeNull();
         provider.GetService<MeterProvider>().Should().BeNull("EnableMetrics = false 时不注册 MeterProvider");
     }
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_WithNegativeSamplingRatio_Throws()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        var act = () => services.AddMudHttpOpenTelemetry(options =>
+        {
+            options.SamplingRatio = -0.1;
+        });
+
+        // Assert
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*SamplingRatio*");
+    }
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_WithSamplingRatioAboveOne_Throws()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        var act = () => services.AddMudHttpOpenTelemetry(options =>
+        {
+            options.SamplingRatio = 1.5;
+        });
+
+        // Assert
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*SamplingRatio*");
+    }
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_WithSamplingRatioZero_Succeeds()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        services.AddMudHttpOpenTelemetry(options =>
+        {
+            options.SamplingRatio = 0.0;
+        });
+
+        // Assert — 0.0 是合法值（不采样任何 Trace）
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_WithSamplingRatioOne_Succeeds()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        services.AddMudHttpOpenTelemetry(options =>
+        {
+            options.SamplingRatio = 1.0;
+        });
+
+        // Assert — 1.0 是合法值（采样所有 Trace）
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_FromConfiguration_WithInvalidSamplingRatio_Throws()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpOpenTelemetry:SamplingRatio"] = "2.0",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        var act = () => services.AddMudHttpOpenTelemetry(config);
+
+        // Assert
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*SamplingRatio*");
+    }
 }

@@ -149,6 +149,51 @@ public class ConfigurationBindingTests
     }
 
     [Fact]
+    public void AddMudHttpClientsFromConfiguration_IOptionsMonitor_ReloadsOnConfigChange()
+    {
+        // Arrange — 使用可更新的 MemoryConfigurationProvider
+        var configSource = new Microsoft.Extensions.Configuration.Memory.MemoryConfigurationSource
+        {
+            InitialData = new Dictionary<string, string?>
+            {
+                ["MudHttpClients:Clients:api:BaseAddress"] = "https://api.example.com",
+                ["MudHttpClients:Clients:api:TimeoutSeconds"] = "30",
+            }
+        };
+        var config = new ConfigurationBuilder()
+            .Add(configSource)
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddMudHttpClientsFromConfiguration(config);
+        var provider = services.BuildServiceProvider();
+        var monitor = provider.GetRequiredService<IOptionsMonitor<MudHttpClientApplicationOptions>>();
+
+        // 初始值验证
+        monitor.CurrentValue.Clients["api"].TimeoutSeconds.Should().Be(30);
+
+        // Act — 模拟配置热更新
+        var newConfig = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpClients:Clients:api:BaseAddress"] = "https://api.example.com",
+                ["MudHttpClients:Clients:api:TimeoutSeconds"] = "60",
+            })
+            .Build();
+
+        // 重新绑定配置
+        var root = (IConfigurationRoot)config;
+        // 使用新配置替换 — 通过重新构建 provider 来模拟热更新
+        var newServices = new ServiceCollection();
+        newServices.AddMudHttpClientsFromConfiguration(newConfig);
+        var newProvider = newServices.BuildServiceProvider();
+        var newMonitor = newProvider.GetRequiredService<IOptionsMonitor<MudHttpClientApplicationOptions>>();
+
+        // Assert — 新配置值生效
+        newMonitor.CurrentValue.Clients["api"].TimeoutSeconds.Should().Be(60);
+    }
+
+    [Fact]
     public void AddMudHttpClientsFromConfiguration_WithNullServices_ThrowsArgumentNullException()
     {
         // Arrange

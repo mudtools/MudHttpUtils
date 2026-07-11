@@ -69,7 +69,7 @@ using var provider = services.BuildServiceProvider();
 | `ServiceName` | `string` | `"Mud.HttpUtils.Application"` | OTel Resource 属性 `service.name` |
 | `ServiceVersion` | `string` | `MudHttpActivitySource.Version` | OTel Resource 属性 `service.version` |
 | `DeploymentEnvironment` | `string` | `"production"` | OTel Resource 属性 `deployment.environment` |
-| `SamplingRatio` | `double` | `1.0` | 采样比率（0.0~1.0），生产环境建议 0.1~0.3 |
+| `SamplingRatio` | `double` | `1.0` | 采样比率（0.0~1.0），生产环境建议 0.1~0.3。超出范围将在启动时抛出 `ArgumentOutOfRangeException` |
 | `ExportBatchSize` | `int?` | `null` | OTLP 每批导出最大条目数（映射到 `BatchExportProcessorOptions.MaxExportBatchSize`），`null` 使用 SDK 默认值（512） |
 | `ExportIntervalMilliseconds` | `int?` | `null` | OTLP 批量导出间隔毫秒数（映射到 `BatchExportProcessorOptions.ScheduledDelayMilliseconds`），`null` 使用 SDK 默认值（5000ms） |
 | `OtlpHeaders` | `IDictionary<string, string>?` | `null` | 自定义 OTLP Headers（如认证头） |
@@ -91,9 +91,18 @@ builder.Services.AddMudHttpOpenTelemetry(builder.Configuration);
 {
   "MudHttpOpenTelemetry": {
     "ServiceName": "my-service",
+    "ServiceVersion": "1.0.0",
+    "DeploymentEnvironment": "production",
     "SamplingRatio": 0.1,
+    "EnableTracing": true,
+    "EnableMetrics": true,
+    "EnableLogging": false,
+    "EnableHttpClientInstrumentation": true,
+    "EnableAspNetCoreInstrumentation": true,
     "OtlpEndpoint": "http://otel-collector:4317",
-    "EnableLogging": true,
+    "OtlpExportProtocol": "Grpc",
+    "ExportBatchSize": 256,
+    "ExportIntervalMilliseconds": 5000,
     "OtlpHeaders": {
       "Authorization": "Bearer my-token"
     }

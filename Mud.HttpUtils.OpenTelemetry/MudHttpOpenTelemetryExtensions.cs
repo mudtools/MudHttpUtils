@@ -112,6 +112,10 @@ public static class MudHttpOpenTelemetryExtensions
         IServiceCollection services,
         MudHttpOpenTelemetryOptions options)
     {
+        // 校验 SamplingRatio 范围
+        if (options.SamplingRatio < 0 || options.SamplingRatio > 1)
+            throw new ArgumentOutOfRangeException(nameof(options.SamplingRatio),
+                $"SamplingRatio 必须在 0.0~1.0 范围内，当前值为 {options.SamplingRatio}。");
 
         // 配置 Resource：service.name / service.version / deployment.environment（OTel 规范必需）
         var builder = services.AddOpenTelemetry()

@@ -313,6 +313,30 @@ services.AddMudHttpTokenRecoveryFromConfiguration(configuration);
 }
 ```
 
+### 令牌后台刷新配置
+
+`TokenRefreshBackgroundOptions` 用于配置令牌主动刷新后台服务，配置节名称为 `TokenRefreshBackground`。
+
+| 属性 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `Enabled` | `bool` | `false` | 是否启用后台刷新，需显式设置为 `true` |
+| `RefreshIntervalSeconds` | `int` | `300` | 刷新间隔（秒），必须大于 0 |
+| `RetryDelaySeconds` | `int` | `60` | 刷新失败后重试延迟（秒），必须大于 0 |
+| `StopOnError` | `bool` | `false` | 刷新失败时是否停止服务 |
+
+```csharp
+// 通过代码配置
+services.AddTokenRefreshBackgroundService(options =>
+{
+    options.Enabled = true;
+    options.RefreshIntervalSeconds = 3500;
+    options.RetryDelaySeconds = 60;
+    options.StopOnError = false;
+});
+```
+
+> `RefreshIntervalSeconds` 和 `RetryDelaySeconds` 设置为 0 或负数时将抛出 `ArgumentOutOfRangeException`。
+
 ### 应用上下文
 
 | 类                     | 说明                                        |
@@ -379,6 +403,7 @@ services.AddMudHttpHealthChecks(Configuration);
 | `DegradedThreshold` | `double` | `0.2` | 告警阈值（失败率 0~1），达到则返回 Degraded |
 | `CriticalThreshold` | `double` | `0.5` | 临界阈值（失败率 0~1），达到则返回 Unhealthy |
 | `MinSampleSize` | `int` | `5` | 最小样本数，窗口期内总刷新次数低于此值时返回 Healthy |
+| `FailureStatus` | `HealthStatus?` | `null` | 失败时返回的健康状态（null 表示由健康检查内部判定） |
 
 #### 熔断器健康检查选项
 
@@ -399,11 +424,13 @@ services.AddMudHttpHealthChecks(Configuration);
       "WindowSeconds": 300,
       "DegradedThreshold": 0.2,
       "CriticalThreshold": 0.5,
-      "MinSampleSize": 5
+      "MinSampleSize": 5,
+      "FailureStatus": "Degraded"
     },
     "CircuitBreaker": {
       "MaxOpenCount": 0,
-      "MaxHalfOpenCount": 0
+      "MaxHalfOpenCount": 0,
+      "FailureStatus": "Unhealthy"
     }
   }
 }

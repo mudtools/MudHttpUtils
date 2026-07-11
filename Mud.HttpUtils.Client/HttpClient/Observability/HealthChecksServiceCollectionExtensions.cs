@@ -102,8 +102,10 @@ public static class MudHttpHealthChecksExtensions
             o.TokenRefresh.DegradedThreshold = options.TokenRefresh.DegradedThreshold;
             o.TokenRefresh.CriticalThreshold = options.TokenRefresh.CriticalThreshold;
             o.TokenRefresh.MinSampleSize = options.TokenRefresh.MinSampleSize;
+            o.TokenRefresh.FailureStatus = options.TokenRefresh.FailureStatus;
             o.CircuitBreaker.MaxOpenCount = options.CircuitBreaker.MaxOpenCount;
             o.CircuitBreaker.MaxHalfOpenCount = options.CircuitBreaker.MaxHalfOpenCount;
+            o.CircuitBreaker.FailureStatus = options.CircuitBreaker.FailureStatus;
         });
     }
 }

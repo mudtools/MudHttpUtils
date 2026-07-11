@@ -677,6 +677,8 @@ public static class HttpClientServiceCollectionExtensions
         // 注册后置配置器，在选项绑定后检查 ClientSecret 与 ClientSecretProviderName 的互斥冲突
         services.TryAddSingleton<IPostConfigureOptions<OAuth2Options>>(sp =>
             new OAuth2OptionsPostConfigure(sp.GetService<ILogger<OAuth2OptionsPostConfigure>>()));
+        // 注册校验器，在选项绑定时验证必填字段和端点 HTTPS 一致性
+        services.TryAddSingleton<IValidateOptions<OAuth2Options>, OAuth2OptionsValidator>();
         return services;
     }
 

@@ -24,14 +24,26 @@ public class TokenRefreshBackgroundOptions
     public bool Enabled { get; set; } = false;
 
     /// <summary>
-    /// 刷新间隔（秒），默认 300 秒（5 分钟）。
+    /// 刷新间隔（秒），默认 300 秒（5 分钟）。必须大于 0。
     /// </summary>
-    public int RefreshIntervalSeconds { get; set; } = 300;
+    /// <exception cref="ArgumentOutOfRangeException">设置小于等于 0 的值时抛出。</exception>
+    public int RefreshIntervalSeconds
+    {
+        get => _refreshIntervalSeconds;
+        set => _refreshIntervalSeconds = value > 0 ? value : throw new ArgumentOutOfRangeException(nameof(RefreshIntervalSeconds), "刷新间隔必须大于 0 秒。");
+    }
+    private int _refreshIntervalSeconds = 300;
 
     /// <summary>
-    /// 刷新失败后重试延迟（秒），默认 60 秒（1 分钟）。
+    /// 刷新失败后重试延迟（秒），默认 60 秒（1 分钟）。必须大于 0。
     /// </summary>
-    public int RetryDelaySeconds { get; set; } = 60;
+    /// <exception cref="ArgumentOutOfRangeException">设置小于等于 0 的值时抛出。</exception>
+    public int RetryDelaySeconds
+    {
+        get => _retryDelaySeconds;
+        set => _retryDelaySeconds = value > 0 ? value : throw new ArgumentOutOfRangeException(nameof(RetryDelaySeconds), "重试延迟必须大于 0 秒。");
+    }
+    private int _retryDelaySeconds = 60;
 
     /// <summary>
     /// 获取或设置刷新失败时是否停止服务，默认 false。
