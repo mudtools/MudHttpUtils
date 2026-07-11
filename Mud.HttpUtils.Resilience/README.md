@@ -17,12 +17,15 @@ Mud.HttpUtils.Resilience 是 Mud.HttpUtils 的弹性策略层，基于 Polly 提
 
 | 类 | 说明 |
 |-----|------|
-| `ResilientHttpClient` | `IEnhancedHttpClient` 的弹性装饰器，组合重试/超时/熔断策略 |
-| `PollyResiliencePolicyProvider` | 基于 Polly 的策略提供器，根据 `ResilienceOptions` 创建策略 |
+| `ResilientHttpClient` | `IEnhancedHttpClient` 的弹性装饰器，组合重试/超时/熔断策略，并实现 `IEncryptableHttpClient`（加解密路径不经过 Polly 包装） |
+| `PollyResiliencePolicyProvider` | 基于 Polly 的策略提供器，根据 `ResilienceOptions` 创建策略（含重试抖动 Jitter） |
 | `ResiliencePolicyResolver` | `IResiliencePolicyResolver` 实现，解耦 `IHttpRequestExecutor` 与具体弹性策略，封装请求克隆逻辑 |
-| `HttpRequestMessageCloner` | HTTP 请求消息克隆工具，确保重试安全 |
+| `AppResiliencePolicyResolver` | 按应用（App）解析弹性策略的工厂，为每个 App 维护独立的策略提供器与解析器 |
+| `HttpRequestMessageCloner` <sup>internal</sup> | HTTP 请求消息克隆工具（internal），确保重试安全，提供 `CloneAsync` / `TryCloneAsync` |
+| `ResilienceOptionsValidator` | `IValidateOptions<ResilienceOptions>` 实现，启动时执行跨选项校验 |
 | `ResilienceOptions` | 弹性策略配置选项 |
-| `ResilienceConstants` | 弹性策略常量定义 |
+| `ResilienceConstants` | 弹性策略常量定义（含 `SkipResiliencePropertyKey`，用于避免方法级策略与全局装饰器双重包装） |
+| `RetryDiagnosticPayload` / `TimeoutDiagnosticPayload` | 诊断事件负载类型，支持分布式追踪 |
 | `IResiliencePolicyProvider` | 弹性策略提供器接口，支持自定义策略实现 |
 
 ### 策略组合顺序
@@ -52,6 +55,16 @@ var cloned = await HttpRequestMessageCloner.CloneAsync(request, maxContentSize: 
 ```
 
 > 当请求体大小超过 `MaxCloneContentSize` 时，`ResilientHttpClient` 会自动跳过重试策略，避免克隆大请求体的性能开销。适用于大文件上传等场景。
+
+### 方法级 / Per-App 弹性策略
+
+除全局装饰器外，本包还支持**方法级**与**按应用（Per-App）**的弹性策略编排：
+
+- 生成代码通过 `IHttpRequestExecutor` + `IResiliencePolicyResolver`（`ResiliencePolicyResolver.ResolvePolicyWrapper` / `IResiliencePolicyProvider.GetMethodPolicy`）按方法级 `[Retry]`/`[Timeout]`/`[CircuitBreaker]` 特性构建策略。
+- `AppResiliencePolicyResolver` 为每个 App 维护独立的 `PollyResiliencePolicyProvider` 与 `ResiliencePolicyResolver`，实现多租户策略隔离。
+- `ResilienceConstants.SkipResiliencePropertyKey`（`"__Mud_HttpUtils_SkipResilience"`）用于标记请求已由方法级策略包装，使全局装饰器跳过，避免双重包装。
+
+> `AddMudHttpResilienceDecorator` 在 .NET 8+ 上通过 Keyed Services（`DecorateKeyedServices`）装饰带键的 `IEnhancedHttpClient` 注册，兼容多命名客户端场景。
 
 ### 重试回调机制
 

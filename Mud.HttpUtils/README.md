@@ -140,6 +140,10 @@ public class UserService
 | `AddMudHttpUtils(clientName, baseAddress, configureResilienceOptions)`                              | 带基础地址的便捷重载            |
 | `AddMudHttpUtils(clientName, configuration, configureHttpClient, sectionPath)`                      | 从配置文件绑定弹性策略          |
 | `AddMudHttpUtils(clientName, configureEncryption, configureHttpClient, configureResilienceOptions)` | 带 AES 加密配置的重载           |
+| `AddMudHttpUtils(clientName, configureHttpClient, enableResilience)`                                | 带 `enableResilience` 开关的重载（可禁用弹性策略） |
+| `AddMudHttpUtils(clientName, baseAddress, enableResilience)`                                        | 带基础地址与 `enableResilience` 开关的重载 |
+
+> `AddMudHttpUtils` 及其相关 DI 扩展方法的实现位于 `Mud.HttpUtils.Resilience` 包（元包通过传递依赖引用），使用前需 `using Mud.HttpUtils.Resilience;`。
 
 ### AddMudHttpClient — 仅注册客户端（位于 Mud.HttpUtils.Client 包）
 
@@ -1119,6 +1123,12 @@ var hmacProvider = appContext.GetService<IHmacSignatureProvider>();
 | `ITokenRefreshBackgroundService` | 令牌后台刷新服务契约                                                                                              |
 | `IMudAppContext`                 | 应用上下文（含 GetService<T>）                                                                                    |
 | `IAppManager<T>`                 | 多应用管理器（含 ConfigurationChanged 事件）                                                                      |
+
+| `ITokenProvider`                 | Token 提供器（GetTokenAsync），统一封装 Token 查找、获取、刷新逻辑                                                 |
+| `ICurrentUserContext`            | 当前用户上下文（UserId 属性），线程安全的用户 ID 传播                                                              |
+| `IHttpRequestExecutor`           | HTTP 请求执行器，生成代码与运行时之间的桥梁，统一处理反序列化、错误处理、拦截器与弹性策略编排                      |
+| `IAppResiliencePolicyResolver`   | 按应用（App）解析弹性策略的工厂接口                                                                                |
+| `IAppContextHolder`              | 应用上下文持有器（Current / BeginScope），维护当前异步上下文中的应用上下文                                        |
 
 ## 工具类
 

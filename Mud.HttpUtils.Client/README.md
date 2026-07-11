@@ -18,10 +18,12 @@ Mud.HttpUtils.Client 是 Mud.HttpUtils 的客户端实现层，提供 `IEnhanced
 | 类                                | 说明                                                                                                   |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `EnhancedHttpClient`              | `IEnhancedHttpClient` 默认实现，封装 `System.Net.Http.HttpClient`，支持请求/响应拦截器、基地址动态切换 |
-| `DirectEnhancedHttpClient`        | 直接构造的增强客户端，支持加密操作                                                                     |
+| `DirectEnhancedHttpClient` <sup>internal</sup> | 直接构造的增强客户端，支持加密操作                                |
 | `HttpClientFactoryEnhancedClient` | 基于 `IHttpClientFactory` 的增强客户端，支持基地址动态切换                                             |
-| `EnhancedHttpClientFactory`       | `IEnhancedHttpClientFactory` 默认实现，按名称创建并缓存客户端实例，.NET 8+ 通过 Keyed Service 解析    |
+| `EnhancedHttpClientFactory` <sup>internal</sup> | `IEnhancedHttpClientFactory` 默认实现，按名称创建并缓存客户端实例，.NET 8+ 通过 Keyed Service 解析 |
 | `HttpClientResolver`              | `IHttpClientResolver` 默认实现，管理命名客户端注册与解析                                               |
+
+> `DirectEnhancedHttpClient` 与 `EnhancedHttpClientFactory` 为 `internal` 类型，由 `AddMudHttpClient` 内部使用，通常无需在业务代码中直接引用。
 
 ### 基地址动态切换
 
@@ -137,16 +139,23 @@ var maskedObj = masker.MaskObject(userRequest);
 
 | 类                                | 说明                                                                         |
 | --------------------------------- | ---------------------------------------------------------------------------- |
-| `TokenManagerBase`                | 令牌管理器抽象基类，提供并发安全的令牌刷新，支持绝对过期保护                 |
-| `UserTokenManagerBase`            | 用户令牌管理器抽象基类，提供用户级并发安全刷新和缓存容量控制                 |
-| `TokenRefreshHostedService`       | 令牌后台刷新服务，实现 `IHostedService` 和 `ITokenRefreshBackgroundService`  |
+| `TokenManagerBase` <sup>abstract</sup> | 令牌管理器抽象基类（定义于 Abstractions），提供并发安全的令牌刷新，支持绝对过期保护 |
+| `UserTokenManagerBase` <sup>abstract</sup> | 用户令牌管理器抽象基类（定义于 Abstractions），提供用户级并发安全刷新和缓存容量控制 |
+| `StandardOAuth2TokenManager`      | OAuth2 标准令牌管理器，内置 Authorization Code / Client Credentials / ROPC / Refresh Token 流程 |
+| `TokenRefreshHostedService`       | `.NET 6+` 下的令牌后台刷新服务，实现 `IHostedService` 和 `ITokenRefreshBackgroundService`（`netstandard2.0` 下为 `TokenRefreshBackgroundService`，基于 Timer） |
+| `TokenRefreshBackgroundService`   | `netstandard2.0` 下的令牌后台刷新服务，基于 Timer 定时刷新                   |
+| `TokenRecoveryExecutor`           | 401 令牌刷新重试执行器，被 `TokenRecoveryDelegatingHandler` 与恢复客户端共享  |
 | `TokenRecoveryDelegatingHandler`  | 令牌恢复委托处理器，401 响应时自动刷新令牌并重试，支持多种注入模式           |
-| `DefaultTokenProvider`            | `ITokenProvider` 默认实现，通过 `IMudAppContext` 获取令牌管理器并获取令牌    |
-| `DefaultCurrentUserContext`       | `ICurrentUserContext` 默认实现，使用 `AsyncLocal` 实现线程安全的用户 ID 传播 |
+| `TokenRecoveryEnhancedClient`     | 带令牌恢复的增强客户端，继承 `HttpClientFactoryEnhancedClient`               |
+| `DefaultTokenProvider` <sup>internal</sup> | `ITokenProvider` 默认实现（internal），通过 `IMudAppContext` 获取令牌管理器并获取令牌 |
+| `DefaultCurrentUserContext<TUser>` | `ICurrentUserContext` 默认实现（泛型，`TUser : CurrentUserInfo, new()`），使用 `AsyncLocal` 实现线程安全的用户 ID 传播 |
 | `MemoryTokenStore`                | `ITokenStore` 内存默认实现，支持 `GetTokenTypesAsync`、`ClearAsync` 批量操作 |
 | `MemoryUserTokenStore`            | `IUserTokenStore` 内存默认实现，按用户 ID 隔离，支持 `ClearUserAsync` 等     |
 | `MemoryEncryptedTokenStore`       | `IEncryptedTokenStore` 内存默认实现，自动加密/解密令牌数据                   |
+| `MemoryCacheTokenCache<T>`        | `ITokenCache<T>` 内存缓存实现（基于 `IMemoryCache`），供 `TokenManagerBase` 使用 |
 | `DefaultFormContent`              | `IFormContent` 默认实现，基于 `Dictionary<string, string>`                   |
+
+> `TokenManagerBase` 与 `UserTokenManagerBase` 的抽象基类定义位于 `Mud.HttpUtils.Abstractions` 包；`OAuth2TokenManagerBase`（OAuth2 抽象基类）亦定义于 Abstractions。`DefaultTokenProvider` 为 `internal` 类型，由框架在内部使用。`DefaultCurrentUserContext<TUser>` 为泛型实现，使用时需指定用户类型（如 `DefaultCurrentUserContext<MyUser>`，`MyUser` 继承 `CurrentUserInfo`）。
 
 ```csharp
 // 自定义令牌管理器
@@ -339,13 +348,14 @@ services.AddTokenRefreshBackgroundService(options =>
 
 ### 应用上下文
 
-| 类                     | 说明                                        |
-| ---------------------- | ------------------------------------------- |
-| `DefaultAppManager<T>` | `IAppManager<T>` 默认实现，管理多应用上下文 |
-| `DefaultAppContext`    | `IMudAppContext` 默认实现                   |
+> 应用上下文的接口（`IMudAppContext`、`IAppManager<T>`、`IAppContextSwitcher`）与默认管理器实现（`DefaultAppManager<T>`）定义于 `Mud.HttpUtils.Abstractions` 包。本包提供基于 `AsyncLocal` 的上下文持有器实现。
+
+| 类                          | 说明                                                                       |
+| --------------------------- | -------------------------------------------------------------------------- |
+| `AsyncLocalAppContextSwitcher` | `IAppContextHolder` 默认实现，基于 `AsyncLocal` 维护当前应用上下文（`Current` / `BeginScope`） |
 
 ```csharp
-// 多应用管理
+// 多应用管理（IAppManager<T> 默认实现位于 Mud.HttpUtils.Abstractions）
 services.AddSingleton<IAppManager<FeishuContext>, DefaultAppManager<FeishuContext>>();
 
 // 监听配置变更
@@ -356,7 +366,7 @@ appManager.ConfigurationChanged += (sender, args) =>
 };
 ```
 
-> `DefaultAppManager<T>` 新增 `ConfigurationChanged` 事件，支持应用配置热更新通知。`IMudAppContext` 新增 `GetService<T>()` 方法，支持从应用上下文中解析 DI 服务。
+> `DefaultAppManager<T>` 新增 `ConfigurationChanged` 事件，支持应用配置热更新通知。`IMudAppContext` 新增 `GetService<T>()` 方法，支持从应用上下文中解析 DI 服务。`AsyncLocalAppContextSwitcher` 实现 `IAppContextHolder`，用于在当前异步上下文中切换/持有时应用上下文。
 
 ### 工具类
 
@@ -407,7 +417,7 @@ services.AddMudHttpHealthChecks(Configuration);
 
 #### 熔断器健康检查选项
 
-`CircuitBreakerHealthCheckSettings` 用于配置熔断器健康检查，在 `appsettings.json` 中位于 `MudHttpHealthChecks:CircuitBreaker` 下。
+`CircuitBreakerHealthCheckSettings` 用于配置熔断器健康检查，在 `appsettings.json` 中位于 `MudHttpHealthChecks:CircuitBreakerHealthCheck` 下。
 
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
@@ -427,7 +437,7 @@ services.AddMudHttpHealthChecks(Configuration);
       "MinSampleSize": 5,
       "FailureStatus": "Degraded"
     },
-    "CircuitBreaker": {
+    "CircuitBreakerHealthCheck": {
       "MaxOpenCount": 0,
       "MaxHalfOpenCount": 0,
       "FailureStatus": "Unhealthy"
@@ -436,12 +446,14 @@ services.AddMudHttpHealthChecks(Configuration);
 }
 ```
 
+> `MudHttpHealthChecks` 下的 `TokenRefresh` 子节会被 `AddMudHttpHealthChecks(IConfiguration)` 自动绑定；`CircuitBreakerHealthCheck` 子节对应 `MudCircuitBreakerHealthCheck.SectionName`（默认 `"CircuitBreakerHealthCheck"`）。
+
 ### 可观测性
 
 | 类                      | 说明                                                                   |
 | ----------------------- | ---------------------------------------------------------------------- |
 | `TracingDelegatingHandler` | 追踪委托处理器，自动创建 Activity 并记录 HTTP 请求链路信息          |
-| `MudHttpObservability`  | 可观测性辅助工具，提供指标记录和追踪标签管理                          |
+| `MudHttpObservability` <sup>internal</sup> | 可观测性辅助工具（internal），提供指标记录和追踪标签管理            |
 
 > `TracingDelegatingHandler` 作为 `DelegatingHandler` 注入到 HttpClient 管道中，自动创建分布式追踪 Activity 并记录请求方法、URL、状态码、耗时等信息。配合 `Mud.HttpUtils.OpenTelemetry` 包可一键导出到 OTLP 收集器。
 
@@ -554,7 +566,27 @@ services.AddSingleton<IHttpResponseInterceptor, CacheResponseInterceptor>();
 
 ```csharp
 services.AddSingleton<ISensitiveDataMasker, DefaultSensitiveDataMasker>();
+// 或使用便捷扩展方法
+services.AddSensitiveDataMasker();                 // 注册 DefaultSensitiveDataMasker
+services.AddSensitiveDataMasker<MyMasker>();        // 注册自定义实现
 ```
+
+### 便捷注册扩展方法
+
+除手动 `AddSingleton<TInterface, TImpl>()` 外，本包还提供一组语义化扩展方法，自动注册对应的默认实现（含可传入自定义实现的泛型重载）：
+
+| 扩展方法 | 说明 |
+| -------- | ---- |
+| `AddHttpResponseCache(int maxCacheSize = 1000, int cleanupIntervalSeconds = 60)` | 注册内存响应缓存（等价于 `IHttpResponseCache` + `IHttpResponseInterceptor`） |
+| `AddSensitiveDataMasker()` / `AddSensitiveDataMasker<TMasker>()` | 注册敏感数据脱敏器 |
+| `AddApiKeyProvider()` / `AddApiKeyProvider<TProvider>()` | 注册 API Key 提供器 |
+| `AddHmacSignatureProvider()` / `AddHmacSignatureProvider<TProvider>()` | 注册 HMAC 签名提供器 |
+| `AddTokenProvider()` / `AddTokenProvider<TProvider>()` | 注册 Token 提供器（`ITokenProvider`） |
+| `AddCurrentUserContext()` / `AddCurrentUserContext<TContext>()` | 注册当前用户上下文（`ICurrentUserContext`） |
+| `AddMudHttpOAuth2FromConfiguration(IConfiguration, ...)` | 从 `MudHttpOAuth2` 配置节绑定 OAuth2 选项 |
+| `AddMudHttpTokenRecoveryFromConfiguration(IConfiguration, ...)` | 从 `MudHttpTokenRecovery` 配置节绑定令牌恢复选项 |
+| `AddMudHttpUserTokenCacheFromConfiguration(IConfiguration, ...)` | 从 `MudHttpUserTokenCache` 配置节绑定用户令牌缓存选项 |
+| `AddMudHttpClientsFromConfiguration(IConfiguration, ...)` | 从 `MudHttpClients` 配置节批量注册命名客户端与域名白名单 |
 
 ## 依赖项
 
@@ -570,6 +602,6 @@ services.AddSingleton<ISensitiveDataMasker, DefaultSensitiveDataMasker>();
 
 - **默认实现可替换**：所有核心接口均提供默认实现，但可通过 DI 替换为自定义实现
 - **线程安全**：`TokenManagerBase`、`UserTokenManagerBase`、`HttpClientResolver` 均实现并发安全
-- **资源管理**：`EnhancedHttpClient` 实现 `IDisposable`，正确释放 `HttpClient` 资源
+- **资源管理**：`EnhancedHttpClient` 内部正确管理 `HttpClient` 资源（注：本类未实现 `IDisposable`，由 `IHttpClientFactory` 或 `AddMudHttpClient` 负责生命周期管理）
 - **可观测性**：所有关键操作均通过 `ILogger` 记录日志，支持结构化日志
 - **性能优先**：使用 `SemaphoreSlim` 替代 `lock`、使用 `IMemoryCache` 替代 `ConcurrentDictionary`、支持大文件上传进度报告
