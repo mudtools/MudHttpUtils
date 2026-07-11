@@ -89,14 +89,14 @@ services.AddSingleton<IHttpResponseInterceptor, CacheResponseInterceptor>();
 services.AddMudHttpClient("myApi", encryption =>
 {
     encryption.Key = Convert.FromBase64String("your-base64-key");
-    encryption.IV = Convert.FromBase64String("your-base64-iv");
+    // 注意：从 v1.8.0 起 IV 自动随机生成，无需手动设置
 }, client =>
 {
     client.BaseAddress = new Uri("https://api.example.com");
 });
 ```
 
-> 密钥长度支持 AES-128（16 字节）、AES-192（24 字节）、AES-256（32 字节）。`AesEncryptionOptions.Validate()` 方法在启动时验证密钥和 IV 的有效性。
+> 密钥长度支持 AES-128（16 字节）、AES-192（24 字节）、AES-256（32 字节）。`AesEncryptionOptions.Validate()` 方法在启动时验证密钥的有效性。从 v1.8.0 起，IV 在每次加密时自动随机生成，无需手动设置。
 
 ### 安全认证提供程序
 
@@ -178,7 +178,7 @@ services.AddTokenRefreshBackgroundService(options =>
 });
 ```
 
-> `TokenManagerBase` 使用 `SemaphoreSlim(1, 1)` 确保同一时刻只有一个线程执行令牌刷新。`UserTokenManagerBase` 使用 `IMemoryCache` 管理用户令牌缓存，支持 `MaxCacheSize` 限制和自动过期清理。`TokenRefreshHostedService` 支持配置 `RefreshIntervalSeconds`（刷新间隔）、`RefreshBeforeExpirySeconds`（过期前提前刷新时间）、`RetryDelaySeconds`（重试延迟）和 `StopOnError`（出错时是否停止）。
+> `TokenManagerBase` 使用 `SemaphoreSlim(1, 1)` 确保同一时刻只有一个线程执行令牌刷新。`UserTokenManagerBase` 使用 `IMemoryCache` 管理用户令牌缓存，支持 `SizeLimit` 限制和自动过期清理。`TokenRefreshHostedService` 支持配置 `RefreshIntervalSeconds`（刷新间隔）、`RetryDelaySeconds`（重试延迟）和 `StopOnError`（出错时是否停止）。令牌过期提前量由 `TokenManagerBase.ExpireThresholdSeconds` 控制（默认 300 秒）。
 
 > `DefaultTokenProvider` 是 `ITokenProvider` 的默认实现，通过 `IMudAppContext` 获取令牌管理器并获取令牌。它不持有 `IMudAppContext` 引用，而是通过方法参数逐调用接收，以确保生成代码中 `UseApp()`/`UseDefaultApp()` 上下文切换的正确性。当 `TokenRequest.UserId` 非空时，自动使用 `IUserTokenManager` 获取用户级令牌。
 
@@ -213,6 +213,39 @@ var httpContent = formContent.ToHttpContent(); // FormUrlEncodedContent
 ```
 
 > `DefaultFormContent` 是 `IFormContent` 的默认实现，将字典数据转换为 `FormUrlEncodedContent`。适用于简单的表单提交场景。
+
+### 令牌恢复配置
+
+`TokenRecoveryOptions` 用于控制 401 响应时的自动令牌刷新与重试行为，配置节名称为 `MudHttpTokenRecovery`。
+
+| 属性 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `Enabled` | `bool` | `true` | 是否启用令牌恢复机制 |
+| `RecoveryMaxRetries` | `int` | `1` | 令牌恢复的最大重试次数 |
+| `TokenScheme` | `string` | `"Bearer"` | 令牌的认证方案 |
+
+```csharp
+// 通过代码配置
+services.Configure<TokenRecoveryOptions>(options =>
+{
+    options.Enabled = true;
+    options.RecoveryMaxRetries = 2;
+    options.TokenScheme = "Bearer";
+});
+
+// 或通过 IConfiguration 绑定
+services.AddMudHttpTokenRecoveryFromConfiguration(configuration);
+```
+
+```json
+{
+  "MudHttpTokenRecovery": {
+    "Enabled": true,
+    "RecoveryMaxRetries": 2,
+    "TokenScheme": "Bearer"
+  }
+}
+```
 
 ### 应用上下文
 

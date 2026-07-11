@@ -1,0 +1,187 @@
+// -----------------------------------------------------------------------
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// -----------------------------------------------------------------------
+
+namespace Mud.HttpUtils.Client.Tests;
+
+/// <summary>
+/// 配置选项默认值验证测试。
+/// </summary>
+public class OptionsDefaultValueTests
+{
+    [Fact]
+    public void TokenRefreshBackgroundOptions_DefaultValues_AreCorrect()
+    {
+        var options = new TokenRefreshBackgroundOptions();
+
+        options.Enabled.Should().BeFalse();
+        options.RefreshIntervalSeconds.Should().Be(300);
+        options.RetryDelaySeconds.Should().Be(60);
+        options.StopOnError.Should().BeFalse();
+    }
+
+    [Fact]
+    public void TokenRefreshBackgroundOptions_DoesNotHave_RefreshBeforeExpirySeconds()
+    {
+        // RefreshBeforeExpirySeconds 已被删除（死配置）
+        var type = typeof(TokenRefreshBackgroundOptions);
+        type.GetProperty("RefreshBeforeExpirySeconds").Should().BeNull();
+    }
+
+    [Fact]
+    public void UserTokenCacheOptions_DefaultValues_AreCorrect()
+    {
+        var options = new UserTokenCacheOptions();
+
+        options.SizeLimit.Should().Be(UserTokenCacheOptions.DefaultSizeLimit);
+        options.ExpireThresholdSeconds.Should().Be(UserTokenCacheOptions.DefaultExpireThresholdSeconds);
+        options.CleanupIntervalSeconds.Should().Be(UserTokenCacheOptions.DefaultCleanupIntervalSeconds);
+        options.SlidingExpirationSeconds.Should().Be(UserTokenCacheOptions.DefaultSlidingExpirationSeconds);
+        options.CompactionPercentage.Should().Be(UserTokenCacheOptions.DefaultCompactionPercentage);
+    }
+
+    [Fact]
+    public void UserTokenCacheOptions_DefaultConstants_HaveExpectedValues()
+    {
+        UserTokenCacheOptions.DefaultSizeLimit.Should().Be(10000);
+        UserTokenCacheOptions.DefaultExpireThresholdSeconds.Should().Be(300);
+        UserTokenCacheOptions.DefaultCleanupIntervalSeconds.Should().Be(300);
+        UserTokenCacheOptions.DefaultSlidingExpirationSeconds.Should().Be(3600);
+        UserTokenCacheOptions.DefaultCompactionPercentage.Should().Be(0.2);
+    }
+
+    [Fact]
+    public void OAuth2Options_DefaultValues_AreCorrect()
+    {
+        var options = new OAuth2Options();
+
+        options.ClientId.Should().BeEmpty();
+        options.ClientSecret.Should().BeEmpty();
+        options.ClientSecretProviderName.Should().BeNull();
+        options.TokenEndpoint.Should().BeEmpty();
+        options.RequireHttps.Should().BeTrue();
+        options.ExpirySafetyMarginSeconds.Should().Be(60);
+    }
+
+    [Fact]
+    public void OAuth2Options_GetConflictWarning_WhenBothSecretsSet_ReturnsWarning()
+    {
+        var options = new OAuth2Options
+        {
+            ClientSecret = "plain-secret",
+            ClientSecretProviderName = "vault-provider"
+        };
+
+        var warning = options.GetConflictWarning();
+        warning.Should().NotBeNull();
+        warning.Should().Contain("ClientSecretProviderName");
+        warning.Should().Contain("优先");
+    }
+
+    [Fact]
+    public void OAuth2Options_GetConflictWarning_WhenOnlyClientSecret_ReturnsNull()
+    {
+        var options = new OAuth2Options
+        {
+            ClientSecret = "plain-secret"
+        };
+
+        options.GetConflictWarning().Should().BeNull();
+    }
+
+    [Fact]
+    public void OAuth2Options_GetConflictWarning_WhenOnlyProviderName_ReturnsNull()
+    {
+        var options = new OAuth2Options
+        {
+            ClientSecretProviderName = "vault-provider"
+        };
+
+        options.GetConflictWarning().Should().BeNull();
+    }
+
+    [Fact]
+    public void TokenRecoveryOptions_DefaultValues_AreCorrect()
+    {
+        var options = new TokenRecoveryOptions();
+
+        options.Enabled.Should().BeTrue();
+        options.RecoveryMaxRetries.Should().Be(1);
+        options.TokenScheme.Should().Be("Bearer");
+    }
+
+    [Fact]
+    public void MudHttpClientOptions_DefaultValues_AreCorrect()
+    {
+        var options = new MudHttpClientOptions();
+
+        options.BaseAddress.Should().BeNull();
+        options.TimeoutSeconds.Should().BeNull();
+        options.DefaultHeaders.Should().BeNull();
+        options.AllowCustomBaseUrls.Should().BeFalse();
+    }
+
+    [Fact]
+    public void MudHttpClientApplicationOptions_DefaultValues_AreCorrect()
+    {
+        var options = new MudHttpClientApplicationOptions();
+
+        MudHttpClientApplicationOptions.SectionName.Should().Be("MudHttpClients");
+        options.Clients.Should().NotBeNull();
+        options.Clients.Should().BeEmpty();
+        options.DefaultClientName.Should().BeNull();
+        options.AllowedDomains.Should().NotBeNull();
+        options.AllowedDomains.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void AesEncryptionOptions_Key_ReturnsClone()
+    {
+        var key = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };
+        var options = new AesEncryptionOptions { Key = key };
+
+        var returnedKey = options.Key;
+        returnedKey.Should().NotBeSameAs(key);
+        returnedKey.Should().Equal(key);
+
+        // 修改返回的 key 不应影响内部状态
+        returnedKey[0] = 99;
+        options.Key[0].Should().Be(1);
+    }
+
+    [Fact]
+    public void AesEncryptionOptions_Validate_WithValidKey_DoesNotThrow()
+    {
+        var options = new AesEncryptionOptions
+        {
+            Key = new byte[16] // AES-128
+        };
+
+        var act = () => options.Validate();
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void AesEncryptionOptions_Validate_WithInvalidKey_Throws()
+    {
+        var options = new AesEncryptionOptions
+        {
+            Key = new byte[10] // 无效长度
+        };
+
+        var act = () => options.Validate();
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void AesEncryptionOptions_Validate_WithNullKey_Throws()
+    {
+        var options = new AesEncryptionOptions();
+
+        var act = () => options.Validate();
+        act.Should().Throw<InvalidOperationException>();
+    }
+}

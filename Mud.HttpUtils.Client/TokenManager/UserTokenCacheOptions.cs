@@ -13,32 +13,57 @@ namespace Mud.HttpUtils;
 public class UserTokenCacheOptions
 {
     /// <summary>
-    /// 缓存容量限制（用户数量），默认 10000。
+    /// 默认缓存容量限制（用户数量）。
+    /// </summary>
+    public const int DefaultSizeLimit = 10000;
+
+    /// <summary>
+    /// 默认令牌过期提前量（秒）。
+    /// </summary>
+    public const int DefaultExpireThresholdSeconds = 300;
+
+    /// <summary>
+    /// 默认缓存清理间隔（秒）。
+    /// </summary>
+    public const int DefaultCleanupIntervalSeconds = 300;
+
+    /// <summary>
+    /// 默认滑动过期时间（秒）。
+    /// </summary>
+    public const int DefaultSlidingExpirationSeconds = 3600;
+
+    /// <summary>
+    /// 默认缓存压缩百分比。
+    /// </summary>
+    public const double DefaultCompactionPercentage = 0.2;
+
+    /// <summary>
+    /// 缓存容量限制（用户数量），默认 <see cref="DefaultSizeLimit"/>（10000）。
     /// 当缓存数量超过此值时，将自动淘汰过期令牌和最久未访问的令牌。
     /// </summary>
-    public int SizeLimit { get; set; } = 10000;
+    public int SizeLimit { get; set; } = DefaultSizeLimit;
 
     /// <summary>
-    /// 用户令牌过期提前量（秒），默认 300 秒（5 分钟）。
+    /// 用户令牌过期提前量（秒），默认 <see cref="DefaultExpireThresholdSeconds"/>（300 秒 = 5 分钟）。
     /// 令牌在此时间内即将过期时将触发自动刷新。
     /// </summary>
-    public int ExpireThresholdSeconds { get; set; } = 300;
+    public int ExpireThresholdSeconds { get; set; } = DefaultExpireThresholdSeconds;
 
     /// <summary>
-    /// 缓存清理间隔（秒），默认 300 秒（5 分钟）。
+    /// 缓存清理间隔（秒），默认 <see cref="DefaultCleanupIntervalSeconds"/>（300 秒 = 5 分钟）。
     /// 定期清理过期的用户令牌缓存和对应的锁资源。
     /// </summary>
-    public int CleanupIntervalSeconds { get; set; } = 300;
+    public int CleanupIntervalSeconds { get; set; } = DefaultCleanupIntervalSeconds;
 
     /// <summary>
-    /// 滑动过期时间（秒），默认 3600 秒（1 小时）。
+    /// 滑动过期时间（秒），默认 <see cref="DefaultSlidingExpirationSeconds"/>（3600 秒 = 1 小时）。
     /// 如果在此时间内未访问缓存条目，该条目将被自动移除。
     /// </summary>
-    public int SlidingExpirationSeconds { get; set; } = 3600;
+    public int SlidingExpirationSeconds { get; set; } = DefaultSlidingExpirationSeconds;
 
     /// <summary>
-    /// 缓存压缩百分比，默认 0.2（20%）。
+    /// 缓存压缩百分比，默认 <see cref="DefaultCompactionPercentage"/>（0.2 = 20%）。
     /// 当缓存达到容量限制时，将按此比例压缩（移除）条目。
     /// </summary>
-    public double CompactionPercentage { get; set; } = 0.2;
+    public double CompactionPercentage { get; set; } = DefaultCompactionPercentage;
 }

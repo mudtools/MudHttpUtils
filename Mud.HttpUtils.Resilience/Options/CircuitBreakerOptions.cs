@@ -33,7 +33,16 @@ public class CircuitBreakerOptions
     public int FailureThreshold
     {
         get => _failureThreshold;
-        set => _failureThreshold = value > 0 ? value : throw new ArgumentOutOfRangeException(nameof(FailureThreshold), "故障阈值必须大于 0。");
+        set
+        {
+            if (value <= 0)
+                throw new ArgumentOutOfRangeException(nameof(FailureThreshold), "故障阈值必须大于 0。");
+            // 当使用高级熔断模式（SamplingDurationSeconds > 0）时，FailureThreshold 表示失败率百分比，范围为 1-100
+            if (_samplingDurationSeconds > 0 && value > 100)
+                throw new ArgumentOutOfRangeException(nameof(FailureThreshold),
+                    "当 SamplingDurationSeconds 大于 0 时，FailureThreshold 表示失败率百分比，取值范围为 1-100。");
+            _failureThreshold = value;
+        }
     }
 
     /// <summary>
@@ -57,7 +66,16 @@ public class CircuitBreakerOptions
     public int SamplingDurationSeconds
     {
         get => _samplingDurationSeconds;
-        set => _samplingDurationSeconds = value >= 0 ? value : throw new ArgumentOutOfRangeException(nameof(SamplingDurationSeconds), "采样窗口时间不能为负数。");
+        set
+        {
+            if (value < 0)
+                throw new ArgumentOutOfRangeException(nameof(SamplingDurationSeconds), "采样窗口时间不能为负数。");
+            // 当切换到高级熔断模式时，校验 FailureThreshold 是否在百分比范围内
+            if (value > 0 && _failureThreshold > 100)
+                throw new ArgumentOutOfRangeException(nameof(SamplingDurationSeconds),
+                    $"当 SamplingDurationSeconds 大于 0 时，FailureThreshold 表示失败率百分比，当前值为 {_failureThreshold}，超出范围 1-100。");
+            _samplingDurationSeconds = value;
+        }
     }
 
     /// <summary>

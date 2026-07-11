@@ -83,7 +83,7 @@ services.AddMudHttpUtils("myApi", "https://api.example.com", options =>
 | `MaxRetryAttempts` | `int` | `3` | 最大重试次数 |
 | `DelayMilliseconds` | `int` | `1000` | 基础延迟时间（毫秒） |
 | `UseExponentialBackoff` | `bool` | `true` | 是否使用指数退避 |
-| `RetryStatusCodes` | `int[]` | `[408, 429, 500, 502, 503, 504]` | 触发重试的 HTTP 状态码 |
+| `RetryStatusCodes` | `int[]?` | `null`（运行时回退到 `[408, 429, 500, 502, 503, 504]`） | 触发重试的 HTTP 状态码 |
 | `OnRetry` | `Func<Exception?, int, TimeSpan, Task>?` | `null` | 重试回调函数 |
 
 ### TimeoutOptions

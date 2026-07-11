@@ -31,8 +31,23 @@ public class OAuth2Options
     /// 客户端密钥的安全提供程序名称。
     /// 当设置此值时，将通过 <see cref="ISecretProvider"/> 从安全存储中获取 ClientSecret，
     /// 而非使用明文配置的 <see cref="ClientSecret"/>。
+    /// <para>注意：当同时设置 <see cref="ClientSecret"/> 和 <see cref="ClientSecretProviderName"/> 时，
+    /// <see cref="ClientSecretProviderName"/> 优先生效。建议仅设置其中之一以避免混淆。</para>
     /// </summary>
     public string? ClientSecretProviderName { get; set; }
+
+    /// <summary>
+    /// 校验配置是否存在互斥冲突：当同时设置 <see cref="ClientSecret"/> 和 <see cref="ClientSecretProviderName"/> 时返回警告消息。
+    /// </summary>
+    /// <returns>警告消息；如果无冲突则返回 null。</returns>
+    internal string? GetConflictWarning()
+    {
+        if (!string.IsNullOrEmpty(ClientSecret) && !string.IsNullOrEmpty(ClientSecretProviderName))
+        {
+            return $"OAuth2Options: ClientSecret 和 ClientSecretProviderName 同时设置，ClientSecretProviderName 将优先生效。建议仅保留一个以避免混淆。";
+        }
+        return null;
+    }
 
     /// <summary>
     /// 令牌端点。

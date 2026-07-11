@@ -76,7 +76,7 @@ services.AddWebApiHttpClient();
 services.AddMudHttpUtils("myApi", encryption =>
 {
     encryption.Key = Convert.FromBase64String("your-base64-key");
-    encryption.IV = Convert.FromBase64String("your-base64-iv");
+    // 注意：从 v1.8.0 起 IV 自动随机生成，无需手动设置
 }, client =>
 {
     client.BaseAddress = new Uri("https://api.example.com");
@@ -91,7 +91,7 @@ services.AddWebApiHttpClient();
 services.AddMudHttpClient("myApi", encryption =>
 {
     encryption.Key = Convert.FromBase64String("your-base64-key");
-    encryption.IV = Convert.FromBase64String("your-base64-iv");
+    // 注意：从 v1.8.0 起 IV 自动随机生成，无需手动设置
 }, client =>
 {
     client.BaseAddress = new Uri("https://api.example.com");
@@ -879,7 +879,7 @@ var stream = await _httpClient.SendStreamAsync(request);
 services.AddMudHttpClient("myApi", encryption =>
 {
     encryption.Key = Convert.FromBase64String("your-base64-key");
-    encryption.IV = Convert.FromBase64String("your-base64-iv");
+    // 注意：从 v1.8.0 起 IV 自动随机生成，无需手动设置
 }, client =>
 {
     client.BaseAddress = new Uri("https://api.example.com");
@@ -958,8 +958,8 @@ services.AddTokenRefreshBackgroundService(options =>
 {
     options.Enabled = true;
     options.RefreshIntervalSeconds = 3500;
-    options.InitialDelaySeconds = 30;
-    options.MaxRetryAttempts = 3;
+    options.RetryDelaySeconds = 60;
+    options.StopOnError = false;
 });
 ```
 
@@ -968,9 +968,9 @@ services.AddTokenRefreshBackgroundService(options =>
 ```csharp
 services.Configure<UserTokenCacheOptions>(options =>
 {
-    options.MaxCacheSize = 1000;
+    options.SizeLimit = 1000;
     options.CleanupIntervalSeconds = 300;
-    options.RefreshAheadSeconds = 300;
+    options.ExpireThresholdSeconds = 300;
 });
 ```
 

@@ -287,7 +287,7 @@ public interface IFeishuUserApi { }
 services.AddMudHttpClient("myApi", encryption =>
 {
     encryption.Key = Convert.FromBase64String("your-base64-key");
-    encryption.IV = Convert.FromBase64String("your-base64-iv");
+    // 注意：从 v1.8.0 起 IV 自动随机生成，无需手动设置
 }, client =>
 {
     client.BaseAddress = new Uri("https://api.example.com");

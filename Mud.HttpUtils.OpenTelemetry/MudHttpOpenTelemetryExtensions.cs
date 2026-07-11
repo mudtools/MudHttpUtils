@@ -71,6 +71,9 @@ public static class MudHttpOpenTelemetryExtensions
                     new KeyValuePair<string, object>("deployment.environment", options.DeploymentEnvironment)
                 }));
 
+        // 批量导出配置：通过 DI 注册 BatchExportProcessorOptions，对所有 Provider 生效
+        ConfigureBatchExportOptions(services, options);
+
         if (options.EnableTracing)
         {
             builder.WithTracing(tp =>
@@ -125,6 +128,25 @@ public static class MudHttpOpenTelemetryExtensions
         }
 
         return builder;
+    }
+
+    /// <summary>
+    /// 通过 DI 注册批量导出处理器选项，使 <see cref="MudHttpOpenTelemetryOptions.ExportBatchSize"/>
+    /// 和 <see cref="MudHttpOpenTelemetryOptions.ExportIntervalMilliseconds"/> 生效。
+    /// </summary>
+    private static void ConfigureBatchExportOptions(IServiceCollection services, MudHttpOpenTelemetryOptions options)
+    {
+        // 批量导出配置：仅当值 > 0 时生效，null 使用 SDK 默认值
+        if (options.ExportBatchSize.HasValue && options.ExportBatchSize.Value > 0)
+        {
+            services.Configure<BatchExportProcessorOptions<Activity>>(b =>
+                b.MaxQueueSize = options.ExportBatchSize.Value);
+        }
+        if (options.ExportIntervalMilliseconds.HasValue && options.ExportIntervalMilliseconds.Value > 0)
+        {
+            services.Configure<BatchExportProcessorOptions<Activity>>(b =>
+                b.ExporterTimeoutMilliseconds = options.ExportIntervalMilliseconds.Value);
+        }
     }
 
     private static void ConfigureOtlpExporter(TracerProviderBuilder builder, MudHttpOpenTelemetryOptions options)

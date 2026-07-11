@@ -654,4 +654,70 @@ public static class HttpClientServiceCollectionExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// 从 IConfiguration 绑定 OAuth2 令牌管理器配置。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <param name="configuration">配置实例。</param>
+    /// <param name="sectionPath">配置节点路径，默认 <see cref="OAuth2Options.SectionName"/>。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+    public static IServiceCollection AddMudHttpOAuth2FromConfiguration(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        string sectionPath = OAuth2Options.SectionName)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+        if (configuration == null)
+            throw new ArgumentNullException(nameof(configuration));
+
+        services.Configure<OAuth2Options>(configuration.GetSection(sectionPath));
+        return services;
+    }
+
+    /// <summary>
+    /// 从 IConfiguration 绑定令牌恢复配置。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <param name="configuration">配置实例。</param>
+    /// <param name="sectionPath">配置节点路径，默认 <see cref="TokenRecoveryOptions.SectionName"/>。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+    public static IServiceCollection AddMudHttpTokenRecoveryFromConfiguration(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        string sectionPath = TokenRecoveryOptions.SectionName)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+        if (configuration == null)
+            throw new ArgumentNullException(nameof(configuration));
+
+        services.Configure<TokenRecoveryOptions>(configuration.GetSection(sectionPath));
+        return services;
+    }
+
+    /// <summary>
+    /// 从 IConfiguration 绑定用户令牌缓存配置。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <param name="configuration">配置实例。</param>
+    /// <param name="sectionPath">配置节点路径，默认 <c>"MudHttpUserTokenCache"</c>。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+    public static IServiceCollection AddMudHttpUserTokenCacheFromConfiguration(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        string sectionPath = "MudHttpUserTokenCache")
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+        if (configuration == null)
+            throw new ArgumentNullException(nameof(configuration));
+
+        services.Configure<UserTokenCacheOptions>(configuration.GetSection(sectionPath));
+        return services;
+    }
 }
