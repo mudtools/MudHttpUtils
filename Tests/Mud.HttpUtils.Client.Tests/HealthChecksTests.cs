@@ -506,6 +506,89 @@ public class HealthChecksTests
         var act = () => ((IServiceCollection)null!).AddMudHttpHealthChecks();
         act.Should().Throw<ArgumentNullException>();
     }
+
+    [Fact]
+    public void AddMudHttpHealthChecks_WithNullConfiguration_Throws()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        var act = () => services.AddMudHttpHealthChecks(null!);
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public async Task AddMudHttpHealthChecks_FromConfiguration_BindsFailureStatus()
+    {
+        // Arrange — 验证 FailureStatus 通过 IConfiguration 绑定
+        var configDict = new Dictionary<string, string?>
+        {
+            ["MudHttpHealthChecks:TokenRefresh:FailureStatus"] = "Degraded",
+        };
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(configDict)
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMudHttpHealthChecks(configuration);
+
+        // Act & Assert — 不抛异常即表示绑定成功
+        var provider = services.BuildServiceProvider();
+        var healthCheckService = provider.GetRequiredService<HealthCheckService>();
+        var report = await healthCheckService.CheckHealthAsync();
+        report.Entries.Should().ContainKey(TokenRefreshHealthCheck.Name);
+    }
+
+    [Fact]
+    public void AddMudHttpHealthChecks_FromConfiguration_WithCustomSectionPath_Works()
+    {
+        // Arrange
+        var configDict = new Dictionary<string, string?>
+        {
+            ["Custom:TokenRefresh:WindowSeconds"] = "120",
+            ["Custom:TokenRefresh:MinSampleSize"] = "3",
+        };
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(configDict)
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        services.AddMudHttpHealthChecks(configuration, "Custom");
+
+        // Assert
+        var provider = services.BuildServiceProvider();
+        var tokenRefreshOptions = provider.GetRequiredService<
+            Microsoft.Extensions.Options.IOptions<TokenRefreshHealthCheckOptions>>().Value;
+        tokenRefreshOptions.WindowSeconds.Should().Be(120);
+        tokenRefreshOptions.MinSampleSize.Should().Be(3);
+    }
+
+    [Fact]
+    public void AddMudHttpHealthChecks_FromConfiguration_WithEmptySection_UsesDefaults()
+    {
+        // Arrange
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>())
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        services.AddMudHttpHealthChecks(configuration);
+
+        // Assert — 空配置节应使用默认值
+        var provider = services.BuildServiceProvider();
+        var tokenRefreshOptions = provider.GetRequiredService<
+            Microsoft.Extensions.Options.IOptions<TokenRefreshHealthCheckOptions>>().Value;
+        tokenRefreshOptions.WindowSeconds.Should().Be(300);
+        tokenRefreshOptions.DegradedThreshold.Should().Be(0.2);
+        tokenRefreshOptions.CriticalThreshold.Should().Be(0.5);
+        tokenRefreshOptions.MinSampleSize.Should().Be(5);
+    }
 }
 
 /// <summary>

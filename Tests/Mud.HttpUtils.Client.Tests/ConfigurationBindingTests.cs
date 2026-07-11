@@ -7,6 +7,7 @@
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Mud.HttpUtils.Client.Tests;
@@ -494,4 +495,137 @@ public class ConfigurationBindingTests
         options.RetryDelaySeconds.Should().Be(60);
         options.StopOnError.Should().BeFalse();
     }
+
+    [Fact]
+    public void AddMudHttpOAuth2FromConfiguration_WithBothSecrets_LogsWarning()
+    {
+        // Arrange — 同时设置 ClientSecret 和 ClientSecretProviderName
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpOAuth2:ClientId"] = "test-client",
+                ["MudHttpOAuth2:ClientSecret"] = "plain-secret",
+                ["MudHttpOAuth2:ClientSecretProviderName"] = "vault-provider",
+                ["MudHttpOAuth2:TokenEndpoint"] = "https://auth.example.com/token",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        var loggerProvider = new CollectingLoggerProvider();
+        services.AddLogging(b => b.AddProvider(loggerProvider));
+
+        // Act
+        services.AddMudHttpOAuth2FromConfiguration(config);
+        var provider = services.BuildServiceProvider();
+
+        // 触发 IPostConfigureOptions 执行
+        _ = provider.GetRequiredService<IOptions<OAuth2Options>>().Value;
+
+        // Assert — 应记录警告日志
+        var warnings = loggerProvider.GetLogRecords(LogLevel.Warning);
+        warnings.Should().NotBeEmpty();
+        warnings[0].Message.Should().Contain("ClientSecretProviderName");
+        warnings[0].Message.Should().Contain("优先");
+    }
+
+    [Fact]
+    public void AddMudHttpOAuth2FromConfiguration_WithOnlyClientSecret_DoesNotLogWarning()
+    {
+        // Arrange — 仅设置 ClientSecret
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpOAuth2:ClientId"] = "test-client",
+                ["MudHttpOAuth2:ClientSecret"] = "plain-secret",
+                ["MudHttpOAuth2:TokenEndpoint"] = "https://auth.example.com/token",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        var loggerProvider = new CollectingLoggerProvider();
+        services.AddLogging(b => b.AddProvider(loggerProvider));
+
+        // Act
+        services.AddMudHttpOAuth2FromConfiguration(config);
+        var provider = services.BuildServiceProvider();
+        _ = provider.GetRequiredService<IOptions<OAuth2Options>>().Value;
+
+        // Assert — 不应有警告日志
+        var warnings = loggerProvider.GetLogRecords(LogLevel.Warning);
+        warnings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void AddMudHttpOAuth2FromConfiguration_WithOnlyProviderName_DoesNotLogWarning()
+    {
+        // Arrange — 仅设置 ClientSecretProviderName
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpOAuth2:ClientId"] = "test-client",
+                ["MudHttpOAuth2:ClientSecretProviderName"] = "vault-provider",
+                ["MudHttpOAuth2:TokenEndpoint"] = "https://auth.example.com/token",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        var loggerProvider = new CollectingLoggerProvider();
+        services.AddLogging(b => b.AddProvider(loggerProvider));
+
+        // Act
+        services.AddMudHttpOAuth2FromConfiguration(config);
+        var provider = services.BuildServiceProvider();
+        _ = provider.GetRequiredService<IOptions<OAuth2Options>>().Value;
+
+        // Assert — 不应有警告日志
+        var warnings = loggerProvider.GetLogRecords(LogLevel.Warning);
+        warnings.Should().BeEmpty();
+    }
 }
+
+/// <summary>
+/// 收集日志记录的 ILoggerProvider，用于测试中验证警告日志输出。
+/// </summary>
+internal sealed class CollectingLoggerProvider : ILoggerProvider
+{
+    private readonly List<LogRecord> _records = new();
+    private readonly object _lock = new();
+
+    public ILogger CreateLogger(string categoryName) => new CollectingLogger(this);
+
+    public IReadOnlyList<LogRecord> GetLogRecords(LogLevel level)
+    {
+        lock (_lock)
+        {
+            return _records.Where(r => r.Level == level).ToList();
+        }
+    }
+
+    public void AddRecord(LogLevel level, string message)
+    {
+        lock (_lock)
+        {
+            _records.Add(new LogRecord(level, message));
+        }
+    }
+
+    public void Dispose() { }
+
+    private sealed class CollectingLogger : ILogger
+    {
+        private readonly CollectingLoggerProvider _provider;
+
+        public CollectingLogger(CollectingLoggerProvider provider) => _provider = provider;
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            _provider.AddRecord(logLevel, formatter(state, exception));
+        }
+    }
+}
+
+internal sealed record LogRecord(LogLevel Level, string Message);

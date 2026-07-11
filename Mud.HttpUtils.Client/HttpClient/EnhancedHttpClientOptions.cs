@@ -8,6 +8,10 @@ namespace Mud.HttpUtils;
 /// <remarks>
 /// <para>此类封装了 <see cref="EnhancedHttpClient"/> 的所有可配置参数,避免构造函数参数过多的问题。</para>
 /// <para>后续新增配置项只需在此类中添加属性即可,无需修改构造函数签名。</para>
+/// <para><b>注意</b>：此类包含接口和委托类型属性（如 <see cref="ILogger"/>、<see cref="IHttpRequestInterceptor"/>），
+/// 无法通过 <c>IConfiguration</c> 绑定。仅供编程式配置使用，由 <c>CreateEnhancedClient</c> 通过 DI 注入赋值。</para>
+/// <para><see cref="AllowCustomBaseUrls"/> 属性的值在通过 <c>AddMudHttpClientsFromConfiguration</c> 注册时，
+/// 会被 <see cref="MudHttpClientOptions.AllowCustomBaseUrls"/> 的值覆盖（参见 <c>CreateEnhancedClient</c> 实现）。</para>
 /// </remarks>
 public sealed class EnhancedHttpClientOptions
 {

@@ -86,12 +86,14 @@ public class MudHttpOpenTelemetryOptions
     public double SamplingRatio { get; set; } = 1.0;
 
     /// <summary>
-    /// OTLP 批量导出批量大小。设为 <c>null</c> 使用 SDK 默认值（512）。仅当 <c>>0</c> 时生效。
+    /// OTLP 每批导出最大条目数。设为 <c>null</c> 使用 SDK 默认值（512）。仅当 <c>>0</c> 时生效。
+    /// 映射到 <c>BatchExportProcessorOptions&lt;T&gt;.MaxExportBatchSize</c>。
     /// </summary>
     public int? ExportBatchSize { get; set; }
 
     /// <summary>
     /// OTLP 批量导出间隔（毫秒）。设为 <c>null</c> 使用 SDK 默认值（5000ms）。仅当 <c>>0</c> 时生效。
+    /// 映射到 <c>BatchExportProcessorOptions&lt;T&gt;.ScheduledDelayMilliseconds</c>。
     /// </summary>
     public int? ExportIntervalMilliseconds { get; set; }
 

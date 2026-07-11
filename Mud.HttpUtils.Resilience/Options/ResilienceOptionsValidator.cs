@@ -13,6 +13,12 @@ namespace Mud.HttpUtils.Resilience;
 /// <see cref="ResilienceOptions"/> 的跨选项校验器。
 /// 检查重试策略与超时策略之间的潜在冲突，例如重试总延迟超过单次超时时间。
 /// </summary>
+/// <remarks>
+/// <b>已知限制</b>：此校验器仅能访问 <see cref="ResilienceOptions"/>，无法校验
+/// <c>HttpClient.Timeout</c>（通过 <c>MudHttpClientOptions.TimeoutSeconds</c> 配置）与 Polly 超时的跨选项冲突。
+/// 建议用户手动确保 <c>HttpClient.Timeout</c> 略大于 <c>Retry.MaxRetryAttempts × Timeout.TimeoutSeconds + 总重试延迟</c>，
+/// 避免 HttpClient 超时打断正常的重试流程。详见 Mud.HttpUtils.Resilience README 中的"超时配置说明"。
+/// </remarks>
 public class ResilienceOptionsValidator : IValidateOptions<ResilienceOptions>
 {
     /// <inheritdoc />

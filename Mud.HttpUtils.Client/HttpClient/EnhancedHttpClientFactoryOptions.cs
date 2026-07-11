@@ -3,6 +3,10 @@ namespace Mud.HttpUtils;
 /// <summary>
 /// 增强型 HTTP 客户端工厂的配置选项，存储按名称注册的客户端工厂委托。
 /// </summary>
+/// <remarks>
+/// 此类仅供 DI 内部使用，通过 <c>services.Configure&lt;EnhancedHttpClientFactoryOptions&gt;()</c> 编程式注册。
+/// 由于包含 <c>Func</c> 委托类型属性，无法通过 <c>IConfiguration</c> 绑定。
+/// </remarks>
 public sealed class EnhancedHttpClientFactoryOptions
 {
     /// <summary>

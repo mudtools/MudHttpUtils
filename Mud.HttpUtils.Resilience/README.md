@@ -177,7 +177,9 @@ services.AddMudHttpResilienceDecorator(configuration, "MudHttpResilience");
     "CircuitBreaker": {
       "Enabled": true,
       "FailureThreshold": 5,
-      "BreakDurationSeconds": 30
+      "BreakDurationSeconds": 30,
+      "SamplingDurationSeconds": 0,
+      "MinimumThroughput": 10
     }
   }
 }
@@ -198,6 +200,15 @@ services.AddMudHttpResilienceDecorator(configuration, "MudHttpResilience");
 ```
 
 > 高级模式下 `FailureThreshold = 50` 表示采样窗口内失败率达 50% 时触发熔断，至少需要 `MinimumThroughput` 次请求。
+
+### 配置校验
+
+`ResilienceOptionsValidator` 实现了 `IValidateOptions<ResilienceOptions>`，在选项绑定时自动执行跨选项校验：
+
+- 当 `Retry.Enabled` 和 `Timeout.Enabled` 同时为 `true` 时，校验重试总延迟（含指数退避）是否超过单次超时时间 `Timeout.TimeoutSeconds`。超出时 `IOptions.Validate` 返回失败，应用启动抛出异常。
+- 当 `Retry.Enabled` 或 `Timeout.Enabled` 为 `false` 时，跳过此校验。
+
+**已知限制**：此校验器无法检测 `HttpClient.Timeout`（通过 `MudHttpClientOptions.TimeoutSeconds` 配置）与 Polly 超时的跨选项冲突。建议用户手动确保 `HttpClient.Timeout` 略大于 `Retry.MaxRetryAttempts × Timeout.TimeoutSeconds + 总重试延迟`，避免 HttpClient 超时打断正常的重试流程。详见上方"超时配置说明"。
 
 ### 一站式注册
 

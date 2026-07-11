@@ -70,8 +70,8 @@ using var provider = services.BuildServiceProvider();
 | `ServiceVersion` | `string` | `MudHttpActivitySource.Version` | OTel Resource 属性 `service.version` |
 | `DeploymentEnvironment` | `string` | `"production"` | OTel Resource 属性 `deployment.environment` |
 | `SamplingRatio` | `double` | `1.0` | 采样比率（0.0~1.0），生产环境建议 0.1~0.3 |
-| `ExportBatchSize` | `int?` | `null` | OTLP 批量导出批量大小，`null` 使用 SDK 默认值（512） |
-| `ExportIntervalMilliseconds` | `int?` | `null` | OTLP 批量导出间隔（毫秒），`null` 使用 SDK 默认值（5000ms） |
+| `ExportBatchSize` | `int?` | `null` | OTLP 每批导出最大条目数（映射到 `BatchExportProcessorOptions.MaxExportBatchSize`），`null` 使用 SDK 默认值（512） |
+| `ExportIntervalMilliseconds` | `int?` | `null` | OTLP 批量导出间隔毫秒数（映射到 `BatchExportProcessorOptions.ScheduledDelayMilliseconds`），`null` 使用 SDK 默认值（5000ms） |
 | `OtlpHeaders` | `IDictionary<string, string>?` | `null` | 自定义 OTLP Headers（如认证头） |
 | `ConfigureTracing` | `Action<TracerProviderBuilder>?` | `null` | 自定义追踪配置委托，在 Mud 默认配置之后执行 |
 | `ConfigureMetrics` | `Action<MeterProviderBuilder>?` | `null` | 自定义指标配置委托，在 Mud 默认配置之后执行 |

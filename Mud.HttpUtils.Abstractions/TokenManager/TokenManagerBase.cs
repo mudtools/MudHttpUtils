@@ -46,9 +46,9 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     protected virtual int RefreshRetryDelayMilliseconds => 1000;
 
     /// <summary>
-    /// 令牌过期提前量的默认值（秒），与 <see cref="UserTokenCacheOptions.DefaultExpireThresholdSeconds"/> 保持一致。
+    /// 令牌过期提前量的默认值（秒）。<c>UserTokenCacheOptions.DefaultExpireThresholdSeconds</c> 引用此常量以保持跨层一致。
     /// </summary>
-    protected const int DefaultExpireThresholdSeconds = 300;
+    public const int DefaultExpireThresholdSeconds = 300;
 
     /// <summary>
     /// 获取令牌过期提前量（秒），默认 <see cref="DefaultExpireThresholdSeconds"/>（300 秒 = 5 分钟）。

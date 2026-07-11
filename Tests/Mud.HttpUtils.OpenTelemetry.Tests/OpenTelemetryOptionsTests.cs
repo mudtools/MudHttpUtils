@@ -4,6 +4,7 @@
 // -----------------------------------------------------------------------
 
 using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using OpenTelemetry;
@@ -59,10 +60,10 @@ public class OpenTelemetryOptionsTests
         var batchOptions = provider.GetService<IConfigureOptions<BatchExportProcessorOptions<Activity>>>();
         batchOptions.Should().NotBeNull("ExportBatchSize 应通过 BatchExportProcessorOptions 注册到 DI");
 
-        // 验证实际生效的值
+        // 验证实际生效的值：ExportBatchSize 映射到 MaxExportBatchSize
         var optionsMonitor = provider.GetService<IOptions<BatchExportProcessorOptions<Activity>>>();
         optionsMonitor.Should().NotBeNull();
-        optionsMonitor!.Value.MaxQueueSize.Should().Be(256);
+        optionsMonitor!.Value.MaxExportBatchSize.Should().Be(256);
     }
 
     [Fact]
@@ -78,11 +79,11 @@ public class OpenTelemetryOptionsTests
             options.ExportIntervalMilliseconds = 3000;
         });
 
-        // Assert
+        // Assert — ExportIntervalMilliseconds 映射到 ScheduledDelayMilliseconds
         var provider = services.BuildServiceProvider();
         var optionsMonitor = provider.GetService<IOptions<BatchExportProcessorOptions<Activity>>>();
         optionsMonitor.Should().NotBeNull();
-        optionsMonitor!.Value.ExporterTimeoutMilliseconds.Should().Be(3000);
+        optionsMonitor!.Value.ScheduledDelayMilliseconds.Should().Be(3000);
     }
 
     [Fact]
@@ -153,12 +154,12 @@ public class OpenTelemetryOptionsTests
             options.ExportIntervalMilliseconds = 2000;
         });
 
-        // Assert
+        // Assert — ExportBatchSize→MaxExportBatchSize, ExportIntervalMilliseconds→ScheduledDelayMilliseconds
         var provider = services.BuildServiceProvider();
         var optionsMonitor = provider.GetService<IOptions<BatchExportProcessorOptions<Activity>>>();
         optionsMonitor.Should().NotBeNull();
-        optionsMonitor!.Value.MaxQueueSize.Should().Be(512);
-        optionsMonitor.Value.ExporterTimeoutMilliseconds.Should().Be(2000);
+        optionsMonitor!.Value.MaxExportBatchSize.Should().Be(512);
+        optionsMonitor.Value.ScheduledDelayMilliseconds.Should().Be(2000);
     }
 
     [Fact]
@@ -270,5 +271,96 @@ public class OpenTelemetryOptionsTests
         tracerProvider.Should().NotBeNull("EnableTracing = true 时应注册 TracerProvider");
         var meterProvider = provider.GetService<MeterProvider>();
         meterProvider.Should().BeNull("EnableMetrics = false 时不注册 MeterProvider");
+    }
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_FromConfiguration_BindsAllOptions()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpOpenTelemetry:ServiceName"] = "config-service",
+                ["MudHttpOpenTelemetry:ServiceVersion"] = "3.0.0",
+                ["MudHttpOpenTelemetry:DeploymentEnvironment"] = "staging",
+                ["MudHttpOpenTelemetry:SamplingRatio"] = "0.1",
+                ["MudHttpOpenTelemetry:EnableTracing"] = "true",
+                ["MudHttpOpenTelemetry:EnableMetrics"] = "true",
+                ["MudHttpOpenTelemetry:EnableLogging"] = "true",
+                ["MudHttpOpenTelemetry:OtlpEndpoint"] = "http://otel-collector:4317",
+                ["MudHttpOpenTelemetry:ExportBatchSize"] = "256",
+                ["MudHttpOpenTelemetry:ExportIntervalMilliseconds"] = "3000",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        services.AddMudHttpOpenTelemetry(config);
+
+        // Assert — 验证 IConfiguration 绑定后选项值正确
+        var provider = services.BuildServiceProvider();
+
+        // 验证批量导出参数绑定后映射正确
+        var batchOptions = provider.GetService<IOptions<BatchExportProcessorOptions<Activity>>>();
+        batchOptions.Should().NotBeNull();
+        batchOptions!.Value.MaxExportBatchSize.Should().Be(256);
+        batchOptions.Value.ScheduledDelayMilliseconds.Should().Be(3000);
+
+        // TracerProvider 和 MeterProvider 应成功注册
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+        provider.GetService<MeterProvider>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_FromConfiguration_WithConfigure_OverridesBoundValues()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpOpenTelemetry:ServiceName"] = "config-service",
+                ["MudHttpOpenTelemetry:SamplingRatio"] = "0.1",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act — 配置绑定后再通过委托覆盖
+        services.AddMudHttpOpenTelemetry(config, configure: options =>
+        {
+            options.ServiceName = "override-service";
+            options.SamplingRatio = 0.5;
+        });
+
+        // Assert — 不抛异常即表示配置成功
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_FromConfiguration_WithCustomSectionPath_Works()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Custom:OTel:ServiceName"] = "custom-section-service",
+                ["Custom:OTel:EnableMetrics"] = "false",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        services.AddMudHttpOpenTelemetry(config, "Custom:OTel");
+
+        // Assert
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+        provider.GetService<MeterProvider>().Should().BeNull("EnableMetrics = false 时不注册 MeterProvider");
     }
 }

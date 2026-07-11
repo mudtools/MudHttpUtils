@@ -23,9 +23,9 @@ public class UserTokenCacheOptions
     public const int DefaultSizeLimit = 10000;
 
     /// <summary>
-    /// 默认令牌过期提前量（秒）。
+    /// 默认令牌过期提前量（秒）。引用 <see cref="TokenManagerBase.DefaultExpireThresholdSeconds"/> 以保持跨层一致。
     /// </summary>
-    public const int DefaultExpireThresholdSeconds = 300;
+    public const int DefaultExpireThresholdSeconds = TokenManagerBase.DefaultExpireThresholdSeconds;
 
     /// <summary>
     /// 默认缓存清理间隔（秒）。

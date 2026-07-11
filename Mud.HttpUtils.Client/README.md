@@ -178,7 +178,7 @@ services.AddTokenRefreshBackgroundService(options =>
 });
 ```
 
-> `TokenManagerBase` 使用 `SemaphoreSlim(1, 1)` 确保同一时刻只有一个线程执行令牌刷新。`UserTokenManagerBase` 使用 `IMemoryCache` 管理用户令牌缓存，支持 `SizeLimit` 限制和自动过期清理。`TokenRefreshHostedService` 支持配置 `RefreshIntervalSeconds`（刷新间隔）、`RetryDelaySeconds`（重试延迟）和 `StopOnError`（出错时是否停止）。令牌过期提前量由 `TokenManagerBase.ExpireThresholdSeconds` 控制（默认 300 秒）。
+> `TokenManagerBase` 使用 `SemaphoreSlim(1, 1)` 确保同一时刻只有一个线程执行令牌刷新。`UserTokenManagerBase` 使用 `IMemoryCache` 管理用户令牌缓存，支持 `SizeLimit` 限制和自动过期清理。`TokenRefreshHostedService` 支持配置 `RefreshIntervalSeconds`（刷新间隔）、`RetryDelaySeconds`（重试延迟）和 `StopOnError`（出错时是否停止）。非用户令牌的过期提前量由 `TokenManagerBase.ExpireThresholdSeconds` 控制（默认 300 秒，引用 `TokenManagerBase.DefaultExpireThresholdSeconds` 常量）；用户令牌的过期提前量由 `UserTokenCacheOptions.ExpireThresholdSeconds` 控制（默认同样为 300 秒，引用同一常量），可通过 `AddMudHttpUserTokenCacheFromConfiguration` 绑定。
 
 > `DefaultTokenProvider` 是 `ITokenProvider` 的默认实现，通过 `IMudAppContext` 获取令牌管理器并获取令牌。它不持有 `IMudAppContext` 引用，而是通过方法参数逐调用接收，以确保生成代码中 `UseApp()`/`UseDefaultApp()` 上下文切换的正确性。当 `TokenRequest.UserId` 非空时，自动使用 `IUserTokenManager` 获取用户级令牌。
 
@@ -362,9 +362,52 @@ appManager.ConfigurationChanged += (sender, args) =>
 ```csharp
 // 注册健康检查
 services.AddMudHttpHealthChecks();
+
+// 或从 IConfiguration 绑定
+services.AddMudHttpHealthChecks(Configuration);
 ```
 
 > `AddMudHttpHealthChecks()` 扩展方法注册熔断器和令牌刷新健康检查，可配合 ASP.NET Core Health Checks 中间件使用。
+
+#### 令牌刷新健康检查选项
+
+`TokenRefreshHealthCheckOptions` 用于配置令牌刷新健康检查的窗口期和阈值，在 `appsettings.json` 中位于 `MudHttpHealthChecks:TokenRefresh` 下。
+
+| 属性 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `WindowSeconds` | `int` | `300` | 统计窗口期（秒） |
+| `DegradedThreshold` | `double` | `0.2` | 告警阈值（失败率 0~1），达到则返回 Degraded |
+| `CriticalThreshold` | `double` | `0.5` | 临界阈值（失败率 0~1），达到则返回 Unhealthy |
+| `MinSampleSize` | `int` | `5` | 最小样本数，窗口期内总刷新次数低于此值时返回 Healthy |
+
+#### 熔断器健康检查选项
+
+`CircuitBreakerHealthCheckSettings` 用于配置熔断器健康检查，在 `appsettings.json` 中位于 `MudHttpHealthChecks:CircuitBreaker` 下。
+
+| 属性 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `MaxOpenCount` | `int` | `0` | 允许的 Open 状态最大数量 |
+| `MaxHalfOpenCount` | `int` | `0` | 允许的 HalfOpen 状态最大数量 |
+| `FailureStatus` | `HealthStatus?` | `Unhealthy` | 失败时返回的健康状态 |
+
+对应 `appsettings.json`：
+
+```json
+{
+  "MudHttpHealthChecks": {
+    "TokenRefresh": {
+      "WindowSeconds": 300,
+      "DegradedThreshold": 0.2,
+      "CriticalThreshold": 0.5,
+      "MinSampleSize": 5
+    },
+    "CircuitBreaker": {
+      "MaxOpenCount": 0,
+      "MaxHalfOpenCount": 0
+    }
+  }
+}
+```
 
 ### 可观测性
 

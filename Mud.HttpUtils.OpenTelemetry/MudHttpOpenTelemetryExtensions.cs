@@ -191,12 +191,12 @@ public static class MudHttpOpenTelemetryExtensions
         if (options.ExportBatchSize.HasValue && options.ExportBatchSize.Value > 0)
         {
             services.Configure<BatchExportProcessorOptions<Activity>>(b =>
-                b.MaxQueueSize = options.ExportBatchSize.Value);
+                b.MaxExportBatchSize = options.ExportBatchSize.Value);
         }
         if (options.ExportIntervalMilliseconds.HasValue && options.ExportIntervalMilliseconds.Value > 0)
         {
             services.Configure<BatchExportProcessorOptions<Activity>>(b =>
-                b.ExporterTimeoutMilliseconds = options.ExportIntervalMilliseconds.Value);
+                b.ScheduledDelayMilliseconds = options.ExportIntervalMilliseconds.Value);
         }
     }
 
