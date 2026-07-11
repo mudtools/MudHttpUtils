@@ -214,6 +214,72 @@ var httpContent = formContent.ToHttpContent(); // FormUrlEncodedContent
 
 > `DefaultFormContent` 是 `IFormContent` 的默认实现，将字典数据转换为 `FormUrlEncodedContent`。适用于简单的表单提交场景。
 
+### OAuth2 配置
+
+`OAuth2Options` 用于配置 OAuth2 客户端凭证流程的参数，配置节名称为 `MudHttpOAuth2`。
+
+| 属性 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `ClientId` | `string` | `""` | 客户端 ID |
+| `ClientSecret` | `string` | `""` | 客户端密钥（明文，建议优先使用 `ClientSecretProviderName`） |
+| `ClientSecretProviderName` | `string?` | `null` | 密钥安全提供程序名称，设置后从 `ISecretProvider` 获取密钥 |
+| `TokenEndpoint` | `string` | `""` | 令牌端点 URL |
+| `RevocationEndpoint` | `string` | `""` | 令牌撤销端点 URL |
+| `IntrospectionEndpoint` | `string` | `""` | 令牌内省端点 URL |
+| `RequireHttps` | `bool` | `true` | 是否强制 HTTPS 端点 |
+| `ExpirySafetyMarginSeconds` | `int` | `60` | 令牌过期安全边际（秒），提前刷新以避免使用过期令牌 |
+
+> **安全提示**：当同时设置 `ClientSecret` 和 `ClientSecretProviderName` 时，`ClientSecretProviderName` 优先生效。建议仅设置其中之一以避免混淆。`AddMudHttpOAuth2FromConfiguration` 会在启动时自动检测此冲突并记录警告日志。
+
+```csharp
+// 通过代码配置
+services.Configure<OAuth2Options>(options =>
+{
+    options.ClientId = "my-client";
+    options.ClientSecretProviderName = "vault-provider";
+    options.TokenEndpoint = "https://auth.example.com/token";
+    options.ExpirySafetyMarginSeconds = 90;
+});
+
+// 或通过 IConfiguration 绑定
+services.AddMudHttpOAuth2FromConfiguration(configuration);
+```
+
+对应 `appsettings.json`：
+
+```json
+{
+  "MudHttpOAuth2": {
+    "ClientId": "my-client",
+    "ClientSecretProviderName": "vault-provider",
+    "TokenEndpoint": "https://auth.example.com/token",
+    "RevocationEndpoint": "https://auth.example.com/revoke",
+    "IntrospectionEndpoint": "https://auth.example.com/introspect",
+    "RequireHttps": true,
+    "ExpirySafetyMarginSeconds": 90
+  }
+}
+```
+
+### 用户令牌缓存配置
+
+`UserTokenCacheOptions` 用于配置用户令牌缓存的容量、过期和清理策略，配置节名称为 `MudHttpUserTokenCache`。
+
+| 属性 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `SizeLimit` | `int` | `10000` | 缓存容量限制（用户数量） |
+| `ExpireThresholdSeconds` | `int` | `300` | 令牌过期提前量（秒），即将过期时触发刷新 |
+| `CleanupIntervalSeconds` | `int` | `300` | 缓存清理间隔（秒） |
+| `SlidingExpirationSeconds` | `int` | `3600` | 滑动过期时间（秒），未访问则自动移除 |
+| `CompactionPercentage` | `double` | `0.2` | 缓存压缩百分比（达容量限制时按此比例淘汰） |
+
+```csharp
+// 通过 IConfiguration 绑定
+services.AddMudHttpUserTokenCacheFromConfiguration(configuration);
+```
+
+> `UserTokenManagerBase` 支持通过 `IOptions<UserTokenCacheOptions>` 从 DI 注入缓存配置。子类构造函数可接收 `IOptions<UserTokenCacheOptions>` 参数，确保通过 `AddMudHttpUserTokenCacheFromConfiguration` 绑定的配置生效。
+
 ### 令牌恢复配置
 
 `TokenRecoveryOptions` 用于控制 401 响应时的自动令牌刷新与重试行为，配置节名称为 `MudHttpTokenRecovery`。

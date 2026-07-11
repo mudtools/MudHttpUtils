@@ -13,6 +13,11 @@ namespace Mud.HttpUtils;
 public class UserTokenCacheOptions
 {
     /// <summary>
+    /// 配置节的名称。
+    /// </summary>
+    public const string SectionName = "MudHttpUserTokenCache";
+
+    /// <summary>
     /// 默认缓存容量限制（用户数量）。
     /// </summary>
     public const int DefaultSizeLimit = 10000;

@@ -122,21 +122,10 @@ public sealed class MudHttpHealthChecksOptions
 
 /// <summary>
 /// 令牌刷新健康检查配置（含失败状态）。
+/// 继承自 <see cref="TokenRefreshHealthCheckOptions"/>，额外包含 <see cref="FailureStatus"/> 属性。
 /// </summary>
-public sealed class TokenRefreshHealthCheckSettings
+public sealed class TokenRefreshHealthCheckSettings : TokenRefreshHealthCheckOptions
 {
-    /// <summary>统计窗口期（秒），默认 300。</summary>
-    public int WindowSeconds { get; set; } = 300;
-
-    /// <summary>告警阈值（0~1），默认 0.2。</summary>
-    public double DegradedThreshold { get; set; } = 0.2;
-
-    /// <summary>临界阈值（0~1），默认 0.5。</summary>
-    public double CriticalThreshold { get; set; } = 0.5;
-
-    /// <summary>最小样本数，默认 5。</summary>
-    public int MinSampleSize { get; set; } = 5;
-
     /// <summary>失败时返回的健康状态，默认 null（由健康检查内部判定）。</summary>
     public HealthStatus? FailureStatus { get; set; }
 }

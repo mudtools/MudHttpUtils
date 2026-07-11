@@ -928,22 +928,22 @@ public class MyTokenManager : TokenManagerBase
 {
     private readonly ITokenStore _tokenStore;
 
-    public MyTokenManager(ITokenStore tokenStore, ILogger<MyTokenManager> logger)
-        : base(logger)
+    public MyTokenManager(ITokenStore tokenStore)
+        : base()
     {
         _tokenStore = tokenStore;
     }
 
-    protected override Task<TokenInfo?> GetCachedTokenAsync(string tokenType, CancellationToken ct)
+    public override Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
     {
-        return _tokenStore.GetAccessTokenAsync(tokenType, ct)
-            .ContinueWith(t => t.Result != null ? new TokenInfo(t.Result, 7200) : null, ct);
+        return GetOrRefreshTokenAsync(cancellationToken);
     }
 
-    protected override async Task<TokenInfo> RefreshTokenCoreAsync(string tokenType, CancellationToken ct)
+    protected override async Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
     {
-        var newToken = await FetchNewTokenAsync(tokenType, ct);
-        await _tokenStore.SetAccessTokenAsync(tokenType, newToken.AccessToken, newToken.ExpiresIn, ct);
+        var newToken = await FetchNewTokenAsync(cancellationToken);
+        await _tokenStore.SetAccessTokenAsync(
+            newToken.AccessToken, newToken.ExpiresIn, cancellationToken);
         return newToken;
     }
 }

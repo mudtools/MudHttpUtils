@@ -8,10 +8,12 @@ namespace Mud.HttpUtils.Observability;
 /// <summary>
 /// 令牌刷新健康检查选项。
 /// </summary>
-public sealed class TokenRefreshHealthCheckOptions
+public class TokenRefreshHealthCheckOptions
 {
-    /// <summary>配置节点路径。</summary>
-    public const string SectionName = "TokenRefreshHealthCheck";
+    /// <summary>
+    /// 配置节点路径。在 <c>appsettings.json</c> 中位于 <c>MudHttpHealthChecks:TokenRefresh</c> 下。
+    /// </summary>
+    public const string SectionName = "MudHttpHealthChecks:TokenRefresh";
 
     /// <summary>
     /// 统计窗口期（秒），默认 300 秒（5 分钟）。

@@ -5,6 +5,7 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using OpenTelemetry;
 using OpenTelemetry.Exporter;
@@ -22,7 +23,7 @@ namespace Mud.HttpUtils.OpenTelemetry;
 /// Mud.HttpUtils OpenTelemetry 适配包的 DI 扩展方法。
 /// </summary>
 /// <remarks>
-/// <para>通过 <see cref="AddMudHttpOpenTelemetry"/> 一键启用 Mud.HttpUtils 的分布式追踪与指标采集，
+/// <para>通过 <see cref="AddMudHttpOpenTelemetry(IServiceCollection, Action{MudHttpOpenTelemetryOptions}?)"/> 一键启用 Mud.HttpUtils 的分布式追踪与指标采集，
 /// 并关联 .NET HttpClient 内置的 <c>System.Net.Http</c> ActivitySource。</para>
 /// <para>默认导出至本地 OTLP gRPC 端点（<c>http://localhost:4317</c>），
 /// 通过 <see cref="MudHttpOpenTelemetryOptions.OtlpEndpoint"/> 自定义。</para>
@@ -31,6 +32,48 @@ namespace Mud.HttpUtils.OpenTelemetry;
 /// </remarks>
 public static class MudHttpOpenTelemetryExtensions
 {
+    /// <summary>
+    /// 一键开启 Mud.HttpUtils 的 OpenTelemetry 追踪与指标采集，从 <see cref="IConfiguration"/> 绑定选项。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <param name="configuration">配置实例，用于绑定 <see cref="MudHttpOpenTelemetryOptions"/>。</param>
+    /// <param name="sectionPath">配置节点路径，默认 <c>"MudHttpOpenTelemetry"</c>。</param>
+    /// <param name="configure">可选的附加配置委托，在配置绑定之后执行，可覆盖绑定值。</param>
+    /// <returns>返回 <see cref="OpenTelemetryBuilder"/>，便于调用方继续追加配置。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> 或 <paramref name="configuration"/> 为 null。</exception>
+    /// <example>
+    /// appsettings.json：
+    /// <code>
+    /// {
+    ///   "MudHttpOpenTelemetry": {
+    ///     "ServiceName": "my-service",
+    ///     "SamplingRatio": 0.1,
+    ///     "OtlpEndpoint": "http://otel-collector:4317",
+    ///     "EnableLogging": true
+    ///   }
+    /// }
+    /// </code>
+    /// 代码：
+    /// <code>
+    /// builder.Services.AddMudHttpOpenTelemetry(builder.Configuration);
+    /// </code>
+    /// </example>
+    public static OpenTelemetryBuilder AddMudHttpOpenTelemetry(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        string sectionPath = "MudHttpOpenTelemetry",
+        Action<MudHttpOpenTelemetryOptions>? configure = null)
+    {
+        if (services is null) throw new ArgumentNullException(nameof(services));
+        if (configuration is null) throw new ArgumentNullException(nameof(configuration));
+
+        var options = new MudHttpOpenTelemetryOptions();
+        configuration.GetSection(sectionPath).Bind(options);
+        configure?.Invoke(options);
+
+        return AddMudHttpOpenTelemetryCore(services, options);
+    }
+
     /// <summary>
     /// 一键开启 Mud.HttpUtils 的 OpenTelemetry 追踪与指标采集。
     /// </summary>
@@ -61,6 +104,14 @@ public static class MudHttpOpenTelemetryExtensions
 
         var options = new MudHttpOpenTelemetryOptions();
         configure?.Invoke(options);
+
+        return AddMudHttpOpenTelemetryCore(services, options);
+    }
+
+    private static OpenTelemetryBuilder AddMudHttpOpenTelemetryCore(
+        IServiceCollection services,
+        MudHttpOpenTelemetryOptions options)
+    {
 
         // 配置 Resource：service.name / service.version / deployment.environment（OTel 规范必需）
         var builder = services.AddOpenTelemetry()

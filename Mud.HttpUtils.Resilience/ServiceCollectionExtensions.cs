@@ -38,8 +38,8 @@ public static class ServiceCollectionExtensions
     /// <code>
     /// services.AddMudHttpResilience(options =>
     /// {
-    ///     options.RetryCount = 3;
-    ///     options.TimeoutSeconds = 30;
+    ///     options.Retry.MaxRetryAttempts = 3;
+    ///     options.Timeout.TimeoutSeconds = 30;
     /// });
     /// </code>
     /// </example>
@@ -56,6 +56,7 @@ public static class ServiceCollectionExtensions
             services.Configure(configureOptions);
         }
 
+        services.TryAddSingleton<IValidateOptions<ResilienceOptions>, ResilienceOptionsValidator>();
         services.TryAddSingleton<IResiliencePolicyProvider>(CreatePolicyProvider);
         // 注册弹性策略解析器，供 IHttpRequestExecutor 在运行时编排方法级弹性策略
         services.TryAddSingleton<IResiliencePolicyResolver, ResiliencePolicyResolver>();
@@ -76,8 +77,13 @@ public static class ServiceCollectionExtensions
     /// <code>
     /// {
     ///   "MudHttpResilience": {
-    ///     "RetryCount": 3,
-    ///     "TimeoutSeconds": 30
+    ///     "Retry": {
+    ///       "MaxRetryAttempts": 3,
+    ///       "DelayMilliseconds": 1000
+    ///     },
+    ///     "Timeout": {
+    ///       "TimeoutSeconds": 30
+    ///     }
     ///   }
     /// }
     /// </code>
@@ -98,6 +104,7 @@ public static class ServiceCollectionExtensions
 
         services.Configure<ResilienceOptions>(options => configuration.GetSection(configurationSectionPath).Bind(options));
 
+        services.TryAddSingleton<IValidateOptions<ResilienceOptions>, ResilienceOptionsValidator>();
         services.TryAddSingleton<IResiliencePolicyProvider>(CreatePolicyProvider);
         // 注册弹性策略解析器，供 IHttpRequestExecutor 在运行时编排方法级弹性策略
         services.TryAddSingleton<IResiliencePolicyResolver, ResiliencePolicyResolver>();

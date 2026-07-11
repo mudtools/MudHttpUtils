@@ -54,6 +54,12 @@ public class OptionsDefaultValueTests
     }
 
     [Fact]
+    public void UserTokenCacheOptions_SectionName_HasExpectedValue()
+    {
+        UserTokenCacheOptions.SectionName.Should().Be("MudHttpUserTokenCache");
+    }
+
+    [Fact]
     public void OAuth2Options_DefaultValues_AreCorrect()
     {
         var options = new OAuth2Options();
@@ -62,8 +68,16 @@ public class OptionsDefaultValueTests
         options.ClientSecret.Should().BeEmpty();
         options.ClientSecretProviderName.Should().BeNull();
         options.TokenEndpoint.Should().BeEmpty();
+        options.RevocationEndpoint.Should().BeEmpty();
+        options.IntrospectionEndpoint.Should().BeEmpty();
         options.RequireHttps.Should().BeTrue();
         options.ExpirySafetyMarginSeconds.Should().Be(60);
+    }
+
+    [Fact]
+    public void OAuth2Options_SectionName_HasExpectedValue()
+    {
+        OAuth2Options.SectionName.Should().Be("MudHttpOAuth2");
     }
 
     [Fact]

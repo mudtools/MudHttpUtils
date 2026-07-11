@@ -60,13 +60,48 @@ using var provider = services.BuildServiceProvider();
 |------|------|--------|------|
 | `EnableTracing` | `bool` | `true` | 是否启用分布式追踪 |
 | `EnableMetrics` | `bool` | `true` | 是否启用指标采集 |
+| `EnableLogging` | `bool` | `false` | 是否启用 OTLP 日志导出（向后兼容；依赖 .NET 8+ 的 ILogger 集成） |
 | `EnableHttpClientInstrumentation` | `bool` | `true` | 关联 .NET HttpClient 内置 ActivitySource |
 | `EnableAspNetCoreInstrumentation` | `bool` | `true` | 启用 ASP.NET Core 入站请求 Instrumentation（控制台应用无效） |
 | `OtlpEndpoint` | `Uri?` | `http://localhost:4317` | OTLP 导出端点，`null` 表示不配置 OTLP 导出器 |
 | `OtlpExportProtocol` | `OtlpExportProtocol` | `Grpc` | OTLP 导出协议（`Grpc` 或 `HttpProtobuf`） |
 | `UseShortExporterTimeout` | `bool` | `false` | 是否使用 5 秒短超时（开发调试用） |
+| `ServiceName` | `string` | `"Mud.HttpUtils.Application"` | OTel Resource 属性 `service.name` |
+| `ServiceVersion` | `string` | `MudHttpActivitySource.Version` | OTel Resource 属性 `service.version` |
+| `DeploymentEnvironment` | `string` | `"production"` | OTel Resource 属性 `deployment.environment` |
+| `SamplingRatio` | `double` | `1.0` | 采样比率（0.0~1.0），生产环境建议 0.1~0.3 |
+| `ExportBatchSize` | `int?` | `null` | OTLP 批量导出批量大小，`null` 使用 SDK 默认值（512） |
+| `ExportIntervalMilliseconds` | `int?` | `null` | OTLP 批量导出间隔（毫秒），`null` 使用 SDK 默认值（5000ms） |
+| `OtlpHeaders` | `IDictionary<string, string>?` | `null` | 自定义 OTLP Headers（如认证头） |
 | `ConfigureTracing` | `Action<TracerProviderBuilder>?` | `null` | 自定义追踪配置委托，在 Mud 默认配置之后执行 |
 | `ConfigureMetrics` | `Action<MeterProviderBuilder>?` | `null` | 自定义指标配置委托，在 Mud 默认配置之后执行 |
+| `ConfigureLogging` | `Action<LoggerProviderBuilder>?` | `null` | 自定义日志配置委托，在 Mud 默认配置之后执行 |
+
+### 从 IConfiguration 绑定
+
+除代码配置外，还支持从 `appsettings.json` 绑定选项：
+
+```csharp
+builder.Services.AddMudHttpOpenTelemetry(builder.Configuration);
+```
+
+对应 `appsettings.json`：
+
+```json
+{
+  "MudHttpOpenTelemetry": {
+    "ServiceName": "my-service",
+    "SamplingRatio": 0.1,
+    "OtlpEndpoint": "http://otel-collector:4317",
+    "EnableLogging": true,
+    "OtlpHeaders": {
+      "Authorization": "Bearer my-token"
+    }
+  }
+}
+```
+
+> 也可同时使用配置绑定和代码配置：`AddMudHttpOpenTelemetry(builder.Configuration, configure: options => { ... })`，代码配置在配置绑定之后执行，可覆盖绑定值。
 
 ### 高级配置示例
 

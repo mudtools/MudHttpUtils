@@ -280,6 +280,67 @@ public class ConfigurationBindingTests
     }
 
     [Fact]
+    public void AddMudHttpOAuth2FromConfiguration_BindsAllEndpoints()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpOAuth2:ClientId"] = "test-client",
+                ["MudHttpOAuth2:ClientSecret"] = "test-secret",
+                ["MudHttpOAuth2:TokenEndpoint"] = "https://auth.example.com/token",
+                ["MudHttpOAuth2:RevocationEndpoint"] = "https://auth.example.com/revoke",
+                ["MudHttpOAuth2:IntrospectionEndpoint"] = "https://auth.example.com/introspect",
+                ["MudHttpOAuth2:RequireHttps"] = "true",
+                ["MudHttpOAuth2:ExpirySafetyMarginSeconds"] = "90",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddMudHttpOAuth2FromConfiguration(config);
+
+        // Assert
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<OAuth2Options>>().Value;
+        options.ClientId.Should().Be("test-client");
+        options.ClientSecret.Should().Be("test-secret");
+        options.TokenEndpoint.Should().Be("https://auth.example.com/token");
+        options.RevocationEndpoint.Should().Be("https://auth.example.com/revoke");
+        options.IntrospectionEndpoint.Should().Be("https://auth.example.com/introspect");
+        options.RequireHttps.Should().BeTrue();
+        options.ExpirySafetyMarginSeconds.Should().Be(90);
+    }
+
+    [Fact]
+    public void AddMudHttpOAuth2FromConfiguration_BindsClientSecretProviderName()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpOAuth2:ClientId"] = "test-client",
+                ["MudHttpOAuth2:ClientSecretProviderName"] = "vault-provider",
+                ["MudHttpOAuth2:TokenEndpoint"] = "https://auth.example.com/token",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddMudHttpOAuth2FromConfiguration(config);
+
+        // Assert
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<OAuth2Options>>().Value;
+        options.ClientId.Should().Be("test-client");
+        options.ClientSecretProviderName.Should().Be("vault-provider");
+        options.ClientSecret.Should().BeEmpty();
+        options.TokenEndpoint.Should().Be("https://auth.example.com/token");
+    }
+
+    [Fact]
     public void AddMudHttpTokenRecoveryFromConfiguration_BindsTokenRecoveryOptions()
     {
         // Arrange
@@ -333,5 +394,104 @@ public class ConfigurationBindingTests
         options.CleanupIntervalSeconds.Should().Be(120);
         options.SlidingExpirationSeconds.Should().Be(1800);
         options.CompactionPercentage.Should().Be(0.1);
+    }
+
+    [Fact]
+    public void AddMudHttpUserTokenCacheFromConfiguration_UsesSectionNameConstant()
+    {
+        // Arrange - 使用 UserTokenCacheOptions.SectionName 作为默认路径
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpUserTokenCache:SizeLimit"] = "2000",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+
+        // Act - 不传 sectionPath，使用默认值 UserTokenCacheOptions.SectionName
+        services.AddMudHttpUserTokenCacheFromConfiguration(config);
+
+        // Assert
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<UserTokenCacheOptions>>().Value;
+        options.SizeLimit.Should().Be(2000);
+    }
+
+    [Fact]
+    public void AddTokenRefreshBackgroundService_FromConfiguration_BindsOptions()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["TokenRefreshBackground:Enabled"] = "true",
+                ["TokenRefreshBackground:RefreshIntervalSeconds"] = "120",
+                ["TokenRefreshBackground:RetryDelaySeconds"] = "30",
+                ["TokenRefreshBackground:StopOnError"] = "true",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        services.AddTokenRefreshBackgroundService(config);
+
+        // Assert
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<TokenRefreshBackgroundOptions>>().Value;
+        options.Enabled.Should().BeTrue();
+        options.RefreshIntervalSeconds.Should().Be(120);
+        options.RetryDelaySeconds.Should().Be(30);
+        options.StopOnError.Should().BeTrue();
+    }
+
+    [Fact]
+    public void AddTokenRefreshBackgroundService_FromConfiguration_WithCustomSectionPath_Works()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Custom:Refresh:Enabled"] = "true",
+                ["Custom:Refresh:RefreshIntervalSeconds"] = "600",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        services.AddTokenRefreshBackgroundService(config, "Custom:Refresh");
+
+        // Assert
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<TokenRefreshBackgroundOptions>>().Value;
+        options.Enabled.Should().BeTrue();
+        options.RefreshIntervalSeconds.Should().Be(600);
+    }
+
+    [Fact]
+    public void AddTokenRefreshBackgroundService_FromConfiguration_WithEmptySection_UsesDefaults()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>())
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        services.AddTokenRefreshBackgroundService(config);
+
+        // Assert - 空配置节应使用默认值
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<TokenRefreshBackgroundOptions>>().Value;
+        options.Enabled.Should().BeFalse();
+        options.RefreshIntervalSeconds.Should().Be(300);
+        options.RetryDelaySeconds.Should().Be(60);
+        options.StopOnError.Should().BeFalse();
     }
 }

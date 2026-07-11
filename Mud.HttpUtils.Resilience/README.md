@@ -33,6 +33,12 @@ Mud.HttpUtils.Resilience 是 Mud.HttpUtils 的弹性策略层，基于 Polly 提
 - 超时的请求会被熔断器统计
 - 重试策略在所有内层策略之外
 
+> **超时配置说明**：`HttpClient.Timeout`（通过 `MudHttpClientOptions.TimeoutSeconds` 配置）与 Polly 的 `TimeoutOptions.TimeoutSeconds` 是两个独立的超时机制。
+> - `HttpClient.Timeout` 是 .NET HttpClient 内置的全局超时，作用于整个请求生命周期（包括重试）。
+> - `TimeoutOptions.TimeoutSeconds` 是 Polly 的单次请求超时，仅作用于单次尝试（每次重试独立计时）。
+> - 建议将 `HttpClient.Timeout` 设置为略大于 `Retry.MaxRetryAttempts × TimeoutOptions.TimeoutSeconds + 总重试延迟`，避免 HttpClient 超时打断正常的重试流程。
+> - 启用弹性策略后，如果未显式设置 `HttpClient.Timeout`，Polly 超时策略将作为主要超时控制。
+
 ### 请求克隆与大小限制
 
 `HttpRequestMessageCloner` 用于在重试时克隆请求消息（因为 `HttpRequestMessage` 不可重用）。新增内容大小限制功能：

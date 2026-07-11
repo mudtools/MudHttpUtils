@@ -674,6 +674,9 @@ public static class HttpClientServiceCollectionExtensions
             throw new ArgumentNullException(nameof(configuration));
 
         services.Configure<OAuth2Options>(configuration.GetSection(sectionPath));
+        // 注册后置配置器，在选项绑定后检查 ClientSecret 与 ClientSecretProviderName 的互斥冲突
+        services.TryAddSingleton<IPostConfigureOptions<OAuth2Options>>(sp =>
+            new OAuth2OptionsPostConfigure(sp.GetService<ILogger<OAuth2OptionsPostConfigure>>()));
         return services;
     }
 
@@ -704,13 +707,13 @@ public static class HttpClientServiceCollectionExtensions
     /// </summary>
     /// <param name="services">服务集合。</param>
     /// <param name="configuration">配置实例。</param>
-    /// <param name="sectionPath">配置节点路径，默认 <c>"MudHttpUserTokenCache"</c>。</param>
+    /// <param name="sectionPath">配置节点路径，默认 <see cref="UserTokenCacheOptions.SectionName"/>。</param>
     /// <returns>服务集合（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
     public static IServiceCollection AddMudHttpUserTokenCacheFromConfiguration(
         this IServiceCollection services,
         IConfiguration configuration,
-        string sectionPath = "MudHttpUserTokenCache")
+        string sectionPath = UserTokenCacheOptions.SectionName)
     {
         if (services == null)
             throw new ArgumentNullException(nameof(services));
