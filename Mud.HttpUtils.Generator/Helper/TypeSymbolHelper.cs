@@ -629,37 +629,21 @@ internal static class TypeSymbolHelper
     /// </summary>
     /// <param name="typeSymbol">类型符号</param>
     /// <returns>如果是异步类型返回 true，否则返回 false</returns>
+    /// <remarks>
+    /// 注意：不通过 <see cref="INamespaceSymbol"/> 校验命名空间。
+    /// 在 <c>ForAttributeWithMetadataName</c> 的 transform 上下文中，Roslyn 返回的
+    /// <see cref="INamedTypeSymbol.ContainingNamespace"/> 可能是全局命名空间而非实际命名空间
+    /// （<c>IsGlobalNamespace == true</c>），导致命名空间检查不可靠。
+    /// 此处仅通过类型名 + 类型参数数量判断，与 Roslyn 源生成器上下文兼容。
+    /// </remarks>
     public static bool IsAsyncType(ITypeSymbol typeSymbol)
     {
         if (typeSymbol is INamedTypeSymbol namedType)
         {
-            return IsTaskOrValueTask(namedType);
+            return namedType.Name == "Task" && (namedType.TypeArguments.Length == 0 || namedType.TypeArguments.Length == 1) ||
+                   namedType.Name == "ValueTask" && (namedType.TypeArguments.Length == 0 || namedType.TypeArguments.Length == 1);
         }
         return false;
-    }
-
-    /// <summary>
-    /// 校验类型符号是否为 <see cref="System.Threading.Tasks.Task"/> 或
-    /// <see cref="System.Threading.Tasks.ValueTask"/>（含泛型版本）。
-    /// </summary>
-    /// <remarks>
-    /// Roslyn 的 <see cref="SpecialType"/> 枚举不包含 Task/ValueTask（它们不属于基础类型系统），
-    /// 因此通过名称 + 命名空间校验，避免用户自定义同名类型（非 <c>System.Threading.Tasks</c>
-    /// 命名空间）被误判为异步类型。
-    /// </remarks>
-    private static bool IsTaskOrValueTask(INamedTypeSymbol namedType)
-    {
-        var originalDef = namedType.OriginalDefinition;
-        var name = originalDef.Name;
-        if (name != "Task" && name != "ValueTask")
-            return false;
-
-        if (originalDef.TypeArguments.Length > 1)
-            return false;
-
-        // 校验命名空间，避免用户自定义同名类型被误判
-        var ns = originalDef.ContainingNamespace?.ToDisplayString();
-        return ns == "System.Threading.Tasks";
     }
 
     /// <summary>
@@ -673,7 +657,7 @@ internal static class TypeSymbolHelper
         {
             // 如果是 Task 或 ValueTask 而不是 Task<T> 或 ValueTask<T>，返回 void
             if (asyncType is INamedTypeSymbol simpleType &&
-                IsTaskOrValueTask(simpleType) &&
+                (simpleType.Name == "Task" || simpleType.Name == "ValueTask") &&
                 simpleType.TypeArguments.Length == 0)
             {
                 return "void";
