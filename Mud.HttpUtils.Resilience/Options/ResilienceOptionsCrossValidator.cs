@@ -46,8 +46,15 @@ internal sealed class ResilienceOptionsCrossValidator : IPostConfigureOptions<Re
     /// <inheritdoc />
     public void PostConfigure(string? name, ResilienceOptions? options)
     {
-        if (options == null || _appOptions == null)
+        if (options == null)
             return;
+
+        if (_appOptions == null)
+        {
+            _logger.LogDebug(
+                "未检测到 MudHttpClientApplicationOptions（未通过 AddMudHttpClientsFromConfiguration 注册），跳过 HttpClient.Timeout 与 Polly 重试/超时的跨选项校验。");
+            return;
+        }
 
         // 仅当重试和超时均启用时才校验
         if (!options.Retry.Enabled || !options.Timeout.Enabled)

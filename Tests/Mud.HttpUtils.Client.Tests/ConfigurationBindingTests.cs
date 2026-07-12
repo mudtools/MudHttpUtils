@@ -644,6 +644,354 @@ public class ConfigurationBindingTests
         var warnings = loggerProvider.GetLogRecords(LogLevel.Warning);
         warnings.Should().BeEmpty();
     }
+
+    // ========== ResponseCacheOptions 绑定测试 ==========
+
+    [Fact]
+    public void AddMudHttpClientsFromConfiguration_BindsResponseCacheOptions()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpClients:Clients:api:BaseAddress"] = "https://api.example.com",
+                ["MudHttpClients:ResponseCache:MaxCacheSize"] = "5000",
+                ["MudHttpClients:ResponseCache:CleanupIntervalSeconds"] = "30",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddMudHttpClientsFromConfiguration(config);
+
+        // Assert
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<MudHttpClientApplicationOptions>>().Value;
+        options.ResponseCache.MaxCacheSize.Should().Be(5000);
+        options.ResponseCache.CleanupIntervalSeconds.Should().Be(30);
+    }
+
+    [Fact]
+    public void AddMudHttpClientsFromConfiguration_ResponseCacheDefaults_WhenNotConfigured()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpClients:Clients:api:BaseAddress"] = "https://api.example.com",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddMudHttpClientsFromConfiguration(config);
+
+        // Assert
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<MudHttpClientApplicationOptions>>().Value;
+        options.ResponseCache.MaxCacheSize.Should().Be(ResponseCacheOptions.DefaultMaxCacheSize);
+        options.ResponseCache.CleanupIntervalSeconds.Should().Be(ResponseCacheOptions.DefaultCleanupIntervalSeconds);
+    }
+
+    [Fact]
+    public void ResponseCacheOptions_MaxCacheSize_Setter_ThrowsOnZeroOrNegative()
+    {
+        // Arrange
+        var options = new ResponseCacheOptions();
+
+        // Act & Assert
+        var actZero = () => options.MaxCacheSize = 0;
+        actZero.Should().Throw<ArgumentOutOfRangeException>();
+
+        var actNegative = () => options.MaxCacheSize = -1;
+        actNegative.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void ResponseCacheOptions_CleanupIntervalSeconds_Setter_ThrowsOnZeroOrNegative()
+    {
+        // Arrange
+        var options = new ResponseCacheOptions();
+
+        // Act & Assert
+        var actZero = () => options.CleanupIntervalSeconds = 0;
+        actZero.Should().Throw<ArgumentOutOfRangeException>();
+
+        var actNegative = () => options.CleanupIntervalSeconds = -10;
+        actNegative.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    // ========== MudHttpClientOptions.TimeoutSeconds 校验测试 ==========
+
+    [Fact]
+    public void MudHttpClientOptions_TimeoutSeconds_Setter_ThrowsOnZeroOrNegative()
+    {
+        // Arrange
+        var options = new MudHttpClientOptions();
+
+        // Act & Assert
+        var actZero = () => options.TimeoutSeconds = 0;
+        actZero.Should().Throw<ArgumentOutOfRangeException>();
+
+        var actNegative = () => options.TimeoutSeconds = -5;
+        actNegative.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void MudHttpClientOptions_TimeoutSeconds_AcceptsNullAndPositive()
+    {
+        // Arrange
+        var options = new MudHttpClientOptions();
+
+        // Act & Assert — null 和正整数应该被接受
+        options.TimeoutSeconds = null;
+        options.TimeoutSeconds.Should().BeNull();
+
+        options.TimeoutSeconds = 30;
+        options.TimeoutSeconds.Should().Be(30);
+    }
+
+    // ========== OAuth2Options HTTPS 校验测试 ==========
+
+    [Fact]
+    public void OAuth2OptionsValidator_RevocationEndpoint_NotHttps_FailsWhenRequireHttps()
+    {
+        // Arrange
+        var options = new OAuth2Options
+        {
+            ClientId = "test-client",
+            ClientSecret = "secret",
+            TokenEndpoint = "https://auth.example.com/token",
+            RevocationEndpoint = "http://auth.example.com/revoke",
+            RequireHttps = true,
+        };
+        var validator = new OAuth2OptionsValidator();
+
+        // Act
+        var result = validator.Validate(null, options);
+
+        // Assert
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("RevocationEndpoint");
+        result.FailureMessage.Should().Contain("HTTPS");
+    }
+
+    [Fact]
+    public void OAuth2OptionsValidator_IntrospectionEndpoint_NotHttps_FailsWhenRequireHttps()
+    {
+        // Arrange
+        var options = new OAuth2Options
+        {
+            ClientId = "test-client",
+            ClientSecret = "secret",
+            TokenEndpoint = "https://auth.example.com/token",
+            IntrospectionEndpoint = "http://auth.example.com/introspect",
+            RequireHttps = true,
+        };
+        var validator = new OAuth2OptionsValidator();
+
+        // Act
+        var result = validator.Validate(null, options);
+
+        // Assert
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("IntrospectionEndpoint");
+        result.FailureMessage.Should().Contain("HTTPS");
+    }
+
+    [Fact]
+    public void OAuth2OptionsValidator_AllEndpointsHttps_SucceedsWhenRequireHttps()
+    {
+        // Arrange
+        var options = new OAuth2Options
+        {
+            ClientId = "test-client",
+            ClientSecret = "secret",
+            TokenEndpoint = "https://auth.example.com/token",
+            RevocationEndpoint = "https://auth.example.com/revoke",
+            IntrospectionEndpoint = "https://auth.example.com/introspect",
+            RequireHttps = true,
+        };
+        var validator = new OAuth2OptionsValidator();
+
+        // Act
+        var result = validator.Validate(null, options);
+
+        // Assert
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void OAuth2OptionsValidator_EndpointsNotCheckedWhenRequireHttpsFalse()
+    {
+        // Arrange
+        var options = new OAuth2Options
+        {
+            ClientId = "test-client",
+            ClientSecret = "secret",
+            TokenEndpoint = "http://auth.example.com/token",
+            RevocationEndpoint = "http://auth.example.com/revoke",
+            IntrospectionEndpoint = "http://auth.example.com/introspect",
+            RequireHttps = false,
+        };
+        var validator = new OAuth2OptionsValidator();
+
+        // Act
+        var result = validator.Validate(null, options);
+
+        // Assert
+        result.Succeeded.Should().BeTrue();
+    }
+
+    // ========== TokenRecoveryOptions 校验测试 ==========
+
+    [Fact]
+    public void TokenRecoveryOptions_RecoveryMaxRetries_Setter_ThrowsOnNegative()
+    {
+        // Arrange
+        var options = new TokenRecoveryOptions();
+
+        // Act & Assert
+        var act = () => options.RecoveryMaxRetries = -1;
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void TokenRecoveryOptions_TokenScheme_Setter_ThrowsOnEmpty()
+    {
+        // Arrange
+        var options = new TokenRecoveryOptions();
+
+        // Act & Assert
+        var actNull = () => options.TokenScheme = null!;
+        actNull.Should().Throw<ArgumentException>();
+
+        var actEmpty = () => options.TokenScheme = "";
+        actEmpty.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void TokenRecoveryOptions_RecoveryMaxRetries_AcceptsZero()
+    {
+        // Arrange
+        var options = new TokenRecoveryOptions();
+
+        // Act
+        options.RecoveryMaxRetries = 0;
+
+        // Assert — 0 表示禁用恢复重试，应该被接受
+        options.RecoveryMaxRetries.Should().Be(0);
+    }
+
+    [Fact]
+    public void TokenRecoveryOptionsValidator_WithValidOptions_Succeeds()
+    {
+        // Arrange
+        var options = new TokenRecoveryOptions { RecoveryMaxRetries = 1, TokenScheme = "Bearer" };
+        var validator = new TokenRecoveryOptionsValidator();
+
+        // Act
+        var result = validator.Validate(null, options);
+
+        // Assert
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void TokenRecoveryOptionsValidator_WithNullOptions_Succeeds()
+    {
+        // Arrange
+        var validator = new TokenRecoveryOptionsValidator();
+
+        // Act
+        var result = validator.Validate(null, null);
+
+        // Assert
+        result.Succeeded.Should().BeTrue();
+    }
+
+    // ========== TokenRefreshBackgroundOptions 交叉校验测试 ==========
+
+    [Fact]
+    public void TokenRefreshBackgroundOptionsValidator_RetryDelayExceedsInterval_Fails()
+    {
+        // Arrange
+        var options = new TokenRefreshBackgroundOptions
+        {
+            Enabled = true,
+            RefreshIntervalSeconds = 60,
+            RetryDelaySeconds = 120,
+        };
+        var validator = new TokenRefreshBackgroundOptionsValidator();
+
+        // Act
+        var result = validator.Validate(null, options);
+
+        // Assert
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("RetryDelaySeconds");
+        result.FailureMessage.Should().Contain("RefreshIntervalSeconds");
+    }
+
+    [Fact]
+    public void TokenRefreshBackgroundOptionsValidator_RetryDelayEqualsInterval_Fails()
+    {
+        // Arrange
+        var options = new TokenRefreshBackgroundOptions
+        {
+            Enabled = true,
+            RefreshIntervalSeconds = 60,
+            RetryDelaySeconds = 60,
+        };
+        var validator = new TokenRefreshBackgroundOptionsValidator();
+
+        // Act
+        var result = validator.Validate(null, options);
+
+        // Assert
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("RetryDelaySeconds");
+    }
+
+    [Fact]
+    public void TokenRefreshBackgroundOptionsValidator_RetryDelayLessThanInterval_Succeeds()
+    {
+        // Arrange
+        var options = new TokenRefreshBackgroundOptions
+        {
+            Enabled = true,
+            RefreshIntervalSeconds = 300,
+            RetryDelaySeconds = 60,
+        };
+        var validator = new TokenRefreshBackgroundOptionsValidator();
+
+        // Act
+        var result = validator.Validate(null, options);
+
+        // Assert
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void TokenRefreshBackgroundOptionsValidator_Disabled_SkipsValidation()
+    {
+        // Arrange
+        var options = new TokenRefreshBackgroundOptions
+        {
+            Enabled = false,
+            RefreshIntervalSeconds = 10,
+            RetryDelaySeconds = 999,
+        };
+        var validator = new TokenRefreshBackgroundOptionsValidator();
+
+        // Act
+        var result = validator.Validate(null, options);
+
+        // Assert — 未启用时跳过交叉校验
+        result.Succeeded.Should().BeTrue();
+    }
 }
 
 /// <summary>

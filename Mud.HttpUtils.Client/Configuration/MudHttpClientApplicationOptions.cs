@@ -71,7 +71,7 @@ public class MudHttpClientApplicationOptions
     /// HTTP 响应缓存配置
     /// </summary>
     /// <remarks>
-    /// <para>HC-01 修复：将原硬编码的 <see cref="MemoryHttpResponseCache"/> 容量(1000)与 TTL(60秒)抽为可配置项。</para>
+    /// <para>HC-01 修复：将原硬编码的 <see cref="MemoryHttpResponseCache"/> 容量(1000)与清理间隔(60秒)抽为可配置项。</para>
     /// <para>仅在未手动注册 <see cref="IHttpResponseCache"/> 实现时生效（TryAddSingleton 语义）。</para>
     /// <para>配置示例：</para>
     /// <code>
@@ -103,13 +103,26 @@ public class ResponseCacheOptions
     /// </summary>
     public const int DefaultCleanupIntervalSeconds = 60;
 
-    /// <summary>
-    /// 最大缓存条目数，默认 <see cref="DefaultMaxCacheSize"/>（1000）。
-    /// </summary>
-    public int MaxCacheSize { get; set; } = DefaultMaxCacheSize;
+    private int _maxCacheSize = DefaultMaxCacheSize;
+    private int _cleanupIntervalSeconds = DefaultCleanupIntervalSeconds;
 
     /// <summary>
-    /// 清理间隔（秒），默认 <see cref="DefaultCleanupIntervalSeconds"/>（60 秒）。
+    /// 最大缓存条目数，默认 <see cref="DefaultMaxCacheSize"/>（1000）。必须大于 0。
     /// </summary>
-    public int CleanupIntervalSeconds { get; set; } = DefaultCleanupIntervalSeconds;
+    /// <exception cref="ArgumentOutOfRangeException">设置小于等于 0 的值时抛出。</exception>
+    public int MaxCacheSize
+    {
+        get => _maxCacheSize;
+        set => _maxCacheSize = value > 0 ? value : throw new ArgumentOutOfRangeException(nameof(MaxCacheSize), "最大缓存条目数必须大于 0。");
+    }
+
+    /// <summary>
+    /// 清理间隔（秒），默认 <see cref="DefaultCleanupIntervalSeconds"/>（60 秒）。必须大于 0。
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">设置小于等于 0 的值时抛出。</exception>
+    public int CleanupIntervalSeconds
+    {
+        get => _cleanupIntervalSeconds;
+        set => _cleanupIntervalSeconds = value > 0 ? value : throw new ArgumentOutOfRangeException(nameof(CleanupIntervalSeconds), "清理间隔必须大于 0 秒。");
+    }
 }

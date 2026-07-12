@@ -313,7 +313,10 @@ services.AddHttpResponseCache(maxCacheSize: 2000, cleanupIntervalSeconds: 120);
 services.AddMudHttpClientsFromConfiguration(configuration);
 ```
 
-> 当同时调用 `AddHttpResponseCache` 并在 `MudHttpClients:ResponseCache` 配置节中设置值时，配置节绑定的值优先（在 `AddMudHttpClientsFromConfiguration` 内部会覆盖 `AddHttpResponseCache` 的默认参数）。
+> 当同时调用 `AddHttpResponseCache` 并在 `MudHttpClients:ResponseCache` 配置节中设置值时，两者均使用 `TryAddSingleton` 语义注册——**先注册者生效**。通常建议二选一：
+> - 如需从配置文件控制缓存参数，使用 `AddMudHttpClientsFromConfiguration`（内部自动读取 `ResponseCache` 子节）。
+> - 如需代码硬编码缓存参数，使用 `AddHttpResponseCache(maxCacheSize, cleanupIntervalSeconds)`。
+> - 如需完全自定义缓存实现，直接注册 `IHttpResponseCache`。
 
 ### 令牌恢复配置
 
@@ -322,8 +325,8 @@ services.AddMudHttpClientsFromConfiguration(configuration);
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `Enabled` | `bool` | `true` | 是否启用令牌恢复机制 |
-| `RecoveryMaxRetries` | `int` | `1` | 令牌恢复的最大重试次数 |
-| `TokenScheme` | `string` | `"Bearer"` | 令牌的认证方案 |
+| `RecoveryMaxRetries` | `int` | `1` | 令牌恢复的最大重试次数（必须 >= 0，启动时由 `TokenRecoveryOptionsValidator` 校验） |
+| `TokenScheme` | `string` | `"Bearer"` | 令牌的认证方案（不能为空，启动时校验） |
 
 ```csharp
 // 通过代码配置
@@ -370,7 +373,9 @@ services.AddTokenRefreshBackgroundService(options =>
 });
 ```
 
-> `RefreshIntervalSeconds` 和 `RetryDelaySeconds` 设置为 0 或负数时将抛出 `ArgumentOutOfRangeException`。
+> `RecoveryMaxRetries` 设置为负数时将抛出 `ArgumentOutOfRangeException`。`TokenScheme` 设置为 null 或空字符串时将抛出 `ArgumentException`。此外，`AddMudHttpTokenRecoveryFromConfiguration` 会注册 `TokenRecoveryOptionsValidator`，在启动时自动校验上述约束。
+>
+> `RefreshIntervalSeconds` 和 `RetryDelaySeconds` 设置为 0 或负数时将抛出 `ArgumentOutOfRangeException`。此外，`AddTokenRefreshBackgroundService` 和 `AddTokenRefreshBackgroundServiceFromConfiguration` 会注册 `TokenRefreshBackgroundOptionsValidator`，当 `RetryDelaySeconds` 大于等于 `RefreshIntervalSeconds` 时返回校验失败（重试延迟跨越下一个刷新周期可能导致刷新逻辑混乱）。
 
 ### 应用上下文
 
@@ -636,6 +641,10 @@ sequenceDiagram
   "MudHttpClients": {
     "AllowedDomains": [ "api.example.com", "cdn.example.com" ],
     "DefaultClientName": "Default",
+    "ResponseCache": {
+      "MaxCacheSize": 2000,
+      "CleanupIntervalSeconds": 120
+    },
     "Clients": {
       "Default": {
         "BaseAddress": "https://api.example.com",

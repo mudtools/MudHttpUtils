@@ -22,7 +22,8 @@ Mud.HttpUtils.Resilience 是 Mud.HttpUtils 的弹性策略层，基于 Polly 提
 | `ResiliencePolicyResolver` | `IResiliencePolicyResolver` 实现，解耦 `IHttpRequestExecutor` 与具体弹性策略，封装请求克隆逻辑 |
 | `AppResiliencePolicyResolver` | 按应用（App）解析弹性策略的工厂，为每个 App 维护独立的策略提供器与解析器 |
 | `HttpRequestMessageCloner` <sup>internal</sup> | HTTP 请求消息克隆工具（internal），确保重试安全，提供 `CloneAsync` / `TryCloneAsync` |
-| `ResilienceOptionsValidator` | `IValidateOptions<ResilienceOptions>` 实现，启动时执行跨选项校验 |
+| `ResilienceOptionsValidator` | `IValidateOptions<ResilienceOptions>` 实现，校验重试延迟与超时的跨选项冲突 |
+| `ResilienceOptionsCrossValidator` | `IPostConfigureOptions<ResilienceOptions>` 实现，检查 `HttpClient.Timeout` 与 Polly 重试/超时的潜在冲突，记录警告日志 |
 | `ResilienceOptions` | 弹性策略配置选项 |
 | `ResilienceConstants` | 弹性策略常量定义（含 `SkipResiliencePropertyKey`，用于避免方法级策略与全局装饰器双重包装） |
 | `RetryDiagnosticPayload` / `TimeoutDiagnosticPayload` | 诊断事件负载类型，支持分布式追踪 |
@@ -170,7 +171,7 @@ flowchart TD
 | `DelayMilliseconds` | `int` | `1000` | 基础延迟时间（毫秒） |
 | `UseExponentialBackoff` | `bool` | `true` | 是否使用指数退避 |
 | `RetryStatusCodes` | `int[]?` | `null`（运行时回退到 `[408, 429, 500, 502, 503, 504]`） | 触发重试的 HTTP 状态码 |
-| `OnRetry` | `Func<Exception?, int, TimeSpan, Task>?` | `null` | 重试回调函数 |
+| `OnRetry` | `Func<Exception?, int, TimeSpan, Task>?` | `null` | 重试回调函数（仅支持代码配置，无法从 IConfiguration 绑定） |
 
 ### TimeoutOptions
 
@@ -281,14 +282,30 @@ services.AddMudHttpResilienceDecorator(configuration, "MudHttpResilience");
 
 > 高级模式下 `FailureThreshold = 50` 表示采样窗口内失败率达 50% 时触发熔断，至少需要 `MinimumThroughput` 次请求。
 
-### 配置校验
+> **配置热更新**：当通过 `IConfiguration` 绑定（如 `AddMudHttpResilience(configuration)`）时，`ResilienceOptions` 支持 `IOptionsMonitor<ResilienceOptions>` 热更新。修改 `appsettings.json` 中的弹性策略配置后，无需重启应用即可生效（策略提供器会在下次请求时读取最新配置）。
+>
+> **注意**：`OnRetry` 回调委托为代码类型，无法从配置文件绑定。如需设置 `OnRetry`，请使用 `Action<ResilienceOptions>` 委托重载。
+
+### 配置校验与跨选项警告
+
+本包提供两层配置校验机制：
+
+#### 1. 启动时校验 — `ResilienceOptionsValidator`
 
 `ResilienceOptionsValidator` 实现了 `IValidateOptions<ResilienceOptions>`，在选项绑定时自动执行跨选项校验：
 
 - 当 `Retry.Enabled` 和 `Timeout.Enabled` 同时为 `true` 时，校验重试总延迟（含指数退避）是否超过单次超时时间 `Timeout.TimeoutSeconds`。超出时 `IOptions.Validate` 返回失败，应用启动抛出异常。
 - 当 `Retry.Enabled` 或 `Timeout.Enabled` 为 `false` 时，跳过此校验。
 
-**已知限制**：此校验器无法检测 `HttpClient.Timeout`（通过 `MudHttpClientOptions.TimeoutSeconds` 配置）与 Polly 超时的跨选项冲突。建议用户手动确保 `HttpClient.Timeout` 略大于 `Retry.MaxRetryAttempts × Timeout.TimeoutSeconds + 总重试延迟`，避免 HttpClient 超时打断正常的重试流程。详见上方"超时配置说明"。
+#### 2. 运行时跨选项警告 — `ResilienceOptionsCrossValidator`
+
+`ResilienceOptionsCrossValidator` 实现了 `IPostConfigureOptions<ResilienceOptions>`，在选项绑定时检查 `HttpClient.Timeout`（通过 `MudHttpClientApplicationOptions.Clients[*].TimeoutSeconds` 配置）与 Polly 重试/超时策略之间的潜在冲突：
+
+- 计算所有已配置客户端中最小的 `TimeoutSeconds`，与重试总时间预估（重试延迟 + 重试次数 × 单次超时）进行比较。
+- 当 `HttpClient.Timeout` 小于重试总时间预估时，记录 **警告日志**（不阻止应用启动）。
+- 仅当同时注册了 `MudHttpClientApplicationOptions`（即通过 `AddMudHttpClientsFromConfiguration` 注册）时生效。
+
+> **说明**：此校验器仅记录警告而非阻止启动，因为某些场景下用户可能有意设置较短的全局超时。建议参考警告日志调整 `TimeoutSeconds` 配置。
 
 ### 一站式注册
 

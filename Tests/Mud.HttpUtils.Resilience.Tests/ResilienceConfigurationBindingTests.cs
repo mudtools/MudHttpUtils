@@ -5,6 +5,8 @@
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Mud.HttpUtils.Resilience.Tests;
@@ -258,5 +260,212 @@ public class ResilienceConfigurationBindingTests
         var services = new ServiceCollection();
         var act = () => services.AddMudHttpResilience((IConfiguration)null!);
         act.Should().Throw<ArgumentNullException>();
+    }
+
+    // ========== ResilienceOptions 热更新测试 ==========
+
+    [Fact]
+    public void AddMudHttpResilience_FromConfiguration_RegistersIOptionsMonitor()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpResilience:Retry:MaxRetryAttempts"] = "3",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddMudHttpResilience(config);
+
+        // Assert
+        var provider = services.BuildServiceProvider();
+        var monitor = provider.GetService<IOptionsMonitor<ResilienceOptions>>();
+        monitor.Should().NotBeNull();
+        monitor!.CurrentValue.Retry.MaxRetryAttempts.Should().Be(3);
+    }
+
+    // ========== ResilienceOptionsCrossValidator 测试 ==========
+
+    [Fact]
+    public void CrossValidator_WhenHttpClientTimeoutLessThanRetryTotal_LogsWarning()
+    {
+        // Arrange — HttpClient.Timeout = 10 秒，重试总时间 = 3次×30秒超时 + 延迟 = ~93 秒
+        var appOptions = Microsoft.Extensions.Options.Options.Create(new MudHttpClientApplicationOptions
+        {
+            Clients =
+            {
+                ["api"] = new MudHttpClientOptions { TimeoutSeconds = 10 }
+            }
+        });
+        var logger = new TestLogger<ResilienceOptionsCrossValidator>();
+        var validator = new ResilienceOptionsCrossValidator(appOptions, logger);
+
+        var resilienceOptions = new ResilienceOptions
+        {
+            Retry = { Enabled = true, MaxRetryAttempts = 3, DelayMilliseconds = 1000, UseExponentialBackoff = true },
+            Timeout = { Enabled = true, TimeoutSeconds = 30 }
+        };
+
+        // Act
+        validator.PostConfigure(null, resilienceOptions);
+
+        // Assert
+        logger.Warnings.Should().NotBeEmpty();
+        logger.Warnings[0].Should().Contain("HttpClient.Timeout");
+    }
+
+    [Fact]
+    public void CrossValidator_WhenHttpClientTimeoutSufficient_DoesNotLogWarning()
+    {
+        // Arrange — HttpClient.Timeout = 300 秒，远超重试总时间
+        var appOptions = Microsoft.Extensions.Options.Options.Create(new MudHttpClientApplicationOptions
+        {
+            Clients =
+            {
+                ["api"] = new MudHttpClientOptions { TimeoutSeconds = 300 }
+            }
+        });
+        var logger = new TestLogger<ResilienceOptionsCrossValidator>();
+        var validator = new ResilienceOptionsCrossValidator(appOptions, logger);
+
+        var resilienceOptions = new ResilienceOptions
+        {
+            Retry = { Enabled = true, MaxRetryAttempts = 3, DelayMilliseconds = 1000, UseExponentialBackoff = true },
+            Timeout = { Enabled = true, TimeoutSeconds = 30 }
+        };
+
+        // Act
+        validator.PostConfigure(null, resilienceOptions);
+
+        // Assert
+        logger.Warnings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void CrossValidator_WhenAppOptionsNull_LogsDebugAndSkips()
+    {
+        // Arrange — 不提供 appOptions
+        var logger = new TestLogger<ResilienceOptionsCrossValidator>();
+        var validator = new ResilienceOptionsCrossValidator(null, logger);
+
+        var resilienceOptions = new ResilienceOptions
+        {
+            Retry = { Enabled = true, MaxRetryAttempts = 3, DelayMilliseconds = 1000 },
+            Timeout = { Enabled = true, TimeoutSeconds = 30 }
+        };
+
+        // Act
+        validator.PostConfigure(null, resilienceOptions);
+
+        // Assert
+        logger.Warnings.Should().BeEmpty();
+        logger.Debugs.Should().NotBeEmpty();
+        logger.Debugs[0].Should().Contain("MudHttpClientApplicationOptions");
+    }
+
+    [Fact]
+    public void CrossValidator_WhenRetryDisabled_SkipsCheck()
+    {
+        // Arrange
+        var appOptions = Microsoft.Extensions.Options.Options.Create(new MudHttpClientApplicationOptions
+        {
+            Clients =
+            {
+                ["api"] = new MudHttpClientOptions { TimeoutSeconds = 1 }
+            }
+        });
+        var logger = new TestLogger<ResilienceOptionsCrossValidator>();
+        var validator = new ResilienceOptionsCrossValidator(appOptions, logger);
+
+        var resilienceOptions = new ResilienceOptions
+        {
+            Retry = { Enabled = false, MaxRetryAttempts = 3, DelayMilliseconds = 1000 },
+            Timeout = { Enabled = true, TimeoutSeconds = 30 }
+        };
+
+        // Act
+        validator.PostConfigure(null, resilienceOptions);
+
+        // Assert
+        logger.Warnings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void CrossValidator_WhenTimeoutDisabled_SkipsCheck()
+    {
+        // Arrange
+        var appOptions = Microsoft.Extensions.Options.Options.Create(new MudHttpClientApplicationOptions
+        {
+            Clients =
+            {
+                ["api"] = new MudHttpClientOptions { TimeoutSeconds = 1 }
+            }
+        });
+        var logger = new TestLogger<ResilienceOptionsCrossValidator>();
+        var validator = new ResilienceOptionsCrossValidator(appOptions, logger);
+
+        var resilienceOptions = new ResilienceOptions
+        {
+            Retry = { Enabled = true, MaxRetryAttempts = 3, DelayMilliseconds = 1000 },
+            Timeout = { Enabled = false, TimeoutSeconds = 30 }
+        };
+
+        // Act
+        validator.PostConfigure(null, resilienceOptions);
+
+        // Assert
+        logger.Warnings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void CrossValidator_WhenNoClientTimeoutConfigured_SkipsCheck()
+    {
+        // Arrange — 客户端未设置 TimeoutSeconds
+        var appOptions = Microsoft.Extensions.Options.Options.Create(new MudHttpClientApplicationOptions
+        {
+            Clients =
+            {
+                ["api"] = new MudHttpClientOptions { BaseAddress = "https://api.example.com" }
+            }
+        });
+        var logger = new TestLogger<ResilienceOptionsCrossValidator>();
+        var validator = new ResilienceOptionsCrossValidator(appOptions, logger);
+
+        var resilienceOptions = new ResilienceOptions
+        {
+            Retry = { Enabled = true, MaxRetryAttempts = 3, DelayMilliseconds = 1000 },
+            Timeout = { Enabled = true, TimeoutSeconds = 30 }
+        };
+
+        // Act
+        validator.PostConfigure(null, resilienceOptions);
+
+        // Assert
+        logger.Warnings.Should().BeEmpty();
+    }
+}
+
+/// <summary>
+/// 测试用 ILogger，收集日志记录以供断言。
+/// </summary>
+internal sealed class TestLogger<T> : ILogger<T>
+{
+    public List<string> Warnings { get; } = new();
+    public List<string> Debugs { get; } = new();
+
+    public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+    public bool IsEnabled(LogLevel logLevel) => true;
+
+    public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+    {
+        var message = formatter(state, exception);
+        if (logLevel == LogLevel.Warning)
+            Warnings.Add(message);
+        else if (logLevel == LogLevel.Debug)
+            Debugs.Add(message);
     }
 }

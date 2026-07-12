@@ -104,7 +104,8 @@ public static class ServiceCollectionExtensions
         if (configuration == null)
             throw new ArgumentNullException(nameof(configuration));
 
-        services.Configure<ResilienceOptions>(options => configuration.GetSection(configurationSectionPath).Bind(options));
+        // 使用 IConfiguration 直接绑定（而非 lambda + Bind），以支持热更新（IOptionsMonitor + ChangeToken）
+        services.Configure<ResilienceOptions>(configuration.GetSection(configurationSectionPath));
 
         services.TryAddSingleton<IValidateOptions<ResilienceOptions>, ResilienceOptionsValidator>();
         // 注册跨选项后置配置器，检查 HttpClient.Timeout 与 Polly 重试/超时的潜在冲突
