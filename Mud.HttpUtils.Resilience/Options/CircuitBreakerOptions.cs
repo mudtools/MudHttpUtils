@@ -1,4 +1,4 @@
-﻿// -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
 //  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
@@ -18,6 +18,7 @@ public class CircuitBreakerOptions
     private int _failureThreshold = 5;
     private int _breakDurationSeconds = 30;
     private int _samplingDurationSeconds;
+    private int _minimumThroughput = 10;
 
     /// <summary>
     /// 是否启用熔断策略。默认 false。
@@ -79,9 +80,18 @@ public class CircuitBreakerOptions
     }
 
     /// <summary>
-    /// 采样窗口内的最小吞吐量。默认 10。
+    /// 采样窗口内的最小吞吐量。默认 10。必须 >= 2。
     /// 仅在 <see cref="SamplingDurationSeconds"/> 大于 0 时生效。
     /// <para>在采样窗口内，请求数必须达到此值后，才会开始计算失败率。</para>
+    /// <para>Polly <see cref="Polly.CircuitBreaker.AdvancedCircuitBreakerAsync"/> 要求此值 >= 2。</para>
     /// </summary>
-    public int MinimumThroughput { get; set; } = 10;
+    /// <exception cref="ArgumentOutOfRangeException">设置小于 2 的值时抛出。</exception>
+    public int MinimumThroughput
+    {
+        get => _minimumThroughput;
+        set => _minimumThroughput = value >= 2
+            ? value
+            : throw new ArgumentOutOfRangeException(nameof(MinimumThroughput),
+                "采样窗口最小吞吐量必须 >= 2（Polly AdvancedCircuitBreaker 要求）。");
+    }
 }

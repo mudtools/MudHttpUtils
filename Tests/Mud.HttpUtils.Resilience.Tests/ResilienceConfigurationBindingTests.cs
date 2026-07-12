@@ -8,6 +8,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Polly;
+using Polly.Timeout;
 
 namespace Mud.HttpUtils.Resilience.Tests;
 
@@ -445,6 +447,95 @@ public class ResilienceConfigurationBindingTests
 
         // Assert
         logger.Warnings.Should().BeEmpty();
+    }
+
+    // ========== RetryStatusCodes 空数组行为测试（Task 1.2） ==========
+
+    [Fact]
+    public async Task RetryPolicy_WithEmptyStatusCodesArray_DoesNotRetryOnStatusCodeExceptions()
+    {
+        // 验证：空数组时，带 StatusCode 的 HttpRequestException 不触发重试
+        var options = new ResilienceOptions
+        {
+            Retry = new RetryOptions
+            {
+                Enabled = true,
+                MaxRetryAttempts = 3,
+                RetryStatusCodes = Array.Empty<int>()  // 空数组
+            }
+        };
+        var provider = new PollyResiliencePolicyProvider(options);
+
+        var callCount = 0;
+        var policy = provider.GetRetryPolicy<string>();
+        await Assert.ThrowsAsync<HttpRequestException>(async () =>
+        {
+            await policy.ExecuteAsync(async _ =>
+            {
+                callCount++;
+                throw new HttpRequestException("500", null, HttpStatusCode.InternalServerError);
+            }, CancellationToken.None);
+        });
+        // 带 StatusCode 的异常在空数组下不重试
+        callCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task RetryPolicy_WithEmptyStatusCodesArray_RetriesOnTimeoutException()
+    {
+        // 验证：空数组时，TimeoutRejectedException 仍触发重试
+        var options = new ResilienceOptions
+        {
+            Retry = new RetryOptions
+            {
+                Enabled = true,
+                MaxRetryAttempts = 3,
+                RetryStatusCodes = Array.Empty<int>()
+            }
+        };
+        var provider = new PollyResiliencePolicyProvider(options);
+
+        var callCount = 0;
+        var policy = provider.GetRetryPolicy<string>();
+        await Assert.ThrowsAsync<TimeoutRejectedException>(async () =>
+        {
+            await policy.ExecuteAsync(async _ =>
+            {
+                callCount++;
+                throw new TimeoutRejectedException();
+            }, CancellationToken.None);
+        });
+        // 初次 + 3 次重试 = 4 次
+        callCount.Should().Be(4);
+    }
+
+    [Fact]
+    public async Task RetryPolicy_WithNullStatusCodes_UsesDefaultAndRetriesOn500()
+    {
+        // 验证：null 时回退到默认状态码，500 触发重试
+        var options = new ResilienceOptions
+        {
+            Retry = new RetryOptions
+            {
+                Enabled = true,
+                MaxRetryAttempts = 3,
+                RetryStatusCodes = null  // null
+            }
+        };
+        var provider = new PollyResiliencePolicyProvider(options);
+
+        var callCount = 0;
+        var policy = provider.GetRetryPolicy<string>();
+        await Assert.ThrowsAsync<HttpRequestException>(async () =>
+        {
+            await policy.ExecuteAsync(async _ =>
+            {
+                callCount++;
+                throw new HttpRequestException("500", null, HttpStatusCode.InternalServerError);
+            }, CancellationToken.None);
+        });
+        // null 回退到默认 [408,429,500,502,503,504]，500 触发重试
+        callCount.Should().Be(4); // 初次 + 3 次重试
     }
 }
 

@@ -176,4 +176,49 @@ public class CircuitBreakerOptionsTests
         options.BreakDurationSeconds.Should().Be(30);
         options.SamplingDurationSeconds.Should().Be(0);
     }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(-1)]
+    [InlineData(-100)]
+    public void MinimumThroughput_SetToLessThanTwo_ThrowsArgumentOutOfRangeException(int invalidValue)
+    {
+        var options = new CircuitBreakerOptions();
+        var act = () => options.MinimumThroughput = invalidValue;
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*必须 >= 2*");
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(10)]
+    [InlineData(int.MaxValue)]
+    public void MinimumThroughput_SetToValidValue_DoesNotThrow(int validValue)
+    {
+        var options = new CircuitBreakerOptions();
+        options.MinimumThroughput = validValue;
+        options.MinimumThroughput.Should().Be(validValue);
+    }
+
+    [Fact]
+    public void MinimumThroughput_DefaultValue_IsTen()
+    {
+        var options = new CircuitBreakerOptions();
+        options.MinimumThroughput.Should().Be(10);
+    }
+
+    [Fact]
+    public void MinimumThroughput_SetAfterSamplingDuration_StillValidates()
+    {
+        // 先设置 SamplingDurationSeconds > 0，再设置 MinimumThroughput < 2，应抛出异常
+        var options = new CircuitBreakerOptions
+        {
+            SamplingDurationSeconds = 30
+        };
+
+        var act = () => options.MinimumThroughput = 1;
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*必须 >= 2*");
+    }
 }

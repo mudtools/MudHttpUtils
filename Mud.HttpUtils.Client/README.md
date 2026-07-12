@@ -355,6 +355,8 @@ services.AddMudHttpTokenRecoveryFromConfiguration(configuration);
 
 `TokenRefreshBackgroundOptions` 用于配置令牌主动刷新后台服务，配置节名称为 `TokenRefreshBackground`。
 
+> **命名差异**：此配置节名称为 `TokenRefreshBackground`，未遵循其他配置节的 `MudHttp` 前缀命名约定，为向后兼容历史版本而保留。下个大版本将统一为 `MudHttpTokenRefreshBackground`。
+
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `Enabled` | `bool` | `false` | 是否启用后台刷新，需显式设置为 `true` |
@@ -662,6 +664,8 @@ sequenceDiagram
 ```csharp
 services.AddMudHttpClientsFromConfiguration(Configuration);
 ```
+
+> **TimeoutSeconds 说明**：`MudHttpClientOptions.TimeoutSeconds` 控制 HttpClient 全局超时（包含所有重试的总时间），与 `TimeoutOptions.TimeoutSeconds`（Polly 单次请求超时）不同。两者可同时配置，详见 [Resilience 文档 - 超时配置](../Mud.HttpUtils.Resilience/README.md#timeoutoptions)。
 
 ### 注册安全认证服务
 

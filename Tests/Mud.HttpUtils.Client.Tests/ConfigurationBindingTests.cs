@@ -992,6 +992,94 @@ public class ConfigurationBindingTests
         // Assert — 未启用时跳过交叉校验
         result.Succeeded.Should().BeTrue();
     }
+
+    // ========== AES 加密配置绑定测试 ==========
+
+    [Fact]
+    public void AddMudHttpAesEncryptionFromConfiguration_BindsAndRegistersProvider()
+    {
+        // Arrange — 32 字节密钥的 Base64 编码（AES-256）
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpAesEncryption:Key"] = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddMudHttpAesEncryptionFromConfiguration(config);
+
+        // Assert
+        var provider = services.BuildServiceProvider();
+        var encryptionProvider = provider.GetService<IEncryptionProvider>();
+        encryptionProvider.Should().NotBeNull("AddMudHttpAesEncryptionFromConfiguration 应注册 IEncryptionProvider");
+
+        // 验证加密功能可用
+        var cipher = encryptionProvider!.Encrypt("hello");
+        cipher.Should().NotBeNullOrEmpty();
+        var plain = encryptionProvider.Decrypt(cipher);
+        plain.Should().Be("hello");
+    }
+
+    [Fact]
+    public void AddMudHttpAesEncryptionFromConfiguration_InvalidKey_ThrowsOnResolve()
+    {
+        // Arrange — 无效密钥（长度不合法）
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpAesEncryption:Key"] = "invalid-key"
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddMudHttpAesEncryptionFromConfiguration(config);
+
+        // Act & Assert — 解析 IEncryptionProvider 时应抛出异常（密钥长度不合法）
+        var provider = services.BuildServiceProvider();
+        var act = () => provider.GetRequiredService<IEncryptionProvider>();
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void AddMudHttpAesEncryptionFromConfiguration_NullArgs_Throws()
+    {
+        // Arrange
+        IConfiguration config = new ConfigurationBuilder().Build();
+        var services = new ServiceCollection();
+
+        // Act & Assert — null services 抛出 ArgumentNullException
+        var actNullServices = () => ((IServiceCollection)null!).AddMudHttpAesEncryptionFromConfiguration(config);
+        actNullServices.Should().Throw<ArgumentNullException>();
+
+        // Act & Assert — null configuration 抛出 ArgumentNullException
+        var actNullConfig = () => services.AddMudHttpAesEncryptionFromConfiguration(null!);
+        actNullConfig.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void AddMudHttpAesEncryptionFromConfiguration_CustomSectionPath()
+    {
+        // Arrange — 使用自定义配置节路径
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Custom:Aes:Key"] = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddMudHttpAesEncryptionFromConfiguration(config, "Custom:Aes");
+
+        // Assert
+        var provider = services.BuildServiceProvider();
+        var encryptionProvider = provider.GetService<IEncryptionProvider>();
+        encryptionProvider.Should().NotBeNull("自定义配置节路径应正确绑定");
+    }
 }
 
 /// <summary>

@@ -13,8 +13,14 @@ namespace Mud.HttpUtils;
 public class TokenRefreshBackgroundOptions
 {
     /// <summary>
-    /// 配置节的名称。
+    /// 配置节的名称，用于从配置文件中读取令牌刷新后台服务配置。
     /// </summary>
+    /// <remarks>
+    /// <para><b>注意：此配置节名称为 <c>"TokenRefreshBackground"</c>，
+    /// 未遵循其他配置节的 <c>MudHttp</c> 前缀命名约定。</b>
+    /// 这是为了向后兼容历史版本而保留的命名。
+    /// 下个大版本将统一为 <c>"MudHttpTokenRefreshBackground"</c>。</para>
+    /// </remarks>
     public const string SectionName = "TokenRefreshBackground";
 
     /// <summary>

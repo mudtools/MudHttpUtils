@@ -119,6 +119,8 @@ builder.Services.AddMudHttpOpenTelemetry(builder.Configuration);
 ```
 
 > 也可同时使用配置绑定和代码配置：`AddMudHttpOpenTelemetry(builder.Configuration, configure: options => { ... })`，代码配置在配置绑定之后执行，可覆盖绑定值。
+>
+> **热更新限制**：OpenTelemetry 配置在应用启动时一次性读取，**不支持 IOptionsMonitor 热更新**。这是因为 OpenTelemetry SDK 的 TracerProvider/MeterProvider 在构建后不可变。修改 `appsettings.json` 中的 `MudHttpOpenTelemetry` 节后需重启应用才能生效。如需运行时可变配置，请使用 `AddMudHttpOpenTelemetry(Action<MudHttpOpenTelemetryOptions>?)` 重载并在自定义委托中读取动态配置源。
 
 ### 高级配置示例
 

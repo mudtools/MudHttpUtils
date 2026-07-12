@@ -143,6 +143,43 @@ public static class HttpClientServiceCollectionExtensions
     }
 
     /// <summary>
+    /// 从 <see cref="IConfiguration"/> 绑定 AES 加密配置，并注册 <see cref="IEncryptionProvider"/>。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <param name="configuration">配置实例，用于绑定 <see cref="AesEncryptionOptions"/>。</param>
+    /// <param name="sectionPath">配置节点路径，默认 <see cref="AesEncryptionOptions.SectionName"/>。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+    /// <example>
+    /// appsettings.json：
+    /// <code>
+    /// {
+    ///   "MudHttpAesEncryption": {
+    ///     "Key": "base64-encoded-32-byte-key"
+    ///   }
+    /// }
+    /// </code>
+    /// 代码：
+    /// <code>
+    /// builder.Services.AddMudHttpAesEncryptionFromConfiguration(builder.Configuration);
+    /// </code>
+    /// </example>
+    public static IServiceCollection AddMudHttpAesEncryptionFromConfiguration(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        string sectionPath = AesEncryptionOptions.SectionName)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+        if (configuration == null)
+            throw new ArgumentNullException(nameof(configuration));
+
+        services.Configure<AesEncryptionOptions>(configuration.GetSection(sectionPath));
+        services.TryAddSingleton<IEncryptionProvider, DefaultAesEncryptionProvider>();
+        return services;
+    }
+
+    /// <summary>
     /// 添加基于 <see cref="IHttpClientFactory"/> 的 <see cref="HttpClientFactoryEnhancedClient"/> 到依赖注入容器，
     /// 并注册为 <see cref="IEnhancedHttpClient"/> 服务，同时配置 HttpClient 的基础地址。
     /// </summary>
