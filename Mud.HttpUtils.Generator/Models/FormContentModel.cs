@@ -65,5 +65,5 @@ internal readonly struct FormContentModel : IEquatable<FormContentModel>
 
     public override bool Equals(object? obj) => obj is FormContentModel other && Equals(other);
 
-    public override int GetHashCode() => StringComparer.Ordinal.GetHashCode(Fingerprint);
+    public override int GetHashCode() => Fingerprint is { Length: > 0 } fp ? StringComparer.Ordinal.GetHashCode(fp) : 0;
 }

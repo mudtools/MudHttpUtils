@@ -22,12 +22,18 @@ internal static class MethodAnalyzer
     /// 避免 <see cref="AnalyzeInterfaceProperties"/> 对同一接口被每个方法重复调用导致的 O(N×M) 性能退化。
     /// 传入 null 时将内部计算。
     /// </param>
+    /// <param name="cachedInterfaceAttributes">
+    /// 可选的预计算接口特性列表（<c>INamedTypeSymbol.GetAttributes()</c> 结果）。
+    /// 当由 <see cref="GeneratorContext"/> 批量调用时传入已缓存的特性，避免对同一接口的每个方法
+    /// 重复调用 <c>GetAttributes()</c> 产生多次分配。传入 <c>default</c> 时将内部计算。
+    /// </param>
     public static MethodAnalysisResult AnalyzeMethod(
         Compilation compilation,
         IMethodSymbol methodSymbol,
         InterfaceDeclarationSyntax interfaceDecl,
         SemanticModel? semanticModel = null,
-        IReadOnlyList<InterfacePropertyInfo>? cachedInterfaceProperties = null)
+        IReadOnlyList<InterfacePropertyInfo>? cachedInterfaceProperties = null,
+        ImmutableArray<AttributeData> cachedInterfaceAttributes = default)
     {
         ArgumentNullExceptionExtensions.ThrowIfNull(compilation);
         ArgumentNullExceptionExtensions.ThrowIfNull(methodSymbol);
@@ -58,10 +64,19 @@ internal static class MethodAnalyzer
         var parameters = ParameterAnalyzer.AnalyzeParameters(methodSymbol);
         var (bodyContentType, bodyEnableEncrypt, bodyEncryptSerializeType, bodyEncryptPropertyName) = GetBodyInfoFromParameters(parameters);
 
-        // 一次性获取接口符号和接口特性列表，避免 5 个子方法各自独立调用 GetAttributes() 产生多次分配
-        var interfaceModel = semanticModel ?? SemanticModelCache.GetOrCreate(compilation, interfaceDecl.SyntaxTree);
-        var interfaceSymbol = interfaceModel.GetDeclaredSymbol(interfaceDecl) as INamedTypeSymbol;
-        var interfaceAttrs = interfaceSymbol?.GetAttributes() ?? ImmutableArray<AttributeData>.Empty;
+        // 一次性获取接口特性列表，避免 5 个子方法各自独立调用 GetAttributes() 产生多次分配
+        // 优先使用调用方预计算的接口特性缓存，避免对同一接口的每个方法重复调用 GetAttributes()
+        ImmutableArray<AttributeData> interfaceAttrs;
+        if (cachedInterfaceAttributes.IsDefault)
+        {
+            var interfaceModel = semanticModel ?? SemanticModelCache.GetOrCreate(compilation, interfaceDecl.SyntaxTree);
+            var interfaceSymbol = interfaceModel.GetDeclaredSymbol(interfaceDecl) as INamedTypeSymbol;
+            interfaceAttrs = interfaceSymbol?.GetAttributes() ?? ImmutableArray<AttributeData>.Empty;
+        }
+        else
+        {
+            interfaceAttrs = cachedInterfaceAttributes;
+        }
 
         var (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName, interfaceTokenScopes) = AnalyzeInterfaceAttributes(interfaceAttrs);
 

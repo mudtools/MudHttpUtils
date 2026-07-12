@@ -127,6 +127,8 @@ internal static class StringExtensions
         var lines = str.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
         var indentedLines = lines.Select(line => string.IsNullOrEmpty(line) ? line : indent + line);
 
-        return string.Join("\n", indentedLines);
+        // 使用 Environment.NewLine 确保与 StringBuilder.AppendLine() 生成的行尾一致，
+        // 避免在 Windows 上混用 \n 和 \r\n 导致生成的代码行尾不统一
+        return string.Join(Environment.NewLine, indentedLines);
     }
 }

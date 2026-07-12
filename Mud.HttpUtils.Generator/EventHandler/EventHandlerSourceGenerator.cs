@@ -166,8 +166,11 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
         // 构建生成的代码
         var sb = new StringBuilder();
 
-        // 文件头部注释
-        GenerateFileHeader(sb);
+        // 缓存命名空间列表，避免在后续检查中重复调用 GetFileUsingNameSpaces() 创建新集合
+        var usingNamespaces = GetFileUsingNameSpaces();
+
+        // 文件头部注释（使用缓存的命名空间列表，避免 GenerateFileHeader 内部再次调用 GetFileUsingNameSpaces()）
+        GenerateFileHeader(sb, usingNamespaces);
 
         // 添加自定义命名空间引用（如果需要的话）
         if (!string.IsNullOrEmpty(inheritedFrom))
@@ -176,7 +179,7 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
             if (lastDotIndex > 0)
             {
                 var inheritedNamespace = inheritedFrom.Substring(0, lastDotIndex);
-                if (!GetFileUsingNameSpaces().Contains(inheritedNamespace))
+                if (!usingNamespaces.Contains(inheritedNamespace))
                 {
                     sb.AppendLine($"using {inheritedNamespace};");
                 }

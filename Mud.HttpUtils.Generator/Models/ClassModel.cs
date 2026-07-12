@@ -64,5 +64,5 @@ internal readonly struct ClassModel : IEquatable<ClassModel>
 
     public override bool Equals(object? obj) => obj is ClassModel other && Equals(other);
 
-    public override int GetHashCode() => StringComparer.Ordinal.GetHashCode(Fingerprint);
+    public override int GetHashCode() => Fingerprint is { Length: > 0 } fp ? StringComparer.Ordinal.GetHashCode(fp) : 0;
 }
