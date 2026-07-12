@@ -200,14 +200,14 @@ internal class GeneratorContext
 
         // 单次遍历检测全部 5 个特性标志，避免 5 个独立 Detect 方法各自遍历 allMethods
         // 并各自调用 method.GetAttributes() 产生重复分配
-        DetectFeatures(interfaceSymbol, allMethods);
+        DetectFeatures(allMethods);
     }
 
     /// <summary>
     /// 单次遍历所有方法，一次性检测 Cache、CacheVaryByUser、Resilience、ApiKeyInjection、HmacSignatureInjection。
     /// 接口级 Token 特性在循环前检查；方法级特性在单次循环中合并检测，尽早短路退出。
     /// </summary>
-    private void DetectFeatures(INamedTypeSymbol interfaceSymbol, IReadOnlyList<IMethodSymbol> allMethods)
+    private void DetectFeatures(IReadOnlyList<IMethodSymbol> allMethods)
     {
         try
         {

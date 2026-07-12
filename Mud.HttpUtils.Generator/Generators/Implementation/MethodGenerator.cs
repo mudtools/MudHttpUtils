@@ -281,6 +281,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             var progressArg = progressParam != null ? progressParam.Name : "null";
 
             // 构造 ResponseDescriptor 以支持 AllowAnyStatusCode
+            codeBuilder.AppendLine($"            await {executor}.DownloadLargeAsync(__httpRequest, {httpClientExpr}, {filePathParam.Name}, {overwrite.ToString().ToLowerInvariant()}, {bufferSize},");
             codeBuilder.Append("                ");
             WriteResponseDescriptorCode(codeBuilder, methodInfo, deserializeType, indent: "                ");
             codeBuilder.AppendLine($", progress: {progressArg}{cancellationTokenArg}).ConfigureAwait(false);");
