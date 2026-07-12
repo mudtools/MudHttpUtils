@@ -62,8 +62,8 @@ public static class HttpClientServiceCollectionExtensions
         {
             var appOptions = sp.GetService<IOptions<MudHttpClientApplicationOptions>>()?.Value;
             var cacheOptions = appOptions?.ResponseCache;
-            var maxCacheSize = cacheOptions?.MaxCacheSize ?? 1000;
-            var cleanupInterval = cacheOptions?.CleanupIntervalSeconds ?? 60;
+            var maxCacheSize = cacheOptions?.MaxCacheSize ?? ResponseCacheOptions.DefaultMaxCacheSize;
+            var cleanupInterval = cacheOptions?.CleanupIntervalSeconds ?? ResponseCacheOptions.DefaultCleanupIntervalSeconds;
             return new MemoryHttpResponseCache(maxCacheSize, cleanupInterval);
         });
 
@@ -262,8 +262,8 @@ public static class HttpClientServiceCollectionExtensions
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
     public static IServiceCollection AddHttpResponseCache(
         this IServiceCollection services,
-        int maxCacheSize = 1000,
-        int cleanupIntervalSeconds = 60)
+        int maxCacheSize = ResponseCacheOptions.DefaultMaxCacheSize,
+        int cleanupIntervalSeconds = ResponseCacheOptions.DefaultCleanupIntervalSeconds)
     {
         if (services == null)
             throw new ArgumentNullException(nameof(services));
@@ -620,7 +620,9 @@ public static class HttpClientServiceCollectionExtensions
             return services;
 
         // 将配置注册到 DI，以便 CreateEnhancedClient 可以读取 AllowCustomBaseUrls 等属性
-        services.Configure<MudHttpClientApplicationOptions>(section.Bind);
+        // 使用 Configure<T>(IConfiguration) 重载（而非 section.Bind 的 Action<T> 重载），
+        // 以注册 ConfigurationChangeTokenSource，支持 IOptionsMonitor<T> 热更新。
+        services.Configure<MudHttpClientApplicationOptions>(section);
 
         var options = new MudHttpClientApplicationOptions();
         section.Bind(options);
@@ -707,6 +709,9 @@ public static class HttpClientServiceCollectionExtensions
             throw new ArgumentNullException(nameof(configuration));
 
         services.Configure<TokenRecoveryOptions>(configuration.GetSection(sectionPath));
+        // 注册 TokenRecoveryOptions 为可解析服务，使 TokenRecoveryDelegatingHandler 的可选构造函数参数
+        // 能通过 DI 自动解析配置绑定的值（而非始终使用默认 null → new TokenRecoveryOptions()）。
+        services.AddSingleton(resolver => resolver.GetRequiredService<IOptions<TokenRecoveryOptions>>().Value);
         return services;
     }
 

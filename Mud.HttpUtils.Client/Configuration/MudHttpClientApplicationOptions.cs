@@ -94,12 +94,22 @@ public class MudHttpClientApplicationOptions
 public class ResponseCacheOptions
 {
     /// <summary>
-    /// 最大缓存条目数，默认 1000
+    /// 默认最大缓存条目数。
     /// </summary>
-    public int MaxCacheSize { get; set; } = 1000;
+    public const int DefaultMaxCacheSize = 1000;
 
     /// <summary>
-    /// 清理间隔（秒），默认 60 秒
+    /// 默认清理间隔（秒）。
     /// </summary>
-    public int CleanupIntervalSeconds { get; set; } = 60;
+    public const int DefaultCleanupIntervalSeconds = 60;
+
+    /// <summary>
+    /// 最大缓存条目数，默认 <see cref="DefaultMaxCacheSize"/>（1000）。
+    /// </summary>
+    public int MaxCacheSize { get; set; } = DefaultMaxCacheSize;
+
+    /// <summary>
+    /// 清理间隔（秒），默认 <see cref="DefaultCleanupIntervalSeconds"/>（60 秒）。
+    /// </summary>
+    public int CleanupIntervalSeconds { get; set; } = DefaultCleanupIntervalSeconds;
 }

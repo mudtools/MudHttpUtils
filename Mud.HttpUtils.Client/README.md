@@ -289,6 +289,32 @@ services.AddMudHttpUserTokenCacheFromConfiguration(configuration);
 
 > `UserTokenManagerBase` 支持通过 `IOptions<UserTokenCacheOptions>` 从 DI 注入缓存配置。子类构造函数可接收 `IOptions<UserTokenCacheOptions>` 参数，确保通过 `AddMudHttpUserTokenCacheFromConfiguration` 绑定的配置生效。
 
+### 响应缓存配置
+
+`ResponseCacheOptions` 用于控制内存响应缓存的容量与清理策略。该选项作为 `MudHttpClientApplicationOptions.ResponseCache` 子节绑定，也可通过 `AddHttpResponseCache` 扩展方法的参数进行设置。
+
+| 属性 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `MaxCacheSize` | `int` | `1000` | 最大缓存条目数，超出后采用 LRU 淘汰 |
+| `CleanupIntervalSeconds` | `int` | `60` | 过期缓存清理间隔（秒） |
+
+```csharp
+// 通过 AddHttpResponseCache 扩展方法指定参数
+services.AddHttpResponseCache(maxCacheSize: 2000, cleanupIntervalSeconds: 120);
+
+// 或从 MudHttpClientApplicationOptions 配置节绑定
+// appsettings.json:
+// "MudHttpClients": {
+//   "ResponseCache": {
+//     "MaxCacheSize": 2000,
+//     "CleanupIntervalSeconds": 120
+//   }
+// }
+services.AddMudHttpClientsFromConfiguration(configuration);
+```
+
+> 当同时调用 `AddHttpResponseCache` 并在 `MudHttpClients:ResponseCache` 配置节中设置值时，配置节绑定的值优先（在 `AddMudHttpClientsFromConfiguration` 内部会覆盖 `AddHttpResponseCache` 的默认参数）。
+
 ### 令牌恢复配置
 
 `TokenRecoveryOptions` 用于控制 401 响应时的自动令牌刷新与重试行为，配置节名称为 `MudHttpTokenRecovery`。
@@ -405,7 +431,7 @@ services.AddMudHttpHealthChecks(Configuration);
 
 #### 令牌刷新健康检查选项
 
-`TokenRefreshHealthCheckOptions` 用于配置令牌刷新健康检查的窗口期和阈值，在 `appsettings.json` 中位于 `MudHttpHealthChecks:TokenRefresh` 下。
+`TokenRefreshHealthCheckSettings`（继承自 `TokenRefreshHealthCheckOptions`，额外增加 `FailureStatus` 属性）用于配置令牌刷新健康检查的窗口期和阈值，在 `appsettings.json` 中位于 `MudHttpHealthChecks:TokenRefresh` 下。
 
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
@@ -661,7 +687,7 @@ services.AddSensitiveDataMasker<MyMasker>();        // 注册自定义实现
 
 | 扩展方法 | 说明 |
 | -------- | ---- |
-| `AddHttpResponseCache(int maxCacheSize = 1000, int cleanupIntervalSeconds = 60)` | 注册内存响应缓存（等价于 `IHttpResponseCache` + `IHttpResponseInterceptor`） |
+| `AddHttpResponseCache(int maxCacheSize = ResponseCacheOptions.DefaultMaxCacheSize, int cleanupIntervalSeconds = ResponseCacheOptions.DefaultCleanupIntervalSeconds)` | 注册内存响应缓存（等价于 `IHttpResponseCache` + `IHttpResponseInterceptor`） |
 | `AddSensitiveDataMasker()` / `AddSensitiveDataMasker<TMasker>()` | 注册敏感数据脱敏器 |
 | `AddApiKeyProvider()` / `AddApiKeyProvider<TProvider>()` | 注册 API Key 提供器 |
 | `AddHmacSignatureProvider()` / `AddHmacSignatureProvider<TProvider>()` | 注册 HMAC 签名提供器 |

@@ -151,17 +151,14 @@ public class ConfigurationBindingTests
     [Fact]
     public void AddMudHttpClientsFromConfiguration_IOptionsMonitor_ReloadsOnConfigChange()
     {
-        // Arrange — 使用可更新的 MemoryConfigurationProvider
-        var configSource = new Microsoft.Extensions.Configuration.Memory.MemoryConfigurationSource
+        // Arrange — 使用可在 Load() 后保留 Set() 更新的自定义配置提供器
+        var updatableProvider = new UpdatableMemoryProvider(new Dictionary<string, string?>
         {
-            InitialData = new Dictionary<string, string?>
-            {
-                ["MudHttpClients:Clients:api:BaseAddress"] = "https://api.example.com",
-                ["MudHttpClients:Clients:api:TimeoutSeconds"] = "30",
-            }
-        };
+            ["MudHttpClients:Clients:api:BaseAddress"] = "https://api.example.com",
+            ["MudHttpClients:Clients:api:TimeoutSeconds"] = "30",
+        });
         var config = new ConfigurationBuilder()
-            .Add(configSource)
+            .Add(updatableProvider)
             .Build();
 
         var services = new ServiceCollection();
@@ -172,25 +169,12 @@ public class ConfigurationBindingTests
         // 初始值验证
         monitor.CurrentValue.Clients["api"].TimeoutSeconds.Should().Be(30);
 
-        // Act — 模拟配置热更新
-        var newConfig = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["MudHttpClients:Clients:api:BaseAddress"] = "https://api.example.com",
-                ["MudHttpClients:Clients:api:TimeoutSeconds"] = "60",
-            })
-            .Build();
+        // Act — 在同一配置实例上更新值并触发重载
+        updatableProvider.Set("MudHttpClients:Clients:api:TimeoutSeconds", "60");
+        ((IConfigurationRoot)config).Reload();
 
-        // 重新绑定配置
-        var root = (IConfigurationRoot)config;
-        // 使用新配置替换 — 通过重新构建 provider 来模拟热更新
-        var newServices = new ServiceCollection();
-        newServices.AddMudHttpClientsFromConfiguration(newConfig);
-        var newProvider = newServices.BuildServiceProvider();
-        var newMonitor = newProvider.GetRequiredService<IOptionsMonitor<MudHttpClientApplicationOptions>>();
-
-        // Assert — 新配置值生效
-        newMonitor.CurrentValue.Clients["api"].TimeoutSeconds.Should().Be(60);
+        // Assert — 同一 monitor 实例感知到配置变更
+        monitor.CurrentValue.Clients["api"].TimeoutSeconds.Should().Be(60);
     }
 
     [Fact]
@@ -410,6 +394,40 @@ public class ConfigurationBindingTests
         options.Enabled.Should().BeFalse();
         options.RecoveryMaxRetries.Should().Be(3);
         options.TokenScheme.Should().Be("Basic");
+    }
+
+    [Fact]
+    public void AddMudHttpTokenRecoveryFromConfiguration_RegistersTokenRecoveryOptionsAsResolvableService()
+    {
+        // Arrange — 模拟 appsettings.json 中的配置
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpTokenRecovery:Enabled"] = "true",
+                ["MudHttpTokenRecovery:RecoveryMaxRetries"] = "5",
+                ["MudHttpTokenRecovery:TokenScheme"] = "Digest",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddMudHttpTokenRecoveryFromConfiguration(config);
+
+        // Assert — TokenRecoveryOptions 应作为直接可解析服务注册，
+        // 使 TokenRecoveryDelegatingHandler 的可选构造函数参数能通过 DI 自动解析。
+        var provider = services.BuildServiceProvider();
+        var directOptions = provider.GetService<TokenRecoveryOptions>();
+        directOptions.Should().NotBeNull();
+        directOptions!.Enabled.Should().BeTrue();
+        directOptions.RecoveryMaxRetries.Should().Be(5);
+        directOptions.TokenScheme.Should().Be("Digest");
+
+        // 同时验证 IOptions<TokenRecoveryOptions> 也能解析到相同的值
+        var ioptions = provider.GetRequiredService<IOptions<TokenRecoveryOptions>>().Value;
+        ioptions.Enabled.Should().BeTrue();
+        ioptions.RecoveryMaxRetries.Should().Be(5);
+        ioptions.TokenScheme.Should().Be("Digest");
     }
 
     [Fact]
@@ -674,3 +692,26 @@ internal sealed class CollectingLoggerProvider : ILoggerProvider
 }
 
 internal sealed record LogRecord(LogLevel Level, string Message);
+
+/// <summary>
+/// 可更新的内存配置提供器，用于测试 IOptionsMonitor 热更新。
+/// 与 <see cref="Microsoft.Extensions.Configuration.Memory.MemoryConfigurationProvider"/> 不同，
+/// 此提供器的 <see cref="Load"/> 方法为空操作，确保 <see cref="ConfigurationProvider.Set"/> 的修改
+/// 在 <see cref="IConfigurationRoot.Reload"/> 时不会被覆盖。
+/// 同时实现 <see cref="IConfigurationSource"/>，使其可直接通过 <c>ConfigurationBuilder.Add()</c> 注册。
+/// </summary>
+internal sealed class UpdatableMemoryProvider : ConfigurationProvider, IConfigurationSource
+{
+    public UpdatableMemoryProvider(IDictionary<string, string?> initialData)
+    {
+        Data = new Dictionary<string, string?>(initialData, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 空操作，保留 <see cref="ConfigurationProvider.Set"/> 的修改不被覆盖。
+    /// </summary>
+    public override void Load() { }
+
+    /// <inheritdoc />
+    IConfigurationProvider IConfigurationSource.Build(IConfigurationBuilder builder) => this;
+}

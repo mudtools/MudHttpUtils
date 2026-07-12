@@ -24,9 +24,9 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
     /// <summary>
     /// 初始化 MemoryHttpResponseCache 实例。
     /// </summary>
-    /// <param name="maxCacheSize">最大缓存条目数，默认 1000。</param>
-    /// <param name="cleanupIntervalSeconds">清理间隔（秒），默认 60 秒。</param>
-    public MemoryHttpResponseCache(int maxCacheSize = 1000, int cleanupIntervalSeconds = 60)
+    /// <param name="maxCacheSize">最大缓存条目数，默认 <see cref="ResponseCacheOptions.DefaultMaxCacheSize"/>（1000）。</param>
+    /// <param name="cleanupIntervalSeconds">清理间隔（秒），默认 <see cref="ResponseCacheOptions.DefaultCleanupIntervalSeconds"/>（60 秒）。</param>
+    public MemoryHttpResponseCache(int maxCacheSize = ResponseCacheOptions.DefaultMaxCacheSize, int cleanupIntervalSeconds = ResponseCacheOptions.DefaultCleanupIntervalSeconds)
     {
         _maxCacheSize = maxCacheSize;
         _cleanupTimer = new Timer(

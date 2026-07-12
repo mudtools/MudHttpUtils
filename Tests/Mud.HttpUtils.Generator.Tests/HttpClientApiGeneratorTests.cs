@@ -1312,4 +1312,225 @@ namespace TestNamespace
     }
 
     #endregion
+
+    #region 文件下载（[FilePath]）代码生成验证
+
+    /// <summary>
+    /// 验证 [FilePath] 参数生成 DownloadLargeAsync 调用，包含正确的参数顺序和默认值。
+    /// </summary>
+    [Fact]
+    public void Generator_WithFilePathParameter_GeneratesDownloadLargeAsyncCall()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    [HttpClientApi(TokenManage = ""ITestTokenManager"")]
+    public interface ITestApi
+    {
+        [Get(""/api/v1/file/download"")]
+        Task DownloadLargeFileAsync([Query(""fileId"")] string fileId, [FilePath] string filePath);
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetAllGeneratedCode(outputCompilation);
+
+        generatedCode.Should().Contain("DownloadLargeAsync",
+            "[FilePath] 参数应生成 DownloadLargeAsync 调用");
+        generatedCode.Should().Contain("filePath",
+            "filePath 参数应传递给 DownloadLargeAsync");
+        generatedCode.Should().Contain("true, 81920",
+            "默认 Overwrite=true 且 BufferSize=81920");
+        generatedCode.Should().Contain("progress: null",
+            "无 IProgress 参数时应传递 null");
+        generatedCode.Should().Contain("cancellationToken: default",
+            "无 CancellationToken 参数时应使用 default");
+        generatedCode.Should().Contain("IsVoidReturn = true",
+            "Task 返回类型应标记 IsVoidReturn = true");
+    }
+
+    /// <summary>
+    /// 验证 [FilePath(BufferSize = N)] 自定义缓冲区大小被正确提取到生成代码中。
+    /// </summary>
+    [Fact]
+    public void Generator_WithFilePathCustomBufferSize_GeneratesCorrectBufferSize()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    [HttpClientApi(TokenManage = ""ITestTokenManager"")]
+    public interface ITestApi
+    {
+        [Get(""/api/v1/file/download"")]
+        Task DownloadLargeFileAsync([Query(""fileId"")] string fileId, [FilePath(BufferSize = 40960)] string filePath);
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetAllGeneratedCode(outputCompilation);
+
+        generatedCode.Should().Contain("40960",
+            "[FilePath(BufferSize = 40960)] 应在生成代码中使用 40960");
+        generatedCode.Should().NotContain("81920",
+            "自定义 BufferSize 时不应使用默认值 81920");
+    }
+
+    /// <summary>
+    /// 验证 [FilePath(Overwrite = false)] 禁用覆盖被正确提取到生成代码中。
+    /// </summary>
+    [Fact]
+    public void Generator_WithFilePathOverwriteFalse_GeneratesCorrectOverwriteFlag()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    [HttpClientApi(TokenManage = ""ITestTokenManager"")]
+    public interface ITestApi
+    {
+        [Get(""/api/v1/file/download"")]
+        Task DownloadLargeFileAsync([Query(""fileId"")] string fileId, [FilePath(Overwrite = false)] string filePath);
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetAllGeneratedCode(outputCompilation);
+
+        generatedCode.Should().Contain("false, 81920",
+            "[FilePath(Overwrite = false)] 应在生成代码中使用 false 作为 overwrite 参数");
+    }
+
+    /// <summary>
+    /// 验证 [FilePath] 搭配 IProgress{long} 参数时，进度参数被正确传递。
+    /// </summary>
+    [Fact]
+    public void Generator_WithFilePathAndProgress_GeneratesProgressParameter()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    [HttpClientApi(TokenManage = ""ITestTokenManager"")]
+    public interface ITestApi
+    {
+        [Get(""/api/v1/file/download"")]
+        Task DownloadLargeFileAsync([Query(""fileId"")] string fileId, [FilePath] string filePath, IProgress<long> progress);
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetAllGeneratedCode(outputCompilation);
+
+        generatedCode.Should().Contain("progress: progress",
+            "IProgress<long> 参数应按名称传递给 DownloadLargeAsync");
+    }
+
+    /// <summary>
+    /// 验证 [FilePath] 搭配 CancellationToken 参数时，取消令牌被正确传递。
+    /// </summary>
+    [Fact]
+    public void Generator_WithFilePathAndCancellationToken_GeneratesCancellationTokenArg()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    [HttpClientApi(TokenManage = ""ITestTokenManager"")]
+    public interface ITestApi
+    {
+        [Get(""/api/v1/file/download"")]
+        Task DownloadLargeFileAsync([Query(""fileId"")] string fileId, [FilePath] string filePath, CancellationToken cancellationToken = default);
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetAllGeneratedCode(outputCompilation);
+
+        generatedCode.Should().Contain("cancellationToken: cancellationToken",
+            "CancellationToken 参数应按名称传递给 DownloadLargeAsync");
+    }
+
+    /// <summary>
+    /// 验证 [FilePath] 参数不会被误添加到查询参数、请求体或 URL 路径中。
+    /// </summary>
+    [Fact]
+    public void Generator_WithFilePathParameter_ExcludesFromQueryAndBody()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    [HttpClientApi(TokenManage = ""ITestTokenManager"")]
+    public interface ITestApi
+    {
+        [Get(""/api/v1/file/download"")]
+        Task DownloadLargeFileAsync([Query(""fileId"")] string fileId, [FilePath] string filePath);
+    }
+}";
+
+        var (_, outputCompilation) = RunGenerator(source);
+        var generatedCode = GetAllGeneratedCode(outputCompilation);
+
+        // filePath 不应出现在查询参数构建逻辑中
+        generatedCode.Should().NotContain(@"__queryParams.Add(""filePath""",
+            "[FilePath] 参数不应被添加到查询参数集合");
+        generatedCode.Should().NotContain(@"__queryParams.Add(""FilePath""",
+            "[FilePath] 参数不应被添加到查询参数集合（大小写变体）");
+
+        // filePath 不应出现在请求体构建逻辑中
+        generatedCode.Should().NotContain("JsonContent",
+            "[FilePath] 参数不应触发 JSON 请求体序列化");
+    }
+
+    #endregion
 }
