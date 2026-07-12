@@ -55,7 +55,7 @@ internal class RequestBuilder
     private string BuildUrlWithPlaceholders(string urlTemplate, List<ParameterInfo> pathParams, MethodAnalysisResult? methodInfo = null)
     {
         // 转义 URL 模板中的特殊字符（\ 和 "），占位符 {name} 不含这些字符，转义不影响后续替换
-        var interpolatedUrl = StringEscapeHelper.EscapeString(urlTemplate);
+        var sb = new StringBuilder(StringEscapeHelper.EscapeString(urlTemplate));
         var hasPathParams = pathParams.Any();
 
         if (methodInfo != null)
@@ -64,39 +64,31 @@ internal class RequestBuilder
             if (isTokenPathMode && !string.IsNullOrEmpty(methodInfo.InterfaceTokenName))
             {
                 var tokenPlaceholder = $"{{{methodInfo.InterfaceTokenName}}}";
-                if (interpolatedUrl.Contains(tokenPlaceholder))
-                {
-                    interpolatedUrl = interpolatedUrl.Replace(tokenPlaceholder, "{access_token}");
-                }
+                sb.Replace(tokenPlaceholder, "{access_token}");
             }
 
             foreach (var pathParam in methodInfo.InterfacePathParameters)
             {
                 var placeholder = $"{{{pathParam.Name}}}";
-                if (interpolatedUrl.Contains(placeholder))
-                {
-                    var escapedValue = Uri.EscapeDataString(pathParam.Value ?? "");
-                    interpolatedUrl = interpolatedUrl.Replace(placeholder, escapedValue);
-                }
+                var escapedValue = Uri.EscapeDataString(pathParam.Value ?? "");
+                sb.Replace(placeholder, escapedValue);
             }
 
             foreach (var interfacePathProp in methodInfo.InterfaceProperties.Where(p => p.AttributeType == "Path"))
             {
                 var placeholder = $"{{{interfacePathProp.ParameterName}}}";
-                if (interpolatedUrl.Contains(placeholder))
-                {
-                    var formatExpression = !string.IsNullOrEmpty(interfacePathProp.Format)
-                        ? $".ToString(\"{StringEscapeHelper.EscapeString(interfacePathProp.Format)}\")"
-                        : ".ToString()";
 
-                    if (interfacePathProp.UrlEncode)
-                    {
-                        interpolatedUrl = interpolatedUrl.Replace(placeholder, $"{{System.Uri.EscapeDataString({interfacePathProp.Name}{formatExpression})}}");
-                    }
-                    else
-                    {
-                        interpolatedUrl = interpolatedUrl.Replace(placeholder, $"{{{interfacePathProp.Name}{formatExpression}}}");
-                    }
+                var formatExpression = !string.IsNullOrEmpty(interfacePathProp.Format)
+                    ? $".ToString(\"{StringEscapeHelper.EscapeString(interfacePathProp.Format)}\")"
+                    : ".ToString()";
+
+                if (interfacePathProp.UrlEncode)
+                {
+                    sb.Replace(placeholder, $"{{System.Uri.EscapeDataString({interfacePathProp.Name}{formatExpression})}}");
+                }
+                else
+                {
+                    sb.Replace(placeholder, $"{{{interfacePathProp.Name}{formatExpression}}}");
                 }
             }
         }
@@ -108,16 +100,13 @@ internal class RequestBuilder
                 var pathAttr = param.Attributes.First(a => HttpClientGeneratorConstants.PathAttributes.Contains(a.Name));
                 var placeholderName = GetPathParameterName(pathAttr, param.Name);
 
-                if (interpolatedUrl.Contains($"{{{placeholderName}}}"))
-                {
-                    var formatString = GetFormatString(pathAttr);
-                    var urlEncode = GetUrlEncodeValue(pathAttr);
-                    interpolatedUrl = FormatUrlParameter(interpolatedUrl, placeholderName, formatString, urlEncode, param.Name, param.Type);
-                }
+                var formatString = GetFormatString(pathAttr);
+                var urlEncode = GetUrlEncodeValue(pathAttr);
+                FormatUrlParameter(sb, placeholderName, formatString, urlEncode, param.Name, param.Type);
             }
         }
 
-        return $"            var __url = $\"{interpolatedUrl}\";";
+        return $"            var __url = $\"{sb}\";";
     }
 
     /// <summary>
@@ -586,8 +575,9 @@ internal class RequestBuilder
         return null;
     }
 
-    private string FormatUrlParameter(string url, string placeholderName, string? formatString, bool urlEncode, string paramName, string paramType)
+    private void FormatUrlParameter(StringBuilder sb, string placeholderName, string? formatString, bool urlEncode, string paramName, string paramType)
     {
+        var placeholder = $"{{{placeholderName}}}";
         var isStringType = TypeDetectionHelper.IsStringType(paramType);
 
         if (string.IsNullOrEmpty(formatString))
@@ -596,14 +586,18 @@ internal class RequestBuilder
             {
                 if (isStringType)
                 {
-                    return url.Replace($"{{{placeholderName}}}", $"{{Uri.EscapeDataString({paramName})}}");
+                    sb.Replace(placeholder, $"{{Uri.EscapeDataString({paramName})}}");
                 }
                 else
                 {
-                    return url.Replace($"{{{placeholderName}}}", $"{{Uri.EscapeDataString(({paramName}).ToString() ?? string.Empty)}}");
+                    sb.Replace(placeholder, $"{{Uri.EscapeDataString(({paramName}).ToString() ?? string.Empty)}}");
                 }
             }
-            return url.Replace($"{{{placeholderName}}}", $"{{{paramName}}}");
+            else
+            {
+                sb.Replace(placeholder, $"{{{paramName}}}");
+            }
+            return;
         }
 
         if (formatString.Contains("{0}"))
@@ -612,18 +606,25 @@ internal class RequestBuilder
             var formatExpr = $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{escapedFormat}\", {paramName})";
             if (urlEncode)
             {
-                return url.Replace($"{{{placeholderName}}}", $"{{Uri.EscapeDataString({formatExpr})}}");
+                sb.Replace(placeholder, $"{{Uri.EscapeDataString({formatExpr})}}");
             }
-            return url.Replace($"{{{placeholderName}}}", $"{{{formatExpr}}}");
+            else
+            {
+                sb.Replace(placeholder, $"{{{formatExpr}}}");
+            }
+            return;
         }
 
         var escapedStandardFormat = StringEscapeHelper.EscapeString(formatString);
         var standardFormatExpr = $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{escapedStandardFormat}}}\", {paramName})";
         if (urlEncode)
         {
-            return url.Replace($"{{{placeholderName}}}", $"{{Uri.EscapeDataString({standardFormatExpr})}}");
+            sb.Replace(placeholder, $"{{Uri.EscapeDataString({standardFormatExpr})}}");
         }
-        return url.Replace($"{{{placeholderName}}}", $"{{{standardFormatExpr}}}");
+        else
+        {
+            sb.Replace(placeholder, $"{{{standardFormatExpr}}}");
+        }
     }
 
     private void GenerateInterfaceQueryProperty(StringBuilder codeBuilder, InterfacePropertyInfo property)

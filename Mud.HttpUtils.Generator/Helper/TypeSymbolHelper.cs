@@ -70,7 +70,7 @@ internal static class TypeSymbolHelper
     /// <param name="interfaceSymbol">接口符号</param>
     /// <param name="includeParentInterfaces">是否包含父接口的方法</param>
     /// <param name="excludedInterfaces">要排除的接口名称列表（可选）</param>
-    public static IEnumerable<IMethodSymbol> GetAllMethods(
+    public static IReadOnlyList<IMethodSymbol> GetAllMethods(
         INamedTypeSymbol interfaceSymbol,
         bool includeParentInterfaces = true,
         IEnumerable<string> excludedInterfaces = null)
@@ -80,18 +80,21 @@ internal static class TypeSymbolHelper
 
         var visitedInterfaces = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
         var excludedSet = excludedInterfaces != null ? new HashSet<string>(excludedInterfaces) : new HashSet<string>();
-        return GetAllRecursive(interfaceSymbol, visitedInterfaces, includeParentInterfaces, excludedSet);
+        var results = new List<IMethodSymbol>();
+        GetAllRecursive(interfaceSymbol, visitedInterfaces, includeParentInterfaces, excludedSet, results);
+        return results;
     }
 
-    private static IEnumerable<IMethodSymbol> GetAllRecursive(
+    private static void GetAllRecursive(
         INamedTypeSymbol interfaceSymbol,
         HashSet<INamedTypeSymbol> visitedInterfaces,
         bool includeParentInterfaces,
-        HashSet<string> excludedInterfaces)
+        HashSet<string> excludedInterfaces,
+        List<IMethodSymbol> results)
     {
         // 避免循环引用
         if (visitedInterfaces.Contains(interfaceSymbol))
-            yield break;
+            return;
 
         visitedInterfaces.Add(interfaceSymbol);
 
@@ -114,36 +117,34 @@ internal static class TypeSymbolHelper
                             excludedInterfaces.Add(ancestorDisplay);
                     }
                 }
-                yield break; // 跳过整个接口及其方法
+                return; // 跳过整个接口及其方法
             }
         }
 
         // 首先处理当前接口的方法
         foreach (var method in interfaceSymbol.GetMembers().OfType<IMethodSymbol>())
         {
-            yield return method;
+            results.Add(method);
         }
 
         // 如果不需要父接口的方法，则直接返回
         if (!includeParentInterfaces)
-            yield break;
+            return;
 
         // 然后递归处理所有父接口
         // 使用 AllInterfaces 替代 Interfaces，确保获取所有基接口（包括跨程序集的）
         var baseInterfaces = SafeGetAllInterfaces(interfaceSymbol);
         if (baseInterfaces == null)
-            yield break;
+            return;
 
         foreach (var baseInterface in baseInterfaces)
         {
-            foreach (var baseMethod in GetAllRecursive(
+            GetAllRecursive(
                 baseInterface,
                 visitedInterfaces,
                 includeParentInterfaces,
-                excludedInterfaces))
-            {
-                yield return baseMethod;
-            }
+                excludedInterfaces,
+                results);
         }
     }
 
@@ -193,7 +194,7 @@ internal static class TypeSymbolHelper
                     : null));
 
             // 泛型接口的名称格式
-            if (SafeGetName(() => interfaceSymbol.IsGenericType) == true)
+            if (SafeGetBool(() => interfaceSymbol.IsGenericType) == true)
             {
                 var originalDefinition = interfaceSymbol.OriginalDefinition;
                 AddIfNotNull(namesToCheck, SafeGetName(() => originalDefinition.ToDisplayString()));
@@ -244,7 +245,7 @@ internal static class TypeSymbolHelper
     /// <summary>
     /// 安全地获取布尔值，捕获设计时符号解析异常并记录日志。
     /// </summary>
-    private static bool? SafeGetName(Func<bool> accessor)
+    private static bool? SafeGetBool(Func<bool> accessor)
     {
         try
         {
@@ -252,7 +253,7 @@ internal static class TypeSymbolHelper
         }
         catch (Exception ex)
         {
-            GeneratorDebugLogger.LogError("SafeGetName", ex);
+            GeneratorDebugLogger.LogError("SafeGetBool", ex);
             return null;
         }
     }

@@ -324,6 +324,12 @@ internal class InterfaceImplementationGenerator
                 return type;
         }
 
+        // 仅对简单类型名（不含 .）执行全局命名空间扫描。
+        // 全限定名（含 .）应已由前面 GetTypeByMetadataName 解析，若未命中说明类型不存在。
+        if (typeName.Contains('.'))
+            return null;
+
+        // 全局命名空间扫描作为最终回退，仅处理简单类型名
         foreach (var ns in _compilation.GlobalNamespace.GetNamespaceMembers())
         {
             type = FindTypeInNamespace(ns, typeName);

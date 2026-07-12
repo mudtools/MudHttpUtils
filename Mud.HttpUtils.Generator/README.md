@@ -106,6 +106,83 @@ public class UserService
 }
 ```
 
+## 代码生成逻辑
+
+源代码生成器在编译期将「声明式接口」转换为「强类型实现类 + DI 注册代码」。整体流程可分为**输入收集 → 校验诊断 → 分发生成 → 编译输出**四个阶段：
+
+```mermaid
+flowchart TD
+    A["开发者代码<br/>接口 [HttpClientApi] + 方法/参数特性<br/>事件类 [GenerateEventHandler]<br/>表单类 [FormContent]"] --> B["Roslyn 编译触发<br/>IIncrementalGenerator"]
+
+    B --> C["语法 / 语义收集<br/>筛选候选类型"]
+    C --> C1["接口实现元数据<br/>HttpClientApiInfo"]
+    C --> C2["事件处理器元数据"]
+    C --> C3["FormContent 元数据"]
+
+    C1 --> D["校验与诊断<br/>Validators"]
+    C2 --> D
+    C3 --> D
+    D -->|"错误（Error）"| ERR["中断生成<br/>报告 HTTPCLIENT* / FORM* / EHSG*"]
+    D -->|"通过 / 警告"| E["分发至各生成器"]
+
+    E --> F["HttpInvokeClassSourceGenerator<br/>实现类生成器"]
+    E --> G["HttpInvokeRegistrationGenerator<br/>注册代码生成器"]
+    E --> H["FormContentGenerator"]
+    E --> I["EventHandlerGenerator"]
+
+    F --> F1["ConstructorGenerator<br/>按运行模式生成构造函数"]
+    F --> F2["MethodGenerator + RequestBuilder<br/>生成方法体（URL/参数/序列化）"]
+    F --> F3["AccessTokenGenerator<br/>生成 Token 获取代码"]
+
+    F1 --> O["输出 .g.cs 源文件"]
+    F2 --> O
+    F3 --> O
+    G --> O
+    H --> O
+    I --> O
+    O --> P["编译进程序集<br/>运行时 AddWebApiHttpClient() 注册"]
+```
+
+### 运行模式与参数推断
+
+单个接口/方法的生成逻辑包含两类关键决策：**运行模式选择**（决定构造函数依赖）与**参数推断**（决定每个参数如何映射到 HTTP 请求）：
+
+```mermaid
+flowchart TD
+    Start["解析 [HttpClientApi]"] --> Mode{"运行模式判断"}
+    Mode -->|"设置 HttpClient"| M1["HttpClient 模式<br/>依赖 IEnhancedHttpClient"]
+    Mode -->|"设置 TokenManage"| M2["TokenManager 模式<br/>依赖令牌管理器 + ITokenProvider"]
+    Mode -->|"均未设置"| M3["默认模式<br/>依赖 IMudAppContext"]
+
+    M2 --> Require{"RequiresUserId?"}
+    Require -->|"是"| M2a["额外注入 ICurrentUserContext"]
+    Require -->|"否"| M2b["仅令牌管理器"]
+
+    Start2["解析方法参数"] --> Infer{"参数是否标注<br/>HTTP 特性？"}
+    Infer -->|"未标注（默认推断）"| T{"参数类型"}
+    T -->|"简单类型 / 数组 / 可空"| Q["推断为 [Query]"]
+    T -->|"复杂类型（对象/List/Dict）"| Bd["推断为 [Body]"]
+    T -->|"CancellationToken / IProgress"| Sp["特殊类型，跳过推断"]
+
+    Infer -->|"已标注特性"| Known["按特性处理<br/>Path/Query/Header/Body/Token/Form..."]
+
+    Q --> Combine["合并请求要素"]
+    Bd --> Combine
+    Sp --> Combine
+    Known --> Combine
+    M1 --> Combine
+    M2a --> Combine
+    M2b --> Combine
+    M3 --> Combine
+
+    Combine --> Emit["生成 HttpRequestMessage<br/>内容类型优先级 + 头部合并<br/>+ 方法级弹性策略特性"]
+```
+
+> **要点**：
+> - `HttpClient` 与 `TokenManage` 互斥，同时设置时 `HttpClient` 优先（对应诊断 `HTTPCLIENT007`）。
+> - 方法参数优先级高于接口级动态属性（`[Query]`/`[Path]` 接口属性）；同名时方法参数覆盖接口属性，接口属性为 `null` 时跳过。
+> - 内容类型优先级：`Body 参数级 > 方法级 > 接口级 > 默认 (application/json)`。
+
 ## 三种运行模式
 
 生成器根据 `[HttpClientApi]` 特性配置生成不同的实现代码：

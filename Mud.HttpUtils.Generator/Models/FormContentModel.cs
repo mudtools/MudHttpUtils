@@ -10,10 +10,11 @@ using System.Diagnostics;
 namespace Mud.HttpUtils.Models;
 
 /// <summary>
-/// 事件处理器类生成模型，作为增量管道中 transform 阶段的输出。
+/// FormContent 类生成模型，作为增量管道中 transform 阶段的输出。
 /// </summary>
 /// <remarks>
-/// 设计与 <see cref="InterfaceModel"/> 一致：将 <see cref="ClassDeclarationSyntax"/> 与其对应的
+/// 设计与 <see cref="InterfaceModel"/> 和 <see cref="ClassModel"/> 一致：将
+/// <see cref="ClassDeclarationSyntax"/> 与其对应的
 /// <see cref="GeneratorAttributeSyntaxContext"/>（包含 SemanticModel、Compilation、Attributes）
 /// 打包为一个可比较的单元，并预解析 <see cref="INamedTypeSymbol"/> 避免下游重复调用
 /// <c>SemanticModel.GetDeclaredSymbol</c>。
@@ -28,7 +29,7 @@ namespace Mud.HttpUtils.Models;
 /// </para>
 /// </remarks>
 [DebuggerDisplay("{Syntax.Identifier.Text} (Fingerprint={Fingerprint?.Length} chars)")]
-internal readonly struct ClassModel : IEquatable<ClassModel>
+internal readonly struct FormContentModel : IEquatable<FormContentModel>
 {
     /// <summary>
     /// 类声明语法节点。
@@ -51,7 +52,7 @@ internal readonly struct ClassModel : IEquatable<ClassModel>
     /// </summary>
     public string Fingerprint { get; }
 
-    public ClassModel(ClassDeclarationSyntax syntax, GeneratorAttributeSyntaxContext context)
+    public FormContentModel(ClassDeclarationSyntax syntax, GeneratorAttributeSyntaxContext context)
     {
         Syntax = syntax;
         Context = context;
@@ -59,10 +60,10 @@ internal readonly struct ClassModel : IEquatable<ClassModel>
         Fingerprint = syntax.ToString();
     }
 
-    public bool Equals(ClassModel other) =>
+    public bool Equals(FormContentModel other) =>
         string.Equals(Fingerprint, other.Fingerprint, StringComparison.Ordinal);
 
-    public override bool Equals(object? obj) => obj is ClassModel other && Equals(other);
+    public override bool Equals(object? obj) => obj is FormContentModel other && Equals(other);
 
     public override int GetHashCode() => StringComparer.Ordinal.GetHashCode(Fingerprint);
 }

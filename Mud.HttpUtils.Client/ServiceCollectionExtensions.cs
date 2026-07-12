@@ -51,7 +51,10 @@ public static class HttpClientServiceCollectionExtensions
         // 注册分布式追踪与指标采集 DelegatingHandler
         // 无 ActivityListener/MeterListener 订阅时零开销，由 IsObserved 标记去重避免与 EnhancedHttpClient 兜底重复
         // HC-02 修复：TracingDelegatingHandler 为无状态设计，使用单例实例避免每次请求创建新对象，降低 GC 压力。
-        httpClientBuilder.AddHttpMessageHandler(_ => TracingDelegatingHandler.Shared);
+        // HC-03 修复：IHttpClientFactory 要求每个 handler 管道使用独立的 DelegatingHandler 实例（InnerHandler 不可重复设置）。
+        // 使用工厂委托每次创建新实例，Handler 管道生命周期由 IHttpClientFactory 管理（默认 2 分钟）。
+        // TracingDelegatingHandler 本身无状态（所有数据从 request 参数获取），新实例不增加运行时开销。
+        httpClientBuilder.AddHttpMessageHandler(() => new TracingDelegatingHandler());
 
         // HC-01 修复：将原硬编码的容量(1000)与 TTL(60秒)改为从 IOptions<MudHttpClientApplicationOptions> 读取，
         // 支持通过配置文件自定义。仍保持 TryAddSingleton 语义，用户可手动注册 IHttpResponseCache 抢占。

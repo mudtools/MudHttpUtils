@@ -83,6 +83,73 @@ services.AddMudHttpUtils("myApi", "https://api.example.com", options =>
 
 > `OnRetry` 签名为 `Func<Exception?, int, TimeSpan, Task>`，参数分别为：触发的异常（可能为 null）、重试次数（从 1 开始）、下次重试前的延迟时间。可用于日志记录、指标收集、动态调整重试策略等。
 
+## 弹性策略执行逻辑
+
+弹性策略通过**装饰器模式**叠加在 `IEnhancedHttpClient` 之上，并由 `IResiliencePolicyResolver` 支持方法级 / Per-App 的独立编排。下图展示装饰器分层结构：
+
+```mermaid
+flowchart TB
+    subgraph Caller["调用方"]
+        EX["IHttpRequestExecutor<br/>（生成代码入口）"]
+    end
+
+    subgraph Deco["弹性装饰层"]
+        RHC["ResilientHttpClient<br/>（IEnhancedHttpClient 装饰器）"]
+        WRAP["Polly PolicyWrap"]
+        R["重试 Retry（外层）"]
+        C["熔断 CircuitBreaker（中间）"]
+        T["超时 Timeout（内层）"]
+    end
+
+    subgraph Inner["内层客户端"]
+        EHC["EnhancedHttpClient<br/>/ HttpClientFactoryEnhancedClient"]
+        NET["HttpClient（System.Net.Http）"]
+    end
+
+    subgraph MethodPolicy["方法级 / Per-App 策略"]
+        RP["IResiliencePolicyResolver<br/>ResolvePolicyWrapper / GetMethodPolicy"]
+        ARP["AppResiliencePolicyResolver<br/>（按 App 隔离策略）"]
+        SKIP["SkipResiliencePropertyKey<br/>（避免全局装饰器双重包装）"]
+    end
+
+    EX --> RHC
+    RHC --> WRAP
+    WRAP --> R --> C --> T --> EHC
+    EHC --> NET
+
+    RP -->|"方法级策略优先"| EX
+    ARP -->|"为各 App 维护独立策略"| RP
+    SKIP -->|"标记跳过全局装饰"| RHC
+```
+
+单次请求在装饰器内部经历「重试 → 熔断 → 超时」的嵌套编排，重试时通过 `HttpRequestMessageCloner` 克隆请求体：
+
+```mermaid
+flowchart TD
+    Start["IHttpRequestExecutor 发起请求"] --> Check{"请求体大小<br/>> MaxCloneContentSize?"}
+    Check -->|"是（大请求体）"| Warn["记录警告，跳过重试策略"]
+    Check -->|"否"| Wrap["进入 PolicyWrap<br/>重试 → 熔断 → 超时"]
+
+    Warn --> Inner["内层 IEnhancedHttpClient 发送"]
+    Wrap --> Attempt["单次尝试"]
+    Attempt --> CB{"熔断状态?"}
+    CB -->|"Open（已熔断）"| Reject["快速失败"]
+    CB -->|"Closed / HalfOpen"| TO["超时策略（单次尝试计时）"]
+    TO --> Send["内层 IEnhancedHttpClient 发送"]
+    Send --> Resp{"成功?"}
+    Resp -->|"是"| Success["返回响应"]
+    Resp -->|"否（可重试状态 / 异常）"| RetryDec{"重试次数 < MaxRetryAttempts?<br/>且状态在 RetryStatusCodes?"}
+    RetryDec -->|"是"| Clone["HttpRequestMessageCloner.CloneAsync<br/>克隆请求体"]
+    Clone --> Attempt
+    RetryDec -->|"否"| Fail["抛出最终异常"]
+    Reject --> Fail
+```
+
+> **要点**：
+> - 策略组合顺序为 **重试（外层）→ 熔断（中间）→ 超时（内层）**：超时仅作用于单次尝试（每次重试独立计时），重试统计包含熔断结果。
+> - 请求体超过 `MaxCloneContentSize`（默认 10MB）时自动跳过重试，避免克隆大请求体的开销（适用大文件上传）。
+> - 方法级 `[Retry]`/`[Timeout]`/`[CircuitBreaker]` 经 `IResiliencePolicyResolver` 构建，并通过 `SkipResiliencePropertyKey` 标记，避免与全局装饰器双重包装。
+
 ## 配置选项
 
 ### ResilienceOptions

@@ -499,6 +499,90 @@ UrlValidator.AddAllowedDomain("new-api.example.com");
 UrlValidator.RemoveAllowedDomain("old-api.example.com");
 ```
 
+## 客户端执行逻辑
+
+`Mud.HttpUtils.Client` 在运行时承担「请求组装 → 安全处理 → 发送 → 响应处理」的完整链路。下图展示一次 HTTP 请求在客户端层各组件间的流转：
+
+```mermaid
+flowchart TD
+    Start["生成代码 / 业务调用<br/>IHttpRequestExecutor"] --> EX["DefaultHttpRequestExecutor<br/>统一入口：反序列化 / 错误处理 / 拦截器调度"]
+
+    EX --> ReqI["请求拦截器链<br/>IHttpRequestInterceptor（按 Order 升序）"]
+    ReqI --> Token["令牌注入<br/>DefaultTokenProvider → IMudAppContext<br/>→ TokenManager / IUserTokenManager"]
+    Token --> Enc{"已配置加密?<br/>IEncryptionProvider"}
+    Enc -->|"是"| EncOp["请求体 / 字段加密<br/>DefaultAesEncryptionProvider（AES-CBC）"]
+    Enc -->|"否"| Auth
+    EncOp --> Auth["认证头注入<br/>API Key / HMAC 签名"]
+    Auth --> UrlCheck["URL 安全校验<br/>UrlValidator（SSRF 防护 / 域名白名单）"]
+    UrlCheck -->|"非法地址"| UrlErr["拒绝请求并抛出异常"]
+    UrlCheck -->|"通过"| Client["IEnhancedHttpClient 发送"]
+
+    Client --> Mode{"客户端类型"}
+    Mode -->|"直接"| EHC["EnhancedHttpClient"]
+    Mode -->|"工厂"| FH["HttpClientFactoryEnhancedClient"]
+    Mode -->|"带恢复"| TR["TokenRecoveryEnhancedClient"]
+    EHC --> Trace["TracingDelegatingHandler<br/>创建 Activity / 记录链路"]
+    FH --> Trace
+    TR --> Trace
+    Trace --> Net["HttpClient（System.Net.Http）"]
+
+    Net -->|"返回响应"| RespI["响应拦截器链<br/>CacheResponseInterceptor（Order=100）"]
+    RespI --> Dec{"成功?<br/>2xx"}
+    Dec -->|"是"| Deser["反序列化 → T / Response&lt;T&gt;"]
+    Dec -->|"否（4xx/5xx）"| Err["抛出状态码异常 / 返回 Response&lt;T&gt;"]
+
+    Net -->|"401 Unauthorized"| Recover["TokenRecoveryDelegatingHandler<br/>→ TokenRecoveryExecutor 刷新令牌并重试"]
+    Recover --> Client
+```
+
+### 令牌获取与 401 恢复流程
+
+令牌的并发安全获取与「401 自动恢复」由客户端层内部协作完成，独立于业务接口，无需在生成代码中显式处理：
+
+```mermaid
+sequenceDiagram
+    participant B as 业务/生成代码
+    participant EX as DefaultHttpRequestExecutor
+    participant TP as DefaultTokenProvider
+    participant CTX as IMudAppContext
+    participant TM as TokenManagerBase
+    participant OS as TokenRefreshHostedService
+    participant RH as TokenRecoveryDelegatingHandler
+    participant RE as TokenRecoveryExecutor
+    participant NET as HttpClient
+
+    B->>EX: 调用（含 UserId?）
+    EX->>TP: GetTokenAsync(TokenRequest)
+    TP->>CTX: 获取当前 App / 用户上下文
+    CTX-->>TP: TokenManager / IUserTokenManager
+    TP->>TM: GetOrRefreshTokenAsync()
+    TM->>TM: SemaphoreSlim(1,1) 加锁
+    alt 缓存命中且未临近过期
+        TM-->>TP: 缓存的 CredentialToken
+    else 需刷新
+        TM->>TM: RefreshTokenCoreAsync()<br/>（StandardOAuth2TokenManager / 自定义）
+        TM-->>TP: 新 CredentialToken
+    end
+    TP-->>EX: AccessToken
+    EX->>NET: 携带 Token 发送请求
+
+    NET-->>RH: 返回 401
+    RH->>RE: 触发令牌恢复（≤ RecoveryMaxRetries）
+    RE->>TM: 强制刷新令牌
+    TM-->>RE: 新令牌
+    RE->>NET: 重发请求（带新令牌）
+    NET-->>EX: 成功响应
+
+    OS->>TM: 定时主动刷新（RefreshIntervalSeconds）
+    TM-->>OS: 更新缓存令牌
+```
+
+> **要点**：
+> - **令牌获取零反射、零上下文持有**：`DefaultTokenProvider` 不持有 `IMudAppContext`，而是通过每次调用的 `TokenRequest`（含 `UserId`）接收上下文，确保 `UseApp()`/`UseDefaultApp()` 切换正确传播。
+> - **并发安全刷新**：`TokenManagerBase` 使用 `SemaphoreSlim(1,1)` 保证同一时刻仅一个线程刷新；`UserTokenManagerBase` 通过 `IMemoryCache` 按用户隔离并控制容量（`SizeLimit`）。
+> - **401 自愈**：`TokenRecoveryDelegatingHandler` 与 `TokenRecoveryEnhancedClient` 共享 `TokenRecoveryExecutor`，在 `RecoveryMaxRetries` 次数内自动刷新并重试，与弹性装饰器的重试互不干扰。
+> - **后台刷新**：`TokenRefreshHostedService`（.NET 6+）/ `TokenRefreshBackgroundService`（netstandard2.0）按 `RefreshIntervalSeconds` 主动刷新，避免临界过期。
+
 ## 安装
 
 ```xml

@@ -33,59 +33,63 @@ internal class FormContentGenerator : TransitiveCodeGenerator
     /// <inheritdoc/>
     /// <remarks>
     /// 增量管道设计说明：
-    /// 本生成器需要 Compilation 进行语义分析，因此将 CompilationProvider 纳入管道。
-    /// 当编译变化时 ExecuteGenerator 会被重新调用，但 ForAttributeWithMetadataName 的语法过滤
-    /// 确保仅处理带有 [FormContent] 特性的类。
+    /// 语义数据（SemanticModel、Compilation、AttributeData）由 <see cref="GeneratorAttributeSyntaxContext"/>
+    /// 在 transform 阶段一次性捕获，并打包为 <see cref="FormContentModel"/>。该模型以类声明的源文本作为指纹
+    /// （<see cref="FormContentModel.Fingerprint"/>），通过 <see cref="WithComparer"/> 进行增量比较。
+    /// 当类源文本未变化时，<c>RegisterSourceOutput</c> 不会被触发，从而避免无关文件编辑
+    /// （如其他类型定义变更）导致的重复生成。
+    /// <para>
+    /// 此设计消除了将 <c>CompilationProvider</c> 纳入管道的反模式：任意源文件编辑都会改变 Compilation，
+    /// 旧方案下即使目标类未变也会重新生成。现方案下，仅当被标记的类声明本身发生变化时才会触发生成。
+    /// </para>
     /// </remarks>
     public override void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        var formContentClasses = context.SyntaxProvider.ForAttributeWithMetadataName(
+        var formContentModels = context.SyntaxProvider.ForAttributeWithMetadataName(
             "Mud.HttpUtils.Attributes.FormContentAttribute",
             predicate: static (node, _) => node is ClassDeclarationSyntax,
-            transform: static (ctx, _) => (ClassDeclarationSyntax)ctx.TargetNode)
-            .WithTrackingName("FormContent_SyntaxProvider");
-
-        var collected = formContentClasses
+            transform: static (ctx, _) => new FormContentModel(
+                (ClassDeclarationSyntax)ctx.TargetNode,
+                ctx))
+            .WithComparer(EqualityComparer<FormContentModel>.Default)
+            .WithTrackingName("FormContent_SyntaxProvider")
             .Collect()
             .WithTrackingName("FormContent_Collected");
 
-        var compilationWithOptions = context.CompilationProvider
+        var completeData = formContentModels
             .Combine(context.AnalyzerConfigOptionsProvider)
-            .WithTrackingName("FormContent_CompilationAndOptions");
-
-        var completeDataProvider = compilationWithOptions
-            .Combine(collected)
             .WithTrackingName("FormContent_CompleteData");
 
-        context.RegisterSourceOutput(completeDataProvider,
+        context.RegisterSourceOutput(completeData,
             (ctx, provider) => ExecuteGenerator(
-                compilation: provider.Left.Left,
-                formContentClasses: provider.Right,
+                formContentModels: provider.Left,
                 context: ctx));
     }
 
     /// <summary>
     /// 执行源代码生成逻辑
     /// </summary>
-    /// <param name="compilation">编译信息</param>
-    /// <param name="formContentContexts">FormContent 类声明数组</param>
+    /// <param name="formContentModels">所有标记 [FormContent] 特性的类模型。每个 <see cref="FormContentModel"/>
+    /// 通过 <see cref="FormContentModel.Context"/> 携带 <see cref="SemanticModel"/>（含 <see cref="Compilation"/>）。</param>
     /// <param name="context">源代码生成上下文</param>
     private void ExecuteGenerator(
-        Compilation compilation,
-        ImmutableArray<ClassDeclarationSyntax> formContentClasses,
+        ImmutableArray<FormContentModel> formContentModels,
         SourceProductionContext context)
     {
-        if (formContentClasses.IsDefaultOrEmpty)
+        if (formContentModels.IsDefaultOrEmpty)
             return;
 
-        foreach (var classDecl in formContentClasses)
+        foreach (var model in formContentModels)
         {
+            if (context.CancellationToken.IsCancellationRequested)
+                return;
+
+            var classDecl = model.Syntax;
+
             try
             {
-                var semanticModel = SemanticModelCache.GetOrCreate(compilation, classDecl.SyntaxTree);
-                var classSymbol = semanticModel.GetDeclaredSymbol(classDecl) as INamedTypeSymbol;
-
-                if (classSymbol == null)
+                // 使用 FormContentModel 中预解析的 Symbol，避免重复调用 GetDeclaredSymbol
+                if (model.Symbol is not INamedTypeSymbol classSymbol)
                 {
                     context.ReportDiagnostic(Diagnostic.Create(
                         Diagnostics.FormContentGenerationError,
