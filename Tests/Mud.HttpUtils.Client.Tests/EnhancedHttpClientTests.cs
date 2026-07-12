@@ -181,16 +181,17 @@ public class EnhancedHttpClientTests : IClassFixture<UrlValidatorFixture>
     }
 
     [Fact]
-    public async Task SendAsync_WithInvalidJson_ThrowsHttpRequestExceptionWithJsonInnerException()
+    public async Task SendAsync_WithInvalidJson_ThrowsJsonException()
     {
+        // HC-02 修复：JsonException 现在直接抛出而非包装为 HttpRequestException，
+        // 以便调用方可以按 JsonException 类型进行 catch
         var handler = CreateMockHandler("not-valid-json", HttpStatusCode.OK);
         var client = CreateClient(handler.Object);
 
         var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/test");
         var act = async () => await client.SendAsync<TestData>(request);
 
-        var exception = await act.Should().ThrowAsync<HttpRequestException>();
-        exception.And.InnerException.Should().BeOfType<JsonException>();
+        await act.Should().ThrowAsync<JsonException>();
     }
 
     [Fact]

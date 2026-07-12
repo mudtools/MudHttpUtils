@@ -1074,8 +1074,9 @@ namespace TestNamespace
             "未声明 [Cache] 特性时应直接赋值（不抛异常）");
         generatedCode.Should().Contain("_resilienceResolver = resilienceResolver;",
             "未声明 [Retry] 特性时应直接赋值（不抛异常）");
-        generatedCode.Should().Contain("new Mud.HttpUtils.DefaultHttpRequestExecutor(__appContext.HttpClient, _cacheProvider, _resilienceResolver)",
-            "方法内执行器创建应引用 _cacheProvider/_resilienceResolver 字段而非 null");
+        // 执行器统一使用 DI 注入的 _executor 字段（所有模式均通过构造函数注入，无状态设计）
+        generatedCode.Should().Contain("_executor = executor ?? throw new ArgumentNullException(nameof(executor));",
+            "执行器应通过 DI 注入而非手动创建");
     }
 
     [Fact]
@@ -1144,9 +1145,10 @@ namespace TestNamespace
     }
 
     [Fact]
-    public void Generator_WithDefaultMode_GeneratesObsoleteUseApp()
+    public void Generator_WithDefaultMode_GeneratesUseAppWithoutObsolete()
     {
-        // 验证默认模式下 UseApp(string) 标记 [Obsolete]
+        // GEN-02 修复：UseApp(string) 不再标记 [Obsolete]，
+        // 因为它与 BeginScope 是互补关系而非替代关系
         var source = @"
 using Mud.HttpUtils;
 using Mud.HttpUtils.Attributes;
@@ -1165,16 +1167,17 @@ namespace TestNamespace
         var generatedCode = GetGeneratedCode(outputCompilation);
 
         generatedCode.Should().NotBeNull();
-        generatedCode.Should().Contain("[Obsolete(\"推荐使用 BeginScope(string) 以确保上下文自动恢复",
-            "默认模式下 UseApp(string) 应标记 [Obsolete]");
         generatedCode.Should().Contain("public IMudAppContext UseApp(string appKey)",
             "默认模式下应生成 UseApp(string) 方法");
+        generatedCode.Should().NotContain("[Obsolete",
+            "GEN-02 修复后 UseApp 不再标记 [Obsolete]");
     }
 
     [Fact]
-    public void Generator_WithDefaultMode_GeneratesObsoleteUseDefaultApp()
+    public void Generator_WithDefaultMode_GeneratesUseDefaultAppWithoutObsolete()
     {
-        // 验证默认模式下 UseDefaultApp() 标记 [Obsolete]
+        // GEN-02 修复：UseDefaultApp() 不再标记 [Obsolete]，
+        // 因为它与 UseDefaultAppScope() 是互补关系而非替代关系
         var source = @"
 using Mud.HttpUtils;
 using Mud.HttpUtils.Attributes;
@@ -1193,10 +1196,10 @@ namespace TestNamespace
         var generatedCode = GetGeneratedCode(outputCompilation);
 
         generatedCode.Should().NotBeNull();
-        generatedCode.Should().Contain("[Obsolete(\"推荐使用 UseDefaultAppScope() 以确保上下文自动恢复",
-            "默认模式下 UseDefaultApp() 应标记 [Obsolete]");
         generatedCode.Should().Contain("public IMudAppContext UseDefaultApp()",
             "默认模式下应生成 UseDefaultApp() 方法");
+        generatedCode.Should().NotContain("[Obsolete",
+            "GEN-02 修复后 UseDefaultApp 不再标记 [Obsolete]");
     }
 
     [Fact]
