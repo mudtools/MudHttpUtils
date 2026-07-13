@@ -246,6 +246,11 @@ internal class MethodGenerator : ICodeFragmentGenerator
         var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
 
         // IAsyncEnumerable — 直接调用执行器流式方法（不经过 Cache/Resilience，与当前行为一致）
+        // AOT 安全说明：生成代码传递 _jsonSerializerOptions（含 DI 注入的 JsonSerializerContext resolver），
+        // IL2026/IL3050 误报已由 ClassStructureGenerator 生成的类级 [UnconditionalSuppressMessage] 压制。
+        // 消费方须确保 T（elementType）已在 JsonSerializerContext 中声明，否则 AOT 下反序列化返回 default。
+        // JsonTypeInfo<T> 安全重载（AsyncEnumerableExtensions.SendAsAsyncEnumerable<T>(IBaseHttpClient, HttpRequestMessage, JsonTypeInfo<T>, CT)）
+        // 已存在于 NET8_0_OR_GREATER，但源生成器无法访问消费方的 JsonSerializerContext 实例，故无法自动切换。
         if (methodInfo.IsAsyncEnumerableReturn && !string.IsNullOrEmpty(methodInfo.AsyncEnumerableElementType))
         {
             var elementType = methodInfo.AsyncEnumerableElementType;
