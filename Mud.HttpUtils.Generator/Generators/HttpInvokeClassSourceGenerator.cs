@@ -56,6 +56,20 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
                 HandleInterfaceProcessingException(ex, interfaceDecl, context);
             }
         }
+
+        // P2.1: AOT004 — 检查 DTO 覆盖情况（仅在有 HttpClientApi 接口时运行）
+        if (!interfaces.IsDefaultOrEmpty)
+        {
+            try
+            {
+                var firstCompilation = interfaces[0].Context.SemanticModel.Compilation;
+                Mud.HttpUtils.Analyzers.AotDtoCoverageAnalyzer.Analyze(firstCompilation, context);
+            }
+            catch
+            {
+                // AOT004 是诊断性检查，不应阻断代码生成
+            }
+        }
     }
 
     private void ProcessInterface(Compilation compilation, InterfaceDeclarationSyntax interfaceDecl, INamedTypeSymbol interfaceSymbol, SemanticModel semanticModel, SourceProductionContext context, string httpClientOptionsName)

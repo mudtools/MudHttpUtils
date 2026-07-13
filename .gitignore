@@ -46,6 +46,9 @@
 /Tests/Mud.HttpUtils.Benchmarks/bin
 /Tests/Mud.HttpUtils.Benchmarks/obj
 /Tests/Mud.HttpUtils.Benchmarks/TestResults
+/Tests/Mud.HttpUtils.JsonContextScaffolder.Tests/bin
+/Tests/Mud.HttpUtils.JsonContextScaffolder.Tests/obj
+/Tests/Mud.HttpUtils.JsonContextScaffolder.Tests/TestResults
 /Demos/HttpClientApiDemo/bin
 /Demos/HttpClientApiDemo/obj
 /Demos/HttpClientDemo/bin
@@ -60,6 +63,9 @@
 /Demos/CommonClassPubliceLibrary/obj
 /Demos/HttpClientApiPublicDemo/bin
 /Demos/HttpClientApiPublicDemo/obj
+/Tools/Mud.HttpUtils.JsonContextScaffolder/bin
+/Tools/Mud.HttpUtils.JsonContextScaffolder/obj
+/Tools/bin
 /Demos/bin
 /.trae
 /artifacts

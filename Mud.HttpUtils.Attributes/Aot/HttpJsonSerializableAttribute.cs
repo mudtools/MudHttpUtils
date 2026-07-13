@@ -44,14 +44,14 @@ public sealed class HttpJsonSerializableAttribute : Attribute
     public string? SerializerClassName { get; set; }
 
     /// <summary>
-    /// 可选的 JSON 命名策略。若未指定，Scaffolder 会按以下优先级推导：
+    /// JSON 命名策略。设为 <see cref="JsonNamingPolicyHint.Default"/> 时由 Scaffolder 自动推导：
     /// <list type="number">
     ///   <item>程序集中超过 50% 的实体使用 <c>[JsonPropertyName]</c> 且符合 SnakeCaseLower 模式 → 自动选 SnakeCaseLower</item>
     ///   <item>否则默认 CamelCase（与库 <c>s_defaultJsonSerializerOptions</c> 一致）</item>
     /// </list>
     /// 显式指定将覆盖自动推导。
     /// </summary>
-    public JsonNamingPolicyHint? NamingPolicy { get; set; }
+    public JsonNamingPolicyHint NamingPolicy { get; set; } = JsonNamingPolicyHint.Default;
 }
 
 /// <summary>
@@ -60,6 +60,11 @@ public sealed class HttpJsonSerializableAttribute : Attribute
 /// </summary>
 public enum JsonNamingPolicyHint
 {
+    /// <summary>
+    /// 自动推导（默认）。Scaffolder 检测实体上的 <c>[JsonPropertyName]</c> 模式决定策略。
+    /// </summary>
+    Default,
+
     /// <summary>
     /// 驼峰命名（如 <c>propertyName</c>），与库默认 <c>JsonNamingPolicy.CamelCase</c> 一致。
     /// </summary>

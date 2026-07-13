@@ -10,6 +10,7 @@ namespace AotVerificationDemo;
 /// <summary>
 /// 用户信息（JSON 响应 DTO）
 /// </summary>
+[HttpJsonSerializable(SerializerClassName = "App", NamingPolicy = JsonNamingPolicyHint.CamelCase)]
 public class UserDto
 {
     public int Id { get; set; }
@@ -22,6 +23,7 @@ public class UserDto
 /// <summary>
 /// 创建用户请求（JSON 请求 DTO）
 /// </summary>
+[HttpJsonSerializable(SerializerClassName = "App", NamingPolicy = JsonNamingPolicyHint.CamelCase)]
 public class CreateUserRequest
 {
     public string Name { get; set; } = string.Empty;
@@ -33,6 +35,7 @@ public class CreateUserRequest
 /// <summary>
 /// 登录结果（JSON 响应 DTO）
 /// </summary>
+[HttpJsonSerializable(SerializerClassName = "App", NamingPolicy = JsonNamingPolicyHint.CamelCase)]
 public class LoginResult
 {
     [SensitiveData(MaskMode = SensitiveDataMaskMode.Hide)]
