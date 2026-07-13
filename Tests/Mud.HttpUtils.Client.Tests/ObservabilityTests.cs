@@ -908,6 +908,21 @@ public class ObservabilityTests
         TracingDelegatingHandler.ObservedPropertyKey.Should().Be("__mud_observed");
     }
 
+    [Fact]
+    public void TracingHandler_Shared_IsNotNull()
+    {
+        TracingDelegatingHandler.Shared.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void TracingHandler_Shared_ReturnsSameInstance()
+    {
+        var first = TracingDelegatingHandler.Shared;
+        var second = TracingDelegatingHandler.Shared;
+
+        first.Should().BeSameAs(second);
+    }
+
     // ============ v2 修复：Mud 自定义 Span 属性断言 ============
 
     [Fact]

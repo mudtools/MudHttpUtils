@@ -266,6 +266,36 @@ public class OptionsDefaultValueTests
     }
 
     [Fact]
+    public void MudHttpClientApplicationOptions_ResponseCache_DefaultIsNotNull()
+    {
+        var options = new MudHttpClientApplicationOptions();
+
+        options.ResponseCache.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void ResponseCacheOptions_DefaultValues_AreCorrect()
+    {
+        var options = new ResponseCacheOptions();
+
+        options.MaxCacheSize.Should().Be(1000);
+        options.CleanupIntervalSeconds.Should().Be(60);
+    }
+
+    [Fact]
+    public void ResponseCacheOptions_CanSetCustomValues()
+    {
+        var options = new ResponseCacheOptions
+        {
+            MaxCacheSize = 5000,
+            CleanupIntervalSeconds = 30
+        };
+
+        options.MaxCacheSize.Should().Be(5000);
+        options.CleanupIntervalSeconds.Should().Be(30);
+    }
+
+    [Fact]
     public void AesEncryptionOptions_Key_ReturnsClone()
     {
         var key = new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16 };

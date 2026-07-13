@@ -23,6 +23,32 @@ public class TokenManagerBaseTests
     }
 
     [Fact]
+    public async Task GetOrRefreshTokenAsync_WhenTokenExpired_ReturnsRefreshedTokenNotCachedToken()
+    {
+        // TM-05 验证：刷新成功后直接返回新 token，而非缓存中的旧 token
+        var manager = new TestTokenManager("old-cached-token", DateTimeOffset.UtcNow.AddMinutes(-1).ToUnixTimeMilliseconds());
+
+        var token = await manager.GetOrRefreshTokenAsync();
+
+        token.Should().Be("refreshed-token");
+        token.Should().NotBe("old-cached-token");
+    }
+
+    [Fact]
+    public async Task GetOrRefreshTokenAsync_AfterRefresh_TokenIsCachedForSubsequentCalls()
+    {
+        // TM-05 验证：刷新后的 token 应被写入缓存，后续调用返回相同 token 且不重复刷新
+        var manager = new CountingRefreshTokenManager();
+
+        var token1 = await manager.GetOrRefreshTokenAsync();
+        var token2 = await manager.GetOrRefreshTokenAsync();
+
+        token1.Should().Be("refreshed-and-cached-token");
+        token2.Should().Be(token1);
+        manager.RefreshCount.Should().Be(1);
+    }
+
+    [Fact]
     public async Task GetOrRefreshTokenAsync_WhenRefreshFails_TriggersRefreshFailedEvent()
     {
         var manager = new FailingTokenManager();
@@ -263,6 +289,24 @@ public class TokenManagerBaseTests
                 AccessToken = "refreshed-token",
                 Expire = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds()
             });
+    }
+
+    private class CountingRefreshTokenManager : TokenManagerBase
+    {
+        public int RefreshCount { get; private set; }
+
+        public override Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
+            => GetOrRefreshTokenAsync(cancellationToken);
+
+        protected override Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
+        {
+            RefreshCount++;
+            return Task.FromResult(new CredentialToken
+            {
+                AccessToken = "refreshed-and-cached-token",
+                Expire = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds()
+            });
+        }
     }
 
     private class FailingTokenManager : TokenManagerBase

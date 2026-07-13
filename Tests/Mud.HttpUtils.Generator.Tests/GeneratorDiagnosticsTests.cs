@@ -126,4 +126,31 @@ namespace TestNamespace
     }
 
     #endregion
+
+    #region HTTPCLIENT018 - TokenManager Without Explicit Key
+
+    [Fact]
+    public void Generator_WithTokenManagerButNoKey_GeneratesHTTPCLIENT018()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(TokenManage = ""myManager"")]
+    public interface ITestApi
+    {
+        [Get(""/data"")]
+        Task<string> GetDataAsync();
+    }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        diagnostics.Should().Contain(d => d.Id == "HTTPCLIENT018");
+    }
+
+    #endregion
 }
