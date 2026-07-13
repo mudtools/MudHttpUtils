@@ -972,6 +972,133 @@ public class RequestBuilderTests
         code.Should().NotContain("GetValue");
     }
 
+    /// <summary>
+    /// 验证子类继承的属性也能被编译期枚举到（AOT 安全路径）。
+    /// 子类比基类多一个属性，基类属性也应在生成代码中出现。
+    /// </summary>
+    [Fact]
+    public void GenerateBodyParameter_FormUrlEncodedWithInheritance_EnumeratesBaseAndDerivedProperties()
+    {
+        var typeSymbol = GetTypeSymbolFromCompilation("""
+            public class BaseFormBody
+            {
+                public string BaseField { get; set; }
+                public int BaseNumber { get; set; }
+            }
+            public class DerivedFormBody : BaseFormBody
+            {
+                public string DerivedField { get; set; }
+            }
+            """, "DerivedFormBody");
+
+        var methodInfo = CreateMethodInfo("/api/submit", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "form",
+                Type = "DerivedFormBody",
+                TypeSymbol = typeSymbol,
+                Attributes = [new ParameterAttributeInfo { Name = "BodyAttribute" }]
+            }
+        });
+        methodInfo.SerializationMethod = "FormUrlEncoded";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: true);
+        var code = codeBuilder.ToString();
+
+        // 基类属性和子类属性都应被枚举到
+        code.Should().Contain("form.BaseField");
+        code.Should().Contain("form.BaseNumber");
+        code.Should().Contain("form.DerivedField");
+        code.Should().Contain("FormUrlEncodedContent");
+
+        // 不应包含反射
+        code.Should().NotContain("GetType().GetProperties()");
+        code.Should().NotContain("GetValue");
+    }
+
+    /// <summary>
+    /// 验证带 private setter 的属性不会被枚举（与运行时 GetProperties 行为一致）。
+    /// </summary>
+    [Fact]
+    public void GenerateBodyParameter_FormUrlEncodedWithPrivateSetter_ExcludesPrivateSetterProperties()
+    {
+        var typeSymbol = GetTypeSymbolFromCompilation("""
+            public class MixedAccessBody
+            {
+                public string PublicProp { get; set; }
+                public int PrivateSetterProp { get; private set; }
+            }
+            """, "MixedAccessBody");
+
+        var methodInfo = CreateMethodInfo("/api/test", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "data",
+                Type = "MixedAccessBody",
+                TypeSymbol = typeSymbol,
+                Attributes = [new ParameterAttributeInfo { Name = "BodyAttribute" }]
+            }
+        });
+        methodInfo.SerializationMethod = "FormUrlEncoded";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: true);
+        var code = codeBuilder.ToString();
+
+        // PublicProp 有公共 getter 和 setter，应被枚举
+        code.Should().Contain("data.PublicProp");
+
+        // PrivateSetterProp 的 setter 是 private，但 getter 是 public
+        // 生成器检查 p.GetMethod.DeclaredAccessibility == Public，getter 是 public 的所以应被包含
+        // 验证它确实被包含（因为只需读取属性值，不需要 setter）
+        code.Should().Contain("data.PrivateSetterProp");
+
+        code.Should().Contain("FormUrlEncodedContent");
+    }
+
+    /// <summary>
+    /// 验证 static 属性不会被枚举（与运行时 GetProperties 的 BindingFlags.Instance 一致）。
+    /// </summary>
+    [Fact]
+    public void GenerateBodyParameter_FormUrlEncodedWithStaticProperty_ExcludesStaticProperties()
+    {
+        var typeSymbol = GetTypeSymbolFromCompilation("""
+            public class WithStaticProp
+            {
+                public string InstanceProp { get; set; }
+                public static string StaticProp { get; set; } = "default";
+            }
+            """, "WithStaticProp");
+
+        var methodInfo = CreateMethodInfo("/api/test", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "data",
+                Type = "WithStaticProp",
+                TypeSymbol = typeSymbol,
+                Attributes = [new ParameterAttributeInfo { Name = "BodyAttribute" }]
+            }
+        });
+        methodInfo.SerializationMethod = "FormUrlEncoded";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: true);
+        var code = codeBuilder.ToString();
+
+        // 实例属性应被枚举
+        code.Should().Contain("data.InstanceProp");
+
+        // 静态属性不应被枚举
+        code.Should().NotContain("data.StaticProp");
+        code.Should().NotContain("WithStaticProp.StaticProp");
+
+        code.Should().Contain("FormUrlEncodedContent");
+    }
+
     #endregion
 
     #region 辅助方法

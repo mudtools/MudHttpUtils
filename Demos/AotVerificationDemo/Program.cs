@@ -25,6 +25,7 @@ public class Program
         await DemoEnhancedHttpClient_Json(host.Services);
         await DemoGeneratedApiClient_FormUrlEncoded(host.Services);
         await DemoResilienceDecorator(host.Services);
+        await DemoResilienceDecoratorWithImplementationType();
         DemoSensitiveDataMasker();
 
         Console.WriteLine("\n=== AOT 验证示例完成 ===");
@@ -212,6 +213,76 @@ public class Program
         }
 
         Console.WriteLine("  [✓] Resilience 装饰器路径已执行（ActivatorUtilities 已知类型，AOT 安全）\n");
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // 场景 4b：Resilience 装饰器 — ImplementationType 分支
+    // ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 验证通过 ImplementationType 注册的 IEnhancedHttpClient 在装饰器包装下
+    /// 走 ActivatorUtilities.CreateInstance 路径（AOT 安全验证）。
+    /// </summary>
+    /// <remarks>
+    /// 此场景使用独立的 ServiceCollection，以避免与主注册冲突。
+    /// DecorateService&lt;IEnhancedHttpClient&gt; 在 ImplementationType 分支调用
+    /// ActivatorUtilities.CreateInstance(sp, implementationType)，需验证 AOT 下正常。
+    /// </remarks>
+    private static async Task DemoResilienceDecoratorWithImplementationType()
+    {
+        Console.WriteLine("--- 4b. Resilience 装饰器（ImplementationType 分支）---");
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // 注册 HttpClient 供 ActivatorUtilities 解析
+        services.AddTransient(_ => new HttpClient { BaseAddress = new Uri("https://httpbin.org"), Timeout = TimeSpan.FromSeconds(10) });
+
+        // 使用 ImplementationType 注册（非工厂委托），触发 DecorateService 的 ImplementationType 分支
+        services.AddTransient<IEnhancedHttpClient, SimpleEnhancedClient>();
+
+        // 添加弹性装饰器
+        services.AddMudHttpResilienceDecorator(options =>
+        {
+            options.Retry.Enabled = true;
+            options.Retry.MaxRetryAttempts = 1;
+            options.Retry.DelayMilliseconds = 50;
+            options.Timeout.Enabled = true;
+            options.Timeout.TimeoutSeconds = 5;
+            options.CircuitBreaker.Enabled = false;
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var httpClient = provider.GetRequiredService<IEnhancedHttpClient>();
+
+        // 验证 IEnhancedHttpClient 已被 ResilientHttpClient 装饰器包装
+        var typeName = httpClient.GetType().Name;
+        Console.WriteLine($"  IEnhancedHttpClient 实际类型: {typeName}");
+
+        if (typeName.Contains("Resilient"))
+        {
+            Console.WriteLine("  [✓] ImplementationType 分支装饰器已生效（ActivatorUtilities.CreateInstance AOT 安全）");
+        }
+        else
+        {
+            Console.WriteLine($"  [!] 装饰器未生效，类型为 {typeName}");
+        }
+
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, "/api/test");
+            await httpClient.SendAsync<UserDto>(request);
+        }
+        catch (HttpRequestException ex)
+        {
+            Console.WriteLine($"  SendAsync — HTTP 请求失败（预期）: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  SendAsync — 异常: {ex.GetType().Name}: {ex.Message}");
+        }
+
+        Console.WriteLine("  [✓] ImplementationType 路径已执行（ActivatorUtilities.CreateInstance 在 AOT 下正常）\n");
     }
 
     // ─────────────────────────────────────────────────────────

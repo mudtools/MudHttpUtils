@@ -421,13 +421,25 @@ internal class RequestBuilder
         // 尝试使用编译期类型符号枚举属性（AOT 安全路径）
         if (bodyParam.TypeSymbol != null)
         {
-            var properties = bodyParam.TypeSymbol.GetMembers()
-                .OfType<IPropertySymbol>()
-                .Where(p => p.DeclaredAccessibility == Accessibility.Public
-                            && !p.IsStatic
-                            && p.GetMethod != null
-                            && p.GetMethod.DeclaredAccessibility == Accessibility.Public)
-                .ToList();
+            // 遍历继承链枚举所有公共可读属性（与运行时 GetProperties() 行为一致）
+            var properties = new List<IPropertySymbol>();
+            var currentType = bodyParam.TypeSymbol;
+            while (currentType != null && currentType.SpecialType != SpecialType.System_Object)
+            {
+                var declaredProps = currentType.GetMembers()
+                    .OfType<IPropertySymbol>()
+                    .Where(p => p.DeclaredAccessibility == Accessibility.Public
+                                && !p.IsStatic
+                                && p.GetMethod != null
+                                && p.GetMethod.DeclaredAccessibility == Accessibility.Public);
+                foreach (var prop in declaredProps)
+                {
+                    // 避免重复添加被 override 的属性
+                    if (!properties.Any(p => SymbolEqualityComparer.Default.Equals(p, prop.OriginalDefinition) || p.Name == prop.Name))
+                        properties.Add(prop);
+                }
+                currentType = currentType.BaseType;
+            }
 
             codeBuilder.AppendLine("                var __bodyFormParams = new Dictionary<string, string>();");
 

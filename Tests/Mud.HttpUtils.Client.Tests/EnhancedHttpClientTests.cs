@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Moq;
 using Moq.Protected;
 
@@ -642,8 +643,9 @@ public class EnhancedHttpClientTests : IClassFixture<UrlValidatorFixture>
     {
         public TestableEnhancedHttpClient(
             HttpClient httpClient,
-            EnhancedHttpClientOptions? options = null)
-            : base(httpClient, options)
+            EnhancedHttpClientOptions? options = null,
+            IOptions<JsonSerializerOptions>? jsonOptions = null)
+            : base(httpClient, options, jsonOptions)
         {
         }
     }
