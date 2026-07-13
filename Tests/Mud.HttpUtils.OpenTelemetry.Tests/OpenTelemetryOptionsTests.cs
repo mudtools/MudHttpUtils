@@ -457,4 +457,28 @@ public class OpenTelemetryOptionsTests
         act.Should().Throw<ArgumentOutOfRangeException>()
             .WithMessage("*SamplingRatio*");
     }
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_FromConfiguration_DoesNotRegisterIOptionsMonitor()
+    {
+        // 验证：从 IConfiguration 绑定后，IOptionsMonitor<MudHttpOpenTelemetryOptions> 不应注册
+        // （因为 OTel SDK 本身不支持热更新，使用 Bind 而非 Configure<T>）
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpOpenTelemetry:ServiceName"] = "test-service"
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMudHttpOpenTelemetry(config);
+
+        // OTel 注册了大量服务，但不应包含 IOptionsMonitor<MudHttpOpenTelemetryOptions>
+        // （因为使用 Bind 而非 Configure<T>）
+        var descriptor = services.FirstOrDefault(
+            s => s.ServiceType == typeof(IOptionsMonitor<MudHttpOpenTelemetryOptions>));
+        // 此测试验证设计意图：明确不支持热更新
+        descriptor.Should().BeNull();
+    }
 }

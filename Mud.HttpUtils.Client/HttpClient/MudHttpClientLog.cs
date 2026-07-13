@@ -59,6 +59,10 @@ internal static partial class MudHttpClientLog
     [LoggerMessage(EventId = 110, Level = LogLevel.Warning,
         Message = "HTTP 请求超时：操作在 {TimeoutMs}ms 内未完成。")]
     public static partial void RequestTimeoutMs(ILogger logger, double timeoutMs);
+
+    [LoggerMessage(EventId = 111, Level = LogLevel.Warning,
+        Message = "RetryStatusCodes 配置为空数组，仅 HttpRequestException（无 StatusCode）/TimeoutRejectedException/TaskCanceledException 会触发重试。如需使用默认状态码 [408,429,500,502,503,504]，请移除该配置项或设为 null。")]
+    public static partial void RetryStatusCodesEmptyArray(ILogger logger);
 #else
     private static readonly Action<ILogger, double, int, int, Exception?> s_retryAttempting =
         LoggerMessage.Define<double, int, int>(LogLevel.Warning, new EventId(101, nameof(RetryAttempting)),
@@ -116,6 +120,11 @@ internal static partial class MudHttpClientLog
             "HTTP 请求超时：操作在 {TimeoutMs}ms 内未完成。");
     public static void RequestTimeoutMs(ILogger logger, double timeoutMs)
         => s_requestTimeoutMs(logger, timeoutMs, null);
+
+    private static readonly Action<ILogger, Exception?> s_retryStatusCodesEmptyArray =
+        LoggerMessage.Define(LogLevel.Warning, new EventId(111, nameof(RetryStatusCodesEmptyArray)),
+            "RetryStatusCodes 配置为空数组，仅 HttpRequestException（无 StatusCode）/TimeoutRejectedException/TaskCanceledException 会触发重试。如需使用默认状态码 [408,429,500,502,503,504]，请移除该配置项或设为 null。");
+    public static void RetryStatusCodesEmptyArray(ILogger logger) => s_retryStatusCodesEmptyArray(logger, null);
 #endif
 
     #endregion

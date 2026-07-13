@@ -106,7 +106,16 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             return Policy.NoOpAsync<TResult>();
         }
 
-        var retryStatusCodes = retryOptions.RetryStatusCodes ?? GetDefaultRetryStatusCodes();
+        var retryStatusCodes = retryOptions.RetryStatusCodes;
+        if (retryStatusCodes is null)
+        {
+            retryStatusCodes = GetDefaultRetryStatusCodes();
+        }
+        else if (retryStatusCodes.Length == 0)
+        {
+            // 空数组表示用户有意禁用状态码重试（仅异常触发重试），记录警告
+            MudHttpClientLog.RetryStatusCodesEmptyArray(_logger);
+        }
         var policyKey = PolicyKeyGlobalRetry;
 
         return Policy<TResult>
@@ -426,7 +435,15 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 
         if (retryEnabled)
         {
-            var retryStatusCodes = _options.Retry.RetryStatusCodes ?? GetDefaultRetryStatusCodes();
+            var retryStatusCodes = _options.Retry.RetryStatusCodes;
+            if (retryStatusCodes is null)
+            {
+                retryStatusCodes = GetDefaultRetryStatusCodes();
+            }
+            else if (retryStatusCodes.Length == 0)
+            {
+                MudHttpClientLog.RetryStatusCodesEmptyArray(_logger);
+            }
             var onRetryCallback = _options.Retry.OnRetry;
 
             var retryPolicy = Policy<TResult>

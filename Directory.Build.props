@@ -7,7 +7,7 @@
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
 		<PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
 		<PackageProjectUrl>http://www.mudtools.cn/</PackageProjectUrl>
-		<RepositoryUrl>https://github.com/mudtools/MudCodeGenerator</RepositoryUrl>
+		<RepositoryUrl>https://github.com/mudtools/MudHttpUtils</RepositoryUrl>
 		<RepositoryType>git</RepositoryType>
 		<PackageIcon>Icon.png</PackageIcon>
 		<PackageReadmeFile>README.md</PackageReadmeFile>

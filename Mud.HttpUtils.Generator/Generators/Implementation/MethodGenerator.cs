@@ -281,9 +281,10 @@ internal class MethodGenerator : ICodeFragmentGenerator
             var progressArg = progressParam != null ? progressParam.Name : "null";
 
             // 构造 ResponseDescriptor 以支持 AllowAnyStatusCode
-            var responseDescriptor = BuildResponseDescriptorCode(methodInfo, deserializeType);
-            codeBuilder.AppendLine($"            await {executor}.DownloadLargeAsync(__httpRequest, {httpClientExpr}, {filePathParam.Name}, overwrite: {overwrite.ToString().ToLowerInvariant()}, bufferSize: {bufferSize},");
-            codeBuilder.AppendLine($"                {responseDescriptor}, progress: {progressArg}{cancellationTokenArg}).ConfigureAwait(false);");
+            codeBuilder.AppendLine($"            await {executor}.DownloadLargeAsync(__httpRequest, {httpClientExpr}, {filePathParam.Name}, {overwrite.ToString().ToLowerInvariant()}, {bufferSize},");
+            codeBuilder.Append("                ");
+            WriteResponseDescriptorCode(codeBuilder, methodInfo, deserializeType, indent: "                ");
+            codeBuilder.AppendLine($", progress: {progressArg}{cancellationTokenArg}).ConfigureAwait(false);");
             return;
         }
 
@@ -299,79 +300,87 @@ internal class MethodGenerator : ICodeFragmentGenerator
             if (hasCacheOrResilience)
             {
                 // 启用 Cache/Resilience 时通过 ExecuteAsync 编排（执行器内部对 byte[] 使用 DownloadAsync 而非反序列化）
-                var byteDownloadDescriptor = BuildExecutionDescriptorCode(context, methodInfo, deserializeType);
                 if (isNullableByteArray)
                 {
                     codeBuilder.AppendLine($"            return await {executor}.ExecuteAsync<{deserializeType}>(");
-                    codeBuilder.AppendLine($"                __httpRequest,");
+                    codeBuilder.AppendLine("                __httpRequest,");
                     codeBuilder.AppendLine($"                {httpClientExpr},");
-                    codeBuilder.AppendLine($"                {byteDownloadDescriptor},");
+                    codeBuilder.Append("                ");
+                    WriteExecutionDescriptorCode(codeBuilder, context, methodInfo, deserializeType, indent: "                ");
+                    codeBuilder.AppendLine(",");
                     codeBuilder.AppendLine($"                _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false);");
                 }
                 else
                 {
                     codeBuilder.AppendLine($"            return (await {executor}.ExecuteAsync<{deserializeType}>(");
-                    codeBuilder.AppendLine($"                __httpRequest,");
+                    codeBuilder.AppendLine("                __httpRequest,");
                     codeBuilder.AppendLine($"                {httpClientExpr},");
-                    codeBuilder.AppendLine($"                {byteDownloadDescriptor},");
+                    codeBuilder.Append("                ");
+                    WriteExecutionDescriptorCode(codeBuilder, context, methodInfo, deserializeType, indent: "                ");
+                    codeBuilder.AppendLine(",");
                     codeBuilder.AppendLine($"                _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false)) ?? System.Array.Empty<byte>();");
                 }
             }
             else
             {
                 // 未启用 Cache/Resilience 时直接调用 DownloadAsync，传递 ResponseDescriptor 以支持 AllowAnyStatusCode
-                var responseDescriptor = BuildResponseDescriptorCode(methodInfo, deserializeType);
                 if (isNullableByteArray)
                 {
                     codeBuilder.AppendLine($"            return await {executor}.DownloadAsync(__httpRequest, {httpClientExpr},");
-                    codeBuilder.AppendLine($"                {responseDescriptor}{cancellationTokenArg}).ConfigureAwait(false);");
+                    codeBuilder.Append("                ");
+                    WriteResponseDescriptorCode(codeBuilder, methodInfo, deserializeType, indent: "                ");
+                    codeBuilder.AppendLine($"{cancellationTokenArg}).ConfigureAwait(false);");
                 }
                 else
                 {
                     codeBuilder.AppendLine($"            return (await {executor}.DownloadAsync(__httpRequest, {httpClientExpr},");
-                    codeBuilder.AppendLine($"                {responseDescriptor}{cancellationTokenArg}).ConfigureAwait(false)) ?? System.Array.Empty<byte>();");
+                    codeBuilder.Append("                ");
+                    WriteResponseDescriptorCode(codeBuilder, methodInfo, deserializeType, indent: "                ");
+                    codeBuilder.AppendLine($"{cancellationTokenArg}).ConfigureAwait(false)) ?? System.Array.Empty<byte>();");
                 }
             }
             return;
         }
 
-        // 构造 ExecutionDescriptor 并调用执行器（支持 Cache/Resilience 编排）
-        var executionDescriptor = BuildExecutionDescriptorCode(context, methodInfo, deserializeType);
-
         // void 返回 — 使用非泛型 ExecuteAsync（支持 Cache/Resilience 编排）
         if (IsVoidType(deserializeType))
         {
             codeBuilder.AppendLine($"            await {executor}.ExecuteAsync(");
-            codeBuilder.AppendLine($"                __httpRequest,");
+            codeBuilder.AppendLine("                __httpRequest,");
             codeBuilder.AppendLine($"                {httpClientExpr},");
-            codeBuilder.AppendLine($"                {executionDescriptor}{cancellationTokenArg}).ConfigureAwait(false);");
+            codeBuilder.Append("                ");
+            WriteExecutionDescriptorCode(codeBuilder, context, methodInfo, deserializeType, indent: "                ");
+            codeBuilder.AppendLine($"{cancellationTokenArg}).ConfigureAwait(false);");
             return;
         }
 
         if (IsResponseType(deserializeType, out var innerType))
         {
             codeBuilder.AppendLine($"            return await {executor}.ExecuteAsResponseAsync<{innerType}>(");
-            codeBuilder.AppendLine($"                __httpRequest,");
+            codeBuilder.AppendLine("                __httpRequest,");
             codeBuilder.AppendLine($"                {httpClientExpr},");
-            codeBuilder.AppendLine($"                {executionDescriptor},");
+            codeBuilder.Append("                ");
+            WriteExecutionDescriptorCode(codeBuilder, context, methodInfo, deserializeType, indent: "                ");
+            codeBuilder.AppendLine(",");
             codeBuilder.AppendLine($"                _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false);");
         }
         else
         {
             codeBuilder.AppendLine($"            return await {executor}.ExecuteAsync<{deserializeType}>(");
-            codeBuilder.AppendLine($"                __httpRequest,");
+            codeBuilder.AppendLine("                __httpRequest,");
             codeBuilder.AppendLine($"                {httpClientExpr},");
-            codeBuilder.AppendLine($"                {executionDescriptor},");
+            codeBuilder.Append("                ");
+            WriteExecutionDescriptorCode(codeBuilder, context, methodInfo, deserializeType, indent: "                ");
+            codeBuilder.AppendLine(",");
             codeBuilder.AppendLine($"                _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false);");
         }
     }
 
     /// <summary>
-    /// 构造 ResponseDescriptor 代码（用于下载场景，不包含 Cache/Resilience 配置）。
+    /// 将 ResponseDescriptor 代码直接写入 <paramref name="sb"/>（用于下载场景，不包含 Cache/Resilience 配置）。
     /// </summary>
-    private string BuildResponseDescriptorCode(MethodAnalysisResult methodInfo, string deserializeType)
+    private void WriteResponseDescriptorCode(StringBuilder sb, MethodAnalysisResult methodInfo, string deserializeType, string indent)
     {
-        var sb = new StringBuilder();
         sb.AppendLine("new ResponseDescriptor");
         sb.AppendLine("            {");
 
@@ -394,16 +403,15 @@ internal class MethodGenerator : ICodeFragmentGenerator
         }
 
         sb.Append("            }");
-        return sb.ToString();
     }
 
     /// <summary>
-    /// 构造 ExecutionDescriptor 代码，包含 ResponseDescriptor、CacheOptions、ResilienceExecutionOptions 和 CacheKey。
+    /// 将 ExecutionDescriptor 代码直接写入 <paramref name="sb"/>，包含 ResponseDescriptor、CacheOptions、ResilienceExecutionOptions 和 CacheKey。
     /// 当方法未启用 Cache/Resilience 时，对应字段为 null，执行器走直接执行路径。
     /// </summary>
-    private string BuildExecutionDescriptorCode(GeneratorContext context, MethodAnalysisResult methodInfo, string deserializeType)
+    /// <param name="indent">每行前缀缩进（与调用点的代码缩进对齐）。</param>
+    private void WriteExecutionDescriptorCode(StringBuilder sb, GeneratorContext context, MethodAnalysisResult methodInfo, string deserializeType, string indent)
     {
-        var sb = new StringBuilder();
         sb.AppendLine("new ExecutionDescriptor");
         sb.AppendLine("            {");
         sb.AppendLine("                Response = new ResponseDescriptor");
@@ -463,9 +471,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             sb.AppendLine("                },");
         }
 
-        sb.AppendLine("            }");
-
-        return sb.ToString().TrimEnd('\n', '\r');
+        sb.Append("            }");
     }
 
     /// <summary>

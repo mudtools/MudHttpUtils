@@ -57,6 +57,8 @@ public static class ServiceCollectionExtensions
         }
 
         services.TryAddSingleton<IValidateOptions<ResilienceOptions>, ResilienceOptionsValidator>();
+        // 注册跨选项后置配置器，检查 HttpClient.Timeout 与 Polly 重试/超时的潜在冲突
+        services.TryAddSingleton<IPostConfigureOptions<ResilienceOptions>, ResilienceOptionsCrossValidator>();
         services.TryAddSingleton<IResiliencePolicyProvider>(CreatePolicyProvider);
         // 注册弹性策略解析器，供 IHttpRequestExecutor 在运行时编排方法级弹性策略
         services.TryAddSingleton<IResiliencePolicyResolver, ResiliencePolicyResolver>();
@@ -102,9 +104,12 @@ public static class ServiceCollectionExtensions
         if (configuration == null)
             throw new ArgumentNullException(nameof(configuration));
 
-        services.Configure<ResilienceOptions>(options => configuration.GetSection(configurationSectionPath).Bind(options));
+        // 使用 IConfiguration 直接绑定（而非 lambda + Bind），以支持热更新（IOptionsMonitor + ChangeToken）
+        services.Configure<ResilienceOptions>(configuration.GetSection(configurationSectionPath));
 
         services.TryAddSingleton<IValidateOptions<ResilienceOptions>, ResilienceOptionsValidator>();
+        // 注册跨选项后置配置器，检查 HttpClient.Timeout 与 Polly 重试/超时的潜在冲突
+        services.TryAddSingleton<IPostConfigureOptions<ResilienceOptions>, ResilienceOptionsCrossValidator>();
         services.TryAddSingleton<IResiliencePolicyProvider>(CreatePolicyProvider);
         // 注册弹性策略解析器，供 IHttpRequestExecutor 在运行时编排方法级弹性策略
         services.TryAddSingleton<IResiliencePolicyResolver, ResiliencePolicyResolver>();

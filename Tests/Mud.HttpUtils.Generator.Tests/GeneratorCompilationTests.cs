@@ -208,7 +208,8 @@ namespace TestNamespace
 
         var (diagnostics, outputCompilation) = RunGenerator(source);
 
-        diagnostics.Should().BeEmpty();
+        // HTTPCLIENT018 是预期警告：未显式指定 TokenManagerKey 时生成器使用默认推断值
+        diagnostics.Where(d => d.Id != "HTTPCLIENT018").Should().BeEmpty();
         var generatedCode = GetGeneratedCode(outputCompilation);
         generatedCode.Should().NotBeNullOrEmpty();
         generatedCode.Should().Contain("GetSecureDataAsync");

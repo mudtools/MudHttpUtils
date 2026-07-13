@@ -52,7 +52,7 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 | `HeaderAttribute`         | 请求头参数                    | Parameter / Method / Interface | `Name`, `Value`, `AliasAs`, `Replace`                                                                          |
 | `BodyAttribute`           | 请求体参数                    | Parameter                      | `ContentType`, `EnableEncrypt`, `EncryptSerializeType`, `EncryptPropertyName`, `RawString`, `UseStringContent` |
 | `TokenAttribute`          | 令牌参数                      | Parameter / Interface / Method | `TokenType`, `InjectionMode`, `Name`, `Scopes`, `Replace`, `TokenManagerKey`, `RequiresUserId`                 |
-| `FilePathAttribute`       | 文件路径参数                  | Parameter                      | `BufferSize`                                                                                                   |
+| `FilePathAttribute`       | 文件路径参数（上传/下载）     | Parameter / Property          | `BufferSize`、`Overwrite`                                                                                      |
 | `FormContentAttribute`    | 表单内容参数                  | Parameter / Class              | —                                                                                                              |
 | `FormAttribute`           | 表单字段（URL 编码）          | Parameter                      | `FieldName`                                                                                                    |
 | `MultipartFormAttribute`  | 多部分表单字段                | Parameter                      | —                                                                                                              |
@@ -88,6 +88,17 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 | `SerializationMethodAttribute` | 请求体序列化方法控制   | Interface / Method                    |
 | `InterfacePathAttribute`       | 接口级固定路径参数     | Interface                             |
 | `InterfaceQueryAttribute`      | 接口级固定查询参数     | Interface                             |
+
+### 关联枚举
+
+| 枚举                     | 说明                                                                 |
+| ------------------------ | -------------------------------------------------------------------- |
+| `HeaderMergeMode`        | 头部合并模式（`Append` / `Replace` / `Ignore`），配合 `HeaderMergeAttribute` |
+| `SerializationMethod`    | 请求体序列化方法（`Json` / `Xml` / `FormUrlEncoded`），配合 `SerializationMethodAttribute` |
+| `QuerySerializationMethod` | QueryMap 序列化方法（`ToString` / `Json`），配合 `QueryMapAttribute` |
+| `CachePriority`          | ⚠️ 已过时：缓存优先级（`Low` / `Normal` / `High` / `NeverRemove`）   |
+
+> `TokenInjectionMode`（`Header` / `Query` / `Path` / `ApiKey` / `HmacSignature` / `BasicAuth` / `Cookie`）与 `SensitiveDataMaskMode`（`Hide` / `Mask` / `TypeOnly`）见对应章节。
 
 ### 事件处理特性
 
@@ -168,6 +179,7 @@ public interface IHttpClientApi { }
 | `RegistryGroupName` | `string?` | `null`               | 注册组名称，影响生成的注册方法名                               |
 | `IsAbstract`        | `bool`    | `false`              | 是否生成抽象类                                                 |
 | `InheritedFrom`     | `string?` | `null`               | 继承的基类名称                                                 |
+| `BaseAddress`       | `string?` | `null`               | ⚠️ 已过时：构造函数与属性均已废弃，请通过 `AddMudHttpClient(clientName, baseAddress)` 配置基地址 |
 
 ## BodyAttribute 详解
 
@@ -202,12 +214,12 @@ Task SendTextAsync([Body(UseStringContent = true)] object message);
 
 | 属性              | 类型                 | 默认值                | 说明                                                        |
 | ----------------- | -------------------- | --------------------- | ----------------------------------------------------------- |
-| `TokenType`       | `string`             | `"TenantAccessToken"` | Token 类型标识符（建议使用 `TokenTypes` 常量类）            |
+| `TokenType`       | `string`             | `"AccessToken"`       | Token 类型标识符（建议使用 `TokenTypes` 常量类）            |
 | `InjectionMode`   | `TokenInjectionMode` | `Header`              | Token 注入模式                                              |
 | `Name`            | `string?`            | `null`                | 自定义 Header/Query 名称                                    |
 | `Scopes`          | `string?`            | `null`                | 令牌作用域，多个作用域用逗号分隔                            |
 | `Replace`         | `bool`               | `true`                | 是否替换已有 Header                                         |
-| `TokenManagerKey` | `string?`            | `null`                | 令牌管理器查找键，用于解耦业务概念（TokenType）和技术查找键 |
+| `TokenManagerKey` | `string?`            | 同 `TokenType`        | 令牌管理器查找键，默认与 `TokenType` 相同，用于解耦业务概念（TokenType）和技术查找键 |
 | `RequiresUserId`  | `bool`               | `false`               | 是否需要用户 ID，为 true 时通过 `ICurrentUserContext` 获取  |
 
 > **TokenManagerKey**：当指定此值时，代码生成器将使用此键而非 `TokenType` 从 `IMudAppContext` 中查找令牌管理器。此属性用于解耦业务概念和技术查找键，例如多个不同的 `TokenType` 可以映射到同一个 `TokenManager`。如果未指定，则使用 `TokenType` 作为查找键。
@@ -296,8 +308,10 @@ Task<PublicData> GetPublicDataAsync();
 | `DurationSeconds`      | `int`           | `300`    | 缓存持续时间（秒）                                      |
 | `CacheKeyTemplate`     | `string?`       | `null`   | 缓存键模板                                              |
 | `VaryByUser`           | `bool`          | `false`  | 是否按用户区分缓存                                      |
-| `UseSlidingExpiration` | `bool`          | `false`  | 是否使用滑动过期                                        |
-| `Priority`             | `CachePriority` | `Normal` | 缓存优先级（`Low` / `Normal` / `High` / `NeverRemove`） |
+| `UseSlidingExpiration` | `bool`          | `false`  | ⚠️ 已过时：当前未被生成器处理，将在未来版本中移除或实现 |
+| `Priority`             | `CachePriority` | `Normal` | ⚠️ 已过时：当前未被生成器处理，将在未来版本中移除或实现 |
+
+> `CachePriority` 枚举（`Low` / `Normal` / `High` / `NeverRemove`）同样已标记为 `[Obsolete]`，请勿在新代码中使用 `UseSlidingExpiration` 与 `Priority`。
 
 ```csharp
 [Get("/users/{id}")]
@@ -313,12 +327,14 @@ Task<Config> GetConfigAsync();
 
 `HeaderAttribute` 支持应用到参数、方法或接口级别：
 
-| 属性      | 类型      | 默认值  | 说明                             |
-| --------- | --------- | ------- | -------------------------------- |
-| `Name`    | `string?` | `null`  | 请求头名称                       |
-| `Value`   | `object?` | `null`  | 请求头值（方法/接口级别使用）    |
-| `AliasAs` | `string?` | `null`  | 别名，用于映射到不同的请求头名称 |
-| `Replace` | `bool`    | `false` | 是否替换已有的同名请求头         |
+| 属性         | 类型      | 默认值  | 说明                                                                     |
+| ------------ | --------- | ------- | ------------------------------------------------------------------------ |
+| `Name`       | `string?` | `null`  | 请求头名称                                                               |
+| `Value`      | `object?` | `null`  | 请求头值（方法/接口级别使用）                                            |
+| `AliasAs`    | `string?` | `null`  | 别名，用于映射到不同的请求头名称                                         |
+| `Replace`    | `bool`    | `false` | 是否替换已有的同名请求头                                                 |
+| `FormatString` | `string?` | `null` | 请求头值格式化字符串（如 `"N"`、`"yyyy-MM-ddTHH:mm:ssZ"`），支持 `string.Format` 或 `IFormattable` |
+| `Format`     | `string?` | `null`  | `FormatString` 的别名                                                     |
 
 ```csharp
 // 参数级别
@@ -387,6 +403,33 @@ Task<UploadResult> UploadDocumentAsync(
 [Post("/api/upload")]
 Task<UploadResult> UploadImageAsync(
     [Upload(ContentType = "image/png")] IFormFile image);
+```
+
+## FilePathAttribute 详解
+
+用于标记文件路径参数，既可用于**上传**（将文件内容作为请求体/表单数据发送），也可用于**下载**（将响应内容写入本地文件）。
+
+| 属性       | 类型    | 默认值  | 说明                                                                       |
+| ---------- | ------- | ------- | -------------------------------------------------------------------------- |
+| `BufferSize` | `int` | `81920` | 读/写文件时的缓冲区大小（字节），默认 80KB                                  |
+| `Overwrite`  | `bool`| `true`  | 下载时是否覆盖已存在的文件；设为 `false` 时若文件已存在将抛出 `IOException` |
+
+```csharp
+// 上传文件
+[Post("/api/upload")]
+Task<UploadResult> UploadFileAsync([FilePath] string filePath);
+
+// 自定义缓冲区大小（128KB）
+[Post("/api/upload-large")]
+Task<UploadResult> UploadLargeFileAsync([FilePath(BufferSize = 131072)] string filePath);
+
+// 下载文件，不覆盖已存在文件
+[Get("/api/files/{id}")]
+Task DownloadAsync(int id, [FilePath(Overwrite = false)] string savePath);
+
+// 下载文件，带进度报告（通过方法签名中的 IProgress<T> 参数接收）
+[Get("/api/files/{id}")]
+Task DownloadWithProgressAsync(int id, [FilePath] string savePath, IProgress<long> progress);
 ```
 
 ## SensitiveDataAttribute 详解
@@ -681,6 +724,36 @@ public interface IUserApi
     [Get("/api/users/{id}")]
     Task<User> GetUserAsync(int id);
     // 实际请求: /api/users/1?api_version=2.0&client_id=my-app
+}
+```
+
+## GenerateEventHandlerAttribute 详解
+
+用于标记类，指示源代码生成器为该类生成事件处理器实现（常用于 Webhook / 事件订阅场景，如飞书事件订阅）。提供两个构造函数：`GenerateEventHandler()` 与 `GenerateEventHandler(string? eventType)`。
+
+| 属性                  | 类型      | 说明                                                                         |
+| --------------------- | --------- | ---------------------------------------------------------------------------- |
+| `EventType`           | `string?` | 事件类型标识符，对应构造函数参数 `eventType`                                 |
+| `HandlerClassName`    | `string?` | 生成的处理器类名称（默认按约定生成）                                         |
+| `HandlerNamespace`    | `string?` | 生成的处理器类所在命名空间                                                   |
+| `InheritedFrom`       | `string?` | 生成的处理器类继承的基类名称                                                 |
+| `ConstructorParameters` | `string?` | 构造函数参数字符串，用于生成构造函数签名（如 `"ILogger logger, IEmailService email"`） |
+| `ConstructorBaseCall` | `string?` | 构造函数基类调用字符串，用于生成 `base(...)` 调用（如 `"logger"`）           |
+| `HeaderType`          | `string?` | 反序列化事件请求头所用的请求头类型                                           |
+
+```csharp
+[GenerateEventHandler(
+    EventType = "UserCreatedEvent",
+    HandlerClassName = "UserCreatedEventHandler",
+    HandlerNamespace = "MyApp.Handlers",
+    InheritedFrom = "BaseEventHandler",
+    ConstructorParameters = "ILogger logger, IEmailService emailService",
+    ConstructorBaseCall = "logger"
+)]
+public class UserCreatedEvent
+{
+    public string UserId { get; set; }
+    public string UserName { get; set; }
 }
 ```
 

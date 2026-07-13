@@ -151,17 +151,14 @@ public class ConfigurationBindingTests
     [Fact]
     public void AddMudHttpClientsFromConfiguration_IOptionsMonitor_ReloadsOnConfigChange()
     {
-        // Arrange — 使用可更新的 MemoryConfigurationProvider
-        var configSource = new Microsoft.Extensions.Configuration.Memory.MemoryConfigurationSource
+        // Arrange — 使用可在 Load() 后保留 Set() 更新的自定义配置提供器
+        var updatableProvider = new UpdatableMemoryProvider(new Dictionary<string, string?>
         {
-            InitialData = new Dictionary<string, string?>
-            {
-                ["MudHttpClients:Clients:api:BaseAddress"] = "https://api.example.com",
-                ["MudHttpClients:Clients:api:TimeoutSeconds"] = "30",
-            }
-        };
+            ["MudHttpClients:Clients:api:BaseAddress"] = "https://api.example.com",
+            ["MudHttpClients:Clients:api:TimeoutSeconds"] = "30",
+        });
         var config = new ConfigurationBuilder()
-            .Add(configSource)
+            .Add(updatableProvider)
             .Build();
 
         var services = new ServiceCollection();
@@ -172,25 +169,12 @@ public class ConfigurationBindingTests
         // 初始值验证
         monitor.CurrentValue.Clients["api"].TimeoutSeconds.Should().Be(30);
 
-        // Act — 模拟配置热更新
-        var newConfig = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["MudHttpClients:Clients:api:BaseAddress"] = "https://api.example.com",
-                ["MudHttpClients:Clients:api:TimeoutSeconds"] = "60",
-            })
-            .Build();
+        // Act — 在同一配置实例上更新值并触发重载
+        updatableProvider.Set("MudHttpClients:Clients:api:TimeoutSeconds", "60");
+        ((IConfigurationRoot)config).Reload();
 
-        // 重新绑定配置
-        var root = (IConfigurationRoot)config;
-        // 使用新配置替换 — 通过重新构建 provider 来模拟热更新
-        var newServices = new ServiceCollection();
-        newServices.AddMudHttpClientsFromConfiguration(newConfig);
-        var newProvider = newServices.BuildServiceProvider();
-        var newMonitor = newProvider.GetRequiredService<IOptionsMonitor<MudHttpClientApplicationOptions>>();
-
-        // Assert — 新配置值生效
-        newMonitor.CurrentValue.Clients["api"].TimeoutSeconds.Should().Be(60);
+        // Assert — 同一 monitor 实例感知到配置变更
+        monitor.CurrentValue.Clients["api"].TimeoutSeconds.Should().Be(60);
     }
 
     [Fact]
@@ -413,6 +397,40 @@ public class ConfigurationBindingTests
     }
 
     [Fact]
+    public void AddMudHttpTokenRecoveryFromConfiguration_RegistersTokenRecoveryOptionsAsResolvableService()
+    {
+        // Arrange — 模拟 appsettings.json 中的配置
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpTokenRecovery:Enabled"] = "true",
+                ["MudHttpTokenRecovery:RecoveryMaxRetries"] = "5",
+                ["MudHttpTokenRecovery:TokenScheme"] = "Digest",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddMudHttpTokenRecoveryFromConfiguration(config);
+
+        // Assert — TokenRecoveryOptions 应作为直接可解析服务注册，
+        // 使 TokenRecoveryDelegatingHandler 的可选构造函数参数能通过 DI 自动解析。
+        var provider = services.BuildServiceProvider();
+        var directOptions = provider.GetService<TokenRecoveryOptions>();
+        directOptions.Should().NotBeNull();
+        directOptions!.Enabled.Should().BeTrue();
+        directOptions.RecoveryMaxRetries.Should().Be(5);
+        directOptions.TokenScheme.Should().Be("Digest");
+
+        // 同时验证 IOptions<TokenRecoveryOptions> 也能解析到相同的值
+        var ioptions = provider.GetRequiredService<IOptions<TokenRecoveryOptions>>().Value;
+        ioptions.Enabled.Should().BeTrue();
+        ioptions.RecoveryMaxRetries.Should().Be(5);
+        ioptions.TokenScheme.Should().Be("Digest");
+    }
+
+    [Fact]
     public void AddMudHttpUserTokenCacheFromConfiguration_BindsUserTokenCacheOptions()
     {
         // Arrange
@@ -626,6 +644,442 @@ public class ConfigurationBindingTests
         var warnings = loggerProvider.GetLogRecords(LogLevel.Warning);
         warnings.Should().BeEmpty();
     }
+
+    // ========== ResponseCacheOptions 绑定测试 ==========
+
+    [Fact]
+    public void AddMudHttpClientsFromConfiguration_BindsResponseCacheOptions()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpClients:Clients:api:BaseAddress"] = "https://api.example.com",
+                ["MudHttpClients:ResponseCache:MaxCacheSize"] = "5000",
+                ["MudHttpClients:ResponseCache:CleanupIntervalSeconds"] = "30",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddMudHttpClientsFromConfiguration(config);
+
+        // Assert
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<MudHttpClientApplicationOptions>>().Value;
+        options.ResponseCache.MaxCacheSize.Should().Be(5000);
+        options.ResponseCache.CleanupIntervalSeconds.Should().Be(30);
+    }
+
+    [Fact]
+    public void AddMudHttpClientsFromConfiguration_ResponseCacheDefaults_WhenNotConfigured()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpClients:Clients:api:BaseAddress"] = "https://api.example.com",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddMudHttpClientsFromConfiguration(config);
+
+        // Assert
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<MudHttpClientApplicationOptions>>().Value;
+        options.ResponseCache.MaxCacheSize.Should().Be(ResponseCacheOptions.DefaultMaxCacheSize);
+        options.ResponseCache.CleanupIntervalSeconds.Should().Be(ResponseCacheOptions.DefaultCleanupIntervalSeconds);
+    }
+
+    [Fact]
+    public void ResponseCacheOptions_MaxCacheSize_Setter_ThrowsOnZeroOrNegative()
+    {
+        // Arrange
+        var options = new ResponseCacheOptions();
+
+        // Act & Assert
+        var actZero = () => options.MaxCacheSize = 0;
+        actZero.Should().Throw<ArgumentOutOfRangeException>();
+
+        var actNegative = () => options.MaxCacheSize = -1;
+        actNegative.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void ResponseCacheOptions_CleanupIntervalSeconds_Setter_ThrowsOnZeroOrNegative()
+    {
+        // Arrange
+        var options = new ResponseCacheOptions();
+
+        // Act & Assert
+        var actZero = () => options.CleanupIntervalSeconds = 0;
+        actZero.Should().Throw<ArgumentOutOfRangeException>();
+
+        var actNegative = () => options.CleanupIntervalSeconds = -10;
+        actNegative.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    // ========== MudHttpClientOptions.TimeoutSeconds 校验测试 ==========
+
+    [Fact]
+    public void MudHttpClientOptions_TimeoutSeconds_Setter_ThrowsOnZeroOrNegative()
+    {
+        // Arrange
+        var options = new MudHttpClientOptions();
+
+        // Act & Assert
+        var actZero = () => options.TimeoutSeconds = 0;
+        actZero.Should().Throw<ArgumentOutOfRangeException>();
+
+        var actNegative = () => options.TimeoutSeconds = -5;
+        actNegative.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void MudHttpClientOptions_TimeoutSeconds_AcceptsNullAndPositive()
+    {
+        // Arrange
+        var options = new MudHttpClientOptions();
+
+        // Act & Assert — null 和正整数应该被接受
+        options.TimeoutSeconds = null;
+        options.TimeoutSeconds.Should().BeNull();
+
+        options.TimeoutSeconds = 30;
+        options.TimeoutSeconds.Should().Be(30);
+    }
+
+    // ========== OAuth2Options HTTPS 校验测试 ==========
+
+    [Fact]
+    public void OAuth2OptionsValidator_RevocationEndpoint_NotHttps_FailsWhenRequireHttps()
+    {
+        // Arrange
+        var options = new OAuth2Options
+        {
+            ClientId = "test-client",
+            ClientSecret = "secret",
+            TokenEndpoint = "https://auth.example.com/token",
+            RevocationEndpoint = "http://auth.example.com/revoke",
+            RequireHttps = true,
+        };
+        var validator = new OAuth2OptionsValidator();
+
+        // Act
+        var result = validator.Validate(null, options);
+
+        // Assert
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("RevocationEndpoint");
+        result.FailureMessage.Should().Contain("HTTPS");
+    }
+
+    [Fact]
+    public void OAuth2OptionsValidator_IntrospectionEndpoint_NotHttps_FailsWhenRequireHttps()
+    {
+        // Arrange
+        var options = new OAuth2Options
+        {
+            ClientId = "test-client",
+            ClientSecret = "secret",
+            TokenEndpoint = "https://auth.example.com/token",
+            IntrospectionEndpoint = "http://auth.example.com/introspect",
+            RequireHttps = true,
+        };
+        var validator = new OAuth2OptionsValidator();
+
+        // Act
+        var result = validator.Validate(null, options);
+
+        // Assert
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("IntrospectionEndpoint");
+        result.FailureMessage.Should().Contain("HTTPS");
+    }
+
+    [Fact]
+    public void OAuth2OptionsValidator_AllEndpointsHttps_SucceedsWhenRequireHttps()
+    {
+        // Arrange
+        var options = new OAuth2Options
+        {
+            ClientId = "test-client",
+            ClientSecret = "secret",
+            TokenEndpoint = "https://auth.example.com/token",
+            RevocationEndpoint = "https://auth.example.com/revoke",
+            IntrospectionEndpoint = "https://auth.example.com/introspect",
+            RequireHttps = true,
+        };
+        var validator = new OAuth2OptionsValidator();
+
+        // Act
+        var result = validator.Validate(null, options);
+
+        // Assert
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void OAuth2OptionsValidator_EndpointsNotCheckedWhenRequireHttpsFalse()
+    {
+        // Arrange
+        var options = new OAuth2Options
+        {
+            ClientId = "test-client",
+            ClientSecret = "secret",
+            TokenEndpoint = "http://auth.example.com/token",
+            RevocationEndpoint = "http://auth.example.com/revoke",
+            IntrospectionEndpoint = "http://auth.example.com/introspect",
+            RequireHttps = false,
+        };
+        var validator = new OAuth2OptionsValidator();
+
+        // Act
+        var result = validator.Validate(null, options);
+
+        // Assert
+        result.Succeeded.Should().BeTrue();
+    }
+
+    // ========== TokenRecoveryOptions 校验测试 ==========
+
+    [Fact]
+    public void TokenRecoveryOptions_RecoveryMaxRetries_Setter_ThrowsOnNegative()
+    {
+        // Arrange
+        var options = new TokenRecoveryOptions();
+
+        // Act & Assert
+        var act = () => options.RecoveryMaxRetries = -1;
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void TokenRecoveryOptions_TokenScheme_Setter_ThrowsOnEmpty()
+    {
+        // Arrange
+        var options = new TokenRecoveryOptions();
+
+        // Act & Assert
+        var actNull = () => options.TokenScheme = null!;
+        actNull.Should().Throw<ArgumentException>();
+
+        var actEmpty = () => options.TokenScheme = "";
+        actEmpty.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void TokenRecoveryOptions_RecoveryMaxRetries_AcceptsZero()
+    {
+        // Arrange
+        var options = new TokenRecoveryOptions();
+
+        // Act
+        options.RecoveryMaxRetries = 0;
+
+        // Assert — 0 表示禁用恢复重试，应该被接受
+        options.RecoveryMaxRetries.Should().Be(0);
+    }
+
+    [Fact]
+    public void TokenRecoveryOptionsValidator_WithValidOptions_Succeeds()
+    {
+        // Arrange
+        var options = new TokenRecoveryOptions { RecoveryMaxRetries = 1, TokenScheme = "Bearer" };
+        var validator = new TokenRecoveryOptionsValidator();
+
+        // Act
+        var result = validator.Validate(null, options);
+
+        // Assert
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void TokenRecoveryOptionsValidator_WithNullOptions_Succeeds()
+    {
+        // Arrange
+        var validator = new TokenRecoveryOptionsValidator();
+
+        // Act
+        var result = validator.Validate(null, null);
+
+        // Assert
+        result.Succeeded.Should().BeTrue();
+    }
+
+    // ========== TokenRefreshBackgroundOptions 交叉校验测试 ==========
+
+    [Fact]
+    public void TokenRefreshBackgroundOptionsValidator_RetryDelayExceedsInterval_Fails()
+    {
+        // Arrange
+        var options = new TokenRefreshBackgroundOptions
+        {
+            Enabled = true,
+            RefreshIntervalSeconds = 60,
+            RetryDelaySeconds = 120,
+        };
+        var validator = new TokenRefreshBackgroundOptionsValidator();
+
+        // Act
+        var result = validator.Validate(null, options);
+
+        // Assert
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("RetryDelaySeconds");
+        result.FailureMessage.Should().Contain("RefreshIntervalSeconds");
+    }
+
+    [Fact]
+    public void TokenRefreshBackgroundOptionsValidator_RetryDelayEqualsInterval_Fails()
+    {
+        // Arrange
+        var options = new TokenRefreshBackgroundOptions
+        {
+            Enabled = true,
+            RefreshIntervalSeconds = 60,
+            RetryDelaySeconds = 60,
+        };
+        var validator = new TokenRefreshBackgroundOptionsValidator();
+
+        // Act
+        var result = validator.Validate(null, options);
+
+        // Assert
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("RetryDelaySeconds");
+    }
+
+    [Fact]
+    public void TokenRefreshBackgroundOptionsValidator_RetryDelayLessThanInterval_Succeeds()
+    {
+        // Arrange
+        var options = new TokenRefreshBackgroundOptions
+        {
+            Enabled = true,
+            RefreshIntervalSeconds = 300,
+            RetryDelaySeconds = 60,
+        };
+        var validator = new TokenRefreshBackgroundOptionsValidator();
+
+        // Act
+        var result = validator.Validate(null, options);
+
+        // Assert
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void TokenRefreshBackgroundOptionsValidator_Disabled_SkipsValidation()
+    {
+        // Arrange
+        var options = new TokenRefreshBackgroundOptions
+        {
+            Enabled = false,
+            RefreshIntervalSeconds = 10,
+            RetryDelaySeconds = 999,
+        };
+        var validator = new TokenRefreshBackgroundOptionsValidator();
+
+        // Act
+        var result = validator.Validate(null, options);
+
+        // Assert — 未启用时跳过交叉校验
+        result.Succeeded.Should().BeTrue();
+    }
+
+    // ========== AES 加密配置绑定测试 ==========
+
+    [Fact]
+    public void AddMudHttpAesEncryptionFromConfiguration_BindsAndRegistersProvider()
+    {
+        // Arrange — 32 字节密钥的 Base64 编码（AES-256）
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpAesEncryption:Key"] = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddMudHttpAesEncryptionFromConfiguration(config);
+
+        // Assert
+        var provider = services.BuildServiceProvider();
+        var encryptionProvider = provider.GetService<IEncryptionProvider>();
+        encryptionProvider.Should().NotBeNull("AddMudHttpAesEncryptionFromConfiguration 应注册 IEncryptionProvider");
+
+        // 验证加密功能可用
+        var cipher = encryptionProvider!.Encrypt("hello");
+        cipher.Should().NotBeNullOrEmpty();
+        var plain = encryptionProvider.Decrypt(cipher);
+        plain.Should().Be("hello");
+    }
+
+    [Fact]
+    public void AddMudHttpAesEncryptionFromConfiguration_InvalidKey_ThrowsOnResolve()
+    {
+        // Arrange — 无效密钥（长度不合法）
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpAesEncryption:Key"] = "invalid-key"
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddMudHttpAesEncryptionFromConfiguration(config);
+
+        // Act & Assert — 解析 IEncryptionProvider 时应抛出异常（密钥长度不合法）
+        var provider = services.BuildServiceProvider();
+        var act = () => provider.GetRequiredService<IEncryptionProvider>();
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void AddMudHttpAesEncryptionFromConfiguration_NullArgs_Throws()
+    {
+        // Arrange
+        IConfiguration config = new ConfigurationBuilder().Build();
+        var services = new ServiceCollection();
+
+        // Act & Assert — null services 抛出 ArgumentNullException
+        var actNullServices = () => ((IServiceCollection)null!).AddMudHttpAesEncryptionFromConfiguration(config);
+        actNullServices.Should().Throw<ArgumentNullException>();
+
+        // Act & Assert — null configuration 抛出 ArgumentNullException
+        var actNullConfig = () => services.AddMudHttpAesEncryptionFromConfiguration(null!);
+        actNullConfig.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void AddMudHttpAesEncryptionFromConfiguration_CustomSectionPath()
+    {
+        // Arrange — 使用自定义配置节路径
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Custom:Aes:Key"] = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddMudHttpAesEncryptionFromConfiguration(config, "Custom:Aes");
+
+        // Assert
+        var provider = services.BuildServiceProvider();
+        var encryptionProvider = provider.GetService<IEncryptionProvider>();
+        encryptionProvider.Should().NotBeNull("自定义配置节路径应正确绑定");
+    }
 }
 
 /// <summary>
@@ -674,3 +1128,26 @@ internal sealed class CollectingLoggerProvider : ILoggerProvider
 }
 
 internal sealed record LogRecord(LogLevel Level, string Message);
+
+/// <summary>
+/// 可更新的内存配置提供器，用于测试 IOptionsMonitor 热更新。
+/// 与 <see cref="Microsoft.Extensions.Configuration.Memory.MemoryConfigurationProvider"/> 不同，
+/// 此提供器的 <see cref="Load"/> 方法为空操作，确保 <see cref="ConfigurationProvider.Set"/> 的修改
+/// 在 <see cref="IConfigurationRoot.Reload"/> 时不会被覆盖。
+/// 同时实现 <see cref="IConfigurationSource"/>，使其可直接通过 <c>ConfigurationBuilder.Add()</c> 注册。
+/// </summary>
+internal sealed class UpdatableMemoryProvider : ConfigurationProvider, IConfigurationSource
+{
+    public UpdatableMemoryProvider(IDictionary<string, string?> initialData)
+    {
+        Data = new Dictionary<string, string?>(initialData, StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// 空操作，保留 <see cref="ConfigurationProvider.Set"/> 的修改不被覆盖。
+    /// </summary>
+    public override void Load() { }
+
+    /// <inheritdoc />
+    IConfigurationProvider IConfigurationSource.Build(IConfigurationBuilder builder) => this;
+}

@@ -164,7 +164,7 @@ public class QueryMapHelperTests
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, true, false);
 
-        queryParams["Name"].Should().Be("");
+        queryParams["Name"].Should().BeNull();
         queryParams["Age"].Should().Be("25");
     }
 
@@ -270,7 +270,7 @@ public class QueryMapHelperTests
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, true, false);
 
         queryParams["Filter.status"].Should().Be("active");
-        queryParams["Filter.empty"].Should().Be("");
+        queryParams["Filter.empty"].Should().BeNull();
     }
 
     #endregion

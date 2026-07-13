@@ -51,7 +51,10 @@ public static class HttpClientServiceCollectionExtensions
         // 注册分布式追踪与指标采集 DelegatingHandler
         // 无 ActivityListener/MeterListener 订阅时零开销，由 IsObserved 标记去重避免与 EnhancedHttpClient 兜底重复
         // HC-02 修复：TracingDelegatingHandler 为无状态设计，使用单例实例避免每次请求创建新对象，降低 GC 压力。
-        httpClientBuilder.AddHttpMessageHandler(_ => TracingDelegatingHandler.Shared);
+        // HC-03 修复：IHttpClientFactory 要求每个 handler 管道使用独立的 DelegatingHandler 实例（InnerHandler 不可重复设置）。
+        // 使用工厂委托每次创建新实例，Handler 管道生命周期由 IHttpClientFactory 管理（默认 2 分钟）。
+        // TracingDelegatingHandler 本身无状态（所有数据从 request 参数获取），新实例不增加运行时开销。
+        httpClientBuilder.AddHttpMessageHandler(() => new TracingDelegatingHandler());
 
         // HC-01 修复：将原硬编码的容量(1000)与 TTL(60秒)改为从 IOptions<MudHttpClientApplicationOptions> 读取，
         // 支持通过配置文件自定义。仍保持 TryAddSingleton 语义，用户可手动注册 IHttpResponseCache 抢占。
@@ -59,8 +62,8 @@ public static class HttpClientServiceCollectionExtensions
         {
             var appOptions = sp.GetService<IOptions<MudHttpClientApplicationOptions>>()?.Value;
             var cacheOptions = appOptions?.ResponseCache;
-            var maxCacheSize = cacheOptions?.MaxCacheSize ?? 1000;
-            var cleanupInterval = cacheOptions?.CleanupIntervalSeconds ?? 60;
+            var maxCacheSize = cacheOptions?.MaxCacheSize ?? ResponseCacheOptions.DefaultMaxCacheSize;
+            var cleanupInterval = cacheOptions?.CleanupIntervalSeconds ?? ResponseCacheOptions.DefaultCleanupIntervalSeconds;
             return new MemoryHttpResponseCache(maxCacheSize, cleanupInterval);
         });
 
@@ -140,6 +143,43 @@ public static class HttpClientServiceCollectionExtensions
     }
 
     /// <summary>
+    /// 从 <see cref="IConfiguration"/> 绑定 AES 加密配置，并注册 <see cref="IEncryptionProvider"/>。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <param name="configuration">配置实例，用于绑定 <see cref="AesEncryptionOptions"/>。</param>
+    /// <param name="sectionPath">配置节点路径，默认 <see cref="AesEncryptionOptions.SectionName"/>。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+    /// <example>
+    /// appsettings.json：
+    /// <code>
+    /// {
+    ///   "MudHttpAesEncryption": {
+    ///     "Key": "base64-encoded-32-byte-key"
+    ///   }
+    /// }
+    /// </code>
+    /// 代码：
+    /// <code>
+    /// builder.Services.AddMudHttpAesEncryptionFromConfiguration(builder.Configuration);
+    /// </code>
+    /// </example>
+    public static IServiceCollection AddMudHttpAesEncryptionFromConfiguration(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        string sectionPath = AesEncryptionOptions.SectionName)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+        if (configuration == null)
+            throw new ArgumentNullException(nameof(configuration));
+
+        services.Configure<AesEncryptionOptions>(configuration.GetSection(sectionPath));
+        services.TryAddSingleton<IEncryptionProvider, DefaultAesEncryptionProvider>();
+        return services;
+    }
+
+    /// <summary>
     /// 添加基于 <see cref="IHttpClientFactory"/> 的 <see cref="HttpClientFactoryEnhancedClient"/> 到依赖注入容器，
     /// 并注册为 <see cref="IEnhancedHttpClient"/> 服务，同时配置 HttpClient 的基础地址。
     /// </summary>
@@ -189,6 +229,8 @@ public static class HttpClientServiceCollectionExtensions
         {
             services.AddOptions<TokenRefreshBackgroundOptions>();
         }
+        // 注册校验器，检查 RetryDelaySeconds 与 RefreshIntervalSeconds 之间的交叉冲突
+        services.TryAddSingleton<IValidateOptions<TokenRefreshBackgroundOptions>, TokenRefreshBackgroundOptionsValidator>();
 
         RegisterTokenRefreshService(services);
 
@@ -215,6 +257,8 @@ public static class HttpClientServiceCollectionExtensions
 
         services.AddOptions<TokenRefreshBackgroundOptions>()
             .Bind(configuration.GetSection(configurationSectionPath));
+        // 注册校验器，检查 RetryDelaySeconds 与 RefreshIntervalSeconds 之间的交叉冲突
+        services.TryAddSingleton<IValidateOptions<TokenRefreshBackgroundOptions>, TokenRefreshBackgroundOptionsValidator>();
 
         RegisterTokenRefreshService(services);
 
@@ -259,8 +303,8 @@ public static class HttpClientServiceCollectionExtensions
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
     public static IServiceCollection AddHttpResponseCache(
         this IServiceCollection services,
-        int maxCacheSize = 1000,
-        int cleanupIntervalSeconds = 60)
+        int maxCacheSize = ResponseCacheOptions.DefaultMaxCacheSize,
+        int cleanupIntervalSeconds = ResponseCacheOptions.DefaultCleanupIntervalSeconds)
     {
         if (services == null)
             throw new ArgumentNullException(nameof(services));
@@ -617,7 +661,9 @@ public static class HttpClientServiceCollectionExtensions
             return services;
 
         // 将配置注册到 DI，以便 CreateEnhancedClient 可以读取 AllowCustomBaseUrls 等属性
-        services.Configure<MudHttpClientApplicationOptions>(section.Bind);
+        // 使用 Configure<T>(IConfiguration) 重载（而非 section.Bind 的 Action<T> 重载），
+        // 以注册 ConfigurationChangeTokenSource，支持 IOptionsMonitor<T> 热更新。
+        services.Configure<MudHttpClientApplicationOptions>(section);
 
         var options = new MudHttpClientApplicationOptions();
         section.Bind(options);
@@ -704,6 +750,11 @@ public static class HttpClientServiceCollectionExtensions
             throw new ArgumentNullException(nameof(configuration));
 
         services.Configure<TokenRecoveryOptions>(configuration.GetSection(sectionPath));
+        // 注册校验器，在选项绑定时验证 RecoveryMaxRetries 和 TokenScheme 的取值范围
+        services.TryAddSingleton<IValidateOptions<TokenRecoveryOptions>, TokenRecoveryOptionsValidator>();
+        // 注册 TokenRecoveryOptions 为可解析服务，使 TokenRecoveryDelegatingHandler 的可选构造函数参数
+        // 能通过 DI 自动解析配置绑定的值（而非始终使用默认 null → new TokenRecoveryOptions()）。
+        services.AddSingleton(resolver => resolver.GetRequiredService<IOptions<TokenRecoveryOptions>>().Value);
         return services;
     }
 

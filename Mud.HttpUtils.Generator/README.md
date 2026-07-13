@@ -46,7 +46,7 @@ Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为
 - **序列化方法控制**：识别 `[SerializationMethod]` 特性，指定接口或方法级别的请求体序列化方式
 - **接口级固定参数**：识别 `[InterfacePath]` 和 `[InterfaceQuery]` 特性，为接口所有方法自动添加固定路径/查询参数
 - **允许任意状态码**：识别 `[AllowAnyStatusCode]` 特性，错误状态码不抛异常
-- **编译诊断**：检测 `Response<T>` + `[Cache]` 组合并发出 HTTPCLIENT011 警告
+- **编译诊断**：提供 `HTTPCLIENT*` / `HTTPCLIENTREG*` / `EHSG*` / `FORM*` 等多组编译期诊断（错误与警告），详见「编译诊断」章节
 
 ## 安装
 
@@ -106,6 +106,83 @@ public class UserService
 }
 ```
 
+## 代码生成逻辑
+
+源代码生成器在编译期将「声明式接口」转换为「强类型实现类 + DI 注册代码」。整体流程可分为**输入收集 → 校验诊断 → 分发生成 → 编译输出**四个阶段：
+
+```mermaid
+flowchart TD
+    A["开发者代码<br/>接口 [HttpClientApi] + 方法/参数特性<br/>事件类 [GenerateEventHandler]<br/>表单类 [FormContent]"] --> B["Roslyn 编译触发<br/>IIncrementalGenerator"]
+
+    B --> C["语法 / 语义收集<br/>筛选候选类型"]
+    C --> C1["接口实现元数据<br/>HttpClientApiInfo"]
+    C --> C2["事件处理器元数据"]
+    C --> C3["FormContent 元数据"]
+
+    C1 --> D["校验与诊断<br/>Validators"]
+    C2 --> D
+    C3 --> D
+    D -->|"错误（Error）"| ERR["中断生成<br/>报告 HTTPCLIENT* / FORM* / EHSG*"]
+    D -->|"通过 / 警告"| E["分发至各生成器"]
+
+    E --> F["HttpInvokeClassSourceGenerator<br/>实现类生成器"]
+    E --> G["HttpInvokeRegistrationGenerator<br/>注册代码生成器"]
+    E --> H["FormContentGenerator"]
+    E --> I["EventHandlerGenerator"]
+
+    F --> F1["ConstructorGenerator<br/>按运行模式生成构造函数"]
+    F --> F2["MethodGenerator + RequestBuilder<br/>生成方法体（URL/参数/序列化）"]
+    F --> F3["AccessTokenGenerator<br/>生成 Token 获取代码"]
+
+    F1 --> O["输出 .g.cs 源文件"]
+    F2 --> O
+    F3 --> O
+    G --> O
+    H --> O
+    I --> O
+    O --> P["编译进程序集<br/>运行时 AddWebApiHttpClient() 注册"]
+```
+
+### 运行模式与参数推断
+
+单个接口/方法的生成逻辑包含两类关键决策：**运行模式选择**（决定构造函数依赖）与**参数推断**（决定每个参数如何映射到 HTTP 请求）：
+
+```mermaid
+flowchart TD
+    Start["解析 [HttpClientApi]"] --> Mode{"运行模式判断"}
+    Mode -->|"设置 HttpClient"| M1["HttpClient 模式<br/>依赖 IEnhancedHttpClient"]
+    Mode -->|"设置 TokenManage"| M2["TokenManager 模式<br/>依赖令牌管理器 + ITokenProvider"]
+    Mode -->|"均未设置"| M3["默认模式<br/>依赖 IMudAppContext"]
+
+    M2 --> Require{"RequiresUserId?"}
+    Require -->|"是"| M2a["额外注入 ICurrentUserContext"]
+    Require -->|"否"| M2b["仅令牌管理器"]
+
+    Start2["解析方法参数"] --> Infer{"参数是否标注<br/>HTTP 特性？"}
+    Infer -->|"未标注（默认推断）"| T{"参数类型"}
+    T -->|"简单类型 / 数组 / 可空"| Q["推断为 [Query]"]
+    T -->|"复杂类型（对象/List/Dict）"| Bd["推断为 [Body]"]
+    T -->|"CancellationToken / IProgress"| Sp["特殊类型，跳过推断"]
+
+    Infer -->|"已标注特性"| Known["按特性处理<br/>Path/Query/Header/Body/Token/Form..."]
+
+    Q --> Combine["合并请求要素"]
+    Bd --> Combine
+    Sp --> Combine
+    Known --> Combine
+    M1 --> Combine
+    M2a --> Combine
+    M2b --> Combine
+    M3 --> Combine
+
+    Combine --> Emit["生成 HttpRequestMessage<br/>内容类型优先级 + 头部合并<br/>+ 方法级弹性策略特性"]
+```
+
+> **要点**：
+> - `HttpClient` 与 `TokenManage` 互斥，同时设置时 `HttpClient` 优先（对应诊断 `HTTPCLIENT007`）。
+> - 方法参数优先级高于接口级动态属性（`[Query]`/`[Path]` 接口属性）；同名时方法参数覆盖接口属性，接口属性为 `null` 时跳过。
+> - 内容类型优先级：`Body 参数级 > 方法级 > 接口级 > 默认 (application/json)`。
+
 ## 三种运行模式
 
 生成器根据 `[HttpClientApi]` 特性配置生成不同的实现代码：
@@ -154,10 +231,10 @@ public interface IMyApi { }
 
 ### 实现类
 
-对于接口 `IUserApi`，生成器会生成 `UserApi` 实现类，位于原始接口命名空间的 `.HttpClientApi` 子命名空间下：
+对于接口 `IUserApi`，生成器会生成 `UserApi` 实现类，位于原始接口命名空间的 `.Internal` 子命名空间下：
 
 ```csharp
-namespace MyApp.HttpClientApi
+namespace MyApp.Internal
 {
     internal partial class UserApi : IUserApi
     {
@@ -178,7 +255,7 @@ public static partial class HttpClientApiExtensions
     {
         // 注册 IUserApi 的 HttpClient 包装实现类（瞬时服务）
         // 注意：实现类构造函数依赖 IEnhancedHttpClient，请确保已通过 AddMudHttpClient 等方法注册此服务
-        services.AddTransient<global::MyApp.IUserApi, global::MyApp.HttpClientApi.UserApi>();
+        services.AddTransient<global::MyApp.IUserApi, global::MyApp.Internal.UserApi>();
         return services;
     }
 }
@@ -202,7 +279,7 @@ services.AddTransient<global::MyApp.IMyApi>(sp =>
         var innerClient = client.Client;
         innerClient.Timeout = TimeSpan.FromMilliseconds(50000);
     }
-    return new global::MyApp.HttpClientApi.MyApi(option, httpClient);
+    return new global::MyApp.Internal.MyApi(option, httpClient);
 });
 ```
 
@@ -274,19 +351,24 @@ Body 参数级 > 方法级 > 接口级 > 默认值 (application/json)
 
 #### Path 参数
 
+`[Path]` 也可以使用别名 `[Route]`（两者等价）：
+
 ```csharp
 [Get("/users/{id}/posts/{postId}")]
-Task<Post> GetPostAsync([Path] int id, [Path] int postId);
+Task<Post> GetPostAsync([Path] int id, [Route] int postId);
 ```
 
 #### Query 参数
+
+`[Query]` 除支持数组分隔符（`[Query(Separator = ",")]`，同 `[ArrayQuery]`）外，还支持方法级、接口级固定查询参数（见「接口级固定参数」章节）。
 
 ```csharp
 [Get("/users")]
 Task<List<User>> GetUsersAsync(
     [Query] string? name = null,
     [Query] int page = 1,
-    [Query] int pageSize = 20
+    [Query] int pageSize = 20,
+    [Query(Separator = ",")] int[] ids   // 普通 [Query] 也支持 Separator 将数组序列化为单个参数
 );
 ```
 
@@ -599,11 +681,49 @@ var headers = response.ResponseHeaders;   // 响应头
 
 ### 编译诊断
 
-生成器提供以下编译诊断：
+源代码生成器在编译时会对不合理的 API 定义产生警告或错误，帮助开发者在编译阶段发现问题。
 
-| 诊断 ID       | 级别    | 说明                                                                              |
-| ------------- | ------- | --------------------------------------------------------------------------------- |
-| HTTPCLIENT011 | Warning | `Response<T>` 返回类型与 `[Cache]` 特性组合使用，可能导致缓存过期的状态码和响应头 |
+#### 接口实现生成（HTTPCLIENT*）
+
+| 诊断 ID | 严重级别 | 触发条件 | 解决方案 |
+|---------|----------|----------|----------|
+| `HTTPCLIENT001` | Error | 生成接口实现时发生异常 | 检查接口定义是否正确，查看内部异常信息 |
+| `HTTPCLIENT003` | Error | 接口语法分析失败 | 确保接口定义符合 C# 语法规范 |
+| `HTTPCLIENT004` | Error | 参数配置错误 | 检查参数特性配置是否正确 |
+| `HTTPCLIENT005` | Error | URL 模板格式无效 | 检查 `[Get]`/`[Post]` 等特性中的 URL 模板 |
+| `HTTPCLIENT007` | Error | 同时指定 `HttpClient` 和 `TokenManage` | 两者互斥，只设置其中一个 |
+| `HTTPCLIENT008` | Error | 加密配置但 HttpClient 类型不支持加密 | 使用 `IEnhancedHttpClient` 或移除加密配置 |
+| `HTTPCLIENT009` | Warning | XML 请求但 HttpClient 类型不支持 XML | 使用 `IEnhancedHttpClient` 或修改 Content-Type |
+| `HTTPCLIENT010` | Warning | 使用了已弃用的 `BaseAddress` 参数 | 改用 `AddMudHttpClient(clientName, baseAddress)` |
+| `HTTPCLIENT011` | Warning | `[Cache]` 与 `Response<T>` 返回类型组合 | 缓存会存储状态码和响应头，建议使用普通返回类型 |
+| `HTTPCLIENT012` | Error | 泛型接口不支持代码生成 | 改为非泛型接口或为每个类型参数创建独立接口 |
+| `HTTPCLIENT013` | Error | URL 模板中的路径占位符与 `[Path]` 参数不匹配 | 确保 URL 模板中的 `{placeholder}` 与方法中的 `[Path]` 参数一一对应 |
+| `HTTPCLIENT014` | Warning | `HttpClient` 类型未找到 | 确认类型名称正确，或通过 `AddMudHttpClient` 注册对应命名客户端 |
+| `HTTPCLIENT015` | Error | `TokenManage` 类型未找到 | 确认类型名称正确，或确保包含该类型的项目已引用 |
+| `HTTPCLIENT016` | Error | `TokenManage` 类型缺少必需方法 | 类型须提供 `GetDefaultApp()`/`GetApp(string)` 方法或实现 `IAppManager<T>` |
+| `HTTPCLIENT017` | Warning | `HttpClient` 类型无法解析，兼容性校验被跳过 | 使用完全限定名确保类型可解析 |
+| `HTTPCLIENT018` | Warning | `TokenManagerKey` 使用默认推断值 | 多接口共享同一 TokenManager 时显式指定 `TokenManagerKey` 或 `TokenType` |
+
+#### 注册代码生成（HTTPCLIENTREG*）
+
+| 诊断 ID | 严重级别 | 触发条件 | 解决方案 |
+|---------|----------|----------|----------|
+| `HTTPCLIENTREG001` | Error | 注册代码生成失败 | 检查接口定义和 DI 注册配置 |
+| `HTTPCLIENTREG002` | Error | `RegistryGroupName` 不是有效 C# 标识符 | 使用字母、数字、下划线组成，以字母或下划线开头 |
+
+#### 事件处理器生成（EHSG*）
+
+| 诊断 ID | 严重级别 | 触发条件 | 解决方案 |
+|---------|----------|----------|----------|
+| `EHSG001` | Error | 事件处理器代码生成错误 | 检查 `[GenerateEventHandler]` 标记的类定义 |
+
+#### FormContent 生成（FORM*）
+
+| 诊断 ID | 严重级别 | 触发条件 | 解决方案 |
+|---------|----------|----------|----------|
+| `FORM001` | Error | FormContent 代码生成错误 | 检查 FormContent 类定义 |
+| `FORM002` | Error | FormContent 缺少 `[FilePath]` 属性 | 必须且只能有一个属性标记 `[FilePath]` |
+| `FORM003` | Error | FormContent 存在多个 `[FilePath]` 属性 | 只保留一个 `[FilePath]` 属性 |
 
 ### 日志脱敏
 

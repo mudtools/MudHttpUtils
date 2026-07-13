@@ -74,6 +74,9 @@ public class OAuth2Options
     /// 令牌过期安全边际（秒），默认 60 秒。
     /// 计算令牌过期时间时会从服务器返回的 expires_in 中减去此值，
     /// 以确保在令牌实际过期前提前刷新，避免因网络延迟导致使用已过期令牌。
+    /// <para>注意：此值仅用于 OAuth2 令牌端点返回的 <c>expires_in</c> 计算偏移。
+    /// 令牌缓存层面的提前刷新由 <see cref="TokenManagerBase.ExpireThresholdSeconds"/> 和
+    /// <see cref="UserTokenCacheOptions.ExpireThresholdSeconds"/> 控制（默认 300 秒）。</para>
     /// </summary>
     public int ExpirySafetyMarginSeconds { get; set; } = 60;
 }

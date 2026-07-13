@@ -16,8 +16,6 @@ namespace Mud.HttpUtils;
 [Generator(LanguageNames.CSharp)]
 internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
 {
-    private const string EventHandlerAttributeName = "GenerateEventHandlerAttribute";
-
     /// <inheritdoc/>
     protected override Collection<string> GetFileUsingNameSpaces()
     {
@@ -88,10 +86,9 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
             try
             {
                 var eventClass = model.Syntax;
-                var semanticModel = model.Context.SemanticModel;
-                var classSymbol = semanticModel.GetDeclaredSymbol(eventClass) as INamedTypeSymbol;
 
-                if (classSymbol == null)
+                // 使用 ClassModel 中预解析的 Symbol，避免重复调用 GetDeclaredSymbol
+                if (model.Symbol is not INamedTypeSymbol classSymbol)
                 {
                     context.ReportDiagnostic(Diagnostic.Create(
                         Diagnostics.EventHandlerGenerationError,
@@ -101,10 +98,8 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
                     continue;
                 }
 
-                // 从符号特性中获取 GenerateEventHandler 特性
-                var eventHandlerAttribute = classSymbol.GetAttributes()
-                    .FirstOrDefault(a => a.AttributeClass?.Name == EventHandlerAttributeName ||
-                                         a.AttributeClass?.Name == EventHandlerAttributeName.Replace("Attribute", ""));
+                // 直接使用 Context.Attributes 中已匹配的特性数据，避免重复遍历 classSymbol.GetAttributes()
+                var eventHandlerAttribute = model.Context.Attributes.FirstOrDefault();
 
                 if (eventHandlerAttribute == null)
                     continue;
@@ -171,8 +166,11 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
         // 构建生成的代码
         var sb = new StringBuilder();
 
-        // 文件头部注释
-        GenerateFileHeader(sb);
+        // 缓存命名空间列表，避免在后续检查中重复调用 GetFileUsingNameSpaces() 创建新集合
+        var usingNamespaces = GetFileUsingNameSpaces();
+
+        // 文件头部注释（使用缓存的命名空间列表，避免 GenerateFileHeader 内部再次调用 GetFileUsingNameSpaces()）
+        GenerateFileHeader(sb, usingNamespaces);
 
         // 添加自定义命名空间引用（如果需要的话）
         if (!string.IsNullOrEmpty(inheritedFrom))
@@ -181,7 +179,7 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
             if (lastDotIndex > 0)
             {
                 var inheritedNamespace = inheritedFrom.Substring(0, lastDotIndex);
-                if (!GetFileUsingNameSpaces().Contains(inheritedNamespace))
+                if (!usingNamespaces.Contains(inheritedNamespace))
                 {
                     sb.AppendLine($"using {inheritedNamespace};");
                 }

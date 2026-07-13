@@ -55,10 +55,13 @@ public class RetryOptions
     /// 获取或设置重试前的回调委托。
     /// </summary>
     /// <remarks>
-    /// 回调参数：
-    /// - Exception: 导致重试的异常（可能为 null）
-    /// - int: 当前重试次数（从 1 开始）
-    /// - TimeSpan: 本次重试的延迟时间
+    /// <para>回调参数：</para>
+    /// <list type="bullet">
+    /// <item><description>Exception: 导致重试的异常（可能为 null）</description></item>
+    /// <item><description>int: 当前重试次数（从 1 开始）</description></item>
+    /// <item><description>TimeSpan: 本次重试的延迟时间</description></item>
+    /// </list>
+    /// <para><b>注意</b>：此属性为委托类型，仅支持通过 <c>Action&lt;ResilienceOptions&gt;</c> 委托进行代码配置，无法通过 <c>IConfiguration</c> / <c>appsettings.json</c> 绑定。</para>
     /// </remarks>
     public Func<Exception?, int, TimeSpan, Task>? OnRetry { get; set; }
 }

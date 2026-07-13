@@ -22,12 +22,18 @@ internal static class MethodAnalyzer
     /// 避免 <see cref="AnalyzeInterfaceProperties"/> 对同一接口被每个方法重复调用导致的 O(N×M) 性能退化。
     /// 传入 null 时将内部计算。
     /// </param>
+    /// <param name="cachedInterfaceAttributes">
+    /// 可选的预计算接口特性列表（<c>INamedTypeSymbol.GetAttributes()</c> 结果）。
+    /// 当由 <see cref="GeneratorContext"/> 批量调用时传入已缓存的特性，避免对同一接口的每个方法
+    /// 重复调用 <c>GetAttributes()</c> 产生多次分配。传入 <c>default</c> 时将内部计算。
+    /// </param>
     public static MethodAnalysisResult AnalyzeMethod(
         Compilation compilation,
         IMethodSymbol methodSymbol,
         InterfaceDeclarationSyntax interfaceDecl,
         SemanticModel? semanticModel = null,
-        IReadOnlyList<InterfacePropertyInfo>? cachedInterfaceProperties = null)
+        IReadOnlyList<InterfacePropertyInfo>? cachedInterfaceProperties = null,
+        ImmutableArray<AttributeData> cachedInterfaceAttributes = default)
     {
         ArgumentNullExceptionExtensions.ThrowIfNull(compilation);
         ArgumentNullExceptionExtensions.ThrowIfNull(methodSymbol);
@@ -52,16 +58,25 @@ internal static class MethodAnalyzer
         if (string.IsNullOrEmpty(httpMethod) || string.IsNullOrEmpty(urlTemplate))
             return MethodAnalysisResult.CreateInvalid();
 
-        var methodContentType = GetMethodContentTypeFromAttributes(methodAttributes);
-        var responseContentType = GetResponseContentTypeFromAttributes(methodAttributes);
-        var responseEnableDecrypt = GetResponseEnableDecryptFromAttributes(methodAttributes);
+        var methodContentType = GetMethodContentTypeFromHttpMethodAttr(httpMethodAttributeData);
+        var responseContentType = GetResponseContentTypeFromHttpMethodAttr(httpMethodAttributeData);
+        var responseEnableDecrypt = GetResponseEnableDecryptFromHttpMethodAttr(httpMethodAttributeData);
         var parameters = ParameterAnalyzer.AnalyzeParameters(methodSymbol);
         var (bodyContentType, bodyEnableEncrypt, bodyEncryptSerializeType, bodyEncryptPropertyName) = GetBodyInfoFromParameters(parameters);
 
-        // 一次性获取接口符号和接口特性列表，避免 5 个子方法各自独立调用 GetAttributes() 产生多次分配
-        var interfaceModel = semanticModel ?? SemanticModelCache.GetOrCreate(compilation, interfaceDecl.SyntaxTree);
-        var interfaceSymbol = interfaceModel.GetDeclaredSymbol(interfaceDecl) as INamedTypeSymbol;
-        var interfaceAttrs = interfaceSymbol?.GetAttributes() ?? ImmutableArray<AttributeData>.Empty;
+        // 一次性获取接口特性列表，避免 5 个子方法各自独立调用 GetAttributes() 产生多次分配
+        // 优先使用调用方预计算的接口特性缓存，避免对同一接口的每个方法重复调用 GetAttributes()
+        ImmutableArray<AttributeData> interfaceAttrs;
+        if (cachedInterfaceAttributes.IsDefault)
+        {
+            var interfaceModel = semanticModel ?? SemanticModelCache.GetOrCreate(compilation, interfaceDecl.SyntaxTree);
+            var interfaceSymbol = interfaceModel.GetDeclaredSymbol(interfaceDecl) as INamedTypeSymbol;
+            interfaceAttrs = interfaceSymbol?.GetAttributes() ?? ImmutableArray<AttributeData>.Empty;
+        }
+        else
+        {
+            interfaceAttrs = cachedInterfaceAttributes;
+        }
 
         var (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName, interfaceTokenScopes) = AnalyzeInterfaceAttributes(interfaceAttrs);
 
@@ -243,17 +258,15 @@ internal static class MethodAnalyzer
         if (methodSymbol == null)
             return null;
 
-        return GetMethodContentTypeFromAttributes(methodSymbol.GetAttributes());
+        var httpMethodAttr = FindHttpMethodAttributeFromAttributes(methodSymbol.GetAttributes());
+        return GetMethodContentTypeFromHttpMethodAttr(httpMethodAttr);
     }
 
     /// <summary>
     /// 从已缓存的特性列表中获取ContentType值
     /// </summary>
-    private static string? GetMethodContentTypeFromAttributes(ImmutableArray<AttributeData> attributes)
+    private static string? GetMethodContentTypeFromHttpMethodAttr(AttributeData? httpMethodAttr)
     {
-        var httpMethodAttr = attributes
-            .FirstOrDefault(attr => HttpClientGeneratorConstants.SupportedHttpMethods.Contains(attr.AttributeClass?.Name));
-
         if (httpMethodAttr == null)
             return null;
 
@@ -339,11 +352,8 @@ internal static class MethodAnalyzer
     /// <summary>
     /// 从已缓存的特性列表中获取ResponseContentType值
     /// </summary>
-    private static string? GetResponseContentTypeFromAttributes(ImmutableArray<AttributeData> attributes)
+    private static string? GetResponseContentTypeFromHttpMethodAttr(AttributeData? httpMethodAttr)
     {
-        var httpMethodAttr = attributes
-            .FirstOrDefault(attr => HttpClientGeneratorConstants.SupportedHttpMethods.Contains(attr.AttributeClass?.Name));
-
         if (httpMethodAttr == null)
             return null;
 
@@ -353,19 +363,14 @@ internal static class MethodAnalyzer
     /// <summary>
     /// 从已缓存的特性列表中获取ResponseEnableDecrypt值
     /// </summary>
-    private static bool GetResponseEnableDecryptFromAttributes(ImmutableArray<AttributeData> attributes)
+    private static bool GetResponseEnableDecryptFromHttpMethodAttr(AttributeData? httpMethodAttr)
     {
-        var httpMethodAttr = attributes
-            .FirstOrDefault(attr => HttpClientGeneratorConstants.SupportedHttpMethods.Contains(attr.AttributeClass?.Name));
-
         if (httpMethodAttr == null)
             return false;
 
-        var value = AttributeDataHelper.GetBoolValueFromAttribute(
+        return AttributeDataHelper.GetBoolValueFromAttribute(
             httpMethodAttr,
             HttpClientGeneratorConstants.HttpMethodResponseEnableDecryptProperty);
-
-        return value;
     }
 
     /// <summary>
@@ -559,30 +564,9 @@ internal static class MethodAnalyzer
                 return ancestorDecl;
         }
 
-        // 最终回退：Locations 未命中源代码位置时，按接口名遍历语法树
-        // 此路径极少触发，保留以确保健壮性
-        GeneratorDebugLogger.Log(
-            $"FindInterfaceDeclarationSyntax 最终回退路径触发: {interfaceSymbol.ToDisplayString()} (DeclaringSyntaxReferences 与 Locations 均未命中)");
-
-        var interfaceName = interfaceSymbol.Name;
-        foreach (var syntaxTree in compilation.SyntaxTrees)
-        {
-            var root = syntaxTree.GetRoot();
-            var interfaceDeclarations = root.DescendantNodes().OfType<InterfaceDeclarationSyntax>();
-            foreach (var interfaceDecl in interfaceDeclarations)
-            {
-                if (interfaceDecl.Identifier.Text == interfaceName)
-                {
-                    var model = SemanticModelCache.GetOrCreate(compilation, syntaxTree);
-                    var symbol = model.GetDeclaredSymbol(interfaceDecl);
-                    if (symbol?.Equals(interfaceSymbol, SymbolEqualityComparer.Default) == true)
-                    {
-                        return interfaceDecl;
-                    }
-                }
-            }
-        }
-
+        // DeclaringSyntaxReferences 和 Locations 均未命中源代码位置
+        // 说明接口声明不在当前编译的源代码中（可能来自引用程序集或部分类型定义缺失）。
+        // 不再遍历所有语法树（O(N) 风险），直接返回 null 由调用方降级处理。
         return null;
     }
 

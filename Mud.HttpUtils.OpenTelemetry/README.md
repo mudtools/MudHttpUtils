@@ -6,10 +6,10 @@
 
 ## 目标框架
 
+- `netstandard2.0`
+- `net6.0`
 - `net8.0`
 - `net10.0`
-
-> 由于 OpenTelemetry SDK 1.10.0 的传递依赖（`Microsoft.Extensions.*` 9.0.0）已不再支持 `net6.0`，本包仅面向 `net8.0+`。如需在 `net6.0` 中使用，请直接引用 `OpenTelemetry.*` 包并按本包源码自行配置。
 
 ## 安装
 
@@ -77,6 +77,14 @@ using var provider = services.BuildServiceProvider();
 | `ConfigureMetrics` | `Action<MeterProviderBuilder>?` | `null` | 自定义指标配置委托，在 Mud 默认配置之后执行 |
 | `ConfigureLogging` | `Action<LoggerProviderBuilder>?` | `null` | 自定义日志配置委托，在 Mud 默认配置之后执行 |
 
+> **`OtlpExportProtocol` 枚举**：本包自定义了 `OtlpExportProtocol`（`Grpc = 0`、`HttpProtobuf = 1`），用于覆盖 OpenTelemetry SDK 的同名类型。可通过 `options.OtlpExportProtocol` 指定导出协议。
+>
+> **批量导出配置范围**：`ExportBatchSize` / `ExportIntervalMilliseconds` 仅作用于 **Tracing**（Activity）的 `BatchExportProcessorOptions`，不影响 Metrics / Logs 的导出节奏。
+>
+> **`EnableHttpClientInstrumentation`**：同时控制 Tracing 与 Metrics 两侧的 .NET HttpClient 关联（`AddHttpClientInstrumentation`），不仅关联 ActivitySource。
+>
+> `AddMudHttpOpenTelemetry` 的两个重载均返回 `OpenTelemetryBuilder`，可继续链式追加配置；`IConfiguration` 重载的 `sectionPath` 参数默认值为 `"MudHttpOpenTelemetry"`，可自定义绑定节点路径。
+
 ### 从 IConfiguration 绑定
 
 除代码配置外，还支持从 `appsettings.json` 绑定选项：
@@ -111,6 +119,8 @@ builder.Services.AddMudHttpOpenTelemetry(builder.Configuration);
 ```
 
 > 也可同时使用配置绑定和代码配置：`AddMudHttpOpenTelemetry(builder.Configuration, configure: options => { ... })`，代码配置在配置绑定之后执行，可覆盖绑定值。
+>
+> **热更新限制**：OpenTelemetry 配置在应用启动时一次性读取，**不支持 IOptionsMonitor 热更新**。这是因为 OpenTelemetry SDK 的 TracerProvider/MeterProvider 在构建后不可变。修改 `appsettings.json` 中的 `MudHttpOpenTelemetry` 节后需重启应用才能生效。如需运行时可变配置，请使用 `AddMudHttpOpenTelemetry(Action<MudHttpOpenTelemetryOptions>?)` 重载并在自定义委托中读取动态配置源。
 
 ### 高级配置示例
 
@@ -172,14 +182,14 @@ builder.Services.AddMudHttpOpenTelemetry();
 
 ## 依赖项
 
-| 包 | 说明 |
-|----|------|
-| `Mud.HttpUtils.Abstractions` | 提供 `MudHttpActivitySource` / `MudHttpMeter` 静态源 |
-| `OpenTelemetry` | OpenTelemetry SDK 核心 |
-| `OpenTelemetry.Extensions.Hosting` | DI 集成扩展 |
-| `OpenTelemetry.Exporter.OpenTelemetryProtocol` | OTLP 导出器 |
-| `OpenTelemetry.Instrumentation.Http` | HttpClient Instrumentation |
-| `OpenTelemetry.Instrumentation.AspNetCore` | ASP.NET Core Instrumentation |
+| 包 | 版本 | 说明 |
+|----|------|------|
+| `Mud.HttpUtils.Abstractions` | — | 提供 `MudHttpActivitySource` / `MudHttpMeter` 静态源 |
+| `OpenTelemetry` | 1.16.0 | OpenTelemetry SDK 核心 |
+| `OpenTelemetry.Extensions.Hosting` | 1.16.0 | DI 集成扩展 |
+| `OpenTelemetry.Exporter.OpenTelemetryProtocol` | 1.16.0 | OTLP 导出器 |
+| `OpenTelemetry.Instrumentation.Http` | 1.16.0 | HttpClient Instrumentation |
+| `OpenTelemetry.Instrumentation.AspNetCore` | 1.16.0 | ASP.NET Core Instrumentation |
 
 ## 部署 OTLP 收集器
 

@@ -35,6 +35,13 @@ public static class MudHttpOpenTelemetryExtensions
     /// <summary>
     /// 一键开启 Mud.HttpUtils 的 OpenTelemetry 追踪与指标采集，从 <see cref="IConfiguration"/> 绑定选项。
     /// </summary>
+    /// <remarks>
+    /// <para><b>注意：此方法在启动时读取配置一次，不支持 IOptionsMonitor 热更新。</b>
+    /// OpenTelemetry SDK 的 TracerProvider/MeterProvider 在构建后不可变，
+    /// 修改 appsettings.json 后需重启应用才能生效。
+    /// 如需运行时可变配置，请使用 <see cref="AddMudHttpOpenTelemetry(IServiceCollection, Action{MudHttpOpenTelemetryOptions}?)"/>
+    /// 重载并在自定义委托中读取动态配置源。</para>
+    /// </remarks>
     /// <param name="services">服务集合。</param>
     /// <param name="configuration">配置实例，用于绑定 <see cref="MudHttpOpenTelemetryOptions"/>。</param>
     /// <param name="sectionPath">配置节点路径，默认 <c>"MudHttpOpenTelemetry"</c>。</param>

@@ -74,6 +74,13 @@ internal class GeneratorContext
     public IReadOnlyList<InterfacePropertyInfo> InterfaceProperties { get; set; } = [];
 
     /// <summary>
+    /// 接口符号的特性列表，在构造函数中一次性计算并缓存。
+    /// 避免在 <see cref="GetOrAnalyzeMethod"/> 和 <see cref="DetectFeatures"/> 中重复调用
+    /// <c>INamedTypeSymbol.GetAttributes()</c> 产生多次分配。
+    /// </summary>
+    public ImmutableArray<AttributeData> InterfaceAttributes { get; }
+
+    /// <summary>
     /// 方法分析结果缓存，避免同一方法被 AnalyzeMethod 重复分析。
     /// 使用 SymbolEqualityComparer.Default 确保符号比较的正确性。
     /// 注意：此 Dictionary 仅在单线程生成上下文中使用（每个 GeneratorContext 实例对应一个接口的生成），
@@ -101,8 +108,9 @@ internal class GeneratorContext
             return cached;
 
         var result = MethodAnalyzer.AnalyzeMethod(
-            compilation, methodSymbol, interfaceDeclaration, semanticModel,
-            cachedInterfaceProperties: InterfaceProperties);
+                compilation, methodSymbol, interfaceDeclaration, semanticModel,
+                cachedInterfaceProperties: InterfaceProperties,
+                cachedInterfaceAttributes: InterfaceAttributes);
         MethodAnalysisCache[methodSymbol] = result;
         return result;
     }
@@ -187,21 +195,25 @@ internal class GeneratorContext
             InterfaceProperties = [];
         }
 
+        // 预计算接口特性列表，后续 GetOrAnalyzeMethod 和 DetectFeatures 共享，避免重复调用 GetAttributes()
+        InterfaceAttributes = interfaceSymbol.GetAttributes();
+
         // 单次遍历检测全部 5 个特性标志，避免 5 个独立 Detect 方法各自遍历 allMethods
         // 并各自调用 method.GetAttributes() 产生重复分配
-        DetectFeatures(interfaceSymbol, allMethods);
+        DetectFeatures(allMethods);
     }
 
     /// <summary>
     /// 单次遍历所有方法，一次性检测 Cache、CacheVaryByUser、Resilience、ApiKeyInjection、HmacSignatureInjection。
     /// 接口级 Token 特性在循环前检查；方法级特性在单次循环中合并检测，尽早短路退出。
     /// </summary>
-    private void DetectFeatures(INamedTypeSymbol interfaceSymbol, IReadOnlyList<IMethodSymbol> allMethods)
+    private void DetectFeatures(IReadOnlyList<IMethodSymbol> allMethods)
     {
         try
         {
             // 接口级 Token 特性检查（单次调用，不在方法循环内重复）
-            var interfaceTokenAttr = interfaceSymbol.GetAttributes()
+            // 使用构造函数中预计算的 InterfaceAttributes，避免重复调用 GetAttributes()
+            var interfaceTokenAttr = InterfaceAttributes
                 .FirstOrDefault(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.AttributeClass?.Name));
             if (interfaceTokenAttr != null)
             {

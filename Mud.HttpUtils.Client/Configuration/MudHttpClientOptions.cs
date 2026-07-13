@@ -37,13 +37,23 @@ public class MudHttpClientOptions
     /// </remarks>
     public string? BaseAddress { get; set; }
 
+    private int? _timeoutSeconds;
+
     /// <summary>
     /// 超时时间（秒）
     /// </summary>
     /// <remarks>
-    /// 请求的超时时间，单位为秒。如果未设置，使用系统默认值（通常为 100 秒）。
+    /// <para>请求的超时时间，单位为秒。如果未设置，使用系统默认值（通常为 100 秒）。</para>
+    /// <para>设置时必须大于 0。</para>
     /// </remarks>
-    public int? TimeoutSeconds { get; set; }
+    /// <exception cref="ArgumentOutOfRangeException">设置小于等于 0 的值时抛出。</exception>
+    public int? TimeoutSeconds
+    {
+        get => _timeoutSeconds;
+        set => _timeoutSeconds = value.HasValue && value.Value <= 0
+            ? throw new ArgumentOutOfRangeException(nameof(TimeoutSeconds), "超时时间必须大于 0 秒。")
+            : value;
+    }
 
     /// <summary>
     /// 默认请求头

@@ -38,15 +38,17 @@ public class EnhancedHttpClientSubclassTests
     }
 
     [Fact]
-    public void DirectEnhancedHttpClient_WithBaseAddress_ReturnsNewClient()
+    public void DirectEnhancedHttpClient_WithBaseAddress_ThrowsNotSupportedException()
     {
+        // M-3 修复：DirectEnhancedHttpClient 未重写 WithBaseAddress，基类实现抛出 NotSupportedException
+        // 以防止绕过 IHttpClientFactory 池化机制导致 Socket 端口耗尽
         var httpClient = new HttpClient { BaseAddress = new Uri("https://api.example.com") };
         var client = new DirectEnhancedHttpClient(httpClient);
 
-        var newClient = client.WithBaseAddress("https://api2.example.com");
+        var act = () => client.WithBaseAddress("https://api2.example.com");
 
-        newClient.Should().NotBeNull();
-        newClient.Should().NotBeSameAs(client);
+        act.Should().Throw<NotSupportedException>()
+            .WithMessage("*IHttpClientFactory*");
     }
 
     [Fact]
