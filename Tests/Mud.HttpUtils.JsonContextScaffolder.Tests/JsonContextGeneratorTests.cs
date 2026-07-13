@@ -420,4 +420,133 @@ public class JsonContextGeneratorTests
         files[0].SourceCode.Should().NotContain("[JsonSerializable(typeof(global::TestApp.DerivedDto))]");
     }
 
+    #region AOT 诊断测试（AOT001-AOT003）
+
+    [Fact]
+    public void Generate_ConflictingNamingPolicy_ReportsAOT001()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            namespace TestApp;
+            [HttpJsonSerializable(SerializerClassName = "App", NamingPolicy = JsonNamingPolicyHint.CamelCase)]
+            public class DtoA { }
+            [HttpJsonSerializable(SerializerClassName = "App", NamingPolicy = JsonNamingPolicyHint.SnakeCaseLower)]
+            public class DtoB { }
+            """;
+        var compilation = CreateCompilation(source);
+        var generator = new JsonContextGenerator();
+
+        generator.Generate(compilation);
+
+        generator.Diagnostics.Should().Contain(d => d.Id == "AOT001");
+    }
+
+    [Fact]
+    public void Generate_SameNamingPolicy_NoAOT001()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            namespace TestApp;
+            [HttpJsonSerializable(SerializerClassName = "App", NamingPolicy = JsonNamingPolicyHint.CamelCase)]
+            public class DtoA { }
+            [HttpJsonSerializable(SerializerClassName = "App", NamingPolicy = JsonNamingPolicyHint.CamelCase)]
+            public class DtoB { }
+            """;
+        var compilation = CreateCompilation(source);
+        var generator = new JsonContextGenerator();
+
+        generator.Generate(compilation);
+
+        generator.Diagnostics.Should().NotContain(d => d.Id == "AOT001");
+    }
+
+    [Fact]
+    public void Generate_OpenGeneric_ReportsAOT002()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            namespace TestApp;
+            [HttpJsonSerializable(SerializerClassName = "App")]
+            public class Widget<T> { public T Value { get; set; } }
+            """;
+        var compilation = CreateCompilation(source);
+        var generator = new JsonContextGenerator();
+
+        generator.Generate(compilation);
+
+        generator.Diagnostics.Should().Contain(d => d.Id == "AOT002");
+    }
+
+    [Fact]
+    public void Generate_NonGeneric_NoAOT002()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            namespace TestApp;
+            [HttpJsonSerializable(SerializerClassName = "App")]
+            public class Dto { }
+            """;
+        var compilation = CreateCompilation(source);
+        var generator = new JsonContextGenerator();
+
+        generator.Generate(compilation);
+
+        generator.Diagnostics.Should().NotContain(d => d.Id == "AOT002");
+    }
+
+    [Fact]
+    public void Generate_PolymorphicType_ReportsAOT003()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            namespace TestApp;
+            public class BaseDto { public int Id { get; set; } }
+            [HttpJsonSerializable(SerializerClassName = "App")]
+            public class DerivedDto : BaseDto { public string Name { get; set; } }
+            """;
+        var compilation = CreateCompilation(source);
+        var generator = new JsonContextGenerator();
+
+        generator.Generate(compilation);
+
+        generator.Diagnostics.Should().Contain(d => d.Id == "AOT003");
+    }
+
+    [Fact]
+    public void Generate_AutoDerivedTypes_NoAOT003()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            namespace TestApp;
+            public class BaseDto { public int Id { get; set; } }
+            [HttpJsonSerializable(SerializerClassName = "App")]
+            public class DerivedDto : BaseDto { public string Name { get; set; } }
+            """;
+        var compilation = CreateCompilation(source);
+        var generator = new JsonContextGenerator();
+
+        generator.Generate(compilation, autoDerivedTypes: true);
+
+        generator.Diagnostics.Should().NotContain(d => d.Id == "AOT003");
+    }
+
+    [Fact]
+    public void Generate_NonPolymorphicType_NoAOT003()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            namespace TestApp;
+            [HttpJsonSerializable(SerializerClassName = "App")]
+            public class SimpleDto { public string Name { get; set; } }
+            """;
+        var compilation = CreateCompilation(source);
+        var generator = new JsonContextGenerator();
+
+        generator.Generate(compilation);
+
+        generator.Diagnostics.Should().NotContain(d => d.Id == "AOT003");
+    }
+
+    #endregion
+
 }

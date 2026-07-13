@@ -31,6 +31,8 @@ internal static class AotDtoCoverageAnalyzer
     private const string JsonSerializerContextFullName = "System.Text.Json.Serialization.JsonSerializerContext";
     private const string HttpClientApiAttributeFullName = "Mud.HttpUtils.Attributes.HttpClientApiAttribute";
     private const string BodyAttributeFullName = "Mud.HttpUtils.Attributes.BodyAttribute";
+    private const string QueryAttributeFullName = "Mud.HttpUtils.Attributes.QueryAttribute";
+    private const string QueryMapAttributeFullName = "Mud.HttpUtils.Attributes.QueryMapAttribute";
 
     /// <summary>
     /// 分析编译单元中所有 [HttpClientApi] 接口方法的 DTO 覆盖情况，报告未覆盖的 AOT004 诊断。
@@ -187,7 +189,7 @@ internal static class AotDtoCoverageAnalyzer
     }
 
     /// <summary>
-    /// 检查单个方法的 DTO 覆盖情况。
+    /// 检查单个方法的 DTO 覆盖情况（AOT004 + AOT005）。
     /// </summary>
     private static void CheckMethodDtoCoverage(
         Compilation compilation,
@@ -197,33 +199,84 @@ internal static class AotDtoCoverageAnalyzer
         HashSet<INamedTypeSymbol> coveredTypes)
     {
         var bodyAttr = compilation.GetTypeByMetadataName(BodyAttributeFullName);
+        var queryAttr = compilation.GetTypeByMetadataName(QueryAttributeFullName);
+        var queryMapAttr = compilation.GetTypeByMetadataName(QueryMapAttributeFullName);
 
-        // 检查请求体 DTO
-        if (bodyAttr != null)
+        foreach (var param in method.Parameters)
         {
-            foreach (var param in method.Parameters)
-            {
-                var hasBodyAttr = param.GetAttributes()
-                    .Any(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, bodyAttr));
-                if (!hasBodyAttr)
-                    continue;
+            var paramType = param.Type as INamedTypeSymbol;
+            if (paramType == null)
+                continue;
 
-                var paramType = param.Type as INamedTypeSymbol;
-                if (paramType != null && !IsCovered(paramType, coveredTypes) && !IsPrimitiveOrString(paramType))
+            var paramLocation = param.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax().GetLocation()
+                ?? method.Locations.FirstOrDefault();
+
+            // 检查 [Body] 请求体 DTO — AOT004
+            if (bodyAttr != null && param.GetAttributes()
+                .Any(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, bodyAttr)))
+            {
+                if (!IsCovered(paramType, coveredTypes) && !IsPrimitiveOrString(paramType))
                 {
-                    var location = param.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax().GetLocation()
-                        ?? method.Locations.FirstOrDefault();
                     context.ReportDiagnostic(Diagnostic.Create(
                         Diagnostics.AotDtoNotCoveredByContext,
-                        location,
+                        paramLocation,
                         interfaceSymbol.Name,
                         method.Name,
                         paramType.ToDisplayString()));
                 }
+                continue; // [Body] 参数不会同时是 [Query]
+            }
+
+            // 检查 [Query] 复杂类型参数 — AOT005
+            // [Query] 复杂类型（非简单类型、非数组）在源生成器中默认使用 JSON 序列化
+            if (queryAttr != null && param.GetAttributes()
+                .Any(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, queryAttr)))
+            {
+                if (!IsPrimitiveOrString(paramType) && !IsArrayType(paramType) &&
+                    !IsCovered(paramType, coveredTypes))
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        Diagnostics.AotQueryParameterNotInContext,
+                        paramLocation,
+                        interfaceSymbol.Name,
+                        method.Name,
+                        param.Name,
+                        paramType.ToDisplayString()));
+                }
+                continue;
+            }
+
+            // 检查 [QueryMap] + JSON 序列化参数 — AOT005
+            if (queryMapAttr != null)
+            {
+                var queryMapAttribute = param.GetAttributes()
+                    .FirstOrDefault(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, queryMapAttr));
+
+                if (queryMapAttribute != null)
+                {
+                    // 检查 SerializationMethod 是否为 Json (enum value != 0)
+                    var serMethodArg = queryMapAttribute.NamedArguments
+                        .FirstOrDefault(kvp => kvp.Key == "SerializationMethod");
+                    var useJsonSerialization = serMethodArg.Value.Value is int enumVal && enumVal != 0;
+
+                    // JSON 序列化的 QueryMap 参数且类型非字典（字典类型不涉及 JSON 序列化）
+                    if (useJsonSerialization && !IsDictionaryType(paramType) &&
+                        !IsPrimitiveOrString(paramType) &&
+                        !IsCovered(paramType, coveredTypes))
+                    {
+                        context.ReportDiagnostic(Diagnostic.Create(
+                            Diagnostics.AotQueryParameterNotInContext,
+                            paramLocation,
+                            interfaceSymbol.Name,
+                            method.Name,
+                            param.Name,
+                            paramType.ToDisplayString()));
+                    }
+                }
             }
         }
 
-        // 检查响应 DTO
+        // 检查响应 DTO — AOT004
         var returnType = method.ReturnType as INamedTypeSymbol;
         if (returnType != null)
         {
@@ -240,6 +293,30 @@ internal static class AotDtoCoverageAnalyzer
                     innerType.ToDisplayString()));
             }
         }
+    }
+
+    /// <summary>
+    /// 判断是否为数组类型。
+    /// </summary>
+    private static bool IsArrayType(INamedTypeSymbol type)
+    {
+        return type.TypeKind == TypeKind.Array ||
+               (type.IsGenericType && type.Name == "List" && type.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic") ||
+               (type.IsGenericType && type.Name == "IEnumerable" && type.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic");
+    }
+
+    /// <summary>
+    /// 判断是否为字典类型。
+    /// </summary>
+    private static bool IsDictionaryType(INamedTypeSymbol type)
+    {
+        if (!type.IsGenericType)
+            return false;
+
+        var name = type.Name;
+        var ns = type.ContainingNamespace?.ToDisplayString();
+        return ns == "System.Collections.Generic" &&
+               (name == "IDictionary" || name == "Dictionary" || name == "IReadOnlyDictionary" || name == "ReadOnlyDictionary");
     }
 
     /// <summary>
@@ -273,9 +350,22 @@ internal static class AotDtoCoverageAnalyzer
 
     /// <summary>
     /// 判断是否为基本类型或 string（不需要 Context 覆盖）。
+    /// 包括可空值类型（如 int?、bool?）和枚举类型。
     /// </summary>
     private static bool IsPrimitiveOrString(INamedTypeSymbol type)
     {
+        // 解包 Nullable<T>（如 int? → int）
+        if (type.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T &&
+            type.TypeArguments.Length > 0 &&
+            type.TypeArguments[0] is INamedTypeSymbol innerType)
+        {
+            return IsPrimitiveOrString(innerType);
+        }
+
+        // 枚举类型使用 ToString()，不需要 JSON 序列化
+        if (type.TypeKind == TypeKind.Enum)
+            return true;
+
         return type.SpecialType switch
         {
             SpecialType.System_String or
@@ -299,7 +389,7 @@ internal static class AotDtoCoverageAnalyzer
     }
 
     /// <summary>
-    /// 解包 Task<T> 的内部类型。
+    /// 解包 Task&lt;T&gt; 的内部类型。
     /// </summary>
     private static INamedTypeSymbol? ExtractTaskInnerType(INamedTypeSymbol returnType)
     {

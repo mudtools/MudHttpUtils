@@ -25,6 +25,7 @@ public class Program
         await DemoEnhancedHttpClient_Json(host.Services);
         await DemoGeneratedApiClient_FormUrlEncoded(host.Services);
         await DemoQueryMapJsonSerialization(host.Services);
+        await DemoComplexQueryJsonSerialization(host.Services);
         await DemoResilienceDecorator(host.Services);
         await DemoResilienceDecoratorWithImplementationType();
         DemoSensitiveDataMasker();
@@ -257,6 +258,49 @@ public class Program
         }
 
         Console.WriteLine("  [✓] 查询参数代码路径已执行（[Query] 逐参数内联，AOT 安全）\n");
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // 场景 3c：复杂查询参数 JSON 序列化路径（QueryParameterBinder AOT 修复验证）
+    // ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 验证 [Query] 复杂类型参数在 AOT 下正常工作。
+    /// </summary>
+    /// <remarks>
+    /// [Query] 复杂类型参数由源生成器在编译期发射内联属性展平代码，
+    /// JSON 序列化使用泛型重载 JsonSerializer.Serialize&lt;T&gt;(value, _jsonSerializerOptions)，
+    /// 而非非泛型 JsonSerializer.Serialize(object?) 重载（AOT 不安全）。
+    /// 此场景验证 JsonAotSourceGeneratorPlan §3.6 的修复。
+    /// </remarks>
+    private static async Task DemoComplexQueryJsonSerialization(IServiceProvider services)
+    {
+        Console.WriteLine("--- 3c. 复杂查询参数 JSON 序列化路径（[Query] + 复杂类型，AOT 安全）---");
+        var searchApi = services.GetRequiredService<ISearchApi>();
+
+        try
+        {
+            // [Query] 复杂类型参数，源生成器在编译期发射内联属性展平代码
+            // 简单类型属性（string/int/bool）使用 JsonSerializer.Serialize<T>(value, _jsonSerializerOptions)
+            var results = await searchApi.AdvancedSearchAsync(new SearchCriteria
+            {
+                Keyword = "test",
+                MinAge = 18,
+                MaxAge = 65,
+                ActiveOnly = true
+            });
+            Console.WriteLine($"  AdvancedSearchAsync => {(results != null ? $"{results.Count} results" : "null")}");
+        }
+        catch (HttpRequestException ex)
+        {
+            Console.WriteLine($"  AdvancedSearchAsync — HTTP 请求失败（预期，无真实服务器）: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  AdvancedSearchAsync — 异常: {ex.GetType().Name}: {ex.Message}");
+        }
+
+        Console.WriteLine("  [✓] 复杂查询参数 JSON 序列化路径已执行（JsonSerializer.Serialize<T> + _jsonSerializerOptions）\n");
     }
 
     // ─────────────────────────────────────────────────────────

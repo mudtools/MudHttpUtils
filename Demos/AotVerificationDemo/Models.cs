@@ -44,6 +44,23 @@ public class LoginResult
     public DateTime ExpiresAt { get; set; }
 }
 
+/// <summary>
+/// 搜索条件（复杂查询参数 DTO，通过 [Query] 传入）
+/// </summary>
+/// <remarks>
+/// 此类型用于验证 [Query] 复杂类型参数的 JSON 序列化 AOT 安全路径。
+/// 源生成器在编译期为每个属性发射内联代码，
+/// JSON 序列化使用泛型重载 JsonSerializer.Serialize&lt;T&gt;(value, _jsonSerializerOptions)。
+/// </remarks>
+[HttpJsonSerializable(SerializerClassName = "App", NamingPolicy = JsonNamingPolicyHint.CamelCase)]
+public class SearchCriteria
+{
+    public string? Keyword { get; set; }
+    public int? MinAge { get; set; }
+    public int? MaxAge { get; set; }
+    public bool? ActiveOnly { get; set; }
+}
+
 // ─────────────────────────────────────────────────────────────
 // FormUrlEncoded DTO 类型 — 属性在编译期由源生成器枚举（AOT 安全）
 // ─────────────────────────────────────────────────────────────

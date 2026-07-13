@@ -69,6 +69,9 @@ public interface ISearchApi
         [Query] int? minAge = null,
         [Query] int? maxAge = null,
         [Query] bool? activeOnly = null);
+
+    [Get("/api/search/advanced")]
+    Task<List<UserDto>?> AdvancedSearchAsync([Query] SearchCriteria? criteria = null);
 }
 
 // ─────────────────────────────────────────────────────────────

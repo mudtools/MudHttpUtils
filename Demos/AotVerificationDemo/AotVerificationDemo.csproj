@@ -33,4 +33,38 @@
 		<PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
 	</ItemGroup>
 
+	<!-- ─────────────────────────────────────────────────────────────
+	     Pre-build：JSON Context 脚手架（Mud.HttpUtils.JsonContextScaffolder）
+	     在编译前扫描标注 [HttpJsonSerializable] 的实体，自动生成 AppJsonContext.g.cs
+	     到 obj/<tfm>/GeneratedJsonContext/，作为真实编译源参与 STJ 源生成。
+	     手写补充（List<UserDto> 等）见 JsonContext.cs。
+	     机制对应方案文档 §3.2（pre-build 产出真实 .g.cs，绕过 Roslyn 生成器互不可见限制）。
+	     ───────────────────────────────────────────────────────────── -->
+	<PropertyGroup>
+		<ScaffolderProject>$(MSBuildThisFileDirectory)..\..\Tools\Mud.HttpUtils.JsonContextScaffolder\Mud.HttpUtils.JsonContextScaffolder.csproj</ScaffolderProject>
+	</PropertyGroup>
+
+	<!-- 运行脚手架：仅在源码较新时重新生成（增量） -->
+	<!-- 注意：脚手架内部使用 MSBuildWorkspace 评估本项目，需清除外层 dotnet build 注入的
+	     MSBuild 相关环境变量，否则嵌套评估会因 SDK/Exe 路径冲突而失败（独立运行正常）。 -->
+	<Target Name="GenerateJsonContext"
+	        BeforeTargets="BeforeCompile"
+	        Inputs="$(MSBuildProjectFile);@(Compile)"
+	        Outputs="$(IntermediateOutputPath)GeneratedJsonContext\AppJsonContext.g.cs"
+	        Condition="Exists('$(ScaffolderProject)')">
+		<Message Importance="high" Text="[JsonContext] 运行脚手架生成 AppJsonContext（pre-build）" />
+		<Exec Command="dotnet run --project &quot;$(ScaffolderProject)&quot; -- --project &quot;$(MSBuildProjectFullPath)&quot; -o &quot;$(IntermediateOutputPath)GeneratedJsonContext&quot;"
+		      EnvironmentVariables="MSBUILD_EXE_PATH=;MSBuildEnableNodeReuse=false" />
+	</Target>
+
+	<!-- 将生成文件纳入编译（obj/ 默认被 SDK 排除，需显式 Include） -->
+	<Target Name="IncludeGeneratedJsonContext"
+	        BeforeTargets="BeforeCompile"
+	        DependsOnTargets="GenerateJsonContext">
+		<ItemGroup Condition="Exists('$(IntermediateOutputPath)GeneratedJsonContext')">
+			<Compile Include="$(IntermediateOutputPath)GeneratedJsonContext\**\*.g.cs" />
+			<FileWrites Include="$(IntermediateOutputPath)GeneratedJsonContext\**\*.g.cs" />
+		</ItemGroup>
+	</Target>
+
 </Project>

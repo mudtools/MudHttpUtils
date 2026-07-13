@@ -5,6 +5,7 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -16,7 +17,22 @@ using Mud.HttpUtils.JsonContextScaffolder;
 
 // 注册 MSBuild 实例（仅需一次）
 if (!MSBuildLocator.IsRegistered)
-    MSBuildLocator.RegisterDefaults();
+{
+    try
+    {
+        MSBuildLocator.RegisterDefaults();
+    }
+    catch (Exception ex)
+    {
+        // 部分环境（仅安装 .NET SDK、或未设置 DOTNET_ROOT）下 RegisterDefaults 无法定位 MSBuild。
+        // 此时从 `dotnet --list-sdks` 的输出推导 SDK 目录并直接注册。
+        var sdkDir = FindDotNetSdkDir();
+        if (sdkDir == null)
+            throw new InvalidOperationException("无法自动定位 MSBuild。请安装 .NET SDK 或通过 DOTNET_ROOT 指定其路径。", ex);
+
+        MSBuildLocator.RegisterMSBuildPath(sdkDir);
+    }
+}
 
 var projectPath = (string?)null;
 var outputDir = (string?)null;
@@ -128,6 +144,29 @@ foreach (var file in files)
     System.Console.WriteLine();
 }
 
+// 输出诊断信息（AOT001-AOT003）
+if (generator.Diagnostics.Count > 0)
+{
+    System.Console.WriteLine();
+    System.Console.WriteLine("诊断：");
+    foreach (var diag in generator.Diagnostics)
+    {
+        var severity = diag.Severity switch
+        {
+            ScaffolderDiagnosticSeverity.Error => "错误",
+            ScaffolderDiagnosticSeverity.Warning => "警告",
+            _ => "信息"
+        };
+        var stream = diag.Severity == ScaffolderDiagnosticSeverity.Error
+            ? System.Console.Error
+            : System.Console.Out;
+        stream.WriteLine($"  [{diag.Id}] {severity}: {diag.Message}");
+        if (!string.IsNullOrEmpty(diag.Location))
+            stream.WriteLine($"    位置: {diag.Location}");
+    }
+    System.Console.WriteLine();
+}
+
 System.Console.WriteLine($"完成！{(dryRun ? "(dry-run)" : $"{files.Count} 个文件已生成到 {effectiveOutputDir}")}");
 System.Console.WriteLine();
 System.Console.WriteLine("提示：将生成的文件加入版本控制（git add），仅在新增/变更 [HttpJsonSerializable] 标注时重跑。");
@@ -158,4 +197,81 @@ static void PrintHelp()
       为每组生成一个 JsonSerializerContext 源文件（#if NET8_0_OR_GREATER 包裹）。
       生成的文件应提交到版本控制，仅在实体变更时重跑。
     """);
+}
+
+// 推导包含 Microsoft.Build.dll 的 .NET SDK 目录，用于 RegisterDefaults 失败时的兜底注册
+// （仅安装 .NET SDK、未设置 DOTNET_ROOT 等场景）。
+static string? FindDotNetSdkDir()
+{
+    // 1) DOTNET_ROOT 环境变量指向的 SDK 目录
+    var dotnetRoot = Environment.GetEnvironmentVariable("DOTNET_ROOT");
+    if (!string.IsNullOrEmpty(dotnetRoot))
+    {
+        var fromRoot = SearchSdkDirs(Path.Combine(dotnetRoot!, "sdk"));
+        if (fromRoot != null)
+            return fromRoot;
+    }
+
+    // 2) 标准安装位置（Windows）：%ProgramFiles%\dotnet\sdk、%ProgramFiles(x86)%\dotnet\sdk
+    foreach (var baseDir in new[]
+             {
+                 Environment.GetEnvironmentVariable("ProgramFiles"),
+                 Environment.GetEnvironmentVariable("ProgramFiles(x86)")
+             }.Where(d => !string.IsNullOrEmpty(d)))
+    {
+        var fromProgramFiles = SearchSdkDirs(Path.Combine(baseDir!, "dotnet", "sdk"));
+        if (fromProgramFiles != null)
+            return fromProgramFiles;
+    }
+
+    // 3) 兜底：通过 dotnet --list-sdks 解析 [<path>]
+    try
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            Arguments = "--list-sdks",
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        using var proc = Process.Start(psi);
+        if (proc != null)
+        {
+            var output = proc.StandardOutput.ReadToEnd();
+            proc.WaitForExit();
+
+            // 输出示例：10.0.301 [C:\Program Files\dotnet\sdk\10.0.301]
+            foreach (var line in output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+            {
+                var start = line.IndexOf('[');
+                var end = line.IndexOf(']', start);
+                if (start >= 0 && end > start)
+                {
+                    var path = line.Substring(start + 1, end - start - 1).Trim();
+                    if (Directory.Exists(path) && File.Exists(Path.Combine(path, "Microsoft.Build.dll")))
+                        return path;
+                }
+            }
+        }
+    }
+    catch
+    {
+        // 忽略异常，返回 null 交由上层处理
+    }
+
+    return null;
+}
+
+// 在 SDK 根目录下查找含 Microsoft.Build.dll 的版本目录（取版本最高者）。
+static string? SearchSdkDirs(string sdkRoot)
+{
+    if (!Directory.Exists(sdkRoot))
+        return null;
+
+    return Directory.EnumerateDirectories(sdkRoot)
+        .Where(d => File.Exists(Path.Combine(d, "Microsoft.Build.dll")))
+        .OrderByDescending(d => d)
+        .FirstOrDefault();
 }

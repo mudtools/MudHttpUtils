@@ -247,12 +247,11 @@ internal static class Diagnostics
 
     public static readonly DiagnosticDescriptor AotDuplicateSerializerClassName = new(
         id: "AOT001",
-        title: "AOT JSON Context 类名重复",
-        messageFormat: "同一编译单元中出现重复的 SerializerClassName '{0}'。请改名或留空由 Scaffolder 自动派生唯一名称。",
+        title: "AOT JSON Context 类名冲突",
+        messageFormat: "SerializerClassName '{0}' 存在冲突的 NamingPolicy 配置。同一 Context 内只能使用一个命名策略。建议统一配置或拆分为不同分组。",
         category: "AOT",
-        DiagnosticSeverity.Error,
-        isEnabledByDefault: true,
-        customTags: WellKnownDiagnosticTags.NotConfigurable);
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor AotOpenGenericOnLegacyTfm = new(
         id: "AOT002",

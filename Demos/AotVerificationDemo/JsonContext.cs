@@ -1,29 +1,19 @@
-using System.Text.Json;
+#if NET8_0_OR_GREATER
 using System.Text.Json.Serialization;
 
 namespace AotVerificationDemo;
 
-/// <summary>
-/// Native AOT JSON 源生成上下文。
-/// 消费方必须在此声明所有需要 JSON 序列化/反序列化的 DTO 类型，
-/// 编译器将生成类型元数据，替代运行时反射。
-/// </summary>
-/// <remarks>
-/// 此文件可手写（如本文件所示），也可通过 <c>Mud.HttpUtils.JsonContextScaffolder</c> 工具自动生成：
-/// <code>
-/// dotnet mud-jsonctx --project Demos/AotVerificationDemo/AotVerificationDemo.csproj
-/// </code>
-/// 模型上已标注 <c>[HttpJsonSerializable]</c>，Scaffolder 会扫描并生成本文件。
-/// </remarks>
-[JsonSourceGenerationOptions(
-    PropertyNameCaseInsensitive = true,
-    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
-    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    WriteIndented = false)]
-[JsonSerializable(typeof(UserDto))]
-[JsonSerializable(typeof(List<UserDto>))]
-[JsonSerializable(typeof(CreateUserRequest))]
-[JsonSerializable(typeof(LoginResult))]
-internal partial class AppJsonContext : JsonSerializerContext
-{
-}
+// 本文件为 AppJsonContext 的「部分类补充」（手动维护）。
+//
+// AppJsonContext 的主体（[JsonSourceGenerationOptions] 与标注实体的 [JsonSerializable]）
+// 由 Mud.HttpUtils.JsonContextScaffolder 在 pre-build 阶段自动生成，
+// 产出位置：obj/<tfm>/GeneratedJsonContext/AppJsonContext.g.cs（见 AotVerificationDemo.csproj 的 GenerateJsonContext 目标）。
+//
+// 脚手架仅扫描标注 [HttpJsonSerializable] 的实体/DTO。List<UserDto> 是框架开放泛型包装类型，
+// 无法（也不应）标注特性，故在此手工补充注册，使 ListUsersAsync / SearchAsync 的反序列化在 AOT 下可用。
+// 若新增其它「脚手架无法覆盖」的根类型，请在此处追加对应 [JsonSerializable]。
+
+// [!TEMP] 临时移除以定位 STJ hintName 冲突根因
+// [JsonSerializable(typeof(List<UserDto>))]
+internal partial class AppJsonContext;
+#endif

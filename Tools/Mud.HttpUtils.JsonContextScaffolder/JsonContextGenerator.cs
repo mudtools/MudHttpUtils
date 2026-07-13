@@ -24,6 +24,28 @@ namespace Mud.HttpUtils.JsonContextScaffolder;
 public record JsonContextFile(string FileName, string SourceCode, string ContextClassName, int TypeCount);
 
 /// <summary>
+/// 诊断严重级别。
+/// </summary>
+public enum ScaffolderDiagnosticSeverity
+{
+    /// <summary>信息。</summary>
+    Info,
+    /// <summary>警告。</summary>
+    Warning,
+    /// <summary>错误。</summary>
+    Error
+}
+
+/// <summary>
+/// Scaffolder 诊断信息（对应 AOT001-AOT005 诊断约定）。
+/// </summary>
+/// <param name="Id">诊断 ID（如 AOT001）。</param>
+/// <param name="Severity">严重级别。</param>
+/// <param name="Message">诊断消息。</param>
+/// <param name="Location">相关位置（类型全名，可选）。</param>
+public record ScaffolderDiagnostic(string Id, ScaffolderDiagnosticSeverity Severity, string Message, string? Location = null);
+
+/// <summary>
 /// 类型分组信息。
 /// </summary>
 internal record TypeGroup
@@ -44,6 +66,12 @@ internal record TypeGroup
 public class JsonContextGenerator
 {
     private const string AttributeFullName = "Mud.HttpUtils.Attributes.HttpJsonSerializableAttribute";
+    private const string JsonDerivedTypeAttributeFullName = "System.Text.Json.Serialization.JsonDerivedTypeAttribute";
+
+    /// <summary>
+    /// 本次生成过程中产生的诊断信息。
+    /// </summary>
+    public List<ScaffolderDiagnostic> Diagnostics { get; } = [];
 
     /// <summary>
     /// 生成 Context 源文件。
@@ -53,6 +81,8 @@ public class JsonContextGenerator
     /// <param name="autoDerivedTypes">是否自动检测同程序集内的派生类并生成 [JsonDerivedType]。</param>
     public List<JsonContextFile> Generate(Compilation compilation, string defaultNamespace = "Generated", bool autoDerivedTypes = false)
     {
+        Diagnostics.Clear();
+
         var attributeSymbol = compilation.GetTypeByMetadataName(AttributeFullName);
         if (attributeSymbol == null)
             return [];
@@ -62,12 +92,8 @@ public class JsonContextGenerator
         if (annotatedTypes.Count == 0)
             return [];
 
-        // 2. 检查 SerializerClassName 重复（AOT001）
-        var duplicates = annotatedTypes
-            .Where(t => !string.IsNullOrEmpty(t.SerializerClassName))
-            .GroupBy(t => t.SerializerClassName!)
-            .Where(g => g.Count() > 1)
-            .ToList();
+        // 2. 运行诊断检查（AOT001-AOT003）
+        CheckDiagnostics(annotatedTypes, compilation, autoDerivedTypes);
 
         // 3. 分组
         var groups = GroupTypes(annotatedTypes, defaultNamespace);
@@ -81,6 +107,93 @@ public class JsonContextGenerator
         }
 
         return files;
+    }
+
+    /// <summary>
+    /// 运行 AOT 诊断检查。
+    /// </summary>
+    private void CheckDiagnostics(List<AnnotatedType> annotatedTypes, Compilation compilation, bool autoDerivedTypes)
+    {
+        // AOT001：同一 SerializerClassName 出现冲突的 NamingPolicy
+        CheckDuplicateSerializerClassNameConflicts(annotatedTypes);
+
+        // AOT002：开放泛型类型在低版本 TFM 上不可用
+        CheckOpenGenericOnLegacyTfm(annotatedTypes);
+
+        // AOT003：多态类型缺少 [JsonDerivedType]
+        if (!autoDerivedTypes)
+            CheckPolymorphismWithoutJsonDerivedType(annotatedTypes, compilation);
+    }
+
+    /// <summary>
+    /// AOT001：检测同一 SerializerClassName 下存在冲突的 NamingPolicy 配置。
+    /// </summary>
+    private void CheckDuplicateSerializerClassNameConflicts(List<AnnotatedType> annotatedTypes)
+    {
+        var conflictGroups = annotatedTypes
+            .Where(t => !string.IsNullOrEmpty(t.SerializerClassName))
+            .GroupBy(t => t.SerializerClassName!)
+            .Where(g => g.Select(t => t.NamingPolicy).Distinct().Count() > 1
+                        && g.Any(t => t.NamingPolicy != JsonNamingPolicyHint.Default));
+        ;
+
+        foreach (var group in conflictGroups)
+        {
+            var policies = string.Join(", ", group.Select(t => $"{t.Symbol.ToDisplayString()}={t.NamingPolicy}"));
+            Diagnostics.Add(new ScaffolderDiagnostic(
+                "AOT001",
+                ScaffolderDiagnosticSeverity.Warning,
+                $"SerializerClassName '{group.Key}' 存在冲突的 NamingPolicy 配置：{policies}。同一 Context 内只能使用一个命名策略，当前采用第一个非 Default 值。建议统一配置或拆分为不同分组。",
+                group.Key));
+        }
+    }
+
+    /// <summary>
+    /// AOT002：开放泛型类型在 net8.0 以下不支持源生成。
+    /// </summary>
+    private void CheckOpenGenericOnLegacyTfm(List<AnnotatedType> annotatedTypes)
+    {
+        foreach (var type in annotatedTypes)
+        {
+            if (type.Symbol.IsGenericType && type.Symbol.TypeParameters.Length > 0)
+            {
+                Diagnostics.Add(new ScaffolderDiagnostic(
+                    "AOT002",
+                    ScaffolderDiagnosticSeverity.Warning,
+                    $"类型 '{type.Symbol.ToDisplayString()}' 是开放泛型，在 net8.0 以下不支持源生成开放泛型。生成的 Context 以 #if NET8_0_OR_GREATER 包裹，低版本将走反射兜底，AOT 下不可用。",
+                    type.Symbol.ToDisplayString()));
+            }
+        }
+    }
+
+    /// <summary>
+    /// AOT003：类型存在基类（多态）但未标注 [JsonDerivedType]。
+    /// </summary>
+    private void CheckPolymorphismWithoutJsonDerivedType(List<AnnotatedType> annotatedTypes, Compilation compilation)
+    {
+        var jsonDerivedTypeAttr = compilation.GetTypeByMetadataName(JsonDerivedTypeAttributeFullName);
+
+        foreach (var type in annotatedTypes)
+        {
+            // 跳过值类型和没有基类（仅 object）的类型
+            if (type.Symbol.BaseType == null ||
+                type.Symbol.BaseType.SpecialType == SpecialType.System_Object)
+                continue;
+
+            // 检查是否有 [JsonDerivedType] 标注
+            var hasJsonDerivedType = jsonDerivedTypeAttr != null &&
+                type.Symbol.GetAttributes().Any(a =>
+                    SymbolEqualityComparer.Default.Equals(a.AttributeClass, jsonDerivedTypeAttr));
+
+            if (!hasJsonDerivedType)
+            {
+                Diagnostics.Add(new ScaffolderDiagnostic(
+                    "AOT003",
+                    ScaffolderDiagnosticSeverity.Warning,
+                    $"类型 '{type.Symbol.ToDisplayString()}' 存在基类 '{type.Symbol.BaseType.ToDisplayString()}'（多态序列化），但未标注 [JsonDerivedType]。以基类反序列化派生类时源生成不含派生类型，可能丢字段。建议在同程序集内补充 [JsonDerivedType] 或使用 --auto-derived-types 选项自动补全。",
+                    type.Symbol.ToDisplayString()));
+            }
+        }
     }
 
     /// <summary>
