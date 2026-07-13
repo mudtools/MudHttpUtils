@@ -8,6 +8,7 @@
     <Project Path="Demos/HttpClientApiPublicDemo/HttpClientApiPublicDemo.csproj" Id="fd484f33-9086-4c78-825f-9ac1a9fb9502" />
     <Project Path="Demos/HttpClientDemo/HttpClientDemo.csproj" />
     <Project Path="Demos/ResilienceDemo/ResilienceDemo.csproj" />
+    <Project Path="Demos/AotVerificationDemo/AotVerificationDemo.csproj" />
   </Folder>
   <Folder Name="/Src/">
     <Project Path="Mud.HttpUtils.Abstractions/Mud.HttpUtils.Abstractions.csproj" />

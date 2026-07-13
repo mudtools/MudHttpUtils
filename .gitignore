@@ -50,6 +50,8 @@
 /Demos/HttpClientApiDemo/obj
 /Demos/HttpClientDemo/bin
 /Demos/HttpClientDemo/obj
+/Demos/AotVerificationDemo/bin
+/Demos/AotVerificationDemo/obj
 /Demos/ResilienceDemo/bin
 /Demos/ResilienceDemo/obj
 /Demos/CommonClassLibrary/bin

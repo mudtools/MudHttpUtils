@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+		<OutputType>Exe</OutputType>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<IsAotCompatible>true</IsAotCompatible>
+		<PublishAot>true</PublishAot>
+		<GenerateDocumentationFile>false</GenerateDocumentationFile>
+	</PropertyGroup>
+
+	<!-- AOT 分析器在构建时启用（PublishAot=true 自动启用），
+	     IL 告警作为警告显示。CI 中 dotnet publish -p:PublishAot=true 为最终验证。
+	     不在 csproj 中设 WarningsAsErrors 是因为生成代码通过 IOptions<JsonSerializerOptions>
+	     传递 resolver，AOT 分析器无法静态追踪 DI 数据流，会产生已知误报。 -->
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\Mud.HttpUtils.Client\Mud.HttpUtils.Client.csproj" />
+		<ProjectReference Include="..\..\Mud.HttpUtils.Attributes\Mud.HttpUtils.Attributes.csproj" />
+		<ProjectReference Include="..\..\Mud.HttpUtils.Generator\Mud.HttpUtils.Generator.csproj" OutputItemType="Analyzer" />
+		<ProjectReference Include="..\..\Mud.HttpUtils.Resilience\Mud.HttpUtils.Resilience.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
+	</ItemGroup>
+
+</Project>

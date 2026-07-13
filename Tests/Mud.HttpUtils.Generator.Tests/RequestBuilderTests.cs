@@ -766,6 +766,214 @@ public class RequestBuilderTests
 
     #endregion
 
+    #region FormUrlEncoded Body 生成测试（AOT 静态属性访问 — Task 2 验证）
+
+    /// <summary>
+    /// 验证当 TypeSymbol 可用时，FormUrlEncoded Body 使用编译期静态属性访问而非运行时反射。
+    /// 这是 AOT 改造的核心验证：生成的代码不应包含 GetType().GetProperties() / GetValue。
+    /// </summary>
+    [Fact]
+    public void GenerateBodyParameter_FormUrlEncodedWithTypeSymbol_GeneratesStaticPropertyAccess()
+    {
+        var typeSymbol = GetTypeSymbolFromCompilation("""
+            public class TestFormBody
+            {
+                public string Username { get; set; }
+                public string Password { get; set; }
+                public int Age { get; set; }
+            }
+            """, "TestFormBody");
+
+        var methodInfo = CreateMethodInfo("/api/login", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "form",
+                Type = "TestFormBody",
+                TypeSymbol = typeSymbol,
+                Attributes = [new ParameterAttributeInfo { Name = "BodyAttribute" }]
+            }
+        });
+        methodInfo.SerializationMethod = "FormUrlEncoded";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: true);
+        var code = codeBuilder.ToString();
+
+        // 应使用静态属性访问
+        code.Should().Contain("form.Username");
+        code.Should().Contain("form.Password");
+        code.Should().Contain("form.Age");
+        code.Should().Contain("FormUrlEncodedContent");
+        code.Should().Contain("__bodyFormParams");
+
+        // 不应包含运行时反射代码
+        code.Should().NotContain("GetType().GetProperties()");
+        code.Should().NotContain("GetValue");
+        code.Should().NotContain("IL2072");
+        code.Should().NotContain("#pragma warning");
+    }
+
+    /// <summary>
+    /// 验证非可空值类型属性直接 ToString()，不生成 null 检查；
+    /// 引用类型属性生成 null 检查 + ToString()。
+    /// </summary>
+    [Fact]
+    public void GenerateBodyParameter_FormUrlEncodedWithTypeSymbol_ValueTypeDirectToString()
+    {
+        var typeSymbol = GetTypeSymbolFromCompilation("""
+            public class TestValueTypeForm
+            {
+                public int Count { get; set; }
+                public bool Active { get; set; }
+                public string Name { get; set; }
+            }
+            """, "TestValueTypeForm");
+
+        var methodInfo = CreateMethodInfo("/api/submit", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "data",
+                Type = "TestValueTypeForm",
+                TypeSymbol = typeSymbol,
+                Attributes = [new ParameterAttributeInfo { Name = "BodyAttribute" }]
+            }
+        });
+        methodInfo.SerializationMethod = "FormUrlEncoded";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: true);
+        var code = codeBuilder.ToString();
+
+        // 非可空值类型：直接 ToString()，无 null 检查
+        code.Should().Contain("data.Count.ToString()");
+        code.Should().Contain("data.Active.ToString()");
+
+        // 引用类型：有 null 检查
+        code.Should().Contain("var __val_Name = data.Name");
+        code.Should().Contain("if (__val_Name != null)");
+        code.Should().Contain("__val_Name.ToString()");
+    }
+
+    /// <summary>
+    /// 验证可空值类型（int?）属性生成 null 检查，而非直接 ToString()。
+    /// </summary>
+    [Fact]
+    public void GenerateBodyParameter_FormUrlEncodedWithTypeSymbol_NullableValueType()
+    {
+        var typeSymbol = GetTypeSymbolFromCompilation("""
+            #nullable enable
+            public class TestNullableForm
+            {
+                public int? OptionalCount { get; set; }
+                public string RequiredName { get; set; }
+            }
+            """, "TestNullableForm");
+
+        var methodInfo = CreateMethodInfo("/api/test", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "form",
+                Type = "TestNullableForm",
+                TypeSymbol = typeSymbol,
+                Attributes = [new ParameterAttributeInfo { Name = "BodyAttribute" }]
+            }
+        });
+        methodInfo.SerializationMethod = "FormUrlEncoded";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: true);
+        var code = codeBuilder.ToString();
+
+        // 可空值类型：应有 null 检查
+        code.Should().Contain("var __val_OptionalCount = form.OptionalCount");
+        code.Should().Contain("if (__val_OptionalCount != null)");
+
+        // 非可空值类型：直接 ToString()（string 是引用类型，走 null 检查路径）
+        code.Should().Contain("var __val_RequiredName = form.RequiredName");
+
+        // 不应包含反射
+        code.Should().NotContain("GetType().GetProperties()");
+    }
+
+    /// <summary>
+    /// 验证当 TypeSymbol 不可用时（测试/模拟场景），回退到反射路径并保留 IL2072 压制。
+    /// </summary>
+    [Fact]
+    public void GenerateBodyParameter_FormUrlEncodedWithoutTypeSymbol_FallsBackToReflection()
+    {
+        var methodInfo = CreateMethodInfo("/api/login", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "form",
+                Type = "TestFormBody",
+                // TypeSymbol = null（不设置）
+                Attributes = [new ParameterAttributeInfo { Name = "BodyAttribute" }]
+            }
+        });
+        methodInfo.SerializationMethod = "FormUrlEncoded";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: true);
+        var code = codeBuilder.ToString();
+
+        // 应回退到反射路径
+        code.Should().Contain("GetType().GetProperties()");
+        code.Should().Contain("GetValue");
+        code.Should().Contain("FormUrlEncodedContent");
+
+        // 应有 IL2072 压制
+        code.Should().Contain("IL2072");
+    }
+
+    /// <summary>
+    /// 验证自定义 struct 类型的 Body 参数仍使用编译期静态属性访问。
+    /// 注意：TypeDetectionHelper.IsValueType 检查类型名字符串，自定义 struct 名不被识别为值类型，
+    /// 因此外层 null 检查仍会生成（保守行为，不影响 AOT 安全性）。
+    /// 关键验证点是属性访问使用编译期发射而非运行时反射。
+    /// </summary>
+    [Fact]
+    public void GenerateBodyParameter_FormUrlEncodedWithStructBody_StillUsesStaticPropertyAccess()
+    {
+        var typeSymbol = GetTypeSymbolFromCompilation("""
+            public struct TestStructBody
+            {
+                public int Id { get; set; }
+                public string Name { get; set; }
+            }
+            """, "TestStructBody");
+
+        var methodInfo = CreateMethodInfo("/api/submit", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "body",
+                Type = "TestStructBody",
+                TypeSymbol = typeSymbol,
+                Attributes = [new ParameterAttributeInfo { Name = "BodyAttribute" }]
+            }
+        });
+        methodInfo.SerializationMethod = "FormUrlEncoded";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: true);
+        var code = codeBuilder.ToString();
+
+        // 属性访问应使用编译期发射（AOT 安全）
+        code.Should().Contain("body.Id.ToString()");
+        code.Should().Contain("body.Name");
+        code.Should().Contain("FormUrlEncodedContent");
+
+        // 不应包含运行时反射
+        code.Should().NotContain("GetType().GetProperties()");
+        code.Should().NotContain("GetValue");
+    }
+
+    #endregion
+
     #region 辅助方法
 
     private static MethodAnalysisResult CreateMethodInfo(string urlTemplate, List<ParameterInfo>? parameters = null)
@@ -781,6 +989,22 @@ public class RequestBuilderTests
             AsyncInnerReturnType = "string",
             Parameters = parameters ?? []
         };
+    }
+
+    /// <summary>
+    /// 从 Roslyn 编译中获取指定类型的 ITypeSymbol，用于测试 TypeSymbol 可用时的代码生成路径。
+    /// </summary>
+    private static ITypeSymbol GetTypeSymbolFromCompilation(string source, string typeName)
+    {
+        var syntaxTree = CSharpSyntaxTree.ParseText(source);
+        var compilation = CSharpCompilation.Create(
+            "TestTypeAssembly",
+            new[] { syntaxTree },
+            BasicReferenceAssemblies.GetReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        return compilation.GetTypeByMetadataName(typeName)
+            ?? throw new InvalidOperationException($"无法获取类型符号: {typeName}");
     }
 
     #endregion

@@ -80,6 +80,48 @@ jobs:
         run: dotnet build ${{ matrix.demo_project }} --no-restore --configuration Release
 
   # ──────────────────────────────────────────────
+  # Native AOT 发布验证
+  # ──────────────────────────────────────────────
+  aot-publish:
+    name: AOT 发布验证 (${{ matrix.rid }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: windows-latest
+            rid: win-x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      # Native AOT 需要目标平台的原生工具链
+      # Ubuntu: clang, zlib1g-dev 已预装在 github runner 中
+      # Windows: MSVC 已预装
+      - name: Install AOT prerequisites (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang zlib1g-dev
+
+      - name: Publish AOT (net10.0)
+        run: dotnet publish Demos/AotVerificationDemo/AotVerificationDemo.csproj -c Release -f net10.0 -r ${{ matrix.rid }}
+
+      - name: Publish AOT (net8.0)
+        run: dotnet publish Demos/AotVerificationDemo/AotVerificationDemo.csproj -c Release -f net8.0 -r ${{ matrix.rid }}
+
+  # ──────────────────────────────────────────────
   # 主项目及子包构建与发布
   # ──────────────────────────────────────────────
   build-and-pack:
