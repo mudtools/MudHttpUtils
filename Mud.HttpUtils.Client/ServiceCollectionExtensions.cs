@@ -754,7 +754,8 @@ public static class HttpClientServiceCollectionExtensions
         services.TryAddSingleton<IValidateOptions<TokenRecoveryOptions>, TokenRecoveryOptionsValidator>();
         // 注册 TokenRecoveryOptions 为可解析服务，使 TokenRecoveryDelegatingHandler 的可选构造函数参数
         // 能通过 DI 自动解析配置绑定的值（而非始终使用默认 null → new TokenRecoveryOptions()）。
-        services.AddSingleton(resolver => resolver.GetRequiredService<IOptions<TokenRecoveryOptions>>().Value);
+        // NEW-HC-05 修复：使用 TryAddSingleton 避免覆盖已注册的 TokenRecoveryOptions
+        services.TryAddSingleton(resolver => resolver.GetRequiredService<IOptions<TokenRecoveryOptions>>().Value);
         return services;
     }
 

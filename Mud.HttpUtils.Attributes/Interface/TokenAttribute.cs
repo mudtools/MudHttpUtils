@@ -80,6 +80,8 @@ public sealed class TokenAttribute(string tokenType = TokenTypes.AccessToken) : 
     /// 此属性用于解耦业务概念（TokenType）和技术查找键（TokenManagerKey）。
     /// 例如，多个不同的 TokenType 可以映射到同一个 TokenManager。
     /// 如果未指定，则使用 TokenType 作为查找键。
+    /// NEW-GEN-09 说明：主构造函数的 tokenType 参数会同时设置此属性和 <see cref="TokenType"/>。
+    /// 若显式设置为 null，生成器将回退到 <see cref="TokenType"/> 作为降级值。
     /// </remarks>
     public string? TokenManagerKey { get; set; } = tokenType;
 

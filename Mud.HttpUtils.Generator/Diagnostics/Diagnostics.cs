@@ -168,6 +168,16 @@ internal static class Diagnostics
         category: "代码生成",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    // NEW-GEN-03/08 修复：CacheAttribute 的 UseSlidingExpiration 和 Priority 属性当前被生成器忽略。
+    // 当用户显式设置这些属性时，发出信息性诊断提示用户这些配置不会生效。
+    public static readonly DiagnosticDescriptor CacheAttributePropertyIgnored = new(
+        id: "HTTPCLIENT019",
+        title: "CacheAttribute 属性被生成器忽略",
+        messageFormat: "接口 {0} 的方法 {1} 设置了 [Cache] 特性的 {2} 属性，但该属性当前被生成器忽略，不会在生成的代码中生效。如需此功能，请关注后续版本更新。",
+        category: "代码生成",
+        DiagnosticSeverity.Info,
+        isEnabledByDefault: true);
     #endregion
 
     #region HttpClient注册生成器诊断信息 (HTTPCLIENTREG001-002)

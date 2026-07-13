@@ -158,31 +158,38 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
         _disposed = true;
         _cleanupTimer?.Dispose();
 
-        foreach (var kvp in _fetchLocks)
-        {
-            kvp.Value.Dispose();
-        }
+        // NEW-CA-01 修复：不立即 Dispose fetchLock，避免在途 GetOrFetchAsync 的 finally 中 Release 抛 ObjectDisposedException
+        // 仅清空字典引用，SemaphoreSlim 由 GC 终结器释放
         _fetchLocks.Clear();
         _cache.Clear();
     }
 
     private void CleanupExpiredEntries(object? state)
     {
-        var now = DateTimeOffset.UtcNow;
-        foreach (var kvp in _cache)
+        // NEW-CA-02 修复：Timer 回调包裹 try-catch，避免未捕获异常导致进程崩溃
+        try
         {
-            if (kvp.Value.ExpireTime <= now)
+            var now = DateTimeOffset.UtcNow;
+            foreach (var kvp in _cache)
             {
-                _cache.TryRemove(kvp.Key, out _);
+                if (kvp.Value.ExpireTime <= now)
+                {
+                    _cache.TryRemove(kvp.Key, out _);
+                }
+            }
+
+            // NEW-CA-03 修复：仅从字典移除 fetchLock，不立即 Dispose，避免在途操作抛异常
+            foreach (var kvp in _fetchLocks)
+            {
+                if (!_cache.ContainsKey(kvp.Key))
+                {
+                    _fetchLocks.TryRemove(kvp.Key, out _);
+                }
             }
         }
-
-        foreach (var kvp in _fetchLocks)
+        catch (Exception ex)
         {
-            if (!_cache.ContainsKey(kvp.Key) && _fetchLocks.TryRemove(kvp.Key, out var removedLock))
-            {
-                removedLock.Dispose();
-            }
+            System.Diagnostics.Debug.WriteLine($"MemoryHttpResponseCache: CleanupExpiredEntries 异常: {ex.Message}");
         }
     }
 

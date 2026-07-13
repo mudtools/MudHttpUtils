@@ -82,6 +82,9 @@ internal readonly struct InterfaceModel : IEquatable<InterfaceModel>
     /// 关键属性变更（如 TokenManager 类型重命名）或继承关系变更会使指纹变化，触发重新生成，
     /// 避免 Context 中的 SemanticModel 来自过期编译。
     /// </summary>
+    // NEW-GEN-10 说明：指纹不包含基接口内部方法，这是已接受的权衡。
+    // 若基接口添加新方法，用户需手动"触摸"派生接口文件（如添加空行再删除）强制重新生成，
+    // 或使用 dotnet build -p:ForceHttpGenerator=true 强制重新生成。
     private static string BuildFingerprint(InterfaceDeclarationSyntax syntax, GeneratorAttributeSyntaxContext context)
     {
         var sourceText = syntax.ToString();

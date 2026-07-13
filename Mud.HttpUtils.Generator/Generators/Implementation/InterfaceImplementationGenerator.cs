@@ -21,6 +21,9 @@ internal class InterfaceImplementationGenerator
     /// 类型解析缓存：以 Compilation 为主键的 ConditionalWeakTable，Compilation 变化时自动失效；
     /// 内层以类型名为键缓存解析结果（包括 null），避免对同一 Compilation 重复执行全局命名空间扫描。
     /// </summary>
+    // NEW-GEN-02 说明：ConditionalWeakTable 依赖 Compilation 的 GC 回收自动清理。
+    // 在 IDE 场景下 Compilation 可能保持较长时间引用，但这是 Roslyn 源生成器的标准缓存模式。
+    // 如遇内存问题，可考虑改用 IncrementalValueProvider 提供的缓存机制。
     private static readonly ConditionalWeakTable<Compilation, ConcurrentDictionary<string, INamedTypeSymbol?>> _typeResolveCache = new();
 
     private readonly Compilation _compilation;
@@ -92,6 +95,9 @@ internal class InterfaceImplementationGenerator
         DetectICurrentUserId(generatorContext);
 
         PrecomputeXmlResponseTypes(generatorContext);
+
+        // NEW-GEN-03/08 修复：检测方法 CacheAttribute 中被生成器忽略的属性并发出诊断
+        ReportCacheAttributeIgnoredProperties(generatorContext);
 
         var generators = InitializeGenerators(generatorContext);
 
@@ -717,6 +723,51 @@ internal class InterfaceImplementationGenerator
         }
 
         context.HasXmlResponse = context.XmlResponseTypes.Count > 0;
+    }
+
+    /// <summary>
+    /// NEW-GEN-03/08 修复：检测方法 CacheAttribute 中被生成器忽略的属性（UseSlidingExpiration、Priority），
+    /// 当用户显式设置这些属性时发出信息性诊断，提示这些配置不会在生成的代码中生效。
+    /// </summary>
+    private void ReportCacheAttributeIgnoredProperties(GeneratorContext context)
+    {
+        foreach (var method in context.AllMethods)
+        {
+            var cacheAttr = method.GetAttributes()
+                .FirstOrDefault(attr => HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name));
+
+            if (cacheAttr == null)
+                continue;
+
+            // 获取特性在源代码中的位置，回退到方法声明位置或接口声明位置
+            var location = (cacheAttr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
+                ?? method.Locations.FirstOrDefault()
+                ?? _interfaceDecl.GetLocation())!;
+
+            // 检查 UseSlidingExpiration：仅当显式设置为 true 时发出诊断（设置为 false 等同于默认值）
+            var slidingArg = cacheAttr.NamedArguments
+                .FirstOrDefault(na => na.Key == "UseSlidingExpiration");
+            if (slidingArg.Value.Value is bool useSliding && useSliding)
+            {
+                _context.ReportDiagnostic(Diagnostic.Create(
+                    Diagnostics.CacheAttributePropertyIgnored,
+                    location,
+                    _interfaceSymbol.Name,
+                    method.Name,
+                    "UseSlidingExpiration"));
+            }
+
+            // 检查 Priority：只要显式设置（无论值为何）即发出诊断，因为该属性被生成器完全忽略
+            if (cacheAttr.NamedArguments.Any(na => na.Key == "Priority"))
+            {
+                _context.ReportDiagnostic(Diagnostic.Create(
+                    Diagnostics.CacheAttributePropertyIgnored,
+                    location,
+                    _interfaceSymbol.Name,
+                    method.Name,
+                    "Priority"));
+            }
+        }
     }
 
     /// <summary>

@@ -5,10 +5,8 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
-using System.Collections.Concurrent;
-using System.Diagnostics;
-using System.Linq;
 using Mud.HttpUtils.Observability;
+using System.Collections.Concurrent;
 
 namespace Mud.HttpUtils;
 
@@ -17,7 +15,7 @@ namespace Mud.HttpUtils;
 /// </summary>
 public abstract class TokenManagerBase : ITokenManager, IDisposable
 {
-    private readonly ITokenCache<CredentialToken?> _tokenCache;
+    private readonly ITokenCache<CredentialToken> _tokenCache;
     private readonly ConcurrentDictionary<string, Lazy<SemaphoreSlim>> _scopeLocks = new();
     private readonly Timer _cleanupTimer;
     private readonly Timer _lockCleanupTimer;
@@ -77,7 +75,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
     /// <inheritdoc />
     protected TokenManagerBase()
-        : this(new ConcurrentDictionaryTokenCache<CredentialToken?>())
+        : this(new ConcurrentDictionaryTokenCache<CredentialToken>())
     {
     }
 
@@ -85,7 +83,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// 使用自定义令牌缓存初始化令牌管理器。
     /// </summary>
     /// <param name="tokenCache">令牌缓存实现。</param>
-    protected TokenManagerBase(ITokenCache<CredentialToken?> tokenCache)
+    protected TokenManagerBase(ITokenCache<CredentialToken> tokenCache)
     {
         _tokenCache = tokenCache ?? throw new ArgumentNullException(nameof(tokenCache));
         _cleanupTimer = new Timer(CleanupExpiredTokens, null,
@@ -257,11 +255,20 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
     /// <summary>
     /// 触发令牌刷新失败事件。
+    /// NEW-TM-04 修复：捕获订阅者异常，避免掩盖原始令牌刷新失败的根因。
     /// </summary>
     /// <param name="e">事件参数。</param>
     private void OnRefreshFailed(TokenRefreshFailedEventArgs e)
     {
-        RefreshFailed?.Invoke(this, e);
+        try
+        {
+            RefreshFailed?.Invoke(this, e);
+        }
+        catch (Exception ex)
+        {
+            // 订阅者异常不应掩盖原始刷新失败，仅记录
+            System.Diagnostics.Debug.WriteLine($"TokenManagerBase: RefreshFailed 订阅者抛出异常: {ex.Message}");
+        }
     }
 
     private void UpdateToken(string scopeKey, CredentialToken? token)
@@ -343,10 +350,10 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             }
         }
 
-        // 最终失败路径
-        var finalElapsedMs = (Stopwatch.GetTimestamp() - startTimestamp) * timestampToMs;
-        RecordTokenRefresh(success: false, tokenManagerKey, finalElapsedMs, isFallback: false);
-        throw lastException ?? new InvalidOperationException("令牌刷新失败");
+        // NEW-TM-05 修复：移除不可达的死代码。
+        // while 循环内 catch 块在达到最大重试次数时必然 throw，循环永不自然退出。
+        // 此处通过 throw 确保编译器控制流分析通过，且语义清晰。
+        throw new InvalidOperationException("令牌刷新失败：达到最大重试次数。");
     }
 
     /// <summary>
@@ -420,26 +427,34 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         if (_disposed)
             return;
 
-        lock (_cleanupLock)
+        // NEW-TM-02 修复：Timer 回调异常会被 .NET 静默吞掉，包裹 try-catch 以保证可观测性
+        try
         {
-            if (_disposed)
-                return;
-
-            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var thresholdMs = ExpireThresholdSeconds * 1000L;
-
-            foreach (var key in _tokenCache.Keys.ToList())
+            lock (_cleanupLock)
             {
-                // T-2 修复：默认作用域（DefaultScopeKey）令牌过期后也应被定时清理，
-                // 下次访问 GetOrRefreshTokenAsync 时会自动重新获取，不再跳过。
-                // 注意：CleanupUnusedLocks 仍保留对 DefaultScopeKey 的跳过，以避免默认作用域锁被回收。
+                if (_disposed)
+                    return;
 
-                if (_tokenCache.TryGet(key, out var entry) && entry?.Expire - thresholdMs <= now)
+                var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                var thresholdMs = ExpireThresholdSeconds * 1000L;
+
+                foreach (var key in _tokenCache.Keys.ToList())
                 {
-                    _tokenCache.TryRemove(key, out _);
-                    TryRemoveScopeLock(key);
+                    // T-2 修复：默认作用域（DefaultScopeKey）令牌过期后也应被定时清理，
+                    // 下次访问 GetOrRefreshTokenAsync 时会自动重新获取，不再跳过。
+                    // 注意：CleanupUnusedLocks 仍保留对 DefaultScopeKey 的跳过，以避免默认作用域锁被回收。
+
+                    if (_tokenCache.TryGet(key, out var entry) && entry?.Expire - thresholdMs <= now)
+                    {
+                        _tokenCache.TryRemove(key, out _);
+                        TryRemoveScopeLock(key);
+                    }
                 }
             }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"TokenManagerBase: CleanupExpiredTokens 回调异常: {ex.Message}");
         }
     }
 
@@ -448,31 +463,46 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         if (_disposed)
             return;
 
-        lock (_cleanupLock)
+        // NEW-TM-02 修复：Timer 回调异常会被 .NET 静默吞掉，包裹 try-catch 以保证可观测性
+        try
         {
-            if (_disposed)
-                return;
-
-            foreach (var kvp in _scopeLocks)
+            lock (_cleanupLock)
             {
-                if (kvp.Key == DefaultScopeKey)
-                    continue;
+                if (_disposed)
+                    return;
 
-                if (!_tokenCache.TryGet(kvp.Key, out _) && kvp.Value.IsValueCreated && kvp.Value.Value.CurrentCount == 1)
+                foreach (var kvp in _scopeLocks)
                 {
-                    TryRemoveScopeLock(kvp.Key);
+                    if (kvp.Key == DefaultScopeKey)
+                        continue;
+
+                    // NEW-TM-03 修复：同时清理 IsValueCreated=false 的 Lazy（避免字典无界增长）
+                    // NEW-TM-01 修复：仅当锁空闲（CurrentCount==1）时才移除，避免影响在途操作
+                    if (!_tokenCache.TryGet(kvp.Key, out _))
+                    {
+                        if (!kvp.Value.IsValueCreated || kvp.Value.Value.CurrentCount == 1)
+                        {
+                            TryRemoveScopeLock(kvp.Key);
+                        }
+                    }
                 }
             }
         }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"TokenManagerBase: CleanupUnusedLocks 回调异常: {ex.Message}");
+        }
     }
 
+    /// <summary>
+    /// NEW-TM-01 修复：仅从字典移除锁，不立即 Dispose。
+    /// SemaphoreSlim 的 Dispose 期间其他线程可能正 WaitAsync，会导致 ObjectDisposedException。
+    /// 移除后，未来 GetOrAdd 会创建新锁；已持有旧锁引用的线程仍可安全使用，
+    /// SemaphoreSlim 由 GC 终结器释放资源，避免 TOCTOU 竞态。
+    /// </summary>
     private void TryRemoveScopeLock(string scopeKey)
     {
-        if (_scopeLocks.TryRemove(scopeKey, out var lazyLock))
-        {
-            if (lazyLock.IsValueCreated)
-                lazyLock.Value.Dispose();
-        }
+        _scopeLocks.TryRemove(scopeKey, out _);
     }
 
     /// <inheritdoc />

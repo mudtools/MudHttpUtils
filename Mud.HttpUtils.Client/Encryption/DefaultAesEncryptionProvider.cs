@@ -48,7 +48,10 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
         if (string.IsNullOrEmpty(plainText))
             return string.Empty;
 
-        if (_disposed) throw new ObjectDisposedException(nameof(DefaultAesEncryptionProvider));
+        if (_disposed)
+        {
+            throw new ObjectDisposedException(nameof(DefaultAesEncryptionProvider));
+        }
 
         var plainBytes = Encoding.UTF8.GetBytes(plainText);
         var encryptedBytes = EncryptCore(plainBytes);
@@ -105,6 +108,7 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
         return DecryptCore(encryptedData);
     }
 
+    /// <inheritdoc/>
     public void Dispose()
     {
         if (_disposed)
@@ -112,7 +116,7 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
 
         _disposed = true;
         SecurityHelper.ClearBytes(_key);
-        _key = Array.Empty<byte>();
+        _key = [];
     }
 
     private byte[] EncryptCore(byte[] plainBytes)

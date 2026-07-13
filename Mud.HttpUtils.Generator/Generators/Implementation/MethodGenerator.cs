@@ -5,7 +5,6 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
-using System.Linq;
 using Mud.HttpUtils.Analyzers;
 using Mud.HttpUtils.Generators.Base;
 using Mud.HttpUtils.Generators.Context;
@@ -413,18 +412,18 @@ internal class MethodGenerator : ICodeFragmentGenerator
     private void WriteExecutionDescriptorCode(StringBuilder sb, GeneratorContext context, MethodAnalysisResult methodInfo, string deserializeType, string indent)
     {
         sb.AppendLine("new ExecutionDescriptor");
-        sb.AppendLine("            {");
-        sb.AppendLine("                Response = new ResponseDescriptor");
-        sb.AppendLine("                {");
+        sb.AppendLine("               {");
+        sb.AppendLine("                   Response = new ResponseDescriptor");
+        sb.AppendLine("                   {");
 
         var isResponseType = IsResponseType(deserializeType, out var responseInnerType);
-        sb.AppendLine($"                    AllowAnyStatusCode = {methodInfo.AllowAnyStatusCode.ToString().ToLowerInvariant()},");
-        sb.AppendLine($"                    IsResponseType = {isResponseType.ToString().ToLowerInvariant()},");
-        sb.AppendLine($"                    ResponseContentType = \"{methodInfo.ResponseContentType ?? ""}\",");
-        sb.AppendLine($"                    EnableDecrypt = {methodInfo.ResponseEnableDecrypt.ToString().ToLowerInvariant()},");
+        sb.AppendLine($"                       AllowAnyStatusCode = {methodInfo.AllowAnyStatusCode.ToString().ToLowerInvariant()},");
+        sb.AppendLine($"                       IsResponseType = {isResponseType.ToString().ToLowerInvariant()},");
+        sb.AppendLine($"                       ResponseContentType = \"{methodInfo.ResponseContentType ?? ""}\",");
+        sb.AppendLine($"                       EnableDecrypt = {methodInfo.ResponseEnableDecrypt.ToString().ToLowerInvariant()},");
 
         var isVoid = IsVoidType(deserializeType);
-        sb.AppendLine($"                    IsVoidReturn = {isVoid.ToString().ToLowerInvariant()},");
+        sb.AppendLine($"                       IsVoidReturn = {isVoid.ToString().ToLowerInvariant()},");
 
         // XML 序列化器引用
         var isXml = ContentTypeHelper.IsXmlContentType(methodInfo.ResponseContentType);
@@ -432,46 +431,46 @@ internal class MethodGenerator : ICodeFragmentGenerator
         {
             var xmlTargetType = isResponseType ? responseInnerType : deserializeType;
             var xmlFieldRef = RequestBuilder.GetXmlSerializerFieldReference(xmlTargetType);
-            sb.AppendLine($"                    XmlSerializer = {xmlFieldRef},");
+            sb.AppendLine($"                       XmlSerializer = {xmlFieldRef},");
         }
 
-        sb.AppendLine("                },");
+        sb.AppendLine("                   },");
 
         // Cache 配置
         if (methodInfo.CacheEnabled)
         {
             var cacheKeyExpression = GenerateCacheKeyExpression(context, methodInfo);
-            sb.AppendLine("                Cache = new CacheOptions");
-            sb.AppendLine("                {");
-            sb.AppendLine($"                    DurationSeconds = {methodInfo.CacheDurationSeconds},");
-            sb.AppendLine($"                    VaryByUser = {methodInfo.CacheVaryByUser.ToString().ToLowerInvariant()},");
+            sb.AppendLine("                   Cache = new CacheOptions");
+            sb.AppendLine("                   {");
+            sb.AppendLine($"                       DurationSeconds = {methodInfo.CacheDurationSeconds},");
+            sb.AppendLine($"                       VaryByUser = {methodInfo.CacheVaryByUser.ToString().ToLowerInvariant()},");
             if (!string.IsNullOrEmpty(methodInfo.CacheKeyTemplate))
-                sb.AppendLine($"                    KeyTemplate = \"{methodInfo.CacheKeyTemplate}\",");
-            sb.AppendLine("                },");
-            sb.AppendLine($"                CacheKey = {cacheKeyExpression},");
+                sb.AppendLine($"                       KeyTemplate = \"{methodInfo.CacheKeyTemplate}\",");
+            sb.AppendLine("                   },");
+            sb.AppendLine($"                       CacheKey = {cacheKeyExpression},");
         }
 
         // Resilience 配置
         var hasResilience = methodInfo.RetryEnabled || methodInfo.CircuitBreakerEnabled || methodInfo.MethodTimeoutEnabled;
         if (hasResilience)
         {
-            sb.AppendLine("                Resilience = new ResilienceExecutionOptions");
-            sb.AppendLine("                {");
-            sb.AppendLine($"                    RetryEnabled = {methodInfo.RetryEnabled.ToString().ToLowerInvariant()},");
-            sb.AppendLine($"                    MaxRetries = {methodInfo.RetryMaxRetries},");
-            sb.AppendLine($"                    DelayMilliseconds = {methodInfo.RetryDelayMilliseconds},");
-            sb.AppendLine($"                    UseExponentialBackoff = {methodInfo.RetryUseExponentialBackoff.ToString().ToLowerInvariant()},");
-            sb.AppendLine($"                    CircuitBreakerEnabled = {methodInfo.CircuitBreakerEnabled.ToString().ToLowerInvariant()},");
-            sb.AppendLine($"                    FailureThreshold = {methodInfo.CircuitBreakerFailureThreshold},");
-            sb.AppendLine($"                    BreakDurationSeconds = {methodInfo.CircuitBreakerBreakDurationSeconds},");
-            sb.AppendLine($"                    SamplingDurationSeconds = {methodInfo.CircuitBreakerSamplingDurationSeconds},");
-            sb.AppendLine($"                    MinimumThroughput = {methodInfo.CircuitBreakerMinimumThroughput},");
-            sb.AppendLine($"                    TimeoutEnabled = {methodInfo.MethodTimeoutEnabled.ToString().ToLowerInvariant()},");
-            sb.AppendLine($"                    TimeoutMilliseconds = {methodInfo.MethodTimeoutMilliseconds},");
-            sb.AppendLine("                },");
+            sb.AppendLine("                   Resilience = new ResilienceExecutionOptions");
+            sb.AppendLine("                   {");
+            sb.AppendLine($"                       RetryEnabled = {methodInfo.RetryEnabled.ToString().ToLowerInvariant()},");
+            sb.AppendLine($"                       MaxRetries = {methodInfo.RetryMaxRetries},");
+            sb.AppendLine($"                       DelayMilliseconds = {methodInfo.RetryDelayMilliseconds},");
+            sb.AppendLine($"                       UseExponentialBackoff = {methodInfo.RetryUseExponentialBackoff.ToString().ToLowerInvariant()},");
+            sb.AppendLine($"                       CircuitBreakerEnabled = {methodInfo.CircuitBreakerEnabled.ToString().ToLowerInvariant()},");
+            sb.AppendLine($"                       FailureThreshold = {methodInfo.CircuitBreakerFailureThreshold},");
+            sb.AppendLine($"                       BreakDurationSeconds = {methodInfo.CircuitBreakerBreakDurationSeconds},");
+            sb.AppendLine($"                       SamplingDurationSeconds = {methodInfo.CircuitBreakerSamplingDurationSeconds},");
+            sb.AppendLine($"                       MinimumThroughput = {methodInfo.CircuitBreakerMinimumThroughput},");
+            sb.AppendLine($"                       TimeoutEnabled = {methodInfo.MethodTimeoutEnabled.ToString().ToLowerInvariant()},");
+            sb.AppendLine($"                       TimeoutMilliseconds = {methodInfo.MethodTimeoutMilliseconds},");
+            sb.AppendLine("                   },");
         }
 
-        sb.Append("            }");
+        sb.Append("               }");
     }
 
     /// <summary>

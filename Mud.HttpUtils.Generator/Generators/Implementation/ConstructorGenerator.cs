@@ -39,10 +39,27 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     /// <summary>
     /// 生成类字段
     /// </summary>
+    // NEW-GEN-06 说明：GenerateClassFields 方法采用二维分支策略：
+    // 第一维按是否继承基类（HasInheritedFrom）划分，因为继承模式下字段生成规则与独立模式差异显著；
+    // 第二维按字段类别（TokenManager/HttpClient/Cache/Resilience 等）划分。
+    // 当前为渐进式重构，已将两大主分支抽取为独立方法。建议未来引入 IFieldGenerator 策略模式
+    // 进一步解耦字段生成逻辑，消除组合爆炸。TODO: 考虑引入 IFieldGenerator 策略。
     private void GenerateClassFields(StringBuilder codeBuilder)
     {
         if (_context.HasInheritedFrom)
         {
+            GenerateFieldsForInheritedMode(codeBuilder);
+            return;
+        }
+
+        GenerateFieldsForNonInheritedMode(codeBuilder);
+    }
+
+    /// <summary>
+    /// 生成继承模式下的类字段（派生类字段，基类已有的字段不重复生成）
+    /// </summary>
+    private void GenerateFieldsForInheritedMode(StringBuilder codeBuilder)
+    {
             // 当基类没有 TokenManager 但派生类有时，需要生成自己的令牌相关字段
             if (_context.HasTokenManager && !_context.Configuration.BaseHasTokenManager)
             {
@@ -103,9 +120,13 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             }
 
             codeBuilder.AppendLine();
-            return;
-        }
+    }
 
+    /// <summary>
+    /// 生成非继承模式下的类字段（独立实现，包含所有必要字段）
+    /// </summary>
+    private void GenerateFieldsForNonInheritedMode(StringBuilder codeBuilder)
+    {
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine("        /// 用于JSON内容序列化与反序列化操作的<see cref = \"JsonSerializerOptions\"/> 参数实例。");
         codeBuilder.AppendLine("        /// </summary>");

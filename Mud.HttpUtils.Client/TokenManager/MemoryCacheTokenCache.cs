@@ -59,6 +59,12 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
     /// <inheritdoc />
     public bool TryGet(string key, out T? value)
     {
+        // NEW-TM-10 修复：Dispose 后访问抛 ObjectDisposedException，这里提前检查返回 false
+        if (_disposed)
+        {
+            value = default;
+            return false;
+        }
         if (_cache.TryGetValue(key, out var obj) && obj is T typed)
         {
             value = typed;
@@ -72,6 +78,9 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
     /// <inheritdoc />
     public void Set(string key, T? value)
     {
+        // NEW-TM-10 修复：Dispose 后不再写入，避免 ObjectDisposedException
+        if (_disposed)
+            return;
         if (value == null)
         {
             _cache.Remove(key);
@@ -86,6 +95,9 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
     /// <inheritdoc />
     public void Set(string key, T? value, TimeSpan? absoluteExpirationRelativeToNow, TimeSpan? slidingExpiration, Action<string>? postEvictionCallback = null)
     {
+        // NEW-TM-10 修复：Dispose 后不再写入，避免 ObjectDisposedException
+        if (_disposed)
+            return;
         if (value == null)
         {
             _cache.Remove(key);
@@ -129,6 +141,12 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
     /// <inheritdoc />
     public bool TryRemove(string key, out T? removed)
     {
+        // NEW-TM-10 修复：Dispose 后直接返回 false，避免 ObjectDisposedException
+        if (_disposed)
+        {
+            removed = default;
+            return false;
+        }
         if (_cache.TryGetValue(key, out var obj) && obj is T typed)
         {
             _cache.Remove(key);
@@ -144,6 +162,9 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
     /// <inheritdoc />
     public void Compact(double percentage)
     {
+        // NEW-TM-10 修复：Dispose 后不再操作，避免 ObjectDisposedException
+        if (_disposed)
+            return;
         if (_cache is MemoryCache mc)
         {
             mc.Compact(percentage);
@@ -153,6 +174,9 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
     /// <inheritdoc />
     public void Clear()
     {
+        // NEW-TM-10 修复：Dispose 后不再操作，避免 ObjectDisposedException
+        if (_disposed)
+            return;
         _keys.Clear();
         if (_cache is MemoryCache mc)
         {

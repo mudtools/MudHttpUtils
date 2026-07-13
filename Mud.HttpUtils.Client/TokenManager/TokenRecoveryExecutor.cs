@@ -110,6 +110,14 @@ public class TokenRecoveryExecutor
             ? await ReadContentBytesAsync(request.Content, cancellationToken).ConfigureAwait(false)
             : null;
 
+        // NEW-HC-03 修复：检查缓存请求体大小，超过阈值（10MB）则不缓存，避免 OOM 风险
+        const long maxCachedRequestBodySize = 10 * 1024 * 1024; // 10MB
+        if (contentBytes != null && contentBytes.Length > maxCachedRequestBodySize)
+        {
+            _logger.LogWarning("请求体大小 {ActualSize} 字节超过缓存阈值 {MaxSize} 字节，跳过缓存以避免 OOM 风险。401 重试将无法携带原始请求体。", contentBytes.Length, maxCachedRequestBodySize);
+            contentBytes = null;
+        }
+
         var response = await sendFunc(request, cancellationToken).ConfigureAwait(false);
 
         if (response.StatusCode != HttpStatusCode.Unauthorized)
@@ -346,6 +354,12 @@ public class TokenRecoveryExecutor
     private static HttpRequestMessage BuildRetryRequest(HttpRequestMessage original, byte[]? contentBytes, TokenRecoveryContext? recoveryContext)
     {
         var clone = new HttpRequestMessage(original.Method, original.RequestUri);
+
+        // NEW-HC-04 修复：复制 Version 和 VersionPolicy
+        clone.Version = original.Version;
+#if !NETSTANDARD2_0
+        clone.VersionPolicy = original.VersionPolicy;
+#endif
 
         if (contentBytes != null && contentBytes.Length > 0)
         {

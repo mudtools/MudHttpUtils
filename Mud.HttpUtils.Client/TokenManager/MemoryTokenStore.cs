@@ -53,9 +53,14 @@ public class MemoryTokenStore : ITokenStore
     /// </remarks>
     public virtual Task<string?> GetAccessTokenAsync(string tokenType, CancellationToken cancellationToken = default)
     {
-        if (_store.TryGetValue(tokenType, out var entry) && entry.ExpiresAt > DateTimeOffset.UtcNow)
+        if (_store.TryGetValue(tokenType, out var entry))
         {
-            return Task.FromResult<string?>(entry.AccessToken);
+            if (entry.ExpiresAt > DateTimeOffset.UtcNow)
+            {
+                return Task.FromResult<string?>(entry.AccessToken);
+            }
+            // NEW-TM-08 修复：过期则移除，与文档承诺一致
+            _store.TryRemove(tokenType, out _);
         }
 
         return Task.FromResult<string?>(null);
@@ -73,13 +78,21 @@ public class MemoryTokenStore : ITokenStore
     /// </remarks>
     public virtual Task SetAccessTokenAsync(string tokenType, string accessToken, long expiresInSeconds, CancellationToken cancellationToken = default)
     {
-        _store[tokenType] = new TokenEntry
-        {
-            AccessToken = accessToken,
-            RefreshToken = _store.TryGetValue(tokenType, out var existing) ? existing.RefreshToken : null,
-            ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds)
-        };
-
+        // NEW-TM-09 修复：改用 AddOrUpdate 原子操作，避免与 SetRefreshTokenAsync 并发时丢失 RefreshToken 更新
+        _store.AddOrUpdate(tokenType,
+            _ => new TokenEntry
+            {
+                AccessToken = accessToken,
+                RefreshToken = null,
+                ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds)
+            },
+            (_, existing) =>
+            {
+                existing.AccessToken = accessToken;
+                existing.ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds);
+                // 保留已有的 RefreshToken
+                return existing;
+            });
         return Task.CompletedTask;
     }
 

@@ -2,11 +2,11 @@
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
 //  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
-//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
-using System.Collections.Concurrent;
 using Microsoft.Extensions.Options;
+using System.Collections.Concurrent;
 
 namespace Mud.HttpUtils;
 
@@ -16,7 +16,9 @@ namespace Mud.HttpUtils;
 /// </summary>
 public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 {
-    private readonly ConcurrentDictionary<string, SemaphoreSlim> _userLocks = new();
+    // NEW-TM-06 修复：改用 Lazy<SemaphoreSlim> + ExecutionAndPublication，与基类 TokenManagerBase 对齐。
+    // 避免裸 GetOrAdd 在并发下多次执行工厂导致互斥锁失效。
+    private readonly ConcurrentDictionary<string, Lazy<SemaphoreSlim>> _userLocks = new();
     private readonly ITokenCache<UserTokenInfo> _userTokenCache;
     private readonly UserTokenCacheOptions _cacheOptions;
 
@@ -127,7 +129,10 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
             return cachedInfo!.AccessToken;
         }
 
-        var userLock = _userLocks.GetOrAdd(userId!, _ => new SemaphoreSlim(1, 1));
+        // NEW-TM-06 修复：使用 Lazy<SemaphoreSlim> + ExecutionAndPublication 模式，
+        // 确保同一 userId 的并发请求拿到相同的 SemaphoreSlim 实例。
+        var userLock = _userLocks.GetOrAdd(userId!, _ => new Lazy<SemaphoreSlim>(
+            () => new SemaphoreSlim(1, 1), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
         var acquired = false;
         try
         {
@@ -222,7 +227,8 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         {
             if (!_userTokenCache.TryGet(kvp.Key, out _))
             {
-                if (kvp.Value.CurrentCount == 1)
+                // NEW-TM-06 修复：适配 Lazy<SemaphoreSlim>，同时处理未创建的 Lazy
+                if (!kvp.Value.IsValueCreated || kvp.Value.Value.CurrentCount == 1)
                     orphanedKeys.Add(kvp.Key);
             }
         }
@@ -240,10 +246,11 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// <param name="userId">用户标识。</param>
     private void TryCleanupUserLock(string userId)
     {
-        if (!_userLocks.TryGetValue(userId, out var userLock))
+        if (!_userLocks.TryGetValue(userId, out var lazyLock))
             return;
 
-        if (userLock.CurrentCount != 1)
+        // NEW-TM-06 修复：适配 Lazy<SemaphoreSlim>
+        if (!lazyLock.IsValueCreated || lazyLock.Value.CurrentCount != 1)
             return;
 
         TryRemoveAndDisposeLock(userId);
@@ -280,27 +287,14 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
     /// <summary>
     /// 安全移除并释放用户锁。
-    /// 使用 TryRemove 确保只有锁的“拥有者”（最后一个引用者）才执行 Dispose，
-    /// 避免在锁正在被使用时释放。
+    /// NEW-TM-07 修复：仅从字典移除，不立即 Dispose，避免 TOCTOU 竞态破坏互斥。
+    /// 与基类 TokenManagerBase.TryRemoveScopeLock 修复策略一致：
+    /// 移除后新来线程通过 GetOrAdd 创建新 Lazy&lt;SemaphoreSlim&gt;，
+    /// 已持有旧锁引用的线程仍可安全使用，由 GC 终结器释放资源。
     /// </summary>
     private void TryRemoveAndDisposeLock(string userId)
     {
-        // 尝试移除，只有成功移除的线程才负责 Dispose
-        // 如果移除失败说明锁已被其他线程移除，无需重复 Dispose
-        if (_userLocks.TryRemove(userId, out var lockToDispose))
-        {
-            // 仅在锁空闲时 Dispose；如果锁正在使用中（CurrentCount == 0），
-            // 说明有线程正在持有锁，不安全 Dispose，留待下次清理
-            if (lockToDispose.CurrentCount == 1)
-            {
-                lockToDispose.Dispose();
-            }
-            else
-            {
-                // 锁正在使用中，重新放回字典，等待下次清理
-                _userLocks.TryAdd(userId, lockToDispose);
-            }
-        }
+        _userLocks.TryRemove(userId, out _);
     }
 
     private bool IsUserTokenValid(UserTokenInfo? tokenInfo)
@@ -324,6 +318,8 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
     /// <summary>
     /// 释放资源。
+    /// NEW-TM-11 修复：调整 Dispose 顺序，先设置 _disposed 标志再释放资源，
+    /// 避免并发 GetOrRefreshTokenAsync 在资源释放期间通过 _disposed 检查。
     /// </summary>
     /// <param name="disposing">是否释放托管资源。</param>
     protected override void Dispose(bool disposing)
@@ -331,13 +327,18 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         if (_disposed)
             return;
 
+        // NEW-TM-11 修复：先设置标志，使并发 GetOrRefreshTokenAsync 立即感知 Dispose 状态
+        _disposed = true;
+
         if (disposing)
         {
             _userTokenCache?.Dispose();
 
-            foreach (var userLock in _userLocks.Values)
+            // NEW-TM-06 修复：适配 Lazy<SemaphoreSlim>
+            foreach (var lazyLock in _userLocks.Values)
             {
-                userLock?.Dispose();
+                if (lazyLock.IsValueCreated)
+                    lazyLock.Value.Dispose();
             }
             _userLocks.Clear();
         }

@@ -113,25 +113,13 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
         if (string.IsNullOrWhiteSpace(appKey))
             return false;
 
-        // M-10 修复：移除应用时释放 IDisposable 资源，避免 Timer、SemaphoreSlim 等非托管资源泄漏。
-        // FeishuAppContext 等实现了 IDisposable 的上下文在 RemoveApp 时不会被自动释放，
-        // 长期运行的服务中频繁增删应用会导致句柄泄漏。
         var removed = _apps.TryRemove(appKey, out var context);
 
         if (removed)
         {
-            // 释放被移除的应用上下文资源
-            if (context is IDisposable disposable)
-            {
-                try
-                {
-                    disposable.Dispose();
-                }
-                catch
-                {
-                    // 释放过程中的异常不应阻止 RemoveApp 的正常完成
-                }
-            }
+            // NEW-MA-01 修复：不立即 Dispose 上下文，避免在途请求抛 ObjectDisposedException。
+            // 上下文由 GC 回收。若需立即释放，应用应显式调用 context.Dispose()。
+            // 注意：原 M-10 修复中的立即 Dispose 会导致在途 HTTP 请求的 HttpClient/TokenManager 被释放。
 
             lock (_defaultAppLock)
             {

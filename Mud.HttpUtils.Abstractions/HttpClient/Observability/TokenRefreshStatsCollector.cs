@@ -76,16 +76,24 @@ public static class TokenRefreshStatsCollector
 
     /// <summary>
     /// 设置保留期（应 >= 健康检查最大窗口期）。仅供宿主初始化时调用。
-    /// 只允许扩大保留期，避免误操作缩小导致健康检查窗口数据丢失。
+    /// 允许扩大或缩小保留期，缩小时会清理超出新窗口的事件。
     /// </summary>
     /// <param name="retention">保留期，必须为正值。</param>
     public static void SetRetention(TimeSpan retention)
     {
         if (retention <= TimeSpan.Zero)
             return;
-        // 仅允许扩大保留期，避免运行时缩小导致正在使用的健康检查窗口数据丢失
-        if (retention > s_retention)
-            s_retention = retention;
+        var oldRetention = s_retention;
+        s_retention = retention;
+        // NEW-OB-01 修复：允许缩小保留期，并在缩小时清理超出新窗口的事件
+        if (retention < oldRetention)
+        {
+            var since = DateTimeOffset.UtcNow - retention;
+            while (s_events.TryPeek(out var e) && e.Timestamp < since)
+            {
+                s_events.TryDequeue(out _);
+            }
+        }
     }
 
     /// <summary>
@@ -128,10 +136,16 @@ public static class TokenRefreshStatsCollector
         DateTimeOffset? lastFailureAt = null;
 
         // 并发枚举 ConcurrentQueue 是安全的（得到的是某一时刻的快照）
+        // NEW-OB-02 修复：利用 FIFO 单调性，遇到首个窗口内事件后停止跳过
+        var started = false;
         foreach (var e in s_events)
         {
-            if (e.Timestamp < since)
-                continue;
+            if (!started)
+            {
+                if (e.Timestamp < since)
+                    continue;
+                started = true;
+            }
 
             total++;
             if (lastRefreshAt == null || e.Timestamp > lastRefreshAt)
