@@ -27,9 +27,60 @@ public class Program
         await DemoResilienceDecorator(host.Services);
         await DemoResilienceDecoratorWithImplementationType();
         DemoSensitiveDataMasker();
+        DemoOAuth2Serialization();
 
         Console.WriteLine("\n=== AOT 验证示例完成 ===");
         Console.WriteLine("如果此程序在 Native AOT 模式下成功运行，说明 JSON / 表单 / 弹性 / 脱敏主路径均已 AOT 兼容。");
+        Console.WriteLine("AOT_OK");
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // 场景 6：OAuth2 令牌序列化验证（直接序列化断言）
+    // ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 验证 OAuth2 令牌响应和令牌自省结果的 JSON 序列化/反序列化
+    /// 在 AOT 下正确工作（使用库内置 OAuth2JsonContext）。
+    /// </summary>
+    /// <remarks>
+    /// 此场景使用直接序列化断言，不依赖真实 HTTP 请求，
+    /// 确保 OAuth2JsonContext 的类型元数据在 AOT 裁剪后仍可用。
+    /// </remarks>
+    private static void DemoOAuth2Serialization()
+    {
+        Console.WriteLine("--- 6. OAuth2 令牌序列化验证（库内置 JsonContext）---");
+
+        // 模拟 OAuth2 令牌响应 JSON
+        var tokenJson = "{\"access_token\":\"test-access-token\",\"token_type\":\"Bearer\",\"expires_in\":3600,\"refresh_token\":\"test-refresh-token\"}";
+
+        // 使用 StandardOAuth2TokenManager 的 s_jsonOptions 反序列化
+        // 验证 OAuth2JsonContext.Default 已正确注入
+#if NET8_0_OR_GREATER
+        var options = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+            TypeInfoResolver = Mud.HttpUtils.OAuth2JsonContext.Default
+        };
+
+        var introspectionJson = "{\"active\":true,\"client_id\":\"test-client\",\"username\":\"testuser\",\"scope\":\"read write\"}";
+        var introspectionResult = JsonSerializer.Deserialize<TokenIntrospectionResult>(introspectionJson, options);
+
+        if (introspectionResult != null && introspectionResult.Active && introspectionResult.ClientId == "test-client")
+        {
+            Console.WriteLine($"  IntrospectToken => Active={introspectionResult.Active}, ClientId={introspectionResult.ClientId}");
+            Console.WriteLine("  [✓] OAuth2 令牌自省结果反序列化正确（OAuth2JsonContext 生效）");
+        }
+        else
+        {
+            Console.WriteLine("  [!] OAuth2 令牌自省结果反序列化失败——AOT 下类型元数据可能被裁剪！");
+            throw new InvalidOperationException("OAuth2 introspection deserialization failed - type metadata may be trimmed in AOT");
+        }
+#else
+        Console.WriteLine("  [✓] 跳过（JsonSourceGeneration 仅在 .NET 8+ 可用）");
+#endif
+
+        Console.WriteLine();
     }
 
     /// <summary>

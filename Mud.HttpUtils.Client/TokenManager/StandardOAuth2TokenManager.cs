@@ -21,7 +21,10 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     private static readonly JsonSerializerOptions s_jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+#if NET8_0_OR_GREATER
+        TypeInfoResolver = OAuth2JsonContext.Default
+#endif
     };
 
     /// <summary>
@@ -406,7 +409,13 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         return DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds();
     }
 
-    private sealed class OAuth2TokenResponse
+    /// <summary>
+    /// OAuth2 令牌响应 DTO。
+    /// </summary>
+    /// <remarks>
+    /// 可见性为 <c>internal</c> 以支持 <see cref="OAuth2JsonContext"/> 的 <c>[JsonSerializable]</c> 引用。
+    /// </remarks>
+    internal sealed class OAuth2TokenResponse
     {
         [JsonPropertyName("access_token")]
         public string? AccessToken { get; set; }

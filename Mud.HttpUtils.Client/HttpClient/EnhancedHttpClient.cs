@@ -127,15 +127,39 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver? resolver = options.JsonTypeInfoResolver;
         resolver ??= jsonOptions?.Value?.TypeInfoResolver;
 
+        // 库内置兜底上下文（始终包含，保证内部类型可用）
+        System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver builtIn = MudHttpJsonContext.Default;
+
         if (resolver != null)
         {
+            // 消费方提供了 resolver
+            if (System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported)
+            {
+                // JIT：再 Combine 一个 DefaultJsonTypeInfoResolver 作反射兜底，兼容未声明类型
+                return new JsonSerializerOptions(s_defaultJsonSerializerOptions)
+                {
+                    TypeInfoResolver = System.Text.Json.Serialization.Metadata.JsonTypeInfoResolver.Combine(
+                        resolver, builtIn,
+                        new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver())
+                };
+            }
+            // AOT：仅源生成，杜绝静默回退反射
             return new JsonSerializerOptions(s_defaultJsonSerializerOptions)
             {
-                // 仅使用源生成 resolver，不拼接 DefaultJsonTypeInfoResolver，
-                // 避免未声明类型在 AOT 下静默回退反射而被裁剪为空对象。
-                TypeInfoResolver = resolver
+                TypeInfoResolver = System.Text.Json.Serialization.Metadata.JsonTypeInfoResolver.Combine(resolver, builtIn)
             };
         }
+
+        // 未提供 resolver：
+        if (System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported == false)
+        {
+            // AOT 且未提供 resolver：用库内置上下文，避免回退反射
+            return new JsonSerializerOptions(s_defaultJsonSerializerOptions)
+            {
+                TypeInfoResolver = builtIn
+            };
+        }
+        // JIT 且未提供 resolver：保留 s_defaultJsonSerializerOptions，默认走反射（DefaultJsonTypeInfoResolver）
 #endif
         return s_defaultJsonSerializerOptions;
     }
@@ -296,6 +320,10 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     }
 
     /// <inheritdoc cref="IBaseHttpClient.SendAsAsyncEnumerable"/>
+#if NET8_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("ReflectionAnalysis", "IL2026:RequiresUnreferencedCode",
+        Justification = "_jsonOptions 通过 DI 注入了 JsonSerializerContext resolver，T 的类型元数据已由消费方的 JsonSerializerContext 保留。")]
+#endif
     public async IAsyncEnumerable<TResult> SendAsAsyncEnumerable<TResult>(
      HttpRequestMessage request,
      object? jsonSerializerOptions = null,
@@ -1584,7 +1612,15 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// <returns>流式返回的异步枚举。</returns>
     /// <remarks>
     /// 此方法使用 <see cref="StreamReader"/> 读取流。调用方应负责释放底层 <paramref name="stream"/>（StreamReader 释放时也会释放流，重复释放是幂等的）。
+    /// <para>
+    /// <b>Native AOT 注意</b>：此重载使用开放泛型 <c>JsonSerializer.Deserialize&lt;T&gt;</c>，
+    /// AOT 场景下须确保 <typeparamref name="T"/> 已在 <see cref="JsonSerializerContext"/> 中声明，
+    /// 否则可能静默返回空对象。推荐使用 <see cref="ParseNdJsonStreamAsync{T}(Stream, System.Text.Json.Serialization.Metadata.JsonTypeInfo{T}, CancellationToken)"/> 重载。
+    /// </para>
     /// </remarks>
+#if NET8_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("NDJSON 反序列化使用开放泛型 JsonSerializer.Deserialize<T>，AOT 场景须确保 T 已在 JsonSerializerContext 中声明。推荐使用 JsonTypeInfo<T> 重载。")]
+#endif
     internal static async IAsyncEnumerable<T> ParseNdJsonStreamAsync<T>(
         Stream stream,
         JsonSerializerOptions? options,
@@ -1619,6 +1655,44 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             }
         }
     }
+
+#if NET8_0_OR_GREATER
+    /// <summary>
+    /// 从 NDJSON 流中逐行解析并异步枚举结果（AOT 安全重载）。
+    /// </summary>
+    /// <typeparam name="T">每行数据反序列化的目标类型。</typeparam>
+    /// <param name="stream">包含 NDJSON 内容的流。</param>
+    /// <param name="jsonTypeInfo">来自 <see cref="JsonSerializerContext"/> 的类型信息（AOT 安全）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>流式返回的异步枚举。</returns>
+    internal static async IAsyncEnumerable<T> ParseNdJsonStreamAsync<T>(
+        Stream stream,
+        System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> jsonTypeInfo,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        using var reader = new StreamReader(stream, System.Text.Encoding.UTF8);
+
+        while (true)
+        {
+            var line = await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+            if (line == null)
+            {
+                yield break;
+            }
+
+            if (string.IsNullOrEmpty(line))
+            {
+                continue;
+            }
+
+            var item = JsonSerializer.Deserialize(line, jsonTypeInfo);
+            if (item != null)
+            {
+                yield return item;
+            }
+        }
+    }
+#endif
 
     #endregion
 

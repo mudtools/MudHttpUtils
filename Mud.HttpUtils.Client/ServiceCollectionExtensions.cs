@@ -351,13 +351,28 @@ public static class HttpClientServiceCollectionExtensions
     /// <returns>服务集合（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
     /// <remarks>
-    /// 此方法注册 <see cref="DefaultSensitiveDataMasker"/> 作为默认的敏感数据掩码器实现。
+    /// 此方法注册 <see cref="AotSafeSensitiveDataMasker"/> 作为默认的敏感数据掩码器实现（AOT 安全）。
     /// 敏感数据掩码器用于在日志记录和错误消息中隐藏敏感信息（如密码、令牌、密钥等）。
+    /// <para>
+    /// <b>Native AOT 注意</b>：<see cref="AotSafeSensitiveDataMasker"/> 使用编译期字典式注册，
+    /// 消费方须通过 <c>Register&lt;T&gt;</c> 方法注册需要脱敏的 DTO 类型。
+    /// 未注册的类型将返回 <c>[TypeName]</c> 而非真正脱敏。
+    /// 如需使用反射遍历属性的原有行为（非 AOT 场景），请使用
+    /// <c>AddSensitiveDataMasker&lt;DefaultSensitiveDataMasker&gt;()</c>。
+    /// </para>
     /// </remarks>
     /// <example>
     /// <code>
-    /// // 注册默认敏感数据掩码器
+    /// // 注册 AOT 安全的默认敏感数据掩码器
     /// services.AddSensitiveDataMasker();
+    ///
+    /// // 注册后配置脱敏规则
+    /// services.AddSingleton&lt;ISensitiveDataMasker&gt;(sp =>
+    /// {
+    ///     var masker = new AotSafeSensitiveDataMasker();
+    ///     masker.Register&lt;UserDto&gt;(obj => /* ... */);
+    ///     return masker;
+    /// });
     /// </code>
     /// </example>
     public static IServiceCollection AddSensitiveDataMasker(
@@ -366,7 +381,7 @@ public static class HttpClientServiceCollectionExtensions
         if (services == null)
             throw new ArgumentNullException(nameof(services));
 
-        services.TryAddSingleton<ISensitiveDataMasker, DefaultSensitiveDataMasker>();
+        services.TryAddSingleton<ISensitiveDataMasker, AotSafeSensitiveDataMasker>();
         return services;
     }
 

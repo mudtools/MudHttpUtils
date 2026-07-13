@@ -25,4 +25,12 @@
 		<CodeAnalysisTreatWarningsAsErrors>false</CodeAnalysisTreatWarningsAsErrors>
 		<BaseOutputPath>..\bin</BaseOutputPath>
 	</PropertyGroup>
+
+	<!-- AOT 兼容性配置：仅在 .NET 7+ TFM 上启用 AOT 分析器。
+	     netstandard2.0 和 net6.0 不支持 AOT 分析器，设置 IsAotCompatible 无实际效果。
+	     各 csproj 不再单独设置 IsAotCompatible/EnableAotAnalyzer，统一由此处管控。 -->
+	<PropertyGroup Condition="'$(TargetFramework)' != 'netstandard2.0' AND '$(TargetFramework)' != 'net6.0' AND '$(IsAotCompatible)' == ''">
+		<IsAotCompatible>true</IsAotCompatible>
+		<EnableAotAnalyzer>true</EnableAotAnalyzer>
+	</PropertyGroup>
 </Project>

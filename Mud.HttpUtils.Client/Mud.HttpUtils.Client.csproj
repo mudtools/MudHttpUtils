@@ -8,8 +8,6 @@
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>
-		<EnableAotAnalyzer>true</EnableAotAnalyzer>
-		<IsAotCompatible>true</IsAotCompatible>
 	</PropertyGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\Mud.HttpUtils.Abstractions\Mud.HttpUtils.Abstractions.csproj" />
@@ -42,6 +40,7 @@
 		<InternalsVisibleTo Include="Mud.HttpUtils.Resilience.Tests" />
 		<InternalsVisibleTo Include="Mud.HttpUtils.Client.Tests" />
 		<InternalsVisibleTo Include="Mud.HttpUtils.Integration.Tests" />
+		<InternalsVisibleTo Include="AotVerificationDemo" />
 	</ItemGroup>
 	<ItemGroup>
 		<None Include="README.md" Pack="true" PackagePath="\" />

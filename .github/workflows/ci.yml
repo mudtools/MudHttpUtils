@@ -121,6 +121,42 @@ jobs:
       - name: Publish AOT (net8.0)
         run: dotnet publish Demos/AotVerificationDemo/AotVerificationDemo.csproj -c Release -f net8.0 -r ${{ matrix.rid }}
 
+      - name: Run AOT binary (net10.0) and verify AOT_OK
+        shell: bash
+        run: |
+          BIN_PATH="Demos/AotVerificationDemo/bin/Release/net10.0/${{ matrix.rid }}/publish/AotVerificationDemo"
+          if [ -f "$BIN_PATH" ]; then
+            OUTPUT=$("$BIN_PATH" 2>&1 || true)
+            echo "$OUTPUT"
+            if echo "$OUTPUT" | grep -q "AOT_OK"; then
+              echo "✓ AOT runtime verification passed (net10.0)"
+            else
+              echo "✗ AOT runtime verification FAILED (net10.0) - AOT_OK not found in output"
+              exit 1
+            fi
+          else
+            echo "Binary not found at $BIN_PATH"
+            exit 1
+          fi
+
+      - name: Run AOT binary (net8.0) and verify AOT_OK
+        shell: bash
+        run: |
+          BIN_PATH="Demos/AotVerificationDemo/bin/Release/net8.0/${{ matrix.rid }}/publish/AotVerificationDemo"
+          if [ -f "$BIN_PATH" ]; then
+            OUTPUT=$("$BIN_PATH" 2>&1 || true)
+            echo "$OUTPUT"
+            if echo "$OUTPUT" | grep -q "AOT_OK"; then
+              echo "✓ AOT runtime verification passed (net8.0)"
+            else
+              echo "✗ AOT runtime verification FAILED (net8.0) - AOT_OK not found in output"
+              exit 1
+            fi
+          else
+            echo "Binary not found at $BIN_PATH"
+            exit 1
+          fi
+
   # ──────────────────────────────────────────────
   # 主项目及子包构建与发布
   # ──────────────────────────────────────────────
