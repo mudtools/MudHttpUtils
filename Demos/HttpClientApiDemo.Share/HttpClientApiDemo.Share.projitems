@@ -64,7 +64,6 @@
     <Compile Include="$(MSBuildThisFileDirectory)TokenManage\TokenTestApi.cs" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="$(MSBuildThisFileDirectory)ContentTypeTestApis\VerifyGeneratedCode.ps1" />
     <None Include="$(MSBuildThisFileDirectory)README.md" />
   </ItemGroup>
 </Project>

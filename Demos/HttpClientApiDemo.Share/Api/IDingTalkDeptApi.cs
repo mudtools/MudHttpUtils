@@ -14,7 +14,7 @@ using HttpClientApiTest.WebApi;
 /// 测试各种部门相关的API功能，包括不同Token类型、参数位置等场景
 /// </summary>
 [HttpClientApi(Timeout = 60, TokenManage = "IFeishuAppManager", RegistryGroupName = "Dingtalk")]
-[Header("Authorization")]
+[Header("Authorization"), Token]
 public interface IDingTalkDeptApi
 {
     /// <summary>

@@ -10,7 +10,7 @@ namespace HttpClientApiTest.Api;
 /// 钉钉用户API测试接口
 /// 测试各种用户相关的API功能，包括不同Token类型、参数位置、数组查询等场景
 /// </summary>
-[HttpClientApi(Timeout = 60, TokenManage = "IFeishuAppManager", RegistryGroupName = "Dingtalk")]
+[HttpClientApi(Timeout = 60, TokenManage = "IFeishuAppManager", RegistryGroupName = "Dingtalk"), Token]
 public interface IDingTalkUserApi : IAppContextSwitcher
 {
     /// <summary>

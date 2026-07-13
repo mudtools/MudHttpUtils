@@ -10,7 +10,7 @@ namespace HttpClientApiTest.TokenHeaderTestApi;
 /// Token和Header特性在不同HTTP方法中的测试接口
 /// 用于测试[Token]和[Header]特性在各种HTTP方法中的使用
 /// </summary>
-[HttpClientApi(Timeout = 90, TokenManage = "IFeishuAppManager", RegistryGroupName = "TokenHeaderHttpMethods")]
+[HttpClientApi(Timeout = 90, TokenManage = "IFeishuAppManager", RegistryGroupName = "TokenHeaderHttpMethods"), Token]
 public interface ITokenHeaderHttpMethodsTestApi
 {
     /// <summary>
