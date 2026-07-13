@@ -119,16 +119,6 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
                 codeBuilder.AppendLine("        public string? CurrentUserId => _currentUserContext.UserId;");
             }
 
-        if (_context.HasXmlResponse && _context.XmlResponseTypes.Count > 0)
-        {
-            codeBuilder.AppendLine();
-            foreach (var xmlType in _context.XmlResponseTypes.OrderBy(t => t))
-            {
-                var safeFieldName = GetXmlSerializerFieldName(xmlType);
-                codeBuilder.AppendLine($"        private static readonly System.Xml.Serialization.XmlSerializer {safeFieldName} = new System.Xml.Serialization.XmlSerializer(typeof({xmlType}));");
-            }
-        }
-
             codeBuilder.AppendLine();
     }
 
@@ -779,9 +769,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             .Replace(" ", "")
             .Replace(".", "_")
             .Replace("[", "_")
-            .Replace("]", "_")
-            .Replace("+", "_")    // 嵌套类型分隔符（Parent+Child）
-            .Replace("`", "_");   // 泛型 arity 标记（Dictionary`2）
+            .Replace("]", "_");
         return $"_xmlSerializer_{safeName}";
     }
 }

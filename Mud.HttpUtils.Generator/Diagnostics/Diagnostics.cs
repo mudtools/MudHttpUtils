@@ -27,6 +27,7 @@ internal static class Diagnostics
      *   - COMWRAP*: COM包装生成器 (COMWRAP001)
      *   - SG*: 源代码生成器通用 (SG001)
      *   - EG*: 实体生成器通用 (EG001-002)
+     *   - AOT*: AOT JSON 序列化诊断 (AOT001-005)
      */
     #endregion 
 
@@ -238,5 +239,51 @@ internal static class Diagnostics
         DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         customTags: WellKnownDiagnosticTags.NotConfigurable);
+    #endregion
+
+    #region AOT JSON 序列化诊断信息 (AOT001-005)
+    // 诊断由 HttpJsonContextScaffolder（pre-build 工具）或独立分析器报告。
+    // 前缀 AOT 遵循仓库 XXXNNN 约定（3-6 字符前缀 + 3 位数字）。
+
+    public static readonly DiagnosticDescriptor AotDuplicateSerializerClassName = new(
+        id: "AOT001",
+        title: "AOT JSON Context 类名重复",
+        messageFormat: "同一编译单元中出现重复的 SerializerClassName '{0}'。请改名或留空由 Scaffolder 自动派生唯一名称。",
+        category: "AOT",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
+
+    public static readonly DiagnosticDescriptor AotOpenGenericOnLegacyTfm = new(
+        id: "AOT002",
+        title: "开放泛型类型在低版本 TFM 上标注 [HttpJsonSerializable]",
+        messageFormat: "类型 '{0}' 是开放泛型，在 net8.0 以下不支持源生成开放泛型。低版本将走反射兜底，AOT 下不可用。",
+        category: "AOT",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor AotPolymorphismWithoutJsonDerivedType = new(
+        id: "AOT003",
+        title: "多态类型缺少 [JsonDerivedType] 标注",
+        messageFormat: "类型 '{0}' 存在基类（多态序列化），但未标注 [JsonDerivedType]。以基类反序列化派生类时源生成不含派生类型，可能丢字段。建议在同程序集内补充 [JsonDerivedType] 或由 Scaffolder 自动补全。",
+        category: "AOT",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor AotDtoNotCoveredByContext = new(
+        id: "AOT004",
+        title: "HttpClient API 方法的 DTO 未被任何 JsonSerializerContext 覆盖",
+        messageFormat: "接口 {0} 的方法 {1} 使用的请求/响应 DTO '{2}' 未被任何已引用的 JsonSerializerContext 覆盖。AOT 下序列化可能返回空对象或失败。",
+        category: "AOT",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor AotQueryParameterNotInContext = new(
+        id: "AOT005",
+        title: "查询参数类型使用 JSON 序列化但未被 Context 覆盖",
+        messageFormat: "接口 {0} 的方法 {1} 的查询参数 '{2}' 标注了 JSON 序列化，但其类型 '{3}' 未被任何 JsonSerializerContext 覆盖。AOT 下查询参数 JSON 序列化可能失败。建议将此类型纳入 JsonSerializerContext 或实现 IQueryParameter 接口。",
+        category: "AOT",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
     #endregion
 }

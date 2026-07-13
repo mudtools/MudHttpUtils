@@ -798,4 +798,49 @@ public static class HttpClientServiceCollectionExtensions
         services.Configure<UserTokenCacheOptions>(configuration.GetSection(sectionPath));
         return services;
     }
+
+#if NET8_0_OR_GREATER
+    /// <summary>
+    /// 注册 JSON 序列化上下文（支持 Native AOT），将消费方 <see cref="System.Text.Json.Serialization.JsonSerializerContext"/>
+    /// 合并到全局 <see cref="JsonSerializerOptions"/> 中。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 此扩展方法封装了 <c>services.Configure&lt;JsonSerializerOptions&gt;(o =&gt; o.TypeInfoResolver = JsonTypeInfoResolver.Combine(o.TypeInfoResolver, context))</c>，
+    /// 避免每个消费方手写 Combine 逻辑。
+    /// </para>
+    /// <para>
+    /// 库内置 <see cref="EnhancedHttpClient.BuildJsonOptions"/> 会自动读取 <c>IOptions&lt;JsonSerializerOptions&gt;</c>
+    /// 中的 <c>TypeInfoResolver</c>，并与库内置 <c>MudHttpJsonContext.Default</c> 合并。
+    /// </para>
+    /// <para>
+    /// <b>多目标框架守卫</b>：<see cref="System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver"/> 仅在 .NET 8+ 存在。
+    /// 消费方调用此方法时须用 <c>#if NET8_0_OR_GREATER</c> 包裹：
+    /// <code>
+    /// #if NET8_0_OR_GREATER
+    /// services.AddMudHttpClientJsonContext(FeishuJsonContext.Default);
+    /// #endif
+    /// </code>
+    /// </para>
+    /// </remarks>
+    /// <param name="services">服务集合。</param>
+    /// <param name="context">消费方的 JSON 序列化上下文（由 <c>HttpJsonContextScaffolder</c> 产出或手写）。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+    public static IServiceCollection AddMudHttpClientJsonContext(
+        this IServiceCollection services,
+        System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver context)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+        if (context == null)
+            throw new ArgumentNullException(nameof(context));
+
+        services.Configure<JsonSerializerOptions>(o =>
+        {
+            o.TypeInfoResolver = System.Text.Json.Serialization.Metadata.JsonTypeInfoResolver.Combine(o.TypeInfoResolver, context);
+        });
+        return services;
+    }
+#endif
 }

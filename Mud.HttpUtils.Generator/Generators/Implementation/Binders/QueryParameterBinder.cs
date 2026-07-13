@@ -420,6 +420,12 @@ internal class QueryParameterBinder : IParameterBinder
     /// <summary>
     /// 为简单类型属性生成展平代码。
     /// </summary>
+    /// <remarks>
+    /// AOT 修复（JsonAotSourceGeneratorPlan §3.6）：JSON 序列化使用泛型重载
+    /// <c>JsonSerializer.Serialize&lt;T&gt;(value, _jsonSerializerOptions)</c>，
+    /// 而非非泛型 <c>JsonSerializer.Serialize(object?)</c>。非泛型重载因运行时
+    /// <c>Type</c> 分发不被 trim/AOT 分析器视作安全，即使传入含 Context 的 options。
+    /// </remarks>
     private static void GenerateSimplePropertyFlattening(
         StringBuilder codeBuilder, string objName, string propName, IPropertySymbol prop,
         string indent, string escapedKey, bool includeNullValues,
@@ -430,11 +436,16 @@ internal class QueryParameterBinder : IParameterBinder
         var isNullable = prop.Type.NullableAnnotation == NullableAnnotation.Annotated
                          || (isValueType && prop.Type.OriginalDefinition?.SpecialType == SpecialType.System_Nullable_T);
 
+        // 获取属性类型的完全限定显示名（用于泛型 Serialize<T> 重载）
+        var propTypeDisplay = prop.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
+            .WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.UseSpecialTypes));
+
         if (isValueType && !isNullable)
         {
             // 非可空值类型：始终有值
+            // AOT 安全：使用泛型重载 JsonSerializer.Serialize<T>(value, _jsonSerializerOptions)
             var valueExpr = useJsonSerialization
-                ? $"JsonSerializer.Serialize({fullAccess})"
+                ? $"JsonSerializer.Serialize<{propTypeDisplay}>({fullAccess}, _jsonSerializerOptions)"
                 : $"{fullAccess}.ToString() ?? \"\"";
 
             if (urlEncode)
@@ -450,8 +461,9 @@ internal class QueryParameterBinder : IParameterBinder
             codeBuilder.AppendLine($"{indent}if ({valVar} != null)");
             codeBuilder.AppendLine($"{indent}{{");
 
+            // AOT 安全：使用泛型重载 JsonSerializer.Serialize<T>(value, _jsonSerializerOptions)
             var valueExpr = useJsonSerialization
-                ? $"JsonSerializer.Serialize({valVar})"
+                ? $"JsonSerializer.Serialize<{propTypeDisplay}>({valVar}, _jsonSerializerOptions)"
                 : $"{valVar}.ToString() ?? \"\"";
 
             if (urlEncode)

@@ -700,53 +700,25 @@ internal class InterfaceImplementationGenerator
             if (!methodInfo.IsValid)
                 continue;
 
-            // XML 响应类型
             var isXmlResponse = ContentTypeHelper.IsXmlContentType(methodInfo.ResponseContentType);
-            if (isXmlResponse)
+            if (!isXmlResponse)
+                continue;
+
+            var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
+            if (string.IsNullOrEmpty(deserializeType) || deserializeType == "void" || deserializeType == "System.Void")
+                continue;
+
+            if (TypeSymbolHelper.IsResponseType(deserializeType))
             {
-                var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
-                if (!string.IsNullOrEmpty(deserializeType) && deserializeType != "void" && deserializeType != "System.Void")
+                var innerType = TypeSymbolHelper.ExtractResponseInnerType(deserializeType);
+                if (!string.IsNullOrEmpty(innerType) && innerType != "void" && innerType != "System.Void")
                 {
-                    if (TypeSymbolHelper.IsResponseType(deserializeType))
-                    {
-                        var innerType = TypeSymbolHelper.ExtractResponseInnerType(deserializeType);
-                        if (!string.IsNullOrEmpty(innerType) && innerType != "void" && innerType != "System.Void")
-                        {
-                            context.XmlResponseTypes.Add(innerType);
-                        }
-                    }
-                    else
-                    {
-                        context.XmlResponseTypes.Add(deserializeType);
-                    }
+                    context.XmlResponseTypes.Add(innerType);
                 }
             }
-
-            // AOT 改造（Phase 5）：XML 请求体类型也需生成静态 XmlSerializer 字段
-            if (!methodInfo.BodyEnableEncrypt)
+            else
             {
-                var bodyParam = methodInfo.Parameters
-                    .FirstOrDefault(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.BodyAttribute));
-                if (bodyParam != null)
-                {
-                    var bodyAttr = bodyParam.Attributes.First(a => a.Name == HttpClientGeneratorConstants.BodyAttribute);
-                    var hasExplicitContentType = bodyAttr.Arguments.Length > 0 || bodyAttr.NamedArguments.ContainsKey("ContentType");
-                    var effectiveContentType = methodInfo.GetEffectiveContentType();
-                    var bodyContentType = bodyAttr.NamedArguments.TryGetValue("ContentType", out var ctArg)
-                        ? ctArg?.ToString()
-                        : (bodyAttr.Arguments.Length > 0 ? bodyAttr.Arguments[0]?.ToString() : null);
-                    var effectiveBodyContentType = bodyContentType ?? effectiveContentType;
-                    var isXmlRequest = ContentTypeHelper.IsXmlContentType(effectiveBodyContentType ?? HttpClientGeneratorConstants.DefaultContentType)
-                        || (!hasExplicitContentType && methodInfo.SerializationMethod == "Xml");
-                    // 排除 FormUrlEncoded 序列化方法（它不走 XML 路径）
-                    if (!hasExplicitContentType && methodInfo.SerializationMethod == "FormUrlEncoded")
-                        isXmlRequest = false;
-
-                    if (isXmlRequest && !string.IsNullOrEmpty(bodyParam.Type))
-                    {
-                        context.XmlResponseTypes.Add(bodyParam.Type);
-                    }
-                }
+                context.XmlResponseTypes.Add(deserializeType);
             }
         }
 

@@ -42,6 +42,36 @@ public interface IAuthApi
 }
 
 // ─────────────────────────────────────────────────────────────
+// 生成 API 客户端 — 查询参数路径（AOT 安全的 [Query] 方式）
+// ─────────────────────────────────────────────────────────────
+
+/// <summary>
+/// 搜索 API（[Query] 逐参数声明，AOT 安全）
+/// </summary>
+/// <remarks>
+/// 验证查询参数路径的 AOT 安全性：
+/// <para>
+/// [Query] 参数逐个声明，源生成器在编译期为每个参数发射内联查询构建代码。
+/// 简单类型（string/int/bool 等）使用 ToString() 序列化，不涉及反射。
+/// </para>
+/// <para>
+/// 对比：[QueryMap] 使用 FlattenObjectToQueryParams() 展平 POCO 对象，
+/// 该方法依赖运行时反射（GetProperties/GetValue），AOT 裁剪后属性元数据丢失，
+/// 已标注 [RequiresUnreferencedCode]，不适用于 Native AOT。
+/// </para>
+/// </remarks>
+[HttpClientApi(HttpClient = "IEnhancedHttpClient")]
+public interface ISearchApi
+{
+    [Get("/api/search")]
+    Task<List<UserDto>?> SearchAsync(
+        [Query] string? keyword = null,
+        [Query] int? minAge = null,
+        [Query] int? maxAge = null,
+        [Query] bool? activeOnly = null);
+}
+
+// ─────────────────────────────────────────────────────────────
 // 非 AOT 安全路径 — 仅文档说明，不在 AOT 构建中使用
 // ─────────────────────────────────────────────────────────────
 
@@ -49,13 +79,15 @@ public interface IAuthApi
  * ⚠️ QueryMap 路径在 Native AOT 下不安全：
  *
  * [HttpClientApi(HttpClient = "IEnhancedHttpClient")]
- * public interface ISearchApi
+ * public interface IComplexSearchApi
  * {
- *     // QueryMap 使用运行时反射 (GetProperties/GetValue) 展平 POCO 对象，
+ *     // QueryMap 使用 FlattenObjectToQueryParams() 展平 POCO 对象，
+ *     // 该方法依赖运行时反射 (GetProperties/GetValue)，
  *     // AOT 裁剪后属性元数据丢失，查询参数会静默为空。
  *     // 已标注 [RequiresUnreferencedCode]，AOT 分析器会产生 IL2026 警告。
  *     //
- *     // AOT 替代方案：使用 [Query] 逐个参数声明，或实现 IQueryParameter 接口。
+ *     // AOT 替代方案（已在上方 ISearchApi 中验证）：
+ *     // 使用 [Query] 逐个参数声明，源生成器在编译期发射内联代码。
  *     [Get("/api/search")]
  *     Task<List<UserDto>?> SearchAsync([QueryMap] SearchCriteria criteria);
  * }
