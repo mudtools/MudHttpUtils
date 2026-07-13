@@ -11,6 +11,10 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Encodings.Web;
 
+#if NET6_0_OR_GREATER
+using System.Diagnostics.CodeAnalysis;
+#endif
+
 namespace Mud.HttpUtils;
 
 /// <summary>
@@ -193,7 +197,16 @@ public class DefaultSensitiveDataMasker : ISensitiveDataMasker
     /// <remarks>
     /// 该方法会递归遍历对象的所有公共属性，对标记有 <c>SensitiveDataAttribute</c> 的字符串属性进行掩码处理。
     /// 使用引用相等性检测来避免循环引用问题，并限制最大递归深度以防止栈溢出。
+    /// <para>
+    /// <b>Native AOT 注意</b>：此方法使用反射遍历对象属性和特性，在 Native AOT 裁剪后
+    /// 属性/特性元数据可能被裁剪导致漏脱敏。AOT 场景下请使用编译期安全的
+    /// <see cref="ISensitiveDataMasker"/> 实现（如基于字典的 <c>StaticSensitiveDataMasker</c>）。
+    /// </para>
     /// </remarks>
+#if NET7_0_OR_GREATER
+    [RequiresUnreferencedCode("脱敏使用反射遍历对象属性和特性，Native AOT 下属性/特性可能被裁剪导致漏脱敏。请改用编译期安全的 ISensitiveDataMasker 实现。")]
+    [RequiresDynamicCode("脱敏使用反射遍历对象属性和特性，Native AOT 不支持。请改用编译期安全的 ISensitiveDataMasker 实现。")]
+#endif
     public string MaskObject(object obj)
     {
         return MaskObjectInternal(obj, 0, new HashSet<object>(ReferenceEqualityComparer.Instance));

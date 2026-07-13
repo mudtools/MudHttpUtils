@@ -1,6 +1,6 @@
 // -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
-//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
@@ -25,7 +25,8 @@ public sealed class XmlSerialize
     /// <typeparam name="T">对象类型</typeparam>
     /// <param name="obj">要序列化的对象</param>
     /// <returns>XML字符串</returns>
-#if NET6_0_OR_GREATER
+#if NET7_0_OR_GREATER
+    [RequiresDynamicCode("XML 序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
     public static string Serialize<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
         T>(T obj)
@@ -43,7 +44,8 @@ public sealed class XmlSerialize
     /// <param name="obj">要序列化的对象</param>
     /// <param name="encoding">编码方式</param>
     /// <returns>XML字符串</returns>
-#if NET6_0_OR_GREATER
+#if NET7_0_OR_GREATER
+    [RequiresDynamicCode("XML 序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
     public static string Serialize<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
         T>(T obj, Encoding encoding)
@@ -93,7 +95,8 @@ public sealed class XmlSerialize
     /// <typeparam name="T">对象类型</typeparam>
     /// <param name="xml">XML字符串</param>
     /// <returns>反序列化后的对象</returns>
-#if NET6_0_OR_GREATER
+#if NET7_0_OR_GREATER
+    [RequiresDynamicCode("XML 反序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
     public static T Deserialize<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
         T>(string xml)
@@ -111,7 +114,8 @@ public sealed class XmlSerialize
     /// <param name="xml">XML字符串</param>
     /// <param name="encoding">编码方式</param>
     /// <returns>反序列化后的对象</returns>
-#if NET6_0_OR_GREATER
+#if NET7_0_OR_GREATER
+    [RequiresDynamicCode("XML 反序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
     public static T Deserialize<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
         T>(string xml, Encoding encoding)

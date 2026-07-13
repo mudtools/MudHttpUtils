@@ -29,6 +29,12 @@ internal class ParameterInfo
     public string Type { get; set; } = string.Empty;
 
     /// <summary>
+    /// 参数的 Roslyn 类型符号（可选，用于编译期属性枚举等场景）。
+    /// 在参数来自语义分析时设置；在测试/模拟场景可能为 null。
+    /// </summary>
+    public ITypeSymbol? TypeSymbol { get; set; }
+
+    /// <summary>
     /// 参数特性列表
     /// </summary>
     public IReadOnlyList<ParameterAttributeInfo> Attributes { get; set; } = [];

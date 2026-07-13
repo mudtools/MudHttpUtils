@@ -400,6 +400,12 @@ internal class RequestBuilder
     /// <summary>
     /// 生成 URL 编码的 Body 参数（用于 [SerializationMethod(FormUrlEncoded)] + [Body]）
     /// </summary>
+    /// <remarks>
+    /// AOT 改造（Task 2）：原实现使用运行时反射 <c>GetType().GetProperties()</c> 枚举属性，
+    /// 在 Native AOT 裁剪后属性元数据丢失导致表单体为空。现改为编译期枚举属性并发射静态属性访问，
+    /// 彻底消除反射依赖。若 <see cref="ParameterInfo.TypeSymbol"/> 不可用（如测试模拟场景），
+    /// 则回退到原始反射路径并保留 IL2072 压制。
+    /// </remarks>
     private void GenerateUrlEncodedBodyParameter(StringBuilder codeBuilder, ParameterInfo bodyParam)
     {
         // 非可空值类型永远不会为 null；已通过 ParameterValidationHelper 验证的参数也无需重复检查
@@ -411,24 +417,69 @@ internal class RequestBuilder
             codeBuilder.AppendLine($"            if ({bodyParam.Name} != null)");
             codeBuilder.AppendLine("            {");
         }
-        codeBuilder.AppendLine($"#if NET6_0_OR_GREATER");
-        codeBuilder.AppendLine($"#pragma warning disable IL2072");
-        codeBuilder.AppendLine($"#endif");
-        codeBuilder.AppendLine($"                var __bodyFormParams = new Dictionary<string, string>();");
-        codeBuilder.AppendLine($"                var __bodyProperties = {bodyParam.Name}.GetType().GetProperties();");
-        codeBuilder.AppendLine($"                foreach (var __prop in __bodyProperties)");
-        codeBuilder.AppendLine("                {");
-        codeBuilder.AppendLine($"                    var __val = __prop.GetValue({bodyParam.Name});");
-        codeBuilder.AppendLine("                    if (__val != null)");
-        codeBuilder.AppendLine("                    {");
-        codeBuilder.AppendLine("                        __bodyFormParams[__prop.Name] = __val.ToString() ?? \"\";");
-        codeBuilder.AppendLine("                    }");
-        codeBuilder.AppendLine("                }");
-        codeBuilder.AppendLine("                using var __bodyFormContent = new System.Net.Http.FormUrlEncodedContent(__bodyFormParams);");
-        codeBuilder.AppendLine("                __httpRequest.Content = __bodyFormContent;");
-        codeBuilder.AppendLine($"#if NET6_0_OR_GREATER");
-        codeBuilder.AppendLine($"#pragma warning restore IL2072");
-        codeBuilder.AppendLine($"#endif");
+
+        // 尝试使用编译期类型符号枚举属性（AOT 安全路径）
+        if (bodyParam.TypeSymbol != null)
+        {
+            var properties = bodyParam.TypeSymbol.GetMembers()
+                .OfType<IPropertySymbol>()
+                .Where(p => p.DeclaredAccessibility == Accessibility.Public
+                            && !p.IsStatic
+                            && p.GetMethod != null
+                            && p.GetMethod.DeclaredAccessibility == Accessibility.Public)
+                .ToList();
+
+            codeBuilder.AppendLine("                var __bodyFormParams = new Dictionary<string, string>();");
+
+            foreach (var prop in properties)
+            {
+                var propName = prop.Name;
+                var isValueType = prop.Type.IsValueType;
+                var isNullable = prop.Type.NullableAnnotation == NullableAnnotation.Annotated
+                                 || (isValueType && prop.Type.OriginalDefinition?.SpecialType == SpecialType.System_Nullable_T);
+
+                if (isValueType && !isNullable)
+                {
+                    // 非可空值类型：直接 ToString()
+                    codeBuilder.AppendLine($"                __bodyFormParams[\"{propName}\"] = {bodyParam.Name}.{propName}.ToString() ?? \"\";");
+                }
+                else
+                {
+                    // 引用类型或可空值类型：加 null 检查
+                    codeBuilder.AppendLine($"                var __val_{propName} = {bodyParam.Name}.{propName};");
+                    codeBuilder.AppendLine($"                if (__val_{propName} != null)");
+                    codeBuilder.AppendLine($"                {{");
+                    codeBuilder.AppendLine($"                    __bodyFormParams[\"{propName}\"] = __val_{propName}.ToString() ?? \"\";");
+                    codeBuilder.AppendLine($"                }}");
+                }
+            }
+
+            codeBuilder.AppendLine("                using var __bodyFormContent = new System.Net.Http.FormUrlEncodedContent(__bodyFormParams);");
+            codeBuilder.AppendLine("                __httpRequest.Content = __bodyFormContent;");
+        }
+        else
+        {
+            // 回退路径：TypeSymbol 不可用时使用反射（仅测试/模拟场景）
+            codeBuilder.AppendLine($"#if NET6_0_OR_GREATER");
+            codeBuilder.AppendLine($"#pragma warning disable IL2072");
+            codeBuilder.AppendLine($"#endif");
+            codeBuilder.AppendLine($"                var __bodyFormParams = new Dictionary<string, string>();");
+            codeBuilder.AppendLine($"                var __bodyProperties = {bodyParam.Name}.GetType().GetProperties();");
+            codeBuilder.AppendLine($"                foreach (var __prop in __bodyProperties)");
+            codeBuilder.AppendLine("                {");
+            codeBuilder.AppendLine($"                    var __val = __prop.GetValue({bodyParam.Name});");
+            codeBuilder.AppendLine("                    if (__val != null)");
+            codeBuilder.AppendLine("                    {");
+            codeBuilder.AppendLine("                        __bodyFormParams[__prop.Name] = __val.ToString() ?? \"\";");
+            codeBuilder.AppendLine("                    }");
+            codeBuilder.AppendLine("                }");
+            codeBuilder.AppendLine("                using var __bodyFormContent = new System.Net.Http.FormUrlEncodedContent(__bodyFormParams);");
+            codeBuilder.AppendLine("                __httpRequest.Content = __bodyFormContent;");
+            codeBuilder.AppendLine($"#if NET6_0_OR_GREATER");
+            codeBuilder.AppendLine($"#pragma warning restore IL2072");
+            codeBuilder.AppendLine($"#endif");
+        }
+
         if (needsNullCheck)
         {
             codeBuilder.AppendLine("            }");

@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Mud.HttpUtils.Client;
+using System.Text.Json;
 #if NET6_0_OR_GREATER
 using Microsoft.Extensions.Hosting;
 #endif
@@ -612,7 +613,9 @@ public static class HttpClientServiceCollectionExtensions
             }
         }
 
-        return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, options);
+        var jsonOptions = sp.GetService<IOptions<JsonSerializerOptions>>();
+
+        return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, options, jsonOptions: jsonOptions);
     }
 
     /// <summary>

@@ -6,6 +6,8 @@
 // -----------------------------------------------------------------------
 
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using System.Text.Json;
 
 namespace Mud.HttpUtils;
 
@@ -32,6 +34,7 @@ public class HttpClientFactoryEnhancedClient : EnhancedHttpClient
     private readonly IEncryptionProvider? _encryptionProvider;
     private readonly EnhancedHttpClientOptions _options;
     private readonly Uri? _overrideBaseAddress;
+    private readonly IOptions<JsonSerializerOptions>? _jsonOptions;
 
     protected override IEncryptionProvider? EncryptionProvider => _encryptionProvider;
 
@@ -43,20 +46,23 @@ public class HttpClientFactoryEnhancedClient : EnhancedHttpClient
     /// <param name="encryptionProvider">加密提供器（可选）</param>
     /// <param name="options">配置选项（可选）。</param>
     /// <param name="overrideBaseAddress">覆盖的基地址（可选）。</param>
+    /// <param name="jsonOptions">JSON 序列化选项（可选，用于 Native AOT 场景注入 JsonSerializerContext）。</param>
     /// <exception cref="ArgumentNullException">factory 或 clientName 为 null</exception>
     public HttpClientFactoryEnhancedClient(
         IHttpClientFactory factory,
         string clientName,
         IEncryptionProvider? encryptionProvider = null,
         EnhancedHttpClientOptions? options = null,
-        Uri? overrideBaseAddress = null)
-        : base(CreateClient(factory, clientName, overrideBaseAddress), options)
+        Uri? overrideBaseAddress = null,
+        IOptions<JsonSerializerOptions>? jsonOptions = null)
+        : base(CreateClient(factory, clientName, overrideBaseAddress), options, jsonOptions)
     {
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
         _clientName = clientName ?? throw new ArgumentNullException(nameof(clientName));
         _encryptionProvider = encryptionProvider;
         _options = options ?? new EnhancedHttpClientOptions();
         _overrideBaseAddress = overrideBaseAddress;
+        _jsonOptions = jsonOptions;
     }
 
     private static HttpClient CreateClient(IHttpClientFactory factory, string name, Uri? overrideBaseAddress)
@@ -95,7 +101,8 @@ public class HttpClientFactoryEnhancedClient : EnhancedHttpClient
             _clientName,
             _encryptionProvider,
             _options,
-            baseAddress);
+            baseAddress,
+            _jsonOptions);
     }
 
 }

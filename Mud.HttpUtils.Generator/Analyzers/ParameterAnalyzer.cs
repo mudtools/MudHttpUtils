@@ -58,6 +58,7 @@ internal static class ParameterAnalyzer
         {
             Name = parameter.Name,
             Type = TypeSymbolHelper.GetTypeFullName(parameter.Type),
+            TypeSymbol = parameter.Type,
             Attributes = parameter.GetAttributes().Select(attr => new ParameterAttributeInfo
             {
                 Name = attr.AttributeClass?.Name ?? "",
