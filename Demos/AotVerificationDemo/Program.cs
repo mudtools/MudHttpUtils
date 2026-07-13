@@ -50,21 +50,12 @@ public class Program
     {
         Console.WriteLine("--- 6. OAuth2 令牌序列化验证（库内置 JsonContext）---");
 
-        // 模拟 OAuth2 令牌响应 JSON
-        var tokenJson = "{\"access_token\":\"test-access-token\",\"token_type\":\"Bearer\",\"expires_in\":3600,\"refresh_token\":\"test-refresh-token\"}";
-
         // 使用 StandardOAuth2TokenManager 的 s_jsonOptions 反序列化
         // 验证 OAuth2JsonContext.Default 已正确注入
+        // AOT 安全：直接使用 JsonTypeInfo<T> 重载，避免 JsonSerializerOptions 传递导致的 IL2026/IL3050 告警
 #if NET8_0_OR_GREATER
-        var options = new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true,
-            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-            TypeInfoResolver = Mud.HttpUtils.OAuth2JsonContext.Default
-        };
-
         var introspectionJson = "{\"active\":true,\"client_id\":\"test-client\",\"username\":\"testuser\",\"scope\":\"read write\"}";
-        var introspectionResult = JsonSerializer.Deserialize<TokenIntrospectionResult>(introspectionJson, options);
+        var introspectionResult = JsonSerializer.Deserialize(introspectionJson, Mud.HttpUtils.OAuth2JsonContext.Default.TokenIntrospectionResult);
 
         if (introspectionResult != null && introspectionResult.Active && introspectionResult.ClientId == "test-client")
         {

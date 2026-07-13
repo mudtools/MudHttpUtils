@@ -488,6 +488,12 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
     }
 
     /// <inheritdoc />
+    public string EncryptContent<T>(T content, string propertyName = "data")
+    {
+        return ((IEncryptableHttpClient)_innerClient).EncryptContent(content, propertyName);
+    }
+
+    /// <inheritdoc />
     public string DecryptContent(string encryptedContent)
     {
         return ((IEncryptableHttpClient)_innerClient).DecryptContent(encryptedContent);

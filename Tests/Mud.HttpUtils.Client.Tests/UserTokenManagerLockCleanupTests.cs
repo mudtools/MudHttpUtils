@@ -142,9 +142,10 @@ public class UserTokenManagerLockCleanupTests
         private int GetUserLockCount()
         {
             // 通过反射获取 _userLocks 的 Count
+            // 注意：_userLocks 类型为 ConcurrentDictionary<string, Lazy<SemaphoreSlim>>（NEW-TM-06 修复）
             var field = typeof(UserTokenManagerBase)
                 .GetField("_userLocks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (field?.GetValue(this) is System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> dict)
+            if (field?.GetValue(this) is System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<SemaphoreSlim>> dict)
             {
                 return dict.Count;
             }

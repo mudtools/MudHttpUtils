@@ -195,6 +195,9 @@ public class ServiceCollectionExtensionsTests
         public string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json)
             => string.Empty;
 
+        public string EncryptContent<T>(T content, string propertyName = "data")
+            => string.Empty;
+
         public string DecryptContent(string encryptedContent)
             => string.Empty;
 

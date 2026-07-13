@@ -1052,6 +1052,47 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         return JsonSerializer.Serialize(result, _jsonOptions);
     }
 
+    /// <summary>
+    /// 加密内容对象（AOT 安全泛型重载）。
+    /// </summary>
+    /// <typeparam name="T">内容对象的类型。该类型必须在 <c>JsonSerializerContext</c> 中声明。</typeparam>
+    /// <param name="content">要加密的内容对象。</param>
+    /// <param name="propertyName">加密数据所在的属性名称，默认为 "data"。</param>
+    /// <returns>加密后的字符串内容。</returns>
+    /// <remarks>
+    /// 使用编译期类型 <typeparamref name="T"/> 进行 JSON 序列化，不依赖运行时反射，
+    /// 适用于 Native AOT 场景。仅支持 JSON 序列化（不支持 XML）。
+    /// 外层 JSON 包装使用 <see cref="Utf8JsonWriter"/> 直接写入，无反射开销。
+    /// </remarks>
+    public string EncryptContent<T>(T content, string propertyName = "data")
+    {
+        if (content == null)
+            throw new ArgumentNullException(nameof(content));
+        if (string.IsNullOrEmpty(propertyName))
+            throw new ArgumentException("属性名不能为空", nameof(propertyName));
+
+        if (EncryptionProvider == null)
+            throw new InvalidOperationException(
+                "未配置加密提供器。请通过 AddMudHttpClient 注册时配置 AesEncryptionOptions，" +
+                "或注册自定义 IEncryptionProvider 实现。");
+
+        // AOT 安全：使用编译期类型 T 序列化，不使用 content.GetType()
+        var serializedContent = JsonSerializer.Serialize(content, _jsonOptions);
+        var encryptedData = EncryptionProvider.Encrypt(serializedContent);
+
+        // AOT 安全：使用 Utf8JsonWriter 直接构建外层 JSON，避免 Dictionary<string, object> 反射序列化
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WritePropertyName(propertyName);
+            writer.WriteStringValue(encryptedData);
+            writer.WriteEndObject();
+            writer.Flush();
+        }
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
     /// <inheritdoc cref="IEncryptableHttpClient.DecryptContent"/>
     /// <param name="encryptedContent">要解密的加密字符串。</param>
     /// <returns>解密后的原始字符串。</returns>

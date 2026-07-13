@@ -60,6 +60,15 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
         }
 
         codeBuilder.AppendLine($"    {GeneratedCodeConsts.HttpGeneratedCodeAttribute}");
+        // AOT Phase 0.1：压制生成代码中 JsonSerializer.Serialize<T>(value, _jsonSerializerOptions) 的 IL2026/IL3050 误报。
+        // _jsonSerializerOptions 通过 DI 注入了 JsonSerializerContext resolver，T 的类型元数据已由消费方的 JsonSerializerContext 保留。
+        // AOT 分析器无法静态追踪 DI 数据流，产生已知误报。仅在有 UnconditionalSuppressMessageAttribute 的 TFM 上生成。
+        codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
+        codeBuilder.AppendLine("    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(\"ReflectionAnalysis\", \"IL2026\",");
+        codeBuilder.AppendLine("        Justification = \"生成的 JSON 序列化通过 _jsonSerializerOptions（DI 注入的 JsonSerializerContext resolver）保证 AOT 安全，T 的类型元数据已由消费方的 JsonSerializerContext 保留。\")]");
+        codeBuilder.AppendLine("    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(\"AotAnalysis\", \"IL3050\",");
+        codeBuilder.AppendLine("        Justification = \"生成的 JSON 序列化通过 _jsonSerializerOptions（DI 注入的 JsonSerializerContext resolver）保证 AOT 安全，T 的类型元数据已由消费方的 JsonSerializerContext 保留.\")]");
+        codeBuilder.AppendLine("#endif");
         // NEW-GEN-05 说明：使用 internal 强制通过 DI 接口消费，符合"面向接口编程"原则。
         // 跨程序集测试场景可通过 InternalsVisibleTo 配置。
         codeBuilder.AppendLine($"    internal {classKeyword} {context.ClassName}{inheritance}");

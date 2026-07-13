@@ -155,6 +155,11 @@ internal class QueryParameterBinder : IParameterBinder
 
     private static void GenerateComplexQueryParameter(StringBuilder codeBuilder, ParameterInfo param, string indent)
     {
+        // AOT 改造（Phase 4）：当 TypeSymbol 可用时，编译期枚举属性并生成直接属性访问代码，
+        // 消除运行时反射。若 TypeSymbol 不可用（测试/模拟场景），回退到 FlattenObjectToQueryParams。
+        if (TryGenerateInlineQueryFlattening(codeBuilder, param, indent, ",", includeNullValues: false, useJsonSerialization: true, urlEncode: true))
+            return;
+
         codeBuilder.AppendLine($"{indent}if ({param.Name} != null)");
         codeBuilder.AppendLine($"{indent}{{");
         codeBuilder.AppendLine($"{indent}    FlattenObjectToQueryParams({param.Name}, string.Empty, \",\", __queryParams, false, true, true, __rawQueryPairs);");
@@ -279,9 +284,226 @@ internal class QueryParameterBinder : IParameterBinder
             && serMethod is int enumVal && enumVal != 0;
         var urlEncode = !(attr.NamedArguments.TryGetValue("UrlEncode", out var urlEnc) && urlEnc is false);
 
+        // AOT 改造（Phase 4）：当 TypeSymbol 可用时，编译期枚举属性并生成直接属性访问代码，
+        // 消除运行时反射。若 TypeSymbol 不可用（测试/模拟场景），回退到 FlattenObjectToQueryParams。
+        if (TryGenerateInlineQueryFlattening(codeBuilder, param, indent, separator, includeNull, useJson, urlEncode))
+            return;
+
         codeBuilder.AppendLine($"{indent}if ({param.Name} != null)");
         codeBuilder.AppendLine($"{indent}{{");
         codeBuilder.AppendLine($"{indent}    FlattenObjectToQueryParams({param.Name}, string.Empty, \"{StringEscapeHelper.EscapeString(separator)}\", __queryParams, {includeNull.ToString().ToLowerInvariant()}, {useJson.ToString().ToLowerInvariant()}, {urlEncode.ToString().ToLowerInvariant()}, __rawQueryPairs);");
+        codeBuilder.AppendLine($"{indent}}}");
+    }
+
+    // ============ AOT 改造（Phase 4）：内联查询参数展平 ============
+
+    /// <summary>
+    /// 尝试生成 AOT 安全的内联查询参数展平代码。
+    /// 当 <see cref="ParameterInfo.TypeSymbol"/> 可用时，在编译期枚举属性并生成直接属性访问代码，
+    /// 消除运行时反射。若 TypeSymbol 不可用（测试/模拟场景），返回 false 以回退到
+    /// <c>FlattenObjectToQueryParams</c>。
+    /// </summary>
+    private static bool TryGenerateInlineQueryFlattening(
+        StringBuilder codeBuilder, ParameterInfo param, string indent,
+        string separator, bool includeNullValues,
+        bool useJsonSerialization, bool urlEncode)
+    {
+        if (param.TypeSymbol == null)
+            return false;
+
+        var typeSymbol = param.TypeSymbol;
+
+        // 检查类型是否实现 IQueryParameter
+        var implementsIQueryParameter = typeSymbol.AllInterfaces
+            .Any(i => i.Name == "IQueryParameter" &&
+                       i.ContainingNamespace?.ToDisplayString() == "Mud.HttpUtils");
+
+        codeBuilder.AppendLine($"{indent}if ({param.Name} != null)");
+        codeBuilder.AppendLine($"{indent}{{");
+
+        if (implementsIQueryParameter)
+        {
+            GenerateIQueryParameterInline(codeBuilder, param.Name, indent + "    ",
+                string.Empty, separator, includeNullValues, urlEncode);
+        }
+        else
+        {
+            // 枚举继承链上的所有公共可读属性（与运行时 GetProperties() 行为一致）
+            var properties = CollectPublicProperties(typeSymbol);
+            foreach (var prop in properties)
+            {
+                GeneratePropertyFlatteningInline(codeBuilder, param.Name, prop, indent + "    ",
+                    string.Empty, separator, includeNullValues, useJsonSerialization, urlEncode);
+            }
+        }
+
+        codeBuilder.AppendLine($"{indent}}}");
+        return true;
+    }
+
+    /// <summary>
+    /// 收集类型继承链上的所有公共可读属性（与运行时 GetProperties() 行为一致）。
+    /// </summary>
+    private static List<IPropertySymbol> CollectPublicProperties(ITypeSymbol typeSymbol)
+    {
+        var properties = new List<IPropertySymbol>();
+        var currentType = typeSymbol;
+        while (currentType != null && currentType.SpecialType != SpecialType.System_Object)
+        {
+            var declaredProps = currentType.GetMembers()
+                .OfType<IPropertySymbol>()
+                .Where(p => p.DeclaredAccessibility == Accessibility.Public
+                            && !p.IsStatic
+                            && p.GetMethod != null
+                            && p.GetMethod.DeclaredAccessibility == Accessibility.Public);
+            foreach (var prop in declaredProps)
+            {
+                if (!properties.Any(p => p.Name == prop.Name))
+                    properties.Add(prop);
+            }
+            currentType = currentType.BaseType;
+        }
+        return properties;
+    }
+
+    /// <summary>
+    /// 检查类型符号是否实现 IQueryParameter。
+    /// </summary>
+    private static bool ImplementsIQueryParameter(ITypeSymbol typeSymbol)
+    {
+        return typeSymbol.AllInterfaces
+            .Any(i => i.Name == "IQueryParameter" &&
+                       i.ContainingNamespace?.ToDisplayString() == "Mud.HttpUtils");
+    }
+
+    /// <summary>
+    /// 为单个属性生成展平代码（AOT 安全路径）。
+    /// </summary>
+    private static void GeneratePropertyFlatteningInline(
+        StringBuilder codeBuilder, string objName, IPropertySymbol prop, string indent,
+        string prefix, string separator, bool includeNullValues,
+        bool useJsonSerialization, bool urlEncode)
+    {
+        var propName = prop.Name;
+        var key = string.IsNullOrEmpty(prefix) ? propName : prefix + separator + propName;
+        var escapedKey = StringEscapeHelper.EscapeString(key);
+        var propTypeDisplay = prop.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
+            .WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.UseSpecialTypes));
+
+        // 检查属性类型是否实现 IQueryParameter
+        if (ImplementsIQueryParameter(prop.Type))
+        {
+            GenerateIQueryParameterInline(codeBuilder, objName + "." + propName, indent,
+                key, separator, includeNullValues, urlEncode);
+            return;
+        }
+
+        // 判断是否为简单类型（含枚举）
+        var isEnum = prop.Type.TypeKind == TypeKind.Enum;
+        var isSimpleType = TypeDetectionHelper.IsSimpleType(propTypeDisplay) || isEnum;
+
+        if (isSimpleType)
+        {
+            GenerateSimplePropertyFlattening(codeBuilder, objName, propName, prop,
+                indent, escapedKey, includeNullValues, useJsonSerialization, urlEncode);
+        }
+        else
+        {
+            // 复杂类型：回退到 FlattenObjectToQueryParams 处理嵌套属性
+            codeBuilder.AppendLine($"{indent}if ({objName}.{propName} != null)");
+            codeBuilder.AppendLine($"{indent}{{");
+            codeBuilder.AppendLine($"{indent}    FlattenObjectToQueryParams({objName}.{propName}, \"{escapedKey}\", \"{StringEscapeHelper.EscapeString(separator)}\", __queryParams, {includeNullValues.ToString().ToLowerInvariant()}, {useJsonSerialization.ToString().ToLowerInvariant()}, {urlEncode.ToString().ToLowerInvariant()}, __rawQueryPairs);");
+            codeBuilder.AppendLine($"{indent}}}");
+        }
+    }
+
+    /// <summary>
+    /// 为简单类型属性生成展平代码。
+    /// </summary>
+    private static void GenerateSimplePropertyFlattening(
+        StringBuilder codeBuilder, string objName, string propName, IPropertySymbol prop,
+        string indent, string escapedKey, bool includeNullValues,
+        bool useJsonSerialization, bool urlEncode)
+    {
+        var fullAccess = objName + "." + propName;
+        var isValueType = prop.Type.IsValueType;
+        var isNullable = prop.Type.NullableAnnotation == NullableAnnotation.Annotated
+                         || (isValueType && prop.Type.OriginalDefinition?.SpecialType == SpecialType.System_Nullable_T);
+
+        if (isValueType && !isNullable)
+        {
+            // 非可空值类型：始终有值
+            var valueExpr = useJsonSerialization
+                ? $"JsonSerializer.Serialize({fullAccess})"
+                : $"{fullAccess}.ToString() ?? \"\"";
+
+            if (urlEncode)
+                codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{escapedKey}\", {valueExpr});");
+            else
+                codeBuilder.AppendLine($"{indent}__rawQueryPairs.Add(System.Uri.EscapeDataString(\"{escapedKey}\") + \"=\" + {valueExpr});");
+        }
+        else
+        {
+            // 可空值类型或引用类型：需 null 检查
+            var valVar = $"__val_{propName}";
+            codeBuilder.AppendLine($"{indent}var {valVar} = {fullAccess};");
+            codeBuilder.AppendLine($"{indent}if ({valVar} != null)");
+            codeBuilder.AppendLine($"{indent}{{");
+
+            var valueExpr = useJsonSerialization
+                ? $"JsonSerializer.Serialize({valVar})"
+                : $"{valVar}.ToString() ?? \"\"";
+
+            if (urlEncode)
+                codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{escapedKey}\", {valueExpr});");
+            else
+                codeBuilder.AppendLine($"{indent}    __rawQueryPairs.Add(System.Uri.EscapeDataString(\"{escapedKey}\") + \"=\" + {valueExpr});");
+
+            codeBuilder.AppendLine($"{indent}}}");
+
+            if (includeNullValues)
+            {
+                codeBuilder.AppendLine($"{indent}else");
+                codeBuilder.AppendLine($"{indent}{{");
+                if (urlEncode)
+                    codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{escapedKey}\", string.Empty);");
+                else
+                    codeBuilder.AppendLine($"{indent}    __rawQueryPairs.Add(System.Uri.EscapeDataString(\"{escapedKey}\") + \"=\");");
+                codeBuilder.AppendLine($"{indent}}}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// 生成 IQueryParameter.ToQueryParameters() 的内联遍历代码。
+    /// </summary>
+    private static void GenerateIQueryParameterInline(
+        StringBuilder codeBuilder, string objExpr, string indent,
+        string keyPrefix, string separator, bool includeNullValues, bool urlEncode)
+    {
+        var escapedPrefix = StringEscapeHelper.EscapeString(keyPrefix);
+        var escapedSep = StringEscapeHelper.EscapeString(separator);
+
+        codeBuilder.AppendLine($"{indent}foreach (var __kvp in {objExpr}.ToQueryParameters())");
+        codeBuilder.AppendLine($"{indent}{{");
+        // 计算子键：有前缀时拼接，无前缀时直接使用 kvp.Key
+        if (string.IsNullOrEmpty(keyPrefix))
+        {
+            codeBuilder.AppendLine($"{indent}    var __subKey = __kvp.Key;");
+        }
+        else
+        {
+            codeBuilder.AppendLine($"{indent}    var __subKey = \"{escapedPrefix}\" + \"{escapedSep}\" + __kvp.Key;");
+        }
+
+        var condition = includeNullValues ? "true" : "!string.IsNullOrEmpty(__kvp.Value)";
+        codeBuilder.AppendLine($"{indent}    if ({condition})");
+        codeBuilder.AppendLine($"{indent}    {{");
+        if (urlEncode)
+            codeBuilder.AppendLine($"{indent}        __queryParams.Add(__subKey, __kvp.Value ?? string.Empty);");
+        else
+            codeBuilder.AppendLine($"{indent}        __rawQueryPairs.Add(System.Uri.EscapeDataString(__subKey) + \"=\" + (__kvp.Value ?? string.Empty));");
+        codeBuilder.AppendLine($"{indent}    }}");
         codeBuilder.AppendLine($"{indent}}}");
     }
 

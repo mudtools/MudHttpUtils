@@ -336,9 +336,20 @@ internal class RequestBuilder
         }
         else if (isXmlContentType)
         {
-            codeBuilder.AppendLine($"            var __xmlContent = XmlSerialize.Serialize({bodyParam.Name});");
+            // AOT 改造（Phase 5）：使用静态 XmlSerializer 字段替代运行时 XmlSerialize.Serialize，
+            // 消除 [RequiresDynamicCode] 路径。静态字段由 ConstructorGenerator 预生成。
+            var xmlFieldRef = GetXmlSerializerFieldReference(bodyParam.Type);
+            codeBuilder.AppendLine("            var __xmlSettings = new System.Xml.XmlWriterSettings { Encoding = Encoding.UTF8, Indent = true, IndentChars = \"  \", OmitXmlDeclaration = false };");
+            codeBuilder.AppendLine("            using (var __xmlStream = new System.IO.MemoryStream())");
+            codeBuilder.AppendLine("            {");
+            codeBuilder.AppendLine("                using var __xmlWriter = System.Xml.XmlWriter.Create(__xmlStream, __xmlSettings);");
+            codeBuilder.AppendLine("                var __xmlNs = new System.Xml.Serialization.XmlSerializerNamespaces();");
+            codeBuilder.AppendLine("                __xmlNs.Add(\"\", \"\");");
+            codeBuilder.AppendLine($"                {xmlFieldRef}.Serialize(__xmlWriter, {bodyParam.Name}, __xmlNs);");
+            codeBuilder.AppendLine("            }");
+            codeBuilder.AppendLine("            var __xmlContent = Encoding.UTF8.GetString(__xmlStream.ToArray());");
             codeBuilder.AppendLine($"            using var __xmlStrContent = new StringContent(__xmlContent, Encoding.UTF8, {contentTypeExpression});");
-            codeBuilder.AppendLine($"            __httpRequest.Content = __xmlStrContent;");
+            codeBuilder.AppendLine("            __httpRequest.Content = __xmlStrContent;");
         }
         else
         {
@@ -460,9 +471,9 @@ internal class RequestBuilder
                     // 引用类型或可空值类型：加 null 检查
                     codeBuilder.AppendLine($"                var __val_{propName} = {bodyParam.Name}.{propName};");
                     codeBuilder.AppendLine($"                if (__val_{propName} != null)");
-                    codeBuilder.AppendLine($"                {{");
+                    codeBuilder.AppendLine("                {");
                     codeBuilder.AppendLine($"                    __bodyFormParams[\"{propName}\"] = __val_{propName}.ToString() ?? \"\";");
-                    codeBuilder.AppendLine($"                }}");
+                    codeBuilder.AppendLine("                }");
                 }
             }
 

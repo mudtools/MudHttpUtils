@@ -24,33 +24,53 @@ public class AotAttributeAnnotationTests
     [Fact]
     public void EncryptContent_HasRequiresDynamicCodeAttribute()
     {
-        // Arrange
-        var method = typeof(EnhancedHttpClient).GetMethod(
-            nameof(EnhancedHttpClient.EncryptContent),
-            BindingFlags.Public | BindingFlags.Instance);
+        // Arrange — 精确定位 object 重载（具有 [RequiresDynamicCode]）
+        var method = typeof(EnhancedHttpClient).GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .FirstOrDefault(m => m.Name == nameof(EnhancedHttpClient.EncryptContent)
+                && !m.IsGenericMethod
+                && m.GetParameters().Length == 3
+                && m.GetParameters()[0].ParameterType == typeof(object));
 
-        method.Should().NotBeNull("EncryptContent 方法应存在");
+        method.Should().NotBeNull("EncryptContent(object, ...) 方法应存在");
 
         // Act
         var attr = method!.GetCustomAttribute<RequiresDynamicCodeAttribute>();
 
         // Assert: EncryptContent 使用 object/Dictionary 反射式序列化，AOT 不安全
-        attr.Should().NotBeNull("EncryptContent 应标注 [RequiresDynamicCode]");
+        attr.Should().NotBeNull("EncryptContent(object, ...) 应标注 [RequiresDynamicCode]");
         attr!.Message.Should().Contain("AOT");
     }
 
     [Fact]
     public void EncryptContent_RequiresDynamicCodeMessage_ExplainsAotIncompatibility()
     {
-        var method = typeof(EnhancedHttpClient).GetMethod(
-            nameof(EnhancedHttpClient.EncryptContent),
-            BindingFlags.Public | BindingFlags.Instance);
+        var method = typeof(EnhancedHttpClient).GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .FirstOrDefault(m => m.Name == nameof(EnhancedHttpClient.EncryptContent)
+                && !m.IsGenericMethod
+                && m.GetParameters().Length == 3
+                && m.GetParameters()[0].ParameterType == typeof(object));
 
+        method.Should().NotBeNull();
         var attr = method!.GetCustomAttribute<RequiresDynamicCodeAttribute>();
         attr.Should().NotBeNull();
 
         // 消息应包含关键引导信息
         attr!.Message.Should().Contain("强类型");
+    }
+
+    [Fact]
+    public void EncryptContent_GenericOverload_DoesNotHaveRequiresDynamicCodeAttribute()
+    {
+        // 泛型重载 EncryptContent<T> 是 AOT 安全的，不应标注 [RequiresDynamicCode]
+        var method = typeof(EnhancedHttpClient).GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .FirstOrDefault(m => m.Name == nameof(EnhancedHttpClient.EncryptContent)
+                && m.IsGenericMethod
+                && m.GetParameters().Length == 2);
+
+        method.Should().NotBeNull("EncryptContent<T> 泛型重载应存在");
+
+        var attr = method!.GetCustomAttribute<RequiresDynamicCodeAttribute>();
+        attr.Should().BeNull("EncryptContent<T> 是 AOT 安全泛型重载，不应标注 [RequiresDynamicCode]");
     }
 #endif
 

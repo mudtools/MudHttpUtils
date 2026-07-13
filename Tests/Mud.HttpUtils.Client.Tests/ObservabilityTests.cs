@@ -1289,22 +1289,25 @@ public class ObservabilityTests
     // ============ v2 修复：TokenRefreshStatsCollector 动态保留期 ============
 
     [Fact]
-    public void TokenRefreshStatsCollector_SetRetention_Expands_Retention()
+    public void TokenRefreshStatsCollector_SetRetention_Expands_And_Shrinks_Retention()
     {
         // 注意：本测试与 HealthChecksTests 共享 ObservabilityTestCollection，串行执行
-        // 不能假定初始保留期为 5 分钟，仅验证扩大行为
+        // 不能假定初始保留期为 5 分钟，仅验证 SetRetention 行为
+        // NEW-OB-01 修复：SetRetention 允许扩大和缩小保留期，缩小时清理超出新窗口的事件
+
+        // 扩大保留期
         TokenRefreshStatsCollector.SetRetention(TimeSpan.FromMinutes(30));
-
         TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(30));
 
-        // 重新设回较小值不应生效（仅允许扩大）
+        // 缩小保留期（NEW-OB-01：允许缩小，并清理超出新窗口的事件）
         TokenRefreshStatsCollector.SetRetention(TimeSpan.FromMinutes(1));
-        TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(30));
+        TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(1));
 
-        // 负值不应生效
+        // 零值/负值不应生效
         TokenRefreshStatsCollector.SetRetention(TimeSpan.Zero);
-        TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(30));
+        TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(1));
 
+        // 再次扩大保留期
         TokenRefreshStatsCollector.SetRetention(TimeSpan.FromMinutes(60));
         TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(60));
     }

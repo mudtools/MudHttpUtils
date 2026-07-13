@@ -116,10 +116,10 @@ jobs:
           sudo apt-get install -y clang zlib1g-dev
 
       - name: Publish AOT (net10.0)
-        run: dotnet publish Demos/AotVerificationDemo/AotVerificationDemo.csproj -c Release -f net10.0 -r ${{ matrix.rid }}
+        run: dotnet publish Demos/AotVerificationDemo/AotVerificationDemo.csproj -c Release -f net10.0 -r ${{ matrix.rid }} -p:AotStrictMode=true
 
       - name: Publish AOT (net8.0)
-        run: dotnet publish Demos/AotVerificationDemo/AotVerificationDemo.csproj -c Release -f net8.0 -r ${{ matrix.rid }}
+        run: dotnet publish Demos/AotVerificationDemo/AotVerificationDemo.csproj -c Release -f net8.0 -r ${{ matrix.rid }} -p:AotStrictMode=true
 
       - name: Run AOT binary (net10.0) and verify AOT_OK
         shell: bash
