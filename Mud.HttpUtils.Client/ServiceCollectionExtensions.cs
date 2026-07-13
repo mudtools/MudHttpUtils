@@ -68,8 +68,7 @@ public static class HttpClientServiceCollectionExtensions
             return new MemoryHttpResponseCache(maxCacheSize, cleanupInterval);
         });
 
-        // 临时调试：注释掉 RegisterNamedClient
-        // RegisterNamedClient(services, clientName, setAsDefault);
+        RegisterNamedClient(services, clientName, setAsDefault);
 
         return httpClientBuilder;
     }
