@@ -65,6 +65,12 @@ public static class MudHttpOpenTelemetryExtensions
     /// builder.Services.AddMudHttpOpenTelemetry(builder.Configuration);
     /// </code>
     /// </example>
+#if NET6_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Microsoft.Extensions.Configuration.ConfigurationBinder", "IL2026:RequiresUnreferencedCode",
+        Justification = "OTel 配置绑定在 AOT 下需通过委托式重载 AddMudHttpOpenTelemetry(Action<MudHttpOpenTelemetryOptions>) 替代。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050:RequiresDynamicCode",
+        Justification = "OTel 配置绑定在 AOT 下需通过委托式重载替代。")]
+#endif
     public static OpenTelemetryBuilder AddMudHttpOpenTelemetry(
         this IServiceCollection services,
         IConfiguration configuration,

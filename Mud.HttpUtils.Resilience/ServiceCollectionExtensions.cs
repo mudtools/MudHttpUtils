@@ -98,6 +98,12 @@ public static class ServiceCollectionExtensions
     /// services.AddMudHttpResilience(Configuration);
     /// </code>
     /// </example>
+#if NET6_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Microsoft.Extensions.Configuration.ConfigurationBinder", "IL2026:RequiresUnreferencedCode",
+        Justification = "配置绑定路径在 AOT 下需通过委托式重载 AddMudHttpResilience(Action<ResilienceOptions>) 替代。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050:RequiresDynamicCode",
+        Justification = "配置绑定路径在 AOT 下需通过委托式重载替代。")]
+#endif
     public static IServiceCollection AddMudHttpResilience(
         this IServiceCollection services,
         IConfiguration configuration,

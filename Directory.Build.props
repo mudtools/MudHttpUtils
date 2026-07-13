@@ -17,7 +17,7 @@
 		<Authors>Mud Studio</Authors>
 		<Company>Mud Studio</Company>
 		<LangVersion>latest</LangVersion>
-		<NoWarn>CA1707;CA1021;CA1822;RS1035</NoWarn>
+		<NoWarn>CA1707;CA1021;CA1822;RS1035;NETSDK1210</NoWarn>
 		<AnalyzerLanguage>cs</AnalyzerLanguage>
 		<InjectIsExternalInitOnLegacy>true</InjectIsExternalInitOnLegacy>
 		<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
@@ -26,11 +26,16 @@
 		<BaseOutputPath>..\bin</BaseOutputPath>
 	</PropertyGroup>
 
-	<!-- AOT 兼容性配置：仅在 .NET 7+ TFM 上启用 AOT 分析器。
+	<!-- AOT 兼容性配置：仅在 .NET 8+ TFM 上启用 AOT 分析器。
 	     netstandard2.0 和 net6.0 不支持 AOT 分析器，设置 IsAotCompatible 无实际效果。
 	     各 csproj 不再单独设置 IsAotCompatible/EnableAotAnalyzer，统一由此处管控。 -->
 	<PropertyGroup Condition="'$(TargetFramework)' != 'netstandard2.0' AND '$(TargetFramework)' != 'net6.0' AND '$(IsAotCompatible)' == ''">
 		<IsAotCompatible>true</IsAotCompatible>
 		<EnableAotAnalyzer>true</EnableAotAnalyzer>
+	</PropertyGroup>
+
+	<!-- netstandard2.0/net6.0 不支持 AOT 分析器，抑制 NETSDK1210 噪声告警 -->
+	<PropertyGroup Condition="'$(TargetFramework)' == 'netstandard2.0' OR '$(TargetFramework)' == 'net6.0'">
+		<NoWarn>$(NoWarn);NETSDK1210</NoWarn>
 	</PropertyGroup>
 </Project>

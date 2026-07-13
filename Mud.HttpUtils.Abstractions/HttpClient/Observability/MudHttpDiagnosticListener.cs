@@ -34,6 +34,10 @@ public sealed class MudHttpDiagnosticListener : DiagnosticListener
     /// </summary>
     /// <param name="eventName">事件名称（来自 <see cref="MudHttpDiagnosticNames"/>）。</param>
     /// <param name="payloadFactory">事件负载工厂，仅在存在订阅者时调用。</param>
+#if NET6_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("System.Diagnostics.DiagnosticSource", "IL2026:RequiresUnreferencedCode",
+        Justification = "诊断负载类型为编译期已知的 record/class 类型（HttpRequestDiagnosticPayload 等），AOT 下元数据不会被裁剪。DiagnosticSource.Write 的 IL2026 是对 object 负载的通用警告，本场景负载类型已确定。")]
+#endif
     public void WriteIfEnabled(string eventName, Func<object?> payloadFactory)
     {
         if (!IsEnabled(eventName))

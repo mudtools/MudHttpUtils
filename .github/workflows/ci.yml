@@ -158,6 +158,69 @@ jobs:
           fi
 
   # ──────────────────────────────────────────────
+  # NuGet 包消费方 AOT 发布验证（PackageReference 路径）
+  # ──────────────────────────────────────────────
+  aot-packageref:
+    name: AOT PackageRef 验证
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Install AOT prerequisites (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang zlib1g-dev
+
+      - name: Restore solution
+        run: dotnet restore Mud.HttpUtils.slnx
+
+      - name: Build solution
+        run: dotnet build Mud.HttpUtils.slnx --no-restore --configuration Release
+
+      - name: Pack all projects to artifacts/
+        run: |
+          dotnet pack Mud.HttpUtils.Abstractions/Mud.HttpUtils.Abstractions.csproj --no-build --configuration Release --output artifacts
+          dotnet pack Mud.HttpUtils.Attributes/Mud.HttpUtils.Attributes.csproj --no-build --configuration Release --output artifacts
+          dotnet pack Mud.HttpUtils.Client/Mud.HttpUtils.Client.csproj --no-build --configuration Release --output artifacts
+          dotnet pack Mud.HttpUtils.Resilience/Mud.HttpUtils.Resilience.csproj --no-build --configuration Release --output artifacts
+          dotnet pack Mud.HttpUtils/Mud.HttpUtils.csproj --no-build --configuration Release --output artifacts
+          dotnet pack Mud.HttpUtils.Generator/Mud.HttpUtils.Generator.csproj --no-build --configuration Release --output artifacts
+          dotnet pack Mud.HttpUtils.OpenTelemetry/Mud.HttpUtils.OpenTelemetry.csproj --no-build --configuration Release --output artifacts
+
+      - name: Restore AotPackageRefDemo (local NuGet source)
+        run: dotnet restore Demos/AotPackageRefDemo/AotPackageRefDemo.csproj
+
+      - name: Publish AOT (PackageReference, net8.0)
+        run: dotnet publish Demos/AotPackageRefDemo/AotPackageRefDemo.csproj -c Release -f net8.0 -r linux-x64 -p:AotStrictMode=true --no-restore -o Demos/AotPackageRefDemo/publish
+
+      - name: Run AOT binary and verify AOT_OK
+        shell: bash
+        run: |
+          BIN_PATH="Demos/AotPackageRefDemo/publish/AotPackageRefDemo"
+          if [ -f "$BIN_PATH" ]; then
+            OUTPUT=$("$BIN_PATH" 2>&1 || true)
+            echo "$OUTPUT"
+            if echo "$OUTPUT" | grep -q "AOT_OK"; then
+              echo "✓ AOT PackageRef verification passed (net8.0)"
+            else
+              echo "✗ AOT PackageRef verification FAILED (net8.0) - AOT_OK not found in output"
+              exit 1
+            fi
+          else
+            echo "Binary not found at $BIN_PATH"
+            exit 1
+          fi
+
+  # ──────────────────────────────────────────────
   # 主项目及子包构建与发布
   # ──────────────────────────────────────────────
   build-and-pack:

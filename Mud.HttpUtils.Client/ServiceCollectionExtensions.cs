@@ -664,6 +664,12 @@ public static class HttpClientServiceCollectionExtensions
     /// }
     /// </code>
     /// </remarks>
+#if NET6_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Microsoft.Extensions.Configuration.ConfigurationBinder", "IL2026:RequiresUnreferencedCode",
+        Justification = "配置绑定路径在 AOT 下需通过委托式重载 AddMudHttpClients(Action<MudHttpClientApplicationOptions>) 替代。选项类型的公共属性在 AOT 下不会被裁剪（均为简单类型）。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050:RequiresDynamicCode",
+        Justification = "配置绑定路径在 AOT 下需通过委托式重载替代。")]
+#endif
     public static IServiceCollection AddMudHttpClientsFromConfiguration(
         this IServiceCollection services,
         IConfiguration configuration,

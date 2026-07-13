@@ -1467,6 +1467,10 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// <summary>
     /// 将对象序列化为XML字符串
     /// </summary>
+#if NET6_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("System.Xml.XmlSerializer", "IL2026:RequiresUnreferencedCode",
+        Justification = "XML 序列化路径已通过 XmlSerialize.Serialize 标注 RequiresDynamicCode，AOT 下不支持 XML 序列化。请改用 JSON 序列化。")]
+#endif
     private static string SerializeToXml<T>(T obj, Encoding encoding)
     {
         try
@@ -1482,6 +1486,10 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// <summary>
     /// 从XML字符串反序列化为对象
     /// </summary>
+#if NET6_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("System.Xml.XmlSerializer", "IL2026:RequiresUnreferencedCode",
+        Justification = "XML 反序列化路径已通过 XmlSerialize.Deserialize 标注 RequiresDynamicCode，AOT 下不支持 XML 序列化。请改用 JSON 序列化。")]
+#endif
     private static T? DeserializeFromXml<T>(string xml, Encoding encoding)
     {
         try

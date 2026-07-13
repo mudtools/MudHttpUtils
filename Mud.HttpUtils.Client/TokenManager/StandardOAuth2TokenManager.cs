@@ -246,7 +246,11 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 #endif
 
+#if NET8_0_OR_GREATER
+        var result = JsonSerializer.Deserialize(json, OAuth2JsonContext.Default.TokenIntrospectionResult);
+#else
         var result = JsonSerializer.Deserialize<TokenIntrospectionResult>(json, s_jsonOptions);
+#endif
         return result ?? new TokenIntrospectionResult();
     }
 
@@ -349,7 +353,11 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 #endif
 
+#if NET8_0_OR_GREATER
+        var tokenResponse = JsonSerializer.Deserialize(json, OAuth2JsonContext.Default.OAuth2TokenResponse);
+#else
         var tokenResponse = JsonSerializer.Deserialize<OAuth2TokenResponse>(json, s_jsonOptions);
+#endif
         if (tokenResponse == null)
             throw new InvalidOperationException("令牌响应反序列化失败");
 

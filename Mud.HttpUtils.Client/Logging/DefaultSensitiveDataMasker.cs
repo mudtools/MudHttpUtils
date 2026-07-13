@@ -206,6 +206,8 @@ public class DefaultSensitiveDataMasker : ISensitiveDataMasker
 #if NET7_0_OR_GREATER
     [RequiresUnreferencedCode("脱敏使用反射遍历对象属性和特性，Native AOT 下属性/特性可能被裁剪导致漏脱敏。请改用编译期安全的 ISensitiveDataMasker 实现。")]
     [RequiresDynamicCode("脱敏使用反射遍历对象属性和特性，Native AOT 不支持。请改用编译期安全的 ISensitiveDataMasker 实现。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("System.Text.Json", "IL2070:DynamicallyAccessedMembers",
+        Justification = "反射脱敏已标注 RequiresUnreferencedCode 和 RequiresDynamicCode，AOT 下应使用 AotSafeSensitiveDataMasker。IL2070 来自 obj.GetType().GetProperties() 的动态访问，是非 AOT 路径的预期行为。")]
 #endif
     public string MaskObject(object obj)
     {

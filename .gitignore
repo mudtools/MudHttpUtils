@@ -63,6 +63,8 @@
 /Demos/CommonClassPubliceLibrary/obj
 /Demos/HttpClientApiPublicDemo/bin
 /Demos/HttpClientApiPublicDemo/obj
+/Demos/AotPackageRefDemo/bin
+/Demos/AotPackageRefDemo/obj
 /Tools/Mud.HttpUtils.JsonContextScaffolder/bin
 /Tools/Mud.HttpUtils.JsonContextScaffolder/obj
 /Tools/bin

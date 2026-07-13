@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+		<OutputType>Exe</OutputType>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<IsAotCompatible>true</IsAotCompatible>
+		<PublishAot>true</PublishAot>
+		<GenerateDocumentationFile>false</GenerateDocumentationFile>
+		<!-- 此项目不在解决方案中，仅由 CI aot-packageref 作业构建。
+		     需先运行 dotnet pack 生成 NuGet 包到 artifacts/ 目录。
+		     验证 NuGet 包消费方的 AOT 发布体验：源生成器从 analyzers/dotnet/cs 加载、
+		     Attributes 从 lib/netstandard2.0 引用、AOT 发布成功并运行输出 AOT_OK。 -->
+	</PropertyGroup>
+
+	<!-- AOT 严格模式 — 通过 -p:AotStrictMode=true 激活 -->
+	<PropertyGroup Condition="'$(AotStrictMode)' == 'true'">
+		<WarningsAsErrors>IL2026;IL2050;IL2067;IL2070;IL2072;IL3050</WarningsAsErrors>
+	</PropertyGroup>
+
+	<!-- NuGet 包引用（版本跟随 Directory.Build.props 的 $(Version)） -->
+	<ItemGroup>
+		<PackageReference Include="Mud.HttpUtils.Attributes" Version="$(Version)" />
+		<PackageReference Include="Mud.HttpUtils.Client" Version="$(Version)" />
+		<PackageReference Include="Mud.HttpUtils.Generator" Version="$(Version)" />
+		<PackageReference Include="Mud.HttpUtils.Resilience" Version="$(Version)" />
+		<PackageReference Include="Mud.HttpUtils.OpenTelemetry" Version="$(Version)" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
+	</ItemGroup>
+
+</Project>
