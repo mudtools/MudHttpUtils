@@ -405,7 +405,7 @@ internal class QueryParameterBinder : IParameterBinder
         if (isSimpleType)
         {
             GenerateSimplePropertyFlattening(codeBuilder, objName, propName, prop,
-                indent, escapedKey, includeNullValues, useJsonSerialization, urlEncode);
+                indent, escapedKey, includeNullValues, useJsonSerialization, urlEncode, propTypeDisplay);
         }
         else
         {
@@ -429,16 +429,12 @@ internal class QueryParameterBinder : IParameterBinder
     private static void GenerateSimplePropertyFlattening(
         StringBuilder codeBuilder, string objName, string propName, IPropertySymbol prop,
         string indent, string escapedKey, bool includeNullValues,
-        bool useJsonSerialization, bool urlEncode)
+        bool useJsonSerialization, bool urlEncode, string propTypeDisplay)
     {
         var fullAccess = objName + "." + propName;
         var isValueType = prop.Type.IsValueType;
         var isNullable = prop.Type.NullableAnnotation == NullableAnnotation.Annotated
                          || (isValueType && prop.Type.OriginalDefinition?.SpecialType == SpecialType.System_Nullable_T);
-
-        // 获取属性类型的完全限定显示名（用于泛型 Serialize<T> 重载）
-        var propTypeDisplay = prop.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
-            .WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.UseSpecialTypes));
 
         if (isValueType && !isNullable)
         {

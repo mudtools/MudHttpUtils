@@ -26,6 +26,7 @@ jobs:
           - Tests/Mud.HttpUtils.Generator.Tests/Mud.HttpUtils.Generator.Tests.csproj
           - Tests/Mud.HttpUtils.Client.Tests/Mud.HttpUtils.Client.Tests.csproj
           - Tests/Mud.HttpUtils.Resilience.Tests/Mud.HttpUtils.Resilience.Tests.csproj
+          - Tests/Mud.HttpUtils.JsonContextScaffolder.Tests/Mud.HttpUtils.JsonContextScaffolder.Tests.csproj
 
     steps:
       - name: Checkout
