@@ -340,13 +340,12 @@ internal class RequestBuilder
             // 消除 [RequiresDynamicCode] 路径。静态字段由 ConstructorGenerator 预生成。
             var xmlFieldRef = GetXmlSerializerFieldReference(bodyParam.Type);
             codeBuilder.AppendLine("            var __xmlSettings = new System.Xml.XmlWriterSettings { Encoding = Encoding.UTF8, Indent = true, IndentChars = \"  \", OmitXmlDeclaration = false };");
-            codeBuilder.AppendLine("            using (var __xmlStream = new System.IO.MemoryStream())");
-            codeBuilder.AppendLine("            {");
-            codeBuilder.AppendLine("                using var __xmlWriter = System.Xml.XmlWriter.Create(__xmlStream, __xmlSettings);");
-            codeBuilder.AppendLine("                var __xmlNs = new System.Xml.Serialization.XmlSerializerNamespaces();");
-            codeBuilder.AppendLine("                __xmlNs.Add(\"\", \"\");");
-            codeBuilder.AppendLine($"                {xmlFieldRef}.Serialize(__xmlWriter, {bodyParam.Name}, __xmlNs);");
-            codeBuilder.AppendLine("            }");
+            codeBuilder.AppendLine("            using var __xmlStream = new System.IO.MemoryStream();");
+            codeBuilder.AppendLine("            using var __xmlWriter = System.Xml.XmlWriter.Create(__xmlStream, __xmlSettings);");
+            codeBuilder.AppendLine("            var __xmlNs = new System.Xml.Serialization.XmlSerializerNamespaces();");
+            codeBuilder.AppendLine("            __xmlNs.Add(\"\", \"\");");
+            codeBuilder.AppendLine($"            {xmlFieldRef}.Serialize(__xmlWriter, {bodyParam.Name}, __xmlNs);");
+            codeBuilder.AppendLine("            __xmlWriter.Flush();");
             codeBuilder.AppendLine("            var __xmlContent = Encoding.UTF8.GetString(__xmlStream.ToArray());");
             codeBuilder.AppendLine($"            using var __xmlStrContent = new StringContent(__xmlContent, Encoding.UTF8, {contentTypeExpression});");
             codeBuilder.AppendLine("            __httpRequest.Content = __xmlStrContent;");

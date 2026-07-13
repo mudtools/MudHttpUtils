@@ -268,7 +268,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine();
             foreach (var xmlType in _context.XmlResponseTypes.OrderBy(t => t))
             {
-                var safeFieldName = GetXmlSerializerFieldName(xmlType);
+                var safeFieldName = RequestBuilder.GetXmlSerializerFieldReference(xmlType);
                 // AOT: XmlSerializer 构造函数在 .NET 7+ BCL 中已标注 [RequiresDynamicCode]，
                 // AOT 分析器会对此字段初始化器自动产生 IL3050 警告。
                 // 字段声明本身不支持 [RequiresDynamicCode] 特性（仅 class/constructor/method 有效）。
@@ -760,16 +760,4 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine();
     }
 
-    private static string GetXmlSerializerFieldName(string typeName)
-    {
-        var safeName = typeName
-            .Replace("<", "_")
-            .Replace(">", "_")
-            .Replace(",", "_")
-            .Replace(" ", "")
-            .Replace(".", "_")
-            .Replace("[", "_")
-            .Replace("]", "_");
-        return $"_xmlSerializer_{safeName}";
-    }
 }
