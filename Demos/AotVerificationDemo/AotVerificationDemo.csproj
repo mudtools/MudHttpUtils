@@ -19,7 +19,7 @@
 	     将 AOT 相关诊断（IL2xxx/IL3xxx）精确清单式设为错误。
 	     已验证安全的误报通过 [UnconditionalSuppressMessage] 在代码中压制。 -->
 	<PropertyGroup Condition="'$(AotStrictMode)' == 'true'">
-		<WarningsAsErrors>IL2026;IL2050;IL2067;IL2070;IL2072;IL3050</WarningsAsErrors>
+		<WarningsAsErrors>IL2026;IL2046;IL2050;IL2057;IL2067;IL2070;IL2072;IL2075;IL2080;IL3050</WarningsAsErrors>
 	</PropertyGroup>
 
 	<ItemGroup>

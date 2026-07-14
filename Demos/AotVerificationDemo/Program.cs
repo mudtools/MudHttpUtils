@@ -3,7 +3,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Mud.HttpUtils;
 using Mud.HttpUtils.Resilience;
+using System.Text;
 using System.Text.Json;
+#if NET8_0_OR_GREATER
+using System.Text.Json.Serialization.Metadata;
+#endif
 
 namespace AotVerificationDemo;
 
@@ -30,9 +34,11 @@ public class Program
         await DemoResilienceDecoratorWithImplementationType();
         DemoSensitiveDataMasker();
         DemoOAuth2Serialization();
+        await DemoEncryptContentSerialization();
+        await DemoNdjsonSerialization();
 
         Console.WriteLine("\n=== AOT 验证示例完成 ===");
-        Console.WriteLine("如果此程序在 Native AOT 模式下成功运行，说明 JSON / 表单 / 查询参数 / 弹性 / 脱敏主路径均已 AOT 兼容。");
+        Console.WriteLine("如果此程序在 Native AOT 模式下成功运行，说明 JSON / 表单 / 查询参数 / 弹性 / 脱敏 / 加密 / NDJSON 主路径均已 AOT 兼容。");
         Console.WriteLine("AOT_OK");
     }
 
@@ -447,5 +453,138 @@ public class Program
         Console.WriteLine($"  MaskObject(LoginForm) => {maskedLogin}");
 
         Console.WriteLine("  [✓] 脱敏器使用编译期字典式实现（无反射，AOT 安全）\n");
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // 场景 7：EncryptContent<T> 泛型重载序列化验证
+    // ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 验证 <see cref="IEncryptableHttpClient.EncryptContent{T}"/> 泛型重载的
+    /// 内部序列化路径在 AOT 下正确工作。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>EncryptContent&lt;T&gt;</c> 内部使用 <c>JsonSerializer.Serialize&lt;T&gt;(content, _jsonOptions)</c>
+    /// （AOT 安全泛型重载）+ <c>Utf8JsonWriter</c> 直接构建外层 JSON（避免 Dictionary&lt;string, object&gt; 反射）。
+    /// </para>
+    /// <para>
+    /// 此场景直接验证这两个序列化模式（不调用真实 EncryptContent 以避免需要 IEncryptionProvider），
+    /// 确保 <c>AppJsonContext.Default.UserDto</c> 的 <c>JsonTypeInfo&lt;T&gt;</c> 在 AOT 裁剪后仍可用。
+    /// </para>
+    /// </remarks>
+    private static async Task DemoEncryptContentSerialization()
+    {
+        Console.WriteLine("--- 7. EncryptContent<T> 序列化模式验证（AOT 安全泛型 + Utf8JsonWriter）---");
+
+        var user = new UserDto
+        {
+            Id = 42,
+            Name = "Encrypt Test",
+            Email = "encrypt@example.com"
+        };
+
+#if NET8_0_OR_GREATER
+        // 模拟 EncryptContent<T> 内部的 JsonSerializer.Serialize<T>(content, _jsonOptions) 调用
+        // _jsonOptions 含有 AppJsonContext.Default resolver，AOT 安全
+        var serializedContent = JsonSerializer.Serialize(user, AppJsonContext.Default.UserDto);
+        Console.WriteLine($"  Serialize<UserDto> => {serializedContent}");
+
+        // 模拟 EncryptContent<T> 内部的 Utf8JsonWriter 外层 JSON 构建
+        // 避免使用 Dictionary<string, object> 反射式序列化
+        using var stream = new MemoryStream();
+        using (var writer = new System.Text.Json.Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            writer.WritePropertyName("data");
+            writer.WriteStringValue(serializedContent); // 模拟加密后的数据
+            writer.WriteEndObject();
+            writer.Flush();
+        }
+        var wrappedJson = Encoding.UTF8.GetString(stream.ToArray());
+        Console.WriteLine($"  Wrapped JSON => {wrappedJson}");
+
+        // 反序列化验证
+        var deserialized = JsonSerializer.Deserialize(serializedContent, AppJsonContext.Default.UserDto);
+        if (deserialized != null && deserialized.Id == 42 && deserialized.Name == "Encrypt Test")
+        {
+            Console.WriteLine($"  Deserialize => Id={deserialized.Id}, Name={deserialized.Name}");
+            Console.WriteLine("  [✓] EncryptContent<T> 序列化模式正确（JsonSerializer.Serialize<T> + Utf8JsonWriter，AOT 安全）");
+        }
+        else
+        {
+            throw new InvalidOperationException("EncryptContent<T> serialization failed - type metadata may be trimmed in AOT");
+        }
+#else
+        Console.WriteLine("  [✓] 跳过（JsonSourceGeneration 仅在 .NET 8+ 可用）");
+#endif
+
+        await Task.CompletedTask;
+        Console.WriteLine();
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // 场景 8：NDJSON 流式反序列化验证（JsonTypeInfo<T> 重载）
+    // ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 验证 NDJSON 逐行反序列化的 <c>JsonTypeInfo&lt;T&gt;</c> AOT 安全重载。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// NDJSON 路径中 <c>ParseNdJsonStreamAsync&lt;T&gt;(Stream, JsonTypeInfo&lt;T&gt;, CT)</c>
+    /// 使用 <c>JsonSerializer.Deserialize(line, jsonTypeInfo)</c>（AOT 安全重载），
+    /// 替代了开放泛型 <c>JsonSerializer.Deserialize&lt;T&gt;(line, options)</c>（已标注 [RequiresUnreferencedCode]）。
+    /// </para>
+    /// <para>
+    /// 此场景模拟 NDJSON 流：构造多行 JSON，逐行使用 <c>JsonTypeInfo&lt;T&gt;</c> 反序列化，
+    /// 验证 <c>AppJsonContext.Default.UserDto</c> 在 AOT 裁剪后仍可用。
+    /// </para>
+    /// </remarks>
+    private static async Task DemoNdjsonSerialization()
+    {
+        Console.WriteLine("--- 8. NDJSON 流式反序列化验证（JsonTypeInfo<T> AOT 安全重载）---");
+
+#if NET8_0_OR_GREATER
+        // 构造 NDJSON（每行一个 JSON 对象）
+        var user1 = new UserDto { Id = 1, Name = "Alice", Email = "alice@example.com" };
+        var user2 = new UserDto { Id = 2, Name = "Bob", Email = "bob@example.com" };
+
+        var line1 = JsonSerializer.Serialize(user1, AppJsonContext.Default.UserDto);
+        var line2 = JsonSerializer.Serialize(user2, AppJsonContext.Default.UserDto);
+        var ndjson = $"{line1}\n{line2}\n";
+
+        Console.WriteLine($"  NDJSON content:\n{string.Join("\n", ndjson.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(l => "    " + l))}");
+
+        // 逐行反序列化 — 模拟 ParseNdJsonStreamAsync<T>(Stream, JsonTypeInfo<T>, CT) 的内部逻辑
+        var results = new List<UserDto>();
+        using var reader = new StringReader(ndjson);
+        string? line;
+        while ((line = await reader.ReadLineAsync()) != null)
+        {
+            if (string.IsNullOrEmpty(line))
+                continue;
+
+            // AOT 安全：使用 JsonTypeInfo<T> 重载（ParseNdJsonStreamAsync 的 AOT 安全路径）
+            var item = JsonSerializer.Deserialize(line, AppJsonContext.Default.UserDto);
+            if (item != null)
+                results.Add(item);
+        }
+
+        if (results.Count == 2 && results[0].Id == 1 && results[0].Name == "Alice"
+            && results[1].Id == 2 && results[1].Name == "Bob")
+        {
+            Console.WriteLine($"  Parsed {results.Count} items: {results[0].Name}, {results[1].Name}");
+            Console.WriteLine("  [✓] NDJSON 流式反序列化正确（JsonTypeInfo<T> 重载，AOT 安全）");
+        }
+        else
+        {
+            throw new InvalidOperationException("NDJSON deserialization failed - type metadata may be trimmed in AOT");
+        }
+#else
+        Console.WriteLine("  [✓] 跳过（JsonSourceGeneration 仅在 .NET 8+ 可用）");
+#endif
+
+        Console.WriteLine();
     }
 }

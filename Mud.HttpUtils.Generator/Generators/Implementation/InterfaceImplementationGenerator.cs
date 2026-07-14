@@ -680,8 +680,14 @@ internal class InterfaceImplementationGenerator
     }
 
     /// <summary>
-    /// 预计算接口方法中使用的 XML 响应类型，以便 ConstructorGenerator 能在生成字段时正确生成 XmlSerializer 静态缓存字段
+    /// 预计算接口方法中使用的 XML 类型（包括请求体和响应体），
+    /// 以便 ConstructorGenerator 能在生成字段时正确生成 XmlSerializer 静态缓存字段。
     /// </summary>
+    /// <remarks>
+    /// Phase 5 修复：原实现仅收集 XML 响应类型，但 RequestBuilder.GenerateBodyParameter 也为
+    /// XML 请求体生成 _xmlSerializer_{type} 字段引用。若请求体类型未被收集，ConstructorGenerator
+    /// 不会生成对应静态字段，导致编译报 CS0103。
+    /// </remarks>
     private void PrecomputeXmlResponseTypes(GeneratorContext context)
     {
         var methods = context.AllMethods;
@@ -700,25 +706,42 @@ internal class InterfaceImplementationGenerator
             if (!methodInfo.IsValid)
                 continue;
 
+            // 1. 收集 XML 响应类型（反序列化用）
             var isXmlResponse = ContentTypeHelper.IsXmlContentType(methodInfo.ResponseContentType);
-            if (!isXmlResponse)
-                continue;
-
-            var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
-            if (string.IsNullOrEmpty(deserializeType) || deserializeType == "void" || deserializeType == "System.Void")
-                continue;
-
-            if (TypeSymbolHelper.IsResponseType(deserializeType))
+            if (isXmlResponse)
             {
-                var innerType = TypeSymbolHelper.ExtractResponseInnerType(deserializeType);
-                if (!string.IsNullOrEmpty(innerType) && innerType != "void" && innerType != "System.Void")
+                var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
+                if (!string.IsNullOrEmpty(deserializeType) && deserializeType != "void" && deserializeType != "System.Void")
                 {
-                    context.XmlResponseTypes.Add(innerType);
+                    if (TypeSymbolHelper.IsResponseType(deserializeType))
+                    {
+                        var innerType = TypeSymbolHelper.ExtractResponseInnerType(deserializeType);
+                        if (!string.IsNullOrEmpty(innerType) && innerType != "void" && innerType != "System.Void")
+                        {
+                            context.XmlResponseTypes.Add(innerType);
+                        }
+                    }
+                    else
+                    {
+                        context.XmlResponseTypes.Add(deserializeType);
+                    }
                 }
             }
-            else
+
+            // 2. 收集 XML 请求体类型（序列化用）
+            // RequestBuilder.GenerateBodyParameter 在 isXmlContentType 分支中引用 _xmlSerializer_{type} 字段，
+            // 但仅在非加密路径下使用（加密路径走 EncryptContent，不使用静态字段）。
+            var bodyParam = methodInfo.Parameters
+                .FirstOrDefault(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.BodyAttribute));
+            if (bodyParam != null && !methodInfo.BodyEnableEncrypt && !string.IsNullOrEmpty(bodyParam.Type))
             {
-                context.XmlResponseTypes.Add(deserializeType);
+                var effectiveContentType = methodInfo.GetEffectiveContentType();
+                var isXmlRequest = methodInfo.SerializationMethod == "Xml"
+                    || ContentTypeHelper.IsXmlContentType(effectiveContentType);
+                if (isXmlRequest)
+                {
+                    context.XmlResponseTypes.Add(bodyParam.Type);
+                }
             }
         }
 

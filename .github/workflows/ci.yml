@@ -26,6 +26,7 @@ jobs:
           - Tests/Mud.HttpUtils.Generator.Tests/Mud.HttpUtils.Generator.Tests.csproj
           - Tests/Mud.HttpUtils.Client.Tests/Mud.HttpUtils.Client.Tests.csproj
           - Tests/Mud.HttpUtils.Resilience.Tests/Mud.HttpUtils.Resilience.Tests.csproj
+          - Tests/Mud.HttpUtils.JsonContextScaffolder.Tests/Mud.HttpUtils.JsonContextScaffolder.Tests.csproj
 
     steps:
       - name: Checkout
@@ -200,12 +201,15 @@ jobs:
         run: dotnet restore Demos/AotPackageRefDemo/AotPackageRefDemo.csproj
 
       - name: Publish AOT (PackageReference, net8.0)
-        run: dotnet publish Demos/AotPackageRefDemo/AotPackageRefDemo.csproj -c Release -f net8.0 -r linux-x64 -p:AotStrictMode=true --no-restore -o Demos/AotPackageRefDemo/publish
+        run: dotnet publish Demos/AotPackageRefDemo/AotPackageRefDemo.csproj -c Release -f net8.0 -r linux-x64 -p:AotStrictMode=true --no-restore -o Demos/AotPackageRefDemo/publish-net8
 
-      - name: Run AOT binary and verify AOT_OK
+      - name: Publish AOT (PackageReference, net10.0)
+        run: dotnet publish Demos/AotPackageRefDemo/AotPackageRefDemo.csproj -c Release -f net10.0 -r linux-x64 -p:AotStrictMode=true --no-restore -o Demos/AotPackageRefDemo/publish-net10
+
+      - name: Run AOT binary (net8.0) and verify AOT_OK
         shell: bash
         run: |
-          BIN_PATH="Demos/AotPackageRefDemo/publish/AotPackageRefDemo"
+          BIN_PATH="Demos/AotPackageRefDemo/publish-net8/AotPackageRefDemo"
           if [ -f "$BIN_PATH" ]; then
             OUTPUT=$("$BIN_PATH" 2>&1 || true)
             echo "$OUTPUT"
@@ -213,6 +217,24 @@ jobs:
               echo "✓ AOT PackageRef verification passed (net8.0)"
             else
               echo "✗ AOT PackageRef verification FAILED (net8.0) - AOT_OK not found in output"
+              exit 1
+            fi
+          else
+            echo "Binary not found at $BIN_PATH"
+            exit 1
+          fi
+
+      - name: Run AOT binary (net10.0) and verify AOT_OK
+        shell: bash
+        run: |
+          BIN_PATH="Demos/AotPackageRefDemo/publish-net10/AotPackageRefDemo"
+          if [ -f "$BIN_PATH" ]; then
+            OUTPUT=$("$BIN_PATH" 2>&1 || true)
+            echo "$OUTPUT"
+            if echo "$OUTPUT" | grep -q "AOT_OK"; then
+              echo "✓ AOT PackageRef verification passed (net10.0)"
+            else
+              echo "✗ AOT PackageRef verification FAILED (net10.0) - AOT_OK not found in output"
               exit 1
             fi
           else

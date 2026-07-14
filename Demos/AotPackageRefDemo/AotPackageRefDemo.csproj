@@ -16,7 +16,7 @@
 
 	<!-- AOT 严格模式 — 通过 -p:AotStrictMode=true 激活 -->
 	<PropertyGroup Condition="'$(AotStrictMode)' == 'true'">
-		<WarningsAsErrors>IL2026;IL2050;IL2067;IL2070;IL2072;IL3050</WarningsAsErrors>
+		<WarningsAsErrors>IL2026;IL2046;IL2050;IL2057;IL2067;IL2070;IL2072;IL2075;IL2080;IL3050</WarningsAsErrors>
 	</PropertyGroup>
 
 	<!-- NuGet 包引用（版本跟随 Directory.Build.props 的 $(Version)） -->

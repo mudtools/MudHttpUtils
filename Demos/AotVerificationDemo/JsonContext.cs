@@ -13,7 +13,6 @@ namespace AotVerificationDemo;
 // 无法（也不应）标注特性，故在此手工补充注册，使 ListUsersAsync / SearchAsync 的反序列化在 AOT 下可用。
 // 若新增其它「脚手架无法覆盖」的根类型，请在此处追加对应 [JsonSerializable]。
 
-// [!TEMP] 临时移除以定位 STJ hintName 冲突根因
-// [JsonSerializable(typeof(List<UserDto>))]
+[JsonSerializable(typeof(List<UserDto>))]
 internal partial class AppJsonContext;
 #endif
