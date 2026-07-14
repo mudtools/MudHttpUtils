@@ -287,6 +287,9 @@ jobs:
       - name: Pack Generator
         run: dotnet pack Mud.HttpUtils.Generator/Mud.HttpUtils.Generator.csproj --no-build --configuration Release --output artifacts
 
+      - name: Pack JsonContextScaffolder (dotnet tool)
+        run: dotnet pack Tools/Mud.HttpUtils.JsonContextScaffolder/Mud.HttpUtils.JsonContextScaffolder.csproj --configuration Release --output artifacts
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:

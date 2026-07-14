@@ -6,6 +6,10 @@
 // -----------------------------------------------------------------------
 
 using System.Collections.Immutable;
+using System.Linq;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Mud.HttpUtils;
 
@@ -18,6 +22,45 @@ namespace Mud.HttpUtils;
 internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
 {
     private const string DefaultHttpClientOptionsName = "HttpClientOptions";
+
+    /// <inheritdoc/>
+    public override void Initialize(IncrementalGeneratorInitializationContext context)
+    {
+        base.Initialize(context);
+
+        // AOT006：独立于 [HttpClientApi] 接口，检测标注 [HttpJsonSerializable] 但未被任何
+        // JsonSerializerContext 覆盖的类型（即“脚手架未运行/未接入构建”的编译期信号）。
+        // 仅本生成器注册一次，避免与同基类的其他生成器（如 RegistrationGenerator）重复触发诊断。
+        // 仅当编译单元存在此类类型时才触发；使用 CompilationProvider 以获得正确的增量缓存语义。
+        var hasHttpJsonSerializable = context.SyntaxProvider
+            .ForAttributeWithMetadataName(
+                fullyQualifiedMetadataName: "Mud.HttpUtils.Attributes.HttpJsonSerializableAttribute",
+                predicate: static (node, _) => node is TypeDeclarationSyntax,
+                transform: static (_, _) => true)
+            .Collect()
+            .Select(static (values, _) => values.Any());
+
+        var jsonCtxCoverageData = hasHttpJsonSerializable
+            .Combine(context.CompilationProvider)
+            .Combine(context.AnalyzerConfigOptionsProvider);
+
+        context.RegisterSourceOutput(jsonCtxCoverageData, static (ctx, provider) =>
+        {
+            var (hasFlag, compilation) = provider.Left;
+            if (!hasFlag)
+                return;
+
+            try
+            {
+                Mud.HttpUtils.Analyzers.AotDtoCoverageAnalyzer.AnalyzeHttpJsonSerializableCoverage(compilation, ctx);
+            }
+            catch
+            {
+                // AOT006 为诊断性检查，不应阻断代码生成
+            }
+        });
+    }
+
 
     /// <inheritdoc/>
     protected override void ExecuteGenerator(

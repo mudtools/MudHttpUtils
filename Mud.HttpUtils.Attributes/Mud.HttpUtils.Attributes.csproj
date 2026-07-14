@@ -15,5 +15,11 @@
 	<ItemGroup>
 		<None Include="README.md" Pack="true" PackagePath="\" />
 		<None Include="..\Icon.png" Pack="true" PackagePath="\" />
+		<!-- 可选 MSBuild 目标：消费方设置 <MudEnableJsonContextScaffolder>true</MudEnableJsonContextScaffolder> 后，
+		     编译前自动运行 HttpJsonContextScaffolder 生成 JSON Context。默认不启用，不影响现有消费方。
+		     Mud.HttpUtils.Attributes.targets 为 NuGet 自动导入约定的入口（须与包名一致），
+		     其内部再导入真正的 Mud.HttpUtils.JsonContextScaffolder.targets。 -->
+		<None Include="build\Mud.HttpUtils.Attributes.targets" Pack="true" PackagePath="build" />
+		<None Include="build\Mud.HttpUtils.JsonContextScaffolder.targets" Pack="true" PackagePath="build" />
 	</ItemGroup>
 </Project>

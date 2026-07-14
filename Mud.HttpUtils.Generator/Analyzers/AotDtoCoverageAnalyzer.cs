@@ -30,6 +30,7 @@ internal static class AotDtoCoverageAnalyzer
     private const string JsonSerializableAttributeFullName = "System.Text.Json.Serialization.JsonSerializableAttribute";
     private const string JsonSerializerContextFullName = "System.Text.Json.Serialization.JsonSerializerContext";
     private const string HttpClientApiAttributeFullName = "Mud.HttpUtils.Attributes.HttpClientApiAttribute";
+    private const string HttpJsonSerializableAttributeFullName = "Mud.HttpUtils.Attributes.HttpJsonSerializableAttribute";
     private const string BodyAttributeFullName = "Mud.HttpUtils.Attributes.BodyAttribute";
     private const string QueryAttributeFullName = "Mud.HttpUtils.Attributes.QueryAttribute";
     private const string QueryMapAttributeFullName = "Mud.HttpUtils.Attributes.QueryMapAttribute";
@@ -79,6 +80,59 @@ internal static class AotDtoCoverageAnalyzer
 
                     CheckMethodDtoCoverage(compilation, context, interfaceSymbol, method, coveredTypes);
                 }
+            }
+        }
+    }
+
+    /// <summary>
+    /// AOT006 诊断：检测标注 [HttpJsonSerializable] 的类型是否未被任何 JsonSerializerContext 覆盖。
+    /// </summary>
+    /// <remarks>
+    /// <para>与 AOT004 不同，本检查独立于 [HttpClientApi] 接口，凡是当前编译单元（即实体所在项目）
+    /// 中标注了 [HttpJsonSerializable] 的类型都会被核验。覆盖缺失通常意味着 HttpJsonContextScaffolder
+    /// 未运行或手写 Context 缺失——这正是“脚手架未接入构建”的编译期信号。</para>
+    /// <para>仅核验当前编译单元内声明的类型（不含引用程序集中的类型），避免跨程序集误报：
+    /// 实体项目应各自运行脚手架生成 internal Context 覆盖自身类型。</para>
+    /// </remarks>
+    public static void AnalyzeHttpJsonSerializableCoverage(Compilation compilation, SourceProductionContext context)
+    {
+        var httpJsonSerializableAttr = compilation.GetTypeByMetadataName(HttpJsonSerializableAttributeFullName);
+        if (httpJsonSerializableAttr == null)
+            return;
+
+        // 收集已覆盖类型（当前编译单元 + 引用程序集中的所有 Context）
+        var coveredTypes = CollectCoveredTypes(compilation);
+
+        foreach (var syntaxTree in compilation.SyntaxTrees)
+        {
+            if (context.CancellationToken.IsCancellationRequested)
+                return;
+
+            var semanticModel = compilation.GetSemanticModel(syntaxTree);
+            var root = syntaxTree.GetRoot();
+
+            foreach (var typeDecl in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
+            {
+                if (context.CancellationToken.IsCancellationRequested)
+                    return;
+
+                var typeSymbol = semanticModel.GetDeclaredSymbol(typeDecl) as INamedTypeSymbol;
+                if (typeSymbol == null)
+                    continue;
+
+                var hasHttpJsonSerializable = typeSymbol.GetAttributes()
+                    .Any(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, httpJsonSerializableAttr));
+                if (!hasHttpJsonSerializable)
+                    continue;
+
+                // 已覆盖（含集合/Nullable 解包）或为基元/字符串/枚举 → 跳过
+                if (IsCovered(typeSymbol, coveredTypes) || IsPrimitiveOrString(typeSymbol))
+                    continue;
+
+                context.ReportDiagnostic(Diagnostic.Create(
+                    Diagnostics.AotJsonSerializableNotCovered,
+                    typeSymbol.Locations.FirstOrDefault() ?? typeDecl.GetLocation(),
+                    typeSymbol.ToDisplayString()));
             }
         }
     }

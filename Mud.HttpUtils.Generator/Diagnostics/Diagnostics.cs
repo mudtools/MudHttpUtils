@@ -284,5 +284,13 @@ internal static class Diagnostics
         category: "AOT",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor AotJsonSerializableNotCovered = new(
+        id: "AOT006",
+        title: "[HttpJsonSerializable] 类型未被任何 JsonSerializerContext 覆盖",
+        messageFormat: "类型 '{0}' 标注了 [HttpJsonSerializable]，但未被任何已引用的 JsonSerializerContext 覆盖。若未运行 HttpJsonContextScaffolder 或将其纳入手写 JsonSerializerContext，AOT 下序列化可能返回空对象或失败。请运行 `dotnet mud-jsonctx` 或将此类型加入 JsonSerializerContext。",
+        category: "AOT",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
     #endregion
 }

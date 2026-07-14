@@ -401,6 +401,29 @@ public class JsonContextGeneratorTests
     }
 
     [Fact]
+    public void Generate_AutoDerivedTypes_IncludesTransitiveDerivedClasses()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            namespace TestApp;
+            [HttpJsonSerializable(SerializerClassName = "App")]
+            public class BaseDto { public int Id { get; set; } }
+            public class MidDto : BaseDto { public string Name { get; set; } }
+            public class LeafDto : MidDto { public bool Active { get; set; } }
+            """;
+        var compilation = CreateCompilation(source);
+        var generator = new JsonContextGenerator();
+
+        var files = generator.Generate(compilation, autoDerivedTypes: true);
+
+        files.Should().HaveCount(1);
+        // 递归覆盖完整继承链：Base -> Mid -> Leaf
+        files[0].SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.BaseDto))]");
+        files[0].SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.MidDto))]");
+        files[0].SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.LeafDto))]");
+    }
+
+    [Fact]
     public void Generate_AutoDerivedTypes_DisabledByDefault()
     {
         var source = """

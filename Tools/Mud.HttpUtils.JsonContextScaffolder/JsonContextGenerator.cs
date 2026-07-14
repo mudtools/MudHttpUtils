@@ -360,31 +360,40 @@ public class JsonContextGenerator
     }
 
     /// <summary>
-    /// 在同程序集内查找直接继承自指定基类的派生类型（用于 P2.2 自动 [JsonDerivedType]）。
+    /// 在同程序集内递归查找继承自指定基类的所有派生类型（用于 --auto-derived-types 自动 [JsonDerivedType]）。
+    /// 采用广度优先遍历完整继承链，覆盖多层派生（如 Base → Mid → Leaf）。
     /// </summary>
     private static List<INamedTypeSymbol> FindDerivedTypes(Compilation compilation, INamedTypeSymbol baseType)
     {
-        var result = new List<INamedTypeSymbol>();
-
+        // 收集编译单元内声明的所有具名类型（仅遍历一次语法树）
+        var allTypes = new List<INamedTypeSymbol>();
         foreach (var syntaxTree in compilation.SyntaxTrees)
         {
             var semanticModel = compilation.GetSemanticModel(syntaxTree);
-            var root = syntaxTree.GetRoot();
-
-            foreach (var node in root.DescendantNodes())
+            foreach (var node in syntaxTree.GetRoot().DescendantNodes())
             {
-                if (semanticModel.GetDeclaredSymbol(node) is not INamedTypeSymbol candidate)
-                    continue;
+                if (semanticModel.GetDeclaredSymbol(node) is INamedTypeSymbol candidate)
+                    allTypes.Add(candidate);
+            }
+        }
 
-                // 跳过自身
-                if (SymbolEqualityComparer.Default.Equals(candidate, baseType))
-                    continue;
+        // 从基类出发，逐层找出所有直接/间接派生类
+        var result = new List<INamedTypeSymbol>();
+        var visited = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+        var queue = new Queue<INamedTypeSymbol>();
+        queue.Enqueue(baseType);
 
-                // 检查直接基类是否匹配
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            foreach (var candidate in allTypes)
+            {
                 if (candidate.BaseType != null &&
-                    SymbolEqualityComparer.Default.Equals(candidate.BaseType, baseType))
+                    SymbolEqualityComparer.Default.Equals(candidate.BaseType, current) &&
+                    visited.Add(candidate))
                 {
                     result.Add(candidate);
+                    queue.Enqueue(candidate);
                 }
             }
         }

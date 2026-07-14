@@ -16,7 +16,10 @@
 
 	<!-- AOT 严格模式 — 通过 -p:AotStrictMode=true 激活 -->
 	<PropertyGroup Condition="'$(AotStrictMode)' == 'true'">
-		<WarningsAsErrors>IL2026;IL2046;IL2050;IL2057;IL2067;IL2070;IL2072;IL2075;IL2080;IL3050</WarningsAsErrors>
+		<!-- AOT006（标注 [HttpJsonSerializable] 却无 JsonSerializerContext 覆盖）升级为错误，
+		     作为“脚手架未运行/未接入构建”的严格门禁。
+		     AOT004/AOT005 暂不升级：AOT004 对 FormUrlEncoded 的 [Body] 参数存在已知误报。 -->
+		<WarningsAsErrors>IL2026;IL2046;IL2050;IL2057;IL2067;IL2070;IL2072;IL2075;IL2080;IL3050;AOT006</WarningsAsErrors>
 	</PropertyGroup>
 
 	<!-- NuGet 包引用（版本跟随 Directory.Build.props 的 $(Version)） -->

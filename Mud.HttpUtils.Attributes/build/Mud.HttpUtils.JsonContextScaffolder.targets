@@ -1,0 +1,56 @@
+<Project>
+
+  <!--
+    Mud.HttpUtils.JsonContextScaffolder 自动生成目标（可选加入）。
+    ============================================================
+    默认【不启用】，绝不干扰未显式选择该工作流的消费方构建。
+    仅当消费方在其 .csproj 中设置 <MudEnableJsonContextScaffolder>true</MudEnableJsonContextScaffolder>
+    时，本目标才会在 BeforeCompile 阶段运行 `mud-jsonctx` 脚手架工具，将标注 [HttpJsonSerializable]
+    的类型生成 JsonSerializerContext 源文件，并纳入编译（机制同仓库内 AotVerificationDemo 的内联目标）。
+
+    启用前提（任选其一安装脚手架工具）：
+      a) 全局安装： dotnet tool install --global Mud.HttpUtils.JsonContextScaffolder
+      b) 本地工具： dotnet tool install --local  Mud.HttpUtils.JsonContextScaffolder
+                     （需先 dotnet new tool-manifest，并在 .config/dotnet-tools.json 中登记）
+      c) .NET 8+ SDK 项目引用工具：
+                     <DotNetToolReference Include="Mud.HttpUtils.JsonContextScaffolder" Version="x.y.z" />
+        本目标会优先使用 DotNetToolReference 解析出的本地路径，否则回退到 PATH 上的 `mud-jsonctx`。
+
+    工具未安装时，本目标以【警告】形式提示（不中断构建），消费方可选择手动运行并签入生成的 .g.cs。
+  -->
+
+  <PropertyGroup>
+    <MudEnableJsonContextScaffolder Condition="'$(MudEnableJsonContextScaffolder)' == ''">false</MudEnableJsonContextScaffolder>
+    <MudJsonContextOutputPath Condition="'$(MudJsonContextOutputPath)' == ''">$(IntermediateOutputPath)GeneratedJsonContext</MudJsonContextOutputPath>
+    <!-- 优先使用 DotNetToolReference 解析出的本地路径；否则回退到 PATH 上的命令名 -->
+    <MudJsonContextToolCommand Condition="'$(MudJsonContextToolCommand)' == '' AND '$(DotNetToolMud_HttpUtils_JsonContextScaffolder)' != ''">$(DotNetToolMud_HttpUtils_JsonContextScaffolder)mud-jsonctx$(ExeExtension)</MudJsonContextToolCommand>
+    <MudJsonContextToolCommand Condition="'$(MudJsonContextToolCommand)' == ''">mud-jsonctx</MudJsonContextToolCommand>
+  </PropertyGroup>
+
+  <Target Name="MudGenerateJsonContext"
+          BeforeTargets="BeforeCompile"
+          Condition="'$(MudEnableJsonContextScaffolder)' == 'true'">
+    <Message Importance="high" Text="[Mud] 运行 JsonContextScaffolder 生成 JSON Context（pre-build）" />
+    <!-- 脚手架内部使用 MSBuildWorkspace 重新评估本项目，需清除外层构建注入的 MSBuild 环境变量，
+         否则嵌套评估会因 SDK/Exe 路径冲突而失败（独立运行正常）。 -->
+    <Exec Command="&quot;$(MudJsonContextToolCommand)&quot; --project &quot;$(MSBuildProjectFullPath)&quot; -o &quot;$(MudJsonContextOutputPath)&quot; --auto-derived-types"
+          EnvironmentVariables="MSBUILD_EXE_PATH=;MSBuildEnableNodeReuse=false"
+          ContinueOnError="true">
+      <Output TaskParameter="ExitCode" PropertyName="_MudJsonCtxExitCode" />
+    </Exec>
+    <Message Condition="'$(_MudJsonCtxExitCode)' != '0' AND '$(_MudJsonCtxExitCode)' != ''"
+             Importance="high"
+             Text="[Mud] JsonContextScaffolder 未成功执行（退出码 $(_MudJsonCtxExitCode)）。请确认已安装工具：dotnet tool install --global Mud.HttpUtils.JsonContextScaffolder；或手动运行并将生成的 .g.cs 签入版本控制。" />
+  </Target>
+
+  <Target Name="MudIncludeGeneratedJsonContext"
+          BeforeTargets="BeforeCompile"
+          Condition="'$(MudEnableJsonContextScaffolder)' == 'true' AND Exists('$(MudJsonContextOutputPath)')"
+          DependsOnTargets="MudGenerateJsonContext">
+    <ItemGroup>
+      <Compile Include="$(MudJsonContextOutputPath)\**\*.g.cs" />
+      <FileWrites Include="$(MudJsonContextOutputPath)\**\*.g.cs" />
+    </ItemGroup>
+  </Target>
+
+</Project>

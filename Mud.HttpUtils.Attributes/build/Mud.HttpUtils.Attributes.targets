@@ -1,0 +1,9 @@
+<Project>
+  <!--
+    Mud.HttpUtils.Attributes 包自动导入入口。
+    仅用于把可选的 JsonContextScaffolder 构建目标引入消费方工程；该目标默认关闭，
+    仅当消费方显式设置 <MudEnableJsonContextScaffolder>true</MudEnableJsonContextScaffolder> 时生效，
+    对未选择该工作流的消费方零影响。
+  -->
+  <Import Project="$(MSBuildThisFileDirectory)Mud.HttpUtils.JsonContextScaffolder.targets" />
+</Project>

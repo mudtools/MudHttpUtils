@@ -19,7 +19,11 @@
 	     将 AOT 相关诊断（IL2xxx/IL3xxx）精确清单式设为错误。
 	     已验证安全的误报通过 [UnconditionalSuppressMessage] 在代码中压制。 -->
 	<PropertyGroup Condition="'$(AotStrictMode)' == 'true'">
-		<WarningsAsErrors>IL2026;IL2046;IL2050;IL2057;IL2067;IL2070;IL2072;IL2075;IL2080;IL3050</WarningsAsErrors>
+		<!-- AOT006（标注 [HttpJsonSerializable] 却无 JsonSerializerContext 覆盖）升级为错误，
+		     作为“脚手架未运行/未接入构建”的严格门禁。
+		     AOT004/AOT005 暂不升级：AOT004 对 FormUrlEncoded 的 [Body] 参数存在已知误报，
+		     需先修正分析器（跳过 FormUrlEncoded Body）后方可纳入严格门禁。 -->
+		<WarningsAsErrors>IL2026;IL2046;IL2050;IL2057;IL2067;IL2070;IL2072;IL2075;IL2080;IL3050;AOT006</WarningsAsErrors>
 	</PropertyGroup>
 
 	<ItemGroup>

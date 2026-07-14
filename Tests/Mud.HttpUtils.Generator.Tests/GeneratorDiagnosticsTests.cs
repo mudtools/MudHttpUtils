@@ -156,6 +156,51 @@ namespace TestNamespace
 
     #endregion
 
+    #region AOT006 - [HttpJsonSerializable] not covered by any JsonSerializerContext
+
+    [Fact]
+    public void Generator_WithHttpJsonSerializableButNoContext_GeneratesAOT006()
+    {
+        var source = @"
+using Mud.HttpUtils.Attributes;
+namespace TestNamespace
+{
+    [HttpJsonSerializable]
+    public class UserDto { public string Name { get; set; } }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        diagnostics.Should().Contain(d => d.Id == "AOT006");
+    }
+
+    [Fact]
+    public void Generator_WithHttpJsonSerializableCoveredByContext_NoAOT006()
+    {
+        var source = @"
+using Mud.HttpUtils.Attributes;
+using System.Text.Json.Serialization;
+namespace TestNamespace
+{
+    [HttpJsonSerializable]
+    public class UserDto { public string Name { get; set; } }
+
+    [JsonSourceGenerationOptions]
+    [JsonSerializable(typeof(UserDto))]
+    internal partial class AppJsonContext : JsonSerializerContext
+    {
+    }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        diagnostics.Should().NotContain(d => d.Id == "AOT006");
+    }
+
+    #endregion
+
     // ============================================================
     // NEW-GEN-14：生成器异常完整堆栈输出
     // ============================================================

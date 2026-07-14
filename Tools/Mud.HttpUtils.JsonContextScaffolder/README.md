@@ -1,34 +1,24 @@
 # Mud.HttpUtils.JsonContextScaffolder
 
-扫描 `[HttpJsonSerializable]` 标注类型，自动产出 `JsonSerializerContext` 源文件，支持 Native AOT。
+扫描实体/DTO 上标注的 `[HttpJsonSerializable]`，自动产出 `JsonSerializerContext` 源文件，使 STJ 源生成在 Native AOT 下获得类型元数据。面向**消费方（第三方开发者）**分发，以 `dotnet tool` 形式提供。
 
-## 安装
+## 安装（已发布到 NuGet）
 
 ```bash
 dotnet tool install --global Mud.HttpUtils.JsonContextScaffolder
 ```
 
-或本地工具：
+或作为本地工具：
 
 ```bash
 dotnet new tool-manifest
 dotnet tool install Mud.HttpUtils.JsonContextScaffolder
 ```
 
-## 用法
+> 仓库贡献者在发布前也可直接运行源码（无需安装）：
+> `dotnet run --project Tools/Mud.HttpUtils.JsonContextScaffolder -- --project <你的.csproj>`
 
-```bash
-# 基本用法
-mud-jsonctx --project src/MyApp.DataModels/MyApp.DataModels.csproj
-
-# 指定输出目录
-mud-jsonctx -p src/MyApp.DataModels/MyApp.DataModels.csproj -o src/MyApp.DataModels/Generated
-
-# 预览（不写入文件）
-mud-jsonctx -p src/MyApp.DataModels/MyApp.DataModels.csproj --dry-run
-```
-
-## 工作流程
+## 使用流程
 
 1. 在实体/DTO 上标注 `[HttpJsonSerializable]`：
 
@@ -37,15 +27,21 @@ mud-jsonctx -p src/MyApp.DataModels/MyApp.DataModels.csproj --dry-run
 public class ContractFileUploadRequest { ... }
 ```
 
-2. 运行 Scaffolder 生成 `JsonSerializerContext` 源文件：
+2. 运行脚手架，扫描并生成 `XxxJsonContext.g.cs`：
 
 ```bash
 mud-jsonctx --project src/MyApp.DataModels/MyApp.DataModels.csproj
+# 指定输出目录
+mud-jsonctx -p src/MyApp.DataModels/MyApp.DataModels.csproj -o src/MyApp.DataModels/Generated
+# 仅预览不写入
+mud-jsonctx -p src/MyApp.DataModels/MyApp.DataModels.csproj --dry-run
+# 自动补全多态派生类（见下）
+mud-jsonctx -p src/MyApp.DataModels/MyApp.DataModels.csproj --auto-derived-types
 ```
 
-3. 将生成的 `.g.cs` 文件提交到版本控制。
+3. 将生成的 `.g.cs` 提交到版本控制（仅在新增/变更标注时重跑）。
 
-4. 在启动时注入 Context：
+4. 在启动时注册 Context（仅 .NET 8+）：
 
 ```csharp
 #if NET8_0_OR_GREATER
@@ -53,14 +49,68 @@ services.AddMudHttpClientJsonContext(FeishuAIJsonContext.Default);
 #endif
 ```
 
-## 分组规则
+库内置 `BuildJsonOptions` 会自动把消费方 resolver 与库内置 `MudHttpJsonContext.Default` 合并。
 
-- `SerializerClassName` 相同的类型合并到同一个 Context
-- 留空时自动派生名称：`{程序集简称}{顶层命名空间}`
-- 同一 Context 内共享命名策略
+## 重要限制与手写补充
 
-## 命名策略自动推导
+- **框架泛型包装无法标注**：如 `List<UserDto>`、`PagedResult<UserDto>` 这类不是你定义的、或本身为开放/框架泛型包装的根类型，不能（也不应）打 `[HttpJsonSerializable]`。需手写一个 partial 补充（类名须与脚手架生成的 Context 类名一致）：
 
-未显式指定 `NamingPolicy` 时，Scaffolder 会检测实体上的 `[JsonPropertyName]` 模式：
-- 超过 50% 的属性名符合 `snake_case_lower` → 自动选 `SnakeCaseLower`
-- 否则默认 `CamelCase`（与库默认一致）
+```csharp
+#if NET8_0_OR_GREATER
+using System.Text.Json.Serialization;
+namespace MyApp.DataModels;
+[JsonSerializable(typeof(List<UserDto>))]
+internal partial class FeishuAIJsonContext;
+#endif
+```
+
+- **多态（基类反序列化派生类）**：默认仅检查直接基类。使用 `--auto-derived-types` 可递归扫描并生成**完整派生层级**（Base → Mid → Leaf）。基于接口的 polymorphism 仍需手动标注 `[JsonDerivedType]`。
+- **开放泛型**：`<T>` 类型以 `<>` 写入 context，仅在 NET8_0_OR_GREATER 下源生成；更低 TFM 走反射兜底，AOT 不可用（见 AOT002 警告）。
+- 生成的 Context 为 `internal partial`，仅作用于标注类型所在的同一程序集；跨程序集需各自生成。
+
+## 分组与命名规则
+
+- `SerializerClassName` 相同的类型合并到同一 Context；留空时自动派生 `{程序集简称}{顶层命名空间}`。
+- 未显式指定 `NamingPolicy` 时自动推导：超过 50% 的属性 `[JsonPropertyName]` 符合 `snake_case_lower` → `SnakeCaseLower`，否则 `CamelCase`（与库默认一致）。
+- 同一 Context 内共享一个命名策略，冲突会报 AOT001 警告。
+
+## 诊断（AOT001-AOT006）
+
+- **AOT001**：同一 `SerializerClassName` 下存在冲突的 `NamingPolicy` 配置。
+- **AOT002**：标注了开放泛型类型（低版本 TFM 不支持源生成，AOT 不可用）。
+- **AOT003**：类型存在基类（多态）但未标注 `[JsonDerivedType]`（未启用 `--auto-derived-types` 时报告）。
+- **AOT004**：`[HttpClientApi]` 接口方法的请求/响应 DTO 未被任何 `JsonSerializerContext` 覆盖。
+- **AOT005**：`[Query]`/`[QueryMap]` 中以 JSON 序列化的复杂参数类型未被 `JsonSerializerContext` 覆盖。
+- **AOT006**：类型标注了 `[HttpJsonSerializable]` 却未被任何已引用的 `JsonSerializerContext` 覆盖。**这正是“脚手架未运行 / 未接入构建”的编译期信号**——一旦出现即说明标注的实体没有对应生成的 Context，AOT 下会漏元数据。
+
+> AOT004–AOT006 默认以 **Warning** 形式提示（不阻断生成）。在 CI 严格模式下（`-p:AotStrictMode=true`，见 `AotVerificationDemo`/`AotPackageRefDemo` 的 `WarningsAsErrors`）会升级为 **Error**，从而强制消费方构建必须接入脚手架或手写 Context。
+
+## 自动接入构建（可选 MSBuild 目标）
+
+手动跑工具并提交 `.g.cs` 适合一次性生成；若希望脚手架随消费方构建**自动**运行（避免遗忘），Mud.HttpUtils 已内置一个**默认关闭**的可选 MSBuild 目标，随 `Mud.HttpUtils.Attributes` 包自动导入消费方工程。
+
+1. 安装脚手架工具（三选一）：
+
+```bash
+# a) 全局
+dotnet tool install --global Mud.HttpUtils.JsonContextScaffolder
+# b) 本地工具（需先 dotnet new tool-manifest）
+dotnet tool install Mud.HttpUtils.JsonContextScaffolder
+# c) .NET 8+ SDK 项目引用（推荐，可复现）
+dotnet add package Mud.HttpUtils.JsonContextScaffolder   # 仅用于 DotNetToolReference 解析
+# 然后在 .csproj 中：<DotNetToolReference Include="Mud.HttpUtils.JsonContextScaffolder" Version="x.y.z" />
+```
+
+2. 在标注了 `[HttpJsonSerializable]` 的实体项目 `.csproj` 中开启：
+
+```xml
+<PropertyGroup>
+  <MudEnableJsonContextScaffolder>true</MudEnableJsonContextScaffolder>
+  <!-- 可选：自定义生成输出目录，默认 obj/<tfm>/GeneratedJsonContext -->
+  <!-- <MudJsonContextOutputPath>$(IntermediateOutputPath)GeneratedJsonContext</MudJsonContextOutputPath> -->
+</PropertyGroup>
+```
+
+开启后，`BeforeCompile` 阶段会自动执行 `mud-jsonctx --project <本项目> -o <输出> --auto-derived-types` 并将生成的 `*.g.cs` 纳入编译。工具未安装时仅输出**警告**（不中断构建），你可改回手动运行并签入生成结果。
+
+> 该目标默认不启用（`MudEnableJsonContextScaffolder=false`），对未选择该工作流的消费方**零影响**。

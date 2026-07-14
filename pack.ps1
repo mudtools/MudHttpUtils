@@ -36,6 +36,7 @@ $Projects = @(
     "Mud.HttpUtils.Resilience",
     "Mud.HttpUtils",
     "Mud.HttpUtils.Generator",
+    "Mud.HttpUtils.JsonContextScaffolder",
     "Mud.HttpUtils.OpenTelemetry"
 )
 
