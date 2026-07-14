@@ -49,7 +49,7 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 | `QueryMapAttribute`       | 查询参数映射（对象/字典展开） | Parameter / Property           | `PropertySeparator`, `SerializationMethod`, `UrlEncode`, `IncludeNullValues`                                   |
 | `RawQueryStringAttribute` | 原始查询字符串                | Parameter                      | `PrependQuestionMark`                                                                                          |
 | `ArrayQueryAttribute`     | 数组查询参数                  | Parameter                      | `Separator`                                                                                                    |
-| `HeaderAttribute`         | 请求头参数                    | Parameter / Method / Interface | `Name`, `Value`, `AliasAs`, `Replace`                                                                          |
+| `HeaderAttribute`         | 请求头参数                    | Parameter / Method / Interface / Property | `Name`, `Value`, `AliasAs`, `Replace`, `FormatString`                                                          |
 | `BodyAttribute`           | 请求体参数                    | Parameter                      | `ContentType`, `EnableEncrypt`, `EncryptSerializeType`, `EncryptPropertyName`, `RawString`, `UseStringContent` |
 | `TokenAttribute`          | 令牌参数                      | Parameter / Interface / Method | `TokenType`, `InjectionMode`, `Name`, `Scopes`, `Replace`, `TokenManagerKey`, `RequiresUserId`                 |
 | `FilePathAttribute`       | 文件路径参数（上传/下载）     | Parameter / Property          | `BufferSize`、`Overwrite`                                                                                      |

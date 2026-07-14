@@ -73,6 +73,9 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
 
     private void HandleInterfaceProcessingException(Exception ex, InterfaceDeclarationSyntax interfaceDecl, SourceProductionContext context)
     {
+        // NEW-GEN-14 修复：对于预期异常（InvalidOperationException/ArgumentException）使用 FormatExceptionMessage
+        // （DEBUG 含堆栈，Release 仅消息）；对于非预期异常（NullReferenceException 等生成器内部 Bug），
+        // 始终使用 ex.ToString() 保留完整堆栈，避免在 Release 构建中丢失定位信息。
         var descriptor = ex switch
         {
             InvalidOperationException => Diagnostics.HttpClientApiSyntaxError,
@@ -80,6 +83,19 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
             _ => Diagnostics.HttpClientApiGenerationError
         };
 
-        ReportErrorDiagnostic(context, descriptor, interfaceDecl.Identifier.Text, ex, interfaceDecl.GetLocation());
+        // 对于非预期异常，将完整异常信息（含堆栈）写入诊断消息，便于定位生成器内部 Bug
+        if (descriptor == Diagnostics.HttpClientApiGenerationError)
+        {
+            // 临时覆盖异常的格式化逻辑：直接使用 ex.ToString() 包含完整类型名+消息+堆栈
+            var fullMessage = ex.ToString();
+            context.ReportDiagnostic(Diagnostic.Create(descriptor, interfaceDecl.GetLocation() ?? Location.None,
+                interfaceDecl.Identifier.Text, fullMessage));
+            // 同时通过 GeneratorDebugLogger.LogError 记录到 Trace（Release 也可输出）
+            GeneratorDebugLogger.LogError($"InterfaceProcessing_{interfaceDecl.Identifier.Text}", ex);
+        }
+        else
+        {
+            ReportErrorDiagnostic(context, descriptor, interfaceDecl.Identifier.Text, ex, interfaceDecl.GetLocation());
+        }
     }
 }

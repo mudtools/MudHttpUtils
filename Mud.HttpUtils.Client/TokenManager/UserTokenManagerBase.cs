@@ -191,7 +191,19 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
     private void OnUserTokenEvicted(string userId)
     {
-        TryRemoveAndDisposeLock(userId);
+        // NEW-TM-13 修复：与 TryCleanupUserLock/CleanupOrphanedLocks 一致，仅当锁空闲时才移除。
+        // 原实现直接 TryRemoveAndDisposeLock 不检查 CurrentCount，导致缓存驱逐时若锁正被占用：
+        //   1. 线程 A 持有锁（CurrentCount=0）开始刷新令牌
+        //   2. 缓存驱逐回调移除 _userLocks[userId]（锁仍被 A 持有，不在字典中）
+        //   3. 线程 B 调用 GetOrRefreshTokenAsync，GetOrAdd 创建新的 Lazy<SemaphoreSlim>
+        //   4. 线程 A 与 B 持有不同的 SemaphoreSlim 实例，互斥失效
+        //   5. OAuth2 RefreshToken 一次性使用，并发刷新导致第二次失败、用户被登出
+        // 修复后：锁被占用时不移除，由占用线程在 finally 路径的 TryCleanupUserLock 兜底清理。
+        if (!_userLocks.TryGetValue(userId, out var lazyLock))
+            return;
+
+        if (!lazyLock.IsValueCreated || lazyLock.Value.CurrentCount == 1)
+            TryRemoveAndDisposeLock(userId);
     }
 
     /// <summary>

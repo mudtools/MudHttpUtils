@@ -646,6 +646,9 @@ internal static class MethodAnalyzer
             var pathAttr = property.GetAttributes()
                 .FirstOrDefault(attr => attr.AttributeClass?.Name == "PathAttribute");
 
+            var headerAttr = property.GetAttributes()
+                .FirstOrDefault(attr => attr.AttributeClass?.Name == "HeaderAttribute");
+
             // 仅当前接口的语法树中有对应的属性声明；基接口（尤其跨程序集）的属性声明可能不可达，传 null 安全处理
             propertyDecls.TryGetValue(property.Name, out var propertyDecl);
 
@@ -656,6 +659,10 @@ internal static class MethodAnalyzer
             else if (pathAttr != null)
             {
                 properties.Add(CreatePropertyInfo(property, pathAttr, "Path", propertyDecl, model));
+            }
+            else if (headerAttr != null)
+            {
+                properties.Add(CreatePropertyInfo(property, headerAttr, "Header", propertyDecl, model));
             }
         }
 
@@ -668,10 +675,13 @@ internal static class MethodAnalyzer
                     continue;
 
                 var queryAttr = property.GetAttributes()
-                    .FirstOrDefault(attr => attr.AttributeClass?.Name == "QueryAttribute");
+                        .FirstOrDefault(attr => attr.AttributeClass?.Name == "QueryAttribute");
 
                 var pathAttr = property.GetAttributes()
-                    .FirstOrDefault(attr => attr.AttributeClass?.Name == "PathAttribute");
+                        .FirstOrDefault(attr => attr.AttributeClass?.Name == "PathAttribute");
+
+                var headerAttr = property.GetAttributes()
+                        .FirstOrDefault(attr => attr.AttributeClass?.Name == "HeaderAttribute");
 
                 // 基接口的语法节点通常不在当前接口的语法树中，传 null
                 PropertyDeclarationSyntax? propertyDecl = null;
@@ -698,6 +708,10 @@ internal static class MethodAnalyzer
                 else if (pathAttr != null)
                 {
                     properties.Add(CreatePropertyInfo(property, pathAttr, "Path", propertyDecl, model));
+                }
+                else if (headerAttr != null)
+                {
+                    properties.Add(CreatePropertyInfo(property, headerAttr, "Header", propertyDecl, model));
                 }
             }
         }
@@ -736,10 +750,29 @@ internal static class MethodAnalyzer
                     if (namedArg.Value.Value is bool urlEncode)
                         propertyInfo.UrlEncode = urlEncode;
                     break;
+                case "Replace":
+                    if (namedArg.Value.Value is bool replace)
+                        propertyInfo.Replace = replace;
+                    break;
+                case "AliasAs":
+                    propertyInfo.AliasAs = namedArg.Value.Value?.ToString();
+                    break;
             }
         }
 
-        if (string.IsNullOrEmpty(propertyInfo.ParameterName))
+        // 对于 Header 属性，如果未通过构造函数或 Name 指定名称，则尝试使用 AliasAs
+        if (attributeType == "Header" && string.IsNullOrEmpty(propertyInfo.ParameterName))
+        {
+            if (!string.IsNullOrEmpty(propertyInfo.AliasAs))
+            {
+                propertyInfo.ParameterName = propertyInfo.AliasAs;
+            }
+            else
+            {
+                propertyInfo.ParameterName = property.Name;
+            }
+        }
+        else if (string.IsNullOrEmpty(propertyInfo.ParameterName))
         {
             propertyInfo.ParameterName = property.Name;
         }

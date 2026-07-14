@@ -36,7 +36,7 @@ Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为
 - **日志脱敏**：识别 `[SensitiveData]` 特性，配合 `ISensitiveDataMasker` 实现日志脱敏
 - **Token Scopes**：识别 `[Token(Scopes = "...")]` 特性，支持 OAuth2 令牌作用域
 - **Base Path 支持**：识别 `[BasePath]` 特性，支持接口级统一路径前缀，支持占位符
-- **接口级动态属性**：识别接口上标记 `[Query]`/`[Path]` 的属性，生成实现类属性并应用于所有方法
+- **接口级动态属性**：识别接口上标记 `[Query]`/`[Path]`/`[Header]` 的属性，生成实现类属性并应用于所有方法
 - **QueryMap 参数映射**：识别 `[QueryMap]` 特性，将对象/字典展开为查询参数，支持序列化控制和属性分隔符
 - **RawQueryString**：识别 `[RawQueryString]` 特性，直接传递原始查询字符串
 - **Response\<T\> 包装类型**：支持返回 `Response<T>` 类型，同时提供响应内容和元数据
@@ -566,7 +566,7 @@ URL 构建规则：
 
 ### 接口级动态属性
 
-支持在接口上定义 `[Query]` 或 `[Path]` 属性，生成的实现类将包含对应的可读写属性，属性值应用于接口的所有方法：
+支持在接口上定义 `[Query]`、`[Path]` 或 `[Header]` 属性，生成的实现类将包含对应的可读写属性，属性值应用于接口的所有方法：
 
 ```csharp
 [HttpClientApi(HttpClient = "IEnhancedHttpClient")]
@@ -581,6 +581,13 @@ public interface ITenantApi
 
     [Query("locale")]
     string? Locale { get; set; }
+
+    // 接口级 Header 属性：动态请求头，值为运行时设置的属性值
+    [Header("X-App-Version")]
+    string AppVersion { get; set; }
+
+    [Header("X-Trace-Id", FormatString = "N")]
+    Guid TraceId { get; set; }
 
     [Get("users")]
     Task<List<User>> GetUsersAsync();
@@ -598,12 +605,21 @@ internal partial class TenantApi : ITenantApi
     public string TenantId { get; set; }
     public string ApiKey { get; set; }
     public string? Locale { get; set; }
+    public string AppVersion { get; set; }
+    public Guid TraceId { get; set; }
 
     // 每个方法请求时自动附加接口属性值
 }
 ```
 
 > **优先级**：方法参数优先级高于接口属性。如果方法参数与接口属性同名，方法参数值会覆盖接口属性值。接口属性值为 null 时跳过该参数。
+
+> **Header 属性特殊说明**：
+> - `[Header]` 属性支持 `Replace`（替换同名请求头）和 `FormatString`（格式化值）参数。
+> - 当 `HeaderMergeMode` 为 `Ignore` 时，接口属性级 Header 会被跳过。
+> - 当 `HeaderMergeMode` 为 `Replace` 时，接口属性级 Header 会先移除同名请求头再添加。
+> - 如果 TokenManager 存在且 Header 名为 `Authorization`，该属性 Header 会被跳过（由 Token 注入机制处理）。
+> - 属性级 Header 在方法参数 Header 之后、接口级静态 Header 之前生成，遵循"动态优先于静态"原则。
 
 ### QueryMap 参数映射
 
@@ -990,6 +1006,7 @@ Mud.HttpUtils.Generator/
 - 新增 `IFormContent.ToHttpContentAsync(IProgress<long>?)` 上传进度报告支持
 - 新增 `[BasePath]` 特性识别，支持接口级统一路径前缀
 - 新增接口级动态属性支持，识别接口上标记 `[Query]`/`[Path]` 的属性
+- 新增 `[Header]` 属性支持接口级动态属性，识别接口上标记 `[Header]` 的属性，支持 `Replace`、`FormatString`、`AliasAs` 参数
 - 新增 `[QueryMap]` 参数映射，支持对象/字典展开为查询参数，支持 `PropertySeparator` 和 `SerializationMethod`
 - 新增 `[RawQueryString]` 原始查询字符串参数支持
 - 新增 `Response<T>` 包装类型支持

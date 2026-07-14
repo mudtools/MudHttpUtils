@@ -142,13 +142,55 @@ public class UserTokenManagerLockCleanupTests
         private int GetUserLockCount()
         {
             // 通过反射获取 _userLocks 的 Count
+            // NEW-TM-06 修复后 _userLocks 类型为 ConcurrentDictionary<string, Lazy<SemaphoreSlim>>
             var field = typeof(UserTokenManagerBase)
                 .GetField("_userLocks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (field?.GetValue(this) is System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> dict)
+            if (field?.GetValue(this) is System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<SemaphoreSlim>> dict)
             {
                 return dict.Count;
             }
             return -1;
+        }
+
+        /// <summary>
+        /// 手动获取（持有）用户锁，模拟令牌刷新进行中。若锁不存在则创建。
+        /// </summary>
+        public void AcquireUserLock(string userId)
+        {
+            var field = typeof(UserTokenManagerBase)
+                .GetField("_userLocks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            if (field?.GetValue(this) is System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<SemaphoreSlim>> dict)
+            {
+                var lazyLock = dict.GetOrAdd(userId, _ => new Lazy<SemaphoreSlim>(
+                    () => new SemaphoreSlim(1, 1), LazyThreadSafetyMode.ExecutionAndPublication));
+                lazyLock.Value.Wait();
+            }
+        }
+
+        /// <summary>
+        /// 释放用户锁。
+        /// </summary>
+        public void ReleaseUserLock(string userId)
+        {
+            var field = typeof(UserTokenManagerBase)
+                .GetField("_userLocks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            if (field?.GetValue(this) is System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<SemaphoreSlim>> dict)
+            {
+                if (dict.TryGetValue(userId, out var lazyLock) && lazyLock.IsValueCreated)
+                {
+                    lazyLock.Value.Release();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 通过反射调用 private OnUserTokenEvicted 方法，模拟缓存驱逐回调。
+        /// </summary>
+        public void TriggerUserTokenEvicted(string userId)
+        {
+            var method = typeof(UserTokenManagerBase)
+                .GetMethod("OnUserTokenEvicted", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            method?.Invoke(this, new object[] { userId });
         }
 
         public override Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
@@ -208,5 +250,54 @@ public class UserTokenManagerLockCleanupTests
                 cache.TryRemove(userId, out _);
             }
         }
+    }
+
+    // ============================================================
+    // NEW-TM-13：OnUserTokenEvicted 锁占用检查
+    // ============================================================
+
+    [Fact]
+    public void OnUserTokenEvicted_WhenLockIsHeld_ShouldNotRemoveLock()
+    {
+        // Arrange
+        using var manager = new TestUserTokenManagerForLockCleanup();
+
+        // 触发 GetOrRefreshTokenAsync 创建锁（不预设 token，走刷新路径创建锁）
+        var result = manager.GetOrRefreshTokenAsync("user-evicted").Result;
+        result.Should().Be("refreshed-token-for-user-evicted");
+
+        // 手动持有锁（模拟令牌刷新进行中，CurrentCount == 0）
+        manager.AcquireUserLock("user-evicted");
+
+        // Act：触发缓存驱逐回调（模拟 MemoryCache 过期驱逐）
+        manager.TriggerUserTokenEvicted("user-evicted");
+
+        // Assert：锁应保留（不应被 OnUserTokenEvicted 移除）
+        manager.UserLockCount.Should().Be(1,
+            "锁被占用时（CurrentCount == 0）OnUserTokenEvicted 不应移除锁");
+
+        // 清理
+        manager.ReleaseUserLock("user-evicted");
+    }
+
+    [Fact]
+    public void OnUserTokenEvicted_WhenLockIsIdle_ShouldRemoveLock()
+    {
+        // Arrange
+        using var manager = new TestUserTokenManagerForLockCleanup();
+
+        // 触发 GetOrRefreshTokenAsync 创建锁（不预设 token，走刷新路径创建锁）
+        var result = manager.GetOrRefreshTokenAsync("user-evicted-idle").Result;
+        result.Should().Be("refreshed-token-for-user-evicted-idle");
+
+        // 锁应处于空闲状态（CurrentCount == 1）
+        manager.UserLockCount.Should().BeGreaterOrEqualTo(1);
+
+        // Act：触发缓存驱逐回调
+        manager.TriggerUserTokenEvicted("user-evicted-idle");
+
+        // Assert：锁应被移除
+        manager.UserLockCount.Should().Be(0,
+            "锁空闲时（CurrentCount == 1）OnUserTokenEvicted 应移除锁");
     }
 }

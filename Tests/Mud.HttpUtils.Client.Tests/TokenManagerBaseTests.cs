@@ -612,4 +612,75 @@ public class TokenManagerBaseTests
             };
         }
     }
+
+    // ============================================================
+    // NEW-TM-12：OperationCanceledException 立即传播
+    // ============================================================
+
+    [Fact]
+    public async Task GetOrRefreshTokenAsync_WhenCanceled_ShouldThrowOperationCanceledExceptionImmediately()
+    {
+        // Arrange：使用一个会一直挂起直到取消的 TokenManager
+        var manager = new CancelableTokenManager();
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+
+        // Act
+        var act = async () => await manager.GetOrRefreshTokenAsync(cts.Token);
+
+        // Assert：应直接抛 OperationCanceledException（或 TaskCanceledException，后者是前者的子类），
+        // 不应被 RefreshFailed 事件处理为 fallback token，也不应抛 InvalidOperationException
+        var ex = await act.Should().ThrowAsync<OperationCanceledException>();
+        ex.Which.Should().BeAssignableTo<OperationCanceledException>(
+            "取消应立即传播，不应进入重试/降级逻辑");
+        manager.RefreshFailedEventCount.Should().Be(0,
+            "取消异常不应触发 RefreshFailed 事件");
+    }
+
+    [Fact]
+    public async Task GetOrRefreshTokenAsync_WhenCanceled_ShouldNotReturnFallbackToken()
+    {
+        // Arrange：注册一个 fallback handler，如果取消异常被错误处理为 fallback，则 fallback 会被返回
+        var manager = new CancelableTokenManager();
+        manager.RefreshFailed += (_, e) =>
+        {
+            // NEW-TM-12 修复前：取消异常会进入此分支并被设置为 fallback token
+            // NEW-TM-12 修复后：取消异常直接抛出，不应进入此分支
+            e.FallbackToken = "should-not-be-returned";
+        };
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+
+        // Act
+        var act = async () => await manager.GetOrRefreshTokenAsync(cts.Token);
+
+        // Assert：不应返回 fallback token，应抛 OperationCanceledException
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    /// <summary>
+    /// NEW-TM-12 测试用：RefreshTokenCoreAsync 在收到取消信号前一直等待的 TokenManager
+    /// </summary>
+    private class CancelableTokenManager : TokenManagerBase
+    {
+        public int RefreshFailedEventCount { get; private set; }
+
+        public CancelableTokenManager()
+        {
+            RefreshFailed += (_, _) => RefreshFailedEventCount++;
+        }
+
+        protected override Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
+        {
+            // 等待取消信号，不主动抛异常
+            cancellationToken.WaitHandle.WaitOne(TimeSpan.FromSeconds(5));
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new CredentialToken
+            {
+                AccessToken = "should-not-reach-here",
+                Expire = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds()
+            });
+        }
+
+        public override Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
+            => GetOrRefreshTokenAsync(cancellationToken);
+    }
 }

@@ -766,6 +766,146 @@ public class RequestBuilderTests
 
     #endregion
 
+    #region GenerateInterfaceHeaderProperties 测试
+
+    [Fact]
+    public void GenerateInterfaceHeaderProperties_StringHeader_GeneratesNullCheckAndAdd()
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
+        {
+            new() { Name = "TenantId", Type = "string", AttributeType = "Header", ParameterName = "X-Tenant-Id" }
+        };
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("if (!string.IsNullOrWhiteSpace(TenantId))");
+        code.Should().Contain("__httpRequest.Headers.Add(\"X-Tenant-Id\", TenantId)");
+    }
+
+    [Fact]
+    public void GenerateInterfaceHeaderProperties_ReplaceTrue_GeneratesRemoveAndAdd()
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
+        {
+            new() { Name = "AuthToken", Type = "string", AttributeType = "Header", ParameterName = "X-Auth-Token", Replace = true }
+        };
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("if (!string.IsNullOrWhiteSpace(AuthToken))");
+        code.Should().Contain("{");
+        code.Should().Contain("__httpRequest.Headers.Remove(\"X-Auth-Token\")");
+        code.Should().Contain("__httpRequest.Headers.Add(\"X-Auth-Token\", AuthToken)");
+        code.Should().Contain("}");
+    }
+
+    [Fact]
+    public void GenerateInterfaceHeaderProperties_HeaderMergeModeIgnore_SkipsAllHeaderProperties()
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
+        {
+            new() { Name = "TenantId", Type = "string", AttributeType = "Header", ParameterName = "X-Tenant-Id" }
+        };
+        methodInfo.HeaderMergeMode = "Ignore";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: false);
+        var code = codeBuilder.ToString();
+
+        code.Should().NotContain("__httpRequest.Headers.Add(\"X-Tenant-Id\"");
+    }
+
+    [Fact]
+    public void GenerateInterfaceHeaderProperties_AuthorizationHeader_WithTokenManager_SkipsAuthorization()
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
+        {
+            new() { Name = "AuthHeader", Type = "string", AttributeType = "Header", ParameterName = "Authorization" }
+        };
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: true);
+        var code = codeBuilder.ToString();
+
+        code.Should().NotContain("__httpRequest.Headers.Add(\"Authorization\"");
+    }
+
+    [Fact]
+    public void GenerateInterfaceHeaderProperties_AuthorizationHeader_WithoutTokenManager_GeneratesHeader()
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
+        {
+            new() { Name = "AuthHeader", Type = "string", AttributeType = "Header", ParameterName = "Authorization" }
+        };
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("__httpRequest.Headers.Add(\"Authorization\", AuthHeader)");
+    }
+
+    [Fact]
+    public void GenerateInterfaceHeaderProperties_NoHeaderProperties_GeneratesNothing()
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
+        {
+            new() { Name = "Version", Type = "string", AttributeType = "Query", ParameterName = "version" }
+        };
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: false);
+        var code = codeBuilder.ToString();
+
+        code.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GenerateInterfaceHeaderProperties_GuidHeader_WithFormat_GeneratesFormattedExpression()
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
+        {
+            new() { Name = "RequestId", Type = "System.Guid", AttributeType = "Header", ParameterName = "X-Request-Id", Format = "N" }
+        };
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{0:N}\", RequestId)");
+        code.Should().Contain("__httpRequest.Headers.Add(\"X-Request-Id\"");
+    }
+
+    [Fact]
+    public void GenerateInterfaceHeaderProperties_NullableType_GeneratesNullCheck()
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
+        {
+            new() { Name = "Timestamp", Type = "DateTime?", AttributeType = "Header", ParameterName = "X-Timestamp" }
+        };
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("if (Timestamp != null)");
+        code.Should().Contain("__httpRequest.Headers.Add(\"X-Timestamp\"");
+    }
+
+    #endregion
+
     #region 辅助方法
 
     private static MethodAnalysisResult CreateMethodInfo(string urlTemplate, List<ParameterInfo>? parameters = null)

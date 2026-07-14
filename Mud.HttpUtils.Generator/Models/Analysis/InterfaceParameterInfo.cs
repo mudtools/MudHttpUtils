@@ -26,7 +26,7 @@ internal class InterfacePathParameterInfo
 }
 
 /// <summary>
-/// 接口级动态属性信息（标记 [Query] 或 [Path] 的接口属性）
+/// 接口级动态属性信息（标记 [Query]、[Path] 或 [Header] 的接口属性）
 /// </summary>
 internal class InterfacePropertyInfo
 {
@@ -49,4 +49,14 @@ internal class InterfacePropertyInfo
     /// 为 true 时生成的实现属性不生成 setter，保持接口契约一致。
     /// </summary>
     public bool IsReadOnly { get; set; }
+
+    /// <summary>
+    /// 是否替换已有的同名请求头。仅对 AttributeType == "Header" 的属性有效。
+    /// </summary>
+    public bool Replace { get; set; }
+
+    /// <summary>
+    /// 请求头的别名，用于映射到不同的请求头名称。仅对 AttributeType == "Header" 的属性有效。
+    /// </summary>
+    public string? AliasAs { get; set; }
 }
