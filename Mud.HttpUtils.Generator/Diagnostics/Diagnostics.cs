@@ -272,7 +272,7 @@ internal static class Diagnostics
     public static readonly DiagnosticDescriptor AotDtoNotCoveredByContext = new(
         id: "AOT004",
         title: "HttpClient API 方法的 DTO 未被任何 JsonSerializerContext 覆盖",
-        messageFormat: "接口 {0} 的方法 {1} 使用的请求/响应 DTO '{2}' 未被任何已引用的 JsonSerializerContext 覆盖。AOT 下序列化可能返回空对象或失败。",
+        messageFormat: "接口 {0} 的方法 {1} 使用的请求/响应 DTO '{2}' 未被任何已引用的 JsonSerializerContext 覆盖。AOT 下序列化将抛 NotSupportedException。修复：在 DTO 类型上标注 [HttpJsonSerializable] 并运行 'dotnet mud-jsonctx --project <path>' 生成上下文，或将类型手动加入现有 JsonSerializerContext。",
         category: "AOT",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -292,5 +292,28 @@ internal static class Diagnostics
         category: "AOT",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    /// <summary>
+    /// AOT007：Native AOT 上下文下使用 XML 序列化。
+    /// <para>
+    /// <c>XmlSerializer</c> 构造函数在 .NET 7+ Native AOT 下需要动态代码生成，
+    /// 会在类首次访问时抛 <see cref="System.PlatformNotSupportedException"/>。
+    /// </para>
+    /// <para>
+    /// 语义说明：AOT007 <b>仅</b>在 AOT 上下文下报告（分析器通过 isAotEnabled 提前 return）。
+    /// 非 AOT 项目（未设置 IsAotCompatible=true 且未设置 PublishAot=true）即使引用了本诊断分析器，
+    /// 也不会收到 AOT007 错误，因此不会阻止非 AOT 项目使用 XML 序列化。这是设计意图，
+    /// 不应被误读为"全局阻止 XML 使用"——XML 路径在 JIT/非 AOT 部署场景仍完全可用。
+    /// </para>
+    /// </summary>
+    public static readonly DiagnosticDescriptor AotXmlNotSupportedInAot = new(
+        id: "AOT007",
+        title: "XML 序列化在 Native AOT 下不支持",
+        messageFormat: "接口 {0} 的方法 {1} 使用 XML 序列化，Native AOT 下 XmlSerializer 需要动态代码生成，会在运行时抛 PlatformNotSupportedException。请改用 [SerializationMethod(SerializationMethod.Json)]，或在非 AOT 部署场景使用 XML。",
+        category: "AOT",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "XmlSerializer 在 Native AOT 下不支持。请将方法改为 JSON 序列化，或在非 AOT 部署场景使用 XML。此诊断仅在 AOT 上下文（IsAotCompatible=true 或 PublishAot=true）下报告。",
+        helpLinkUri: "https://learn.microsoft.com/dotnet/core/deploying/native-aot");
     #endregion
 }

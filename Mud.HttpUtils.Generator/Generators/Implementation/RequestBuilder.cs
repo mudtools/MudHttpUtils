@@ -352,7 +352,18 @@ internal class RequestBuilder
         }
         else
         {
-            codeBuilder.AppendLine($"            var __jsonContent = JsonSerializer.Serialize({bodyParam.Name}, _jsonSerializerOptions);");
+            // [AOT v4 Phase 19.1] Body 序列化改用泛型重载 JsonSerializer.Serialize<T>，
+            // 与 QueryParameterBinder.cs:444 一致，使 AOT 分析器能静态追踪类型 T，消除 IL2026/IL3050。
+            // 防御（[审查修订 D11]）：类型显示含可空修饰符 '?' 时（如 MyDto? / List<MyDto?>?）无法直接用作泛型参数，
+            // 回退到非泛型重载（仍由 Phase 19.2 的方法级 [UnconditionalSuppressMessage] 覆盖）。
+            if (bodyParam.Type.IndexOf('?') < 0)
+            {
+                codeBuilder.AppendLine($"            var __jsonContent = JsonSerializer.Serialize<{bodyParam.Type}>({bodyParam.Name}, _jsonSerializerOptions);");
+            }
+            else
+            {
+                codeBuilder.AppendLine($"            var __jsonContent = JsonSerializer.Serialize({bodyParam.Name}, _jsonSerializerOptions);");
+            }
             codeBuilder.AppendLine($"            using var __jsonStrContent = new StringContent(__jsonContent, Encoding.UTF8, {contentTypeExpression});");
             codeBuilder.AppendLine($"            __httpRequest.Content = __jsonStrContent;");
         }

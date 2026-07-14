@@ -161,6 +161,54 @@ jobs:
   # ──────────────────────────────────────────────
   # NuGet 包消费方 AOT 发布验证（PackageReference 路径）
   # ──────────────────────────────────────────────
+      # [AOT v4 Phase 21.1 / D12] XML 路径在 AOT 下的拒绝验证（AOT007）。
+      # 使用 github.workspace 传递路径，临时项目创建在仓库子目录下以自动继承 Directory.Build.props。
+      # 仅设置 IsAotCompatible=true（触发 AOT007 分析器的 AOT 上下文检测）；不设置 PublishAot=true，
+      # 因 dotnet build 即可触发 AOT007 编译期诊断，无需实际 AOT 发布。
+      - name: Verify XML path is rejected in AOT (AOT007)
+        shell: bash
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          TEST_DIR="$WORKSPACE/.tmp-xml-aot-test"
+          mkdir -p "$TEST_DIR"
+          cat > "$TEST_DIR/Test.csproj" << 'EOF'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net10.0</TargetFramework>
+              <IsAotCompatible>true</IsAotCompatible>
+            </PropertyGroup>
+            <ItemGroup>
+              <ProjectReference Include="..\Mud.HttpUtils.Client\Mud.HttpUtils.Client.csproj" />
+              <ProjectReference Include="..\Mud.HttpUtils.Generator\Mud.HttpUtils.Generator.csproj" OutputItemType="Analyzer" />
+            </ItemGroup>
+            <!-- [D18] ProjectReference 场景需显式注册 CompilerVisibleProperty，
+                 否则 AotXmlRejectionAnalyzer 读不到 build_property.IsAotCompatible，AOT007 不会触发。 -->
+            <ItemGroup>
+              <CompilerVisibleProperty Include="IsAotCompatible" />
+              <CompilerVisibleProperty Include="PublishAot" />
+            </ItemGroup>
+          </Project>
+          EOF
+          cat > "$TEST_DIR/Program.cs" << 'EOF'
+          using Mud.HttpUtils.Attributes;
+          [HttpClientApi]
+          public interface IXmlApi
+          {
+              [Post("/api/data"), SerializationMethod(SerializationMethod.Xml)]
+              System.Threading.Tasks.Task<string> PostDataAsync([Body] MyDto data);
+          }
+          public class MyDto { public string Name { get; set; } }
+          EOF
+          if dotnet build "$TEST_DIR/Test.csproj" -p:AotStrictMode=true 2>&1 | grep -q "AOT007"; then
+            echo "✓ AOT007 correctly reported for XML path in AOT"
+          else
+            echo "✗ AOT007 not reported for XML path in AOT"
+            exit 1
+          fi
+          rm -rf "$TEST_DIR"
+
   aot-packageref:
     name: AOT PackageRef 验证
     runs-on: ubuntu-latest
@@ -196,6 +244,9 @@ jobs:
           dotnet pack Mud.HttpUtils/Mud.HttpUtils.csproj --no-build --configuration Release --output artifacts
           dotnet pack Mud.HttpUtils.Generator/Mud.HttpUtils.Generator.csproj --no-build --configuration Release --output artifacts
           dotnet pack Mud.HttpUtils.OpenTelemetry/Mud.HttpUtils.OpenTelemetry.csproj --no-build --configuration Release --output artifacts
+          # [AOT v4 Phase 17.2 / D3] 补齐 Scaffolder 工具包，PackageRef 模式下脚手架才能工作（被现有 nuget.config 的 local 源自动识别）
+          dotnet pack Tools/Mud.HttpUtils.JsonContextScaffolder/Mud.HttpUtils.JsonContextScaffolder.csproj --no-build --configuration Release --output artifacts
+
 
       - name: Restore AotPackageRefDemo (local NuGet source)
         run: dotnet restore Demos/AotPackageRefDemo/AotPackageRefDemo.csproj

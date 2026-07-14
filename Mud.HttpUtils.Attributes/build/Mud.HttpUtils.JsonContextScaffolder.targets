@@ -20,6 +20,11 @@
   -->
 
   <PropertyGroup>
+    <!-- [AOT v4 Phase 17.1 / D16] 仅 PublishAot=true 时自动激活脚手架（最精确的 AOT 发布信号）。
+         IsAotCompatible=true（仅声明 AOT 友好、不实际发布 AOT）不自动激活，避免库项目误触发工具未安装警告。
+         消费方仍可用 <MudEnableJsonContextScaffolder>true</MudEnableJsonContextScaffolder> 显式覆盖，
+         或用 <MudEnableJsonContextScaffolder>false</MudEnableJsonContextScaffolder> 显式禁用。 -->
+    <MudEnableJsonContextScaffolder Condition="'$(MudEnableJsonContextScaffolder)' == '' AND '$(PublishAot)' == 'true'">true</MudEnableJsonContextScaffolder>
     <MudEnableJsonContextScaffolder Condition="'$(MudEnableJsonContextScaffolder)' == ''">false</MudEnableJsonContextScaffolder>
     <MudJsonContextOutputPath Condition="'$(MudJsonContextOutputPath)' == ''">$(IntermediateOutputPath)GeneratedJsonContext</MudJsonContextOutputPath>
     <!-- 优先使用 DotNetToolReference 解析出的本地路径；否则回退到 PATH 上的命令名 -->

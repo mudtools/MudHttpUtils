@@ -16,10 +16,10 @@
 
 	<!-- AOT 严格模式 — 通过 -p:AotStrictMode=true 激活 -->
 	<PropertyGroup Condition="'$(AotStrictMode)' == 'true'">
-		<!-- AOT006（标注 [HttpJsonSerializable] 却无 JsonSerializerContext 覆盖）升级为错误，
-		     作为“脚手架未运行/未接入构建”的严格门禁。
-		     AOT004/AOT005 暂不升级：AOT004 对 FormUrlEncoded 的 [Body] 参数存在已知误报。 -->
-		<WarningsAsErrors>IL2026;IL2046;IL2050;IL2057;IL2067;IL2070;IL2072;IL2075;IL2080;IL3050;AOT006</WarningsAsErrors>
+		<!-- [AOT v4 Phase 20.2] AOT004/AOT005/AOT006/AOT007 均升级为错误。
+		     AOT004 对 FormUrlEncoded 的 [Body] 参数误报已在 Phase 20.1 修正。
+		     AOT007 为 XML 序列化在 AOT 下的显式拒绝（Phase 18）。 -->
+		<WarningsAsErrors>IL2026;IL2046;IL2050;IL2057;IL2067;IL2070;IL2072;IL2075;IL2080;IL3050;AOT004;AOT005;AOT006;AOT007</WarningsAsErrors>
 	</PropertyGroup>
 
 	<!-- NuGet 包引用（版本跟随 Directory.Build.props 的 $(Version)） -->
@@ -33,6 +33,20 @@
 
 	<ItemGroup>
 		<PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
+	</ItemGroup>
+
+	<!-- [AOT v4 Phase 17.2 / D9] 使用标准 DotNetToolReference 恢复脚手架工具，由 Attributes targets 自动解析（$(DotNetToolMud_HttpUtils_JsonContextScaffolder)）。
+	     因 PublishAot=true，Phase 17.1 的 targets 会自动激活脚手架；工具包已由 CI 打包至 artifacts/（被 nuget.config 的 local 源识别）。 -->
+	<ItemGroup>
+		<DotNetToolReference Include="Mud.HttpUtils.JsonContextScaffolder" Version="$(Version)" />
+	</ItemGroup>
+
+
+	<!-- [AOT v4 Phase 18.0 / D18] PackageReference 场景下 Generator 包内 build/*.props 会自动导入并注册
+	     CompilerVisibleProperty；此处显式声明以确保 AOT 上下文属性对分析器可见（幂等，重复声明无害）。 -->
+	<ItemGroup>
+		<CompilerVisibleProperty Include="IsAotCompatible" />
+		<CompilerVisibleProperty Include="PublishAot" />
 	</ItemGroup>
 
 </Project>

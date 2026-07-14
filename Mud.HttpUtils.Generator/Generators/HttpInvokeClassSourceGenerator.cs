@@ -59,6 +59,37 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
                 // AOT006 为诊断性检查，不应阻断代码生成
             }
         });
+
+        // AOT007：在 AOT 上下文下检测使用 XML 序列化的 [HttpClientApi] 接口方法（AotXmlRejectionAnalyzer）。
+        // 仅当存在 [HttpClientApi] 接口时触发；分析器内部再依据 build_property.IsAotCompatible/PublishAot
+        // 判定是否处于 AOT 上下文，非 AOT 项目不报告。
+        var hasHttpClientApi = context.SyntaxProvider
+            .ForAttributeWithMetadataName(
+                fullyQualifiedMetadataName: "Mud.HttpUtils.Attributes.HttpClientApiAttribute",
+                predicate: static (node, _) => node is InterfaceDeclarationSyntax,
+                transform: static (_, _) => true)
+            .Collect()
+            .Select(static (values, _) => values.Any());
+
+        var aotXmlCheckData = hasHttpClientApi
+            .Combine(context.CompilationProvider)
+            .Combine(context.AnalyzerConfigOptionsProvider);
+
+        context.RegisterSourceOutput(aotXmlCheckData, static (ctx, provider) =>
+        {
+            var ((hasApi, compilation), configOptions) = provider;
+            if (!hasApi)
+                return;
+
+            try
+            {
+                Mud.HttpUtils.Analyzers.AotXmlRejectionAnalyzer.Analyze(compilation, ctx, configOptions);
+            }
+            catch
+            {
+                // AOT007 为诊断性检查，不应阻断代码生成
+            }
+        });
     }
 
 
@@ -74,6 +105,13 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
         var httpClientOptionsName = DefaultHttpClientOptionsName;
         ProjectConfigHelper.ReadProjectOptions(configOptionsProvider.GlobalOptions, "build_property.HttpClientOptionsName",
            val => httpClientOptionsName = val, DefaultHttpClientOptionsName);
+
+        // [AOT v4 Phase 18.3 / D19] 读取 AOT 上下文：IsAotCompatible=true 或 PublishAot=true。
+        // 该属性经 build/Mud.HttpUtils.Generator.props 注册为 CompilerVisibleProperty（D18）后方可读取，
+        // 否则恒为 false（AOT 下 XML 静态字段不会被条件化跳过）。
+        var isAotEnabled =
+            ProjectConfigHelper.ReadConfigValueAsBool(configOptionsProvider.GlobalOptions, "build_property.IsAotCompatible", false) ||
+            ProjectConfigHelper.ReadConfigValueAsBool(configOptionsProvider.GlobalOptions, "build_property.PublishAot", false);
 
         foreach (var model in interfaces)
         {
@@ -92,7 +130,7 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
 
             try
             {
-                ProcessInterface(compilation, interfaceDecl, interfaceSymbol, semanticModel, context, httpClientOptionsName);
+                ProcessInterface(compilation, interfaceDecl, interfaceSymbol, semanticModel, context, httpClientOptionsName, isAotEnabled);
             }
             catch (Exception ex)
             {
@@ -115,7 +153,7 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
         }
     }
 
-    private void ProcessInterface(Compilation compilation, InterfaceDeclarationSyntax interfaceDecl, INamedTypeSymbol interfaceSymbol, SemanticModel semanticModel, SourceProductionContext context, string httpClientOptionsName)
+    private void ProcessInterface(Compilation compilation, InterfaceDeclarationSyntax interfaceDecl, INamedTypeSymbol interfaceSymbol, SemanticModel semanticModel, SourceProductionContext context, string httpClientOptionsName, bool isAotEnabled)
     {
         var interfaceCodeGenerator = new InterfaceImplementationGenerator(
             compilation,
@@ -123,7 +161,8 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
             interfaceSymbol,
             semanticModel,
             context,
-            httpClientOptionsName);
+            httpClientOptionsName,
+            isAotEnabled);
 
         interfaceCodeGenerator.GenerateCode();
     }

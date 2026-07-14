@@ -269,10 +269,21 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             foreach (var xmlType in _context.XmlResponseTypes.OrderBy(t => t))
             {
                 var safeFieldName = RequestBuilder.GetXmlSerializerFieldReference(xmlType);
-                // AOT: XmlSerializer 构造函数在 .NET 7+ BCL 中已标注 [RequiresDynamicCode]，
-                // AOT 分析器会对此字段初始化器自动产生 IL3050 警告。
-                // 字段声明本身不支持 [RequiresDynamicCode] 特性（仅 class/constructor/method 有效）。
-                codeBuilder.AppendLine($"        private static readonly System.Xml.Serialization.XmlSerializer {safeFieldName} = new System.Xml.Serialization.XmlSerializer(typeof({xmlType}));");
+                if (_context.IsAotEnabled)
+                {
+                    // [AOT v4 Phase 18.3 / D19] AOT 上下文：XmlSerializer 构造函数在 .NET 7+ BCL 中标注
+                    // [RequiresDynamicCode]，Native AOT 无法静态分析，静态字段初始化会触发 IL3050。
+                    // 故不生成静态字段，改为“延迟抛出的只读属性”，使 {safeFieldName} 引用仍可被编译
+                    // （RequestBuilder.cs:347 的 .Serialize 调用、MethodGenerator.cs:411 的 XmlSerializer 赋值），
+                    // 运行时一旦真正走 XML 路径即抛 PlatformNotSupportedException。
+                    // 此为防御纵深：AOT007 分析器（Phase 18.2）已优先以 Error 阻断 XML 方法的构建。
+                    codeBuilder.AppendLine($"        private static System.Xml.Serialization.XmlSerializer {safeFieldName} => throw new System.PlatformNotSupportedException(\"XML 序列化在 Native AOT 下不被支持，请改用 [SerializationMethod(SerializationMethod.Json)]。\");");
+                }
+                else
+                {
+                    // 非 AOT：生成静态 XmlSerializer 缓存字段。
+                    codeBuilder.AppendLine($"        private static readonly System.Xml.Serialization.XmlSerializer {safeFieldName} = new System.Xml.Serialization.XmlSerializer(typeof({xmlType}));");
+                }
             }
         }
 

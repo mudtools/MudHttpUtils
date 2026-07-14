@@ -33,6 +33,7 @@ internal class InterfaceImplementationGenerator
     private readonly SemanticModel _semanticModel;
     private readonly StringBuilder _codeBuilder;
     private readonly string _optionsName;
+    private readonly bool _isAotEnabled;
 
     public InterfaceImplementationGenerator(
         Compilation compilation,
@@ -40,7 +41,8 @@ internal class InterfaceImplementationGenerator
         INamedTypeSymbol interfaceSymbol,
         SemanticModel semanticModel,
         SourceProductionContext context,
-        string optionsName)
+        string optionsName,
+        bool isAotEnabled = false)
     {
         _compilation = compilation;
         _interfaceDecl = interfaceDecl;
@@ -48,6 +50,7 @@ internal class InterfaceImplementationGenerator
         _semanticModel = semanticModel;
         _context = context;
         _optionsName = optionsName;
+        _isAotEnabled = isAotEnabled;
 
         var estimatedCapacity = EstimateCodeCapacity();
         _codeBuilder = new StringBuilder(estimatedCapacity);
@@ -85,7 +88,8 @@ internal class InterfaceImplementationGenerator
             _interfaceDecl,
             _semanticModel,
             _context,
-            configuration);
+            configuration,
+            _isAotEnabled);
 
         // InterfaceProperties 已在 GeneratorContext 构造函数中预计算（含基接口 [Query]/[Path] 属性），
         // 后续 GetOrAnalyzeMethod 会将其作为 cachedInterfaceProperties 传入 AnalyzeMethod，避免重复扫描。

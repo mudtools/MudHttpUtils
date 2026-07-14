@@ -62,6 +62,28 @@ public class SearchCriteria
 }
 
 // ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────
+// 场景 10 验证 DTO：仅标注 [HttpJsonSerializable]，不手工写 JsonSerializerContext。
+// 由 Phase 17 脚手架在 pre-build 阶段自动扫描并生成 AppJsonContext 覆盖。
+// ─────────────────────────────────────────────────────
+[HttpJsonSerializable(SerializerClassName = "App", NamingPolicy = JsonNamingPolicyHint.CamelCase)]
+public class ScaffoldedDto
+{
+    public int Id { get; set; }
+    public string? Note { get; set; }
+}
+
+// ─────────────────────────────────────────────────────
+// 场景 11 验证 DTO：故意「未覆盖」——既不标注 [HttpJsonSerializable]，
+// 也不在任何 JsonSerializerContext 中注册。AOT 下经 AppJsonContext.Default
+// （仅含源生成 resolver，无反射兜底）序列化应抛 NotSupportedException。
+// 此类型仅用于运行时断言，不参与任何 HTTP 接口。
+// ─────────────────────────────────────────────────────
+public class UncoveredDto
+{
+    public string? Value { get; set; }
+}
+
 // FormUrlEncoded DTO 类型 — 属性在编译期由源生成器枚举（AOT 安全）
 // ─────────────────────────────────────────────────────────────
 

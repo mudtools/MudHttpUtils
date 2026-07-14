@@ -1,0 +1,20 @@
+<Project>
+
+  <!--
+    Mud.HttpUtils.Generator 随包分发的 MSBuild props。
+    ============================================================
+    使 AOT 上下文属性对源生成器/分析器可见（以 build_property.* 形式出现在 AnalyzerConfigOptions.GlobalOptions 中）。
+    仅声明 CompilerVisibleProperty，不包含任何 MSBuild <Target>，
+    与 Mud.HttpUtils.Attributes 包的脚手架 targets 性质不同，不会产生双包 Target 冲突。
+
+    背景：MSBuild 属性默认不会暴露给 Roslyn 分析器；只有注册为 CompilerVisibleProperty 的属性
+    才能通过 build_property.<Name> 键被读取。AOT007 诊断（AotXmlRejectionAnalyzer）与 XML 静态字段
+    条件化（ConstructorGenerator）依赖此机制判定项目是否处于 AOT 上下文。
+  -->
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="IsAotCompatible" />
+    <CompilerVisibleProperty Include="PublishAot" />
+  </ItemGroup>
+
+</Project>

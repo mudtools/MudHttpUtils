@@ -200,7 +200,7 @@ public class DefaultSensitiveDataMasker : ISensitiveDataMasker
     /// <para>
     /// <b>Native AOT 注意</b>：此方法使用反射遍历对象属性和特性，在 Native AOT 裁剪后
     /// 属性/特性元数据可能被裁剪导致漏脱敏。AOT 场景下请使用编译期安全的
-    /// <see cref="ISensitiveDataMasker"/> 实现（如基于字典的 <c>StaticSensitiveDataMasker</c>）。
+    /// <see cref="AotSafeSensitiveDataMasker"/>（基于编译期字典，类型安全）。
     /// </para>
     /// </remarks>
 #if NET7_0_OR_GREATER

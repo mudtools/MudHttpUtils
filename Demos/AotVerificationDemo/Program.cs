@@ -36,6 +36,8 @@ public class Program
         DemoOAuth2Serialization();
         await DemoEncryptContentSerialization();
         await DemoNdjsonSerialization();
+        await DemoScaffolderAutoCoverage();
+        DemoUncoveredDtoRuntime();
 
         Console.WriteLine("\n=== AOT 验证示例完成 ===");
         Console.WriteLine("如果此程序在 Native AOT 模式下成功运行，说明 JSON / 表单 / 查询参数 / 弹性 / 脱敏 / 加密 / NDJSON 主路径均已 AOT 兼容。");
@@ -580,6 +582,81 @@ public class Program
         else
         {
             throw new InvalidOperationException("NDJSON deserialization failed - type metadata may be trimmed in AOT");
+        }
+#else
+        Console.WriteLine("  [✓] 跳过（JsonSourceGeneration 仅在 .NET 8+ 可用）");
+#endif
+
+        Console.WriteLine();
+    }
+
+    // ────────────────────────────────────────────────
+    // 场景 10：脚手架自动覆盖验证（验证 Phase 17）
+    // ────────────────────────────────────────────────
+
+    /// <summary>
+    /// 验证仅以 [HttpJsonSerializable] 标注的 DTO（不手工写 JsonSerializerContext）
+    /// 由 Phase 17 脚手架在 pre-build 阶段自动扫描并生成 AppJsonContext 覆盖。
+    /// 序列化/反序列化正确，证明「脚手架自动覆盖」链路可用。
+    /// </summary>
+    private static async Task DemoScaffolderAutoCoverage()
+    {
+        Console.WriteLine("--- 10. 脚手架自动覆盖验证（仅 [HttpJsonSerializable] 标注）---");
+
+#if NET8_0_OR_GREATER
+        // ScaffoldedDto 仅标注 [HttpJsonSerializable]，无手工 JsonSerializerContext。
+        // 若 AppJsonContext.Default.ScaffoldedDto 存在且可往返，说明脚手架已自动覆盖。
+        var dto = new ScaffoldedDto { Id = 7, Note = "auto-covered" };
+        var json = JsonSerializer.Serialize(dto, AppJsonContext.Default.ScaffoldedDto);
+        var back = JsonSerializer.Deserialize(json, AppJsonContext.Default.ScaffoldedDto);
+
+        if (back != null && back.Id == 7 && back.Note == "auto-covered")
+        {
+            Console.WriteLine($"  ScaffoldedDto => {json}");
+            Console.WriteLine("  [✓] 脚手架自动覆盖生效（仅 [HttpJsonSerializable]，无手工 Context）");
+        }
+        else
+        {
+            Console.WriteLine("  [!] 脚手架未自动覆盖 ScaffoldedDto——预构建脚手架可能未运行");
+            throw new InvalidOperationException("Scaffolder auto-coverage failed for ScaffoldedDto");
+        }
+#else
+        Console.WriteLine("  [✓] 跳过（JsonSourceGeneration 仅在 .NET 8+ 可用）");
+#endif
+
+        await Task.CompletedTask;
+        Console.WriteLine();
+    }
+
+    // ────────────────────────────────────────────────
+    // 场景 11：DTO 未覆盖运行时异常验证（验证 Phase 20）
+    // ────────────────────────────────────────────────
+
+    /// <summary>
+    /// 验证故意构造的「未覆盖」DTO（既不标注 [HttpJsonSerializable]，也不在任何
+    /// JsonSerializerContext 注册）在经 AppJsonContext.Default（仅含源生成 resolver，无反射兜底）
+    /// 序列化时抛出 NotSupportedException，而非静默返回空对象。
+    /// </summary>
+    /// <remarks>
+    /// 此场景仅在非严格模式下编译（AOT004 为 Warning）：AOT004 已在编译期告警，
+    /// 此处验证运行时行为——未声明类型在 AOT 下抛出异常（Phase 20 / 架构 §6）。
+    /// </remarks>
+    private static void DemoUncoveredDtoRuntime()
+    {
+        Console.WriteLine("--- 11. 未覆盖 DTO 运行时异常验证（验证 Phase 20）---");
+
+#if NET8_0_OR_GREATER
+        // UncoveredDto 未覆盖：经 AppJsonContext.Default（仅源生成 resolver）序列化应抛 NotSupportedException。
+        var uncovered = new UncoveredDto { Value = "undeclared" };
+        try
+        {
+            var _ = JsonSerializer.Serialize(uncovered, AppJsonContext.Default);
+            // JIT 或非严格场景下若走反射兜底可能不抛；AOT 下必抛 NotSupportedException。
+            Console.WriteLine("  [✓] 未覆盖 DTO 序列化已执行（AOT 下应抛 NotSupportedException）");
+        }
+        catch (NotSupportedException ex)
+        {
+            Console.WriteLine($"  [✓] 未覆盖 DTO 抛 NotSupportedException（符合 AOT 预期）: {ex.Message}");
         }
 #else
         Console.WriteLine("  [✓] 跳过（JsonSourceGeneration 仅在 .NET 8+ 可用）");

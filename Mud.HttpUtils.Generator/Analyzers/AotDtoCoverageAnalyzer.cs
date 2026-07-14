@@ -34,6 +34,49 @@ internal static class AotDtoCoverageAnalyzer
     private const string BodyAttributeFullName = "Mud.HttpUtils.Attributes.BodyAttribute";
     private const string QueryAttributeFullName = "Mud.HttpUtils.Attributes.QueryAttribute";
     private const string QueryMapAttributeFullName = "Mud.HttpUtils.Attributes.QueryMapAttribute";
+    private const string SerializationMethodAttributeFullName = "Mud.HttpUtils.Attributes.SerializationMethodAttribute";
+
+    /// <summary>
+    /// 读取方法的 SerializationMethod（从 [SerializationMethod] 特性，方法级优先于接口级默认值）。
+    /// 返回 "Json" / "Xml" / "FormUrlEncoded"。默认 "Json"。
+    /// </summary>
+    private static string GetMethodSerializationMethod(IMethodSymbol method)
+    {
+        string? ReadFrom(IEnumerable<AttributeData> attributes)
+        {
+            var attr = attributes.FirstOrDefault(a =>
+                SymbolEqualityComparer.Default.Equals(a.AttributeClass,
+                    method.ContainingType.ContainingAssembly.GetTypeByMetadataName(SerializationMethodAttributeFullName))
+                || a.AttributeClass?.Name == "SerializationMethodAttribute");
+            if (attr == null)
+                return null;
+            if (attr.ConstructorArguments.Length > 0 && attr.ConstructorArguments[0].Value is int enumVal)
+            {
+                return enumVal switch
+                {
+                    0 => "Json",
+                    1 => "Xml",
+                    2 => "FormUrlEncoded",
+                    _ => "Json"
+                };
+            }
+            return "Json";
+        }
+
+        // 方法级优先
+        var methodLevel = ReadFrom(method.GetAttributes());
+        if (methodLevel != null)
+            return methodLevel;
+
+        // 回退到接口级默认值
+        var interfaceLevel = ReadFrom(method.ContainingType.GetAttributes());
+        if (interfaceLevel != null)
+            return interfaceLevel;
+
+        return "Json";
+    }
+
+
 
     /// <summary>
     /// 分析编译单元中所有 [HttpClientApi] 接口方法的 DTO 覆盖情况，报告未覆盖的 AOT004 诊断。
@@ -269,6 +312,14 @@ internal static class AotDtoCoverageAnalyzer
             if (bodyAttr != null && param.GetAttributes()
                 .Any(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, bodyAttr)))
             {
+                // [AOT v4 Phase 20.1 / D-误报修正] FormUrlEncoded Body 不走 JSON 序列化，无需 JsonSerializerContext 覆盖，
+                // 跳过 AOT004 检查（原逻辑未区分 SerializationMethod，导致 FormUrlEncoded Body 被误报）。
+                var methodSerializationMethod = GetMethodSerializationMethod(method);
+                if (methodSerializationMethod == "FormUrlEncoded")
+                {
+                    continue; // 跳过 AOT004 检查
+                }
+
                 if (!IsCovered(paramType, coveredTypes) && !IsPrimitiveOrString(paramType))
                 {
                     context.ReportDiagnostic(Diagnostic.Create(

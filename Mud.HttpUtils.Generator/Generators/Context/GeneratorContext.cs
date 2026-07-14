@@ -47,6 +47,13 @@ internal class GeneratorContext
     public bool HasQueryMap { get; set; }
 
     /// <summary>
+    /// 消费方项目是否启用 AOT（build_property.IsAotCompatible=true 或 build_property.PublishAot=true）。
+    /// 由 <see cref="HttpInvokeClassSourceGenerator"/> 从 AnalyzerConfigOptions.GlobalOptions 读取后逐层传入。
+    /// 用于 AOT 下 XML 静态字段的条件化生成（见 ConstructorGenerator）。
+    /// </summary>
+    public bool IsAotEnabled { get; }
+
+    /// <summary>
     /// 接口中是否有方法使用了 XML 响应类型，需要生成 XmlSerializer 静态缓存字段
     /// </summary>
     public bool HasXmlResponse { get; set; }
@@ -137,7 +144,8 @@ internal class GeneratorContext
         InterfaceDeclarationSyntax interfaceDeclaration,
         SemanticModel semanticModel,
         SourceProductionContext productionContext,
-        GenerationConfiguration configuration)
+        GenerationConfiguration configuration,
+        bool isAotEnabled = false)
     {
         Compilation = compilation;
         InterfaceSymbol = interfaceSymbol;
@@ -145,6 +153,7 @@ internal class GeneratorContext
         SemanticModel = semanticModel;
         ProductionContext = productionContext;
         Configuration = configuration;
+        IsAotEnabled = isAotEnabled;
 
         ClassName = TypeSymbolHelper.GetImplementationClassName(interfaceSymbol.Name);
         NamespaceName = SyntaxHelper.GetNamespaceName(interfaceDeclaration, HttpClientGeneratorConstants.ImplementationNamespaceSuffix);
