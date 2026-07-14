@@ -71,7 +71,18 @@ public class MemoryEncryptedTokenStore : MemoryTokenStore, IEncryptedTokenStore
         if (encrypted == null)
             return null;
 
-        return _encryptionProvider.Decrypt(encrypted);
+        // NEW-TM-14 修复：包装解密异常，使调用方可区分"令牌不存在"（返回 null）与"解密失败"（抛 InvalidOperationException）。
+        // 密钥轮换、密文损坏、IV 不匹配等场景下原始 CryptographicException 直接上抛，上层难以区分故障类型。
+        // 包装后触发上层走重新获取令牌路径，而非误判为系统故障。
+        try
+        {
+            return _encryptionProvider.Decrypt(encrypted);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new InvalidOperationException(
+                $"访问令牌解密失败（tokenType: {tokenType}）。可能原因：密钥轮换、密文损坏、IV 不匹配。请触发令牌重新获取流程。", ex);
+        }
     }
 
     /// <summary>
@@ -107,7 +118,16 @@ public class MemoryEncryptedTokenStore : MemoryTokenStore, IEncryptedTokenStore
         if (encrypted == null)
             return null;
 
-        return _encryptionProvider.Decrypt(encrypted);
+        // NEW-TM-14 修复：与 GetAccessTokenAsync 一致，包装解密异常为 InvalidOperationException。
+        try
+        {
+            return _encryptionProvider.Decrypt(encrypted);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new InvalidOperationException(
+                $"刷新令牌解密失败（tokenType: {tokenType}）。可能原因：密钥轮换、密文损坏、IV 不匹配。请触发令牌重新获取流程。", ex);
+        }
     }
 
     /// <summary>

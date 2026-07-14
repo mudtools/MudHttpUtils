@@ -276,6 +276,68 @@ public class EnhancedHttpClientTests : IClassFixture<UrlValidatorFixture>
 
     #endregion
 
+    #region SendAsAsyncEnumerable Tests (NEW-HC-08)
+
+    [Fact]
+    public async Task SendAsAsyncEnumerable_WhenStreamReadThrowsJsonException_ShouldThrowJsonExceptionNotHttpRequestException()
+    {
+        // Arrange：构造一个响应，其 ReadAsStreamAsync 抛出 JsonException
+        // NEW-HC-08 修复：JsonException 应直接传播，不被 catch-all 包装为 HttpRequestException
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ThrowingContent(new JsonException("模拟 JSON 解析失败"))
+            });
+        var client = CreateClient(handler.Object);
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/api/stream");
+
+        // Act
+        var act = async () =>
+        {
+            await foreach (var item in client.SendAsAsyncEnumerable<TestData>(request))
+            {
+            }
+        };
+
+        // Assert：应抛 JsonException，不应被包装为 HttpRequestException
+        var ex = await act.Should().ThrowAsync<JsonException>();
+        ex.Which.Should().BeOfType<JsonException>(
+            "NEW-HC-08：JsonException 应直接传播，不被包装为 HttpRequestException");
+    }
+
+    [Fact]
+    public async Task SendAsAsyncEnumerable_WhenStreamReadThrowsInvalidOperationException_ShouldThrowDirectly()
+    {
+        // Arrange：构造一个响应，其 ReadAsStreamAsync 抛出 InvalidOperationException
+        // NEW-HC-08 修复：InvalidOperationException 应直接传播，不被 catch-all 包装为 HttpRequestException
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ThrowingContent(new InvalidOperationException("模拟流读取失败"))
+            });
+        var client = CreateClient(handler.Object);
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/api/stream");
+
+        // Act
+        var act = async () =>
+        {
+            await foreach (var item in client.SendAsAsyncEnumerable<TestData>(request))
+            {
+            }
+        };
+
+        // Assert：应抛 InvalidOperationException，不应被包装为 HttpRequestException
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    #endregion
+
     #region DownloadAsync Tests
 
     [Fact]
@@ -348,6 +410,76 @@ public class EnhancedHttpClientTests : IClassFixture<UrlValidatorFixture>
         var act = async () => await client.DownloadLargeAsync(request, "   ");
 
         await act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task DownloadLargeAsync_WithProgress_ShouldThrottleReportsByTime()
+    {
+        // Arrange：构造一个大文件响应（1MB），缓冲区 8192
+        // NEW-HC-09 修复：进度回调按时间节流（100ms 间隔），避免每 buffer 触发回调
+        var fileSize = 1024 * 1024; // 1MB
+        var content = new byte[fileSize];
+        for (int i = 0; i < fileSize; i++) content[i] = (byte)(i % 256);
+
+        var handler = CreateMockHandlerForBytes(content, HttpStatusCode.OK);
+        var client = CreateClient(handler.Object);
+
+        var progressReports = new List<long>();
+        var progress = new SynchronousProgress<long>(bytes => progressReports.Add(bytes));
+
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/largefile");
+
+            // Act：使用较小缓冲区触发多次写入，但进度报告应被节流
+            // 缓冲区 8192，1MB 文件会写入 128 次，但进度报告应远少于 128 次
+            await client.DownloadLargeAsync(request, tempFile, bufferSize: 8192, progress: progress);
+
+            // Assert
+            progressReports.Should().NotBeEmpty("至少应有一次进度报告");
+            progressReports.Count.Should().BeLessThan(128,
+                "1MB 文件以 8192 缓冲区写入应被节流到远少于 128 次报告");
+            progressReports.Last().Should().Be(fileSize,
+                "最终进度报告应为完整文件大小");
+            progressReports.Should().BeInAscendingOrder("进度应单调递增");
+        }
+        finally
+        {
+            if (File.Exists(tempFile)) File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public async Task DownloadLargeAsync_WithProgress_ShouldAlwaysReportFinalProgress()
+    {
+        // Arrange：即使是小文件（仅写入一两次），最终进度也应被报告
+        // NEW-HC-09 修复：循环结束后强制报告最终进度
+        var fileSize = 100; // 极小文件，可能只写入一次
+        var content = new byte[fileSize];
+
+        var handler = CreateMockHandlerForBytes(content, HttpStatusCode.OK);
+        var client = CreateClient(handler.Object);
+
+        var progressReports = new List<long>();
+        var progress = new SynchronousProgress<long>(bytes => progressReports.Add(bytes));
+
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/smallfile");
+
+            // Act
+            await client.DownloadLargeAsync(request, tempFile, bufferSize: 81920, progress: progress);
+
+            // Assert：至少一次进度报告，且最终值为文件大小
+            progressReports.Should().NotBeEmpty();
+            progressReports.Last().Should().Be(fileSize);
+        }
+        finally
+        {
+            if (File.Exists(tempFile)) File.Delete(tempFile);
+        }
     }
 
     #endregion
@@ -648,6 +780,44 @@ public class EnhancedHttpClientTests : IClassFixture<UrlValidatorFixture>
             : base(httpClient, options, jsonOptions)
         {
         }
+    }
+
+    /// <summary>
+    /// 自定义 HttpContent，在 ReadAsStreamAsync 时抛出指定异常。
+    /// 用于测试 SendAsAsyncEnumerable 的异常处理逻辑（NEW-HC-08）。
+    /// </summary>
+    private sealed class ThrowingContent : HttpContent
+    {
+        private readonly Exception _exception;
+
+        public ThrowingContent(Exception exception) => _exception = exception;
+
+        protected override Task<Stream> CreateContentReadStreamAsync()
+        {
+            throw _exception;
+        }
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        {
+            throw _exception;
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 同步执行 Report 的 IProgress 实现，避免 Progress&lt;T&gt; 的同步上下文切换。
+    /// 用于测试进度回调（NEW-HC-09）。
+    /// </summary>
+    private sealed class SynchronousProgress<T> : IProgress<T>
+    {
+        private readonly Action<T> _callback;
+        public SynchronousProgress(Action<T> callback) => _callback = callback;
+        public void Report(T value) => _callback(value);
     }
 
     #endregion

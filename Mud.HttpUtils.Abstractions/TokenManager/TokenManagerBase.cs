@@ -316,6 +316,13 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
                 return token;
             }
+            // NEW-TM-12 修复：取消操作必须立即传播，不进入重试/降级逻辑。
+            // 原实现将 OperationCanceledException 视为普通刷新失败，可能错误返回 FallbackToken，
+            // 违背 .NET 异步编程规范（取消应立即传播，不应被业务逻辑拦截）。
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 lastException = ex;

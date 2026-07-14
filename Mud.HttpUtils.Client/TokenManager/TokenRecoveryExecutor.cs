@@ -390,14 +390,24 @@ public class TokenRecoveryExecutor
             clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
         }
 
+        // NEW-HC-10 修复：跳过 __mud_* 可观测性内部属性，让重试请求被独立采集为新的 Trace/Metric。
+        // 原实现复制所有 Properties/Options，导致：
+        //   1. TracingDelegatingHandler 检测到 __mud_observed=true 跳过 Activity 创建，重试请求无独立 Trace
+        //   2. ExecuteWithObservabilityAsync 检测到已 observed 跳过指标采集，重试耗时与状态码不计入指标
+        //   3. __mud_status_code 被覆盖，Jaeger 中看不到 401→200 的恢复轨迹
+        // 业务属性（如 TokenRecoveryContext）不受 __mud_ 前缀限制，仍正常复制。
         foreach (var property in original.Properties)
         {
+            if (property.Key.StartsWith("__mud_", StringComparison.Ordinal))
+                continue;
             clone.Properties.Add(property);
         }
 
 #if !NETSTANDARD2_0
         foreach (var option in original.Options)
         {
+            if (option.Key.StartsWith("__mud_", StringComparison.Ordinal))
+                continue;
             clone.Options.TryAdd(option.Key, option.Value);
         }
 #endif

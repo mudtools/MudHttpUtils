@@ -234,6 +234,11 @@ internal class MethodGenerator : ICodeFragmentGenerator
         _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
         _requestBuilder.GenerateRequestSetup(codeBuilder, methodInfo);
         _requestBuilder.GenerateHeaderParameters(codeBuilder, methodInfo);
+
+        // 生成接口属性级 Header（动态值，运行时由属性提供）
+        var hasTokenManager = !string.IsNullOrEmpty(context.Configuration.TokenManager);
+        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager);
+
         codeBuilder.AppendLine();
         _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient);
 

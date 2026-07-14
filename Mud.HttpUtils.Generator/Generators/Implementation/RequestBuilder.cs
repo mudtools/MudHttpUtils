@@ -743,6 +743,101 @@ internal class RequestBuilder
         }
     }
 
+    /// <summary>
+    /// 生成接口级 Header 属性的请求头添加代码。
+    /// 属性级 Header 的值在运行时动态设置，与方法参数 Header 和接口级静态 Header 区分。
+    /// 遵循 HeaderMergeMode 规则，并处理 Authorization 与 Token 注入的冲突。
+    /// </summary>
+    public void GenerateInterfaceHeaderProperties(StringBuilder codeBuilder, MethodAnalysisResult methodInfo, bool hasTokenManager)
+    {
+        var headerProperties = methodInfo.InterfaceProperties
+            .Where(p => p.AttributeType == "Header")
+            .ToList();
+
+        if (headerProperties.Count == 0)
+            return;
+
+        var headerMergeMode = methodInfo.HeaderMergeMode;
+        var shouldIgnore = headerMergeMode == "Ignore";
+
+        foreach (var property in headerProperties)
+        {
+            if (shouldIgnore)
+                continue;
+
+            var headerName = property.ParameterName ?? property.Name;
+            if (string.IsNullOrEmpty(headerName))
+                continue;
+
+            // 当 TokenManager 存在且 Header 名为 Authorization 时跳过（由 Token 注入机制处理）
+            if (hasTokenManager && headerName.Equals("Authorization", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var escapedHeaderName = StringEscapeHelper.EscapeString(headerName);
+            var shouldReplace = property.Replace || headerMergeMode == "Replace";
+            var isStringType = TypeDetectionHelper.IsStringType(property.Type);
+
+            if (isStringType)
+            {
+                // string 类型：null/空白时跳过
+                codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({property.Name}))");
+                if (shouldReplace)
+                {
+                    codeBuilder.AppendLine($"            {{");
+                    codeBuilder.AppendLine($"                __httpRequest.Headers.Remove(\"{escapedHeaderName}\");");
+                    codeBuilder.AppendLine($"                __httpRequest.Headers.Add(\"{escapedHeaderName}\", {property.Name});");
+                    codeBuilder.AppendLine($"            }}");
+                }
+                else
+                {
+                    codeBuilder.AppendLine($"                if (!__httpRequest.Headers.Contains(\"{escapedHeaderName}\"))");
+                    codeBuilder.AppendLine($"                    __httpRequest.Headers.Add(\"{escapedHeaderName}\", {property.Name});");
+                }
+            }
+            else
+            {
+                // 非 string 类型：使用格式化表达式
+                var formatExpression = !string.IsNullOrEmpty(property.Format)
+                    ? $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{property.Format}}}\", {property.Name})"
+                    : $"{property.Name}.ToString()";
+
+                // 值类型不会为 null，直接添加
+                if (TypeDetectionHelper.IsValueType(property.Type) && !TypeDetectionHelper.IsNullableType(property.Type))
+                {
+                    if (shouldReplace)
+                    {
+                        codeBuilder.AppendLine($"            __httpRequest.Headers.Remove(\"{escapedHeaderName}\");");
+                        codeBuilder.AppendLine($"            __httpRequest.Headers.Add(\"{escapedHeaderName}\", {formatExpression});");
+                    }
+                    else
+                    {
+                        codeBuilder.AppendLine($"            if (!__httpRequest.Headers.Contains(\"{escapedHeaderName}\"))");
+                        codeBuilder.AppendLine($"                __httpRequest.Headers.Add(\"{escapedHeaderName}\", {formatExpression});");
+                    }
+                }
+                else
+                {
+                    // 可空类型：null 时跳过
+                    codeBuilder.AppendLine($"            if ({property.Name} != null)");
+                    if (shouldReplace)
+                    {
+                        codeBuilder.AppendLine($"            {{");
+                        codeBuilder.AppendLine($"                __httpRequest.Headers.Remove(\"{escapedHeaderName}\");");
+                        codeBuilder.AppendLine($"                __httpRequest.Headers.Add(\"{escapedHeaderName}\", {formatExpression});");
+                        codeBuilder.AppendLine($"            }}");
+                    }
+                    else
+                    {
+                        codeBuilder.AppendLine($"            {{");
+                        codeBuilder.AppendLine($"                if (!__httpRequest.Headers.Contains(\"{escapedHeaderName}\"))");
+                        codeBuilder.AppendLine($"                    __httpRequest.Headers.Add(\"{escapedHeaderName}\", {formatExpression});");
+                        codeBuilder.AppendLine($"            }}");
+                    }
+                }
+            }
+        }
+    }
+
     private static readonly HashSet<string> FormatStringFirstArgAttributes = new HashSet<string>(StringComparer.Ordinal)
     {
         HttpClientGeneratorConstants.QueryAttribute,

@@ -25,9 +25,31 @@ public abstract class TransitiveCodeGenerator : IIncrementalGenerator
     /// 获取生成代码的默认引入的命名空间。
     /// </summary>
     /// <returns></returns>
+    /// <remarks>
+    /// NEW-GEN-13 修复：原默认列表仅含 4 个命名空间，不包含生成代码实际依赖的
+    /// System.Net.Http、System.Threading、System.Text.Json、Mud.HttpUtils 等。
+    /// 若子类未重写此方法且消费项目未配置 GlobalUsings.cs，生成代码可能因缺少 using 而编译失败。
+    /// 修复后扩展为生成代码实际依赖的完整命名空间集合。
+    /// </remarks>
     protected virtual Collection<string> GetFileUsingNameSpaces()
     {
-        return ["System", "System.ComponentModel.DataAnnotations", "System.Runtime.CompilerServices", "System.Linq.Expressions"];
+        return
+        [
+            "System",
+            "System.Collections.Generic",
+            "System.ComponentModel.DataAnnotations",
+            "System.Linq",
+            "System.Linq.Expressions",
+            "System.Net.Http",
+            "System.Runtime.CompilerServices",
+            "System.Text.Json",
+            "System.Text.Json.Serialization",
+            "System.Threading",
+            "System.Threading.Tasks",
+            "Microsoft.Extensions.Logging",
+            "Mud.HttpUtils",
+            "Mud.HttpUtils.Observability"
+        ];
     }
 
     /// <summary>

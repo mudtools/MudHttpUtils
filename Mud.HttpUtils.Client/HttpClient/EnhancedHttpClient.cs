@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Mud.HttpUtils.Observability;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -407,6 +408,20 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {
                 _logger.HttpRequestCancelled(uri, ex);
+                throw;
+            }
+            // NEW-HC-08 修复：与 ExecuteHttpRequestCoreAsync（L750-768）保持一致，
+            // 保留 JsonException 与 InvalidOperationException 原始类型，使流式与非流式路径的异常处理模式统一。
+            // 原实现将所有非 HttpRequestException/OCE 异常包装为 HttpRequestException，
+            // 调用方无法用统一的 catch (JsonException) 模式处理流式与非流式响应。
+            catch (JsonException ex)
+            {
+                _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
+                throw;
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
                 throw;
             }
             catch (Exception ex)
@@ -1266,6 +1281,14 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 var buffer = new byte[bufferSize];
                 int bytesRead;
 
+                // NEW-HC-09 修复：进度回调按时间节流，避免大文件下载时每 buffer（默认 81920 字节）触发一次回调。
+                // GB 级文件每秒可能触发数百到数千次回调，造成 UI 线程高频刷新、IProgress.Post 排队堆积、日志海量输出。
+                // 节流策略：首次上报 + 每隔 100ms 上报一次 + 最后一次上报（确保最终进度被记录）。
+                // 使用 Stopwatch.GetTimestamp() 而非 Environment.TickCount64，兼容 netstandard2.0。
+                var lastReportTimestamp = Stopwatch.GetTimestamp();
+                var timestampToMs = 1000.0 / Stopwatch.Frequency;
+                const double ProgressReportIntervalMs = 100;
+
                 while (true)
                 {
 #if NETSTANDARD2_0
@@ -1283,8 +1306,19 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 #endif
 
                     totalBytesWritten += bytesRead;
-                    progress.Report(totalBytesWritten);
+
+                    // 按时间节流：仅当距上次上报超过 100ms 时才触发回调
+                    var currentTimestamp = Stopwatch.GetTimestamp();
+                    var elapsedMs = (currentTimestamp - lastReportTimestamp) * timestampToMs;
+                    if (elapsedMs >= ProgressReportIntervalMs)
+                    {
+                        progress.Report(totalBytesWritten);
+                        lastReportTimestamp = currentTimestamp;
+                    }
                 }
+
+                // 确保最终进度被上报（无论节流状态）
+                progress.Report(totalBytesWritten);
             }
 
             await fileStream.FlushAsync(cancellationToken).ConfigureAwait(false);
