@@ -572,4 +572,389 @@ public class JsonContextGeneratorTests
 
     #endregion
 
+    #region [HttpClientApi] 接口扫描测试
+
+    [Fact]
+    public void Generate_HttpClientApi_ReturnsClosedGeneric_RegistersIt()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            using System.Text.Json.Serialization;
+            using System.Threading.Tasks;
+            namespace TestApp;
+
+            public class Result<T> where T : class
+            {
+                [JsonPropertyName("code")]
+                public int Code { get; set; }
+                [JsonPropertyName("data")]
+                public T? Data { get; set; }
+            }
+            public class MyData { public string? Name { get; set; } }
+
+            [HttpClientApi]
+            public interface IMyApi
+            {
+                [Get("/api/data")]
+                Task<Result<MyData>?> GetDataAsync();
+            }
+            """;
+        var compilation = CreateCompilation(source, assemblyName: "TestApp");
+        var generator = new JsonContextGenerator();
+
+        var files = generator.Generate(compilation);
+
+        // Should have a HttpClientApi context
+        files.Should().Contain(f => f.ContextClassName.Contains("HttpClientApi"));
+        var apiFile = files.First(f => f.ContextClassName.Contains("HttpClientApi"));
+        // Closed generic should NOT be rewritten to <>
+        apiFile.SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.Result<global::TestApp.MyData>))]");
+        apiFile.SourceCode.Should().NotContain("Result<>");
+    }
+
+    [Fact]
+    public void Generate_HttpClientApi_BodyParameterType_DiscoveredAndRegistered()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            using System.Text.Json.Serialization;
+            using System.Threading.Tasks;
+            namespace TestApp;
+
+            public class Result<T> where T : class
+            {
+                [JsonPropertyName("data")]
+                public T? Data { get; set; }
+            }
+            public class MyData { public string? Name { get; set; } }
+            public class CreateRequest { public string? Name { get; set; } }
+
+            [HttpClientApi]
+            public interface IMyApi
+            {
+                [Post("/api/data")]
+                Task<Result<MyData>?> CreateAsync([Body] CreateRequest request);
+            }
+            """;
+        var compilation = CreateCompilation(source, assemblyName: "TestApp");
+        var generator = new JsonContextGenerator();
+
+        var files = generator.Generate(compilation);
+
+        var apiFile = files.First(f => f.ContextClassName.Contains("HttpClientApi"));
+        // Body parameter type should be registered
+        apiFile.SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.CreateRequest))]");
+        // Closed generic return type should also be registered
+        apiFile.SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.Result<global::TestApp.MyData>))]");
+    }
+
+    [Fact]
+    public void Generate_HttpClientApi_PrimitiveReturnType_Skipped()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            using System.Threading.Tasks;
+            namespace TestApp;
+
+            [HttpClientApi]
+            public interface IMyApi
+            {
+                [Get("/api/count")]
+                Task<int> GetCountAsync();
+            }
+            """;
+        var compilation = CreateCompilation(source, assemblyName: "TestApp");
+        var generator = new JsonContextGenerator();
+
+        var files = generator.Generate(compilation);
+
+        // int is a framework type, should not produce any context
+        files.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Generate_HttpClientApi_StringReturnType_Skipped()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            using System.Threading.Tasks;
+            namespace TestApp;
+
+            [HttpClientApi]
+            public interface IMyApi
+            {
+                [Get("/api/name")]
+                Task<string?> GetNameAsync();
+            }
+            """;
+        var compilation = CreateCompilation(source, assemblyName: "TestApp");
+        var generator = new JsonContextGenerator();
+
+        var files = generator.Generate(compilation);
+
+        files.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Generate_HttpClientApi_NoReturnType_Skipped()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            using System.Threading.Tasks;
+            namespace TestApp;
+
+            [HttpClientApi]
+            public interface IMyApi
+            {
+                [Post("/api/notify")]
+                Task NotifyAsync();
+            }
+            """;
+        var compilation = CreateCompilation(source, assemblyName: "TestApp");
+        var generator = new JsonContextGenerator();
+
+        var files = generator.Generate(compilation);
+
+        files.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Generate_HttpClientApi_AnnotatedType_NotDuplicatedInDiscoveredContext()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            using System.Text.Json.Serialization;
+            using System.Threading.Tasks;
+            namespace TestApp;
+
+            public class Result<T> where T : class
+            {
+                [JsonPropertyName("data")]
+                public T? Data { get; set; }
+            }
+
+            [HttpJsonSerializable(SerializerClassName = "Models")]
+            public class MyData { public string? Name { get; set; } }
+
+            [HttpClientApi]
+            public interface IMyApi
+            {
+                [Get("/api/data")]
+                Task<Result<MyData>?> GetDataAsync();
+            }
+            """;
+        var compilation = CreateCompilation(source, assemblyName: "TestApp");
+        var generator = new JsonContextGenerator();
+
+        var files = generator.Generate(compilation);
+
+        // Should have both the annotated context and the HttpClientApi context
+        files.Should().Contain(f => f.ContextClassName == "ModelsJsonContext");
+        files.Should().Contain(f => f.ContextClassName.Contains("HttpClientApi"));
+
+        var annotatedFile = files.First(f => f.ContextClassName == "ModelsJsonContext");
+        var apiFile = files.First(f => f.ContextClassName.Contains("HttpClientApi"));
+
+        // MyData should be in the annotated context, not in the HttpClientApi context
+        annotatedFile.SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.MyData))]");
+        apiFile.SourceCode.Should().NotContain("[JsonSerializable(typeof(global::TestApp.MyData))]");
+
+        // Closed generic should be in the HttpClientApi context
+        apiFile.SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.Result<global::TestApp.MyData>))]");
+    }
+
+    [Fact]
+    public void Generate_HttpClientApi_ScanDisabled_NoDiscovery()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            using System.Text.Json.Serialization;
+            using System.Threading.Tasks;
+            namespace TestApp;
+
+            public class Result<T> where T : class
+            {
+                [JsonPropertyName("data")]
+                public T? Data { get; set; }
+            }
+            public class MyData { public string? Name { get; set; } }
+
+            [HttpClientApi]
+            public interface IMyApi
+            {
+                [Get("/api/data")]
+                Task<Result<MyData>?> GetDataAsync();
+            }
+            """;
+        var compilation = CreateCompilation(source, assemblyName: "TestApp");
+        var generator = new JsonContextGenerator();
+
+        var files = generator.Generate(compilation, scanHttpClientApi: false);
+
+        // No annotated types and scanning disabled → empty result
+        files.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Generate_HttpClientApi_ListOfCustomType_OnlyInnerTypeRegistered()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            using System.Text.Json.Serialization;
+            using System.Threading.Tasks;
+            using System.Collections.Generic;
+            namespace TestApp;
+
+            public class MyData { public string? Name { get; set; } }
+
+            [HttpClientApi]
+            public interface IMyApi
+            {
+                [Get("/api/data")]
+                Task<List<MyData>> GetDataAsync();
+            }
+            """;
+        var compilation = CreateCompilation(source, assemblyName: "TestApp");
+        var generator = new JsonContextGenerator();
+
+        var files = generator.Generate(compilation);
+
+        var apiFile = files.First(f => f.ContextClassName.Contains("HttpClientApi"));
+        // List<MyData> is a framework generic → skip the List but register MyData
+        apiFile.SourceCode.Should().NotContain("List<global::TestApp.MyData>");
+        apiFile.SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.MyData))]");
+    }
+
+    [Fact]
+    public void Generate_HttpClientApi_NestedClosedGeneric_AllLevelsRegistered()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            using System.Text.Json.Serialization;
+            using System.Threading.Tasks;
+            namespace TestApp;
+
+            public class Result<T> where T : class
+            {
+                [JsonPropertyName("data")]
+                public T? Data { get; set; }
+            }
+            public class PageList<T> where T : class
+            {
+                [JsonPropertyName("items")]
+                public List<T> Items { get; set; } = new();
+            }
+            public class MyData { public string? Name { get; set; } }
+
+            [HttpClientApi]
+            public interface IMyApi
+            {
+                [Get("/api/data")]
+                Task<Result<PageList<MyData>>?> GetDataAsync();
+            }
+            """;
+        var compilation = CreateCompilation(source, assemblyName: "TestApp");
+        var generator = new JsonContextGenerator();
+
+        var files = generator.Generate(compilation);
+
+        var apiFile = files.First(f => f.ContextClassName.Contains("HttpClientApi"));
+        // Outer closed generic
+        apiFile.SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.Result<global::TestApp.PageList<global::TestApp.MyData>>))]");
+        // Inner closed generic
+        apiFile.SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.PageList<global::TestApp.MyData>))]");
+        // Innermost type
+        apiFile.SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.MyData))]");
+    }
+
+    [Fact]
+    public void Generate_HttpClientApi_DisabledByDefault_WhenNoAnnotatedTypes()
+    {
+        // When scanHttpClientApi is false (default param is true, but we pass false)
+        // and there are no annotated types, result should be empty
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            using System.Threading.Tasks;
+            namespace TestApp;
+
+            [HttpClientApi]
+            public interface IMyApi
+            {
+                [Get("/api/data")]
+                Task<string> GetDataAsync();
+            }
+            """;
+        var compilation = CreateCompilation(source, assemblyName: "TestApp");
+        var generator = new JsonContextGenerator();
+
+        var files = generator.Generate(compilation, scanHttpClientApi: false);
+
+        files.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Generate_HttpClientApi_ReportsAOT004Info()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            using System.Text.Json.Serialization;
+            using System.Threading.Tasks;
+            namespace TestApp;
+
+            public class Result<T> where T : class
+            {
+                [JsonPropertyName("data")]
+                public T? Data { get; set; }
+            }
+            public class MyData { public string? Name { get; set; } }
+
+            [HttpClientApi]
+            public interface IMyApi
+            {
+                [Get("/api/data")]
+                Task<Result<MyData>?> GetDataAsync();
+            }
+            """;
+        var compilation = CreateCompilation(source, assemblyName: "TestApp");
+        var generator = new JsonContextGenerator();
+
+        generator.Generate(compilation);
+
+        generator.Diagnostics.Should().Contain(d => d.Id == "AOT004" && d.Severity == ScaffolderDiagnosticSeverity.Info);
+    }
+
+    [Fact]
+    public void Generate_HttpClientApi_ValueTaskReturnType_Supported()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            using System.Text.Json.Serialization;
+            using System.Threading.Tasks;
+            namespace TestApp;
+
+            public class Result<T> where T : class
+            {
+                [JsonPropertyName("data")]
+                public T? Data { get; set; }
+            }
+            public class MyData { public string? Name { get; set; } }
+
+            [HttpClientApi]
+            public interface IMyApi
+            {
+                [Get("/api/data")]
+                ValueTask<Result<MyData>?> GetDataAsync();
+            }
+            """;
+        var compilation = CreateCompilation(source, assemblyName: "TestApp");
+        var generator = new JsonContextGenerator();
+
+        var files = generator.Generate(compilation);
+
+        var apiFile = files.First(f => f.ContextClassName.Contains("HttpClientApi"));
+        apiFile.SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.Result<global::TestApp.MyData>))]");
+    }
+
+    #endregion
+
 }

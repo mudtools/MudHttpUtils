@@ -1,6 +1,6 @@
 # Mud.HttpUtils.JsonContextScaffolder
 
-扫描实体/DTO 上标注的 `[HttpJsonSerializable]`，自动产出 `JsonSerializerContext` 源文件，使 STJ 源生成在 Native AOT 下获得类型元数据。面向**消费方（第三方开发者）**分发，以 `dotnet tool` 形式提供。
+扫描实体/DTO 上标注的 `[HttpJsonSerializable]` 以及 `[HttpClientApi]` 接口的方法返回类型和 `[Body]` 参数类型，自动产出 `JsonSerializerContext` 源文件，使 STJ 源生成在 Native AOT 下获得类型元数据。面向**消费方（第三方开发者）**分发，以 `dotnet tool` 形式提供。
 
 ## 安装（已发布到 NuGet）
 
@@ -37,6 +37,8 @@ mud-jsonctx -p src/MyApp.DataModels/MyApp.DataModels.csproj -o src/MyApp.DataMod
 mud-jsonctx -p src/MyApp.DataModels/MyApp.DataModels.csproj --dry-run
 # 自动补全多态派生类（见下）
 mud-jsonctx -p src/MyApp.DataModels/MyApp.DataModels.csproj --auto-derived-types
+# 禁用 [HttpClientApi] 接口扫描（默认开启）
+mud-jsonctx -p src/MyApp.DataModels/MyApp.DataModels.csproj --no-scan-http-client-api
 ```
 
 3. 将生成的 `.g.cs` 提交到版本控制（仅在新增/变更标注时重跑）。
@@ -51,9 +53,52 @@ services.AddMudHttpClientJsonContext(FeishuAIJsonContext.Default);
 
 库内置 `BuildJsonOptions` 会自动把消费方 resolver 与库内置 `MudHttpJsonContext.Default` 合并。
 
+## [HttpClientApi] 接口自动扫描（默认开启）
+
+除了扫描 `[HttpJsonSerializable]` 标注的实体/DTO 外，脚手架还会自动扫描 `[HttpClientApi]` 接口，提取方法返回类型和 `[Body]` 参数类型中的**闭合泛型**（如 `FeishuApiResult<T>`）并注册到独立的 Context 文件中。
+
+### 为什么需要这个功能？
+
+像 `FeishuApiResult<T>` 这类泛型包装类型无法直接标注 `[HttpJsonSerializable]`（因为它们是构造类型，不是类型定义），但在 AOT 下又必须注册闭合泛型才能获得类型元数据。手动维护这些闭合泛型注册既繁琐又容易遗漏。
+
+### 扫描规则
+
+- 扫描所有标注了 `[HttpClientApi]` 的接口
+- 解包 `Task<T>` / `ValueTask<T>` 返回类型，提取内层类型
+- 提取标注了 `[Body]` 的参数类型
+- **闭合泛型**（如 `FeishuApiResult<X>`）：始终注册，并递归处理类型参数
+- **非泛型自定义类型**：仅当来自当前程序集且未标注 `[HttpJsonSerializable]` 时注册
+- **框架类型**（`System.*` 命名空间、基元类型）：跳过
+- **已标注 `[HttpJsonSerializable]` 的类型**：不重复注册
+
+### 生成的 Context
+
+发现类型会生成到独立的 Context 文件中，命名规则为 `{程序集简称}HttpClientApiJsonContext`。例如对 `Mud.Feishu.csproj` 扫描会生成 `FeishuHttpClientApiJsonContext.g.cs`。
+
+### 示例
+
+```csharp
+// 扫描前：需手写闭合泛型注册
+[JsonSerializable(typeof(FeishuApiResult<GetUserDataResult>))]
+[JsonSerializable(typeof(FeishuApiResult<WsEndpointResult>))]
+// ... 数百个手动注册
+internal partial class FeishuApiResultJsonContext : JsonSerializerContext { }
+
+// 扫描后：自动生成 FeishuHttpClientApiJsonContext.g.cs，包含所有闭合泛型
+// 无需手写，运行 mud-jsonctx 即可
+```
+
+### 禁用扫描
+
+如需禁用此功能（例如项目不使用 `[HttpClientApi]` 或只需扫描标注类型）：
+
+```bash
+mud-jsonctx --project src/MyApp/MyApp.csproj --no-scan-http-client-api
+```
+
 ## 重要限制与手写补充
 
-- **框架泛型包装无法标注**：如 `List<UserDto>`、`PagedResult<UserDto>` 这类不是你定义的、或本身为开放/框架泛型包装的根类型，不能（也不应）打 `[HttpJsonSerializable]`。需手写一个 partial 补充（类名须与脚手架生成的 Context 类名一致）：
+- **框架泛型包装无法标注**：如 `List<UserDto>` 这类不是你定义的、或本身为开放/框架泛型包装的根类型，不能（也不应）打 `[HttpJsonSerializable]`。需手写一个 partial 补充（类名须与脚手架生成的 Context 类名一致）：
 
 ```csharp
 #if NET8_0_OR_GREATER
@@ -64,6 +109,7 @@ internal partial class FeishuAIJsonContext;
 #endif
 ```
 
+- **闭合泛型自动发现**：`[HttpClientApi]` 接口返回类型中的闭合泛型（如 `FeishuApiResult<T>`）由 `[HttpClientApi]` 扫描自动发现并注册，无需手写。
 - **多态（基类反序列化派生类）**：默认仅检查直接基类。使用 `--auto-derived-types` 可递归扫描并生成**完整派生层级**（Base → Mid → Leaf）。基于接口的 polymorphism 仍需手动标注 `[JsonDerivedType]`。
 - **开放泛型**：`<T>` 类型以 `<>` 写入 context，仅在 NET8_0_OR_GREATER 下源生成；更低 TFM 走反射兜底，AOT 不可用（见 AOT002 警告）。
 - 生成的 Context 为 `internal partial`，仅作用于标注类型所在的同一程序集；跨程序集需各自生成。
@@ -79,7 +125,7 @@ internal partial class FeishuAIJsonContext;
 - **AOT001**：同一 `SerializerClassName` 下存在冲突的 `NamingPolicy` 配置。
 - **AOT002**：标注了开放泛型类型（低版本 TFM 不支持源生成，AOT 不可用）。
 - **AOT003**：类型存在基类（多态）但未标注 `[JsonDerivedType]`（未启用 `--auto-derived-types` 时报告）。
-- **AOT004**：`[HttpClientApi]` 接口方法的请求/响应 DTO 未被任何 `JsonSerializerContext` 覆盖。
+- **AOT004**：`[HttpClientApi]` 接口扫描信息——当扫描发现类型并自动注册时，以 Info 级别报告发现数量和目标 Context。
 - **AOT005**：`[Query]`/`[QueryMap]` 中以 JSON 序列化的复杂参数类型未被 `JsonSerializerContext` 覆盖。
 - **AOT006**：类型标注了 `[HttpJsonSerializable]` 却未被任何已引用的 `JsonSerializerContext` 覆盖。**这正是“脚手架未运行 / 未接入构建”的编译期信号**——一旦出现即说明标注的实体没有对应生成的 Context，AOT 下会漏元数据。
 

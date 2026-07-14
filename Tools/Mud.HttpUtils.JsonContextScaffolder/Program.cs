@@ -38,6 +38,7 @@ var projectPath = (string?)null;
 var outputDir = (string?)null;
 var dryRun = false;
 var autoDerivedTypes = false;
+var scanHttpClientApi = true;
 
 // 解析命令行参数
 for (var i = 0; i < args.Length; i++)
@@ -59,6 +60,12 @@ for (var i = 0; i < args.Length; i++)
             break;
         case "--auto-derived-types":
             autoDerivedTypes = true;
+            break;
+        case "--scan-http-client-api":
+            scanHttpClientApi = true;
+            break;
+        case "--no-scan-http-client-api":
+            scanHttpClientApi = false;
             break;
         case "--help":
         case "-h":
@@ -88,7 +95,8 @@ System.Console.WriteLine($"Mud.HttpUtils JSON Context Scaffolder");
 System.Console.WriteLine($"  项目：{projectPath}");
 System.Console.WriteLine($"  输出：{outputDir ?? "(项目目录/Generated)"}");
 System.Console.WriteLine($"  Dry run：{dryRun}");
-System.Console.WriteLine($"  Auto derived types：{autoDerivedTypes}");;
+System.Console.WriteLine($"  Auto derived types：{autoDerivedTypes}");
+System.Console.WriteLine($"  Scan [HttpClientApi]：{scanHttpClientApi}");
 System.Console.WriteLine();
 
 // 加载项目
@@ -108,7 +116,7 @@ if (compilation == null)
 
 // 生成 Context 文件
 var generator = new JsonContextGenerator();
-var files = generator.Generate(compilation, autoDerivedTypes: autoDerivedTypes);
+var files = generator.Generate(compilation, autoDerivedTypes: autoDerivedTypes, scanHttpClientApi: scanHttpClientApi);
 
 if (files.Count == 0)
 {
@@ -185,6 +193,8 @@ static void PrintHelp()
       -o, --output <目录>    输出目录（默认：<项目目录>/Generated）
       --dry-run              仅预览，不写入文件
       --auto-derived-types   自动检测同程序集内派生类，生成额外的 [JsonSerializable]
+      --scan-http-client-api  扫描 [HttpClientApi] 接口，自动发现返回类型和 [Body] 参数中的闭合泛型（默认开启）
+      --no-scan-http-client-api  禁用 [HttpClientApi] 接口扫描
       -h, --help             显示帮助
 
     示例：
@@ -195,6 +205,8 @@ static void PrintHelp()
     说明：
       扫描项目中标注 [HttpJsonSerializable] 的类型，按 SerializerClassName 分组，
       为每组生成一个 JsonSerializerContext 源文件（#if NET8_0_OR_GREATER 包裹）。
+      同时扫描 [HttpClientApi] 接口的方法返回类型和 [Body] 参数类型，
+      自动发现闭合泛型（如 FeishuApiResult<T>）并注册到独立的 Context。
       生成的文件应提交到版本控制，仅在实体变更时重跑。
     """);
 }

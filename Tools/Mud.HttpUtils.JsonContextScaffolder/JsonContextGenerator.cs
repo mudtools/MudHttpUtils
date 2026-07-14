@@ -67,6 +67,8 @@ public class JsonContextGenerator
 {
     private const string AttributeFullName = "Mud.HttpUtils.Attributes.HttpJsonSerializableAttribute";
     private const string JsonDerivedTypeAttributeFullName = "System.Text.Json.Serialization.JsonDerivedTypeAttribute";
+    private const string HttpClientApiAttributeFullName = "Mud.HttpUtils.Attributes.HttpClientApiAttribute";
+    private const string BodyAttributeFullName = "Mud.HttpUtils.Attributes.BodyAttribute";
 
     /// <summary>
     /// 本次生成过程中产生的诊断信息。
@@ -79,31 +81,66 @@ public class JsonContextGenerator
     /// <param name="compilation">Roslyn 编译单元。</param>
     /// <param name="defaultNamespace">默认命名空间（当类型无命名空间时使用）。</param>
     /// <param name="autoDerivedTypes">是否自动检测同程序集内的派生类并生成 [JsonDerivedType]。</param>
-    public List<JsonContextFile> Generate(Compilation compilation, string defaultNamespace = "Generated", bool autoDerivedTypes = false)
+    /// <param name="scanHttpClientApi">是否扫描 [HttpClientApi] 接口，自动发现返回类型和 [Body] 参数类型中的闭合泛型。</param>
+    public List<JsonContextFile> Generate(
+        Compilation compilation,
+        string defaultNamespace = "Generated",
+        bool autoDerivedTypes = false,
+        bool scanHttpClientApi = true)
     {
         Diagnostics.Clear();
 
         var attributeSymbol = compilation.GetTypeByMetadataName(AttributeFullName);
-        if (attributeSymbol == null)
-            return [];
 
-        // 1. 扫描所有标注类型
-        var annotatedTypes = ScanAnnotatedTypes(compilation, attributeSymbol);
-        if (annotatedTypes.Count == 0)
-            return [];
+        // 1. 扫描 [HttpJsonSerializable] 标注类型
+        var annotatedTypes = attributeSymbol != null
+            ? ScanAnnotatedTypes(compilation, attributeSymbol)
+            : new List<AnnotatedType>();
 
-        // 2. 运行诊断检查（AOT001-AOT003）
-        CheckDiagnostics(annotatedTypes, compilation, autoDerivedTypes);
-
-        // 3. 分组
-        var groups = GroupTypes(annotatedTypes, defaultNamespace);
-
-        // 4. 为每组生成源文件
-        var files = new List<JsonContextFile>();
-        foreach (var group in groups)
+        // 2. 扫描 [HttpClientApi] 接口返回类型和 [Body] 参数类型
+        List<INamedTypeSymbol> discoveredTypes = [];
+        if (scanHttpClientApi)
         {
-            var file = GenerateContextFile(group, compilation, autoDerivedTypes);
+            var annotatedSet = new HashSet<INamedTypeSymbol>(
+                annotatedTypes.Select(a => a.Symbol),
+                SymbolEqualityComparer.Default);
+            discoveredTypes = ScanHttpClientApiTypes(compilation, annotatedSet);
+        }
+
+        // 3. 无标注类型且无发现类型时返回空
+        if (annotatedTypes.Count == 0 && discoveredTypes.Count == 0)
+            return [];
+
+        // 4. 诊断检查（AOT001-AOT003，仅针对标注类型）
+        if (annotatedTypes.Count > 0)
+            CheckDiagnostics(annotatedTypes, compilation, autoDerivedTypes);
+
+        // 5. 分组并生成
+        var files = new List<JsonContextFile>();
+
+        // 5a. 标注类型分组
+        if (annotatedTypes.Count > 0)
+        {
+            var groups = GroupTypes(annotatedTypes, defaultNamespace);
+            foreach (var group in groups)
+            {
+                var file = GenerateContextFile(group, compilation, autoDerivedTypes);
+                files.Add(file);
+            }
+        }
+
+        // 5b. [HttpClientApi] 发现类型分组（闭合泛型等）
+        if (discoveredTypes.Count > 0)
+        {
+            var apiGroup = CreateDiscoveredTypeGroup(discoveredTypes, compilation, defaultNamespace);
+            var file = GenerateContextFile(apiGroup, compilation, autoDerivedTypes);
             files.Add(file);
+
+            Diagnostics.Add(new ScaffolderDiagnostic(
+                "AOT004",
+                ScaffolderDiagnosticSeverity.Info,
+                $"[HttpClientApi] 接口扫描发现 {discoveredTypes.Count} 个类型（含闭合泛型），已自动纳入 {apiGroup.SerializerClassName}JsonContext。",
+                null));
         }
 
         return files;
@@ -248,6 +285,212 @@ public class JsonContextGenerator
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// 扫描编译单元中所有标注 <c>[HttpClientApi]</c> 的接口，提取方法返回类型和 <c>[Body]</c> 参数类型。
+    /// </summary>
+    /// <remarks>
+    /// 自动发现闭合泛型（如 <c>FeishuApiResult&lt;T&gt;</c>）和非标注的自定义类型，
+    /// 将其纳入 JSON 源生成上下文，确保 AOT 下类型元数据完整。
+    /// </remarks>
+    /// <param name="compilation">Roslyn 编译单元。</param>
+    /// <param name="annotatedSet">已通过 [HttpJsonSerializable] 标注的类型集合（用于去重）。</param>
+    /// <returns>发现的需注册类型列表。</returns>
+    private List<INamedTypeSymbol> ScanHttpClientApiTypes(
+        Compilation compilation,
+        HashSet<INamedTypeSymbol> annotatedSet)
+    {
+        var result = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+
+        var httpClientApiAttr = compilation.GetTypeByMetadataName(HttpClientApiAttributeFullName);
+        if (httpClientApiAttr == null)
+            return [];
+
+        var bodyAttr = compilation.GetTypeByMetadataName(BodyAttributeFullName);
+
+        foreach (var syntaxTree in compilation.SyntaxTrees)
+        {
+            var semanticModel = compilation.GetSemanticModel(syntaxTree);
+            var root = syntaxTree.GetRoot();
+
+            foreach (var node in root.DescendantNodes())
+            {
+                if (semanticModel.GetDeclaredSymbol(node) is not INamedTypeSymbol typeSymbol)
+                    continue;
+
+                if (typeSymbol.TypeKind != TypeKind.Interface)
+                    continue;
+
+                var hasHttpClientApi = typeSymbol.GetAttributes().Any(a =>
+                    SymbolEqualityComparer.Default.Equals(a.AttributeClass, httpClientApiAttr));
+                if (!hasHttpClientApi)
+                    continue;
+
+                // 扫描接口自身声明的方法（含继承链上的方法）
+                var methods = typeSymbol.GetMembers().OfType<IMethodSymbol>();
+                foreach (var method in methods)
+                {
+                    // 跳过属性访问器和事件访问器
+                    if (method.MethodKind is MethodKind.PropertyGet or MethodKind.PropertySet)
+                        continue;
+
+                    // 返回类型
+                    var returnType = UnwrapTaskType(method.ReturnType);
+                    if (returnType is INamedTypeSymbol namedReturn)
+                        CollectSerializableTypes(namedReturn, result, annotatedSet, compilation.Assembly);
+
+                    // [Body] 参数类型
+                    foreach (var param in method.Parameters)
+                    {
+                        var hasBody = bodyAttr != null && param.GetAttributes().Any(a =>
+                            SymbolEqualityComparer.Default.Equals(a.AttributeClass, bodyAttr));
+                        if (!hasBody)
+                            continue;
+
+                        if (param.Type is INamedTypeSymbol namedParam)
+                            CollectSerializableTypes(namedParam, result, annotatedSet, compilation.Assembly);
+                    }
+                }
+            }
+        }
+
+        return result.ToList();
+    }
+
+    /// <summary>
+    /// 解包 <see cref="Task{T}"/> / <see cref="ValueTask{T}"/> 的类型参数。
+    /// </summary>
+    /// <param name="type">方法返回类型符号。</param>
+    /// <returns>解包后的类型参数；若为无返回值的 Task 则返回 null；若非 Task 类型则原样返回。</returns>
+    private static ITypeSymbol? UnwrapTaskType(ITypeSymbol type)
+    {
+        if (type is not INamedTypeSymbol named)
+            return null;
+
+        // Task<T> / ValueTask<T>
+        if (named.IsGenericType && named.TypeArguments.Length == 1)
+        {
+            var fullName = named.OriginalDefinition.ToDisplayString();
+            if (fullName is "System.Threading.Tasks.Task<T>" or "System.Threading.Tasks.ValueTask<T>")
+                return named.TypeArguments[0];
+        }
+
+        // Task / ValueTask（无返回值）
+        var nonGenericName = named.OriginalDefinition?.ToDisplayString();
+        if (nonGenericName is "System.Threading.Tasks.Task" or "System.Threading.Tasks.ValueTask")
+            return null;
+
+        // 非 Task 类型，原样返回
+        return type;
+    }
+
+    /// <summary>
+    /// 递归收集需要纳入 JSON 源生成的类型。
+    /// </summary>
+    /// <remarks>
+    /// 处理规则：
+    /// <list type="bullet">
+    ///   <item>框架类型（System.* 命名空间、基元类型）跳过自身，但递归处理其类型参数</item>
+    ///   <item>闭合泛型（如 <c>FeishuApiResult&lt;X&gt;</c>）始终注册，并递归处理类型参数</item>
+    ///   <item>开放泛型定义跳过（无法直接注册）</item>
+    ///   <item>非泛型类型：仅当来自当前程序集且未标注 <c>[HttpJsonSerializable]</c> 时注册</item>
+    ///   <item><see cref="Nullable{T}"/> 自动解包内层类型</item>
+    /// </list>
+    /// </remarks>
+    /// <param name="type">待收集的类型符号。</param>
+    /// <param name="result">收集结果集合。</param>
+    /// <param name="annotatedSet">已通过 [HttpJsonSerializable] 标注的类型集合（用于去重）。</param>
+    /// <param name="currentAssembly">当前编译的程序集符号（用于判断类型来源）。</param>
+    private static void CollectSerializableTypes(
+        INamedTypeSymbol type,
+        HashSet<INamedTypeSymbol> result,
+        HashSet<INamedTypeSymbol> annotatedSet,
+        IAssemblySymbol currentAssembly)
+    {
+        // 解包 Nullable<T>
+        if (type.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+        {
+            if (type.TypeArguments.FirstOrDefault() is INamedTypeSymbol inner)
+                CollectSerializableTypes(inner, result, annotatedSet, currentAssembly);
+            return;
+        }
+
+        // 框架类型：跳过自身，但递归处理类型参数
+        if (IsFrameworkType(type))
+        {
+            if (type.IsGenericType)
+            {
+                foreach (var arg in type.TypeArguments)
+                {
+                    if (arg is INamedTypeSymbol namedArg)
+                        CollectSerializableTypes(namedArg, result, annotatedSet, currentAssembly);
+                }
+            }
+            return;
+        }
+
+        // 跳过开放泛型定义
+        if (type.IsGenericType && type.IsDefinition)
+            return;
+
+        // 闭合泛型：始终注册（无论来自哪个程序集），并递归处理类型参数
+        if (type.IsGenericType && !type.IsDefinition)
+        {
+            result.Add(type);
+            foreach (var arg in type.TypeArguments)
+            {
+                if (arg is INamedTypeSymbol namedArg)
+                    CollectSerializableTypes(namedArg, result, annotatedSet, currentAssembly);
+            }
+            return;
+        }
+
+        // 非泛型类型：仅当来自当前程序集且未标注时注册
+        // 来自引用程序集的类型应已由其自身的 [HttpJsonSerializable] Context 覆盖
+        if (!SymbolEqualityComparer.Default.Equals(type.ContainingAssembly, currentAssembly))
+            return;
+        if (annotatedSet.Contains(type))
+            return;
+
+        result.Add(type);
+    }
+
+    /// <summary>
+    /// 判断类型是否为框架类型（基元类型、System.* 命名空间下的类型）。
+    /// </summary>
+    private static bool IsFrameworkType(INamedTypeSymbol type)
+    {
+        // 基元类型（int, string, bool, DateTime, etc.）
+        if (type.OriginalDefinition.SpecialType != SpecialType.None)
+            return true;
+
+        var ns = type.ContainingNamespace?.ToDisplayString();
+        if (ns is null or "System" || ns.StartsWith("System."))
+            return true;
+
+        return false;
+    }
+
+    /// <summary>
+    /// 为 [HttpClientApi] 发现的类型创建分组。
+    /// </summary>
+    private static TypeGroup CreateDiscoveredTypeGroup(
+        List<INamedTypeSymbol> types,
+        Compilation compilation,
+        string defaultNamespace)
+    {
+        var assemblyName = compilation.AssemblyName ?? "App";
+        var shortName = assemblyName.Split('.').Last();
+        var serializerClassName = $"{shortName}HttpClientApi";
+
+        return new TypeGroup
+        {
+            SerializerClassName = serializerClassName,
+            NamingPolicy = JsonNamingPolicyHint.Default, // 自动推导
+            TargetNamespace = defaultNamespace,
+            Types = types
+        };
     }
 
     /// <summary>
@@ -446,8 +689,9 @@ public class JsonContextGenerator
         var displayString = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
             .WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.UseSpecialTypes));
 
-        // 开放泛型：将 <T>, <TKey, TValue> 等改写为 <>
-        if (type.IsGenericType && type.TypeParameters.Length > 0)
+        // 开放泛型定义：将 <T>, <TKey, TValue> 等改写为 <>
+        // 闭合泛型（如 FeishuApiResult<X>）保持原样，STJ 支持闭合泛型的 [JsonSerializable]
+        if (type.IsGenericType && type.IsDefinition)
         {
             // 匹配 <...> 中的类型参数名并替换为空
             var genericMatch = Regex.Match(displayString, @"<[^>]+>");
