@@ -415,7 +415,8 @@ namespace TestNamespace
     [Fact]
     public void Generator_WithOptionValue_GeneratesNullCheck()
     {
-        // 验证修复 BUG：option 应先检查 null，再检查 option.Value
+        // 重构后：IOptions<JsonSerializerOptions> 参数已移除，改为 IHttpContentSerializer（可选）。
+        // 验证生成代码不再包含旧的 option null 检查，且使用 IHttpContentSerializer。
         var source = @"
 using Mud.HttpUtils;
 using Mud.HttpUtils.Attributes;
@@ -435,12 +436,14 @@ namespace TestNamespace
 
         if (generatedCode != null)
         {
-            generatedCode.Should().Contain("if (option == null)",
-                "应先检查 option 是否为 null");
-            generatedCode.Should().Contain("throw new ArgumentNullException(nameof(option))",
-                "option 为 null 时应抛出 ArgumentNullException");
-            generatedCode.Should().Contain("option.Value ?? throw new InvalidOperationException",
-                "option.Value 为 null 时应抛出 InvalidOperationException");
+            generatedCode.Should().NotContain("if (option == null)",
+                "重构后不应再检查 option 是否为 null（参数已移除）");
+            generatedCode.Should().NotContain("throw new ArgumentNullException(nameof(option))",
+                "重构后不应再对 option 抛出 ArgumentNullException（参数已移除）");
+            generatedCode.Should().Contain("IHttpContentSerializer",
+                "生成类应依赖 IHttpContentSerializer");
+            generatedCode.Should().Contain("HttpContentSerializerFactory.CreateDefault()",
+                "未注入序列化器时应使用工厂创建默认实例");
         }
     }
 

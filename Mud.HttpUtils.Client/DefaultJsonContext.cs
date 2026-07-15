@@ -17,7 +17,7 @@ namespace Mud.HttpUtils;
 /// </summary>
 /// <remarks>
 /// <para>
-/// 此上下文登记库内部使用的通用类型，作为 <see cref="EnhancedHttpClient.BuildJsonOptions"/> 的兜底 resolver。
+/// 此上下文登记库内部使用的通用类型，作为 <see cref="HttpContentSerializerFactory.BuildOptions"/> 的兜底 resolver。
 /// 消费方 DTO 由消费方自建的 <see cref="JsonSerializerContext"/> 提供，二者通过
 /// <see cref="JsonTypeInfoResolver.Combine(IJsonTypeInfoResolver?[])"/> 合并。
 /// </para>

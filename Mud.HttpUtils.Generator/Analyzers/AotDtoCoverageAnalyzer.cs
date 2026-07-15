@@ -76,7 +76,15 @@ internal static class AotDtoCoverageAnalyzer
         return "Json";
     }
 
-
+    /// <summary>
+    /// 构造用于 CodeFix 的诊断属性，携带待覆盖类型的完全限定名，
+    /// 使 <c>Mud.HttpUtils.CodeFixes</c> 中的修复器能精确获知需要加入 JsonSerializerContext 的类型。
+    /// </summary>
+    private static ImmutableDictionary<string, string> TypeProps(INamedTypeSymbol type)
+    {
+        return ImmutableDictionary<string, string>.Empty
+            .Add("TypeFullName", type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+    }
 
     /// <summary>
     /// 分析编译单元中所有 [HttpClientApi] 接口方法的 DTO 覆盖情况，报告未覆盖的 AOT004 诊断。
@@ -175,6 +183,7 @@ internal static class AotDtoCoverageAnalyzer
                 context.ReportDiagnostic(Diagnostic.Create(
                     Diagnostics.AotJsonSerializableNotCovered,
                     typeSymbol.Locations.FirstOrDefault() ?? typeDecl.GetLocation(),
+                    TypeProps(typeSymbol),
                     typeSymbol.ToDisplayString()));
             }
         }
@@ -325,6 +334,7 @@ internal static class AotDtoCoverageAnalyzer
                     context.ReportDiagnostic(Diagnostic.Create(
                         Diagnostics.AotDtoNotCoveredByContext,
                         paramLocation,
+                        TypeProps(paramType),
                         interfaceSymbol.Name,
                         method.Name,
                         paramType.ToDisplayString()));
@@ -365,18 +375,19 @@ internal static class AotDtoCoverageAnalyzer
                     var useJsonSerialization = serMethodArg.Value.Value is int enumVal && enumVal != 0;
 
                     // JSON 序列化的 QueryMap 参数且类型非字典（字典类型不涉及 JSON 序列化）
-                    if (useJsonSerialization && !IsDictionaryType(paramType) &&
-                        !IsPrimitiveOrString(paramType) &&
-                        !IsCovered(paramType, coveredTypes))
-                    {
-                        context.ReportDiagnostic(Diagnostic.Create(
-                            Diagnostics.AotQueryParameterNotInContext,
-                            paramLocation,
-                            interfaceSymbol.Name,
-                            method.Name,
-                            param.Name,
-                            paramType.ToDisplayString()));
-                    }
+                if (useJsonSerialization && !IsDictionaryType(paramType) &&
+                    !IsPrimitiveOrString(paramType) &&
+                    !IsCovered(paramType, coveredTypes))
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        Diagnostics.AotQueryParameterNotInContext,
+                        paramLocation,
+                        TypeProps(paramType),
+                        interfaceSymbol.Name,
+                        method.Name,
+                        param.Name,
+                        paramType.ToDisplayString()));
+                }
                 }
             }
         }
@@ -393,6 +404,7 @@ internal static class AotDtoCoverageAnalyzer
                 context.ReportDiagnostic(Diagnostic.Create(
                     Diagnostics.AotDtoNotCoveredByContext,
                     location,
+                    TypeProps(innerType),
                     interfaceSymbol.Name,
                     method.Name,
                     innerType.ToDisplayString()));

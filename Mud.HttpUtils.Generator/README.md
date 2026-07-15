@@ -46,7 +46,7 @@ Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为
 - **序列化方法控制**：识别 `[SerializationMethod]` 特性，指定接口或方法级别的请求体序列化方式
 - **接口级固定参数**：识别 `[InterfacePath]` 和 `[InterfaceQuery]` 特性，为接口所有方法自动添加固定路径/查询参数
 - **允许任意状态码**：识别 `[AllowAnyStatusCode]` 特性，错误状态码不抛异常
-- **编译诊断**：提供 `HTTPCLIENT*` / `HTTPCLIENTREG*` / `EHSG*` / `FORM*` 等多组编译期诊断（错误与警告），详见「编译诊断」章节
+- **编译诊断**：提供 `HTTPCLIENT*` / `HTTPCLIENTREG*` / `EHSG*` / `FORM*` / `AOT*` 等多组编译期诊断（错误与警告），其中部分支持通过 IDE 代码修复器（CodeFix）一键修复，详见「编译诊断」章节
 
 ## 安装
 
@@ -699,47 +699,64 @@ var headers = response.ResponseHeaders;   // 响应头
 
 源代码生成器在编译时会对不合理的 API 定义产生警告或错误，帮助开发者在编译阶段发现问题。
 
+> **可自动修复**：标有「是」的诊断支持通过代码修复器（CodeFix）在 IDE 中一键修复（灯泡操作），修复器位于 `Mud.HttpUtils.CodeFixes` 程序集，与诊断来源（源生成器/分析器）解耦，仅按诊断 ID 匹配。
+
 #### 接口实现生成（HTTPCLIENT*）
 
-| 诊断 ID | 严重级别 | 触发条件 | 解决方案 |
-|---------|----------|----------|----------|
-| `HTTPCLIENT001` | Error | 生成接口实现时发生异常 | 检查接口定义是否正确，查看内部异常信息 |
-| `HTTPCLIENT003` | Error | 接口语法分析失败 | 确保接口定义符合 C# 语法规范 |
-| `HTTPCLIENT004` | Error | 参数配置错误 | 检查参数特性配置是否正确 |
-| `HTTPCLIENT005` | Error | URL 模板格式无效 | 检查 `[Get]`/`[Post]` 等特性中的 URL 模板 |
-| `HTTPCLIENT007` | Error | 同时指定 `HttpClient` 和 `TokenManage` | 两者互斥，只设置其中一个 |
-| `HTTPCLIENT008` | Error | 加密配置但 HttpClient 类型不支持加密 | 使用 `IEnhancedHttpClient` 或移除加密配置 |
-| `HTTPCLIENT009` | Warning | XML 请求但 HttpClient 类型不支持 XML | 使用 `IEnhancedHttpClient` 或修改 Content-Type |
-| `HTTPCLIENT010` | Warning | 使用了已弃用的 `BaseAddress` 参数 | 改用 `AddMudHttpClient(clientName, baseAddress)` |
-| `HTTPCLIENT011` | Warning | `[Cache]` 与 `Response<T>` 返回类型组合 | 缓存会存储状态码和响应头，建议使用普通返回类型 |
-| `HTTPCLIENT012` | Error | 泛型接口不支持代码生成 | 改为非泛型接口或为每个类型参数创建独立接口 |
-| `HTTPCLIENT013` | Error | URL 模板中的路径占位符与 `[Path]` 参数不匹配 | 确保 URL 模板中的 `{placeholder}` 与方法中的 `[Path]` 参数一一对应 |
-| `HTTPCLIENT014` | Warning | `HttpClient` 类型未找到 | 确认类型名称正确，或通过 `AddMudHttpClient` 注册对应命名客户端 |
-| `HTTPCLIENT015` | Error | `TokenManage` 类型未找到 | 确认类型名称正确，或确保包含该类型的项目已引用 |
-| `HTTPCLIENT016` | Error | `TokenManage` 类型缺少必需方法 | 类型须提供 `GetDefaultApp()`/`GetApp(string)` 方法或实现 `IAppManager<T>` |
-| `HTTPCLIENT017` | Warning | `HttpClient` 类型无法解析，兼容性校验被跳过 | 使用完全限定名确保类型可解析 |
-| `HTTPCLIENT018` | Warning | `TokenManagerKey` 使用默认推断值 | 多接口共享同一 TokenManager 时显式指定 `TokenManagerKey` 或 `TokenType` |
+| 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 |
+|---------|----------|----------|----------|------------|
+| `HTTPCLIENT001` | Error | 生成接口实现时发生异常 | 检查接口定义是否正确，查看内部异常信息 | 否 |
+| `HTTPCLIENT003` | Error | 接口语法分析失败 | 确保接口定义符合 C# 语法规范 | 否 |
+| `HTTPCLIENT004` | Error | 参数配置错误 | 检查参数特性配置是否正确 | 否 |
+| `HTTPCLIENT005` | Error | URL 模板格式无效 | 检查 `[Get]`/`[Post]` 等特性中的 URL 模板 | 否 |
+| `HTTPCLIENT007` | Error | 同时指定 `HttpClient` 和 `TokenManage` | 两者互斥，只设置其中一个 | 是（`HttpClientMutuallyExclusiveCodeFixProvider`，二选一移除） |
+| `HTTPCLIENT008` | Error | 加密配置但 HttpClient 类型不支持加密 | 使用 `IEnhancedHttpClient` 或移除加密配置 | 否 |
+| `HTTPCLIENT009` | Warning | XML 请求但 HttpClient 类型不支持 XML | 使用 `IEnhancedHttpClient` 或修改 Content-Type | 否 |
+| `HTTPCLIENT010` | Warning | 使用了已弃用的 `BaseAddress` 参数 | 改用 `AddMudHttpClient(clientName, baseAddress)` | 否 |
+| `HTTPCLIENT011` | Warning | `[Cache]` 与 `Response<T>` 返回类型组合 | 缓存会存储状态码和响应头，建议使用普通返回类型 | 否 |
+| `HTTPCLIENT012` | Error | 泛型接口不支持代码生成 | 改为非泛型接口或为每个类型参数创建独立接口 | 否 |
+| `HTTPCLIENT013` | Error | URL 模板中的路径占位符与 `[Path]` 参数不匹配 | 确保 URL 模板中的 `{placeholder}` 与方法中的 `[Path]` 参数一一对应 | 否 |
+| `HTTPCLIENT014` | Warning | `HttpClient` 类型未找到 | 确认类型名称正确，或通过 `AddMudHttpClient` 注册对应命名客户端 | 否 |
+| `HTTPCLIENT015` | Error | `TokenManage` 类型未找到 | 确认类型名称正确，或确保包含该类型的项目已引用 | 否 |
+| `HTTPCLIENT016` | Error | `TokenManage` 类型缺少必需方法 | 类型须提供 `GetDefaultApp()`/`GetApp(string)` 方法或实现 `IAppManager<T>` | 否 |
+| `HTTPCLIENT017` | Warning | `HttpClient` 类型无法解析，兼容性校验被跳过 | 使用完全限定名确保类型可解析 | 否 |
+| `HTTPCLIENT018` | Warning | `TokenManagerKey` 使用默认推断值 | 多接口共享同一 TokenManager 时显式指定 `TokenManagerKey` 或 `TokenType` | 否 |
+| `HTTPCLIENT019` | Info | `[Cache]` 设置了被生成器忽略的属性 | `UseSlidingExpiration`/`Priority` 当前未生效，关注后续版本 | 否 |
 
 #### 注册代码生成（HTTPCLIENTREG*）
 
-| 诊断 ID | 严重级别 | 触发条件 | 解决方案 |
-|---------|----------|----------|----------|
-| `HTTPCLIENTREG001` | Error | 注册代码生成失败 | 检查接口定义和 DI 注册配置 |
-| `HTTPCLIENTREG002` | Error | `RegistryGroupName` 不是有效 C# 标识符 | 使用字母、数字、下划线组成，以字母或下划线开头 |
+| 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 |
+|---------|----------|----------|----------|------------|
+| `HTTPCLIENTREG001` | Error | 注册代码生成失败 | 检查接口定义和 DI 注册配置 | 否 |
+| `HTTPCLIENTREG002` | Error | `RegistryGroupName` 不是有效 C# 标识符 | 使用字母、数字、下划线组成，以字母或下划线开头 | 否 |
 
 #### 事件处理器生成（EHSG*）
 
-| 诊断 ID | 严重级别 | 触发条件 | 解决方案 |
-|---------|----------|----------|----------|
-| `EHSG001` | Error | 事件处理器代码生成错误 | 检查 `[GenerateEventHandler]` 标记的类定义 |
+| 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 |
+|---------|----------|----------|----------|------------|
+| `EHSG001` | Error | 事件处理器代码生成错误 | 检查 `[GenerateEventHandler]` 标记的类定义 | 否 |
 
 #### FormContent 生成（FORM*）
 
-| 诊断 ID | 严重级别 | 触发条件 | 解决方案 |
-|---------|----------|----------|----------|
-| `FORM001` | Error | FormContent 代码生成错误 | 检查 FormContent 类定义 |
-| `FORM002` | Error | FormContent 缺少 `[FilePath]` 属性 | 必须且只能有一个属性标记 `[FilePath]` |
-| `FORM003` | Error | FormContent 存在多个 `[FilePath]` 属性 | 只保留一个 `[FilePath]` 属性 |
+| 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 |
+|---------|----------|----------|----------|------------|
+| `FORM001` | Error | FormContent 代码生成错误 | 检查 FormContent 类定义 | 否 |
+| `FORM002` | Error | FormContent 缺少 `[FilePath]` 属性 | 必须且只能有一个属性标记 `[FilePath]` | 否 |
+| `FORM003` | Error | FormContent 存在多个 `[FilePath]` 属性 | 只保留一个 `[FilePath]` 属性 | 否 |
+
+#### AOT JSON 序列化诊断（AOT*）
+
+`AOT*` 系列诊断用于保障 Native AOT 场景下的 JSON 序列化可用性。其中 `AOT004`/`AOT005`/`AOT006` 由 `Mud.HttpUtils.Generator` 中的 `AotDtoCoverageAnalyzer` 报告，`AOT007` 由 `AotXmlRejectionAnalyzer` 报告（仅在 AOT 上下文下）；`AOT001`/`AOT002`/`AOT003` 由 `HttpJsonContextScaffolder` 脚手架工具在生成期报告。
+
+| 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 |
+|---------|----------|----------|----------|------------|
+| `AOT001` | Warning | 同一 `JsonSerializerContext` 内存在冲突的 `NamingPolicy` 配置 | 统一命名策略，或拆分为不同分组 | 否 |
+| `AOT002` | Warning | 开放泛型类型在 net8.0 以下标注 `[HttpJsonSerializable]` | 升级 TFM 至 net8.0+，或避免在低版本使用开放泛型源生成 | 否 |
+| `AOT003` | Warning | 多态类型缺少 `[JsonDerivedType]` 标注 | 补充 `[JsonDerivedType]`，或由 Scaffolder 自动补全派生类型 | 否 |
+| `AOT004` | Warning | `[HttpClientApi]` 方法的请求/响应 DTO 未被任何 `JsonSerializerContext` 覆盖 | 标注 `[HttpJsonSerializable]` 并运行 `dotnet mud-jsonctx`，或手动将类型加入现有 `JsonSerializerContext` | 是（`AotJsonContextCodeFixProvider`，自动向用户可编辑的 `JsonSerializerContext` 追加 `[JsonSerializable(typeof(T))]`，或新建 `partial` 扩展类） |
+| `AOT005` | Warning | 查询参数类型使用 JSON 序列化但未被 `JsonSerializerContext` 覆盖 | 将类型纳入 `JsonSerializerContext`，或实现 `IQueryParameter` 接口 | 是（`AotJsonContextCodeFixProvider`，同 AOT004 修复逻辑） |
+| `AOT006` | Warning | 标注了 `[HttpJsonSerializable]` 的类型未被任何 `JsonSerializerContext` 覆盖 | 运行 `dotnet mud-jsonctx`，或将此类型加入 `JsonSerializerContext` | 是（`AotJsonContextCodeFixProvider`，同 AOT004 修复逻辑） |
+| `AOT007` | Error | AOT 上下文下使用 XML 序列化 | 改用 `[SerializationMethod(SerializationMethod.Json)]`，或在非 AOT 部署场景使用 XML | 是（`AotXmlCodeFixProvider`，将方法改为 JSON 序列化） |
 
 ### 日志脱敏
 
@@ -980,6 +997,13 @@ Mud.HttpUtils.Generator/
 生成的代码位于 `obj/Debug/<tfm>/generated/Mud.HttpUtils.Generator/` 目录下。
 
 ## 版本历史
+
+### 2.1.0
+
+- 新增代码修复器 `AotJsonContextCodeFixProvider`（`Mud.HttpUtils.CodeFixes` 程序集）：一键将 `AOT004`/`AOT005`/`AOT006` 指向的 DTO 类型加入现有 `JsonSerializerContext`（或新建 `partial` 扩展类）
+- 新增代码修复器 `AotXmlCodeFixProvider`：将 `AOT007`（AOT 下 XML 序列化）一键改为 JSON 序列化
+- 新增代码修复器 `HttpClientMutuallyExclusiveCodeFixProvider`：将 `HTTPCLIENT007`（HttpClient 与 TokenManage 互斥）一键二选一移除
+- 「编译诊断」章节补充 `AOT001`–`AOT007` 诊断表，并为所有诊断新增「可自动修复」列
 
 ### 2.0.0
 
