@@ -69,6 +69,7 @@ public class JsonContextGenerator
     private const string JsonDerivedTypeAttributeFullName = "System.Text.Json.Serialization.JsonDerivedTypeAttribute";
     private const string HttpClientApiAttributeFullName = "Mud.HttpUtils.Attributes.HttpClientApiAttribute";
     private const string BodyAttributeFullName = "Mud.HttpUtils.Attributes.BodyAttribute";
+    private const string SerializationMethodAttributeFullName = "Mud.HttpUtils.Attributes.SerializationMethodAttribute";
 
     /// <summary>
     /// 本次生成过程中产生的诊断信息。
@@ -119,28 +120,36 @@ public class JsonContextGenerator
         var files = new List<JsonContextFile>();
 
         // 5a. 标注类型分组
+        List<TypeGroup> groups = [];
         if (annotatedTypes.Count > 0)
-        {
-            var groups = GroupTypes(annotatedTypes, defaultNamespace);
-            foreach (var group in groups)
-            {
-                var file = GenerateContextFile(group, compilation, autoDerivedTypes);
-                files.Add(file);
-            }
-        }
+            groups = GroupTypes(annotatedTypes, defaultNamespace);
 
-        // 5b. [HttpClientApi] 发现类型分组（闭合泛型等）
+        // 5b. [D25] [HttpClientApi] 发现类型（闭合泛型等）合并到第一个标注类型分组中。
+        // 避免创建单独的 JsonSerializerContext，防止 STJ 源生成器因 partial class 重复定义导致 hintName 冲突。
         if (discoveredTypes.Count > 0)
         {
-            var apiGroup = CreateDiscoveredTypeGroup(discoveredTypes, compilation, defaultNamespace);
-            var file = GenerateContextFile(apiGroup, compilation, autoDerivedTypes);
-            files.Add(file);
+            if (groups.Count > 0)
+            {
+                // 将发现类型添加到第一个标注类型分组
+                groups[0].Types.AddRange(discoveredTypes);
+            }
+            else
+            {
+                // 无标注类型时，创建独立分组（回退逻辑）
+                groups.Add(CreateDiscoveredTypeGroup(discoveredTypes, compilation, defaultNamespace));
+            }
 
             Diagnostics.Add(new ScaffolderDiagnostic(
                 "AOT004",
                 ScaffolderDiagnosticSeverity.Info,
-                $"[HttpClientApi] 接口扫描发现 {discoveredTypes.Count} 个类型（含闭合泛型），已自动纳入 {apiGroup.SerializerClassName}JsonContext。",
+                $"[HttpClientApi] 接口扫描发现 {discoveredTypes.Count} 个类型（含闭合泛型），已自动纳入 {groups[0].SerializerClassName}JsonContext。",
                 null));
+        }
+
+        foreach (var group in groups)
+        {
+            var file = GenerateContextFile(group, compilation, autoDerivedTypes);
+            files.Add(file);
         }
 
         return files;
@@ -335,12 +344,23 @@ public class JsonContextGenerator
                     if (method.MethodKind is MethodKind.PropertyGet or MethodKind.PropertySet)
                         continue;
 
-                    // 返回类型
-                    var returnType = UnwrapTaskType(method.ReturnType);
-                    if (returnType is INamedTypeSymbol namedReturn)
-                        CollectSerializableTypes(namedReturn, result, annotatedSet, compilation.Assembly);
+                    // [D25] 检查方法的 SerializationMethod：FormUrlEncoded/Xml 方法不走 JSON 序列化，
+                    // 其 [Body] 参数和返回类型不应纳入 JsonSerializerContext（与 Phase 20.1 AOT004 误报修正同理）。
+                    var serializationMethod = GetMethodSerializationMethod(method, compilation);
+                    var isJsonMethod = serializationMethod is null or "Json";
 
-                    // [Body] 参数类型
+                    // 返回类型（仅 JSON 方法）
+                    if (isJsonMethod)
+                    {
+                        var returnType = UnwrapTaskType(method.ReturnType);
+                        if (returnType is INamedTypeSymbol namedReturn)
+                            CollectSerializableTypes(namedReturn, result, annotatedSet, compilation.Assembly);
+                    }
+
+                    // [Body] 参数类型（仅 JSON 方法；FormUrlEncoded Body 不走 JSON 序列化，Xml Body 走 XmlSerializer）
+                    if (!isJsonMethod)
+                        continue;
+
                     foreach (var param in method.Parameters)
                     {
                         var hasBody = bodyAttr != null && param.GetAttributes().Any(a =>
@@ -359,6 +379,41 @@ public class JsonContextGenerator
     }
 
     /// <summary>
+    /// 获取方法的 SerializationMethod（检查方法自身和接口级标注）。
+    /// </summary>
+    /// <returns>序列化方法名称（"Json"/"Xml"/"FormUrlEncoded"）；无标注时返回 null（默认 JSON）。</returns>
+    private static string? GetMethodSerializationMethod(IMethodSymbol method, Compilation compilation)
+    {
+        var attrSymbol = compilation.GetTypeByMetadataName(SerializationMethodAttributeFullName);
+        if (attrSymbol == null)
+            return null;
+
+        // 优先检查方法自身的 [SerializationMethod]
+        var attr = method.GetAttributes().FirstOrDefault(a =>
+            SymbolEqualityComparer.Default.Equals(a.AttributeClass, attrSymbol));
+        // 回退到接口级 [SerializationMethod]
+        attr ??= method.ContainingType.GetAttributes().FirstOrDefault(a =>
+            SymbolEqualityComparer.Default.Equals(a.AttributeClass, attrSymbol));
+
+        if (attr == null || attr.ConstructorArguments.Length == 0)
+            return null;
+
+        // 枚举值在 Roslyn 中可能以 int 或 TypedConstant 形式存储
+        var value = attr.ConstructorArguments[0].Value;
+        return value switch
+        {
+            int n => n switch
+            {
+                0 => "Json",
+                1 => "Xml",
+                2 => "FormUrlEncoded",
+                _ => null
+            },
+            _ => value?.ToString()
+        };
+    }
+
+    /// <summary>
     /// 解包 <see cref="Task{T}"/> / <see cref="ValueTask{T}"/> 的类型参数。
     /// </summary>
     /// <param name="type">方法返回类型符号。</param>
@@ -371,18 +426,32 @@ public class JsonContextGenerator
         // Task<T> / ValueTask<T>
         if (named.IsGenericType && named.TypeArguments.Length == 1)
         {
-            var fullName = named.OriginalDefinition.ToDisplayString();
-            if (fullName is "System.Threading.Tasks.Task<T>" or "System.Threading.Tasks.ValueTask<T>")
+            if (IsTaskOrValueTask(named.OriginalDefinition))
                 return named.TypeArguments[0];
         }
 
         // Task / ValueTask（无返回值）
-        var nonGenericName = named.OriginalDefinition?.ToDisplayString();
-        if (nonGenericName is "System.Threading.Tasks.Task" or "System.Threading.Tasks.ValueTask")
+        if (IsTaskOrValueTask(named))
             return null;
 
         // 非 Task 类型，原样返回
         return type;
+    }
+
+    /// <summary>
+    /// 判断类型是否为 <see cref="Task"/> / <see cref="ValueTask"/>（含泛型定义）。
+    /// </summary>
+    /// <remarks>
+    /// 使用 <see cref="INamedTypeSymbol.MetadataName"/> + 命名空间判断，
+    /// 比 <c>ToDisplayString</c> 更健壮——不受 Roslyn 版本、
+    /// MSBuildWorkspace 加载状态影响（加载不完全时 ToDisplayString 可能返回非标准格式）。
+    /// </remarks>
+    private static bool IsTaskOrValueTask(INamedTypeSymbol type)
+    {
+        var ns = type.ContainingNamespace?.ToDisplayString();
+        return (ns, type.MetadataName) is
+            ("System.Threading.Tasks", "Task") or
+            ("System.Threading.Tasks", "ValueTask");
     }
 
     /// <summary>
@@ -413,6 +482,25 @@ public class JsonContextGenerator
         {
             if (type.TypeArguments.FirstOrDefault() is INamedTypeSymbol inner)
                 CollectSerializableTypes(inner, result, annotatedSet, currentAssembly);
+            return;
+        }
+
+        // [D25] 闭合泛型框架类型（如 List<UserDto>、IEnumerable<UserDto>）：注册自身 + 递归处理类型参数。
+        // 这些类型需要注册到 JsonSerializerContext 才能在 AOT 下序列化/反序列化。
+        if (IsFrameworkType(type) && type.IsGenericType && !type.IsDefinition)
+        {
+            // 仅注册包含非框架类型参数的闭合泛型（如 List<UserDto>，不注册 List<string>）
+            var hasUserTypeArg = type.TypeArguments.Any(a =>
+                a is INamedTypeSymbol namedArg && !IsFrameworkType(namedArg));
+            if (hasUserTypeArg)
+            {
+                result.Add(type);
+                foreach (var arg in type.TypeArguments)
+                {
+                    if (arg is INamedTypeSymbol namedArg)
+                        CollectSerializableTypes(namedArg, result, annotatedSet, currentAssembly);
+                }
+            }
             return;
         }
 

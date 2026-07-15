@@ -650,7 +650,7 @@ public class Program
         var uncovered = new UncoveredDto { Value = "undeclared" };
         try
         {
-            var _ = JsonSerializer.Serialize(uncovered, AppJsonContext.Default);
+            var _ = JsonSerializer.Serialize(uncovered, typeof(UncoveredDto), AppJsonContext.Default);
             // JIT 或非严格场景下若走反射兜底可能不抛；AOT 下必抛 NotSupportedException。
             Console.WriteLine("  [✓] 未覆盖 DTO 序列化已执行（AOT 下应抛 NotSupportedException）");
         }
