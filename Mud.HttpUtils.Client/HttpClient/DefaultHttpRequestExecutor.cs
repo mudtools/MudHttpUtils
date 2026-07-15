@@ -31,18 +31,21 @@ namespace Mud.HttpUtils;
 /// <param name="resilienceResolver">全局弹性策略解析器（可选）。</param>
 /// <param name="appResilienceResolver">按应用解析弹性策略的解析器（可选）。优先于 <paramref name="resilienceResolver"/>。</param>
 /// <param name="appContextHolder">应用上下文持有器（可选）。用于在多应用场景下获取当前应用的 AppKey。</param>
+/// <param name="contentSerializer">HTTP 内容序列化器（可选）。不提供时使用 <see cref="SystemTextJsonContentSerializer"/> 默认实现。</param>
 public class DefaultHttpRequestExecutor(
     ILogger<DefaultHttpRequestExecutor> logger,
     IHttpResponseCache? cacheProvider = null,
     IResiliencePolicyResolver? resilienceResolver = null,
     IAppResiliencePolicyResolver? appResilienceResolver = null,
-    IAppContextHolder? appContextHolder = null) : IHttpRequestExecutor
+    IAppContextHolder? appContextHolder = null,
+    IHttpContentSerializer? contentSerializer = null) : IHttpRequestExecutor
 {
     private readonly IHttpResponseCache? _cacheProvider = cacheProvider;
     private readonly IResiliencePolicyResolver? _resilienceResolver = resilienceResolver;
     private readonly IAppResiliencePolicyResolver? _appResilienceResolver = appResilienceResolver;
     private readonly IAppContextHolder? _appContextHolder = appContextHolder;
     private readonly ILogger _logger = logger ?? NullLogger<DefaultHttpRequestExecutor>.Instance;
+    private readonly IHttpContentSerializer _contentSerializer = contentSerializer ?? new SystemTextJsonContentSerializer();
 
     /// <summary>
     /// 解析当前请求应使用的弹性策略解析器。
@@ -128,7 +131,7 @@ public class DefaultHttpRequestExecutor(
             var options = jsonSerializerOptions as JsonSerializerOptions;
             try
             {
-                result = JsonSerializer.Deserialize<TResult>(rawContent, options);
+                result = _contentSerializer.Deserialize<TResult>(rawContent, options);
             }
             catch (JsonException ex)
             {
@@ -187,7 +190,7 @@ public class DefaultHttpRequestExecutor(
                 }
                 else
                 {
-                    content = JsonSerializer.Deserialize<TInner>(rawContent,
+                    content = _contentSerializer.Deserialize<TInner>(rawContent,
                         jsonSerializerOptions as JsonSerializerOptions);
                 }
             }

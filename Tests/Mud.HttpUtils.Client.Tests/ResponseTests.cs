@@ -78,7 +78,8 @@ public class ResponseTests
     [Fact]
     public void Response_GetContentOrThrow_SuccessResponse_ReturnsContent()
     {
-        var response = new Response<string>(HttpStatusCode.OK, "hello", null, null);
+        // 使用 rawContent 非空值消除 T=string 时成功/错误构造函数的重载歧义
+        var response = new Response<string>(HttpStatusCode.OK, "hello", "hello", null);
 
         var result = response.GetContentOrThrow();
 
@@ -99,7 +100,8 @@ public class ResponseTests
     [Fact]
     public void Response_ImplicitConversion_ReturnsContent()
     {
-        var response = new Response<string>(HttpStatusCode.OK, "hello", null, null);
+        // 使用 rawContent 非空值消除 T=string 时成功/错误构造函数的重载歧义
+        var response = new Response<string>(HttpStatusCode.OK, "hello", "hello", null);
 
         string? result = response;
 

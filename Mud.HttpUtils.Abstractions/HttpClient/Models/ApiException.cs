@@ -90,6 +90,19 @@ public class ApiException : Exception
     }
 
     /// <summary>
+    /// 供运输层异常子类（如 <see cref="ApiRequestException"/>）使用的受保护构造函数。
+    /// 运输层失败无 HTTP 状态码，故不要求 <paramref name="statusCode"/>，<see cref="StatusCode"/> 取默认值 0。
+    /// </summary>
+    /// <param name="message">异常消息。</param>
+    /// <param name="requestUri">请求 URI。</param>
+    /// <param name="innerException">内部异常（通常为原始运输层异常）。</param>
+    protected ApiException(string message, string? requestUri, Exception? innerException)
+        : base(message, innerException)
+    {
+        RequestUri = requestUri;
+    }
+
+    /// <summary>
     /// 获取 HTTP 状态码。
     /// </summary>
     public HttpStatusCode StatusCode { get; }

@@ -352,20 +352,10 @@ internal class RequestBuilder
         }
         else
         {
-            // [AOT v4 Phase 19.1] Body 序列化改用泛型重载 JsonSerializer.Serialize<T>，
-            // 与 QueryParameterBinder.cs:444 一致，使 AOT 分析器能静态追踪类型 T，消除 IL2026/IL3050。
-            // 防御（[审查修订 D11]）：类型显示含可空修饰符 '?' 时（如 MyDto? / List<MyDto?>?）无法直接用作泛型参数，
-            // 回退到非泛型重载（仍由 Phase 19.2 的方法级 [UnconditionalSuppressMessage] 覆盖）。
-            if (bodyParam.Type.IndexOf('?') < 0)
-            {
-                codeBuilder.AppendLine($"            var __jsonContent = JsonSerializer.Serialize<{bodyParam.Type}>({bodyParam.Name}, _jsonSerializerOptions);");
-            }
-            else
-            {
-                codeBuilder.AppendLine($"            var __jsonContent = JsonSerializer.Serialize({bodyParam.Name}, _jsonSerializerOptions);");
-            }
-            codeBuilder.AppendLine($"            using var __jsonStrContent = new StringContent(__jsonContent, Encoding.UTF8, {contentTypeExpression});");
-            codeBuilder.AppendLine($"            __httpRequest.Content = __jsonStrContent;");
+            // [Phase 3.1 全量收敛] Body 序列化统一委托 IHttpContentSerializer.ToHttpContent，
+            // 不再直接调用 JsonSerializer.Serialize。生成代码持有 _contentSerializer（由 DI 注入）。
+            // ToHttpContent 内部使用泛型 JsonSerializer.Serialize<T>（AOT 安全），无需在生成代码中区分泛型/非泛型重载。
+            codeBuilder.AppendLine($"            __httpRequest.Content = _contentSerializer.ToHttpContent({bodyParam.Name}, _jsonSerializerOptions);");
         }
     }
 

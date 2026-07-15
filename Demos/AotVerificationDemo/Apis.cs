@@ -1,4 +1,5 @@
 using AotVerificationDemo;
+using Mud.HttpUtils;
 using Mud.HttpUtils.Attributes;
 
 namespace AotVerificationDemo;
@@ -72,6 +73,26 @@ public interface ISearchApi
 
     [Get("/api/search/advanced")]
     Task<List<UserDto>?> AdvancedSearchAsync([Query] SearchCriteria? criteria = null);
+}
+
+// ─────────────────────────────────────────────────────────────
+// 生成 API 客户端 — Response<T> 包装路径（AOT 安全反序列化验证）
+// ─────────────────────────────────────────────────────────────
+
+/// <summary>
+/// 响应包装 API（返回 <see cref="Response{T}"/>）。
+/// 源生成器对 <c>Response&lt;UserDto&gt;</c> 返回类型发射
+/// <c>ExecuteAsResponseAsync&lt;UserDto&gt;</c> 调用，
+/// 响应体经 DI 注入的 JsonSerializerOptions（含 AppJsonContext resolver）
+/// 反序列化为 UserDto，再包装为 Response&lt;UserDto&gt; 返回（不抛异常）。
+/// 此路径在 Native AOT 下由源生成 resolver 保证类型元数据可用。
+/// </summary>
+[HttpClientApi(HttpClient = "IEnhancedHttpClient")]
+public interface IResponseApi
+{
+    [Get("/api/users/{id}")]
+    [AllowAnyStatusCode]
+    Task<Response<UserDto>> GetUserResponseAsync([Path] int id);
 }
 
 // ─────────────────────────────────────────────────────────────

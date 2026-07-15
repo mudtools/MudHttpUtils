@@ -87,7 +87,10 @@ internal readonly struct InterfaceModel : IEquatable<InterfaceModel>
     // 或使用 dotnet build -p:ForceHttpGenerator=true 强制重新生成。
     private static string BuildFingerprint(InterfaceDeclarationSyntax syntax, GeneratorAttributeSyntaxContext context)
     {
-        var sourceText = syntax.ToString();
+        // 仅取节点结构化文本,排除前导/尾随琐事(注释、空白),使纯注释变更不触发重新生成。
+        // v1.5(Phase 2.3):原实现用 syntax.ToString() 会包含注释等 trivia,导致"仅注释变更"
+        // 也会改变指纹触发重生成;改为 WithoutTrivia() 后,注释/空白不再是生成缓存的失效因素。
+        var sourceText = syntax.WithoutTrivia().ToString();
 
         // 预估容量：源文本 + 基接口信息（约 32 字节/基接口）+ 特性信息（约 128 字节）
         var baseListCount = syntax.BaseList?.Types.Count ?? 0;

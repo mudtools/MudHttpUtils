@@ -44,8 +44,9 @@ public static class AsyncEnumerableExtensions
         await using (stream.ConfigureAwait(false))
         {
             var options = jsonSerializerOptions as System.Text.Json.JsonSerializerOptions;
+        var contentSerializer = new SystemTextJsonContentSerializer(options);
 
-            await foreach (var item in EnhancedHttpClient.ParseNdJsonStreamAsync<T>(stream, options, cancellationToken).ConfigureAwait(false))
+            await foreach (var item in EnhancedHttpClient.ParseNdJsonStreamAsync<T>(stream, options, contentSerializer, cancellationToken).ConfigureAwait(false))
             {
                 yield return item;
             }
@@ -77,7 +78,7 @@ public static class AsyncEnumerableExtensions
 
         await using (stream.ConfigureAwait(false))
         {
-            await foreach (var item in EnhancedHttpClient.ParseNdJsonStreamAsync(stream, jsonTypeInfo, cancellationToken).ConfigureAwait(false))
+            await foreach (var item in EnhancedHttpClient.ParseNdJsonStreamAsync(stream, jsonTypeInfo, new SystemTextJsonContentSerializer(), cancellationToken).ConfigureAwait(false))
             {
                 yield return item;
             }

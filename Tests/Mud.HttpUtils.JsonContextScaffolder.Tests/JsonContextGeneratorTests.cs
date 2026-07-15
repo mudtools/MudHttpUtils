@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Mud.HttpUtils.Attributes;
@@ -748,19 +748,32 @@ public class JsonContextGeneratorTests
 
         var files = generator.Generate(compilation);
 
-        // Should have both the annotated context and the HttpClientApi context
+        // [D25-c] 发现的类型合并到第一个标注类型分组中，避免 STJ 源生成器 partial class 冲突。
+        // 故仅有 ModelsJsonContext（标注上下文），无独立 HttpClientApi 上下文。
         files.Should().Contain(f => f.ContextClassName == "ModelsJsonContext");
-        files.Should().Contain(f => f.ContextClassName.Contains("HttpClientApi"));
 
         var annotatedFile = files.First(f => f.ContextClassName == "ModelsJsonContext");
-        var apiFile = files.First(f => f.ContextClassName.Contains("HttpClientApi"));
 
-        // MyData should be in the annotated context, not in the HttpClientApi context
+        // MyData 来自 [HttpJsonSerializable] 标注，应在标注上下文中
         annotatedFile.SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.MyData))]");
-        apiFile.SourceCode.Should().NotContain("[JsonSerializable(typeof(global::TestApp.MyData))]");
+        // [D25-c] MyData 的 [JsonSerializable] 应只出现一次（标注注册 + 发现扫描去重）
+        var myDataRegistrations = CountOccurrences(annotatedFile.SourceCode, "[JsonSerializable(typeof(global::TestApp.MyData))]");
+        myDataRegistrations.Should().Be(1, "MyData 不应在上下文中重复注册");
 
-        // Closed generic should be in the HttpClientApi context
-        apiFile.SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.Result<global::TestApp.MyData>))]");
+        // 闭合泛型 Result<MyData> 应在标注上下文中（合并自 HttpClientApi 发现）
+        annotatedFile.SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.Result<global::TestApp.MyData>))]");
+    }
+
+    private static int CountOccurrences(string source, string substring)
+    {
+        var count = 0;
+        var index = 0;
+        while ((index = source.IndexOf(substring, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += substring.Length;
+        }
+        return count;
     }
 
     [Fact]
@@ -796,7 +809,7 @@ public class JsonContextGeneratorTests
     }
 
     [Fact]
-    public void Generate_HttpClientApi_ListOfCustomType_OnlyInnerTypeRegistered()
+    public void Generate_HttpClientApi_ListOfCustomType_BothListAndInnerTypeRegistered()
     {
         var source = """
             using Mud.HttpUtils.Attributes;
@@ -820,8 +833,9 @@ public class JsonContextGeneratorTests
         var files = generator.Generate(compilation);
 
         var apiFile = files.First(f => f.ContextClassName.Contains("HttpClientApi"));
-        // List<MyData> is a framework generic → skip the List but register MyData
-        apiFile.SourceCode.Should().NotContain("List<global::TestApp.MyData>");
+        // [D25-b] 闭合泛型框架类型（如 List<MyData>）含用户类型参数时，注册自身 + 递归处理类型参数。
+        // List<MyData> 必须注册到 JsonSerializerContext 才能在 AOT 下反序列化。
+        apiFile.SourceCode.Should().Contain("List<global::TestApp.MyData>");
         apiFile.SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.MyData))]");
     }
 

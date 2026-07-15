@@ -2,9 +2,12 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Mud.HttpUtils;
 using Mud.HttpUtils.Attributes;
+using System.Text.Json;
 
 namespace Mud.HttpUtils.Integration.Tests;
 
@@ -199,6 +202,9 @@ public class HttpClientApiIntegrationTests : IDisposable
         services.AddLogging();
         services.AddOptions();
         services.AddSingleton<IEnhancedHttpClient>(new DirectEnhancedHttpClient(_httpClient));
+        // 注册 IHttpContentSerializer 和 IHttpRequestExecutor（AddWebApiHttpClient 仅注册接口→实现映射，不注册基础设施服务）
+        services.TryAddSingleton<IHttpContentSerializer>(sp => new SystemTextJsonContentSerializer(sp.GetService<IOptions<JsonSerializerOptions>>()?.Value));
+        services.TryAddSingleton<IHttpRequestExecutor, DefaultHttpRequestExecutor>();
         services.AddWebApiHttpClient();
         _services = services.BuildServiceProvider();
     }

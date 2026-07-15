@@ -7,6 +7,9 @@
 		<Nullable>enable</Nullable>
 		<IsAotCompatible>true</IsAotCompatible>
 		<PublishAot>true</PublishAot>
+		<!-- [v1.5 Phase 1.3] 启用 InvariantGlobalization 验证全球化裁剪路径。
+		     暂不开 TrimMode=full（v1.4 修正：OTLP Exporter Protobuf 反射在 full 裁剪下有已知风险）。 -->
+		<InvariantGlobalization>true</InvariantGlobalization>
 		<GenerateDocumentationFile>false</GenerateDocumentationFile>
 	</PropertyGroup>
 

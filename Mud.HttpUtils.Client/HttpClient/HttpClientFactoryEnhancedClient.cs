@@ -54,8 +54,9 @@ public class HttpClientFactoryEnhancedClient : EnhancedHttpClient
         IEncryptionProvider? encryptionProvider = null,
         EnhancedHttpClientOptions? options = null,
         Uri? overrideBaseAddress = null,
-        IOptions<JsonSerializerOptions>? jsonOptions = null)
-        : base(CreateClient(factory, clientName, overrideBaseAddress), options, jsonOptions)
+        IOptions<JsonSerializerOptions>? jsonOptions = null,
+        IHttpContentSerializer? contentSerializer = null)
+        : base(CreateClient(factory, clientName, overrideBaseAddress), options, jsonOptions, contentSerializer)
     {
         _factory = factory ?? throw new ArgumentNullException(nameof(factory));
         _clientName = clientName ?? throw new ArgumentNullException(nameof(clientName));

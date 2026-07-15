@@ -336,8 +336,10 @@ public class JsonContextGenerator
                 if (!hasHttpClientApi)
                     continue;
 
-                // 扫描接口自身声明的方法（含继承链上的方法）
-                var methods = typeSymbol.GetMembers().OfType<IMethodSymbol>();
+                // 扫描接口自身声明的方法 + 继承链上所有基接口的方法
+                // [审查修复] 原 GetMembers() 只返回当前接口声明的方法，遗漏继承的基接口方法，
+                // 导致基接口中定义的返回类型/Body 参数类型未注册到 JsonSerializerContext，AOT 下反序列化失败。
+                var methods = GetAllInterfaceMethods(typeSymbol);
                 foreach (var method in methods)
                 {
                     // 跳过属性访问器和事件访问器
@@ -376,6 +378,37 @@ public class JsonContextGenerator
         }
 
         return result.ToList();
+    }
+
+    /// <summary>
+    /// 递归获取接口及其所有父接口的所有方法（去重）。
+    /// </summary>
+    /// <param name="interfaceSymbol">接口符号。</param>
+    /// <returns>去重后的方法列表（含父接口方法）。</returns>
+    private static List<IMethodSymbol> GetAllInterfaceMethods(INamedTypeSymbol interfaceSymbol)
+    {
+        var visited = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+        var results = new List<IMethodSymbol>();
+
+        void Collect(INamedTypeSymbol iface)
+        {
+            if (iface == null || visited.Contains(iface))
+                return;
+            visited.Add(iface);
+
+            foreach (var method in iface.GetMembers().OfType<IMethodSymbol>())
+            {
+                if (method.MethodKind is MethodKind.PropertyGet or MethodKind.PropertySet)
+                    continue;
+                results.Add(method);
+            }
+
+            foreach (var baseInterface in iface.Interfaces)
+                Collect(baseInterface);
+        }
+
+        Collect(interfaceSymbol);
+        return results;
     }
 
     /// <summary>

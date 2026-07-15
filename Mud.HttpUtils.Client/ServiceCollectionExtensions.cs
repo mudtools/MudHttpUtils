@@ -101,6 +101,13 @@ public static class HttpClientServiceCollectionExtensions
         }
 
         services.TryAddTransient<IBaseHttpClient>(sp => sp.GetRequiredService<IEnhancedHttpClient>());
+        // 注册 IHttpContentSerializer：全量收敛的序列化抽象层。
+        // v1.5 AOT 修正：使用 DI 注入的 JsonSerializerOptions（含 TypeInfoResolver），避免无解析器的默认实例导致 AOT 失败。
+        services.TryAddSingleton<IHttpContentSerializer>(sp =>
+        {
+            var jsonOptions = sp.GetService<IOptions<JsonSerializerOptions>>();
+            return new SystemTextJsonContentSerializer(jsonOptions?.Value);
+        });
         // 注册 IHttpRequestExecutor：执行器为无状态设计，IBaseHttpClient 通过方法参数逐次传递。
         // HC-04 修复：从 Transient 升级为 Singleton，避免无状态服务在每次解析时重复创建实例。
         // 依赖项（IHttpResponseCache、IResiliencePolicyResolver 等）均为 Singleton，生命周期匹配。
@@ -111,9 +118,13 @@ public static class HttpClientServiceCollectionExtensions
             var resilienceResolver = sp.GetService<IResiliencePolicyResolver>();
             var appResilienceResolver = sp.GetService<IAppResiliencePolicyResolver>();
             var appContextHolder = sp.GetService<IAppContextHolder>();
-            return new DefaultHttpRequestExecutor(logger ?? NullLogger<DefaultHttpRequestExecutor>.Instance, cacheProvider, resilienceResolver, appResilienceResolver, appContextHolder);
+            var contentSerializer = sp.GetService<IHttpContentSerializer>();
+            return new DefaultHttpRequestExecutor(logger ?? NullLogger<DefaultHttpRequestExecutor>.Instance, cacheProvider, resilienceResolver, appResilienceResolver, appContextHolder, contentSerializer);
         });
         services.TryAddSingleton<IHttpClientResolver, HttpClientResolver>();
+        // 注册 URL 参数格式化器（Phase 4.3）
+        services.TryAddSingleton<IUrlParameterFormatter, DefaultUrlParameterFormatter>();
+        services.TryAddSingleton<IUrlParameterKeyFormatter, CamelCaseUrlParameterKeyFormatter>();
     }
 
     /// <summary>
@@ -629,8 +640,9 @@ public static class HttpClientServiceCollectionExtensions
         }
 
         var jsonOptions = sp.GetService<IOptions<JsonSerializerOptions>>();
+        var contentSerializer = sp.GetService<IHttpContentSerializer>();
 
-        return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, options, jsonOptions: jsonOptions);
+        return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, options, jsonOptions: jsonOptions, contentSerializer: contentSerializer);
     }
 
     /// <summary>

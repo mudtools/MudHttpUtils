@@ -60,66 +60,66 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     /// </summary>
     private void GenerateFieldsForInheritedMode(StringBuilder codeBuilder)
     {
-            // 当基类没有 TokenManager 但派生类有时，需要生成自己的令牌相关字段
-            if (_context.HasTokenManager && !_context.Configuration.BaseHasTokenManager)
-            {
-                codeBuilder.AppendLine("        /// <summary>");
-                codeBuilder.AppendLine($"        /// 用于HttpClient客户端操作操作使用的的<see cref = \"{_context.Configuration.TokenManagerType}\"/> 令牌管理实例。");
-                codeBuilder.AppendLine("        /// </summary>");
-                codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly {_context.Configuration.TokenManagerType} _tokenManager;");
+        // 当基类没有 TokenManager 但派生类有时，需要生成自己的令牌相关字段
+        if (_context.HasTokenManager && !_context.Configuration.BaseHasTokenManager)
+        {
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine($"        /// 用于HttpClient客户端操作操作使用的的<see cref = \"{_context.Configuration.TokenManagerType}\"/> 令牌管理实例。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly {_context.Configuration.TokenManagerType} _tokenManager;");
 
-                codeBuilder.AppendLine("        /// <summary>");
-                codeBuilder.AppendLine("        /// 令牌提供器，用于获取访问令牌。");
-                codeBuilder.AppendLine("        /// </summary>");
-                codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly ITokenProvider _tokenProvider;");
-            }
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 令牌提供器，用于获取访问令牌。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly ITokenProvider _tokenProvider;");
+        }
 
-            if (_context.HasTokenManager && _context.Configuration.AnyMethodRequiresUserId)
-            {
-                codeBuilder.AppendLine("        /// <summary>");
-                codeBuilder.AppendLine("        /// 当前用户上下文，用于获取当前用户ID。");
-                codeBuilder.AppendLine("        /// </summary>");
-                codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly ICurrentUserContext _currentUserContext;");
-            }
+        if (_context.HasTokenManager && _context.Configuration.AnyMethodRequiresUserId)
+        {
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 当前用户上下文，用于获取当前用户ID。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly ICurrentUserContext _currentUserContext;");
+        }
 
-            // 当派生类有新的缓存/弹性策略方法但基类没有时，需要生成自己的字段
-            if (_context.HasCache && !_context.Configuration.BaseHasCache)
-            {
-                codeBuilder.AppendLine("        /// <summary>");
-                codeBuilder.AppendLine("        /// HTTP响应缓存提供器，用于缓存接口方法的响应结果。");
-                codeBuilder.AppendLine("        /// </summary>");
-                codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IHttpResponseCache _cacheProvider;");
-            }
+        // 当派生类有新的缓存/弹性策略方法但基类没有时，需要生成自己的字段
+        if (_context.HasCache && !_context.Configuration.BaseHasCache)
+        {
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// HTTP响应缓存提供器，用于缓存接口方法的响应结果。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IHttpResponseCache _cacheProvider;");
+        }
 
-            if (_context.HasResilience && !_context.Configuration.BaseHasResilience)
-            {
-                codeBuilder.AppendLine("        /// <summary>");
-                codeBuilder.AppendLine("        /// 弹性策略解析器，用于方法级重试、烕断、超时等弹性策略的运行时编排。");
-                codeBuilder.AppendLine("        /// </summary>");
-                codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IResiliencePolicyResolver _resilienceResolver;");
-            }
+        if (_context.HasResilience && !_context.Configuration.BaseHasResilience)
+        {
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 弹性策略解析器，用于方法级重试、烕断、超时等弹性策略的运行时编排。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IResiliencePolicyResolver _resilienceResolver;");
+        }
 
-            if (_context.ImplementsICurrentUserId && _context.Configuration.AnyMethodRequiresUserId)
-            {
-                codeBuilder.AppendLine();
-                codeBuilder.AppendLine("        /// <summary>");
-                codeBuilder.AppendLine("        /// 当前用户ID（ICurrentUserId 实现），委托给 ICurrentUserContext。");
-                codeBuilder.AppendLine("        /// </summary>");
-                codeBuilder.AppendLine("        public string? CurrentUserId");
-                codeBuilder.AppendLine("        {");
-                codeBuilder.AppendLine("            get => _currentUserContext.UserId;");
-                codeBuilder.AppendLine("        }");
-            }
-            else if (_context.Configuration.AnyMethodRequiresUserId)
-            {
-                codeBuilder.AppendLine();
-                codeBuilder.AppendLine("        /// <summary>");
-                codeBuilder.AppendLine("        /// 当前用户ID，委托给 ICurrentUserContext.UserId。");
-                codeBuilder.AppendLine("        /// </summary>");
-                codeBuilder.AppendLine("        public string? CurrentUserId => _currentUserContext.UserId;");
-            }
-
+        if (_context.ImplementsICurrentUserId && _context.Configuration.AnyMethodRequiresUserId)
+        {
             codeBuilder.AppendLine();
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 当前用户ID（ICurrentUserId 实现），委托给 ICurrentUserContext。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine("        public string? CurrentUserId");
+            codeBuilder.AppendLine("        {");
+            codeBuilder.AppendLine("            get => _currentUserContext.UserId;");
+            codeBuilder.AppendLine("        }");
+        }
+        else if (_context.Configuration.AnyMethodRequiresUserId)
+        {
+            codeBuilder.AppendLine();
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 当前用户ID，委托给 ICurrentUserContext.UserId。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine("        public string? CurrentUserId => _currentUserContext.UserId;");
+        }
+
+        codeBuilder.AppendLine();
     }
 
     /// <summary>
@@ -131,6 +131,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// 用于JSON内容序列化与反序列化操作的<see cref = \"JsonSerializerOptions\"/> 参数实例。");
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly JsonSerializerOptions _jsonSerializerOptions;");
+
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// HTTP 内容序列化器，统一处理 JSON 序列化/反序列化操作。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IHttpContentSerializer _contentSerializer;");
 
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine("        /// 日志记录器，用于记录 HTTP 请求执行过程中的错误和调试信息。");
@@ -329,6 +334,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine($"        /// 构建 <see cref = \"{className}\"/> 类的实例。");
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine("        /// <param name=\"option\">Json序列化参数</param>");
+        codeBuilder.AppendLine("        /// <param name=\"contentSerializer\">HTTP 内容序列化器（可选,未注入时使用默认 SystemTextJsonContentSerializer）</param>");
         codeBuilder.AppendLine("        /// <param name=\"logger\">日志记录器（可选）</param>");
 
         if (_context.HasTokenManager)
@@ -388,9 +394,9 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     private void GenerateConstructorSignature(StringBuilder codeBuilder, string className)
     {
         var parameters = new List<string>
-        {
-            "IOptions<JsonSerializerOptions> option"
-        };
+                {
+                "IOptions<JsonSerializerOptions> option"
+                };
 
         if (_context.HasTokenManager)
         {
@@ -440,8 +446,10 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             parameters.Add("IResiliencePolicyResolver? resilienceResolver = null");
         }
 
-        // 非继承模式下在参数列表末尾添加可选的 logger 参数
-        // 继承模式下也添加 logger 参数，用于传递给基类构造函数
+        // 在参数列表末尾添加可选的 contentSerializer 和 logger 参数
+        // contentSerializer 必须放在所有必需参数之后（C# 要求可选参数在必需参数之后）
+        // 继承模式下 contentSerializer 使用命名参数传递给基类构造函数
+        parameters.Add("IHttpContentSerializer? contentSerializer = null");
         parameters.Add("ILogger? logger = null");
 
         var signature = $"        public {className}({string.Join(", ", parameters)})";
@@ -492,7 +500,8 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
                 baseParameters.Add("resilienceResolver");
             }
             // logger 使用命名参数传递，避免基类可选参数顺序不匹配的问题
-            codeBuilder.AppendLine($" : base({string.Join(", ", baseParameters)}, logger: logger)");
+            // contentSerializer 同样使用命名参数传递（Phase 3.1 全量收敛）
+            codeBuilder.AppendLine($" : base({string.Join(", ", baseParameters)}, logger: logger, contentSerializer: contentSerializer)");
         }
         else
         {
@@ -512,6 +521,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("            if (option == null)");
             codeBuilder.AppendLine("                throw new ArgumentNullException(nameof(option));");
             codeBuilder.AppendLine("            _jsonSerializerOptions = option.Value ?? throw new InvalidOperationException(\"JsonSerializerOptions 选项值不能为 null。\");");
+            codeBuilder.AppendLine("            _contentSerializer = contentSerializer ?? new SystemTextJsonContentSerializer(_jsonSerializerOptions);");
             codeBuilder.AppendLine("            _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;");
 
             if (_context.HasTokenManager)

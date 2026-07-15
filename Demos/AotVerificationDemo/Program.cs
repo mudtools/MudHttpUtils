@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Mud.HttpUtils;
 using Mud.HttpUtils.Resilience;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 #if NET8_0_OR_GREATER
@@ -38,6 +39,7 @@ public class Program
         await DemoNdjsonSerialization();
         await DemoScaffolderAutoCoverage();
         DemoUncoveredDtoRuntime();
+        await DemoResponseTypeWrapping();
 
         Console.WriteLine("\n=== AOT 验证示例完成 ===");
         Console.WriteLine("如果此程序在 Native AOT 模式下成功运行，说明 JSON / 表单 / 查询参数 / 弹性 / 脱敏 / 加密 / NDJSON 主路径均已 AOT 兼容。");
@@ -661,6 +663,66 @@ public class Program
 #else
         Console.WriteLine("  [✓] 跳过（JsonSourceGeneration 仅在 .NET 8+ 可用）");
 #endif
+
+        Console.WriteLine();
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // 场景 12：Response<T> 包装路径（AOT 安全反序列化验证）
+    // ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 验证返回类型为 <see cref="Response{T}"/> 的 API 方法在 Native AOT 下的
+    /// 包装/反序列化路径：响应体经 <c>AppJsonContext</c>（源生成 resolver）
+    /// 反序列化为 <c>UserDto</c>，再包装为 <c>Response&lt;UserDto&gt;</c> 返回
+    /// （不抛异常，状态码与内容均可用）。
+    /// </summary>
+    /// <remarks>
+    /// 此场景使用独立的 ServiceCollection 与假 <see cref="ResponseTypeHandler"/>，
+    /// 避免对真实服务器依赖，同时验证 InvariantGlobalization 下
+    /// 全球化裁剪不影响 JSON 反序列化。
+    /// </remarks>
+    private static async Task DemoResponseTypeWrapping()
+    {
+        Console.WriteLine("--- 12. Response<T> 包装路径（AOT 安全反序列化）---");
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // 注入带假 handler 的 HttpClient（返回固定 JSON），供生成客户端使用
+        services.AddMudHttpClient("IEnhancedHttpClient", c =>
+            {
+                c.BaseAddress = new Uri("https://fake.example");
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new ResponseTypeHandler());
+
+        // 配置 JsonSerializerOptions 挂载源生成 resolver（AOT 核心）
+        services.Configure<JsonSerializerOptions>(options =>
+        {
+            options.TypeInfoResolver = AppJsonContext.Default;
+        });
+
+        // 注册源生成的 API 客户端（含 IResponseApi）
+        services.AddWebApiHttpClient();
+
+        using var provider = services.BuildServiceProvider();
+        var responseApi = provider.GetRequiredService<IResponseApi>();
+
+        var response = await responseApi.GetUserResponseAsync(1);
+
+        if (response.StatusCode == HttpStatusCode.OK
+            && response.Content is { } user
+            && user.Id == 1
+            && user.Name == "AOT Resp")
+        {
+            Console.WriteLine($"  Response<UserDto> => Status={(int)response.StatusCode}, Id={user.Id}, Name={user.Name}, IsSuccess={response.IsSuccessStatusCode}");
+            Console.WriteLine("  [✓] Response<T> 包装路径已执行（响应体经 AppJsonContext 反序列化，AOT 安全）");
+        }
+        else
+        {
+            Console.WriteLine($"  [!] Response<T> 包装路径异常：StatusCode={response.StatusCode}, Content={response.Content}, Error={response.ErrorContent}");
+            throw new InvalidOperationException("Response<T> wrapping path failed in AOT smoke test");
+        }
 
         Console.WriteLine();
     }

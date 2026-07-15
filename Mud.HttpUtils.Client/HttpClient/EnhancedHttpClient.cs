@@ -57,6 +57,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     private readonly ISensitiveDataMasker? _sensitiveDataMasker;
     private readonly bool _allowCustomBaseUrls;
     private readonly JsonSerializerOptions _jsonOptions;
+    private readonly IHttpContentSerializer _contentSerializer;
+
+    /// <summary>
+    /// 获取 HTTP 内容序列化器。所有 JSON 序列化/反序列化操作统一通过此抽象层进行。
+    /// </summary>
+    public IHttpContentSerializer ContentSerializer => _contentSerializer;
 
     /// <summary>
     /// 获取加密提供程序。子类可重写此属性以提供加密功能。
@@ -95,11 +101,13 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// <param name="httpClient">HttpClient实例</param>
     /// <param name="options">配置选项（可选，默认为 null，表示使用默认配置）。</param>
     /// <param name="jsonOptions">JSON 序列化选项（可选，用于 Native AOT 场景注入 <see cref="JsonSerializerContext"/>）。</param>
+    /// <param name="contentSerializer">HTTP 内容序列化器（可选,未注入时使用默认 SystemTextJsonContentSerializer）</param>
     /// <exception cref="ArgumentNullException"></exception>
     protected EnhancedHttpClient(
         HttpClient httpClient,
         EnhancedHttpClientOptions? options = null,
-        IOptions<JsonSerializerOptions>? jsonOptions = null)
+        IOptions<JsonSerializerOptions>? jsonOptions = null,
+        IHttpContentSerializer? contentSerializer = null)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         options ??= new EnhancedHttpClientOptions();
@@ -110,6 +118,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         _sensitiveDataMasker = options.SensitiveDataMasker;
         _allowCustomBaseUrls = options.AllowCustomBaseUrls;
         _jsonOptions = BuildJsonOptions(options, jsonOptions);
+        _contentSerializer = contentSerializer ?? new SystemTextJsonContentSerializer(_jsonOptions);
     }
 
     /// <summary>
@@ -396,7 +405,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
             {
                 _logger.HttpRequestTimeout(uri, _httpClient.Timeout.TotalSeconds, ex);
-                throw new HttpRequestException($"请求超时: {uri}", ex);
+                throw new ApiRequestException($"请求超时: {uri}", ex, isTimeout: true, requestUri: uri);
             }
             catch (TaskCanceledException ex)
             {
@@ -427,12 +436,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             catch (Exception ex)
             {
                 _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
-                throw new HttpRequestException($"HTTP请求处理失败: {ex.Message}", ex);
+                throw new ApiRequestException($"HTTP请求处理失败: {uri}", ex, requestUri: uri);
             }
 
             var options = (jsonSerializerOptions as JsonSerializerOptions) ?? _jsonOptions;
 
-            await foreach (var item in ParseNdJsonStreamAsync<TResult>(stream, options, cancellationToken).ConfigureAwait(false))
+            await foreach (var item in ParseNdJsonStreamAsync<TResult>(stream, options, _contentSerializer, cancellationToken).ConfigureAwait(false))
             {
                 yield return item;
             }
@@ -755,10 +764,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         HttpMethod method, string operation, string completeMsg, string errorMsg,
         string requestUri, TRequest requestData, CancellationToken cancellationToken)
     {
-        var content = JsonSerializer.Serialize(requestData, _jsonOptions);
         using var request = new HttpRequestMessage(method, requestUri)
         {
-            Content = new StringContent(content, Encoding.UTF8, "application/json")
+            Content = _contentSerializer.ToHttpContent(requestData, _jsonOptions)
         };
         var validatedUri = ValidateRequest(request);
         return await ExecuteWithObservabilityAsync(
@@ -811,7 +819,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
             _logger.HttpRequestTimeout(requestUri!, _httpClient.Timeout.TotalSeconds, ex);
-            throw new HttpRequestException($"请求超时: {requestUri}", ex);
+            throw new ApiRequestException($"请求超时: {requestUri}", ex, isTimeout: true, requestUri: requestUri);
         }
         catch (TaskCanceledException ex)
         {
@@ -842,7 +850,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         catch (Exception ex)
         {
             _logger.HttpRequestFailedWithExceptionType(requestUri!, ex.GetType().Name, ex);
-            throw new HttpRequestException($"HTTP请求处理失败: {ex.Message}", ex);
+            throw new ApiRequestException($"HTTP请求处理失败: {requestUri}", ex, requestUri: requestUri);
         }
     }
 
@@ -936,7 +944,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
                     try
                     {
-                        var result = await JsonSerializer.DeserializeAsync<TResult>(memoryStream, options, cancellationToken).ConfigureAwait(false);
+                        using var responseContent = new StreamContent(memoryStream);
+                        var result = await _contentSerializer.FromHttpContentAsync<TResult>(responseContent, options, cancellationToken).ConfigureAwait(false);
                         _logger.JsonDeserializeSuccess(requestUri!, typeof(TResult).Name);
                         return result;
                     }
@@ -950,7 +959,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 {
                     try
                     {
-                        return await JsonSerializer.DeserializeAsync<TResult>(stream, options, cancellationToken).ConfigureAwait(false);
+                        using var responseContent = new StreamContent(stream);
+                        return await _contentSerializer.FromHttpContentAsync<TResult>(responseContent, options, cancellationToken).ConfigureAwait(false);
                     }
                     catch (JsonException jsonEx)
                     {
@@ -1054,7 +1064,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
         else
         {
-            serializedContent = JsonSerializer.Serialize(content, content.GetType(), _jsonOptions);
+            serializedContent = _contentSerializer.Serialize(content, content.GetType(), _jsonOptions);
         }
 
         var encryptedData = EncryptionProvider.Encrypt(serializedContent);
@@ -1064,7 +1074,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             [propertyName] = encryptedData
         };
 
-        return JsonSerializer.Serialize(result, _jsonOptions);
+        return _contentSerializer.Serialize(result, _jsonOptions);
     }
 
     /// <summary>
@@ -1092,7 +1102,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 "或注册自定义 IEncryptionProvider 实现。");
 
         // AOT 安全：使用编译期类型 T 序列化，不使用 content.GetType()
-        var serializedContent = JsonSerializer.Serialize(content, _jsonOptions);
+        var serializedContent = _contentSerializer.Serialize(content, _jsonOptions);
         var encryptedData = EncryptionProvider.Encrypt(serializedContent);
 
         // AOT 安全：使用 Utf8JsonWriter 直接构建外层 JSON，避免 Dictionary<string, object> 反射序列化
@@ -1707,6 +1717,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     internal static async IAsyncEnumerable<T> ParseNdJsonStreamAsync<T>(
         Stream stream,
         JsonSerializerOptions? options,
+        IHttpContentSerializer contentSerializer,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         using var reader = new StreamReader(stream, System.Text.Encoding.UTF8);
@@ -1729,9 +1740,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 continue;
             }
 
-            var item = options != null
-                ? JsonSerializer.Deserialize<T>(line, options)
-                : JsonSerializer.Deserialize<T>(line);
+            var item = contentSerializer.Deserialize<T>(line, options);
             if (item != null)
             {
                 yield return item;
@@ -1751,6 +1760,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     internal static async IAsyncEnumerable<T> ParseNdJsonStreamAsync<T>(
         Stream stream,
         System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> jsonTypeInfo,
+        IHttpContentSerializer contentSerializer,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         using var reader = new StreamReader(stream, System.Text.Encoding.UTF8);
@@ -1768,7 +1778,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 continue;
             }
 
-            var item = JsonSerializer.Deserialize(line, jsonTypeInfo);
+            var item = contentSerializer.Deserialize<T>(line, jsonTypeInfo);
             if (item != null)
             {
                 yield return item;

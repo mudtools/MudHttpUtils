@@ -3,10 +3,13 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Mud.HttpUtils;
 using Mud.HttpUtils.Attributes;
 using Mud.HttpUtils.Resilience;
+using System.Text.Json;
 
 namespace Mud.HttpUtils.Integration.Tests;
 
@@ -53,6 +56,8 @@ public class TokenInjectionIntegrationTests : IDisposable
         services.AddOptions();
         services.AddSingleton<IEnhancedHttpClient>(new DirectEnhancedHttpClient(_httpClient));
         services.AddSingleton<ITokenManager, IntegrationTestTokenManager>();
+        services.TryAddSingleton<IHttpContentSerializer>(sp => new SystemTextJsonContentSerializer(sp.GetService<IOptions<JsonSerializerOptions>>()?.Value));
+        services.TryAddSingleton<IHttpRequestExecutor, DefaultHttpRequestExecutor>();
         services.AddWebApiHttpClient();
         _services = services.BuildServiceProvider();
     }
@@ -182,6 +187,8 @@ public class ResilienceIntegrationTests : IDisposable
         var innerClient = new DirectEnhancedHttpClient(_httpClient);
         var policyProvider = new PollyResiliencePolicyProvider(resilienceOptions);
         services.AddSingleton<IEnhancedHttpClient>(new ResilientHttpClient(innerClient, policyProvider));
+        services.TryAddSingleton<IHttpContentSerializer>(sp => new SystemTextJsonContentSerializer(sp.GetService<IOptions<JsonSerializerOptions>>()?.Value));
+        services.TryAddSingleton<IHttpRequestExecutor, DefaultHttpRequestExecutor>();
         services.AddWebApiHttpClient();
         _services = services.BuildServiceProvider();
     }

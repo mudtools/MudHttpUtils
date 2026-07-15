@@ -1531,8 +1531,9 @@ namespace TestNamespace
             "[FilePath] 参数不应被添加到查询参数集合（大小写变体）");
 
         // filePath 不应出现在请求体构建逻辑中
-        generatedCode.Should().NotContain("JsonContent",
-            "[FilePath] 参数不应触发 JSON 请求体序列化");
+        // Phase 3.1 后，Body 序列化使用 _contentSerializer.ToHttpContent，不再使用 StringContent + "JsonContent"
+        generatedCode.Should().NotContain("_contentSerializer.ToHttpContent(filePath",
+            "[FilePath] 参数不应触发请求体序列化");
     }
 
     #endregion
