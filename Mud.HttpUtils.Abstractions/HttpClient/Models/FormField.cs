@@ -15,7 +15,7 @@ namespace Mud.HttpUtils;
 /// <typeparam name="TBody">body 对象的类型。</typeparam>
 /// <remarks>
 /// 由源生成器生成静态数组，每个 <see cref="FormField{TBody}"/> 持有编译期已知的属性 getter，
-/// 实现零反射的 form-urlencoded 序列化。与 Refit 的 <c>FormField&lt;TBody&gt;</c> 模式对齐。
+/// 实现零反射的 form-urlencoded 序列化。
 /// </remarks>
 public sealed class FormField<TBody>
 {

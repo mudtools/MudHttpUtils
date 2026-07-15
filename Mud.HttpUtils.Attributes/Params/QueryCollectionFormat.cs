@@ -11,7 +11,7 @@ namespace Mud.HttpUtils.Attributes;
 /// 指定集合类型查询参数的序列化格式。
 /// </summary>
 /// <remarks>
-/// 对齐 Refit 的 <c>CollectionFormat</c> 概念，控制数组/集合参数在查询字符串中的格式化方式。
+/// 控制数组/集合参数在查询字符串中的格式化方式。
 /// </remarks>
 public enum QueryCollectionFormat
 {

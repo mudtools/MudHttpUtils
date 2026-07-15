@@ -14,7 +14,7 @@ namespace Mud.HttpUtils;
 /// multipart/form-data 上传项的抽象基类。
 /// </summary>
 /// <remarks>
-/// 允许运行时多态选择上传来源（字节数组、流、文件），与 Refit 的 <c>MultipartItem</c> 对齐。
+/// 允许运行时多态选择上传来源（字节数组、流、文件）。
 /// 派生类通过 <see cref="ToContent"/> 提供具体的 <see cref="HttpContent"/> 实现。
 /// </remarks>
 public abstract class MultipartItem

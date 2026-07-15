@@ -16,7 +16,7 @@ using Xunit;
 namespace Mud.HttpUtils.Generator.Tests.Incremental;
 
 /// <summary>
-/// 增量行为测试(对齐 Refit 的 <c>Incremental/</c> 设计意图)。
+/// 增量行为测试。
 /// </summary>
 /// <remarks>
 /// 本仓库的生成器管线通过 <c>WithComparer(EqualityComparer&lt;InterfaceModel&gt;.Default)</c> 进行增量比较，
@@ -24,7 +24,7 @@ namespace Mud.HttpUtils.Generator.Tests.Incremental;
 /// 因此"无关变更不重新生成 / 接口变更重新生成"的增量正确性,等价于断言两次构建的
 /// <see cref="Mud.HttpUtils.Models.InterfaceModel"/> 是否相等。
 /// <para>
-/// 注:Refit 的对应测试使用 <c>GeneratorDriverOptions(trackIncrementalSteps: true)</c> 直接断言
+/// 注:测试使用 <c>GeneratorDriverOptions(trackIncrementalSteps: true)</c> 直接断言
 /// <c>IncrementalStepRunReason.Cached/Modified</c>。本仓库的 <c>HttpInvokeClassSourceGenerator</c> 仅实现
 /// <c>IIncrementalGenerator</c>,且测试运行时加载的 Roslyn 程序集存在版本碎片化
 /// (<c>IIncrementalGenerator</c> 取自 SDK 内联 Roslyn,而 <c>ISourceGenerator</c> 取自另一份

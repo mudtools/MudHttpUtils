@@ -13,7 +13,6 @@ namespace Mud.HttpUtils.Generator.Models;
 /// <summary>
 /// 不可变且实现值相等的数组包装。用于 Roslyn 增量生成器的中间模型，
 /// 使 <see cref="IEquatable{T}.Equals"/> 可用于判断两步之间是否需要重新 Emit。
-/// 参考 Refit 的 ImmutableEquatableArray&lt;T&gt; 实现（for 循环 + 私有 Combine，非 LINQ）。
 /// </summary>
 /// <typeparam name="T">元素类型，必须实现 <see cref="IEquatable{T}"/>。</typeparam>
 internal sealed class ImmutableEquatableArray<T> : IEquatable<ImmutableEquatableArray<T>>, IReadOnlyList<T>

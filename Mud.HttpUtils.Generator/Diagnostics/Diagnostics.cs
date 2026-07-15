@@ -111,13 +111,13 @@ internal static class Diagnostics
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor HttpClientApiGenericInterfaceNotSupported = new(
-        id: "HTTPCLIENT012",
-        title: "泛型接口不支持代码生成",
-        messageFormat: "接口 {0} 是泛型接口，源生成器不支持为泛型接口生成实现。请将接口改为非泛型接口，或为每个具体类型参数创建独立的非泛型接口。",
-        category: "代码生成",
-        DiagnosticSeverity.Error,
-        isEnabledByDefault: true,
-        customTags: WellKnownDiagnosticTags.NotConfigurable);
+    id: "HTTPCLIENT012",
+    title: "泛型接口代码生成",
+    messageFormat: "接口 {0} 是泛型接口，源生成器将转发类型参数与约束。",
+    category: "代码生成",
+    DiagnosticSeverity.Info,
+    isEnabledByDefault: true,
+    customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     public static readonly DiagnosticDescriptor HttpClientPathParameterMismatch = new(
         id: "HTTPCLIENT013",

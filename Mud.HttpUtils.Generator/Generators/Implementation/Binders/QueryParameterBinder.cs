@@ -203,7 +203,7 @@ internal class QueryParameterBinder : IParameterBinder
             separatorExplicitlySet = true;
         }
 
-        // [v2.4 §2.3] 消费 CollectionFormat 命名参数（对齐 Refit）
+        // [v2.4 §2.3] 消费 CollectionFormat 命名参数
         // CollectionFormat 为非 Multi 时覆盖 Separator（除非 Separator 被显式设置且 CollectionFormat 未显式设置）
         if (attr.NamedArguments.TryGetValue("CollectionFormat", out var cfVal) && cfVal is int cfInt && cfInt != 0)
         {

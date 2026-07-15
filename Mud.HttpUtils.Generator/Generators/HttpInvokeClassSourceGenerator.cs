@@ -113,6 +113,10 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
             ProjectConfigHelper.ReadConfigValueAsBool(configOptionsProvider.GlobalOptions, "build_property.IsAotCompatible", false) ||
             ProjectConfigHelper.ReadConfigValueAsBool(configOptionsProvider.GlobalOptions, "build_property.PublishAot", false);
 
+        // [v2.4 §3.4] 读取消费项目 nullable 配置，条件化发射 #nullable enable
+        EmitNullableEnable = ProjectConfigHelper.ReadConfigValue(
+            configOptionsProvider.GlobalOptions, "build_property.Nullable", "enable") == "enable";
+
         foreach (var model in interfaces)
         {
             if (context.CancellationToken.IsCancellationRequested)

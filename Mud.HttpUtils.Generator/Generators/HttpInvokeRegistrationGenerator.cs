@@ -27,6 +27,10 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         if (interfaces.IsDefaultOrEmpty)
             return;
 
+        // [v2.4 §3.4] 读取消费项目 nullable 配置，条件化发射 #nullable enable
+        EmitNullableEnable = ProjectConfigHelper.ReadConfigValue(
+            configOptionsProvider.GlobalOptions, "build_property.Nullable", "enable") == "enable";
+
         var httpClientApis = CollectHttpClientApis(interfaces, context);
 
         if (httpClientApis.Count == 0)

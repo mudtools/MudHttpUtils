@@ -14,7 +14,6 @@ namespace Mud.HttpUtils.Generator.Tests;
 
 /// <summary>
 /// Verify 快照测试辅助类，封装生成器驱动的快照验证逻辑。
-/// 参考 Refit 的 Fixture.cs 设计，适配 Mud.HttpUtils 的测试框架（xUnit + Verify.Xunit）。
 /// </summary>
 public static class VerifyFixture
 {

@@ -711,3 +711,11 @@ virtual Mud.HttpUtils.TokenManagerBase.SupportsBackgroundRefresh.get -> bool
 volatile Mud.HttpUtils.TokenManagerBase._disposed -> bool
 Mud.HttpUtils.RestService
 static Mud.HttpUtils.RestService.ForGenerated<T>(System.IServiceProvider! serviceProvider) -> T!
+Mud.HttpUtils.IHttpExceptionFactory
+Mud.HttpUtils.IDeserializationExceptionFactory
+Mud.HttpUtils.ITransportExceptionFactory
+Mud.HttpUtils.DefaultExceptionFactory
+Mud.HttpUtils.DefaultExceptionFactory.CreateApiException(System.Net.Http.HttpResponseMessage! response, string? content, string? requestUri) -> System.Exception?
+Mud.HttpUtils.DefaultExceptionFactory.CreateDeserializationException(string? content, System.Type! targetType, System.Exception! deserializationException, string? requestUri) -> System.Exception!
+Mud.HttpUtils.DefaultExceptionFactory.CreateTransportException(System.Exception! transportException, string? requestUri, bool isTimeout, bool isCancellation) -> System.Exception!
+Mud.HttpUtils.DefaultExceptionFactory.DefaultExceptionFactory() -> void

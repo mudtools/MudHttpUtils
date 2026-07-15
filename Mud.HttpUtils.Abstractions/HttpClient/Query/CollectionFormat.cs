@@ -12,7 +12,6 @@ namespace Mud.HttpUtils;
 /// </summary>
 /// <remarks>
 /// 定义集合类型参数（如 <c>List&lt;T&gt;</c>、<c>T[]</c>）在 URL 查询参数或 form-urlencoded 中的序列化方式。
-/// 与 Refit 的 <c>CollectionFormat</c> 对齐。
 /// </remarks>
 public enum CollectionFormat
 {

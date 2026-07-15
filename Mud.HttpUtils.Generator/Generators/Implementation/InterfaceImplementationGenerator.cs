@@ -152,11 +152,12 @@ internal class InterfaceImplementationGenerator
 
         if (_interfaceSymbol.IsGenericType)
         {
+            // [v2.4 §3.2] 泛型接口现支持代码生成（类型参数转发），不再阻断。
+            // 保留 Info 级诊断告知用户生成器已感知泛型接口。
             _context.ReportDiagnostic(Diagnostic.Create(
                 Diagnostics.HttpClientApiGenericInterfaceNotSupported,
                 _interfaceDecl.GetLocation(),
                 _interfaceSymbol.Name));
-            isValid = false;
         }
 
         if (!string.IsNullOrEmpty(configuration.HttpClient) && !string.IsNullOrEmpty(configuration.RawTokenManager))

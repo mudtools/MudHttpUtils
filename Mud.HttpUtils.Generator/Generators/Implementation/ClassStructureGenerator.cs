@@ -49,24 +49,52 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
     {
         string classKeyword = context.Configuration.IsAbstract ? "abstract partial class" : "partial class";
 
+        // [v2.4 §3.2] 泛型接口类型参数转发：将接口的类型参数和约束原样转发到实现类。
+        var typeParams = _interfaceSymbol.IsGenericType
+            ? $"<{string.Join(", ", _interfaceSymbol.TypeParameters.Select(tp => tp.Name))}>"
+            : string.Empty;
+
+        // 转发类型约束（where T : class, new() 等）
+        var constraints = string.Empty;
+        if (_interfaceSymbol.IsGenericType)
+        {
+            var constraintParts = new List<string>();
+            foreach (var tp in _interfaceSymbol.TypeParameters)
+            {
+                var parts = new List<string>();
+                if (tp.HasReferenceTypeConstraint)
+                    parts.Add("class");
+                if (tp.HasValueTypeConstraint)
+                    parts.Add("struct");
+                if (tp.HasUnmanagedTypeConstraint)
+                    parts.Add("unmanaged");
+                if (tp.HasNotNullConstraint)
+                    parts.Add("notnull");
+                foreach (var constraintType in tp.ConstraintTypes)
+                    parts.Add(constraintType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
+                        .WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.UseSpecialTypes)));
+                if (tp.HasConstructorConstraint)
+                    parts.Add("new()");
+
+                if (parts.Count > 0)
+                    constraintParts.Add($"where {tp.Name} : {string.Join(", ", parts)}");
+            }
+            if (constraintParts.Count > 0)
+                constraints = " " + string.Join(" ", constraintParts);
+        }
+
         string inheritance = string.Empty;
         if (context.HasInheritedFrom)
         {
-            inheritance = $" : {context.Configuration.InheritedFrom}, {_interfaceSymbol.Name}";
+            inheritance = $" : {context.Configuration.InheritedFrom}, {_interfaceSymbol.Name}{typeParams}";
         }
         else
         {
-            inheritance = $" : {_interfaceSymbol.Name}";
+            inheritance = $" : {_interfaceSymbol.Name}{typeParams}";
         }
 
         codeBuilder.AppendLine($"    {GeneratedCodeConsts.HttpGeneratedCodeAttribute}");
-        // AOT v4 Phase 19.2 / D6/D14：原类级 [UnconditionalSuppressMessage] 已移除，
-        // 改为方法级精准压制（见 MethodGenerator.WriteMethodLevelSuppressMessage），
-        // 仅覆盖经执行器间接 JSON 序列化的生成方法，避免误覆盖 XML 路径
-        // （XML 路径在 AOT 下已由 AOT007 分析器在编译期阻止，见 Phase 18）。
-        // NEW-GEN-05 说明：使用 internal 强制通过 DI 接口消费，符合"面向接口编程"原则。
-        // 跨程序集测试场景可通过 InternalsVisibleTo 配置。
-        codeBuilder.AppendLine($"    internal {classKeyword} {context.ClassName}{inheritance}");
+        codeBuilder.AppendLine($"    internal {classKeyword} {context.ClassName}{typeParams}{inheritance}{constraints}");
         codeBuilder.AppendLine("    {");
     }
 }

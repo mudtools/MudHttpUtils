@@ -711,3 +711,7 @@ virtual Mud.HttpUtils.TokenManagerBase.SupportsBackgroundRefresh.get -> bool
 volatile Mud.HttpUtils.TokenManagerBase._disposed -> bool
 Mud.HttpUtils.RestService
 static Mud.HttpUtils.RestService.ForGenerated<T>(System.IServiceProvider! serviceProvider) -> T!
+Mud.HttpUtils.IHttpExceptionFactory
+Mud.HttpUtils.IDeserializationExceptionFactory
+Mud.HttpUtils.ITransportExceptionFactory
+Mud.HttpUtils.DefaultExceptionFactory
