@@ -1,0 +1,432 @@
+#nullable enable
+abstract Mud.HttpUtils.UserTokenManagerBase.GetTokenAsync(string? userId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string?>!
+abstract Mud.HttpUtils.UserTokenManagerBase.GetTokenInfoAsync(string! userId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.UserTokenInfo?>!
+abstract Mud.HttpUtils.UserTokenManagerBase.GetUserTokenWithCodeAsync(string! code, string! redirectUri, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.UserTokenInfo?>!
+abstract Mud.HttpUtils.UserTokenManagerBase.RefreshUserTokenAsync(string! userId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.UserTokenInfo?>!
+abstract Mud.HttpUtils.UserTokenManagerBase.RemoveTokenAsync(string! userId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+const Mud.HttpUtils.MudCircuitBreakerHealthCheck.Name = "mud_circuit_breaker" -> string!
+const Mud.HttpUtils.MudCircuitBreakerHealthCheckOptions.SectionName = "CircuitBreakerHealthCheck" -> string!
+const Mud.HttpUtils.MudHttpClientApplicationOptions.SectionName = "MudHttpClients" -> string!
+const Mud.HttpUtils.OAuth2Options.SectionName = "MudHttpOAuth2" -> string!
+const Mud.HttpUtils.Observability.TokenRefreshHealthCheck.Name = "mud_token_refresh" -> string!
+const Mud.HttpUtils.ResponseCacheOptions.DefaultCleanupIntervalSeconds = 60 -> int
+const Mud.HttpUtils.ResponseCacheOptions.DefaultMaxCacheSize = 1000 -> int
+const Mud.HttpUtils.TracingDelegatingHandler.ObservedPropertyKey = "__mud_observed" -> string!
+const Mud.HttpUtils.UserTokenCacheOptions.DefaultCleanupIntervalSeconds = 300 -> int
+const Mud.HttpUtils.UserTokenCacheOptions.DefaultCompactionPercentage = 0.2 -> double
+const Mud.HttpUtils.UserTokenCacheOptions.DefaultExpireThresholdSeconds = 300 -> int
+const Mud.HttpUtils.UserTokenCacheOptions.DefaultSizeLimit = 10000 -> int
+const Mud.HttpUtils.UserTokenCacheOptions.DefaultSlidingExpirationSeconds = 3600 -> int
+const Mud.HttpUtils.UserTokenCacheOptions.SectionName = "MudHttpUserTokenCache" -> string!
+Mud.HttpUtils.AotSafeSensitiveDataMasker
+Mud.HttpUtils.AotSafeSensitiveDataMasker.AotSafeSensitiveDataMasker() -> void
+Mud.HttpUtils.AotSafeSensitiveDataMasker.Mask(string! value, Mud.HttpUtils.SensitiveDataMaskMode mode = Mud.HttpUtils.SensitiveDataMaskMode.Mask, int prefixLength = 2, int suffixLength = 2) -> string!
+Mud.HttpUtils.AotSafeSensitiveDataMasker.MaskObject(object! obj) -> string!
+Mud.HttpUtils.AotSafeSensitiveDataMasker.Register<T>(System.Func<T!, string!>! maskFunc) -> void
+Mud.HttpUtils.AsyncEnumerableExtensions
+Mud.HttpUtils.AsyncLocalAppContextSwitcher
+Mud.HttpUtils.AsyncLocalAppContextSwitcher.AsyncLocalAppContextSwitcher() -> void
+Mud.HttpUtils.AsyncLocalAppContextSwitcher.BeginScope(Mud.HttpUtils.IMudAppContext! context) -> System.IDisposable!
+Mud.HttpUtils.AsyncLocalAppContextSwitcher.Current.get -> Mud.HttpUtils.IMudAppContext?
+Mud.HttpUtils.AsyncLocalAppContextSwitcher.Current.set -> void
+Mud.HttpUtils.CacheResponseInterceptor
+Mud.HttpUtils.CacheResponseInterceptor.CacheResponseInterceptor(Mud.HttpUtils.IHttpResponseCache! cache, Microsoft.Extensions.Logging.ILogger<Mud.HttpUtils.CacheResponseInterceptor!>! logger) -> void
+Mud.HttpUtils.CacheResponseInterceptor.ClearAsync() -> System.Threading.Tasks.Task!
+Mud.HttpUtils.CacheResponseInterceptor.GetOrFetchAsync<T>(string! key, System.Func<System.Threading.Tasks.Task<T>!>! fetchFunc, System.TimeSpan expiration, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<T?>!
+Mud.HttpUtils.CacheResponseInterceptor.Order.get -> int
+Mud.HttpUtils.CacheResponseInterceptor.Remove(string! key) -> void
+Mud.HttpUtils.CacheResponseInterceptor.RemoveAsync(string! key) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.CacheResponseInterceptor.Set<T>(string! key, T? value, System.TimeSpan absoluteExpirationRelativeToNow) -> void
+Mud.HttpUtils.CacheResponseInterceptor.Set<T>(string! key, T? value, System.TimeSpan expirationRelativeToNow, bool useSlidingExpiration) -> void
+Mud.HttpUtils.CacheResponseInterceptor.TryGet<T>(string! key, out T? value) -> bool
+Mud.HttpUtils.CamelCaseUrlParameterKeyFormatter
+Mud.HttpUtils.CamelCaseUrlParameterKeyFormatter.CamelCaseUrlParameterKeyFormatter() -> void
+Mud.HttpUtils.CamelCaseUrlParameterKeyFormatter.Format(string! key) -> string!
+Mud.HttpUtils.CircuitBreakerHealthCheckSettings
+Mud.HttpUtils.CircuitBreakerHealthCheckSettings.CircuitBreakerHealthCheckSettings() -> void
+Mud.HttpUtils.CircuitBreakerHealthCheckSettings.FailureStatus.get -> Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus?
+Mud.HttpUtils.CircuitBreakerHealthCheckSettings.FailureStatus.set -> void
+Mud.HttpUtils.CircuitBreakerHealthCheckSettings.MaxHalfOpenCount.get -> int
+Mud.HttpUtils.CircuitBreakerHealthCheckSettings.MaxHalfOpenCount.set -> void
+Mud.HttpUtils.CircuitBreakerHealthCheckSettings.MaxOpenCount.get -> int
+Mud.HttpUtils.CircuitBreakerHealthCheckSettings.MaxOpenCount.set -> void
+Mud.HttpUtils.Client.DefaultCurrentUserContext<TUser>
+Mud.HttpUtils.Client.DefaultCurrentUserContext<TUser>.DefaultCurrentUserContext() -> void
+Mud.HttpUtils.Client.DefaultCurrentUserContext<TUser>.SetUser(TUser? user) -> void
+Mud.HttpUtils.Client.DefaultCurrentUserContext<TUser>.SetUserId(string? userId) -> void
+Mud.HttpUtils.Client.DefaultCurrentUserContext<TUser>.User.get -> TUser?
+Mud.HttpUtils.Client.DefaultCurrentUserContext<TUser>.UserId.get -> string?
+Mud.HttpUtils.DefaultAesEncryptionProvider
+Mud.HttpUtils.DefaultAesEncryptionProvider.Decrypt(string! cipherText) -> string!
+Mud.HttpUtils.DefaultAesEncryptionProvider.DecryptBytes(byte[]! encryptedData) -> byte[]!
+Mud.HttpUtils.DefaultAesEncryptionProvider.DefaultAesEncryptionProvider(Microsoft.Extensions.Options.IOptions<Mud.HttpUtils.AesEncryptionOptions!>! options) -> void
+Mud.HttpUtils.DefaultAesEncryptionProvider.Dispose() -> void
+Mud.HttpUtils.DefaultAesEncryptionProvider.Encrypt(string! plainText) -> string!
+Mud.HttpUtils.DefaultAesEncryptionProvider.EncryptBytes(byte[]! data) -> byte[]!
+Mud.HttpUtils.DefaultApiKeyProvider
+Mud.HttpUtils.DefaultApiKeyProvider.DefaultApiKeyProvider(Microsoft.Extensions.Configuration.IConfiguration! configuration) -> void
+Mud.HttpUtils.DefaultApiKeyProvider.GetApiKeyAsync(string? keyName = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string!>!
+Mud.HttpUtils.DefaultFormContent
+Mud.HttpUtils.DefaultFormContent.DefaultFormContent(System.Collections.Generic.Dictionary<string!, string!>! formData) -> void
+Mud.HttpUtils.DefaultFormContent.ToHttpContent() -> System.Net.Http.HttpContent!
+Mud.HttpUtils.DefaultFormContent.ToHttpContentAsync(System.IProgress<long>? progress = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Net.Http.HttpContent!>!
+Mud.HttpUtils.DefaultHmacSignatureProvider
+Mud.HttpUtils.DefaultHmacSignatureProvider.DefaultHmacSignatureProvider() -> void
+Mud.HttpUtils.DefaultHmacSignatureProvider.GenerateSignatureAsync(System.Net.Http.HttpRequestMessage! request, string! secretKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string!>!
+Mud.HttpUtils.DefaultHmacSignatureProvider.VerifySignatureAsync(System.Net.Http.HttpRequestMessage! request, string! signature, string! secretKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Mud.HttpUtils.DefaultHttpRequestExecutor
+Mud.HttpUtils.DefaultHttpRequestExecutor.DefaultHttpRequestExecutor(Microsoft.Extensions.Logging.ILogger<Mud.HttpUtils.DefaultHttpRequestExecutor!>! logger, Mud.HttpUtils.IHttpResponseCache? cacheProvider = null, Mud.HttpUtils.IResiliencePolicyResolver? resilienceResolver = null, Mud.HttpUtils.IAppResiliencePolicyResolver? appResilienceResolver = null, Mud.HttpUtils.IAppContextHolder? appContextHolder = null, Mud.HttpUtils.IHttpContentSerializer? contentSerializer = null) -> void
+Mud.HttpUtils.DefaultHttpRequestExecutor.DownloadAsync(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, Mud.HttpUtils.ResponseDescriptor? descriptor = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]?>!
+Mud.HttpUtils.DefaultHttpRequestExecutor.DownloadLargeAsync(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, string! filePath, bool overwrite = true, int bufferSize = 81920, Mud.HttpUtils.ResponseDescriptor? descriptor = null, System.IProgress<long>? progress = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.DefaultHttpRequestExecutor.ExecuteAsResponseAsync<TInner>(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, Mud.HttpUtils.ExecutionDescriptor! descriptor, object? jsonSerializerOptions, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.Response<TInner>?>!
+Mud.HttpUtils.DefaultHttpRequestExecutor.ExecuteAsync(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, Mud.HttpUtils.ExecutionDescriptor! descriptor, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.DefaultHttpRequestExecutor.ExecuteAsync<TResult>(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, Mud.HttpUtils.ExecutionDescriptor! descriptor, object? jsonSerializerOptions, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
+Mud.HttpUtils.DefaultHttpRequestExecutor.SendAndDeserializeAsync<TResult>(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, Mud.HttpUtils.ResponseDescriptor! descriptor, object? jsonSerializerOptions, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
+Mud.HttpUtils.DefaultHttpRequestExecutor.SendAsAsyncEnumerable<TElement>(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, object? jsonSerializerOptions, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TElement>!
+Mud.HttpUtils.DefaultHttpRequestExecutor.SendAsResponseAsync<TInner>(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, Mud.HttpUtils.ResponseDescriptor! descriptor, object? jsonSerializerOptions, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.Response<TInner>!>!
+Mud.HttpUtils.DefaultHttpRequestExecutor.SendAsync(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, Mud.HttpUtils.ResponseDescriptor! descriptor, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.DefaultSensitiveDataMasker
+Mud.HttpUtils.DefaultSensitiveDataMasker.DefaultSensitiveDataMasker() -> void
+Mud.HttpUtils.DefaultSensitiveDataMasker.Mask(string! value, Mud.HttpUtils.SensitiveDataMaskMode mode = Mud.HttpUtils.SensitiveDataMaskMode.Mask, int prefixLength = 2, int suffixLength = 2) -> string!
+Mud.HttpUtils.DefaultSensitiveDataMasker.MaskObject(object! obj) -> string!
+Mud.HttpUtils.DefaultUrlParameterFormatter
+Mud.HttpUtils.DefaultUrlParameterFormatter.DefaultUrlParameterFormatter() -> void
+Mud.HttpUtils.DefaultUrlParameterFormatter.Format(object? value, System.Reflection.ICustomAttributeProvider? attributeProvider, System.Type! type) -> string?
+Mud.HttpUtils.EnhancedHttpClient
+Mud.HttpUtils.EnhancedHttpClient.ContentSerializer.get -> Mud.HttpUtils.IHttpContentSerializer!
+Mud.HttpUtils.EnhancedHttpClient.DecryptBytes(byte[]! encryptedData) -> byte[]!
+Mud.HttpUtils.EnhancedHttpClient.DecryptContent(string! encryptedContent) -> string!
+Mud.HttpUtils.EnhancedHttpClient.DeleteAsJsonAsync<TRequest, TResult>(string! requestUri, TRequest requestData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
+Mud.HttpUtils.EnhancedHttpClient.DeleteAsJsonAsync<TResult>(string! requestUri, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
+Mud.HttpUtils.EnhancedHttpClient.DownloadAsync(System.Net.Http.HttpRequestMessage! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]?>!
+Mud.HttpUtils.EnhancedHttpClient.DownloadLargeAsync(System.Net.Http.HttpRequestMessage! request, string! filePath, bool overwrite = true, int bufferSize = 81920, System.IProgress<long>? progress = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.IO.FileInfo!>!
+Mud.HttpUtils.EnhancedHttpClient.EncryptBytes(byte[]! data) -> byte[]!
+Mud.HttpUtils.EnhancedHttpClient.EncryptContent(object! content, string! propertyName = "data", Mud.HttpUtils.SerializeType serializeType = Mud.HttpUtils.SerializeType.Json) -> string!
+Mud.HttpUtils.EnhancedHttpClient.EncryptContent<T>(T content, string! propertyName = "data") -> string!
+Mud.HttpUtils.EnhancedHttpClient.EnhancedHttpClient(System.Net.Http.HttpClient! httpClient, Mud.HttpUtils.EnhancedHttpClientOptions? options = null, Microsoft.Extensions.Options.IOptions<System.Text.Json.JsonSerializerOptions!>? jsonOptions = null, Mud.HttpUtils.IHttpContentSerializer? contentSerializer = null) -> void
+Mud.HttpUtils.EnhancedHttpClient.GetAsync<TResult>(string! requestUri, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
+Mud.HttpUtils.EnhancedHttpClient.GetXmlAsync<TResult>(string! requestUri, System.Text.Encoding? encoding = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
+Mud.HttpUtils.EnhancedHttpClient.PatchAsJsonAsync<TRequest, TResult>(string! requestUri, TRequest requestData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
+Mud.HttpUtils.EnhancedHttpClient.PostAsJsonAsync<TRequest, TResult>(string! requestUri, TRequest requestData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
+Mud.HttpUtils.EnhancedHttpClient.PostAsXmlAsync<TRequest, TResult>(string! requestUri, TRequest requestData, System.Text.Encoding? encoding = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
+Mud.HttpUtils.EnhancedHttpClient.PutAsJsonAsync<TRequest, TResult>(string! requestUri, TRequest requestData, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
+Mud.HttpUtils.EnhancedHttpClient.PutAsXmlAsync<TRequest, TResult>(string! requestUri, TRequest requestData, System.Text.Encoding? encoding = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
+Mud.HttpUtils.EnhancedHttpClient.SendAsAsyncEnumerable<TResult>(System.Net.Http.HttpRequestMessage! request, object? jsonSerializerOptions = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TResult>!
+Mud.HttpUtils.EnhancedHttpClient.SendAsync<TResult>(System.Net.Http.HttpRequestMessage! request, object? jsonSerializerOptions = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
+Mud.HttpUtils.EnhancedHttpClient.SendRawAsync(System.Net.Http.HttpRequestMessage! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Net.Http.HttpResponseMessage!>!
+Mud.HttpUtils.EnhancedHttpClient.SendStreamAsync(System.Net.Http.HttpRequestMessage! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.IO.Stream!>!
+Mud.HttpUtils.EnhancedHttpClient.SendXmlAsync<TResult>(System.Net.Http.HttpRequestMessage! request, System.Text.Encoding? encoding = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
+Mud.HttpUtils.EnhancedHttpClientFactoryOptions
+Mud.HttpUtils.EnhancedHttpClientFactoryOptions.ClientFactories.get -> System.Collections.Generic.Dictionary<string!, System.Func<System.IServiceProvider!, Mud.HttpUtils.IEnhancedHttpClient!>!>!
+Mud.HttpUtils.EnhancedHttpClientFactoryOptions.EnhancedHttpClientFactoryOptions() -> void
+Mud.HttpUtils.EnhancedHttpClientOptions
+Mud.HttpUtils.EnhancedHttpClientOptions.AllowCustomBaseUrls.get -> bool
+Mud.HttpUtils.EnhancedHttpClientOptions.AllowCustomBaseUrls.set -> void
+Mud.HttpUtils.EnhancedHttpClientOptions.EnhancedHttpClientOptions() -> void
+Mud.HttpUtils.EnhancedHttpClientOptions.Logger.get -> Microsoft.Extensions.Logging.ILogger?
+Mud.HttpUtils.EnhancedHttpClientOptions.Logger.set -> void
+Mud.HttpUtils.EnhancedHttpClientOptions.RequestInterceptors.get -> System.Collections.Generic.IEnumerable<Mud.HttpUtils.IHttpRequestInterceptor!>?
+Mud.HttpUtils.EnhancedHttpClientOptions.RequestInterceptors.set -> void
+Mud.HttpUtils.EnhancedHttpClientOptions.ResponseInterceptors.get -> System.Collections.Generic.IEnumerable<Mud.HttpUtils.IHttpResponseInterceptor!>?
+Mud.HttpUtils.EnhancedHttpClientOptions.ResponseInterceptors.set -> void
+Mud.HttpUtils.EnhancedHttpClientOptions.SensitiveDataMasker.get -> Mud.HttpUtils.ISensitiveDataMasker?
+Mud.HttpUtils.EnhancedHttpClientOptions.SensitiveDataMasker.set -> void
+Mud.HttpUtils.HttpClientFactoryEnhancedClient
+Mud.HttpUtils.HttpClientFactoryEnhancedClient.HttpClientFactoryEnhancedClient(System.Net.Http.IHttpClientFactory! factory, string! clientName, Mud.HttpUtils.IEncryptionProvider? encryptionProvider = null, Mud.HttpUtils.EnhancedHttpClientOptions? options = null, System.Uri? overrideBaseAddress = null, Microsoft.Extensions.Options.IOptions<System.Text.Json.JsonSerializerOptions!>? jsonOptions = null, Mud.HttpUtils.IHttpContentSerializer? contentSerializer = null) -> void
+Mud.HttpUtils.HttpClientResolver
+Mud.HttpUtils.HttpClientResolver.GetClient(string! clientName) -> Mud.HttpUtils.IEnhancedHttpClient!
+Mud.HttpUtils.HttpClientResolver.HttpClientResolver(Mud.HttpUtils.IEnhancedHttpClientFactory! clientFactory) -> void
+Mud.HttpUtils.HttpClientResolver.TryGetClient(string! clientName, out Mud.HttpUtils.IEnhancedHttpClient? client) -> bool
+Mud.HttpUtils.HttpClientServiceCollectionExtensions
+Mud.HttpUtils.HttpClientUtils
+Mud.HttpUtils.HttpClientUtils.HttpClientUtils() -> void
+Mud.HttpUtils.MemoryCacheTokenCache<T>
+Mud.HttpUtils.MemoryCacheTokenCache<T>.Clear() -> void
+Mud.HttpUtils.MemoryCacheTokenCache<T>.Compact(double percentage) -> void
+Mud.HttpUtils.MemoryCacheTokenCache<T>.Count.get -> int
+Mud.HttpUtils.MemoryCacheTokenCache<T>.Dispose() -> void
+Mud.HttpUtils.MemoryCacheTokenCache<T>.Keys.get -> System.Collections.Generic.IEnumerable<string!>!
+Mud.HttpUtils.MemoryCacheTokenCache<T>.MemoryCacheTokenCache() -> void
+Mud.HttpUtils.MemoryCacheTokenCache<T>.MemoryCacheTokenCache(int? sizeLimit, int cleanupIntervalSeconds = 300, double compactionPercentage = 0.2) -> void
+Mud.HttpUtils.MemoryCacheTokenCache<T>.Set(string! key, T? value) -> void
+Mud.HttpUtils.MemoryCacheTokenCache<T>.Set(string! key, T? value, System.TimeSpan? absoluteExpirationRelativeToNow, System.TimeSpan? slidingExpiration, System.Action<string!>? postEvictionCallback = null) -> void
+Mud.HttpUtils.MemoryCacheTokenCache<T>.TryGet(string! key, out T? value) -> bool
+Mud.HttpUtils.MemoryCacheTokenCache<T>.TryRemove(string! key, out T? removed) -> bool
+Mud.HttpUtils.MemoryEncryptedTokenStore
+Mud.HttpUtils.MemoryEncryptedTokenStore.IsEncryptionEnabled.get -> bool
+Mud.HttpUtils.MemoryEncryptedTokenStore.MemoryEncryptedTokenStore(Mud.HttpUtils.IEncryptionProvider! encryptionProvider) -> void
+Mud.HttpUtils.MemoryHttpResponseCache
+Mud.HttpUtils.MemoryHttpResponseCache.ClearAsync() -> System.Threading.Tasks.Task!
+Mud.HttpUtils.MemoryHttpResponseCache.Dispose() -> void
+Mud.HttpUtils.MemoryHttpResponseCache.GetOrFetchAsync<T>(string! key, System.Func<System.Threading.Tasks.Task<T>!>! fetchFunc, System.TimeSpan expiration, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<T?>!
+Mud.HttpUtils.MemoryHttpResponseCache.MemoryHttpResponseCache(int maxCacheSize = 1000, int cleanupIntervalSeconds = 60) -> void
+Mud.HttpUtils.MemoryHttpResponseCache.Remove(string! key) -> void
+Mud.HttpUtils.MemoryHttpResponseCache.RemoveAsync(string! key) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.MemoryHttpResponseCache.Set<T>(string! key, T? value, System.TimeSpan absoluteExpirationRelativeToNow) -> void
+Mud.HttpUtils.MemoryHttpResponseCache.Set<T>(string! key, T? value, System.TimeSpan expirationRelativeToNow, bool useSlidingExpiration) -> void
+Mud.HttpUtils.MemoryHttpResponseCache.TryGet<T>(string! key, out T? value) -> bool
+Mud.HttpUtils.MemoryTokenStore
+Mud.HttpUtils.MemoryTokenStore.MemoryTokenStore() -> void
+Mud.HttpUtils.MemoryUserTokenStore
+Mud.HttpUtils.MemoryUserTokenStore.ClearAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.MemoryUserTokenStore.ClearUserAsync(string! userId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.MemoryUserTokenStore.GetAccessTokenAsync(string! userId, string! tokenType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string?>!
+Mud.HttpUtils.MemoryUserTokenStore.GetRefreshTokenAsync(string! userId, string! tokenType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string?>!
+Mud.HttpUtils.MemoryUserTokenStore.GetTokenTypesAsync(string! userId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IEnumerable<string!>!>!
+Mud.HttpUtils.MemoryUserTokenStore.MemoryUserTokenStore() -> void
+Mud.HttpUtils.MemoryUserTokenStore.RemoveAsync(string! userId, string! tokenType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.MemoryUserTokenStore.SetAccessTokenAsync(string! userId, string! tokenType, string! accessToken, long expiresInSeconds, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.MemoryUserTokenStore.SetRefreshTokenAsync(string! userId, string! tokenType, string! refreshToken, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.MessageSanitizer
+Mud.HttpUtils.MudCircuitBreakerHealthCheck
+Mud.HttpUtils.MudCircuitBreakerHealthCheck.CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult>!
+Mud.HttpUtils.MudCircuitBreakerHealthCheck.MudCircuitBreakerHealthCheck() -> void
+Mud.HttpUtils.MudCircuitBreakerHealthCheck.MudCircuitBreakerHealthCheck(Mud.HttpUtils.MudCircuitBreakerHealthCheckOptions! options) -> void
+Mud.HttpUtils.MudCircuitBreakerHealthCheckOptions
+Mud.HttpUtils.MudCircuitBreakerHealthCheckOptions.MaxHalfOpenCount.get -> int
+Mud.HttpUtils.MudCircuitBreakerHealthCheckOptions.MaxHalfOpenCount.set -> void
+Mud.HttpUtils.MudCircuitBreakerHealthCheckOptions.MaxOpenCount.get -> int
+Mud.HttpUtils.MudCircuitBreakerHealthCheckOptions.MaxOpenCount.set -> void
+Mud.HttpUtils.MudCircuitBreakerHealthCheckOptions.MudCircuitBreakerHealthCheckOptions() -> void
+Mud.HttpUtils.MudHttpClientApplicationOptions
+Mud.HttpUtils.MudHttpClientApplicationOptions.AllowedDomains.get -> System.Collections.Generic.List<string!>!
+Mud.HttpUtils.MudHttpClientApplicationOptions.AllowedDomains.set -> void
+Mud.HttpUtils.MudHttpClientApplicationOptions.Clients.get -> System.Collections.Generic.Dictionary<string!, Mud.HttpUtils.MudHttpClientOptions!>!
+Mud.HttpUtils.MudHttpClientApplicationOptions.Clients.set -> void
+Mud.HttpUtils.MudHttpClientApplicationOptions.CollectionFormat.get -> Mud.HttpUtils.CollectionFormat
+Mud.HttpUtils.MudHttpClientApplicationOptions.CollectionFormat.set -> void
+Mud.HttpUtils.MudHttpClientApplicationOptions.DefaultClientName.get -> string?
+Mud.HttpUtils.MudHttpClientApplicationOptions.DefaultClientName.set -> void
+Mud.HttpUtils.MudHttpClientApplicationOptions.MudHttpClientApplicationOptions() -> void
+Mud.HttpUtils.MudHttpClientApplicationOptions.ResponseCache.get -> Mud.HttpUtils.ResponseCacheOptions!
+Mud.HttpUtils.MudHttpClientApplicationOptions.ResponseCache.set -> void
+Mud.HttpUtils.MudHttpClientApplicationOptions.UrlParameterFormatter.get -> Mud.HttpUtils.IUrlParameterFormatter?
+Mud.HttpUtils.MudHttpClientApplicationOptions.UrlParameterFormatter.set -> void
+Mud.HttpUtils.MudHttpClientApplicationOptions.UrlParameterKeyFormatter.get -> Mud.HttpUtils.IUrlParameterKeyFormatter?
+Mud.HttpUtils.MudHttpClientApplicationOptions.UrlParameterKeyFormatter.set -> void
+Mud.HttpUtils.MudHttpClientOptions
+Mud.HttpUtils.MudHttpClientOptions.AllowCustomBaseUrls.get -> bool
+Mud.HttpUtils.MudHttpClientOptions.AllowCustomBaseUrls.set -> void
+Mud.HttpUtils.MudHttpClientOptions.BaseAddress.get -> string?
+Mud.HttpUtils.MudHttpClientOptions.BaseAddress.set -> void
+Mud.HttpUtils.MudHttpClientOptions.DefaultHeaders.get -> System.Collections.Generic.Dictionary<string!, string!>?
+Mud.HttpUtils.MudHttpClientOptions.DefaultHeaders.set -> void
+Mud.HttpUtils.MudHttpClientOptions.MudHttpClientOptions() -> void
+Mud.HttpUtils.MudHttpClientOptions.TimeoutSeconds.get -> int?
+Mud.HttpUtils.MudHttpClientOptions.TimeoutSeconds.set -> void
+Mud.HttpUtils.MudHttpHealthChecksExtensions
+Mud.HttpUtils.MudHttpHealthChecksOptions
+Mud.HttpUtils.MudHttpHealthChecksOptions.CircuitBreaker.get -> Mud.HttpUtils.CircuitBreakerHealthCheckSettings!
+Mud.HttpUtils.MudHttpHealthChecksOptions.CircuitBreaker.set -> void
+Mud.HttpUtils.MudHttpHealthChecksOptions.MudHttpHealthChecksOptions() -> void
+Mud.HttpUtils.MudHttpHealthChecksOptions.TokenRefresh.get -> Mud.HttpUtils.TokenRefreshHealthCheckSettings!
+Mud.HttpUtils.MudHttpHealthChecksOptions.TokenRefresh.set -> void
+Mud.HttpUtils.OAuth2Options
+Mud.HttpUtils.OAuth2Options.ClientId.get -> string!
+Mud.HttpUtils.OAuth2Options.ClientId.set -> void
+Mud.HttpUtils.OAuth2Options.ClientSecret.get -> string!
+Mud.HttpUtils.OAuth2Options.ClientSecret.set -> void
+Mud.HttpUtils.OAuth2Options.ClientSecretProviderName.get -> string?
+Mud.HttpUtils.OAuth2Options.ClientSecretProviderName.set -> void
+Mud.HttpUtils.OAuth2Options.ExpirySafetyMarginSeconds.get -> int
+Mud.HttpUtils.OAuth2Options.ExpirySafetyMarginSeconds.set -> void
+Mud.HttpUtils.OAuth2Options.IntrospectionEndpoint.get -> string!
+Mud.HttpUtils.OAuth2Options.IntrospectionEndpoint.set -> void
+Mud.HttpUtils.OAuth2Options.OAuth2Options() -> void
+Mud.HttpUtils.OAuth2Options.RequireHttps.get -> bool
+Mud.HttpUtils.OAuth2Options.RequireHttps.set -> void
+Mud.HttpUtils.OAuth2Options.RevocationEndpoint.get -> string!
+Mud.HttpUtils.OAuth2Options.RevocationEndpoint.set -> void
+Mud.HttpUtils.OAuth2Options.TokenEndpoint.get -> string!
+Mud.HttpUtils.OAuth2Options.TokenEndpoint.set -> void
+Mud.HttpUtils.OAuth2OptionsValidator
+Mud.HttpUtils.OAuth2OptionsValidator.OAuth2OptionsValidator() -> void
+Mud.HttpUtils.OAuth2OptionsValidator.Validate(string? name, Mud.HttpUtils.OAuth2Options! options) -> Microsoft.Extensions.Options.ValidateOptionsResult!
+Mud.HttpUtils.Observability.TokenRefreshHealthCheck
+Mud.HttpUtils.Observability.TokenRefreshHealthCheck.CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult>!
+Mud.HttpUtils.Observability.TokenRefreshHealthCheck.TokenRefreshHealthCheck(Microsoft.Extensions.Options.IOptions<Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions!>! options) -> void
+Mud.HttpUtils.Observability.TokenRefreshHealthCheck.TokenRefreshHealthCheck(Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions! options) -> void
+Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions
+Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions.CriticalThreshold.get -> double
+Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions.CriticalThreshold.set -> void
+Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions.DegradedThreshold.get -> double
+Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions.DegradedThreshold.set -> void
+Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions.MinSampleSize.get -> int
+Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions.MinSampleSize.set -> void
+Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions.TokenRefreshHealthCheckOptions() -> void
+Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions.WindowSeconds.get -> int
+Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions.WindowSeconds.set -> void
+Mud.HttpUtils.ProgressableStreamContent
+Mud.HttpUtils.ProgressableStreamContent.ProgressableStreamContent(System.Net.Http.HttpContent! content, System.IProgress<long>? progress, int bufferSize = 4096) -> void
+Mud.HttpUtils.QueryMapHelper
+Mud.HttpUtils.ResponseCacheOptions
+Mud.HttpUtils.ResponseCacheOptions.CleanupIntervalSeconds.get -> int
+Mud.HttpUtils.ResponseCacheOptions.CleanupIntervalSeconds.set -> void
+Mud.HttpUtils.ResponseCacheOptions.MaxCacheSize.get -> int
+Mud.HttpUtils.ResponseCacheOptions.MaxCacheSize.set -> void
+Mud.HttpUtils.ResponseCacheOptions.ResponseCacheOptions() -> void
+Mud.HttpUtils.SnakeCaseUrlParameterKeyFormatter
+Mud.HttpUtils.SnakeCaseUrlParameterKeyFormatter.Format(string! key) -> string!
+Mud.HttpUtils.SnakeCaseUrlParameterKeyFormatter.SnakeCaseUrlParameterKeyFormatter() -> void
+Mud.HttpUtils.StandardOAuth2TokenManager
+Mud.HttpUtils.StandardOAuth2TokenManager.GetOrRefreshCredentialTokenAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.CredentialToken!>!
+Mud.HttpUtils.StandardOAuth2TokenManager.StandardOAuth2TokenManager(System.Net.Http.HttpClient! httpClient, Microsoft.Extensions.Options.IOptions<Mud.HttpUtils.OAuth2Options!>! options, Microsoft.Extensions.Logging.ILogger<Mud.HttpUtils.StandardOAuth2TokenManager!>? logger = null, Mud.HttpUtils.ISecretProvider? secretProvider = null) -> void
+Mud.HttpUtils.SystemTextJsonContentSerializer
+Mud.HttpUtils.SystemTextJsonContentSerializer.Deserialize<T>(string! json, object? options = null) -> T?
+Mud.HttpUtils.SystemTextJsonContentSerializer.FromHttpContentAsync<T>(System.Net.Http.HttpContent! content, object? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<T?>!
+Mud.HttpUtils.SystemTextJsonContentSerializer.GetFieldNameForProperty(System.Reflection.PropertyInfo! propertyInfo) -> string?
+Mud.HttpUtils.SystemTextJsonContentSerializer.Options.get -> System.Text.Json.JsonSerializerOptions!
+Mud.HttpUtils.SystemTextJsonContentSerializer.Serialize(object? item, System.Type! type, object? options = null) -> string!
+Mud.HttpUtils.SystemTextJsonContentSerializer.Serialize<T>(T item, object? options = null) -> string!
+Mud.HttpUtils.SystemTextJsonContentSerializer.SystemTextJsonContentSerializer(System.Text.Json.JsonSerializerOptions? options = null) -> void
+Mud.HttpUtils.SystemTextJsonContentSerializer.ToHttpContent<T>(T item, object? options = null) -> System.Net.Http.HttpContent?
+Mud.HttpUtils.TokenRecoveryDelegatingHandler
+Mud.HttpUtils.TokenRecoveryDelegatingHandler.TokenRecoveryDelegatingHandler(Mud.HttpUtils.ITokenManager! tokenManager, Mud.HttpUtils.IUserTokenManager? userTokenManager, Mud.HttpUtils.ICurrentUserContext? currentUserContext = null, Mud.HttpUtils.TokenRecoveryOptions? options = null, Microsoft.Extensions.Logging.ILogger<Mud.HttpUtils.TokenRecoveryDelegatingHandler!>? logger = null) -> void
+Mud.HttpUtils.TokenRecoveryDelegatingHandler.TokenRecoveryDelegatingHandler(Mud.HttpUtils.ITokenManager! tokenManager, Mud.HttpUtils.TokenRecoveryOptions? options = null, Microsoft.Extensions.Logging.ILogger<Mud.HttpUtils.TokenRecoveryDelegatingHandler!>? logger = null) -> void
+Mud.HttpUtils.TokenRecoveryEnhancedClient
+Mud.HttpUtils.TokenRecoveryEnhancedClient.TokenRecoveryEnhancedClient(System.Net.Http.IHttpClientFactory! factory, string! clientName, Mud.HttpUtils.TokenRecoveryExecutor! recoveryExecutor, Mud.HttpUtils.IEncryptionProvider? encryptionProvider = null, Mud.HttpUtils.EnhancedHttpClientOptions? options = null) -> void
+Mud.HttpUtils.TokenRecoveryExecutor
+Mud.HttpUtils.TokenRecoveryExecutor.ExecuteAsync(System.Net.Http.HttpRequestMessage! request, System.Func<System.Net.Http.HttpRequestMessage!, System.Threading.CancellationToken, System.Threading.Tasks.Task<System.Net.Http.HttpResponseMessage!>!>! sendFunc, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Net.Http.HttpResponseMessage!>!
+Mud.HttpUtils.TokenRecoveryExecutor.TokenRecoveryExecutor(Mud.HttpUtils.ITokenManager! tokenManager, Mud.HttpUtils.IUserTokenManager? userTokenManager, Mud.HttpUtils.ICurrentUserContext? currentUserContext = null, Mud.HttpUtils.TokenRecoveryOptions? options = null, Microsoft.Extensions.Logging.ILogger? logger = null) -> void
+Mud.HttpUtils.TokenRecoveryExecutor.TokenRecoveryExecutor(Mud.HttpUtils.ITokenManager! tokenManager, Mud.HttpUtils.TokenRecoveryOptions? options = null, Microsoft.Extensions.Logging.ILogger? logger = null) -> void
+Mud.HttpUtils.TokenRecoveryOptionsValidator
+Mud.HttpUtils.TokenRecoveryOptionsValidator.TokenRecoveryOptionsValidator() -> void
+Mud.HttpUtils.TokenRecoveryOptionsValidator.Validate(string? name, Mud.HttpUtils.TokenRecoveryOptions? options) -> Microsoft.Extensions.Options.ValidateOptionsResult!
+Mud.HttpUtils.TokenRefreshBackgroundOptionsValidator
+Mud.HttpUtils.TokenRefreshBackgroundOptionsValidator.TokenRefreshBackgroundOptionsValidator() -> void
+Mud.HttpUtils.TokenRefreshBackgroundOptionsValidator.Validate(string? name, Mud.HttpUtils.TokenRefreshBackgroundOptions? options) -> Microsoft.Extensions.Options.ValidateOptionsResult!
+Mud.HttpUtils.TokenRefreshBackgroundService
+Mud.HttpUtils.TokenRefreshBackgroundService.Dispose() -> void
+Mud.HttpUtils.TokenRefreshBackgroundService.RegisterTokenManager(Mud.HttpUtils.ITokenManager! tokenManager, string? name = null) -> void
+Mud.HttpUtils.TokenRefreshBackgroundService.StartAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.TokenRefreshBackgroundService.StopAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.TokenRefreshBackgroundService.TokenRefreshBackgroundService(Microsoft.Extensions.Options.IOptions<Mud.HttpUtils.TokenRefreshBackgroundOptions!>! options, Microsoft.Extensions.Logging.ILogger<Mud.HttpUtils.TokenRefreshBackgroundService!>? logger = null) -> void
+Mud.HttpUtils.TokenRefreshBackgroundService.TokenRefreshBackgroundService(Mud.HttpUtils.ITokenManager! tokenManager, Microsoft.Extensions.Options.IOptions<Mud.HttpUtils.TokenRefreshBackgroundOptions!>! options, Microsoft.Extensions.Logging.ILogger<Mud.HttpUtils.TokenRefreshBackgroundService!>? logger = null) -> void
+Mud.HttpUtils.TokenRefreshBackgroundService.TokenRefreshBackgroundService(Mud.HttpUtils.ITokenManager! tokenManager, Mud.HttpUtils.TokenRefreshBackgroundOptions? options = null, Microsoft.Extensions.Logging.ILogger<Mud.HttpUtils.TokenRefreshBackgroundService!>? logger = null) -> void
+Mud.HttpUtils.TokenRefreshBackgroundService.TokenRefreshBackgroundService(Mud.HttpUtils.TokenRefreshBackgroundOptions? options = null, Microsoft.Extensions.Logging.ILogger<Mud.HttpUtils.TokenRefreshBackgroundService!>? logger = null) -> void
+Mud.HttpUtils.TokenRefreshHealthCheckSettings
+Mud.HttpUtils.TokenRefreshHealthCheckSettings.FailureStatus.get -> Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus?
+Mud.HttpUtils.TokenRefreshHealthCheckSettings.FailureStatus.set -> void
+Mud.HttpUtils.TokenRefreshHealthCheckSettings.TokenRefreshHealthCheckSettings() -> void
+Mud.HttpUtils.TokenRefreshHostedService
+Mud.HttpUtils.TokenRefreshHostedService.RegisterTokenManager(Mud.HttpUtils.ITokenManager! tokenManager, string? name = null) -> void
+Mud.HttpUtils.TokenRefreshHostedService.StartAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.TokenRefreshHostedService.StopAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.TokenRefreshHostedService.TokenRefreshHostedService(Microsoft.Extensions.Options.IOptions<Mud.HttpUtils.TokenRefreshBackgroundOptions!>! options, Microsoft.Extensions.Logging.ILogger<Mud.HttpUtils.TokenRefreshHostedService!>! logger) -> void
+Mud.HttpUtils.TokenRefreshHostedService.TokenRefreshHostedService(Mud.HttpUtils.ITokenManager! tokenManager, Microsoft.Extensions.Options.IOptions<Mud.HttpUtils.TokenRefreshBackgroundOptions!>! options, Microsoft.Extensions.Logging.ILogger<Mud.HttpUtils.TokenRefreshHostedService!>! logger) -> void
+Mud.HttpUtils.TracingDelegatingHandler
+Mud.HttpUtils.TracingDelegatingHandler.TracingDelegatingHandler() -> void
+Mud.HttpUtils.UrlValidator
+Mud.HttpUtils.UserTokenCacheOptions
+Mud.HttpUtils.UserTokenCacheOptions.CleanupIntervalSeconds.get -> int
+Mud.HttpUtils.UserTokenCacheOptions.CleanupIntervalSeconds.set -> void
+Mud.HttpUtils.UserTokenCacheOptions.CompactionPercentage.get -> double
+Mud.HttpUtils.UserTokenCacheOptions.CompactionPercentage.set -> void
+Mud.HttpUtils.UserTokenCacheOptions.ExpireThresholdSeconds.get -> int
+Mud.HttpUtils.UserTokenCacheOptions.ExpireThresholdSeconds.set -> void
+Mud.HttpUtils.UserTokenCacheOptions.SizeLimit.get -> int
+Mud.HttpUtils.UserTokenCacheOptions.SizeLimit.set -> void
+Mud.HttpUtils.UserTokenCacheOptions.SlidingExpirationSeconds.get -> int
+Mud.HttpUtils.UserTokenCacheOptions.SlidingExpirationSeconds.set -> void
+Mud.HttpUtils.UserTokenCacheOptions.UserTokenCacheOptions() -> void
+Mud.HttpUtils.UserTokenManagerBase
+Mud.HttpUtils.UserTokenManagerBase.CachedUserTokenCount.get -> int
+Mud.HttpUtils.UserTokenManagerBase.CleanupExpiredUserTokens() -> void
+Mud.HttpUtils.UserTokenManagerBase.CleanupOrphanedLocks() -> void
+Mud.HttpUtils.UserTokenManagerBase.GetOrRefreshTokenAsync(string? userId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string?>!
+Mud.HttpUtils.UserTokenManagerBase.GetUserTokenFromCache(string! userId) -> Mud.HttpUtils.UserTokenInfo?
+Mud.HttpUtils.UserTokenManagerBase.RemoveUserTokenFromCache(string! userId) -> void
+Mud.HttpUtils.UserTokenManagerBase.UpdateUserTokenCache(string! userId, Mud.HttpUtils.UserTokenInfo! tokenInfo) -> void
+Mud.HttpUtils.UserTokenManagerBase.UserTokenManagerBase() -> void
+Mud.HttpUtils.UserTokenManagerBase.UserTokenManagerBase(Microsoft.Extensions.Options.IOptions<Mud.HttpUtils.UserTokenCacheOptions!>? cacheOptions) -> void
+Mud.HttpUtils.UserTokenManagerBase.UserTokenManagerBase(Mud.HttpUtils.ITokenCache<Mud.HttpUtils.UserTokenInfo!>? userTokenCache, Mud.HttpUtils.UserTokenCacheOptions? cacheOptions = null) -> void
+Mud.HttpUtils.UserTokenManagerBase.UserTokenManagerBase(Mud.HttpUtils.UserTokenCacheOptions? cacheOptions) -> void
+Mud.HttpUtils.XmlSerialize
+Mud.HttpUtils.XmlSerialize.XmlSerialize() -> void
+override Mud.HttpUtils.HttpClientFactoryEnhancedClient.BaseAddress.get -> System.Uri?
+override Mud.HttpUtils.HttpClientFactoryEnhancedClient.ClientName.get -> string?
+override Mud.HttpUtils.HttpClientFactoryEnhancedClient.EncryptionProvider.get -> Mud.HttpUtils.IEncryptionProvider?
+override Mud.HttpUtils.HttpClientFactoryEnhancedClient.WithBaseAddress(System.Uri! baseAddress) -> Mud.HttpUtils.IEnhancedHttpClient!
+override Mud.HttpUtils.MemoryEncryptedTokenStore.GetAccessTokenAsync(string! tokenType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string?>!
+override Mud.HttpUtils.MemoryEncryptedTokenStore.GetRefreshTokenAsync(string! tokenType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string?>!
+override Mud.HttpUtils.MemoryEncryptedTokenStore.SetAccessTokenAsync(string! tokenType, string! accessToken, long expiresInSeconds, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+override Mud.HttpUtils.MemoryEncryptedTokenStore.SetRefreshTokenAsync(string! tokenType, string! refreshToken, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+override Mud.HttpUtils.ProgressableStreamContent.Dispose(bool disposing) -> void
+override Mud.HttpUtils.ProgressableStreamContent.SerializeToStreamAsync(System.IO.Stream! stream, System.Net.TransportContext? context) -> System.Threading.Tasks.Task!
+override Mud.HttpUtils.ProgressableStreamContent.TryComputeLength(out long length) -> bool
+override Mud.HttpUtils.StandardOAuth2TokenManager.GetTokenAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string!>!
+override Mud.HttpUtils.StandardOAuth2TokenManager.GetTokenByAuthorizationCodeAsync(string! code, string! redirectUri, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.CredentialToken!>!
+override Mud.HttpUtils.StandardOAuth2TokenManager.GetTokenByClientCredentialsAsync(string![]? scopes = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.CredentialToken!>!
+override Mud.HttpUtils.StandardOAuth2TokenManager.GetTokenByPasswordAsync(string! username, string! password, string![]? scopes = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.CredentialToken!>!
+override Mud.HttpUtils.StandardOAuth2TokenManager.IntrospectTokenAsync(string! token, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.TokenIntrospectionResult!>!
+override Mud.HttpUtils.StandardOAuth2TokenManager.RefreshTokenByRefreshTokenAsync(string! refreshToken, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.CredentialToken!>!
+override Mud.HttpUtils.StandardOAuth2TokenManager.RefreshTokenCoreAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Mud.HttpUtils.CredentialToken!>!
+override Mud.HttpUtils.StandardOAuth2TokenManager.RefreshTokenWithScopesAsync(string![]? scopes, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Mud.HttpUtils.CredentialToken!>!
+override Mud.HttpUtils.StandardOAuth2TokenManager.RevokeTokenAsync(string! token, string? tokenTypeHint = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+override Mud.HttpUtils.TokenRecoveryDelegatingHandler.SendAsync(System.Net.Http.HttpRequestMessage! request, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Net.Http.HttpResponseMessage!>!
+override Mud.HttpUtils.UserTokenManagerBase.Dispose(bool disposing) -> void
+override Mud.HttpUtils.UserTokenManagerBase.InvalidateTokenAsync(string![]? scopes = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.TokenResult>!
+override Mud.HttpUtils.UserTokenManagerBase.SupportsBackgroundRefresh.get -> bool
+static Mud.HttpUtils.AsyncEnumerableExtensions.SendAsAsyncEnumerable<T>(this Mud.HttpUtils.IBaseHttpClient! client, System.Net.Http.HttpRequestMessage! request, object? jsonSerializerOptions = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<T>!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddApiKeyProvider(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddApiKeyProvider<TProvider>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddCurrentUserContext(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddCurrentUserContext<TContext>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddHmacSignatureProvider(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddHmacSignatureProvider<TProvider>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddHttpResponseCache(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, int maxCacheSize = 1000, int cleanupIntervalSeconds = 60) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpAesEncryptionFromConfiguration(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, string! sectionPath = "MudHttpAesEncryption") -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpClient(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! clientName, string! baseAddress) -> Microsoft.Extensions.DependencyInjection.IHttpClientBuilder!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpClient(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! clientName, System.Action<Mud.HttpUtils.AesEncryptionOptions!>! configureEncryption, System.Action<System.Net.Http.HttpClient!>? configureHttpClient = null) -> Microsoft.Extensions.DependencyInjection.IHttpClientBuilder!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpClient(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! clientName, System.Action<System.Net.Http.HttpClient!>? configureHttpClient = null, bool setAsDefault = false) -> Microsoft.Extensions.DependencyInjection.IHttpClientBuilder!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpClientsFromConfiguration(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, string! sectionPath = "MudHttpClients") -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpOAuth2FromConfiguration(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, string! sectionPath = "MudHttpOAuth2") -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpTokenRecoveryFromConfiguration(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, string! sectionPath = "MudHttpTokenRecovery") -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpUserTokenCacheFromConfiguration(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, string! sectionPath = "MudHttpUserTokenCache") -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddSensitiveDataMasker(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddSensitiveDataMasker<TMasker>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddTokenProvider(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddTokenProvider<TProvider>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddTokenRefreshBackgroundService(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, string! configurationSectionPath = "TokenRefreshBackground") -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddTokenRefreshBackgroundService(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Mud.HttpUtils.TokenRefreshBackgroundOptions!>? configureOptions = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.HttpClientUtils.CreateFileContent(string? fileName, byte[]! fileBytes) -> System.Net.Http.ByteArrayContent!
+static Mud.HttpUtils.HttpClientUtils.GetByteArrayContentAsync(string? filePath, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Net.Http.ByteArrayContent!>!
+static Mud.HttpUtils.MessageSanitizer.Sanitize(string! message, int maxLength = 500) -> string!
+static Mud.HttpUtils.MudHttpHealthChecksExtensions.AddMudHttpHealthChecks(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, string! sectionPath = "MudHttpHealthChecks") -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.MudHttpHealthChecksExtensions.AddMudHttpHealthChecks(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Mud.HttpUtils.MudHttpHealthChecksOptions!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.QueryMapHelper.FlattenObjectToQueryParams(object! obj, string! prefix, string! separator, Mud.HttpUtils.QueryParameterBuilder! queryParams, bool includeNullValues, bool useJsonSerialization, bool urlEncode = true, System.Collections.Generic.List<string!>? rawPairs = null, int depth = 0) -> void
+static Mud.HttpUtils.UrlValidator.AddAllowedDomain(string! domain) -> void
+static Mud.HttpUtils.UrlValidator.ClearDnsCache() -> void
+static Mud.HttpUtils.UrlValidator.ConfigureAllowedDomains(System.Collections.Generic.IEnumerable<string!>! domains) -> void
+static Mud.HttpUtils.UrlValidator.GetAllowedDomains() -> System.Collections.Generic.IReadOnlyCollection<string!>!
+static Mud.HttpUtils.UrlValidator.RemoveAllowedDomain(string! domain) -> void
+static Mud.HttpUtils.UrlValidator.ValidateBaseUrl(string? baseUrl, bool allowCustomBaseUrls = false) -> void
+static Mud.HttpUtils.UrlValidator.ValidateUrl(string? url, bool allowCustomBaseUrls = false) -> void
+static Mud.HttpUtils.XmlSerialize.Deserialize<T>(string! xml) -> T
+static Mud.HttpUtils.XmlSerialize.Deserialize<T>(string! xml, System.Text.Encoding! encoding) -> T
+static Mud.HttpUtils.XmlSerialize.Serialize<T>(T obj) -> string!
+static Mud.HttpUtils.XmlSerialize.Serialize<T>(T obj, System.Text.Encoding! encoding) -> string!
+static readonly Mud.HttpUtils.TracingDelegatingHandler.Shared -> Mud.HttpUtils.TracingDelegatingHandler!
+virtual Mud.HttpUtils.EnhancedHttpClient.BaseAddress.get -> System.Uri?
+virtual Mud.HttpUtils.EnhancedHttpClient.ClientName.get -> string?
+virtual Mud.HttpUtils.EnhancedHttpClient.EncryptionProvider.get -> Mud.HttpUtils.IEncryptionProvider?
+virtual Mud.HttpUtils.EnhancedHttpClient.SendCoreAsync(System.Net.Http.HttpRequestMessage! request, System.Net.Http.HttpCompletionOption completionOption, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<System.Net.Http.HttpResponseMessage!>!
+virtual Mud.HttpUtils.EnhancedHttpClient.WithBaseAddress(string! baseAddress) -> Mud.HttpUtils.IEnhancedHttpClient!
+virtual Mud.HttpUtils.EnhancedHttpClient.WithBaseAddress(System.Uri! baseAddress) -> Mud.HttpUtils.IEnhancedHttpClient!
+virtual Mud.HttpUtils.MemoryTokenStore.ClearAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+virtual Mud.HttpUtils.MemoryTokenStore.GetAccessTokenAsync(string! tokenType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string?>!
+virtual Mud.HttpUtils.MemoryTokenStore.GetRefreshTokenAsync(string! tokenType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string?>!
+virtual Mud.HttpUtils.MemoryTokenStore.GetTokenTypesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IEnumerable<string!>!>!
+virtual Mud.HttpUtils.MemoryTokenStore.RemoveAsync(string! tokenType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+virtual Mud.HttpUtils.MemoryTokenStore.SetAccessTokenAsync(string! tokenType, string! accessToken, long expiresInSeconds, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+virtual Mud.HttpUtils.MemoryTokenStore.SetRefreshTokenAsync(string! tokenType, string! refreshToken, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+virtual Mud.HttpUtils.UserTokenManagerBase.CanRefreshTokenAsync(string! userId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+virtual Mud.HttpUtils.UserTokenManagerBase.GetOrRefreshTokenAsync(string? userId, string![]? scopes, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string?>!
+virtual Mud.HttpUtils.UserTokenManagerBase.GetTokenAsync(string? userId, string![]? scopes, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string?>!
+virtual Mud.HttpUtils.UserTokenManagerBase.HasValidTokenAsync(string! userId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+virtual Mud.HttpUtils.UserTokenManagerBase.InvalidateUserTokenAsync(string! userId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+virtual Mud.HttpUtils.UserTokenManagerBase.UserExpireThresholdSeconds.get -> int
+static Mud.HttpUtils.AsyncEnumerableExtensions.SendAsAsyncEnumerable<T>(this Mud.HttpUtils.IBaseHttpClient! client, System.Net.Http.HttpRequestMessage! request, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! jsonTypeInfo, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<T>!
+Mud.HttpUtils.EnhancedHttpClientOptions.JsonTypeInfoResolver.get -> System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver?
+Mud.HttpUtils.EnhancedHttpClientOptions.JsonTypeInfoResolver.set -> void
+static Mud.HttpUtils.ServiceCollectionExtensions.AddMudHttpClientJsonContext(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver! context) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

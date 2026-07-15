@@ -1,0 +1,24 @@
+<Project>
+
+	<!-- Phase 5.4: PublicAPI per-TFM 基线管理
+	     仅对发布库（有 PackageId、非源生成器/分析器、有构建输出、非测试项目）启用。
+	     在 Directory.Build.targets 中声明，因为 PackageId 等属性在项目文件中设置，
+	     需在项目文件之后导入才能读取。
+	     通过 AdditionalFiles 按 TFM 声明 PublicAPI.Shipped.txt / PublicAPI.Unshipped.txt。 -->
+	<PropertyGroup>
+		<EnablePublicApiBaseline Condition="'$(PackageId)' != '' AND '$(IsRoslynComponent)' != 'true' AND '$(IncludeBuildOutput)' != 'false' AND '$(IsTestProject)' != 'true'">true</EnablePublicApiBaseline>
+	</PropertyGroup>
+
+	<ItemGroup Condition="'$(EnablePublicApiBaseline)' == 'true'">
+		<PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="3.3.4">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(EnablePublicApiBaseline)' == 'true' AND '$(TargetFramework)' != ''">
+		<AdditionalFiles Include="PublicAPI\$(TargetFramework)\PublicAPI.Shipped.txt" />
+		<AdditionalFiles Include="PublicAPI\$(TargetFramework)\PublicAPI.Unshipped.txt" />
+	</ItemGroup>
+
+</Project>

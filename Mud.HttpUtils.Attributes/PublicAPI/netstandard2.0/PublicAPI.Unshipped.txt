@@ -1,0 +1,264 @@
+#nullable enable
+Mud.HttpUtils.Attributes.AllowAnyStatusCodeAttribute
+Mud.HttpUtils.Attributes.AllowAnyStatusCodeAttribute.AllowAnyStatusCodeAttribute() -> void
+Mud.HttpUtils.Attributes.ArrayQueryAttribute
+Mud.HttpUtils.Attributes.ArrayQueryAttribute.ArrayQueryAttribute() -> void
+Mud.HttpUtils.Attributes.ArrayQueryAttribute.ArrayQueryAttribute(string! name) -> void
+Mud.HttpUtils.Attributes.ArrayQueryAttribute.ArrayQueryAttribute(string! name, string? separator) -> void
+Mud.HttpUtils.Attributes.ArrayQueryAttribute.Name.get -> string?
+Mud.HttpUtils.Attributes.ArrayQueryAttribute.Name.set -> void
+Mud.HttpUtils.Attributes.ArrayQueryAttribute.Separator.get -> string?
+Mud.HttpUtils.Attributes.ArrayQueryAttribute.Separator.set -> void
+Mud.HttpUtils.Attributes.BasePathAttribute
+Mud.HttpUtils.Attributes.BasePathAttribute.BasePathAttribute(string! path) -> void
+Mud.HttpUtils.Attributes.BasePathAttribute.Path.get -> string!
+Mud.HttpUtils.Attributes.BodyAttribute
+Mud.HttpUtils.Attributes.BodyAttribute.BodyAttribute() -> void
+Mud.HttpUtils.Attributes.BodyAttribute.BodyAttribute(string! contentType) -> void
+Mud.HttpUtils.Attributes.BodyAttribute.ContentType.get -> string?
+Mud.HttpUtils.Attributes.BodyAttribute.ContentType.set -> void
+Mud.HttpUtils.Attributes.BodyAttribute.EnableEncrypt.get -> bool
+Mud.HttpUtils.Attributes.BodyAttribute.EnableEncrypt.set -> void
+Mud.HttpUtils.Attributes.BodyAttribute.EncryptPropertyName.get -> string?
+Mud.HttpUtils.Attributes.BodyAttribute.EncryptPropertyName.set -> void
+Mud.HttpUtils.Attributes.BodyAttribute.EncryptSerializeType.get -> Mud.HttpUtils.SerializeType
+Mud.HttpUtils.Attributes.BodyAttribute.EncryptSerializeType.set -> void
+Mud.HttpUtils.Attributes.BodyAttribute.RawString.get -> bool
+Mud.HttpUtils.Attributes.BodyAttribute.RawString.set -> void
+Mud.HttpUtils.Attributes.BodyAttribute.UseStringContent.get -> bool
+Mud.HttpUtils.Attributes.BodyAttribute.UseStringContent.set -> void
+Mud.HttpUtils.Attributes.CacheAttribute
+Mud.HttpUtils.Attributes.CacheAttribute.CacheAttribute(int durationSeconds = 300) -> void
+Mud.HttpUtils.Attributes.CacheAttribute.CacheKeyTemplate.get -> string?
+Mud.HttpUtils.Attributes.CacheAttribute.CacheKeyTemplate.set -> void
+Mud.HttpUtils.Attributes.CacheAttribute.DurationSeconds.get -> int
+Mud.HttpUtils.Attributes.CacheAttribute.DurationSeconds.set -> void
+Mud.HttpUtils.Attributes.CacheAttribute.Priority.get -> Mud.HttpUtils.Attributes.CachePriority
+Mud.HttpUtils.Attributes.CacheAttribute.Priority.set -> void
+Mud.HttpUtils.Attributes.CacheAttribute.UseSlidingExpiration.get -> bool
+Mud.HttpUtils.Attributes.CacheAttribute.UseSlidingExpiration.set -> void
+Mud.HttpUtils.Attributes.CacheAttribute.VaryByUser.get -> bool
+Mud.HttpUtils.Attributes.CacheAttribute.VaryByUser.set -> void
+Mud.HttpUtils.Attributes.CachePriority
+Mud.HttpUtils.Attributes.CachePriority.High = 2 -> Mud.HttpUtils.Attributes.CachePriority
+Mud.HttpUtils.Attributes.CachePriority.Low = 0 -> Mud.HttpUtils.Attributes.CachePriority
+Mud.HttpUtils.Attributes.CachePriority.NeverRemove = 3 -> Mud.HttpUtils.Attributes.CachePriority
+Mud.HttpUtils.Attributes.CachePriority.Normal = 1 -> Mud.HttpUtils.Attributes.CachePriority
+Mud.HttpUtils.Attributes.CircuitBreakerAttribute
+Mud.HttpUtils.Attributes.CircuitBreakerAttribute.BreakDurationSeconds.get -> int
+Mud.HttpUtils.Attributes.CircuitBreakerAttribute.BreakDurationSeconds.set -> void
+Mud.HttpUtils.Attributes.CircuitBreakerAttribute.CircuitBreakerAttribute(int failureThreshold = 5) -> void
+Mud.HttpUtils.Attributes.CircuitBreakerAttribute.FailureThreshold.get -> int
+Mud.HttpUtils.Attributes.CircuitBreakerAttribute.FailureThreshold.set -> void
+Mud.HttpUtils.Attributes.CircuitBreakerAttribute.MinimumThroughput.get -> int
+Mud.HttpUtils.Attributes.CircuitBreakerAttribute.MinimumThroughput.set -> void
+Mud.HttpUtils.Attributes.CircuitBreakerAttribute.SamplingDurationSeconds.get -> int
+Mud.HttpUtils.Attributes.CircuitBreakerAttribute.SamplingDurationSeconds.set -> void
+Mud.HttpUtils.Attributes.DeleteAttribute
+Mud.HttpUtils.Attributes.DeleteAttribute.DeleteAttribute(string? requestUri = null) -> void
+Mud.HttpUtils.Attributes.FilePathAttribute
+Mud.HttpUtils.Attributes.FilePathAttribute.BufferSize.get -> int
+Mud.HttpUtils.Attributes.FilePathAttribute.BufferSize.set -> void
+Mud.HttpUtils.Attributes.FilePathAttribute.FilePathAttribute() -> void
+Mud.HttpUtils.Attributes.FilePathAttribute.Overwrite.get -> bool
+Mud.HttpUtils.Attributes.FilePathAttribute.Overwrite.set -> void
+Mud.HttpUtils.Attributes.FormAttribute
+Mud.HttpUtils.Attributes.FormAttribute.FieldName.get -> string?
+Mud.HttpUtils.Attributes.FormAttribute.FieldName.set -> void
+Mud.HttpUtils.Attributes.FormAttribute.FormAttribute() -> void
+Mud.HttpUtils.Attributes.FormContentAttribute
+Mud.HttpUtils.Attributes.FormContentAttribute.FormContentAttribute() -> void
+Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute
+Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute.ConstructorBaseCall.get -> string?
+Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute.ConstructorBaseCall.set -> void
+Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute.ConstructorParameters.get -> string?
+Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute.ConstructorParameters.set -> void
+Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute.EventType.get -> string?
+Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute.EventType.set -> void
+Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute.GenerateEventHandlerAttribute() -> void
+Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute.GenerateEventHandlerAttribute(string? eventType) -> void
+Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute.HandlerClassName.get -> string?
+Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute.HandlerClassName.set -> void
+Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute.HandlerNamespace.get -> string?
+Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute.HandlerNamespace.set -> void
+Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute.HeaderType.get -> string?
+Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute.HeaderType.set -> void
+Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute.InheritedFrom.get -> string?
+Mud.HttpUtils.Attributes.GenerateEventHandlerAttribute.InheritedFrom.set -> void
+Mud.HttpUtils.Attributes.GetAttribute
+Mud.HttpUtils.Attributes.GetAttribute.GetAttribute(string? requestUri = null) -> void
+Mud.HttpUtils.Attributes.HeadAttribute
+Mud.HttpUtils.Attributes.HeadAttribute.HeadAttribute(string? requestUri = null) -> void
+Mud.HttpUtils.Attributes.HeaderAttribute
+Mud.HttpUtils.Attributes.HeaderAttribute.AliasAs.get -> string?
+Mud.HttpUtils.Attributes.HeaderAttribute.AliasAs.set -> void
+Mud.HttpUtils.Attributes.HeaderAttribute.Format.get -> string?
+Mud.HttpUtils.Attributes.HeaderAttribute.Format.set -> void
+Mud.HttpUtils.Attributes.HeaderAttribute.FormatString.get -> string?
+Mud.HttpUtils.Attributes.HeaderAttribute.FormatString.set -> void
+Mud.HttpUtils.Attributes.HeaderAttribute.HeaderAttribute() -> void
+Mud.HttpUtils.Attributes.HeaderAttribute.HeaderAttribute(string! name) -> void
+Mud.HttpUtils.Attributes.HeaderAttribute.HeaderAttribute(string! name, object? value) -> void
+Mud.HttpUtils.Attributes.HeaderAttribute.Name.get -> string?
+Mud.HttpUtils.Attributes.HeaderAttribute.Name.set -> void
+Mud.HttpUtils.Attributes.HeaderAttribute.Replace.get -> bool
+Mud.HttpUtils.Attributes.HeaderAttribute.Replace.set -> void
+Mud.HttpUtils.Attributes.HeaderAttribute.Value.get -> object?
+Mud.HttpUtils.Attributes.HeaderAttribute.Value.set -> void
+Mud.HttpUtils.Attributes.HeaderMergeAttribute
+Mud.HttpUtils.Attributes.HeaderMergeAttribute.HeaderMergeAttribute(Mud.HttpUtils.Attributes.HeaderMergeMode mode) -> void
+Mud.HttpUtils.Attributes.HeaderMergeAttribute.Mode.get -> Mud.HttpUtils.Attributes.HeaderMergeMode
+Mud.HttpUtils.Attributes.HeaderMergeMode
+Mud.HttpUtils.Attributes.HeaderMergeMode.Append = 0 -> Mud.HttpUtils.Attributes.HeaderMergeMode
+Mud.HttpUtils.Attributes.HeaderMergeMode.Ignore = 2 -> Mud.HttpUtils.Attributes.HeaderMergeMode
+Mud.HttpUtils.Attributes.HeaderMergeMode.Replace = 1 -> Mud.HttpUtils.Attributes.HeaderMergeMode
+Mud.HttpUtils.Attributes.HttpClientApiAttribute
+Mud.HttpUtils.Attributes.HttpClientApiAttribute.BaseAddress.get -> string?
+Mud.HttpUtils.Attributes.HttpClientApiAttribute.ContentType.get -> string!
+Mud.HttpUtils.Attributes.HttpClientApiAttribute.ContentType.set -> void
+Mud.HttpUtils.Attributes.HttpClientApiAttribute.HttpClient.get -> string?
+Mud.HttpUtils.Attributes.HttpClientApiAttribute.HttpClient.set -> void
+Mud.HttpUtils.Attributes.HttpClientApiAttribute.HttpClientApiAttribute() -> void
+Mud.HttpUtils.Attributes.HttpClientApiAttribute.HttpClientApiAttribute(string! baseAddress) -> void
+Mud.HttpUtils.Attributes.HttpClientApiAttribute.InheritedFrom.get -> string?
+Mud.HttpUtils.Attributes.HttpClientApiAttribute.InheritedFrom.set -> void
+Mud.HttpUtils.Attributes.HttpClientApiAttribute.IsAbstract.get -> bool
+Mud.HttpUtils.Attributes.HttpClientApiAttribute.IsAbstract.set -> void
+Mud.HttpUtils.Attributes.HttpClientApiAttribute.RegistryGroupName.get -> string?
+Mud.HttpUtils.Attributes.HttpClientApiAttribute.RegistryGroupName.set -> void
+Mud.HttpUtils.Attributes.HttpClientApiAttribute.Timeout.get -> int
+Mud.HttpUtils.Attributes.HttpClientApiAttribute.Timeout.set -> void
+Mud.HttpUtils.Attributes.HttpClientApiAttribute.TokenManage.get -> string?
+Mud.HttpUtils.Attributes.HttpClientApiAttribute.TokenManage.set -> void
+Mud.HttpUtils.Attributes.HttpJsonSerializableAttribute
+Mud.HttpUtils.Attributes.HttpJsonSerializableAttribute.HttpJsonSerializableAttribute() -> void
+Mud.HttpUtils.Attributes.HttpJsonSerializableAttribute.NamingPolicy.get -> Mud.HttpUtils.Attributes.JsonNamingPolicyHint
+Mud.HttpUtils.Attributes.HttpJsonSerializableAttribute.NamingPolicy.set -> void
+Mud.HttpUtils.Attributes.HttpJsonSerializableAttribute.SerializerClassName.get -> string?
+Mud.HttpUtils.Attributes.HttpJsonSerializableAttribute.SerializerClassName.set -> void
+Mud.HttpUtils.Attributes.HttpMethodAttribute
+Mud.HttpUtils.Attributes.HttpMethodAttribute.ContentType.get -> string?
+Mud.HttpUtils.Attributes.HttpMethodAttribute.ContentType.set -> void
+Mud.HttpUtils.Attributes.HttpMethodAttribute.HttpMethod.get -> System.Net.Http.HttpMethod!
+Mud.HttpUtils.Attributes.HttpMethodAttribute.HttpMethod.set -> void
+Mud.HttpUtils.Attributes.HttpMethodAttribute.HttpMethodAttribute(System.Net.Http.HttpMethod! httpMethod, string? requestUri = null) -> void
+Mud.HttpUtils.Attributes.HttpMethodAttribute.RequestUri.get -> string?
+Mud.HttpUtils.Attributes.HttpMethodAttribute.RequestUri.set -> void
+Mud.HttpUtils.Attributes.HttpMethodAttribute.ResponseContentType.get -> string?
+Mud.HttpUtils.Attributes.HttpMethodAttribute.ResponseContentType.set -> void
+Mud.HttpUtils.Attributes.HttpMethodAttribute.ResponseEnableDecrypt.get -> bool
+Mud.HttpUtils.Attributes.HttpMethodAttribute.ResponseEnableDecrypt.set -> void
+Mud.HttpUtils.Attributes.IgnoreGeneratorAttribute
+Mud.HttpUtils.Attributes.IgnoreGeneratorAttribute.IgnoreGeneratorAttribute() -> void
+Mud.HttpUtils.Attributes.InterfacePathAttribute
+Mud.HttpUtils.Attributes.InterfacePathAttribute.InterfacePathAttribute(string! name, string? value) -> void
+Mud.HttpUtils.Attributes.InterfacePathAttribute.Name.get -> string!
+Mud.HttpUtils.Attributes.InterfacePathAttribute.Value.get -> string?
+Mud.HttpUtils.Attributes.InterfaceQueryAttribute
+Mud.HttpUtils.Attributes.InterfaceQueryAttribute.InterfaceQueryAttribute(string! name, string? value) -> void
+Mud.HttpUtils.Attributes.InterfaceQueryAttribute.Name.get -> string!
+Mud.HttpUtils.Attributes.InterfaceQueryAttribute.Value.get -> string?
+Mud.HttpUtils.Attributes.JsonNamingPolicyHint
+Mud.HttpUtils.Attributes.JsonNamingPolicyHint.CamelCase = 1 -> Mud.HttpUtils.Attributes.JsonNamingPolicyHint
+Mud.HttpUtils.Attributes.JsonNamingPolicyHint.Default = 0 -> Mud.HttpUtils.Attributes.JsonNamingPolicyHint
+Mud.HttpUtils.Attributes.JsonNamingPolicyHint.KebabCaseLower = 4 -> Mud.HttpUtils.Attributes.JsonNamingPolicyHint
+Mud.HttpUtils.Attributes.JsonNamingPolicyHint.KebabCaseUpper = 5 -> Mud.HttpUtils.Attributes.JsonNamingPolicyHint
+Mud.HttpUtils.Attributes.JsonNamingPolicyHint.SnakeCaseLower = 2 -> Mud.HttpUtils.Attributes.JsonNamingPolicyHint
+Mud.HttpUtils.Attributes.JsonNamingPolicyHint.SnakeCaseUpper = 3 -> Mud.HttpUtils.Attributes.JsonNamingPolicyHint
+Mud.HttpUtils.Attributes.MultipartFormAttribute
+Mud.HttpUtils.Attributes.MultipartFormAttribute.MultipartFormAttribute() -> void
+Mud.HttpUtils.Attributes.OptionsAttribute
+Mud.HttpUtils.Attributes.OptionsAttribute.OptionsAttribute(string? requestUri = null) -> void
+Mud.HttpUtils.Attributes.PatchAttribute
+Mud.HttpUtils.Attributes.PatchAttribute.PatchAttribute(string? requestUri = null) -> void
+Mud.HttpUtils.Attributes.PathAttribute
+Mud.HttpUtils.Attributes.PathAttribute.Format.get -> string?
+Mud.HttpUtils.Attributes.PathAttribute.Format.set -> void
+Mud.HttpUtils.Attributes.PathAttribute.FormatString.get -> string?
+Mud.HttpUtils.Attributes.PathAttribute.FormatString.set -> void
+Mud.HttpUtils.Attributes.PathAttribute.Name.get -> string?
+Mud.HttpUtils.Attributes.PathAttribute.Name.set -> void
+Mud.HttpUtils.Attributes.PathAttribute.PathAttribute() -> void
+Mud.HttpUtils.Attributes.PathAttribute.PathAttribute(string? formatString) -> void
+Mud.HttpUtils.Attributes.PathAttribute.UrlEncode.get -> bool
+Mud.HttpUtils.Attributes.PathAttribute.UrlEncode.set -> void
+Mud.HttpUtils.Attributes.PostAttribute
+Mud.HttpUtils.Attributes.PostAttribute.PostAttribute(string? requestUri = null) -> void
+Mud.HttpUtils.Attributes.PutAttribute
+Mud.HttpUtils.Attributes.PutAttribute.PutAttribute(string? requestUri = null) -> void
+Mud.HttpUtils.Attributes.QueryAttribute
+Mud.HttpUtils.Attributes.QueryAttribute.AliasAs.get -> string?
+Mud.HttpUtils.Attributes.QueryAttribute.AliasAs.set -> void
+Mud.HttpUtils.Attributes.QueryAttribute.Format.get -> string?
+Mud.HttpUtils.Attributes.QueryAttribute.Format.set -> void
+Mud.HttpUtils.Attributes.QueryAttribute.Name.get -> string?
+Mud.HttpUtils.Attributes.QueryAttribute.Name.set -> void
+Mud.HttpUtils.Attributes.QueryAttribute.QueryAttribute() -> void
+Mud.HttpUtils.Attributes.QueryAttribute.QueryAttribute(string! name) -> void
+Mud.HttpUtils.Attributes.QueryAttribute.QueryAttribute(string! name, string? format) -> void
+Mud.HttpUtils.Attributes.QueryAttribute.Separator.get -> string?
+Mud.HttpUtils.Attributes.QueryAttribute.Separator.set -> void
+Mud.HttpUtils.Attributes.QueryMapAttribute
+Mud.HttpUtils.Attributes.QueryMapAttribute.IncludeNullValues.get -> bool
+Mud.HttpUtils.Attributes.QueryMapAttribute.IncludeNullValues.set -> void
+Mud.HttpUtils.Attributes.QueryMapAttribute.PropertySeparator.get -> string!
+Mud.HttpUtils.Attributes.QueryMapAttribute.PropertySeparator.set -> void
+Mud.HttpUtils.Attributes.QueryMapAttribute.QueryMapAttribute() -> void
+Mud.HttpUtils.Attributes.QueryMapAttribute.SerializationMethod.get -> Mud.HttpUtils.Attributes.QuerySerializationMethod
+Mud.HttpUtils.Attributes.QueryMapAttribute.SerializationMethod.set -> void
+Mud.HttpUtils.Attributes.QueryMapAttribute.UrlEncode.get -> bool
+Mud.HttpUtils.Attributes.QueryMapAttribute.UrlEncode.set -> void
+Mud.HttpUtils.Attributes.QuerySerializationMethod
+Mud.HttpUtils.Attributes.QuerySerializationMethod.Json = 1 -> Mud.HttpUtils.Attributes.QuerySerializationMethod
+Mud.HttpUtils.Attributes.QuerySerializationMethod.ToString = 0 -> Mud.HttpUtils.Attributes.QuerySerializationMethod
+Mud.HttpUtils.Attributes.RawQueryStringAttribute
+Mud.HttpUtils.Attributes.RawQueryStringAttribute.RawQueryStringAttribute() -> void
+Mud.HttpUtils.Attributes.RetryAttribute
+Mud.HttpUtils.Attributes.RetryAttribute.DelayMilliseconds.get -> int
+Mud.HttpUtils.Attributes.RetryAttribute.DelayMilliseconds.set -> void
+Mud.HttpUtils.Attributes.RetryAttribute.MaxRetries.get -> int
+Mud.HttpUtils.Attributes.RetryAttribute.MaxRetries.set -> void
+Mud.HttpUtils.Attributes.RetryAttribute.RetryAttribute(int maxRetries = 3) -> void
+Mud.HttpUtils.Attributes.RetryAttribute.UseExponentialBackoff.get -> bool
+Mud.HttpUtils.Attributes.RetryAttribute.UseExponentialBackoff.set -> void
+Mud.HttpUtils.Attributes.SensitiveDataAttribute
+Mud.HttpUtils.Attributes.SensitiveDataAttribute.MaskMode.get -> Mud.HttpUtils.SensitiveDataMaskMode
+Mud.HttpUtils.Attributes.SensitiveDataAttribute.MaskMode.set -> void
+Mud.HttpUtils.Attributes.SensitiveDataAttribute.PrefixLength.get -> int
+Mud.HttpUtils.Attributes.SensitiveDataAttribute.PrefixLength.set -> void
+Mud.HttpUtils.Attributes.SensitiveDataAttribute.SensitiveDataAttribute() -> void
+Mud.HttpUtils.Attributes.SensitiveDataAttribute.SuffixLength.get -> int
+Mud.HttpUtils.Attributes.SensitiveDataAttribute.SuffixLength.set -> void
+Mud.HttpUtils.Attributes.SerializationMethod
+Mud.HttpUtils.Attributes.SerializationMethod.FormUrlEncoded = 2 -> Mud.HttpUtils.Attributes.SerializationMethod
+Mud.HttpUtils.Attributes.SerializationMethod.Json = 0 -> Mud.HttpUtils.Attributes.SerializationMethod
+Mud.HttpUtils.Attributes.SerializationMethod.Xml = 1 -> Mud.HttpUtils.Attributes.SerializationMethod
+Mud.HttpUtils.Attributes.SerializationMethodAttribute
+Mud.HttpUtils.Attributes.SerializationMethodAttribute.Method.get -> Mud.HttpUtils.Attributes.SerializationMethod
+Mud.HttpUtils.Attributes.SerializationMethodAttribute.SerializationMethodAttribute(Mud.HttpUtils.Attributes.SerializationMethod method) -> void
+Mud.HttpUtils.Attributes.TimeoutAttribute
+Mud.HttpUtils.Attributes.TimeoutAttribute.TimeoutAttribute(int timeoutMilliseconds) -> void
+Mud.HttpUtils.Attributes.TimeoutAttribute.TimeoutMilliseconds.get -> int
+Mud.HttpUtils.Attributes.TimeoutAttribute.TimeoutMilliseconds.set -> void
+Mud.HttpUtils.Attributes.TokenAttribute
+Mud.HttpUtils.Attributes.TokenAttribute.InjectionMode.get -> Mud.HttpUtils.TokenInjectionMode
+Mud.HttpUtils.Attributes.TokenAttribute.InjectionMode.set -> void
+Mud.HttpUtils.Attributes.TokenAttribute.Name.get -> string?
+Mud.HttpUtils.Attributes.TokenAttribute.Name.set -> void
+Mud.HttpUtils.Attributes.TokenAttribute.RequiresUserId.get -> bool
+Mud.HttpUtils.Attributes.TokenAttribute.RequiresUserId.set -> void
+Mud.HttpUtils.Attributes.TokenAttribute.Scopes.get -> string?
+Mud.HttpUtils.Attributes.TokenAttribute.Scopes.set -> void
+Mud.HttpUtils.Attributes.TokenAttribute.TokenAttribute(string! tokenType = "AccessToken") -> void
+Mud.HttpUtils.Attributes.TokenAttribute.TokenManagerKey.get -> string?
+Mud.HttpUtils.Attributes.TokenAttribute.TokenManagerKey.set -> void
+Mud.HttpUtils.Attributes.TokenAttribute.TokenType.get -> string!
+Mud.HttpUtils.Attributes.TokenAttribute.TokenType.set -> void
+Mud.HttpUtils.Attributes.UploadAttribute
+Mud.HttpUtils.Attributes.UploadAttribute.ContentType.get -> string?
+Mud.HttpUtils.Attributes.UploadAttribute.ContentType.set -> void
+Mud.HttpUtils.Attributes.UploadAttribute.FieldName.get -> string?
+Mud.HttpUtils.Attributes.UploadAttribute.FieldName.set -> void
+Mud.HttpUtils.Attributes.UploadAttribute.FileName.get -> string?
+Mud.HttpUtils.Attributes.UploadAttribute.FileName.set -> void
+Mud.HttpUtils.Attributes.UploadAttribute.UploadAttribute() -> void

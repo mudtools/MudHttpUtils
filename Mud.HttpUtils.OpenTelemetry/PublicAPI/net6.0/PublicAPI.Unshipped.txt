@@ -1,0 +1,45 @@
+#nullable enable
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryExtensions
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ConfigureLogging.get -> System.Action<OpenTelemetry.Logs.LoggerProviderBuilder!>?
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ConfigureLogging.set -> void
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ConfigureMetrics.get -> System.Action<OpenTelemetry.Metrics.MeterProviderBuilder!>?
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ConfigureMetrics.set -> void
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ConfigureTracing.get -> System.Action<OpenTelemetry.Trace.TracerProviderBuilder!>?
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ConfigureTracing.set -> void
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.DeploymentEnvironment.get -> string!
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.DeploymentEnvironment.set -> void
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.EnableAspNetCoreInstrumentation.get -> bool
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.EnableAspNetCoreInstrumentation.set -> void
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.EnableHttpClientInstrumentation.get -> bool
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.EnableHttpClientInstrumentation.set -> void
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.EnableLogging.get -> bool
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.EnableLogging.set -> void
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.EnableMetrics.get -> bool
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.EnableMetrics.set -> void
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.EnableTracing.get -> bool
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.EnableTracing.set -> void
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ExportBatchSize.get -> int?
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ExportBatchSize.set -> void
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ExportIntervalMilliseconds.get -> int?
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ExportIntervalMilliseconds.set -> void
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.MudHttpOpenTelemetryOptions() -> void
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.OtlpEndpoint.get -> System.Uri?
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.OtlpEndpoint.set -> void
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.OtlpExportProtocol.get -> Mud.HttpUtils.OpenTelemetry.OtlpExportProtocol
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.OtlpExportProtocol.set -> void
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.OtlpHeaders.get -> System.Collections.Generic.IDictionary<string!, string!>?
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.OtlpHeaders.set -> void
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.SamplingRatio.get -> double
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.SamplingRatio.set -> void
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ServiceName.get -> string!
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ServiceName.set -> void
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ServiceVersion.get -> string!
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ServiceVersion.set -> void
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.UseShortExporterTimeout.get -> bool
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.UseShortExporterTimeout.set -> void
+Mud.HttpUtils.OpenTelemetry.OtlpExportProtocol
+Mud.HttpUtils.OpenTelemetry.OtlpExportProtocol.Grpc = 0 -> Mud.HttpUtils.OpenTelemetry.OtlpExportProtocol
+Mud.HttpUtils.OpenTelemetry.OtlpExportProtocol.HttpProtobuf = 1 -> Mud.HttpUtils.OpenTelemetry.OtlpExportProtocol
+static Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryExtensions.AddMudHttpOpenTelemetry(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, string! sectionPath = "MudHttpOpenTelemetry", System.Action<Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions!>? configure = null) -> OpenTelemetry.OpenTelemetryBuilder!
+static Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryExtensions.AddMudHttpOpenTelemetry(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions!>? configure = null) -> OpenTelemetry.OpenTelemetryBuilder!

@@ -18,6 +18,8 @@
 /Mud.HttpUtils.Resilience/bin
 /Mud.HttpUtils.OpenTelemetry/obj
 /Mud.HttpUtils.OpenTelemetry/bin
+/Mud.HttpUtils.CodeFixes/obj
+/Mud.HttpUtils.CodeFixes/bin
 /bin
 /Tests/bin
 /Tests/Mud.HttpUtils.Client.Tests/bin
@@ -32,6 +34,7 @@
 /Tests/Mud.HttpUtils.Generator.Tests/bin
 /Tests/Mud.HttpUtils.Generator.Tests/obj
 /Tests/Mud.HttpUtils.Generator.Tests/TestResults
+/Tests/Mud.HttpUtils.Generator.Tests/*.txt
 /Tests/Mud.HttpUtils.Tests/bin
 /Tests/Mud.HttpUtils.Tests/obj
 /Tests/Mud.HttpUtils.Benchmarks/bin
@@ -49,6 +52,9 @@
 /Tests/Mud.HttpUtils.JsonContextScaffolder.Tests/bin
 /Tests/Mud.HttpUtils.JsonContextScaffolder.Tests/obj
 /Tests/Mud.HttpUtils.JsonContextScaffolder.Tests/TestResults
+/Tests/Mud.HttpUtils.CodeFixes.Tests/bin
+/Tests/Mud.HttpUtils.CodeFixes.Tests/obj
+/Tests/Mud.HttpUtils.CodeFixes.Tests/TestResults
 /Demos/HttpClientApiDemo/bin
 /Demos/HttpClientApiDemo/obj
 /Demos/HttpClientDemo/bin
