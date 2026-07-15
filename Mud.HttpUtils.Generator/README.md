@@ -189,40 +189,40 @@ flowchart TD
 
 ### 模式一：默认模式（IMudAppContext）
 
-不设置 `TokenManage` 和 `HttpClient` 时，构造函数依赖 `IOptions<JsonSerializerOptions>` 和 `IMudAppContext`。
+不设置 `TokenManage` 和 `HttpClient` 时，构造函数依赖 `IHttpContentSerializer`（可选）和 `IMudAppContext`。
 
 ```csharp
 [HttpClientApi]
 public interface IMyApi { }
 
 // 生成的构造函数：
-// public MyApi(IOptions<JsonSerializerOptions> option, IMudAppContext appContext)
+// public MyApi(IMudAppContext appContext, IAppContextHolder appContextHolder, IHttpRequestExecutor executor, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null)
 ```
 
 ### 模式二：TokenManager 模式
 
-设置 `TokenManage` 时，构造函数依赖 `IOptions<JsonSerializerOptions>`、指定的 Token 管理器类型、`ITokenProvider`（可选）和 `ICurrentUserContext`（当 `RequiresUserId = true` 时）。
+设置 `TokenManage` 时，构造函数依赖指定的 Token 管理器类型、`ITokenProvider`（可选）、`ICurrentUserContext`（当 `RequiresUserId = true` 时）和 `IHttpContentSerializer`（可选）。
 
 ```csharp
 [HttpClientApi(TokenManage = "IFeishuAppManager")]
 public interface IMyApi { }
 
 // 生成的构造函数：
-// public MyApi(IOptions<JsonSerializerOptions> option, IFeishuAppManager appManager, ITokenProvider tokenProvider)
+// public MyApi(IFeishuAppManager appManager, IAppContextHolder appContextHolder, ITokenProvider tokenProvider, IHttpRequestExecutor executor, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null)
 // 当 RequiresUserId = true 时：
-// public MyApi(IOptions<JsonSerializerOptions> option, IFeishuAppManager appManager, ITokenProvider tokenProvider, ICurrentUserContext currentUserContext)
+// public MyApi(IFeishuAppManager appManager, IAppContextHolder appContextHolder, ITokenProvider tokenProvider, ICurrentUserContext currentUserContext, IHttpRequestExecutor executor, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null)
 ```
 
 ### 模式三：HttpClient 模式（推荐）
 
-设置 `HttpClient` 时，构造函数依赖 `IOptions<JsonSerializerOptions>` 和指定的 HttpClient 接口类型。不生成 Token 相关代码。
+设置 `HttpClient` 时，构造函数依赖指定的 HttpClient 接口类型和 `IHttpContentSerializer`（可选）。不生成 Token 相关代码。
 
 ```csharp
 [HttpClientApi(HttpClient = "IEnhancedHttpClient")]
 public interface IMyApi { }
 
 // 生成的构造函数：
-// public MyApi(IOptions<JsonSerializerOptions> option, IEnhancedHttpClient httpClient)
+// public MyApi(IEnhancedHttpClient httpClient, IHttpRequestExecutor executor, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null)
 ```
 
 > **注意**：`HttpClient` 与 `TokenManage` 互斥，同时定义时 `HttpClient` 优先。

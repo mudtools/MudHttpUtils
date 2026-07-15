@@ -56,7 +56,7 @@ public class TokenInjectionIntegrationTests : IDisposable
         services.AddOptions();
         services.AddSingleton<IEnhancedHttpClient>(new DirectEnhancedHttpClient(_httpClient));
         services.AddSingleton<ITokenManager, IntegrationTestTokenManager>();
-        services.TryAddSingleton<IHttpContentSerializer>(sp => new SystemTextJsonContentSerializer(sp.GetService<IOptions<JsonSerializerOptions>>()?.Value));
+        services.TryAddSingleton<IHttpContentSerializer>(sp => HttpContentSerializerFactory.CreateDefault(sp.GetService<IOptions<JsonSerializerOptions>>()?.Value));
         services.TryAddSingleton<IHttpRequestExecutor, DefaultHttpRequestExecutor>();
         services.AddWebApiHttpClient();
         _services = services.BuildServiceProvider();
@@ -187,7 +187,7 @@ public class ResilienceIntegrationTests : IDisposable
         var innerClient = new DirectEnhancedHttpClient(_httpClient);
         var policyProvider = new PollyResiliencePolicyProvider(resilienceOptions);
         services.AddSingleton<IEnhancedHttpClient>(new ResilientHttpClient(innerClient, policyProvider));
-        services.TryAddSingleton<IHttpContentSerializer>(sp => new SystemTextJsonContentSerializer(sp.GetService<IOptions<JsonSerializerOptions>>()?.Value));
+        services.TryAddSingleton<IHttpContentSerializer>(sp => HttpContentSerializerFactory.CreateDefault(sp.GetService<IOptions<JsonSerializerOptions>>()?.Value));
         services.TryAddSingleton<IHttpRequestExecutor, DefaultHttpRequestExecutor>();
         services.AddWebApiHttpClient();
         _services = services.BuildServiceProvider();

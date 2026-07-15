@@ -12,7 +12,6 @@ using Mud.HttpUtils.Observability;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace Mud.HttpUtils;
 
@@ -56,7 +55,6 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     private readonly IHttpResponseInterceptor[] _responseInterceptors;
     private readonly ISensitiveDataMasker? _sensitiveDataMasker;
     private readonly bool _allowCustomBaseUrls;
-    private readonly JsonSerializerOptions _jsonOptions;
     private readonly IHttpContentSerializer _contentSerializer;
 
     /// <summary>
@@ -82,14 +80,6 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// </remarks>
     /// <value>客户端名称，如果未通过 IHttpClientFactory 创建则为 <c>null</c>。</value>
     public virtual string? ClientName => null;
-
-    private static readonly JsonSerializerOptions s_defaultJsonSerializerOptions = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
-    };
 
     private const int DefaultBufferSize = 81920;
     private const int MaxDebugLogBodyLength = 32768;
@@ -117,61 +107,16 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         _responseInterceptors = options.ResponseInterceptors?.OrderBy(i => i.Order).ToArray() ?? Array.Empty<IHttpResponseInterceptor>();
         _sensitiveDataMasker = options.SensitiveDataMasker;
         _allowCustomBaseUrls = options.AllowCustomBaseUrls;
-        _jsonOptions = BuildJsonOptions(options, jsonOptions);
-        _contentSerializer = contentSerializer ?? new SystemTextJsonContentSerializer(_jsonOptions);
-    }
-
-    /// <summary>
-    /// 根据配置来源构建 JSON 序列化选项，优先级：EnhancedHttpClientOptions.JsonTypeInfoResolver → IOptions&lt;JsonSerializerOptions&gt;.TypeInfoResolver → 静态默认。
-    /// </summary>
-    /// <param name="options">增强型 HttpClient 配置选项。</param>
-    /// <param name="jsonOptions">DI 注入的 JSON 序列化选项（可选）。</param>
-    /// <returns>合并后的 <see cref="JsonSerializerOptions"/> 实例。</returns>
-    private static JsonSerializerOptions BuildJsonOptions(
-        EnhancedHttpClientOptions options,
-        IOptions<JsonSerializerOptions>? jsonOptions)
-    {
+        // 阶段 B3：序列化器自持 options，基类不再持有 _jsonOptions。
+        // 未注入序列化器时经由工厂 CreateDefault 合并 MudHttpJsonContext.Default。
+        _contentSerializer = contentSerializer
+            ?? HttpContentSerializerFactory.CreateDefault(
+                jsonOptions?.Value,
 #if NET8_0_OR_GREATER
-        // 优先使用 EnhancedHttpClientOptions.JsonTypeInfoResolver（编程式注入）
-        // 其次使用 IOptions<JsonSerializerOptions>.TypeInfoResolver（DI 注入）
-        System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver? resolver = options.JsonTypeInfoResolver;
-        resolver ??= jsonOptions?.Value?.TypeInfoResolver;
-
-        // 库内置兜底上下文（始终包含，保证内部类型可用）
-        System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver builtIn = MudHttpJsonContext.Default;
-
-        if (resolver != null)
-        {
-            // 消费方提供了 resolver
-            if (System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported)
-            {
-                // JIT：再 Combine 一个 DefaultJsonTypeInfoResolver 作反射兜底，兼容未声明类型
-                return new JsonSerializerOptions(s_defaultJsonSerializerOptions)
-                {
-                    TypeInfoResolver = System.Text.Json.Serialization.Metadata.JsonTypeInfoResolver.Combine(
-                        resolver, builtIn,
-                        new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver())
-                };
-            }
-            // AOT：仅源生成，杜绝静默回退反射
-            return new JsonSerializerOptions(s_defaultJsonSerializerOptions)
-            {
-                TypeInfoResolver = System.Text.Json.Serialization.Metadata.JsonTypeInfoResolver.Combine(resolver, builtIn)
-            };
-        }
-
-        // 未提供 resolver：
-        if (System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported == false)
-        {
-            // AOT 且未提供 resolver：用库内置上下文，避免回退反射
-            return new JsonSerializerOptions(s_defaultJsonSerializerOptions)
-            {
-                TypeInfoResolver = builtIn
-            };
-        }
-        // JIT 且未提供 resolver：保留 s_defaultJsonSerializerOptions，默认走反射（DefaultJsonTypeInfoResolver）
+                options.JsonTypeInfoResolver);
+#else
+                null);
 #endif
-        return s_defaultJsonSerializerOptions;
     }
 
     /// <summary>
@@ -217,7 +162,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             "发送JSON请求", "JSON请求完成", "JSON请求失败", uri,
             () => SendRequestAsync<TResult>(
                 request,
-                jsonSerializerOptions: (jsonSerializerOptions as JsonSerializerOptions) ?? _jsonOptions,
+                jsonSerializerOptions: jsonSerializerOptions as JsonSerializerOptions,
                 cancellationToken: cancellationToken));
     }
 
@@ -332,7 +277,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// <inheritdoc cref="IBaseHttpClient.SendAsAsyncEnumerable"/>
 #if NET8_0_OR_GREATER
     [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("ReflectionAnalysis", "IL2026:RequiresUnreferencedCode",
-        Justification = "_jsonOptions 通过 DI 注入了 JsonSerializerContext resolver，T 的类型元数据已由消费方的 JsonSerializerContext 保留。")]
+        Justification = "通过注入的 IHttpContentSerializer（其 options 含消费方 JsonSerializerContext resolver）保证 AOT 安全。")]
 #endif
     public async IAsyncEnumerable<TResult> SendAsAsyncEnumerable<TResult>(
      HttpRequestMessage request,
@@ -439,7 +384,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 throw new ApiRequestException($"HTTP请求处理失败: {uri}", ex, requestUri: uri);
             }
 
-            var options = (jsonSerializerOptions as JsonSerializerOptions) ?? _jsonOptions;
+            var options = jsonSerializerOptions;
 
             await foreach (var item in ParseNdJsonStreamAsync<TResult>(stream, options, _contentSerializer, cancellationToken).ConfigureAwait(false))
             {
@@ -766,7 +711,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     {
         using var request = new HttpRequestMessage(method, requestUri)
         {
-            Content = _contentSerializer.ToHttpContent(requestData, _jsonOptions)
+            Content = _contentSerializer.ToHttpContent(requestData)
         };
         var validatedUri = ValidateRequest(request);
         return await ExecuteWithObservabilityAsync(
@@ -774,7 +719,6 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             operation, completeMsg, errorMsg, validatedUri,
             () => SendRequestAsync<TResult>(
                 request,
-                jsonSerializerOptions: _jsonOptions,
                 cancellationToken: cancellationToken));
     }
 
@@ -789,7 +733,6 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             operation, completeMsg, errorMsg, validatedUri,
             () => SendRequestAsync<TResult>(
                 request,
-                jsonSerializerOptions: _jsonOptions,
                 cancellationToken: cancellationToken));
     }
 
@@ -909,7 +852,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 #endif
 
-                var options = jsonSerializerOptions ?? _jsonOptions;
+                var options = jsonSerializerOptions;
 
                 if (_enableLogging && _logger.IsEnabled(LogLevel.Debug))
                 {
@@ -1064,7 +1007,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
         else
         {
-            serializedContent = _contentSerializer.Serialize(content, content.GetType(), _jsonOptions);
+            serializedContent = _contentSerializer.Serialize(content, content.GetType());
         }
 
         var encryptedData = EncryptionProvider.Encrypt(serializedContent);
@@ -1074,7 +1017,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             [propertyName] = encryptedData
         };
 
-        return _contentSerializer.Serialize(result, _jsonOptions);
+        return _contentSerializer.Serialize(result);
     }
 
     /// <summary>
@@ -1102,7 +1045,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 "或注册自定义 IEncryptionProvider 实现。");
 
         // AOT 安全：使用编译期类型 T 序列化，不使用 content.GetType()
-        var serializedContent = _contentSerializer.Serialize(content, _jsonOptions);
+        var serializedContent = _contentSerializer.Serialize(content);
         var encryptedData = EncryptionProvider.Encrypt(serializedContent);
 
         // AOT 安全：使用 Utf8JsonWriter 直接构建外层 JSON，避免 Dictionary<string, object> 反射序列化
@@ -1716,7 +1659,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 #endif
     internal static async IAsyncEnumerable<T> ParseNdJsonStreamAsync<T>(
         Stream stream,
-        JsonSerializerOptions? options,
+        object? options,
         IHttpContentSerializer contentSerializer,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {

@@ -102,11 +102,12 @@ public static class HttpClientServiceCollectionExtensions
 
         services.TryAddTransient<IBaseHttpClient>(sp => sp.GetRequiredService<IEnhancedHttpClient>());
         // 注册 IHttpContentSerializer：全量收敛的序列化抽象层。
-        // v1.5 AOT 修正：使用 DI 注入的 JsonSerializerOptions（含 TypeInfoResolver），避免无解析器的默认实例导致 AOT 失败。
+        // 阶段 A3：经由 HttpContentSerializerFactory.CreateDefault 合并 MudHttpJsonContext.Default，
+        // 修复原注册未合并库解析器的不一致（原仅 new SystemTextJsonContentSerializer(jsonOptions?.Value)）。
         services.TryAddSingleton<IHttpContentSerializer>(sp =>
         {
             var jsonOptions = sp.GetService<IOptions<JsonSerializerOptions>>();
-            return new SystemTextJsonContentSerializer(jsonOptions?.Value);
+            return HttpContentSerializerFactory.CreateDefault(jsonOptions?.Value);
         });
         // 注册 IHttpRequestExecutor：执行器为无状态设计，IBaseHttpClient 通过方法参数逐次传递。
         // HC-04 修复：从 Transient 升级为 Singleton，避免无状态服务在每次解析时重复创建实例。
@@ -828,8 +829,12 @@ public static class HttpClientServiceCollectionExtensions
     /// 避免每个消费方手写 Combine 逻辑。
     /// </para>
     /// <para>
-    /// 库内置 <see cref="EnhancedHttpClient.BuildJsonOptions"/> 会自动读取 <c>IOptions&lt;JsonSerializerOptions&gt;</c>
+    /// 库内置 <see cref="HttpContentSerializerFactory"/> 会自动读取 <c>IOptions&lt;JsonSerializerOptions&gt;</c>
     /// 中的 <c>TypeInfoResolver</c>，并与库内置 <c>MudHttpJsonContext.Default</c> 合并。
+    /// </para>
+    /// <para>
+    /// 亦可使用 <see cref="AddMudHttpContentSerializer"/> 直接注册带 context 的 <see cref="IHttpContentSerializer"/>，
+    /// 无需经过 <c>IOptions&lt;JsonSerializerOptions&gt;</c> 间接配置。
     /// </para>
     /// <para>
     /// <b>多目标框架守卫</b>：<see cref="System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver"/> 仅在 .NET 8+ 存在。
@@ -858,6 +863,42 @@ public static class HttpClientServiceCollectionExtensions
         {
             o.TypeInfoResolver = System.Text.Json.Serialization.Metadata.JsonTypeInfoResolver.Combine(o.TypeInfoResolver, context);
         });
+        return services;
+    }
+
+    /// <summary>
+    /// 直接注册带 <see cref="System.Text.Json.Serialization.JsonSerializerContext"/> 的 <see cref="IHttpContentSerializer"/>，
+    /// 替代 <see cref="AddMudHttpClientJsonContext"/> 的间接配置方式。供生成类场景更直观地注入序列化器。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 此方法直接注册 <see cref="IHttpContentSerializer"/>，内部经由 <see cref="HttpContentSerializerFactory.CreateDefault"/>
+    /// 合并消费方 context resolver 与库内置 <c>MudHttpJsonContext.Default</c>。
+    /// </para>
+    /// <para>
+    /// 与 <see cref="AddMudHttpClientJsonContext"/> 的区别：后者通过 <c>IOptions&lt;JsonSerializerOptions&gt;</c> 间接配置 resolver，
+    /// 而此方法直接创建带 context 的序列化器实例，语义更直观，且不依赖 <c>IOptions&lt;JsonSerializerOptions&gt;</c> 中间层。
+    /// </para>
+    /// <para>
+    /// <b>多目标框架守卫</b>：<see cref="System.Text.Json.Serialization.JsonSerializerContext"/> 仅在 .NET 8+ 存在。
+    /// 消费方调用此方法时须用 <c>#if NET8_0_OR_GREATER</c> 包裹。
+    /// </para>
+    /// </remarks>
+    /// <param name="services">服务集合。</param>
+    /// <param name="context">消费方的 JSON 序列化上下文（由 <c>HttpJsonContextScaffolder</c> 产出或手写）。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+    public static IServiceCollection AddMudHttpContentSerializer(
+        this IServiceCollection services,
+        System.Text.Json.Serialization.JsonSerializerContext context)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+        if (context == null)
+            throw new ArgumentNullException(nameof(context));
+
+        services.TryAddSingleton<IHttpContentSerializer>(_ =>
+            HttpContentSerializerFactory.CreateDefault(context.Options, context));
         return services;
     }
 #endif

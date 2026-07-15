@@ -35,6 +35,7 @@ public class HttpClientFactoryEnhancedClient : EnhancedHttpClient
     private readonly EnhancedHttpClientOptions _options;
     private readonly Uri? _overrideBaseAddress;
     private readonly IOptions<JsonSerializerOptions>? _jsonOptions;
+    private readonly IHttpContentSerializer? _contentSerializer;
 
     protected override IEncryptionProvider? EncryptionProvider => _encryptionProvider;
 
@@ -64,6 +65,7 @@ public class HttpClientFactoryEnhancedClient : EnhancedHttpClient
         _options = options ?? new EnhancedHttpClientOptions();
         _overrideBaseAddress = overrideBaseAddress;
         _jsonOptions = jsonOptions;
+        _contentSerializer = contentSerializer;
     }
 
     private static HttpClient CreateClient(IHttpClientFactory factory, string name, Uri? overrideBaseAddress)
@@ -103,7 +105,8 @@ public class HttpClientFactoryEnhancedClient : EnhancedHttpClient
             _encryptionProvider,
             _options,
             baseAddress,
-            _jsonOptions);
+            _jsonOptions,
+            _contentSerializer);
     }
 
 }

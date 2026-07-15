@@ -422,7 +422,7 @@ internal class QueryParameterBinder : IParameterBinder
     /// </summary>
     /// <remarks>
     /// AOT 修复（JsonAotSourceGeneratorPlan §3.6）：JSON 序列化使用泛型重载
-    /// <c>JsonSerializer.Serialize&lt;T&gt;(value, _jsonSerializerOptions)</c>，
+    /// <c>_contentSerializer.Serialize&lt;T&gt;(value)</c>，
     /// 而非非泛型 <c>JsonSerializer.Serialize(object?)</c>。非泛型重载因运行时
     /// <c>Type</c> 分发不被 trim/AOT 分析器视作安全，即使传入含 Context 的 options。
     /// </remarks>
@@ -439,9 +439,9 @@ internal class QueryParameterBinder : IParameterBinder
         if (isValueType && !isNullable)
         {
             // 非可空值类型：始终有值
-            // AOT 安全：使用泛型重载 JsonSerializer.Serialize<T>(value, _jsonSerializerOptions)
+            // AOT 安全：使用 _contentSerializer.Serialize<T>(value)
             var valueExpr = useJsonSerialization
-                ? $"JsonSerializer.Serialize<{propTypeDisplay}>({fullAccess}, _jsonSerializerOptions)"
+                ? $"_contentSerializer.Serialize<{propTypeDisplay}>({fullAccess})"
                 : $"{fullAccess}.ToString() ?? \"\"";
 
             if (urlEncode)
@@ -457,9 +457,9 @@ internal class QueryParameterBinder : IParameterBinder
             codeBuilder.AppendLine($"{indent}if ({valVar} != null)");
             codeBuilder.AppendLine($"{indent}{{");
 
-            // AOT 安全：使用泛型重载 JsonSerializer.Serialize<T>(value, _jsonSerializerOptions)
+            // AOT 安全：使用 _contentSerializer.Serialize<T>(value)
             var valueExpr = useJsonSerialization
-                ? $"JsonSerializer.Serialize<{propTypeDisplay}>({valVar}, _jsonSerializerOptions)"
+                ? $"_contentSerializer.Serialize<{propTypeDisplay}>({valVar})"
                 : $"{valVar}.ToString() ?? \"\"";
 
             if (urlEncode)

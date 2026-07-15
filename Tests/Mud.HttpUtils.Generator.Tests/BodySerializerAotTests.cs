@@ -56,7 +56,7 @@ public class BodySerializerAotTests
         _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: false);
         var code = codeBuilder.ToString();
 
-        code.Should().Contain("_contentSerializer.ToHttpContent(data, _jsonSerializerOptions)");
+        code.Should().Contain("_contentSerializer.ToHttpContent(data)");
         // 不应直接调用 JsonSerializer.Serialize
         code.Should().NotContain("JsonSerializer.Serialize");
     }
@@ -72,7 +72,7 @@ public class BodySerializerAotTests
         _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: false);
         var code = codeBuilder.ToString();
 
-        code.Should().Contain("_contentSerializer.ToHttpContent(data, _jsonSerializerOptions)");
+        code.Should().Contain("_contentSerializer.ToHttpContent(data)");
         code.Should().NotContain("JsonSerializer.Serialize");
     }
 
@@ -87,7 +87,7 @@ public class BodySerializerAotTests
         _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: false);
         var code = codeBuilder.ToString();
 
-        code.Should().Contain("_contentSerializer.ToHttpContent(data, _jsonSerializerOptions)");
+        code.Should().Contain("_contentSerializer.ToHttpContent(data)");
         code.Should().NotContain("JsonSerializer.Serialize");
     }
 }

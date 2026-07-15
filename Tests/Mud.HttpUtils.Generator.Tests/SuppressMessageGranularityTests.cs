@@ -5,7 +5,7 @@ namespace Mud.HttpUtils.Generator.Tests;
 /// </summary>
 /// <remarks>
 /// 验证类级 [UnconditionalSuppressMessage] 已移除，
-/// 改为方法级精准压制（WriteMethodLevelSuppressMessage），仅覆盖使用 _jsonSerializerOptions 的生成方法。
+/// 改为方法级精准压制（WriteMethodLevelSuppressMessage），仅覆盖经执行器间接 JSON 序列化的生成方法。
 /// </remarks>
 public class SuppressMessageGranularityTests
 {

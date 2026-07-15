@@ -130,9 +130,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
         var returnType = methodSymbol.ReturnType.ToDisplayString(returnTypeFormat);
         // [AOT v4 Phase 19.2 / D6/D14] 方法级 [UnconditionalSuppressMessage] 替代原类级压制：
-        // 生成代码传递 _jsonSerializerOptions（含 DI 注入的 JsonSerializerContext resolver），
+        // 生成代码经执行器间接 JSON 序列化，通过注入的 IHttpContentSerializer（其 options 含消费方 JsonSerializerContext resolver）保证 AOT 安全，
         // AOT 分析器无法静态追踪 DI 数据流，对 IL2026/IL3050 产生已知误报。
-        // 仅覆盖真正使用 _jsonSerializerOptions 的路径（IAsyncEnumerable / byte[]+Cache/Resilience /
+        // 仅覆盖经执行器间接 JSON 序列化的生成方法（IAsyncEnumerable / byte[]+Cache/Resilience /
         // IsResponseType / 通用 ExecuteAsync< T >）；void / 文件下载 / byte[] 直下等未传 options 的路径无需压制。
         // 防御性：对所有生成方法统一注入（#if NET6_0_OR_GREATER 仅 AOT/trimming TFM 生效，其余 TFM 无害）。
         WriteMethodLevelSuppressMessage(codeBuilder);
@@ -259,7 +259,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
 
         // IAsyncEnumerable — 直接调用执行器流式方法（不经过 Cache/Resilience，与当前行为一致）
-        // AOT 安全说明：生成代码传递 _jsonSerializerOptions（含 DI 注入的 JsonSerializerContext resolver），
+        // AOT 安全说明：生成代码经执行器间接 JSON 序列化，通过注入的 IHttpContentSerializer（其 options 含消费方 JsonSerializerContext resolver）保证 AOT 安全，
         // IL2026/IL3050 误报已由方法级 [UnconditionalSuppressMessage] 压制（见 WriteMethodLevelSuppressMessage）。
         // 消费方须确保 T（elementType）已在 JsonSerializerContext 中声明，否则 AOT 下反序列化返回 default。
         // JsonTypeInfo<T> 安全重载（AsyncEnumerableExtensions.SendAsAsyncEnumerable<T>(IBaseHttpClient, HttpRequestMessage, JsonTypeInfo<T>, CT)）
@@ -270,7 +270,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             var cancellationTokenParam = methodInfo.Parameters
                 .FirstOrDefault(p => TypeDetectionHelper.IsCancellationToken(p.Type));
             var cancellationTokenName = cancellationTokenParam?.Name ?? "default";
-            codeBuilder.AppendLine($"            await foreach (var __item in {executor}.SendAsAsyncEnumerable<{elementType}>(__httpRequest, {httpClientExpr}, _jsonSerializerOptions, {cancellationTokenName}))");
+            codeBuilder.AppendLine($"            await foreach (var __item in {executor}.SendAsAsyncEnumerable<{elementType}>(__httpRequest, {httpClientExpr}, null, {cancellationTokenName}))");
             codeBuilder.AppendLine("            {");
             codeBuilder.AppendLine("                yield return __item;");
             codeBuilder.AppendLine("            }");
@@ -325,7 +325,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     codeBuilder.Append("                ");
                     WriteExecutionDescriptorCode(codeBuilder, context, methodInfo, deserializeType, indent: "                ");
                     codeBuilder.AppendLine(",");
-                    codeBuilder.AppendLine($"                _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false);");
+                    codeBuilder.AppendLine($"                null{cancellationTokenArg}).ConfigureAwait(false);");
                 }
                 else
                 {
@@ -335,7 +335,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     codeBuilder.Append("                ");
                     WriteExecutionDescriptorCode(codeBuilder, context, methodInfo, deserializeType, indent: "                ");
                     codeBuilder.AppendLine(",");
-                    codeBuilder.AppendLine($"                _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false)) ?? System.Array.Empty<byte>();");
+                    codeBuilder.AppendLine($"                null{cancellationTokenArg}).ConfigureAwait(false)) ?? System.Array.Empty<byte>();");
                 }
             }
             else
@@ -379,7 +379,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             codeBuilder.Append("                ");
             WriteExecutionDescriptorCode(codeBuilder, context, methodInfo, deserializeType, indent: "                ");
             codeBuilder.AppendLine(",");
-            codeBuilder.AppendLine($"                _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false);");
+            codeBuilder.AppendLine($"                null{cancellationTokenArg}).ConfigureAwait(false);");
         }
         else
         {
@@ -389,25 +389,25 @@ internal class MethodGenerator : ICodeFragmentGenerator
             codeBuilder.Append("                ");
             WriteExecutionDescriptorCode(codeBuilder, context, methodInfo, deserializeType, indent: "                ");
             codeBuilder.AppendLine(",");
-            codeBuilder.AppendLine($"                _jsonSerializerOptions{cancellationTokenArg}).ConfigureAwait(false);");
+            codeBuilder.AppendLine($"                null{cancellationTokenArg}).ConfigureAwait(false);");
         }
     }
 
     /// <summary>
-    /// 写入方法级 [UnconditionalSuppressMessage]，压制生成代码中 JSON 序列化（_jsonSerializerOptions）的
+    /// 写入方法级 [UnconditionalSuppressMessage]，压制生成代码中经执行器间接 JSON 序列化的
     /// IL2026/IL3050 误报。仅在有 UnconditionalSuppressMessageAttribute 的 TFM（NET6_0_OR_GREATER）上生成。
     /// </summary>
     /// <remarks>
-    /// 原类级压制（ClassStructureGenerator）已移除，改为方法级精准覆盖所有引用 _jsonSerializerOptions 的生成方法
+    /// 原类级压制（ClassStructureGenerator）已移除，改为方法级精准覆盖所有经执行器间接 JSON 序列化的生成方法
     /// （[审查修订 D6/D14]：响应反序列化 + IAsyncEnumerable 流式 + byte[] 下载带 Cache/Resilience 路径）。
     /// </remarks>
     private static void WriteMethodLevelSuppressMessage(StringBuilder codeBuilder)
     {
         codeBuilder.AppendLine("#if NET6_0_OR_GREATER");
         codeBuilder.AppendLine("        [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(\"ReflectionAnalysis\", \"IL2026\",");
-        codeBuilder.AppendLine("            Justification = \"生成的 JSON 序列化/反序列化通过 _jsonSerializerOptions（DI 注入的 JsonSerializerContext resolver）保证 AOT 安全，T 的类型元数据已由消费方的 JsonSerializerContext 保留。\")]");
+        codeBuilder.AppendLine("            Justification = \"生成的 JSON 序列化/反序列化通过注入的 IHttpContentSerializer（其 options 含消费方 JsonSerializerContext resolver）保证 AOT 安全，T 的类型元数据已由消费方的 JsonSerializerContext 保留.\")]");
         codeBuilder.AppendLine("        [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(\"AotAnalysis\", \"IL3050\",");
-        codeBuilder.AppendLine("            Justification = \"生成的 JSON 序列化/反序列化通过 _jsonSerializerOptions（DI 注入的 JsonSerializerContext resolver）保证 AOT 安全，T 的类型元数据已由消费方的 JsonSerializerContext 保留。\")]");
+        codeBuilder.AppendLine("            Justification = \"生成的 JSON 序列化/反序列化通过注入的 IHttpContentSerializer（其 options 含消费方 JsonSerializerContext resolver）保证 AOT 安全，T 的类型元数据已由消费方的 JsonSerializerContext 保留.\")]");
         codeBuilder.AppendLine("#endif");
     }
 

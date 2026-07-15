@@ -355,7 +355,7 @@ internal class RequestBuilder
             // [Phase 3.1 全量收敛] Body 序列化统一委托 IHttpContentSerializer.ToHttpContent，
             // 不再直接调用 JsonSerializer.Serialize。生成代码持有 _contentSerializer（由 DI 注入）。
             // ToHttpContent 内部使用泛型 JsonSerializer.Serialize<T>（AOT 安全），无需在生成代码中区分泛型/非泛型重载。
-            codeBuilder.AppendLine($"            __httpRequest.Content = _contentSerializer.ToHttpContent({bodyParam.Name}, _jsonSerializerOptions);");
+            codeBuilder.AppendLine($"            __httpRequest.Content = _contentSerializer.ToHttpContent({bodyParam.Name});");
         }
     }
 

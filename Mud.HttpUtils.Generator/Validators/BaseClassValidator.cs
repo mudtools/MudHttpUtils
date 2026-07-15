@@ -141,10 +141,10 @@ internal static class BaseClassValidator
 
         // 验证构造函数：检查是否存在兼容的构造函数
         // 新执行器架构下，生成器向 base() 传递的参数包括：
-        //   - HttpClient 模式: IBaseHttpClient/IEnhancedHttpClient, IOptions<JsonSerializerOptions>, [IHttpResponseCache], [IResiliencePolicyResolver]
-        //   - TokenManager 模式: ITokenManager, IOptions<JsonSerializerOptions>, [IHttpResponseCache], [IResiliencePolicyResolver]
+        //   - HttpClient 模式: IBaseHttpClient/IEnhancedHttpClient, IHttpContentSerializer, [IHttpResponseCache], [IResiliencePolicyResolver]
+        //   - TokenManager 模式: ITokenManager, IHttpContentSerializer, [IHttpResponseCache], [IResiliencePolicyResolver]
         // 验证策略：检查构造函数是否包含必需的参数类型（顺序不敏感，允许额外可选参数）
-        var requiredTypes = new List<string> { "IOptions<JsonSerializerOptions>" };
+        var requiredTypes = new List<string> { "IHttpContentSerializer" };
         if (hasTokenManager)
             requiredTypes.Add("ITokenManager");
         else
@@ -170,11 +170,6 @@ internal static class BaseClassValidator
                         return paramTypeString.Contains("ITokenManager") ||
                                paramTypeString.Contains("ITenantTokenManager") ||
                                paramTypeString.Contains("IUserTokenManager");
-                    }
-                    if (requiredType.Contains("IOptions<JsonSerializerOptions>"))
-                    {
-                        return paramTypeString.Contains("IOptions") &&
-                               paramTypeString.Contains("JsonSerializerOptions");
                     }
                     return paramTypeString.Contains(requiredType);
                 });

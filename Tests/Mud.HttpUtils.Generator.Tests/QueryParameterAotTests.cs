@@ -11,7 +11,7 @@ namespace Mud.HttpUtils.Generator.Tests;
 /// <remarks>
 /// 验证 JsonAotSourceGeneratorPlan §3.6 的修复：
 /// 当 TypeSymbol 可用时，JSON 序列化使用泛型重载
-/// <c>JsonSerializer.Serialize&lt;T&gt;(value, _jsonSerializerOptions)</c>，
+/// <c>_contentSerializer.Serialize&lt;T&gt;(value)</c>，
 /// 而非非泛型 <c>JsonSerializer.Serialize(object?)</c>。
 /// </remarks>
 public class QueryParameterAotTests
@@ -53,7 +53,7 @@ public class QueryParameterAotTests
 
     /// <summary>
     /// 验证 [QueryMap] + SerializationMethod=Json + TypeSymbol 可用时，
-    /// 生成的代码使用泛型 JsonSerializer.Serialize&lt;T&gt;(value, _jsonSerializerOptions) 而非非泛型重载。
+    /// 生成的代码使用 _contentSerializer.Serialize&lt;T&gt;(value) 而非非泛型重载。
     /// </summary>
     [Fact]
     public void GenerateQueryParameters_QueryMapWithJsonAndTypeSymbol_UsesGenericSerializeOverload()
@@ -83,9 +83,8 @@ public class QueryParameterAotTests
         _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
         var code = codeBuilder.ToString();
 
-        // AOT 安全：必须使用泛型重载 + _jsonSerializerOptions
-        code.Should().Contain("JsonSerializer.Serialize<");
-        code.Should().Contain("_jsonSerializerOptions");
+        // AOT 安全：必须使用 _contentSerializer.Serialize<T>
+        code.Should().Contain("_contentSerializer.Serialize<");
 
         // 不应使用非泛型重载（AOT 不安全）
         code.Should().NotContain("JsonSerializer.Serialize(filter");
@@ -129,9 +128,9 @@ public class QueryParameterAotTests
         code.Should().Contain("var __val_Name = filter.Name");
         code.Should().Contain("if (__val_Name != null)");
 
-        // null 检查内部使用泛型重载 + _jsonSerializerOptions
-        code.Should().Contain("JsonSerializer.Serialize<");
-        code.Should().Contain("__val_Name, _jsonSerializerOptions");
+        // null 检查内部使用 _contentSerializer.Serialize<T>
+        code.Should().Contain("_contentSerializer.Serialize<");
+        code.Should().Contain("__val_Name)");
     }
 
     /// <summary>
@@ -165,8 +164,8 @@ public class QueryParameterAotTests
         var code = codeBuilder.ToString();
 
         // 非可空值类型：直接序列化，无 null 检查
-        code.Should().Contain("JsonSerializer.Serialize<");
-        code.Should().Contain("filter.Count, _jsonSerializerOptions");
+        code.Should().Contain("_contentSerializer.Serialize<");
+        code.Should().Contain("filter.Count)");
         code.Should().NotContain("var __val_Count");
     }
 
@@ -176,7 +175,7 @@ public class QueryParameterAotTests
 
     /// <summary>
     /// 验证 [Query] 复杂类型 + TypeSymbol 可用时，
-    /// 生成的代码使用泛型 JsonSerializer.Serialize&lt;T&gt;(value, _jsonSerializerOptions)。
+    /// 生成的代码使用 _contentSerializer.Serialize&lt;T&gt;(value)。
     /// </summary>
     [Fact]
     public void GenerateQueryParameters_QueryComplexTypeWithSymbol_UsesGenericSerializeOverload()
@@ -203,8 +202,7 @@ public class QueryParameterAotTests
         var code = codeBuilder.ToString();
 
         // [Query] 复杂类型默认使用 JSON 序列化
-        code.Should().Contain("JsonSerializer.Serialize<");
-        code.Should().Contain("_jsonSerializerOptions");
+        code.Should().Contain("_contentSerializer.Serialize<");
 
         // 不应回退到反射路径
         code.Should().NotContain("FlattenObjectToQueryParams");
@@ -283,8 +281,8 @@ public class QueryParameterAotTests
         // 回退到反射路径
         code.Should().Contain("FlattenObjectToQueryParams");
 
-        // 不应包含 AOT 安全的泛型序列化（因为走反射路径）
-        code.Should().NotContain("JsonSerializer.Serialize<");
+        // 不应包含 AOT 安全的序列化（因为走反射路径）
+        code.Should().NotContain("_contentSerializer.Serialize<");
         code.Should().NotContain("_jsonSerializerOptions");
     }
 

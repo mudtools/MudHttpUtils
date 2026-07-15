@@ -62,7 +62,7 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine($"    {GeneratedCodeConsts.HttpGeneratedCodeAttribute}");
         // AOT v4 Phase 19.2 / D6/D14：原类级 [UnconditionalSuppressMessage] 已移除，
         // 改为方法级精准压制（见 MethodGenerator.WriteMethodLevelSuppressMessage），
-        // 仅覆盖真正引用 _jsonSerializerOptions 的生成方法，避免误覆盖 XML 路径
+        // 仅覆盖经执行器间接 JSON 序列化的生成方法，避免误覆盖 XML 路径
         // （XML 路径在 AOT 下已由 AOT007 分析器在编译期阻止，见 Phase 18）。
         // NEW-GEN-05 说明：使用 internal 强制通过 DI 接口消费，符合"面向接口编程"原则。
         // 跨程序集测试场景可通过 InternalsVisibleTo 配置。

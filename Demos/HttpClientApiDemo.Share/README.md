@@ -301,18 +301,14 @@ if (__queryParams.Count > 0)
     __url += "?" + __queryParams.ToString();
 
 // 生成的代码（CreateUserAsync — 复杂类型自动推断为请求体）
-var __jsonContent = JsonSerializer.Serialize(user, _jsonSerializerOptions);
-using var __jsonStrContent = new StringContent(__jsonContent, Encoding.UTF8, _defaultContentType);
-__httpRequest.Content = __jsonStrContent;
+__httpRequest.Content = _contentSerializer.ToHttpContent(user);
 
 // 生成的代码（AdvancedSearchUsersAsync — 混合推断）
 var __queryParams = global::Mud.HttpUtils.QueryParameterBuilder.Create();
 __queryParams.Add("keyword", keyword);           // string → 查询参数
 if (__queryParams.Count > 0)
     __url += "?" + __queryParams.ToString();
-var __jsonContent = JsonSerializer.Serialize(criteria, _jsonSerializerOptions);  // 复杂类型 → 请求体
-using var __jsonStrContent = new StringContent(__jsonContent, Encoding.UTF8, _defaultContentType);
-__httpRequest.Content = __jsonStrContent;
+__httpRequest.Content = _contentSerializer.ToHttpContent(criteria);  // 复杂类型 → 请求体
 ```
 
 ## 相关文档

@@ -50,7 +50,7 @@ public class LoginResult
 /// <remarks>
 /// 此类型用于验证 [Query] 复杂类型参数的 JSON 序列化 AOT 安全路径。
 /// 源生成器在编译期为每个属性发射内联代码，
-/// JSON 序列化使用泛型重载 JsonSerializer.Serialize&lt;T&gt;(value, _jsonSerializerOptions)。
+/// JSON 序列化使用 _contentSerializer.Serialize&lt;T&gt;(value)。
 /// </remarks>
 [HttpJsonSerializable(SerializerClassName = "App", NamingPolicy = JsonNamingPolicyHint.CamelCase)]
 public class SearchCriteria

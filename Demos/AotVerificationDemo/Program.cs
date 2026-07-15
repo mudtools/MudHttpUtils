@@ -99,7 +99,8 @@ public class Program
             options.TypeInfoResolver = AppJsonContext.Default;
         });
 
-        // 2. 注册 EnhancedHttpClient（DI 路径会透传 IOptions<JsonSerializerOptions> 至基类）
+        // 2. 注册 EnhancedHttpClient（DI 路径经由 IHttpContentSerializer 序列化，options 含消费方 resolver）
+        //    亦可使用 services.AddMudHttpContentSerializer(AppJsonContext.Default) 直接注入带 context 的序列化器
         services.AddMudHttpClient("default", client =>
         {
             client.BaseAddress = new Uri("https://httpbin.org");
@@ -181,7 +182,7 @@ public class Program
 
         try
         {
-            // EnhancedHttpClient 内置方法使用 _jsonOptions（含 JsonSerializerContext resolver）
+            // EnhancedHttpClient 内置方法使用 _contentSerializer（其 options 含 JsonSerializerContext resolver）
             var result = await httpClient.PostAsJsonAsync<CreateUserRequest, UserDto>(
                 "/api/users",
                 new CreateUserRequest { Name = "Direct", Email = "direct@example.com" });
@@ -279,7 +280,7 @@ public class Program
     /// </summary>
     /// <remarks>
     /// [Query] 复杂类型参数由源生成器在编译期发射内联属性展平代码，
-    /// JSON 序列化使用泛型重载 JsonSerializer.Serialize&lt;T&gt;(value, _jsonSerializerOptions)，
+    /// JSON 序列化使用 _contentSerializer.Serialize&lt;T&gt;(value)，
     /// 而非非泛型 JsonSerializer.Serialize(object?) 重载（AOT 不安全）。
     /// 此场景验证 JsonAotSourceGeneratorPlan §3.6 的修复。
     /// </remarks>
@@ -291,7 +292,7 @@ public class Program
         try
         {
             // [Query] 复杂类型参数，源生成器在编译期发射内联属性展平代码
-            // 简单类型属性（string/int/bool）使用 JsonSerializer.Serialize<T>(value, _jsonSerializerOptions)
+            // 简单类型属性（string/int/bool）使用 _contentSerializer.Serialize<T>(value)
             var results = await searchApi.AdvancedSearchAsync(new SearchCriteria
             {
                 Keyword = "test",
@@ -310,7 +311,7 @@ public class Program
             Console.WriteLine($"  AdvancedSearchAsync — 异常: {ex.GetType().Name}: {ex.Message}");
         }
 
-        Console.WriteLine("  [✓] 复杂查询参数 JSON 序列化路径已执行（JsonSerializer.Serialize<T> + _jsonSerializerOptions）\n");
+        Console.WriteLine("  [✓] 复杂查询参数 JSON 序列化路径已执行（_contentSerializer.Serialize<T>）\n");
     }
 
     // ─────────────────────────────────────────────────────────
@@ -469,7 +470,7 @@ public class Program
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <c>EncryptContent&lt;T&gt;</c> 内部使用 <c>JsonSerializer.Serialize&lt;T&gt;(content, _jsonOptions)</c>
+    /// <c>EncryptContent&lt;T&gt;</c> 内部使用 <c>_contentSerializer.Serialize&lt;T&gt;(content)</c>
     /// （AOT 安全泛型重载）+ <c>Utf8JsonWriter</c> 直接构建外层 JSON（避免 Dictionary&lt;string, object&gt; 反射）。
     /// </para>
     /// <para>
@@ -489,8 +490,8 @@ public class Program
         };
 
 #if NET8_0_OR_GREATER
-        // 模拟 EncryptContent<T> 内部的 JsonSerializer.Serialize<T>(content, _jsonOptions) 调用
-        // _jsonOptions 含有 AppJsonContext.Default resolver，AOT 安全
+        // 模拟 EncryptContent<T> 内部的 _contentSerializer.Serialize<T>(content) 调用
+        // _contentSerializer 的 options 含有 AppJsonContext.Default resolver，AOT 安全
         var serializedContent = JsonSerializer.Serialize(user, AppJsonContext.Default.UserDto);
         Console.WriteLine($"  Serialize<UserDto> => {serializedContent}");
 

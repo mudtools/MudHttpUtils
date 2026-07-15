@@ -21,7 +21,8 @@ public class Program
                     options.TypeInfoResolver = DemoJsonContext.Default;
                 });
 
-                // 2. 注册 EnhancedHttpClient（DI 路径透传 IOptions<JsonSerializerOptions>）
+                // 2. 注册 EnhancedHttpClient（DI 路径经由 IHttpContentSerializer 序列化，options 含消费方 resolver）
+                //    亦可使用 services.AddMudHttpContentSerializer(DemoJsonContext.Default) 直接注入带 context 的序列化器
                 services.AddMudHttpClient("default", client =>
                 {
                     client.BaseAddress = new Uri("https://httpbin.org");

@@ -45,7 +45,7 @@ public class DefaultHttpRequestExecutor(
     private readonly IAppResiliencePolicyResolver? _appResilienceResolver = appResilienceResolver;
     private readonly IAppContextHolder? _appContextHolder = appContextHolder;
     private readonly ILogger _logger = logger ?? NullLogger<DefaultHttpRequestExecutor>.Instance;
-    private readonly IHttpContentSerializer _contentSerializer = contentSerializer ?? new SystemTextJsonContentSerializer();
+    private readonly IHttpContentSerializer _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
 
     /// <summary>
     /// 解析当前请求应使用的弹性策略解析器。

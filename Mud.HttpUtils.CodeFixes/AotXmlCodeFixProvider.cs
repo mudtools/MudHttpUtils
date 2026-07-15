@@ -53,7 +53,11 @@ public class AotXmlCodeFixProvider : CodeFixProvider
         var attribute = token.Parent?.FirstAncestorOrSelf<AttributeSyntax>();
         if (attribute == null) return;
 
-        // 确认该特性是 SerializationMethod 特性且包含 Xml 参数
+        // 确认该特性是 SerializationMethod 特性（避免误伤其他含 "Xml" 字样的特性）
+        if (!IsSerializationMethodAttribute(attribute))
+            return;
+
+        // 确认特性参数包含 Xml 值
         if (!ContainsXmlArgument(attribute))
             return;
 
@@ -71,10 +75,16 @@ public class AotXmlCodeFixProvider : CodeFixProvider
         foreach (var arg in attribute.ArgumentList.Arguments)
         {
             var expr = arg.Expression.ToString();
-            if (expr.Contains("Xml"))
+            if (expr.Contains("SerializationMethod.Xml") || expr.Contains("Xml"))
                 return true;
         }
         return false;
+    }
+
+    private static bool IsSerializationMethodAttribute(AttributeSyntax attribute)
+    {
+        var name = attribute.Name.ToString();
+        return name.Contains("SerializationMethod");
     }
 
     private static Task<Document> ReplaceXmlWithJsonAsync(

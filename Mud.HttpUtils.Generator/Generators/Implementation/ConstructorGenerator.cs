@@ -128,11 +128,6 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     private void GenerateFieldsForNonInheritedMode(StringBuilder codeBuilder)
     {
         codeBuilder.AppendLine("        /// <summary>");
-        codeBuilder.AppendLine("        /// 用于JSON内容序列化与反序列化操作的<see cref = \"JsonSerializerOptions\"/> 参数实例。");
-        codeBuilder.AppendLine("        /// </summary>");
-        codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly JsonSerializerOptions _jsonSerializerOptions;");
-
-        codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine("        /// HTTP 内容序列化器，统一处理 JSON 序列化/反序列化操作。");
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IHttpContentSerializer _contentSerializer;");
@@ -333,7 +328,6 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine($"        /// 构建 <see cref = \"{className}\"/> 类的实例。");
         codeBuilder.AppendLine("        /// </summary>");
-        codeBuilder.AppendLine("        /// <param name=\"option\">Json序列化参数</param>");
         codeBuilder.AppendLine("        /// <param name=\"contentSerializer\">HTTP 内容序列化器（可选,未注入时使用默认 SystemTextJsonContentSerializer）</param>");
         codeBuilder.AppendLine("        /// <param name=\"logger\">日志记录器（可选）</param>");
 
@@ -393,10 +387,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     /// </summary>
     private void GenerateConstructorSignature(StringBuilder codeBuilder, string className)
     {
-        var parameters = new List<string>
-                {
-                "IOptions<JsonSerializerOptions> option"
-                };
+        var parameters = new List<string>();
 
         if (_context.HasTokenManager)
         {
@@ -457,10 +448,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
 
         if (_context.HasInheritedFrom)
         {
-            var baseParameters = new List<string>
-            {
-                "option",
-            };
+            var baseParameters = new List<string>();
             if (_context.HasTokenManager)
             {
                 if (_context.Configuration.BaseHasTokenManager)
@@ -513,16 +501,13 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     /// 生成构造函数体
     /// </summary>
     private void GenerateConstructorBody(StringBuilder codeBuilder)
-    {
-        codeBuilder.AppendLine("        {");
-
-        if (!_context.HasInheritedFrom)
         {
-            codeBuilder.AppendLine("            if (option == null)");
-            codeBuilder.AppendLine("                throw new ArgumentNullException(nameof(option));");
-            codeBuilder.AppendLine("            _jsonSerializerOptions = option.Value ?? throw new InvalidOperationException(\"JsonSerializerOptions 选项值不能为 null。\");");
-            codeBuilder.AppendLine("            _contentSerializer = contentSerializer ?? new SystemTextJsonContentSerializer(_jsonSerializerOptions);");
-            codeBuilder.AppendLine("            _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;");
+            codeBuilder.AppendLine("        {");
+
+            if (!_context.HasInheritedFrom)
+            {
+                codeBuilder.AppendLine("            _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();");
+                codeBuilder.AppendLine("            _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;");
 
             if (_context.HasTokenManager)
             {
