@@ -359,6 +359,15 @@ internal class MethodGenerator : ICodeFragmentGenerator
             return;
         }
 
+        // [v2.4 §2.4] HttpResponseMessage 直达返回 — 架构红线例外
+        // 绕过 _executor，直接调用 IBaseHttpClient.SendRawAsync。
+        // 理由：用户选择 HttpResponseMessage 返回即表明自管错误处理/反序列化/缓存/弹性等全部后续逻辑。
+        if (IsHttpResponseMessageType(deserializeType))
+        {
+            codeBuilder.AppendLine($"            return await {httpClientExpr}.SendRawAsync(__httpRequest{cancellationTokenArg}).ConfigureAwait(false);");
+            return;
+        }
+
         // void 返回 — 使用非泛型 ExecuteAsync（支持 Cache/Resilience 编排）
         if (IsVoidType(deserializeType))
         {
@@ -567,6 +576,16 @@ internal class MethodGenerator : ICodeFragmentGenerator
     private static bool IsVoidType(string type)
     {
         return type == "void" || type == "System.Void";
+    }
+
+    /// <summary>
+    /// [v2.4 §2.4] 判断类型是否为 HttpResponseMessage（直达返回路径）。
+    /// 支持简写和全限定名。
+    /// </summary>
+    private static bool IsHttpResponseMessageType(string type)
+    {
+        return type == "HttpResponseMessage" ||
+        type == "System.Net.Http.HttpResponseMessage";
     }
 
     /// <summary>

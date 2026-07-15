@@ -181,18 +181,18 @@ public class JsonOptionsAotTests : IClassFixture<UrlValidatorFixture>
     public async Task EnhancedHttpClient_WithoutIOptions_DefaultOptionsUsesCamelCaseCaseInsensitive()
     {
         // Arrange: 不传 IOptions，默认 options 有 PropertyNameCaseInsensitive=true
-        // 所以 USER_NAME/userName/UserName 都能匹配到 UserName 属性
-        var responseBody = "{\"USER_NAME\":\"Alice\",\"USER_AGE\":25}";
+        // 所以 USERNAME/userName/UserName 都能匹配到 UserName 属性（仅大小写不同，不含下划线）
+        var responseBody = "{\"USERNAME\":\"Alice\",\"USERAGE\":25}";
         var handler = CreateMockHandler(responseBody, HttpStatusCode.OK);
 
         var httpClient = new HttpClient(handler.Object) { BaseAddress = new Uri("https://api.example.com") };
         var client = new AotTestEnhancedClient(httpClient, new EnhancedHttpClientOptions { AllowCustomBaseUrls = true });
 
-        // Act: 默认 options 的 PropertyNameCaseInsensitive=true，USER_NAME 能匹配 UserName
+        // Act: 默认 options 的 PropertyNameCaseInsensitive=true，USERNAME 能匹配 UserName
         var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/test");
         var result = await client.SendAsync<TestDto>(request);
 
-        // Assert: 因大小写不敏感，USER_NAME 匹配 UserName
+        // Assert: 因大小写不敏感，USERNAME 匹配 UserName
         result.Should().NotBeNull();
         result!.UserName.Should().Be("Alice");
         result.UserAge.Should().Be(25);
@@ -303,7 +303,7 @@ public class JsonOptionsAotTests : IClassFixture<UrlValidatorFixture>
 
         var capturedRequest = new CapturedRequest();
         var handler = CreateMockHandlerCapturingRequest(
-            "{\"user_name\":\"test\",\"age\":30}", HttpStatusCode.OK, capturedRequest);
+            "{\"user_name\":\"test\",\"user_age\":30}", HttpStatusCode.OK, capturedRequest);
 
         var httpClient = new HttpClient(handler.Object) { BaseAddress = new Uri("https://api.example.com") };
         // 直接注入自定义序列化器，不传 IOptions
@@ -313,13 +313,13 @@ public class JsonOptionsAotTests : IClassFixture<UrlValidatorFixture>
             contentSerializer: customSerializer);
 
         // Act
-        await client.PostAsJsonAsync<TestDto, TestDto>("/api/test", new TestDto { Name = "test", Age = 30 });
+        await client.PostAsJsonAsync<TestDto, TestDto>("/api/test", new TestDto { UserName = "test", UserAge = 30 });
 
-        // Assert: 自定义序列化器的 SnakeCaseLower 策略应生效（user_name, age）
+        // Assert: 自定义序列化器的 SnakeCaseLower 策略应生效（user_name, user_age）
         capturedRequest.Body.Should().NotBeNull();
         capturedRequest.Body!.Should().Contain("\"user_name\"");
-        capturedRequest.Body.Should().Contain("\"age\"");
-        capturedRequest.Body.Should().NotContain("\"Name\"");
+        capturedRequest.Body.Should().Contain("\"user_age\"");
+        capturedRequest.Body.Should().NotContain("\"UserName\"");
         capturedRequest.Body.Should().NotContain("\"userName\"");
     }
 
@@ -339,7 +339,7 @@ public class JsonOptionsAotTests : IClassFixture<UrlValidatorFixture>
         var customSerializer = new SystemTextJsonContentSerializer(customOptions);
 
         // 返回 snake_case JSON
-        var responseBody = "{\"user_name\":\"Alice\",\"age\":25}";
+        var responseBody = "{\"user_name\":\"Alice\",\"user_age\":25}";
         var handler = CreateMockHandler(responseBody, HttpStatusCode.OK);
 
         var httpClient = new HttpClient(handler.Object) { BaseAddress = new Uri("https://api.example.com") };
@@ -354,8 +354,8 @@ public class JsonOptionsAotTests : IClassFixture<UrlValidatorFixture>
 
         // Assert: 自定义序列化器能正确反序列化 snake_case JSON
         result.Should().NotBeNull();
-        result!.Name.Should().Be("Alice");
-        result.Age.Should().Be(25);
+        result!.UserName.Should().Be("Alice");
+        result.UserAge.Should().Be(25);
     }
 
     #endregion
@@ -406,7 +406,7 @@ public class JsonOptionsAotTests : IClassFixture<UrlValidatorFixture>
 
         var capturedRequest = new CapturedRequest();
         var handler = CreateMockHandlerCapturingRequest(
-            "{\"user_name\":\"test\",\"age\":30}", HttpStatusCode.OK, capturedRequest);
+            "{\"user_name\":\"test\",\"user_age\":30}", HttpStatusCode.OK, capturedRequest);
 
         var httpClient = new HttpClient(handler.Object) { BaseAddress = new Uri("https://api.example.com") };
         var mockFactory = new Mock<IHttpClientFactory>();
@@ -422,12 +422,12 @@ public class JsonOptionsAotTests : IClassFixture<UrlValidatorFixture>
         var newClient = client.WithBaseAddress(new Uri("https://api.example.com/v2"));
 
         // 使用重建后的实例发送请求
-        await newClient.PostAsJsonAsync<TestDto, TestDto>("/api/test", new TestDto { Name = "test", Age = 30 });
+        await newClient.PostAsJsonAsync<TestDto, TestDto>("/api/test", new TestDto { UserName = "test", UserAge = 30 });
 
         // Assert: 重建实例仍使用自定义序列化器的 SnakeCaseLower 策略
         capturedRequest.Body.Should().NotBeNull();
         capturedRequest.Body!.Should().Contain("\"user_name\"");
-        capturedRequest.Body.Should().NotContain("\"Name\"");
+        capturedRequest.Body.Should().NotContain("\"UserName\"");
         capturedRequest.Body.Should().NotContain("\"userName\"");
     }
 

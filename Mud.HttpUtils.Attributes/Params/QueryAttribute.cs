@@ -92,4 +92,47 @@ public sealed class QueryAttribute : Attribute
     /// </para>
     /// </remarks>
     public string? Separator { get; set; }
+
+    /// <summary>
+    /// 获取或设置查询参数名的前缀。前缀将拼接到参数名前（如 Prefix="filter" + Name="keyword" => "filter.keyword"）。
+    /// </summary>
+    /// <remarks>
+    /// 对齐 Refit 的 <c>Prefix</c> 概念，适用于复杂对象展平时为属性名添加统一前缀。
+    /// 默认为 <c>null</c>（无前缀）。
+    /// </remarks>
+    public string? Prefix { get; set; }
+
+    /// <summary>
+    /// 获取或设置集合类型参数的序列化格式。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 对齐 Refit 的 <c>CollectionFormat</c> 概念。控制数组/集合参数在查询字符串中的格式化方式。
+    /// </para>
+    /// <para>
+    /// 默认为 <see cref="QueryCollectionFormat.Multi"/>（重复参数模式：?ids=1&amp;ids=2）。
+    /// 设置为 <see cref="QueryCollectionFormat.Csv"/> 等分隔模式时，将覆盖 <see cref="Separator"/> 的值。
+    /// </para>
+    /// </remarks>
+    public QueryCollectionFormat CollectionFormat { get; set; } = QueryCollectionFormat.Multi;
+
+    /// <summary>
+    /// 获取或设置一个值，指示是否将参数值强制视为字符串（使用 ToString() 而非 JSON 序列化）。
+    /// </summary>
+    /// <remarks>
+    /// 对齐 Refit 的 <c>TreatAsString</c> 概念。对于复杂类型参数，默认使用 JSON 序列化。
+    /// 设置为 <c>true</c> 时，参数值将直接调用 ToString() 作为查询参数值，跳过 JSON 序列化。
+    /// 默认为 <c>false</c>。
+    /// </remarks>
+    public bool TreatAsString { get; set; }
+
+    /// <summary>
+    /// 获取或设置一个值，指示是否序列化 null 值（作为空查询参数）。
+    /// </summary>
+    /// <remarks>
+    /// 对齐 Refit 的 <c>SerializeNull</c> 概念。默认情况下 null 值被跳过（不添加到查询字符串）。
+    /// 设置为 <c>true</c> 时，null 值将序列化为空查询参数（如 ?keyword=）。
+    /// 默认为 <c>false</c>。
+    /// </remarks>
+    public bool SerializeNull { get; set; }
 }

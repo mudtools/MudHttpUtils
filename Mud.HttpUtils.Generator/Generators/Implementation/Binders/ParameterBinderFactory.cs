@@ -13,6 +13,7 @@ internal class ParameterBinderFactory
             new PathParameterBinder(),
             new QueryParameterBinder(),
             new HeaderParameterBinder(),
+            new HeaderCollectionParameterBinder(),
             new BodyParameterBinder()
         };
     }

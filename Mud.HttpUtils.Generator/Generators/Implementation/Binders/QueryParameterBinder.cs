@@ -203,6 +203,22 @@ internal class QueryParameterBinder : IParameterBinder
             separatorExplicitlySet = true;
         }
 
+        // [v2.4 §2.3] 消费 CollectionFormat 命名参数（对齐 Refit）
+        // CollectionFormat 为非 Multi 时覆盖 Separator（除非 Separator 被显式设置且 CollectionFormat 未显式设置）
+        if (attr.NamedArguments.TryGetValue("CollectionFormat", out var cfVal) && cfVal is int cfInt && cfInt != 0)
+        {
+            // CollectionFormat 被显式设置为非 Multi，推导分隔符
+            separator = cfInt switch
+            {
+                1 => ",",    // Csv
+                2 => " ",    // Ssv
+                3 => "\t",   // Tsv
+                4 => "|",    // Pipes
+                _ => null
+            };
+            separatorExplicitlySet = true;
+        }
+
         // 计算最终生效的分隔符：显式设置则使用设置的值，未设置则使用默认值
         var effectiveSeparator = separatorExplicitlySet ? separator : defaultSeparator;
 

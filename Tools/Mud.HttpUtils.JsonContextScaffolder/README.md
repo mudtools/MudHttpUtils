@@ -51,7 +51,7 @@ services.AddMudHttpClientJsonContext(FeishuAIJsonContext.Default);
 #endif
 ```
 
-库内置 `BuildJsonOptions` 会自动把消费方 resolver 与库内置 `MudHttpJsonContext.Default` 合并。
+库内置 `HttpContentSerializerFactory.BuildOptions` 会自动把消费方 resolver 与库内置 `MudHttpJsonContext.Default` 合并。
 
 ## [HttpClientApi] 接口自动扫描（默认开启）
 

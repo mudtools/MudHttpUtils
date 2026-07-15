@@ -20,7 +20,7 @@ namespace Mud.HttpUtils.Attributes;
 /// <para>
 /// 消费方将生成的 <c>XxxJsonContext.Default</c> 注入 <c>EnhancedHttpClientOptions.JsonTypeInfoResolver</c>
 /// 或通过 <c>services.Configure&lt;JsonSerializerOptions&gt;(o =&gt; o.TypeInfoResolver = ...)</c> 注入。
-/// 库内置 <c>BuildJsonOptions</c> 会自动合并消费方 resolver 与库内置 <c>MudHttpJsonContext.Default</c>。
+/// 库内置 <c>HttpContentSerializerFactory.BuildOptions</c> 会自动合并消费方 resolver 与库内置 <c>MudHttpJsonContext.Default</c>。
 /// </para>
 /// </remarks>
 /// <example>
@@ -47,7 +47,7 @@ public sealed class HttpJsonSerializableAttribute : Attribute
     /// JSON 命名策略。设为 <see cref="JsonNamingPolicyHint.Default"/> 时由 Scaffolder 自动推导：
     /// <list type="number">
     ///   <item>程序集中超过 50% 的实体使用 <c>[JsonPropertyName]</c> 且符合 SnakeCaseLower 模式 → 自动选 SnakeCaseLower</item>
-    ///   <item>否则默认 CamelCase（与库 <c>s_defaultJsonSerializerOptions</c> 一致）</item>
+    ///   <item>否则默认 CamelCase（与库 <c>HttpContentSerializerFactory</c> 内置默认 options 一致）</item>
     /// </list>
     /// 显式指定将覆盖自动推导。
     /// </summary>
