@@ -410,6 +410,8 @@ internal class QueryParameterBinder : IParameterBinder
         else
         {
             // 复杂类型：回退到 FlattenObjectToQueryParams 处理嵌套属性
+        // 已知限制（v2.4 §1.2）：嵌套复杂属性仍走反射回退路径。
+        // 全深度内联化需权衡递归代码膨胀与 AOT 收益，当前接受此限制。
             codeBuilder.AppendLine($"{indent}if ({objName}.{propName} != null)");
             codeBuilder.AppendLine($"{indent}{{");
             codeBuilder.AppendLine($"{indent}    FlattenObjectToQueryParams({objName}.{propName}, \"{escapedKey}\", \"{StringEscapeHelper.EscapeString(separator)}\", __queryParams, {includeNullValues.ToString().ToLowerInvariant()}, {useJsonSerialization.ToString().ToLowerInvariant()}, {urlEncode.ToString().ToLowerInvariant()}, __rawQueryPairs);");

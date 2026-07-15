@@ -902,4 +902,56 @@ public static class HttpClientServiceCollectionExtensions
         return services;
     }
 #endif
+
+    /// <summary>
+    /// 注册源生成的 API 客户端基础设施（AOT 安全，无反射回退）。
+    /// </summary>
+    /// <typeparam name="T">标记了 <c>[HttpClientApi]</c> 特性的接口类型。</typeparam>
+    /// <param name="services">服务集合。</param>
+    /// <param name="clientName">Named HttpClient 的名称。</param>
+    /// <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <remarks>
+    /// <para>
+    /// 此方法为 <b>AOT 严格生成优先</b>入口，不标注 <c>[RequiresUnreferencedCode]</c>，
+    /// 不使用反射回退。注册的基础设施包括：
+    /// <list type="bullet">
+    /// <item><description><see cref="IEnhancedHttpClient"/>（经 IHttpClientFactory 创建）</description></item>
+    /// <item><description><see cref="IBaseHttpClient"/>（指向 IEnhancedHttpClient）</description></item>
+    /// <item><description><see cref="IHttpContentSerializer"/>（SystemTextJsonContentSerializer）</description></item>
+    /// <item><description><see cref="IHttpRequestExecutor"/>（DefaultHttpRequestExecutor）</description></item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// <b>注意</b>：此方法仅注册基础设施。<typeparamref name="T"/> 的实际实现注册由源生成器
+    /// 自动生成的 <c>AddWebApiHttpClient()</c> 方法完成。使用方式：
+    /// <code>
+    /// services.AddMudHttpGeneratedClient&lt;IUserApi&gt;("default", c => c.BaseAddress = new Uri("https://api.example.com"));
+    /// services.AddWebApiHttpClient(); // 源生成器自动生成
+    /// </code>
+    /// </para>
+    /// <para>
+    /// 解析 API 客户端时使用 <see cref="RestService.ForGenerated{T}(IServiceProvider)"/>：
+    /// <code>
+    /// var userApi = RestService.ForGenerated&lt;IUserApi&gt;(serviceProvider);
+    /// </code>
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+    public static IServiceCollection AddMudHttpGeneratedClient<T>(
+        this IServiceCollection services,
+        string clientName,
+        Action<HttpClient>? configureHttpClient = null) where T : class
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+        if (string.IsNullOrWhiteSpace(clientName))
+            throw new ArgumentNullException(nameof(clientName));
+
+        // 注册 HttpClient 基础设施（复用 AddMudHttpClient 的基础设施注册逻辑，
+        // 包括 IEnhancedHttpClient / IBaseHttpClient / IHttpContentSerializer / IHttpRequestExecutor 等）
+        services.AddMudHttpClient(clientName, configureHttpClient, setAsDefault: true);
+
+        return services;
+    }
 }

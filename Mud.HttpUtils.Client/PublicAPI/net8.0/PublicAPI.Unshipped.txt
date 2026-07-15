@@ -20,8 +20,8 @@ const Mud.HttpUtils.UserTokenCacheOptions.DefaultSlidingExpirationSeconds = 3600
 const Mud.HttpUtils.UserTokenCacheOptions.SectionName = "MudHttpUserTokenCache" -> string!
 Mud.HttpUtils.AotSafeSensitiveDataMasker
 Mud.HttpUtils.AotSafeSensitiveDataMasker.AotSafeSensitiveDataMasker() -> void
-Mud.HttpUtils.AotSafeSensitiveDataMasker.Mask(string! value, Mud.HttpUtils.SensitiveDataMaskMode mode = Mud.HttpUtils.SensitiveDataMaskMode.Mask, int prefixLength = 2, int suffixLength = 2) -> string!
-Mud.HttpUtils.AotSafeSensitiveDataMasker.MaskObject(object! obj) -> string!
+virtual Mud.HttpUtils.AotSafeSensitiveDataMasker.Mask(string! value, Mud.HttpUtils.SensitiveDataMaskMode mode = Mud.HttpUtils.SensitiveDataMaskMode.Mask, int prefixLength = 2, int suffixLength = 2) -> string!
+virtual Mud.HttpUtils.AotSafeSensitiveDataMasker.MaskObject(object! obj) -> string!
 Mud.HttpUtils.AotSafeSensitiveDataMasker.Register<T>(System.Func<T!, string!>! maskFunc) -> void
 Mud.HttpUtils.AsyncEnumerableExtensions
 Mud.HttpUtils.AsyncLocalAppContextSwitcher
@@ -85,10 +85,10 @@ Mud.HttpUtils.DefaultHttpRequestExecutor.SendAndDeserializeAsync<TResult>(System
 Mud.HttpUtils.DefaultHttpRequestExecutor.SendAsAsyncEnumerable<TElement>(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, object? jsonSerializerOptions, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TElement>!
 Mud.HttpUtils.DefaultHttpRequestExecutor.SendAsResponseAsync<TInner>(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, Mud.HttpUtils.ResponseDescriptor! descriptor, object? jsonSerializerOptions, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.Response<TInner>!>!
 Mud.HttpUtils.DefaultHttpRequestExecutor.SendAsync(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, Mud.HttpUtils.ResponseDescriptor! descriptor, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Mud.HttpUtils.DefaultSensitiveDataMasker
-Mud.HttpUtils.DefaultSensitiveDataMasker.DefaultSensitiveDataMasker() -> void
-Mud.HttpUtils.DefaultSensitiveDataMasker.Mask(string! value, Mud.HttpUtils.SensitiveDataMaskMode mode = Mud.HttpUtils.SensitiveDataMaskMode.Mask, int prefixLength = 2, int suffixLength = 2) -> string!
-Mud.HttpUtils.DefaultSensitiveDataMasker.MaskObject(object! obj) -> string!
+~Mud.HttpUtils.DefaultSensitiveDataMasker
+~Mud.HttpUtils.DefaultSensitiveDataMasker.DefaultSensitiveDataMasker() -> void
+~Mud.HttpUtils.DefaultSensitiveDataMasker.Mask(string! value, Mud.HttpUtils.SensitiveDataMaskMode mode = Mud.HttpUtils.SensitiveDataMaskMode.Mask, int prefixLength = 2, int suffixLength = 2) -> string!
+~Mud.HttpUtils.DefaultSensitiveDataMasker.MaskObject(object! obj) -> string!
 Mud.HttpUtils.DefaultUrlParameterFormatter
 Mud.HttpUtils.DefaultUrlParameterFormatter.DefaultUrlParameterFormatter() -> void
 Mud.HttpUtils.DefaultUrlParameterFormatter.Format(object? value, System.Reflection.ICustomAttributeProvider? attributeProvider, System.Type! type) -> string?
@@ -430,3 +430,4 @@ static Mud.HttpUtils.AsyncEnumerableExtensions.SendAsAsyncEnumerable<T>(this Mud
 Mud.HttpUtils.EnhancedHttpClientOptions.JsonTypeInfoResolver.get -> System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver?
 Mud.HttpUtils.EnhancedHttpClientOptions.JsonTypeInfoResolver.set -> void
 static Mud.HttpUtils.ServiceCollectionExtensions.AddMudHttpClientJsonContext(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver! context) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpGeneratedClient<T>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! clientName, System.Action<System.Net.Http.HttpClient!>? configureHttpClient = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

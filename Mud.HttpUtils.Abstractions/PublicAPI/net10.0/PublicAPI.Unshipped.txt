@@ -709,3 +709,5 @@ virtual Mud.HttpUtils.TokenManagerBase.RefreshRetryDelayMilliseconds.get -> int
 virtual Mud.HttpUtils.TokenManagerBase.RefreshTokenWithScopesAsync(string![]? scopes, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Mud.HttpUtils.CredentialToken!>!
 virtual Mud.HttpUtils.TokenManagerBase.SupportsBackgroundRefresh.get -> bool
 volatile Mud.HttpUtils.TokenManagerBase._disposed -> bool
+Mud.HttpUtils.RestService
+static Mud.HttpUtils.RestService.ForGenerated<T>(System.IServiceProvider! serviceProvider) -> T!

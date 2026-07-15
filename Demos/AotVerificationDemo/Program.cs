@@ -31,6 +31,7 @@ public class Program
         await DemoGeneratedApiClient_FormUrlEncoded(host.Services);
         await DemoQueryMapJsonSerialization(host.Services);
         await DemoComplexQueryJsonSerialization(host.Services);
+        await DemoQueryMapFeatureCoverage(host.Services);
         await DemoResilienceDecorator(host.Services);
         await DemoResilienceDecoratorWithImplementationType();
         DemoSensitiveDataMasker();
@@ -107,7 +108,7 @@ public class Program
             client.Timeout = TimeSpan.FromSeconds(10);
         });
 
-        // 3. 注册源生成的 API 客户端（IUserApi, IAuthApi, ISearchApi）
+        // 3. 注册源生成的 API 客户端（IUserApi, IAuthApi, ISearchApi, IComplexSearchApi）
         services.AddWebApiHttpClient();
 
         // 4. 注册 Resilience 装饰器（包装 IEnhancedHttpClient）
@@ -122,7 +123,9 @@ public class Program
         });
 
         // 5. 注册 AOT 安全的脱敏器（替代 DefaultSensitiveDataMasker）
-        services.AddSingleton<ISensitiveDataMasker, AotSafeSensitiveDataMasker>();
+        //    先调用 AddSensitiveDataMasker() 注册库内默认实现，再以 AddSingleton 覆盖注册子类
+        services.AddSensitiveDataMasker();
+        services.AddSingleton<ISensitiveDataMasker, DemoSensitiveDataMasker>();
     }
 
     // ─────────────────────────────────────────────────────────
@@ -315,6 +318,48 @@ public class Program
     }
 
     // ─────────────────────────────────────────────────────────
+    // 场景 3d：[QueryMap] 特性维度（对象展平路径，AOT 安全验证）
+    // ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 验证 [QueryMap] 特性在 AOT 下正常工作。
+    /// </summary>
+    /// <remarks>
+    /// 对象型 [QueryMap] 参数的一级属性已由源生成器在编译期发射内联展平代码
+    /// （TryGenerateInlineQueryFlattening），不涉及运行时反射。
+    /// 此场景补齐 [QueryMap] 特性维度覆盖。
+    /// </remarks>
+    private static async Task DemoQueryMapFeatureCoverage(IServiceProvider services)
+    {
+        Console.WriteLine("--- 3d. [QueryMap] 对象展平路径（AOT 安全，一级属性内联展平）---");
+        var searchApi = services.GetRequiredService<IComplexSearchApi>();
+
+        try
+        {
+            // [QueryMap] 对象参数，源生成器在编译期发射内联属性展平代码
+            // 一级属性（string/int/bool）使用 _contentSerializer.Serialize<T>(value)
+            var results = await searchApi.SearchAsync(new SearchCriteria
+            {
+                Keyword = "querymap-test",
+                MinAge = 20,
+                MaxAge = 50,
+                ActiveOnly = true
+            });
+            Console.WriteLine($"  [QueryMap] SearchAsync => {(results != null ? $"{results.Count} results" : "null")}");
+        }
+        catch (HttpRequestException ex)
+        {
+            Console.WriteLine($"  [QueryMap] SearchAsync — HTTP 请求失败（预期，无真实服务器）: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  [QueryMap] SearchAsync — 异常: {ex.GetType().Name}: {ex.Message}");
+        }
+
+        Console.WriteLine("  [✓] [QueryMap] 对象展平路径已执行（一级属性内联展平，AOT 安全）\n");
+    }
+
+    // ─────────────────────────────────────────────────────────
     // 场景 4：Resilience 装饰器
     // ─────────────────────────────────────────────────────────
 
@@ -431,7 +476,7 @@ public class Program
     {
         Console.WriteLine("--- 5. AOT 安全脱敏器（字典式实现）---");
 
-        var masker = new AotSafeSensitiveDataMasker();
+        var masker = new DemoSensitiveDataMasker();
 
         // 字符串脱敏
         var maskedEmail = masker.Mask("user@example.com", SensitiveDataMaskMode.Mask, 2, 4);

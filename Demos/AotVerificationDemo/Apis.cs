@@ -56,9 +56,9 @@ public interface IAuthApi
 /// 简单类型（string/int/bool 等）使用 ToString() 序列化，不涉及反射。
 /// </para>
 /// <para>
-/// 对比：[QueryMap] 使用 FlattenObjectToQueryParams() 展平 POCO 对象，
-/// 该方法依赖运行时反射（GetProperties/GetValue），AOT 裁剪后属性元数据丢失，
-/// 已标注 [RequiresUnreferencedCode]，不适用于 Native AOT。
+/// 对比：对象型 [QueryMap] 的一级属性已由源生成器在编译期发射内联展平代码（AOT 安全）。
+/// 仅嵌套复杂属性仍回退到 FlattenObjectToQueryParams() 反射路径（已知限制）。
+/// 简单 [Query] 参数（string/int/bool 等）使用 ToString() 序列化，不涉及反射。
 /// </para>
 /// </remarks>
 [HttpClientApi(HttpClient = "IEnhancedHttpClient")]
@@ -96,26 +96,33 @@ public interface IResponseApi
 }
 
 // ─────────────────────────────────────────────────────────────
-// 非 AOT 安全路径 — 仅文档说明，不在 AOT 构建中使用
+// [QueryMap] 特性维度 Demo 场景（AOT 安全，一级属性已由生成器内联展平）
+// ─────────────────────────────────────────────────────────────
+
+/// <summary>
+/// 复杂搜索 API（[QueryMap] 对象展平路径）
+/// </summary>
+/// <remarks>
+/// 验证 [QueryMap] 特性的 AOT 安全性：
+/// <para>
+/// 对象型 [QueryMap] 参数的一级属性已由源生成器在编译期发射内联展平代码
+/// （TryGenerateInlineQueryFlattening），不涉及运行时反射。
+/// 仅嵌套复杂属性（如 SearchCriteria.Nested）仍回退到 FlattenObjectToQueryParams()
+/// 反射路径（已知限制，需权衡递归代码膨胀与 AOT 收益）。
+/// </para>
+/// </remarks>
+[HttpClientApi(HttpClient = "IEnhancedHttpClient")]
+public interface IComplexSearchApi
+{
+    [Get("/api/search")]
+    Task<List<UserDto>?> SearchAsync([QueryMap] SearchCriteria? criteria = null);
+}
+
+// ─────────────────────────────────────────────────────────────
+// 以下路径在 Native AOT 下不安全 — 仅文档说明，不在 AOT 构建中使用
 // ─────────────────────────────────────────────────────────────
 
 /*
- * ⚠️ QueryMap 路径在 Native AOT 下不安全：
- *
- * [HttpClientApi(HttpClient = "IEnhancedHttpClient")]
- * public interface IComplexSearchApi
- * {
- *     // QueryMap 使用 FlattenObjectToQueryParams() 展平 POCO 对象，
- *     // 该方法依赖运行时反射 (GetProperties/GetValue)，
- *     // AOT 裁剪后属性元数据丢失，查询参数会静默为空。
- *     // 已标注 [RequiresUnreferencedCode]，AOT 分析器会产生 IL2026 警告。
- *     //
- *     // AOT 替代方案（已在上方 ISearchApi 中验证）：
- *     // 使用 [Query] 逐个参数声明，源生成器在编译期发射内联代码。
- *     [Get("/api/search")]
- *     Task<List<UserDto>?> SearchAsync([QueryMap] SearchCriteria criteria);
- * }
- *
  * ⚠️ XML 响应路径在 Native AOT 下不安全：
  *
  * [HttpClientApi(HttpClient = "IEnhancedHttpClient")]
@@ -133,6 +140,6 @@ public interface IResponseApi
  *
  * // DefaultSensitiveDataMasker 使用反射遍历对象属性读取 [SensitiveData] 特性，
  * // AOT 裁剪后属性/特性元数据丢失，敏感字段可能漏脱敏。
- * // 已标注 [RequiresUnreferencedCode]/[RequiresDynamicCode]。
- * // AOT 替代方案：使用编译期安全的字典式 ISensitiveDataMasker 实现（见 AotSafeMasker.cs）。
+ * // 已标注 [Obsolete]/[RequiresUnreferencedCode]/[RequiresDynamicCode]。
+ * // AOT 替代方案：使用 AotSafeSensitiveDataMasker（已标 virtual 可子类化，见 DemoSensitiveDataMasker.cs）。
  */

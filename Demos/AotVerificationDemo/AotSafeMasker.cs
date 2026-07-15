@@ -1,22 +1,27 @@
-using System.Collections.Concurrent;
 using System.Text.Json;
 using Mud.HttpUtils;
 
 namespace AotVerificationDemo;
 
 /// <summary>
-/// AOT 安全的敏感数据脱敏器（编译期字典式实现）。
-/// <para>
-/// 替代 <see cref="DefaultSensitiveDataMasker"/>（使用反射，AOT 下不安全）。
-/// 通过预注册的 {类型 → 属性脱敏规则} 字典在编译期已知所有脱敏目标，
-/// 无运行时反射，Native AOT 裁剪后仍可正确工作。
-/// </para>
+/// Demo 专属脱敏器，子类化库内 <see cref="AotSafeSensitiveDataMasker"/>，
+/// 在构造函数中注册 Demo DTO 的脱敏规则。
 /// </summary>
-public class AotSafeSensitiveDataMasker : ISensitiveDataMasker
+/// <remarks>
+/// <para>
+/// v2.4 重构：原实现为 shadowing 重写（同名类直接实现 <see cref="ISensitiveDataMasker"/>），
+/// 导致 Mask 行为与库版本不一致（null/empty 返回原值、用 <c>*</c> 而非 <c>***</c>）。
+/// 现改为子类化库内 <see cref="AotSafeSensitiveDataMasker"/>，复用其 AOT 安全的字典式实现，
+/// 仅在构造函数中注册 Demo 专属 DTO 规则。
+/// </para>
+/// <para>
+/// 注册方式：先调用 <c>AddSensitiveDataMasker()</c> 注册库内默认实现，
+/// 再以 <c>AddSingleton&lt;ISensitiveDataMasker, DemoSensitiveDataMasker&gt;()</c> 覆盖注册子类。
+/// </para>
+/// </remarks>
+public class DemoSensitiveDataMasker : AotSafeSensitiveDataMasker
 {
-    private readonly ConcurrentDictionary<Type, Func<object, string>> _maskers = new();
-
-    public AotSafeSensitiveDataMasker()
+    public DemoSensitiveDataMasker()
     {
         // 在构造函数中注册所有需要脱敏的类型规则（编译期已知）
         Register<UserDto>(obj =>
@@ -60,46 +65,5 @@ public class AotSafeSensitiveDataMasker : ISensitiveDataMasker
             // 返回脱敏后的字符串表示（避免无 JsonSerializerContext 的 JSON 序列化触发 IL3050）
             return $"{{\"username\":\"{form.Username}\",\"password\":\"***\",\"rememberMe\":{form.RememberMe.ToString().ToLowerInvariant()}}}";
         });
-    }
-
-    /// <summary>
-    /// 注册类型的脱敏规则
-    /// </summary>
-    public void Register<T>(Func<T, string> maskFunc) where T : class
-    {
-        _maskers[typeof(T)] = obj => maskFunc((T)obj);
-    }
-
-    /// <inheritdoc/>
-    public string Mask(string value, SensitiveDataMaskMode mode = SensitiveDataMaskMode.Mask,
-        int prefixLength = 2, int suffixLength = 2)
-    {
-        if (string.IsNullOrEmpty(value))
-            return value;
-
-        return mode switch
-        {
-            SensitiveDataMaskMode.Hide => "***",
-            SensitiveDataMaskMode.Mask => value.Length > prefixLength + suffixLength
-                ? value[..prefixLength] + new string('*', value.Length - prefixLength - suffixLength)
-                  + value[^suffixLength..]
-                : new string('*', value.Length),
-            SensitiveDataMaskMode.TypeOnly => $"[String: {value.Length} chars]",
-            _ => value
-        };
-    }
-
-    /// <inheritdoc/>
-    public string MaskObject(object obj)
-    {
-        if (obj == null)
-            return "null";
-
-        var type = obj.GetType();
-        if (_maskers.TryGetValue(type, out var masker))
-            return masker(obj);
-
-        // 未注册的类型返回类型信息（不序列化未知类型，避免反射）
-        return $"[{type.Name}]";
     }
 }

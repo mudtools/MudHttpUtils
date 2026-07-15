@@ -135,6 +135,15 @@ jobs:
               echo "✗ AOT runtime verification FAILED (net10.0) - AOT_OK not found in output"
               exit 1
             fi
+            # [v2.4 §1.4] 关键场景名硬门禁断言
+            for SCENE in "DemoResponseTypeWrapping" "DemoComplexQueryJsonSerialization" "DemoQueryMapFeatureCoverage" "DemoSensitiveDataMasker"; do
+              if echo "$OUTPUT" | grep -q "$SCENE"; then
+                echo "✓ Scene $SCENE executed (net10.0)"
+              else
+                echo "✗ Scene $SCENE NOT found in output (net10.0)"
+                exit 1
+              fi
+            done
           else
             echo "Binary not found at $BIN_PATH"
             exit 1
@@ -153,6 +162,15 @@ jobs:
               echo "✗ AOT runtime verification FAILED (net8.0) - AOT_OK not found in output"
               exit 1
             fi
+            # [v2.4 §1.4] 关键场景名硬门禁断言
+            for SCENE in "DemoResponseTypeWrapping" "DemoComplexQueryJsonSerialization" "DemoQueryMapFeatureCoverage" "DemoSensitiveDataMasker"; do
+              if echo "$OUTPUT" | grep -q "$SCENE"; then
+                echo "✓ Scene $SCENE executed (net8.0)"
+              else
+                echo "✗ Scene $SCENE NOT found in output (net8.0)"
+                exit 1
+              fi
+            done
           else
             echo "Binary not found at $BIN_PATH"
             exit 1
