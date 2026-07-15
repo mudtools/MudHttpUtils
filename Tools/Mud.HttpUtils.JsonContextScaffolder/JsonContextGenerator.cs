@@ -442,14 +442,17 @@ public class JsonContextGenerator
     /// 判断类型是否为 <see cref="Task"/> / <see cref="ValueTask"/>（含泛型定义）。
     /// </summary>
     /// <remarks>
-    /// 使用 <see cref="INamedTypeSymbol.MetadataName"/> + 命名空间判断，
+    /// 使用 <see cref="ISymbol.Name"/> + 命名空间判断，
     /// 比 <c>ToDisplayString</c> 更健壮——不受 Roslyn 版本、
     /// MSBuildWorkspace 加载状态影响（加载不完全时 ToDisplayString 可能返回非标准格式）。
+    /// 注意：不能使用 <c>MetadataName</c>，因为它对泛型类型返回带 arity 后缀的名称（如 "Task`1"）。
     /// </remarks>
     private static bool IsTaskOrValueTask(INamedTypeSymbol type)
     {
         var ns = type.ContainingNamespace?.ToDisplayString();
-        return (ns, type.MetadataName) is
+        // 使用 Name（不含 arity 后缀）而非 MetadataName（含 "`1" 后缀）。
+        // MetadataName 对于 Task<T> 返回 "Task`1"，Name 返回 "Task"。
+        return (ns, type.Name) is
             ("System.Threading.Tasks", "Task") or
             ("System.Threading.Tasks", "ValueTask");
     }
