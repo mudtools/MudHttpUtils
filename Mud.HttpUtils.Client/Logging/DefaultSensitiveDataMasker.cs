@@ -49,6 +49,7 @@ namespace Mud.HttpUtils;
 /// // 输出: JSON 格式，其中标记为敏感的字段会被掩码处理
 /// </code>
 /// </example>
+[Obsolete("AOT 下不安全，请使用 AotSafeSensitiveDataMasker。详见 https://learn.microsoft.com/dotnet/core/deploying/native-aot")]
 public class DefaultSensitiveDataMasker : ISensitiveDataMasker
 {
     /// <summary>

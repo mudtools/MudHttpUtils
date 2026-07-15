@@ -66,7 +66,7 @@ public class AotSafeSensitiveDataMasker : ISensitiveDataMasker
     /// 此方法的行为与 <see cref="DefaultSensitiveDataMasker.Mask"/> 完全一致，
     /// 确保从反射实现切换到 AOT 安全实现时无行为差异。
     /// </remarks>
-    public string Mask(string value, SensitiveDataMaskMode mode = SensitiveDataMaskMode.Mask, int prefixLength = 2, int suffixLength = 2)
+    public virtual string Mask(string value, SensitiveDataMaskMode mode = SensitiveDataMaskMode.Mask, int prefixLength = 2, int suffixLength = 2)
     {
         if (string.IsNullOrEmpty(value))
             return MaskString;
@@ -102,7 +102,7 @@ public class AotSafeSensitiveDataMasker : ISensitiveDataMasker
     /// 请确保所有需要脱敏的 DTO 均已通过 <see cref="Register{T}"/> 注册。
     /// </para>
     /// </remarks>
-    public string MaskObject(object obj)
+    public virtual string MaskObject(object obj)
     {
         if (obj == null)
             return "null";
