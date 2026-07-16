@@ -35,6 +35,9 @@ namespace Mud.HttpUtils;
 /// <param name="exceptionRedactor">异常擦除器（Phase 2 T2.1）。在异常抛出前擦除敏感数据，为 null 时不执行擦除。</param>
 /// <param name="maxExceptionContentLength">错误响应体最大读取字符数（Phase 2 T2.2）。为 null 时不限制，防止恶意/超大响应导致 OOM。</param>
 /// <param name="captureRequestContent">是否在发送前捕获请求体字符串（Phase 2 T2.3）。为 true 时存入 <see cref="ApiException.RequestContent"/> 供调试。</param>
+/// <param name="httpVersion">HTTP 版本（Phase 3 T3.4）。为 null 时使用 HttpClient 默认版本。</param>
+/// <param name="httpVersionPolicy">HTTP 版本策略（Phase 3 T3.4）。为 null 时使用 HttpClient 默认策略。</param>
+/// <param name="httpRequestMessageOptions">请求消息选项预设（Phase 3 T3.5）。为 null 时不预设。</param>
 public class DefaultHttpRequestExecutor(
     ILogger<DefaultHttpRequestExecutor> logger,
     IHttpResponseCache? cacheProvider = null,
@@ -45,7 +48,13 @@ public class DefaultHttpRequestExecutor(
     // Phase 2 运行时消费参数
     IExceptionRedactor? exceptionRedactor = null,
     int? maxExceptionContentLength = null,
-    bool captureRequestContent = false) : IHttpRequestExecutor
+    bool captureRequestContent = false,
+    // Phase 3 运行时消费参数
+#if NET6_0_OR_GREATER
+    Version? httpVersion = null,
+    System.Net.Http.HttpVersionPolicy? httpVersionPolicy = null,
+#endif
+    Dictionary<string, object?>? httpRequestMessageOptions = null) : IHttpRequestExecutor
 {
     private readonly IHttpResponseCache? _cacheProvider = cacheProvider;
     private readonly IResiliencePolicyResolver? _resilienceResolver = resilienceResolver;
@@ -57,6 +66,11 @@ public class DefaultHttpRequestExecutor(
     private readonly IExceptionRedactor? _exceptionRedactor = exceptionRedactor;
     private readonly int? _maxExceptionContentLength = maxExceptionContentLength;
     private readonly bool _captureRequestContent = captureRequestContent;
+#if NET6_0_OR_GREATER
+    private readonly Version? _httpVersion = httpVersion;
+    private readonly System.Net.Http.HttpVersionPolicy? _httpVersionPolicy = httpVersionPolicy;
+#endif
+    private readonly Dictionary<string, object?>? _httpRequestMessageOptions = httpRequestMessageOptions;
 
     /// <summary>
     /// 解析当前请求应使用的弹性策略解析器。
@@ -89,12 +103,15 @@ public class DefaultHttpRequestExecutor(
         var encryptableClient = httpClient as IEncryptableHttpClient;
 
         // Phase 2 (T2.3)：发送前捕获请求体（启用时）
-        string? capturedRequestContent = _captureRequestContent
-            ? await CaptureRequestContentAsync(request).ConfigureAwait(false)
-            : null;
+string? capturedRequestContent = _captureRequestContent
+? await CaptureRequestContentAsync(request).ConfigureAwait(false)
+: null;
 
-        // 1. 发送请求
-        using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
+// Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
+ApplyRequestConfig(request);
+
+// 1. 发送请求
+using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
 
         // 2. 错误处理（非 AllowAnyStatusCode 模式）
         if (!descriptor.AllowAnyStatusCode && !response.IsSuccessStatusCode)
@@ -236,11 +253,14 @@ public class DefaultHttpRequestExecutor(
         CancellationToken cancellationToken = default)
     {
         // Phase 2 (T2.3)：发送前捕获请求体（启用时）
-        string? capturedRequestContent = _captureRequestContent
-            ? await CaptureRequestContentAsync(request).ConfigureAwait(false)
-            : null;
+string? capturedRequestContent = _captureRequestContent
+? await CaptureRequestContentAsync(request).ConfigureAwait(false)
+: null;
 
-        using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
+// Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
+ApplyRequestConfig(request);
+
+using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (!descriptor.AllowAnyStatusCode && !response.IsSuccessStatusCode)
         {
@@ -265,11 +285,14 @@ public class DefaultHttpRequestExecutor(
         CancellationToken cancellationToken = default)
     {
         // Phase 2 (T2.3)：发送前捕获请求体（启用时）
-        string? capturedRequestContent = _captureRequestContent
-            ? await CaptureRequestContentAsync(request).ConfigureAwait(false)
-            : null;
+string? capturedRequestContent = _captureRequestContent
+? await CaptureRequestContentAsync(request).ConfigureAwait(false)
+: null;
 
-        using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
+// Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
+ApplyRequestConfig(request);
+
+using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
 
         // 错误处理：descriptor 为 null 时默认检查状态码，与普通方法语义一致
         var allowAnyStatusCode = descriptor?.AllowAnyStatusCode ?? false;
@@ -317,11 +340,14 @@ public class DefaultHttpRequestExecutor(
         CancellationToken cancellationToken = default)
     {
         // Phase 2 (T2.3)：发送前捕获请求体（启用时）
-        string? capturedRequestContent = _captureRequestContent
-            ? await CaptureRequestContentAsync(request).ConfigureAwait(false)
-            : null;
+string? capturedRequestContent = _captureRequestContent
+? await CaptureRequestContentAsync(request).ConfigureAwait(false)
+: null;
 
-        // 发送请求并检查状态码（与 DownloadAsync 保持一致的错误处理语义）
+// Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
+ApplyRequestConfig(request);
+
+// 发送请求并检查状态码（与 DownloadAsync 保持一致的错误处理语义）
         using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
 
         var allowAnyStatusCode = descriptor?.AllowAnyStatusCode ?? false;
@@ -636,6 +662,31 @@ public class DefaultHttpRequestExecutor(
         {
             // 读取失败不影响请求发送
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Phase 3 (T3.4/T3.5)：将 HttpVersion、HttpVersionPolicy 和 HttpRequestMessageOptions 应用到请求消息。
+    /// 在请求发送前调用，确保生成代码路径也能消费这些配置。
+    /// </summary>
+    private void ApplyRequestConfig(HttpRequestMessage request)
+    {
+#if NET6_0_OR_GREATER
+        if (_httpVersion != null)
+            request.Version = _httpVersion;
+        if (_httpVersionPolicy != null)
+            request.VersionPolicy = _httpVersionPolicy.Value;
+#endif
+        if (_httpRequestMessageOptions != null)
+        {
+            foreach (var kvp in _httpRequestMessageOptions)
+            {
+#if NETSTANDARD2_0
+                request.Properties[kvp.Key] = kvp.Value;
+#else
+                request.Options.TryAdd(kvp.Key, kvp.Value);
+#endif
+            }
         }
     }
 

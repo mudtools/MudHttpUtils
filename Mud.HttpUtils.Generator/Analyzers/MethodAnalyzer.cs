@@ -44,7 +44,7 @@ internal static class MethodAnalyzer
         // 一次性获取方法特性列表，避免在后续分析中重复调用 GetAttributes() 产生多次分配
         var methodAttributes = methodSymbol.GetAttributes();
 
-        var httpMethodAttributeData = FindHttpMethodAttributeFromAttributes(methodAttributes);
+        var httpMethodAttributeData = FindHttpMethodAttributeFromAttributes(methodAttributes, compilation);
         if (httpMethodAttributeData == null)
             return MethodAnalysisResult.CreateInvalid();
 

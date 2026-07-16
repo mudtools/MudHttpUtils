@@ -9,6 +9,12 @@
 [![Mud.HttpUtils.Resilience](https://img.shields.io/nuget/v/Mud.HttpUtils.Resilience?label=Mud.HttpUtils.Resilience "Mud.HttpUtils.Resilience")](https://www.nuget.org/packages/Mud.HttpUtils.Resilience/ "Mud.HttpUtils.Resilience") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Resilience "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Resilience/ "downloads")
 [![Mud.HttpUtils.Generator](https://img.shields.io/nuget/v/Mud.HttpUtils.Generator?label=Mud.HttpUtils.Generator "Mud.HttpUtils.Generator")](https://www.nuget.org/packages/Mud.HttpUtils.Generator/ "Mud.HttpUtils.Generator") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Generator "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Generator/ "downloads")
 [![Mud.HttpUtils.OpenTelemetry](https://img.shields.io/nuget/v/Mud.HttpUtils.OpenTelemetry?label=Mud.HttpUtils.OpenTelemetry "Mud.HttpUtils.OpenTelemetry")](https://www.nuget.org/packages/Mud.HttpUtils.OpenTelemetry/ "Mud.HttpUtils.OpenTelemetry") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.OpenTelemetry "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.OpenTelemetry/ "downloads")
+[![Mud.HttpUtils.Newtonsoft.Json](https://img.shields.io/nuget/v/Mud.HttpUtils.Newtonsoft.Json?label=Mud.HttpUtils.Newtonsoft.Json "Mud.HttpUtils.Newtonsoft.Json")](https://www.nuget.org/packages/Mud.HttpUtils.Newtonsoft.Json/ "Mud.HttpUtils.Newtonsoft.Json") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Newtonsoft.Json "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Newtonsoft.Json/ "downloads")
+[![Mud.HttpUtils.Xml](https://img.shields.io/nuget/v/Mud.HttpUtils.Xml?label=Mud.HttpUtils.Xml "Mud.HttpUtils.Xml")](https://www.nuget.org/packages/Mud.HttpUtils.Xml/ "Mud.HttpUtils.Xml") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Xml "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Xml/ "downloads")
+[![Mud.HttpUtils.Testing](https://img.shields.io/nuget/v/Mud.HttpUtils.Testing?label=Mud.HttpUtils.Testing "Mud.HttpUtils.Testing")](https://www.nuget.org/packages/Mud.HttpUtils.Testing/ "Mud.HttpUtils.Testing") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Testing "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Testing/ "downloads")
+[![Mud.HttpUtils.Analyzers](https://img.shields.io/nuget/v/Mud.HttpUtils.Analyzers?label=Mud.HttpUtils.Analyzers "Mud.HttpUtils.Analyzers")](https://www.nuget.org/packages/Mud.HttpUtils.Analyzers/ "Mud.HttpUtils.Analyzers") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Analyzers "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Analyzers/ "downloads")
+[![Mud.HttpUtils.CodeFixes](https://img.shields.io/nuget/v/Mud.HttpUtils.CodeFixes?label=Mud.HttpUtils.CodeFixes "Mud.HttpUtils.CodeFixes")](https://www.nuget.org/packages/Mud.HttpUtils.CodeFixes/ "Mud.HttpUtils.CodeFixes") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.CodeFixes "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.CodeFixes/ "downloads")
+[![Mud.HttpUtils.JsonContextScaffolder](https://img.shields.io/nuget/v/Mud.HttpUtils.JsonContextScaffolder?label=Mud.HttpUtils.JsonContextScaffolder "Mud.HttpUtils.JsonContextScaffolder")](https://www.nuget.org/packages/Mud.HttpUtils.JsonContextScaffolder/ "Mud.HttpUtils.JsonContextScaffolder") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.JsonContextScaffolder "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.JsonContextScaffolder/ "downloads")
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE-MIT)
 
 **基于 Roslyn 的声明式 HTTP 客户端源代码生成器**
@@ -52,6 +58,12 @@ Mud.HttpUtils 是一个基于 Roslyn 源代码生成器的声明式 HTTP 客户�
 | **Mud.HttpUtils.Resilience**   | 弹性策略（Polly）                                                                                | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Resilience.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Resilience/)     | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Resilience.svg)     |
 | **Mud.HttpUtils.Generator**   | 源代码生成器                                                                                     | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Generator.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Generator/)       | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Generator.svg)     |
 | **Mud.HttpUtils.OpenTelemetry** | OpenTelemetry 可观测性适配                                                                   | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.OpenTelemetry.svg)](https://www.nuget.org/packages/Mud.HttpUtils.OpenTelemetry/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.OpenTelemetry.svg) |
+| **Mud.HttpUtils.Newtonsoft.Json** | Newtonsoft.Json 序列化器适配 | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Newtonsoft.Json.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Newtonsoft.Json/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Newtonsoft.Json.svg) |
+| **Mud.HttpUtils.Xml** | XML 序列化器适配 | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Xml.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Xml/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Xml.svg) |
+| **Mud.HttpUtils.Testing** | 测试辅助包（StubHttp mock 服务器、网络行为模拟） | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Testing.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Testing/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Testing.svg) |
+| **Mud.HttpUtils.Analyzers** | 独立分析器项目（接口规范诊断） | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Analyzers.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Analyzers/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Analyzers.svg) |
+| **Mud.HttpUtils.CodeFixes** | 代码修复提供器 | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.CodeFixes.svg)](https://www.nuget.org/packages/Mud.HttpUtils.CodeFixes/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.CodeFixes.svg) |
+| **Mud.HttpUtils.JsonContextScaffolder** | JsonSerializerContext 脚手架工具 | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.JsonContextScaffolder.svg)](https://www.nuget.org/packages/Mud.HttpUtils.JsonContextScaffolder/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.JsonContextScaffolder.svg) |
 
 ### 🏛️ 系统架构
 
@@ -627,6 +639,12 @@ MudHttpUtils/
 ├── Mud.HttpUtils.OpenTelemetry/      # OpenTelemetry 可观测性适配
 │   ├── MudHttpOpenTelemetryExtensions    # 一键开启 Tracing + Metrics
 │   └── MudHttpOpenTelemetryOptions       # 配置选项
+├── Mud.HttpUtils.Newtonsoft.Json/   # Newtonsoft.Json 序列化器适配
+├── Mud.HttpUtils.Xml/              # XML 序列化器适配
+├── Mud.HttpUtils.Testing/          # 测试辅助包（StubHttp + NetworkBehavior）
+├── Mud.HttpUtils.Analyzers/         # 独立分析器项目
+├── Mud.HttpUtils.CodeFixes/         # 代码修复提供器
+├── Mud.HttpUtils.JsonContextScaffolder/ # JsonSerializerContext 脚手架
 ├── Demos/                            # 示例项目
 └── Tests/                            # 测试项目
 ```
@@ -642,6 +660,12 @@ MudHttpUtils/
 | Mud.HttpUtils.Resilience   | 弹性策略                   | [README](Mud.HttpUtils.Resilience/README.md)   |
 | Mud.HttpUtils.Generator    | 源代码生成器               | [README](Mud.HttpUtils.Generator/README.md)    |
 | Mud.HttpUtils.OpenTelemetry | OpenTelemetry 可观测性    | [README](Mud.HttpUtils.OpenTelemetry/README.md) |
+| Mud.HttpUtils.Newtonsoft.Json | Newtonsoft.Json 序列化器适配 | [README](Mud.HttpUtils.Newtonsoft.Json/README.md) |
+| Mud.HttpUtils.Xml           | XML 序列化器适配           | [README](Mud.HttpUtils.Xml/README.md)          |
+| Mud.HttpUtils.Testing       | 测试辅助包                 | [README](Mud.HttpUtils.Testing/README.md)      |
+| Mud.HttpUtils.Analyzers     | 独立分析器                 | [README](Mud.HttpUtils.Analyzers/README.md)   |
+| Mud.HttpUtils.CodeFixes    | 代码修复提供器             | [README](Mud.HttpUtils.CodeFixes/README.md)    |
+| Mud.HttpUtils.JsonContextScaffolder | JsonContext 脚手架 | [README](Mud.HttpUtils.JsonContextScaffolder/README.md) |
 
 ### ⚡ 性能说明
 

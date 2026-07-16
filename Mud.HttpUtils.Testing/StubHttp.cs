@@ -56,7 +56,7 @@ public sealed class StubHttp : HttpMessageHandler
     }
 
     /// <inheritdoc/>
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         // 查找匹配的路由
         var key = RouteMatcher.BuildKey(request.Method, request.RequestUri?.AbsolutePath ?? "/");
@@ -77,10 +77,16 @@ public sealed class StubHttp : HttpMessageHandler
 
         if (matched == null)
         {
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)
+            return new HttpResponseMessage(HttpStatusCode.NotFound)
             {
                 Content = new StringContent($"No stub response configured for {request.Method} {request.RequestUri?.AbsolutePath}")
-            });
+            };
+        }
+
+        // 模拟网络延迟（如已配置）
+        if (matched.DelayMs > 0)
+        {
+            await Task.Delay(matched.DelayMs, cancellationToken).ConfigureAwait(false);
         }
 
         var responseMessage = new HttpResponseMessage(matched.StatusCode);
@@ -96,7 +102,7 @@ public sealed class StubHttp : HttpMessageHandler
             responseMessage.Headers.TryAddWithoutValidation(header.Key, header.Value);
         }
 
-        return Task.FromResult(responseMessage);
+        return responseMessage;
     }
 
     /// <summary>

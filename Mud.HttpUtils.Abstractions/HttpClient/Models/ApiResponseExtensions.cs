@@ -37,7 +37,10 @@ public static class ApiResponseExtensions
     public static Response<T> EnsureSuccessStatusCode<T>(this Response<T> response)
     {
         if ((int)response.StatusCode < 200 || (int)response.StatusCode >= 300)
-            throw new ApiException(response.StatusCode, response.ErrorContent);
+        {
+            var requestUri = response.ResponseMessage?.RequestMessage?.RequestUri?.ToString();
+            throw new ApiException(response.StatusCode, response.ErrorContent, requestUri);
+        }
         return response;
     }
 

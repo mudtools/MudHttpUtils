@@ -292,7 +292,12 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         sb.AppendLine("                    contentSerializer: options?.ContentSerializer,");
         sb.AppendLine("                    exceptionRedactor: options?.ExceptionRedactor,");
         sb.AppendLine("                    maxExceptionContentLength: options?.MaxExceptionContentLength,");
-        sb.AppendLine("                    captureRequestContent: options?.CaptureRequestContent);");
+        sb.AppendLine("                    captureRequestContent: options?.CaptureRequestContent,");
+        sb.AppendLine("#if NET6_0_OR_GREATER");
+        sb.AppendLine("                    httpVersion: options?.HttpVersion,");
+        sb.AppendLine("                    httpVersionPolicy: options?.HttpVersionPolicy,");
+        sb.AppendLine("#endif");
+        sb.AppendLine("                    httpRequestMessageOptions: options?.HttpRequestMessageOptions);");
         // 调用实现类构造函数（默认模式签名）
         sb.AppendLine($"                return new {fullyQualifiedImplementation}(");
         sb.AppendLine("                    appContext,");

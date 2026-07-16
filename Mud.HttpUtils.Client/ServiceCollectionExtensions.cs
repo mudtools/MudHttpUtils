@@ -130,7 +130,12 @@ public static class HttpClientServiceCollectionExtensions
                 appContextHolder, contentSerializer,
                 exceptionRedactor: exceptionRedactor,
                 maxExceptionContentLength: enhancedOptions?.MaxExceptionContentLength,
-                captureRequestContent: enhancedOptions?.CaptureRequestContent ?? false);
+                captureRequestContent: enhancedOptions?.CaptureRequestContent ?? false,
+#if NET6_0_OR_GREATER
+                httpVersion: enhancedOptions?.HttpVersion,
+                httpVersionPolicy: enhancedOptions?.HttpVersionPolicy,
+#endif
+                httpRequestMessageOptions: enhancedOptions?.HttpRequestMessageOptions);
         });
         services.TryAddSingleton<IHttpClientResolver, HttpClientResolver>();
         // 注册 URL 参数格式化器（Phase 4.3）

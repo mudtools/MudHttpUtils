@@ -123,6 +123,26 @@ public sealed class GeneratedClientOptions
     /// </remarks>
     public bool? GeneratedOnlyMode { get; set; }
 
+#if NET6_0_OR_GREATER
+    /// <summary>
+    /// 获取或设置 HTTP 版本（应用到生成的请求消息）。
+    /// </summary>
+    /// <value>默认为 <c>null</c>（使用 HttpClient 默认版本）。</value>
+    public Version? HttpVersion { get; set; }
+
+    /// <summary>
+    /// 获取或设置 HTTP 版本策略。
+    /// </summary>
+    /// <value>默认为 <c>null</c>（使用 HttpClient 默认策略）。</value>
+    public System.Net.Http.HttpVersionPolicy? HttpVersionPolicy { get; set; }
+#endif
+
+    /// <summary>
+    /// 获取或设置写入 <see cref="System.Net.Http.HttpRequestMessage"/> 的键值对预设。
+    /// </summary>
+    /// <value>默认为 <c>null</c>（不预设）。</value>
+    public Dictionary<string, object?>? HttpRequestMessageOptions { get; set; }
+
 #if NET8_0_OR_GREATER
     /// <summary>
     /// 获取或设置 Native AOT 下的 JSON 类型解析器。

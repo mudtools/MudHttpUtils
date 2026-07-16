@@ -63,6 +63,11 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     private readonly int? _maxExceptionContentLength;
     private readonly bool _captureRequestContent;
     private readonly UrlResolutionMode _urlResolution;
+#if NET6_0_OR_GREATER
+    private readonly Version? _httpVersion;
+    private readonly System.Net.Http.HttpVersionPolicy? _httpVersionPolicy;
+#endif
+    private readonly Dictionary<string, object?>? _httpRequestMessageOptions;
 
     /// <summary>
     /// 获取 HTTP 内容序列化器。所有 JSON 序列化/反序列化操作统一通过此抽象层进行。
@@ -120,6 +125,11 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         _maxExceptionContentLength = options.MaxExceptionContentLength;
         _captureRequestContent = options.CaptureRequestContent;
         _urlResolution = options.UrlResolution;
+#if NET6_0_OR_GREATER
+        _httpVersion = options.HttpVersion;
+        _httpVersionPolicy = options.HttpVersionPolicy;
+#endif
+        _httpRequestMessageOptions = options.HttpRequestMessageOptions;
         // 阶段 B3：序列化器自持 options，基类不再持有 _jsonOptions。
         // 未注入序列化器时经由工厂 CreateDefault 合并 MudHttpJsonContext.Default。
         _contentSerializer = contentSerializer
@@ -568,6 +578,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         // Phase 3 (T3.1)：根据 UrlResolutionMode 解析请求 URI
         requestUri = ResolveRequestUri(requestUri)!;
         using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        ApplyRequestConfig(request);
         var uri = ValidateRequest(request);
         return await ExecuteWithObservabilityAsync(
             request,
@@ -587,6 +598,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         {
             Content = new StringContent(xmlContent, enc, "application/xml")
         };
+        ApplyRequestConfig(request);
         var uri = ValidateRequest(request);
         return await ExecuteWithObservabilityAsync(
             request,
@@ -755,6 +767,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         {
             Content = content
         };
+        ApplyRequestConfig(request);
         // 将捕获的请求体存入请求属性，供 EnsureSuccessStatusCodeAsync 在创建 ApiException 时读取
         if (capturedRequestContent != null)
         {
@@ -803,6 +816,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         // Phase 3 (T3.1)：根据 UrlResolutionMode 解析请求 URI
         requestUri = ResolveRequestUri(requestUri)!;
         using var request = new HttpRequestMessage(method, requestUri);
+        ApplyRequestConfig(request);
         var validatedUri = ValidateRequest(request);
         return await ExecuteWithObservabilityAsync(
             request,
@@ -1431,6 +1445,31 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             return resolvedUri.ToString();
 
         return requestUri;
+    }
+
+    /// <summary>
+    /// Phase 3 (T3.4/T3.5)：将 HttpVersion、HttpVersionPolicy 和 HttpRequestMessageOptions 应用到请求消息。
+    /// 在每次构建 HttpRequestMessage 后调用。
+    /// </summary>
+    private void ApplyRequestConfig(HttpRequestMessage request)
+    {
+#if NET6_0_OR_GREATER
+        if (_httpVersion != null)
+            request.Version = _httpVersion;
+        if (_httpVersionPolicy != null)
+            request.VersionPolicy = _httpVersionPolicy.Value;
+#endif
+        if (_httpRequestMessageOptions != null)
+        {
+            foreach (var kvp in _httpRequestMessageOptions)
+            {
+#if NETSTANDARD2_0
+                request.Properties[kvp.Key] = kvp.Value;
+#else
+                request.Options.TryAdd(kvp.Key, kvp.Value);
+#endif
+            }
+        }
     }
 
     /// <summary>

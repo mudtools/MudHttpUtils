@@ -38,6 +38,9 @@ public sealed class StubResponse
     /// <summary>模拟延迟（毫秒）。</summary>
     public int DelayMs { get; set; }
 
+    /// <summary>网络行为模拟器（可选）。</summary>
+    public NetworkBehavior? Behavior { get; set; }
+
     /// <summary>已调用次数。</summary>
     public int CallCount => _callCount;
 
@@ -72,6 +75,15 @@ public sealed class StubResponse
     public StubResponse WithDelay(int milliseconds)
     {
         DelayMs = milliseconds;
+        return this;
+    }
+
+    /// <summary>附加网络行为模拟器（延迟、丢包等）。</summary>
+    public StubResponse WithBehavior(NetworkBehavior behavior)
+    {
+        Behavior = behavior;
+        if (behavior.DelayMs > 0)
+            DelayMs = behavior.DelayMs;
         return this;
     }
 

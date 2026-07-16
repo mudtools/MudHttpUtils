@@ -431,3 +431,46 @@ Mud.HttpUtils.EnhancedHttpClientOptions.JsonTypeInfoResolver.get -> System.Text.
 Mud.HttpUtils.EnhancedHttpClientOptions.JsonTypeInfoResolver.set -> void
 static Mud.HttpUtils.ServiceCollectionExtensions.AddMudHttpClientJsonContext(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver! context) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpGeneratedClient<T>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! clientName, System.Action<System.Net.Http.HttpClient!>? configureHttpClient = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+Mud.HttpUtils.EnhancedHttpClientOptions.RequestBodySerialization.get -> Mud.HttpUtils.RequestBodySerializationMode
+Mud.HttpUtils.EnhancedHttpClientOptions.RequestBodySerialization.set -> void
+Mud.HttpUtils.EnhancedHttpClientOptions.ExceptionRedactor.get -> Mud.HttpUtils.IExceptionRedactor?
+Mud.HttpUtils.EnhancedHttpClientOptions.ExceptionRedactor.set -> void
+Mud.HttpUtils.EnhancedHttpClientOptions.MaxExceptionContentLength.get -> System.Nullable<int>
+Mud.HttpUtils.EnhancedHttpClientOptions.MaxExceptionContentLength.set -> void
+Mud.HttpUtils.EnhancedHttpClientOptions.CaptureRequestContent.get -> bool
+Mud.HttpUtils.EnhancedHttpClientOptions.CaptureRequestContent.set -> void
+Mud.HttpUtils.EnhancedHttpClientOptions.UrlResolution.get -> Mud.HttpUtils.UrlResolutionMode
+Mud.HttpUtils.EnhancedHttpClientOptions.UrlResolution.set -> void
+Mud.HttpUtils.EnhancedHttpClientOptions.HttpVersion.get -> System.Version?
+Mud.HttpUtils.EnhancedHttpClientOptions.HttpVersion.set -> void
+Mud.HttpUtils.EnhancedHttpClientOptions.HttpVersionPolicy.get -> System.Net.Http.HttpVersionPolicy?
+Mud.HttpUtils.EnhancedHttpClientOptions.HttpVersionPolicy.set -> void
+Mud.HttpUtils.EnhancedHttpClientOptions.HttpRequestMessageOptions.get -> System.Collections.Generic.Dictionary<string, object?>?
+Mud.HttpUtils.EnhancedHttpClientOptions.HttpRequestMessageOptions.set -> void
+Mud.HttpUtils.PushStreamContent
+Mud.HttpUtils.PushStreamContent.PushStreamContent(System.Action<System.IO.Stream>! onStreamAvailable, string mediaType = "application/json") -> void
+Mud.HttpUtils.CamelCaseStringEnumConverter
+Mud.HttpUtils.CamelCaseStringEnumConverter.CamelCaseStringEnumConverter() -> void
+Mud.HttpUtils.CamelCaseStringEnumConverter.CanConvert(System.Type! typeToConvert) -> bool
+Mud.HttpUtils.CamelCaseStringEnumConverter.CreateConverter(System.Type! typeToConvert, System.Text.Json.JsonSerializerOptions! options) -> System.Text.Json.Serialization.JsonConverter?
+Mud.HttpUtils.MudHttpClientNamingPresets
+Mud.HttpUtils.MudHttpClientNamingPresets.CamelCase() -> System.Text.Json.JsonSerializerOptions!
+Mud.HttpUtils.MudHttpClientNamingPresets.SnakeCase() -> System.Text.Json.JsonSerializerOptions!
+Mud.HttpUtils.MudHttpClientNamingPresets.KebabCase() -> System.Text.Json.JsonSerializerOptions!
+Mud.HttpUtils.DelegateExceptionRedactor
+Mud.HttpUtils.DelegateExceptionRedactor.DelegateExceptionRedactor(System.Action<Mud.HttpUtils.ApiException>! action) -> void
+Mud.HttpUtils.DelegateExceptionRedactor.Redact(Mud.HttpUtils.ApiException! exception) -> void
+Mud.HttpUtils.SeparatedCaseJsonNamingPolicy
+Mud.HttpUtils.SeparatedCaseJsonNamingPolicy.SeparatedCaseJsonNamingPolicy(char separator) -> void
+Mud.HttpUtils.SeparatedCaseJsonNamingPolicy.Snake.get -> Mud.HttpUtils.SeparatedCaseJsonNamingPolicy!
+Mud.HttpUtils.SeparatedCaseJsonNamingPolicy.Kebab.get -> Mud.HttpUtils.SeparatedCaseJsonNamingPolicy!
+Mud.HttpUtils.SeparatedCaseJsonNamingPolicy.ConvertName(string! name) -> string!
+Mud.HttpUtils.CamelCaseUrlParameterKeyFormatter
+Mud.HttpUtils.CamelCaseUrlParameterKeyFormatter.CamelCaseUrlParameterKeyFormatter() -> void
+Mud.HttpUtils.CamelCaseUrlParameterKeyFormatter.Format(string! key) -> string!
+Mud.HttpUtils.SnakeCaseUrlParameterKeyFormatter
+Mud.HttpUtils.SnakeCaseUrlParameterKeyFormatter.SnakeCaseUrlParameterKeyFormatter() -> void
+Mud.HttpUtils.SnakeCaseUrlParameterKeyFormatter.Format(string! key) -> string!
+Mud.HttpUtils.KebabCaseUrlParameterKeyFormatter
+Mud.HttpUtils.KebabCaseUrlParameterKeyFormatter.KebabCaseUrlParameterKeyFormatter() -> void
+Mud.HttpUtils.KebabCaseUrlParameterKeyFormatter.Format(string! key) -> string!

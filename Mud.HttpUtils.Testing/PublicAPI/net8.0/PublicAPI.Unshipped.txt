@@ -1,0 +1,38 @@
+#nullable enable
+Mud.HttpUtils.Testing.NetworkBehavior
+Mud.HttpUtils.Testing.NetworkBehavior.NetworkBehavior() -> void
+Mud.HttpUtils.Testing.NetworkBehavior.DelayMs.get -> int
+Mud.HttpUtils.Testing.NetworkBehavior.DelayMs.set -> void
+Mud.HttpUtils.Testing.NetworkBehavior.FailureRate.get -> double
+Mud.HttpUtils.Testing.NetworkBehavior.FailureRate.set -> void
+Mud.HttpUtils.Testing.NetworkBehavior.FailureStatusCode.get -> System.Net.HttpStatusCode
+Mud.HttpUtils.Testing.NetworkBehavior.FailureStatusCode.set -> void
+static Mud.HttpUtils.Testing.NetworkBehavior.WithDelay(int delayMs) -> Mud.HttpUtils.Testing.NetworkBehavior!
+static Mud.HttpUtils.Testing.NetworkBehavior.WithFailure(double failureRate, System.Net.HttpStatusCode failureStatusCode = System.Net.HttpStatusCode.ServiceUnavailable) -> Mud.HttpUtils.Testing.NetworkBehavior!
+static Mud.HttpUtils.Testing.NetworkBehavior.WithDelayAndFailure(int delayMs, double failureRate, System.Net.HttpStatusCode failureStatusCode = System.Net.HttpStatusCode.ServiceUnavailable) -> Mud.HttpUtils.Testing.NetworkBehavior!
+Mud.HttpUtils.Testing.NetworkBehavior.ShouldFail() -> bool
+Mud.HttpUtils.Testing.StubHttp
+Mud.HttpUtils.Testing.StubHttp.StubHttp() -> void
+Mud.HttpUtils.Testing.StubHttp.Respond(System.Net.Http.HttpMethod! method, string! path, System.Net.HttpStatusCode statusCode = System.Net.HttpStatusCode.OK, string? content = null, string contentType = "application/json") -> Mud.HttpUtils.Testing.StubResponse!
+Mud.HttpUtils.Testing.StubHttp.RespondToAnyRequest(System.Net.HttpStatusCode statusCode = System.Net.HttpStatusCode.OK, string? content = null, string contentType = "application/json") -> Mud.HttpUtils.Testing.StubResponse!
+Mud.HttpUtils.Testing.StubHttp.Clear() -> void
+Mud.HttpUtils.Testing.StubResponse
+Mud.HttpUtils.Testing.StubResponse.Method.get -> System.Net.Http.HttpMethod?
+Mud.HttpUtils.Testing.StubResponse.Path.get -> string!
+Mud.HttpUtils.Testing.StubResponse.StatusCode.get -> System.Net.HttpStatusCode
+Mud.HttpUtils.Testing.StubResponse.StatusCode.set -> void
+Mud.HttpUtils.Testing.StubResponse.Content.get -> string?
+Mud.HttpUtils.Testing.StubResponse.Content.set -> void
+Mud.HttpUtils.Testing.StubResponse.ContentType.get -> string!
+Mud.HttpUtils.Testing.StubResponse.ContentType.set -> void
+Mud.HttpUtils.Testing.StubResponse.Headers.get -> System.Collections.Generic.Dictionary<string!, string!>!
+Mud.HttpUtils.Testing.StubResponse.DelayMs.get -> int
+Mud.HttpUtils.Testing.StubResponse.DelayMs.set -> void
+Mud.HttpUtils.Testing.StubResponse.Behavior.get -> Mud.HttpUtils.Testing.NetworkBehavior?
+Mud.HttpUtils.Testing.StubResponse.Behavior.set -> void
+Mud.HttpUtils.Testing.StubResponse.CallCount.get -> int
+Mud.HttpUtils.Testing.StubResponse.IsValid.get -> bool
+Mud.HttpUtils.Testing.StubResponse.WithMaxCalls(int max) -> Mud.HttpUtils.Testing.StubResponse!
+Mud.HttpUtils.Testing.StubResponse.WithHeader(string! name, string! value) -> Mud.HttpUtils.Testing.StubResponse!
+Mud.HttpUtils.Testing.StubResponse.WithDelay(int milliseconds) -> Mud.HttpUtils.Testing.StubResponse!
+Mud.HttpUtils.Testing.StubResponse.WithBehavior(Mud.HttpUtils.Testing.NetworkBehavior! behavior) -> Mud.HttpUtils.Testing.StubResponse!

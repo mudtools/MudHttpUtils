@@ -749,3 +749,39 @@ Mud.HttpUtils.DefaultExceptionFactory.CreateApiException(System.Net.Http.HttpRes
 Mud.HttpUtils.DefaultExceptionFactory.CreateDeserializationException(string? content, System.Type! targetType, System.Exception! deserializationException, string? requestUri) -> System.Exception!
 Mud.HttpUtils.DefaultExceptionFactory.CreateTransportException(System.Exception! transportException, string? requestUri, bool isTimeout, bool isCancellation) -> System.Exception!
 Mud.HttpUtils.DefaultExceptionFactory.DefaultExceptionFactory() -> void
+Mud.HttpUtils.GeneratedClientOptions.HttpRequestMessageOptions.get -> System.Collections.Generic.Dictionary<string, object?>?
+Mud.HttpUtils.GeneratedClientOptions.HttpRequestMessageOptions.set -> void
+Mud.HttpUtils.IExceptionRedactor
+Mud.HttpUtils.IExceptionRedactor.Redact(Mud.HttpUtils.ApiException! exception) -> void
+Mud.HttpUtils.ISynchronousContentSerializer
+Mud.HttpUtils.ISynchronousContentSerializer.ToHttpContentSynchronous<T>(T item) -> System.Net.Http.HttpContent!
+Mud.HttpUtils.ISynchronousContentSerializer.ToStreamingHttpContent<T>(T item) -> System.Net.Http.HttpContent!
+Mud.HttpUtils.ISynchronousContentDeserializer
+Mud.HttpUtils.ISynchronousContentDeserializer.DeserializeFromString<T>(string! content) -> T?
+Mud.HttpUtils.IStreamingContentSerializer
+Mud.HttpUtils.IStreamingContentSerializer.DeserializeStreamAsync<T>(System.IO.Stream! stream, Mud.HttpUtils.StreamingContentFormat format, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<T?>
+Mud.HttpUtils.StreamingContentFormat
+Mud.HttpUtils.StreamingContentFormat.JsonArray = 0
+Mud.HttpUtils.StreamingContentFormat.JsonLines = 1
+Mud.HttpUtils.RequestBodySerializationMode
+Mud.HttpUtils.RequestBodySerializationMode.Default = 0
+Mud.HttpUtils.RequestBodySerializationMode.Buffered = 1
+Mud.HttpUtils.RequestBodySerializationMode.Streamed = 2
+Mud.HttpUtils.UrlResolutionMode
+Mud.HttpUtils.UrlResolutionMode.Default = 0
+Mud.HttpUtils.UrlResolutionMode.Rfc3986 = 1
+Mud.HttpUtils.ApiException.Content.get -> string?
+Mud.HttpUtils.ApiException.Content.set -> void
+Mud.HttpUtils.ApiException.RequestUri.get -> string?
+Mud.HttpUtils.ApiException.RequestUri.set -> void
+Mud.HttpUtils.ApiException.RequestContent.get -> string?
+Mud.HttpUtils.ApiException.RequestContent.set -> void
+Mud.HttpUtils.ApiException.HasRequestContent.get -> bool
+Mud.HttpUtils.ApiResponseExtensions
+Mud.HttpUtils.ApiResponseExtensions.EnsureSuccessStatusCodeAsync<T>(this System.Threading.Tasks.Task<Mud.HttpUtils.Response<T>!>! task) -> System.Threading.Tasks.Task<Mud.HttpUtils.Response<T>!>!
+Mud.HttpUtils.ApiResponseExtensions.EnsureSuccessStatusCode<T>(this Mud.HttpUtils.Response<T>! response) -> Mud.HttpUtils.Response<T>!
+Mud.HttpUtils.ApiResponseExtensions.GetHeader<T>(this Mud.HttpUtils.IApiResponse<T>! response, string! name) -> string?
+Mud.HttpUtils.CollectionFormat.Tsv = 4
+Mud.HttpUtils.CollectionFormat.Pipes = 5
+Mud.HttpUtils.AllowUnmatchedRouteParametersAttribute
+Mud.HttpUtils.AllowUnmatchedRouteParametersAttribute.AllowUnmatchedRouteParametersAttribute() -> void
