@@ -41,11 +41,6 @@ namespace Mud.HttpUtils;
 public static class RestService
 {
     /// <summary>
-    /// 缓存已解析的生成实现类型映射（预留，当前未直接使用，供未来反射场景兼容）。
-    /// </summary>
-    private static readonly ConcurrentDictionary<Type, Type> _typeMapping = new();
-
-    /// <summary>
     /// 持有源生成的实现工厂委托（无 DI 路径）。
     /// </summary>
     /// <remarks>

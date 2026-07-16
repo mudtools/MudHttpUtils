@@ -630,11 +630,7 @@ public class DefaultHttpRequestExecutor(
         if (request?.Content == null) return null;
         try
         {
-#if NET5_0_OR_GREATER
             return await request.Content.ReadAsStringAsync().ConfigureAwait(false);
-#else
-            return await request.Content.ReadAsStringAsync().ConfigureAwait(false);
-#endif
         }
         catch
         {

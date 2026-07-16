@@ -33,7 +33,7 @@ namespace Mud.HttpUtils;
 /// }
 /// </code>
 /// </example>
-public class ApiException : Exception
+public class ApiException : HttpRequestException
 {
     /// <summary>
     /// 初始化 <see cref="ApiException"/> 类的新实例。
@@ -41,7 +41,11 @@ public class ApiException : Exception
     /// <param name="statusCode">HTTP 状态码。</param>
     /// <param name="content">响应内容。</param>
     public ApiException(HttpStatusCode statusCode, string? content)
+#if NET5_0_OR_GREATER
+        : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}).", null, statusCode)
+#else
         : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}).")
+#endif
     {
         StatusCode = statusCode;
         Content = content;
@@ -54,7 +58,11 @@ public class ApiException : Exception
     /// <param name="content">响应内容。</param>
     /// <param name="requestUri">请求 URI。</param>
     public ApiException(HttpStatusCode statusCode, string? content, string? requestUri)
+#if NET5_0_OR_GREATER
+        : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}) for request: {requestUri}.", null, statusCode)
+#else
         : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}) for request: {requestUri}.")
+#endif
     {
         StatusCode = statusCode;
         Content = content;
@@ -68,7 +76,11 @@ public class ApiException : Exception
     /// <param name="content">响应内容。</param>
     /// <param name="innerException">内部异常。</param>
     public ApiException(HttpStatusCode statusCode, string? content, Exception innerException)
+#if NET5_0_OR_GREATER
+        : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}).", innerException, statusCode)
+#else
         : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}).", innerException)
+#endif
     {
         StatusCode = statusCode;
         Content = content;
@@ -82,7 +94,11 @@ public class ApiException : Exception
     /// <param name="requestUri">请求 URI。</param>
     /// <param name="innerException">内部异常。</param>
     public ApiException(HttpStatusCode statusCode, string? content, string? requestUri, Exception innerException)
+#if NET5_0_OR_GREATER
+        : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}) for request: {requestUri}.", innerException, statusCode)
+#else
         : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}) for request: {requestUri}.", innerException)
+#endif
     {
         StatusCode = statusCode;
         Content = content;
@@ -105,7 +121,15 @@ public class ApiException : Exception
     /// <summary>
     /// 获取 HTTP 状态码。
     /// </summary>
+    /// <remarks>
+    /// 在 NET 5+ 上，此属性使用 <c>new</c> 关键字隐藏基类 <see cref="HttpRequestException.StatusCode"/>（nullable），
+    /// 提供 non-nullable 版本。两者返回相同的逻辑值。
+    /// </remarks>
+#if NET5_0_OR_GREATER
+    public new HttpStatusCode StatusCode { get; }
+#else
     public HttpStatusCode StatusCode { get; }
+#endif
 
     /// <summary>
     /// 获取或设置响应内容。

@@ -120,7 +120,17 @@ public static class HttpClientServiceCollectionExtensions
             var appResilienceResolver = sp.GetService<IAppResiliencePolicyResolver>();
             var appContextHolder = sp.GetService<IAppContextHolder>();
             var contentSerializer = sp.GetService<IHttpContentSerializer>();
-            return new DefaultHttpRequestExecutor(logger ?? NullLogger<DefaultHttpRequestExecutor>.Instance, cacheProvider, resilienceResolver, appResilienceResolver, appContextHolder, contentSerializer);
+            // Phase 2 (T2.1)：从 DI 解析异常擦除器（用户可通过 services.AddSingleton<IExceptionRedactor>() 注册）
+            var exceptionRedactor = sp.GetService<IExceptionRedactor>();
+            // Phase 2 (T2.2/T2.3)：从 IOptions<EnhancedHttpClientOptions> 读取配置（如果已注册）
+            var enhancedOptions = sp.GetService<IOptions<EnhancedHttpClientOptions>>()?.Value;
+            return new DefaultHttpRequestExecutor(
+                logger ?? NullLogger<DefaultHttpRequestExecutor>.Instance,
+                cacheProvider, resilienceResolver, appResilienceResolver,
+                appContextHolder, contentSerializer,
+                exceptionRedactor: exceptionRedactor,
+                maxExceptionContentLength: enhancedOptions?.MaxExceptionContentLength,
+                captureRequestContent: enhancedOptions?.CaptureRequestContent ?? false);
         });
         services.TryAddSingleton<IHttpClientResolver, HttpClientResolver>();
         // 注册 URL 参数格式化器（Phase 4.3）

@@ -350,6 +350,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 #endif
             }
+            // Phase 2：ApiException 继承 HttpRequestException，须在前者之前捕获
+            catch (ApiException ex)
+            {
+                _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
+                throw;
+            }
             catch (HttpRequestException ex)
             {
 #if !NETSTANDARD2_0
@@ -381,12 +387,6 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             // 保留 JsonException 与 InvalidOperationException 原始类型，使流式与非流式路径的异常处理模式统一。
             // 原实现将所有非 HttpRequestException/OCE 异常包装为 HttpRequestException，
             // 调用方无法用统一的 catch (JsonException) 模式处理流式与非流式响应。
-            catch (ApiException ex)
-            {
-                // Phase 2：ApiException 已应用过 ExceptionRedactor，直接重抛
-                _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
-                throw;
-            }
             catch (JsonException ex)
             {
                 _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
@@ -825,6 +825,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         {
             return await coreAction().ConfigureAwait(false);
         }
+        // Phase 2：ApiException 继承 HttpRequestException，须在前者之前捕获
+        catch (ApiException ex)
+        {
+            _logger.HttpRequestFailedWithExceptionType(requestUri!, ex.GetType().Name, ex);
+            throw;
+        }
         catch (HttpRequestException ex)
         {
 #if !NETSTANDARD2_0
@@ -855,12 +861,6 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         // HC-02 修复：在 catch-all 之前捕获 JsonException 和 InvalidOperationException，保留原始异常类型。
         // 此前所有非 HttpRequestException / OperationCanceledException 的异常被统一包装为 HttpRequestException，
         // 调用方无法按 JsonException 等具体类型 catch，只能通过 InnerException 检查。
-        catch (ApiException ex)
-        {
-            // Phase 2：ApiException 已在 EnsureSuccessStatusCodeAsync 中应用过 ExceptionRedactor，直接重抛
-            _logger.HttpRequestFailedWithExceptionType(requestUri!, ex.GetType().Name, ex);
-            throw;
-        }
         catch (JsonException ex)
         {
             _logger.HttpRequestFailedWithExceptionType(requestUri!, ex.GetType().Name, ex);
