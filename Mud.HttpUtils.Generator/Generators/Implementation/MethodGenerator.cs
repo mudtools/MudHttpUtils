@@ -262,8 +262,15 @@ internal class MethodGenerator : ICodeFragmentGenerator
         // AOT 安全说明：生成代码经执行器间接 JSON 序列化，通过注入的 IHttpContentSerializer（其 options 含消费方 JsonSerializerContext resolver）保证 AOT 安全，
         // IL2026/IL3050 误报已由方法级 [UnconditionalSuppressMessage] 压制（见 WriteMethodLevelSuppressMessage）。
         // 消费方须确保 T（elementType）已在 JsonSerializerContext 中声明，否则 AOT 下反序列化返回 default。
-        // JsonTypeInfo<T> 安全重载（AsyncEnumerableExtensions.SendAsAsyncEnumerable<T>(IBaseHttpClient, HttpRequestMessage, JsonTypeInfo<T>, CT)）
-        // 已存在于 NET8_0_OR_GREATER，但源生成器无法访问消费方的 JsonSerializerContext 实例，故无法自动切换。
+        //
+        // [v4 Phase 1] AOT 安全重载链路已就绪：
+        //   - IBaseHttpClient.SendAsAsyncEnumerable<T>(HttpRequestMessage, JsonTypeInfo<T>, CT)  [NET8+]
+        //   - IHttpRequestExecutor.SendAsAsyncEnumerable<T>(HttpRequestMessage, IBaseHttpClient, JsonTypeInfo<T>, CT)  [NET8+]
+        //   - EnhancedHttpClient.SendAsAsyncEnumerable<T>(HttpRequestMessage, JsonTypeInfo<T>, CT)  [NET8+]
+        //   - ResilientHttpClient.SendAsAsyncEnumerable<T>(HttpRequestMessage, JsonTypeInfo<T>, CT)  [NET8+]
+        //   - AsyncEnumerableExtensions.SendAsAsyncEnumerable<T>(IBaseHttpClient, HttpRequestMessage, JsonTypeInfo<T>, CT)  [NET8+]
+        // 源生成器无法自动注入消费方的 JsonSerializerContext 实例（生成器不可见消费方类型），
+        // 故生成代码仍走 jsonSerializerOptions=null 路径。消费方可手动调用上述 AOT 安全重载。
         if (methodInfo.IsAsyncEnumerableReturn && !string.IsNullOrEmpty(methodInfo.AsyncEnumerableElementType))
         {
             var elementType = methodInfo.AsyncEnumerableElementType;

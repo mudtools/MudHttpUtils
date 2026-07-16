@@ -461,6 +461,18 @@ ApplyRequestConfig(request);
         return httpClient.SendAsAsyncEnumerable<TElement>(request, jsonSerializerOptions, cancellationToken);
     }
 
+#if NET8_0_OR_GREATER
+    /// <inheritdoc/>
+    public IAsyncEnumerable<TElement> SendAsAsyncEnumerable<TElement>(
+        HttpRequestMessage request,
+        IBaseHttpClient httpClient,
+        System.Text.Json.Serialization.Metadata.JsonTypeInfo<TElement> jsonTypeInfo,
+        CancellationToken cancellationToken = default)
+    {
+        return httpClient.SendAsAsyncEnumerable<TElement>(request, jsonTypeInfo, cancellationToken);
+    }
+#endif
+
     /// <inheritdoc/>
     public async Task<TResult?> ExecuteAsync<TResult>(
         HttpRequestMessage request,

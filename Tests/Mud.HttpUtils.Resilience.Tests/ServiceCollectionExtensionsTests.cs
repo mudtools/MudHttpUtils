@@ -147,6 +147,11 @@ public class ServiceCollectionExtensionsTests
         public async IAsyncEnumerable<TResult> SendAsAsyncEnumerable<TResult>(HttpRequestMessage request, object? jsonSerializerOptions = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
         { await Task.CompletedTask; yield break; }
 
+#if NET8_0_OR_GREATER
+        public async IAsyncEnumerable<TResult> SendAsAsyncEnumerable<TResult>(HttpRequestMessage request, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TResult> jsonTypeInfo, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        { await Task.CompletedTask; yield break; }
+#endif
+
         public Task<TResult?> SendAsync<TResult>(HttpRequestMessage request, object? jsonSerializerOptions = null, CancellationToken cancellationToken = default)
             => Task.FromResult(default(TResult));
 

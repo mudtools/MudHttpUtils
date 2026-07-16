@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+		<OutputType>Exe</OutputType>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<IsAotCompatible>true</IsAotCompatible>
+		<PublishAot>true</PublishAot>
+		<!-- [v4 Phase 2] 启用 TrimMode=full 验证完整裁剪模式。
+		     AotVerificationDemo 使用默认的 TrimMode=partial（仅裁剪明确未使用的程序集），
+		     本项目启用 full 模式（裁剪所有程序集中的未使用成员），验证库代码是否有遗漏的反射依赖。 -->
+		<TrimMode>full</TrimMode>
+		<!-- 关闭单警告模式，使所有裁剪告警都可见 -->
+		<TrimmerSingleWarn>false</TrimmerSingleWarn>
+		<InvariantGlobalization>true</InvariantGlobalization>
+		<GenerateDocumentationFile>false</GenerateDocumentationFile>
+	</PropertyGroup>
+
+	<!-- AOT 严格模式：与 AotVerificationDemo 保持一致 -->
+	<PropertyGroup Condition="'$(AotStrictMode)' == 'true'">
+		<WarningsAsErrors>IL2026;IL2046;IL2050;IL2057;IL2067;IL2070;IL2072;IL2075;IL2080;IL3050;AOT004;AOT005;AOT006;AOT007</WarningsAsErrors>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\..\Mud.HttpUtils.Client\Mud.HttpUtils.Client.csproj" />
+		<ProjectReference Include="..\..\Mud.HttpUtils.Attributes\Mud.HttpUtils.Attributes.csproj" />
+		<ProjectReference Include="..\..\Mud.HttpUtils.Generator\Mud.HttpUtils.Generator.csproj" OutputItemType="Analyzer" />
+		<ProjectReference Include="..\..\Mud.HttpUtils.Resilience\Mud.HttpUtils.Resilience.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<CompilerVisibleProperty Include="IsAotCompatible" />
+		<CompilerVisibleProperty Include="PublishAot" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
+	</ItemGroup>
+
+</Project>

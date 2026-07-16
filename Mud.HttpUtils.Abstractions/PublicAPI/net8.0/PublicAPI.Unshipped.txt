@@ -219,7 +219,7 @@ Mud.HttpUtils.IEncryptableHttpClient
 Mud.HttpUtils.IEncryptableHttpClient.DecryptBytes(byte[]! encryptedData) -> byte[]!
 Mud.HttpUtils.IEncryptableHttpClient.DecryptContent(string! encryptedContent) -> string!
 Mud.HttpUtils.IEncryptableHttpClient.EncryptBytes(byte[]! data) -> byte[]!
-Mud.HttpUtils.IEncryptableHttpClient.EncryptContent(object! content, string! propertyName = "data", Mud.HttpUtils.SerializeType serializeType = Mud.HttpUtils.SerializeType.Json) -> string!
+~Mud.HttpUtils.IEncryptableHttpClient.EncryptContent(object! content, string! propertyName = "data", Mud.HttpUtils.SerializeType serializeType = Mud.HttpUtils.SerializeType.Json) -> string!
 Mud.HttpUtils.IEncryptableHttpClient.EncryptContent<T>(T content, string! propertyName = "data") -> string!
 Mud.HttpUtils.IEncryptedTokenStore
 Mud.HttpUtils.IEncryptedTokenStore.IsEncryptionEnabled.get -> bool
@@ -783,3 +783,5 @@ Mud.HttpUtils.CollectionFormat.Tsv = 4
 Mud.HttpUtils.CollectionFormat.Pipes = 5
 Mud.HttpUtils.AllowUnmatchedRouteParametersAttribute
 Mud.HttpUtils.AllowUnmatchedRouteParametersAttribute.AllowUnmatchedRouteParametersAttribute() -> void
+abstract Mud.HttpUtils.IBaseHttpClient.SendAsAsyncEnumerable<TResult>(System.Net.Http.HttpRequestMessage! request, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TResult>! jsonTypeInfo, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TResult>!
+abstract Mud.HttpUtils.IHttpRequestExecutor.SendAsAsyncEnumerable<TElement>(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TElement>! jsonTypeInfo, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TElement>!

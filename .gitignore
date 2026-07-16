@@ -80,6 +80,8 @@
 /Demos/HttpClientApiPublicDemo/obj
 /Demos/AotPackageRefDemo/bin
 /Demos/AotPackageRefDemo/obj
+/Demos/AotFullTrimVerificationDemo/bin
+/Demos/AotFullTrimVerificationDemo/obj
 /Tools/Mud.HttpUtils.JsonContextScaffolder/bin
 /Tools/Mud.HttpUtils.JsonContextScaffolder/obj
 /Tools/bin

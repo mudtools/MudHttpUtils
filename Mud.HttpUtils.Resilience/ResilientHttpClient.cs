@@ -232,6 +232,45 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         }
     }
 
+#if NET8_0_OR_GREATER
+    /// <inheritdoc />
+    /// <remarks>
+    /// AOT 安全流式重载：使用 <see cref="System.Text.Json.Serialization.Metadata.JsonTypeInfo{TResult}"/> 进行反序列化。
+    /// 弹性策略行为与非泛型重载一致（连接建立阶段可重试，流式读取阶段不包装）。
+    /// </remarks>
+    public IAsyncEnumerable<TResult> SendAsAsyncEnumerable<TResult>(
+        HttpRequestMessage request,
+        System.Text.Json.Serialization.Metadata.JsonTypeInfo<TResult> jsonTypeInfo,
+        CancellationToken cancellationToken = default)
+    {
+        if (ShouldSkipResilience(request))
+        {
+            return _innerClient.SendAsAsyncEnumerable<TResult>(request, jsonTypeInfo, cancellationToken);
+        }
+
+        return ExecuteStreamWithResilienceAsync(request, jsonTypeInfo, cancellationToken);
+    }
+
+    private async IAsyncEnumerable<TResult> ExecuteStreamWithResilienceAsync<TResult>(
+        HttpRequestMessage request,
+        System.Text.Json.Serialization.Metadata.JsonTypeInfo<TResult> jsonTypeInfo,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request, MaxCloneContentSize).ConfigureAwait(false);
+        try
+        {
+            await foreach (var item in _innerClient.SendAsAsyncEnumerable<TResult>(clonedRequest, jsonTypeInfo, cancellationToken).ConfigureAwait(false))
+            {
+                yield return item;
+            }
+        }
+        finally
+        {
+            clonedRequest.Dispose();
+        }
+    }
+#endif
+
     /// <inheritdoc />
     public async Task<TResult?> SendAsync<TResult>(
         HttpRequestMessage request,
@@ -481,11 +520,12 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
 
     #region IEncryptableHttpClient
 
-    /// <inheritdoc />
-    public string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json)
-    {
-        return ((IEncryptableHttpClient)_innerClient).EncryptContent(content, propertyName, serializeType);
-    }
+/// <inheritdoc />
+[Obsolete("此重载使用运行时反射 (content.GetType())，Native AOT 不兼容。请改用 EncryptContent<T>(T, string) 泛型重载。")]
+public string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json)
+{
+return ((IEncryptableHttpClient)_innerClient).EncryptContent(content, propertyName, serializeType);
+}
 
     /// <inheritdoc />
     public string EncryptContent<T>(T content, string propertyName = "data")

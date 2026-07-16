@@ -23,6 +23,7 @@ public interface IEncryptableHttpClient
     /// <b>Native AOT 注意</b>：此重载使用运行时类型 (<c>content.GetType()</c>) 进行 JSON 序列化，
     /// 在 AOT 下可能不安全。请在 AOT 场景下改用 <see cref="EncryptContent{T}"/> 泛型重载。
     /// </remarks>
+    [Obsolete("此重载使用运行时反射 (content.GetType())，Native AOT 不兼容。请改用 EncryptContent<T>(T, string) 泛型重载。")]
     string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json);
 
     /// <summary>

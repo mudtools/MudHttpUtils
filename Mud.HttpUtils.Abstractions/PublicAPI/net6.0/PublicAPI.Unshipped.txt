@@ -219,7 +219,7 @@ Mud.HttpUtils.IEncryptableHttpClient
 Mud.HttpUtils.IEncryptableHttpClient.DecryptBytes(byte[]! encryptedData) -> byte[]!
 Mud.HttpUtils.IEncryptableHttpClient.DecryptContent(string! encryptedContent) -> string!
 Mud.HttpUtils.IEncryptableHttpClient.EncryptBytes(byte[]! data) -> byte[]!
-Mud.HttpUtils.IEncryptableHttpClient.EncryptContent(object! content, string! propertyName = "data", Mud.HttpUtils.SerializeType serializeType = Mud.HttpUtils.SerializeType.Json) -> string!
+~Mud.HttpUtils.IEncryptableHttpClient.EncryptContent(object! content, string! propertyName = "data", Mud.HttpUtils.SerializeType serializeType = Mud.HttpUtils.SerializeType.Json) -> string!
 Mud.HttpUtils.IEncryptableHttpClient.EncryptContent<T>(T content, string! propertyName = "data") -> string!
 Mud.HttpUtils.IEncryptedTokenStore
 Mud.HttpUtils.IEncryptedTokenStore.IsEncryptionEnabled.get -> bool

@@ -21,8 +21,16 @@ namespace Mud.HttpUtils;
 /// <para>
 /// <b>Native AOT 注意</b>：<see cref="Format"/> 方法使用运行时反射（<c>type.IsEnum</c> / <c>GetField</c> / <c>GetCustomAttribute</c>），
 /// 在 <c>PublishAot</c> 下触发 IL207x 告警。已标注 <c>[RequiresUnreferencedCode]</c> / <c>[RequiresDynamicCode]</c>
-/// 声明为非 AOT 路径。AOT 场景下应通过源生成器在编译期生成枚举/特性映射查找表，
-/// 运行时 <see cref="IUrlParameterFormatter"/> 仅作非 AOT 回退。
+/// 声明为非 AOT 路径。
+/// </para>
+/// <para>
+/// <b>AOT 场景推荐做法</b>：
+/// <list type="bullet">
+/// <item>实现自定义 <see cref="IUrlParameterFormatter"/>，在构造函数中预构建枚举映射字典（使用源生成器或手写映射）。</item>
+/// <item>或直接在 <c>[HttpClientApi]</c> 接口的方法参数上使用 <c>[Query(Format = "...")]</c> 特性，
+/// 源生成器将在编译期生成查询参数代码，无需运行时反射。</item>
+/// </list>
+/// 后续计划（v5+）：通过源生成器在编译期自动生成枚举/特性映射查找表，运行时 <see cref="IUrlParameterFormatter"/> 仅作非 AOT 回退。
 /// </para>
 /// </remarks>
 public class DefaultUrlParameterFormatter : IUrlParameterFormatter

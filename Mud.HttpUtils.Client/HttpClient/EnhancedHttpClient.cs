@@ -485,6 +485,178 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
     #endregion
 
+#if NET8_0_OR_GREATER
+    /// <inheritdoc cref="IBaseHttpClient.SendAsAsyncEnumerable{TResult}(HttpRequestMessage, System.Text.Json.Serialization.Metadata.JsonTypeInfo{TResult}, CancellationToken)"/>
+    /// <remarks>
+    /// 此重载使用 <see cref="System.Text.Json.Serialization.Metadata.JsonTypeInfo{TResult}"/> 进行 AOT 安全的流式反序列化，
+    /// 不依赖开放泛型反射。可观测性/日志/异常处理与非泛型重载一致。
+    /// </remarks>
+    public async IAsyncEnumerable<TResult> SendAsAsyncEnumerable<TResult>(
+        HttpRequestMessage request,
+        System.Text.Json.Serialization.Metadata.JsonTypeInfo<TResult> jsonTypeInfo,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        if (request == null)
+            throw new ArgumentNullException(nameof(request));
+        if (jsonTypeInfo == null)
+            throw new ArgumentNullException(nameof(jsonTypeInfo));
+
+        var uri = ValidateRequest(request);
+
+        // 可观测性：设置 client_name 供下游 DelegatingHandler 读取
+        MudHttpObservability.SetClientName(request, ClientName);
+
+        // 创建日志作用域（CorrelationId / ClientName / Method / Host）
+        using var scope = _enableLogging
+            ? MudHttpObservability.CreateLoggerScope(_logger, request, ClientName)
+            : null;
+
+        // 若已被 TracingDelegatingHandler 采集，则不重复创建 Activity/指标（去重）
+        var alreadyObserved = MudHttpObservability.IsObserved(request);
+        var activity = alreadyObserved ? null : MudHttpObservability.StartRequestActivity(request, ClientName);
+        var sw = alreadyObserved ? default : ValueStopwatch.StartNew();
+        var recordedSuccess = false;
+        HttpResponseMessage? response = null;
+
+        // 路径 B 兜底：发出 RequestStarted 事件
+        if (!alreadyObserved)
+        {
+            MudHttpActivitySource.AddActivityEvent(
+                MudHttpDiagnosticNames.RequestStarted,
+                () => new HttpRequestDiagnosticPayload(request.Method.Method, request.RequestUri?.ToString(), ClientName),
+                MudHttpDiagnosticNames.RequestStarted,
+                new[]
+                {
+                    new KeyValuePair<string, object?>("method", request.Method.Method),
+                    new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                    new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
+                });
+        }
+
+        try
+        {
+            LogOperation("发送流式异步枚举请求（AOT 安全）", uri);
+
+            Stream stream;
+            try
+            {
+                response = await SendCoreAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+
+                await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
+
+                MudHttpObservability.SetStatusCode(request, (int)response.StatusCode);
+                MudHttpObservability.SetContentLength(request, response.Content.Headers.ContentLength);
+
+                stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (ApiException ex)
+            {
+                _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
+                throw;
+            }
+            catch (HttpRequestException ex)
+            {
+                var statusCode = ex.StatusCode.HasValue ? (int)ex.StatusCode.Value : 0;
+                _logger.HttpRequestFailedWithStatusCode(uri, statusCode, ex);
+                throw;
+            }
+            catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+            {
+                _logger.HttpRequestTimeout(uri, _httpClient.Timeout.TotalSeconds, ex);
+                throw new ApiRequestException($"请求超时: {uri}", ex, isTimeout: true, requestUri: uri);
+            }
+            catch (TaskCanceledException ex)
+            {
+                _logger.HttpRequestCancelled(uri, ex);
+                throw;
+            }
+            catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
+            {
+                _logger.HttpRequestCancelled(uri, ex);
+                throw;
+            }
+            catch (JsonException ex)
+            {
+                _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
+                throw;
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
+                throw new ApiRequestException($"HTTP请求处理失败: {uri}", ex, requestUri: uri);
+            }
+
+            await foreach (var item in ParseNdJsonStreamAsync(stream, jsonTypeInfo, _contentSerializer, cancellationToken).ConfigureAwait(false))
+            {
+                yield return item;
+            }
+
+            LogOperation("流式异步枚举请求完成（AOT 安全）", uri);
+            recordedSuccess = true;
+        }
+        finally
+        {
+            response?.Dispose();
+
+            if (!alreadyObserved)
+            {
+                var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
+                if (recordedSuccess)
+                {
+                    MudHttpObservability.RecordSuccessFromRequest(activity, request, elapsedMs, ClientName);
+
+                    int statusCode = 0;
+                    if (MudHttpObservability.TryGetProperty(request, "__mud_status_code", out var sc) && sc is int code)
+                        statusCode = code;
+                    MudHttpActivitySource.AddActivityEvent(
+                        MudHttpDiagnosticNames.RequestStopped,
+                        () => new HttpResponseDiagnosticPayload(request.Method.Method, request.RequestUri?.ToString(), ClientName, statusCode, elapsedMs),
+                        MudHttpDiagnosticNames.RequestStopped,
+                        new[]
+                        {
+                            new KeyValuePair<string, object?>("method", request.Method.Method),
+                            new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                            new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
+                            new KeyValuePair<string, object?>("status_code", statusCode),
+                            new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+                        });
+                }
+                else
+                {
+                    var streamEx = new InvalidOperationException("流式异步枚举未成功完成");
+                    MudHttpObservability.RecordError(
+                        activity,
+                        streamEx,
+                        elapsedMs,
+                        ClientName,
+                        request);
+
+                    MudHttpActivitySource.AddActivityEvent(
+                        MudHttpDiagnosticNames.RequestFailed,
+                        () => new HttpRequestErrorDiagnosticPayload(request.Method.Method, request.RequestUri?.ToString(), ClientName, elapsedMs, streamEx),
+                        MudHttpDiagnosticNames.RequestFailed,
+                        new[]
+                        {
+                            new KeyValuePair<string, object?>("method", request.Method.Method),
+                            new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                            new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
+                            new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+                            new KeyValuePair<string, object?>("exception_type", streamEx.GetType().Name),
+                        });
+                }
+                MudHttpObservability.MarkObserved(request);
+            }
+
+            activity?.Dispose();
+        }
+    }
+#endif
+
     #region XML 序列化支持
 
     /// <inheritdoc cref="IXmlHttpClient.SendXmlAsync{TResult}"/>
@@ -1084,6 +1256,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 #if NET8_0_OR_GREATER
     [RequiresDynamicCode("EncryptContent 使用 object/Dictionary 反射式 JSON 序列化，Native AOT 不支持。请在 AOT 场景下改用强类型重载或避免加密内容路径。")]
 #endif
+    [Obsolete("此重载使用运行时反射 (content.GetType())，Native AOT 不兼容。请改用 EncryptContent<T>(T, string) 泛型重载。")]
     public string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json)
     {
         if (content == null)

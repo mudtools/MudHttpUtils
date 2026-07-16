@@ -102,7 +102,7 @@ Mud.HttpUtils.EnhancedHttpClient.DeleteAsJsonAsync<TResult>(string! requestUri, 
 Mud.HttpUtils.EnhancedHttpClient.DownloadAsync(System.Net.Http.HttpRequestMessage! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]?>!
 Mud.HttpUtils.EnhancedHttpClient.DownloadLargeAsync(System.Net.Http.HttpRequestMessage! request, string! filePath, bool overwrite = true, int bufferSize = 81920, System.IProgress<long>? progress = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.IO.FileInfo!>!
 Mud.HttpUtils.EnhancedHttpClient.EncryptBytes(byte[]! data) -> byte[]!
-Mud.HttpUtils.EnhancedHttpClient.EncryptContent(object! content, string! propertyName = "data", Mud.HttpUtils.SerializeType serializeType = Mud.HttpUtils.SerializeType.Json) -> string!
+~Mud.HttpUtils.EnhancedHttpClient.EncryptContent(object! content, string! propertyName = "data", Mud.HttpUtils.SerializeType serializeType = Mud.HttpUtils.SerializeType.Json) -> string!
 Mud.HttpUtils.EnhancedHttpClient.EncryptContent<T>(T content, string! propertyName = "data") -> string!
 Mud.HttpUtils.EnhancedHttpClient.EnhancedHttpClient(System.Net.Http.HttpClient! httpClient, Mud.HttpUtils.EnhancedHttpClientOptions? options = null, Microsoft.Extensions.Options.IOptions<System.Text.Json.JsonSerializerOptions!>? jsonOptions = null, Mud.HttpUtils.IHttpContentSerializer? contentSerializer = null) -> void
 Mud.HttpUtils.EnhancedHttpClient.GetAsync<TResult>(string! requestUri, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
