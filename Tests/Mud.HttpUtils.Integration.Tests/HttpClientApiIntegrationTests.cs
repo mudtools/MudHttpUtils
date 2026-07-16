@@ -201,7 +201,7 @@ public class HttpClientApiIntegrationTests : IDisposable
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddOptions();
-        services.AddSingleton<IEnhancedHttpClient>(new DirectEnhancedHttpClient(_httpClient));
+        services.AddSingleton<IEnhancedHttpClient>(new DirectEnhancedHttpClient(_httpClient, new EnhancedHttpClientOptions { AllowCustomBaseUrls = true }));
         // 注册 IHttpContentSerializer 和 IHttpRequestExecutor（AddWebApiHttpClient 仅注册接口→实现映射，不注册基础设施服务）
         services.TryAddSingleton<IHttpContentSerializer>(sp => HttpContentSerializerFactory.CreateDefault(sp.GetService<IOptions<JsonSerializerOptions>>()?.Value));
         services.TryAddSingleton<IHttpRequestExecutor, DefaultHttpRequestExecutor>();

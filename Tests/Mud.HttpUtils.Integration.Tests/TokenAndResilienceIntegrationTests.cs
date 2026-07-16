@@ -54,7 +54,7 @@ public class TokenInjectionIntegrationTests : IDisposable
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddOptions();
-        services.AddSingleton<IEnhancedHttpClient>(new DirectEnhancedHttpClient(_httpClient));
+        services.AddSingleton<IEnhancedHttpClient>(new DirectEnhancedHttpClient(_httpClient, new EnhancedHttpClientOptions { AllowCustomBaseUrls = true }));
         services.AddSingleton<ITokenManager, IntegrationTestTokenManager>();
         services.TryAddSingleton<IHttpContentSerializer>(sp => HttpContentSerializerFactory.CreateDefault(sp.GetService<IOptions<JsonSerializerOptions>>()?.Value));
         services.TryAddSingleton<IHttpRequestExecutor, DefaultHttpRequestExecutor>();
@@ -184,7 +184,7 @@ public class ResilienceIntegrationTests : IDisposable
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddOptions();
-        var innerClient = new DirectEnhancedHttpClient(_httpClient);
+        var innerClient = new DirectEnhancedHttpClient(_httpClient, new EnhancedHttpClientOptions { AllowCustomBaseUrls = true });
         var policyProvider = new PollyResiliencePolicyProvider(resilienceOptions);
         services.AddSingleton<IEnhancedHttpClient>(new ResilientHttpClient(innerClient, policyProvider));
         services.TryAddSingleton<IHttpContentSerializer>(sp => HttpContentSerializerFactory.CreateDefault(sp.GetService<IOptions<JsonSerializerOptions>>()?.Value));

@@ -66,28 +66,30 @@ public static class UrlValidator
             throw new ArgumentException($"URL 格式无效: {url}", nameof(url));
         }
 
-        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException($"仅允许 HTTPS 协议，当前协议: {uri.Scheme}");
-        }
-
-        if (!IsStandardHttpsPort(uri))
-        {
-            throw new InvalidOperationException($"非标准 HTTPS 端口: {uri.Port}");
-        }
-
         var host = uri.Host;
 
+        // 白名单域名跳过所有后续检查
         if (_allowedDomains.Count > 0 && IsAllowedDomain(host))
             return;
 
         if (!allowCustomBaseUrls)
         {
+            // 严格模式：强制 HTTPS、标准端口、域名白名单
+            if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException($"仅允许 HTTPS 协议，当前协议: {uri.Scheme}");
+            }
+
+            if (!IsStandardHttpsPort(uri))
+            {
+                throw new InvalidOperationException($"非标准 HTTPS 端口: {uri.Port}");
+            }
+
             if (_allowedDomains.Count > 0)
             {
                 var allowedDomains = string.Join(", ", _allowedDomains.OrderBy(d => d));
                 throw new InvalidOperationException(
-                    $"域名 '{host}' 不在白名单中。允许的域名: {allowedDomains}。" +
+                    $"域名 '{host}' 不在白名单中。允许的域名: {allowedDomains}." +
                     "如需使用自定义域名，请设置 allowCustomBaseUrls=true（注意安全风险）。");
             }
 
@@ -96,7 +98,8 @@ public static class UrlValidator
                 "或设置 allowCustomBaseUrls=true（注意安全风险）。");
         }
 
-        if (IsPrivateIpAddress(host))
+        // 自定义模式：允许 HTTP 和非标准端口，但仍阻止非 localhost 的私有 IP 和内网域名
+        if (IsPrivateIpAddress(host) && !IsLoopbackAddress(host))
         {
             throw new InvalidOperationException($"不允许访问私有 IP 地址: {host}");
         }
@@ -189,6 +192,29 @@ public static class UrlValidator
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// 检查主机名是否为回环地址（localhost / 127.0.0.1 / ::1）。
+    /// </summary>
+    private static bool IsLoopbackAddress(string host)
+    {
+        if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (IPAddress.TryParse(host, out var ipAddress))
+            return IPAddress.IsLoopback(ipAddress);
+
+        try
+        {
+            var addresses = _dnsCache.GetOrAdd(host, h =>
+                Dns.GetHostAddressesAsync(h).GetAwaiter().GetResult());
+            return addresses.Any(IPAddress.IsLoopback);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool IsInternalDomain(string host)

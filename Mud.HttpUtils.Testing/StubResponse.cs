@@ -103,4 +103,36 @@ internal static class RouteMatcher
         if (string.IsNullOrEmpty(normalizedPath)) normalizedPath = "/";
         return $"{methodStr} {normalizedPath}";
     }
+
+    /// <summary>
+    /// 检查请求路径是否匹配路由模板（支持 {param} 占位符）。
+    /// 例如 "/api/users/{id}" 匹配 "/api/users/42"。
+    /// </summary>
+    /// <param name="routePath">路由模板路径。</param>
+    /// <param name="requestPath">实际请求路径。</param>
+    /// <returns>匹配则返回 true，否则 false。</returns>
+    internal static bool MatchPath(string routePath, string requestPath)
+    {
+        var routeSegments = routePath.TrimEnd('/').Split('/');
+        var requestSegments = requestPath.TrimEnd('/').Split('/');
+
+        if (routeSegments.Length != requestSegments.Length)
+            return false;
+
+        for (int i = 0; i < routeSegments.Length; i++)
+        {
+            var routeSeg = routeSegments[i];
+            var requestSeg = requestSegments[i];
+
+            // 路由段为 {param} 占位符时匹配任意值
+            if (routeSeg.StartsWith("{") && routeSeg.EndsWith("}"))
+                continue;
+
+            // 普通段需精确匹配（忽略大小写）
+            if (!string.Equals(routeSeg, requestSeg, StringComparison.OrdinalIgnoreCase))
+                return false;
+        }
+
+        return true;
+    }
 }

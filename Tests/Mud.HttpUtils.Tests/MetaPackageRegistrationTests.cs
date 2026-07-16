@@ -92,6 +92,7 @@ public class MetaPackageRegistrationTests
     private class TestTokenManager : ITokenManager
     {
         public string TokenType => "Bearer";
+        public bool SupportsBackgroundRefresh => true;
         public Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
             => Task.FromResult("test-token");
         public Task<string> GetTokenAsync(string[]? scopes, CancellationToken cancellationToken = default)

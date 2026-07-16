@@ -73,14 +73,35 @@ public class DefaultUrlParameterFormatter : IUrlParameterFormatter
 }
 
 /// <summary>
-/// CamelCase 键格式化器（PascalCase → camelCase）。
+/// CamelCase 键格式化器（PascalCase/snake_case/kebab-case → camelCase）。
 /// </summary>
 public class CamelCaseUrlParameterKeyFormatter : IUrlParameterKeyFormatter
 {
     /// <inheritdoc/>
     public string Format(string key)
     {
-        if (string.IsNullOrEmpty(key) || char.IsLower(key[0])) return key;
+        if (string.IsNullOrEmpty(key)) return key;
+
+        // 若包含分隔符（_ 或 -），先拆分再以 camelCase 重组
+        if (key.Contains('_') || key.Contains('-'))
+        {
+            var parts = key.Split(['_', '-'], StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0) return key;
+            var sb = new System.Text.StringBuilder(key.Length);
+            sb.Append(parts[0].ToLowerInvariant());
+            for (int i = 1; i < parts.Length; i++)
+            {
+                if (parts[i].Length > 0)
+                {
+                    sb.Append(char.ToUpperInvariant(parts[i][0]));
+                    sb.Append(parts[i].Substring(1).ToLowerInvariant());
+                }
+            }
+            return sb.ToString();
+        }
+
+        // 无分隔符：仅首字母小写（PascalCase → camelCase）
+        if (char.IsLower(key[0])) return key;
         if (key.Length == 1) return char.ToLowerInvariant(key[0]).ToString();
         return char.ToLowerInvariant(key[0]) + key.Substring(1);
     }

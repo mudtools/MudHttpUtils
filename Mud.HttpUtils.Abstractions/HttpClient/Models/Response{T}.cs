@@ -78,7 +78,8 @@ public class Response<T> : IApiResponse<T>
         RawContent = rawContent;
         ResponseHeaders = responseHeaders;
         ResponseMessage = responseMessage;
-        ErrorContent = null;
+        // 当状态码表示错误时，rawContent 即为错误内容
+        ErrorContent = (int)statusCode < 200 || (int)statusCode >= 300 ? rawContent : null;
         // 显式转换：Dictionary<string,List<string>> -> Dictionary<string,IReadOnlyList<string>>
         // (IReadOnlyList<out T> 协变不触发隐式引用转换,需显式 ToDictionary)
         _headersView = responseHeaders?

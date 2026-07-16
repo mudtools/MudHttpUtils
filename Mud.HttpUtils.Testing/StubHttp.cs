@@ -58,18 +58,36 @@ public sealed class StubHttp : HttpMessageHandler
     /// <inheritdoc/>
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        // 查找匹配的路由
-        var key = RouteMatcher.BuildKey(request.Method, request.RequestUri?.AbsolutePath ?? "/");
+        var requestPath = request.RequestUri?.AbsolutePath ?? "/";
         StubResponse? matched = null;
 
-        if (_routes.TryGetValue(key, out var responses))
+        // 遍历所有路由，支持精确匹配和模板参数匹配（如 /api/users/{id}）
+        foreach (var kvp in _routes)
         {
-            // 取第一个未过期或未达到调用次数限制的响应
-            matched = responses.FirstOrDefault(r => r.IsValid);
-            if (matched != null)
+            var responses = kvp.Value;
+            // 尝试精确匹配
+            var exactKey = RouteMatcher.BuildKey(request.Method, requestPath);
+            if (kvp.Key == exactKey)
             {
-                matched.IncrementCallCount();
+                matched = responses.FirstOrDefault(r => r.IsValid);
+                break;
             }
+            // 尝试模板匹配（路由路径含 {param} 占位符）
+            foreach (var resp in responses)
+            {
+                if (resp.IsValid && RouteMatcher.MatchPath(resp.Path, requestPath)
+                    && (resp.Method == null || resp.Method == request.Method))
+                {
+                    matched = resp;
+                    break;
+                }
+            }
+            if (matched != null) break;
+        }
+
+        if (matched != null)
+        {
+            matched.IncrementCallCount();
         }
 
         // Fallback 到 catch-all
