@@ -370,3 +370,4 @@ options.MaxCloneContentSize = -1;
 - **性能保护**：通过 `MaxCloneContentSize` 限制克隆大小，避免大请求体的克隆开销
 - **可观测性**：通过 `OnRetry` 支持自定义重试回调，便于日志记录和指标收集；内置诊断事件负载（`RetryDiagnosticPayload`、`TimeoutDiagnosticPayload`）支持分布式追踪
 - **配置灵活**：支持代码配置和配置文件绑定
+- **AOT 兼容**：`ResilientHttpClient` 装饰器与策略编排均为静态类型与委托，无运行时反射，可在 Native AOT 下使用

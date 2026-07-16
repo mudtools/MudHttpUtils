@@ -695,7 +695,18 @@ var headers = response.ResponseHeaders;   // 响应头
 
 > `Response<T>` 支持 `AllowAnyStatusCodeAttribute`，即使响应状态码表示错误也不会抛出异常。支持 `GetContentOrThrow()` 方法在错误时抛出 `ApiException`。
 
-### 编译诊断
+### Native AOT 支持
+
+Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud.HttpUtils.JsonContextScaffolder` 脚手架实现零反射的 Native AOT 构建：
+
+- **`[HttpJsonSerializable]`（Attributes）**：在实体/DTO 上标注，Scaffolder 自动生成 `JsonSerializerContext`。
+- **`[HttpClientApi]` 接口扫描**：Scaffolder 自动提取方法返回类型与 `[Body]` 参数类型中的闭合泛型（如 `FeishuApiResult<T>`）并注册到独立 Context，无需手写。
+- **`IHttpContentSerializer` 注入**：生成的实现类构造函数可注入 `IHttpContentSerializer`（默认 `SystemTextJsonContentSerializer`），序列化统一经抽象进行，AOT 路径下由编译期字段名映射绕过反射。
+- **AOT 编译诊断**：`AOT001`–`AOT007` 在编译期发现未覆盖的 DTO / 开放泛型 / 多态 / XML 序列化等问题，部分可由 `Mud.HttpUtils.CodeFixes` 一键修复；`-p:AotStrictMode=true` 升级为 Error。
+
+> 完整脚手架用法见 [`Mud.HttpUtils.JsonContextScaffolder` 工具文档](../Tools/Mud.HttpUtils.JsonContextScaffolder/README.md)。
+
+## 编译诊断
 
 源代码生成器在编译时会对不合理的 API 定义产生警告或错误，帮助开发者在编译阶段发现问题。
 
@@ -1050,3 +1061,5 @@ Mud.HttpUtils.Generator/
 - [Mud.HttpUtils.Attributes](../Mud.HttpUtils.Attributes/) - 特性定义
 - [Mud.HttpUtils.Client](../Mud.HttpUtils.Client/) - 客户端实现
 - [Mud.HttpUtils.Resilience](../Mud.HttpUtils.Resilience/) - 弹性策略
+- [Mud.HttpUtils.CodeFixes](../Mud.HttpUtils.CodeFixes/) - 诊断代码修复器（IDE 一键修复）
+- [Mud.HttpUtils.JsonContextScaffolder](../../Tools/Mud.HttpUtils.JsonContextScaffolder/) - AOT JSON 上下文脚手架工具

@@ -6,7 +6,9 @@
 	     需在项目文件之后导入才能读取。
 	     通过 AdditionalFiles 按 TFM 声明 PublicAPI.Shipped.txt / PublicAPI.Unshipped.txt。 -->
 	<PropertyGroup>
-		<EnablePublicApiBaseline Condition="'$(PackageId)' != '' AND '$(IsRoslynComponent)' != 'true' AND '$(IncludeBuildOutput)' != 'false' AND '$(IsTestProject)' != 'true'">true</EnablePublicApiBaseline>
+		<!-- PackAsTool 是 dotnet 全局工具（CLI 可执行程序），非供外部引用的类库，
+		     其公共类型（如 JsonContextGenerator）属于工具内部实现细节，无需维护公共 API 基线。 -->
+		<EnablePublicApiBaseline Condition="'$(PackageId)' != '' AND '$(IsRoslynComponent)' != 'true' AND '$(IncludeBuildOutput)' != 'false' AND '$(IsTestProject)' != 'true' AND '$(PackAsTool)' != 'true'">true</EnablePublicApiBaseline>
 	</PropertyGroup>
 
 	<ItemGroup Condition="'$(EnablePublicApiBaseline)' == 'true'">

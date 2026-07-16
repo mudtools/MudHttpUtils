@@ -564,7 +564,7 @@ Task<SearchResult> SearchAsync([RawQueryString] string queryString);
 
 ## 接口级动态属性
 
-`PathAttribute` 和 `QueryAttribute` 现在支持应用到接口属性（`AttributeTargets.Property`），用于定义全局参数：
+`PathAttribute`、`QueryAttribute` 和 `HeaderAttribute` 现在支持应用到接口属性（`AttributeTargets.Property`），用于定义全局参数（接口级 Header 属性支持 `Replace`、`FormatString`、`AliasAs` 参数）：
 
 ```csharp
 [HttpClientApi(HttpClient = "IEnhancedHttpClient")]
@@ -598,6 +598,25 @@ await api.GetUsersAsync();
 ```
 
 > **优先级**：方法参数优先级高于接口属性。如果方法参数与接口属性同名，方法参数值会覆盖接口属性值。
+>
+> **接口级 Header 属性**：`[Header]` 可标记在接口属性上，作为所有方法的动态请求头。支持 `Replace`（替换同名请求头）与 `FormatString`（格式化值，如 GUID 的 `"N"`）；当 `HeaderMergeMode` 为 `Ignore` 时该属性 Header 被跳过，`Replace` 时先移除同名头再添加；若 Header 名为 `Authorization` 且存在 TokenManager，则该属性 Header 由 Token 注入机制处理而被跳过。属性级 Header 在方法参数 Header 之后、接口级静态 Header 之前生成（动态优先于静态）。
+
+```csharp
+[HttpClientApi(HttpClient = "IEnhancedHttpClient")]
+[BasePath("{tenantId}/api/v1")]
+public interface ITenantApi
+{
+    [Path("tenantId")] string TenantId { get; set; }
+    [Query("apiKey")] string ApiKey { get; set; }
+
+    // 接口级 Header 动态属性
+    [Header("X-App-Version")] string AppVersion { get; set; }
+    [Header("X-Trace-Id", FormatString = "N")] Guid TraceId { get; set; }
+
+    [Get("users")]
+    Task<List<User>> GetUsersAsync();
+}
+```
 
 ## RetryAttribute 详解
 
@@ -756,6 +775,26 @@ public class UserCreatedEvent
     public string UserName { get; set; }
 }
 ```
+
+## HttpJsonSerializableAttribute 详解（Native AOT 支持）
+
+标注在需纳入 JSON 源生成的实体/DTO 上（支持 `class` / `struct` / `record`），用于 Native AOT 场景。Scaffolder 会按此特性聚合生成 `JsonSerializerContext` 源文件，使 STJ 源生成在 AOT 下获得类型元数据。
+
+| 属性 | 类型 | 默认值 | 说明 |
+| ---- | ---- | ------ | ---- |
+| `SerializerClassName` | `string?` | `null`（自动派生） | 生成的 Context 类名（不含 `JsonContext` 后缀）；同名实体合并进同一 Context |
+| `NamingPolicy` | `JsonNamingPolicyHint` | `Default`（自动推导） | JSON 命名策略：`Default`（按 `[JsonPropertyName]` 模式自动推导）/ `CamelCase` / `SnakeCaseLower` / `SnakeCaseUpper` / `KebabCaseLower` / `KebabCaseUpper` |
+
+```csharp
+[HttpJsonSerializable(SerializerClassName = "FeishuAI", NamingPolicy = JsonNamingPolicyHint.SnakeCaseLower)]
+public class ContractFileUploadRequest { ... }
+```
+
+> **工作流**：标注实体 → 运行 `Mud.HttpUtils.JsonContextScaffolder` 脚手架（`dotnet mud-jsonctx --project <你的.csproj>`）自动生成 `XxxJsonContext.g.cs` → 在 .NET 8+ 启动注册 `services.AddMudHttpClientJsonContext(FeishuAIJsonContext.Default)`。`HttpContentSerializerFactory.BuildOptions` 会自动合并消费方 resolver 与库内置 `MudHttpJsonContext.Default`。
+>
+> **编译期保障**：若类型标注了 `[HttpJsonSerializable]` 却未被任何 `JsonSerializerContext` 覆盖，源生成器会发出 `AOT006` 编译诊断（可由 `Mud.HttpUtils.CodeFixes` 的 `AotJsonContextCodeFixProvider` 一键修复）；`[HttpClientApi]` 接口的闭合泛型返回/Body 类型未被覆盖则发出 `AOT004`/`AOT005`。CI 严格模式（`-p:AotStrictMode=true`）下这些诊断升级为 Error。
+
+详见 [`Mud.HttpUtils.JsonContextScaffolder` 工具文档](../Tools/Mud.HttpUtils.JsonContextScaffolder/README.md) 与 [`Mud.HttpUtils.Generator` 文档](../Mud.HttpUtils.Generator/README.md#aot-json-序列化诊断aot) 的 AOT 诊断章节。
 
 ## QueryAttribute 详解
 

@@ -117,6 +117,15 @@ services.AddSingleton<IHmacSignatureProvider, DefaultHmacSignatureProvider>();
 
 > `DefaultApiKeyProvider` 从 `IConfiguration` 的 `ApiKey` 或 `ApiKeys:Default` 键读取密钥。`DefaultHmacSignatureProvider` 使用 HMAC-SHA256 算法对请求内容计算签名，签名结果以 Base64 编码。
 
+### HTTP 内容序列化器
+
+| 类                                | 说明                                                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `SystemTextJsonContentSerializer` | `IHttpContentSerializer` 默认实现，基于 `System.Text.Json`，行为等价于直接调用 `JsonSerializer`，保证向后兼容 |
+| `HttpContentSerializerFactory`    | 序列化选项合并工厂，集中构建 `JsonSerializerOptions`，自动合并消费方 resolver（`IOptions`/编程式）+ 库内置 `MudHttpJsonContext.Default` +（JIT）反射兜底 |
+
+> 所有 JSON 序列化/反序列化（请求体、响应、`NDJSON` 流式解析、加密内容等）均通过 `IHttpContentSerializer` 抽象进行，不再直接调用 `JsonSerializer`。默认实现 `SystemTextJsonContentSerializer` 可在 DI 中替换为自定义实现以切换序列化引擎（如 Newtonsoft.Json / XML）。`HttpContentSerializerFactory.BuildOptions` 会自动把消费方 resolver 与库内置 `MudHttpJsonContext.Default` 合并：AOT 环境下仅保留源生成上下文、杜绝静默回退反射；JIT 环境下额外 `Combine` `DefaultJsonTypeInfoResolver` 兼容未声明类型。
+
 ### 日志脱敏
 
 | 类                           | 说明                                                                          |
@@ -720,6 +729,16 @@ services.AddSensitiveDataMasker<MyMasker>();        // 注册自定义实现
 | `Microsoft.Extensions.Logging.Abstractions` | 日志抽象                                                      |
 | `Microsoft.Extensions.Options`              | 选项模式                                                      |
 | `Microsoft.Extensions.Caching.Memory`       | 内存缓存（`UserTokenManagerBase`、`MemoryHttpResponseCache`） |
+
+## Native AOT 支持
+
+`Mud.HttpUtils.Client` 是 Native AOT 友好的：所有 JSON 序列化/反序列化统一经过 `IHttpContentSerializer` 抽象，避免在 AOT 下静默回退反射。
+
+- 通过 `AddMudHttpClientJsonContext(...)`（.NET 8+）注册消费方 `JsonSerializerContext`，由 `HttpContentSerializerFactory.BuildOptions` 自动与库内置 `MudHttpJsonContext.Default` 合并。
+- 配合 `Mud.HttpUtils.JsonContextScaffolder` 脚手架自动生成包含闭合泛型（如 `FeishuApiResult<T>`）的 `JsonSerializerContext`，或手动将 `[HttpJsonSerializable]` 标注类型加入 `JsonSerializerContext`。
+- `SystemTextJsonContentSerializer` 在 AOT 环境下仅使用源生成元数据，不在运行时反射。
+
+> 详见 [`Mud.HttpUtils.JsonContextScaffolder` 工具文档](../Tools/Mud.HttpUtils.JsonContextScaffolder/README.md) 与 [`Mud.HttpUtils.Abstractions` 文档](../Mud.HttpUtils.Abstractions/README.md#native-aot-支持) 的 AOT 章节。
 
 ## 设计原则
 

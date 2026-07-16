@@ -134,7 +134,7 @@ HttpClientApiDemo.Share/
 ### 编译项目
 
 ```bash
-cd Test/HttpClientApiTest
+cd Demos/HttpClientApiDemo.Share
 dotnet build
 ```
 
@@ -168,8 +168,10 @@ obj/Debug/net10.0/generated/Mud.HttpUtils.Generator/Mud.HttpUtils.HttpInvokeClas
 
 ### 基本使用
 
+> **注意**：`[HttpClientApi]` 的 `BaseAddress` 构造函数与属性已废弃，请通过 `AddMudHttpClient(clientName, baseAddress)` 在 DI 注册时配置基地址，接口定义仅保留内容类型等声明。
+
 ```csharp
-[HttpClientApi("https://api.mudtools.cn/", ContentType = "application/xml")]
+[HttpClientApi(ContentType = "application/xml")]
 public interface IMyApi
 {
     // 使用接口级别的 application/xml
