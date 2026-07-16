@@ -21,19 +21,19 @@ public static class MudHttpClientNamingPresets
     /// </summary>
     /// <returns>配置了 <see cref="JsonNamingPolicy.CamelCase"/> 的 <see cref="JsonSerializerOptions"/>。</returns>
     public static JsonSerializerOptions CamelCase() =>
-        new(JsonNamingPolicy.CamelCase);
+        new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
     /// <summary>
     /// SnakeCase：JSON 属性名为 snake_case。
     /// </summary>
     /// <returns>配置了 snake_case 命名策略的 <see cref="JsonSerializerOptions"/>。</returns>
     public static JsonSerializerOptions SnakeCase() =>
-        new(SeparatedCaseJsonNamingPolicy.Snake);
+        new() { PropertyNamingPolicy = SeparatedCaseJsonNamingPolicy.Snake };
 
     /// <summary>
     /// KebabCase：JSON 属性名为 kebab-case。
     /// </summary>
     /// <returns>配置了 kebab-case 命名策略的 <see cref="JsonSerializerOptions"/>。</returns>
     public static JsonSerializerOptions KebabCase() =>
-        new(SeparatedCaseJsonNamingPolicy.Kebab);
+        new() { PropertyNamingPolicy = SeparatedCaseJsonNamingPolicy.Kebab };
 }

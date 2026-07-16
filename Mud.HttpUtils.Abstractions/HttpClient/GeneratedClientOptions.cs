@@ -90,6 +90,24 @@ public sealed class GeneratedClientOptions
     public IAppContextHolder? AppContextHolder { get; set; }
 
     /// <summary>
+    /// 获取或设置异常擦除器（在异常传播前清除敏感数据）。
+    /// </summary>
+    /// <value>默认为 <c>null</c>（不执行擦除）。</value>
+    public IExceptionRedactor? ExceptionRedactor { get; set; }
+
+    /// <summary>
+    /// 获取或设置错误响应体最大读取字符数（防止恶意/超大错误响应导致 OOM）。
+    /// </summary>
+    /// <value>默认为 <c>null</c>（无限制）。</value>
+    public int? MaxExceptionContentLength { get; set; }
+
+    /// <summary>
+    /// 获取或设置是否在发送前捕获请求体字符串（用于异常调试）。
+    /// </summary>
+    /// <value>默认为 <c>false</c>（不捕获）。</value>
+    public bool CaptureRequestContent { get; set; }
+
+    /// <summary>
     /// 获取或设置实例级"仅生成模式"覆盖。
     /// </summary>
     /// <value>

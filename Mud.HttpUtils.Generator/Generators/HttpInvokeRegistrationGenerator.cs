@@ -289,7 +289,10 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         sb.AppendLine("                    options?.ResilienceResolver,");
         sb.AppendLine("                    appResilienceResolver: null,");
         sb.AppendLine("                    appContextHolder: appContextHolder,");
-        sb.AppendLine("                    contentSerializer: options?.ContentSerializer);");
+        sb.AppendLine("                    contentSerializer: options?.ContentSerializer,");
+        sb.AppendLine("                    exceptionRedactor: options?.ExceptionRedactor,");
+        sb.AppendLine("                    maxExceptionContentLength: options?.MaxExceptionContentLength,");
+        sb.AppendLine("                    captureRequestContent: options?.CaptureRequestContent);");
         // 调用实现类构造函数（默认模式签名）
         sb.AppendLine($"                return new {fullyQualifiedImplementation}(");
         sb.AppendLine("                    appContext,");

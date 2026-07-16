@@ -57,6 +57,13 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     private readonly bool _allowCustomBaseUrls;
     private readonly IHttpContentSerializer _contentSerializer;
 
+    // Phase 1/2/3 运行时消费字段
+    private readonly RequestBodySerializationMode _requestBodySerialization;
+    private readonly IExceptionRedactor? _exceptionRedactor;
+    private readonly int? _maxExceptionContentLength;
+    private readonly bool _captureRequestContent;
+    private readonly UrlResolutionMode _urlResolution;
+
     /// <summary>
     /// 获取 HTTP 内容序列化器。所有 JSON 序列化/反序列化操作统一通过此抽象层进行。
     /// </summary>
@@ -107,6 +114,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         _responseInterceptors = options.ResponseInterceptors?.OrderBy(i => i.Order).ToArray() ?? Array.Empty<IHttpResponseInterceptor>();
         _sensitiveDataMasker = options.SensitiveDataMasker;
         _allowCustomBaseUrls = options.AllowCustomBaseUrls;
+        // Phase 1/2/3：从 options 读取运行时消费属性
+        _requestBodySerialization = options.RequestBodySerialization;
+        _exceptionRedactor = options.ExceptionRedactor;
+        _maxExceptionContentLength = options.MaxExceptionContentLength;
+        _captureRequestContent = options.CaptureRequestContent;
+        _urlResolution = options.UrlResolution;
         // 阶段 B3：序列化器自持 options，基类不再持有 _jsonOptions。
         // 未注入序列化器时经由工厂 CreateDefault 合并 MudHttpJsonContext.Default。
         _contentSerializer = contentSerializer
@@ -368,6 +381,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             // 保留 JsonException 与 InvalidOperationException 原始类型，使流式与非流式路径的异常处理模式统一。
             // 原实现将所有非 HttpRequestException/OCE 异常包装为 HttpRequestException，
             // 调用方无法用统一的 catch (JsonException) 模式处理流式与非流式响应。
+            catch (ApiException ex)
+            {
+                // Phase 2：ApiException 已应用过 ExceptionRedactor，直接重抛
+                _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
+                throw;
+            }
             catch (JsonException ex)
             {
                 _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
@@ -546,6 +565,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     {
         requestUri.ThrowIfNull();
 
+        // Phase 3 (T3.1)：根据 UrlResolutionMode 解析请求 URI
+        requestUri = ResolveRequestUri(requestUri)!;
         using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
         var uri = ValidateRequest(request);
         return await ExecuteWithObservabilityAsync(
@@ -560,6 +581,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     {
         var enc = encoding ?? Encoding.UTF8;
         var xmlContent = SerializeToXml(requestData, enc);
+        // Phase 3 (T3.1)：根据 UrlResolutionMode 解析请求 URI
+        requestUri = ResolveRequestUri(requestUri)!;
         using var request = new HttpRequestMessage(method, requestUri)
         {
             Content = new StringContent(xmlContent, enc, "application/xml")
@@ -709,10 +732,39 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         HttpMethod method, string operation, string completeMsg, string errorMsg,
         string requestUri, TRequest requestData, CancellationToken cancellationToken)
     {
+        // Phase 3 (T3.1)：根据 UrlResolutionMode 解析请求 URI
+        requestUri = ResolveRequestUri(requestUri)!;
+        // Phase 1 (T1.2)：根据 RequestBodySerializationMode 选择序列化路径
+        var content = CreateHttpContentWithMode(requestData);
+        // Phase 2 (T2.3)：CaptureRequestContent 启用时缓冲请求体字符串
+        string? capturedRequestContent = null;
+        if (_captureRequestContent && content != null)
+        {
+            try
+            {
+#if NET5_0_OR_GREATER
+                capturedRequestContent = await content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+#else
+                capturedRequestContent = await content.ReadAsStringAsync().ConfigureAwait(false);
+#endif
+            }
+            catch { /* 读取失败不影响请求发送 */ }
+        }
+
         using var request = new HttpRequestMessage(method, requestUri)
         {
-            Content = _contentSerializer.ToHttpContent(requestData)
+            Content = content
         };
+        // 将捕获的请求体存入请求属性，供 EnsureSuccessStatusCodeAsync 在创建 ApiException 时读取
+        if (capturedRequestContent != null)
+        {
+#if NETSTANDARD2_0
+            request.Properties["__mud_captured_request_content"] = capturedRequestContent;
+#else
+            request.Options.TryAdd("__mud_captured_request_content", capturedRequestContent);
+#endif
+        }
+
         var validatedUri = ValidateRequest(request);
         return await ExecuteWithObservabilityAsync(
             request,
@@ -722,10 +774,34 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 cancellationToken: cancellationToken));
     }
 
+    /// <summary>
+    /// Phase 1 (T1.2)：根据 <see cref="_requestBodySerialization"/> 模式选择请求体序列化路径。
+    /// <see cref="RequestBodySerializationMode.Default"/> 使用 <see cref="IHttpContentSerializer.ToHttpContent{T}"/>（向后兼容）。
+    /// <see cref="RequestBodySerializationMode.Buffered"/> / <see cref="RequestBodySerializationMode.Streamed"/> 使用 <see cref="ISynchronousContentSerializer"/> fast-path。
+    /// </summary>
+    private HttpContent? CreateHttpContentWithMode<T>(T item)
+    {
+        if (_requestBodySerialization == RequestBodySerializationMode.Default)
+            return _contentSerializer.ToHttpContent(item);
+
+        // 检测序列化器是否实现 ISynchronousContentSerializer 以启用 fast-path
+        if (_contentSerializer is ISynchronousContentSerializer syncSerializer)
+        {
+            return _requestBodySerialization == RequestBodySerializationMode.Streamed
+                ? syncSerializer.ToStreamingHttpContent(item)
+                : syncSerializer.ToHttpContentSynchronous(item);
+        }
+
+        // 序列化器未实现 fast-path 接口，回退到默认路径
+        return _contentSerializer.ToHttpContent(item);
+    }
+
     private async Task<TResult?> SendSimpleJsonRequestAsync<TResult>(
         HttpMethod method, string operation, string completeMsg, string errorMsg,
         string requestUri, CancellationToken cancellationToken)
     {
+        // Phase 3 (T3.1)：根据 UrlResolutionMode 解析请求 URI
+        requestUri = ResolveRequestUri(requestUri)!;
         using var request = new HttpRequestMessage(method, requestUri);
         var validatedUri = ValidateRequest(request);
         return await ExecuteWithObservabilityAsync(
@@ -779,6 +855,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         // HC-02 修复：在 catch-all 之前捕获 JsonException 和 InvalidOperationException，保留原始异常类型。
         // 此前所有非 HttpRequestException / OperationCanceledException 的异常被统一包装为 HttpRequestException，
         // 调用方无法按 JsonException 等具体类型 catch，只能通过 InnerException 检查。
+        catch (ApiException ex)
+        {
+            // Phase 2：ApiException 已在 EnsureSuccessStatusCodeAsync 中应用过 ExceptionRedactor，直接重抛
+            _logger.HttpRequestFailedWithExceptionType(requestUri!, ex.GetType().Name, ex);
+            throw;
+        }
         catch (JsonException ex)
         {
             _logger.HttpRequestFailedWithExceptionType(requestUri!, ex.GetType().Name, ex);
@@ -1323,6 +1405,35 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     }
 
     /// <summary>
+    /// Phase 3 (T3.1)：根据 UrlResolutionMode 解析请求 URI。
+    /// <see cref="UrlResolutionMode.Default"/> 时返回原字符串（由 HttpClient 解析）。
+    /// <see cref="UrlResolutionMode.Rfc3986"/> 时使用 new Uri(baseAddress, relativeUri) 显式解析为绝对 URI。
+    /// </summary>
+    private string? ResolveRequestUri(string? requestUri)
+    {
+        if (string.IsNullOrEmpty(requestUri))
+            return requestUri;
+
+        // 绝对 URI 直接返回
+        if (Uri.IsWellFormedUriString(requestUri, UriKind.Absolute))
+            return requestUri;
+
+        // Default 模式：返回原字符串，由 HttpClient 按 BaseAddress 解析
+        if (_urlResolution == UrlResolutionMode.Default)
+            return requestUri;
+
+        // Rfc3986 模式：使用标准 Uri 合并规则解析
+        var baseAddress = _httpClient.BaseAddress;
+        if (baseAddress == null)
+            return requestUri; // 无 BaseAddress，交给 HttpClient 处理
+
+        if (Uri.TryCreate(baseAddress, requestUri, out var resolvedUri))
+            return resolvedUri.ToString();
+
+        return requestUri;
+    }
+
+    /// <summary>
     /// 验证URL的有效性
     /// </summary>
     private void ValidateUrl(string? url)
@@ -1386,33 +1497,51 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
         _logger.HttpRequestFailedWithResponse(statusCode, sanitizedContent);
 
+        // Phase 2 (T2.1/T2.3)：创建 ApiException，应用 ExceptionRedactor 擦除敏感数据，设置 RequestContent
+        var apiEx = new ApiException(response.StatusCode, errorContent, response.RequestMessage?.RequestUri?.ToString());
+
+        // Phase 2 (T2.3)：从请求属性读取捕获的请求体
+        string? capturedRequestContent = null;
+        var requestMsg = response.RequestMessage;
+        if (requestMsg != null)
+        {
 #if NETSTANDARD2_0
-        var httpEx = new HttpRequestException($"HTTP请求失败: {statusCode} {response.StatusCode} - {errorContent}", null);
-        httpEx.Data["HttpStatusCode"] = statusCode;
-        throw httpEx;
+            if (requestMsg.Properties.TryGetValue("__mud_captured_request_content", out var captured))
+                capturedRequestContent = captured as string;
 #else
-        var httpEx = new HttpRequestException($"HTTP请求失败: {statusCode} {response.StatusCode} - {errorContent}", null, response.StatusCode);
-        httpEx.Data["HttpStatusCode"] = statusCode;
-        throw httpEx;
+            if (requestMsg.Options.TryGetValue(new HttpRequestOptionsKey<string>("__mud_captured_request_content"), out var captured))
+                capturedRequestContent = captured;
 #endif
+        }
+        if (capturedRequestContent != null)
+            apiEx.RequestContent = capturedRequestContent;
+
+        // Phase 2 (T2.1)：在抛出前调用 ExceptionRedactor 擦除敏感数据
+        _exceptionRedactor?.Redact(apiEx);
+
+        apiEx.Data["HttpStatusCode"] = statusCode;
+        throw apiEx;
     }
 
     private async Task<string> ReadErrorContentWithLimitAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
+        // Phase 2 (T2.2)：使用可配置的 MaxExceptionContentLength，回退到硬编码默认值
+        var maxLen = _maxExceptionContentLength ?? MaxErrorContentLength;
+
         var contentLength = response.Content.Headers.ContentLength;
 
-        if (contentLength.HasValue && contentLength.Value > MaxErrorContentLength)
+        if (contentLength.HasValue && contentLength.Value > maxLen)
         {
 #if NETSTANDARD2_0
             using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 #else
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 #endif
-            var buffer = new byte[MaxErrorContentLength];
+            var buffer = new byte[maxLen];
 #if NETSTANDARD2_0
             var bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
 #else
-            var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, MaxErrorContentLength), cancellationToken).ConfigureAwait(false);
+            var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, maxLen), cancellationToken).ConfigureAwait(false);
 #endif
             return Encoding.UTF8.GetString(buffer, 0, bytesRead) + "...[已截断]";
         }

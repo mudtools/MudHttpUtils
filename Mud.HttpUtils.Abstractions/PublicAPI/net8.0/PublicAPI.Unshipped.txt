@@ -727,6 +727,12 @@ Mud.HttpUtils.GeneratedClientOptions.ContentSerializer.get -> Mud.HttpUtils.IHtt
 Mud.HttpUtils.GeneratedClientOptions.ContentSerializer.set -> void
 Mud.HttpUtils.GeneratedClientOptions.GeneratedOnlyMode.get -> System.Boolean?
 Mud.HttpUtils.GeneratedClientOptions.GeneratedOnlyMode.set -> void
+Mud.HttpUtils.GeneratedClientOptions.ExceptionRedactor.get -> Mud.HttpUtils.IExceptionRedactor?
+Mud.HttpUtils.GeneratedClientOptions.ExceptionRedactor.set -> void
+Mud.HttpUtils.GeneratedClientOptions.MaxExceptionContentLength.get -> System.Nullable<int>
+Mud.HttpUtils.GeneratedClientOptions.MaxExceptionContentLength.set -> void
+Mud.HttpUtils.GeneratedClientOptions.CaptureRequestContent.get -> bool
+Mud.HttpUtils.GeneratedClientOptions.CaptureRequestContent.set -> void
 Mud.HttpUtils.GeneratedClientOptions.JsonTypeInfoResolver.get -> System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver?
 Mud.HttpUtils.GeneratedClientOptions.JsonTypeInfoResolver.set -> void
 Mud.HttpUtils.GeneratedClientOptions.RequestInterceptor.get -> Mud.HttpUtils.IHttpRequestInterceptor?
