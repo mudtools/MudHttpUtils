@@ -20,7 +20,6 @@
     <Project Path="Mud.HttpUtils.Resilience/Mud.HttpUtils.Resilience.csproj" />
     <Project Path="Mud.HttpUtils/Mud.HttpUtils.csproj" />
     <Project Path="Mud.HttpUtils.Newtonsoft.Json/Mud.HttpUtils.Newtonsoft.Json.csproj" />
-    <Project Path="Mud.HttpUtils.Xml/Mud.HttpUtils.Xml.csproj" />
     <Project Path="Mud.HttpUtils.Analyzers/Mud.HttpUtils.Analyzers.csproj" />
     <Project Path="Mud.HttpUtils.Testing/Mud.HttpUtils.Testing.csproj" />
   </Folder>

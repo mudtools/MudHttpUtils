@@ -114,7 +114,9 @@ public static class ServiceCollectionExtensions
         if (configuration == null)
             throw new ArgumentNullException(nameof(configuration));
 
-        // 使用 IConfiguration 直接绑定（而非 lambda + Bind），以支持热更新（IOptionsMonitor + ChangeToken）
+        // 使用 IConfiguration 直接绑定，支持 IOptionsMonitor 变更通知。
+        // 注意：PollyResiliencePolicyProvider 注册为单例并通过 IOptions<ResilienceOptions> 读取配置，
+        // 因此策略在启动时创建一次，不会随配置热更新而动态变化。
         services.Configure<ResilienceOptions>(configuration.GetSection(configurationSectionPath));
 
         services.TryAddSingleton<IValidateOptions<ResilienceOptions>, ResilienceOptionsValidator>();

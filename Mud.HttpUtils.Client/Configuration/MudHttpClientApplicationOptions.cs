@@ -86,21 +86,6 @@ public class MudHttpClientApplicationOptions
     /// </code>
     /// </remarks>
     public ResponseCacheOptions ResponseCache { get; set; } = new();
-
-    /// <summary>
-    /// URL 参数值格式化器（Phase 4.3）。默认为 null，使用 DI 注册的 <see cref="IUrlParameterFormatter"/>。
-    /// </summary>
-    public IUrlParameterFormatter? UrlParameterFormatter { get; set; }
-
-    /// <summary>
-    /// URL 参数键格式化器（Phase 4.3）。默认为 null，使用 DI 注册的 <see cref="IUrlParameterKeyFormatter"/>。
-    /// </summary>
-    public IUrlParameterKeyFormatter? UrlParameterKeyFormatter { get; set; }
-
-    /// <summary>
-    /// 集合参数的默认格式（Phase 4.3）。默认为 Multi。
-    /// </summary>
-    public CollectionFormat CollectionFormat { get; set; } = CollectionFormat.Multi;
 }
 
 /// <summary>

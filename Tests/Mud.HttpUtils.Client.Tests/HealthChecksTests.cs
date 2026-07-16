@@ -628,6 +628,102 @@ public class HealthChecksTests
         tokenRefreshOptions.CriticalThreshold.Should().Be(0.5);
         tokenRefreshOptions.MinSampleSize.Should().Be(5);
     }
+
+    // ============ TokenRefreshHealthCheckOptionsValidator ============
+
+    [Fact]
+    public void TokenRefreshHealthCheckOptionsValidator_NullOptions_ReturnsSuccess()
+    {
+        var validator = new TokenRefreshHealthCheckOptionsValidator();
+        var result = validator.Validate("Test", null!);
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void TokenRefreshHealthCheckOptionsValidator_DefaultOptions_ReturnsSuccess()
+    {
+        var validator = new TokenRefreshHealthCheckOptionsValidator();
+        var result = validator.Validate("Test", new TokenRefreshHealthCheckOptions());
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(-100)]
+    public void TokenRefreshHealthCheckOptionsValidator_WindowSecondsNotPositive_ReturnsFail(int invalidValue)
+    {
+        var validator = new TokenRefreshHealthCheckOptionsValidator();
+        var result = validator.Validate("Test", new TokenRefreshHealthCheckOptions { WindowSeconds = invalidValue });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("WindowSeconds");
+    }
+
+    [Theory]
+    [InlineData(-0.1)]
+    [InlineData(1.1)]
+    [InlineData(2.0)]
+    [InlineData(-1.0)]
+    public void TokenRefreshHealthCheckOptionsValidator_DegradedThresholdOutOfRange_ReturnsFail(double invalidValue)
+    {
+        var validator = new TokenRefreshHealthCheckOptionsValidator();
+        var result = validator.Validate("Test", new TokenRefreshHealthCheckOptions { DegradedThreshold = invalidValue });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("DegradedThreshold");
+    }
+
+    [Theory]
+    [InlineData(-0.1)]
+    [InlineData(1.1)]
+    [InlineData(2.0)]
+    [InlineData(-1.0)]
+    public void TokenRefreshHealthCheckOptionsValidator_CriticalThresholdOutOfRange_ReturnsFail(double invalidValue)
+    {
+        var validator = new TokenRefreshHealthCheckOptionsValidator();
+        var result = validator.Validate("Test", new TokenRefreshHealthCheckOptions { CriticalThreshold = invalidValue });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("CriticalThreshold");
+    }
+
+    [Fact]
+    public void TokenRefreshHealthCheckOptionsValidator_CriticalLessThanDegraded_ReturnsFail()
+    {
+        var validator = new TokenRefreshHealthCheckOptionsValidator();
+        var result = validator.Validate("Test", new TokenRefreshHealthCheckOptions
+        {
+            DegradedThreshold = 0.5,
+            CriticalThreshold = 0.2,
+        });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("CriticalThreshold 必须 >= DegradedThreshold");
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(-100)]
+    public void TokenRefreshHealthCheckOptionsValidator_MinSampleSizeNegative_ReturnsFail(int invalidValue)
+    {
+        var validator = new TokenRefreshHealthCheckOptionsValidator();
+        var result = validator.Validate("Test", new TokenRefreshHealthCheckOptions { MinSampleSize = invalidValue });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("MinSampleSize");
+    }
+
+    [Fact]
+    public void TokenRefreshHealthCheckOptionsValidator_MultipleFailures_ReportsAll()
+    {
+        var validator = new TokenRefreshHealthCheckOptionsValidator();
+        var result = validator.Validate("Test", new TokenRefreshHealthCheckOptions
+        {
+            WindowSeconds = 0,
+            DegradedThreshold = 2.0,
+            MinSampleSize = -5,
+        });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("WindowSeconds");
+        result.FailureMessage.Should().Contain("DegradedThreshold");
+        result.FailureMessage.Should().Contain("MinSampleSize");
+    }
 }
 
 /// <summary>

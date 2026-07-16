@@ -282,7 +282,7 @@ services.AddMudHttpResilienceDecorator(configuration, "MudHttpResilience");
 
 > 高级模式下 `FailureThreshold = 50` 表示采样窗口内失败率达 50% 时触发熔断，至少需要 `MinimumThroughput` 次请求。
 
-> **配置热更新**：当通过 `IConfiguration` 绑定（如 `AddMudHttpResilience(configuration)`）时，`ResilienceOptions` 支持 `IOptionsMonitor<ResilienceOptions>` 热更新。修改 `appsettings.json` 中的弹性策略配置后，无需重启应用即可生效（策略提供器会在下次请求时读取最新配置）。
+> **配置热更新说明**：当通过 `IConfiguration` 绑定（如 `AddMudHttpResilience(configuration)`）时，`ResilienceOptions` 的配置绑定本身支持 `IOptionsMonitor<ResilienceOptions>` 变更通知。但 `PollyResiliencePolicyProvider` 注册为单例，并通过 `IOptions<ResilienceOptions>`（非 `IOptionsMonitor`）读取配置，因此 Polly 策略在应用启动时创建一次，**不会**在运行时自动热更新。如需更新弹性策略，请重启应用或重新注册策略提供器。
 >
 > **注意**：`OnRetry` 回调委托为代码类型，无法从配置文件绑定。如需设置 `OnRetry`，请使用 `Action<ResilienceOptions>` 委托重载。
 

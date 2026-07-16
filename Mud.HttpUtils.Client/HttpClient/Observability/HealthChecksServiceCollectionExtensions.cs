@@ -5,7 +5,9 @@
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 using Mud.HttpUtils.Observability;
 
 namespace Mud.HttpUtils;
@@ -48,6 +50,9 @@ public static class MudHttpHealthChecksExtensions
             o.CriticalThreshold = options.TokenRefresh.CriticalThreshold;
             o.MinSampleSize = options.TokenRefresh.MinSampleSize;
         });
+
+        // 注册配置级校验器，使无效配置在启动时即被检测
+        services.TryAddSingleton<IValidateOptions<TokenRefreshHealthCheckOptions>, TokenRefreshHealthCheckOptionsValidator>();
 
         var cbOptions = new MudCircuitBreakerHealthCheckOptions
         {

@@ -194,17 +194,11 @@ Mud.HttpUtils.MudHttpClientApplicationOptions.AllowedDomains.get -> System.Colle
 Mud.HttpUtils.MudHttpClientApplicationOptions.AllowedDomains.set -> void
 Mud.HttpUtils.MudHttpClientApplicationOptions.Clients.get -> System.Collections.Generic.Dictionary<string!, Mud.HttpUtils.MudHttpClientOptions!>!
 Mud.HttpUtils.MudHttpClientApplicationOptions.Clients.set -> void
-Mud.HttpUtils.MudHttpClientApplicationOptions.CollectionFormat.get -> Mud.HttpUtils.CollectionFormat
-Mud.HttpUtils.MudHttpClientApplicationOptions.CollectionFormat.set -> void
 Mud.HttpUtils.MudHttpClientApplicationOptions.DefaultClientName.get -> string?
 Mud.HttpUtils.MudHttpClientApplicationOptions.DefaultClientName.set -> void
 Mud.HttpUtils.MudHttpClientApplicationOptions.MudHttpClientApplicationOptions() -> void
 Mud.HttpUtils.MudHttpClientApplicationOptions.ResponseCache.get -> Mud.HttpUtils.ResponseCacheOptions!
 Mud.HttpUtils.MudHttpClientApplicationOptions.ResponseCache.set -> void
-Mud.HttpUtils.MudHttpClientApplicationOptions.UrlParameterFormatter.get -> Mud.HttpUtils.IUrlParameterFormatter?
-Mud.HttpUtils.MudHttpClientApplicationOptions.UrlParameterFormatter.set -> void
-Mud.HttpUtils.MudHttpClientApplicationOptions.UrlParameterKeyFormatter.get -> Mud.HttpUtils.IUrlParameterKeyFormatter?
-Mud.HttpUtils.MudHttpClientApplicationOptions.UrlParameterKeyFormatter.set -> void
 Mud.HttpUtils.MudHttpClientOptions
 Mud.HttpUtils.MudHttpClientOptions.AllowCustomBaseUrls.get -> bool
 Mud.HttpUtils.MudHttpClientOptions.AllowCustomBaseUrls.set -> void
@@ -257,6 +251,9 @@ Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions.MinSampleSize.set -> 
 Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions.TokenRefreshHealthCheckOptions() -> void
 Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions.WindowSeconds.get -> int
 Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions.WindowSeconds.set -> void
+Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptionsValidator
+Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptionsValidator.TokenRefreshHealthCheckOptionsValidator() -> void
+Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptionsValidator.Validate(string? name, Mud.HttpUtils.Observability.TokenRefreshHealthCheckOptions! options) -> Microsoft.Extensions.Options.ValidateOptionsResult!
 Mud.HttpUtils.ProgressableStreamContent
 Mud.HttpUtils.ProgressableStreamContent.ProgressableStreamContent(System.Net.Http.HttpContent! content, System.IProgress<long>? progress, int bufferSize = 4096) -> void
 Mud.HttpUtils.QueryMapHelper

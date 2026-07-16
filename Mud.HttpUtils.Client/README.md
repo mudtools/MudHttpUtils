@@ -39,6 +39,51 @@ var baseAddress = httpClient.BaseAddress;
 
 > `WithBaseAddress` 创建新的客户端实例，不影响原客户端。新客户端继承原客户端的超时设置和默认请求头。
 
+### 增强客户端配置选项（EnhancedHttpClientOptions）
+
+`EnhancedHttpClientOptions` 封装了 `EnhancedHttpClient` 的所有可配置参数，避免构造函数参数过多的问题。**此类仅供编程式配置使用**，包含接口和委托类型属性，无法通过 `IConfiguration` 绑定。
+
+| 属性 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `Logger` | `ILogger?` | `null` | 日志记录器实例 |
+| `RequestInterceptors` | `IEnumerable<IHttpRequestInterceptor>?` | `null` | 请求拦截器集合 |
+| `ResponseInterceptors` | `IEnumerable<IHttpResponseInterceptor>?` | `null` | 响应拦截器集合 |
+| `SensitiveDataMasker` | `ISensitiveDataMasker?` | `null` | 敏感数据掩码器 |
+| `AllowCustomBaseUrls` | `bool` | `false` | 是否允许自定义基础 URL（可能带来 SSRF 风险，谨慎使用） |
+| `RequestBodySerialization` | `RequestBodySerializationMode` | `Default` | 请求体序列化模式（`Buffered`/`Streamed` 需 `ISynchronousContentSerializer`） |
+| `ExceptionRedactor` | `IExceptionRedactor?` | `null` | 异常擦除器（在异常传播前清除敏感数据） |
+| `MaxExceptionContentLength` | `int?` | `null` | 错误响应体最大读取字符数（防止 OOM） |
+| `CaptureRequestContent` | `bool` | `false` | 是否在发送前捕获请求体字符串（用于异常调试） |
+| `UrlResolution` | `UrlResolutionMode` | `Default` | URL 解析模式 |
+| `HttpVersion` <sup>net6+</sup> | `Version?` | `HttpVersion.Version11` | HTTP 版本 |
+| `HttpVersionPolicy` <sup>net6+</sup> | `HttpVersionPolicy?` | `RequestVersionOrLower` | HTTP 版本策略 |
+| `HttpRequestMessageOptions` | `Dictionary<string, object?>?` | `null` | 写入 `HttpRequestMessage.Options` 的键值对预设 |
+| `JsonTypeInfoResolver` <sup>net8+</sup> | `IJsonTypeInfoResolver?` | `null` | Native AOT 下用于 JSON 源生成的类型解析器 |
+
+```csharp
+// 编程式配置 EnhancedHttpClientOptions
+services.AddMudHttpClient("myApi", client =>
+{
+    client.BaseAddress = new Uri("https://api.example.com");
+}, setAsDefault: true);
+
+// 通过 EnhancedHttpClientFactoryOptions 为特定客户端配置增强选项
+services.Configure<EnhancedHttpClientFactoryOptions>(options =>
+{
+    options.ClientFactories["myApi"] = sp => new EnhancedHttpClient(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient("myApi"),
+        new EnhancedHttpClientOptions
+        {
+            AllowCustomBaseUrls = false,
+            MaxExceptionContentLength = 4096,
+            CaptureRequestContent = true,
+            RequestBodySerialization = RequestBodySerializationMode.Buffered,
+        });
+});
+```
+
+> **注意**：`AllowCustomBaseUrls` 的值在通过 `AddMudHttpClientsFromConfiguration` 注册时，会被 `MudHttpClientOptions.AllowCustomBaseUrls` 的值覆盖。`JsonTypeInfoResolver` 与 DI 注入的 `IOptions<JsonSerializerOptions>` 中的 `TypeInfoResolver` 二选一即可，优先级为：`JsonTypeInfoResolver` → `IOptions<JsonSerializerOptions>.TypeInfoResolver` → 静态默认。
+
 ### 文件上传进度报告
 
 | 类                          | 说明                                                |

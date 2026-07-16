@@ -29,14 +29,15 @@ if (-not [string]::IsNullOrWhiteSpace($Version)) {
 }
 
 # 要打包的项目列表
-$Projects = @(
+$Projects = @(    
     "Mud.HttpUtils.Abstractions",
     "Mud.HttpUtils.Attributes",
     "Mud.HttpUtils.Client",
     "Mud.HttpUtils.Resilience",
     "Mud.HttpUtils",
     "Mud.HttpUtils.Generator",
-    "Mud.HttpUtils.JsonContextScaffolder",
+    "Mud.HttpUtils.Newtonsoft.Json",
+    "Tools/Mud.HttpUtils.JsonContextScaffolder",
     "Mud.HttpUtils.OpenTelemetry"
 )
 
