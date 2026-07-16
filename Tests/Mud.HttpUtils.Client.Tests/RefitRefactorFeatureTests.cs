@@ -6,6 +6,7 @@
 // -----------------------------------------------------------------------
 
 using Mud.HttpUtils;
+using Mud.HttpUtils.Testing;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -422,6 +423,125 @@ public class RefitRefactorFeatureTests
     {
         var formatter = new KebabCaseUrlParameterKeyFormatter();
         formatter.Format("userName").Should().Be("user-name");
+    }
+
+    #endregion
+
+    #region Phase 5/D-04: FormField<TBody>
+
+    [Fact]
+    public void FormField_CanBeConstructed()
+    {
+        // D-04: FormField<TBody> 描述符类型可用
+        var field = new FormField<string>(static body => body, "Name");
+        field.Getter.Should().NotBeNull();
+        field.ClrName.Should().Be("Name");
+        field.ExplicitName.Should().BeNull();
+    }
+
+    [Fact]
+    public void FormField_ResolveFieldName_UsesExplicitNameWhenSet()
+    {
+        var field = new FormField<string>(static body => body, "ClrName", "json_name");
+        field.ResolveFieldName(null).Should().Be("json_name");
+    }
+
+    [Fact]
+    public void FormField_ResolveFieldName_FallsBackToClrName()
+    {
+        var field = new FormField<string>(static body => body, "ClrName");
+        field.ResolveFieldName(null).Should().Be("ClrName");
+    }
+
+    #endregion
+
+    #region Phase 5: MultipartItem
+
+    [Fact]
+    public void ByteArrayPart_CreatesContent()
+    {
+        var part = new ByteArrayPart([1, 2, 3], "file");
+        var content = part.ToContent();
+        content.Should().NotBeNull();
+        content.Should().BeOfType<System.Net.Http.ByteArrayContent>();
+    }
+
+    [Fact]
+    public void StreamPart_CreatesContent()
+    {
+        using var stream = new System.IO.MemoryStream([4, 5, 6]);
+        var part = new StreamPart(stream, "file");
+        var content = part.ToContent();
+        content.Should().NotBeNull();
+        content.Should().BeOfType<System.Net.Http.StreamContent>();
+    }
+
+    #endregion
+
+    #region Phase 7: Testing Helpers (StubHttp + NetworkBehavior)
+
+    [Fact]
+    public async Task StubHttp_ReturnsConfiguredResponse()
+    {
+        var stub = new StubHttp();
+        stub.Respond(HttpMethod.Get, "/api/test", HttpStatusCode.OK, "hello", "text/plain");
+
+        using var client = new HttpClient(stub) { BaseAddress = new Uri("https://localhost") };
+        var response = await client.GetAsync("/api/test");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync()).Should().Be("hello");
+    }
+
+    [Fact]
+    public async Task StubHttp_RouteMatcher_MatchesPathWithParameter()
+    {
+        var stub = new StubHttp();
+        stub.Respond(HttpMethod.Get, "/api/users/{id}", HttpStatusCode.OK, "found");
+
+        using var client = new HttpClient(stub) { BaseAddress = new Uri("https://localhost") };
+        var response = await client.GetAsync("/api/users/42");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync()).Should().Be("found");
+    }
+
+    [Fact]
+    public async Task StubHttp_NetworkBehavior_DelayAndFailure()
+    {
+        var stub = new StubHttp();
+        var behavior = NetworkBehavior.WithDelay(10);
+        stub.Respond(HttpMethod.Get, "/api/slow", HttpStatusCode.OK, "data")
+            .WithBehavior(behavior);
+
+        using var client = new HttpClient(stub) { BaseAddress = new Uri("https://localhost") };
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var response = await client.GetAsync("/api/slow");
+        sw.Stop();
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        sw.ElapsedMilliseconds.Should().BeGreaterThanOrEqualTo(10);
+    }
+
+    #endregion
+
+    #region Phase 0: RestService GeneratedOnlyMode
+
+    [Fact]
+    public void RestService_GeneratedOnlyMode_DefaultFalse()
+    {
+        RestService.GeneratedOnlyMode.Should().BeFalse();
+    }
+
+    [Fact]
+    public void GeneratedClientOptions_GeneratedOnlyMode_CanOverride()
+    {
+        // T0.3: 实例级覆盖
+        var options = new GeneratedClientOptions { GeneratedOnlyMode = true };
+        options.GeneratedOnlyMode.Should().BeTrue();
+
+        var options2 = new GeneratedClientOptions { GeneratedOnlyMode = false };
+        options2.GeneratedOnlyMode.Should().BeFalse();
     }
 
     #endregion

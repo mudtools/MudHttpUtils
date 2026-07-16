@@ -31,7 +31,9 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
 
     public void Generate(StringBuilder codeBuilder, GeneratorContext context)
     {
-        TransitiveCodeGenerator.GenerateFileHeader(codeBuilder, DefaultUsingNamespaces);
+        // [D-03 修复] 传递 EmitNullableEnable 以条件化发射 #nullable enable
+        // [D-06 修复] 传递 EmitGeneratedCodeMarkers 以条件化发射 [GeneratedCode] 特性
+        TransitiveCodeGenerator.GenerateFileHeader(codeBuilder, DefaultUsingNamespaces, context.EmitNullableEnable);
         codeBuilder.AppendLine();
         GenerateNamespaceDeclaration(codeBuilder, context);
         GenerateClassDeclaration(codeBuilder, context);
@@ -93,9 +95,13 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
             inheritance = $" : {_interfaceSymbol.Name}{typeParams}";
         }
 
-        codeBuilder.AppendLine($"    {GeneratedCodeConsts.HttpGeneratedCodeAttribute}");
-        // T5.4: DynamicDependency 标注，防止 trimmer 在 AOT 下裁剪生成类型及 RestService 成员
-        codeBuilder.AppendLine("    [System.Diagnostics.CodeAnalysis.DynamicDependency(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof(global::Mud.HttpUtils.RestService))]");
+        // [D-06 修复] EmitGeneratedCodeMarkers=false 时不标注 [GeneratedCode]，便于调试生成代码中的警告
+        if (context.EmitGeneratedCodeMarkers)
+        {
+            codeBuilder.AppendLine($"    {GeneratedCodeConsts.HttpGeneratedCodeAttribute}");
+            // T5.4: DynamicDependency 标注，防止 trimmer 在 AOT 下裁剪生成类型及 RestService 成员
+            codeBuilder.AppendLine("    [System.Diagnostics.CodeAnalysis.DynamicDependency(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof(global::Mud.HttpUtils.RestService))]");
+        }
         codeBuilder.AppendLine($"    internal {classKeyword} {context.ClassName}{typeParams}{inheritance}{constraints}");
         codeBuilder.AppendLine("    {");
     }

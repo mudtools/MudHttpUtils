@@ -54,6 +54,20 @@ internal class GeneratorContext
     public bool IsAotEnabled { get; }
 
     /// <summary>
+    /// [v2.4 §3.4 D-03 修复] 是否在生成代码头部发射 #nullable enable。
+    /// 由 HttpInvokeClassSourceGenerator 从 build_property.Nullable 读取后逐层传入。
+    /// 默认 true（向后兼容）。消费项目 Nullable=disable 时不发射，避免冗余告警。
+    /// </summary>
+    public bool EmitNullableEnable { get; }
+
+    /// <summary>
+    /// [D-06 修复] 是否在生成代码上标注 [GeneratedCode] 特性。
+    /// 由 HttpInvokeClassSourceGenerator 从 build_property.MudEmitGeneratedCodeMarkers 读取后逐层传入。
+    /// 默认 true（向后兼容）。设为 false 时不标注，便于调试生成代码中的警告。
+    /// </summary>
+    public bool EmitGeneratedCodeMarkers { get; }
+
+    /// <summary>
     /// 接口中是否有方法使用了 XML 响应类型，需要生成 XmlSerializer 静态缓存字段
     /// </summary>
     public bool HasXmlResponse { get; set; }
@@ -145,7 +159,9 @@ internal class GeneratorContext
         SemanticModel semanticModel,
         SourceProductionContext productionContext,
         GenerationConfiguration configuration,
-        bool isAotEnabled = false)
+        bool isAotEnabled = false,
+        bool emitNullableEnable = true,
+        bool emitGeneratedCodeMarkers = true)
     {
         Compilation = compilation;
         InterfaceSymbol = interfaceSymbol;
@@ -154,6 +170,8 @@ internal class GeneratorContext
         ProductionContext = productionContext;
         Configuration = configuration;
         IsAotEnabled = isAotEnabled;
+        EmitNullableEnable = emitNullableEnable;
+        EmitGeneratedCodeMarkers = emitGeneratedCodeMarkers;
 
         ClassName = TypeSymbolHelper.GetImplementationClassName(interfaceSymbol.Name);
         NamespaceName = SyntaxHelper.GetNamespaceName(interfaceDeclaration, HttpClientGeneratorConstants.ImplementationNamespaceSuffix);

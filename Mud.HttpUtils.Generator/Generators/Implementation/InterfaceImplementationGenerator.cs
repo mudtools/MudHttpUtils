@@ -34,6 +34,8 @@ internal class InterfaceImplementationGenerator
     private readonly StringBuilder _codeBuilder;
     private readonly string _optionsName;
     private readonly bool _isAotEnabled;
+    private readonly bool _emitNullableEnable;
+    private readonly bool _emitGeneratedCodeMarkers;
 
     public InterfaceImplementationGenerator(
         Compilation compilation,
@@ -42,7 +44,9 @@ internal class InterfaceImplementationGenerator
         SemanticModel semanticModel,
         SourceProductionContext context,
         string optionsName,
-        bool isAotEnabled = false)
+        bool isAotEnabled = false,
+        bool emitNullableEnable = true,
+        bool emitGeneratedCodeMarkers = true)
     {
         _compilation = compilation;
         _interfaceDecl = interfaceDecl;
@@ -51,6 +55,8 @@ internal class InterfaceImplementationGenerator
         _context = context;
         _optionsName = optionsName;
         _isAotEnabled = isAotEnabled;
+        _emitNullableEnable = emitNullableEnable;
+        _emitGeneratedCodeMarkers = emitGeneratedCodeMarkers;
 
         var estimatedCapacity = EstimateCodeCapacity();
         _codeBuilder = new StringBuilder(estimatedCapacity);
@@ -89,7 +95,9 @@ internal class InterfaceImplementationGenerator
             _semanticModel,
             _context,
             configuration,
-            _isAotEnabled);
+            _isAotEnabled,
+            _emitNullableEnable,
+            _emitGeneratedCodeMarkers);
 
         // InterfaceProperties 已在 GeneratorContext 构造函数中预计算（含基接口 [Query]/[Path] 属性），
         // 后续 GetOrAnalyzeMethod 会将其作为 cachedInterfaceProperties 传入 AnalyzeMethod，避免重复扫描。

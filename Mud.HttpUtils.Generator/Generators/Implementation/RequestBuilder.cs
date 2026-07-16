@@ -374,6 +374,11 @@ internal class RequestBuilder
     /// <summary>
     /// 生成 URL 编码的表单参数（用于 [Form] 特性）
     /// </summary>
+    /// <remarks>
+    /// [D-04 设计说明] 此路径与 <see cref="FormField{TBody}"/> 描述符模式功能等价，
+    /// 但采用直接属性访问代码（AOT 安全）。FormField&lt;TBody&gt; 类型作为可选描述符存在，
+    /// 供未来统一序列化入口使用。当前保留直接属性访问以避免不必要的间接层。
+    /// </remarks>
     private void GenerateUrlEncodedFormParameter(StringBuilder codeBuilder, List<ParameterInfo> formParams)
     {
         codeBuilder.AppendLine("            var __formParameters = new Dictionary<string, string>();");
@@ -416,6 +421,9 @@ internal class RequestBuilder
     /// 在 Native AOT 裁剪后属性元数据丢失导致表单体为空。现改为编译期枚举属性并发射静态属性访问，
     /// 彻底消除反射依赖。若 <see cref="ParameterInfo.TypeSymbol"/> 不可用（如测试模拟场景），
     /// 则回退到原始反射路径并保留 IL2072 压制。
+    /// [D-04 设计说明] 此路径与 FormField&lt;TBody&gt; 描述符模式功能等价，
+    /// 但采用编译期属性枚举代码（AOT 安全）。FormField&lt;TBody&gt; 类型作为可选描述符存在，
+    /// 供未来统一序列化入口使用。当前保留编译期属性枚举以避免不必要的间接层。
     /// </remarks>
     private void GenerateUrlEncodedBodyParameter(StringBuilder codeBuilder, ParameterInfo bodyParam)
     {

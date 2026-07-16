@@ -393,12 +393,18 @@ internal class QueryParameterBinder : IParameterBinder
     }
 
     /// <summary>
+    /// 最大递归深度，防止循环引用导致无限递归。
+    /// </summary>
+    private const int MaxFlatteningDepth = 5;
+
+    /// <summary>
     /// 为单个属性生成展平代码（AOT 安全路径）。
+    /// 当 depth 超过 MaxFlatteningDepth 时回退到 FlattenObjectToQueryParams 反射路径。
     /// </summary>
     private static void GeneratePropertyFlatteningInline(
         StringBuilder codeBuilder, string objName, IPropertySymbol prop, string indent,
         string prefix, string separator, bool includeNullValues,
-        bool useJsonSerialization, bool urlEncode)
+        bool useJsonSerialization, bool urlEncode, int depth = 0)
     {
         var propName = prop.Name;
         var key = string.IsNullOrEmpty(prefix) ? propName : prefix + separator + propName;
@@ -425,9 +431,29 @@ internal class QueryParameterBinder : IParameterBinder
         }
         else
         {
-            // 复杂类型：回退到 FlattenObjectToQueryParams 处理嵌套属性
-        // 已知限制（v2.4 §1.2）：嵌套复杂属性仍走反射回退路径。
-        // 全深度内联化需权衡递归代码膨胀与 AOT 收益，当前接受此限制。
+            // [v2.4 §1.2 D-01 修复] 复杂类型：递归内联展平，不再回退到反射路径 FlattenObjectToQueryParams。
+            // 当深度未超限且属性类型符号可用时，递归枚举嵌套属性生成直接属性访问代码（AOT 安全）。
+            // 仅当深度超限或类型符号不可用时，回退到 FlattenObjectToQueryParams 反射路径。
+            if (depth < MaxFlatteningDepth && prop.Type is INamedTypeSymbol nestedTypeSymbol)
+            {
+                // 递归枚举嵌套类型的公共属性（与运行时 GetProperties() 行为一致）
+                var nestedProps = CollectPublicProperties(nestedTypeSymbol);
+                if (nestedProps.Count > 0)
+                {
+                    codeBuilder.AppendLine($"{indent}if ({objName}.{propName} != null)");
+                    codeBuilder.AppendLine($"{indent}{{");
+                    foreach (var nestedProp in nestedProps)
+                    {
+                        GeneratePropertyFlatteningInline(codeBuilder, objName + "." + propName, nestedProp,
+                            indent + "    ", key, separator, includeNullValues,
+                            useJsonSerialization, urlEncode, depth + 1);
+                    }
+                    codeBuilder.AppendLine($"{indent}}}");
+                    return;
+                }
+            }
+
+            // 深度超限或无公共属性：回退到 FlattenObjectToQueryParams（反射路径，非 AOT 安全）
             codeBuilder.AppendLine($"{indent}if ({objName}.{propName} != null)");
             codeBuilder.AppendLine($"{indent}{{");
             codeBuilder.AppendLine($"{indent}    FlattenObjectToQueryParams({objName}.{propName}, \"{escapedKey}\", \"{StringEscapeHelper.EscapeString(separator)}\", __queryParams, {includeNullValues.ToString().ToLowerInvariant()}, {useJsonSerialization.ToString().ToLowerInvariant()}, {urlEncode.ToString().ToLowerInvariant()}, __rawQueryPairs, 0, _contentSerializer);");
@@ -443,6 +469,12 @@ internal class QueryParameterBinder : IParameterBinder
     /// <c>_contentSerializer.Serialize&lt;T&gt;(value)</c>，
     /// 而非非泛型 <c>JsonSerializer.Serialize(object?)</c>。非泛型重载因运行时
     /// <c>Type</c> 分发不被 trim/AOT 分析器视作安全，即使传入含 Context 的 options。
+    /// [D-05 设计说明] 此处使用内联 ToString() 格式化（AOT 安全），不调用
+    /// <c>IUrlParameterFormatter.Format</c>。IUrlParameterFormatter 的默认实现
+    /// <c>DefaultUrlParameterFormatter</c> 使用反射（已标注 [RequiresUnreferencedCode]），
+    /// 非 AOT 安全。IUrlParameterFormatter 作为非 AOT 场景的可选运行时覆盖存在，
+    /// AOT 路径下通过编译期内联格式化保证零反射。未来可由源生成器在编译期
+    /// 生成枚举/特性映射查找表作为 AOT 友好的格式化路径。
     /// </remarks>
     private static void GenerateSimplePropertyFlattening(
         StringBuilder codeBuilder, string objName, string propName, IPropertySymbol prop,

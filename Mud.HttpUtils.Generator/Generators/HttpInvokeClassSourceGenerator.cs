@@ -117,9 +117,13 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
             ProjectConfigHelper.ReadConfigValueAsBool(configOptionsProvider.GlobalOptions, "build_property.IsAotCompatible", false) ||
             ProjectConfigHelper.ReadConfigValueAsBool(configOptionsProvider.GlobalOptions, "build_property.PublishAot", false);
 
-        // [v2.4 §3.4] 读取消费项目 nullable 配置，条件化发射 #nullable enable
+        // [v2.4 §3.4 D-03 修复] 读取消费项目 nullable 配置，条件化发射 #nullable enable
         EmitNullableEnable = ProjectConfigHelper.ReadConfigValue(
             configOptionsProvider.GlobalOptions, "build_property.Nullable", "enable") == "enable";
+
+        // [D-06 修复] 读取 MudEmitGeneratedCodeMarkers 开关，控制生成代码 [GeneratedCode] 标注
+        var emitGeneratedCodeMarkers = ProjectConfigHelper.ReadConfigValueAsBool(
+            configOptionsProvider.GlobalOptions, "build_property.MudEmitGeneratedCodeMarkers", true);
 
         foreach (var model in interfaces)
         {
@@ -138,7 +142,7 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
 
             try
             {
-                ProcessInterface(compilation, interfaceDecl, interfaceSymbol, semanticModel, context, httpClientOptionsName, isAotEnabled);
+                ProcessInterface(compilation, interfaceDecl, interfaceSymbol, semanticModel, context, httpClientOptionsName, isAotEnabled, EmitNullableEnable, emitGeneratedCodeMarkers);
             }
             catch (Exception ex)
             {
@@ -161,7 +165,7 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
         }
     }
 
-    private void ProcessInterface(Compilation compilation, InterfaceDeclarationSyntax interfaceDecl, INamedTypeSymbol interfaceSymbol, SemanticModel semanticModel, SourceProductionContext context, string httpClientOptionsName, bool isAotEnabled)
+    private void ProcessInterface(Compilation compilation, InterfaceDeclarationSyntax interfaceDecl, INamedTypeSymbol interfaceSymbol, SemanticModel semanticModel, SourceProductionContext context, string httpClientOptionsName, bool isAotEnabled, bool emitNullableEnable, bool emitGeneratedCodeMarkers)
     {
         var interfaceCodeGenerator = new InterfaceImplementationGenerator(
             compilation,
@@ -170,7 +174,9 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
             semanticModel,
             context,
             httpClientOptionsName,
-            isAotEnabled);
+            isAotEnabled,
+            emitNullableEnable,
+            emitGeneratedCodeMarkers);
 
         interfaceCodeGenerator.GenerateCode();
     }
