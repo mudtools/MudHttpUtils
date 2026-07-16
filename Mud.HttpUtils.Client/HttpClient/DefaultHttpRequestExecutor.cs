@@ -103,15 +103,15 @@ public class DefaultHttpRequestExecutor(
         var encryptableClient = httpClient as IEncryptableHttpClient;
 
         // Phase 2 (T2.3)：发送前捕获请求体（启用时）
-string? capturedRequestContent = _captureRequestContent
-? await CaptureRequestContentAsync(request).ConfigureAwait(false)
-: null;
+    string? capturedRequestContent = _captureRequestContent
+    ? await CaptureRequestContentAsync(request).ConfigureAwait(false)
+    : null;
 
-// Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
-ApplyRequestConfig(request);
+    // Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
+    ApplyRequestConfig(request);
 
-// 1. 发送请求
-using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
+    // 1. 发送请求
+    using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
 
         // 2. 错误处理（非 AllowAnyStatusCode 模式）
         if (!descriptor.AllowAnyStatusCode && !response.IsSuccessStatusCode)

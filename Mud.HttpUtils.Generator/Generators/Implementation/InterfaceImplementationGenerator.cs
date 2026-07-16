@@ -122,9 +122,10 @@ internal class InterfaceImplementationGenerator
             _codeBuilder.AppendLine("            bool useJsonSerialization,");
             _codeBuilder.AppendLine("            bool urlEncode = true,");
             _codeBuilder.AppendLine("            System.Collections.Generic.List<string>? rawPairs = null,");
-            _codeBuilder.AppendLine("            int depth = 0)");
+            _codeBuilder.AppendLine("            int depth = 0,");
+            _codeBuilder.AppendLine("            global::Mud.HttpUtils.IHttpContentSerializer? contentSerializer = null)");
             _codeBuilder.AppendLine("        {");
-            _codeBuilder.AppendLine("            QueryMapHelper.FlattenObjectToQueryParams(obj, prefix, separator, queryParams, includeNullValues, useJsonSerialization, urlEncode, rawPairs, depth);");
+            _codeBuilder.AppendLine("            QueryMapHelper.FlattenObjectToQueryParams(obj, prefix, separator, queryParams, includeNullValues, useJsonSerialization, urlEncode, rawPairs, depth, contentSerializer);");
             _codeBuilder.AppendLine("        }");
         }
 

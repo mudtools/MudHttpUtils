@@ -162,7 +162,7 @@ internal class QueryParameterBinder : IParameterBinder
 
         codeBuilder.AppendLine($"{indent}if ({param.Name} != null)");
         codeBuilder.AppendLine($"{indent}{{");
-        codeBuilder.AppendLine($"{indent}    FlattenObjectToQueryParams({param.Name}, string.Empty, \",\", __queryParams, false, true, true, __rawQueryPairs);");
+        codeBuilder.AppendLine($"{indent}    FlattenObjectToQueryParams({param.Name}, string.Empty, \",\", __queryParams, false, true, true, __rawQueryPairs, 0, _contentSerializer);");
         codeBuilder.AppendLine($"{indent}}}");
     }
 
@@ -307,7 +307,7 @@ internal class QueryParameterBinder : IParameterBinder
 
         codeBuilder.AppendLine($"{indent}if ({param.Name} != null)");
         codeBuilder.AppendLine($"{indent}{{");
-        codeBuilder.AppendLine($"{indent}    FlattenObjectToQueryParams({param.Name}, string.Empty, \"{StringEscapeHelper.EscapeString(separator)}\", __queryParams, {includeNull.ToString().ToLowerInvariant()}, {useJson.ToString().ToLowerInvariant()}, {urlEncode.ToString().ToLowerInvariant()}, __rawQueryPairs);");
+        codeBuilder.AppendLine($"{indent}    FlattenObjectToQueryParams({param.Name}, string.Empty, \"{StringEscapeHelper.EscapeString(separator)}\", __queryParams, {includeNull.ToString().ToLowerInvariant()}, {useJson.ToString().ToLowerInvariant()}, {urlEncode.ToString().ToLowerInvariant()}, __rawQueryPairs, 0, _contentSerializer);");
         codeBuilder.AppendLine($"{indent}}}");
     }
 
@@ -430,7 +430,7 @@ internal class QueryParameterBinder : IParameterBinder
         // 全深度内联化需权衡递归代码膨胀与 AOT 收益，当前接受此限制。
             codeBuilder.AppendLine($"{indent}if ({objName}.{propName} != null)");
             codeBuilder.AppendLine($"{indent}{{");
-            codeBuilder.AppendLine($"{indent}    FlattenObjectToQueryParams({objName}.{propName}, \"{escapedKey}\", \"{StringEscapeHelper.EscapeString(separator)}\", __queryParams, {includeNullValues.ToString().ToLowerInvariant()}, {useJsonSerialization.ToString().ToLowerInvariant()}, {urlEncode.ToString().ToLowerInvariant()}, __rawQueryPairs);");
+            codeBuilder.AppendLine($"{indent}    FlattenObjectToQueryParams({objName}.{propName}, \"{escapedKey}\", \"{StringEscapeHelper.EscapeString(separator)}\", __queryParams, {includeNullValues.ToString().ToLowerInvariant()}, {useJsonSerialization.ToString().ToLowerInvariant()}, {urlEncode.ToString().ToLowerInvariant()}, __rawQueryPairs, 0, _contentSerializer);");
             codeBuilder.AppendLine($"{indent}}}");
         }
     }

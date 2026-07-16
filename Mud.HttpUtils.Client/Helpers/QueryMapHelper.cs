@@ -7,7 +7,6 @@
 
 using System.Collections.Concurrent;
 using System.Reflection;
-using System.Text.Json;
 
 namespace Mud.HttpUtils;
 
@@ -19,6 +18,11 @@ public static class QueryMapHelper
     private const int MaxFlattenRecursionDepth = 10;
 
     private static readonly ConcurrentDictionary<Type, PropertyInfo[]> PropertyCache = new();
+
+    /// <summary>
+    /// 未注入序列化器时的默认实例，确保 JSON 序列化至少使用库默认选项（含 MudHttpJsonContext.Default）。
+    /// </summary>
+    private static readonly IHttpContentSerializer s_defaultSerializer = HttpContentSerializerFactory.CreateDefault();
 
 
     /// <summary>
@@ -37,7 +41,8 @@ public static class QueryMapHelper
         bool useJsonSerialization,
         bool urlEncode = true,
         List<string>? rawPairs = null,
-        int depth = 0)
+        int depth = 0,
+        IHttpContentSerializer? contentSerializer = null)
     {
         if (obj == null)
         {
@@ -46,6 +51,7 @@ public static class QueryMapHelper
 
         if (depth > MaxFlattenRecursionDepth) throw new InvalidOperationException("Maximum recursion depth exceeded while flattening object of type " + obj.GetType().Name + ". This may be caused by a circular reference.");
 
+        var serializer = contentSerializer ?? s_defaultSerializer;
         var properties = PropertyCache.GetOrAdd(obj.GetType(), t => t.GetProperties());
         foreach (var prop in properties)
         {
@@ -71,7 +77,7 @@ public static class QueryMapHelper
             {
                 string stringValue;
                 if (useJsonSerialization)
-                    stringValue = JsonSerializer.Serialize(value);
+                    stringValue = serializer.Serialize(value, type);
                 else
                     stringValue = value.ToString() ?? string.Empty;
 
@@ -96,7 +102,7 @@ public static class QueryMapHelper
             }
             else
             {
-                FlattenObjectToQueryParams(value, key, separator, queryParams, includeNullValues, useJsonSerialization, urlEncode, rawPairs, depth + 1);
+                FlattenObjectToQueryParams(value, key, separator, queryParams, includeNullValues, useJsonSerialization, urlEncode, rawPairs, depth + 1, contentSerializer);
             }
         }
     }

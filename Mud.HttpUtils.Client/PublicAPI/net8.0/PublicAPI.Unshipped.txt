@@ -87,6 +87,7 @@ Mud.HttpUtils.DefaultHttpRequestExecutor.SendAsResponseAsync<TInner>(System.Net.
 Mud.HttpUtils.DefaultHttpRequestExecutor.SendAsync(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, Mud.HttpUtils.ResponseDescriptor! descriptor, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 ~Mud.HttpUtils.DefaultSensitiveDataMasker
 ~Mud.HttpUtils.DefaultSensitiveDataMasker.DefaultSensitiveDataMasker() -> void
+Mud.HttpUtils.DefaultSensitiveDataMasker.DefaultSensitiveDataMasker(Mud.HttpUtils.IHttpContentSerializer? contentSerializer = null) -> void
 ~Mud.HttpUtils.DefaultSensitiveDataMasker.Mask(string! value, Mud.HttpUtils.SensitiveDataMaskMode mode = Mud.HttpUtils.SensitiveDataMaskMode.Mask, int prefixLength = 2, int suffixLength = 2) -> string!
 ~Mud.HttpUtils.DefaultSensitiveDataMasker.MaskObject(object! obj) -> string!
 Mud.HttpUtils.DefaultUrlParameterFormatter
@@ -270,7 +271,7 @@ Mud.HttpUtils.SnakeCaseUrlParameterKeyFormatter.Format(string! key) -> string!
 Mud.HttpUtils.SnakeCaseUrlParameterKeyFormatter.SnakeCaseUrlParameterKeyFormatter() -> void
 Mud.HttpUtils.StandardOAuth2TokenManager
 Mud.HttpUtils.StandardOAuth2TokenManager.GetOrRefreshCredentialTokenAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.CredentialToken!>!
-Mud.HttpUtils.StandardOAuth2TokenManager.StandardOAuth2TokenManager(System.Net.Http.HttpClient! httpClient, Microsoft.Extensions.Options.IOptions<Mud.HttpUtils.OAuth2Options!>! options, Microsoft.Extensions.Logging.ILogger<Mud.HttpUtils.StandardOAuth2TokenManager!>? logger = null, Mud.HttpUtils.ISecretProvider? secretProvider = null) -> void
+Mud.HttpUtils.StandardOAuth2TokenManager.StandardOAuth2TokenManager(System.Net.Http.HttpClient! httpClient, Microsoft.Extensions.Options.IOptions<Mud.HttpUtils.OAuth2Options!>! options, Microsoft.Extensions.Logging.ILogger<Mud.HttpUtils.StandardOAuth2TokenManager!>? logger = null, Mud.HttpUtils.ISecretProvider? secretProvider = null, Mud.HttpUtils.IHttpContentSerializer? contentSerializer = null) -> void
 Mud.HttpUtils.SystemTextJsonContentSerializer
 Mud.HttpUtils.SystemTextJsonContentSerializer.Deserialize<T>(string! json, object? options = null) -> T?
 Mud.HttpUtils.SystemTextJsonContentSerializer.FromHttpContentAsync<T>(System.Net.Http.HttpContent! content, object? options = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<T?>!
@@ -394,7 +395,7 @@ static Mud.HttpUtils.HttpClientUtils.GetByteArrayContentAsync(string? filePath, 
 static Mud.HttpUtils.MessageSanitizer.Sanitize(string! message, int maxLength = 500) -> string!
 static Mud.HttpUtils.MudHttpHealthChecksExtensions.AddMudHttpHealthChecks(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfiguration! configuration, string! sectionPath = "MudHttpHealthChecks") -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static Mud.HttpUtils.MudHttpHealthChecksExtensions.AddMudHttpHealthChecks(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Mud.HttpUtils.MudHttpHealthChecksOptions!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-static Mud.HttpUtils.QueryMapHelper.FlattenObjectToQueryParams(object! obj, string! prefix, string! separator, Mud.HttpUtils.QueryParameterBuilder! queryParams, bool includeNullValues, bool useJsonSerialization, bool urlEncode = true, System.Collections.Generic.List<string!>? rawPairs = null, int depth = 0) -> void
+static Mud.HttpUtils.QueryMapHelper.FlattenObjectToQueryParams(object! obj, string! prefix, string! separator, Mud.HttpUtils.QueryParameterBuilder! queryParams, bool includeNullValues, bool useJsonSerialization, bool urlEncode = true, System.Collections.Generic.List<string!>? rawPairs = null, int depth = 0, Mud.HttpUtils.IHttpContentSerializer? contentSerializer = null) -> void
 static Mud.HttpUtils.UrlValidator.AddAllowedDomain(string! domain) -> void
 static Mud.HttpUtils.UrlValidator.ClearDnsCache() -> void
 static Mud.HttpUtils.UrlValidator.ConfigureAllowedDomains(System.Collections.Generic.IEnumerable<string!>! domains) -> void

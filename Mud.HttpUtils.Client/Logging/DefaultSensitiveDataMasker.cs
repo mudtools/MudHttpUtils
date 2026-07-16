@@ -72,6 +72,17 @@ public class DefaultSensitiveDataMasker : ISensitiveDataMasker
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
+    private readonly IHttpContentSerializer _contentSerializer;
+
+    /// <summary>
+    /// 初始化 DefaultSensitiveDataMasker 实例。
+    /// </summary>
+    /// <param name="contentSerializer">HTTP 内容序列化器（可选）。未注入时使用 <see cref="HttpContentSerializerFactory.CreateDefault"/> 默认实现。</param>
+    public DefaultSensitiveDataMasker(IHttpContentSerializer? contentSerializer = null)
+    {
+        _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
+    }
+
     /// <summary>
     /// 属性掩码信息缓存，使用类型作为键，避免重复反射开销。
     /// </summary>
@@ -282,7 +293,7 @@ public class DefaultSensitiveDataMasker : ISensitiveDataMasker
                 }
             }
 
-            return JsonSerializer.Serialize(maskedObject, s_jsonOptions);
+            return _contentSerializer.Serialize(maskedObject, s_jsonOptions);
         }
         finally
         {

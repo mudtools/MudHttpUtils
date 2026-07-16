@@ -5,12 +5,13 @@
 		<Description>Mud HttpUtils CodeFixes 为源生成器诊断提供自动修复功能。</Description>
 		<PackageTags>HttpUtils;HttpClient;Roslyn;CodeFix;CodeFixProvider;Mud HttpUtils</PackageTags>
 		<Product>Mud Http Utils Code Fixes</Product>
-		<PackageId>Mud.HttpUtils.CodeFixes</PackageId>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>
 		<AssemblyName>Mud.HttpUtils.CodeFixes</AssemblyName>
 		<IsRoslynComponent>true</IsRoslynComponent>
 		<AnalysisLevel>6.0-all</AnalysisLevel>
+		<!-- 合并到 Mud.HttpUtils.Generator NuGet 包中分发，不再单独打包 -->
+		<IsPackable>false</IsPackable>
 		<IncludeBuildOutput>false</IncludeBuildOutput>
 	</PropertyGroup>
 
@@ -20,11 +21,6 @@
 			<PrivateAssets>all</PrivateAssets>
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
-	</ItemGroup>
-
-	<!--开发调试阶段-->
-	<ItemGroup>
-		<None Include="$(OutputPath)$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
 	</ItemGroup>
 
 </Project>

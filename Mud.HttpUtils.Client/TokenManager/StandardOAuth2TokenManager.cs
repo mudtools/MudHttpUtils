@@ -17,6 +17,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     private readonly ILogger _logger;
     private readonly ISecretProvider? _secretProvider;
     private readonly Lazy<Task<string?>> _clientSecretLazy;
+    private readonly IHttpContentSerializer _contentSerializer;
 
     private static readonly JsonSerializerOptions s_jsonOptions = new()
     {
@@ -34,16 +35,19 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// <param name="options">OAuth2 配置选项。</param>
     /// <param name="logger">日志记录器（可选）。</param>
     /// <param name="secretProvider">安全密钥提供程序（可选）。</param>
+    /// <param name="contentSerializer">HTTP 内容序列化器（可选）。未注入时使用 <see cref="HttpContentSerializerFactory.CreateDefault"/> 默认实现。</param>
     public StandardOAuth2TokenManager(
         HttpClient httpClient,
         IOptions<OAuth2Options> options,
         ILogger<StandardOAuth2TokenManager>? logger = null,
-        ISecretProvider? secretProvider = null)
+        ISecretProvider? secretProvider = null,
+        IHttpContentSerializer? contentSerializer = null)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? NullLogger<StandardOAuth2TokenManager>.Instance;
         _secretProvider = secretProvider;
+        _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
         _clientSecretLazy = new Lazy<Task<string?>>(ResolveClientSecretAsync, LazyThreadSafetyMode.ExecutionAndPublication);
     }
 
@@ -246,11 +250,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 #endif
 
-#if NET8_0_OR_GREATER
-        var result = JsonSerializer.Deserialize(json, OAuth2JsonContext.Default.TokenIntrospectionResult);
-#else
-        var result = JsonSerializer.Deserialize<TokenIntrospectionResult>(json, s_jsonOptions);
-#endif
+        var result = _contentSerializer.Deserialize<TokenIntrospectionResult>(json, s_jsonOptions);
         return result ?? new TokenIntrospectionResult();
     }
 
@@ -353,11 +353,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 #endif
 
-#if NET8_0_OR_GREATER
-        var tokenResponse = JsonSerializer.Deserialize(json, OAuth2JsonContext.Default.OAuth2TokenResponse);
-#else
-        var tokenResponse = JsonSerializer.Deserialize<OAuth2TokenResponse>(json, s_jsonOptions);
-#endif
+        var tokenResponse = _contentSerializer.Deserialize<OAuth2TokenResponse>(json, s_jsonOptions);
         if (tokenResponse == null)
             throw new InvalidOperationException("令牌响应反序列化失败");
 

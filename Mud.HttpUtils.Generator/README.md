@@ -56,6 +56,8 @@ dotnet add package Mud.HttpUtils.Generator
 
 > 源代码生成器需配合运行时库 `Mud.HttpUtils` 一起使用。
 
+> **v2.1+ 合并包**：本包已包含独立诊断分析器（`MUD001`/`MUD002` 接口规范检查）和代码修复器（`HTTPCLIENT005`/`007`、`AOT004`/`005`/`006`/`007` 一键修复），无需单独安装 `Mud.HttpUtils.Analyzers` 或 `Mud.HttpUtils.CodeFixes` 包。
+
 ## 快速开始
 
 ### 1. 定义 API 接口
@@ -990,8 +992,9 @@ Mud.HttpUtils.Generator/
 ## 依赖项
 
 - .NET Standard 2.0
-- Microsoft.CodeAnalysis.Analyzers
 - Microsoft.CodeAnalysis.CSharp
+- Microsoft.CodeAnalysis.CSharp.Workspaces（代码修复器依赖）
+- Microsoft.CodeAnalysis.Analyzers
 - Mud.HttpUtils.Abstractions（项目引用）
 - Mud.HttpUtils.Attributes（项目引用）
 
@@ -1061,5 +1064,6 @@ Mud.HttpUtils.Generator/
 - [Mud.HttpUtils.Attributes](../Mud.HttpUtils.Attributes/) - 特性定义
 - [Mud.HttpUtils.Client](../Mud.HttpUtils.Client/) - 客户端实现
 - [Mud.HttpUtils.Resilience](../Mud.HttpUtils.Resilience/) - 弹性策略
-- [Mud.HttpUtils.CodeFixes](../Mud.HttpUtils.CodeFixes/) - 诊断代码修复器（IDE 一键修复）
+- [Mud.HttpUtils.Analyzers](../Mud.HttpUtils.Analyzers/) - 独立诊断分析器（已合并到本包，不再单独发布）
+- [Mud.HttpUtils.CodeFixes](../Mud.HttpUtils.CodeFixes/) - 诊断代码修复器（已合并到本包，不再单独发布）
 - [Mud.HttpUtils.JsonContextScaffolder](../../Tools/Mud.HttpUtils.JsonContextScaffolder/) - AOT JSON 上下文脚手架工具
