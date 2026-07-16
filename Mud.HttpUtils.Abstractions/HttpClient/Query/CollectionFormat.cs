@@ -34,4 +34,14 @@ public enum CollectionFormat
     /// 空格分隔。如 <c>?ids=1%202%203</c>。
     /// </summary>
     Space,
+
+    /// <summary>
+    /// 制表符分隔。如 <c>?ids=1%092%093</c>。
+    /// </summary>
+    Tsv,
+
+    /// <summary>
+    /// 管道分隔。如 <c>?ids=1|2|3</c>。
+    /// </summary>
+    Pipes,
 }

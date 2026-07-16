@@ -5,6 +5,7 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using System.IO;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -13,6 +14,8 @@ namespace Mud.HttpUtils;
 
 /// <summary>
 /// 基于 <see cref="JsonSerializer"/> 的 <see cref="IHttpContentSerializer"/> 默认实现。
+/// 同时实现 <see cref="ISynchronousContentSerializer"/>、<see cref="ISynchronousContentDeserializer"/>、
+/// <see cref="IStreamingContentSerializer"/> 三个可选能力接口，支持同步 fast-path 与流式反序列化。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -23,8 +26,13 @@ namespace Mud.HttpUtils;
 /// <b>Native AOT</b>：构造时传入的 options 应包含 <c>TypeInfoResolver</c>
 /// （由 <c>JsonSerializerContext</c> 提供），以确保 AOT 下序列化/反序列化路径安全。
 /// </para>
+/// <para>
+/// <b>v3.3 Phase 1 T1.3</b>：实现 <see cref="ISynchronousContentSerializer"/> 启用 STJ 源生成 fast-path
+/// （<c>SerializeToUtf8Bytes</c> / <c>Utf8JsonWriter</c>）。
+/// </para>
 /// </remarks>
-public class SystemTextJsonContentSerializer : IHttpContentSerializer
+public class SystemTextJsonContentSerializer : IHttpContentSerializer,
+    ISynchronousContentSerializer, ISynchronousContentDeserializer, IStreamingContentSerializer
 {
     private readonly JsonSerializerOptions _options;
 
@@ -106,5 +114,163 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer
     private JsonSerializerOptions ResolveOptions(object? options)
     {
         return options as JsonSerializerOptions ?? _options;
+    }
+
+    // ========================================================================
+    // ISynchronousContentSerializer 实现
+    // ========================================================================
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// 使用 <c>SerializeToUtf8Bytes</c> 同步路径返回 <see cref="ByteArrayContent"/>（启用 STJ 源生成 fast-path）。
+    /// netstandard2.0 下回退到 <c>Serialize&lt;T&gt;</c> + <see cref="StringContent"/>。
+    /// </remarks>
+    public HttpContent ToHttpContentSynchronous<T>(T item)
+    {
+        if (item is null) return new ByteArrayContent(Array.Empty<byte>());
+
+        var opts = _options;
+#if NET5_0_OR_GREATER
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(item, opts);
+        var content = new ByteArrayContent(bytes);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        return content;
+#else
+        var json = JsonSerializer.Serialize(item, opts);
+        return new StringContent(json, Encoding.UTF8, "application/json");
+#endif
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// 返回自定义 <see cref="HttpContent"/>，在 <c>SerializeToStreamAsync</c> 中使用 <c>Utf8JsonWriter</c> 写入请求流。
+    /// 不缓冲全部内容，适用于大 payload 上传。
+    /// </remarks>
+    public HttpContent ToStreamingHttpContent<T>(T item)
+    {
+        return new StreamingJsonContent<T>(item, _options);
+    }
+
+    // ========================================================================
+    // ISynchronousContentDeserializer 实现
+    // ========================================================================
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// 委托现有 <see cref="Deserialize{T}(string, object?)"/> 实现（已有 <c>JsonTypeInfo&lt;T&gt;</c> fast-path）。
+    /// </remarks>
+    public T? DeserializeFromString<T>(string content)
+    {
+        return Deserialize<T>(content);
+    }
+
+    // ========================================================================
+    // IStreamingContentSerializer 实现
+    // ========================================================================
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// <para><see cref="StreamingContentFormat.JsonLines"/>：逐行读取，每行反序列化为一个 <typeparamref name="T"/>。</para>
+    /// <para><see cref="StreamingContentFormat.JsonArray"/>：使用 <c>DeserializeAsyncEnumerable&lt;T&gt;</c> 增量枚举（net6+）。</para>
+    /// </remarks>
+    public async IAsyncEnumerable<T?> DeserializeStreamAsync<T>(
+        Stream stream,
+        StreamingContentFormat format,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var opts = _options;
+
+        switch (format)
+        {
+            case StreamingContentFormat.JsonLines:
+                // NDJSON: 逐行读取，每行一个 JSON 值
+                using (var reader = new StreamReader(stream))
+                {
+                    string? line;
+                    while ((line = await ReadLineAsyncWithCancellation(reader, cancellationToken).ConfigureAwait(false)) != null)
+                    {
+                        if (string.IsNullOrWhiteSpace(line)) continue;
+                        yield return JsonSerializer.Deserialize<T>(line, opts);
+                    }
+                }
+                yield break;
+
+            case StreamingContentFormat.JsonArray:
+                // 单个 JSON 数组，增量枚举
+#if NET6_0_OR_GREATER
+                await foreach (var item in JsonSerializer
+                    .DeserializeAsyncEnumerable<T>(stream, opts, cancellationToken)
+                    .WithCancellation(cancellationToken)
+                    .ConfigureAwait(false))
+                {
+                    yield return item;
+                }
+#else
+                // netstandard2.0 回退：整体反序列化后枚举
+                var list = await JsonSerializer.DeserializeAsync<List<T>>(stream, opts, cancellationToken).ConfigureAwait(false);
+                if (list != null)
+                {
+                    foreach (var item in list) yield return item;
+                }
+#endif
+                yield break;
+
+            default:
+                throw new ArgumentOutOfRangeException(nameof(format), format, "Unsupported streaming content format.");
+        }
+    }
+
+    /// <summary>
+    /// 读取一行并支持取消令牌（.NET 7+ 原生支持，旧版本回退到无取消版本）。
+    /// </summary>
+    private static async Task<string?> ReadLineAsyncWithCancellation(StreamReader reader, CancellationToken cancellationToken)
+    {
+#if NET7_0_OR_GREATER
+        return await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+#else
+        cancellationToken.ThrowIfCancellationRequested();
+        return await reader.ReadLineAsync().ConfigureAwait(false);
+#endif
+    }
+
+    // ========================================================================
+    // 内部类型：流式 JSON HttpContent
+    // ========================================================================
+
+    /// <summary>
+    /// 流式 JSON <see cref="HttpContent"/>：在发送时使用 <c>Utf8JsonWriter</c> 同步写入请求流，不缓冲全部内容。
+    /// </summary>
+    private sealed class StreamingJsonContent<T> : HttpContent
+    {
+        private readonly T _item;
+        private readonly JsonSerializerOptions _options;
+
+        public StreamingJsonContent(T item, JsonSerializerOptions options)
+        {
+            _item = item;
+            _options = options;
+            Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        }
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+            => SerializeToStreamAsyncCore(stream, CancellationToken.None);
+
+#if NET5_0_OR_GREATER
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context, CancellationToken cancellationToken)
+            => SerializeToStreamAsyncCore(stream, cancellationToken);
+#endif
+
+        private async Task SerializeToStreamAsyncCore(Stream stream, CancellationToken cancellationToken)
+        {
+            await using var writer = new Utf8JsonWriter(stream);
+            JsonSerializer.Serialize(writer, _item, _options);
+            await writer.FlushAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = -1;
+            return false;
+        }
     }
 }

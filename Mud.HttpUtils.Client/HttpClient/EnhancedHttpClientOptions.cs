@@ -57,6 +57,68 @@ public sealed class EnhancedHttpClientOptions
     /// </remarks>
     public bool AllowCustomBaseUrls { get; set; }
 
+    /// <summary>
+    /// 获取或设置请求体序列化模式。
+    /// </summary>
+    /// <value>默认为 <see cref="RequestBodySerializationMode.Default"/>（现有同步行为，向后兼容）。</value>
+    /// <remarks>
+    /// <para>
+    /// 设置为 <see cref="RequestBodySerializationMode.Buffered"/> 或 <see cref="RequestBodySerializationMode.Streamed"/>
+    /// 时，要求配置的 <see cref="IHttpContentSerializer"/> 实现 <see cref="ISynchronousContentSerializer"/>，
+    /// 以启用 STJ 源生成 fast-path。
+    /// </para>
+    /// </remarks>
+    public RequestBodySerializationMode RequestBodySerialization { get; set; } = RequestBodySerializationMode.Default;
+
+    /// <summary>
+    /// 获取或设置异常擦除器（在异常传播前清除敏感数据）。
+    /// </summary>
+    /// <value>默认为 <c>null</c>（不执行擦除）。</value>
+    public IExceptionRedactor? ExceptionRedactor { get; set; }
+
+    /// <summary>
+    /// 获取或设置错误响应体最大读取字符数（防止恶意/超大错误响应导致 OOM）。
+    /// </summary>
+    /// <value>默认为 <c>null</c>（无限制）。设置后错误响应体截断到指定字符数。</value>
+    public int? MaxExceptionContentLength { get; set; }
+
+    /// <summary>
+    /// 获取或设置是否在发送前捕获请求体字符串（用于异常调试）。
+    /// </summary>
+    /// <value>默认为 <c>false</c>（不捕获）。</value>
+    /// <remarks>
+    /// </remarks>
+    public bool CaptureRequestContent { get; set; }
+
+    /// <summary>
+    /// 获取或设置 URL 解析模式。
+    /// </summary>
+    /// <value>默认为 <see cref="UrlResolutionMode.Default"/>（向后兼容）。</value>
+    public UrlResolutionMode UrlResolution { get; set; } = UrlResolutionMode.Default;
+
+#if NET6_0_OR_GREATER
+    /// <summary>
+    /// 获取或设置 HTTP 版本。
+    /// </summary>
+    /// <value>默认为 <see cref="System.Net.HttpVersion.Version11"/>。</value>
+    public Version? HttpVersion { get; set; } = System.Net.HttpVersion.Version11;
+
+    /// <summary>
+    /// 获取或设置 HTTP 版本策略。
+    /// </summary>
+    /// <value>默认为 <see cref="System.Net.HttpVersionPolicy.RequestVersionOrLower"/>。</value>
+    public System.Net.Http.HttpVersionPolicy? HttpVersionPolicy { get; set; } = System.Net.Http.HttpVersionPolicy.RequestVersionOrLower;
+#endif
+
+    /// <summary>
+    /// 获取或设置写入 <see cref="System.Net.Http.HttpRequestMessage"/> 的键值对预设。
+    /// </summary>
+    /// <value>默认为 <c>null</c>（不预设）。</value>
+    /// <remarks>
+    /// 在构建请求时将这些键值对写入 <c>HttpRequestMessage.Options</c>（net6+）或 <c>HttpRequestMessage.Properties</c>（netstandard2.0）。
+    /// </remarks>
+    public Dictionary<string, object?>? HttpRequestMessageOptions { get; set; }
+
 #if NET8_0_OR_GREATER
     /// <summary>
     /// Native AOT 下用于 JSON 源生成的类型解析器（JsonSerializerContext）。

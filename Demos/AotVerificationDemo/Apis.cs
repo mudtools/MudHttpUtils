@@ -119,6 +119,25 @@ public interface IComplexSearchApi
 }
 
 // ─────────────────────────────────────────────────────────────
+// 生成 API 客户端 — 默认模式（无 DI 入口 + ModuleInitializer 自动注册验证）
+// ─────────────────────────────────────────────────────────────
+
+/// <summary>
+/// 默认模式 API（无 HttpClient/TokenManager 包装类型）。
+/// 源生成器为此接口生成 ModuleInitializer 工厂注册代码，
+/// 可通过 <c>RestService.ForGenerated&lt;INonDiApi&gt;(httpClient, options)</c> 无 DI 调用。
+/// </summary>
+/// <remarks>
+/// v3.3 Phase 0 T0.4：验证无 DI AOT 入口与 ModuleInitializer 自动注册。
+/// </remarks>
+[HttpClientApi]
+public interface INonDiApi
+{
+    [Get("/api/users/{id}")]
+    Task<UserDto?> GetUserAsync([Path] int id);
+}
+
+// ─────────────────────────────────────────────────────────────
 // 以下路径在 Native AOT 下不安全 — 仅文档说明，不在 AOT 构建中使用
 // ─────────────────────────────────────────────────────────────
 

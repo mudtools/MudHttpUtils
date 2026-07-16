@@ -20,6 +20,12 @@
 /Mud.HttpUtils.OpenTelemetry/bin
 /Mud.HttpUtils.CodeFixes/obj
 /Mud.HttpUtils.CodeFixes/bin
+/Mud.HttpUtils.Newtonsoft.Json/obj
+/Mud.HttpUtils.Newtonsoft.Json/bin
+/Mud.HttpUtils.Analyzers/obj
+/Mud.HttpUtils.Analyzers/bin
+/Mud.HttpUtils.Testing/obj
+/Mud.HttpUtils.Testing/bin
 /bin
 /Tests/bin
 /Tests/Mud.HttpUtils.Client.Tests/bin
@@ -55,6 +61,9 @@
 /Tests/Mud.HttpUtils.CodeFixes.Tests/bin
 /Tests/Mud.HttpUtils.CodeFixes.Tests/obj
 /Tests/Mud.HttpUtils.CodeFixes.Tests/TestResults
+/Test/Mud.HttpUtils.Testing/obj
+/Test/Mud.HttpUtils.Testing/bin
+/Test/Mud.HttpUtils.Testing/TestResults
 /Demos/HttpClientApiDemo/bin
 /Demos/HttpClientApiDemo/obj
 /Demos/HttpClientDemo/bin

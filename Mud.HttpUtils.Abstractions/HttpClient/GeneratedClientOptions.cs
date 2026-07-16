@@ -1,11 +1,9 @@
 // -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2026
-//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规的许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
-
-using System.Text.Json.Serialization;
 
 namespace Mud.HttpUtils;
 
@@ -18,8 +16,12 @@ namespace Mud.HttpUtils;
 /// 携带源生成实现类构造函数所需的可选服务依赖。
 /// </para>
 /// <para>
-/// 所有属性均为可选（null 时使用默认实现）。AOT 场景下，建议至少提供
-/// <see cref="ContentSerializer"/>（含 <c>TypeInfoResolver</c>）以确保 JSON 序列化 AOT 安全。
+/// 大多数属性为可选（null 时使用默认实现）。但 <see cref="AppContext"/> 在默认模式接口下为必需——
+/// 源生成的工厂委托会在 <see cref="AppContext"/> 为 null 时抛出 <see cref="InvalidOperationException"/>，
+/// 因为 <see cref="IMudAppContext"/> 没有通用默认实现。
+/// </para>
+/// <para>
+/// AOT 场景下，建议至少提供 <see cref="ContentSerializer"/>（含 <c>TypeInfoResolver</c>）以确保 JSON 序列化 AOT 安全。
 /// </para>
 /// <para>
 /// 注意：此类型位于 Abstractions 层，仅携带 Abstractions 中定义的接口。
@@ -63,12 +65,52 @@ public sealed class GeneratedClientOptions
     /// </summary>
     public ISensitiveDataMasker? SensitiveDataMasker { get; set; }
 
+    /// <summary>
+    /// 获取或设置应用上下文实例。
+    /// </summary>
+    /// <value>应用上下文实例。默认模式下为必需（为 null 时工厂委托抛出异常），因为 <see cref="IMudAppContext"/> 没有通用默认实现。</value>
+    /// <remarks>
+    /// <para>
+    /// 仅用于源生成的默认模式接口（未声明 <c>TokenManager</c> 或 <c>HttpClient</c> 包装类型）。
+    /// 消费方需自行构造 <see cref="IMudAppContext"/> 实现并赋值。
+    /// </para>
+    /// <para>
+    /// HttpClient / TokenManager 模式接口不通过 ModuleInitializer 注册，此属性对它们无意义。
+    /// </para>
+    /// </remarks>
+    public IMudAppContext? AppContext { get; set; }
+
+    /// <summary>
+    /// 获取或设置应用上下文持有器。
+    /// </summary>
+    /// <value>应用上下文持有器实例。为 null 时工厂委托创建默认 <c>AsyncLocalAppContextSwitcher</c> 实例。</value>
+    /// <remarks>
+    /// 仅用于源生成的默认模式接口。为 null 时由工厂委托内部创建 <c>AsyncLocalAppContextSwitcher</c>（位于 <c>Mud.HttpUtils.Client</c>）。
+    /// </remarks>
+    public IAppContextHolder? AppContextHolder { get; set; }
+
+    /// <summary>
+    /// 获取或设置实例级"仅生成模式"覆盖。
+    /// </summary>
+    /// <value>
+    /// <c>null</c>（默认）= 使用全局 <see cref="RestService.GeneratedOnlyMode"/> 值；
+    /// <c>true</c> = 强制仅生成模式（即使全局为 false）；
+    /// <c>false</c> = 强制非仅生成模式（即使全局为 true，用于多租户隔离）。
+    /// </value>
+    /// <remarks>
+    /// <para>
+    /// 用于多租户场景下覆盖全局 <see cref="RestService.GeneratedOnlyMode"/> 标志。
+    /// 例如全局开启 AOT 守护，但特定租户需要回退反射（虽然 Mud.HttpUtils 不支持反射回退，此属性保留用于未来扩展）。
+    /// </para>
+    /// </remarks>
+    public bool? GeneratedOnlyMode { get; set; }
+
 #if NET8_0_OR_GREATER
     /// <summary>
     /// 获取或设置 Native AOT 下的 JSON 类型解析器。
     /// </summary>
     /// <value>
-    /// 消费方可通过此属性编程式注入 <see cref="JsonSerializerContext"/>，
+    /// 消费方可通过此属性编程式注入 <c>JsonSerializerContext</c>，
     /// 使源生成实现在 AOT 下使用源生成元数据。
     /// </value>
     public System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver? JsonTypeInfoResolver { get; set; }

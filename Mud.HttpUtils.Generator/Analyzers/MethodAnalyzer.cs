@@ -197,6 +197,58 @@ internal static class MethodAnalyzer
     }
 
     /// <summary>
+    /// 从已缓存的特性列表中查找HTTP方法特性（含自定义特性 fallback）。
+    /// v3.3 Phase 5 T5.2：当已知特性名匹配失败时，检查是否有特性继承自 HttpMethodAttribute。
+    /// </summary>
+    /// <param name="attributes">方法特性列表。</param>
+    /// <param name="compilation">编译上下文（用于解析 HttpMethodAttribute 类型）。</param>
+    internal static AttributeData? FindHttpMethodAttributeFromAttributes(
+        ImmutableArray<AttributeData> attributes,
+        Compilation compilation)
+    {
+        // 1. 先尝试已知特性名匹配（快速路径）
+        var known = FindHttpMethodAttributeFromAttributes(attributes);
+        if (known != null)
+            return known;
+
+        // 2. Fallback：检查是否有特性继承自 HttpMethodAttribute
+        var httpMethodAttrType = compilation.GetTypeByMetadataName("Mud.HttpUtils.Attributes.HttpMethodAttribute");
+        if (httpMethodAttrType == null)
+            return null;
+
+        foreach (var attr in attributes)
+        {
+            if (attr.AttributeClass == null)
+                continue;
+
+            // 跳过已知特性（已在快速路径中排除）
+            if (HttpClientGeneratorConstants.SupportedHttpMethods.Contains(attr.AttributeClass.Name))
+                continue;
+
+            // 检查继承链：attr.AttributeClass 是否继承自 HttpMethodAttribute
+            if (InheritsFrom(attr.AttributeClass, httpMethodAttrType))
+                return attr;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 检查类型是否继承自指定基类型（含多级继承）。
+    /// </summary>
+    private static bool InheritsFrom(INamedTypeSymbol type, INamedTypeSymbol baseType)
+    {
+        var current = type.BaseType;
+        while (current != null)
+        {
+            if (SymbolEqualityComparer.Default.Equals(current, baseType))
+                return true;
+            current = current.BaseType;
+        }
+        return false;
+    }
+
+    /// <summary>
     /// 从特性名称中提取HTTP方法名称
     /// </summary>
     public static string ExtractHttpMethodName(string attributeName)

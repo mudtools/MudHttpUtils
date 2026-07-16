@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFrameworks>netstandard2.0;net6.0;net8.0;net10.0</TargetFrameworks>
+		<PackageId>Mud.HttpUtils.Testing</PackageId>
+		<Description>Mud HttpUtils 测试辅助包，提供 StubHttp mock 服务器、路由匹配、网络行为模拟。</Description>
+		<PackageTags>HttpUtils;Testing;Mock;Stub;Mud HttpUtils</PackageTags>
+		<Product>Mud Http Utils</Product>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<GenerateDocumentationFile>True</GenerateDocumentationFile>
+	</PropertyGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\Mud.HttpUtils.Abstractions\Mud.HttpUtils.Abstractions.csproj" />
+	</ItemGroup>
+	<ItemGroup>
+		<None Include="README.md" Pack="true" PackagePath="\" />
+		<None Include="..\Icon.png" Pack="true" PackagePath="\" />
+	</ItemGroup>
+</Project>

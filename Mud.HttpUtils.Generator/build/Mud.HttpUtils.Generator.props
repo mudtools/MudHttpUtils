@@ -15,6 +15,10 @@
   <ItemGroup>
     <CompilerVisibleProperty Include="IsAotCompatible" />
     <CompilerVisibleProperty Include="PublishAot" />
+    <!-- T5.3: 全局禁用源生成器（调试与渐进迁移） -->
+    <CompilerVisibleProperty Include="DisableMudSourceGenerator" />
+    <!-- T5.5: 控制是否生成 [GeneratedCode] 标记（false 时不抑制生成代码中的警告） -->
+    <CompilerVisibleProperty Include="MudEmitGeneratedCodeMarkers" />
   </ItemGroup>
 
 </Project>

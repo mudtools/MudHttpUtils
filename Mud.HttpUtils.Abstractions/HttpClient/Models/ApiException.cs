@@ -108,14 +108,36 @@ public class ApiException : Exception
     public HttpStatusCode StatusCode { get; }
 
     /// <summary>
-    /// 获取响应内容。
+    /// 获取或设置响应内容。
     /// </summary>
-    public string? Content { get; }
+    /// <remarks>
+    /// setter 供 <see cref="IExceptionRedactor"/> 在异常传播前清除敏感数据。
+    /// </remarks>
+    public string? Content { get; set; }
 
     /// <summary>
-    /// 获取请求 URI。
+    /// 获取或设置请求 URI。
     /// </summary>
-    public string? RequestUri { get; }
+    /// <remarks>
+    /// setter 供 <see cref="IExceptionRedactor"/> 在异常传播前清除敏感数据。
+    /// </remarks>
+    public string? RequestUri { get; set; }
+
+    /// <summary>
+    /// 获取或设置请求体内容（捕获发送前的请求体字符串）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 仅在 <c>CaptureRequestContent</c> 启用时填充。请求体常含凭据或 PII，
+    /// 应配合 <see cref="IExceptionRedactor"/> 在传播前擦除。
+    /// </para>
+    /// </remarks>
+    public string? RequestContent { get; set; }
+
+    /// <summary>
+    /// 获取一个值，指示是否已捕获请求内容。
+    /// </summary>
+    public bool HasRequestContent => !string.IsNullOrEmpty(RequestContent);
 
     /// <summary>
     /// 尝试将响应内容反序列化为指定类型。

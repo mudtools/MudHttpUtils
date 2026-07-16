@@ -41,6 +41,8 @@ public class Program
         await DemoScaffolderAutoCoverage();
         DemoUncoveredDtoRuntime();
         await DemoResponseTypeWrapping();
+        await DemoNonDiAotEntry();
+        DemoModuleInitializerAutoRegistration();
 
         Console.WriteLine("\n=== AOT 验证示例完成 ===");
         Console.WriteLine("如果此程序在 Native AOT 模式下成功运行，说明 JSON / 表单 / 查询参数 / 弹性 / 脱敏 / 加密 / NDJSON 主路径均已 AOT 兼容。");
@@ -771,5 +773,128 @@ public class Program
         }
 
         Console.WriteLine();
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // 场景 13：无 DI AOT 入口验证（RestService.ForGenerated<T>）
+    // ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 验证不依赖 <c>IServiceProvider</c> 的 AOT 安全入口
+    /// <c>RestService.ForGenerated&lt;T&gt;(HttpClient, GeneratedClientOptions?)</c>。
+    /// </summary>
+    /// <remarks>
+    /// v3.3 Phase 0 T0.4：验证无 DI 入口可解析生成实现类。
+    /// 工厂委托由 ModuleInitializer 自动注册（net5+），或手动调用 <c>RegisterAllFactories()</c>（netstandard2.0）。
+    /// </remarks>
+    private static async Task DemoNonDiAotEntry()
+    {
+        Console.WriteLine("--- 13. 无 DI AOT 入口验证（ForGenerated<T>）---");
+
+        try
+        {
+            // 构造 HttpClient（无 DI 容器）
+            using var httpClient = new HttpClient { BaseAddress = new Uri("https://httpbin.org"), Timeout = TimeSpan.FromSeconds(10) };
+
+            // 构造 GeneratedClientOptions（携带最小必需依赖）
+            var options = new GeneratedClientOptions
+            {
+                AppContext = new MinimalAppContext("aot-demo", httpClient),
+                ContentSerializer = new SystemTextJsonContentSerializer()
+            };
+
+            // 无 DI 入口：直接通过 RestService.ForGenerated<T> 解析
+            var api = RestService.ForGenerated<INonDiApi>(httpClient, options);
+            Console.WriteLine($"  ForGenerated<INonDiApi> => 实例类型: {api.GetType().Name}");
+
+            // 尝试调用 API 方法（HTTP 请求预期失败——无真实服务器）
+            // 关键验证：工厂解析成功，序列化代码路径可执行
+            try
+            {
+                var user = await api.GetUserAsync(1);
+                Console.WriteLine($"  GetUserAsync(1) => {(user != null ? $"Id={user.Id}" : "null")}");
+            }
+            catch (HttpRequestException ex)
+            {
+                Console.WriteLine($"  GetUserAsync — HTTP 请求失败（预期，无真实服务器）: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"  GetUserAsync — 异常: {ex.GetType().Name}: {ex.Message}");
+            }
+
+            Console.WriteLine("  [✓] 无 DI 入口 ForGenerated<T> 解析成功（ModuleInitializer 工厂注册生效）");
+        }
+        catch (InvalidOperationException ex)
+        {
+            Console.WriteLine($"  [!] ForGenerated<T> 失败——工厂未注册: {ex.Message}");
+            Console.WriteLine("  [!] ModuleInitializer 可能未执行（netstandard2.0 需手动调用 RegisterAllFactories()）");
+        }
+
+        Console.WriteLine();
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // 场景 14：ModuleInitializer 自动注册验证
+    // ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 验证程序集加载后 ModuleInitializer 自动调用了 <c>RegisterGeneratedFactory</c>。
+    /// </summary>
+    /// <remarks>
+    /// v3.3 Phase 0 T0.4：若 ModuleInitializer 生效，<c>ForGenerated&lt;T&gt;</c> 不会抛出
+    /// "No generated factory registered" 异常。
+    /// </remarks>
+    private static void DemoModuleInitializerAutoRegistration()
+    {
+        Console.WriteLine("--- 14. ModuleInitializer 自动注册验证 ---");
+
+        try
+        {
+            using var httpClient = new HttpClient { BaseAddress = new Uri("https://httpbin.org") };
+            var options = new GeneratedClientOptions
+            {
+                AppContext = new MinimalAppContext("aot-init", httpClient),
+            };
+
+            // 仅验证工厂是否已注册——不调用 API 方法
+            var api = RestService.ForGenerated<INonDiApi>(httpClient, options);
+            Console.WriteLine($"  ForGenerated<INonDiApi> 解析成功 → {api.GetType().Name}");
+            Console.WriteLine("  [✓] ModuleInitializer 自动注册已执行（工厂已注册，无需手动调用）");
+        }
+        catch (InvalidOperationException)
+        {
+            Console.WriteLine("  [!] ModuleInitializer 未执行——工厂未注册");
+            Console.WriteLine("  [!] netstandard2.0 不支持 ModuleInitializer，需手动调用 GeneratedFactoryRegistration.RegisterAllFactories()");
+        }
+
+        Console.WriteLine();
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // 辅助类型：最小 IMudAppContext 实现
+    // ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 最小 <see cref="IMudAppContext"/> 实现，仅用于无 DI AOT Demo。
+    /// </summary>
+    private sealed class MinimalAppContext : IMudAppContext
+    {
+        private readonly HttpClient _httpClient;
+
+        public MinimalAppContext(string appKey, HttpClient httpClient)
+        {
+            AppKey = appKey;
+            _httpClient = httpClient;
+        }
+
+        public string AppKey { get; }
+
+        public IEnhancedHttpClient HttpClient => throw new NotImplementedException(
+            "MinimalAppContext 不提供 IEnhancedHttpClient；生成实现通过 IHttpRequestExecutor 发送请求。");
+
+        public ITokenManager GetTokenManager(string tokenType) => throw new NotImplementedException();
+        public T GetTokenManager<T>() where T : class, ITokenManager => throw new NotImplementedException();
+        public T? GetService<T>() where T : class => null;
     }
 }

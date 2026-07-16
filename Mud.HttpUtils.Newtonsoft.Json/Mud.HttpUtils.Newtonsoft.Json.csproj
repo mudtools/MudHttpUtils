@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFrameworks>netstandard2.0;net6.0;net8.0;net10.0</TargetFrameworks>
+		<PackageId>Mud.HttpUtils.Newtonsoft.Json</PackageId>
+		<Description>Mud HttpUtils 的 Newtonsoft.Json 序列化器实现，提供 IHttpContentSerializer + ISynchronousContentSerializer。</Description>
+		<PackageTags>HttpUtils;HttpClient;Newtonsoft;Json;序列化;Mud HttpUtils</PackageTags>
+		<Product>Mud Http Utils</Product>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<GenerateDocumentationFile>True</GenerateDocumentationFile>
+	</PropertyGroup>
+	<ItemGroup>
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+	</ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\Mud.HttpUtils.Abstractions\Mud.HttpUtils.Abstractions.csproj" />
+	</ItemGroup>
+	<ItemGroup>
+		<None Include="README.md" Pack="true" PackagePath="\" />
+		<None Include="..\Icon.png" Pack="true" PackagePath="\" />
+	</ItemGroup>
+</Project>

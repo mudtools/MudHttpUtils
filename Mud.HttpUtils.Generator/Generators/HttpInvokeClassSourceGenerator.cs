@@ -102,6 +102,10 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
         if (interfaces.IsDefaultOrEmpty || configOptionsProvider == null)
             return;
 
+        // T5.3: 全局禁用开关（调试与渐进迁移）
+        if (ProjectConfigHelper.ReadConfigValueAsBool(configOptionsProvider.GlobalOptions, "build_property.DisableMudSourceGenerator", false))
+            return;
+
         var httpClientOptionsName = DefaultHttpClientOptionsName;
         ProjectConfigHelper.ReadProjectOptions(configOptionsProvider.GlobalOptions, "build_property.HttpClientOptionsName",
            val => httpClientOptionsName = val, DefaultHttpClientOptionsName);

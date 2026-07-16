@@ -27,6 +27,11 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         if (interfaces.IsDefaultOrEmpty)
             return;
 
+        // T5.3: 全局禁用开关（调试与渐进迁移）
+        if (configOptionsProvider != null &&
+            ProjectConfigHelper.ReadConfigValueAsBool(configOptionsProvider.GlobalOptions, "build_property.DisableMudSourceGenerator", false))
+            return;
+
         // [v2.4 §3.4] 读取消费项目 nullable 配置，条件化发射 #nullable enable
         EmitNullableEnable = ProjectConfigHelper.ReadConfigValue(
             configOptionsProvider.GlobalOptions, "build_property.Nullable", "enable") == "enable";
@@ -37,8 +42,17 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
             return;
 
         var compilation = interfaces[0].Context.SemanticModel.Compilation;
-        var sourceCode = GenerateSourceCode(compilation, httpClientApis, context);
-        context.AddSource("HttpClientApiExtensions.g.cs", SourceText.From(sourceCode, Encoding.UTF8));
+
+        // 1. 生成 HttpClientApiExtensions.g.cs（DI 注册扩展方法）
+        var extensionSourceCode = GenerateExtensionClassCode(compilation, httpClientApis, context);
+        context.AddSource("HttpClientApiExtensions.g.cs", SourceText.From(extensionSourceCode, Encoding.UTF8));
+
+        // 2. T0.2: 生成 GeneratedFactoryRegistration.g.cs（ModuleInitializer 工厂注册）
+        var factorySourceCode = GenerateFactoryRegistrationCode(httpClientApis);
+        if (!string.IsNullOrEmpty(factorySourceCode))
+        {
+            context.AddSource("GeneratedFactoryRegistration.g.cs", SourceText.From(factorySourceCode, Encoding.UTF8));
+        }
     }
 
     /// <inheritdoc/>
@@ -163,6 +177,9 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         return codeBuilder.ToString();
     }
 
+    private string GenerateExtensionClassCode(Compilation compilation, List<HttpClientApiInfo> apis, SourceProductionContext context)
+        => GenerateSourceCode(compilation, apis, context);
+
     private void GenerateExtensionClass(Compilation compilation, StringBuilder codeBuilder, List<HttpClientApiInfo> apis, SourceProductionContext context)
     {
         GenerateFileHeader(codeBuilder);
@@ -180,6 +197,110 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         GenerateAddWebApiHttpClientMethod(codeBuilder, apis, context);
         codeBuilder.AppendLine("    }");
         codeBuilder.AppendLine("}");
+    }
+
+    /// <summary>
+    /// 生成 GeneratedFactoryRegistration.g.cs：包含 [ModuleInitializer] 自动注册代码。
+    /// 仅在 net5.0+ 下生成 ModuleInitializer；netstandard2.0 生成普通静态方法（需手动调用）。
+    /// 工厂委托内部构造 DefaultHttpRequestExecutor 等依赖。
+    /// <para>
+    /// v3.4 修正（L-11）：仅对默认模式（无 TokenManagerType 且无 HttpClientType）的接口生成注册代码。
+    /// HttpClient / TokenManager 模式的实现类构造函数需要用户自定义类型，工厂委托无法构造，需通过 DI 容器使用。
+    /// </para>
+    /// </summary>
+    private string GenerateFactoryRegistrationCode(List<HttpClientApiInfo> apis)
+    {
+        // v3.4 L-11：仅对默认模式接口生成注册代码（无 TokenManagerType 且无 HttpClientType）
+        var defaultModeApis = apis
+            .Where(a => string.IsNullOrEmpty(a.HttpClientType) && string.IsNullOrEmpty(a.TokenManagerType))
+            .ToList();
+
+        if (defaultModeApis.Count == 0)
+            return string.Empty;
+
+        var sb = new StringBuilder(500 + defaultModeApis.Count * 600);
+        GenerateFileHeader(sb);
+
+        sb.AppendLine();
+        sb.AppendLine("namespace Mud.HttpUtils");
+        sb.AppendLine("{");
+        sb.AppendLine($"    {CompilerGeneratedAttribute}");
+        sb.AppendLine($"    {GeneratedCodeAttribute}");
+        sb.AppendLine("    internal static partial class GeneratedFactoryRegistration");
+        sb.AppendLine("    {");
+
+        // net5.0+ 生成 [ModuleInitializer]
+        sb.AppendLine("#if NET5_0_OR_GREATER");
+        sb.AppendLine("        [System.Diagnostics.CodeAnalysis.SuppressMessage(");
+        sb.AppendLine("            \"Usage\",");
+        sb.AppendLine("            \"CA2255:The ModuleInitializer attribute should not be used in libraries\",");
+        sb.AppendLine("            Justification = \"ModuleInitializer 用于自动注册源生成的 API 客户端工厂\")]");
+        sb.AppendLine("        [System.Runtime.CompilerServices.ModuleInitializer]");
+        sb.AppendLine("        internal static void Initialize()");
+        sb.AppendLine("        {");
+        foreach (var api in defaultModeApis)
+        {
+            GenerateFactoryRegistrationCall(sb, api);
+        }
+        sb.AppendLine("        }");
+        sb.AppendLine("#else");
+        // netstandard2.0：生成普通静态方法供消费方手动调用
+        sb.AppendLine("        /// <summary>");
+        sb.AppendLine("        /// 注册所有源生成的 API 客户端工厂（netstandard2.0 不支持 ModuleInitializer，需手动调用）。</summary>");
+        sb.AppendLine("        internal static void RegisterAllFactories()");
+        sb.AppendLine("        {");
+        foreach (var api in defaultModeApis)
+        {
+            GenerateFactoryRegistrationCall(sb, api);
+        }
+        sb.AppendLine("        }");
+        sb.AppendLine("#endif");
+
+        sb.AppendLine("    }");
+        sb.AppendLine("}");
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// 生成单个默认模式接口的工厂注册调用代码。
+    /// 工厂委托构造 DefaultHttpRequestExecutor 并调用实现类构造函数（默认模式签名）。
+    /// </summary>
+    private void GenerateFactoryRegistrationCall(StringBuilder sb, HttpClientApiInfo api)
+    {
+        var fullyQualifiedInterface = $"global::{api.Namespace}.{api.InterfaceName}";
+        var fullyQualifiedImplementation = $"global::{api.Namespace}.{HttpClientGeneratorConstants.ImplementationNamespaceSuffix}.{api.ImplementationName}";
+
+        sb.AppendLine($"            global::Mud.HttpUtils.RestService.RegisterGeneratedFactory<{fullyQualifiedInterface}>((client, options) =>");
+        sb.AppendLine("            {");
+        // v3.4 L-11：AppContext 为必需参数（IMudAppContext 无通用默认实现）
+        sb.AppendLine("                var appContext = options?.AppContext");
+        sb.AppendLine("                    ?? throw new System.InvalidOperationException(");
+        sb.AppendLine($"                        \"ForGenerated<{api.InterfaceName}> requires options.AppContext to be set. \" +");
+        sb.AppendLine("                        \"IMudAppContext has no default implementation; construct one and assign to GeneratedClientOptions.AppContext.\");");
+        // AppContextHolder 为可选，为 null 时创建默认 AsyncLocalAppContextSwitcher
+        sb.AppendLine("                var appContextHolder = options?.AppContextHolder");
+        sb.AppendLine("                    ?? new global::Mud.HttpUtils.AsyncLocalAppContextSwitcher();");
+        // DefaultHttpRequestExecutor 构造函数：第一个参数是 ILogger<DefaultHttpRequestExecutor>，不是 HttpClient
+        sb.AppendLine("                var executorLogger = Microsoft.Extensions.Logging.Abstractions.NullLogger<global::Mud.HttpUtils.DefaultHttpRequestExecutor>.Instance;");
+        sb.AppendLine("                var executor = new global::Mud.HttpUtils.DefaultHttpRequestExecutor(");
+        sb.AppendLine("                    executorLogger,");
+        sb.AppendLine("                    options?.CacheProvider,");
+        sb.AppendLine("                    options?.ResilienceResolver,");
+        sb.AppendLine("                    appResilienceResolver: null,");
+        sb.AppendLine("                    appContextHolder: appContextHolder,");
+        sb.AppendLine("                    contentSerializer: options?.ContentSerializer);");
+        // 调用实现类构造函数（默认模式签名）
+        sb.AppendLine($"                return new {fullyQualifiedImplementation}(");
+        sb.AppendLine("                    appContext,");
+        sb.AppendLine("                    appContextHolder,");
+        sb.AppendLine("                    executor,");
+        sb.AppendLine("                    appManager: null,");
+        sb.AppendLine("                    cacheProvider: options?.CacheProvider,");
+        sb.AppendLine("                    resilienceResolver: options?.ResilienceResolver,");
+        sb.AppendLine("                    contentSerializer: options?.ContentSerializer,");
+        sb.AppendLine("                    logger: null);");
+        sb.AppendLine("            });");
     }
 
     private void GenerateAddWebApiHttpClientMethod(StringBuilder codeBuilder, List<HttpClientApiInfo> apis, SourceProductionContext context)

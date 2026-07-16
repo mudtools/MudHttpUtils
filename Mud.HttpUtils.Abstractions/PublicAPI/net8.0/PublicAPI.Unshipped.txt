@@ -711,3 +711,29 @@ virtual Mud.HttpUtils.TokenManagerBase.SupportsBackgroundRefresh.get -> bool
 volatile Mud.HttpUtils.TokenManagerBase._disposed -> bool
 Mud.HttpUtils.RestService
 static Mud.HttpUtils.RestService.ForGenerated<T>(System.IServiceProvider! serviceProvider) -> T!
+static Mud.HttpUtils.RestService.ForGenerated<T>(System.Net.Http.HttpClient! client, Mud.HttpUtils.GeneratedClientOptions? options = null) -> T!
+static Mud.HttpUtils.RestService.get_GeneratedOnlyMode() -> bool
+static Mud.HttpUtils.RestService.set_GeneratedOnlyMode(bool value) -> void
+static Mud.HttpUtils.RestService.RegisterGeneratedFactory<T>(System.Func<System.Net.Http.HttpClient!, Mud.HttpUtils.GeneratedClientOptions?, T>! factory) -> void
+Mud.HttpUtils.GeneratedClientOptions
+Mud.HttpUtils.GeneratedClientOptions.GeneratedClientOptions() -> void
+Mud.HttpUtils.GeneratedClientOptions.AppContext.get -> Mud.HttpUtils.IMudAppContext?
+Mud.HttpUtils.GeneratedClientOptions.AppContext.set -> void
+Mud.HttpUtils.GeneratedClientOptions.AppContextHolder.get -> Mud.HttpUtils.IAppContextHolder?
+Mud.HttpUtils.GeneratedClientOptions.AppContextHolder.set -> void
+Mud.HttpUtils.GeneratedClientOptions.CacheProvider.get -> Mud.HttpUtils.IHttpResponseCache?
+Mud.HttpUtils.GeneratedClientOptions.CacheProvider.set -> void
+Mud.HttpUtils.GeneratedClientOptions.ContentSerializer.get -> Mud.HttpUtils.IHttpContentSerializer?
+Mud.HttpUtils.GeneratedClientOptions.ContentSerializer.set -> void
+Mud.HttpUtils.GeneratedClientOptions.GeneratedOnlyMode.get -> System.Boolean?
+Mud.HttpUtils.GeneratedClientOptions.GeneratedOnlyMode.set -> void
+Mud.HttpUtils.GeneratedClientOptions.JsonTypeInfoResolver.get -> System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver?
+Mud.HttpUtils.GeneratedClientOptions.JsonTypeInfoResolver.set -> void
+Mud.HttpUtils.GeneratedClientOptions.RequestInterceptor.get -> Mud.HttpUtils.IHttpRequestInterceptor?
+Mud.HttpUtils.GeneratedClientOptions.RequestInterceptor.set -> void
+Mud.HttpUtils.GeneratedClientOptions.ResilienceResolver.get -> Mud.HttpUtils.IResiliencePolicyResolver?
+Mud.HttpUtils.GeneratedClientOptions.ResilienceResolver.set -> void
+Mud.HttpUtils.GeneratedClientOptions.ResponseInterceptor.get -> Mud.HttpUtils.IHttpResponseInterceptor?
+Mud.HttpUtils.GeneratedClientOptions.ResponseInterceptor.set -> void
+Mud.HttpUtils.GeneratedClientOptions.SensitiveDataMasker.get -> Mud.HttpUtils.ISensitiveDataMasker?
+Mud.HttpUtils.GeneratedClientOptions.SensitiveDataMasker.set -> void

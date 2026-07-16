@@ -80,6 +80,24 @@ public interface ITransportExceptionFactory
 }
 
 /// <summary>
+/// 异常擦除钩子：在异常传播前清除敏感数据（Authorization 头、请求体、Set-Cookie 等）。
+/// </summary>
+/// <remarks>
+/// <para>
+/// 使用时通过 <c>options.ExceptionRedactor</c> 或 DI 注入。默认无注入时不执行擦除。
+/// 典型用法：<c>ex.Content = null; ex.RequestContent = null;</c>
+/// </para>
+/// </remarks>
+public interface IExceptionRedactor
+{
+    /// <summary>
+    /// 擦除异常中的敏感数据。
+    /// </summary>
+    /// <param name="exception">要擦除的异常。</param>
+    void Redact(ApiException exception);
+}
+
+/// <summary>
 /// 三级异常工厂的默认实现集合。复刻现有行为，确保向后兼容。
 /// </summary>
 /// <remarks>
