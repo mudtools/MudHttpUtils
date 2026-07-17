@@ -6,6 +6,7 @@
 // -----------------------------------------------------------------------
 
 using System.Diagnostics;
+using Mud.HttpUtils.Helpers;
 
 namespace Mud.HttpUtils.Models;
 
@@ -92,10 +93,8 @@ internal readonly struct InterfaceModel : IEquatable<InterfaceModel>
         // 也会改变指纹触发重生成;改为 WithoutTrivia() 后,注释/空白不再是生成缓存的失效因素。
         var sourceText = syntax.WithoutTrivia().ToString();
 
-        // 预估容量：源文本 + 基接口信息（约 32 字节/基接口）+ 特性信息（约 128 字节）
-        var baseListCount = syntax.BaseList?.Types.Count ?? 0;
-        var estimatedCapacity = sourceText.Length + (baseListCount * 32) + 128;
-        var sb = new StringBuilder(estimatedCapacity);
+        // 使用 ValueStringBuilder（栈分配 + ArrayPool 回退）替代 StringBuilder，减少 GC 压力（W5 修复）
+        var sb = new ValueStringBuilder(stackalloc char[512]);
         sb.Append(sourceText);
 
         // 纳入继承层次：当基接口列表变化时（如添加/移除基接口），指纹随之变化
@@ -103,21 +102,35 @@ internal readonly struct InterfaceModel : IEquatable<InterfaceModel>
         {
             foreach (var baseType in syntax.BaseList.Types)
             {
-                sb.Append('|').Append("Base:").Append(baseType.ToString());
+                sb.Append('|');
+                    sb.Append("Base:");
+                    sb.Append(baseType.ToString());
             }
         }
 
-        // 仅纳入影响生成代码的关键属性，避免过度失效
+        // 纳入影响生成代码的关键属性，避免过度失效
         if (!context.Attributes.IsDefaultOrEmpty)
         {
             foreach (var attr in context.Attributes)
             {
+                // 构造函数参数：纳入所有值，避免通过构造函数传入的配置变化不触发重新生成
+                foreach (var arg in attr.ConstructorArguments)
+                {
+                    sb.Append('|');
+                    sb.Append("Ctor=");
+                    sb.Append(arg.Value?.ToString() ?? string.Empty);
+                }
+
+                // 命名参数：仅纳入影响生成代码的关键属性，避免过度失效
                 foreach (var arg in attr.NamedArguments)
                 {
                     if (arg.Key is "HttpClient" or "TokenManage" or "InheritedFrom"
                         or "IsAbstract" or "ContentType" or "Timeout")
                     {
-                        sb.Append('|').Append(arg.Key).Append('=').Append(arg.Value.Value);
+                        sb.Append('|');
+                        sb.Append(arg.Key);
+                        sb.Append('=');
+                        sb.Append(arg.Value.Value?.ToString() ?? string.Empty);
                     }
                 }
             }

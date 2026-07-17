@@ -444,13 +444,13 @@ internal static class MethodAnalyzer
         foreach (var interfaceSyntax in allInterfaces)
         {
             // 先用廉价的名称和参数数量过滤候选集，避免对每个方法都调用昂贵的 GetDeclaredSymbol
+            // 不物化为 List：候选集通常很小（同名同参数数量），延迟枚举两次的开销低于 List 分配
             var candidates = interfaceSyntax.Members
                 .OfType<MethodDeclarationSyntax>()
                 .Where(m => m.Identifier.Text == targetName &&
-                            m.ParameterList.Parameters.Count == targetParamCount)
-                .ToList();
+                            m.ParameterList.Parameters.Count == targetParamCount);
 
-            if (candidates.Count == 0)
+            if (!candidates.Any())
                 continue;
 
             // 仅对候选方法进行语义分析确认

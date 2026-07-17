@@ -18,9 +18,9 @@ namespace Mud.HttpUtils.Models;
 /// 打包为一个可比较的单元，并预解析 <see cref="INamedTypeSymbol"/> 避免下游重复调用
 /// <c>SemanticModel.GetDeclaredSymbol</c>。
 /// <para>
-/// 增量缓存策略：<see cref="Fingerprint"/> 为类声明的完整源文本（<see cref="SyntaxNode.ToString"/>），
-/// 用于 <see cref="IEquatable{T}"/> 比较。当类源文本未变化时，模型视为相同，
-/// <c>RegisterSourceOutput</c> 不会被触发，从而避免无关文件编辑导致的重复生成。
+/// 增量缓存策略：<see cref="Fingerprint"/> 为类声明去除琐事后的源文本（<see cref="SyntaxNode.WithoutTrivia"/>），
+/// 用于 <see cref="IEquatable{T}"/> 比较。当类源文本（不含注释/空白）未变化时，模型视为相同，
+/// <c>RegisterSourceOutput</c> 不会被触发，从而避免无关文件编辑（如仅注释变更）导致的重复生成。
 /// </para>
 /// <para>
 /// 此设计消除了将 <c>CompilationProvider</c> 纳入管道的反模式：任意源文件编辑都会改变 Compilation，
@@ -56,7 +56,8 @@ internal readonly struct ClassModel : IEquatable<ClassModel>
         Syntax = syntax;
         Context = context;
         Symbol = context.SemanticModel.GetDeclaredSymbol(syntax) as INamedTypeSymbol;
-        Fingerprint = syntax.ToString();
+        // 使用 WithoutTrivia 排除注释/空白，避免仅 trivia 变更触发重新生成（与 InterfaceModel 一致）
+        Fingerprint = syntax.WithoutTrivia().ToString();
     }
 
     public bool Equals(ClassModel other) =>

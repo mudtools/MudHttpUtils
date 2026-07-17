@@ -110,7 +110,7 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
                 if (!string.IsNullOrEmpty(generatedCode))
                 {
                     var fileName = GenerateUniqueFileName(eventClass, classSymbol, eventHandlerAttribute);
-                    context.AddSource(fileName, SourceText.From(generatedCode, Encoding.UTF8));
+                    AddSourceValidated(context, fileName, generatedCode);
                 }
             }
             catch (Exception ex)

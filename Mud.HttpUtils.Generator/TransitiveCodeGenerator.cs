@@ -5,7 +5,14 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Diagnostics;
+using System.Linq;
+using System.Text;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.Text;
 
 namespace Mud.HttpUtils;
 
@@ -123,6 +130,37 @@ public abstract class TransitiveCodeGenerator : IIncrementalGenerator
         Location location)
     {
         context.ReportDiagnostic(Diagnostic.Create(descriptor, location ?? Location.None, className, GeneratorDebugLogger.FormatExceptionMessage(exception)));
+    }
+
+    /// <summary>
+    /// 在 DEBUG 构建下验证生成代码的语法正确性（S1 优化建议）。
+    /// 使用 <see cref="CSharpSyntaxTree.ParseText"/> 解析生成代码，发现语法错误时记录日志。
+    /// Release 构建下此方法被 [Conditional("DEBUG")] 移除，零开销。
+    /// </summary>
+    [Conditional("DEBUG")]
+    internal static void ValidateGeneratedCode(string hintName, string code)
+    {
+        try
+        {
+            var tree = CSharpSyntaxTree.ParseText(SourceText.From(code, Encoding.UTF8));
+            foreach (var diag in tree.GetDiagnostics().Where(d => d.Severity == DiagnosticSeverity.Error))
+            {
+                GeneratorDebugLogger.Log($"生成代码语法错误 [{hintName}]: {diag.GetMessage()}");
+            }
+        }
+        catch
+        {
+            // 验证失败不应阻断生成
+        }
+    }
+
+    /// <summary>
+    /// 添加生成源代码，并在 DEBUG 构建下验证语法正确性。
+    /// </summary>
+    internal static void AddSourceValidated(SourceProductionContext context, string hintName, string code)
+    {
+        ValidateGeneratedCode(hintName, code);
+        context.AddSource(hintName, SourceText.From(code, Encoding.UTF8));
     }
 
 }

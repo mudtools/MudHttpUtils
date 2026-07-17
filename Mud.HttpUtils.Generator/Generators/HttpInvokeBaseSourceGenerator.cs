@@ -62,8 +62,9 @@ internal abstract class HttpInvokeBaseSourceGenerator : TransitiveCodeGenerator
     /// <para>
     /// 已接受的权衡：<see cref="InterfaceModel.Context"/> 中的 <see cref="SemanticModel"/> 和
     /// <see cref="Compilation"/> 在指纹未变化时可能来自上一次编译。若依赖的其他文件发生语义变化
-    /// （如类型实现接口变更），生成器不会重新执行。这对于本生成器是可接受的——生成的代码仅引用类型名称，
-    /// 不依赖类型内部结构。
+    /// （如类型实现接口变更、被引用的 DTO 类型重命名），生成器不会重新执行。生成的代码可能引用
+    /// 过期的类型名称，导致编译错误。缓解措施：修改接口声明（如加空行再删除）强制触发重新生成，
+    /// 或通过 <c>build_property.ForceHttpGenerator=true</c> 强制重新生成（见 <see cref="InterfaceModel.BuildFingerprint"/>）。
     /// </para>
     /// </remarks>
     public override void Initialize(IncrementalGeneratorInitializationContext context)

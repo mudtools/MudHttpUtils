@@ -29,9 +29,11 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
         base.Initialize(context);
 
         // AOT006：独立于 [HttpClientApi] 接口，检测标注 [HttpJsonSerializable] 但未被任何
-        // JsonSerializerContext 覆盖的类型（即“脚手架未运行/未接入构建”的编译期信号）。
+        // JsonSerializerContext 覆盖的类型（即"脚手架未运行/未接入构建"的编译期信号）。
         // 仅本生成器注册一次，避免与同基类的其他生成器（如 RegistrationGenerator）重复触发诊断。
-        // 仅当编译单元存在此类类型时才触发；使用 CompilationProvider 以获得正确的增量缓存语义。
+        // 使用 CompilationProvider 是因为 AnalyzeHttpJsonSerializableCoverage 内部的 CollectCoveredTypes
+        // 需遍历当前编译及引用程序集中的所有 JsonSerializerContext 子类，该全量遍历无法通过
+        // ForAttributeWithMetadataName 增量收集（引用程序集非当前编译的 SyntaxTree）。
         var hasHttpJsonSerializable = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 fullyQualifiedMetadataName: "Mud.HttpUtils.Attributes.HttpJsonSerializableAttribute",
@@ -54,42 +56,15 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
             {
                 Mud.HttpUtils.Analyzers.AotDtoCoverageAnalyzer.AnalyzeHttpJsonSerializableCoverage(compilation, ctx);
             }
-            catch
+            catch (Exception ex)
             {
-                // AOT006 为诊断性检查，不应阻断代码生成
+                // AOT006 为诊断性检查，不应阻断代码生成，但记录日志便于排查分析器内部错误
+                GeneratorDebugLogger.LogError("AOT006_AnalyzeHttpJsonSerializableCoverage", ex);
             }
         });
 
-        // AOT007：在 AOT 上下文下检测使用 XML 序列化的 [HttpClientApi] 接口方法（AotXmlRejectionAnalyzer）。
-        // 仅当存在 [HttpClientApi] 接口时触发；分析器内部再依据 build_property.IsAotCompatible/PublishAot
-        // 判定是否处于 AOT 上下文，非 AOT 项目不报告。
-        var hasHttpClientApi = context.SyntaxProvider
-            .ForAttributeWithMetadataName(
-                fullyQualifiedMetadataName: "Mud.HttpUtils.Attributes.HttpClientApiAttribute",
-                predicate: static (node, _) => node is InterfaceDeclarationSyntax,
-                transform: static (_, _) => true)
-            .Collect()
-            .Select(static (values, _) => values.Any());
-
-        var aotXmlCheckData = hasHttpClientApi
-            .Combine(context.CompilationProvider)
-            .Combine(context.AnalyzerConfigOptionsProvider);
-
-        context.RegisterSourceOutput(aotXmlCheckData, static (ctx, provider) =>
-        {
-            var ((hasApi, compilation), configOptions) = provider;
-            if (!hasApi)
-                return;
-
-            try
-            {
-                Mud.HttpUtils.Analyzers.AotXmlRejectionAnalyzer.Analyze(compilation, ctx, configOptions);
-            }
-            catch
-            {
-                // AOT007 为诊断性检查，不应阻断代码生成
-            }
-        });
+        // AOT007 已移至 ExecuteGenerator 中调用，复用主生成管道已增量收集的 interfaceModels，
+        // 避免单独的 CompilationProvider 管道导致每次按键重新遍历整个编译（C1 修复）。
     }
 
 
@@ -150,17 +125,21 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
             }
         }
 
-        // P2.1: AOT004 — 检查 DTO 覆盖情况（仅在有 HttpClientApi 接口时运行）
+        // P2.1: AOT004 — 检查 DTO 覆盖情况 + AOT007 — 检查 AOT 下 XML 序列化
+        // 两者均复用主生成管道已增量收集的 interfaceModels，避免单独的 CompilationProvider
+        // 管道导致每次按键重新遍历整个编译（C1 修复）
         if (!interfaces.IsDefaultOrEmpty)
         {
             try
             {
                 var firstCompilation = interfaces[0].Context.SemanticModel.Compilation;
                 Mud.HttpUtils.Analyzers.AotDtoCoverageAnalyzer.Analyze(firstCompilation, context);
+                Mud.HttpUtils.Analyzers.AotXmlRejectionAnalyzer.Analyze(firstCompilation, context, configOptionsProvider);
             }
-            catch
+            catch (Exception ex)
             {
-                // AOT004 是诊断性检查，不应阻断代码生成
+                // AOT004/AOT007 为诊断性检查，不应阻断代码生成，但记录日志便于排查分析器内部错误
+                GeneratorDebugLogger.LogError("AOT004_AOT007_Analyze", ex);
             }
         }
     }

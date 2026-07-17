@@ -6,6 +6,7 @@
 // -----------------------------------------------------------------------
 
 using System.Collections.Concurrent;
+using Mud.HttpUtils;
 using Mud.HttpUtils.Analyzers;
 using Mud.HttpUtils.Generators.Base;
 using Mud.HttpUtils.Generators.Context;
@@ -147,9 +148,7 @@ internal class InterfaceImplementationGenerator
         var fileName = string.IsNullOrEmpty(namespacePath)
             ? $"{generatorContext.ClassName}.g.cs"
             : $"{namespacePath}/{generatorContext.ClassName}.g.cs";
-        _context.AddSource(
-            fileName,
-            SourceText.From(_codeBuilder.ToString(), Encoding.UTF8));
+        TransitiveCodeGenerator.AddSourceValidated(_context, fileName, _codeBuilder.ToString());
     }
 
     /// <summary>

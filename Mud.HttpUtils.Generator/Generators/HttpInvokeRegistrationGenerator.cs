@@ -24,12 +24,11 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         SourceProductionContext context,
         AnalyzerConfigOptionsProvider configOptionsProvider)
     {
-        if (interfaces.IsDefaultOrEmpty)
+        if (interfaces.IsDefaultOrEmpty || configOptionsProvider == null)
             return;
 
         // T5.3: 全局禁用开关（调试与渐进迁移）
-        if (configOptionsProvider != null &&
-            ProjectConfigHelper.ReadConfigValueAsBool(configOptionsProvider.GlobalOptions, "build_property.DisableMudSourceGenerator", false))
+        if (ProjectConfigHelper.ReadConfigValueAsBool(configOptionsProvider.GlobalOptions, "build_property.DisableMudSourceGenerator", false))
             return;
 
         // [v2.4 §3.4] 读取消费项目 nullable 配置，条件化发射 #nullable enable
@@ -45,13 +44,13 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
 
         // 1. 生成 HttpClientApiExtensions.g.cs（DI 注册扩展方法）
         var extensionSourceCode = GenerateExtensionClassCode(compilation, httpClientApis, context);
-        context.AddSource("HttpClientApiExtensions.g.cs", SourceText.From(extensionSourceCode, Encoding.UTF8));
+        AddSourceValidated(context, "HttpClientApiExtensions.g.cs", extensionSourceCode);
 
         // 2. T0.2: 生成 GeneratedFactoryRegistration.g.cs（ModuleInitializer 工厂注册）
         var factorySourceCode = GenerateFactoryRegistrationCode(httpClientApis);
         if (!string.IsNullOrEmpty(factorySourceCode))
         {
-            context.AddSource("GeneratedFactoryRegistration.g.cs", SourceText.From(factorySourceCode, Encoding.UTF8));
+            AddSourceValidated(context, "GeneratedFactoryRegistration.g.cs", factorySourceCode);
         }
     }
 

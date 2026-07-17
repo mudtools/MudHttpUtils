@@ -129,7 +129,7 @@ internal class FormContentGenerator : TransitiveCodeGenerator
                     {
                         fileName = $"{classSymbol.Name}.g.cs";
                     }
-                    context.AddSource(fileName, SourceText.From(generatedCode, Encoding.UTF8));
+                    AddSourceValidated(context, fileName, generatedCode);
                 }
             }
             catch (Exception ex)
