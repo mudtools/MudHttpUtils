@@ -78,5 +78,11 @@ public class OAuth2Options
     /// 令牌缓存层面的提前刷新由 <see cref="TokenManagerBase.ExpireThresholdSeconds"/> 和
     /// <see cref="UserTokenCacheOptions.ExpireThresholdSeconds"/> 控制（默认 300 秒）。</para>
     /// </summary>
-    public int ExpirySafetyMarginSeconds { get; set; } = 60;
+    /// <exception cref="ArgumentOutOfRangeException">设置小于 0 的值时抛出。</exception>
+    public int ExpirySafetyMarginSeconds
+    {
+        get => _expirySafetyMarginSeconds;
+        set => _expirySafetyMarginSeconds = value >= 0 ? value : throw new ArgumentOutOfRangeException(nameof(ExpirySafetyMarginSeconds), "令牌过期安全边际不能为负数。");
+    }
+    private int _expirySafetyMarginSeconds = 60;
 }

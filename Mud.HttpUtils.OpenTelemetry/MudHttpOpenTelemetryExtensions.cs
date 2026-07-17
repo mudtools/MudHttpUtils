@@ -7,6 +7,8 @@
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using OpenTelemetry;
 using OpenTelemetry.Exporter;
 using OpenTelemetry.Logs;
@@ -84,6 +86,9 @@ public static class MudHttpOpenTelemetryExtensions
         configuration.GetSection(sectionPath).Bind(options);
         configure?.Invoke(options);
 
+        // 注册校验器，在选项绑定时验证属性范围
+        services.TryAddSingleton<IValidateOptions<MudHttpOpenTelemetryOptions>, MudHttpOpenTelemetryOptionsValidator>();
+
         return AddMudHttpOpenTelemetryCore(services, options);
     }
 
@@ -118,6 +123,9 @@ public static class MudHttpOpenTelemetryExtensions
         var options = new MudHttpOpenTelemetryOptions();
         configure?.Invoke(options);
 
+        // 注册校验器，在选项绑定时验证属性范围
+        services.TryAddSingleton<IValidateOptions<MudHttpOpenTelemetryOptions>, MudHttpOpenTelemetryOptionsValidator>();
+
         return AddMudHttpOpenTelemetryCore(services, options);
     }
 
@@ -125,7 +133,7 @@ public static class MudHttpOpenTelemetryExtensions
         IServiceCollection services,
         MudHttpOpenTelemetryOptions options)
     {
-        // 校验 SamplingRatio 范围
+        // 校验 SamplingRatio 范围（保留运行时校验，IValidateOptions 仅在 IConfiguration 绑定时生效）
         if (options.SamplingRatio < 0 || options.SamplingRatio > 1)
             throw new ArgumentOutOfRangeException(nameof(options.SamplingRatio),
                 $"SamplingRatio 必须在 0.0~1.0 范围内，当前值为 {options.SamplingRatio}。");

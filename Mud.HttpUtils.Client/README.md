@@ -143,7 +143,7 @@ services.AddMudHttpClient("myApi", encryption =>
 });
 ```
 
-> 密钥长度支持 AES-128（16 字节）、AES-192（24 字节）、AES-256（32 字节）。`AesEncryptionOptions.Validate()` 方法在启动时验证密钥的有效性。从 v1.8.0 起，IV 在每次加密时自动随机生成，无需手动设置。
+> 密钥长度支持 AES-128（16 字节）、AES-192（24 字节）、AES-256（32 字节）。`AesEncryptionOptions.Validate()` 方法在 `IEncryptionProvider` 首次解析时验证密钥的有效性。从 v1.8.0 起，IV 在每次加密时自动随机生成，无需手动设置。
 
 ### 安全认证提供程序
 
@@ -504,7 +504,7 @@ services.AddMudHttpHealthChecks(Configuration);
 
 #### 熔断器健康检查选项
 
-`CircuitBreakerHealthCheckSettings` 用于配置熔断器健康检查，在 `appsettings.json` 中位于 `MudHttpHealthChecks:CircuitBreakerHealthCheck` 下。
+`CircuitBreakerHealthCheckSettings` 用于配置熔断器健康检查，在 `appsettings.json` 中位于 `MudHttpHealthChecks:CircuitBreaker` 下。
 
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
@@ -524,7 +524,7 @@ services.AddMudHttpHealthChecks(Configuration);
       "MinSampleSize": 5,
       "FailureStatus": "Degraded"
     },
-    "CircuitBreakerHealthCheck": {
+    "CircuitBreaker": {
       "MaxOpenCount": 0,
       "MaxHalfOpenCount": 0,
       "FailureStatus": "Unhealthy"
@@ -533,7 +533,7 @@ services.AddMudHttpHealthChecks(Configuration);
 }
 ```
 
-> `MudHttpHealthChecks` 下的 `TokenRefresh` 子节会被 `AddMudHttpHealthChecks(IConfiguration)` 自动绑定；`CircuitBreakerHealthCheck` 子节对应 `MudCircuitBreakerHealthCheck.SectionName`（默认 `"CircuitBreakerHealthCheck"`）。
+> `MudHttpHealthChecks` 下的 `TokenRefresh` 和 `CircuitBreaker` 子节会被 `AddMudHttpHealthChecks(IConfiguration)` 自动绑定。
 
 ### 可观测性
 

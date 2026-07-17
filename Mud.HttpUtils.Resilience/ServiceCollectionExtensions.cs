@@ -75,7 +75,7 @@ public static class ServiceCollectionExtensions
     /// </summary>
     /// <param name="services">服务集合。</param>
     /// <param name="configuration">配置实例，用于绑定弹性策略选项。</param>
-    /// <param name="configurationSectionPath">配置文件中弹性策略节点的路径，默认为 "MudHttpResilience"。</param>
+    /// <param name="configurationSectionPath">配置文件中弹性策略节点的路径，默认为 <see cref="ResilienceOptions.SectionName"/>。</param>
     /// <returns>服务集合（链式调用）。</returns>
     /// <exception cref="ArgumentNullException"><paramref name="services"/> 或 <paramref name="configuration"/> 为 null 时抛出。</exception>
     /// <example>
@@ -107,7 +107,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddMudHttpResilience(
         this IServiceCollection services,
         IConfiguration configuration,
-        string configurationSectionPath = "MudHttpResilience")
+        string configurationSectionPath = ResilienceOptions.SectionName)
     {
         if (services == null)
             throw new ArgumentNullException(nameof(services));
@@ -177,14 +177,14 @@ public static class ServiceCollectionExtensions
     /// </remarks>
     /// <param name="services">服务集合。</param>
     /// <param name="configuration">配置实例，用于绑定弹性策略选项。</param>
-    /// <param name="configurationSectionPath">配置文件中弹性策略节点的路径，默认为 "MudHttpResilience"。</param>
+    /// <param name="configurationSectionPath">配置文件中弹性策略节点的路径，默认为 <see cref="ResilienceOptions.SectionName"/>。</param>
     /// <returns>服务集合（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">services 为 null 时抛出。</exception>
     /// <exception cref="InvalidOperationException">未找到已注册的 IEnhancedHttpClient 服务时抛出。</exception>
     public static IServiceCollection AddMudHttpResilienceDecorator(
         this IServiceCollection services,
         IConfiguration configuration,
-        string configurationSectionPath = "MudHttpResilience")
+        string configurationSectionPath = ResilienceOptions.SectionName)
     {
         if (services == null)
             throw new ArgumentNullException(nameof(services));
@@ -455,7 +455,7 @@ public static class ServiceCollectionExtensions
     /// <param name="clientName">Named HttpClient 的名称。</param>
     /// <param name="configuration">配置实例。</param>
     /// <param name="configureHttpClient">配置 HttpClient 的委托。</param>
-    /// <param name="resilienceSectionPath">弹性策略配置节点路径，默认 "MudHttpResilience"。</param>
+    /// <param name="resilienceSectionPath">弹性策略配置节点路径，默认 <see cref="ResilienceOptions.SectionName"/>。</param>
     /// <returns>服务集合（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
     public static IServiceCollection AddMudHttpUtils(
@@ -463,7 +463,7 @@ public static class ServiceCollectionExtensions
         string clientName,
         IConfiguration configuration,
         Action<HttpClient> configureHttpClient,
-        string resilienceSectionPath = "MudHttpResilience")
+        string resilienceSectionPath = ResilienceOptions.SectionName)
     {
         if (services == null)
             throw new ArgumentNullException(nameof(services));

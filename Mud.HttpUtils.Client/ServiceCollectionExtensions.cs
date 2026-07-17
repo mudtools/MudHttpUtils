@@ -203,6 +203,8 @@ public static class HttpClientServiceCollectionExtensions
             throw new ArgumentNullException(nameof(configuration));
 
         services.Configure<AesEncryptionOptions>(configuration.GetSection(sectionPath));
+        // 注册校验器，在选项绑定时验证密钥长度有效性，使无效密钥在启动时即被检测
+        services.TryAddSingleton<IValidateOptions<AesEncryptionOptions>, AesEncryptionOptionsValidator>();
         services.TryAddSingleton<IEncryptionProvider, DefaultAesEncryptionProvider>();
         return services;
     }

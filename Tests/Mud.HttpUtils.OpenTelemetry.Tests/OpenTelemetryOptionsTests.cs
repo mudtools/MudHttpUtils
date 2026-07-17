@@ -481,4 +481,144 @@ public class OpenTelemetryOptionsTests
         // 此测试验证设计意图：明确不支持热更新
         descriptor.Should().BeNull();
     }
+
+    // ============ MudHttpOpenTelemetryOptionsValidator ============
+
+    [Fact]
+    public void MudHttpOpenTelemetryOptionsValidator_NullOptions_ReturnsSuccess()
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", null!);
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void MudHttpOpenTelemetryOptionsValidator_DefaultOptions_ReturnsSuccess()
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions());
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(-0.1)]
+    [InlineData(-1.0)]
+    [InlineData(1.1)]
+    [InlineData(2.0)]
+    public void MudHttpOpenTelemetryOptionsValidator_InvalidSamplingRatio_ReturnsFail(double invalidRatio)
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions { SamplingRatio = invalidRatio });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("SamplingRatio");
+    }
+
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(0.5)]
+    [InlineData(1.0)]
+    public void MudHttpOpenTelemetryOptionsValidator_ValidSamplingRatio_ReturnsSuccess(double validRatio)
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions { SamplingRatio = validRatio });
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(-100)]
+    public void MudHttpOpenTelemetryOptionsValidator_InvalidExportBatchSize_ReturnsFail(int invalidBatchSize)
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions { ExportBatchSize = invalidBatchSize });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("ExportBatchSize");
+    }
+
+    [Fact]
+    public void MudHttpOpenTelemetryOptionsValidator_NullExportBatchSize_ReturnsSuccess()
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions { ExportBatchSize = null });
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(-100)]
+    public void MudHttpOpenTelemetryOptionsValidator_InvalidExportIntervalMilliseconds_ReturnsFail(int invalidInterval)
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions { ExportIntervalMilliseconds = invalidInterval });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("ExportIntervalMilliseconds");
+    }
+
+    [Fact]
+    public void MudHttpOpenTelemetryOptionsValidator_NullExportIntervalMilliseconds_ReturnsSuccess()
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions { ExportIntervalMilliseconds = null });
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void MudHttpOpenTelemetryOptionsValidator_InvalidServiceName_ReturnsFail(string? invalidName)
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions { ServiceName = invalidName! });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("ServiceName");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void MudHttpOpenTelemetryOptionsValidator_InvalidServiceVersion_ReturnsFail(string? invalidVersion)
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions { ServiceVersion = invalidVersion! });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("ServiceVersion");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void MudHttpOpenTelemetryOptionsValidator_InvalidDeploymentEnvironment_ReturnsFail(string? invalidEnv)
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions { DeploymentEnvironment = invalidEnv! });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("DeploymentEnvironment");
+    }
+
+    [Fact]
+    public void MudHttpOpenTelemetryOptionsValidator_MultipleFailures_ReportsAll()
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions
+        {
+            SamplingRatio = -1.0,
+            ExportBatchSize = 0,
+            ExportIntervalMilliseconds = -5,
+            ServiceName = "",
+            ServiceVersion = "  ",
+            DeploymentEnvironment = null!,
+        });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("SamplingRatio");
+        result.FailureMessage.Should().Contain("ExportBatchSize");
+        result.FailureMessage.Should().Contain("ExportIntervalMilliseconds");
+        result.FailureMessage.Should().Contain("ServiceName");
+        result.FailureMessage.Should().Contain("ServiceVersion");
+        result.FailureMessage.Should().Contain("DeploymentEnvironment");
+    }
 }
