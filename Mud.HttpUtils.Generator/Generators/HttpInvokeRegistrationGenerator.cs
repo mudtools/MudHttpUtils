@@ -291,7 +291,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         sb.AppendLine("                    contentSerializer: options?.ContentSerializer,");
         sb.AppendLine("                    exceptionRedactor: options?.ExceptionRedactor,");
         sb.AppendLine("                    maxExceptionContentLength: options?.MaxExceptionContentLength,");
-        sb.AppendLine("                    captureRequestContent: options?.CaptureRequestContent,");
+        sb.AppendLine("                    captureRequestContent: options?.CaptureRequestContent ?? false,");
         sb.AppendLine("#if NET6_0_OR_GREATER");
         sb.AppendLine("                    httpVersion: options?.HttpVersion,");
         sb.AppendLine("                    httpVersionPolicy: options?.HttpVersionPolicy,");

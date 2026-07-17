@@ -445,9 +445,13 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
 
         // T5.4: DynamicDependency 标注，防止 trimmer 在 AOT 下裁剪生成类型及 RestService 成员
         // 该特性仅允许用于构造函数、方法、字段声明，故放在构造函数上而非类声明上
+        // 注意：DynamicDependencyAttribute / DynamicallyAccessedMemberTypes 在 netstandard2.0 下不可用
+        // （netstandard2.1+ 才内置），需用 #if 包裹避免 netstandard2.0 消费项目编译失败
         if (_context.EmitGeneratedCodeMarkers)
         {
+            codeBuilder.AppendLine("#if !NETSTANDARD2_0");
             codeBuilder.AppendLine("        [System.Diagnostics.CodeAnalysis.DynamicDependency(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof(global::Mud.HttpUtils.RestService))]");
+            codeBuilder.AppendLine("#endif");
         }
         var signature = $"        public {className}({string.Join(", ", parameters)})";
         codeBuilder.Append(signature);
