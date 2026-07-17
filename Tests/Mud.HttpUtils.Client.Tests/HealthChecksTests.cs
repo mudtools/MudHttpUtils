@@ -503,9 +503,8 @@ public class HealthChecksTests
     [Fact]
     public void AddMudHttpHealthChecks_FromConfiguration_CircuitBreakerKey_BindsCorrectly()
     {
-        // 回归测试：验证熔断器健康检查的 JSON 键名为 "CircuitBreaker"（而非 "CircuitBreakerHealthCheck"）。
-        // MudHttpHealthChecksOptions.CircuitBreaker 属性名决定绑定键名，
-        // MudCircuitBreakerHealthCheckOptions.SectionName 常量 ("CircuitBreakerHealthCheck") 未参与绑定路径。
+    // 回归测试：验证熔断器健康检查的 JSON 键名为 "CircuitBreaker"，
+    // 与 MudCircuitBreakerHealthCheckOptions.SectionName 常量一致。
         var configDict = new Dictionary<string, string?>
         {
             ["MudHttpHealthChecks:CircuitBreaker:MaxOpenCount"] = "3",
@@ -783,6 +782,47 @@ public class HealthChecksTests
         result.Failed.Should().BeTrue();
         result.FailureMessage.Should().Contain("CriticalThreshold");
         result.FailureMessage.Should().Contain("DegradedThreshold");
+    }
+
+    // ============ SectionName 常量一致性测试 ============
+
+    [Fact]
+    public void MudCircuitBreakerHealthCheckOptions_SectionName_MatchesBindingKey()
+    {
+        // 验证 SectionName 常量值与实际 IConfiguration 绑定键名一致。
+        // 绑定键名由 MudHttpHealthChecksOptions.CircuitBreaker 属性名决定，
+        // SectionName 常量应与之保持一致以避免误导。
+        MudCircuitBreakerHealthCheckOptions.SectionName.Should().Be("CircuitBreaker");
+    }
+
+    [Fact]
+    public void MudCircuitBreakerHealthCheckOptions_SectionName_NotOldValue()
+    {
+        // 回归测试：确保 SectionName 不再是旧的错误值 "CircuitBreakerHealthCheck"
+        MudCircuitBreakerHealthCheckOptions.SectionName.Should().NotBe("CircuitBreakerHealthCheck");
+    }
+
+    [Fact]
+    public void AddMudHttpHealthChecks_FromConfiguration_UsingSectionNameConstant_BindsCorrectly()
+    {
+        // 端到端验证：使用 SectionName 常量作为配置键前缀，应正确绑定
+        var configDict = new Dictionary<string, string?>
+        {
+            [$"MudHttpHealthChecks:{MudCircuitBreakerHealthCheckOptions.SectionName}:MaxOpenCount"] = "3",
+            [$"MudHttpHealthChecks:{MudCircuitBreakerHealthCheckOptions.SectionName}:MaxHalfOpenCount"] = "2",
+        };
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(configDict)
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMudHttpHealthChecks(configuration);
+
+        var provider = services.BuildServiceProvider();
+        var cbOptions = provider.GetRequiredService<MudCircuitBreakerHealthCheckOptions>();
+        cbOptions.MaxOpenCount.Should().Be(3);
+        cbOptions.MaxHalfOpenCount.Should().Be(2);
     }
 }
 

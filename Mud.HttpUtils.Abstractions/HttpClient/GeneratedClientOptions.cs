@@ -29,7 +29,7 @@ namespace Mud.HttpUtils;
 /// 生成实现类构造函数接受 <c>ILogger?</c> 可选参数，此处传入 null。
 /// </para>
 /// </remarks>
-public sealed class GeneratedClientOptions
+public sealed class GeneratedClientOptions : IEnhancedClientConfig
 {
     /// <summary>
     /// 获取或设置 HTTP 内容序列化器。

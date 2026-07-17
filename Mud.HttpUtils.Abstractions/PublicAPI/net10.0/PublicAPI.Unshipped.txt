@@ -715,6 +715,21 @@ static Mud.HttpUtils.RestService.ForGenerated<T>(System.Net.Http.HttpClient! cli
 static Mud.HttpUtils.RestService.get_GeneratedOnlyMode() -> bool
 static Mud.HttpUtils.RestService.set_GeneratedOnlyMode(bool value) -> void
 static Mud.HttpUtils.RestService.RegisterGeneratedFactory<T>(System.Func<System.Net.Http.HttpClient!, Mud.HttpUtils.GeneratedClientOptions?, T>! factory) -> void
+Mud.HttpUtils.IEnhancedClientConfig
+Mud.HttpUtils.IEnhancedClientConfig.CaptureRequestContent.get -> bool
+Mud.HttpUtils.IEnhancedClientConfig.CaptureRequestContent.set -> void
+Mud.HttpUtils.IEnhancedClientConfig.ExceptionRedactor.get -> Mud.HttpUtils.IExceptionRedactor?
+Mud.HttpUtils.IEnhancedClientConfig.ExceptionRedactor.set -> void
+Mud.HttpUtils.IEnhancedClientConfig.HttpRequestMessageOptions.get -> System.Collections.Generic.Dictionary<string!, object?>?
+Mud.HttpUtils.IEnhancedClientConfig.HttpRequestMessageOptions.set -> void
+Mud.HttpUtils.IEnhancedClientConfig.HttpVersion.get -> System.Version?
+Mud.HttpUtils.IEnhancedClientConfig.HttpVersion.set -> void
+Mud.HttpUtils.IEnhancedClientConfig.HttpVersionPolicy.get -> System.Net.Http.HttpVersionPolicy?
+Mud.HttpUtils.IEnhancedClientConfig.HttpVersionPolicy.set -> void
+Mud.HttpUtils.IEnhancedClientConfig.JsonTypeInfoResolver.get -> System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver?
+Mud.HttpUtils.IEnhancedClientConfig.JsonTypeInfoResolver.set -> void
+Mud.HttpUtils.IEnhancedClientConfig.MaxExceptionContentLength.get -> int?
+Mud.HttpUtils.IEnhancedClientConfig.MaxExceptionContentLength.set -> void
 Mud.HttpUtils.GeneratedClientOptions
 Mud.HttpUtils.GeneratedClientOptions.GeneratedClientOptions() -> void
 Mud.HttpUtils.GeneratedClientOptions.AppContext.get -> Mud.HttpUtils.IMudAppContext?
@@ -727,6 +742,12 @@ Mud.HttpUtils.GeneratedClientOptions.ContentSerializer.get -> Mud.HttpUtils.IHtt
 Mud.HttpUtils.GeneratedClientOptions.ContentSerializer.set -> void
 Mud.HttpUtils.GeneratedClientOptions.GeneratedOnlyMode.get -> System.Boolean?
 Mud.HttpUtils.GeneratedClientOptions.GeneratedOnlyMode.set -> void
+Mud.HttpUtils.GeneratedClientOptions.ExceptionRedactor.get -> Mud.HttpUtils.IExceptionRedactor?
+Mud.HttpUtils.GeneratedClientOptions.ExceptionRedactor.set -> void
+Mud.HttpUtils.GeneratedClientOptions.MaxExceptionContentLength.get -> int?
+Mud.HttpUtils.GeneratedClientOptions.MaxExceptionContentLength.set -> void
+Mud.HttpUtils.GeneratedClientOptions.CaptureRequestContent.get -> bool
+Mud.HttpUtils.GeneratedClientOptions.CaptureRequestContent.set -> void
 Mud.HttpUtils.GeneratedClientOptions.JsonTypeInfoResolver.get -> System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver?
 Mud.HttpUtils.GeneratedClientOptions.JsonTypeInfoResolver.set -> void
 Mud.HttpUtils.GeneratedClientOptions.RequestInterceptor.get -> Mud.HttpUtils.IHttpRequestInterceptor?
@@ -737,6 +758,12 @@ Mud.HttpUtils.GeneratedClientOptions.ResponseInterceptor.get -> Mud.HttpUtils.IH
 Mud.HttpUtils.GeneratedClientOptions.ResponseInterceptor.set -> void
 Mud.HttpUtils.GeneratedClientOptions.SensitiveDataMasker.get -> Mud.HttpUtils.ISensitiveDataMasker?
 Mud.HttpUtils.GeneratedClientOptions.SensitiveDataMasker.set -> void
+Mud.HttpUtils.GeneratedClientOptions.HttpVersion.get -> System.Version?
+Mud.HttpUtils.GeneratedClientOptions.HttpVersion.set -> void
+Mud.HttpUtils.GeneratedClientOptions.HttpVersionPolicy.get -> System.Net.Http.HttpVersionPolicy?
+Mud.HttpUtils.GeneratedClientOptions.HttpVersionPolicy.set -> void
+Mud.HttpUtils.GeneratedClientOptions.HttpRequestMessageOptions.get -> System.Collections.Generic.Dictionary<string!, object?>?
+Mud.HttpUtils.GeneratedClientOptions.HttpRequestMessageOptions.set -> void
 Mud.HttpUtils.IHttpExceptionFactory
 Mud.HttpUtils.IDeserializationExceptionFactory
 Mud.HttpUtils.ITransportExceptionFactory

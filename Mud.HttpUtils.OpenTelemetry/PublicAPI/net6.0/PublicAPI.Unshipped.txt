@@ -38,6 +38,9 @@ Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ServiceVersion.get -> st
 Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.ServiceVersion.set -> void
 Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.UseShortExporterTimeout.get -> bool
 Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions.UseShortExporterTimeout.set -> void
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptionsValidator
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptionsValidator.MudHttpOpenTelemetryOptionsValidator() -> void
+Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptionsValidator.Validate(string? name, Mud.HttpUtils.OpenTelemetry.MudHttpOpenTelemetryOptions? options) -> Microsoft.Extensions.Options.ValidateOptionsResult!
 Mud.HttpUtils.OpenTelemetry.OtlpExportProtocol
 Mud.HttpUtils.OpenTelemetry.OtlpExportProtocol.Grpc = 0 -> Mud.HttpUtils.OpenTelemetry.OtlpExportProtocol
 Mud.HttpUtils.OpenTelemetry.OtlpExportProtocol.HttpProtobuf = 1 -> Mud.HttpUtils.OpenTelemetry.OtlpExportProtocol

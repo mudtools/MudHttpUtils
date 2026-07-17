@@ -715,6 +715,15 @@ static Mud.HttpUtils.RestService.ForGenerated<T>(System.Net.Http.HttpClient! cli
 static Mud.HttpUtils.RestService.get_GeneratedOnlyMode() -> bool
 static Mud.HttpUtils.RestService.set_GeneratedOnlyMode(bool value) -> void
 static Mud.HttpUtils.RestService.RegisterGeneratedFactory<T>(System.Func<System.Net.Http.HttpClient!, Mud.HttpUtils.GeneratedClientOptions?, T>! factory) -> void
+Mud.HttpUtils.IEnhancedClientConfig
+Mud.HttpUtils.IEnhancedClientConfig.CaptureRequestContent.get -> bool
+Mud.HttpUtils.IEnhancedClientConfig.CaptureRequestContent.set -> void
+Mud.HttpUtils.IEnhancedClientConfig.ExceptionRedactor.get -> Mud.HttpUtils.IExceptionRedactor?
+Mud.HttpUtils.IEnhancedClientConfig.ExceptionRedactor.set -> void
+Mud.HttpUtils.IEnhancedClientConfig.HttpRequestMessageOptions.get -> System.Collections.Generic.Dictionary<string, object?>?
+Mud.HttpUtils.IEnhancedClientConfig.HttpRequestMessageOptions.set -> void
+Mud.HttpUtils.IEnhancedClientConfig.MaxExceptionContentLength.get -> System.Nullable<int>
+Mud.HttpUtils.IEnhancedClientConfig.MaxExceptionContentLength.set -> void
 Mud.HttpUtils.GeneratedClientOptions
 Mud.HttpUtils.GeneratedClientOptions.GeneratedClientOptions() -> void
 Mud.HttpUtils.GeneratedClientOptions.AppContext.get -> Mud.HttpUtils.IMudAppContext?

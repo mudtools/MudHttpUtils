@@ -111,8 +111,11 @@ public sealed class MudCircuitBreakerHealthCheck : IHealthCheck
 /// </summary>
 public sealed class MudCircuitBreakerHealthCheckOptions
 {
-    /// <summary>配置节点路径。</summary>
-    public const string SectionName = "CircuitBreakerHealthCheck";
+    /// <summary>
+    /// 配置节点路径。此值与 <see cref="MudHttpHealthChecksOptions.CircuitBreaker"/> 属性名一致，
+    /// 即 <c>appsettings.json</c> 中 <c>MudHttpHealthChecks:CircuitBreaker</c> 子节的键名。
+    /// </summary>
+    public const string SectionName = "CircuitBreaker";
 
     /// <summary>
     /// 允许的 HalfOpen 状态最大数量，超过此值则返回 Degraded，默认 0（任何 HalfOpen 都视为 Degraded）。

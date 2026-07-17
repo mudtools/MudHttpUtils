@@ -468,13 +468,12 @@ public class OptionsDefaultValueTests
         {
             ClientId = "test-client",
             TokenEndpoint = "https://auth.example.com/token",
-            ExpirySafetyMarginSeconds = -1,
         };
-        var validator = new OAuth2OptionsValidator();
 
-        var result = validator.Validate(null, options);
-
-        result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain("ExpirySafetyMarginSeconds");
+        // 属性 setter 在设置负值时直接抛出 ArgumentOutOfRangeException，
+        // 确保即使通过编程方式赋值也无法绕过校验。
+        var act = () => options.ExpirySafetyMarginSeconds = -1;
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("ExpirySafetyMarginSeconds");
     }
 }

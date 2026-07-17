@@ -21,7 +21,7 @@ namespace Mud.HttpUtils;
 /// <para><see cref="AllowCustomBaseUrls"/> 属性的值在通过 <c>AddMudHttpClientsFromConfiguration</c> 注册时，
 /// 会被 <see cref="MudHttpClientOptions.AllowCustomBaseUrls"/> 的值覆盖（参见 <c>CreateEnhancedClient</c> 实现）。</para>
 /// </remarks>
-public sealed class EnhancedHttpClientOptions
+public sealed class EnhancedHttpClientOptions : IEnhancedClientConfig
 {
     /// <summary>
     /// 获取或设置日志记录器。

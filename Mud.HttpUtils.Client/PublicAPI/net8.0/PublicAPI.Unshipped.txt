@@ -5,7 +5,7 @@ abstract Mud.HttpUtils.UserTokenManagerBase.GetUserTokenWithCodeAsync(string! co
 abstract Mud.HttpUtils.UserTokenManagerBase.RefreshUserTokenAsync(string! userId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.UserTokenInfo?>!
 abstract Mud.HttpUtils.UserTokenManagerBase.RemoveTokenAsync(string! userId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
 const Mud.HttpUtils.MudCircuitBreakerHealthCheck.Name = "mud_circuit_breaker" -> string!
-const Mud.HttpUtils.MudCircuitBreakerHealthCheckOptions.SectionName = "CircuitBreakerHealthCheck" -> string!
+const Mud.HttpUtils.MudCircuitBreakerHealthCheckOptions.SectionName = "CircuitBreaker" -> string!
 const Mud.HttpUtils.MudHttpClientApplicationOptions.SectionName = "MudHttpClients" -> string!
 const Mud.HttpUtils.OAuth2Options.SectionName = "MudHttpOAuth2" -> string!
 const Mud.HttpUtils.Observability.TokenRefreshHealthCheck.Name = "mud_token_refresh" -> string!
@@ -18,6 +18,9 @@ const Mud.HttpUtils.UserTokenCacheOptions.DefaultExpireThresholdSeconds = 300 ->
 const Mud.HttpUtils.UserTokenCacheOptions.DefaultSizeLimit = 10000 -> int
 const Mud.HttpUtils.UserTokenCacheOptions.DefaultSlidingExpirationSeconds = 3600 -> int
 const Mud.HttpUtils.UserTokenCacheOptions.SectionName = "MudHttpUserTokenCache" -> string!
+Mud.HttpUtils.AesEncryptionOptionsValidator
+Mud.HttpUtils.AesEncryptionOptionsValidator.AesEncryptionOptionsValidator() -> void
+Mud.HttpUtils.AesEncryptionOptionsValidator.Validate(string? name, Mud.HttpUtils.AesEncryptionOptions? options) -> Microsoft.Extensions.Options.ValidateOptionsResult!
 Mud.HttpUtils.AotSafeSensitiveDataMasker
 Mud.HttpUtils.AotSafeSensitiveDataMasker.AotSafeSensitiveDataMasker() -> void
 virtual Mud.HttpUtils.AotSafeSensitiveDataMasker.Mask(string! value, Mud.HttpUtils.SensitiveDataMaskMode mode = Mud.HttpUtils.SensitiveDataMaskMode.Mask, int prefixLength = 2, int suffixLength = 2) -> string!

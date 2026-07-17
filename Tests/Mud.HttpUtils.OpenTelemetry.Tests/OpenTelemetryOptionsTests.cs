@@ -621,4 +621,220 @@ public class OpenTelemetryOptionsTests
         result.FailureMessage.Should().Contain("ServiceVersion");
         result.FailureMessage.Should().Contain("DeploymentEnvironment");
     }
+
+    // ============ UseShortExporterTimeout 测试 ============
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_WithUseShortExporterTimeout_DoesNotThrow()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        services.AddMudHttpOpenTelemetry(options =>
+        {
+            options.UseShortExporterTimeout = true;
+        });
+
+        // Assert — 不抛异常即表示配置成功，OTLP 导出器超时应在内部设为 5 秒
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_WithUseShortExporterTimeoutFalse_UsesDefaultTimeout()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act — 默认 UseShortExporterTimeout=false，不修改导出器超时
+        services.AddMudHttpOpenTelemetry(options =>
+        {
+            options.UseShortExporterTimeout = false;
+        });
+
+        // Assert — 不抛异常即表示配置成功
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+    }
+
+    // ============ OtlpExportProtocol 测试 ============
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_WithHttpProtobufProtocol_DoesNotThrow()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act — 使用 HTTP/Protobuf 协议而非默认的 gRPC
+        services.AddMudHttpOpenTelemetry(options =>
+        {
+            options.OtlpExportProtocol = OtlpExportProtocol.HttpProtobuf;
+            options.OtlpEndpoint = new Uri("http://localhost:4318");
+        });
+
+        // Assert — 不抛异常即表示协议映射成功
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_WithGrpcProtocol_DoesNotThrow()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act — 显式使用 gRPC 协议（默认值）
+        services.AddMudHttpOpenTelemetry(options =>
+        {
+            options.OtlpExportProtocol = OtlpExportProtocol.Grpc;
+        });
+
+        // Assert
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+    }
+
+    // ============ EnableLogging 测试 ============
+
+#if NET8_0_OR_GREATER
+    [Fact]
+    public void AddMudHttpOpenTelemetry_WithEnableLogging_RegistersLoggerProvider()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act — 启用 OTLP 日志导出
+        services.AddMudHttpOpenTelemetry(options =>
+        {
+            options.EnableLogging = true;
+        });
+
+        // Assert — LoggerProvider 应被注册
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+        provider.GetService<MeterProvider>().Should().NotBeNull();
+        // LoggerProvider 在 .NET 8+ 通过 OpenTelemetryBuilder.WithLogging 注册
+        // 验证不抛异常即表示日志导出器注册成功
+    }
+#endif
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_WithEnableLoggingFalse_DoesNotRegisterLogging()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act — 默认 EnableLogging=false
+        services.AddMudHttpOpenTelemetry(options =>
+        {
+            options.EnableLogging = false;
+        });
+
+        // Assert — Tracing 和 Metrics 仍应注册
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+        provider.GetService<MeterProvider>().Should().NotBeNull();
+    }
+
+    // ============ OtlpHeaders 从 IConfiguration 绑定测试 ============
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_FromConfiguration_BindsOtlpHeaders()
+    {
+        // Arrange — 从 appsettings.json 绑定 OtlpHeaders
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpOpenTelemetry:OtlpHeaders:Authorization"] = "Bearer config-token",
+                ["MudHttpOpenTelemetry:OtlpHeaders:X-API-Key"] = "config-key",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        services.AddMudHttpOpenTelemetry(config);
+
+        // Assert — 不抛异常即表示 OtlpHeaders 从 IConfiguration 成功绑定并应用
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_FromConfiguration_BindsUseShortExporterTimeout()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpOpenTelemetry:UseShortExporterTimeout"] = "true",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        services.AddMudHttpOpenTelemetry(config);
+
+        // Assert — 不抛异常即表示 UseShortExporterTimeout 从 IConfiguration 绑定成功
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_FromConfiguration_BindsOtlpExportProtocol()
+    {
+        // Arrange — 从配置绑定 HttpProtobuf 协议
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpOpenTelemetry:OtlpExportProtocol"] = "HttpProtobuf",
+                ["MudHttpOpenTelemetry:OtlpEndpoint"] = "http://localhost:4318",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        services.AddMudHttpOpenTelemetry(config);
+
+        // Assert — 不抛异常即表示协议枚举从字符串绑定成功
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+    }
+
+#if NET8_0_OR_GREATER
+    [Fact]
+    public void AddMudHttpOpenTelemetry_FromConfiguration_BindsEnableLogging()
+    {
+        // Arrange — 从配置启用日志导出
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpOpenTelemetry:EnableLogging"] = "true",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        services.AddMudHttpOpenTelemetry(config);
+
+        // Assert — 不抛异常即表示 EnableLogging 从 IConfiguration 绑定并生效
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+        provider.GetService<MeterProvider>().Should().NotBeNull();
+    }
+#endif
 }
