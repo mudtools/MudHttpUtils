@@ -522,6 +522,12 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
 
 /// <inheritdoc />
 [Obsolete("此重载使用运行时反射 (content.GetType())，Native AOT 不兼容。请改用 EncryptContent<T>(T, string) 泛型重载。")]
+#if NET6_0_OR_GREATER
+[System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("EncryptContent(object, ...) 委托给底层客户端并使用运行时类型分派，Native AOT 不支持。请改用 EncryptContent<T>(T, string) 泛型重载。")]
+#endif
+#if NET7_0_OR_GREATER
+[System.Diagnostics.CodeAnalysis.RequiresDynamicCode("EncryptContent(object, ...) 委托给底层客户端并使用运行时类型分派，Native AOT 不支持。请改用 EncryptContent<T>(T, string) 泛型重载。")]
+#endif
 public string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json)
 {
 return ((IEncryptableHttpClient)_innerClient).EncryptContent(content, propertyName, serializeType);

@@ -75,6 +75,9 @@ public class NewtonsoftJsonContentSerializer(JsonSerializerSettings? settings = 
 #if NET6_0_OR_GREATER
     [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Newtonsoft.Json uses reflection. Not AOT-compatible.")]
 #endif
+#if NET7_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Serialize(object, Type, options) uses runtime type dispatch via Newtonsoft.Json reflection. Not AOT-compatible.")]
+#endif
     public string Serialize(object? item, Type type, object? options = null)
     {
         return JsonConvert.SerializeObject(item, type, _settings);

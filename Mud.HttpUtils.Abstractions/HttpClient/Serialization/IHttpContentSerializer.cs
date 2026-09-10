@@ -29,6 +29,17 @@ namespace Mud.HttpUtils;
 /// <b>Native AOT 注意</b>：<see cref="GetFieldNameForProperty"/> 方法接收 <see cref="PropertyInfo"/>，
 /// 在 AOT 下需反射读取属性特性。建议 AOT 路径中由源生成器在编译期提供字段名映射，绕过此方法。
 /// </para>
+/// <para>
+/// <b>Native AOT 契约</b>：AOT 场景下，传入/注入的 options 必须携带源生成 <c>IJsonTypeInfoResolver</c>
+/// （由 <c>JsonSerializerContext</c> 提供）。推荐使用 <c>HttpContentSerializerFactory.CreateDefault</c>、
+/// <c>AddMudHttpContentSerializer(context)</c> 或 <c>AddMudHttpClientJsonContext(context)</c> 注入源生成上下文，
+/// 并确保参与序列化的每个类型都被该上下文覆盖。
+/// </para>
+/// <para>
+/// <see cref="Serialize(object?, Type, object?)"/> 使用运行时类型分派，是<b>显式的非 AOT 路径</b>
+/// （已标注 <c>[RequiresUnreferencedCode]</c> / <c>[RequiresDynamicCode]</c>）。
+/// 需要显式 <c>JsonTypeInfo&lt;T&gt;</c> 的 AOT 快车道请使用 <see cref="IAotJsonContentSerializer"/>。
+/// </para>
 /// </remarks>
 public interface IHttpContentSerializer
 {
@@ -67,6 +78,18 @@ public interface IHttpContentSerializer
     /// <param name="type">对象的运行时类型。</param>
     /// <param name="options">序列化选项。可为 null，使用默认选项。</param>
     /// <returns>JSON 字符串。</returns>
+    /// <remarks>
+    /// <b>非 AOT 路径</b>：使用运行时 <see cref="System.Type"/> 分派，AOT 下需要动态元数据生成。
+    /// AOT 场景请改用 <see cref="IAotJsonContentSerializer"/> 的 <c>JsonTypeInfo&lt;T&gt;</c> 重载，
+    /// 或使用泛型重载 <see cref="Serialize{T}(T, object?)"/> 并确保 <paramref name="type"/> 已被
+    /// 源生成 <c>JsonSerializerContext</c> 覆盖。
+    /// </remarks>
+#if NET6_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Serialize(object, Type, options) 使用运行时类型分派，Native AOT 不支持。请改用泛型 Serialize<T>(item, options) 或 IAotJsonContentSerializer.Serialize<T>(item, JsonTypeInfo<T>)。")]
+#endif
+#if NET7_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Serialize(object, Type, options) 使用运行时类型分派，Native AOT 不支持。请改用泛型 Serialize<T>(item, options) 或 IAotJsonContentSerializer.Serialize<T>(item, JsonTypeInfo<T>)。")]
+#endif
     string Serialize(object? item, System.Type type, object? options = null);
 
     /// <summary>

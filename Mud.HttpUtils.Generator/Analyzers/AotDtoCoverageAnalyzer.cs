@@ -2,27 +2,30 @@
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2026
 //  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
-//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任。
 // -----------------------------------------------------------------------
 
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Threading;
 using Microsoft.CodeAnalysis;
 
 namespace Mud.HttpUtils.Analyzers;
 
 /// <summary>
-/// AOT004 诊断分析器：检测 [HttpClientApi] 接口方法的请求/响应 DTO 是否被任何已引用的 JsonSerializerContext 覆盖。
+/// AOT004 / AOT005 / AOT006 诊断分析器：检测 [HttpClientApi] 接口方法的请求/响应 DTO 与
+/// [HttpJsonSerializable] 类型是否被任何已引用的 JsonSerializerContext 覆盖。
 /// </summary>
 /// <remarks>
 /// <para>
-/// 此分析器在 HttpClient API 程序集上运行（而非实体程序集），通过扫描编译单元引用的所有程序集中
-/// 的 <c>JsonSerializerContext</c> 子类上的 <c>[JsonSerializable]</c> 特性，判断 DTO 覆盖情况。
+/// 本分析器为<b>纯函数</b>：输入 <see cref="Compilation"/>，输出 <see cref="Diagnostic"/> 集合，
+/// 不依赖 <c>SourceProductionContext</c>，因此可被单元测试直接调用（无需构造 GeneratorDriver）。
+/// 生成器负责把返回的诊断上报。
 /// </para>
 /// <para>
-/// 若 DTO 未被任何 Context 覆盖，AOT 下序列化可能返回空对象或失败。
-/// 建议将此类型纳入 <c>JsonSerializerContext</c>（手写或通过 <c>HttpJsonContextScaffolder</c> 生成）。
+/// 覆盖集合的收集支持 IDE（<c>CompilationReference</c>）与 CLI（<c>PortableExecutableReference</c>）
+/// 两种引用形态，并递归命名空间，避免"DTO + Context 在依赖包"场景下的漏报/误报。
 /// </para>
 /// </remarks>
 internal static class AotDtoCoverageAnalyzer
@@ -40,40 +43,24 @@ internal static class AotDtoCoverageAnalyzer
     /// 读取方法的 SerializationMethod（从 [SerializationMethod] 特性，方法级优先于接口级默认值）。
     /// 返回 "Json" / "Xml" / "FormUrlEncoded"。默认 "Json"。
     /// </summary>
-    private static string GetMethodSerializationMethod(IMethodSymbol method)
+    /// <remarks>
+    /// 枚举名映射统一委托给 <see cref="MethodAnalyzer.ReadSerializationMethodName"/>（单一事实源），
+    /// 避免"枚举数值字符串 vs 枚举名"再次分叉。
+    /// </remarks>
+    internal static string GetMethodSerializationMethod(IMethodSymbol method)
     {
-        string? ReadFrom(IEnumerable<AttributeData> attributes)
-        {
-            var attr = attributes.FirstOrDefault(a =>
-                SymbolEqualityComparer.Default.Equals(a.AttributeClass,
-                    method.ContainingType.ContainingAssembly.GetTypeByMetadataName(SerializationMethodAttributeFullName))
-                || a.AttributeClass?.Name == "SerializationMethodAttribute");
-            if (attr == null)
-                return null;
-            if (attr.ConstructorArguments.Length > 0 && attr.ConstructorArguments[0].Value is int enumVal)
-            {
-                return enumVal switch
-                {
-                    0 => "Json",
-                    1 => "Xml",
-                    2 => "FormUrlEncoded",
-                    _ => "Json"
-                };
-            }
-            return "Json";
-        }
-
-        // 方法级优先
-        var methodLevel = ReadFrom(method.GetAttributes());
-        if (methodLevel != null)
+        var methodAttr = method.GetAttributes().FirstOrDefault(IsSerializationMethodAttribute);
+        var methodLevel = methodAttr != null ? MethodAnalyzer.ReadSerializationMethodName(methodAttr) : null;
+        if (!string.IsNullOrEmpty(methodLevel))
             return methodLevel;
 
-        // 回退到接口级默认值
-        var interfaceLevel = ReadFrom(method.ContainingType.GetAttributes());
-        if (interfaceLevel != null)
-            return interfaceLevel;
+        var interfaceAttr = method.ContainingType.GetAttributes().FirstOrDefault(IsSerializationMethodAttribute);
+        var interfaceLevel = interfaceAttr != null ? MethodAnalyzer.ReadSerializationMethodName(interfaceAttr) : null;
 
-        return "Json";
+        return string.IsNullOrEmpty(interfaceLevel) ? "Json" : interfaceLevel;
+
+        static bool IsSerializationMethodAttribute(AttributeData a)
+            => a.AttributeClass?.Name == "SerializationMethodAttribute";
     }
 
     /// <summary>
@@ -87,34 +74,37 @@ internal static class AotDtoCoverageAnalyzer
     }
 
     /// <summary>
-    /// 分析编译单元中所有 [HttpClientApi] 接口方法的 DTO 覆盖情况，报告未覆盖的 AOT004 诊断。
+    /// 分析编译单元中所有 [HttpClientApi] 接口方法的 DTO 覆盖情况，返回 AOT004 / AOT005 诊断。
     /// </summary>
     /// <param name="compilation">编译单元。</param>
-    /// <param name="context">源生成上下文。</param>
-    public static void Analyze(Compilation compilation, SourceProductionContext context)
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>诊断集合（无问题或未配置 Context 时为空）。</returns>
+    public static ImmutableArray<Diagnostic> Analyze(Compilation compilation, CancellationToken cancellationToken)
     {
+        var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
+
         // 1. 收集所有已引用的 JsonSerializerContext 子类上的 [JsonSerializable] 类型集合
         var coveredTypes = CollectCoveredTypes(compilation);
         if (coveredTypes.Count == 0)
-            return; // 无 Context 引用，跳过（避免在未配置 AOT 的项目中产生噪音）
+            return diagnostics.ToImmutable(); // 无 Context 引用，跳过（避免在未配置 AOT 的项目中产生噪音）
 
         // 2. 查找 HttpClientApiAttribute 符号
         var httpClientApiAttr = compilation.GetTypeByMetadataName(HttpClientApiAttributeFullName);
         if (httpClientApiAttr == null)
-            return;
+            return diagnostics.ToImmutable();
 
         // 3. 遍历所有标注 [HttpClientApi] 的接口
         foreach (var syntaxTree in compilation.SyntaxTrees)
         {
-            if (context.CancellationToken.IsCancellationRequested)
-                return;
+            if (cancellationToken.IsCancellationRequested)
+                return diagnostics.ToImmutable();
 
             var semanticModel = compilation.GetSemanticModel(syntaxTree);
-            var root = syntaxTree.GetRoot();
+            var root = syntaxTree.GetRoot(cancellationToken);
 
             foreach (var interfaceDecl in root.DescendantNodes().OfType<InterfaceDeclarationSyntax>())
             {
-                var interfaceSymbol = semanticModel.GetDeclaredSymbol(interfaceDecl);
+                var interfaceSymbol = semanticModel.GetDeclaredSymbol(interfaceDecl, cancellationToken);
                 if (interfaceSymbol == null)
                     continue;
 
@@ -126,13 +116,15 @@ internal static class AotDtoCoverageAnalyzer
                 // 4. 检查每个方法的 DTO 覆盖情况
                 foreach (var method in interfaceSymbol.GetMembers().OfType<IMethodSymbol>())
                 {
-                    if (context.CancellationToken.IsCancellationRequested)
-                        return;
+                    if (cancellationToken.IsCancellationRequested)
+                        return diagnostics.ToImmutable();
 
-                    CheckMethodDtoCoverage(compilation, context, interfaceSymbol, method, coveredTypes);
+                    CheckMethodDtoCoverage(compilation, diagnostics, interfaceSymbol, method, coveredTypes);
                 }
             }
         }
+
+        return diagnostics.ToImmutable();
     }
 
     /// <summary>
@@ -145,29 +137,31 @@ internal static class AotDtoCoverageAnalyzer
     /// <para>仅核验当前编译单元内声明的类型（不含引用程序集中的类型），避免跨程序集误报：
     /// 实体项目应各自运行脚手架生成 internal Context 覆盖自身类型。</para>
     /// </remarks>
-    public static void AnalyzeHttpJsonSerializableCoverage(Compilation compilation, SourceProductionContext context)
+    public static ImmutableArray<Diagnostic> AnalyzeHttpJsonSerializableCoverage(Compilation compilation, CancellationToken cancellationToken)
     {
+        var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
+
         var httpJsonSerializableAttr = compilation.GetTypeByMetadataName(HttpJsonSerializableAttributeFullName);
         if (httpJsonSerializableAttr == null)
-            return;
+            return diagnostics.ToImmutable();
 
         // 收集已覆盖类型（当前编译单元 + 引用程序集中的所有 Context）
         var coveredTypes = CollectCoveredTypes(compilation);
 
         foreach (var syntaxTree in compilation.SyntaxTrees)
         {
-            if (context.CancellationToken.IsCancellationRequested)
-                return;
+            if (cancellationToken.IsCancellationRequested)
+                return diagnostics.ToImmutable();
 
             var semanticModel = compilation.GetSemanticModel(syntaxTree);
-            var root = syntaxTree.GetRoot();
+            var root = syntaxTree.GetRoot(cancellationToken);
 
             foreach (var typeDecl in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
             {
-                if (context.CancellationToken.IsCancellationRequested)
-                    return;
+                if (cancellationToken.IsCancellationRequested)
+                    return diagnostics.ToImmutable();
 
-                var typeSymbol = semanticModel.GetDeclaredSymbol(typeDecl) as INamedTypeSymbol;
+                var typeSymbol = semanticModel.GetDeclaredSymbol(typeDecl, cancellationToken) as INamedTypeSymbol;
                 if (typeSymbol == null)
                     continue;
 
@@ -177,21 +171,27 @@ internal static class AotDtoCoverageAnalyzer
                     continue;
 
                 // 已覆盖（含集合/Nullable 解包）或为基元/字符串/枚举 → 跳过
-                if (IsCovered(typeSymbol, coveredTypes) || IsPrimitiveOrString(typeSymbol))
+                if (IsCovered(typeSymbol, coveredTypes) || QuerySerializationClassifier.IsSimple(typeSymbol))
                     continue;
 
-                context.ReportDiagnostic(Diagnostic.Create(
+                diagnostics.Add(Diagnostic.Create(
                     Diagnostics.AotJsonSerializableNotCovered,
                     typeSymbol.Locations.FirstOrDefault() ?? typeDecl.GetLocation(),
                     TypeProps(typeSymbol),
                     typeSymbol.ToDisplayString()));
             }
         }
+
+        return diagnostics.ToImmutable();
     }
 
     /// <summary>
     /// 收集编译单元引用的所有 JsonSerializerContext 子类上的 [JsonSerializable] 类型。
     /// </summary>
+    /// <remarks>
+    /// 同时支持 IDE（<see cref="CompilationReference"/>）与 CLI（<c>PortableExecutableReference</c>）
+    /// 两种引用形态，并递归命名空间与嵌套类型。
+    /// </remarks>
     private static HashSet<INamedTypeSymbol> CollectCoveredTypes(Compilation compilation)
     {
         var result = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
@@ -213,69 +213,83 @@ internal static class AotDtoCoverageAnalyzer
                 if (typeSymbol == null)
                     continue;
 
-                // 检查是否继承自 JsonSerializerContext
-                if (!InheritsFromJsonSerializerContext(typeSymbol, jsonSerializerContext))
-                    continue;
-
-                // 收集 [JsonSerializable] 特性中的类型
-                foreach (var attr in typeSymbol.GetAttributes())
-                {
-                    if (!SymbolEqualityComparer.Default.Equals(attr.AttributeClass, jsonSerializableAttr))
-                        continue;
-
-                    if (attr.ConstructorArguments.Length > 0 &&
-                        attr.ConstructorArguments[0].Value is INamedTypeSymbol coveredType)
-                    {
-                        result.Add(coveredType);
-                    }
-                }
+                if (InheritsFromJsonSerializerContext(typeSymbol, jsonSerializerContext))
+                    CollectFromContextType(typeSymbol, jsonSerializableAttr, result);
             }
         }
 
-        // 也扫描引用程序集中的 JsonSerializerContext 子类
+        // 扫描引用程序集中的 JsonSerializerContext 子类
         foreach (var reference in compilation.References)
         {
-            if (reference is not CompilationReference compRef)
+            // IDE: CompilationReference 直接可用；CLI: PortableExecutableReference 经符号解析
+            var asm = reference is CompilationReference compRef
+                ? compRef.Compilation.Assembly
+                : compilation.GetAssemblyOrModuleSymbol(reference) as IAssemblySymbol;
+            if (asm is null)
                 continue;
 
-            foreach (var typeSymbol in compRef.Compilation.GlobalNamespace.GetTypeMembers())
-            {
-                CollectCoveredTypesFromNamespace(typeSymbol, jsonSerializerContext, jsonSerializableAttr, result);
-            }
+            CollectCoveredTypesFromNamespace(asm.GlobalNamespace, jsonSerializerContext, jsonSerializableAttr, result);
         }
 
         return result;
     }
 
     /// <summary>
-    /// 递归扫描命名空间中的 JsonSerializerContext 子类。
+    /// 从 Context 类型收集其 [JsonSerializable] 标注的类型。
+    /// </summary>
+    private static void CollectFromContextType(
+        INamedTypeSymbol contextType,
+        INamedTypeSymbol jsonSerializableAttr,
+        HashSet<INamedTypeSymbol> result)
+    {
+        foreach (var attr in contextType.GetAttributes())
+        {
+            if (!SymbolEqualityComparer.Default.Equals(attr.AttributeClass, jsonSerializableAttr))
+                continue;
+
+            if (attr.ConstructorArguments.Length > 0 &&
+                attr.ConstructorArguments[0].Value is INamedTypeSymbol coveredType)
+            {
+                result.Add(coveredType);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 递归扫描命名空间（含子命名空间与嵌套类型）中的 JsonSerializerContext 子类。
     /// </summary>
     private static void CollectCoveredTypesFromNamespace(
-        INamedTypeSymbol namespaceSymbol,
+        INamespaceSymbol namespaceSymbol,
         INamedTypeSymbol jsonSerializerContext,
         INamedTypeSymbol jsonSerializableAttr,
         HashSet<INamedTypeSymbol> result)
     {
-        // 检查当前类型
-        if (InheritsFromJsonSerializerContext(namespaceSymbol, jsonSerializerContext))
+        foreach (var type in namespaceSymbol.GetTypeMembers())
         {
-            foreach (var attr in namespaceSymbol.GetAttributes())
-            {
-                if (!SymbolEqualityComparer.Default.Equals(attr.AttributeClass, jsonSerializableAttr))
-                    continue;
-
-                if (attr.ConstructorArguments.Length > 0 &&
-                    attr.ConstructorArguments[0].Value is INamedTypeSymbol coveredType)
-                {
-                    result.Add(coveredType);
-                }
-            }
+            CollectCoveredTypesFromType(type, jsonSerializerContext, jsonSerializableAttr, result);
         }
 
-        // 递归子命名空间
-        foreach (var child in namespaceSymbol.GetTypeMembers())
+        foreach (var child in namespaceSymbol.GetNamespaceMembers())
         {
             CollectCoveredTypesFromNamespace(child, jsonSerializerContext, jsonSerializableAttr, result);
+        }
+    }
+
+    /// <summary>
+    /// 递归处理类型及其嵌套类型。
+    /// </summary>
+    private static void CollectCoveredTypesFromType(
+        INamedTypeSymbol type,
+        INamedTypeSymbol jsonSerializerContext,
+        INamedTypeSymbol jsonSerializableAttr,
+        HashSet<INamedTypeSymbol> result)
+    {
+        if (InheritsFromJsonSerializerContext(type, jsonSerializerContext))
+            CollectFromContextType(type, jsonSerializableAttr, result);
+
+        foreach (var nested in type.GetTypeMembers())
+        {
+            CollectCoveredTypesFromType(nested, jsonSerializerContext, jsonSerializableAttr, result);
         }
     }
 
@@ -299,7 +313,7 @@ internal static class AotDtoCoverageAnalyzer
     /// </summary>
     private static void CheckMethodDtoCoverage(
         Compilation compilation,
-        SourceProductionContext context,
+        ImmutableArray<Diagnostic>.Builder diagnostics,
         INamedTypeSymbol interfaceSymbol,
         IMethodSymbol method,
         HashSet<INamedTypeSymbol> coveredTypes)
@@ -310,8 +324,7 @@ internal static class AotDtoCoverageAnalyzer
 
         foreach (var param in method.Parameters)
         {
-            var paramType = param.Type as INamedTypeSymbol;
-            if (paramType == null)
+            if (param.Type is not INamedTypeSymbol paramType)
                 continue;
 
             var paramLocation = param.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax().GetLocation()
@@ -321,17 +334,13 @@ internal static class AotDtoCoverageAnalyzer
             if (bodyAttr != null && param.GetAttributes()
                 .Any(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, bodyAttr)))
             {
-                // [AOT v4 Phase 20.1 / D-误报修正] FormUrlEncoded Body 不走 JSON 序列化，无需 JsonSerializerContext 覆盖，
-                // 跳过 AOT004 检查（原逻辑未区分 SerializationMethod，导致 FormUrlEncoded Body 被误报）。
-                var methodSerializationMethod = GetMethodSerializationMethod(method);
-                if (methodSerializationMethod == "FormUrlEncoded")
-                {
-                    continue; // 跳过 AOT004 检查
-                }
+                // FormUrlEncoded Body 不走 JSON 序列化，无需 JsonSerializerContext 覆盖，跳过 AOT004 检查。
+                if (GetMethodSerializationMethod(method) == "FormUrlEncoded")
+                    continue;
 
-                if (!IsCovered(paramType, coveredTypes) && !IsPrimitiveOrString(paramType))
+                if (!IsCovered(paramType, coveredTypes) && !QuerySerializationClassifier.IsSimple(paramType))
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(
+                    diagnostics.Add(Diagnostic.Create(
                         Diagnostics.AotDtoNotCoveredByContext,
                         paramLocation,
                         TypeProps(paramType),
@@ -343,16 +352,17 @@ internal static class AotDtoCoverageAnalyzer
             }
 
             // 检查 [Query] 复杂类型参数 — AOT005
-            // [Query] 复杂类型（非简单类型、非数组）在源生成器中默认使用 JSON 序列化
+            // 判定统一走 QuerySerializationClassifier（单一事实源），仅当"确实走 JSON 序列化"且未被覆盖时才报告。
             if (queryAttr != null && param.GetAttributes()
                 .Any(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, queryAttr)))
             {
-                if (!IsPrimitiveOrString(paramType) && !IsArrayType(paramType) &&
-                    !IsCovered(paramType, coveredTypes))
+                if (QuerySerializationClassifier.Classify(paramType) == QuerySerializationClassifier.Kind.JsonSerialized
+                    && !IsCovered(paramType, coveredTypes))
                 {
-                    context.ReportDiagnostic(Diagnostic.Create(
+                    diagnostics.Add(Diagnostic.Create(
                         Diagnostics.AotQueryParameterNotInContext,
                         paramLocation,
+                        TypeProps(paramType),
                         interfaceSymbol.Name,
                         method.Name,
                         param.Name,
@@ -374,66 +384,39 @@ internal static class AotDtoCoverageAnalyzer
                         .FirstOrDefault(kvp => kvp.Key == "SerializationMethod");
                     var useJsonSerialization = serMethodArg.Value.Value is int enumVal && enumVal != 0;
 
-                    // JSON 序列化的 QueryMap 参数且类型非字典（字典类型不涉及 JSON 序列化）
-                if (useJsonSerialization && !IsDictionaryType(paramType) &&
-                    !IsPrimitiveOrString(paramType) &&
-                    !IsCovered(paramType, coveredTypes))
-                {
-                    context.ReportDiagnostic(Diagnostic.Create(
-                        Diagnostics.AotQueryParameterNotInContext,
-                        paramLocation,
-                        TypeProps(paramType),
-                        interfaceSymbol.Name,
-                        method.Name,
-                        param.Name,
-                        paramType.ToDisplayString()));
-                }
+                    // 仅当"JSON 序列化的 QueryMap 且类型确实走 JSON"且未被覆盖时才报告。
+                    if (useJsonSerialization
+                        && QuerySerializationClassifier.Classify(paramType) == QuerySerializationClassifier.Kind.JsonSerialized
+                        && !IsCovered(paramType, coveredTypes))
+                    {
+                        diagnostics.Add(Diagnostic.Create(
+                            Diagnostics.AotQueryParameterNotInContext,
+                            paramLocation,
+                            TypeProps(paramType),
+                            interfaceSymbol.Name,
+                            method.Name,
+                            param.Name,
+                            paramType.ToDisplayString()));
+                    }
                 }
             }
         }
 
         // 检查响应 DTO — AOT004
-        var returnType = method.ReturnType as INamedTypeSymbol;
-        if (returnType != null)
+        if (method.ReturnType is INamedTypeSymbol returnType)
         {
-            // 解包 Task<T>
             var innerType = ExtractTaskInnerType(returnType);
-            if (innerType != null && !IsCovered(innerType, coveredTypes) && !IsPrimitiveOrString(innerType))
+            if (innerType != null && !IsCovered(innerType, coveredTypes) && !QuerySerializationClassifier.IsSimple(innerType))
             {
-                var location = method.Locations.FirstOrDefault();
-                context.ReportDiagnostic(Diagnostic.Create(
+                diagnostics.Add(Diagnostic.Create(
                     Diagnostics.AotDtoNotCoveredByContext,
-                    location,
+                    method.Locations.FirstOrDefault(),
                     TypeProps(innerType),
                     interfaceSymbol.Name,
                     method.Name,
                     innerType.ToDisplayString()));
             }
         }
-    }
-
-    /// <summary>
-    /// 判断是否为数组类型。
-    /// </summary>
-    private static bool IsArrayType(INamedTypeSymbol type)
-    {
-        return type.TypeKind == TypeKind.Array ||
-               (type.IsGenericType && type.Name == "List" && type.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic") ||
-               (type.IsGenericType && type.Name == "IEnumerable" && type.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic");
-    }
-
-    /// <summary>
-    /// 判断是否为字典类型。
-    /// </summary>
-    private static bool IsDictionaryType(INamedTypeSymbol type)
-    {
-        if (!type.IsGenericType)
-            return false;
-
-        var name = type.Name;
-        var ns = type.ContainingNamespace?.ToDisplayString();
-        return ns == "System.Collections.Generic" &&
-               (name == "IDictionary" || name == "Dictionary" || name == "IReadOnlyDictionary" || name == "ReadOnlyDictionary");
     }
 
     /// <summary>
@@ -457,7 +440,6 @@ internal static class AotDtoCoverageAnalyzer
         if (type.IsGenericType && type.TypeArguments.Length == 1 &&
             type.TypeArguments[0] is INamedTypeSymbol elementType)
         {
-            // 检查 List<UserDto> 是否覆盖 → 检查 UserDto 是否覆盖
             if (coveredTypes.Contains(elementType))
                 return true;
         }
@@ -466,62 +448,26 @@ internal static class AotDtoCoverageAnalyzer
     }
 
     /// <summary>
-    /// 判断是否为基本类型或 string（不需要 Context 覆盖）。
-    /// 包括可空值类型（如 int?、bool?）和枚举类型。
+    /// 解包 Task&lt;T&gt; / ValueTask&lt;T&gt; 的内部类型。
     /// </summary>
-    private static bool IsPrimitiveOrString(INamedTypeSymbol type)
-    {
-        // 解包 Nullable<T>（如 int? → int）
-        if (type.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T &&
-            type.TypeArguments.Length > 0 &&
-            type.TypeArguments[0] is INamedTypeSymbol innerType)
-        {
-            return IsPrimitiveOrString(innerType);
-        }
-
-        // 枚举类型使用 ToString()，不需要 JSON 序列化
-        if (type.TypeKind == TypeKind.Enum)
-            return true;
-
-        return type.SpecialType switch
-        {
-            SpecialType.System_String or
-            SpecialType.System_Int32 or
-            SpecialType.System_Int64 or
-            SpecialType.System_Boolean or
-            SpecialType.System_Double or
-            SpecialType.System_Single or
-            SpecialType.System_Decimal or
-            SpecialType.System_DateTime or
-            SpecialType.System_Byte or
-            SpecialType.System_SByte or
-            SpecialType.System_Int16 or
-            SpecialType.System_UInt16 or
-            SpecialType.System_UInt32 or
-            SpecialType.System_UInt64 or
-            SpecialType.System_Char or
-            SpecialType.System_Object => true,
-            _ => false
-        };
-    }
-
-    /// <summary>
-    /// 解包 Task&lt;T&gt; 的内部类型。
-    /// </summary>
+    /// <remarks>
+    /// 注意：BCL 中泛型参数名为 <c>TResult</c>，因此 <c>ToDisplayString()</c> 是
+    /// <c>System.Threading.Tasks.Task&lt;TResult&gt;</c>。早期实现按 <c>Task&lt;T&gt;</c> 做字符串比较，
+    /// 永远不匹配 → 响应 DTO 的 AOT004 检查实际从未生效（已修复为按命名空间 + 名称 + 元数判定）。
+    /// </remarks>
     private static INamedTypeSymbol? ExtractTaskInnerType(INamedTypeSymbol returnType)
     {
-        if (!returnType.IsGenericType)
+        if (!returnType.IsGenericType || returnType.TypeArguments.Length != 1)
             return null;
 
         var def = returnType.OriginalDefinition;
-        if (def.ToDisplayString() == "System.Threading.Tasks.Task<T>" ||
-            def.ToDisplayString() == "System.Threading.Tasks.ValueTask<T>")
-        {
-            if (returnType.TypeArguments.Length > 0 &&
-                returnType.TypeArguments[0] is INamedTypeSymbol inner)
-                return inner;
-        }
+        var ns = def.ContainingNamespace?.ToDisplayString();
+        if (ns != "System.Threading.Tasks")
+            return null;
 
-        return null;
+        if (def.Name is not ("Task" or "ValueTask"))
+            return null;
+
+        return returnType.TypeArguments[0] as INamedTypeSymbol;
     }
 }

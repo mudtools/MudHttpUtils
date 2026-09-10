@@ -1253,6 +1253,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// <param name="propertyName">加密后JSON中的属性名,默认为"data"。</param>
     /// <param name="serializeType">序列化类型,支持JSON和XML。</param>
     /// <returns>加密后的字符串。</returns>
+#if NET6_0_OR_GREATER
+    [RequiresUnreferencedCode("EncryptContent(object, ...) 使用运行时类型分派（content.GetType()）与 XML 序列化，Native AOT 不支持。请改用 EncryptContent<T>(T, string) 强类型重载。")]
+#endif
 #if NET8_0_OR_GREATER
     [RequiresDynamicCode("EncryptContent 使用 object/Dictionary 反射式 JSON 序列化，Native AOT 不支持。请在 AOT 场景下改用强类型重载或避免加密内容路径。")]
 #endif
@@ -1796,8 +1799,14 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// 将对象序列化为XML字符串
     /// </summary>
 #if NET6_0_OR_GREATER
-    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("System.Xml.XmlSerializer", "IL2026:RequiresUnreferencedCode",
-        Justification = "XML 序列化路径已通过 XmlSerialize.Serialize 标注 RequiresDynamicCode，AOT 下不支持 XML 序列化。请改用 JSON 序列化。")]
+    // XML 路径在 Native AOT 下由 AOT007（编译期）与 ConstructorGenerator（运行期 PlatformNotSupportedException）
+    // 双重拒绝，故此处压制分析器的级联告警是安全的，且不污染上层公有 XML API 的调用图。
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "XML 序列化在 AOT 下不可达：AOT007 编译期拒绝 + ConstructorGenerator 运行期守卫。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
+        Justification = "同上：XML 路径在 Native AOT 下不可达。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2091",
+        Justification = "XmlSerialize.Serialize<T> 要求 DAM；该路径在 AOT 下不可达（见 AOT007 与运行期守卫），泛型实参无需满足 DAM。")]
 #endif
     private static string SerializeToXml<T>(T obj, Encoding encoding)
     {
@@ -1815,8 +1824,13 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// 从XML字符串反序列化为对象
     /// </summary>
 #if NET6_0_OR_GREATER
-    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("System.Xml.XmlSerializer", "IL2026:RequiresUnreferencedCode",
-        Justification = "XML 反序列化路径已通过 XmlSerialize.Deserialize 标注 RequiresDynamicCode，AOT 下不支持 XML 序列化。请改用 JSON 序列化。")]
+    // 同 SerializeToXml：XML 路径在 AOT 下由 AOT007 与运行期守卫双重拒绝，本地压制不污染上层公有 XML API。
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "XML 反序列化在 AOT 下不可达：AOT007 编译期拒绝 + ConstructorGenerator 运行期守卫。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
+        Justification = "同上：XML 路径在 Native AOT 下不可达。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2091",
+        Justification = "XmlSerialize.Deserialize<T> 要求 DAM；该路径在 AOT 下不可达（见 AOT007 与运行期守卫），泛型实参无需满足 DAM。")]
 #endif
     private static T? DeserializeFromXml<T>(string xml, Encoding encoding)
     {

@@ -373,11 +373,23 @@ public class RefitRefactorFeatureTests
     #region Phase 4: CamelCaseStringEnumConverter
 
     [Fact]
-    public void CamelCaseStringEnumConverter_CanConvertEnum()
+    public void CamelCaseStringEnumConverter_SerializesAsCamelCase()
     {
-        // T4.5: CamelCaseStringEnumConverter
-        var converter = new CamelCaseStringEnumConverter();
-        converter.CanConvert(typeof(TestEnum)).Should().BeTrue();
+        // T4.5: 泛型 CamelCaseStringEnumConverter 为 AOT 安全实现，序列化为 camelCase 字符串。
+        var options = new System.Text.Json.JsonSerializerOptions
+        {
+            Converters = { new CamelCaseStringEnumConverter<TestEnum>() }
+        };
+
+        var json = System.Text.Json.JsonSerializer.Serialize(TestEnum.FirstValue, options);
+        json.Should().Be("\"firstValue\"");
+
+        // 反序列化大小写不敏感，且兼容原始 PascalCase 名称。
+        var roundTrip = System.Text.Json.JsonSerializer.Deserialize<TestEnum>("\"firstValue\"", options);
+        roundTrip.Should().Be(TestEnum.FirstValue);
+
+        var pascal = System.Text.Json.JsonSerializer.Deserialize<TestEnum>("\"FirstValue\"", options);
+        pascal.Should().Be(TestEnum.FirstValue);
     }
 
     private enum TestEnum { None, FirstValue, SecondValue }

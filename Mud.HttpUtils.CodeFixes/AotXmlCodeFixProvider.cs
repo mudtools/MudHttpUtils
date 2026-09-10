@@ -17,18 +17,24 @@ namespace Mud.HttpUtils.CodeFixes;
 
 
 /// <summary>
-/// 为 AOT007 诊断提供自动修复：将 [SerializationMethod(SerializationMethod.Xml)] 改为 [SerializationMethod(SerializationMethod.Json)]。
+/// 为 AOT007 诊断提供自动修复。
 /// <para>
-/// AOT007 在 Native AOT 上下文下报告 XML 序列化不被支持。
-/// 此 CodeFix 将 SerializationMethod.Xml 替换为 SerializationMethod.Json，
-/// 确保 AOT 兼容性。
+/// AOT007 在 Native AOT 上下文下报告 XML 序列化不被支持。诊断有两种定位形态
+/// （见 <c>AotXmlRejectionAnalyzer</c> 的"诊断定位契约"）：
 /// </para>
+/// <list type="number">
+/// <item><b>特性级</b>：XML 判定来源于 <c>[SerializationMethod(SerializationMethod.Xml)]</c> →
+/// 将 <c>SerializationMethod.Xml</c> 替换为 <c>SerializationMethod.Json</c>。</item>
+/// <item><b>方法级</b>：XML 来源于响应/Body 的 content-type（无特性）→ 在方法上补写
+/// <c>[SerializationMethod(SerializationMethod.Json)]</c> 显式声明 JSON。</item>
+/// </list>
 /// </summary>
 [ExportCodeFixProvider(LanguageNames.CSharp, Name = nameof(AotXmlCodeFixProvider))]
 [Shared]
 public class AotXmlCodeFixProvider : CodeFixProvider
 {
     private const string Title = "将 XML 序列化改为 JSON（AOT 兼容）";
+    private const string AddJsonTitle = "添加 [SerializationMethod(Json)]（AOT 兼容）";
 
     /// <inheritdoc />
     public sealed override ImmutableArray<string> FixableDiagnosticIds
@@ -47,26 +53,34 @@ public class AotXmlCodeFixProvider : CodeFixProvider
         var root = await context.Document.GetSyntaxRootAsync(context.CancellationToken).ConfigureAwait(false);
         if (root == null) return;
 
-        // 查找包含诊断位置的 AttributeSyntax
-        var diagnosticSpan = diagnostic.Location.SourceSpan;
-        var token = root.FindToken(diagnosticSpan.Start);
-        var attribute = token.Parent?.FirstAncestorOrSelf<AttributeSyntax>();
-        if (attribute == null) return;
+        var token = root.FindToken(diagnostic.Location.SourceSpan.Start);
+        var node = token.Parent;
+        if (node == null) return;
 
-        // 确认该特性是 SerializationMethod 特性（避免误伤其他含 "Xml" 字样的特性）
-        if (!IsSerializationMethodAttribute(attribute))
+        // 形态 1：特性级定位 —— 直接替换 SerializationMethod.Xml → Json。
+        var attribute = node.FirstAncestorOrSelf<AttributeSyntax>();
+        if (attribute != null && IsSerializationMethodAttribute(attribute) && ContainsXmlArgument(attribute))
+        {
+            var action = CodeAction.Create(
+                title: Title,
+                createChangedDocument: c => ReplaceXmlWithJsonAsync(context.Document, attribute, c),
+                equivalenceKey: nameof(AotXmlCodeFixProvider) + ".ReplaceXml");
+
+            context.RegisterCodeFix(action, diagnostic);
             return;
+        }
 
-        // 确认特性参数包含 Xml 值
-        if (!ContainsXmlArgument(attribute))
-            return;
+        // 形态 2：方法级定位 —— XML 来自 content-type，无特性可替换，改为在方法上补写 Json 声明。
+        var method = node.FirstAncestorOrSelf<MethodDeclarationSyntax>();
+        if (method != null)
+        {
+            var action = CodeAction.Create(
+                title: AddJsonTitle,
+                createChangedDocument: c => AddJsonSerializationMethodAsync(context.Document, method, c),
+                equivalenceKey: nameof(AotXmlCodeFixProvider) + ".AddJson");
 
-        var action = CodeAction.Create(
-            title: Title,
-            createChangedDocument: c => ReplaceXmlWithJsonAsync(context.Document, attribute, c),
-            equivalenceKey: nameof(AotXmlCodeFixProvider));
-
-        context.RegisterCodeFix(action, diagnostic);
+            context.RegisterCodeFix(action, diagnostic);
+        }
     }
 
     private static bool ContainsXmlArgument(AttributeSyntax attribute)
@@ -75,30 +89,56 @@ public class AotXmlCodeFixProvider : CodeFixProvider
         foreach (var arg in attribute.ArgumentList.Arguments)
         {
             var expr = arg.Expression.ToString();
-            if (expr.Contains("SerializationMethod.Xml") || expr.Contains("Xml"))
+            if (expr.Contains("SerializationMethod.Xml") || expr == "Xml")
                 return true;
         }
         return false;
     }
 
     private static bool IsSerializationMethodAttribute(AttributeSyntax attribute)
-    {
-        var name = attribute.Name.ToString();
-        return name.Contains("SerializationMethod");
-    }
+        => attribute.Name.ToString().Contains("SerializationMethod");
 
-    private static Task<Document> ReplaceXmlWithJsonAsync(
+    private static async Task<Document> ReplaceXmlWithJsonAsync(
         Document document,
         AttributeSyntax attribute,
         CancellationToken cancellationToken)
     {
-        var root = document.GetSyntaxRootAsync(cancellationToken).Result;
-        if (root == null) return Task.FromResult(document);
+        var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+        if (root == null) return document;
 
         // 替换所有 SerializationMethod.Xml 为 SerializationMethod.Json
         var newAttribute = ReplaceXmlArguments(attribute);
         var newRoot = root.ReplaceNode(attribute, newAttribute);
-        return Task.FromResult(document.WithSyntaxRoot(newRoot));
+        return document.WithSyntaxRoot(newRoot);
+    }
+
+    private static async Task<Document> AddJsonSerializationMethodAsync(
+        Document document,
+        MethodDeclarationSyntax method,
+        CancellationToken cancellationToken)
+    {
+        var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+        if (root == null) return document;
+
+        // 方法级已有 [SerializationMethod] 时不再重复添加（避免产生重复特性）。
+        var hasSerializationMethod = method.AttributeLists
+            .SelectMany(list => list.Attributes)
+            .Any(a => a.Name.ToString().Contains("SerializationMethod"));
+        if (hasSerializationMethod)
+            return document;
+
+        var attribute = SyntaxFactory.Attribute(
+            SyntaxFactory.ParseName("Mud.HttpUtils.Attributes.SerializationMethodAttribute"),
+            SyntaxFactory.AttributeArgumentList(
+                SyntaxFactory.SingletonSeparatedList(
+                    SyntaxFactory.AttributeArgument(
+                        SyntaxFactory.ParseExpression("Mud.HttpUtils.Attributes.SerializationMethod.Json")))));
+
+        var newMethod = method.AddAttributeLists(
+            SyntaxFactory.AttributeList(SyntaxFactory.SingletonSeparatedList(attribute)));
+
+        var newRoot = root.ReplaceNode(method, newMethod);
+        return document.WithSyntaxRoot(newRoot);
     }
 
     private static AttributeSyntax ReplaceXmlArguments(AttributeSyntax attribute)

@@ -122,6 +122,10 @@ internal class InterfaceImplementationGenerator
         if (generatorContext.HasQueryMap)
         {
             _codeBuilder.AppendLine();
+            // 该包装方法委托给已标注 RUC/RDC 的 QueryMapHelper（运行时反射展平）。
+            // 它仅作为 TypeSymbol 不可用时的兜底（真实项目走编译期内联展平），
+            // 因此局部豁免 AOT 分析告警，避免污染消费方的生成代码构建（严格模式下会变为错误）。
+            _codeBuilder.AppendLine("#pragma warning disable IL2026, IL3050");
             _codeBuilder.AppendLine("        private static void FlattenObjectToQueryParams(");
             _codeBuilder.AppendLine("            object obj,");
             _codeBuilder.AppendLine("            string prefix,");
@@ -136,6 +140,7 @@ internal class InterfaceImplementationGenerator
             _codeBuilder.AppendLine("        {");
             _codeBuilder.AppendLine("            QueryMapHelper.FlattenObjectToQueryParams(obj, prefix, separator, queryParams, includeNullValues, useJsonSerialization, urlEncode, rawPairs, depth, contentSerializer);");
             _codeBuilder.AppendLine("        }");
+            _codeBuilder.AppendLine("#pragma warning restore IL2026, IL3050");
         }
 
         _codeBuilder.AppendLine("    }");

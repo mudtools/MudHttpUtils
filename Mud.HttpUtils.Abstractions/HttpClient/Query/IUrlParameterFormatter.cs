@@ -32,5 +32,16 @@ public interface IUrlParameterFormatter
     /// <param name="attributeProvider">特性提供者（如 <see cref="ParameterInfo"/>），用于读取 <c>[Query]</c> 特性。可为 null。</param>
     /// <param name="type">参数值的类型。</param>
     /// <returns>格式化后的字符串；如果值为 null 则返回 null。</returns>
+    /// <remarks>
+    /// <b>标注语义</b>：该标注表示"某些实现可能非 AOT 安全"（默认实现通过反射读取
+    /// <c>[EnumMember]</c> / <c>[Query]</c>），AOT 场景可注入在构造期预构建映射表的无反射实现，
+    /// 此时实现侧无需标注。详见 <c>DefaultUrlParameterFormatter</c> 的 XML 文档。
+    /// </remarks>
+#if NET6_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Format 的反射式实现会读取枚举特性与 [Query] 特性，Native AOT 下元数据可能被裁剪。AOT 场景请注入预构建映射表的无反射实现。")]
+#endif
+#if NET7_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Format 的反射式实现依赖运行时元数据，Native AOT 不支持。AOT 场景请注入预构建映射表的无反射实现。")]
+#endif
     string? Format(object? value, ICustomAttributeProvider? attributeProvider, Type type);
 }

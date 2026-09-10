@@ -122,37 +122,49 @@ public class DefaultSensitiveDataMasker : ISensitiveDataMasker
     /// </para>
     /// </remarks>
     private static PropertyMaskInfo[] GetOrCreatePropertyInfos(Type type)
+        => s_propertyCache.GetOrAdd(type, BuildPropertyInfos);
+
+    /// <summary>
+    /// 反射构建指定类型的属性掩码信息（缓存未命中时调用）。
+    /// </summary>
+    /// <remarks>
+    /// IL2070 压制说明：反射式脱敏仅在非 AOT 场景使用（AOT 场景应注入
+    /// <see cref="AotSafeSensitiveDataMasker"/>），此处 <c>GetProperties</c> 的 DAM 无法在编译期满足，
+    /// 属该类的设计前提。压制挂在本方法（而非 <see cref="MaskObject"/>），以匹配实际告警位置。
+    /// </remarks>
+#if NET6_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2070",
+        Justification = "反射式脱敏仅在非 AOT 场景使用；AOT 场景请注入 AotSafeSensitiveDataMasker。此处 GetProperties 的 DAM 无法在编译期满足，属该类的设计前提。")]
+#endif
+    private static PropertyMaskInfo[] BuildPropertyInfos(Type type)
     {
-        return s_propertyCache.GetOrAdd(type, t =>
+        var properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+        var infos = new List<PropertyMaskInfo>(properties.Length);
+
+        foreach (var property in properties)
         {
-            var properties = t.GetProperties(BindingFlags.Public | BindingFlags.Instance);
-            var infos = new List<PropertyMaskInfo>(properties.Length);
+            if (!property.CanRead)
+                continue;
 
-            foreach (var property in properties)
+            var sensitiveAttr = property.GetCustomAttributesData()
+                .FirstOrDefault(a => a.AttributeType.Name == SensitiveDataAttributeName);
+
+            var isSensitive = sensitiveAttr != null && property.PropertyType == typeof(string);
+            var isComplex = property.PropertyType != typeof(string) &&
+                            !property.PropertyType.IsPrimitive;
+
+            infos.Add(new PropertyMaskInfo
             {
-                if (!property.CanRead)
-                    continue;
+                Property = property,
+                IsSensitive = isSensitive,
+                MaskMode = isSensitive ? GetNamedArgument(sensitiveAttr!, "MaskMode", SensitiveDataMaskMode.Mask) : SensitiveDataMaskMode.Mask,
+                PrefixLength = isSensitive ? GetNamedArgument(sensitiveAttr!, "PrefixLength", 2) : 2,
+                SuffixLength = isSensitive ? GetNamedArgument(sensitiveAttr!, "SuffixLength", 2) : 2,
+                IsComplexType = isComplex
+            });
+        }
 
-                var sensitiveAttr = property.GetCustomAttributesData()
-                    .FirstOrDefault(a => a.AttributeType.Name == SensitiveDataAttributeName);
-
-                var isSensitive = sensitiveAttr != null && property.PropertyType == typeof(string);
-                var isComplex = property.PropertyType != typeof(string) &&
-                                !property.PropertyType.IsPrimitive;
-
-                infos.Add(new PropertyMaskInfo
-                {
-                    Property = property,
-                    IsSensitive = isSensitive,
-                    MaskMode = isSensitive ? GetNamedArgument(sensitiveAttr!, "MaskMode", SensitiveDataMaskMode.Mask) : SensitiveDataMaskMode.Mask,
-                    PrefixLength = isSensitive ? GetNamedArgument(sensitiveAttr!, "PrefixLength", 2) : 2,
-                    SuffixLength = isSensitive ? GetNamedArgument(sensitiveAttr!, "SuffixLength", 2) : 2,
-                    IsComplexType = isComplex
-                });
-            }
-
-            return infos.ToArray();
-        });
+        return infos.ToArray();
     }
 
     /// <summary>
@@ -215,11 +227,22 @@ public class DefaultSensitiveDataMasker : ISensitiveDataMasker
     /// <see cref="AotSafeSensitiveDataMasker"/>（基于编译期字典，类型安全）。
     /// </para>
     /// </remarks>
-#if NET7_0_OR_GREATER
+#if NET6_0_OR_GREATER
     [RequiresUnreferencedCode("脱敏使用反射遍历对象属性和特性，Native AOT 下属性/特性可能被裁剪导致漏脱敏。请改用编译期安全的 ISensitiveDataMasker 实现。")]
+#endif
+#if NET7_0_OR_GREATER
     [RequiresDynamicCode("脱敏使用反射遍历对象属性和特性，Native AOT 不支持。请改用编译期安全的 ISensitiveDataMasker 实现。")]
-    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("System.Text.Json", "IL2070:DynamicallyAccessedMembers",
-        Justification = "反射脱敏已标注 RequiresUnreferencedCode 和 RequiresDynamicCode，AOT 下应使用 AotSafeSensitiveDataMasker。IL2070 来自 obj.GetType().GetProperties() 的动态访问，是非 AOT 路径的预期行为。")]
+#endif
+#if NET6_0_OR_GREATER
+    // 接口刻意不标注 RUC/RDC（否则会迫使 AOT 安全的 AotSafeSensitiveDataMasker 也带标注，
+    // 导致其调用方在 AOT 安全路径收到误导性告警）。本类作为显式非 AOT 的反射实现，
+    // 因此出现"标注不匹配"告警，这里压制并注明理由。
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2046",
+        Justification = "接口刻意不标注 RUC；本实现基于反射、已 [Obsolete] 且仅用于非 AOT 场景。AOT 场景请使用 AotSafeSensitiveDataMasker。")]
+#endif
+#if NET7_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3051",
+        Justification = "接口刻意不标注 RDC；本实现基于反射、已 [Obsolete] 且仅用于非 AOT 场景。AOT 场景请使用 AotSafeSensitiveDataMasker。")]
 #endif
     public string MaskObject(object obj)
     {

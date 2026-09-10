@@ -162,9 +162,10 @@ public class AotAttributeAnnotationTests
     }
 
     [Fact]
-    public void QueryMapHelper_FlattenObjectToQueryParams_DoesNotHaveRequiresDynamicCodeAttribute()
+    public void QueryMapHelper_FlattenObjectToQueryParams_HasRequiresDynamicCodeAttribute()
     {
-        // QueryMapHelper 仅使用反射（GetProperties/GetValue），不涉及动态代码生成
+        // P0 修正：该方法内部调用 IHttpContentSerializer.Serialize(object, Type)（运行时类型分派，已标注 RDC），
+        // 因此自身也必须标注 RDC，否则调用方会产生 IL3050。
         var method = typeof(QueryMapHelper).GetMethod(
             "FlattenObjectToQueryParams",
             BindingFlags.Public | BindingFlags.Static);
@@ -172,7 +173,7 @@ public class AotAttributeAnnotationTests
         method.Should().NotBeNull();
 
         var attr = method!.GetCustomAttribute<RequiresDynamicCodeAttribute>();
-        attr.Should().BeNull("QueryMapHelper 是纯反射，不应标注 [RequiresDynamicCode]（会误导调用方）");
+        attr.Should().NotBeNull("FlattenObjectToQueryParams 调用 Serialize(object, Type)，应标注 [RequiresDynamicCode]");
     }
 #endif
 
@@ -199,6 +200,91 @@ public class AotAttributeAnnotationTests
             attr!.Message.Should().Contain("XmlSerializer");
             attr.Message.Should().Contain("AOT");
         }
+    }
+
+    [Theory]
+    [InlineData(nameof(XmlSerialize.Serialize))]
+    [InlineData(nameof(XmlSerialize.Deserialize))]
+    public void XmlSerialize_Methods_HaveRequiresUnreferencedCodeAttribute(string methodName)
+    {
+        // P0 修正：XmlSerializer 在 BCL 中同时标注 RUC/RDC；仅标注 RDC 会让消费方拿不到 IL2026 提示。
+        var methods = typeof(XmlSerialize).GetMethods(BindingFlags.Public | BindingFlags.Static)
+            .Where(m => m.Name == methodName)
+            .ToList();
+
+        methods.Should().NotBeEmpty($"应存在 {methodName} 方法");
+
+        foreach (var method in methods)
+        {
+            var attr = method.GetCustomAttribute<RequiresUnreferencedCodeAttribute>();
+            attr.Should().NotBeNull($"{methodName} 应标注 [RequiresUnreferencedCode]");
+            attr!.Message.Should().Contain("XmlSerializer");
+        }
+    }
+#endif
+
+    #endregion
+
+    #region 接口侧 AOT 契约（P0-4 / P2-5）
+
+    [Fact]
+    public void IHttpContentSerializer_NonGenericSerialize_HasRequiresUnreferencedCodeAndDynamicCode()
+    {
+        var method = typeof(IHttpContentSerializer).GetMethod(
+            "Serialize",
+            new[] { typeof(object), typeof(Type), typeof(object) });
+
+        method.Should().NotBeNull("IHttpContentSerializer.Serialize(object, Type, object?) 应存在");
+
+        method!.GetCustomAttribute<RequiresUnreferencedCodeAttribute>()
+            .Should().NotBeNull("非泛型 Serialize 使用运行时类型分派，应标注 [RequiresUnreferencedCode]");
+        method.GetCustomAttribute<RequiresDynamicCodeAttribute>()
+            .Should().NotBeNull("非泛型 Serialize 使用运行时类型分派，应标注 [RequiresDynamicCode]");
+    }
+
+    [Fact]
+    public void IEncryptableHttpClient_ObjectOverload_HasRequiresUnreferencedCodeAndDynamicCode()
+    {
+        var method = typeof(IEncryptableHttpClient).GetMethod(
+            "EncryptContent",
+            new[] { typeof(object), typeof(string), typeof(SerializeType) });
+
+        method.Should().NotBeNull("IEncryptableHttpClient.EncryptContent(object, ...) 应存在");
+
+        method!.GetCustomAttribute<RequiresUnreferencedCodeAttribute>()
+            .Should().NotBeNull("object 重载使用运行时类型分派与 XML 序列化，应标注 [RequiresUnreferencedCode]");
+        method.GetCustomAttribute<RequiresDynamicCodeAttribute>()
+            .Should().NotBeNull("object 重载使用运行时类型分派，应标注 [RequiresDynamicCode]");
+    }
+
+    [Fact]
+    public void ISensitiveDataMasker_MaskObject_IsNotAnnotated_ToKeepAotSafeImplementationsClean()
+    {
+        // 设计决策：接口刻意不标注 RUC/RDC。.NET 分析器要求接口与实现标注"完全一致"（双向），
+        // 若接口标注，则 AOT 安全的 AotSafeSensitiveDataMasker 也被迫带标注，
+        // 使其调用方在 AOT 安全路径上收到误导性告警。非 AOT 实现自行标注并压制 IL2046/IL3051。
+        var method = typeof(ISensitiveDataMasker).GetMethod("MaskObject", new[] { typeof(object) });
+
+        method.Should().NotBeNull();
+        method!.GetCustomAttribute<RequiresUnreferencedCodeAttribute>()
+            .Should().BeNull("接口刻意不标注 RUC，以保持 AotSafeSensitiveDataMasker 的调用零告警");
+        method.GetCustomAttribute<RequiresDynamicCodeAttribute>()
+            .Should().BeNull("接口刻意不标注 RDC，以保持 AotSafeSensitiveDataMasker 的调用零告警");
+    }
+
+#if NET8_0_OR_GREATER
+    [Fact]
+    public void IAotJsonContentSerializer_Exists_OnNet8OrGreater()
+    {
+        var type = typeof(IAotJsonContentSerializer);
+        type.IsInterface.Should().BeTrue();
+
+        var typeInfoParameter = typeof(System.Text.Json.Serialization.Metadata.JsonTypeInfo<>);
+        type.GetMethods().Should().OnlyContain(m =>
+            m.GetParameters().Any(p =>
+                p.ParameterType.IsGenericType &&
+                p.ParameterType.GetGenericTypeDefinition() == typeInfoParameter),
+            "IAotJsonContentSerializer 的每个方法都应接收 JsonTypeInfo<T> 参数（AOT 快车道）");
     }
 #endif
 

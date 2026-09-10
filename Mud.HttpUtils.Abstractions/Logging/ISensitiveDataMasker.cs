@@ -110,6 +110,16 @@ public interface ISensitiveDataMasker
     /// 对于复杂对象，实现者应该注意循环引用和性能问题。
     /// 建议在实现中使用缓存机制来提高重复对象的处理效率。
     /// </para>
+    /// <para>
+    /// <b>Native AOT 契约</b>：本接口<b>不</b>对此方法标注
+    /// <c>[RequiresUnreferencedCode]</c> / <c>[RequiresDynamicCode]</c>。
+    /// 原因是 .NET 的 AOT 分析器要求接口与其所有实现标注<b>完全一致</b>（双向），
+    /// 若在接口上标注，则连 AOT 安全的 <c>AotSafeSensitiveDataMasker</c> 也会被迫带上标注，
+    /// 从而让调用方在 AOT 安全路径上收到误导性告警。
+    /// 因此，非 AOT 安全的实现（如基于反射的 <c>DefaultSensitiveDataMasker</c>）自行在其实现上标注，
+    /// 并在实现处压制 IL2046/IL3051 的"标注不匹配"告警。
+    /// <b>AOT 场景请通过 <c>AddSensitiveDataMasker()</c> 注入 <c>AotSafeSensitiveDataMasker</c> 并预先注册脱敏规则。</b>
+    /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException">当 <paramref name="obj"/> 为 null 时可能抛出。</exception>
     string MaskObject(object obj);

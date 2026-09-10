@@ -891,9 +891,7 @@ internal static class MethodAnalyzer
 
         if (methodAttr != null)
         {
-            var method = methodAttr.ConstructorArguments.Length > 0
-                ? methodAttr.ConstructorArguments[0].Value?.ToString()
-                : null;
+            var method = ReadSerializationMethodName(methodAttr);
             if (!string.IsNullOrEmpty(method))
                 return method;
         }
@@ -903,14 +901,40 @@ internal static class MethodAnalyzer
 
         if (interfaceAttr != null)
         {
-            var method = interfaceAttr.ConstructorArguments.Length > 0
-                ? interfaceAttr.ConstructorArguments[0].Value?.ToString()
-                : null;
+            var method = ReadSerializationMethodName(interfaceAttr);
             if (!string.IsNullOrEmpty(method))
                 return method;
         }
 
         return "Json";
+    }
+
+    /// <summary>
+    /// 读取 <c>[SerializationMethod]</c> 的枚举名（<c>Json</c> / <c>Xml</c> / <c>FormUrlEncoded</c>）。
+    /// </summary>
+    /// <remarks>
+    /// <b>重要</b>：Roslyn 的 <c>TypedConstant.Value</c> 对枚举参数返回的是<b>底层整数值</b>，
+    /// 直接 <c>ToString()</c> 会得到 "0"/"1"/"2"。历史实现正是如此，导致生成器与 AOT007 中所有
+    /// <c>== "Xml"</c> / <c>== "FormUrlEncoded"</c> 比较全部失效（[SerializationMethod(Xml)] 声明的
+    /// 方法被当作 JSON 处理，AOT007 也不会触发）。此处统一映射为枚举名。
+    /// </remarks>
+    internal static string? ReadSerializationMethodName(AttributeData attr)
+    {
+        if (attr.ConstructorArguments.Length == 0)
+            return null;
+
+        return attr.ConstructorArguments[0].Value switch
+        {
+            int i => i switch
+            {
+                0 => "Json",
+                1 => "Xml",
+                2 => "FormUrlEncoded",
+                _ => null
+            },
+            string s when !string.IsNullOrEmpty(s) => s,
+            _ => null
+        };
     }
 
     /// <summary>

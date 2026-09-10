@@ -26,6 +26,9 @@ public sealed class XmlSerialize
     /// <param name="obj">要序列化的对象</param>
     /// <returns>XML字符串</returns>
 #if NET7_0_OR_GREATER
+#if NET6_0_OR_GREATER
+    [RequiresUnreferencedCode("XML 序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
+#endif
     [RequiresDynamicCode("XML 序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
     public static string Serialize<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
@@ -45,6 +48,9 @@ public sealed class XmlSerialize
     /// <param name="encoding">编码方式</param>
     /// <returns>XML字符串</returns>
 #if NET7_0_OR_GREATER
+#if NET6_0_OR_GREATER
+    [RequiresUnreferencedCode("XML 序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
+#endif
     [RequiresDynamicCode("XML 序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
     public static string Serialize<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
@@ -96,6 +102,9 @@ public sealed class XmlSerialize
     /// <param name="xml">XML字符串</param>
     /// <returns>反序列化后的对象</returns>
 #if NET7_0_OR_GREATER
+#if NET6_0_OR_GREATER
+    [RequiresUnreferencedCode("XML 反序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
+#endif
     [RequiresDynamicCode("XML 反序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
     public static T Deserialize<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
@@ -115,6 +124,9 @@ public sealed class XmlSerialize
     /// <param name="encoding">编码方式</param>
     /// <returns>反序列化后的对象</returns>
 #if NET7_0_OR_GREATER
+#if NET6_0_OR_GREATER
+    [RequiresUnreferencedCode("XML 反序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
+#endif
     [RequiresDynamicCode("XML 反序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
     public static T Deserialize<
         [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]

@@ -60,6 +60,43 @@ namespace TestNamespace
         provider.FixableDiagnosticIds.Should().Contain("AOT007");
     }
 
+    /// <summary>
+    /// 方法级定位（XML 来源为响应/Body content-type，无 [SerializationMethod] 特性可替换）：
+    /// CodeFix 应在方法上补写 [SerializationMethod(Json)]。
+    /// 这覆盖了历史上"分析器定位方法 / CodeFix 只认特性"导致的修复永不生效的契约断裂（M9）。
+    /// </summary>
+    [Fact]
+    public async Task Aot007CodeFix_MethodLevelLocation_AddsSerializationMethodJsonAttribute()
+    {
+        var source = """
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    public interface ITestApi
+    {
+        [Get("/data")]
+        Task<string> GetDataAsync();
+    }
+}
+""";
+
+        var (document, diagnostic) = await CreateDocumentWithDiagnosticAsync(
+            source,
+            "AOT007",
+            root => root.DescendantNodes().OfType<MethodDeclarationSyntax>()
+                .FirstOrDefault(m => m.Identifier.Text == "GetDataAsync"));
+
+        var codeFix = new AotXmlCodeFixProvider();
+        var fixedDocument = await ApplyCodeFixAsync(codeFix, document, diagnostic);
+
+        var fixedSource = (await fixedDocument.GetSyntaxRootAsync())!.ToFullString();
+        fixedSource.Should().Contain("SerializationMethod.Json",
+            "方法级定位时应补写 [SerializationMethod(Json)] 特性");
+    }
+
     #endregion
 
     #region HTTPCLIENT007 CodeFix 测试

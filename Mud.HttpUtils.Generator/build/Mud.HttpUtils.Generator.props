@@ -15,6 +15,12 @@
   <ItemGroup>
     <CompilerVisibleProperty Include="IsAotCompatible" />
     <CompilerVisibleProperty Include="PublishAot" />
+    <!-- [v2.4 §3.4 D-03] 消费项目 nullable 配置：决定生成代码是否发射 #nullable enable。
+         未注册时 build_property.Nullable 恒取默认值 → EmitNullableEnable 恒为 true，配置静默失效。 -->
+    <CompilerVisibleProperty Include="Nullable" />
+    <!-- 消费项目自定义 HttpClientOptions 类名（读取 build_property.HttpClientOptionsName）。
+         未注册时恒取默认值 HttpClientOptions。 -->
+    <CompilerVisibleProperty Include="HttpClientOptionsName" />
     <!-- T5.3: 全局禁用源生成器（调试与渐进迁移） -->
     <CompilerVisibleProperty Include="DisableMudSourceGenerator" />
     <!-- T5.5: 控制是否生成 [GeneratedCode] 标记（false 时不抑制生成代码中的警告） -->

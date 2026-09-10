@@ -14,13 +14,7 @@
 		     Attributes 从 lib/netstandard2.0 引用、AOT 发布成功并运行输出 AOT_OK。 -->
 	</PropertyGroup>
 
-	<!-- AOT 严格模式 — 通过 -p:AotStrictMode=true 激活 -->
-	<PropertyGroup Condition="'$(AotStrictMode)' == 'true'">
-		<!-- [AOT v4 Phase 20.2] AOT004/AOT005/AOT006/AOT007 均升级为错误。
-		     AOT004 对 FormUrlEncoded 的 [Body] 参数误报已在 Phase 20.1 修正。
-		     AOT007 为 XML 序列化在 AOT 下的显式拒绝（Phase 18）。 -->
-		<WarningsAsErrors>IL2026;IL2046;IL2050;IL2057;IL2067;IL2070;IL2072;IL2075;IL2080;IL3050;AOT004;AOT005;AOT006;AOT007</WarningsAsErrors>
-	</PropertyGroup>
+	<!-- AOT 严格模式清单已上移至 Directory.Build.props（全仓统一口径），此处不再重复定义。
 
 	<!-- NuGet 包引用（版本跟随 Directory.Build.props 的 $(Version)） -->
 	<ItemGroup>

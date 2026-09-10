@@ -17,10 +17,7 @@
 		<GenerateDocumentationFile>false</GenerateDocumentationFile>
 	</PropertyGroup>
 
-	<!-- AOT 严格模式：与 AotVerificationDemo 保持一致 -->
-	<PropertyGroup Condition="'$(AotStrictMode)' == 'true'">
-		<WarningsAsErrors>IL2026;IL2046;IL2050;IL2057;IL2067;IL2070;IL2072;IL2075;IL2080;IL3050;AOT004;AOT005;AOT006;AOT007</WarningsAsErrors>
-	</PropertyGroup>
+	<!-- AOT 严格模式清单已上移至 Directory.Build.props（全仓统一口径），此处不再重复定义。 -->
 
 	<ItemGroup>
 		<ProjectReference Include="..\..\Mud.HttpUtils.Client\Mud.HttpUtils.Client.csproj" />

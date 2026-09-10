@@ -14,6 +14,7 @@ using Microsoft.Extensions.Options;
 using Mud.HttpUtils.Client;
 using System.Text.Json;
 #if NET6_0_OR_GREATER
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Hosting;
 #endif
 
@@ -192,6 +193,12 @@ public static class HttpClientServiceCollectionExtensions
     /// builder.Services.AddMudHttpAesEncryptionFromConfiguration(builder.Configuration);
     /// </code>
     /// </example>
+#if NET6_0_OR_GREATER
+    [RequiresUnreferencedCode("IConfiguration 绑定使用反射。AOT 场景请改用 AddMudHttpAesEncryption(Action<AesEncryptionOptions>) 委托式重载。")]
+#endif
+#if NET7_0_OR_GREATER
+    [RequiresDynamicCode("IConfiguration 绑定使用运行时反射，Native AOT 不支持。AOT 场景请改用委托式重载。")]
+#endif
     public static IServiceCollection AddMudHttpAesEncryptionFromConfiguration(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -275,6 +282,12 @@ public static class HttpClientServiceCollectionExtensions
     /// <param name="configurationSectionPath">配置节点路径，默认 "TokenRefreshBackground"。</param>
     /// <returns>服务集合（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+#if NET6_0_OR_GREATER
+    [RequiresUnreferencedCode("IConfiguration 绑定使用反射。AOT 场景请改用 AddTokenRefreshBackgroundService(Action<TokenRefreshBackgroundOptions>) 委托式重载。")]
+#endif
+#if NET7_0_OR_GREATER
+    [RequiresDynamicCode("IConfiguration 绑定使用运行时反射，Native AOT 不支持。AOT 场景请改用委托式重载。")]
+#endif
     public static IServiceCollection AddTokenRefreshBackgroundService(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -362,7 +375,11 @@ public static class HttpClientServiceCollectionExtensions
     /// services.AddSensitiveDataMasker&lt;CustomSensitiveDataMasker&gt;();
     /// </code>
     /// </example>
-    public static IServiceCollection AddSensitiveDataMasker<TMasker>(
+    public static IServiceCollection AddSensitiveDataMasker<
+#if NET6_0_OR_GREATER
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+#endif
+        TMasker>(
         this IServiceCollection services)
         where TMasker : class, ISensitiveDataMasker
     {
@@ -431,7 +448,11 @@ public static class HttpClientServiceCollectionExtensions
     /// services.AddHmacSignatureProvider&lt;CustomHmacSignatureProvider&gt;();
     /// </code>
     /// </example>
-    public static IServiceCollection AddHmacSignatureProvider<TProvider>(
+    public static IServiceCollection AddHmacSignatureProvider<
+#if NET6_0_OR_GREATER
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+#endif
+        TProvider>(
         this IServiceCollection services)
         where TProvider : class, IHmacSignatureProvider
     {
@@ -485,7 +506,11 @@ public static class HttpClientServiceCollectionExtensions
     /// services.AddApiKeyProvider&lt;CustomApiKeyProvider&gt;();
     /// </code>
     /// </example>
-    public static IServiceCollection AddApiKeyProvider<TProvider>(
+    public static IServiceCollection AddApiKeyProvider<
+#if NET6_0_OR_GREATER
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+#endif
+        TProvider>(
         this IServiceCollection services)
         where TProvider : class, IApiKeyProvider
     {
@@ -539,7 +564,11 @@ public static class HttpClientServiceCollectionExtensions
     /// services.AddTokenProvider&lt;CustomTokenProvider&gt;();
     /// </code>
     /// </example>
-    public static IServiceCollection AddTokenProvider<TProvider>(
+    public static IServiceCollection AddTokenProvider<
+#if NET6_0_OR_GREATER
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+#endif
+        TProvider>(
         this IServiceCollection services)
         where TProvider : class, ITokenProvider
     {
@@ -595,7 +624,11 @@ public static class HttpClientServiceCollectionExtensions
     /// services.AddCurrentUserContext&lt;CustomUserContext&gt;();
     /// </code>
     /// </example>
-    public static IServiceCollection AddCurrentUserContext<TContext>(
+    public static IServiceCollection AddCurrentUserContext<
+#if NET6_0_OR_GREATER
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+#endif
+        TContext>(
         this IServiceCollection services)
         where TContext : class, ICurrentUserContext
     {
@@ -766,6 +799,12 @@ public static class HttpClientServiceCollectionExtensions
     /// <param name="sectionPath">配置节点路径，默认 <see cref="OAuth2Options.SectionName"/>。</param>
     /// <returns>服务集合（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+#if NET6_0_OR_GREATER
+    [RequiresUnreferencedCode("IConfiguration 绑定使用反射。AOT 场景请改用 AddMudHttpOAuth2(Action<OAuth2Options>) 委托式重载。")]
+#endif
+#if NET7_0_OR_GREATER
+    [RequiresDynamicCode("IConfiguration 绑定使用运行时反射，Native AOT 不支持。AOT 场景请改用委托式重载。")]
+#endif
     public static IServiceCollection AddMudHttpOAuth2FromConfiguration(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -793,6 +832,12 @@ public static class HttpClientServiceCollectionExtensions
     /// <param name="sectionPath">配置节点路径，默认 <see cref="TokenRecoveryOptions.SectionName"/>。</param>
     /// <returns>服务集合（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+#if NET6_0_OR_GREATER
+    [RequiresUnreferencedCode("IConfiguration 绑定使用反射。AOT 场景请改用委托式重载或编程式配置。")]
+#endif
+#if NET7_0_OR_GREATER
+    [RequiresDynamicCode("IConfiguration 绑定使用运行时反射，Native AOT 不支持。AOT 场景请改用委托式重载。")]
+#endif
     public static IServiceCollection AddMudHttpTokenRecoveryFromConfiguration(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -821,6 +866,12 @@ public static class HttpClientServiceCollectionExtensions
     /// <param name="sectionPath">配置节点路径，默认 <see cref="UserTokenCacheOptions.SectionName"/>。</param>
     /// <returns>服务集合（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+#if NET6_0_OR_GREATER
+    [RequiresUnreferencedCode("IConfiguration 绑定使用反射。AOT 场景请改用委托式重载或编程式配置。")]
+#endif
+#if NET7_0_OR_GREATER
+    [RequiresDynamicCode("IConfiguration 绑定使用运行时反射，Native AOT 不支持。AOT 场景请改用委托式重载。")]
+#endif
     public static IServiceCollection AddMudHttpUserTokenCacheFromConfiguration(
         this IServiceCollection services,
         IConfiguration configuration,

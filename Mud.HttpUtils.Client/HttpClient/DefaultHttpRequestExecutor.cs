@@ -93,6 +93,12 @@ public class DefaultHttpRequestExecutor(
     }
 
     /// <inheritdoc/>
+    // XML 响应路径在 Native AOT 下不可达：AOT007（编译期）拒绝 XML 方法，ConstructorGenerator 在
+    // AOT 上下文中将 XmlSerializer 字段改为抛 PlatformNotSupportedException 的属性。故此处压制 IL2026 是安全的。
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "XML 响应反序列化在 AOT 下不可达（AOT007 编译期拒绝 + ConstructorGenerator 运行期守卫）。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
+        Justification = "同上：XmlSerializer 反序列化在 Native AOT 下不可达。")]
     public async Task<TResult?> SendAndDeserializeAsync<TResult>(
         HttpRequestMessage request,
         IBaseHttpClient httpClient,
@@ -178,6 +184,11 @@ public class DefaultHttpRequestExecutor(
     }
 
     /// <inheritdoc/>
+    // 同 SendAndDeserializeAsync：XML 路径在 AOT 下不可达，压制 IL2026 是安全的。
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "XML 响应反序列化在 AOT 下不可达（AOT007 编译期拒绝 + ConstructorGenerator 运行期守卫）。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
+        Justification = "同上：XmlSerializer 反序列化在 Native AOT 下不可达。")]
     public async Task<Response<TInner>> SendAsResponseAsync<TInner>(
         HttpRequestMessage request,
         IBaseHttpClient httpClient,

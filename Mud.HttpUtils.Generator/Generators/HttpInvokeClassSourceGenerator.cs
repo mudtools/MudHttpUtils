@@ -54,7 +54,10 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
 
             try
             {
-                Mud.HttpUtils.Analyzers.AotDtoCoverageAnalyzer.AnalyzeHttpJsonSerializableCoverage(compilation, ctx);
+                foreach (var diagnostic in Mud.HttpUtils.Analyzers.AotDtoCoverageAnalyzer.AnalyzeHttpJsonSerializableCoverage(compilation, ctx.CancellationToken))
+                {
+                    ctx.ReportDiagnostic(diagnostic);
+                }
             }
             catch (Exception ex)
             {
@@ -133,8 +136,14 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
             try
             {
                 var firstCompilation = interfaces[0].Context.SemanticModel.Compilation;
-                Mud.HttpUtils.Analyzers.AotDtoCoverageAnalyzer.Analyze(firstCompilation, context);
-                Mud.HttpUtils.Analyzers.AotXmlRejectionAnalyzer.Analyze(firstCompilation, context, configOptionsProvider);
+                foreach (var diagnostic in Mud.HttpUtils.Analyzers.AotDtoCoverageAnalyzer.Analyze(firstCompilation, context.CancellationToken))
+                {
+                    context.ReportDiagnostic(diagnostic);
+                }
+                foreach (var diagnostic in Mud.HttpUtils.Analyzers.AotXmlRejectionAnalyzer.Analyze(firstCompilation, isAotEnabled, context.CancellationToken))
+                {
+                    context.ReportDiagnostic(diagnostic);
+                }
             }
             catch (Exception ex)
             {

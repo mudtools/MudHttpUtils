@@ -8,20 +8,14 @@ namespace Mud.HttpUtils.Generator.Tests;
 /// 对使用 XML 序列化的 [HttpClientApi] 接口方法报告 AOT007 错误；
 /// 非 AOT 上下文下不报告（D15 语义：非 AOT 项目不阻塞 XML 使用）。
 ///
-/// [API 限制说明] 本仓库使用的 Microsoft.CodeAnalysis.CSharp 4.12.0 中，
-/// CSharpGeneratorDriver.Create 的 IIncrementalGenerator 重载（含数组重载）均不含 optionsProvider 形参；
-/// 仅接受 IEnumerable&lt;ISourceGenerator&gt; 的重载才支持 optionsProvider，而 HttpInvokeClassSourceGenerator
-/// 仅实现 IIncrementalGenerator。因此无法在本单元测试中向生成器注入 build_property.IsAotCompatible / PublishAot。
-///
-/// 故本文件仅验证「负向守卫」：
-///   1. 非 AOT 上下文下，XML 方法【不】误报 AOT007（验证分析器不会在非 AOT 场景误伤）。
-///   2. JSON 方法（无论 AOT 与否）【不】报告 AOT007（验证分析器能区分 XML 与 JSON）。
-/// AOT007 的【正向】触发（XML + AOT 上下文 → 报告）由 CI 步骤（Phase 21.1 / D12）端到端验证：
-/// 该步骤以 IsAotCompatible=true 真实构建并断言输出包含 AOT007。
+/// [可测性改造] 分析器已把"是否 AOT 上下文"从 <c>AnalyzerConfigOptionsProvider</c> 解耦为
+/// <c>bool isAotEnabled</c> 参数（由生成器读取配置后传入），配合"返回诊断集合"的纯函数签名，
+/// 使得 AOT007 的【正向】触发可以在单元测试中直接断言，而不再依赖 CI 端到端构建。
 /// </remarks>
 public class AotXmlRejectionTests
 {
     private const string XmlInterfaceSource = """
+        using System.Threading.Tasks;
         using Mud.HttpUtils.Attributes;
 
         namespace TestNamespace
@@ -39,6 +33,7 @@ public class AotXmlRejectionTests
         """;
 
     private const string JsonInterfaceSource = """
+        using System.Threading.Tasks;
         using Mud.HttpUtils.Attributes;
 
         namespace TestNamespace
@@ -100,5 +95,44 @@ public class AotXmlRejectionTests
 
         diagnostics.Should().NotContain(d => d.Id == "AOT007",
             "JSON 方法不应报告 AOT007");
+    }
+
+    /// <summary>
+    /// AOT 上下文 + XML 方法 → 报告 AOT007，且诊断定位到 [SerializationMethod(Xml)] 特性。
+    /// 该定位契约是 CodeFix 能直接替换 Xml→Json 的前提（M9 修复验收）。
+    /// </summary>
+    [Fact]
+    public void AotContext_XmlMethod_ReportsAot007_LocatedOnSerializationMethodAttribute()
+    {
+        var syntaxTree = CSharpSyntaxTree.ParseText(XmlInterfaceSource);
+        var compilation = CSharpCompilation.Create(
+            "TestAssembly",
+            new[] { syntaxTree },
+            BasicReferenceAssemblies.GetReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        // 排查辅助：直接调用方法分析器，确保该 XML 方法能被正确解析（否则分析器会静默跳过）。
+        var semanticModel = compilation.GetSemanticModel(syntaxTree);
+        var interfaceDecl = syntaxTree.GetRoot().DescendantNodes().OfType<InterfaceDeclarationSyntax>().Single();
+        var interfaceSymbol = semanticModel.GetDeclaredSymbol(interfaceDecl)!;
+        var methodSymbol = interfaceSymbol.GetMembers().OfType<IMethodSymbol>().Single();
+        var methodInfo = Mud.HttpUtils.Analyzers.MethodAnalyzer
+            .AnalyzeMethod(compilation, methodSymbol, interfaceDecl, semanticModel);
+        methodInfo.IsValid.Should().BeTrue("MethodAnalyzer 应能解析该 XML 方法（否则 AOT007 会被静默跳过）");
+        methodInfo.SerializationMethod.Should().Be("Xml",
+            $"方法级 [SerializationMethod(Xml)] 应被解析；实际 ResponseContentType={methodInfo.ResponseContentType ?? "<null>"}, Effective={methodInfo.GetEffectiveContentType() ?? "<null>"}");
+
+        var diagnostics = Mud.HttpUtils.Analyzers.AotXmlRejectionAnalyzer.Analyze(
+            compilation, isAotEnabled: true, CancellationToken.None);
+
+        var aot007 = diagnostics.Where(d => d.Id == "AOT007").ToList();
+        aot007.Should().ContainSingle("AOT 上下文下的 XML 方法应报告 AOT007");
+
+        var root = syntaxTree.GetRoot();
+        var node = root.FindNode(aot007[0].Location.SourceSpan);
+        var attribute = node.FirstAncestorOrSelf<AttributeSyntax>();
+
+        attribute.Should().NotBeNull("AOT007 应定位到 [SerializationMethod(Xml)] 特性，CodeFix 才能直接替换");
+        attribute!.Name.ToString().Should().Contain("SerializationMethod");
     }
 }

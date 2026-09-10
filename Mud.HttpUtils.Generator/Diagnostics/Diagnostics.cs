@@ -27,7 +27,7 @@ internal static class Diagnostics
      *   - COMWRAP*: COM包装生成器 (COMWRAP001)
      *   - SG*: 源代码生成器通用 (SG001)
      *   - EG*: 实体生成器通用 (EG001-002)
-     *   - AOT*: AOT JSON 序列化诊断 (AOT001-005)
+     *   - AOT*: AOT JSON 序列化诊断 (AOT001-007)
      */
     #endregion 
 
@@ -241,7 +241,7 @@ internal static class Diagnostics
         customTags: WellKnownDiagnosticTags.NotConfigurable);
     #endregion
 
-    #region AOT JSON 序列化诊断信息 (AOT001-005)
+    #region AOT JSON 序列化诊断信息 (AOT001-007)
     // 诊断由 HttpJsonContextScaffolder（pre-build 工具）或独立分析器报告。
     // 前缀 AOT 遵循仓库 XXXNNN 约定（3-6 字符前缀 + 3 位数字）。
 

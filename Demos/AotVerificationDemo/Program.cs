@@ -45,8 +45,54 @@ public class Program
         DemoModuleInitializerAutoRegistration();
 
         Console.WriteLine("\n=== AOT 验证示例完成 ===");
+
+        // AOT_OK 门槛化：仅当所有非预期异常/断言失败计数为 0 时才输出成功标记，否则以退出码 1 结束。
+        if (s_failed > 0)
+        {
+            Console.WriteLine($"AOT_FAILED (failed={s_failed})");
+            Environment.ExitCode = 1;
+            return;
+        }
+
         Console.WriteLine("如果此程序在 Native AOT 模式下成功运行，说明 JSON / 表单 / 查询参数 / 弹性 / 脱敏 / 加密 / NDJSON 主路径均已 AOT 兼容。");
         Console.WriteLine("AOT_OK");
+    }
+
+    /// <summary>非预期失败计数（0 才输出 AOT_OK）。</summary>
+    private static int s_failed;
+
+    /// <summary>
+    /// 处理场景中的异常：网络类异常（无真实服务器）属预期，不计入失败；
+    /// AOT 相关的序列化/配置异常（<c>NotSupportedException</c>/<c>InvalidOperationException</c>/<c>JsonException</c>）
+    /// 视为非预期失败。
+    /// </summary>
+    private static void HandleUnexpected(string scenario, Exception ex)
+    {
+        if (IsExpectedFailure(ex))
+        {
+            Console.WriteLine($"  {scenario} — 预期失败（无真实服务器）: {ex.Message}");
+            return;
+        }
+
+        s_failed++;
+        Console.WriteLine($"  [FAIL] {scenario} — 非预期异常: {ex.GetType().Name}: {ex.Message}");
+    }
+
+    private static bool IsExpectedFailure(Exception ex)
+        => ex is HttpRequestException or TaskCanceledException or OperationCanceledException
+           || ex is System.Net.Sockets.SocketException
+           || ex.InnerException is not null && IsExpectedFailure(ex.InnerException);
+
+    /// <summary>
+    /// 断言；失败时计入失败计数（不抛异常，便于继续验证其余场景）。
+    /// </summary>
+    private static void Assert(bool condition, string scenario)
+    {
+        if (condition)
+            return;
+
+        s_failed++;
+        Console.WriteLine($"  [FAIL] {scenario}");
     }
 
     // ─────────────────────────────────────────────────────────
@@ -151,7 +197,7 @@ public class Program
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"  GetUserAsync — 异常: {ex.GetType().Name}: {ex.Message}");
+            HandleUnexpected("GetUserAsync", ex);
         }
 
         try
@@ -170,7 +216,7 @@ public class Program
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"  CreateUserAsync — 异常: {ex.GetType().Name}: {ex.Message}");
+            HandleUnexpected("CreateUserAsync", ex);
         }
 
         Console.WriteLine("  [✓] JSON 序列化/反序列化代码路径已执行（序列化在 HTTP 请求发送前完成）\n");
@@ -199,7 +245,7 @@ public class Program
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"  PostAsJsonAsync — 异常: {ex.GetType().Name}: {ex.Message}");
+            HandleUnexpected("PostAsJsonAsync", ex);
         }
 
         Console.WriteLine("  [✓] EnhancedHttpClient JSON 路径已执行（验证 G8 修复：IOptions 透传生效）\n");
@@ -230,7 +276,7 @@ public class Program
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"  LoginAsync — 异常: {ex.GetType().Name}: {ex.Message}");
+            HandleUnexpected("LoginAsync", ex);
         }
 
         Console.WriteLine("  [✓] FormUrlEncoded Body 已通过编译期静态属性访问生成（无运行时反射）\n");
@@ -270,7 +316,7 @@ public class Program
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"  SearchAsync — 异常: {ex.GetType().Name}: {ex.Message}");
+            HandleUnexpected("SearchAsync", ex);
         }
 
         Console.WriteLine("  [✓] 查询参数代码路径已执行（[Query] 逐参数内联，AOT 安全）\n");
@@ -313,7 +359,7 @@ public class Program
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"  AdvancedSearchAsync — 异常: {ex.GetType().Name}: {ex.Message}");
+            HandleUnexpected("AdvancedSearchAsync", ex);
         }
 
         Console.WriteLine("  [✓] 复杂查询参数 JSON 序列化路径已执行（_contentSerializer.Serialize<T>）\n");
@@ -355,7 +401,7 @@ public class Program
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"  [QueryMap] SearchAsync — 异常: {ex.GetType().Name}: {ex.Message}");
+            HandleUnexpected("[QueryMap] SearchAsync", ex);
         }
 
         Console.WriteLine("  [✓] [QueryMap] 对象展平路径已执行（一级属性内联展平，AOT 安全）\n");
@@ -394,7 +440,7 @@ public class Program
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"  SendAsync — 异常: {ex.GetType().Name}: {ex.Message}");
+            HandleUnexpected("SendAsync", ex);
         }
 
         Console.WriteLine("  [✓] Resilience 装饰器路径已执行（ActivatorUtilities 已知类型，AOT 安全）\n");
@@ -464,7 +510,7 @@ public class Program
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"  SendAsync — 异常: {ex.GetType().Name}: {ex.Message}");
+            HandleUnexpected("SendAsync", ex);
         }
 
         Console.WriteLine("  [✓] ImplementationType 路径已执行（ActivatorUtilities.CreateInstance 在 AOT 下正常）\n");
@@ -698,11 +744,15 @@ public class Program
 #if NET8_0_OR_GREATER
         // UncoveredDto 未覆盖：经 AppJsonContext.Default（仅源生成 resolver）序列化应抛 NotSupportedException。
         var uncovered = new UncoveredDto { Value = "undeclared" };
+        var isAotRuntime = !System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported;
         try
         {
             var _ = JsonSerializer.Serialize(uncovered, typeof(UncoveredDto), AppJsonContext.Default);
-            // JIT 或非严格场景下若走反射兜底可能不抛；AOT 下必抛 NotSupportedException。
-            Console.WriteLine("  [✓] 未覆盖 DTO 序列化已执行（AOT 下应抛 NotSupportedException）");
+            // JIT 下可能走反射兜底而不抛；AOT 下必抛 NotSupportedException——否则视为失败。
+            Assert(!isAotRuntime,
+                "未覆盖 DTO 在 Native AOT 下应抛 NotSupportedException，但序列化成功（AOT 契约被破坏）");
+            if (!isAotRuntime)
+                Console.WriteLine("  [✓] 未覆盖 DTO 序列化已执行（JIT 非严格场景，预期不抛）");
         }
         catch (NotSupportedException ex)
         {
@@ -820,14 +870,16 @@ public class Program
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"  GetUserAsync — 异常: {ex.GetType().Name}: {ex.Message}");
+                HandleUnexpected("GetUserAsync", ex);
             }
 
             Console.WriteLine("  [✓] 无 DI 入口 ForGenerated<T> 解析成功（ModuleInitializer 工厂注册生效）");
         }
         catch (InvalidOperationException ex)
         {
-            Console.WriteLine($"  [!] ForGenerated<T> 失败——工厂未注册: {ex.Message}");
+            // 工厂未注册属真实失败（非网络），计入失败计数。
+            s_failed++;
+            Console.WriteLine($"  [FAIL] ForGenerated<T> 失败——工厂未注册: {ex.Message}");
             Console.WriteLine("  [!] ModuleInitializer 可能未执行（netstandard2.0 需手动调用 RegisterAllFactories()）");
         }
 

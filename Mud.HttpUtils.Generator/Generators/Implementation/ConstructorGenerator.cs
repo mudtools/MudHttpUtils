@@ -282,7 +282,12 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
                 else
                 {
                     // 非 AOT：生成静态 XmlSerializer 缓存字段。
+                    // XmlSerializer 构造函数在 .NET 7+ BCL 中标注 RUC/RDC；此处为按设计的非 AOT 运行时路径
+                    // （XML 方法在 AOT 上下文由 AOT007 编译期阻断），用 #pragma 局部豁免 AOT 分析告警，
+                    // 避免这些"已知且预期"的告警污染消费方的生成代码构建（严格模式下会变为错误）。
+                    codeBuilder.AppendLine("#pragma warning disable IL2026, IL3050");
                     codeBuilder.AppendLine($"        private static readonly System.Xml.Serialization.XmlSerializer {safeFieldName} = new System.Xml.Serialization.XmlSerializer(typeof({xmlType}));");
+                    codeBuilder.AppendLine("#pragma warning restore IL2026, IL3050");
                 }
             }
         }

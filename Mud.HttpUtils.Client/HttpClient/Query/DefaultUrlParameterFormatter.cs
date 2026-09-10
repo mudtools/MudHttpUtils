@@ -68,6 +68,14 @@ public class DefaultUrlParameterFormatter : IUrlParameterFormatter
     /// <summary>
     /// 通过反射读取参数特性上的 Format 属性（避免直接引用 Attributes 项目）。
     /// </summary>
+    /// <remarks>
+    /// IL2075 压制说明：本方法仅由已标注 RUC/RDC 的 <see cref="Format"/> 调用，属非 AOT 路径；
+    /// <c>attr.GetType()</c> 返回的动态类型无法在编译期声明 DAM，故在此局部压制。
+    /// </remarks>
+#if NET6_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2075",
+        Justification = "仅由已标注 RUC/RDC 的 Format 调用的非 AOT 反射路径；GetType() 结果无法声明 DAM。")]
+#endif
     private static string? TryGetQueryFormat(ParameterInfo paramInfo)
     {
         foreach (var attr in paramInfo.GetCustomAttributes(inherit: false))

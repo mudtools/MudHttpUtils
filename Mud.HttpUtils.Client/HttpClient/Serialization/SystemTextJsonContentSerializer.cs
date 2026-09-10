@@ -33,6 +33,9 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public class SystemTextJsonContentSerializer : IHttpContentSerializer,
     ISynchronousContentSerializer, ISynchronousContentDeserializer, IStreamingContentSerializer
+#if NET8_0_OR_GREATER
+    , IAotJsonContentSerializer
+#endif
 {
     private readonly JsonSerializerOptions _options;
 
@@ -44,13 +47,41 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
     /// <summary>
     /// 初始化 <see cref="SystemTextJsonContentSerializer"/> 实例。
     /// </summary>
-    /// <param name="options">JSON 序列化选项。为 null 时使用默认选项。</param>
+    /// <param name="options">JSON 序列化选项。为 null 时使用 <see cref="HttpContentSerializerFactory.BuildOptions"/> 合并库内置上下文后的默认选项。</param>
+    /// <exception cref="InvalidOperationException">
+    /// 在 Native AOT 运行时而 <paramref name="options"/> 未携带 <c>TypeInfoResolver</c> 时抛出，
+    /// 以避免运行期静默的反射失败。
+    /// </exception>
     public SystemTextJsonContentSerializer(JsonSerializerOptions? options = null)
     {
-        _options = options ?? new JsonSerializerOptions();
+        var resolved = options ?? HttpContentSerializerFactory.BuildOptions(null);
+
+#if NET8_0_OR_GREATER
+        // AOT 守卫：无源生成 resolver 时快速失败，避免静默反射失败 / 运行时 NotSupportedException。
+        if (!System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported
+            && resolved.TypeInfoResolver is null)
+        {
+            throw new InvalidOperationException(
+                "Native AOT 下 JsonSerializerOptions.TypeInfoResolver 不能为空。" +
+                "请使用 HttpContentSerializerFactory.CreateDefault()、" +
+                "AddMudHttpContentSerializer(context) 或 AddMudHttpClientJsonContext(context) 注入源生成上下文。");
+        }
+#endif
+
+        _options = resolved;
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// 序列化经 <see cref="JsonSerializerOptions.TypeInfoResolver"/> 解析 <typeparamref name="T"/> 的元数据。
+    /// <b>Native AOT 契约</b>：options 必须携带源生成 <c>JsonSerializerContext</c> 且覆盖
+    /// <typeparamref name="T"/>；否则运行时会抛出受控异常（见构造函数守卫与
+    /// <see cref="IAotJsonContentSerializer"/>）。
+    /// </remarks>
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "契约要求：AOT 下 options 的 TypeInfoResolver 恒为源生成上下文（构造函数守卫强制），序列化不需要反射元数据。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
+        Justification = "同上：AOT 下 resolver 恒为源生成；无 resolver 时构造函数已抛 InvalidOperationException，不会走到动态代码。")]
     public HttpContent? ToHttpContent<T>(T item, object? options = null)
     {
         if (item is null) return null;
@@ -60,6 +91,10 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
     }
 
     /// <inheritdoc/>
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "契约要求：AOT 下 options 的 TypeInfoResolver 恒为源生成上下文（构造函数守卫强制），反序列化不需要反射元数据。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
+        Justification = "同上：AOT 下 resolver 恒为源生成；无 resolver 时构造函数已抛 InvalidOperationException，不会走到动态代码。")]
     public async Task<T?> FromHttpContentAsync<T>(HttpContent content, object? options = null, CancellationToken cancellationToken = default)
     {
 
@@ -75,6 +110,10 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
     }
 
     /// <inheritdoc/>
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "契约要求：AOT 下 options 的 TypeInfoResolver 恒为源生成上下文（构造函数守卫强制），序列化不需要反射元数据。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
+        Justification = "同上：AOT 下 resolver 恒为源生成；无 resolver 时构造函数已抛 InvalidOperationException，不会走到动态代码。")]
     public string Serialize<T>(T item, object? options = null)
     {
         var opts = ResolveOptions(options);
@@ -82,6 +121,17 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// <b>非 AOT 路径</b>：使用运行时 <see cref="System.Type"/> 分派，AOT 下需要动态元数据生成。
+    /// AOT 场景请改用 <see cref="IAotJsonContentSerializer"/> 的 <c>JsonTypeInfo&lt;T&gt;</c> 重载，
+    /// 或泛型重载 <see cref="Serialize{T}(T, object?)"/>。
+    /// </remarks>
+#if NET6_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Serialize(object, Type, options) 使用运行时类型分派，Native AOT 不支持。请改用 IAotJsonContentSerializer.Serialize<T>(item, JsonTypeInfo<T>)。")]
+#endif
+#if NET7_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Serialize(object, Type, options) 使用运行时类型分派，Native AOT 不支持。请改用 IAotJsonContentSerializer.Serialize<T>(item, JsonTypeInfo<T>)。")]
+#endif
     public string Serialize(object? item, System.Type type, object? options = null)
     {
         var opts = ResolveOptions(options);
@@ -89,6 +139,10 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
     }
 
     /// <inheritdoc/>
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "契约要求：AOT 下 options 的 TypeInfoResolver 恒为源生成上下文（构造函数守卫强制），反序列化不需要反射元数据。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
+        Justification = "同上：AOT 下 resolver 恒为源生成；无 resolver 时构造函数已抛 InvalidOperationException，不会走到动态代码。")]
     public T? Deserialize<T>(string json, object? options = null)
     {
 #if NET6_0_OR_GREATER
@@ -100,6 +154,40 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
         var opts = ResolveOptions(options);
         return JsonSerializer.Deserialize<T>(json, opts);
     }
+
+    // ========================================================================
+    // IAotJsonContentSerializer 实现（AOT 快车道，NET8+）
+    // ========================================================================
+
+#if NET8_0_OR_GREATER
+    /// <inheritdoc/>
+    public HttpContent? ToHttpContent<T>(T item, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo)
+    {
+        if (item is null) return null;
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(item, typeInfo);
+        var content = new ByteArrayContent(bytes);
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+        return content;
+    }
+
+    /// <inheritdoc/>
+    public async Task<T?> FromHttpContentAsync<T>(
+        HttpContent content,
+        System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo,
+        CancellationToken cancellationToken = default)
+    {
+        await using var stream = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        return await JsonSerializer.DeserializeAsync(stream, typeInfo, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public string Serialize<T>(T item, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo)
+        => JsonSerializer.Serialize(item, typeInfo);
+
+    /// <inheritdoc/>
+    public T? Deserialize<T>(string json, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> typeInfo)
+        => JsonSerializer.Deserialize(json, typeInfo);
+#endif
 
     /// <inheritdoc/>
 #if NET6_0_OR_GREATER
@@ -125,6 +213,10 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
     /// 使用 <c>SerializeToUtf8Bytes</c> 同步路径返回 <see cref="ByteArrayContent"/>（启用 STJ 源生成 fast-path）。
     /// netstandard2.0 下回退到 <c>Serialize&lt;T&gt;</c> + <see cref="StringContent"/>。
     /// </remarks>
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "契约要求：AOT 下 _options 的 TypeInfoResolver 恒为源生成上下文（构造函数守卫强制），同步序列化不需要反射元数据。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
+        Justification = "同上：AOT 下 resolver 恒为源生成；无 resolver 时构造函数已抛 InvalidOperationException，不会走到动态代码。")]
     public HttpContent ToHttpContentSynchronous<T>(T item)
     {
         if (item is null) return new ByteArrayContent(Array.Empty<byte>());
@@ -173,6 +265,10 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
     /// <para><see cref="StreamingContentFormat.JsonLines"/>：逐行读取，每行反序列化为一个 <typeparamref name="T"/>。</para>
     /// <para><see cref="StreamingContentFormat.JsonArray"/>：使用 <c>DeserializeAsyncEnumerable&lt;T&gt;</c> 增量枚举（net6+）。</para>
     /// </remarks>
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "NDJSON/流式路径经 _options 的源生成 resolver 解析元素类型；AOT 契约由构造函数守卫保证。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
+        Justification = "同上：AOT 下 resolver 恒为源生成；无 resolver 时构造函数已抛 InvalidOperationException，不会走到动态代码。")]
     public async IAsyncEnumerable<T?> DeserializeStreamAsync<T>(
         Stream stream,
         StreamingContentFormat format,
@@ -260,6 +356,10 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
             => SerializeToStreamAsyncCore(stream, cancellationToken);
 #endif
 
+        [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
+            Justification = "流式路径经 _options 的源生成 resolver 解析 T；AOT 契约由构造函数守卫保证。")]
+        [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
+            Justification = "同上：AOT 下 resolver 恒为源生成；无 resolver 时构造函数已抛 InvalidOperationException，不会走到动态代码。")]
         private async Task SerializeToStreamAsyncCore(Stream stream, CancellationToken cancellationToken)
         {
             await using var writer = new Utf8JsonWriter(stream);

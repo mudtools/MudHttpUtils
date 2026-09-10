@@ -86,7 +86,10 @@ namespace TestNamespace
 
         var (diagnostics, outputCompilation) = RunGenerator(source);
 
-        diagnostics.Should().BeEmpty();
+        // AOT004（CreateUserRequest 未被任何 JsonSerializerContext 覆盖）属预期告警：
+        // 本测试关注代码生成，仅要求无错误级诊断。AOT004 的正向行为由
+        // AotDtoCoverageAnalyzerTests 覆盖（覆盖集合现可解析引用程序集中的 Context，故会触发该告警）。
+        diagnostics.Should().NotContain(d => d.Severity == DiagnosticSeverity.Error);
         var generatedCode = GetGeneratedCode(outputCompilation);
         generatedCode.Should().NotBeNullOrEmpty();
         generatedCode.Should().Contain("CreateUserAsync");
@@ -374,7 +377,8 @@ namespace TestNamespace
 
         var (diagnostics, outputCompilation) = RunGenerator(source);
 
-        diagnostics.Should().BeEmpty();
+        // 同 Generator_PostWithBody：包含未覆盖的 Body DTO 时会得到预期的 AOT004 告警。
+        diagnostics.Should().NotContain(d => d.Severity == DiagnosticSeverity.Error);
         var generatedCode = GetGeneratedCode(outputCompilation);
         generatedCode.Should().NotBeNullOrEmpty();
         generatedCode.Should().Contain("GetUsersAsync");

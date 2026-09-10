@@ -43,6 +43,18 @@ public static class HttpContentSerializerFactory
     /// <param name="injected">消费方通过 DI（<c>IOptions&lt;JsonSerializerOptions&gt;</c>）或编程式注入的选项。</param>
     /// <param name="explicitResolver">编程式注入的类型解析器（来自 <c>EnhancedHttpClientOptions.JsonTypeInfoResolver</c>）。</param>
     /// <returns>合并后的 <see cref="JsonSerializerOptions"/> 实例。</returns>
+    /// <remarks>
+    /// AOT 分支只组合源生成上下文；<c>DefaultJsonTypeInfoResolver</c> 仅在
+    /// <see cref="System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported"/> 为 true 的
+    /// JIT 分支实例化。Roslyn AOT 分析器不做跨运行时布尔的流分析，故此处显式压制并注明理由。
+    /// 返回值始终为新实例（或安全副本），避免消费方改写共享静态状态。
+    /// </remarks>
+#if NET8_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "DefaultJsonTypeInfoResolver 仅在 RuntimeFeature.IsDynamicCodeSupported==true 的 JIT 分支实例化；AOT 分支只组合源生成 context，永不执行该行。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
+        Justification = "同上：JIT 专属分支，Native AOT 运行时不可达。")]
+#endif
     public static JsonSerializerOptions BuildOptions(
         JsonSerializerOptions? injected,
 #if NET8_0_OR_GREATER
@@ -89,9 +101,10 @@ public static class HttpContentSerializerFactory
                 TypeInfoResolver = builtIn
             };
         }
-        // JIT 且未提供 resolver：保留 s_defaultJsonSerializerOptions，默认走反射（DefaultJsonTypeInfoResolver）
+        // JIT 且未提供 resolver：返回共享默认选项的安全副本，默认走反射（DefaultJsonTypeInfoResolver）。
+        // 返回副本而非共享静态实例，避免消费方通过 Options 属性改写库级共享状态。
 #endif
-        return s_defaultJsonSerializerOptions;
+        return new JsonSerializerOptions(s_defaultJsonSerializerOptions);
     }
 
     /// <summary>
