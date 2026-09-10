@@ -31,8 +31,15 @@ public static class MessageSanitizer
         "card_no", "card_number", "bank_card", "bankCard",
         "real_name", "realName",
         "address", "住址",
-        "passport", "driver_license"
+        "passport", "driver_license",
+        // M1-#5：补齐 URL query 中常见的敏感键（与 SensitiveUrlRedactor 共用本词表）
+        "authorization", "code", "client_secret", "signature", "sig", "nonce"
     };
+
+    /// <summary>
+    /// 敏感字段名集合的只读视图（供 <see cref="Helpers.SensitiveUrlRedactor"/> 等 URL 脱敏组件复用，避免维护两份词表）。
+    /// </summary>
+    internal static IReadOnlyCollection<string> SensitiveFieldNames => SensitiveFields;
 
     private static readonly HashSet<string> NameSensitiveFields = new(StringComparer.OrdinalIgnoreCase)
     {

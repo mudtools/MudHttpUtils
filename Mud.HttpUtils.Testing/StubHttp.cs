@@ -107,9 +107,20 @@ public sealed class StubHttp : HttpMessageHandler
             await Task.Delay(matched.DelayMs, cancellationToken).ConfigureAwait(false);
         }
 
-        var responseMessage = new HttpResponseMessage(matched.StatusCode);
+        // 模拟真实 HttpClient 行为：响应携带原始请求引用（ApiException.RequestContent 等依赖 RequestMessage）
+        var responseMessage = new HttpResponseMessage(matched.StatusCode)
+        {
+            RequestMessage = request,
+            Version = request.Version,
+        };
 
-        if (!string.IsNullOrEmpty(matched.Content))
+        if (matched.StreamFactory != null)
+        {
+            // 流式响应：不设置 Content-Length（模拟 chunked 传输），框架按需读取
+            var stream = matched.StreamFactory();
+            responseMessage.Content = new StreamContentWithoutLength(stream, matched.ContentType);
+        }
+        else if (!string.IsNullOrEmpty(matched.Content))
         {
             responseMessage.Content = new StringContent(matched.Content, System.Text.Encoding.UTF8, matched.ContentType);
         }
@@ -131,4 +142,138 @@ public sealed class StubHttp : HttpMessageHandler
         _routes.Clear();
         _catchAll.Clear();
     }
+
+    /// <summary>
+    /// 创建一个感知 <see cref="CancellationToken"/> 的上传流（读取方尊重取消令牌时抛
+    /// <see cref="OperationCanceledException"/>），用于测试上传取消传播（如 <c>ProgressableStreamContent</c>）。
+    /// </summary>
+    /// <param name="totalBytes">流总字节数。</param>
+    /// <param name="chunkSize">每块字节数（默认 8192）。</param>
+    /// <param name="emitBytesBeforeCancelSignal">
+    /// 返回前产出的字节数（模拟"已发送部分数据后才收到取消"）。达到该字节数后，流在 <paramref name="cancelAfter"/> 时间内保持可读，
+    /// 若取消令牌在期间触发则抛 <see cref="OperationCanceledException"/>。
+    /// </param>
+    /// <param name="cancelAfter">可读保持时长。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    public static Stream CreateCancellableUploadStream(
+        long totalBytes,
+        int chunkSize = 8192,
+        long emitBytesBeforeCancelSignal = 0,
+        TimeSpan? cancelAfter = null,
+        CancellationToken cancellationToken = default)
+        => new CancellableUploadStream(totalBytes, chunkSize, emitBytesBeforeCancelSignal, cancelAfter, cancellationToken);
+}
+
+/// <summary>
+/// 不设置 Content-Length 的流式 HttpContent（框架读取时按 chunked 语义处理）。
+/// </summary>
+internal sealed class StreamContentWithoutLength : HttpContent
+{
+    private readonly Stream _stream;
+    private readonly string _contentType;
+
+    internal StreamContentWithoutLength(Stream stream, string contentType)
+    {
+        _stream = stream;
+        _contentType = contentType;
+        Headers.TryAddWithoutValidation("Content-Type", contentType);
+    }
+
+    // 不重写 TryComputeLength → Content-Length 保持缺失（chunked 语义）
+    protected override bool TryComputeLength(out long length)
+    {
+        length = 0;
+        return false;
+    }
+
+    protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+    {
+        var buffer = new byte[81920];
+        int bytesRead;
+#if NETSTANDARD2_0
+        while ((bytesRead = await _stream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false)) != 0)
+            await stream.WriteAsync(buffer, 0, bytesRead).ConfigureAwait(false);
+#else
+        while ((bytesRead = await _stream.ReadAsync(buffer.AsMemory()).ConfigureAwait(false)) != 0)
+            await stream.WriteAsync(buffer.AsMemory(0, bytesRead)).ConfigureAwait(false);
+#endif
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _stream.Dispose();
+        base.Dispose(disposing);
+    }
+}
+
+/// <summary>
+/// 感知取消的上传流：产出 <see cref="_emitBeforeCancel"/> 字节后，若取消令牌在 <see cref="_readWindow"/> 内触发
+/// 则抛 <see cref="OperationCanceledException"/>；否则持续返回数据直至读满。
+/// </summary>
+internal sealed class CancellableUploadStream : Stream
+{
+    private readonly long _totalBytes;
+    private readonly byte[] _chunk;
+    private readonly long _emitBeforeCancel;
+    private readonly TimeSpan _readWindow;
+    private readonly CancellationToken _cancellationToken;
+    private long _position;
+    private bool _cancelWindowEntered;
+
+    public CancellableUploadStream(long totalBytes, int chunkSize, long emitBytesBeforeCancel, TimeSpan? readWindow, CancellationToken cancellationToken)
+    {
+        _totalBytes = totalBytes;
+        _chunk = new byte[chunkSize];
+        for (var i = 0; i < chunkSize; i++)
+            _chunk[i] = (byte)'u';
+        _emitBeforeCancel = emitBytesBeforeCancel;
+        _readWindow = readWindow ?? TimeSpan.FromSeconds(30);
+        _cancellationToken = cancellationToken;
+    }
+
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => _totalBytes;
+    public override long Position { get => _position; set => throw new NotSupportedException(); }
+
+    public override void Flush() { }
+
+    public override int Read(byte[] buffer, int offset, int count)
+    {
+        // 先产出"已发送"部分
+        if (_position < _emitBeforeCancel)
+        {
+            var toCopy = (int)Math.Min(Math.Min(count, _chunk.Length), _emitBeforeCancel - _position);
+            Array.Copy(_chunk, 0, buffer, offset, toCopy);
+            _position += toCopy;
+            return toCopy;
+        }
+
+        // 进入取消窗口：等待取消令牌或窗口超时
+        if (!_cancelWindowEntered)
+        {
+            _cancelWindowEntered = true;
+            _cancellationToken.ThrowIfCancellationRequested();
+            var remaining = _readWindow;
+            while (remaining > TimeSpan.Zero)
+            {
+                _cancellationToken.ThrowIfCancellationRequested();
+                System.Threading.Thread.Sleep(10);
+                remaining -= TimeSpan.FromMilliseconds(10);
+            }
+        }
+
+        // 窗口内未取消 → 正常产出剩余数据
+        var left = _totalBytes - _position;
+        if (left <= 0) return 0;
+        var copy = (int)Math.Min(Math.Min(count, _chunk.Length), left);
+        Array.Copy(_chunk, 0, buffer, offset, copy);
+        _position += copy;
+        return copy;
+    }
+
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 }

@@ -7,6 +7,7 @@
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Mud.HttpUtils.Helpers;
 using Mud.HttpUtils.Observability;
 using System.Text.Json;
 using System.Xml.Serialization;
@@ -33,8 +34,8 @@ namespace Mud.HttpUtils;
 /// <param name="appContextHolder">应用上下文持有器（可选）。用于在多应用场景下获取当前应用的 AppKey。</param>
 /// <param name="contentSerializer">HTTP 内容序列化器（可选）。不提供时使用 <see cref="SystemTextJsonContentSerializer"/> 默认实现。</param>
 /// <param name="exceptionRedactor">异常擦除器（Phase 2 T2.1）。在异常抛出前擦除敏感数据，为 null 时不执行擦除。</param>
-/// <param name="maxExceptionContentLength">错误响应体最大读取字符数（Phase 2 T2.2）。为 null 时不限制，防止恶意/超大响应导致 OOM。</param>
-/// <param name="captureRequestContent">是否在发送前捕获请求体字符串（Phase 2 T2.3）。为 true 时存入 <see cref="ApiException.RequestContent"/> 供调试。</param>
+/// <param name="maxExceptionContentLength">错误响应体最大读取字符数（Phase 2 T2.2）。为 null 时使用默认值 10240（<see cref="HttpExecutionConstants.DefaultMaxExceptionContentLength"/>）；设为 0 或负数表示不限制。读取阶段生效，防止恶意/超大响应导致 OOM。</param>
+/// <param name="captureRequestContent">是否在发送前捕获请求体字符串（Phase 2 T2.3）。为 true 时存入 <see cref="ApiException.RequestContent"/> 供调试，捕获长度同样受 <paramref name="maxExceptionContentLength"/> 约束。</param>
 /// <param name="httpVersion">HTTP 版本（Phase 3 T3.4）。为 null 时使用 HttpClient 默认版本。</param>
 /// <param name="httpVersionPolicy">HTTP 版本策略（Phase 3 T3.4）。为 null 时使用 HttpClient 默认策略。</param>
 /// <param name="httpRequestMessageOptions">请求消息选项预设（Phase 3 T3.5）。为 null 时不预设。</param>
@@ -64,7 +65,9 @@ public class DefaultHttpRequestExecutor(
     private readonly IHttpContentSerializer _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
     // Phase 2 字段
     private readonly IExceptionRedactor? _exceptionRedactor = exceptionRedactor;
-    private readonly int? _maxExceptionContentLength = maxExceptionContentLength;
+    // N-1：统一默认值（10240），与 EnhancedHttpClient 路径一致；<= 0 表示不限制
+    private readonly int _maxExceptionContentLength =
+        maxExceptionContentLength ?? HttpExecutionConstants.DefaultMaxExceptionContentLength;
     private readonly bool _captureRequestContent = captureRequestContent;
 #if NET6_0_OR_GREATER
     private readonly Version? _httpVersion = httpVersion;
@@ -122,7 +125,7 @@ public class DefaultHttpRequestExecutor(
         // 2. 错误处理（非 AllowAnyStatusCode 模式）
         if (!descriptor.AllowAnyStatusCode && !response.IsSuccessStatusCode)
         {
-            var errorContent = await ReadContentAsync(response, cancellationToken).ConfigureAwait(false);
+            var errorContent = await ReadErrorContentLimitedAsync(response, cancellationToken).ConfigureAwait(false);
             _logger.LogError("HTTP 请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
                 (int)response.StatusCode, request.RequestUri?.ToString(), errorContent);
             throw CreateApiException(response.StatusCode, errorContent, request.RequestUri?.ToString(), capturedRequestContent);
@@ -275,7 +278,7 @@ using var response = await httpClient.SendRawAsync(request, cancellationToken).C
 
         if (!descriptor.AllowAnyStatusCode && !response.IsSuccessStatusCode)
         {
-            var errorContent = await ReadContentAsync(response, cancellationToken).ConfigureAwait(false);
+            var errorContent = await ReadErrorContentLimitedAsync(response, cancellationToken).ConfigureAwait(false);
             _logger.LogError("HTTP 请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
                 (int)response.StatusCode, request.RequestUri?.ToString(), errorContent);
             throw CreateApiException(response.StatusCode, errorContent, request.RequestUri?.ToString(), capturedRequestContent);
@@ -309,7 +312,7 @@ using var response = await httpClient.SendRawAsync(request, cancellationToken).C
         var allowAnyStatusCode = descriptor?.AllowAnyStatusCode ?? false;
         if (!allowAnyStatusCode && !response.IsSuccessStatusCode)
         {
-            var errorContent = await ReadContentAsync(response, cancellationToken).ConfigureAwait(false);
+            var errorContent = await ReadErrorContentLimitedAsync(response, cancellationToken).ConfigureAwait(false);
             _logger.LogError("HTTP 下载请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
                 (int)response.StatusCode, request.RequestUri?.ToString(), errorContent);
             throw CreateApiException(response.StatusCode, errorContent, request.RequestUri?.ToString(), capturedRequestContent);
@@ -364,7 +367,7 @@ ApplyRequestConfig(request);
         var allowAnyStatusCode = descriptor?.AllowAnyStatusCode ?? false;
         if (!allowAnyStatusCode && !response.IsSuccessStatusCode)
         {
-            var errorContent = await ReadContentAsync(response, cancellationToken).ConfigureAwait(false);
+            var errorContent = await ReadErrorContentLimitedAsync(response, cancellationToken).ConfigureAwait(false);
             _logger.LogError("HTTP 大文件下载请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
                 (int)response.StatusCode, request.RequestUri?.ToString(), errorContent);
             throw CreateApiException(response.StatusCode, errorContent, request.RequestUri?.ToString(), capturedRequestContent);
@@ -661,25 +664,31 @@ ApplyRequestConfig(request);
     }
 
     /// <summary>
-    /// Phase 2 (T2.2)：截断错误响应体到指定长度，防止恶意/超大响应导致 OOM。
+    /// 按上限读取错误响应体（Phase 2 T2.2 / M1-#1）：在 <b>读取阶段</b> 限制字符数，
+    /// 无论响应是否携带 Content-Length（chunked 场景）均不会超读，防 OOM。
     /// </summary>
-    private static string TruncateErrorContent(string content, int? maxLength)
+    private async Task<string> ReadErrorContentLimitedAsync(
+        HttpResponseMessage response, CancellationToken cancellationToken)
     {
-        if (maxLength is int max && !string.IsNullOrEmpty(content) && content.Length > max)
-            return content.Substring(0, max) + "...[已截断]";
+        var (content, _) = await LimitedContentReader
+            .ReadLimitedStringAsync(response.Content, _maxExceptionContentLength, cancellationToken)
+            .ConfigureAwait(false);
         return content;
     }
 
     /// <summary>
     /// Phase 2 (T2.3)：捕获请求体字符串（发送前调用）。
-    /// 读取失败不影响请求发送，返回 null。
+    /// 读取失败不影响请求发送，返回 null。捕获长度受 MaxExceptionContentLength 约束（#16）。
     /// </summary>
-    private static async Task<string?> CaptureRequestContentAsync(HttpRequestMessage? request)
+    private async Task<string?> CaptureRequestContentAsync(HttpRequestMessage? request)
     {
         if (request?.Content == null) return null;
         try
         {
-            return await request.Content.ReadAsStringAsync().ConfigureAwait(false);
+            var (content, _) = await LimitedContentReader
+                .ReadLimitedStringAsync(request.Content, _maxExceptionContentLength, CancellationToken.None)
+                .ConfigureAwait(false);
+            return content;
         }
         catch
         {
@@ -714,12 +723,12 @@ ApplyRequestConfig(request);
     }
 
     /// <summary>
-    /// Phase 2 (T2.1/T2.2/T2.3)：创建 ApiException 并应用 ExceptionRedactor、MaxExceptionContentLength 截断、RequestContent 捕获。
+    /// Phase 2 (T2.1/T2.2/T2.3)：创建 ApiException 并应用 ExceptionRedactor、RequestContent 捕获。
     /// </summary>
     /// <param name="statusCode">HTTP 状态码。</param>
-    /// <param name="errorContent">错误响应内容（已截断）。</param>
+    /// <param name="errorContent">错误响应内容（由 <see cref="ReadErrorContentLimitedAsync"/> 限量读取，截断时含 <c>...[已截断]</c> 标记）。</param>
     /// <param name="requestUri">请求 URI。</param>
-    /// <param name="capturedRequestContent">捕获的请求体（可为 null）。</param>
+    /// <param name="capturedRequestContent">捕获的请求体（可为 null，长度同样受限）。</param>
     /// <returns>已应用擦除的 ApiException。</returns>
     private ApiException CreateApiException(
         System.Net.HttpStatusCode statusCode,
@@ -727,10 +736,7 @@ ApplyRequestConfig(request);
         string? requestUri,
         string? capturedRequestContent = null)
     {
-        // Phase 2 (T2.2)：截断错误响应体
-        var truncated = TruncateErrorContent(errorContent ?? string.Empty, _maxExceptionContentLength);
-
-        var ex = new ApiException(statusCode, truncated, requestUri);
+        var ex = new ApiException(statusCode, errorContent ?? string.Empty, requestUri);
 
         // Phase 2 (T2.3)：设置捕获的请求体
         if (capturedRequestContent != null)

@@ -76,7 +76,8 @@ public sealed class ResiliencePolicyResolver : IResiliencePolicyResolver
             return policy.ExecuteAsync(
                 async (ctx, ct) =>
                 {
-                    var clonedRequest = await HttpRequestMessageCloner.CloneAsync(requestTemplate, _maxCloneContentSize).ConfigureAwait(false);
+                    var clonedRequest = await HttpRequestMessageCloner
+                        .CloneAsync(requestTemplate, _maxCloneContentSize, ct).ConfigureAwait(false);
                     // 从 Context 读取 retry_count（首次执行时不存在，重试时由 onRetry 回调写入）
                     if (ctx.TryGetValue(PollyResiliencePolicyProvider.RetryCountContextKey, out var rc) && rc is int retryCount)
                         MudHttpObservability.RecordRetryCount(clonedRequest, retryCount);

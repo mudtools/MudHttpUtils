@@ -118,7 +118,8 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         return await policy.ExecuteAsync(
             async (ctx, ct) =>
             {
-                var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request, MaxCloneContentSize).ConfigureAwait(false);
+                var clonedRequest = await HttpRequestMessageCloner
+                    .CloneAsync(request, MaxCloneContentSize, ct).ConfigureAwait(false);
                 // 从 Context 读取 retry_count（首次执行时不存在，重试时由 onRetry 回调写入）
                 if (ctx.TryGetValue(PollyResiliencePolicyProvider.RetryCountContextKey, out var rc) && rc is int retryCount)
                     MudHttpObservability.RecordRetryCount(clonedRequest, retryCount);
@@ -165,20 +166,9 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
     private static HttpRequestMessage CloneRequestHeaders(HttpRequestMessage request)
     {
         var clone = new HttpRequestMessage(request.Method, request.RequestUri);
-        clone.Version = request.Version;
-
-        foreach (var header in request.Headers)
-        {
-            clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
-        }
-
-#if !NETSTANDARD2_0
-        foreach (var option in request.Options)
-        {
-            clone.Options.TryAdd(option.Key, option.Value);
-        }
-#endif
-
+        // M1-#3：与 HttpRequestMessageCloner.CloneAsync 共用元数据拷贝（Version/VersionPolicy/
+        // Properties/Options/请求头），消除两处克隆点的漂移
+        HttpRequestMessageCloner.CopyMetadata(request, clone);
         return clone;
     }
 
@@ -218,7 +208,8 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         object? jsonSerializerOptions,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request, MaxCloneContentSize).ConfigureAwait(false);
+        var clonedRequest = await HttpRequestMessageCloner
+            .CloneAsync(request, MaxCloneContentSize, cancellationToken).ConfigureAwait(false);
         try
         {
             await foreach (var item in _innerClient.SendAsAsyncEnumerable<TResult>(clonedRequest, jsonSerializerOptions, cancellationToken).ConfigureAwait(false))
@@ -256,7 +247,8 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         System.Text.Json.Serialization.Metadata.JsonTypeInfo<TResult> jsonTypeInfo,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request, MaxCloneContentSize).ConfigureAwait(false);
+        var clonedRequest = await HttpRequestMessageCloner
+            .CloneAsync(request, MaxCloneContentSize, cancellationToken).ConfigureAwait(false);
         try
         {
             await foreach (var item in _innerClient.SendAsAsyncEnumerable<TResult>(clonedRequest, jsonTypeInfo, cancellationToken).ConfigureAwait(false))

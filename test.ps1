@@ -51,7 +51,9 @@ $TestProjects = @(
     "Tests/Mud.HttpUtils.Client.Tests",
     "Tests/Mud.HttpUtils.Resilience.Tests",
     "Tests/Mud.HttpUtils.Generator.Tests",
-    "Tests/Mud.HttpUtils.CodeFixes.Tests"
+    "Tests/Mud.HttpUtils.CodeFixes.Tests",
+    "Tests/Mud.HttpUtils.Integration.Tests",
+    "Tests/Mud.HttpUtils.OpenTelemetry.Tests"
 )
 
 $TotalPassed = 0

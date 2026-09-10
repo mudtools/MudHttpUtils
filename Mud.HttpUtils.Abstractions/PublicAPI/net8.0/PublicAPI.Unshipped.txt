@@ -800,3 +800,5 @@ Mud.HttpUtils.AllowUnmatchedRouteParametersAttribute
 Mud.HttpUtils.AllowUnmatchedRouteParametersAttribute.AllowUnmatchedRouteParametersAttribute() -> void
 abstract Mud.HttpUtils.IBaseHttpClient.SendAsAsyncEnumerable<TResult>(System.Net.Http.HttpRequestMessage! request, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TResult>! jsonTypeInfo, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TResult>!
 abstract Mud.HttpUtils.IHttpRequestExecutor.SendAsAsyncEnumerable<TElement>(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TElement>! jsonTypeInfo, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TElement>!
+const Mud.HttpUtils.HttpExecutionConstants.DefaultMaxExceptionContentLength = 10240
+const Mud.HttpUtils.HttpExecutionConstants.AllowNonIdempotentRetryPropertyKey = "__Mud_HttpUtils_AllowNonIdempotentRetry"

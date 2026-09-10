@@ -79,7 +79,17 @@ public sealed class EnhancedHttpClientOptions : IEnhancedClientConfig
     /// <summary>
     /// 获取或设置错误响应体最大读取字符数（防止恶意/超大错误响应导致 OOM）。
     /// </summary>
-    /// <value>默认为 <c>null</c>（无限制）。设置后错误响应体截断到指定字符数。</value>
+    /// <value>默认为 <c>null</c>（使用默认值 10240 字符）。设为 <c>0</c> 或负数表示不限制。</value>
+    /// <remarks>
+    /// <para>
+    /// 上限在<b>读取阶段</b>生效（限量读取），无论响应是否携带 <c>Content-Length</c> 均不会超读；
+    /// 截断的内容末尾带 <c>...[已截断]</c> 标记。
+    /// </para>
+    /// <para>
+    /// 该上限同时约束 <see cref="CaptureRequestContent"/> 开启时捕获的请求体长度。
+    /// 与生成代码路径（<c>DefaultHttpRequestExecutor</c>）行为一致。
+    /// </para>
+    /// </remarks>
     public int? MaxExceptionContentLength { get; set; }
 
     /// <summary>
@@ -87,6 +97,7 @@ public sealed class EnhancedHttpClientOptions : IEnhancedClientConfig
     /// </summary>
     /// <value>默认为 <c>false</c>（不捕获）。</value>
     /// <remarks>
+    /// 捕获的请求体长度受 <see cref="MaxExceptionContentLength"/> 约束（0/负数 = 不限制）。
     /// </remarks>
     public bool CaptureRequestContent { get; set; }
 

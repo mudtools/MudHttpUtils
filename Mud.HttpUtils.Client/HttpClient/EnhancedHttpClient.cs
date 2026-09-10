@@ -8,6 +8,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Mud.HttpUtils.Helpers;
 using Mud.HttpUtils.Observability;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
@@ -95,7 +96,14 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
     private const int DefaultBufferSize = 81920;
     private const int MaxDebugLogBodyLength = 32768;
-    private const int MaxErrorContentLength = 10240;
+    // N-1：默认上限统一至 HttpExecutionConstants（单一真相源），与 DefaultHttpRequestExecutor 路径一致
+    private const int MaxErrorContentLength = HttpExecutionConstants.DefaultMaxExceptionContentLength;
+
+    /// <summary>
+    /// 生效的错误内容最大字符数：显式配置优先（0/负 = 不限制），未配置时用默认值 10240。
+    /// 错误响应体与捕获的请求体（<c>CaptureRequestContent</c>）共用该上限。
+    /// </summary>
+    private int EffectiveMaxErrorContentLength => _maxExceptionContentLength ?? MaxErrorContentLength;
 
     /// <summary>
     /// 初始化增强型HttpClient实例
@@ -329,12 +337,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         {
             MudHttpActivitySource.AddActivityEvent(
                 MudHttpDiagnosticNames.RequestStarted,
-                () => new HttpRequestDiagnosticPayload(request.Method.Method, request.RequestUri?.ToString(), ClientName),
+                () => new HttpRequestDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName),
                 MudHttpDiagnosticNames.RequestStarted,
                 new[]
                 {
                     new KeyValuePair<string, object?>("method", request.Method.Method),
-                    new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                    new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
                     new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
                 });
         }
@@ -441,12 +449,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                         statusCode = code;
                     MudHttpActivitySource.AddActivityEvent(
                         MudHttpDiagnosticNames.RequestStopped,
-                        () => new HttpResponseDiagnosticPayload(request.Method.Method, request.RequestUri?.ToString(), ClientName, statusCode, elapsedMs),
+                        () => new HttpResponseDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, statusCode, elapsedMs),
                         MudHttpDiagnosticNames.RequestStopped,
                         new[]
                         {
                             new KeyValuePair<string, object?>("method", request.Method.Method),
-                            new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                            new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
                             new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
                             new KeyValuePair<string, object?>("status_code", statusCode),
                             new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
@@ -465,12 +473,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                     // RequestFailed 事件
                     MudHttpActivitySource.AddActivityEvent(
                         MudHttpDiagnosticNames.RequestFailed,
-                        () => new HttpRequestErrorDiagnosticPayload(request.Method.Method, request.RequestUri?.ToString(), ClientName, elapsedMs, streamEx),
+                        () => new HttpRequestErrorDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, elapsedMs, streamEx),
                         MudHttpDiagnosticNames.RequestFailed,
                         new[]
                         {
                             new KeyValuePair<string, object?>("method", request.Method.Method),
-                            new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                            new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
                             new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
                             new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
                             new KeyValuePair<string, object?>("exception_type", streamEx.GetType().Name),
@@ -523,12 +531,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         {
             MudHttpActivitySource.AddActivityEvent(
                 MudHttpDiagnosticNames.RequestStarted,
-                () => new HttpRequestDiagnosticPayload(request.Method.Method, request.RequestUri?.ToString(), ClientName),
+                () => new HttpRequestDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName),
                 MudHttpDiagnosticNames.RequestStarted,
                 new[]
                 {
                     new KeyValuePair<string, object?>("method", request.Method.Method),
-                    new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                    new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
                     new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
                 });
         }
@@ -615,12 +623,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                         statusCode = code;
                     MudHttpActivitySource.AddActivityEvent(
                         MudHttpDiagnosticNames.RequestStopped,
-                        () => new HttpResponseDiagnosticPayload(request.Method.Method, request.RequestUri?.ToString(), ClientName, statusCode, elapsedMs),
+                        () => new HttpResponseDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, statusCode, elapsedMs),
                         MudHttpDiagnosticNames.RequestStopped,
                         new[]
                         {
                             new KeyValuePair<string, object?>("method", request.Method.Method),
-                            new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                            new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
                             new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
                             new KeyValuePair<string, object?>("status_code", statusCode),
                             new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
@@ -638,12 +646,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
                     MudHttpActivitySource.AddActivityEvent(
                         MudHttpDiagnosticNames.RequestFailed,
-                        () => new HttpRequestErrorDiagnosticPayload(request.Method.Method, request.RequestUri?.ToString(), ClientName, elapsedMs, streamEx),
+                        () => new HttpRequestErrorDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, elapsedMs, streamEx),
                         MudHttpDiagnosticNames.RequestFailed,
                         new[]
                         {
                             new KeyValuePair<string, object?>("method", request.Method.Method),
-                            new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                            new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
                             new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
                             new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
                             new KeyValuePair<string, object?>("exception_type", streamEx.GetType().Name),
@@ -920,17 +928,16 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         requestUri = ResolveRequestUri(requestUri)!;
         // Phase 1 (T1.2)：根据 RequestBodySerializationMode 选择序列化路径
         var content = CreateHttpContentWithMode(requestData);
-        // Phase 2 (T2.3)：CaptureRequestContent 启用时缓冲请求体字符串
+        // Phase 2 (T2.3)：CaptureRequestContent 启用时缓冲请求体字符串（#16：长度受 MaxExceptionContentLength 约束）
         string? capturedRequestContent = null;
         if (_captureRequestContent && content != null)
         {
             try
             {
-#if NET5_0_OR_GREATER
-                capturedRequestContent = await content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-#else
-                capturedRequestContent = await content.ReadAsStringAsync().ConfigureAwait(false);
-#endif
+                var (captured, _) = await LimitedContentReader
+                    .ReadLimitedStringAsync(content, EffectiveMaxErrorContentLength, cancellationToken)
+                    .ConfigureAwait(false);
+                capturedRequestContent = captured;
             }
             catch { /* 读取失败不影响请求发送 */ }
         }
@@ -1100,7 +1107,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         JsonSerializerOptions? jsonSerializerOptions = null,
         CancellationToken cancellationToken = default)
     {
-        string? requestUri = httpRequestMessage.RequestUri?.ToString();
+        // M1-#5：日志输出用 URL 脱敏（敏感 query 值掩码）
+        string? requestUri = SafeUrl(httpRequestMessage.RequestUri) is var safe && safe.Length > 0 ? safe : null;
 
         return await ExecuteHttpRequestCoreAsync(
             async () =>
@@ -1197,7 +1205,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         Encoding? encoding = null,
         CancellationToken cancellationToken = default)
     {
-        string? requestUri = httpRequestMessage.RequestUri?.ToString();
+        // M1-#5：日志输出用 URL 脱敏（敏感 query 值掩码）
+        string? requestUri = SafeUrl(httpRequestMessage.RequestUri) is var safe && safe.Length > 0 ? safe : null;
 
         encoding ??= Encoding.UTF8;
 
@@ -1408,7 +1417,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         HttpRequestMessage httpRequestMessage,
         CancellationToken cancellationToken = default)
     {
-        string? requestUri = httpRequestMessage.RequestUri?.ToString();
+        // M1-#5：日志输出用 URL 脱敏（敏感 query 值掩码）
+        string? requestUri = SafeUrl(httpRequestMessage.RequestUri) is var safe && safe.Length > 0 ? safe : null;
 
         return await ExecuteHttpRequestCoreAsync(async () =>
         {
@@ -1589,10 +1599,20 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     private string ValidateRequest(HttpRequestMessage request)
     {
         request.ThrowIfNull();
-        var uri = request.RequestUri?.ToString() ?? "[No URI]";
+        var uri = SafeUrl(request.RequestUri);
+        // 校验使用原始 URL（脱敏掩码会破坏 URL 结构校验语义）
         ValidateUrl(request.RequestUri?.ToString());
         return uri;
     }
+
+    /// <summary>
+    /// M1-#5：日志/诊断输出用 URL（脱敏敏感 query 值，如 access_token）。
+    /// 校验与发送路径不得使用本方法（需原始 URL）。
+    /// </summary>
+    private static string SafeUrl(Uri? requestUri)
+        => SensitiveUrlRedactor.Redact(requestUri?.ToString()) is { Length: > 0 } safe
+            ? safe
+            : "[No URI]";
 
     /// <summary>
     /// Phase 3 (T3.1)：根据 UrlResolutionMode 解析请求 URI。
@@ -1740,32 +1760,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
     private async Task<string> ReadErrorContentWithLimitAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
-        // Phase 2 (T2.2)：使用可配置的 MaxExceptionContentLength，回退到硬编码默认值
-        var maxLen = _maxExceptionContentLength ?? MaxErrorContentLength;
-
-        var contentLength = response.Content.Headers.ContentLength;
-
-        if (contentLength.HasValue && contentLength.Value > maxLen)
-        {
-#if NETSTANDARD2_0
-            using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
-#else
-            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-#endif
-            var buffer = new byte[maxLen];
-#if NETSTANDARD2_0
-            var bytesRead = await stream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
-#else
-            var bytesRead = await stream.ReadAsync(buffer.AsMemory(0, maxLen), cancellationToken).ConfigureAwait(false);
-#endif
-            return Encoding.UTF8.GetString(buffer, 0, bytesRead) + "...[已截断]";
-        }
-
-#if NETSTANDARD2_0
-        return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-#else
-        return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-#endif
+        // Phase 2 (T2.2) / M1-#9：统一走 LimitedContentReader，在读取阶段限制字符数。
+        // 无论 Content-Length 是否存在（chunked 场景）均不会超读；0/负数 = 不限制。
+        var (content, _) = await LimitedContentReader
+            .ReadLimitedStringAsync(response.Content, EffectiveMaxErrorContentLength, cancellationToken)
+            .ConfigureAwait(false);
+        return content;
     }
 
     /// <summary>
@@ -1926,12 +1926,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         // 路径 B 兜底：发出 RequestStarted 事件，与 TracingDelegatingHandler 路径 A 保持一致
         MudHttpActivitySource.AddActivityEvent(
             MudHttpDiagnosticNames.RequestStarted,
-            () => new HttpRequestDiagnosticPayload(request.Method.Method, request.RequestUri?.ToString(), ClientName),
+            () => new HttpRequestDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName),
             MudHttpDiagnosticNames.RequestStarted,
             new[]
             {
                 new KeyValuePair<string, object?>("method", request.Method.Method),
-                new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
                 new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
             });
 
@@ -1947,12 +1947,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 statusCode = code;
             MudHttpActivitySource.AddActivityEvent(
                 MudHttpDiagnosticNames.RequestStopped,
-                () => new HttpResponseDiagnosticPayload(request.Method.Method, request.RequestUri?.ToString(), ClientName, statusCode, elapsedMs),
+                () => new HttpResponseDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, statusCode, elapsedMs),
                 MudHttpDiagnosticNames.RequestStopped,
                 new[]
                 {
                     new KeyValuePair<string, object?>("method", request.Method.Method),
-                    new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                    new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
                     new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
                     new KeyValuePair<string, object?>("status_code", statusCode),
                     new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
@@ -1969,12 +1969,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             // RequestFailed 事件
             MudHttpActivitySource.AddActivityEvent(
                 MudHttpDiagnosticNames.RequestFailed,
-                () => new HttpRequestErrorDiagnosticPayload(request.Method.Method, request.RequestUri?.ToString(), ClientName, elapsedMs, ex),
+                () => new HttpRequestErrorDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, elapsedMs, ex),
                 MudHttpDiagnosticNames.RequestFailed,
                 new[]
                 {
                     new KeyValuePair<string, object?>("method", request.Method.Method),
-                    new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
+                    new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
                     new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
                     new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
                     new KeyValuePair<string, object?>("exception_type", ex.GetType().Name),

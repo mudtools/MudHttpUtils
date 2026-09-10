@@ -87,7 +87,79 @@ public sealed class StubResponse
         return this;
     }
 
+    /// <summary>
+    /// 以流方式提供响应体：响应不携带 <c>Content-Length</c>（模拟 chunked 传输），流由框架按需读取。
+    /// </summary>
+    /// <param name="streamFactory">每次响应时创建新流的工厂（框架负责释放）。</param>
+    /// <remarks>
+    /// 用于测试"无 Content-Length 的响应体读取上限"（如 OOM 防护）与流式反序列化场景。
+    /// 设置后 <see cref="Content"/> 字符串内容被忽略。
+    /// </remarks>
+    public StubResponse WithStreamContent(Func<Stream> streamFactory)
+    {
+        StreamFactory = streamFactory ?? throw new ArgumentNullException(nameof(streamFactory));
+        return this;
+    }
+
+    /// <summary>
+    /// 以惰性生成的字节流提供超大响应体：按 <paramref name="chunkSize"/> 分块写入，测试进程无需预先分配
+    /// <paramref name="totalBytes"/> 大小的内存。响应不携带 <c>Content-Length</c>。
+    /// </summary>
+    /// <param name="totalBytes">响应体总字节数。</param>
+    /// <param name="chunkSize">每块字节数（默认 81920）。</param>
+    /// <param name="fillByte">填充字节值（默认 ASCII 'x'）。</param>
+    public StubResponse WithLazyContent(long totalBytes, int chunkSize = 81920, byte fillByte = (byte)'x')
+    {
+        if (totalBytes < 0) throw new ArgumentOutOfRangeException(nameof(totalBytes));
+        if (chunkSize <= 0) throw new ArgumentOutOfRangeException(nameof(chunkSize));
+        StreamFactory = () => new RepeatingByteStream(totalBytes, chunkSize, fillByte);
+        return this;
+    }
+
+    /// <summary>响应体流工厂（设置后优先于 <see cref="Content"/> 字符串）。</summary>
+    internal Func<Stream>? StreamFactory { get; private set; }
+
     internal void IncrementCallCount() => Interlocked.Increment(ref _callCount);
+}
+
+/// <summary>
+/// 按块重复产出填充字节的只读流，用于模拟超大响应体而不预分配全部内存。
+/// </summary>
+internal sealed class RepeatingByteStream : Stream
+{
+    private readonly long _totalBytes;
+    private readonly byte[] _chunk;
+    private long _position;
+
+    public RepeatingByteStream(long totalBytes, int chunkSize, byte fillByte)
+    {
+        _totalBytes = totalBytes;
+        _chunk = new byte[chunkSize];
+        for (var i = 0; i < chunkSize; i++)
+            _chunk[i] = fillByte;
+    }
+
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => _totalBytes;
+    public override long Position { get => _position; set => throw new NotSupportedException(); }
+
+    public override void Flush() { }
+
+    public override int Read(byte[] buffer, int offset, int count)
+    {
+        var remaining = _totalBytes - _position;
+        if (remaining <= 0) return 0;
+        var toCopy = (int)Math.Min(Math.Min(count, _chunk.Length), remaining);
+        Array.Copy(_chunk, 0, buffer, offset, toCopy);
+        _position += toCopy;
+        return toCopy;
+    }
+
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 }
 
 /// <summary>

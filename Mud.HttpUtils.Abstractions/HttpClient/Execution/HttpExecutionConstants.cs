@@ -21,4 +21,19 @@ public static class HttpExecutionConstants
     /// 此常量与 Mud.HttpUtils.Resilience.ResilienceConstants.SkipResiliencePropertyKey 保持一致。
     /// </remarks>
     public const string SkipResiliencePropertyKey = "__Mud_HttpUtils_SkipResilience";
+
+    /// <summary>
+    /// 错误响应体（<see cref="HttpRequestException"/> 载荷 / <c>ApiException.Content</c> / <c>RequestContent</c>）
+    /// 的默认最大字符数（两条执行路径统一：内置方法路径与生成代码路径）。
+    /// </summary>
+    /// <remarks>
+    /// 设为 <c>0</c> 或负数表示不限制。读取阶段生效（限量读取），而非读完后截断。
+    /// </remarks>
+    public const int DefaultMaxExceptionContentLength = 10240;
+
+    /// <summary>
+    /// 用于标记请求允许对非幂等 HTTP 方法重试的属性键（配合 <c>RetryAttribute.AllowNonIdempotent</c> 或
+    /// <c>RetryOptions.AllowNonIdempotentRetry</c> 使用，详见重试与幂等性文档）。
+    /// </summary>
+    public const string AllowNonIdempotentRetryPropertyKey = "__Mud_HttpUtils_AllowNonIdempotentRetry";
 }

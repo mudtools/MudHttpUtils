@@ -798,3 +798,5 @@ Mud.HttpUtils.CollectionFormat.Tsv = 4
 Mud.HttpUtils.CollectionFormat.Pipes = 5
 Mud.HttpUtils.AllowUnmatchedRouteParametersAttribute
 Mud.HttpUtils.AllowUnmatchedRouteParametersAttribute.AllowUnmatchedRouteParametersAttribute() -> void
+const Mud.HttpUtils.HttpExecutionConstants.DefaultMaxExceptionContentLength = 10240
+const Mud.HttpUtils.HttpExecutionConstants.AllowNonIdempotentRetryPropertyKey = "__Mud_HttpUtils_AllowNonIdempotentRetry"

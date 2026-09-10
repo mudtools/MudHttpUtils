@@ -36,3 +36,6 @@ Mud.HttpUtils.Testing.StubResponse.WithMaxCalls(int max) -> Mud.HttpUtils.Testin
 Mud.HttpUtils.Testing.StubResponse.WithHeader(string! name, string! value) -> Mud.HttpUtils.Testing.StubResponse!
 Mud.HttpUtils.Testing.StubResponse.WithDelay(int milliseconds) -> Mud.HttpUtils.Testing.StubResponse!
 Mud.HttpUtils.Testing.StubResponse.WithBehavior(Mud.HttpUtils.Testing.NetworkBehavior! behavior) -> Mud.HttpUtils.Testing.StubResponse!
+Mud.HttpUtils.Testing.StubResponse.WithStreamContent(System.Func<System.IO.Stream!>! streamFactory) -> Mud.HttpUtils.Testing.StubResponse!
+Mud.HttpUtils.Testing.StubResponse.WithLazyContent(long totalBytes, int chunkSize = 81920, byte fillByte = 120) -> Mud.HttpUtils.Testing.StubResponse!
+static Mud.HttpUtils.Testing.StubHttp.CreateCancellableUploadStream(long totalBytes, int chunkSize = 8192, long emitBytesBeforeCancelSignal = 0, System.TimeSpan? cancelAfter = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.IO.Stream!

@@ -8,7 +8,13 @@ namespace Mud.HttpUtils;
 /// </summary>
 public static class UrlValidator
 {
-    private static readonly HashSet<string> _allowedDomains = new(StringComparer.OrdinalIgnoreCase);
+    // M1-#4：白名单改为不可变快照 + Volatile.Write 原子替换。
+    // 并发 ConfigureAllowedDomains 与 ValidateUrl 不再出现 "Collection was modified" 或读到空集的空窗期；
+    // 读取方只读不写，快照引用在被替换前始终完整可用。
+    private static HashSet<string> _allowedDomains = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>当前白名单快照（读端只读，写端经整体替换更新）。</summary>
+    private static HashSet<string> AllowedDomainsSnapshot => Volatile.Read(ref _allowedDomains);
 
     private static readonly List<IPNetwork> _privateNetworks;
 
@@ -31,7 +37,8 @@ public static class UrlValidator
     }
 
     /// <summary>
-    /// 配置允许的域名白名单（替换默认白名单）
+    /// 配置允许的域名白名单（替换默认白名单）。
+    /// 线程安全：整体构建新集合并原子替换，并发调用期间不存在"空集"瞬间。
     /// </summary>
     /// <param name="domains">允许的域名集合</param>
     public static void ConfigureAllowedDomains(IEnumerable<string> domains)
@@ -39,12 +46,13 @@ public static class UrlValidator
         if (domains == null)
             throw new ArgumentNullException(nameof(domains));
 
-        _allowedDomains.Clear();
+        var newSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var domain in domains)
         {
             if (!string.IsNullOrWhiteSpace(domain))
-                _allowedDomains.Add(domain.Trim());
+                newSet.Add(domain.Trim());
         }
+        Volatile.Write(ref _allowedDomains, newSet);
     }
 
     /// <summary>
@@ -69,7 +77,7 @@ public static class UrlValidator
         var host = uri.Host;
 
         // 白名单域名跳过所有后续检查
-        if (_allowedDomains.Count > 0 && IsAllowedDomain(host))
+        if (IsDomainAllowedBySnapshot(host))
             return;
 
         if (!allowCustomBaseUrls)
@@ -85,9 +93,9 @@ public static class UrlValidator
                 throw new InvalidOperationException($"非标准 HTTPS 端口: {uri.Port}");
             }
 
-            if (_allowedDomains.Count > 0)
+            if (AllowedDomainsSnapshot.Count > 0)
             {
-                var allowedDomains = string.Join(", ", _allowedDomains.OrderBy(d => d));
+                var allowedDomains = string.Join(", ", AllowedDomainsSnapshot.OrderBy(d => d));
                 throw new InvalidOperationException(
                     $"域名 '{host}' 不在白名单中。允许的域名: {allowedDomains}." +
                     "如需使用自定义域名，请设置 allowCustomBaseUrls=true（注意安全风险）。");
@@ -124,18 +132,29 @@ public static class UrlValidator
     }
 
     /// <summary>
-    /// 检查主机名是否在允许的域名白名单中
+    /// 检查主机名是否在允许的域名白名单中（基于当前快照判定，含子域名匹配）。
     /// </summary>
-    private static bool IsAllowedDomain(string host)
+    private static bool IsDomainAllowedBySnapshot(string host)
     {
-        if (_allowedDomains.Contains(host))
+        var snapshot = AllowedDomainsSnapshot;
+        if (snapshot.Count == 0)
+            return false;
+        return IsAllowedDomain(host, snapshot);
+    }
+
+    /// <summary>
+    /// 检查主机名是否在指定白名单集合中（含子域名匹配）。
+    /// </summary>
+    private static bool IsAllowedDomain(string host, HashSet<string> allowedDomains)
+    {
+        if (allowedDomains.Contains(host))
             return true;
 
         var parts = host.Split('.');
         for (int i = parts.Length - 2; i >= 0; i--)
         {
             var domain = string.Join(".", parts.Skip(i));
-            if (_allowedDomains.Contains(domain))
+            if (allowedDomains.Contains(domain))
                 return true;
         }
 
@@ -240,33 +259,39 @@ public static class UrlValidator
     }
 
     /// <summary>
-    /// 获取当前允许的域名白名单
+    /// 获取当前允许的域名白名单（返回快照副本，线程安全）。
     /// </summary>
     public static IReadOnlyCollection<string> GetAllowedDomains()
     {
-        return _allowedDomains.ToArray();
+        return AllowedDomainsSnapshot.ToArray();
     }
 
     /// <summary>
-    /// 添加自定义域名到白名单（运行时扩展）
+    /// 添加自定义域名到白名单（运行时扩展）。线程安全（复制快照后整体替换）。
     /// </summary>
     public static void AddAllowedDomain(string domain)
     {
         if (string.IsNullOrWhiteSpace(domain))
             throw new ArgumentNullException(nameof(domain));
 
-        _allowedDomains.Add(domain.Trim().ToLowerInvariant());
+        var current = AllowedDomainsSnapshot;
+        var newSet = new HashSet<string>(current, StringComparer.OrdinalIgnoreCase);
+        newSet.Add(domain.Trim().ToLowerInvariant());
+        Volatile.Write(ref _allowedDomains, newSet);
     }
 
     /// <summary>
-    /// 从白名单中移除域名
+    /// 从白名单中移除域名。线程安全（复制快照后整体替换）。
     /// </summary>
     public static void RemoveAllowedDomain(string domain)
     {
         if (string.IsNullOrWhiteSpace(domain))
             throw new ArgumentNullException(nameof(domain));
 
-        _allowedDomains.Remove(domain.Trim());
+        var current = AllowedDomainsSnapshot;
+        var newSet = new HashSet<string>(current, StringComparer.OrdinalIgnoreCase);
+        newSet.Remove(domain.Trim());
+        Volatile.Write(ref _allowedDomains, newSet);
     }
 
     /// <summary>

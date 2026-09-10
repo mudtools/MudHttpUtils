@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Net.Http;
 using Microsoft.Extensions.Logging;
+using Mud.HttpUtils.Helpers;
 
 namespace Mud.HttpUtils;
 
@@ -51,7 +52,9 @@ internal static class MudHttpObservability
         if (uri != null)
         {
             activity.SetTag(MudHttpActivitySource.Tags.HttpMethod, request.Method.Method);
-            activity.SetTag(MudHttpActivitySource.Tags.HttpUrl, uri.ToString());
+            // M1-#5：Span tag 中的 URL 脱敏（掩码 access_token 等敏感 query 值），防止令牌随遥测泄漏。
+            // 排障可获取完整 URI 的渠道：ApiException.RequestUri（由 IExceptionRedactor 兜底）。
+            activity.SetTag(MudHttpActivitySource.Tags.HttpUrl, SensitiveUrlRedactor.Redact(uri.ToString()));
             // 仅绝对 URI 才有 Scheme/Host（相对 URI 在 BaseAddress 设置后由 HttpClient 解析）
             if (uri.IsAbsoluteUri)
             {
