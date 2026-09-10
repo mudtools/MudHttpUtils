@@ -14,7 +14,7 @@
 		     Attributes 从 lib/netstandard2.0 引用、AOT 发布成功并运行输出 AOT_OK。 -->
 	</PropertyGroup>
 
-	<!-- AOT 严格模式清单已上移至 Directory.Build.props（全仓统一口径），此处不再重复定义。
+	<!-- AOT 严格模式清单已上移至 Directory.Build.props（全仓统一口径），此处不再重复定义。 -->
 
 	<!-- NuGet 包引用（版本跟随 Directory.Build.props 的 $(Version)） -->
 	<ItemGroup>
@@ -41,6 +41,8 @@
 	<ItemGroup>
 		<CompilerVisibleProperty Include="IsAotCompatible" />
 		<CompilerVisibleProperty Include="PublishAot" />
+		<CompilerVisibleProperty Include="Nullable" />
+		<CompilerVisibleProperty Include="HttpClientOptionsName" />
 	</ItemGroup>
 
 </Project>

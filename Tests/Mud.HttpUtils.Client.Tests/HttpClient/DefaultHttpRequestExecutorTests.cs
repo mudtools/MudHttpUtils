@@ -727,7 +727,7 @@ public class DefaultHttpRequestExecutorTests
 
         var tempFile = Path.Combine(Path.GetTempPath(), $"mud_test_{Guid.NewGuid():N}.bin");
         var reportedBytes = new List<long>();
-        var progress = new Progress<long>(b => reportedBytes.Add(b));
+        var progress = new RecordingProgress(reportedBytes);
         try
         {
             await executor.DownloadLargeAsync(CreateRequest(), mockClient.Object, tempFile, progress: progress);

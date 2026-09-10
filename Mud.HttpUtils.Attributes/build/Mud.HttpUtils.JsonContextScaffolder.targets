@@ -32,14 +32,21 @@
     <MudJsonContextToolCommand Condition="'$(MudJsonContextToolCommand)' == ''">mud-jsonctx</MudJsonContextToolCommand>
   </PropertyGroup>
 
+  <!-- [重要] 重入保护：脚手架内部使用 MSBuildWorkspace 评估本项目，而 MSBuildWorkspace 会发起
+       "设计时构建"（DesignTimeBuild=true）并同样执行 BeforeCompile 目标。若本目标不加防护，
+       嵌套评估会再次触发本目标 → 再次运行脚手架 → 无限递归（表现为构建不断派生 dotnet 进程、
+       永不结束）。故必须同时满足：
+         1) 跳过设计时构建（'$(DesignTimeBuild)' != 'true'）；
+         2) 以环境变量 MudJsonContextScaffolderRunning 做重入保护（嵌套评估继承该进程环境变量，
+            在 MSBuild 属性层面表现为 'true'）。 -->
   <Target Name="MudGenerateJsonContext"
           BeforeTargets="BeforeCompile"
-          Condition="'$(MudEnableJsonContextScaffolder)' == 'true'">
+          Condition="'$(MudEnableJsonContextScaffolder)' == 'true' AND '$(DesignTimeBuild)' != 'true' AND '$(MudJsonContextScaffolderRunning)' != 'true'">
     <Message Importance="high" Text="[Mud] 运行 JsonContextScaffolder 生成 JSON Context（pre-build）" />
     <!-- 脚手架内部使用 MSBuildWorkspace 重新评估本项目，需清除外层构建注入的 MSBuild 环境变量，
          否则嵌套评估会因 SDK/Exe 路径冲突而失败（独立运行正常）。 -->
     <Exec Command="&quot;$(MudJsonContextToolCommand)&quot; --project &quot;$(MSBuildProjectFullPath)&quot; -o &quot;$(MudJsonContextOutputPath)&quot; --auto-derived-types"
-          EnvironmentVariables="MSBUILD_EXE_PATH=;MSBuildEnableNodeReuse=false"
+          EnvironmentVariables="MSBUILD_EXE_PATH=;MSBuildEnableNodeReuse=false;MudJsonContextScaffolderRunning=true"
           ContinueOnError="true">
       <Output TaskParameter="ExitCode" PropertyName="_MudJsonCtxExitCode" />
     </Exec>

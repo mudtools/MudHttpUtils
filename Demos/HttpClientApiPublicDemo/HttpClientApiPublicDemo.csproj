@@ -5,6 +5,11 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<GenerateDocumentationFile>false</GenerateDocumentationFile>
+		<!-- 本工程刻意消费"已发布"的 NuGet 包（见下方 PackageReference），用于验证消费方体验。
+		     其生成代码来自已发布版本的源生成器（2.0.2 仍直接发射 JsonSerializer.Serialize(options) /
+		     XmlSerializer 静态字段），本仓库无法修复已发布包，故退出 AOT 严格模式
+		     （严格模式用于锁死本仓库源码的 AOT 契约）。 -->
+		<MudExcludeFromAotStrictMode>true</MudExcludeFromAotStrictMode>
 	</PropertyGroup>
 	<ItemGroup>
 		<PackageReference Include="Mud.HttpUtils" Version="2.0.2" />

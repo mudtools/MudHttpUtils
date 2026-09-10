@@ -84,9 +84,17 @@ internal static class AotDtoCoverageAnalyzer
         var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
 
         // 1. 收集所有已引用的 JsonSerializerContext 子类上的 [JsonSerializable] 类型集合
-        var coveredTypes = CollectCoveredTypes(compilation);
-        if (coveredTypes.Count == 0)
-            return diagnostics.ToImmutable(); // 无 Context 引用，跳过（避免在未配置 AOT 的项目中产生噪音）
+        var coveredTypes = CollectCoveredTypes(compilation, out var hasLocalContext);
+
+        // 触发门控：仅当"本编译单元自身声明了 JsonSerializerContext"时才运行 AOT004/AOT005。
+        // 原因：覆盖集合自 P1-4（ADR-03）起会同时扫描引用程序集，而 Mud.HttpUtils 各库内部
+        // 都自带 internal Context（MudHttpJsonContext / OAuth2JsonContext / ProblemDetailsJsonContext …），
+        // 因此"coveredTypes.Count == 0"不再是有效的门控——任何引用本库的工程都会命中。
+        // 若不以"本地声明 Context"作为接入信号，所有未选择 AOT 源生成工作流的消费方
+        // （本仓库的 HttpClientApiDemo / ResilienceDemo / HttpClientDemo 等）都会被大量噪音诊断淹没。
+        // 注意：仍使用引用程序集解析出的覆盖集合做判定（跨程序集 DTO+Context 场景不误报，见 ADR-03）。
+        if (!hasLocalContext || coveredTypes.Count == 0)
+            return diagnostics.ToImmutable();
 
         // 2. 查找 HttpClientApiAttribute 符号
         var httpClientApiAttr = compilation.GetTypeByMetadataName(HttpClientApiAttributeFullName);
@@ -146,7 +154,7 @@ internal static class AotDtoCoverageAnalyzer
             return diagnostics.ToImmutable();
 
         // 收集已覆盖类型（当前编译单元 + 引用程序集中的所有 Context）
-        var coveredTypes = CollectCoveredTypes(compilation);
+        var coveredTypes = CollectCoveredTypes(compilation, out _);
 
         foreach (var syntaxTree in compilation.SyntaxTrees)
         {
@@ -188,13 +196,20 @@ internal static class AotDtoCoverageAnalyzer
     /// <summary>
     /// 收集编译单元引用的所有 JsonSerializerContext 子类上的 [JsonSerializable] 类型。
     /// </summary>
+    /// <param name="compilation">编译单元。</param>
+    /// <param name="hasLocalContext">
+    /// 输出：当前编译单元是否<b>自身</b>声明了至少一个 <c>JsonSerializerContext</c> 子类。
+    /// 用作 AOT004/AOT005 的触发门控（引用程序集中的 Context 只用于覆盖判定，不作为触发信号）。
+    /// </param>
     /// <remarks>
     /// 同时支持 IDE（<see cref="CompilationReference"/>）与 CLI（<c>PortableExecutableReference</c>）
     /// 两种引用形态，并递归命名空间与嵌套类型。
     /// </remarks>
-    private static HashSet<INamedTypeSymbol> CollectCoveredTypes(Compilation compilation)
+    private static HashSet<INamedTypeSymbol> CollectCoveredTypes(Compilation compilation, out bool hasLocalContext)
     {
         var result = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+        hasLocalContext = false;
+
         var jsonSerializableAttr = compilation.GetTypeByMetadataName(JsonSerializableAttributeFullName);
         var jsonSerializerContext = compilation.GetTypeByMetadataName(JsonSerializerContextFullName);
 
@@ -214,7 +229,10 @@ internal static class AotDtoCoverageAnalyzer
                     continue;
 
                 if (InheritsFromJsonSerializerContext(typeSymbol, jsonSerializerContext))
+                {
+                    hasLocalContext = true;
                     CollectFromContextType(typeSymbol, jsonSerializableAttr, result);
+                }
             }
         }
 

@@ -95,16 +95,26 @@ public static class HttpContentSerializerFactory
         // 未提供 resolver：
         if (System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported == false)
         {
-            // AOT 且未提供 resolver：用库内置上下文，避免回退反射
+            // AOT 且未提供 resolver：仅组合库内置上下文，避免回退反射
             return new JsonSerializerOptions(s_defaultJsonSerializerOptions)
             {
                 TypeInfoResolver = builtIn
             };
         }
-        // JIT 且未提供 resolver：返回共享默认选项的安全副本，默认走反射（DefaultJsonTypeInfoResolver）。
+
+        // JIT 且未提供 resolver：必须合并库内置上下文（builtIn）+ 反射兜底（DefaultJsonTypeInfoResolver）。
+        // 若此处只返回无 resolver 的裸副本，库内部类型（MudHttpJsonContext 覆盖的类型）在消费方
+        // 未注入 resolver 时将无法解析，默认序列化器在“零配置”场景下会退化为不可用。
         // 返回副本而非共享静态实例，避免消费方通过 Options 属性改写库级共享状态。
-#endif
+        return new JsonSerializerOptions(s_defaultJsonSerializerOptions)
+        {
+            TypeInfoResolver = System.Text.Json.Serialization.Metadata.JsonTypeInfoResolver.Combine(
+                builtIn,
+                new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver())
+        };
+#else
         return new JsonSerializerOptions(s_defaultJsonSerializerOptions);
+#endif
     }
 
     /// <summary>

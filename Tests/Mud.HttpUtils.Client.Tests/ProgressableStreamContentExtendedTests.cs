@@ -12,7 +12,7 @@ public class ProgressableStreamContentExtendedTests
         var originalContent = new ByteArrayContent(data);
 
         var progressReports = new List<long>();
-        var progress = new Progress<long>(bytes => progressReports.Add(bytes));
+        var progress = new RecordingProgress(progressReports);
 
         var progressable = new ProgressableStreamContent(originalContent, progress, bufferSize: 1024);
 
@@ -31,7 +31,7 @@ public class ProgressableStreamContentExtendedTests
         var originalContent = new ByteArrayContent(data);
 
         var progressReports = new List<long>();
-        var progress = new Progress<long>(bytes => progressReports.Add(bytes));
+        var progress = new RecordingProgress(progressReports);
 
         var progressable = new ProgressableStreamContent(originalContent, progress, bufferSize: 10);
 
@@ -66,7 +66,7 @@ public class ProgressableStreamContentExtendedTests
         var originalContent = new StreamContent(stream);
 
         var progressReports = new List<long>();
-        var progress = new Progress<long>(bytes => progressReports.Add(bytes));
+        var progress = new RecordingProgress(progressReports);
 
         var progressable = new ProgressableStreamContent(originalContent, progress, bufferSize: 50);
 
@@ -105,7 +105,7 @@ public class ProgressableStreamContentExtendedTests
         var originalContent = new ByteArrayContent(data);
 
         var progressReports = new List<long>();
-        var progress = new Progress<long>(bytes => progressReports.Add(bytes));
+        var progress = new RecordingProgress(progressReports);
 
         var progressable = new ProgressableStreamContent(originalContent, progress, bufferSize: 64);
 

@@ -39,12 +39,7 @@
 		<NoWarn>$(NoWarn);NETSDK1210</NoWarn>
 	</PropertyGroup>
 
-	<!-- AOT 严格模式：通过 -p:AotStrictMode=true 激活，将 AOT 相关诊断精确清单式升级为错误。
-	     作用域 = 库 + Demo（排除 *.Tests / *.Benchmarks：测试与基准代码不是 AOT 交付物，
-	     其反射/动态代码用法属测试基建，纳入严格模式只会产生噪声）。
-	     此前该清单分散定义在 3 个 Demo csproj 中，且 MSBuild 项目属性不向被 ProjectReference 的库传播，
-	     导致"库内 IL 告警永远不失败、CI 严格模式名不副实"。上移后库工程同样受检（防回归）。 -->
-	<PropertyGroup Condition="'$(AotStrictMode)' == 'true' AND !$(MSBuildProjectName.EndsWith('.Tests')) AND !$(MSBuildProjectName.EndsWith('.Benchmarks'))">
-		<WarningsAsErrors>$(WarningsAsErrors);IL2026;IL2046;IL2050;IL2057;IL2067;IL2070;IL2072;IL2075;IL2080;IL2091;IL3050;IL3051;AOT004;AOT005;AOT006;AOT007</WarningsAsErrors>
-	</PropertyGroup>
+	<!-- 说明：AOT 严格模式的 WarningsAsErrors 注入已移至 Directory.Build.targets。
+	     原因：本文件在项目文件【之前】导入，无法读取项目内定义的属性（如单个工程的
+	     <MudExcludeFromAotStrictMode>true</MudExcludeFromAotStrictMode> 退出开关）。 -->
 </Project>

@@ -40,7 +40,10 @@
 /Tests/Mud.HttpUtils.Generator.Tests/bin
 /Tests/Mud.HttpUtils.Generator.Tests/obj
 /Tests/Mud.HttpUtils.Generator.Tests/TestResults
-/Tests/Mud.HttpUtils.Generator.Tests/*.txt
+# Verify 快照：只忽略 .received.txt（失败产物），必须跟踪 .verified.txt（测试基线）。
+# 历史规则为 *.txt，导致 22 份 *.verified.txt 从未入库 → 全新检出/CI 上快照测试必然全红。
+/Tests/Mud.HttpUtils.Generator.Tests/*.received.txt
+!/Tests/Mud.HttpUtils.Generator.Tests/*.verified.txt
 /Tests/Mud.HttpUtils.Tests/bin
 /Tests/Mud.HttpUtils.Tests/obj
 /Tests/Mud.HttpUtils.Benchmarks/bin

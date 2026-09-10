@@ -31,6 +31,10 @@
 	<ItemGroup>
 		<CompilerVisibleProperty Include="IsAotCompatible" />
 		<CompilerVisibleProperty Include="PublishAot" />
+		<!-- 与包路径（Mud.HttpUtils.Generator.props）保持一致：Nullable 决定生成代码是否发射
+		     #nullable enable；HttpClientOptionsName 决定生成的 Options 类名（读取 build_property.*）。 -->
+		<CompilerVisibleProperty Include="Nullable" />
+		<CompilerVisibleProperty Include="HttpClientOptionsName" />
 	</ItemGroup>
 
 	<ItemGroup>
@@ -48,17 +52,23 @@
 		<ScaffolderProject>$(MSBuildThisFileDirectory)..\..\Tools\Mud.HttpUtils.JsonContextScaffolder\Mud.HttpUtils.JsonContextScaffolder.csproj</ScaffolderProject>
 	</PropertyGroup>
 
-	<!-- 运行脚手架：仅在源码较新时重新生成（增量） -->
-	<!-- 注意：脚手架内部使用 MSBuildWorkspace 评估本项目，需清除外层 dotnet build 注入的
-	     MSBuild 相关环境变量，否则嵌套评估会因 SDK/Exe 路径冲突而失败（独立运行正常）。 -->
+	<!-- 运行脚手架：仅在源码较新时重新生成（增量）。
+	     注意（重要）：脚手架内部使用 MSBuildWorkspace 评估本项目，而 MSBuildWorkspace 会发起
+	     "设计时构建"（DesignTimeBuild=true）并同样执行 BeforeCompile 目标。若本目标不加防护，
+	     嵌套评估会再次触发本目标 → `dotnet run 脚手架` → 再次嵌套 …… 形成**无限递归**，
+	     表现为构建进程不断派生新的 dotnet 进程、构建永不结束。故必须同时满足：
+	       1) 跳过设计时构建（'$(DesignTimeBuild)' != 'true'）；
+	       2) 以环境变量 MudJsonContextScaffolderRunning 做重入保护（嵌套评估可见该进程环境变量，
+	          从而在 MSBuild 属性层面表现为 'true'）。
+	     另：清除外层注入的 MSBuild 环境变量，否则嵌套评估会因 SDK/Exe 路径冲突而失败。 -->
 	<Target Name="GenerateJsonContext"
 	        BeforeTargets="BeforeCompile"
 	        Inputs="$(MSBuildProjectFile);@(Compile)"
 	        Outputs="$(IntermediateOutputPath)GeneratedJsonContext\AppJsonContext.g.cs"
-	        Condition="Exists('$(ScaffolderProject)')">
+	        Condition="'$(DesignTimeBuild)' != 'true' AND '$(MudJsonContextScaffolderRunning)' != 'true' AND Exists('$(ScaffolderProject)')">
 		<Message Importance="high" Text="[JsonContext] 运行脚手架生成 AppJsonContext（pre-build）" />
 		<Exec Command="dotnet run --project &quot;$(ScaffolderProject)&quot; -- --project &quot;$(MSBuildProjectFullPath)&quot; -o &quot;$(IntermediateOutputPath)GeneratedJsonContext&quot;"
-		      EnvironmentVariables="MSBUILD_EXE_PATH=;MSBuildEnableNodeReuse=false" />
+		      EnvironmentVariables="MSBUILD_EXE_PATH=;MSBuildEnableNodeReuse=false;MudJsonContextScaffolderRunning=true" />
 	</Target>
 
 	<!-- 将生成文件纳入编译（obj/ 默认被 SDK 排除，需显式 Include） -->

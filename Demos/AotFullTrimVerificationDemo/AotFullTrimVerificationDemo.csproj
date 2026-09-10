@@ -29,6 +29,10 @@
 	<ItemGroup>
 		<CompilerVisibleProperty Include="IsAotCompatible" />
 		<CompilerVisibleProperty Include="PublishAot" />
+		<!-- 与包路径（Mud.HttpUtils.Generator.props）保持一致：Nullable → 生成代码 #nullable enable；
+		     HttpClientOptionsName → 生成的 Options 类名。缺失时读取恒取默认值，配置静默失效。 -->
+		<CompilerVisibleProperty Include="Nullable" />
+		<CompilerVisibleProperty Include="HttpClientOptionsName" />
 	</ItemGroup>
 
 	<ItemGroup>

@@ -222,6 +222,174 @@ public class AotDtoCoverageAnalyzerTests
         aot004[0].Properties.Should().ContainKey("TypeFullName");
     }
 
+    // ───────────────────────── 触发门控：未接入 AOT 源生成工作流的工程零噪音 ─────────────────────────
+
+    /// <summary>
+    /// 本编译单元自身未声明任何 <c>JsonSerializerContext</c> → 视为未接入 AOT 源生成工作流，不报告任何覆盖诊断。
+    /// </summary>
+    /// <remarks>
+    /// 该门控是"避免在未配置 AOT 的项目中产生噪音"这一既有设计的实现；
+    /// P1-4（ADR-03）让覆盖集合同时扫描引用程序集后，Mud.HttpUtils 各库自带的 internal Context
+    /// 会使"覆盖集合为空即跳过"失效，故触发条件改为"本编译单元是否声明 Context"。
+    /// 引用程序集中的 Context 仍用于覆盖判定（见 <c>CoveredType_InReferencedAssembly_IsRecognized_AndUncoveredStillReported</c>）。
+    /// </remarks>
+    [Fact]
+    public void NoLocalJsonSerializerContext_DoesNotReportCoverageDiagnostics()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                public class LocalDto { public int Id { get; set; } }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Get("/x")]
+                    Task<LocalDto?> GetAsync([Query] LocalDto criteria);
+                }
+            }
+            """;
+
+        Analyze(source).Should().NotContain(d => d.Id == "AOT004" || d.Id == "AOT005",
+            "未声明本地 JsonSerializerContext 的工程不应收到覆盖类诊断（避免非 AOT 工程噪音）");
+    }
+
+    // ───────────────────────── AOT004：响应类型解包（Task/ValueTask/Nullable/List） ─────────────────────────
+
+    /// <summary>
+    /// 响应 DTO 的 AOT004 必须在解包 Task&lt;T&gt; / ValueTask&lt;T&gt; / Nullable&lt;T&gt; / List&lt;T&gt; 后
+    /// 按内部类型判定。历史上按 <c>"System.Threading.Tasks.Task&lt;T&gt;"</c> 字符串比较（BCL 实际为
+    /// <c>Task&lt;TResult&gt;</c>），导致响应 DTO 的 AOT004 从未生效。
+    /// </summary>
+    [Theory]
+    [InlineData("Task<ResultDto>")]
+    [InlineData("ValueTask<ResultDto>")]
+    [InlineData("Task<ResultDto?>")]
+    [InlineData("Task<System.Collections.Generic.List<ResultDto>>")]
+    public void ResponseDto_Wrapped_NotCovered_ReportsAot004(string returnType)
+    {
+        var source = $$"""
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                public class ResultDto { public int Id { get; set; } }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Get("/x")]
+                    {{returnType}} GetAsync();
+                }
+
+                {{ContextBoilerplate}}
+            }
+            """;
+
+        var diagnostics = Analyze(source);
+        var aot004 = diagnostics.Where(d => d.Id == "AOT004").ToList();
+
+        aot004.Should().ContainSingle($"{returnType} 解包后应判定为未覆盖并报告 AOT004");
+        aot004[0].Properties["TypeFullName"].Should().Contain("ResultDto");
+    }
+
+    /// <summary>
+    /// 解包的"正向"路径：元素类型已被 Context 覆盖时不得误报 AOT004。
+    /// </summary>
+    [Fact]
+    public void ResponseDto_ListWithCoveredElement_DoesNotReportAot004()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                public class ResultDto { public int Id { get; set; } }
+
+                [System.Text.Json.Serialization.JsonSerializable(typeof(ResultDto))]
+                internal sealed partial class AppJsonContext : System.Text.Json.Serialization.JsonSerializerContext
+                {
+                    public AppJsonContext(System.Text.Json.JsonSerializerOptions options) : base(options) { }
+                    protected override System.Text.Json.JsonSerializerOptions? GeneratedSerializerOptions => null;
+                    public override System.Text.Json.Serialization.Metadata.JsonTypeInfo? GetTypeInfo(System.Type type) => null;
+                }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Get("/x")]
+                    Task<System.Collections.Generic.List<ResultDto>> GetAsync();
+                }
+            }
+            """;
+
+        Analyze(source).Should().NotContain(d => d.Id == "AOT004",
+            "元素类型已被 Context 覆盖时，List<T> 响应不应误报 AOT004");
+    }
+
+    // ───────────────────────── AOT005：[QueryMap] 分支 ─────────────────────────
+
+    [Fact]
+    public void QueryMap_ExplicitJsonSerialization_NotCovered_ReportsAot005()
+    {
+        var source = $$"""
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                public class SearchCriteria { public string Keyword { get; set; } = ""; }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Get("/x")]
+                    Task<string> GetAsync(
+                        [QueryMap(SerializationMethod = QuerySerializationMethod.Json)] SearchCriteria criteria);
+                }
+
+                {{ContextBoilerplate}}
+            }
+            """;
+
+        var diagnostics = Analyze(source);
+        var aot005 = diagnostics.Where(d => d.Id == "AOT005").ToList();
+
+        aot005.Should().ContainSingle("[QueryMap] 显式 JSON 序列化的未覆盖复杂类型应报告 AOT005");
+        aot005[0].Properties.Should().ContainKey("TypeFullName");
+    }
+
+    [Fact]
+    public void QueryMap_Dictionary_DoesNotReportAot005()
+    {
+        var source = $$"""
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Get("/x")]
+                    Task<string> GetAsync(
+                        [QueryMap(SerializationMethod = QuerySerializationMethod.Json)]
+                        System.Collections.Generic.Dictionary<string, string> criteria);
+                }
+
+                {{ContextBoilerplate}}
+            }
+            """;
+
+        Analyze(source).Should().NotContain(d => d.Id == "AOT005",
+            "字典 [QueryMap] 逐键值格式化，不涉及整体 JSON 序列化");
+    }
+
     // ───────────────────────── AOT006 ─────────────────────────
 
     [Fact]
@@ -280,7 +448,9 @@ public class AotDtoCoverageAnalyzerTests
 
         var contractsReference = MetadataReference.CreateFromImage(imageStream.ToArray());
 
-        // 主程序集：一个已被依赖 Context 覆盖的返回类型 + 一个未覆盖的返回类型
+        // 主程序集：一个已被依赖 Context 覆盖的返回类型 + 一个未覆盖的返回类型。
+        // 另声明一个本地 Context：AOT004/AOT005 的触发门控为"本编译单元自身声明了 Context"
+        // （未接入 AOT 源生成工作流的工程不应被覆盖诊断淹没），引用程序集中的 Context 仍参与覆盖判定。
         const string apiSource = """
             using System.Threading.Tasks;
             using Mud.HttpUtils.Attributes;
@@ -288,6 +458,14 @@ public class AotDtoCoverageAnalyzerTests
             namespace Api
             {
                 public class LocalUncoveredDto { public int Id { get; set; } }
+
+                [System.Text.Json.Serialization.JsonSerializable(typeof(int))]
+                internal sealed partial class ApiJsonContext : System.Text.Json.Serialization.JsonSerializerContext
+                {
+                    public ApiJsonContext(System.Text.Json.JsonSerializerOptions options) : base(options) { }
+                    protected override System.Text.Json.JsonSerializerOptions? GeneratedSerializerOptions => null;
+                    public override System.Text.Json.Serialization.Metadata.JsonTypeInfo? GetTypeInfo(System.Type type) => null;
+                }
 
                 [HttpClientApi("https://api.example.com")]
                 public interface ITestApi
