@@ -179,22 +179,40 @@ services.AddSingleton<IHttpResponseInterceptor, CacheResponseInterceptor>();
 
 ### 加密提供程序
 
-| 类                             | 说明                                                  |
-| ------------------------------ | ----------------------------------------------------- |
-| `DefaultAesEncryptionProvider` | `IEncryptionProvider` 默认实现，使用 AES-CBC 模式加密 |
+| 类                             | 说明                                                                          |
+| ------------------------------ | ----------------------------------------------------------------------------- |
+| `DefaultAesEncryptionProvider` | `IEncryptionProvider` 默认实现，**始终使用认证加密**（AesGcm 或 CBC + HMAC-SHA256） |
+
+#### 密文信封格式
+
+加密产出的密文首字节为**信封版本前缀**，**解密仅按该前缀分派，不依赖任何运行时配置**：
+
+| 版本 | 布局 | 最小长度 | 产出条件 | 可在哪些目标框架解密 |
+| :--- | :--- | ------: | :--- | :--- |
+| `0x02` | `[0x02][nonce(12)][tag(16)][密文]`（AesGcm，AEAD） | 29 | net8.0/net10.0 且 `AesGcm.IsSupported` 且 `RequireCrossRuntimePortable=false`（默认） | 仅 net8.0+ |
+| `0x03` | `[0x03][IV(16)][MAC(32)][密文]`（CBC + HMAC-SHA256，Encrypt-then-MAC） | 65 | 其余运行时；或 `RequireCrossRuntimePortable=true` | 全部（netstandard2.0/net6.0/net8.0/net10.0） |
+
+版本字节空间：`0x00` 保留为非法哨兵（永不用作版本）；`0x01` 曾用于 v1 裸 CBC，该路径已随「AES 信封版本前缀歧义消除」移除且**编号永久冻结**；`0x04`~`0x0F` 保留给未来对称算法；`0x10`~`0xFF` 保留给未来扩展。
+
+无法识别的格式会抛 `CryptographicException`（消息含实际首字节）；完整性校验失败同样抛 `CryptographicException`。
+
+> **跨运行时场景**：`IEncryptableHttpClient.EncryptContent` 产出的密文会经 HTTP 传输到对端，而对端目标框架未知。若对端可能低于 net8.0，请在**加密侧**设置 `RequireCrossRuntimePortable = true` 强制产出 `0x03`。
 
 ```csharp
 services.AddMudHttpClient("myApi", encryption =>
 {
     encryption.Key = Convert.FromBase64String("your-base64-key");
     // 注意：从 v1.8.0 起 IV 自动随机生成，无需手动设置
+
+    // 可选：密文需能被 netstandard2.0 / net6.0 端解密时开启
+    encryption.RequireCrossRuntimePortable = true;
 }, client =>
 {
     client.BaseAddress = new Uri("https://api.example.com");
 });
 ```
 
-> 密钥长度支持 AES-128（16 字节）、AES-192（24 字节）、AES-256（32 字节）。`AesEncryptionOptions.Validate()` 方法在 `IEncryptionProvider` 首次解析时验证密钥的有效性。从 v1.8.0 起，IV 在每次加密时自动随机生成；CFG-27 已移除 `AesEncryptionOptions.IV` 属性（运行时无消费点），无需也无法手动设置。
+> 密钥长度支持 AES-128（16 字节）、AES-192（24 字节）、AES-256（32 字节）。`AesEncryptionOptions.Validate()` 方法在 `IEncryptionProvider` 首次解析时验证密钥的有效性。从 v1.8.0 起，IV 在每次加密时自动随机生成；CFG-27 已移除 `AesEncryptionOptions.IV` 属性（运行时无消费点），无需也无法手动设置。认证加密始终开启，不再提供关闭选项。
 
 ### 安全认证提供程序
 
@@ -650,7 +668,7 @@ flowchart TD
     EX --> ReqI["请求拦截器链<br/>IHttpRequestInterceptor（按 Order 升序）"]
     ReqI --> Token["令牌注入<br/>DefaultTokenProvider → IMudAppContext<br/>→ TokenManager / IUserTokenManager"]
     Token --> Enc{"已配置加密?<br/>IEncryptionProvider"}
-    Enc -->|"是"| EncOp["请求体 / 字段加密<br/>DefaultAesEncryptionProvider（AES-CBC）"]
+    Enc -->|"是"| EncOp["请求体 / 字段加密<br/>DefaultAesEncryptionProvider（AesGcm / CBC+HMAC）"]
     Enc -->|"否"| Auth
     EncOp --> Auth["认证头注入<br/>API Key / HMAC 签名"]
     Auth --> UrlCheck["URL 安全校验<br/>UrlValidator（SSRF 防护 / 域名白名单）"]

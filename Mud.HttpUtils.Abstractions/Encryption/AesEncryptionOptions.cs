@@ -40,23 +40,25 @@ public class AesEncryptionOptions
     // 运行时无任何消费点（Validate 不校验、Provider 不读取），属静默失效配置。
 
     /// <summary>
-    /// 获取或设置是否启用认证加密（Authenticated Encryption）。
+    /// 获取或设置是否强制产出可跨运行时解密的密文格式。
     /// </summary>
-    /// <value>默认为 <c>true</c>（M2-#7：认证加密是安全默认，裸 CBC 存在位翻转篡改与填充预言子风险）。</value>
+    /// <value>默认为 <c>false</c>。</value>
     /// <remarks>
     /// <para>
-    /// 启用后的密文格式（带 1 字节版本前缀，为未来演进预留）：
+    /// 本库加密时始终使用<b>认证加密</b>（AEAD / Encrypt-then-MAC），密文带 1 字节版本前缀：
     /// <list type="bullet">
-    /// <item><c>0x02</c>（net8.0/net10.0）：AesGcm —— <c>[版本][nonce(12)][tag(16)][密文]</c></item>
-    /// <item><c>0x03</c>（netstandard2.0/net6.0，无 AesGcm API）：CBC + HMAC-SHA256 —— <c>[版本][IV(16)][MAC(32)][密文]</c>（Encrypt-then-MAC）</item>
+    /// <item><c>0x02</c> AesGcm —— <c>[0x02][nonce(12)][tag(16)][密文]</c>：仅 net8.0+ 且 <c>AesGcm.IsSupported</c> 时产出，且<b>仅能</b>在 net8.0+ 解密。</item>
+    /// <item><c>0x03</c> CBC + HMAC-SHA256 —— <c>[0x03][IV(16)][MAC(32)][密文]</c>（Encrypt-then-MAC）：可在全部目标框架（netstandard2.0 / net6.0 / net8.0 / net10.0）解密。</item>
     /// </list>
-    /// 解密按版本前缀自动分派。
+    /// 解密<b>仅</b>按首字节版本前缀分派，与任何配置无关。
     /// </para>
     /// <para>
-    /// 设为 <c>false</c> 回退裸 CBC（<c>[IV(16)][密文]</c>，无版本前缀），仅建议调试用途，不提供完整性保护。
+    /// 设为 <c>true</c> 时，即使在 net8.0+ 上也强制产出 <c>0x03</c> 格式，
+    /// 用于密文需要跨进程/跨服务传输、而对端目标框架可能低于 net8.0 的场景
+    /// （例如经 <c>IEncryptableHttpClient.EncryptContent</c> 加密后由 net6.0 服务解密）。
     /// </para>
     /// </remarks>
-    public bool EnableAuthenticatedEncryption { get; set; } = true;
+    public bool RequireCrossRuntimePortable { get; set; }
 
     /// <summary>
     /// 验证 AES 加密选项的有效性。

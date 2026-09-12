@@ -154,9 +154,12 @@ internal static partial class MudHttpClientLog
         Message = "Retry.AllowNonIdempotentRetry = true，RetryableHttpMethods 将被忽略（所有 HTTP 方法均允许重试）。如需仅重试幂等方法，请将其设为 false。")]
     public static partial void RetryableHttpMethodsIgnored(ILogger logger);
 
-    [LoggerMessage(EventId = 116, Level = LogLevel.Warning,
-        Message = "AesEncryptionOptions.EnableAuthenticatedEncryption = false：加密将退化为裸 CBC（无完整性校验），存在填充预言（padding oracle）风险。生产环境请开启认证加密。")]
-    public static partial void AuthenticatedEncryptionDisabled(ILogger logger);
+    // EventId 116 已废弃：原 AesEncryptionOptions.EnableAuthenticatedEncryption=false 安全警告，
+    // 触发点随「AES 信封版本前缀歧义消除方案（OPT-C，移除裸 CBC 路径）」一并移除。编号冻结，不再复用。
+
+    [LoggerMessage(EventId = 119, Level = LogLevel.Information,
+        Message = "AesEncryptionProvider：当前运行时不支持 AesGcm，已使用 CBC + HMAC-SHA256（信封版本 0x03）进行认证加密。如需密文可跨 netstandard2.0/net6.0 运行时解密，可显式设置 AesEncryptionOptions.RequireCrossRuntimePortable = true。")]
+    public static partial void AesGcmUnavailableFallbackToCbcHmac(ILogger logger);
 
     [LoggerMessage(EventId = 117, Level = LogLevel.Warning,
         Message = "检测到响应缓存双入口同时配置：AddHttpResponseCache 已显式注册 IHttpResponseCache，配置节 MudHttpClients:ResponseCache 将被忽略（TryAddSingleton 先注册者生效）。")]
@@ -184,11 +187,14 @@ internal static partial class MudHttpClientLog
     public static void RetryableHttpMethodsIgnored(ILogger logger)
         => s_retryableHttpMethodsIgnored(logger, null);
 
-    private static readonly Action<ILogger, Exception?> s_authenticatedEncryptionDisabled =
-        LoggerMessage.Define(LogLevel.Warning, new EventId(116, nameof(AuthenticatedEncryptionDisabled)),
-            "AesEncryptionOptions.EnableAuthenticatedEncryption = false：加密将退化为裸 CBC（无完整性校验），存在填充预言（padding oracle）风险。生产环境请开启认证加密。");
-    public static void AuthenticatedEncryptionDisabled(ILogger logger)
-        => s_authenticatedEncryptionDisabled(logger, null);
+    // EventId 116 已废弃：原 AesEncryptionOptions.EnableAuthenticatedEncryption=false 安全警告，
+    // 触发点随「AES 信封版本前缀歧义消除方案（OPT-C，移除裸 CBC 路径）」一并移除。编号冻结，不再复用。
+
+    private static readonly Action<ILogger, Exception?> s_aesGcmUnavailableFallbackToCbcHmac =
+        LoggerMessage.Define(LogLevel.Information, new EventId(119, nameof(AesGcmUnavailableFallbackToCbcHmac)),
+            "AesEncryptionProvider：当前运行时不支持 AesGcm，已使用 CBC + HMAC-SHA256（信封版本 0x03）进行认证加密。如需密文可跨 netstandard2.0/net6.0 运行时解密，可显式设置 AesEncryptionOptions.RequireCrossRuntimePortable = true。");
+    public static void AesGcmUnavailableFallbackToCbcHmac(ILogger logger)
+        => s_aesGcmUnavailableFallbackToCbcHmac(logger, null);
 
     private static readonly Action<ILogger, Exception?> s_responseCacheConfigurationIgnored =
         LoggerMessage.Define(LogLevel.Warning, new EventId(117, nameof(ResponseCacheConfigurationIgnored)),

@@ -57,10 +57,10 @@ const Mud.HttpUtils.TokenTypes.RefreshToken = "RefreshToken" -> string!
 Mud.HttpUtils.AesEncryptionOptions
 Mud.HttpUtils.AesEncryptionOptions.AesEncryptionOptions() -> void
 Mud.HttpUtils.AesEncryptionOptions.ClearSensitiveData() -> void
-Mud.HttpUtils.AesEncryptionOptions.EnableAuthenticatedEncryption.get -> bool
-Mud.HttpUtils.AesEncryptionOptions.EnableAuthenticatedEncryption.set -> void
 Mud.HttpUtils.AesEncryptionOptions.Key.get -> byte[]!
 Mud.HttpUtils.AesEncryptionOptions.Key.set -> void
+Mud.HttpUtils.AesEncryptionOptions.RequireCrossRuntimePortable.get -> bool
+Mud.HttpUtils.AesEncryptionOptions.RequireCrossRuntimePortable.set -> void
 Mud.HttpUtils.AesEncryptionOptions.Validate() -> void
 Mud.HttpUtils.ApiException
 Mud.HttpUtils.ApiException.ApiException(string! message, string? requestUri, System.Exception? innerException) -> void

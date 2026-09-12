@@ -6,11 +6,14 @@ namespace Mud.HttpUtils.Tests;
 
 public class AesEncryptionProviderTests
 {
-    private static IEncryptionProvider CreateProvider(byte[]? key = null)
+    private static readonly byte[] TestKey = Convert.FromBase64String("MTIzNDU2Nzg5MDEyMzQ1Ng==");
+
+    private static IEncryptionProvider CreateProvider(byte[]? key = null, bool requireCrossRuntimePortable = false)
     {
         var options = new AesEncryptionOptions
         {
-            Key = key ?? Convert.FromBase64String("MTIzNDU2Nzg5MDEyMzQ1Ng==")
+            Key = key ?? (byte[])TestKey.Clone(),
+            RequireCrossRuntimePortable = requireCrossRuntimePortable,
         };
         return new DefaultAesEncryptionProvider(Options.Create(options));
     }
@@ -401,31 +404,6 @@ public class AesEncryptionProviderTests
         act.Should().Throw<CryptographicException>();
     }
 
-    /// <summary>
-    /// 认证加密开启时拒绝裸 CBC 密文（无版本前缀）：抛 <see cref="CryptographicException"/> 而非静默解密。
-    /// </summary>
-    [Fact]
-    public void AuthenticatedEncryption_RawCbcCipherText_IsRejected()
-    {
-        var legacyOptions = new AesEncryptionOptions
-        {
-            Key = Convert.FromBase64String("MTIzNDU2Nzg5MDEyMzQ1Ng=="),
-            EnableAuthenticatedEncryption = false,
-        };
-        using var legacyProvider = new DefaultAesEncryptionProvider(Options.Create(legacyOptions));
-        var rawCbc = legacyProvider.EncryptBytes(Encoding.UTF8.GetBytes("legacy"));
-
-        // 确定性修复：裸 CBC 的首字节是随机 IV 的第 1 字节，若恰为 0x02/0x03 会被误判为合法信封版本
-        // （约 0.8% 概率导致本用例偶发失败）。强制置为非版本字节，使断言稳定。
-        rawCbc[0] = 0x00;
-
-        var provider = CreateProvider();
-        var act = () => provider.DecryptBytes(rawCbc);
-
-        act.Should().Throw<CryptographicException>()
-            .WithMessage("*版本前缀*");
-    }
-
     /// <summary>构造 v3（CBC+HMAC）信封：<c>[0x03][IV(16)][MAC(32)][密文]</c>。</summary>
     private static byte[] BuildCbcHmacEnvelope(byte[] key, byte[] plain, bool tamper)
     {
@@ -453,6 +431,236 @@ public class AesEncryptionProviderTests
         if (tamper)
             envelope[^1] ^= 0x01;
         return envelope;
+    }
+
+    #endregion
+
+    #region AES 信封版本前缀歧义消除 (AE-T11)
+
+    /// <summary>
+    /// AE-1/AE-4：net8+ 且未要求跨运行时可移植 → 密文首字节恒为 0x02。
+    /// 循环 200 次消除随机性（nonce 随机，但版本字节必须恒定）。
+    /// </summary>
+    [Fact]
+    public void Envelope_VersionSpace_Gcm_HasPrefix02()
+    {
+        if (!AesGcm.IsSupported) return;   // 环境不支持 GCM 时由下一条用例覆盖 0x03
+
+        var provider = CreateProvider();
+
+        for (var i = 0; i < 200; i++)
+        {
+            var bytes = Convert.FromBase64String(provider.Encrypt("payload " + i));
+            bytes[0].Should().Be((byte)0x02);
+        }
+    }
+
+    /// <summary>
+    /// AE-4：非 GCM 运行时（或 <c>RequireCrossRuntimePortable=true</c>）→ 密文首字节恒为 0x03。
+    /// </summary>
+    [Fact]
+    public void Envelope_VersionSpace_CbcHmac_HasPrefix03()
+    {
+        var provider = CreateProvider(requireCrossRuntimePortable: AesGcm.IsSupported);
+
+        for (var i = 0; i < 200; i++)
+        {
+            var bytes = Convert.FromBase64String(provider.Encrypt("payload " + i));
+            bytes[0].Should().Be((byte)0x03);
+        }
+    }
+
+    /// <summary>
+    /// AE-5（B-3）：net8+ 上强制 <c>RequireCrossRuntimePortable=true</c> → 产出 0x03，
+    /// 且该密文仍可被默认（GCM）provider 解密（解密侧按前缀分派，与配置无关）。
+    /// </summary>
+    [Fact]
+    public void Envelope_CrossRuntimePortable_ProducesCbcHmacOnNet8()
+    {
+        var portable = CreateProvider(requireCrossRuntimePortable: true);
+        var plain = "cross-runtime payload";
+
+        var cipher = Convert.FromBase64String(portable.Encrypt(plain));
+
+        cipher[0].Should().Be((byte)0x03);
+        CreateProvider().Decrypt(Convert.ToBase64String(cipher)).Should().Be(plain);
+    }
+
+    /// <summary>
+    /// AE-2 根治验证：分派只依赖密文首字节，不依赖加密侧配置。
+    /// 0x02 与 0x03 两种密文在任意配置的 provider 上解密结果一致。
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Decrypt_DispatchIgnoresRuntimeConfiguration(bool requireCrossRuntimePortable)
+    {
+        var plain = "configuration independent";
+        var gcmCipher = Convert.FromBase64String(CreateProvider().Encrypt(plain));
+        var cbcHmacCipher = Convert.FromBase64String(
+            CreateProvider(requireCrossRuntimePortable: true).Encrypt(plain));
+
+        // 两种前缀都必须是合法版本字节（非 GCM 环境下两者均为 0x03，断言仍成立）
+        gcmCipher[0].Should().BeOneOf((byte)0x02, (byte)0x03);
+        cbcHmacCipher[0].Should().BeOneOf((byte)0x02, (byte)0x03);
+
+        var reader = CreateProvider(requireCrossRuntimePortable: requireCrossRuntimePortable);
+        reader.Decrypt(Convert.ToBase64String(gcmCipher)).Should().Be(plain);
+        reader.Decrypt(Convert.ToBase64String(cbcHmacCipher)).Should().Be(plain);
+    }
+
+    /// <summary>
+    /// AE-1/AE-3：逐字节遍历所有非法版本字节（0x00、0x01、0x04~0xFF）→
+    /// 均抛 <see cref="CryptographicException"/> 且消息含实际首字节。
+    /// 确定性构造，不依赖随机 IV（E-4 转正）。
+    /// </summary>
+    [Fact]
+    public void Decrypt_UnrecognizedVersion_ThrowsWithActualByte()
+    {
+        var provider = CreateProvider();
+
+        for (var b = 0; b <= 0xFF; b++)
+        {
+            if (b is 0x02 or 0x03) continue;
+
+            var input = new byte[1 + 16 + 32 + 16];
+            input[0] = (byte)b;
+
+            var act = () => provider.DecryptBytes(input);
+
+            act.Should().Throw<CryptographicException>()
+                .WithMessage($"*0x{b:X2}*");
+        }
+    }
+
+    /// <summary>AE-6：空数组 → <see cref="CryptographicException"/>（格式类错误统一异常类型）。</summary>
+    [Fact]
+    public void Decrypt_ZeroLength_ThrowsCryptographicException()
+    {
+        var provider = CreateProvider();
+
+        var act = () => provider.DecryptBytes(Array.Empty<byte>());
+
+        act.Should().Throw<CryptographicException>().WithMessage("*长度*");
+    }
+
+    /// <summary>AE-3：长度校验前置 —— v3 信封长度不足时抛「格式」异常（含最少字节数），而非解密失败/索引越界。</summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(48)]
+    [InlineData(64)]
+    public void Decrypt_CbcHmacTooShort_ThrowsFormatError(int length)
+    {
+        var provider = CreateProvider();
+        var input = new byte[length];
+        input[0] = 0x03;
+
+        var act = () => provider.DecryptBytes(input);
+
+        act.Should().Throw<CryptographicException>()
+            .WithMessage("*密文数据格式无效*")
+            .WithMessage("*最少 65 字节*");
+    }
+
+    /// <summary>AE-3（续）：v2 信封长度不足时抛「格式」异常；运行时不支持 GCM 时抛出明确的不可解密提示。</summary>
+    [Fact]
+    public void Decrypt_GcmTooShort_ThrowsCryptographicException()
+    {
+        var provider = CreateProvider();
+        var input = new byte[1];
+        input[0] = 0x02;
+
+        var act = () => provider.DecryptBytes(input);
+
+        act.Should().Throw<CryptographicException>()
+            .WithMessage(AesGcm.IsSupported ? "*密文数据格式无效*" : "*AesGcm*");
+    }
+
+    /// <summary>往返一致性：空明文 / 1 字节 / 1MB，覆盖 0x02 与 0x03 两种格式。</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RoundTrip_AllProducedFormats(bool requireCrossRuntimePortable)
+    {
+        var provider = CreateProvider(requireCrossRuntimePortable: requireCrossRuntimePortable);
+        var large = new string('x', 1024 * 1024);
+
+        foreach (var plain in new[] { string.Empty, "a", "Hello, 世界! @#$%", large })
+        {
+            provider.Decrypt(provider.Encrypt(plain)).Should().Be(plain);
+        }
+    }
+
+    /// <summary>边界：二进制 API 的空数组与 1 字节往返。</summary>
+    [Fact]
+    public void RoundTrip_EmptyAndSingleByteBytes()
+    {
+        var provider = CreateProvider();
+
+        provider.DecryptBytes(provider.EncryptBytes(Array.Empty<byte>())).Should().BeEmpty();
+        provider.DecryptBytes(provider.EncryptBytes(new byte[] { 0xAB })).Should().Equal(new byte[] { 0xAB });
+    }
+
+    /// <summary>完整性：0x02 与 0x03 密文的密文位 / nonce(IV) 位翻转均必须抛异常。</summary>
+    [Fact]
+    public void Envelope_Tamper_AnyFormat_Throws()
+    {
+        foreach (var portable in new[] { false, true })
+        {
+            var provider = CreateProvider(requireCrossRuntimePortable: portable);
+
+            var tail = Convert.FromBase64String(provider.Encrypt("tamper me"));
+            tail[^1] ^= 0x01;
+            Action tailAct = () => provider.DecryptBytes(tail);
+            tailAct.Should().Throw<CryptographicException>();
+
+            var head = Convert.FromBase64String(provider.Encrypt("tamper me"));
+            head[1] ^= 0x01;   // nonce / IV 首字节，均在 MAC/tag 覆盖范围内
+            Action headAct = () => provider.DecryptBytes(head);
+            headAct.Should().Throw<CryptographicException>();
+        }
+    }
+
+    /// <summary>BC-AE2 防回潮：<c>EnableAuthenticatedEncryption</c> 已从公开面移除。</summary>
+    [Fact]
+    public void PublicApi_EnableAuthenticatedEncryption_Removed()
+    {
+        typeof(AesEncryptionOptions).GetProperty("EnableAuthenticatedEncryption").Should().BeNull();
+
+        foreach (var name in new[]
+                 {
+                     "Mud.HttpUtils.Abstractions/PublicAPI/netstandard2.0/PublicAPI.Unshipped.txt",
+                     "Mud.HttpUtils.Abstractions/PublicAPI/net6.0/PublicAPI.Unshipped.txt",
+                     "Mud.HttpUtils.Abstractions/PublicAPI/net8.0/PublicAPI.Unshipped.txt",
+                     "Mud.HttpUtils.Abstractions/PublicAPI/net10.0/PublicAPI.Unshipped.txt",
+                 })
+        {
+            var path = Path.Combine(RepoRoot, name);
+            File.Exists(path).Should().BeTrue($"{name} 应存在");
+            File.ReadAllText(path).Should().NotContain("EnableAuthenticatedEncryption");
+            File.ReadAllText(path).Should().Contain("RequireCrossRuntimePortable.get -> bool");
+        }
+    }
+
+    /// <summary>BC-AE4：<c>RequireCrossRuntimePortable</c> 默认值为 <c>false</c>。</summary>
+    [Fact]
+    public void PublicApi_RequireCrossRuntimePortable_DefaultFalse()
+    {
+        new AesEncryptionOptions { Key = (byte[])TestKey.Clone() }
+            .RequireCrossRuntimePortable.Should().BeFalse();
+    }
+
+    /// <summary>测试工程根目录下的仓库根路径（用于 PublicAPI 基线断言）。</summary>
+    private static string RepoRoot
+    {
+        get
+        {
+            var dir = new DirectoryInfo(AppContext.BaseDirectory);
+            while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Mud.HttpUtils.slnx")))
+                dir = dir.Parent;
+
+            return dir?.FullName ?? AppContext.BaseDirectory;
+        }
     }
 
     #endregion

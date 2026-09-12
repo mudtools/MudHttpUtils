@@ -8,11 +8,11 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Mud.HttpUtils.Observability;
+using Mud.HttpUtils.Resilience.Observability;
 using Polly;
 using Polly.Timeout;
 using System.Collections.Concurrent;
-using Mud.HttpUtils.Observability;
-using Mud.HttpUtils.Resilience.Observability;
 
 namespace Mud.HttpUtils.Resilience;
 
@@ -189,10 +189,10 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             TimeoutStrategy.Pessimistic,
             onTimeoutAsync: (context, timespan, task) =>
             {
-                    MudHttpClientLog.RequestTimeout(_logger, timespan.TotalSeconds);
-                    // R-1：指标 tag 白名单过滤
-                    MudHttpMeter.RetryCounter.Add(1, MudHttpMeter.FilterTags(
-                        new KeyValuePair<string, object?>[] { new("policy_key", policyKey), new("outcome", "timeout") }));
+                MudHttpClientLog.RequestTimeout(_logger, timespan.TotalSeconds);
+                // R-1：指标 tag 白名单过滤
+                MudHttpMeter.RetryCounter.Add(1, MudHttpMeter.FilterTags(
+                    new KeyValuePair<string, object?>[] { new("policy_key", policyKey), new("outcome", "timeout") }));
 
                 // 写入 TimeoutOccurred Span 事件，与 RetryOccurred 对称
                 MudHttpActivitySource.AddActivityEvent(

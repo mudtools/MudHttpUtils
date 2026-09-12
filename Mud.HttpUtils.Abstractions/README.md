@@ -83,9 +83,19 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 | 类型                   | 说明                                                            |
 | ---------------------- | --------------------------------------------------------------- |
 | `IEncryptionProvider`  | 加密提供程序接口，定义 `Encrypt` 和 `Decrypt` 方法              |
-| `AesEncryptionOptions` | AES 加密配置选项，包含 `Key` 属性和 `Validate()` 验证方法（`IV` 已移除（CFG-27），v1.8.0 起自动随机生成） |
+| `AesEncryptionOptions` | AES 加密配置选项，包含 `Key` 属性、`RequireCrossRuntimePortable` 属性和 `Validate()` 验证方法（`IV` 已移除（CFG-27），v1.8.0 起自动随机生成） |
 
 > `AesEncryptionOptions` 支持通过配置文件绑定（配置节名称：`MudHttpAesEncryption`），密钥长度支持 AES-128（16 字节）、AES-192（24 字节）、AES-256（32 字节）。
+>
+> `DefaultAesEncryptionProvider` **始终使用认证加密**，密文首字节为信封版本前缀，解密仅按该前缀分派（与配置无关）：
+>
+> | 版本 | 布局 | 产出条件 | 可在哪些目标框架解密 |
+> | :--- | :--- | :--- | :--- |
+> | `0x02` | `[0x02][nonce(12)][tag(16)][密文]`（AesGcm） | net8.0/net10.0 且 `AesGcm.IsSupported` 且 `RequireCrossRuntimePortable=false`（默认） | 仅 net8.0+ |
+> | `0x03` | `[0x03][IV(16)][MAC(32)][密文]`（CBC + HMAC-SHA256，Encrypt-then-MAC） | 其余运行时；或 `RequireCrossRuntimePortable=true` | 全部（ns2.0/net6/net8/net10） |
+>
+> 版本字节 `0x00`（保留哨兵）与 `0x01`（v1 裸 CBC，路径已移除）**永不复用**；`0x04`~`0xFF` 预留给未来扩展。
+> 若密文需跨进程传输到低版本目标框架的服务，请在加密侧设置 `RequireCrossRuntimePortable = true`。
 >
 > 通过 `AddMudHttpAesEncryptionFromConfiguration` 扩展方法（位于 `Mud.HttpUtils.Client` 包）从 `IConfiguration` 一键注册：
 >
@@ -409,7 +419,7 @@ TokenInjectionMode (Header, Query, Path, ApiKey, HmacSignature, BasicAuth, Cooki
 TokenTypes (常量: TenantAccessToken, UserAccessToken, Bearer, Basic)
 Response<T> (StatusCode, Content, RawContent, ErrorContent, ResponseHeaders, IsSuccessStatusCode, GetContentOrThrow)
 ApiException (StatusCode, ErrorContent)
-AesEncryptionOptions (Key, Validate) — IV 已移除（CFG-27），v1.8.0 起自动随机生成
+AesEncryptionOptions (Key, RequireCrossRuntimePortable, Validate) — IV 已移除（CFG-27），v1.8.0 起自动随机生成；始终认证加密
 TokenRefreshBackgroundOptions (Enabled, RefreshIntervalSeconds, RetryDelaySeconds, StopOnError)
 [UserTokenCacheOptions — 位于 Mud.HttpUtils.Client]
 ```
