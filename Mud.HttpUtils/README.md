@@ -419,7 +419,8 @@ var result = await uploadApi.UploadAsync(formData);
 public interface IExampleApi { }
 ```
 
-> `BaseAddress` 构造函数和属性已废弃，请通过 `AddMudHttpClient(clientName, baseAddress)` 配置基地址。
+> `BaseAddress` 构造函数与属性已标记 `[Obsolete(..., error: true)]` —— 使用会产生**编译错误 `CS0619`**。
+> 请通过 `AddMudHttpClient(clientName, baseAddress)` 或 `AddMudHttpGeneratedClient<T>(clientName)` 配置基地址。
 > 生成器会在注册代码中生成 `client.Timeout` 设置，使 Timeout 属性真正生效。
 
 ### HTTP 方法特性

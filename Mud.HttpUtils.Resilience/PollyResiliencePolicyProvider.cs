@@ -130,10 +130,9 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 onRetryAsync: async (outcome, timeSpan, retryCount, context) =>
                 {
                     MudHttpClientLog.RetryAttempting(_logger, timeSpan.TotalMilliseconds, retryCount, retryOptions.MaxRetryAttempts, outcome.Exception);
-                    MudHttpMeter.RetryCounter.Add(1,
-                        new KeyValuePair<string, object?>("policy_key", policyKey),
-                        new KeyValuePair<string, object?>("outcome", "retry"),
-                        new KeyValuePair<string, object?>("retry_count", retryCount));
+                    // R-1：指标 tag 白名单过滤
+                    MudHttpMeter.RetryCounter.Add(1, MudHttpMeter.FilterTags(
+                        new KeyValuePair<string, object?>[] { new("policy_key", policyKey), new("outcome", "retry"), new("retry_count", retryCount) }));
 
                     // 将重试次数写入 Polly Context，供 ResilientHttpClient 在克隆请求时读取并写入请求属性
                     context[RetryCountContextKey] = retryCount;
@@ -190,10 +189,10 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             TimeoutStrategy.Pessimistic,
             onTimeoutAsync: (context, timespan, task) =>
             {
-                MudHttpClientLog.RequestTimeout(_logger, timespan.TotalSeconds);
-                MudHttpMeter.RetryCounter.Add(1,
-                    new KeyValuePair<string, object?>("policy_key", policyKey),
-                    new KeyValuePair<string, object?>("outcome", "timeout"));
+                    MudHttpClientLog.RequestTimeout(_logger, timespan.TotalSeconds);
+                    // R-1：指标 tag 白名单过滤
+                    MudHttpMeter.RetryCounter.Add(1, MudHttpMeter.FilterTags(
+                        new KeyValuePair<string, object?>[] { new("policy_key", policyKey), new("outcome", "timeout") }));
 
                 // 写入 TimeoutOccurred Span 事件，与 RetryOccurred 对称
                 MudHttpActivitySource.AddActivityEvent(
@@ -349,9 +348,9 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 onTimeoutAsync: (context, timespan, task) =>
                 {
                     MudHttpClientLog.RequestTimeoutMs(_logger, timespan.TotalMilliseconds);
-                    MudHttpMeter.RetryCounter.Add(1,
-                        new KeyValuePair<string, object?>("policy_key", policyKey),
-                        new KeyValuePair<string, object?>("outcome", "timeout"));
+                    // R-1：指标 tag 白名单过滤
+                    MudHttpMeter.RetryCounter.Add(1, MudHttpMeter.FilterTags(
+                        new KeyValuePair<string, object?>[] { new("policy_key", policyKey), new("outcome", "timeout") }));
                     return Task.CompletedTask;
                 });
             policy = timeoutPolicy;
@@ -448,10 +447,9 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                     onRetryAsync: async (outcome, timeSpan, retryCount, context) =>
                     {
                         MudHttpClientLog.RetryAttempting(_logger, timeSpan.TotalMilliseconds, retryCount, maxRetries, outcome.Exception);
-                        MudHttpMeter.RetryCounter.Add(1,
-                            new KeyValuePair<string, object?>("policy_key", policyKey),
-                            new KeyValuePair<string, object?>("outcome", "retry"),
-                            new KeyValuePair<string, object?>("retry_count", retryCount));
+                        // R-1：指标 tag 白名单过滤
+                        MudHttpMeter.RetryCounter.Add(1, MudHttpMeter.FilterTags(
+                            new KeyValuePair<string, object?>[] { new("policy_key", policyKey), new("outcome", "retry"), new("retry_count", retryCount) }));
 
                         // 将重试次数写入 Polly Context，供 ResilientHttpClient 在克隆请求时读取并写入请求属性
                         context[RetryCountContextKey] = retryCount;

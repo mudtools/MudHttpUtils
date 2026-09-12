@@ -374,12 +374,13 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
         var tmKey = tokenManagerKey ?? "(unknown)";
 
-        MudHttpMeter.TokenRefreshCounter.Add(1,
-            new KeyValuePair<string, object?>("token_manager_key", tmKey),
-            new KeyValuePair<string, object?>("outcome", outcome));
+        // R-1：指标 tag 白名单过滤
+        var refreshTags = MudHttpMeter.FilterTags(
+            new KeyValuePair<string, object?>[] { new("token_manager_key", tmKey), new("outcome", outcome) });
+        MudHttpMeter.TokenRefreshCounter.Add(1, refreshTags);
 
-        MudHttpMeter.TokenRefreshDuration.Record(elapsedMs,
-            new KeyValuePair<string, object?>("token_manager_key", tmKey));
+        MudHttpMeter.TokenRefreshDuration.Record(elapsedMs, MudHttpMeter.FilterTags(
+            new KeyValuePair<string, object?>[] { new("token_manager_key", tmKey) }));
 
         // 同步写入无锁统计收集器，供健康检查使用
         TokenRefreshStatsCollector.Record(success, tokenManagerKey, elapsedMs, isFallback);

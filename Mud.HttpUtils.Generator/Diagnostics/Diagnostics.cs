@@ -94,13 +94,9 @@ internal static class Diagnostics
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
-    public static readonly DiagnosticDescriptor HttpClientApiBaseAddressObsolete = new(
-        id: "HTTPCLIENT010",
-        title: "HttpClientApiAttribute.BaseAddress 已弃用",
-        messageFormat: "接口 {0} 使用了 HttpClientApiAttribute 的 BaseAddress 参数，该参数已弃用。请改用 AddMudHttpClient(clientName, baseAddress) 配置基地址。",
-        category: "代码生成",
-        DiagnosticSeverity.Warning,
-        isEnabledByDefault: true);
+    // CFG-23：原 HTTPCLIENT010（HttpClientApiAttribute.BaseAddress 已弃用）为死诊断 ——
+    // 该属性/构造函数已标注 [Obsolete(error: true)]，使用处直接产生编译错误 CS0619，生成器无需重复提示。
+    // 描述符已删除，ID HTTPCLIENT010 保留为未使用占位（不重新分配）。
 
     public static readonly DiagnosticDescriptor CacheWithResponseTypeWarning = new(
         id: "HTTPCLIENT011",
@@ -267,6 +263,8 @@ internal static class Diagnostics
     #region AOT JSON 序列化诊断信息 (AOT001-007)
     // 诊断由 HttpJsonContextScaffolder（pre-build 工具）或独立分析器报告。
     // 前缀 AOT 遵循仓库 XXXNNN 约定（3-6 字符前缀 + 3 位数字）。
+    // CFG-24：AOT001~AOT003 的触发点位于脚手架/独立分析器（以字符串 ID 产出），本区域内的描述符
+    // 集中登记 ID 与元数据（供脚手架引用与一致性核对）；与其触发点分离属有意设计，非死代码。
 
     public static readonly DiagnosticDescriptor AotDuplicateSerializerClassName = new(
         id: "AOT001",

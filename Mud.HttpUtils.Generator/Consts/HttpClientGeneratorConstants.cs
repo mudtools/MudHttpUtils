@@ -70,7 +70,8 @@ internal static class HttpClientGeneratorConstants
     public const string HttpClientProperty = "HttpClient";
     public const string IsAbstractProperty = "IsAbstract";
     public const string InheritedFromProperty = "InheritedFrom";
-    public const string BaseAddressProperty = "BaseAddress";
+    // CFG-22：BaseAddressProperty 为死常量（全仓仅定义、无读取），已删除。
+    // [HttpClientApi(BaseAddress = …)] 使用处会直接产生编译错误 CS0619（属性标注 [Obsolete(error: true)]）。
 
     public static readonly string[] BasePathAttributeNames = ["BasePathAttribute", "BasePath"];
 
@@ -82,6 +83,9 @@ internal static class HttpClientGeneratorConstants
     public static readonly string[] InterfacePathAttributeNames = ["InterfacePathAttribute", "InterfacePath"];
     public static readonly string[] HeaderMergeAttributeNames = ["HeaderMergeAttribute", "HeaderMerge"];
     public static readonly string[] SerializationMethodAttributeNames = ["SerializationMethodAttribute", "SerializationMethod"];
+
+    /// <summary>CFG-18：接口级「允许未匹配路由占位符」标记特性名。</summary>
+    public static readonly string[] AllowUnmatchedRouteParametersAttributeNames = ["AllowUnmatchedRouteParametersAttribute", "AllowUnmatchedRouteParameters"];
 
     public static readonly string[] RetryAttributeNames = ["RetryAttribute", "Retry"];
     public static readonly string[] CircuitBreakerAttributeNames = ["CircuitBreakerAttribute", "CircuitBreaker"];

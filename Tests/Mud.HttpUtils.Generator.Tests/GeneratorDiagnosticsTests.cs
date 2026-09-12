@@ -102,6 +102,84 @@ namespace TestNamespace
 
     #endregion
 
+    #region HTTPCLIENT020 - [Retry] on non-idempotent method without AllowNonIdempotent
+
+    [Fact]
+    public void Generator_WithRetryOnPostWithoutAllowNonIdempotent_GeneratesHTTPCLIENT020()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Post(""/orders"")]
+        [Retry(3, 1000)]
+        Task<string> CreateOrderAsync();
+    }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        diagnostics.Should().Contain(d => d.Id == "HTTPCLIENT020");
+        var diagnostic = diagnostics.First(d => d.Id == "HTTPCLIENT020");
+        diagnostic.Severity.Should().Be(DiagnosticSeverity.Warning);
+    }
+
+    [Fact]
+    public void Generator_WithRetryOnPostWithAllowNonIdempotent_NoHTTPCLIENT020()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Post(""/orders"")]
+        [Retry(3, 1000, AllowNonIdempotent = true)]
+        Task<string> CreateOrderAsync();
+    }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        diagnostics.Should().NotContain(d => d.Id == "HTTPCLIENT020");
+    }
+
+    [Fact]
+    public void Generator_WithRetryOnGetWithoutAllowNonIdempotent_NoHTTPCLIENT020()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Get(""/data"")]
+        [Retry(3, 1000)]
+        Task<string> GetDataAsync();
+    }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        diagnostics.Should().NotContain(d => d.Id == "HTTPCLIENT020");
+    }
+
+    #endregion
+
     #region No Diagnostics for Valid Interface
 
     [Fact]

@@ -61,10 +61,9 @@ public class CacheResponseInterceptor(IHttpResponseCache cache, ILogger<CacheRes
         {
             MudHttpClientLog.CacheHit(_logger, key);
             // M1-#6：cache_key 含完整 URL/参数（高基数），不得作为指标 tag（会打爆时序后端）；
-            // 高基数信息保留在下方 Activity 事件中
-            MudHttpMeter.CacheCounter.Add(1,
-                new KeyValuePair<string, object?>("client_name", clientName),
-                new KeyValuePair<string, object?>("outcome", "hit"));
+            // 高基数信息保留在下方 Activity 事件中；R-1：经白名单过滤
+            MudHttpMeter.CacheCounter.Add(1, MudHttpMeter.FilterTags(
+                new KeyValuePair<string, object?>[] { new("client_name", clientName), new("outcome", "hit") }));
 
             // 将缓存命中写入当前 Activity tag（仅 Mud Activity，避免污染外部 Activity）
             if (isMudActivity)
@@ -82,9 +81,9 @@ public class CacheResponseInterceptor(IHttpResponseCache cache, ILogger<CacheRes
         }
 
         value = default;
-        MudHttpMeter.CacheCounter.Add(1,
-            new KeyValuePair<string, object?>("client_name", clientName),
-            new KeyValuePair<string, object?>("outcome", "miss"));
+        // R-1：经指标 tag 白名单过滤
+        MudHttpMeter.CacheCounter.Add(1, MudHttpMeter.FilterTags(
+            new KeyValuePair<string, object?>[] { new("client_name", clientName), new("outcome", "miss") }));
 
         // 将缓存未命中写入当前 Activity tag（仅 Mud Activity，避免污染外部 Activity）
         if (isMudActivity)

@@ -16,6 +16,17 @@ public sealed class RetryAttribute : Attribute
         MaxRetries = maxRetries;
     }
 
+    /// <summary>
+    /// 初始化 <see cref="RetryAttribute"/>，同时指定最大重试次数与重试延迟。
+    /// </summary>
+    /// <param name="maxRetries">最大重试次数。</param>
+    /// <param name="delayMilliseconds">重试延迟（毫秒）。</param>
+    public RetryAttribute(int maxRetries, int delayMilliseconds)
+    {
+        MaxRetries = maxRetries;
+        DelayMilliseconds = delayMilliseconds;
+    }
+
     /// <summary>最大重试次数。</summary>
     public int MaxRetries { get; set; }
 

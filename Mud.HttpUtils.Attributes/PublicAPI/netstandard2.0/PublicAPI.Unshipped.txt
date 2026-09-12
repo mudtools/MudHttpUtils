@@ -120,6 +120,7 @@ Mud.HttpUtils.Attributes.HttpClientApiAttribute
 Mud.HttpUtils.Attributes.HttpClientApiAttribute.BaseAddress.get -> string?
 Mud.HttpUtils.Attributes.HttpClientApiAttribute.ContentType.get -> string!
 Mud.HttpUtils.Attributes.HttpClientApiAttribute.ContentType.set -> void
+const Mud.HttpUtils.Attributes.HttpClientApiAttribute.DefaultTimeoutSeconds = 50 -> int
 Mud.HttpUtils.Attributes.HttpClientApiAttribute.HttpClient.get -> string?
 Mud.HttpUtils.Attributes.HttpClientApiAttribute.HttpClient.set -> void
 Mud.HttpUtils.Attributes.HttpClientApiAttribute.HttpClientApiAttribute() -> void
@@ -240,6 +241,7 @@ Mud.HttpUtils.Attributes.RetryAttribute.DelayMilliseconds.set -> void
 Mud.HttpUtils.Attributes.RetryAttribute.MaxRetries.get -> int
 Mud.HttpUtils.Attributes.RetryAttribute.MaxRetries.set -> void
 Mud.HttpUtils.Attributes.RetryAttribute.RetryAttribute(int maxRetries = 3) -> void
+Mud.HttpUtils.Attributes.RetryAttribute.RetryAttribute(int maxRetries, int delayMilliseconds) -> void
 Mud.HttpUtils.Attributes.RetryAttribute.UseExponentialBackoff.get -> bool
 Mud.HttpUtils.Attributes.RetryAttribute.UseExponentialBackoff.set -> void
 Mud.HttpUtils.Attributes.SensitiveDataAttribute

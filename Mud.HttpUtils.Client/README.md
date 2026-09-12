@@ -85,6 +85,21 @@ DI 服务依赖（ILogger / IHttpRequestInterceptor / IHttpResponseInterceptor /
 | `Logger` | ✅（DI） | ✅ | ⚠️ 固定 `NullLogger`（无 DI 路径） |
 | `RestService.ForGenerated<T>(IServiceProvider)` | — | — | 从容器解析全部依赖，**不接受** `GeneratedClientOptions` |
 
+#### AOT JSON 解析器优先级链（CFG-17）
+
+`IJsonTypeInfoResolver` 有多处来源，优先级从高到低：
+
+```
+① EnhancedHttpClientOptions.JsonTypeInfoResolver        （编程式，net8+）
+  → ② IOptions<JsonSerializerOptions>.TypeInfoResolver   （DI 注册）
+  → ③ MudHttpJsonContext.Default                          （库内置源生成上下文）
+  → ④ 反射回退                                            （非 AOT 安全）
+```
+
+> - ①/② 由 `HttpContentSerializerFactory.CreateDefault(jsonOptions?.Value, jsonTypeInfoResolver)` 合并，来源互不排斥、可叠加。
+> - ③ 始终参与合并（`AddMudHttpClientJsonContext` / `AddMudHttpContentSerializer` 注册消费方上下文时亦然）。
+> - `GeneratedClientOptions.JsonTypeInfoResolver`（无 DI 路径）**不参与**该链 —— 该路径的 AOT 元数据请通过 `GeneratedClientOptions.ContentSerializer` 携带（见 CFG-06）。
+
 #### 可观测性全局开关（`MudHttpObservabilityOptions`，CFG-D10）
 
 `MudHttpObservabilityOptions`（位于 `Mud.HttpUtils.Abstractions`）以**静态属性**提供模块级开关（测试翻转后须在 `finally` 恢复）：
@@ -407,6 +422,8 @@ services.AddMudHttpClientsFromConfiguration(configuration);
 > - 如需从配置文件控制缓存参数，使用 `AddMudHttpClientsFromConfiguration`（内部自动读取 `ResponseCache` 子节）。
 > - 如需代码硬编码缓存参数，使用 `AddHttpResponseCache(maxCacheSize, cleanupIntervalSeconds)`。
 > - 如需完全自定义缓存实现，直接注册 `IHttpResponseCache`。
+>
+> **CFG-16**：两者同时配置且配置节设置了非默认值时，启动期记录警告日志（`EventId 117`，"响应缓存双入口同时配置"），避免配置被静默忽略。
 
 ### 令牌恢复配置
 

@@ -993,6 +993,12 @@ internal class MethodGenerator : ICodeFragmentGenerator
         if (string.IsNullOrEmpty(urlTemplate))
             return;
 
+        // CFG-18：接口标记 [AllowUnmatchedRouteParameters] 时，URL 模板中的未匹配 {token} 占位符
+        // 有意保留为字面量（交由 DelegatingHandler/拦截器在运行时重写），跳过 HTTPCLIENT013 校验。
+        if (AttributeDataHelper.HasAttribute(
+                context.InterfaceSymbol!, HttpClientGeneratorConstants.AllowUnmatchedRouteParametersAttributeNames))
+            return;
+
         var templatePlaceholders = ExtractPathPlaceholders(urlTemplate);
         if (templatePlaceholders.Count == 0)
             return;

@@ -4,9 +4,9 @@ using Mud.HttpUtils.Resilience;
 namespace Mud.HttpUtils.Resilience.Tests;
 
 /// <summary>
-/// ShouldRetry 行为测试：验证重试状态码判断逻辑（问题 7 修复验证）。
+/// ShouldRetry 行为测试：验证重试状态码判断逻辑（问题 7 / M3-#20 修复验证）。
 /// 在 netstandard2.0 下，HttpRequestException 没有 StatusCode 属性，
-/// ShouldRetry 通过 Data["HttpStatusCode"] 和消息解析进行判断。
+/// ShouldRetry 通过 Data["HttpStatusCode"] 获取结构化状态码（无状态码 = 传输层故障，判定重试）。
 /// </summary>
 public class ShouldRetryTests
 {

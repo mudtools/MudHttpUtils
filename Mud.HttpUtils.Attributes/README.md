@@ -76,7 +76,7 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 
 | 特性                     | 用途             | 目标                 | 关键属性                                   |
 | ------------------------ | ---------------- | -------------------- | ------------------------------------------ |
-| `SensitiveDataAttribute` | 标记敏感数据属性 | Property / Parameter | `MaskMode`, `PrefixLength`, `SuffixLength` |
+| `SensitiveDataAttribute` | 标记敏感数据属性 | Property（**仅属性**，CFG-11 收窄） | `MaskMode`, `PrefixLength`, `SuffixLength` |
 
 ### 控制特性
 
@@ -166,7 +166,8 @@ public interface IHttpClientApi { }
 ```
 
 > **注意**：`HttpClient` 与 `TokenManage` 互斥，同时定义时 `HttpClient` 优先。
-> `BaseAddress` 构造函数和属性已废弃，请通过 `AddMudHttpClient(clientName, baseAddress)` 配置基地址。
+> `BaseAddress` 构造函数与属性已标记 `[Obsolete(..., error: true)]` —— 使用会产生**编译错误 `CS0619`**（非警告）。
+> 请通过 `AddMudHttpClient(clientName, baseAddress)` 或 `AddMudHttpGeneratedClient<T>(clientName)` 配置基地址。
 
 ### 全部属性
 
@@ -179,7 +180,7 @@ public interface IHttpClientApi { }
 | `RegistryGroupName` | `string?` | `null`               | 注册组名称，影响生成的注册方法名                               |
 | `IsAbstract`        | `bool`    | `false`              | 是否生成抽象类                                                 |
 | `InheritedFrom`     | `string?` | `null`               | 继承的基类名称                                                 |
-| `BaseAddress`       | `string?` | `null`               | ⚠️ 已过时：构造函数与属性均已废弃，请通过 `AddMudHttpClient(clientName, baseAddress)` 配置基地址 |
+| `BaseAddress`       | `string?` | `null`               | ⚠️ 已过时：构造函数与属性均 `[Obsolete(error: true)]`，使用即**编译错误 `CS0619`**；请通过 `AddMudHttpClient(clientName, baseAddress)` 配置基地址 |
 
 ## BodyAttribute 详解
 
@@ -440,6 +441,12 @@ Task DownloadWithProgressAsync(int id, [FilePath] string savePath, IProgress<lon
 | `MaskMode`     | `SensitiveDataMaskMode` | `Mask` | 脱敏模式                    |
 | `PrefixLength` | `int`                   | `2`    | 前缀保留长度（`Mask` 模式） |
 | `SuffixLength` | `int`                   | `2`    | 后缀保留长度（`Mask` 模式） |
+
+> **作用目标（CFG-11）**：`[SensitiveData]` **仅对对象属性生效** —— `DefaultSensitiveDataMasker` 通过反射遍历 `Type.GetProperties()` 读取该特性；
+> `AotSafeSensitiveDataMasker` 则由编译期注册驱动，完全忽略该特性。
+> `AttributeUsage` 已收窄为仅 `Property`：标注在**方法参数**上会产生编译错误 `CS0592`
+> （此前允许标注但不会产生任何掩码效果，属静默失效）。
+> 如需对请求体/参数脱敏，请在请求 DTO 的属性上标注，或实现自定义 `ISensitiveDataMasker`。
 
 脱敏模式说明：
 

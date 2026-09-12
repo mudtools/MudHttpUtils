@@ -198,7 +198,8 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
 
         if (_fetchLocks.Count > _maxFetchLocks)
         {
-            System.Diagnostics.Debug.WriteLine(
+            // M3-#24：用 Trace 而非 Debug —— Release 构建下也可见，运维可接入 TraceListener 观测
+            System.Diagnostics.Trace.WriteLine(
                 $"MemoryHttpResponseCache: fetch 锁数量 {_fetchLocks.Count} 超过上限 {_maxFetchLocks}，剩余键均未命中可回收条件（活跃回源中），等待下个清理周期");
         }
     }
@@ -229,7 +230,7 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
             // M3-#24：清理后若仍超限（全部键活跃回源中），记录告警便于观测
             if (_fetchLocks.Count > _maxFetchLocks)
             {
-                System.Diagnostics.Debug.WriteLine(
+                System.Diagnostics.Trace.WriteLine(
                     $"MemoryHttpResponseCache: fetch 锁数量 {_fetchLocks.Count} 仍超过上限 {_maxFetchLocks}，请检查是否存在大量持续失败的回源请求");
             }
         }

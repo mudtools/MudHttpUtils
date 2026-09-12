@@ -218,11 +218,14 @@ public class TokenRecoveryExecutor
                 recoveryActivity.Dispose();
             }
 
-            // 记录恢复指标
+            // 记录恢复指标（R-1：经指标 tag 白名单过滤）
             var outcome = recoverySucceeded ? "success" : "failure";
-            MudHttpMeter.TokenRecoveryCounter.Add(1,
-                new KeyValuePair<string, object?>("token_manager_key", tokenManagerKey ?? "(unknown)"),
-                new KeyValuePair<string, object?>("outcome", outcome));
+            MudHttpMeter.TokenRecoveryCounter.Add(1, MudHttpMeter.FilterTags(
+                new KeyValuePair<string, object?>[]
+                {
+                    new("token_manager_key", tokenManagerKey ?? "(unknown)"),
+                    new("outcome", outcome),
+                }));
         }
     }
 

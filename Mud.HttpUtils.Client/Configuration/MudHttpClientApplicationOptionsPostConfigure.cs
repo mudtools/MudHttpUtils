@@ -22,10 +22,15 @@ internal sealed class MudHttpClientApplicationOptionsPostConfigure
     : IPostConfigureOptions<MudHttpClientApplicationOptions>
 {
     private readonly ILogger<MudHttpClientApplicationOptionsPostConfigure> _logger;
+    private readonly bool _explicitResponseCacheRegistered;
 
     public MudHttpClientApplicationOptionsPostConfigure(
-        ILogger<MudHttpClientApplicationOptionsPostConfigure>? logger = null)
-        => _logger = logger ?? NullLogger<MudHttpClientApplicationOptionsPostConfigure>.Instance;
+        ILogger<MudHttpClientApplicationOptionsPostConfigure>? logger = null,
+        ExplicitResponseCacheRegistration? explicitResponseCache = null)
+    {
+        _logger = logger ?? NullLogger<MudHttpClientApplicationOptionsPostConfigure>.Instance;
+        _explicitResponseCacheRegistered = explicitResponseCache is not null;
+    }
 
     /// <inheritdoc />
     public void PostConfigure(string? name, MudHttpClientApplicationOptions options)
@@ -39,6 +44,15 @@ internal sealed class MudHttpClientApplicationOptionsPostConfigure
             {
                 MudHttpClientLog.ClientSkippedMissingBaseAddress(_logger, kvp.Key);
             }
+        }
+
+        // CFG-16：双入口冲突（AddHttpResponseCache 显式注册 + 配置节设置了非默认 ResponseCache）。
+        if (_explicitResponseCacheRegistered
+            && options.ResponseCache is { } cache
+            && (cache.MaxCacheSize != ResponseCacheOptions.DefaultMaxCacheSize
+                || cache.CleanupIntervalSeconds != ResponseCacheOptions.DefaultCleanupIntervalSeconds))
+        {
+            MudHttpClientLog.ResponseCacheConfigurationIgnored(_logger);
         }
     }
 }

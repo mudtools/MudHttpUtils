@@ -5,7 +5,6 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
-using System.IO;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -105,7 +104,7 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
         using var stream = await content.ReadAsStreamAsync().ConfigureAwait(false);
 #endif
         {
-            // M3-#26：空响应体（chunked 无 Content-Length 空体）返回 default 而非抛 JsonException
+            // 空响应体（chunked 无 Content-Length 空体）返回 default 而非抛 JsonException
             return await DeserializeWithEmptyToleranceAsync<T>(
                 stream,
                 s => JsonSerializer.DeserializeAsync<T>(s, opts, cancellationToken),
@@ -149,6 +148,10 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
         Justification = "同上：AOT 下 resolver 恒为源生成；无 resolver 时构造函数已抛 InvalidOperationException，不会走到动态代码。")]
     public T? Deserialize<T>(string json, object? options = null)
     {
+        // 空响应体（chunked 无 Content-Length 空体，经调用方读为空串）返回 default
+        // 而非抛 JsonException，与流式路径 DeserializeWithEmptyToleranceAsync 语义一致
+        if (string.IsNullOrEmpty(json))
+            return default;
 #if NET6_0_OR_GREATER
         if (options is System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> jsonTypeInfo)
         {
@@ -181,7 +184,7 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
         CancellationToken cancellationToken = default)
     {
         await using var stream = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        // M3-#26：与 object? 路径同语义 —— 空响应体返回 default
+        // 与 object? 路径同语义 —— 空响应体返回 default
         return await DeserializeWithEmptyToleranceAsync<T>(
             stream,
             s => JsonSerializer.DeserializeAsync(s, typeInfo, cancellationToken),
@@ -213,7 +216,7 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
     }
 
     /// <summary>
-    /// M3-#26：空响应体容忍反序列化 —— 空流返回 <c>default(T)</c>，非空流照常反序列化。
+    /// 空响应体容忍反序列化 —— 空流返回 <c>default(T)</c>，非空流照常反序列化。
     /// </summary>
     /// <remarks>
     /// 背景：chunked 响应无 Content-Length，空体不会命中调用方的 <c>Content-Length == 0</c> 预检，
@@ -243,7 +246,7 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
     }
 
     /// <summary>
-    /// M3-#26：从流中预读 1 字节；流已结束（空体）返回 null。
+    /// 从流中预读 1 字节；流已结束（空体）返回 null。
     /// </summary>
     private static async Task<byte?> ReadFirstByteAsync(Stream stream, CancellationToken cancellationToken)
     {
@@ -257,7 +260,7 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
     }
 
     /// <summary>
-    /// M3-#26：把预读的首字节拼回流头部的只读转发装饰器（用于不可 seek 流的"先探测后反序列化"）。
+    /// 把预读的首字节拼回流头部的只读转发装饰器（用于不可 seek 流的"先探测后反序列化"）。
     /// 不拥有内部流 —— 响应流的释放由 <see cref="HttpResponseMessage"/> 负责。
     /// </summary>
     private sealed class PrependedByteStream : Stream

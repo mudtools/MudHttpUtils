@@ -151,7 +151,7 @@ internal static class MudHttpObservability
         if (statusCode > 0)
             tags.Add(new("status_code", statusCode));
 
-        var tagsArray = tags.ToArray();
+        var tagsArray = MudHttpMeter.FilterTags(tags.ToArray());
         MudHttpMeter.RequestCounter.Add(1, tagsArray);
         MudHttpMeter.RequestDuration.Record(elapsedMs, tagsArray);
     }
@@ -187,7 +187,8 @@ internal static class MudHttpObservability
 #endif
         }
 
-        var tags = BuildRequestTags(clientName, request, outcome: "error").ToArray();
+        // R-1：指标 tag 白名单过滤（默认白名单 = 全部内建维度，零分配快路径直接返回原数组）
+        var tags = MudHttpMeter.FilterTags(BuildRequestTags(clientName, request, outcome: "error").ToArray());
         MudHttpMeter.RequestCounter.Add(1, tags);
         MudHttpMeter.RequestDuration.Record(elapsedMs, tags);
     }

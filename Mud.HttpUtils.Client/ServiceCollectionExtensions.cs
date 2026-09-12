@@ -264,6 +264,38 @@ public static class HttpClientServiceCollectionExtensions
     }
 
     /// <summary>
+    /// 以编程式委托配置 AES 加密选项，并注册 <see cref="IEncryptionProvider"/>（AOT 友好，CFG-26）。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="AddMudHttpAesEncryptionFromConfiguration"/> 等价，但不使用 <c>IConfiguration</c> 反射绑定，
+    /// 因此可用于 Native AOT 场景（后者消息中引用的正是本重载）。
+    /// </remarks>
+    /// <param name="services">服务集合。</param>
+    /// <param name="configure">配置 AES 加密选项的委托（可选）。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> 为 null 时抛出。</exception>
+    public static IServiceCollection AddMudHttpAesEncryption(
+        this IServiceCollection services,
+        Action<AesEncryptionOptions>? configure = null)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        if (configure != null)
+        {
+            services.Configure(configure);
+        }
+        else
+        {
+            services.AddOptions<AesEncryptionOptions>();
+        }
+
+        services.TryAddSingleton<IValidateOptions<AesEncryptionOptions>, AesEncryptionOptionsValidator>();
+        services.TryAddSingleton<IEncryptionProvider, DefaultAesEncryptionProvider>();
+        return services;
+    }
+
+    /// <summary>
     /// 添加基于 <see cref="IHttpClientFactory"/> 的 <see cref="HttpClientFactoryEnhancedClient"/> 到依赖注入容器，
     /// 并注册为 <see cref="IEnhancedHttpClient"/> 服务，同时配置 HttpClient 的基础地址。
     /// </summary>
@@ -401,6 +433,9 @@ public static class HttpClientServiceCollectionExtensions
 
         services.TryAddSingleton<IHttpResponseCache>(sp =>
             new MemoryHttpResponseCache(maxCacheSize, cleanupIntervalSeconds));
+
+        // CFG-16：登记显式注册标记，供 MudHttpClientApplicationOptionsPostConfigure 检测与配置节的双入口冲突。
+        services.TryAddSingleton<ExplicitResponseCacheRegistration>();
 
         return services;
     }
@@ -889,6 +924,39 @@ public static class HttpClientServiceCollectionExtensions
         services.TryAddSingleton<IPostConfigureOptions<OAuth2Options>>(sp =>
             new OAuth2OptionsPostConfigure(sp.GetService<ILogger<OAuth2OptionsPostConfigure>>()));
         // 注册校验器，在选项绑定时验证必填字段和端点 HTTPS 一致性
+        services.TryAddSingleton<IValidateOptions<OAuth2Options>, OAuth2OptionsValidator>();
+        return services;
+    }
+
+    /// <summary>
+    /// 以编程式委托配置 OAuth2 选项（AOT 友好，CFG-26）。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="AddMudHttpOAuth2FromConfiguration"/> 等价，但不使用 <c>IConfiguration</c> 反射绑定，
+    /// 因此可用于 Native AOT 场景（后者消息中引用的正是本重载）。
+    /// </remarks>
+    /// <param name="services">服务集合。</param>
+    /// <param name="configure">配置 OAuth2 选项的委托（可选）。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> 为 null 时抛出。</exception>
+    public static IServiceCollection AddMudHttpOAuth2(
+        this IServiceCollection services,
+        Action<OAuth2Options>? configure = null)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        if (configure != null)
+        {
+            services.Configure(configure);
+        }
+        else
+        {
+            services.AddOptions<OAuth2Options>();
+        }
+
+        services.TryAddSingleton<IPostConfigureOptions<OAuth2Options>>(sp =>
+            new OAuth2OptionsPostConfigure(sp.GetService<ILogger<OAuth2OptionsPostConfigure>>()));
         services.TryAddSingleton<IValidateOptions<OAuth2Options>, OAuth2OptionsValidator>();
         return services;
     }

@@ -9,12 +9,20 @@ namespace Mud.HttpUtils.Attributes;
 
 
 /// <summary>
-/// 标记属性或参数为敏感数据，在日志记录时进行掩码处理。
+/// 标记属性为敏感数据，在日志记录时进行掩码处理。
 /// </summary>
 /// <remarks>
 /// <para>
-/// 应用于属性或参数上，指示该字段包含敏感数据（如密码、令牌、信用卡号等），
-/// 在日志记录和监控中应进行掩码处理以防止数据泄露。
+/// 指示该属性包含敏感数据（如密码、令牌、信用卡号等），在日志记录和监控中应进行掩码处理以防止数据泄露。
+/// </para>
+/// <para>
+/// <b>CFG-11</b>：本特性<strong>仅对对象属性生效</strong>——<c>DefaultSensitiveDataMasker</c> 通过反射遍历
+/// <c>Type.GetProperties()</c> 读取本特性；<c>AotSafeSensitiveDataMasker</c> 则由编译期注册驱动（忽略本特性）。
+/// </para>
+/// <para>
+/// 因此 <see cref="AttributeUsageAttribute.ValidOn"/> 已收窄为仅 <see cref="AttributeTargets.Property"/>，
+/// 应用于方法参数将产生编译错误 <c>CS0592</c>（原先允许标注在参数上但<strong>不会产生任何掩码效果</strong>，属静默失效）。
+/// 如需对方法参数脱敏，请在请求 DTO 属性上标注本特性，或自定义 <c>ISensitiveDataMasker</c>。
 /// </para>
 /// </remarks>
 /// <example>
@@ -34,7 +42,7 @@ namespace Mud.HttpUtils.Attributes;
 /// }
 /// </code>
 /// </example>
-[AttributeUsage(AttributeTargets.Property | AttributeTargets.Parameter, AllowMultiple = false)]
+[AttributeUsage(AttributeTargets.Property, AllowMultiple = false)]
 public sealed class SensitiveDataAttribute : Attribute
 {
     /// <summary>

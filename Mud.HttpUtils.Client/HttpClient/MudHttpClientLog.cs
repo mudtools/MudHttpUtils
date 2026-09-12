@@ -158,6 +158,10 @@ internal static partial class MudHttpClientLog
         Message = "AesEncryptionOptions.EnableAuthenticatedEncryption = false：加密将退化为裸 CBC（无完整性校验），存在填充预言（padding oracle）风险。生产环境请开启认证加密。")]
     public static partial void AuthenticatedEncryptionDisabled(ILogger logger);
 
+    [LoggerMessage(EventId = 117, Level = LogLevel.Warning,
+        Message = "检测到响应缓存双入口同时配置：AddHttpResponseCache 已显式注册 IHttpResponseCache，配置节 MudHttpClients:ResponseCache 将被忽略（TryAddSingleton 先注册者生效）。")]
+    public static partial void ResponseCacheConfigurationIgnored(ILogger logger);
+
     [LoggerMessage(EventId = 118, Level = LogLevel.Debug,
         Message = "客户端 {ClientName} 的 AllowCustomBaseUrls 被覆盖为 {NewValue}（原值 {OldValue}）。")]
     public static partial void AllowCustomBaseUrlsOverridden(ILogger logger, string clientName, bool newValue, bool oldValue);
@@ -185,6 +189,12 @@ internal static partial class MudHttpClientLog
             "AesEncryptionOptions.EnableAuthenticatedEncryption = false：加密将退化为裸 CBC（无完整性校验），存在填充预言（padding oracle）风险。生产环境请开启认证加密。");
     public static void AuthenticatedEncryptionDisabled(ILogger logger)
         => s_authenticatedEncryptionDisabled(logger, null);
+
+    private static readonly Action<ILogger, Exception?> s_responseCacheConfigurationIgnored =
+        LoggerMessage.Define(LogLevel.Warning, new EventId(117, nameof(ResponseCacheConfigurationIgnored)),
+            "检测到响应缓存双入口同时配置：AddHttpResponseCache 已显式注册 IHttpResponseCache，配置节 MudHttpClients:ResponseCache 将被忽略（TryAddSingleton 先注册者生效）。");
+    public static void ResponseCacheConfigurationIgnored(ILogger logger)
+        => s_responseCacheConfigurationIgnored(logger, null);
 
     private static readonly Action<ILogger, string, bool, bool, Exception?> s_allowCustomBaseUrlsOverridden =
         LoggerMessage.Define<string, bool, bool>(LogLevel.Debug, new EventId(118, nameof(AllowCustomBaseUrlsOverridden)),

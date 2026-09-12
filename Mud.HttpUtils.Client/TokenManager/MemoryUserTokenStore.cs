@@ -89,10 +89,18 @@ public class MemoryUserTokenStore : IUserTokenStore
     public Task<string?> GetAccessTokenAsync(string userId, string tokenType, CancellationToken cancellationToken = default)
     {
         if (_userStore.TryGetValue(userId, out var userTokens) &&
-            userTokens.TryGetValue(tokenType, out var entry) &&
-            entry.ExpiresAt > DateTimeOffset.UtcNow)
+            userTokens.TryGetValue(tokenType, out var entry))
         {
-            return Task.FromResult<string?>(entry.AccessToken);
+            if (entry.ExpiresAt > DateTimeOffset.UtcNow)
+                return Task.FromResult<string?>(entry.AccessToken);
+
+            // 过期条目条件移除（按引用比对），避免陈旧条目滞留内存直到 ClearUserAsync
+#if NET5_0_OR_GREATER
+            userTokens.TryRemove(new KeyValuePair<string, MemoryTokenStore.TokenEntry>(tokenType, entry));
+#else
+            // ns2.0 无 TryRemove(KeyValuePair) 重载，回退普通移除（弱一致：误删会被下次 Set 恢复）
+            userTokens.TryRemove(tokenType, out _);
+#endif
         }
 
         return Task.FromResult<string?>(null);

@@ -36,9 +36,12 @@ namespace Mud.HttpUtils.Attributes;
 /// 
 /// 注册和使用：
 /// <code>
-/// // 注册
-/// builder.Services.AddMudHttpClient&lt;IUserApi&gt;("UserApi", "https://api.example.com");
-/// 
+/// // 注册（推荐：为标记 [HttpClientApi] 的接口注册源生成客户端）
+/// builder.Services.AddMudHttpGeneratedClient&lt;IUserApi&gt;("UserApi");
+///
+/// // 或先注册命名 HttpClient 的基地址
+/// builder.Services.AddMudHttpClient("UserApi", "https://api.example.com");
+///
 /// // 使用
 /// var userApi = serviceProvider.GetRequiredService&lt;IUserApi&gt;();
 /// var user = await userApi.GetUserAsync(123);

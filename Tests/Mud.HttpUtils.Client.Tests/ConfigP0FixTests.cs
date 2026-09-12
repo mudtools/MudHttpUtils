@@ -8,6 +8,7 @@
 using System.Reflection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Mud.HttpUtils.Attributes;
 
@@ -27,6 +28,20 @@ public class ConfigP0FixTests
     {
         HttpClientApiAttribute.DefaultTimeoutSeconds.Should().Be(50);
         new HttpClientApiAttribute().Timeout.Should().Be(50);
+    }
+
+    // ---------------------------------------------------------------
+    // CFG-11：SensitiveDataAttribute 仅对属性生效
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void CFG11_SensitiveDataAttribute_OnlyTargetsProperty()
+    {
+        var usage = typeof(SensitiveDataAttribute).GetCustomAttribute<AttributeUsageAttribute>();
+
+        usage.Should().NotBeNull();
+        // 标注在方法参数上会产生编译错误 CS0592（原允许但无任何掩码效果 → 静默失效）。
+        usage!.ValidOn.Should().Be(AttributeTargets.Property);
     }
 
     // ---------------------------------------------------------------
@@ -225,5 +240,65 @@ public class ConfigP0FixTests
         var act = () => _ = provider.GetRequiredService<IOptions<MudHttpClientApplicationOptions>>().Value;
 
         act.Should().NotThrow();
+    }
+
+    // ---------------------------------------------------------------
+    // CFG-16：响应缓存双入口（AddHttpResponseCache + 配置节）
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void CFG16_DualResponseCacheEntries_LogsWarning()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpClients:Clients:api:BaseAddress"] = "https://api.example.com",
+                ["MudHttpClients:ResponseCache:MaxCacheSize"] = "2000",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        var loggerProvider = new CollectingLoggerProvider();
+        services.AddLogging(b => b.AddProvider(loggerProvider));
+
+        services.AddHttpResponseCache(maxCacheSize: 5000, cleanupIntervalSeconds: 30);
+        services.AddMudHttpClientsFromConfiguration(config);
+
+        using var provider = services.BuildServiceProvider();
+        _ = provider.GetRequiredService<IOptions<MudHttpClientApplicationOptions>>().Value;
+
+        loggerProvider.GetLogRecords(LogLevel.Warning)
+            .Should().Contain(r => r.Message.Contains("ResponseCache"));
+    }
+
+    // ---------------------------------------------------------------
+    // CFG-26：AOT 友好的委托式重载
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void CFG26_AddMudHttpAesEncryption_DelegateOverload_RegistersProvider()
+    {
+        var services = new ServiceCollection();
+
+        services.AddMudHttpAesEncryption(o => o.Key = Convert.FromBase64String("MTIzNDU2Nzg5MDEyMzQ1Ng=="));
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetService<IEncryptionProvider>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void CFG26_AddMudHttpOAuth2_DelegateOverload_BindsOptions()
+    {
+        var services = new ServiceCollection();
+
+        services.AddMudHttpOAuth2(o =>
+        {
+            o.ClientId = "cid";
+            o.ClientSecret = "csecret";
+            o.TokenEndpoint = "https://auth.example.com/token";
+        });
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IOptions<OAuth2Options>>().Value.ClientId.Should().Be("cid");
     }
 }

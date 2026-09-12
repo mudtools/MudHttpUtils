@@ -170,6 +170,9 @@ public class DefaultHttpRequestExecutor(
 
         if (isXml && descriptor.XmlSerializer is XmlSerializer xmlSerializer)
         {
+            // chunked 空响应体（读为空串）返回 default，与 JSON 路径语义一致
+            if (string.IsNullOrEmpty(rawContent))
+                return default;
             try
             {
                 using var reader = new StringReader(rawContent);
@@ -249,8 +252,16 @@ public class DefaultHttpRequestExecutor(
                 var isXml = IsXmlContentType(descriptor.ResponseContentType);
                 if (isXml && descriptor.XmlSerializer is XmlSerializer xmlSerializer)
                 {
-                    using var reader = new StringReader(rawContent);
-                    content = xmlSerializer.Deserialize(reader) is TInner typed ? typed : default;
+                    // chunked 空响应体（读为空串）返回 default，与 JSON 路径语义一致
+                    if (string.IsNullOrEmpty(rawContent))
+                    {
+                        content = default;
+                    }
+                    else
+                    {
+                        using var reader = new StringReader(rawContent);
+                        content = xmlSerializer.Deserialize(reader) is TInner typed ? typed : default;
+                    }
                 }
                 else
                 {
@@ -348,14 +359,46 @@ public class DefaultHttpRequestExecutor(
 
         try
         {
+            // N-2：成功响应体守卫 —— Content-Length 预判 + 读取阶段守卫流（与 ReadContentAsync /
+            // EnhancedHttpClient.DownloadFileAsync 语义一致），超限抛 ApiRequestException 防 OOM
+            if (_maxSuccessResponseBytes > 0)
+            {
+                var contentLength = response.Content.Headers.ContentLength;
+                if (contentLength > _maxSuccessResponseBytes)
+                {
+                    throw new ApiRequestException(
+                        $"成功响应体大小 {contentLength.Value} 字节超过限制 {_maxSuccessResponseBytes} 字节",
+                        requestUri: Helpers.SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()));
+                }
+
 #if NET6_0_OR_GREATER
-            var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+                var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 #else
-            var bytes = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+                var contentStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 #endif
-            var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
-            RecordDownloadCompleted(request, clientName, bytes?.Length ?? 0, elapsedMs);
-            return bytes;
+                using var guardedContent = new StreamContent(
+                    new Helpers.SuccessResponseGuardStream(contentStream, _maxSuccessResponseBytes,
+                        Helpers.SensitiveUrlRedactor.Redact(request.RequestUri?.ToString())));
+                if (response.Content.Headers.ContentType != null)
+                    guardedContent.Headers.ContentType = response.Content.Headers.ContentType;
+#if NET6_0_OR_GREATER
+                var bytes = await guardedContent.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+#else
+                var bytes = await guardedContent.ReadAsByteArrayAsync().ConfigureAwait(false);
+#endif
+                var elapsed = sw.GetElapsedTime().TotalMilliseconds;
+                RecordDownloadCompleted(request, clientName, bytes?.Length ?? 0, elapsed);
+                return bytes;
+            }
+
+#if NET6_0_OR_GREATER
+            var unguardedBytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+#else
+            var unguardedBytes = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+#endif
+            var elapsedMs2 = sw.GetElapsedTime().TotalMilliseconds;
+            RecordDownloadCompleted(request, clientName, unguardedBytes?.Length ?? 0, elapsedMs2);
+            return unguardedBytes;
         }
         catch (Exception ex)
         {
@@ -887,11 +930,12 @@ public class DefaultHttpRequestExecutor(
                 new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
             });
 
-        var tags = new KeyValuePair<string, object?>[]
+        // R-1：指标 tag 白名单过滤
+        var tags = MudHttpMeter.FilterTags(new KeyValuePair<string, object?>[]
         {
             new("client_name", clientName ?? "(default)"),
             new("outcome", "success"),
-        };
+        });
         MudHttpMeter.DownloadBytesCounter.Add(bytes, tags);
         MudHttpMeter.DownloadDuration.Record(elapsedMs, tags);
     }
@@ -916,11 +960,12 @@ public class DefaultHttpRequestExecutor(
                 new KeyValuePair<string, object?>("exception_type", ex.GetType().Name),
             });
 
-        var tags = new KeyValuePair<string, object?>[]
+        // R-1：指标 tag 白名单过滤
+        var tags = MudHttpMeter.FilterTags(new KeyValuePair<string, object?>[]
         {
             new("client_name", clientName ?? "(default)"),
             new("outcome", "error"),
-        };
+        });
         MudHttpMeter.DownloadDuration.Record(elapsedMs, tags);
     }
 }

@@ -129,7 +129,7 @@ internal class QueryParameterBinder : IParameterBinder
         }
         else if (TypeDetectionHelper.IsStringType(param.Type))
         {
-            // Add() 内部已跳过 null/空白值；allowNull 时改用 AddAllowNull 保留显式空值（?q=）。
+            // Add() 仅过滤 null（M2-#16A：空串/空白是显式值，按 "key=" 保留）；allowNull 时改用 AddAllowNull 保留 null 空值（?q=）。
             var method = allowNull ? "AddAllowNull" : "Add";
             codeBuilder.AppendLine($"{indent}__queryParams.{method}(\"{escapedName}\", {param.Name});");
         }

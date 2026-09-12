@@ -30,7 +30,7 @@ public interface IEnhancedClientConfig
     /// <summary>
     /// 获取或设置错误响应体最大读取字符数（防止恶意/超大错误响应导致 OOM）。
     /// </summary>
-    /// <value>默认为 <c>null</c>（无限制）。设置后错误响应体截断到指定字符数。</value>
+    /// <value>默认为 <c>null</c>（使用默认上限 <c>10240</c> 字符；设为 <c>0</c> 或负数表示不限制）。</value>
     int? MaxExceptionContentLength { get; set; }
 
     /// <summary>

@@ -377,6 +377,32 @@ namespace TestNamespace
     }
 
     /// <summary>
+    /// 场景 13b: [Retry(AllowNonIdempotent = true)] —— POST 方法显式放行非幂等重试（M2-#12），
+    /// 生成代码应向请求写入 AllowNonIdempotentRetryPropertyKey 放行标记。
+    /// </summary>
+    [Fact]
+    public Task Snapshot_RetryAllowNonIdempotent_ShouldEmitRetryFlag()
+    {
+        var source = """
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    public interface ITestApi
+    {
+        [Post("/orders")]
+        [Retry(3, 1000, AllowNonIdempotent = true)]
+        Task<string> CreateOrderAsync();
+    }
+}
+""";
+        var (driver, outputCompilation) = VerifyFixture.RunGeneratorDriver(source);
+        return VerifyFixture.VerifyGenerator(driver, outputCompilation);
+    }
+
+    /// <summary>
     /// 场景 14: [Timeout] 弹性策略。
     /// </summary>
     [Fact]
