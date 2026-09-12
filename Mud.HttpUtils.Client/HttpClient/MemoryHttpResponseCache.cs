@@ -48,18 +48,22 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
         {
             if (entry.ExpireTime > DateTimeOffset.UtcNow)
             {
-                entry.LastAccessTime = Interlocked.Increment(ref _accessCounter);
-
-                if (entry.UseSlidingExpiration && entry.SlidingWindow > TimeSpan.Zero)
-                {
-                    entry.ExpireTime = DateTimeOffset.UtcNow.Add(entry.SlidingWindow);
-                }
+                // M2-#14：条目不可变 —— 访问时间与滑动过期经 TryUpdate CAS 原子替换，
+                // 并发 TryGet 不会读到半更新状态（ExpireTime/LastAccessTime 撕裂值）。
+                var touched = entry.Touch(Interlocked.Increment(ref _accessCounter));
+                _cache.TryUpdate(key, touched, entry);
 
                 value = (T?)entry.Value;
                 return true;
             }
 
+            // 条件移除（按引用比对），避免"读到旧值 → 他线程已换新值 → 误删新值"
+#if NET5_0_OR_GREATER
+            _cache.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry));
+#else
+            // ns2.0 无 TryRemove(KeyValuePair) 重载，回退普通移除（弱一致：误删会被下次 Set 恢复）
             _cache.TryRemove(key, out _);
+#endif
         }
 
         value = default;
@@ -224,11 +228,15 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
         }
     }
 
+    /// <summary>
+    /// M2-#14：缓存条目为不可变对象；任何状态变更（访问时间/滑动过期顺延）都生成新实例，
+    /// 经 <see cref="ConcurrentDictionary{TKey,TValue}.TryUpdate"/> CAS 原子替换。
+    /// </summary>
     private sealed class CacheEntry
     {
         public object Value { get; }
-        public DateTimeOffset ExpireTime { get; set; }
-        public long LastAccessTime { get; set; }
+        public DateTimeOffset ExpireTime { get; }
+        public long LastAccessTime { get; }
         public bool UseSlidingExpiration { get; }
         public TimeSpan SlidingWindow { get; }
 
@@ -241,5 +249,18 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
             UseSlidingExpiration = useSlidingExpiration;
             SlidingWindow = slidingWindow;
         }
+
+        /// <summary>
+        /// 生成"被访问后"的新条目：刷新访问序号；滑动过期模式下顺延过期时间。
+        /// </summary>
+        public CacheEntry Touch(long accessSequence) =>
+            new CacheEntry(
+                Value,
+                UseSlidingExpiration && SlidingWindow > TimeSpan.Zero
+                    ? DateTimeOffset.UtcNow.Add(SlidingWindow)
+                    : ExpireTime,
+                accessSequence,
+                UseSlidingExpiration,
+                SlidingWindow);
     }
 }

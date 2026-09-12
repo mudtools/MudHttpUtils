@@ -82,7 +82,7 @@ internal static class MethodAnalyzer
 
         var (cacheEnabled, cacheDurationSeconds, cacheKeyTemplate, cacheVaryByUser) = AnalyzeCacheAttribute(methodAttributes);
 
-        var (retryEnabled, retryMaxRetries, retryDelayMilliseconds, retryUseExponentialBackoff) = AnalyzeRetryAttribute(methodAttributes);
+        var (retryEnabled, retryMaxRetries, retryDelayMilliseconds, retryUseExponentialBackoff, retryAllowNonIdempotent) = AnalyzeRetryAttribute(methodAttributes);
         var (circuitBreakerEnabled, circuitBreakerFailureThreshold, circuitBreakerBreakDurationSeconds, circuitBreakerSamplingDurationSeconds, circuitBreakerMinimumThroughput) = AnalyzeCircuitBreakerAttribute(methodAttributes);
         var (methodTimeoutEnabled, methodTimeoutMilliseconds) = AnalyzeTimeoutAttribute(methodAttributes);
 
@@ -148,6 +148,7 @@ internal static class MethodAnalyzer
             RetryMaxRetries = retryMaxRetries,
             RetryDelayMilliseconds = retryDelayMilliseconds,
             RetryUseExponentialBackoff = retryUseExponentialBackoff,
+            RetryAllowNonIdempotent = retryAllowNonIdempotent,
             CircuitBreakerEnabled = circuitBreakerEnabled,
             CircuitBreakerFailureThreshold = circuitBreakerFailureThreshold,
             CircuitBreakerBreakDurationSeconds = circuitBreakerBreakDurationSeconds,
@@ -1178,13 +1179,13 @@ internal static class MethodAnalyzer
         return (true, durationSeconds, keyTemplate, varyByUser);
     }
 
-    private static (bool enabled, int maxRetries, int delayMilliseconds, bool useExponentialBackoff) AnalyzeRetryAttribute(ImmutableArray<AttributeData> attributes)
+    private static (bool enabled, int maxRetries, int delayMilliseconds, bool useExponentialBackoff, bool allowNonIdempotent) AnalyzeRetryAttribute(ImmutableArray<AttributeData> attributes)
     {
         var retryAttr = attributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.RetryAttributeNames.Contains(attr.AttributeClass?.Name));
 
         if (retryAttr == null)
-            return (false, 3, 1000, true);
+            return (false, 3, 1000, true, false);
 
         var maxRetries = AttributeDataHelper.GetAttributeIntValue(
             retryAttr, 0, HttpClientGeneratorConstants.RetryMaxRetriesProperty, 3);
@@ -1195,7 +1196,11 @@ internal static class MethodAnalyzer
         var useExponentialBackoff = AttributeDataHelper.GetBoolValueFromAttribute(
             retryAttr, HttpClientGeneratorConstants.RetryUseExponentialBackoffProperty, true);
 
-        return (true, maxRetries, delayMilliseconds, useExponentialBackoff);
+        // M2-#12：[Retry(AllowNonIdempotent = true)] → 生成代码向请求写入放行标记
+        var allowNonIdempotent = AttributeDataHelper.GetBoolValueFromAttribute(
+            retryAttr, "AllowNonIdempotent", false);
+
+        return (true, maxRetries, delayMilliseconds, useExponentialBackoff, allowNonIdempotent);
     }
 
     private static (bool enabled, int failureThreshold, int breakDurationSeconds, int samplingDurationSeconds, int minimumThroughput) AnalyzeCircuitBreakerAttribute(ImmutableArray<AttributeData> attributes)

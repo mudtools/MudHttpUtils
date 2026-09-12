@@ -1,5 +1,6 @@
-#nullable enable
+﻿#nullable enable
 const Mud.HttpUtils.Resilience.ResilienceConstants.SkipResiliencePropertyKey = "__Mud_HttpUtils_SkipResilience" -> string!
+const Mud.HttpUtils.Resilience.ResilienceOptions.SectionName = "MudHttpResilience" -> string!
 Mud.HttpUtils.Resilience.AppResiliencePolicyResolver
 Mud.HttpUtils.Resilience.AppResiliencePolicyResolver.AppResiliencePolicyResolver(System.Func<string!, Mud.HttpUtils.Resilience.ResilienceOptions?>! optionsFactory, Microsoft.Extensions.Logging.ILogger<Mud.HttpUtils.Resilience.AppResiliencePolicyResolver!>? logger = null) -> void
 Mud.HttpUtils.Resilience.AppResiliencePolicyResolver.ResolveResolver(string! appKey) -> Mud.HttpUtils.IResiliencePolicyResolver?
@@ -69,7 +70,7 @@ Mud.HttpUtils.Resilience.ResilientHttpClient.DeleteAsJsonAsync<TResult>(string! 
 Mud.HttpUtils.Resilience.ResilientHttpClient.DownloadAsync(System.Net.Http.HttpRequestMessage! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]?>!
 Mud.HttpUtils.Resilience.ResilientHttpClient.DownloadLargeAsync(System.Net.Http.HttpRequestMessage! request, string! filePath, bool overwrite = true, int bufferSize = 81920, System.IProgress<long>? progress = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.IO.FileInfo!>!
 Mud.HttpUtils.Resilience.ResilientHttpClient.EncryptBytes(byte[]! data) -> byte[]!
-~Mud.HttpUtils.Resilience.ResilientHttpClient.EncryptContent(object! content, string! propertyName = "data", Mud.HttpUtils.SerializeType serializeType = Mud.HttpUtils.SerializeType.Json) -> string!
+Mud.HttpUtils.Resilience.ResilientHttpClient.EncryptContent(object! content, string! propertyName = "data", Mud.HttpUtils.SerializeType serializeType = Mud.HttpUtils.SerializeType.Json) -> string!
 Mud.HttpUtils.Resilience.ResilientHttpClient.EncryptContent<T>(T content, string! propertyName = "data") -> string!
 Mud.HttpUtils.Resilience.ResilientHttpClient.GetAsync<TResult>(string! requestUri, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
 Mud.HttpUtils.Resilience.ResilientHttpClient.GetXmlAsync<TResult>(string! requestUri, System.Text.Encoding? encoding = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
@@ -87,6 +88,8 @@ Mud.HttpUtils.Resilience.ResilientHttpClient.SendXmlAsync<TResult>(System.Net.Ht
 Mud.HttpUtils.Resilience.ResilientHttpClient.WithBaseAddress(string! baseAddress) -> Mud.HttpUtils.IEnhancedHttpClient!
 Mud.HttpUtils.Resilience.ResilientHttpClient.WithBaseAddress(System.Uri! baseAddress) -> Mud.HttpUtils.IEnhancedHttpClient!
 Mud.HttpUtils.Resilience.RetryOptions
+Mud.HttpUtils.Resilience.RetryOptions.AllowNonIdempotentRetry.get -> bool
+Mud.HttpUtils.Resilience.RetryOptions.AllowNonIdempotentRetry.set -> void
 Mud.HttpUtils.Resilience.RetryOptions.DelayMilliseconds.get -> int
 Mud.HttpUtils.Resilience.RetryOptions.DelayMilliseconds.set -> void
 Mud.HttpUtils.Resilience.RetryOptions.Enabled.get -> bool
@@ -95,11 +98,15 @@ Mud.HttpUtils.Resilience.RetryOptions.MaxRetryAttempts.get -> int
 Mud.HttpUtils.Resilience.RetryOptions.MaxRetryAttempts.set -> void
 Mud.HttpUtils.Resilience.RetryOptions.OnRetry.get -> System.Func<System.Exception?, int, System.TimeSpan, System.Threading.Tasks.Task!>?
 Mud.HttpUtils.Resilience.RetryOptions.OnRetry.set -> void
+Mud.HttpUtils.Resilience.RetryOptions.RetryableHttpMethods.get -> System.Collections.Generic.HashSet<string!>!
+Mud.HttpUtils.Resilience.RetryOptions.RetryableHttpMethods.set -> void
 Mud.HttpUtils.Resilience.RetryOptions.RetryOptions() -> void
 Mud.HttpUtils.Resilience.RetryOptions.RetryStatusCodes.get -> int[]?
 Mud.HttpUtils.Resilience.RetryOptions.RetryStatusCodes.set -> void
 Mud.HttpUtils.Resilience.RetryOptions.UseExponentialBackoff.get -> bool
 Mud.HttpUtils.Resilience.RetryOptions.UseExponentialBackoff.set -> void
+Mud.HttpUtils.Resilience.RetryOptions.UseJitter.get -> bool
+Mud.HttpUtils.Resilience.RetryOptions.UseJitter.set -> void
 Mud.HttpUtils.Resilience.ServiceCollectionExtensions
 Mud.HttpUtils.Resilience.TimeoutOptions
 Mud.HttpUtils.Resilience.TimeoutOptions.Enabled.get -> bool

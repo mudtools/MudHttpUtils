@@ -64,6 +64,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     private readonly int? _maxExceptionContentLength;
     private readonly bool _captureRequestContent;
     private readonly UrlResolutionMode _urlResolution;
+    // N-2：成功响应体可选守卫（0 = 不限制）
+    private readonly long _maxSuccessResponseBytes;
 #if NET6_0_OR_GREATER
     private readonly Version? _httpVersion;
     private readonly System.Net.Http.HttpVersionPolicy? _httpVersionPolicy;
@@ -106,6 +108,61 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     private int EffectiveMaxErrorContentLength => _maxExceptionContentLength ?? MaxErrorContentLength;
 
     /// <summary>
+    /// N-2：成功响应体 Content-Length 预判 —— 已知长度超限时在读取前即抛出，避免无谓的传输与缓冲。
+    /// </summary>
+    /// <remarks>未启用守卫（<c>MaxSuccessResponseBytes &lt;= 0</c>）时不做任何检查。</remarks>
+    private void EnsureSuccessContentLengthWithinLimit(long? contentLength, string? requestUri)
+    {
+        if (_maxSuccessResponseBytes > 0 && contentLength > _maxSuccessResponseBytes)
+        {
+            throw new ApiRequestException(
+                $"成功响应体大小 {contentLength.Value} 字节超过限制 {_maxSuccessResponseBytes} 字节",
+                requestUri: requestUri);
+        }
+    }
+
+    /// <summary>
+    /// N-2：为成功响应体包装守卫流（读取阶段校验，chunked 无 Content-Length 场景兜底）。
+    /// 未启用守卫时原样返回，不产生任何额外开销。
+    /// </summary>
+    private Stream GuardSuccessStream(Stream stream, string? requestUri)
+        => _maxSuccessResponseBytes > 0
+            ? new Helpers.SuccessResponseGuardStream(stream, _maxSuccessResponseBytes, requestUri)
+            : stream;
+
+    /// <summary>
+    /// N-2：读取 XML 成功响应体字符串。启用守卫时经守卫流读取（超限即抛），
+    /// 并透传原 <c>Content-Type</c>（保留 charset 语义）。
+    /// </summary>
+    private async Task<string> ReadXmlContentStringAsync(
+        HttpResponseMessage response, string? requestUri, CancellationToken cancellationToken)
+    {
+        EnsureSuccessContentLengthWithinLimit(response.Content.Headers.ContentLength, requestUri);
+        if (_maxSuccessResponseBytes <= 0)
+        {
+#if NETSTANDARD2_0
+            return await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+#else
+            return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+#endif
+        }
+
+#if NETSTANDARD2_0
+        var xmlStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+#else
+        var xmlStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+#endif
+        using var guardedContent = new StreamContent(GuardSuccessStream(xmlStream, requestUri));
+        if (response.Content.Headers.ContentType != null)
+            guardedContent.Headers.ContentType = response.Content.Headers.ContentType;
+#if NETSTANDARD2_0
+        return await guardedContent.ReadAsStringAsync().ConfigureAwait(false);
+#else
+        return await guardedContent.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+#endif
+    }
+
+    /// <summary>
     /// 初始化增强型HttpClient实例
     /// </summary>
     /// <param name="httpClient">HttpClient实例</param>
@@ -133,6 +190,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         _maxExceptionContentLength = options.MaxExceptionContentLength;
         _captureRequestContent = options.CaptureRequestContent;
         _urlResolution = options.UrlResolution;
+        // N-2：成功响应体可选守卫（0 = 不限制）
+        _maxSuccessResponseBytes = options.MaxSuccessResponseBytes;
 #if NET6_0_OR_GREATER
         _httpVersion = options.HttpVersion;
         _httpVersionPolicy = options.HttpVersionPolicy;
@@ -330,6 +389,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         var activity = alreadyObserved ? null : MudHttpObservability.StartRequestActivity(request, ClientName);
         var sw = alreadyObserved ? default : ValueStopwatch.StartNew();
         var recordedSuccess = false;
+        // M2-#13：三态 —— 真异常才记 error；break/提前退出与完整枚举一样记成功
+        Exception? pendingException = null;
         HttpResponseMessage? response = null;
 
         // 路径 B 兜底：发出 RequestStarted 事件，与 TracingDelegatingHandler 路径 A 保持一致
@@ -371,11 +432,13 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             // Phase 2：ApiException 继承 HttpRequestException，须在前者之前捕获
             catch (ApiException ex)
             {
+                pendingException = ex;
                 _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
                 throw;
             }
             catch (HttpRequestException ex)
             {
+                pendingException = ex;
 #if !NETSTANDARD2_0
                 var statusCode = ex.StatusCode.HasValue ? (int)ex.StatusCode.Value : 0;
                 _logger.HttpRequestFailedWithStatusCode(uri, statusCode, ex);
@@ -386,11 +449,13 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             }
             catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
             {
+                pendingException = ex;
                 _logger.HttpRequestTimeout(uri, _httpClient.Timeout.TotalSeconds, ex);
                 throw new ApiRequestException($"请求超时: {uri}", ex, isTimeout: true, requestUri: uri);
             }
             catch (TaskCanceledException ex)
             {
+                pendingException = ex;
                 _logger.HttpRequestCancelled(uri, ex);
                 throw;
             }
@@ -398,6 +463,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             // 直接重抛避免被下面的 catch-all 包装为 HttpRequestException
             catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {
+                pendingException = ex;
                 _logger.HttpRequestCancelled(uri, ex);
                 throw;
             }
@@ -407,25 +473,45 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             // 调用方无法用统一的 catch (JsonException) 模式处理流式与非流式响应。
             catch (JsonException ex)
             {
+                pendingException = ex;
                 _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
                 throw;
             }
             catch (InvalidOperationException ex)
             {
+                pendingException = ex;
                 _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
                 throw;
             }
             catch (Exception ex)
             {
+                pendingException = ex;
                 _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
                 throw new ApiRequestException($"HTTP请求处理失败: {uri}", ex, requestUri: uri);
             }
 
             var options = jsonSerializerOptions;
 
-            await foreach (var item in ParseNdJsonStreamAsync<TResult>(stream, options, _contentSerializer, cancellationToken).ConfigureAwait(false))
+            // M2-#13：手动驱动枚举器 —— 解析阶段的异常在局部 catch（无 yield）中捕获，
+            // 使 finally 能区分"真异常"与"调用方 break 提前退出"（后者按成功记录）。
+            // （迭代器方法限制：带 catch 的 try 块体内禁止 yield，故不能用 await foreach + 外层 catch。）
+            await using var enumerator = ParseNdJsonStreamAsync<TResult>(stream, options, _contentSerializer, cancellationToken)
+                .GetAsyncEnumerator(cancellationToken);
+            while (true)
             {
-                yield return item;
+                bool hasNext;
+                try
+                {
+                    hasNext = await enumerator.MoveNextAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    pendingException = ex;
+                    throw;
+                }
+                if (!hasNext)
+                    break;
+                yield return enumerator.Current;
             }
 
             LogOperation("流式异步枚举请求完成", uri);
@@ -439,11 +525,35 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             if (!alreadyObserved)
             {
                 var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
-                if (recordedSuccess)
+                // M2-#13：三态 —— faulted 记 error（真实异常）；完整枚举与提前退出（break）都记成功
+                if (pendingException != null)
+                {
+                    MudHttpObservability.RecordError(
+                        activity,
+                        pendingException,
+                        elapsedMs,
+                        ClientName,
+                        request);
+
+                    // RequestFailed 事件（异常类型与实际抛出一致）
+                    MudHttpActivitySource.AddActivityEvent(
+                        MudHttpDiagnosticNames.RequestFailed,
+                        () => new HttpRequestErrorDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, elapsedMs, pendingException),
+                        MudHttpDiagnosticNames.RequestFailed,
+                        new[]
+                        {
+                            new KeyValuePair<string, object?>("method", request.Method.Method),
+                            new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
+                            new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
+                            new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+                            new KeyValuePair<string, object?>("exception_type", pendingException.GetType().Name),
+                        });
+                }
+                else
                 {
                     MudHttpObservability.RecordSuccessFromRequest(activity, request, elapsedMs, ClientName);
 
-                    // RequestStopped 事件
+                    // RequestStopped 事件（recordedSuccess 区分完整枚举与提前退出，仅作为事件 tag，非指标维度）
                     int statusCode = 0;
                     if (MudHttpObservability.TryGetProperty(request, "__mud_status_code", out var sc) && sc is int code)
                         statusCode = code;
@@ -458,30 +568,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                             new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
                             new KeyValuePair<string, object?>("status_code", statusCode),
                             new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
-                        });
-                }
-                else
-                {
-                    var streamEx = new InvalidOperationException("流式异步枚举未成功完成");
-                    MudHttpObservability.RecordError(
-                        activity,
-                        streamEx,
-                        elapsedMs,
-                        ClientName,
-                        request);
-
-                    // RequestFailed 事件
-                    MudHttpActivitySource.AddActivityEvent(
-                        MudHttpDiagnosticNames.RequestFailed,
-                        () => new HttpRequestErrorDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, elapsedMs, streamEx),
-                        MudHttpDiagnosticNames.RequestFailed,
-                        new[]
-                        {
-                            new KeyValuePair<string, object?>("method", request.Method.Method),
-                            new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
-                            new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
-                            new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
-                            new KeyValuePair<string, object?>("exception_type", streamEx.GetType().Name),
+                            new KeyValuePair<string, object?>("stream_completed", recordedSuccess),
                         });
                 }
                 MudHttpObservability.MarkObserved(request);
@@ -524,6 +611,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         var activity = alreadyObserved ? null : MudHttpObservability.StartRequestActivity(request, ClientName);
         var sw = alreadyObserved ? default : ValueStopwatch.StartNew();
         var recordedSuccess = false;
+        // M2-#13：三态 —— 真异常才记 error；break/提前退出与完整枚举一样记成功
+        Exception? pendingException = null;
         HttpResponseMessage? response = null;
 
         // 路径 B 兜底：发出 RequestStarted 事件
@@ -559,49 +648,72 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             }
             catch (ApiException ex)
             {
+                pendingException = ex;
                 _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
                 throw;
             }
             catch (HttpRequestException ex)
             {
+                pendingException = ex;
                 var statusCode = ex.StatusCode.HasValue ? (int)ex.StatusCode.Value : 0;
                 _logger.HttpRequestFailedWithStatusCode(uri, statusCode, ex);
                 throw;
             }
             catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
             {
+                pendingException = ex;
                 _logger.HttpRequestTimeout(uri, _httpClient.Timeout.TotalSeconds, ex);
                 throw new ApiRequestException($"请求超时: {uri}", ex, isTimeout: true, requestUri: uri);
             }
             catch (TaskCanceledException ex)
             {
+                pendingException = ex;
                 _logger.HttpRequestCancelled(uri, ex);
                 throw;
             }
             catch (OperationCanceledException ex) when (cancellationToken.IsCancellationRequested)
             {
+                pendingException = ex;
                 _logger.HttpRequestCancelled(uri, ex);
                 throw;
             }
             catch (JsonException ex)
             {
+                pendingException = ex;
                 _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
                 throw;
             }
             catch (InvalidOperationException ex)
             {
+                pendingException = ex;
                 _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
                 throw;
             }
             catch (Exception ex)
             {
+                pendingException = ex;
                 _logger.HttpRequestFailedWithExceptionType(uri, ex.GetType().Name, ex);
                 throw new ApiRequestException($"HTTP请求处理失败: {uri}", ex, requestUri: uri);
             }
 
-            await foreach (var item in ParseNdJsonStreamAsync(stream, jsonTypeInfo, _contentSerializer, cancellationToken).ConfigureAwait(false))
+            // M2-#13：手动驱动枚举器 —— 解析阶段异常在局部 catch（无 yield）中捕获，与第一个重载同构
+            await using var aotEnumerator = ParseNdJsonStreamAsync(stream, jsonTypeInfo, _contentSerializer, cancellationToken)
+                .GetAsyncEnumerator(cancellationToken);
+            while (true)
             {
-                yield return item;
+                bool hasNext;
+                try
+                {
+                    hasNext = await aotEnumerator.MoveNextAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    pendingException = ex;
+                    throw;
+                }
+                if (!hasNext)
+                    break;
+                yield return aotEnumerator.Current;
             }
 
             LogOperation("流式异步枚举请求完成（AOT 安全）", uri);
@@ -614,7 +726,29 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             if (!alreadyObserved)
             {
                 var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
-                if (recordedSuccess)
+                if (pendingException != null)
+                {
+                    MudHttpObservability.RecordError(
+                        activity,
+                        pendingException,
+                        elapsedMs,
+                        ClientName,
+                        request);
+
+                    MudHttpActivitySource.AddActivityEvent(
+                        MudHttpDiagnosticNames.RequestFailed,
+                        () => new HttpRequestErrorDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, elapsedMs, pendingException),
+                        MudHttpDiagnosticNames.RequestFailed,
+                        new[]
+                        {
+                            new KeyValuePair<string, object?>("method", request.Method.Method),
+                            new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
+                            new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
+                            new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+                            new KeyValuePair<string, object?>("exception_type", pendingException.GetType().Name),
+                        });
+                }
+                else
                 {
                     MudHttpObservability.RecordSuccessFromRequest(activity, request, elapsedMs, ClientName);
 
@@ -632,29 +766,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                             new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
                             new KeyValuePair<string, object?>("status_code", statusCode),
                             new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
-                        });
-                }
-                else
-                {
-                    var streamEx = new InvalidOperationException("流式异步枚举未成功完成");
-                    MudHttpObservability.RecordError(
-                        activity,
-                        streamEx,
-                        elapsedMs,
-                        ClientName,
-                        request);
-
-                    MudHttpActivitySource.AddActivityEvent(
-                        MudHttpDiagnosticNames.RequestFailed,
-                        () => new HttpRequestErrorDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, elapsedMs, streamEx),
-                        MudHttpDiagnosticNames.RequestFailed,
-                        new[]
-                        {
-                            new KeyValuePair<string, object?>("method", request.Method.Method),
-                            new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
-                            new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
-                            new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
-                            new KeyValuePair<string, object?>("exception_type", streamEx.GetType().Name),
+                            new KeyValuePair<string, object?>("stream_completed", recordedSuccess),
                         });
                 }
                 MudHttpObservability.MarkObserved(request);
@@ -1116,6 +1228,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 using var response = await SendAndValidateAsync(httpRequestMessage, cancellationToken).ConfigureAwait(false);
 
                 var contentLength = response.Content.Headers.ContentLength;
+                // N-2：成功响应体守卫（Content-Length 预判 + 读取阶段校验）
+                EnsureSuccessContentLengthWithinLimit(contentLength, requestUri);
                 if (contentLength == 0)
                 {
                     _logger.JsonResponseBodyEmpty(requestUri!);
@@ -1123,9 +1237,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 }
 
 #if NETSTANDARD2_0
-                using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                using var stream = GuardSuccessStream(await response.Content.ReadAsStreamAsync().ConfigureAwait(false), requestUri);
 #else
-                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                await using var stream = GuardSuccessStream(await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false), requestUri);
 #endif
 
                 var options = jsonSerializerOptions;
@@ -1222,11 +1336,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                     return default;
                 }
 
-#if NETSTANDARD2_0
-                var xmlContent = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-#else
-                var xmlContent = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-#endif
+                // N-2：成功响应体守卫（Content-Length 预判 + 读取阶段校验，保留 charset 语义）
+                var xmlContent = await ReadXmlContentStringAsync(response, requestUri, cancellationToken).ConfigureAwait(false);
 
                 if (_enableLogging && _logger.IsEnabled(LogLevel.Debug))
                 {
@@ -1425,9 +1536,23 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             using var response = await SendAndValidateAsync(httpRequestMessage, cancellationToken).ConfigureAwait(false);
 
             var contentLength = response.Content.Headers.ContentLength;
+            // N-2：成功响应体守卫（byte[] 全量缓冲路径；流式落盘走 DownloadLargeAsync，不受守卫约束）
+            EnsureSuccessContentLengthWithinLimit(contentLength, requestUri);
             if (contentLength > 10 * 1024 * 1024)
             {
                 _logger.DownloadFileLarge(requestUri!, contentLength.GetValueOrDefault() / (1024.0 * 1024.0));
+            }
+
+            if (_maxSuccessResponseBytes > 0)
+            {
+#if NETSTANDARD2_0
+                using var guardedStream = GuardSuccessStream(await response.Content.ReadAsStreamAsync().ConfigureAwait(false), requestUri);
+#else
+                await using var guardedStream = GuardSuccessStream(await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false), requestUri);
+#endif
+                using var buffered = new MemoryStream();
+                await guardedStream.CopyToAsync(buffered, DefaultBufferSize, cancellationToken).ConfigureAwait(false);
+                return buffered.ToArray();
             }
 
 #if NETSTANDARD2_0
@@ -1850,13 +1975,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
     private string SanitizeContent(string content, int maxLength = 200)
     {
-        if (_sensitiveDataMasker != null)
-        {
-            var masked = _sensitiveDataMasker.Mask(content);
-            return masked.Length > maxLength ? masked.Substring(0, maxLength) + "..." : masked;
-        }
-
-        return MessageSanitizer.Sanitize(content, maxLength: maxLength);
+        // M2-#18：统一脱敏入口（masker 回退 MessageSanitizer），与生成代码路径共用
+        return MessageSanitizer.SanitizeWith(_sensitiveDataMasker, content, maxLength);
     }
 
     private void LogOperation(string operation, string uri)

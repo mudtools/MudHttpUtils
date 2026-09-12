@@ -74,6 +74,48 @@ public static class HttpClientServiceCollectionExtensions
         return httpClientBuilder;
     }
 
+    /// <summary>
+    /// 注册 SSRF 防护的 IP 准入策略（M2-#8）。默认注册 <see cref="DefaultIpAddressPolicy"/>（拒绝私网/回环/链路本地地址，fail-closed）；
+    /// 如需放行特定网段（如本地调试的 localhost），请自行注册 <see cref="IIpAddressPolicy"/> 替换。
+    /// </summary>
+    /// <remarks>
+    /// 本方法仅注册策略，不改变任何 HttpClient 行为。如需<b>连接期校验</b>（在建立 TCP 连接时对实际建连 IP 执行准入校验，
+    /// 根治 DNS rebinding TOCTOU），请在 <see cref="IHttpClientBuilder"/> 上继续调用
+    /// <see cref="AddMudHttpClientSsrfProtection(IHttpClientBuilder)"/>（net6.0+）。
+    /// </remarks>
+    /// <param name="services">服务集合。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    public static IServiceCollection AddMudHttpClientSsrfProtection(this IServiceCollection services)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        services.TryAddSingleton<IIpAddressPolicy, DefaultIpAddressPolicy>();
+        return services;
+    }
+
+#if NET6_0_OR_GREATER
+    /// <summary>
+    /// 为命中的 HttpClient 启用连接期 SSRF 校验（M2-#8.2，net6.0+）：在建立 TCP 连接时对实际建连的 IP 执行
+    /// <see cref="IIpAddressPolicy.IsAllowed"/> 准入校验，根治 DNS rebinding TOCTOU（URL 校验期与建连期解析结果可能不一致）。
+    /// </summary>
+    /// <remarks>
+    /// 需先注册 <see cref="IIpAddressPolicy"/>（可经 <see cref="AddMudHttpClientSsrfProtection(IServiceCollection)"/>
+    /// 注册默认策略）。被策略拒绝的连接将抛出 <see cref="InvalidOperationException"/>。
+    /// </remarks>
+    /// <param name="builder">HttpClient 构建器。</param>
+    /// <returns><see cref="IHttpClientBuilder"/>（链式调用）。</returns>
+    public static IHttpClientBuilder AddMudHttpClientSsrfProtection(this IHttpClientBuilder builder)
+    {
+        if (builder == null)
+            throw new ArgumentNullException(nameof(builder));
+
+        builder.ConfigurePrimaryHttpMessageHandler(sp =>
+            new SsrfSafeSocketsHttpHandler(sp.GetRequiredService<IIpAddressPolicy>()));
+        return builder;
+    }
+#endif
+
     private static void RegisterNamedClient(
         IServiceCollection services,
         string clientName,
@@ -123,6 +165,8 @@ public static class HttpClientServiceCollectionExtensions
             var contentSerializer = sp.GetService<IHttpContentSerializer>();
             // Phase 2 (T2.1)：从 DI 解析异常擦除器（用户可通过 services.AddSingleton<IExceptionRedactor>() 注册）
             var exceptionRedactor = sp.GetService<IExceptionRedactor>();
+            // M2-#18：从 DI 解析敏感数据掩码器（与 EnhancedHttpClient 的日志脱敏共用同一注册）
+            var sensitiveDataMasker = sp.GetService<ISensitiveDataMasker>();
             // Phase 2 (T2.2/T2.3)：从 IOptions<EnhancedHttpClientOptions> 读取配置（如果已注册）
             var enhancedOptions = sp.GetService<IOptions<EnhancedHttpClientOptions>>()?.Value;
             return new DefaultHttpRequestExecutor(
@@ -132,6 +176,9 @@ public static class HttpClientServiceCollectionExtensions
                 exceptionRedactor: exceptionRedactor,
                 maxExceptionContentLength: enhancedOptions?.MaxExceptionContentLength,
                 captureRequestContent: enhancedOptions?.CaptureRequestContent ?? false,
+                // N-2：成功响应体守卫与 EnhancedHttpClient 路径同源同语义
+                maxSuccessResponseBytes: enhancedOptions?.MaxSuccessResponseBytes ?? 0,
+                sensitiveDataMasker: sensitiveDataMasker,
 #if NET6_0_OR_GREATER
                 httpVersion: enhancedOptions?.HttpVersion,
                 httpVersionPolicy: enhancedOptions?.HttpVersionPolicy,

@@ -124,18 +124,9 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
             .WaitAndRetryAsync(
                 retryOptions.MaxRetryAttempts,
-                retryAttempt =>
-                {
-                    // M-1 修复：添加随机抖动(Jitter)，避免高并发下多实例同步重试导致"重试风暴"。
-                    // 退避 = 基础退避 + [0, baseDelay/4) 的随机抖动
-                    var baseDelayMs = retryOptions.UseExponentialBackoff
-                        ? Math.Min(
-                            retryOptions.DelayMilliseconds * Math.Pow(2, retryAttempt - 1),
-                            60000)
-                        : retryOptions.DelayMilliseconds;
-                    var jitterMs = GetJitterMilliseconds(baseDelayMs);
-                    return TimeSpan.FromMilliseconds(baseDelayMs + jitterMs);
-                },
+                // M-1/M2-#11：统一走 ComputeBackoff（含抖动开关），全局与方法级共用同一实现
+                retryAttempt => ComputeBackoff(
+                    retryOptions.UseExponentialBackoff, retryOptions.DelayMilliseconds, retryAttempt),
                 onRetryAsync: async (outcome, timeSpan, retryCount, context) =>
                 {
                     MudHttpClientLog.RetryAttempting(_logger, timeSpan.TotalMilliseconds, retryCount, retryOptions.MaxRetryAttempts, outcome.Exception);
@@ -452,12 +443,8 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
                 .WaitAndRetryAsync(
                     maxRetries,
-                    retryAttempt => useExponentialBackoff
-                        ? TimeSpan.FromMilliseconds(
-                            Math.Min(
-                                delayMilliseconds * Math.Pow(2, retryAttempt - 1),
-                                60000))
-                        : TimeSpan.FromMilliseconds(delayMilliseconds),
+                    // M2-#11：方法级重试统一走 ComputeBackoff（含抖动，与全局重试一致）
+                    retryAttempt => ComputeBackoff(useExponentialBackoff, delayMilliseconds, retryAttempt),
                     onRetryAsync: async (outcome, timeSpan, retryCount, context) =>
                     {
                         MudHttpClientLog.RetryAttempting(_logger, timeSpan.TotalMilliseconds, retryCount, maxRetries, outcome.Exception);
@@ -534,6 +521,27 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 #else
         return _jitterRandom.Value!.Next(0, maxJitter);
 #endif
+    }
+
+    /// <summary>
+    /// M2-#11：统一的重试退避计算（全局重试与方法级 [Retry] 共用）。
+    /// 退避 = 指数退避（上限 60s）或固定延迟 + 可选随机抖动 [0, baseDelay/4)。
+    /// </summary>
+    /// <param name="useExponentialBackoff">是否指数退避。</param>
+    /// <param name="baseDelayMs">基础延迟（毫秒）。</param>
+    /// <param name="attempt">当前重试次数（从 1 开始）。</param>
+    /// <returns>本次重试的退避时长。</returns>
+    private TimeSpan ComputeBackoff(bool useExponentialBackoff, double baseDelayMs, int attempt)
+    {
+        var delay = useExponentialBackoff
+            ? Math.Min(baseDelayMs * Math.Pow(2, attempt - 1), 60000)
+            : baseDelayMs;
+
+        // RetryOptions.UseJitter（默认 true）控制抖动；关闭时恢复纯指数/固定退避
+        if (_options.Retry.UseJitter)
+            delay += GetJitterMilliseconds(delay);
+
+        return TimeSpan.FromMilliseconds(delay);
     }
 
     private static bool ShouldRetry(HttpRequestException exception, int[] retryStatusCodes)

@@ -38,6 +38,15 @@ public class ApiRequestException : ApiException
     public bool IsCancellation { get; }
 
     /// <summary>
+    /// 是否因熔断器打开导致（请求被熔断策略直接拒绝，未实际发出）。
+    /// </summary>
+    /// <remarks>
+    /// M2-#10：熔断打开时框架抛 <see cref="ApiRequestException"/>（而非第三方 <c>BrokenCircuitException</c>），
+    /// 通过本属性区分；原始异常保留在 <see cref="Exception.InnerException"/> 与 <see cref="TransportException"/>。
+    /// </remarks>
+    public bool IsCircuitOpen { get; }
+
+    /// <summary>
     /// 初始化 <see cref="ApiRequestException"/> 类的新实例。
     /// </summary>
     /// <param name="message">异常消息。</param>
@@ -45,16 +54,19 @@ public class ApiRequestException : ApiException
     /// <param name="isTimeout">是否为超时。</param>
     /// <param name="isCancellation">是否为取消。</param>
     /// <param name="requestUri">请求 URI。</param>
+    /// <param name="isCircuitOpen">是否因熔断器打开导致。</param>
     public ApiRequestException(
         string message,
         Exception? transportException = null,
         bool isTimeout = false,
         bool isCancellation = false,
-        string? requestUri = null)
+        string? requestUri = null,
+        bool isCircuitOpen = false)
         : base(message, requestUri, transportException)
     {
         TransportException = transportException;
         IsTimeout = isTimeout;
         IsCancellation = isCancellation;
+        IsCircuitOpen = isCircuitOpen;
     }
 }

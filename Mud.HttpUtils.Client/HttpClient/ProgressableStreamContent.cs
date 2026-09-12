@@ -66,20 +66,38 @@ public class ProgressableStreamContent : HttpContent
     /// <remarks>
     /// 此方法通过缓冲区读取内部内容的流,并在每次写入目标流后报告累计已传输的字节数。
     /// 进度报告通过 <see cref="IProgress{T}.Report"/> 方法实现。
+    /// 仅 netstandard2.0 / 旧重载路径可达，故使用 <see cref="CancellationToken.None"/>（#28 同理）。
     /// </remarks>
-    protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+    protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        => SerializeToStreamCoreAsync(stream, CancellationToken.None);
+
+#if NET5_0_OR_GREATER
+    /// <summary>
+    /// M2-#17：带取消令牌的序列化重载 —— .NET 5+ 的 <see cref="HttpContent"/> 优先调用本重载，
+    /// 使上传期间的取消（连接关闭 / 请求取消）能中断内部流读取与写出，而非等待传输完成。
+    /// </summary>
+    protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context, CancellationToken cancellationToken)
+        => SerializeToStreamCoreAsync(stream, cancellationToken);
+#endif
+
+    private async Task SerializeToStreamCoreAsync(Stream stream, CancellationToken cancellationToken)
     {
         var buffer = new byte[_bufferSize];
         long totalBytesRead = 0;
 
+#if NETSTANDARD2_0
         using var contentStream = await _content.ReadAsStreamAsync().ConfigureAwait(false);
+#else
+        // 不 dispose 内容流（HttpContent 自有流，生命周期归 _content 所有）
+        var contentStream = await _content.ReadAsStreamAsync().ConfigureAwait(false);
+#endif
 
         while (true)
         {
 #if NETSTANDARD2_0
-            var bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(false);
+            var bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
 #else
-            var bytesRead = await contentStream.ReadAsync(buffer.AsMemory()).ConfigureAwait(false);
+            var bytesRead = await contentStream.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
 #endif
 
             if (bytesRead == 0)
@@ -88,9 +106,9 @@ public class ProgressableStreamContent : HttpContent
             totalBytesRead += bytesRead;
 
 #if NETSTANDARD2_0
-            await stream.WriteAsync(buffer, 0, bytesRead).ConfigureAwait(false);
+            await stream.WriteAsync(buffer, 0, bytesRead, cancellationToken).ConfigureAwait(false);
 #else
-            await stream.WriteAsync(buffer.AsMemory(0, bytesRead)).ConfigureAwait(false);
+            await stream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken).ConfigureAwait(false);
 #endif
 
             _progress?.Report(totalBytesRead);

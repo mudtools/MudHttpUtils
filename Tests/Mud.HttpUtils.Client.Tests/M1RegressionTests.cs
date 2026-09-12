@@ -200,6 +200,33 @@ public class SensitiveUrlRedactorTests
         redacted.Should().Contain("session_token=***REDACTED***");
         redacted.Should().Contain("limit=10");
     }
+
+    [Fact]
+    public void Redact_SwitchOff_PreservesFullUrl()
+    {
+        // T-5.2：RedactUrlInTelemetry = false 时保留完整 URL（排障开关有效性）。
+        // 静态开关——finally 恢复默认值，避免影响并行用例。
+        MudHttpObservabilityOptions.RedactUrlInTelemetry = false;
+        try
+        {
+            var url = "https://api.example.com/v1?access_token=secret-token-value&page=1";
+            Mud.HttpUtils.Helpers.SensitiveUrlRedactor.Redact(url).Should().Be(url);
+        }
+        finally
+        {
+            MudHttpObservabilityOptions.RedactUrlInTelemetry = true;
+        }
+    }
+
+    [Fact]
+    public void Redact_SwitchOnDefault_MasksSensitiveQuery()
+    {
+        // 开关默认 true：脱敏生效（与 Redact_SensitiveQueryValues_Masked 互补，锁定开关语义）
+        MudHttpObservabilityOptions.RedactUrlInTelemetry.Should().BeTrue();
+        var url = "https://api.example.com/v1?access_token=secret-token-value";
+        Mud.HttpUtils.Helpers.SensitiveUrlRedactor.Redact(url)
+            .Should().Be("https://api.example.com/v1?access_token=***REDACTED***");
+    }
 }
 
 /// <summary>

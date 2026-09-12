@@ -107,6 +107,22 @@ public sealed class EnhancedHttpClientOptions : IEnhancedClientConfig
     /// <value>默认为 <see cref="UrlResolutionMode.Default"/>（向后兼容）。</value>
     public UrlResolutionMode UrlResolution { get; set; } = UrlResolutionMode.Default;
 
+    /// <summary>
+    /// 获取或设置成功响应体的最大字节数（可选守卫，N-2）。
+    /// </summary>
+    /// <value>默认为 <c>0</c>（不限制，保持反序列化/下载语义不变）。</value>
+    /// <remarks>
+    /// <para>
+    /// 设为正数后，成功响应体超过该字节数时抛出 <see cref="ApiRequestException"/>
+    /// （在读取阶段按 Content-Length 预判 + 读取过程校验，不缓冲超限内容）。
+    /// 用于防止异常大的响应导致 OOM。
+    /// </para>
+    /// <para>
+    /// 大文件下载请使用 <c>DownloadLargeAsync</c>（流式落盘），不受本守卫约束。
+    /// </para>
+    /// </remarks>
+    public long MaxSuccessResponseBytes { get; set; }
+
 #if NET6_0_OR_GREATER
     /// <summary>
     /// 获取或设置 HTTP 版本。

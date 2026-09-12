@@ -40,17 +40,22 @@ public sealed class QueryParameterBuilder(string baseUrl)
     public static QueryParameterBuilder Create(string baseUrl = "") => new(baseUrl);
 
     /// <summary>
-    /// 添加查询参数（空值将被忽略）。
+    /// 添加查询参数（null 将被忽略；空字符串是合法值，序列化为 <c>key=</c>）。
     /// </summary>
+    /// <remarks>
+    /// M2-#16A：<c>null</c> 与"空字符串"是两种语义 —— 前者表示"无值，跳过"，
+    /// 后者是调用方显式提供的空值（生成代码在 <c>QueryMap(IncludeNullValues = true)</c>
+    /// 时产出 <c>key=</c> 空串对），必须保留，否则该配置完全失效。
+    /// </remarks>
     public void Add(string name, string? value)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentNullException(nameof(name));
 
-        if (string.IsNullOrWhiteSpace(value))
+        if (value is null)
             return;
 
-        _params.Add(new KeyValuePair<string, string>(name, value!));
+        _params.Add(new KeyValuePair<string, string>(name, value));
         _cachedQueryString = null; // 清除缓存
     }
 

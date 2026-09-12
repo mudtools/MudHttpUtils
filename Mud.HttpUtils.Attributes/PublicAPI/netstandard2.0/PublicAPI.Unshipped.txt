@@ -1,4 +1,6 @@
-#nullable enable
+﻿#nullable enable
+Mud.HttpUtils.AllowUnmatchedRouteParametersAttribute
+Mud.HttpUtils.AllowUnmatchedRouteParametersAttribute.AllowUnmatchedRouteParametersAttribute() -> void
 Mud.HttpUtils.Attributes.AllowAnyStatusCodeAttribute
 Mud.HttpUtils.Attributes.AllowAnyStatusCodeAttribute.AllowAnyStatusCodeAttribute() -> void
 Mud.HttpUtils.Attributes.ArrayQueryAttribute
@@ -90,8 +92,6 @@ Mud.HttpUtils.Attributes.GetAttribute.GetAttribute(string? requestUri = null) ->
 Mud.HttpUtils.Attributes.HeadAttribute
 Mud.HttpUtils.Attributes.HeadAttribute.HeadAttribute(string? requestUri = null) -> void
 Mud.HttpUtils.Attributes.HeaderAttribute
-Mud.HttpUtils.Attributes.HeaderCollectionAttribute
-Mud.HttpUtils.Attributes.HeaderCollectionAttribute.HeaderCollectionAttribute() -> void
 Mud.HttpUtils.Attributes.HeaderAttribute.AliasAs.get -> string?
 Mud.HttpUtils.Attributes.HeaderAttribute.AliasAs.set -> void
 Mud.HttpUtils.Attributes.HeaderAttribute.Format.get -> string?
@@ -107,6 +107,8 @@ Mud.HttpUtils.Attributes.HeaderAttribute.Replace.get -> bool
 Mud.HttpUtils.Attributes.HeaderAttribute.Replace.set -> void
 Mud.HttpUtils.Attributes.HeaderAttribute.Value.get -> object?
 Mud.HttpUtils.Attributes.HeaderAttribute.Value.set -> void
+Mud.HttpUtils.Attributes.HeaderCollectionAttribute
+Mud.HttpUtils.Attributes.HeaderCollectionAttribute.HeaderCollectionAttribute() -> void
 Mud.HttpUtils.Attributes.HeaderMergeAttribute
 Mud.HttpUtils.Attributes.HeaderMergeAttribute.HeaderMergeAttribute(Mud.HttpUtils.Attributes.HeaderMergeMode mode) -> void
 Mud.HttpUtils.Attributes.HeaderMergeAttribute.Mode.get -> Mud.HttpUtils.Attributes.HeaderMergeMode
@@ -143,8 +145,8 @@ Mud.HttpUtils.Attributes.HttpMethodAttribute.ContentType.get -> string?
 Mud.HttpUtils.Attributes.HttpMethodAttribute.ContentType.set -> void
 Mud.HttpUtils.Attributes.HttpMethodAttribute.HttpMethod.get -> System.Net.Http.HttpMethod!
 Mud.HttpUtils.Attributes.HttpMethodAttribute.HttpMethod.set -> void
-Mud.HttpUtils.Attributes.HttpMethodAttribute.HttpMethodAttribute(System.Net.Http.HttpMethod! httpMethod, string? requestUri = null) -> void
 Mud.HttpUtils.Attributes.HttpMethodAttribute.HttpMethodAttribute(string! httpMethod, string? requestUri = null) -> void
+Mud.HttpUtils.Attributes.HttpMethodAttribute.HttpMethodAttribute(System.Net.Http.HttpMethod! httpMethod, string? requestUri = null) -> void
 Mud.HttpUtils.Attributes.HttpMethodAttribute.RequestUri.get -> string?
 Mud.HttpUtils.Attributes.HttpMethodAttribute.RequestUri.set -> void
 Mud.HttpUtils.Attributes.HttpMethodAttribute.ResponseContentType.get -> string?
@@ -192,30 +194,29 @@ Mud.HttpUtils.Attributes.PutAttribute.PutAttribute(string? requestUri = null) ->
 Mud.HttpUtils.Attributes.QueryAttribute
 Mud.HttpUtils.Attributes.QueryAttribute.AliasAs.get -> string?
 Mud.HttpUtils.Attributes.QueryAttribute.AliasAs.set -> void
+Mud.HttpUtils.Attributes.QueryAttribute.CollectionFormat.get -> Mud.HttpUtils.Attributes.QueryCollectionFormat
+Mud.HttpUtils.Attributes.QueryAttribute.CollectionFormat.set -> void
+Mud.HttpUtils.Attributes.QueryAttribute.Format.get -> string?
+Mud.HttpUtils.Attributes.QueryAttribute.Format.set -> void
+Mud.HttpUtils.Attributes.QueryAttribute.Name.get -> string?
+Mud.HttpUtils.Attributes.QueryAttribute.Name.set -> void
+Mud.HttpUtils.Attributes.QueryAttribute.Prefix.get -> string?
+Mud.HttpUtils.Attributes.QueryAttribute.Prefix.set -> void
+Mud.HttpUtils.Attributes.QueryAttribute.QueryAttribute() -> void
+Mud.HttpUtils.Attributes.QueryAttribute.QueryAttribute(string! name) -> void
+Mud.HttpUtils.Attributes.QueryAttribute.QueryAttribute(string! name, string? format) -> void
+Mud.HttpUtils.Attributes.QueryAttribute.Separator.get -> string?
+Mud.HttpUtils.Attributes.QueryAttribute.Separator.set -> void
+Mud.HttpUtils.Attributes.QueryAttribute.SerializeNull.get -> bool
+Mud.HttpUtils.Attributes.QueryAttribute.SerializeNull.set -> void
+Mud.HttpUtils.Attributes.QueryAttribute.TreatAsString.get -> bool
+Mud.HttpUtils.Attributes.QueryAttribute.TreatAsString.set -> void
 Mud.HttpUtils.Attributes.QueryCollectionFormat
 Mud.HttpUtils.Attributes.QueryCollectionFormat.Csv = 1 -> Mud.HttpUtils.Attributes.QueryCollectionFormat
 Mud.HttpUtils.Attributes.QueryCollectionFormat.Multi = 0 -> Mud.HttpUtils.Attributes.QueryCollectionFormat
 Mud.HttpUtils.Attributes.QueryCollectionFormat.Pipes = 4 -> Mud.HttpUtils.Attributes.QueryCollectionFormat
 Mud.HttpUtils.Attributes.QueryCollectionFormat.Ssv = 2 -> Mud.HttpUtils.Attributes.QueryCollectionFormat
 Mud.HttpUtils.Attributes.QueryCollectionFormat.Tsv = 3 -> Mud.HttpUtils.Attributes.QueryCollectionFormat
-Mud.HttpUtils.Attributes.QueryCollectionFormat.value__ : int
-Mud.HttpUtils.Attributes.QueryAttribute.CollectionFormat.get -> Mud.HttpUtils.Attributes.QueryCollectionFormat
-Mud.HttpUtils.Attributes.QueryAttribute.CollectionFormat.set -> void
-Mud.HttpUtils.Attributes.QueryAttribute.Prefix.get -> string?
-Mud.HttpUtils.Attributes.QueryAttribute.Prefix.set -> void
-Mud.HttpUtils.Attributes.QueryAttribute.SerializeNull.get -> bool
-Mud.HttpUtils.Attributes.QueryAttribute.SerializeNull.set -> void
-Mud.HttpUtils.Attributes.QueryAttribute.TreatAsString.get -> bool
-Mud.HttpUtils.Attributes.QueryAttribute.TreatAsString.set -> void
-Mud.HttpUtils.Attributes.QueryAttribute.Format.get -> string?
-Mud.HttpUtils.Attributes.QueryAttribute.Format.set -> void
-Mud.HttpUtils.Attributes.QueryAttribute.Name.get -> string?
-Mud.HttpUtils.Attributes.QueryAttribute.Name.set -> void
-Mud.HttpUtils.Attributes.QueryAttribute.QueryAttribute() -> void
-Mud.HttpUtils.Attributes.QueryAttribute.QueryAttribute(string! name) -> void
-Mud.HttpUtils.Attributes.QueryAttribute.QueryAttribute(string! name, string? format) -> void
-Mud.HttpUtils.Attributes.QueryAttribute.Separator.get -> string?
-Mud.HttpUtils.Attributes.QueryAttribute.Separator.set -> void
 Mud.HttpUtils.Attributes.QueryMapAttribute
 Mud.HttpUtils.Attributes.QueryMapAttribute.IncludeNullValues.get -> bool
 Mud.HttpUtils.Attributes.QueryMapAttribute.IncludeNullValues.set -> void
@@ -232,6 +233,8 @@ Mud.HttpUtils.Attributes.QuerySerializationMethod.ToString = 0 -> Mud.HttpUtils.
 Mud.HttpUtils.Attributes.RawQueryStringAttribute
 Mud.HttpUtils.Attributes.RawQueryStringAttribute.RawQueryStringAttribute() -> void
 Mud.HttpUtils.Attributes.RetryAttribute
+Mud.HttpUtils.Attributes.RetryAttribute.AllowNonIdempotent.get -> bool
+Mud.HttpUtils.Attributes.RetryAttribute.AllowNonIdempotent.set -> void
 Mud.HttpUtils.Attributes.RetryAttribute.DelayMilliseconds.get -> int
 Mud.HttpUtils.Attributes.RetryAttribute.DelayMilliseconds.set -> void
 Mud.HttpUtils.Attributes.RetryAttribute.MaxRetries.get -> int

@@ -112,6 +112,9 @@ internal class InterfaceImplementationGenerator
         // NEW-GEN-03/08 修复：检测方法 CacheAttribute 中被生成器忽略的属性并发出诊断
         ReportCacheAttributeIgnoredProperties(generatorContext);
 
+        // M2-#12：非幂等方法声明 [Retry] 但未显式 AllowNonIdempotent 时发出 Warning
+        ReportRetryNonIdempotentWithoutAllow(generatorContext);
+
         var generators = InitializeGenerators(generatorContext);
 
         foreach (var generator in generators)
@@ -808,6 +811,57 @@ internal class InterfaceImplementationGenerator
                     method.Name,
                     "Priority"));
             }
+        }
+    }
+
+    /// <summary>
+    /// M2-#12：非幂等 HTTP 方法（POST/PATCH 等未在全局 RetryableHttpMethods 白名单中的方法）
+    /// 声明了 [Retry] 但未显式设置 <c>AllowNonIdempotent = true</c> 时发出 Warning：
+    /// 运行时重试将被静默跳过（保留超时与熔断）。
+    /// </summary>
+    private void ReportRetryNonIdempotentWithoutAllow(GeneratorContext context)
+    {
+        // 幂等方法白名单（与 RetryOptions.RetryableHttpMethods 默认值一致，不区分大小写）
+        var idempotentMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "GET", "HEAD", "OPTIONS", "PUT", "DELETE", "TRACE",
+        };
+
+        foreach (var method in context.AllMethods)
+        {
+            var retryAttr = method.GetAttributes()
+                .FirstOrDefault(attr => HttpClientGeneratorConstants.RetryAttributeNames.Contains(attr.AttributeClass?.Name));
+
+            if (retryAttr == null)
+                continue;
+
+            // 需要知道该方法的 HTTP 方法名：从 Http 特性推断
+            var httpAttr = MethodAnalyzer.FindHttpMethodAttributeFromAttributes(method.GetAttributes());
+            var httpMethodName = httpAttr?.AttributeClass?.Name;
+            if (httpMethodName == null)
+                continue;
+            // 特性名如 "PostAttribute"/"Post" → "POST"（netstandard2.0 目标无 Range/Index，用 Substring）
+            var httpMethod = httpMethodName.EndsWith("Attribute", StringComparison.OrdinalIgnoreCase)
+                ? httpMethodName.Substring(0, httpMethodName.Length - "Attribute".Length).ToUpperInvariant()
+                : httpMethodName.ToUpperInvariant();
+
+            // 幂等方法不提示；已显式 AllowNonIdempotent 不提示
+            if (idempotentMethods.Contains(httpMethod))
+                continue;
+            if (retryAttr.NamedArguments.Any(na =>
+                    na.Key == "AllowNonIdempotent" && na.Value.Value is true))
+                continue;
+
+            var location = (retryAttr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
+                ?? method.Locations.FirstOrDefault()
+                ?? _interfaceDecl.GetLocation())!;
+
+            _context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.RetryNonIdempotentWithoutAllow,
+                location,
+                _interfaceSymbol.Name,
+                method.Name,
+                httpMethod));
         }
     }
 

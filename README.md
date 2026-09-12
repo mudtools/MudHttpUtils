@@ -318,6 +318,18 @@ services.AddMudHttpUtils("myApi", "https://api.example.com", options =>
 });
 ```
 
+**非幂等方法防护**：默认仅对幂等方法（GET/HEAD/OPTIONS/PUT/DELETE/TRACE）重试，POST/PATCH 等非幂等方法退化为超时+熔断（防重复提交）。超时与熔断对所有方法始终生效。如需对非幂等方法重试：
+
+```csharp
+// 全局开关
+options.Retry.AllowNonIdempotentRetry = true;
+
+// 或方法级标注
+[Post("/orders")]
+[Retry(AllowNonIdempotent = true)]
+Task<Order> CreateOrderAsync([Body] CreateOrderRequest request);
+```
+
 也支持从 `appsettings.json` 绑定：
 
 ```json
@@ -397,6 +409,28 @@ Task<Response> PostSecureAsync(
 [Post("/api/secure-data", ResponseEnableDecrypt = true)]
 Task<SecureData> GetSecureDataAsync([Body] Request request);
 ```
+
+> 默认 AES 实现为认证加密（AES-GCM / AES-CBC+HMAC），密文带版本前缀，无需额外 MAC 配置。
+
+#### SSRF 防护（.NET 6+）
+
+URL 来自用户输入时，建议启用连接期 IP 准入校验，根治 DNS rebinding（URL 校验期与实际建连期解析结果可能不一致）：
+
+```csharp
+// 1. 注册 IP 准入策略（默认实现拒绝私网/回环/链路本地地址，fail-closed）
+services.AddMudHttpClientSsrfProtection();
+
+// 2. 为命中的 HttpClient 启用连接期校验（建连时对实际连接的 IP 执行准入校验）
+services.AddMudHttpClient("myApi", "https://api.example.com")
+    .AddMudHttpClientSsrfProtection();
+
+// 自定义准入策略：注册自己的 IIpAddressPolicy 替换默认实现（如本地调试放行 localhost）
+services.AddSingleton<IIpAddressPolicy, MyDebugIpPolicy>();
+```
+
+- 被策略拒绝的连接抛出 `InvalidOperationException`。
+- 默认 `AllowCustomBaseUrls = false` 时强制 HTTPS + 白名单（fail-closed）；`AllowCustomBaseUrls = true` 放行自定义 URL 时，必须自行校验 URL 来源。
+- DNS 解析结果带 TTL 缓存（默认 5 分钟），并发场景下同域名解析受锁保护（单飞）。
 
 #### 令牌管理
 
@@ -488,6 +522,17 @@ Task DownloadFileAsync([Path] string fileId, [FilePath(BufferSize = 81920)] stri
 [Get("/files/{fileId}/content")]
 Task<byte[]> DownloadFileContentAsync([Path] string fileId);
 ```
+
+**成功响应体守卫（可选）**：限制反序列化路径的成功响应体大小，超限抛 `ApiRequestException`；`0`（默认）= 不限制：
+
+```csharp
+services.Configure<EnhancedHttpClientOptions>(o =>
+{
+    o.MaxSuccessResponseBytes = 10 * 1024 * 1024; // 10 MB
+});
+```
+
+超大文件请改用流式落盘（`[FilePath]` 下载路径不受守卫约束）。
 
 #### 接口级动态属性
 

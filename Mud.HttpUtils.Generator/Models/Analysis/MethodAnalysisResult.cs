@@ -215,6 +215,9 @@ internal class MethodAnalysisResult
 
     public bool RetryUseExponentialBackoff { get; set; } = true;
 
+    /// <summary>是否允许对非幂等 HTTP 方法重试（[Retry(AllowNonIdempotent = true)]，M2-#12）。</summary>
+    public bool RetryAllowNonIdempotent { get; set; }
+
     public bool CircuitBreakerEnabled { get; set; }
 
     public int CircuitBreakerFailureThreshold { get; set; } = 5;

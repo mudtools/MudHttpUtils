@@ -41,6 +41,26 @@ public static class MessageSanitizer
     /// </summary>
     internal static IReadOnlyCollection<string> SensitiveFieldNames => SensitiveFields;
 
+    /// <summary>
+    /// M2-#18：统一的日志脱敏入口 —— 优先使用可插拔掩码器（<paramref name="masker"/>），
+    /// 未注册时回退内置 <see cref="Sanitize(string, int)"/>。内置方法路径（EnhancedHttpClient）与
+    /// 生成代码路径（DefaultHttpRequestExecutor）共用本方法，避免两条路径行为漂移。
+    /// </summary>
+    /// <param name="content">原始日志内容。</param>
+    /// <param name="maxLength">输出最大长度（超长截断并追加 "...")。</param>
+    /// <param name="masker">可插拔敏感数据掩码器（可为 null）。</param>
+    /// <returns>脱敏后的内容。</returns>
+    internal static string SanitizeWith(ISensitiveDataMasker? masker, string content, int maxLength)
+    {
+        if (masker != null)
+        {
+            var masked = masker.Mask(content);
+            return masked.Length > maxLength ? masked.Substring(0, maxLength) + "..." : masked;
+        }
+
+        return Sanitize(content, maxLength: maxLength);
+    }
+
     private static readonly HashSet<string> NameSensitiveFields = new(StringComparer.OrdinalIgnoreCase)
     {
         "real_name", "realName", "name"

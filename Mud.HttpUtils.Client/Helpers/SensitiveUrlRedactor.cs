@@ -34,6 +34,11 @@ internal static class SensitiveUrlRedactor
         if (string.IsNullOrEmpty(url))
             return url ?? string.Empty;
 
+        // M1-#5.3：运维开关。关闭时保留完整 URL（仅供已自行治理日志下游的排障场景）。
+        // 不影响 ApiException.RequestUri（始终保留完整 URI）与 URL 安全校验（始终用原始 URL）。
+        if (!MudHttpObservabilityOptions.RedactUrlInTelemetry)
+            return url;
+
         var qIndex = url.IndexOf('?');
         if (qIndex < 0 || qIndex == url.Length - 1)
             return url;                    // 无 query，无需处理

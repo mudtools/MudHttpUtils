@@ -36,6 +36,7 @@ namespace Mud.HttpUtils;
 /// <param name="exceptionRedactor">异常擦除器（Phase 2 T2.1）。在异常抛出前擦除敏感数据，为 null 时不执行擦除。</param>
 /// <param name="maxExceptionContentLength">错误响应体最大读取字符数（Phase 2 T2.2）。为 null 时使用默认值 10240（<see cref="HttpExecutionConstants.DefaultMaxExceptionContentLength"/>）；设为 0 或负数表示不限制。读取阶段生效，防止恶意/超大响应导致 OOM。</param>
 /// <param name="captureRequestContent">是否在发送前捕获请求体字符串（Phase 2 T2.3）。为 true 时存入 <see cref="ApiException.RequestContent"/> 供调试，捕获长度同样受 <paramref name="maxExceptionContentLength"/> 约束。</param>
+/// <param name="maxSuccessResponseBytes">成功响应体最大字节数（N-2 可选守卫）。默认 0 = 不限制；设为正数后，成功响应体超过该字节数时抛 <see cref="ApiRequestException"/>（Content-Length 预判 + 守卫流读取阶段校验，不缓冲超限内容）。</param>
 /// <param name="httpVersion">HTTP 版本（Phase 3 T3.4）。为 null 时使用 HttpClient 默认版本。</param>
 /// <param name="httpVersionPolicy">HTTP 版本策略（Phase 3 T3.4）。为 null 时使用 HttpClient 默认策略。</param>
 /// <param name="httpRequestMessageOptions">请求消息选项预设（Phase 3 T3.5）。为 null 时不预设。</param>
@@ -50,6 +51,10 @@ public class DefaultHttpRequestExecutor(
     IExceptionRedactor? exceptionRedactor = null,
     int? maxExceptionContentLength = null,
     bool captureRequestContent = false,
+    // N-2：成功响应体最大字节数（0 = 不限制），与 EnhancedHttpClientOptions.MaxSuccessResponseBytes 同源
+    long maxSuccessResponseBytes = 0,
+    // M2-#18：日志脱敏掩码器（与 EnhancedHttpClient.SanitizeContent 同一回退链）
+    ISensitiveDataMasker? sensitiveDataMasker = null,
     // Phase 3 运行时消费参数
 #if NET6_0_OR_GREATER
     Version? httpVersion = null,
@@ -69,6 +74,10 @@ public class DefaultHttpRequestExecutor(
     private readonly int _maxExceptionContentLength =
         maxExceptionContentLength ?? HttpExecutionConstants.DefaultMaxExceptionContentLength;
     private readonly bool _captureRequestContent = captureRequestContent;
+    // N-2：成功响应体守卫（0 = 不限制）
+    private readonly long _maxSuccessResponseBytes = maxSuccessResponseBytes;
+    // M2-#18：日志脱敏掩码器（与 EnhancedHttpClient 同一回退链 MessageSanitizer）
+    private readonly ISensitiveDataMasker? _sensitiveDataMasker = sensitiveDataMasker;
 #if NET6_0_OR_GREATER
     private readonly Version? _httpVersion = httpVersion;
     private readonly System.Net.Http.HttpVersionPolicy? _httpVersionPolicy = httpVersionPolicy;
@@ -112,22 +121,25 @@ public class DefaultHttpRequestExecutor(
         var encryptableClient = httpClient as IEncryptableHttpClient;
 
         // Phase 2 (T2.3)：发送前捕获请求体（启用时）
-    string? capturedRequestContent = _captureRequestContent
-    ? await CaptureRequestContentAsync(request).ConfigureAwait(false)
-    : null;
+        string? capturedRequestContent = _captureRequestContent
+        ? await CaptureRequestContentAsync(request).ConfigureAwait(false)
+        : null;
 
-    // Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
-    ApplyRequestConfig(request);
+        // Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
+        ApplyRequestConfig(request);
 
-    // 1. 发送请求
-    using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
+        // 1. 发送请求
+        using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
 
         // 2. 错误处理（非 AllowAnyStatusCode 模式）
         if (!descriptor.AllowAnyStatusCode && !response.IsSuccessStatusCode)
         {
             var errorContent = await ReadErrorContentLimitedAsync(response, cancellationToken).ConfigureAwait(false);
+            // M2-#18：日志路径统一脱敏（URL 走 SensitiveUrlRedactor，内容走 masker 回退 MessageSanitizer）
             _logger.LogError("HTTP 请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
-                (int)response.StatusCode, request.RequestUri?.ToString(), errorContent);
+                (int)response.StatusCode,
+                Helpers.SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()),
+                MessageSanitizer.SanitizeWith(_sensitiveDataMasker, errorContent, 500));
             throw CreateApiException(response.StatusCode, errorContent, request.RequestUri?.ToString(), capturedRequestContent);
         }
 
@@ -135,8 +147,10 @@ public class DefaultHttpRequestExecutor(
         if (descriptor.IsVoidReturn)
             return default;
 
-        // 4. 读取响应内容
-        var rawContent = await ReadContentAsync(response, cancellationToken).ConfigureAwait(false);
+        // 4. 读取响应内容（N-2：成功响应体守卫）
+        var rawContent = await ReadContentAsync(
+            response, Helpers.SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()), cancellationToken)
+            .ConfigureAwait(false);
 
         // 5. string 返回类型特殊处理（不经过 JSON 反序列化）
         if (typeof(TResult) == typeof(string))
@@ -203,7 +217,9 @@ public class DefaultHttpRequestExecutor(
 
         using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
         var statusCode = response.StatusCode;
-        var rawContent = await ReadContentAsync(response, cancellationToken).ConfigureAwait(false);
+        var rawContent = await ReadContentAsync(
+            response, Helpers.SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()), cancellationToken)
+            .ConfigureAwait(false);
         var responseHeaders = response.Headers.ToDictionary(h => h.Key, h => h.Value.ToList());
 
         if ((int)statusCode >= 200 && (int)statusCode <= 299)
@@ -267,20 +283,23 @@ public class DefaultHttpRequestExecutor(
         CancellationToken cancellationToken = default)
     {
         // Phase 2 (T2.3)：发送前捕获请求体（启用时）
-string? capturedRequestContent = _captureRequestContent
-? await CaptureRequestContentAsync(request).ConfigureAwait(false)
-: null;
+        string? capturedRequestContent = _captureRequestContent
+        ? await CaptureRequestContentAsync(request).ConfigureAwait(false)
+        : null;
 
-// Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
-ApplyRequestConfig(request);
+        // Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
+        ApplyRequestConfig(request);
 
-using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
+        using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
 
         if (!descriptor.AllowAnyStatusCode && !response.IsSuccessStatusCode)
         {
             var errorContent = await ReadErrorContentLimitedAsync(response, cancellationToken).ConfigureAwait(false);
+            // M2-#18：日志路径统一脱敏
             _logger.LogError("HTTP 请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
-                (int)response.StatusCode, request.RequestUri?.ToString(), errorContent);
+                (int)response.StatusCode,
+                Helpers.SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()),
+                MessageSanitizer.SanitizeWith(_sensitiveDataMasker, errorContent, 500));
             throw CreateApiException(response.StatusCode, errorContent, request.RequestUri?.ToString(), capturedRequestContent);
         }
     }
@@ -299,22 +318,25 @@ using var response = await httpClient.SendRawAsync(request, cancellationToken).C
         CancellationToken cancellationToken = default)
     {
         // Phase 2 (T2.3)：发送前捕获请求体（启用时）
-string? capturedRequestContent = _captureRequestContent
-? await CaptureRequestContentAsync(request).ConfigureAwait(false)
-: null;
+        string? capturedRequestContent = _captureRequestContent
+        ? await CaptureRequestContentAsync(request).ConfigureAwait(false)
+        : null;
 
-// Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
-ApplyRequestConfig(request);
+        // Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
+        ApplyRequestConfig(request);
 
-using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
+        using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
 
         // 错误处理：descriptor 为 null 时默认检查状态码，与普通方法语义一致
         var allowAnyStatusCode = descriptor?.AllowAnyStatusCode ?? false;
         if (!allowAnyStatusCode && !response.IsSuccessStatusCode)
         {
             var errorContent = await ReadErrorContentLimitedAsync(response, cancellationToken).ConfigureAwait(false);
+            // M2-#18：日志路径统一脱敏
             _logger.LogError("HTTP 下载请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
-                (int)response.StatusCode, request.RequestUri?.ToString(), errorContent);
+                (int)response.StatusCode,
+                Helpers.SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()),
+                MessageSanitizer.SanitizeWith(_sensitiveDataMasker, errorContent, 500));
             throw CreateApiException(response.StatusCode, errorContent, request.RequestUri?.ToString(), capturedRequestContent);
         }
 
@@ -354,22 +376,25 @@ using var response = await httpClient.SendRawAsync(request, cancellationToken).C
         CancellationToken cancellationToken = default)
     {
         // Phase 2 (T2.3)：发送前捕获请求体（启用时）
-string? capturedRequestContent = _captureRequestContent
-? await CaptureRequestContentAsync(request).ConfigureAwait(false)
-: null;
+        string? capturedRequestContent = _captureRequestContent
+        ? await CaptureRequestContentAsync(request).ConfigureAwait(false)
+        : null;
 
-// Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
-ApplyRequestConfig(request);
+        // Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
+        ApplyRequestConfig(request);
 
-// 发送请求并检查状态码（与 DownloadAsync 保持一致的错误处理语义）
+        // 发送请求并检查状态码（与 DownloadAsync 保持一致的错误处理语义）
         using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
 
         var allowAnyStatusCode = descriptor?.AllowAnyStatusCode ?? false;
         if (!allowAnyStatusCode && !response.IsSuccessStatusCode)
         {
             var errorContent = await ReadErrorContentLimitedAsync(response, cancellationToken).ConfigureAwait(false);
+            // M2-#18：日志路径统一脱敏
             _logger.LogError("HTTP 大文件下载请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
-                (int)response.StatusCode, request.RequestUri?.ToString(), errorContent);
+                (int)response.StatusCode,
+                Helpers.SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()),
+                MessageSanitizer.SanitizeWith(_sensitiveDataMasker, errorContent, 500));
             throw CreateApiException(response.StatusCode, errorContent, request.RequestUri?.ToString(), capturedRequestContent);
         }
 
@@ -653,9 +678,39 @@ ApplyRequestConfig(request);
 #endif
     }
 
-    private static async Task<string> ReadContentAsync(
-        HttpResponseMessage response, CancellationToken cancellationToken)
+    /// <summary>
+    /// 读取成功响应体字符串。启用 N-2 守卫（<c>maxSuccessResponseBytes &gt; 0</c>）时，
+    /// 按 Content-Length 预判 + 守卫流读取阶段校验，超限抛 <see cref="ApiRequestException"/>。
+    /// </summary>
+    private async Task<string> ReadContentAsync(
+        HttpResponseMessage response, string? requestUri, CancellationToken cancellationToken)
     {
+        if (_maxSuccessResponseBytes > 0)
+        {
+            var contentLength = response.Content.Headers.ContentLength;
+            if (contentLength > _maxSuccessResponseBytes)
+            {
+                throw new ApiRequestException(
+                    $"成功响应体大小 {contentLength.Value} 字节超过限制 {_maxSuccessResponseBytes} 字节",
+                    requestUri: requestUri);
+            }
+
+#if NET6_0_OR_GREATER
+            var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+#else
+            var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+#endif
+            using var guardedContent = new StreamContent(
+                new Helpers.SuccessResponseGuardStream(stream, _maxSuccessResponseBytes, requestUri));
+            if (response.Content.Headers.ContentType != null)
+                guardedContent.Headers.ContentType = response.Content.Headers.ContentType;
+#if NET6_0_OR_GREATER
+            return await guardedContent.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+#else
+            return await guardedContent.ReadAsStringAsync().ConfigureAwait(false);
+#endif
+        }
+
 #if NET6_0_OR_GREATER
         return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 #else

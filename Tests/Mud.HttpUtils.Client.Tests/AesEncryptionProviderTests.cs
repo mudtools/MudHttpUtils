@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Options;
+using System.Linq;
+using System.Security.Cryptography;
 
 namespace Mud.HttpUtils.Tests;
 
@@ -334,6 +336,139 @@ public class AesEncryptionProviderTests
         var act = () => options.ClearSensitiveData();
 
         act.Should().NotThrow();
+    }
+
+    #endregion
+
+    #region M2-#7 认证加密回归 (T-7.x)
+
+    /// <summary>
+    /// T-7.1 / T-7.4 验收：认证加密密文必须带版本前缀。
+    /// net8+（AesGcm 可用）→ 0x02；否则 → 0x03（CBC+HMAC）。
+    /// </summary>
+    [Fact]
+    public void AuthenticatedEncryption_Encrypt_ProducesVersionPrefix()
+    {
+        var provider = CreateProvider();
+        var expected = AesGcm.IsSupported ? (byte)0x02 : (byte)0x03;
+
+        var bytes = Convert.FromBase64String(provider.Encrypt("test"));
+
+        bytes[0].Should().Be(expected);
+    }
+
+    /// <summary>
+    /// T-7 验收：翻转密文任意 1 bit → 解密抛 <see cref="CryptographicException"/>（而非返回乱文）。
+    /// 末字节属于密文体：GCM tag 校验失败 / CBC+HMAC MAC 校验失败。
+    /// </summary>
+    [Fact]
+    public void AuthenticatedEncryption_FlipCiphertextBit_ThrowsCryptographicException()
+    {
+        var provider = CreateProvider();
+        var bytes = Convert.FromBase64String(provider.Encrypt("secret payload"));
+        bytes[^1] ^= 0x01;
+
+        var act = () => provider.DecryptBytes(bytes);
+
+        act.Should().Throw<CryptographicException>();
+    }
+
+    /// <summary>
+    /// T-7 验收（续）：翻转 nonce/IV 字节（下标 1）→ GCM tag / HMAC MAC 均覆盖该字节 → 解密抛异常。
+    /// </summary>
+    [Fact]
+    public void AuthenticatedEncryption_FlipNonceBit_ThrowsCryptographicException()
+    {
+        var provider = CreateProvider();
+        var bytes = Convert.FromBase64String(provider.Encrypt("secret payload"));
+        bytes[1] ^= 0x01;
+
+        var act = () => provider.DecryptBytes(bytes);
+
+        act.Should().Throw<CryptographicException>();
+    }
+
+    /// <summary>
+    /// T-7.3 验收：v3（CBC + HMAC-SHA256 Encrypt-then-MAC）信封可被解密 ——
+    /// 手工构造合法 v3 信封（测试进程为 net8，经此用例确定性覆盖 DecryptCbcThenHmac 路径）。
+    /// </summary>
+    [Fact]
+    public void AuthenticatedEncryption_CbcHmacEnvelope_RoundTrips()
+    {
+        var provider = CreateProvider();
+        var key = Convert.FromBase64String("MTIzNDU2Nzg5MDEyMzQ1Ng==");
+        var plain = Encoding.UTF8.GetBytes("manual v3 envelope");
+
+        var envelope = BuildCbcHmacEnvelope(key, plain, tamper: false);
+
+        provider.DecryptBytes(envelope).Should().Equal(plain);
+    }
+
+    /// <summary>
+    /// T-7.3 验收（续）：篡改 v3 信封密文体 → 常量时间 MAC 校验失败 → 抛 <see cref="CryptographicException"/>。
+    /// </summary>
+    [Fact]
+    public void AuthenticatedEncryption_CbcHmacEnvelope_TamperedMac_ThrowsCryptographicException()
+    {
+        var provider = CreateProvider();
+        var key = Convert.FromBase64String("MTIzNDU2Nzg5MDEyMzQ1Ng==");
+        var plain = Encoding.UTF8.GetBytes("manual v3 envelope");
+
+        var envelope = BuildCbcHmacEnvelope(key, plain, tamper: true);
+
+        var act = () => provider.DecryptBytes(envelope);
+
+        act.Should().Throw<CryptographicException>();
+    }
+
+    /// <summary>
+    /// 认证加密开启时拒绝裸 CBC 密文（无版本前缀）：抛 <see cref="CryptographicException"/> 而非静默解密。
+    /// </summary>
+    [Fact]
+    public void AuthenticatedEncryption_RawCbcCipherText_IsRejected()
+    {
+        var legacyOptions = new AesEncryptionOptions
+        {
+            Key = Convert.FromBase64String("MTIzNDU2Nzg5MDEyMzQ1Ng=="),
+            EnableAuthenticatedEncryption = false,
+        };
+        using var legacyProvider = new DefaultAesEncryptionProvider(Options.Create(legacyOptions));
+        var rawCbc = legacyProvider.EncryptBytes(Encoding.UTF8.GetBytes("legacy"));
+
+        var provider = CreateProvider();
+        var act = () => provider.DecryptBytes(rawCbc);
+
+        act.Should().Throw<CryptographicException>()
+            .WithMessage("*版本前缀*");
+    }
+
+    /// <summary>构造 v3（CBC+HMAC）信封：<c>[0x03][IV(16)][MAC(32)][密文]</c>。</summary>
+    private static byte[] BuildCbcHmacEnvelope(byte[] key, byte[] plain, bool tamper)
+    {
+        using var aes = Aes.Create();
+        aes.Key = key;
+        aes.Mode = CipherMode.CBC;
+        aes.Padding = PaddingMode.PKCS7;
+        aes.GenerateIV();
+
+        byte[] cipher;
+        using (var encryptor = aes.CreateEncryptor())
+            cipher = encryptor.TransformFinalBlock(plain, 0, plain.Length);
+
+        // MAC 覆盖 IV + 密文（Encrypt-then-MAC，与 DecryptCbcThenHmac 的 ComputeHmac 一致）
+        byte[] mac;
+        using (var hmac = new HMACSHA256(key))
+            mac = hmac.ComputeHash(aes.IV.Concat(cipher).ToArray());
+
+        var envelope = new byte[1 + aes.IV.Length + mac.Length + cipher.Length];
+        envelope[0] = 0x03;
+        Buffer.BlockCopy(aes.IV, 0, envelope, 1, aes.IV.Length);
+        Buffer.BlockCopy(mac, 0, envelope, 1 + aes.IV.Length, mac.Length);
+        Buffer.BlockCopy(cipher, 0, envelope, 1 + aes.IV.Length + mac.Length, cipher.Length);
+
+        if (tamper)
+            envelope[^1] ^= 0x01;
+        return envelope;
     }
 
     #endregion

@@ -18,9 +18,10 @@ public class ResiliencePolicyResolverTests
 {
     private static readonly Uri TestUri = new("https://api.example.com/test");
 
-    private static HttpRequestMessage CreateRequest(string content = """{"id":1}""")
+    private static HttpRequestMessage CreateRequest(string content = """{"id":1}""", HttpMethod? method = null)
     {
-        var request = new HttpRequestMessage(HttpMethod.Post, TestUri);
+        // 默认 GET（幂等）：M2-#12 后非幂等方法默认不重试，参数透传类用例用 GET 保持原有验证意图
+        var request = new HttpRequestMessage(method ?? HttpMethod.Get, TestUri);
         if (content != null)
         {
             request.Content = new StringContent(content, Encoding.UTF8, "application/json");
@@ -175,12 +176,16 @@ public class ResiliencePolicyResolverTests
         callCount.Should().Be(3); // 1 次初始 + 2 次重试
         receivedRequests.Should().HaveCount(3);
 
-        // 每次传入 coreExecute 的都应是克隆请求，而非原始模板
-        foreach (var received in receivedRequests)
+        // M2-#19：首次尝试直接用原请求（保持流式/进度语义）；仅重试时克隆。
+        // 重试的两次传入都应是克隆请求，而非原始模板；首次与模板为同一实例。
+        receivedRequests[0].Should().BeSameAs(requestTemplate);
+        for (var i = 1; i < receivedRequests.Count; i++)
         {
+            var received = receivedRequests[i];
             received.Should().NotBeSameAs(requestTemplate);
             received.RequestUri.Should().Be(TestUri);
-            received.Method.Should().Be(HttpMethod.Post);
+            // 测试 helper 默认 GET（M2-#12：非幂等方法默认不重试），克隆保真断言同步为 GET
+            received.Method.Should().Be(HttpMethod.Get);
         }
     }
 
@@ -203,27 +208,25 @@ public class ResiliencePolicyResolverTests
         var requestTemplate = CreateRequest("""{"data":"value"}""");
         var wrapper = resolver.ResolvePolicyWrapper<string>(RetryOptions(1), requestTemplate);
 
-        HttpRequestMessage? firstRequest = null;
+        HttpRequestMessage? retryRequest = null;
         var callCount = 0;
         Func<HttpRequestMessage, CancellationToken, Task<string>> coreExecute = (req, ct) =>
         {
             callCount++;
             if (callCount == 1)
-            {
-                firstRequest = req;
                 throw new InvalidOperationException("first attempt fails");
-            }
+            retryRequest = req;
             return Task.FromResult("ok");
         };
 
         await wrapper!(coreExecute, CancellationToken.None);
 
-        // 第一次执行的克隆请求应在 finally 中被 Dispose。
-        // Dispose 后访问 Content 流会抛出 ObjectDisposedException。
-        firstRequest.Should().NotBeNull();
-        firstRequest!.Content.Should().NotBeNull();
-        var act = () => firstRequest.Content!.ReadAsStream();
-        act.Should().Throw<ObjectDisposedException>("克隆请求在 finally 块中应被 Dispose");
+        // M2-#19：首次执行用原请求（不被 Dispose，生命周期归调用方）；
+        // 重试时克隆的请求应在 finally 中被 Dispose（Dispose 后访问 Content 流抛 ObjectDisposedException）。
+        retryRequest.Should().NotBeNull();
+        retryRequest!.Content.Should().NotBeNull();
+        var act = () => retryRequest.Content!.ReadAsStream();
+        act.Should().Throw<ObjectDisposedException>("重试克隆请求在 finally 块中应被 Dispose");
     }
 
     [Fact]
@@ -251,10 +254,12 @@ public class ResiliencePolicyResolverTests
 
         await wrapper!(coreExecute, CancellationToken.None);
 
+        // M2-#19：无重试成功时直接用原请求 —— 与模板同一实例且不被 Dispose
         receivedRequest.Should().NotBeNull();
+        receivedRequest.Should().BeSameAs(requestTemplate);
         receivedRequest!.Content.Should().NotBeNull();
         var act = () => receivedRequest.Content!.ReadAsStream();
-        act.Should().Throw<ObjectDisposedException>("即使成功无重试，克隆请求也应被 Dispose");
+        act.Should().NotThrow("原请求生命周期归调用方，首次执行不得 Dispose");
     }
 
     #endregion
@@ -294,7 +299,9 @@ public class ResiliencePolicyResolverTests
     [Fact]
     public async Task ResolvePolicyWrapper_ContentExceedingMaxCloneSize_FirstAttemptClonesBeforeExecution()
     {
-        // 首次执行也需要克隆，因此即使不重试，超限内容也会在首次克隆时抛出
+        // M2-#19：首次执行不再克隆 → 超限内容在首次直接成功执行（不再抛出）；
+        // 仅当发生重试时才因克隆超限抛 InvalidOperationException。
+        // 本用例锁定"首次不克隆"的新语义：即使内容超限，首次执行也不受影响。
         var largeContent = new string('x', 2048);
         var noOpPolicy = Policy.NoOpAsync<string>();
 
@@ -310,14 +317,18 @@ public class ResiliencePolicyResolverTests
         var requestTemplate = CreateRequest(largeContent);
         var wrapper = resolver.ResolvePolicyWrapper<string>(RetryOptions(), requestTemplate);
 
+        HttpRequestMessage? receivedRequest = null;
         Func<HttpRequestMessage, CancellationToken, Task<string>> coreExecute = (req, ct) =>
-            Task.FromResult("should not reach");
+        {
+            receivedRequest = req;
+            return Task.FromResult("done-first-attempt");
+        };
 
-        var act = () => wrapper!(coreExecute, CancellationToken.None);
+        var result = await wrapper!(coreExecute, CancellationToken.None);
 
-        // 首次克隆就应失败
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*超过最大克隆限制*");
+        // 首次成功：原样执行（无克隆、无超限异常），且传入的是原请求本身
+        result.Should().Be("done-first-attempt");
+        receivedRequest.Should().BeSameAs(requestTemplate);
     }
 
     #endregion

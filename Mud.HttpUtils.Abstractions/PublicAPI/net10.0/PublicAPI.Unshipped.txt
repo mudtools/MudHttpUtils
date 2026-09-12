@@ -1,4 +1,4 @@
-#nullable enable
+﻿#nullable enable
 abstract Mud.HttpUtils.MultipartItem.ToContent() -> System.Net.Http.HttpContent!
 abstract Mud.HttpUtils.OAuth2TokenManagerBase.GetTokenByAuthorizationCodeAsync(string! code, string! redirectUri, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.CredentialToken!>!
 abstract Mud.HttpUtils.OAuth2TokenManagerBase.GetTokenByClientCredentialsAsync(string![]? scopes = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.CredentialToken!>!
@@ -6,6 +6,8 @@ abstract Mud.HttpUtils.OAuth2TokenManagerBase.RefreshTokenByRefreshTokenAsync(st
 abstract Mud.HttpUtils.TokenManagerBase.GetTokenAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string!>!
 abstract Mud.HttpUtils.TokenManagerBase.RefreshTokenCoreAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Mud.HttpUtils.CredentialToken!>!
 const Mud.HttpUtils.AesEncryptionOptions.SectionName = "MudHttpAesEncryption" -> string!
+const Mud.HttpUtils.HttpExecutionConstants.AllowNonIdempotentRetryPropertyKey = "__Mud_HttpUtils_AllowNonIdempotentRetry" -> string!
+const Mud.HttpUtils.HttpExecutionConstants.DefaultMaxExceptionContentLength = 10240 -> int
 const Mud.HttpUtils.HttpExecutionConstants.SkipResiliencePropertyKey = "__Mud_HttpUtils_SkipResilience" -> string!
 const Mud.HttpUtils.MudHttpActivitySource.ActivityNameRequest = "Mud.HttpUtils.HttpClient.Request" -> string!
 const Mud.HttpUtils.MudHttpActivitySource.ActivityNameTokenRecovery = "Mud.HttpUtils.Token.Recovery" -> string!
@@ -45,6 +47,8 @@ const Mud.HttpUtils.TokenManagerBase.DefaultExpireThresholdSeconds = 300 -> int
 const Mud.HttpUtils.TokenManagerBase.DefaultScopeKey = "default" -> string!
 const Mud.HttpUtils.TokenRecoveryContext.PropertyKey = "__Mud_HttpUtils_TokenRecoveryContext" -> string!
 const Mud.HttpUtils.TokenRecoveryOptions.SectionName = "MudHttpTokenRecovery" -> string!
+const Mud.HttpUtils.TokenRefreshBackgroundOptions.DefaultRefreshIntervalSeconds = 300 -> int
+const Mud.HttpUtils.TokenRefreshBackgroundOptions.DefaultRetryDelaySeconds = 60 -> int
 const Mud.HttpUtils.TokenRefreshBackgroundOptions.SectionName = "TokenRefreshBackground" -> string!
 const Mud.HttpUtils.TokenTypes.AccessToken = "AccessToken" -> string!
 const Mud.HttpUtils.TokenTypes.Basic = "Basic" -> string!
@@ -53,6 +57,8 @@ const Mud.HttpUtils.TokenTypes.RefreshToken = "RefreshToken" -> string!
 Mud.HttpUtils.AesEncryptionOptions
 Mud.HttpUtils.AesEncryptionOptions.AesEncryptionOptions() -> void
 Mud.HttpUtils.AesEncryptionOptions.ClearSensitiveData() -> void
+Mud.HttpUtils.AesEncryptionOptions.EnableAuthenticatedEncryption.get -> bool
+Mud.HttpUtils.AesEncryptionOptions.EnableAuthenticatedEncryption.set -> void
 Mud.HttpUtils.AesEncryptionOptions.IV.get -> byte[]!
 Mud.HttpUtils.AesEncryptionOptions.IV.set -> void
 Mud.HttpUtils.AesEncryptionOptions.Key.get -> byte[]!
@@ -65,15 +71,22 @@ Mud.HttpUtils.ApiException.ApiException(System.Net.HttpStatusCode statusCode, st
 Mud.HttpUtils.ApiException.ApiException(System.Net.HttpStatusCode statusCode, string? content, string? requestUri, System.Exception! innerException) -> void
 Mud.HttpUtils.ApiException.ApiException(System.Net.HttpStatusCode statusCode, string? content, System.Exception! innerException) -> void
 Mud.HttpUtils.ApiException.Content.get -> string?
+Mud.HttpUtils.ApiException.Content.set -> void
 Mud.HttpUtils.ApiException.DeserializeContent<T>(System.Func<string!, T?>! deserialize) -> T?
+Mud.HttpUtils.ApiException.HasRequestContent.get -> bool
+Mud.HttpUtils.ApiException.RequestContent.get -> string?
+Mud.HttpUtils.ApiException.RequestContent.set -> void
 Mud.HttpUtils.ApiException.RequestUri.get -> string?
+Mud.HttpUtils.ApiException.RequestUri.set -> void
 Mud.HttpUtils.ApiException.StatusCode.get -> System.Net.HttpStatusCode
 Mud.HttpUtils.ApiException.TryDeserializeContent<T>(System.Func<string!, T?>! deserialize, out T? result) -> bool
 Mud.HttpUtils.ApiRequestException
-Mud.HttpUtils.ApiRequestException.ApiRequestException(string! message, System.Exception? transportException = null, bool isTimeout = false, bool isCancellation = false, string? requestUri = null) -> void
+Mud.HttpUtils.ApiRequestException.ApiRequestException(string! message, System.Exception? transportException = null, bool isTimeout = false, bool isCancellation = false, string? requestUri = null, bool isCircuitOpen = false) -> void
 Mud.HttpUtils.ApiRequestException.IsCancellation.get -> bool
+Mud.HttpUtils.ApiRequestException.IsCircuitOpen.get -> bool
 Mud.HttpUtils.ApiRequestException.IsTimeout.get -> bool
 Mud.HttpUtils.ApiRequestException.TransportException.get -> System.Exception?
+Mud.HttpUtils.ApiResponseExtensions
 Mud.HttpUtils.AppConfigurationChangedEventArgs
 Mud.HttpUtils.AppConfigurationChangedEventArgs.AppConfigurationChangedEventArgs(string! appKey, Mud.HttpUtils.AppConfigurationChangeType changeType) -> void
 Mud.HttpUtils.AppConfigurationChangedEventArgs.AppKey.get -> string!
@@ -102,8 +115,10 @@ Mud.HttpUtils.CircuitBreakerStateObserver
 Mud.HttpUtils.CollectionFormat
 Mud.HttpUtils.CollectionFormat.Comma = 1 -> Mud.HttpUtils.CollectionFormat
 Mud.HttpUtils.CollectionFormat.Multi = 0 -> Mud.HttpUtils.CollectionFormat
+Mud.HttpUtils.CollectionFormat.Pipes = 5 -> Mud.HttpUtils.CollectionFormat
 Mud.HttpUtils.CollectionFormat.Semicolon = 2 -> Mud.HttpUtils.CollectionFormat
 Mud.HttpUtils.CollectionFormat.Space = 3 -> Mud.HttpUtils.CollectionFormat
+Mud.HttpUtils.CollectionFormat.Tsv = 4 -> Mud.HttpUtils.CollectionFormat
 Mud.HttpUtils.ConcurrentDictionaryTokenCache<T>
 Mud.HttpUtils.ConcurrentDictionaryTokenCache<T>.Clear() -> void
 Mud.HttpUtils.ConcurrentDictionaryTokenCache<T>.Compact(double percentage) -> void
@@ -141,6 +156,11 @@ Mud.HttpUtils.DefaultAppManager<TAppContext>.DefaultAppManager() -> void
 Mud.HttpUtils.DefaultAppManager<TAppContext>.RegisterApp(string! appKey, TAppContext appContext, bool isDefault = false) -> void
 Mud.HttpUtils.DefaultAppManager<TAppContext>.RegisterAppAsync(string! appKey, TAppContext appContext, bool isDefault = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Mud.HttpUtils.DefaultAppManager<TAppContext>.RegisterSwitcherFactory<TContextSwitcher>(System.Func<TAppContext, TContextSwitcher>! factory) -> void
+Mud.HttpUtils.DefaultExceptionFactory
+Mud.HttpUtils.DefaultExceptionFactory.CreateApiException(System.Net.Http.HttpResponseMessage! response, string? content, string? requestUri) -> System.Exception?
+Mud.HttpUtils.DefaultExceptionFactory.CreateDeserializationException(string? content, System.Type! targetType, System.Exception! deserializationException, string? requestUri) -> System.Exception!
+Mud.HttpUtils.DefaultExceptionFactory.CreateTransportException(System.Exception! transportException, string? requestUri, bool isTimeout, bool isCancellation) -> System.Exception!
+Mud.HttpUtils.DefaultExceptionFactory.DefaultExceptionFactory() -> void
 Mud.HttpUtils.ExecutionDescriptor
 Mud.HttpUtils.ExecutionDescriptor.Cache.get -> Mud.HttpUtils.CacheOptions?
 Mud.HttpUtils.ExecutionDescriptor.Cache.set -> void
@@ -164,7 +184,46 @@ Mud.HttpUtils.FormField<TBody>.Getter.get -> System.Func<TBody, object?>!
 Mud.HttpUtils.FormField<TBody>.PrefixSegment.get -> string?
 Mud.HttpUtils.FormField<TBody>.ResolveFieldName(Mud.HttpUtils.IUrlParameterKeyFormatter? keyFormatter) -> string!
 Mud.HttpUtils.FormField<TBody>.SerializeNull.get -> bool
+Mud.HttpUtils.GeneratedClientOptions
+Mud.HttpUtils.GeneratedClientOptions.AppContext.get -> Mud.HttpUtils.IMudAppContext?
+Mud.HttpUtils.GeneratedClientOptions.AppContext.set -> void
+Mud.HttpUtils.GeneratedClientOptions.AppContextHolder.get -> Mud.HttpUtils.IAppContextHolder?
+Mud.HttpUtils.GeneratedClientOptions.AppContextHolder.set -> void
+Mud.HttpUtils.GeneratedClientOptions.CacheProvider.get -> Mud.HttpUtils.IHttpResponseCache?
+Mud.HttpUtils.GeneratedClientOptions.CacheProvider.set -> void
+Mud.HttpUtils.GeneratedClientOptions.CaptureRequestContent.get -> bool
+Mud.HttpUtils.GeneratedClientOptions.CaptureRequestContent.set -> void
+Mud.HttpUtils.GeneratedClientOptions.ContentSerializer.get -> Mud.HttpUtils.IHttpContentSerializer?
+Mud.HttpUtils.GeneratedClientOptions.ContentSerializer.set -> void
+Mud.HttpUtils.GeneratedClientOptions.ExceptionRedactor.get -> Mud.HttpUtils.IExceptionRedactor?
+Mud.HttpUtils.GeneratedClientOptions.ExceptionRedactor.set -> void
+Mud.HttpUtils.GeneratedClientOptions.GeneratedClientOptions() -> void
+Mud.HttpUtils.GeneratedClientOptions.GeneratedOnlyMode.get -> bool?
+Mud.HttpUtils.GeneratedClientOptions.GeneratedOnlyMode.set -> void
+Mud.HttpUtils.GeneratedClientOptions.HttpRequestMessageOptions.get -> System.Collections.Generic.Dictionary<string!, object?>?
+Mud.HttpUtils.GeneratedClientOptions.HttpRequestMessageOptions.set -> void
+Mud.HttpUtils.GeneratedClientOptions.HttpVersion.get -> System.Version?
+Mud.HttpUtils.GeneratedClientOptions.HttpVersion.set -> void
+Mud.HttpUtils.GeneratedClientOptions.HttpVersionPolicy.get -> System.Net.Http.HttpVersionPolicy?
+Mud.HttpUtils.GeneratedClientOptions.HttpVersionPolicy.set -> void
+Mud.HttpUtils.GeneratedClientOptions.JsonTypeInfoResolver.get -> System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver?
+Mud.HttpUtils.GeneratedClientOptions.JsonTypeInfoResolver.set -> void
+Mud.HttpUtils.GeneratedClientOptions.MaxExceptionContentLength.get -> int?
+Mud.HttpUtils.GeneratedClientOptions.MaxExceptionContentLength.set -> void
+Mud.HttpUtils.GeneratedClientOptions.RequestInterceptor.get -> Mud.HttpUtils.IHttpRequestInterceptor?
+Mud.HttpUtils.GeneratedClientOptions.RequestInterceptor.set -> void
+Mud.HttpUtils.GeneratedClientOptions.ResilienceResolver.get -> Mud.HttpUtils.IResiliencePolicyResolver?
+Mud.HttpUtils.GeneratedClientOptions.ResilienceResolver.set -> void
+Mud.HttpUtils.GeneratedClientOptions.ResponseInterceptor.get -> Mud.HttpUtils.IHttpResponseInterceptor?
+Mud.HttpUtils.GeneratedClientOptions.ResponseInterceptor.set -> void
+Mud.HttpUtils.GeneratedClientOptions.SensitiveDataMasker.get -> Mud.HttpUtils.ISensitiveDataMasker?
+Mud.HttpUtils.GeneratedClientOptions.SensitiveDataMasker.set -> void
 Mud.HttpUtils.HttpExecutionConstants
+Mud.HttpUtils.IAotJsonContentSerializer
+Mud.HttpUtils.IAotJsonContentSerializer.Deserialize<T>(string! json, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! typeInfo) -> T?
+Mud.HttpUtils.IAotJsonContentSerializer.FromHttpContentAsync<T>(System.Net.Http.HttpContent! content, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! typeInfo, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<T?>!
+Mud.HttpUtils.IAotJsonContentSerializer.Serialize<T>(T item, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! typeInfo) -> string!
+Mud.HttpUtils.IAotJsonContentSerializer.ToHttpContent<T>(T item, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T>! typeInfo) -> System.Net.Http.HttpContent?
 Mud.HttpUtils.IApiKeyProvider
 Mud.HttpUtils.IApiKeyProvider.GetApiKeyAsync(string? keyName = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string!>!
 Mud.HttpUtils.IApiResponse
@@ -206,6 +265,7 @@ Mud.HttpUtils.IBaseHttpClient
 Mud.HttpUtils.IBaseHttpClient.DownloadAsync(System.Net.Http.HttpRequestMessage! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]?>!
 Mud.HttpUtils.IBaseHttpClient.DownloadLargeAsync(System.Net.Http.HttpRequestMessage! request, string! filePath, bool overwrite = true, int bufferSize = 81920, System.IProgress<long>? progress = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.IO.FileInfo!>!
 Mud.HttpUtils.IBaseHttpClient.SendAsAsyncEnumerable<TResult>(System.Net.Http.HttpRequestMessage! request, object? jsonSerializerOptions = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TResult>!
+Mud.HttpUtils.IBaseHttpClient.SendAsAsyncEnumerable<TResult>(System.Net.Http.HttpRequestMessage! request, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TResult>! jsonTypeInfo, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TResult>!
 Mud.HttpUtils.IBaseHttpClient.SendAsync<TResult>(System.Net.Http.HttpRequestMessage! request, object? jsonSerializerOptions = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
 Mud.HttpUtils.IBaseHttpClient.SendRawAsync(System.Net.Http.HttpRequestMessage! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Net.Http.HttpResponseMessage!>!
 Mud.HttpUtils.IBaseHttpClient.SendStreamAsync(System.Net.Http.HttpRequestMessage! request, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.IO.Stream!>!
@@ -215,11 +275,13 @@ Mud.HttpUtils.ICurrentUserContext.SetUserId(string? userId) -> void
 Mud.HttpUtils.ICurrentUserContext.UserId.get -> string?
 Mud.HttpUtils.ICurrentUserId
 Mud.HttpUtils.ICurrentUserId.CurrentUserId.get -> string?
+Mud.HttpUtils.IDeserializationExceptionFactory
+Mud.HttpUtils.IDeserializationExceptionFactory.CreateDeserializationException(string? content, System.Type! targetType, System.Exception! deserializationException, string? requestUri) -> System.Exception!
 Mud.HttpUtils.IEncryptableHttpClient
 Mud.HttpUtils.IEncryptableHttpClient.DecryptBytes(byte[]! encryptedData) -> byte[]!
 Mud.HttpUtils.IEncryptableHttpClient.DecryptContent(string! encryptedContent) -> string!
 Mud.HttpUtils.IEncryptableHttpClient.EncryptBytes(byte[]! data) -> byte[]!
-~Mud.HttpUtils.IEncryptableHttpClient.EncryptContent(object! content, string! propertyName = "data", Mud.HttpUtils.SerializeType serializeType = Mud.HttpUtils.SerializeType.Json) -> string!
+Mud.HttpUtils.IEncryptableHttpClient.EncryptContent(object! content, string! propertyName = "data", Mud.HttpUtils.SerializeType serializeType = Mud.HttpUtils.SerializeType.Json) -> string!
 Mud.HttpUtils.IEncryptableHttpClient.EncryptContent<T>(T content, string! propertyName = "data") -> string!
 Mud.HttpUtils.IEncryptedTokenStore
 Mud.HttpUtils.IEncryptedTokenStore.IsEncryptionEnabled.get -> bool
@@ -228,6 +290,21 @@ Mud.HttpUtils.IEncryptionProvider.Decrypt(string! cipherText) -> string!
 Mud.HttpUtils.IEncryptionProvider.DecryptBytes(byte[]! encryptedData) -> byte[]!
 Mud.HttpUtils.IEncryptionProvider.Encrypt(string! plainText) -> string!
 Mud.HttpUtils.IEncryptionProvider.EncryptBytes(byte[]! data) -> byte[]!
+Mud.HttpUtils.IEnhancedClientConfig
+Mud.HttpUtils.IEnhancedClientConfig.CaptureRequestContent.get -> bool
+Mud.HttpUtils.IEnhancedClientConfig.CaptureRequestContent.set -> void
+Mud.HttpUtils.IEnhancedClientConfig.ExceptionRedactor.get -> Mud.HttpUtils.IExceptionRedactor?
+Mud.HttpUtils.IEnhancedClientConfig.ExceptionRedactor.set -> void
+Mud.HttpUtils.IEnhancedClientConfig.HttpRequestMessageOptions.get -> System.Collections.Generic.Dictionary<string!, object?>?
+Mud.HttpUtils.IEnhancedClientConfig.HttpRequestMessageOptions.set -> void
+Mud.HttpUtils.IEnhancedClientConfig.HttpVersion.get -> System.Version?
+Mud.HttpUtils.IEnhancedClientConfig.HttpVersion.set -> void
+Mud.HttpUtils.IEnhancedClientConfig.HttpVersionPolicy.get -> System.Net.Http.HttpVersionPolicy?
+Mud.HttpUtils.IEnhancedClientConfig.HttpVersionPolicy.set -> void
+Mud.HttpUtils.IEnhancedClientConfig.JsonTypeInfoResolver.get -> System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver?
+Mud.HttpUtils.IEnhancedClientConfig.JsonTypeInfoResolver.set -> void
+Mud.HttpUtils.IEnhancedClientConfig.MaxExceptionContentLength.get -> int?
+Mud.HttpUtils.IEnhancedClientConfig.MaxExceptionContentLength.set -> void
 Mud.HttpUtils.IEnhancedHttpClient
 Mud.HttpUtils.IEnhancedHttpClient.BaseAddress.get -> System.Uri?
 Mud.HttpUtils.IEnhancedHttpClient.WithBaseAddress(string! baseAddress) -> Mud.HttpUtils.IEnhancedHttpClient!
@@ -236,6 +313,8 @@ Mud.HttpUtils.IEnhancedHttpClientFactory
 Mud.HttpUtils.IEnhancedHttpClientFactory.CreateClient(string! clientName) -> Mud.HttpUtils.IEnhancedHttpClient!
 Mud.HttpUtils.IEnhancedHttpClientFactory.Invalidate(string! clientName) -> bool
 Mud.HttpUtils.IEnhancedHttpClientFactory.InvalidateAll() -> void
+Mud.HttpUtils.IExceptionRedactor
+Mud.HttpUtils.IExceptionRedactor.Redact(Mud.HttpUtils.ApiException! exception) -> void
 Mud.HttpUtils.IFormContent
 Mud.HttpUtils.IFormContent.ToHttpContent() -> System.Net.Http.HttpContent!
 Mud.HttpUtils.IFormContent.ToHttpContentAsync(System.IProgress<long>? progress = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Net.Http.HttpContent!>!
@@ -252,6 +331,8 @@ Mud.HttpUtils.IHttpContentSerializer.GetFieldNameForProperty(System.Reflection.P
 Mud.HttpUtils.IHttpContentSerializer.Serialize(object? item, System.Type! type, object? options = null) -> string!
 Mud.HttpUtils.IHttpContentSerializer.Serialize<T>(T item, object? options = null) -> string!
 Mud.HttpUtils.IHttpContentSerializer.ToHttpContent<T>(T item, object? options = null) -> System.Net.Http.HttpContent?
+Mud.HttpUtils.IHttpExceptionFactory
+Mud.HttpUtils.IHttpExceptionFactory.CreateApiException(System.Net.Http.HttpResponseMessage! response, string? content, string? requestUri) -> System.Exception?
 Mud.HttpUtils.IHttpRequestExecutor
 Mud.HttpUtils.IHttpRequestExecutor.DownloadAsync(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, Mud.HttpUtils.ResponseDescriptor? descriptor = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]?>!
 Mud.HttpUtils.IHttpRequestExecutor.DownloadLargeAsync(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, string! filePath, bool overwrite = true, int bufferSize = 81920, Mud.HttpUtils.ResponseDescriptor? descriptor = null, System.IProgress<long>? progress = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
@@ -260,6 +341,7 @@ Mud.HttpUtils.IHttpRequestExecutor.ExecuteAsync(System.Net.Http.HttpRequestMessa
 Mud.HttpUtils.IHttpRequestExecutor.ExecuteAsync<TResult>(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, Mud.HttpUtils.ExecutionDescriptor! descriptor, object? jsonSerializerOptions, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
 Mud.HttpUtils.IHttpRequestExecutor.SendAndDeserializeAsync<TResult>(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, Mud.HttpUtils.ResponseDescriptor! descriptor, object? jsonSerializerOptions, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<TResult?>!
 Mud.HttpUtils.IHttpRequestExecutor.SendAsAsyncEnumerable<TElement>(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, object? jsonSerializerOptions, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TElement>!
+Mud.HttpUtils.IHttpRequestExecutor.SendAsAsyncEnumerable<TElement>(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TElement>! jsonTypeInfo, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TElement>!
 Mud.HttpUtils.IHttpRequestExecutor.SendAsResponseAsync<TInner>(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, Mud.HttpUtils.ResponseDescriptor! descriptor, object? jsonSerializerOptions, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.Response<TInner>!>!
 Mud.HttpUtils.IHttpRequestExecutor.SendAsync(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, Mud.HttpUtils.ResponseDescriptor! descriptor, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Mud.HttpUtils.IHttpRequestInterceptor
@@ -298,6 +380,13 @@ Mud.HttpUtils.ISecretProvider.GetSecretAsync(string! name) -> System.Threading.T
 Mud.HttpUtils.ISensitiveDataMasker
 Mud.HttpUtils.ISensitiveDataMasker.Mask(string! value, Mud.HttpUtils.SensitiveDataMaskMode mode = Mud.HttpUtils.SensitiveDataMaskMode.Mask, int prefixLength = 2, int suffixLength = 2) -> string!
 Mud.HttpUtils.ISensitiveDataMasker.MaskObject(object! obj) -> string!
+Mud.HttpUtils.IStreamingContentSerializer
+Mud.HttpUtils.IStreamingContentSerializer.DeserializeStreamAsync<T>(System.IO.Stream! stream, Mud.HttpUtils.StreamingContentFormat format, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<T?>!
+Mud.HttpUtils.ISynchronousContentDeserializer
+Mud.HttpUtils.ISynchronousContentDeserializer.DeserializeFromString<T>(string! content) -> T?
+Mud.HttpUtils.ISynchronousContentSerializer
+Mud.HttpUtils.ISynchronousContentSerializer.ToHttpContentSynchronous<T>(T item) -> System.Net.Http.HttpContent!
+Mud.HttpUtils.ISynchronousContentSerializer.ToStreamingHttpContent<T>(T item) -> System.Net.Http.HttpContent!
 Mud.HttpUtils.ITokenCache<T>
 Mud.HttpUtils.ITokenCache<T>.Clear() -> void
 Mud.HttpUtils.ITokenCache<T>.Compact(double percentage) -> void
@@ -328,6 +417,8 @@ Mud.HttpUtils.ITokenStore.GetTokenTypesAsync(System.Threading.CancellationToken 
 Mud.HttpUtils.ITokenStore.RemoveAsync(string! tokenType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Mud.HttpUtils.ITokenStore.SetAccessTokenAsync(string! tokenType, string! accessToken, long expiresInSeconds, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Mud.HttpUtils.ITokenStore.SetRefreshTokenAsync(string! tokenType, string! refreshToken, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.ITransportExceptionFactory
+Mud.HttpUtils.ITransportExceptionFactory.CreateTransportException(System.Exception! transportException, string? requestUri, bool isTimeout, bool isCancellation) -> System.Exception!
 Mud.HttpUtils.IUrlParameterFormatter
 Mud.HttpUtils.IUrlParameterFormatter.Format(object? value, System.Reflection.ICustomAttributeProvider? attributeProvider, System.Type! type) -> string?
 Mud.HttpUtils.IUrlParameterKeyFormatter
@@ -359,6 +450,7 @@ Mud.HttpUtils.IXmlHttpClient.SendXmlAsync<TResult>(System.Net.Http.HttpRequestMe
 Mud.HttpUtils.MudHttpActivitySource
 Mud.HttpUtils.MudHttpActivitySource.Tags
 Mud.HttpUtils.MudHttpMeter
+Mud.HttpUtils.MudHttpObservabilityOptions
 Mud.HttpUtils.MultipartItem
 Mud.HttpUtils.MultipartItem.ContentType.get -> string?
 Mud.HttpUtils.MultipartItem.ContentType.set -> void
@@ -452,6 +544,10 @@ Mud.HttpUtils.QueryParameterBuilder.GetValues(string! name) -> System.Collection
 Mud.HttpUtils.QueryParameterBuilder.QueryParameterBuilder() -> void
 Mud.HttpUtils.QueryParameterBuilder.QueryParameterBuilder(string! baseUrl) -> void
 Mud.HttpUtils.QueryParameterBuilder.this[string! name].get -> string?
+Mud.HttpUtils.RequestBodySerializationMode
+Mud.HttpUtils.RequestBodySerializationMode.Buffered = 1 -> Mud.HttpUtils.RequestBodySerializationMode
+Mud.HttpUtils.RequestBodySerializationMode.Default = 0 -> Mud.HttpUtils.RequestBodySerializationMode
+Mud.HttpUtils.RequestBodySerializationMode.Streamed = 2 -> Mud.HttpUtils.RequestBodySerializationMode
 Mud.HttpUtils.ResilienceExecutionOptions
 Mud.HttpUtils.ResilienceExecutionOptions.BreakDurationSeconds.get -> int
 Mud.HttpUtils.ResilienceExecutionOptions.BreakDurationSeconds.set -> void
@@ -502,6 +598,7 @@ Mud.HttpUtils.ResponseDescriptor.ResponseContentType.set -> void
 Mud.HttpUtils.ResponseDescriptor.ResponseDescriptor() -> void
 Mud.HttpUtils.ResponseDescriptor.XmlSerializer.get -> object?
 Mud.HttpUtils.ResponseDescriptor.XmlSerializer.set -> void
+Mud.HttpUtils.RestService
 Mud.HttpUtils.SensitiveDataMaskMode
 Mud.HttpUtils.SensitiveDataMaskMode.Hide = 0 -> Mud.HttpUtils.SensitiveDataMaskMode
 Mud.HttpUtils.SensitiveDataMaskMode.Mask = 1 -> Mud.HttpUtils.SensitiveDataMaskMode
@@ -509,6 +606,9 @@ Mud.HttpUtils.SensitiveDataMaskMode.TypeOnly = 2 -> Mud.HttpUtils.SensitiveDataM
 Mud.HttpUtils.SerializeType
 Mud.HttpUtils.SerializeType.Json = 0 -> Mud.HttpUtils.SerializeType
 Mud.HttpUtils.SerializeType.Xml = 1 -> Mud.HttpUtils.SerializeType
+Mud.HttpUtils.StreamingContentFormat
+Mud.HttpUtils.StreamingContentFormat.JsonArray = 0 -> Mud.HttpUtils.StreamingContentFormat
+Mud.HttpUtils.StreamingContentFormat.JsonLines = 1 -> Mud.HttpUtils.StreamingContentFormat
 Mud.HttpUtils.StreamPart
 Mud.HttpUtils.StreamPart.Stream.get -> System.IO.Stream!
 Mud.HttpUtils.StreamPart.StreamPart(System.IO.Stream! stream, string! name, string? fileName = null, string? contentType = null) -> void
@@ -615,6 +715,9 @@ Mud.HttpUtils.TokenResult.Scope.get -> string?
 Mud.HttpUtils.TokenResult.TokenResult() -> void
 Mud.HttpUtils.TokenResult.TokenResult(string! accessToken, long expireTime, string? scope = null) -> void
 Mud.HttpUtils.TokenTypes
+Mud.HttpUtils.UrlResolutionMode
+Mud.HttpUtils.UrlResolutionMode.Default = 0 -> Mud.HttpUtils.UrlResolutionMode
+Mud.HttpUtils.UrlResolutionMode.Rfc3986 = 1 -> Mud.HttpUtils.UrlResolutionMode
 Mud.HttpUtils.UserTokenInfo
 Mud.HttpUtils.UserTokenInfo.AccessToken.get -> string?
 Mud.HttpUtils.UserTokenInfo.AccessToken.set -> void
@@ -652,12 +755,17 @@ override Mud.HttpUtils.ByteArrayPart.ToContent() -> System.Net.Http.HttpContent!
 override Mud.HttpUtils.FileInfoPart.ToContent() -> System.Net.Http.HttpContent!
 override Mud.HttpUtils.QueryParameterBuilder.ToString() -> string!
 override Mud.HttpUtils.StreamPart.ToContent() -> System.Net.Http.HttpContent!
+static Mud.HttpUtils.ApiResponseExtensions.EnsureSuccessStatusCode<T>(this Mud.HttpUtils.Response<T>! response) -> Mud.HttpUtils.Response<T>!
+static Mud.HttpUtils.ApiResponseExtensions.EnsureSuccessStatusCodeAsync<T>(this System.Threading.Tasks.Task<Mud.HttpUtils.Response<T>!>! task) -> System.Threading.Tasks.Task<Mud.HttpUtils.Response<T>!>!
+static Mud.HttpUtils.ApiResponseExtensions.GetHeader<T>(this Mud.HttpUtils.IApiResponse<T>! response, string! name) -> string?
 static Mud.HttpUtils.CircuitBreakerStateObserver.Clear() -> void
 static Mud.HttpUtils.CircuitBreakerStateObserver.CurrentStates.get -> System.Collections.Generic.IEnumerable<System.Diagnostics.Metrics.Measurement<int>>!
 static Mud.HttpUtils.CircuitBreakerStateObserver.RemoveState(string! policyKey) -> bool
 static Mud.HttpUtils.CircuitBreakerStateObserver.SetState(string! policyKey, Mud.HttpUtils.CircuitBreakerState state) -> void
 static Mud.HttpUtils.MudHttpActivitySource.AddActivityEvent(string! diagnosticEventName, System.Func<object?>! diagnosticPayloadFactory, string! activityEventName, System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string!, object?>>? tags = null) -> void
 static Mud.HttpUtils.MudHttpActivitySource.IsMudActivity(System.Diagnostics.Activity! activity) -> bool
+static Mud.HttpUtils.MudHttpObservabilityOptions.RedactUrlInTelemetry.get -> bool
+static Mud.HttpUtils.MudHttpObservabilityOptions.RedactUrlInTelemetry.set -> void
 static Mud.HttpUtils.Observability.MudHttpDiagnosticListener.Instance.get -> Mud.HttpUtils.Observability.MudHttpDiagnosticListener!
 static Mud.HttpUtils.Observability.TokenRefreshStatsCollector.Clear() -> void
 static Mud.HttpUtils.Observability.TokenRefreshStatsCollector.CurrentRetention.get -> System.TimeSpan
@@ -666,6 +774,11 @@ static Mud.HttpUtils.Observability.TokenRefreshStatsCollector.Record(bool succes
 static Mud.HttpUtils.Observability.TokenRefreshStatsCollector.SetRetention(System.TimeSpan retention) -> void
 static Mud.HttpUtils.QueryParameterBuilder.Create(string! baseUrl = "") -> Mud.HttpUtils.QueryParameterBuilder!
 static Mud.HttpUtils.Response<T>.implicit operator T?(Mud.HttpUtils.Response<T>! response) -> T?
+static Mud.HttpUtils.RestService.ForGenerated<T>(System.IServiceProvider! serviceProvider) -> T!
+static Mud.HttpUtils.RestService.ForGenerated<T>(System.Net.Http.HttpClient! client, Mud.HttpUtils.GeneratedClientOptions? options = null) -> T!
+static Mud.HttpUtils.RestService.GeneratedOnlyMode.get -> bool
+static Mud.HttpUtils.RestService.GeneratedOnlyMode.set -> void
+static Mud.HttpUtils.RestService.RegisterGeneratedFactory<T>(System.Func<System.Net.Http.HttpClient!, Mud.HttpUtils.GeneratedClientOptions?, T!>! factory) -> void
 static Mud.HttpUtils.TokenResult.Empty.get -> Mud.HttpUtils.TokenResult
 static Mud.HttpUtils.TokenResult.FromCredentialToken(Mud.HttpUtils.CredentialToken! token) -> Mud.HttpUtils.TokenResult
 static Mud.HttpUtils.UserTokenInfo.FromCredentialToken(Mud.HttpUtils.CredentialToken! token, string! userId, string? openId = null, string? unionId = null) -> Mud.HttpUtils.UserTokenInfo!
@@ -709,66 +822,3 @@ virtual Mud.HttpUtils.TokenManagerBase.RefreshRetryDelayMilliseconds.get -> int
 virtual Mud.HttpUtils.TokenManagerBase.RefreshTokenWithScopesAsync(string![]? scopes, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Mud.HttpUtils.CredentialToken!>!
 virtual Mud.HttpUtils.TokenManagerBase.SupportsBackgroundRefresh.get -> bool
 volatile Mud.HttpUtils.TokenManagerBase._disposed -> bool
-Mud.HttpUtils.RestService
-static Mud.HttpUtils.RestService.ForGenerated<T>(System.IServiceProvider! serviceProvider) -> T!
-static Mud.HttpUtils.RestService.ForGenerated<T>(System.Net.Http.HttpClient! client, Mud.HttpUtils.GeneratedClientOptions? options = null) -> T!
-static Mud.HttpUtils.RestService.get_GeneratedOnlyMode() -> bool
-static Mud.HttpUtils.RestService.set_GeneratedOnlyMode(bool value) -> void
-static Mud.HttpUtils.RestService.RegisterGeneratedFactory<T>(System.Func<System.Net.Http.HttpClient!, Mud.HttpUtils.GeneratedClientOptions?, T>! factory) -> void
-Mud.HttpUtils.IEnhancedClientConfig
-Mud.HttpUtils.IEnhancedClientConfig.CaptureRequestContent.get -> bool
-Mud.HttpUtils.IEnhancedClientConfig.CaptureRequestContent.set -> void
-Mud.HttpUtils.IEnhancedClientConfig.ExceptionRedactor.get -> Mud.HttpUtils.IExceptionRedactor?
-Mud.HttpUtils.IEnhancedClientConfig.ExceptionRedactor.set -> void
-Mud.HttpUtils.IEnhancedClientConfig.HttpRequestMessageOptions.get -> System.Collections.Generic.Dictionary<string!, object?>?
-Mud.HttpUtils.IEnhancedClientConfig.HttpRequestMessageOptions.set -> void
-Mud.HttpUtils.IEnhancedClientConfig.HttpVersion.get -> System.Version?
-Mud.HttpUtils.IEnhancedClientConfig.HttpVersion.set -> void
-Mud.HttpUtils.IEnhancedClientConfig.HttpVersionPolicy.get -> System.Net.Http.HttpVersionPolicy?
-Mud.HttpUtils.IEnhancedClientConfig.HttpVersionPolicy.set -> void
-Mud.HttpUtils.IEnhancedClientConfig.JsonTypeInfoResolver.get -> System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver?
-Mud.HttpUtils.IEnhancedClientConfig.JsonTypeInfoResolver.set -> void
-Mud.HttpUtils.IEnhancedClientConfig.MaxExceptionContentLength.get -> int?
-Mud.HttpUtils.IEnhancedClientConfig.MaxExceptionContentLength.set -> void
-Mud.HttpUtils.GeneratedClientOptions
-Mud.HttpUtils.GeneratedClientOptions.GeneratedClientOptions() -> void
-Mud.HttpUtils.GeneratedClientOptions.AppContext.get -> Mud.HttpUtils.IMudAppContext?
-Mud.HttpUtils.GeneratedClientOptions.AppContext.set -> void
-Mud.HttpUtils.GeneratedClientOptions.AppContextHolder.get -> Mud.HttpUtils.IAppContextHolder?
-Mud.HttpUtils.GeneratedClientOptions.AppContextHolder.set -> void
-Mud.HttpUtils.GeneratedClientOptions.CacheProvider.get -> Mud.HttpUtils.IHttpResponseCache?
-Mud.HttpUtils.GeneratedClientOptions.CacheProvider.set -> void
-Mud.HttpUtils.GeneratedClientOptions.ContentSerializer.get -> Mud.HttpUtils.IHttpContentSerializer?
-Mud.HttpUtils.GeneratedClientOptions.ContentSerializer.set -> void
-Mud.HttpUtils.GeneratedClientOptions.GeneratedOnlyMode.get -> System.Boolean?
-Mud.HttpUtils.GeneratedClientOptions.GeneratedOnlyMode.set -> void
-Mud.HttpUtils.GeneratedClientOptions.ExceptionRedactor.get -> Mud.HttpUtils.IExceptionRedactor?
-Mud.HttpUtils.GeneratedClientOptions.ExceptionRedactor.set -> void
-Mud.HttpUtils.GeneratedClientOptions.MaxExceptionContentLength.get -> int?
-Mud.HttpUtils.GeneratedClientOptions.MaxExceptionContentLength.set -> void
-Mud.HttpUtils.GeneratedClientOptions.CaptureRequestContent.get -> bool
-Mud.HttpUtils.GeneratedClientOptions.CaptureRequestContent.set -> void
-Mud.HttpUtils.GeneratedClientOptions.JsonTypeInfoResolver.get -> System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver?
-Mud.HttpUtils.GeneratedClientOptions.JsonTypeInfoResolver.set -> void
-Mud.HttpUtils.GeneratedClientOptions.RequestInterceptor.get -> Mud.HttpUtils.IHttpRequestInterceptor?
-Mud.HttpUtils.GeneratedClientOptions.RequestInterceptor.set -> void
-Mud.HttpUtils.GeneratedClientOptions.ResilienceResolver.get -> Mud.HttpUtils.IResiliencePolicyResolver?
-Mud.HttpUtils.GeneratedClientOptions.ResilienceResolver.set -> void
-Mud.HttpUtils.GeneratedClientOptions.ResponseInterceptor.get -> Mud.HttpUtils.IHttpResponseInterceptor?
-Mud.HttpUtils.GeneratedClientOptions.ResponseInterceptor.set -> void
-Mud.HttpUtils.GeneratedClientOptions.SensitiveDataMasker.get -> Mud.HttpUtils.ISensitiveDataMasker?
-Mud.HttpUtils.GeneratedClientOptions.SensitiveDataMasker.set -> void
-Mud.HttpUtils.GeneratedClientOptions.HttpVersion.get -> System.Version?
-Mud.HttpUtils.GeneratedClientOptions.HttpVersion.set -> void
-Mud.HttpUtils.GeneratedClientOptions.HttpVersionPolicy.get -> System.Net.Http.HttpVersionPolicy?
-Mud.HttpUtils.GeneratedClientOptions.HttpVersionPolicy.set -> void
-Mud.HttpUtils.GeneratedClientOptions.HttpRequestMessageOptions.get -> System.Collections.Generic.Dictionary<string!, object?>?
-Mud.HttpUtils.GeneratedClientOptions.HttpRequestMessageOptions.set -> void
-Mud.HttpUtils.IHttpExceptionFactory
-Mud.HttpUtils.IDeserializationExceptionFactory
-Mud.HttpUtils.ITransportExceptionFactory
-Mud.HttpUtils.DefaultExceptionFactory
-abstract Mud.HttpUtils.IBaseHttpClient.SendAsAsyncEnumerable<TResult>(System.Net.Http.HttpRequestMessage! request, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TResult>! jsonTypeInfo, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TResult>!
-abstract Mud.HttpUtils.IHttpRequestExecutor.SendAsAsyncEnumerable<TElement>(System.Net.Http.HttpRequestMessage! request, Mud.HttpUtils.IBaseHttpClient! httpClient, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TElement>! jsonTypeInfo, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TElement>!
-const Mud.HttpUtils.HttpExecutionConstants.DefaultMaxExceptionContentLength = 10240
-const Mud.HttpUtils.HttpExecutionConstants.AllowNonIdempotentRetryPropertyKey = "__Mud_HttpUtils_AllowNonIdempotentRetry"

@@ -887,6 +887,71 @@ public class DefaultHttpRequestExecutorTests
         capturedDurations[0].Tags.Should().Contain(t => t.Key == "outcome" && (string?)t.Value == "error");
     }
 
+    #region M1-#16.2 异常擦除器在执行器路径被调用
+
+    [Fact]
+    public async Task SendAndDeserializeAsync_NonSuccess_InvokesExceptionRedactor_OnExecutorPath()
+    {
+        // T-16.2：生成代码路径（DefaultHttpRequestExecutor）抛 ApiException 前调用 IExceptionRedactor，
+        // 与内置方法路径（EnhancedHttpClient.Diag_CaptureFlow）行为一致；且 ApiException.RequestUri
+        // 保留完整 URI（#5.4），RequestContent 受 MaxExceptionContentLength 约束（#16）。
+        ApiException? seen = null;
+        var redactor = new DelegateExceptionRedactor(ex => seen = ex);
+
+        var mockClient = new Mock<IBaseHttpClient>();
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CreateResponse(HttpStatusCode.InternalServerError, "err-body"));
+
+        var executor = new DefaultHttpRequestExecutor(
+            NullLogger<DefaultHttpRequestExecutor>.Instance,
+            exceptionRedactor: redactor,
+            captureRequestContent: true);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, TestUri)
+        {
+            Content = new StringContent("""{"name":"x"}""", Encoding.UTF8, "application/json"),
+        };
+
+        var act = () => executor.SendAndDeserializeAsync<TestUser>(
+            request, mockClient.Object, JsonDescriptor(allowAnyStatusCode: false), null);
+
+        (await act.Should().ThrowAsync<ApiException>()).Which.Content.Should().Be("err-body");
+
+        seen.Should().NotBeNull("执行器路径应在抛出前调用 IExceptionRedactor");
+        seen!.Content.Should().Be("err-body");
+        seen.RequestContent.Should().NotBeNull("CaptureRequestContent=true 时应回填请求体");
+        seen.RequestUri.Should().Be(TestUri.ToString(), "ApiException.RequestUri 保留完整 URI（#5.4）");
+    }
+
+    #endregion
+
+    #region M1-N-1 两条路径错误响应体默认上限一致
+
+    [Fact]
+    public async Task SendAndDeserializeAsync_NonSuccess_DefaultLimit_MatchesEnhancedClientPath_T1_2()
+    {
+        // T-1.2 / N-1：生成代码路径（DefaultHttpRequestExecutor）默认 maxExceptionContentLength = null → 10240，
+        // 与内置方法路径（EnhancedHttpClient.ErrorContent_DefaultLimit_AppliesWithoutExplicitConfig）结果长度一致。
+        var bigError = new string('x', 50 * 1024);
+        var mockClient = new Mock<IBaseHttpClient>();
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CreateResponse(HttpStatusCode.InternalServerError, bigError));
+
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
+
+        var ex = await FluentActions.Awaiting(() =>
+            executor.SendAndDeserializeAsync<TestUser>(
+                CreateRequest(), mockClient.Object, JsonDescriptor(allowAnyStatusCode: false), null))
+            .Should().ThrowAsync<ApiException>();
+
+        ex.Which.Content.Should().NotBeNull();
+        ex.Which.Content!.Length.Should().Be(
+            HttpExecutionConstants.DefaultMaxExceptionContentLength + "...[已截断]".Length);
+        ex.Which.Content.Should().EndWith("...[已截断]");
+    }
+
+    #endregion
+
     /// <summary>
     /// 自定义 HttpContent，其 SerializeToStreamAsync 抛出异常，用于测试下载失败场景。
     /// HttpContent.ReadAsByteArrayAsync 内部会调用 SerializeToStreamAsync，因此会传播异常。

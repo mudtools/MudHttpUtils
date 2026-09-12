@@ -52,6 +52,25 @@ public class AesEncryptionOptions
     }
 
     /// <summary>
+    /// 获取或设置是否启用认证加密（Authenticated Encryption）。
+    /// </summary>
+    /// <value>默认为 <c>true</c>（M2-#7：认证加密是安全默认，裸 CBC 存在位翻转篡改与填充预言子风险）。</value>
+    /// <remarks>
+    /// <para>
+    /// 启用后的密文格式（带 1 字节版本前缀，为未来演进预留）：
+    /// <list type="bullet">
+    /// <item><c>0x02</c>（net8.0/net10.0）：AesGcm —— <c>[版本][nonce(12)][tag(16)][密文]</c></item>
+    /// <item><c>0x03</c>（netstandard2.0/net6.0，无 AesGcm API）：CBC + HMAC-SHA256 —— <c>[版本][IV(16)][MAC(32)][密文]</c>（Encrypt-then-MAC）</item>
+    /// </list>
+    /// 解密按版本前缀自动分派。
+    /// </para>
+    /// <para>
+    /// 设为 <c>false</c> 回退裸 CBC（<c>[IV(16)][密文]</c>，无版本前缀），仅建议调试用途，不提供完整性保护。
+    /// </para>
+    /// </remarks>
+    public bool EnableAuthenticatedEncryption { get; set; } = true;
+
+    /// <summary>
     /// 验证 AES 加密选项的有效性。
     /// </summary>
     /// <exception cref="InvalidOperationException">

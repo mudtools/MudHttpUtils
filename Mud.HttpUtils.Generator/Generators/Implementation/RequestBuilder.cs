@@ -218,6 +218,17 @@ internal class RequestBuilder
         {
             codeBuilder.AppendLine($"            using var __httpRequest = new HttpRequestMessage(HttpMethod.{methodInfo.HttpMethod}, __url);");
         }
+
+        // M2-#12：[Retry(AllowNonIdempotent = true)] → 向请求写入放行标记（重试决策层读取，
+        // 全局路径 ResilientHttpClient 与方法级路径 ResiliencePolicyResolver 均识别）
+        if (methodInfo.RetryEnabled && methodInfo.RetryAllowNonIdempotent)
+        {
+            codeBuilder.AppendLine("#if NETSTANDARD2_0");
+            codeBuilder.AppendLine($"            __httpRequest.Properties[HttpExecutionConstants.AllowNonIdempotentRetryPropertyKey] = true;");
+            codeBuilder.AppendLine("#else");
+            codeBuilder.AppendLine($"            __httpRequest.Options.TryAdd(HttpExecutionConstants.AllowNonIdempotentRetryPropertyKey, true);");
+            codeBuilder.AppendLine("#endif");
+        }
     }
 
     /// <summary>

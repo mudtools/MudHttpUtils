@@ -179,6 +179,16 @@ internal static class Diagnostics
         category: "代码生成",
         DiagnosticSeverity.Info,
         isEnabledByDefault: true);
+
+    // M2-#12：非幂等方法声明 [Retry] 但未显式 AllowNonIdempotent 时，重试将被静默跳过。
+    // 发出 Warning 提示（生成器侧编译期闭环，原方案 12.4）。
+    public static readonly DiagnosticDescriptor RetryNonIdempotentWithoutAllow = new(
+        id: "HTTPCLIENT020",
+        title: "非幂等方法的 [Retry] 默认不生效",
+        messageFormat: "接口 {0} 的方法 {1} 使用 HTTP {2}（非幂等方法）声明了 [Retry]，但未设置 AllowNonIdempotent = true。运行时将跳过重试（保留超时与熔断）以防止重复提交。如该操作在服务端可安全重复执行，请显式设置 [Retry(AllowNonIdempotent = true)]。",
+        category: "代码生成",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
     #endregion
 
     #region HttpClient注册生成器诊断信息 (HTTPCLIENTREG001-002)

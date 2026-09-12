@@ -63,6 +63,10 @@ internal static partial class MudHttpClientLog
     [LoggerMessage(EventId = 111, Level = LogLevel.Warning,
         Message = "RetryStatusCodes 配置为空数组，仅 HttpRequestException（无 StatusCode）/TimeoutRejectedException/TaskCanceledException 会触发重试。如需使用默认状态码 [408,429,500,502,503,504]，请移除该配置项或设为 null。")]
     public static partial void RetryStatusCodesEmptyArray(ILogger logger);
+
+    [LoggerMessage(EventId = 112, Level = LogLevel.Information,
+        Message = "HTTP 方法 {Method} 为非幂等方法，默认跳过重试（保留超时和熔断）。如需重试请设置 [Retry(AllowNonIdempotent = true)] 或 RetryOptions.AllowNonIdempotentRetry = true。")]
+    public static partial void RetrySkippedNonIdempotent(ILogger logger, string method);
 #else
     private static readonly Action<ILogger, double, int, int, Exception?> s_retryAttempting =
         LoggerMessage.Define<double, int, int>(LogLevel.Warning, new EventId(101, nameof(RetryAttempting)),
@@ -125,6 +129,12 @@ internal static partial class MudHttpClientLog
         LoggerMessage.Define(LogLevel.Warning, new EventId(111, nameof(RetryStatusCodesEmptyArray)),
             "RetryStatusCodes 配置为空数组，仅 HttpRequestException（无 StatusCode）/TimeoutRejectedException/TaskCanceledException 会触发重试。如需使用默认状态码 [408,429,500,502,503,504]，请移除该配置项或设为 null。");
     public static void RetryStatusCodesEmptyArray(ILogger logger) => s_retryStatusCodesEmptyArray(logger, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_retrySkippedNonIdempotent =
+        LoggerMessage.Define<string>(LogLevel.Information, new EventId(112, nameof(RetrySkippedNonIdempotent)),
+            "HTTP 方法 {Method} 为非幂等方法，默认跳过重试（保留超时和熔断）。如需重试请设置 [Retry(AllowNonIdempotent = true)] 或 RetryOptions.AllowNonIdempotentRetry = true。");
+    public static void RetrySkippedNonIdempotent(ILogger logger, string method)
+        => s_retrySkippedNonIdempotent(logger, method, null);
 #endif
 
     #endregion
