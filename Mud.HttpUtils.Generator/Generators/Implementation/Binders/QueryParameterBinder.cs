@@ -95,18 +95,33 @@ internal class QueryParameterBinder : IParameterBinder
         var paramName = GetQueryParameterName(attr, param.Name);
         var formatString = GetFormatString(attr);
 
+        // CFG-04：消费 [Query] 的 Prefix / TreatAsString / SerializeNull（此前全仓无读取点）。
+        var prefix = attr.NamedArguments.TryGetValue("Prefix", out var p) && p is string ps && ps.Length > 0 ? ps : null;
+        var treatAsString = attr.NamedArguments.TryGetValue("TreatAsString", out var t) && t is true;
+        var serializeNull = attr.NamedArguments.TryGetValue("SerializeNull", out var n) && n is true;
+
         if (TypeDetectionHelper.IsSimpleType(param.Type))
         {
-            GenerateSimpleQueryParameter(codeBuilder, param, paramName, formatString, attr, indent);
+            // 简单类型：SerializeNull 需要「允许 null 落键」的构造入口（AddAllowNull）。
+            GenerateSimpleQueryParameter(codeBuilder, param, ApplyPrefix(paramName, prefix), formatString, attr, indent, allowNull: serializeNull);
         }
         else
         {
-            GenerateComplexQueryParameter(codeBuilder, param, indent);
+            GenerateComplexQueryParameter(codeBuilder, param, indent, prefix, treatAsString, serializeNull);
         }
     }
 
-    private static void GenerateSimpleQueryParameter(StringBuilder codeBuilder, ParameterInfo param, string paramName, string? formatString, ParameterAttributeInfo attr, string indent)
+    /// <summary>
+    /// CFG-04：契约 —— <c>Prefix="filter" + Name="keyword" =&gt; "filter.keyword"</c>。
+    /// 顶层前缀用 <c>'.'</c> 与属性名连接；深层嵌套继续使用展平 separator。
+    /// </summary>
+    private static string ApplyPrefix(string name, string? prefix)
+        => string.IsNullOrEmpty(prefix) ? name : prefix + "." + name;
+
+    private static void GenerateSimpleQueryParameter(StringBuilder codeBuilder, ParameterInfo param, string paramName, string? formatString, ParameterAttributeInfo attr, string indent, bool allowNull = false)
     {
+        var escapedName = StringEscapeHelper.EscapeString(paramName);
+
         if (TypeDetectionHelper.IsArrayType(param.Type))
         {
             // [Query] 数组默认使用重复参数模式（与 Separator = null 行为一致）
@@ -114,8 +129,9 @@ internal class QueryParameterBinder : IParameterBinder
         }
         else if (TypeDetectionHelper.IsStringType(param.Type))
         {
-            // Add() 内部已跳过 null/空白值，无需外部检查
-            codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", {param.Name});");
+            // Add() 内部已跳过 null/空白值；allowNull 时改用 AddAllowNull 保留显式空值（?q=）。
+            var method = allowNull ? "AddAllowNull" : "Add";
+            codeBuilder.AppendLine($"{indent}__queryParams.{method}(\"{escapedName}\", {param.Name});");
         }
         else
         {
@@ -129,40 +145,69 @@ internal class QueryParameterBinder : IParameterBinder
                 var formatArg = !string.IsNullOrEmpty(formatString)
                     ? $"\"{StringEscapeHelper.EscapeString(formatString)}\""
                     : "null";
-                codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", {param.Name}, {formatArg});");
+
+                if (allowNull && TypeDetectionHelper.IsNullableType(param.Type))
+                {
+                    // SerializeNull：null 时补发空键（?key=），保留既有格式化语义。
+                    codeBuilder.AppendLine($"{indent}if ({param.Name}.HasValue)");
+                    codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{escapedName}\", {param.Name}, {formatArg});");
+                    codeBuilder.AppendLine($"{indent}else");
+                    codeBuilder.AppendLine($"{indent}    __queryParams.AddAllowNull(\"{escapedName}\", string.Empty);");
+                }
+                else
+                {
+                    codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{escapedName}\", {param.Name}, {formatArg});");
+                }
             }
             else
             {
                 // 无专用重载的类型（如 byte, char, DateTimeOffset, TimeSpan 等）：回退到 ToString()
                 if (TypeDetectionHelper.IsNullableType(param.Type))
                 {
-                    // 使用 ?. 运算符，Add() 会跳过 null 值
+                    // 使用 ?. 运算符，Add() 会跳过 null 值；allowNull 时用 AddAllowNull 保留空键。
                     var formatExpression = !string.IsNullOrEmpty(formatString)
                         ? $"?.ToString(\"{StringEscapeHelper.EscapeString(formatString)}\")"
                         : "?.ToString()";
-                    codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", {param.Name}{formatExpression});");
+                    var method = allowNull ? "AddAllowNull" : "Add";
+                    codeBuilder.AppendLine($"{indent}__queryParams.{method}(\"{escapedName}\", {param.Name}{formatExpression});");
                 }
                 else
                 {
+                    // 非可空值类型永远有值，allowNull 无意义
                     var formatExpression = !string.IsNullOrEmpty(formatString)
                         ? $".ToString(\"{StringEscapeHelper.EscapeString(formatString)}\")"
                         : ".ToString()";
-                    codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", {param.Name}{formatExpression});");
+                    codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{escapedName}\", {param.Name}{formatExpression});");
                 }
             }
         }
     }
 
-    private static void GenerateComplexQueryParameter(StringBuilder codeBuilder, ParameterInfo param, string indent)
+    private static void GenerateComplexQueryParameter(StringBuilder codeBuilder, ParameterInfo param, string indent, string? prefix, bool treatAsString, bool serializeNull)
     {
         // AOT 改造（Phase 4）：当 TypeSymbol 可用时，编译期枚举属性并生成直接属性访问代码，
         // 消除运行时反射。若 TypeSymbol 不可用（测试/模拟场景），回退到 FlattenObjectToQueryParams。
-        if (TryGenerateInlineQueryFlattening(codeBuilder, param, indent, ",", includeNullValues: false, useJsonSerialization: true, urlEncode: true))
+        // CFG-04：prefix / TreatAsString / SerializeNull 透传。
+        if (TryGenerateInlineQueryFlattening(codeBuilder, param, indent, ",",
+                includeNullValues: serializeNull,
+                useJsonSerialization: !treatAsString,
+                urlEncode: true,
+                prefix: prefix))
             return;
 
+        // 反射回退路径（仅在 TypeSymbol 不可用时进入；真实编译恒走 AOT 内联路径）：
+        // CFG-04 —— 设置 Prefix 时以 '.' 作为层级分隔符，使键满足 "filter.keyword" 契约；
+        // 未设置 Prefix 时保持既有 "," 分隔（与旧行为逐字节一致）。
+        var hasPrefix = !string.IsNullOrEmpty(prefix);
+        var prefixLiteral = hasPrefix
+            ? $"\"{StringEscapeHelper.EscapeString(prefix!)}\""
+            : "string.Empty";
+        var separatorLiteral = hasPrefix ? "\".\"" : "\",\"";
+        var includeNullLiteral = serializeNull.ToString().ToLowerInvariant();
+        var useJsonLiteral = (!treatAsString).ToString().ToLowerInvariant();
         codeBuilder.AppendLine($"{indent}if ({param.Name} != null)");
         codeBuilder.AppendLine($"{indent}{{");
-        codeBuilder.AppendLine($"{indent}    FlattenObjectToQueryParams({param.Name}, string.Empty, \",\", __queryParams, false, true, true, __rawQueryPairs, 0, _contentSerializer);");
+        codeBuilder.AppendLine($"{indent}    FlattenObjectToQueryParams({param.Name}, {prefixLiteral}, {separatorLiteral}, __queryParams, {includeNullLiteral}, {useJsonLiteral}, true, __rawQueryPairs, 0, _contentSerializer);");
         codeBuilder.AppendLine($"{indent}}}");
     }
 
@@ -322,7 +367,8 @@ internal class QueryParameterBinder : IParameterBinder
     private static bool TryGenerateInlineQueryFlattening(
         StringBuilder codeBuilder, ParameterInfo param, string indent,
         string separator, bool includeNullValues,
-        bool useJsonSerialization, bool urlEncode)
+        bool useJsonSerialization, bool urlEncode,
+        string? prefix = null)
     {
         if (param.TypeSymbol == null)
             return false;
@@ -334,13 +380,16 @@ internal class QueryParameterBinder : IParameterBinder
             .Any(i => i.Name == "IQueryParameter" &&
                        i.ContainingNamespace?.ToDisplayString() == "Mud.HttpUtils");
 
+        // CFG-04：顶层前缀以「原始前缀 + '.'」形式向下传递；未设置 Prefix 时为空串（生成结果与旧版逐字节一致）。
+        var topPrefix = string.IsNullOrEmpty(prefix) ? string.Empty : prefix + ".";
+
         codeBuilder.AppendLine($"{indent}if ({param.Name} != null)");
         codeBuilder.AppendLine($"{indent}{{");
 
         if (implementsIQueryParameter)
         {
             GenerateIQueryParameterInline(codeBuilder, param.Name, indent + "    ",
-                string.Empty, separator, includeNullValues, urlEncode);
+                topPrefix, separator, includeNullValues, urlEncode);
         }
         else
         {
@@ -349,7 +398,7 @@ internal class QueryParameterBinder : IParameterBinder
             foreach (var prop in properties)
             {
                 GeneratePropertyFlatteningInline(codeBuilder, param.Name, prop, indent + "    ",
-                    string.Empty, separator, includeNullValues, useJsonSerialization, urlEncode);
+                    topPrefix, separator, includeNullValues, useJsonSerialization, urlEncode);
             }
         }
 
@@ -407,7 +456,8 @@ internal class QueryParameterBinder : IParameterBinder
         bool useJsonSerialization, bool urlEncode, int depth = 0)
     {
         var propName = prop.Name;
-        var key = string.IsNullOrEmpty(prefix) ? propName : prefix + separator + propName;
+        // CFG-04：prefix 为「原始前缀」（已含尾部分隔符）；未设置 Prefix 时 prefix 为空串，key = propName（与旧版一致）。
+        var key = prefix + propName;
         var escapedKey = StringEscapeHelper.EscapeString(key);
         var propTypeDisplay = prop.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
             .WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.UseSpecialTypes));
@@ -416,7 +466,7 @@ internal class QueryParameterBinder : IParameterBinder
         if (ImplementsIQueryParameter(prop.Type))
         {
             GenerateIQueryParameterInline(codeBuilder, objName + "." + propName, indent,
-                key, separator, includeNullValues, urlEncode);
+                key + separator, separator, includeNullValues, urlEncode);
             return;
         }
 
@@ -445,7 +495,7 @@ internal class QueryParameterBinder : IParameterBinder
                     foreach (var nestedProp in nestedProps)
                     {
                         GeneratePropertyFlatteningInline(codeBuilder, objName + "." + propName, nestedProp,
-                            indent + "    ", key, separator, includeNullValues,
+                            indent + "    ", key + separator, separator, includeNullValues,
                             useJsonSerialization, urlEncode, depth + 1);
                     }
                     codeBuilder.AppendLine($"{indent}}}");
@@ -540,18 +590,17 @@ internal class QueryParameterBinder : IParameterBinder
         string keyPrefix, string separator, bool includeNullValues, bool urlEncode)
     {
         var escapedPrefix = StringEscapeHelper.EscapeString(keyPrefix);
-        var escapedSep = StringEscapeHelper.EscapeString(separator);
 
         codeBuilder.AppendLine($"{indent}foreach (var __kvp in {objExpr}.ToQueryParameters())");
         codeBuilder.AppendLine($"{indent}{{");
-        // 计算子键：有前缀时拼接，无前缀时直接使用 kvp.Key
+        // CFG-04：keyPrefix 为「原始前缀」（已含尾部分隔符）；无前缀时直接使用 kvp.Key。
         if (string.IsNullOrEmpty(keyPrefix))
         {
             codeBuilder.AppendLine($"{indent}    var __subKey = __kvp.Key;");
         }
         else
         {
-            codeBuilder.AppendLine($"{indent}    var __subKey = \"{escapedPrefix}\" + \"{escapedSep}\" + __kvp.Key;");
+            codeBuilder.AppendLine($"{indent}    var __subKey = \"{escapedPrefix}\" + __kvp.Key;");
         }
 
         var condition = includeNullValues ? "true" : "!string.IsNullOrEmpty(__kvp.Value)";
@@ -615,7 +664,17 @@ internal class QueryParameterBinder : IParameterBinder
 
     private static string GetQueryParameterName(ParameterAttributeInfo attr, string defaultName)
     {
-        return attr.Arguments.FirstOrDefault()?.ToString() ?? defaultName;
+        // CFG-04 / B-3：优先构造参数（[Query("name")]），其次命名参数（[Query(Name = "name")]）。
+        var fromConstructor = attr.Arguments.FirstOrDefault()?.ToString();
+        if (!string.IsNullOrEmpty(fromConstructor))
+            return fromConstructor;
+
+        if (attr.NamedArguments.TryGetValue("Name", out var nameValue)
+            && nameValue is string name
+            && !string.IsNullOrEmpty(name))
+            return name;
+
+        return defaultName;
     }
 
     private static string? GetFormatString(ParameterAttributeInfo attr)

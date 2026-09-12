@@ -52,9 +52,14 @@ internal static class MudHttpObservability
         if (uri != null)
         {
             activity.SetTag(MudHttpActivitySource.Tags.HttpMethod, request.Method.Method);
-            // M1-#5：Span tag 中的 URL 脱敏（掩码 access_token 等敏感 query 值），防止令牌随遥测泄漏。
+            // M1-#5 / CFG-05：Span tag 中的 URL 脱敏（掩码 access_token 等敏感 query 值），防止令牌随遥测泄漏。
+            //  - RecordFullUrlOnSuccess=false（默认）：仅记录 scheme://host/path，从机制上杜绝 query 随遥测泄漏并控制 tag 基数；
+            //  - true：记录完整 URL，仍受 RedactUrlInTelemetry 约束（敏感 query 值掩码）。
             // 排障可获取完整 URI 的渠道：ApiException.RequestUri（由 IExceptionRedactor 兜底）。
-            activity.SetTag(MudHttpActivitySource.Tags.HttpUrl, SensitiveUrlRedactor.Redact(uri.ToString()));
+            var urlForTag = MudHttpObservabilityOptions.RecordFullUrlOnSuccess
+                ? SensitiveUrlRedactor.Redact(uri.ToString())
+                : SensitiveUrlRedactor.Redact(ToSchemeHostPath(uri));
+            activity.SetTag(MudHttpActivitySource.Tags.HttpUrl, urlForTag);
             // 仅绝对 URI 才有 Scheme/Host（相对 URI 在 BaseAddress 设置后由 HttpClient 解析）
             if (uri.IsAbsoluteUri)
             {
@@ -324,6 +329,13 @@ internal static class MudHttpObservability
         return request.Properties.TryGetValue(key, out value);
 #endif
     }
+
+    /// <summary>
+    /// 相对 URI 原样返回；绝对 URI 返回 <c>scheme://authority/path</c>（丢弃 query 与 fragment）。
+    /// 用于 <see cref="MudHttpObservabilityOptions.RecordFullUrlOnSuccess"/> 为 <c>false</c> 时的 Span tag。
+    /// </summary>
+    private static string ToSchemeHostPath(Uri uri)
+        => uri.IsAbsoluteUri ? $"{uri.Scheme}://{uri.Authority}{uri.AbsolutePath}" : uri.ToString();
 
     /// <summary>
     /// 安全获取 URI 的 Host 属性。

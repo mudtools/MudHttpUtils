@@ -86,9 +86,8 @@ public static class MudHttpOpenTelemetryExtensions
         configuration.GetSection(sectionPath).Bind(options);
         configure?.Invoke(options);
 
-        // 注册校验器，在选项绑定时验证属性范围
-        services.TryAddSingleton<IValidateOptions<MudHttpOpenTelemetryOptions>, MudHttpOpenTelemetryOptionsValidator>();
-
+        // CFG-10：本方法将配置绑定到「局部变量」，全仓无 IOptions<MudHttpOpenTelemetryOptions> 消费路径，
+        // 因此 IValidateOptions 管道永不触发（死校验器）。改为在扩展方法内显式校验并抛出。
         return AddMudHttpOpenTelemetryCore(services, options);
     }
 
@@ -123,9 +122,7 @@ public static class MudHttpOpenTelemetryExtensions
         var options = new MudHttpOpenTelemetryOptions();
         configure?.Invoke(options);
 
-        // 注册校验器，在选项绑定时验证属性范围
-        services.TryAddSingleton<IValidateOptions<MudHttpOpenTelemetryOptions>, MudHttpOpenTelemetryOptionsValidator>();
-
+        // CFG-10：同配置绑定重载 —— 显式校验（校验器不接入 IOptions 管道）。
         return AddMudHttpOpenTelemetryCore(services, options);
     }
 
@@ -133,10 +130,20 @@ public static class MudHttpOpenTelemetryExtensions
         IServiceCollection services,
         MudHttpOpenTelemetryOptions options)
     {
-        // 校验 SamplingRatio 范围（保留运行时校验，IValidateOptions 仅在 IConfiguration 绑定时生效）
+        // 校验 SamplingRatio 范围（保留 ArgumentOutOfRangeException 语义，向后兼容既有调用方与测试）
         if (options.SamplingRatio < 0 || options.SamplingRatio > 1)
             throw new ArgumentOutOfRangeException(nameof(options.SamplingRatio),
                 $"SamplingRatio 必须在 0.0~1.0 范围内，当前值为 {options.SamplingRatio}。");
+
+        // CFG-10：显式运行完整校验器（ServiceName/ServiceVersion/DeploymentEnvironment/ExportBatchSize/
+        // ExportIntervalMilliseconds 此前完全无校验），使非法配置在启动期即失败而非静默。
+        var validationResult = new MudHttpOpenTelemetryOptionsValidator()
+            .Validate(Options.DefaultName, options);
+        if (validationResult.Failed)
+        {
+            throw new OptionsValidationException(
+                Options.DefaultName, typeof(MudHttpOpenTelemetryOptions), validationResult.Failures!);
+        }
 
         // 配置 Resource：service.name / service.version / deployment.environment（OTel 规范必需）
         var builder = services.AddOpenTelemetry()

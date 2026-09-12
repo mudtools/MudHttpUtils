@@ -189,6 +189,19 @@ internal static class Diagnostics
         category: "代码生成",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    // CFG-07：方法级 [Timeout(ms)] 超过接口级 [HttpClientApi(Timeout=秒)] 声明的 HttpClient 超时。
+    // HttpClient.Timeout 是硬上限，会使 Polly 方法级超时永不触发（配置静默失效）。
+    // 仅在「方法级显式声明 [Timeout]」且「接口级 Timeout 显式声明」时报告（R-9 抑制误报）。
+    public static readonly DiagnosticDescriptor MethodTimeoutExceedsHttpClientTimeout = new(
+        id: "HTTPCLIENT021",
+        title: "方法级 [Timeout] 超过 HttpClient 超时，将不会生效",
+        messageFormat: "接口 {0} 的方法 {1} 声明了 [Timeout({2}ms)]，但接口级 HttpClient 超时为 {3} 秒。" +
+                       "HttpClient.Timeout 是硬上限，方法级 Polly 超时将在其之后才可能触发（实际永不触发）。" +
+                       "请将 [Timeout] 调整为小于 {3} 秒，或提高 [HttpClientApi(Timeout = …)]。",
+        category: "代码生成",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
     #endregion
 
     #region HttpClient注册生成器诊断信息 (HTTPCLIENTREG001-002)

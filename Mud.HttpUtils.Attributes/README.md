@@ -308,10 +308,11 @@ Task<PublicData> GetPublicDataAsync();
 | `DurationSeconds`      | `int`           | `300`    | 缓存持续时间（秒）                                      |
 | `CacheKeyTemplate`     | `string?`       | `null`   | 缓存键模板                                              |
 | `VaryByUser`           | `bool`          | `false`  | 是否按用户区分缓存                                      |
-| `UseSlidingExpiration` | `bool`          | `false`  | ⚠️ 已过时：当前未被生成器处理，将在未来版本中移除或实现 |
-| `Priority`             | `CachePriority` | `Normal` | ⚠️ 已过时：当前未被生成器处理，将在未来版本中移除或实现 |
+| `UseSlidingExpiration` | `bool`          | `false`  | ✅ 已支持：下沉为 `CacheOptions.UseSlidingExpiration`，生成代码生效 |
+| `Priority`             | `CachePriority` | `Normal` | ⚠️ 已过时：当前未被生成器处理（设置时产生 `HTTPCLIENT019`），将在未来版本中移除 |
 
-> `CachePriority` 枚举（`Low` / `Normal` / `High` / `NeverRemove`）同样已标记为 `[Obsolete]`，请勿在新代码中使用 `UseSlidingExpiration` 与 `Priority`。
+> **CFG-D04 修正**：仅 `Priority`（及 `CachePriority` 枚举，`Low` / `Normal` / `High` / `NeverRemove`）被 `[Obsolete]` 且被生成器忽略；
+> `UseSlidingExpiration` **受生成器支持**，请勿再标记为未生效。
 
 ```csharp
 [Get("/users/{id}")]
@@ -319,7 +320,7 @@ Task<PublicData> GetPublicDataAsync();
 Task<User> GetUserAsync([Path] int id);
 
 [Get("/config")]
-[Cache(300, CacheKeyTemplate = "config:{0}", UseSlidingExpiration = true, Priority = CachePriority.High)]
+[Cache(300, CacheKeyTemplate = "config:{0}", UseSlidingExpiration = true)]
 Task<Config> GetConfigAsync();
 ```
 

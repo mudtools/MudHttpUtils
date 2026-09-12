@@ -49,6 +49,35 @@ public class M1ObservabilityIntegrationTests : IDisposable
     public async Task Span_HttpUrl_Redacts_SensitiveQuery_T5_1()
     {
         // T-5.1：TokenInjectionMode.Query 等价场景——query 携带 access_token，Span http.url 不得泄露令牌原文
+        // CFG-05：默认省略 query，故显式开启 RecordFullUrlOnSuccess 以验证「完整 URL 下的脱敏」。
+        MudHttpObservabilityOptions.RecordFullUrlOnSuccess = true;
+        try
+        {
+            var client = CreateClient(new OkHandler());
+
+            using var response = await client.SendRawAsync(
+                new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/v1/data?access_token=secret-token-value&page=1"));
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            var span = _startedActivities.LastOrDefault(a => a.OperationName == MudHttpActivitySource.ActivityNameRequest);
+            span.Should().NotBeNull();
+            var httpUrl = span!.GetTagItem(MudHttpActivitySource.Tags.HttpUrl) as string;
+            httpUrl.Should().NotBeNull();
+            httpUrl.Should().Contain("***REDACTED***");
+            httpUrl.Should().NotContain("secret-token-value");
+            httpUrl.Should().Contain("page=1");   // 非敏感参数保留（排障可用性）
+        }
+        finally
+        {
+            MudHttpObservabilityOptions.RecordFullUrlOnSuccess = false;
+        }
+    }
+
+    [Fact]
+    public async Task Span_HttpUrl_Default_OmitsQuery_T5_1b()
+    {
+        // CFG-05：默认（RecordFullUrlOnSuccess=false）仅记录 scheme://host/path，不含 query。
         var client = CreateClient(new OkHandler());
 
         using var response = await client.SendRawAsync(
@@ -59,17 +88,15 @@ public class M1ObservabilityIntegrationTests : IDisposable
         var span = _startedActivities.LastOrDefault(a => a.OperationName == MudHttpActivitySource.ActivityNameRequest);
         span.Should().NotBeNull();
         var httpUrl = span!.GetTagItem(MudHttpActivitySource.Tags.HttpUrl) as string;
-        httpUrl.Should().NotBeNull();
-        httpUrl.Should().Contain("***REDACTED***");
-        httpUrl.Should().NotContain("secret-token-value");
-        httpUrl.Should().Contain("page=1");   // 非敏感参数保留（排障可用性）
+        httpUrl.Should().Be("https://api.example.com/v1/data");
     }
 
     [Fact]
     public async Task Span_HttpUrl_SwitchOff_PreservesFullUrl_T5_2()
     {
-        // T-5.2：RedactUrlInTelemetry = false → Span http.url 保留完整令牌（开关有效性）
+        // T-5.2：RedactUrlInTelemetry = false 且 RecordFullUrlOnSuccess = true → Span http.url 保留完整令牌（开关有效性）
         MudHttpObservabilityOptions.RedactUrlInTelemetry = false;
+        MudHttpObservabilityOptions.RecordFullUrlOnSuccess = true;
         try
         {
             var client = CreateClient(new OkHandler());
@@ -87,6 +114,7 @@ public class M1ObservabilityIntegrationTests : IDisposable
         finally
         {
             MudHttpObservabilityOptions.RedactUrlInTelemetry = true;
+            MudHttpObservabilityOptions.RecordFullUrlOnSuccess = false;
         }
     }
 

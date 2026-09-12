@@ -104,6 +104,13 @@ internal static class HttpClientGeneratorConstants
     public const string CacheUseSlidingExpirationProperty = "UseSlidingExpiration";
 
     // 默认值
+    /// <summary>
+    /// 未显式配置 <c>[HttpClientApi(Timeout=…)]</c> 时的默认超时秒数。
+    /// 与 <c>Mud.HttpUtils.Attributes.HttpClientApiAttribute.DefaultTimeoutSeconds</c> 保持一致（CFG-03），
+    /// 由测试 <c>HttpClientApiAttributeDefaultTimeoutTests</c> 守护一致性。
+    /// </summary>
+    public const int DefaultHttpClientTimeoutSeconds = 50;
+
     public const string DefaultTokenManageInterface = "ITokenManage";
     public const string DefaultWrapSuffix = "Wrap";
     public const string DefaultContentType = "application/json";

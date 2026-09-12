@@ -537,6 +537,39 @@ public class ResilienceConfigurationBindingTests
         // null 回退到默认 [408,429,500,502,503,504]，500 触发重试
         callCount.Should().Be(4); // 初次 + 3 次重试
     }
+
+    #region CFG-09 - AllowNonIdempotentRetry 使 RetryableHttpMethods 被忽略的告警
+
+    [Fact]
+    public void PostConfigure_AllowNonIdempotentWithNarrowedMethods_LogsWarning()
+    {
+        var logger = new TestLogger<ResilienceOptionsPostConfigure>();
+        var postConfigure = new ResilienceOptionsPostConfigure(logger);
+
+        var options = new ResilienceOptions();
+        options.Retry.AllowNonIdempotentRetry = true;
+        options.Retry.RetryableHttpMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "GET" };
+
+        postConfigure.PostConfigure(null, options);
+
+        logger.Warnings.Should().Contain(w => w.Contains("RetryableHttpMethods"));
+    }
+
+    [Fact]
+    public void PostConfigure_AllowNonIdempotentWithDefaultMethods_NoWarning()
+    {
+        var logger = new TestLogger<ResilienceOptionsPostConfigure>();
+        var postConfigure = new ResilienceOptionsPostConfigure(logger);
+
+        var options = new ResilienceOptions();
+        options.Retry.AllowNonIdempotentRetry = true; // 方法集合保持默认
+
+        postConfigure.PostConfigure(null, options);
+
+        logger.Warnings.Should().BeEmpty();
+    }
+
+    #endregion
 }
 
 /// <summary>

@@ -158,7 +158,13 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
 
     private int ExtractTimeoutParameter(AttributeData httpClientApiAttribute)
     {
-        return AttributeDataHelper.GetIntValueFromAttribute(httpClientApiAttribute, HttpClientGeneratorConstants.TimeoutProperty, 100);
+        // CFG-03：与 HttpClientApiAttribute.DefaultTimeoutSeconds 保持一致（50）。
+        // 生成器按字符串名匹配特性，不引用 Attributes 程序集，故此处引用 Generator 常量；
+        // 二者一致性由测试守护（HttpClientApiAttributeDefaultTimeoutTests）。
+        return AttributeDataHelper.GetIntValueFromAttribute(
+            httpClientApiAttribute,
+            HttpClientGeneratorConstants.TimeoutProperty,
+            HttpClientGeneratorConstants.DefaultHttpClientTimeoutSeconds);
     }
 
 
@@ -292,6 +298,8 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         sb.AppendLine("                    exceptionRedactor: options?.ExceptionRedactor,");
         sb.AppendLine("                    maxExceptionContentLength: options?.MaxExceptionContentLength,");
         sb.AppendLine("                    captureRequestContent: options?.CaptureRequestContent ?? false,");
+        // CFG-06：接线敏感数据掩码器（无 DI 路径此前完全缺失脱敏能力，属安全缺口）
+        sb.AppendLine("                    sensitiveDataMasker: options?.SensitiveDataMasker,");
         sb.AppendLine("#if NET6_0_OR_GREATER");
         sb.AppendLine("                    httpVersion: options?.HttpVersion,");
         sb.AppendLine("                    httpVersionPolicy: options?.HttpVersionPolicy,");

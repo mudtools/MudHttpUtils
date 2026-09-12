@@ -55,10 +55,46 @@ var baseAddress = httpClient.BaseAddress;
 | `MaxExceptionContentLength` | `int?` | `null` | 错误响应体最大读取字符数（防止 OOM） |
 | `CaptureRequestContent` | `bool` | `false` | 是否在发送前捕获请求体字符串（用于异常调试） |
 | `UrlResolution` | `UrlResolutionMode` | `Default` | URL 解析模式 |
+| `MaxSuccessResponseBytes` | `long` | `0` | 成功响应体最大字节数（`0` = 不限制；超限抛 `ApiRequestException`） |
 | `HttpVersion` <sup>net6+</sup> | `Version?` | `HttpVersion.Version11` | HTTP 版本 |
 | `HttpVersionPolicy` <sup>net6+</sup> | `HttpVersionPolicy?` | `RequestVersionOrLower` | HTTP 版本策略 |
 | `HttpRequestMessageOptions` | `Dictionary<string, object?>?` | `null` | 写入 `HttpRequestMessage.Options` 的键值对预设 |
 | `JsonTypeInfoResolver` <sup>net8+</sup> | `IJsonTypeInfoResolver?` | `null` | Native AOT 下用于 JSON 源生成的类型解析器 |
+
+#### 配置优先级契约（CFG-01）
+
+DI 路径（`AddMudHttpClient` → `CreateEnhancedClient`）以 `IOptions<EnhancedHttpClientOptions>` 为**基线克隆**，覆盖顺序为：
+
+```
+DI 服务依赖（ILogger / IHttpRequestInterceptor / IHttpResponseInterceptor / ISensitiveDataMasker）
+  > MudHttpClients:Clients:<name>.AllowCustomBaseUrls（命名客户端节）
+  > services.Configure<EnhancedHttpClientOptions>(...)（编程式配置）
+  > 类默认值
+```
+
+> **注意**：`IOptions<EnhancedHttpClientOptions>.Value` 为单例缓存对象，客户端创建时**克隆**后覆盖，不会就地修改该单例（多客户端不会串味）。
+
+#### 三条客户端创建路径的能力矩阵（CFG-20）
+
+| 能力 | ① DI `AddMudHttpClient` | ② DI + 源生成 | ③ 无 DI `RestService.ForGenerated<T>(HttpClient, GeneratedClientOptions)` |
+| :--- | :--- | :--- | :--- |
+| 配置载体 | `MudHttpClientApplicationOptions` + `EnhancedHttpClientOptions` | 同 ① | `GeneratedClientOptions` |
+| `RequestBodySerialization` / `UrlResolution` / `JsonTypeInfoResolver` | ✅ 生效（CFG-01 修复后） | ✅ | ⚠️ 无该能力 |
+| `SensitiveDataMasker` | ✅ | ✅ | ✅（CFG-06 接线） |
+| `RequestInterceptor` / `ResponseInterceptor` | ✅ | ✅ | ❌ 该路径不适用（无 DI 生成路径不经过 `EnhancedHttpClient`） |
+| `Logger` | ✅（DI） | ✅ | ⚠️ 固定 `NullLogger`（无 DI 路径） |
+| `RestService.ForGenerated<T>(IServiceProvider)` | — | — | 从容器解析全部依赖，**不接受** `GeneratedClientOptions` |
+
+#### 可观测性全局开关（`MudHttpObservabilityOptions`，CFG-D10）
+
+`MudHttpObservabilityOptions`（位于 `Mud.HttpUtils.Abstractions`）以**静态属性**提供模块级开关（测试翻转后须在 `finally` 恢复）：
+
+| 属性 | 默认值 | 说明 |
+| :--- | :--- | :--- |
+| `RedactUrlInTelemetry` | `true` | 是否对 Span tag / 日志 / 诊断事件中的 URL 脱敏（掩码 `access_token` 等敏感 query 值） |
+| `RecordFullUrlOnSuccess` | `false` | 成功请求的 Span tag 是否记录**完整 URL**。默认仅记录 `scheme://host/path`（不含 query，防泄漏并控制 tag 基数） |
+| `MetricTagAllowlist` | 全部内建维度 | 指标 tag 白名单，白名单之外的维度被丢弃（防高基数） |
+| `EmitDiagnosticEvents` | `true` | 是否发出诊断事件（`ActivityEvent` / `DiagnosticSource`）；关闭仅影响事件构造，不影响 Span 与指标 |
 
 ```csharp
 // 编程式配置 EnhancedHttpClientOptions
@@ -431,7 +467,7 @@ services.AddTokenRefreshBackgroundService(options =>
 
 > `RecoveryMaxRetries` 设置为负数时将抛出 `ArgumentOutOfRangeException`。`TokenScheme` 设置为 null 或空字符串时将抛出 `ArgumentException`。此外，`AddMudHttpTokenRecoveryFromConfiguration` 会注册 `TokenRecoveryOptionsValidator`，在启动时自动校验上述约束。
 >
-> `RefreshIntervalSeconds` 和 `RetryDelaySeconds` 设置为 0 或负数时将抛出 `ArgumentOutOfRangeException`。此外，`AddTokenRefreshBackgroundService` 和 `AddTokenRefreshBackgroundServiceFromConfiguration` 会注册 `TokenRefreshBackgroundOptionsValidator`，当 `RetryDelaySeconds` 大于等于 `RefreshIntervalSeconds` 时返回校验失败（重试延迟跨越下一个刷新周期可能导致刷新逻辑混乱）。
+> `RefreshIntervalSeconds` 和 `RetryDelaySeconds` 设置为 0 或负数时将抛出 `ArgumentOutOfRangeException`。此外，`AddTokenRefreshBackgroundService` 的**两个重载**（`Action<TokenRefreshBackgroundOptions>` 与 `IConfiguration`）均会注册 `TokenRefreshBackgroundOptionsValidator`，当 `RetryDelaySeconds` 大于等于 `RefreshIntervalSeconds` 时返回校验失败（会抛出 `OptionsValidationException` 阻止启动 —— 重试延迟跨越下一个刷新周期可能导致刷新逻辑混乱）。
 
 ### 应用上下文
 

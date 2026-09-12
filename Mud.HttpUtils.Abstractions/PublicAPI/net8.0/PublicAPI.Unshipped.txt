@@ -538,6 +538,7 @@ Mud.HttpUtils.QueryParameterBuilder.Add(string! name, short? value, string? form
 Mud.HttpUtils.QueryParameterBuilder.Add(string! name, string? value) -> void
 Mud.HttpUtils.QueryParameterBuilder.Add(string! name, System.DateTime? value, string? formatString) -> void
 Mud.HttpUtils.QueryParameterBuilder.Add(string! name, System.Guid? value, string? formatString) -> void
+Mud.HttpUtils.QueryParameterBuilder.AddAllowNull(string! name, string? value) -> void
 Mud.HttpUtils.QueryParameterBuilder.Build() -> string!
 Mud.HttpUtils.QueryParameterBuilder.Count.get -> int
 Mud.HttpUtils.QueryParameterBuilder.GetValues(string! name) -> System.Collections.Generic.IEnumerable<string!>!

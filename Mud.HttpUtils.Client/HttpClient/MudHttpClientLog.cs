@@ -139,6 +139,62 @@ internal static partial class MudHttpClientLog
 
     #endregion
 
+    #region Config 模块 (EventId: 113-120)
+
+#if NET6_0_OR_GREATER
+    [LoggerMessage(EventId = 113, Level = LogLevel.Warning,
+        Message = "MudHttpClients:Clients:{ClientName} 未配置 BaseAddress，该客户端不会被注册，其 TimeoutSeconds/DefaultHeaders/AllowCustomBaseUrls 配置将被忽略。")]
+    public static partial void ClientSkippedMissingBaseAddress(ILogger logger, string clientName);
+
+    [LoggerMessage(EventId = 114, Level = LogLevel.Information,
+        Message = "已应用 UrlValidator 域名白名单（{Count} 项）。")]
+    public static partial void AllowedDomainsApplied(ILogger logger, int count);
+
+    [LoggerMessage(EventId = 115, Level = LogLevel.Warning,
+        Message = "Retry.AllowNonIdempotentRetry = true，RetryableHttpMethods 将被忽略（所有 HTTP 方法均允许重试）。如需仅重试幂等方法，请将其设为 false。")]
+    public static partial void RetryableHttpMethodsIgnored(ILogger logger);
+
+    [LoggerMessage(EventId = 116, Level = LogLevel.Warning,
+        Message = "AesEncryptionOptions.EnableAuthenticatedEncryption = false：加密将退化为裸 CBC（无完整性校验），存在填充预言（padding oracle）风险。生产环境请开启认证加密。")]
+    public static partial void AuthenticatedEncryptionDisabled(ILogger logger);
+
+    [LoggerMessage(EventId = 118, Level = LogLevel.Debug,
+        Message = "客户端 {ClientName} 的 AllowCustomBaseUrls 被覆盖为 {NewValue}（原值 {OldValue}）。")]
+    public static partial void AllowCustomBaseUrlsOverridden(ILogger logger, string clientName, bool newValue, bool oldValue);
+#else
+    private static readonly Action<ILogger, string, Exception?> s_clientSkippedMissingBaseAddress =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(113, nameof(ClientSkippedMissingBaseAddress)),
+            "MudHttpClients:Clients:{ClientName} 未配置 BaseAddress，该客户端不会被注册，其 TimeoutSeconds/DefaultHeaders/AllowCustomBaseUrls 配置将被忽略。");
+    public static void ClientSkippedMissingBaseAddress(ILogger logger, string clientName)
+        => s_clientSkippedMissingBaseAddress(logger, clientName, null);
+
+    private static readonly Action<ILogger, int, Exception?> s_allowedDomainsApplied =
+        LoggerMessage.Define<int>(LogLevel.Information, new EventId(114, nameof(AllowedDomainsApplied)),
+            "已应用 UrlValidator 域名白名单（{Count} 项）。");
+    public static void AllowedDomainsApplied(ILogger logger, int count)
+        => s_allowedDomainsApplied(logger, count, null);
+
+    private static readonly Action<ILogger, Exception?> s_retryableHttpMethodsIgnored =
+        LoggerMessage.Define(LogLevel.Warning, new EventId(115, nameof(RetryableHttpMethodsIgnored)),
+            "Retry.AllowNonIdempotentRetry = true，RetryableHttpMethods 将被忽略（所有 HTTP 方法均允许重试）。如需仅重试幂等方法，请将其设为 false。");
+    public static void RetryableHttpMethodsIgnored(ILogger logger)
+        => s_retryableHttpMethodsIgnored(logger, null);
+
+    private static readonly Action<ILogger, Exception?> s_authenticatedEncryptionDisabled =
+        LoggerMessage.Define(LogLevel.Warning, new EventId(116, nameof(AuthenticatedEncryptionDisabled)),
+            "AesEncryptionOptions.EnableAuthenticatedEncryption = false：加密将退化为裸 CBC（无完整性校验），存在填充预言（padding oracle）风险。生产环境请开启认证加密。");
+    public static void AuthenticatedEncryptionDisabled(ILogger logger)
+        => s_authenticatedEncryptionDisabled(logger, null);
+
+    private static readonly Action<ILogger, string, bool, bool, Exception?> s_allowCustomBaseUrlsOverridden =
+        LoggerMessage.Define<string, bool, bool>(LogLevel.Debug, new EventId(118, nameof(AllowCustomBaseUrlsOverridden)),
+            "客户端 {ClientName} 的 AllowCustomBaseUrls 被覆盖为 {NewValue}（原值 {OldValue}）。");
+    public static void AllowCustomBaseUrlsOverridden(ILogger logger, string clientName, bool newValue, bool oldValue)
+        => s_allowCustomBaseUrlsOverridden(logger, clientName, newValue, oldValue, null);
+#endif
+
+    #endregion
+
     #region Cache 模块 (EventId: 121-130)
 
 #if NET6_0_OR_GREATER

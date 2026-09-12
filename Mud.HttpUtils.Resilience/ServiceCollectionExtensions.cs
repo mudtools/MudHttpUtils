@@ -63,6 +63,8 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IValidateOptions<ResilienceOptions>, ResilienceOptionsValidator>();
         // 注册跨选项后置配置器，检查 HttpClient.Timeout 与 Polly 重试/超时的潜在冲突
         services.TryAddSingleton<IPostConfigureOptions<ResilienceOptions>, ResilienceOptionsCrossValidator>();
+        // CFG-09：AllowNonIdempotentRetry=true 且方法集合被收窄时告警（RetryableHttpMethods 将被忽略）
+        services.TryAddSingleton<IPostConfigureOptions<ResilienceOptions>, ResilienceOptionsPostConfigure>();
         services.TryAddSingleton<IResiliencePolicyProvider>(CreatePolicyProvider);
         // 注册弹性策略解析器，供 IHttpRequestExecutor 在运行时编排方法级弹性策略
         services.TryAddSingleton<IResiliencePolicyResolver, ResiliencePolicyResolver>();
@@ -122,6 +124,8 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IValidateOptions<ResilienceOptions>, ResilienceOptionsValidator>();
         // 注册跨选项后置配置器，检查 HttpClient.Timeout 与 Polly 重试/超时的潜在冲突
         services.TryAddSingleton<IPostConfigureOptions<ResilienceOptions>, ResilienceOptionsCrossValidator>();
+        // CFG-09：AllowNonIdempotentRetry=true 且方法集合被收窄时告警（RetryableHttpMethods 将被忽略）
+        services.TryAddSingleton<IPostConfigureOptions<ResilienceOptions>, ResilienceOptionsPostConfigure>();
         services.TryAddSingleton<IResiliencePolicyProvider>(CreatePolicyProvider);
         // 注册弹性策略解析器，供 IHttpRequestExecutor 在运行时编排方法级弹性策略
         services.TryAddSingleton<IResiliencePolicyResolver, ResiliencePolicyResolver>();

@@ -525,7 +525,6 @@ public class OpenTelemetryOptionsTests
     }
 
     [Theory]
-    [InlineData(0)]
     [InlineData(-1)]
     [InlineData(-100)]
     public void MudHttpOpenTelemetryOptionsValidator_InvalidExportBatchSize_ReturnsFail(int invalidBatchSize)
@@ -545,7 +544,6 @@ public class OpenTelemetryOptionsTests
     }
 
     [Theory]
-    [InlineData(0)]
     [InlineData(-1)]
     [InlineData(-100)]
     public void MudHttpOpenTelemetryOptionsValidator_InvalidExportIntervalMilliseconds_ReturnsFail(int invalidInterval)
@@ -607,7 +605,7 @@ public class OpenTelemetryOptionsTests
         var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions
         {
             SamplingRatio = -1.0,
-            ExportBatchSize = 0,
+            ExportBatchSize = -3,
             ExportIntervalMilliseconds = -5,
             ServiceName = "",
             ServiceVersion = "  ",
@@ -837,4 +835,16 @@ public class OpenTelemetryOptionsTests
         provider.GetService<MeterProvider>().Should().NotBeNull();
     }
 #endif
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_InvalidServiceName_Throws()
+    {
+        // CFG-10：此前校验器为死校验器（无 IOptions 消费路径），非法 ServiceName 静默通过。
+        var services = new ServiceCollection();
+
+        var act = () => services.AddMudHttpOpenTelemetry(options => options.ServiceName = "");
+
+        act.Should().Throw<Microsoft.Extensions.Options.OptionsValidationException>()
+            .WithMessage("*ServiceName*");
+    }
 }

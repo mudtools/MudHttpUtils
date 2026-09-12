@@ -740,15 +740,27 @@ Mud.HttpUtils 通过 Roslyn 源代码生成器在编译时生成强类型的 HTT
 | `HTTPCLIENT007` | Error | 同时指定 `HttpClient` 和 `TokenManage` | 两者互斥，只设置其中一个 |
 | `HTTPCLIENT008` | Error | 加密配置但 HttpClient 类型不支持加密 | 使用 `IEnhancedHttpClient` 或移除加密配置 |
 | `HTTPCLIENT009` | Warning | XML 请求但 HttpClient 类型不支持 XML | 使用 `IEnhancedHttpClient` 或修改 Content-Type |
-| `HTTPCLIENT010` | Warning | 使用了已弃用的 `BaseAddress` 参数 | 改用 `AddMudHttpClient(clientName, baseAddress)` |
 | `HTTPCLIENT011` | Warning | `[Cache]` 与 `Response<T>` 返回类型组合 | 缓存会存储状态码和响应头，建议使用普通返回类型 |
-| `HTTPCLIENT012` | Error | 泛型接口不支持代码生成 | 改为非泛型接口或为每个类型参数创建独立接口 |
+| `HTTPCLIENT012` | Info | 泛型接口：生成器将转发类型参数与约束 | 无需处理，仅供感知（泛型接口**已支持**代码生成） |
 | `HTTPCLIENT013` | Error | URL 模板中的路径占位符与 `[Path]` 参数不匹配 | 确保 URL 模板中的 `{placeholder}` 与方法中的 `[Path]` 参数一一对应 |
+| `HTTPCLIENT014` | Warning | 指定的 `HttpClient` 类型在当前编译中未找到 | 确认类型名称正确，或确保已注册对应命名客户端 |
+| `HTTPCLIENT015` | Error | `TokenManage` 类型未找到 | 确认类型名称正确，或确保包含该类型的项目已引用 |
+| `HTTPCLIENT016` | Error | `TokenManage` 类型缺少必需方法 | 提供 `IMudAppContext GetDefaultApp()` / `GetApp(string)` 或实现 `IAppManager<T>` |
+| `HTTPCLIENT017` | Warning | `HttpClient` 类型无法解析，加密/XML 兼容性校验被跳过 | 使用完全限定名确保类型可解析 |
+| `HTTPCLIENT018` | Warning | `TokenManagerKey` 使用默认推断值 | 多接口共享同一 TokenManager 时显式指定 `TokenManagerKey` 或 `TokenType` |
+| `HTTPCLIENT019` | Info | `[Cache]` 设置了被生成器忽略的属性（仅 `Priority`） | `Priority` 当前未生效；`UseSlidingExpiration` 已支持 |
+| `HTTPCLIENT020` | Warning | 非幂等方法声明 `[Retry]` 但未设 `AllowNonIdempotent` | 运行时将跳过重试；如服务端可安全重复执行请显式开启 |
+| `HTTPCLIENT021` | Warning | 方法级 `[Timeout]` 超过接口级 `HttpClient` 超时 | `HttpClient.Timeout` 是硬上限，调小 `[Timeout]` 或提高 `[HttpClientApi(Timeout=…)]` |
 | `HTTPCLIENTREG001` | Error | 注册代码生成失败 | 检查接口定义和 DI 注册配置 |
 | `HTTPCLIENTREG002` | Error | `RegistryGroupName` 不是有效 C# 标识符 | 使用字母、数字、下划线组成，以字母或下划线开头 |
+| `EHSG001` | Error | 事件处理器代码生成失败 | 检查被处理类型定义与配置 |
 | `FORM001` | Error | FormContent 代码生成错误 | 检查 FormContent 类定义 |
 | `FORM002` | Error | FormContent 缺少 `[FilePath]` 属性 | 必须且只能有一个属性标记 `[FilePath]` |
 | `FORM003` | Error | FormContent 存在多个 `[FilePath]` 属性 | 只保留一个 `[FilePath]` 属性 |
+
+> **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010` 当前**未使用**（保留/废弃占位）。
+> `HTTPCLIENT010`（`HttpClientApiAttribute.BaseAddress` 已弃用提示）**不会触发** —— 该属性为 `[Obsolete(error: true)]`，
+> 使用时直接产生编译错误 `CS0619`，无需生成器提示。
 
 ### 🧪 测试
 

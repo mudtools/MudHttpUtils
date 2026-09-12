@@ -11,9 +11,14 @@ namespace Mud.HttpUtils;
 /// <see cref="TokenRefreshBackgroundOptions"/> 的校验器，检查刷新间隔与重试延迟之间的潜在冲突。
 /// </summary>
 /// <remarks>
-/// 当 <see cref="TokenRefreshBackgroundOptions.RetryDelaySeconds"/> 大于等于
+/// <para>
+/// 当 <see cref="TokenRefreshBackgroundOptions.Enabled"/> 为 <c>true</c> 且
+/// <see cref="TokenRefreshBackgroundOptions.RetryDelaySeconds"/> 大于等于
 /// <see cref="TokenRefreshBackgroundOptions.RefreshIntervalSeconds"/> 时，
-/// 重试延迟会跨越下一个刷新周期，可能导致刷新逻辑混乱。此校验器记录警告但不阻止启动。
+/// 返回 <see cref="ValidateOptionsResult.Fail"/>（<b>会抛出 <see cref="OptionsValidationException"/>，阻止应用启动</b>），
+/// 避免重试延迟吞掉整个刷新周期导致服务实际停摆。
+/// </para>
+/// <para>CFG-12：原注释误述为「记录警告但不阻止启动」，与实现相反，现已按实现语义修正。</para>
 /// </remarks>
 public class TokenRefreshBackgroundOptionsValidator : IValidateOptions<TokenRefreshBackgroundOptions>
 {

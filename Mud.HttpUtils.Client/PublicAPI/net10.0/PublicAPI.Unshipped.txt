@@ -66,7 +66,7 @@ Mud.HttpUtils.Client.DefaultCurrentUserContext<TUser>.UserId.get -> string?
 Mud.HttpUtils.DefaultAesEncryptionProvider
 Mud.HttpUtils.DefaultAesEncryptionProvider.Decrypt(string! cipherText) -> string!
 Mud.HttpUtils.DefaultAesEncryptionProvider.DecryptBytes(byte[]! encryptedData) -> byte[]!
-Mud.HttpUtils.DefaultAesEncryptionProvider.DefaultAesEncryptionProvider(Microsoft.Extensions.Options.IOptions<Mud.HttpUtils.AesEncryptionOptions!>! options) -> void
+Mud.HttpUtils.DefaultAesEncryptionProvider.DefaultAesEncryptionProvider(Microsoft.Extensions.Options.IOptions<Mud.HttpUtils.AesEncryptionOptions!>! options, Microsoft.Extensions.Logging.ILogger<Mud.HttpUtils.DefaultAesEncryptionProvider!>? logger = null) -> void
 Mud.HttpUtils.DefaultAesEncryptionProvider.Dispose() -> void
 Mud.HttpUtils.DefaultAesEncryptionProvider.Encrypt(string! plainText) -> string!
 Mud.HttpUtils.DefaultAesEncryptionProvider.EncryptBytes(byte[]! data) -> byte[]!

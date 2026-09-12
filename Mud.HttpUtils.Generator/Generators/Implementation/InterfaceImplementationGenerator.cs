@@ -115,6 +115,9 @@ internal class InterfaceImplementationGenerator
         // M2-#12：非幂等方法声明 [Retry] 但未显式 AllowNonIdempotent 时发出 Warning
         ReportRetryNonIdempotentWithoutAllow(generatorContext);
 
+        // CFG-07：方法级 [Timeout] 超过接口级 HttpClient 超时时发出 Warning
+        ReportMethodTimeoutConflicts(generatorContext);
+
         var generators = InitializeGenerators(generatorContext);
 
         foreach (var generator in generators)
@@ -549,10 +552,8 @@ internal class InterfaceImplementationGenerator
         {
             HttpClientOptionsName = _optionsName,
             DefaultContentType = GetHttpClientApiContentTypeFromAttribute(httpClientApiAttribute),
-            Timeout = AttributeDataHelper.GetIntValueFromAttribute(
-                httpClientApiAttribute,
-                HttpClientGeneratorConstants.TimeoutProperty,
-                100),
+            // CFG-03/CFG-21：Timeout 由 HttpInvokeRegistrationGenerator 从特性直接读取（含默认值），
+            // GenerationConfiguration.Timeout 为死字段，已删除，不再在此赋值。
             IsAbstract = isAbstract,
             InheritedFrom = inheritedFrom,
             HttpClient = httpClient,
@@ -850,6 +851,52 @@ internal class InterfaceImplementationGenerator
                 _interfaceSymbol.Name,
                 method.Name,
                 httpMethod));
+        }
+    }
+
+    /// <summary>
+    /// CFG-07：方法级 <c>[Timeout(ms)]</c> 超过接口级 <c>[HttpClientApi(Timeout=秒)]</c> 声明的
+    /// HttpClient 超时时发出 Warning —— <c>HttpClient.Timeout</c> 是硬上限，会使 Polly 方法级超时永不触发。
+    /// 仅在「方法级显式声明 <c>[Timeout]</c>」且「接口级 <c>Timeout</c> 显式声明」时报告（避免默认值场景误报）。
+    /// </summary>
+    private void ReportMethodTimeoutConflicts(GeneratorContext context)
+    {
+        var httpClientApiAttr = AttributeDataHelper.GetAttributeDataFromSymbol(
+            _interfaceSymbol, HttpClientGeneratorConstants.HttpClientApiAttributeNames);
+        if (httpClientApiAttr == null)
+            return;
+
+        // 仅在接口级 Timeout 被显式赋值时报告：未显式设置时生成器回退默认 50s，不应据此误报。
+        var interfaceTimeoutArg = httpClientApiAttr.NamedArguments
+            .FirstOrDefault(na => na.Key == HttpClientGeneratorConstants.TimeoutProperty);
+        if (interfaceTimeoutArg.Key == null || interfaceTimeoutArg.Value.Value is not int interfaceTimeoutSeconds)
+            return;
+
+        var interfaceTimeoutMs = (long)interfaceTimeoutSeconds * 1000;
+
+        foreach (var method in context.AllMethods)
+        {
+            var timeoutAttr = method.GetAttributes()
+                .FirstOrDefault(a => HttpClientGeneratorConstants.TimeoutAttributeNames.Contains(a.AttributeClass?.Name));
+            if (timeoutAttr == null)
+                continue;
+
+            var methodTimeoutMs = AttributeDataHelper.GetAttributeIntValue(
+                timeoutAttr, 0, HttpClientGeneratorConstants.TimeoutMillisecondsProperty, -1);
+            if (methodTimeoutMs <= 0 || methodTimeoutMs <= interfaceTimeoutMs)
+                continue;
+
+            var location = (timeoutAttr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
+                ?? method.Locations.FirstOrDefault()
+                ?? _interfaceDecl.GetLocation())!;
+
+            _context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.MethodTimeoutExceedsHttpClientTimeout,
+                location,
+                _interfaceSymbol.Name,
+                method.Name,
+                methodTimeoutMs,
+                interfaceTimeoutSeconds));
         }
     }
 

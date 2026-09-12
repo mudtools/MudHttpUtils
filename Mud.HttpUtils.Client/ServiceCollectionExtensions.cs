@@ -719,13 +719,21 @@ public static class HttpClientServiceCollectionExtensions
         var factory = sp.GetRequiredService<IHttpClientFactory>();
         var encryptionProvider = sp.GetService<IEncryptionProvider>();
 
-        var options = new EnhancedHttpClientOptions
-        {
-            Logger = sp.GetService<ILogger<HttpClientFactoryEnhancedClient>>(),
-            RequestInterceptors = sp.GetServices<IHttpRequestInterceptor>(),
-            ResponseInterceptors = sp.GetServices<IHttpResponseInterceptor>(),
-            SensitiveDataMasker = sp.GetService<ISensitiveDataMasker>()
-        };
+        // CFG-01：以编程式配置（IOptions<EnhancedHttpClientOptions>）为基线克隆出「每客户端独立实例」，
+        // 修正原实现 new EnhancedHttpClientOptions() 丢弃全部编程式配置（RequestBodySerialization /
+        // UrlResolution / JsonTypeInfoResolver 等静默失效）的反直觉行为。
+        // 克隆（而非直接使用 IOptions.Value）保证后续覆盖不污染共享单例，避免多客户端串味。
+        var options = EnhancedHttpClientOptionsCloner.Clone(
+            sp.GetService<IOptions<EnhancedHttpClientOptions>>()?.Value);
+
+        // DI 解析项覆盖（服务依赖必须来自容器，优先级高于编程式配置）
+        options.Logger = sp.GetService<ILogger<HttpClientFactoryEnhancedClient>>();
+        options.RequestInterceptors = sp.GetServices<IHttpRequestInterceptor>();
+        options.ResponseInterceptors = sp.GetServices<IHttpResponseInterceptor>();
+        options.SensitiveDataMasker = sp.GetService<ISensitiveDataMasker>();
+
+        // CFG-08：强制解析白名单热更新订阅者（惰性单例），确保首个客户端创建时即建立订阅。
+        _ = sp.GetService<AllowedDomainsReloader>();
 
         var optionsMonitor = sp.GetService<IOptionsMonitor<MudHttpClientApplicationOptions>>();
         if (optionsMonitor != null)
@@ -733,6 +741,12 @@ public static class HttpClientServiceCollectionExtensions
             var appOptions = optionsMonitor.CurrentValue;
             if (appOptions.Clients.TryGetValue(clientName, out var clientOptions))
             {
+                // CFG-19：覆盖是单向的（配置节未设置时也会被重置为 false），记录 Debug 便于排查。
+                if (options.AllowCustomBaseUrls != clientOptions.AllowCustomBaseUrls && options.Logger != null)
+                {
+                    MudHttpClientLog.AllowCustomBaseUrlsOverridden(
+                        options.Logger, clientName, clientOptions.AllowCustomBaseUrls, options.AllowCustomBaseUrls);
+                }
                 options.AllowCustomBaseUrls = clientOptions.AllowCustomBaseUrls;
             }
         }
@@ -799,6 +813,10 @@ public static class HttpClientServiceCollectionExtensions
         // 以注册 ConfigurationChangeTokenSource，支持 IOptionsMonitor<T> 热更新。
         services.Configure<MudHttpClientApplicationOptions>(section);
 
+        // CFG-02：启动期校验（DefaultClientName 指向无 BaseAddress 客户端 → Fail）+ 后置警告（其余跳过项）。
+        services.TryAddSingleton<IValidateOptions<MudHttpClientApplicationOptions>, MudHttpClientApplicationOptionsValidator>();
+        services.TryAddSingleton<IPostConfigureOptions<MudHttpClientApplicationOptions>, MudHttpClientApplicationOptionsPostConfigure>();
+
         var options = new MudHttpClientApplicationOptions();
         section.Bind(options);
 
@@ -807,6 +825,10 @@ public static class HttpClientServiceCollectionExtensions
         {
             UrlValidator.ConfigureAllowedDomains(options.AllowedDomains);
         }
+
+        // CFG-08：注册白名单热更新订阅者（首次同步应用 + 变更重放）。
+        // 解析时机见 AllowedDomainsReloader（net6+ 由 IHostedService 包装保证启动期解析）。
+        services.TryAddSingleton<AllowedDomainsReloader>();
 
         foreach (var kvp in options.Clients)
         {

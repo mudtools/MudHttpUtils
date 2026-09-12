@@ -5,6 +5,8 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯用户合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using System.Security.Cryptography;
 
@@ -36,8 +38,15 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
     private bool _disposed;
     private readonly bool _authenticated;
 
-    /// <inheritdoc/>
-    public DefaultAesEncryptionProvider(IOptions<AesEncryptionOptions> options)
+    /// <summary>
+    /// 初始化 <see cref="DefaultAesEncryptionProvider"/> 实例。
+    /// </summary>
+    /// <param name="options">AES 加密选项。</param>
+    /// <param name="logger">可选日志记录器；CFG-15：当关闭认证加密时记录安全警告。</param>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> 或其 <c>Value</c> 为 null。</exception>
+    public DefaultAesEncryptionProvider(
+        IOptions<AesEncryptionOptions> options,
+        ILogger<DefaultAesEncryptionProvider>? logger = null)
     {
         if (options?.Value == null)
             throw new ArgumentNullException(nameof(options));
@@ -46,6 +55,13 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
         _key = (byte[])options.Value.Key.Clone();
         _authenticated = options.Value.EnableAuthenticatedEncryption;
         options.Value.ClearSensitiveData();
+
+        // CFG-15：关闭认证加密（裸 CBC，无完整性校验）存在填充预言风险，启动期显式告警（不阻断）。
+        if (!_authenticated)
+        {
+            MudHttpClientLog.AuthenticatedEncryptionDisabled(
+                logger ?? NullLogger<DefaultAesEncryptionProvider>.Instance);
+        }
     }
 
     /// <summary>

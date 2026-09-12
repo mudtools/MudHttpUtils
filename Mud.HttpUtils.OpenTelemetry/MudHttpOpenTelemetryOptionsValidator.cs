@@ -30,11 +30,13 @@ public class MudHttpOpenTelemetryOptionsValidator : IValidateOptions<MudHttpOpen
         if (options.SamplingRatio < 0 || options.SamplingRatio > 1)
             failures.Add($"MudHttpOpenTelemetryOptions: SamplingRatio 必须在 0.0~1.0 范围内，当前值为 {options.SamplingRatio}。");
 
-        if (options.ExportBatchSize.HasValue && options.ExportBatchSize.Value <= 0)
-            failures.Add($"MudHttpOpenTelemetryOptions: ExportBatchSize 必须大于 0（null 使用 SDK 默认值），当前值为 {options.ExportBatchSize.Value}。");
+        // CFG-10：与 AddMudHttpOpenTelemetryCore 的实际语义对齐 —— 0 与 null 等价（均表示「不覆盖 SDK 默认值」，
+        // 见 ConfigureBatchExportOptions 的 `HasValue && Value > 0` 判据），仅负数属非法。
+        if (options.ExportBatchSize.HasValue && options.ExportBatchSize.Value < 0)
+            failures.Add($"MudHttpOpenTelemetryOptions: ExportBatchSize 不能为负数（null 或 0 使用 SDK 默认值），当前值为 {options.ExportBatchSize.Value}。");
 
-        if (options.ExportIntervalMilliseconds.HasValue && options.ExportIntervalMilliseconds.Value <= 0)
-            failures.Add($"MudHttpOpenTelemetryOptions: ExportIntervalMilliseconds 必须大于 0（null 使用 SDK 默认值），当前值为 {options.ExportIntervalMilliseconds.Value}。");
+        if (options.ExportIntervalMilliseconds.HasValue && options.ExportIntervalMilliseconds.Value < 0)
+            failures.Add($"MudHttpOpenTelemetryOptions: ExportIntervalMilliseconds 不能为负数（null 或 0 使用 SDK 默认值），当前值为 {options.ExportIntervalMilliseconds.Value}。");
 
         if (string.IsNullOrWhiteSpace(options.ServiceName))
             failures.Add("MudHttpOpenTelemetryOptions: ServiceName 不能为 null 或空白字符串。");

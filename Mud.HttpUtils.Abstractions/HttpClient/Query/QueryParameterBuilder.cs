@@ -60,6 +60,25 @@ public sealed class QueryParameterBuilder(string baseUrl)
     }
 
     /// <summary>
+    /// 添加查询参数；<paramref name="value"/> 为 <c>null</c> 时仍以空值落键（<c>name=</c>）。
+    /// </summary>
+    /// <remarks>
+    /// CFG-04：供 <c>[Query(SerializeNull = true)]</c> 使用。与 <see cref="Add(string, string?)"/>
+    /// 的「null 跳过」语义区分：本方法保留「显式空值」表达力。
+    /// </remarks>
+    /// <param name="name">参数名称。</param>
+    /// <param name="value">参数值；为 <c>null</c> 时序列化为空串。</param>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> 为 null 或空白。</exception>
+    public void AddAllowNull(string name, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentNullException(nameof(name));
+
+        _params.Add(new KeyValuePair<string, string>(name, value ?? string.Empty));
+        _cachedQueryString = null; // 清除缓存
+    }
+
+    /// <summary>
     /// 添加查询参数（空值将被忽略），并使用指定的格式化字符串。
     /// </summary>
     /// <param name="name">参数名称。</param>

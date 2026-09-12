@@ -413,10 +413,38 @@ public class ObservabilityTests
         activity.Should().NotBeNull();
         activity!.Kind.Should().Be(ActivityKind.Client);
         activity.GetTagItem(MudHttpActivitySource.Tags.HttpMethod).Should().Be("POST");
-        activity.GetTagItem(MudHttpActivitySource.Tags.HttpUrl).Should().Be("https://api.example.com/path?query=1");
+        // CFG-05：默认（RecordFullUrlOnSuccess=false）仅记录 scheme://host/path，不含 query。
+        activity.GetTagItem(MudHttpActivitySource.Tags.HttpUrl).Should().Be("https://api.example.com/path");
         activity.GetTagItem(MudHttpActivitySource.Tags.HttpScheme).Should().Be("https");
         activity.GetTagItem(MudHttpActivitySource.Tags.HttpHost).Should().Be("api.example.com");
         activity.GetTagItem(MudHttpActivitySource.Tags.MudClientName).Should().Be("client_a");
+    }
+
+    [Fact]
+    public void Observability_StartRequestActivity_RecordFullUrl_IncludesQuery()
+    {
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == MudHttpActivitySource.Name,
+            SampleUsingParentId = (ref ActivityCreationOptions<string> _) => ActivitySamplingResult.AllData,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var original = MudHttpObservabilityOptions.RecordFullUrlOnSuccess;
+        try
+        {
+            MudHttpObservabilityOptions.RecordFullUrlOnSuccess = true;
+            var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/path?query=1");
+            using var activity = MudHttpObservability.StartRequestActivity(request, "client_a");
+
+            activity.Should().NotBeNull();
+            activity!.GetTagItem(MudHttpActivitySource.Tags.HttpUrl).Should().Be("https://api.example.com/path?query=1");
+        }
+        finally
+        {
+            MudHttpObservabilityOptions.RecordFullUrlOnSuccess = original;
+        }
     }
 
     [Fact]

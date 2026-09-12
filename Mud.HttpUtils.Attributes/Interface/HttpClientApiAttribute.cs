@@ -70,10 +70,20 @@ public sealed class HttpClientApiAttribute : Attribute
     public string? BaseAddress { get; }
 
     /// <summary>
+    /// 未显式设置 <see cref="Timeout"/> 时的默认请求超时时间（秒）。
+    /// </summary>
+    /// <remarks>
+    /// <para>CFG-03：本常量为「默认超时」的单一真相源，生成器以字面量（50）回退并由一致性测试锁定。</para>
+    /// <para>注意：该默认值仅作用于生成器产出的命名 HttpClient；
+    /// 手动 <c>AddMudHttpClient(name, baseAddress)</c> 注册的客户端使用 HttpClient 自身默认超时（100 秒）。</para>
+    /// </remarks>
+    public const int DefaultTimeoutSeconds = 50;
+
+    /// <summary>
     /// 获取或设置请求超时时间（秒）。
     /// </summary>
-    /// <value>默认为 50 秒。</value>
-    public int Timeout { get; set; } = 50;
+    /// <value>默认为 50 秒（<see cref="DefaultTimeoutSeconds"/>）。</value>
+    public int Timeout { get; set; } = DefaultTimeoutSeconds;
 
     /// <summary>
     /// 获取或设置服务注册组名称，用于将客户端分组管理。

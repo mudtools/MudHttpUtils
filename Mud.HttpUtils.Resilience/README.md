@@ -170,6 +170,9 @@ flowchart TD
 | `MaxRetryAttempts` | `int` | `3` | 最大重试次数 |
 | `DelayMilliseconds` | `int` | `1000` | 基础延迟时间（毫秒） |
 | `UseExponentialBackoff` | `bool` | `true` | 是否使用指数退避 |
+| `UseJitter` | `bool` | `true` | 退避是否加入随机抖动（范围 `[0, 基础退避/4)`），避免多实例"重试风暴" |
+| `AllowNonIdempotentRetry` | `bool` | `false` | 是否允许非幂等方法重试。为 `true` 时 **`RetryableHttpMethods` 将被忽略**（所有方法均可重试，启动期记录警告，CFG-09） |
+| `RetryableHttpMethods` | `HashSet<string>` | `GET/HEAD/OPTIONS/PUT/DELETE/TRACE` | 允许重试的 HTTP 方法集合（不区分大小写）。**仅当 `AllowNonIdempotentRetry=false` 时生效** |
 | `RetryStatusCodes` | `int[]?` | `null`（运行时回退到 `[408, 429, 500, 502, 503, 504]`） | 触发重试的 HTTP 状态码。`null`（未设置）使用默认值；`[]`（空数组）表示不重试任何状态码，仅 `HttpRequestException`/`TimeoutRejectedException`/`TaskCanceledException` 触发重试（运行时记录警告日志） |
 | `OnRetry` | `Func<Exception?, int, TimeSpan, Task>?` | `null` | 重试回调函数（仅支持代码配置，无法从 IConfiguration 绑定） |
 
@@ -179,6 +182,32 @@ flowchart TD
 |------|------|--------|------|
 | `Enabled` | `bool` | `true` | 是否启用超时策略 |
 | `TimeoutSeconds` | `int` | `30` | 超时时间（秒） |
+
+### 超时层级与单位对照表（CFG-13）
+
+Mud.HttpUtils 存在四个超时入口，**单位不同**且**生效层级不同**：
+
+| 入口 | 单位 | 默认 | 生效层级 | 说明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `MudHttpClientOptions.TimeoutSeconds` | 秒 | `null`（HttpClient 默认 100s） | **外层硬上限**（`HttpClient.Timeout`） | 由 `AddMudHttpClientsFromConfiguration` 设置 |
+| `HttpClientApiAttribute.Timeout` | 秒 | `50`（`DefaultTimeoutSeconds`） | 生成注册的命名 HttpClient 超时 | 仅生成客户端；见 CFG-03 |
+| `TimeoutOptions.TimeoutSeconds` | 秒 | `30` | 全局 Polly 单次超时 | 全局弹性策略 |
+| `TimeoutAttribute.TimeoutMilliseconds` | **毫秒** | 必填 | 方法级 Polly 超时 | 方法级弹性策略 |
+
+> **生效顺序**：`HttpClient.Timeout`（外层硬上限）⊃ `Timeout(options)`（全局 Polly）⊃ `[Timeout]`（方法级 Polly）。
+> 外层硬上限会**封顶**内层：当 `HttpClient.Timeout` 短于方法级 `[Timeout]` 时，Polly 超时永不触发
+> —— 编译期由生成器诊断 **HTTPCLIENT021** 提示（CFG-07）。
+
+### 重试叠加关系（CFG-14）
+
+| 入口 | 语义 | 互斥关系 |
+| :--- | :--- | :--- |
+| `RetryOptions.MaxRetryAttempts` | 全局 HTTP 重试 | 与方法级 `[Retry]` **互斥**（`SkipResilience` 标记，方法级优先，仅应用一次） |
+| `RetryAttribute.MaxRetries` | 方法级 HTTP 重试 | 同上 |
+| `TokenRecoveryOptions.RecoveryMaxRetries`（`Mud.HttpUtils.Client`） | 401 令牌恢复重试 | 与 HTTP 重试**不互斥** |
+
+> **乘积效应**：令牌恢复与 HTTP 重试叠加时，最坏请求次数 = `(1 + RecoveryMaxRetries) × (1 + HttpRetries)`。
+> 文档提示，不做运行时跨包探测（`Client` 不引用 `Resilience`，见方案 ADR）。
 
 ### CircuitBreakerOptions
 

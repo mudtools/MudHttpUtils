@@ -26,7 +26,18 @@ namespace Mud.HttpUtils;
 /// <para>
 /// 注意：此类型位于 Abstractions 层，仅携带 Abstractions 中定义的接口。
 /// <c>ILogger</c> 等需 <c>Microsoft.Extensions.Logging</c> 的依赖不在此处提供，
-/// 生成实现类构造函数接受 <c>ILogger?</c> 可选参数，此处传入 null。
+/// 生成实现类构造函数接受 <c>ILogger?</c> 可选参数。
+/// </para>
+/// <para>
+/// CFG-06（能力边界显式声明，非静默）：
+/// <list type="bullet">
+///   <item><description><b>Logger</b>：无 DI 路径固定使用 <c>NullLogger</c>（生成工厂硬编码 <c>logger: null</c>），
+///   不产生任何日志。如需日志，请使用 DI 路径。</description></item>
+///   <item><description><b>RequestInterceptor / ResponseInterceptor</b>：无 DI 路径<b>不生效</b>（见对应属性说明）。</description></item>
+///   <item><description><b>SensitiveDataMasker</b>：已接线生效。</description></item>
+///   <item><description><b>JsonTypeInfoResolver</b>：通过 <see cref="ContentSerializer"/> 承载；
+///   若仅设置本属性而未提供序列化器，AOT 下 JSON 元数据可能不可用。</description></item>
+/// </list>
 /// </para>
 /// </remarks>
 public sealed class GeneratedClientOptions : IEnhancedClientConfig
@@ -43,11 +54,21 @@ public sealed class GeneratedClientOptions : IEnhancedClientConfig
     /// <summary>
     /// 获取或设置请求拦截器。
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// CFG-06：无 DI 路径（<c>RestService.ForGenerated&lt;T&gt;(HttpClient, GeneratedClientOptions)</c>）当前
+    /// <b>不支持拦截器</b>——生成实现类经 <c>DefaultHttpRequestExecutor</c> 直接发送请求，未接入拦截器管道。
+    /// 如需请求/响应拦截，请使用 DI 路径（<c>AddMudHttpClient</c> + <c>IHttpRequestInterceptor</c> 注册）。
+    /// </para>
+    /// </remarks>
     public IHttpRequestInterceptor? RequestInterceptor { get; set; }
 
     /// <summary>
     /// 获取或设置响应拦截器。
     /// </summary>
+    /// <remarks>
+    /// <para>CFG-06：无 DI 路径当前<b>不支持</b>，语义与 <see cref="RequestInterceptor"/> 相同。</para>
+    /// </remarks>
     public IHttpResponseInterceptor? ResponseInterceptor { get; set; }
 
     /// <summary>
@@ -63,6 +84,9 @@ public sealed class GeneratedClientOptions : IEnhancedClientConfig
     /// <summary>
     /// 获取或设置敏感数据掩码器。
     /// </summary>
+    /// <remarks>
+    /// CFG-06：已接线至 <c>DefaultHttpRequestExecutor</c>（错误响应日志脱敏）。
+    /// </remarks>
     public ISensitiveDataMasker? SensitiveDataMasker { get; set; }
 
     /// <summary>
