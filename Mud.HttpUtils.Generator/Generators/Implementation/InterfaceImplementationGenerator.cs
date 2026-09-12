@@ -770,8 +770,9 @@ internal class InterfaceImplementationGenerator
     }
 
     /// <summary>
-    /// NEW-GEN-03/08 修复：检测方法 CacheAttribute 中被生成器忽略的属性（UseSlidingExpiration、Priority），
-    /// 当用户显式设置这些属性时发出信息性诊断，提示这些配置不会在生成的代码中生效。
+    /// NEW-GEN-03/08 修复：检测方法 CacheAttribute 中被生成器忽略的属性（M3-#27 修订：仅剩 Priority ——
+    /// UseSlidingExpiration 已被生成器支持并下沉到 CacheOptions），当用户显式设置时发出信息性诊断，
+    /// 提示该配置不会在生成的代码中生效。
     /// </summary>
     private void ReportCacheAttributeIgnoredProperties(GeneratorContext context)
     {
@@ -787,19 +788,6 @@ internal class InterfaceImplementationGenerator
             var location = (cacheAttr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
                 ?? method.Locations.FirstOrDefault()
                 ?? _interfaceDecl.GetLocation())!;
-
-            // 检查 UseSlidingExpiration：仅当显式设置为 true 时发出诊断（设置为 false 等同于默认值）
-            var slidingArg = cacheAttr.NamedArguments
-                .FirstOrDefault(na => na.Key == "UseSlidingExpiration");
-            if (slidingArg.Value.Value is bool useSliding && useSliding)
-            {
-                _context.ReportDiagnostic(Diagnostic.Create(
-                    Diagnostics.CacheAttributePropertyIgnored,
-                    location,
-                    _interfaceSymbol.Name,
-                    method.Name,
-                    "UseSlidingExpiration"));
-            }
 
             // 检查 Priority：只要显式设置（无论值为何）即发出诊断，因为该属性被生成器完全忽略
             if (cacheAttr.NamedArguments.Any(na => na.Key == "Priority"))

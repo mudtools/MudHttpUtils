@@ -252,7 +252,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             "发送JSON请求", "JSON请求完成", "JSON请求失败", uri,
             () => SendRequestAsync<TResult>(
                 request,
-                jsonSerializerOptions: jsonSerializerOptions as JsonSerializerOptions,
+                jsonSerializerOptions: jsonSerializerOptions, // M3-#23：object? 透传，保留 JsonTypeInfo<T> 快路径
                 cancellationToken: cancellationToken));
     }
 
@@ -1216,7 +1216,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// <returns>反序列化后的响应结果</returns>
     private async Task<TResult?> SendRequestAsync<TResult>(
         HttpRequestMessage httpRequestMessage,
-        JsonSerializerOptions? jsonSerializerOptions = null,
+        // M3-#23：参数从 JsonSerializerOptions? 收宽为 object?，由 IHttpContentSerializer 自行分派
+        // （JsonSerializerOptions / JsonTypeInfo<T> 快路径均可达）
+        object? jsonSerializerOptions = null,
         CancellationToken cancellationToken = default)
     {
         // M1-#5：日志输出用 URL 脱敏（敏感 query 值掩码）

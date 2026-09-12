@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 abstract Mud.HttpUtils.MultipartItem.ToContent() -> System.Net.Http.HttpContent!
 abstract Mud.HttpUtils.OAuth2TokenManagerBase.GetTokenByAuthorizationCodeAsync(string! code, string! redirectUri, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.CredentialToken!>!
 abstract Mud.HttpUtils.OAuth2TokenManagerBase.GetTokenByClientCredentialsAsync(string![]? scopes = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.CredentialToken!>!
@@ -803,3 +803,13 @@ virtual Mud.HttpUtils.TokenManagerBase.RefreshRetryDelayMilliseconds.get -> int
 virtual Mud.HttpUtils.TokenManagerBase.RefreshTokenWithScopesAsync(string![]? scopes, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Mud.HttpUtils.CredentialToken!>!
 virtual Mud.HttpUtils.TokenManagerBase.SupportsBackgroundRefresh.get -> bool
 volatile Mud.HttpUtils.TokenManagerBase._disposed -> bool
+Mud.HttpUtils.CacheOptions.UseSlidingExpiration.get -> bool
+Mud.HttpUtils.CacheOptions.UseSlidingExpiration.set -> void
+Mud.HttpUtils.IHttpResponseCache.GetOrFetchAsync<T>(string! key, System.Func<System.Threading.Tasks.Task<T>!>! fetchFunc, System.TimeSpan expiration, bool useSlidingExpiration, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<T?>!
+static Mud.HttpUtils.MudHttpMeter.FilterTags(System.Collections.Generic.KeyValuePair<string!, object?>[]! tags) -> System.Collections.Generic.KeyValuePair<string!, object?>[]!
+static Mud.HttpUtils.MudHttpObservabilityOptions.EmitDiagnosticEvents.get -> bool
+static Mud.HttpUtils.MudHttpObservabilityOptions.EmitDiagnosticEvents.set -> void
+static Mud.HttpUtils.MudHttpObservabilityOptions.MetricTagAllowlist.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+static Mud.HttpUtils.MudHttpObservabilityOptions.MetricTagAllowlist.set -> void
+static Mud.HttpUtils.MudHttpObservabilityOptions.RecordFullUrlOnSuccess.get -> bool
+static Mud.HttpUtils.MudHttpObservabilityOptions.RecordFullUrlOnSuccess.set -> void

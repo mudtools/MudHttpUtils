@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// HTTP 可观测性（Span tag / 日志 / 诊断事件）的全局开关。
+/// HTTP 可观测性（Span tag / 日志 / 诊断事件 / 指标维度）的全局开关。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -37,4 +37,47 @@ public static class MudHttpObservabilityOptions
     /// </para>
     /// </remarks>
     public static bool RedactUrlInTelemetry { get; set; } = true;
+
+    /// <summary>
+    /// 成功请求的 Span tag 是否记录完整 URL（R-1）。默认 <c>false</c> —— 仅记录
+    /// <c>scheme://host/path</c>（不含 query），从机制上防止敏感 query 随遥测泄漏并控制 tag 基数。
+    /// </summary>
+    /// <remarks>
+    /// 设为 <c>true</c> 时记录完整 URL，但仍受 <see cref="RedactUrlInTelemetry"/> 约束（敏感 query 值掩码）。
+    /// 错误路径不受本开关影响：<c>ApiException.RequestUri</c> 始终保留完整 URI。
+    /// </remarks>
+    public static bool RecordFullUrlOnSuccess { get; set; } = false;
+
+    /// <summary>
+    /// 指标 tag 白名单（R-1，#6 的治本之策）：所有 <see cref="MudHttpMeter"/> 写入点统一过滤，
+    /// 白名单之外的维度被丢弃，从机制上杜绝高基数回归。
+    /// </summary>
+    /// <remarks>
+    /// 默认包含当前全部内建维度（client_name/method/host/outcome/status_code/policy_key/
+    /// token_manager_key/retry_count），即默认行为与白名单引入前一致；调用方可收缩该集合
+    /// （如仅保留 client_name/outcome）以降低基数，但<strong>无法新增</strong>内建维度之外的键
+    /// （自定义键不在任何写入点产出）。设为空集表示丢弃全部维度（不推荐，指标将失去聚合维度）。
+    /// </remarks>
+    public static IReadOnlyCollection<string> MetricTagAllowlist { get; set; } =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "client_name",
+            "method",
+            "host",
+            "outcome",
+            "status_code",
+            "policy_key",
+            "token_manager_key",
+            "retry_count",
+        };
+
+    /// <summary>
+    /// 是否发出诊断事件（R-2）：控制 <see cref="MudHttpActivitySource.AddActivityEvent"/> 整体短路
+    /// （含 DiagnosticSource 事件与 Activity Event 的 tags 数组构造）。默认 <c>true</c>。
+    /// </summary>
+    /// <remarks>
+    /// 高频请求场景（诊断事件消费方未接入）可设为 <c>false</c> 归零事件构造开销；
+    /// 关闭不影响 Activity 本身（Span 生命周期、status、核心 tag）与指标。
+    /// </remarks>
+    public static bool EmitDiagnosticEvents { get; set; } = true;
 }

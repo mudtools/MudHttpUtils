@@ -129,6 +129,45 @@ public static class MudHttpMeter
             "mud.http.download.duration",
             unit: "ms",
             description: "文件下载耗时分布（仅响应体下载阶段）");
+
+    private static readonly IReadOnlyCollection<string> s_defaultAllowlist = MudHttpObservabilityOptions.MetricTagAllowlist;
+    private static IReadOnlyCollection<string>? s_lookupSource;
+    private static volatile HashSet<string>? s_lookup;
+
+    /// <summary>
+    /// R-1：按 <see cref="MudHttpObservabilityOptions.MetricTagAllowlist"/> 过滤指标维度，
+    /// 白名单之外的 tag 被丢弃（#6 高基数治理的机制化防线）。所有指标写入点统一调用。
+    /// </summary>
+    /// <remarks>
+    /// 默认白名单（引用未变更时）直接返回原数组（零分配）；白名单被替换后按引用变更重建查找集。
+    /// </remarks>
+    public static KeyValuePair<string, object?>[] FilterTags(KeyValuePair<string, object?>[] tags)
+    {
+        var allowlist = MudHttpObservabilityOptions.MetricTagAllowlist;
+
+        // 默认白名单 = 当前全部内建维度：跳过过滤（零分配快路径）
+        if (ReferenceEquals(allowlist, s_defaultAllowlist))
+            return tags;
+
+        var lookup = s_lookup;
+        if (lookup is null || !ReferenceEquals(s_lookupSource, allowlist))
+        {
+            lookup = new HashSet<string>(
+                allowlist ?? Array.Empty<string>(),
+                StringComparer.Ordinal);
+            s_lookupSource = allowlist;
+            s_lookup = lookup;
+        }
+
+        var filtered = new List<KeyValuePair<string, object?>>(tags.Length);
+        foreach (var tag in tags)
+        {
+            if (lookup.Contains(tag.Key))
+                filtered.Add(tag);
+        }
+
+        return filtered.ToArray();
+    }
 }
 
 /// <summary>

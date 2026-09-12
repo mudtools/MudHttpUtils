@@ -189,6 +189,7 @@ namespace TestNamespace.Internal
                    {
                        DurationSeconds = 60,
                        VaryByUser = false,
+                       UseSlidingExpiration = false,
                    },
                        CacheKey = $"GetDataAsync",
                },

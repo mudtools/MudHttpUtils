@@ -18,6 +18,9 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _fetchLocks = new();
     private readonly Timer? _cleanupTimer;
     private readonly int _maxCacheSize;
+    // M3-#24：fetch 锁容量上限（与 _maxCacheSize 联动），防止"每次回源失败（结果为 null 不入缓存）"
+    // 场景下 _fetchLocks 随不同 key 无界增长
+    private readonly int _maxFetchLocks;
     private long _accessCounter;
     private bool _disposed;
 
@@ -29,6 +32,7 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
     public MemoryHttpResponseCache(int maxCacheSize = ResponseCacheOptions.DefaultMaxCacheSize, int cleanupIntervalSeconds = ResponseCacheOptions.DefaultCleanupIntervalSeconds)
     {
         _maxCacheSize = maxCacheSize;
+        _maxFetchLocks = 2 * _maxCacheSize;
         _cleanupTimer = new Timer(
             CleanupExpiredEntries,
             null,
@@ -106,6 +110,10 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
 
     /// <inheritdoc />
     public async Task<T?> GetOrFetchAsync<T>(string key, Func<Task<T>> fetchFunc, TimeSpan expiration, CancellationToken cancellationToken = default)
+        => await GetOrFetchAsync(key, fetchFunc, expiration, useSlidingExpiration: false, cancellationToken).ConfigureAwait(false);
+
+    /// <inheritdoc />
+    public async Task<T?> GetOrFetchAsync<T>(string key, Func<Task<T>> fetchFunc, TimeSpan expiration, bool useSlidingExpiration, CancellationToken cancellationToken = default)
     {
         if (key == null)
             throw new ArgumentNullException(nameof(key));
@@ -116,6 +124,8 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
             return cachedValue;
 
         var fetchLock = _fetchLocks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        // M3-#24：超限时回收"不在缓存中"的锁，防止无界增长
+        PruneFetchLocksIfOverCapacity();
         await fetchLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -126,7 +136,8 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
 
             if (result != null)
             {
-                Set(key, result, expiration);
+                // M3-#27：透传滑动过期语义（TryGet 命中时由 CacheEntry.Touch 顺延过期时间）
+                Set(key, result, expiration, useSlidingExpiration);
             }
 
             return result;
@@ -168,6 +179,30 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
         _cache.Clear();
     }
 
+    /// <summary>
+    /// M3-#24：fetch 锁超限回收 —— 优先移除"不在 <see cref="_cache"/> 中"的锁（缓存条目已被清理/淘汰的键）。
+    /// 若全部键均处于活跃回源中，保持现状并在下个清理周期重试（此时不释放，避免破坏互斥语义）。
+    /// </summary>
+    private void PruneFetchLocksIfOverCapacity()
+    {
+        if (_fetchLocks.Count <= _maxFetchLocks)
+            return;
+
+        foreach (var kvp in _fetchLocks)
+        {
+            if (_fetchLocks.Count <= _maxFetchLocks)
+                break;
+            if (!_cache.ContainsKey(kvp.Key))
+                _fetchLocks.TryRemove(kvp.Key, out _);
+        }
+
+        if (_fetchLocks.Count > _maxFetchLocks)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"MemoryHttpResponseCache: fetch 锁数量 {_fetchLocks.Count} 超过上限 {_maxFetchLocks}，剩余键均未命中可回收条件（活跃回源中），等待下个清理周期");
+        }
+    }
+
     private void CleanupExpiredEntries(object? state)
     {
         // NEW-CA-02 修复：Timer 回调包裹 try-catch，避免未捕获异常导致进程崩溃
@@ -189,6 +224,13 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
                 {
                     _fetchLocks.TryRemove(kvp.Key, out _);
                 }
+            }
+
+            // M3-#24：清理后若仍超限（全部键活跃回源中），记录告警便于观测
+            if (_fetchLocks.Count > _maxFetchLocks)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"MemoryHttpResponseCache: fetch 锁数量 {_fetchLocks.Count} 仍超过上限 {_maxFetchLocks}，请检查是否存在大量持续失败的回源请求");
             }
         }
         catch (Exception ex)

@@ -69,8 +69,9 @@ public sealed class CacheAttribute : Attribute
     /// </summary>
     /// <remarks>
     /// 启用后，每次访问缓存项都会重置过期时间。
+    /// M3-#27：生成器已支持该属性 —— 经 <see cref="Mud.HttpUtils.CacheOptions.UseSlidingExpiration"/>
+    /// 传递至缓存层（<c>IHttpResponseCache.Set(key, value, expiration, useSlidingExpiration)</c>）。
     /// </remarks>
-    [Obsolete("UseSlidingExpiration 当前未被生成器处理，将在未来版本中移除或实现。")]
     public bool UseSlidingExpiration { get; set; }
 
     /// <summary>

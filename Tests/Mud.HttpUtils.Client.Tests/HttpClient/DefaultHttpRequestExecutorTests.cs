@@ -431,9 +431,10 @@ public class DefaultHttpRequestExecutorTests
                 It.IsAny<string>(),
                 It.IsAny<Func<Task<TestUser?>>>(),
                 It.IsAny<TimeSpan>(),
+                It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()))
-            .Returns<string, Func<Task<TestUser?>>, TimeSpan, CancellationToken>(
-                async (key, fetch, exp, ct) =>
+            .Returns<string, Func<Task<TestUser?>>, TimeSpan, bool, CancellationToken>(
+                async (key, fetch, exp, sliding, ct) =>
                 {
                     fetchedValue = await fetch();
                     return fetchedValue;
@@ -452,7 +453,7 @@ public class DefaultHttpRequestExecutorTests
         result!.Id.Should().Be(20);
         mockCache.Verify(c => c.GetOrFetchAsync(
             "test-key", It.IsAny<Func<Task<TestUser?>>>(), TimeSpan.FromSeconds(60),
-            It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
         mockClient.Verify(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -466,6 +467,7 @@ public class DefaultHttpRequestExecutorTests
                 It.IsAny<string>(),
                 It.IsAny<Func<Task<TestUser?>>>(),
                 It.IsAny<TimeSpan>(),
+                It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(cachedUser);
         var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance, mockCache.Object);
@@ -526,9 +528,10 @@ public class DefaultHttpRequestExecutorTests
                 It.IsAny<string>(),
                 It.IsAny<Func<Task<TestUser?>>>(),
                 It.IsAny<TimeSpan>(),
+                It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()))
-            .Returns<string, Func<Task<TestUser?>>, TimeSpan, CancellationToken>(
-                async (key, fetch, exp, ct) => await fetch());
+            .Returns<string, Func<Task<TestUser?>>, TimeSpan, bool, CancellationToken>(
+                async (key, fetch, exp, sliding, ct) => await fetch());
         var mockResolver = new Mock<IResiliencePolicyResolver>();
         mockResolver.Setup(r => r.ResolvePolicyWrapper<TestUser>(
                 It.IsAny<ResilienceExecutionOptions>(), It.IsAny<HttpRequestMessage>()))
@@ -551,7 +554,7 @@ public class DefaultHttpRequestExecutorTests
         // 缓存应被调用一次（包裹弹性策略）
         mockCache.Verify(c => c.GetOrFetchAsync(
             "combo-key", It.IsAny<Func<Task<TestUser?>>>(), TimeSpan.FromSeconds(30),
-            It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
         // 弹性策略解析器应被调用一次
         mockResolver.Verify(r => r.ResolvePolicyWrapper<TestUser>(
             It.IsAny<ResilienceExecutionOptions>(), It.IsAny<HttpRequestMessage>()), Times.Once);
@@ -569,6 +572,7 @@ public class DefaultHttpRequestExecutorTests
                 It.IsAny<string>(),
                 It.IsAny<Func<Task<TestUser?>>>(),
                 It.IsAny<TimeSpan>(),
+                It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(cachedUser);
         var mockResolver = new Mock<IResiliencePolicyResolver>();

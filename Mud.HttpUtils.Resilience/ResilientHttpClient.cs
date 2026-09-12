@@ -28,7 +28,9 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
 {
     private readonly IEnhancedHttpClient _innerClient;
     private readonly IResiliencePolicyProvider _policyProvider;
-    private readonly ILogger _logger;
+    // M3-#21：字段收强为 ILogger<ResilientHttpClient>（构造函数仅赋值该类型或 NullLogger<ResilientHttpClient>），
+    // 消除 WithBaseAddress 中的向下强制转换 —— 未来任何改动都在编译期暴露而非运行时 InvalidCastException
+    private readonly ILogger<ResilientHttpClient> _logger;
     private readonly ResilienceOptions? _options;
 
     /// <summary>
@@ -592,18 +594,18 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
 
     #region IEncryptableHttpClient
 
-/// <inheritdoc />
-[Obsolete("此重载使用运行时反射 (content.GetType())，Native AOT 不兼容。请改用 EncryptContent<T>(T, string) 泛型重载。")]
+    /// <inheritdoc />
+    [Obsolete("此重载使用运行时反射 (content.GetType())，Native AOT 不兼容。请改用 EncryptContent<T>(T, string) 泛型重载。")]
 #if NET6_0_OR_GREATER
-[System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("EncryptContent(object, ...) 委托给底层客户端并使用运行时类型分派，Native AOT 不支持。请改用 EncryptContent<T>(T, string) 泛型重载。")]
+    [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("EncryptContent(object, ...) 委托给底层客户端并使用运行时类型分派，Native AOT 不支持。请改用 EncryptContent<T>(T, string) 泛型重载。")]
 #endif
 #if NET7_0_OR_GREATER
-[System.Diagnostics.CodeAnalysis.RequiresDynamicCode("EncryptContent(object, ...) 委托给底层客户端并使用运行时类型分派，Native AOT 不支持。请改用 EncryptContent<T>(T, string) 泛型重载。")]
+    [System.Diagnostics.CodeAnalysis.RequiresDynamicCode("EncryptContent(object, ...) 委托给底层客户端并使用运行时类型分派，Native AOT 不支持。请改用 EncryptContent<T>(T, string) 泛型重载。")]
 #endif
-public string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json)
-{
-return ((IEncryptableHttpClient)_innerClient).EncryptContent(content, propertyName, serializeType);
-}
+    public string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json)
+    {
+        return ((IEncryptableHttpClient)_innerClient).EncryptContent(content, propertyName, serializeType);
+    }
 
     /// <inheritdoc />
     public string EncryptContent<T>(T content, string propertyName = "data")
@@ -652,7 +654,7 @@ return ((IEncryptableHttpClient)_innerClient).EncryptContent(content, propertyNa
             throw new ArgumentNullException(nameof(baseAddress));
 
         var innerWithNewBase = _innerClient.WithBaseAddress(baseAddress);
-        return new ResilientHttpClient(innerWithNewBase, _policyProvider, (ILogger<ResilientHttpClient>)_logger, _options);
+        return new ResilientHttpClient(innerWithNewBase, _policyProvider, _logger, _options);
     }
 
     #endregion

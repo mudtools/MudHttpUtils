@@ -191,6 +191,10 @@ public sealed class QueryParameterBuilder(string baseUrl)
     /// <summary>
     /// 构建完整的 URL（包含基础 URL 和查询字符串）。
     /// </summary>
+    /// <remarks>
+    /// M3-#25：相对路径 <paramref name="baseUrl"/>（如 <c>/api/users</c>）降级为字符串拼接
+    /// （返回 <c>/api/users?page=1</c>），不再要求绝对 URI；绝对 URL 维持 <see cref="UriBuilder"/> 拼接语义。
+    /// </remarks>
     public string Build()
     {
         if (_cachedQueryString != null)
@@ -203,7 +207,15 @@ public sealed class QueryParameterBuilder(string baseUrl)
             return _cachedQueryString;
         }
 
-        // 使用 UriBuilder 安全拼接
+        // M3-#25（方案 B）：相对 baseUrl 不适用 UriBuilder（要求绝对 URI），降级为字符串拼接
+        // （合法且常见："/api/users" + "?page=1"）
+        if (!Uri.TryCreate(_baseUrl, UriKind.Absolute, out _))
+        {
+            _cachedQueryString = _baseUrl + (query.Length > 0 ? "?" + query : string.Empty);
+            return _cachedQueryString;
+        }
+
+        // 使用 UriBuilder 安全拼接（绝对 URL 维持现状）
         var uriBuilder = new UriBuilder(_baseUrl);
         if (!string.IsNullOrEmpty(query))
         {

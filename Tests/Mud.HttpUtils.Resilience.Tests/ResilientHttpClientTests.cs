@@ -62,6 +62,45 @@ public class ResilientHttpClientTests
         client.Should().NotBeNull();
     }
 
+    /// <summary>
+    /// M3-#21 smoke：WithBaseAddress 后日志仍可用。
+    /// 字段已收强为 <c>ILogger&lt;ResilientHttpClient&gt;</c>，WithBaseAddress 直接透传原 logger（无向下强转点）；
+    /// 新实例走非幂等跳过重试路径时应正常写出日志。
+    /// </summary>
+    [Fact]
+    public async Task WithBaseAddress_ThenSend_LoggerStillUsable()
+    {
+        var mockInner = new Mock<IEnhancedHttpClient>();
+        mockInner.Setup(c => c.WithBaseAddress(It.IsAny<Uri>())).Returns(mockInner.Object);
+        mockInner
+            .Setup(c => c.PostAsJsonAsync<string, string>(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns<string, string, CancellationToken>((_, _, _) => Task.FromException<string?>(new HttpRequestException("boom")));
+        var mockLogger = new Mock<ILogger<ResilientHttpClient>>();
+        // LoggerMessage 源生成代码先检查 IsEnabled，默认 false 会跳过写日志
+        mockLogger.Setup(l => l.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
+        var policyProvider = new PollyResiliencePolicyProvider(new ResilienceOptions
+        {
+            Retry = { Enabled = true, MaxRetryAttempts = 3, DelayMilliseconds = 1 }
+        });
+
+        var client = new ResilientHttpClient(mockInner.Object, policyProvider, mockLogger.Object);
+        var rebased = client.WithBaseAddress(new Uri("https://api.example.com"));
+
+        var act = () => rebased.PostAsJsonAsync<string, string>("https://api.example.com/orders", "payload");
+        await act.Should().ThrowAsync<HttpRequestException>();
+
+        // 非幂等 POST 默认跳过重试（仅 1 次调用），该路径经新实例的 _logger 写日志
+        mockInner.Verify(c => c.PostAsJsonAsync<string, string>(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        mockLogger.Verify(
+            l => l.Log(
+                It.IsAny<LogLevel>(),
+                It.IsAny<EventId>(),
+                It.IsAny<It.IsAnyType>(),
+                It.IsAny<Exception?>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.AtLeastOnce);
+    }
+
     [Fact]
     public void EncryptContent_WhenInnerClientImplementsIEncryptableHttpClient_ShouldDelegateToInnerClient()
     {

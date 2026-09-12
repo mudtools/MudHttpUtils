@@ -184,10 +184,11 @@ public class DefaultHttpRequestExecutor(
         }
         else
         {
-            var options = jsonSerializerOptions as JsonSerializerOptions;
             try
             {
-                result = _contentSerializer.Deserialize<TResult>(rawContent, options);
+                // M3-#23：object? 直接透传给序列化器（由 SystemTextJsonContentSerializer 自行分派
+                // JsonSerializerOptions / JsonTypeInfo<T>），删除 as 窄化 —— 否则 JsonTypeInfo 快路径不可达
+                result = _contentSerializer.Deserialize<TResult>(rawContent, jsonSerializerOptions);
             }
             catch (JsonException ex)
             {
@@ -253,8 +254,8 @@ public class DefaultHttpRequestExecutor(
                 }
                 else
                 {
-                    content = _contentSerializer.Deserialize<TInner>(rawContent,
-                        jsonSerializerOptions as JsonSerializerOptions);
+                    // M3-#23：object? 直接透传（同上，保留 JsonTypeInfo<T> 快路径可达性）
+                    content = _contentSerializer.Deserialize<TInner>(rawContent, jsonSerializerOptions);
                 }
             }
             catch (Exception ex) when (ex is JsonException
@@ -491,26 +492,56 @@ public class DefaultHttpRequestExecutor(
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// M3-#22：流式路径同样应用请求配置（<see cref="ApplyRequestConfig"/>，幂等覆盖写），
+    /// 与 <see cref="SendAndDeserializeAsync{TResult}"/> / DownloadAsync 语义一致；
+    /// 请求体捕获（需要 await）改为在<b>枚举首次推进时</b>执行 —— IAsyncEnumerable 工厂方法无法 await。
+    /// </remarks>
     public IAsyncEnumerable<TElement> SendAsAsyncEnumerable<TElement>(
         HttpRequestMessage request,
         IBaseHttpClient httpClient,
         object? jsonSerializerOptions,
         CancellationToken cancellationToken = default)
     {
-        return httpClient.SendAsAsyncEnumerable<TElement>(request, jsonSerializerOptions, cancellationToken);
+        ApplyRequestConfig(request);
+        return EnumerateWithCaptureAsync(
+            request,
+            ct => httpClient.SendAsAsyncEnumerable<TElement>(request, jsonSerializerOptions, ct),
+            cancellationToken);
     }
 
 #if NET8_0_OR_GREATER
     /// <inheritdoc/>
+    /// <remarks>M3-#22：与 <see cref="SendAsAsyncEnumerable{TElement}(HttpRequestMessage, IBaseHttpClient, object?, CancellationToken)"/> 同语义（JsonTypeInfo 快路径）。</remarks>
     public IAsyncEnumerable<TElement> SendAsAsyncEnumerable<TElement>(
         HttpRequestMessage request,
         IBaseHttpClient httpClient,
         System.Text.Json.Serialization.Metadata.JsonTypeInfo<TElement> jsonTypeInfo,
         CancellationToken cancellationToken = default)
     {
-        return httpClient.SendAsAsyncEnumerable<TElement>(request, jsonTypeInfo, cancellationToken);
+        ApplyRequestConfig(request);
+        return EnumerateWithCaptureAsync(
+            request,
+            ct => httpClient.SendAsAsyncEnumerable<TElement>(request, jsonTypeInfo, ct),
+            cancellationToken);
     }
 #endif
+
+    /// <summary>
+    /// M3-#22：流式枚举统一实现 —— 首次推进时捕获请求体（<see cref="CaptureRequestContentAsync"/>），
+    /// 随后转发给内部客户端的流式枚举（<paramref name="streamFactory"/> 已绑定具体的重载与请求）。
+    /// </summary>
+    private async IAsyncEnumerable<TElement> EnumerateWithCaptureAsync<TElement>(
+        HttpRequestMessage request,
+        Func<CancellationToken, IAsyncEnumerable<TElement>> streamFactory,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        if (_captureRequestContent)
+            await CaptureRequestContentAsync(request).ConfigureAwait(false);
+
+        await foreach (var item in streamFactory(cancellationToken).ConfigureAwait(false))
+            yield return item;
+    }
 
     /// <inheritdoc/>
     public async Task<TResult?> ExecuteAsync<TResult>(
@@ -640,10 +671,12 @@ public class DefaultHttpRequestExecutor(
                 if (descriptor.Cache != null && _cacheProvider != null && descriptor.CacheKey != null)
                 {
                     var expiration = TimeSpan.FromSeconds(descriptor.Cache.DurationSeconds);
+                    // M3-#27：透传滑动过期语义
                     return await _cacheProvider.GetOrFetchAsync(
                         descriptor.CacheKey,
                         () => ResilienceWrapped(cancellationToken),
                         expiration,
+                        descriptor.Cache.UseSlidingExpiration,
                         cancellationToken).ConfigureAwait(false);
                 }
 
@@ -655,10 +688,12 @@ public class DefaultHttpRequestExecutor(
         if (descriptor.Cache != null && _cacheProvider != null && descriptor.CacheKey != null)
         {
             var expiration = TimeSpan.FromSeconds(descriptor.Cache.DurationSeconds);
+            // M3-#27：透传滑动过期语义
             return await _cacheProvider.GetOrFetchAsync(
                 descriptor.CacheKey,
                 () => coreExecute(request, cancellationToken),
                 expiration,
+                descriptor.Cache.UseSlidingExpiration,
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -799,6 +834,10 @@ public class DefaultHttpRequestExecutor(
 
         // Phase 2 (T2.1)：在抛出前调用 ExceptionRedactor 擦除敏感数据
         _exceptionRedactor?.Redact(ex);
+
+        // M3-#20：统一写入结构化状态码，供 ns2.0 的重试判定（ShouldRetry → Data["HttpStatusCode"]）使用，
+        // 与 EnhancedHttpClient.EnsureSuccessStatusCodeAsync 路径保持同一数据源约定
+        ex.Data["HttpStatusCode"] = (int)statusCode;
 
         return ex;
     }

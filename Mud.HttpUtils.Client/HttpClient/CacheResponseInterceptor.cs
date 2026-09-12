@@ -126,8 +126,12 @@ public class CacheResponseInterceptor(IHttpResponseCache cache, ILogger<CacheRes
 
     /// <inheritdoc/>
     public async Task<T?> GetOrFetchAsync<T>(string key, Func<Task<T>> fetchFunc, TimeSpan expiration, CancellationToken cancellationToken = default)
+        => await GetOrFetchAsync(key, fetchFunc, expiration, useSlidingExpiration: false, cancellationToken).ConfigureAwait(false);
+
+    /// <inheritdoc/>
+    public async Task<T?> GetOrFetchAsync<T>(string key, Func<Task<T>> fetchFunc, TimeSpan expiration, bool useSlidingExpiration, CancellationToken cancellationToken = default)
     {
-        return await _cache.GetOrFetchAsync<T>(key, fetchFunc, expiration, cancellationToken).ConfigureAwait(false);
+        return await _cache.GetOrFetchAsync<T>(key, fetchFunc, expiration, useSlidingExpiration, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>

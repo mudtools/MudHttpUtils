@@ -544,36 +544,47 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
         return TimeSpan.FromMilliseconds(delay);
     }
 
+    /// <summary>
+    /// M3-#20：重试判定统一为结构化状态码检查（netstandard2.0 与 net6+ 行为一致）。
+    /// </summary>
+    /// <remarks>
+    /// 状态码来源：net5+ 读 <see cref="HttpRequestException.StatusCode"/>（<see cref="ApiException"/>
+    /// 构造时已传入 base）；netstandard2.0 读 <c>Data["HttpStatusCode"]</c>（由
+    /// <c>EnhancedHttpClient.EnsureSuccessStatusCodeAsync</c> 与 <c>DefaultHttpRequestExecutor.CreateApiException</c>
+    /// 统一写入，两 TFM 均有）。删除了 ns2.0 原有的"异常消息文本猜测"分支 —— 该分支在无状态码时
+    /// 与 net6+ 的 <c>return true</c> 结论可能不同，违反多 TFM 行为一致要求。
+    /// </remarks>
     private static bool ShouldRetry(HttpRequestException exception, int[] retryStatusCodes)
     {
-#if NETSTANDARD2_0
-        // netstandard2.0 的 HttpRequestException 没有 StatusCode 属性
-        // 尝试从 Data 字典获取（由 EnhancedHttpClient.EnsureSuccessStatusCodeAsync 设置）
-        if (exception.Data.Contains("HttpStatusCode") && exception.Data["HttpStatusCode"] is int code)
-        {
+        if (TryGetStatusCode(exception, out var code))
             return retryStatusCodes.Contains(code);
-        }
 
-        // 如果没有状态码信息，回退到不重试客户端错误的保守策略
-        // 仅当异常消息包含可识别的服务器错误状态码时才重试
-        var message = exception.Message ?? string.Empty;
-        foreach (var retryCode in retryStatusCodes)
-        {
-            if (message.Contains($" {retryCode} "))
-                return true;
-        }
-
-        // 无法确定状态码时，保守地重试（保持向后兼容）
+        // 无状态码 = 传输层故障（连接失败、DNS、TLS）→ 重试（两 TFM 一致）
         return true;
+    }
+
+    /// <summary>
+    /// M3-#20：从异常中提取结构化状态码；不可得时返回 false。
+    /// </summary>
+    private static bool TryGetStatusCode(HttpRequestException ex, out int code)
+    {
+#if NETSTANDARD2_0
+        // netstandard2.0 的 HttpRequestException 没有 StatusCode 属性，
+        // 从 Data 字典获取（由框架的 ApiException 构造路径统一写入）
+        if (ex.Data.Contains("HttpStatusCode") && ex.Data["HttpStatusCode"] is int c)
+        {
+            code = c;
+            return true;
+        }
 #else
-        if (exception.StatusCode.HasValue)
+        if (ex.StatusCode.HasValue)
         {
-            var statusCode = (int)exception.StatusCode.Value;
-            return retryStatusCodes.Contains(statusCode);
+            code = (int)ex.StatusCode.Value;
+            return true;
         }
-
-        return true;
 #endif
+        code = 0;
+        return false;
     }
 
     private static int[] GetDefaultRetryStatusCodes()

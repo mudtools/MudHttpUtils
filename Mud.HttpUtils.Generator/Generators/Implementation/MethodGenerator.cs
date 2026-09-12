@@ -496,6 +496,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
             sb.AppendLine("                   {");
             sb.AppendLine($"                       DurationSeconds = {methodInfo.CacheDurationSeconds},");
             sb.AppendLine($"                       VaryByUser = {methodInfo.CacheVaryByUser.ToString().ToLowerInvariant()},");
+            // M3-#27：滑动过期语义下沉到 CacheOptions，运行时经 GetOrFetchAsync 透传至缓存层
+            sb.AppendLine($"                       UseSlidingExpiration = {methodInfo.CacheUseSlidingExpiration.ToString().ToLowerInvariant()},");
             if (!string.IsNullOrEmpty(methodInfo.CacheKeyTemplate))
                 sb.AppendLine($"                       KeyTemplate = \"{methodInfo.CacheKeyTemplate}\",");
             sb.AppendLine("                   },");

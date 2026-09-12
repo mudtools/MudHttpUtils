@@ -80,7 +80,7 @@ internal static class MethodAnalyzer
 
         var (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName, interfaceTokenScopes) = AnalyzeInterfaceAttributes(interfaceAttrs);
 
-        var (cacheEnabled, cacheDurationSeconds, cacheKeyTemplate, cacheVaryByUser) = AnalyzeCacheAttribute(methodAttributes);
+        var (cacheEnabled, cacheDurationSeconds, cacheKeyTemplate, cacheVaryByUser, cacheUseSlidingExpiration) = AnalyzeCacheAttribute(methodAttributes);
 
         var (retryEnabled, retryMaxRetries, retryDelayMilliseconds, retryUseExponentialBackoff, retryAllowNonIdempotent) = AnalyzeRetryAttribute(methodAttributes);
         var (circuitBreakerEnabled, circuitBreakerFailureThreshold, circuitBreakerBreakDurationSeconds, circuitBreakerSamplingDurationSeconds, circuitBreakerMinimumThroughput) = AnalyzeCircuitBreakerAttribute(methodAttributes);
@@ -144,6 +144,7 @@ internal static class MethodAnalyzer
             CacheDurationSeconds = cacheDurationSeconds,
             CacheKeyTemplate = cacheKeyTemplate,
             CacheVaryByUser = cacheVaryByUser,
+            CacheUseSlidingExpiration = cacheUseSlidingExpiration,
             RetryEnabled = retryEnabled,
             RetryMaxRetries = retryMaxRetries,
             RetryDelayMilliseconds = retryDelayMilliseconds,
@@ -1159,13 +1160,13 @@ internal static class MethodAnalyzer
         return name == attributeName || name == attributeName.Replace("Attribute", "");
     }
 
-    private static (bool enabled, int durationSeconds, string? keyTemplate, bool varyByUser) AnalyzeCacheAttribute(ImmutableArray<AttributeData> attributes)
+    private static (bool enabled, int durationSeconds, string? keyTemplate, bool varyByUser, bool useSlidingExpiration) AnalyzeCacheAttribute(ImmutableArray<AttributeData> attributes)
     {
         var cacheAttr = attributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name));
 
         if (cacheAttr == null)
-            return (false, 300, null, false);
+            return (false, 300, null, false, false);
 
         var durationSeconds = AttributeDataHelper.GetAttributeIntValue(
             cacheAttr, 0, HttpClientGeneratorConstants.CacheDurationSecondsProperty, 300);
@@ -1176,7 +1177,11 @@ internal static class MethodAnalyzer
         var varyByUser = AttributeDataHelper.GetBoolValueFromAttribute(
             cacheAttr, HttpClientGeneratorConstants.CacheVaryByUserProperty);
 
-        return (true, durationSeconds, keyTemplate, varyByUser);
+        // M3-#27：解析滑动过期配置（此前被生成器忽略，仅发 HTTPCLIENT019 Info）
+        var useSlidingExpiration = AttributeDataHelper.GetBoolValueFromAttribute(
+            cacheAttr, HttpClientGeneratorConstants.CacheUseSlidingExpirationProperty);
+
+        return (true, durationSeconds, keyTemplate, varyByUser, useSlidingExpiration);
     }
 
     private static (bool enabled, int maxRetries, int delayMilliseconds, bool useExponentialBackoff, bool allowNonIdempotent) AnalyzeRetryAttribute(ImmutableArray<AttributeData> attributes)

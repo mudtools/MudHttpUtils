@@ -105,7 +105,11 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
         using var stream = await content.ReadAsStreamAsync().ConfigureAwait(false);
 #endif
         {
-            return await JsonSerializer.DeserializeAsync<T>(stream, opts, cancellationToken).ConfigureAwait(false);
+            // M3-#26：空响应体（chunked 无 Content-Length 空体）返回 default 而非抛 JsonException
+            return await DeserializeWithEmptyToleranceAsync<T>(
+                stream,
+                s => JsonSerializer.DeserializeAsync<T>(s, opts, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -177,7 +181,11 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
         CancellationToken cancellationToken = default)
     {
         await using var stream = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        return await JsonSerializer.DeserializeAsync(stream, typeInfo, cancellationToken).ConfigureAwait(false);
+        // M3-#26：与 object? 路径同语义 —— 空响应体返回 default
+        return await DeserializeWithEmptyToleranceAsync<T>(
+            stream,
+            s => JsonSerializer.DeserializeAsync(s, typeInfo, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -202,6 +210,108 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
     private JsonSerializerOptions ResolveOptions(object? options)
     {
         return options as JsonSerializerOptions ?? _options;
+    }
+
+    /// <summary>
+    /// M3-#26：空响应体容忍反序列化 —— 空流返回 <c>default(T)</c>，非空流照常反序列化。
+    /// </summary>
+    /// <remarks>
+    /// 背景：chunked 响应无 Content-Length，空体不会命中调用方的 <c>Content-Length == 0</c> 预检，
+    /// 此前会直接进入 <c>JsonSerializer.DeserializeAsync</c> 并抛 JsonException。
+    /// 可 seek 的流（缓冲/内存流）直接判断长度，零额外读取；不可 seek 的网络流探测首字节，
+    /// EOF 视为空体，否则经 <see cref="PrependedByteStream"/> 回填首字节后反序列化（不丢字节）。
+    /// </remarks>
+    private static async Task<T?> DeserializeWithEmptyToleranceAsync<T>(
+        Stream stream,
+        Func<Stream, ValueTask<T?>> deserialize,
+        CancellationToken cancellationToken)
+    {
+        // 可 seek 的流：长度可直接判断，无额外读取开销
+        if (stream.CanSeek)
+        {
+            return stream.Length == 0
+                ? default
+                : await deserialize(stream).ConfigureAwait(false);
+        }
+
+        // 不可 seek 的流（chunked 网络流）：探测首字节
+        var first = await ReadFirstByteAsync(stream, cancellationToken).ConfigureAwait(false);
+        if (first is null)
+            return default;
+
+        return await deserialize(new PrependedByteStream(first.Value, stream)).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// M3-#26：从流中预读 1 字节；流已结束（空体）返回 null。
+    /// </summary>
+    private static async Task<byte?> ReadFirstByteAsync(Stream stream, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[1];
+#if NETSTANDARD2_0
+        var read = await stream.ReadAsync(buffer, 0, 1, cancellationToken).ConfigureAwait(false);
+#else
+        var read = await stream.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
+#endif
+        return read == 0 ? null : buffer[0];
+    }
+
+    /// <summary>
+    /// M3-#26：把预读的首字节拼回流头部的只读转发装饰器（用于不可 seek 流的"先探测后反序列化"）。
+    /// 不拥有内部流 —— 响应流的释放由 <see cref="HttpResponseMessage"/> 负责。
+    /// </summary>
+    private sealed class PrependedByteStream : Stream
+    {
+        private readonly Stream _inner;
+        private readonly byte _first;
+        private bool _firstConsumed;
+
+        public PrependedByteStream(byte first, Stream inner)
+        {
+            _first = first;
+            _inner = inner;
+        }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            if (!_firstConsumed)
+            {
+                _firstConsumed = true;
+                if (count > 0)
+                {
+                    buffer[offset] = _first;
+                    return 1;
+                }
+                return 0;
+            }
+            return _inner.Read(buffer, offset, count);
+        }
+
+        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+        {
+            if (!_firstConsumed)
+            {
+                _firstConsumed = true;
+                if (count > 0)
+                {
+                    buffer[offset] = _first;
+                    return 1;
+                }
+                return 0;
+            }
+            return await _inner.ReadAsync(buffer, offset, count, cancellationToken).ConfigureAwait(false);
+        }
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
     }
 
     // ========================================================================
@@ -348,6 +458,9 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
             Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
         }
 
+        // M3-#28：两参遗留重载仅 netstandard2.0 / 旧 HttpClient 路径可达（.NET 5+ 的 HttpClient
+        // 优先调用下方三参重载并传递真实 CancellationToken）。两参重载拿不到令牌，故使用
+        // CancellationToken.None —— 这是有意为之，不是缺陷。
         protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
             => SerializeToStreamAsyncCore(stream, CancellationToken.None);
 

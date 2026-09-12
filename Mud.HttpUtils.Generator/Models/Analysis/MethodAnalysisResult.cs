@@ -207,6 +207,9 @@ internal class MethodAnalysisResult
 
     public bool CacheVaryByUser { get; set; }
 
+    /// <summary>是否使用滑动过期（[Cache(UseSlidingExpiration = true)]，M3-#27）。</summary>
+    public bool CacheUseSlidingExpiration { get; set; }
+
     public bool RetryEnabled { get; set; }
 
     public int RetryMaxRetries { get; set; } = 3;
