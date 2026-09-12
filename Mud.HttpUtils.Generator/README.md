@@ -327,7 +327,8 @@ services.AddExternalWebApiHttpClient();
 public interface IExampleApi { }
 ```
 
-> `BaseAddress` 构造函数与属性已标记 `[Obsolete(..., error: true)]` —— 使用会产生**编译错误 `CS0619`**；请通过 `AddMudHttpClient(clientName, baseAddress)` 或 `AddMudHttpGeneratedClient<T>(clientName)` 配置基地址。
+> **CFG-27**：`BaseAddress` 构造函数与属性**已移除**（使用将产生编译错误 `CS0117`）；
+> 请通过 `AddMudHttpClient(clientName, baseAddress)` 或 `AddMudHttpGeneratedClient<T>(clientName)` 配置基地址。
 
 > TokenManager 模式下，生成器会自动注入 `ITokenProvider` 用于统一 Token 获取。当 `[Token(RequiresUserId = true)]` 时，还会自动注入 `ICurrentUserContext` 并生成只读属性 `CurrentUserId => _currentUserContext.UserId`。
 
@@ -533,7 +534,7 @@ Token 注入模式：
 Task<User> GetUserAsync([Path] int id);
 
 [Get("/config")]
-[Cache(300, CacheKeyTemplate = "config:{0}", UseSlidingExpiration = true, Priority = CachePriority.High)]
+[Cache(300, CacheKeyTemplate = "config:{0}", UseSlidingExpiration = true)]
 Task<Config> GetConfigAsync();
 ```
 
@@ -733,12 +734,13 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 | `HTTPCLIENT016` | Error | `TokenManage` 类型缺少必需方法 | 类型须提供 `GetDefaultApp()`/`GetApp(string)` 方法或实现 `IAppManager<T>` | 否 |
 | `HTTPCLIENT017` | Warning | `HttpClient` 类型无法解析，兼容性校验被跳过 | 使用完全限定名确保类型可解析 | 否 |
 | `HTTPCLIENT018` | Warning | `TokenManagerKey` 使用默认推断值 | 多接口共享同一 TokenManager 时显式指定 `TokenManagerKey` 或 `TokenType` | 否 |
-| `HTTPCLIENT019` | Info | `[Cache]` 设置了被生成器忽略的属性（仅 `Priority`） | `Priority` 当前未生效；`UseSlidingExpiration` 已支持 | 否 |
+| ~~`HTTPCLIENT019`~~ | — | ❌ 已移除（CFG-27）：其唯一触发点 `CacheAttribute.Priority` 已删除 | 无需处理（ID 保留为未使用占位） | 否 |
 | `HTTPCLIENT020` | Warning | 非幂等方法声明 `[Retry]` 但未设 `AllowNonIdempotent` | 运行时将跳过重试；如服务端可安全重复执行请显式开启 | 否 |
 | `HTTPCLIENT021` | Warning | 方法级 `[Timeout]` 超过接口级 `HttpClient` 超时 | `HttpClient.Timeout` 是硬上限，调小 `[Timeout]` 或提高 `[HttpClientApi(Timeout=…)]` | 否 |
 
-> **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010` 当前**未使用**。
-> `HTTPCLIENT010` 不会触发 —— `BaseAddress` 为 `[Obsolete(error: true)]`，使用时直接编译错误 `CS0619`。
+> **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010`、`HTTPCLIENT019` 当前**未使用**（ID 保留为占位，不重新分配）。
+> - `HTTPCLIENT010`：`BaseAddress` 已移除（CFG-27），使用直接编译错误 `CS0117`，无需生成器提示。
+> - `HTTPCLIENT019`：`CacheAttribute.Priority` 已移除（CFG-27），`[Cache]` 已无被忽略的属性。
 
 #### 注册代码生成（HTTPCLIENTREG*）
 

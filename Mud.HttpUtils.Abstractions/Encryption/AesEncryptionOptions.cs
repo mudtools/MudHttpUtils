@@ -12,7 +12,7 @@ namespace Mud.HttpUtils;
 /// </summary>
 /// <remarks>
 /// 从 v1.8.0 起，IV 不再需要配置，加密时会自动随机生成 IV 并附加到密文前。
-/// 保留 IV 属性仅为向后兼容，新代码无需设置 IV。
+/// CFG-27：仅用于向后兼容的 <c>IV</c> 属性已移除（运行时无消费点），新代码不应再设置 IV。
 /// </remarks>
 public class AesEncryptionOptions
 {
@@ -22,7 +22,6 @@ public class AesEncryptionOptions
     public const string SectionName = "MudHttpAesEncryption";
 
     private byte[]? _key;
-    private byte[]? _iv;
 
     /// <summary>
     /// 获取或设置 AES 加密密钥。
@@ -37,19 +36,8 @@ public class AesEncryptionOptions
         set => _key = value;
     }
 
-    /// <summary>
-    /// 获取或设置 AES 加密的初始化向量（IV）。
-    /// </summary>
-    /// <remarks>
-    /// 从 v1.8.0 起，IV 不再需要配置，加密时会自动随机生成。
-    /// 保留此属性仅为向后兼容。Getter 返回 IV 的副本。
-    /// </remarks>
-    [Obsolete("从 v1.8.0 起，IV 在每次加密时自动随机生成，无需手动设置。此属性将在未来版本中移除。")]
-    public byte[] IV
-    {
-        get => _iv != null ? (byte[])_iv.Clone() : Array.Empty<byte>();
-        set => _iv = value;
-    }
+    // CFG-27：原 IV 属性已移除 —— 从 v1.8.0 起 IV 在每次加密时自动随机生成，
+    // 运行时无任何消费点（Validate 不校验、Provider 不读取），属静默失效配置。
 
     /// <summary>
     /// 获取或设置是否启用认证加密（Authenticated Encryption）。
@@ -86,15 +74,13 @@ public class AesEncryptionOptions
     }
 
     /// <summary>
-    /// 安全清除密钥和初始化向量，防止敏感数据残留在内存中。
-    /// 注意：此方法会清零 Key 和 IV 数组，调用后此实例将不可用。
+    /// 安全清除密钥，防止敏感数据残留在内存中。
+    /// 注意：此方法会清零 Key 数组，调用后此实例将不可用。
     /// 通常不需要手动调用，因为 DefaultAesEncryptionProvider 会在构造时克隆密钥。
     /// </summary>
     public void ClearSensitiveData()
     {
         SecurityHelper.ClearBytes(_key);
-        SecurityHelper.ClearBytes(_iv);
         _key = null;
-        _iv = null;
     }
 }

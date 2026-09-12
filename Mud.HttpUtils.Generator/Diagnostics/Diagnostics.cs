@@ -166,15 +166,10 @@ internal static class Diagnostics
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
-    // NEW-GEN-03/08 修复：CacheAttribute 的 Priority 属性当前被生成器忽略（M3-#27 修订：
-    // UseSlidingExpiration 已受支持，不再发诊断）。当用户显式设置 Priority 时，发出信息性诊断提示用户该配置不会生效。
-    public static readonly DiagnosticDescriptor CacheAttributePropertyIgnored = new(
-        id: "HTTPCLIENT019",
-        title: "CacheAttribute 属性被生成器忽略",
-        messageFormat: "接口 {0} 的方法 {1} 设置了 [Cache] 特性的 {2} 属性，但该属性当前被生成器忽略，不会在生成的代码中生效。如需此功能，请关注后续版本更新。",
-        category: "代码生成",
-        DiagnosticSeverity.Info,
-        isEnabledByDefault: true);
+    // CFG-27：原 HTTPCLIENT019（CacheAttribute 属性被生成器忽略）描述符已删除 ——
+    // 其唯一触发点 CacheAttribute.Priority 已随 [Obsolete] 残留清理一并移除；
+    // UseSlidingExpiration 早已受支持。[Cache] 当前无被忽略的属性。
+    // ID HTTPCLIENT019 保留为未使用占位（不重新分配）。
 
     // M2-#12：非幂等方法声明 [Retry] 但未显式 AllowNonIdempotent 时，重试将被静默跳过。
     // 发出 Warning 提示（生成器侧编译期闭环，原方案 12.4）。

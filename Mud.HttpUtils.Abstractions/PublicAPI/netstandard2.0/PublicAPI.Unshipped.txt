@@ -59,8 +59,6 @@ Mud.HttpUtils.AesEncryptionOptions.AesEncryptionOptions() -> void
 Mud.HttpUtils.AesEncryptionOptions.ClearSensitiveData() -> void
 Mud.HttpUtils.AesEncryptionOptions.EnableAuthenticatedEncryption.get -> bool
 Mud.HttpUtils.AesEncryptionOptions.EnableAuthenticatedEncryption.set -> void
-Mud.HttpUtils.AesEncryptionOptions.IV.get -> byte[]!
-Mud.HttpUtils.AesEncryptionOptions.IV.set -> void
 Mud.HttpUtils.AesEncryptionOptions.Key.get -> byte[]!
 Mud.HttpUtils.AesEncryptionOptions.Key.set -> void
 Mud.HttpUtils.AesEncryptionOptions.Validate() -> void

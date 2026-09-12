@@ -344,18 +344,11 @@ public class OptionsDefaultValueTests
     }
 
     [Fact]
-    public void AesEncryptionOptions_IV_Setter_IsObsoleteButDoesNotThrow()
+    public void CFG27_AesEncryptionOptions_IV_IsRemoved()
     {
-        // IV 属性已标记 [Obsolete]，但 setter 仍可调用不抛异常（向后兼容）
-        var options = new AesEncryptionOptions();
-        var iv = new byte[16];
-#pragma warning disable CS0618
-        options.IV = iv;
-#pragma warning restore CS0618
-        // Getter 返回副本
-#pragma warning disable CS0618
-        options.IV.Should().Equal(iv);
-#pragma warning restore CS0618
+        // CFG-27：IV 属性已移除 —— 运行时无消费点（Validate 不校验、Provider 不读取），
+        // v1.8.0 起 IV 在每次加密时自动随机生成。
+        typeof(AesEncryptionOptions).GetProperty("IV").Should().BeNull();
     }
 
     [Fact]

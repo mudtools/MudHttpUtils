@@ -35,17 +35,10 @@ Mud.HttpUtils.Attributes.CacheAttribute.CacheKeyTemplate.get -> string?
 Mud.HttpUtils.Attributes.CacheAttribute.CacheKeyTemplate.set -> void
 Mud.HttpUtils.Attributes.CacheAttribute.DurationSeconds.get -> int
 Mud.HttpUtils.Attributes.CacheAttribute.DurationSeconds.set -> void
-Mud.HttpUtils.Attributes.CacheAttribute.Priority.get -> Mud.HttpUtils.Attributes.CachePriority
-Mud.HttpUtils.Attributes.CacheAttribute.Priority.set -> void
 Mud.HttpUtils.Attributes.CacheAttribute.UseSlidingExpiration.get -> bool
 Mud.HttpUtils.Attributes.CacheAttribute.UseSlidingExpiration.set -> void
 Mud.HttpUtils.Attributes.CacheAttribute.VaryByUser.get -> bool
 Mud.HttpUtils.Attributes.CacheAttribute.VaryByUser.set -> void
-Mud.HttpUtils.Attributes.CachePriority
-Mud.HttpUtils.Attributes.CachePriority.High = 2 -> Mud.HttpUtils.Attributes.CachePriority
-Mud.HttpUtils.Attributes.CachePriority.Low = 0 -> Mud.HttpUtils.Attributes.CachePriority
-Mud.HttpUtils.Attributes.CachePriority.NeverRemove = 3 -> Mud.HttpUtils.Attributes.CachePriority
-Mud.HttpUtils.Attributes.CachePriority.Normal = 1 -> Mud.HttpUtils.Attributes.CachePriority
 Mud.HttpUtils.Attributes.CircuitBreakerAttribute
 Mud.HttpUtils.Attributes.CircuitBreakerAttribute.BreakDurationSeconds.get -> int
 Mud.HttpUtils.Attributes.CircuitBreakerAttribute.BreakDurationSeconds.set -> void
@@ -117,14 +110,12 @@ Mud.HttpUtils.Attributes.HeaderMergeMode.Append = 0 -> Mud.HttpUtils.Attributes.
 Mud.HttpUtils.Attributes.HeaderMergeMode.Ignore = 2 -> Mud.HttpUtils.Attributes.HeaderMergeMode
 Mud.HttpUtils.Attributes.HeaderMergeMode.Replace = 1 -> Mud.HttpUtils.Attributes.HeaderMergeMode
 Mud.HttpUtils.Attributes.HttpClientApiAttribute
-Mud.HttpUtils.Attributes.HttpClientApiAttribute.BaseAddress.get -> string?
 Mud.HttpUtils.Attributes.HttpClientApiAttribute.ContentType.get -> string!
 Mud.HttpUtils.Attributes.HttpClientApiAttribute.ContentType.set -> void
 const Mud.HttpUtils.Attributes.HttpClientApiAttribute.DefaultTimeoutSeconds = 50 -> int
 Mud.HttpUtils.Attributes.HttpClientApiAttribute.HttpClient.get -> string?
 Mud.HttpUtils.Attributes.HttpClientApiAttribute.HttpClient.set -> void
 Mud.HttpUtils.Attributes.HttpClientApiAttribute.HttpClientApiAttribute() -> void
-Mud.HttpUtils.Attributes.HttpClientApiAttribute.HttpClientApiAttribute(string! baseAddress) -> void
 Mud.HttpUtils.Attributes.HttpClientApiAttribute.InheritedFrom.get -> string?
 Mud.HttpUtils.Attributes.HttpClientApiAttribute.InheritedFrom.set -> void
 Mud.HttpUtils.Attributes.HttpClientApiAttribute.IsAbstract.get -> bool

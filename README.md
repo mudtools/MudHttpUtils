@@ -748,7 +748,7 @@ Mud.HttpUtils 通过 Roslyn 源代码生成器在编译时生成强类型的 HTT
 | `HTTPCLIENT016` | Error | `TokenManage` 类型缺少必需方法 | 提供 `IMudAppContext GetDefaultApp()` / `GetApp(string)` 或实现 `IAppManager<T>` |
 | `HTTPCLIENT017` | Warning | `HttpClient` 类型无法解析，加密/XML 兼容性校验被跳过 | 使用完全限定名确保类型可解析 |
 | `HTTPCLIENT018` | Warning | `TokenManagerKey` 使用默认推断值 | 多接口共享同一 TokenManager 时显式指定 `TokenManagerKey` 或 `TokenType` |
-| `HTTPCLIENT019` | Info | `[Cache]` 设置了被生成器忽略的属性（仅 `Priority`） | `Priority` 当前未生效；`UseSlidingExpiration` 已支持 |
+| ~~`HTTPCLIENT019`~~ | — | ❌ 已移除（CFG-27）：其唯一触发点 `CacheAttribute.Priority` 已删除 | 无需处理（ID 保留为未使用占位） |
 | `HTTPCLIENT020` | Warning | 非幂等方法声明 `[Retry]` 但未设 `AllowNonIdempotent` | 运行时将跳过重试；如服务端可安全重复执行请显式开启 |
 | `HTTPCLIENT021` | Warning | 方法级 `[Timeout]` 超过接口级 `HttpClient` 超时 | `HttpClient.Timeout` 是硬上限，调小 `[Timeout]` 或提高 `[HttpClientApi(Timeout=…)]` |
 | `HTTPCLIENTREG001` | Error | 注册代码生成失败 | 检查接口定义和 DI 注册配置 |
@@ -758,9 +758,9 @@ Mud.HttpUtils 通过 Roslyn 源代码生成器在编译时生成强类型的 HTT
 | `FORM002` | Error | FormContent 缺少 `[FilePath]` 属性 | 必须且只能有一个属性标记 `[FilePath]` |
 | `FORM003` | Error | FormContent 存在多个 `[FilePath]` 属性 | 只保留一个 `[FilePath]` 属性 |
 
-> **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010` 当前**未使用**（保留/废弃占位）。
-> `HTTPCLIENT010`（`HttpClientApiAttribute.BaseAddress` 已弃用提示）**不会触发** —— 该属性为 `[Obsolete(error: true)]`，
-> 使用时直接产生编译错误 `CS0619`，无需生成器提示。
+> **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010`、`HTTPCLIENT019` 当前**未使用**（ID 保留为占位，不重新分配）。
+> - `HTTPCLIENT010`：`HttpClientApiAttribute.BaseAddress` **已移除**（CFG-27），使用直接编译错误 `CS0117`。
+> - `HTTPCLIENT019`：`CacheAttribute.Priority` **已移除**（CFG-27），`[Cache]` 已无被忽略的属性。
 
 ### 🧪 测试
 

@@ -419,7 +419,7 @@ var result = await uploadApi.UploadAsync(formData);
 public interface IExampleApi { }
 ```
 
-> `BaseAddress` 构造函数与属性已标记 `[Obsolete(..., error: true)]` —— 使用会产生**编译错误 `CS0619`**。
+> **CFG-27**：`BaseAddress` 构造函数与属性**已移除**（使用将产生编译错误 `CS0117`）。
 > 请通过 `AddMudHttpClient(clientName, baseAddress)` 或 `AddMudHttpGeneratedClient<T>(clientName)` 配置基地址。
 > 生成器会在注册代码中生成 `client.Timeout` 设置，使 Timeout 属性真正生效。
 

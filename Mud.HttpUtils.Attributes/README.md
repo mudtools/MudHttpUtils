@@ -16,7 +16,7 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 
 | 特性                     | 用途                 | 目标      | 关键属性                                                                                                                 |
 | ------------------------ | -------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `HttpClientApiAttribute` | 标注 HTTP API 接口   | Interface | `BaseAddress`, `ContentType`, `Timeout`, `TokenManage`, `HttpClient`, `RegistryGroupName`, `IsAbstract`, `InheritedFrom` |
+| `HttpClientApiAttribute` | 标注 HTTP API 接口   | Interface | `ContentType`, `Timeout`, `TokenManage`, `HttpClient`, `RegistryGroupName`, `IsAbstract`, `InheritedFrom` |
 | `BasePathAttribute`      | 标注接口基础路径前缀 | Interface | `Path`                                                                                                                   |
 
 ### HTTP 方法特性
@@ -96,7 +96,7 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 | `HeaderMergeMode`        | 头部合并模式（`Append` / `Replace` / `Ignore`），配合 `HeaderMergeAttribute` |
 | `SerializationMethod`    | 请求体序列化方法（`Json` / `Xml` / `FormUrlEncoded`），配合 `SerializationMethodAttribute` |
 | `QuerySerializationMethod` | QueryMap 序列化方法（`ToString` / `Json`），配合 `QueryMapAttribute` |
-| `CachePriority`          | ⚠️ 已过时：缓存优先级（`Low` / `Normal` / `High` / `NeverRemove`）   |
+| ~~`CachePriority`~~      | ❌ 已移除（CFG-27）：缓存优先级枚举，运行时无消费点                   |
 
 > `TokenInjectionMode`（`Header` / `Query` / `Path` / `ApiKey` / `HmacSignature` / `BasicAuth` / `Cookie`）与 `SensitiveDataMaskMode`（`Hide` / `Mask` / `TypeOnly`）见对应章节。
 
@@ -166,8 +166,8 @@ public interface IHttpClientApi { }
 ```
 
 > **注意**：`HttpClient` 与 `TokenManage` 互斥，同时定义时 `HttpClient` 优先。
-> `BaseAddress` 构造函数与属性已标记 `[Obsolete(..., error: true)]` —— 使用会产生**编译错误 `CS0619`**（非警告）。
-> 请通过 `AddMudHttpClient(clientName, baseAddress)` 或 `AddMudHttpGeneratedClient<T>(clientName)` 配置基地址。
+> **CFG-27**：`BaseAddress` 构造函数与属性**已移除**（此前为 `[Obsolete(error: true)]`）。
+> 使用将产生编译错误 `CS0117`；请通过 `AddMudHttpClient(clientName, baseAddress)` 或 `AddMudHttpGeneratedClient<T>(clientName)` 配置基地址。
 
 ### 全部属性
 
@@ -180,7 +180,6 @@ public interface IHttpClientApi { }
 | `RegistryGroupName` | `string?` | `null`               | 注册组名称，影响生成的注册方法名                               |
 | `IsAbstract`        | `bool`    | `false`              | 是否生成抽象类                                                 |
 | `InheritedFrom`     | `string?` | `null`               | 继承的基类名称                                                 |
-| `BaseAddress`       | `string?` | `null`               | ⚠️ 已过时：构造函数与属性均 `[Obsolete(error: true)]`，使用即**编译错误 `CS0619`**；请通过 `AddMudHttpClient(clientName, baseAddress)` 配置基地址 |
 
 ## BodyAttribute 详解
 
@@ -310,10 +309,11 @@ Task<PublicData> GetPublicDataAsync();
 | `CacheKeyTemplate`     | `string?`       | `null`   | 缓存键模板                                              |
 | `VaryByUser`           | `bool`          | `false`  | 是否按用户区分缓存                                      |
 | `UseSlidingExpiration` | `bool`          | `false`  | ✅ 已支持：下沉为 `CacheOptions.UseSlidingExpiration`，生成代码生效 |
-| `Priority`             | `CachePriority` | `Normal` | ⚠️ 已过时：当前未被生成器处理（设置时产生 `HTTPCLIENT019`），将在未来版本中移除 |
 
-> **CFG-D04 修正**：仅 `Priority`（及 `CachePriority` 枚举，`Low` / `Normal` / `High` / `NeverRemove`）被 `[Obsolete]` 且被生成器忽略；
-> `UseSlidingExpiration` **受生成器支持**，请勿再标记为未生效。
+> **CFG-D04 修正**：`UseSlidingExpiration` **受生成器支持**，请勿标记为未生效。
+>
+> **CFG-27**：`Priority` 属性（及 `CachePriority` 枚举）**已移除** —— 生成器从未处理该属性，运行时无消费点；
+> 随之移除诊断 `HTTPCLIENT019`（`[Cache]` 当前已无被忽略的属性）。
 
 ```csharp
 [Get("/users/{id}")]

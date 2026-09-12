@@ -57,20 +57,15 @@ public sealed class HttpClientApiAttribute : Attribute
     {
     }
 
-    [Obsolete("此构造函数已被弃用，请使用 AddMudHttpClient(clientName, baseAddress) 配置基地址。", error: true)]
-    public HttpClientApiAttribute(string baseAddress)
-    {
-        BaseAddress = baseAddress;
-    }
+    // CFG-27：原 HttpClientApiAttribute(string baseAddress) 构造函数与 BaseAddress 属性已移除
+    // （此前为 [Obsolete(error: true)]，使用即编译错误 CS0619；移除后使用将报 CS0117「不存在该成员」）。
+    // 迁移：通过 AddMudHttpClient(clientName, baseAddress) 或 AddMudHttpGeneratedClient<T>(clientName) 配置基地址。
 
     /// <summary>
     /// 获取或设置请求的默认内容类型。
     /// </summary>
     /// <value>默认为 "application/json"。</value>
     public string ContentType { get; set; } = "application/json";
-
-    [Obsolete("此属性已被弃用，请使用 AddMudHttpClient(clientName, baseAddress) 配置基地址。", error: true)]
-    public string? BaseAddress { get; }
 
     /// <summary>
     /// 未显式设置 <see cref="Timeout"/> 时的默认请求超时时间（秒）。

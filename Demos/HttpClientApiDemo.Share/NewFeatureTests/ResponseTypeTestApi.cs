@@ -97,6 +97,6 @@ public interface INormalReturnWithCacheTestApi
     /// 普通返回类型 + Cache，带自定义缓存键
     /// </summary>
     [Get("api/products/{id}")]
-    [Cache(120, CacheKeyTemplate = "product:{0}", UseSlidingExpiration = true, Priority = CachePriority.High)]
+    [Cache(120, CacheKeyTemplate = "product:{0}", UseSlidingExpiration = true)]
     Task<ProductInfo> GetProductAsync([Path] string id, CancellationToken cancellationToken = default);
 }

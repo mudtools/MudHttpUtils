@@ -168,7 +168,7 @@ obj/Debug/net10.0/generated/Mud.HttpUtils.Generator/Mud.HttpUtils.HttpInvokeClas
 
 ### 基本使用
 
-> **注意**：`[HttpClientApi]` 的 `BaseAddress` 构造函数与属性已标记 `[Obsolete(..., error: true)]` —— 使用会产生**编译错误 `CS0619`**。请通过 `AddMudHttpClient(clientName, baseAddress)` 或 `AddMudHttpGeneratedClient<T>(clientName)` 在 DI 注册时配置基地址，接口定义仅保留内容类型等声明。
+> **注意**：`[HttpClientApi]` 的 `BaseAddress` 构造函数与属性**已移除**（CFG-27，使用将产生编译错误 `CS0117`）。请通过 `AddMudHttpClient(clientName, baseAddress)` 或 `AddMudHttpGeneratedClient<T>(clientName)` 在 DI 注册时配置基地址，接口定义仅保留内容类型等声明。
 
 ```csharp
 [HttpClientApi(ContentType = "application/xml")]

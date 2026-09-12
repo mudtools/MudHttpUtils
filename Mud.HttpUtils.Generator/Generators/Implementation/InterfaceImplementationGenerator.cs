@@ -109,9 +109,6 @@ internal class InterfaceImplementationGenerator
 
         PrecomputeXmlResponseTypes(generatorContext);
 
-        // NEW-GEN-03/08 修复：检测方法 CacheAttribute 中被生成器忽略的属性并发出诊断
-        ReportCacheAttributeIgnoredProperties(generatorContext);
-
         // M2-#12：非幂等方法声明 [Retry] 但未显式 AllowNonIdempotent 时发出 Warning
         ReportRetryNonIdempotentWithoutAllow(generatorContext);
 
@@ -770,38 +767,9 @@ internal class InterfaceImplementationGenerator
         context.HasXmlResponse = context.XmlResponseTypes.Count > 0;
     }
 
-    /// <summary>
-    /// NEW-GEN-03/08 修复：检测方法 CacheAttribute 中被生成器忽略的属性（M3-#27 修订：仅剩 Priority ——
-    /// UseSlidingExpiration 已被生成器支持并下沉到 CacheOptions），当用户显式设置时发出信息性诊断，
-    /// 提示该配置不会在生成的代码中生效。
-    /// </summary>
-    private void ReportCacheAttributeIgnoredProperties(GeneratorContext context)
-    {
-        foreach (var method in context.AllMethods)
-        {
-            var cacheAttr = method.GetAttributes()
-                .FirstOrDefault(attr => HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name));
-
-            if (cacheAttr == null)
-                continue;
-
-            // 获取特性在源代码中的位置，回退到方法声明位置或接口声明位置
-            var location = (cacheAttr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
-                ?? method.Locations.FirstOrDefault()
-                ?? _interfaceDecl.GetLocation())!;
-
-            // 检查 Priority：只要显式设置（无论值为何）即发出诊断，因为该属性被生成器完全忽略
-            if (cacheAttr.NamedArguments.Any(na => na.Key == "Priority"))
-            {
-                _context.ReportDiagnostic(Diagnostic.Create(
-                    Diagnostics.CacheAttributePropertyIgnored,
-                    location,
-                    _interfaceSymbol.Name,
-                    method.Name,
-                    "Priority"));
-            }
-        }
-    }
+    // CFG-27：原 ReportCacheAttributeIgnoredProperties（HTTPCLIENT019）已移除 ——
+    // 其唯一触发点 CacheAttribute.Priority 已被删除；UseSlidingExpiration 早已受支持。
+    // [Cache] 当前已无「被生成器忽略」的属性，故诊断不再需要（ID HTTPCLIENT019 保留为未使用占位）。
 
     /// <summary>
     /// M2-#12：非幂等 HTTP 方法（POST/PATCH 等未在全局 RetryableHttpMethods 白名单中的方法）

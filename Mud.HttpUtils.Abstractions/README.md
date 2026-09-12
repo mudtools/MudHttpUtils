@@ -83,7 +83,7 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 | 类型                   | 说明                                                            |
 | ---------------------- | --------------------------------------------------------------- |
 | `IEncryptionProvider`  | 加密提供程序接口，定义 `Encrypt` 和 `Decrypt` 方法              |
-| `AesEncryptionOptions` | AES 加密配置选项，包含 `Key` 属性和 `Validate()` 验证方法（`IV` 已废弃，v1.8.0 起自动随机生成） |
+| `AesEncryptionOptions` | AES 加密配置选项，包含 `Key` 属性和 `Validate()` 验证方法（`IV` 已移除（CFG-27），v1.8.0 起自动随机生成） |
 
 > `AesEncryptionOptions` 支持通过配置文件绑定（配置节名称：`MudHttpAesEncryption`），密钥长度支持 AES-128（16 字节）、AES-192（24 字节）、AES-256（32 字节）。
 >
@@ -409,7 +409,7 @@ TokenInjectionMode (Header, Query, Path, ApiKey, HmacSignature, BasicAuth, Cooki
 TokenTypes (常量: TenantAccessToken, UserAccessToken, Bearer, Basic)
 Response<T> (StatusCode, Content, RawContent, ErrorContent, ResponseHeaders, IsSuccessStatusCode, GetContentOrThrow)
 ApiException (StatusCode, ErrorContent)
-AesEncryptionOptions (Key, Validate) — IV 已废弃，v1.8.0 起自动随机生成
+AesEncryptionOptions (Key, Validate) — IV 已移除（CFG-27），v1.8.0 起自动随机生成
 TokenRefreshBackgroundOptions (Enabled, RefreshIntervalSeconds, RetryDelaySeconds, StopOnError)
 [UserTokenCacheOptions — 位于 Mud.HttpUtils.Client]
 ```
