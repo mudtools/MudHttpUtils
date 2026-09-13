@@ -43,6 +43,13 @@ public class CredentialToken
     { get; set; }
 
     /// <summary>
+    /// P2.4（TK-04）获取或设置令牌的签发时间（Unix 时间戳，毫秒）。
+    /// 用于 TTL 感知阈值：短 TTL 令牌的有效阈值被钳位为 <c>min(configuredThreshold, ttl/2)</c>，
+    /// 避免"提前量过大导致 token 刚签发即被判为需刷新"。
+    /// </summary>
+    public long IssuedAt { get; set; }
+
+    /// <summary>
     /// 获取或设置刷新令牌，用于获取新的访问令牌。
     /// </summary>
     public string? RefreshToken { get; set; }
@@ -56,4 +63,24 @@ public class CredentialToken
     /// 获取或设置令牌的作用域。
     /// </summary>
     public string? Scope { get; set; }
+
+    /// <summary>
+    /// P2.9（TK-22）安全的调试字符串：对敏感字段（AccessToken / RefreshToken）做脱敏，
+    /// 仅展示前缀与长度，绝不输出完整令牌值，防止结构化日志或断言信息中泄漏凭据。
+    /// </summary>
+    public override string ToString()
+        => $"CredentialToken{{ Scope={(string.IsNullOrEmpty(Scope) ? "(null)" : Scope)}, " +
+           $"AccessToken={Redact(AccessToken)}, RefreshToken={Redact(RefreshToken)}, " +
+           $"Expire={Expire}, IssuedAt={IssuedAt}, RefreshTokenExpire={RefreshTokenExpire} }}";
+
+    /// <summary>
+    /// 对令牌值脱敏：保留前 6 个字符 + "…" + 长度；空值显示 "&lt;null&gt;"。
+    /// </summary>
+    internal static string Redact(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return "<null>";
+        var prefix = value.Length > 6 ? value.Substring(0, 6) : value;
+        return prefix + "***(" + value.Length + ")";
+    }
 }

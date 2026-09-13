@@ -16,7 +16,8 @@ namespace Mud.HttpUtils;
 public abstract class TokenManagerBase : ITokenManager, IDisposable
 {
     private readonly ITokenCache<CredentialToken> _tokenCache;
-    private readonly ConcurrentDictionary<string, Lazy<SemaphoreSlim>> _scopeLocks = new();
+    // P2.2（TK-05/09/24）键控锁表统一管理作用域锁，替代原有的 ConcurrentDictionary<string, Lazy<SemaphoreSlim>>。
+    private readonly KeyedLockTable _keyedLockTable = new();
     private readonly Timer _cleanupTimer;
     private readonly Timer _lockCleanupTimer;
     private readonly object _cleanupLock = new();
@@ -37,6 +38,9 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
     /// <summary>
     /// 获取令牌刷新失败时的最大重试次数，默认 0（不重试）。
+    /// P2.10（TK-20）重试语义显式化：此值是重试的唯一主控门，
+    /// ShouldRetry（TokenRefreshFailedEventArgs）默认为 true 仅用于提前取消；
+    /// 子类覆写此属性或事件处理器设 ShouldRetry=false 与 MaxRefreshRetryCount 正交协作。
     /// </summary>
     protected virtual int MaxRefreshRetryCount => 0;
 
@@ -137,13 +141,9 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             return fastToken!.AccessToken!;
         }
 
-        var scopeLock = _scopeLocks.GetOrAdd(scopeKey, _ => new Lazy<SemaphoreSlim>(() => new SemaphoreSlim(1, 1), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
-        var acquired = false;
-        try
+        // P2.2（TK-05/09/24）从键控锁表获取作用域锁
+        using (var releaser = await _keyedLockTable.AcquireAsync(scopeKey, cancellationToken).ConfigureAwait(false))
         {
-            await scopeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-            acquired = true;
-
             if (_disposed)
                 throw new ObjectDisposedException(GetType().Name);
 
@@ -165,10 +165,6 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             // TM-05 修复：token 已是有效凭证，无需再次字典查找，直接返回。
             return token.AccessToken!;
         }
-        finally
-        {
-            if (acquired) scopeLock.Release();
-        }
     }
 
     /// <inheritdoc />
@@ -178,13 +174,8 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             throw new ObjectDisposedException(GetType().Name);
 
         var scopeKey = GetScopeKey(scopes);
-        var scopeLock = _scopeLocks.GetOrAdd(scopeKey, _ => new Lazy<SemaphoreSlim>(() => new SemaphoreSlim(1, 1), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
-        var acquired = false;
-        try
+        using (var releaser = await _keyedLockTable.AcquireAsync(scopeKey, cancellationToken).ConfigureAwait(false))
         {
-            await scopeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-            acquired = true;
-
             if (_disposed)
                 throw new ObjectDisposedException(GetType().Name);
 
@@ -193,10 +184,6 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                 return TokenResult.Empty;
 
             return new TokenResult(removed.AccessToken!, removed.Expire, scopeKey);
-        }
-        finally
-        {
-            if (acquired) scopeLock.Release();
         }
     }
 
@@ -257,12 +244,24 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     }
 
     /// <summary>
-    /// 从缓存中获取令牌信息，如果不存在或已过期则返回 null。
+    /// 从缓存中获取默认作用域的令牌信息，如果不存在或已过期则返回 null。
+    /// P2.3（TK-02）保留兼容层：委托 <see cref="GetCachedCredentialToken(string)"/> 读取默认作用域。
     /// </summary>
     /// <returns>缓存中的令牌信息，如果不存在或已过期则返回 null。</returns>
     protected CredentialToken? GetCachedCredentialToken()
     {
-        if (_tokenCache.TryGet(DefaultScopeKey, out var token))
+        return GetCachedCredentialToken(DefaultScopeKey);
+    }
+
+    /// <summary>
+    /// P2.3（TK-02）从缓存中获取指定作用域的令牌信息，如果不存在或已过期则返回 null。
+    /// 按 scopeKey 隔离刷新链路，避免用默认作用域的 refresh_token 去刷新任意 scope（跨作用域污染）。
+    /// </summary>
+    /// <param name="scopeKey">作用域缓存键（由 <see cref="GetScopeKey(string[])"/> 生成）。</param>
+    /// <returns>缓存中的令牌信息，如果不存在或已过期则返回 null。</returns>
+    protected CredentialToken? GetCachedCredentialToken(string scopeKey)
+    {
+        if (_tokenCache.TryGet(scopeKey, out var token))
             return token;
         return null;
     }
@@ -385,7 +384,10 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                     };
                 }
 
-                if (!eventArgs.ShouldRetry || retryCount >= MaxRefreshRetryCount)
+                // TK-20（P2.10）重试语义显式化：
+                // MaxRefreshRetryCount 是重试的唯一主控门（默认 0 = 不重试），
+                // ShouldRetry 仅用于事件处理器提前取消剩余重试，不能启用重试。
+                if (retryCount >= MaxRefreshRetryCount || !eventArgs.ShouldRetry)
                 {
                     // 失败路径：记录指标
                     var elapsedMs = (Stopwatch.GetTimestamp() - startTimestamp) * timestampToMs;
@@ -474,8 +476,9 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             return false;
 
         // P1.3（TK-04）收敛：有效期判定统一委托 TokenExpiryPolicy，保证与 CleanupExpiredTokens 严格一致
+        // P2.4（TK-04）TTL 感知阈值：短 TTL 令牌的有效提前量被钳位为 min(configuredThreshold, ttl/2)
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        if (TokenExpiryPolicy.IsValid(entry.Expire, now, ExpireThresholdSeconds))
+        if (TokenExpiryPolicy.IsValid(entry.IssuedAt, entry.Expire, now, ExpireThresholdSeconds))
         {
             token = entry;
             return true;
@@ -505,12 +508,13 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                     // 注意：CleanupUnusedLocks 仍保留对 DefaultScopeKey 的跳过，以避免默认作用域锁被回收。
 
                     // P1.3（TK-04）收敛：过期判定统一委托 TokenExpiryPolicy，与 TryGetValidToken 严格一致
+                    // P2.4（TK-04）TTL 感知阈值
                     if (_tokenCache.TryGet(key, out var entry)
                         && entry != null
-                        && TokenExpiryPolicy.IsExpired(entry.Expire, now, ExpireThresholdSeconds))
+                        && TokenExpiryPolicy.IsExpired(entry.IssuedAt, entry.Expire, now, ExpireThresholdSeconds))
                     {
                         _tokenCache.TryRemove(key, out _);
-                        TryRemoveScopeLock(key);
+                        _keyedLockTable.TryRetire(key);   // P2.2（TK-05/09/24）经 retire 协议统一回收
                     }
                 }
             }
@@ -534,19 +538,16 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                 if (_disposed)
                     return;
 
-                foreach (var kvp in _scopeLocks)
+                foreach (var key in _keyedLockTable.Keys.ToList())
                 {
-                    if (kvp.Key == DefaultScopeKey)
+                    if (key == DefaultScopeKey)
                         continue;
 
-                    // NEW-TM-03 修复：同时清理 IsValueCreated=false 的 Lazy（避免字典无界增长）
-                    // NEW-TM-01 修复：仅当锁空闲（CurrentCount==1）时才移除，避免影响在途操作
-                    if (!_tokenCache.TryGet(kvp.Key, out _))
+                    // P2.2（TK-05/09/24）仅当缓存中已无该作用域令牌时才退休对应的锁。
+                    // TryRetire 内部以 retire 协议保证：若锁正被占用则仅标记退休，由最后一个 Releaser 完成移除。
+                    if (!_tokenCache.TryGet(key, out _))
                     {
-                        if (!kvp.Value.IsValueCreated || kvp.Value.Value.CurrentCount == 1)
-                        {
-                            TryRemoveScopeLock(kvp.Key);
-                        }
+                        _keyedLockTable.TryRetire(key);
                     }
                 }
             }
@@ -557,23 +558,12 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         }
     }
 
-    /// <summary>
-    /// NEW-TM-01 修复：仅从字典移除锁，不立即 Dispose。
-    /// SemaphoreSlim 的 Dispose 期间其他线程可能正 WaitAsync，会导致 ObjectDisposedException。
-    /// 移除后，未来 GetOrAdd 会创建新锁；已持有旧锁引用的线程仍可安全使用，
-    /// SemaphoreSlim 由 GC 终结器释放资源，避免 TOCTOU 竞态。
-    /// </summary>
-    private void TryRemoveScopeLock(string scopeKey)
-    {
-        _scopeLocks.TryRemove(scopeKey, out _);
-    }
-
     /// <inheritdoc />
     // P1.5（TK-08）Dispose 补充缓存释放，且不再 Dispose SemaphoreSlim。
     // 1. 补上 _tokenCache.Dispose()（原实现仅 Clear()，未释放缓存底层资源）。
-    // 2. 不再对 scopeLocks 调 SemaphoreSlim.Dispose()：SemaphoreSlim.Dispose 与在途 WaitAsync/Release 并存会抛
-    //    ObjectDisposedException，破坏"Dispose 后允许在途请求完成、其 Release 不抛异常"的契约。
-    //    仅从字典移除即可，在途引用仍可安全使用，资源由 GC 终结器兜底。此决策与 TryRemoveScopeLock 注释一致。
+    // 2. P2.2（TK-05/09/24）_keyedLockTable.Dispose() 与 KeyedLockTable 内部"不 Dispose SemaphoreSlim"决策一致：
+    //    SemaphoreSlim.Dispose 与在途 WaitAsync/Release 并存会抛 ObjectDisposedException，
+    //    破坏"Dispose 后允许在途请求完成、其 Release 不抛异常"的契约。
     protected virtual void Dispose(bool disposing)
     {
         if (_disposed)
@@ -591,7 +581,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                 _lockCleanupTimer?.Dispose();
             }
 
-            _scopeLocks.Clear();
+            _keyedLockTable.Dispose();
             _tokenCache.Dispose();
         }
     }

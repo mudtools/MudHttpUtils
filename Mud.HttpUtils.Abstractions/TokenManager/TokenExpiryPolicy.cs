@@ -48,4 +48,54 @@ internal static class TokenExpiryPolicy
     /// <returns>有效返回 true，否则 false。</returns>
     public static bool IsValid(long expireMs, long nowMs, int thresholdSeconds)
         => !IsExpired(expireMs, nowMs, thresholdSeconds);
+
+    /// <summary>
+    /// P2.4（TK-04）TTL 感知阈值。对短 TTL 令牌，有效阈值被钳位为 <c>min(configuredThreshold, ttl/2)</c>，
+    /// 避免"提前量过大导致 token 刚签发即被判为需刷新（短 TTL 令牌永不命中缓存）"。
+    /// 当 <paramref name="issuedAtMs"/> 未提供（&lt;= 0）时回退到配置阈值，保持与旧行为一致。
+    /// </summary>
+    /// <param name="issuedAtMs">令牌签发时间（Unix 时间戳，毫秒）。</param>
+    /// <param name="expireMs">令牌过期时间（Unix 时间戳，毫秒）。</param>
+    /// <param name="configuredThresholdSeconds">配置的过期提前量（秒）。</param>
+    /// <returns>应为该令牌应用的有效提前量（秒）。</returns>
+    public static long EffectiveThresholdSeconds(long issuedAtMs, long expireMs, int configuredThresholdSeconds)
+    {
+        if (issuedAtMs <= 0)
+            return configuredThresholdSeconds;
+
+        var ttlSeconds = (expireMs - issuedAtMs) / 1000L;
+        if (ttlSeconds <= 0)
+            return configuredThresholdSeconds;
+
+        var halfTtl = ttlSeconds / 2L;
+        return Math.Min(configuredThresholdSeconds, halfTtl);
+    }
+
+    /// <summary>
+    /// P2.4（TK-04）TTL 感知的过期判定。当 <c>expire - effectiveThreshold &lt;= now</c> 时为 true。
+    /// </summary>
+    /// <param name="issuedAtMs">令牌签发时间（Unix 时间戳，毫秒）。</param>
+    /// <param name="expireMs">令牌过期时间（Unix 时间戳，毫秒）。</param>
+    /// <param name="nowMs">当前时间（Unix 时间戳，毫秒）。</param>
+    /// <param name="configuredThresholdSeconds">配置的过期提前量（秒）。</param>
+    /// <returns>已过期返回 true，否则 false。</returns>
+    public static bool IsExpired(long issuedAtMs, long expireMs, long nowMs, int configuredThresholdSeconds)
+    {
+        if (expireMs <= 0)
+            return true;
+
+        var effectiveThresholdMs = EffectiveThresholdSeconds(issuedAtMs, expireMs, configuredThresholdSeconds) * 1000L;
+        return expireMs - effectiveThresholdMs <= nowMs;
+    }
+
+    /// <summary>
+    /// P2.4（TK-04）TTL 感知的有效性判定。当 <c>expire - effectiveThreshold &gt; now</c> 时为 true。
+    /// </summary>
+    /// <param name="issuedAtMs">令牌签发时间（Unix 时间戳，毫秒）。</param>
+    /// <param name="expireMs">令牌过期时间（Unix 时间戳，毫秒）。</param>
+    /// <param name="nowMs">当前时间（Unix 时间戳，毫秒）。</param>
+    /// <param name="configuredThresholdSeconds">配置的过期提前量（秒）。</param>
+    /// <returns>有效返回 true，否则 false。</returns>
+    public static bool IsValid(long issuedAtMs, long expireMs, long nowMs, int configuredThresholdSeconds)
+        => !IsExpired(issuedAtMs, expireMs, nowMs, configuredThresholdSeconds);
 }

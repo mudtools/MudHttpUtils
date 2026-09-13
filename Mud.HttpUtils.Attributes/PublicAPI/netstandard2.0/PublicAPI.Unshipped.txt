@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 Mud.HttpUtils.AllowUnmatchedRouteParametersAttribute
 Mud.HttpUtils.AllowUnmatchedRouteParametersAttribute.AllowUnmatchedRouteParametersAttribute() -> void
 Mud.HttpUtils.Attributes.AllowAnyStatusCodeAttribute
@@ -261,6 +261,8 @@ Mud.HttpUtils.Attributes.TokenAttribute.Name.get -> string?
 Mud.HttpUtils.Attributes.TokenAttribute.Name.set -> void
 Mud.HttpUtils.Attributes.TokenAttribute.RequiresUserId.get -> bool
 Mud.HttpUtils.Attributes.TokenAttribute.RequiresUserId.set -> void
+Mud.HttpUtils.Attributes.TokenAttribute.Scheme.get -> string?
+Mud.HttpUtils.Attributes.TokenAttribute.Scheme.set -> void
 Mud.HttpUtils.Attributes.TokenAttribute.Scopes.get -> string?
 Mud.HttpUtils.Attributes.TokenAttribute.Scopes.set -> void
 Mud.HttpUtils.Attributes.TokenAttribute.TokenAttribute(string! tokenType = "AccessToken") -> void

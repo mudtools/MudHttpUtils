@@ -281,15 +281,27 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// <inheritdoc/>
     /// <remarks>
     /// P1.2（TK-02）同 <see cref="RefreshTokenCoreAsync"/>，不自行写缓存。
+    /// P2.3（TK-02）按 scopeKey 隔离刷新链路：优先读取该作用域的缓存 refresh_token，
+    /// 缺失时回退默认作用域（兼容"统一刷新令牌"的服务端），最后才走 client_credentials。
     /// </remarks>
     protected override async Task<CredentialToken> RefreshTokenWithScopesAsync(string[]? scopes, CancellationToken cancellationToken)
     {
-        var currentToken = GetCachedCredentialToken();
+        var scopeKey = GetScopeKey(scopes);
+        var scopedToken = GetCachedCredentialToken(scopeKey);
 
-        if (currentToken?.RefreshToken != null)
+        // 优先使用当前作用域自己缓存的 refresh_token
+        if (scopedToken?.RefreshToken != null)
         {
             return await RefreshTokenByRefreshTokenAsync(
-                currentToken.RefreshToken, cancellationToken).ConfigureAwait(false);
+                scopedToken.RefreshToken, cancellationToken).ConfigureAwait(false);
+        }
+
+        // 回退默认作用域（"统一刷新令牌"服务端场景）
+        var defaultToken = GetCachedCredentialToken(DefaultScopeKey);
+        if (defaultToken?.RefreshToken != null)
+        {
+            return await RefreshTokenByRefreshTokenAsync(
+                defaultToken.RefreshToken, cancellationToken).ConfigureAwait(false);
         }
 
         return await GetTokenByClientCredentialsAsync(scopes, cancellationToken)
@@ -370,6 +382,8 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         {
             AccessToken = tokenResponse.AccessToken ?? string.Empty,
             RefreshToken = tokenResponse.RefreshToken,
+            // P2.4（TK-04）记录签发时间，供 TTL 感知阈值的有效提前量钳位
+            IssuedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             Expire = CalculateExpire(tokenResponse.ExpiresIn)
         };
 

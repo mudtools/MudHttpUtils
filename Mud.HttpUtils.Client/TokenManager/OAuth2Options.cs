@@ -100,4 +100,23 @@ public class OAuth2Options
         set => _expirySafetyMarginSeconds = value >= 0 ? value : throw new ArgumentOutOfRangeException(nameof(ExpirySafetyMarginSeconds), "令牌过期安全边际不能为负数。");
     }
     private int _expirySafetyMarginSeconds = 60;
+
+    /// <summary>
+    /// P2.9（TK-22）安全的调试字符串：对 <see cref="ClientSecret"/> 做脱敏（保留前缀 + 长度），
+    /// 防止结构化日志或配置转储中泄漏明文客户端密钥。
+    /// </summary>
+    public override string ToString()
+        => $"OAuth2Options{{ ClientId={ClientId}, ClientSecret={RedactSecret(ClientSecret)}, " +
+           $"ClientSecretProviderName={(string.IsNullOrEmpty(ClientSecretProviderName) ? "(none)" : ClientSecretProviderName)}, " +
+           $"ClientSecretCacheTtlSeconds={ClientSecretCacheTtlSeconds}, TokenEndpoint={TokenEndpoint}, " +
+           $"RevocationEndpoint={RevocationEndpoint}, IntrospectionEndpoint={IntrospectionEndpoint}, " +
+           $"RequireHttps={RequireHttps}, ExpirySafetyMarginSeconds={ExpirySafetyMarginSeconds} }}";
+
+    private static string RedactSecret(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return "<null>";
+        var prefix = value.Length > 4 ? value.Substring(0, 4) : value;
+        return prefix + "***(" + value.Length + ")";
+    }
 }

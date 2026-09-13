@@ -138,6 +138,8 @@ Mud.HttpUtils.CredentialToken.Expire.get -> long
 Mud.HttpUtils.CredentialToken.Expire.set -> void
 Mud.HttpUtils.CredentialToken.Msg.get -> string?
 Mud.HttpUtils.CredentialToken.Msg.set -> void
+Mud.HttpUtils.CredentialToken.IssuedAt.get -> long
+Mud.HttpUtils.CredentialToken.IssuedAt.set -> void
 Mud.HttpUtils.CredentialToken.RefreshToken.get -> string?
 Mud.HttpUtils.CredentialToken.RefreshToken.set -> void
 Mud.HttpUtils.CredentialToken.RefreshTokenExpire.get -> long
@@ -636,6 +638,7 @@ Mud.HttpUtils.TokenIntrospectionResult.Username.get -> string?
 Mud.HttpUtils.TokenIntrospectionResult.Username.set -> void
 Mud.HttpUtils.TokenManagerBase
 Mud.HttpUtils.TokenManagerBase.GetCachedCredentialToken() -> Mud.HttpUtils.CredentialToken?
+Mud.HttpUtils.TokenManagerBase.GetCachedCredentialToken(string! scopeKey) -> Mud.HttpUtils.CredentialToken?
 Mud.HttpUtils.TokenManagerBase.GetScopeKey(string![]? scopes) -> string!
 Mud.HttpUtils.TokenManagerBase.RefreshFailed -> System.EventHandler<Mud.HttpUtils.TokenRefreshFailedEventArgs!>?
 Mud.HttpUtils.TokenManagerBase.SetCachedToken(string! accessToken, long expireTime) -> void
@@ -787,6 +790,7 @@ static readonly Mud.HttpUtils.MudHttpMeter.RetryCounter -> System.Diagnostics.Me
 static readonly Mud.HttpUtils.MudHttpMeter.TokenRecoveryCounter -> System.Diagnostics.Metrics.Counter<long>!
 static readonly Mud.HttpUtils.MudHttpMeter.TokenRefreshCounter -> System.Diagnostics.Metrics.Counter<long>!
 static readonly Mud.HttpUtils.MudHttpMeter.TokenRefreshDuration -> System.Diagnostics.Metrics.Histogram<double>!
+override Mud.HttpUtils.CredentialToken.ToString() -> string!
 virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.GetAllApps() -> System.Collections.Generic.IEnumerable<TAppContext>!
 virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.GetApp(string! appKey) -> TAppContext
 virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.GetDefaultApp() -> TAppContext

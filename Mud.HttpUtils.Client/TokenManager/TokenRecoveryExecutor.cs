@@ -142,9 +142,14 @@ public class TokenRecoveryExecutor
 
         var recoveryContext = GetRecoveryContext(request);
         var isUserTokenRecovery = recoveryContext != null && !string.IsNullOrEmpty(recoveryContext.UserId);
-        var tokenManagerKey = isUserTokenRecovery
-            ? _userTokenManager?.GetType().Name
-            : _tokenManager.GetType().Name;
+
+        // P2.5（TK-07）：优先使用请求上下文中显式写入的 TokenManagerKey 作为管理器定位键与可观测性维度；
+        // 未显式指定时回退到注入管理器类型的短名推断（保持旧行为）。
+        var tokenManagerKey = !string.IsNullOrEmpty(recoveryContext?.TokenManagerKey)
+            ? recoveryContext!.TokenManagerKey
+            : (isUserTokenRecovery
+                ? _userTokenManager?.GetType().Name
+                : _tokenManager.GetType().Name);
 
         // P1.4（TK-06）fail-fast：用户级令牌恢复但未配置用户令牌管理器时，
         // 不得静默回退到租户令牌（会造成凭据错配），直接返回 401。
