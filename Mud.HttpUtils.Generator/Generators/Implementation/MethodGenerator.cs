@@ -117,6 +117,22 @@ internal class MethodGenerator : ICodeFragmentGenerator
         var hasHttpClient = !string.IsNullOrEmpty(context.Configuration.HttpClient);
         var needsTokenInjection = ShouldInjectToken(methodInfo, hasTokenManager, hasHttpClient);
 
+        // P3.3（TK-18）：Path / HmacSignature 注入模式不被令牌恢复执行器支持，编译期以 Warning 提示。
+        if (needsTokenInjection &&
+            (methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModePath ||
+             methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeHmacSignature))
+        {
+            var methodSyntax = methodSymbol.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
+            var location = methodSyntax?.GetLocation() ?? context.InterfaceDeclaration.GetLocation();
+            context.ProductionContext.ReportDiagnostic(
+                Diagnostic.Create(
+                    Diagnostics.TokenRecoveryUnsupportedInjectionMode,
+                    location,
+                    context.InterfaceSymbol.Name,
+                    methodSymbol.Name,
+                    methodInfo.EffectiveTokenInjectionMode));
+        }
+
         codeBuilder.AppendLine();
         codeBuilder.AppendLine($"        /// <summary>");
         codeBuilder.AppendLine($"        /// <inheritdoc />");

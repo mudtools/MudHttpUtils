@@ -22,6 +22,23 @@ public class TokenManagerBaseTests
         token.Should().Be("refreshed-token");
     }
 
+    // P3.4（C4，TK-23）：MetricsKey 默认回落 GetType().Name，且允许子类覆写为可区分的业务键。
+    [Fact]
+    public void MetricsKey_DefaultsToTypeName()
+    {
+        var manager = new ExposedMetricsKeyTokenManager();
+
+        manager.GetMetricsKey().Should().Be(nameof(ExposedMetricsKeyTokenManager));
+    }
+
+    [Fact]
+    public void MetricsKey_CanBeOverridden()
+    {
+        var manager = new CustomMetricsKeyTokenManager("tenant-a");
+
+        manager.GetMetricsKey().Should().Be("tenant-a");
+    }
+
     [Fact]
     public async Task GetOrRefreshTokenAsync_WhenTokenExpired_ReturnsRefreshedTokenNotCachedToken()
     {
@@ -307,6 +324,44 @@ public class TokenManagerBaseTests
                 Expire = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds()
             });
         }
+    }
+
+    // P3.4（C4，TK-23）：仅暴露 MetricsKey 供测试断言默认回落值。
+    private class ExposedMetricsKeyTokenManager : TokenManagerBase
+    {
+        public string GetMetricsKey() => MetricsKey;
+
+        public override Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
+            => GetOrRefreshTokenAsync(cancellationToken);
+
+        protected override Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
+            => Task.FromResult(new CredentialToken
+            {
+                AccessToken = "refreshed-token",
+                Expire = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds()
+            });
+    }
+
+    // P3.4（C4，TK-23）：覆写 MetricsKey 以区隔同一实现类型的多实例维度。
+    private class CustomMetricsKeyTokenManager : TokenManagerBase
+    {
+        private readonly string _key;
+
+        public CustomMetricsKeyTokenManager(string key) => _key = key;
+
+        public string GetMetricsKey() => MetricsKey;
+
+        protected override string MetricsKey => _key;
+
+        public override Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
+            => GetOrRefreshTokenAsync(cancellationToken);
+
+        protected override Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
+            => Task.FromResult(new CredentialToken
+            {
+                AccessToken = "refreshed-token",
+                Expire = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds()
+            });
     }
 
     private class FailingTokenManager : TokenManagerBase

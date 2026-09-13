@@ -23,21 +23,24 @@ public class OAuth2OptionsValidator : IValidateOptions<OAuth2Options>
         if (string.IsNullOrWhiteSpace(options.ClientId))
             failures.Add("OAuth2Options: ClientId 不能为空。");
 
+        // P3.1（C1，TK-17/19）校验统一：经 OAuth2EndpointValidator.IsSecure 判定，
+        // 替代原 StartsWith("https://") 前缀检查——前者会误拒绝合法的 localhost 开发端点，
+        // 后者无法识别畸形字符串。IsSecure 允许 HTTPS 或本机回环 HTTP。
         if (string.IsNullOrWhiteSpace(options.TokenEndpoint))
             failures.Add("OAuth2Options: TokenEndpoint 不能为空。");
         else if (options.RequireHttps &&
-                !options.TokenEndpoint.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            failures.Add($"OAuth2Options: RequireHttps 为 true 但 TokenEndpoint（{options.TokenEndpoint}）不是 HTTPS 端点。");
+                !OAuth2EndpointValidator.IsSecure(options.TokenEndpoint))
+            failures.Add($"OAuth2Options: RequireHttps 为 true 但 TokenEndpoint（{options.TokenEndpoint}）不是安全的 HTTPS 端点。");
 
         if (!string.IsNullOrWhiteSpace(options.RevocationEndpoint) &&
             options.RequireHttps &&
-            !options.RevocationEndpoint.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            failures.Add($"OAuth2Options: RequireHttps 为 true 但 RevocationEndpoint（{options.RevocationEndpoint}）不是 HTTPS 端点。");
+            !OAuth2EndpointValidator.IsSecure(options.RevocationEndpoint))
+            failures.Add($"OAuth2Options: RequireHttps 为 true 但 RevocationEndpoint（{options.RevocationEndpoint}）不是安全的 HTTPS 端点。");
 
         if (!string.IsNullOrWhiteSpace(options.IntrospectionEndpoint) &&
             options.RequireHttps &&
-            !options.IntrospectionEndpoint.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-            failures.Add($"OAuth2Options: RequireHttps 为 true 但 IntrospectionEndpoint（{options.IntrospectionEndpoint}）不是 HTTPS 端点。");
+            !OAuth2EndpointValidator.IsSecure(options.IntrospectionEndpoint))
+            failures.Add($"OAuth2Options: RequireHttps 为 true 但 IntrospectionEndpoint（{options.IntrospectionEndpoint}）不是安全的 HTTPS 端点。");
 
         if (options.ExpirySafetyMarginSeconds < 0)
             failures.Add("OAuth2Options: ExpirySafetyMarginSeconds 不能为负数。");

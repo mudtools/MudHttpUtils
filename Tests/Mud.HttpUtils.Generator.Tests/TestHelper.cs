@@ -76,6 +76,7 @@ public static class BasicReferenceAssemblies
             MetadataReference.CreateFromFile(typeof(System.Attribute).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(Mud.HttpUtils.Attributes.HttpClientApiAttribute).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(Mud.HttpUtils.TokenInjectionMode).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Mud.HttpUtils.ITokenManager).Assembly.Location),
         };
 
         var runtimeDir = Path.GetDirectoryName(typeof(object).Assembly.Location)!;
