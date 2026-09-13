@@ -655,6 +655,8 @@ Mud.HttpUtils.TokenRecoveryOptions.Enabled.get -> bool
 Mud.HttpUtils.TokenRecoveryOptions.Enabled.set -> void
 Mud.HttpUtils.TokenRecoveryOptions.RecoveryMaxRetries.get -> int
 Mud.HttpUtils.TokenRecoveryOptions.RecoveryMaxRetries.set -> void
+Mud.HttpUtils.TokenRecoveryOptions.RefreshTimeoutSeconds.get -> double
+Mud.HttpUtils.TokenRecoveryOptions.RefreshTimeoutSeconds.set -> void
 Mud.HttpUtils.TokenRecoveryOptions.TokenRecoveryOptions() -> void
 Mud.HttpUtils.TokenRecoveryOptions.TokenScheme.get -> string!
 Mud.HttpUtils.TokenRecoveryOptions.TokenScheme.set -> void
@@ -663,6 +665,8 @@ Mud.HttpUtils.TokenRefreshBackgroundOptions.Enabled.get -> bool
 Mud.HttpUtils.TokenRefreshBackgroundOptions.Enabled.set -> void
 Mud.HttpUtils.TokenRefreshBackgroundOptions.RefreshIntervalSeconds.get -> int
 Mud.HttpUtils.TokenRefreshBackgroundOptions.RefreshIntervalSeconds.set -> void
+Mud.HttpUtils.TokenRefreshBackgroundOptions.MaxConsecutiveFailures.get -> int
+Mud.HttpUtils.TokenRefreshBackgroundOptions.MaxConsecutiveFailures.set -> void
 Mud.HttpUtils.TokenRefreshBackgroundOptions.RetryDelaySeconds.get -> int
 Mud.HttpUtils.TokenRefreshBackgroundOptions.RetryDelaySeconds.set -> void
 Mud.HttpUtils.TokenRefreshBackgroundOptions.StopOnError.get -> bool
@@ -791,11 +795,13 @@ virtual Mud.HttpUtils.OAuth2TokenManagerBase.RevokeTokenAsync(string! token, str
 virtual Mud.HttpUtils.TokenManagerBase.Dispose() -> void
 virtual Mud.HttpUtils.TokenManagerBase.Dispose(bool disposing) -> void
 virtual Mud.HttpUtils.TokenManagerBase.ExpireThresholdSeconds.get -> int
+virtual Mud.HttpUtils.TokenManagerBase.FallbackGraceSeconds.get -> int
 virtual Mud.HttpUtils.TokenManagerBase.GetOrRefreshTokenAsync(string![]? scopes, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string!>!
 virtual Mud.HttpUtils.TokenManagerBase.GetOrRefreshTokenAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string!>!
 virtual Mud.HttpUtils.TokenManagerBase.GetTokenAsync(string![]? scopes, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string!>!
 virtual Mud.HttpUtils.TokenManagerBase.InvalidateTokenAsync(string![]? scopes = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.TokenResult>!
 virtual Mud.HttpUtils.TokenManagerBase.MaxCacheLifetimeSeconds.get -> int
+virtual Mud.HttpUtils.TokenManagerBase.MaxFallbackLifetimeSeconds.get -> int
 virtual Mud.HttpUtils.TokenManagerBase.MaxRefreshRetryCount.get -> int
 virtual Mud.HttpUtils.TokenManagerBase.MaxScopeCacheSize.get -> int
 virtual Mud.HttpUtils.TokenManagerBase.RefreshRetryDelayMilliseconds.get -> int

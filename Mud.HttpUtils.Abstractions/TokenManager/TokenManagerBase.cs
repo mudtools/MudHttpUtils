@@ -20,6 +20,8 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     private readonly Timer _cleanupTimer;
     private readonly Timer _lockCleanupTimer;
     private readonly object _cleanupLock = new();
+    // P1.3（TK-04）降级令牌连续命中的计数，用于指数退避；成功刷新时复位为 0。
+    private int _consecutiveFallbacks;
     /// <summary>
     /// 指示对象是否已释放。
     /// </summary>
@@ -53,6 +55,18 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// 令牌在此时间内即将过期时将触发自动刷新。
     /// </summary>
     protected virtual int ExpireThresholdSeconds => DefaultExpireThresholdSeconds;
+
+    /// <summary>
+    /// 降级令牌的额外宽限（秒），默认 60。确保降级条目在缓存层判定为可用，
+    /// 避免因 <c>expire - threshold == now</c> 的严格比较边界而复现刷新风暴。
+    /// </summary>
+    protected virtual int FallbackGraceSeconds => 60;
+
+    /// <summary>
+    /// 降级指数退避的增量上限（秒），默认 300。注意此为"退避增量"上限而非令牌总有效期上限；
+    /// 实际降级令牌有效期 = <see cref="ExpireThresholdSeconds"/> + 退避增量。
+    /// </summary>
+    protected virtual int MaxFallbackLifetimeSeconds => 300;
 
     /// <summary>
     /// 指示此令牌管理器是否支持后台主动刷新。默认为 <c>true</c>。
@@ -271,9 +285,30 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         }
     }
 
+    // P1.1（TK-01）凭据字段级合并：刷新响应缺省字段时保留既有凭据，避免静默降级到错误授权流程。
+    // 语义与 UserTokenInfo.UpdateFromCredentialToken 对齐（仅当新值缺失/无效时保留旧值，服务端返回的新值必须优先）。
     private void UpdateToken(string scopeKey, CredentialToken? token)
     {
-        if (token != null && token.Expire > 0)
+        if (token == null)
+        {
+            _tokenCache.Set(scopeKey, null);
+            return;
+        }
+
+        // 字段级合并：读取旧条目，仅当新令牌未提供 refresh_token / refresh_token_expire / scope 时保留旧值。
+        if (_tokenCache.TryGet(scopeKey, out var existing) && existing != null)
+        {
+            if (string.IsNullOrEmpty(token.RefreshToken))
+            {
+                token.RefreshToken = existing.RefreshToken;
+                if (token.RefreshTokenExpire <= 0 && existing.RefreshTokenExpire > 0)
+                    token.RefreshTokenExpire = existing.RefreshTokenExpire;
+            }
+            if (string.IsNullOrEmpty(token.Scope))
+                token.Scope = existing.Scope;
+        }
+
+        if (token.Expire > 0)
         {
             var maxLifetimeMs = MaxCacheLifetimeSeconds * 1000L;
             var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -310,7 +345,8 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             {
                 var token = await refreshFunc(cancellationToken).ConfigureAwait(false);
 
-                // 成功路径：记录指标
+                // 成功路径：复位降级退避计数，记录指标（P1.3：服务恢复后尽快回到正常令牌）
+                Interlocked.Exchange(ref _consecutiveFallbacks, 0);
                 var elapsedMs = (Stopwatch.GetTimestamp() - startTimestamp) * timestampToMs;
                 RecordTokenRefresh(success: true, tokenManagerKey, elapsedMs, isFallback: false);
 
@@ -336,10 +372,16 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                     var elapsedMs = (Stopwatch.GetTimestamp() - startTimestamp) * timestampToMs;
                     RecordTokenRefresh(success: true, tokenManagerKey, elapsedMs, isFallback: true);
 
+                    // P1.3（TK-04）降级令牌有效期 = ExpireThresholdSeconds + 指数退避增量，
+                    // 保证降级条目在缓存层必然判定为可用（严格 > 成立），避免刷新风暴；
+                    // 同时退避使服务恢复后能快速回到正常令牌。
+                    var backoff = NextFallbackLifetimeSeconds();
                     return new CredentialToken
                     {
                         AccessToken = eventArgs.FallbackToken,
-                        Expire = DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeMilliseconds()
+                        Expire = DateTimeOffset.UtcNow
+                            .AddSeconds(ExpireThresholdSeconds + backoff)
+                            .ToUnixTimeMilliseconds()
                     };
                 }
 
@@ -361,6 +403,17 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         // while 循环内 catch 块在达到最大重试次数时必然 throw，循环永不自然退出。
         // 此处通过 throw 确保编译器控制流分析通过，且语义清晰。
         throw new InvalidOperationException("令牌刷新失败：达到最大重试次数。");
+    }
+
+    /// <summary>
+    /// 计算降级令牌的"退避增量"（秒）。P1.3（TK-04）修复：
+    /// 从 <c>FallbackGraceSeconds</c>（默认 60s）开始指数翻倍，命中 <see cref="MaxFallbackLifetimeSeconds"/> 后封顶。
+    /// 返回值为"增量"，实际有效期 = <see cref="ExpireThresholdSeconds"/> + 增量，保证缓存层严格判定为可用。
+    /// </summary>
+    private int NextFallbackLifetimeSeconds()
+    {
+        var n = Math.Min(Interlocked.Increment(ref _consecutiveFallbacks), 5);   // 上限 2^4 倍
+        return Math.Min(FallbackGraceSeconds << (n - 1), MaxFallbackLifetimeSeconds);
     }
 
     /// <summary>
@@ -420,9 +473,9 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         if (entry == null || string.IsNullOrEmpty(entry.AccessToken) || entry.Expire <= 0)
             return false;
 
+        // P1.3（TK-04）收敛：有效期判定统一委托 TokenExpiryPolicy，保证与 CleanupExpiredTokens 严格一致
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var thresholdMs = ExpireThresholdSeconds * 1000L;
-        if (entry.Expire - thresholdMs > now)
+        if (TokenExpiryPolicy.IsValid(entry.Expire, now, ExpireThresholdSeconds))
         {
             token = entry;
             return true;
@@ -444,7 +497,6 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                     return;
 
                 var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                var thresholdMs = ExpireThresholdSeconds * 1000L;
 
                 foreach (var key in _tokenCache.Keys.ToList())
                 {
@@ -452,7 +504,10 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                     // 下次访问 GetOrRefreshTokenAsync 时会自动重新获取，不再跳过。
                     // 注意：CleanupUnusedLocks 仍保留对 DefaultScopeKey 的跳过，以避免默认作用域锁被回收。
 
-                    if (_tokenCache.TryGet(key, out var entry) && entry?.Expire - thresholdMs <= now)
+                    // P1.3（TK-04）收敛：过期判定统一委托 TokenExpiryPolicy，与 TryGetValidToken 严格一致
+                    if (_tokenCache.TryGet(key, out var entry)
+                        && entry != null
+                        && TokenExpiryPolicy.IsExpired(entry.Expire, now, ExpireThresholdSeconds))
                     {
                         _tokenCache.TryRemove(key, out _);
                         TryRemoveScopeLock(key);
@@ -514,6 +569,11 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     }
 
     /// <inheritdoc />
+    // P1.5（TK-08）Dispose 补充缓存释放，且不再 Dispose SemaphoreSlim。
+    // 1. 补上 _tokenCache.Dispose()（原实现仅 Clear()，未释放缓存底层资源）。
+    // 2. 不再对 scopeLocks 调 SemaphoreSlim.Dispose()：SemaphoreSlim.Dispose 与在途 WaitAsync/Release 并存会抛
+    //    ObjectDisposedException，破坏"Dispose 后允许在途请求完成、其 Release 不抛异常"的契约。
+    //    仅从字典移除即可，在途引用仍可安全使用，资源由 GC 终结器兜底。此决策与 TryRemoveScopeLock 注释一致。
     protected virtual void Dispose(bool disposing)
     {
         if (_disposed)
@@ -531,13 +591,8 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                 _lockCleanupTimer?.Dispose();
             }
 
-            foreach (var lazyLock in _scopeLocks.Values)
-            {
-                if (lazyLock.IsValueCreated)
-                    lazyLock.Value.Dispose();
-            }
             _scopeLocks.Clear();
-            _tokenCache.Clear();
+            _tokenCache.Dispose();
         }
     }
     /// <inheritdoc />

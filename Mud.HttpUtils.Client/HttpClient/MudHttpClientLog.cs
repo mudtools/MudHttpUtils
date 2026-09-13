@@ -347,6 +347,10 @@ internal static partial class MudHttpClientLog
     [LoggerMessage(EventId = 155, Level = LogLevel.Warning,
         Message = "获取令牌失败，TokenManagerKey: '{TokenManagerKey}'。")]
     public static partial void TokenRetrievalFailed(ILogger logger, string? tokenManagerKey);
+
+    [LoggerMessage(EventId = 156, Level = LogLevel.Warning,
+        Message = "令牌恢复放弃：重试请求主机 '{RetryHost}' 与原始主机 '{OriginalHost}' 不一致，可能被重定向到不受信任的地址，拒绝继续恢复。")]
+    public static partial void TokenRecoveryHostMismatch(ILogger logger, string? retryHost, string? originalHost);
 #else
     private static readonly Action<ILogger, string, Exception?> s_tokenManagerRegistered =
         LoggerMessage.Define<string>(LogLevel.Debug, new EventId(131, nameof(TokenManagerRegistered)),
@@ -493,6 +497,12 @@ internal static partial class MudHttpClientLog
             "获取令牌失败，TokenManagerKey: '{TokenManagerKey}'。");
     public static void TokenRetrievalFailed(ILogger logger, string? tokenManagerKey)
         => s_tokenRetrievalFailed(logger, tokenManagerKey, null);
+
+    private static readonly Action<ILogger, string?, string?, Exception?> s_tokenRecoveryHostMismatch =
+        LoggerMessage.Define<string?, string?>(LogLevel.Warning, new EventId(156, nameof(TokenRecoveryHostMismatch)),
+            "令牌恢复放弃：重试请求主机 '{RetryHost}' 与原始主机 '{OriginalHost}' 不一致，可能被重定向到不受信任的地址，拒绝继续恢复。");
+    public static void TokenRecoveryHostMismatch(ILogger logger, string? retryHost, string? originalHost)
+        => s_tokenRecoveryHostMismatch(logger, retryHost, originalHost, null);
 #endif
 
     #endregion

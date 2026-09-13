@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -562,6 +563,93 @@ public class TokenRefreshBackgroundServiceTests
         // 验证它是一个 override（覆盖了基类的 true 默认值）
         property!.GetMethod!.GetBaseDefinition().Should().NotBeSameAs(property.GetMethod,
             "UserTokenManagerBase 应覆盖基类的 SupportsBackgroundRefresh 属性");
+    }
+
+    /// <summary>
+    /// P1.6（TK-11）重入闸：当上一轮刷新编排尚未结束时 Timer 再次触发，
+    /// 应被 <see cref="Interlocked.CompareExchange"/> 重入闸拦截，同一时刻运行中的刷新编排不超过 1。
+    /// </summary>
+    [Fact]
+    public async Task BackgroundService_OverlappingCallback_ShouldNotRunConcurrently()
+    {
+        var maxConcurrent = 0;
+        var current = 0;
+        var tickCount = 0;
+
+        var options = new TokenRefreshBackgroundOptions
+        {
+            Enabled = true,
+            RefreshIntervalSeconds = 1,
+            RetryDelaySeconds = 1
+        };
+        var service = new TokenRefreshBackgroundService(options);
+
+        var manager = new Mock<ITokenManager>();
+        manager.SetupGet(t => t.SupportsBackgroundRefresh).Returns(true);
+        manager.Setup(t => t.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                var c = Interlocked.Increment(ref current);
+                UpdateMax(ref maxConcurrent, c);
+                Interlocked.Increment(ref tickCount);
+                // 模拟远端慢响应：刷新耗时超过刷新间隔，制造 Timer 重叠触发窗口
+                await Task.Delay(1500).ConfigureAwait(false);
+                Interlocked.Decrement(ref current);
+                return "token";
+            });
+        service.RegisterTokenManager(manager.Object, "slow-manager");
+
+        await service.StartAsync();
+        await Task.Delay(TimeSpan.FromSeconds(4)).ConfigureAwait(false);
+        await service.StopAsync();
+        service.Dispose();
+
+        maxConcurrent.Should().BeLessThanOrEqualTo(1, "同一时刻只允许一个刷新编排在运行");
+        tickCount.Should().BeGreaterThan(0);
+    }
+
+    /// <summary>
+    /// P1.6（TK-10）停止语义：StopOnError=true 时刷新失败后服务应优雅结束（break），
+    /// 而不是抛异常——避免 .NET 6+ BackgroundServiceExceptionBehavior 默认 StopHost 连带停止整个应用。
+    /// </summary>
+    [Fact]
+    public async Task StopOnError_ShouldStopServiceWithoutStoppingHost()
+    {
+        var options = Options.Create(new TokenRefreshBackgroundOptions
+        {
+            Enabled = true,
+            RefreshIntervalSeconds = 1,
+            StopOnError = true
+        });
+        var logger = new Mock<ILogger<TokenRefreshHostedService>>().Object;
+        var manager = new Mock<ITokenManager>();
+        manager.SetupGet(t => t.SupportsBackgroundRefresh).Returns(true);
+        manager.Setup(t => t.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new Exception("refresh-failed"));
+
+        var service = new TokenRefreshHostedService(manager.Object, options, logger);
+
+        // 通过反射调用受保护的 ExecuteAsync，验证其在首次失败后应优雅完成而非抛异常
+        var executeAsync = typeof(TokenRefreshHostedService).GetMethod(
+            "ExecuteAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var runTask = (Task)executeAsync!.Invoke(service, new object[] { CancellationToken.None })!;
+
+        await runTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        runTask.Status.Should().Be(TaskStatus.RanToCompletion, "StopOnError 触发后应优雅 break，而非 Faulted");
+    }
+
+    /// <summary>
+    /// 选择性地更新最大值。
+    /// </summary>
+    private static void UpdateMax(ref int max, int candidate)
+    {
+        int current;
+        while (candidate > (current = Volatile.Read(ref max)))
+        {
+            if (Interlocked.CompareExchange(ref max, candidate, current) == current)
+                return;
+        }
     }
 
     #endregion

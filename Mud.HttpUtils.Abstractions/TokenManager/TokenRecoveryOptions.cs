@@ -39,4 +39,17 @@ public class TokenRecoveryOptions
         get => _tokenScheme;
         set => _tokenScheme = !string.IsNullOrEmpty(value) ? value : throw new ArgumentException("令牌认证方案不能为 null 或空字符串。", nameof(TokenScheme));
     }
+
+    /// <summary>
+    /// P1.4（TK-15）令牌刷新的超时兜底（秒），默认 30。
+    /// 取消隔离后刷新任务不再受单一调用方取消影响，本超时防止远端挂起导致恢复流程无限期阻塞；
+    /// 超时后抛出 <see cref="TimeoutException"/>，恢复流程按刷新失败处理并返回 401。
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">设置小于等于 0 的值时抛出。</exception>
+    public double RefreshTimeoutSeconds
+    {
+        get => _refreshTimeoutSeconds;
+        set => _refreshTimeoutSeconds = value > 0 ? value : throw new ArgumentOutOfRangeException(nameof(RefreshTimeoutSeconds), "刷新超时秒数必须大于 0。");
+    }
+    private double _refreshTimeoutSeconds = 30;
 }

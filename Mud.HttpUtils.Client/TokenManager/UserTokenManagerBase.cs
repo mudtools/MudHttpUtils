@@ -311,10 +311,12 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
     private bool IsUserTokenValid(UserTokenInfo? tokenInfo)
     {
-        if (tokenInfo == null || string.IsNullOrEmpty(tokenInfo.AccessToken))
+        if (tokenInfo == null || string.IsNullOrEmpty(tokenInfo.AccessToken) || tokenInfo.AccessTokenExpireTime <= 0)
             return false;
 
-        return tokenInfo.IsAccessTokenValid(UserExpireThresholdSeconds);
+        // P1.3（TK-04）收敛：有效期判定统一委托 TokenExpiryPolicy，与 TokenManagerBase 严格一致
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        return TokenExpiryPolicy.IsValid(tokenInfo.AccessTokenExpireTime, now, UserExpireThresholdSeconds);
     }
 
     /// <summary>

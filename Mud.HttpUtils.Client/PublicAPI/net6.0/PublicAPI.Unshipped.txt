@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 abstract Mud.HttpUtils.UserTokenManagerBase.GetTokenAsync(string? userId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string?>!
 abstract Mud.HttpUtils.UserTokenManagerBase.GetTokenInfoAsync(string! userId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.UserTokenInfo?>!
 abstract Mud.HttpUtils.UserTokenManagerBase.GetUserTokenWithCodeAsync(string! code, string! redirectUri, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.UserTokenInfo?>!
@@ -260,6 +260,8 @@ Mud.HttpUtils.OAuth2Options.ClientId.get -> string!
 Mud.HttpUtils.OAuth2Options.ClientId.set -> void
 Mud.HttpUtils.OAuth2Options.ClientSecret.get -> string!
 Mud.HttpUtils.OAuth2Options.ClientSecret.set -> void
+Mud.HttpUtils.OAuth2Options.ClientSecretCacheTtlSeconds.get -> int
+Mud.HttpUtils.OAuth2Options.ClientSecretCacheTtlSeconds.set -> void
 Mud.HttpUtils.OAuth2Options.ClientSecretProviderName.get -> string?
 Mud.HttpUtils.OAuth2Options.ClientSecretProviderName.set -> void
 Mud.HttpUtils.OAuth2Options.ExpirySafetyMarginSeconds.get -> int
