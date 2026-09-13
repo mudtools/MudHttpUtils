@@ -76,6 +76,7 @@ public static class BasicReferenceAssemblies
             MetadataReference.CreateFromFile(typeof(System.Attribute).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(Mud.HttpUtils.Attributes.HttpClientApiAttribute).Assembly.Location),
             MetadataReference.CreateFromFile(typeof(Mud.HttpUtils.TokenInjectionMode).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(Mud.HttpUtils.ITokenManager).Assembly.Location),
         };
 
         // [M0] 全量运行时框架引用：编译断言需要「输入 + 生成产物」整体可编译（F15）。

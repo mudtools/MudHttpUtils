@@ -91,6 +91,15 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// </summary>
     protected virtual int MaxCacheLifetimeSeconds => 86400;
 
+    /// <summary>
+    /// 获取此令牌管理器在可观测性（指标 tag、Activity、健康检查）中使用的键。
+    /// P3.4（C4，TK-23）指标键可配置：默认回落到 CLR 类型名 <see cref="object.GetType"/>().Name。
+    /// 当多个逻辑上不同的管理器共享同一实现类型、或同一类型多实例需要区隔维度时，
+    /// 子类可覆写本属性返回可区分（且稳定）的键，例如 DI 注册名、配置区段名或业务键。
+    /// 覆写时应保证返回值稳定且不含敏感信息，因为它会作为指标维度/日志维度被持久化。
+    /// </summary>
+    protected virtual string MetricsKey => GetType().Name;
+
     /// <inheritdoc />
     protected TokenManagerBase()
         : this(new ConcurrentDictionaryTokenCache<CredentialToken>())
@@ -336,7 +345,8 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         // 可观测性：记录刷新开始时间戳
         var startTimestamp = Stopwatch.GetTimestamp();
         var timestampToMs = 1000.0 / Stopwatch.Frequency;
-        string? tokenManagerKey = GetType().Name;
+        // P3.4（C4，TK-23）：使用可覆写的 MetricsKey 而非 GetType().Name，使多管理器/多实例维度可区分。
+        string? tokenManagerKey = MetricsKey;
 
         while (retryCount <= MaxRefreshRetryCount)
         {

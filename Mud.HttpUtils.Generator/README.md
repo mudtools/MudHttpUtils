@@ -737,7 +737,8 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 | ~~`HTTPCLIENT019`~~ | — | ❌ 已移除（CFG-27）：其唯一触发点 `CacheAttribute.Priority` 已删除 | 无需处理（ID 保留为未使用占位） | 否 |
 | `HTTPCLIENT020` | Warning | 非幂等方法声明 `[Retry]` 但未设 `AllowNonIdempotent` | 运行时将跳过重试；如服务端可安全重复执行请显式开启 | 否 |
 | `HTTPCLIENT021` | Warning | 方法级 `[Timeout]` 超过接口级 `HttpClient` 超时 | `HttpClient.Timeout` 是硬上限，调小 `[Timeout]` 或提高 `[HttpClientApi(Timeout=…)]` | 否 |
-| `HTTPCLIENT022` | Info | 检测到 `-p:ForceHttpGenerator=true`，增量缓存被强制失效 | 无需处理（逃生舱生效提示，F4） | 否 |
+| `HTTPCLIENT022` | Warning | 方法使用 `Path`/`HmacSignature` 令牌注入模式 | 该模式不被令牌恢复处理器支持，刷新后的新令牌无法重新注入；改用 `Header`/`Query`/`ApiKey`/`Cookie`/`BasicAuth` 模式 | 否 |
+| `HTTPCLIENT023` | Info | 检测到 `-p:ForceHttpGenerator=true`，增量缓存被强制失效 | 无需处理（逃生舱生效提示，F4） | 否 |
 
 > **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010`、`HTTPCLIENT019` 当前**未使用**（ID 保留为占位，不重新分配）。
 > - `HTTPCLIENT010`：`BaseAddress` 已移除（CFG-27），使用直接编译错误 `CS0117`，无需生成器提示。

@@ -88,6 +88,8 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 
     /// <summary>
     /// 校验端点是否满足 HTTPS 要求。
+    /// P3.1（C1，TK-17/19）校验统一：经 OAuth2EndpointValidator.IsSecure 判定，
+    /// 与 OAuth2OptionsValidator 共用同一逻辑（Uri.TryCreate + DNS 解析 + IsLoopback）。
     /// </summary>
     private void ValidateEndpointHttps(string endpoint, string endpointName)
     {
@@ -95,9 +97,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
             return;
 
         if (!string.IsNullOrEmpty(endpoint) &&
-            !endpoint.StartsWith("https://", StringComparison.OrdinalIgnoreCase) &&
-            !endpoint.StartsWith("http://localhost", StringComparison.OrdinalIgnoreCase) &&
-            !endpoint.StartsWith("http://127.0.0.1", StringComparison.OrdinalIgnoreCase))
+            !OAuth2EndpointValidator.IsSecure(endpoint))
         {
             throw new InvalidOperationException($"{endpointName} 必须使用 HTTPS 协议: {endpoint}。若需在开发环境使用 HTTP，请设置 OAuth2Options.RequireHttps = false。");
         }

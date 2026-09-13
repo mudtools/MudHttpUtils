@@ -194,9 +194,22 @@ internal static class Diagnostics
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
-    // [F4] 强制失效逃生舱提示：-p:ForceHttpGenerator=true 时下游增量步骤必然 Modified，产出一行可观测提示。
-    public static readonly DiagnosticDescriptor IncrementalCacheForcedInvalidation = new(
+    // P3.3（TK-18）：Path / HmacSignature 注入模式不被 TokenRecoveryDelegatingHandler /
+    // TokenRecoveryEnhancedClient 的恢复执行器支持（ApplyTokenToRequest 对这两种模式直接返回 false），
+    // 令牌过期触发 401 后刷新出的新令牌无法重新注入，恢复将静默失败。编译期以 Warning 提醒开发者。
+    public static readonly DiagnosticDescriptor TokenRecoveryUnsupportedInjectionMode = new(
         id: "HTTPCLIENT022",
+        title: "Path/HmacSignature 令牌注入模式不支持令牌恢复",
+        messageFormat: "接口 {0} 的方法 {1} 使用令牌注入模式 '{2}'。该模式不被令牌恢复处理器（TokenRecoveryDelegatingHandler / TokenRecoveryEnhancedClient）支持：令牌过期触发 401 后，刷新得到的新令牌无法重新注入（Path 无法重写 URL 中的令牌，HmacSignature 无法用新令牌重算签名）。恢复将静默失败并返回 401。如需令牌恢复能力，请改用 Header/Query/ApiKey/Cookie/BasicAuth 注入模式。",
+        category: "代码生成",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    // [F4] 强制失效逃生舱提示：-p:ForceHttpGenerator=true 时下游增量步骤必然 Modified，产出一行可观测提示。
+    // 合并注记：本诊断原与 P3.3(TK-18) 的 TokenRecoveryUnsupportedInjectionMode 争用 HTTPCLIENT022；
+    // TK-18 先落库并占用 022，故 [F4] 让位改用 023（ID 一经分配即保留，不再回收复用）。
+    public static readonly DiagnosticDescriptor IncrementalCacheForcedInvalidation = new(
+        id: "HTTPCLIENT023",
         title: "增量缓存已被 ForceHttpGenerator 强制失效",
         messageFormat: "已检测到 -p:ForceHttpGenerator=true，生成器增量缓存被强制失效，本次构建将重新生成全部实现类代码。",
         category: "代码生成",

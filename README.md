@@ -469,7 +469,7 @@ ICurrentUserContext     // 当前用户上下文（线程安全的用户 ID 传�
 TokenRequest           // Token 请求参数（TokenManagerKey, UserId, Scopes）
 ITokenStore            // 令牌持久化存储契约
 IUserTokenStore        // 用户级令牌持久化存储契约
-TokenManagerBase          // 令牌管理器抽象基类（并发安全刷新）
+TokenManagerBase          // 令牌管理器抽象基类（并发安全刷新，支持 MetricsKey 覆写）
 UserTokenManagerBase      // 用户令牌管理器抽象基类（并发安全刷新）
 TokenTypes                // 令牌类型常量（TenantAccessToken、UserAccessToken 等）
 MemoryTokenStore          // 内存令牌存储默认实现（ITokenStore）
@@ -493,6 +493,15 @@ public interface IFeishuUserApi { }
 // 使用 TokenManagerKey 解耦业务概念和技术查找键
 [Token(TokenType = "UserAccessToken", TokenManagerKey = "FeishuUser")]
 public interface IFeishuContactApi { }
+
+// 覆写 MetricsKey 使指标维度可区分（多实例场景下避免监控数据混叠）
+public class MyNamedTokenManager : TokenManagerBase
+{
+    public MyNamedTokenManager(string instanceName) => _instanceName = instanceName;
+    protected override string MetricsKey => _instanceName;
+    private readonly string _instanceName;
+    // 必须实现：GetCachedTokenAsync / RefreshTokenCoreAsync
+}
 ```
 
 #### 多命名客户端
@@ -778,12 +787,14 @@ Mud.HttpUtils 通过 Roslyn 源代码生成器在编译时生成强类型的 HTT
 | ~~`HTTPCLIENT019`~~ | — | ❌ 已移除（CFG-27）：其唯一触发点 `CacheAttribute.Priority` 已删除 | 无需处理（ID 保留为未使用占位） |
 | `HTTPCLIENT020` | Warning | 非幂等方法声明 `[Retry]` 但未设 `AllowNonIdempotent` | 运行时将跳过重试；如服务端可安全重复执行请显式开启 |
 | `HTTPCLIENT021` | Warning | 方法级 `[Timeout]` 超过接口级 `HttpClient` 超时 | `HttpClient.Timeout` 是硬上限，调小 `[Timeout]` 或提高 `[HttpClientApi(Timeout=…)]` |
+| `HTTPCLIENT022` | Warning | 方法使用 `Path`/`HmacSignature` 令牌注入模式 | 令牌恢复处理器（`TokenRecoveryDelegatingHandler`/`TokenRecoveryEnhancedClient`）不支持这两种模式，刷新后的新令牌无法重新注入，恢复将静默失败并返回 401。如需令牌恢复能力请改用 `Header`/`Query`/`ApiKey`/`Cookie`/`BasicAuth` 模式 |
 | `HTTPCLIENTREG001` | Error | 注册代码生成失败 | 检查接口定义和 DI 注册配置 |
 | `HTTPCLIENTREG002` | Error | `RegistryGroupName` 不是有效 C# 标识符 | 使用字母、数字、下划线组成，以字母或下划线开头 |
 | `EHSG001` | Error | 事件处理器代码生成失败 | 检查被处理类型定义与配置 |
 | `FORM001` | Error | FormContent 代码生成错误 | 检查 FormContent 类定义 |
 | `FORM002` | Error | FormContent 缺少 `[FilePath]` 属性 | 必须且只能有一个属性标记 `[FilePath]` |
 | `FORM003` | Error | FormContent 存在多个 `[FilePath]` 属性 | 只保留一个 `[FilePath]` 属性 |
+| `MUD004` | Warning | `ITokenManager` 实现未注册为 Singleton | `ITokenManager` 的实现类内部维护令牌缓存与并发锁（如 `SemaphoreSlim`），Scoped/Transient 注册会使每个请求持有独立缓存实例，导致并发安全机制失效与重复刷新令牌。请改用 `AddSingleton`/`TryAddSingleton` |
 
 > **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010`、`HTTPCLIENT019` 当前**未使用**（ID 保留为占位，不重新分配）。
 > - `HTTPCLIENT010`：`HttpClientApiAttribute.BaseAddress` **已移除**（CFG-27），使用直接编译错误 `CS0117`。

@@ -234,6 +234,101 @@ namespace TestNamespace
 
     #endregion
 
+    #region HTTPCLIENT022 - Path/HmacSignature token injection mode lacks recovery capability (P3.3 / TK-18)
+
+    [Fact]
+    public void Generator_WithPathInjectionMode_GeneratesHTTPCLIENT022()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    [HttpClientApi(TokenManage = ""ITestTokenManager"")]
+    [Token(TokenType = ""AccessToken"", InjectionMode = TokenInjectionMode.Path)]
+    public interface ITestApi
+    {
+        [Get(""/data"")]
+        Task<string> GetDataAsync();
+    }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        var diag = diagnostics.Should().ContainSingle(d => d.Id == "HTTPCLIENT022").Subject;
+        diag.Severity.Should().Be(DiagnosticSeverity.Warning);
+    }
+
+    [Fact]
+    public void Generator_WithHmacSignatureInjectionMode_GeneratesHTTPCLIENT022()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    [HttpClientApi(TokenManage = ""ITestTokenManager"")]
+    [Token(TokenType = ""AccessToken"", InjectionMode = TokenInjectionMode.HmacSignature)]
+    public interface ITestApi
+    {
+        [Get(""/data"")]
+        Task<string> GetDataAsync();
+    }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        diagnostics.Should().Contain(d => d.Id == "HTTPCLIENT022");
+    }
+
+    [Fact]
+    public void Generator_WithHeaderInjectionMode_NoHTTPCLIENT022()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    [HttpClientApi(TokenManage = ""ITestTokenManager"")]
+    [Token]
+    public interface ITestApi
+    {
+        [Get(""/data"")]
+        Task<string> GetDataAsync();
+    }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        diagnostics.Should().NotContain(d => d.Id == "HTTPCLIENT022");
+    }
+
+    #endregion
+
     #region AOT006 - [HttpJsonSerializable] not covered by any JsonSerializerContext
 
     // [F6] AOT006 已迁出生成管道，由独立 DiagnosticAnalyzer（HttpJsonSerializableCoverageAnalyzer）
