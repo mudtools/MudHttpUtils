@@ -9,6 +9,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Mud.HttpUtils.Helpers;
 
 namespace Mud.HttpUtils;
 
@@ -106,16 +107,30 @@ public class TokenRecoveryExecutor
         if (!ShouldAttemptRecovery(request))
             return await sendFunc(request, cancellationToken).ConfigureAwait(false);
 
-        var contentBytes = request.Content != null
-            ? await ReadContentBytesAsync(request.Content, cancellationToken).ConfigureAwait(false)
-            : null;
-
-        // NEW-HC-03 修复：检查缓存请求体大小，超过阈值（10MB）则不缓存，避免 OOM 风险
+        // P1.7（TK-12）先限流后缓冲：读取请求体前先按 Content-Length 判断，超限直接跳过，
+        // 避免先整体读入内存造成超大 body 的 OOM 风险。
         const long maxCachedRequestBodySize = 10 * 1024 * 1024; // 10MB
-        if (contentBytes != null && contentBytes.Length > maxCachedRequestBodySize)
+        byte[]? contentBytes = null;
+
+        if (request.Content != null)
         {
-            _logger.LogWarning("请求体大小 {ActualSize} 字节超过缓存阈值 {MaxSize} 字节，跳过缓存以避免 OOM 风险。401 重试将无法携带原始请求体。", contentBytes.Length, maxCachedRequestBodySize);
-            contentBytes = null;
+            var declaredLength = request.Content.Headers.ContentLength;
+            if (declaredLength.HasValue && declaredLength.Value > maxCachedRequestBodySize)
+            {
+                _logger.LogWarning("请求体声明大小 {ActualSize} 字节超过缓存阈值 {MaxSize} 字节，跳过缓存以避免 OOM 风险。401 重试将无法携带原始请求体。", declaredLength.Value, maxCachedRequestBodySize);
+                contentBytes = null;
+            }
+            else
+            {
+                contentBytes = await ReadContentBytesAsync(request.Content, cancellationToken).ConfigureAwait(false);
+
+                // 兜底：Content-Length 缺失或不可靠时，读取后再按实际长度校验一次
+                if (contentBytes.Length > maxCachedRequestBodySize)
+                {
+                    _logger.LogWarning("请求体大小 {ActualSize} 字节超过缓存阈值 {MaxSize} 字节，跳过缓存以避免 OOM 风险。401 重试将无法携带原始请求体。", contentBytes.Length, maxCachedRequestBodySize);
+                    contentBytes = null;
+                }
+            }
         }
 
         var response = await sendFunc(request, cancellationToken).ConfigureAwait(false);
@@ -127,9 +142,23 @@ public class TokenRecoveryExecutor
 
         var recoveryContext = GetRecoveryContext(request);
         var isUserTokenRecovery = recoveryContext != null && !string.IsNullOrEmpty(recoveryContext.UserId);
-        var tokenManagerKey = isUserTokenRecovery
-            ? _userTokenManager?.GetType().Name
-            : _tokenManager.GetType().Name;
+
+        // P2.5（TK-07）：优先使用请求上下文中显式写入的 TokenManagerKey 作为管理器定位键与可观测性维度；
+        // 未显式指定时回退到注入管理器类型的短名推断（保持旧行为）。
+        var tokenManagerKey = !string.IsNullOrEmpty(recoveryContext?.TokenManagerKey)
+            ? recoveryContext!.TokenManagerKey
+            : (isUserTokenRecovery
+                ? _userTokenManager?.GetType().Name
+                : _tokenManager.GetType().Name);
+
+        // P1.4（TK-06）fail-fast：用户级令牌恢复但未配置用户令牌管理器时，
+        // 不得静默回退到租户令牌（会造成凭据错配），直接返回 401。
+        if (isUserTokenRecovery && _userTokenManager == null)
+        {
+            MudHttpClientLog.UserTokenRefreshFailed(_logger, recoveryContext!.UserId!,
+                new InvalidOperationException("请求需要用户级令牌恢复，但未注册用户令牌管理器（IUserTokenManager）。"));
+            return CreateUnauthorizedResponse(request);
+        }
 
         // 创建令牌恢复子 Activity（mud.token.recovery）
         var recoveryActivity = MudHttpActivitySource.Instance.HasListeners()
@@ -145,7 +174,8 @@ public class TokenRecoveryExecutor
         {
             for (var retry = 0; retry < _options.RecoveryMaxRetries; retry++)
             {
-                MudHttpClientLog.TokenRecoveryAttempting(_logger, retry + 1, _options.RecoveryMaxRetries, request.Method.Method, request.RequestUri?.ToString());
+                // P1.4（TK-03）URI 脱敏：防止 Path/Query 注入模式令牌随日志泄漏
+                MudHttpClientLog.TokenRecoveryAttempting(_logger, retry + 1, _options.RecoveryMaxRetries, request.Method.Method, SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()));
 
                 string? newToken = null;
 
@@ -181,6 +211,16 @@ public class TokenRecoveryExecutor
                 }
 
                 var retryRequest = BuildRetryRequest(request, contentBytes, recoveryContext);
+
+                // P1.4（TK-~redirect）跨主机校验：重试请求 host 与原始请求 host 不一致说明发生了
+                // 重定向到不受信任的地址，放弃恢复，避免将令牌外发到第三方主机。此分支不计数重试。
+                if (!IsSameHost(request.RequestUri, retryRequest.RequestUri))
+                {
+                    MudHttpClientLog.TokenRecoveryHostMismatch(_logger, retryRequest.RequestUri?.Host, request.RequestUri?.Host);
+                    if (retryRequest != request) retryRequest.Dispose();
+                    return CreateUnauthorizedResponse(request);
+                }
+
                 if (!ApplyTokenToRequest(retryRequest, newToken, recoveryContext))
                 {
                     MudHttpClientLog.TokenInjectionUnsupported(_logger, recoveryContext?.InjectionMode.ToString() ?? "default");
@@ -200,7 +240,8 @@ public class TokenRecoveryExecutor
                 retryResponse.Dispose();
             }
 
-            MudHttpClientLog.TokenRecoveryExhausted(_logger, _options.RecoveryMaxRetries, request.Method.Method, request.RequestUri?.ToString());
+            // P1.4（TK-03）URI 脱敏
+            MudHttpClientLog.TokenRecoveryExhausted(_logger, _options.RecoveryMaxRetries, request.Method.Method, SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()));
 
             return CreateUnauthorizedResponse(request);
         }
@@ -421,6 +462,11 @@ public class TokenRecoveryExecutor
     /// <summary>
     /// 执行令牌刷新，使用 ConcurrentDictionary 去重，确保同一时间窗口内多个 401 只触发一次刷新。
     /// </summary>
+    /// <remarks>
+    /// P1.4（TK-15）取消隔离：持有刷新权的线程使用与等待者无关的超时令牌
+    /// （<see cref="TokenRecoveryOptions.RefreshTimeoutSeconds"/> 兜底，默认 30s），单调用方取消不会中断
+    /// 共享刷新；等待线程仅使用自身的取消令牌等待结果，互不影响。
+    /// </remarks>
     private async Task<string?> RefreshTokenWithDedupAsync(CancellationToken cancellationToken)
     {
         while (true)
@@ -433,17 +479,7 @@ public class TokenRecoveryExecutor
                 // 当前线程赢得了刷新权
                 try
                 {
-                    // 保持原有行为：InvalidateTokenAsync 失败仅记录日志，不阻止后续刷新
-                    try
-                    {
-                        await _tokenManager.InvalidateTokenAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
-                    }
-                    catch (Exception invalidateEx)
-                    {
-                        MudHttpClientLog.TokenInvalidationFailed(_logger, invalidateEx);
-                    }
-
-                    var token = await _tokenManager.GetOrRefreshTokenAsync(cancellationToken).ConfigureAwait(false);
+                    var token = await RefreshCredentialWithIsolationAsync().ConfigureAwait(false);
                     tcs.SetResult(token);
                     return token;
                 }
@@ -460,10 +496,10 @@ public class TokenRecoveryExecutor
             }
             else
             {
-                // 另一个线程正在刷新，等待其结果
+                // 另一个线程正在刷新，等待其结果（等待线程仅受自身 CT 约束，不影响共享刷新）
                 try
                 {
-                    var token = await existing.ConfigureAwait(false);
+                    var token = await WaitForTaskAsync(existing, cancellationToken).ConfigureAwait(false);
 
                     // 验证获取到的令牌是否有效（可能在等待期间令牌又被另一个 401 失效了）
                     if (!string.IsNullOrEmpty(token))
@@ -485,8 +521,33 @@ public class TokenRecoveryExecutor
     }
 
     /// <summary>
+    /// 以取消隔离方式执行租户令牌刷新：刷新操作自身不受调用方 CT 影响，仅受"刷新超时"约束。
+    /// 保持原有行为：InvalidateTokenAsync 失败仅记录日志，不阻止后续刷新。
+    /// </summary>
+    private async Task<string?> RefreshCredentialWithIsolationAsync()
+    {
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(_options.RefreshTimeoutSeconds));
+        var refreshCt = timeoutCts.Token;
+
+        try
+        {
+            await _tokenManager.InvalidateTokenAsync(cancellationToken: refreshCt).ConfigureAwait(false);
+        }
+        catch (Exception invalidateEx)
+        {
+            MudHttpClientLog.TokenInvalidationFailed(_logger, invalidateEx);
+        }
+
+        return await _tokenManager.GetOrRefreshTokenAsync(refreshCt).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// 执行用户令牌刷新，使用 ConcurrentDictionary 按 userId 去重。
     /// </summary>
+    /// <remarks>
+    /// P1.4（TK-15）取消隔离：持有刷新权的线程使用与等待者无关的超时令牌，单调用方取消不会中断
+    /// 共享刷新；等待线程仅使用自身的取消令牌等待结果，互不影响。
+    /// </remarks>
     private async Task<string?> RefreshUserTokenWithDedupAsync(string userId, CancellationToken cancellationToken)
     {
         while (true)
@@ -498,17 +559,7 @@ public class TokenRecoveryExecutor
             {
                 try
                 {
-                    // 保持原有行为：RemoveTokenAsync 失败仅记录日志，不阻止后续刷新
-                    try
-                    {
-                        await _userTokenManager!.RemoveTokenAsync(userId, cancellationToken).ConfigureAwait(false);
-                    }
-                    catch (Exception removeEx)
-                    {
-                        MudHttpClientLog.UserTokenRemovalFailed(_logger, userId, removeEx);
-                    }
-
-                    var token = await _userTokenManager.GetOrRefreshTokenAsync(userId, cancellationToken).ConfigureAwait(false);
+                    var token = await RefreshUserTokenWithIsolationAsync(userId).ConfigureAwait(false);
                     tcs.SetResult(token);
                     return token;
                 }
@@ -526,7 +577,7 @@ public class TokenRecoveryExecutor
             {
                 try
                 {
-                    var token = await existing.ConfigureAwait(false);
+                    var token = await WaitForTaskAsync(existing, cancellationToken).ConfigureAwait(false);
                     if (!string.IsNullOrEmpty(token))
                         return token;
                     _userRefreshTasks.TryRemove(userId, out _);
@@ -540,6 +591,29 @@ public class TokenRecoveryExecutor
         }
     }
 
+    /// <summary>
+    /// 以取消隔离方式执行用户令牌刷新：刷新操作自身不受调用方 CT 影响，仅受"刷新超时"约束。
+    /// 保持原有行为：RemoveTokenAsync 失败仅记录日志，不阻止后续刷新。
+    /// </summary>
+    private async Task<string?> RefreshUserTokenWithIsolationAsync(string userId)
+    {
+        // 调用方 RefreshUserTokenWithDedupAsync 已保证 _userTokenManager 非空
+        var userTokenManager = _userTokenManager!;
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(_options.RefreshTimeoutSeconds));
+        var refreshCt = timeoutCts.Token;
+
+        try
+        {
+            await userTokenManager.RemoveTokenAsync(userId, refreshCt).ConfigureAwait(false);
+        }
+        catch (Exception removeEx)
+        {
+            MudHttpClientLog.UserTokenRemovalFailed(_logger, userId, removeEx);
+        }
+
+        return await userTokenManager.GetOrRefreshTokenAsync(userId, refreshCt).ConfigureAwait(false);
+    }
+
     private static HttpResponseMessage CreateUnauthorizedResponse(HttpRequestMessage request)
     {
         return new HttpResponseMessage(HttpStatusCode.Unauthorized)
@@ -547,6 +621,40 @@ public class TokenRecoveryExecutor
             RequestMessage = request,
             Content = new StringContent("令牌刷新失败，无法恢复请求")
         };
+    }
+
+    /// <summary>
+    /// P1.4（TK-~redirect）跨主机校验：比较原始请求与重试请求的 scheme + host + port 是否一致。
+    /// 不一致说明发生了重定向到不受信任的地址，恢复流程应放弃，避免把刷新令牌注入到第三方主机。
+    /// 任一 URI 为 null 时不认为相同。
+    /// </summary>
+    private static bool IsSameHost(Uri? original, Uri? retry)
+    {
+        if (original == null || retry == null)
+            return original == null && retry == null;
+
+        return string.Equals(original.Scheme, retry.Scheme, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(original.Host, retry.Host, StringComparison.OrdinalIgnoreCase)
+            && original.Port == retry.Port;
+    }
+
+    /// <summary>
+    /// 尝试等待指定任务，等待线程仅受自身取消令牌约束；
+    /// net5+ 使用 <c>Task.WaitAsync</c>，netstandard2.0 使用 <c>Task.WhenAny</c> + <c>Task.Delay</c> 实现同等效果。
+    /// </summary>
+    private static async Task<T> WaitForTaskAsync<T>(Task<T> task, CancellationToken cancellationToken)
+    {
+#if NETSTANDARD2_0
+        if (task.IsCompleted)
+            return await task.ConfigureAwait(false);
+
+        var completed = await Task.WhenAny(task, Task.Delay(Timeout.Infinite, cancellationToken)).ConfigureAwait(false);
+        if (completed != task)
+            throw new OperationCanceledException(cancellationToken);
+        return await task.ConfigureAwait(false);
+#else
+        return await task.WaitAsync(cancellationToken).ConfigureAwait(false);
+#endif
     }
 
     private static string ReplaceQueryParameter(string? queryString, string paramName, string newValue)

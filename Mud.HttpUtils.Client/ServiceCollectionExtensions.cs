@@ -962,6 +962,46 @@ public static class HttpClientServiceCollectionExtensions
     }
 
     /// <summary>
+    /// P2.9（TK-24）注册令牌管理器为单例生命周期。
+    /// </summary>
+    /// <typeparam name="TManager">令牌管理器实现类型，必须实现 <see cref="ITokenManager"/>（通常也应实现 <see cref="IUserTokenManager"/>）。</typeparam>
+    /// <param name="services">服务集合。</param>
+    /// <param name="lifetime">注册生命周期，默认 <see cref="Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton"/>。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> 为 null 时抛出。</exception>
+    /// <remarks>
+    /// <para>
+    /// 令牌管理器是有状态组件（持有令牌缓存、单飞行锁、后台刷新定时器），其生命周期应与应用一致，
+    /// 否则将破坏跨请求的令牌缓存与 single-flight 互斥。因此本方法默认强制 <see cref="Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton"/>；
+    /// 仅当你有充分理由（且能保证独立作用域内不共享缓存）时才可显式指定 <see cref="Microsoft.Extensions.DependencyInjection.ServiceLifetime.Scoped"/>。
+    /// </para>
+    /// <para>同时注册为 <see cref="ITokenManager"/>；若 <typeparamref name="TManager"/> 实现 <see cref="IUserTokenManager"/>，
+    /// 也会注册为 <see cref="IUserTokenManager"/>，确保按接口注入两处均解析到同一实例。</para>
+    /// </remarks>
+    public static IServiceCollection AddMudHttpTokenManager<
+#if NET6_0_OR_GREATER
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+#endif
+        TManager>(
+        this IServiceCollection services,
+        Microsoft.Extensions.DependencyInjection.ServiceLifetime lifetime = Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton)
+        where TManager : class, ITokenManager
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        // 令牌管理器必须有状态，默认强制 Singleton。仅显式选择 Scoped/Transient 时按请求生命周期注册。
+        if (typeof(IUserTokenManager).IsAssignableFrom(typeof(TManager)))
+        {
+            services.Add(new Microsoft.Extensions.DependencyInjection.ServiceDescriptor(typeof(IUserTokenManager), typeof(TManager), lifetime));
+        }
+        services.Add(new Microsoft.Extensions.DependencyInjection.ServiceDescriptor(typeof(ITokenManager), typeof(TManager), lifetime));
+        services.Add(new Microsoft.Extensions.DependencyInjection.ServiceDescriptor(typeof(TManager), typeof(TManager), lifetime));
+
+        return services;
+    }
+
+    /// <summary>
     /// 从 IConfiguration 绑定令牌恢复配置。
     /// </summary>
     /// <param name="services">服务集合。</param>

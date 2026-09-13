@@ -37,6 +37,21 @@ public class OAuth2Options
     public string? ClientSecretProviderName { get; set; }
 
     /// <summary>
+    /// P1.8（TK-13）客户端密钥缓存的 TTL（秒），默认 300。
+    /// 用于控制从 <see cref="ISecretProvider"/> 解析得到的密钥在内存中的缓存时长，
+    /// 以便密钥轮换后能在 TTL 过期后被重新解析。
+    /// <para>设为 0 表示不缓存（每次刷新都重新解析密钥）。</para>
+    /// <para>当 <see cref="ClientSecretProviderName"/> 为空（不启用安全提供程序）时，直接返回配置值，不进入缓存路径。</para>
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">设置小于 0 的值时抛出。</exception>
+    public int ClientSecretCacheTtlSeconds
+    {
+        get => _clientSecretCacheTtlSeconds;
+        set => _clientSecretCacheTtlSeconds = value >= 0 ? value : throw new ArgumentOutOfRangeException(nameof(ClientSecretCacheTtlSeconds), "客户端密钥缓存 TTL 不能为负数。");
+    }
+    private int _clientSecretCacheTtlSeconds = 300;
+
+    /// <summary>
     /// 校验配置是否存在互斥冲突：当同时设置 <see cref="ClientSecret"/> 和 <see cref="ClientSecretProviderName"/> 时返回警告消息。
     /// </summary>
     /// <returns>警告消息；如果无冲突则返回 null。</returns>
@@ -85,4 +100,23 @@ public class OAuth2Options
         set => _expirySafetyMarginSeconds = value >= 0 ? value : throw new ArgumentOutOfRangeException(nameof(ExpirySafetyMarginSeconds), "令牌过期安全边际不能为负数。");
     }
     private int _expirySafetyMarginSeconds = 60;
+
+    /// <summary>
+    /// P2.9（TK-22）安全的调试字符串：对 <see cref="ClientSecret"/> 做脱敏（保留前缀 + 长度），
+    /// 防止结构化日志或配置转储中泄漏明文客户端密钥。
+    /// </summary>
+    public override string ToString()
+        => $"OAuth2Options{{ ClientId={ClientId}, ClientSecret={RedactSecret(ClientSecret)}, " +
+           $"ClientSecretProviderName={(string.IsNullOrEmpty(ClientSecretProviderName) ? "(none)" : ClientSecretProviderName)}, " +
+           $"ClientSecretCacheTtlSeconds={ClientSecretCacheTtlSeconds}, TokenEndpoint={TokenEndpoint}, " +
+           $"RevocationEndpoint={RevocationEndpoint}, IntrospectionEndpoint={IntrospectionEndpoint}, " +
+           $"RequireHttps={RequireHttps}, ExpirySafetyMarginSeconds={ExpirySafetyMarginSeconds} }}";
+
+    private static string RedactSecret(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return "<null>";
+        var prefix = value.Length > 4 ? value.Substring(0, 4) : value;
+        return prefix + "***(" + value.Length + ")";
+    }
 }

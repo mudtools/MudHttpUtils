@@ -330,6 +330,54 @@ public class TokenManagerBaseTests
             => throw new InvalidOperationException("Token refresh failed");
     }
 
+    [Fact]
+    public async Task TtlAwareThreshold_ShortTtlToken_ShouldNotRefreshOnEveryCall()
+    {
+        // P2.4（TK-04）：短 TTL 令牌（TTL=200s < 默认阈值 300s）若不钳位阈值，
+        // expire - 300 <= now 立即成立 → 每次调用都刷新。TTL 感知阈值有效= min(300, 100)=100s。
+        var manager = new ShortTtlTokenManager(ttlSeconds: 200);
+
+        var token1 = await manager.GetOrRefreshTokenAsync();
+        var token2 = await manager.GetOrRefreshTokenAsync();
+
+        token1.Should().Be("short-ttl-token");
+        token2.Should().Be("short-ttl-token");
+        manager.RefreshCount.Should().Be(0, "短 TTL 令牌在 TTL 感知阈值下不应被提前判定为过期而刷新");
+    }
+
+    private class ShortTtlTokenManager : TokenManagerBase
+    {
+        private readonly int _ttlSeconds;
+
+        public int RefreshCount { get; private set; }
+
+        public ShortTtlTokenManager(int ttlSeconds)
+        {
+            _ttlSeconds = ttlSeconds;
+            var now = DateTimeOffset.UtcNow;
+            UpdateScopedToken(DefaultScopeKey, new CredentialToken
+            {
+                AccessToken = "short-ttl-token",
+                IssuedAt = now.ToUnixTimeMilliseconds(),
+                Expire = now.AddSeconds(ttlSeconds).ToUnixTimeMilliseconds()
+            });
+        }
+
+        public override Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
+            => GetOrRefreshTokenAsync(cancellationToken);
+
+        protected override Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
+        {
+            RefreshCount++;
+            return Task.FromResult(new CredentialToken
+            {
+                AccessToken = "short-ttl-token",
+                IssuedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                Expire = DateTimeOffset.UtcNow.AddSeconds(_ttlSeconds).ToUnixTimeMilliseconds()
+            });
+        }
+    }
+
     private class ScopedTokenManager : TokenManagerBase
     {
         public int RefreshCount { get; private set; }

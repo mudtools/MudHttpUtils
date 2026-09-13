@@ -5,14 +5,51 @@ namespace Mud.HttpUtils;
 
 internal static class TokenRefreshHelper
 {
+    /// <summary>
+    /// 刷新所有已注册的令牌管理器，返回是否应继续后台刷新调度。
+    /// </summary>
+    /// <remarks>
+    /// P1.6（TK-10）：<see cref="TokenRefreshBackgroundOptions.StopOnError"/> 为 <c>true</c> 时任一管理器刷新失败即
+    /// 返回 <c>false</c>（停止调度）；为 <c>false</c> 时记录错误并继续，返回 <c>true</c>。
+    /// 本重载为单次调用的简便形式（内部使用临时状态），供无需跨调度周期保留"连续失败计数"的调用方使用。
+    /// </remarks>
     public static async Task<bool> RefreshAllTokenManagersAsync(
         ConcurrentDictionary<string, ITokenManager> tokenManagers,
         ILogger logger,
         TokenRefreshBackgroundOptions options,
         CancellationToken cancellationToken)
     {
+        var state = new TokenRefreshLoopState();
+        return await RefreshAllTokenManagersAsync(tokenManagers, logger, options, cancellationToken, state).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 刷新所有已注册的令牌管理器，返回是否应继续后台刷新调度。
+    /// </summary>
+    /// <remarks>
+    /// P1.6（TK-10 / TK-10-max）停止语义：
+    /// <list type="bullet">
+    ///   <item><see cref="TokenRefreshBackgroundOptions.StopOnError"/> 为 <c>true</c>：任一管理器失败即停止（返回 <c>false</c>）。</item>
+    ///   <item><see cref="TokenRefreshBackgroundOptions.MaxConsecutiveFailures"/> 大于 0：连续失败达到该阈值即停止（返回 <c>false</c>），
+    ///     与 <see cref="TokenRefreshBackgroundOptions.StopOnError"/> 正交；默认 0 表示不因连续失败次数停止。</item>
+    /// </list>
+    /// <paramref name="state"/> 由调用方跨调度周期保留，用于累计"连续失败的刷新周期数"；
+    /// 当某个周期内所有管理器均成功时自动复位为 0。
+    /// </remarks>
+    public static async Task<bool> RefreshAllTokenManagersAsync(
+        ConcurrentDictionary<string, ITokenManager> tokenManagers,
+        ILogger logger,
+        TokenRefreshBackgroundOptions options,
+        CancellationToken cancellationToken,
+        TokenRefreshLoopState state)
+    {
         if (tokenManagers.IsEmpty)
+        {
+            state.ConsecutiveFailures = 0;
             return true;
+        }
+
+        var cycleHadFailure = false;
 
         foreach (var kvp in tokenManagers)
         {
@@ -33,6 +70,7 @@ internal static class TokenRefreshHelper
             catch (Exception ex)
             {
                 MudHttpClientLog.TokenRefreshFailed(logger, kvp.Key, ex);
+                cycleHadFailure = true;
 
                 if (options.StopOnError)
                 {
@@ -42,6 +80,32 @@ internal static class TokenRefreshHelper
             }
         }
 
+        // 全成功则复位连续失败计数，否则累加
+        if (!cycleHadFailure)
+        {
+            state.ConsecutiveFailures = 0;
+        }
+        else
+        {
+            state.ConsecutiveFailures++;
+        }
+
+        // MaxConsecutiveFailures > 0 且达到阈值：停止调度（与 StopOnError 正交）
+        if (options.MaxConsecutiveFailures > 0 && state.ConsecutiveFailures >= options.MaxConsecutiveFailures)
+        {
+            MudHttpClientLog.TokenRefreshFailedAndStopped(logger, "(max-consecutive-failures)");
+            return false;
+        }
+
         return true;
     }
+}
+
+/// <summary>
+/// 令牌刷新循环的状态，用于跨调度周期保留"连续失败周期数"。
+/// </summary>
+internal sealed class TokenRefreshLoopState
+{
+    /// <summary>连续失败的刷新周期数。</summary>
+    public int ConsecutiveFailures;
 }

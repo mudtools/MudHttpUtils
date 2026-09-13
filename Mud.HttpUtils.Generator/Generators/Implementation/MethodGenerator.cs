@@ -740,7 +740,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
             // ApiKey 模式或自定义 Header 名称仍使用 Headers.Add 直接注入原始令牌值。
             if (IsTokenHeaderMode(methodInfo) && headerName.Equals("Authorization", StringComparison.OrdinalIgnoreCase))
             {
-                codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(\"Bearer\", access_token);");
+                // P2.6（TK-21）：使用令牌方案（Scheme）而非硬编码 "Bearer"。
+                var scheme = StringEscapeHelper.EscapeString(methodInfo.EffectiveTokenScheme);
+                codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(\"{scheme}\", access_token);");
             }
             else
             {
@@ -749,7 +751,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
         }
         else if (IsTokenBasicAuthMode(methodInfo))
         {
-            codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"Authorization\", $\"Basic {{__basicCredentials}}\");");
+            // P2.6（TK-21）：BasicAuth 使用令牌方案（Scheme），默认 "Basic"。
+            var scheme = StringEscapeHelper.EscapeString(methodInfo.EffectiveTokenScheme);
+            codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"Authorization\", $\"{scheme} {{__basicCredentials}}\");");
         }
         else if (IsTokenCookieMode(methodInfo))
         {
@@ -765,6 +769,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
     /// <summary>
     /// 判断是否需要生成 TokenRecoveryContext。
     /// 仅在非默认场景下生成：恢复处理器的 null 回退已覆盖默认 Header+Authorization+Bearer 场景。
+    /// P2.5（TK-07）：当显式指定了 TokenManagerKey 时也必须生成上下文，以便 TokenManagerKey 能
+    /// 携带到恢复执行器，作为管理器定位的查询键与可观测性维度写入。
     /// </summary>
     private bool ShouldGenerateTokenRecoveryContext(GeneratorContext context, MethodAnalysisResult methodInfo)
     {
@@ -774,6 +780,11 @@ internal class MethodGenerator : ICodeFragmentGenerator
         if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModePath ||
             injectionMode == HttpClientGeneratorConstants.TokenInjectionModeHmacSignature)
             return false;
+
+        // 显式指定 TokenManagerKey（方法级或接口级）时生成上下文，使 key 贯通到恢复执行器
+        if (!string.IsNullOrEmpty(methodInfo.MethodTokenManagerKey) ||
+            !string.IsNullOrEmpty(context.Configuration.TokenManagerKey))
+            return true;
 
         // 用户级令牌需要 UserId 才能正确恢复
         if (TokenMethodHelper.MethodRequiresUserId(context, methodInfo))
@@ -804,7 +815,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         // 对所有插入字符串字面量的用户输入进行转义，防止生成代码编译失败
         var escapedHeaderName = StringEscapeHelper.EscapeString(headerName);
         var escapedCookieName = StringEscapeHelper.EscapeString(cookieName);
-        var escapedTokenScheme = StringEscapeHelper.EscapeString(injectionMode == "BasicAuth" ? "Basic" : "Bearer");
+        var escapedTokenScheme = StringEscapeHelper.EscapeString(methodInfo.EffectiveTokenScheme);
 
         var injectionModeValue = injectionMode switch
         {
@@ -817,6 +828,11 @@ internal class MethodGenerator : ICodeFragmentGenerator
             "Cookie" => "TokenInjectionMode.Cookie",
             _ => "TokenInjectionMode.Header"
         };
+
+        // P2.5（TK-07）：将 TokenManagerKey 写入恢复上下文，使恢复执行器能据此定位管理器并标识可观测维度。
+        // GetMethodTokenManagerKey 始终返回非空（含默认回退），因此直接转义后写死；仅当有跟踪值时也保持简单性。
+        var tokenManagerKey = TokenMethodHelper.GetMethodTokenManagerKey(context, methodInfo);
+        var escapedTokenManagerKey = StringEscapeHelper.EscapeString(tokenManagerKey);
 
         // Query 模式需要 QueryParameterName 才能在恢复时重新注入查询参数
         string? queryParamName = null;
@@ -837,6 +853,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine($"{indent}    CookieName = \"{escapedCookieName}\",");
         if (escapedQueryParamName != null)
             codeBuilder.AppendLine($"{indent}    QueryParameterName = \"{escapedQueryParamName}\",");
+        codeBuilder.AppendLine($"{indent}    TokenManagerKey = \"{escapedTokenManagerKey}\",");
         codeBuilder.AppendLine($"{indent}    UserId = {userIdExpr}");
         codeBuilder.AppendLine($"{indent}}};");
         codeBuilder.AppendLine($"{indent}#else");
@@ -848,6 +865,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine($"{indent}    CookieName = \"{escapedCookieName}\",");
         if (escapedQueryParamName != null)
             codeBuilder.AppendLine($"{indent}    QueryParameterName = \"{escapedQueryParamName}\",");
+        codeBuilder.AppendLine($"{indent}    TokenManagerKey = \"{escapedTokenManagerKey}\",");
         codeBuilder.AppendLine($"{indent}    UserId = {userIdExpr}");
         codeBuilder.AppendLine($"{indent}}});");
         codeBuilder.AppendLine($"{indent}#endif");

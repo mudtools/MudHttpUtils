@@ -16,7 +16,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     private readonly OAuth2Options _options;
     private readonly ILogger _logger;
     private readonly ISecretProvider? _secretProvider;
-    private readonly Lazy<Task<string?>> _clientSecretLazy;
+    private readonly ClientSecretCache _clientSecretCache; // P1.8（TK-13）TTL 缓存，密钥轮换可被拾取、工厂故障不缓存
     private readonly IHttpContentSerializer _contentSerializer;
 
     private static readonly JsonSerializerOptions s_jsonOptions = new()
@@ -48,7 +48,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         _logger = logger ?? NullLogger<StandardOAuth2TokenManager>.Instance;
         _secretProvider = secretProvider;
         _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
-        _clientSecretLazy = new Lazy<Task<string?>>(ResolveClientSecretAsync, LazyThreadSafetyMode.ExecutionAndPublication);
+        _clientSecretCache = new ClientSecretCache(TimeSpan.FromSeconds(_options.ClientSecretCacheTtlSeconds));
     }
 
     /// <summary>
@@ -74,11 +74,16 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     }
 
     /// <summary>
-    /// 获取有效的 ClientSecret，优先从 ISecretProvider 获取，回退到配置值。
+    /// P1.8（TK-13）获取有效的 ClientSecret。
+    /// 未启用安全提供程序（<see cref="OAuth2Options.ClientSecretProviderName"/> 为空）时直接返回配置值，不进入缓存路径；
+    /// 启用时经 <see cref="ClientSecretCache"/> 按 TTL 缓存解析结果，密钥轮换后 TTL 过期即被重新解析，且解析失败不缓存。
     /// </summary>
     private Task<string?> GetClientSecretAsync(CancellationToken cancellationToken = default)
     {
-        return _clientSecretLazy.Value;
+        if (_secretProvider == null || string.IsNullOrEmpty(_options.ClientSecretProviderName))
+            return Task.FromResult<string?>(_options.ClientSecret);
+
+        return _clientSecretCache.GetAsync(ResolveClientSecretAsync, cancellationToken);
     }
 
     /// <summary>
@@ -256,9 +261,8 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 
     /// <inheritdoc/>
     /// <remarks>
-    /// TM-03 修复：移除 UpdateScopedToken 调用。此方法仅由 <see cref="TokenManagerBase.GetOrRefreshTokenAsync"/> 通过
-    /// <see cref="TokenManagerBase.RefreshTokenWithRetryCoreAsync"/> 调用，调用方在第 148 行已统一执行 <c>UpdateToken(scopeKey, token)</c>。
-    /// 此前的双重写入导致 <c>MaxCacheLifetimeSeconds</c> 截断逻辑执行两次，且首次写入时未被截断的过大 Expire 值存在短暂缓存窗口。
+    /// P1.2（TK-02）缓存写入统一由 <see cref="TokenManagerBase"/> 的 <c>GetOrRefreshTokenAsync</c> 在 scope 锁内完成；
+    /// 本方法仅负责刷新并返回新令牌，不自行写缓存。
     /// </remarks>
     protected override async Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
     {
@@ -276,16 +280,28 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 
     /// <inheritdoc/>
     /// <remarks>
-    /// TM-03 修复：同 <see cref="RefreshTokenCoreAsync"/>，移除冗余的 UpdateScopedToken 调用。
+    /// P1.2（TK-02）同 <see cref="RefreshTokenCoreAsync"/>，不自行写缓存。
+    /// P2.3（TK-02）按 scopeKey 隔离刷新链路：优先读取该作用域的缓存 refresh_token，
+    /// 缺失时回退默认作用域（兼容"统一刷新令牌"的服务端），最后才走 client_credentials。
     /// </remarks>
     protected override async Task<CredentialToken> RefreshTokenWithScopesAsync(string[]? scopes, CancellationToken cancellationToken)
     {
-        var currentToken = GetCachedCredentialToken();
+        var scopeKey = GetScopeKey(scopes);
+        var scopedToken = GetCachedCredentialToken(scopeKey);
 
-        if (currentToken?.RefreshToken != null)
+        // 优先使用当前作用域自己缓存的 refresh_token
+        if (scopedToken?.RefreshToken != null)
         {
             return await RefreshTokenByRefreshTokenAsync(
-                currentToken.RefreshToken, cancellationToken).ConfigureAwait(false);
+                scopedToken.RefreshToken, cancellationToken).ConfigureAwait(false);
+        }
+
+        // 回退默认作用域（"统一刷新令牌"服务端场景）
+        var defaultToken = GetCachedCredentialToken(DefaultScopeKey);
+        if (defaultToken?.RefreshToken != null)
+        {
+            return await RefreshTokenByRefreshTokenAsync(
+                defaultToken.RefreshToken, cancellationToken).ConfigureAwait(false);
         }
 
         return await GetTokenByClientCredentialsAsync(scopes, cancellationToken)
@@ -366,11 +382,16 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         {
             AccessToken = tokenResponse.AccessToken ?? string.Empty,
             RefreshToken = tokenResponse.RefreshToken,
+            // P2.4（TK-04）记录签发时间，供 TTL 感知阈值的有效提前量钳位
+            IssuedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             Expire = CalculateExpire(tokenResponse.ExpiresIn)
         };
 
-        UpdateScopedToken(DefaultScopeKey, newToken);
-
+        // P1.2（TK-02）删除跨锁写入默认作用域。
+        // 缓存写入统一由 TokenManagerBase.GetOrRefreshTokenAsync 在获取 scope 锁后，
+        // 通过 UpdateToken(scopeKey, token) 完成；此处若再写 DefaultScopeKey，
+        // 会：(1) 在 scope 锁之外无保护地写入默认作用域，破坏作用域隔离；(2) 触发 MaxCacheLifetimeSeconds 截断逻辑重复执行，
+        // 造成先写入未截断的过大 Expire 又有短暂缓存窗口。返回新令牌交给调用方统一缓存即可。
         return newToken;
     }
 

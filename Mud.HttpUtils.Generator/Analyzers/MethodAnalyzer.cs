@@ -78,7 +78,7 @@ internal static class MethodAnalyzer
             interfaceAttrs = cachedInterfaceAttributes;
         }
 
-        var (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName, interfaceTokenScopes) = AnalyzeInterfaceAttributes(interfaceAttrs);
+        var (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName, interfaceTokenScopes, interfaceTokenScheme) = AnalyzeInterfaceAttributes(interfaceAttrs);
 
         var (cacheEnabled, cacheDurationSeconds, cacheKeyTemplate, cacheVaryByUser, cacheUseSlidingExpiration) = AnalyzeCacheAttribute(methodAttributes);
 
@@ -88,7 +88,7 @@ internal static class MethodAnalyzer
 
         var methodTokenScopes = AnalyzeMethodTokenScopes(methodAttributes);
 
-        var (methodTokenManagerKey, methodRequiresUserId, methodTokenInjectionMode) = AnalyzeMethodTokenExtended(methodAttributes);
+        var (methodTokenManagerKey, methodRequiresUserId, methodTokenInjectionMode, methodTokenScheme) = AnalyzeMethodTokenExtended(methodAttributes);
 
         var tokenParameterName = parameters
             .FirstOrDefault(p => p.Attributes.Any(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.Name)))?
@@ -129,8 +129,10 @@ internal static class MethodAnalyzer
             InterfaceTokenInjectionMode = interfaceTokenInjectionMode,
             InterfaceTokenName = interfaceTokenName,
             InterfaceTokenScopes = interfaceTokenScopes,
+            InterfaceTokenScheme = interfaceTokenScheme,
             MethodTokenScopes = methodTokenScopes,
             MethodTokenInjectionMode = methodTokenInjectionMode,
+            MethodTokenScheme = methodTokenScheme,
             TokenParameterName = tokenParameterName,
             MethodTokenManagerKey = methodTokenManagerKey,
             MethodRequiresUserId = methodRequiresUserId,
@@ -961,7 +963,7 @@ internal static class MethodAnalyzer
     /// <summary>
     /// 分析接口特性
     /// </summary>
-    private static (HashSet<string> interfaceAttributes, List<InterfaceHeaderAttributeInfo> interfaceHeaderAttributes, string? interfaceTokenInjectionMode, string? interfaceTokenName, string? interfaceTokenScopes)
+    private static (HashSet<string> interfaceAttributes, List<InterfaceHeaderAttributeInfo> interfaceHeaderAttributes, string? interfaceTokenInjectionMode, string? interfaceTokenName, string? interfaceTokenScopes, string? interfaceTokenScheme)
         AnalyzeInterfaceAttributes(ImmutableArray<AttributeData> interfaceAttrs)
     {
         var interfaceAttributes = new HashSet<string>();
@@ -969,6 +971,7 @@ internal static class MethodAnalyzer
         string? interfaceTokenInjectionMode = null;
         string? interfaceTokenName = null;
         string? interfaceTokenScopes = null;
+        string? interfaceTokenScheme = null;
 
         if (!interfaceAttrs.IsDefault)
         {
@@ -1015,17 +1018,20 @@ internal static class MethodAnalyzer
                 var injectionMode = GetTokenInjectionMode(tokenAttr);
                 var tokenName = GetTokenName(tokenAttr);
                 var tokenScopes = GetTokenScopes(tokenAttr);
+                var tokenScheme = GetTokenScheme(tokenAttr);
                 if (!string.IsNullOrEmpty(injectionMode))
                 {
                     interfaceTokenInjectionMode = injectionMode;
                     interfaceTokenName = tokenName;
                     interfaceTokenScopes = tokenScopes;
+                    if (!string.IsNullOrEmpty(tokenScheme))
+                        interfaceTokenScheme = tokenScheme;
                     interfaceAttributes.Add($"Token:{injectionMode}:{tokenName}");
                 }
             }
         }
 
-        return (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName, interfaceTokenScopes);
+        return (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName, interfaceTokenScopes, interfaceTokenScheme);
     }
 
     /// <summary>
@@ -1087,6 +1093,25 @@ internal static class MethodAnalyzer
     }
 
     /// <summary>
+    /// 获取Token特性的 Scheme（认证方案）值
+    /// </summary>
+    private static string? GetTokenScheme(AttributeData tokenAttr)
+    {
+        if (tokenAttr == null)
+            return null;
+
+        foreach (var namedArg in tokenAttr.NamedArguments)
+        {
+            if (namedArg.Key == "Scheme")
+            {
+                return namedArg.Value.Value?.ToString();
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// 获取Header特性的名称
     /// </summary>
     private static string GetHeaderName(AttributeData headerAttr)
@@ -1108,13 +1133,13 @@ internal static class MethodAnalyzer
     /// <summary>
     /// 从已缓存的特性列表中分析方法级别 Token 特性的 TokenManagerKey 和 RequiresUserId
     /// </summary>
-    private static (string? tokenManagerKey, bool? requiresUserId, string? injectionMode) AnalyzeMethodTokenExtended(ImmutableArray<AttributeData> attributes)
+    private static (string? tokenManagerKey, bool? requiresUserId, string? injectionMode, string? scheme) AnalyzeMethodTokenExtended(ImmutableArray<AttributeData> attributes)
     {
         var tokenAttr = attributes
             .FirstOrDefault(attr => HasAttributeWithName(attr, "TokenAttribute"));
 
         if (tokenAttr == null)
-            return (null, null, null);
+            return (null, null, null, null);
 
         var tokenManagerKey = TokenHelper.GetTokenManagerKeyFromAttribute(tokenAttr);
         var requiresUserIdValue = tokenAttr.NamedArguments
@@ -1122,8 +1147,9 @@ internal static class MethodAnalyzer
 
         bool? requiresUserId = requiresUserIdValue is bool b ? b : (bool?)null;
         var injectionMode = GetTokenInjectionMode(tokenAttr);
+        var scheme = GetTokenScheme(tokenAttr);
 
-        return (tokenManagerKey, requiresUserId, injectionMode);
+        return (tokenManagerKey, requiresUserId, injectionMode, scheme);
     }
 
     /// <summary>

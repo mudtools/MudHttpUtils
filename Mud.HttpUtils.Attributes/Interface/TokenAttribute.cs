@@ -86,6 +86,17 @@ public sealed class TokenAttribute(string tokenType = TokenTypes.AccessToken) : 
     public string? TokenManagerKey { get; set; } = tokenType;
 
     /// <summary>
+    /// 获取或设置令牌注入时使用的认证方案（Scheme），仅 Header/Authorization 注入模式使用。
+    /// 例如 "Bearer"、"Basic" 或自定义方案。
+    /// </summary>
+    /// <remarks>
+    /// <para>P2.6（TK-21）新增：此前生成器与恢复执行器均硬编码 "Bearer"/"Basic"。指定此值后，
+    /// 生成令牌注入代码与 <see cref="Mud.HttpUtils.TokenRecoveryContext.TokenScheme"/> 将采用此方案。
+    /// 留空时按注入模式回退：BasicAuth 模式默认 "Basic"，其余默认 "Bearer"。</para>
+    /// </remarks>
+    public string? Scheme { get; set; }
+
+    /// <summary>
     /// 获取或设置一个值，该值指示此令牌是否需要用户 ID。
     /// </summary>
     /// <remarks>

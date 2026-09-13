@@ -115,6 +115,68 @@ public class TokenRecoveryConcurrencyTests
         refreshCallCount.Should().BeLessThan(5);
     }
 
+    /// <summary>
+    /// P1.4（TK-15）取消隔离：当一个调用方在刷新进行中取消其请求时，
+    /// 不应中断共享的令牌刷新流程；其它等待同一刷新结果的调用方仍应成功。
+    /// </summary>
+    [Fact]
+    public async Task Recovery_WaiterCancellation_ShouldNotCancelSharedRefresh()
+    {
+        var refreshCallCount = 0;
+        var refreshStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var refreshContinue = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var mockTokenManager = new Mock<ITokenManager>();
+        mockTokenManager
+            .Setup(m => m.InvalidateTokenAsync(It.IsAny<string[]>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(TokenResult.Empty);
+        mockTokenManager
+            .Setup(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                Interlocked.Increment(ref refreshCallCount);
+                refreshStarted.TrySetResult(true);
+                // 挂起刷新，模拟远端慢响应，扩大去重窗口
+                await refreshContinue.Task.ConfigureAwait(false);
+                return "new-token";
+            });
+
+        // 前两次请求返回 401，之后的恢复重试返回 200
+        var requestCount = 0;
+
+        var handler = new TokenRecoveryDelegatingHandler(mockTokenManager.Object);
+        handler.InnerHandler = new FakeHttpMessageHandler(_ =>
+        {
+            var n = Interlocked.Increment(ref requestCount);
+            if (n <= 2)
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("ok") };
+        });
+        var invoker = new HttpMessageInvoker(handler);
+
+        // 两个调用方并发发起请求
+        using var ctsA = new CancellationTokenSource();
+        invoker.SendAsync(CreateRequest(), ctsA.Token);
+        var taskB = invoker.SendAsync(CreateRequest(), CancellationToken.None);
+
+        // 等待刷新真正开始（只有一个线程赢得刷新权）
+        await refreshStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.Delay(50).ConfigureAwait(false);
+
+        // 调用方 A 在刷新进行中取消
+        ctsA.Cancel();
+
+        // 释放刷新完成信号
+        refreshContinue.SetResult(true);
+
+        // 调用方 B 应正常成功（其等待不被 A 的取消影响）
+        var responseB = await taskB.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+        responseB.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // 调用方 A 的请求因取消而失败，但共享刷新只发生了一次
+        refreshCallCount.Should().Be(1);
+    }
+
     private sealed class FakeHttpMessageHandler : HttpMessageHandler
     {
         private readonly Func<HttpRequestMessage, HttpResponseMessage> _handler;
