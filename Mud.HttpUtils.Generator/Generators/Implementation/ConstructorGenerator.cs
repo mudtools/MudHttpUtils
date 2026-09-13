@@ -392,30 +392,35 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     /// </summary>
     private void GenerateConstructorSignature(StringBuilder codeBuilder, string className)
     {
-        var parameters = new List<string>();
+        // [F15 修复] C# 要求「可选参数必须出现在所有必需参数之后」（CS1737）。
+        // 原实现把可选的 appManager = null 放在必需 cacheProvider/resilienceResolver 之前，
+        // 当接口声明 [Cache]/[Retry] 等特性时产出不可编译的构造函数（快照固化了非法代码）。
+        // 修复：先收集必需参数，再收集可选参数，最后拼接。
+        var requiredParameters = new List<string>();
+        var optionalParameters = new List<string>();
 
         if (_context.HasTokenManager)
         {
-            parameters.Add($"{_context.Configuration.TokenManagerType} appManager");
-            parameters.Add("IAppContextHolder appContextHolder");
-            parameters.Add("ITokenProvider tokenProvider");
+            requiredParameters.Add($"{_context.Configuration.TokenManagerType} appManager");
+            requiredParameters.Add("IAppContextHolder appContextHolder");
+            requiredParameters.Add("ITokenProvider tokenProvider");
             if (_context.Configuration.AnyMethodRequiresUserId)
             {
-                parameters.Add("ICurrentUserContext currentUserContext");
+                requiredParameters.Add("ICurrentUserContext currentUserContext");
             }
-            parameters.Add("IHttpRequestExecutor executor");
+            requiredParameters.Add("IHttpRequestExecutor executor");
         }
         else if (_context.HasHttpClient)
         {
-            parameters.Add($"{_context.Configuration.HttpClient} httpClient");
-            parameters.Add("IHttpRequestExecutor executor");
+            requiredParameters.Add($"{_context.Configuration.HttpClient} httpClient");
+            requiredParameters.Add("IHttpRequestExecutor executor");
         }
         else
         {
-            parameters.Add("IMudAppContext appContext");
-            parameters.Add("IAppContextHolder appContextHolder");
-            parameters.Add("IHttpRequestExecutor executor");
-            parameters.Add("IAppManager<IMudAppContext>? appManager = null");
+            requiredParameters.Add("IMudAppContext appContext");
+            requiredParameters.Add("IAppContextHolder appContextHolder");
+            requiredParameters.Add("IHttpRequestExecutor executor");
+            optionalParameters.Add("IAppManager<IMudAppContext>? appManager = null");
         }
 
         // 构造函数需要接受 cacheProvider/resilienceResolver 如果派生类自己需要或基类需要
@@ -424,29 +429,31 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
 
         if (needsCacheParam)
         {
-            parameters.Add("IHttpResponseCache cacheProvider");
+            requiredParameters.Add("IHttpResponseCache cacheProvider");
         }
         else if (!_context.HasInheritedFrom)
         {
             // 所有非继承模式下始终接受可选的 cacheProvider，允许 DI 注入的全局缓存服务传递给执行器
-            parameters.Add("IHttpResponseCache? cacheProvider = null");
+            optionalParameters.Add("IHttpResponseCache? cacheProvider = null");
         }
 
         if (needsResilienceParam)
         {
-            parameters.Add("IResiliencePolicyResolver resilienceResolver");
+            requiredParameters.Add("IResiliencePolicyResolver resilienceResolver");
         }
         else if (!_context.HasInheritedFrom)
         {
             // 所有非继承模式下始终接受可选的 resilienceResolver，允许 DI 注入的全局弹性策略服务传递给执行器
-            parameters.Add("IResiliencePolicyResolver? resilienceResolver = null");
+            optionalParameters.Add("IResiliencePolicyResolver? resilienceResolver = null");
         }
 
         // 在参数列表末尾添加可选的 contentSerializer 和 logger 参数
         // contentSerializer 必须放在所有必需参数之后（C# 要求可选参数在必需参数之后）
         // 继承模式下 contentSerializer 使用命名参数传递给基类构造函数
-        parameters.Add("IHttpContentSerializer? contentSerializer = null");
-        parameters.Add("ILogger? logger = null");
+        optionalParameters.Add("IHttpContentSerializer? contentSerializer = null");
+        optionalParameters.Add("ILogger? logger = null");
+
+        var parameters = requiredParameters.Concat(optionalParameters).ToList();
 
         // T5.4: DynamicDependency 标注，防止 trimmer 在 AOT 下裁剪生成类型及 RestService 成员
         // 该特性仅允许用于构造函数、方法、字段声明，故放在构造函数上而非类声明上

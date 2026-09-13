@@ -78,34 +78,33 @@ public static class BasicReferenceAssemblies
             MetadataReference.CreateFromFile(typeof(Mud.HttpUtils.TokenInjectionMode).Assembly.Location),
         };
 
+        // [M0] 全量运行时框架引用：编译断言需要「输入 + 生成产物」整体可编译（F15）。
+        // 仅靠上述最小引用无法满足 Task<>/Uri 等在 .NET 8 共享框架中的转发定义，
+        // 会令编译断言产生与生成器无关的假阴性。此处按运行时基目录枚举全部托管运行时程序集，
+        // 消除对个别 DLL 名称的依赖（如 System.Private.Uri / System.Threading.Tasks 跨版本变化）。
+        // 用 AssemblyName.GetAssemblyName 鉴别仅含托管元数据的 PE（跳过 Native/资源 DLL）。
         var runtimeDir = Path.GetDirectoryName(typeof(object).Assembly.Location)!;
-        var runtimeAssemblies = new[]
+        if (Directory.Exists(runtimeDir))
         {
-            "System.Runtime.dll",
-            "System.Collections.Concurrent.dll",
-            "System.Threading.dll",
-            "System.Memory.dll",
-            "System.Threading.Tasks.dll",
-            "System.Collections.dll",
-            "System.Linq.dll",
-            "System.Net.Http.dll",
-            "System.Net.Primitives.dll",
-            "System.IO.dll",
-            "System.Text.Json.dll",
-            "System.Private.CoreLib.dll",
-            "netstandard.dll",
-            "System.ObjectModel.dll",
-            "System.ComponentModel.dll",
-            "System.Diagnostics.Debug.dll",
-            "System.Reflection.dll",
-        };
-
-        foreach (var asm in runtimeAssemblies)
-        {
-            var path = Path.Combine(runtimeDir, asm);
-            if (File.Exists(path))
+            var addedPaths = new HashSet<string>(
+                references.Select(r => r.Display),
+                StringComparer.OrdinalIgnoreCase);
+            foreach (var dll in Directory.EnumerateFiles(runtimeDir, "*.dll", SearchOption.TopDirectoryOnly))
             {
-                references.Add(MetadataReference.CreateFromFile(path));
+                if (!addedPaths.Add(dll))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    _ = AssemblyName.GetAssemblyName(dll); // 非托管 PE 或损坏文件会抛 BadImageFormatException
+                    references.Add(MetadataReference.CreateFromFile(dll));
+                }
+                catch
+                {
+                    // 跳过无托管元数据的文件（Native 运行时 / 资源 DLL）
+                }
             }
         }
 

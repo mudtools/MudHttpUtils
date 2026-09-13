@@ -23,9 +23,9 @@ namespace Mud.HttpUtils.Analyzers;
 /// <para>
 /// 检查规则：
 /// <list type="bullet">
-///   <item><b>MUD001</b>：[HttpClientApi] 接口方法缺少 HTTP 方法特性</item>
-///   <item><b>MUD002</b>：[HttpClientApi] 接口方法返回类型不是 Task 或 Task&lt;T&gt;</item>
-///   <item><b>MUD003</b>：[HttpClientApi] 接口方法缺少 [Path] 参数但路由模板含 {placeholder}</item>
+///   <item><b>MUD001</b>：[HttpClientApi] 接口方法缺少 HTTP 方法特性（[IgnoreGenerator] 标记的接口/方法豁免）</item>
+///   <item><b>MUD002</b>：[HttpClientApi] 接口方法返回类型不在生成器支持白名单内
+///        （Task/ValueTask/IAsyncEnumerable/HttpResponseMessage/byte[]/Stream，见 F9）</item>
 /// </list>
 /// </para>
 /// </remarks>
@@ -34,6 +34,8 @@ public class MudHttpInterfaceAnalyzer : DiagnosticAnalyzer
 {
     private const string HttpClientApiAttributeFullName = "Mud.HttpUtils.Attributes.HttpClientApiAttribute";
 
+    private const string IgnoreGeneratorAttributeFullName = "Mud.HttpUtils.Attributes.IgnoreGeneratorAttribute";
+
     // 已知 HTTP 方法特性名
     private static readonly HashSet<string> KnownHttpMethodAttributes = new(StringComparer.Ordinal)
     {
@@ -41,6 +43,47 @@ public class MudHttpInterfaceAnalyzer : DiagnosticAnalyzer
         "Delete", "DeleteAttribute", "Patch", "PatchAttribute",
         "Head", "HeadAttribute", "Options", "OptionsAttribute", "HttpMethod", "HttpMethodAttribute"
     };
+
+    /// <summary>
+    /// [F9 修复] MUD002 白名单：与生成器方法生成分支一一对应。
+    /// <list type="bullet">
+    ///   <item>Task / Task&lt;T&gt; / ValueTask / ValueTask&lt;T&gt;（异步通用）</item>
+    ///   <item>IAsyncEnumerable&lt;T&gt;（MethodGenerator.cs:274-285 流式分支）</item>
+    ///   <item>HttpResponseMessage（MethodGenerator.cs:370-376 直达返回分支）</item>
+    ///   <item>byte[]（MethodGenerator.cs:315-367 下载分支）</item>
+    ///   <item>Stream（响应流分支）</item>
+    /// </list>
+    /// </summary>
+    private static bool IsGeneratorSupportedReturnType(ITypeSymbol returnType)
+    {
+        // Task / ValueTask（含泛型与非泛型）：按命名空间 + 名称 + 元数判定（符号判定，非 StartsWith 字符串比较）。
+        if (returnType is INamedTypeSymbol named)
+        {
+            var fullName = named.OriginalDefinition.ToDisplayString();
+            if (fullName is "System.Threading.Tasks.Task" or "System.Threading.Tasks.Task<TResult>"
+                or "System.Threading.Tasks.ValueTask" or "System.Threading.Tasks.ValueTask<TResult>")
+            {
+                return true;
+            }
+
+            if (named.OriginalDefinition.Name == "IAsyncEnumerable"
+                && named.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic")
+            {
+                return true;
+            }
+        }
+
+        if (returnType is IArrayTypeSymbol arrayType)
+        {
+            // byte[]（MethodGenerator.cs:315-367 下载分支）
+            if (arrayType.ElementType.SpecialType == SpecialType.System_Byte)
+                return true;
+        }
+
+        // HttpResponseMessage / Stream：按命名空间 + 名称判定
+        var returnFullName = returnType.ContainingNamespace?.ToDisplayString() + "." + returnType.Name;
+        return returnFullName is "System.Net.Http.HttpResponseMessage" or "System.IO.Stream";
+    }
 
     public static readonly DiagnosticDescriptor MUD001_MethodMissingHttpMethodAttribute = new(
         id: "MUD001",
@@ -54,11 +97,11 @@ public class MudHttpInterfaceAnalyzer : DiagnosticAnalyzer
     public static readonly DiagnosticDescriptor MUD002_MethodInvalidReturnType = new(
         id: "MUD002",
         title: "HttpClientApi 方法返回类型无效",
-        messageFormat: "方法 '{0}' 返回类型 '{1}' 无效，应为 Task、Task<T>、ValueTask 或 ValueTask<T>",
+        messageFormat: "方法 '{0}' 返回类型 '{1}' 无效，应为 Task、Task<T>、ValueTask、ValueTask<T>、IAsyncEnumerable<T>、HttpResponseMessage、byte[] 或 Stream",
         category: "Mud.HttpUtils.Interface",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "HttpClientApi 接口方法必须返回 Task 或 ValueTask 类型。");
+        description: "HttpClientApi 接口方法必须返回生成器支持的返回类型。");
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics
         => ImmutableArray.Create(MUD001_MethodMissingHttpMethodAttribute, MUD002_MethodInvalidReturnType);
@@ -81,9 +124,17 @@ public class MudHttpInterfaceAnalyzer : DiagnosticAnalyzer
                    || string.Equals(a.AttributeClass?.Name, "HttpClientApi", StringComparison.Ordinal));
         if (!hasHttpClientApi) return;
 
+        // [F9/E-5 修复] 接口级 [IgnoreGenerator]：该接口的全部方法一律跳过（"接口级忽略 = 生成器完全不介入"）。
+        if (interfaceSymbol.GetAttributes().Any(IsIgnoreGeneratorAttribute))
+            return;
+
         foreach (var method in interfaceSymbol.GetMembers().OfType<IMethodSymbol>())
         {
             if (method.MethodKind != MethodKind.Ordinary) continue;
+
+            // [F9/E-5 修复] 方法级 [IgnoreGenerator]：跳过该方法的 MUD001/MUD002。
+            if (method.GetAttributes().Any(IsIgnoreGeneratorAttribute))
+                continue;
 
             // MUD001: 检查 HTTP 方法特性
             var hasHttpMethodAttr = method.GetAttributes()
@@ -100,17 +151,22 @@ public class MudHttpInterfaceAnalyzer : DiagnosticAnalyzer
 
             // MUD002: 检查返回类型
             var returnType = method.ReturnType;
-            var returnTypeName = returnType.ToDisplayString();
-            if (!returnTypeName.StartsWith("System.Threading.Tasks.Task", StringComparison.Ordinal)
-                && !returnTypeName.StartsWith("System.Threading.Tasks.ValueTask", StringComparison.Ordinal))
+            if (!IsGeneratorSupportedReturnType(returnType))
             {
                 var location = method.Locations.FirstOrDefault() ?? interfaceDecl.GetLocation();
                 context.ReportDiagnostic(Diagnostic.Create(
                     MUD002_MethodInvalidReturnType,
                     location,
                     method.Name,
-                    returnTypeName));
+                    returnType.ToDisplayString()));
             }
         }
     }
+
+    /// <summary>
+    /// 获取特性的完全限定名（F9：符号判定而非字符串前缀比较，避免误认用户自定义 Task 等）。
+    /// </summary>
+    private static bool IsIgnoreGeneratorAttribute(AttributeData attribute)
+        => attribute.AttributeClass is { } cls
+           && string.Equals(cls.ToDisplayString(), IgnoreGeneratorAttributeFullName, StringComparison.Ordinal);
 }

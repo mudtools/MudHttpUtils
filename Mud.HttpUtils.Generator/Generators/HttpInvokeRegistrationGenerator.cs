@@ -18,11 +18,14 @@ namespace Mud.HttpUtils;
 [Generator(LanguageNames.CSharp)]
 internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
 {
+    /// <summary>注册代码 namespace 的回退目标（AssemblyName 非法/为空时使用）。</summary>
+    private const string FallbackNamespace = "Microsoft.Extensions.DependencyInjection";
     /// <inheritdoc/>
     protected override void ExecuteGenerator(
         ImmutableArray<InterfaceModel> interfaces,
         SourceProductionContext context,
-        AnalyzerConfigOptionsProvider configOptionsProvider)
+        AnalyzerConfigOptionsProvider configOptionsProvider,
+        string generationSalt)
     {
         if (interfaces.IsDefaultOrEmpty || configOptionsProvider == null)
             return;
@@ -136,11 +139,23 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         var implementationName = TypeSymbolHelper.GetImplementationClassName(interfaceSymbol.Name);
         var namespaceName = SyntaxHelper.GetNamespaceName(interfaceSyntax);
 
+        // [F7 修复] 接口声明在全局命名空间时，无法生成合法的 DI 注册代码（global::.IApi 不合法）。
+        // 明确报错并给出迁移指引，而非静默产出非法 C#。
+        if (string.IsNullOrWhiteSpace(namespaceName))
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.HttpClientRegistrationGenerationError,
+                interfaceSyntax.GetLocation(),
+                interfaceSyntax.Identifier.Text,
+                "接口声明在全局命名空间中，生成器无法为其生成 DI 注册代码。请将接口放入显式命名空间。"));
+            return null;
+        }
+
         // 提取 HttpClient 和 TokenManager 类型信息，用于生成注册提示注释
         var httpClient = AttributeDataHelper.GetStringValueFromAttribute(httpClientApiAttribute, HttpClientGeneratorConstants.HttpClientProperty);
         var tokenManage = AttributeDataHelper.GetStringValueFromAttribute(httpClientApiAttribute, HttpClientGeneratorConstants.TokenManageProperty);
-        // 互斥逻辑：HttpClient 优先，与 InterfaceImplementationGenerator 一致
-        var effectiveTokenManage = !string.IsNullOrEmpty(httpClient) ? null : tokenManage;
+        // 互斥逻辑：HttpClient 优先，与 InterfaceImplementationGenerator 一致（统一 IsNullOrWhiteSpace，F16）。
+        var effectiveTokenManage = !string.IsNullOrWhiteSpace(httpClient) ? null : tokenManage;
         var tokenManagerType = !string.IsNullOrEmpty(effectiveTokenManage)
             ? TypeSymbolHelper.GetTypeAllDisplayString(compilation, effectiveTokenManage!)
             : null;
@@ -184,6 +199,22 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         return codeBuilder.ToString();
     }
 
+    /// <summary>
+    /// [F7] 解析注册代码的命名空间：AssemblyName 参与拼接时，逐段校验合法 C# 标识符。
+    /// 非法/为空时回退到 <see cref="FallbackNamespace"/>，避免产出非法 C#。
+    /// </summary>
+    private static string ResolveRegistrationNamespace(Compilation compilation)
+    {
+        var assemblyName = compilation.AssemblyName;
+        if (string.IsNullOrWhiteSpace(assemblyName))
+            return FallbackNamespace;
+
+        return assemblyName.Split('.')
+            .All(segment => CSharpCodeValidator.IsValidCSharpIdentifier(segment))
+                ? assemblyName
+                : FallbackNamespace;
+    }
+
     private string GenerateExtensionClassCode(Compilation compilation, List<HttpClientApiInfo> apis, SourceProductionContext context)
         => GenerateSourceCode(compilation, apis, context);
 
@@ -192,8 +223,10 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         GenerateFileHeader(codeBuilder);
 
         codeBuilder.AppendLine();
-        var @namespace = compilation.AssemblyName;
-        var targetNamespace = string.IsNullOrEmpty(@namespace) ? "Microsoft.Extensions.DependencyInjection" : @namespace;
+        // [F7 修复] namespace 取 AssemblyName 时须校验其每个以 . 分隔的段都是合法 C# 标识符；
+        // AssemblyName 允许 '-'、空格、首字符数字等非法标识符字符（MSBuild 默认取项目名不做替换），
+        // 直接代入会产出非法 C#。非法/为空时回退到 DI 扩展方法约定的命名空间。
+        var targetNamespace = ResolveRegistrationNamespace(compilation);
 
         codeBuilder.AppendLine($"namespace {targetNamespace}");
         codeBuilder.AppendLine("{");

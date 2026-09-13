@@ -193,6 +193,16 @@ internal static class Diagnostics
         category: "代码生成",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    // [F4] 强制失效逃生舱提示：-p:ForceHttpGenerator=true 时下游增量步骤必然 Modified，产出一行可观测提示。
+    public static readonly DiagnosticDescriptor IncrementalCacheForcedInvalidation = new(
+        id: "HTTPCLIENT022",
+        title: "增量缓存已被 ForceHttpGenerator 强制失效",
+        messageFormat: "已检测到 -p:ForceHttpGenerator=true，生成器增量缓存被强制失效，本次构建将重新生成全部实现类代码。",
+        category: "代码生成",
+        DiagnosticSeverity.Info,
+        isEnabledByDefault: true,
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
     #endregion
 
     #region HttpClient注册生成器诊断信息 (HTTPCLIENTREG001-002)
@@ -331,5 +341,19 @@ internal static class Diagnostics
         isEnabledByDefault: true,
         description: "XmlSerializer 在 Native AOT 下不支持。请将方法改为 JSON 序列化，或在非 AOT 部署场景使用 XML。此诊断仅在 AOT 上下文（IsAotCompatible=true 或 PublishAot=true）下报告。",
         helpLinkUri: "https://learn.microsoft.com/dotnet/core/deploying/native-aot");
+
+    /// <summary>
+    /// [F10 修复] AOT007 降级变体：仅 <c>IsAotCompatible=true</c>（但未发布 Native AOT）时使用。
+    /// 语义：AOT 分析器已启用但运行期未必 AOT —— 降为 Warning，并提示改用 PublishAot/MudAotRuntimeMode 显式声明。
+    /// 严格模式（WarningsAsErrors）下仍可升级为 Error，CI 门禁强度由用户掌控。
+    /// </summary>
+    public static readonly DiagnosticDescriptor AotXmlNotSupportedInAotWarning = new(
+        id: "AOT007",
+        title: "XML 序列化在 Native AOT 下可能不支持（AOT 分析器已启用但未声明运行期 AOT）",
+        messageFormat: "接口 {0} 的方法 {1} 使用 XML 序列化。当前项目仅设置了 IsAotCompatible=true（启用 AOT 分析器），但未声明以 Native AOT 发布；若以 Native AOT 发布请同时设置 PublishAot=true 或 MudAotRuntimeMode=aot，否则 XML 路径在运行期将抛 PlatformNotSupportedException。",
+        category: "AOT",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "仅设置 IsAotCompatible 时的降级提示（F10）。");
     #endregion
 }

@@ -64,14 +64,14 @@ internal class RequestBuilder
             if (isTokenPathMode && !string.IsNullOrEmpty(methodInfo.InterfaceTokenName))
             {
                 var tokenPlaceholder = $"{{{methodInfo.InterfaceTokenName}}}";
-                sb.Replace(tokenPlaceholder, "{access_token}");
+                ReplacePlaceholder(sb, tokenPlaceholder, "{access_token}");
             }
 
             foreach (var pathParam in methodInfo.InterfacePathParameters)
             {
                 var placeholder = $"{{{pathParam.Name}}}";
                 var escapedValue = Uri.EscapeDataString(pathParam.Value ?? "");
-                sb.Replace(placeholder, escapedValue);
+                ReplacePlaceholder(sb, placeholder, escapedValue);
             }
 
             foreach (var interfacePathProp in methodInfo.InterfaceProperties.Where(p => p.AttributeType == "Path"))
@@ -84,11 +84,11 @@ internal class RequestBuilder
 
                 if (interfacePathProp.UrlEncode)
                 {
-                    sb.Replace(placeholder, $"{{System.Uri.EscapeDataString({interfacePathProp.Name}{formatExpression})}}");
+                    ReplacePlaceholder(sb, placeholder, $"{{System.Uri.EscapeDataString({interfacePathProp.Name}{formatExpression})}}");
                 }
                 else
                 {
-                    sb.Replace(placeholder, $"{{{interfacePathProp.Name}{formatExpression}}}");
+                    ReplacePlaceholder(sb, placeholder, $"{{{interfacePathProp.Name}{formatExpression}}}");
                 }
             }
         }
@@ -110,13 +110,53 @@ internal class RequestBuilder
     }
 
     /// <summary>
-    /// 获取路径参数的占位符名称
+    /// 获取路径参数的占位符名称。
+    /// <para>单一事实源：审计 F3 要求 HTTPCLIENT013 占位符判定与生成阶段的替换使用同一名称解析，
+    /// 避免 <c>[Path(Name = "userId")] int id</c> 被校验侧误判为占位符缺失。</para>
     /// </summary>
     private static string GetPathParameterName(ParameterAttributeInfo pathAttr, string paramName)
     {
         if (pathAttr.NamedArguments.TryGetValue("Name", out var nameValue) && nameValue is string name && !string.IsNullOrEmpty(name))
             return name;
         return paramName;
+    }
+
+    /// <summary>
+    /// 供生成器/校验器共用的「有效占位符名」（= <see cref="GetPathParameterName"/> 的公开出口，F3）。
+    /// </summary>
+    internal static string GetEffectivePathName(ParameterAttributeInfo pathAttr, string paramName)
+        => GetPathParameterName(pathAttr, paramName);
+
+    /// <summary>
+    /// 大小写不敏感替换（F3）：URL 模板 <c>{id}</c> 与 <c>[Path]</c> 参数 <c>Id</c> 应视为同一占位符。
+    /// 生成阶段统一改用本方法，避免「校验阶段 OrdinalIgnoreCase、生成阶段 Ordinal」的语义分叉。
+    /// URL 模板规模很小（单条路径），此处以清晰为优先。
+    /// </summary>
+    private static void ReplacePlaceholder(StringBuilder sb, string placeholder, string replacement)
+    {
+        var current = sb.ToString();
+        if (current.IndexOf(placeholder, StringComparison.OrdinalIgnoreCase) < 0)
+            return;
+
+        // netstandard2.0 无 string.Replace(string, string, StringComparison) 重载，
+        // 用 IndexOf 循环逐处替换（OrdinalIgnoreCase）。
+        var newText = new StringBuilder(current.Length);
+        var index = 0;
+        while (true)
+        {
+            var found = current.IndexOf(placeholder, index, StringComparison.OrdinalIgnoreCase);
+            if (found < 0)
+            {
+                newText.Append(current, index, current.Length - index);
+                break;
+            }
+            newText.Append(current, index, found - index);
+            newText.Append(replacement);
+            index = found + placeholder.Length;
+        }
+
+        sb.Clear();
+        sb.Append(newText.ToString());
     }
 
     /// <summary>
@@ -300,14 +340,16 @@ internal class RequestBuilder
         string? effectiveContentType = null;
         if (hasExplicitContentType)
         {
-            contentTypeExpression = $"\"{contentType}\"";
+            // [F13 修复] 在写入点转义 ContentType 字面量：ContentType 来自用户特性，含 " 或 \ 时
+            // 直接拼接会产出非法 C# 字符串字面量。
+            contentTypeExpression = $"\"{StringEscapeHelper.EscapeString(contentType)}\"";
             effectiveContentType = contentType;
         }
         else
         {
             effectiveContentType = methodInfo.GetEffectiveContentType();
             contentTypeExpression = !string.IsNullOrEmpty(effectiveContentType)
-                ? $"\"{effectiveContentType}\""
+                ? $"\"{StringEscapeHelper.EscapeString(effectiveContentType)}\""
                 : "_defaultContentType";
         }
 
@@ -392,7 +434,8 @@ internal class RequestBuilder
     /// </remarks>
     private void GenerateUrlEncodedFormParameter(StringBuilder codeBuilder, List<ParameterInfo> formParams)
     {
-        codeBuilder.AppendLine("            var __formParameters = new Dictionary<string, string>();");
+        // [F2 修复] 使用 global:: 限定 BCL 泛型，降低对 using 的隐式依赖（System.Collections.Generic）
+        codeBuilder.AppendLine("            var __formParameters = new global::System.Collections.Generic.Dictionary<string, string>();");
 
         foreach (var formParam in formParams)
         {
@@ -471,7 +514,7 @@ internal class RequestBuilder
                 currentType = currentType.BaseType;
             }
 
-            codeBuilder.AppendLine("                var __bodyFormParams = new Dictionary<string, string>();");
+            codeBuilder.AppendLine($"                var __bodyFormParams = new global::System.Collections.Generic.Dictionary<string, string>();");
 
             foreach (var prop in properties)
             {
@@ -505,7 +548,7 @@ internal class RequestBuilder
             codeBuilder.AppendLine($"#if NET6_0_OR_GREATER");
             codeBuilder.AppendLine($"#pragma warning disable IL2072");
             codeBuilder.AppendLine($"#endif");
-            codeBuilder.AppendLine($"                var __bodyFormParams = new Dictionary<string, string>();");
+            codeBuilder.AppendLine($"                var __bodyFormParams = new global::System.Collections.Generic.Dictionary<string, string>();");
             codeBuilder.AppendLine($"                var __bodyProperties = {bodyParam.Name}.GetType().GetProperties();");
             codeBuilder.AppendLine($"                foreach (var __prop in __bodyProperties)");
             codeBuilder.AppendLine("                {");
@@ -679,16 +722,16 @@ internal class RequestBuilder
             {
                 if (isStringType)
                 {
-                    sb.Replace(placeholder, $"{{Uri.EscapeDataString({paramName})}}");
+                    ReplacePlaceholder(sb, placeholder, $"{{Uri.EscapeDataString({paramName})}}");
                 }
                 else
                 {
-                    sb.Replace(placeholder, $"{{Uri.EscapeDataString(({paramName}).ToString() ?? string.Empty)}}");
+                    ReplacePlaceholder(sb, placeholder, $"{{Uri.EscapeDataString(({paramName}).ToString() ?? string.Empty)}}");
                 }
             }
             else
             {
-                sb.Replace(placeholder, $"{{{paramName}}}");
+                ReplacePlaceholder(sb, placeholder, $"{{{paramName}}}");
             }
             return;
         }
@@ -699,11 +742,11 @@ internal class RequestBuilder
             var formatExpr = $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{escapedFormat}\", {paramName})";
             if (urlEncode)
             {
-                sb.Replace(placeholder, $"{{Uri.EscapeDataString({formatExpr})}}");
+                ReplacePlaceholder(sb, placeholder, $"{{Uri.EscapeDataString({formatExpr})}}");
             }
             else
             {
-                sb.Replace(placeholder, $"{{{formatExpr}}}");
+                ReplacePlaceholder(sb, placeholder, $"{{{formatExpr}}}");
             }
             return;
         }
@@ -712,11 +755,11 @@ internal class RequestBuilder
         var standardFormatExpr = $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{escapedStandardFormat}}}\", {paramName})";
         if (urlEncode)
         {
-            sb.Replace(placeholder, $"{{Uri.EscapeDataString({standardFormatExpr})}}");
+            ReplacePlaceholder(sb, placeholder, $"{{Uri.EscapeDataString({standardFormatExpr})}}");
         }
         else
         {
-            sb.Replace(placeholder, $"{{{standardFormatExpr}}}");
+            ReplacePlaceholder(sb, placeholder, $"{{{standardFormatExpr}}}");
         }
     }
 
@@ -776,14 +819,15 @@ internal class RequestBuilder
         if (headerProperties.Count == 0)
             return;
 
+        // [F8 修复] Ignore 语义修正：HeaderMergeMode 控制的是「方法参数级」Header 与接口级 Header 的合并规则，
+        // 接口属性级 Header（运行时动态值）在任何 mode 下都应生效（与文档 HeaderMergeAttribute.Ignore
+        // = "方法级头部忽略，只使用接口级头部" 一致）。原实现在此短路跳过接口属性级 Header（语义颠倒），
+        // 导致 Ignore 模式下接口 [Header] 属性被静默丢弃。方法参数级 Header 的 Ignore 跳过由
+        // HeaderParameterBinder.GenerateBindingCode 处理（HeaderParameterBinder.cs:34-39）。
         var headerMergeMode = methodInfo.HeaderMergeMode;
-        var shouldIgnore = headerMergeMode == "Ignore";
 
         foreach (var property in headerProperties)
         {
-            if (shouldIgnore)
-                continue;
-
             var headerName = property.ParameterName ?? property.Name;
             if (string.IsNullOrEmpty(headerName))
                 continue;

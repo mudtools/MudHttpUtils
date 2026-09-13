@@ -132,6 +132,85 @@ public class IncrementalTests
             "HttpClientApi.HttpClient 关键特性值变更应改变 InterfaceModel 指纹(应触发重新生成)。");
     }
 
+    // F5: partial 接口的兄弟声明变更应触发指纹变化（原实现仅捕获带特性的那一个 partial 声明）。
+    private const string PartialInterfaceSource = """
+        using Mud.HttpUtils;
+        using Mud.HttpUtils.Attributes;
+
+        [HttpClientApi]
+        public partial interface IApi
+        {
+            [Get("/users/{id}")]
+            Task<string> GetAsync([Path] int id);
+        }
+
+        public partial interface IApi
+        {
+            [Get("/users")]
+            Task<string> ListAsync();
+        }
+        """;
+
+    private const string PartialInterfaceSourceWithSiblingMethod = """
+        using Mud.HttpUtils;
+        using Mud.HttpUtils.Attributes;
+
+        [HttpClientApi]
+        public partial interface IApi
+        {
+            [Get("/users/{id}")]
+            Task<string> GetAsync([Path] int id);
+        }
+
+        public partial interface IApi
+        {
+            [Get("/users")]
+            Task<string> ListAsync();
+
+            [Get("/users/{id}/status")]
+            Task<string> StatusAsync([Path] int id);
+        }
+        """;
+
+    private const string PartialInterfaceSourceSiblingCommentOnly = """
+        using Mud.HttpUtils;
+        using Mud.HttpUtils.Attributes;
+
+        [HttpClientApi]
+        public partial interface IApi
+        {
+            [Get("/users/{id}")]
+            Task<string> GetAsync([Path] int id);
+        }
+
+        // 仅注释变更（作为接口声明的 leading trivia，才被 WithoutTrivia 排除）
+        public partial interface IApi
+        {
+            [Get("/users")]
+            Task<string> ListAsync();
+        }
+        """;
+
+    [Fact]
+    public void PartialInterfaceSiblingDeclarationChange_ShouldRegenerate()
+    {
+        var before = BuildModel(PartialInterfaceSource);
+        var after = BuildModel(PartialInterfaceSourceWithSiblingMethod);
+
+        Assert.False(before.Equals(after),
+            "partial 接口的兄弟声明新增成员应改变指纹,否则实现的接口成员缺失。");
+    }
+
+    [Fact]
+    public void CommentOnlyChangeInSiblingPartial_ShouldNotRegenerate()
+    {
+        var before = BuildModel(PartialInterfaceSource);
+        var after = BuildModel(PartialInterfaceSourceSiblingCommentOnly);
+
+        Assert.True(before.Equals(after),
+            "partial 兄弟声明仅注释变更不应改变指纹(同主声明排除 trivia 的既有权衡)。");
+    }
+
     private static Mud.HttpUtils.Models.InterfaceModel BuildModel(string source)
     {
         var compilation = CreateCompilation(source);

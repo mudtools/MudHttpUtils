@@ -135,4 +135,98 @@ public class AotXmlRejectionTests
         attribute.Should().NotBeNull("AOT007 应定位到 [SerializationMethod(Xml)] 特性，CodeFix 才能直接替换");
         attribute!.Name.ToString().Should().Contain("SerializationMethod");
     }
+
+    // ───────────────────────── F10：AOT007 分级（Error / Warning）─────────────────────────
+
+    private static Compilation CreateCompilation(string source)
+    {
+        var syntaxTree = CSharpSyntaxTree.ParseText(source);
+        return CSharpCompilation.Create(
+            "TestAssembly",
+            new[] { syntaxTree },
+            BasicReferenceAssemblies.GetReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    internal static ImmutableArray<Diagnostic> AnalyzeWithDescriptor(
+        string source, bool isAotEnabled, DiagnosticDescriptor descriptor)
+        => Mud.HttpUtils.Analyzers.AotXmlRejectionAnalyzer.Analyze(
+            CreateCompilation(source), isAotEnabled, CancellationToken.None, descriptor);
+
+    [Fact]
+    public void F10_AotModeResolver_PublishAotOnly_ResolvesAot()
+    {
+        var provider = new TestAnalyzerConfigOptionsProvider(
+            new Dictionary<string, string> { ["build_property.PublishAot"] = "true" });
+        Mud.HttpUtils.AotModeResolver.Resolve(provider.GlobalOptions)
+            .Should().Be(Mud.HttpUtils.AotRuntimeMode.Aot);
+    }
+
+    [Fact]
+    public void F10_AotModeResolver_IsAotCompatibleOnly_ResolvesJit()
+    {
+        // F10 核心语义：IsAotCompatible 只是 AOT 分析器开关，不代表运行期 Native AOT。
+        var provider = new TestAnalyzerConfigOptionsProvider(
+            new Dictionary<string, string> { ["build_property.IsAotCompatible"] = "true" });
+        Mud.HttpUtils.AotModeResolver.Resolve(provider.GlobalOptions)
+            .Should().Be(Mud.HttpUtils.AotRuntimeMode.Jit);
+        Mud.HttpUtils.AotModeResolver.IsAotAnalyzerOnly(provider.GlobalOptions).Should().BeTrue();
+    }
+
+    [Fact]
+    public void F10_AotModeResolver_MudAotRuntimeModeAot_ResolvesAot()
+    {
+        var provider = new TestAnalyzerConfigOptionsProvider(
+            new Dictionary<string, string> { ["build_property.MudAotRuntimeMode"] = "aot" });
+        Mud.HttpUtils.AotModeResolver.Resolve(provider.GlobalOptions)
+            .Should().Be(Mud.HttpUtils.AotRuntimeMode.Aot);
+    }
+
+    [Fact]
+    public void F10_AotModeResolver_MudAotRuntimeModeJit_WithPublishAot_ResolvesJit()
+    {
+        // 显式 jit 覆盖 PublishAot（用户显式承担运行期 XML 风险）。
+        var provider = new TestAnalyzerConfigOptionsProvider(new Dictionary<string, string>
+        {
+            ["build_property.PublishAot"] = "true",
+            ["build_property.MudAotRuntimeMode"] = "jit",
+        });
+        Mud.HttpUtils.AotModeResolver.Resolve(provider.GlobalOptions)
+            .Should().Be(Mud.HttpUtils.AotRuntimeMode.Jit);
+    }
+
+    [Fact]
+    public void F10_AotModeResolver_NoAotSignals_ResolvesJit()
+    {
+        var provider = new TestAnalyzerConfigOptionsProvider(new Dictionary<string, string>());
+        Mud.HttpUtils.AotModeResolver.Resolve(provider.GlobalOptions)
+            .Should().Be(Mud.HttpUtils.AotRuntimeMode.Jit);
+        Mud.HttpUtils.AotModeResolver.IsAotAnalyzerOnly(provider.GlobalOptions).Should().BeFalse();
+    }
+
+    [Fact]
+    public void F10_IsAotCompatibleOnly_ReportsWarning()
+    {
+        // 原实现：IsAotCompatible=true 直接判定为 AOT → AOT007 Error。
+        // F10 后：仅为模糊态 → Warning（降级提示）。
+        var diagnostics = AnalyzeWithDescriptor(
+            XmlInterfaceSource, isAotEnabled: true, Diagnostics.AotXmlNotSupportedInAotWarning);
+
+        var aot007 = diagnostics.Where(d => d.Id == "AOT007").ToList();
+        aot007.Should().ContainSingle();
+        aot007[0].Severity.Should().Be(DiagnosticSeverity.Warning,
+            "仅 IsAotCompatible=true 时 AOT007 应降级为 Warning（F10）");
+    }
+
+    [Fact]
+    public void F10_PublishAotOnly_ReportsError()
+    {
+        var diagnostics = AnalyzeWithDescriptor(
+            XmlInterfaceSource, isAotEnabled: true, Diagnostics.AotXmlNotSupportedInAot);
+
+        var aot007 = diagnostics.Where(d => d.Id == "AOT007").ToList();
+        aot007.Should().ContainSingle();
+        aot007[0].Severity.Should().Be(DiagnosticSeverity.Error,
+            "PublishAot=true 时 AOT007 应保持 Error 阻断");
+    }
 }

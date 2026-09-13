@@ -15,6 +15,10 @@
   <ItemGroup>
     <CompilerVisibleProperty Include="IsAotCompatible" />
     <CompilerVisibleProperty Include="PublishAot" />
+    <!-- [F10] 运行期 AOT 模式显式三态（auto 默认 / jit / aot）：
+         MudAotRuntimeMode=aot 时 AOT007 按 Error 阻断；jit 时显式承担运行期 XML 风险（Warning）；
+         未设置时按 PublishAot 判定。注册后经 build_property.MudAotRuntimeMode 读取。 -->
+    <CompilerVisibleProperty Include="MudAotRuntimeMode" />
     <!-- [v2.4 §3.4 D-03] 消费项目 nullable 配置：决定生成代码是否发射 #nullable enable。
          未注册时 build_property.Nullable 恒取默认值 → EmitNullableEnable 恒为 true，配置静默失效。 -->
     <CompilerVisibleProperty Include="Nullable" />
@@ -25,6 +29,9 @@
     <CompilerVisibleProperty Include="DisableMudSourceGenerator" />
     <!-- T5.5: 控制是否生成 [GeneratedCode] 标记（false 时不抑制生成代码中的警告） -->
     <CompilerVisibleProperty Include="MudEmitGeneratedCodeMarkers" />
+    <!-- [F4] 增量强制失效逃生舱：-p:ForceHttpGenerator=true 时生成器下游步骤强制重跑。
+         未注册时 build_property.ForceHttpGenerator 恒取默认 false，逃生舱静默失效。 -->
+    <CompilerVisibleProperty Include="ForceHttpGenerator" />
   </ItemGroup>
 
 </Project>

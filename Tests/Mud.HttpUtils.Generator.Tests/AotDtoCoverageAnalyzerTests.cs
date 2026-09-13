@@ -1,4 +1,5 @@
 using Mud.HttpUtils.Analyzers;
+using Microsoft.CodeAnalysis.Diagnostics;
 
 namespace Mud.HttpUtils.Generator.Tests;
 
@@ -332,6 +333,132 @@ public class AotDtoCoverageAnalyzerTests
             "元素类型已被 Context 覆盖时，List<T> 响应不应误报 AOT004");
     }
 
+    // [F12] 响应端：Response<T> 包装只报内部 T；HttpResponseMessage/Stream/byte[] 走非 JSON 路径不报。
+
+    [Fact]
+    public void ResponseType_ShouldCheckInnerTypeOnly()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                public class ResultDto { public int Id { get; set; } }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Get("/x")]
+                    Task<Mud.HttpUtils.Response<ResultDto>> GetAsync();
+                }
+
+                [System.Text.Json.Serialization.JsonSerializable(typeof(int))]
+                internal sealed partial class AppJsonContext : System.Text.Json.Serialization.JsonSerializerContext
+                {
+                    public AppJsonContext(System.Text.Json.JsonSerializerOptions options) : base(options) { }
+                    protected override System.Text.Json.JsonSerializerOptions? GeneratedSerializerOptions => null;
+                    public override System.Text.Json.Serialization.Metadata.JsonTypeInfo? GetTypeInfo(System.Type type) => null;
+                }
+            }
+            """;
+
+        var aot004 = Analyze(source).Where(d => d.Id == "AOT004").ToList();
+        aot004.Should().ContainSingle("Response<T> 内部 T 未覆盖应报 AOT004");
+        aot004[0].Properties["TypeFullName"].Should().Contain("ResultDto",
+            "应报内部 T（ResultDto）而非 Response<T> 包装");
+    }
+
+    [Fact]
+    public void HttpResponseMessageReturn_ShouldNotReportAOT004()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Get("/raw")]
+                    Task<System.Net.Http.HttpResponseMessage> GetAsync();
+                }
+
+                [System.Text.Json.Serialization.JsonSerializable(typeof(int))]
+                internal sealed partial class AppJsonContext : System.Text.Json.Serialization.JsonSerializerContext
+                {
+                    public AppJsonContext(System.Text.Json.JsonSerializerOptions options) : base(options) { }
+                    protected override System.Text.Json.JsonSerializerOptions? GeneratedSerializerOptions => null;
+                    public override System.Text.Json.Serialization.Metadata.JsonTypeInfo? GetTypeInfo(System.Type type) => null;
+                }
+            }
+            """;
+
+        Analyze(source).Should().NotContain(d => d.Id == "AOT004",
+            "HttpResponseMessage 直达返回不走反序列化，不应报 AOT004");
+    }
+
+    [Fact]
+    public void StreamReturn_ShouldNotReportAOT004()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Get("/stream")]
+                    Task<System.IO.Stream> GetAsync();
+                }
+
+                [System.Text.Json.Serialization.JsonSerializable(typeof(int))]
+                internal sealed partial class AppJsonContext : System.Text.Json.Serialization.JsonSerializerContext
+                {
+                    public AppJsonContext(System.Text.Json.JsonSerializerOptions options) : base(options) { }
+                    protected override System.Text.Json.JsonSerializerOptions? GeneratedSerializerOptions => null;
+                    public override System.Text.Json.Serialization.Metadata.JsonTypeInfo? GetTypeInfo(System.Type type) => null;
+                }
+            }
+            """;
+
+        Analyze(source).Should().NotContain(d => d.Id == "AOT004",
+            "Stream 响应不走 JSON 反序列化，不应报 AOT004");
+    }
+
+    [Fact]
+    public void ByteArrayReturn_ShouldNotReportAOT004()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Get("/bytes")]
+                    Task<byte[]> GetAsync();
+                }
+
+                [System.Text.Json.Serialization.JsonSerializable(typeof(int))]
+                internal sealed partial class AppJsonContext : System.Text.Json.Serialization.JsonSerializerContext
+                {
+                    public AppJsonContext(System.Text.Json.JsonSerializerOptions options) : base(options) { }
+                    protected override System.Text.Json.JsonSerializerOptions? GeneratedSerializerOptions => null;
+                    public override System.Text.Json.Serialization.Metadata.JsonTypeInfo? GetTypeInfo(System.Type type) => null;
+                }
+            }
+            """;
+
+        Analyze(source).Should().NotContain(d => d.Id == "AOT004",
+            "byte[] 下载不走反序列化，不应报 AOT004");
+    }
+
     // ───────────────────────── AOT005：[QueryMap] 分支 ─────────────────────────
 
     [Fact]
@@ -413,6 +540,69 @@ public class AotDtoCoverageAnalyzerTests
 
         diagnostics.Should().Contain(d => d.Id == "AOT006",
             "[HttpJsonSerializable] 类型未被任何 Context 覆盖时应报告 AOT006");
+    }
+
+    // [F6] AOT006 迁出增量生成管道后，由独立 DiagnosticAnalyzer（编译分析阶段）承载。
+    // 冒烟测试：经 CompilationWithAnalyzers 执行 HttpJsonSerializableCoverageAnalyzer，
+    // 未覆盖类型恰好报 1 条 AOT006；覆盖后 0 条。
+    [Fact]
+    public async Task Analyzer_UncoveredHttpJsonSerializable_ReportsSingleAot006()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpJsonSerializable]
+                public class UncoveredDto { public int Id { get; set; } }
+
+                [System.Text.Json.Serialization.JsonSerializable(typeof(int))]
+                internal sealed partial class AppJsonContext : System.Text.Json.Serialization.JsonSerializerContext
+                {
+                    public AppJsonContext(System.Text.Json.JsonSerializerOptions options) : base(options) { }
+                    protected override System.Text.Json.JsonSerializerOptions? GeneratedSerializerOptions => null;
+                    public override System.Text.Json.Serialization.Metadata.JsonTypeInfo? GetTypeInfo(System.Type type) => null;
+                }
+            }
+            """;
+
+        var compilation = CreateCompilation(source);
+        var analysis = compilation.WithAnalyzers(
+            ImmutableArray.Create<DiagnosticAnalyzer>(new HttpJsonSerializableCoverageAnalyzer()));
+        var diagnostics = await analysis.GetAnalyzerDiagnosticsAsync();
+
+        diagnostics.Where(d => d.Id == "AOT006").Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Analyzer_CoveredHttpJsonSerializable_NoAot006()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpJsonSerializable]
+                public class CoveredDto { public int Id { get; set; } }
+
+                [System.Text.Json.Serialization.JsonSerializable(typeof(CoveredDto))]
+                internal sealed partial class AppJsonContext : System.Text.Json.Serialization.JsonSerializerContext
+                {
+                    public AppJsonContext(System.Text.Json.JsonSerializerOptions options) : base(options) { }
+                    protected override System.Text.Json.JsonSerializerOptions? GeneratedSerializerOptions => null;
+                    public override System.Text.Json.Serialization.Metadata.JsonTypeInfo? GetTypeInfo(System.Type type) => null;
+                }
+            }
+            """;
+
+        var compilation = CreateCompilation(source);
+        var analysis = compilation.WithAnalyzers(
+            ImmutableArray.Create<DiagnosticAnalyzer>(new HttpJsonSerializableCoverageAnalyzer()));
+        var diagnostics = await analysis.GetAnalyzerDiagnosticsAsync();
+
+        diagnostics.Where(d => d.Id == "AOT006").Should().BeEmpty();
     }
 
     // ───────────────────────── M10：引用程序集（PE 引用）Context 覆盖 ─────────────────────────

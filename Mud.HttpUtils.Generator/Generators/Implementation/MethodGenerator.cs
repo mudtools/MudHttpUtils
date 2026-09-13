@@ -82,6 +82,20 @@ internal class MethodGenerator : ICodeFragmentGenerator
     {
         if (!methodInfo.IsValid) return;
 
+        // [F14 修复] 参数修饰符校验：存在 ref/out/in/params/指针参数时报告 HTTPCLIENT004（Error）
+        // 并跳过该方法体生成，避免产出 CS0177/CS0269 等不可编译代码。
+        var unsupportedParameter = methodInfo.Parameters.FirstOrDefault(p => p.UnsupportedReason != null);
+        if (unsupportedParameter != null)
+        {
+            var methodSyntax = GetMethodSyntax(methodSymbol, context);
+            context.ProductionContext.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.HttpClientApiParameterError,
+                methodSyntax?.GetLocation() ?? context.InterfaceDeclaration.GetLocation(),
+                context.InterfaceDeclaration.Identifier.Text,
+                $"{methodSymbol.Name}: {unsupportedParameter.UnsupportedReason}"));
+            return;
+        }
+
         if (!string.IsNullOrEmpty(methodInfo.UrlTemplate) &&
             !CSharpCodeValidator.IsValidUrlTemplate(methodInfo.UrlTemplate, out var urlError))
         {
@@ -137,7 +151,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         // 防御性：对所有生成方法统一注入（#if NET6_0_OR_GREATER 仅 AOT/trimming TFM 生效，其余 TFM 无害）。
         WriteMethodLevelSuppressMessage(codeBuilder);
 
-        codeBuilder.AppendLine($"        public {virtualKeyword}{asyncKeyword}{returnType} {methodSymbol.Name}({TypeSymbolHelper.GetParameterList(methodSymbol)})");
+        codeBuilder.AppendLine($"        public {virtualKeyword}{asyncKeyword}{returnType} {methodSymbol.Name}({ParameterSignatureBuilder.Build(methodSymbol)})");
         codeBuilder.AppendLine("        {");
 
         ParameterValidationHelper.GenerateParameterValidation(codeBuilder, methodInfo.Parameters);
@@ -438,7 +452,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
         var isResponseType = IsResponseType(deserializeType, out var responseInnerType);
         sb.AppendLine($"                AllowAnyStatusCode = {methodInfo.AllowAnyStatusCode.ToString().ToLowerInvariant()},");
         sb.AppendLine($"                IsResponseType = {isResponseType.ToString().ToLowerInvariant()},");
-        sb.AppendLine($"                ResponseContentType = \"{methodInfo.ResponseContentType ?? ""}\",");
+        // [F13 修复] 在写入点转义 ResponseContentType 字面量。
+        sb.AppendLine($"                ResponseContentType = \"{StringEscapeHelper.EscapeString(methodInfo.ResponseContentType ?? "")}\",");
         sb.AppendLine($"                EnableDecrypt = {methodInfo.ResponseEnableDecrypt.ToString().ToLowerInvariant()},");
 
         var isVoid = IsVoidType(deserializeType);
@@ -471,7 +486,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
         var isResponseType = IsResponseType(deserializeType, out var responseInnerType);
         sb.AppendLine($"                       AllowAnyStatusCode = {methodInfo.AllowAnyStatusCode.ToString().ToLowerInvariant()},");
         sb.AppendLine($"                       IsResponseType = {isResponseType.ToString().ToLowerInvariant()},");
-        sb.AppendLine($"                       ResponseContentType = \"{methodInfo.ResponseContentType ?? ""}\",");
+        // [F13 修复] 在写入点转义 ResponseContentType 字面量（用户可配置，含 " \ 时直拼产出非法 C#）。
+        sb.AppendLine($"                       ResponseContentType = \"{StringEscapeHelper.EscapeString(methodInfo.ResponseContentType ?? "")}\",");
         sb.AppendLine($"                       EnableDecrypt = {methodInfo.ResponseEnableDecrypt.ToString().ToLowerInvariant()},");
 
         var isVoid = IsVoidType(deserializeType);
@@ -499,7 +515,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
             // M3-#27：滑动过期语义下沉到 CacheOptions，运行时经 GetOrFetchAsync 透传至缓存层
             sb.AppendLine($"                       UseSlidingExpiration = {methodInfo.CacheUseSlidingExpiration.ToString().ToLowerInvariant()},");
             if (!string.IsNullOrEmpty(methodInfo.CacheKeyTemplate))
-                sb.AppendLine($"                       KeyTemplate = \"{methodInfo.CacheKeyTemplate}\",");
+                // [F13 修复] 在写入点转义 KeyTemplate 字面量（用户可配置模板，含 " \ 时直拼产出非法 C#）。
+                sb.AppendLine($"                       KeyTemplate = \"{StringEscapeHelper.EscapeString(methodInfo.CacheKeyTemplate!)}\",");
             sb.AppendLine("                   },");
             sb.AppendLine($"                       CacheKey = {cacheKeyExpression},");
         }
@@ -882,6 +899,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         var isValid = true;
 
+        // [E-4 修复] 诊断定位到方法本身（而非整个接口声明），便于 IDE 快速定位与 #pragma 抑制。
+        var methodLocation = GetMethodLocation(context, methodInfo);
+
         // 校验加密兼容性：EnableEncrypt=true 时 HttpClient 必须实现 IEncryptableHttpClient
         if (methodInfo.BodyEnableEncrypt)
         {
@@ -890,7 +910,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 context.ProductionContext.ReportDiagnostic(
                     Diagnostic.Create(
                         Diagnostics.HttpClientEncryptNotSupported,
-                        context.InterfaceDeclaration.GetLocation(),
+                        methodLocation,
                         context.InterfaceDeclaration.Identifier.Text,
                         methodInfo.MethodName ?? "Unknown",
                         httpClientType));
@@ -901,7 +921,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 context.ProductionContext.ReportDiagnostic(
                     Diagnostic.Create(
                         Diagnostics.HttpClientTypeUnresolved,
-                        context.InterfaceDeclaration.GetLocation(),
+                        methodLocation,
                         context.InterfaceDeclaration.Identifier.Text,
                         methodInfo.MethodName ?? "Unknown",
                         httpClientType));
@@ -918,7 +938,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 context.ProductionContext.ReportDiagnostic(
                     Diagnostic.Create(
                         Diagnostics.HttpClientXmlNotSupported,
-                        context.InterfaceDeclaration.GetLocation(),
+                        methodLocation,
                         context.InterfaceDeclaration.Identifier.Text,
                         methodInfo.MethodName ?? "Unknown",
                         httpClientType));
@@ -929,7 +949,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 context.ProductionContext.ReportDiagnostic(
                     Diagnostic.Create(
                         Diagnostics.HttpClientTypeUnresolved,
-                        context.InterfaceDeclaration.GetLocation(),
+                        methodLocation,
                         context.InterfaceDeclaration.Identifier.Text,
                         methodInfo.MethodName ?? "Unknown",
                         httpClientType));
@@ -937,6 +957,18 @@ internal class MethodGenerator : ICodeFragmentGenerator
         }
 
         return isValid;
+    }
+
+    /// <summary>
+    /// 获取方法声明位置（E-4）：优先方法语法节点，回退接口声明。
+    /// </summary>
+    private static Location GetMethodLocation(GeneratorContext context, MethodAnalysisResult methodInfo)
+    {
+        // FindMethodSyntax 需要 IMethodSymbol；methodInfo 不含符号，回退到按名称在接口内查找。
+        var methodSyntax = context.InterfaceDeclaration.Members
+            .OfType<MethodDeclarationSyntax>()
+            .FirstOrDefault(m => string.Equals(m.Identifier.Text, methodInfo.MethodName, StringComparison.Ordinal));
+        return methodSyntax?.GetLocation() ?? context.InterfaceDeclaration.GetLocation();
     }
 
     /// <summary>
@@ -1022,10 +1054,15 @@ internal class MethodGenerator : ICodeFragmentGenerator
             return;
 
         var pathParams = new HashSet<string>(
-            methodSymbol.Parameters
-                .Where(p => p.GetAttributes().Any(attr =>
-                    HttpClientGeneratorConstants.PathAttributes.Contains(attr.AttributeClass?.Name)))
-                .Select(p => p.Name),
+            // [F3 修复] 单一事实源：与生成阶段（RequestBuilder.GetPathParameterName）共用相同的
+            // 占位符名解析，[Path(Name = "userId")] int id 不再被误报为占位符缺失。
+            // methodInfo.Parameters 已由 ParameterAnalyzer 解析为 ParameterAttributeInfo（含 Name/Arguments/NamedArguments），
+            // 直接复用而非对 IMethodSymbol.Parameters 重新 GetAttributes。
+            methodInfo.Parameters
+                .Where(p => p.Attributes.Any(attr => HttpClientGeneratorConstants.PathAttributes.Contains(attr.Name)))
+                .Select(p => RequestBuilder.GetEffectivePathName(
+                    p.Attributes.First(attr => HttpClientGeneratorConstants.PathAttributes.Contains(attr.Name)),
+                    p.Name)),
             StringComparer.OrdinalIgnoreCase);
 
         // 当 Token 使用 Path 注入模式时，URL 模板中的 Token 占位符应由 Token 注入机制替换，
@@ -1090,5 +1127,12 @@ internal class MethodGenerator : ICodeFragmentGenerator
         }
         return placeholders;
     }
+
+    /// <summary>
+    /// 获取方法声明语法节点（用于诊断 Location 精细化）。
+    /// </summary>
+    private static MethodDeclarationSyntax? GetMethodSyntax(IMethodSymbol methodSymbol, GeneratorContext context)
+        => MethodAnalyzer.FindMethodSyntax(
+            context.Compilation, methodSymbol, context.InterfaceDeclaration, context.SemanticModel);
 
 }

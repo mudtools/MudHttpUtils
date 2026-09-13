@@ -737,6 +737,7 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 | ~~`HTTPCLIENT019`~~ | — | ❌ 已移除（CFG-27）：其唯一触发点 `CacheAttribute.Priority` 已删除 | 无需处理（ID 保留为未使用占位） | 否 |
 | `HTTPCLIENT020` | Warning | 非幂等方法声明 `[Retry]` 但未设 `AllowNonIdempotent` | 运行时将跳过重试；如服务端可安全重复执行请显式开启 | 否 |
 | `HTTPCLIENT021` | Warning | 方法级 `[Timeout]` 超过接口级 `HttpClient` 超时 | `HttpClient.Timeout` 是硬上限，调小 `[Timeout]` 或提高 `[HttpClientApi(Timeout=…)]` | 否 |
+| `HTTPCLIENT022` | Info | 检测到 `-p:ForceHttpGenerator=true`，增量缓存被强制失效 | 无需处理（逃生舱生效提示，F4） | 否 |
 
 > **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010`、`HTTPCLIENT019` 当前**未使用**（ID 保留为占位，不重新分配）。
 > - `HTTPCLIENT010`：`BaseAddress` 已移除（CFG-27），使用直接编译错误 `CS0117`，无需生成器提示。
@@ -765,7 +766,7 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 
 #### AOT JSON 序列化诊断（AOT*）
 
-`AOT*` 系列诊断用于保障 Native AOT 场景下的 JSON 序列化可用性。其中 `AOT004`/`AOT005`/`AOT006` 由 `Mud.HttpUtils.Generator` 中的 `AotDtoCoverageAnalyzer` 报告，`AOT007` 由 `AotXmlRejectionAnalyzer` 报告（仅在 AOT 上下文下）；`AOT001`/`AOT002`/`AOT003` 由 `HttpJsonContextScaffolder` 脚手架工具在生成期报告。
+`AOT*` 系列诊断用于保障 Native AOT 场景下的 JSON 序列化可用性。其中 `AOT004`/`AOT005`/`AOT006` 由 `Mud.HttpUtils.Generator` 中的 `AotDtoCoverageAnalyzer` 报告（`AOT006` 经独立诊断分析器承载，见下），`AOT007` 由 `AotXmlRejectionAnalyzer` 报告（仅在 AOT 上下文下）；`AOT001`/`AOT002`/`AOT003` 由 `HttpJsonContextScaffolder` 脚手架工具在生成期报告。
 
 | 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 |
 |---------|----------|----------|----------|------------|
@@ -775,7 +776,16 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 | `AOT004` | Warning | `[HttpClientApi]` 方法的请求/响应 DTO 未被任何 `JsonSerializerContext` 覆盖 | 标注 `[HttpJsonSerializable]` 并运行 `dotnet mud-jsonctx`，或手动将类型加入现有 `JsonSerializerContext` | 是（`AotJsonContextCodeFixProvider`，自动向用户可编辑的 `JsonSerializerContext` 追加 `[JsonSerializable(typeof(T))]`，或新建 `partial` 扩展类） |
 | `AOT005` | Warning | 查询参数类型使用 JSON 序列化但未被 `JsonSerializerContext` 覆盖 | 将类型纳入 `JsonSerializerContext`，或实现 `IQueryParameter` 接口 | 是（`AotJsonContextCodeFixProvider`，同 AOT004 修复逻辑） |
 | `AOT006` | Warning | 标注了 `[HttpJsonSerializable]` 的类型未被任何 `JsonSerializerContext` 覆盖 | 运行 `dotnet mud-jsonctx`，或将此类型加入 `JsonSerializerContext` | 是（`AotJsonContextCodeFixProvider`，同 AOT004 修复逻辑） |
-| `AOT007` | Error | AOT 上下文下使用 XML 序列化 | 改用 `[SerializationMethod(SerializationMethod.Json)]`，或在非 AOT 部署场景使用 XML | 是（`AotXmlCodeFixProvider`，将方法改为 JSON 序列化） |
+| `AOT007` | Error / Warning（F10 分级） | AOT 上下文下使用 XML 序列化 | 改用 `[SerializationMethod(SerializationMethod.Json)]`，或在非 AOT 部署场景使用 XML。级别分级：确认 Native AOT（`PublishAot=true` / `MudAotRuntimeMode=aot`）→ Error；仅 `IsAotCompatible=true`（未声明运行期 AOT）→ Warning | 是（`AotXmlCodeFixProvider`，将方法改为 JSON 序列化） |
+
+#### 独立分析器诊断（MUD*）
+
+下述诊断由 `Mud.HttpUtils.Analyzers` 中的独立诊断分析器（随本包分发，不依赖源生成器）报告（F9 对齐）：
+
+| 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 |
+|---------|----------|----------|----------|------------|
+| `MUD001` | Error | `[HttpClientApi]` 接口方法缺少 HTTP 方法特性 | 为方法标注 `[Get]`/`[Post]`/`[Put]`/`[Delete]`/`[Patch]`/`[Head]`/`[Options]`；标注 `[IgnoreGenerator]` 的接口/方法豁免 | 否 |
+| `MUD002` | Error | `[HttpClientApi]` 接口方法返回类型不在生成器支持白名单内 | 返回 `Task`/`Task<T>`/`ValueTask`/`ValueTask<T>`/`IAsyncEnumerable<T>`/`HttpResponseMessage`/`byte[]`/`Stream`（与生成器分支一一对应） | 否 |
 
 ### 日志脱敏
 

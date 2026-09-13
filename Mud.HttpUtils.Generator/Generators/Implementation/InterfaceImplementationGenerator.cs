@@ -68,6 +68,13 @@ internal class InterfaceImplementationGenerator
     /// </summary>
     public void GenerateCode()
     {
+        // [E-5 修复] 接口级 [IgnoreGenerator]：生成器完全不介入（用户自备实现），
+        // 亦不产生生成期诊断（AOT/MUD 由分析器各自豁免）。
+        // 必须早于 ExtractConfigurationFromAttributes 与 ValidateConfiguration，
+        // 确保既不产出源码也不产生生成期诊断。
+        if (Mud.HttpUtils.Analyzers.GeneratorAttributeFilters.HasIgnoreGenerator(_interfaceSymbol))
+            return;
+
         var configuration = ExtractConfigurationFromAttributes();
 
         // GEN-04 修复：当 TokenManagerKey 和 TokenType 均未显式指定时，发出警告诊断。
@@ -250,12 +257,24 @@ internal class InterfaceImplementationGenerator
 
         if (typeSymbol == null)
         {
+            // [E-4 修复] HTTPCLIENT014 定位到 [HttpClientApi] 特性语法，而非整个接口声明。
+            var location = GetHttpClientApiAttributeLocation() ?? _interfaceDecl.GetLocation();
             _context.ReportDiagnostic(Diagnostic.Create(
                 Diagnostics.HttpClientTypeNotFound,
-                _interfaceDecl.GetLocation(),
+                location,
                 _interfaceSymbol.Name,
                 httpClientType));
         }
+    }
+
+    /// <summary>
+    /// 定位 [HttpClientApi] 特性的语法位置（E-4），未找到时返回 null。
+    /// </summary>
+    private Location? GetHttpClientApiAttributeLocation()
+    {
+        var attribute = _interfaceSymbol.GetAttributes()
+            .FirstOrDefault(a => HttpClientGeneratorConstants.HttpClientApiAttributeNames.Contains(a.AttributeClass?.Name));
+        return attribute?.ApplicationSyntaxReference?.GetSyntax()?.GetLocation();
     }
 
     private bool ValidateTokenManagerType(GenerationConfiguration configuration)

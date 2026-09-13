@@ -121,6 +121,10 @@ internal static class AotDtoCoverageAnalyzer
                 if (!hasHttpClientApi)
                     continue;
 
+                // [E-5] 接口级 [IgnoreGenerator]：AOT004/AOT005 对"用户明确不管"的接口无意义，跳过。
+                if (GeneratorAttributeFilters.HasIgnoreGenerator(interfaceSymbol))
+                    continue;
+
                 // 4. 检查每个方法的 DTO 覆盖情况
                 foreach (var method in interfaceSymbol.GetMembers().OfType<IMethodSymbol>())
                 {
@@ -423,19 +427,67 @@ internal static class AotDtoCoverageAnalyzer
         // 检查响应 DTO — AOT004
         if (method.ReturnType is INamedTypeSymbol returnType)
         {
+            // [F12] 响应端判定：与 MethodGenerator 的分支保持同源。
+            // 先解包 Task<T>/ValueTask<T>（非泛型 Task 无响应 DTO，保持原行为跳过）。
             var innerType = ExtractTaskInnerType(returnType);
-            if (innerType != null && !IsCovered(innerType, coveredTypes) && !QuerySerializationClassifier.IsSimple(innerType))
+            if (innerType == null)
+                return;
+
+            var responseType = innerType;
+
+            // 1) Response<T> → 取内部 T（生成器端 MethodGenerator.IsResponseType 分支）。
+            if (IsResponseWrapper(responseType))
+            {
+                responseType = GetResponseInnerType(responseType);
+                if (responseType == null)
+                    return;
+            }
+
+            // 2) 非 JSON 契约的 Task<T> 返回（生成器不走反序列化）→ 跳过：
+            //    HttpResponseMessage（SendRawAsync 直达）、Stream/byte[]（下载分支）、简单类型。
+            if (IsHttpResponseMessage(responseType) || IsStream(responseType) ||
+                IsByteArray(responseType) || QuerySerializationClassifier.IsSimple(responseType))
+                return;
+
+            // 3) 其余才做覆盖判定
+            if (!IsCovered(responseType, coveredTypes) && !QuerySerializationClassifier.IsSimple(responseType))
             {
                 diagnostics.Add(Diagnostic.Create(
                     Diagnostics.AotDtoNotCoveredByContext,
                     method.Locations.FirstOrDefault(),
-                    TypeProps(innerType),
+                    TypeProps(responseType),
                     interfaceSymbol.Name,
                     method.Name,
-                    innerType.ToDisplayString()));
+                    responseType.ToDisplayString()));
             }
         }
     }
+
+    /// <summary>是否 Response&lt;T&gt; 包装类型（Mud.HttpUtils.Response&lt;T&gt;）。</summary>
+    private static bool IsResponseWrapper(ITypeSymbol type)
+    {
+        var def = (type as INamedTypeSymbol)?.OriginalDefinition;
+        if (def is null || !def.IsGenericType || def.TypeParameters.Length != 1)
+            return false;
+        return def.ContainingNamespace?.ToDisplayString() == "Mud.HttpUtils" && def.Name == "Response";
+    }
+
+    /// <summary>解包 Response&lt;T&gt; 的内部 T。</summary>
+    private static INamedTypeSymbol? GetResponseInnerType(ITypeSymbol type)
+        => (type as INamedTypeSymbol)?.TypeArguments.FirstOrDefault() as INamedTypeSymbol;
+
+    private static bool IsHttpResponseMessage(ITypeSymbol type)
+        => type is { } t
+           && t.ContainingNamespace?.ToDisplayString() == "System.Net.Http"
+           && t.Name == "HttpResponseMessage";
+
+    private static bool IsStream(ITypeSymbol type)
+        => type is { } t
+           && t.ContainingNamespace?.ToDisplayString() == "System.IO"
+           && t.Name == "Stream";
+
+    private static bool IsByteArray(ITypeSymbol type)
+        => type is IArrayTypeSymbol { ElementType.SpecialType: SpecialType.System_Byte };
 
     /// <summary>
     /// 检查类型是否被 Context 覆盖（包括集合类型解包）。

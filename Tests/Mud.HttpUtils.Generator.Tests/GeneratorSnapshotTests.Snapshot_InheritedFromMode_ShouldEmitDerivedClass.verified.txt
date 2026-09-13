@@ -4,9 +4,12 @@
 
 #nullable enable
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -15,46 +18,46 @@ using Mud.HttpUtils;
 namespace TestNamespace.Internal
 {
     [global::System.CodeDom.Compiler.GeneratedCode("Mud.HttpUtils.Generator", "2.0.4")]
-    internal partial class BaseApi : IBaseApi
+    internal abstract partial class BaseApi : global::TestNamespace.IBaseApi
     {
         /// <summary>
         /// HTTP 内容序列化器，统一处理 JSON 序列化/反序列化操作。
         /// </summary>
-        private readonly IHttpContentSerializer _contentSerializer;
+        protected readonly IHttpContentSerializer _contentSerializer;
         /// <summary>
         /// 日志记录器，用于记录 HTTP 请求执行过程中的错误和调试信息。
         /// </summary>
-        private readonly ILogger _logger;
+        protected readonly ILogger _logger;
         /// <summary>
         /// 应用上下文持有器，用于获取、设置和切换当前应用上下文。
         /// </summary>
-        private readonly IAppContextHolder _appContextHolder;
+        protected readonly IAppContextHolder _appContextHolder;
         /// <summary>
         /// 用于HttpClient客户端操作操作使用的的<see cref = "ITestTokenManager"/> 令牌管理实例。
         /// </summary>
-        private readonly ITestTokenManager _tokenManager;
+        protected readonly ITestTokenManager _tokenManager;
         /// <summary>
         /// 令牌提供器，用于获取访问令牌。
         /// </summary>
-        private readonly ITokenProvider _tokenProvider;
+        protected readonly ITokenProvider _tokenProvider;
         /// <summary>
         /// HTTP 请求执行器，统一处理响应反序列化和错误处理。
         /// </summary>
-        private readonly IHttpRequestExecutor _executor;
+        protected readonly IHttpRequestExecutor _executor;
 #pragma warning disable CS0414 // 字段在生成的 ExecuteAsync 方法体中被引用，编译器跨分部类检测不到引用
         /// <summary>
         /// 用于HttpClient客户端操作的内容类型。
         /// </summary>
-        private readonly string _defaultContentType = "application/json";
+        protected readonly string _defaultContentType = "application/json";
 #pragma warning restore CS0414
         /// <summary>
         /// HTTP响应缓存提供器（可选，未声明 [Cache] 特性时由 DI 注入）。
         /// </summary>
-        private readonly IHttpResponseCache? _cacheProvider;
+        protected readonly IHttpResponseCache? _cacheProvider;
         /// <summary>
         /// 弹性策略解析器（可选，未声明 [Retry]/[CircuitBreaker]/[Timeout] 特性时由 DI 注入）。
         /// </summary>
-        private readonly IResiliencePolicyResolver? _resilienceResolver;
+        protected readonly IResiliencePolicyResolver? _resilienceResolver;
 
         /// <summary>
         /// 构建 <see cref = "BaseApi"/> 类的实例。
@@ -177,7 +180,7 @@ namespace TestNamespace.Internal
         [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
             Justification = "生成的 JSON 序列化/反序列化通过注入的 IHttpContentSerializer（其 options 含消费方 JsonSerializerContext resolver）保证 AOT 安全，T 的类型元数据已由消费方的 JsonSerializerContext 保留.")]
 #endif
-        public async Task<string> GetBaseDataAsync()
+        public virtual async global::System.Threading.Tasks.Task<string> GetBaseDataAsync()
         {
             var __appContext = _appContextHolder.Current ?? _tokenManager.GetDefaultApp();
 
@@ -243,9 +246,12 @@ namespace TestNamespace.Internal
 
 #nullable enable
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -254,16 +260,8 @@ using Mud.HttpUtils;
 namespace TestNamespace.Internal
 {
     [global::System.CodeDom.Compiler.GeneratedCode("Mud.HttpUtils.Generator", "2.0.4")]
-    internal partial class DerivedApi : IBaseApi, IDerivedApi
+    internal partial class DerivedApi : BaseApi, global::TestNamespace.IDerivedApi
     {
-        /// <summary>
-        /// 用于HttpClient客户端操作操作使用的的<see cref = "ITestTokenManager"/> 令牌管理实例。
-        /// </summary>
-        private readonly ITestTokenManager _tokenManager;
-        /// <summary>
-        /// 令牌提供器，用于获取访问令牌。
-        /// </summary>
-        private readonly ITokenProvider _tokenProvider;
 
         /// <summary>
         /// 构建 <see cref = "DerivedApi"/> 类的实例。
@@ -277,10 +275,8 @@ namespace TestNamespace.Internal
 #if !NETSTANDARD2_0
         [System.Diagnostics.CodeAnalysis.DynamicDependency(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof(global::Mud.HttpUtils.RestService))]
 #endif
-        public DerivedApi(ITestTokenManager appManager, IAppContextHolder appContextHolder, ITokenProvider tokenProvider, IHttpRequestExecutor executor, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null) : base(appManager.GetDefaultApp(), appContextHolder, executor, logger: logger, contentSerializer: contentSerializer)
+        public DerivedApi(ITestTokenManager appManager, IAppContextHolder appContextHolder, ITokenProvider tokenProvider, IHttpRequestExecutor executor, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null) : base(appManager, appContextHolder, tokenProvider, executor, logger: logger, contentSerializer: contentSerializer)
         {
-            _tokenManager = appManager ?? throw new ArgumentNullException(nameof(appManager));
-            _tokenProvider = tokenProvider ?? throw new ArgumentNullException(nameof(tokenProvider));
         }
 
         /// <summary>
@@ -294,59 +290,7 @@ namespace TestNamespace.Internal
         /// 保留供子类覆盖使用。新代码应使用 GetTokenAsync(tokenManagerKey, ...) 方法指定查找键。
         /// </summary>
         /// <returns>返回Token令牌管理器查找键。</returns>
-        protected virtual string GetTokenManagerKey() => _tokenManagerKey;
-
-        /// <summary>
-        /// 切换到指定的应用上下文。
-        /// </summary>
-        /// <returns>返回切换后的应用上下文。</returns>
-        public IMudAppContext UseApp(string appKey)
-        {
-            var context = _tokenManager.GetApp(appKey);
-            if(context == null)
-                throw new InvalidOperationException($"无法找到指定的应用上下文，AppKey: {appKey}");
-            _appContextHolder.Current = context;
-            return context;
-        }
-
-        /// <summary>
-        /// 切换到默认的应用上下文。
-        /// </summary>
-        /// <returns>返回默认的应用上下文。</returns>
-        public IMudAppContext UseDefaultApp()
-        {
-            var context = _tokenManager.GetDefaultApp();
-            if(context == null)
-                throw new InvalidOperationException($"无法找到默认的应用上下文。");
-            _appContextHolder.Current = context;
-            return context;
-        }
-
-        /// <summary>
-        /// 切换到默认应用上下文，并返回作用域以在结束时自动恢复。
-        /// 推荐使用此方法替代 UseDefaultApp()，确保上下文自动恢复。
-        /// </summary>
-        /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>
-        public IDisposable UseDefaultAppScope()
-        {
-            var context = _tokenManager.GetDefaultApp();
-            if(context == null)
-                throw new InvalidOperationException($"无法找到默认的应用上下文。");
-            return _appContextHolder.BeginScope(context);
-        }
-
-        /// <summary>
-        /// 创建一个应用上下文作用域，切换到指定的应用上下文，并在作用域结束时自动恢复之前的上下文。
-        /// </summary>
-        /// <param name="appKey">应用的唯一标识符。</param>
-        /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>
-        public IDisposable BeginScope(string appKey)
-        {
-            var context = _tokenManager.GetApp(appKey);
-            if(context == null)
-                throw new InvalidOperationException($"无法找到指定的应用上下文，AppKey: {appKey}");
-            return _appContextHolder.BeginScope(context);
-        }
+        protected override string GetTokenManagerKey() => _tokenManagerKey;
 
 
         /// <summary>
@@ -359,7 +303,7 @@ namespace TestNamespace.Internal
         [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
             Justification = "生成的 JSON 序列化/反序列化通过注入的 IHttpContentSerializer（其 options 含消费方 JsonSerializerContext resolver）保证 AOT 安全，T 的类型元数据已由消费方的 JsonSerializerContext 保留.")]
 #endif
-        public async Task<string> GetDerivedDataAsync()
+        public async global::System.Threading.Tasks.Task<string> GetDerivedDataAsync()
         {
             var __appContext = _appContextHolder.Current ?? _tokenManager.GetDefaultApp();
 
@@ -409,7 +353,7 @@ namespace TestNamespace.Internal
         /// 异步获取当前应用上下文的访问令牌。
         /// </summary>
         /// <returns>包含访问令牌的字符串任务。</returns>
-        public virtual async Task<string> GetTokenAsync()
+        public override async Task<string> GetTokenAsync()
         {
             return await GetTokenAsync("AccessToken", null).ConfigureAwait(false);
         }

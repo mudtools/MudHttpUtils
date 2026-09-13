@@ -45,5 +45,8 @@
 		<!-- [AOT v4 Phase 18.0 / D18] 随包分发 build props，注册 CompilerVisibleProperty
 		     （IsAotCompatible/PublishAot），使分析器能判定 AOT 上下文。 -->
 		<None Include="build\Mud.HttpUtils.Generator.props" Pack="true" PackagePath="build\" Visible="false" />
+		<!-- [F11] 随包分发 build targets：-p:AotStrictMode=true 严格模式（WarningsAsErrors 清单）。
+		     文件名与 PackageId 同名，NuGet 才能自动导入。 -->
+		<None Include="build\Mud.HttpUtils.Generator.targets" Pack="true" PackagePath="build\" Visible="false" />
 	</ItemGroup>
 </Project>

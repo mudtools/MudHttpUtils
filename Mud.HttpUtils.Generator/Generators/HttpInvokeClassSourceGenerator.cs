@@ -28,44 +28,11 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
     {
         base.Initialize(context);
 
-        // AOT006：独立于 [HttpClientApi] 接口，检测标注 [HttpJsonSerializable] 但未被任何
-        // JsonSerializerContext 覆盖的类型（即"脚手架未运行/未接入构建"的编译期信号）。
-        // 仅本生成器注册一次，避免与同基类的其他生成器（如 RegistrationGenerator）重复触发诊断。
-        // 使用 CompilationProvider 是因为 AnalyzeHttpJsonSerializableCoverage 内部的 CollectCoveredTypes
-        // 需遍历当前编译及引用程序集中的所有 JsonSerializerContext 子类，该全量遍历无法通过
-        // ForAttributeWithMetadataName 增量收集（引用程序集非当前编译的 SyntaxTree）。
-        var hasHttpJsonSerializable = context.SyntaxProvider
-            .ForAttributeWithMetadataName(
-                fullyQualifiedMetadataName: "Mud.HttpUtils.Attributes.HttpJsonSerializableAttribute",
-                predicate: static (node, _) => node is TypeDeclarationSyntax,
-                transform: static (_, _) => true)
-            .Collect()
-            .Select(static (values, _) => values.Any());
-
-        var jsonCtxCoverageData = hasHttpJsonSerializable
-            .Combine(context.CompilationProvider)
-            .Combine(context.AnalyzerConfigOptionsProvider);
-
-        context.RegisterSourceOutput(jsonCtxCoverageData, static (ctx, provider) =>
-        {
-            var (hasFlag, compilation) = provider.Left;
-            if (!hasFlag)
-                return;
-
-            try
-            {
-                foreach (var diagnostic in Mud.HttpUtils.Analyzers.AotDtoCoverageAnalyzer.AnalyzeHttpJsonSerializableCoverage(compilation, ctx.CancellationToken))
-                {
-                    ctx.ReportDiagnostic(diagnostic);
-                }
-            }
-            catch (Exception ex)
-            {
-                // AOT006 为诊断性检查，不应阻断代码生成，但记录日志便于排查分析器内部错误
-                GeneratorDebugLogger.LogError("AOT006_AnalyzeHttpJsonSerializableCoverage", ex);
-            }
-        });
-
+        // [F6 修复] AOT006 已迁出增量生成管道：由独立 DiagnosticAnalyzer
+        // （HttpJsonSerializableCoverageAnalyzer，编译分析阶段）承载。
+        // 原实现 Combine(CompilationProvider) 使每次编译变化都触发 AotDtoCoverageAnalyzer 的全量覆盖扫描，
+        // 污染增量图（IDE 输入路径同步等待）；迁移后生成管道不再持有 CompilationProvider 依赖。
+        //
         // AOT007 已移至 ExecuteGenerator 中调用，复用主生成管道已增量收集的 interfaceModels，
         // 避免单独的 CompilationProvider 管道导致每次按键重新遍历整个编译（C1 修复）。
     }
@@ -75,10 +42,20 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
     protected override void ExecuteGenerator(
         ImmutableArray<InterfaceModel> interfaces,
         SourceProductionContext context,
-        AnalyzerConfigOptionsProvider configOptionsProvider)
+        AnalyzerConfigOptionsProvider configOptionsProvider,
+        string generationSalt)
     {
         if (interfaces.IsDefaultOrEmpty || configOptionsProvider == null)
             return;
+
+        // [F4] 逃生舱生效提示：ForceHttpGenerator=true 强制刷新了增量缓存，输出可观测提示，
+        // 避免用户无法确认开关是否生效。（salt 值本身不写入生成内容。）
+        if (generationSalt.EndsWith("|force", StringComparison.Ordinal))
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.IncrementalCacheForcedInvalidation,
+                Location.None));
+        }
 
         // T5.3: 全局禁用开关（调试与渐进迁移）
         if (ProjectConfigHelper.ReadConfigValueAsBool(configOptionsProvider.GlobalOptions, "build_property.DisableMudSourceGenerator", false))
@@ -88,12 +65,14 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
         ProjectConfigHelper.ReadProjectOptions(configOptionsProvider.GlobalOptions, "build_property.HttpClientOptionsName",
            val => httpClientOptionsName = val, DefaultHttpClientOptionsName);
 
-        // [AOT v4 Phase 18.3 / D19] 读取 AOT 上下文：IsAotCompatible=true 或 PublishAot=true。
-        // 该属性经 build/Mud.HttpUtils.Generator.props 注册为 CompilerVisibleProperty（D18）后方可读取，
-        // 否则恒为 false（AOT 下 XML 静态字段不会被条件化跳过）。
-        var isAotEnabled =
-            ProjectConfigHelper.ReadConfigValueAsBool(configOptionsProvider.GlobalOptions, "build_property.IsAotCompatible", false) ||
-            ProjectConfigHelper.ReadConfigValueAsBool(configOptionsProvider.GlobalOptions, "build_property.PublishAot", false);
+        // [AOT v4 Phase 18.3 / D19] 读取 AOT 上下文。
+        // [F10 修复] 不再以「IsAotCompatible 是否启用」充当 Native AOT 判定：
+        //   - AotRuntimeMode = MudAotRuntimeMode 显式配置 > PublishAot > 默认 Jit；
+        //   - isAotEnabled（驱动 ConstructorGenerator 的 XML 静态字段替换）仅当「确实 AOT」时为 true；
+        //   - 仅 IsAotCompatible=true 时 AOT007 降级为 Warning（并提示改用 PublishAot/MudAotRuntimeMode）。
+        var aotMode = AotModeResolver.Resolve(configOptionsProvider.GlobalOptions);
+        var isAotEnabled = aotMode == AotRuntimeMode.Aot;
+        var isAotAnalyzerOnly = AotModeResolver.IsAotAnalyzerOnly(configOptionsProvider.GlobalOptions);
 
         // [v2.4 §3.4 D-03 修复] 读取消费项目 nullable 配置，条件化发射 #nullable enable
         EmitNullableEnable = ProjectConfigHelper.ReadConfigValue(
@@ -140,7 +119,14 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
                 {
                     context.ReportDiagnostic(diagnostic);
                 }
-                foreach (var diagnostic in Mud.HttpUtils.Analyzers.AotXmlRejectionAnalyzer.Analyze(firstCompilation, isAotEnabled, context.CancellationToken))
+
+                // [F10] AOT007 分级由 AotXmlRejectionAnalyzer 内部按模式决定（Error/Warning）；
+                // isAotEnabled 仅决定是否运行分析，具体级别在 Analyze 内由 descriptor 参数化。
+                var aot007Descriptor = isAotAnalyzerOnly
+                    ? Diagnostics.AotXmlNotSupportedInAotWarning
+                    : Diagnostics.AotXmlNotSupportedInAot;
+                foreach (var diagnostic in Mud.HttpUtils.Analyzers.AotXmlRejectionAnalyzer.Analyze(
+                             firstCompilation, isAotEnabled, context.CancellationToken, aot007Descriptor))
                 {
                     context.ReportDiagnostic(diagnostic);
                 }

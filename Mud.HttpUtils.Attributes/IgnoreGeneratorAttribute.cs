@@ -8,13 +8,17 @@
 namespace Mud.HttpUtils.Attributes;
 
 /// <summary>
-/// 标记接口、方法、属性或字段忽略源代码生成器的处理。
+/// 标记接口或方法忽略源代码生成器的处理。
 /// </summary>
 /// <remarks>
 /// <para>
-/// 应用于接口、方法、属性或字段上，指示源代码生成器在生成代码时应忽略该元素。
-/// 通常用于在接口中保留某些成员不被自动生成实现，允许手动实现。
+/// [E-2] 支持面收敛为 <see cref="AttributeTargets.Interface"/> 与 <see cref="AttributeTargets.Method"/>
+/// （决策 2026-09-13）。Property/Field 上的标注在当前实现下本就无效（无消费点），收窄后编译器以
+/// CS0592 直接提示，比生成器诊断更准确。
 /// </para>
+/// <para>方法级：不生成该方法实现（同接口其他方法照常生成）。</para>
+/// <para>接口级：生成器完全不介入——不生成实现类、不生成 DI 注册/工厂、不报该接口的 AOT/MUD 诊断；
+/// 由使用方自行实现并注册。</para>
 /// </remarks>
 /// <example>
 /// <code>
@@ -31,7 +35,7 @@ namespace Mud.HttpUtils.Attributes;
 /// }
 /// </code>
 /// </example>
-[AttributeUsage(AttributeTargets.Interface | AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = false)]
+[AttributeUsage(AttributeTargets.Interface | AttributeTargets.Method, AllowMultiple = false)]
 public sealed class IgnoreGeneratorAttribute : Attribute
 {
 }

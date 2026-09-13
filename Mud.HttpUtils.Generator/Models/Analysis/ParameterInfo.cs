@@ -59,4 +59,10 @@ internal class ParameterInfo
     /// 由 ParameterValidationHelper 设置，用于 RequestBuilder 判断是否需要生成冗余的 null 检查。
     /// </summary>
     public bool IsValidated { get; set; }
+
+    /// <summary>
+    /// [F14] 参数被生成器判定为不支持的原因（ref/out/in/params/指针等）。
+    /// 非 null 时 MethodGenerator 报告 HTTPCLIENT004 并跳过该方法体生成。
+    /// </summary>
+    public string? UnsupportedReason { get; set; }
 }

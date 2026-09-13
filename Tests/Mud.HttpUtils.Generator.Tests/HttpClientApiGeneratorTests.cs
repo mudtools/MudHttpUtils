@@ -138,7 +138,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -162,7 +162,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -189,7 +189,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -214,7 +214,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Post(""/submit"")]
@@ -237,7 +237,7 @@ using System.IO;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Post(""/upload"")]
@@ -264,7 +264,7 @@ namespace TestNamespace
         public string Content { get; set; }
     }
 
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/chat/stream"")]
@@ -287,7 +287,7 @@ using System.IO;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Post(""/upload"")]
@@ -317,7 +317,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     [InterfaceQuery(Name = ""version"", Value = ""v1"")]
     public interface ITestApi
     {
@@ -356,7 +356,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users/{id}"")]
@@ -392,7 +392,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/search"")]
@@ -423,7 +423,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -492,7 +492,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -518,7 +518,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Patch(""/users/{id}"")]
@@ -545,7 +545,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -802,7 +802,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -837,7 +837,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/data"", ResponseContentType = ""application/xml"")]
@@ -1053,7 +1053,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -1092,7 +1092,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -1129,7 +1129,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -1158,7 +1158,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -1187,7 +1187,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -1215,7 +1215,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -1243,7 +1243,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -1271,7 +1271,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -1301,7 +1301,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]

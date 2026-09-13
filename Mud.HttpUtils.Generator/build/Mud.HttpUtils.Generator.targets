@@ -1,0 +1,18 @@
+<Project>
+
+  <!--
+    Mud.HttpUtils.Generator 随包分发的 targets。
+    ============================================================
+    AOT 严格模式随包分发（F11）：-p:AotStrictMode=true 时把 AOT 相关诊断清单式升级为错误。
+    原实现仅存在于仓库 Directory.Build.targets，随源码分发；消费 NuGet 包的第三方项目
+    无法获得该承诺（Generator README §AOT 章节承诺 -p:AotStrictMode=true 生效）。
+    文件名必须与 PackageId 同名（Mud.HttpUtils.Generator.targets），否则 NuGet 不会自动导入。
+    与 Mud.HttpUtils.Attributes 包各自 build/{PackageId}.targets 自动导入互不冲突
+    （命名空间隔离由文件名保证）。
+  -->
+
+  <PropertyGroup Condition="'$(AotStrictMode)' == 'true' AND '$(MudExcludeFromAotStrictMode)' != 'true'">
+    <WarningsAsErrors>$(WarningsAsErrors);IL2026;IL2046;IL2050;IL2057;IL2067;IL2070;IL2072;IL2075;IL2080;IL2091;IL3050;IL3051;AOT004;AOT005;AOT006;AOT007</WarningsAsErrors>
+  </PropertyGroup>
+
+</Project>

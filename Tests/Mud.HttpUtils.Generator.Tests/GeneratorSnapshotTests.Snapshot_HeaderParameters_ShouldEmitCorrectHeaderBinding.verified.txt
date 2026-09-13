@@ -4,9 +4,12 @@
 
 #nullable enable
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -15,7 +18,7 @@ using Mud.HttpUtils;
 namespace TestNamespace.Internal
 {
     [global::System.CodeDom.Compiler.GeneratedCode("Mud.HttpUtils.Generator", "2.0.4")]
-    internal partial class TestApi : ITestApi
+    internal partial class TestApi : global::TestNamespace.ITestApi
     {
         /// <summary>
         /// HTTP 内容序列化器，统一处理 JSON 序列化/反序列化操作。
@@ -165,7 +168,7 @@ namespace TestNamespace.Internal
         [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
             Justification = "生成的 JSON 序列化/反序列化通过注入的 IHttpContentSerializer（其 options 含消费方 JsonSerializerContext resolver）保证 AOT 安全，T 的类型元数据已由消费方的 JsonSerializerContext 保留.")]
 #endif
-        public async Task<string> GetDataAsync(string requestId)
+        public async global::System.Threading.Tasks.Task<string> GetDataAsync(string requestId)
         {
             if (string.IsNullOrWhiteSpace(requestId))
             {

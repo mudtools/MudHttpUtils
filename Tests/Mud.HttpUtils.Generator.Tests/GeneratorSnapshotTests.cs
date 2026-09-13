@@ -31,7 +31,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get("/users")]
@@ -61,7 +61,7 @@ namespace TestNamespace
         public string? Email { get; set; }
     }
 
-    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Post("/users")]
@@ -90,7 +90,7 @@ namespace TestNamespace
         public string Name { get; set; }
     }
 
-    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Put("/users/{id}")]
@@ -114,7 +114,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Delete("/users/{id}")]
@@ -142,7 +142,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get("/search")]
@@ -166,7 +166,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get("/users/{userId}/posts/{postId}")]
@@ -190,7 +190,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get("/data")]
@@ -219,7 +219,7 @@ namespace TestNamespace
         public string Value { get; set; }
     }
 
-    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Post("/submit")]
@@ -247,7 +247,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get("/users/{id}")]
@@ -271,7 +271,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get("/users")]
@@ -363,7 +363,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get("/data")]
@@ -389,7 +389,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Post("/orders")]
@@ -414,7 +414,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get("/data")]
@@ -439,11 +439,11 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get("/data")]
-        [CircuitBreaker(5, 30000)]
+        [CircuitBreaker(5, BreakDurationSeconds = 30)]
         Task<string> GetDataAsync();
     }
 }
@@ -468,7 +468,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get("/data")]
@@ -503,7 +503,7 @@ namespace TestNamespace
     public interface ITestApi
     {
         [Get("/secure-data")]
-        [Token(TokenInjectionMode.Header, "Authorization", "Bearer {0}")]
+        [Token(TokenType = "AccessToken", InjectionMode = TokenInjectionMode.Header, Name = "Authorization", Scheme = "Bearer")]
         Task<string> GetSecureDataAsync();
     }
 }
@@ -534,7 +534,7 @@ namespace TestNamespace
     public interface ITestApi
     {
         [Get("/data")]
-        [Token(TokenInjectionMode.Query, "access_token")]
+        [Token(TokenType = "AccessToken", InjectionMode = TokenInjectionMode.Query, Name = "access_token")]
         Task<string> GetDataAsync();
     }
 }
@@ -559,7 +559,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    [HttpClientApi]
     [BasePath("/api/v1")]
     [Header("X-API-Version", "2.0")]
     public interface ITestApi
@@ -585,7 +585,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Path]
@@ -652,14 +652,14 @@ namespace TestNamespace
         IMudAppContext GetApp(string appKey);
     }
 
-    [HttpClientApi(TokenManage = "ITestTokenManager")]
+    [HttpClientApi(TokenManage = "ITestTokenManager", IsAbstract = true)]
     public interface IBaseApi
     {
         [Get("/base")]
         Task<string> GetBaseDataAsync();
     }
 
-    [HttpClientApi(TokenManage = "ITestTokenManager", InheritedFrom = "IBaseApi")]
+    [HttpClientApi(TokenManage = "ITestTokenManager", InheritedFrom = "BaseApi")]
     public interface IDerivedApi : IBaseApi
     {
         [Get("/derived")]

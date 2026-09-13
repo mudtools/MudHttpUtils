@@ -97,6 +97,27 @@ internal readonly struct InterfaceModel : IEquatable<InterfaceModel>
         var sb = new ValueStringBuilder(stackalloc char[512]);
         sb.Append(sourceText);
 
+        // [F5 修复] 纳入同一接口的其余 partial 声明。原实现仅取 ctx.TargetNode（带特性的那个 partial 声明），
+        // partial 兄弟声明变化（新增方法/特性改签名）不会失效指纹 → 生成的实现类缺少数成员。
+        // 任一兄弟 partial 声明变化都会触发该接口重生成（准确性提升，非过度失效）；trivia 变化仍被排除。
+        if (context.SemanticModel.GetDeclaredSymbol(syntax) is INamedTypeSymbol interfaceSymbol)
+        {
+            foreach (var reference in interfaceSymbol.DeclaringSyntaxReferences
+                         .OrderBy(r => r.SyntaxTree.FilePath, StringComparer.Ordinal)
+                         .ThenBy(r => r.Span.Start))
+            {
+                if (reference.SyntaxTree == syntax.SyntaxTree && reference.Span == syntax.Span)
+                    continue; // 跳过主声明
+
+                if (reference.GetSyntax(cancellationToken: default) is InterfaceDeclarationSyntax other)
+                {
+                    sb.Append('|');
+                    sb.Append("Partial:");
+                    sb.Append(other.WithoutTrivia().ToString());
+                }
+            }
+        }
+
         // 纳入继承层次：当基接口列表变化时（如添加/移除基接口），指纹随之变化
         if (syntax.BaseList != null)
         {

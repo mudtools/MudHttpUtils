@@ -22,18 +22,14 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
         _interfaceSymbol = interfaceSymbol;
     }
 
-    private static readonly string[] DefaultUsingNamespaces =
-    [
-        "System", "System.Net.Http", "System.Text",
-        "System.Text.Json", "System.Threading.Tasks",
-        "Microsoft.Extensions.Logging", "Microsoft.Extensions.Options", "Mud.HttpUtils"
-    ];
-
+    // [F2 修复] 使用 GeneratedCodeConsts.ImplementationFileUsings 作为单一事实源，
+    // 原私有静态列表缺 System.Linq / System.Collections.Generic，生成代码在无 ImplicitUsings
+    // 的消费项目上编译失败（本仓库 Demo 因 ImplicitUsings=enable 掩盖了缺失）。
     public void Generate(StringBuilder codeBuilder, GeneratorContext context)
     {
         // [D-03 修复] 传递 EmitNullableEnable 以条件化发射 #nullable enable
         // [D-06 修复] 传递 EmitGeneratedCodeMarkers 以条件化发射 [GeneratedCode] 特性
-        TransitiveCodeGenerator.GenerateFileHeader(codeBuilder, DefaultUsingNamespaces, context.EmitNullableEnable);
+        TransitiveCodeGenerator.GenerateFileHeader(codeBuilder, GeneratedCodeConsts.ImplementationFileUsings, context.EmitNullableEnable);
         codeBuilder.AppendLine();
         GenerateNamespaceDeclaration(codeBuilder, context);
         GenerateClassDeclaration(codeBuilder, context);
@@ -86,13 +82,17 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
         }
 
         string inheritance = string.Empty;
+        // [E-1 修复] typeParams 由接口类型参数名拼接（如 <T>，本身无命名空间歧义）。
+        // 接口名使用 global:: 完全限定，避免 X.Internal 子命名空间中存在同名类型时静默绑定到错误类型。
+        var interfaceFullName = _interfaceSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
+            .WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.UseSpecialTypes));
         if (context.HasInheritedFrom)
         {
-            inheritance = $" : {context.Configuration.InheritedFrom}, {_interfaceSymbol.Name}{typeParams}";
+            inheritance = $" : {context.Configuration.InheritedFrom}, {interfaceFullName}{typeParams}";
         }
         else
         {
-            inheritance = $" : {_interfaceSymbol.Name}{typeParams}";
+            inheritance = $" : {interfaceFullName}{typeParams}";
         }
 
         // [D-06 修复] EmitGeneratedCodeMarkers=false 时不标注 [GeneratedCode]，便于调试生成代码中的警告

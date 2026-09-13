@@ -707,6 +707,69 @@ public class RequestBuilderTests
         code.Should().Contain("__httpRequest.Headers.Add(\"Authorization\"");
     }
 
+    // [F8] Ignore 语义修正：接口属性级 [Header] 在任何 mode 下都应生效（仅方法参数级 Header 在 Ignore 下跳过）。
+    private static MethodAnalysisResult CreateMethodInfoWithInterfaceHeaderProperty(string? headerMergeMode = null)
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
+        {
+            new()
+            {
+                Name = "TraceIdHeader",
+                ParameterName = "X-Trace-Id",
+                AttributeType = "Header",
+                Type = "string",
+                IsReadOnly = false
+            }
+        };
+        if (headerMergeMode != null)
+        {
+            methodInfo.HeaderMergeMode = headerMergeMode;
+        }
+
+        return methodInfo;
+    }
+
+    [Fact]
+    public void GenerateInterfaceHeaderProperties_HeaderMergeIgnore_ShouldKeepInterfacePropertyHeader()
+    {
+        // 修复前：Ignore 短路跳过接口属性级 Header（语义颠倒，见审计 F8）。
+        var methodInfo = CreateMethodInfoWithInterfaceHeaderProperty("Ignore");
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("X-Trace-Id",
+            "Ignore 模式下接口属性级 [Header] 必须保持发送（HeaderMergeAttribute.Ignore=仅方法级忽略）");
+    }
+
+    [Fact]
+    public void GenerateInterfaceHeaderProperties_HeaderMergeAppend_ShouldKeepInterfacePropertyHeader()
+    {
+        var methodInfo = CreateMethodInfoWithInterfaceHeaderProperty("Append");
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("X-Trace-Id");
+        code.Should().NotContain(".Remove(\"X-Trace-Id\")");
+    }
+
+    [Fact]
+    public void GenerateInterfaceHeaderProperties_HeaderMergeReplace_ShouldKeepInterfacePropertyHeader()
+    {
+        var methodInfo = CreateMethodInfoWithInterfaceHeaderProperty("Replace");
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("X-Trace-Id");
+        code.Should().Contain(".Remove(\"X-Trace-Id\")");
+    }
+
     #endregion
 
     #region Format 属性测试 (Query)
@@ -1097,6 +1160,62 @@ public class RequestBuilderTests
         code.Should().NotContain("WithStaticProp.StaticProp");
 
         code.Should().Contain("FormUrlEncodedContent");
+    }
+
+    // [F13] 字面量转义收口：ContentType 含 " 或 \ 时必须转义，否则产出非法 C#。
+    // 走 UseStringContent=true 的 StringContent 分支（该分支把 content type 作为字符串字面量写入）。
+
+    [Fact]
+    public void GenerateBodyParameter_ContentTypeWithDoubleQuoteAndBackslash_EscapesLiteral()
+    {
+        var methodInfo = CreateMethodInfo("/api/data", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "data", Type = "string",
+                Attributes = [new ParameterAttributeInfo
+                {
+                    Name = "BodyAttribute",
+                    Arguments = new object?[] { "appli\"cation\\x\\json" },
+                    NamedArguments = new Dictionary<string, object?> { ["UseStringContent"] = true },
+                }]
+            }
+        });
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("StringContent");
+        // " 应转义为 \"，\ 应为 \\（由 StringEscapeHelper.EscapeString 处理）
+        code.Should().NotContain("\"appli\"cation", "ContentType 中的原始引号必须被转义");
+        code.Should().Contain("appli\\\"cation");
+    }
+
+    [Fact]
+    public void GenerateBodyParameter_ContentTypeFromEffectiveContentType_EscapesLiteral()
+    {
+        var methodInfo = CreateMethodInfo("/api/data", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "data", Type = "string",
+                Attributes = [new ParameterAttributeInfo
+                {
+                    Name = "BodyAttribute",
+                    NamedArguments = new Dictionary<string, object?> { ["UseStringContent"] = true },
+                }]
+            }
+        });
+        methodInfo.BodyContentType = "appli\"cation\\json";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("StringContent");
+        code.Should().Contain("appli\\\"cation\\\\json",
+            "BodyContentType 经写入点转义后应产出合法字符串字面量");
     }
 
     #endregion

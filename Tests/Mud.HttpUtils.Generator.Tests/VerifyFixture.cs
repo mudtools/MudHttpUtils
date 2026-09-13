@@ -31,6 +31,15 @@ public static class VerifyFixture
         Compilation outputCompilation,
         [CallerFilePath] string sourceFile = "")
     {
+        // [M0] 快照前先做编译断言：快照只负责形状，编译断言负责「生成代码必须可编译」（F15）。
+        // 输入 + 生成产物整体不应有 Error 级编译诊断；
+        // 期望若干诊断（如 HTTPCLIENT012 泛型 Info）的用例不在此路径下断言。
+        var errors = outputCompilation.GetDiagnostics()
+            .Where(d => d.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+        errors.Should().BeEmpty(
+            $"快照用例的输入 + 生成产物必须可编译（F15）；错误：{string.Join("\n", errors.Select(e => e.ToString()))}");
+
         // 从 outputCompilation 中提取生成器添加的语法树（跳过原始输入语法树）
         var generatedSources = new List<(string HintName, string Source)>();
         foreach (var tree in outputCompilation.SyntaxTrees.Skip(1))
@@ -78,7 +87,13 @@ public static class VerifyFixture
             references.AddRange(additionalReferences);
         }
 
-        var syntaxTree = CSharpSyntaxTree.ParseText(source);
+        // [M0/F15] 编译断言要求「输入 + 生成产物」整体可编译。快照测试的输入源天然省略
+        // <ImplicitUsings>enable</ImplicitUsings> 提供的标准 using（消费项目在项目文件中全局启用）。
+        // 此处补齐标准隐式 using，使输入源等价于合法消费配置；
+        // 生成产物仍按自包含校验（用其自带的 using 头），因此 F2「缺 using」仍能被编译断言捕获。
+        var effectiveSource = ImplicitUsingsPreamble + source;
+
+        var syntaxTree = CSharpSyntaxTree.ParseText(effectiveSource);
         var compilation = CSharpCompilation.Create(
             "TestAssembly",
             new[] { syntaxTree },
@@ -90,6 +105,20 @@ public static class VerifyFixture
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
         return (driver, outputCompilation);
     }
+
+    /// <summary>
+    /// 模拟 <c>&lt;ImplicitUsings&gt;enable&lt;/ImplicitUsings&gt;</c> 的标准隐式 using 头。
+    /// </summary>
+    private const string ImplicitUsingsPreamble = """
+        global using System;
+        global using System.Collections.Generic;
+        global using System.IO;
+        global using System.Linq;
+        global using System.Net.Http;
+        global using System.Threading;
+        global using System.Threading.Tasks;
+
+        """;
 
     /// <summary>
     /// 获取或缓存元数据引用。

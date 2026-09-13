@@ -19,12 +19,16 @@ namespace Mud.HttpUtils.Analyzers;
 /// <para>
 /// <c>XmlSerializer</c> 构造函数在 .NET 7+ Native AOT 下需要动态代码生成，
 /// 会在类首次访问时抛 <see cref="System.PlatformNotSupportedException"/>。本分析器在编译期
-/// 将该运行时崩溃前移为 AOT007 错误诊断，使消费方在编译阶段即可发现问题。
+/// 将该运行时崩溃前移为 AOT007 诊断，使消费方在编译阶段即可发现问题。
 /// </para>
 /// <para>
 /// <b>仅</b>在 AOT 上下文（<c>build_property.IsAotCompatible=true</c> 或
 /// <c>build_property.PublishAot=true</c>）下报告；AOT 开关由调用方（生成器）读取配置后以
 /// <c>isAotEnabled</c> 参数传入，从而将"配置读取"与"分析"解耦，便于单元测试直接调用。
+/// </para>
+/// <para>
+/// [F10 修复] 诊断级别由调用方参数化：<c>descriptor</c> 由调用方按
+/// <see cref="AotModeResolver"/> 决定（Error：确认 Native AOT；Warning：仅 IsAotCompatible 的模糊态）。
 /// </para>
 /// <para>
 /// <b>诊断定位契约</b>：当 XML 判定来源于 <c>[SerializationMethod(Xml)]</c> 特性时，诊断定位到该
@@ -48,11 +52,13 @@ internal static class AotXmlRejectionAnalyzer
     /// <param name="compilation">编译单元。</param>
     /// <param name="isAotEnabled">是否处于 AOT 上下文（由调用方从 <c>AnalyzerConfigOptions</c> 读取）。</param>
     /// <param name="cancellationToken">取消令牌。</param>
+    /// <param name="descriptor">诊断描述符（F10：由调用方按 <see cref="AotModeResolver"/> 决定 Error/Warning）。</param>
     /// <returns>诊断集合；非 AOT 上下文时为空。</returns>
     public static ImmutableArray<Diagnostic> Analyze(
         Compilation compilation,
         bool isAotEnabled,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DiagnosticDescriptor? descriptor = null)
     {
         var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
 
@@ -63,6 +69,9 @@ internal static class AotXmlRejectionAnalyzer
         var httpClientApiAttr = compilation.GetTypeByMetadataName(HttpClientApiAttributeFullName);
         if (httpClientApiAttr == null)
             return diagnostics.ToImmutable();
+
+        // [F10] 默认 Error（保持既有调用面兼容）。
+        var effectiveDescriptor = descriptor ?? Diagnostics.AotXmlNotSupportedInAot;
 
         var serializationMethodAttr = compilation.GetTypeByMetadataName(SerializationMethodAttributeFullName);
 
@@ -85,6 +94,11 @@ internal static class AotXmlRejectionAnalyzer
                 var hasHttpClientApi = interfaceSymbol.GetAttributes()
                     .Any(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, httpClientApiAttr));
                 if (!hasHttpClientApi)
+                    continue;
+
+                // [E-5] 接口级 [IgnoreGenerator]：用户明确自行实现，不生成实现类 ⇒ 不存在
+                // XmlSerializer 代码 ⇒ AOT007 不应报（当前以 Error 阻断，属特性豁免失败）。
+                if (GeneratorAttributeFilters.HasIgnoreGenerator(interfaceSymbol))
                     continue;
 
                 foreach (var method in interfaceSymbol.GetMembers().OfType<IMethodSymbol>())
@@ -130,7 +144,7 @@ internal static class AotXmlRejectionAnalyzer
                     location ??= method.Locations.FirstOrDefault() ?? interfaceDecl.GetLocation();
 
                     diagnostics.Add(Diagnostic.Create(
-                        Diagnostics.AotXmlNotSupportedInAot,
+                        effectiveDescriptor,
                         location,
                         interfaceSymbol.Name,
                         method.Name));
