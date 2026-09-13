@@ -23,11 +23,17 @@
 	     仅对发布库（有 PackageId、非源生成器/分析器、有构建输出、非测试项目）启用。
 	     在 Directory.Build.targets 中声明，因为 PackageId 等属性在项目文件中设置，
 	     需在项目文件之后导入才能读取。
-	     通过 AdditionalFiles 按 TFM 声明 PublicAPI.Shipped.txt / PublicAPI.Unshipped.txt。 -->
+	     通过 AdditionalFiles 按 TFM 声明 PublicAPI.Shipped.txt / PublicAPI.Unshipped.txt。
+
+	     说明：2026-09-13 已删除全部 PublicAPI 目录（各发布库下的 PublicAPI/<tfm>/*.txt）。
+	     这些基线文件当初由 Microsoft.CodeAnalysis.PublicApiAnalyzers 维护，但长期未随代码同步，
+	     已失去 API 审查约束力（缺失/错漏 API 仅为 warning，未设为 error）。
+	     此处将开关强制关闭，避免 csc 因找不到 AdditionalFiles 而报 CS2001。
+	     若日后需要恢复公共 API 审查，重新置为 true 并重建基线文件即可。 -->
 	<PropertyGroup>
 		<!-- PackAsTool 是 dotnet 全局工具（CLI 可执行程序），非供外部引用的类库，
 		     其公共类型（如 JsonContextGenerator）属于工具内部实现细节，无需维护公共 API 基线。 -->
-		<EnablePublicApiBaseline Condition="'$(PackageId)' != '' AND '$(IsRoslynComponent)' != 'true' AND '$(IncludeBuildOutput)' != 'false' AND '$(IsTestProject)' != 'true' AND '$(PackAsTool)' != 'true'">true</EnablePublicApiBaseline>
+		<EnablePublicApiBaseline Condition="'$(PackageId)' != '' AND '$(IsRoslynComponent)' != 'true' AND '$(IncludeBuildOutput)' != 'false' AND '$(IsTestProject)' != 'true' AND '$(PackAsTool)' != 'true'">false</EnablePublicApiBaseline>
 	</PropertyGroup>
 
 	<ItemGroup Condition="'$(EnablePublicApiBaseline)' == 'true'">

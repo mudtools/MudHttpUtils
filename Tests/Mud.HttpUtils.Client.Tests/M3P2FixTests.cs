@@ -210,6 +210,58 @@ public class M3P2FixTests
         (await serializer.FromHttpContentAsync<long>(content)).Should().Be(42);
     }
 
+    [Fact]
+    public async Task Executor_SendAndDeserialize_EmptyChunkedBody_ReturnsDefault()
+    {
+        // M3-#26 生成代码路径：DefaultHttpRequestExecutor 读取空 chunked 体得到空串，
+        // Deserialize<T>(string) 空串守卫返回 default（此前会抛 JsonException 并被包装为 ApiException）
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
+        var mockClient = new Mock<IBaseHttpClient>();
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            // 无 Content-Length 的空流（chunked 空体语义）
+            Content = new StreamContent(new NonSeekableStream(Array.Empty<byte>()))
+        };
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
+
+        var result = await executor.SendAndDeserializeAsync<long>(
+            new HttpRequestMessage(HttpMethod.Get, new Uri("https://api.example.com/test")),
+            mockClient.Object,
+            new ResponseDescriptor { ResponseContentType = "application/json" },
+            null);
+
+        result.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Executor_SendAndDeserialize_EmptyChunkedXmlBody_ReturnsDefault()
+    {
+        // M3-#26 生成代码路径（XML）：空 chunked 体返回 default，而非 XmlSerializer 抛 InvalidOperationException
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
+        var mockClient = new Mock<IBaseHttpClient>();
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(new NonSeekableStream(Array.Empty<byte>()))
+        };
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
+        var descriptor = new ResponseDescriptor { ResponseContentType = "application/xml" };
+        descriptor.XmlSerializer = new System.Xml.Serialization.XmlSerializer(typeof(EmptyXmlDto));
+
+        var result = await executor.SendAndDeserializeAsync<EmptyXmlDto>(
+            new HttpRequestMessage(HttpMethod.Get, new Uri("https://api.example.com/test")),
+            mockClient.Object,
+            descriptor,
+            null);
+
+        result.Should().BeNull();
+    }
+
+    public sealed class EmptyXmlDto
+    {
+    }
+
     private sealed class NonSeekableStream : Stream
     {
         private readonly MemoryStream _inner;

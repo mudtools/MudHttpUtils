@@ -120,7 +120,8 @@ public class TokenManagerBaseTests
         eventArgs.TokenType.Should().Be("access_token");
         eventArgs.RetryCount.Should().Be(2);
         eventArgs.Timestamp.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(1));
-        eventArgs.ShouldRetry.Should().BeFalse();
+        // TK-20：ShouldRetry 默认 true —— MaxRefreshRetryCount 是重试的唯一主控门，false 仅用于事件处理器提前取消
+        eventArgs.ShouldRetry.Should().BeTrue();
         eventArgs.FallbackToken.Should().BeNull();
     }
 

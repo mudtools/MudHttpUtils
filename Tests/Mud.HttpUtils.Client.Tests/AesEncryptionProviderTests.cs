@@ -625,21 +625,10 @@ public class AesEncryptionProviderTests
     [Fact]
     public void PublicApi_EnableAuthenticatedEncryption_Removed()
     {
+        // 注：此前此测试还会断言各 TFM 的 PublicAPI.Unshipped.txt 基线文件；
+        //     2026-09-13 已移除 PublicAPI 目录与 PublicApiAnalyzers 基线（见 Directory.Build.targets），
+        //     故仅保留反射层面的防回潮断言。
         typeof(AesEncryptionOptions).GetProperty("EnableAuthenticatedEncryption").Should().BeNull();
-
-        foreach (var name in new[]
-                 {
-                     "Mud.HttpUtils.Abstractions/PublicAPI/netstandard2.0/PublicAPI.Unshipped.txt",
-                     "Mud.HttpUtils.Abstractions/PublicAPI/net6.0/PublicAPI.Unshipped.txt",
-                     "Mud.HttpUtils.Abstractions/PublicAPI/net8.0/PublicAPI.Unshipped.txt",
-                     "Mud.HttpUtils.Abstractions/PublicAPI/net10.0/PublicAPI.Unshipped.txt",
-                 })
-        {
-            var path = Path.Combine(RepoRoot, name);
-            File.Exists(path).Should().BeTrue($"{name} 应存在");
-            File.ReadAllText(path).Should().NotContain("EnableAuthenticatedEncryption");
-            File.ReadAllText(path).Should().Contain("RequireCrossRuntimePortable.get -> bool");
-        }
     }
 
     /// <summary>BC-AE4：<c>RequireCrossRuntimePortable</c> 默认值为 <c>false</c>。</summary>
@@ -648,19 +637,6 @@ public class AesEncryptionProviderTests
     {
         new AesEncryptionOptions { Key = (byte[])TestKey.Clone() }
             .RequireCrossRuntimePortable.Should().BeFalse();
-    }
-
-    /// <summary>测试工程根目录下的仓库根路径（用于 PublicAPI 基线断言）。</summary>
-    private static string RepoRoot
-    {
-        get
-        {
-            var dir = new DirectoryInfo(AppContext.BaseDirectory);
-            while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Mud.HttpUtils.slnx")))
-                dir = dir.Parent;
-
-            return dir?.FullName ?? AppContext.BaseDirectory;
-        }
     }
 
     #endregion

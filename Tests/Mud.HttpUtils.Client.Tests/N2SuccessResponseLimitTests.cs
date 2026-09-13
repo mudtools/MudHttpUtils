@@ -242,6 +242,78 @@ public class N2SuccessResponseLimitTests : IDisposable
     }
 
     [Fact]
+    public async Task Executor_DownloadAsync_ContentLengthExceedsLimit_ThrowsApiRequestException()
+    {
+        // N-2：executor byte[] 下载路径（DownloadAsync）Content-Length 预判
+        var executor = new DefaultHttpRequestExecutor(
+            NullLogger<DefaultHttpRequestExecutor>.Instance,
+            maxSuccessResponseBytes: 1024);
+        var mockClient = new Mock<IBaseHttpClient>();
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(new byte[10 * 1024])
+        };
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
+
+        var ex = await FluentActions.Awaiting(() => executor.DownloadAsync(
+                new HttpRequestMessage(HttpMethod.Get, new Uri("https://api.example.com/file")),
+                mockClient.Object))
+            .Should().ThrowAsync<ApiRequestException>();
+
+        ex.Which.Message.Should().Contain("1024");
+    }
+
+    [Fact]
+    public async Task Executor_DownloadAsync_ChunkedExceedsLimitDuringRead_ThrowsApiRequestException()
+    {
+        // N-2：executor byte[] 下载路径 —— chunked（无 Content-Length）超限由守卫流在读取阶段校验
+        var executor = new DefaultHttpRequestExecutor(
+            NullLogger<DefaultHttpRequestExecutor>.Instance,
+            maxSuccessResponseBytes: 1024);
+        var mockClient = new Mock<IBaseHttpClient>();
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            // 无 Content-Length 的流式内容（chunked 语义）—— 只能靠守卫流读取阶段拦截
+            Content = new StreamContent(new MemoryStream(Enumerable.Repeat((byte)'x', 10 * 1024).ToArray()))
+        };
+        response.Content.Headers.ContentLength = null;
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
+
+        var ex = await FluentActions.Awaiting(() => executor.DownloadAsync(
+                new HttpRequestMessage(HttpMethod.Get, new Uri("https://api.example.com/file")),
+                mockClient.Object))
+            .Should().ThrowAsync<ApiRequestException>();
+
+        ex.Which.Message.Should().Contain("1024");
+    }
+
+    [Fact]
+    public async Task Executor_DownloadAsync_WithinLimit_ReturnsFullBytes()
+    {
+        // N-2：executor byte[] 下载路径 —— 未超限时守卫不改变语义
+        var executor = new DefaultHttpRequestExecutor(
+            NullLogger<DefaultHttpRequestExecutor>.Instance,
+            maxSuccessResponseBytes: 64 * 1024);
+        var mockClient = new Mock<IBaseHttpClient>();
+        var data = new byte[10 * 1024];
+        new Random(42).NextBytes(data);
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(data)
+        };
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
+
+        var result = await executor.DownloadAsync(
+            new HttpRequestMessage(HttpMethod.Get, new Uri("https://api.example.com/file")),
+            mockClient.Object);
+
+        result.Should().Equal(data);
+    }
+
+    [Fact]
     public async Task DiWiring_OptionFlowsToExecutor()
     {
         // DI 装配：IOptions<EnhancedHttpClientOptions>.MaxSuccessResponseBytes → DefaultHttpRequestExecutor 守卫
