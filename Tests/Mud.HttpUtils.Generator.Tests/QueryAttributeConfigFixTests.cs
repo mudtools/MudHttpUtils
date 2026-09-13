@@ -182,4 +182,44 @@ public class QueryAttributeConfigFixTests
         // B-3：命名参数 Name 作为构造参数的回退（此前被忽略）
         code.Should().Contain("page_size");
     }
+
+    /// <summary>
+    /// T-19（CFG-04 Prefix 嵌套）：顶层键为 <c>prefix + propName</c>（'.' 连接），
+    /// 嵌套层沿用展平 separator（§13.3 修订设计：嵌套前缀为 key + separator）。
+    /// </summary>
+    [Fact]
+    public void CFG04_QueryPrefix_NestedObject_UsesPrefixAndFlattenSeparator()
+    {
+        var typeSymbol = GetTypeSymbol("""
+            public class OuterFilter
+            {
+                public string Inner { get; set; }
+            }
+            public class SearchFilterNested
+            {
+                public string Keyword { get; set; }
+                public OuterFilter Outer { get; set; }
+            }
+            """, "SearchFilterNested");
+
+        var code = GenerateFor(new ParameterInfo
+        {
+            Name = "filter",
+            Type = "SearchFilterNested",
+            TypeSymbol = typeSymbol,
+            Attributes =
+            [
+                new ParameterAttributeInfo
+                {
+                    Name = "QueryAttribute",
+                    NamedArguments = new Dictionary<string, object?> { ["Prefix"] = "filter" },
+                },
+            ],
+        });
+
+        // 顶层：filter.Keyword
+        code.Should().Contain("\"filter.Keyword\"");
+        // 嵌套：filter.Outer + 展平 separator(',') + Inner
+        code.Should().Contain("\"filter.Outer,Inner\"");
+    }
 }

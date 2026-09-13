@@ -521,8 +521,10 @@ public class RefitRefactorFeatureTests
     [Fact]
     public async Task StubHttp_NetworkBehavior_DelayAndFailure()
     {
+        // 稳定性：Task.Delay 的到期时间受系统定时器分辨率影响，QPC 实测值可能略小于标称值
+        //（全量运行中曾出现 10ms 延迟实测 9ms 的偶发偏差）。改用 50ms 延迟 + 10ms 容差断言。
         var stub = new StubHttp();
-        var behavior = NetworkBehavior.WithDelay(10);
+        var behavior = NetworkBehavior.WithDelay(50);
         stub.Respond(HttpMethod.Get, "/api/slow", HttpStatusCode.OK, "data")
             .WithBehavior(behavior);
 
@@ -532,7 +534,7 @@ public class RefitRefactorFeatureTests
         sw.Stop();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        sw.ElapsedMilliseconds.Should().BeGreaterThanOrEqualTo(10);
+        sw.ElapsedMilliseconds.Should().BeGreaterThanOrEqualTo(40);
     }
 
     #endregion

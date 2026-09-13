@@ -171,10 +171,19 @@ public sealed class GeneratedClientOptions : IEnhancedClientConfig
     /// <summary>
     /// 获取或设置 Native AOT 下的 JSON 类型解析器。
     /// </summary>
-    /// <value>
-    /// 消费方可通过此属性编程式注入 <c>JsonSerializerContext</c>，
-    /// 使源生成实现在 AOT 下使用源生成元数据。
-    /// </value>
+    /// <value>默认为 <c>null</c>（不生效）。</value>
+    /// <remarks>
+    /// <para>
+    /// <b>CFG-06（不静默声明）</b>：无 DI 路径（<c>RestService.ForGenerated&lt;T&gt;(HttpClient, GeneratedClientOptions)</c>）
+    /// 当前<b>不直接消费</b>本属性 —— 生成工厂仅传递 <see cref="ContentSerializer"/>，
+    /// JSON 元数据由其携带的 <c>TypeInfoResolver</c> 承载（AOT JSON 解析器优先级链见 Client README CFG-17）。
+    /// </para>
+    /// <para>
+    /// 因此仅设置本属性而未提供含 <c>TypeInfoResolver</c> 的 <see cref="ContentSerializer"/> 时，
+    /// 本属性不产生任何效果（AOT 下 JSON 元数据可能不可用）。
+    /// 请改用 <see cref="ContentSerializer"/> 注入含源生成上下文的序列化器。
+    /// </para>
+    /// </remarks>
     public System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver? JsonTypeInfoResolver { get; set; }
 #endif
 }

@@ -160,7 +160,9 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
     {
         // CFG-03：与 HttpClientApiAttribute.DefaultTimeoutSeconds 保持一致（50）。
         // 生成器按字符串名匹配特性，不引用 Attributes 程序集，故此处引用 Generator 常量；
-        // 二者一致性由测试守护（HttpClientApiAttributeDefaultTimeoutTests）。
+        // 二者一致性由测试守护：Attributes 侧 CFG03_HttpClientApiAttribute_DefaultTimeout_Is50（Client.Tests）、
+        // Generator 常量 CFG03_DefaultTimeoutConstant_Is50（Generator.Tests）、
+        // 生成产物 RegistrationTimeoutGenerationTests（Generator.Tests，T-06）。
         return AttributeDataHelper.GetIntValueFromAttribute(
             httpClientApiAttribute,
             HttpClientGeneratorConstants.TimeoutProperty,

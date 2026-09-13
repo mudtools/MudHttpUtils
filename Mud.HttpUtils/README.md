@@ -331,7 +331,7 @@ services.AddSingleton<IHttpResponseCache, MemoryHttpResponseCache>();
 services.AddSingleton<IHttpResponseInterceptor, CacheResponseInterceptor>();
 ```
 
-> `CacheAttribute` 支持 `DurationSeconds`、`CacheKeyTemplate`、`VaryByUser`、`UseSlidingExpiration`、`Priority` 属性。`MemoryHttpResponseCache` 使用 `IMemoryCache` 作为底层存储，可替换为 Redis 等分布式缓存。
+> `CacheAttribute` 支持 `DurationSeconds`、`CacheKeyTemplate`、`VaryByUser`、`UseSlidingExpiration` 属性（`Priority` 已随 CFG-27 移除：生成器从未处理该属性，运行时无消费点）。`MemoryHttpResponseCache` 使用 `IMemoryCache` 作为底层存储，可替换为 Redis 等分布式缓存。
 
 ## 日志脱敏
 

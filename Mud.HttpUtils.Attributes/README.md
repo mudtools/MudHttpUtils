@@ -62,7 +62,7 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 
 | 特性             | 用途         | 目标   | 关键属性                                                                                |
 | ---------------- | ------------ | ------ | --------------------------------------------------------------------------------------- |
-| `CacheAttribute` | 响应缓存标注 | Method | `DurationSeconds`, `CacheKeyTemplate`, `VaryByUser`, `UseSlidingExpiration`, `Priority` |
+| `CacheAttribute` | 响应缓存标注 | Method | `DurationSeconds`, `CacheKeyTemplate`, `VaryByUser`, `UseSlidingExpiration`（`Priority` 已随 CFG-27 移除，见下文） |
 
 ### 弹性策略特性
 

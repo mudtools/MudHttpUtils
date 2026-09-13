@@ -242,6 +242,60 @@ public class ConfigP0FixTests
         act.Should().NotThrow();
     }
 
+    /// <summary>
+    /// T-04（CFG-02）：被跳过的无 BaseAddress 客户端必须有启动期警告（不静默），且包含客户端名。
+    /// </summary>
+    [Fact]
+    public void CFG02_ClientWithoutBaseAddress_LogsWarning()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpClients:Clients:no-addr:TimeoutSeconds"] = "30",
+                ["MudHttpClients:Clients:ok:BaseAddress"] = "https://ok.example.com",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        var loggerProvider = new CollectingLoggerProvider();
+        services.AddLogging(b => b.AddProvider(loggerProvider));
+        services.AddMudHttpClientsFromConfiguration(config);
+
+        using var provider = services.BuildServiceProvider();
+        _ = provider.GetRequiredService<IOptions<MudHttpClientApplicationOptions>>().Value;
+
+        loggerProvider.GetLogRecords(LogLevel.Warning)
+            .Should().Contain(r => r.Message.Contains("no-addr"),
+                "未配置 BaseAddress 的客户端被跳过注册时必须产生警告（CFG-02 不静默原则）");
+    }
+
+    /// <summary>
+    /// T-14（覆盖空洞）：各 Options 的 <c>SectionName</c> 常量必须与绑定默认参数/文档示例一致，
+    /// 防止意外改名导致既有 appsettings 键静默失效。
+    /// </summary>
+    [Fact]
+    public void T14_SectionName_MatchesBindingKey()
+    {
+        MudHttpClientApplicationOptions.SectionName.Should().Be("MudHttpClients");
+        TokenRecoveryOptions.SectionName.Should().Be("MudHttpTokenRecovery");
+        TokenRefreshBackgroundOptions.SectionName.Should().Be("TokenRefreshBackground");
+        OAuth2Options.SectionName.Should().Be("MudHttpOAuth2");
+        AesEncryptionOptions.SectionName.Should().Be("MudHttpAesEncryption");
+
+        // 以常量为键做一次真实绑定回环（命名差异见 TokenRefreshBackgroundOptions XML 标注）。
+        var bound = new TokenRefreshBackgroundOptions();
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                [$"{TokenRefreshBackgroundOptions.SectionName}:RefreshIntervalSeconds"] = "77",
+            })
+            .Build()
+            .GetSection(TokenRefreshBackgroundOptions.SectionName)
+            .Bind(bound);
+
+        bound.RefreshIntervalSeconds.Should().Be(77);
+    }
+
     // ---------------------------------------------------------------
     // CFG-16：响应缓存双入口（AddHttpResponseCache + 配置节）
     // ---------------------------------------------------------------
