@@ -432,6 +432,32 @@ services.AddSingleton<IIpAddressPolicy, MyDebugIpPolicy>();
 - 默认 `AllowCustomBaseUrls = false` 时强制 HTTPS + 白名单（fail-closed）；`AllowCustomBaseUrls = true` 放行自定义 URL 时，必须自行校验 URL 来源。
 - DNS 解析结果带 TTL 缓存（默认 5 分钟），并发场景下同域名解析受锁保护（单飞）。
 
+#### 遥测脱敏（默认开启）
+
+Span tag、日志与诊断事件中的 URL 默认脱敏（掩码 `access_token` / `refresh_token` / `api_key` 等敏感 query 值），防止令牌随遥测泄漏：
+
+```csharp
+// 全局开关（静态属性，需在进程启动时设置）
+MudHttpObservabilityOptions.RedactUrlInTelemetry = true;   // 默认 true：URL 脱敏
+MudHttpObservabilityOptions.RecordFullUrlOnSuccess = false; // 默认 false：成功请求仅记录 scheme://host/path（不含 query）
+MudHttpObservabilityOptions.EmitDiagnosticEvents = true;    // 默认 true：诊断事件（ActivityEvent / DiagnosticSource）
+```
+
+- 脱敏只掩码敏感 query 键的值，保留键名与 URL 结构，兼顾排障；未命中敏感词表的 query 原样保留。
+- `RecordFullUrlOnSuccess = true` 时成功请求也记录完整 URL，但仍受 `RedactUrlInTelemetry` 约束；错误路径（`ApiException.RequestUri`）始终保留完整 URI，由 `IExceptionRedactor` 兜底擦除。
+- 指标 tag 白名单：`MudHttpObservabilityOptions.MetricTagAllowlist` 控制所有指标维度（默认包含 `client_name`/`method`/`host`/`outcome`/`status_code`/`policy_key`/`token_manager_key`/`retry_count`），白名单之外的维度被丢弃，从机制上杜绝高基数 tag（如 `cache_key`）打爆时序后端。
+
+#### 错误内容上限（默认 10240）
+
+错误响应体（`ApiException.Content`）与捕获的请求体（`ApiException.RequestContent`）默认在**读取阶段**截断为 10240 字符，防止恶意/超大响应导致 OOM：
+
+```csharp
+o.MaxExceptionContentLength = 10240;  // 默认 10240；设为 0 或负数 = 不限制
+```
+
+- 内置方法路径（`EnhancedHttpClient`）与生成代码路径（`DefaultHttpRequestExecutor`）默认值一致（10240），截断内容带 `...[已截断]` 后缀。
+- `MaxSuccessResponseBytes`（默认 `0` = 不限制）可为成功响应体设置字节级守卫：已知长度（Content-Length）预判超限即抛 `ApiRequestException`，chunked 无长度场景由守卫流在读取阶段拦截。流式下载（`DownloadLargeAsync`/流式枚举）不受此限。
+
 #### 令牌管理
 
 ```csharp
@@ -712,6 +738,7 @@ MudHttpUtils/
 | Mud.HttpUtils.Analyzers     | 独立分析器                 | [README](Mud.HttpUtils.Analyzers/README.md)   |
 | Mud.HttpUtils.CodeFixes    | 代码修复提供器             | [README](Mud.HttpUtils.CodeFixes/README.md)    |
 | Mud.HttpUtils.JsonContextScaffolder | JsonContext 脚手架 | [README](Mud.HttpUtils.JsonContextScaffolder/README.md) |
+| 变更记录                       | 行为基线与版本说明          | [CHANGELOG](CHANGELOG.md)                          |
 
 ### ⚡ 性能说明
 
