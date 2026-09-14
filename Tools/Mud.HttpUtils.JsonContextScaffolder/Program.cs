@@ -10,6 +10,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 using Microsoft.Build.Locator;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.MSBuild;
@@ -91,12 +92,17 @@ if (!File.Exists(projectPath))
     return 1;
 }
 
+// [T12 修复] 读取项目目标框架列表：AOT002（开放泛型）仅在项目确实包含 net8.0 以下 TFM 时才告警。
+// 脚手架仍只依赖 Compilation（不引入 MSBuildWorkspace 之外的额外依赖），项目文件由本方法静态解析。
+var targetFrameworks = ReadTargetFrameworks(projectPath);
+
 System.Console.WriteLine($"Mud.HttpUtils JSON Context Scaffolder");
 System.Console.WriteLine($"  项目：{projectPath}");
 System.Console.WriteLine($"  输出：{outputDir ?? "(项目目录/Generated)"}");
 System.Console.WriteLine($"  Dry run：{dryRun}");
 System.Console.WriteLine($"  Auto derived types：{autoDerivedTypes}");
 System.Console.WriteLine($"  Scan [HttpClientApi]：{scanHttpClientApi}");
+System.Console.WriteLine($"  目标框架：{(targetFrameworks.Count > 0 ? string.Join(", ", targetFrameworks) : "(未声明/无法解析)")}");
 System.Console.WriteLine();
 
 // 加载项目
@@ -116,7 +122,11 @@ if (compilation == null)
 
 // 生成 Context 文件
 var generator = new JsonContextGenerator();
-var files = generator.Generate(compilation, autoDerivedTypes: autoDerivedTypes, scanHttpClientApi: scanHttpClientApi);
+var files = generator.Generate(
+    compilation,
+    autoDerivedTypes: autoDerivedTypes,
+    scanHttpClientApi: scanHttpClientApi,
+    targetFrameworks: targetFrameworks);
 
 if (files.Count == 0)
 {
@@ -192,7 +202,11 @@ static void PrintHelp()
       -p, --project <路径>   要扫描的 .csproj 文件路径
       -o, --output <目录>    输出目录（默认：<项目目录>/Generated）
       --dry-run              仅预览，不写入文件
-      --auto-derived-types   自动检测同程序集内派生类，生成额外的 [JsonSerializable]
+      --auto-derived-types   自动检测同程序集内派生类，并为每个派生类型生成独立的
+                             [JsonSerializable(typeof(派生类型))] 根。
+                             注意：多态序列化（以【基类静态类型】序列化/反序列化派生实例）必须由基类
+                             元数据携带 [JsonDerivedType]，该特性只能标注在用户类型声明上，生成文件
+                             无法替用户类型附加——本开关不能替代它。
       --scan-http-client-api  扫描 [HttpClientApi] 接口，自动发现返回类型和 [Body] 参数中的闭合泛型（默认开启）
       --no-scan-http-client-api  禁用 [HttpClientApi] 接口扫描
       -h, --help             显示帮助
@@ -205,10 +219,56 @@ static void PrintHelp()
     说明：
       扫描项目中标注 [HttpJsonSerializable] 的类型，按 SerializerClassName 分组，
       为每组生成一个 JsonSerializerContext 源文件（#if NET8_0_OR_GREATER 包裹）。
-      同时扫描 [HttpClientApi] 接口的方法返回类型和 [Body] 参数类型，
-      自动发现闭合泛型（如 FeishuApiResult<T>）并注册到独立的 Context。
+      同时扫描 [HttpClientApi] 接口的方法返回类型（含 Task<T[]> 数组根）和 [Body] 参数类型，
+      自动发现闭合泛型（如 FeishuApiResult<T>）与数组根并注册到独立的 Context。
       生成的文件应提交到版本控制，仅在实体变更时重跑。
+
+      AOT002（开放泛型）告警仅在项目包含 net8.0 以下 TFM 时报告：
+      项目目标框架从 .csproj / 同级 Directory.Build.props 的 TargetFramework(s) 读取。
     """);
+}
+
+// [T12] 从项目文件（及同级 Directory.Build.props）读取 TargetFramework / TargetFrameworks。
+// 无法解析时返回空列表，由 JsonContextGenerator 按"未知"保守处理（仍告警 AOT002）。
+static IReadOnlyList<string> ReadTargetFrameworks(string projectPath)
+{
+    var result = new List<string>();
+    var projectDir = Path.GetDirectoryName(projectPath);
+
+    var candidates = new List<string> { projectPath };
+    if (!string.IsNullOrEmpty(projectDir))
+        candidates.Add(Path.Combine(projectDir!, "Directory.Build.props"));
+
+    foreach (var file in candidates)
+    {
+        if (!File.Exists(file))
+            continue;
+
+        try
+        {
+            var doc = XDocument.Load(file);
+            var elements = doc.Descendants()
+                .Where(e => e.Name.LocalName is "TargetFramework" or "TargetFrameworks");
+
+            foreach (var element in elements)
+            {
+                foreach (var tfm in element.Value.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    // 含 MSBuild 变量/条件表达式的值无法静态解析，交由下游按"未知"保守处理
+                    if (tfm.Contains('$'))
+                        continue;
+
+                    result.Add(tfm);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Console.Error.WriteLine($"[警告] 解析 {file} 的目标框架失败（将按未知处理）：{ex.Message}");
+        }
+    }
+
+    return result.Distinct().ToList();
 }
 
 // 推导包含 Microsoft.Build.dll 的 .NET SDK 目录，用于 RegisterDefaults 失败时的兜底注册

@@ -16,31 +16,6 @@ using Microsoft.CodeAnalysis;
 namespace Mud.HttpUtils.Analyzers;
 
 /// <summary>
-/// <c>AotDtoCoverageAnalyzer.CollectCoveredTypes</c> 的结果载体（含触发门控信号）。
-/// </summary>
-/// <remarks>
-/// [Phase5 修复 3.1 / 审查 3.1] 覆盖集合需扫描全部语法树 + 全部引用程序集命名空间，
-/// 是全流程最昂贵的操作之一。AOT004/AOT005（<c>AotDtoCoverageDiagnosticAnalyzer</c>）与
-/// AOT006（<c>HttpJsonSerializableCoverageAnalyzer</c>）在同一次编译中各需一份，
-/// 故按 <see cref="Compilation"/> 缓存（复用 <c>SemanticModelCache</c> 的 ConditionalWeakTable 模式），
-/// 把两次全引用扫描合并为一次。
-/// </remarks>
-internal sealed class CoveredTypesResult
-{
-    /// <summary>被任一 JsonSerializerContext 覆盖的类型集合。</summary>
-    public HashSet<INamedTypeSymbol> Types { get; }
-
-    /// <summary>当前编译单元是否<b>自身</b>声明了至少一个 JsonSerializerContext 子类（AOT004/005 触发门控）。</summary>
-    public bool HasLocalContext { get; }
-
-    public CoveredTypesResult(HashSet<INamedTypeSymbol> types, bool hasLocalContext)
-    {
-        Types = types;
-        HasLocalContext = hasLocalContext;
-    }
-}
-
-/// <summary>
 /// AOT004 / AOT005 / AOT006 诊断分析器：检测 [HttpClientApi] 接口方法的请求/响应 DTO 与
 /// [HttpJsonSerializable] 类型是否被任何已引用的 JsonSerializerContext 覆盖。
 /// </summary>
@@ -131,17 +106,13 @@ internal static class AotDtoCoverageAnalyzer
 
         // [T7 修复] 门控前移：先做轻量探测（仅遍历本编译语法树，不触引用程序集），
         // 避免无本地 Context 的 JIT 消费方每次编译都付出全量引用程序集扫描成本。
+        // 探测结果按 Compilation 缓存，后续覆盖集合计算直接复用（本编译语法树只遍历一次）。
         // forceRun（T6）为 true 时跳过 hasLocalContext 门控，但仍需覆盖集合。
-        List<INamedTypeSymbol>? localContexts = null;
-        if (!forceRun)
-        {
-            if (!HasLocalJsonSerializerContext(compilation, out localContexts))
-                return diagnostics.ToImmutable();
-        }
+        if (!forceRun && !HasLocalJsonSerializerContext(compilation, out _))
+            return diagnostics.ToImmutable();
 
         // 实际需要覆盖集合时才执行全量扫描（含引用程序集）。
-        // [T7 修复] 复用探测结果中的本编译 Context，避免二次遍历。
-        var coveredTypes = CollectCoveredTypes(compilation, localContexts, out _);
+        var coveredTypes = CollectCoveredTypes(compilation);
 
         // 触发门控：仅当"本编译单元自身声明了 JsonSerializerContext"时才运行 AOT004/AOT005。
         // 原因：覆盖集合自 P1-4（ADR-03）起会同时扫描引用程序集，而 Mud.HttpUtils 各库内部
@@ -260,9 +231,9 @@ internal static class AotDtoCoverageAnalyzer
         if (httpJsonSerializableAttr == null)
             return diagnostics.ToImmutable();
 
-        // [T7 修复] 复用轻量探测结果，避免 AOT006 路径二次扫描本编译语法树。
-        HasLocalJsonSerializerContext(compilation, out var localContexts6);
-        var coveredTypes = CollectCoveredTypes(compilation, localContexts6, out _);
+        // [T7 修复] 覆盖集合内部会复用按 Compilation 缓存的本地 Context 探测结果，
+        // 本编译语法树不会因 AOT006 路径被二次遍历。
+        var coveredTypes = CollectCoveredTypes(compilation);
 
         foreach (var syntaxTree in compilation.SyntaxTrees)
         {
@@ -302,7 +273,7 @@ internal static class AotDtoCoverageAnalyzer
     }
 
     /// <summary>
-    /// [T7 修复] 轻量探测：仅遍历本编译语法树，检查是否声明了 JsonSerializerContext 子类。
+    /// [T7 修复] 轻量探测门控：仅遍历本编译语法树，检查是否声明了 JsonSerializerContext 子类。
     /// 不触引用程序集，O(语法树) 而非 O(语法树 + 引用程序集)。
     /// </summary>
     /// <param name="compilation">编译单元。</param>
@@ -310,10 +281,37 @@ internal static class AotDtoCoverageAnalyzer
     /// <returns>是否存在至少一个本地 Context。</returns>
     private static bool HasLocalJsonSerializerContext(Compilation compilation, out List<INamedTypeSymbol> localContexts)
     {
-        localContexts = new List<INamedTypeSymbol>();
+        localContexts = GetLocalContexts(compilation);
+        return localContexts.Count > 0;
+    }
+
+    /// <summary>
+    /// 本编译单元 Context 探测结果的编译级缓存。
+    /// </summary>
+    /// <remarks>
+    /// [T7 修复] 探测（遍历本编译语法树）与覆盖集合计算（本编译 + 全部引用程序集）都会用到
+    /// "本编译声明的 Context 列表"。若各自扫描，本编译语法树会被遍历两次——而 T7 的目标正是
+    /// "复用探测结果，避免二次遍历"。故按 <see cref="Compilation"/> 缓存探测结果：
+    /// AOT004/005（<c>AotDtoCoverageDiagnosticAnalyzer</c>）、AOT006（<c>HttpJsonSerializableCoverageAnalyzer</c>）
+    /// 与覆盖集合计算共享同一份列表。
+    /// </remarks>
+    private static readonly ConditionalWeakTable<Compilation, List<INamedTypeSymbol>> _localContextsCache = new();
+
+    /// <summary>
+    /// 获取本编译单元声明的所有 JsonSerializerContext 子类（按 <see cref="Compilation"/> 缓存）。
+    /// </summary>
+    private static List<INamedTypeSymbol> GetLocalContexts(Compilation compilation)
+        => _localContextsCache.GetValue(compilation, static c => ComputeLocalContexts(c));
+
+    /// <summary>
+    /// 遍历本编译语法树，收集其中声明的 JsonSerializerContext 子类。
+    /// </summary>
+    private static List<INamedTypeSymbol> ComputeLocalContexts(Compilation compilation)
+    {
+        var localContexts = new List<INamedTypeSymbol>();
         var jsonSerializerContext = compilation.GetTypeByMetadataName(JsonSerializerContextFullName);
         if (jsonSerializerContext == null)
-            return false;
+            return localContexts;
 
         foreach (var syntaxTree in compilation.SyntaxTrees)
         {
@@ -322,27 +320,21 @@ internal static class AotDtoCoverageAnalyzer
 
             foreach (var typeDecl in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
             {
-                var typeSymbol = semanticModel.GetDeclaredSymbol(typeDecl) as INamedTypeSymbol;
-                if (typeSymbol == null)
-                    continue;
-
-                if (InheritsFromJsonSerializerContext(typeSymbol, jsonSerializerContext))
+                if (semanticModel.GetDeclaredSymbol(typeDecl) is INamedTypeSymbol typeSymbol &&
+                    InheritsFromJsonSerializerContext(typeSymbol, jsonSerializerContext))
+                {
                     localContexts.Add(typeSymbol);
+                }
             }
         }
 
-        return localContexts.Count > 0;
+        return localContexts;
     }
 
     /// <summary>
     /// 收集编译单元引用的所有 JsonSerializerContext 子类上的 [JsonSerializable] 类型（按 <see cref="Compilation"/> 缓存）。
     /// </summary>
     /// <param name="compilation">编译单元。</param>
-    /// <param name="localContexts">[T7] 预探测的本编译 Context 集合（可为 null，内部回退到自扫描）。</param>
-    /// <param name="hasLocalContext">
-    /// 输出：当前编译单元是否<b>自身</b>声明了至少一个 <c>JsonSerializerContext</c> 子类。
-    /// 用作 AOT004/AOT005 的触发门控（引用程序集中的 Context 只用于覆盖判定，不作为触发信号）。
-    /// </param>
     /// <remarks>
     /// <para>
     /// 同时支持 IDE（<see cref="CompilationReference"/>）与 CLI（<c>PortableExecutableReference</c>）
@@ -353,52 +345,37 @@ internal static class AotDtoCoverageAnalyzer
     /// AOT004/005 与 AOT006 两个分析器共享同一份覆盖集合，省掉第二遍全引用程序集扫描。
     /// 缓存值只读（调用方不得修改返回的集合），故可安全共享。
     /// </para>
+    /// <para>
+    /// [T7 修复] 本编译单元部分的扫描复用 <see cref="_localContextsCache"/> 的探测结果，
+    /// 不再重复遍历本编译语法树；只有"引用程序集扫描"会在缓存未命中时执行。
+    /// 注意：引用程序集中的 Context 只用于覆盖判定，不作为 AOT004/005 的触发信号
+    /// （触发门控见 <see cref="HasLocalJsonSerializerContext"/>）。
+    /// </para>
     /// </remarks>
-    private static HashSet<INamedTypeSymbol> CollectCoveredTypes(Compilation compilation, List<INamedTypeSymbol>? localContexts, out bool hasLocalContext)
-    {
-        var cached = _coveredTypesCache.GetValue(compilation, static c => ComputeCoveredTypes(c));
-        hasLocalContext = cached.HasLocalContext;
-        return cached.Types;
-    }
+    private static HashSet<INamedTypeSymbol> CollectCoveredTypes(Compilation compilation)
+        => _coveredTypesCache.GetValue(compilation, static c => ComputeCoveredTypes(c));
 
     /// <summary>
     /// 编译级覆盖集合缓存：<see cref="Compilation"/> 生命周期结束即自动失效。
     /// </summary>
-    private static readonly ConditionalWeakTable<Compilation, CoveredTypesResult> _coveredTypesCache = new();
+    private static readonly ConditionalWeakTable<Compilation, HashSet<INamedTypeSymbol>> _coveredTypesCache = new();
 
     /// <summary>
-    /// 计算覆盖集合（缓存未命中时的实际扫描，O(语法树 + 引用程序集)）。
+    /// 计算覆盖集合（缓存未命中时的实际扫描，O(本编译 Context 数 + 引用程序集)）。
     /// </summary>
-    private static CoveredTypesResult ComputeCoveredTypes(Compilation compilation)
+    private static HashSet<INamedTypeSymbol> ComputeCoveredTypes(Compilation compilation)
     {
         var result = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
-        var hasLocalContext = false;
 
         var jsonSerializableAttr = compilation.GetTypeByMetadataName(JsonSerializableAttributeFullName);
         var jsonSerializerContext = compilation.GetTypeByMetadataName(JsonSerializerContextFullName);
 
         if (jsonSerializableAttr == null || jsonSerializerContext == null)
-            return new CoveredTypesResult(result, hasLocalContext);
+            return result;
 
-        // 扫描当前编译单元中的所有类型
-        foreach (var syntaxTree in compilation.SyntaxTrees)
-        {
-            var semanticModel = compilation.GetSemanticModel(syntaxTree);
-            var root = syntaxTree.GetRoot();
-
-            foreach (var typeDecl in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
-            {
-                var typeSymbol = semanticModel.GetDeclaredSymbol(typeDecl) as INamedTypeSymbol;
-                if (typeSymbol == null)
-                    continue;
-
-                if (InheritsFromJsonSerializerContext(typeSymbol, jsonSerializerContext))
-                {
-                    hasLocalContext = true;
-                    CollectFromContextType(typeSymbol, jsonSerializableAttr, result);
-                }
-            }
-        }
+        // 本编译单元：直接复用探测缓存（避免二次遍历本编译语法树）
+        foreach (var localContext in GetLocalContexts(compilation))
+            CollectFromContextType(localContext, jsonSerializableAttr, result);
 
         // 扫描引用程序集中的 JsonSerializerContext 子类
         foreach (var reference in compilation.References)
@@ -413,7 +390,7 @@ internal static class AotDtoCoverageAnalyzer
             CollectCoveredTypesFromNamespace(asm.GlobalNamespace, jsonSerializerContext, jsonSerializableAttr, result);
         }
 
-        return new CoveredTypesResult(result, hasLocalContext);
+        return result;
     }
 
     /// <summary>

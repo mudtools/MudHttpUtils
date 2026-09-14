@@ -17,7 +17,7 @@
 		<GenerateDocumentationFile>false</GenerateDocumentationFile>
 	</PropertyGroup>
 
-	<!-- AOT 严格模式清单已上移至 Directory.Build.props（全仓统一口径），此处不再重复定义。 -->
+	<!-- AOT 严格模式清单定义在 Directory.Build.targets（全仓统一口径），此处不再重复定义。 -->
 
 	<ItemGroup>
 		<ProjectReference Include="..\..\Mud.HttpUtils.Client\Mud.HttpUtils.Client.csproj" />

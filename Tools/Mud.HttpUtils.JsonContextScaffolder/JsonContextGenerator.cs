@@ -53,7 +53,16 @@ internal record TypeGroup
     public required string SerializerClassName { get; init; }
     public required JsonNamingPolicyHint NamingPolicy { get; init; }
     public required string TargetNamespace { get; init; }
-    public required List<INamedTypeSymbol> Types { get; init; }
+
+    /// <summary>
+    /// 本组需注册为 <c>[JsonSerializable]</c> 根的类型。
+    /// </summary>
+    /// <remarks>
+    /// [T1 修复] 元素类型放宽为 <see cref="ITypeSymbol"/>：数组型根（如 <c>UserDto[]</c>）是
+    /// <see cref="IArrayTypeSymbol"/>，**不继承** <see cref="INamedTypeSymbol"/>，
+    /// 原 <c>List&lt;INamedTypeSymbol&gt;</c> + 强制转型会在数组根上抛 <c>InvalidCastException</c>。
+    /// </remarks>
+    public required List<ITypeSymbol> Types { get; init; }
 }
 
 /// <summary>
@@ -83,11 +92,18 @@ public class JsonContextGenerator
     /// <param name="defaultNamespace">默认命名空间（当类型无命名空间时使用）。</param>
     /// <param name="autoDerivedTypes">是否自动检测同程序集内的派生类并生成 [JsonDerivedType]。</param>
     /// <param name="scanHttpClientApi">是否扫描 [HttpClientApi] 接口，自动发现返回类型和 [Body] 参数类型中的闭合泛型。</param>
+    /// <param name="targetFrameworks">
+    /// [T12] 项目目标框架列表（如 <c>["net8.0","net10.0"]</c>），由调用方从项目文件读取后传入。
+    /// 为 null/空时按"未知"处理（AOT002 保持保守告警）。
+    /// 仅用于 AOT002 门控：源生成对开放泛型的支持自 net8.0 起才具备，
+    /// 故仅当项目确实包含 net8.0 以下 TFM 时才告警——纯 net8+ 项目不再产生噪音告警。
+    /// </param>
     public List<JsonContextFile> Generate(
         Compilation compilation,
         string defaultNamespace = "Generated",
         bool autoDerivedTypes = false,
-        bool scanHttpClientApi = true)
+        bool scanHttpClientApi = true,
+        IReadOnlyList<string>? targetFrameworks = null)
     {
         Diagnostics.Clear();
 
@@ -99,7 +115,7 @@ public class JsonContextGenerator
             : new List<AnnotatedType>();
 
         // 2. 扫描 [HttpClientApi] 接口返回类型和 [Body] 参数类型
-        List<INamedTypeSymbol> discoveredTypes = [];
+        List<ITypeSymbol> discoveredTypes = [];
         if (scanHttpClientApi)
         {
             var annotatedSet = new HashSet<INamedTypeSymbol>(
@@ -114,7 +130,7 @@ public class JsonContextGenerator
 
         // 4. 诊断检查（AOT001-AOT003，仅针对标注类型）
         if (annotatedTypes.Count > 0)
-            CheckDiagnostics(annotatedTypes, compilation, autoDerivedTypes);
+            CheckDiagnostics(annotatedTypes, compilation, autoDerivedTypes, targetFrameworks);
 
         // 5. 分组并生成
         var files = new List<JsonContextFile>();
@@ -158,13 +174,17 @@ public class JsonContextGenerator
     /// <summary>
     /// 运行 AOT 诊断检查。
     /// </summary>
-    private void CheckDiagnostics(List<AnnotatedType> annotatedTypes, Compilation compilation, bool autoDerivedTypes)
+    private void CheckDiagnostics(
+        List<AnnotatedType> annotatedTypes,
+        Compilation compilation,
+        bool autoDerivedTypes,
+        IReadOnlyList<string>? targetFrameworks)
     {
         // AOT001：同一 SerializerClassName 出现冲突的 NamingPolicy
         CheckDuplicateSerializerClassNameConflicts(annotatedTypes);
 
-        // AOT002：开放泛型类型在低版本 TFM 上不可用
-        CheckOpenGenericOnLegacyTfm(annotatedTypes);
+        // AOT002：开放泛型类型在低版本 TFM 上不可用（仅当项目确实包含 net8.0 以下 TFM）
+        CheckOpenGenericOnLegacyTfm(annotatedTypes, targetFrameworks);
 
         // AOT003：多态类型缺少 [JsonDerivedType]
         if (!autoDerivedTypes)
@@ -197,8 +217,22 @@ public class JsonContextGenerator
     /// <summary>
     /// AOT002：开放泛型类型在 net8.0 以下不支持源生成。
     /// </summary>
-    private void CheckOpenGenericOnLegacyTfm(List<AnnotatedType> annotatedTypes)
+    /// <param name="annotatedTypes">已标注类型。</param>
+    /// <param name="targetFrameworks">
+    /// 项目目标框架列表；为 null/空表示未知（保持保守告警），
+    /// 非空且全部 ≥ net8.0 时不再告警（生成文件已由 <c>#if NET8_0_OR_GREATER</c> 包裹，
+    /// net8+ 项目完全支持 <c>typeof(Generic&lt;&gt;)</c> 的源生成）。
+    /// </param>
+    /// <remarks>
+    /// [T12 修复] 原实现对开放泛型无条件告警——即使项目只面向 net8.0/net10.0（完全支持源生成开放泛型）
+    /// 也会产生噪音告警，且消息自称"net8.0 以下不支持"与实际 TFM 无关。
+    /// </remarks>
+    private void CheckOpenGenericOnLegacyTfm(List<AnnotatedType> annotatedTypes, IReadOnlyList<string>? targetFrameworks)
     {
+        // 已知 TFM 且全部 ≥ net8.0 → 开放泛型走源生成，无需告警。
+        if (targetFrameworks is { Count: > 0 } && !targetFrameworks.Any(IsTfmBelowNet8))
+            return;
+
         foreach (var type in annotatedTypes)
         {
             if (type.Symbol.IsGenericType && type.Symbol.TypeParameters.Length > 0)
@@ -206,15 +240,56 @@ public class JsonContextGenerator
                 Diagnostics.Add(new ScaffolderDiagnostic(
                     "AOT002",
                     ScaffolderDiagnosticSeverity.Warning,
-                    $"类型 '{type.Symbol.ToDisplayString()}' 是开放泛型，在 net8.0 以下不支持源生成开放泛型。生成的 Context 以 #if NET8_0_OR_GREATER 包裹，低版本将走反射兜底，AOT 下不可用。",
+                    $"类型 '{type.Symbol.ToDisplayString()}' 是开放泛型，且项目包含 net8.0 以下 TFM——开放泛型在该 TFM 下不参与源生成（走反射兜底），Native AOT 下不可用。若所有目标 TFM 均为 net8.0+，可忽略本告警。",
                     type.Symbol.ToDisplayString()));
             }
         }
     }
 
     /// <summary>
-    /// AOT003：类型存在基类（多态）但未标注 [JsonDerivedType]。
+    /// 判断单个 TFM 字符串是否低于 net8.0（net6.0 / netstandard2.0 / net48 / netcoreapp3.1 …）。
     /// </summary>
+    /// <remarks>
+    /// 规则：取出 TFM 中的主版本号（<c>net6.0</c>→6、<c>netstandard2.0</c>→2、<c>net48</c>→4），
+    /// 主版本号 &lt; 8 视为低版本。无法解析的 TFM（含 MSBuild 变量）按"低版本"处理（保守告警）。
+    /// </remarks>
+    private static bool IsTfmBelowNet8(string tfm)
+    {
+        if (string.IsNullOrWhiteSpace(tfm))
+            return true;
+
+        if (!tfm.StartsWith("net", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // 形如 net8.0 / net10.0 / netstandard2.0 / netcoreapp3.1 / net48
+        var versionPart = tfm.Substring(3);
+        if (versionPart.Length == 0)
+            return true;
+
+        if (!char.IsDigit(versionPart[0]))
+            return true; // netstandard / netcoreapp 之外的未知前缀
+
+        // .NET 5+ 的 TFM 一律带小数点（net8.0 / net10.0）；
+        // 无小数点者为 net48 / net472 等旧式紧凑写法 → 必然低于 net8.0。
+        if (!versionPart.Contains('.'))
+            return true;
+
+        var digits = new string(versionPart.TakeWhile(char.IsDigit).ToArray());
+        return !int.TryParse(digits, out var major) || major < 8;
+    }
+
+    /// <summary>
+    /// AOT003：类型存在基类（多态）但其多态映射未声明。
+    /// </summary>
+    /// <remarks>
+    /// [T2 修复] 满足以下任一条件即视为"多态映射已声明"，不再告警：
+    /// <list type="number">
+    ///   <item>类型自身标注了 <c>[JsonDerivedType]</c>（类型作为基类时声明其派生类型）；</item>
+    ///   <item>其任一基类上标注了指向本类型的 <c>[JsonDerivedType(typeof(本类型))]</c>——
+    ///        这才是"以基类静态类型序列化/反序列化派生实例"的正确修复位置，
+    ///        原实现只看类型自身，会导致用户按提示修好基类后仍被持续告警。</item>
+    /// </list>
+    /// </remarks>
     private void CheckPolymorphismWithoutJsonDerivedType(List<AnnotatedType> annotatedTypes, Compilation compilation)
     {
         var jsonDerivedTypeAttr = compilation.GetTypeByMetadataName(JsonDerivedTypeAttributeFullName);
@@ -226,10 +301,14 @@ public class JsonContextGenerator
                 type.Symbol.BaseType.SpecialType == SpecialType.System_Object)
                 continue;
 
-            // 检查是否有 [JsonDerivedType] 标注
+            // 检查是否有 [JsonDerivedType] 标注（自身声明派生类型）
             var hasJsonDerivedType = jsonDerivedTypeAttr != null &&
                 type.Symbol.GetAttributes().Any(a =>
                     SymbolEqualityComparer.Default.Equals(a.AttributeClass, jsonDerivedTypeAttr));
+
+            // 检查基类是否已声明指向本类型的多态映射（正确修复位置）
+            if (!hasJsonDerivedType && jsonDerivedTypeAttr != null)
+                hasJsonDerivedType = IsDeclaredByBaseJsonDerivedType(type.Symbol, jsonDerivedTypeAttr);
 
             if (!hasJsonDerivedType)
             {
@@ -240,6 +319,32 @@ public class JsonContextGenerator
                     type.Symbol.ToDisplayString()));
             }
         }
+    }
+
+    /// <summary>
+    /// 判断类型的继承链上是否存在标注了 <c>[JsonDerivedType(typeof(该类型))]</c> 的基类。
+    /// </summary>
+    private static bool IsDeclaredByBaseJsonDerivedType(INamedTypeSymbol type, INamedTypeSymbol jsonDerivedTypeAttr)
+    {
+        var baseType = type.BaseType;
+        while (baseType != null && baseType.SpecialType != SpecialType.System_Object)
+        {
+            foreach (var attr in baseType.GetAttributes())
+            {
+                if (!SymbolEqualityComparer.Default.Equals(attr.AttributeClass, jsonDerivedTypeAttr))
+                    continue;
+
+                if (attr.ConstructorArguments.Length > 0 &&
+                    SymbolEqualityComparer.Default.Equals(attr.ConstructorArguments[0].Value as ITypeSymbol, type))
+                {
+                    return true;
+                }
+            }
+
+            baseType = baseType.BaseType;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -305,12 +410,12 @@ public class JsonContextGenerator
     /// </remarks>
     /// <param name="compilation">Roslyn 编译单元。</param>
     /// <param name="annotatedSet">已通过 [HttpJsonSerializable] 标注的类型集合（用于去重）。</param>
-    /// <returns>发现的需注册类型列表。</returns>
-    private List<INamedTypeSymbol> ScanHttpClientApiTypes(
+    /// <returns>发现的需注册类型列表（含数组根，故为 <see cref="ITypeSymbol"/>）。</returns>
+    private List<ITypeSymbol> ScanHttpClientApiTypes(
         Compilation compilation,
         HashSet<INamedTypeSymbol> annotatedSet)
     {
-        var result = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+        var result = new HashSet<ITypeSymbol>(SymbolEqualityComparer.Default);
 
         var httpClientApiAttr = compilation.GetTypeByMetadataName(HttpClientApiAttributeFullName);
         if (httpClientApiAttr == null)
@@ -355,11 +460,13 @@ public class JsonContextGenerator
                     if (isJsonMethod)
                     {
                         var returnType = UnwrapTaskType(method.ReturnType);
-                        // [T1 修复] 数组返回类型（如 Task<UserDto[]>）：注册数组本身 + 递归元素类型
+                        // [T1 修复] 数组返回类型（如 Task<UserDto[]>）：注册数组根本身 + 递归元素类型。
+                        // 注意：数组是 IArrayTypeSymbol（非 INamedTypeSymbol），必须以 ITypeSymbol 入集合，
+                        // 否则强制转型会在运行期抛 InvalidCastException。
                         if (returnType is IArrayTypeSymbol arrayReturn)
                         {
                             if (arrayReturn.ElementType is INamedTypeSymbol arrayElem && !IsFrameworkType(arrayElem))
-                                result.Add((INamedTypeSymbol)arrayReturn);
+                                result.Add(arrayReturn);
                             if (arrayReturn.ElementType is INamedTypeSymbol namedElem)
                                 CollectSerializableTypes(namedElem, result, annotatedSet, compilation.Assembly);
                         }
@@ -378,11 +485,11 @@ public class JsonContextGenerator
                         if (!hasBody)
                             continue;
 
-                        // [T1 修复] 数组 [Body] 参数（如 [Body] UserDto[]）：注册数组本身 + 递归元素类型
+                        // [T1 修复] 数组 [Body] 参数（如 [Body] UserDto[]）：注册数组根本身 + 递归元素类型
                         if (param.Type is IArrayTypeSymbol arrayParam)
                         {
                             if (arrayParam.ElementType is INamedTypeSymbol arrayElem && !IsFrameworkType(arrayElem))
-                                result.Add((INamedTypeSymbol)arrayParam);
+                                result.Add(arrayParam);
                             if (arrayParam.ElementType is INamedTypeSymbol namedElem)
                                 CollectSerializableTypes(namedElem, result, annotatedSet, compilation.Assembly);
                         }
@@ -520,12 +627,12 @@ public class JsonContextGenerator
     /// </list>
     /// </remarks>
     /// <param name="type">待收集的类型符号。</param>
-    /// <param name="result">收集结果集合。</param>
+    /// <param name="result">收集结果集合（[T1] 放宽为 <see cref="ITypeSymbol"/>，以容纳数组型根）。</param>
     /// <param name="annotatedSet">已通过 [HttpJsonSerializable] 标注的类型集合（用于去重）。</param>
     /// <param name="currentAssembly">当前编译的程序集符号（用于判断类型来源）。</param>
     private static void CollectSerializableTypes(
         INamedTypeSymbol type,
-        HashSet<INamedTypeSymbol> result,
+        HashSet<ITypeSymbol> result,
         HashSet<INamedTypeSymbol> annotatedSet,
         IAssemblySymbol currentAssembly)
     {
@@ -616,7 +723,7 @@ public class JsonContextGenerator
     /// 为 [HttpClientApi] 发现的类型创建分组。
     /// </summary>
     private static TypeGroup CreateDiscoveredTypeGroup(
-        List<INamedTypeSymbol> types,
+        List<ITypeSymbol> types,
         Compilation compilation,
         string defaultNamespace)
     {
@@ -728,8 +835,7 @@ public class JsonContextGenerator
             // 多态序列化（以基类类型序列化派生实例）仍需用户在基类声明上标注 [JsonDerivedType]。
             if (autoDerivedTypes)
             {
-                var derivedTypes = FindDerivedTypes(compilation, type);
-                foreach (var derived in derivedTypes)
+                foreach (var derived in FindDerivedTypes(compilation, type))
                 {
                     var derivedExpr = GetTypeOfExpression(derived);
                     sb.AppendLine($"[JsonSerializable(typeof({derivedExpr}))] // 派生类型已注册为独立根；多态（以基类类型序列化）仍需在基类上标注 [JsonDerivedType]");
@@ -749,8 +855,14 @@ public class JsonContextGenerator
     /// 在同程序集内递归查找继承自指定基类的所有派生类型（用于 --auto-derived-types 自动 [JsonDerivedType]）。
     /// 采用广度优先遍历完整继承链，覆盖多层派生（如 Base → Mid → Leaf）。
     /// </summary>
-    private static List<INamedTypeSymbol> FindDerivedTypes(Compilation compilation, INamedTypeSymbol baseType)
+    /// <param name="compilation">Roslyn 编译单元。</param>
+    /// <param name="baseType">基类型。数组等非具名类型无继承链，直接返回空。</param>
+    private static List<INamedTypeSymbol> FindDerivedTypes(Compilation compilation, ITypeSymbol baseType)
     {
+        var result = new List<INamedTypeSymbol>();
+        if (baseType is not INamedTypeSymbol baseNamedType)
+            return result;
+
         // 收集编译单元内声明的所有具名类型（仅遍历一次语法树）
         var allTypes = new List<INamedTypeSymbol>();
         foreach (var syntaxTree in compilation.SyntaxTrees)
@@ -764,10 +876,9 @@ public class JsonContextGenerator
         }
 
         // 从基类出发，逐层找出所有直接/间接派生类
-        var result = new List<INamedTypeSymbol>();
         var visited = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
         var queue = new Queue<INamedTypeSymbol>();
-        queue.Enqueue(baseType);
+        queue.Enqueue(baseNamedType);
 
         while (queue.Count > 0)
         {
@@ -791,7 +902,7 @@ public class JsonContextGenerator
     /// 自动推导命名策略：检测实体上的 [JsonPropertyName] 模式。
     /// 超过 50% 的实体使用 snake_case_lower → 返回 SnakeCaseLower，否则 CamelCase。
     /// </summary>
-    private static JsonNamingPolicyHint AutoDeriveNamingPolicy(List<INamedTypeSymbol> types)
+    private static JsonNamingPolicyHint AutoDeriveNamingPolicy(List<ITypeSymbol> types)
     {
         var snakeCaseRegex = new Regex(@"^[a-z][a-z0-9]*(_[a-z0-9]+)+$", RegexOptions.Compiled);
         int totalProps = 0;
@@ -799,7 +910,10 @@ public class JsonContextGenerator
 
         foreach (var type in types)
         {
-            foreach (var prop in type.GetMembers().OfType<IPropertySymbol>())
+            if (type is not INamedTypeSymbol namedType)
+                continue; // 数组等非具名根不参与命名策略推导
+
+            foreach (var prop in namedType.GetMembers().OfType<IPropertySymbol>())
             {
                 // 检查是否有 [JsonPropertyName] 特性
                 var jsonPropNameAttr = prop.GetAttributes().FirstOrDefault(a =>
@@ -827,14 +941,19 @@ public class JsonContextGenerator
     /// <summary>
     /// 获取类型的 typeof() 表达式，处理开放泛型（&lt;T&gt; → &lt;&gt;）。
     /// </summary>
-    private static string GetTypeOfExpression(INamedTypeSymbol type)
+    /// <remarks>
+    /// [T1 修复] 参数放宽为 <see cref="ITypeSymbol"/> 以支持数组根：
+    /// <c>IArrayTypeSymbol</c> 的 <c>ToDisplayString(FullyQualifiedFormat)</c> 直接产出
+    /// <c>global::Ns.UserDto[]</c>，无需任何改写。
+    /// </remarks>
+    private static string GetTypeOfExpression(ITypeSymbol type)
     {
         var displayString = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
             .WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.UseSpecialTypes));
 
         // 开放泛型定义：将 <T>, <TKey, TValue> 等改写为 <>
         // 闭合泛型（如 FeishuApiResult<X>）保持原样，STJ 支持闭合泛型的 [JsonSerializable]
-        if (type.IsGenericType && type.IsDefinition)
+        if (type is INamedTypeSymbol namedType && namedType.IsGenericType && namedType.IsDefinition)
         {
             // 匹配 <...> 中的类型参数名并替换为空
             var genericMatch = Regex.Match(displayString, @"<[^>]+>");

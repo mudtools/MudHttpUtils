@@ -9,23 +9,33 @@
     的类型生成 JsonSerializerContext 源文件，并纳入编译（机制同仓库内 AotVerificationDemo 的内联目标）。
 
     启用前提（任选其一安装脚手架工具）：
-      a) 全局安装： dotnet tool install --global Mud.HttpUtils.JsonContextScaffolder
-      b) 本地工具： dotnet tool install --local  Mud.HttpUtils.JsonContextScaffolder
+      a) 全局安装： dotnet tool install -g Mud.HttpUtils.JsonContextScaffolder
+      b) 本地工具： dotnet tool install -l Mud.HttpUtils.JsonContextScaffolder
                      （需先 dotnet new tool-manifest，并在 .config/dotnet-tools.json 中登记）
       c) .NET 8+ SDK 项目引用工具：
                      <DotNetToolReference Include="Mud.HttpUtils.JsonContextScaffolder" Version="x.y.z" />
         本目标会优先使用 DotNetToolReference 解析出的本地路径，否则回退到 PATH 上的 `mud-jsonctx`。
 
     工具未安装时，本目标以【警告】形式提示（不中断构建），消费方可选择手动运行并签入生成的 .g.cs。
+
+    [重要] 本文件是 MSBuild XML 工程文件，**注释中禁止出现连续两个短横线**
+    （XML 规范限制：注释内出现该序列时 MSBuild 直接报 MSB4024，
+    而本文件由 Mud.HttpUtils.Attributes.targets 自动导入，会让所有消费方构建直接失败）。
+    因此上面的工具安装命令使用短选项 -g / -l，请勿改写为长选项形式。
   -->
 
   <PropertyGroup>
     <!-- [AOT v4 Phase 17.1 / D16 / T3 修复] 判定语义与 Mud.HttpUtils.Generator 的 AotModeResolver 保持一致：
-       显式 MudAotRuntimeMode > PublishAot > 关闭。
+       显式 MudAotRuntimeMode（aot / jit）> PublishAot > 关闭。
        IsAotCompatible=true（仅声明 AOT 友好、不实际发布 AOT）不自动激活，避免库项目误触发工具未安装警告。
        消费方仍可用 <MudEnableJsonContextScaffolder>true</MudEnableJsonContextScaffolder> 显式覆盖，
-       或用 <MudEnableJsonContextScaffolder>false</MudEnableJsonContextScaffolder> 显式禁用。 -->
-    <MudEnableJsonContextScaffolder Condition="'$(MudEnableJsonContextScaffolder)' == '' AND ('$(PublishAot)' == 'true' OR '$(MudAotRuntimeMode)' == 'aot')">true</MudEnableJsonContextScaffolder>
+       或用 <MudEnableJsonContextScaffolder>false</MudEnableJsonContextScaffolder> 显式禁用。
+
+       注意：显式 jit 必须【先于】PublishAot 判定——AotModeResolver 中显式 jit 会否决 PublishAot
+       （JIT 部署的项目即使携带 PublishAot 属性也不应激活脚手架），否则两处口径再次分叉。 -->
+    <MudEnableJsonContextScaffolder Condition="'$(MudEnableJsonContextScaffolder)' == '' AND '$(MudAotRuntimeMode)' == 'jit'">false</MudEnableJsonContextScaffolder>
+    <MudEnableJsonContextScaffolder Condition="'$(MudEnableJsonContextScaffolder)' == '' AND '$(MudAotRuntimeMode)' == 'aot'">true</MudEnableJsonContextScaffolder>
+    <MudEnableJsonContextScaffolder Condition="'$(MudEnableJsonContextScaffolder)' == '' AND '$(PublishAot)' == 'true'">true</MudEnableJsonContextScaffolder>
     <MudEnableJsonContextScaffolder Condition="'$(MudEnableJsonContextScaffolder)' == ''">false</MudEnableJsonContextScaffolder>
     <MudJsonContextOutputPath Condition="'$(MudJsonContextOutputPath)' == ''">$(IntermediateOutputPath)GeneratedJsonContext</MudJsonContextOutputPath>
     <!-- 优先使用 DotNetToolReference 解析出的本地路径；否则回退到 PATH 上的命令名 -->

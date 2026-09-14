@@ -10,10 +10,18 @@ using Mud.HttpUtils;
 namespace Mud.HttpUtils.Tests;
 
 /// <summary>快车道测试用 DTO。</summary>
+/// <remarks>
+/// [AOT 体系修复] 必须包含至少一个**多词**属性名：单属性名（Id/Name）在 CamelCase 与 SnakeCaseLower
+/// 下的转换结果完全相同（都是 "id"/"name"），会让 T4 的"命名策略可区分"防假阳性断言
+/// （<c>viaOptionsSlot.Should().NotBe(viaOptions)</c>）恒失败——原夹具即如此。
+/// </remarks>
 public sealed class AotFastPathDto
 {
     public int Id { get; set; }
     public string Name { get; set; } = string.Empty;
+
+    /// <summary>多词属性：CamelCase → displayName；SnakeCaseLower → display_name（用于区分两种命名策略）。</summary>
+    public string DisplayName { get; set; } = string.Empty;
 }
 
 /// <summary>快车道测试用源生成上下文（CamelCase）。</summary>

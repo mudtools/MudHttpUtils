@@ -184,9 +184,12 @@ jobs:
               echo "✗ AOT runtime verification FAILED (net10.0) - AOT_OK not found in output"
               exit 1
             fi
-            # [v2.4 §1.4] 关键场景名硬门禁断言
-            for SCENE in "DemoResponseTypeWrapping" "DemoComplexQueryJsonSerialization" "DemoQueryMapFeatureCoverage" "DemoSensitiveDataMasker"; do
-              if echo "$OUTPUT" | grep -q "$SCENE"; then
+            # [v2.4 §1.4 + AOT 体系修复] 关键场景硬门禁断言。
+            # [修复] 原断言使用 Program.cs 中的方法名（Demo*），但 Demo 输出从未打印方法名 →
+            # 断言恒失败。现 Demo 在每个场景前打印 ASCII 标记行 "[SCENE] {方法名}"，此处按其断言
+            # （grep -F 逐字匹配，避免 [QueryMap] 之类被当作正则字符类）。
+            for SCENE in "DemoResponseTypeWrapping" "DemoComplexQueryJsonSerialization" "DemoQueryMapFeatureCoverage" "DemoSensitiveDataMasker" "DemoPolymorphismRoundTrip"; do
+              if echo "$OUTPUT" | grep -Fq "[SCENE] $SCENE"; then
                 echo "✓ Scene $SCENE executed (net10.0)"
               else
                 echo "✗ Scene $SCENE NOT found in output (net10.0)"
@@ -211,9 +214,9 @@ jobs:
               echo "✗ AOT runtime verification FAILED (net8.0) - AOT_OK not found in output"
               exit 1
             fi
-            # [v2.4 §1.4] 关键场景名硬门禁断言
-            for SCENE in "DemoResponseTypeWrapping" "DemoComplexQueryJsonSerialization" "DemoQueryMapFeatureCoverage" "DemoSensitiveDataMasker"; do
-              if echo "$OUTPUT" | grep -q "$SCENE"; then
+            # [v2.4 §1.4 + AOT 体系修复] 关键场景硬门禁断言（说明见 net10.0 步骤）
+            for SCENE in "DemoResponseTypeWrapping" "DemoComplexQueryJsonSerialization" "DemoQueryMapFeatureCoverage" "DemoSensitiveDataMasker" "DemoPolymorphismRoundTrip"; do
+              if echo "$OUTPUT" | grep -Fq "[SCENE] $SCENE"; then
                 echo "✓ Scene $SCENE executed (net8.0)"
               else
                 echo "✗ Scene $SCENE NOT found in output (net8.0)"
@@ -239,9 +242,11 @@ jobs:
               echo "✗ FullTrim verification FAILED - AOT_OK not found in output"
               exit 1
             fi
-            # [T10 修复] 关键场景名硬门禁断言（含场景 3 去虚化后的 EncryptContent round-trip）
-            for SCENE in "场景 1: JSON 序列化" "场景 2: AOT 安全脱敏器" "场景 3: EncryptContent" "场景 4: 查询参数" "场景 5: 生成器路径"; do
-              if echo "$OUTPUT" | grep -q "$SCENE"; then
+            # [T10 修复 + AOT 体系修复] 关键场景硬门禁断言（含场景 3 去虚化后的 EncryptContent round-trip）。
+            # 场景标识已改为 ASCII（RunScenarioAsync 打印 "[SCENE] {id}"）：原断言用中文场景名且
+            # 只是在失败分支才打印，断言方向与实现相反 → 门禁必然红。
+            for SCENE in "JsonSerialization" "AotSafeMasker" "EncryptContent" "QueryParameters" "GeneratedContext"; do
+              if echo "$OUTPUT" | grep -Fq "[SCENE] $SCENE"; then
                 echo "✓ Scene $SCENE executed (FullTrim)"
               else
                 echo "✗ Scene $SCENE NOT found in output (FullTrim)"
@@ -303,6 +308,64 @@ jobs:
             exit 1
           fi
           rm -rf "$TEST_DIR"
+
+      # [T3 修复] 脚手架激活条件与 AotModeResolver 语义一致性探针。
+      # 覆盖：显式 MudAotRuntimeMode=aot 激活（无需 PublishAot）；显式 jit 否决 PublishAot；
+      #       无属性时关闭（IsAotCompatible 不自动激活，D16 语义不变）。
+      # 断言方式：探针工程把"属性值"与"目标是否真的执行"写成标记文件（AfterTargets 在目标被条件跳过时
+      # 不会执行，故 ran.txt 存在即为目标执行过的证据），避免依赖中文日志 grep 的跨平台编码差异。
+      - name: Verify scaffolder activation aligns with AotModeResolver (T3)
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          TEST_DIR="$WORKSPACE/.tmp-scaffolder-activation"
+          rm -rf "$TEST_DIR"
+          mkdir -p "$TEST_DIR"
+          cat > "$TEST_DIR/Test.csproj" << 'EOF'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <TargetFramework>net10.0</TargetFramework>
+            </PropertyGroup>
+            <Import Project="..\Mud.HttpUtils.Attributes\build\Mud.HttpUtils.JsonContextScaffolder.targets" />
+            <Target Name="ProbeWriteActivationState" BeforeTargets="BeforeCompile">
+              <WriteLinesToFile File="$(MSBuildProjectDirectory)\activation.txt"
+                                Lines="MudEnableJsonContextScaffolder=$(MudEnableJsonContextScaffolder)"
+                                Overwrite="true" />
+            </Target>
+            <Target Name="ProbeWriteRanMarker" AfterTargets="MudGenerateJsonContext"
+                    Condition="'$(MudEnableJsonContextScaffolder)' == 'true'">
+              <WriteLinesToFile File="$(MSBuildProjectDirectory)\ran.txt" Lines="ran" Overwrite="true" />
+            </Target>
+          </Project>
+          EOF
+          check() {
+            local label="$1" wantFlag="$2" wantRan="$3"
+            shift 3
+            rm -f "$TEST_DIR/activation.txt" "$TEST_DIR/ran.txt"
+            dotnet build "$TEST_DIR/Test.csproj" "$@" > /dev/null 2>&1 || true
+            local state="(none)"
+            [ -f "$TEST_DIR/activation.txt" ] && state=$(tr -d '\r' < "$TEST_DIR/activation.txt")
+            local ran="no"
+            [ -f "$TEST_DIR/ran.txt" ] && ran="yes"
+            echo "  $label => $state | targetRan=$ran"
+            if [ "$state" != "MudEnableJsonContextScaffolder=$wantFlag" ] || [ "$ran" != "$wantRan" ]; then
+              echo "::error::T3 alignment FAILED ($label): expected MudEnableJsonContextScaffolder=$wantFlag/targetRan=$wantRan, got $state/targetRan=$ran"
+              return 1
+            fi
+          }
+          fail=0
+          check "MudAotRuntimeMode=aot" true yes -p:MudAotRuntimeMode=aot || fail=1
+          check "MudAotRuntimeMode=jit" false no -p:MudAotRuntimeMode=jit || fail=1
+          check "PublishAot+explicit jit vetoes" false no -p:PublishAot=true -p:MudAotRuntimeMode=jit || fail=1
+          check "PublishAot" true yes -p:PublishAot=true || fail=1
+          rm -rf "$TEST_DIR"
+          if [ "$fail" -ne 0 ]; then
+            echo "✗ Scaffolder activation semantics diverge from AotModeResolver"
+            exit 1
+          fi
+          echo "✓ Scaffolder activation matches AotModeResolver semantics"
 
   aot-packageref:
     name: AOT PackageRef 验证

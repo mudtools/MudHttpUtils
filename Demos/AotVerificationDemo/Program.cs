@@ -16,6 +16,10 @@ public class Program
 {
     public static async Task Main(string[] args)
     {
+        // 库默认阻断未列入白名单的域名（防 SSRF）。本 Demo 面向公开测试站点，
+        // 需显式登记，否则每个 HTTP 场景都会在建连前抛 InvalidOperationException 并被计为失败。
+        UrlValidator.ConfigureAllowedDomains(["httpbin.org", "fake.example"]);
+
         var host = Host.CreateDefaultBuilder(args)
             .ConfigureServices((context, services) =>
             {
@@ -25,24 +29,45 @@ public class Program
 
         Console.WriteLine("=== Mud.HttpUtils Native AOT 验证示例 ===\n");
 
-        // 每个场景验证一条 AOT 安全路径
+        // 每个场景验证一条 AOT 安全路径。
+        // [CI 门禁] 每个场景输出 ASCII 标记行（[SCENE] {方法名}）：CI 用它在跨平台 shell 中稳定断言
+        // "关键场景确实执行"，而不依赖下方中文标题（中文在不同 runner/locale 下的 grep 行为不稳定）。
+        Console.WriteLine($"[SCENE] {nameof(DemoGeneratedApiClient_Json)}");
         await DemoGeneratedApiClient_Json(host.Services);
+        Console.WriteLine($"[SCENE] {nameof(DemoEnhancedHttpClient_Json)}");
         await DemoEnhancedHttpClient_Json(host.Services);
+        Console.WriteLine($"[SCENE] {nameof(DemoGeneratedApiClient_FormUrlEncoded)}");
         await DemoGeneratedApiClient_FormUrlEncoded(host.Services);
+        Console.WriteLine($"[SCENE] {nameof(DemoQueryMapJsonSerialization)}");
         await DemoQueryMapJsonSerialization(host.Services);
+        Console.WriteLine($"[SCENE] {nameof(DemoComplexQueryJsonSerialization)}");
         await DemoComplexQueryJsonSerialization(host.Services);
+        Console.WriteLine($"[SCENE] {nameof(DemoQueryMapFeatureCoverage)}");
         await DemoQueryMapFeatureCoverage(host.Services);
+        Console.WriteLine($"[SCENE] {nameof(DemoResilienceDecorator)}");
         await DemoResilienceDecorator(host.Services);
+        Console.WriteLine($"[SCENE] {nameof(DemoResilienceDecoratorWithImplementationType)}");
         await DemoResilienceDecoratorWithImplementationType();
+        Console.WriteLine($"[SCENE] {nameof(DemoSensitiveDataMasker)}");
         DemoSensitiveDataMasker();
+        Console.WriteLine($"[SCENE] {nameof(DemoOAuth2Serialization)}");
         DemoOAuth2Serialization();
+        Console.WriteLine($"[SCENE] {nameof(DemoEncryptContentSerialization)}");
         await DemoEncryptContentSerialization();
+        Console.WriteLine($"[SCENE] {nameof(DemoNdjsonSerialization)}");
         await DemoNdjsonSerialization();
+        Console.WriteLine($"[SCENE] {nameof(DemoScaffolderAutoCoverage)}");
         await DemoScaffolderAutoCoverage();
+        Console.WriteLine($"[SCENE] {nameof(DemoUncoveredDtoRuntime)}");
         DemoUncoveredDtoRuntime();
+        Console.WriteLine($"[SCENE] {nameof(DemoResponseTypeWrapping)}");
         await DemoResponseTypeWrapping();
+        Console.WriteLine($"[SCENE] {nameof(DemoNonDiAotEntry)}");
         await DemoNonDiAotEntry();
+        Console.WriteLine($"[SCENE] {nameof(DemoModuleInitializerAutoRegistration)}");
         DemoModuleInitializerAutoRegistration();
+        Console.WriteLine($"[SCENE] {nameof(DemoPolymorphismRoundTrip)}");
+        DemoPolymorphismRoundTrip();
 
         Console.WriteLine("\n=== AOT 验证示例完成 ===");
 
@@ -519,7 +544,6 @@ public class Program
     // ─────────────────────────────────────────────────────────
     // 场景 5：AOT 安全的敏感数据脱敏
     // ─────────────────────────────────────────────────────────
-
     private static void DemoSensitiveDataMasker()
     {
         Console.WriteLine("--- 5. AOT 安全脱敏器（字典式实现）---");
@@ -731,32 +755,37 @@ public class Program
     /// <summary>
     /// 验证故意构造的「未覆盖」DTO（既不标注 [HttpJsonSerializable]，也不在任何
     /// JsonSerializerContext 注册）在经 AppJsonContext.Default（仅含源生成 resolver，无反射兜底）
-    /// 序列化时抛出 NotSupportedException，而非静默返回空对象。
+    /// 序列化时抛出异常，而非静默返回空对象。
     /// </summary>
     /// <remarks>
     /// 此场景仅在非严格模式下编译（AOT004 为 Warning）：AOT004 已在编译期告警，
-    /// 此处验证运行时行为——未声明类型在 AOT 下抛出异常（Phase 20 / 架构 §6）。
+    /// 此处验证运行时行为——未声明类型在源生成 resolver 下必须失败（Phase 20 / 架构 §6）。
+    /// <para>
+    /// [修复] 原实现只捕获 <c>NotSupportedException</c>，且把"配了源生成 resolver 时 JIT 会走反射兜底"
+    /// 当作前提。实测：显式传入 <c>JsonSerializerContext</c> 时**不存在**反射兜底，
+    /// STJ 直接抛 <c>InvalidOperationException</c>（JsonTypeInfo metadata … not provided by TypeInfoResolver），
+    /// 该异常未被捕获 → 整个进程以 Unhandled exception 终止 → 永远输出不了 AOT_OK（AOT 门禁失效）。
+    /// 现按"JIT / Native AOT 一致：必须失败"断言，并接受两种异常类型
+    /// （不同 .NET 版本/运行模式下 STJ 的异常类型可能不同）。
+    /// </para>
     /// </remarks>
     private static void DemoUncoveredDtoRuntime()
     {
         Console.WriteLine("--- 11. 未覆盖 DTO 运行时异常验证（验证 Phase 20）---");
 
 #if NET8_0_OR_GREATER
-        // UncoveredDto 未覆盖：经 AppJsonContext.Default（仅源生成 resolver）序列化应抛 NotSupportedException。
+        // UncoveredDto 未覆盖：经 AppJsonContext.Default（仅源生成 resolver、无反射兜底）序列化应失败。
         var uncovered = new UncoveredDto { Value = "undeclared" };
-        var isAotRuntime = !System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported;
         try
         {
             var _ = JsonSerializer.Serialize(uncovered, typeof(UncoveredDto), AppJsonContext.Default);
-            // JIT 下可能走反射兜底而不抛；AOT 下必抛 NotSupportedException——否则视为失败。
-            Assert(!isAotRuntime,
-                "未覆盖 DTO 在 Native AOT 下应抛 NotSupportedException，但序列化成功（AOT 契约被破坏）");
-            if (!isAotRuntime)
-                Console.WriteLine("  [✓] 未覆盖 DTO 序列化已执行（JIT 非严格场景，预期不抛）");
+            // 序列化竟然成功 → 说明存在反射兜底，AOT 契约被破坏（JIT 判定之后可能静默产出空对象）。
+            Assert(false,
+                "未覆盖 DTO 应因缺少 JsonTypeInfo 元数据而失败，但序列化成功（AOT 契约被破坏）");
         }
-        catch (NotSupportedException ex)
+        catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
         {
-            Console.WriteLine($"  [✓] 未覆盖 DTO 抛 NotSupportedException（符合 AOT 预期）: {ex.Message}");
+            Console.WriteLine($"  [✓] 未覆盖 DTO 序列化被拒绝（符合 AOT 预期）: {ex.GetType().Name}: {ex.Message}");
         }
 #else
         Console.WriteLine("  [✓] 跳过（JsonSourceGeneration 仅在 .NET 8+ 可用）");
@@ -847,10 +876,13 @@ public class Program
             using var httpClient = new HttpClient { BaseAddress = new Uri("https://httpbin.org"), Timeout = TimeSpan.FromSeconds(10) };
 
             // 构造 GeneratedClientOptions（携带最小必需依赖）
+            // 序列化器必须挂接源生成 resolver：无参构造在 Native AOT 下会因缺少
+            // TypeInfoResolver 而走内置兜底上下文（不含本 Demo 的 DTO），导致反序列化失败。
             var options = new GeneratedClientOptions
             {
                 AppContext = new MinimalAppContext("aot-demo", httpClient),
-                ContentSerializer = new SystemTextJsonContentSerializer()
+                ContentSerializer = new SystemTextJsonContentSerializer(
+                    HttpContentSerializerFactory.BuildOptions(null, AppJsonContext.Default))
             };
 
             // 无 DI 入口：直接通过 RestService.ForGenerated<T> 解析
@@ -924,26 +956,80 @@ public class Program
     }
 
     // ─────────────────────────────────────────────────────────
+    // 场景 15：多态序列化（基类 [JsonDerivedType] 端到端验证）
+    // ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// [T2] 多态端到端验证：以【基类静态类型】序列化/反序列化派生实例。
+    /// </summary>
+    /// <remarks>
+    /// 这是 AOT003 修复指引的闭环验证点：只有基类声明上标注了
+    /// <c>[JsonDerivedType(typeof(派生类型))]</c>，以基类静态类型进行的多态
+    /// round-trip 才能在 STJ 源生成 + Native AOT 下成功
+    /// （<c>--auto-derived-types</c> 仅注册派生类型为独立根，无法替代该特性）。
+    /// </remarks>
+    private static void DemoPolymorphismRoundTrip()
+    {
+        Console.WriteLine("--- 15. 多态序列化验证（基类 [JsonDerivedType]，AOT 端到端）---");
+
+#if NET8_0_OR_GREATER
+        // 静态类型为基类 PolyShape —— 多态映射必须来自基类元数据
+        PolyShape shape = new PolyCircle { Name = "circle-1", Radius = 3.5 };
+
+        var json = JsonSerializer.Serialize(shape, AppJsonContext.Default.PolyShape);
+        var back = JsonSerializer.Deserialize(json, AppJsonContext.Default.PolyShape);
+
+        if (back is PolyCircle circle
+            && circle.Name == "circle-1"
+            && Math.Abs(circle.Radius - 3.5) < 0.001)
+        {
+            Console.WriteLine($"  PolyShape(PolyCircle) => {json}");
+            Console.WriteLine("  [✓] 多态 round-trip 通过（基类 [JsonDerivedType] 生效，源生成 + AOT 安全）");
+        }
+        else
+        {
+            Assert(false,
+                $"多态 round-trip 失败：反序列化结果 {back?.GetType().Name ?? "null"}——基类 [JsonDerivedType] 未生效？");
+        }
+#else
+        Console.WriteLine("  [✓] 跳过（JsonSourceGeneration 仅在 .NET 8+ 可用）");
+#endif
+
+        Console.WriteLine();
+    }
+
+    // ─────────────────────────────────────────────────────────
     // 辅助类型：最小 IMudAppContext 实现
     // ─────────────────────────────────────────────────────────
 
     /// <summary>
     /// 最小 <see cref="IMudAppContext"/> 实现，仅用于无 DI AOT Demo。
     /// </summary>
+    /// <remarks>
+    /// [修复] 原实现让 <see cref="HttpClient"/> 属性抛 <see cref="NotImplementedException"/>
+    /// （假设"生成实现通过 IHttpRequestExecutor 发送请求"），但生成实现实际会经
+    /// <see cref="IMudAppContext.HttpClient"/> 取 <see cref="IEnhancedHttpClient"/>，
+    /// 于是场景 13 在 <c>GetUserAsync</c> 处抛 <c>NotImplementedException</c> → 被计为非预期失败
+    /// → 整个 Demo 输出 AOT_FAILED（AOT 门禁失效）。现提供真实可用的客户端，
+    /// 并注入源生成 resolver 以满足 Native AOT 的序列化契约。
+    /// </remarks>
     private sealed class MinimalAppContext : IMudAppContext
     {
-        private readonly HttpClient _httpClient;
+        private readonly IEnhancedHttpClient _enhancedHttpClient;
 
         public MinimalAppContext(string appKey, HttpClient httpClient)
         {
             AppKey = appKey;
-            _httpClient = httpClient;
+            _enhancedHttpClient = new SimpleEnhancedClient(httpClient, new EnhancedHttpClientOptions
+            {
+                // Native AOT 下 EnhancedHttpClient 的默认序列化器构造守卫要求 resolver 非空
+                JsonTypeInfoResolver = AppJsonContext.Default,
+            });
         }
 
         public string AppKey { get; }
 
-        public IEnhancedHttpClient HttpClient => throw new NotImplementedException(
-            "MinimalAppContext 不提供 IEnhancedHttpClient；生成实现通过 IHttpRequestExecutor 发送请求。");
+        public IEnhancedHttpClient HttpClient => _enhancedHttpClient;
 
         public ITokenManager GetTokenManager(string tokenType) => throw new NotImplementedException();
         public T GetTokenManager<T>() where T : class, ITokenManager => throw new NotImplementedException();

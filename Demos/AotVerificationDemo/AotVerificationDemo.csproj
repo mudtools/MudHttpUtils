@@ -20,7 +20,7 @@
 
 	<!-- AOT 分析器在构建时启用（PublishAot=true 自动启用），
 	     IL 告警作为警告显示。CI 中 dotnet publish -p:PublishAot=true 为最终验证。
-	     严格模式（-p:AotStrictMode=true）的 WarningsAsErrors 清单已上移至 Directory.Build.props，
+	     严格模式（-p:AotStrictMode=true）的 WarningsAsErrors 清单定义在 Directory.Build.targets，
 	     全仓（库 + Demo）统一口径，此处不再重复定义。 -->
 
 	<ItemGroup>

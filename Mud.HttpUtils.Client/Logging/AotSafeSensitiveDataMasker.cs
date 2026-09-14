@@ -32,6 +32,12 @@ namespace Mud.HttpUtils;
 /// <para>
 /// 此类是线程安全的，可以在多线程环境中安全使用。
 /// </para>
+/// <para>
+/// <b>禁止对含特殊字符的值手工拼接 JSON</b>：字符串插值（如 <c>$"{{\"name\":\"{value}\"}}"</c>）不会转义
+/// 引号、反斜杠与控制字符，含特殊字符的字段会产出非法 JSON（下游解析失败），换行/控制字符还会造成日志注入。
+/// 正确做法是经 <c>JsonSerializer.SerializeToNode(obj, JsonTypeInfo&lt;T&gt;)</c> 序列化后修改字段再
+/// <c>ToJsonString()</c>（AOT 安全）；若确需局部拼接，至少对每个值单独调用 <c>JsonSerializer.Serialize(value)</c>。
+/// </para>
 /// </remarks>
 /// <example>
 /// 使用示例：
@@ -40,8 +46,10 @@ namespace Mud.HttpUtils;
 /// masker.Register&lt;UserDto&gt;(obj =&gt;
 /// {
 ///     var user = (UserDto)obj;
-///     // 禁止对含特殊字符字段手拼 JSON，应使用 JsonSerializer + 字段后处理
-///     return $"{{\"id\":{user.Id},\"name\":{JsonSerializer.Serialize(user.Name)},\"email\":{JsonSerializer.Serialize(masker.Mask(user.Email))}}}";
+///     // 先以源生成 JsonTypeInfo 序列化为 JsonNode（AOT 安全），再对敏感字段做后处理。
+///     var node = JsonSerializer.SerializeToNode(user, AppJsonContext.Default.UserDto)!.AsObject();
+///     node["email"] = masker.Mask(user.Email);
+///     return node.ToJsonString();
 /// });
 ///
 /// // 注册为默认脱敏器
@@ -132,7 +140,10 @@ public class AotSafeSensitiveDataMasker : ISensitiveDataMasker
     /// </para>
     /// <para>
     /// [T5 修复] 未注册命中时发出一次性告警（每个类型仅一次），
-    /// 引导消费方补充注册。若 <see cref="_enableBaseTypeFallback"/> 开启，
+    /// 引导消费方补充注册：注入了 <see cref="ILogger"/> 时走日志，否则回退 <see cref="Console.Error"/>——
+    /// 脱敏是安全相关路径，禁止静默（"未注册 → 输出 [TypeName]"本身是 fail-safe，
+    /// 但静默会让消费方永远发现不了遗漏注册）。
+    /// 若 <see cref="_enableBaseTypeFallback"/> 开启，
     /// 命中未注册但存在可赋值的已注册基类时使用基类规则并告警。
     /// </para>
     /// </remarks>
@@ -153,27 +164,48 @@ public class AotSafeSensitiveDataMasker : ISensitiveDataMasker
             {
                 if (_maskers.TryGetValue(baseType, out var baseMasker))
                 {
-                    if (_unregisteredWarned.TryAdd(type, 0))
-                    {
-                        _logger?.LogWarning(
-                            "AotSafeSensitiveDataMasker: 类型 {Type} 未注册脱敏规则，已回退到基类 {BaseType} 规则。请调用 Register<{Type}>() 注册专用规则。",
-                            type, baseType, type);
-                    }
+                    WarnUnregistered(
+                        $"AotSafeSensitiveDataMasker: 类型 {type} 未注册脱敏规则，已回退到基类 {baseType} 规则。请调用 Register<{type.Name}>() 注册专用规则。",
+                        type,
+                        "AotSafeSensitiveDataMasker: 类型 {Type} 未注册脱敏规则，已回退到基类 {BaseType} 规则。请调用 Register<{TypeName}>() 注册专用规则。",
+                        type,
+                        baseType,
+                        type.Name);
                     return baseMasker(obj);
                 }
                 baseType = baseType.BaseType;
             }
         }
 
-        // [T5 修复] 未注册类型一次性告警
-        if (_unregisteredWarned.TryAdd(type, 0))
-        {
-            _logger?.LogWarning(
-                "AotSafeSensitiveDataMasker: 类型 {Type} 未注册脱敏规则，已按 [{TypeName}] 兜底输出。请调用 Register<{Type}>() 注册。",
-                type, type.Name);
-        }
+        // [T5 修复] 未注册类型一次性告警。
+        // 注意：结构化日志的消息模板占位符数量必须与参数数量一致——模板出现 3 个占位符而只传 2 个参数时，
+        // LogValuesFormatter 会抛 FormatException（原实现即如此，且仅在真正调用 logger 时才暴露）。
+        WarnUnregistered(
+            $"AotSafeSensitiveDataMasker: 类型 {type} 未注册脱敏规则，已按 [{type.Name}] 兜底输出。请调用 Register<{type.Name}>() 注册。",
+            type,
+            "AotSafeSensitiveDataMasker: 类型 {Type} 未注册脱敏规则，已按 [{TypeName}] 兜底输出。请调用 Register<T>() 注册该类型。",
+            type,
+            type.Name);
 
         // 未注册的类型返回类型信息（不序列化未知类型，避免反射）
         return $"[{type.Name}]";
+    }
+
+    /// <summary>
+    /// [T5] 未注册类型的一次性告警（每个类型仅一次）：优先走注入的日志，否则回退 <see cref="Console.Error"/>。
+    /// </summary>
+    /// <param name="fallbackMessage">无 <see cref="ILogger"/> 时输出的完整消息。</param>
+    /// <param name="dedupKey">去重键（命中过的类型不再重复告警）。</param>
+    /// <param name="messageTemplate">日志消息模板（占位符须与 <paramref name="logArgs"/> 数量一致）。</param>
+    /// <param name="logArgs">日志消息参数。</param>
+    private void WarnUnregistered(string fallbackMessage, Type dedupKey, string messageTemplate, params object[] logArgs)
+    {
+        if (!_unregisteredWarned.TryAdd(dedupKey, 0))
+            return;
+
+        if (_logger != null)
+            _logger.LogWarning(messageTemplate, logArgs);
+        else
+            Console.Error.WriteLine(fallbackMessage);
     }
 }

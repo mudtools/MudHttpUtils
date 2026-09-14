@@ -33,23 +33,23 @@ internal static class Program
         Console.WriteLine("=== Mud.HttpUtils TrimMode=full AOT 验证 ===");
         Console.WriteLine();
 
-        await RunScenarioAsync("场景 1: JSON 序列化/反序列化", VerifyJsonSerializationAsync);
-        await RunScenarioAsync("场景 2: AOT 安全脱敏器", () =>
+        await RunScenarioAsync("JsonSerialization", VerifyJsonSerializationAsync);
+        await RunScenarioAsync("AotSafeMasker", () =>
         {
             VerifyAotSafeMasker();
             return Task.CompletedTask;
         });
-        await RunScenarioAsync("场景 3: EncryptContent<T> 泛型重载", () =>
+        await RunScenarioAsync("EncryptContent", () =>
         {
             VerifyEncryptContent();
             return Task.CompletedTask;
         });
-        await RunScenarioAsync("场景 4: 查询参数格式化", () =>
+        await RunScenarioAsync("QueryParameters", () =>
         {
             VerifyQueryParameters();
             return Task.CompletedTask;
         });
-        await RunScenarioAsync("场景 5: 生成器路径（源生成 Context）", VerifyGeneratedContextAsync);
+        await RunScenarioAsync("GeneratedContext", VerifyGeneratedContextAsync);
 
         Console.WriteLine();
 
@@ -64,8 +64,19 @@ internal static class Program
         return 0;
     }
 
+    /// <summary>
+    /// 执行一个验证场景。
+    /// </summary>
+    /// <param name="name">场景标识（ASCII，供 CI grep 断言场景确实执行）。</param>
+    /// <param name="scenario">场景委托。</param>
+    /// <remarks>
+    /// [修复] 原实现仅在失败分支打印场景名，CI 却把"输出中存在场景名"当作成功断言——
+    /// 断言方向与实现相反（成功即不出现 → 门禁必然红）。现在成功/失败都打印 <c>[SCENE]</c> 标记行，
+    /// 标识使用 ASCII 以避免跨平台 shell 的中文编码差异。
+    /// </remarks>
     private static async Task RunScenarioAsync(string name, Func<Task> scenario)
     {
+        Console.WriteLine($"[SCENE] {name}");
         try
         {
             await scenario().ConfigureAwait(false);
@@ -128,10 +139,12 @@ internal static class Program
         var encrypted = client.EncryptContent(dto);
         Assert(!string.IsNullOrEmpty(encrypted), "EncryptContent<T> 返回空字符串");
 
-        // 解密并验证 round-trip
+        // 解密并验证 round-trip。
+        // [AOT 体系修复] 断言需与源生成 Context 对齐：JsonSerializerOptions 命名策略为 CamelCase，
+        // 故解密后应是 "id":77（原断言只认 "Id"，在正确配置下必然失败）。
         var decrypted = client.DecryptContent(encrypted);
-        Assert(decrypted.Contains("\"Id\":77") || decrypted.Contains("\"id\":77"),
-            "EncryptContent<T> round-trip 解密后内容不一致");
+        Assert(decrypted.Contains("\"id\":77") || decrypted.Contains("\"Id\":77"),
+            $"EncryptContent<T> round-trip 解密后内容不一致：{decrypted}");
 
         Console.WriteLine("  ✓ EncryptContent<T> 泛型重载加密 round-trip 成功");
     }
@@ -171,9 +184,16 @@ internal static class Program
         Assert(roundTrip?.Id == 7 && roundTrip.Name == "generated",
             "源生成 Context round-trip 结果不一致");
 
-        // 引用生成实现类，避免其在 full trim 下被判定为不可达而裁剪（同时验证生成产物可实例化引用）。
-        var api = RestService.ForGenerated<IFullTrimApi>(new HttpClient { BaseAddress = new Uri("https://fake.example") });
-        Assert(api is not null, "生成实现类无法通过 RestService.ForGenerated<T> 解析");
+        // [AOT 体系修复] 以编译期类型引用生成实现类，避免其在 full trim 下被判定为不可达而裁剪。
+        // 不能改用 RestService.ForGenerated<IFullTrimApi>()：工厂注册代码只为**默认模式**接口
+        // （[HttpClientApi] 且未指定 HttpClient/TokenManager 包装类型）生成
+        // （HttpInvokeRegistrationGenerator.GenerateFactoryRegistrationCall 仅遍历 defaultModeApis），
+        // 而 IFullTrimApi 使用 IEnhancedHttpClient 模式 → ForGenerated 必然抛
+        // "No generated factory registered"，使本场景恒失败。
+        // 生成实现类命名约定：{接口所在命名空间}.Internal.{去掉 I 前缀的接口名}。
+        var generatedImplementation = typeof(AotFullTrimVerificationDemo.Internal.FullTrimApi);
+        Assert(generatedImplementation.Name == "FullTrimApi",
+            $"生成实现类缺失或命名不符：{generatedImplementation.FullName}");
 
         Console.WriteLine("  ✓ 源生成 Context round-trip 与生成实现类解析均正常");
         await Task.CompletedTask;
@@ -255,12 +275,20 @@ internal sealed class XorEncryptionProvider : IEncryptionProvider
 /// <summary>
 /// [T10] 测试用 EnhancedHttpClient 子类，覆盖 EncryptionProvider 以注入 <see cref="XorEncryptionProvider"/>。
 /// </summary>
+/// <remarks>
+/// [AOT 体系修复] 必须显式注入源生成 <c>JsonTypeInfoResolver</c>：否则序列化器退回
+/// 库内置 <c>MudHttpJsonContext</c>（不含本 Demo 的 <c>TestDto</c>）→ EncryptContent 抛
+/// <c>NotSupportedException</c>，场景 3 恒失败（此前 T10 的"去虚化"断言恰好暴露了这一点）。
+/// </remarks>
 internal sealed class EncryptTestClient : EnhancedHttpClient
 {
     private readonly IEncryptionProvider _encryptionProvider;
 
     public EncryptTestClient(IEncryptionProvider encryptionProvider)
-        : base(new HttpClient(), new EnhancedHttpClientOptions())
+        : base(new HttpClient(), new EnhancedHttpClientOptions
+        {
+            JsonTypeInfoResolver = FullTrimJsonContext.Default,
+        })
     {
         _encryptionProvider = encryptionProvider;
     }

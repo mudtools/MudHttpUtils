@@ -35,7 +35,7 @@ mud-jsonctx --project src/MyApp.DataModels/MyApp.DataModels.csproj
 mud-jsonctx -p src/MyApp.DataModels/MyApp.DataModels.csproj -o src/MyApp.DataModels/Generated
 # 仅预览不写入
 mud-jsonctx -p src/MyApp.DataModels/MyApp.DataModels.csproj --dry-run
-# 自动补全多态派生类（见下）
+# 把同程序集内的派生类额外注册为独立 [JsonSerializable] 根（注意：不能替代 [JsonDerivedType]，见下）
 mud-jsonctx -p src/MyApp.DataModels/MyApp.DataModels.csproj --auto-derived-types
 # 禁用 [HttpClientApi] 接口扫描（默认开启）
 mud-jsonctx -p src/MyApp.DataModels/MyApp.DataModels.csproj --no-scan-http-client-api
@@ -110,8 +110,9 @@ internal partial class FeishuAIJsonContext;
 ```
 
 - **闭合泛型自动发现**：`[HttpClientApi]` 接口返回类型中的闭合泛型（如 `FeishuApiResult<T>`）由 `[HttpClientApi]` 扫描自动发现并注册，无需手写。
-- **多态（基类反序列化派生类）**：默认仅检查直接基类。使用 `--auto-derived-types` 可递归扫描并生成**完整派生层级**（Base → Mid → Leaf）。基于接口的 polymorphism 仍需手动标注 `[JsonDerivedType]`。
-- **开放泛型**：`<T>` 类型以 `<>` 写入 context，仅在 NET8_0_OR_GREATER 下源生成；更低 TFM 走反射兜底，AOT 不可用（见 AOT002 警告）。
+- **数组根自动发现**：返回类型或 `[Body]` 参数中的数组（如 `Task<UserDto[]>`、`[Body] UserDto[]`）会同时注册 `typeof(UserDto[])` 与元素类型 `typeof(UserDto)`——STJ 源生成需要数组根自身的元数据才能在 AOT 下解析。
+- **多态（以基类静态类型序列化派生实例）**：使用 `--auto-derived-types` 时脚手架会递归扫描并注册**完整派生层级**（Base → Mid → Leaf），但注册的是**派生类型自己的根**（只覆盖 `Serialize<Derived>` 这类静态调用）。**多态序列化必须由基类元数据携带 `[JsonDerivedType]`**——该特性只能标注在用户类型声明上（`[JsonDerivedType(typeof(Derived), "discriminator")]`），生成的 `.g.cs` 无法替用户类型附加特性，故 `--auto-derived-types` **不能**替代它。未标注时脚手架以 AOT003 提示。
+- **开放泛型**：`<T>` 类型以 `<>` 写入 context，仅在 NET8_0_OR_GREATER 下源生成；更低 TFM 走反射兜底，AOT 不可用。AOT002 告警仅在项目（`TargetFramework(s)`）确实包含 net8.0 以下 TFM 时报告——纯 net8.0/net10.0 项目不再产生该告警。
 - 生成的 Context 为 `internal partial`，仅作用于标注类型所在的同一程序集；跨程序集需各自生成。
 
 ## 分组与命名规则
@@ -123,7 +124,7 @@ internal partial class FeishuAIJsonContext;
 ## 诊断（AOT001-AOT006）
 
 - **AOT001**：同一 `SerializerClassName` 下存在冲突的 `NamingPolicy` 配置。
-- **AOT002**：标注了开放泛型类型（低版本 TFM 不支持源生成，AOT 不可用）。
+- **AOT002**：标注了开放泛型类型，且项目包含 net8.0 以下 TFM（该 TFM 下不支持源生成开放泛型，AOT 不可用）。全部目标 TFM 均为 net8.0+ 时不再报告。
 - **AOT003**：类型存在基类（多态）但未标注 `[JsonDerivedType]`（未启用 `--auto-derived-types` 时报告）。`--auto-derived-types` 仅额外注册派生类型为独立 `[JsonSerializable]` root，**不能**替代基类上的 `[JsonDerivedType]` 特性——多态序列化（以基类类型序列化派生实例）仍需手动在基类声明上标注。
 - **AOT004**：`[HttpClientApi]` 接口扫描信息——当扫描发现类型并自动注册时，以 Info 级别报告发现数量和目标 Context。
 - **AOT005**：`[Query]`/`[QueryMap]` 中以 JSON 序列化的复杂参数类型未被 `JsonSerializerContext` 覆盖。

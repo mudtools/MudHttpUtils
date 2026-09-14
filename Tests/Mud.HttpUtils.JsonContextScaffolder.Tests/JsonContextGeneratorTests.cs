@@ -535,6 +535,160 @@ public class JsonContextGeneratorTests
         generator.Diagnostics.Should().Contain(d => d.Id == "AOT003");
     }
 
+    /// <summary>
+    /// [T2] AOT003 消息必须明确引导"在基类上标注 [JsonDerivedType]"，并说明
+    /// <c>--auto-derived-types</c> 不能替代该特性（否则用户照提示操作后 AOT 下依然失败）。
+    /// </summary>
+    [Fact]
+    public void Generate_PolymorphicType_AOT003MessageGuidesJsonDerivedType()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            namespace TestApp;
+            public class BaseDto { public int Id { get; set; } }
+            [HttpJsonSerializable(SerializerClassName = "App")]
+            public class DerivedDto : BaseDto { public string Name { get; set; } }
+            """;
+        var compilation = CreateCompilation(source);
+        var generator = new JsonContextGenerator();
+
+        generator.Generate(compilation);
+
+        var aot003 = generator.Diagnostics.Single(d => d.Id == "AOT003");
+        aot003.Message.Should().Contain("[JsonDerivedType]", "消息须给出可操作的修复指引");
+        aot003.Message.Should().Contain("基类", "需指明特性应标注在基类声明上");
+        aot003.Message.Should().Contain("--auto-derived-types", "需说明该开关不能替代 [JsonDerivedType]");
+        aot003.Message.Should().Contain("不能替代");
+    }
+
+    /// <summary>
+    /// [T2] 反向回归：不使用 <c>--auto-derived-types</c> 且基类已标注 [JsonDerivedType] 时不得报 AOT003。
+    /// </summary>
+    [Fact]
+    public void Generate_PolymorphicType_WithJsonDerivedTypeOnBase_NoAOT003()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            using System.Text.Json.Serialization;
+            namespace TestApp;
+            [JsonDerivedType(typeof(DerivedDto), "derived")]
+            public class BaseDto { public int Id { get; set; } }
+            [HttpJsonSerializable(SerializerClassName = "App")]
+            public class DerivedDto : BaseDto { public string Name { get; set; } }
+            """;
+        var compilation = CreateCompilation(source);
+        var generator = new JsonContextGenerator();
+
+        generator.Generate(compilation);
+
+        generator.Diagnostics.Should().NotContain(d => d.Id == "AOT003");
+    }
+
+    /// <summary>
+    /// [T2] <c>--auto-derived-types</c> 生成的派生注册必须带注释说明"仍需基类 [JsonDerivedType]"。
+    /// </summary>
+    [Fact]
+    public void Generate_AutoDerivedTypes_EmittedDerivedRootCarriesJsonDerivedTypeHint()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            namespace TestApp;
+            public class DerivedDto : BaseDto { public string Name { get; set; } }
+            [HttpJsonSerializable(SerializerClassName = "App")]
+            public class BaseDto { public int Id { get; set; } }
+            """;
+        var compilation = CreateCompilation(source);
+        var generator = new JsonContextGenerator();
+
+        var files = generator.Generate(compilation, autoDerivedTypes: true);
+
+        files.Should().HaveCount(1);
+        files[0].SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.BaseDto))]");
+        files[0].SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.DerivedDto))]");
+        files[0].SourceCode.Should().Contain("[JsonDerivedType]");
+    }
+
+    // ───────────────────────── T12：AOT002 按项目 TFM 门控 ─────────────────────────
+
+    [Fact]
+    public void Generate_OpenGeneric_Net8OnlyProject_NoAOT002()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            namespace TestApp;
+            [HttpJsonSerializable(SerializerClassName = "App")]
+            public class Widget<T> { public T? Value { get; set; } }
+            """;
+        var compilation = CreateCompilation(source);
+        var generator = new JsonContextGenerator();
+
+        // 项目仅面向 net8.0/net10.0：open generic 走源生成，不应有噪音告警
+        generator.Generate(compilation, targetFrameworks: ["net8.0", "net10.0"]);
+
+        generator.Diagnostics.Should().NotContain(d => d.Id == "AOT002");
+    }
+
+    [Theory]
+    [InlineData("net6.0")]
+    [InlineData("netstandard2.0")]
+    [InlineData("net48")]
+    public void Generate_OpenGeneric_LegacyTfmProject_ReportsAOT002(string legacyTfm)
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            namespace TestApp;
+            [HttpJsonSerializable(SerializerClassName = "App")]
+            public class Widget<T> { public T? Value { get; set; } }
+            """;
+        var compilation = CreateCompilation(source);
+        var generator = new JsonContextGenerator();
+
+        generator.Generate(compilation, targetFrameworks: [legacyTfm, "net8.0"]);
+
+        generator.Diagnostics.Should().Contain(d => d.Id == "AOT002");
+    }
+
+    /// <summary>
+    /// 多 TFM 项目中只要存在低版本 TFM（如 net8.0;net6.0）即告警——低版本那条构建路径仍不可用。
+    /// </summary>
+    [Fact]
+    public void Generate_OpenGeneric_MultiTfmWithLegacy_ReportsAOT002()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            namespace TestApp;
+            [HttpJsonSerializable(SerializerClassName = "App")]
+            public class Widget<T> { public T? Value { get; set; } }
+            """;
+        var compilation = CreateCompilation(source);
+        var generator = new JsonContextGenerator();
+
+        generator.Generate(compilation, targetFrameworks: ["net6.0", "net8.0", "net10.0"]);
+
+        var aot002 = generator.Diagnostics.Single(d => d.Id == "AOT002");
+        aot002.Message.Should().Contain("net8.0 以下 TFM");
+    }
+
+    /// <summary>
+    /// TFM 未知（未传入）时保持保守告警——无法证明所有 TFM 均 ≥ net8.0。
+    /// </summary>
+    [Fact]
+    public void Generate_OpenGeneric_TargetFrameworksUnknown_ReportsAOT002()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            namespace TestApp;
+            [HttpJsonSerializable(SerializerClassName = "App")]
+            public class Widget<T> { public T? Value { get; set; } }
+            """;
+        var compilation = CreateCompilation(source);
+        var generator = new JsonContextGenerator();
+
+        generator.Generate(compilation, targetFrameworks: null);
+
+        generator.Diagnostics.Should().Contain(d => d.Id == "AOT002");
+    }
+
     [Fact]
     public void Generate_AutoDerivedTypes_NoAOT003()
     {
@@ -646,6 +800,96 @@ public class JsonContextGeneratorTests
         apiFile.SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.CreateRequest))]");
         // Closed generic return type should also be registered
         apiFile.SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.Result<global::TestApp.MyData>))]");
+    }
+
+    // ───────────────────────── T1：数组型根注册（裸数组非 INamedTypeSymbol） ─────────────────────────
+
+    /// <summary>
+    /// 数组返回类型（<c>Task&lt;UserDto[]&gt;</c>）必须同时注册数组根与元素类型。
+    /// </summary>
+    /// <remarks>
+    /// 回归：早期实现对 <c>IArrayTypeSymbol</c> 做 <c>(INamedTypeSymbol)array</c> 强制转型——
+    /// 数组符号不继承 <c>INamedTypeSymbol</c>，该转型在运行期抛 <c>InvalidCastException</c>，
+    /// 导致任何含数组返回类型/[Body] 数组的项目运行脚手架即崩溃。
+    /// </remarks>
+    [Fact]
+    public void Generate_HttpClientApi_ArrayReturnType_RegistersArrayRootAndElement()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            using System.Threading.Tasks;
+            namespace TestApp;
+
+            public class UserDto { public string? Name { get; set; } }
+
+            [HttpClientApi]
+            public interface IMyApi
+            {
+                [Get("/api/users")]
+                Task<UserDto[]> ListAsync();
+            }
+            """;
+        var compilation = CreateCompilation(source, assemblyName: "TestApp");
+        var generator = new JsonContextGenerator();
+
+        var files = generator.Generate(compilation);
+
+        var apiFile = files.First(f => f.ContextClassName.Contains("HttpClientApi"));
+        // 数组根自身必须有元数据才能在 AOT 下解析（元素类型覆盖不能替代）
+        apiFile.SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.UserDto[]))]");
+        // 元素类型同样注册
+        apiFile.SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.UserDto))]");
+    }
+
+    [Fact]
+    public void Generate_HttpClientApi_ArrayBodyParameter_RegistersArrayRootAndElement()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            using System.Threading.Tasks;
+            namespace TestApp;
+
+            public class ItemDto { public int Id { get; set; } }
+
+            [HttpClientApi]
+            public interface IMyApi
+            {
+                [Post("/api/items/batch")]
+                Task<bool> SendAsync([Body] ItemDto[] items);
+            }
+            """;
+        var compilation = CreateCompilation(source, assemblyName: "TestApp");
+        var generator = new JsonContextGenerator();
+
+        var files = generator.Generate(compilation);
+
+        var apiFile = files.First(f => f.ContextClassName.Contains("HttpClientApi"));
+        apiFile.SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.ItemDto[]))]");
+        apiFile.SourceCode.Should().Contain("[JsonSerializable(typeof(global::TestApp.ItemDto))]");
+    }
+
+    [Fact]
+    public void Generate_HttpClientApi_FrameworkElementArray_Skipped()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            using System.Threading.Tasks;
+            namespace TestApp;
+
+            [HttpClientApi]
+            public interface IMyApi
+            {
+                [Get("/api/names")]
+                Task<string[]> ListNamesAsync();
+            }
+            """;
+        var compilation = CreateCompilation(source, assemblyName: "TestApp");
+        var generator = new JsonContextGenerator();
+
+        var files = generator.Generate(compilation);
+
+        // 框架元素类型数组不注册（与既有"框架类型跳过"规则一致）
+        files.Should().BeEmpty();
     }
 
     [Fact]
