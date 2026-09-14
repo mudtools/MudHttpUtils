@@ -32,7 +32,8 @@ internal class RequestBuilder
         }
 
         // 规则2：如果以 / 开头，忽略 BasePath
-        if (urlTemplate.StartsWith("/"))
+        // [Phase4 修复 5.1] 显式 StringComparison.Ordinal（CA1310）：URL 前缀属标识符级比较。
+        if (urlTemplate.StartsWith("/", StringComparison.Ordinal))
         {
             return BuildUrlWithPlaceholders(urlTemplate, pathParams, methodInfo);
         }
@@ -140,6 +141,8 @@ internal class RequestBuilder
 
         // netstandard2.0 无 string.Replace(string, string, StringComparison) 重载，
         // 用 IndexOf 循环逐处替换（OrdinalIgnoreCase）。
+        // [Phase5 修复 3.4] 复用已有 sb 容量（Clear 保留 Capacity）并直接 Append(StringBuilder)，
+        // 省掉 newText.ToString() 的中间字符串分配。
         var newText = new StringBuilder(current.Length);
         var index = 0;
         while (true)
@@ -156,7 +159,7 @@ internal class RequestBuilder
         }
 
         sb.Clear();
-        sb.Append(newText.ToString());
+        sb.Append(newText);
     }
 
     /// <summary>
@@ -428,7 +431,7 @@ internal class RequestBuilder
     /// 生成 URL 编码的表单参数（用于 [Form] 特性）
     /// </summary>
     /// <remarks>
-    /// [D-04 设计说明] 此路径与 <see cref="FormField{TBody}"/> 描述符模式功能等价，
+    /// [D-04 设计说明] 此路径与 <c>FormField&lt;TBody&gt;</c> 描述符模式功能等价，
     /// 但采用直接属性访问代码（AOT 安全）。FormField&lt;TBody&gt; 类型作为可选描述符存在，
     /// 供未来统一序列化入口使用。当前保留直接属性访问以避免不必要的间接层。
     /// </remarks>

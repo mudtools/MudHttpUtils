@@ -35,7 +35,7 @@ internal class FormContentGenerator : TransitiveCodeGenerator
     /// 增量管道设计说明：
     /// 语义数据（SemanticModel、Compilation、AttributeData）由 <see cref="GeneratorAttributeSyntaxContext"/>
     /// 在 transform 阶段一次性捕获，并打包为 <see cref="FormContentModel"/>。该模型以类声明的源文本作为指纹
-    /// （<see cref="FormContentModel.Fingerprint"/>），通过 <see cref="WithComparer"/> 进行增量比较。
+    /// （<see cref="FormContentModel.Fingerprint"/>），通过 <c>WithComparer</c> 进行增量比较。
     /// 当类源文本未变化时，<c>RegisterSourceOutput</c> 不会被触发，从而避免无关文件编辑
     /// （如其他类型定义变更）导致的重复生成。
     /// <para>

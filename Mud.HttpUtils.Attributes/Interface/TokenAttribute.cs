@@ -40,7 +40,18 @@ namespace Mud.HttpUtils.Attributes;
 /// </code>
 /// </example>
 /// <remarks>
+/// <para>
 /// 初始化 <see cref="TokenAttribute"/> 类的新实例。
+/// </para>
+/// <para>
+/// <b>安全约束</b>：本特性的全部字符串属性都只接受「键名 / 标识符」——生成器会把它们
+/// <b>原样写入生成的源码</b>（如 <c>GetTokenAsync("FeishuUser", …)</c>），因此会进入版本库与反编译输出。
+/// 允许：<see cref="TokenType"/>、<see cref="TokenManagerKey"/>、<see cref="Scopes"/> 的作用域名、
+/// <see cref="Name"/>（Header / Query 的<b>名称</b>）、<see cref="Scheme"/>。
+/// <b>禁止</b>写入任何机密（token 值、API Key、客户端密钥、密码、签名盐）。
+/// 真实密钥只能由运行时实现从环境变量 / 密钥管理服务读取并经
+/// <c>IMudAppContext</c> / <c>ITokenManager</c> 等注入，生成器全程不接触密钥值。
+/// </para>
 /// </remarks>
 /// <param name="tokenType">令牌类型，默认为 <see cref="TokenTypes.AccessToken"/>。此值同时设置 TokenType 和 TokenManagerKey（向后兼容）。</param>
 [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Interface | AttributeTargets.Method, AllowMultiple = false)]

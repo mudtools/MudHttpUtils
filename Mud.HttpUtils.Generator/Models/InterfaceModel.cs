@@ -116,6 +116,17 @@ internal readonly struct InterfaceModel : IEquatable<InterfaceModel>
                     sb.Append(other.WithoutTrivia().ToString());
                 }
             }
+
+            // [Phase2 修复 3.1 / 审查 1.5] 纳入声明所在命名空间与包含类型（复用上一步已解析的 symbol，
+            // 不二次调用 GetDeclaredSymbol）。
+            // 原因：源文本指纹对「接口被整体移动到另一个命名空间 / 嵌套到另一个类型中」不敏感——
+            // 语法树换了、但接口声明文本与继承列表不变 ⇒ 指纹相同 ⇒ 下游命中缓存 ⇒ 生成产物停留在
+            // 旧命名空间，生成的实现类引用过期类型名导致编译错误（且必须手工"触摸"或 ForceHttpGenerator 才能恢复）。
+            sb.Append('|');
+            sb.Append("Ns:");
+            sb.Append(interfaceSymbol.ContainingNamespace?.ToDisplayString() ?? string.Empty);
+            sb.Append("|Ct:");
+            sb.Append(interfaceSymbol.ContainingType?.ToDisplayString() ?? string.Empty);
         }
 
         // 纳入继承层次：当基接口列表变化时（如添加/移除基接口），指纹随之变化

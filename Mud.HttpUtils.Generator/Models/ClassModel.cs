@@ -18,7 +18,7 @@ namespace Mud.HttpUtils.Models;
 /// 打包为一个可比较的单元，并预解析 <see cref="INamedTypeSymbol"/> 避免下游重复调用
 /// <c>SemanticModel.GetDeclaredSymbol</c>。
 /// <para>
-/// 增量缓存策略：<see cref="Fingerprint"/> 为类声明去除琐事后的源文本（<see cref="SyntaxNode.WithoutTrivia"/>），
+/// 增量缓存策略：<see cref="Fingerprint"/> 为类声明去除琐事后的源文本（<c>SyntaxNode.WithoutTrivia()</c>），
 /// 用于 <see cref="IEquatable{T}"/> 比较。当类源文本（不含注释/空白）未变化时，模型视为相同，
 /// <c>RegisterSourceOutput</c> 不会被触发，从而避免无关文件编辑（如仅注释变更）导致的重复生成。
 /// </para>

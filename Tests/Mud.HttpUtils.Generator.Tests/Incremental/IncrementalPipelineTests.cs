@@ -90,6 +90,104 @@ public class IncrementalPipelineTests
             .Should().BeTrue("接口成员新增必须触发接口模型 Modified");
     }
 
+    // ─────────────── [Phase3 4.3/4.4] 下游（per-item）步骤的增量断言 ───────────────
+
+    /// <summary>
+    /// 无关文件编辑时，逐接口注册点的下游步骤（<c>HttpInvokeBase_CompleteData</c>）同样不得重跑。
+    /// </summary>
+    /// <remarks>
+    /// 历史缺口（审查 4.5）：既有断言只覆盖上游 <c>HttpInvokeBase_SyntaxProvider</c>，
+    /// 无法发现「上游命中缓存但下游 Combine 节点被判定 Modified」——即审查 1.4 的「增量退化为全量」。
+    /// Phase3 拆出 per-item 注册点后，本断言成为该拆分的防回归守卫。
+    /// </remarks>
+    [Fact]
+    public async Task UnrelatedFileEdit_ShouldCachePerInterfaceDownstreamStep()
+    {
+        var driver = CreateTrackedDriver(BaseInterface);
+        driver = driver.RunGenerators(Compile(BaseInterface));
+
+        driver = driver.RunGenerators(Compile(BaseWithUnrelated));
+        var secondRun = driver.GetRunResult().Results[0].TrackedSteps;
+
+        var perInterfaceSteps = secondRun
+            .FirstOrDefault(kvp => kvp.Key == "HttpInvokeBase_CompleteData").Value;
+        perInterfaceSteps.Should().NotBeNullOrEmpty(
+            "应存在逐接口注册点的追踪步骤 HttpInvokeBase_CompleteData");
+
+        perInterfaceSteps
+            .SelectMany(s => s.Outputs)
+            .Should().NotContain(o => o.Reason == IncrementalStepRunReason.Modified,
+                "无关文件编辑不得让逐接口生成步骤重跑（否则 per-item 缓存失效，退化为全量生成）");
+
+        await Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// [Phase3 验收] 两个接口仅改 1 个 → 逐接口注册点恰好 1 个输出 Modified，其余命中缓存。
+    /// </summary>
+    /// <remarks>
+    /// 这是「真 per-interface 增量」的核心证据：修复前管道末端为 <c>Collect()</c> + <c>Combine</c>
+    /// 的单一节点，任一接口变化都会让全部接口的输出被判定 Modified。
+    /// </remarks>
+    [Fact]
+    public async Task SingleInterfaceChange_ShouldOnlyModifyThatInterfaceDownstream()
+    {
+        const string twoInterfacesSource = Header + """
+            [HttpClientApi]
+            public interface IApiA
+            {
+                [Get("/users/{id}")]
+                Task<string> GetAsync([Path] int id);
+            }
+
+            [HttpClientApi]
+            public interface IApiB
+            {
+                [Get("/orders/{id}")]
+                Task<string> GetAsync([Path] int id);
+            }
+            """;
+
+        // 仅修改 IApiA 的 URL，IApiB 保持逐字不变。
+        const string modifiedSource = Header + """
+            [HttpClientApi]
+            public interface IApiA
+            {
+                [Get("/v2/users/{id}")]
+                Task<string> GetAsync([Path] int id);
+            }
+
+            [HttpClientApi]
+            public interface IApiB
+            {
+                [Get("/orders/{id}")]
+                Task<string> GetAsync([Path] int id);
+            }
+            """;
+
+        var driver = CreateTrackedDriver(twoInterfacesSource);
+        driver = driver.RunGenerators(Compile(twoInterfacesSource));
+
+        var firstRunOutputs = driver.GetRunResult().Results[0].TrackedSteps
+            .First(kvp => kvp.Key == "HttpInvokeBase_CompleteData").Value
+            .SelectMany(s => s.Outputs).Count();
+        firstRunOutputs.Should().Be(2, "两个 [HttpClientApi] 接口应产生两个逐接口输入元素");
+
+        driver = driver.RunGenerators(Compile(modifiedSource));
+        var secondRun = driver.GetRunResult().Results[0].TrackedSteps;
+
+        var outputs = secondRun
+            .FirstOrDefault(kvp => kvp.Key == "HttpInvokeBase_CompleteData").Value
+            .SelectMany(s => s.Outputs)
+            .ToList();
+
+        outputs.Should().HaveCount(2);
+        outputs.Count(o => o.Reason == IncrementalStepRunReason.Modified)
+            .Should().Be(1, "只改 1 个接口时下游应只有 1 个元素 Modified（per-item 缓存生效）");
+
+        await Task.CompletedTask;
+    }
+
     [Fact]
     public async Task ForceHttpGenerator_ShouldChangeSaltValue()
     {

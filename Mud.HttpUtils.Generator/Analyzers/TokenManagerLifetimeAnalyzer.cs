@@ -14,16 +14,16 @@ using Microsoft.CodeAnalysis.Diagnostics;
 namespace Mud.HttpUtils.Analyzers;
 
 /// <summary>
-/// <see cref="ITokenManager"/> 生命周期诊断分析器（P3.5 / C5，TK-24）。
+/// <c>ITokenManager</c> 生命周期诊断分析器（P3.5 / C5，TK-24）。
 /// </summary>
 /// <remarks>
 /// <para>
-/// <see cref="ITokenManager"/> 的实现类内部维护令牌缓存与并发锁（如 <see cref="TokenManagerBase"/>），
+/// <c>ITokenManager</c> 的实现类内部维护令牌缓存与并发锁（如 <c>TokenManagerBase</c>），
 /// 必须注册为 <b>Singleton</b> 以全局共享缓存、避免并发安全机制失效与冗余刷新。
 /// </para>
 /// <para>
 /// 本分析器检查 <c>IServiceCollection</c> 的 DI 注册调用（<c>AddScoped</c>/<c>AddTransient</c>/
-/// <c>TryAddScoped</c>/<c>TryAddTransient</c>），当被注册的类型为 <see cref="ITokenManager"/> 或其实现时，
+/// <c>TryAddScoped</c>/<c>TryAddTransient</c>），当被注册的类型为 <c>ITokenManager</c> 或其实现时，
 /// 发出 <b>MUD004</b> Warning。
 /// </para>
 /// </remarks>
@@ -55,6 +55,11 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
     /// <inheritdoc />
     public override void Initialize(AnalysisContext context)
     {
+        // [Phase4 修复 5.1] CA1062：显式参数守卫（Roslyn 会传非 null，
+        // 但公开可覆写入口显式校验可避免第三方直接调用时的 NRE）。
+        if (context == null)
+            throw new ArgumentNullException(nameof(context));
+
         context.EnableConcurrentExecution();
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.RegisterSyntaxNodeAction(AnalyzeInvocation, SyntaxKind.InvocationExpression);

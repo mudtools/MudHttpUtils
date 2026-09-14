@@ -32,6 +32,9 @@
     <!-- [F4] 增量强制失效逃生舱：-p:ForceHttpGenerator=true 时生成器下游步骤强制重跑。
          未注册时 build_property.ForceHttpGenerator 恒取默认 false，逃生舱静默失效。 -->
     <CompilerVisibleProperty Include="ForceHttpGenerator" />
+    <!-- [T6 修复] AOT004/AOT005 覆盖分析显式 opt-in：共享 Context 包场景下消费工程不声明 Context
+         时默认不检查；设为 true 时强制运行覆盖分析（forceRun），用于 DTO+Context 均在独立共享包的场景。 -->
+    <CompilerVisibleProperty Include="MudEnableAotCoverageAnalysis" />
   </ItemGroup>
 
 </Project>

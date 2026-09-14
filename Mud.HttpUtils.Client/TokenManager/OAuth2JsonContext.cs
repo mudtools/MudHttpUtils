@@ -5,7 +5,8 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
-#if NET8_0_OR_GREATER
+// [T11 修复] 去掉 #if NET8_0_OR_GREATER guard：依赖 netstandard2.0 下 System.Text.Json ≥ 8.0 NuGet 包
+// 提供的源生成类型，net6+ 为 in-box。与 DefaultJsonContext / ProblemDetailsJsonContext 口径一致。
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -27,4 +28,3 @@ namespace Mud.HttpUtils;
 internal partial class OAuth2JsonContext : JsonSerializerContext
 {
 }
-#endif

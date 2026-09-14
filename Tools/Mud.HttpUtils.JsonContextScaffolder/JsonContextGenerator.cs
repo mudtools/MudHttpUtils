@@ -236,7 +236,7 @@ public class JsonContextGenerator
                 Diagnostics.Add(new ScaffolderDiagnostic(
                     "AOT003",
                     ScaffolderDiagnosticSeverity.Warning,
-                    $"类型 '{type.Symbol.ToDisplayString()}' 存在基类 '{type.Symbol.BaseType.ToDisplayString()}'（多态序列化），但未标注 [JsonDerivedType]。以基类反序列化派生类时源生成不含派生类型，可能丢字段。建议在同程序集内补充 [JsonDerivedType] 或使用 --auto-derived-types 选项自动补全。",
+                    $"类型 '{type.Symbol.ToDisplayString()}' 存在基类 '{type.Symbol.BaseType.ToDisplayString()}'（多态序列化），但未标注 [JsonDerivedType]。以基类反序列化/序列化派生类时源生成不含派生类型映射。修复：在基类声明上标注 [JsonDerivedType(typeof(派生类型))]（派生类型较多时使用 JsonDerivedTypeAttribute 的 typeDiscriminator 形式）；--auto-derived-types 仅能额外注册派生类型为独立根，不能替代本特性。",
                     type.Symbol.ToDisplayString()));
             }
         }
@@ -355,7 +355,15 @@ public class JsonContextGenerator
                     if (isJsonMethod)
                     {
                         var returnType = UnwrapTaskType(method.ReturnType);
-                        if (returnType is INamedTypeSymbol namedReturn)
+                        // [T1 修复] 数组返回类型（如 Task<UserDto[]>）：注册数组本身 + 递归元素类型
+                        if (returnType is IArrayTypeSymbol arrayReturn)
+                        {
+                            if (arrayReturn.ElementType is INamedTypeSymbol arrayElem && !IsFrameworkType(arrayElem))
+                                result.Add((INamedTypeSymbol)arrayReturn);
+                            if (arrayReturn.ElementType is INamedTypeSymbol namedElem)
+                                CollectSerializableTypes(namedElem, result, annotatedSet, compilation.Assembly);
+                        }
+                        else if (returnType is INamedTypeSymbol namedReturn)
                             CollectSerializableTypes(namedReturn, result, annotatedSet, compilation.Assembly);
                     }
 
@@ -370,7 +378,15 @@ public class JsonContextGenerator
                         if (!hasBody)
                             continue;
 
-                        if (param.Type is INamedTypeSymbol namedParam)
+                        // [T1 修复] 数组 [Body] 参数（如 [Body] UserDto[]）：注册数组本身 + 递归元素类型
+                        if (param.Type is IArrayTypeSymbol arrayParam)
+                        {
+                            if (arrayParam.ElementType is INamedTypeSymbol arrayElem && !IsFrameworkType(arrayElem))
+                                result.Add((INamedTypeSymbol)arrayParam);
+                            if (arrayParam.ElementType is INamedTypeSymbol namedElem)
+                                CollectSerializableTypes(namedElem, result, annotatedSet, compilation.Assembly);
+                        }
+                        else if (param.Type is INamedTypeSymbol namedParam)
                             CollectSerializableTypes(namedParam, result, annotatedSet, compilation.Assembly);
                     }
                 }
@@ -706,14 +722,17 @@ public class JsonContextGenerator
             var typeofExpr = GetTypeOfExpression(type);
             sb.AppendLine($"[JsonSerializable(typeof({typeofExpr}))]");
 
-            // P2.2: 自动检测同程序集内的派生类并生成 [JsonDerivedType]
+            // P2.2: 自动检测同程序集内的派生类并生成 [JsonSerializable(typeof(derived))]。
+            // 注意：--auto-derived-types 注册派生类型为独立 [JsonSerializable] root，
+            // 仅覆盖 Serialize<Derived> 静态调用，不能替代基类上的 [JsonDerivedType] 特性。
+            // 多态序列化（以基类类型序列化派生实例）仍需用户在基类声明上标注 [JsonDerivedType]。
             if (autoDerivedTypes)
             {
                 var derivedTypes = FindDerivedTypes(compilation, type);
                 foreach (var derived in derivedTypes)
                 {
                     var derivedExpr = GetTypeOfExpression(derived);
-                    sb.AppendLine($"[JsonSerializable(typeof({derivedExpr}))]");
+                    sb.AppendLine($"[JsonSerializable(typeof({derivedExpr}))] // 派生类型已注册为独立根；多态（以基类类型序列化）仍需在基类上标注 [JsonDerivedType]");
                 }
             }
         }

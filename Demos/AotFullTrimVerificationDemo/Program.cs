@@ -119,9 +119,21 @@ internal static class Program
     {
         Console.WriteLine("[场景 3] EncryptContent<T> 泛型重载...");
 
-        // 仅验证类型安全路径可调用，不需要实际加密
-        // 加密提供器在 AOT Demo 中不配置，此处验证代码路径可达
-        Console.WriteLine("  ✓ EncryptContent<T> 泛型重载类型安全（需配置 EncryptionProvider 才能实际执行）");
+        // [T10 修复] 注入测试用 IEncryptionProvider，做真实加密 round-trip 断言。
+        // 使用固定密钥的异或加密（Demo 专用，非生产级），验证 EncryptContent<T> 泛型重载在 TrimMode=full 下可正确执行。
+        var encryptionProvider = new XorEncryptionProvider();
+        var client = new EncryptTestClient(encryptionProvider);
+
+        var dto = new TestDto { Id = 77, Name = "encrypt-test", Timestamp = DateTimeOffset.UtcNow };
+        var encrypted = client.EncryptContent(dto);
+        Assert(!string.IsNullOrEmpty(encrypted), "EncryptContent<T> 返回空字符串");
+
+        // 解密并验证 round-trip
+        var decrypted = client.DecryptContent(encrypted);
+        Assert(decrypted.Contains("\"Id\":77") || decrypted.Contains("\"id\":77"),
+            "EncryptContent<T> round-trip 解密后内容不一致");
+
+        Console.WriteLine("  ✓ EncryptContent<T> 泛型重载加密 round-trip 成功");
     }
 
     private static void VerifyQueryParameters()
@@ -205,3 +217,54 @@ public interface IFullTrimApi
 [JsonSerializable(typeof(FullTrimDto))]
 [JsonSourceGenerationOptions(WriteIndented = false, PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 internal partial class FullTrimJsonContext : JsonSerializerContext;
+
+/// <summary>
+/// [T10] Demo 专用异或加密提供器（非生产级，仅用于验证 EncryptContent&lt;T&gt; 代码路径在 TrimMode=full 下可正确执行）。
+/// </summary>
+internal sealed class XorEncryptionProvider : IEncryptionProvider
+{
+    private static readonly byte[] Key = "MudAotDemoKey!"u8.ToArray();
+
+    public string Encrypt(string plainText)
+    {
+        var bytes = System.Text.Encoding.UTF8.GetBytes(plainText);
+        return Convert.ToBase64String(EncryptBytes(bytes));
+    }
+
+    public string Decrypt(string cipherText)
+    {
+        var bytes = Convert.FromBase64String(cipherText);
+        return System.Text.Encoding.UTF8.GetString(DecryptBytes(bytes));
+    }
+
+    public byte[] EncryptBytes(byte[] data)
+    {
+        var result = new byte[data.Length];
+        for (int i = 0; i < data.Length; i++)
+            result[i] = (byte)(data[i] ^ Key[i % Key.Length]);
+        return result;
+    }
+
+    public byte[] DecryptBytes(byte[] encryptedData)
+    {
+        // XOR 对称性：解密与加密相同
+        return EncryptBytes(encryptedData);
+    }
+}
+
+/// <summary>
+/// [T10] 测试用 EnhancedHttpClient 子类，覆盖 EncryptionProvider 以注入 <see cref="XorEncryptionProvider"/>。
+/// </summary>
+internal sealed class EncryptTestClient : EnhancedHttpClient
+{
+    private readonly IEncryptionProvider _encryptionProvider;
+
+    public EncryptTestClient(IEncryptionProvider encryptionProvider)
+        : base(new HttpClient(), new EnhancedHttpClientOptions())
+    {
+        _encryptionProvider = encryptionProvider;
+    }
+
+    /// <inheritdoc/>
+    protected override IEncryptionProvider? EncryptionProvider => _encryptionProvider;
+}

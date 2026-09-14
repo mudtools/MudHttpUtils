@@ -124,46 +124,42 @@ public class HttpClientInvalidUrlTemplateCodeFixProvider : CodeFixProvider
     }
 
     /// <summary>
-    /// 修复花括号配对：移除多余的右花括号，补齐未闭合的左花括号。
+    /// 修复花括号配对：补齐未闭合的左花括号，移除多余的右花括号。
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// [Phase1 修复 1.3 / 审查 4.3] 历史实现存在两个缺陷：
+    /// <list type="number">
+    ///   <item>未闭合的 <c>{</c> 走 <c>continue</c> 被<strong>直接删除</strong>，
+    ///   但注释与随后的「补齐未闭合的 {」循环都表明预期是<strong>补上 <c>}</c></strong>——
+    ///   该补齐循环因为位置从未入栈而成为死代码；</item>
+    ///   <item>删除 <c>{</c> 会把 <c>/users/{id</c> 变成 <c>/users/id</c>，
+    ///   路由从「占位符」静默变成「字面量段」，属语义破坏（比语法错误更危险）。</item>
+    /// </list>
+    /// 现改为「左花括号一律补齐、右花括号无配对时丢弃」：
+    /// <c>/users/{id</c> → <c>/users/{id}</c>，<c>/users/id}</c> → <c>/users/id</c>。
+    /// </para>
+    /// </remarks>
     private static string FixBraceMismatch(string urlValue)
     {
-        // 策略：逐字符扫描，跟踪花括号配对状态
-        var result = new StringBuilder(urlValue.Length);
-        int openBraceCount = 0;
+        var result = new StringBuilder(urlValue.Length + 4);
+        // 记录 result 中尚未闭合的 '{' 的插入位置
         var unmatchedOpenPositions = new List<int>();
 
-        for (int i = 0; i < urlValue.Length; i++)
+        foreach (char c in urlValue)
         {
-            char c = urlValue[i];
             if (c == '{')
             {
-                // 检查是否有对应的 }
-                int endBrace = urlValue.IndexOf('}', i + 1);
-                if (endBrace == -1)
-                {
-                    // 未闭合的 { — 删除该花括号（将其后的内容保留）
-                    // 跳过这个 {，不写入 result
-                    continue;
-                }
-                openBraceCount++;
                 unmatchedOpenPositions.Add(result.Length);
                 result.Append(c);
             }
             else if (c == '}')
             {
-                if (openBraceCount > 0)
-                {
-                    openBraceCount--;
-                    unmatchedOpenPositions.RemoveAt(unmatchedOpenPositions.Count - 1);
-                    result.Append(c);
-                }
-                else
-                {
-                    // 多余的 } — 删除
-                    // 跳过这个 }，不写入 result
-                    continue;
-                }
+                if (unmatchedOpenPositions.Count == 0)
+                    continue; // 无配对的多余 '}' → 丢弃（保留会产出非法 URL 模板）
+
+                unmatchedOpenPositions.RemoveAt(unmatchedOpenPositions.Count - 1);
+                result.Append(c);
             }
             else
             {
@@ -171,13 +167,34 @@ public class HttpClientInvalidUrlTemplateCodeFixProvider : CodeFixProvider
             }
         }
 
-        // 补齐未闭合的 {
-        foreach (var pos in unmatchedOpenPositions.OrderByDescending(x => x))
+        // 补齐未闭合的 '{'：闭合位置取「占位符所在路径段的末尾」——
+        // 下一个 '/'、'?'、'#' 之前，或字符串末尾。
+        // 直接在 '{' 后插入会得到 "/users/{}id"（占位符名为空、id 变成字面量段），
+        // 必须插到段末才能得到语义等价的 "/users/{id}"。
+        // 位置先在原始文本上算好，再按倒序插入，避免前序插入导致后续位置位移。
+        var text = result.ToString();
+        foreach (var insertAt in unmatchedOpenPositions
+                     .Select(pos => FindPlaceholderSegmentEnd(text, pos + 1))
+                     .OrderByDescending(x => x))
         {
-            result.Insert(pos + 1, '}');
+            result.Insert(insertAt, '}');
         }
 
         return result.ToString();
+    }
+
+    /// <summary>
+    /// 求占位符所在路径段的末尾位置（下一个 <c>/</c>、<c>?</c>、<c>#</c> 之前，或字符串末尾）。
+    /// </summary>
+    private static int FindPlaceholderSegmentEnd(string text, int from)
+    {
+        for (int i = from; i < text.Length; i++)
+        {
+            if (text[i] is '/' or '?' or '#')
+                return i;
+        }
+
+        return text.Length;
     }
 
     private static Task<Document> FixBackslashAsync(
@@ -186,23 +203,8 @@ public class HttpClientInvalidUrlTemplateCodeFixProvider : CodeFixProvider
         AttributeArgumentSyntax arg,
         string originalUrl,
         CancellationToken cancellationToken)
-    {
-        var root = document.GetSyntaxRootAsync(cancellationToken).Result;
-        if (root == null) return Task.FromResult(document);
-
         // 将反斜杠替换为正斜杠
-        var fixedUrl = originalUrl.Replace('\\', '/');
-
-        // 创建新的字符串字面量
-        var newLiteral = SyntaxFactory.LiteralExpression(
-            SyntaxKind.StringLiteralExpression,
-            SyntaxFactory.Literal(fixedUrl));
-
-        var newArg = arg.WithExpression(newLiteral);
-        var newRoot = root.ReplaceNode(arg, newArg);
-
-        return Task.FromResult(document.WithSyntaxRoot(newRoot));
-    }
+        => ReplaceUrlLiteralAsync(document, arg, originalUrl.Replace('\\', '/'), cancellationToken);
 
     private static Task<Document> FixBracesAsync(
         Document document,
@@ -210,11 +212,25 @@ public class HttpClientInvalidUrlTemplateCodeFixProvider : CodeFixProvider
         AttributeArgumentSyntax arg,
         string originalUrl,
         CancellationToken cancellationToken)
-    {
-        var root = document.GetSyntaxRootAsync(cancellationToken).Result;
-        if (root == null) return Task.FromResult(document);
+        => ReplaceUrlLiteralAsync(document, arg, FixBraceMismatch(originalUrl), cancellationToken);
 
-        var fixedUrl = FixBraceMismatch(originalUrl);
+    /// <summary>
+    /// 用修复后的 URL 文本替换特性上的字符串字面量。
+    /// </summary>
+    /// <remarks>
+    /// 使用 <c>await</c> 而非 <c>GetSyntaxRootAsync(...).Result</c>：
+    /// 后者在 IDE 的 UI 线程（含同步上下文）上会与 Roslyn 内部的异步续体互等而<strong>死锁</strong>，
+    /// 表现为「点灯泡后 IDE 卡死」。CodeAction 的回调本身是异步委托，无同步返回的必要。
+    /// </remarks>
+    private static async Task<Document> ReplaceUrlLiteralAsync(
+        Document document,
+        AttributeArgumentSyntax arg,
+        string fixedUrl,
+        CancellationToken cancellationToken)
+    {
+        var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+        if (root == null)
+            return document;
 
         var newLiteral = SyntaxFactory.LiteralExpression(
             SyntaxKind.StringLiteralExpression,
@@ -223,6 +239,6 @@ public class HttpClientInvalidUrlTemplateCodeFixProvider : CodeFixProvider
         var newArg = arg.WithExpression(newLiteral);
         var newRoot = root.ReplaceNode(arg, newArg);
 
-        return Task.FromResult(document.WithSyntaxRoot(newRoot));
+        return document.WithSyntaxRoot(newRoot);
     }
 }

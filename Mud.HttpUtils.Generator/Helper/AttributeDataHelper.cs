@@ -129,7 +129,11 @@ internal static class AttributeDataHelper
     /// <param name="parameterName">参数名称</param>
     /// <param name="defaultValue">默认值</param>
     /// <returns>布尔值</returns>
-    public static bool GetBoolValueFromAttribute(AttributeData attribute, string parameterName, bool defaultValue = false)
+    /// <remarks>
+    /// [Phase4 修复 5.1] 参数放宽为 <c>AttributeData?</c>：方法体首行即做 null 判定并返回
+    /// <paramref name="defaultValue"/>，原签名却声明为非空，迫使调用方在无意义处加 <c>!</c>（CS8604）。
+    /// </remarks>
+    public static bool GetBoolValueFromAttribute(AttributeData? attribute, string parameterName, bool defaultValue = false)
     {
         if (attribute == null)
             return defaultValue;

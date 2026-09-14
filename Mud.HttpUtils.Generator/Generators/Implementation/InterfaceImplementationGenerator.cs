@@ -32,11 +32,16 @@ internal class InterfaceImplementationGenerator
     private readonly SourceProductionContext _context;
     private readonly INamedTypeSymbol _interfaceSymbol;
     private readonly SemanticModel _semanticModel;
-    private readonly StringBuilder _codeBuilder;
     private readonly string _optionsName;
     private readonly bool _isAotEnabled;
     private readonly bool _emitNullableEnable;
     private readonly bool _emitGeneratedCodeMarkers;
+
+    /// <summary>
+    /// 生成代码缓冲区。在 <see cref="GenerateCode"/> 中于 <see cref="GeneratorContext"/> 构造之后按
+    /// 实际方法数分配容量（§6.5：避免构造期二次遍历接口方法树）。
+    /// </summary>
+    private StringBuilder _codeBuilder = null!;
 
     public InterfaceImplementationGenerator(
         Compilation compilation,
@@ -58,9 +63,6 @@ internal class InterfaceImplementationGenerator
         _isAotEnabled = isAotEnabled;
         _emitNullableEnable = emitNullableEnable;
         _emitGeneratedCodeMarkers = emitGeneratedCodeMarkers;
-
-        var estimatedCapacity = EstimateCodeCapacity();
-        _codeBuilder = new StringBuilder(estimatedCapacity);
     }
 
     /// <summary>
@@ -106,6 +108,10 @@ internal class InterfaceImplementationGenerator
             _isAotEnabled,
             _emitNullableEnable,
             _emitGeneratedCodeMarkers);
+
+        // [Phase5 修复 3.5] 容量估算复用 GeneratorContext 已算出的 AllMethods，
+        // 不再二次调用 TypeSymbolHelper.GetAllMethods 遍历接口方法树。
+        _codeBuilder = new StringBuilder(EstimateCodeCapacity(generatorContext.AllMethods.Count));
 
         // InterfaceProperties 已在 GeneratorContext 构造函数中预计算（含基接口 [Query]/[Path] 属性），
         // 后续 GetOrAnalyzeMethod 会将其作为 cachedInterfaceProperties 传入 AnalyzeMethod，避免重复扫描。
@@ -483,21 +489,14 @@ internal class InterfaceImplementationGenerator
     /// <summary>
     /// 估算生成的代码容量
     /// </summary>
-    private int EstimateCodeCapacity()
+    /// <param name="methodCount">
+    /// 接口（含基接口）方法数，由 <see cref="GeneratorContext.AllMethods"/> 提供。
+    /// [Phase5 修复 3.5] 原实现在构造函数中独立遍历接口方法树，与 GeneratorContext 的遍历重复。
+    /// </param>
+    private static int EstimateCodeCapacity(int methodCount)
     {
-        int methodCount = 0;
-        try
-        {
-            var methods = TypeSymbolHelper.GetAllMethods(_interfaceSymbol, true);
-            foreach (var method in methods)
-            {
-                methodCount++;
-            }
-        }
-        catch
-        {
+        if (methodCount <= 0)
             methodCount = 10;
-        }
 
         var estimatedCapacity = 2000 + (methodCount * 700);
         return Math.Min(estimatedCapacity, 30000);

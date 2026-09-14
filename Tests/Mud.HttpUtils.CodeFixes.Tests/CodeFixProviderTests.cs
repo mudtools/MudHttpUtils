@@ -30,7 +30,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get("/data")]
@@ -74,7 +74,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get("/data")]
@@ -330,7 +330,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get("/users/{id")]
@@ -339,9 +339,12 @@ namespace TestNamespace
 }
 """;
 
-        var (document, diagnostic) = await CreateGeneratorDrivenDiagnosticAsync(source, "HTTPCLIENT005");
+        string? producedIds = null;
+        var (document, diagnostic) = await CreateGeneratorDrivenDiagnosticAsync(
+            source, "HTTPCLIENT005", ids => producedIds = ids);
 
-        diagnostic.Should().NotBeNull("URL 含未闭合花括号应触发 HTTPCLIENT005");
+        diagnostic.Should().NotBeNull(
+            $"URL 含未闭合花括号应触发 HTTPCLIENT005（实际生成器诊断：[{producedIds}]）");
 
         var codeFix = new HttpClientInvalidUrlTemplateCodeFixProvider();
         var actions = await GetRegisteredActionsAsync(codeFix, document, diagnostic!);
@@ -374,7 +377,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = "https://api.example.com")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get("\\api\\users/{id}")]
@@ -434,9 +437,12 @@ namespace TestNamespace
 }
 """;
 
-        var (document, diagnostic) = await CreateGeneratorDrivenDiagnosticAsync(source, "HTTPCLIENT007");
+        string? producedIds = null;
+        var (document, diagnostic) = await CreateGeneratorDrivenDiagnosticAsync(
+            source, "HTTPCLIENT007", ids => producedIds = ids);
 
-        diagnostic.Should().NotBeNull("HttpClient 与 TokenManage 同时指定应触发 HTTPCLIENT007");
+        diagnostic.Should().NotBeNull(
+            $"HttpClient 与 TokenManage 同时指定应触发 HTTPCLIENT007（实际生成器诊断：[{producedIds}]）");
 
         var codeFix = new HttpClientMutuallyExclusiveCodeFixProvider();
         var actions = await GetRegisteredActionsAsync(codeFix, document, diagnostic!);
@@ -466,19 +472,169 @@ namespace TestNamespace
         provider.FixableDiagnosticIds.Should().Contain("HTTPCLIENT005");
     }
 
+    /// <summary>
+    /// 多余的右花括号被丢弃：<c>/users/id}</c> → <c>/users/id</c>。
+    /// </summary>
+    [Fact]
+    public async Task HttpClient005CodeFix_RedundantClosingBrace_IsRemoved()
+    {
+        var source = """
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Get("/users/id}")]
+        Task<string> GetAsync();
+    }
+}
+""";
+
+        var fixedSource = await ApplyBraceFixAsync(source);
+
+        fixedSource.Should().Contain("/users/id\"", "多余的 } 应被移除");
+    }
+
+    /// <summary>
+    /// 未闭合的左花括号在「路径段末尾」闭合：<c>/users/{id/details</c> → <c>/users/{id}/details</c>。
+    /// </summary>
+    /// <remarks>
+    /// 若闭合位置取「'{' 之后」（历史实现意图），会得到 <c>/users/{}id/details</c>——
+    /// 占位符名为空且 <c>id</c> 退化为字面量段，属语义破坏。
+    /// </remarks>
+    [Fact]
+    public async Task HttpClient005CodeFix_UnclosedBrace_ClosesAtPathSegmentEnd()
+    {
+        var source = """
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Get("/users/{id/details")]
+        Task<string> GetAsync();
+    }
+}
+""";
+
+        var fixedSource = await ApplyBraceFixAsync(source);
+
+        fixedSource.Should().Contain("/users/{id}/details", "未闭合的 { 应在路径段末尾补齐 }");
+    }
+
+    /// <summary>运行生成器拿到真实 HTTPCLIENT005 诊断，应用「花括号配对」修复并返回修复后的源码。</summary>
+    private static async Task<string> ApplyBraceFixAsync(string source)
+    {
+        string? producedIds = null;
+        var (document, diagnostic) = await CreateGeneratorDrivenDiagnosticAsync(
+            source, "HTTPCLIENT005", ids => producedIds = ids);
+
+        diagnostic.Should().NotBeNull($"用例源码应触发 HTTPCLIENT005（实际生成器诊断：[{producedIds}]）");
+
+        var codeFix = new HttpClientInvalidUrlTemplateCodeFixProvider();
+        var actions = await GetRegisteredActionsAsync(codeFix, document, diagnostic!);
+
+        var braceAction = actions.FirstOrDefault(a => a.Title.Contains("花括号"));
+        braceAction.Should().NotBeNull();
+
+        var operations = await braceAction!.GetOperationsAsync(CancellationToken.None);
+        var fixedDocument = operations.OfType<ApplyChangesOperation>().First()
+            .ChangedSolution.GetDocument(document.Id)!;
+
+        return (await fixedDocument.GetSyntaxRootAsync())!.ToFullString();
+    }
+
     #endregion
 
     #region 辅助方法
 
-    private static readonly MetadataReference[] TestReferences =
+    /// <summary>
+    /// 编译引用集。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// [Phase1 修复 2.3] 历史实现只引用 <c>System.Private.CoreLib</c> + <c>System.Text.Json</c> +
+    /// <c>Mud.HttpUtils.Attributes</c> + <c>Mud.HttpUtils.Client</c> 四个程序集。
+    /// 但 <c>Mud.HttpUtils.Attributes</c> 自身以 <c>netstandard2.0</c> 编译，其 <c>Attribute</c> 等基类型
+    /// 由 <c>netstandard</c> 门面程序集转发——该门面缺失时整个编译单元降级为
+    /// <c>CS0012（类型“Attribute”在未引用的程序集中定义）</c> + <c>CS0246（未能找到 Task&lt;&gt;）</c>，
+    /// 属性被视为未解析、<c>MethodAnalyzer.AnalyzeMethod</c> 返回无效结果，
+    /// 于是「真实闭环」测试只能看到 <c>HTTPCLIENT024</c>（占位实现）而永远等不到目标诊断。
+    /// </para>
+    /// <para>
+    /// 现改为按运行时基目录枚举全部托管程序集（含 <c>netstandard.dll</c> 门面），
+    /// 与 <c>Generator.Tests.BasicReferenceAssemblies</c> 同源策略，消除「缺少门面程序集」类假阴性。
+    /// </para>
+    /// </remarks>
+    private static readonly MetadataReference[] TestReferences = BuildTestReferences();
+
+    private static MetadataReference[] BuildTestReferences()
     {
-        // 核心库（object / Task 等）与 System.Text.Json（JsonSerializerContext 基类）。
-        MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-        MetadataReference.CreateFromFile(typeof(System.Text.Json.Serialization.JsonSerializerContext).Assembly.Location),
-        // 生成器与属性库（HttpClientApiAttribute 等）
-        MetadataReference.CreateFromFile(typeof(Mud.HttpUtils.Attributes.HttpClientApiAttribute).Assembly.Location),
-        MetadataReference.CreateFromFile(typeof(Mud.HttpUtils.HttpClientUtils).Assembly.Location),
-    };
+        var references = new List<MetadataReference>();
+        var added = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // 运行时基目录（共享框架目录）——含 netstandard 门面与全部 BCL。
+        var runtimeDir = Path.GetDirectoryName(typeof(object).Assembly.Location);
+        if (runtimeDir != null && Directory.Exists(runtimeDir))
+        {
+            foreach (var dll in Directory.EnumerateFiles(runtimeDir, "*.dll", SearchOption.TopDirectoryOnly))
+            {
+                if (!added.Add(dll))
+                    continue;
+
+                // 仅纳入托管程序集（Native/资源 DLL 会让 CreateFromFile 抛异常）。
+                if (!TryAdd(references, dll))
+                    added.Remove(dll);
+            }
+        }
+
+        // 被测类型所在的程序集（Attributes / Client 均为 netstandard2.0 → 必须搭配上面的 netstandard 门面）。
+        var clientAssemblyPath = typeof(Mud.HttpUtils.HttpClientUtils).Assembly.Location;
+        AddOrIgnore(references, added, clientAssemblyPath);
+        AddOrIgnore(references, added, typeof(Mud.HttpUtils.Attributes.HttpClientApiAttribute).Assembly.Location);
+        AddOrIgnore(references, added, typeof(System.Text.Json.Serialization.JsonSerializerContext).Assembly.Location);
+
+        // Mud.HttpUtils.* 同族程序集（Abstractions / Client / Xml / Resilience …）位于应用输出目录，
+        // 不在共享框架目录内；缺它们时 IMudAppContext 等类型无法解析（CS0246），
+        // 会让「TokenManage 类型缺少必需方法」类诊断路径失效。
+        var appDir = Path.GetDirectoryName(clientAssemblyPath);
+        if (!string.IsNullOrEmpty(appDir) && Directory.Exists(appDir))
+        {
+            foreach (var dll in Directory.EnumerateFiles(appDir, "Mud.HttpUtils*.dll", SearchOption.TopDirectoryOnly))
+            {
+                if (added.Add(dll) && !TryAdd(references, dll))
+                    added.Remove(dll);
+            }
+        }
+
+        return references.ToArray();
+
+        static void AddOrIgnore(List<MetadataReference> list, HashSet<string> seen, string path)
+        {
+            if (!string.IsNullOrEmpty(path) && seen.Add(path))
+                TryAdd(list, path);
+        }
+
+        static bool TryAdd(List<MetadataReference> list, string path)
+        {
+            try
+            {
+                _ = System.Reflection.AssemblyName.GetAssemblyName(path);
+                list.Add(MetadataReference.CreateFromFile(path));
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
 
     private static async Task<(Document Document, Diagnostic Diagnostic)> CreateDocumentWithDiagnosticAsync(
         string source,
@@ -519,9 +675,16 @@ namespace TestNamespace
     /// [Phase1 修复 4.2] 真实闭环：用生成器跑出的真实 Diagnostic 驱动 CodeFix 测试。
     /// 运行生成器获取诊断，创建 Document 供 CodeFix 使用。
     /// </summary>
+    /// <param name="source">接口源代码。</param>
+    /// <param name="diagnosticId">期望的诊断 ID。</param>
+    /// <param name="allGeneratorDiagnosticIds">
+    /// 输出：生成器本次运行产出的全部诊断 ID（去重）。
+    /// 用于在「期望诊断缺失」时给出可诊断的失败信息（否则只能看到 null 断言，无从判断是解析失败还是提前返回）。
+    /// </param>
     private static async Task<(Document Document, Diagnostic? Diagnostic)> CreateGeneratorDrivenDiagnosticAsync(
         string source,
-        string diagnosticId)
+        string diagnosticId,
+        Action<string>? allGeneratorDiagnosticIds = null)
     {
         var parseOptions = new CSharpParseOptions(LanguageVersion.Latest);
         var tree = CSharpSyntaxTree.ParseText(source, parseOptions);
@@ -542,6 +705,9 @@ namespace TestNamespace
 
         var runResult = driver.GetRunResult();
 
+        allGeneratorDiagnosticIds?.Invoke(
+            string.Join(" | ", runResult.Diagnostics.Select(d => $"{d.Id}: {d.GetMessage()}").Distinct().OrderBy(x => x)));
+
         // 从生成器诊断中查找目标 ID
         var diagnostic = runResult.Diagnostics.FirstOrDefault(d => d.Id == diagnosticId);
 
@@ -561,6 +727,7 @@ namespace TestNamespace
         var project = workspace.AddProject(projectInfo);
         var document = workspace.AddDocument(project.Id, "TestFile.cs", SourceText.From(source));
 
+        await Task.CompletedTask;
         return (document, diagnostic);
     }
 

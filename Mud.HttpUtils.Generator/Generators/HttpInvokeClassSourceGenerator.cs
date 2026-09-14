@@ -28,34 +28,28 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
     {
         base.Initialize(context);
 
-        // [F6 修复] AOT006 已迁出增量生成管道：由独立 DiagnosticAnalyzer
-        // （HttpJsonSerializableCoverageAnalyzer，编译分析阶段）承载。
-        // 原实现 Combine(CompilationProvider) 使每次编译变化都触发 AotDtoCoverageAnalyzer 的全量覆盖扫描，
-        // 污染增量图（IDE 输入路径同步等待）；迁移后生成管道不再持有 CompilationProvider 依赖。
-        //
-        // AOT007 已移至 ExecuteGenerator 中调用，复用主生成管道已增量收集的 interfaceModels，
-        // 避免单独的 CompilationProvider 管道导致每次按键重新遍历整个编译（C1 修复）。
+        // [F6 修复 + Phase2 修复 3.2] AOT004 / AOT005 / AOT006 / AOT007 均已迁出增量生成管道，
+        // 由独立 DiagnosticAnalyzer（编译分析阶段）承载：
+        //   - AOT006 → HttpJsonSerializableCoverageAnalyzer（F6）；
+        //   - AOT004 / AOT005 → AotDtoCoverageDiagnosticAnalyzer（Phase2 3.2）；
+        //   - AOT007 → AotXmlRejectionDiagnosticAnalyzer（Phase2 3.2）。
+        // 原实现由生成管道下游上报，重算依赖接口指纹失效（只改 Context / AOT 配置时不重算），
+        // 且 Combine(CompilationProvider) 会污染增量图。迁移后生成管道只产出源码，不再持有诊断职责。
     }
 
 
+    /// <summary>
+    /// 逐接口生成实现类（Phase3 per-item 注册点：改 1 个接口只重跑 1 个接口）。
+    /// </summary>
     /// <inheritdoc/>
-    protected override void ExecuteGenerator(
-        ImmutableArray<InterfaceModel> interfaces,
+    protected override void ExecuteInterfaceGenerator(
+        InterfaceModel model,
         SourceProductionContext context,
         AnalyzerConfigOptionsProvider configOptionsProvider,
         string generationSalt)
     {
-        if (interfaces.IsDefaultOrEmpty || configOptionsProvider == null)
+        if (configOptionsProvider == null)
             return;
-
-        // [F4] 逃生舱生效提示：ForceHttpGenerator=true 强制刷新了增量缓存，输出可观测提示，
-        // 避免用户无法确认开关是否生效。（salt 值本身不写入生成内容。）
-        if (generationSalt.EndsWith("|force", StringComparison.Ordinal))
-        {
-            context.ReportDiagnostic(Diagnostic.Create(
-                Diagnostics.IncrementalCacheForcedInvalidation,
-                Location.None));
-        }
 
         // T5.3: 全局禁用开关（调试与渐进迁移）
         if (ProjectConfigHelper.ReadConfigValueAsBool(configOptionsProvider.GlobalOptions, "build_property.DisableMudSourceGenerator", false))
@@ -68,11 +62,11 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
         // [AOT v4 Phase 18.3 / D19] 读取 AOT 上下文。
         // [F10 修复] 不再以「IsAotCompatible 是否启用」充当 Native AOT 判定：
         //   - AotRuntimeMode = MudAotRuntimeMode 显式配置 > PublishAot > 默认 Jit；
-        //   - isAotEnabled（驱动 ConstructorGenerator 的 XML 静态字段替换）仅当「确实 AOT」时为 true；
-        //   - 仅 IsAotCompatible=true 时 AOT007 降级为 Warning（并提示改用 PublishAot/MudAotRuntimeMode）。
+        //   - isAotEnabled（驱动 ConstructorGenerator 的 XML 静态字段替换）仅当「确实 AOT」时为 true。
+        // 注：AOT007 的分级（Error/Warning）随诊断迁移至 AotXmlRejectionDiagnosticAnalyzer，
+        // 该分析器自行经 AotModeResolver 读取同一份配置，本处不再需要 isAotAnalyzerOnly。
         var aotMode = AotModeResolver.Resolve(configOptionsProvider.GlobalOptions);
         var isAotEnabled = aotMode == AotRuntimeMode.Aot;
-        var isAotAnalyzerOnly = AotModeResolver.IsAotAnalyzerOnly(configOptionsProvider.GlobalOptions);
 
         // [v2.4 §3.4 D-03 修复] 读取消费项目 nullable 配置，条件化发射 #nullable enable
         EmitNullableEnable = ProjectConfigHelper.ReadConfigValue(
@@ -82,61 +76,60 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
         var emitGeneratedCodeMarkers = ProjectConfigHelper.ReadConfigValueAsBool(
             configOptionsProvider.GlobalOptions, "build_property.MudEmitGeneratedCodeMarkers", true);
 
-        foreach (var model in interfaces)
+        var interfaceDecl = model.Syntax;
+        var semanticModel = model.Context.SemanticModel;
+        var compilation = semanticModel.Compilation;
+
+        // 使用 InterfaceModel 中预解析的 Symbol，避免重复调用 GetDeclaredSymbol
+        if (model.Symbol is not INamedTypeSymbol interfaceSymbol)
         {
-            if (context.CancellationToken.IsCancellationRequested)
-                return;
-
-            var interfaceDecl = model.Syntax;
-            var semanticModel = model.Context.SemanticModel;
-            var compilation = semanticModel.Compilation;
-
-            // 使用 InterfaceModel 中预解析的 Symbol，避免重复调用 GetDeclaredSymbol
-            if (model.Symbol is not INamedTypeSymbol interfaceSymbol)
-            {
-                continue;
-            }
-
-            try
-            {
-                ProcessInterface(compilation, interfaceDecl, interfaceSymbol, semanticModel, context, httpClientOptionsName, isAotEnabled, EmitNullableEnable, emitGeneratedCodeMarkers);
-            }
-            catch (Exception ex)
-            {
-                HandleInterfaceProcessingException(ex, interfaceDecl, context);
-            }
+            return;
         }
 
-        // P2.1: AOT004 — 检查 DTO 覆盖情况 + AOT007 — 检查 AOT 下 XML 序列化
-        // 两者均复用主生成管道已增量收集的 interfaceModels，避免单独的 CompilationProvider
-        // 管道导致每次按键重新遍历整个编译（C1 修复）
-        if (!interfaces.IsDefaultOrEmpty)
+        try
         {
-            try
-            {
-                var firstCompilation = interfaces[0].Context.SemanticModel.Compilation;
-                foreach (var diagnostic in Mud.HttpUtils.Analyzers.AotDtoCoverageAnalyzer.Analyze(firstCompilation, context.CancellationToken))
-                {
-                    context.ReportDiagnostic(diagnostic);
-                }
-
-                // [F10] AOT007 分级由 AotXmlRejectionAnalyzer 内部按模式决定（Error/Warning）；
-                // isAotEnabled 仅决定是否运行分析，具体级别在 Analyze 内由 descriptor 参数化。
-                var aot007Descriptor = isAotAnalyzerOnly
-                    ? Diagnostics.AotXmlNotSupportedInAotWarning
-                    : Diagnostics.AotXmlNotSupportedInAot;
-                foreach (var diagnostic in Mud.HttpUtils.Analyzers.AotXmlRejectionAnalyzer.Analyze(
-                             firstCompilation, isAotEnabled, context.CancellationToken, aot007Descriptor))
-                {
-                    context.ReportDiagnostic(diagnostic);
-                }
-            }
-            catch (Exception ex)
-            {
-                // AOT004/AOT007 为诊断性检查，不应阻断代码生成，但记录日志便于排查分析器内部错误
-                GeneratorDebugLogger.LogError("AOT004_AOT007_Analyze", ex);
-            }
+            ProcessInterface(compilation, interfaceDecl, interfaceSymbol, semanticModel, context, httpClientOptionsName, isAotEnabled, EmitNullableEnable, emitGeneratedCodeMarkers);
         }
+        catch (Exception ex)
+        {
+            HandleInterfaceProcessingException(ex, interfaceDecl, context);
+        }
+    }
+
+    /// <summary>
+    /// 全局生成逻辑：本生成器的逐接口产物已由 <see cref="ExecuteInterfaceGenerator"/> 产出，
+    /// 此处仅承担「每次生成运行只应上报一次」的全局诊断（逃生舱生效提示）。
+    /// </summary>
+    /// <inheritdoc/>
+    protected override void ExecuteGenerator(
+        ImmutableArray<InterfaceModel> interfaces,
+        SourceProductionContext context,
+        AnalyzerConfigOptionsProvider configOptionsProvider,
+        string generationSalt)
+    {
+        if (interfaces.IsDefaultOrEmpty || configOptionsProvider == null)
+            return;
+
+        // T5.3: 全局禁用开关（调试与渐进迁移）
+        if (ProjectConfigHelper.ReadConfigValueAsBool(configOptionsProvider.GlobalOptions, "build_property.DisableMudSourceGenerator", false))
+            return;
+
+        // [F4] 逃生舱生效提示：ForceHttpGenerator=true 强制刷新了增量缓存，输出可观测提示，
+        // 避免用户无法确认开关是否生效。（salt 值本身不写入生成内容。）
+        // 放在全局注册点：逐接口注册点会按接口数重复上报同一诊断。
+        if (generationSalt.EndsWith("|force", StringComparison.Ordinal))
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.IncrementalCacheForcedInvalidation,
+                Location.None));
+        }
+
+        // [Phase2 修复 3.2 / 审查 1.6] AOT004 / AOT005 / AOT007 已迁出生成管道：
+        // 由独立 DiagnosticAnalyzer 承载（AotDtoCoverageDiagnosticAnalyzer / AotXmlRejectionDiagnosticAnalyzer，
+        // 与 AOT006 的 HttpJsonSerializableCoverageAnalyzer 同一范本）。
+        // 原因：诊断挂在生成管道下游时，其重算依赖接口指纹失效——只改 JsonSerializerContext 或
+        // AOT 配置（接口声明未变）时下游节点命中缓存，诊断不会重算（陈旧/漏报）。
+        // 迁移后生成器只负责产出源码，职责单一，诊断随编译变化自然重算。
     }
 
     private void ProcessInterface(Compilation compilation, InterfaceDeclarationSyntax interfaceDecl, INamedTypeSymbol interfaceSymbol, SemanticModel semanticModel, SourceProductionContext context, string httpClientOptionsName, bool isAotEnabled, bool emitNullableEnable, bool emitGeneratedCodeMarkers)

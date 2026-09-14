@@ -45,10 +45,14 @@ internal static class TypeSymbolHelper
     /// <param name="interfaceSymbol">接口符号</param>
     /// <param name="includeParentInterfaces">是否包含父接口的方法</param>
     /// <param name="excludedInterfaces">要排除的接口名称列表（可选）</param>
+    /// <remarks>
+    /// [Phase4 修复 5.1] 可选参数显式标注可空（CS8625/CS8604）：默认值与调用方均可能传 null，
+    /// 方法体已按「null = 不排除任何接口」处理。
+    /// </remarks>
     public static IReadOnlyList<IMethodSymbol> GetAllMethods(
         INamedTypeSymbol interfaceSymbol,
         bool includeParentInterfaces = true,
-        IEnumerable<string> excludedInterfaces = null)
+        IEnumerable<string>? excludedInterfaces = null)
     {
         if (interfaceSymbol == null)
             return [];
@@ -608,7 +612,7 @@ internal static class TypeSymbolHelper
     /// <remarks>
     /// 注意：不通过 <see cref="INamespaceSymbol"/> 校验命名空间。
     /// 在 <c>ForAttributeWithMetadataName</c> 的 transform 上下文中，Roslyn 返回的
-    /// <see cref="INamedTypeSymbol.ContainingNamespace"/> 可能是全局命名空间而非实际命名空间
+    /// <c>INamedTypeSymbol.ContainingNamespace</c> 可能是全局命名空间而非实际命名空间
     /// （<c>IsGlobalNamespace == true</c>），导致命名空间检查不可靠。
     /// 此处仅通过类型名 + 类型参数数量判断，与 Roslyn 源生成器上下文兼容。
     /// </remarks>

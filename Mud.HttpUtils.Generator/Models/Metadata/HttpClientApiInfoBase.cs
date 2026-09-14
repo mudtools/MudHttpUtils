@@ -40,9 +40,13 @@ internal abstract class HttpClientApiInfoBase
     public string Namespace { get; }
 
     /// <summary>
-    /// API 基础地址
+    /// API 基础地址（可为 null：运行时通过 Options 配置）。
     /// </summary>
-    public string BaseUrl { get; }
+    /// <remarks>
+    /// [Phase4 修复 5.1] 属性类型与构造参数语义对齐（CS8618/CS8601）：构造参数本就是 <c>string?</c>，
+    /// 属性却声明为非空，导致「可能为 null」的赋值被标记。生成器内无任何读取点（已确认），故放宽为可空。
+    /// </remarks>
+    public string? BaseUrl { get; }
 
     /// <summary>
     /// 超时时间（秒）

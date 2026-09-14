@@ -111,9 +111,10 @@ internal static class AotXmlRejectionAnalyzer
                     {
                         methodInfo = MethodAnalyzer.AnalyzeMethod(compilation, method, interfaceDecl, semanticModel);
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // 单个方法分析失败不应阻断其他方法的诊断
+                        // [T8 修复] 单个方法分析失败不应阻断其他方法的诊断，但记录日志以便排查
+                        GeneratorDebugLogger.LogError("AOT007_MethodAnalyze", ex);
                         continue;
                     }
 

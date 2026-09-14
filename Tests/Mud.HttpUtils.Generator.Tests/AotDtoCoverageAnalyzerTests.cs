@@ -1,5 +1,7 @@
 using Mud.HttpUtils.Analyzers;
 using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.Text;
+using System.Text;
 
 namespace Mud.HttpUtils.Generator.Tests;
 
@@ -679,5 +681,211 @@ public class AotDtoCoverageAnalyzerTests
             "未覆盖的本地 DTO 仍应报告 AOT004（证明覆盖集合非空且解析可用）");
         coveredTypeNames.Should().NotContain(n => n.Contains("RemoteDto"),
             "已在引用程序集 Context 中覆盖的类型不应误报 AOT004（PE 引用符号解析）");
+    }
+
+    // ───────────────────────── T1：数组型 DTO 覆盖判断 ─────────────────────────
+
+    [Fact]
+    public void Body_ArrayDto_NotCovered_ReportsAot004()
+    {
+        var source = $$"""
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                public class UserDto { public int Id { get; set; } }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Post("/x")]
+                    Task<string> PostAsync([Body] UserDto[] users);
+                }
+
+                {{ContextBoilerplate}}
+            }
+            """;
+
+        var diagnostics = Analyze(source);
+        var aot004 = diagnostics.Where(d => d.Id == "AOT004").ToList();
+
+        aot004.Should().ContainSingle("[Body] UserDto[] 的元素类型未覆盖应报告 AOT004");
+        aot004[0].Properties["TypeFullName"].Should().Contain("UserDto",
+            "应报元素类型 UserDto 而非数组本身");
+    }
+
+    [Fact]
+    public void Body_ArrayDto_Covered_DoesNotReport()
+    {
+        var source = $$"""
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                public class UserDto { public int Id { get; set; } }
+
+                [System.Text.Json.Serialization.JsonSerializable(typeof(UserDto))]
+                internal sealed partial class AppJsonContext : System.Text.Json.Serialization.JsonSerializerContext
+                {
+                    public AppJsonContext(System.Text.Json.JsonSerializerOptions options) : base(options) { }
+                    protected override System.Text.Json.JsonSerializerOptions? GeneratedSerializerOptions => null;
+                    public override System.Text.Json.Serialization.Metadata.JsonTypeInfo? GetTypeInfo(System.Type type) => null;
+                }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Post("/x")]
+                    Task<string> PostAsync([Body] UserDto[] users);
+                }
+            }
+            """;
+
+        Analyze(source).Should().NotContain(d => d.Id == "AOT004",
+            "元素类型已覆盖时，[Body] UserDto[] 不应误报 AOT004");
+    }
+
+    [Fact]
+    public void Response_TaskOfArray_NotCovered_ReportsAot004()
+    {
+        var source = $$"""
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                public class ResultDto { public int Id { get; set; } }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Get("/x")]
+                    Task<ResultDto[]> GetAsync();
+                }
+
+                {{ContextBoilerplate}}
+            }
+            """;
+
+        var diagnostics = Analyze(source);
+        var aot004 = diagnostics.Where(d => d.Id == "AOT004").ToList();
+
+        aot004.Should().ContainSingle("Task<ResultDto[]> 的元素类型未覆盖应报告 AOT004");
+        aot004[0].Properties["TypeFullName"].Should().Contain("ResultDto",
+            "应报元素类型 ResultDto 而非数组本身");
+    }
+
+    [Fact]
+    public void Response_TaskOfArray_Covered_DoesNotReport()
+    {
+        var source = $$"""
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                public class ResultDto { public int Id { get; set; } }
+
+                [System.Text.Json.Serialization.JsonSerializable(typeof(ResultDto))]
+                internal sealed partial class AppJsonContext : System.Text.Json.Serialization.JsonSerializerContext
+                {
+                    public AppJsonContext(System.Text.Json.JsonSerializerOptions options) : base(options) { }
+                    protected override System.Text.Json.JsonSerializerOptions? GeneratedSerializerOptions => null;
+                    public override System.Text.Json.Serialization.Metadata.JsonTypeInfo? GetTypeInfo(System.Type type) => null;
+                }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Get("/x")]
+                    Task<ResultDto[]> GetAsync();
+                }
+            }
+            """;
+
+        Analyze(source).Should().NotContain(d => d.Id == "AOT004",
+            "元素类型已覆盖时，Task<ResultDto[]> 不应误报 AOT004");
+    }
+
+    // ───────────────────────── T6：forceRun opt-in（共享 Context 包场景） ─────────────────────────
+
+    /// <summary>
+    /// [T6] DTO + Context 均在引用程序集（共享包），本编译单元不声明 Context 时，
+    /// 默认不检查（forceRun=false）；forceRun=true 时应报告未覆盖的 DTO。
+    /// </summary>
+    [Fact]
+    public void ExternalContextOnly_ForceRun_ReportsAot004()
+    {
+        // 依赖程序集：DTO + Context
+        const string contractsSource = """
+            using System;
+            using System.Text.Json;
+            using System.Text.Json.Serialization;
+            using System.Text.Json.Serialization.Metadata;
+
+            namespace Contracts
+            {
+                public class SharedDto { public int Id { get; set; } }
+                public class UncoveredDto { public int Id { get; set; } }
+
+                [JsonSerializable(typeof(SharedDto))]
+                internal sealed partial class SharedJsonContext : JsonSerializerContext
+                {
+                    public SharedJsonContext(JsonSerializerOptions options) : base(options) { }
+                    protected override JsonSerializerOptions? GeneratedSerializerOptions => null;
+                    public override JsonTypeInfo? GetTypeInfo(Type type) => null;
+                }
+            }
+            """;
+
+        var contractsCompilation = CreateCompilation(contractsSource);
+        using var imageStream = new MemoryStream();
+        var emitResult = contractsCompilation.Emit(imageStream);
+        emitResult.Success.Should().BeTrue("合成依赖程序集应能成功编译");
+
+        var contractsReference = MetadataReference.CreateFromImage(imageStream.ToArray());
+
+        // 主程序集：仅声明 [HttpClientApi] 接口，不声明本地 Context。
+        const string apiSource = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace Api
+            {
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Get("/covered")]
+                    Task<Contracts.SharedDto?> GetCoveredAsync();
+
+                    [Get("/uncovered")]
+                    Task<Contracts.UncoveredDto?> GetUncoveredAsync();
+                }
+            }
+            """;
+
+        var compilation = CreateCompilation(apiSource, contractsReference);
+
+        // 默认（forceRun=false）：无本地 Context → 不报告
+        var defaultDiagnostics = AotDtoCoverageAnalyzer.Analyze(compilation, CancellationToken.None, forceRun: false);
+        defaultDiagnostics.Should().NotContain(d => d.Id == "AOT004",
+            "无本地 Context 时默认不检查，避免非 AOT 工程噪音");
+
+        // forceRun=true：强制运行 → 应报告未覆盖的 UncoveredDto
+        var forcedDiagnostics = AotDtoCoverageAnalyzer.Analyze(compilation, CancellationToken.None, forceRun: true);
+        var aot004 = forcedDiagnostics.Where(d => d.Id == "AOT004").ToList();
+
+        aot004.Should().ContainSingle("forceRun=true 时应报告未覆盖的 DTO");
+        aot004[0].Properties["TypeFullName"].Should().Contain("UncoveredDto");
+
+        // SharedDto 已被引用程序集中的 Context 覆盖 → 不应误报
+        var coveredTypeNames = forcedDiagnostics
+            .Where(d => d.Id == "AOT004")
+            .Select(d => d.Properties.TryGetValue("TypeFullName", out var n) ? n : string.Empty)
+            .ToList();
+        coveredTypeNames.Should().NotContain(n => n.Contains("SharedDto"),
+            "已在引用程序集 Context 中覆盖的类型不应误报");
     }
 }

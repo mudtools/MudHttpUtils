@@ -6,6 +6,7 @@
 // -----------------------------------------------------------------------
 
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
 
 namespace Mud.HttpUtils;
 
@@ -23,6 +24,12 @@ namespace Mud.HttpUtils;
 /// <b>未注册的类型将返回 <c>[TypeName]</c> 而非真正脱敏</b>，请确保所有需要脱敏的 DTO 均已注册。
 /// </para>
 /// <para>
+/// <b>Mask 方法</b>：字符串脱敏行为与 <see cref="DefaultSensitiveDataMasker.Mask"/> 完全一致。
+/// <b>MaskObject 方法</b>：与反射版 <see cref="DefaultSensitiveDataMasker"/> 存在差异——
+/// 反射版通过 [SensitiveData] 特性自动发现脱敏规则；本类要求显式 Register&lt;T&gt; 注册，
+/// 未注册类型返回 [TypeName] 兜底输出并发出一次性告警（引导补注册）。
+/// </para>
+/// <para>
 /// 此类是线程安全的，可以在多线程环境中安全使用。
 /// </para>
 /// </remarks>
@@ -30,10 +37,11 @@ namespace Mud.HttpUtils;
 /// 使用示例：
 /// <code>
 /// var masker = new AotSafeSensitiveDataMasker();
-/// masker.Register&lt;UserDto&gt;(obj =>
+/// masker.Register&lt;UserDto&gt;(obj =&gt;
 /// {
 ///     var user = (UserDto)obj;
-///     return $"{{\"id\":{user.Id},\"name\":\"{user.Name}\",\"email\":\"{masker.Mask(user.Email)}\"}}";
+///     // 禁止对含特殊字符字段手拼 JSON，应使用 JsonSerializer + 字段后处理
+///     return $"{{\"id\":{user.Id},\"name\":{JsonSerializer.Serialize(user.Name)},\"email\":{JsonSerializer.Serialize(masker.Mask(user.Email))}}}";
 /// });
 ///
 /// // 注册为默认脱敏器
@@ -48,6 +56,25 @@ public class AotSafeSensitiveDataMasker : ISensitiveDataMasker
     private const string MaskString = "***";
 
     private readonly ConcurrentDictionary<Type, Func<object, string>> _maskers = new();
+    // [T5 修复] 未注册类型一次性告警去重表
+    private readonly ConcurrentDictionary<Type, byte> _unregisteredWarned = new();
+    private readonly ILogger? _logger;
+    // [T5 修复] 基类注册兜底开关（默认关闭，避免改变现有精确匹配契约）
+    private readonly bool _enableBaseTypeFallback;
+
+    /// <summary>
+    /// 初始化 <see cref="AotSafeSensitiveDataMasker"/> 实例。
+    /// </summary>
+    /// <param name="logger">日志记录器（可选）。未注册类型命中时发出一次性告警。</param>
+    /// <param name="enableBaseTypeFallback">
+    /// 是否启用基类注册兜底（默认 false）。
+    /// 开启时：未注册但存在可赋值的已注册基类时使用基类规则并告警。
+    /// </param>
+    public AotSafeSensitiveDataMasker(ILogger? logger = null, bool enableBaseTypeFallback = false)
+    {
+        _logger = logger;
+        _enableBaseTypeFallback = enableBaseTypeFallback;
+    }
 
     /// <summary>
     /// 注册类型的脱敏规则。
@@ -63,8 +90,10 @@ public class AotSafeSensitiveDataMasker : ISensitiveDataMasker
 
     /// <inheritdoc/>
     /// <remarks>
-    /// 此方法的行为与 <see cref="DefaultSensitiveDataMasker.Mask"/> 完全一致，
+    /// <para>
+    /// <b>Mask 方法</b>：字符串脱敏行为与 <see cref="DefaultSensitiveDataMasker.Mask"/> 完全一致，
     /// 确保从反射实现切换到 AOT 安全实现时无行为差异。
+    /// </para>
     /// </remarks>
     public virtual string Mask(string value, SensitiveDataMaskMode mode = SensitiveDataMaskMode.Mask, int prefixLength = 2, int suffixLength = 2)
     {
@@ -101,6 +130,11 @@ public class AotSafeSensitiveDataMasker : ISensitiveDataMasker
     /// <b>注意</b>：未注册的类型将返回 <c>[TypeName]</c>，不会进行脱敏。
     /// 请确保所有需要脱敏的 DTO 均已通过 <see cref="Register{T}"/> 注册。
     /// </para>
+    /// <para>
+    /// [T5 修复] 未注册命中时发出一次性告警（每个类型仅一次），
+    /// 引导消费方补充注册。若 <see cref="_enableBaseTypeFallback"/> 开启，
+    /// 命中未注册但存在可赋值的已注册基类时使用基类规则并告警。
+    /// </para>
     /// </remarks>
     public virtual string MaskObject(object obj)
     {
@@ -110,6 +144,34 @@ public class AotSafeSensitiveDataMasker : ISensitiveDataMasker
         var type = obj.GetType();
         if (_maskers.TryGetValue(type, out var masker))
             return masker(obj);
+
+        // [T5 修复] 基类注册兜底（可选开关）
+        if (_enableBaseTypeFallback)
+        {
+            var baseType = type.BaseType;
+            while (baseType != null)
+            {
+                if (_maskers.TryGetValue(baseType, out var baseMasker))
+                {
+                    if (_unregisteredWarned.TryAdd(type, 0))
+                    {
+                        _logger?.LogWarning(
+                            "AotSafeSensitiveDataMasker: 类型 {Type} 未注册脱敏规则，已回退到基类 {BaseType} 规则。请调用 Register<{Type}>() 注册专用规则。",
+                            type, baseType, type);
+                    }
+                    return baseMasker(obj);
+                }
+                baseType = baseType.BaseType;
+            }
+        }
+
+        // [T5 修复] 未注册类型一次性告警
+        if (_unregisteredWarned.TryAdd(type, 0))
+        {
+            _logger?.LogWarning(
+                "AotSafeSensitiveDataMasker: 类型 {Type} 未注册脱敏规则，已按 [{TypeName}] 兜底输出。请调用 Register<{Type}>() 注册。",
+                type, type.Name);
+        }
 
         // 未注册的类型返回类型信息（不序列化未知类型，避免反射）
         return $"[{type.Name}]";

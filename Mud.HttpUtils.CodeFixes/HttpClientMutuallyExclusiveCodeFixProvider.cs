@@ -68,9 +68,11 @@ public class HttpClientMutuallyExclusiveCodeFixProvider : CodeFixProvider
             foreach (var arg in attribute.ArgumentList.Arguments)
             {
                 var exprStr = arg.ToString();
-                if (exprStr.StartsWith("HttpClient"))
+                // [Phase4 修复 5.1] 显式 StringComparison.Ordinal：语法文本比较属标识符级比较，
+                // 使用区域敏感重载在土耳其语等区域下可能行为不同（CA1310）。
+                if (exprStr.StartsWith("HttpClient", StringComparison.Ordinal))
                     hasHttpClient = true;
-                if (exprStr.StartsWith("TokenManage"))
+                if (exprStr.StartsWith("TokenManage", StringComparison.Ordinal))
                     hasTokenManage = true;
             }
         }
@@ -94,21 +96,23 @@ public class HttpClientMutuallyExclusiveCodeFixProvider : CodeFixProvider
             diagnostic);
     }
 
-    private static Task<Document> RemovePropertyAsync(
+    private static async Task<Document> RemovePropertyAsync(
         Document document,
         AttributeSyntax attribute,
         string propertyName,
         CancellationToken cancellationToken)
     {
-        var root = document.GetSyntaxRootAsync(cancellationToken).Result;
-        if (root == null) return Task.FromResult(document);
+        // [Phase4 修复 5.1] 改为 await：GetSyntaxRootAsync(...).Result 在 IDE 的 UI 线程上
+        // 会与 Roslyn 内部异步续体互等导致死锁（表现为点灯泡后 IDE 卡死）。
+        var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
+        if (root == null) return document;
 
-        if (attribute.ArgumentList == null) return Task.FromResult(document);
+        if (attribute.ArgumentList == null) return document;
 
-        // 过滤掉指定属性的参数
+        // 过滤掉指定属性的参数（Ordinal：语法文本比较不应受区域设置影响）
         var newArguments = attribute.ArgumentList.Arguments
-            .Where(arg => !arg.ToString().StartsWith(propertyName + " "))
-            .Where(arg => !arg.ToString().StartsWith(propertyName + "="))
+            .Where(arg => !arg.ToString().StartsWith(propertyName + " ", StringComparison.Ordinal))
+            .Where(arg => !arg.ToString().StartsWith(propertyName + "=", StringComparison.Ordinal))
             .ToList();
 
         var newAttribute = attribute.WithArgumentList(
@@ -116,6 +120,6 @@ public class HttpClientMutuallyExclusiveCodeFixProvider : CodeFixProvider
                 SyntaxFactory.SeparatedList(newArguments)));
 
         var newRoot = root.ReplaceNode(attribute, newAttribute);
-        return Task.FromResult(document.WithSyntaxRoot(newRoot));
+        return document.WithSyntaxRoot(newRoot);
     }
 }

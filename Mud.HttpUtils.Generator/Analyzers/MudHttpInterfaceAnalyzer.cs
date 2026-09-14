@@ -68,6 +68,11 @@ public class MudHttpInterfaceAnalyzer : DiagnosticAnalyzer
     /// <inheritdoc />
     public override void Initialize(AnalysisContext context)
     {
+        // [Phase4 修复 5.1] CA1062：显式参数守卫（Roslyn 会传非 null，
+        // 但公开可覆写入口显式校验可避免第三方直接调用时的 NRE）。
+        if (context == null)
+            throw new ArgumentNullException(nameof(context));
+
         context.EnableConcurrentExecution();
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.RegisterSyntaxNodeAction(AnalyzeInterface, SyntaxKind.InterfaceDeclaration);

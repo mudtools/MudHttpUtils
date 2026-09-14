@@ -1,11 +1,19 @@
+using Microsoft.CodeAnalysis.Diagnostics;
+
 namespace Mud.HttpUtils.Generator.Tests;
 
 /// <summary>
-/// AOT004 FormUrlEncoded 误报修正回归测试（Phase 20.1）。
+/// AOT004 FormUrlEncoded / XML 误报修正回归测试（Phase 20.1 / Phase 2.5）。
 /// </summary>
 /// <remarks>
+/// <para>
 /// 验证 FormUrlEncoded Body 不触发 AOT004（因不走 JSON 序列化），
 /// JSON Body 未被 JsonSerializerContext 覆盖时触发 AOT004。
+/// </para>
+/// <para>
+/// [Phase2 修复 3.2] AOT004/AOT005 已由 <c>AotDtoCoverageDiagnosticAnalyzer</c> 承载（原由生成器上报），
+/// 故此处同时运行生成器与 AOT 分析器，断言口径与迁移前一致。
+/// </para>
 /// </remarks>
 public class Aot004FormUrlEncodedTests
 {
@@ -52,7 +60,33 @@ public class Aot004FormUrlEncodedTests
         }
         """;
 
-    private static GeneratorDriver RunGenerator(string source)
+    private const string XmlInterfaceSource = """
+        using Mud.HttpUtils.Attributes;
+        using System.Text.Json.Serialization;
+
+        namespace TestNamespace
+        {
+            [HttpClientApi("https://api.example.com")]
+            public interface IXmlApi
+            {
+                [Post("/api/data")]
+                [SerializationMethod(SerializationMethod.Xml)]
+                Task<string> PostDataAsync([Body] MyDto data);
+            }
+
+            [JsonSourceGenerationOptions]
+            [JsonSerializable(typeof(OtherDto))]
+            internal partial class AppJsonContext : JsonSerializerContext { }
+
+            public class MyDto { public string Name { get; set; } }
+            public class OtherDto { public string X { get; set; } }
+        }
+        """;
+
+    /// <summary>
+    /// 跑生成器（产出实现类）后叠加 AOT 分析器，返回分析器诊断集合。
+    /// </summary>
+    private static ImmutableArray<Diagnostic> RunGeneratorAndAnalyzers(string source)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(source);
         var references = BasicReferenceAssemblies.GetReferences();
@@ -63,8 +97,14 @@ public class Aot004FormUrlEncodedTests
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
         var generator = new HttpInvokeClassSourceGenerator();
-        var driver = CSharpGeneratorDriver.Create(generator);
-        return driver.RunGenerators(compilation);
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(generator);
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
+
+        var analysis = outputCompilation.WithAnalyzers(ImmutableArray.Create<DiagnosticAnalyzer>(
+            new Mud.HttpUtils.Analyzers.AotDtoCoverageDiagnosticAnalyzer(),
+            new Mud.HttpUtils.Analyzers.AotXmlRejectionDiagnosticAnalyzer()));
+
+        return analysis.GetAnalyzerDiagnosticsAsync().GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -73,11 +113,22 @@ public class Aot004FormUrlEncodedTests
     [Fact]
     public void FormUrlEncodedBody_DoesNotTriggerAOT004()
     {
-        var driver = RunGenerator(FormUrlEncodedInterfaceSource);
-        var diagnostics = driver.GetRunResult().Diagnostics;
+        var diagnostics = RunGeneratorAndAnalyzers(FormUrlEncodedInterfaceSource);
 
         diagnostics.Should().NotContain(d => d.Id == "AOT004",
             "FormUrlEncoded Body 不走 JSON 序列化，不应触发 AOT004（Phase 20.1 修正）");
+    }
+
+    /// <summary>
+    /// [Phase2 修复 2.5] XML 序列化的 Body 同样不走 JSON 序列化，不应触发 AOT004。
+    /// </summary>
+    [Fact]
+    public void XmlBody_DoesNotTriggerAOT004()
+    {
+        var diagnostics = RunGeneratorAndAnalyzers(XmlInterfaceSource);
+
+        diagnostics.Should().NotContain(d => d.Id == "AOT004",
+            "XML Body 走 XmlSerializer，不需要 JsonSerializerContext 覆盖（Phase 2.5 豁免）");
     }
 
     /// <summary>
@@ -86,8 +137,7 @@ public class Aot004FormUrlEncodedTests
     [Fact]
     public void JsonBody_NotCovered_TriggersAOT004()
     {
-        var driver = RunGenerator(JsonInterfaceSource);
-        var diagnostics = driver.GetRunResult().Diagnostics;
+        var diagnostics = RunGeneratorAndAnalyzers(JsonInterfaceSource);
 
         // MyDto 未被任何 JsonSerializerContext 覆盖，应触发 AOT004
         diagnostics.Should().Contain(d => d.Id == "AOT004",

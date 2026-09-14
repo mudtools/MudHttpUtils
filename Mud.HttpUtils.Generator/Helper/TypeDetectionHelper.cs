@@ -105,7 +105,7 @@ internal static class TypeDetectionHelper
     }
 
     /// <summary>
-    /// 查询参数 Add 重载类型，用于确定 <see cref="QueryParameterBuilder.Add"/> 方法的重载选择。
+    /// 查询参数 Add 重载类型，用于确定 <c>QueryParameterBuilder.Add</c> 方法的重载选择。
     /// </summary>
     public enum QueryAddOverloadKind
     {

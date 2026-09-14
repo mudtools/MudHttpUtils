@@ -5,6 +5,12 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+// [Phase4 修复 5.1] CA1308（建议把 ToLowerInvariant 换成 ToUpperInvariant）在本文件内属**误报**：
+// 生成产物需要小写形式——bool 字面量（C# 只接受 "true"/"false"）、
+// ResponseDescriptor/ExecutionDescriptor 的枚举与标识符文本、camelCase 的 JSON 属性名。
+// 大写形式会产出语义错误或不可编译的代码。故按方案 5.1 的「显式 #pragma + 理由」方式就地抑制。
+#pragma warning disable CA1308
+
 using Mud.HttpUtils.Analyzers;
 using Mud.HttpUtils.Generators.Base;
 using Mud.HttpUtils.Generators.Context;
@@ -560,7 +566,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 methodInfo.RetryEnabled || methodInfo.CircuitBreakerEnabled || methodInfo.MethodTimeoutEnabled;
 
             // 判断返回类型是否为可空 byte[]?（非可空时使用 ?? Array.Empty<byte>() 确保非空返回）
-            var isNullableByteArray = deserializeType.TrimEnd().EndsWith("?");
+            // [Phase4 修复 5.1] 显式 StringComparison.Ordinal（CA1310）：判断的是 C# 类型文本结尾，
+            // 区域敏感比较可能改变结果。
+            var isNullableByteArray = deserializeType.TrimEnd().EndsWith("?", StringComparison.Ordinal);
 
             if (hasCacheOrResilience)
             {
@@ -716,6 +724,10 @@ internal class MethodGenerator : ICodeFragmentGenerator
     /// 将 ExecutionDescriptor 代码直接写入 <paramref name="sb"/>，包含 ResponseDescriptor、CacheOptions、ResilienceExecutionOptions 和 CacheKey。
     /// 当方法未启用 Cache/Resilience 时，对应字段为 null，执行器走直接执行路径。
     /// </summary>
+    /// <param name="sb">代码缓冲区。</param>
+    /// <param name="context">生成上下文。</param>
+    /// <param name="methodInfo">方法分析结果（缓存/弹性/响应描述来源）。</param>
+    /// <param name="deserializeType">反序列化目标类型文本。</param>
     /// <param name="indent">每行前缀缩进（与调用点的代码缩进对齐）。</param>
     private void WriteExecutionDescriptorCode(StringBuilder sb, GeneratorContext context, MethodAnalysisResult methodInfo, string deserializeType, string indent)
     {
@@ -833,7 +845,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             }
         }
 
-        keyBuilder.Append("\"");
+        keyBuilder.Append('"');
         return keyBuilder.ToString();
     }
 
@@ -1258,6 +1270,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
     /// <summary>
     /// 检查指定的 HttpClient 类型是否实现了给定的接口
     /// </summary>
+    /// <param name="compilation">编译单元（用于解析自定义 HttpClient 类型）。</param>
+    /// <param name="httpClientType">[HttpClientApi] 指定的 HttpClient 类型名。</param>
+    /// <param name="interfaceName">要求实现的接口名（如 <c>IXmlHttpClient</c> / <c>IEncryptableHttpClient</c>）。</param>
     /// <param name="typeResolved">返回 true 表示类型已解析并完成了实际校验；false 表示类型无法解析，结果为保守放行。</param>
     private static bool HttpClientTypeSupportsInterface(Compilation compilation, string httpClientType, string interfaceName, out bool typeResolved)
     {

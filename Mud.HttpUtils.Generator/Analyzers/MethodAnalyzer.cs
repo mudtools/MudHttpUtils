@@ -17,14 +17,18 @@ internal static class MethodAnalyzer
     /// <summary>
     /// 分析函数符号，并返回 MethodAnalysisResult 分析结果
     /// </summary>
+    /// <param name="compilation">编译单元。</param>
+    /// <param name="methodSymbol">待分析的接口方法符号。</param>
+    /// <param name="interfaceDecl">方法所属的接口声明语法节点。</param>
+    /// <param name="semanticModel">可选语义模型；为 null 时由编译单元按语法树获取。</param>
     /// <param name="cachedInterfaceProperties">
-    /// 可选的预计算接口属性列表。当由 <see cref="GeneratorContext"/> 批量调用时传入已缓存的属性，
+    /// 可选的预计算接口属性列表。当由 <c>GeneratorContext</c> 批量调用时传入已缓存的属性，
     /// 避免 <see cref="AnalyzeInterfaceProperties"/> 对同一接口被每个方法重复调用导致的 O(N×M) 性能退化。
     /// 传入 null 时将内部计算。
     /// </param>
     /// <param name="cachedInterfaceAttributes">
     /// 可选的预计算接口特性列表（<c>INamedTypeSymbol.GetAttributes()</c> 结果）。
-    /// 当由 <see cref="GeneratorContext"/> 批量调用时传入已缓存的特性，避免对同一接口的每个方法
+    /// 当由 <c>GeneratorContext</c> 批量调用时传入已缓存的特性，避免对同一接口的每个方法
     /// 重复调用 <c>GetAttributes()</c> 产生多次分配。传入 <c>default</c> 时将内部计算。
     /// </param>
     public static MethodAnalysisResult AnalyzeMethod(
@@ -361,8 +365,13 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         if (bodyAttr.NamedArguments.TryGetValue("ContentType", out var ctValue))
             contentType = ctValue?.ToString();
 
-        if (bodyAttr.NamedArguments.TryGetValue(HttpClientGeneratorConstants.BodyEnableEncryptProperty, out var encValue))
-            bool.TryParse(encValue?.ToString(), out enableEncrypt);
+        // [Phase4 修复 5.1] 显式消费 TryParse 返回值（CA1806）：解析失败时保持 enableEncrypt 的既有值（false），
+        // 不依赖 out 参数被写成默认值的隐式行为。
+        if (bodyAttr.NamedArguments.TryGetValue(HttpClientGeneratorConstants.BodyEnableEncryptProperty, out var encValue)
+            && bool.TryParse(encValue?.ToString(), out var parsedEnableEncrypt))
+        {
+            enableEncrypt = parsedEnableEncrypt;
+        }
 
         if (bodyAttr.NamedArguments.TryGetValue(HttpClientGeneratorConstants.BodyEncryptSerializeTypeProperty, out var estValue))
             encryptSerializeType = GetEnumNameFromTypedConstant(estValue, "Json");
@@ -504,9 +513,9 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
     /// 用于在语义分析失败时的回退匹配，避免重载方法误判。
     /// </summary>
     /// <remarks>
-    /// 使用 <see cref="SemanticModel.GetTypeInfo(SyntaxNode)"/> 获取候选参数的类型符号，
+    /// 使用 <c>SemanticModel.GetTypeInfo(SyntaxNode)</c> 获取候选参数的类型符号，
     /// 通过 <see cref="SymbolEqualityComparer"/> 进行符号相等性比较，
-    /// 而非源文本字符串比较（<see cref="TypeSyntax.ToString"/> 仅返回源代码写法，
+    /// 而非源文本字符串比较（<c>TypeSyntax.ToString()</c> 仅返回源代码写法，
     /// 与 <see cref="ISymbol.ToDisplayString(SymbolDisplayFormat)"/> 的全限定格式不可比，会导致匹配失败）。
     /// </remarks>
     private static bool TryMatchByParameterTypes(

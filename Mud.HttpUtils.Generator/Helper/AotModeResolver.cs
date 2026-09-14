@@ -9,7 +9,7 @@ namespace Mud.HttpUtils;
 
 /// <summary>
 /// [F10 修复] 运行期 AOT 模式。
-/// <para>语义：<see cref="IsAotCompatible"/> 是「启用 AOT/裁剪分析器」的编译期开关（类库为获得 IL 警告而设置），
+/// <para>语义：<c>IsAotCompatible</c> 是「启用 AOT/裁剪分析器」的编译期开关（类库为获得 IL 警告而设置），
 /// 不表示产物以 Native AOT 发布。原实现以 <c>IsAotCompatible || PublishAot</c> 判定，导致 JIT 部署的库项目在
 /// <c>IsAotCompatible=true</c> 时被误判为 AOT——XML 方法直接 Error 阻断构建。</para>
 /// </summary>

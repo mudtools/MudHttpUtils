@@ -526,6 +526,16 @@ Token 注入模式：
 | `BasicAuth`     | HTTP Basic 认证，将凭据编码为 Base64 注入到 Authorization 请求头  |
 | `Cookie`        | 注入到 Cookie 请求头                                              |
 
+> ⚠️ **安全约束：`[Token]` / `[HttpClientApi]` 的字符串属性只接受「键名 / 标识符」，不得放置任何机密。**
+>
+> 生成器会把这些字符串**原样写入生成的源码**（如 `GetTokenAsync("FeishuUser", …)`、`GetApiKeyAsync("X-Api-Key")`），
+> 因此它们会进入版本库、中间产物与反编译输出。允许的内容示例：`TokenType` / `TokenManagerKey` / `Scopes` 的作用域名 /
+> `Name`（Header 或 Query 的**名称**）/ `Scheme`（`Bearer`、`Basic`）。
+>
+> **禁止**写入：token 值、API Key 值、客户端密钥、密码、签名盐、连接字符串。
+> 真实密钥必须通过运行时配置注入——由 `IMudAppContext` / `ITokenManager` / `IApiKeyProvider` /
+> `IHmacSignatureProvider` 的实现从环境变量、密钥管理服务（KMS）或 `IConfiguration` 读取，生成器全程不接触密钥值。
+
 ### 缓存支持
 
 ```csharp
@@ -775,7 +785,7 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 |---------|----------|----------|----------|------------|--------|
 | `AOT001` | Warning | 同一 `JsonSerializerContext` 内存在冲突的 `NamingPolicy` 配置 | 统一命名策略，或拆分为不同分组 | 否 | 是 |
 | `AOT002` | Warning | 开放泛型类型在 net8.0 以下标注 `[HttpJsonSerializable]` | 升级 TFM 至 net8.0+，或避免在低版本使用开放泛型源生成 | 否 | 是 |
-| `AOT003` | Warning | 多态类型缺少 `[JsonDerivedType]` 标注 | 补充 `[JsonDerivedType]`，或由 Scaffolder 自动补全派生类型 | 否 | 是 |
+| `AOT003` | Warning | 多态类型缺少 `[JsonDerivedType]` 标注 | 在基类声明上补充 `[JsonDerivedType]`；`--auto-derived-types` 仅注册派生类为独立 root，不能替代基类上的 `[JsonDerivedType]` | 否 | 是 |
 | `AOT004` | Warning | `[HttpClientApi]` 方法的请求/响应 DTO 未被任何 `JsonSerializerContext` 覆盖 | 标注 `[HttpJsonSerializable]` 并运行 `dotnet mud-jsonctx`，或手动将类型加入现有 `JsonSerializerContext` | 是（`AotJsonContextCodeFixProvider`，自动向用户可编辑的 `JsonSerializerContext` 追加 `[JsonSerializable(typeof(T))]`，或新建 `partial` 扩展类） | 是 |
 | `AOT005` | Warning | 查询参数类型使用 JSON 序列化但未被 `JsonSerializerContext` 覆盖 | 将类型纳入 `JsonSerializerContext`，或实现 `IQueryParameter` 接口 | 是（`AotJsonContextCodeFixProvider`，同 AOT004 修复逻辑） | 是 |
 | `AOT006` | Warning | 标注了 `[HttpJsonSerializable]` 的类型未被任何 `JsonSerializerContext` 覆盖 | 运行 `dotnet mud-jsonctx`，或将此类型加入 `JsonSerializerContext` | 是（`AotJsonContextCodeFixProvider`，同 AOT004 修复逻辑） | 是 |

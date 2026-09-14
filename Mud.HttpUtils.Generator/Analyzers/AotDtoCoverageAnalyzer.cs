@@ -9,10 +9,36 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using Microsoft.CodeAnalysis;
 
 namespace Mud.HttpUtils.Analyzers;
+
+/// <summary>
+/// <c>AotDtoCoverageAnalyzer.CollectCoveredTypes</c> 的结果载体（含触发门控信号）。
+/// </summary>
+/// <remarks>
+/// [Phase5 修复 3.1 / 审查 3.1] 覆盖集合需扫描全部语法树 + 全部引用程序集命名空间，
+/// 是全流程最昂贵的操作之一。AOT004/AOT005（<c>AotDtoCoverageDiagnosticAnalyzer</c>）与
+/// AOT006（<c>HttpJsonSerializableCoverageAnalyzer</c>）在同一次编译中各需一份，
+/// 故按 <see cref="Compilation"/> 缓存（复用 <c>SemanticModelCache</c> 的 ConditionalWeakTable 模式），
+/// 把两次全引用扫描合并为一次。
+/// </remarks>
+internal sealed class CoveredTypesResult
+{
+    /// <summary>被任一 JsonSerializerContext 覆盖的类型集合。</summary>
+    public HashSet<INamedTypeSymbol> Types { get; }
+
+    /// <summary>当前编译单元是否<b>自身</b>声明了至少一个 JsonSerializerContext 子类（AOT004/005 触发门控）。</summary>
+    public bool HasLocalContext { get; }
+
+    public CoveredTypesResult(HashSet<INamedTypeSymbol> types, bool hasLocalContext)
+    {
+        Types = types;
+        HasLocalContext = hasLocalContext;
+    }
+}
 
 /// <summary>
 /// AOT004 / AOT005 / AOT006 诊断分析器：检测 [HttpClientApi] 接口方法的请求/响应 DTO 与
@@ -38,7 +64,8 @@ internal static class AotDtoCoverageAnalyzer
     private const string BodyAttributeFullName = "Mud.HttpUtils.Attributes.BodyAttribute";
     private const string QueryAttributeFullName = "Mud.HttpUtils.Attributes.QueryAttribute";
     private const string QueryMapAttributeFullName = "Mud.HttpUtils.Attributes.QueryMapAttribute";
-    private const string SerializationMethodAttributeFullName = "Mud.HttpUtils.Attributes.SerializationMethodAttribute";
+    // [Phase4 修复 5.1] 已删除未使用常量 SerializationMethodAttributeFullName（CA1823）：
+    // 序列化方式改为按 AttributeClass.Name 匹配（见 GetMethodSerializationMethod），不再需要完全限定名。
 
     /// <summary>
     /// 读取方法的 SerializationMethod（从 [SerializationMethod] 特性，方法级优先于接口级默认值）。
@@ -68,9 +95,11 @@ internal static class AotDtoCoverageAnalyzer
     /// 构造用于 CodeFix 的诊断属性，携带待覆盖类型的完全限定名，
     /// 使 <c>Mud.HttpUtils.CodeFixes</c> 中的修复器能精确获知需要加入 JsonSerializerContext 的类型。
     /// </summary>
-    private static ImmutableDictionary<string, string> TypeProps(INamedTypeSymbol type)
+    private static ImmutableDictionary<string, string?> TypeProps(INamedTypeSymbol type)
     {
-        return ImmutableDictionary<string, string>.Empty
+        // [Phase4 修复 5.1] 值类型改为 string?（CS8620）：Diagnostic.Create 的 properties 形参为
+        // ImmutableDictionary<string, string?>，用 <string, string> 传入会被判定为可空性不匹配。
+        return ImmutableDictionary<string, string?>.Empty
             .Add("TypeFullName", type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
     }
 
@@ -79,13 +108,15 @@ internal static class AotDtoCoverageAnalyzer
     /// </summary>
     /// <param name="compilation">编译单元。</param>
     /// <param name="cancellationToken">取消令牌。</param>
+    /// <param name="forceRun">[T6] 强制运行覆盖分析（opt-in）：当 DTO + Context 均在引用程序集（共享包）
+    /// 而本编译单元不声明 Context 时，默认不检查；设为 true 时跳过 hasLocalContext 门控。</param>
     /// <returns>诊断集合（无问题或未配置 Context 时为空）。</returns>
-    public static ImmutableArray<Diagnostic> Analyze(Compilation compilation, CancellationToken cancellationToken)
+    public static ImmutableArray<Diagnostic> Analyze(Compilation compilation, CancellationToken cancellationToken, bool forceRun = false)
     {
         // [Phase2 修复 2.2] 异常护栏：分析器宁少报不可抛，避免 AD0001 整轮禁用。
         try
         {
-            return AnalyzeCore(compilation, cancellationToken);
+            return AnalyzeCore(compilation, cancellationToken, forceRun);
         }
         catch (Exception ex)
         {
@@ -94,12 +125,23 @@ internal static class AotDtoCoverageAnalyzer
         }
     }
 
-    private static ImmutableArray<Diagnostic> AnalyzeCore(Compilation compilation, CancellationToken cancellationToken)
+    private static ImmutableArray<Diagnostic> AnalyzeCore(Compilation compilation, CancellationToken cancellationToken, bool forceRun = false)
     {
         var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
 
-        // 1. 收集所有已引用的 JsonSerializerContext 子类上的 [JsonSerializable] 类型集合
-        var coveredTypes = CollectCoveredTypes(compilation, out var hasLocalContext);
+        // [T7 修复] 门控前移：先做轻量探测（仅遍历本编译语法树，不触引用程序集），
+        // 避免无本地 Context 的 JIT 消费方每次编译都付出全量引用程序集扫描成本。
+        // forceRun（T6）为 true 时跳过 hasLocalContext 门控，但仍需覆盖集合。
+        List<INamedTypeSymbol>? localContexts = null;
+        if (!forceRun)
+        {
+            if (!HasLocalJsonSerializerContext(compilation, out localContexts))
+                return diagnostics.ToImmutable();
+        }
+
+        // 实际需要覆盖集合时才执行全量扫描（含引用程序集）。
+        // [T7 修复] 复用探测结果中的本编译 Context，避免二次遍历。
+        var coveredTypes = CollectCoveredTypes(compilation, localContexts, out _);
 
         // 触发门控：仅当"本编译单元自身声明了 JsonSerializerContext"时才运行 AOT004/AOT005。
         // 原因：覆盖集合自 P1-4（ADR-03）起会同时扫描引用程序集，而 Mud.HttpUtils 各库内部
@@ -108,13 +150,20 @@ internal static class AotDtoCoverageAnalyzer
         // 若不以"本地声明 Context"作为接入信号，所有未选择 AOT 源生成工作流的消费方
         // （本仓库的 HttpClientApiDemo / ResilienceDemo / HttpClientDemo 等）都会被大量噪音诊断淹没。
         // 注意：仍使用引用程序集解析出的覆盖集合做判定（跨程序集 DTO+Context 场景不误报，见 ADR-03）。
-        if (!hasLocalContext || coveredTypes.Count == 0)
+        // [T6 修复] forceRun=true 时跳过 hasLocalContext 门控，用于 DTO+Context 均在引用程序集的共享包场景。
+        if (!forceRun && coveredTypes.Count == 0)
             return diagnostics.ToImmutable();
 
         // 2. 查找 HttpClientApiAttribute 符号
         var httpClientApiAttr = compilation.GetTypeByMetadataName(HttpClientApiAttributeFullName);
         if (httpClientApiAttr == null)
             return diagnostics.ToImmutable();
+
+        // [T8 修复] 方法级特性符号一次性解析，避免在 CheckMethodDtoCoverage 中逐方法重复 GetTypeByMetadataName
+        var bodyAttr = compilation.GetTypeByMetadataName(BodyAttributeFullName);
+        var queryAttr = compilation.GetTypeByMetadataName(QueryAttributeFullName);
+        var queryMapAttr = compilation.GetTypeByMetadataName(QueryMapAttributeFullName);
+        var analysisContext = new DtoCoverageAnalysisContext(bodyAttr, queryAttr, queryMapAttr);
 
         // 3. 遍历所有标注 [HttpClientApi] 的接口
         foreach (var syntaxTree in compilation.SyntaxTrees)
@@ -146,12 +195,37 @@ internal static class AotDtoCoverageAnalyzer
                     if (cancellationToken.IsCancellationRequested)
                         return diagnostics.ToImmutable();
 
-                    CheckMethodDtoCoverage(compilation, diagnostics, interfaceSymbol, method, coveredTypes);
+                    CheckMethodDtoCoverage(compilation, diagnostics, interfaceSymbol, method, coveredTypes, analysisContext);
                 }
             }
         }
 
         return diagnostics.ToImmutable();
+    }
+
+    /// <summary>
+    /// 方法级特性符号的预解析上下文，避免逐方法重复 GetTypeByMetadataName。
+    /// </summary>
+    /// <remarks>
+    /// 刻意不用 <c>record</c>/<c>init</c>：本工程目标框架为 <c>netstandard2.0</c>，
+    /// 缺少 <c>System.Runtime.CompilerServices.IsExternalInit</c>（<c>InjectIsExternalInitOnLegacy</c>
+    /// 在本仓库未生效），使用 record/init 会直接 CS0518 编译失败。
+    /// </remarks>
+    private sealed class DtoCoverageAnalysisContext
+    {
+        public DtoCoverageAnalysisContext(
+            INamedTypeSymbol? bodyAttribute,
+            INamedTypeSymbol? queryAttribute,
+            INamedTypeSymbol? queryMapAttribute)
+        {
+            BodyAttribute = bodyAttribute;
+            QueryAttribute = queryAttribute;
+            QueryMapAttribute = queryMapAttribute;
+        }
+
+        public INamedTypeSymbol? BodyAttribute { get; }
+        public INamedTypeSymbol? QueryAttribute { get; }
+        public INamedTypeSymbol? QueryMapAttribute { get; }
     }
 
     /// <summary>
@@ -186,8 +260,9 @@ internal static class AotDtoCoverageAnalyzer
         if (httpJsonSerializableAttr == null)
             return diagnostics.ToImmutable();
 
-        // 收集已覆盖类型（当前编译单元 + 引用程序集中的所有 Context）
-        var coveredTypes = CollectCoveredTypes(compilation, out _);
+        // [T7 修复] 复用轻量探测结果，避免 AOT006 路径二次扫描本编译语法树。
+        HasLocalJsonSerializerContext(compilation, out var localContexts6);
+        var coveredTypes = CollectCoveredTypes(compilation, localContexts6, out _);
 
         foreach (var syntaxTree in compilation.SyntaxTrees)
         {
@@ -227,27 +302,83 @@ internal static class AotDtoCoverageAnalyzer
     }
 
     /// <summary>
-    /// 收集编译单元引用的所有 JsonSerializerContext 子类上的 [JsonSerializable] 类型。
+    /// [T7 修复] 轻量探测：仅遍历本编译语法树，检查是否声明了 JsonSerializerContext 子类。
+    /// 不触引用程序集，O(语法树) 而非 O(语法树 + 引用程序集)。
     /// </summary>
     /// <param name="compilation">编译单元。</param>
+    /// <param name="localContexts">输出：本编译单元中所有 JsonSerializerContext 子类符号。</param>
+    /// <returns>是否存在至少一个本地 Context。</returns>
+    private static bool HasLocalJsonSerializerContext(Compilation compilation, out List<INamedTypeSymbol> localContexts)
+    {
+        localContexts = new List<INamedTypeSymbol>();
+        var jsonSerializerContext = compilation.GetTypeByMetadataName(JsonSerializerContextFullName);
+        if (jsonSerializerContext == null)
+            return false;
+
+        foreach (var syntaxTree in compilation.SyntaxTrees)
+        {
+            var semanticModel = compilation.GetSemanticModel(syntaxTree);
+            var root = syntaxTree.GetRoot();
+
+            foreach (var typeDecl in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
+            {
+                var typeSymbol = semanticModel.GetDeclaredSymbol(typeDecl) as INamedTypeSymbol;
+                if (typeSymbol == null)
+                    continue;
+
+                if (InheritsFromJsonSerializerContext(typeSymbol, jsonSerializerContext))
+                    localContexts.Add(typeSymbol);
+            }
+        }
+
+        return localContexts.Count > 0;
+    }
+
+    /// <summary>
+    /// 收集编译单元引用的所有 JsonSerializerContext 子类上的 [JsonSerializable] 类型（按 <see cref="Compilation"/> 缓存）。
+    /// </summary>
+    /// <param name="compilation">编译单元。</param>
+    /// <param name="localContexts">[T7] 预探测的本编译 Context 集合（可为 null，内部回退到自扫描）。</param>
     /// <param name="hasLocalContext">
     /// 输出：当前编译单元是否<b>自身</b>声明了至少一个 <c>JsonSerializerContext</c> 子类。
     /// 用作 AOT004/AOT005 的触发门控（引用程序集中的 Context 只用于覆盖判定，不作为触发信号）。
     /// </param>
     /// <remarks>
+    /// <para>
     /// 同时支持 IDE（<see cref="CompilationReference"/>）与 CLI（<c>PortableExecutableReference</c>）
     /// 两种引用形态，并递归命名空间与嵌套类型。
+    /// </para>
+    /// <para>
+    /// [Phase5 修复 3.1] 结果按 <see cref="Compilation"/> 缓存（ConditionalWeakTable）：同一次编译内
+    /// AOT004/005 与 AOT006 两个分析器共享同一份覆盖集合，省掉第二遍全引用程序集扫描。
+    /// 缓存值只读（调用方不得修改返回的集合），故可安全共享。
+    /// </para>
     /// </remarks>
-    private static HashSet<INamedTypeSymbol> CollectCoveredTypes(Compilation compilation, out bool hasLocalContext)
+    private static HashSet<INamedTypeSymbol> CollectCoveredTypes(Compilation compilation, List<INamedTypeSymbol>? localContexts, out bool hasLocalContext)
+    {
+        var cached = _coveredTypesCache.GetValue(compilation, static c => ComputeCoveredTypes(c));
+        hasLocalContext = cached.HasLocalContext;
+        return cached.Types;
+    }
+
+    /// <summary>
+    /// 编译级覆盖集合缓存：<see cref="Compilation"/> 生命周期结束即自动失效。
+    /// </summary>
+    private static readonly ConditionalWeakTable<Compilation, CoveredTypesResult> _coveredTypesCache = new();
+
+    /// <summary>
+    /// 计算覆盖集合（缓存未命中时的实际扫描，O(语法树 + 引用程序集)）。
+    /// </summary>
+    private static CoveredTypesResult ComputeCoveredTypes(Compilation compilation)
     {
         var result = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
-        hasLocalContext = false;
+        var hasLocalContext = false;
 
         var jsonSerializableAttr = compilation.GetTypeByMetadataName(JsonSerializableAttributeFullName);
         var jsonSerializerContext = compilation.GetTypeByMetadataName(JsonSerializerContextFullName);
 
         if (jsonSerializableAttr == null || jsonSerializerContext == null)
-            return result;
+            return new CoveredTypesResult(result, hasLocalContext);
 
         // 扫描当前编译单元中的所有类型
         foreach (var syntaxTree in compilation.SyntaxTrees)
@@ -282,7 +413,7 @@ internal static class AotDtoCoverageAnalyzer
             CollectCoveredTypesFromNamespace(asm.GlobalNamespace, jsonSerializerContext, jsonSerializableAttr, result);
         }
 
-        return result;
+        return new CoveredTypesResult(result, hasLocalContext);
     }
 
     /// <summary>
@@ -367,18 +498,51 @@ internal static class AotDtoCoverageAnalyzer
         ImmutableArray<Diagnostic>.Builder diagnostics,
         INamedTypeSymbol interfaceSymbol,
         IMethodSymbol method,
-        HashSet<INamedTypeSymbol> coveredTypes)
+        HashSet<INamedTypeSymbol> coveredTypes,
+        DtoCoverageAnalysisContext analysisContext)
     {
-        var bodyAttr = compilation.GetTypeByMetadataName(BodyAttributeFullName);
-        var queryAttr = compilation.GetTypeByMetadataName(QueryAttributeFullName);
-        var queryMapAttr = compilation.GetTypeByMetadataName(QueryMapAttributeFullName);
+        var bodyAttr = analysisContext.BodyAttribute;
+        var queryAttr = analysisContext.QueryAttribute;
+        var queryMapAttr = analysisContext.QueryMapAttribute;
 
         foreach (var param in method.Parameters)
         {
+            // [T1 修复] 数组参数解包——[Body] 数组的元素类型需要 Context 覆盖。
+            // 裸数组（如 UserDto[]）是 IArrayTypeSymbol 而非 INamedTypeSymbol，
+            // 原 `is not INamedTypeSymbol` 过滤使其被整体跳过，导致漏报。
+            if (param.Type is IArrayTypeSymbol arrayType)
+            {
+                var paramLocation = param.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax().GetLocation()
+                    ?? method.Locations.FirstOrDefault();
+
+                // 仅对 [Body] 数组做 AOT004 检查（[Query] 数组走逐元素 ToString，不走 JSON 序列化）
+                if (bodyAttr != null && param.GetAttributes()
+                    .Any(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, bodyAttr)))
+                {
+                    var ser = GetMethodSerializationMethod(method);
+                    if (ser is "FormUrlEncoded" or "Xml")
+                        continue;
+
+                    if (arrayType.ElementType is INamedTypeSymbol arrayElem &&
+                        !IsCovered(arrayElem, coveredTypes) &&
+                        !QuerySerializationClassifier.IsSimple(arrayElem))
+                    {
+                        diagnostics.Add(Diagnostic.Create(
+                            Diagnostics.AotDtoNotCoveredByContext,
+                            paramLocation,
+                            TypeProps(arrayElem),
+                            interfaceSymbol.Name,
+                            method.Name,
+                            arrayElem.ToDisplayString()));
+                    }
+                }
+                continue;
+            }
+
             if (param.Type is not INamedTypeSymbol paramType)
                 continue;
 
-            var paramLocation = param.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax().GetLocation()
+            var paramLocation2 = param.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax().GetLocation()
                 ?? method.Locations.FirstOrDefault();
 
             // 检查 [Body] 请求体 DTO — AOT004
@@ -395,7 +559,7 @@ internal static class AotDtoCoverageAnalyzer
                 {
                     diagnostics.Add(Diagnostic.Create(
                         Diagnostics.AotDtoNotCoveredByContext,
-                        paramLocation,
+                        paramLocation2,
                         TypeProps(paramType),
                         interfaceSymbol.Name,
                         method.Name,
@@ -414,7 +578,7 @@ internal static class AotDtoCoverageAnalyzer
                 {
                     diagnostics.Add(Diagnostic.Create(
                         Diagnostics.AotQueryParameterNotInContext,
-                        paramLocation,
+                        paramLocation2,
                         TypeProps(paramType),
                         interfaceSymbol.Name,
                         method.Name,
@@ -444,7 +608,7 @@ internal static class AotDtoCoverageAnalyzer
                     {
                         diagnostics.Add(Diagnostic.Create(
                             Diagnostics.AotQueryParameterNotInContext,
-                            paramLocation,
+                            paramLocation2,
                             TypeProps(paramType),
                             interfaceSymbol.Name,
                             method.Name,
@@ -464,7 +628,36 @@ internal static class AotDtoCoverageAnalyzer
             if (innerType == null)
                 return;
 
-            var responseType = innerType;
+            // [T1 修复] 数组响应类型（如 Task<UserDto[]>）：解包元素类型做覆盖判定。
+            if (innerType is IArrayTypeSymbol responseArrayType)
+            {
+                var responseArrayElem = responseArrayType.ElementType;
+                if (responseArrayElem is INamedTypeSymbol responseElemNamed)
+                {
+                    // 非 JSON 契约跳过
+                    if (IsHttpResponseMessage(responseElemNamed) || IsStream(responseElemNamed) ||
+                        QuerySerializationClassifier.IsSimple(responseElemNamed))
+                        return;
+
+                    if (GetMethodSerializationMethod(method) is "Xml")
+                        return;
+
+                    if (!IsCovered(responseElemNamed, coveredTypes))
+                    {
+                        diagnostics.Add(Diagnostic.Create(
+                            Diagnostics.AotDtoNotCoveredByContext,
+                            method.Locations.FirstOrDefault(),
+                            TypeProps(responseElemNamed),
+                            interfaceSymbol.Name,
+                            method.Name,
+                            responseElemNamed.ToDisplayString()));
+                    }
+                }
+                return;
+            }
+
+            if (innerType is not INamedTypeSymbol responseType)
+                return;
 
             // 1) Response<T> → 取内部 T（生成器端 MethodGenerator.IsResponseType 分支）。
             if (IsResponseWrapper(responseType))
@@ -554,14 +747,35 @@ internal static class AotDtoCoverageAnalyzer
     }
 
     /// <summary>
+    /// 检查 ITypeSymbol（含数组）是否被 Context 覆盖。
+    /// 数组类型的元素类型已被覆盖时视为覆盖。
+    /// </summary>
+    private static bool IsCovered(ITypeSymbol type, HashSet<INamedTypeSymbol> coveredTypes)
+    {
+        if (type is INamedTypeSymbol named)
+            return IsCovered(named, coveredTypes);
+
+        // 数组：元素类型被覆盖即可
+        if (type is IArrayTypeSymbol array &&
+            array.ElementType is INamedTypeSymbol elem)
+        {
+            return coveredTypes.Contains(elem);
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// 解包 Task&lt;T&gt; / ValueTask&lt;T&gt; 的内部类型。
     /// </summary>
     /// <remarks>
     /// 注意：BCL 中泛型参数名为 <c>TResult</c>，因此 <c>ToDisplayString()</c> 是
     /// <c>System.Threading.Tasks.Task&lt;TResult&gt;</c>。早期实现按 <c>Task&lt;T&gt;</c> 做字符串比较，
     /// 永远不匹配 → 响应 DTO 的 AOT004 检查实际从未生效（已修复为按命名空间 + 名称 + 元数判定）。
+    /// [T1 修复] 返回类型从 INamedTypeSymbol? 放宽为 ITypeSymbol?，
+    /// 使 Task&lt;UserDto[]&gt; 中的数组类型能原样上抛，由调用方统一处理。
     /// </remarks>
-    private static INamedTypeSymbol? ExtractTaskInnerType(INamedTypeSymbol returnType)
+    private static ITypeSymbol? ExtractTaskInnerType(INamedTypeSymbol returnType)
     {
         if (!returnType.IsGenericType || returnType.TypeArguments.Length != 1)
             return null;
@@ -574,6 +788,6 @@ internal static class AotDtoCoverageAnalyzer
         if (def.Name is not ("Task" or "ValueTask"))
             return null;
 
-        return returnType.TypeArguments[0] as INamedTypeSymbol;
+        return returnType.TypeArguments[0];
     }
 }

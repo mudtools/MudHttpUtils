@@ -124,7 +124,7 @@ internal partial class FeishuAIJsonContext;
 
 - **AOT001**：同一 `SerializerClassName` 下存在冲突的 `NamingPolicy` 配置。
 - **AOT002**：标注了开放泛型类型（低版本 TFM 不支持源生成，AOT 不可用）。
-- **AOT003**：类型存在基类（多态）但未标注 `[JsonDerivedType]`（未启用 `--auto-derived-types` 时报告）。
+- **AOT003**：类型存在基类（多态）但未标注 `[JsonDerivedType]`（未启用 `--auto-derived-types` 时报告）。`--auto-derived-types` 仅额外注册派生类型为独立 `[JsonSerializable]` root，**不能**替代基类上的 `[JsonDerivedType]` 特性——多态序列化（以基类类型序列化派生实例）仍需手动在基类声明上标注。
 - **AOT004**：`[HttpClientApi]` 接口扫描信息——当扫描发现类型并自动注册时，以 Info 级别报告发现数量和目标 Context。
 - **AOT005**：`[Query]`/`[QueryMap]` 中以 JSON 序列化的复杂参数类型未被 `JsonSerializerContext` 覆盖。
 - **AOT006**：类型标注了 `[HttpJsonSerializable]` 却未被任何已引用的 `JsonSerializerContext` 覆盖。**这正是“脚手架未运行 / 未接入构建”的编译期信号**——一旦出现即说明标注的实体没有对应生成的 Context，AOT 下会漏元数据。

@@ -17,7 +17,7 @@ namespace Mud.HttpUtils.Helpers;
 /// <remarks>
 /// 用于源生成器热路径（如 <see cref="Models.InterfaceModel"/> 指纹构建），减少 GC 压力。
 /// Generator 项目不引用 Abstractions（避免循环依赖），故此处独立维护一份精简实现。
-/// 注意：<see cref="ref struct"/> 不支持链式调用（无法返回 ref this），请使用分步 Append。
+/// 注意：<c>ref struct</c> 不支持链式调用（无法返回 ref this），请使用分步 Append。
 /// </remarks>
 [DebuggerDisplay("Length = {Length}")]
 internal ref struct ValueStringBuilder

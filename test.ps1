@@ -129,7 +129,7 @@ if ($AOT) {
         $demoList += @{ Name = "AotPackageRefDemo"; Path = "Demos/AotPackageRefDemo/AotPackageRefDemo.csproj" }
     }
 
-    # 严格模式参数（-p:AotStrictMode=true 使 AOT 相关诊断升级为错误；清单定义在 Directory.Build.props）
+    # 严格模式参数（-p:AotStrictMode=true 使 AOT 相关诊断升级为错误；清单定义在 Directory.Build.targets）
     $extraArgs = @()
     if ($AotStrictMode) {
         $extraArgs += "-p:AotStrictMode=true"

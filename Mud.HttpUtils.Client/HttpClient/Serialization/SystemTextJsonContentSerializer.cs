@@ -76,6 +76,10 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
     /// <b>Native AOT 契约</b>：options 必须携带源生成 <c>JsonSerializerContext</c> 且覆盖
     /// <typeparamref name="T"/>；否则运行时会抛出受控异常（见构造函数守卫与
     /// <see cref="IAotJsonContentSerializer"/>）。
+    /// <para>
+    /// [T4 修复] options 槽位接受 <c>JsonSerializerOptions</c> 或 <c>JsonTypeInfo&lt;T&gt;</c>，
+    /// 与 <see cref="Deserialize{T}(string, object?)"/> 全方法对称。
+    /// </para>
     /// </remarks>
     [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
         Justification = "契约要求：AOT 下 options 的 TypeInfoResolver 恒为源生成上下文（构造函数守卫强制），序列化不需要反射元数据。")]
@@ -84,6 +88,16 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
     public HttpContent? ToHttpContent<T>(T item, object? options = null)
     {
         if (item is null) return null;
+#if NET6_0_OR_GREATER
+        // [T4 修复] options 槽位对称支持 JsonTypeInfo<T>，与 Deserialize 一致
+        if (options is System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> ti)
+        {
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(item, ti);
+            var content = new ByteArrayContent(bytes);
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+            return content;
+        }
+#endif
         var opts = ResolveOptions(options);
         var json = JsonSerializer.Serialize(item, opts);
         return new StringContent(json, Encoding.UTF8, "application/json");
@@ -119,6 +133,13 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
         Justification = "同上：AOT 下 resolver 恒为源生成；无 resolver 时构造函数已抛 InvalidOperationException，不会走到动态代码。")]
     public string Serialize<T>(T item, object? options = null)
     {
+#if NET6_0_OR_GREATER
+        // [T4 修复] options 槽位对称支持 JsonTypeInfo<T>，与 Deserialize 一致
+        if (options is System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> ti)
+        {
+            return JsonSerializer.Serialize(item, ti);
+        }
+#endif
         var opts = ResolveOptions(options);
         return JsonSerializer.Serialize(item, opts);
     }
@@ -327,7 +348,7 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
     /// netstandard2.0 下回退到 <c>Serialize&lt;T&gt;</c> + <see cref="StringContent"/>。
     /// </remarks>
     [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
-        Justification = "契约要求：AOT 下 _options 的 TypeInfoResolver 恒为源生成上下文（构造函数守卫强制），同步序列化不需要反射元数据。")]
+        Justification = "契约要求：AOT 下 options 的 TypeInfoResolver 恒为源生成上下文（构造函数守卫强制），同步序列化不需要反射元数据。")]
     [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
         Justification = "同上：AOT 下 resolver 恒为源生成；无 resolver 时构造函数已抛 InvalidOperationException，不会走到动态代码。")]
     public HttpContent ToHttpContentSynchronous<T>(T item)

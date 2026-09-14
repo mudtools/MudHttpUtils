@@ -5,6 +5,11 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+// [Phase4 修复 5.1] CA1308（建议把 ToLowerInvariant 换成 ToUpperInvariant）在本文件内属**误报**：
+// 生成器需要把 bool 值写成 C# 字面量 "true"/"false"，大写形式 "True"/"False" 不是合法 C#，
+// 会直接产出不可编译的代码。故按方案 5.1 的「显式 #pragma + 理由」方式就地抑制，而非全局 NoWarn。
+#pragma warning disable CA1308
+
 namespace Mud.HttpUtils.Analyzers;
 
 /// <summary>

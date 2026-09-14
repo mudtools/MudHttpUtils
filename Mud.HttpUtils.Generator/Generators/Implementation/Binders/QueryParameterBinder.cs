@@ -1,5 +1,11 @@
 using Mud.HttpUtils.Models;
 
+// [Phase4 修复 5.1] CA1308（建议把 ToLowerInvariant 换成 ToUpperInvariant）在本文件内属**误报**：
+// 生成产物需要小写字面量（C# 字面量、camelCase 的 JSON/查询参数名、内联类型名），
+// 大写形式会产出语义错误或不可编译的代码（详见各调用点的参数名与命名约定）。
+// 故按方案 5.1 的「显式 #pragma + 理由」方式就地抑制，而非全局 NoWarn。
+#pragma warning disable CA1308
+
 namespace Mud.HttpUtils.Generators.Implementation;
 
 internal class QueryParameterBinder : IParameterBinder
