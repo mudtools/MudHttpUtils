@@ -27,6 +27,11 @@ internal static class HttpClientGeneratorConstants
     /// </summary>
     public static readonly string[] SupportedHttpMethods = ["Get", "GetAttribute", "Post", "PostAttribute", "Put", "PutAttribute", "Delete", "DeleteAttribute", "Patch", "PatchAttribute", "Head", "HeadAttribute", "Options", "OptionsAttribute"];
 
+    /// <summary>
+    /// [Phase5 优化 3.3] 支持的HTTP方法名称 HashSet，用于 O(1) 查找。
+    /// </summary>
+    public static readonly HashSet<string> SupportedHttpMethodsSet = new(SupportedHttpMethods, StringComparer.Ordinal);
+
     public static readonly HashSet<string> PathAttributes = new HashSet<string>(StringComparer.Ordinal) { "PathAttribute", "Path", "RouteAttribute", "Route" };
     public const string QueryAttribute = "QueryAttribute";
     public const string ArrayQueryAttribute = "ArrayQueryAttribute";

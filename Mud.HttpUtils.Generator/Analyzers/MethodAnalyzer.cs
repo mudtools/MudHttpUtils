@@ -194,11 +194,16 @@ internal static class MethodAnalyzer
     /// <summary>
     /// 从已缓存的特性列表中查找HTTP方法特性（仅快速路径：已知的 Get/Post/... 特性名）。
     /// </summary>
-    internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableArray<AttributeData> attributes)
+internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableArray<AttributeData> attributes)
+{
+    // [Phase5 优化 3.3] 使用 HashSet.Contains 替代数组 Contains，O(1) vs O(n)。
+    foreach (var attr in attributes)
     {
-        return attributes
-            .FirstOrDefault(attr => HttpClientGeneratorConstants.SupportedHttpMethods.Contains(attr.AttributeClass?.Name));
+        if (attr.AttributeClass?.Name is { } name && HttpClientGeneratorConstants.SupportedHttpMethodsSet.Contains(name))
+            return attr;
     }
+    return null;
+}
 
     /// <summary>
     /// 从已缓存的特性列表中查找HTTP方法特性（含自定义特性 fallback）。
@@ -541,23 +546,40 @@ internal static class MethodAnalyzer
         InterfaceDeclarationSyntax interfaceDecl,
         SemanticModel? semanticModel = null)
     {
-        yield return interfaceDecl;
+        // [Phase2 修复 2.1] 使用 visited HashSet 防止循环引用导致 StackOverflow。
+        // 对齐 TypeSymbolHelper.cs:56-74 的已有正确实现。
+        var visited = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+        return GetAllBaseInterfaceSyntaxNodesCore(compilation, interfaceDecl, semanticModel, visited);
+    }
 
+    /// <summary>
+    /// 递归获取基接口语法节点的内部实现，通过 visited 集合防止循环引用。
+    /// </summary>
+    private static IEnumerable<InterfaceDeclarationSyntax> GetAllBaseInterfaceSyntaxNodesCore(
+        Compilation compilation,
+        InterfaceDeclarationSyntax interfaceDecl,
+        SemanticModel? semanticModel,
+        HashSet<INamedTypeSymbol> visited)
+    {
         var model = semanticModel ?? SemanticModelCache.GetOrCreate(compilation, interfaceDecl.SyntaxTree);
         var interfaceSymbol = model.GetDeclaredSymbol(interfaceDecl);
 
         if (interfaceSymbol == null)
             yield break;
 
+        // 防止循环引用：已访问过的接口直接跳过
+        if (!visited.Add(interfaceSymbol))
+            yield break;
+
+        yield return interfaceDecl;
+
         foreach (var baseInterface in interfaceSymbol.Interfaces)
         {
             var baseInterfaceSyntax = GetInterfaceDeclarationSyntax(compilation, baseInterface);
             if (baseInterfaceSyntax != null)
             {
-                yield return baseInterfaceSyntax;
-
                 var baseInterfaceModel = SemanticModelCache.GetOrCreate(compilation, baseInterfaceSyntax.SyntaxTree);
-                foreach (var deeperBase in GetAllBaseInterfaceSyntaxNodes(compilation, baseInterfaceSyntax, baseInterfaceModel))
+                foreach (var deeperBase in GetAllBaseInterfaceSyntaxNodesCore(compilation, baseInterfaceSyntax, baseInterfaceModel, visited))
                 {
                     yield return deeperBase;
                 }
@@ -696,13 +718,16 @@ internal static class MethodAnalyzer
             if (!visitedProperties.Add(property))
                 continue;
 
-            var queryAttr = property.GetAttributes()
+            // [Phase5 优化 3.2] 每属性仅调用一次 GetAttributes()，消除 3N 次分配。
+            var propAttrs = property.GetAttributes();
+
+            var queryAttr = propAttrs
                 .FirstOrDefault(attr => attr.AttributeClass?.Name == "QueryAttribute");
 
-            var pathAttr = property.GetAttributes()
+            var pathAttr = propAttrs
                 .FirstOrDefault(attr => attr.AttributeClass?.Name == "PathAttribute");
 
-            var headerAttr = property.GetAttributes()
+            var headerAttr = propAttrs
                 .FirstOrDefault(attr => attr.AttributeClass?.Name == "HeaderAttribute");
 
             // 仅当前接口的语法树中有对应的属性声明；基接口（尤其跨程序集）的属性声明可能不可达，传 null 安全处理

@@ -5,6 +5,7 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using System;
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics;
@@ -34,10 +35,18 @@ internal sealed class HttpJsonSerializableCoverageAnalyzer : DiagnosticAnalyzer
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.RegisterCompilationAction(static ctx =>
         {
-            foreach (var diagnostic in AotDtoCoverageAnalyzer
-                         .AnalyzeHttpJsonSerializableCoverage(ctx.Compilation, ctx.CancellationToken))
+            // [Phase2 修复 2.2] 异常护栏：分析器宁少报不可抛，避免 AD0001 整轮禁用。
+            try
             {
-                ctx.ReportDiagnostic(diagnostic);
+                foreach (var diagnostic in AotDtoCoverageAnalyzer
+                             .AnalyzeHttpJsonSerializableCoverage(ctx.Compilation, ctx.CancellationToken))
+                {
+                    ctx.ReportDiagnostic(diagnostic);
+                }
+            }
+            catch (Exception ex)
+            {
+                GeneratorDebugLogger.LogError(nameof(HttpJsonSerializableCoverageAnalyzer), ex);
             }
         });
     }

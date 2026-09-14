@@ -149,10 +149,15 @@ internal class MethodGenerator : ICodeFragmentGenerator
         if (!string.IsNullOrEmpty(methodInfo.UrlTemplate) &&
             !CSharpCodeValidator.IsValidUrlTemplate(methodInfo.UrlTemplate, out var urlError))
         {
+            // [Phase1 修复 1.1/1.3] 诊断 Location 定位到 HTTP 方法特性的 URL 参数位置，
+            // 使 CodeFix 能通过 FindToken(span.Start).Parent?.FirstAncestorOrSelf<AttributeSyntax>() 命中。
+            var urlTemplateLocation = GetHttpMethodAttributeArgumentLocation(methodSymbol, context)
+                ?? context.InterfaceDeclaration.GetLocation();
+
             context.ProductionContext.ReportDiagnostic(
                 Diagnostic.Create(
                     Diagnostics.HttpClientInvalidUrlTemplate,
-                    context.InterfaceDeclaration.GetLocation(),
+                    urlTemplateLocation,
                     context.InterfaceDeclaration.Identifier.Text,
                     methodInfo.UrlTemplate,
                     urlError));
@@ -284,8 +289,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
             var effectiveScopes = methodInfo.MethodTokenScopes ?? methodInfo.InterfaceTokenScopes;
             var scopes = TokenHelper.ParseScopes(effectiveScopes);
 
+            // [Phase2 修复 1.8] 对 scopes 元素转义，防止含 " \ 等特殊字符产出非法 C#。
             var scopesArg = scopes.Length > 0
-                ? $"new[] {{ {string.Join(", ", scopes.Select(s => $"\"{s}\""))} }}"
+                ? $"new[] {{ {string.Join(", ", scopes.Select(s => $"\"{StringEscapeHelper.EscapeString(s)}\""))} }}"
                 : "null";
             var userIdArg = requiresUserId ? "_currentUserContext.UserId" : "null";
 
@@ -293,7 +299,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
             {
                 var apiKeyName = methodInfo.InterfaceTokenName;
                 if (!string.IsNullOrEmpty(apiKeyName))
-                    codeBuilder.AppendLine($"            var access_token = await GetApiKeyAsync(\"{apiKeyName}\").ConfigureAwait(false);");
+                    // [Phase2 修复 1.8] 对 apiKeyName 转义。
+                    codeBuilder.AppendLine($"            var access_token = await GetApiKeyAsync(\"{StringEscapeHelper.EscapeString(apiKeyName!)}\").ConfigureAwait(false);");
                 else
                     codeBuilder.AppendLine($"            var access_token = await GetApiKeyAsync().ConfigureAwait(false);");
             }
@@ -303,25 +310,29 @@ internal class MethodGenerator : ICodeFragmentGenerator
             }
             else if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModeBasicAuth)
             {
+                // [Phase2 修复 1.8] 对 tokenManagerKey 转义，同 TokenMethodHelper.cs:37 已有做法。
+                var escapedTokenManagerKey = StringEscapeHelper.EscapeString(tokenManagerKey);
                 if (!string.IsNullOrEmpty(tokenParamName) && !tokenParamHasHeader)
                 {
-                    codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({tokenParamName}) ? {tokenParamName} : await GetTokenAsync(\"{tokenManagerKey}\", {userIdArg}, {scopesArg}).ConfigureAwait(false);");
+                    codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({tokenParamName}) ? {tokenParamName} : await GetTokenAsync(\"{escapedTokenManagerKey}\", {userIdArg}, {scopesArg}).ConfigureAwait(false);");
                 }
                 else
                 {
-                    codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(\"{tokenManagerKey}\", {userIdArg}, {scopesArg}).ConfigureAwait(false);");
+                    codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(\"{escapedTokenManagerKey}\", {userIdArg}, {scopesArg}).ConfigureAwait(false);");
                 }
                 codeBuilder.AppendLine($"            var __basicCredentials = System.Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(access_token));");
             }
             else
             {
+                // [Phase2 修复 1.8] 对 tokenManagerKey 转义，同 TokenMethodHelper.cs:37 已有做法。
+                var escapedTokenManagerKey = StringEscapeHelper.EscapeString(tokenManagerKey);
                 if (!string.IsNullOrEmpty(tokenParamName) && !tokenParamHasHeader)
                 {
-                    codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({tokenParamName}) ? {tokenParamName} : await GetTokenAsync(\"{tokenManagerKey}\", {userIdArg}, {scopesArg}).ConfigureAwait(false);");
+                    codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({tokenParamName}) ? {tokenParamName} : await GetTokenAsync(\"{escapedTokenManagerKey}\", {userIdArg}, {scopesArg}).ConfigureAwait(false);");
                 }
                 else
                 {
-                    codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(\"{tokenManagerKey}\", {userIdArg}, {scopesArg}).ConfigureAwait(false);");
+                    codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(\"{escapedTokenManagerKey}\", {userIdArg}, {scopesArg}).ConfigureAwait(false);");
                 }
             }
         }
@@ -1407,5 +1418,29 @@ internal class MethodGenerator : ICodeFragmentGenerator
     private static MethodDeclarationSyntax? GetMethodSyntax(IMethodSymbol methodSymbol, GeneratorContext context)
         => MethodAnalyzer.FindMethodSyntax(
             context.Compilation, methodSymbol, context.InterfaceDeclaration, context.SemanticModel);
+
+    /// <summary>
+    /// [Phase1 修复 1.1] 定位 HTTP 方法特性的第一个参数（URL 字面量）的语法位置。
+    /// 使 CodeFix 能通过 FindToken(span.Start).Parent?.FirstAncestorOrSelf&lt;AttributeSyntax&gt;() 命中。
+    /// </summary>
+    private static Location? GetHttpMethodAttributeArgumentLocation(IMethodSymbol methodSymbol, GeneratorContext context)
+    {
+        var methodAttr = MethodAnalyzer.FindHttpMethodAttributeFromAttributes(methodSymbol.GetAttributes());
+        if (methodAttr == null)
+            return null;
+
+        var attrSyntax = methodAttr.ApplicationSyntaxReference?.GetSyntax();
+        if (attrSyntax == null)
+            return null;
+
+        // 定位到第一个特性参数（URL 模板字面量），与 CodeFix 的查找逻辑对齐：
+        // CodeFix 用 root.FindToken(span.Start).Parent?.FirstAncestorOrSelf<AttributeSyntax>() 查找特性，
+        // 再取 attribute.ArgumentList.Arguments[0].Expression as LiteralExpressionSyntax。
+        var firstArg = attrSyntax.DescendantNodes()
+            .OfType<AttributeArgumentSyntax>()
+            .FirstOrDefault();
+
+        return firstArg?.GetLocation() ?? attrSyntax.GetLocation();
+    }
 
 }

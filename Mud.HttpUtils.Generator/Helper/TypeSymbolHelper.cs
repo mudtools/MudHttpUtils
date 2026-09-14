@@ -623,7 +623,7 @@ internal static class TypeSymbolHelper
     }
 
     /// <summary>
-    /// 提取异步方法的内部返回类型（从 Task<T> 或 ValueTask<T> 中提取 T）
+    /// 提取异步方法的内部返回类型（从 Task&lt;T&gt; 或 ValueTask&lt;T&gt; 中提取 T）
     /// </summary>
     /// <param name="asyncType">异步类型符号（Task 或 ValueTask）</param>
     /// <returns>内部返回类型字符串</returns>

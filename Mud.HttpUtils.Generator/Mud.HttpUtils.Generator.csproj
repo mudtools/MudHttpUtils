@@ -33,6 +33,9 @@
 	</ItemGroup>
 	<ItemGroup>
 		<InternalsVisibleTo Include="Mud.HttpUtils.Generator.Tests" />
+		<!-- [Phase1 修复 4.2] CodeFixes.Tests 需要直接实例化生成器以构建真实闭环测试
+		     （用生成器跑出的真实 Diagnostic 驱动 CodeFix，而非手工造位置）。 -->
+		<InternalsVisibleTo Include="Mud.HttpUtils.CodeFixes.Tests" />
 	</ItemGroup>
 	<ItemGroup>
 		<!-- 诊断发布跟踪（消除 RS2008）：登记全部 DiagnosticDescriptor 的 ID/类别/级别。

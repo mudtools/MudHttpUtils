@@ -12,7 +12,7 @@ namespace Mud.HttpUtils;
 /// <para>
 /// 本文件是「源码共享」文件，被两处编译：
 /// <list type="number">
-///   <item>由 <c>Mud.HttpUtils.Generator</c> 直接编译，供 <see cref="Diagnostics"/> 中的诊断描述符引用；</item>
+///   <item>由 <c>Mud.HttpUtils.Generator</c> 直接编译，供 <c>Diagnostics</c> 中的诊断描述符引用；</item>
 ///   <item>由 <c>Mud.HttpUtils.CodeFixes</c> 通过 <c>&lt;Compile Include="…" Link="…"/&gt;</c> 链接编译，
 ///         供各 <c>CodeFixProvider</c> 的 <c>FixableDiagnosticIds</c> 引用。</item>
 /// </list>

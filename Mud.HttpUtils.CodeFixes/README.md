@@ -17,7 +17,7 @@
 | `AotJsonContextCodeFixProvider` | `AOT004` / `AOT005` / `AOT006` | DTO / 查询参数类型未被 `JsonSerializerContext` 覆盖（Native AOT 下会漏元数据） | 将缺失类型追加 `[JsonSerializable(typeof(T))]` 到用户可编辑的 `JsonSerializerContext`；若仅存在脚手架生成文件，则新建 `partial` 扩展类 |
 | `AotXmlCodeFixProvider` | `AOT007` | Native AOT 上下文下使用 XML 序列化 | 将 `[SerializationMethod(SerializationMethod.Xml)]` 改为 `Json`，确保 AOT 兼容 |
 | `HttpClientMutuallyExclusiveCodeFixProvider` | `HTTPCLIENT007` | `[HttpClientApi]` 同时指定 `HttpClient` 与 `TokenManage`（两者互斥） | 提供两个选项：移除 `HttpClient`（保留 `TokenManage`）或移除 `TokenManage`（保留 `HttpClient`） |
-| `HttpClientInvalidUrlTemplateCodeFixProvider` | `HTTPCLIENT005` | URL 模板格式无效（常见为误用反斜杠，如 `\api\users`） | 将 URL 中的反斜杠（`\`）自动替换为正斜杠（`/`） |
+| `HttpClientInvalidUrlTemplateCodeFixProvider` | `HTTPCLIENT005` | URL 模板格式无效（反斜杠误用或花括号未配对） | 将 URL 中的反斜杠（`\`）自动替换为正斜杠（`/`）；修复花括号配对（补齐/删除错配的 `{` `}`） |
 
 ## 使用方式
 
@@ -26,7 +26,7 @@
 - `AOT004`/`AOT005`/`AOT006`：选择"将类型添加到 JsonSerializerContext（AOT 兼容）"，自动补齐 JSON 源生成上下文。
 - `AOT007`：选择"将 XML 序列化改为 JSON（AOT 兼容）"。
 - `HTTPCLIENT007`：选择移除 `HttpClient` 或 `TokenManage` 二选一。
-- `HTTPCLIENT005`：选择"将 URL 反斜杠替换为正斜杠"。
+- `HTTPCLIENT005`：选择"将 URL 反斜杠替换为正斜杠"或"修复 URL 模板中的花括号配对"。
 
 > 修复器与诊断源完全解耦：只要诊断 ID 匹配，即使诊断来自其他扩展也会尝试修复。所有修复器均支持 `Fix All`（批量修复）操作。
 

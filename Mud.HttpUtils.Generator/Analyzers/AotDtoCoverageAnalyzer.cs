@@ -5,6 +5,7 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任。
 // -----------------------------------------------------------------------
 
+using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
@@ -81,6 +82,20 @@ internal static class AotDtoCoverageAnalyzer
     /// <returns>诊断集合（无问题或未配置 Context 时为空）。</returns>
     public static ImmutableArray<Diagnostic> Analyze(Compilation compilation, CancellationToken cancellationToken)
     {
+        // [Phase2 修复 2.2] 异常护栏：分析器宁少报不可抛，避免 AD0001 整轮禁用。
+        try
+        {
+            return AnalyzeCore(compilation, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            GeneratorDebugLogger.LogError(nameof(Analyze), ex);
+            return ImmutableArray<Diagnostic>.Empty;
+        }
+    }
+
+    private static ImmutableArray<Diagnostic> AnalyzeCore(Compilation compilation, CancellationToken cancellationToken)
+    {
         var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
 
         // 1. 收集所有已引用的 JsonSerializerContext 子类上的 [JsonSerializable] 类型集合
@@ -150,6 +165,20 @@ internal static class AotDtoCoverageAnalyzer
     /// 实体项目应各自运行脚手架生成 internal Context 覆盖自身类型。</para>
     /// </remarks>
     public static ImmutableArray<Diagnostic> AnalyzeHttpJsonSerializableCoverage(Compilation compilation, CancellationToken cancellationToken)
+    {
+        // [Phase2 修复 2.2] 异常护栏：分析器宁少报不可抛，避免 AD0001 整轮禁用。
+        try
+        {
+            return AnalyzeHttpJsonSerializableCoverageCore(compilation, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            GeneratorDebugLogger.LogError(nameof(AnalyzeHttpJsonSerializableCoverage), ex);
+            return ImmutableArray<Diagnostic>.Empty;
+        }
+    }
+
+    private static ImmutableArray<Diagnostic> AnalyzeHttpJsonSerializableCoverageCore(Compilation compilation, CancellationToken cancellationToken)
     {
         var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
 
@@ -356,8 +385,10 @@ internal static class AotDtoCoverageAnalyzer
             if (bodyAttr != null && param.GetAttributes()
                 .Any(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, bodyAttr)))
             {
-                // FormUrlEncoded Body 不走 JSON 序列化，无需 JsonSerializerContext 覆盖，跳过 AOT004 检查。
-                if (GetMethodSerializationMethod(method) == "FormUrlEncoded")
+                // FormUrlEncoded / Xml Body 不走 JSON 序列化，无需 JsonSerializerContext 覆盖，跳过 AOT004 检查。
+                // [Phase2 修复 2.5] 增加 Xml 豁免，防止 XML 方法被 AOT004 误报。
+                var ser = GetMethodSerializationMethod(method);
+                if (ser is "FormUrlEncoded" or "Xml")
                     continue;
 
                 if (!IsCovered(paramType, coveredTypes) && !QuerySerializationClassifier.IsSimple(paramType))
@@ -445,8 +476,13 @@ internal static class AotDtoCoverageAnalyzer
 
             // 2) 非 JSON 契约的 Task<T> 返回（生成器不走反序列化）→ 跳过：
             //    HttpResponseMessage（SendRawAsync 直达）、Stream/byte[]（下载分支）、简单类型。
+            //    [Phase2 修复 2.5] XML 序列化的响应不走 JSON 反序列化，也跳过，防止 AOT004 误报。
             if (IsHttpResponseMessage(responseType) || IsStream(responseType) ||
                 IsByteArray(responseType) || QuerySerializationClassifier.IsSimple(responseType))
+                return;
+
+            // XML 序列化方法豁免：响应端用 XML 反序列化，不需要 JsonSerializerContext 覆盖。
+            if (GetMethodSerializationMethod(method) is "Xml")
                 return;
 
             // 3) 其余才做覆盖判定

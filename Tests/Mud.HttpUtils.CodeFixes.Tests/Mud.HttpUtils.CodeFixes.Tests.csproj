@@ -30,6 +30,10 @@
 		<!-- 诊断 ID 契约守卫测试需要反射 Generator 的 Diagnostics 描述符集合
 		     （Generator 与 CodeFixes 分属两个程序集，仅能通过描述符比对锁定 ID 契约）。 -->
 		<ProjectReference Include="..\..\Mud.HttpUtils.Generator\Mud.HttpUtils.Generator.csproj" />
+		<!-- [Phase1 修复 4.2] 真实闭环测试需要引用 Attributes 与 Client 库
+		     以构造可被生成器正确处理的编译单元。 -->
+		<ProjectReference Include="..\..\Mud.HttpUtils.Attributes\Mud.HttpUtils.Attributes.csproj" />
+		<ProjectReference Include="..\..\Mud.HttpUtils.Client\Mud.HttpUtils.Client.csproj" />
 	</ItemGroup>
 
 </Project>

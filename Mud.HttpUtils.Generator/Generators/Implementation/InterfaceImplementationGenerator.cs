@@ -189,9 +189,12 @@ internal class InterfaceImplementationGenerator
 
         if (!string.IsNullOrEmpty(configuration.HttpClient) && !string.IsNullOrEmpty(configuration.RawTokenManager))
         {
+            // [Phase1 修复 1.2] 诊断 Location 定位到 [HttpClientApi] 特性语法位置，
+            // 使 CodeFix 能通过 FindToken(span.Start).Parent?.FirstAncestorOrSelf<AttributeSyntax>() 命中。
+            var mutualExclusionLocation = GetHttpClientApiAttributeLocation() ?? _interfaceDecl.GetLocation();
             _context.ReportDiagnostic(Diagnostic.Create(
                 Diagnostics.HttpClientAndTokenManagerMutuallyExclusive,
-                _interfaceDecl.GetLocation(),
+                mutualExclusionLocation,
                 _interfaceSymbol.Name));
             isValid = false;
         }

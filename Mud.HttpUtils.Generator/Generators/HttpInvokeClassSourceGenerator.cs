@@ -167,14 +167,14 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
             _ => Diagnostics.HttpClientApiGenerationError
         };
 
-        // 对于非预期异常，将完整异常信息（含堆栈）写入诊断消息，便于定位生成器内部 Bug
+        // 对于非预期异常，[Phase4 修复 2.3] 不再将完整堆栈写入诊断消息（泄漏本机路径），
+        // 改为仅输出类型名+消息；完整堆栈仅走 GeneratorDebugLogger.LogError（Trace/文件）。
         if (descriptor == Diagnostics.HttpClientApiGenerationError)
         {
-            // 临时覆盖异常的格式化逻辑：直接使用 ex.ToString() 包含完整类型名+消息+堆栈
-            var fullMessage = ex.ToString();
+            var safeMessage = $"{ex.GetType().Name}: {ex.Message}";
             context.ReportDiagnostic(Diagnostic.Create(descriptor, interfaceDecl.GetLocation() ?? Location.None,
-                interfaceDecl.Identifier.Text, fullMessage));
-            // 同时通过 GeneratorDebugLogger.LogError 记录到 Trace（Release 也可输出）
+                interfaceDecl.Identifier.Text, safeMessage));
+            // 同时通过 GeneratorDebugLogger.LogError 记录完整堆栈到 Trace（Release 也可输出）
             GeneratorDebugLogger.LogError($"InterfaceProcessing_{interfaceDecl.Identifier.Text}", ex);
         }
         else
