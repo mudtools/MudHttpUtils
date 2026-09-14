@@ -22,7 +22,7 @@
     <Project Path="Mud.HttpUtils/Mud.HttpUtils.csproj" />
   </Folder>
   <Folder Name="/Tests/">
-    <Project Path="Mud.HttpUtils.Testing/Mud.HttpUtils.Testing.csproj" />
+    <Project Path="Tests/Mud.HttpUtils.Testing/Mud.HttpUtils.Testing.csproj" />
     <Project Path="Tests/Mud.HttpUtils.Benchmarks/Mud.HttpUtils.Benchmarks.csproj" />
     <Project Path="Tests/Mud.HttpUtils.Client.Tests/Mud.HttpUtils.Client.Tests.csproj" />
     <Project Path="Tests/Mud.HttpUtils.CodeFixes.Tests/Mud.HttpUtils.CodeFixes.Tests.csproj" />

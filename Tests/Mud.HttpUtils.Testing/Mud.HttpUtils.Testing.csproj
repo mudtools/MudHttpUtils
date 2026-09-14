@@ -10,10 +10,10 @@
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>
 	</PropertyGroup>
 	<ItemGroup>
-		<ProjectReference Include="..\Mud.HttpUtils.Abstractions\Mud.HttpUtils.Abstractions.csproj" />
+		<ProjectReference Include="..\..\Mud.HttpUtils.Abstractions\Mud.HttpUtils.Abstractions.csproj" />
 	</ItemGroup>
 	<ItemGroup>
 		<None Include="README.md" Pack="true" PackagePath="\" />
-		<None Include="..\Icon.png" Pack="true" PackagePath="\" />
+		<None Include="..\..\Icon.png" Pack="true" PackagePath="\" />
 	</ItemGroup>
 </Project>

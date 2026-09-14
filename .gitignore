@@ -25,10 +25,10 @@
 /Mud.HttpUtils.Newtonsoft.Json/bin
 /Mud.HttpUtils.Analyzers/obj
 /Mud.HttpUtils.Analyzers/bin
-/Mud.HttpUtils.Testing/obj
-/Mud.HttpUtils.Testing/bin
 /bin
 /Tests/bin
+/Tests/Mud.HttpUtils.Testing/obj
+/Tests/Mud.HttpUtils.Testing/bin
 /Tests/Mud.HttpUtils.Client.Tests/bin
 /Tests/Mud.HttpUtils.Client.Tests/obj
 /Tests/Mud.HttpUtils.Client.Tests/TestResults
