@@ -13,7 +13,7 @@ using Microsoft.CodeAnalysis;
 namespace Mud.HttpUtils.Analyzers;
 
 /// <summary>
-/// AOT007 诊断分析器：检测 Native AOT 上下文下使用 XML 序列化的 [HttpClientApi] 接口方法。
+/// AOT007 诊断分析器：检测 AOT 相关上下文下使用 XML 序列化的 [HttpClientApi] 接口方法。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -22,13 +22,16 @@ namespace Mud.HttpUtils.Analyzers;
 /// 将该运行时崩溃前移为 AOT007 诊断，使消费方在编译阶段即可发现问题。
 /// </para>
 /// <para>
-/// <b>仅</b>在 AOT 上下文（<c>build_property.IsAotCompatible=true</c> 或
-/// <c>build_property.PublishAot=true</c>）下报告；AOT 开关由调用方（生成器）读取配置后以
-/// <c>isAotEnabled</c> 参数传入，从而将"配置读取"与"分析"解耦，便于单元测试直接调用。
+/// <b>仅</b>在 AOT 相关上下文下报告（<c>IsAotCompatible=true</c> 的模糊态，或
+/// <c>PublishAot=true</c>/<c>MudAotRuntimeMode=aot</c> 的确认态）；
+/// 「是否运行」由调用方（<see cref="AotXmlRejectionDiagnosticAnalyzer"/>，或单元测试）读取配置后以
+/// <c>isAotContext</c> 参数传入，从而将「配置读取」与「分析」解耦，便于直接调用测试。
 /// </para>
 /// <para>
-/// [F10 修复] 诊断级别由调用方参数化：<c>descriptor</c> 由调用方按
+/// [F10 修复 / F11 修正] 诊断级别由调用方参数化：<c>descriptor</c> 由调用方按
 /// <see cref="AotModeResolver"/> 决定（Error：确认 Native AOT；Warning：仅 IsAotCompatible 的模糊态）。
+/// F11 修正前的实现只在确认 AOT 时运行分析，导致 Warning 分支不可达（见
+/// <see cref="AotXmlRejectionDiagnosticAnalyzer"/> 的类型注释）。
 /// </para>
 /// <para>
 /// <b>诊断定位契约</b>：当 XML 判定来源于 <c>[SerializationMethod(Xml)]</c> 特性时，诊断定位到该
@@ -47,23 +50,31 @@ internal static class AotXmlRejectionAnalyzer
     private const string SerializationMethodAttributeFullName = "Mud.HttpUtils.Attributes.SerializationMethodAttribute";
 
     /// <summary>
-    /// 分析编译单元中所有 [HttpClientApi] 接口方法，在 AOT 上下文下对使用 XML 序列化的方法返回 AOT007。
+    /// 分析编译单元中所有 [HttpClientApi] 接口方法，在 AOT 相关上下文下对使用 XML 序列化的方法返回 AOT007。
     /// </summary>
     /// <param name="compilation">编译单元。</param>
-    /// <param name="isAotEnabled">是否处于 AOT 上下文（由调用方从 <c>AnalyzerConfigOptions</c> 读取）。</param>
+    /// <param name="isAotContext">
+    /// 是否处于 <b>AOT 相关上下文</b>（确认 Native AOT，或仅启用 AOT 分析器的模糊态）。
+    /// 由调用方从 <c>AnalyzerConfigOptions</c> 读取后传入；<c>false</c> 时直接返回空集。
+    /// </param>
     /// <param name="cancellationToken">取消令牌。</param>
-    /// <param name="descriptor">诊断描述符（F10：由调用方按 <see cref="AotModeResolver"/> 决定 Error/Warning）。</param>
-    /// <returns>诊断集合；非 AOT 上下文时为空。</returns>
+    /// <param name="descriptor">诊断描述符（F10/F11：由调用方按 <see cref="AotModeResolver"/> 三态决定 Error/Warning）。</param>
+    /// <returns>诊断集合；无 AOT 信号时为空。</returns>
+    /// <remarks>
+    /// [F11 修复] 参数语义由「是否 AOT 运行期」放宽为「是否处于 AOT 相关上下文」：
+    /// 模糊态（仅 <c>IsAotCompatible=true</c>）也要执行分析，否则 Warning 分级恒不可达。
+    /// 级别差异完全由 <paramref name="descriptor"/> 承载（Error/Warning 共用 AOT007 ID）。
+    /// </remarks>
     public static ImmutableArray<Diagnostic> Analyze(
         Compilation compilation,
-        bool isAotEnabled,
+        bool isAotContext,
         CancellationToken cancellationToken,
         DiagnosticDescriptor? descriptor = null)
     {
         var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
 
-        // 非 AOT 项目即使引用本分析器也不受影响（设计意图：XML 在 JIT/非 AOT 部署仍完全可用）。
-        if (!isAotEnabled)
+        // 无 AOT 信号的项目即使引用本分析器也不受影响（设计意图：XML 在 JIT 部署仍完全可用）。
+        if (!isAotContext)
             return diagnostics.ToImmutable();
 
         var httpClientApiAttr = compilation.GetTypeByMetadataName(HttpClientApiAttributeFullName);

@@ -550,6 +550,9 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
     /// <summary>
     /// 获取接口及其所有基接口的语法节点
     /// </summary>
+    /// <remarks>
+    /// 返回值已<strong>立即物化</strong>（见下方注释）：调用方拿到的是可重复枚举的快照。
+    /// </remarks>
     public static IEnumerable<InterfaceDeclarationSyntax> GetAllBaseInterfaceSyntaxNodes(
         Compilation compilation,
         InterfaceDeclarationSyntax interfaceDecl,
@@ -558,7 +561,12 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         // [Phase2 修复 2.1] 使用 visited HashSet 防止循环引用导致 StackOverflow。
         // 对齐 TypeSymbolHelper.cs:56-74 的已有正确实现。
         var visited = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
-        return GetAllBaseInterfaceSyntaxNodesCore(compilation, interfaceDecl, semanticModel, visited);
+
+        // [本轮核验修复] 必须物化：visited 是跨整个递归共享的可变集合，惰性迭代器只能枚举一次——
+        // 第二次枚举时根接口已被 visited 收录 ⇒ 立即 yield break ⇒ 静默返回空集，
+        // 表现为「派生接口从基接口继承的方法全部丢失」→ 生成类缺成员（CS0535）且无任何提示。
+        // 接口层级规模极小，物化成本可忽略。
+        return GetAllBaseInterfaceSyntaxNodesCore(compilation, interfaceDecl, semanticModel, visited).ToList();
     }
 
     /// <summary>
@@ -764,13 +772,17 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
                 if (!visitedProperties.Add(property))
                     continue;
 
-                var queryAttr = property.GetAttributes()
+                // [Phase5 优化 3.2 / 本轮核验补齐] 本循环原实现仍对每属性调用 3 次 GetAttributes()
+                // （上面「当前接口自身成员」的循环已改为 1 次，基接口分支被漏掉），此处补齐同一口径。
+                var propAttrs = property.GetAttributes();
+
+                var queryAttr = propAttrs
                         .FirstOrDefault(attr => attr.AttributeClass?.Name == "QueryAttribute");
 
-                var pathAttr = property.GetAttributes()
+                var pathAttr = propAttrs
                         .FirstOrDefault(attr => attr.AttributeClass?.Name == "PathAttribute");
 
-                var headerAttr = property.GetAttributes()
+                var headerAttr = propAttrs
                         .FirstOrDefault(attr => attr.AttributeClass?.Name == "HeaderAttribute");
 
                 // 基接口的语法节点通常不在当前接口的语法树中，传 null

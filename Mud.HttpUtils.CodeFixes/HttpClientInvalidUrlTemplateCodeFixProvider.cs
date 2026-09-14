@@ -77,7 +77,7 @@ public class HttpClientInvalidUrlTemplateCodeFixProvider : CodeFixProvider
             context.RegisterCodeFix(
                 CodeAction.Create(
                     title: FixBackslashTitle,
-                    createChangedDocument: c => FixBackslashAsync(context.Document, attribute, firstArg, urlValue, c),
+                    createChangedDocument: c => ReplaceUrlLiteralAsync(context.Document, firstArg, urlValue.Replace('\\', '/'), c),
                     equivalenceKey: $"{nameof(HttpClientInvalidUrlTemplateCodeFixProvider)}_FixBackslash"),
                 diagnostic);
         }
@@ -88,7 +88,7 @@ public class HttpClientInvalidUrlTemplateCodeFixProvider : CodeFixProvider
             context.RegisterCodeFix(
                 CodeAction.Create(
                     title: FixBracesTitle,
-                    createChangedDocument: c => FixBracesAsync(context.Document, attribute, firstArg, urlValue, c),
+                    createChangedDocument: c => ReplaceUrlLiteralAsync(context.Document, firstArg, FixBraceMismatch(urlValue), c),
                     equivalenceKey: $"{nameof(HttpClientInvalidUrlTemplateCodeFixProvider)}_FixBraces"),
                 diagnostic);
         }
@@ -196,23 +196,6 @@ public class HttpClientInvalidUrlTemplateCodeFixProvider : CodeFixProvider
 
         return text.Length;
     }
-
-    private static Task<Document> FixBackslashAsync(
-        Document document,
-        AttributeSyntax attribute,
-        AttributeArgumentSyntax arg,
-        string originalUrl,
-        CancellationToken cancellationToken)
-        // 将反斜杠替换为正斜杠
-        => ReplaceUrlLiteralAsync(document, arg, originalUrl.Replace('\\', '/'), cancellationToken);
-
-    private static Task<Document> FixBracesAsync(
-        Document document,
-        AttributeSyntax attribute,
-        AttributeArgumentSyntax arg,
-        string originalUrl,
-        CancellationToken cancellationToken)
-        => ReplaceUrlLiteralAsync(document, arg, FixBraceMismatch(originalUrl), cancellationToken);
 
     /// <summary>
     /// 用修复后的 URL 文本替换特性上的字符串字面量。

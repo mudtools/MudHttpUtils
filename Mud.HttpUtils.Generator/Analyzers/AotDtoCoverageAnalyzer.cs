@@ -108,7 +108,7 @@ internal static class AotDtoCoverageAnalyzer
         // 避免无本地 Context 的 JIT 消费方每次编译都付出全量引用程序集扫描成本。
         // 探测结果按 Compilation 缓存，后续覆盖集合计算直接复用（本编译语法树只遍历一次）。
         // forceRun（T6）为 true 时跳过 hasLocalContext 门控，但仍需覆盖集合。
-        if (!forceRun && !HasLocalJsonSerializerContext(compilation, out _))
+        if (!forceRun && !HasLocalJsonSerializerContext(compilation))
             return diagnostics.ToImmutable();
 
         // 实际需要覆盖集合时才执行全量扫描（含引用程序集）。
@@ -277,13 +277,14 @@ internal static class AotDtoCoverageAnalyzer
     /// 不触引用程序集，O(语法树) 而非 O(语法树 + 引用程序集)。
     /// </summary>
     /// <param name="compilation">编译单元。</param>
-    /// <param name="localContexts">输出：本编译单元中所有 JsonSerializerContext 子类符号。</param>
     /// <returns>是否存在至少一个本地 Context。</returns>
-    private static bool HasLocalJsonSerializerContext(Compilation compilation, out List<INamedTypeSymbol> localContexts)
-    {
-        localContexts = GetLocalContexts(compilation);
-        return localContexts.Count > 0;
-    }
+    /// <remarks>
+    /// [本轮核验修复] 原签名带 <c>out List&lt;INamedTypeSymbol&gt; localContexts</c>，
+    /// 但两个调用点均以 <c>out _</c> 丢弃（探测结果实际经 <see cref="GetLocalContexts"/> 的编译级缓存共享），
+    /// 属 T7 清理的死参数残留；现删除，避免"看似产出、实则丢弃"的误导。
+    /// </remarks>
+    private static bool HasLocalJsonSerializerContext(Compilation compilation)
+        => GetLocalContexts(compilation).Count > 0;
 
     /// <summary>
     /// 本编译单元 Context 探测结果的编译级缓存。

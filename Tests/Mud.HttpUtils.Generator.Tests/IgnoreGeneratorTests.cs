@@ -131,7 +131,7 @@ public class IgnoreGeneratorTests
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
         var diagnostics = Mud.HttpUtils.Analyzers.AotXmlRejectionAnalyzer.Analyze(
-            compilation, isAotEnabled: true, CancellationToken.None);
+            compilation, isAotContext: true, CancellationToken.None);
 
         diagnostics.Should().NotContain(d => d.Id == "AOT007",
             "接口级 [IgnoreGenerator] 不应产生 AOT007（用户自备实现，不存在 XmlSerializer 代码）");

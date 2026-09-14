@@ -75,7 +75,10 @@ internal readonly struct InterfaceModel : IEquatable<InterfaceModel>
         Syntax = syntax;
         Context = context;
         Symbol = context.SemanticModel.GetDeclaredSymbol(syntax) as INamedTypeSymbol;
-        Fingerprint = BuildFingerprint(syntax, context);
+        // [本轮核验修复 / A.5 修订 2] 直接复用上面已解析的 Symbol：
+        // 原实现在 BuildFingerprint 内部再次调用 GetDeclaredSymbol，同一符号被解析两次
+        // （GetDeclaredSymbol 非零成本，且与「不二次调用」的方案修订相悖）。
+        Fingerprint = BuildFingerprint(syntax, Symbol, context);
     }
 
     /// <summary>
@@ -83,10 +86,16 @@ internal readonly struct InterfaceModel : IEquatable<InterfaceModel>
     /// 关键属性变更（如 TokenManager 类型重命名）或继承关系变更会使指纹变化，触发重新生成，
     /// 避免 Context 中的 SemanticModel 来自过期编译。
     /// </summary>
+    /// <param name="syntax">接口声明节点（带 [HttpClientApi] 的那个 partial 声明）。</param>
+    /// <param name="interfaceSymbol">已由构造函数解析的接口符号；语法有误时为 null。</param>
+    /// <param name="context">特性语法上下文（提供 Attributes）。</param>
     // NEW-GEN-10 说明：指纹不包含基接口内部方法，这是已接受的权衡。
     // 若基接口添加新方法，用户需手动"触摸"派生接口文件（如添加空行再删除）强制重新生成，
     // 或使用 dotnet build -p:ForceHttpGenerator=true 强制重新生成。
-    private static string BuildFingerprint(InterfaceDeclarationSyntax syntax, GeneratorAttributeSyntaxContext context)
+    private static string BuildFingerprint(
+        InterfaceDeclarationSyntax syntax,
+        INamedTypeSymbol? interfaceSymbol,
+        GeneratorAttributeSyntaxContext context)
     {
         // 仅取节点结构化文本,排除前导/尾随琐事(注释、空白),使纯注释变更不触发重新生成。
         // v1.5(Phase 2.3):原实现用 syntax.ToString() 会包含注释等 trivia,导致"仅注释变更"
@@ -100,7 +109,7 @@ internal readonly struct InterfaceModel : IEquatable<InterfaceModel>
         // [F5 修复] 纳入同一接口的其余 partial 声明。原实现仅取 ctx.TargetNode（带特性的那个 partial 声明），
         // partial 兄弟声明变化（新增方法/特性改签名）不会失效指纹 → 生成的实现类缺少数成员。
         // 任一兄弟 partial 声明变化都会触发该接口重生成（准确性提升，非过度失效）；trivia 变化仍被排除。
-        if (context.SemanticModel.GetDeclaredSymbol(syntax) is INamedTypeSymbol interfaceSymbol)
+        if (interfaceSymbol != null)
         {
             foreach (var reference in interfaceSymbol.DeclaringSyntaxReferences
                          .OrderBy(r => r.SyntaxTree.FilePath, StringComparer.Ordinal)
@@ -135,8 +144,8 @@ internal readonly struct InterfaceModel : IEquatable<InterfaceModel>
             foreach (var baseType in syntax.BaseList.Types)
             {
                 sb.Append('|');
-                    sb.Append("Base:");
-                    sb.Append(baseType.ToString());
+                sb.Append("Base:");
+                sb.Append(baseType.ToString());
             }
         }
 

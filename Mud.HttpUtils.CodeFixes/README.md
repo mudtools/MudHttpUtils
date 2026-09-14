@@ -37,7 +37,7 @@
 | `AOT004` | Warning | `Mud.HttpUtils.Generator`（`AotDtoCoverageAnalyzer`） | 是 |
 | `AOT005` | Warning | `Mud.HttpUtils.Generator`（`AotDtoCoverageAnalyzer`） | 是 |
 | `AOT006` | Warning | `Mud.HttpUtils.Generator`（`AotDtoCoverageAnalyzer`） | 是 |
-| `AOT007` | Error | `Mud.HttpUtils.Generator`（`AotXmlRejectionAnalyzer`，仅 AOT 上下文） | 是 |
+| `AOT007` | Error / Warning（F10/F11 分级） | `Mud.HttpUtils.Generator`（`AotXmlRejectionDiagnosticAnalyzer`，AOT 相关上下文） | 是 |
 | `HTTPCLIENT005` | Error | `Mud.HttpUtils.Generator` | 是 |
 | `HTTPCLIENT007` | Error | `Mud.HttpUtils.Generator` | 是 |
 

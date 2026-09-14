@@ -1,3 +1,6 @@
+using Microsoft.CodeAnalysis.Diagnostics;
+using Mud.HttpUtils.Analyzers;
+
 namespace Mud.HttpUtils.Generator.Tests;
 
 /// <summary>
@@ -123,7 +126,7 @@ public class AotXmlRejectionTests
             $"方法级 [SerializationMethod(Xml)] 应被解析；实际 ResponseContentType={methodInfo.ResponseContentType ?? "<null>"}, Effective={methodInfo.GetEffectiveContentType() ?? "<null>"}");
 
         var diagnostics = Mud.HttpUtils.Analyzers.AotXmlRejectionAnalyzer.Analyze(
-            compilation, isAotEnabled: true, CancellationToken.None);
+            compilation, isAotContext: true, CancellationToken.None);
 
         var aot007 = diagnostics.Where(d => d.Id == "AOT007").ToList();
         aot007.Should().ContainSingle("AOT 上下文下的 XML 方法应报告 AOT007");
@@ -149,9 +152,9 @@ public class AotXmlRejectionTests
     }
 
     internal static ImmutableArray<Diagnostic> AnalyzeWithDescriptor(
-        string source, bool isAotEnabled, DiagnosticDescriptor descriptor)
+        string source, bool isAotContext, DiagnosticDescriptor descriptor)
         => Mud.HttpUtils.Analyzers.AotXmlRejectionAnalyzer.Analyze(
-            CreateCompilation(source), isAotEnabled, CancellationToken.None, descriptor);
+            CreateCompilation(source), isAotContext, CancellationToken.None, descriptor);
 
     [Fact]
     public void F10_AotModeResolver_PublishAotOnly_ResolvesAot()
@@ -210,7 +213,7 @@ public class AotXmlRejectionTests
         // 原实现：IsAotCompatible=true 直接判定为 AOT → AOT007 Error。
         // F10 后：仅为模糊态 → Warning（降级提示）。
         var diagnostics = AnalyzeWithDescriptor(
-            XmlInterfaceSource, isAotEnabled: true, Diagnostics.AotXmlNotSupportedInAotWarning);
+            XmlInterfaceSource, isAotContext: true, Diagnostics.AotXmlNotSupportedInAotWarning);
 
         var aot007 = diagnostics.Where(d => d.Id == "AOT007").ToList();
         aot007.Should().ContainSingle();
@@ -222,11 +225,71 @@ public class AotXmlRejectionTests
     public void F10_PublishAotOnly_ReportsError()
     {
         var diagnostics = AnalyzeWithDescriptor(
-            XmlInterfaceSource, isAotEnabled: true, Diagnostics.AotXmlNotSupportedInAot);
+            XmlInterfaceSource, isAotContext: true, Diagnostics.AotXmlNotSupportedInAot);
 
         var aot007 = diagnostics.Where(d => d.Id == "AOT007").ToList();
         aot007.Should().ContainSingle();
         aot007[0].Severity.Should().Be(DiagnosticSeverity.Error,
             "PublishAot=true 时 AOT007 应保持 Error 阻断");
+    }
+
+    // ───────────────────────── F11：分级门控三态（纯分析器侧）─────────────────────────
+
+    /// <summary>
+    /// [F11 修复] 无 AOT 信号时纯分析器直接返回空集（<c>isAotContext:false</c> 短路）。
+    /// </summary>
+    [Fact]
+    public void F11_NoAotContext_ReturnsEmpty()
+    {
+        var diagnostics = AnalyzeWithDescriptor(
+            XmlInterfaceSource, isAotContext: false, Diagnostics.AotXmlNotSupportedInAot);
+
+        diagnostics.Should().BeEmpty("无 AOT 信号时不应产出任何 AOT007（D15 语义）");
+    }
+
+    /// <summary>
+    /// [F11 修复] 显式 <c>MudAotRuntimeMode=jit</c> 时模糊态判定为假 —— 用户已声明运行期，
+    /// 不再收到降级提示（否则除关闭 IsAotCompatible 外无任何关闭手段）。
+    /// </summary>
+    [Fact]
+    public void F11_ExplicitJit_DisablesAnalyzerOnlyState()
+    {
+        var provider = new TestAnalyzerConfigOptionsProvider(new Dictionary<string, string>
+        {
+            ["build_property.IsAotCompatible"] = "true",
+            ["build_property.MudAotRuntimeMode"] = "jit",
+        });
+
+        Mud.HttpUtils.AotModeResolver.IsAotAnalyzerOnly(provider.GlobalOptions)
+            .Should().BeFalse("显式 MudAotRuntimeMode=jit 表示用户已声明运行期模式，不应再提示 AOT007 Warning");
+    }
+
+    /// <summary>
+    /// [F11 修复] 显式 <c>MudAotRuntimeMode=jit</c> + <c>IsAotCompatible=true</c> 的真实分析器
+    /// 不得上报 AOT007（无论是 Error 还是 Warning）。
+    /// </summary>
+    [Fact]
+    public void F11_ExplicitJit_AnalyzerReportsNothing()
+    {
+        var compilation = CreateCompilation(XmlInterfaceSource);
+        var analyzers = ImmutableArray.Create<DiagnosticAnalyzer>(
+            new AotXmlRejectionDiagnosticAnalyzer());
+
+        var analyzerOptions = new AnalyzerOptions(
+            ImmutableArray<AdditionalText>.Empty,
+            new TestAnalyzerConfigOptionsProvider(new Dictionary<string, string>
+            {
+                ["build_property.IsAotCompatible"] = "true",
+                ["build_property.MudAotRuntimeMode"] = "jit",
+            }));
+
+        var diagnostics = compilation
+            .WithAnalyzers(analyzers, analyzerOptions)
+            .GetAnalyzerDiagnosticsAsync()
+            .GetAwaiter()
+            .GetResult();
+
+        diagnostics.Should().NotContain(d => d.Id == "AOT007",
+            "显式声明 JIT 运行期后不应再报告 AOT007（F11 逃生舱）");
     }
 }

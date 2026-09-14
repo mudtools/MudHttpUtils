@@ -46,9 +46,30 @@ internal static class AotModeResolver
     }
 
     /// <summary>
-    /// 是否处于「AOT 分析器已启用但运行期未必 AOT」的模糊态（仅用于降级提示，不阻断）。
+    /// 是否处于「AOT 分析器已启用但运行期未声明」的模糊态（用于降级提示，不阻断）。
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// [F11 修复] 判定为真的条件：<c>IsAotCompatible=true</c>（启用 AOT/裁剪分析器）且运行期未确认为 AOT，
+    /// <b>且</b>用户未显式声明运行期模式。
+    /// </para>
+    /// <para>
+    /// 历史缺陷（本轮核验发现）：原实现仅判 <c>IsAotCompatible &amp;&amp; Resolve()==Jit</c>，
+    /// 而显式 <c>MudAotRuntimeMode=jit</c> 也满足该条件（显式 jit 同样解析为 Jit）——
+    /// 即「用户已显式声明以 JIT 发布」仍会持续收到降级提示，缺少正大光明的关闭方式
+    /// （只能关掉 <c>IsAotCompatible</c> 或抑制诊断）。现把显式 <c>jit</c> 视为用户已承担运行期语义，
+    /// 与 <see cref="Resolve"/> 中「显式 jit 否决 PublishAot」的既有口径对齐。
+    /// </para>
+    /// </remarks>
     public static bool IsAotAnalyzerOnly(AnalyzerConfigOptions globalOptions)
-        => ProjectConfigHelper.ReadConfigValueAsBool(globalOptions, BuildPropertyIsAotCompatible, false)
-           && Resolve(globalOptions) == AotRuntimeMode.Jit;
+    {
+        if (!ProjectConfigHelper.ReadConfigValueAsBool(globalOptions, BuildPropertyIsAotCompatible, false))
+            return false;
+
+        var explicitMode = ProjectConfigHelper.ReadConfigValue(globalOptions, BuildPropertyMudAotRuntimeMode);
+        if (string.Equals(explicitMode, "jit", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        return Resolve(globalOptions) == AotRuntimeMode.Jit;
+    }
 }

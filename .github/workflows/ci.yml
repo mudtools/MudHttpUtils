@@ -265,12 +265,25 @@ jobs:
       # 使用 github.workspace 传递路径，临时项目创建在仓库子目录下以自动继承 Directory.Build.props。
       # 仅设置 IsAotCompatible=true（触发 AOT007 分析器的 AOT 上下文检测）；不设置 PublishAot=true，
       # 因 dotnet build 即可触发 AOT007 编译期诊断，无需实际 AOT 发布。
+      #
+      # 说明（本轮修复三处探针缺陷，原探针恒红）：
+      #   1. 必须显式 ProjectReference Mud.HttpUtils.Attributes：Client/Abstractions 均不引用它，
+      #      缺引用时探针源码 CS0246 全量失败，`grep AOT007` 必然找不到（历史探针即如此）；
+      #   2. 接口必须放在显式命名空间：全局命名空间的 [HttpClientApi] 会触发 HTTPCLIENTREG001
+      #      （Error + NotConfigurable），csc 的 Declare 阶段"连坐闸门"会让同一编译中的**全部**
+      #      分析器诊断不再呈现（含 AOT007）——即使 AOT 上下文判定正确也看不到；
+      #   3. 分级与逃生舱需一并门禁：仅 IsAotCompatible=true → Warning；显式 MudAotRuntimeMode=jit
+      #      → 不报告（F11 修复后的三态语义）。
       - name: Verify XML path is rejected in AOT (AOT007)
         shell: bash
         env:
           WORKSPACE: ${{ github.workspace }}
         run: |
+          # 用例 1 在严格模式下 AOT007 被升级为 Error ⇒ 构建必然失败，故必须关闭 -e
+          # （GitHub Actions 的 shell: bash 默认以 `bash -e` 执行，失败的命令替换会直接中断脚本）。
+          set +e
           TEST_DIR="$WORKSPACE/.tmp-xml-aot-test"
+          rm -rf "$TEST_DIR"
           mkdir -p "$TEST_DIR"
           cat > "$TEST_DIR/Test.csproj" << 'EOF'
           <Project Sdk="Microsoft.NET.Sdk">
@@ -280,6 +293,7 @@ jobs:
               <IsAotCompatible>true</IsAotCompatible>
             </PropertyGroup>
             <ItemGroup>
+              <ProjectReference Include="..\Mud.HttpUtils.Attributes\Mud.HttpUtils.Attributes.csproj" />
               <ProjectReference Include="..\Mud.HttpUtils.Client\Mud.HttpUtils.Client.csproj" />
               <ProjectReference Include="..\Mud.HttpUtils.Generator\Mud.HttpUtils.Generator.csproj" OutputItemType="Analyzer" />
             </ItemGroup>
@@ -288,26 +302,51 @@ jobs:
             <ItemGroup>
               <CompilerVisibleProperty Include="IsAotCompatible" />
               <CompilerVisibleProperty Include="PublishAot" />
+              <CompilerVisibleProperty Include="MudAotRuntimeMode" />
             </ItemGroup>
           </Project>
           EOF
           cat > "$TEST_DIR/Program.cs" << 'EOF'
           using Mud.HttpUtils.Attributes;
-          [HttpClientApi]
-          public interface IXmlApi
+
+          namespace XmlAotProbe
           {
-              [Post("/api/data"), SerializationMethod(SerializationMethod.Xml)]
-              System.Threading.Tasks.Task<string> PostDataAsync([Body] MyDto data);
+              [HttpClientApi]
+              public interface IXmlApi
+              {
+                  [Post("/api/data"), SerializationMethod(SerializationMethod.Xml)]
+                  System.Threading.Tasks.Task<string> PostDataAsync([Body] MyDto data);
+              }
+
+              public class MyDto { public string Name { get; set; } }
+
+              internal static class Program { private static void Main() { } }
           }
-          public class MyDto { public string Name { get; set; } }
           EOF
-          if dotnet build "$TEST_DIR/Test.csproj" -p:AotStrictMode=true 2>&1 | grep -q "AOT007"; then
-            echo "✓ AOT007 correctly reported for XML path in AOT"
+          fail=0
+
+          # 用例 1：仅 IsAotCompatible=true（模糊态）→ 必须报 AOT007（Warning，严格模式下升级为 Error）。
+          out_ambiguous=$(dotnet build "$TEST_DIR/Test.csproj" -p:AotStrictMode=true 2>&1)
+          if echo "$out_ambiguous" | grep -q "AOT007"; then
+            echo "✓ AOT007 reported for XML path with IsAotCompatible only (warning/error per strict mode)"
           else
-            echo "✗ AOT007 not reported for XML path in AOT"
-            exit 1
+            echo "$out_ambiguous"
+            echo "✗ AOT007 not reported for XML path in AOT (IsAotCompatible only)"
+            fail=1
           fi
+
+          # 用例 2：显式 MudAotRuntimeMode=jit（F11 逃生舱）→ 不得报告 AOT007。
+          out_jit=$(dotnet build "$TEST_DIR/Test.csproj" -p:MudAotRuntimeMode=jit 2>&1)
+          if echo "$out_jit" | grep -q "AOT007"; then
+            echo "$out_jit"
+            echo "✗ AOT007 reported despite explicit MudAotRuntimeMode=jit (F11 escape hatch broken)"
+            fail=1
+          else
+            echo "✓ No AOT007 under explicit MudAotRuntimeMode=jit"
+          fi
+
           rm -rf "$TEST_DIR"
+          exit $fail
 
       # [T3 修复] 脚手架激活条件与 AotModeResolver 语义一致性探针。
       # 覆盖：显式 MudAotRuntimeMode=aot 激活（无需 PublishAot）；显式 jit 否决 PublishAot；

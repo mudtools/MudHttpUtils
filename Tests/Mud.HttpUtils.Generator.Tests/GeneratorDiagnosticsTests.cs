@@ -402,20 +402,12 @@ namespace TestNamespace
             "LogError 应在输出中包含异常消息，便于诊断异常原因");
     }
 
-    /// <summary>
-    /// 验证 NEW-GEN-14 修复：非预期异常的诊断消息应使用 ex.ToString() 包含完整堆栈信息。
-    /// <para>
-    /// 此测试标记为 Skip，因为难以确定性触发生成器内部的非预期异常（NullReferenceException 等）。
-    /// 该场景通过 <see cref="Generator_WhenUnexpectedExceptionOccurs_DiagnosticMessageShouldContainStackTrace"/>
-    /// 对 GeneratorDebugLogger.LogError 的单元测试间接覆盖。
-    /// </para>
-    /// </summary>
-    [Fact(Skip = "NEW-GEN-14：意外异常难以确定性触发，通过 GeneratorDebugLogger.LogError 单元测试覆盖")]
-    public void Generator_WhenUnexpectedExceptionOccurs_DiagnosticShouldUseFullExceptionToString()
-    {
-        // 若未来能确定性触发 HttpClientApiGenerationError 诊断，可在此通过编译边缘场景接口
-        // 并验证诊断消息包含 ex.ToString() 输出的格式（如包含堆栈跟踪关键词 "at " 或异常类型全名）
-    }
+    // [本轮核验修复] 此处原有 `Generator_WhenUnexpectedExceptionOccurs_DiagnosticShouldUseFullExceptionToString`
+    // 恒空的 Skip 用例，其断言的语义（诊断消息含完整 ex.ToString()）已在 [Phase4 修复 2.3 / §5.2] 中
+    // **被反向修正**——非预期异常的诊断消息改为「类型名: 消息」，完整堆栈仅走 GeneratorDebugLogger.LogError
+    // （堆栈含本机绝对路径，写入诊断会泄漏到 IDE 错误列表/CI 日志）。
+    // 该用例既无法确定性触发（意外异常不可构造），其目标又与现行实现相反，已删除；
+    // 现行契约由上方 LogError 用例 + HttpInvokeClassSourceGenerator 的注释固化。
 
     #region F7 - 注册代码命名空间安全化
 

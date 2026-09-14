@@ -145,6 +145,72 @@ public class AotDiagnosticAnalyzerTests
             "JIT 部署下 XML 仍可用，不应报告 AOT007（D15 语义）");
     }
 
+    /// <summary>
+    /// [F11 修复] 仅 <c>IsAotCompatible=true</c>（AOT 分析器已启用但运行期未声明）时，
+    /// 分析器必须以 <b>Warning</b> 形式报告 AOT007。
+    /// </summary>
+    /// <remarks>
+    /// 修复前该分支恒不可达：分析器以 <c>Resolve()==Aot</c> 为唯一运行条件，而模糊态蕴含
+    /// <c>Resolve()==Jit</c> ⇒ 直接返回空集。README「AOT007 分级：仅 IsAotCompatible → Warning」
+    /// 与 CI 的 AOT007 探针（仅设置 IsAotCompatible=true）因此双双失效。本用例是该分级的行为守卫。
+    /// </remarks>
+    [Fact]
+    public void Aot007_Analyzer_ReportsWarning_WhenOnlyIsAotCompatible()
+    {
+        var diagnostics = RunAnalyzersOnly(
+            XmlInterfaceSource,
+            new Dictionary<string, string> { ["build_property.IsAotCompatible"] = "true" });
+
+        var aot007 = diagnostics.Where(d => d.Id == "AOT007").ToList();
+        aot007.Should().ContainSingle(
+            "仅 IsAotCompatible=true 的模糊态必须报告 AOT007（F10 分级），否则 README 承诺与 CI 门禁同时失效");
+        aot007[0].Severity.Should().Be(DiagnosticSeverity.Warning,
+            "运行期未确认为 AOT → 降级为 Warning");
+    }
+
+    /// <summary>
+    /// [F11 修复] 显式 <c>MudAotRuntimeMode=jit</c> 是可关闭降级提示的逃生舱：
+    /// 用户既已声明运行期模式，不再收到 AOT007。
+    /// </summary>
+    [Fact]
+    public void Aot007_Analyzer_NotReported_WhenExplicitJitWithIsAotCompatible()
+    {
+        var diagnostics = RunAnalyzersOnly(
+            XmlInterfaceSource,
+            new Dictionary<string, string>
+            {
+                ["build_property.IsAotCompatible"] = "true",
+                ["build_property.MudAotRuntimeMode"] = "jit",
+            });
+
+        diagnostics.Should().NotContain(d => d.Id == "AOT007",
+            "显式 MudAotRuntimeMode=jit 表示用户已承担运行期语义，不应再提示 AOT007");
+    }
+
+    /// <summary>
+    /// [F11 修复] 模糊态与确认态的级别必须严格区分：前者 Warning、后者 Error（同一 AOT007 ID）。
+    /// </summary>
+    [Fact]
+    public void Aot007_Analyzer_SeveritySeparatesAmbiguousFromConfirmedAot()
+    {
+        var ambiguous = RunAnalyzersOnly(
+            XmlInterfaceSource,
+            new Dictionary<string, string> { ["build_property.IsAotCompatible"] = "true" })
+            .Single(d => d.Id == "AOT007");
+
+        var confirmed = RunAnalyzersOnly(
+            XmlInterfaceSource,
+            new Dictionary<string, string>
+            {
+                ["build_property.IsAotCompatible"] = "true",
+                ["build_property.PublishAot"] = "true",
+            })
+            .Single(d => d.Id == "AOT007");
+
+        ambiguous.Severity.Should().Be(DiagnosticSeverity.Warning);
+        confirmed.Severity.Should().Be(DiagnosticSeverity.Error);
+    }
+
     // ───────────────────────── AOT004：生成器关闭后仍可见 ─────────────────────────
 
     [Fact]

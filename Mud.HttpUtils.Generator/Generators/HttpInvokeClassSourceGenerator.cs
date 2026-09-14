@@ -150,9 +150,13 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
 
     private void HandleInterfaceProcessingException(Exception ex, InterfaceDeclarationSyntax interfaceDecl, SourceProductionContext context)
     {
-        // NEW-GEN-14 修复：对于预期异常（InvalidOperationException/ArgumentException）使用 FormatExceptionMessage
-        // （DEBUG 含堆栈，Release 仅消息）；对于非预期异常（NullReferenceException 等生成器内部 Bug），
-        // 始终使用 ex.ToString() 保留完整堆栈，避免在 Release 构建中丢失定位信息。
+        // 异常消息分流（[Phase4 修复 2.3] 后的现行行为，注释已同步）：
+        //   - 预期异常（InvalidOperationException/ArgumentException）→ FormatExceptionMessage
+        //     （DEBUG 含堆栈便于本地排查，Release 仅消息）；
+        //   - 非预期异常（NullReferenceException 等生成器内部 Bug）→ 恒定 `类型名: 消息`，
+        //     完整堆栈只走 GeneratorDebugLogger.LogError(Trace)，**不再**写入诊断消息——
+        //     诊断消息会进入 IDE 错误列表/CI 日志，带本机路径的堆栈属信息泄漏。
+        // （历史注释曾写「始终使用 ex.ToString() 保留完整堆栈」，与 §5.2 修复后的实现相反，已更正。）
         var descriptor = ex switch
         {
             InvalidOperationException => Diagnostics.HttpClientApiSyntaxError,
