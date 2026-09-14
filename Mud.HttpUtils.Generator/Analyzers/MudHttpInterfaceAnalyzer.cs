@@ -21,8 +21,9 @@ namespace Mud.HttpUtils.Analyzers;
 /// 检查规则：
 /// <list type="bullet">
 ///   <item><b>MUD001</b>：[HttpClientApi] 接口方法缺少 HTTP 方法特性（[IgnoreGenerator] 标记的接口/方法豁免）</item>
-///   <item><b>MUD002</b>：[HttpClientApi] 接口方法返回类型不在生成器支持白名单内
-///        （Task/ValueTask/IAsyncEnumerable/HttpResponseMessage/byte[]/Stream，见 F9）</item>
+///   <item><b>MUD002</b>：[HttpClientApi] 接口方法返回类型不受生成器支持
+///        （仅异步形态：Task/Task&lt;T&gt;/ValueTask/ValueTask&lt;T&gt;/IAsyncEnumerable&lt;T&gt;，
+///        见 <see cref="ReturnTypeSupport"/>，与生成器共用同一判定）</item>
 /// </list>
 /// </para>
 /// <para>
@@ -44,45 +45,19 @@ namespace Mud.HttpUtils.Analyzers;
 public class MudHttpInterfaceAnalyzer : DiagnosticAnalyzer
 {
     /// <summary>
-    /// [F9 修复] MUD002 白名单：与生成器方法生成分支一一对应。
-    /// <list type="bullet">
-    ///   <item>Task / Task&lt;T&gt; / ValueTask / ValueTask&lt;T&gt;（异步通用）</item>
-    ///   <item>IAsyncEnumerable&lt;T&gt;（MethodGenerator.cs:274-285 流式分支）</item>
-    ///   <item>HttpResponseMessage（MethodGenerator.cs:370-376 直达返回分支）</item>
-    ///   <item>byte[]（MethodGenerator.cs:315-367 下载分支）</item>
-    ///   <item>Stream（响应流分支）</item>
-    /// </list>
+    /// [F9 修复] 判断返回类型是否为生成器支持的形态。
     /// </summary>
+    /// <remarks>
+    /// 判定逻辑<b>不再在本分析器内重复实现</b>，统一委托给 <see cref="ReturnTypeSupport.IsSupported"/> ——
+    /// 生成器（<c>MethodGenerator</c>）与 MUD002 必须给出完全相同的答案：
+    /// 若生成器判「不支持」而本分析器判「支持」，生成器会发射占位实现且无诊断陪跑，
+    /// 编译期错误被静默降级为运行期异常；反之则是误报阻断。
+    /// <para>
+    /// 对应关系：本规则即生成器「能为该方法发射 <c>async</c> 方法体」的充要条件。
+    /// </para>
+    /// </remarks>
     private static bool IsGeneratorSupportedReturnType(ITypeSymbol returnType)
-    {
-        // Task / ValueTask（含泛型与非泛型）：按命名空间 + 名称 + 元数判定（符号判定，非 StartsWith 字符串比较）。
-        if (returnType is INamedTypeSymbol named)
-        {
-            var fullName = named.OriginalDefinition.ToDisplayString();
-            if (fullName is "System.Threading.Tasks.Task" or "System.Threading.Tasks.Task<TResult>"
-                or "System.Threading.Tasks.ValueTask" or "System.Threading.Tasks.ValueTask<TResult>")
-            {
-                return true;
-            }
-
-            if (named.OriginalDefinition.Name == "IAsyncEnumerable"
-                && named.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic")
-            {
-                return true;
-            }
-        }
-
-        if (returnType is IArrayTypeSymbol arrayType)
-        {
-            // byte[]（MethodGenerator.cs:315-367 下载分支）
-            if (arrayType.ElementType.SpecialType == SpecialType.System_Byte)
-                return true;
-        }
-
-        // HttpResponseMessage / Stream：按命名空间 + 名称判定
-        var returnFullName = returnType.ContainingNamespace?.ToDisplayString() + "." + returnType.Name;
-        return returnFullName is "System.Net.Http.HttpResponseMessage" or "System.IO.Stream";
-    }
+        => ReturnTypeSupport.IsSupported(returnType);
 
     /// <inheritdoc />
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics

@@ -29,10 +29,16 @@ namespace Mud.HttpUtils.Generators.Implementation;
 /// <b>不补位的情形</b>：
 /// <list type="bullet">
 ///   <item>标注 <c>[IgnoreGenerator]</c> 的成员 —— 语义为使用方自行实现，补位会与其实现冲突；</item>
-///   <item><c>ref</c> 返回的属性 —— <c>throw</c> 表达式无法作为 ref 返回值；</item>
-///   <item>静态接口成员 —— 接口静态成员不由实现类满足；</item>
+///   <item><c>static virtual</c> 成员 —— 接口已提供默认实现，补位会以抛异常的成员覆盖该默认行为
+///         （<c>static abstract</c> 无默认实现，属实现类契约，仍需补位）；</item>
+///   <item>使用方已在 partial 实现类中手写的同名同参成员 —— 补位会构成重复定义（CS0111），
+///         见 <see cref="ContractPlaceholder.IsImplementedByUser"/>；</item>
 ///   <item>使用基类（<c>[HttpClientApi(InheritedFrom = ...)]</c>）时基接口上的成员 —— 由基类负责实现。</item>
 /// </list>
+/// </para>
+/// <para>
+/// <b>签名保真</b>：补位成员须与接口签名一致，故需按需补齐 <c>static</c>/<c>unsafe</c> 修饰符与
+/// <c>ref</c>/<c>ref readonly</c> 返回形态（<c>ref</c> 返回须用语句体访问器，<c>throw</c> 表达式不可用作 ref 返回值）。
 /// </para>
 /// </remarks>
 internal class InterfaceContractCompletionGenerator : ICodeFragmentGenerator
@@ -61,13 +67,24 @@ internal class InterfaceContractCompletionGenerator : ICodeFragmentGenerator
             if (!visited.Add(member))
                 continue;
 
-            // 静态接口成员不属于实现类契约；[IgnoreGenerator] 成员由使用方自行实现。
-            if (member.IsStatic || GeneratorAttributeFilters.HasIgnoreGenerator(member))
+            // [IgnoreGenerator] 成员由使用方自行实现，补位会与其实现冲突。
+            if (GeneratorAttributeFilters.HasIgnoreGenerator(member))
+                continue;
+
+            // 静态成员：仅 static abstract（无默认实现）属于实现类的契约面；
+            // static virtual 有默认实现，发射占位反而会以抛异常的成员覆盖该默认行为。
+            if (member.IsStatic && !member.IsAbstract)
                 continue;
 
             // 其它片段生成器（AppContext / 令牌辅助等）已按模式无条件发射同名成员时不得重复发射
             // （重复会产生 CS0111/CS0102；显式实现还会抢占接口分派，破坏既有运行期行为）。
-            if (context.ProvidedMemberNames.Contains(member.Name))
+            // 该登记表只含实例成员，故仅对实例成员生效。
+            if (!member.IsStatic && context.ProvidedMemberNames.Contains(member.Name))
+                continue;
+
+            // 使用方已在 partial 实现类中手写该成员（占位实现落地前的可用写法）时让路，
+            // 否则构成重复定义（CS0111）。
+            if (ContractPlaceholder.IsImplementedByUser(context, member))
                 continue;
 
             switch (member)
@@ -119,33 +136,37 @@ internal class InterfaceContractCompletionGenerator : ICodeFragmentGenerator
     /// <summary>
     /// 发射属性/索引器占位实现。返回值表示是否实际发射了成员。
     /// </summary>
+    /// <remarks>
+    /// 需按需补齐修饰符以保证生成的成员与接口签名一致（否则编译器仍报 CS0535）：
+    /// <c>static</c>（接口静态抽象成员）、<c>unsafe</c>（指针类型）、<c>ref</c>/<c>ref readonly</c> 返回。
+    /// <c>ref</c> 返回的属性无法用 <c>throw</c> 表达式实现，须改用语句体访问器。
+    /// </remarks>
     private static bool EmitPropertyStub(StringBuilder codeBuilder, IPropertySymbol property)
     {
-        // ref 返回（含 ref readonly）属性无法用 throw 表达式实现，跳过：
-        // 这种情况仍由编译器 CS0535 提示，属已知限制。
-        if (property.ReturnsByRef || property.ReturnsByRefReadonly)
-            return false;
-
         var getter = property.GetMethod;
         var setter = property.SetMethod;
         if (getter == null && setter == null)
             return false;
 
         var propertyType = property.Type.ToDisplayString(TypeFormat);
+        var returnsByRefReadonly = property.ReturnsByRefReadonly;
+        var returnsByRef = property.ReturnsByRef || returnsByRefReadonly;
+        var refPrefix = returnsByRefReadonly ? "ref readonly " : returnsByRef ? "ref " : string.Empty;
+        var modifiers = BuildModifiers(property.IsStatic, needsUnsafe: ContractPlaceholder.RequiresUnsafeContext(property.Type));
         var declaration = property.IsIndexer
-            ? $"public {propertyType} this[{ParameterSignatureBuilder.Build(property.Parameters)}]"
-            : $"public {propertyType} {property.Name}";
+            ? $"public {modifiers}{refPrefix}{propertyType} this[{ParameterSignatureBuilder.Build(property.Parameters)}]"
+            : $"public {modifiers}{refPrefix}{propertyType} {property.Name}";
 
         WriteMemberDocumentation(codeBuilder, "属性");
         codeBuilder.AppendLine($"        {GeneratedCodeConsts.HttpGeneratedCodeAttribute}");
         codeBuilder.AppendLine($"        {declaration}");
         codeBuilder.AppendLine("        {");
         if (getter != null)
-            codeBuilder.AppendLine($"            get => throw new global::System.NotSupportedException(\"{BuildMessage("属性", property.Name)}\");");
+            WritePropertyAccessor(codeBuilder, "get", "属性", property.Name, returnsByRef);
         if (setter != null)
         {
             var accessor = setter.IsInitOnly ? "init" : "set";
-            codeBuilder.AppendLine($"            {accessor} => throw new global::System.NotSupportedException(\"{BuildMessage("属性", property.Name)}\");");
+            WritePropertyAccessor(codeBuilder, accessor, "属性", property.Name, returnsByRef: false);
         }
         codeBuilder.AppendLine("        }");
 
@@ -153,19 +174,37 @@ internal class InterfaceContractCompletionGenerator : ICodeFragmentGenerator
     }
 
     /// <summary>
+    /// 写入属性访问器：普通情况用 <c>throw</c> 表达式，<c>ref</c> 返回的 getter 用语句体。
+    /// </summary>
+    private static void WritePropertyAccessor(
+        StringBuilder codeBuilder, string accessor, string memberKind, string memberName, bool returnsByRef)
+    {
+        var message = BuildMessage(memberKind, memberName);
+        if (returnsByRef)
+        {
+            codeBuilder.AppendLine($"            {accessor}");
+            codeBuilder.AppendLine("            {");
+            codeBuilder.AppendLine($"                throw new global::System.NotSupportedException(\"{message}\");");
+            codeBuilder.AppendLine("            }");
+            return;
+        }
+
+        codeBuilder.AppendLine($"            {accessor} => throw new global::System.NotSupportedException(\"{message}\");");
+    }
+
+    /// <summary>
     /// 发射事件占位实现。返回值表示是否实际发射了成员。
     /// </summary>
     private static bool EmitEventStub(StringBuilder codeBuilder, IEventSymbol @event)
     {
-        // 事件类型为指针/函数指针时需 unsafe 上下文，跳过（此类用法不属于受支持的接口形态）。
-        if (@event.Type.TypeKind is TypeKind.Pointer or TypeKind.FunctionPointer)
-            return false;
-
         var delegateType = @event.Type.ToDisplayString(TypeFormat);
+        var modifiers = BuildModifiers(
+            @event.IsStatic,
+            needsUnsafe: ContractPlaceholder.RequiresUnsafeContext(@event.Type));
 
         WriteMemberDocumentation(codeBuilder, "事件");
         codeBuilder.AppendLine($"        {GeneratedCodeConsts.HttpGeneratedCodeAttribute}");
-        codeBuilder.AppendLine($"        public event {delegateType} {@event.Name}");
+        codeBuilder.AppendLine($"        public {modifiers}event {delegateType} {@event.Name}");
         codeBuilder.AppendLine("        {");
         // 使用自定义访问器（而非字段式事件）以避免 CS0067「事件从未使用」告警。
         codeBuilder.AppendLine($"            add => throw new global::System.NotSupportedException(\"{BuildMessage("事件", @event.Name)}\");");
@@ -174,6 +213,12 @@ internal class InterfaceContractCompletionGenerator : ICodeFragmentGenerator
 
         return true;
     }
+
+    /// <summary>
+    /// 构造成员修饰符前缀（<c>static</c> / <c>unsafe</c>）。
+    /// </summary>
+    private static string BuildModifiers(bool isStatic, bool needsUnsafe)
+        => (isStatic ? "static " : string.Empty) + (needsUnsafe ? "unsafe " : string.Empty);
 
     private static void WriteMemberDocumentation(StringBuilder codeBuilder, string memberKind)
     {

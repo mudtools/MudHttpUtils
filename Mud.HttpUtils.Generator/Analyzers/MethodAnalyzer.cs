@@ -102,7 +102,10 @@ internal static class MethodAnalyzer
         var serializationMethod = AnalyzeSerializationMethod(methodSymbol, methodAttributes, interfaceAttrs);
 
         var returnTypeFullName = TypeSymbolHelper.GetTypeFullName(methodSymbol.ReturnType);
-        var isAsyncEnumerable = TypeDetectionHelper.IsAsyncEnumerableType(returnTypeFullName, out var asyncEnumerableElementType);
+        // IAsyncEnumerable<T> 识别：统一由 ReturnTypeSupport 按符号判定。
+        // （原实现用正则匹配类型限定名，永不匹配 → 流式分支为死代码、生成代码报 CS4032。）
+        var asyncEnumerableElementType = ReturnTypeSupport.GetAsyncEnumerableElementType(methodSymbol.ReturnType);
+        var isAsyncEnumerable = asyncEnumerableElementType != null;
 
         return new MethodAnalysisResult
         {
@@ -1200,7 +1203,7 @@ internal static class MethodAnalyzer
         var varyByUser = AttributeDataHelper.GetBoolValueFromAttribute(
             cacheAttr, HttpClientGeneratorConstants.CacheVaryByUserProperty);
 
-        // M3-#27：解析滑动过期配置（此前被生成器忽略，仅发 HTTPCLIENT019 Info）
+        // 解析滑动过期配置（此前被生成器忽略，仅发 HTTPCLIENT019 Info）
         var useSlidingExpiration = AttributeDataHelper.GetBoolValueFromAttribute(
             cacheAttr, HttpClientGeneratorConstants.CacheUseSlidingExpirationProperty);
 

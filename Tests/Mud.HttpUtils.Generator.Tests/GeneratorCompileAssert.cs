@@ -25,16 +25,19 @@ internal static class GeneratorCompileAssert
     /// <param name="nullable">nullable 上下文；F1 触发条件与 nullable 上下文相关，需双向覆盖。</param>
     /// <param name="languageVersion">目标语言版本。</param>
     /// <param name="description">用例描述（用于失败消息）。</param>
+    /// <param name="allowUnsafe">是否允许 unsafe 上下文（指针签名用例需要；消费方项目同样须开 AllowUnsafeBlocks）。</param>
     /// <returns>更新后的编译单元（含生成代码），供需要进一步断言的调用方使用。</returns>
     public static Compilation RunAndAssertNoErrors(
         string source,
         IEnumerable<MetadataReference>? extraReferences = null,
         NullableContextOptions nullable = NullableContextOptions.Disable,
         LanguageVersion languageVersion = LanguageVersion.Latest,
-        string? description = null)
+        string? description = null,
+        bool allowUnsafe = false)
     {
         var generator = new HttpInvokeClassSourceGenerator();
-        return RunAndAssertNoErrors(generator, source, extraReferences, nullable, languageVersion, description);
+        return RunAndAssertNoErrors(
+            generator, source, extraReferences, nullable, languageVersion, description, allowUnsafe);
     }
 
     /// <summary>
@@ -46,9 +49,10 @@ internal static class GeneratorCompileAssert
         IEnumerable<MetadataReference>? extraReferences = null,
         NullableContextOptions nullable = NullableContextOptions.Disable,
         LanguageVersion languageVersion = LanguageVersion.Latest,
-        string? description = null)
+        string? description = null,
+        bool allowUnsafe = false)
     {
-        var compilation = CreateCompilation(source, extraReferences, nullable, languageVersion);
+        var compilation = CreateCompilation(source, extraReferences, nullable, languageVersion, allowUnsafe);
 
         GeneratorDriver driver = CSharpGeneratorDriver.Create(generator);
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out _);
@@ -70,7 +74,8 @@ internal static class GeneratorCompileAssert
         string source,
         IEnumerable<MetadataReference>? extraReferences,
         NullableContextOptions nullable,
-        LanguageVersion languageVersion)
+        LanguageVersion languageVersion,
+        bool allowUnsafe)
     {
         var tree = CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(languageVersion));
         return CSharpCompilation.Create(
@@ -78,6 +83,7 @@ internal static class GeneratorCompileAssert
             new[] { tree },
             BasicReferenceAssemblies.GetReferences().Concat(extraReferences ?? []),
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
-                .WithNullableContextOptions(nullable));
+                .WithNullableContextOptions(nullable)
+                .WithAllowUnsafe(allowUnsafe));
     }
 }

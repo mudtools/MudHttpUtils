@@ -48,7 +48,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 // 缺少 HTTP 方法特性：生成器无法生成 HTTP 调用实现。
                 // 不得静默跳过 —— 否则实现类缺失接口成员会产生 CS0535，
                 // 掩盖 MUD001（「缺少 HTTP 方法特性」）等真正的原因。
-                EmitContractCompletionStub(codeBuilder, context, methodSymbol);
+                EmitContractCompletionStub(codeBuilder, context, methodSymbol, "该成员缺少 HTTP 方法特性");
                 continue;
             }
 
@@ -65,15 +65,13 @@ internal class MethodGenerator : ICodeFragmentGenerator
             if (outcome != MethodGenerationOutcome.Generated)
             {
                 // 未发射真实实现 → 补发占位成员，保证实现类满足接口契约（否则产生 CS0535）。
-                // 占位成员运行期会抛 NotSupportedException，故必须编译期有诊断可见：
-                // 若该问题尚无任何诊断说明，则此处补一条。
-                if (outcome == MethodGenerationOutcome.SkippedWithoutDiagnostic)
-                {
-                    ContractPlaceholder.ReportUnsupportedMember(
-                        context, methodSymbol, "无法解析为有效的 HTTP 方法，请检查 URL 模板等配置");
-                }
-
-                EmitContractCompletionStub(codeBuilder, context, methodSymbol);
+                // 占位成员运行期会抛 NotSupportedException，故必须编译期有诊断可见；
+                // 该诊断（HTTPCLIENT024）由 EmitContractCompletionStub 在真正发射占位时报告。
+                EmitContractCompletionStub(
+                    codeBuilder, context, methodSymbol,
+                    outcome == MethodGenerationOutcome.SkippedWithoutDiagnostic
+                        ? "无法解析为有效的 HTTP 方法，请检查 URL 模板等配置"
+                        : "生成器无法为该成员生成 HTTP 调用实现（原因见该成员上的其它诊断）");
             }
 
             if (HasCacheAttribute(methodSymbol))
@@ -114,10 +112,10 @@ internal class MethodGenerator : ICodeFragmentGenerator
         /// <summary>已发射真实实现。</summary>
         Generated,
 
-        /// <summary>未发射实现，但该问题已有诊断说明（本生成器或分析器产出），无需重复报告。</summary>
+        /// <summary>未发射实现，但该问题已有更具体的诊断说明（本生成器或分析器产出）。</summary>
         SkippedWithDiagnostic,
 
-        /// <summary>未发射实现且无任何诊断说明 —— 需补一条，避免占位实现把编译期错误变成运行期故障。</summary>
+        /// <summary>未发射实现且无更具体的诊断说明 —— 占位诊断需给出通用原因，避免把编译期错误变成运行期故障。</summary>
         SkippedWithoutDiagnostic,
     }
 
@@ -126,10 +124,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
     /// </summary>
     /// <returns>
     /// 生成结果。<see cref="MethodGenerationOutcome.Generated"/> 表示已发射该方法成员；
-    /// 其余取值表示未发射，调用方将按 <see cref="EmitContractCompletionStub"/> 补发契约占位实现。
-    /// 注意：<c>[IgnoreGenerator]</c> 方法返回
-    /// <see cref="MethodGenerationOutcome.SkippedWithDiagnostic"/>，但<b>不应</b>补发占位成员
-    /// （语义为使用方自行实现），该判定由调用方完成。
+    /// 其余取值表示未发射，调用方将按 <see cref="EmitContractCompletionStub"/> 补发契约占位实现
+    /// （该补发内部对 <c>[IgnoreGenerator]</c> 与使用方已手写的方法自动让路）。
     /// </returns>
     private MethodGenerationOutcome GenerateMethodImplementation(StringBuilder codeBuilder, GeneratorContext context, IMethodSymbol methodSymbol, MethodAnalysisResult methodInfo, bool isVirtual = false)
     {
@@ -201,6 +197,15 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     methodSymbol.Name,
                     methodInfo.EffectiveTokenInjectionMode));
         }
+
+        // 返回类型形态门控：生成器只为异步形态（Task/ValueTask/Task<T>/ValueTask<T>/IAsyncEnumerable<T>）
+        // 发射 async 方法体，而方法体一律含 await。裸返回类型（byte[]/Stream/HttpResponseMessage/Response<T>/
+        // string/void 等）会产出「非 async 方法体内含 await」的不可编译代码（实测 CS4032）。
+        // 故此处不再发射方法体，改由调用方补发契约占位实现（抛 NotSupportedException）。
+        // 诊断由 MUD002（Error，与生成器共用 ReturnTypeSupport.IsSupported 判定）给出，
+        // 不在此重复报告 —— 见 ContractPlaceholder 的「避免重复报告」约定。
+        if (!ReturnTypeSupport.IsSupported(methodSymbol.ReturnType))
+            return MethodGenerationOutcome.SkippedWithDiagnostic;
 
         codeBuilder.AppendLine();
         codeBuilder.AppendLine($"        /// <summary>");
@@ -315,21 +320,42 @@ internal class MethodGenerator : ICodeFragmentGenerator
     }
 
     /// <summary>
-    /// 为「生成器无法实现」的接口方法发射契约占位实现；<c>[IgnoreGenerator]</c> 方法除外。
+    /// 为「生成器无法实现」的接口方法发射契约占位实现；<c>[IgnoreGenerator]</c> 方法与使用方已手写实现的方法除外。
     /// </summary>
+    /// <param name="codeBuilder">代码缓冲区。</param>
+    /// <param name="context">生成上下文。</param>
+    /// <param name="methodSymbol">未生成实现的方法。</param>
+    /// <param name="reason">占位原因（写入 HTTPCLIENT024 诊断消息）。</param>
     /// <remarks>
+    /// <para>
     /// <c>[IgnoreGenerator]</c>（接口级/方法级）语义为「生成器完全跳过、由使用方自行实现」，
     /// 此时发射占位成员会与使用方的实现冲突，故必须保持不发射。
+    /// </para>
+    /// <para>
+    /// 同理，使用方在 partial 实现类中手写该方法（占位实现落地前的可用写法）时也必须让路，
+    /// 否则构成重复定义（CS0111）。见 <see cref="ContractPlaceholder.IsImplementedByUser"/>。
+    /// </para>
+    /// <para>
+    /// 真正发射占位时同步报告 <c>HTTPCLIENT024</c>：占位成员运行期必抛异常，
+    /// 故编译期必须始终可见 —— 不能依赖「该成员上的其它诊断」兜底，
+    /// 因为其中的分析器诊断（MUD001/MUD002）在生成器报出「Error + NotConfigurable」诊断时会整体消失。
+    /// </para>
     /// </remarks>
-    private static void EmitContractCompletionStub(StringBuilder codeBuilder, GeneratorContext context, IMethodSymbol methodSymbol)
+    private static void EmitContractCompletionStub(
+        StringBuilder codeBuilder, GeneratorContext context, IMethodSymbol methodSymbol, string reason)
     {
         if (GeneratorAttributeFilters.HasIgnoreGenerator(methodSymbol))
             return;
 
         // 其它片段生成器（AppContext / 令牌辅助等）已按模式无条件发射同名成员时，不得重复发射。
-        if (context.ProvidedMemberNames.Contains(methodSymbol.Name))
+        // 该登记表只含实例成员，故仅对实例方法生效。
+        if (!methodSymbol.IsStatic && context.ProvidedMemberNames.Contains(methodSymbol.Name))
             return;
 
+        if (ContractPlaceholder.IsImplementedByUser(context, methodSymbol))
+            return;
+
+        ContractPlaceholder.ReportUnsupportedMember(context, methodSymbol, reason);
         EmitUnsupportedMethodStub(codeBuilder, methodSymbol);
     }
 
@@ -348,8 +374,16 @@ internal class MethodGenerator : ICodeFragmentGenerator
     /// 会以明确消息快速失败，而非产生难以定位的编译错误。
     /// </para>
     /// <para>
-    /// <b>例外</b>：签名含指针/函数指针类型的方法不发射占位成员 —— 发射需要 <c>unsafe</c> 上下文，
-    /// 且这些方法已由 HTTPCLIENT004（Error）明确说明原因。
+    /// <b>签名保真</b>：占位成员必须与接口签名逐项一致，否则编译器报 <c>CS0535</c>（更糟：报 <c>CS8767</c> 之类的隐式实现不匹配）。
+    /// 因此需按需补齐修饰符：
+    /// <list type="bullet">
+    ///   <item><c>unsafe</c> —— 指针/函数指针签名（如 <c>Task&lt;string&gt; M(int* p)</c>），
+    ///         缺失会报「指针不得在安全上下文中使用」；</item>
+    ///   <item><c>static</c> —— 接口静态抽象成员（C# 11+，<c>static abstract</c>）由实现类的<b>静态</b>成员满足，
+    ///         缺失会持续报 CS0535；</item>
+    ///   <item><c>ref</c>/<c>ref readonly</c> 返回 —— <c>throw</c> 表达式不能作为 ref 返回值，
+    ///         须改用语句体 <c>{ throw ...; }</c>。</item>
+    /// </list>
     /// </para>
     /// </remarks>
     private static void EmitUnsupportedMethodStub(StringBuilder codeBuilder, IMethodSymbol methodSymbol)
@@ -359,23 +393,22 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 SymbolDisplayMiscellaneousOptions.UseSpecialTypes |
                 SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
 
-        // 指针 / 函数指针签名需 unsafe 上下文，跳过占位（HTTPCLIENT004 已给出原因）。
-        if (methodSymbol.ReturnType.TypeKind is TypeKind.Pointer or TypeKind.FunctionPointer)
-            return;
-        if (methodSymbol.Parameters.Any(p => p.Type.TypeKind is TypeKind.Pointer or TypeKind.FunctionPointer))
-            return;
+        var isStatic = methodSymbol.IsStatic;
+        var returnsByRefReadonly = methodSymbol.RefKind == RefKind.RefReadOnly;
+        var returnsByRef = methodSymbol.RefKind != RefKind.None;
+        var needsUnsafe = ContractPlaceholder.RequiresUnsafeContext(methodSymbol.ReturnType) ||
+            methodSymbol.Parameters.Any(p => ContractPlaceholder.RequiresUnsafeContext(p.Type));
 
-        // 静态接口成员（C# 11+）不由实现类的实例成员满足，发射实例成员无意义。
-        if (methodSymbol.IsStatic)
-            return;
-
-        var returnType = methodSymbol.ReturnType.ToDisplayString(typeFormat);
+        var returnType = (returnsByRefReadonly ? "ref readonly " : returnsByRef ? "ref " : string.Empty)
+            + methodSymbol.ReturnType.ToDisplayString(typeFormat);
         var typeParameters = methodSymbol.TypeParameters.Length == 0
             ? string.Empty
             : $"<{string.Join(", ", methodSymbol.TypeParameters.Select(tp => tp.Name))}>";
+        var modifiers = (isStatic ? "static " : string.Empty)
+            + (needsUnsafe ? "unsafe " : string.Empty);
         var message =
             $"方法 '{methodSymbol.Name}' 未生成 HTTP 调用实现：请检查接口方法的 HTTP 方法特性（[Get]/[Post] 等）、" +
-            "参数修饰符、URL 模板与 HttpClient 类型配置（详见编译诊断），或为该方法标注 [IgnoreGenerator] 自行实现。";
+            "参数修饰符、返回类型形态、URL 模板与 HttpClient 类型配置（详见编译诊断），或为该方法标注 [IgnoreGenerator] 自行实现。";
 
         codeBuilder.AppendLine();
         codeBuilder.AppendLine("        /// <summary>");
@@ -387,8 +420,19 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// 修复对应诊断后重新生成；若确需自行实现，请标注 [IgnoreGenerator]。");
         codeBuilder.AppendLine("        /// </remarks>");
         codeBuilder.AppendLine($"        {GeneratedCodeConsts.HttpGeneratedCodeAttribute}");
-        codeBuilder.AppendLine($"        public {returnType} {methodSymbol.Name}{typeParameters}({ParameterSignatureBuilder.Build(methodSymbol)})");
-        codeBuilder.AppendLine($"            => throw new global::System.NotSupportedException(\"{StringEscapeHelper.EscapeString(message)}\");");
+        codeBuilder.AppendLine($"        public {modifiers}{returnType} {methodSymbol.Name}{typeParameters}({ParameterSignatureBuilder.Build(methodSymbol)})");
+
+        if (returnsByRef)
+        {
+            // ref 返回无法用 throw 表达式，改用语句体。
+            codeBuilder.AppendLine("        {");
+            codeBuilder.AppendLine($"            throw new global::System.NotSupportedException(\"{StringEscapeHelper.EscapeString(message)}\");");
+            codeBuilder.AppendLine("        }");
+        }
+        else
+        {
+            codeBuilder.AppendLine($"            => throw new global::System.NotSupportedException(\"{StringEscapeHelper.EscapeString(message)}\");");
+        }
     }
 
     /// <summary>
@@ -662,7 +706,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             sb.AppendLine("                   {");
             sb.AppendLine($"                       DurationSeconds = {methodInfo.CacheDurationSeconds},");
             sb.AppendLine($"                       VaryByUser = {methodInfo.CacheVaryByUser.ToString().ToLowerInvariant()},");
-            // M3-#27：滑动过期语义下沉到 CacheOptions，运行时经 GetOrFetchAsync 透传至缓存层
+            // 滑动过期语义下沉到 CacheOptions，运行时经 GetOrFetchAsync 透传至缓存层
             sb.AppendLine($"                       UseSlidingExpiration = {methodInfo.CacheUseSlidingExpiration.ToString().ToLowerInvariant()},");
             if (!string.IsNullOrEmpty(methodInfo.CacheKeyTemplate))
                 // [F13 修复] 在写入点转义 KeyTemplate 字面量（用户可配置模板，含 " \ 时直拼产出非法 C#）。

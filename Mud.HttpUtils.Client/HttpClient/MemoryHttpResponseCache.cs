@@ -136,7 +136,7 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
 
             if (result != null)
             {
-                // M3-#27：透传滑动过期语义（TryGet 命中时由 CacheEntry.Touch 顺延过期时间）
+                // 透传滑动过期语义（TryGet 命中时由 CacheEntry.Touch 顺延过期时间）
                 Set(key, result, expiration, useSlidingExpiration);
             }
 

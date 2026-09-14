@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/Demos/">
+    <Project Path="Demos/AotVerificationDemo/AotVerificationDemo.csproj" />
     <Project Path="Demos/CommonClassLibrary.Share/CommonClassLibrary.Share.shproj" Id="53f9a9c3-3728-41b9-afe9-51ff9194496b" />
     <Project Path="Demos/CommonClassLibrary/CommonClassLibrary.csproj" />
     <Project Path="Demos/CommonClassPubliceLibrary/CommonClassPubliceLibrary.csproj" Id="228e153e-0ac6-4d1d-a34c-38a35d1d40ba" />
@@ -8,29 +9,28 @@
     <Project Path="Demos/HttpClientApiPublicDemo/HttpClientApiPublicDemo.csproj" Id="fd484f33-9086-4c78-825f-9ac1a9fb9502" />
     <Project Path="Demos/HttpClientDemo/HttpClientDemo.csproj" />
     <Project Path="Demos/ResilienceDemo/ResilienceDemo.csproj" />
-    <Project Path="Demos/AotVerificationDemo/AotVerificationDemo.csproj" />
   </Folder>
   <Folder Name="/Src/">
     <Project Path="Mud.HttpUtils.Abstractions/Mud.HttpUtils.Abstractions.csproj" />
     <Project Path="Mud.HttpUtils.Attributes/Mud.HttpUtils.Attributes.csproj" />
     <Project Path="Mud.HttpUtils.Client/Mud.HttpUtils.Client.csproj" />
-    <Project Path="Mud.HttpUtils.Generator/Mud.HttpUtils.Generator.csproj" />
     <Project Path="Mud.HttpUtils.CodeFixes/Mud.HttpUtils.CodeFixes.csproj" />
+    <Project Path="Mud.HttpUtils.Generator/Mud.HttpUtils.Generator.csproj" />
+    <Project Path="Mud.HttpUtils.Newtonsoft.Json/Mud.HttpUtils.Newtonsoft.Json.csproj" />
     <Project Path="Mud.HttpUtils.OpenTelemetry/Mud.HttpUtils.OpenTelemetry.csproj" />
     <Project Path="Mud.HttpUtils.Resilience/Mud.HttpUtils.Resilience.csproj" />
     <Project Path="Mud.HttpUtils/Mud.HttpUtils.csproj" />
-    <Project Path="Mud.HttpUtils.Newtonsoft.Json/Mud.HttpUtils.Newtonsoft.Json.csproj" />
-    <Project Path="Mud.HttpUtils.Testing/Mud.HttpUtils.Testing.csproj" />
   </Folder>
   <Folder Name="/Tests/">
+    <Project Path="Mud.HttpUtils.Testing/Mud.HttpUtils.Testing.csproj" />
     <Project Path="Tests/Mud.HttpUtils.Benchmarks/Mud.HttpUtils.Benchmarks.csproj" />
     <Project Path="Tests/Mud.HttpUtils.Client.Tests/Mud.HttpUtils.Client.Tests.csproj" />
+    <Project Path="Tests/Mud.HttpUtils.CodeFixes.Tests/Mud.HttpUtils.CodeFixes.Tests.csproj" />
     <Project Path="Tests/Mud.HttpUtils.Generator.Tests/Mud.HttpUtils.Generator.Tests.csproj" />
     <Project Path="Tests/Mud.HttpUtils.Integration.Tests/Mud.HttpUtils.Integration.Tests.csproj" />
     <Project Path="Tests/Mud.HttpUtils.JsonContextScaffolder.Tests/Mud.HttpUtils.JsonContextScaffolder.Tests.csproj" />
     <Project Path="Tests/Mud.HttpUtils.OpenTelemetry.Tests/Mud.HttpUtils.OpenTelemetry.Tests.csproj" />
     <Project Path="Tests/Mud.HttpUtils.Resilience.Tests/Mud.HttpUtils.Resilience.Tests.csproj" />
-    <Project Path="Tests/Mud.HttpUtils.CodeFixes.Tests/Mud.HttpUtils.CodeFixes.Tests.csproj" />
   </Folder>
   <Folder Name="/Tools/">
     <Project Path="Tools/Mud.HttpUtils.JsonContextScaffolder/Mud.HttpUtils.JsonContextScaffolder.csproj" />

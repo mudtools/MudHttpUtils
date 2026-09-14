@@ -227,13 +227,22 @@ internal static class Diagnostics
     /// 否则会把编译期错误静默降级为运行期故障。
     /// </para>
     /// <para>
-    /// <b>级别必须为 Warning</b>：若使用 Error 级别，编译器将跳过本编译中的分析器诊断
-    /// （实测：生成器报告 Error 诊断后 MUD001/MUD002/MUD004 等不再呈现），
-    /// 从而掩盖真正说明根因的诊断（见 <c>MudHttpInterfaceAnalyzer</c>）。Warning 级别与其它诊断共存。
+    /// <b>级别为 Error</b>：占位成员在运行期必然抛 <see cref="System.NotSupportedException"/>，
+    /// 属「接口声明的成员实际不可用」。修复前该情形表现为 <c>CS0535</c>（编译失败），
+    /// 若降级为 Warning 则构建转为成功，等于把原本的编译期失败改成运行期故障 ——
+    /// 对未标注 <c>[IgnoreGenerator]</c> 的属性/索引器/事件尤为危险（该情形没有其它 Error 级诊断兜底）。
     /// </para>
     /// <para>
-    /// 报告约定：仅当该成员问题没有更具体的诊断（MUD001/MUD002/HTTPCLIENT004/005/008/009/017）说明时才报告，
-    /// 避免对同一问题重复提示。
+    /// <b>不得添加 <see cref="WellKnownDiagnosticTags.NotConfigurable"/> 标签</b>：实测规律为
+    /// 「生成器报出 <c>Error</c> 且带 <c>NotConfigurable</c> 标签的诊断时，同一编译中的<b>分析器</b>诊断
+    /// （<c>MUD001</c>/<c>MUD002</c>/<c>MUD004</c>）整体不再呈现」（<c>HTTPCLIENT004</c>/<c>HTTPCLIENT005</c> 均可复现；
+    /// 去掉标签或降为 Warning 后立即恢复）。本诊断是占位实现唯一可靠的可见性来源，必须始终呈现，故不加该标签。
+    /// </para>
+    /// <para>
+    /// <b>报告约定：每次发射占位实现都报告</b>（不再沿用「有更具体诊断就不报」的旧约定）。
+    /// 原因有二：其一，本诊断承载其它诊断无法替代的信息（占位已发射、运行期将抛异常）；
+    /// 其二，兜底诊断可能是分析器诊断（MUD001/MUD002），而它受上一条规律影响可能整体消失，
+    /// 一旦消失而本诊断又未报，占位实现就变成<b>静默</b>的运行期故障。
     /// </para>
     /// </remarks>
     public static readonly DiagnosticDescriptor HttpClientMemberNotGeneratedPlaceholder = new(
@@ -241,7 +250,7 @@ internal static class Diagnostics
         title: "接口成员未生成实现（已发射占位实现）",
         messageFormat: "接口 {0} 的成员 {1} 未生成实现（{2}）——已发射占位实现，运行期调用将抛 NotSupportedException。请在修复对应配置后重新生成，或为该成员标注 [IgnoreGenerator] 自行实现。",
         category: "代码生成",
-        DiagnosticSeverity.Warning,
+        DiagnosticSeverity.Error,
         isEnabledByDefault: true);
     #endregion
 
@@ -412,14 +421,18 @@ internal static class Diagnostics
         isEnabledByDefault: true,
         description: "标记了 [HttpClientApi] 的接口中的每个方法必须标注一个 HTTP 方法特性.");
 
+    // 判定口径与生成器一致（共用 ReturnTypeSupport.IsSupported）：
+    // 只接受异步形态。裸 byte[]/Stream/HttpResponseMessage 曾被视为合法，
+    // 但生成器对它们会产出「非 async 方法体内含 await」的不可编译代码（实测 CS4032），
+    // 属「分析器沉默 + 生成坏代码」的漏报，已收紧。
     public static readonly DiagnosticDescriptor MudMethodInvalidReturnType = new(
         id: DiagnosticIds.MudMethodInvalidReturnType,
         title: "HttpClientApi 方法返回类型无效",
-        messageFormat: "方法 '{0}' 返回类型 '{1}' 无效，应为 Task、Task<T>、ValueTask、ValueTask<T>、IAsyncEnumerable<T>、HttpResponseMessage、byte[] 或 Stream",
+        messageFormat: "方法 '{0}' 返回类型 '{1}' 无效，应为异步形态：Task、Task<T>、ValueTask、ValueTask<T> 或 IAsyncEnumerable<T>（响应体类型 T 可为任意类型，含 byte[]/Stream/HttpResponseMessage/自定义类型）",
         category: "Mud.HttpUtils.Interface",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "HttpClientApi 接口方法必须返回生成器支持的返回类型.");
+        description: "HttpClientApi 接口方法必须返回生成器支持的返回类型（异步形态）.");
 
     public static readonly DiagnosticDescriptor MudNonSingletonTokenManager = new(
         id: DiagnosticIds.MudNonSingletonTokenManager,

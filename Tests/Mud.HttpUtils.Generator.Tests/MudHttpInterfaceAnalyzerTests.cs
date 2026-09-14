@@ -14,7 +14,9 @@ namespace Mud.HttpUtils.Generator.Tests;
 /// F9：MUD001/MUD002 与生成器能力对齐的测试。
 /// <para>
 /// MUD001 豁免 [IgnoreGenerator]（接口级跳过全部、方法级跳过单个）；
-/// MUD002 支持生成器实际支持的返回类型（IAsyncEnumerable/HttpResponseMessage/byte[]/Stream）。
+/// MUD002 只接受生成器实际支持的<b>异步形态</b>返回类型
+/// （Task/Task&lt;T&gt;/ValueTask/ValueTask&lt;T&gt;/IAsyncEnumerable&lt;T&gt;，与生成器共用
+/// <c>ReturnTypeSupport.IsSupported</c>）—— 裸 byte[]/Stream/HttpResponseMessage/void 均不受支持。
 /// </para>
 /// </summary>
 public class MudHttpInterfaceAnalyzerTests
@@ -39,6 +41,12 @@ public class MudHttpInterfaceAnalyzerTests
         var analysis = compilation.WithAnalyzers(ImmutableArray.Create<DiagnosticAnalyzer>(new MudHttpInterfaceAnalyzer()));
         return analysis.GetAnalyzerDiagnosticsAsync().GetAwaiter().GetResult();
     }
+
+    /// <summary>
+    /// 供其它测试类复用本分析器（MUD001/MUD002）的语义分析入口。
+    /// 典型用途：断言「生成器发射占位实现」的场景同时具备说明根因的分析器诊断。
+    /// </summary>
+    internal static ImmutableArray<Diagnostic> AnalyzeForTest(string source) => Analyze(source);
 
     private const string BaseInterfaceBody = """
             [Get("/users")]
@@ -131,13 +139,43 @@ public class MudHttpInterfaceAnalyzerTests
                 public interface IApi
                 {
                     [Get("/raw")]
-                    System.Net.Http.HttpResponseMessage Raw();
+                    Task<System.Net.Http.HttpResponseMessage> RawAsync();
                 }
             }
             """;
 
         var diagnostics = Analyze(source);
         diagnostics.Should().NotContain(d => d.Id == "MUD002");
+    }
+
+    /// <summary>
+    /// 回归：裸（未被 async 形态包裹）的返回类型此前被 MUD002 视为合法，但生成器对它们会产出
+    /// 「非 async 方法体内含 await」的不可编译代码（实测 CS4032）——
+    /// 属「分析器沉默 + 生成坏代码」的漏报方向，现必须报告 MUD002。
+    /// </summary>
+    [Theory]
+    [InlineData("byte[] Bytes();")]
+    [InlineData("System.Net.Http.HttpResponseMessage Raw();")]
+    [InlineData("System.IO.Stream Stream();")]
+    [InlineData("void FireAndForget();")]
+    [InlineData("string GetString();")]
+    public void BareNonAsyncReturnType_ReportsMUD002(string declaration)
+    {
+        var source = HttpClientApiUsings + $$"""
+            namespace TestNamespace
+            {
+                [HttpClientApi]
+                public interface IApi
+                {
+                    [Get("/x")]
+                    {{declaration}}
+                }
+            }
+            """;
+
+        var diagnostics = Analyze(source);
+        diagnostics.Should().Contain(d => d.Id == "MUD002",
+            "裸返回类型会产出不可编译的生成代码，必须报告 MUD002");
     }
 
     [Fact]

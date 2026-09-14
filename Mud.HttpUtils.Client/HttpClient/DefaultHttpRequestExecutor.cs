@@ -666,7 +666,7 @@ public class DefaultHttpRequestExecutor(
     /// 统一的执行编排逻辑：根据 descriptor 应用弹性策略和缓存包装。
     /// </summary>
     /// <remarks>
-    /// A-4 修复：弹性管线语义说明（双层结构，通过 SkipResilience 标记保证弹性策略只应用一次）：
+    /// 弹性管线语义说明（双层结构，通过 SkipResilience 标记保证弹性策略只应用一次）：
     /// <para>
     /// 1. <b>ResilientHttpClient（全局装饰器）</b>——作为最外层装饰器应用全局默认弹性策略；
     ///    发送前检查 SkipResilience 标记，若已设置则跳过全局弹性包装，直接转发至内层客户端。
@@ -714,7 +714,7 @@ public class DefaultHttpRequestExecutor(
                 if (descriptor.Cache != null && _cacheProvider != null && descriptor.CacheKey != null)
                 {
                     var expiration = TimeSpan.FromSeconds(descriptor.Cache.DurationSeconds);
-                    // M3-#27：透传滑动过期语义
+                    // 透传滑动过期语义
                     return await _cacheProvider.GetOrFetchAsync(
                         descriptor.CacheKey,
                         () => ResilienceWrapped(cancellationToken),
@@ -731,7 +731,7 @@ public class DefaultHttpRequestExecutor(
         if (descriptor.Cache != null && _cacheProvider != null && descriptor.CacheKey != null)
         {
             var expiration = TimeSpan.FromSeconds(descriptor.Cache.DurationSeconds);
-            // M3-#27：透传滑动过期语义
+            // 透传滑动过期语义
             return await _cacheProvider.GetOrFetchAsync(
                 descriptor.CacheKey,
                 () => coreExecute(request, cancellationToken),

@@ -58,7 +58,7 @@ public interface IHttpResponseCache
     Task<T?> GetOrFetchAsync<T>(string key, Func<Task<T>> fetchFunc, TimeSpan expiration, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// 尝试从缓存中获取响应，如果缓存未命中则执行获取函数并缓存结果（M3-#27：支持滑动过期）。
+    /// 尝试从缓存中获取响应，如果缓存未命中则执行获取函数并缓存结果（支持滑动过期）。
     /// </summary>
     /// <typeparam name="T">响应类型。</typeparam>
     /// <param name="key">缓存键。</param>

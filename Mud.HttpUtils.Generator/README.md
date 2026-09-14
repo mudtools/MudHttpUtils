@@ -739,7 +739,7 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 | `HTTPCLIENT021` | Warning | 方法级 `[Timeout]` 超过接口级 `HttpClient` 超时 | `HttpClient.Timeout` 是硬上限，调小 `[Timeout]` 或提高 `[HttpClientApi(Timeout=…)]` | 否 |
 | `HTTPCLIENT022` | Warning | 方法使用 `Path`/`HmacSignature` 令牌注入模式 | 该模式不被令牌恢复处理器支持，刷新后的新令牌无法重新注入；改用 `Header`/`Query`/`ApiKey`/`Cookie`/`BasicAuth` 模式 | 否 |
 | `HTTPCLIENT023` | Info | 检测到 `-p:ForceHttpGenerator=true`，增量缓存被强制失效 | 无需处理（逃生舱生效提示，F4） | 否 |
-| `HTTPCLIENT024` | Warning | 接口成员（无条件化特性的属性/事件等）未被生成实现，已发射占位实现 | 改用受支持的接口成员形态，或标注 `[IgnoreGenerator]` 自行实现。占位成员在运行期调用会抛 `NotSupportedException` | 否 |
+| `HTTPCLIENT024` | Error | 接口成员未被生成实现，已发射占位实现（含无条件化特性的属性/事件、不受支持的返回类型/参数修饰符等） | 改用受支持的接口成员形态，或标注 `[IgnoreGenerator]` 自行实现。占位成员在运行期调用会抛 `NotSupportedException` | 否 |
 
 > **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010`、`HTTPCLIENT019` 当前**未使用**（ID 保留为占位，不重新分配）。
 > - `HTTPCLIENT010`：`BaseAddress` 已移除（CFG-27），使用直接编译错误 `CS0117`，无需生成器提示。
@@ -786,8 +786,8 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 
 | 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 |
 |---------|----------|----------|----------|------------|
-| `MUD001` | Error | `[HttpClientApi]` 接口方法缺少 HTTP 方法特性 | 为方法标注 `[Get]`/`[Post]`/`[Put]`/`[Delete]`/`[Patch]`/`[Head]`/`[Options]`，或使用继承自 `HttpMethodAttribute` 的自定义特性；标注 `[IgnoreGenerator]` 的接口/方法豁免 | 否 |
-| `MUD002` | Error | `[HttpClientApi]` 接口方法返回类型不在生成器支持白名单内 | 返回 `Task`/`Task<T>`/`ValueTask`/`ValueTask<T>`/`IAsyncEnumerable<T>`/`HttpResponseMessage`/`byte[]`/`Stream`（与生成器分支一一对应） | 否 |
+| `MUD001` | Error | `[HttpClientApi]` 接口方法缺少 HTTP 方法特性 | 为方法标注 `[Get]`/`[Post]`/`[Put]`/`[Delete]`/`[Patch]`/`[Head]`/`[Options]`；标注 `[IgnoreGenerator]` 的接口/方法豁免。注意生成器由**特性名**推导 HTTP 动词，故继承 `HttpMethodAttribute` 的自定义特性不受支持（会产出 `CS0117`） | 否 |
+| `MUD002` | Error | `[HttpClientApi]` 接口方法返回类型不受生成器支持 | 返回**异步形态**：`Task`/`Task<T>`/`ValueTask`/`ValueTask<T>`/`IAsyncEnumerable<T>`（响应体 `T` 可为任意类型，含 `byte[]`/`Stream`/`HttpResponseMessage`/自定义类型）。裸 `byte[]`/`Stream`/`HttpResponseMessage`/`void` 均不受支持（生成器会产出不可编译代码） | 否 |
 | `MUD004` | Warning | `ITokenManager` 的实现以 `AddScoped`/`AddTransient`/`TryAddScoped`/`TryAddTransient` 注册（该实现内部维护令牌缓存与并发锁，非 Singleton 会令并发安全机制失效并重复刷新令牌） | 改用 `AddSingleton`/`TryAddSingleton` | 否 |
 
 ### 日志脱敏
@@ -983,19 +983,35 @@ public class UserRequest
 
 | 情形 | 生成行为 | 编译期诊断 |
 |---|---|---|
-| 方法缺少 HTTP 方法特性 | 发射占位方法 | `MUD001`（Error） |
-| 方法返回类型不在白名单内 | 发射占位方法 | `MUD002`（Error） |
-| 方法存在不支持的参数修饰符（`ref`/`out`/`in`/`params`/指针） | 发射占位方法 | `HTTPCLIENT004`（Error） |
-| 方法 URL 模板无效 | 发射占位方法 | `HTTPCLIENT005`（Error） |
-| 属性/索引器/事件不受支持（如未标注 `[Query]`/`[Path]`/`[Header]` 的属性） | 发射占位成员 | `HTTPCLIENT024`（Warning） |
-| 成员标注 `[IgnoreGenerator]` | **不发射任何成员**（由使用方自行实现） | 无（由使用方负责） |
+| 方法缺少 HTTP 方法特性 | 发射占位方法 | `HTTPCLIENT024`（Error）＋ `MUD001`（Error） |
+| 方法返回类型不是异步形态（含裸 `byte[]`/`Stream`/`HttpResponseMessage`/`void`） | 发射占位方法 | `HTTPCLIENT024`（Error）＋ `MUD002`（Error） |
+| 方法存在不支持的参数修饰符（`ref`/`out`/`in`/`params`/指针） | 发射占位方法（指针签名带 `unsafe`） | `HTTPCLIENT024`（Error）＋ `HTTPCLIENT004`（Error） |
+| 方法 URL 模板无效 | 发射占位方法 | `HTTPCLIENT024`（Error）＋ `HTTPCLIENT005`（Error） |
+| 属性/索引器/事件不受支持（如未标注 `[Query]`/`[Path]`/`[Header]` 的属性） | 发射占位成员（`ref` 返回用语句体访问器；`static abstract` 发射静态成员） | `HTTPCLIENT024`（Error） |
+| 成员标注 `[IgnoreGenerator]`，或使用方已在 partial 实现类中手写该成员 | **不发射任何成员**（由使用方实现） | 无（由使用方负责） |
+
+**签名保真要求**：占位成员必须与接口签名逐项一致，否则编译器仍报 `CS0535`。因此占位发射会按需补齐
+`unsafe`（指针/函数指针签名）、`static`（接口 `static abstract` 成员由实现类的静态成员满足），
+以及 `ref`/`ref readonly` 返回（改用语句体访问器 —— `throw` 表达式不能作为 ref 返回值）。
 
 > **设计意图**：早期实现对无法处理的方法/属性直接跳过，生成的实现类因此缺失接口成员，编译时报出 `CS0535`。
 > 该错误既不说明根因，还会**掩盖真正有价值的诊断**（例如 `MUD001` 完全不可见）。
 > 现改为「占位实现 + 明确诊断」：编译错误被替换为可直接定位与修复的诊断，且占位成员在运行期被调用时以明确异常快速失败。
+
+> **`HTTPCLIENT024` 为什么必须是 Error，且为什么每次发射占位都必报**：
 >
-> `HTTPCLIENT024` 的级别必须为 **Warning**：若使用 Error 级别，编译器会跳过本次编译中的分析器诊断
-> （实测 `MUD001`/`MUD002`/`MUD004` 均不再呈现），从而掩盖根因诊断。
+> - **必须是 Error**：修复前这些情形表现为 `CS0535`（构建失败）。若降级为 Warning，构建转为成功，
+>   等于把编译期失败改成运行期故障 —— 对没有其它 Error 级诊断兜底的属性/索引器/事件尤其危险。
+> - **必须每次必报**：`HTTPCLIENT024` 承载其它诊断无法替代的信息（占位已发射、运行期将抛异常）。
+>   兜底诊断可能是**分析器**诊断（`MUD001`/`MUD002`），而实测存在如下规律：
+>
+>   > 生成器报出 **`Error` 且带 `NotConfigurable` 标签**的诊断时，同一编译中的**分析器**诊断
+>   > （`MUD001`/`MUD002`/`MUD004`）整体不再呈现（`HTTPCLIENT004`/`HTTPCLIENT005` 可复现；
+>   > 去掉该标签或降为 Warning 后立即恢复）。
+>
+>   因此**不得**给 `HTTPCLIENT024` 加 `NotConfigurable` 标签（否则它会连坐抑制分析器诊断），
+>   也不能依赖分析器诊断作为占位实现的可见性兜底 —— 一旦兜底诊断消失而本诊断又未报，
+>   占位实现就变成**静默**的运行期故障。
 
 ## 项目结构
 
