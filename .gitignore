@@ -4,6 +4,7 @@
 
 /.vs
 /.docs
+/.probe
 /Mud.HttpUtils/obj
 /Mud.HttpUtils/bin
 /Mud.HttpUtils.Generator/.vs
@@ -18,8 +19,18 @@
 /Mud.HttpUtils.Resilience/bin
 /Mud.HttpUtils.OpenTelemetry/obj
 /Mud.HttpUtils.OpenTelemetry/bin
+/Mud.HttpUtils.CodeFixes/obj
+/Mud.HttpUtils.CodeFixes/bin
+/Mud.HttpUtils.Newtonsoft.Json/obj
+/Mud.HttpUtils.Newtonsoft.Json/bin
+/Mud.HttpUtils.Analyzers/obj
+/Mud.HttpUtils.Analyzers/bin
+/Mud.HttpUtils.Xml/obj
+/Mud.HttpUtils.Xml/bin
 /bin
 /Tests/bin
+/Tests/Mud.HttpUtils.Testing/obj
+/Tests/Mud.HttpUtils.Testing/bin
 /Tests/Mud.HttpUtils.Client.Tests/bin
 /Tests/Mud.HttpUtils.Client.Tests/obj
 /Tests/Mud.HttpUtils.Client.Tests/TestResults
@@ -32,6 +43,10 @@
 /Tests/Mud.HttpUtils.Generator.Tests/bin
 /Tests/Mud.HttpUtils.Generator.Tests/obj
 /Tests/Mud.HttpUtils.Generator.Tests/TestResults
+# Verify 快照：只忽略 .received.txt（失败产物），必须跟踪 .verified.txt（测试基线）。
+# 历史规则为 *.txt，导致 22 份 *.verified.txt 从未入库 → 全新检出/CI 上快照测试必然全红。
+/Tests/Mud.HttpUtils.Generator.Tests/*.received.txt
+!/Tests/Mud.HttpUtils.Generator.Tests/*.verified.txt
 /Tests/Mud.HttpUtils.Tests/bin
 /Tests/Mud.HttpUtils.Tests/obj
 /Tests/Mud.HttpUtils.Benchmarks/bin
@@ -43,13 +58,28 @@
 /Tests/Mud.HttpUtils.Integration.Tests/bin
 /Tests/Mud.HttpUtils.Integration.Tests/obj
 /Tests/Mud.HttpUtils.Integration.Tests/TestResults
+# 「仅分析器」CI 探针工程（刻意含违规样例，构建必然失败；不在解决方案中）
+/Tests/AnalyzerOnlyProbe/bin
+/Tests/AnalyzerOnlyProbe/obj
+/Tests/AnalyzerOnlyProbe/TestResults
 /Tests/Mud.HttpUtils.Benchmarks/bin
 /Tests/Mud.HttpUtils.Benchmarks/obj
 /Tests/Mud.HttpUtils.Benchmarks/TestResults
+/Tests/Mud.HttpUtils.JsonContextScaffolder.Tests/bin
+/Tests/Mud.HttpUtils.JsonContextScaffolder.Tests/obj
+/Tests/Mud.HttpUtils.JsonContextScaffolder.Tests/TestResults
+/Tests/Mud.HttpUtils.CodeFixes.Tests/bin
+/Tests/Mud.HttpUtils.CodeFixes.Tests/obj
+/Tests/Mud.HttpUtils.CodeFixes.Tests/TestResults
+/Test/Mud.HttpUtils.Testing/obj
+/Test/Mud.HttpUtils.Testing/bin
+/Test/Mud.HttpUtils.Testing/TestResults
 /Demos/HttpClientApiDemo/bin
 /Demos/HttpClientApiDemo/obj
 /Demos/HttpClientDemo/bin
 /Demos/HttpClientDemo/obj
+/Demos/AotVerificationDemo/bin
+/Demos/AotVerificationDemo/obj
 /Demos/ResilienceDemo/bin
 /Demos/ResilienceDemo/obj
 /Demos/CommonClassLibrary/bin
@@ -58,9 +88,15 @@
 /Demos/CommonClassPubliceLibrary/obj
 /Demos/HttpClientApiPublicDemo/bin
 /Demos/HttpClientApiPublicDemo/obj
+/Demos/AotPackageRefDemo/bin
+/Demos/AotPackageRefDemo/obj
+/Demos/AotFullTrimVerificationDemo/bin
+/Demos/AotFullTrimVerificationDemo/obj
+/Tools/Mud.HttpUtils.JsonContextScaffolder/bin
+/Tools/Mud.HttpUtils.JsonContextScaffolder/obj
+/Tools/bin
 /Demos/bin
 /.trae
 /artifacts
 
-# XML 文档文件（由 GenerateDocumentationFile 生成，应输出到 bin 目录）
-*.xml
+*.verified.txt
