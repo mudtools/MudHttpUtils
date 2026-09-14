@@ -34,6 +34,20 @@ public class TypeConverterTests
         }
         """;
 
+    private const string NullableSignatureSource = """
+        using System;
+
+        namespace TestNamespace
+        {
+            public interface IApi
+            {
+                global::System.Threading.Tasks.Task<string> WithNullableDefaults(
+                    int? count = 10,
+                    bool? flag = true);
+            }
+        }
+        """;
+
     [Fact]
     public void StructDefault_ShouldReturnDefaultLiteral()
     {
@@ -63,18 +77,48 @@ public class TypeConverterTests
         literal.Should().Be("default");
     }
 
-    private static string GetDefaultValueLiteralForType(string typeName)
+    [Fact]
+    public void NullableIntExplicitValue_ShouldReturnNumericLiteral()
+    {
+        // 回归：int? x = 10 曾落入兜底分支输出 "\"10\""（字符串字面量），与 int? 基类型不匹配。
+        GetDefaultValueLiteralForType("int?", 10).Should().Be("10");
+    }
+
+    [Fact]
+    public void NullableBoolExplicitValue_ShouldReturnBoolLiteral()
+    {
+        // 回归：bool? b = true 曾落入兜底分支输出 "\"true\""（字符串字面量），与 bool? 基类型不匹配。
+        GetDefaultValueLiteralForType("bool?", true).Should().Be("true");
+    }
+
+    [Fact]
+    public void ParameterSignatureBuilder_NullableValueDefaults_ShouldEmitTypedLiterals()
+    {
+        var compilation = CreateCompilation(NullableSignatureSource);
+        var type = compilation.GetTypeByMetadataName("TestNamespace.IApi")!;
+        var method = type.GetMembers("WithNullableDefaults").OfType<IMethodSymbol>().Single();
+
+        var signature = ParameterSignatureBuilder.Build(method);
+
+        signature.Should().Be("int? count = 10, bool? flag = true");
+    }
+
+    private static string GetDefaultValueLiteralForType(string typeName, object? defaultValue = null)
+    {
+        var compilation = CreateCompilation(SourceTemplate);
+        var type = ResolveType(compilation, typeName);
+        return TypeConverter.GetDefaultValueLiteral(type, defaultValue);
+    }
+
+    private static Compilation CreateCompilation(string source)
     {
         var references = BasicReferenceAssemblies.GetReferences();
-        var tree = CSharpSyntaxTree.ParseText(SourceTemplate);
-        var compilation = CSharpCompilation.Create(
+        var tree = CSharpSyntaxTree.ParseText(source);
+        return CSharpCompilation.Create(
             "TypeConverterTests",
             new[] { tree },
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-
-        var type = ResolveType(compilation, typeName);
-        return TypeConverter.GetDefaultValueLiteral(type, defaultValue: null);
     }
 
     private static ITypeSymbol ResolveType(Compilation compilation, string typeName)
@@ -82,10 +126,14 @@ public class TypeConverterTests
         return typeName switch
         {
             "string" => compilation.GetSpecialType(SpecialType.System_String),
-            "int?" => compilation.GetTypeByMetadataName("System.Nullable`1")!
-                .Construct(compilation.GetSpecialType(SpecialType.System_Int32)),
+            "int?" => MakeNullable(compilation, SpecialType.System_Int32),
+            "bool?" => MakeNullable(compilation, SpecialType.System_Boolean),
             _ => compilation.GetTypeByMetadataName(typeName)
                 ?? throw new InvalidOperationException($"无法解析类型 {typeName}"),
         };
     }
+
+    private static INamedTypeSymbol MakeNullable(Compilation compilation, SpecialType underlyingType)
+        => compilation.GetTypeByMetadataName("System.Nullable`1")!
+            .Construct(compilation.GetSpecialType(underlyingType));
 }
