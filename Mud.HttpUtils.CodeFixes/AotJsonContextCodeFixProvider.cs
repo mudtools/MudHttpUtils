@@ -43,7 +43,10 @@ public class AotJsonContextCodeFixProvider : CodeFixProvider
 
     /// <inheritdoc />
     public sealed override ImmutableArray<string> FixableDiagnosticIds
-        => ImmutableArray.Create("AOT004", "AOT005", "AOT006");
+        => ImmutableArray.Create(
+            DiagnosticIds.AotDtoNotCoveredByContext,
+            DiagnosticIds.AotQueryParameterNotInContext,
+            DiagnosticIds.AotJsonSerializableNotCovered);
 
     /// <inheritdoc />
     public sealed override FixAllProvider GetFixAllProvider()

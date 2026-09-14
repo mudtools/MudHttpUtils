@@ -31,6 +31,7 @@ internal sealed class HttpJsonSerializableCoverageAnalyzer : DiagnosticAnalyzer
     public override void Initialize(AnalysisContext context)
     {
         context.EnableConcurrentExecution();
+        context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.RegisterCompilationAction(static ctx =>
         {
             foreach (var diagnostic in AotDtoCoverageAnalyzer

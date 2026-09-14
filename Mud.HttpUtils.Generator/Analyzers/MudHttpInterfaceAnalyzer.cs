@@ -14,12 +14,9 @@ using Microsoft.CodeAnalysis.Diagnostics;
 namespace Mud.HttpUtils.Analyzers;
 
 /// <summary>
-/// Mud.HttpUtils 接口规范诊断分析器（独立于源生成器）。
+/// Mud.HttpUtils 接口规范诊断分析器。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 提供编译期接口规范检查，无需引用源生成器即可使用。
-/// </para>
 /// <para>
 /// 检查规则：
 /// <list type="bullet">
@@ -28,22 +25,22 @@ namespace Mud.HttpUtils.Analyzers;
 ///        （Task/ValueTask/IAsyncEnumerable/HttpResponseMessage/byte[]/Stream，见 F9）</item>
 /// </list>
 /// </para>
+/// <para>
+/// 与生成器的一致性（本分析器已并入 Mud.HttpUtils.Generator 程序集）：
+/// <list type="bullet">
+///   <item>HTTP 方法特性判定复用 <see cref="MethodAnalyzer.FindHttpMethodAttributeFromAttributes(ImmutableArray{AttributeData}, Compilation)"/>，
+///         因此同样支持「自定义特性继承 <c>Mud.HttpUtils.Attributes.HttpMethodAttribute</c>」的写法——
+///         此前两者分属不同程序集，本分析器只能硬编码特性名白名单（无继承回退），
+///         会对生成器支持的写法误报 MUD001（Error 级，直接阻断构建）。</item>
+///   <item><c>[IgnoreGenerator]</c> 判定复用 <see cref="GeneratorAttributeFilters"/>，
+///         与生成器的「接口级忽略 = 完全不介入 / 方法级忽略 = 跳过该方法」语义严格一致。</item>
+///   <item>[HttpClientApi] 特性名集合复用 <see cref="HttpClientGeneratorConstants.HttpClientApiAttributeNames"/>。</item>
+/// </list>
+/// </para>
 /// </remarks>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public class MudHttpInterfaceAnalyzer : DiagnosticAnalyzer
 {
-    private const string HttpClientApiAttributeFullName = "Mud.HttpUtils.Attributes.HttpClientApiAttribute";
-
-    private const string IgnoreGeneratorAttributeFullName = "Mud.HttpUtils.Attributes.IgnoreGeneratorAttribute";
-
-    // 已知 HTTP 方法特性名
-    private static readonly HashSet<string> KnownHttpMethodAttributes = new(StringComparer.Ordinal)
-    {
-        "Get", "GetAttribute", "Post", "PostAttribute", "Put", "PutAttribute",
-        "Delete", "DeleteAttribute", "Patch", "PatchAttribute",
-        "Head", "HeadAttribute", "Options", "OptionsAttribute", "HttpMethod", "HttpMethodAttribute"
-    };
-
     /// <summary>
     /// [F9 修复] MUD002 白名单：与生成器方法生成分支一一对应。
     /// <list type="bullet">
@@ -85,30 +82,17 @@ public class MudHttpInterfaceAnalyzer : DiagnosticAnalyzer
         return returnFullName is "System.Net.Http.HttpResponseMessage" or "System.IO.Stream";
     }
 
-    public static readonly DiagnosticDescriptor MUD001_MethodMissingHttpMethodAttribute = new(
-        id: "MUD001",
-        title: "HttpClientApi 方法缺少 HTTP 方法特性",
-        messageFormat: "方法 '{0}' 缺少 HTTP 方法特性（[Get]/[Post]/[Put]/[Delete]/[Patch]/[Head]/[Options]）",
-        category: "Mud.HttpUtils.Interface",
-        defaultSeverity: DiagnosticSeverity.Error,
-        isEnabledByDefault: true,
-        description: "标记了 [HttpClientApi] 的接口中的每个方法必须标注一个 HTTP 方法特性。");
-
-    public static readonly DiagnosticDescriptor MUD002_MethodInvalidReturnType = new(
-        id: "MUD002",
-        title: "HttpClientApi 方法返回类型无效",
-        messageFormat: "方法 '{0}' 返回类型 '{1}' 无效，应为 Task、Task<T>、ValueTask、ValueTask<T>、IAsyncEnumerable<T>、HttpResponseMessage、byte[] 或 Stream",
-        category: "Mud.HttpUtils.Interface",
-        defaultSeverity: DiagnosticSeverity.Error,
-        isEnabledByDefault: true,
-        description: "HttpClientApi 接口方法必须返回生成器支持的返回类型。");
-
+    /// <inheritdoc />
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics
-        => ImmutableArray.Create(MUD001_MethodMissingHttpMethodAttribute, MUD002_MethodInvalidReturnType);
+        => ImmutableArray.Create(
+            Diagnostics.MudMethodMissingHttpMethodAttribute,
+            Diagnostics.MudMethodInvalidReturnType);
 
+    /// <inheritdoc />
     public override void Initialize(AnalysisContext context)
     {
         context.EnableConcurrentExecution();
+        context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.RegisterSyntaxNodeAction(AnalyzeInterface, SyntaxKind.InterfaceDeclaration);
     }
 
@@ -118,55 +102,50 @@ public class MudHttpInterfaceAnalyzer : DiagnosticAnalyzer
         var interfaceSymbol = context.SemanticModel.GetDeclaredSymbol(interfaceDecl);
         if (interfaceSymbol == null) return;
 
-        // 检查是否有 [HttpClientApi] 特性
+        // 检查是否有 [HttpClientApi] 特性（特性名集合与生成器共用同一常量，避免名称清单漂移）。
         var hasHttpClientApi = interfaceSymbol.GetAttributes()
-            .Any(a => string.Equals(a.AttributeClass?.Name, "HttpClientApiAttribute", StringComparison.Ordinal)
-                   || string.Equals(a.AttributeClass?.Name, "HttpClientApi", StringComparison.Ordinal));
+            .Any(a => HttpClientGeneratorConstants.HttpClientApiAttributeNames
+                .Contains(a.AttributeClass?.Name, StringComparer.Ordinal));
         if (!hasHttpClientApi) return;
 
-        // [F9/E-5 修复] 接口级 [IgnoreGenerator]：该接口的全部方法一律跳过（"接口级忽略 = 生成器完全不介入"）。
-        if (interfaceSymbol.GetAttributes().Any(IsIgnoreGeneratorAttribute))
+        // [F9/E-5] 接口级 [IgnoreGenerator]：该接口的全部方法一律跳过（"接口级忽略 = 生成器完全不介入"）。
+        if (GeneratorAttributeFilters.HasIgnoreGenerator(interfaceSymbol))
             return;
 
         foreach (var method in interfaceSymbol.GetMembers().OfType<IMethodSymbol>())
         {
             if (method.MethodKind != MethodKind.Ordinary) continue;
 
-            // [F9/E-5 修复] 方法级 [IgnoreGenerator]：跳过该方法的 MUD001/MUD002。
-            if (method.GetAttributes().Any(IsIgnoreGeneratorAttribute))
+            // [F9/E-5] 方法级 [IgnoreGenerator]：跳过该方法的 MUD001/MUD002。
+            if (GeneratorAttributeFilters.HasIgnoreGenerator(method))
                 continue;
 
-            // MUD001: 检查 HTTP 方法特性
-            var hasHttpMethodAttr = method.GetAttributes()
-                .Any(a => KnownHttpMethodAttributes.Contains(a.AttributeClass?.Name ?? string.Empty));
+            // 一次性获取方法特性列表，避免两处重复调用 GetAttributes() 产生额外分配。
+            var methodAttributes = method.GetAttributes();
 
-            if (!hasHttpMethodAttr)
+            // MUD001：检查 HTTP 方法特性。
+            // 复用生成器判定（含"自定义特性继承 HttpMethodAttribute"回退），与生成器能力保持一致。
+            var httpMethodAttribute = MethodAnalyzer.FindHttpMethodAttributeFromAttributes(methodAttributes, context.Compilation);
+            if (httpMethodAttribute == null)
             {
                 var location = method.Locations.FirstOrDefault() ?? interfaceDecl.GetLocation();
                 context.ReportDiagnostic(Diagnostic.Create(
-                    MUD001_MethodMissingHttpMethodAttribute,
+                    Diagnostics.MudMethodMissingHttpMethodAttribute,
                     location,
                     method.Name));
             }
 
-            // MUD002: 检查返回类型
+            // MUD002：检查返回类型
             var returnType = method.ReturnType;
             if (!IsGeneratorSupportedReturnType(returnType))
             {
                 var location = method.Locations.FirstOrDefault() ?? interfaceDecl.GetLocation();
                 context.ReportDiagnostic(Diagnostic.Create(
-                    MUD002_MethodInvalidReturnType,
+                    Diagnostics.MudMethodInvalidReturnType,
                     location,
                     method.Name,
                     returnType.ToDisplayString()));
             }
         }
     }
-
-    /// <summary>
-    /// 获取特性的完全限定名（F9：符号判定而非字符串前缀比较，避免误认用户自定义 Task 等）。
-    /// </summary>
-    private static bool IsIgnoreGeneratorAttribute(AttributeData attribute)
-        => attribute.AttributeClass is { } cls
-           && string.Equals(cls.ToDisplayString(), IgnoreGeneratorAttributeFullName, StringComparison.Ordinal);
 }

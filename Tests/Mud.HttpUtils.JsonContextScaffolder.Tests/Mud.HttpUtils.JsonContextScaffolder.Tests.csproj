@@ -22,7 +22,10 @@
 			<PrivateAssets>all</PrivateAssets>
 		</PackageReference>
 		<PackageReference Include="FluentAssertions" Version="7.0.0" />
-		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
+		<!-- 与全仓 Roslyn 组件版本统一（Generator / CodeFixes / 脚手架工具及其余测试工程均为 4.11.0）。
+		     此前为 4.12.0，与脚手架工具的 Microsoft.CodeAnalysis.CSharp.Workspaces 4.11.0
+		     形成依赖约束冲突（NU1608），且会造成程序集割裂。 -->
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" />
 	</ItemGroup>
 
 	<ItemGroup>

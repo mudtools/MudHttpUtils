@@ -28,6 +28,7 @@ internal static class Diagnostics
      *   - SG*: 源代码生成器通用 (SG001)
      *   - EG*: 实体生成器通用 (EG001-002)
      *   - AOT*: AOT JSON 序列化诊断 (AOT001-007)
+     *   - MUD*: 接口规范 / DI 生命周期分析器诊断 (MUD001/MUD002/MUD004)
      */
     #endregion 
 
@@ -60,7 +61,7 @@ internal static class Diagnostics
         customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     public static readonly DiagnosticDescriptor HttpClientInvalidUrlTemplate = new(
-        id: "HTTPCLIENT005",
+        id: DiagnosticIds.HttpClientInvalidUrlTemplate,
         title: "Invalid URL Template",
         messageFormat: "接口 {0} 的URL模板 '{1}' 格式无效: {2}",
         category: "代码生成",
@@ -69,7 +70,7 @@ internal static class Diagnostics
         customTags: WellKnownDiagnosticTags.NotConfigurable);
 
     public static readonly DiagnosticDescriptor HttpClientAndTokenManagerMutuallyExclusive = new(
-        id: "HTTPCLIENT007",
+        id: DiagnosticIds.HttpClientAndTokenManagerMutuallyExclusive,
         title: "HttpClient 与 TokenManage 互斥",
         messageFormat: "接口 {0} 同时指定了 HttpClient 和 TokenManage 属性，两者互斥。请只设置其中一个。",
         category: "代码生成",
@@ -309,7 +310,7 @@ internal static class Diagnostics
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor AotDtoNotCoveredByContext = new(
-        id: "AOT004",
+        id: DiagnosticIds.AotDtoNotCoveredByContext,
         title: "HttpClient API 方法的 DTO 未被任何 JsonSerializerContext 覆盖",
         messageFormat: "接口 {0} 的方法 {1} 使用的请求/响应 DTO '{2}' 未被任何已引用的 JsonSerializerContext 覆盖。AOT 下序列化将抛 NotSupportedException。修复：在 DTO 类型上标注 [HttpJsonSerializable] 并运行 'dotnet mud-jsonctx --project <path>' 生成上下文，或将类型手动加入现有 JsonSerializerContext。",
         category: "AOT",
@@ -317,7 +318,7 @@ internal static class Diagnostics
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor AotQueryParameterNotInContext = new(
-        id: "AOT005",
+        id: DiagnosticIds.AotQueryParameterNotInContext,
         title: "查询参数类型使用 JSON 序列化但未被 Context 覆盖",
         messageFormat: "接口 {0} 的方法 {1} 的查询参数 '{2}' 标注了 JSON 序列化，但其类型 '{3}' 未被任何 JsonSerializerContext 覆盖。AOT 下查询参数 JSON 序列化可能失败。建议将此类型纳入 JsonSerializerContext 或实现 IQueryParameter 接口。",
         category: "AOT",
@@ -325,7 +326,7 @@ internal static class Diagnostics
         isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor AotJsonSerializableNotCovered = new(
-        id: "AOT006",
+        id: DiagnosticIds.AotJsonSerializableNotCovered,
         title: "[HttpJsonSerializable] 类型未被任何 JsonSerializerContext 覆盖",
         messageFormat: "类型 '{0}' 标注了 [HttpJsonSerializable]，但未被任何已引用的 JsonSerializerContext 覆盖。若未运行 HttpJsonContextScaffolder 或将其纳入手写 JsonSerializerContext，AOT 下序列化可能返回空对象或失败。请运行 `dotnet mud-jsonctx` 或将此类型加入 JsonSerializerContext。",
         category: "AOT",
@@ -346,13 +347,14 @@ internal static class Diagnostics
     /// </para>
     /// </summary>
     public static readonly DiagnosticDescriptor AotXmlNotSupportedInAot = new(
-        id: "AOT007",
+        id: DiagnosticIds.AotXmlNotSupported,
         title: "XML 序列化在 Native AOT 下不支持",
         messageFormat: "接口 {0} 的方法 {1} 使用 XML 序列化，Native AOT 下 XmlSerializer 需要动态代码生成，会在运行时抛 PlatformNotSupportedException。请改用 [SerializationMethod(SerializationMethod.Json)]，或在非 AOT 部署场景使用 XML。",
         category: "AOT",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "XmlSerializer 在 Native AOT 下不支持。请将方法改为 JSON 序列化，或在非 AOT 部署场景使用 XML。此诊断仅在 AOT 上下文（IsAotCompatible=true 或 PublishAot=true）下报告。",
+        // 说明：末尾使用 ASCII 句点而非中文句号 —— RS1033 要求 description 以标点结尾且不识别「。」。
+        description: "XmlSerializer 在 Native AOT 下不支持。请将方法改为 JSON 序列化，或在非 AOT 部署场景使用 XML。此诊断仅在 AOT 上下文（IsAotCompatible=true 或 PublishAot=true）下报告.",
         helpLinkUri: "https://learn.microsoft.com/dotnet/core/deploying/native-aot");
 
     /// <summary>
@@ -361,12 +363,45 @@ internal static class Diagnostics
     /// 严格模式（WarningsAsErrors）下仍可升级为 Error，CI 门禁强度由用户掌控。
     /// </summary>
     public static readonly DiagnosticDescriptor AotXmlNotSupportedInAotWarning = new(
-        id: "AOT007",
+        id: DiagnosticIds.AotXmlNotSupported,
         title: "XML 序列化在 Native AOT 下可能不支持（AOT 分析器已启用但未声明运行期 AOT）",
         messageFormat: "接口 {0} 的方法 {1} 使用 XML 序列化。当前项目仅设置了 IsAotCompatible=true（启用 AOT 分析器），但未声明以 Native AOT 发布；若以 Native AOT 发布请同时设置 PublishAot=true 或 MudAotRuntimeMode=aot，否则 XML 路径在运行期将抛 PlatformNotSupportedException。",
         category: "AOT",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
-        description: "仅设置 IsAotCompatible 时的降级提示（F10）。");
+        description: "仅设置 IsAotCompatible 时的降级提示（F10）.");
+    #endregion
+
+    #region 接口规范 / DI 生命周期分析器诊断信息 (MUD001/MUD002/MUD004)
+    // 由本程序集内的 MudHttpInterfaceAnalyzer / TokenManagerLifetimeAnalyzer 报告。
+    // 说明：这三个描述符原定义在独立的 Mud.HttpUtils.Analyzers 程序集中（该程序集已合并入本工程），
+    // 现集中登记以便统一与 README 诊断表做一致性核对（DocumentationContractTests）。
+
+    public static readonly DiagnosticDescriptor MudMethodMissingHttpMethodAttribute = new(
+        id: DiagnosticIds.MudMethodMissingHttpMethodAttribute,
+        title: "HttpClientApi 方法缺少 HTTP 方法特性",
+        messageFormat: "方法 '{0}' 缺少 HTTP 方法特性（[Get]/[Post]/[Put]/[Delete]/[Patch]/[Head]/[Options]）",
+        category: "Mud.HttpUtils.Interface",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "标记了 [HttpClientApi] 的接口中的每个方法必须标注一个 HTTP 方法特性.");
+
+    public static readonly DiagnosticDescriptor MudMethodInvalidReturnType = new(
+        id: DiagnosticIds.MudMethodInvalidReturnType,
+        title: "HttpClientApi 方法返回类型无效",
+        messageFormat: "方法 '{0}' 返回类型 '{1}' 无效，应为 Task、Task<T>、ValueTask、ValueTask<T>、IAsyncEnumerable<T>、HttpResponseMessage、byte[] 或 Stream",
+        category: "Mud.HttpUtils.Interface",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "HttpClientApi 接口方法必须返回生成器支持的返回类型.");
+
+    public static readonly DiagnosticDescriptor MudNonSingletonTokenManager = new(
+        id: DiagnosticIds.MudNonSingletonTokenManager,
+        title: "ITokenManager 实现应注册为 Singleton",
+        messageFormat: "令牌管理器类型 '{0}' 应在 IServiceCollection 中注册为 Singleton（当前使用 '{1}'）。“ITokenManager”的实现内部维护令牌缓存与并发锁，Scoped/Transient 注册会使每个请求持有独立缓存实例，导致并发安全机制失效与重复刷新令牌。请改用 AddSingleton/TryAddSingleton。",
+        category: "Mud.HttpUtils.DependencyInjection",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "ITokenManager 实现应注册为 Singleton，以避免并发安全机制失效与冗余令牌刷新.");
     #endregion
 }

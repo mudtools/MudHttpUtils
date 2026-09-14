@@ -34,7 +34,7 @@ public class HttpClientMutuallyExclusiveCodeFixProvider : CodeFixProvider
 
     /// <inheritdoc />
     public sealed override ImmutableArray<string> FixableDiagnosticIds
-        => ImmutableArray.Create("HTTPCLIENT007");
+        => ImmutableArray.Create(DiagnosticIds.HttpClientAndTokenManagerMutuallyExclusive);
 
     /// <inheritdoc />
     public sealed override FixAllProvider GetFixAllProvider()

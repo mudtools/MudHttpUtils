@@ -30,7 +30,6 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\..\Mud.HttpUtils.Generator\Mud.HttpUtils.Generator.csproj" />
-		<ProjectReference Include="..\..\Mud.HttpUtils.Analyzers\Mud.HttpUtils.Analyzers.csproj" />
 		<ProjectReference Include="..\..\Mud.HttpUtils.Client\Mud.HttpUtils.Client.csproj" />
 		<ProjectReference Include="..\..\Mud.HttpUtils.Attributes\Mud.HttpUtils.Attributes.csproj" />
 	</ItemGroup>

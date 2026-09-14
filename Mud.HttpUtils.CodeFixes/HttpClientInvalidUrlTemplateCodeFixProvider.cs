@@ -30,7 +30,7 @@ public class HttpClientInvalidUrlTemplateCodeFixProvider : CodeFixProvider
 
     /// <inheritdoc />
     public sealed override ImmutableArray<string> FixableDiagnosticIds
-        => ImmutableArray.Create("HTTPCLIENT005");
+        => ImmutableArray.Create(DiagnosticIds.HttpClientInvalidUrlTemplate);
 
     /// <inheritdoc />
     public sealed override FixAllProvider GetFixAllProvider()

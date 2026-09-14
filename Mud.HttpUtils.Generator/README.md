@@ -56,7 +56,7 @@ dotnet add package Mud.HttpUtils.Generator
 
 > 源代码生成器需配合运行时库 `Mud.HttpUtils` 一起使用。
 
-> **v2.1+ 合并包**：本包已包含独立诊断分析器（`MUD001`/`MUD002` 接口规范检查）和代码修复器（`HTTPCLIENT005`/`007`、`AOT004`/`005`/`006`/`007` 一键修复），无需单独安装 `Mud.HttpUtils.Analyzers` 或 `Mud.HttpUtils.CodeFixes` 包。
+> **v2.1+ 合并包**：本包已包含接口规范 / DI 生命周期分析器（`MUD001`/`MUD002`/`MUD004`，已并入生成器程序集）和代码修复器（`HTTPCLIENT005`/`007`、`AOT004`/`005`/`006`/`007` 一键修复，独立程序集）。`Mud.HttpUtils.Analyzers` 与 `Mud.HttpUtils.CodeFixes` 均已不再作为独立包存在，无需单独安装。
 
 ## 快速开始
 
@@ -779,14 +779,15 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 | `AOT006` | Warning | 标注了 `[HttpJsonSerializable]` 的类型未被任何 `JsonSerializerContext` 覆盖 | 运行 `dotnet mud-jsonctx`，或将此类型加入 `JsonSerializerContext` | 是（`AotJsonContextCodeFixProvider`，同 AOT004 修复逻辑） |
 | `AOT007` | Error / Warning（F10 分级） | AOT 上下文下使用 XML 序列化 | 改用 `[SerializationMethod(SerializationMethod.Json)]`，或在非 AOT 部署场景使用 XML。级别分级：确认 Native AOT（`PublishAot=true` / `MudAotRuntimeMode=aot`）→ Error；仅 `IsAotCompatible=true`（未声明运行期 AOT）→ Warning | 是（`AotXmlCodeFixProvider`，将方法改为 JSON 序列化） |
 
-#### 独立分析器诊断（MUD*）
+#### 接口规范 / DI 生命周期分析器诊断（MUD*）
 
-下述诊断由 `Mud.HttpUtils.Analyzers` 中的独立诊断分析器（随本包分发，不依赖源生成器）报告（F9 对齐）：
+下述诊断由本包内的诊断分析器（`MudHttpInterfaceAnalyzer` / `TokenManagerLifetimeAnalyzer`，与源生成器同程序集，F9 对齐）报告：
 
 | 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 |
 |---------|----------|----------|----------|------------|
-| `MUD001` | Error | `[HttpClientApi]` 接口方法缺少 HTTP 方法特性 | 为方法标注 `[Get]`/`[Post]`/`[Put]`/`[Delete]`/`[Patch]`/`[Head]`/`[Options]`；标注 `[IgnoreGenerator]` 的接口/方法豁免 | 否 |
+| `MUD001` | Error | `[HttpClientApi]` 接口方法缺少 HTTP 方法特性 | 为方法标注 `[Get]`/`[Post]`/`[Put]`/`[Delete]`/`[Patch]`/`[Head]`/`[Options]`，或使用继承自 `HttpMethodAttribute` 的自定义特性；标注 `[IgnoreGenerator]` 的接口/方法豁免 | 否 |
 | `MUD002` | Error | `[HttpClientApi]` 接口方法返回类型不在生成器支持白名单内 | 返回 `Task`/`Task<T>`/`ValueTask`/`ValueTask<T>`/`IAsyncEnumerable<T>`/`HttpResponseMessage`/`byte[]`/`Stream`（与生成器分支一一对应） | 否 |
+| `MUD004` | Warning | `ITokenManager` 的实现以 `AddScoped`/`AddTransient`/`TryAddScoped`/`TryAddTransient` 注册（该实现内部维护令牌缓存与并发锁，非 Singleton 会令并发安全机制失效并重复刷新令牌） | 改用 `AddSingleton`/`TryAddSingleton` | 否 |
 
 ### 日志脱敏
 

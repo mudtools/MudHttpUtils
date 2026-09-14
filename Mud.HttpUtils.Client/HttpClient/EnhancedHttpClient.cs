@@ -127,7 +127,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// </summary>
     private Stream GuardSuccessStream(Stream stream, string? requestUri)
         => _maxSuccessResponseBytes > 0
-            ? new Helpers.SuccessResponseGuardStream(stream, _maxSuccessResponseBytes, requestUri)
+            ? new SuccessResponseGuardStream(stream, _maxSuccessResponseBytes, requestUri)
             : stream;
 
     /// <summary>

@@ -260,4 +260,39 @@ public class MudHttpInterfaceAnalyzerTests
         var diagnostics = Analyze(source);
         diagnostics.Should().NotContain(d => d.Id == "MUD001");
     }
+
+    /// <summary>
+    /// 回归测试：自定义 HTTP 方法特性（继承 <c>Mud.HttpUtils.Attributes.HttpMethodAttribute</c>）不得误报 MUD001。
+    /// </summary>
+    /// <remarks>
+    /// 分析器并入 Generator 程序集之前，它只能硬编码特性名白名单（无继承回退），
+    /// 而生成器的 <c>MethodAnalyzer</c> 支持「继承自 HttpMethodAttribute 的自定义特性」
+    /// （v3.3 T5.2 fallback）——两者分属不同程序集导致判定分叉：
+    /// 生成器能正常生成，MUD001（Error 级）却阻断构建。
+    /// 现分析器复用生成器的判定纯函数，本测试锁定该一致性。
+    /// </remarks>
+    [Fact]
+    public void CustomHttpMethodAttribute_DerivedFromHttpMethodAttribute_NoMUD001()
+    {
+        var source = HttpClientApiUsings + """
+            namespace TestNamespace
+            {
+                public sealed class PurgeAttribute : HttpMethodAttribute
+                {
+                    public PurgeAttribute(string requestUri) : base("PURGE", requestUri) { }
+                }
+
+                [HttpClientApi]
+                public interface IApi
+                {
+                    [Purge("/cache")]
+                    Task<string> PurgeAsync();
+                }
+            }
+            """;
+
+        var diagnostics = Analyze(source);
+        diagnostics.Should().NotContain(d => d.Id == "MUD001",
+            "自定义特性继承自 HttpMethodAttribute，生成器支持该写法，MUD001 不应误报");
+    }
 }

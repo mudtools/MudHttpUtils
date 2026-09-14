@@ -45,17 +45,12 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
         "AddScoped", "AddTransient", "TryAddScoped", "TryAddTransient",
     };
 
-    public static readonly DiagnosticDescriptor MUD004_NonSingletonTokenManager = new(
-        id: "MUD004",
-        title: "ITokenManager 实现应注册为 Singleton",
-        messageFormat: "令牌管理器类型 '{0}' 应在 IServiceCollection 中注册为 Singleton（当前使用 '{1}'）。“ITokenManager”的实现内部维护令牌缓存与并发锁，Scoped/Transient 注册会使每个请求持有独立缓存实例，导致并发安全机制失效与重复刷新令牌。请改用 AddSingleton/TryAddSingleton。",
-        category: "Mud.HttpUtils.DependencyInjection",
-        defaultSeverity: DiagnosticSeverity.Warning,
-        isEnabledByDefault: true,
-        description: "ITokenManager 实现应注册为 Singleton，以避免并发安全机制失效与冗余令牌刷新。");
+    // 描述符集中登记于 Diagnostics.MudNonSingletonTokenManager（原定义在本文件，
+    // 随 Mud.HttpUtils.Analyzers 合并入 Generator 后统一收口，便于 README 一致性核对）。
 
+    /// <inheritdoc />
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics
-        => ImmutableArray.Create(MUD004_NonSingletonTokenManager);
+        => ImmutableArray.Create(Diagnostics.MudNonSingletonTokenManager);
 
     /// <inheritdoc />
     public override void Initialize(AnalysisContext context)
@@ -103,7 +98,7 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
         var reportedTypeName = (implementationType ?? serviceType!)?.ToDisplayString()
                                ?? registered.ToDisplayString();
         context.ReportDiagnostic(Diagnostic.Create(
-            MUD004_NonSingletonTokenManager,
+            Diagnostics.MudNonSingletonTokenManager,
             invocation.GetLocation(),
             reportedTypeName,
             methodSymbol.Name));

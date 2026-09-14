@@ -4,6 +4,7 @@
 
 /.vs
 /.docs
+/.probe
 /Mud.HttpUtils/obj
 /Mud.HttpUtils/bin
 /Mud.HttpUtils.Generator/.vs

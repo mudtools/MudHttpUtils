@@ -38,7 +38,7 @@ public class AotXmlCodeFixProvider : CodeFixProvider
 
     /// <inheritdoc />
     public sealed override ImmutableArray<string> FixableDiagnosticIds
-        => ImmutableArray.Create("AOT007");
+        => ImmutableArray.Create(DiagnosticIds.AotXmlNotSupported);
 
     /// <inheritdoc />
     public sealed override FixAllProvider GetFixAllProvider()

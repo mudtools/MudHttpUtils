@@ -33,15 +33,6 @@ public class DocumentationContractTests
         "HTTPCLIENT002", "HTTPCLIENT006", "HTTPCLIENT010", "HTTPCLIENT019",
     };
 
-    /// <summary>
-    /// 由独立分析器（MudHttpInterfaceAnalyzer）承载、不在 Diagnostics.cs 中的诊断。
-    /// 其描述符一致性由 MudHttpInterfaceAnalyzerTests 直接锁定。
-    /// </summary>
-    private static readonly HashSet<string> AnalyzerHostedDiagnosticIds = new(StringComparer.Ordinal)
-    {
-        "MUD001", "MUD002",
-    };
-
     private static readonly Regex DiagnosticRowRegex =
         new(@"\|[ \t]*`(?<id>[A-Z][A-Z0-9]*\d{3})`[ \t]*\|[ \t]*(?<severity>[^|]+?)[ \t]*\|",
             RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -120,8 +111,6 @@ public class DocumentationContractTests
 
         foreach (var (id, severity) in readme)
         {
-            if (AnalyzerHostedDiagnosticIds.Contains(id))
-                continue; // 由独立分析器承载（MudHttpInterfaceAnalyzerTests 锁定）
             diagnostics.Should().ContainKey(id, $"README 诊断表声明的 {id} 必须在 Diagnostics.cs 中存在");
             if (PlaceholderDiagnosticIds.Contains(id))
                 continue;
@@ -143,8 +132,6 @@ public class DocumentationContractTests
         {
             if (PlaceholderDiagnosticIds.Contains(id))
                 continue; // 占位白名单：允许未列出
-            if (AnalyzerHostedDiagnosticIds.Contains(id))
-                continue; // 独立分析器承载，无需在 Diagnostics.cs 中定义
             readme.Should().ContainKey(id,
                 $"Diagnostics.cs 中非占位诊断 {id} 必须在 README 诊断表中出现（防止新增诊断忘记写文档）");
         }

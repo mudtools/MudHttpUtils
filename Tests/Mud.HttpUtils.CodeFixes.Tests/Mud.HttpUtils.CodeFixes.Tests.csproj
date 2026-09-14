@@ -27,6 +27,9 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\..\Mud.HttpUtils.CodeFixes\Mud.HttpUtils.CodeFixes.csproj" />
+		<!-- 诊断 ID 契约守卫测试需要反射 Generator 的 Diagnostics 描述符集合
+		     （Generator 与 CodeFixes 分属两个程序集，仅能通过描述符比对锁定 ID 契约）。 -->
+		<ProjectReference Include="..\..\Mud.HttpUtils.Generator\Mud.HttpUtils.Generator.csproj" />
 	</ItemGroup>
 
 </Project>
