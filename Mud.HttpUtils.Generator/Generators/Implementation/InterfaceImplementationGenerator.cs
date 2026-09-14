@@ -6,6 +6,7 @@
 // -----------------------------------------------------------------------
 
 using System.Collections.Concurrent;
+using Mud.HttpUtils;
 using Mud.HttpUtils.Analyzers;
 using Mud.HttpUtils.Generators.Base;
 using Mud.HttpUtils.Generators.Context;
@@ -33,6 +34,9 @@ internal class InterfaceImplementationGenerator
     private readonly SemanticModel _semanticModel;
     private readonly StringBuilder _codeBuilder;
     private readonly string _optionsName;
+    private readonly bool _isAotEnabled;
+    private readonly bool _emitNullableEnable;
+    private readonly bool _emitGeneratedCodeMarkers;
 
     public InterfaceImplementationGenerator(
         Compilation compilation,
@@ -40,7 +44,10 @@ internal class InterfaceImplementationGenerator
         INamedTypeSymbol interfaceSymbol,
         SemanticModel semanticModel,
         SourceProductionContext context,
-        string optionsName)
+        string optionsName,
+        bool isAotEnabled = false,
+        bool emitNullableEnable = true,
+        bool emitGeneratedCodeMarkers = true)
     {
         _compilation = compilation;
         _interfaceDecl = interfaceDecl;
@@ -48,6 +55,9 @@ internal class InterfaceImplementationGenerator
         _semanticModel = semanticModel;
         _context = context;
         _optionsName = optionsName;
+        _isAotEnabled = isAotEnabled;
+        _emitNullableEnable = emitNullableEnable;
+        _emitGeneratedCodeMarkers = emitGeneratedCodeMarkers;
 
         var estimatedCapacity = EstimateCodeCapacity();
         _codeBuilder = new StringBuilder(estimatedCapacity);
@@ -58,6 +68,13 @@ internal class InterfaceImplementationGenerator
     /// </summary>
     public void GenerateCode()
     {
+        // [E-5 修复] 接口级 [IgnoreGenerator]：生成器完全不介入（用户自备实现），
+        // 亦不产生生成期诊断（AOT/MUD 由分析器各自豁免）。
+        // 必须早于 ExtractConfigurationFromAttributes 与 ValidateConfiguration，
+        // 确保既不产出源码也不产生生成期诊断。
+        if (Mud.HttpUtils.Analyzers.GeneratorAttributeFilters.HasIgnoreGenerator(_interfaceSymbol))
+            return;
+
         var configuration = ExtractConfigurationFromAttributes();
 
         // GEN-04 修复：当 TokenManagerKey 和 TokenType 均未显式指定时，发出警告诊断。
@@ -85,7 +102,10 @@ internal class InterfaceImplementationGenerator
             _interfaceDecl,
             _semanticModel,
             _context,
-            configuration);
+            configuration,
+            _isAotEnabled,
+            _emitNullableEnable,
+            _emitGeneratedCodeMarkers);
 
         // InterfaceProperties 已在 GeneratorContext 构造函数中预计算（含基接口 [Query]/[Path] 属性），
         // 后续 GetOrAnalyzeMethod 会将其作为 cachedInterfaceProperties 传入 AnalyzeMethod，避免重复扫描。
@@ -96,8 +116,15 @@ internal class InterfaceImplementationGenerator
 
         PrecomputeXmlResponseTypes(generatorContext);
 
-        // NEW-GEN-03/08 修复：检测方法 CacheAttribute 中被生成器忽略的属性并发出诊断
-        ReportCacheAttributeIgnoredProperties(generatorContext);
+        // M2-#12：非幂等方法声明 [Retry] 但未显式 AllowNonIdempotent 时发出 Warning
+        ReportRetryNonIdempotentWithoutAllow(generatorContext);
+
+        // CFG-07：方法级 [Timeout] 超过接口级 HttpClient 超时时发出 Warning
+        ReportMethodTimeoutConflicts(generatorContext);
+
+        // 必须在生成器循环之前登记：MethodGenerator 需要据此决定是否补发占位方法，
+        // 而其执行顺序早于 AccessTokenGenerator 等后续片段生成器。
+        RegisterInfrastructureMembers(generatorContext);
 
         var generators = InitializeGenerators(generatorContext);
 
@@ -109,6 +136,10 @@ internal class InterfaceImplementationGenerator
         if (generatorContext.HasQueryMap)
         {
             _codeBuilder.AppendLine();
+            // 该包装方法委托给已标注 RUC/RDC 的 QueryMapHelper（运行时反射展平）。
+            // 它仅作为 TypeSymbol 不可用时的兜底（真实项目走编译期内联展平），
+            // 因此局部豁免 AOT 分析告警，避免污染消费方的生成代码构建（严格模式下会变为错误）。
+            _codeBuilder.AppendLine("#pragma warning disable IL2026, IL3050");
             _codeBuilder.AppendLine("        private static void FlattenObjectToQueryParams(");
             _codeBuilder.AppendLine("            object obj,");
             _codeBuilder.AppendLine("            string prefix,");
@@ -118,10 +149,12 @@ internal class InterfaceImplementationGenerator
             _codeBuilder.AppendLine("            bool useJsonSerialization,");
             _codeBuilder.AppendLine("            bool urlEncode = true,");
             _codeBuilder.AppendLine("            System.Collections.Generic.List<string>? rawPairs = null,");
-            _codeBuilder.AppendLine("            int depth = 0)");
+            _codeBuilder.AppendLine("            int depth = 0,");
+            _codeBuilder.AppendLine("            global::Mud.HttpUtils.IHttpContentSerializer? contentSerializer = null)");
             _codeBuilder.AppendLine("        {");
-            _codeBuilder.AppendLine("            QueryMapHelper.FlattenObjectToQueryParams(obj, prefix, separator, queryParams, includeNullValues, useJsonSerialization, urlEncode, rawPairs, depth);");
+            _codeBuilder.AppendLine("            QueryMapHelper.FlattenObjectToQueryParams(obj, prefix, separator, queryParams, includeNullValues, useJsonSerialization, urlEncode, rawPairs, depth, contentSerializer);");
             _codeBuilder.AppendLine("        }");
+            _codeBuilder.AppendLine("#pragma warning restore IL2026, IL3050");
         }
 
         _codeBuilder.AppendLine("    }");
@@ -134,9 +167,7 @@ internal class InterfaceImplementationGenerator
         var fileName = string.IsNullOrEmpty(namespacePath)
             ? $"{generatorContext.ClassName}.g.cs"
             : $"{namespacePath}/{generatorContext.ClassName}.g.cs";
-        _context.AddSource(
-            fileName,
-            SourceText.From(_codeBuilder.ToString(), Encoding.UTF8));
+        TransitiveCodeGenerator.AddSourceValidated(_context, fileName, _codeBuilder.ToString());
     }
 
     /// <summary>
@@ -148,11 +179,12 @@ internal class InterfaceImplementationGenerator
 
         if (_interfaceSymbol.IsGenericType)
         {
+            // [v2.4 §3.2] 泛型接口现支持代码生成（类型参数转发），不再阻断。
+            // 保留 Info 级诊断告知用户生成器已感知泛型接口。
             _context.ReportDiagnostic(Diagnostic.Create(
                 Diagnostics.HttpClientApiGenericInterfaceNotSupported,
                 _interfaceDecl.GetLocation(),
                 _interfaceSymbol.Name));
-            isValid = false;
         }
 
         if (!string.IsNullOrEmpty(configuration.HttpClient) && !string.IsNullOrEmpty(configuration.RawTokenManager))
@@ -229,12 +261,24 @@ internal class InterfaceImplementationGenerator
 
         if (typeSymbol == null)
         {
+            // [E-4 修复] HTTPCLIENT014 定位到 [HttpClientApi] 特性语法，而非整个接口声明。
+            var location = GetHttpClientApiAttributeLocation() ?? _interfaceDecl.GetLocation();
             _context.ReportDiagnostic(Diagnostic.Create(
                 Diagnostics.HttpClientTypeNotFound,
-                _interfaceDecl.GetLocation(),
+                location,
                 _interfaceSymbol.Name,
                 httpClientType));
         }
+    }
+
+    /// <summary>
+    /// 定位 [HttpClientApi] 特性的语法位置（E-4），未找到时返回 null。
+    /// </summary>
+    private Location? GetHttpClientApiAttributeLocation()
+    {
+        var attribute = _interfaceSymbol.GetAttributes()
+            .FirstOrDefault(a => HttpClientGeneratorConstants.HttpClientApiAttributeNames.Contains(a.AttributeClass?.Name));
+        return attribute?.ApplicationSyntaxReference?.GetSyntax()?.GetLocation();
     }
 
     private bool ValidateTokenManagerType(GenerationConfiguration configuration)
@@ -365,6 +409,49 @@ internal class InterfaceImplementationGenerator
     }
 
     /// <summary>
+    /// 登记各片段生成器「按模式无条件发射」的成员名，供契约占位实现避让（避免 CS0111/CS0102）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 这些成员与「接口是否声明」无关（例如 AppContext 模式的 <c>Current</c>/<c>BeginScope</c>、
+    /// 令牌模式的 <c>GetTokenAsync</c>），无法由符号侧推导；若不登记，占位实现会与其重名冲突。
+    /// </para>
+    /// <para>
+    /// 登记条件从宽：多登记只会少补一个占位成员，不会破坏编译；漏登记则会产生重复成员（编译错误）。
+    /// <b>新增「无条件发射」成员时须同步本方法</b>（另见 <see cref="GeneratorContext.ProvidedMemberNames"/>）。
+    /// </para>
+    /// </remarks>
+    private static void RegisterInfrastructureMembers(GeneratorContext context)
+    {
+        // 接口属性（[Query]/[Path]/[Header]）→ ConstructorGenerator.GenerateInterfaceProperties
+        foreach (var property in context.InterfaceProperties)
+            context.MarkMemberProvided(property.Name);
+
+        // 当前用户 ID → ConstructorGenerator（ICurrentUserId / CacheVaryByUser 场景）
+        if (context.ImplementsICurrentUserId || context.HasCacheVaryByUser)
+            context.MarkMemberProvided("CurrentUserId");
+
+        // AppContext 相关成员 → ConstructorGenerator.GenerateAppContextMembers / GenerateUseAppMethod
+        if (!context.HasHttpClient)
+        {
+            context.MarkMemberProvided("Current");
+            context.MarkMemberProvided("BeginScope");
+            context.MarkMemberProvided("UseApp");
+            context.MarkMemberProvided("UseDefaultApp");
+            context.MarkMemberProvided("UseDefaultAppScope");
+        }
+
+        // 令牌辅助成员 → AccessTokenGenerator / TokenMethodHelper
+        if (context.HasTokenManager && !context.HasHttpClient)
+        {
+            context.MarkMemberProvided("GetTokenAsync");
+            context.MarkMemberProvided("GetApiKeyAsync");
+            context.MarkMemberProvided("ApplyHmacSignatureAsync");
+            context.MarkMemberProvided("GetTokenManagerKey");
+        }
+    }
+
+    /// <summary>
     /// 初始化代码片段生成器
     /// </summary>
     private IEnumerable<ICodeFragmentGenerator> InitializeGenerators(GeneratorContext context)
@@ -380,6 +467,12 @@ internal class InterfaceImplementationGenerator
         {
             generators.Add(new AccessTokenGenerator(context));
         }
+
+        // 契约补全必须最后执行：为前述生成器未实现的接口成员
+        // （无法生成调用实现的方法、无 [Query]/[Path]/[Header] 的属性、索引器、事件）发射占位实现，
+        // 保证实现类满足接口契约、不再产生 CS0535。
+        // 依赖各生成器在 Generate 中登记的 GeneratorContext.ProvidedMemberNames 做避让。
+        generators.Add(new InterfaceContractCompletionGenerator());
 
         return generators;
     }
@@ -528,10 +621,8 @@ internal class InterfaceImplementationGenerator
         {
             HttpClientOptionsName = _optionsName,
             DefaultContentType = GetHttpClientApiContentTypeFromAttribute(httpClientApiAttribute),
-            Timeout = AttributeDataHelper.GetIntValueFromAttribute(
-                httpClientApiAttribute,
-                HttpClientGeneratorConstants.TimeoutProperty,
-                100),
+            // CFG-03/CFG-21：Timeout 由 HttpInvokeRegistrationGenerator 从特性直接读取（含默认值），
+            // GenerationConfiguration.Timeout 为死字段，已删除，不再在此赋值。
             IsAbstract = isAbstract,
             InheritedFrom = inheritedFrom,
             HttpClient = httpClient,
@@ -680,14 +771,21 @@ internal class InterfaceImplementationGenerator
     }
 
     /// <summary>
-    /// 预计算接口方法中使用的 XML 响应类型，以便 ConstructorGenerator 能在生成字段时正确生成 XmlSerializer 静态缓存字段
+    /// 预计算接口方法中使用的 XML 类型（包括请求体和响应体），
+    /// 以便 ConstructorGenerator 能在生成字段时正确生成 XmlSerializer 静态缓存字段。
     /// </summary>
+    /// <remarks>
+    /// Phase 5 修复：原实现仅收集 XML 响应类型，但 RequestBuilder.GenerateBodyParameter 也为
+    /// XML 请求体生成 _xmlSerializer_{type} 字段引用。若请求体类型未被收集，ConstructorGenerator
+    /// 不会生成对应静态字段，导致编译报 CS0103。
+    /// </remarks>
     private void PrecomputeXmlResponseTypes(GeneratorContext context)
     {
         var methods = context.AllMethods;
         foreach (var method in methods)
         {
-            var isHttpMethod = MethodAnalyzer.FindHttpMethodAttributeFromSymbol(method) != null;
+            // 与 MethodGenerator 口径一致：仅已知 HTTP 方法特性名（生成器由特性名推导动词）。
+            var isHttpMethod = MethodAnalyzer.FindHttpMethodAttributeFromAttributes(method.GetAttributes()) != null;
             if (!isHttpMethod)
                 continue;
 
@@ -700,73 +798,146 @@ internal class InterfaceImplementationGenerator
             if (!methodInfo.IsValid)
                 continue;
 
+            // 1. 收集 XML 响应类型（反序列化用）
             var isXmlResponse = ContentTypeHelper.IsXmlContentType(methodInfo.ResponseContentType);
-            if (!isXmlResponse)
-                continue;
-
-            var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
-            if (string.IsNullOrEmpty(deserializeType) || deserializeType == "void" || deserializeType == "System.Void")
-                continue;
-
-            if (TypeSymbolHelper.IsResponseType(deserializeType))
+            if (isXmlResponse)
             {
-                var innerType = TypeSymbolHelper.ExtractResponseInnerType(deserializeType);
-                if (!string.IsNullOrEmpty(innerType) && innerType != "void" && innerType != "System.Void")
+                var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
+                if (!string.IsNullOrEmpty(deserializeType) && deserializeType != "void" && deserializeType != "System.Void")
                 {
-                    context.XmlResponseTypes.Add(innerType);
+                    if (TypeSymbolHelper.IsResponseType(deserializeType))
+                    {
+                        var innerType = TypeSymbolHelper.ExtractResponseInnerType(deserializeType);
+                        if (!string.IsNullOrEmpty(innerType) && innerType != "void" && innerType != "System.Void")
+                        {
+                            context.XmlResponseTypes.Add(innerType);
+                        }
+                    }
+                    else
+                    {
+                        context.XmlResponseTypes.Add(deserializeType);
+                    }
                 }
             }
-            else
+
+            // 2. 收集 XML 请求体类型（序列化用）
+            // RequestBuilder.GenerateBodyParameter 在 isXmlContentType 分支中引用 _xmlSerializer_{type} 字段，
+            // 但仅在非加密路径下使用（加密路径走 EncryptContent，不使用静态字段）。
+            var bodyParam = methodInfo.Parameters
+                .FirstOrDefault(p => p.Attributes.Any(attr => attr.Name == HttpClientGeneratorConstants.BodyAttribute));
+            if (bodyParam != null && !methodInfo.BodyEnableEncrypt && !string.IsNullOrEmpty(bodyParam.Type))
             {
-                context.XmlResponseTypes.Add(deserializeType);
+                var effectiveContentType = methodInfo.GetEffectiveContentType();
+                var isXmlRequest = methodInfo.SerializationMethod == "Xml"
+                    || ContentTypeHelper.IsXmlContentType(effectiveContentType);
+                if (isXmlRequest)
+                {
+                    context.XmlResponseTypes.Add(bodyParam.Type);
+                }
             }
         }
 
         context.HasXmlResponse = context.XmlResponseTypes.Count > 0;
     }
 
+    // CFG-27：原 ReportCacheAttributeIgnoredProperties（HTTPCLIENT019）已移除 ——
+    // 其唯一触发点 CacheAttribute.Priority 已被删除；UseSlidingExpiration 早已受支持。
+    // [Cache] 当前已无「被生成器忽略」的属性，故诊断不再需要（ID HTTPCLIENT019 保留为未使用占位）。
+
     /// <summary>
-    /// NEW-GEN-03/08 修复：检测方法 CacheAttribute 中被生成器忽略的属性（UseSlidingExpiration、Priority），
-    /// 当用户显式设置这些属性时发出信息性诊断，提示这些配置不会在生成的代码中生效。
+    /// M2-#12：非幂等 HTTP 方法（POST/PATCH 等未在全局 RetryableHttpMethods 白名单中的方法）
+    /// 声明了 [Retry] 但未显式设置 <c>AllowNonIdempotent = true</c> 时发出 Warning：
+    /// 运行时重试将被静默跳过（保留超时与熔断）。
     /// </summary>
-    private void ReportCacheAttributeIgnoredProperties(GeneratorContext context)
+    private void ReportRetryNonIdempotentWithoutAllow(GeneratorContext context)
     {
+        // 幂等方法白名单（与 RetryOptions.RetryableHttpMethods 默认值一致，不区分大小写）
+        var idempotentMethods = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "GET", "HEAD", "OPTIONS", "PUT", "DELETE", "TRACE",
+        };
+
         foreach (var method in context.AllMethods)
         {
-            var cacheAttr = method.GetAttributes()
-                .FirstOrDefault(attr => HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name));
+            var retryAttr = method.GetAttributes()
+                .FirstOrDefault(attr => HttpClientGeneratorConstants.RetryAttributeNames.Contains(attr.AttributeClass?.Name));
 
-            if (cacheAttr == null)
+            if (retryAttr == null)
                 continue;
 
-            // 获取特性在源代码中的位置，回退到方法声明位置或接口声明位置
-            var location = (cacheAttr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
+            // 需要知道该方法的 HTTP 方法名：从 Http 特性推断
+            var httpAttr = MethodAnalyzer.FindHttpMethodAttributeFromAttributes(method.GetAttributes());
+            var httpMethodName = httpAttr?.AttributeClass?.Name;
+            if (httpMethodName == null)
+                continue;
+            // 特性名如 "PostAttribute"/"Post" → "POST"（netstandard2.0 目标无 Range/Index，用 Substring）
+            var httpMethod = httpMethodName.EndsWith("Attribute", StringComparison.OrdinalIgnoreCase)
+                ? httpMethodName.Substring(0, httpMethodName.Length - "Attribute".Length).ToUpperInvariant()
+                : httpMethodName.ToUpperInvariant();
+
+            // 幂等方法不提示；已显式 AllowNonIdempotent 不提示
+            if (idempotentMethods.Contains(httpMethod))
+                continue;
+            if (retryAttr.NamedArguments.Any(na =>
+                    na.Key == "AllowNonIdempotent" && na.Value.Value is true))
+                continue;
+
+            var location = (retryAttr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
                 ?? method.Locations.FirstOrDefault()
                 ?? _interfaceDecl.GetLocation())!;
 
-            // 检查 UseSlidingExpiration：仅当显式设置为 true 时发出诊断（设置为 false 等同于默认值）
-            var slidingArg = cacheAttr.NamedArguments
-                .FirstOrDefault(na => na.Key == "UseSlidingExpiration");
-            if (slidingArg.Value.Value is bool useSliding && useSliding)
-            {
-                _context.ReportDiagnostic(Diagnostic.Create(
-                    Diagnostics.CacheAttributePropertyIgnored,
-                    location,
-                    _interfaceSymbol.Name,
-                    method.Name,
-                    "UseSlidingExpiration"));
-            }
+            _context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.RetryNonIdempotentWithoutAllow,
+                location,
+                _interfaceSymbol.Name,
+                method.Name,
+                httpMethod));
+        }
+    }
 
-            // 检查 Priority：只要显式设置（无论值为何）即发出诊断，因为该属性被生成器完全忽略
-            if (cacheAttr.NamedArguments.Any(na => na.Key == "Priority"))
-            {
-                _context.ReportDiagnostic(Diagnostic.Create(
-                    Diagnostics.CacheAttributePropertyIgnored,
-                    location,
-                    _interfaceSymbol.Name,
-                    method.Name,
-                    "Priority"));
-            }
+    /// <summary>
+    /// CFG-07：方法级 <c>[Timeout(ms)]</c> 超过接口级 <c>[HttpClientApi(Timeout=秒)]</c> 声明的
+    /// HttpClient 超时时发出 Warning —— <c>HttpClient.Timeout</c> 是硬上限，会使 Polly 方法级超时永不触发。
+    /// 仅在「方法级显式声明 <c>[Timeout]</c>」且「接口级 <c>Timeout</c> 显式声明」时报告（避免默认值场景误报）。
+    /// </summary>
+    private void ReportMethodTimeoutConflicts(GeneratorContext context)
+    {
+        var httpClientApiAttr = AttributeDataHelper.GetAttributeDataFromSymbol(
+            _interfaceSymbol, HttpClientGeneratorConstants.HttpClientApiAttributeNames);
+        if (httpClientApiAttr == null)
+            return;
+
+        // 仅在接口级 Timeout 被显式赋值时报告：未显式设置时生成器回退默认 50s，不应据此误报。
+        var interfaceTimeoutArg = httpClientApiAttr.NamedArguments
+            .FirstOrDefault(na => na.Key == HttpClientGeneratorConstants.TimeoutProperty);
+        if (interfaceTimeoutArg.Key == null || interfaceTimeoutArg.Value.Value is not int interfaceTimeoutSeconds)
+            return;
+
+        var interfaceTimeoutMs = (long)interfaceTimeoutSeconds * 1000;
+
+        foreach (var method in context.AllMethods)
+        {
+            var timeoutAttr = method.GetAttributes()
+                .FirstOrDefault(a => HttpClientGeneratorConstants.TimeoutAttributeNames.Contains(a.AttributeClass?.Name));
+            if (timeoutAttr == null)
+                continue;
+
+            var methodTimeoutMs = AttributeDataHelper.GetAttributeIntValue(
+                timeoutAttr, 0, HttpClientGeneratorConstants.TimeoutMillisecondsProperty, -1);
+            if (methodTimeoutMs <= 0 || methodTimeoutMs <= interfaceTimeoutMs)
+                continue;
+
+            var location = (timeoutAttr.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
+                ?? method.Locations.FirstOrDefault()
+                ?? _interfaceDecl.GetLocation())!;
+
+            _context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.MethodTimeoutExceedsHttpClientTimeout,
+                location,
+                _interfaceSymbol.Name,
+                method.Name,
+                methodTimeoutMs,
+                interfaceTimeoutSeconds));
         }
     }
 

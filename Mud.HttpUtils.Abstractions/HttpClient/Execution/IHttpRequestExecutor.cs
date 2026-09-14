@@ -94,11 +94,38 @@ public interface IHttpRequestExecutor
     /// <summary>
     /// 以异步枚举方式流式读取响应。
     /// </summary>
+    /// <typeparam name="TElement">流式元素类型。</typeparam>
+    /// <param name="request">HTTP 请求消息。</param>
+    /// <param name="httpClient">用于发送请求的 HTTP 客户端实例。</param>
+    /// <param name="jsonSerializerOptions">JSON 序列化选项。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>流式返回的异步枚举。</returns>
+    /// <remarks>
+    /// <b>Native AOT 注意</b>：此重载使用开放泛型 JSON 反序列化，AOT 场景下须确保 <typeparamref name="TElement"/> 已在
+    /// <c>JsonSerializerContext</c> 中声明。推荐使用 AOT 安全重载。
+    /// </remarks>
     IAsyncEnumerable<TElement> SendAsAsyncEnumerable<TElement>(
         HttpRequestMessage request,
         IBaseHttpClient httpClient,
         object? jsonSerializerOptions,
         CancellationToken cancellationToken = default);
+
+#if NET8_0_OR_GREATER
+    /// <summary>
+    /// 以异步枚举方式流式读取响应（Native AOT 安全重载）。
+    /// </summary>
+    /// <typeparam name="TElement">流式元素类型，必须在 <see cref="System.Text.Json.Serialization.JsonSerializerContext"/> 中声明。</typeparam>
+    /// <param name="request">HTTP 请求消息。</param>
+    /// <param name="httpClient">用于发送请求的 HTTP 客户端实例。</param>
+    /// <param name="jsonTypeInfo">来自 <see cref="System.Text.Json.Serialization.JsonSerializerContext"/> 的类型信息（AOT 安全）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>流式返回的异步枚举。</returns>
+    IAsyncEnumerable<TElement> SendAsAsyncEnumerable<TElement>(
+        HttpRequestMessage request,
+        IBaseHttpClient httpClient,
+        System.Text.Json.Serialization.Metadata.JsonTypeInfo<TElement> jsonTypeInfo,
+        CancellationToken cancellationToken = default);
+#endif
 
     /// <summary>
     /// 发送 HTTP 请求，支持缓存和弹性策略编排。

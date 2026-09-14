@@ -138,7 +138,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -162,7 +162,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -189,7 +189,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -214,7 +214,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Post(""/submit"")]
@@ -237,7 +237,7 @@ using System.IO;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Post(""/upload"")]
@@ -264,7 +264,7 @@ namespace TestNamespace
         public string Content { get; set; }
     }
 
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/chat/stream"")]
@@ -287,7 +287,7 @@ using System.IO;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Post(""/upload"")]
@@ -317,7 +317,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     [InterfaceQuery(Name = ""version"", Value = ""v1"")]
     public interface ITestApi
     {
@@ -356,7 +356,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users/{id}"")]
@@ -392,7 +392,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/search"")]
@@ -415,14 +415,15 @@ namespace TestNamespace
     [Fact]
     public void Generator_WithOptionValue_GeneratesNullCheck()
     {
-        // 验证修复 BUG：option 应先检查 null，再检查 option.Value
+        // 重构后：IOptions<JsonSerializerOptions> 参数已移除，改为 IHttpContentSerializer（可选）。
+        // 验证生成代码不再包含旧的 option null 检查，且使用 IHttpContentSerializer。
         var source = @"
 using Mud.HttpUtils;
 using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -435,12 +436,14 @@ namespace TestNamespace
 
         if (generatedCode != null)
         {
-            generatedCode.Should().Contain("if (option == null)",
-                "应先检查 option 是否为 null");
-            generatedCode.Should().Contain("throw new ArgumentNullException(nameof(option))",
-                "option 为 null 时应抛出 ArgumentNullException");
-            generatedCode.Should().Contain("option.Value ?? throw new InvalidOperationException",
-                "option.Value 为 null 时应抛出 InvalidOperationException");
+            generatedCode.Should().NotContain("if (option == null)",
+                "重构后不应再检查 option 是否为 null（参数已移除）");
+            generatedCode.Should().NotContain("throw new ArgumentNullException(nameof(option))",
+                "重构后不应再对 option 抛出 ArgumentNullException（参数已移除）");
+            generatedCode.Should().Contain("IHttpContentSerializer",
+                "生成类应依赖 IHttpContentSerializer");
+            generatedCode.Should().Contain("HttpContentSerializerFactory.CreateDefault()",
+                "未注入序列化器时应使用工厂创建默认实例");
         }
     }
 
@@ -489,7 +492,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -515,7 +518,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Patch(""/users/{id}"")]
@@ -542,7 +545,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -799,7 +802,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -834,7 +837,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/data"", ResponseContentType = ""application/xml"")]
@@ -1050,7 +1053,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -1089,7 +1092,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -1126,7 +1129,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -1155,7 +1158,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -1184,7 +1187,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -1212,7 +1215,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -1240,7 +1243,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -1268,7 +1271,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -1298,7 +1301,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -1531,8 +1534,9 @@ namespace TestNamespace
             "[FilePath] 参数不应被添加到查询参数集合（大小写变体）");
 
         // filePath 不应出现在请求体构建逻辑中
-        generatedCode.Should().NotContain("JsonContent",
-            "[FilePath] 参数不应触发 JSON 请求体序列化");
+        // Phase 3.1 后，Body 序列化使用 _contentSerializer.ToHttpContent，不再使用 StringContent + "JsonContent"
+        generatedCode.Should().NotContain("_contentSerializer.ToHttpContent(filePath",
+            "[FilePath] 参数不应触发请求体序列化");
     }
 
     #endregion

@@ -59,6 +59,11 @@ public static class MudHttpActivitySource
         string activityEventName,
         IEnumerable<KeyValuePair<string, object?>>? tags = null)
     {
+        // R-2：EmitDiagnosticEvents 关闭时整体短路（含 tags 数组构造），高频场景零开销。
+        // 不影响 Activity 本身（Span 生命周期、status、核心 tag）与指标。
+        if (!MudHttpObservabilityOptions.EmitDiagnosticEvents)
+            return;
+
         // 写入 DiagnosticSource（无订阅者时 payloadFactory 不调用，零分配）
         MudHttpDiagnosticListener.Instance.WriteIfEnabled(diagnosticEventName, diagnosticPayloadFactory);
 

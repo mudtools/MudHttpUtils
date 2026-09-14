@@ -331,7 +331,7 @@ services.AddSingleton<IHttpResponseCache, MemoryHttpResponseCache>();
 services.AddSingleton<IHttpResponseInterceptor, CacheResponseInterceptor>();
 ```
 
-> `CacheAttribute` 支持 `DurationSeconds`、`CacheKeyTemplate`、`VaryByUser`、`UseSlidingExpiration`、`Priority` 属性。`MemoryHttpResponseCache` 使用 `IMemoryCache` 作为底层存储，可替换为 Redis 等分布式缓存。
+> `CacheAttribute` 支持 `DurationSeconds`、`CacheKeyTemplate`、`VaryByUser`、`UseSlidingExpiration` 属性（`Priority` 已随 CFG-27 移除：生成器从未处理该属性，运行时无消费点）。`MemoryHttpResponseCache` 使用 `IMemoryCache` 作为底层存储，可替换为 Redis 等分布式缓存。
 
 ## 日志脱敏
 
@@ -419,7 +419,8 @@ var result = await uploadApi.UploadAsync(formData);
 public interface IExampleApi { }
 ```
 
-> `BaseAddress` 构造函数和属性已废弃，请通过 `AddMudHttpClient(clientName, baseAddress)` 配置基地址。
+> **CFG-27**：`BaseAddress` 构造函数与属性**已移除**（使用将产生编译错误 `CS0117`）。
+> 请通过 `AddMudHttpClient(clientName, baseAddress)` 或 `AddMudHttpGeneratedClient<T>(clientName)` 配置基地址。
 > 生成器会在注册代码中生成 `client.Timeout` 设置，使 Timeout 属性真正生效。
 
 ### HTTP 方法特性

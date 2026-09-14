@@ -28,7 +28,9 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
 {
     private readonly IEnhancedHttpClient _innerClient;
     private readonly IResiliencePolicyProvider _policyProvider;
-    private readonly ILogger _logger;
+    // M3-#21：字段收强为 ILogger<ResilientHttpClient>（构造函数仅赋值该类型或 NullLogger<ResilientHttpClient>），
+    // 消除 WithBaseAddress 中的向下强制转换 —— 未来任何改动都在编译期暴露而非运行时 InvalidCastException
+    private readonly ILogger<ResilientHttpClient> _logger;
     private readonly ResilienceOptions? _options;
 
     /// <summary>
@@ -69,17 +71,24 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
     }
 
     /// <summary>
-    /// 检查请求体是否超过克隆限制，需要跳过重试（但仍保留超时和熔断）。
+    /// 检查请求是否应跳过重试（跳过重试仍保留超时和熔断策略）。
     /// </summary>
     private bool ShouldSkipRetry(HttpRequestMessage request)
     {
-        if (MaxCloneContentSize < 0)
-            return false;
-
-        var contentLength = request.Content?.Headers.ContentLength;
-        if (contentLength.HasValue && contentLength.Value > MaxCloneContentSize)
+        if (MaxCloneContentSize >= 0)
         {
-            MudHttpClientLog.RequestExceedsCloneLimit(_logger, contentLength.Value, MaxCloneContentSize);
+            var contentLength = request.Content?.Headers.ContentLength;
+            if (contentLength.HasValue && contentLength.Value > MaxCloneContentSize)
+            {
+                MudHttpClientLog.RequestExceedsCloneLimit(_logger, contentLength.Value, MaxCloneContentSize);
+                return true;
+            }
+        }
+
+        // M2-#12：非幂等方法默认不重试（防重复提交）；超时与熔断仍经 ExecuteWithoutRetryAsync 生效
+        if (!RetryGuard.IsRetryAllowedForMethod(request, _options))
+        {
+            MudHttpClientLog.RetrySkippedNonIdempotent(_logger, request.Method.Method);
             return true;
         }
 
@@ -96,13 +105,16 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
     {
         var policy = _policyProvider.GetTimeoutAndCircuitBreakerPolicy<TResult>();
 
-        return await policy.ExecuteAsync(
-            async ct =>
-            {
-                // 大内容请求不克隆，直接使用原始请求
-                return await executeFunc(_innerClient, request, ct).ConfigureAwait(false);
-            },
-            cancellationToken).ConfigureAwait(false);
+        // M2-#10：Polly 异常（超时/熔断）在策略边界外汇一为 ApiRequestException
+        return await PollyExceptionNormalizer.ExecuteAsync(
+            request,
+            () => policy.ExecuteAsync(
+                async ct =>
+                {
+                    // 大内容请求不克隆，直接使用原始请求
+                    return await executeFunc(_innerClient, request, ct).ConfigureAwait(false);
+                },
+                cancellationToken)).ConfigureAwait(false);
     }
 
     private async Task<TResult> ExecuteWithCloneAsync<TResult>(
@@ -115,24 +127,45 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         // 通过 Polly Context 传递 retry_count，在每次克隆请求时写入请求属性，
         // 供 RecordOutcome 从请求属性读取并同步到 Activity tag（启用 P0 任务 8 请求属性路径）
         var context = new Context();
-        return await policy.ExecuteAsync(
-            async (ctx, ct) =>
-            {
-                var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request, MaxCloneContentSize).ConfigureAwait(false);
-                // 从 Context 读取 retry_count（首次执行时不存在，重试时由 onRetry 回调写入）
-                if (ctx.TryGetValue(PollyResiliencePolicyProvider.RetryCountContextKey, out var rc) && rc is int retryCount)
-                    MudHttpObservability.RecordRetryCount(clonedRequest, retryCount);
-                try
+        // M2-#10：Polly 异常（超时/熔断）在策略边界外汇一
+        // M2-#19/N-3：首次尝试不克隆 —— 经闭包标志判定（不依赖 provider 是否写入 RetryCountContextKey，
+        // 自定义/第三方策略同样正确），首次用原请求保持流式上传与进度语义；仅重试时克隆。
+        var isFirstAttempt = true;
+        return await PollyExceptionNormalizer.ExecuteAsync(
+            request,
+            () => policy.ExecuteAsync(
+                async (ctx, ct) =>
                 {
-                    return await executeFunc(_innerClient, clonedRequest, ct).ConfigureAwait(false);
-                }
-                finally
-                {
-                    clonedRequest.Dispose();
-                }
-            },
-            context,
-            cancellationToken).ConfigureAwait(false);
+                    var isRetry = !isFirstAttempt;
+                    isFirstAttempt = false;
+                    HttpRequestMessage execRequest;
+                    bool ownsRequest;
+                    if (isRetry)
+                    {
+                        execRequest = await HttpRequestMessageCloner
+                            .CloneAsync(request, MaxCloneContentSize, ct).ConfigureAwait(false);
+                        ownsRequest = true;
+                    }
+                    else
+                    {
+                        execRequest = request;   // 原样发送，不缓冲流式内容
+                        ownsRequest = false;    // 原请求生命周期归调用方，不得 dispose
+                    }
+
+                    try
+                    {
+                        if (isRetry && ctx.TryGetValue(PollyResiliencePolicyProvider.RetryCountContextKey, out var rc) && rc is int retryCount)
+                            MudHttpObservability.RecordRetryCount(execRequest, retryCount);
+                        return await executeFunc(_innerClient, execRequest, ct).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        if (ownsRequest)
+                            execRequest.Dispose();
+                    }
+                },
+                context,
+                cancellationToken)).ConfigureAwait(false);
     }
 
     private async Task<TResult> ExecuteDownloadWithResilienceAsync<TResult>(
@@ -143,54 +176,80 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         var policy = _policyProvider.GetCombinedPolicy<TResult>();
 
         var context = new Context();
-        return await policy.ExecuteAsync(
-            async (ctx, ct) =>
-            {
-                var clonedRequest = CloneRequestHeaders(request);
-                if (ctx.TryGetValue(PollyResiliencePolicyProvider.RetryCountContextKey, out var rc) && rc is int retryCount)
-                    MudHttpObservability.RecordRetryCount(clonedRequest, retryCount);
-                try
+        // M2-#10 + M2-#19：异常归一 + 首次不克隆（闭包标志判定，与 ExecuteWithCloneAsync 同构）
+        var isFirstAttempt = true;
+        return await PollyExceptionNormalizer.ExecuteAsync(
+            request,
+            () => policy.ExecuteAsync(
+                async (ctx, ct) =>
                 {
-                    return await executeFunc(_innerClient, clonedRequest, ct).ConfigureAwait(false);
-                }
-                finally
-                {
-                    clonedRequest.Dispose();
-                }
-            },
-            context,
-            cancellationToken).ConfigureAwait(false);
+                    var isRetry = !isFirstAttempt;
+                    isFirstAttempt = false;
+                    HttpRequestMessage execRequest;
+                    bool ownsRequest;
+                    if (isRetry)
+                    {
+                        execRequest = CloneRequestHeaders(request);
+                        ownsRequest = true;
+                    }
+                    else
+                    {
+                        execRequest = request;
+                        ownsRequest = false;
+                    }
+
+                    try
+                    {
+                        if (isRetry && ctx.TryGetValue(PollyResiliencePolicyProvider.RetryCountContextKey, out var rc) && rc is int retryCount)
+                            MudHttpObservability.RecordRetryCount(execRequest, retryCount);
+                        return await executeFunc(_innerClient, execRequest, ct).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        if (ownsRequest)
+                            execRequest.Dispose();
+                    }
+                },
+                context,
+                cancellationToken)).ConfigureAwait(false);
     }
 
     private static HttpRequestMessage CloneRequestHeaders(HttpRequestMessage request)
     {
         var clone = new HttpRequestMessage(request.Method, request.RequestUri);
-        clone.Version = request.Version;
-
-        foreach (var header in request.Headers)
-        {
-            clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
-        }
-
-#if !NETSTANDARD2_0
-        foreach (var option in request.Options)
-        {
-            clone.Options.TryAdd(option.Key, option.Value);
-        }
-#endif
-
+        // M1-#3：与 HttpRequestMessageCloner.CloneAsync 共用元数据拷贝（Version/VersionPolicy/
+        // Properties/Options/请求头），消除两处克隆点的漂移
+        HttpRequestMessageCloner.CopyMetadata(request, clone);
         return clone;
     }
 
+    /// <summary>
+    /// 便捷方法执行路径（闭包内每次重建请求，首次即真实请求 —— M2-#19/N-3 语义天然成立）。
+    /// </summary>
+    /// <remarks>
+    /// M2-#12：便捷方法路径同样执行非幂等防护（<paramref name="retryAllowed"/> 由调用方按 HTTP 方法经
+    /// <see cref="RetryGuard.IsRetryAllowedForMethod(string, ResilienceOptions?)"/> 判定），非幂等方法退化为超时+熔断。
+    /// M2-#10：超时/熔断异常同样在策略边界外汇一（Polly 类型不外泄）。
+    /// </remarks>
     private async Task<TResult> ExecuteWithoutCloneAsync<TResult>(
+        bool retryAllowed,
+        string httpMethod,
+        string requestUri,
         Func<IEnhancedHttpClient, CancellationToken, Task<TResult>> executeFunc,
         CancellationToken cancellationToken)
     {
-        var policy = _policyProvider.GetCombinedPolicy<TResult>();
+        if (!retryAllowed)
+            MudHttpClientLog.RetrySkippedNonIdempotent(_logger, httpMethod);
 
-        return await policy.ExecuteAsync(
-            async ct => await executeFunc(_innerClient, ct).ConfigureAwait(false),
-            cancellationToken).ConfigureAwait(false);
+        var policy = retryAllowed
+            ? _policyProvider.GetCombinedPolicy<TResult>()
+            : _policyProvider.GetTimeoutAndCircuitBreakerPolicy<TResult>();
+
+        return await PollyExceptionNormalizer.ExecuteAsync(
+            requestUri,
+            () => policy.ExecuteAsync(
+                async ct => await executeFunc(_innerClient, ct).ConfigureAwait(false),
+                cancellationToken)).ConfigureAwait(false);
     }
 
     #region IBaseHttpClient
@@ -218,19 +277,46 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         object? jsonSerializerOptions,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var clonedRequest = await HttpRequestMessageCloner.CloneAsync(request, MaxCloneContentSize).ConfigureAwait(false);
-        try
+        // M2-#19/N-3：首次不克隆 —— 直接枚举原请求，保持流式上传/进度语义。
+        // 流式读取阶段无法被 Polly 包装（IAsyncEnumerable 为拉取模型），连接建立期重试
+        // 由调用方自行包装（见接口 remarks），故此处无"重试时再克隆"的路径。
+        await foreach (var item in _innerClient.SendAsAsyncEnumerable<TResult>(request, jsonSerializerOptions, cancellationToken).ConfigureAwait(false))
         {
-            await foreach (var item in _innerClient.SendAsAsyncEnumerable<TResult>(clonedRequest, jsonSerializerOptions, cancellationToken).ConfigureAwait(false))
-            {
-                yield return item;
-            }
-        }
-        finally
-        {
-            clonedRequest.Dispose();
+            yield return item;
         }
     }
+
+#if NET8_0_OR_GREATER
+    /// <inheritdoc />
+    /// <remarks>
+    /// AOT 安全流式重载：使用 <see cref="System.Text.Json.Serialization.Metadata.JsonTypeInfo{TResult}"/> 进行反序列化。
+    /// 弹性策略行为与非泛型重载一致（连接建立阶段可重试，流式读取阶段不包装）。
+    /// </remarks>
+    public IAsyncEnumerable<TResult> SendAsAsyncEnumerable<TResult>(
+        HttpRequestMessage request,
+        System.Text.Json.Serialization.Metadata.JsonTypeInfo<TResult> jsonTypeInfo,
+        CancellationToken cancellationToken = default)
+    {
+        if (ShouldSkipResilience(request))
+        {
+            return _innerClient.SendAsAsyncEnumerable<TResult>(request, jsonTypeInfo, cancellationToken);
+        }
+
+        return ExecuteStreamWithResilienceAsync(request, jsonTypeInfo, cancellationToken);
+    }
+
+    private async IAsyncEnumerable<TResult> ExecuteStreamWithResilienceAsync<TResult>(
+        HttpRequestMessage request,
+        System.Text.Json.Serialization.Metadata.JsonTypeInfo<TResult> jsonTypeInfo,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        // M2-#19/N-3：首次不克隆（与非泛型流式重载同构）
+        await foreach (var item in _innerClient.SendAsAsyncEnumerable<TResult>(request, jsonTypeInfo, cancellationToken).ConfigureAwait(false))
+        {
+            yield return item;
+        }
+    }
+#endif
 
     /// <inheritdoc />
     public async Task<TResult?> SendAsync<TResult>(
@@ -357,6 +443,9 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         CancellationToken cancellationToken = default)
     {
         return await ExecuteWithoutCloneAsync<TResult?>(
+            RetryGuard.IsRetryAllowedForMethod("GET", _options),
+            "GET",
+            requestUri,
             (client, ct) => client.GetAsync<TResult>(requestUri, ct),
             cancellationToken).ConfigureAwait(false);
     }
@@ -368,6 +457,9 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         CancellationToken cancellationToken = default)
     {
         return await ExecuteWithoutCloneAsync<TResult?>(
+            RetryGuard.IsRetryAllowedForMethod("POST", _options),
+            "POST",
+            requestUri,
             (client, ct) => client.PostAsJsonAsync<TRequest, TResult>(requestUri, requestData, ct),
             cancellationToken).ConfigureAwait(false);
     }
@@ -379,6 +471,9 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         CancellationToken cancellationToken = default)
     {
         return await ExecuteWithoutCloneAsync<TResult?>(
+            RetryGuard.IsRetryAllowedForMethod("PUT", _options),
+            "PUT",
+            requestUri,
             (client, ct) => client.PutAsJsonAsync<TRequest, TResult>(requestUri, requestData, ct),
             cancellationToken).ConfigureAwait(false);
     }
@@ -389,6 +484,9 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         CancellationToken cancellationToken = default)
     {
         return await ExecuteWithoutCloneAsync<TResult?>(
+            RetryGuard.IsRetryAllowedForMethod("DELETE", _options),
+            "DELETE",
+            requestUri,
             (client, ct) => client.DeleteAsJsonAsync<TResult>(requestUri, ct),
             cancellationToken).ConfigureAwait(false);
     }
@@ -400,6 +498,9 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         CancellationToken cancellationToken = default)
     {
         return await ExecuteWithoutCloneAsync<TResult?>(
+            RetryGuard.IsRetryAllowedForMethod("DELETE", _options),
+            "DELETE",
+            requestUri,
             (client, ct) => client.DeleteAsJsonAsync<TRequest, TResult>(requestUri, requestData, ct),
             cancellationToken).ConfigureAwait(false);
     }
@@ -411,6 +512,9 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         CancellationToken cancellationToken = default)
     {
         return await ExecuteWithoutCloneAsync<TResult?>(
+            RetryGuard.IsRetryAllowedForMethod("PATCH", _options),
+            "PATCH",
+            requestUri,
             (client, ct) => client.PatchAsJsonAsync<TRequest, TResult>(requestUri, requestData, ct),
             cancellationToken).ConfigureAwait(false);
     }
@@ -450,6 +554,9 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         CancellationToken cancellationToken = default)
     {
         return await ExecuteWithoutCloneAsync<TResult?>(
+            RetryGuard.IsRetryAllowedForMethod("POST", _options),
+            "POST",
+            requestUri,
             (client, ct) => client.PostAsXmlAsync<TRequest, TResult>(requestUri, requestData, encoding, ct),
             cancellationToken).ConfigureAwait(false);
     }
@@ -462,6 +569,9 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         CancellationToken cancellationToken = default)
     {
         return await ExecuteWithoutCloneAsync<TResult?>(
+            RetryGuard.IsRetryAllowedForMethod("PUT", _options),
+            "PUT",
+            requestUri,
             (client, ct) => client.PutAsXmlAsync<TRequest, TResult>(requestUri, requestData, encoding, ct),
             cancellationToken).ConfigureAwait(false);
     }
@@ -473,6 +583,9 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         CancellationToken cancellationToken = default)
     {
         return await ExecuteWithoutCloneAsync<TResult?>(
+            RetryGuard.IsRetryAllowedForMethod("GET", _options),
+            "GET",
+            requestUri,
             (client, ct) => client.GetXmlAsync<TResult>(requestUri, encoding, ct),
             cancellationToken).ConfigureAwait(false);
     }
@@ -482,9 +595,22 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
     #region IEncryptableHttpClient
 
     /// <inheritdoc />
+    [Obsolete("此重载使用运行时反射 (content.GetType())，Native AOT 不兼容。请改用 EncryptContent<T>(T, string) 泛型重载。")]
+#if NET6_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("EncryptContent(object, ...) 委托给底层客户端并使用运行时类型分派，Native AOT 不支持。请改用 EncryptContent<T>(T, string) 泛型重载。")]
+#endif
+#if NET7_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.RequiresDynamicCode("EncryptContent(object, ...) 委托给底层客户端并使用运行时类型分派，Native AOT 不支持。请改用 EncryptContent<T>(T, string) 泛型重载。")]
+#endif
     public string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json)
     {
         return ((IEncryptableHttpClient)_innerClient).EncryptContent(content, propertyName, serializeType);
+    }
+
+    /// <inheritdoc />
+    public string EncryptContent<T>(T content, string propertyName = "data")
+    {
+        return ((IEncryptableHttpClient)_innerClient).EncryptContent(content, propertyName);
     }
 
     /// <inheritdoc />
@@ -528,7 +654,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
             throw new ArgumentNullException(nameof(baseAddress));
 
         var innerWithNewBase = _innerClient.WithBaseAddress(baseAddress);
-        return new ResilientHttpClient(innerWithNewBase, _policyProvider, (ILogger<ResilientHttpClient>)_logger, _options);
+        return new ResilientHttpClient(innerWithNewBase, _policyProvider, _logger, _options);
     }
 
     #endregion

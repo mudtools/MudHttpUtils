@@ -41,7 +41,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -76,7 +76,7 @@ namespace TestNamespace
         public string Email { get; set; }
     }
 
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Post(""/users"")]
@@ -86,7 +86,10 @@ namespace TestNamespace
 
         var (diagnostics, outputCompilation) = RunGenerator(source);
 
-        diagnostics.Should().BeEmpty();
+        // AOT004（CreateUserRequest 未被任何 JsonSerializerContext 覆盖）属预期告警：
+        // 本测试关注代码生成，仅要求无错误级诊断。AOT004 的正向行为由
+        // AotDtoCoverageAnalyzerTests 覆盖（覆盖集合现可解析引用程序集中的 Context，故会触发该告警）。
+        diagnostics.Should().NotContain(d => d.Severity == DiagnosticSeverity.Error);
         var generatedCode = GetGeneratedCode(outputCompilation);
         generatedCode.Should().NotBeNullOrEmpty();
         generatedCode.Should().Contain("CreateUserAsync");
@@ -105,7 +108,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users/{userId}"")]
@@ -134,7 +137,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/search"")]
@@ -163,7 +166,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/data"")]
@@ -228,7 +231,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Post(""/login"")]
@@ -258,7 +261,7 @@ using System.IO;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Post(""/upload"")]
@@ -288,7 +291,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users/{id}"")]
@@ -317,7 +320,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     [InterfaceQuery(Name = ""version"", Value = ""v1"")]
     public interface ITestApi
     {
@@ -352,7 +355,7 @@ namespace TestNamespace
         public string Name { get; set; }
     }
 
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/users"")]
@@ -374,7 +377,8 @@ namespace TestNamespace
 
         var (diagnostics, outputCompilation) = RunGenerator(source);
 
-        diagnostics.Should().BeEmpty();
+        // 同 Generator_PostWithBody：包含未覆盖的 Body DTO 时会得到预期的 AOT004 告警。
+        diagnostics.Should().NotContain(d => d.Severity == DiagnosticSeverity.Error);
         var generatedCode = GetGeneratedCode(outputCompilation);
         generatedCode.Should().NotBeNullOrEmpty();
         generatedCode.Should().Contain("GetUsersAsync");
@@ -402,7 +406,7 @@ namespace TestNamespace
         public int Page { get; set; }
     }
 
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/search"")]
@@ -431,7 +435,7 @@ using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
-    [HttpClientApi(BaseAddress = ""https://api.example.com"")]
+    [HttpClientApi]
     public interface ITestApi
     {
         [Get(""/data"")]

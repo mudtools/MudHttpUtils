@@ -11,6 +11,10 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
+#if NET6_0_OR_GREATER
+using System.Diagnostics.CodeAnalysis;
+#endif
+
 namespace Mud.HttpUtils.Resilience;
 
 
@@ -59,6 +63,8 @@ public static class ServiceCollectionExtensions
         services.TryAddSingleton<IValidateOptions<ResilienceOptions>, ResilienceOptionsValidator>();
         // 注册跨选项后置配置器，检查 HttpClient.Timeout 与 Polly 重试/超时的潜在冲突
         services.TryAddSingleton<IPostConfigureOptions<ResilienceOptions>, ResilienceOptionsCrossValidator>();
+        // CFG-09：AllowNonIdempotentRetry=true 且方法集合被收窄时告警（RetryableHttpMethods 将被忽略）
+        services.TryAddSingleton<IPostConfigureOptions<ResilienceOptions>, ResilienceOptionsPostConfigure>();
         services.TryAddSingleton<IResiliencePolicyProvider>(CreatePolicyProvider);
         // 注册弹性策略解析器，供 IHttpRequestExecutor 在运行时编排方法级弹性策略
         services.TryAddSingleton<IResiliencePolicyResolver, ResiliencePolicyResolver>();
@@ -71,7 +77,7 @@ public static class ServiceCollectionExtensions
     /// </summary>
     /// <param name="services">服务集合。</param>
     /// <param name="configuration">配置实例，用于绑定弹性策略选项。</param>
-    /// <param name="configurationSectionPath">配置文件中弹性策略节点的路径，默认为 "MudHttpResilience"。</param>
+    /// <param name="configurationSectionPath">配置文件中弹性策略节点的路径，默认为 <see cref="ResilienceOptions.SectionName"/>。</param>
     /// <returns>服务集合（链式调用）。</returns>
     /// <exception cref="ArgumentNullException"><paramref name="services"/> 或 <paramref name="configuration"/> 为 null 时抛出。</exception>
     /// <example>
@@ -94,22 +100,32 @@ public static class ServiceCollectionExtensions
     /// services.AddMudHttpResilience(Configuration);
     /// </code>
     /// </example>
+#if NET6_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Microsoft.Extensions.Configuration.ConfigurationBinder", "IL2026:RequiresUnreferencedCode",
+        Justification = "配置绑定路径在 AOT 下需通过委托式重载 AddMudHttpResilience(Action<ResilienceOptions>) 替代。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050:RequiresDynamicCode",
+        Justification = "配置绑定路径在 AOT 下需通过委托式重载替代。")]
+#endif
     public static IServiceCollection AddMudHttpResilience(
         this IServiceCollection services,
         IConfiguration configuration,
-        string configurationSectionPath = "MudHttpResilience")
+        string configurationSectionPath = ResilienceOptions.SectionName)
     {
         if (services == null)
             throw new ArgumentNullException(nameof(services));
         if (configuration == null)
             throw new ArgumentNullException(nameof(configuration));
 
-        // 使用 IConfiguration 直接绑定（而非 lambda + Bind），以支持热更新（IOptionsMonitor + ChangeToken）
+        // 使用 IConfiguration 直接绑定，支持 IOptionsMonitor 变更通知。
+        // 注意：PollyResiliencePolicyProvider 注册为单例并通过 IOptions<ResilienceOptions> 读取配置，
+        // 因此策略在启动时创建一次，不会随配置热更新而动态变化。
         services.Configure<ResilienceOptions>(configuration.GetSection(configurationSectionPath));
 
         services.TryAddSingleton<IValidateOptions<ResilienceOptions>, ResilienceOptionsValidator>();
         // 注册跨选项后置配置器，检查 HttpClient.Timeout 与 Polly 重试/超时的潜在冲突
         services.TryAddSingleton<IPostConfigureOptions<ResilienceOptions>, ResilienceOptionsCrossValidator>();
+        // CFG-09：AllowNonIdempotentRetry=true 且方法集合被收窄时告警（RetryableHttpMethods 将被忽略）
+        services.TryAddSingleton<IPostConfigureOptions<ResilienceOptions>, ResilienceOptionsPostConfigure>();
         services.TryAddSingleton<IResiliencePolicyProvider>(CreatePolicyProvider);
         // 注册弹性策略解析器，供 IHttpRequestExecutor 在运行时编排方法级弹性策略
         services.TryAddSingleton<IResiliencePolicyResolver, ResiliencePolicyResolver>();
@@ -165,14 +181,14 @@ public static class ServiceCollectionExtensions
     /// </remarks>
     /// <param name="services">服务集合。</param>
     /// <param name="configuration">配置实例，用于绑定弹性策略选项。</param>
-    /// <param name="configurationSectionPath">配置文件中弹性策略节点的路径，默认为 "MudHttpResilience"。</param>
+    /// <param name="configurationSectionPath">配置文件中弹性策略节点的路径，默认为 <see cref="ResilienceOptions.SectionName"/>。</param>
     /// <returns>服务集合（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">services 为 null 时抛出。</exception>
     /// <exception cref="InvalidOperationException">未找到已注册的 IEnhancedHttpClient 服务时抛出。</exception>
     public static IServiceCollection AddMudHttpResilienceDecorator(
         this IServiceCollection services,
         IConfiguration configuration,
-        string configurationSectionPath = "MudHttpResilience")
+        string configurationSectionPath = ResilienceOptions.SectionName)
     {
         if (services == null)
             throw new ArgumentNullException(nameof(services));
@@ -228,7 +244,7 @@ public static class ServiceCollectionExtensions
                     descriptor.ServiceKey,
                     (sp, key) =>
                     {
-                        var inner = (TService)ActivatorUtilities.CreateInstance(sp, implementationType);
+                        var inner = (TService)CreateServiceInstance(sp, implementationType!);
                         return decoratorFactory(inner, sp);
                     },
                     descriptor.Lifetime));
@@ -278,7 +294,7 @@ public static class ServiceCollectionExtensions
                 typeof(TService),
                 sp =>
                 {
-                    var inner = (TService)ActivatorUtilities.CreateInstance(sp, implementationType);
+                    var inner = (TService)CreateServiceInstance(sp, implementationType!);
                     return decoratorFactory(inner, sp);
                 },
                 wrappedDescriptor.Lifetime));
@@ -290,6 +306,28 @@ public static class ServiceCollectionExtensions
         var options = sp.GetRequiredService<IOptions<ResilienceOptions>>();
         var logger = sp.GetService<ILogger<PollyResiliencePolicyProvider>>();
         return new PollyResiliencePolicyProvider(options, logger);
+    }
+
+    /// <summary>
+    /// 通过 <see cref="ActivatorUtilities.CreateInstance"/> 创建服务实例。
+    /// </summary>
+    /// <remarks>
+    /// <b>AOT 安全说明</b>：此方法标注了 <c>[UnconditionalSuppressMessage]</c> 以抑制 IL2026 告警。
+    /// 调用方（DecorateService/DecorateKeyedServices）
+    /// 仅在 <c>ServiceDescriptor.ImplementationType</c> 非 null 时调用此方法，而该属性的注册路径
+    /// （如 <c>services.AddTransient&lt;TService, TImpl&gt;()</c>）已通过
+    /// <c>[DynamicallyAccessedMembers(PublicConstructors)]</c> 保证了类型构造函数的保留。
+    /// AOT 场景下推荐使用工厂委托注册（<c>AddTransient&lt;TService&gt;(sp =&gt; ...)</c>）以完全避免此路径。
+    /// </remarks>
+#if NET6_0_OR_GREATER
+    [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2026:RequiresUnreferencedCode",
+        Justification = "ImplementationType 的构造函数已由 DI 注册路径（如 AddTransient<TService,TImpl>）通过 DynamicallyAccessedMembers 保留。AOT 场景推荐使用工厂委托注册。")]
+    [UnconditionalSuppressMessage("ReflectionAnalysis", "IL2067:DynamicallyAccessedMembers",
+        Justification = "implementationType 来源于 ServiceDescriptor.ImplementationType，该属性在 .NET 8+ 已标注 [DynamicallyAccessedMembers(PublicConstructors)]，构造函数已被保留。")]
+#endif
+    private static object CreateServiceInstance(IServiceProvider sp, Type implementationType)
+    {
+        return ActivatorUtilities.CreateInstance(sp, implementationType);
     }
 
     #region AddMudHttpUtils — 一站式注册（Client + Resilience）
@@ -421,7 +459,7 @@ public static class ServiceCollectionExtensions
     /// <param name="clientName">Named HttpClient 的名称。</param>
     /// <param name="configuration">配置实例。</param>
     /// <param name="configureHttpClient">配置 HttpClient 的委托。</param>
-    /// <param name="resilienceSectionPath">弹性策略配置节点路径，默认 "MudHttpResilience"。</param>
+    /// <param name="resilienceSectionPath">弹性策略配置节点路径，默认 <see cref="ResilienceOptions.SectionName"/>。</param>
     /// <returns>服务集合（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
     public static IServiceCollection AddMudHttpUtils(
@@ -429,7 +467,7 @@ public static class ServiceCollectionExtensions
         string clientName,
         IConfiguration configuration,
         Action<HttpClient> configureHttpClient,
-        string resilienceSectionPath = "MudHttpResilience")
+        string resilienceSectionPath = ResilienceOptions.SectionName)
     {
         if (services == null)
             throw new ArgumentNullException(nameof(services));

@@ -22,6 +22,23 @@ public class TokenManagerBaseTests
         token.Should().Be("refreshed-token");
     }
 
+    // P3.4（C4，TK-23）：MetricsKey 默认回落 GetType().Name，且允许子类覆写为可区分的业务键。
+    [Fact]
+    public void MetricsKey_DefaultsToTypeName()
+    {
+        var manager = new ExposedMetricsKeyTokenManager();
+
+        manager.GetMetricsKey().Should().Be(nameof(ExposedMetricsKeyTokenManager));
+    }
+
+    [Fact]
+    public void MetricsKey_CanBeOverridden()
+    {
+        var manager = new CustomMetricsKeyTokenManager("tenant-a");
+
+        manager.GetMetricsKey().Should().Be("tenant-a");
+    }
+
     [Fact]
     public async Task GetOrRefreshTokenAsync_WhenTokenExpired_ReturnsRefreshedTokenNotCachedToken()
     {
@@ -103,7 +120,8 @@ public class TokenManagerBaseTests
         eventArgs.TokenType.Should().Be("access_token");
         eventArgs.RetryCount.Should().Be(2);
         eventArgs.Timestamp.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(1));
-        eventArgs.ShouldRetry.Should().BeFalse();
+        // TK-20：ShouldRetry 默认 true —— MaxRefreshRetryCount 是重试的唯一主控门，false 仅用于事件处理器提前取消
+        eventArgs.ShouldRetry.Should().BeTrue();
         eventArgs.FallbackToken.Should().BeNull();
     }
 
@@ -309,6 +327,44 @@ public class TokenManagerBaseTests
         }
     }
 
+    // P3.4（C4，TK-23）：仅暴露 MetricsKey 供测试断言默认回落值。
+    private class ExposedMetricsKeyTokenManager : TokenManagerBase
+    {
+        public string GetMetricsKey() => MetricsKey;
+
+        public override Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
+            => GetOrRefreshTokenAsync(cancellationToken);
+
+        protected override Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
+            => Task.FromResult(new CredentialToken
+            {
+                AccessToken = "refreshed-token",
+                Expire = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds()
+            });
+    }
+
+    // P3.4（C4，TK-23）：覆写 MetricsKey 以区隔同一实现类型的多实例维度。
+    private class CustomMetricsKeyTokenManager : TokenManagerBase
+    {
+        private readonly string _key;
+
+        public CustomMetricsKeyTokenManager(string key) => _key = key;
+
+        public string GetMetricsKey() => MetricsKey;
+
+        protected override string MetricsKey => _key;
+
+        public override Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
+            => GetOrRefreshTokenAsync(cancellationToken);
+
+        protected override Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
+            => Task.FromResult(new CredentialToken
+            {
+                AccessToken = "refreshed-token",
+                Expire = DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds()
+            });
+    }
+
     private class FailingTokenManager : TokenManagerBase
     {
         public override Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
@@ -328,6 +384,54 @@ public class TokenManagerBaseTests
 
         protected override Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
             => throw new InvalidOperationException("Token refresh failed");
+    }
+
+    [Fact]
+    public async Task TtlAwareThreshold_ShortTtlToken_ShouldNotRefreshOnEveryCall()
+    {
+        // P2.4（TK-04）：短 TTL 令牌（TTL=200s < 默认阈值 300s）若不钳位阈值，
+        // expire - 300 <= now 立即成立 → 每次调用都刷新。TTL 感知阈值有效= min(300, 100)=100s。
+        var manager = new ShortTtlTokenManager(ttlSeconds: 200);
+
+        var token1 = await manager.GetOrRefreshTokenAsync();
+        var token2 = await manager.GetOrRefreshTokenAsync();
+
+        token1.Should().Be("short-ttl-token");
+        token2.Should().Be("short-ttl-token");
+        manager.RefreshCount.Should().Be(0, "短 TTL 令牌在 TTL 感知阈值下不应被提前判定为过期而刷新");
+    }
+
+    private class ShortTtlTokenManager : TokenManagerBase
+    {
+        private readonly int _ttlSeconds;
+
+        public int RefreshCount { get; private set; }
+
+        public ShortTtlTokenManager(int ttlSeconds)
+        {
+            _ttlSeconds = ttlSeconds;
+            var now = DateTimeOffset.UtcNow;
+            UpdateScopedToken(DefaultScopeKey, new CredentialToken
+            {
+                AccessToken = "short-ttl-token",
+                IssuedAt = now.ToUnixTimeMilliseconds(),
+                Expire = now.AddSeconds(ttlSeconds).ToUnixTimeMilliseconds()
+            });
+        }
+
+        public override Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
+            => GetOrRefreshTokenAsync(cancellationToken);
+
+        protected override Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
+        {
+            RefreshCount++;
+            return Task.FromResult(new CredentialToken
+            {
+                AccessToken = "short-ttl-token",
+                IssuedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                Expire = DateTimeOffset.UtcNow.AddSeconds(_ttlSeconds).ToUnixTimeMilliseconds()
+            });
+        }
     }
 
     private class ScopedTokenManager : TokenManagerBase

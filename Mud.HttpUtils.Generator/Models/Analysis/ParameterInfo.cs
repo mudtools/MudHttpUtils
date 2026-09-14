@@ -29,6 +29,12 @@ internal class ParameterInfo
     public string Type { get; set; } = string.Empty;
 
     /// <summary>
+    /// 参数的 Roslyn 类型符号（可选，用于编译期属性枚举等场景）。
+    /// 在参数来自语义分析时设置；在测试/模拟场景可能为 null。
+    /// </summary>
+    public ITypeSymbol? TypeSymbol { get; set; }
+
+    /// <summary>
     /// 参数特性列表
     /// </summary>
     public IReadOnlyList<ParameterAttributeInfo> Attributes { get; set; } = [];
@@ -53,4 +59,10 @@ internal class ParameterInfo
     /// 由 ParameterValidationHelper 设置，用于 RequestBuilder 判断是否需要生成冗余的 null 检查。
     /// </summary>
     public bool IsValidated { get; set; }
+
+    /// <summary>
+    /// [F14] 参数被生成器判定为不支持的原因（ref/out/in/params/指针等）。
+    /// 非 null 时 MethodGenerator 报告 HTTPCLIENT004 并跳过该方法体生成。
+    /// </summary>
+    public string? UnsupportedReason { get; set; }
 }

@@ -256,9 +256,12 @@ public class ResilientHttpClientExecutionTests
                 return "success";
             });
 
+        // M2-#12：POST 为非幂等方法，需显式 AllowNonIdempotentRetry 才会重试（验证开关 + 请求体保留语义）。
+        // options 需同时传给 ResilientHttpClient（重试决策层）与 policyProvider（策略构建层）
         var options = CreateRetryOptions();
+        options.Retry.AllowNonIdempotentRetry = true;
         var policyProvider = new PollyResiliencePolicyProvider(options);
-        var client = new ResilientHttpClient(mockInner.Object, policyProvider);
+        var client = new ResilientHttpClient(mockInner.Object, policyProvider, options: options);
 
         var request = new HttpRequestMessage(HttpMethod.Post, "https://api.example.com/test")
         {

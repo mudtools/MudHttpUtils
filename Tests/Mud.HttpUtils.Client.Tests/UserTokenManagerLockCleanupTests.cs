@@ -141,13 +141,13 @@ public class UserTokenManagerLockCleanupTests
 
         private int GetUserLockCount()
         {
-            // 通过反射获取 _userLocks 的 Count
-            // NEW-TM-06 修复后 _userLocks 类型为 ConcurrentDictionary<string, Lazy<SemaphoreSlim>>
+            // P2.2（TK-05/09/24）通过反射获取 _userLockTable 字段（单次稳定字段名），
+            // 再读取 KeyedLockTable 的 internal Count（经 InternalsVisibleTo）。
             var field = typeof(UserTokenManagerBase)
-                .GetField("_userLocks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (field?.GetValue(this) is System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<SemaphoreSlim>> dict)
+                .GetField("_userLockTable", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            if (field?.GetValue(this) is KeyedLockTable table)
             {
-                return dict.Count;
+                return table.Count;
             }
             return -1;
         }
@@ -158,12 +158,10 @@ public class UserTokenManagerLockCleanupTests
         public void AcquireUserLock(string userId)
         {
             var field = typeof(UserTokenManagerBase)
-                .GetField("_userLocks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (field?.GetValue(this) is System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<SemaphoreSlim>> dict)
+                .GetField("_userLockTable", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            if (field?.GetValue(this) is KeyedLockTable table)
             {
-                var lazyLock = dict.GetOrAdd(userId, _ => new Lazy<SemaphoreSlim>(
-                    () => new SemaphoreSlim(1, 1), LazyThreadSafetyMode.ExecutionAndPublication));
-                lazyLock.Value.Wait();
+                _heldReleaser = table.AcquireAsync(userId, CancellationToken.None).AsTask().GetAwaiter().GetResult();
             }
         }
 
@@ -172,16 +170,12 @@ public class UserTokenManagerLockCleanupTests
         /// </summary>
         public void ReleaseUserLock(string userId)
         {
-            var field = typeof(UserTokenManagerBase)
-                .GetField("_userLocks", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (field?.GetValue(this) is System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<SemaphoreSlim>> dict)
-            {
-                if (dict.TryGetValue(userId, out var lazyLock) && lazyLock.IsValueCreated)
-                {
-                    lazyLock.Value.Release();
-                }
-            }
+            // 释放 Releaser（内部递减 Waiters，若已退休则完成移除）
+            _heldReleaser?.Dispose();
+            _heldReleaser = null;
         }
+
+        private KeyedLockTable.Releaser? _heldReleaser;
 
         /// <summary>
         /// 通过反射调用 private OnUserTokenEvicted 方法，模拟缓存驱逐回调。

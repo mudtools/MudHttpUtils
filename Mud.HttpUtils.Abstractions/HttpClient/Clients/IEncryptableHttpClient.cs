@@ -19,7 +19,31 @@ public interface IEncryptableHttpClient
     /// <param name="propertyName">加密数据所在的属性名称，默认为 "data"。</param>
     /// <param name="serializeType">序列化类型，指定使用 JSON 或 XML 序列化。</param>
     /// <returns>加密后的字符串内容。</returns>
+    /// <remarks>
+    /// <b>Native AOT 注意</b>：此重载使用运行时类型 (<c>content.GetType()</c>) 进行 JSON 序列化，
+    /// 在 AOT 下可能不安全。请在 AOT 场景下改用 <see cref="EncryptContent{T}"/> 泛型重载。
+    /// </remarks>
+    [Obsolete("此重载使用运行时反射 (content.GetType())，Native AOT 不兼容。请改用 EncryptContent<T>(T, string) 泛型重载。")]
+#if NET6_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("EncryptContent(object, ...) 使用运行时类型分派与 XML 序列化，Native AOT 不支持。请改用 EncryptContent<T>(T, string) 泛型重载。")]
+#endif
+#if NET7_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.RequiresDynamicCode("EncryptContent(object, ...) 使用运行时类型分派进行 JSON 序列化，Native AOT 不支持。请改用 EncryptContent<T>(T, string) 泛型重载。")]
+#endif
     string EncryptContent(object content, string propertyName = "data", SerializeType serializeType = SerializeType.Json);
+
+    /// <summary>
+    /// 加密内容对象（AOT 安全泛型重载）。
+    /// </summary>
+    /// <typeparam name="T">内容对象的类型。该类型必须在 <c>JsonSerializerContext</c> 中声明。</typeparam>
+    /// <param name="content">要加密的内容对象。</param>
+    /// <param name="propertyName">加密数据所在的属性名称，默认为 "data"。</param>
+    /// <returns>加密后的字符串内容。</returns>
+    /// <remarks>
+    /// 使用编译期类型 <typeparamref name="T"/> 进行 JSON 序列化，不依赖运行时反射，
+    /// 适用于 Native AOT 场景。仅支持 JSON 序列化（不支持 XML）。
+    /// </remarks>
+    string EncryptContent<T>(T content, string propertyName = "data");
 
     /// <summary>
     /// 解密内容字符串。

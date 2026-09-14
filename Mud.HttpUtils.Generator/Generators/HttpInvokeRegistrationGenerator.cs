@@ -18,29 +18,43 @@ namespace Mud.HttpUtils;
 [Generator(LanguageNames.CSharp)]
 internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
 {
+    /// <summary>注册代码 namespace 的回退目标（AssemblyName 非法/为空时使用）。</summary>
+    private const string FallbackNamespace = "Microsoft.Extensions.DependencyInjection";
     /// <inheritdoc/>
     protected override void ExecuteGenerator(
         ImmutableArray<InterfaceModel> interfaces,
         SourceProductionContext context,
-        AnalyzerConfigOptionsProvider configOptionsProvider)
+        AnalyzerConfigOptionsProvider configOptionsProvider,
+        string generationSalt)
     {
-        if (interfaces.IsDefaultOrEmpty)
+        if (interfaces.IsDefaultOrEmpty || configOptionsProvider == null)
             return;
 
-        // 所有接口共享同一 Compilation（同一编译单元），从第一个模型的 SemanticModel 取即可
-        var compilation = interfaces[0].Context.SemanticModel.Compilation;
+        // T5.3: 全局禁用开关（调试与渐进迁移）
+        if (ProjectConfigHelper.ReadConfigValueAsBool(configOptionsProvider.GlobalOptions, "build_property.DisableMudSourceGenerator", false))
+            return;
+
+        // [v2.4 §3.4] 读取消费项目 nullable 配置，条件化发射 #nullable enable
+        EmitNullableEnable = ProjectConfigHelper.ReadConfigValue(
+            configOptionsProvider.GlobalOptions, "build_property.Nullable", "enable") == "enable";
 
         var httpClientApis = CollectHttpClientApis(interfaces, context);
 
         if (httpClientApis.Count == 0)
             return;
 
-        var sourceCode = GenerateSourceCode(compilation, httpClientApis, context);
+        var compilation = interfaces[0].Context.SemanticModel.Compilation;
 
-        // 将 AssemblyName 编入 hintName，避免跨程序集场景下可能的文件名冲突
-        var assemblyName = compilation.AssemblyName ?? "Default";
-        var hintName = $"HttpClientApiExtensions.{assemblyName}.g.cs";
-        context.AddSource(hintName, SourceText.From(sourceCode, Encoding.UTF8));
+        // 1. 生成 HttpClientApiExtensions.g.cs（DI 注册扩展方法）
+        var extensionSourceCode = GenerateExtensionClassCode(compilation, httpClientApis, context);
+        AddSourceValidated(context, "HttpClientApiExtensions.g.cs", extensionSourceCode);
+
+        // 2. T0.2: 生成 GeneratedFactoryRegistration.g.cs（ModuleInitializer 工厂注册）
+        var factorySourceCode = GenerateFactoryRegistrationCode(httpClientApis);
+        if (!string.IsNullOrEmpty(factorySourceCode))
+        {
+            AddSourceValidated(context, "GeneratedFactoryRegistration.g.cs", factorySourceCode);
+        }
     }
 
     /// <inheritdoc/>
@@ -49,22 +63,21 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         return ["System", "Microsoft.Extensions.DependencyInjection", "Microsoft.Extensions.DependencyInjection.Extensions", "System.Runtime.CompilerServices", "System.Net.Http", "Microsoft.Extensions.Logging"];
     }
 
-    private List<HttpClientApiInfo> CollectHttpClientApis(ImmutableArray<InterfaceModel> interfaces, SourceProductionContext context)
+    private List<HttpClientApiInfo> CollectHttpClientApis(ImmutableArray<InterfaceModel> models, SourceProductionContext context)
     {
-        return CollectApiInfos<HttpClientApiInfo>(interfaces, context, model => ProcessInterface(model, context));
+        return CollectApiInfos<HttpClientApiInfo>(models, context, model => ProcessInterface(model, context));
     }
 
     /// <summary>
     /// 通用的 API 信息收集方法，消除重复代码
     /// </summary>
-    private List<T> CollectApiInfos<T>(
-        ImmutableArray<InterfaceModel> interfaces,
+    private List<T> CollectApiInfos<T>(ImmutableArray<InterfaceModel> models,
         SourceProductionContext context,
         Func<InterfaceModel, T?> processor)
     {
         var apiInfos = new List<T>();
 
-        foreach (var model in interfaces)
+        foreach (var model in models)
         {
             if (context.CancellationToken.IsCancellationRequested)
                 return apiInfos;
@@ -91,9 +104,8 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         var interfaceSyntax = model.Syntax;
         var semanticModel = model.Context.SemanticModel;
         var compilation = semanticModel.Compilation;
-
-        // 使用 InterfaceModel 中预解析的 Symbol，避免重复调用 GetDeclaredSymbol
-        if (model.Symbol is not INamedTypeSymbol interfaceSymbol)
+        var interfaceSymbol = model.Symbol ?? semanticModel.GetDeclaredSymbol(interfaceSyntax) as INamedTypeSymbol;
+        if (interfaceSymbol == null)
         {
             context.ReportDiagnostic(Diagnostic.Create(
                 Diagnostics.HttpClientApiGenerationError,
@@ -127,11 +139,23 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         var implementationName = TypeSymbolHelper.GetImplementationClassName(interfaceSymbol.Name);
         var namespaceName = SyntaxHelper.GetNamespaceName(interfaceSyntax);
 
+        // [F7 修复] 接口声明在全局命名空间时，无法生成合法的 DI 注册代码（global::.IApi 不合法）。
+        // 明确报错并给出迁移指引，而非静默产出非法 C#。
+        if (string.IsNullOrWhiteSpace(namespaceName))
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.HttpClientRegistrationGenerationError,
+                interfaceSyntax.GetLocation(),
+                interfaceSyntax.Identifier.Text,
+                "接口声明在全局命名空间中，生成器无法为其生成 DI 注册代码。请将接口放入显式命名空间。"));
+            return null;
+        }
+
         // 提取 HttpClient 和 TokenManager 类型信息，用于生成注册提示注释
         var httpClient = AttributeDataHelper.GetStringValueFromAttribute(httpClientApiAttribute, HttpClientGeneratorConstants.HttpClientProperty);
         var tokenManage = AttributeDataHelper.GetStringValueFromAttribute(httpClientApiAttribute, HttpClientGeneratorConstants.TokenManageProperty);
-        // 互斥逻辑：HttpClient 优先，与 InterfaceImplementationGenerator 一致
-        var effectiveTokenManage = !string.IsNullOrEmpty(httpClient) ? null : tokenManage;
+        // 互斥逻辑：HttpClient 优先，与 InterfaceImplementationGenerator 一致（统一 IsNullOrWhiteSpace，F16）。
+        var effectiveTokenManage = !string.IsNullOrWhiteSpace(httpClient) ? null : tokenManage;
         var tokenManagerType = !string.IsNullOrEmpty(effectiveTokenManage)
             ? TypeSymbolHelper.GetTypeAllDisplayString(compilation, effectiveTokenManage!)
             : null;
@@ -144,13 +168,20 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
             timeout,
             registryGroupName,
             httpClient,
-            tokenManagerType,
-            interfaceSyntax.GetLocation());
+            tokenManagerType);
     }
 
     private int ExtractTimeoutParameter(AttributeData httpClientApiAttribute)
     {
-        return AttributeDataHelper.GetIntValueFromAttribute(httpClientApiAttribute, HttpClientGeneratorConstants.TimeoutProperty, 100);
+        // CFG-03：与 HttpClientApiAttribute.DefaultTimeoutSeconds 保持一致（50）。
+        // 生成器按字符串名匹配特性，不引用 Attributes 程序集，故此处引用 Generator 常量；
+        // 二者一致性由测试守护：Attributes 侧 CFG03_HttpClientApiAttribute_DefaultTimeout_Is50（Client.Tests）、
+        // Generator 常量 CFG03_DefaultTimeoutConstant_Is50（Generator.Tests）、
+        // 生成产物 RegistrationTimeoutGenerationTests（Generator.Tests，T-06）。
+        return AttributeDataHelper.GetIntValueFromAttribute(
+            httpClientApiAttribute,
+            HttpClientGeneratorConstants.TimeoutProperty,
+            HttpClientGeneratorConstants.DefaultHttpClientTimeoutSeconds);
     }
 
 
@@ -161,25 +192,41 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
 
     private string GenerateSourceCode(Compilation compilation, List<HttpClientApiInfo> apis, SourceProductionContext context)
     {
-        // 预估容量：基于实际接口命名长度计算，避免缓冲区多次扩容
-        // 每个API注册包含：注释 + AddHttpClient/AddTransient 语句，约 350-500 字符
-        // 基础结构（文件头、命名空间、类声明等）约 800 字符
-        var avgNameLength = apis.Count > 0
-            ? apis.Average(a => (a.Namespace?.Length ?? 0) + a.InterfaceName.Length + a.ImplementationName.Length)
-            : 0;
-        var estimatedCapacity = 800 + (apis.Count * (int)(avgNameLength * 4 + 400));
+        // 预估容量：每个API注册约200字符，基础结构约500字符
+        var estimatedCapacity = 500 + (apis.Count * 200);
         var codeBuilder = new StringBuilder(estimatedCapacity);
         GenerateExtensionClass(compilation, codeBuilder, apis, context);
         return codeBuilder.ToString();
     }
+
+    /// <summary>
+    /// [F7] 解析注册代码的命名空间：AssemblyName 参与拼接时，逐段校验合法 C# 标识符。
+    /// 非法/为空时回退到 <see cref="FallbackNamespace"/>，避免产出非法 C#。
+    /// </summary>
+    private static string ResolveRegistrationNamespace(Compilation compilation)
+    {
+        var assemblyName = compilation.AssemblyName;
+        if (string.IsNullOrWhiteSpace(assemblyName))
+            return FallbackNamespace;
+
+        return assemblyName.Split('.')
+            .All(segment => CSharpCodeValidator.IsValidCSharpIdentifier(segment))
+                ? assemblyName
+                : FallbackNamespace;
+    }
+
+    private string GenerateExtensionClassCode(Compilation compilation, List<HttpClientApiInfo> apis, SourceProductionContext context)
+        => GenerateSourceCode(compilation, apis, context);
 
     private void GenerateExtensionClass(Compilation compilation, StringBuilder codeBuilder, List<HttpClientApiInfo> apis, SourceProductionContext context)
     {
         GenerateFileHeader(codeBuilder);
 
         codeBuilder.AppendLine();
-        var @namespace = compilation.AssemblyName;
-        var targetNamespace = string.IsNullOrEmpty(@namespace) ? "Microsoft.Extensions.DependencyInjection" : @namespace;
+        // [F7 修复] namespace 取 AssemblyName 时须校验其每个以 . 分隔的段都是合法 C# 标识符；
+        // AssemblyName 允许 '-'、空格、首字符数字等非法标识符字符（MSBuild 默认取项目名不做替换），
+        // 直接代入会产出非法 C#。非法/为空时回退到 DI 扩展方法约定的命名空间。
+        var targetNamespace = ResolveRegistrationNamespace(compilation);
 
         codeBuilder.AppendLine($"namespace {targetNamespace}");
         codeBuilder.AppendLine("{");
@@ -190,6 +237,120 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         GenerateAddWebApiHttpClientMethod(codeBuilder, apis, context);
         codeBuilder.AppendLine("    }");
         codeBuilder.AppendLine("}");
+    }
+
+    /// <summary>
+    /// 生成 GeneratedFactoryRegistration.g.cs：包含 [ModuleInitializer] 自动注册代码。
+    /// 仅在 net5.0+ 下生成 ModuleInitializer；netstandard2.0 生成普通静态方法（需手动调用）。
+    /// 工厂委托内部构造 DefaultHttpRequestExecutor 等依赖。
+    /// <para>
+    /// v3.4 修正（L-11）：仅对默认模式（无 TokenManagerType 且无 HttpClientType）的接口生成注册代码。
+    /// HttpClient / TokenManager 模式的实现类构造函数需要用户自定义类型，工厂委托无法构造，需通过 DI 容器使用。
+    /// </para>
+    /// </summary>
+    private string GenerateFactoryRegistrationCode(List<HttpClientApiInfo> apis)
+    {
+        // v3.4 L-11：仅对默认模式接口生成注册代码（无 TokenManagerType 且无 HttpClientType）
+        var defaultModeApis = apis
+            .Where(a => string.IsNullOrEmpty(a.HttpClientType) && string.IsNullOrEmpty(a.TokenManagerType))
+            .ToList();
+
+        if (defaultModeApis.Count == 0)
+            return string.Empty;
+
+        var sb = new StringBuilder(500 + defaultModeApis.Count * 600);
+        GenerateFileHeader(sb);
+
+        sb.AppendLine();
+        sb.AppendLine("namespace Mud.HttpUtils");
+        sb.AppendLine("{");
+        sb.AppendLine($"    {CompilerGeneratedAttribute}");
+        sb.AppendLine($"    {GeneratedCodeAttribute}");
+        sb.AppendLine("    internal static partial class GeneratedFactoryRegistration");
+        sb.AppendLine("    {");
+
+        // net5.0+ 生成 [ModuleInitializer]
+        sb.AppendLine("#if NET5_0_OR_GREATER");
+        sb.AppendLine("        [System.Diagnostics.CodeAnalysis.SuppressMessage(");
+        sb.AppendLine("            \"Usage\",");
+        sb.AppendLine("            \"CA2255:The ModuleInitializer attribute should not be used in libraries\",");
+        sb.AppendLine("            Justification = \"ModuleInitializer 用于自动注册源生成的 API 客户端工厂\")]");
+        sb.AppendLine("        [System.Runtime.CompilerServices.ModuleInitializer]");
+        sb.AppendLine("        internal static void Initialize()");
+        sb.AppendLine("        {");
+        foreach (var api in defaultModeApis)
+        {
+            GenerateFactoryRegistrationCall(sb, api);
+        }
+        sb.AppendLine("        }");
+        sb.AppendLine("#else");
+        // netstandard2.0：生成普通静态方法供消费方手动调用
+        sb.AppendLine("        /// <summary>");
+        sb.AppendLine("        /// 注册所有源生成的 API 客户端工厂（netstandard2.0 不支持 ModuleInitializer，需手动调用）。</summary>");
+        sb.AppendLine("        internal static void RegisterAllFactories()");
+        sb.AppendLine("        {");
+        foreach (var api in defaultModeApis)
+        {
+            GenerateFactoryRegistrationCall(sb, api);
+        }
+        sb.AppendLine("        }");
+        sb.AppendLine("#endif");
+
+        sb.AppendLine("    }");
+        sb.AppendLine("}");
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// 生成单个默认模式接口的工厂注册调用代码。
+    /// 工厂委托构造 DefaultHttpRequestExecutor 并调用实现类构造函数（默认模式签名）。
+    /// </summary>
+    private void GenerateFactoryRegistrationCall(StringBuilder sb, HttpClientApiInfo api)
+    {
+        var fullyQualifiedInterface = $"global::{api.Namespace}.{api.InterfaceName}";
+        var fullyQualifiedImplementation = $"global::{api.Namespace}.{HttpClientGeneratorConstants.ImplementationNamespaceSuffix}.{api.ImplementationName}";
+
+        sb.AppendLine($"            global::Mud.HttpUtils.RestService.RegisterGeneratedFactory<{fullyQualifiedInterface}>((client, options) =>");
+        sb.AppendLine("            {");
+        // v3.4 L-11：AppContext 为必需参数（IMudAppContext 无通用默认实现）
+        sb.AppendLine("                var appContext = options?.AppContext");
+        sb.AppendLine("                    ?? throw new System.InvalidOperationException(");
+        sb.AppendLine($"                        \"ForGenerated<{api.InterfaceName}> requires options.AppContext to be set. \" +");
+        sb.AppendLine("                        \"IMudAppContext has no default implementation; construct one and assign to GeneratedClientOptions.AppContext.\");");
+        // AppContextHolder 为可选，为 null 时创建默认 AsyncLocalAppContextSwitcher
+        sb.AppendLine("                var appContextHolder = options?.AppContextHolder");
+        sb.AppendLine("                    ?? new global::Mud.HttpUtils.AsyncLocalAppContextSwitcher();");
+        // DefaultHttpRequestExecutor 构造函数：第一个参数是 ILogger<DefaultHttpRequestExecutor>，不是 HttpClient
+        sb.AppendLine("                var executorLogger = Microsoft.Extensions.Logging.Abstractions.NullLogger<global::Mud.HttpUtils.DefaultHttpRequestExecutor>.Instance;");
+        sb.AppendLine("                var executor = new global::Mud.HttpUtils.DefaultHttpRequestExecutor(");
+        sb.AppendLine("                    executorLogger,");
+        sb.AppendLine("                    options?.CacheProvider,");
+        sb.AppendLine("                    options?.ResilienceResolver,");
+        sb.AppendLine("                    appResilienceResolver: null,");
+        sb.AppendLine("                    appContextHolder: appContextHolder,");
+        sb.AppendLine("                    contentSerializer: options?.ContentSerializer,");
+        sb.AppendLine("                    exceptionRedactor: options?.ExceptionRedactor,");
+        sb.AppendLine("                    maxExceptionContentLength: options?.MaxExceptionContentLength,");
+        sb.AppendLine("                    captureRequestContent: options?.CaptureRequestContent ?? false,");
+        // CFG-06：接线敏感数据掩码器（无 DI 路径此前完全缺失脱敏能力，属安全缺口）
+        sb.AppendLine("                    sensitiveDataMasker: options?.SensitiveDataMasker,");
+        sb.AppendLine("#if NET6_0_OR_GREATER");
+        sb.AppendLine("                    httpVersion: options?.HttpVersion,");
+        sb.AppendLine("                    httpVersionPolicy: options?.HttpVersionPolicy,");
+        sb.AppendLine("#endif");
+        sb.AppendLine("                    httpRequestMessageOptions: options?.HttpRequestMessageOptions);");
+        // 调用实现类构造函数（默认模式签名）
+        sb.AppendLine($"                return new {fullyQualifiedImplementation}(");
+        sb.AppendLine("                    appContext,");
+        sb.AppendLine("                    appContextHolder,");
+        sb.AppendLine("                    executor,");
+        sb.AppendLine("                    appManager: null,");
+        sb.AppendLine("                    cacheProvider: options?.CacheProvider,");
+        sb.AppendLine("                    resilienceResolver: options?.ResilienceResolver,");
+        sb.AppendLine("                    contentSerializer: options?.ContentSerializer,");
+        sb.AppendLine("                    logger: null);");
+        sb.AppendLine("            });");
     }
 
     private void GenerateAddWebApiHttpClientMethod(StringBuilder codeBuilder, List<HttpClientApiInfo> apis, SourceProductionContext context)
@@ -300,10 +461,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         // 验证 RegistryGroupName 是否为合法的 C# 标识符
         if (!CSharpCodeValidator.IsValidCSharpIdentifier(groupName))
         {
-            // 使用组内第一个 API 的位置信息，提供更精确的诊断定位
-            var firstApi = apiInfos.FirstOrDefault();
-            var location = firstApi?.Location ?? Location.None;
-            CSharpCodeValidator.ValidateAndReportRegistryGroupName(context, location, groupName);
+            CSharpCodeValidator.ValidateAndReportRegistryGroupName(context, Location.None, groupName);
             return;
         }
 
@@ -334,38 +492,33 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
 
         if (!string.IsNullOrEmpty(api.HttpClientType))
         {
-            // HttpClient 模式：注册命名 HttpClient + 接口→实现映射
             codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 HttpClient 包装实现类（瞬时服务）");
             codeBuilder.AppendLine($"            // 注意：实现类构造函数依赖 {api.HttpClientType}，请确保已通过 AddMudHttpClient 等方法注册此服务");
-            // IBaseHttpClient 别名注册已由 AddMudHttpClient 内部完成，此处不再重复注册
-
-            var httpClientName = $"{api.InterfaceName}_HttpClient";
-            var timeoutSeconds = api.Timeout;
-            codeBuilder.AppendLine($"            services.AddHttpClient(\"{httpClientName}\", client =>");
-            codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                client.Timeout = TimeSpan.FromSeconds({timeoutSeconds});");
-            codeBuilder.AppendLine($"            }});");
+            // HttpClient 模式下，实现类构造函数还需注入 IHttpRequestExecutor。
+            // 使用 TryAddTransient 自动注册默认执行器（若用户未自定义注册）。
+            // DefaultHttpRequestExecutor 构造函数的 cacheProvider 和 resilienceResolver 为可选参数，
+            // DI 容器会在对应服务已注册时自动注入，未注册时使用默认值 null。
+            codeBuilder.AppendLine("            services.TryAddTransient<global::Mud.HttpUtils.IBaseHttpClient>(sp => sp.GetRequiredService<global::Mud.HttpUtils.IEnhancedHttpClient>());");
+            codeBuilder.AppendLine("            services.TryAddTransient<global::Mud.HttpUtils.IHttpRequestExecutor, global::Mud.HttpUtils.DefaultHttpRequestExecutor>();");
         }
         else if (!string.IsNullOrEmpty(api.TokenManagerType))
         {
-            // TokenManage 模式：HttpClient 由 IMudAppContext 管理，无需注册命名 HttpClient
-            codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 TokenManage 模式实现类（瞬时服务）");
-            codeBuilder.AppendLine($"            // 注意：HttpClient 由 {api.TokenManagerType} 管理的 IMudAppContext 提供，无需单独注册");
+            codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 HttpClient 包装实现类（瞬时服务）");
+            codeBuilder.AppendLine($"            // 注意：实现类构造函数依赖 {api.TokenManagerType}，请确保已注册此令牌管理器服务");
         }
         else
         {
-            // 默认模式：注册命名 HttpClient + 接口→实现映射
-            codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的默认实现类（瞬时服务）");
-
-            var httpClientName = $"{api.InterfaceName}_HttpClient";
-            var timeoutSeconds = api.Timeout;
-            codeBuilder.AppendLine($"            services.AddHttpClient(\"{httpClientName}\", client =>");
-            codeBuilder.AppendLine($"            {{");
-            codeBuilder.AppendLine($"                client.Timeout = TimeSpan.FromSeconds({timeoutSeconds});");
-            codeBuilder.AppendLine($"            }});");
+            codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 HttpClient 包装实现类（瞬时服务）");
         }
 
-        // 所有模式都需要注册接口→实现的映射
+        var httpClientName = $"{api.InterfaceName}_HttpClient";
+        var timeoutSeconds = api.Timeout;
+
+        codeBuilder.AppendLine($"            services.AddHttpClient(\"{httpClientName}\", client =>");
+        codeBuilder.AppendLine($"            {{");
+        codeBuilder.AppendLine($"                client.Timeout = TimeSpan.FromSeconds({timeoutSeconds});");
+        // BaseAddress 应通过 AddMudHttpClient(clientName, baseAddress) 在运行时配置，此处不生成
+        codeBuilder.AppendLine($"            }});");
         codeBuilder.AppendLine($"            services.AddTransient<{fullyQualifiedInterface}, {fullyQualifiedImplementation}>();");
     }
 }

@@ -22,16 +22,14 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
         _interfaceSymbol = interfaceSymbol;
     }
 
-    private static readonly string[] DefaultUsingNamespaces =
-    [
-        "System", "System.Net.Http", "System.Text",
-        "System.Text.Json", "System.Threading.Tasks",
-        "Microsoft.Extensions.Logging", "Microsoft.Extensions.Options", "Mud.HttpUtils"
-    ];
-
+    // [F2 修复] 使用 GeneratedCodeConsts.ImplementationFileUsings 作为单一事实源，
+    // 原私有静态列表缺 System.Linq / System.Collections.Generic，生成代码在无 ImplicitUsings
+    // 的消费项目上编译失败（本仓库 Demo 因 ImplicitUsings=enable 掩盖了缺失）。
     public void Generate(StringBuilder codeBuilder, GeneratorContext context)
     {
-        TransitiveCodeGenerator.GenerateFileHeader(codeBuilder, DefaultUsingNamespaces);
+        // [D-03 修复] 传递 EmitNullableEnable 以条件化发射 #nullable enable
+        // [D-06 修复] 传递 EmitGeneratedCodeMarkers 以条件化发射 [GeneratedCode] 特性
+        TransitiveCodeGenerator.GenerateFileHeader(codeBuilder, GeneratedCodeConsts.ImplementationFileUsings, context.EmitNullableEnable);
         codeBuilder.AppendLine();
         GenerateNamespaceDeclaration(codeBuilder, context);
         GenerateClassDeclaration(codeBuilder, context);
@@ -49,20 +47,61 @@ internal class ClassStructureGenerator : ICodeFragmentGenerator
     {
         string classKeyword = context.Configuration.IsAbstract ? "abstract partial class" : "partial class";
 
+        // [v2.4 §3.2] 泛型接口类型参数转发：将接口的类型参数和约束原样转发到实现类。
+        var typeParams = _interfaceSymbol.IsGenericType
+            ? $"<{string.Join(", ", _interfaceSymbol.TypeParameters.Select(tp => tp.Name))}>"
+            : string.Empty;
+
+        // 转发类型约束（where T : class, new() 等）
+        var constraints = string.Empty;
+        if (_interfaceSymbol.IsGenericType)
+        {
+            var constraintParts = new List<string>();
+            foreach (var tp in _interfaceSymbol.TypeParameters)
+            {
+                var parts = new List<string>();
+                if (tp.HasReferenceTypeConstraint)
+                    parts.Add("class");
+                if (tp.HasValueTypeConstraint)
+                    parts.Add("struct");
+                if (tp.HasUnmanagedTypeConstraint)
+                    parts.Add("unmanaged");
+                if (tp.HasNotNullConstraint)
+                    parts.Add("notnull");
+                foreach (var constraintType in tp.ConstraintTypes)
+                    parts.Add(constraintType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
+                        .WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.UseSpecialTypes)));
+                if (tp.HasConstructorConstraint)
+                    parts.Add("new()");
+
+                if (parts.Count > 0)
+                    constraintParts.Add($"where {tp.Name} : {string.Join(", ", parts)}");
+            }
+            if (constraintParts.Count > 0)
+                constraints = " " + string.Join(" ", constraintParts);
+        }
+
         string inheritance = string.Empty;
+        // [E-1 修复] typeParams 由接口类型参数名拼接（如 <T>，本身无命名空间歧义）。
+        // 接口名使用 global:: 完全限定，避免 X.Internal 子命名空间中存在同名类型时静默绑定到错误类型。
+        var interfaceFullName = _interfaceSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat
+            .WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.UseSpecialTypes));
         if (context.HasInheritedFrom)
         {
-            inheritance = $" : {context.Configuration.InheritedFrom}, {_interfaceSymbol.Name}";
+            inheritance = $" : {context.Configuration.InheritedFrom}, {interfaceFullName}{typeParams}";
         }
         else
         {
-            inheritance = $" : {_interfaceSymbol.Name}";
+            inheritance = $" : {interfaceFullName}{typeParams}";
         }
 
-        codeBuilder.AppendLine($"    {GeneratedCodeConsts.HttpGeneratedCodeAttribute}");
-        // NEW-GEN-05 说明：使用 internal 强制通过 DI 接口消费，符合"面向接口编程"原则。
-        // 跨程序集测试场景可通过 InternalsVisibleTo 配置。
-        codeBuilder.AppendLine($"    internal {classKeyword} {context.ClassName}{inheritance}");
+        // [D-06 修复] EmitGeneratedCodeMarkers=false 时不标注 [GeneratedCode]，便于调试生成代码中的警告
+        // T5.4: DynamicDependency 标注移至构造函数（ConstructorGenerator），因为该特性仅允许用于构造函数、方法、字段声明
+        if (context.EmitGeneratedCodeMarkers)
+        {
+            codeBuilder.AppendLine($"    {GeneratedCodeConsts.HttpGeneratedCodeAttribute}");
+        }
+        codeBuilder.AppendLine($"    internal {classKeyword} {context.ClassName}{typeParams}{inheritance}{constraints}");
         codeBuilder.AppendLine("    {");
     }
 }

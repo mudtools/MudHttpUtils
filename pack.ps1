@@ -36,6 +36,9 @@ $Projects = @(
     "Mud.HttpUtils.Resilience",
     "Mud.HttpUtils",
     "Mud.HttpUtils.Generator",
+    "Mud.HttpUtils.Newtonsoft.Json",
+    "Mud.HttpUtils.Xml",
+    "Tools/Mud.HttpUtils.JsonContextScaffolder",
     "Mud.HttpUtils.OpenTelemetry"
 )
 
@@ -63,7 +66,8 @@ $FailedProjects = @()
 
 foreach ($project in $Projects) {
     $projectDir = Join-Path $RootDir $project
-    $csproj = Join-Path $projectDir "$project.csproj"
+    $projectName = Split-Path $project -Leaf
+    $csproj = Join-Path $projectDir "$projectName.csproj"
 
     if (-not (Test-Path $csproj)) {
         Write-Host "跳过 (未找到项目文件): $project" -ForegroundColor DarkGray

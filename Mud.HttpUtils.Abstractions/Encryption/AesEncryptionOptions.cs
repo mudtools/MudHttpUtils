@@ -12,7 +12,7 @@ namespace Mud.HttpUtils;
 /// </summary>
 /// <remarks>
 /// 从 v1.8.0 起，IV 不再需要配置，加密时会自动随机生成 IV 并附加到密文前。
-/// 保留 IV 属性仅为向后兼容，新代码无需设置 IV。
+/// CFG-27：仅用于向后兼容的 <c>IV</c> 属性已移除（运行时无消费点），新代码不应再设置 IV。
 /// </remarks>
 public class AesEncryptionOptions
 {
@@ -22,7 +22,6 @@ public class AesEncryptionOptions
     public const string SectionName = "MudHttpAesEncryption";
 
     private byte[]? _key;
-    private byte[]? _iv;
 
     /// <summary>
     /// 获取或设置 AES 加密密钥。
@@ -37,19 +36,29 @@ public class AesEncryptionOptions
         set => _key = value;
     }
 
+    // CFG-27：原 IV 属性已移除 —— 从 v1.8.0 起 IV 在每次加密时自动随机生成，
+    // 运行时无任何消费点（Validate 不校验、Provider 不读取），属静默失效配置。
+
     /// <summary>
-    /// 获取或设置 AES 加密的初始化向量（IV）。
+    /// 获取或设置是否强制产出可跨运行时解密的密文格式。
     /// </summary>
+    /// <value>默认为 <c>false</c>。</value>
     /// <remarks>
-    /// 从 v1.8.0 起，IV 不再需要配置，加密时会自动随机生成。
-    /// 保留此属性仅为向后兼容。Getter 返回 IV 的副本。
+    /// <para>
+    /// 本库加密时始终使用<b>认证加密</b>（AEAD / Encrypt-then-MAC），密文带 1 字节版本前缀：
+    /// <list type="bullet">
+    /// <item><c>0x02</c> AesGcm —— <c>[0x02][nonce(12)][tag(16)][密文]</c>：仅 net8.0+ 且 <c>AesGcm.IsSupported</c> 时产出，且<b>仅能</b>在 net8.0+ 解密。</item>
+    /// <item><c>0x03</c> CBC + HMAC-SHA256 —— <c>[0x03][IV(16)][MAC(32)][密文]</c>（Encrypt-then-MAC）：可在全部目标框架（netstandard2.0 / net6.0 / net8.0 / net10.0）解密。</item>
+    /// </list>
+    /// 解密<b>仅</b>按首字节版本前缀分派，与任何配置无关。
+    /// </para>
+    /// <para>
+    /// 设为 <c>true</c> 时，即使在 net8.0+ 上也强制产出 <c>0x03</c> 格式，
+    /// 用于密文需要跨进程/跨服务传输、而对端目标框架可能低于 net8.0 的场景
+    /// （例如经 <c>IEncryptableHttpClient.EncryptContent</c> 加密后由 net6.0 服务解密）。
+    /// </para>
     /// </remarks>
-    [Obsolete("从 v1.8.0 起，IV 在每次加密时自动随机生成，无需手动设置。此属性将在未来版本中移除。")]
-    public byte[] IV
-    {
-        get => _iv != null ? (byte[])_iv.Clone() : Array.Empty<byte>();
-        set => _iv = value;
-    }
+    public bool RequireCrossRuntimePortable { get; set; }
 
     /// <summary>
     /// 验证 AES 加密选项的有效性。
@@ -67,15 +76,13 @@ public class AesEncryptionOptions
     }
 
     /// <summary>
-    /// 安全清除密钥和初始化向量，防止敏感数据残留在内存中。
-    /// 注意：此方法会清零 Key 和 IV 数组，调用后此实例将不可用。
+    /// 安全清除密钥，防止敏感数据残留在内存中。
+    /// 注意：此方法会清零 Key 数组，调用后此实例将不可用。
     /// 通常不需要手动调用，因为 DefaultAesEncryptionProvider 会在构造时克隆密钥。
     /// </summary>
     public void ClearSensitiveData()
     {
         SecurityHelper.ClearBytes(_key);
-        SecurityHelper.ClearBytes(_iv);
         _key = null;
-        _iv = null;
     }
 }

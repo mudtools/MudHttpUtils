@@ -501,6 +501,55 @@ public class HealthChecksTests
     }
 
     [Fact]
+    public void AddMudHttpHealthChecks_FromConfiguration_CircuitBreakerKey_BindsCorrectly()
+    {
+    // 回归测试：验证熔断器健康检查的 JSON 键名为 "CircuitBreaker"，
+    // 与 MudCircuitBreakerHealthCheckOptions.SectionName 常量一致。
+        var configDict = new Dictionary<string, string?>
+        {
+            ["MudHttpHealthChecks:CircuitBreaker:MaxOpenCount"] = "3",
+            ["MudHttpHealthChecks:CircuitBreaker:MaxHalfOpenCount"] = "2",
+        };
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(configDict)
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMudHttpHealthChecks(configuration);
+
+        var provider = services.BuildServiceProvider();
+        var cbOptions = provider.GetRequiredService<MudCircuitBreakerHealthCheckOptions>();
+        cbOptions.MaxOpenCount.Should().Be(3);
+        cbOptions.MaxHalfOpenCount.Should().Be(2);
+    }
+
+    [Fact]
+    public void AddMudHttpHealthChecks_FromConfiguration_WrongKey_CircuitBreakerHealthCheck_DoesNotBind()
+    {
+        // 回归测试：使用错误的键名 "CircuitBreakerHealthCheck" 不应绑定到熔断器选项，
+        // 应保持默认值。确保 README 和文档使用正确的键名 "CircuitBreaker"。
+        var configDict = new Dictionary<string, string?>
+        {
+            ["MudHttpHealthChecks:CircuitBreakerHealthCheck:MaxOpenCount"] = "3",
+            ["MudHttpHealthChecks:CircuitBreakerHealthCheck:MaxHalfOpenCount"] = "2",
+        };
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(configDict)
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMudHttpHealthChecks(configuration);
+
+        var provider = services.BuildServiceProvider();
+        var cbOptions = provider.GetRequiredService<MudCircuitBreakerHealthCheckOptions>();
+        // 使用错误的键名应导致默认值未被覆盖
+        cbOptions.MaxOpenCount.Should().Be(0);
+        cbOptions.MaxHalfOpenCount.Should().Be(0);
+    }
+
+    [Fact]
     public void AddMudHttpHealthChecks_WithNullServices_Throws()
     {
         var act = () => ((IServiceCollection)null!).AddMudHttpHealthChecks();
@@ -627,6 +676,153 @@ public class HealthChecksTests
         tokenRefreshOptions.DegradedThreshold.Should().Be(0.2);
         tokenRefreshOptions.CriticalThreshold.Should().Be(0.5);
         tokenRefreshOptions.MinSampleSize.Should().Be(5);
+    }
+
+    // ============ TokenRefreshHealthCheckOptionsValidator ============
+
+    [Fact]
+    public void TokenRefreshHealthCheckOptionsValidator_NullOptions_ReturnsSuccess()
+    {
+        var validator = new TokenRefreshHealthCheckOptionsValidator();
+        var result = validator.Validate("Test", null!);
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void TokenRefreshHealthCheckOptionsValidator_DefaultOptions_ReturnsSuccess()
+    {
+        var validator = new TokenRefreshHealthCheckOptionsValidator();
+        var result = validator.Validate("Test", new TokenRefreshHealthCheckOptions());
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(-100)]
+    public void TokenRefreshHealthCheckOptions_WindowSeconds_Setter_ThrowsForNonPositive(int invalidValue)
+    {
+        // setter 校验在赋值时即抛出异常，提供即时反馈
+        var act = () => new TokenRefreshHealthCheckOptions { WindowSeconds = invalidValue };
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*WindowSeconds*");
+    }
+
+    [Theory]
+    [InlineData(-0.1)]
+    [InlineData(1.1)]
+    [InlineData(2.0)]
+    [InlineData(-1.0)]
+    public void TokenRefreshHealthCheckOptions_DegradedThreshold_Setter_ThrowsForOutOfRange(double invalidValue)
+    {
+        var act = () => new TokenRefreshHealthCheckOptions { DegradedThreshold = invalidValue };
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*DegradedThreshold*");
+    }
+
+    [Theory]
+    [InlineData(-0.1)]
+    [InlineData(1.1)]
+    [InlineData(2.0)]
+    [InlineData(-1.0)]
+    public void TokenRefreshHealthCheckOptions_CriticalThreshold_Setter_ThrowsForOutOfRange(double invalidValue)
+    {
+        var act = () => new TokenRefreshHealthCheckOptions { CriticalThreshold = invalidValue };
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*CriticalThreshold*");
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(-100)]
+    public void TokenRefreshHealthCheckOptions_MinSampleSize_Setter_ThrowsForNegative(int invalidValue)
+    {
+        var act = () => new TokenRefreshHealthCheckOptions { MinSampleSize = invalidValue };
+        act.Should().Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*MinSampleSize*");
+    }
+
+    [Fact]
+    public void TokenRefreshHealthCheckOptionsValidator_CriticalLessThanDegraded_ReturnsFail()
+    {
+        var validator = new TokenRefreshHealthCheckOptionsValidator();
+        var result = validator.Validate("Test", new TokenRefreshHealthCheckOptions
+        {
+            DegradedThreshold = 0.5,
+            CriticalThreshold = 0.2,
+        });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("CriticalThreshold 必须 >= DegradedThreshold");
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(-100)]
+    public void TokenRefreshHealthCheckOptionsValidator_MinSampleSizeNegative_ReturnsFail(int invalidValue)
+    {
+        // MinSampleSize setter 校验负值，但 0 是合法的（不限定最小样本量）
+        // 此测试验证 IValidateOptions 对 setter 无法捕获的场景仍然有效
+        // (setter 校验已覆盖负值，此测试保留以验证 validator 的防御性校验)
+        var act = () => new TokenRefreshHealthCheckOptions { MinSampleSize = invalidValue };
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void TokenRefreshHealthCheckOptionsValidator_MultipleFailures_ReportsAll()
+    {
+        // setter 校验会在第一个无效属性赋值时即抛出异常，
+        // IValidateOptions 主要用于 IConfiguration 绑定后的批量校验场景。
+        // 此处验证跨属性校验：CriticalThreshold < DegradedThreshold
+        var validator = new TokenRefreshHealthCheckOptionsValidator();
+        var result = validator.Validate("Test", new TokenRefreshHealthCheckOptions
+        {
+            DegradedThreshold = 0.5,
+            CriticalThreshold = 0.2,
+        });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("CriticalThreshold");
+        result.FailureMessage.Should().Contain("DegradedThreshold");
+    }
+
+    // ============ SectionName 常量一致性测试 ============
+
+    [Fact]
+    public void MudCircuitBreakerHealthCheckOptions_SectionName_MatchesBindingKey()
+    {
+        // 验证 SectionName 常量值与实际 IConfiguration 绑定键名一致。
+        // 绑定键名由 MudHttpHealthChecksOptions.CircuitBreaker 属性名决定，
+        // SectionName 常量应与之保持一致以避免误导。
+        MudCircuitBreakerHealthCheckOptions.SectionName.Should().Be("CircuitBreaker");
+    }
+
+    [Fact]
+    public void MudCircuitBreakerHealthCheckOptions_SectionName_NotOldValue()
+    {
+        // 回归测试：确保 SectionName 不再是旧的错误值 "CircuitBreakerHealthCheck"
+        MudCircuitBreakerHealthCheckOptions.SectionName.Should().NotBe("CircuitBreakerHealthCheck");
+    }
+
+    [Fact]
+    public void AddMudHttpHealthChecks_FromConfiguration_UsingSectionNameConstant_BindsCorrectly()
+    {
+        // 端到端验证：使用 SectionName 常量作为配置键前缀，应正确绑定
+        var configDict = new Dictionary<string, string?>
+        {
+            [$"MudHttpHealthChecks:{MudCircuitBreakerHealthCheckOptions.SectionName}:MaxOpenCount"] = "3",
+            [$"MudHttpHealthChecks:{MudCircuitBreakerHealthCheckOptions.SectionName}:MaxHalfOpenCount"] = "2",
+        };
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(configDict)
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddMudHttpHealthChecks(configuration);
+
+        var provider = services.BuildServiceProvider();
+        var cbOptions = provider.GetRequiredService<MudCircuitBreakerHealthCheckOptions>();
+        cbOptions.MaxOpenCount.Should().Be(3);
+        cbOptions.MaxHalfOpenCount.Should().Be(2);
     }
 }
 

@@ -413,10 +413,38 @@ public class ObservabilityTests
         activity.Should().NotBeNull();
         activity!.Kind.Should().Be(ActivityKind.Client);
         activity.GetTagItem(MudHttpActivitySource.Tags.HttpMethod).Should().Be("POST");
-        activity.GetTagItem(MudHttpActivitySource.Tags.HttpUrl).Should().Be("https://api.example.com/path?query=1");
+        // CFG-05：默认（RecordFullUrlOnSuccess=false）仅记录 scheme://host/path，不含 query。
+        activity.GetTagItem(MudHttpActivitySource.Tags.HttpUrl).Should().Be("https://api.example.com/path");
         activity.GetTagItem(MudHttpActivitySource.Tags.HttpScheme).Should().Be("https");
         activity.GetTagItem(MudHttpActivitySource.Tags.HttpHost).Should().Be("api.example.com");
         activity.GetTagItem(MudHttpActivitySource.Tags.MudClientName).Should().Be("client_a");
+    }
+
+    [Fact]
+    public void Observability_StartRequestActivity_RecordFullUrl_IncludesQuery()
+    {
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == MudHttpActivitySource.Name,
+            SampleUsingParentId = (ref ActivityCreationOptions<string> _) => ActivitySamplingResult.AllData,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var original = MudHttpObservabilityOptions.RecordFullUrlOnSuccess;
+        try
+        {
+            MudHttpObservabilityOptions.RecordFullUrlOnSuccess = true;
+            var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/path?query=1");
+            using var activity = MudHttpObservability.StartRequestActivity(request, "client_a");
+
+            activity.Should().NotBeNull();
+            activity!.GetTagItem(MudHttpActivitySource.Tags.HttpUrl).Should().Be("https://api.example.com/path?query=1");
+        }
+        finally
+        {
+            MudHttpObservabilityOptions.RecordFullUrlOnSuccess = original;
+        }
     }
 
     [Fact]
@@ -1289,22 +1317,25 @@ public class ObservabilityTests
     // ============ v2 修复：TokenRefreshStatsCollector 动态保留期 ============
 
     [Fact]
-    public void TokenRefreshStatsCollector_SetRetention_Expands_Retention()
+    public void TokenRefreshStatsCollector_SetRetention_Expands_And_Shrinks_Retention()
     {
         // 注意：本测试与 HealthChecksTests 共享 ObservabilityTestCollection，串行执行
-        // 不能假定初始保留期为 5 分钟，仅验证扩大行为
+        // 不能假定初始保留期为 5 分钟，仅验证 SetRetention 行为
+        // NEW-OB-01 修复：SetRetention 允许扩大和缩小保留期，缩小时清理超出新窗口的事件
+
+        // 扩大保留期
         TokenRefreshStatsCollector.SetRetention(TimeSpan.FromMinutes(30));
-
         TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(30));
 
-        // 重新设回较小值不应生效（仅允许扩大）
+        // 缩小保留期（NEW-OB-01：允许缩小，并清理超出新窗口的事件）
         TokenRefreshStatsCollector.SetRetention(TimeSpan.FromMinutes(1));
-        TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(30));
+        TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(1));
 
-        // 负值不应生效
+        // 零值/负值不应生效
         TokenRefreshStatsCollector.SetRetention(TimeSpan.Zero);
-        TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(30));
+        TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(1));
 
+        // 再次扩大保留期
         TokenRefreshStatsCollector.SetRetention(TimeSpan.FromMinutes(60));
         TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(60));
     }

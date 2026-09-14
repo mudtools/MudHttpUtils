@@ -151,6 +151,24 @@ internal class MethodAnalysisResult
     public string EffectiveTokenInjectionMode => MethodTokenInjectionMode ?? InterfaceTokenInjectionMode ?? "Header";
 
     /// <summary>
+    /// 方法级 Token 注入方案（Scheme，从方法上的 [Token(Scheme = "...")] 特性获取）。
+    /// 方法级优先于接口级。未指定时为 null，生成器按注入模式回退（BasicAuth→"Basic"，其余→"Bearer"）。
+    /// </summary>
+    public string? MethodTokenScheme { get; set; }
+
+    /// <summary>
+    /// 接口级 Token 注入方案（Scheme，从接口上的 [Token(Scheme = "...")] 特性获取）。
+    /// </summary>
+    public string? InterfaceTokenScheme { get; set; }
+
+    /// <summary>
+    /// 获取有效的 Token 注入方案：方法级优先于接口级；均未指定时按注入模式回退默认值。
+    /// </summary>
+    public string EffectiveTokenScheme
+        => MethodTokenScheme ?? InterfaceTokenScheme
+            ?? (EffectiveTokenInjectionMode == "BasicAuth" ? "Basic" : "Bearer");
+
+    /// <summary>
     /// 方法参数中标记了 [Token] 特性的参数名称。
     /// 当存在此参数时，生成代码应优先使用参数值，仅在参数值为空时回退到 GetTokenAsync()。
     /// </summary>
@@ -207,6 +225,9 @@ internal class MethodAnalysisResult
 
     public bool CacheVaryByUser { get; set; }
 
+    /// <summary>是否使用滑动过期（[Cache(UseSlidingExpiration = true)]，M3-#27）。</summary>
+    public bool CacheUseSlidingExpiration { get; set; }
+
     public bool RetryEnabled { get; set; }
 
     public int RetryMaxRetries { get; set; } = 3;
@@ -214,6 +235,9 @@ internal class MethodAnalysisResult
     public int RetryDelayMilliseconds { get; set; } = 1000;
 
     public bool RetryUseExponentialBackoff { get; set; } = true;
+
+    /// <summary>是否允许对非幂等 HTTP 方法重试（[Retry(AllowNonIdempotent = true)]，M2-#12）。</summary>
+    public bool RetryAllowNonIdempotent { get; set; }
 
     public bool CircuitBreakerEnabled { get; set; }
 

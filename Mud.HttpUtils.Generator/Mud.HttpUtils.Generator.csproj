@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<TargetFramework>netstandard2.0</TargetFramework>
-		<Description>Mud HttpUtils 代码生成器是一个基于 Roslyn 的源代码生成器，自动为标记了 [HttpClientApi] 特性的接口生成 HttpClient 实现类。</Description>
-		<PackageTags>HttpUtils;HttpClient;WebAPI;Roslyn;源代码生成器;SourceGenerator;代码生成;声明式HTTP;Mud HttpUtils</PackageTags>
+		<Description>Mud HttpUtils 代码生成器是一个基于 Roslyn 的源代码生成器，自动为标记了 [HttpClientApi] 特性的接口生成 HttpClient 实现类。本包同时包含接口规范分析器（MUD001/MUD002/MUD004）和代码修复器（HTTPCLIENT005/007、AOT004/005/006/007），用户只需安装此一个包即可获得完整的编译期代码生成、诊断和修复能力。</Description>
+		<PackageTags>HttpUtils;HttpClient;WebAPI;Roslyn;源代码生成器;SourceGenerator;代码生成;声明式HTTP;Analyzer;CodeFix;Mud HttpUtils</PackageTags>
 		<Product>Mud Http Utils Code Generator</Product>
 		<PackageId>Mud.HttpUtils.Generator</PackageId>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
@@ -16,6 +16,11 @@
 		<IncludeBuildOutput>false</IncludeBuildOutput>
 	</PropertyGroup>
 	<ItemGroup>
+		<!-- 说明：本工程【不得】引用 Microsoft.CodeAnalysis.CSharp.Workspaces。
+		     编译器扩展（源生成器 / DiagnosticAnalyzer）会被 csc 在命令行编译时加载，
+		     而命令行编译进程不提供 Workspaces 程序集；一旦引用，RS1038 会告警且行为不可预测。
+		     代码修复器（仅 IDE 需要）依赖 Workspaces，故必须留在独立的
+		     Mud.HttpUtils.CodeFixes 程序集中，仅通过 DiagnosticIds 源码共享 ID 契约。 -->
 		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" PrivateAssets="all" />
 		<PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="5.6.0">
 			<PrivateAssets>all</PrivateAssets>
@@ -23,12 +28,31 @@
 		</PackageReference>
 	</ItemGroup>
 	<ItemGroup>
+		<!-- 引用代码修复器项目，合并到单一 NuGet 包中分发 -->
+		<ProjectReference Include="..\Mud.HttpUtils.CodeFixes\Mud.HttpUtils.CodeFixes.csproj" PrivateAssets="all" />
+	</ItemGroup>
+	<ItemGroup>
 		<InternalsVisibleTo Include="Mud.HttpUtils.Generator.Tests" />
+	</ItemGroup>
+	<ItemGroup>
+		<!-- 诊断发布跟踪（消除 RS2008）：登记全部 DiagnosticDescriptor 的 ID/类别/级别。
+		     未登记的新规则 → RS2008；已登记但类别/级别漂移 → RS2001。 -->
+		<AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
+		<AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
 	</ItemGroup>
 	<!--开发调试阶段-->
 	<ItemGroup>
+		<!-- 源生成器 + 接口规范分析器 DLL（MUD001/MUD002/MUD004 已并入本程序集） -->
 		<None Include="$(OutputPath)$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+		<!-- 代码修复器 DLL（HTTPCLIENT005/007、AOT004/005/006/007 一键修复） -->
+		<None Include="$(OutputPath)Mud.HttpUtils.CodeFixes.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
 		<None Include="README.md" Pack="true" PackagePath="\" />
 		<None Include="..\Icon.png" Pack="true" PackagePath="\" />
+		<!-- [AOT v4 Phase 18.0 / D18] 随包分发 build props，注册 CompilerVisibleProperty
+		     （IsAotCompatible/PublishAot），使分析器能判定 AOT 上下文。 -->
+		<None Include="build\Mud.HttpUtils.Generator.props" Pack="true" PackagePath="build\" Visible="false" />
+		<!-- [F11] 随包分发 build targets：-p:AotStrictMode=true 严格模式（WarningsAsErrors 清单）。
+		     文件名与 PackageId 同名，NuGet 才能自动导入。 -->
+		<None Include="build\Mud.HttpUtils.Generator.targets" Pack="true" PackagePath="build\" Visible="false" />
 	</ItemGroup>
 </Project>

@@ -19,7 +19,9 @@ internal class GenerationConfiguration
 
     public string DefaultContentType { get; set; } = "application/json";
 
-    public int Timeout { get; set; } = 100;
+    // CFG-21：原 Timeout 属性为死字段（赋值于 InterfaceImplementationGenerator，全仓无读取点），已删除。
+    // 接口级超时由 HttpInvokeRegistrationGenerator 直接从 [HttpClientApi(Timeout=…)] 读取
+    // （默认值 HttpClientGeneratorConstants.DefaultHttpClientTimeoutSeconds = 50）。
 
     public bool IsAbstract { get; set; }
 

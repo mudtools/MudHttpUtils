@@ -1,4 +1,4 @@
-﻿/// -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
 //  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
@@ -31,6 +31,7 @@ internal static class HttpClientGeneratorConstants
     public const string QueryAttribute = "QueryAttribute";
     public const string ArrayQueryAttribute = "ArrayQueryAttribute";
     public const string HeaderAttribute = "HeaderAttribute";
+    public const string HeaderCollectionAttribute = "HeaderCollectionAttribute";
     public const string BodyAttribute = "BodyAttribute";
     public const string FormContentAttribute = "FormContentAttribute";
     public const string FilePathAttribute = "FilePathAttribute";
@@ -69,7 +70,8 @@ internal static class HttpClientGeneratorConstants
     public const string HttpClientProperty = "HttpClient";
     public const string IsAbstractProperty = "IsAbstract";
     public const string InheritedFromProperty = "InheritedFrom";
-    public const string BaseAddressProperty = "BaseAddress";
+    // CFG-22：BaseAddressProperty 为死常量（全仓仅定义、无读取），已删除。
+    // [HttpClientApi(BaseAddress = …)] 使用处会直接产生编译错误 CS0619（属性标注 [Obsolete(error: true)]）。
 
     public static readonly string[] BasePathAttributeNames = ["BasePathAttribute", "BasePath"];
 
@@ -81,6 +83,9 @@ internal static class HttpClientGeneratorConstants
     public static readonly string[] InterfacePathAttributeNames = ["InterfacePathAttribute", "InterfacePath"];
     public static readonly string[] HeaderMergeAttributeNames = ["HeaderMergeAttribute", "HeaderMerge"];
     public static readonly string[] SerializationMethodAttributeNames = ["SerializationMethodAttribute", "SerializationMethod"];
+
+    /// <summary>CFG-18：接口级「允许未匹配路由占位符」标记特性名。</summary>
+    public static readonly string[] AllowUnmatchedRouteParametersAttributeNames = ["AllowUnmatchedRouteParametersAttribute", "AllowUnmatchedRouteParameters"];
 
     public static readonly string[] RetryAttributeNames = ["RetryAttribute", "Retry"];
     public static readonly string[] CircuitBreakerAttributeNames = ["CircuitBreakerAttribute", "CircuitBreaker"];
@@ -100,8 +105,16 @@ internal static class HttpClientGeneratorConstants
     public const string CacheDurationSecondsProperty = "DurationSeconds";
     public const string CacheKeyTemplateProperty = "CacheKeyTemplate";
     public const string CacheVaryByUserProperty = "VaryByUser";
+    public const string CacheUseSlidingExpirationProperty = "UseSlidingExpiration";
 
     // 默认值
+    /// <summary>
+    /// 未显式配置 <c>[HttpClientApi(Timeout=…)]</c> 时的默认超时秒数。
+    /// 与 <c>Mud.HttpUtils.Attributes.HttpClientApiAttribute.DefaultTimeoutSeconds</c> 保持一致（CFG-03），
+    /// 由测试 <c>HttpClientApiAttributeDefaultTimeoutTests</c> 守护一致性。
+    /// </summary>
+    public const int DefaultHttpClientTimeoutSeconds = 50;
+
     public const string DefaultTokenManageInterface = "ITokenManage";
     public const string DefaultWrapSuffix = "Wrap";
     public const string DefaultContentType = "application/json";

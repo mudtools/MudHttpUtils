@@ -1,5 +1,5 @@
-using System.Collections.Concurrent;
 using System.Net;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Mud.HttpUtils;
 
@@ -8,11 +8,54 @@ namespace Mud.HttpUtils;
 /// </summary>
 public static class UrlValidator
 {
-    private static readonly HashSet<string> _allowedDomains = new(StringComparer.OrdinalIgnoreCase);
+    // M1-#4：白名单改为不可变快照 + Volatile.Write 原子替换。
+    // 并发 ConfigureAllowedDomains 与 ValidateUrl 不再出现 "Collection was modified" 或读到空集的空窗期；
+    // 读取方只读不写，快照引用在被替换前始终完整可用。
+    private static HashSet<string> _allowedDomains = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>当前白名单快照（读端只读，写端经整体替换更新）。</summary>
+    private static HashSet<string> AllowedDomainsSnapshot => Volatile.Read(ref _allowedDomains);
 
     private static readonly List<IPNetwork> _privateNetworks;
 
-    private static readonly ConcurrentDictionary<string, IPAddress[]> _dnsCache = new();
+    // M2-#8.1：DNS 缓存改为 MemoryCache —— 条目带 TTL（默认 5 分钟，不再永久缓存），
+    // 容量上限 10_000（SizeLimit 超限自动淘汰），消除"解析结果永生 + 无界增长"两个隐患。
+    // 单飞治理：MemoryCache.GetOrCreate 的工厂在并发未命中时可重复执行（无 per-key 锁），
+    // 故以 32 个 stripe 锁做"同 key 串行 + 双检"——同 key 并发只解析一次，锁对象数量有界（32 个）。
+    private const int DnsCacheCapacity = 10_000;
+    private const int DnsStripeCount = 32;
+
+    private static readonly object[] DnsStripes = Enumerable.Range(0, DnsStripeCount).Select(_ => new object()).ToArray();
+
+    /// <summary>DNS 缓存 TTL（默认 5 分钟）。internal 仅供测试验证"过期后重新解析"，生产代码勿改。</summary>
+    internal static TimeSpan DnsCacheTtl { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>仅测试用：替换 DNS 解析实现以统计解析次数（经 InternalsVisibleTo 注入；null = 正常解析）。</summary>
+    internal static Func<string, IPAddress[]>? DnsResolveOverride;
+
+    private static readonly MemoryCache DnsCache = new(new MemoryCacheOptions { SizeLimit = DnsCacheCapacity });
+
+    private static IPAddress[] ResolveWithCache(string host)
+    {
+        if (DnsCache.Get(host) is IPAddress[] cached)
+            return cached;
+
+        lock (DnsStripes[(uint)host.GetHashCode() % DnsStripeCount])
+        {
+            // 双检：同 stripe 的其他 key 调用可能已写入本 key 的条目
+            if (DnsCache.Get(host) is IPAddress[] cachedAgain)
+                return cachedAgain;
+
+            var resolve = DnsResolveOverride ?? (h => Dns.GetHostAddressesAsync(h).GetAwaiter().GetResult());
+            var addresses = resolve(host);
+            DnsCache.Set(host, addresses, new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = DnsCacheTtl,
+                Size = 1,
+            });
+            return addresses;
+        }
+    }
 
     static UrlValidator()
     {
@@ -31,7 +74,8 @@ public static class UrlValidator
     }
 
     /// <summary>
-    /// 配置允许的域名白名单（替换默认白名单）
+    /// 配置允许的域名白名单（替换默认白名单）。
+    /// 线程安全：整体构建新集合并原子替换，并发调用期间不存在"空集"瞬间。
     /// </summary>
     /// <param name="domains">允许的域名集合</param>
     public static void ConfigureAllowedDomains(IEnumerable<string> domains)
@@ -39,12 +83,13 @@ public static class UrlValidator
         if (domains == null)
             throw new ArgumentNullException(nameof(domains));
 
-        _allowedDomains.Clear();
+        var newSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var domain in domains)
         {
             if (!string.IsNullOrWhiteSpace(domain))
-                _allowedDomains.Add(domain.Trim());
+                newSet.Add(domain.Trim());
         }
+        Volatile.Write(ref _allowedDomains, newSet);
     }
 
     /// <summary>
@@ -66,28 +111,30 @@ public static class UrlValidator
             throw new ArgumentException($"URL 格式无效: {url}", nameof(url));
         }
 
-        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException($"仅允许 HTTPS 协议，当前协议: {uri.Scheme}");
-        }
-
-        if (!IsStandardHttpsPort(uri))
-        {
-            throw new InvalidOperationException($"非标准 HTTPS 端口: {uri.Port}");
-        }
-
         var host = uri.Host;
 
-        if (_allowedDomains.Count > 0 && IsAllowedDomain(host))
+        // 白名单域名跳过所有后续检查
+        if (IsDomainAllowedBySnapshot(host))
             return;
 
         if (!allowCustomBaseUrls)
         {
-            if (_allowedDomains.Count > 0)
+            // 严格模式：强制 HTTPS、标准端口、域名白名单
+            if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
             {
-                var allowedDomains = string.Join(", ", _allowedDomains.OrderBy(d => d));
+                throw new InvalidOperationException($"仅允许 HTTPS 协议，当前协议: {uri.Scheme}");
+            }
+
+            if (!IsStandardHttpsPort(uri))
+            {
+                throw new InvalidOperationException($"非标准 HTTPS 端口: {uri.Port}");
+            }
+
+            if (AllowedDomainsSnapshot.Count > 0)
+            {
+                var allowedDomains = string.Join(", ", AllowedDomainsSnapshot.OrderBy(d => d));
                 throw new InvalidOperationException(
-                    $"域名 '{host}' 不在白名单中。允许的域名: {allowedDomains}。" +
+                    $"域名 '{host}' 不在白名单中。允许的域名: {allowedDomains}." +
                     "如需使用自定义域名，请设置 allowCustomBaseUrls=true（注意安全风险）。");
             }
 
@@ -96,7 +143,8 @@ public static class UrlValidator
                 "或设置 allowCustomBaseUrls=true（注意安全风险）。");
         }
 
-        if (IsPrivateIpAddress(host))
+        // 自定义模式：允许 HTTP 和非标准端口，但仍阻止非 localhost 的私有 IP 和内网域名
+        if (IsPrivateIpAddress(host) && !IsLoopbackAddress(host))
         {
             throw new InvalidOperationException($"不允许访问私有 IP 地址: {host}");
         }
@@ -121,18 +169,29 @@ public static class UrlValidator
     }
 
     /// <summary>
-    /// 检查主机名是否在允许的域名白名单中
+    /// 检查主机名是否在允许的域名白名单中（基于当前快照判定，含子域名匹配）。
     /// </summary>
-    private static bool IsAllowedDomain(string host)
+    private static bool IsDomainAllowedBySnapshot(string host)
     {
-        if (_allowedDomains.Contains(host))
+        var snapshot = AllowedDomainsSnapshot;
+        if (snapshot.Count == 0)
+            return false;
+        return IsAllowedDomain(host, snapshot);
+    }
+
+    /// <summary>
+    /// 检查主机名是否在指定白名单集合中（含子域名匹配）。
+    /// </summary>
+    private static bool IsAllowedDomain(string host, HashSet<string> allowedDomains)
+    {
+        if (allowedDomains.Contains(host))
             return true;
 
         var parts = host.Split('.');
         for (int i = parts.Length - 2; i >= 0; i--)
         {
             var domain = string.Join(".", parts.Skip(i));
-            if (_allowedDomains.Contains(domain))
+            if (allowedDomains.Contains(domain))
                 return true;
         }
 
@@ -148,19 +207,7 @@ public static class UrlValidator
 
         try
         {
-            var addresses = _dnsCache.GetOrAdd(host, h =>
-            {
-                var task = Dns.GetHostAddressesAsync(h);
-                try
-                {
-                    return task.GetAwaiter().GetResult();
-                }
-                catch (TimeoutException)
-                {
-                    throw new TimeoutException($"DNS 解析超时: {h}");
-                }
-            });
-
+            var addresses = ResolveWithCache(host);
             return addresses.Any(IsPrivateIpAddress);
         }
         catch (TimeoutException)
@@ -173,7 +220,7 @@ public static class UrlValidator
         }
     }
 
-    private static bool IsPrivateIpAddress(IPAddress ipAddress)
+    internal static bool IsPrivateIpAddress(IPAddress ipAddress)
     {
         if (ipAddress.IsIPv6LinkLocal ||
             ipAddress.IsIPv6SiteLocal ||
@@ -189,6 +236,28 @@ public static class UrlValidator
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// 检查主机名是否为回环地址（localhost / 127.0.0.1 / ::1）。
+    /// </summary>
+    private static bool IsLoopbackAddress(string host)
+    {
+        if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (IPAddress.TryParse(host, out var ipAddress))
+            return IPAddress.IsLoopback(ipAddress);
+
+        try
+        {
+            var addresses = ResolveWithCache(host);
+            return addresses.Any(IPAddress.IsLoopback);
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static bool IsInternalDomain(string host)
@@ -214,41 +283,47 @@ public static class UrlValidator
     }
 
     /// <summary>
-    /// 获取当前允许的域名白名单
+    /// 获取当前允许的域名白名单（返回快照副本，线程安全）。
     /// </summary>
     public static IReadOnlyCollection<string> GetAllowedDomains()
     {
-        return _allowedDomains.ToArray();
+        return AllowedDomainsSnapshot.ToArray();
     }
 
     /// <summary>
-    /// 添加自定义域名到白名单（运行时扩展）
+    /// 添加自定义域名到白名单（运行时扩展）。线程安全（复制快照后整体替换）。
     /// </summary>
     public static void AddAllowedDomain(string domain)
     {
         if (string.IsNullOrWhiteSpace(domain))
             throw new ArgumentNullException(nameof(domain));
 
-        _allowedDomains.Add(domain.Trim().ToLowerInvariant());
+        var current = AllowedDomainsSnapshot;
+        var newSet = new HashSet<string>(current, StringComparer.OrdinalIgnoreCase);
+        newSet.Add(domain.Trim().ToLowerInvariant());
+        Volatile.Write(ref _allowedDomains, newSet);
     }
 
     /// <summary>
-    /// 从白名单中移除域名
+    /// 从白名单中移除域名。线程安全（复制快照后整体替换）。
     /// </summary>
     public static void RemoveAllowedDomain(string domain)
     {
         if (string.IsNullOrWhiteSpace(domain))
             throw new ArgumentNullException(nameof(domain));
 
-        _allowedDomains.Remove(domain.Trim());
+        var current = AllowedDomainsSnapshot;
+        var newSet = new HashSet<string>(current, StringComparer.OrdinalIgnoreCase);
+        newSet.Remove(domain.Trim());
+        Volatile.Write(ref _allowedDomains, newSet);
     }
 
     /// <summary>
-    /// 清除 DNS 缓存
+    /// 清除 DNS 缓存（立即触发后续请求重新解析）。
     /// </summary>
     public static void ClearDnsCache()
     {
-        _dnsCache.Clear();
+        DnsCache.Compact(1.0);
     }
 }
 

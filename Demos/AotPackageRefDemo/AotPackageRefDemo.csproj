@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+		<OutputType>Exe</OutputType>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<IsAotCompatible>true</IsAotCompatible>
+		<PublishAot>true</PublishAot>
+		<GenerateDocumentationFile>false</GenerateDocumentationFile>
+		<!-- 此项目不在解决方案中，仅由 CI aot-packageref 作业构建。
+		     需先运行 dotnet pack 生成 NuGet 包到 artifacts/ 目录。
+		     验证 NuGet 包消费方的 AOT 发布体验：源生成器从 analyzers/dotnet/cs 加载、
+		     Attributes 从 lib/netstandard2.0 引用、AOT 发布成功并运行输出 AOT_OK。 -->
+	</PropertyGroup>
+
+	<!-- AOT 严格模式清单已上移至 Directory.Build.props（全仓统一口径），此处不再重复定义。 -->
+
+	<!-- NuGet 包引用（版本跟随 Directory.Build.props 的 $(Version)） -->
+	<ItemGroup>
+		<PackageReference Include="Mud.HttpUtils.Attributes" Version="$(Version)" />
+		<PackageReference Include="Mud.HttpUtils.Client" Version="$(Version)" />
+		<PackageReference Include="Mud.HttpUtils.Generator" Version="$(Version)" />
+		<PackageReference Include="Mud.HttpUtils.Resilience" Version="$(Version)" />
+		<PackageReference Include="Mud.HttpUtils.OpenTelemetry" Version="$(Version)" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
+	</ItemGroup>
+
+	<!-- [AOT v4 Phase 17.2 / D9] 使用标准 DotNetToolReference 恢复脚手架工具，由 Attributes targets 自动解析（$(DotNetToolMud_HttpUtils_JsonContextScaffolder)）。
+	     因 PublishAot=true，Phase 17.1 的 targets 会自动激活脚手架；工具包已由 CI 打包至 artifacts/（被 nuget.config 的 local 源识别）。 -->
+	<ItemGroup>
+		<DotNetToolReference Include="Mud.HttpUtils.JsonContextScaffolder" Version="$(Version)" />
+	</ItemGroup>
+
+
+	<!-- [AOT v4 Phase 18.0 / D18] PackageReference 场景下 Generator 包内 build/*.props 会自动导入并注册
+	     CompilerVisibleProperty；此处显式声明以确保 AOT 上下文属性对分析器可见（幂等，重复声明无害）。 -->
+	<ItemGroup>
+		<CompilerVisibleProperty Include="IsAotCompatible" />
+		<CompilerVisibleProperty Include="PublishAot" />
+		<CompilerVisibleProperty Include="Nullable" />
+		<CompilerVisibleProperty Include="HttpClientOptionsName" />
+	</ItemGroup>
+
+</Project>

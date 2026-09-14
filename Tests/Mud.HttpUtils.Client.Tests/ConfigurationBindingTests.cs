@@ -177,6 +177,49 @@ public class ConfigurationBindingTests
         monitor.CurrentValue.Clients["api"].TimeoutSeconds.Should().Be(60);
     }
 
+    /// <summary>
+    /// T-11（CFG-08）：AllowedDomains 必须随 <c>IOptionsMonitor</c> 变更重放到 <c>UrlValidator</c>（幂等整体替换）。
+    /// 修复前仅注册期一次性应用（<c>section.Bind</c> 局部快照），Reload 后新域名不生效。
+    /// </summary>
+    [Fact]
+    public void AddMudHttpClientsFromConfiguration_AllowedDomains_MonitorReload_ReappliesWhitelist()
+    {
+        try
+        {
+            // Arrange — 使用可在 Load() 后保留 Set() 更新的自定义配置提供器
+            var updatableProvider = new UpdatableMemoryProvider(new Dictionary<string, string?>
+            {
+                ["MudHttpClients:AllowedDomains:0"] = "api.example.com",
+                ["MudHttpClients:Clients:api:BaseAddress"] = "https://api.example.com",
+            });
+            var config = new ConfigurationBuilder()
+                .Add(updatableProvider)
+                .Build();
+
+            var services = new ServiceCollection();
+            services.AddMudHttpClientsFromConfiguration(config);
+            using var provider = services.BuildServiceProvider();
+
+            // Act 1 — 创建首个增强客户端，强制解析 AllowedDomainsReloader（首次同步应用）
+            _ = provider.GetRequiredService<IEnhancedHttpClient>();
+            UrlValidator.GetAllowedDomains().Should().Contain("api.example.com");
+
+            // Act 2 — 热更新：新增域名并 Reload，OnChange 必须重放白名单
+            updatableProvider.Set("MudHttpClients:AllowedDomains:1", "cdn.example.com");
+            ((IConfigurationRoot)config).Reload();
+
+            // Assert — 新旧域名均在白名单中（幂等整体替换，无累积/丢失）
+            var whitelist = UrlValidator.GetAllowedDomains();
+            whitelist.Should().Contain("api.example.com");
+            whitelist.Should().Contain("cdn.example.com");
+        }
+        finally
+        {
+            // UrlValidator 为静态共享状态，清理避免影响其他测试
+            UrlValidator.ConfigureAllowedDomains(Array.Empty<string>());
+        }
+    }
+
     [Fact]
     public void AddMudHttpClientsFromConfiguration_WithNullServices_ThrowsArgumentNullException()
     {

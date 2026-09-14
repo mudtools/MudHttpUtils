@@ -81,4 +81,49 @@ public class TokenRecoveryExecutorTests
         retryRequest.Method.Should().Be(HttpMethod.Post);
         retryRequest.RequestUri.Should().Be(new Uri("https://api.example.com/api/resource"));
     }
+
+    /// <summary>
+    /// P1.7（TK-12）请求体"先限流后缓冲"：Content-Length 超过 10MB 的请求体应被直接跳过，
+    /// 不进入内存缓冲，因此 401 恢复的重试请求不会携带原始请求体。
+    /// </summary>
+    [Fact]
+    public async Task LargeBody_ShouldNotBufferTwice()
+    {
+        var mockTokenManager = new Mock<ITokenManager>();
+        mockTokenManager
+            .Setup(m => m.InvalidateTokenAsync(It.IsAny<string[]>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(TokenResult.Empty);
+        mockTokenManager
+            .Setup(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("new-token");
+        var executor = new TokenRecoveryExecutor(mockTokenManager.Object);
+
+        // 构造一个声明大小超过 10MB 的请求
+        var request = new HttpRequestMessage(HttpMethod.Post, "https://api.example.com/upload");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "old-token");
+        request.Content = new ByteArrayContent(new byte[11 * 1024 * 1024]); // 11MB
+
+        var retryWithBodyCount = 0;
+        var first = true;
+
+        HttpResponseMessage Send(HttpRequestMessage req)
+        {
+            if (first)
+            {
+                first = false;
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            }
+            if (req.Content != null)
+                Interlocked.Increment(ref retryWithBodyCount);
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        }
+
+        var response = await executor.ExecuteAsync(
+            request,
+            (req, ct) => Task.FromResult(Send(req)),
+            CancellationToken.None).ConfigureAwait(false);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        retryWithBodyCount.Should().Be(0, "超过 10MB 的请求体不应被缓冲进重试请求");
+    }
 }

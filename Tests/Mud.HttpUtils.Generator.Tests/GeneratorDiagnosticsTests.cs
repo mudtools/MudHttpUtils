@@ -102,6 +102,84 @@ namespace TestNamespace
 
     #endregion
 
+    #region HTTPCLIENT020 - [Retry] on non-idempotent method without AllowNonIdempotent
+
+    [Fact]
+    public void Generator_WithRetryOnPostWithoutAllowNonIdempotent_GeneratesHTTPCLIENT020()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Post(""/orders"")]
+        [Retry(3, 1000)]
+        Task<string> CreateOrderAsync();
+    }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        diagnostics.Should().Contain(d => d.Id == "HTTPCLIENT020");
+        var diagnostic = diagnostics.First(d => d.Id == "HTTPCLIENT020");
+        diagnostic.Severity.Should().Be(DiagnosticSeverity.Warning);
+    }
+
+    [Fact]
+    public void Generator_WithRetryOnPostWithAllowNonIdempotent_NoHTTPCLIENT020()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Post(""/orders"")]
+        [Retry(3, 1000, AllowNonIdempotent = true)]
+        Task<string> CreateOrderAsync();
+    }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        diagnostics.Should().NotContain(d => d.Id == "HTTPCLIENT020");
+    }
+
+    [Fact]
+    public void Generator_WithRetryOnGetWithoutAllowNonIdempotent_NoHTTPCLIENT020()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Get(""/data"")]
+        [Retry(3, 1000)]
+        Task<string> GetDataAsync();
+    }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        diagnostics.Should().NotContain(d => d.Id == "HTTPCLIENT020");
+    }
+
+    #endregion
+
     #region No Diagnostics for Valid Interface
 
     [Fact]
@@ -156,6 +234,151 @@ namespace TestNamespace
 
     #endregion
 
+    #region HTTPCLIENT022 - Path/HmacSignature token injection mode lacks recovery capability (P3.3 / TK-18)
+
+    [Fact]
+    public void Generator_WithPathInjectionMode_GeneratesHTTPCLIENT022()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    [HttpClientApi(TokenManage = ""ITestTokenManager"")]
+    [Token(TokenType = ""AccessToken"", InjectionMode = TokenInjectionMode.Path)]
+    public interface ITestApi
+    {
+        [Get(""/data"")]
+        Task<string> GetDataAsync();
+    }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        var diag = diagnostics.Should().ContainSingle(d => d.Id == "HTTPCLIENT022").Subject;
+        diag.Severity.Should().Be(DiagnosticSeverity.Warning);
+    }
+
+    [Fact]
+    public void Generator_WithHmacSignatureInjectionMode_GeneratesHTTPCLIENT022()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    [HttpClientApi(TokenManage = ""ITestTokenManager"")]
+    [Token(TokenType = ""AccessToken"", InjectionMode = TokenInjectionMode.HmacSignature)]
+    public interface ITestApi
+    {
+        [Get(""/data"")]
+        Task<string> GetDataAsync();
+    }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        diagnostics.Should().Contain(d => d.Id == "HTTPCLIENT022");
+    }
+
+    [Fact]
+    public void Generator_WithHeaderInjectionMode_NoHTTPCLIENT022()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    [HttpClientApi(TokenManage = ""ITestTokenManager"")]
+    [Token]
+    public interface ITestApi
+    {
+        [Get(""/data"")]
+        Task<string> GetDataAsync();
+    }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        diagnostics.Should().NotContain(d => d.Id == "HTTPCLIENT022");
+    }
+
+    #endregion
+
+    #region AOT006 - [HttpJsonSerializable] not covered by any JsonSerializerContext
+
+    // [F6] AOT006 已迁出生成管道，由独立 DiagnosticAnalyzer（HttpJsonSerializableCoverageAnalyzer）
+    // 在编译分析阶段报告。此处保留「生成器不再产出 AOT006」的断言（防回归），
+    // 其实际诊断逻辑与恰好 1 条的行为由 AotDtoCoverageAnalyzerTests.Analyzer_* 覆盖。
+
+    [Fact]
+    public void Generator_WithHttpJsonSerializableButNoContext_DoesNotReportAOT006FromGenerator()
+    {
+        var source = @"
+using Mud.HttpUtils.Attributes;
+namespace TestNamespace
+{
+    [HttpJsonSerializable]
+    public class UserDto { public string Name { get; set; } }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        diagnostics.Should().NotContain(d => d.Id == "AOT006",
+            "AOT006 已由独立分析器承载，生成器不应再报告（F6）");
+    }
+
+    [Fact]
+    public void Generator_WithHttpJsonSerializableCoveredByContext_NoAOT006FromGenerator()
+    {
+        var source = @"
+using Mud.HttpUtils.Attributes;
+using System.Text.Json.Serialization;
+namespace TestNamespace
+{
+    [HttpJsonSerializable]
+    public class UserDto { public string Name { get; set; } }
+
+    [JsonSourceGenerationOptions]
+    [JsonSerializable(typeof(UserDto))]
+    internal partial class AppJsonContext : JsonSerializerContext
+    {
+    }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        diagnostics.Should().NotContain(d => d.Id == "AOT006");
+    }
+
+    #endregion
+
     // ============================================================
     // NEW-GEN-14：生成器异常完整堆栈输出
     // ============================================================
@@ -193,6 +416,160 @@ namespace TestNamespace
         // 若未来能确定性触发 HttpClientApiGenerationError 诊断，可在此通过编译边缘场景接口
         // 并验证诊断消息包含 ex.ToString() 输出的格式（如包含堆栈跟踪关键词 "at " 或异常类型全名）
     }
+
+    #region F7 - 注册代码命名空间安全化
+
+    [Fact]
+    public void Registration_InvalidAssemblyName_FallsBackToSafeNamespace()
+    {
+        // F7：AssemblyName 含 '-' 等非法标识符字符时，注册代码 namespace 必须回退到
+        // Microsoft.Extensions.DependencyInjection，不得产出非法 C#。
+        var source = """
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi]
+                public interface IApi
+                {
+                    [Get("/users")]
+                    System.Threading.Tasks.Task<string> GetUsersAsync();
+                }
+            }
+            """;
+
+        var compilation = CSharpCompilation.Create(
+            "my-lib",
+            [CSharpSyntaxTree.ParseText(source)],
+            BasicReferenceAssemblies.GetReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var generator = new HttpInvokeRegistrationGenerator();
+        CSharpGeneratorDriver.Create(generator)
+            .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
+
+        var generated = outputCompilation.SyntaxTrees.Skip(1).FirstOrDefault()?.ToString();
+
+        generated.Should().NotBeNullOrEmpty();
+        generated.Should().NotContain("namespace my-lib", "非法 AssemblyName 不得直接替换进 namespace");
+        generated.Should().Contain("namespace Microsoft.Extensions.DependencyInjection",
+            "非法 AssemblyName 应回退到安全的 DI 命名空间");
+    }
+
+    [Fact]
+    public void Registration_GlobalNamespaceInterface_ReportsError()
+    {
+        // F7：全局命名空间接口无法生成合法 DI 注册代码（global::.IApi 不合法），必须报 HTTPCLIENTREG001。
+        var source = """
+            using Mud.HttpUtils.Attributes;
+
+            [HttpClientApi]
+            public interface IApi
+            {
+                [Get("/users")]
+                System.Threading.Tasks.Task<string> GetUsersAsync();
+            }
+            """;
+
+        var compilation = CSharpCompilation.Create(
+            "TestAssembly",
+            [CSharpSyntaxTree.ParseText(source)],
+            BasicReferenceAssemblies.GetReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var generator = new HttpInvokeRegistrationGenerator();
+        var driver = CSharpGeneratorDriver.Create(generator).RunGenerators(compilation);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        var regDiagnostics = driver.GetRunResult().Diagnostics.Where(d => d.Id == "HTTPCLIENTREG001").ToList();
+        regDiagnostics.Should().ContainSingle();
+        regDiagnostics.Single().GetMessage().IndexOf("全局命名空间", StringComparison.Ordinal).Should().BeGreaterThanOrEqualTo(0,
+            "HTTPCLIENTREG001 消息应包含全局命名空间的迁移指引");
+    }
+
+    #endregion
+
+    #region F14 - ref/out/params/指针参数校验
+
+    [Theory]
+    [InlineData("ref int id")]
+    [InlineData("out string value")]
+    [InlineData("in int pinned")]
+    [InlineData("params string[] tags")]
+    public void Generator_WithUnsupportedParameterModifier_ReportsHTTPCLIENT004(string parameter)
+    {
+        var source = $$"""
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi]
+                public interface ITestApi
+                {
+                    [Post("/data")]
+                    Task<string> PostAsync([Body] string body, {{parameter}});
+                }
+            }
+            """;
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        var relevant = diagnostics.Where(d => d.Id == "HTTPCLIENT004").ToList();
+        relevant.Should().ContainSingle("{{parameter}} 应被 HTTPCLIENT004 拒绝");
+    }
+
+    [Fact]
+    public void Generator_WithPointerParameter_ReportsHTTPCLIENT004()
+    {
+        var source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi]
+                public interface ITestApi
+                {
+                    [Post("/data")]
+                    unsafe Task<string> PostAsync([Body] string body, int* ptr);
+                }
+            }
+            """;
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        var relevant = diagnostics.Where(d => d.Id == "HTTPCLIENT004").ToList();
+        relevant.Should().ContainSingle("指针参数应被 HTTPCLIENT004 拒绝");
+    }
+
+    [Fact]
+    public void Generator_WithoutUnsupportedModifiers_NoHTTPCLIENT004()
+    {
+        var source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi]
+                public interface ITestApi
+                {
+                    [Get("/users/{id}")]
+                    Task<string> GetAsync([Path] int id);
+                }
+            }
+            """;
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        diagnostics.Should().NotContain(d => d.Id == "HTTPCLIENT004");
+    }
+
+    #endregion
 
     /// <summary>
     /// 捕获 Trace.WriteLine 的输出内容，用于验证 GeneratorDebugLogger.LogError 的行为。

@@ -30,6 +30,16 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 
 > `IEnhancedHttpClient` 是 `IBaseHttpClient`、`IJsonHttpClient`、`IXmlHttpClient`、`IEncryptableHttpClient` 的组合接口，提供完整的 HTTP 客户端能力。新增 `WithBaseAddress` 方法支持运行时动态切换基地址，`BaseAddress` 属性获取当前基地址。`IFormContent` 用于 multipart/form-data 场景，支持通过 `IProgress<long>` 报告上传进度。`IEnhancedHttpClientFactory` 用于按名称创建或获取缓存的 `IEnhancedHttpClient` 实例，在 .NET 8+ 上通过 Keyed Service 解析。
 
+### HTTP 内容序列化器接口
+
+| 类型 | 说明 |
+| ---- | ---- |
+| `IHttpContentSerializer` | HTTP 内容序列化器抽象，统一封装请求体序列化、响应反序列化、NDJSON 流式解析、加密内容序列化等全部 JSON 操作，不再直接调用 `JsonSerializer` |
+| `IQueryParameter` | AOT 兼容查询参数接口，配合 `QueryParameterBuilder` 在编译期构建 URL 查询字符串，避免运行时反射 |
+| `QueryParameterBuilder` | 查询参数构建器，提供流式 API 构建 URL 查询字符串 |
+
+> `IHttpContentSerializer` 是 Mud.HttpUtils 序列化的统一入口。所有 JSON 序列化/反序列化（请求体、响应、加密内容、NDJSON 逐行解析等）均通过此抽象进行，默认实现 `SystemTextJsonContentSerializer`（位于 `Mud.HttpUtils.Client`）行为等价于直接调用 `JsonSerializer`，保证向后兼容。消费方可注入自定义实现以切换序列化引擎（如 Newtonsoft.Json / XML）。`IHttpContentSerializer` 是 Native AOT 友好的关键设计：AOT 路径下由源生成器在编译期提供字段名映射，绕过 `GetFieldNameForProperty` 的反射读取。
+
 ### HTTP 拦截器与缓存接口
 
 | 接口                       | 说明                                              |
@@ -73,9 +83,19 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 | 类型                   | 说明                                                            |
 | ---------------------- | --------------------------------------------------------------- |
 | `IEncryptionProvider`  | 加密提供程序接口，定义 `Encrypt` 和 `Decrypt` 方法              |
-| `AesEncryptionOptions` | AES 加密配置选项，包含 `Key` 属性和 `Validate()` 验证方法（`IV` 已废弃，v1.8.0 起自动随机生成） |
+| `AesEncryptionOptions` | AES 加密配置选项，包含 `Key` 属性、`RequireCrossRuntimePortable` 属性和 `Validate()` 验证方法（`IV` 已移除（CFG-27），v1.8.0 起自动随机生成） |
 
 > `AesEncryptionOptions` 支持通过配置文件绑定（配置节名称：`MudHttpAesEncryption`），密钥长度支持 AES-128（16 字节）、AES-192（24 字节）、AES-256（32 字节）。
+>
+> `DefaultAesEncryptionProvider` **始终使用认证加密**，密文首字节为信封版本前缀，解密仅按该前缀分派（与配置无关）：
+>
+> | 版本 | 布局 | 产出条件 | 可在哪些目标框架解密 |
+> | :--- | :--- | :--- | :--- |
+> | `0x02` | `[0x02][nonce(12)][tag(16)][密文]`（AesGcm） | net8.0/net10.0 且 `AesGcm.IsSupported` 且 `RequireCrossRuntimePortable=false`（默认） | 仅 net8.0+ |
+> | `0x03` | `[0x03][IV(16)][MAC(32)][密文]`（CBC + HMAC-SHA256，Encrypt-then-MAC） | 其余运行时；或 `RequireCrossRuntimePortable=true` | 全部（ns2.0/net6/net8/net10） |
+>
+> 版本字节 `0x00`（保留哨兵）与 `0x01`（v1 裸 CBC，路径已移除）**永不复用**；`0x04`~`0xFF` 预留给未来扩展。
+> 若密文需跨进程传输到低版本目标框架的服务，请在加密侧设置 `RequireCrossRuntimePortable = true`。
 >
 > 通过 `AddMudHttpAesEncryptionFromConfiguration` 扩展方法（位于 `Mud.HttpUtils.Client` 包）从 `IConfiguration` 一键注册：
 >
@@ -399,10 +419,21 @@ TokenInjectionMode (Header, Query, Path, ApiKey, HmacSignature, BasicAuth, Cooki
 TokenTypes (常量: TenantAccessToken, UserAccessToken, Bearer, Basic)
 Response<T> (StatusCode, Content, RawContent, ErrorContent, ResponseHeaders, IsSuccessStatusCode, GetContentOrThrow)
 ApiException (StatusCode, ErrorContent)
-AesEncryptionOptions (Key, Validate) — IV 已废弃，v1.8.0 起自动随机生成
+AesEncryptionOptions (Key, RequireCrossRuntimePortable, Validate) — IV 已移除（CFG-27），v1.8.0 起自动随机生成；始终认证加密
 TokenRefreshBackgroundOptions (Enabled, RefreshIntervalSeconds, RetryDelaySeconds, StopOnError)
 [UserTokenCacheOptions — 位于 Mud.HttpUtils.Client]
 ```
+
+## Native AOT 支持
+
+Mud.HttpUtils 全面支持 .NET Native AOT 编译，核心设计目标是**编译期确定 JSON 元数据、运行期零反射兜底**：
+
+- **序列化抽象 `IHttpContentSerializer`**：所有 JSON 操作经统一抽象进行，AOT 路径下由源生成器在编译期提供字段名映射，避免运行时反射。
+- **AOT 兼容查询参数**：`IQueryParameter` / `QueryParameterBuilder` 在编译期构建 URL 查询字符串。
+- **JSON 源生成上下文**：消费方通过 `[HttpJsonSerializable]`（见 `Mud.HttpUtils.Attributes`）标注实体/DTO，并用 `JsonContextScaffolder` 脚手架（`Mud.HttpUtils.JsonContextScaffolder` 工具）自动生成 `JsonSerializerContext`，或手动注册到 `JsonSerializerContext` 后通过 `AddMudHttpClientJsonContext`（.NET 8+）接入合并。
+- **编译期诊断**：源生成器会发出 `AOT001`–`AOT007` 系列诊断（部分可由 `Mud.HttpUtils.CodeFixes` 代码修复器一键修复），在 CI 严格模式（`-p:AotStrictMode=true`）下升级为 Error，强制消费方构建必须接入 Context，避免 AOT 下漏元数据导致运行时失败。
+
+> 详细工作流与脚手架用法参见 [`Mud.HttpUtils.JsonContextScaffolder` 工具文档](../Tools/Mud.HttpUtils.JsonContextScaffolder/README.md) 与 [`Mud.HttpUtils.Generator` 文档](../Mud.HttpUtils.Generator/README.md) 的「AOT JSON 序列化诊断」章节。
 
 ## 设计原则
 

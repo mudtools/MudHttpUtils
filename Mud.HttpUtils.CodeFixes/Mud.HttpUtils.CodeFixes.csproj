@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>netstandard2.0</TargetFramework>
+		<Description>Mud HttpUtils CodeFixes 为源生成器诊断提供自动修复功能。</Description>
+		<PackageTags>HttpUtils;HttpClient;Roslyn;CodeFix;CodeFixProvider;Mud HttpUtils</PackageTags>
+		<Product>Mud Http Utils Code Fixes</Product>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<GenerateDocumentationFile>True</GenerateDocumentationFile>
+		<AssemblyName>Mud.HttpUtils.CodeFixes</AssemblyName>
+		<IsRoslynComponent>true</IsRoslynComponent>
+		<AnalysisLevel>6.0-all</AnalysisLevel>
+		<!-- 与 Mud.HttpUtils.Generator 保持同一 Roslyn 扩展规则基线（诊断元数据规范性由该开关统一管控）。 -->
+		<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+		<!-- 合并到 Mud.HttpUtils.Generator NuGet 包中分发，不再单独打包 -->
+		<IsPackable>false</IsPackable>
+		<IncludeBuildOutput>false</IncludeBuildOutput>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.11.0" PrivateAssets="all" />
+		<PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="5.6.0">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+	</ItemGroup>
+
+	<!-- 诊断 ID 单一事实来源（源码共享，非程序集引用）。
+	     原因：本程序集引用 Microsoft.CodeAnalysis.CSharp.Workspaces，不可以引用
+	     Mud.HttpUtils.Generator（编译器扩展不得与 Workspaces 同程序集）；以源码链接方式
+	     让两侧共享同一份 ID 常量，ID 变更时编译期同时生效。 -->
+	<ItemGroup>
+		<Compile Include="..\Mud.HttpUtils.Generator\DiagnosticIds.cs" Link="DiagnosticIds.cs" />
+	</ItemGroup>
+
+</Project>

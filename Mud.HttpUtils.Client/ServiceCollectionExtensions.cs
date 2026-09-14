@@ -12,7 +12,9 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Mud.HttpUtils.Client;
+using System.Text.Json;
 #if NET6_0_OR_GREATER
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Hosting;
 #endif
 
@@ -72,6 +74,48 @@ public static class HttpClientServiceCollectionExtensions
         return httpClientBuilder;
     }
 
+    /// <summary>
+    /// 注册 SSRF 防护的 IP 准入策略（M2-#8）。默认注册 <see cref="DefaultIpAddressPolicy"/>（拒绝私网/回环/链路本地地址，fail-closed）；
+    /// 如需放行特定网段（如本地调试的 localhost），请自行注册 <see cref="IIpAddressPolicy"/> 替换。
+    /// </summary>
+    /// <remarks>
+    /// 本方法仅注册策略，不改变任何 HttpClient 行为。如需<b>连接期校验</b>（在建立 TCP 连接时对实际建连 IP 执行准入校验，
+    /// 根治 DNS rebinding TOCTOU），请在 <see cref="IHttpClientBuilder"/> 上继续调用
+    /// <see cref="AddMudHttpClientSsrfProtection(IHttpClientBuilder)"/>（net6.0+）。
+    /// </remarks>
+    /// <param name="services">服务集合。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    public static IServiceCollection AddMudHttpClientSsrfProtection(this IServiceCollection services)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        services.TryAddSingleton<IIpAddressPolicy, DefaultIpAddressPolicy>();
+        return services;
+    }
+
+#if NET6_0_OR_GREATER
+    /// <summary>
+    /// 为命中的 HttpClient 启用连接期 SSRF 校验（M2-#8.2，net6.0+）：在建立 TCP 连接时对实际建连的 IP 执行
+    /// <see cref="IIpAddressPolicy.IsAllowed"/> 准入校验，根治 DNS rebinding TOCTOU（URL 校验期与建连期解析结果可能不一致）。
+    /// </summary>
+    /// <remarks>
+    /// 需先注册 <see cref="IIpAddressPolicy"/>（可经 <see cref="AddMudHttpClientSsrfProtection(IServiceCollection)"/>
+    /// 注册默认策略）。被策略拒绝的连接将抛出 <see cref="InvalidOperationException"/>。
+    /// </remarks>
+    /// <param name="builder">HttpClient 构建器。</param>
+    /// <returns><see cref="IHttpClientBuilder"/>（链式调用）。</returns>
+    public static IHttpClientBuilder AddMudHttpClientSsrfProtection(this IHttpClientBuilder builder)
+    {
+        if (builder == null)
+            throw new ArgumentNullException(nameof(builder));
+
+        builder.ConfigurePrimaryHttpMessageHandler(sp =>
+            new SsrfSafeSocketsHttpHandler(sp.GetRequiredService<IIpAddressPolicy>()));
+        return builder;
+    }
+#endif
+
     private static void RegisterNamedClient(
         IServiceCollection services,
         string clientName,
@@ -100,6 +144,14 @@ public static class HttpClientServiceCollectionExtensions
         }
 
         services.TryAddTransient<IBaseHttpClient>(sp => sp.GetRequiredService<IEnhancedHttpClient>());
+        // 注册 IHttpContentSerializer：全量收敛的序列化抽象层。
+        // 阶段 A3：经由 HttpContentSerializerFactory.CreateDefault 合并 MudHttpJsonContext.Default，
+        // 修复原注册未合并库解析器的不一致（原仅 new SystemTextJsonContentSerializer(jsonOptions?.Value)）。
+        services.TryAddSingleton<IHttpContentSerializer>(sp =>
+        {
+            var jsonOptions = sp.GetService<IOptions<JsonSerializerOptions>>();
+            return HttpContentSerializerFactory.CreateDefault(jsonOptions?.Value);
+        });
         // 注册 IHttpRequestExecutor：执行器为无状态设计，IBaseHttpClient 通过方法参数逐次传递。
         // HC-04 修复：从 Transient 升级为 Singleton，避免无状态服务在每次解析时重复创建实例。
         // 依赖项（IHttpResponseCache、IResiliencePolicyResolver 等）均为 Singleton，生命周期匹配。
@@ -110,9 +162,33 @@ public static class HttpClientServiceCollectionExtensions
             var resilienceResolver = sp.GetService<IResiliencePolicyResolver>();
             var appResilienceResolver = sp.GetService<IAppResiliencePolicyResolver>();
             var appContextHolder = sp.GetService<IAppContextHolder>();
-            return new DefaultHttpRequestExecutor(logger ?? NullLogger<DefaultHttpRequestExecutor>.Instance, cacheProvider, resilienceResolver, appResilienceResolver, appContextHolder);
+            var contentSerializer = sp.GetService<IHttpContentSerializer>();
+            // Phase 2 (T2.1)：从 DI 解析异常擦除器（用户可通过 services.AddSingleton<IExceptionRedactor>() 注册）
+            var exceptionRedactor = sp.GetService<IExceptionRedactor>();
+            // M2-#18：从 DI 解析敏感数据掩码器（与 EnhancedHttpClient 的日志脱敏共用同一注册）
+            var sensitiveDataMasker = sp.GetService<ISensitiveDataMasker>();
+            // Phase 2 (T2.2/T2.3)：从 IOptions<EnhancedHttpClientOptions> 读取配置（如果已注册）
+            var enhancedOptions = sp.GetService<IOptions<EnhancedHttpClientOptions>>()?.Value;
+            return new DefaultHttpRequestExecutor(
+                logger ?? NullLogger<DefaultHttpRequestExecutor>.Instance,
+                cacheProvider, resilienceResolver, appResilienceResolver,
+                appContextHolder, contentSerializer,
+                exceptionRedactor: exceptionRedactor,
+                maxExceptionContentLength: enhancedOptions?.MaxExceptionContentLength,
+                captureRequestContent: enhancedOptions?.CaptureRequestContent ?? false,
+                // N-2：成功响应体守卫与 EnhancedHttpClient 路径同源同语义
+                maxSuccessResponseBytes: enhancedOptions?.MaxSuccessResponseBytes ?? 0,
+                sensitiveDataMasker: sensitiveDataMasker,
+#if NET6_0_OR_GREATER
+                httpVersion: enhancedOptions?.HttpVersion,
+                httpVersionPolicy: enhancedOptions?.HttpVersionPolicy,
+#endif
+                httpRequestMessageOptions: enhancedOptions?.HttpRequestMessageOptions);
         });
         services.TryAddSingleton<IHttpClientResolver, HttpClientResolver>();
+        // 注册 URL 参数格式化器（Phase 4.3）
+        services.TryAddSingleton<IUrlParameterFormatter, DefaultUrlParameterFormatter>();
+        services.TryAddSingleton<IUrlParameterKeyFormatter, CamelCaseUrlParameterKeyFormatter>();
     }
 
     /// <summary>
@@ -164,6 +240,12 @@ public static class HttpClientServiceCollectionExtensions
     /// builder.Services.AddMudHttpAesEncryptionFromConfiguration(builder.Configuration);
     /// </code>
     /// </example>
+#if NET6_0_OR_GREATER
+    [RequiresUnreferencedCode("IConfiguration 绑定使用反射。AOT 场景请改用 AddMudHttpAesEncryption(Action<AesEncryptionOptions>) 委托式重载。")]
+#endif
+#if NET7_0_OR_GREATER
+    [RequiresDynamicCode("IConfiguration 绑定使用运行时反射，Native AOT 不支持。AOT 场景请改用委托式重载。")]
+#endif
     public static IServiceCollection AddMudHttpAesEncryptionFromConfiguration(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -175,6 +257,40 @@ public static class HttpClientServiceCollectionExtensions
             throw new ArgumentNullException(nameof(configuration));
 
         services.Configure<AesEncryptionOptions>(configuration.GetSection(sectionPath));
+        // 注册校验器，在选项绑定时验证密钥长度有效性，使无效密钥在启动时即被检测
+        services.TryAddSingleton<IValidateOptions<AesEncryptionOptions>, AesEncryptionOptionsValidator>();
+        services.TryAddSingleton<IEncryptionProvider, DefaultAesEncryptionProvider>();
+        return services;
+    }
+
+    /// <summary>
+    /// 以编程式委托配置 AES 加密选项，并注册 <see cref="IEncryptionProvider"/>（AOT 友好，CFG-26）。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="AddMudHttpAesEncryptionFromConfiguration"/> 等价，但不使用 <c>IConfiguration</c> 反射绑定，
+    /// 因此可用于 Native AOT 场景（后者消息中引用的正是本重载）。
+    /// </remarks>
+    /// <param name="services">服务集合。</param>
+    /// <param name="configure">配置 AES 加密选项的委托（可选）。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> 为 null 时抛出。</exception>
+    public static IServiceCollection AddMudHttpAesEncryption(
+        this IServiceCollection services,
+        Action<AesEncryptionOptions>? configure = null)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        if (configure != null)
+        {
+            services.Configure(configure);
+        }
+        else
+        {
+            services.AddOptions<AesEncryptionOptions>();
+        }
+
+        services.TryAddSingleton<IValidateOptions<AesEncryptionOptions>, AesEncryptionOptionsValidator>();
         services.TryAddSingleton<IEncryptionProvider, DefaultAesEncryptionProvider>();
         return services;
     }
@@ -245,6 +361,12 @@ public static class HttpClientServiceCollectionExtensions
     /// <param name="configurationSectionPath">配置节点路径，默认 "TokenRefreshBackground"。</param>
     /// <returns>服务集合（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+#if NET6_0_OR_GREATER
+    [RequiresUnreferencedCode("IConfiguration 绑定使用反射。AOT 场景请改用 AddTokenRefreshBackgroundService(Action<TokenRefreshBackgroundOptions>) 委托式重载。")]
+#endif
+#if NET7_0_OR_GREATER
+    [RequiresDynamicCode("IConfiguration 绑定使用运行时反射，Native AOT 不支持。AOT 场景请改用委托式重载。")]
+#endif
     public static IServiceCollection AddTokenRefreshBackgroundService(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -312,6 +434,9 @@ public static class HttpClientServiceCollectionExtensions
         services.TryAddSingleton<IHttpResponseCache>(sp =>
             new MemoryHttpResponseCache(maxCacheSize, cleanupIntervalSeconds));
 
+        // CFG-16：登记显式注册标记，供 MudHttpClientApplicationOptionsPostConfigure 检测与配置节的双入口冲突。
+        services.TryAddSingleton<ExplicitResponseCacheRegistration>();
+
         return services;
     }
 
@@ -332,7 +457,11 @@ public static class HttpClientServiceCollectionExtensions
     /// services.AddSensitiveDataMasker&lt;CustomSensitiveDataMasker&gt;();
     /// </code>
     /// </example>
-    public static IServiceCollection AddSensitiveDataMasker<TMasker>(
+    public static IServiceCollection AddSensitiveDataMasker<
+#if NET6_0_OR_GREATER
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+#endif
+        TMasker>(
         this IServiceCollection services)
         where TMasker : class, ISensitiveDataMasker
     {
@@ -350,13 +479,28 @@ public static class HttpClientServiceCollectionExtensions
     /// <returns>服务集合（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
     /// <remarks>
-    /// 此方法注册 <see cref="DefaultSensitiveDataMasker"/> 作为默认的敏感数据掩码器实现。
+    /// 此方法注册 <see cref="AotSafeSensitiveDataMasker"/> 作为默认的敏感数据掩码器实现（AOT 安全）。
     /// 敏感数据掩码器用于在日志记录和错误消息中隐藏敏感信息（如密码、令牌、密钥等）。
+    /// <para>
+    /// <b>Native AOT 注意</b>：<see cref="AotSafeSensitiveDataMasker"/> 使用编译期字典式注册，
+    /// 消费方须通过 <c>Register&lt;T&gt;</c> 方法注册需要脱敏的 DTO 类型。
+    /// 未注册的类型将返回 <c>[TypeName]</c> 而非真正脱敏。
+    /// 如需使用反射遍历属性的原有行为（非 AOT 场景），请使用
+    /// <c>AddSensitiveDataMasker&lt;DefaultSensitiveDataMasker&gt;()</c>。
+    /// </para>
     /// </remarks>
     /// <example>
     /// <code>
-    /// // 注册默认敏感数据掩码器
+    /// // 注册 AOT 安全的默认敏感数据掩码器
     /// services.AddSensitiveDataMasker();
+    ///
+    /// // 注册后配置脱敏规则
+    /// services.AddSingleton&lt;ISensitiveDataMasker&gt;(sp =>
+    /// {
+    ///     var masker = new AotSafeSensitiveDataMasker();
+    ///     masker.Register&lt;UserDto&gt;(obj => /* ... */);
+    ///     return masker;
+    /// });
     /// </code>
     /// </example>
     public static IServiceCollection AddSensitiveDataMasker(
@@ -365,7 +509,7 @@ public static class HttpClientServiceCollectionExtensions
         if (services == null)
             throw new ArgumentNullException(nameof(services));
 
-        services.TryAddSingleton<ISensitiveDataMasker, DefaultSensitiveDataMasker>();
+        services.TryAddSingleton<ISensitiveDataMasker, AotSafeSensitiveDataMasker>();
         return services;
     }
 
@@ -386,7 +530,11 @@ public static class HttpClientServiceCollectionExtensions
     /// services.AddHmacSignatureProvider&lt;CustomHmacSignatureProvider&gt;();
     /// </code>
     /// </example>
-    public static IServiceCollection AddHmacSignatureProvider<TProvider>(
+    public static IServiceCollection AddHmacSignatureProvider<
+#if NET6_0_OR_GREATER
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+#endif
+        TProvider>(
         this IServiceCollection services)
         where TProvider : class, IHmacSignatureProvider
     {
@@ -440,7 +588,11 @@ public static class HttpClientServiceCollectionExtensions
     /// services.AddApiKeyProvider&lt;CustomApiKeyProvider&gt;();
     /// </code>
     /// </example>
-    public static IServiceCollection AddApiKeyProvider<TProvider>(
+    public static IServiceCollection AddApiKeyProvider<
+#if NET6_0_OR_GREATER
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+#endif
+        TProvider>(
         this IServiceCollection services)
         where TProvider : class, IApiKeyProvider
     {
@@ -494,7 +646,11 @@ public static class HttpClientServiceCollectionExtensions
     /// services.AddTokenProvider&lt;CustomTokenProvider&gt;();
     /// </code>
     /// </example>
-    public static IServiceCollection AddTokenProvider<TProvider>(
+    public static IServiceCollection AddTokenProvider<
+#if NET6_0_OR_GREATER
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+#endif
+        TProvider>(
         this IServiceCollection services)
         where TProvider : class, ITokenProvider
     {
@@ -550,7 +706,11 @@ public static class HttpClientServiceCollectionExtensions
     /// services.AddCurrentUserContext&lt;CustomUserContext&gt;();
     /// </code>
     /// </example>
-    public static IServiceCollection AddCurrentUserContext<TContext>(
+    public static IServiceCollection AddCurrentUserContext<
+#if NET6_0_OR_GREATER
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+#endif
+        TContext>(
         this IServiceCollection services)
         where TContext : class, ICurrentUserContext
     {
@@ -594,13 +754,21 @@ public static class HttpClientServiceCollectionExtensions
         var factory = sp.GetRequiredService<IHttpClientFactory>();
         var encryptionProvider = sp.GetService<IEncryptionProvider>();
 
-        var options = new EnhancedHttpClientOptions
-        {
-            Logger = sp.GetService<ILogger<HttpClientFactoryEnhancedClient>>(),
-            RequestInterceptors = sp.GetServices<IHttpRequestInterceptor>(),
-            ResponseInterceptors = sp.GetServices<IHttpResponseInterceptor>(),
-            SensitiveDataMasker = sp.GetService<ISensitiveDataMasker>()
-        };
+        // CFG-01：以编程式配置（IOptions<EnhancedHttpClientOptions>）为基线克隆出「每客户端独立实例」，
+        // 修正原实现 new EnhancedHttpClientOptions() 丢弃全部编程式配置（RequestBodySerialization /
+        // UrlResolution / JsonTypeInfoResolver 等静默失效）的反直觉行为。
+        // 克隆（而非直接使用 IOptions.Value）保证后续覆盖不污染共享单例，避免多客户端串味。
+        var options = EnhancedHttpClientOptionsCloner.Clone(
+            sp.GetService<IOptions<EnhancedHttpClientOptions>>()?.Value);
+
+        // DI 解析项覆盖（服务依赖必须来自容器，优先级高于编程式配置）
+        options.Logger = sp.GetService<ILogger<HttpClientFactoryEnhancedClient>>();
+        options.RequestInterceptors = sp.GetServices<IHttpRequestInterceptor>();
+        options.ResponseInterceptors = sp.GetServices<IHttpResponseInterceptor>();
+        options.SensitiveDataMasker = sp.GetService<ISensitiveDataMasker>();
+
+        // CFG-08：强制解析白名单热更新订阅者（惰性单例），确保首个客户端创建时即建立订阅。
+        _ = sp.GetService<AllowedDomainsReloader>();
 
         var optionsMonitor = sp.GetService<IOptionsMonitor<MudHttpClientApplicationOptions>>();
         if (optionsMonitor != null)
@@ -608,11 +776,20 @@ public static class HttpClientServiceCollectionExtensions
             var appOptions = optionsMonitor.CurrentValue;
             if (appOptions.Clients.TryGetValue(clientName, out var clientOptions))
             {
+                // CFG-19：覆盖是单向的（配置节未设置时也会被重置为 false），记录 Debug 便于排查。
+                if (options.AllowCustomBaseUrls != clientOptions.AllowCustomBaseUrls && options.Logger != null)
+                {
+                    MudHttpClientLog.AllowCustomBaseUrlsOverridden(
+                        options.Logger, clientName, clientOptions.AllowCustomBaseUrls, options.AllowCustomBaseUrls);
+                }
                 options.AllowCustomBaseUrls = clientOptions.AllowCustomBaseUrls;
             }
         }
 
-        return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, options);
+        var jsonOptions = sp.GetService<IOptions<JsonSerializerOptions>>();
+        var contentSerializer = sp.GetService<IHttpContentSerializer>();
+
+        return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, options, jsonOptions: jsonOptions, contentSerializer: contentSerializer);
     }
 
     /// <summary>
@@ -646,6 +823,12 @@ public static class HttpClientServiceCollectionExtensions
     /// }
     /// </code>
     /// </remarks>
+#if NET6_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Microsoft.Extensions.Configuration.ConfigurationBinder", "IL2026:RequiresUnreferencedCode",
+        Justification = "配置绑定路径在 AOT 下需通过委托式重载 AddMudHttpClients(Action<MudHttpClientApplicationOptions>) 替代。选项类型的公共属性在 AOT 下不会被裁剪（均为简单类型）。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050:RequiresDynamicCode",
+        Justification = "配置绑定路径在 AOT 下需通过委托式重载替代。")]
+#endif
     public static IServiceCollection AddMudHttpClientsFromConfiguration(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -665,6 +848,10 @@ public static class HttpClientServiceCollectionExtensions
         // 以注册 ConfigurationChangeTokenSource，支持 IOptionsMonitor<T> 热更新。
         services.Configure<MudHttpClientApplicationOptions>(section);
 
+        // CFG-02：启动期校验（DefaultClientName 指向无 BaseAddress 客户端 → Fail）+ 后置警告（其余跳过项）。
+        services.TryAddSingleton<IValidateOptions<MudHttpClientApplicationOptions>, MudHttpClientApplicationOptionsValidator>();
+        services.TryAddSingleton<IPostConfigureOptions<MudHttpClientApplicationOptions>, MudHttpClientApplicationOptionsPostConfigure>();
+
         var options = new MudHttpClientApplicationOptions();
         section.Bind(options);
 
@@ -673,6 +860,10 @@ public static class HttpClientServiceCollectionExtensions
         {
             UrlValidator.ConfigureAllowedDomains(options.AllowedDomains);
         }
+
+        // CFG-08：注册白名单热更新订阅者（首次同步应用 + 变更重放）。
+        // 解析时机见 AllowedDomainsReloader（net6+ 由 IHostedService 包装保证启动期解析）。
+        services.TryAddSingleton<AllowedDomainsReloader>();
 
         foreach (var kvp in options.Clients)
         {
@@ -712,6 +903,12 @@ public static class HttpClientServiceCollectionExtensions
     /// <param name="sectionPath">配置节点路径，默认 <see cref="OAuth2Options.SectionName"/>。</param>
     /// <returns>服务集合（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+#if NET6_0_OR_GREATER
+    [RequiresUnreferencedCode("IConfiguration 绑定使用反射。AOT 场景请改用 AddMudHttpOAuth2(Action<OAuth2Options>) 委托式重载。")]
+#endif
+#if NET7_0_OR_GREATER
+    [RequiresDynamicCode("IConfiguration 绑定使用运行时反射，Native AOT 不支持。AOT 场景请改用委托式重载。")]
+#endif
     public static IServiceCollection AddMudHttpOAuth2FromConfiguration(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -732,6 +929,79 @@ public static class HttpClientServiceCollectionExtensions
     }
 
     /// <summary>
+    /// 以编程式委托配置 OAuth2 选项（AOT 友好，CFG-26）。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="AddMudHttpOAuth2FromConfiguration"/> 等价，但不使用 <c>IConfiguration</c> 反射绑定，
+    /// 因此可用于 Native AOT 场景（后者消息中引用的正是本重载）。
+    /// </remarks>
+    /// <param name="services">服务集合。</param>
+    /// <param name="configure">配置 OAuth2 选项的委托（可选）。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> 为 null 时抛出。</exception>
+    public static IServiceCollection AddMudHttpOAuth2(
+        this IServiceCollection services,
+        Action<OAuth2Options>? configure = null)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        if (configure != null)
+        {
+            services.Configure(configure);
+        }
+        else
+        {
+            services.AddOptions<OAuth2Options>();
+        }
+
+        services.TryAddSingleton<IPostConfigureOptions<OAuth2Options>>(sp =>
+            new OAuth2OptionsPostConfigure(sp.GetService<ILogger<OAuth2OptionsPostConfigure>>()));
+        services.TryAddSingleton<IValidateOptions<OAuth2Options>, OAuth2OptionsValidator>();
+        return services;
+    }
+
+    /// <summary>
+    /// P2.9（TK-24）注册令牌管理器为单例生命周期。
+    /// </summary>
+    /// <typeparam name="TManager">令牌管理器实现类型，必须实现 <see cref="ITokenManager"/>（通常也应实现 <see cref="IUserTokenManager"/>）。</typeparam>
+    /// <param name="services">服务集合。</param>
+    /// <param name="lifetime">注册生命周期，默认 <see cref="Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton"/>。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> 为 null 时抛出。</exception>
+    /// <remarks>
+    /// <para>
+    /// 令牌管理器是有状态组件（持有令牌缓存、单飞行锁、后台刷新定时器），其生命周期应与应用一致，
+    /// 否则将破坏跨请求的令牌缓存与 single-flight 互斥。因此本方法默认强制 <see cref="Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton"/>；
+    /// 仅当你有充分理由（且能保证独立作用域内不共享缓存）时才可显式指定 <see cref="Microsoft.Extensions.DependencyInjection.ServiceLifetime.Scoped"/>。
+    /// </para>
+    /// <para>同时注册为 <see cref="ITokenManager"/>；若 <typeparamref name="TManager"/> 实现 <see cref="IUserTokenManager"/>，
+    /// 也会注册为 <see cref="IUserTokenManager"/>，确保按接口注入两处均解析到同一实例。</para>
+    /// </remarks>
+    public static IServiceCollection AddMudHttpTokenManager<
+#if NET6_0_OR_GREATER
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
+#endif
+        TManager>(
+        this IServiceCollection services,
+        Microsoft.Extensions.DependencyInjection.ServiceLifetime lifetime = Microsoft.Extensions.DependencyInjection.ServiceLifetime.Singleton)
+        where TManager : class, ITokenManager
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        // 令牌管理器必须有状态，默认强制 Singleton。仅显式选择 Scoped/Transient 时按请求生命周期注册。
+        if (typeof(IUserTokenManager).IsAssignableFrom(typeof(TManager)))
+        {
+            services.Add(new Microsoft.Extensions.DependencyInjection.ServiceDescriptor(typeof(IUserTokenManager), typeof(TManager), lifetime));
+        }
+        services.Add(new Microsoft.Extensions.DependencyInjection.ServiceDescriptor(typeof(ITokenManager), typeof(TManager), lifetime));
+        services.Add(new Microsoft.Extensions.DependencyInjection.ServiceDescriptor(typeof(TManager), typeof(TManager), lifetime));
+
+        return services;
+    }
+
+    /// <summary>
     /// 从 IConfiguration 绑定令牌恢复配置。
     /// </summary>
     /// <param name="services">服务集合。</param>
@@ -739,6 +1009,12 @@ public static class HttpClientServiceCollectionExtensions
     /// <param name="sectionPath">配置节点路径，默认 <see cref="TokenRecoveryOptions.SectionName"/>。</param>
     /// <returns>服务集合（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+#if NET6_0_OR_GREATER
+    [RequiresUnreferencedCode("IConfiguration 绑定使用反射。AOT 场景请改用委托式重载或编程式配置。")]
+#endif
+#if NET7_0_OR_GREATER
+    [RequiresDynamicCode("IConfiguration 绑定使用运行时反射，Native AOT 不支持。AOT 场景请改用委托式重载。")]
+#endif
     public static IServiceCollection AddMudHttpTokenRecoveryFromConfiguration(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -767,6 +1043,12 @@ public static class HttpClientServiceCollectionExtensions
     /// <param name="sectionPath">配置节点路径，默认 <see cref="UserTokenCacheOptions.SectionName"/>。</param>
     /// <returns>服务集合（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+#if NET6_0_OR_GREATER
+    [RequiresUnreferencedCode("IConfiguration 绑定使用反射。AOT 场景请改用委托式重载或编程式配置。")]
+#endif
+#if NET7_0_OR_GREATER
+    [RequiresDynamicCode("IConfiguration 绑定使用运行时反射，Native AOT 不支持。AOT 场景请改用委托式重载。")]
+#endif
     public static IServiceCollection AddMudHttpUserTokenCacheFromConfiguration(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -778,6 +1060,143 @@ public static class HttpClientServiceCollectionExtensions
             throw new ArgumentNullException(nameof(configuration));
 
         services.Configure<UserTokenCacheOptions>(configuration.GetSection(sectionPath));
+        return services;
+    }
+
+#if NET8_0_OR_GREATER
+    /// <summary>
+    /// 注册 JSON 序列化上下文（支持 Native AOT），将消费方 <see cref="System.Text.Json.Serialization.JsonSerializerContext"/>
+    /// 合并到全局 <see cref="JsonSerializerOptions"/> 中。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 此扩展方法封装了 <c>services.Configure&lt;JsonSerializerOptions&gt;(o =&gt; o.TypeInfoResolver = JsonTypeInfoResolver.Combine(o.TypeInfoResolver, context))</c>，
+    /// 避免每个消费方手写 Combine 逻辑。
+    /// </para>
+    /// <para>
+    /// 库内置 <see cref="HttpContentSerializerFactory"/> 会自动读取 <c>IOptions&lt;JsonSerializerOptions&gt;</c>
+    /// 中的 <c>TypeInfoResolver</c>，并与库内置 <c>MudHttpJsonContext.Default</c> 合并。
+    /// </para>
+    /// <para>
+    /// 亦可使用 <see cref="AddMudHttpContentSerializer"/> 直接注册带 context 的 <see cref="IHttpContentSerializer"/>，
+    /// 无需经过 <c>IOptions&lt;JsonSerializerOptions&gt;</c> 间接配置。
+    /// </para>
+    /// <para>
+    /// <b>多目标框架守卫</b>：<see cref="System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver"/> 仅在 .NET 8+ 存在。
+    /// 消费方调用此方法时须用 <c>#if NET8_0_OR_GREATER</c> 包裹：
+    /// <code>
+    /// #if NET8_0_OR_GREATER
+    /// services.AddMudHttpClientJsonContext(FeishuJsonContext.Default);
+    /// #endif
+    /// </code>
+    /// </para>
+    /// </remarks>
+    /// <param name="services">服务集合。</param>
+    /// <param name="context">消费方的 JSON 序列化上下文（由 <c>HttpJsonContextScaffolder</c> 产出或手写）。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+    public static IServiceCollection AddMudHttpClientJsonContext(
+        this IServiceCollection services,
+        System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver context)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+        if (context == null)
+            throw new ArgumentNullException(nameof(context));
+
+        services.Configure<JsonSerializerOptions>(o =>
+        {
+            o.TypeInfoResolver = System.Text.Json.Serialization.Metadata.JsonTypeInfoResolver.Combine(o.TypeInfoResolver, context);
+        });
+        return services;
+    }
+
+    /// <summary>
+    /// 直接注册带 <see cref="System.Text.Json.Serialization.JsonSerializerContext"/> 的 <see cref="IHttpContentSerializer"/>，
+    /// 替代 <see cref="AddMudHttpClientJsonContext"/> 的间接配置方式。供生成类场景更直观地注入序列化器。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 此方法直接注册 <see cref="IHttpContentSerializer"/>，内部经由 <see cref="HttpContentSerializerFactory.CreateDefault"/>
+    /// 合并消费方 context resolver 与库内置 <c>MudHttpJsonContext.Default</c>。
+    /// </para>
+    /// <para>
+    /// 与 <see cref="AddMudHttpClientJsonContext"/> 的区别：后者通过 <c>IOptions&lt;JsonSerializerOptions&gt;</c> 间接配置 resolver，
+    /// 而此方法直接创建带 context 的序列化器实例，语义更直观，且不依赖 <c>IOptions&lt;JsonSerializerOptions&gt;</c> 中间层。
+    /// </para>
+    /// <para>
+    /// <b>多目标框架守卫</b>：<see cref="System.Text.Json.Serialization.JsonSerializerContext"/> 仅在 .NET 8+ 存在。
+    /// 消费方调用此方法时须用 <c>#if NET8_0_OR_GREATER</c> 包裹。
+    /// </para>
+    /// </remarks>
+    /// <param name="services">服务集合。</param>
+    /// <param name="context">消费方的 JSON 序列化上下文（由 <c>HttpJsonContextScaffolder</c> 产出或手写）。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+    public static IServiceCollection AddMudHttpContentSerializer(
+        this IServiceCollection services,
+        System.Text.Json.Serialization.JsonSerializerContext context)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+        if (context == null)
+            throw new ArgumentNullException(nameof(context));
+
+        services.TryAddSingleton<IHttpContentSerializer>(_ =>
+            HttpContentSerializerFactory.CreateDefault(context.Options, context));
+        return services;
+    }
+#endif
+
+    /// <summary>
+    /// 注册源生成的 API 客户端基础设施（AOT 安全，无反射回退）。
+    /// </summary>
+    /// <typeparam name="T">标记了 <c>[HttpClientApi]</c> 特性的接口类型。</typeparam>
+    /// <param name="services">服务集合。</param>
+    /// <param name="clientName">Named HttpClient 的名称。</param>
+    /// <param name="configureHttpClient">配置 HttpClient 的委托（可选）。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <remarks>
+    /// <para>
+    /// 此方法为 <b>AOT 严格生成优先</b>入口，不标注 <c>[RequiresUnreferencedCode]</c>，
+    /// 不使用反射回退。注册的基础设施包括：
+    /// <list type="bullet">
+    /// <item><description><see cref="IEnhancedHttpClient"/>（经 IHttpClientFactory 创建）</description></item>
+    /// <item><description><see cref="IBaseHttpClient"/>（指向 IEnhancedHttpClient）</description></item>
+    /// <item><description><see cref="IHttpContentSerializer"/>（SystemTextJsonContentSerializer）</description></item>
+    /// <item><description><see cref="IHttpRequestExecutor"/>（DefaultHttpRequestExecutor）</description></item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// <b>注意</b>：此方法仅注册基础设施。<typeparamref name="T"/> 的实际实现注册由源生成器
+    /// 自动生成的 <c>AddWebApiHttpClient()</c> 方法完成。使用方式：
+    /// <code>
+    /// services.AddMudHttpGeneratedClient&lt;IUserApi&gt;("default", c => c.BaseAddress = new Uri("https://api.example.com"));
+    /// services.AddWebApiHttpClient(); // 源生成器自动生成
+    /// </code>
+    /// </para>
+    /// <para>
+    /// 解析 API 客户端时使用 <see cref="RestService.ForGenerated{T}(IServiceProvider)"/>：
+    /// <code>
+    /// var userApi = RestService.ForGenerated&lt;IUserApi&gt;(serviceProvider);
+    /// </code>
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+    public static IServiceCollection AddMudHttpGeneratedClient<T>(
+        this IServiceCollection services,
+        string clientName,
+        Action<HttpClient>? configureHttpClient = null) where T : class
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+        if (string.IsNullOrWhiteSpace(clientName))
+            throw new ArgumentNullException(nameof(clientName));
+
+        // 注册 HttpClient 基础设施（复用 AddMudHttpClient 的基础设施注册逻辑，
+        // 包括 IEnhancedHttpClient / IBaseHttpClient / IHttpContentSerializer / IHttpRequestExecutor 等）
+        services.AddMudHttpClient(clientName, configureHttpClient, setAsDefault: true);
+
         return services;
     }
 }

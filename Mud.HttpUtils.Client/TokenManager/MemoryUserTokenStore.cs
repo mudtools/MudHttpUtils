@@ -89,10 +89,18 @@ public class MemoryUserTokenStore : IUserTokenStore
     public Task<string?> GetAccessTokenAsync(string userId, string tokenType, CancellationToken cancellationToken = default)
     {
         if (_userStore.TryGetValue(userId, out var userTokens) &&
-            userTokens.TryGetValue(tokenType, out var entry) &&
-            entry.ExpiresAt > DateTimeOffset.UtcNow)
+            userTokens.TryGetValue(tokenType, out var entry))
         {
-            return Task.FromResult<string?>(entry.AccessToken);
+            if (entry.ExpiresAt > DateTimeOffset.UtcNow)
+                return Task.FromResult<string?>(entry.AccessToken);
+
+            // 过期条目条件移除（按引用比对），避免陈旧条目滞留内存直到 ClearUserAsync
+#if NET5_0_OR_GREATER
+            userTokens.TryRemove(new KeyValuePair<string, MemoryTokenStore.TokenEntry>(tokenType, entry));
+#else
+            // ns2.0 无 TryRemove(KeyValuePair) 重载，回退普通移除（弱一致：误删会被下次 Set 恢复）
+            userTokens.TryRemove(tokenType, out _);
+#endif
         }
 
         return Task.FromResult<string?>(null);
@@ -105,12 +113,10 @@ public class MemoryUserTokenStore : IUserTokenStore
     {
         var userTokens = _userStore.GetOrAdd(userId, _ => new ConcurrentDictionary<string, MemoryTokenStore.TokenEntry>(StringComparer.OrdinalIgnoreCase));
 
-        userTokens[tokenType] = new MemoryTokenStore.TokenEntry
-        {
-            AccessToken = accessToken,
-            RefreshToken = userTokens.TryGetValue(tokenType, out var existing) ? existing.RefreshToken : null,
-            ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds)
-        };
+        // M2-#15：AddOrUpdate + 不可变条目派生 —— 与 MemoryTokenStore 同一模式，防并发丢更新
+        userTokens.AddOrUpdate(tokenType,
+            _ => new MemoryTokenStore.TokenEntry(accessToken, null, DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds)),
+            (_, existing) => existing.WithAccessToken(accessToken, DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds)));
 
         return Task.CompletedTask;
     }
@@ -136,13 +142,10 @@ public class MemoryUserTokenStore : IUserTokenStore
     {
         var userTokens = _userStore.GetOrAdd(userId, _ => new ConcurrentDictionary<string, MemoryTokenStore.TokenEntry>(StringComparer.OrdinalIgnoreCase));
 
+        // M2-#15：不可变条目派生（保留 AccessToken/ExpiresAt）
         userTokens.AddOrUpdate(tokenType,
-            _ => new MemoryTokenStore.TokenEntry { RefreshToken = refreshToken },
-            (_, existing) =>
-            {
-                existing.RefreshToken = refreshToken;
-                return existing;
-            });
+            _ => new MemoryTokenStore.TokenEntry(null, refreshToken, DateTimeOffset.MaxValue),
+            (_, existing) => existing.WithRefreshToken(refreshToken));
 
         return Task.CompletedTask;
     }

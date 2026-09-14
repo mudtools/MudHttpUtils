@@ -18,6 +18,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\..\Mud.HttpUtils.Generator\Mud.HttpUtils.Generator.csproj" OutputItemType="Analyzer" />
+		<ProjectReference Include="..\..\Mud.HttpUtils.CodeFixes\Mud.HttpUtils.CodeFixes.csproj" OutputItemType="Analyzer" />
 		<ProjectReference Include="..\..\Mud.HttpUtils.Client\Mud.HttpUtils.Client.csproj" />
 		<ProjectReference Include="..\..\Mud.HttpUtils.Attributes\Mud.HttpUtils.Attributes.csproj" />
 		<ProjectReference Include="..\CommonClassLibrary\CommonClassLibrary.csproj" />

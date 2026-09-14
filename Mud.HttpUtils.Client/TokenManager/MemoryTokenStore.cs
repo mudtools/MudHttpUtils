@@ -60,7 +60,12 @@ public class MemoryTokenStore : ITokenStore
                 return Task.FromResult<string?>(entry.AccessToken);
             }
             // NEW-TM-08 修复：过期则移除，与文档承诺一致
+            // （ns2.0 无 TryRemove(KeyValuePair) 条件移除重载，回退普通移除）
+#if NET5_0_OR_GREATER
+            _store.TryRemove(new KeyValuePair<string, TokenEntry>(tokenType, entry));
+#else
             _store.TryRemove(tokenType, out _);
+#endif
         }
 
         return Task.FromResult<string?>(null);
@@ -78,21 +83,11 @@ public class MemoryTokenStore : ITokenStore
     /// </remarks>
     public virtual Task SetAccessTokenAsync(string tokenType, string accessToken, long expiresInSeconds, CancellationToken cancellationToken = default)
     {
-        // NEW-TM-09 修复：改用 AddOrUpdate 原子操作，避免与 SetRefreshTokenAsync 并发时丢失 RefreshToken 更新
+        // NEW-TM-09 / M2-#15：AddOrUpdate 原子操作 + 不可变条目 —— update 工厂返回新实例
+        // （原地 mutate 在 AddOrUpdate 下不保证原子性，并发 Set/Set 交错会丢失更新）
         _store.AddOrUpdate(tokenType,
-            _ => new TokenEntry
-            {
-                AccessToken = accessToken,
-                RefreshToken = null,
-                ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds)
-            },
-            (_, existing) =>
-            {
-                existing.AccessToken = accessToken;
-                existing.ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds);
-                // 保留已有的 RefreshToken
-                return existing;
-            });
+            _ => new TokenEntry(accessToken, null, DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds)),
+            (_, existing) => existing.WithAccessToken(accessToken, DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds)));
         return Task.CompletedTask;
     }
 
@@ -126,13 +121,10 @@ public class MemoryTokenStore : ITokenStore
     /// </remarks>
     public virtual Task SetRefreshTokenAsync(string tokenType, string refreshToken, CancellationToken cancellationToken = default)
     {
+        // M2-#15：不可变条目 + With 派生新实例，保留 AccessToken/ExpiresAt 不变
         _store.AddOrUpdate(tokenType,
-            _ => new TokenEntry { RefreshToken = refreshToken },
-            (_, existing) =>
-            {
-                existing.RefreshToken = refreshToken;
-                return existing;
-            });
+            _ => new TokenEntry(null, refreshToken, DateTimeOffset.MaxValue),
+            (_, existing) => existing.WithRefreshToken(refreshToken));
 
         return Task.CompletedTask;
     }
@@ -167,21 +159,35 @@ public class MemoryTokenStore : ITokenStore
     /// <summary>
     /// 令牌条目内部类，用于存储单个令牌类型的完整信息。
     /// </summary>
+    /// <remarks>
+    /// M2-#15：不可变条目 —— 任何字段更新都经 <c>With*</c> 方法派生新实例，
+    /// 由 <see cref="ConcurrentDictionary{TKey,TValue}.AddOrUpdate"/> 原子替换，
+    /// 并发 Set/Set 交错不会丢失更新，读方不会读到半更新状态。
+    /// </remarks>
     internal sealed class TokenEntry
     {
-        /// <summary>
-        /// 获取或设置访问令牌。
-        /// </summary>
-        public string? AccessToken { get; set; }
+        /// <summary>访问令牌。</summary>
+        public string? AccessToken { get; }
 
-        /// <summary>
-        /// 获取或设置刷新令牌。
-        /// </summary>
-        public string? RefreshToken { get; set; }
+        /// <summary>刷新令牌。</summary>
+        public string? RefreshToken { get; }
 
-        /// <summary>
-        /// 获取或设置访问令牌的过期时间。
-        /// </summary>
-        public DateTimeOffset ExpiresAt { get; set; }
+        /// <summary>访问令牌的过期时间。</summary>
+        public DateTimeOffset ExpiresAt { get; }
+
+        public TokenEntry(string? accessToken, string? refreshToken, DateTimeOffset expiresAt)
+        {
+            AccessToken = accessToken;
+            RefreshToken = refreshToken;
+            ExpiresAt = expiresAt;
+        }
+
+        /// <summary>派生新条目：更新访问令牌与过期时间，保留刷新令牌。</summary>
+        public TokenEntry WithAccessToken(string accessToken, DateTimeOffset expiresAt) =>
+            new TokenEntry(accessToken, RefreshToken, expiresAt);
+
+        /// <summary>派生新条目：更新刷新令牌，保留访问令牌与过期时间。</summary>
+        public TokenEntry WithRefreshToken(string refreshToken) =>
+            new TokenEntry(AccessToken, refreshToken, ExpiresAt);
     }
 }

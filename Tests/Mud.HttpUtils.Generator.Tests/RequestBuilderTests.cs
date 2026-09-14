@@ -707,6 +707,69 @@ public class RequestBuilderTests
         code.Should().Contain("__httpRequest.Headers.Add(\"Authorization\"");
     }
 
+    // [F8] Ignore 语义修正：接口属性级 [Header] 在任何 mode 下都应生效（仅方法参数级 Header 在 Ignore 下跳过）。
+    private static MethodAnalysisResult CreateMethodInfoWithInterfaceHeaderProperty(string? headerMergeMode = null)
+    {
+        var methodInfo = CreateMethodInfo("/users");
+        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
+        {
+            new()
+            {
+                Name = "TraceIdHeader",
+                ParameterName = "X-Trace-Id",
+                AttributeType = "Header",
+                Type = "string",
+                IsReadOnly = false
+            }
+        };
+        if (headerMergeMode != null)
+        {
+            methodInfo.HeaderMergeMode = headerMergeMode;
+        }
+
+        return methodInfo;
+    }
+
+    [Fact]
+    public void GenerateInterfaceHeaderProperties_HeaderMergeIgnore_ShouldKeepInterfacePropertyHeader()
+    {
+        // 修复前：Ignore 短路跳过接口属性级 Header（语义颠倒，见审计 F8）。
+        var methodInfo = CreateMethodInfoWithInterfaceHeaderProperty("Ignore");
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("X-Trace-Id",
+            "Ignore 模式下接口属性级 [Header] 必须保持发送（HeaderMergeAttribute.Ignore=仅方法级忽略）");
+    }
+
+    [Fact]
+    public void GenerateInterfaceHeaderProperties_HeaderMergeAppend_ShouldKeepInterfacePropertyHeader()
+    {
+        var methodInfo = CreateMethodInfoWithInterfaceHeaderProperty("Append");
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("X-Trace-Id");
+        code.Should().NotContain(".Remove(\"X-Trace-Id\")");
+    }
+
+    [Fact]
+    public void GenerateInterfaceHeaderProperties_HeaderMergeReplace_ShouldKeepInterfacePropertyHeader()
+    {
+        var methodInfo = CreateMethodInfoWithInterfaceHeaderProperty("Replace");
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("X-Trace-Id");
+        code.Should().Contain(".Remove(\"X-Trace-Id\")");
+    }
+
     #endregion
 
     #region Format 属性测试 (Query)
@@ -766,142 +829,393 @@ public class RequestBuilderTests
 
     #endregion
 
-    #region GenerateInterfaceHeaderProperties 测试
+    #region FormUrlEncoded Body 生成测试（AOT 静态属性访问 — Task 2 验证）
 
+    /// <summary>
+    /// 验证当 TypeSymbol 可用时，FormUrlEncoded Body 使用编译期静态属性访问而非运行时反射。
+    /// 这是 AOT 改造的核心验证：生成的代码不应包含 GetType().GetProperties() / GetValue。
+    /// </summary>
     [Fact]
-    public void GenerateInterfaceHeaderProperties_StringHeader_GeneratesNullCheckAndAdd()
+    public void GenerateBodyParameter_FormUrlEncodedWithTypeSymbol_GeneratesStaticPropertyAccess()
     {
-        var methodInfo = CreateMethodInfo("/users");
-        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
+        var typeSymbol = GetTypeSymbolFromCompilation("""
+            public class TestFormBody
+            {
+                public string Username { get; set; }
+                public string Password { get; set; }
+                public int Age { get; set; }
+            }
+            """, "TestFormBody");
+
+        var methodInfo = CreateMethodInfo("/api/login", new List<ParameterInfo>
         {
-            new() { Name = "TenantId", Type = "string", AttributeType = "Header", ParameterName = "X-Tenant-Id" }
-        };
+            new()
+            {
+                Name = "form",
+                Type = "TestFormBody",
+                TypeSymbol = typeSymbol,
+                Attributes = [new ParameterAttributeInfo { Name = "BodyAttribute" }]
+            }
+        });
+        methodInfo.SerializationMethod = "FormUrlEncoded";
 
         var codeBuilder = new StringBuilder();
-        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: false);
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: true);
         var code = codeBuilder.ToString();
 
-        code.Should().Contain("if (!string.IsNullOrWhiteSpace(TenantId))");
-        code.Should().Contain("__httpRequest.Headers.Add(\"X-Tenant-Id\", TenantId)");
+        // 应使用静态属性访问
+        code.Should().Contain("form.Username");
+        code.Should().Contain("form.Password");
+        code.Should().Contain("form.Age");
+        code.Should().Contain("FormUrlEncodedContent");
+        code.Should().Contain("__bodyFormParams");
+
+        // 不应包含运行时反射代码
+        code.Should().NotContain("GetType().GetProperties()");
+        code.Should().NotContain("GetValue");
+        code.Should().NotContain("IL2072");
+        code.Should().NotContain("#pragma warning");
+    }
+
+    /// <summary>
+    /// 验证非可空值类型属性直接 ToString()，不生成 null 检查；
+    /// 引用类型属性生成 null 检查 + ToString()。
+    /// </summary>
+    [Fact]
+    public void GenerateBodyParameter_FormUrlEncodedWithTypeSymbol_ValueTypeDirectToString()
+    {
+        var typeSymbol = GetTypeSymbolFromCompilation("""
+            public class TestValueTypeForm
+            {
+                public int Count { get; set; }
+                public bool Active { get; set; }
+                public string Name { get; set; }
+            }
+            """, "TestValueTypeForm");
+
+        var methodInfo = CreateMethodInfo("/api/submit", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "data",
+                Type = "TestValueTypeForm",
+                TypeSymbol = typeSymbol,
+                Attributes = [new ParameterAttributeInfo { Name = "BodyAttribute" }]
+            }
+        });
+        methodInfo.SerializationMethod = "FormUrlEncoded";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: true);
+        var code = codeBuilder.ToString();
+
+        // 非可空值类型：直接 ToString()，无 null 检查
+        code.Should().Contain("data.Count.ToString()");
+        code.Should().Contain("data.Active.ToString()");
+
+        // 引用类型：有 null 检查
+        code.Should().Contain("var __val_Name = data.Name");
+        code.Should().Contain("if (__val_Name != null)");
+        code.Should().Contain("__val_Name.ToString()");
+    }
+
+    /// <summary>
+    /// 验证可空值类型（int?）属性生成 null 检查，而非直接 ToString()。
+    /// </summary>
+    [Fact]
+    public void GenerateBodyParameter_FormUrlEncodedWithTypeSymbol_NullableValueType()
+    {
+        var typeSymbol = GetTypeSymbolFromCompilation("""
+            #nullable enable
+            public class TestNullableForm
+            {
+                public int? OptionalCount { get; set; }
+                public string RequiredName { get; set; }
+            }
+            """, "TestNullableForm");
+
+        var methodInfo = CreateMethodInfo("/api/test", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "form",
+                Type = "TestNullableForm",
+                TypeSymbol = typeSymbol,
+                Attributes = [new ParameterAttributeInfo { Name = "BodyAttribute" }]
+            }
+        });
+        methodInfo.SerializationMethod = "FormUrlEncoded";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: true);
+        var code = codeBuilder.ToString();
+
+        // 可空值类型：应有 null 检查
+        code.Should().Contain("var __val_OptionalCount = form.OptionalCount");
+        code.Should().Contain("if (__val_OptionalCount != null)");
+
+        // 非可空值类型：直接 ToString()（string 是引用类型，走 null 检查路径）
+        code.Should().Contain("var __val_RequiredName = form.RequiredName");
+
+        // 不应包含反射
+        code.Should().NotContain("GetType().GetProperties()");
+    }
+
+    /// <summary>
+    /// 验证当 TypeSymbol 不可用时（测试/模拟场景），回退到反射路径并保留 IL2072 压制。
+    /// </summary>
+    [Fact]
+    public void GenerateBodyParameter_FormUrlEncodedWithoutTypeSymbol_FallsBackToReflection()
+    {
+        var methodInfo = CreateMethodInfo("/api/login", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "form",
+                Type = "TestFormBody",
+                // TypeSymbol = null（不设置）
+                Attributes = [new ParameterAttributeInfo { Name = "BodyAttribute" }]
+            }
+        });
+        methodInfo.SerializationMethod = "FormUrlEncoded";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: true);
+        var code = codeBuilder.ToString();
+
+        // 应回退到反射路径
+        code.Should().Contain("GetType().GetProperties()");
+        code.Should().Contain("GetValue");
+        code.Should().Contain("FormUrlEncodedContent");
+
+        // 应有 IL2072 压制
+        code.Should().Contain("IL2072");
+    }
+
+    /// <summary>
+    /// 验证自定义 struct 类型的 Body 参数仍使用编译期静态属性访问。
+    /// 注意：TypeDetectionHelper.IsValueType 检查类型名字符串，自定义 struct 名不被识别为值类型，
+    /// 因此外层 null 检查仍会生成（保守行为，不影响 AOT 安全性）。
+    /// 关键验证点是属性访问使用编译期发射而非运行时反射。
+    /// </summary>
+    [Fact]
+    public void GenerateBodyParameter_FormUrlEncodedWithStructBody_StillUsesStaticPropertyAccess()
+    {
+        var typeSymbol = GetTypeSymbolFromCompilation("""
+            public struct TestStructBody
+            {
+                public int Id { get; set; }
+                public string Name { get; set; }
+            }
+            """, "TestStructBody");
+
+        var methodInfo = CreateMethodInfo("/api/submit", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "body",
+                Type = "TestStructBody",
+                TypeSymbol = typeSymbol,
+                Attributes = [new ParameterAttributeInfo { Name = "BodyAttribute" }]
+            }
+        });
+        methodInfo.SerializationMethod = "FormUrlEncoded";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: true);
+        var code = codeBuilder.ToString();
+
+        // 属性访问应使用编译期发射（AOT 安全）
+        code.Should().Contain("body.Id.ToString()");
+        code.Should().Contain("body.Name");
+        code.Should().Contain("FormUrlEncodedContent");
+
+        // 不应包含运行时反射
+        code.Should().NotContain("GetType().GetProperties()");
+        code.Should().NotContain("GetValue");
+    }
+
+    /// <summary>
+    /// 验证子类继承的属性也能被编译期枚举到（AOT 安全路径）。
+    /// 子类比基类多一个属性，基类属性也应在生成代码中出现。
+    /// </summary>
+    [Fact]
+    public void GenerateBodyParameter_FormUrlEncodedWithInheritance_EnumeratesBaseAndDerivedProperties()
+    {
+        var typeSymbol = GetTypeSymbolFromCompilation("""
+            public class BaseFormBody
+            {
+                public string BaseField { get; set; }
+                public int BaseNumber { get; set; }
+            }
+            public class DerivedFormBody : BaseFormBody
+            {
+                public string DerivedField { get; set; }
+            }
+            """, "DerivedFormBody");
+
+        var methodInfo = CreateMethodInfo("/api/submit", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "form",
+                Type = "DerivedFormBody",
+                TypeSymbol = typeSymbol,
+                Attributes = [new ParameterAttributeInfo { Name = "BodyAttribute" }]
+            }
+        });
+        methodInfo.SerializationMethod = "FormUrlEncoded";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: true);
+        var code = codeBuilder.ToString();
+
+        // 基类属性和子类属性都应被枚举到
+        code.Should().Contain("form.BaseField");
+        code.Should().Contain("form.BaseNumber");
+        code.Should().Contain("form.DerivedField");
+        code.Should().Contain("FormUrlEncodedContent");
+
+        // 不应包含反射
+        code.Should().NotContain("GetType().GetProperties()");
+        code.Should().NotContain("GetValue");
+    }
+
+    /// <summary>
+    /// 验证带 private setter 的属性不会被枚举（与运行时 GetProperties 行为一致）。
+    /// </summary>
+    [Fact]
+    public void GenerateBodyParameter_FormUrlEncodedWithPrivateSetter_ExcludesPrivateSetterProperties()
+    {
+        var typeSymbol = GetTypeSymbolFromCompilation("""
+            public class MixedAccessBody
+            {
+                public string PublicProp { get; set; }
+                public int PrivateSetterProp { get; private set; }
+            }
+            """, "MixedAccessBody");
+
+        var methodInfo = CreateMethodInfo("/api/test", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "data",
+                Type = "MixedAccessBody",
+                TypeSymbol = typeSymbol,
+                Attributes = [new ParameterAttributeInfo { Name = "BodyAttribute" }]
+            }
+        });
+        methodInfo.SerializationMethod = "FormUrlEncoded";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: true);
+        var code = codeBuilder.ToString();
+
+        // PublicProp 有公共 getter 和 setter，应被枚举
+        code.Should().Contain("data.PublicProp");
+
+        // PrivateSetterProp 的 setter 是 private，但 getter 是 public
+        // 生成器检查 p.GetMethod.DeclaredAccessibility == Public，getter 是 public 的所以应被包含
+        // 验证它确实被包含（因为只需读取属性值，不需要 setter）
+        code.Should().Contain("data.PrivateSetterProp");
+
+        code.Should().Contain("FormUrlEncodedContent");
+    }
+
+    /// <summary>
+    /// 验证 static 属性不会被枚举（与运行时 GetProperties 的 BindingFlags.Instance 一致）。
+    /// </summary>
+    [Fact]
+    public void GenerateBodyParameter_FormUrlEncodedWithStaticProperty_ExcludesStaticProperties()
+    {
+        var typeSymbol = GetTypeSymbolFromCompilation("""
+            public class WithStaticProp
+            {
+                public string InstanceProp { get; set; }
+                public static string StaticProp { get; set; } = "default";
+            }
+            """, "WithStaticProp");
+
+        var methodInfo = CreateMethodInfo("/api/test", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "data",
+                Type = "WithStaticProp",
+                TypeSymbol = typeSymbol,
+                Attributes = [new ParameterAttributeInfo { Name = "BodyAttribute" }]
+            }
+        });
+        methodInfo.SerializationMethod = "FormUrlEncoded";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: true);
+        var code = codeBuilder.ToString();
+
+        // 实例属性应被枚举
+        code.Should().Contain("data.InstanceProp");
+
+        // 静态属性不应被枚举
+        code.Should().NotContain("data.StaticProp");
+        code.Should().NotContain("WithStaticProp.StaticProp");
+
+        code.Should().Contain("FormUrlEncodedContent");
+    }
+
+    // [F13] 字面量转义收口：ContentType 含 " 或 \ 时必须转义，否则产出非法 C#。
+    // 走 UseStringContent=true 的 StringContent 分支（该分支把 content type 作为字符串字面量写入）。
+
+    [Fact]
+    public void GenerateBodyParameter_ContentTypeWithDoubleQuoteAndBackslash_EscapesLiteral()
+    {
+        var methodInfo = CreateMethodInfo("/api/data", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "data", Type = "string",
+                Attributes = [new ParameterAttributeInfo
+                {
+                    Name = "BodyAttribute",
+                    Arguments = new object?[] { "appli\"cation\\x\\json" },
+                    NamedArguments = new Dictionary<string, object?> { ["UseStringContent"] = true },
+                }]
+            }
+        });
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: false);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("StringContent");
+        // " 应转义为 \"，\ 应为 \\（由 StringEscapeHelper.EscapeString 处理）
+        code.Should().NotContain("\"appli\"cation", "ContentType 中的原始引号必须被转义");
+        code.Should().Contain("appli\\\"cation");
     }
 
     [Fact]
-    public void GenerateInterfaceHeaderProperties_ReplaceTrue_GeneratesRemoveAndAdd()
+    public void GenerateBodyParameter_ContentTypeFromEffectiveContentType_EscapesLiteral()
     {
-        var methodInfo = CreateMethodInfo("/users");
-        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
+        var methodInfo = CreateMethodInfo("/api/data", new List<ParameterInfo>
         {
-            new() { Name = "AuthToken", Type = "string", AttributeType = "Header", ParameterName = "X-Auth-Token", Replace = true }
-        };
+            new()
+            {
+                Name = "data", Type = "string",
+                Attributes = [new ParameterAttributeInfo
+                {
+                    Name = "BodyAttribute",
+                    NamedArguments = new Dictionary<string, object?> { ["UseStringContent"] = true },
+                }]
+            }
+        });
+        methodInfo.BodyContentType = "appli\"cation\\json";
 
         var codeBuilder = new StringBuilder();
-        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: false);
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: false);
         var code = codeBuilder.ToString();
 
-        code.Should().Contain("if (!string.IsNullOrWhiteSpace(AuthToken))");
-        code.Should().Contain("{");
-        code.Should().Contain("__httpRequest.Headers.Remove(\"X-Auth-Token\")");
-        code.Should().Contain("__httpRequest.Headers.Add(\"X-Auth-Token\", AuthToken)");
-        code.Should().Contain("}");
-    }
-
-    [Fact]
-    public void GenerateInterfaceHeaderProperties_HeaderMergeModeIgnore_SkipsAllHeaderProperties()
-    {
-        var methodInfo = CreateMethodInfo("/users");
-        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
-        {
-            new() { Name = "TenantId", Type = "string", AttributeType = "Header", ParameterName = "X-Tenant-Id" }
-        };
-        methodInfo.HeaderMergeMode = "Ignore";
-
-        var codeBuilder = new StringBuilder();
-        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: false);
-        var code = codeBuilder.ToString();
-
-        code.Should().NotContain("__httpRequest.Headers.Add(\"X-Tenant-Id\"");
-    }
-
-    [Fact]
-    public void GenerateInterfaceHeaderProperties_AuthorizationHeader_WithTokenManager_SkipsAuthorization()
-    {
-        var methodInfo = CreateMethodInfo("/users");
-        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
-        {
-            new() { Name = "AuthHeader", Type = "string", AttributeType = "Header", ParameterName = "Authorization" }
-        };
-
-        var codeBuilder = new StringBuilder();
-        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: true);
-        var code = codeBuilder.ToString();
-
-        code.Should().NotContain("__httpRequest.Headers.Add(\"Authorization\"");
-    }
-
-    [Fact]
-    public void GenerateInterfaceHeaderProperties_AuthorizationHeader_WithoutTokenManager_GeneratesHeader()
-    {
-        var methodInfo = CreateMethodInfo("/users");
-        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
-        {
-            new() { Name = "AuthHeader", Type = "string", AttributeType = "Header", ParameterName = "Authorization" }
-        };
-
-        var codeBuilder = new StringBuilder();
-        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: false);
-        var code = codeBuilder.ToString();
-
-        code.Should().Contain("__httpRequest.Headers.Add(\"Authorization\", AuthHeader)");
-    }
-
-    [Fact]
-    public void GenerateInterfaceHeaderProperties_NoHeaderProperties_GeneratesNothing()
-    {
-        var methodInfo = CreateMethodInfo("/users");
-        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
-        {
-            new() { Name = "Version", Type = "string", AttributeType = "Query", ParameterName = "version" }
-        };
-
-        var codeBuilder = new StringBuilder();
-        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: false);
-        var code = codeBuilder.ToString();
-
-        code.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void GenerateInterfaceHeaderProperties_GuidHeader_WithFormat_GeneratesFormattedExpression()
-    {
-        var methodInfo = CreateMethodInfo("/users");
-        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
-        {
-            new() { Name = "RequestId", Type = "System.Guid", AttributeType = "Header", ParameterName = "X-Request-Id", Format = "N" }
-        };
-
-        var codeBuilder = new StringBuilder();
-        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: false);
-        var code = codeBuilder.ToString();
-
-        code.Should().Contain("string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{0:N}\", RequestId)");
-        code.Should().Contain("__httpRequest.Headers.Add(\"X-Request-Id\"");
-    }
-
-    [Fact]
-    public void GenerateInterfaceHeaderProperties_NullableType_GeneratesNullCheck()
-    {
-        var methodInfo = CreateMethodInfo("/users");
-        methodInfo.InterfaceProperties = new List<InterfacePropertyInfo>
-        {
-            new() { Name = "Timestamp", Type = "DateTime?", AttributeType = "Header", ParameterName = "X-Timestamp" }
-        };
-
-        var codeBuilder = new StringBuilder();
-        _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager: false);
-        var code = codeBuilder.ToString();
-
-        code.Should().Contain("if (Timestamp != null)");
-        code.Should().Contain("__httpRequest.Headers.Add(\"X-Timestamp\"");
+        code.Should().Contain("StringContent");
+        code.Should().Contain("appli\\\"cation\\\\json",
+            "BodyContentType 经写入点转义后应产出合法字符串字面量");
     }
 
     #endregion
@@ -921,6 +1235,22 @@ public class RequestBuilderTests
             AsyncInnerReturnType = "string",
             Parameters = parameters ?? []
         };
+    }
+
+    /// <summary>
+    /// 从 Roslyn 编译中获取指定类型的 ITypeSymbol，用于测试 TypeSymbol 可用时的代码生成路径。
+    /// </summary>
+    private static ITypeSymbol GetTypeSymbolFromCompilation(string source, string typeName)
+    {
+        var syntaxTree = CSharpSyntaxTree.ParseText(source);
+        var compilation = CSharpCompilation.Create(
+            "TestTypeAssembly",
+            new[] { syntaxTree },
+            BasicReferenceAssemblies.GetReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        return compilation.GetTypeByMetadataName(typeName)
+            ?? throw new InvalidOperationException($"无法获取类型符号: {typeName}");
     }
 
     #endregion

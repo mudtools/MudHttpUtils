@@ -8,8 +8,6 @@
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>
-		<EnableAotAnalyzer Condition="'$(TargetFramework)' != 'netstandard2.0'">true</EnableAotAnalyzer>
-		<IsAotCompatible Condition="'$(TargetFramework)' != 'netstandard2.0'">true</IsAotCompatible>
 	</PropertyGroup>
 	<ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
 		<PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="8.0.0" />

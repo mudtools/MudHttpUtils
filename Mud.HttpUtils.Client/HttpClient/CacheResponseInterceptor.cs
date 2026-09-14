@@ -60,10 +60,10 @@ public class CacheResponseInterceptor(IHttpResponseCache cache, ILogger<CacheRes
         if (_cache.TryGet(key, out value))
         {
             MudHttpClientLog.CacheHit(_logger, key);
-            MudHttpMeter.CacheCounter.Add(1,
-                new KeyValuePair<string, object?>("client_name", clientName),
-                new KeyValuePair<string, object?>("outcome", "hit"),
-                new KeyValuePair<string, object?>("cache_key", key));
+            // M1-#6：cache_key 含完整 URL/参数（高基数），不得作为指标 tag（会打爆时序后端）；
+            // 高基数信息保留在下方 Activity 事件中；R-1：经白名单过滤
+            MudHttpMeter.CacheCounter.Add(1, MudHttpMeter.FilterTags(
+                new KeyValuePair<string, object?>[] { new("client_name", clientName), new("outcome", "hit") }));
 
             // 将缓存命中写入当前 Activity tag（仅 Mud Activity，避免污染外部 Activity）
             if (isMudActivity)
@@ -81,10 +81,9 @@ public class CacheResponseInterceptor(IHttpResponseCache cache, ILogger<CacheRes
         }
 
         value = default;
-        MudHttpMeter.CacheCounter.Add(1,
-            new KeyValuePair<string, object?>("client_name", clientName),
-            new KeyValuePair<string, object?>("outcome", "miss"),
-            new KeyValuePair<string, object?>("cache_key", key));
+        // R-1：经指标 tag 白名单过滤
+        MudHttpMeter.CacheCounter.Add(1, MudHttpMeter.FilterTags(
+            new KeyValuePair<string, object?>[] { new("client_name", clientName), new("outcome", "miss") }));
 
         // 将缓存未命中写入当前 Activity tag（仅 Mud Activity，避免污染外部 Activity）
         if (isMudActivity)
@@ -126,8 +125,12 @@ public class CacheResponseInterceptor(IHttpResponseCache cache, ILogger<CacheRes
 
     /// <inheritdoc/>
     public async Task<T?> GetOrFetchAsync<T>(string key, Func<Task<T>> fetchFunc, TimeSpan expiration, CancellationToken cancellationToken = default)
+        => await GetOrFetchAsync(key, fetchFunc, expiration, useSlidingExpiration: false, cancellationToken).ConfigureAwait(false);
+
+    /// <inheritdoc/>
+    public async Task<T?> GetOrFetchAsync<T>(string key, Func<Task<T>> fetchFunc, TimeSpan expiration, bool useSlidingExpiration, CancellationToken cancellationToken = default)
     {
-        return await _cache.GetOrFetchAsync<T>(key, fetchFunc, expiration, cancellationToken).ConfigureAwait(false);
+        return await _cache.GetOrFetchAsync<T>(key, fetchFunc, expiration, useSlidingExpiration, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>

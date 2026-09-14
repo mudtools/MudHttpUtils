@@ -24,7 +24,9 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
     private readonly TokenRefreshBackgroundOptions _options;
     private readonly TimeSpan _refreshInterval;
     private readonly TimeSpan _retryDelay;
+    private readonly TokenRefreshLoopState _loopState = new();
     private Timer? _timer;
+    private int _running; // P1.6（TK-11）重入闸：同一时刻只允许一个刷新编排在运行
     private bool _disposed;
 
     /// <summary>
@@ -114,6 +116,11 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
             MudHttpClientLog.TokenRefreshNoManagersRegistered(_logger);
         }
 
+        // P1.6（TK-11）StartAsync 幂等：先停止旧 Timer 再创建新 Timer，避免重复启动导致多 Timer 并发刷新
+        var oldTimer = Interlocked.Exchange(ref _timer, null);
+        oldTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+        oldTimer?.Dispose();
+
         _timer = new Timer(
             RefreshTokenCallback,
             null,
@@ -135,13 +142,19 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
 
     private async void RefreshTokenCallback(object? state)
     {
-        if (_disposed)
+        // P1.6（TK-11）重入闸：Timer 可能在上一轮刷新尚未结束时再次触发，
+        // 通过 Interlocked.CompareExchange 保证同一时刻只有一个刷新编排在运行，
+        // 避免共享令牌被并发刷新或刷新风暴。
+        if (Interlocked.CompareExchange(ref _running, 1, 0) != 0)
             return;
 
         try
         {
+            if (_disposed)
+                return;
+
             var shouldContinue = await TokenRefreshHelper.RefreshAllTokenManagersAsync(
-                _tokenManagers, _logger, _options, CancellationToken.None).ConfigureAwait(false);
+                _tokenManagers, _logger, _options, CancellationToken.None, _loopState).ConfigureAwait(false);
             if (!shouldContinue)
             {
                 _timer?.Change(Timeout.Infinite, Timeout.Infinite);
@@ -150,6 +163,10 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
         catch (Exception ex)
         {
             MudHttpClientLog.TokenRefreshUnhandledException(_logger, ex);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _running, 0);
         }
     }
 

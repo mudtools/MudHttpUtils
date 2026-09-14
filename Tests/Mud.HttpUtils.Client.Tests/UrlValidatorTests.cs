@@ -166,15 +166,14 @@ public class UrlValidatorTests : IClassFixture<UrlValidatorFixture>, IDisposable
     }
 
     [Fact]
-    public void ValidateUrl_WithLocalhost_ShouldThrowInvalidOperationException()
+    public void ValidateUrl_WithLocalhost_AndAllowCustomBaseUrls_ShouldNotThrow()
     {
+        // 回环地址（127.0.0.1/localhost）在 allowCustomBaseUrls=true 时被允许，用于本地测试场景
         var localhostUrl = "https://127.0.0.1/api/test";
 
         var act = () => _validateUrlMethod.Invoke(null, new object?[] { localhostUrl, true });
 
-        act.Should().Throw<TargetInvocationException>()
-            .WithInnerException<InvalidOperationException>()
-            .WithMessage("*私有 IP 地址*");
+        act.Should().NotThrow();
     }
 
     [Fact]

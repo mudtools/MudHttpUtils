@@ -18,7 +18,8 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 {
     // NEW-TM-06 修复：改用 Lazy<SemaphoreSlim> + ExecutionAndPublication，与基类 TokenManagerBase 对齐。
     // 避免裸 GetOrAdd 在并发下多次执行工厂导致互斥锁失效。
-    private readonly ConcurrentDictionary<string, Lazy<SemaphoreSlim>> _userLocks = new();
+    // P2.2（TK-05/09/24）升级为 KeyedLockTable，以 retire 协议统一锁生命周期。
+    private readonly KeyedLockTable _userLockTable = new();
     private readonly ITokenCache<UserTokenInfo> _userTokenCache;
     private readonly UserTokenCacheOptions _cacheOptions;
 
@@ -129,16 +130,9 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
             return cachedInfo!.AccessToken;
         }
 
-        // NEW-TM-06 修复：使用 Lazy<SemaphoreSlim> + ExecutionAndPublication 模式，
-        // 确保同一 userId 的并发请求拿到相同的 SemaphoreSlim 实例。
-        var userLock = _userLocks.GetOrAdd(userId!, _ => new Lazy<SemaphoreSlim>(
-            () => new SemaphoreSlim(1, 1), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
-        var acquired = false;
-        try
+        // P2.2（TK-05/09/24）从键控锁表获取用户锁，retire 协议保证互斥。
+        using (var releaser = await _userLockTable.AcquireAsync(userId!, cancellationToken).ConfigureAwait(false))
         {
-            await userLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-            acquired = true;
-
             cachedInfo = GetUserTokenFromCache(userId!);
             if (IsUserTokenValid(cachedInfo))
                 return cachedInfo!.AccessToken;
@@ -151,10 +145,6 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
             }
 
             return null;
-        }
-        finally
-        {
-            if (acquired) userLock.Release();
         }
     }
 
@@ -191,19 +181,10 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
     private void OnUserTokenEvicted(string userId)
     {
-        // NEW-TM-13 修复：与 TryCleanupUserLock/CleanupOrphanedLocks 一致，仅当锁空闲时才移除。
-        // 原实现直接 TryRemoveAndDisposeLock 不检查 CurrentCount，导致缓存驱逐时若锁正被占用：
-        //   1. 线程 A 持有锁（CurrentCount=0）开始刷新令牌
-        //   2. 缓存驱逐回调移除 _userLocks[userId]（锁仍被 A 持有，不在字典中）
-        //   3. 线程 B 调用 GetOrRefreshTokenAsync，GetOrAdd 创建新的 Lazy<SemaphoreSlim>
-        //   4. 线程 A 与 B 持有不同的 SemaphoreSlim 实例，互斥失效
-        //   5. OAuth2 RefreshToken 一次性使用，并发刷新导致第二次失败、用户被登出
-        // 修复后：锁被占用时不移除，由占用线程在 finally 路径的 TryCleanupUserLock 兜底清理。
-        if (!_userLocks.TryGetValue(userId, out var lazyLock))
-            return;
-
-        if (!lazyLock.IsValueCreated || lazyLock.Value.CurrentCount == 1)
-            TryRemoveAndDisposeLock(userId);
+        // P2.2（TK-05/09/24）统一走 retire 协议：TryRetire 内部保证
+        // 仅当无等待者时移除；若锁正被占用则仅标记退休，由最后一个 Releaser 完成移除。
+        // 彻底消除原实现中“缓存驱逐时移除在途锁导致互斥失效”的缺陷。
+        _userLockTable.TryRetire(userId);
     }
 
     /// <summary>
@@ -213,7 +194,8 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     protected void RemoveUserTokenFromCache(string userId)
     {
         _userTokenCache.TryRemove(userId, out _);
-        TryRemoveAndDisposeLock(userId);
+        // P2.2（TK-05/09/24）经 retire 协议回收锁，锁被占用时安全延迟移除。
+        _userLockTable.TryRetire(userId);
     }
 
     /// <summary>
@@ -233,21 +215,11 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// </summary>
     protected void CleanupOrphanedLocks()
     {
-        var orphanedKeys = new List<string>();
-
-        foreach (var kvp in _userLocks)
+        // P2.2（TK-05/09/24）经 retire 协议统一回收缓存中已不存在的用户锁。
+        foreach (var key in _userLockTable.Keys.ToList())
         {
-            if (!_userTokenCache.TryGet(kvp.Key, out _))
-            {
-                // NEW-TM-06 修复：适配 Lazy<SemaphoreSlim>，同时处理未创建的 Lazy
-                if (!kvp.Value.IsValueCreated || kvp.Value.Value.CurrentCount == 1)
-                    orphanedKeys.Add(kvp.Key);
-            }
-        }
-
-        foreach (var key in orphanedKeys)
-        {
-            TryRemoveAndDisposeLock(key);
+            if (!_userTokenCache.TryGet(key, out _))
+                _userLockTable.TryRetire(key);
         }
     }
 
@@ -258,14 +230,9 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// <param name="userId">用户标识。</param>
     private void TryCleanupUserLock(string userId)
     {
-        if (!_userLocks.TryGetValue(userId, out var lazyLock))
-            return;
-
-        // NEW-TM-06 修复：适配 Lazy<SemaphoreSlim>
-        if (!lazyLock.IsValueCreated || lazyLock.Value.CurrentCount != 1)
-            return;
-
-        TryRemoveAndDisposeLock(userId);
+        // P2.2（TK-05/09/24）retire 协议内部判断空闲态；
+        // 锁被占用时仅标记退休，不强制移除，保证互斥。
+        _userLockTable.TryRetire(userId);
     }
 
     /// <summary>
@@ -274,13 +241,16 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     protected int CachedUserTokenCount => _userTokenCache.Count;
 
     /// <inheritdoc />
-    public override async Task<TokenResult> InvalidateTokenAsync(string[]? scopes = null, CancellationToken cancellationToken = default)
+    public override Task<TokenResult> InvalidateTokenAsync(string[]? scopes = null, CancellationToken cancellationToken = default)
     {
-        var result = await base.InvalidateTokenAsync(scopes, cancellationToken).ConfigureAwait(false);
-
-        CleanupExpiredUserTokens();
-
-        return result;
+        // P2.8（TK-14）语义收敛：用户令牌管理器无法仅凭 scopes 定位到具体用户，租户级
+        // InvalidateTokenAsync 对用户令牌无意义。若实现静默调用 base（清空共享凭据缓存）或
+        // 紧凑用户缓存，会产生"调用方以为用户令牌已失效，实则其他用户令牌也被连带影响"的歧义。
+        // 故明确抛出 NotSupportedException，引导调用方改用按用户定位的 InvalidateUserTokenAsync(userId) /
+        // RemoveTokenAsync(userId)。
+        throw new NotSupportedException(
+            "UserTokenManagerBase 不支持租户级 InvalidateTokenAsync。请使用 InvalidateUserTokenAsync(userId) " +
+            "或 RemoveTokenAsync(userId) 使指定用户的令牌失效。");
     }
 
     /// <summary>
@@ -297,24 +267,14 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         return Task.CompletedTask;
     }
 
-    /// <summary>
-    /// 安全移除并释放用户锁。
-    /// NEW-TM-07 修复：仅从字典移除，不立即 Dispose，避免 TOCTOU 竞态破坏互斥。
-    /// 与基类 TokenManagerBase.TryRemoveScopeLock 修复策略一致：
-    /// 移除后新来线程通过 GetOrAdd 创建新 Lazy&lt;SemaphoreSlim&gt;，
-    /// 已持有旧锁引用的线程仍可安全使用，由 GC 终结器释放资源。
-    /// </summary>
-    private void TryRemoveAndDisposeLock(string userId)
-    {
-        _userLocks.TryRemove(userId, out _);
-    }
-
     private bool IsUserTokenValid(UserTokenInfo? tokenInfo)
     {
-        if (tokenInfo == null || string.IsNullOrEmpty(tokenInfo.AccessToken))
+        if (tokenInfo == null || string.IsNullOrEmpty(tokenInfo.AccessToken) || tokenInfo.AccessTokenExpireTime <= 0)
             return false;
 
-        return tokenInfo.IsAccessTokenValid(UserExpireThresholdSeconds);
+        // P1.3（TK-04）收敛：有效期判定统一委托 TokenExpiryPolicy，与 TokenManagerBase 严格一致
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        return TokenExpiryPolicy.IsValid(tokenInfo.AccessTokenExpireTime, now, UserExpireThresholdSeconds);
     }
 
     /// <summary>
@@ -346,13 +306,9 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         {
             _userTokenCache?.Dispose();
 
-            // NEW-TM-06 修复：适配 Lazy<SemaphoreSlim>
-            foreach (var lazyLock in _userLocks.Values)
-            {
-                if (lazyLock.IsValueCreated)
-                    lazyLock.Value.Dispose();
-            }
-            _userLocks.Clear();
+            // P2.2（TK-05/09/24）KeyedLockTable.Dispose 不 Dispose SemaphoreSlim，
+            // 保证在途 Releaser 的 Release 安全（修复 TK-08）。
+            _userLockTable.Dispose();
         }
 
         base.Dispose(disposing);

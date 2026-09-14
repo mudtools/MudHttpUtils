@@ -16,12 +16,16 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     private readonly OAuth2Options _options;
     private readonly ILogger _logger;
     private readonly ISecretProvider? _secretProvider;
-    private readonly Lazy<Task<string?>> _clientSecretLazy;
+    private readonly ClientSecretCache _clientSecretCache; // P1.8（TK-13）TTL 缓存，密钥轮换可被拾取、工厂故障不缓存
+    private readonly IHttpContentSerializer _contentSerializer;
 
     private static readonly JsonSerializerOptions s_jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+#if NET8_0_OR_GREATER
+        TypeInfoResolver = OAuth2JsonContext.Default
+#endif
     };
 
     /// <summary>
@@ -31,17 +35,20 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// <param name="options">OAuth2 配置选项。</param>
     /// <param name="logger">日志记录器（可选）。</param>
     /// <param name="secretProvider">安全密钥提供程序（可选）。</param>
+    /// <param name="contentSerializer">HTTP 内容序列化器（可选）。未注入时使用 <see cref="HttpContentSerializerFactory.CreateDefault"/> 默认实现。</param>
     public StandardOAuth2TokenManager(
         HttpClient httpClient,
         IOptions<OAuth2Options> options,
         ILogger<StandardOAuth2TokenManager>? logger = null,
-        ISecretProvider? secretProvider = null)
+        ISecretProvider? secretProvider = null,
+        IHttpContentSerializer? contentSerializer = null)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? NullLogger<StandardOAuth2TokenManager>.Instance;
         _secretProvider = secretProvider;
-        _clientSecretLazy = new Lazy<Task<string?>>(ResolveClientSecretAsync, LazyThreadSafetyMode.ExecutionAndPublication);
+        _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
+        _clientSecretCache = new ClientSecretCache(TimeSpan.FromSeconds(_options.ClientSecretCacheTtlSeconds));
     }
 
     /// <summary>
@@ -67,15 +74,22 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     }
 
     /// <summary>
-    /// 获取有效的 ClientSecret，优先从 ISecretProvider 获取，回退到配置值。
+    /// P1.8（TK-13）获取有效的 ClientSecret。
+    /// 未启用安全提供程序（<see cref="OAuth2Options.ClientSecretProviderName"/> 为空）时直接返回配置值，不进入缓存路径；
+    /// 启用时经 <see cref="ClientSecretCache"/> 按 TTL 缓存解析结果，密钥轮换后 TTL 过期即被重新解析，且解析失败不缓存。
     /// </summary>
     private Task<string?> GetClientSecretAsync(CancellationToken cancellationToken = default)
     {
-        return _clientSecretLazy.Value;
+        if (_secretProvider == null || string.IsNullOrEmpty(_options.ClientSecretProviderName))
+            return Task.FromResult<string?>(_options.ClientSecret);
+
+        return _clientSecretCache.GetAsync(ResolveClientSecretAsync, cancellationToken);
     }
 
     /// <summary>
     /// 校验端点是否满足 HTTPS 要求。
+    /// P3.1（C1，TK-17/19）校验统一：经 OAuth2EndpointValidator.IsSecure 判定，
+    /// 与 OAuth2OptionsValidator 共用同一逻辑（Uri.TryCreate + DNS 解析 + IsLoopback）。
     /// </summary>
     private void ValidateEndpointHttps(string endpoint, string endpointName)
     {
@@ -83,9 +97,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
             return;
 
         if (!string.IsNullOrEmpty(endpoint) &&
-            !endpoint.StartsWith("https://", StringComparison.OrdinalIgnoreCase) &&
-            !endpoint.StartsWith("http://localhost", StringComparison.OrdinalIgnoreCase) &&
-            !endpoint.StartsWith("http://127.0.0.1", StringComparison.OrdinalIgnoreCase))
+            !OAuth2EndpointValidator.IsSecure(endpoint))
         {
             throw new InvalidOperationException($"{endpointName} 必须使用 HTTPS 协议: {endpoint}。若需在开发环境使用 HTTP，请设置 OAuth2Options.RequireHttps = false。");
         }
@@ -243,15 +255,14 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 #endif
 
-        var result = JsonSerializer.Deserialize<TokenIntrospectionResult>(json, s_jsonOptions);
+        var result = _contentSerializer.Deserialize<TokenIntrospectionResult>(json, s_jsonOptions);
         return result ?? new TokenIntrospectionResult();
     }
 
     /// <inheritdoc/>
     /// <remarks>
-    /// TM-03 修复：移除 UpdateScopedToken 调用。此方法仅由 <see cref="TokenManagerBase.GetOrRefreshTokenAsync"/> 通过
-    /// <see cref="TokenManagerBase.RefreshTokenWithRetryCoreAsync"/> 调用，调用方在第 148 行已统一执行 <c>UpdateToken(scopeKey, token)</c>。
-    /// 此前的双重写入导致 <c>MaxCacheLifetimeSeconds</c> 截断逻辑执行两次，且首次写入时未被截断的过大 Expire 值存在短暂缓存窗口。
+    /// P1.2（TK-02）缓存写入统一由 <see cref="TokenManagerBase"/> 的 <c>GetOrRefreshTokenAsync</c> 在 scope 锁内完成；
+    /// 本方法仅负责刷新并返回新令牌，不自行写缓存。
     /// </remarks>
     protected override async Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
     {
@@ -269,16 +280,28 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 
     /// <inheritdoc/>
     /// <remarks>
-    /// TM-03 修复：同 <see cref="RefreshTokenCoreAsync"/>，移除冗余的 UpdateScopedToken 调用。
+    /// P1.2（TK-02）同 <see cref="RefreshTokenCoreAsync"/>，不自行写缓存。
+    /// P2.3（TK-02）按 scopeKey 隔离刷新链路：优先读取该作用域的缓存 refresh_token，
+    /// 缺失时回退默认作用域（兼容"统一刷新令牌"的服务端），最后才走 client_credentials。
     /// </remarks>
     protected override async Task<CredentialToken> RefreshTokenWithScopesAsync(string[]? scopes, CancellationToken cancellationToken)
     {
-        var currentToken = GetCachedCredentialToken();
+        var scopeKey = GetScopeKey(scopes);
+        var scopedToken = GetCachedCredentialToken(scopeKey);
 
-        if (currentToken?.RefreshToken != null)
+        // 优先使用当前作用域自己缓存的 refresh_token
+        if (scopedToken?.RefreshToken != null)
         {
             return await RefreshTokenByRefreshTokenAsync(
-                currentToken.RefreshToken, cancellationToken).ConfigureAwait(false);
+                scopedToken.RefreshToken, cancellationToken).ConfigureAwait(false);
+        }
+
+        // 回退默认作用域（"统一刷新令牌"服务端场景）
+        var defaultToken = GetCachedCredentialToken(DefaultScopeKey);
+        if (defaultToken?.RefreshToken != null)
+        {
+            return await RefreshTokenByRefreshTokenAsync(
+                defaultToken.RefreshToken, cancellationToken).ConfigureAwait(false);
         }
 
         return await GetTokenByClientCredentialsAsync(scopes, cancellationToken)
@@ -346,7 +369,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 #endif
 
-        var tokenResponse = JsonSerializer.Deserialize<OAuth2TokenResponse>(json, s_jsonOptions);
+        var tokenResponse = _contentSerializer.Deserialize<OAuth2TokenResponse>(json, s_jsonOptions);
         if (tokenResponse == null)
             throw new InvalidOperationException("令牌响应反序列化失败");
 
@@ -359,11 +382,16 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         {
             AccessToken = tokenResponse.AccessToken ?? string.Empty,
             RefreshToken = tokenResponse.RefreshToken,
+            // P2.4（TK-04）记录签发时间，供 TTL 感知阈值的有效提前量钳位
+            IssuedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             Expire = CalculateExpire(tokenResponse.ExpiresIn)
         };
 
-        UpdateScopedToken(DefaultScopeKey, newToken);
-
+        // P1.2（TK-02）删除跨锁写入默认作用域。
+        // 缓存写入统一由 TokenManagerBase.GetOrRefreshTokenAsync 在获取 scope 锁后，
+        // 通过 UpdateToken(scopeKey, token) 完成；此处若再写 DefaultScopeKey，
+        // 会：(1) 在 scope 锁之外无保护地写入默认作用域，破坏作用域隔离；(2) 触发 MaxCacheLifetimeSeconds 截断逻辑重复执行，
+        // 造成先写入未截断的过大 Expire 又有短暂缓存窗口。返回新令牌交给调用方统一缓存即可。
         return newToken;
     }
 
@@ -406,7 +434,13 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         return DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds();
     }
 
-    private sealed class OAuth2TokenResponse
+    /// <summary>
+    /// OAuth2 令牌响应 DTO。
+    /// </summary>
+    /// <remarks>
+    /// 可见性为 <c>internal</c> 以支持 <see cref="OAuth2JsonContext"/> 的 <c>[JsonSerializable]</c> 引用。
+    /// </remarks>
+    internal sealed class OAuth2TokenResponse
     {
         [JsonPropertyName("access_token")]
         public string? AccessToken { get; set; }

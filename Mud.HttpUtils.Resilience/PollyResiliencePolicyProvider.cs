@@ -8,11 +8,11 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Mud.HttpUtils.Observability;
+using Mud.HttpUtils.Resilience.Observability;
 using Polly;
 using Polly.Timeout;
 using System.Collections.Concurrent;
-using Mud.HttpUtils.Observability;
-using Mud.HttpUtils.Resilience.Observability;
 
 namespace Mud.HttpUtils.Resilience;
 
@@ -124,25 +124,15 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
             .WaitAndRetryAsync(
                 retryOptions.MaxRetryAttempts,
-                retryAttempt =>
-                {
-                    // M-1 修复：添加随机抖动(Jitter)，避免高并发下多实例同步重试导致"重试风暴"。
-                    // 退避 = 基础退避 + [0, baseDelay/4) 的随机抖动
-                    var baseDelayMs = retryOptions.UseExponentialBackoff
-                        ? Math.Min(
-                            retryOptions.DelayMilliseconds * Math.Pow(2, retryAttempt - 1),
-                            60000)
-                        : retryOptions.DelayMilliseconds;
-                    var jitterMs = GetJitterMilliseconds(baseDelayMs);
-                    return TimeSpan.FromMilliseconds(baseDelayMs + jitterMs);
-                },
+                // M-1/M2-#11：统一走 ComputeBackoff（含抖动开关），全局与方法级共用同一实现
+                retryAttempt => ComputeBackoff(
+                    retryOptions.UseExponentialBackoff, retryOptions.DelayMilliseconds, retryAttempt),
                 onRetryAsync: async (outcome, timeSpan, retryCount, context) =>
                 {
                     MudHttpClientLog.RetryAttempting(_logger, timeSpan.TotalMilliseconds, retryCount, retryOptions.MaxRetryAttempts, outcome.Exception);
-                    MudHttpMeter.RetryCounter.Add(1,
-                        new KeyValuePair<string, object?>("policy_key", policyKey),
-                        new KeyValuePair<string, object?>("outcome", "retry"),
-                        new KeyValuePair<string, object?>("retry_count", retryCount));
+                    // R-1：指标 tag 白名单过滤
+                    MudHttpMeter.RetryCounter.Add(1, MudHttpMeter.FilterTags(
+                        new KeyValuePair<string, object?>[] { new("policy_key", policyKey), new("outcome", "retry"), new("retry_count", retryCount) }));
 
                     // 将重试次数写入 Polly Context，供 ResilientHttpClient 在克隆请求时读取并写入请求属性
                     context[RetryCountContextKey] = retryCount;
@@ -200,9 +190,9 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             onTimeoutAsync: (context, timespan, task) =>
             {
                 MudHttpClientLog.RequestTimeout(_logger, timespan.TotalSeconds);
-                MudHttpMeter.RetryCounter.Add(1,
-                    new KeyValuePair<string, object?>("policy_key", policyKey),
-                    new KeyValuePair<string, object?>("outcome", "timeout"));
+                // R-1：指标 tag 白名单过滤
+                MudHttpMeter.RetryCounter.Add(1, MudHttpMeter.FilterTags(
+                    new KeyValuePair<string, object?>[] { new("policy_key", policyKey), new("outcome", "timeout") }));
 
                 // 写入 TimeoutOccurred Span 事件，与 RetryOccurred 对称
                 MudHttpActivitySource.AddActivityEvent(
@@ -358,9 +348,9 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 onTimeoutAsync: (context, timespan, task) =>
                 {
                     MudHttpClientLog.RequestTimeoutMs(_logger, timespan.TotalMilliseconds);
-                    MudHttpMeter.RetryCounter.Add(1,
-                        new KeyValuePair<string, object?>("policy_key", policyKey),
-                        new KeyValuePair<string, object?>("outcome", "timeout"));
+                    // R-1：指标 tag 白名单过滤
+                    MudHttpMeter.RetryCounter.Add(1, MudHttpMeter.FilterTags(
+                        new KeyValuePair<string, object?>[] { new("policy_key", policyKey), new("outcome", "timeout") }));
                     return Task.CompletedTask;
                 });
             policy = timeoutPolicy;
@@ -452,19 +442,14 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
                 .WaitAndRetryAsync(
                     maxRetries,
-                    retryAttempt => useExponentialBackoff
-                        ? TimeSpan.FromMilliseconds(
-                            Math.Min(
-                                delayMilliseconds * Math.Pow(2, retryAttempt - 1),
-                                60000))
-                        : TimeSpan.FromMilliseconds(delayMilliseconds),
+                    // M2-#11：方法级重试统一走 ComputeBackoff（含抖动，与全局重试一致）
+                    retryAttempt => ComputeBackoff(useExponentialBackoff, delayMilliseconds, retryAttempt),
                     onRetryAsync: async (outcome, timeSpan, retryCount, context) =>
                     {
                         MudHttpClientLog.RetryAttempting(_logger, timeSpan.TotalMilliseconds, retryCount, maxRetries, outcome.Exception);
-                        MudHttpMeter.RetryCounter.Add(1,
-                            new KeyValuePair<string, object?>("policy_key", policyKey),
-                            new KeyValuePair<string, object?>("outcome", "retry"),
-                            new KeyValuePair<string, object?>("retry_count", retryCount));
+                        // R-1：指标 tag 白名单过滤
+                        MudHttpMeter.RetryCounter.Add(1, MudHttpMeter.FilterTags(
+                            new KeyValuePair<string, object?>[] { new("policy_key", policyKey), new("outcome", "retry"), new("retry_count", retryCount) }));
 
                         // 将重试次数写入 Polly Context，供 ResilientHttpClient 在克隆请求时读取并写入请求属性
                         context[RetryCountContextKey] = retryCount;
@@ -536,36 +521,68 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 #endif
     }
 
+    /// <summary>
+    /// M2-#11：统一的重试退避计算（全局重试与方法级 [Retry] 共用）。
+    /// 退避 = 指数退避（上限 60s）或固定延迟 + 可选随机抖动 [0, baseDelay/4)。
+    /// </summary>
+    /// <param name="useExponentialBackoff">是否指数退避。</param>
+    /// <param name="baseDelayMs">基础延迟（毫秒）。</param>
+    /// <param name="attempt">当前重试次数（从 1 开始）。</param>
+    /// <returns>本次重试的退避时长。</returns>
+    private TimeSpan ComputeBackoff(bool useExponentialBackoff, double baseDelayMs, int attempt)
+    {
+        var delay = useExponentialBackoff
+            ? Math.Min(baseDelayMs * Math.Pow(2, attempt - 1), 60000)
+            : baseDelayMs;
+
+        // RetryOptions.UseJitter（默认 true）控制抖动；关闭时恢复纯指数/固定退避
+        if (_options.Retry.UseJitter)
+            delay += GetJitterMilliseconds(delay);
+
+        return TimeSpan.FromMilliseconds(delay);
+    }
+
+    /// <summary>
+    /// M3-#20：重试判定统一为结构化状态码检查（netstandard2.0 与 net6+ 行为一致）。
+    /// </summary>
+    /// <remarks>
+    /// 状态码来源：net5+ 读 <see cref="HttpRequestException.StatusCode"/>（<see cref="ApiException"/>
+    /// 构造时已传入 base）；netstandard2.0 读 <c>Data["HttpStatusCode"]</c>（由
+    /// <c>EnhancedHttpClient.EnsureSuccessStatusCodeAsync</c> 与 <c>DefaultHttpRequestExecutor.CreateApiException</c>
+    /// 统一写入，两 TFM 均有）。删除了 ns2.0 原有的"异常消息文本猜测"分支 —— 该分支在无状态码时
+    /// 与 net6+ 的 <c>return true</c> 结论可能不同，违反多 TFM 行为一致要求。
+    /// </remarks>
     private static bool ShouldRetry(HttpRequestException exception, int[] retryStatusCodes)
     {
-#if NETSTANDARD2_0
-        // netstandard2.0 的 HttpRequestException 没有 StatusCode 属性
-        // 尝试从 Data 字典获取（由 EnhancedHttpClient.EnsureSuccessStatusCodeAsync 设置）
-        if (exception.Data.Contains("HttpStatusCode") && exception.Data["HttpStatusCode"] is int code)
-        {
+        if (TryGetStatusCode(exception, out var code))
             return retryStatusCodes.Contains(code);
-        }
 
-        // 如果没有状态码信息，回退到不重试客户端错误的保守策略
-        // 仅当异常消息包含可识别的服务器错误状态码时才重试
-        var message = exception.Message ?? string.Empty;
-        foreach (var retryCode in retryStatusCodes)
-        {
-            if (message.Contains($" {retryCode} "))
-                return true;
-        }
-
-        // 无法确定状态码时，保守地重试（保持向后兼容）
+        // 无状态码 = 传输层故障（连接失败、DNS、TLS）→ 重试（两 TFM 一致）
         return true;
+    }
+
+    /// <summary>
+    /// M3-#20：从异常中提取结构化状态码；不可得时返回 false。
+    /// </summary>
+    private static bool TryGetStatusCode(HttpRequestException ex, out int code)
+    {
+#if NETSTANDARD2_0
+        // netstandard2.0 的 HttpRequestException 没有 StatusCode 属性，
+        // 从 Data 字典获取（由框架的 ApiException 构造路径统一写入）
+        if (ex.Data.Contains("HttpStatusCode") && ex.Data["HttpStatusCode"] is int c)
+        {
+            code = c;
+            return true;
+        }
 #else
-        if (exception.StatusCode.HasValue)
+        if (ex.StatusCode.HasValue)
         {
-            var statusCode = (int)exception.StatusCode.Value;
-            return retryStatusCodes.Contains(statusCode);
+            code = (int)ex.StatusCode.Value;
+            return true;
         }
-
-        return true;
 #endif
+        code = 0;
+        return false;
     }
 
     private static int[] GetDefaultRetryStatusCodes()

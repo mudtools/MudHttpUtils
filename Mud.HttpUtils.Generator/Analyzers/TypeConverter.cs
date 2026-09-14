@@ -19,9 +19,10 @@ internal static class TypeConverter
     {
         if (defaultValue == null)
         {
-            return parameterType.ToDisplayString() == "System.Threading.CancellationToken"
-                ? "default"
-                : "null";
+            // F1 修复：defaultValue 为 null 时，「值类型参数（含 struct/枚举/可空值类型）的 default」必须
+            // 使用 default 字面量，仅引用类型使用 null。原实现只特判 CancellationToken（按 ToDisplayString
+            // 字符串比较），对自定义 struct 的 = default 输出非法 "null"。
+            return parameterType.IsValueType ? "default" : "null";
         }
 
         switch (parameterType.SpecialType)

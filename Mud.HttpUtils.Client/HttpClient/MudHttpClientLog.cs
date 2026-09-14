@@ -63,6 +63,10 @@ internal static partial class MudHttpClientLog
     [LoggerMessage(EventId = 111, Level = LogLevel.Warning,
         Message = "RetryStatusCodes 配置为空数组，仅 HttpRequestException（无 StatusCode）/TimeoutRejectedException/TaskCanceledException 会触发重试。如需使用默认状态码 [408,429,500,502,503,504]，请移除该配置项或设为 null。")]
     public static partial void RetryStatusCodesEmptyArray(ILogger logger);
+
+    [LoggerMessage(EventId = 112, Level = LogLevel.Information,
+        Message = "HTTP 方法 {Method} 为非幂等方法，默认跳过重试（保留超时和熔断）。如需重试请设置 [Retry(AllowNonIdempotent = true)] 或 RetryOptions.AllowNonIdempotentRetry = true。")]
+    public static partial void RetrySkippedNonIdempotent(ILogger logger, string method);
 #else
     private static readonly Action<ILogger, double, int, int, Exception?> s_retryAttempting =
         LoggerMessage.Define<double, int, int>(LogLevel.Warning, new EventId(101, nameof(RetryAttempting)),
@@ -125,6 +129,84 @@ internal static partial class MudHttpClientLog
         LoggerMessage.Define(LogLevel.Warning, new EventId(111, nameof(RetryStatusCodesEmptyArray)),
             "RetryStatusCodes 配置为空数组，仅 HttpRequestException（无 StatusCode）/TimeoutRejectedException/TaskCanceledException 会触发重试。如需使用默认状态码 [408,429,500,502,503,504]，请移除该配置项或设为 null。");
     public static void RetryStatusCodesEmptyArray(ILogger logger) => s_retryStatusCodesEmptyArray(logger, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_retrySkippedNonIdempotent =
+        LoggerMessage.Define<string>(LogLevel.Information, new EventId(112, nameof(RetrySkippedNonIdempotent)),
+            "HTTP 方法 {Method} 为非幂等方法，默认跳过重试（保留超时和熔断）。如需重试请设置 [Retry(AllowNonIdempotent = true)] 或 RetryOptions.AllowNonIdempotentRetry = true。");
+    public static void RetrySkippedNonIdempotent(ILogger logger, string method)
+        => s_retrySkippedNonIdempotent(logger, method, null);
+#endif
+
+    #endregion
+
+    #region Config 模块 (EventId: 113-120)
+
+#if NET6_0_OR_GREATER
+    [LoggerMessage(EventId = 113, Level = LogLevel.Warning,
+        Message = "MudHttpClients:Clients:{ClientName} 未配置 BaseAddress，该客户端不会被注册，其 TimeoutSeconds/DefaultHeaders/AllowCustomBaseUrls 配置将被忽略。")]
+    public static partial void ClientSkippedMissingBaseAddress(ILogger logger, string clientName);
+
+    [LoggerMessage(EventId = 114, Level = LogLevel.Information,
+        Message = "已应用 UrlValidator 域名白名单（{Count} 项）。")]
+    public static partial void AllowedDomainsApplied(ILogger logger, int count);
+
+    [LoggerMessage(EventId = 115, Level = LogLevel.Warning,
+        Message = "Retry.AllowNonIdempotentRetry = true，RetryableHttpMethods 将被忽略（所有 HTTP 方法均允许重试）。如需仅重试幂等方法，请将其设为 false。")]
+    public static partial void RetryableHttpMethodsIgnored(ILogger logger);
+
+    // EventId 116 已废弃：原 AesEncryptionOptions.EnableAuthenticatedEncryption=false 安全警告，
+    // 触发点随「AES 信封版本前缀歧义消除方案（OPT-C，移除裸 CBC 路径）」一并移除。编号冻结，不再复用。
+
+    [LoggerMessage(EventId = 119, Level = LogLevel.Information,
+        Message = "AesEncryptionProvider：当前运行时不支持 AesGcm，已使用 CBC + HMAC-SHA256（信封版本 0x03）进行认证加密。如需密文可跨 netstandard2.0/net6.0 运行时解密，可显式设置 AesEncryptionOptions.RequireCrossRuntimePortable = true。")]
+    public static partial void AesGcmUnavailableFallbackToCbcHmac(ILogger logger);
+
+    [LoggerMessage(EventId = 117, Level = LogLevel.Warning,
+        Message = "检测到响应缓存双入口同时配置：AddHttpResponseCache 已显式注册 IHttpResponseCache，配置节 MudHttpClients:ResponseCache 将被忽略（TryAddSingleton 先注册者生效）。")]
+    public static partial void ResponseCacheConfigurationIgnored(ILogger logger);
+
+    [LoggerMessage(EventId = 118, Level = LogLevel.Debug,
+        Message = "客户端 {ClientName} 的 AllowCustomBaseUrls 被覆盖为 {NewValue}（原值 {OldValue}）。")]
+    public static partial void AllowCustomBaseUrlsOverridden(ILogger logger, string clientName, bool newValue, bool oldValue);
+#else
+    private static readonly Action<ILogger, string, Exception?> s_clientSkippedMissingBaseAddress =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(113, nameof(ClientSkippedMissingBaseAddress)),
+            "MudHttpClients:Clients:{ClientName} 未配置 BaseAddress，该客户端不会被注册，其 TimeoutSeconds/DefaultHeaders/AllowCustomBaseUrls 配置将被忽略。");
+    public static void ClientSkippedMissingBaseAddress(ILogger logger, string clientName)
+        => s_clientSkippedMissingBaseAddress(logger, clientName, null);
+
+    private static readonly Action<ILogger, int, Exception?> s_allowedDomainsApplied =
+        LoggerMessage.Define<int>(LogLevel.Information, new EventId(114, nameof(AllowedDomainsApplied)),
+            "已应用 UrlValidator 域名白名单（{Count} 项）。");
+    public static void AllowedDomainsApplied(ILogger logger, int count)
+        => s_allowedDomainsApplied(logger, count, null);
+
+    private static readonly Action<ILogger, Exception?> s_retryableHttpMethodsIgnored =
+        LoggerMessage.Define(LogLevel.Warning, new EventId(115, nameof(RetryableHttpMethodsIgnored)),
+            "Retry.AllowNonIdempotentRetry = true，RetryableHttpMethods 将被忽略（所有 HTTP 方法均允许重试）。如需仅重试幂等方法，请将其设为 false。");
+    public static void RetryableHttpMethodsIgnored(ILogger logger)
+        => s_retryableHttpMethodsIgnored(logger, null);
+
+    // EventId 116 已废弃：原 AesEncryptionOptions.EnableAuthenticatedEncryption=false 安全警告，
+    // 触发点随「AES 信封版本前缀歧义消除方案（OPT-C，移除裸 CBC 路径）」一并移除。编号冻结，不再复用。
+
+    private static readonly Action<ILogger, Exception?> s_aesGcmUnavailableFallbackToCbcHmac =
+        LoggerMessage.Define(LogLevel.Information, new EventId(119, nameof(AesGcmUnavailableFallbackToCbcHmac)),
+            "AesEncryptionProvider：当前运行时不支持 AesGcm，已使用 CBC + HMAC-SHA256（信封版本 0x03）进行认证加密。如需密文可跨 netstandard2.0/net6.0 运行时解密，可显式设置 AesEncryptionOptions.RequireCrossRuntimePortable = true。");
+    public static void AesGcmUnavailableFallbackToCbcHmac(ILogger logger)
+        => s_aesGcmUnavailableFallbackToCbcHmac(logger, null);
+
+    private static readonly Action<ILogger, Exception?> s_responseCacheConfigurationIgnored =
+        LoggerMessage.Define(LogLevel.Warning, new EventId(117, nameof(ResponseCacheConfigurationIgnored)),
+            "检测到响应缓存双入口同时配置：AddHttpResponseCache 已显式注册 IHttpResponseCache，配置节 MudHttpClients:ResponseCache 将被忽略（TryAddSingleton 先注册者生效）。");
+    public static void ResponseCacheConfigurationIgnored(ILogger logger)
+        => s_responseCacheConfigurationIgnored(logger, null);
+
+    private static readonly Action<ILogger, string, bool, bool, Exception?> s_allowCustomBaseUrlsOverridden =
+        LoggerMessage.Define<string, bool, bool>(LogLevel.Debug, new EventId(118, nameof(AllowCustomBaseUrlsOverridden)),
+            "客户端 {ClientName} 的 AllowCustomBaseUrls 被覆盖为 {NewValue}（原值 {OldValue}）。");
+    public static void AllowCustomBaseUrlsOverridden(ILogger logger, string clientName, bool newValue, bool oldValue)
+        => s_allowCustomBaseUrlsOverridden(logger, clientName, newValue, oldValue, null);
 #endif
 
     #endregion
@@ -265,6 +347,10 @@ internal static partial class MudHttpClientLog
     [LoggerMessage(EventId = 155, Level = LogLevel.Warning,
         Message = "获取令牌失败，TokenManagerKey: '{TokenManagerKey}'。")]
     public static partial void TokenRetrievalFailed(ILogger logger, string? tokenManagerKey);
+
+    [LoggerMessage(EventId = 156, Level = LogLevel.Warning,
+        Message = "令牌恢复放弃：重试请求主机 '{RetryHost}' 与原始主机 '{OriginalHost}' 不一致，可能被重定向到不受信任的地址，拒绝继续恢复。")]
+    public static partial void TokenRecoveryHostMismatch(ILogger logger, string? retryHost, string? originalHost);
 #else
     private static readonly Action<ILogger, string, Exception?> s_tokenManagerRegistered =
         LoggerMessage.Define<string>(LogLevel.Debug, new EventId(131, nameof(TokenManagerRegistered)),
@@ -411,6 +497,12 @@ internal static partial class MudHttpClientLog
             "获取令牌失败，TokenManagerKey: '{TokenManagerKey}'。");
     public static void TokenRetrievalFailed(ILogger logger, string? tokenManagerKey)
         => s_tokenRetrievalFailed(logger, tokenManagerKey, null);
+
+    private static readonly Action<ILogger, string?, string?, Exception?> s_tokenRecoveryHostMismatch =
+        LoggerMessage.Define<string?, string?>(LogLevel.Warning, new EventId(156, nameof(TokenRecoveryHostMismatch)),
+            "令牌恢复放弃：重试请求主机 '{RetryHost}' 与原始主机 '{OriginalHost}' 不一致，可能被重定向到不受信任的地址，拒绝继续恢复。");
+    public static void TokenRecoveryHostMismatch(ILogger logger, string? retryHost, string? originalHost)
+        => s_tokenRecoveryHostMismatch(logger, retryHost, originalHost, null);
 #endif
 
     #endregion

@@ -1,0 +1,51 @@
+<Project>
+
+	<!-- ─────────────────────────────────────────────────────────────
+	     AOT 严格模式：通过 -p:AotStrictMode=true 激活，将 AOT 相关诊断精确清单式升级为错误。
+	     作用域 = 库 + Demo（排除 *.Tests / *.Benchmarks：测试与基准代码不是 AOT 交付物，
+	     其反射/动态代码用法属测试基建，纳入严格模式只会产生噪声）。
+
+	     声明位置说明：必须在 .targets（而非 .props）中注入——.props 在项目文件之前导入，
+	     读不到项目内定义的属性，导致下文的工程级退出开关永远不生效。
+
+	     <MudExcludeFromAotStrictMode>true</MudExcludeFromAotStrictMode> 供单个工程退出，
+	     适用于"消费已发布 NuGet 包"的示例工程：其生成代码来自已发布版本的源生成器，
+	     本仓库无法修复，纳入严格模式只会在既有发布包上产生无法消除的 IL1xxx/IL3xxx 错误。
+
+	     此前该清单分散定义在 3 个 Demo csproj 中，且 MSBuild 项目属性不向被 ProjectReference 的库传播，
+	     导致"库内 IL 告警永远不失败、CI 严格模式名不副实"。上移后库工程同样受检（防回归）。
+	     ───────────────────────────────────────────────────────────── -->
+	<PropertyGroup Condition="'$(AotStrictMode)' == 'true' AND '$(MudExcludeFromAotStrictMode)' != 'true' AND !$(MSBuildProjectName.EndsWith('.Tests')) AND !$(MSBuildProjectName.EndsWith('.Benchmarks'))">
+		<WarningsAsErrors>$(WarningsAsErrors);IL2026;IL2046;IL2050;IL2057;IL2067;IL2070;IL2072;IL2075;IL2080;IL2091;IL3050;IL3051;AOT004;AOT005;AOT006;AOT007</WarningsAsErrors>
+	</PropertyGroup>
+
+	<!-- Phase 5.4: PublicAPI per-TFM 基线管理
+	     仅对发布库（有 PackageId、非源生成器/分析器、有构建输出、非测试项目）启用。
+	     在 Directory.Build.targets 中声明，因为 PackageId 等属性在项目文件中设置，
+	     需在项目文件之后导入才能读取。
+	     通过 AdditionalFiles 按 TFM 声明 PublicAPI.Shipped.txt / PublicAPI.Unshipped.txt。
+
+	     说明：2026-09-13 已删除全部 PublicAPI 目录（各发布库下的 PublicAPI/<tfm>/*.txt）。
+	     这些基线文件当初由 Microsoft.CodeAnalysis.PublicApiAnalyzers 维护，但长期未随代码同步，
+	     已失去 API 审查约束力（缺失/错漏 API 仅为 warning，未设为 error）。
+	     此处将开关强制关闭，避免 csc 因找不到 AdditionalFiles 而报 CS2001。
+	     若日后需要恢复公共 API 审查，重新置为 true 并重建基线文件即可。 -->
+	<PropertyGroup>
+		<!-- PackAsTool 是 dotnet 全局工具（CLI 可执行程序），非供外部引用的类库，
+		     其公共类型（如 JsonContextGenerator）属于工具内部实现细节，无需维护公共 API 基线。 -->
+		<EnablePublicApiBaseline Condition="'$(PackageId)' != '' AND '$(IsRoslynComponent)' != 'true' AND '$(IncludeBuildOutput)' != 'false' AND '$(IsTestProject)' != 'true' AND '$(PackAsTool)' != 'true'">false</EnablePublicApiBaseline>
+	</PropertyGroup>
+
+	<ItemGroup Condition="'$(EnablePublicApiBaseline)' == 'true'">
+		<PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="5.6.0">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+	</ItemGroup>
+
+	<ItemGroup Condition="'$(EnablePublicApiBaseline)' == 'true' AND '$(TargetFramework)' != ''">
+		<AdditionalFiles Include="PublicAPI\$(TargetFramework)\PublicAPI.Shipped.txt" />
+		<AdditionalFiles Include="PublicAPI\$(TargetFramework)\PublicAPI.Unshipped.txt" />
+	</ItemGroup>
+
+</Project>

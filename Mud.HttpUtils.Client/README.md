@@ -39,6 +39,102 @@ var baseAddress = httpClient.BaseAddress;
 
 > `WithBaseAddress` 创建新的客户端实例，不影响原客户端。新客户端继承原客户端的超时设置和默认请求头。
 
+### 增强客户端配置选项（EnhancedHttpClientOptions）
+
+`EnhancedHttpClientOptions` 封装了 `EnhancedHttpClient` 的所有可配置参数，避免构造函数参数过多的问题。**此类仅供编程式配置使用**，包含接口和委托类型属性，无法通过 `IConfiguration` 绑定。
+
+| 属性 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `Logger` | `ILogger?` | `null` | 日志记录器实例 |
+| `RequestInterceptors` | `IEnumerable<IHttpRequestInterceptor>?` | `null` | 请求拦截器集合 |
+| `ResponseInterceptors` | `IEnumerable<IHttpResponseInterceptor>?` | `null` | 响应拦截器集合 |
+| `SensitiveDataMasker` | `ISensitiveDataMasker?` | `null` | 敏感数据掩码器 |
+| `AllowCustomBaseUrls` | `bool` | `false` | 是否允许自定义基础 URL（可能带来 SSRF 风险，谨慎使用） |
+| `RequestBodySerialization` | `RequestBodySerializationMode` | `Default` | 请求体序列化模式（`Buffered`/`Streamed` 需 `ISynchronousContentSerializer`） |
+| `ExceptionRedactor` | `IExceptionRedactor?` | `null` | 异常擦除器（在异常传播前清除敏感数据） |
+| `MaxExceptionContentLength` | `int?` | `null`（生效值 10240） | 错误响应体最大读取字符数（读取阶段生效，防 OOM）。`null` 时使用默认值 10240（`HttpExecutionConstants.DefaultMaxExceptionContentLength`）；设为 `0` 或负数表示不限制。截断时带 `...[已截断]` 后缀 |
+| `CaptureRequestContent` | `bool` | `false` | 是否在发送前捕获请求体字符串（用于异常调试） |
+| `UrlResolution` | `UrlResolutionMode` | `Default` | URL 解析模式 |
+| `MaxSuccessResponseBytes` | `long` | `0` | 成功响应体最大字节数（`0` = 不限制；超限抛 `ApiRequestException`） |
+| `HttpVersion` <sup>net6+</sup> | `Version?` | `HttpVersion.Version11` | HTTP 版本 |
+| `HttpVersionPolicy` <sup>net6+</sup> | `HttpVersionPolicy?` | `RequestVersionOrLower` | HTTP 版本策略 |
+| `HttpRequestMessageOptions` | `Dictionary<string, object?>?` | `null` | 写入 `HttpRequestMessage.Options` 的键值对预设 |
+| `JsonTypeInfoResolver` <sup>net8+</sup> | `IJsonTypeInfoResolver?` | `null` | Native AOT 下用于 JSON 源生成的类型解析器 |
+
+#### 配置优先级契约（CFG-01）
+
+DI 路径（`AddMudHttpClient` → `CreateEnhancedClient`）以 `IOptions<EnhancedHttpClientOptions>` 为**基线克隆**，覆盖顺序为：
+
+```
+DI 服务依赖（ILogger / IHttpRequestInterceptor / IHttpResponseInterceptor / ISensitiveDataMasker）
+  > MudHttpClients:Clients:<name>.AllowCustomBaseUrls（命名客户端节）
+  > services.Configure<EnhancedHttpClientOptions>(...)（编程式配置）
+  > 类默认值
+```
+
+> **注意**：`IOptions<EnhancedHttpClientOptions>.Value` 为单例缓存对象，客户端创建时**克隆**后覆盖，不会就地修改该单例（多客户端不会串味）。
+
+#### 三条客户端创建路径的能力矩阵（CFG-20）
+
+| 能力 | ① DI `AddMudHttpClient` | ② DI + 源生成 | ③ 无 DI `RestService.ForGenerated<T>(HttpClient, GeneratedClientOptions)` |
+| :--- | :--- | :--- | :--- |
+| 配置载体 | `MudHttpClientApplicationOptions` + `EnhancedHttpClientOptions` | 同 ① | `GeneratedClientOptions` |
+| `RequestBodySerialization` / `UrlResolution` / `JsonTypeInfoResolver` | ✅ 生效（CFG-01 修复后） | ✅ | ⚠️ 无该能力 |
+| `SensitiveDataMasker` | ✅ | ✅ | ✅（CFG-06 接线） |
+| `RequestInterceptor` / `ResponseInterceptor` | ✅ | ✅ | ❌ 该路径不适用（无 DI 生成路径不经过 `EnhancedHttpClient`） |
+| `Logger` | ✅（DI） | ✅ | ⚠️ 固定 `NullLogger`（无 DI 路径） |
+| `RestService.ForGenerated<T>(IServiceProvider)` | — | — | 从容器解析全部依赖，**不接受** `GeneratedClientOptions` |
+
+#### AOT JSON 解析器优先级链（CFG-17）
+
+`IJsonTypeInfoResolver` 有多处来源，优先级从高到低：
+
+```
+① EnhancedHttpClientOptions.JsonTypeInfoResolver        （编程式，net8+）
+  → ② IOptions<JsonSerializerOptions>.TypeInfoResolver   （DI 注册）
+  → ③ MudHttpJsonContext.Default                          （库内置源生成上下文）
+  → ④ 反射回退                                            （非 AOT 安全）
+```
+
+> - ①/② 由 `HttpContentSerializerFactory.CreateDefault(jsonOptions?.Value, jsonTypeInfoResolver)` 合并，来源互不排斥、可叠加。
+> - ③ 始终参与合并（`AddMudHttpClientJsonContext` / `AddMudHttpContentSerializer` 注册消费方上下文时亦然）。
+> - `GeneratedClientOptions.JsonTypeInfoResolver`（无 DI 路径）**不参与**该链 —— 该路径的 AOT 元数据请通过 `GeneratedClientOptions.ContentSerializer` 携带（见 CFG-06）。
+
+#### 可观测性全局开关（`MudHttpObservabilityOptions`，CFG-D10）
+
+`MudHttpObservabilityOptions`（位于 `Mud.HttpUtils.Abstractions`）以**静态属性**提供模块级开关（测试翻转后须在 `finally` 恢复）：
+
+| 属性 | 默认值 | 说明 |
+| :--- | :--- | :--- |
+| `RedactUrlInTelemetry` | `true` | 是否对 Span tag / 日志 / 诊断事件中的 URL 脱敏（掩码 `access_token` 等敏感 query 值） |
+| `RecordFullUrlOnSuccess` | `false` | 成功请求的 Span tag 是否记录**完整 URL**。默认仅记录 `scheme://host/path`（不含 query，防泄漏并控制 tag 基数） |
+| `MetricTagAllowlist` | 全部内建维度 | 指标 tag 白名单，白名单之外的维度被丢弃（防高基数） |
+| `EmitDiagnosticEvents` | `true` | 是否发出诊断事件（`ActivityEvent` / `DiagnosticSource`）；关闭仅影响事件构造，不影响 Span 与指标 |
+
+```csharp
+// 编程式配置 EnhancedHttpClientOptions
+services.AddMudHttpClient("myApi", client =>
+{
+    client.BaseAddress = new Uri("https://api.example.com");
+}, setAsDefault: true);
+
+// 通过 EnhancedHttpClientFactoryOptions 为特定客户端配置增强选项
+services.Configure<EnhancedHttpClientFactoryOptions>(options =>
+{
+    options.ClientFactories["myApi"] = sp => new EnhancedHttpClient(
+        sp.GetRequiredService<IHttpClientFactory>().CreateClient("myApi"),
+        new EnhancedHttpClientOptions
+        {
+            AllowCustomBaseUrls = false,
+            MaxExceptionContentLength = 4096,
+            CaptureRequestContent = true,
+            RequestBodySerialization = RequestBodySerializationMode.Buffered,
+        });
+});
+```
+
+> **注意**：`AllowCustomBaseUrls` 的值在通过 `AddMudHttpClientsFromConfiguration` 注册时，会被 `MudHttpClientOptions.AllowCustomBaseUrls` 的值覆盖。`JsonTypeInfoResolver` 与 DI 注入的 `IOptions<JsonSerializerOptions>` 中的 `TypeInfoResolver` 二选一即可，优先级为：`JsonTypeInfoResolver` → `IOptions<JsonSerializerOptions>.TypeInfoResolver` → 静态默认。
+
 ### 文件上传进度报告
 
 | 类                          | 说明                                                |
@@ -83,22 +179,40 @@ services.AddSingleton<IHttpResponseInterceptor, CacheResponseInterceptor>();
 
 ### 加密提供程序
 
-| 类                             | 说明                                                  |
-| ------------------------------ | ----------------------------------------------------- |
-| `DefaultAesEncryptionProvider` | `IEncryptionProvider` 默认实现，使用 AES-CBC 模式加密 |
+| 类                             | 说明                                                                          |
+| ------------------------------ | ----------------------------------------------------------------------------- |
+| `DefaultAesEncryptionProvider` | `IEncryptionProvider` 默认实现，**始终使用认证加密**（AesGcm 或 CBC + HMAC-SHA256） |
+
+#### 密文信封格式
+
+加密产出的密文首字节为**信封版本前缀**，**解密仅按该前缀分派，不依赖任何运行时配置**：
+
+| 版本 | 布局 | 最小长度 | 产出条件 | 可在哪些目标框架解密 |
+| :--- | :--- | ------: | :--- | :--- |
+| `0x02` | `[0x02][nonce(12)][tag(16)][密文]`（AesGcm，AEAD） | 29 | net8.0/net10.0 且 `AesGcm.IsSupported` 且 `RequireCrossRuntimePortable=false`（默认） | 仅 net8.0+ |
+| `0x03` | `[0x03][IV(16)][MAC(32)][密文]`（CBC + HMAC-SHA256，Encrypt-then-MAC） | 65 | 其余运行时；或 `RequireCrossRuntimePortable=true` | 全部（netstandard2.0/net6.0/net8.0/net10.0） |
+
+版本字节空间：`0x00` 保留为非法哨兵（永不用作版本）；`0x01` 曾用于 v1 裸 CBC，该路径已随「AES 信封版本前缀歧义消除」移除且**编号永久冻结**；`0x04`~`0x0F` 保留给未来对称算法；`0x10`~`0xFF` 保留给未来扩展。
+
+无法识别的格式会抛 `CryptographicException`（消息含实际首字节）；完整性校验失败同样抛 `CryptographicException`。
+
+> **跨运行时场景**：`IEncryptableHttpClient.EncryptContent` 产出的密文会经 HTTP 传输到对端，而对端目标框架未知。若对端可能低于 net8.0，请在**加密侧**设置 `RequireCrossRuntimePortable = true` 强制产出 `0x03`。
 
 ```csharp
 services.AddMudHttpClient("myApi", encryption =>
 {
     encryption.Key = Convert.FromBase64String("your-base64-key");
     // 注意：从 v1.8.0 起 IV 自动随机生成，无需手动设置
+
+    // 可选：密文需能被 netstandard2.0 / net6.0 端解密时开启
+    encryption.RequireCrossRuntimePortable = true;
 }, client =>
 {
     client.BaseAddress = new Uri("https://api.example.com");
 });
 ```
 
-> 密钥长度支持 AES-128（16 字节）、AES-192（24 字节）、AES-256（32 字节）。`AesEncryptionOptions.Validate()` 方法在启动时验证密钥的有效性。从 v1.8.0 起，IV 在每次加密时自动随机生成，无需手动设置。
+> 密钥长度支持 AES-128（16 字节）、AES-192（24 字节）、AES-256（32 字节）。`AesEncryptionOptions.Validate()` 方法在 `IEncryptionProvider` 首次解析时验证密钥的有效性。从 v1.8.0 起，IV 在每次加密时自动随机生成；CFG-27 已移除 `AesEncryptionOptions.IV` 属性（运行时无消费点），无需也无法手动设置。认证加密始终开启，不再提供关闭选项。
 
 ### 安全认证提供程序
 
@@ -116,6 +230,15 @@ services.AddSingleton<IHmacSignatureProvider, DefaultHmacSignatureProvider>();
 ```
 
 > `DefaultApiKeyProvider` 从 `IConfiguration` 的 `ApiKey` 或 `ApiKeys:Default` 键读取密钥。`DefaultHmacSignatureProvider` 使用 HMAC-SHA256 算法对请求内容计算签名，签名结果以 Base64 编码。
+
+### HTTP 内容序列化器
+
+| 类                                | 说明                                                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `SystemTextJsonContentSerializer` | `IHttpContentSerializer` 默认实现，基于 `System.Text.Json`，行为等价于直接调用 `JsonSerializer`，保证向后兼容 |
+| `HttpContentSerializerFactory`    | 序列化选项合并工厂，集中构建 `JsonSerializerOptions`，自动合并消费方 resolver（`IOptions`/编程式）+ 库内置 `MudHttpJsonContext.Default` +（JIT）反射兜底 |
+
+> 所有 JSON 序列化/反序列化（请求体、响应、`NDJSON` 流式解析、加密内容等）均通过 `IHttpContentSerializer` 抽象进行，不再直接调用 `JsonSerializer`。默认实现 `SystemTextJsonContentSerializer` 可在 DI 中替换为自定义实现以切换序列化引擎（如 Newtonsoft.Json / XML）。`HttpContentSerializerFactory.BuildOptions` 会自动把消费方 resolver 与库内置 `MudHttpJsonContext.Default` 合并：AOT 环境下仅保留源生成上下文、杜绝静默回退反射；JIT 环境下额外 `Combine` `DefaultJsonTypeInfoResolver` 兼容未声明类型。
 
 ### 日志脱敏
 
@@ -317,6 +440,8 @@ services.AddMudHttpClientsFromConfiguration(configuration);
 > - 如需从配置文件控制缓存参数，使用 `AddMudHttpClientsFromConfiguration`（内部自动读取 `ResponseCache` 子节）。
 > - 如需代码硬编码缓存参数，使用 `AddHttpResponseCache(maxCacheSize, cleanupIntervalSeconds)`。
 > - 如需完全自定义缓存实现，直接注册 `IHttpResponseCache`。
+>
+> **CFG-16**：两者同时配置且配置节设置了非默认值时，启动期记录警告日志（`EventId 117`，"响应缓存双入口同时配置"），避免配置被静默忽略。
 
 ### 令牌恢复配置
 
@@ -377,7 +502,7 @@ services.AddTokenRefreshBackgroundService(options =>
 
 > `RecoveryMaxRetries` 设置为负数时将抛出 `ArgumentOutOfRangeException`。`TokenScheme` 设置为 null 或空字符串时将抛出 `ArgumentException`。此外，`AddMudHttpTokenRecoveryFromConfiguration` 会注册 `TokenRecoveryOptionsValidator`，在启动时自动校验上述约束。
 >
-> `RefreshIntervalSeconds` 和 `RetryDelaySeconds` 设置为 0 或负数时将抛出 `ArgumentOutOfRangeException`。此外，`AddTokenRefreshBackgroundService` 和 `AddTokenRefreshBackgroundServiceFromConfiguration` 会注册 `TokenRefreshBackgroundOptionsValidator`，当 `RetryDelaySeconds` 大于等于 `RefreshIntervalSeconds` 时返回校验失败（重试延迟跨越下一个刷新周期可能导致刷新逻辑混乱）。
+> `RefreshIntervalSeconds` 和 `RetryDelaySeconds` 设置为 0 或负数时将抛出 `ArgumentOutOfRangeException`。此外，`AddTokenRefreshBackgroundService` 的**两个重载**（`Action<TokenRefreshBackgroundOptions>` 与 `IConfiguration`）均会注册 `TokenRefreshBackgroundOptionsValidator`，当 `RetryDelaySeconds` 大于等于 `RefreshIntervalSeconds` 时返回校验失败（会抛出 `OptionsValidationException` 阻止启动 —— 重试延迟跨越下一个刷新周期可能导致刷新逻辑混乱）。
 
 ### 应用上下文
 
@@ -450,7 +575,7 @@ services.AddMudHttpHealthChecks(Configuration);
 
 #### 熔断器健康检查选项
 
-`CircuitBreakerHealthCheckSettings` 用于配置熔断器健康检查，在 `appsettings.json` 中位于 `MudHttpHealthChecks:CircuitBreakerHealthCheck` 下。
+`CircuitBreakerHealthCheckSettings` 用于配置熔断器健康检查，在 `appsettings.json` 中位于 `MudHttpHealthChecks:CircuitBreaker` 下。
 
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
@@ -470,7 +595,7 @@ services.AddMudHttpHealthChecks(Configuration);
       "MinSampleSize": 5,
       "FailureStatus": "Degraded"
     },
-    "CircuitBreakerHealthCheck": {
+    "CircuitBreaker": {
       "MaxOpenCount": 0,
       "MaxHalfOpenCount": 0,
       "FailureStatus": "Unhealthy"
@@ -479,7 +604,7 @@ services.AddMudHttpHealthChecks(Configuration);
 }
 ```
 
-> `MudHttpHealthChecks` 下的 `TokenRefresh` 子节会被 `AddMudHttpHealthChecks(IConfiguration)` 自动绑定；`CircuitBreakerHealthCheck` 子节对应 `MudCircuitBreakerHealthCheck.SectionName`（默认 `"CircuitBreakerHealthCheck"`）。
+> `MudHttpHealthChecks` 下的 `TokenRefresh` 和 `CircuitBreaker` 子节会被 `AddMudHttpHealthChecks(IConfiguration)` 自动绑定。
 
 ### 可观测性
 
@@ -543,7 +668,7 @@ flowchart TD
     EX --> ReqI["请求拦截器链<br/>IHttpRequestInterceptor（按 Order 升序）"]
     ReqI --> Token["令牌注入<br/>DefaultTokenProvider → IMudAppContext<br/>→ TokenManager / IUserTokenManager"]
     Token --> Enc{"已配置加密?<br/>IEncryptionProvider"}
-    Enc -->|"是"| EncOp["请求体 / 字段加密<br/>DefaultAesEncryptionProvider（AES-CBC）"]
+    Enc -->|"是"| EncOp["请求体 / 字段加密<br/>DefaultAesEncryptionProvider（AesGcm / CBC+HMAC）"]
     Enc -->|"否"| Auth
     EncOp --> Auth["认证头注入<br/>API Key / HMAC 签名"]
     Auth --> UrlCheck["URL 安全校验<br/>UrlValidator（SSRF 防护 / 域名白名单）"]
@@ -720,6 +845,16 @@ services.AddSensitiveDataMasker<MyMasker>();        // 注册自定义实现
 | `Microsoft.Extensions.Logging.Abstractions` | 日志抽象                                                      |
 | `Microsoft.Extensions.Options`              | 选项模式                                                      |
 | `Microsoft.Extensions.Caching.Memory`       | 内存缓存（`UserTokenManagerBase`、`MemoryHttpResponseCache`） |
+
+## Native AOT 支持
+
+`Mud.HttpUtils.Client` 是 Native AOT 友好的：所有 JSON 序列化/反序列化统一经过 `IHttpContentSerializer` 抽象，避免在 AOT 下静默回退反射。
+
+- 通过 `AddMudHttpClientJsonContext(...)`（.NET 8+）注册消费方 `JsonSerializerContext`，由 `HttpContentSerializerFactory.BuildOptions` 自动与库内置 `MudHttpJsonContext.Default` 合并。
+- 配合 `Mud.HttpUtils.JsonContextScaffolder` 脚手架自动生成包含闭合泛型（如 `FeishuApiResult<T>`）的 `JsonSerializerContext`，或手动将 `[HttpJsonSerializable]` 标注类型加入 `JsonSerializerContext`。
+- `SystemTextJsonContentSerializer` 在 AOT 环境下仅使用源生成元数据，不在运行时反射。
+
+> 详见 [`Mud.HttpUtils.JsonContextScaffolder` 工具文档](../Tools/Mud.HttpUtils.JsonContextScaffolder/README.md) 与 [`Mud.HttpUtils.Abstractions` 文档](../Mud.HttpUtils.Abstractions/README.md#native-aot-支持) 的 AOT 章节。
 
 ## 设计原则
 

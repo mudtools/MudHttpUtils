@@ -13,6 +13,11 @@ namespace Mud.HttpUtils.Resilience;
 public class ResilienceOptions
 {
     /// <summary>
+    /// 配置节的名称。
+    /// </summary>
+    public const string SectionName = "MudHttpResilience";
+
+    /// <summary>
     /// 重试策略配置。
     /// </summary>
     public RetryOptions Retry { get; set; } = new();

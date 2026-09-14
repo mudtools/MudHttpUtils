@@ -59,6 +59,7 @@ public sealed class TokenRefreshHostedService(
     private readonly ConcurrentDictionary<string, ITokenManager> _tokenManagers = new(StringComparer.OrdinalIgnoreCase);
     private readonly TokenRefreshBackgroundOptions _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
     private readonly ILogger<TokenRefreshHostedService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly TokenRefreshLoopState _loopState = new(); // P1.6（TK-10-max）跨周期保留连续失败计数
 
     /// <summary>
     /// 初始化 <see cref="TokenRefreshHostedService"/> 类的新实例，绑定单个令牌管理器（向后兼容）。
@@ -108,7 +109,9 @@ public sealed class TokenRefreshHostedService(
     ///   <item><see cref="ObjectDisposedException"/>: 令牌管理器已释放时捕获,移除该管理器</item>
     ///   <item>其他异常: 记录错误日志,根据配置决定是否重试或停止服务</item>
     /// </list>
-    /// <para>如果 <see cref="TokenRefreshBackgroundOptions.StopOnError"/> 为 <c>true</c>,刷新失败时将抛出异常终止服务。</para>
+    /// <para>如果 <see cref="TokenRefreshBackgroundOptions.StopOnError"/> 为 <c>true</c>，或连续失败次数达到
+    /// <see cref="TokenRefreshBackgroundOptions.MaxConsecutiveFailures"/>，刷新失败后本服务将记录 Critical 并优雅停止
+    /// （仅停止本服务，宿主继续运行——刻意不抛异常，避免 .NET BackgroundServiceExceptionBehavior 默认 StopHost 连带停止整个应用）。</para>
     /// </remarks>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -132,10 +135,14 @@ public sealed class TokenRefreshHostedService(
                 await Task.Delay(TimeSpan.FromSeconds(_options.RefreshIntervalSeconds), stoppingToken);
 
                 var shouldContinue = await TokenRefreshHelper.RefreshAllTokenManagersAsync(
-                    _tokenManagers, _logger, _options, stoppingToken);
+                    _tokenManagers, _logger, _options, stoppingToken, _loopState);
                 if (!shouldContinue)
                 {
-                    throw new InvalidOperationException("令牌主动刷新失败且配置为停止服务，后台服务将终止");
+                    // P1.6（TK-10）StopOnError / MaxConsecutiveFailures 触发停止：记录 Critical 后优雅 break。
+                    // 刻意不抛异常——.NET 6+ BackgroundServiceExceptionBehavior 默认 StopHost 会将宿主一并停止。
+                    // 本服务停止后宿主继续运行，其余托管服务不受影响。
+                    MudHttpClientLog.TokenRefreshFailedAndStopped(_logger, string.Join(",", _tokenManagers.Keys));
+                    break;
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -143,7 +150,7 @@ public sealed class TokenRefreshHostedService(
                 MudHttpClientLog.TokenRefreshServiceStopping(_logger);
                 break;
             }
-            catch (Exception ex) when (!_tokenManagers.IsEmpty)
+            catch (Exception ex) when (!_tokenManagers.IsEmpty && !_options.StopOnError)
             {
                 MudHttpClientLog.TokenRefreshFailedWithRetry(_logger, _options.RetryDelaySeconds, ex);
 

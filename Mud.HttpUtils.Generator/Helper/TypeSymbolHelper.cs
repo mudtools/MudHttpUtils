@@ -40,31 +40,6 @@ internal static class TypeSymbolHelper
     #region 方法信息处理
 
     /// <summary>
-    /// 获取方法参数列表字符串（包含默认值、命名空间和可为空修饰符）
-    /// </summary>
-    public static string GetParameterList(IMethodSymbol methodSymbol)
-    {
-        if (methodSymbol == null)
-            return string.Empty;
-
-        // 基于FullyQualifiedFormat进行自定义
-        var format = SymbolDisplayFormat.FullyQualifiedFormat
-            .WithParameterOptions(
-                SymbolDisplayParameterOptions.IncludeName |
-                SymbolDisplayParameterOptions.IncludeType |
-                SymbolDisplayParameterOptions.IncludeDefaultValue |
-                SymbolDisplayParameterOptions.IncludeParamsRefOut)
-            .WithMiscellaneousOptions(
-                SymbolDisplayMiscellaneousOptions.UseSpecialTypes |
-                SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier |
-                SymbolDisplayMiscellaneousOptions.AllowDefaultLiteral);
-
-        return string.Join(", ", methodSymbol.Parameters.Select(p =>
-            p.ToDisplayString(format)));
-    }
-
-
-    /// <summary>
     /// 递归获取接口及其所有父接口的所有方法（去重）
     /// </summary>
     /// <param name="interfaceSymbol">接口符号</param>

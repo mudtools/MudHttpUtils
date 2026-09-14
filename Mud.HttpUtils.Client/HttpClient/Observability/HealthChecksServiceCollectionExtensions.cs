@@ -5,7 +5,9 @@
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 using Mud.HttpUtils.Observability;
 
 namespace Mud.HttpUtils;
@@ -49,6 +51,9 @@ public static class MudHttpHealthChecksExtensions
             o.MinSampleSize = options.TokenRefresh.MinSampleSize;
         });
 
+        // 注册配置级校验器，使无效配置在启动时即被检测
+        services.TryAddSingleton<IValidateOptions<TokenRefreshHealthCheckOptions>, TokenRefreshHealthCheckOptionsValidator>();
+
         var cbOptions = new MudCircuitBreakerHealthCheckOptions
         {
             MaxOpenCount = options.CircuitBreaker.MaxOpenCount,
@@ -82,6 +87,12 @@ public static class MudHttpHealthChecksExtensions
     /// <param name="configuration">配置实例。</param>
     /// <param name="sectionPath">配置节点路径，默认 "MudHttpHealthChecks"。</param>
     /// <returns>服务集合（链式调用）。</returns>
+#if NET6_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Microsoft.Extensions.Configuration.ConfigurationBinder", "IL2026:RequiresUnreferencedCode",
+        Justification = "配置绑定路径在 AOT 下需通过委托式重载 AddMudHttpHealthChecks(Action<MudHttpHealthChecksOptions>) 替代。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050:RequiresDynamicCode",
+        Justification = "配置绑定路径在 AOT 下需通过委托式重载替代。")]
+#endif
     public static IServiceCollection AddMudHttpHealthChecks(
         this IServiceCollection services,
         IConfiguration configuration,

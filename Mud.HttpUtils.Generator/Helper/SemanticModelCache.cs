@@ -19,6 +19,11 @@ namespace Mud.HttpUtils;
 /// - 内层以 SyntaxTree 为键的 ConcurrentDictionary，利用 GetOrAdd 原子操作消除 TOCTOU 竞态。
 ///   每个 Compilation 持有独立的内层字典，避免跨 Compilation 的 SemanticModel 串用，
 ///   因此原 ConditionalWeakTable 实现中的 model.Compilation == compilation 校验不再必要。
+/// <para>
+/// 缓存大小与活动 Compilation 数量成正比：每个活动 Compilation 持有一个内层字典，
+/// 其大小与该编译中的 SyntaxTree 数量成正比。由于外层为 ConditionalWeakTable（弱引用），
+/// Compilation 被 GC 回收后关联缓存自动释放，不会在 IDE 长会话中无限增长。
+/// </para>
 /// </remarks>
 internal static class SemanticModelCache
 {

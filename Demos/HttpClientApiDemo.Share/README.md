@@ -134,7 +134,7 @@ HttpClientApiDemo.Share/
 ### 编译项目
 
 ```bash
-cd Test/HttpClientApiTest
+cd Demos/HttpClientApiDemo.Share
 dotnet build
 ```
 
@@ -168,8 +168,10 @@ obj/Debug/net10.0/generated/Mud.HttpUtils.Generator/Mud.HttpUtils.HttpInvokeClas
 
 ### 基本使用
 
+> **注意**：`[HttpClientApi]` 的 `BaseAddress` 构造函数与属性**已移除**（CFG-27，使用将产生编译错误 `CS0117`）。请通过 `AddMudHttpClient(clientName, baseAddress)` 或 `AddMudHttpGeneratedClient<T>(clientName)` 在 DI 注册时配置基地址，接口定义仅保留内容类型等声明。
+
 ```csharp
-[HttpClientApi("https://api.mudtools.cn/", ContentType = "application/xml")]
+[HttpClientApi(ContentType = "application/xml")]
 public interface IMyApi
 {
     // 使用接口级别的 application/xml
@@ -301,18 +303,14 @@ if (__queryParams.Count > 0)
     __url += "?" + __queryParams.ToString();
 
 // 生成的代码（CreateUserAsync — 复杂类型自动推断为请求体）
-var __jsonContent = JsonSerializer.Serialize(user, _jsonSerializerOptions);
-using var __jsonStrContent = new StringContent(__jsonContent, Encoding.UTF8, _defaultContentType);
-__httpRequest.Content = __jsonStrContent;
+__httpRequest.Content = _contentSerializer.ToHttpContent(user);
 
 // 生成的代码（AdvancedSearchUsersAsync — 混合推断）
 var __queryParams = global::Mud.HttpUtils.QueryParameterBuilder.Create();
 __queryParams.Add("keyword", keyword);           // string → 查询参数
 if (__queryParams.Count > 0)
     __url += "?" + __queryParams.ToString();
-var __jsonContent = JsonSerializer.Serialize(criteria, _jsonSerializerOptions);  // 复杂类型 → 请求体
-using var __jsonStrContent = new StringContent(__jsonContent, Encoding.UTF8, _defaultContentType);
-__httpRequest.Content = __jsonStrContent;
+__httpRequest.Content = _contentSerializer.ToHttpContent(criteria);  // 复杂类型 → 请求体
 ```
 
 ## 相关文档

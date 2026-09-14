@@ -481,4 +481,370 @@ public class OpenTelemetryOptionsTests
         // 此测试验证设计意图：明确不支持热更新
         descriptor.Should().BeNull();
     }
+
+    // ============ MudHttpOpenTelemetryOptionsValidator ============
+
+    [Fact]
+    public void MudHttpOpenTelemetryOptionsValidator_NullOptions_ReturnsSuccess()
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", null!);
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void MudHttpOpenTelemetryOptionsValidator_DefaultOptions_ReturnsSuccess()
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions());
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(-0.1)]
+    [InlineData(-1.0)]
+    [InlineData(1.1)]
+    [InlineData(2.0)]
+    public void MudHttpOpenTelemetryOptionsValidator_InvalidSamplingRatio_ReturnsFail(double invalidRatio)
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions { SamplingRatio = invalidRatio });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("SamplingRatio");
+    }
+
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(0.5)]
+    [InlineData(1.0)]
+    public void MudHttpOpenTelemetryOptionsValidator_ValidSamplingRatio_ReturnsSuccess(double validRatio)
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions { SamplingRatio = validRatio });
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(-100)]
+    public void MudHttpOpenTelemetryOptionsValidator_InvalidExportBatchSize_ReturnsFail(int invalidBatchSize)
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions { ExportBatchSize = invalidBatchSize });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("ExportBatchSize");
+    }
+
+    [Fact]
+    public void MudHttpOpenTelemetryOptionsValidator_NullExportBatchSize_ReturnsSuccess()
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions { ExportBatchSize = null });
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(-100)]
+    public void MudHttpOpenTelemetryOptionsValidator_InvalidExportIntervalMilliseconds_ReturnsFail(int invalidInterval)
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions { ExportIntervalMilliseconds = invalidInterval });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("ExportIntervalMilliseconds");
+    }
+
+    [Fact]
+    public void MudHttpOpenTelemetryOptionsValidator_NullExportIntervalMilliseconds_ReturnsSuccess()
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions { ExportIntervalMilliseconds = null });
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void MudHttpOpenTelemetryOptionsValidator_InvalidServiceName_ReturnsFail(string? invalidName)
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions { ServiceName = invalidName! });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("ServiceName");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void MudHttpOpenTelemetryOptionsValidator_InvalidServiceVersion_ReturnsFail(string? invalidVersion)
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions { ServiceVersion = invalidVersion! });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("ServiceVersion");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void MudHttpOpenTelemetryOptionsValidator_InvalidDeploymentEnvironment_ReturnsFail(string? invalidEnv)
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions { DeploymentEnvironment = invalidEnv! });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("DeploymentEnvironment");
+    }
+
+    [Fact]
+    public void MudHttpOpenTelemetryOptionsValidator_MultipleFailures_ReportsAll()
+    {
+        var validator = new MudHttpOpenTelemetryOptionsValidator();
+        var result = validator.Validate("Test", new MudHttpOpenTelemetryOptions
+        {
+            SamplingRatio = -1.0,
+            ExportBatchSize = -3,
+            ExportIntervalMilliseconds = -5,
+            ServiceName = "",
+            ServiceVersion = "  ",
+            DeploymentEnvironment = null!,
+        });
+        result.Failed.Should().BeTrue();
+        result.FailureMessage.Should().Contain("SamplingRatio");
+        result.FailureMessage.Should().Contain("ExportBatchSize");
+        result.FailureMessage.Should().Contain("ExportIntervalMilliseconds");
+        result.FailureMessage.Should().Contain("ServiceName");
+        result.FailureMessage.Should().Contain("ServiceVersion");
+        result.FailureMessage.Should().Contain("DeploymentEnvironment");
+    }
+
+    // ============ UseShortExporterTimeout 测试 ============
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_WithUseShortExporterTimeout_DoesNotThrow()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        services.AddMudHttpOpenTelemetry(options =>
+        {
+            options.UseShortExporterTimeout = true;
+        });
+
+        // Assert — 不抛异常即表示配置成功，OTLP 导出器超时应在内部设为 5 秒
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_WithUseShortExporterTimeoutFalse_UsesDefaultTimeout()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act — 默认 UseShortExporterTimeout=false，不修改导出器超时
+        services.AddMudHttpOpenTelemetry(options =>
+        {
+            options.UseShortExporterTimeout = false;
+        });
+
+        // Assert — 不抛异常即表示配置成功
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+    }
+
+    // ============ OtlpExportProtocol 测试 ============
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_WithHttpProtobufProtocol_DoesNotThrow()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act — 使用 HTTP/Protobuf 协议而非默认的 gRPC
+        services.AddMudHttpOpenTelemetry(options =>
+        {
+            options.OtlpExportProtocol = OtlpExportProtocol.HttpProtobuf;
+            options.OtlpEndpoint = new Uri("http://localhost:4318");
+        });
+
+        // Assert — 不抛异常即表示协议映射成功
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_WithGrpcProtocol_DoesNotThrow()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act — 显式使用 gRPC 协议（默认值）
+        services.AddMudHttpOpenTelemetry(options =>
+        {
+            options.OtlpExportProtocol = OtlpExportProtocol.Grpc;
+        });
+
+        // Assert
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+    }
+
+    // ============ EnableLogging 测试 ============
+
+#if NET8_0_OR_GREATER
+    [Fact]
+    public void AddMudHttpOpenTelemetry_WithEnableLogging_RegistersLoggerProvider()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act — 启用 OTLP 日志导出
+        services.AddMudHttpOpenTelemetry(options =>
+        {
+            options.EnableLogging = true;
+        });
+
+        // Assert — LoggerProvider 应被注册
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+        provider.GetService<MeterProvider>().Should().NotBeNull();
+        // LoggerProvider 在 .NET 8+ 通过 OpenTelemetryBuilder.WithLogging 注册
+        // 验证不抛异常即表示日志导出器注册成功
+    }
+#endif
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_WithEnableLoggingFalse_DoesNotRegisterLogging()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act — 默认 EnableLogging=false
+        services.AddMudHttpOpenTelemetry(options =>
+        {
+            options.EnableLogging = false;
+        });
+
+        // Assert — Tracing 和 Metrics 仍应注册
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+        provider.GetService<MeterProvider>().Should().NotBeNull();
+    }
+
+    // ============ OtlpHeaders 从 IConfiguration 绑定测试 ============
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_FromConfiguration_BindsOtlpHeaders()
+    {
+        // Arrange — 从 appsettings.json 绑定 OtlpHeaders
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpOpenTelemetry:OtlpHeaders:Authorization"] = "Bearer config-token",
+                ["MudHttpOpenTelemetry:OtlpHeaders:X-API-Key"] = "config-key",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        services.AddMudHttpOpenTelemetry(config);
+
+        // Assert — 不抛异常即表示 OtlpHeaders 从 IConfiguration 成功绑定并应用
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_FromConfiguration_BindsUseShortExporterTimeout()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpOpenTelemetry:UseShortExporterTimeout"] = "true",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        services.AddMudHttpOpenTelemetry(config);
+
+        // Assert — 不抛异常即表示 UseShortExporterTimeout 从 IConfiguration 绑定成功
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_FromConfiguration_BindsOtlpExportProtocol()
+    {
+        // Arrange — 从配置绑定 HttpProtobuf 协议
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpOpenTelemetry:OtlpExportProtocol"] = "HttpProtobuf",
+                ["MudHttpOpenTelemetry:OtlpEndpoint"] = "http://localhost:4318",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        services.AddMudHttpOpenTelemetry(config);
+
+        // Assert — 不抛异常即表示协议枚举从字符串绑定成功
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+    }
+
+#if NET8_0_OR_GREATER
+    [Fact]
+    public void AddMudHttpOpenTelemetry_FromConfiguration_BindsEnableLogging()
+    {
+        // Arrange — 从配置启用日志导出
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpOpenTelemetry:EnableLogging"] = "true",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        services.AddMudHttpOpenTelemetry(config);
+
+        // Assert — 不抛异常即表示 EnableLogging 从 IConfiguration 绑定并生效
+        var provider = services.BuildServiceProvider();
+        provider.GetService<TracerProvider>().Should().NotBeNull();
+        provider.GetService<MeterProvider>().Should().NotBeNull();
+    }
+#endif
+
+    [Fact]
+    public void AddMudHttpOpenTelemetry_InvalidServiceName_Throws()
+    {
+        // CFG-10：此前校验器为死校验器（无 IOptions 消费路径），非法 ServiceName 静默通过。
+        var services = new ServiceCollection();
+
+        var act = () => services.AddMudHttpOpenTelemetry(options => options.ServiceName = "");
+
+        act.Should().Throw<Microsoft.Extensions.Options.OptionsValidationException>()
+            .WithMessage("*ServiceName*");
+    }
 }

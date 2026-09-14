@@ -44,7 +44,7 @@ internal static class MethodAnalyzer
         // 一次性获取方法特性列表，避免在后续分析中重复调用 GetAttributes() 产生多次分配
         var methodAttributes = methodSymbol.GetAttributes();
 
-        var httpMethodAttributeData = FindHttpMethodAttributeFromAttributes(methodAttributes);
+        var httpMethodAttributeData = FindHttpMethodAttributeFromAttributes(methodAttributes, compilation);
         if (httpMethodAttributeData == null)
             return MethodAnalysisResult.CreateInvalid();
 
@@ -78,17 +78,17 @@ internal static class MethodAnalyzer
             interfaceAttrs = cachedInterfaceAttributes;
         }
 
-        var (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName, interfaceTokenScopes) = AnalyzeInterfaceAttributes(interfaceAttrs);
+        var (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName, interfaceTokenScopes, interfaceTokenScheme) = AnalyzeInterfaceAttributes(interfaceAttrs);
 
-        var (cacheEnabled, cacheDurationSeconds, cacheKeyTemplate, cacheVaryByUser) = AnalyzeCacheAttribute(methodAttributes);
+        var (cacheEnabled, cacheDurationSeconds, cacheKeyTemplate, cacheVaryByUser, cacheUseSlidingExpiration) = AnalyzeCacheAttribute(methodAttributes);
 
-        var (retryEnabled, retryMaxRetries, retryDelayMilliseconds, retryUseExponentialBackoff) = AnalyzeRetryAttribute(methodAttributes);
+        var (retryEnabled, retryMaxRetries, retryDelayMilliseconds, retryUseExponentialBackoff, retryAllowNonIdempotent) = AnalyzeRetryAttribute(methodAttributes);
         var (circuitBreakerEnabled, circuitBreakerFailureThreshold, circuitBreakerBreakDurationSeconds, circuitBreakerSamplingDurationSeconds, circuitBreakerMinimumThroughput) = AnalyzeCircuitBreakerAttribute(methodAttributes);
         var (methodTimeoutEnabled, methodTimeoutMilliseconds) = AnalyzeTimeoutAttribute(methodAttributes);
 
         var methodTokenScopes = AnalyzeMethodTokenScopes(methodAttributes);
 
-        var (methodTokenManagerKey, methodRequiresUserId, methodTokenInjectionMode) = AnalyzeMethodTokenExtended(methodAttributes);
+        var (methodTokenManagerKey, methodRequiresUserId, methodTokenInjectionMode, methodTokenScheme) = AnalyzeMethodTokenExtended(methodAttributes);
 
         var tokenParameterName = parameters
             .FirstOrDefault(p => p.Attributes.Any(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.Name)))?
@@ -102,7 +102,10 @@ internal static class MethodAnalyzer
         var serializationMethod = AnalyzeSerializationMethod(methodSymbol, methodAttributes, interfaceAttrs);
 
         var returnTypeFullName = TypeSymbolHelper.GetTypeFullName(methodSymbol.ReturnType);
-        var isAsyncEnumerable = TypeDetectionHelper.IsAsyncEnumerableType(returnTypeFullName, out var asyncEnumerableElementType);
+        // IAsyncEnumerable<T> 识别：统一由 ReturnTypeSupport 按符号判定。
+        // （原实现用正则匹配类型限定名，永不匹配 → 流式分支为死代码、生成代码报 CS4032。）
+        var asyncEnumerableElementType = ReturnTypeSupport.GetAsyncEnumerableElementType(methodSymbol.ReturnType);
+        var isAsyncEnumerable = asyncEnumerableElementType != null;
 
         return new MethodAnalysisResult
         {
@@ -129,8 +132,10 @@ internal static class MethodAnalyzer
             InterfaceTokenInjectionMode = interfaceTokenInjectionMode,
             InterfaceTokenName = interfaceTokenName,
             InterfaceTokenScopes = interfaceTokenScopes,
+            InterfaceTokenScheme = interfaceTokenScheme,
             MethodTokenScopes = methodTokenScopes,
             MethodTokenInjectionMode = methodTokenInjectionMode,
+            MethodTokenScheme = methodTokenScheme,
             TokenParameterName = tokenParameterName,
             MethodTokenManagerKey = methodTokenManagerKey,
             MethodRequiresUserId = methodRequiresUserId,
@@ -144,10 +149,12 @@ internal static class MethodAnalyzer
             CacheDurationSeconds = cacheDurationSeconds,
             CacheKeyTemplate = cacheKeyTemplate,
             CacheVaryByUser = cacheVaryByUser,
+            CacheUseSlidingExpiration = cacheUseSlidingExpiration,
             RetryEnabled = retryEnabled,
             RetryMaxRetries = retryMaxRetries,
             RetryDelayMilliseconds = retryDelayMilliseconds,
             RetryUseExponentialBackoff = retryUseExponentialBackoff,
+            RetryAllowNonIdempotent = retryAllowNonIdempotent,
             CircuitBreakerEnabled = circuitBreakerEnabled,
             CircuitBreakerFailureThreshold = circuitBreakerFailureThreshold,
             CircuitBreakerBreakDurationSeconds = circuitBreakerBreakDurationSeconds,
@@ -176,24 +183,73 @@ internal static class MethodAnalyzer
         return null;
     }
 
-    /// <summary>
-    /// 从方法符号查找HTTP方法特性
-    /// </summary>
-    public static AttributeData? FindHttpMethodAttributeFromSymbol(IMethodSymbol methodSymbol)
-    {
-        if (methodSymbol == null)
-            return null;
-
-        return FindHttpMethodAttributeFromAttributes(methodSymbol.GetAttributes());
-    }
+    // 说明（缺陷修复）：原 `FindHttpMethodAttributeFromSymbol(IMethodSymbol)` 重载已被删除 ——
+    // 它只是把下方快速路径包一层，却容易被生成器前置门误用为「支持判定」的唯一口径。
+    // 现行单一事实源为：
+    //   1) 本文件的快速路径重载（仅 HttpClientGeneratorConstants.SupportedHttpMethods 中的特性名）；
+    //   2) 带 Compilation 的重载额外含「特性继承 HttpMethodAttribute」回退，仅服务于 AnalyzeMethod 的分析路径。
+    // 生成器门控（MethodGenerator / PrecomputeXmlResponseTypes）与 MUD001 分析器必须使用快速路径，
+    // 因为生成器由「特性名」推导 HTTP 动词（发射 HttpMethod.<Verb>），自定义特性名无法映射为合法动词。
 
     /// <summary>
-    /// 从已缓存的特性列表中查找HTTP方法特性
+    /// 从已缓存的特性列表中查找HTTP方法特性（仅快速路径：已知的 Get/Post/... 特性名）。
     /// </summary>
     internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableArray<AttributeData> attributes)
     {
         return attributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.SupportedHttpMethods.Contains(attr.AttributeClass?.Name));
+    }
+
+    /// <summary>
+    /// 从已缓存的特性列表中查找HTTP方法特性（含自定义特性 fallback）。
+    /// v3.3 Phase 5 T5.2：当已知特性名匹配失败时，检查是否有特性继承自 HttpMethodAttribute。
+    /// </summary>
+    /// <param name="attributes">方法特性列表。</param>
+    /// <param name="compilation">编译上下文（用于解析 HttpMethodAttribute 类型）。</param>
+    internal static AttributeData? FindHttpMethodAttributeFromAttributes(
+        ImmutableArray<AttributeData> attributes,
+        Compilation compilation)
+    {
+        // 1. 先尝试已知特性名匹配（快速路径）
+        var known = FindHttpMethodAttributeFromAttributes(attributes);
+        if (known != null)
+            return known;
+
+        // 2. Fallback：检查是否有特性继承自 HttpMethodAttribute
+        var httpMethodAttrType = compilation.GetTypeByMetadataName("Mud.HttpUtils.Attributes.HttpMethodAttribute");
+        if (httpMethodAttrType == null)
+            return null;
+
+        foreach (var attr in attributes)
+        {
+            if (attr.AttributeClass == null)
+                continue;
+
+            // 跳过已知特性（已在快速路径中排除）
+            if (HttpClientGeneratorConstants.SupportedHttpMethods.Contains(attr.AttributeClass.Name))
+                continue;
+
+            // 检查继承链：attr.AttributeClass 是否继承自 HttpMethodAttribute
+            if (InheritsFrom(attr.AttributeClass, httpMethodAttrType))
+                return attr;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 检查类型是否继承自指定基类型（含多级继承）。
+    /// </summary>
+    private static bool InheritsFrom(INamedTypeSymbol type, INamedTypeSymbol baseType)
+    {
+        var current = type.BaseType;
+        while (current != null)
+        {
+            if (SymbolEqualityComparer.Default.Equals(current, baseType))
+                return true;
+            current = current.BaseType;
+        }
+        return false;
     }
 
     /// <summary>
@@ -392,13 +448,13 @@ internal static class MethodAnalyzer
         foreach (var interfaceSyntax in allInterfaces)
         {
             // 先用廉价的名称和参数数量过滤候选集，避免对每个方法都调用昂贵的 GetDeclaredSymbol
+            // 不物化为 List：候选集通常很小（同名同参数数量），延迟枚举两次的开销低于 List 分配
             var candidates = interfaceSyntax.Members
                 .OfType<MethodDeclarationSyntax>()
                 .Where(m => m.Identifier.Text == targetName &&
-                            m.ParameterList.Parameters.Count == targetParamCount)
-                .ToList();
+                            m.ParameterList.Parameters.Count == targetParamCount);
 
-            if (candidates.Count == 0)
+            if (!candidates.Any())
                 continue;
 
             // 仅对候选方法进行语义分析确认
@@ -839,9 +895,7 @@ internal static class MethodAnalyzer
 
         if (methodAttr != null)
         {
-            var method = methodAttr.ConstructorArguments.Length > 0
-                ? methodAttr.ConstructorArguments[0].Value?.ToString()
-                : null;
+            var method = ReadSerializationMethodName(methodAttr);
             if (!string.IsNullOrEmpty(method))
                 return method;
         }
@@ -851,14 +905,40 @@ internal static class MethodAnalyzer
 
         if (interfaceAttr != null)
         {
-            var method = interfaceAttr.ConstructorArguments.Length > 0
-                ? interfaceAttr.ConstructorArguments[0].Value?.ToString()
-                : null;
+            var method = ReadSerializationMethodName(interfaceAttr);
             if (!string.IsNullOrEmpty(method))
                 return method;
         }
 
         return "Json";
+    }
+
+    /// <summary>
+    /// 读取 <c>[SerializationMethod]</c> 的枚举名（<c>Json</c> / <c>Xml</c> / <c>FormUrlEncoded</c>）。
+    /// </summary>
+    /// <remarks>
+    /// <b>重要</b>：Roslyn 的 <c>TypedConstant.Value</c> 对枚举参数返回的是<b>底层整数值</b>，
+    /// 直接 <c>ToString()</c> 会得到 "0"/"1"/"2"。历史实现正是如此，导致生成器与 AOT007 中所有
+    /// <c>== "Xml"</c> / <c>== "FormUrlEncoded"</c> 比较全部失效（[SerializationMethod(Xml)] 声明的
+    /// 方法被当作 JSON 处理，AOT007 也不会触发）。此处统一映射为枚举名。
+    /// </remarks>
+    internal static string? ReadSerializationMethodName(AttributeData attr)
+    {
+        if (attr.ConstructorArguments.Length == 0)
+            return null;
+
+        return attr.ConstructorArguments[0].Value switch
+        {
+            int i => i switch
+            {
+                0 => "Json",
+                1 => "Xml",
+                2 => "FormUrlEncoded",
+                _ => null
+            },
+            string s when !string.IsNullOrEmpty(s) => s,
+            _ => null
+        };
     }
 
     /// <summary>
@@ -883,7 +963,7 @@ internal static class MethodAnalyzer
     /// <summary>
     /// 分析接口特性
     /// </summary>
-    private static (HashSet<string> interfaceAttributes, List<InterfaceHeaderAttributeInfo> interfaceHeaderAttributes, string? interfaceTokenInjectionMode, string? interfaceTokenName, string? interfaceTokenScopes)
+    private static (HashSet<string> interfaceAttributes, List<InterfaceHeaderAttributeInfo> interfaceHeaderAttributes, string? interfaceTokenInjectionMode, string? interfaceTokenName, string? interfaceTokenScopes, string? interfaceTokenScheme)
         AnalyzeInterfaceAttributes(ImmutableArray<AttributeData> interfaceAttrs)
     {
         var interfaceAttributes = new HashSet<string>();
@@ -891,6 +971,7 @@ internal static class MethodAnalyzer
         string? interfaceTokenInjectionMode = null;
         string? interfaceTokenName = null;
         string? interfaceTokenScopes = null;
+        string? interfaceTokenScheme = null;
 
         if (!interfaceAttrs.IsDefault)
         {
@@ -937,17 +1018,20 @@ internal static class MethodAnalyzer
                 var injectionMode = GetTokenInjectionMode(tokenAttr);
                 var tokenName = GetTokenName(tokenAttr);
                 var tokenScopes = GetTokenScopes(tokenAttr);
+                var tokenScheme = GetTokenScheme(tokenAttr);
                 if (!string.IsNullOrEmpty(injectionMode))
                 {
                     interfaceTokenInjectionMode = injectionMode;
                     interfaceTokenName = tokenName;
                     interfaceTokenScopes = tokenScopes;
+                    if (!string.IsNullOrEmpty(tokenScheme))
+                        interfaceTokenScheme = tokenScheme;
                     interfaceAttributes.Add($"Token:{injectionMode}:{tokenName}");
                 }
             }
         }
 
-        return (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName, interfaceTokenScopes);
+        return (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName, interfaceTokenScopes, interfaceTokenScheme);
     }
 
     /// <summary>
@@ -1009,6 +1093,25 @@ internal static class MethodAnalyzer
     }
 
     /// <summary>
+    /// 获取Token特性的 Scheme（认证方案）值
+    /// </summary>
+    private static string? GetTokenScheme(AttributeData tokenAttr)
+    {
+        if (tokenAttr == null)
+            return null;
+
+        foreach (var namedArg in tokenAttr.NamedArguments)
+        {
+            if (namedArg.Key == "Scheme")
+            {
+                return namedArg.Value.Value?.ToString();
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// 获取Header特性的名称
     /// </summary>
     private static string GetHeaderName(AttributeData headerAttr)
@@ -1030,13 +1133,13 @@ internal static class MethodAnalyzer
     /// <summary>
     /// 从已缓存的特性列表中分析方法级别 Token 特性的 TokenManagerKey 和 RequiresUserId
     /// </summary>
-    private static (string? tokenManagerKey, bool? requiresUserId, string? injectionMode) AnalyzeMethodTokenExtended(ImmutableArray<AttributeData> attributes)
+    private static (string? tokenManagerKey, bool? requiresUserId, string? injectionMode, string? scheme) AnalyzeMethodTokenExtended(ImmutableArray<AttributeData> attributes)
     {
         var tokenAttr = attributes
             .FirstOrDefault(attr => HasAttributeWithName(attr, "TokenAttribute"));
 
         if (tokenAttr == null)
-            return (null, null, null);
+            return (null, null, null, null);
 
         var tokenManagerKey = TokenHelper.GetTokenManagerKeyFromAttribute(tokenAttr);
         var requiresUserIdValue = tokenAttr.NamedArguments
@@ -1044,8 +1147,9 @@ internal static class MethodAnalyzer
 
         bool? requiresUserId = requiresUserIdValue is bool b ? b : (bool?)null;
         var injectionMode = GetTokenInjectionMode(tokenAttr);
+        var scheme = GetTokenScheme(tokenAttr);
 
-        return (tokenManagerKey, requiresUserId, injectionMode);
+        return (tokenManagerKey, requiresUserId, injectionMode, scheme);
     }
 
     /// <summary>
@@ -1082,13 +1186,13 @@ internal static class MethodAnalyzer
         return name == attributeName || name == attributeName.Replace("Attribute", "");
     }
 
-    private static (bool enabled, int durationSeconds, string? keyTemplate, bool varyByUser) AnalyzeCacheAttribute(ImmutableArray<AttributeData> attributes)
+    private static (bool enabled, int durationSeconds, string? keyTemplate, bool varyByUser, bool useSlidingExpiration) AnalyzeCacheAttribute(ImmutableArray<AttributeData> attributes)
     {
         var cacheAttr = attributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name));
 
         if (cacheAttr == null)
-            return (false, 300, null, false);
+            return (false, 300, null, false, false);
 
         var durationSeconds = AttributeDataHelper.GetAttributeIntValue(
             cacheAttr, 0, HttpClientGeneratorConstants.CacheDurationSecondsProperty, 300);
@@ -1099,16 +1203,20 @@ internal static class MethodAnalyzer
         var varyByUser = AttributeDataHelper.GetBoolValueFromAttribute(
             cacheAttr, HttpClientGeneratorConstants.CacheVaryByUserProperty);
 
-        return (true, durationSeconds, keyTemplate, varyByUser);
+        // 解析滑动过期配置（此前被生成器忽略，仅发 HTTPCLIENT019 Info）
+        var useSlidingExpiration = AttributeDataHelper.GetBoolValueFromAttribute(
+            cacheAttr, HttpClientGeneratorConstants.CacheUseSlidingExpirationProperty);
+
+        return (true, durationSeconds, keyTemplate, varyByUser, useSlidingExpiration);
     }
 
-    private static (bool enabled, int maxRetries, int delayMilliseconds, bool useExponentialBackoff) AnalyzeRetryAttribute(ImmutableArray<AttributeData> attributes)
+    private static (bool enabled, int maxRetries, int delayMilliseconds, bool useExponentialBackoff, bool allowNonIdempotent) AnalyzeRetryAttribute(ImmutableArray<AttributeData> attributes)
     {
         var retryAttr = attributes
             .FirstOrDefault(attr => HttpClientGeneratorConstants.RetryAttributeNames.Contains(attr.AttributeClass?.Name));
 
         if (retryAttr == null)
-            return (false, 3, 1000, true);
+            return (false, 3, 1000, true, false);
 
         var maxRetries = AttributeDataHelper.GetAttributeIntValue(
             retryAttr, 0, HttpClientGeneratorConstants.RetryMaxRetriesProperty, 3);
@@ -1119,7 +1227,11 @@ internal static class MethodAnalyzer
         var useExponentialBackoff = AttributeDataHelper.GetBoolValueFromAttribute(
             retryAttr, HttpClientGeneratorConstants.RetryUseExponentialBackoffProperty, true);
 
-        return (true, maxRetries, delayMilliseconds, useExponentialBackoff);
+        // M2-#12：[Retry(AllowNonIdempotent = true)] → 生成代码向请求写入放行标记
+        var allowNonIdempotent = AttributeDataHelper.GetBoolValueFromAttribute(
+            retryAttr, "AllowNonIdempotent", false);
+
+        return (true, maxRetries, delayMilliseconds, useExponentialBackoff, allowNonIdempotent);
     }
 
     private static (bool enabled, int failureThreshold, int breakDurationSeconds, int samplingDurationSeconds, int minimumThroughput) AnalyzeCircuitBreakerAttribute(ImmutableArray<AttributeData> attributes)

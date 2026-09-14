@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFrameworks>netstandard2.0;net6.0;net8.0;net10.0</TargetFrameworks>
+		<PackageId>Mud.HttpUtils.Newtonsoft.Json</PackageId>
+		<Description>Mud HttpUtils 的 Newtonsoft.Json 序列化器实现，提供 IHttpContentSerializer + ISynchronousContentSerializer。</Description>
+		<PackageTags>HttpUtils;HttpClient;Newtonsoft;Json;序列化;Mud HttpUtils</PackageTags>
+		<Product>Mud Http Utils</Product>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<GenerateDocumentationFile>True</GenerateDocumentationFile>
+	</PropertyGroup>
+	<!-- Newtonsoft.Json 序列化器按设计即为非 AOT：所有成员均已标注 [RequiresUnreferencedCode]，
+	     其实现内部必然依赖反射与动态代码。AOT/裁剪分析器在本项目只会产生"已知且预期"的噪声
+	     （IL2046 接口标注不匹配、IL3050 动态代码），不构成可修复缺陷，故关闭本项目的分析器，
+	     由 XML 文档 + RUC 标注向消费方传递"非 AOT 路径"契约。 -->
+	<PropertyGroup>
+		<IsAotCompatible>false</IsAotCompatible>
+		<EnableAotAnalyzer>false</EnableAotAnalyzer>
+		<EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+	</PropertyGroup>
+	<ItemGroup>
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+	</ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\Mud.HttpUtils.Abstractions\Mud.HttpUtils.Abstractions.csproj" />
+	</ItemGroup>
+	<ItemGroup>
+		<None Include="README.md" Pack="true" PackagePath="\" />
+		<None Include="..\Icon.png" Pack="true" PackagePath="\" />
+	</ItemGroup>
+</Project>
