@@ -37,6 +37,7 @@ $Projects = @(
     "Mud.HttpUtils",
     "Mud.HttpUtils.Generator",
     "Mud.HttpUtils.Newtonsoft.Json",
+    "Mud.HttpUtils.Xml",
     "Tools/Mud.HttpUtils.JsonContextScaffolder",
     "Mud.HttpUtils.OpenTelemetry"
 )

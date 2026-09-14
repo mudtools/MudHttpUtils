@@ -17,6 +17,7 @@
     <Project Path="Mud.HttpUtils.CodeFixes/Mud.HttpUtils.CodeFixes.csproj" />
     <Project Path="Mud.HttpUtils.Generator/Mud.HttpUtils.Generator.csproj" />
     <Project Path="Mud.HttpUtils.Newtonsoft.Json/Mud.HttpUtils.Newtonsoft.Json.csproj" />
+    <Project Path="Mud.HttpUtils.Xml/Mud.HttpUtils.Xml.csproj" />
     <Project Path="Mud.HttpUtils.OpenTelemetry/Mud.HttpUtils.OpenTelemetry.csproj" />
     <Project Path="Mud.HttpUtils.Resilience/Mud.HttpUtils.Resilience.csproj" />
     <Project Path="Mud.HttpUtils/Mud.HttpUtils.csproj" />

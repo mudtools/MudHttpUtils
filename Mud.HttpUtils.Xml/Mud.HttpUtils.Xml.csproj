@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFrameworks>netstandard2.0;net6.0;net8.0;net10.0</TargetFrameworks>
+		<PackageId>Mud.HttpUtils.Xml</PackageId>
+		<Description>Mud.HttpUtils 的 XML 序列化器实现，提供 IHttpContentSerializer。</Description>
+		<PackageTags>HttpUtils;HttpClient;XML;序列化;Mud HttpUtils</PackageTags>
+		<Product>Mud Http Utils</Product>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<GenerateDocumentationFile>True</GenerateDocumentationFile>
+	</PropertyGroup>
+	<!-- XmlSerializer 按设计即为非 AOT：运行时生成动态程序集，所有公共成员已标注
+	     [RequiresDynamicCode]/[RequiresUnreferencedCode] 向消费方传递"非 AOT 路径"契约。
+	     本项目启用 AOT/裁剪分析器只会产生"已知且预期"的 IL3050/IL2026 噪声，
+	     不构成可修复缺陷，故关闭分析器并退出 AOT 严格模式
+	     （与 Mud.HttpUtils.Newtonsoft.Json 的处理方式一致）。 -->
+	<PropertyGroup>
+		<IsAotCompatible>false</IsAotCompatible>
+		<EnableAotAnalyzer>false</EnableAotAnalyzer>
+		<EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+		<MudExcludeFromAotStrictMode>true</MudExcludeFromAotStrictMode>
+	</PropertyGroup>
+	<!-- 说明：System.Xml.XmlSerializer 由 SDK 隐式引用集覆盖（含 netstandard2.0），
+	     显式 PackageReference 会触发 NU1510 告警，故不声明。 -->
+	<ItemGroup>
+		<ProjectReference Include="..\Mud.HttpUtils.Abstractions\Mud.HttpUtils.Abstractions.csproj" />
+	</ItemGroup>
+	<ItemGroup>
+		<None Include="README.md" Pack="true" PackagePath="\" />
+		<None Include="..\Icon.png" Pack="true" PackagePath="\" />
+	</ItemGroup>
+</Project>

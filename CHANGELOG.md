@@ -43,6 +43,10 @@
 - **相对 baseUrl 支持**：`QueryParameterBuilder.Build()` 对相对路径降级字符串拼接。
 - **`[Cache]` 滑动过期全链路支持**：`UseSlidingExpiration` 由生成器下沉至 `CacheOptions`，`MemoryHttpResponseCache` 命中时顺延过期。
 
+### 序列化适配器包
+
+- **新增 `Mud.HttpUtils.Xml` 包**：提供基于 `XmlSerializer` 的 `IHttpContentSerializer` 适配器（`XmlContentSerializer`），可在 DI 中替换默认 JSON 序列化引擎。按设计即为非 AOT 路径（公共成员已标注 `[RequiresDynamicCode]`/`[RequiresUnreferencedCode]`），与 `Mud.HttpUtils.Newtonsoft.Json` 适配器处理方式一致（关闭 AOT/裁剪分析器并退出 AOT 严格模式）。
+
 ### API 清理（未发布，无兼容义务）
 
 - 移除无运行时消费点的 `[Obsolete]` 残留：`HttpClientApiAttribute.BaseAddress`（属性+构造函数）、`CacheAttribute.Priority` + `CachePriority` 枚举、`AesEncryptionOptions.IV`；连带移除死诊断 `HTTPCLIENT019`（ID 保留为未使用占位）。
