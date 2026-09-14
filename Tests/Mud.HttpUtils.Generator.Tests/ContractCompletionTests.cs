@@ -410,4 +410,84 @@ public class ContractCompletionTests
         GetGeneratedCode(output).Should().NotContain("ManualAsync",
             "[IgnoreGenerator] 方法必须仍由使用方实现，契约补全不得发射占位成员");
     }
+
+    /// <summary>
+    /// 占位成员抛出的异常消息必须携带诊断 ID（<c>HTTPCLIENT024</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 占位成员只在<b>运行期被调用</b>时才暴露，线上日志若只有一句「未生成实现」，
+    /// 无法判断是"缺 HTTP 方法特性"还是"返回类型不受支持"，也无法关联规则与文档。
+    /// 方法占位与属性/事件占位（<c>InterfaceContractCompletionGenerator</c>）两条路径都要带 ID。
+    /// </remarks>
+    [Fact]
+    public void PlaceholderExceptionMessage_ContainsDiagnosticId()
+    {
+        var source = Usings + """
+
+            namespace TestNamespace
+            {
+                [HttpClientApi]
+                public interface ITestApi
+                {
+                    [Get("/bad")]
+                    string GetString();
+
+                    string UnsupportedState { get; set; }
+                }
+            }
+            """;
+
+        var output = GeneratorCompileAssert.RunAndAssertNoErrors(
+            source, description: "含方法占位与属性占位的接口");
+
+        var generated = GetGeneratedCode(output);
+        generated.Should().Contain("HTTPCLIENT024",
+            "占位实现的异常消息必须携带诊断 ID，便于线上日志关联规则与文档");
+        generated.Split("HTTPCLIENT024").Length.Should().BeGreaterThanOrEqualTo(3,
+            "方法占位与属性占位都必须携带诊断 ID（方法 1 处 + 属性 get/set 至少 2 处）");
+    }
+
+    /// <summary>
+    /// 直达返回类型（<c>Stream</c> / <c>HttpResponseMessage</c>）与编排配置组合时，
+    /// 必须报告 <c>HTTPCLIENT025</c>（Warning）—— 直达路径绕过执行器，编排不会生效。
+    /// </summary>
+    /// <remarks>
+    /// 与既有 <c>HTTPCLIENT011</c>（<c>[Cache]</c> + <c>Response&lt;T&gt;</c>）同族：
+    /// "配置静默失效"必须编译期可见。级别为 Warning（代码可编译且语义正确）。
+    /// </remarks>
+    [Fact]
+    public void DirectReturnType_WithCache_ReportsOrchestrationWarning()
+    {
+        var source = Usings + """
+
+            namespace TestNamespace
+            {
+                [HttpClientApi]
+                public interface ITestApi
+                {
+                    [Get("/stream")]
+                    [Cache]
+                    Task<System.IO.Stream> GetStreamAsync();
+
+                    [Get("/raw")]
+                    [Cache]
+                    Task<System.Net.Http.HttpResponseMessage> GetRawAsync();
+
+                    [Get("/plain")]
+                    [Cache]
+                    Task<string> GetPlainAsync();
+                }
+            }
+            """;
+
+        GeneratorCompileAssert.RunAndAssertNoErrors(source, description: "直达返回 + [Cache] 的接口");
+
+        var (_, diagnostics) = RunGenerator(source);
+        var warnings = diagnostics.Where(d => d.Id == "HTTPCLIENT025").ToList();
+
+        warnings.Should().HaveCount(2,
+            "Stream 与 HttpResponseMessage 两个直达返回方法各报告一次；普通 Task<string> 不得报告");
+        warnings.Should().OnlyContain(d => d.Severity == DiagnosticSeverity.Warning,
+            "直达返回的编排失效属「语义可用但配置未生效」，级别为 Warning");
+    }
 }

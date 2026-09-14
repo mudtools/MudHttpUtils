@@ -542,6 +542,11 @@ var response = await _httpClient.SendRawAsync(request);
 var stream = await _httpClient.SendStreamAsync(request);
 ```
 
+> `SendStreamAsync` 返回的流**所有权归调用方**（由调用方负责 `Dispose`，释放即同时释放底层 `HttpResponseMessage`）。
+> 接口方法也可直接声明 `Task<Stream>` 返回 —— 生成器会发射 `SendStreamAsync` 直达调用；
+> 该路径不参与 `[Cache]`/`[Retry]`/`[CircuitBreaker]`/`[Timeout]` 编排与 `Response<T>` 包装
+> （生成期以 `HTTPCLIENT025` 提示）。详见生成器包 README 的「直达返回」一节。
+
 #### 文件上传与下载
 
 ```csharp

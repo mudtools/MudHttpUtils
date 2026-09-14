@@ -65,9 +65,38 @@ namespace Mud.HttpUtils;
 /// <b>历史缺陷（本判定修正的正是它）</b>：MUD002 原白名单把裸 <c>byte[]</c>/<c>Stream</c>/<c>HttpResponseMessage</c>
 /// 视为合法，而生成器对它们会产出 CS4032 —— 属「分析器沉默 + 生成不可编译代码」的漏报方向，已由本判定收紧。
 /// </para>
+/// <para>
+/// <b>新增受支持返回类型时的检查清单（必须同步，缺一即为"三方不一致"）</b>：
+/// <list type="number">
+///   <item>本类（判定源）—— 扩展 <see cref="IsSupported"/> / 新增解析方法；</item>
+///   <item><c>MethodGenerator.GenerateExecutorCall</c> —— 为新形态新增对应的生成分支，
+///         并确认 <c>asyncKeyword</c> 条件覆盖该形态（否则产出 CS4032）；</item>
+///   <item><c>Diagnostics.MudMethodInvalidReturnType</c>（MUD002）—— 消息文案中的"受支持形态"清单；</item>
+///   <item><c>Mud.HttpUtils.Generator/README.md</c> 的 MUD002 行 —— 形态清单段
+///         （由 <c>DocumentationContractTests</c> 的机器可解析标记守卫）；</item>
+///   <item><see cref="SupportedReturnShapes"/> —— 供上述 README 守卫比对的能力口径清单；</item>
+///   <item>阶段三表驱动测试（<c>Tests/Mud.HttpUtils.Generator.Tests/ReturnTypeCapabilityContractTests.cs</c>）
+///         —— 新增"生成器是否发射占位 ⟺ MUD002 是否报告"的样本行。</item>
+/// </list>
+/// </para>
 /// </remarks>
 internal static class ReturnTypeSupport
 {
+    /// <summary>
+    /// 受支持的返回类型形态清单（<b>能力口径</b>，供 README 守卫比对，不是判定逻辑）。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="IsSupported"/> 是同一能力的两处表达：本清单用于与
+    /// <c>README.md</c> 中 MUD002 行的机器可解析标记
+    /// （<c>&lt;!-- supported-return-shapes: ... --&gt;</c>）做一致性守卫，
+    /// 判定逻辑仍是 <see cref="IsSupported"/>。二者不一致会让"文档承诺的能力"与"实际能力"漂移，
+    /// 正是 <c>IAsyncEnumerable</c> 死分支缺陷（README/分析器都认为支持、生成器实际不支持）的成因。
+    /// </remarks>
+    public static readonly string[] SupportedReturnShapes =
+    [
+        "Task", "Task<T>", "ValueTask", "ValueTask<T>", "IAsyncEnumerable<T>",
+    ];
+
     /// <summary>元素类型显示格式：全限定 + 特殊类型关键字，保证生成的类型名在任意上下文中可用。</summary>
     private static readonly SymbolDisplayFormat ElementTypeFormat = SymbolDisplayFormat.FullyQualifiedFormat
         .WithMiscellaneousOptions(

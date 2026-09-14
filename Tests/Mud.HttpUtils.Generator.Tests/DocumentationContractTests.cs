@@ -137,6 +137,57 @@ public class DocumentationContractTests
         }
     }
 
+    /// <summary>
+    /// README 中 MUD002 行的"受支持返回类型形态"清单必须与代码能力口径一致。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 前两条守卫只校验诊断的 <b>ID 与级别</b>，不校验<b>能力口径</b>。
+    /// 历史上 <c>IAsyncEnumerable&lt;T&gt;</c> 与裸 <c>byte[]</c>/<c>Stream</c>/<c>HttpResponseMessage</c>
+    /// 都属于"ID 与级别都对、能力口径错"的漏网案例（README/分析器认为支持、生成器实际不支持）。
+    /// </para>
+    /// <para>
+    /// 实现方式：在 README 的 MUD002 行末尾维护一个受约定格式的机器可解析标记
+    /// <c>&lt;!-- supported-return-shapes: Task, Task&lt;T&gt;, ... --&gt;</c>，
+    /// 与本测试比对 <c>ReturnTypeSupport.SupportedReturnShapes</c>。
+    /// 失败消息会同时给出两侧清单，便于直接修正。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void ReadmeMud002SupportedShapes_MatchCodeCapability()
+    {
+        var readme = ReadReadme();
+        var mud002Line = readme
+            .Split('\n')
+            .FirstOrDefault(line => line.Contains("| `MUD002` |", StringComparison.Ordinal));
+
+        mud002Line.Should().NotBeNull("README 必须存在 MUD002 诊断行");
+
+        const string marker = "supported-return-shapes:";
+        mud002Line!.Contains(marker, StringComparison.Ordinal).Should().BeTrue(
+            "MUD002 行必须维护机器可解析的形态清单标记（<!-- supported-return-shapes: Task, Task<T>, ... -->），" +
+            "否则本文档的能力口径无法被守卫");
+
+        var markerIndex = mud002Line.IndexOf(marker, StringComparison.Ordinal);
+        var payload = mud002Line.Substring(markerIndex + marker.Length);
+        // 只裁掉注释结束标记与首尾空白：不能用 TrimEnd('-', '>') —— 那会把末尾形态的 `<T>` 一起吃掉。
+        var commentEnd = payload.IndexOf("-->", StringComparison.Ordinal);
+        if (commentEnd >= 0)
+            payload = payload.Substring(0, commentEnd);
+        payload = payload.Trim();
+
+        var documented = payload
+            .Split(',')
+            .Select(shape => shape.Trim())
+            .Where(shape => shape.Length > 0)
+            .ToArray();
+
+        documented.Should().NotBeEmpty("形态清单不能为空");
+        documented.Should().BeEquivalentTo(ReturnTypeSupport.SupportedReturnShapes,
+            "README 承诺的受支持返回类型形态必须与 ReturnTypeSupport 的能力口径一致" +
+            $"（README: [{string.Join(", ", documented)}]；代码: [{string.Join(", ", ReturnTypeSupport.SupportedReturnShapes)}]）");
+    }
+
     [Fact]
     public void RegisteredCompilerVisibleProperties_AllHaveReadPoints()
     {

@@ -14,6 +14,42 @@ namespace Mud.HttpUtils;
 /// </summary>
 internal static class Diagnostics
 {
+    #region 诊断标签分层准则（WellKnownDiagnosticTags.NotConfigurable）
+    /*
+     * NotConfigurable 标签的语义（含一个必须避开的编译期"连坐"效应）：
+     *
+     * 1. 语义：标记为 NotConfigurable 的诊断"不可配置"——既不能被 #pragma / NoWarn /
+     *    .editorconfig 抑制或关闭，也不能被改变级别。用于表达"构建契约"性质的诊断。
+     *
+     * 2. 连坐效应（实测 + Roslyn 源码定位）：
+     *    csc 的 CommonCompiler.CompileAndEmit 在 Parse 与 Declare 两个阶段各有一道闸门：
+     *        if (HasUnsuppressableErrors(diagnostics)) { ... return; }
+     *    其中 Diagnostic.IsUnsuppressableError() := DefaultSeverity == Error && IsNotConfigurable()，
+     *    而 IsNotConfigurable() 即"CustomTags 含 NotConfigurable"。
+     *    声明阶段（Declare）闸门在"源生成器已运行、生成器诊断已并入同一 DiagnosticBag"之后求值，
+     *    因此只要存在一条 **默认级别为 Error 且带 NotConfigurable 的生成器诊断**，csc 便提前 return，
+     *    分析器驱动（AnalyzerDriver）的 GetDiagnosticsAsync 永不被调用 —— 同一编译中的
+     *    **全部分析器诊断**（MUD001/MUD002/MUD004）整体不再呈现。
+     *    （注：该闸门只覆盖 Parse/Declare 阶段；方法体内的绑定错误如 CS0029 属 Compile 阶段，
+     *      不参与该判定，故"无关编译错误"不会触发连坐。而 CS0535 属声明阶段错误，会触发。）
+     *
+     * 3. 判定准则（新增诊断必须遵循）：
+     *    NotConfigurable 仅用于**使用者无法通过修改自身源码/配置按预期修复的错误**
+     *    （生成器内部异常、语法损坏、注册阶段内部失败）。
+     *    凡"使用者改一行代码即可修复"的诊断（参数修饰符、URL 模板、互斥配置、类型名/方法缺失、
+     *    特性标记缺失等），**不加**该标签，以保证同编译中的分析器诊断（MUD*）不被连坐抑制。
+     *
+     * 4. 去标签**不降级**：被去标签的诊断级别仍保持 Error（默认行为不变，仍阻断构建），
+     *    只是"允许"使用者显式抑制。请勿顺手降级为 Warning —— 那会把编译期失败变成运行期故障。
+     *
+     * 守卫：Tests/Mud.HttpUtils.Generator.Tests/DiagnosticTagPolicyTests.cs 断言
+     * "Error + NotConfigurable" 的集合恰好等于内部/环境类错误白名单（本文件中即为
+     * HTTPCLIENT001、HTTPCLIENT003、HTTPCLIENTREG001、EHSG001、FORM001）。
+     *
+     * 详见 .docs/生成器诊断治理与返回类型完善方案v1.md §1.2 / §3.3。
+     */
+    #endregion
+
     #region 错误码前缀规范说明
     /*
      * 错误码命名规范：
@@ -57,8 +93,7 @@ internal static class Diagnostics
         messageFormat: "接口 {0} 的参数配置错误: {1}",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true,
-        customTags: WellKnownDiagnosticTags.NotConfigurable);
+        isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor HttpClientInvalidUrlTemplate = new(
         id: DiagnosticIds.HttpClientInvalidUrlTemplate,
@@ -66,8 +101,7 @@ internal static class Diagnostics
         messageFormat: "接口 {0} 的URL模板 '{1}' 格式无效: {2}",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true,
-        customTags: WellKnownDiagnosticTags.NotConfigurable);
+        isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor HttpClientAndTokenManagerMutuallyExclusive = new(
         id: DiagnosticIds.HttpClientAndTokenManagerMutuallyExclusive,
@@ -75,8 +109,7 @@ internal static class Diagnostics
         messageFormat: "接口 {0} 同时指定了 HttpClient 和 TokenManage 属性，两者互斥。请只设置其中一个。",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true,
-        customTags: WellKnownDiagnosticTags.NotConfigurable);
+        isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor HttpClientEncryptNotSupported = new(
         id: "HTTPCLIENT008",
@@ -84,8 +117,7 @@ internal static class Diagnostics
         messageFormat: "接口 {0} 的方法 {1} 启用了加密（EnableEncrypt=true），但指定的 HttpClient 类型 '{2}' 未实现 IEncryptableHttpClient 接口。请使用同时实现了 IEncryptableHttpClient 的类型（如 IEnhancedHttpClient），或移除加密配置。",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true,
-        customTags: WellKnownDiagnosticTags.NotConfigurable);
+        isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor HttpClientXmlNotSupported = new(
         id: "HTTPCLIENT009",
@@ -107,6 +139,30 @@ internal static class Diagnostics
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    /// <summary>
+    /// 直达返回类型（<c>HttpResponseMessage</c> / <c>Stream</c>）与 Cache/Resilience 编排组合时报告。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 直达返回绕过 <c>IHttpRequestExecutor</c>，直接调用客户端原始 API
+    /// （<c>SendRawAsync</c> / <c>SendStreamAsync</c>），故 Cache / Retry / CircuitBreaker / Timeout
+    /// 等编排配置**不会生效**。这在语义上是刻意的（用户选择直达返回即表明自管后续逻辑），
+    /// 但"配置静默失效"必须编译期可见 —— 否则用户会误以为 <c>[Cache]</c> 已生效。
+    /// </para>
+    /// <para>
+    /// 级别为 Warning（非 Error）：代码可编译且语义正确，仅编排未按预期参与，不影响既有工程构建。
+    /// 不加 <see cref="WellKnownDiagnosticTags.NotConfigurable"/>（用户可通过改返回类型修复，
+    /// 且需要避免连坐抑制分析器诊断，见本文件顶部的标签分层准则）。
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor CacheWithDirectReturnTypeWarning = new(
+        id: "HTTPCLIENT025",
+        title: "直达返回类型不参与 Cache/Resilience 编排",
+        messageFormat: "接口 {0} 的方法 {1} 的返回类型 '{2}' 属直达返回（HttpResponseMessage/Stream），生成代码将绕过请求执行器直接调用客户端 API，因此 [Cache]、[Retry]、[CircuitBreaker]、[Timeout] 等编排配置不会生效。如需缓存/弹性编排，请改用 Task<T> 等普通响应体返回类型。",
+        category: "代码生成",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     public static readonly DiagnosticDescriptor HttpClientApiGenericInterfaceNotSupported = new(
     id: "HTTPCLIENT012",
     title: "泛型接口代码生成",
@@ -122,8 +178,7 @@ internal static class Diagnostics
         messageFormat: "接口 {0} 的方法 {1} 的 URL 模板 '{2}' 中的路径参数与方法的 [Path] 参数不匹配。{3}",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true,
-        customTags: WellKnownDiagnosticTags.NotConfigurable);
+        isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor HttpClientTypeNotFound = new(
         id: "HTTPCLIENT014",
@@ -139,8 +194,7 @@ internal static class Diagnostics
         messageFormat: "接口 {0} 的 TokenManage 属性指定的类型 '{1}' 在当前编译中未找到。请确认类型名称正确，或确保包含该类型的项目已正确引用。",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true,
-        customTags: WellKnownDiagnosticTags.NotConfigurable);
+        isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor TokenManagerMissingMethod = new(
         id: "HTTPCLIENT016",
@@ -148,8 +202,7 @@ internal static class Diagnostics
         messageFormat: "接口 {0} 的 TokenManage 属性指定的类型 '{1}' 缺少必需的方法 '{2}'。TokenManage 类型必须提供 'IMudAppContext GetDefaultApp()' 和 'IMudAppContext GetApp(string appKey)' 方法，或实现 IAppManager<TAppContext> 接口。",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true,
-        customTags: WellKnownDiagnosticTags.NotConfigurable);
+        isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor HttpClientTypeUnresolved = new(
         id: "HTTPCLIENT017",
@@ -270,8 +323,7 @@ internal static class Diagnostics
         messageFormat: "RegistryGroupName '{0}' 不是有效的C#标识符。RegistryGroupName必须以字母或下划线开头，只能包含字母、数字和下划线。",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true,
-        customTags: WellKnownDiagnosticTags.NotConfigurable);
+        isEnabledByDefault: true);
     #endregion
 
     #region 事件处理器生成器诊断信息 (EHSG001)
@@ -301,8 +353,7 @@ internal static class Diagnostics
         messageFormat: "类 {0} 标记了 [FormContent] 特性，但没有找到任何标记了 [FilePath] 特性的属性。必须且只能有一个属性标记 [FilePath] 特性。",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true,
-        customTags: WellKnownDiagnosticTags.NotConfigurable);
+        isEnabledByDefault: true);
 
     public static readonly DiagnosticDescriptor FormContentMultipleFilePathAttributes = new(
         id: "FORM003",
@@ -310,8 +361,7 @@ internal static class Diagnostics
         messageFormat: "类 {0} 标记了 [FormContent] 特性，但发现了多个标记了 [FilePath] 特性的属性: {1}。必须且只能有一个属性标记 [FilePath] 特性。",
         category: "代码生成",
         DiagnosticSeverity.Error,
-        isEnabledByDefault: true,
-        customTags: WellKnownDiagnosticTags.NotConfigurable);
+        isEnabledByDefault: true);
     #endregion
 
     #region AOT JSON 序列化诊断信息 (AOT001-007)
@@ -397,6 +447,14 @@ internal static class Diagnostics
     /// 语义：AOT 分析器已启用但运行期未必 AOT —— 降为 Warning，并提示改用 PublishAot/MudAotRuntimeMode 显式声明。
     /// 严格模式（WarningsAsErrors）下仍可升级为 Error，CI 门禁强度由用户掌控。
     /// </summary>
+    /// <remarks>
+    /// <b>RS2001 抑制说明</b>：发布跟踪（<c>AnalyzerReleases.*.md</c>）以<b>规则 ID</b> 为键，
+    /// 同一 ID 只能登记一个 Severity。本变体与 Error 变体刻意共用 <c>AOT007</c>
+    /// （用户侧只感知一个"XML 不支持"规则，级别差异由 <c>MudAotRuntimeMode</c>/<c>PublishAot</c> 决定），
+    /// 因此发布跟踪必然与其中一个描述符的级别不符 → RS2001。
+    /// 这是有意设计，故就地抑制 RS2001（而非拆分为 AOT008 破坏 F10 的分级语义）。
+    /// </remarks>
+#pragma warning disable RS2001 // AOT007 分级变体刻意共用 ID，级别差异不影响用户侧的规则认知
     public static readonly DiagnosticDescriptor AotXmlNotSupportedInAotWarning = new(
         id: DiagnosticIds.AotXmlNotSupported,
         title: "XML 序列化在 Native AOT 下可能不支持（AOT 分析器已启用但未声明运行期 AOT）",
@@ -405,6 +463,7 @@ internal static class Diagnostics
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
         description: "仅设置 IsAotCompatible 时的降级提示（F10）.");
+#pragma warning restore RS2001
     #endregion
 
     #region 接口规范 / DI 生命周期分析器诊断信息 (MUD001/MUD002/MUD004)

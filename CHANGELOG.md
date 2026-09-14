@@ -51,3 +51,12 @@
 
 - 移除无运行时消费点的 `[Obsolete]` 残留：`HttpClientApiAttribute.BaseAddress`（属性+构造函数）、`CacheAttribute.Priority` + `CachePriority` 枚举、`AesEncryptionOptions.IV`；连带移除死诊断 `HTTPCLIENT019`（ID 保留为未使用占位）。
 - `RetryAttribute` 增加双参构造函数 `(int maxRetries, int delayMilliseconds)`，支持 `[Retry(3, 1000, AllowNonIdempotent = true)]` 写法。
+
+### 编译期诊断与返回类型能力（生成器）
+
+- **不可生成的接口成员一律发射占位实现并必报诊断**：对无法生成 HTTP 调用的方法/属性/索引器/事件，生成器发射抛 `NotSupportedException` 的占位成员以满足接口契约，消除 `CS0535`；同时**每次发射占位都报告 `HTTPCLIENT024`（Error）**，不依赖"该成员上的其它诊断"兜底 —— 因为兜底诊断可能是分析器诊断（`MUD001`/`MUD002`），而它们会被生成器的 `Error + NotConfigurable` 诊断连坐抑制（见下）。占位成员抛出的异常消息以 `HTTPCLIENT024:` 开头，便于线上日志关联规则与文档。
+- **返回类型门禁收紧**：生成器只为异步形态（`Task`/`Task<T>`/`ValueTask`/`ValueTask<T>`/`IAsyncEnumerable<T>`）发射实现，裸 `byte[]`/`Stream`/`HttpResponseMessage`/`Response<T>`/`string`/`void` 统一改为「占位实现 + `HTTPCLIENT024` + `MUD002`」；此前这些形态会产出「非 async 方法体内含 `await`」的不可编译代码（`CS4032`），而 `MUD002` 与 README 却把它们列为受支持（"分析器沉默 + 生成坏代码"）。返回类型判定收口到单一事实来源 `ReturnTypeSupport.IsSupported`，生成器与 `MUD002` 共用。
+- **`Task<Stream>` 伪支持修复（行为修复）**：此前生成 `ExecuteAsync<System.IO.Stream>`（把响应体按 JSON 反序列化进 `Stream`），编译通过但**运行期必然失败**；现改为直达调用 `IBaseHttpClient.SendStreamAsync`（复用既有运行期 API，零反射、AOT 安全），**响应流所有权归调用方**（`Dispose` 流即释放底层响应）。该路径不参与 Cache/Resilience/`Response<T>` 编排，与 `Task<HttpResponseMessage>`（`SendRawAsync`）同一口径；两者与 `[Cache]`/`[Retry]`/`[CircuitBreaker]`/`[Timeout]` 组合时新增 `HTTPCLIENT025`（Warning）提示"配置不会生效"。裸 `Stream` 返回仍不受支持（占位 + `MUD002`）。
+- **`IAsyncEnumerable<T>` 流式返回修复**：此前实际未命中流式分支（正则匹配类型限定名永不成功），生成结果退化为 `CS4032`；现按「符号名 + 元数」判定，正常生成 `await foreach` 流式实现。
+- **诊断标签分层（`NotConfigurable`）**：`NotConfigurable` 仅保留给「使用者无法通过修改自身源码/配置修复」的内部/环境类错误（`HTTPCLIENT001`/`003`/`HTTPCLIENTREG001`/`EHSG001`/`FORM001`）；"用户可修复"的诊断（`HTTPCLIENT004`/`005`/`007`/`008`/`013`/`015`/`016`、`HTTPCLIENTREG002`、`FORM002`/`FORM003`）去掉该标签（**级别仍为 Error，仍阻断构建**）。原因：csc 的 `CommonCompiler.CompileAndEmit` 在声明阶段有闸门 `if (HasUnsuppressableErrors(diagnostics)) return;`（`IsUnsuppressableError := DefaultSeverity == Error && 带 NotConfigurable 标签`），且该闸门在源生成器诊断并入同一 `DiagnosticBag` 之后求值 —— 命中即**跳过整轮分析器执行**，`MUD001`/`MUD002`/`MUD004` 在同一编译中整体不呈现。分层后，常见场景（用户手写代码有误）下接口规范诊断恢复可见。
+- **新增诊断发布跟踪**（`AnalyzerReleases.Shipped.md`/`Unshipped.md`）：消除生成器工程构建中的 37 条 `RS2008` 警告噪音，并使新增/变更规则的登记成为构建期门禁（`RS2008`/`RS2001`）。

@@ -58,6 +58,10 @@
 /Tests/Mud.HttpUtils.Integration.Tests/bin
 /Tests/Mud.HttpUtils.Integration.Tests/obj
 /Tests/Mud.HttpUtils.Integration.Tests/TestResults
+# 「仅分析器」CI 探针工程（刻意含违规样例，构建必然失败；不在解决方案中）
+/Tests/AnalyzerOnlyProbe/bin
+/Tests/AnalyzerOnlyProbe/obj
+/Tests/AnalyzerOnlyProbe/TestResults
 /Tests/Mud.HttpUtils.Benchmarks/bin
 /Tests/Mud.HttpUtils.Benchmarks/obj
 /Tests/Mud.HttpUtils.Benchmarks/TestResults
@@ -94,3 +98,5 @@
 /Demos/bin
 /.trae
 /artifacts
+
+*.verified.txt

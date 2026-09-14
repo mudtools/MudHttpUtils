@@ -717,29 +717,30 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 
 #### 接口实现生成（HTTPCLIENT*）
 
-| 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 |
-|---------|----------|----------|----------|------------|
-| `HTTPCLIENT001` | Error | 生成接口实现时发生异常 | 检查接口定义是否正确，查看内部异常信息 | 否 |
-| `HTTPCLIENT003` | Error | 接口语法分析失败 | 确保接口定义符合 C# 语法规范 | 否 |
-| `HTTPCLIENT004` | Error | 参数配置错误 | 检查参数特性配置是否正确 | 否 |
-| `HTTPCLIENT005` | Error | URL 模板格式无效 | 检查 `[Get]`/`[Post]` 等特性中的 URL 模板 | 否 |
-| `HTTPCLIENT007` | Error | 同时指定 `HttpClient` 和 `TokenManage` | 两者互斥，只设置其中一个 | 是（`HttpClientMutuallyExclusiveCodeFixProvider`，二选一移除） |
-| `HTTPCLIENT008` | Error | 加密配置但 HttpClient 类型不支持加密 | 使用 `IEnhancedHttpClient` 或移除加密配置 | 否 |
-| `HTTPCLIENT009` | Warning | XML 请求但 HttpClient 类型不支持 XML | 使用 `IEnhancedHttpClient` 或修改 Content-Type | 否 |
-| `HTTPCLIENT011` | Warning | `[Cache]` 与 `Response<T>` 返回类型组合 | 缓存会存储状态码和响应头，建议使用普通返回类型 | 否 |
-| `HTTPCLIENT012` | Info | 泛型接口：生成器将转发类型参数与约束 | 无需处理（泛型接口**已支持**代码生成） | 否 |
-| `HTTPCLIENT013` | Error | URL 模板中的路径占位符与 `[Path]` 参数不匹配 | 确保 URL 模板中的 `{placeholder}` 与方法中的 `[Path]` 参数一一对应 | 否 |
-| `HTTPCLIENT014` | Warning | `HttpClient` 类型未找到 | 确认类型名称正确，或通过 `AddMudHttpClient` 注册对应命名客户端 | 否 |
-| `HTTPCLIENT015` | Error | `TokenManage` 类型未找到 | 确认类型名称正确，或确保包含该类型的项目已引用 | 否 |
-| `HTTPCLIENT016` | Error | `TokenManage` 类型缺少必需方法 | 类型须提供 `GetDefaultApp()`/`GetApp(string)` 方法或实现 `IAppManager<T>` | 否 |
-| `HTTPCLIENT017` | Warning | `HttpClient` 类型无法解析，兼容性校验被跳过 | 使用完全限定名确保类型可解析 | 否 |
-| `HTTPCLIENT018` | Warning | `TokenManagerKey` 使用默认推断值 | 多接口共享同一 TokenManager 时显式指定 `TokenManagerKey` 或 `TokenType` | 否 |
-| ~~`HTTPCLIENT019`~~ | — | ❌ 已移除（CFG-27）：其唯一触发点 `CacheAttribute.Priority` 已删除 | 无需处理（ID 保留为未使用占位） | 否 |
-| `HTTPCLIENT020` | Warning | 非幂等方法声明 `[Retry]` 但未设 `AllowNonIdempotent` | 运行时将跳过重试；如服务端可安全重复执行请显式开启 | 否 |
-| `HTTPCLIENT021` | Warning | 方法级 `[Timeout]` 超过接口级 `HttpClient` 超时 | `HttpClient.Timeout` 是硬上限，调小 `[Timeout]` 或提高 `[HttpClientApi(Timeout=…)]` | 否 |
-| `HTTPCLIENT022` | Warning | 方法使用 `Path`/`HmacSignature` 令牌注入模式 | 该模式不被令牌恢复处理器支持，刷新后的新令牌无法重新注入；改用 `Header`/`Query`/`ApiKey`/`Cookie`/`BasicAuth` 模式 | 否 |
-| `HTTPCLIENT023` | Info | 检测到 `-p:ForceHttpGenerator=true`，增量缓存被强制失效 | 无需处理（逃生舱生效提示，F4） | 否 |
-| `HTTPCLIENT024` | Error | 接口成员未被生成实现，已发射占位实现（含无条件化特性的属性/事件、不受支持的返回类型/参数修饰符等） | 改用受支持的接口成员形态，或标注 `[IgnoreGenerator]` 自行实现。占位成员在运行期调用会抛 `NotSupportedException` | 否 |
+| 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 | 可抑制 |
+|---------|----------|----------|----------|------------|--------|
+| `HTTPCLIENT001` | Error | 生成接口实现时发生异常 | 检查接口定义是否正确，查看内部异常信息 | 否 | 否 |
+| `HTTPCLIENT003` | Error | 接口语法分析失败 | 确保接口定义符合 C# 语法规范 | 否 | 否 |
+| `HTTPCLIENT004` | Error | 参数配置错误 | 检查参数特性配置是否正确 | 否 | 是 |
+| `HTTPCLIENT005` | Error | URL 模板格式无效 | 检查 `[Get]`/`[Post]` 等特性中的 URL 模板 | 否 | 是 |
+| `HTTPCLIENT007` | Error | 同时指定 `HttpClient` 和 `TokenManage` | 两者互斥，只设置其中一个 | 是（`HttpClientMutuallyExclusiveCodeFixProvider`，二选一移除） | 是 |
+| `HTTPCLIENT008` | Error | 加密配置但 HttpClient 类型不支持加密 | 使用 `IEnhancedHttpClient` 或移除加密配置 | 否 | 是 |
+| `HTTPCLIENT009` | Warning | XML 请求但 HttpClient 类型不支持 XML | 使用 `IEnhancedHttpClient` 或修改 Content-Type | 否 | 是 |
+| `HTTPCLIENT011` | Warning | `[Cache]` 与 `Response<T>` 返回类型组合 | 缓存会存储状态码和响应头，建议使用普通返回类型 | 否 | 是 |
+| `HTTPCLIENT012` | Info | 泛型接口：生成器将转发类型参数与约束 | 无需处理（泛型接口**已支持**代码生成） | 否 | 否 |
+| `HTTPCLIENT013` | Error | URL 模板中的路径占位符与 `[Path]` 参数不匹配 | 确保 URL 模板中的 `{placeholder}` 与方法中的 `[Path]` 参数一一对应 | 否 | 是 |
+| `HTTPCLIENT014` | Warning | `HttpClient` 类型未找到 | 确认类型名称正确，或通过 `AddMudHttpClient` 注册对应命名客户端 | 否 | 是 |
+| `HTTPCLIENT015` | Error | `TokenManage` 类型未找到 | 确认类型名称正确，或确保包含该类型的项目已引用 | 否 | 是 |
+| `HTTPCLIENT016` | Error | `TokenManage` 类型缺少必需方法 | 类型须提供 `GetDefaultApp()`/`GetApp(string)` 方法或实现 `IAppManager<T>` | 否 | 是 |
+| `HTTPCLIENT017` | Warning | `HttpClient` 类型无法解析，兼容性校验被跳过 | 使用完全限定名确保类型可解析 | 否 | 是 |
+| `HTTPCLIENT018` | Warning | `TokenManagerKey` 使用默认推断值 | 多接口共享同一 TokenManager 时显式指定 `TokenManagerKey` 或 `TokenType` | 否 | 是 |
+| ~~`HTTPCLIENT019`~~ | — | ❌ 已移除（CFG-27）：其唯一触发点 `CacheAttribute.Priority` 已删除 | 无需处理（ID 保留为未使用占位） | 否 | — |
+| `HTTPCLIENT020` | Warning | 非幂等方法声明 `[Retry]` 但未设 `AllowNonIdempotent` | 运行时将跳过重试；如服务端可安全重复执行请显式开启 | 否 | 是 |
+| `HTTPCLIENT021` | Warning | 方法级 `[Timeout]` 超过接口级 `HttpClient` 超时 | `HttpClient.Timeout` 是硬上限，调小 `[Timeout]` 或提高 `[HttpClientApi(Timeout=…)]` | 否 | 是 |
+| `HTTPCLIENT022` | Warning | 方法使用 `Path`/`HmacSignature` 令牌注入模式 | 该模式不被令牌恢复处理器支持，刷新后的新令牌无法重新注入；改用 `Header`/`Query`/`ApiKey`/`Cookie`/`BasicAuth` 模式 | 否 | 是 |
+| `HTTPCLIENT023` | Info | 检测到 `-p:ForceHttpGenerator=true`，增量缓存被强制失效 | 无需处理（逃生舱生效提示，F4） | 否 | 否 |
+| `HTTPCLIENT024` | Error | 接口成员未被生成实现，已发射占位实现（含无条件化特性的属性/事件、不受支持的返回类型/参数修饰符等） | 改用受支持的接口成员形态，或标注 `[IgnoreGenerator]` 自行实现。占位成员在运行期调用会抛 `NotSupportedException` | 否 | 是 |
+| `HTTPCLIENT025` | Warning | 直达返回类型（`HttpResponseMessage` / `Stream`）与 `[Cache]`/`[Retry]`/`[CircuitBreaker]`/`[Timeout]` 组合 | 直达返回绕过请求执行器，编排配置不会生效；如需缓存/弹性编排请改用 `Task<T>` 等普通响应体返回类型 | 否 | 是 |
 
 > **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010`、`HTTPCLIENT019` 当前**未使用**（ID 保留为占位，不重新分配）。
 > - `HTTPCLIENT010`：`BaseAddress` 已移除（CFG-27），使用直接编译错误 `CS0117`，无需生成器提示。
@@ -747,48 +748,73 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 
 #### 注册代码生成（HTTPCLIENTREG*）
 
-| 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 |
-|---------|----------|----------|----------|------------|
-| `HTTPCLIENTREG001` | Error | 注册代码生成失败 | 检查接口定义和 DI 注册配置 | 否 |
-| `HTTPCLIENTREG002` | Error | `RegistryGroupName` 不是有效 C# 标识符 | 使用字母、数字、下划线组成，以字母或下划线开头 | 否 |
+| 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 | 可抑制 |
+|---------|----------|----------|----------|------------|--------|
+| `HTTPCLIENTREG001` | Error | 注册代码生成失败 | 检查接口定义和 DI 注册配置 | 否 | 否 |
+| `HTTPCLIENTREG002` | Error | `RegistryGroupName` 不是有效 C# 标识符 | 使用字母、数字、下划线组成，以字母或下划线开头 | 否 | 是 |
 
 #### 事件处理器生成（EHSG*）
 
-| 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 |
-|---------|----------|----------|----------|------------|
-| `EHSG001` | Error | 事件处理器代码生成错误 | 检查 `[GenerateEventHandler]` 标记的类定义 | 否 |
+| 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 | 可抑制 |
+|---------|----------|----------|----------|------------|--------|
+| `EHSG001` | Error | 事件处理器代码生成错误 | 检查 `[GenerateEventHandler]` 标记的类定义 | 否 | 否 |
 
 #### FormContent 生成（FORM*）
 
-| 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 |
-|---------|----------|----------|----------|------------|
-| `FORM001` | Error | FormContent 代码生成错误 | 检查 FormContent 类定义 | 否 |
-| `FORM002` | Error | FormContent 缺少 `[FilePath]` 属性 | 必须且只能有一个属性标记 `[FilePath]` | 否 |
-| `FORM003` | Error | FormContent 存在多个 `[FilePath]` 属性 | 只保留一个 `[FilePath]` 属性 | 否 |
+| 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 | 可抑制 |
+|---------|----------|----------|----------|------------|--------|
+| `FORM001` | Error | FormContent 代码生成错误 | 检查 FormContent 类定义 | 否 | 否 |
+| `FORM002` | Error | FormContent 缺少 `[FilePath]` 属性 | 必须且只能有一个属性标记 `[FilePath]` | 否 | 是 |
+| `FORM003` | Error | FormContent 存在多个 `[FilePath]` 属性 | 只保留一个 `[FilePath]` 属性 | 否 | 是 |
 
 #### AOT JSON 序列化诊断（AOT*）
 
 `AOT*` 系列诊断用于保障 Native AOT 场景下的 JSON 序列化可用性。其中 `AOT004`/`AOT005`/`AOT006` 由 `Mud.HttpUtils.Generator` 中的 `AotDtoCoverageAnalyzer` 报告（`AOT006` 经独立诊断分析器承载，见下），`AOT007` 由 `AotXmlRejectionAnalyzer` 报告（仅在 AOT 上下文下）；`AOT001`/`AOT002`/`AOT003` 由 `HttpJsonContextScaffolder` 脚手架工具在生成期报告。
 
-| 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 |
-|---------|----------|----------|----------|------------|
-| `AOT001` | Warning | 同一 `JsonSerializerContext` 内存在冲突的 `NamingPolicy` 配置 | 统一命名策略，或拆分为不同分组 | 否 |
-| `AOT002` | Warning | 开放泛型类型在 net8.0 以下标注 `[HttpJsonSerializable]` | 升级 TFM 至 net8.0+，或避免在低版本使用开放泛型源生成 | 否 |
-| `AOT003` | Warning | 多态类型缺少 `[JsonDerivedType]` 标注 | 补充 `[JsonDerivedType]`，或由 Scaffolder 自动补全派生类型 | 否 |
-| `AOT004` | Warning | `[HttpClientApi]` 方法的请求/响应 DTO 未被任何 `JsonSerializerContext` 覆盖 | 标注 `[HttpJsonSerializable]` 并运行 `dotnet mud-jsonctx`，或手动将类型加入现有 `JsonSerializerContext` | 是（`AotJsonContextCodeFixProvider`，自动向用户可编辑的 `JsonSerializerContext` 追加 `[JsonSerializable(typeof(T))]`，或新建 `partial` 扩展类） |
-| `AOT005` | Warning | 查询参数类型使用 JSON 序列化但未被 `JsonSerializerContext` 覆盖 | 将类型纳入 `JsonSerializerContext`，或实现 `IQueryParameter` 接口 | 是（`AotJsonContextCodeFixProvider`，同 AOT004 修复逻辑） |
-| `AOT006` | Warning | 标注了 `[HttpJsonSerializable]` 的类型未被任何 `JsonSerializerContext` 覆盖 | 运行 `dotnet mud-jsonctx`，或将此类型加入 `JsonSerializerContext` | 是（`AotJsonContextCodeFixProvider`，同 AOT004 修复逻辑） |
-| `AOT007` | Error / Warning（F10 分级） | AOT 上下文下使用 XML 序列化 | 改用 `[SerializationMethod(SerializationMethod.Json)]`，或在非 AOT 部署场景使用 XML。级别分级：确认 Native AOT（`PublishAot=true` / `MudAotRuntimeMode=aot`）→ Error；仅 `IsAotCompatible=true`（未声明运行期 AOT）→ Warning | 是（`AotXmlCodeFixProvider`，将方法改为 JSON 序列化） |
+| 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 | 可抑制 |
+|---------|----------|----------|----------|------------|--------|
+| `AOT001` | Warning | 同一 `JsonSerializerContext` 内存在冲突的 `NamingPolicy` 配置 | 统一命名策略，或拆分为不同分组 | 否 | 是 |
+| `AOT002` | Warning | 开放泛型类型在 net8.0 以下标注 `[HttpJsonSerializable]` | 升级 TFM 至 net8.0+，或避免在低版本使用开放泛型源生成 | 否 | 是 |
+| `AOT003` | Warning | 多态类型缺少 `[JsonDerivedType]` 标注 | 补充 `[JsonDerivedType]`，或由 Scaffolder 自动补全派生类型 | 否 | 是 |
+| `AOT004` | Warning | `[HttpClientApi]` 方法的请求/响应 DTO 未被任何 `JsonSerializerContext` 覆盖 | 标注 `[HttpJsonSerializable]` 并运行 `dotnet mud-jsonctx`，或手动将类型加入现有 `JsonSerializerContext` | 是（`AotJsonContextCodeFixProvider`，自动向用户可编辑的 `JsonSerializerContext` 追加 `[JsonSerializable(typeof(T))]`，或新建 `partial` 扩展类） | 是 |
+| `AOT005` | Warning | 查询参数类型使用 JSON 序列化但未被 `JsonSerializerContext` 覆盖 | 将类型纳入 `JsonSerializerContext`，或实现 `IQueryParameter` 接口 | 是（`AotJsonContextCodeFixProvider`，同 AOT004 修复逻辑） | 是 |
+| `AOT006` | Warning | 标注了 `[HttpJsonSerializable]` 的类型未被任何 `JsonSerializerContext` 覆盖 | 运行 `dotnet mud-jsonctx`，或将此类型加入 `JsonSerializerContext` | 是（`AotJsonContextCodeFixProvider`，同 AOT004 修复逻辑） | 是 |
+| `AOT007` | Error / Warning（F10 分级） | AOT 上下文下使用 XML 序列化 | 改用 `[SerializationMethod(SerializationMethod.Json)]`，或在非 AOT 部署场景使用 XML。级别分级：确认 Native AOT（`PublishAot=true` / `MudAotRuntimeMode=aot`）→ Error；仅 `IsAotCompatible=true`（未声明运行期 AOT）→ Warning | 是（`AotXmlCodeFixProvider`，将方法改为 JSON 序列化） | 是 |
 
 #### 接口规范 / DI 生命周期分析器诊断（MUD*）
 
 下述诊断由本包内的诊断分析器（`MudHttpInterfaceAnalyzer` / `TokenManagerLifetimeAnalyzer`，与源生成器同程序集，F9 对齐）报告：
 
-| 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 |
-|---------|----------|----------|----------|------------|
-| `MUD001` | Error | `[HttpClientApi]` 接口方法缺少 HTTP 方法特性 | 为方法标注 `[Get]`/`[Post]`/`[Put]`/`[Delete]`/`[Patch]`/`[Head]`/`[Options]`；标注 `[IgnoreGenerator]` 的接口/方法豁免。注意生成器由**特性名**推导 HTTP 动词，故继承 `HttpMethodAttribute` 的自定义特性不受支持（会产出 `CS0117`） | 否 |
-| `MUD002` | Error | `[HttpClientApi]` 接口方法返回类型不受生成器支持 | 返回**异步形态**：`Task`/`Task<T>`/`ValueTask`/`ValueTask<T>`/`IAsyncEnumerable<T>`（响应体 `T` 可为任意类型，含 `byte[]`/`Stream`/`HttpResponseMessage`/自定义类型）。裸 `byte[]`/`Stream`/`HttpResponseMessage`/`void` 均不受支持（生成器会产出不可编译代码） | 否 |
-| `MUD004` | Warning | `ITokenManager` 的实现以 `AddScoped`/`AddTransient`/`TryAddScoped`/`TryAddTransient` 注册（该实现内部维护令牌缓存与并发锁，非 Singleton 会令并发安全机制失效并重复刷新令牌） | 改用 `AddSingleton`/`TryAddSingleton` | 否 |
+| 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 | 可抑制 |
+|---------|----------|----------|----------|------------|--------|
+| `MUD001` | Error | `[HttpClientApi]` 接口方法缺少 HTTP 方法特性 | 为方法标注 `[Get]`/`[Post]`/`[Put]`/`[Delete]`/`[Patch]`/`[Head]`/`[Options]`；标注 `[IgnoreGenerator]` 的接口/方法豁免。注意生成器由**特性名**推导 HTTP 动词，故继承 `HttpMethodAttribute` 的自定义特性不受支持（会产出 `CS0117`） | 否 | 是 |
+| `MUD002` | Error | `[HttpClientApi]` 接口方法返回类型不受生成器支持 | 返回**异步形态**：`Task`/`Task<T>`/`ValueTask`/`ValueTask<T>`/`IAsyncEnumerable<T>`（响应体 `T` 可为任意类型，含 `byte[]`/`Stream`/`HttpResponseMessage`/自定义类型）。裸 `byte[]`/`Stream`/`HttpResponseMessage`/`void` 均不受支持（生成器会产出不可编译代码） | 否 | 是 |<!-- supported-return-shapes: Task, Task<T>, ValueTask, ValueTask<T>, IAsyncEnumerable<T> -->
+| `MUD004` | Warning | `ITokenManager` 的实现以 `AddScoped`/`AddTransient`/`TryAddScoped`/`TryAddTransient` 注册（该实现内部维护令牌缓存与并发锁，非 Singleton 会令并发安全机制失效并重复刷新令牌） | 改用 `AddSingleton`/`TryAddSingleton` | 否 | 是 |
+
+#### 诊断排查顺序与可抑制性
+
+1. **先修生成器诊断**（`HTTPCLIENT*` / `FORM*` / `EHSG*`），再看接口规范诊断（`MUD*`）。
+   原因：csc 的 `CommonCompiler.CompileAndEmit` 在声明阶段有一道闸门
+   `if (HasUnsuppressableErrors(diagnostics)) { ... return; }`，其中
+   `Diagnostic.IsUnsuppressableError() := DefaultSeverity == Error && IsNotConfigurable()`。
+   该闸门在「源生成器已运行、生成器诊断已并入同一 `DiagnosticBag`」之后求值，
+   因此只要存在**默认级别为 Error 且带 `NotConfigurable` 标签**的生成器诊断，
+   csc 就提前返回、**分析器驱动永不执行** —— 同一编译中的 `MUD001`/`MUD002`/`MUD004`
+   会整体不呈现（即"连坐抑制"）。
+   - 上述闸门只覆盖 Parse/Declare 阶段：方法体内的绑定错误（如 `CS0029`）属 Compile 阶段，不触发连坐；
+     而声明阶段错误（如 `CS0535`）会触发。
+   - 本包已按「用户可修复的诊断不加 `NotConfigurable`」分层（见诊断表"可抑制"列），
+     故常见场景下 `MUD*` 会正常呈现。若仍看不到 `MUD*`，用下面的"仅分析器"构建确认。
+2. **仅分析器构建（排查被抑制的分析器诊断）**：
+   ```bash
+   dotnet build <你的项目> -p:DisableMudSourceGenerator=true
+   ```
+   该属性已在包内 `build/Mud.HttpUtils.Generator.props` 注册为 `CompilerVisibleProperty`，
+   关闭源生成器后 `MUD001`/`MUD002`/`MUD004` 不会再被生成器诊断连坐抑制。
+3. **可抑制性（"可抑制"列）**：标 `否` 的诊断带 `NotConfigurable` 标签，
+   既不能被 `#pragma warning disable` / `NoWarn` / `.editorconfig` 抑制，也不能改变级别
+   （仅限"生成器内部/环境类错误"，使用者无法通过改自己的代码修复）；
+   标 `是` 的诊断可用上述方式显式抑制，**但级别仍为 Error/Warning，默认阻断构建 —— 不建议抑制真实错误**。
 
 ### 日志脱敏
 
@@ -994,6 +1020,29 @@ public class UserRequest
 `unsafe`（指针/函数指针签名）、`static`（接口 `static abstract` 成员由实现类的静态成员满足），
 以及 `ref`/`ref readonly` 返回（改用语句体访问器 —— `throw` 表达式不能作为 ref 返回值）。
 
+占位成员抛出的 `NotSupportedException` 消息以诊断 ID 开头（`HTTPCLIENT024: ...`），
+便于线上日志直接关联规则与文档。
+
+#### 直达返回（`HttpResponseMessage` / `Stream`）
+
+`Task<T>` 的响应体 `T` 为 `HttpResponseMessage` 或 `Stream` 时走**直达返回**，绕过请求执行器直接调用客户端原始 API：
+
+| 响应体类型 | 生成调用 | 语义 |
+|---|---|---|
+| `HttpResponseMessage` | `SendRawAsync(request, ct)` | 用户自管状态码/反序列化/释放 |
+| `Stream` | `SendStreamAsync(request, ct)` | **响应流所有权归调用方**（由调用方负责 `Dispose`） |
+
+**共同约束**（与 `HttpResponseMessage` 既有口径一致）：
+- 该路径**不支持** `[Cache]` / `[Retry]` / `[CircuitBreaker]` / `[Timeout]` 编排，也**不支持** `Response<T>` 包装
+  —— 生成期以 `HTTPCLIENT025`（Warning）显式提示，避免"配置静默失效"；
+- `AllowAnyStatusCode` 等 `ResponseDescriptor` 配置不适用（不做状态码校验/包装）。
+
+> **`Task<Stream>` 修复说明**：此前 `Task<Stream>` 会落入通用分支生成
+> `return await _executor.ExecuteAsync<System.IO.Stream>(...)` —— 编译通过（方法体有 `async`/`await`），
+> 但执行器会把响应体按 JSON 反序列化为 `Stream`，**运行期必然失败**；而 `MUD002` 与 README 都把 `Stream`
+> 列为受支持，属"分析器沉默 + 生成语义错误的代码"的伪支持。现改为直达返回，语义正确且零反射（AOT 安全）。
+> 裸（未被异步形态包裹）的 `Stream`/`byte[]`/`HttpResponseMessage` 仍**不受支持**（占位 + `HTTPCLIENT024` + `MUD002`）。
+
 > **设计意图**：早期实现对无法处理的方法/属性直接跳过，生成的实现类因此缺失接口成员，编译时报出 `CS0535`。
 > 该错误既不说明根因，还会**掩盖真正有价值的诊断**（例如 `MUD001` 完全不可见）。
 > 现改为「占位实现 + 明确诊断」：编译错误被替换为可直接定位与修复的诊断，且占位成员在运行期被调用时以明确异常快速失败。
@@ -1003,15 +1052,26 @@ public class UserRequest
 > - **必须是 Error**：修复前这些情形表现为 `CS0535`（构建失败）。若降级为 Warning，构建转为成功，
 >   等于把编译期失败改成运行期故障 —— 对没有其它 Error 级诊断兜底的属性/索引器/事件尤其危险。
 > - **必须每次必报**：`HTTPCLIENT024` 承载其它诊断无法替代的信息（占位已发射、运行期将抛异常）。
->   兜底诊断可能是**分析器**诊断（`MUD001`/`MUD002`），而实测存在如下规律：
+>   兜底诊断可能是**分析器**诊断（`MUD001`/`MUD002`），而存在如下（已定位到源码的）连坐效应：
 >
->   > 生成器报出 **`Error` 且带 `NotConfigurable` 标签**的诊断时，同一编译中的**分析器**诊断
->   > （`MUD001`/`MUD002`/`MUD004`）整体不再呈现（`HTTPCLIENT004`/`HTTPCLIENT005` 可复现；
->   > 去掉该标签或降为 Warning 后立即恢复）。
+>   > csc 的 `CommonCompiler.CompileAndEmit` 在 Parse / Declare 两个阶段各有一道闸门
+>   > `if (HasUnsuppressableErrors(diagnostics)) { ... return; }`，其中
+>   > `Diagnostic.IsUnsuppressableError() := DefaultSeverity == Error && IsNotConfigurable()`，
+>   > `IsNotConfigurable()` 即"`CustomTags` 含 `NotConfigurable`"。
+>   > 声明阶段闸门在「源生成器已运行、生成器诊断已并入同一 `DiagnosticBag`」之后求值，
+>   > 因此生成器报出 **`Error` 且带 `NotConfigurable` 标签**的诊断时，csc 提前返回、
+>   > **分析器驱动永不执行**，同一编译中的**分析器**诊断（`MUD001`/`MUD002`/`MUD004`）整体不再呈现
+>   > （`HTTPCLIENT004`/`HTTPCLIENT005` 可复现；去掉该标签或降为 Warning 立即恢复）。
+>   > 注：闸门只覆盖 Parse/Declare 阶段 —— 方法体内的绑定错误（如 `CS0029`）不触发；
+>   > 声明阶段错误（如 `CS0535`）会触发，这正是"早期实现跳过成员产生 `CS0535`，从而掩盖 `MUD001`"的成因。
 >
 >   因此**不得**给 `HTTPCLIENT024` 加 `NotConfigurable` 标签（否则它会连坐抑制分析器诊断），
 >   也不能依赖分析器诊断作为占位实现的可见性兜底 —— 一旦兜底诊断消失而本诊断又未报，
 >   占位实现就变成**静默**的运行期故障。
+>   同理，"用户可修复"的生成器诊断（`HTTPCLIENT004`/`005`/`007`/`008`/`013`/`015`/`016`、
+>   `HTTPCLIENTREG002`、`FORM002`/`FORM003`）已统一**去标签**（级别仍为 Error），
+>   使常见场景下 `MUD*` 恢复可见；该分层由
+>   `Tests/Mud.HttpUtils.Generator.Tests/DiagnosticTagPolicyTests.cs` 守卫。
 
 ## 项目结构
 

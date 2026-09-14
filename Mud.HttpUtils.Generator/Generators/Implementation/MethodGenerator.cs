@@ -178,6 +178,24 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     methodSymbol.Name));
         }
 
+        // R3：直达返回（HttpResponseMessage / Stream）绕过 _executor，Cache/Resilience 编排不会生效。
+        // 与 HttpResponseMessage 的既有口径一致（用户选择直达返回即表明自管后续逻辑），
+        // 但该"配置静默失效"必须编译期可见，否则用户会误以为 [Cache]/[Retry] 已生效。
+        if ((methodInfo.CacheEnabled || methodInfo.RetryEnabled ||
+             methodInfo.CircuitBreakerEnabled || methodInfo.MethodTimeoutEnabled) &&
+            IsDirectReturnType(methodInfo))
+        {
+            var directReturnSyntax = methodSymbol.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
+            var directReturnLocation = directReturnSyntax?.GetLocation() ?? context.InterfaceDeclaration.GetLocation();
+            context.ProductionContext.ReportDiagnostic(
+                Diagnostic.Create(
+                    Diagnostics.CacheWithDirectReturnTypeWarning,
+                    directReturnLocation,
+                    context.InterfaceSymbol.Name,
+                    methodSymbol.Name,
+                    methodInfo.ReturnType));
+        }
+
         var hasTokenManager = !string.IsNullOrEmpty(context.Configuration.TokenManager);
         var hasHttpClient = !string.IsNullOrEmpty(context.Configuration.HttpClient);
         var needsTokenInjection = ShouldInjectToken(methodInfo, hasTokenManager, hasHttpClient);
@@ -406,9 +424,13 @@ internal class MethodGenerator : ICodeFragmentGenerator
             : $"<{string.Join(", ", methodSymbol.TypeParameters.Select(tp => tp.Name))}>";
         var modifiers = (isStatic ? "static " : string.Empty)
             + (needsUnsafe ? "unsafe " : string.Empty);
+        // 消息携带诊断 ID（HTTPCLIENT024）：占位成员运行期才暴露，线上日志需能直接关联规则与文档
+        // （否则只有一句"未生成实现"，无法判断是"缺 HTTP 方法特性"还是"返回类型不受支持"）。
         var message =
+            "HTTPCLIENT024: 接口成员未生成实现（占位实现），运行期不可用。" +
             $"方法 '{methodSymbol.Name}' 未生成 HTTP 调用实现：请检查接口方法的 HTTP 方法特性（[Get]/[Post] 等）、" +
-            "参数修饰符、返回类型形态、URL 模板与 HttpClient 类型配置（详见编译诊断），或为该方法标注 [IgnoreGenerator] 自行实现。";
+            "参数修饰符、返回类型形态、URL 模板与 HttpClient 类型配置（详见编译诊断），" +
+            "或为该方法标注 [IgnoreGenerator] 自行实现。";
 
         codeBuilder.AppendLine();
         codeBuilder.AppendLine("        /// <summary>");
@@ -583,8 +605,22 @@ internal class MethodGenerator : ICodeFragmentGenerator
             return;
         }
 
+        // [v2.4 §2.4 同构] Stream 直达返回 —— 与 HttpResponseMessage 同属"用户自管"例外：
+        // 用户选择 Stream 返回即表明自管读取/释放；不支持 Cache/Resilience/Response<T> 包装
+        // （组合会由 HTTPCLIENT025 在编译期提示）。走 IBaseHttpClient.SendStreamAsync（响应流所有权归调用方）。
+        //
+        // 修复背景：此前 Task<Stream> 落入下方通用分支，生成
+        // `return await _executor.ExecuteAsync<System.IO.Stream>(...)` —— 编译通过（有 async + await），
+        // 但执行器会把响应体按 JSON 反序列化为 Stream，运行期必然失败；
+        // 而 MUD002 与 README 均把 Stream 列为受支持 ⇒「分析器沉默 + 生成语义错误的代码」的伪支持。
+        if (IsStreamType(deserializeType))
+        {
+            codeBuilder.AppendLine($"            return await {httpClientExpr}.SendStreamAsync(__httpRequest{cancellationTokenArg}).ConfigureAwait(false);");
+            return;
+        }
+
         // void 返回 — 使用非泛型 ExecuteAsync（支持 Cache/Resilience 编排）
-        if (IsVoidType(deserializeType))
+        if (IsVoidInnerReturnType(deserializeType))
         {
             codeBuilder.AppendLine($"            await {executor}.ExecuteAsync(");
             codeBuilder.AppendLine("                __httpRequest,");
@@ -650,7 +686,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         sb.AppendLine($"                ResponseContentType = \"{StringEscapeHelper.EscapeString(methodInfo.ResponseContentType ?? "")}\",");
         sb.AppendLine($"                EnableDecrypt = {methodInfo.ResponseEnableDecrypt.ToString().ToLowerInvariant()},");
 
-        var isVoid = IsVoidType(deserializeType);
+        var isVoid = IsVoidInnerReturnType(deserializeType);
         sb.AppendLine($"                IsVoidReturn = {isVoid.ToString().ToLowerInvariant()},");
 
         // XML 序列化器引用
@@ -684,7 +720,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         sb.AppendLine($"                       ResponseContentType = \"{StringEscapeHelper.EscapeString(methodInfo.ResponseContentType ?? "")}\",");
         sb.AppendLine($"                       EnableDecrypt = {methodInfo.ResponseEnableDecrypt.ToString().ToLowerInvariant()},");
 
-        var isVoid = IsVoidType(deserializeType);
+        var isVoid = IsVoidInnerReturnType(deserializeType);
         sb.AppendLine($"                       IsVoidReturn = {isVoid.ToString().ToLowerInvariant()},");
 
         // XML 序列化器引用
@@ -791,9 +827,19 @@ internal class MethodGenerator : ICodeFragmentGenerator
     }
 
     /// <summary>
-    /// 判断类型是否为 void。
+    /// 判断<b>异步形态的内部返回类型</b>是否为 void（即非泛型 <c>Task</c>/<c>ValueTask</c>）。
     /// </summary>
-    private static bool IsVoidType(string type)
+    /// <remarks>
+    /// <para>
+    /// <b>注意：此处不要"清理"为字面 void 判定</b>。字面 <c>void</c> 返回类型已被返回类型门禁
+    /// （<c>ReturnTypeSupport.IsSupported</c>）拒绝，不会进入方法体生成；本分支服务的是
+    /// <c>MethodAnalysisResult.AsyncInnerReturnType</c> —— 非泛型 <c>Task</c>/<c>ValueTask</c>
+    /// 经 <c>TypeSymbolHelper.ExtractAsyncInnerType</c> 解析得到的字面 <c>"void"</c>。
+    /// 删除或收紧该分支会破坏非泛型 <c>Task</c> 方法的生成（会误走泛型 <c>ExecuteAsync&lt;void&gt;</c>）。
+    /// </para>
+    /// <para>名称中的 "Inner" 即强调它判断的是异步包装内的返回类型，而非方法签名的返回类型。</para>
+    /// </remarks>
+    private static bool IsVoidInnerReturnType(string type)
     {
         return type == "void" || type == "System.Void";
     }
@@ -806,6 +852,39 @@ internal class MethodGenerator : ICodeFragmentGenerator
     {
         return type == "HttpResponseMessage" ||
         type == "System.Net.Http.HttpResponseMessage";
+    }
+
+    /// <summary>
+    /// [v2.4 §2.4 同构] 判断类型是否为 <c>Stream</c>（直达返回路径，走 SendStreamAsync）。
+    /// 支持简写、全限定名与可空注记（<c>Stream?</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="IsHttpResponseMessageType"/> 同构；额外容忍 <c>?</c> 后缀是因为
+    /// <c>TypeSymbolHelper.GetTypeFullName</c> 会把 <c>Task&lt;Stream?&gt;</c> 的内层类型
+    /// 输出为 <c>System.IO.Stream?</c>，若不剥离会漏判并回退到会运行期失败的
+    /// <c>ExecuteAsync&lt;Stream&gt;</c>（JSON 反序列化为 Stream）。
+    /// </remarks>
+    private static bool IsStreamType(string type)
+    {
+        var normalized = type.Trim();
+        if (normalized.EndsWith("?", StringComparison.Ordinal))
+            normalized = normalized.Substring(0, normalized.Length - 1).TrimEnd();
+
+        return normalized == "Stream" || normalized == "System.IO.Stream";
+    }
+
+    /// <summary>
+    /// 判断方法是否为「直达返回」：绕过请求执行器、直接调用客户端原始 API。
+    /// </summary>
+    /// <remarks>
+    /// 当前直达返回类型为 <c>HttpResponseMessage</c>（SendRawAsync）与 <c>Stream</c>（SendStreamAsync）。
+    /// 该路径不参与 Cache/Resilience/Response&lt;T&gt; 编排，故与编排配置组合时报告
+    /// <c>HTTPCLIENT025</c>（Warning），避免配置静默失效。
+    /// </remarks>
+    private static bool IsDirectReturnType(MethodAnalysisResult methodInfo)
+    {
+        var innerReturnType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
+        return IsHttpResponseMessageType(innerReturnType) || IsStreamType(innerReturnType);
     }
 
     /// <summary>

@@ -48,6 +48,51 @@ jobs:
       - name: Run tests
         run: dotnet test ${{ matrix.test_project }} --no-build --configuration Release --logger "console;verbosity=detailed"
 
+      # ── 仅分析器通道（方案 §3.5 / §5.4）──────────────────────────────
+      # 探针工程 Tests/AnalyzerOnlyProbe 刻意包含违规样例（MUD001/MUD002/MUD004），
+      # 构建必然失败，故本步骤以「诊断是否出现」为断言（grep），而非以构建成功为准。
+      # 为什么需要：csc 的 CommonCompiler.CompileAndEmit 在声明阶段有闸门
+      #   if (HasUnsuppressableErrors(diagnostics)) return;
+      # （IsUnsuppressableError := DefaultSeverity == Error && 带 NotConfigurable 标签），
+      # 源生成器诊断已并入该 bag —— 一旦命中，分析器驱动永不执行、MUD* 整体不呈现。
+      # 关闭源生成器即消除该连坐路径，使接口规范诊断必然可见。
+      # 门禁有效性自检：删除任一违规样例，对应 grep 断言即失败 → 本步骤变红。
+      - name: 分析器专用验证（禁用源生成器）
+        if: matrix.test_project == 'Tests/Mud.HttpUtils.Generator.Tests/Mud.HttpUtils.Generator.Tests.csproj'
+        shell: bash
+        run: |
+          set +e
+          output=$(dotnet build Tests/AnalyzerOnlyProbe/AnalyzerOnlyProbe.csproj -c Release -p:DisableMudSourceGenerator=true 2>&1)
+          echo "$output"
+          status=0
+          for id in MUD001 MUD002 MUD004; do
+            if ! grep -q "$id" <<< "$output"; then
+              echo "::error::分析器诊断 $id 未呈现：探针样例缺失，或分析器在真实编译中被抑制"
+              status=1
+            fi
+          done
+          exit $status
+
+      # ── 连坐抑制回归（方案 §1.2 / §3.3）──────────────────────────────
+      # 生成器开启时，Error 级生成器诊断（HTTPCLIENT004，已按标签分层去掉 NotConfigurable）
+      # 不得再连坐抑制分析器诊断 MUD001。若有人把 NotConfigurable 加回 HTTPCLIENT004，
+      # MUD001 会消失 → 本步骤变红（标签分层决策的端到端守卫）。
+      - name: 连坐抑制回归验证（生成器开启）
+        if: matrix.test_project == 'Tests/Mud.HttpUtils.Generator.Tests/Mud.HttpUtils.Generator.Tests.csproj'
+        shell: bash
+        run: |
+          set +e
+          output=$(dotnet build Tests/AnalyzerOnlyProbe/AnalyzerOnlyProbe.csproj -c Release 2>&1)
+          echo "$output"
+          status=0
+          for id in HTTPCLIENT004 MUD001; do
+            if ! grep -q "$id" <<< "$output"; then
+              echo "::error::期望诊断 $id 未呈现（生成器 Error 诊断连坐抑制了分析器诊断？）"
+              status=1
+            fi
+          done
+          exit $status
+
   # ──────────────────────────────────────────────
   # Demo 项目构建
   # ──────────────────────────────────────────────

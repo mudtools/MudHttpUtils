@@ -34,6 +34,12 @@
 	<ItemGroup>
 		<InternalsVisibleTo Include="Mud.HttpUtils.Generator.Tests" />
 	</ItemGroup>
+	<ItemGroup>
+		<!-- 诊断发布跟踪（消除 RS2008）：登记全部 DiagnosticDescriptor 的 ID/类别/级别。
+		     未登记的新规则 → RS2008；已登记但类别/级别漂移 → RS2001。 -->
+		<AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
+		<AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
+	</ItemGroup>
 	<!--开发调试阶段-->
 	<ItemGroup>
 		<!-- 源生成器 + 接口规范分析器 DLL（MUD001/MUD002/MUD004 已并入本程序集） -->

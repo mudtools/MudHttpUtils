@@ -233,7 +233,11 @@ internal class InterfaceContractCompletionGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// </remarks>");
     }
 
+    /// <summary>
+    /// 构造占位成员抛出的异常消息（含诊断 ID，便于线上日志关联规则与文档）。
+    /// </summary>
     private static string BuildMessage(string memberKind, string memberName)
-        => $"接口{memberKind} '{memberName}' 未生成实现：生成器不支持该{memberKind}形态，"
-         + "请改用受支持的接口成员形态，或标注 [IgnoreGenerator] 自行实现。";
+        => $"HTTPCLIENT024: 接口{memberKind} '{memberName}' 未生成实现（占位实现，运行期不可用）："
+         + $"生成器不支持该{memberKind}形态，请改用受支持的接口成员形态（HTTP 方法或 [Query]/[Path]/[Header] 属性），"
+         + "修复对应编译诊断后重新生成，或标注 [IgnoreGenerator] 自行实现。";
 }
