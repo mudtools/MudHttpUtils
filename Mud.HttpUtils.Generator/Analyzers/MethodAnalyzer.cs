@@ -180,19 +180,16 @@ internal static class MethodAnalyzer
         return null;
     }
 
-    /// <summary>
-    /// 从方法符号查找HTTP方法特性
-    /// </summary>
-    public static AttributeData? FindHttpMethodAttributeFromSymbol(IMethodSymbol methodSymbol)
-    {
-        if (methodSymbol == null)
-            return null;
-
-        return FindHttpMethodAttributeFromAttributes(methodSymbol.GetAttributes());
-    }
+    // 说明（缺陷修复）：原 `FindHttpMethodAttributeFromSymbol(IMethodSymbol)` 重载已被删除 ——
+    // 它只是把下方快速路径包一层，却容易被生成器前置门误用为「支持判定」的唯一口径。
+    // 现行单一事实源为：
+    //   1) 本文件的快速路径重载（仅 HttpClientGeneratorConstants.SupportedHttpMethods 中的特性名）；
+    //   2) 带 Compilation 的重载额外含「特性继承 HttpMethodAttribute」回退，仅服务于 AnalyzeMethod 的分析路径。
+    // 生成器门控（MethodGenerator / PrecomputeXmlResponseTypes）与 MUD001 分析器必须使用快速路径，
+    // 因为生成器由「特性名」推导 HTTP 动词（发射 HttpMethod.<Verb>），自定义特性名无法映射为合法动词。
 
     /// <summary>
-    /// 从已缓存的特性列表中查找HTTP方法特性
+    /// 从已缓存的特性列表中查找HTTP方法特性（仅快速路径：已知的 Get/Post/... 特性名）。
     /// </summary>
     internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableArray<AttributeData> attributes)
     {

@@ -29,7 +29,13 @@ internal static class ParameterSignatureBuilder
     public static string Build(IMethodSymbol method) =>
         method.Parameters.Length == 0
             ? string.Empty
-            : string.Join(", ", method.Parameters.Select(BuildParameter));
+            : Build(method.Parameters);
+
+    /// <summary>
+    /// 构造「非方法成员」的参数列表（如索引器的 <see cref="IPropertySymbol.Parameters"/>）。
+    /// </summary>
+    public static string Build(IEnumerable<IParameterSymbol> parameters) =>
+        string.Join(", ", parameters.Select(BuildParameter));
 
     private static string BuildParameter(IParameterSymbol p)
     {

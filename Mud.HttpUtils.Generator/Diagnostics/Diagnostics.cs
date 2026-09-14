@@ -217,6 +217,32 @@ internal static class Diagnostics
         DiagnosticSeverity.Info,
         isEnabledByDefault: true,
         customTags: WellKnownDiagnosticTags.NotConfigurable);
+
+    /// <summary>
+    /// 接口成员未被生成实现，已发射占位实现（运行期调用将抛 NotSupportedException）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 用途：保证生成类始终满足接口契约（不再产生 CS0535）之后，占位成员的存在必须编译期可见，
+    /// 否则会把编译期错误静默降级为运行期故障。
+    /// </para>
+    /// <para>
+    /// <b>级别必须为 Warning</b>：若使用 Error 级别，编译器将跳过本编译中的分析器诊断
+    /// （实测：生成器报告 Error 诊断后 MUD001/MUD002/MUD004 等不再呈现），
+    /// 从而掩盖真正说明根因的诊断（见 <c>MudHttpInterfaceAnalyzer</c>）。Warning 级别与其它诊断共存。
+    /// </para>
+    /// <para>
+    /// 报告约定：仅当该成员问题没有更具体的诊断（MUD001/MUD002/HTTPCLIENT004/005/008/009/017）说明时才报告，
+    /// 避免对同一问题重复提示。
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor HttpClientMemberNotGeneratedPlaceholder = new(
+        id: "HTTPCLIENT024",
+        title: "接口成员未生成实现（已发射占位实现）",
+        messageFormat: "接口 {0} 的成员 {1} 未生成实现（{2}）——已发射占位实现，运行期调用将抛 NotSupportedException。请在修复对应配置后重新生成，或为该成员标注 [IgnoreGenerator] 自行实现。",
+        category: "代码生成",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
     #endregion
 
     #region HttpClient注册生成器诊断信息 (HTTPCLIENTREG001-002)

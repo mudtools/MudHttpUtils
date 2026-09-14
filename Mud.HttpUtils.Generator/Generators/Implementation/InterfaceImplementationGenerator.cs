@@ -122,6 +122,10 @@ internal class InterfaceImplementationGenerator
         // CFG-07：方法级 [Timeout] 超过接口级 HttpClient 超时时发出 Warning
         ReportMethodTimeoutConflicts(generatorContext);
 
+        // 必须在生成器循环之前登记：MethodGenerator 需要据此决定是否补发占位方法，
+        // 而其执行顺序早于 AccessTokenGenerator 等后续片段生成器。
+        RegisterInfrastructureMembers(generatorContext);
+
         var generators = InitializeGenerators(generatorContext);
 
         foreach (var generator in generators)
@@ -405,6 +409,49 @@ internal class InterfaceImplementationGenerator
     }
 
     /// <summary>
+    /// 登记各片段生成器「按模式无条件发射」的成员名，供契约占位实现避让（避免 CS0111/CS0102）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 这些成员与「接口是否声明」无关（例如 AppContext 模式的 <c>Current</c>/<c>BeginScope</c>、
+    /// 令牌模式的 <c>GetTokenAsync</c>），无法由符号侧推导；若不登记，占位实现会与其重名冲突。
+    /// </para>
+    /// <para>
+    /// 登记条件从宽：多登记只会少补一个占位成员，不会破坏编译；漏登记则会产生重复成员（编译错误）。
+    /// <b>新增「无条件发射」成员时须同步本方法</b>（另见 <see cref="GeneratorContext.ProvidedMemberNames"/>）。
+    /// </para>
+    /// </remarks>
+    private static void RegisterInfrastructureMembers(GeneratorContext context)
+    {
+        // 接口属性（[Query]/[Path]/[Header]）→ ConstructorGenerator.GenerateInterfaceProperties
+        foreach (var property in context.InterfaceProperties)
+            context.MarkMemberProvided(property.Name);
+
+        // 当前用户 ID → ConstructorGenerator（ICurrentUserId / CacheVaryByUser 场景）
+        if (context.ImplementsICurrentUserId || context.HasCacheVaryByUser)
+            context.MarkMemberProvided("CurrentUserId");
+
+        // AppContext 相关成员 → ConstructorGenerator.GenerateAppContextMembers / GenerateUseAppMethod
+        if (!context.HasHttpClient)
+        {
+            context.MarkMemberProvided("Current");
+            context.MarkMemberProvided("BeginScope");
+            context.MarkMemberProvided("UseApp");
+            context.MarkMemberProvided("UseDefaultApp");
+            context.MarkMemberProvided("UseDefaultAppScope");
+        }
+
+        // 令牌辅助成员 → AccessTokenGenerator / TokenMethodHelper
+        if (context.HasTokenManager && !context.HasHttpClient)
+        {
+            context.MarkMemberProvided("GetTokenAsync");
+            context.MarkMemberProvided("GetApiKeyAsync");
+            context.MarkMemberProvided("ApplyHmacSignatureAsync");
+            context.MarkMemberProvided("GetTokenManagerKey");
+        }
+    }
+
+    /// <summary>
     /// 初始化代码片段生成器
     /// </summary>
     private IEnumerable<ICodeFragmentGenerator> InitializeGenerators(GeneratorContext context)
@@ -420,6 +467,12 @@ internal class InterfaceImplementationGenerator
         {
             generators.Add(new AccessTokenGenerator(context));
         }
+
+        // 契约补全必须最后执行：为前述生成器未实现的接口成员
+        // （无法生成调用实现的方法、无 [Query]/[Path]/[Header] 的属性、索引器、事件）发射占位实现，
+        // 保证实现类满足接口契约、不再产生 CS0535。
+        // 依赖各生成器在 Generate 中登记的 GeneratorContext.ProvidedMemberNames 做避让。
+        generators.Add(new InterfaceContractCompletionGenerator());
 
         return generators;
     }
@@ -731,7 +784,8 @@ internal class InterfaceImplementationGenerator
         var methods = context.AllMethods;
         foreach (var method in methods)
         {
-            var isHttpMethod = MethodAnalyzer.FindHttpMethodAttributeFromSymbol(method) != null;
+            // 与 MethodGenerator 口径一致：仅已知 HTTP 方法特性名（生成器由特性名推导动词）。
+            var isHttpMethod = MethodAnalyzer.FindHttpMethodAttributeFromAttributes(method.GetAttributes()) != null;
             if (!isHttpMethod)
                 continue;
 

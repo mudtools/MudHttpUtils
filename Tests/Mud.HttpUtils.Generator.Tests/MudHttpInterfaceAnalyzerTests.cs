@@ -262,17 +262,22 @@ public class MudHttpInterfaceAnalyzerTests
     }
 
     /// <summary>
-    /// 回归测试：自定义 HTTP 方法特性（继承 <c>Mud.HttpUtils.Attributes.HttpMethodAttribute</c>）不得误报 MUD001。
+    /// 自定义 HTTP 方法特性（继承 <c>Mud.HttpUtils.Attributes.HttpMethodAttribute</c>）不受支持 → 报告 MUD001。
     /// </summary>
     /// <remarks>
-    /// 分析器并入 Generator 程序集之前，它只能硬编码特性名白名单（无继承回退），
-    /// 而生成器的 <c>MethodAnalyzer</c> 支持「继承自 HttpMethodAttribute 的自定义特性」
-    /// （v3.3 T5.2 fallback）——两者分属不同程序集导致判定分叉：
-    /// 生成器能正常生成，MUD001（Error 级）却阻断构建。
-    /// 现分析器复用生成器的判定纯函数，本测试锁定该一致性。
+    /// <para>
+    /// 依据：生成器由「特性名」推导 HTTP 动词并发射 <c>HttpMethod.&lt;Verb&gt;</c>，
+    /// 自定义特性名无法映射到 <c>System.Net.Http.HttpMethod</c> 的合法成员（生成代码会 CS0117），
+    /// 因此该写法本就不受生成器支持。
+    /// </para>
+    /// <para>
+    /// 由此 MUD001 与生成器门控口径一致（<c>MethodGenerator</c> 仅接受
+    /// <see cref="HttpClientGeneratorConstants.SupportedHttpMethods"/> 中的特性名）：
+    /// 给出明确的 MUD001，优于生成一段运行期才抛 <c>NotSupportedException</c> 的占位实现而无任何提示。
+    /// </para>
     /// </remarks>
     [Fact]
-    public void CustomHttpMethodAttribute_DerivedFromHttpMethodAttribute_NoMUD001()
+    public void CustomHttpMethodAttribute_NotSupported_ReportsMUD001()
     {
         var source = HttpClientApiUsings + """
             namespace TestNamespace
@@ -292,7 +297,7 @@ public class MudHttpInterfaceAnalyzerTests
             """;
 
         var diagnostics = Analyze(source);
-        diagnostics.Should().NotContain(d => d.Id == "MUD001",
-            "自定义特性继承自 HttpMethodAttribute，生成器支持该写法，MUD001 不应误报");
+        diagnostics.Should().Contain(d => d.Id == "MUD001",
+            "生成器不支持继承 HttpMethodAttribute 的自定义特性（HTTP 动词由特性名推导），应报告 MUD001");
     }
 }

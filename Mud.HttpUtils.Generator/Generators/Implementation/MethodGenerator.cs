@@ -30,9 +30,27 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         foreach (var methodSymbol in methodsToGenerate)
         {
-            var isHttpMethod = MethodAnalyzer.FindHttpMethodAttributeFromSymbol(methodSymbol) != null;
-            if (!isHttpMethod)
+            // 属性/事件访问器（PropertyGet/PropertySet/EventAdd/EventRemove 等）不是接口的独立方法成员：
+            // 它们随属性/事件整体由 InterfaceContractCompletionGenerator（或 ConstructorGenerator 的
+            // 接口属性发射）处理；若在此按独立方法发射，会与属性访问器同名冲突（CS0082）。
+            // 说明：原先这些访问器在本循环中因「无 HTTP 方法特性」被静默跳过，此判定与其行为等价。
+            if (methodSymbol.MethodKind != MethodKind.Ordinary)
                 continue;
+
+            // 仅接受已知的 HTTP 方法特性名（Get/Post/... 见 HttpClientGeneratorConstants.SupportedHttpMethods）：
+            // 生成器由「特性名」推导 HTTP 动词并发射 HttpMethod.<Verb>，故继承 HttpMethodAttribute 的自定义特性
+            // 无法映射到合法动词（会产出 CS0117）。该限制与 MUD001 分析器口径一致，
+            // 报告给用户的是明确的 MUD001，而不是一段运行期才抛异常的占位实现。
+            var isHttpMethod = MethodAnalyzer.FindHttpMethodAttributeFromAttributes(
+                methodSymbol.GetAttributes()) != null;
+            if (!isHttpMethod)
+            {
+                // 缺少 HTTP 方法特性：生成器无法生成 HTTP 调用实现。
+                // 不得静默跳过 —— 否则实现类缺失接口成员会产生 CS0535，
+                // 掩盖 MUD001（「缺少 HTTP 方法特性」）等真正的原因。
+                EmitContractCompletionStub(codeBuilder, context, methodSymbol);
+                continue;
+            }
 
             // 一次性分析方法并缓存结果到 GeneratorContext.MethodAnalysisCache，避免 AnalyzeMethod 被重复调用
             var methodInfo = context.GetOrAnalyzeMethod(
@@ -43,7 +61,20 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
             ValidatePathParameters(context, methodSymbol, methodInfo);
 
-            GenerateMethodImplementation(codeBuilder, context, methodSymbol, methodInfo, isAbstractClass);
+            var outcome = GenerateMethodImplementation(codeBuilder, context, methodSymbol, methodInfo, isAbstractClass);
+            if (outcome != MethodGenerationOutcome.Generated)
+            {
+                // 未发射真实实现 → 补发占位成员，保证实现类满足接口契约（否则产生 CS0535）。
+                // 占位成员运行期会抛 NotSupportedException，故必须编译期有诊断可见：
+                // 若该问题尚无任何诊断说明，则此处补一条。
+                if (outcome == MethodGenerationOutcome.SkippedWithoutDiagnostic)
+                {
+                    ContractPlaceholder.ReportUnsupportedMember(
+                        context, methodSymbol, "无法解析为有效的 HTTP 方法，请检查 URL 模板等配置");
+                }
+
+                EmitContractCompletionStub(codeBuilder, context, methodSymbol);
+            }
 
             if (HasCacheAttribute(methodSymbol))
             {
@@ -76,11 +107,34 @@ internal class MethodGenerator : ICodeFragmentGenerator
     }
 
     /// <summary>
-    /// 生成单个方法的实现代码
+    /// 方法生成结果。
     /// </summary>
-    private void GenerateMethodImplementation(StringBuilder codeBuilder, GeneratorContext context, IMethodSymbol methodSymbol, MethodAnalysisResult methodInfo, bool isVirtual = false)
+    private enum MethodGenerationOutcome
     {
-        if (!methodInfo.IsValid) return;
+        /// <summary>已发射真实实现。</summary>
+        Generated,
+
+        /// <summary>未发射实现，但该问题已有诊断说明（本生成器或分析器产出），无需重复报告。</summary>
+        SkippedWithDiagnostic,
+
+        /// <summary>未发射实现且无任何诊断说明 —— 需补一条，避免占位实现把编译期错误变成运行期故障。</summary>
+        SkippedWithoutDiagnostic,
+    }
+
+    /// <summary>
+    /// 生成单个方法的实现代码。
+    /// </summary>
+    /// <returns>
+    /// 生成结果。<see cref="MethodGenerationOutcome.Generated"/> 表示已发射该方法成员；
+    /// 其余取值表示未发射，调用方将按 <see cref="EmitContractCompletionStub"/> 补发契约占位实现。
+    /// 注意：<c>[IgnoreGenerator]</c> 方法返回
+    /// <see cref="MethodGenerationOutcome.SkippedWithDiagnostic"/>，但<b>不应</b>补发占位成员
+    /// （语义为使用方自行实现），该判定由调用方完成。
+    /// </returns>
+    private MethodGenerationOutcome GenerateMethodImplementation(StringBuilder codeBuilder, GeneratorContext context, IMethodSymbol methodSymbol, MethodAnalysisResult methodInfo, bool isVirtual = false)
+    {
+        if (!methodInfo.IsValid)
+            return MethodGenerationOutcome.SkippedWithoutDiagnostic;
 
         // [F14 修复] 参数修饰符校验：存在 ref/out/in/params/指针参数时报告 HTTPCLIENT004（Error）
         // 并跳过该方法体生成，避免产出 CS0177/CS0269 等不可编译代码。
@@ -93,7 +147,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 methodSyntax?.GetLocation() ?? context.InterfaceDeclaration.GetLocation(),
                 context.InterfaceDeclaration.Identifier.Text,
                 $"{methodSymbol.Name}: {unsupportedParameter.UnsupportedReason}"));
-            return;
+            return MethodGenerationOutcome.SkippedWithDiagnostic;
         }
 
         if (!string.IsNullOrEmpty(methodInfo.UrlTemplate) &&
@@ -106,13 +160,14 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     context.InterfaceDeclaration.Identifier.Text,
                     methodInfo.UrlTemplate,
                     urlError));
-            return;
+            return MethodGenerationOutcome.SkippedWithDiagnostic;
         }
 
-        if (methodInfo.IgnoreGenerator) return;
+        if (methodInfo.IgnoreGenerator)
+            return MethodGenerationOutcome.SkippedWithDiagnostic;
 
         if (!ValidateHttpClientCompatibility(context, methodInfo))
-            return;
+            return MethodGenerationOutcome.SkippedWithDiagnostic;
 
         if (methodInfo.CacheEnabled && TypeSymbolHelper.IsResponseType(
                 methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType))
@@ -255,6 +310,85 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
+
+        return MethodGenerationOutcome.Generated;
+    }
+
+    /// <summary>
+    /// 为「生成器无法实现」的接口方法发射契约占位实现；<c>[IgnoreGenerator]</c> 方法除外。
+    /// </summary>
+    /// <remarks>
+    /// <c>[IgnoreGenerator]</c>（接口级/方法级）语义为「生成器完全跳过、由使用方自行实现」，
+    /// 此时发射占位成员会与使用方的实现冲突，故必须保持不发射。
+    /// </remarks>
+    private static void EmitContractCompletionStub(StringBuilder codeBuilder, GeneratorContext context, IMethodSymbol methodSymbol)
+    {
+        if (GeneratorAttributeFilters.HasIgnoreGenerator(methodSymbol))
+            return;
+
+        // 其它片段生成器（AppContext / 令牌辅助等）已按模式无条件发射同名成员时，不得重复发射。
+        if (context.ProvidedMemberNames.Contains(methodSymbol.Name))
+            return;
+
+        EmitUnsupportedMethodStub(codeBuilder, methodSymbol);
+    }
+
+    /// <summary>
+    /// 发射「不受支持的方法」占位实现：成员体直接抛 <see cref="System.NotSupportedException"/>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>背景（缺陷修复）</b>：此前对无法生成的方法直接跳过（不发射成员），生成的实现类因而缺失接口成员
+    /// → 编译报 <c>CS0535</c>。该错误既未说明根因，又会掩盖同编译中真正的诊断
+    /// （典型：MUD001「缺少 HTTP 方法特性」—— 它本应是最直接的提示）。
+    /// </para>
+    /// <para>
+    /// <b>修复方式</b>：始终发射占位成员，使实现类满足接口契约（不再产生 CS0535），
+    /// 让 MUD001/MUD002/HTTPCLIENT004/005 等诊断正常呈现；若该成员在运行期被调用，
+    /// 会以明确消息快速失败，而非产生难以定位的编译错误。
+    /// </para>
+    /// <para>
+    /// <b>例外</b>：签名含指针/函数指针类型的方法不发射占位成员 —— 发射需要 <c>unsafe</c> 上下文，
+    /// 且这些方法已由 HTTPCLIENT004（Error）明确说明原因。
+    /// </para>
+    /// </remarks>
+    private static void EmitUnsupportedMethodStub(StringBuilder codeBuilder, IMethodSymbol methodSymbol)
+    {
+        var typeFormat = SymbolDisplayFormat.FullyQualifiedFormat
+            .WithMiscellaneousOptions(
+                SymbolDisplayMiscellaneousOptions.UseSpecialTypes |
+                SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
+
+        // 指针 / 函数指针签名需 unsafe 上下文，跳过占位（HTTPCLIENT004 已给出原因）。
+        if (methodSymbol.ReturnType.TypeKind is TypeKind.Pointer or TypeKind.FunctionPointer)
+            return;
+        if (methodSymbol.Parameters.Any(p => p.Type.TypeKind is TypeKind.Pointer or TypeKind.FunctionPointer))
+            return;
+
+        // 静态接口成员（C# 11+）不由实现类的实例成员满足，发射实例成员无意义。
+        if (methodSymbol.IsStatic)
+            return;
+
+        var returnType = methodSymbol.ReturnType.ToDisplayString(typeFormat);
+        var typeParameters = methodSymbol.TypeParameters.Length == 0
+            ? string.Empty
+            : $"<{string.Join(", ", methodSymbol.TypeParameters.Select(tp => tp.Name))}>";
+        var message =
+            $"方法 '{methodSymbol.Name}' 未生成 HTTP 调用实现：请检查接口方法的 HTTP 方法特性（[Get]/[Post] 等）、" +
+            "参数修饰符、URL 模板与 HttpClient 类型配置（详见编译诊断），或为该方法标注 [IgnoreGenerator] 自行实现。";
+
+        codeBuilder.AppendLine();
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// <inheritdoc />");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        /// <remarks>");
+        codeBuilder.AppendLine("        /// 占位实现：生成器无法为该接口方法生成 HTTP 调用实现。");
+        codeBuilder.AppendLine("        /// 保留此成员以保证实现类满足接口契约（避免 CS0535 掩盖真正的编译诊断）。");
+        codeBuilder.AppendLine("        /// 修复对应诊断后重新生成；若确需自行实现，请标注 [IgnoreGenerator]。");
+        codeBuilder.AppendLine("        /// </remarks>");
+        codeBuilder.AppendLine($"        {GeneratedCodeConsts.HttpGeneratedCodeAttribute}");
+        codeBuilder.AppendLine($"        public {returnType} {methodSymbol.Name}{typeParameters}({ParameterSignatureBuilder.Build(methodSymbol)})");
+        codeBuilder.AppendLine($"            => throw new global::System.NotSupportedException(\"{StringEscapeHelper.EscapeString(message)}\");");
     }
 
     /// <summary>

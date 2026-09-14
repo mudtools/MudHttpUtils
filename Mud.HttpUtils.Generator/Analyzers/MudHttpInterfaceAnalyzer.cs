@@ -28,10 +28,12 @@ namespace Mud.HttpUtils.Analyzers;
 /// <para>
 /// 与生成器的一致性（本分析器已并入 Mud.HttpUtils.Generator 程序集）：
 /// <list type="bullet">
-///   <item>HTTP 方法特性判定复用 <see cref="MethodAnalyzer.FindHttpMethodAttributeFromAttributes(ImmutableArray{AttributeData}, Compilation)"/>，
-///         因此同样支持「自定义特性继承 <c>Mud.HttpUtils.Attributes.HttpMethodAttribute</c>」的写法——
-///         此前两者分属不同程序集，本分析器只能硬编码特性名白名单（无继承回退），
-///         会对生成器支持的写法误报 MUD001（Error 级，直接阻断构建）。</item>
+///   <item>HTTP 方法特性判定复用 <see cref="MethodAnalyzer.FindHttpMethodAttributeFromAttributes(ImmutableArray{AttributeData})"/>
+///         与 <see cref="HttpClientGeneratorConstants.SupportedHttpMethods"/>，
+///         即只接受已知 HTTP 方法特性名（Get/Post/Put/Delete/Patch/Head/Options 及其 <c>*Attribute</c> 别名）。
+///         <b>例外说明</b>：继承 <c>Mud.HttpUtils.Attributes.HttpMethodAttribute</c> 的自定义特性<i>不</i>被接受 ——
+///         生成器由「特性名」推导 HTTP 动词并发射 <c>HttpMethod.&lt;Verb&gt;</c>，自定义特性名无法映射到合法动词
+///         （生成代码会 CS0117），故该写法本就不受支持；MUD001 如实报告比生成一段运行期才抛异常的占位实现更有价值。</item>
 ///   <item><c>[IgnoreGenerator]</c> 判定复用 <see cref="GeneratorAttributeFilters"/>，
 ///         与生成器的「接口级忽略 = 完全不介入 / 方法级忽略 = 跳过该方法」语义严格一致。</item>
 ///   <item>[HttpClientApi] 特性名集合复用 <see cref="HttpClientGeneratorConstants.HttpClientApiAttributeNames"/>。</item>
@@ -124,8 +126,8 @@ public class MudHttpInterfaceAnalyzer : DiagnosticAnalyzer
             var methodAttributes = method.GetAttributes();
 
             // MUD001：检查 HTTP 方法特性。
-            // 复用生成器判定（含"自定义特性继承 HttpMethodAttribute"回退），与生成器能力保持一致。
-            var httpMethodAttribute = MethodAnalyzer.FindHttpMethodAttributeFromAttributes(methodAttributes, context.Compilation);
+            // 与生成器门控口径一致：仅已知 HTTP 方法特性名（生成器由特性名推导 HTTP 动词）。
+            var httpMethodAttribute = MethodAnalyzer.FindHttpMethodAttributeFromAttributes(methodAttributes);
             if (httpMethodAttribute == null)
             {
                 var location = method.Locations.FirstOrDefault() ?? interfaceDecl.GetLocation();

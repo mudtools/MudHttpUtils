@@ -97,6 +97,31 @@ internal class GeneratorContext
     public IReadOnlyList<InterfacePropertyInfo> InterfaceProperties { get; set; } = [];
 
     /// <summary>
+    /// 已由各片段生成器发射的成员名集合（方法/属性/事件名，含重载）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 用途：契约补全（<see cref="Mud.HttpUtils.Generators.Implementation.InterfaceContractCompletionGenerator"/>
+    /// 与 <c>MethodGenerator</c> 的占位实现）必须避开生成器<b>按模式无条件发射</b>的成员，
+    /// 否则会产生重复成员（CS0111/CS0102）。
+    /// </para>
+    /// <para>
+    /// 典型无条件成员：AppContext 模式的 <c>Current</c>/<c>BeginScope</c>/<c>UseApp</c>/<c>UseDefaultApp</c>/
+    /// <c>UseDefaultAppScope</c>/<c>CurrentUserId</c>，令牌模式的 <c>GetTokenAsync</c>/<c>GetApiKeyAsync</c>/
+    /// <c>GetTokenManagerKey</c> 等。这些成员与「接口是否声明」无关，故无法由符号侧推导。
+    /// </para>
+    /// <para>
+    /// 约定：新增发射点时须同步 <see cref="MarkMemberProvided"/>，否则契约补全可能发射同名占位成员。
+    /// </para>
+    /// </remarks>
+    public HashSet<string> ProvidedMemberNames { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 登记一个已发射的成员名（供契约补全避让）。见 <see cref="ProvidedMemberNames"/>。
+    /// </summary>
+    public void MarkMemberProvided(string memberName) => ProvidedMemberNames.Add(memberName);
+
+    /// <summary>
     /// 接口符号的特性列表，在构造函数中一次性计算并缓存。
     /// 避免在 <see cref="GetOrAnalyzeMethod"/> 和 <see cref="DetectFeatures"/> 中重复调用
     /// <c>INamedTypeSymbol.GetAttributes()</c> 产生多次分配。

@@ -739,6 +739,7 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 | `HTTPCLIENT021` | Warning | 方法级 `[Timeout]` 超过接口级 `HttpClient` 超时 | `HttpClient.Timeout` 是硬上限，调小 `[Timeout]` 或提高 `[HttpClientApi(Timeout=…)]` | 否 |
 | `HTTPCLIENT022` | Warning | 方法使用 `Path`/`HmacSignature` 令牌注入模式 | 该模式不被令牌恢复处理器支持，刷新后的新令牌无法重新注入；改用 `Header`/`Query`/`ApiKey`/`Cookie`/`BasicAuth` 模式 | 否 |
 | `HTTPCLIENT023` | Info | 检测到 `-p:ForceHttpGenerator=true`，增量缓存被强制失效 | 无需处理（逃生舱生效提示，F4） | 否 |
+| `HTTPCLIENT024` | Warning | 接口成员（无条件化特性的属性/事件等）未被生成实现，已发射占位实现 | 改用受支持的接口成员形态，或标注 `[IgnoreGenerator]` 自行实现。占位成员在运行期调用会抛 `NotSupportedException` | 否 |
 
 > **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010`、`HTTPCLIENT019` 当前**未使用**（ID 保留为占位，不重新分配）。
 > - `HTTPCLIENT010`：`BaseAddress` 已移除（CFG-27），使用直接编译错误 `CS0117`，无需生成器提示。
@@ -976,6 +977,26 @@ public class UserRequest
 }
 ```
 
+### 未实现成员的占位实现
+
+生成器**始终保证生成的实现类满足接口契约**：对无法生成 HTTP 调用的接口成员，会发射一个「抛 `NotSupportedException`」的占位实现，而不是跳过该成员。
+
+| 情形 | 生成行为 | 编译期诊断 |
+|---|---|---|
+| 方法缺少 HTTP 方法特性 | 发射占位方法 | `MUD001`（Error） |
+| 方法返回类型不在白名单内 | 发射占位方法 | `MUD002`（Error） |
+| 方法存在不支持的参数修饰符（`ref`/`out`/`in`/`params`/指针） | 发射占位方法 | `HTTPCLIENT004`（Error） |
+| 方法 URL 模板无效 | 发射占位方法 | `HTTPCLIENT005`（Error） |
+| 属性/索引器/事件不受支持（如未标注 `[Query]`/`[Path]`/`[Header]` 的属性） | 发射占位成员 | `HTTPCLIENT024`（Warning） |
+| 成员标注 `[IgnoreGenerator]` | **不发射任何成员**（由使用方自行实现） | 无（由使用方负责） |
+
+> **设计意图**：早期实现对无法处理的方法/属性直接跳过，生成的实现类因此缺失接口成员，编译时报出 `CS0535`。
+> 该错误既不说明根因，还会**掩盖真正有价值的诊断**（例如 `MUD001` 完全不可见）。
+> 现改为「占位实现 + 明确诊断」：编译错误被替换为可直接定位与修复的诊断，且占位成员在运行期被调用时以明确异常快速失败。
+>
+> `HTTPCLIENT024` 的级别必须为 **Warning**：若使用 Error 级别，编译器会跳过本次编译中的分析器诊断
+> （实测 `MUD001`/`MUD002`/`MUD004` 均不再呈现），从而掩盖根因诊断。
+
 ## 项目结构
 
 ```
@@ -986,6 +1007,8 @@ Mud.HttpUtils.Generator/
 ├── Generators/                   # 代码生成器
 │   ├── Implementation/           # 实现类生成
 │   │   ├── ConstructorGenerator.cs  # 构造函数生成
+│   │   ├── InterfaceContractCompletionGenerator.cs  # 契约补全（未实现成员的占位实现）
+│   │   ├── ContractPlaceholder.cs   # 占位实现的诊断支持（HTTPCLIENT024）
 │   │   └── RequestBuilder.cs     # 请求构建
 │   ├── FormContentGenerator.cs   # FormContent 生成器（支持 JsonPropertyName）
 │   ├── HttpInvokeClassSourceGenerator.cs    # 实现类主生成器
