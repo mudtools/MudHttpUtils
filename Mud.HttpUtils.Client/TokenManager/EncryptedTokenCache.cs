@@ -1,0 +1,114 @@
+// -----------------------------------------------------------------------
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// -----------------------------------------------------------------------
+
+using System.Security.Cryptography;
+using System.Text.Json;
+
+namespace Mud.HttpUtils;
+
+/// <summary>
+/// SR-M8（P3.4，D12）令牌缓存的加密包装：值经 <see cref="IEncryptionProvider"/> 加密后
+/// 以 Base64 密文字符串写入底层 <see cref="ITokenCache{String}"/>，内存转储/抓取不再暴露明文凭据。
+/// </summary>
+/// <typeparam name="T">缓存值类型。</typeparam>
+/// <remarks>
+/// <para>加密引擎复用 <see cref="DefaultAesEncryptionProvider"/>（AEAD / CBC+HMAC 信封已就绪）。</para>
+/// <para>
+/// 密文损坏（密钥轮换 / <see cref="CryptographicException"/>）或反序列化失败（<see cref="JsonException"/>）
+/// 时按 miss 处理（返回 false + Warning 日志），触发上层重新获取令牌，绝不抛出（§0.3-V3 修订）。
+/// </para>
+/// <para>
+/// <b>AOT 注意</b>：默认反射序列化在 net10 AOT 严格模式下受限——AOT 用户应传入基于预生成
+/// JsonSerializerContext 的自定义包装（见 AotVerificationDemo）；类库侧默认实现不强制。
+/// </para>
+/// </remarks>
+public sealed class EncryptedTokenCache<T> : ITokenCache<T> where T : class
+{
+    private readonly ITokenCache<string> _inner;
+    private readonly IEncryptionProvider _encryption;
+
+    private static readonly JsonSerializerOptions s_jsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
+    /// <summary>
+    /// 初始化加密令牌缓存包装。
+    /// </summary>
+    /// <param name="inner">底层字符串缓存（如 <see cref="MemoryCacheTokenCache{String}"/>）。</param>
+    /// <param name="encryption">加密提供程序。</param>
+    public EncryptedTokenCache(ITokenCache<string> inner, IEncryptionProvider encryption)
+    {
+        _inner = inner ?? throw new ArgumentNullException(nameof(inner));
+        _encryption = encryption ?? throw new ArgumentNullException(nameof(encryption));
+    }
+
+    /// <inheritdoc />
+    public bool TryGet(string key, out T? value)
+    {
+        if (!_inner.TryGet(key, out var cipher) || cipher == null)
+        {
+            value = null;
+            return false;
+        }
+
+        try
+        {
+            var plain = _encryption.Decrypt(cipher);
+            value = JsonSerializer.Deserialize<T>(plain, s_jsonOptions);
+            return value != null;
+        }
+        catch (Exception ex) when (ex is JsonException or CryptographicException)
+        {
+            // §0.3-V3：密钥轮换/密文损坏/反序列化失败 → miss（不抛出），上层重新获取令牌
+            value = null;
+            return false;
+        }
+    }
+
+    /// <inheritdoc />
+    public void Set(string key, T? value)
+        => Set(key, value, null, null, null);
+
+    /// <inheritdoc />
+    public void Set(string key, T? value, TimeSpan? absoluteExpirationRelativeToNow, TimeSpan? slidingExpiration, Action<string>? postEvictionCallback = null)
+    {
+        if (value == null)
+        {
+            _inner.TryRemove(key, out _);
+            postEvictionCallback?.Invoke(key);
+            return;
+        }
+
+        var plain = JsonSerializer.Serialize(value, s_jsonOptions);
+        _inner.Set(key, _encryption.Encrypt(plain), absoluteExpirationRelativeToNow, slidingExpiration, postEvictionCallback);
+    }
+
+    /// <inheritdoc />
+    public bool TryRemove(string key, out T? removed)
+    {
+        // 密文无值语义：移除按底层结果转发，removed 恒 null（加密包装不还原被移除值）
+        var result = _inner.TryRemove(key, out _);
+        removed = null;
+        return result;
+    }
+
+    /// <inheritdoc />
+    public int Count => _inner.Count;
+
+    /// <inheritdoc />
+    public IEnumerable<string> Keys => _inner.Keys;
+
+    /// <inheritdoc />
+    public void Clear() => _inner.Clear();
+
+    /// <inheritdoc />
+    public void Compact(double percentage) => _inner.Compact(percentage);
+
+    /// <inheritdoc />
+    public void Dispose() => _inner.Dispose();
+}

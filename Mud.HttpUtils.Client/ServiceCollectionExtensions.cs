@@ -1002,6 +1002,28 @@ public static class HttpClientServiceCollectionExtensions
     }
 
     /// <summary>
+    /// SR-M6（P2.4，D9）注册令牌管理器查找注册表：401 恢复执行器按
+    /// <see cref="TokenRecoveryContext.TokenManagerKey"/> 经 <see cref="ITokenManagerRegistry"/>
+    /// 路由到正确的管理器实例（执行器跨应用共享场景的凭据错配防线）。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <param name="resolver">解析委托：键 → 令牌管理器；未知键返回 null（回退构造注入实例）。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+    public static IServiceCollection AddTokenManagerRegistry(
+        this IServiceCollection services,
+        Func<string, ITokenManager?> resolver)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+        if (resolver == null)
+            throw new ArgumentNullException(nameof(resolver));
+
+        services.TryAddSingleton<ITokenManagerRegistry>(new DelegateTokenManagerRegistry(resolver));
+        return services;
+    }
+
+    /// <summary>
     /// 从 IConfiguration 绑定令牌恢复配置。
     /// </summary>
     /// <param name="services">服务集合。</param>

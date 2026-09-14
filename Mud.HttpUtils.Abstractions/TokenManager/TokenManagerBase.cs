@@ -13,13 +13,22 @@ namespace Mud.HttpUtils;
 /// <summary>
 /// 令牌管理器抽象基类，提供并发安全的令牌刷新实现。
 /// </summary>
+/// <remarks>
+/// <para><b>Dispose(bool) 契约（SR-H1，P1.3）</b>：</para>
+/// <list type="number">
+/// <item><description><see cref="Dispose(bool)"/> 可重入、幂等；不以 <c>_disposed</c> 早退（派生类置位后仍须执行基类释放）。</description></item>
+/// <item><description>派生类覆写时应在开头自行检查/置位 <c>_disposed</c>（保留 NEW-TM-11 快速感知语义），且无论标志状态如何都必须调用 <c>base.Dispose(disposing)</c>。</description></item>
+/// <item><description>各释放步骤自身幂等。</description></item>
+/// </list>
+/// </remarks>
 public abstract class TokenManagerBase : ITokenManager, IDisposable
 {
     private readonly ITokenCache<CredentialToken> _tokenCache;
     // P2.2（TK-05/09/24）键控锁表统一管理作用域锁，替代原有的 ConcurrentDictionary<string, Lazy<SemaphoreSlim>>。
     private readonly KeyedLockTable _keyedLockTable = new();
-    private readonly Timer _cleanupTimer;
-    private readonly Timer _lockCleanupTimer;
+    // SR-L9（P3.10）：不再 readonly——仅 SupportsTenantMaintenance=true 时分配（用户管理器跳过）。
+    private readonly Timer? _cleanupTimer;
+    private readonly Timer? _lockCleanupTimer;
     private readonly object _cleanupLock = new();
     // P1.3（TK-04）降级令牌连续命中的计数，用于指数退避；成功刷新时复位为 0。
     private int _consecutiveFallbacks;
@@ -113,12 +122,17 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     protected TokenManagerBase(ITokenCache<CredentialToken> tokenCache)
     {
         _tokenCache = tokenCache ?? throw new ArgumentNullException(nameof(tokenCache));
-        _cleanupTimer = new Timer(CleanupExpiredTokens, null,
-            TimeSpan.FromSeconds(CleanupIntervalSeconds),
-            TimeSpan.FromSeconds(CleanupIntervalSeconds));
-        _lockCleanupTimer = new Timer(CleanupUnusedLocks, null,
-            TimeSpan.FromSeconds(LockCleanupIntervalSeconds),
-            TimeSpan.FromSeconds(LockCleanupIntervalSeconds));
+        // SR-L9（P3.10，D14-V5）仅当管理器声明支持租户维护时才启动两个 Timer；
+        // 用户令牌管理器覆写 SupportsTenantMaintenance=false 跳过（其令牌经 IMemoryCache 自带过期）。
+        if (SupportsTenantMaintenance)
+        {
+            _cleanupTimer = new Timer(CleanupExpiredTokens, null,
+                TimeSpan.FromSeconds(CleanupIntervalSeconds),
+                TimeSpan.FromSeconds(CleanupIntervalSeconds));
+            _lockCleanupTimer = new Timer(CleanupUnusedLocks, null,
+                TimeSpan.FromSeconds(LockCleanupIntervalSeconds),
+                TimeSpan.FromSeconds(LockCleanupIntervalSeconds));
+        }
     }
 
     /// <inheritdoc />
@@ -216,16 +230,15 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     }
 
     /// <summary>
-    /// 生成作用域缓存键。默认实现将 scopes 排序后用逗号连接，null 或空数组返回 "default"。
+    /// 生成作用域缓存键。null 或空数组返回 "default"。
+    /// SR-M5（P3.3，D11）规范化统一委托 <see cref="ScopeKeyBuilder"/>（Distinct/Ordinal/排序）单一实现。
+    /// 行为差异（{"a","a"} 从 "a,a" 变 "a"、大小写不同 scope 不再分裂）属键规范化，记入变更说明。
     /// </summary>
     /// <param name="scopes">令牌作用域数组。</param>
     /// <returns>缓存键字符串。</returns>
     protected string GetScopeKey(string[]? scopes)
     {
-        if (scopes == null || scopes.Length == 0)
-            return DefaultScopeKey;
-
-        return string.Join(",", scopes.OrderBy(s => s));
+        return ScopeKeyBuilder.Build(scopes);
     }
 
     /// <summary>
@@ -274,6 +287,58 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             return token;
         return null;
     }
+
+    /// <summary>
+    /// SR-M2（P2.3，D8）仅失效缓存条目的 refresh_token，其余字段（AccessToken 等）保留。
+    /// 供 invalid_grant 清除回退使用：可疑 refresh_token 被消费后不得继续滞留缓存被后续请求复用。
+    /// </summary>
+    /// <param name="scopeKey">作用域缓存键。</param>
+    protected void InvalidateCachedRefreshToken(string scopeKey)
+    {
+        if (_tokenCache.TryGet(scopeKey, out var existing) && existing != null)
+        {
+            existing.RefreshToken = null;
+            existing.RefreshTokenExpire = 0;
+            _tokenCache.Set(scopeKey, existing);
+        }
+    }
+
+    /// <summary>
+    /// SR-H5（P2.1，D6）租户绑定键（bind-once）。null = 尚未绑定。
+    /// 绑定键 = <c>IMudAppContext.AppKey</c>（多租户在本框架的投影即多 App）。
+    /// </summary>
+    private string? _tenantBinding;
+
+    /// <summary>
+    /// SR-H5（P2.1，D6）是否启用租户绑定守卫（防止单实例跨租户共享导致凭据错配）。默认 true。
+    /// 所有租户共享同一 IdP 凭据且令牌无租户属性的合法场景，可覆写为 false（需自证凭据无租户属性）。
+    /// </summary>
+    protected virtual bool EnforceTenantBinding => true;
+
+    /// <summary>
+    /// SR-H5（P2.1，D6）bind-once 租户绑定守卫：首个租户键绑定后，不同租户键的请求被拒绝。
+    /// 同键重复绑定幂等通过。internal：仅框架调用点（<c>DefaultTokenProvider</c>）触发，不进公共 API。
+    /// </summary>
+    /// <param name="tenantKey">租户键（AppKey）。</param>
+    /// <exception cref="InvalidOperationException">已绑定其他租户且守卫启用时抛出。</exception>
+    internal void BindTenantGuard(string tenantKey)
+    {
+        if (!EnforceTenantBinding || string.IsNullOrEmpty(tenantKey))
+            return;
+        var existing = Interlocked.CompareExchange(ref _tenantBinding, tenantKey, null);
+        if (existing != null && !string.Equals(existing, tenantKey, StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                $"令牌管理器（{MetricsKey}）已绑定租户 '{existing}'，不能用于租户 '{tenantKey}' 的请求。" +
+                "跨租户复用同一管理器实例会导致令牌/凭据错配；若确属共享凭据设计，请覆写 EnforceTenantBinding 返回 false。");
+    }
+
+    /// <summary>
+    /// SR-L9（P3.10，D14-V5）是否启动租户层维护 Timer（过期清理 300s / 锁清理 600s）。默认 true。
+    /// 用户令牌管理器覆写 false 以跳过其永不使用的租户层 Timer 资源。
+    /// <para>注意：仅跳过 Timer 分配；<c>_tokenCache</c> / <c>_keyedLockTable</c> 仍保留分配（避免基类
+    /// 公共路径解引用空字段的 NRE 面，见 §0.3-V5 评审修订）。</para>
+    /// </summary>
+    protected virtual bool SupportsTenantMaintenance => true;
 
     /// <summary>
     /// 触发令牌刷新失败事件。
@@ -329,9 +394,18 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
         _tokenCache.Set(scopeKey, token);
 
+        // SR-M5（P3.3，D11）硬上限 LRU 收敛：超限路径从"仅清过期"升级为
+        // "清过期 → 仍超限 → 强制 LRU Compact"，阻断攻击者/失控代码以海量 scope 组合
+        // 制造无界缓存+锁表膨胀（有效期内 CleanupExpiredTokens 清不掉未过期条目）。
         if (_tokenCache.Count > MaxScopeCacheSize)
         {
             CleanupExpiredTokens(null);
+            if (_tokenCache.Count > MaxScopeCacheSize)                    // 清过期后仍超限 → 强制 LRU
+            {
+                var excess = _tokenCache.Count - MaxScopeCacheSize;
+                var ratio = Math.Max(excess / (double)_tokenCache.Count, 0.05);   // 下限 5%，避免 0 取整
+                _tokenCache.Compact(ratio);
+            }
         }
     }
 
@@ -574,27 +648,56 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     // 2. P2.2（TK-05/09/24）_keyedLockTable.Dispose() 与 KeyedLockTable 内部"不 Dispose SemaphoreSlim"决策一致：
     //    SemaphoreSlim.Dispose 与在途 WaitAsync/Release 并存会抛 ObjectDisposedException，
     //    破坏"Dispose 后允许在途请求完成、其 Release 不抛异常"的契约。
+    // SR-H1（P1.3，D3）Dispose 链重构：可重入 + 每步幂等。
+    // 原实现第一行 if (_disposed) return; 在派生类（如 UserTokenManagerBase）先行置位 _disposed 后
+    // 调 base.Dispose 时直接早退，导致基类维护 Timer / 锁表 / 缓存永不释放（TK-08 / NEW-TM-11 修复引入的回归）。
+    // 新契约（写入基类 XML 文档，见本类 remarks）：
+    //   1) Dispose(bool) 可重入、幂等；不以 _disposed 早退（派生类置位后仍须执行基类释放）。
+    //   2) 派生类覆写时应在开头自行检查/置位 _disposed（保留 NEW-TM-11 快速感知语义），
+    //      且无论标志状态如何都必须调用 base.Dispose(disposing)。
+    //   3) 各释放步骤自身幂等。
     protected virtual void Dispose(bool disposing)
     {
-        if (_disposed)
+        _disposed = true;                        // 幂等置位（volatile 写）
+
+        if (!disposing)
             return;
 
-        _disposed = true;
+        StopMaintenanceTimers();                 // 内部幂等（_timersStopped 一次性标志）
+        _keyedLockTable.Dispose();               // 现有实现已幂等（全量置 Retired + Clear）
+        _tokenCache.Dispose();                   // 两个缓存实现均自带 _disposed 守卫
+    }
 
-        if (disposing)
+    private bool _timersStopped;
+
+    /// <summary>
+    /// SR-H1（P1.3）停止两个租户维护 Timer。与 Timer 回调共用 _cleanupLock，天然互斥；
+    /// _timersStopped 一次性标志保证可重入幂等。
+    /// </summary>
+    private void StopMaintenanceTimers()
+    {
+        lock (_cleanupLock)
         {
-            lock (_cleanupLock)
-            {
-                _cleanupTimer?.Change(Timeout.Infinite, Timeout.Infinite);
-                _lockCleanupTimer?.Change(Timeout.Infinite, Timeout.Infinite);
-                _cleanupTimer?.Dispose();
-                _lockCleanupTimer?.Dispose();
-            }
-
-            _keyedLockTable.Dispose();
-            _tokenCache.Dispose();
+            if (_timersStopped)
+                return;
+            _timersStopped = true;
+            _cleanupTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+            _lockCleanupTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+            _cleanupTimer?.Dispose();
+            _lockCleanupTimer?.Dispose();
         }
     }
+
+    /// <summary>
+    /// SR-H1（P1.3）测试观测钩子：维护 Timer 是否仍在运行（经 InternalsVisibleTo 供测试断言 Dispose 后 Timer 停止）。
+    /// </summary>
+    internal bool TimersActive => !_timersStopped;
+
+    /// <summary>
+    /// SR-M5（P3.3）测试观测钩子：作用域缓存当前条目数（供断言硬上限 LRU 收敛）。
+    /// </summary>
+    internal int CacheCountInternal => _tokenCache.Count;
+
     /// <inheritdoc />
     public virtual void Dispose()
     {

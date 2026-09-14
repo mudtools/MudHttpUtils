@@ -50,7 +50,7 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
 
     /// <inheritdoc />
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics
-        => ImmutableArray.Create(Diagnostics.MudNonSingletonTokenManager);
+        => ImmutableArray.Create(Diagnostics.MudNonSingletonTokenManager, Diagnostics.MudQueryTokenInjectionMode);
 
     /// <inheritdoc />
     public override void Initialize(AnalysisContext context)
@@ -58,6 +58,61 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
         context.EnableConcurrentExecution();
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
         context.RegisterSyntaxNodeAction(AnalyzeInvocation, SyntaxKind.InvocationExpression);
+        // SR-L6（P3.9，D13）：Query 令牌注入模式诊断（Info 级，可抑制）
+        context.RegisterSyntaxNodeAction(AnalyzeMethodDeclaration, SyntaxKind.MethodDeclaration);
+    }
+
+    /// <summary>
+    /// SR-L6（P3.9，D13）：接口方法（含接口成员声明）携带 [Token(InjectionMode = Query)] 时
+    /// 报 Info 诊断——Query 模式令牌进入 URL，代理/访问日志/浏览器历史不可控，生产环境建议 Header。
+    /// </summary>
+    private static void AnalyzeMethodDeclaration(SyntaxNodeAnalysisContext context)
+    {
+        if (context.Node is not MethodDeclarationSyntax method)
+            return;
+
+        // 仅处理 HttpClientApi 接口成员（方法所属类型为接口且被 [HttpClientApi] 标记）
+        if (method.Parent is not InterfaceDeclarationSyntax interfaceDecl)
+            return;
+
+        var interfaceSymbol = context.SemanticModel.GetDeclaredSymbol(interfaceDecl, context.CancellationToken);
+        if (interfaceSymbol == null)
+            return;
+
+        var hasHttpClientApi = interfaceSymbol.GetAttributes().Any(a =>
+            a.AttributeClass?.Name is "HttpClientApiAttribute" or "HttpClientApi");
+        if (!hasHttpClientApi)
+            return;
+
+        // 查找方法上的 [Token] 特性并解析 InjectionMode
+        var tokenAttribute = method.AttributeLists
+            .SelectMany(al => al.Attributes)
+            .FirstOrDefault(a => a.Name.ToString() is "Token" or "TokenAttribute");
+        if (tokenAttribute == null)
+            return;
+
+        var injectionModeQuery = false;
+        foreach (var arg in tokenAttribute.ArgumentList?.Arguments ?? default(SeparatedSyntaxList<AttributeArgumentSyntax>))
+        {
+            // 命名参数 InjectionMode = TokenInjectionMode.Query（枚举成员访问或字符串字面量）
+            if (arg.NameEquals == null || !arg.NameEquals.Name.ToString().Equals("InjectionMode", StringComparison.Ordinal))
+                continue;
+
+            var exprText = arg.Expression.ToString();
+            if (exprText.EndsWith("Query", StringComparison.Ordinal))
+            {
+                injectionModeQuery = true;
+                break;
+            }
+        }
+
+        if (!injectionModeQuery)
+            return;
+
+        context.ReportDiagnostic(Diagnostic.Create(
+            Diagnostics.MudQueryTokenInjectionMode,
+            tokenAttribute.GetLocation(),
+            interfaceSymbol.ToDisplayString()));
     }
 
     private static void AnalyzeInvocation(SyntaxNodeAnalysisContext context)

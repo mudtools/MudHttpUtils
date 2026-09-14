@@ -501,5 +501,17 @@ internal static class Diagnostics
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
         description: "ITokenManager 实现应注册为 Singleton，以避免并发安全机制失效与冗余令牌刷新.");
+
+    // SR-L6（P3.9，D13）：Query 注入模式令牌进入 URL → 代理 / 访问日志 / 浏览器历史不可控。
+    // 库内遥测已由 SensitiveUrlRedactor 脱敏，外部系统不受控；生产环境建议 Header。
+    // Info 级（可抑制）——§0.3-V7 修订：不在生成物发射 #warning（避免污染消费方构建）。
+    public static readonly DiagnosticDescriptor MudQueryTokenInjectionMode = new(
+        id: DiagnosticIds.MudQueryTokenInjectionMode,
+        title: "Query 令牌注入模式存在泄露面",
+        messageFormat: "接口 {0} 使用 Query 令牌注入模式：令牌将进入请求 URL，可能被代理 / 访问日志 / 浏览器历史等不受控的外部系统记录。库内遥测已脱敏，但外部系统不受控；生产环境建议改用 Header 注入模式。",
+        category: "Mud.HttpUtils.Security",
+        DiagnosticSeverity.Info,
+        isEnabledByDefault: true,
+        description: "Query 注入模式令牌进入 URL，存在日志/历史泄露面；建议生产环境使用 Header 模式.");
     #endregion
 }

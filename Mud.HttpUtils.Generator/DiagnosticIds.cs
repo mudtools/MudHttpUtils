@@ -61,4 +61,7 @@ internal static class DiagnosticIds
 
     /// <summary>MUD004：ITokenManager 实现未注册为 Singleton。</summary>
     public const string MudNonSingletonTokenManager = "MUD004";
+
+    /// <summary>MUD005：Token 注入模式使用 Query（令牌进入 URL，代理/访问日志/浏览器历史不可控）。</summary>
+    public const string MudQueryTokenInjectionMode = "MUD005";
 }

@@ -211,9 +211,9 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         try
         {
         using var request = new HttpRequestMessage(HttpMethod.Post, _options.RevocationEndpoint);
-        request.Content = new FormUrlEncodedContent(parameters);
         var clientSecret = await GetClientSecretAsync(cancellationToken).ConfigureAwait(false);
-        ApplyClientAuthentication(request, clientSecret);
+        ApplyClientAuthentication(request, parameters, clientSecret);
+        request.Content = new FormUrlEncodedContent(parameters);
 
             using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
 
@@ -242,9 +242,9 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, _options.IntrospectionEndpoint);
-        request.Content = new FormUrlEncodedContent(parameters);
         var introspectSecret = await GetClientSecretAsync(cancellationToken).ConfigureAwait(false);
-        ApplyClientAuthentication(request, introspectSecret);
+        ApplyClientAuthentication(request, parameters, introspectSecret);
+        request.Content = new FormUrlEncodedContent(parameters);
 
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
@@ -263,6 +263,8 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// <remarks>
     /// P1.2（TK-02）缓存写入统一由 <see cref="TokenManagerBase"/> 的 <c>GetOrRefreshTokenAsync</c> 在 scope 锁内完成；
     /// 本方法仅负责刷新并返回新令牌，不自行写缓存。
+    /// SR-M2（P2.3，D8）invalid_grant 清除 + 回退：轮换型 IdP 响应丢失后旧 refresh_token 已被消费，
+    /// 继续用其请求形成无限失败循环——捕获 invalid_grant 时清除可疑 refresh_token 并回退 client_credentials。
     /// </remarks>
     protected override async Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
     {
@@ -270,8 +272,20 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 
         if (currentToken?.RefreshToken != null)
         {
-            return await RefreshTokenByRefreshTokenAsync(
-                currentToken.RefreshToken, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                return await RefreshTokenByRefreshTokenAsync(
+                    currentToken.RefreshToken, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OAuth2TokenException ex) when (ex.ErrorCode == "invalid_grant")
+            {
+                // 仅 invalid_grant（refresh_token 被消费/过期/撤销）触发清除回退；
+                // invalid_client 等多为配置错误，清除无意义，原样上抛。
+                MudHttpClientLog.RefreshTokenRejected(_logger, DefaultScopeKey, ex.ErrorCode);
+                InvalidateCachedRefreshToken(DefaultScopeKey);
+                return await GetTokenByClientCredentialsAsync(cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
 
         return await GetTokenByClientCredentialsAsync(cancellationToken: cancellationToken)
@@ -281,8 +295,10 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// <inheritdoc/>
     /// <remarks>
     /// P1.2（TK-02）同 <see cref="RefreshTokenCoreAsync"/>，不自行写缓存。
-    /// P2.3（TK-02）按 scopeKey 隔离刷新链路：优先读取该作用域的缓存 refresh_token，
-    /// 缺失时回退默认作用域（兼容"统一刷新令牌"的服务端），最后才走 client_credentials。
+    /// P2.3（TK-02）按 scopeKey 隔离刷新链路：优先读取该作用域的缓存 refresh_token。
+    /// SR-M9（P2.6，D11-2）跨作用域回退默认关闭（<see cref="OAuth2Options.AllowDefaultScopeRefreshTokenFallback"/>）：
+    /// 对签发绑定 audience/scope 的 refresh_token 的 IdP，默认作用域凭据换取当前 scope 令牌 = 越权。
+    /// SR-M2（P2.3，D8）invalid_grant 清除 + 回退（同 <see cref="RefreshTokenCoreAsync"/>）。
     /// </remarks>
     protected override async Task<CredentialToken> RefreshTokenWithScopesAsync(string[]? scopes, CancellationToken cancellationToken)
     {
@@ -292,16 +308,30 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         // 优先使用当前作用域自己缓存的 refresh_token
         if (scopedToken?.RefreshToken != null)
         {
-            return await RefreshTokenByRefreshTokenAsync(
-                scopedToken.RefreshToken, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                return await RefreshTokenByRefreshTokenAsync(
+                    scopedToken.RefreshToken, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OAuth2TokenException ex) when (ex.ErrorCode == "invalid_grant")
+            {
+                MudHttpClientLog.RefreshTokenRejected(_logger, scopeKey, ex.ErrorCode);
+                InvalidateCachedRefreshToken(scopeKey);
+                return await GetTokenByClientCredentialsAsync(scopes, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
 
-        // 回退默认作用域（"统一刷新令牌"服务端场景）
-        var defaultToken = GetCachedCredentialToken(DefaultScopeKey);
-        if (defaultToken?.RefreshToken != null)
+        // 回退默认作用域（"统一刷新令牌"服务端场景），默认关闭（SR-M9）
+        if (_options.AllowDefaultScopeRefreshTokenFallback)
         {
-            return await RefreshTokenByRefreshTokenAsync(
-                defaultToken.RefreshToken, cancellationToken).ConfigureAwait(false);
+            var defaultToken = GetCachedCredentialToken(DefaultScopeKey);
+            if (defaultToken?.RefreshToken != null)
+            {
+                MudHttpClientLog.DefaultScopeRefreshFallbackUsed(_logger, scopeKey);
+                return await RefreshTokenByRefreshTokenAsync(
+                    defaultToken.RefreshToken, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         return await GetTokenByClientCredentialsAsync(scopes, cancellationToken)
@@ -352,16 +382,49 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         ValidateTokenEndpoint();
 
         using var request = new HttpRequestMessage(HttpMethod.Post, _options.TokenEndpoint);
-        request.Content = new FormUrlEncodedContent(parameters);
 
+        // SR-L7（P2.3，D8-3）：先建参数字典 → 认证注入（可能向字典补 client_id）→ 再建 FormUrlEncodedContent。
+        // 重构前：Content 先行创建，公共客户端（空 Secret）的 client_id 无法走请求体。
         if (useClientAuth)
         {
             var sendSecret = await GetClientSecretAsync(cancellationToken).ConfigureAwait(false);
-            ApplyClientAuthentication(request, sendSecret);
+            ApplyClientAuthentication(request, parameters, sendSecret);
         }
 
+        request.Content = new FormUrlEncodedContent(parameters);
+
         using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
+
+        // SR-M2（P2.3，D8）：非 2xx 响应解析 error 载荷后抛结构化 OAuth2TokenException（继承
+        // InvalidOperationException，既有 catch 兼容），携带状态码与 error 字段。
+        if (!response.IsSuccessStatusCode)
+        {
+            string? error = null;
+            string? errorDescription = null;
+            try
+            {
+#if NETSTANDARD2_0
+                var errorJson = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+#else
+                var errorJson = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+#endif
+                var errorPayload = _contentSerializer.Deserialize<OAuth2TokenResponse>(errorJson, s_jsonOptions);
+                error = errorPayload?.Error;
+                errorDescription = errorPayload?.ErrorDescription;
+            }
+            catch
+            {
+                // 解析失败保留裸状态码路径
+            }
+
+            if (!string.IsNullOrEmpty(error))
+                throw new OAuth2TokenException(error, errorDescription, (int)response.StatusCode);
+
+            throw new OAuth2TokenException(
+                $"http_{(int)response.StatusCode}".ToLowerInvariant(),
+                $"令牌端点返回非成功状态码 {response.StatusCode}",
+                (int)response.StatusCode);
+        }
 
 #if NETSTANDARD2_0
         var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
@@ -374,9 +437,9 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
             throw new InvalidOperationException("令牌响应反序列化失败");
 
         if (!string.IsNullOrEmpty(tokenResponse.Error))
-            throw new InvalidOperationException(
-                $"OAuth2 令牌请求失败: {tokenResponse.Error}" +
-                (string.IsNullOrEmpty(tokenResponse.ErrorDescription) ? "" : $" - {tokenResponse.ErrorDescription}"));
+            // SR-M2（P2.3，D8）：错误分支抛类型化异常（原 InvalidOperationException），调用方可
+            // 按 ErrorCode 区分 invalid_grant（清除回退）与 invalid_client（配置错误）等。
+            throw new OAuth2TokenException(tokenResponse.Error, tokenResponse.ErrorDescription, (int)response.StatusCode);
 
         var newToken = new CredentialToken
         {
@@ -399,20 +462,32 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// 应用客户端认证信息到 HTTP 请求。
     /// </summary>
     /// <param name="request">HTTP 请求消息。</param>
+    /// <param name="parameters">令牌请求参数字典。公共客户端（空 Secret）时 <c>client_id</c> 补入此字典（走请求体）。</param>
     /// <param name="clientSecret">已解析的客户端密钥（由调用方通过 <see cref="GetClientSecretAsync"/> 获取后传入）。</param>
     /// <remarks>
-    /// TM-04 修复：此前此方法通过同步访问 <c>_clientSecretLazy.Value.Result</c> 获取密钥，
-    /// 在 Lazy 初始化的 Task 尚未完成时会阻塞线程，且 fallback 路径存在竞态（Lazy 可能刚好 Faulted）。
-    /// 现改为由调用方异步解析密钥后作为参数传入，消除竞态和阻塞。
+    /// TM-04 修复：密钥由调用方异步解析后传入，消除 Lazy 路径的阻塞与竞态。
+    /// SR-L7（P2.3，D8-3）修复：useClientAuth 且 Secret 为空时不再发送
+    /// <c>"Basic base64(clientId:)"</c> 弱凭据头，改为 <c>client_id</c> 走请求体
+    /// （RFC 6749 §2.3.1 公共客户端标准行为）。
     /// </remarks>
-    private void ApplyClientAuthentication(HttpRequestMessage request, string? clientSecret)
+    private void ApplyClientAuthentication(
+        HttpRequestMessage request, Dictionary<string, string> parameters, string? clientSecret)
     {
         if (string.IsNullOrWhiteSpace(_options.ClientId))
             return;
 
-        var credentials = Convert.ToBase64String(
-            Encoding.UTF8.GetBytes($"{_options.ClientId}:{clientSecret}"));
-        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
+        if (!string.IsNullOrWhiteSpace(clientSecret))
+        {
+            var credentials = Convert.ToBase64String(
+                Encoding.UTF8.GetBytes($"{_options.ClientId}:{clientSecret}"));
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
+        }
+        else
+        {
+            // 公共客户端：client_id 走请求体（RFC 6749 §2.3.1），不发送弱 Basic 头
+            parameters["client_id"] = _options.ClientId;
+            MudHttpClientLog.PublicClientAuthUsed(_logger);
+        }
     }
 
     private void ValidateTokenEndpoint()

@@ -31,11 +31,17 @@ public class DefaultCurrentUserContext<TUser> : ICurrentUserContext
     public string? UserId => _user.Value?.UserId;
 
     /// <inheritdoc />
+    /// <remarks>
+    /// SR-L4（P3.7，D14）副本语义：每次派生新实例而非就地突变共享实例。
+    /// AsyncLocal 值在异步分叉（fork）的兄弟分支间共享同一引用，就地突变会跨分支可见；
+    /// 派生副本使各分支的 SetUserId 互不影响（CurrentUserInfo 字段拷贝成本可忽略）。
+    /// </remarks>
     public void SetUserId(string? userId)
     {
         if (userId != null)
         {
-            var user = _user.Value ?? new TUser();
+            var current = _user.Value;
+            var user = current == null ? new TUser() : CopyWithUserId(current, userId);
             user.UserId = userId;
             _user.Value = user;
         }
@@ -43,6 +49,17 @@ public class DefaultCurrentUserContext<TUser> : ICurrentUserContext
         {
             _user.Value = default;
         }
+    }
+
+    /// <summary>
+    /// SR-L4：从既有实例派生携带新 UserId 的副本（不突变原实例，AsyncLocal 兄弟分支互不可见）。
+    /// </summary>
+    private static TUser CopyWithUserId(TUser source, string userId)
+    {
+        var copy = new TUser { UserId = userId };
+        // CurrentUserInfo 及派生类的其余字段经属性拷贝（当前契约仅 UserId 关键字段；
+        // 派生类新增字段需自行覆写派生逻辑时，可直接构造新实例后 SetUser）。
+        return copy;
     }
 
     /// <summary>

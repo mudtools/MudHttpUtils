@@ -102,6 +102,16 @@ public class OAuth2Options
     private int _expirySafetyMarginSeconds = 60;
 
     /// <summary>
+    /// SR-M9（P2.6，D11-2）是否允许在当前作用域缺少 refresh_token 时回退默认作用域的 refresh_token。默认 false。
+    /// <para>
+    /// 对签发绑定 audience/scope 的 refresh_token 的 IdP，跨作用域回退等于拿 A 授权的凭据换 B scope
+    /// 的令牌（越权令牌落地），故默认关闭。仅当 IdP 明确支持"统一刷新令牌"（所有 scope 共享一个
+    /// refresh_token）时才应显式开启。
+    /// </para>
+    /// </summary>
+    public bool AllowDefaultScopeRefreshTokenFallback { get; set; }
+
+    /// <summary>
     /// P2.9（TK-22）安全的调试字符串：对 <see cref="ClientSecret"/> 做脱敏（保留前缀 + 长度），
     /// 防止结构化日志或配置转储中泄漏明文客户端密钥。
     /// </summary>

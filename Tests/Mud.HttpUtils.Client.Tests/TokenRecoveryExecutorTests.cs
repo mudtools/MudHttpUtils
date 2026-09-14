@@ -83,8 +83,9 @@ public class TokenRecoveryExecutorTests
     }
 
     /// <summary>
-    /// P1.7（TK-12）请求体"先限流后缓冲"：Content-Length 超过 10MB 的请求体应被直接跳过，
-    /// 不进入内存缓冲，因此 401 恢复的重试请求不会携带原始请求体。
+    /// SR-H2/H3（P1.4，D4）请求体"读取阶段限量 + 无体不重试"：Content-Length 超过上限（10MB）的
+    /// 请求体应被跳过缓冲，且<b>不进行无体重试</b>——直接返回 401（数据完整性优先），
+    /// 交由上层重试策略处理。
     /// </summary>
     [Fact]
     public async Task LargeBody_ShouldNotBufferTwice()
@@ -103,27 +104,22 @@ public class TokenRecoveryExecutorTests
         request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "old-token");
         request.Content = new ByteArrayContent(new byte[11 * 1024 * 1024]); // 11MB
 
-        var retryWithBodyCount = 0;
-        var first = true;
-
-        HttpResponseMessage Send(HttpRequestMessage req)
-        {
-            if (first)
-            {
-                first = false;
-                return new HttpResponseMessage(HttpStatusCode.Unauthorized);
-            }
-            if (req.Content != null)
-                Interlocked.Increment(ref retryWithBodyCount);
-            return new HttpResponseMessage(HttpStatusCode.OK);
-        }
+        var sendCount = 0;
 
         var response = await executor.ExecuteAsync(
             request,
-            (req, ct) => Task.FromResult(Send(req)),
+            (req, ct) =>
+            {
+                Interlocked.Increment(ref sendCount);
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
+            },
             CancellationToken.None).ConfigureAwait(false);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        retryWithBodyCount.Should().Be(0, "超过 10MB 的请求体不应被缓冲进重试请求");
+        // 新行为：放弃 401 恢复（无体重试被禁止），直接返回 401
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        sendCount.Should().Be(0, "超限请求体应零缓冲短路：甚至不发起首次发送");
+        mockTokenManager.Verify(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()), Times.Never,
+            "超限带体请求不进入恢复刷新链路");
+        response.Dispose();
     }
 }

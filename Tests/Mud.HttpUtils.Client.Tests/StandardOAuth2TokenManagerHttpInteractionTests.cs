@@ -62,15 +62,18 @@ public class StandardOAuth2TokenManagerHttpInteractionTests
     }
 
     [Fact]
-    public async Task GetTokenAsync_WithErrorResponse_ThrowsHttpRequestException()
+    public async Task GetTokenAsync_WithErrorResponse_ThrowsStructuredOAuth2TokenException()
     {
+        // SR-M2（P2.3，D8）：错误分支抛类型化 OAuth2TokenException（继承 InvalidOperationException），
+        // 携带 ErrorCode / ErrorDescription / HttpStatusCode，调用方可编程区分故障类别。
         var errorResponse = new { error = "invalid_client", error_description = "Client authentication failed" };
         var handler = CreateMockHandler(JsonSerializer.Serialize(errorResponse), HttpStatusCode.BadRequest);
         var manager = CreateManager(handler.Object);
 
         var act = async () => await manager.GetTokenAsync(CancellationToken.None);
 
-        await act.Should().ThrowAsync<HttpRequestException>();
+        (await act.Should().ThrowAsync<OAuth2TokenException>())
+            .Which.ErrorCode.Should().Be("invalid_client");
     }
 
     #endregion
@@ -97,14 +100,16 @@ public class StandardOAuth2TokenManagerHttpInteractionTests
     }
 
     [Fact]
-    public async Task GetTokenByAuthorizationCodeAsync_WithHttpError_ThrowsHttpRequestException()
+    public async Task GetTokenByAuthorizationCodeAsync_WithHttpError_ThrowsStructuredException()
     {
+        // SR-M2（P2.3，D8）：非 2xx 且无 error 载荷 → 携带 http_<status> 错误码与状态码的 OAuth2TokenException
         var handler = CreateMockHandler("error", HttpStatusCode.Unauthorized);
         var manager = CreateManager(handler.Object);
 
         var act = async () => await manager.GetTokenByAuthorizationCodeAsync("code", "https://redirect", CancellationToken.None);
 
-        await act.Should().ThrowAsync<HttpRequestException>();
+        var assertion = await act.Should().ThrowAsync<OAuth2TokenException>();
+        assertion.Which.HttpStatusCode.Should().Be(401);
     }
 
     #endregion
@@ -131,14 +136,16 @@ public class StandardOAuth2TokenManagerHttpInteractionTests
     }
 
     [Fact]
-    public async Task RefreshTokenByRefreshTokenAsync_WithHttpError_ThrowsHttpRequestException()
+    public async Task RefreshTokenByRefreshTokenAsync_WithHttpError_ThrowsStructuredException()
     {
+        // SR-M2（P2.3，D8）：非 2xx → OAuth2TokenException（原 EnsureSuccessStatusCode 的 HttpRequestException）
         var handler = CreateMockHandler("error", HttpStatusCode.BadRequest);
         var manager = CreateManager(handler.Object);
 
         var act = async () => await manager.RefreshTokenByRefreshTokenAsync("refresh-token", CancellationToken.None);
 
-        await act.Should().ThrowAsync<HttpRequestException>();
+        var assertion = await act.Should().ThrowAsync<OAuth2TokenException>();
+        assertion.Which.HttpStatusCode.Should().Be(400);
     }
 
     #endregion
@@ -164,14 +171,16 @@ public class StandardOAuth2TokenManagerHttpInteractionTests
     }
 
     [Fact]
-    public async Task GetTokenByPasswordAsync_WithHttpError_ThrowsHttpRequestException()
+    public async Task GetTokenByPasswordAsync_WithHttpError_ThrowsStructuredException()
     {
+        // SR-M2（P2.3，D8）：非 2xx → OAuth2TokenException（原 EnsureSuccessStatusCode 的 HttpRequestException）
         var handler = CreateMockHandler("error", HttpStatusCode.Unauthorized);
         var manager = CreateManager(handler.Object);
 
         var act = async () => await manager.GetTokenByPasswordAsync("user", "pass", null, CancellationToken.None);
 
-        await act.Should().ThrowAsync<HttpRequestException>();
+        var assertion = await act.Should().ThrowAsync<OAuth2TokenException>();
+        assertion.Which.HttpStatusCode.Should().Be(401);
     }
 
     #endregion
