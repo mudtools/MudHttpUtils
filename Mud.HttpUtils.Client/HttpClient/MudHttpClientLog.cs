@@ -13,7 +13,7 @@ namespace Mud.HttpUtils;
 /// <remarks>
 /// <para>.NET 6+ 使用 <c>[LoggerMessage]</c> 源生成器（零分配、级别短路）；</para>
 /// <para>netstandard2.0 fallback 到 <c>LoggerMessage.Define</c>（同样零分配，但需要在运行时构建委托）。</para>
-/// <para>EventId 规划：1-50 EnhancedHttpClient（已分配）；51-100 预留；101-120 Resilience；121-130 Cache；131-150 TokenManager。</para>
+    /// <para>EventId 规划：1-50 EnhancedHttpClient（已分配）；51-100 预留；101-120 Resilience；121-130 Cache；131-156 TokenManager（已分配，含 151-156）；157-165 SR 轮（Token 安审查修复）；166+ 预留。</para>
 /// </remarks>
 internal static partial class MudHttpClientLog
 {
@@ -351,6 +351,44 @@ internal static partial class MudHttpClientLog
     [LoggerMessage(EventId = 156, Level = LogLevel.Warning,
         Message = "令牌恢复放弃：重试请求主机 '{RetryHost}' 与原始主机 '{OriginalHost}' 不一致，可能被重定向到不受信任的地址，拒绝继续恢复。")]
     public static partial void TokenRecoveryHostMismatch(ILogger logger, string? retryHost, string? originalHost);
+
+    // ---- SR 轮新增事件（EventId 157-162；151-156 已分配，见 §0.3-V1 评审修订）----
+
+    [LoggerMessage(EventId = 157, Level = LogLevel.Warning,
+        Message = "请求体大小 {DeclaredLength} 超过恢复缓冲上限或不可恢复，已放弃 401 恢复（无体重试被禁止），直接返回 401。")]
+    public static partial void TokenRecoveryBodyNotRecoverable(ILogger logger, long? declaredLength);
+
+    [LoggerMessage(EventId = 158, Level = LogLevel.Warning,
+        Message = "刷新令牌被 IdP 拒绝（error={ErrorCode}），已清除可疑 refresh_token 并回退 client_credentials（ScopeKey={ScopeKey}）")]
+    public static partial void RefreshTokenRejected(ILogger logger, string scopeKey, string? errorCode);
+
+    [LoggerMessage(EventId = 159, Level = LogLevel.Debug,
+        Message = "公共客户端认证：client_id 经请求体传递（未配置 ClientSecret）")]
+    public static partial void PublicClientAuthUsed(ILogger logger);
+
+    [LoggerMessage(EventId = 160, Level = LogLevel.Warning,
+        Message = "TokenManagerKey '{TokenManagerKey}' 未能在注册表解析到令牌管理器，回退到构造注入的管理器实例")]
+    public static partial void TokenManagerUnresolved(ILogger logger, string tokenManagerKey);
+
+    [LoggerMessage(EventId = 161, Level = LogLevel.Error,
+        Message = "用户身份不一致：上下文主体用户 '{PrincipalUserId}' 与恢复请求用户 '{ContextUserId}' 不匹配，拒绝恢复并返回 401")]
+    public static partial void UserTokenIdentityMismatch(ILogger logger, string principalUserId, string contextUserId);
+
+    [LoggerMessage(EventId = 162, Level = LogLevel.Warning,
+        Message = "令牌管理器（{MetricsKey}）已绑定租户 '{ExistingTenant}'，不能用于租户 '{RequestedTenant}' 的请求。跨租户复用同一管理器实例会导致令牌/凭据错配；若确属共享凭据设计，请覆写 EnforceTenantBinding 返回 false。")]
+    public static partial void TenantBindingRejected(ILogger logger, string metricsKey, string existingTenant, string requestedTenant);
+
+    [LoggerMessage(EventId = 163, Level = LogLevel.Information,
+        Message = "当前作用域（{ScopeKey}）缺少 refresh_token，已回退默认作用域刷新令牌（AllowDefaultScopeRefreshTokenFallback=true）。请确认 IdP 支持统一刷新令牌，否则可能造成越权令牌。")]
+    public static partial void DefaultScopeRefreshFallbackUsed(ILogger logger, string scopeKey);
+
+    [LoggerMessage(EventId = 164, Level = LogLevel.Debug,
+        Message = "用户令牌刷新处于退避窗口（CacheKey={CacheKey}），本次不发起刷新")]
+    public static partial void UserRefreshBackoffActive(ILogger logger, string cacheKey);
+
+    [LoggerMessage(EventId = 165, Level = LogLevel.Information,
+        Message = "跳过不支持后台刷新的令牌管理器: {Name}")]
+    public static partial void TokenManagerSkippedNoBackgroundRefresh(ILogger logger, string name);
 #else
     private static readonly Action<ILogger, string, Exception?> s_tokenManagerRegistered =
         LoggerMessage.Define<string>(LogLevel.Debug, new EventId(131, nameof(TokenManagerRegistered)),
@@ -503,6 +541,62 @@ internal static partial class MudHttpClientLog
             "令牌恢复放弃：重试请求主机 '{RetryHost}' 与原始主机 '{OriginalHost}' 不一致，可能被重定向到不受信任的地址，拒绝继续恢复。");
     public static void TokenRecoveryHostMismatch(ILogger logger, string? retryHost, string? originalHost)
         => s_tokenRecoveryHostMismatch(logger, retryHost, originalHost, null);
+
+    // ---- SR 轮新增事件（EventId 157-162）ns2.0 fallback ----
+
+    private static readonly Action<ILogger, long?, Exception?> s_tokenRecoveryBodyNotRecoverable =
+        LoggerMessage.Define<long?>(LogLevel.Warning, new EventId(157, nameof(TokenRecoveryBodyNotRecoverable)),
+            "请求体大小 {DeclaredLength} 超过恢复缓冲上限或不可恢复，已放弃 401 恢复（无体重试被禁止），直接返回 401。");
+    public static void TokenRecoveryBodyNotRecoverable(ILogger logger, long? declaredLength)
+        => s_tokenRecoveryBodyNotRecoverable(logger, declaredLength, null);
+
+    private static readonly Action<ILogger, string, string?, Exception?> s_refreshTokenRejected =
+        LoggerMessage.Define<string, string?>(LogLevel.Warning, new EventId(158, nameof(RefreshTokenRejected)),
+            "刷新令牌被 IdP 拒绝（error={ErrorCode}），已清除可疑 refresh_token 并回退 client_credentials（ScopeKey={ScopeKey}）");
+    public static void RefreshTokenRejected(ILogger logger, string scopeKey, string? errorCode)
+        => s_refreshTokenRejected(logger, scopeKey, errorCode, null);
+
+    private static readonly Action<ILogger, Exception?> s_publicClientAuthUsed =
+        LoggerMessage.Define(LogLevel.Debug, new EventId(159, nameof(PublicClientAuthUsed)),
+            "公共客户端认证：client_id 经请求体传递（未配置 ClientSecret）");
+    public static void PublicClientAuthUsed(ILogger logger)
+        => s_publicClientAuthUsed(logger, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_tokenManagerUnresolved =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(160, nameof(TokenManagerUnresolved)),
+            "TokenManagerKey '{TokenManagerKey}' 未能在注册表解析到令牌管理器，回退到构造注入的管理器实例");
+    public static void TokenManagerUnresolved(ILogger logger, string tokenManagerKey)
+        => s_tokenManagerUnresolved(logger, tokenManagerKey, null);
+
+    private static readonly Action<ILogger, string, string, Exception?> s_userTokenIdentityMismatch =
+        LoggerMessage.Define<string, string>(LogLevel.Error, new EventId(161, nameof(UserTokenIdentityMismatch)),
+            "用户身份不一致：上下文主体用户 '{PrincipalUserId}' 与恢复请求用户 '{ContextUserId}' 不匹配，拒绝恢复并返回 401");
+    public static void UserTokenIdentityMismatch(ILogger logger, string principalUserId, string contextUserId)
+        => s_userTokenIdentityMismatch(logger, principalUserId, contextUserId, null);
+
+    private static readonly Action<ILogger, string, string, string, Exception?> s_tenantBindingRejected =
+        LoggerMessage.Define<string, string, string>(LogLevel.Warning, new EventId(162, nameof(TenantBindingRejected)),
+            "令牌管理器（{MetricsKey}）已绑定租户 '{ExistingTenant}'，不能用于租户 '{RequestedTenant}' 的请求。跨租户复用同一管理器实例会导致令牌/凭据错配；若确属共享凭据设计，请覆写 EnforceTenantBinding 返回 false。");
+    public static void TenantBindingRejected(ILogger logger, string metricsKey, string existingTenant, string requestedTenant)
+        => s_tenantBindingRejected(logger, metricsKey, existingTenant, requestedTenant, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_defaultScopeRefreshFallbackUsed =
+        LoggerMessage.Define<string>(LogLevel.Information, new EventId(163, nameof(DefaultScopeRefreshFallbackUsed)),
+            "当前作用域（{ScopeKey}）缺少 refresh_token，已回退默认作用域刷新令牌（AllowDefaultScopeRefreshTokenFallback=true）。请确认 IdP 支持统一刷新令牌，否则可能造成越权令牌。");
+    public static void DefaultScopeRefreshFallbackUsed(ILogger logger, string scopeKey)
+        => s_defaultScopeRefreshFallbackUsed(logger, scopeKey, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_userRefreshBackoffActive =
+        LoggerMessage.Define<string>(LogLevel.Debug, new EventId(164, nameof(UserRefreshBackoffActive)),
+            "用户令牌刷新处于退避窗口（CacheKey={CacheKey}），本次不发起刷新");
+    public static void UserRefreshBackoffActive(ILogger logger, string cacheKey)
+        => s_userRefreshBackoffActive(logger, cacheKey, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_tokenManagerSkippedNoBackgroundRefresh =
+        LoggerMessage.Define<string>(LogLevel.Information, new EventId(165, nameof(TokenManagerSkippedNoBackgroundRefresh)),
+            "跳过不支持后台刷新的令牌管理器: {Name}");
+    public static void TokenManagerSkippedNoBackgroundRefresh(ILogger logger, string name)
+        => s_tokenManagerSkippedNoBackgroundRefresh(logger, name, null);
 #endif
 
     #endregion

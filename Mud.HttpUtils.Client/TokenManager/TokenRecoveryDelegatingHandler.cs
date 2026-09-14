@@ -73,15 +73,17 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
     /// <param name="currentUserContext">当前用户上下文，用于获取用户 ID（可选）。</param>
     /// <param name="options">令牌恢复配置选项（可选）。</param>
     /// <param name="logger">日志记录器（可选）。</param>
+    /// <param name="managerRegistry">SR-M6（P2.4，D9）令牌管理器注册表（可选），按 TokenManagerKey 路由恢复链路。</param>
     public TokenRecoveryDelegatingHandler(
         ITokenManager tokenManager,
         IUserTokenManager? userTokenManager,
         ICurrentUserContext? currentUserContext = null,
         TokenRecoveryOptions? options = null,
-        ILogger<TokenRecoveryDelegatingHandler>? logger = null)
+        ILogger<TokenRecoveryDelegatingHandler>? logger = null,
+        ITokenManagerRegistry? managerRegistry = null)
     {
         _recoveryExecutor = new TokenRecoveryExecutor(
-            tokenManager, userTokenManager, currentUserContext, options, logger);
+            tokenManager, userTokenManager, currentUserContext, options, logger, managerRegistry);
     }
 
     /// <inheritdoc />

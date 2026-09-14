@@ -28,6 +28,9 @@ namespace Mud.HttpUtils;
 /// </remarks>
 internal sealed class KeyedLockTable : IDisposable
 {
+    /// <summary>退休分支异步退避间隔（毫秒）。SR-C1（P1.1）：消除无让步忙等自旋。</summary>
+    private const int RetryBackoffMilliseconds = 1;
+
     internal sealed class Entry
     {
         public readonly SemaphoreSlim Semaphore = new(1, 1);
@@ -47,6 +50,12 @@ internal sealed class KeyedLockTable : IDisposable
     internal IEnumerable<string> Keys => _entries.Keys;
 
     /// <summary>
+    /// SR-C1（P1.1）测试观测钩子：退休分支进入异步退避的累计次数（Interlocked 计数）。
+    /// 供并发用例断言"等待期间重试次数有界"（对照修复前的时间复杂度不可控紧循环）。
+    /// </summary>
+    internal long SpinRetries;
+
+    /// <summary>
     /// 以键获取或创建一个信号量锁，并在获取到锁后返回 <see cref="Releaser"/>。
     /// 若条目已被退休，则递减计数后重试获取新条目。
     /// </summary>
@@ -58,7 +67,8 @@ internal sealed class KeyedLockTable : IDisposable
         {
             var entry = _entries.GetOrAdd(key, _ => new Entry());
             Interlocked.Increment(ref entry.Waiters);
-            if (!entry.Retired)
+            // SR-C1（P1.1）：显式 Volatile.Read 消除对 volatile 成员读取的隐式依赖（语义等价）。
+            if (!Volatile.Read(ref entry.Retired))
             {
                 try
                 {
@@ -76,7 +86,18 @@ internal sealed class KeyedLockTable : IDisposable
             // 由本调用方帮助物理移除，避免"自旋者 + 最后持有者已释放"导致退休条目永久滞留、
             // 后续 GetOrAdd 反复返回同一退休条目而无法复用（消除 Waiters 泄漏死锁）。
             if (Volatile.Read(ref entry.Waiters) == 0)
+            {
                 TryRemoveEntry(key, entry);
+                continue;   // 本方已帮助移除，下一轮必得新条目，立即重试
+            }
+
+            // SR-C1（P1.1）修复：退休条目仍被持有/等待时，异步退避后重试。
+            // 原实现为无让步 while(true) 紧循环——持锁刷新可达 30s+（RefreshTimeoutSeconds），
+            // 期间所有并发等待者持续烧 CPU（近似活锁）。retire 协议的正确性前提
+            // （"取到退休条目必须放弃并重取新条目"，防孤儿竞态破坏互斥）不可移除，
+            // 缺陷仅在于重试无退避。OCE 经 ct 自然传播，与既有取消语义一致。
+            Interlocked.Increment(ref SpinRetries);
+            await Task.Delay(RetryBackoffMilliseconds, cancellationToken).ConfigureAwait(false);
         }
     }
 

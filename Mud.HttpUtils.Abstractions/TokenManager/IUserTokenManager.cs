@@ -13,6 +13,9 @@ namespace Mud.HttpUtils;
 /// <remarks>
 /// <b>推荐 DI 生命周期：Singleton。</b>与 <see cref="ITokenManager"/> 相同，
 /// 用户令牌管理器内部维护按 userId 隔离的令牌缓存和并发锁，应注册为 Singleton。
+/// <para>SR-M1（P2.2，D7）scopes 语义：有 scopes 重载按 <b>userId × scope 复合键</b>隔离缓存
+/// （先以 ["read:admin"] 获取的令牌不会被 ["read:basic"] 调用复用）；无 scopes 重载作用于
+/// 该用户的<b>默认作用域条目</b>。登出（RemoveTokenAsync / InvalidateUserTokenAsync）清除该用户全部作用域。</para>
 /// </remarks>
 public interface IUserTokenManager : ITokenManager
 {
@@ -26,6 +29,8 @@ public interface IUserTokenManager : ITokenManager
 
     /// <summary>
     /// 异步获取指定用户和作用域的访问令牌。
+    /// <para>SR-M1（P2.2，D7）：有 scopes 时按 userId × scope 复合键隔离缓存；
+    /// 无 scopes 重载作用于默认作用域条目。</para>
     /// </summary>
     /// <param name="userId">用户的唯一标识符。</param>
     /// <param name="scopes">令牌作用域数组。</param>
@@ -99,6 +104,8 @@ public interface IUserTokenManager : ITokenManager
     /// <summary>
     /// 异步获取指定用户和作用域的有效访问令牌，如果令牌已过期或即将过期则自动刷新。
     /// 此方法保证并发安全：同一 userId 的多个并发调用只会触发一次刷新操作。
+    /// <para>SR-M1（P2.2，D7）：本重载按 userId × scope 复合键隔离缓存——不同 scopes 的调用
+    /// 各自维护独立的缓存条目与并发锁，不会互相复用令牌（权限范围隔离）。</para>
     /// </summary>
     /// <param name="userId">用户的唯一标识符。</param>
     /// <param name="scopes">令牌作用域数组。</param>

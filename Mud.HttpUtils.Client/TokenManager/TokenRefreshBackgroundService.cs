@@ -25,6 +25,8 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
     private readonly TimeSpan _refreshInterval;
     private readonly TimeSpan _retryDelay;
     private readonly TokenRefreshLoopState _loopState = new();
+    // SR-L3（P3.6，D14）：Timer 交换加锁；_timer 读取处 Volatile.Read。
+    private readonly object _timerLock = new();
     private Timer? _timer;
     private int _running; // P1.6（TK-11）重入闸：同一时刻只允许一个刷新编排在运行
     private bool _disposed;
@@ -92,6 +94,14 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
         if (tokenManager == null)
             throw new ArgumentNullException(nameof(tokenManager));
 
+        // SR-M4（P3.2，D14）注册守卫统一：与 TokenRefreshHostedService.RegisterTokenManager 同源
+        // （SupportsBackgroundRefresh=false 的管理器静默跳过），消除 ns2.0 / net6+ 双实现行为漂移。
+        if (!tokenManager.SupportsBackgroundRefresh)
+        {
+            MudHttpClientLog.TokenManagerSkippedNoBackgroundRefresh(_logger, name ?? tokenManager.GetType().Name);
+            return;
+        }
+
         var key = name ?? Guid.NewGuid().ToString("N");
         _tokenManagers[key] = tokenManager;
         MudHttpClientLog.TokenManagerRegistered(_logger, key);
@@ -117,15 +127,20 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
         }
 
         // P1.6（TK-11）StartAsync 幂等：先停止旧 Timer 再创建新 Timer，避免重复启动导致多 Timer 并发刷新
-        var oldTimer = Interlocked.Exchange(ref _timer, null);
-        oldTimer?.Change(Timeout.Infinite, Timeout.Infinite);
-        oldTimer?.Dispose();
+        // SR-L3（P3.6，D14）Timer 交换加锁：并发 StartAsync 下双 Timer 交换竞态（读旧引用/泄漏）消除。
+        lock (_timerLock)
+        {
+            var oldTimer = _timer;
+            _timer = null;
+            oldTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+            oldTimer?.Dispose();
 
-        _timer = new Timer(
-            RefreshTokenCallback,
-            null,
-            _refreshInterval,
-            _refreshInterval);
+            _timer = new Timer(
+                RefreshTokenCallback,
+                null,
+                _refreshInterval,
+                _refreshInterval);
+        }
 
         MudHttpClientLog.TokenRefreshServiceStarted(_logger, _refreshInterval.TotalSeconds, _tokenManagers.Count);
 
@@ -135,7 +150,10 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
     /// <inheritdoc />
     public Task StopAsync(CancellationToken cancellationToken = default)
     {
-        _timer?.Change(Timeout.Infinite, Timeout.Infinite);
+        lock (_timerLock)
+        {
+            _timer?.Change(Timeout.Infinite, Timeout.Infinite);
+        }
         MudHttpClientLog.TokenRefreshServiceStopped(_logger);
         return Task.CompletedTask;
     }
@@ -157,7 +175,8 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
                 _tokenManagers, _logger, _options, CancellationToken.None, _loopState).ConfigureAwait(false);
             if (!shouldContinue)
             {
-                _timer?.Change(Timeout.Infinite, Timeout.Infinite);
+                // SR-L3（P3.6）：回调读 Timer 引用经 Volatile.Read（锁外安全读）
+                Volatile.Read(ref _timer)?.Change(Timeout.Infinite, Timeout.Infinite);
             }
         }
         catch (Exception ex)
@@ -179,7 +198,10 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
             return;
 
         _disposed = true;
-        _timer?.Change(Timeout.Infinite, Timeout.Infinite);
-        _timer?.Dispose();
+        lock (_timerLock)
+        {
+            _timer?.Change(Timeout.Infinite, Timeout.Infinite);
+            _timer?.Dispose();
+        }
     }
 }

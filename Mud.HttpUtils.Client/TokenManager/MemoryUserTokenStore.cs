@@ -41,7 +41,12 @@ namespace Mud.HttpUtils;
 /// </example>
 public class MemoryUserTokenStore : IUserTokenStore
 {
-    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, MemoryTokenStore.TokenEntry>> _userStore = new(StringComparer.OrdinalIgnoreCase);
+    // SR-H4（P1.5，D5）userId 外层比较器改 Ordinal：
+    // 原实现 OrdinalIgnoreCase 令 "User1"/"user1"/大小写不同的邮箱型 ID 共享同一令牌桶（跨用户读取令牌），
+    // 且与 KeyedLockTable（Ordinal）、MemoryCacheTokenCache._keys（默认 Ordinal）两套身份判定分裂。
+    // userId 的大小写归一化责任在调用方入口，存储与缓存层一律 Ordinal。
+    // 内层（tokenType）保留 OrdinalIgnoreCase：tokenType 语义不区分大小写，与 MemoryTokenStore 一致。
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, MemoryTokenStore.TokenEntry>> _userStore = new(StringComparer.Ordinal);
 
     Task<string?> ITokenStore.GetAccessTokenAsync(string tokenType, CancellationToken cancellationToken)
     {
@@ -158,6 +163,12 @@ public class MemoryUserTokenStore : IUserTokenStore
         if (_userStore.TryGetValue(userId, out var userTokens))
         {
             userTokens.TryRemove(tokenType, out _);
+
+            // SR-L5（P3.8，D14）空内层字典清扫：消除海量短命 userId 的空字典壳滞留。
+            // 竞态弱一致可接受——误删（刚被并发 Set 重新填充即被移除）由下次 Set 恢复；
+            // 外层 TryRemove(key) 重载在 ns2.0 一直可用（§0.3-V4），无条件编译。
+            if (userTokens.IsEmpty)
+                _userStore.TryRemove(userId, out _);
         }
 
         return Task.CompletedTask;

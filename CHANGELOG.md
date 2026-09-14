@@ -70,3 +70,30 @@
 - **`IAsyncEnumerable<T>` 流式返回修复**：此前实际未命中流式分支（正则匹配类型限定名永不成功），生成结果退化为 `CS4032`；现按「符号名 + 元数」判定，正常生成 `await foreach` 流式实现。
 - **诊断标签分层（`NotConfigurable`）**：`NotConfigurable` 仅保留给「使用者无法通过修改自身源码/配置修复」的内部/环境类错误（`HTTPCLIENT001`/`003`/`HTTPCLIENTREG001`/`EHSG001`/`FORM001`）；"用户可修复"的诊断（`HTTPCLIENT004`/`005`/`007`/`008`/`013`/`015`/`016`、`HTTPCLIENTREG002`、`FORM002`/`FORM003`）去掉该标签（**级别仍为 Error，仍阻断构建**）。原因：csc 的 `CommonCompiler.CompileAndEmit` 在声明阶段有闸门 `if (HasUnsuppressableErrors(diagnostics)) return;`（`IsUnsuppressableError := DefaultSeverity == Error && 带 NotConfigurable 标签`），且该闸门在源生成器诊断并入同一 `DiagnosticBag` 之后求值 —— 命中即**跳过整轮分析器执行**，`MUD001`/`MUD002`/`MUD004` 在同一编译中整体不呈现。分层后，常见场景（用户手写代码有误）下接口规范诊断恢复可见。
 - **新增诊断发布跟踪**（`AnalyzerReleases.Shipped.md`/`Unshipped.md`）：消除生成器工程构建中的 37 条 `RS2008` 警告噪音，并使新增/变更规则的登记成为构建期门禁（`RS2008`/`RS2001`）。
+
+### 令牌管理安全审查修复（SR 轮，2026-09 第二轮）
+
+> 依据 `.docs/Token管理安全审查修复与加固方案.md`（SR-C1、SR-H1~H5、SR-M1~M9、SR-L1~L9，共 26 项，全部落地）。
+
+- **并发**：`KeyedLockTable` 退休分支忙等自旋改为 1ms 异步退避（SR-C1，观测钩子 `SpinRetries`）；删除用户令牌缓存命中路径的锁 retire churn。retire 协议互斥语义不变（2000 次交错互斥用例回归验证）。
+- **生命周期**：`TokenManagerBase.Dispose(bool)` 重构为可重入 + 每步幂等（SR-H1）——派生类置位 `_disposed` 后基类释放（Timer / 锁表 / 缓存）必然执行，消除 Timer 永久泄漏；契约写入基类 XML 文档。
+- **内存与数据完整性**：401 恢复的请求体缓冲改为**读取阶段限量**（含 chunked，峰值内存 ≤ 上限 + 8KB，SR-H2）；超限 / 禁用体缓存的带体请求**不再进行无体重试**，直接返回 401（SR-H3，数据完整性优先）。新增 `TokenRecoveryOptions.MaxCachedRequestBodyBytes`（默认 10MB）。
+- **身份与租户隔离**：`MemoryUserTokenStore` userId 比较器改 Ordinal（SR-H4，大小写归一化责任在调用方入口）；`TokenManagerBase` 新增 bind-once 租户绑定守卫（SR-H5，`EnforceTenantBinding` 虚属性为合法共享逃生门）；用户令牌按 **userId × scope 复合键**隔离缓存与锁（SR-M1），登出清除该用户全部作用域；恢复执行器与 `DefaultTokenProvider` 校验 `TokenRecoveryContext.UserId` 与受信上下文主体身份一致性，不一致即拒绝（SR-M7/L2，上下文缺席不拦截）。
+- **凭据与授权语义**：`invalid_grant` 清除可疑 refresh_token 并回退 `client_credentials`（SR-M2）；跨作用域回退默认作用域 refresh_token **默认关闭**（`OAuth2Options.AllowDefaultScopeRefreshTokenFallback`，SR-M9）；公共客户端（空 Secret）`client_id` 走请求体，不再发送 `Basic base64(clientId:)` 弱凭据头（SR-L7）；401 令牌请求失败抛类型化 `OAuth2TokenException : InvalidOperationException`（携带 `ErrorCode` / `HttpStatusCode`，既有 catch 兼容）。
+- **401 恢复路由**：新增 `ITokenManagerRegistry`（Abstractions）+ `DelegateTokenManagerRegistry` / `AddTokenManagerRegistry` DI 助手（Client），执行器按 `TokenRecoveryContext.TokenManagerKey` 路由失效/刷新/重试全链路（SR-M6）；解析失败回退注入实例 + Warning（默认键场景可用性优先）。刷新去重键升级为 `managerKey + US + ...` 消除跨管理器合并。
+- **健壮性**：用户令牌刷新失败负缓存指数退避（30s→60s→120s→240s 封顶，SR-M3）；scope 键规范化收敛 `ScopeKeyBuilder`（Distinct/Ordinal/排序，SR-M5）+ `UpdateToken` 超限强制 LRU Compact 硬上限；新增 `EncryptedTokenCache<T>` 用户令牌内存态加密（SR-M8，`UserTokenManagerBase` 加密构造重载，密文损坏按 miss 处理）。
+- **低危收尾**：`MemoryCacheTokenCache.TryGet` 纳入 `_sync`（SR-L1）；后台服务 Timer 交换加锁 + `Volatile.Read`（SR-L3）；`DefaultCurrentUserContext.SetUserId` 副本语义（SR-L4）；`MemoryUserTokenStore` 空内层字典清扫（SR-L5）；ns2.0 双实现注册守卫统一（SR-M4）；用户管理器跳过租户维护 Timer（SR-L9，`SupportsTenantMaintenance`）；ns2.0 `WaitForTaskAsync` 注册滞留文档化（SR-L8）。
+- **诊断**：新增 `MUD005`（Info）——`[Token(InjectionMode = Query)]` 注入模式的日志/历史泄露面提示（SR-L6，可抑制）。
+
+#### 令牌模块行为变更（迁移说明）
+
+| 变更 | 旧行为 | 新行为 | 迁移动作 |
+| --- | --- | --- | --- |
+| 用户令牌 scopes（SR-M1） | 忽略 scopes，全部共享 userId 缓存 | 按 userId×scope 隔离 | 依赖隐式共享的调用方改为显式传一致 scopes 或不传 |
+| 无体重试（SR-H3） | 超限/未知长度请求 401 后空 body 重试 | 直接返回 401 | 调用方自行决定上层重试 |
+| 跨作用域回退（SR-M9） | 默认回退默认作用域 refresh_token | 默认关闭，需显式开启 | 统一刷新令牌型 IdP 用户设置 `AllowDefaultScopeRefreshTokenFallback=true` |
+| 空 Secret 认证（SR-L7） | 发送 `Basic clientId:` 弱头 | `client_id` 走请求体 | 无（公共客户端标准行为） |
+| userId 存储（SR-H4） | IgnoreCase 合并 | Ordinal 隔离 | 大小写混用 userId 的系统在入口归一化 |
+| scope 键（SR-M5） | 原样拼接（可重复/大小写分裂） | Distinct + Ordinal 规范化 | 无（字面量 scope 数组不受影响） |
+| 401 异常类型（SR-M2） | `InvalidOperationException` | `OAuth2TokenException : InvalidOperationException` | 无（catch 基类兼容） |
+| 租户绑定（SR-H5） | 无检测 | bind-once 拒绝跨租户 | 共享凭据设计覆写 `EnforceTenantBinding=false` |

@@ -75,17 +75,28 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
             value = default;
             return false;
         }
-        // P3.2（C2，TK-16）读_IMemoryCache 是唯一数据源；影子索引仅在命中但索引缺失时兜底写入，
-        // 保证 Count/Keys 与 TryGet 语义一致（IMemoryCache 后台驱逐不阻塞读）。
-        if (_cache.TryGetValue(key, out var obj) && obj is T typed)
+        // SR-L1（P3.5，D14）：TryGet 纳入 _sync，消除与 Dispose 的 check-then-act 窗口
+        // （原实现在锁外读 IMemoryCache，Dispose 并发交错可能抛 ObjectDisposedException）。
+        // 用户令牌读路径为同步内存操作，锁开销可忽略。
+        lock (_sync)
         {
-            value = typed;
-            _keys.TryAdd(key, 0);
-            return true;
-        }
+            if (_disposed)
+            {
+                value = default;
+                return false;
+            }
+            // P3.2（C2，TK-16）读_IMemoryCache 是唯一数据源；影子索引仅在命中但索引缺失时兜底写入，
+            // 保证 Count/Keys 与 TryGet 语义一致（IMemoryCache 后台驱逐不阻塞读）。
+            if (_cache.TryGetValue(key, out var obj) && obj is T typed)
+            {
+                value = typed;
+                _keys.TryAdd(key, 0);
+                return true;
+            }
 
-        value = null;
-        return false;
+            value = null;
+            return false;
+        }
     }
 
     /// <inheritdoc />

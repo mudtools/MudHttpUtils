@@ -117,13 +117,15 @@ public class MemoryUserTokenStoreTests
     }
 
     [Fact]
-    public async Task GetAccessTokenAsync_CaseInsensitive_UserId()
+    public async Task GetAccessTokenAsync_CaseSensitive_UserId_ShouldIsolate()
     {
+        // SR-H4（P1.5）：userId 比较器改为 Ordinal，"User1"/"user1" 读写互不可见。
+        // 大小写归一化责任在调用方入口，存储层一律 Ordinal（跨用户读取令牌 = 越权面）。
         await _store.SetAccessTokenAsync("User1", "TestToken", "access_123", 3600);
 
         var result = await _store.GetAccessTokenAsync("user1", "TestToken");
 
-        result.Should().Be("access_123");
+        result.Should().BeNull("大小写不同的 userId 是不同的用户（Ordinal 隔离）");
     }
 
     [Fact]
@@ -133,7 +135,7 @@ public class MemoryUserTokenStoreTests
 
         var result = await _store.GetAccessTokenAsync("user1", "tenantaccesstoken");
 
-        result.Should().Be("access_123");
+        result.Should().Be("access_123", "tokenType 语义不区分大小写（与 MemoryTokenStore 一致）");
     }
 
     #endregion
@@ -268,6 +270,24 @@ public class MemoryUserTokenStoreTests
         var act = async () => await _store.RemoveAsync("nonexistent", "TestToken");
 
         await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task RemoveAsync_LastTokenOfUser_ShouldCollectEmptyUserDict()
+    {
+        // SR-L5（P3.8）：逐条 Remove 后空内层字典被清扫，海量短命 userId 不滞留空字典壳。
+        await _store.SetAccessTokenAsync("short-lived-user", "TokenA", "access_a", 3600);
+
+        await _store.RemoveAsync("short-lived-user", "TokenA");
+
+        // 清扫后：该用户的令牌类型列表应为空（外层条目已移除）
+        var types = await _store.GetTokenTypesAsync("short-lived-user");
+        types.Should().BeEmpty("空内层字典已被清扫（SR-L5）");
+
+        // 再 Set 应正常恢复（清扫误删由下次 Set 恢复——弱一致可接受）
+        await _store.SetAccessTokenAsync("short-lived-user", "TokenA", "access_a2", 3600);
+        var token = await _store.GetAccessTokenAsync("short-lived-user", "TokenA");
+        token.Should().Be("access_a2");
     }
 
     #endregion

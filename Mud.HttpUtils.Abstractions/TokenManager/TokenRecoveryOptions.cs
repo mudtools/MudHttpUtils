@@ -52,4 +52,21 @@ public class TokenRecoveryOptions
         set => _refreshTimeoutSeconds = value > 0 ? value : throw new ArgumentOutOfRangeException(nameof(RefreshTimeoutSeconds), "刷新超时秒数必须大于 0。");
     }
     private double _refreshTimeoutSeconds = 30;
+
+    /// <summary>
+    /// SR-H2/H3（P1.4，D4）401 恢复重试可缓冲的请求体最大字节数，默认 10MB（10 * 1024 * 1024）。
+    /// <para>
+    /// 缓冲在<b>读取阶段</b>施加限制（含未声明 Content-Length 的 chunked / 流式请求），
+    /// 实际读取超过此上限时立即弃置已缓冲数据并放弃 401 恢复（返回 401，不进行无体重试，
+    /// 避免服务端按"空请求"语义处理造成数据完整性事故）。
+    /// </para>
+    /// <para>设为 0 表示禁用请求体缓存：所有带体请求在 401 后一律不进入恢复重试（GET / 无体请求不受影响）。</para>
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">设置小于 0 的值时抛出。</exception>
+    public long MaxCachedRequestBodyBytes
+    {
+        get => _maxCachedRequestBodyBytes;
+        set => _maxCachedRequestBodyBytes = value >= 0 ? value : throw new ArgumentOutOfRangeException(nameof(MaxCachedRequestBodyBytes), "请求体缓冲上限不能为负数。");
+    }
+    private long _maxCachedRequestBodyBytes = 10 * 1024 * 1024;
 }

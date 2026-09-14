@@ -45,6 +45,7 @@ public class TokenRecoveryExecutor
     private readonly ITokenManager _tokenManager;
     private readonly IUserTokenManager? _userTokenManager;
     private readonly ICurrentUserContext? _currentUserContext;
+    private readonly ITokenManagerRegistry? _managerRegistry;
     private readonly TokenRecoveryOptions _options;
     private readonly ILogger _logger;
 
@@ -77,16 +78,20 @@ public class TokenRecoveryExecutor
     /// <param name="currentUserContext">当前用户上下文，用于获取用户 ID（可选）。</param>
     /// <param name="options">令牌恢复配置选项（可选）。</param>
     /// <param name="logger">日志记录器（可选）。</param>
+    /// <param name="managerRegistry">SR-M6（P2.4，D9）：令牌管理器注册表（可选）。非空时按
+    /// TokenRecoveryContext.TokenManagerKey 路由到正确管理器；解析失败回退注入实例 + Warning。</param>
     public TokenRecoveryExecutor(
         ITokenManager tokenManager,
         IUserTokenManager? userTokenManager,
         ICurrentUserContext? currentUserContext = null,
         TokenRecoveryOptions? options = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        ITokenManagerRegistry? managerRegistry = null)
         : this(tokenManager, options, logger)
     {
         _userTokenManager = userTokenManager;
         _currentUserContext = currentUserContext;
+        _managerRegistry = managerRegistry;
     }
 
     /// <summary>
@@ -107,30 +112,32 @@ public class TokenRecoveryExecutor
         if (!ShouldAttemptRecovery(request))
             return await sendFunc(request, cancellationToken).ConfigureAwait(false);
 
-        // P1.7（TK-12）先限流后缓冲：读取请求体前先按 Content-Length 判断，超限直接跳过，
-        // 避免先整体读入内存造成超大 body 的 OOM 风险。
-        const long maxCachedRequestBodySize = 10 * 1024 * 1024; // 10MB
+        // SR-H2/H3（P1.4，D4）读取阶段限量缓冲：请求体在<b>读取阶段</b>施加硬上限（含 chunked /
+        // 未声明 Content-Length 的流式请求），超限立即弃置已缓冲数据，峰值内存 ≤ 上限 + 8KB。
+        // 修复 TK-12 残留缺口：原实现未声明长度时先完整读入内存再校验（2GB 流先分配后丢弃 → OOM）。
+        var maxCachedRequestBodySize = _options.MaxCachedRequestBodyBytes;
         byte[]? contentBytes = null;
 
-        if (request.Content != null)
+        if (request.Content != null && maxCachedRequestBodySize > 0)
         {
-            var declaredLength = request.Content.Headers.ContentLength;
-            if (declaredLength.HasValue && declaredLength.Value > maxCachedRequestBodySize)
-            {
-                _logger.LogWarning("请求体声明大小 {ActualSize} 字节超过缓存阈值 {MaxSize} 字节，跳过缓存以避免 OOM 风险。401 重试将无法携带原始请求体。", declaredLength.Value, maxCachedRequestBodySize);
-                contentBytes = null;
-            }
-            else
-            {
-                contentBytes = await ReadContentBytesAsync(request.Content, cancellationToken).ConfigureAwait(false);
+            contentBytes = await TryBufferContentAsync(
+                request.Content, maxCachedRequestBodySize, cancellationToken).ConfigureAwait(false);
 
-                // 兜底：Content-Length 缺失或不可靠时，读取后再按实际长度校验一次
-                if (contentBytes.Length > maxCachedRequestBodySize)
-                {
-                    _logger.LogWarning("请求体大小 {ActualSize} 字节超过缓存阈值 {MaxSize} 字节，跳过缓存以避免 OOM 风险。401 重试将无法携带原始请求体。", contentBytes.Length, maxCachedRequestBodySize);
-                    contentBytes = null;
-                }
+            if (contentBytes == null)
+            {
+                // 失败安全（SR-H3）：放弃 401 恢复（无体重试被禁止）——服务端可能按"空请求"
+                // 语义处理（清空类操作 / 默认参数写入），无体重试会造成数据完整性事故。
+                MudHttpClientLog.TokenRecoveryBodyNotRecoverable(
+                    _logger, request.Content.Headers.ContentLength);
+                return CreateUnauthorizedResponse(request);
             }
+        }
+        else if (request.Content != null)
+        {
+            // MaxCachedRequestBodyBytes == 0：显式禁用体缓存，带体请求一律不进入 401 恢复重试。
+            MudHttpClientLog.TokenRecoveryBodyNotRecoverable(
+                _logger, request.Content.Headers.ContentLength);
+            return CreateUnauthorizedResponse(request);
         }
 
         var response = await sendFunc(request, cancellationToken).ConfigureAwait(false);
@@ -141,6 +148,30 @@ public class TokenRecoveryExecutor
         response.Dispose();
 
         var recoveryContext = GetRecoveryContext(request);
+
+        // SR-M7/L2（P2.5，D10-A）userId 一致性校验 + 上下文 UserId 回退：
+        // ① TokenRecoveryContext.UserId 取自请求属性（中间层可灌入不可信输入）——与受信的
+        //    ICurrentUserContext.UserId 不一致即拒绝（失败安全，防任意用户令牌读取原语）；
+        // ② 请求未携带恢复上下文但当前用户上下文有 UserId 时，补全用户级恢复路径（激活原死代码承诺）。
+        //    上下文缺席（后台任务等场景）不拦截。
+        var contextUserId = recoveryContext?.UserId ?? _currentUserContext?.UserId;
+        if (!string.IsNullOrEmpty(contextUserId))
+        {
+            var principalUserId = _currentUserContext?.UserId;
+            if (!string.IsNullOrEmpty(principalUserId)
+                && !string.Equals(principalUserId, contextUserId, StringComparison.Ordinal))
+            {
+                MudHttpClientLog.UserTokenIdentityMismatch(_logger, principalUserId!, contextUserId!);
+                return CreateUnauthorizedResponse(request);   // 不一致即拒绝：不触发任何刷新
+            }
+
+            if (recoveryContext == null)
+            {
+                // SR-L2：无显式上下文但上下文有 UserId → 构造用户级恢复上下文
+                recoveryContext = new TokenRecoveryContext { UserId = contextUserId };
+            }
+        }
+
         var isUserTokenRecovery = recoveryContext != null && !string.IsNullOrEmpty(recoveryContext.UserId);
 
         // P2.5（TK-07）：优先使用请求上下文中显式写入的 TokenManagerKey 作为管理器定位键与可观测性维度；
@@ -183,7 +214,7 @@ public class TokenRecoveryExecutor
                 {
                     try
                     {
-                        newToken = await RefreshUserTokenWithDedupAsync(recoveryContext!.UserId!, cancellationToken).ConfigureAwait(false);
+                        newToken = await RefreshUserTokenWithDedupAsync(tokenManagerKey ?? "", recoveryContext!.UserId!, cancellationToken).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
@@ -195,7 +226,7 @@ public class TokenRecoveryExecutor
                 {
                     try
                     {
-                        newToken = await RefreshTokenWithDedupAsync(cancellationToken).ConfigureAwait(false);
+                        newToken = await RefreshTokenWithDedupAsync(tokenManagerKey ?? "", cancellationToken).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
@@ -386,13 +417,49 @@ public class TokenRecoveryExecutor
         }
     }
 
-    private static async Task<byte[]> ReadContentBytesAsync(HttpContent content, CancellationToken cancellationToken)
+    /// <summary>
+    /// SR-H2（P1.4，D4）读取阶段限量缓冲请求体：峰值内存 ≤ maxBytes + CopyBufferSize。
+    /// 声明超限（Content-Length > maxBytes）零缓冲直接返回 null；
+    /// 未声明长度（chunked / 流式）在读取过程中超限即弃置已缓冲数据返回 null。
+    /// </summary>
+    private const int CopyBufferSize = 8192;
+
+    private static async Task<byte[]?> TryBufferContentAsync(
+        HttpContent content, long maxBytes, CancellationToken cancellationToken)
     {
+        if (content.Headers.ContentLength is long declared && declared > maxBytes)
+            return null;                                      // 声明超限：零缓冲
+
 #if NETSTANDARD2_0
-        return await content.ReadAsByteArrayAsync().ConfigureAwait(false);
+        var stream = await content.ReadAsStreamAsync().ConfigureAwait(false);
 #else
-        return await content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+        var stream = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 #endif
+        // 注意：不 dispose 该流 —— ReadAsStreamAsync 返回的是 HttpContent 自有流，
+        // 生命周期归 HttpContent 所有（与 LimitedContentReader 同一惯例）。
+        var capacity = (int)Math.Min(
+            content.Headers.ContentLength.GetValueOrDefault(maxBytes), maxBytes);
+        using var buffered = capacity > 0
+            ? new MemoryStream(capacity)
+            : new MemoryStream();
+        var buffer = new byte[CopyBufferSize];
+        while (true)
+        {
+#if NETSTANDARD2_0
+            int read = await stream.ReadAsync(buffer, 0, CopyBufferSize).ConfigureAwait(false);
+#else
+            int read = await stream.ReadAsync(buffer.AsMemory(0, CopyBufferSize), cancellationToken).ConfigureAwait(false);
+#endif
+            if (read <= 0)
+                break;
+            buffered.Write(buffer, 0, read);
+            if (buffered.Length > maxBytes)
+            {
+                buffered.SetLength(0);                        // 立即弃置已缓冲数据
+                return null;                                  // 实际超限（chunked 未声明）
+            }
+        }
+        return buffered.ToArray();
     }
 
     private static HttpRequestMessage BuildRetryRequest(HttpRequestMessage original, byte[]? contentBytes, TokenRecoveryContext? recoveryContext)
@@ -466,20 +533,23 @@ public class TokenRecoveryExecutor
     /// P1.4（TK-15）取消隔离：持有刷新权的线程使用与等待者无关的超时令牌
     /// （<see cref="TokenRecoveryOptions.RefreshTimeoutSeconds"/> 兜底，默认 30s），单调用方取消不会中断
     /// 共享刷新；等待线程仅使用自身的取消令牌等待结果，互不影响。
+    /// SR-M6（P2.4，D9）去重键升级：__credential → managerKey + "\u001F" + "__credential"，
+    /// 消除不同管理器的共享刷新被错误合并（执行器跨应用共享场景）。
     /// </remarks>
-    private async Task<string?> RefreshTokenWithDedupAsync(CancellationToken cancellationToken)
+    private async Task<string?> RefreshTokenWithDedupAsync(string managerKey, CancellationToken cancellationToken)
     {
+        var dedupKey = managerKey + "\u001F" + CredentialRefreshKey;
         while (true)
         {
             var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var existing = _credentialRefreshTasks.GetOrAdd(CredentialRefreshKey, tcs.Task);
+            var existing = _credentialRefreshTasks.GetOrAdd(dedupKey, tcs.Task);
 
             if (ReferenceEquals(existing, tcs.Task))
             {
                 // 当前线程赢得了刷新权
                 try
                 {
-                    var token = await RefreshCredentialWithIsolationAsync().ConfigureAwait(false);
+                    var token = await RefreshCredentialWithIsolationAsync(managerKey).ConfigureAwait(false);
                     tcs.SetResult(token);
                     return token;
                 }
@@ -491,7 +561,7 @@ public class TokenRecoveryExecutor
                 finally
                 {
                     // 延迟移除，让等待中的线程有机会获取结果
-                    _credentialRefreshTasks.TryRemove(CredentialRefreshKey, out _);
+                    _credentialRefreshTasks.TryRemove(dedupKey, out _);
                 }
             }
             else
@@ -506,12 +576,12 @@ public class TokenRecoveryExecutor
                         return token;
 
                     // 令牌为空，重新尝试刷新
-                    _credentialRefreshTasks.TryRemove(CredentialRefreshKey, out _);
+                    _credentialRefreshTasks.TryRemove(dedupKey, out _);
                 }
                 catch
                 {
                     // 刷新线程失败了，清除后重试
-                    _credentialRefreshTasks.TryRemove(CredentialRefreshKey, out _);
+                    _credentialRefreshTasks.TryRemove(dedupKey, out _);
 
                     // 直接抛出，避免无限重试
                     throw;
@@ -521,24 +591,56 @@ public class TokenRecoveryExecutor
     }
 
     /// <summary>
+    /// SR-M6（P2.4，D9）按 TokenManagerKey 解析本次恢复应使用的令牌管理器。
+    /// 注册表缺席 / 键为空 / 解析失败 → 回退构造注入实例（解析失败记 Warning，不 fail-fast——
+    /// 生成器默认键场景的 401 恢复可用性优先）。
+    /// </summary>
+    private ITokenManager ResolveManager(TokenRecoveryContext? ctx)
+    {
+        var key = ctx?.TokenManagerKey;
+        if (string.IsNullOrEmpty(key) || _managerRegistry == null)
+            return _tokenManager;                        // 既有行为（单管理器绑定）
+
+        var resolved = _managerRegistry.Resolve(key!);
+        if (resolved == null)
+        {
+            MudHttpClientLog.TokenManagerUnresolved(_logger, key!);   // Warning：回退注入实例
+            return _tokenManager;
+        }
+        return resolved;                                 // 命中：失效+刷新+重试全链路走正确管理器
+    }
+
+    /// <summary>
     /// 以取消隔离方式执行租户令牌刷新：刷新操作自身不受调用方 CT 影响，仅受"刷新超时"约束。
     /// 保持原有行为：InvalidateTokenAsync 失败仅记录日志，不阻止后续刷新。
     /// </summary>
-    private async Task<string?> RefreshCredentialWithIsolationAsync()
+    private async Task<string?> RefreshCredentialWithIsolationAsync(string managerKey)
     {
         using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(_options.RefreshTimeoutSeconds));
         var refreshCt = timeoutCts.Token;
 
+        // SR-M6（D9）：经注册表路由后的管理器执行失效 + 刷新（全链路走正确管理器）
+        var manager = ResolveManagerByKeyOrNull(managerKey);
+        var tokenManager = manager ?? _tokenManager;
+
         try
         {
-            await _tokenManager.InvalidateTokenAsync(cancellationToken: refreshCt).ConfigureAwait(false);
+            await tokenManager.InvalidateTokenAsync(cancellationToken: refreshCt).ConfigureAwait(false);
         }
         catch (Exception invalidateEx)
         {
             MudHttpClientLog.TokenInvalidationFailed(_logger, invalidateEx);
         }
 
-        return await _tokenManager.GetOrRefreshTokenAsync(refreshCt).ConfigureAwait(false);
+        return await tokenManager.GetOrRefreshTokenAsync(refreshCt).ConfigureAwait(false);
+    }
+
+    /// <summary>SR-M6（D9）：由去重键反查管理器（键即 TokenManagerKey）；非注册表模式返回 null。</summary>
+    private ITokenManager? ResolveManagerByKeyOrNull(string managerKey)
+    {
+        if (_managerRegistry == null)
+            return null;
+        return _managerRegistry.Resolve(managerKey);
     }
 
     /// <summary>
@@ -547,13 +649,15 @@ public class TokenRecoveryExecutor
     /// <remarks>
     /// P1.4（TK-15）取消隔离：持有刷新权的线程使用与等待者无关的超时令牌，单调用方取消不会中断
     /// 共享刷新；等待线程仅使用自身的取消令牌等待结果，互不影响。
+    /// SR-M6（P2.4，D9）去重键升级：userId → managerKey + "\u001F" + userId（跨管理器隔离）。
     /// </remarks>
-    private async Task<string?> RefreshUserTokenWithDedupAsync(string userId, CancellationToken cancellationToken)
+    private async Task<string?> RefreshUserTokenWithDedupAsync(string managerKey, string userId, CancellationToken cancellationToken)
     {
+        var dedupKey = managerKey + "\u001F" + userId;
         while (true)
         {
             var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var existing = _userRefreshTasks.GetOrAdd(userId, tcs.Task);
+            var existing = _userRefreshTasks.GetOrAdd(dedupKey, tcs.Task);
 
             if (ReferenceEquals(existing, tcs.Task))
             {
@@ -570,7 +674,7 @@ public class TokenRecoveryExecutor
                 }
                 finally
                 {
-                    _userRefreshTasks.TryRemove(userId, out _);
+                    _userRefreshTasks.TryRemove(dedupKey, out _);
                 }
             }
             else
@@ -580,11 +684,11 @@ public class TokenRecoveryExecutor
                     var token = await WaitForTaskAsync(existing, cancellationToken).ConfigureAwait(false);
                     if (!string.IsNullOrEmpty(token))
                         return token;
-                    _userRefreshTasks.TryRemove(userId, out _);
+                    _userRefreshTasks.TryRemove(dedupKey, out _);
                 }
                 catch
                 {
-                    _userRefreshTasks.TryRemove(userId, out _);
+                    _userRefreshTasks.TryRemove(dedupKey, out _);
                     throw;
                 }
             }
@@ -642,6 +746,12 @@ public class TokenRecoveryExecutor
     /// 尝试等待指定任务，等待线程仅受自身取消令牌约束；
     /// net5+ 使用 <c>Task.WaitAsync</c>，netstandard2.0 使用 <c>Task.WhenAny</c> + <c>Task.Delay</c> 实现同等效果。
     /// </summary>
+    /// <remarks>
+    /// SR-L8（P3.10，D14）已知模式（保留现状）：ns2.0 路径 Task.Delay(Timeout.Infinite, ct) 的注册项
+    /// 在取消触发后滞留直至完成——滞留量级 = 等待者被取消的次数（每项一个 Timer 注册，量级可忽略）。
+    /// 改用局部 CancellationTokenSource.CancelAfter 可消除滞留但引入额外分配与取消传播路径，
+    /// 收益低于成本，按决策文档化不改（见 §0.3 / D14 表）。
+    /// </remarks>
     private static async Task<T> WaitForTaskAsync<T>(Task<T> task, CancellationToken cancellationToken)
     {
 #if NETSTANDARD2_0
