@@ -53,7 +53,9 @@ $TestProjects = @(
     "Tests/Mud.HttpUtils.Generator.Tests",
     "Tests/Mud.HttpUtils.CodeFixes.Tests",
     "Tests/Mud.HttpUtils.Integration.Tests",
-    "Tests/Mud.HttpUtils.OpenTelemetry.Tests"
+    "Tests/Mud.HttpUtils.OpenTelemetry.Tests",
+    "Tests/Mud.HttpUtils.JsonContextScaffolder.Tests",
+    "Tests/Mud.HttpUtils.Tests"
 )
 
 $TotalPassed = 0

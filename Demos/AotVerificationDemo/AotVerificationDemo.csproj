@@ -11,6 +11,11 @@
 		     暂不开 TrimMode=full（v1.4 修正：OTLP Exporter Protobuf 反射在 full 裁剪下有已知风险）。 -->
 		<InvariantGlobalization>true</InvariantGlobalization>
 		<GenerateDocumentationFile>false</GenerateDocumentationFile>
+		<!-- net8.0 / net10.0 内层构建串行化：两个 TFM 并行时都会执行
+		     GenerateJsonContext → `dotnet run`（内含对脚手架工程的构建），
+		     并发写同一个 Tools/.../obj 输出会相互抢占文件锁，报 CS2012/MSB3073。
+		     串行化后先后执行，各自构建脚手架互不干扰（第二次为增量，开销很小）。 -->
+		<BuildInParallel>false</BuildInParallel>
 	</PropertyGroup>
 
 	<!-- AOT 分析器在构建时启用（PublishAot=true 自动启用），
@@ -50,7 +55,16 @@
 	     ───────────────────────────────────────────────────────────── -->
 	<PropertyGroup>
 		<ScaffolderProject>$(MSBuildThisFileDirectory)..\..\Tools\Mud.HttpUtils.JsonContextScaffolder\Mud.HttpUtils.JsonContextScaffolder.csproj</ScaffolderProject>
+		<ScaffolderDir>$(MSBuildThisFileDirectory)..\..\Tools\Mud.HttpUtils.JsonContextScaffolder</ScaffolderDir>
 	</PropertyGroup>
+
+	<!-- 脚手架工具源码参与 GenerateJsonContext 的增量判定（Inputs）。
+	     否则工具自身升级（如 typeof() 类型限定符生成规则变化）后，obj 下的旧 .g.cs
+	     不会重新生成，陈旧产物继续参与编译并报 CS0246 等错误。 -->
+	<ItemGroup>
+		<ScaffolderSource Include="$(ScaffolderDir)\**\*.cs"
+		                  Exclude="$(ScaffolderDir)\obj\**;$(ScaffolderDir)\bin\**" />
+	</ItemGroup>
 
 	<!-- 运行脚手架：仅在源码较新时重新生成（增量）。
 	     注意（重要）：脚手架内部使用 MSBuildWorkspace 评估本项目，而 MSBuildWorkspace 会发起
@@ -63,7 +77,7 @@
 	     另：清除外层注入的 MSBuild 环境变量，否则嵌套评估会因 SDK/Exe 路径冲突而失败。 -->
 	<Target Name="GenerateJsonContext"
 	        BeforeTargets="BeforeCompile"
-	        Inputs="$(MSBuildProjectFile);@(Compile)"
+	        Inputs="$(MSBuildProjectFile);@(Compile);$(ScaffolderProject);@(ScaffolderSource)"
 	        Outputs="$(IntermediateOutputPath)GeneratedJsonContext\AppJsonContext.g.cs"
 	        Condition="'$(DesignTimeBuild)' != 'true' AND '$(MudJsonContextScaffolderRunning)' != 'true' AND Exists('$(ScaffolderProject)')">
 		<Message Importance="high" Text="[JsonContext] 运行脚手架生成 AppJsonContext（pre-build）" />
