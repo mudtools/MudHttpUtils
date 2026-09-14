@@ -48,7 +48,10 @@ internal sealed class AllowedDomainsReloader : IDisposable
     private void Apply(MudHttpClientApplicationOptions? options)
     {
         var domains = options?.AllowedDomains ?? new List<string>();
-        UrlValidator.ConfigureAllowedDomains(domains);
+
+        // CFG-34：只替换「配置来源」桶，保留运行期经 UrlValidator.AddAllowedDomain 新增的域名；
+        // 若改用 ConfigureAllowedDomains（整体替换两桶），运行期增量会在每次 Reload 后消失（不变量 I-13）。
+        UrlValidator.SetConfigurationDomains(domains);
         MudHttpClientLog.AllowedDomainsApplied(_logger, domains.Count);
     }
 

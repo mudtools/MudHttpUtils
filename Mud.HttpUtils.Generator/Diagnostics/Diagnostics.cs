@@ -305,6 +305,65 @@ internal static class Diagnostics
         category: "代码生成",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    /// <summary>
+    /// CFG-29（v3.1）：<c>[CircuitBreaker]</c> 特性参数取值超出该字段的有效域。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 本诊断承载四个<b>同为 Error 级</b>的条件，避免为同一语义拆分多个 ID
+    /// （<c>DocumentationContractTests</c> 按 ID 建索引，同一 ID 只能登记一个 <c>DefaultSeverity</c>；
+    /// 与既有 <c>HTTPCLIENT025</c> 同一描述符覆盖 4 种编排的风格一致）：
+    /// </para>
+    /// <list type="number">
+    ///   <item><c>FailureThreshold &lt; 1</c>（无条件）——<c>SamplingDurationSeconds = 0</c> 时该值直传
+    ///     <c>CircuitBreakerAsync(exceptionsAllowedBeforeBreaking:)</c>，<c>&lt;= 0</c> 会使 Polly 抛 <c>ArgumentOutOfRangeException</c>；</item>
+    ///   <item><c>SamplingDurationSeconds &gt; 0 &amp;&amp; FailureThreshold &gt; 100</c> —— 高级模式下该值为失败率百分比，
+    ///     <c>PollyResiliencePolicyProvider</c> 会把 <c>&gt; 100</c> <b>静默压成 100%</b>（配置静默失效）；</item>
+    ///   <item><c>SamplingDurationSeconds &gt; 0 &amp;&amp; MinimumThroughput &lt; 2</c> —— Polly <c>AdvancedCircuitBreakerAsync</c> 下限；</item>
+    ///   <item><c>BreakDurationSeconds &lt;= 0</c> —— 熔断时长必须为正。</item>
+    /// </list>
+    /// <para>
+    /// <b>为何必须落在生成器而非 Attribute setter</b>：Roslyn <b>从不实例化</b> Attribute
+    /// （特性以元数据形式存在于编译产物中，生成器读到的是 <see cref="AttributeData"/>），
+    /// 因此写在 <c>CircuitBreakerAttribute</c> setter 中的校验在任何编译路径下都不会执行 ——
+    /// 这与 <c>CircuitBreakerOptions</c>（运行期由 DI/委托实例化，setter 会执行）形成根本差异。
+    /// </para>
+    /// <para>
+    /// <b>不加 <see cref="WellKnownDiagnosticTags.NotConfigurable"/></b>：使用者改一行即可修复，
+    /// 且需避免"Error + NotConfigurable 连坐抑制同编译内全部分析器诊断"（见本文件顶部标签分层准则）。
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor CircuitBreakerAttributeValueOutOfRange = new(
+        id: "HTTPCLIENT026",
+        title: "[CircuitBreaker] 特性参数取值超出有效域",
+        messageFormat: "接口 {0} 的方法 {1} 的 [CircuitBreaker] 参数取值非法：{2}。该取值在运行时无法按预期工作，请修正。",
+        category: "代码生成",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    /// <summary>
+    /// CFG-32（v3.1）：<c>[Timeout]</c> 特性有效值 <c>&lt;= 0</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 旧行为：<c>[Timeout(0)]</c> 会生成 <c>TimeoutEnabled = true, TimeoutMilliseconds = 0</c>，
+    /// 进而构造 <c>Policy.TimeoutAsync(TimeSpan.Zero, …)</c> —— 一个语义不可预期的策略，
+    /// 且与 <c>TimeoutOptions</c>（setter 抛 <c>ArgumentOutOfRangeException</c>）形成保护等级差。
+    /// </para>
+    /// <para>
+    /// <b>不误报「未声明」</b>：仅在特性<b>存在</b>时校验；未声明 <c>[Timeout]</c> 仍表示
+    /// <c>MethodTimeoutEnabled = false</c>（既有语义，由 <c>MethodAnalyzer.AnalyzeTimeoutAttribute</c> 的
+    /// <c>null</c> 分支返回）。
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor TimeoutAttributeNonPositive = new(
+        id: "HTTPCLIENT027",
+        title: "[Timeout] 特性参数必须为正毫秒数",
+        messageFormat: "接口 {0} 的方法 {1} 的 [Timeout] 取值非法：{2}。[Timeout] 必须为正毫秒数；如需取消方法级超时请移除该特性。",
+        category: "代码生成",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
     #endregion
 
     #region HttpClient注册生成器诊断信息 (HTTPCLIENTREG001-002)

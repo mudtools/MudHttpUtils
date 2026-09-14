@@ -132,17 +132,28 @@ public sealed class GeneratedClientOptions : IEnhancedClientConfig
     public bool CaptureRequestContent { get; set; }
 
     /// <summary>
-    /// 获取或设置实例级"仅生成模式"覆盖。
+    /// 获取或设置实例级"仅生成模式"覆盖（仅影响异常消息的措辞，见备注）。
     /// </summary>
     /// <value>
-    /// <c>null</c>（默认）= 使用全局 <see cref="RestService.GeneratedOnlyMode"/> 值；
-    /// <c>true</c> = 强制仅生成模式（即使全局为 false）；
-    /// <c>false</c> = 强制非仅生成模式（即使全局为 true，用于多租户隔离）。
+    /// <c>null</c>（默认）= 生效值取全局 <see cref="RestService.GeneratedOnlyMode"/>；
+    /// <c>true</c> = 生效值恒为「仅生成模式」；
+    /// <c>false</c> = 生效值恒为「非仅生成模式」。
     /// </value>
     /// <remarks>
     /// <para>
-    /// 用于多租户场景下覆盖全局 <see cref="RestService.GeneratedOnlyMode"/> 标志。
-    /// 例如全局开启 AOT 守护，但特定租户需要回退反射（虽然 Mud.HttpUtils 不支持反射回退，此属性保留用于未来扩展）。
+    /// <b>CFG-31（v3.1）语义澄清</b>：本属性的三态<b>不影响成功路径</b> ——
+    /// 只要工厂委托已注册（<c>[ModuleInitializer]</c> 自动注册或手动
+    /// <see cref="RestService.RegisterGeneratedFactory{T}"/>），三种取值都会直接返回实现实例。
+    /// </para>
+    /// <para>
+    /// <b>真正的作用域是「工厂未注册」这一失败路径</b>：<see cref="RestService.ForGenerated{T}(HttpClient, GeneratedClientOptions?)"/>
+    /// <b>两条分支都抛 <see cref="InvalidOperationException"/></b>，区别仅在消息文本：
+    /// 生效值为 <c>true</c> 时给出「generated-only 模式」引导语，<c>false</c> 时给出常规注册引导语。
+    /// </para>
+    /// <para>
+    /// <b>本库不存在反射回退实现</b>（一级目标是 Native AOT，<c>RestService</c> 明确无反射回退），
+    /// 因此本属性<b>不能</b>用于「某租户回退反射」；它保留用于未来引入回退实现时的开关位，
+    /// 当前价值是把失败消息区分成两种，便于诊断。
     /// </para>
     /// </remarks>
     public bool? GeneratedOnlyMode { get; set; }

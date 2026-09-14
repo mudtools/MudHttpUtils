@@ -148,8 +148,18 @@ public class ConfigurationBindingTests
         monitor.CurrentValue.Clients["api"].AllowCustomBaseUrls.Should().BeTrue();
     }
 
+    /// <summary>
+    /// T14（CFG-36 方案 A）：<c>Clients.&lt;name&gt;.TimeoutSeconds</c> / <c>BaseAddress</c> / <c>DefaultHeaders</c>
+    /// 在<b>注册期</b>由 <c>section.Bind</c> 的局部快照固化（闭包捕获），因此配置 <c>Reload</c> 只更新
+    /// <see cref="IOptionsMonitor{T}"/>，<b>不会</b>改变已注册的 <see cref="HttpClient"/> 配置。
+    /// </summary>
+    /// <remarks>
+    /// 本用例<b>显式锁定「不热更新」为有意行为</b>（原文案名为 <c>…ReloadsOnConfigChange</c>，
+    /// 暗示热更新，但从未断言 <c>HttpClient.Timeout</c>，属误导性测试名）。
+    /// 可热更新的配置项见 <c>Mud.HttpUtils.Client/README.md</c>「配置热更新能力矩阵」。
+    /// </remarks>
     [Fact]
-    public void AddMudHttpClientsFromConfiguration_IOptionsMonitor_ReloadsOnConfigChange()
+    public void AddMudHttpClientsFromConfiguration_Reload_UpdatesMonitorButNotHttpClientTimeout()
     {
         // Arrange — 使用可在 Load() 后保留 Set() 更新的自定义配置提供器
         var updatableProvider = new UpdatableMemoryProvider(new Dictionary<string, string?>
@@ -165,16 +175,22 @@ public class ConfigurationBindingTests
         services.AddMudHttpClientsFromConfiguration(config);
         var provider = services.BuildServiceProvider();
         var monitor = provider.GetRequiredService<IOptionsMonitor<MudHttpClientApplicationOptions>>();
+        var factory = provider.GetRequiredService<IHttpClientFactory>();
 
-        // 初始值验证
+        // 初始值验证（monitor 与 HttpClient 双视角）
         monitor.CurrentValue.Clients["api"].TimeoutSeconds.Should().Be(30);
+        factory.CreateClient("api").Timeout.Should().Be(TimeSpan.FromSeconds(30));
 
         // Act — 在同一配置实例上更新值并触发重载
         updatableProvider.Set("MudHttpClients:Clients:api:TimeoutSeconds", "60");
         ((IConfigurationRoot)config).Reload();
 
-        // Assert — 同一 monitor 实例感知到配置变更
+        // Assert 1 — monitor 感知到变更（IOptionsMonitor 可热更新）
         monitor.CurrentValue.Clients["api"].TimeoutSeconds.Should().Be(60);
+
+        // Assert 2 — HttpClient.Timeout 仍为注册期快照值（CFG-36：注册期闭包固化，不热更新）
+        factory.CreateClient("api").Timeout.Should().Be(TimeSpan.FromSeconds(30),
+            "Clients.<name>.TimeoutSeconds 在注册期由 section.Bind 快照固化，配置 Reload 不改变已注册的 HttpClient 配置");
     }
 
     /// <summary>
@@ -218,6 +234,89 @@ public class ConfigurationBindingTests
             // UrlValidator 为静态共享状态，清理避免影响其他测试
             UrlValidator.ConfigureAllowedDomains(Array.Empty<string>());
         }
+    }
+
+    /// <summary>
+    /// T12（CFG-34 / 不变量 I-13）：配置热更新重放<b>不得</b>清除运行期经
+    /// <c>UrlValidator.AddAllowedDomain</c> 新增的域名。
+    /// </summary>
+    /// <remarks>
+    /// 修复前 <c>AllowedDomainsReloader</c> 调用 <c>ConfigureAllowedDomains</c>（整体替换唯一集合），
+    /// 使 <c>MudHttpClientApplicationOptions</c> XML 文档承诺的「运行时动态修改白名单」在任一次
+    /// <c>IConfigurationRoot.Reload()</c> 后失效。
+    /// </remarks>
+    [Fact]
+    public void AllowedDomains_MonitorReload_KeepsRuntimeAddedDomain()
+    {
+        try
+        {
+            var updatableProvider = new UpdatableMemoryProvider(new Dictionary<string, string?>
+            {
+                ["MudHttpClients:AllowedDomains:0"] = "api.example.com",
+                ["MudHttpClients:Clients:api:BaseAddress"] = "https://api.example.com",
+            });
+            var config = new ConfigurationBuilder()
+                .Add(updatableProvider)
+                .Build();
+
+            var services = new ServiceCollection();
+            services.AddMudHttpClientsFromConfiguration(config);
+            using var provider = services.BuildServiceProvider();
+
+            // 解析客户端 → 强制建立 AllowedDomainsReloader 订阅（配置桶首次应用）
+            _ = provider.GetRequiredService<IEnhancedHttpClient>();
+            UrlValidator.GetAllowedDomains().Should().Contain("api.example.com");
+
+            // Act — 运行期新增域名（运行期桶），随后触发配置重放（配置桶）
+            UrlValidator.AddAllowedDomain("runtime.example.com");
+            updatableProvider.Set("MudHttpClients:AllowedDomains:1", "cdn.example.com");
+            ((IConfigurationRoot)config).Reload();
+
+            // Assert — 运行期增量仍在（不变量 I-13），且配置增量已生效
+            var whitelist = UrlValidator.GetAllowedDomains();
+            whitelist.Should().Contain("runtime.example.com",
+                "配置重放只应替换配置桶，不得清除运行期经 AddAllowedDomain 写入的域名");
+            whitelist.Should().Contain("api.example.com");
+            whitelist.Should().Contain("cdn.example.com");
+        }
+        finally
+        {
+            UrlValidator.ConfigureAllowedDomains(Array.Empty<string>()); // 清理静态状态（同时清空运行期桶）
+        }
+    }
+
+    /// <summary>
+    /// T16（CFG-37 复核结论）：<c>AddTokenRefreshBackgroundService</c> 使用的
+    /// <c>AddOptions&lt;T&gt;().Bind(IConfiguration)</c> 与 <c>Configure&lt;T&gt;(IConfiguration)</c>
+    /// <b>等价</b> —— 均注册 <see cref="IConfigurationChangeTokenSource{T}"/>。
+    /// </summary>
+    /// <remarks>
+    /// 原方案（CFG-37）声称 <c>Bind</c> 缺变更令牌源并建议改为 <c>Configure&lt;T&gt;</c>；
+    /// 经查 <c>OptionsBuilder&lt;T&gt;.Bind(IConfiguration)</c> 内部即调用
+    /// <c>Services.Configure&lt;T&gt;(Name, config, binder)</c>（其实现体注册
+    /// <c>ConfigurationChangeTokenSource&lt;T&gt;</c>），故原建议为零收益等价重构。本用例把该事实固化。
+    /// </remarks>
+    [Fact]
+    public void AddTokenRefreshBackgroundService_RegistersChangeTokenSource()
+    {
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["TokenRefreshBackground:Enabled"] = "false",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act
+        services.AddTokenRefreshBackgroundService(config);
+
+        // Assert — 绑定入口能力与其他选项一致（可热更新）
+        services.Should().Contain(
+            d => d.ServiceType == typeof(IOptionsChangeTokenSource<TokenRefreshBackgroundOptions>),
+            "Bind(IConfiguration) 与 Configure<T>(IConfiguration) 均注册 ConfigurationChangeTokenSource<T>");
+        services.Should().Contain(d => d.ServiceType == typeof(IConfigureOptions<TokenRefreshBackgroundOptions>));
     }
 
     [Fact]

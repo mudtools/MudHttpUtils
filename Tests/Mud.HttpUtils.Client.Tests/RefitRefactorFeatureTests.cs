@@ -276,7 +276,14 @@ public class RefitRefactorFeatureTests
         options.MaxExceptionContentLength.Should().BeNull();
         options.CaptureRequestContent.Should().BeFalse();
         options.HttpRequestMessageOptions.Should().BeNull();
-        // HttpVersion 仅在 NET6_0_OR_GREATER 下定义，测试项目 net8.0 可用但 IDE 可能用 netstandard2.0 分析
+        // HttpVersion / HttpVersionPolicy 仅在 NET6_0_OR_GREATER 下定义。
+        // CFG-30（v3.1）：默认值由 Version11 / RequestVersionOrLower 改为 null（「未配置即不干预」），
+        // 与无 DI 路径的 GeneratedClientOptions 对齐；因 HttpRequestMessage 的构造默认值本就是 1.1 /
+        // RequestVersionOrLower，该调整不产生可观察行为差异。
+#if NET6_0_OR_GREATER
+        options.HttpVersion.Should().BeNull();
+        options.HttpVersionPolicy.Should().BeNull();
+#endif
     }
 
     [Fact]

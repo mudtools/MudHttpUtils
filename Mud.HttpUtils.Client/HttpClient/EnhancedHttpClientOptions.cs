@@ -127,14 +127,29 @@ public sealed class EnhancedHttpClientOptions : IEnhancedClientConfig
     /// <summary>
     /// 获取或设置 HTTP 版本。
     /// </summary>
-    /// <value>默认为 <see cref="System.Net.HttpVersion.Version11"/>。</value>
-    public Version? HttpVersion { get; set; } = System.Net.HttpVersion.Version11;
+    /// <value>默认为 <c>null</c>（不干预请求版本，保持 <see cref="System.Net.Http.HttpRequestMessage"/> 的构造默认值 1.1）。</value>
+    /// <remarks>
+    /// <para>
+    /// <b>CFG-30（v3.1）</b>：默认值由 <c>Version11</c> 调整为 <c>null</c>，与无 DI 路径的
+    /// <c>GeneratedClientOptions.HttpVersion</c>「未配置即不干预」语义对齐。该调整<b>不产生可观察行为差异</b>——
+    /// <see cref="System.Net.Http.HttpRequestMessage"/> 的 <c>Version</c> 构造默认值本就是 1.1。
+    /// </para>
+    /// <para>
+    /// <b>注意</b>：本库（<see cref="EnhancedHttpClient"/> 与 <c>DefaultHttpRequestExecutor</c>）均<b>自建</b>
+    /// <see cref="System.Net.Http.HttpRequestMessage"/> 后调用 <c>HttpClient.SendAsync</c>；
+    /// 而 <c>HttpClient.DefaultRequestVersion</c> / <c>DefaultVersionPolicy</c> 官方文档明确
+    /// <b>不适用于 <c>SendAsync</c></b>（仅作用于 <c>GetAsync</c>/<c>PostAsync</c> 等内部创建请求的便捷重载）。
+    /// 因此如需 HTTP/2、HTTP/3，请通过本属性显式配置。
+    /// </para>
+    /// </remarks>
+    public Version? HttpVersion { get; set; }
 
     /// <summary>
     /// 获取或设置 HTTP 版本策略。
     /// </summary>
-    /// <value>默认为 <see cref="System.Net.HttpVersionPolicy.RequestVersionOrLower"/>。</value>
-    public System.Net.Http.HttpVersionPolicy? HttpVersionPolicy { get; set; } = System.Net.Http.HttpVersionPolicy.RequestVersionOrLower;
+    /// <value>默认为 <c>null</c>（不干预，保持 <see cref="System.Net.Http.HttpRequestMessage"/> 的构造默认值 <c>RequestVersionOrLower</c>）。</value>
+    /// <remarks>语义与 <see cref="HttpVersion"/> 一致（CFG-30），见其备注。</remarks>
+    public System.Net.Http.HttpVersionPolicy? HttpVersionPolicy { get; set; }
 #endif
 
     /// <summary>

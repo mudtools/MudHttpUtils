@@ -13,7 +13,7 @@ namespace Mud.HttpUtils;
 /// <remarks>
 /// <para>.NET 6+ 使用 <c>[LoggerMessage]</c> 源生成器（零分配、级别短路）；</para>
 /// <para>netstandard2.0 fallback 到 <c>LoggerMessage.Define</c>（同样零分配，但需要在运行时构建委托）。</para>
-    /// <para>EventId 规划：1-50 EnhancedHttpClient（已分配）；51-100 预留；101-120 Resilience；121-130 Cache；131-156 TokenManager（已分配，含 151-156）；157-165 SR 轮（Token 安审查修复）；166+ 预留。</para>
+/// <para>EventId 规划：1-50 EnhancedHttpClient（已分配）；51-100 预留；101-120 Resilience；121-130 Cache；131-156 TokenManager（已分配，含 151-156）；157-165 SR 轮（Token 安审查修复）；166 CFG-39（序列化 fast-path 回退）；167+ 预留。</para>
 /// </remarks>
 internal static partial class MudHttpClientLog
 {
@@ -389,6 +389,13 @@ internal static partial class MudHttpClientLog
     [LoggerMessage(EventId = 165, Level = LogLevel.Information,
         Message = "跳过不支持后台刷新的令牌管理器: {Name}")]
     public static partial void TokenManagerSkippedNoBackgroundRefresh(ILogger logger, string name);
+
+    // ---- CFG-39（v3.1）：配置已设置但条件未满足而回退的可观测性（EventId 166 起）----
+
+    [LoggerMessage(EventId = 166, Level = LogLevel.Debug,
+        Message = "RequestBodySerialization 配置为 {Mode}，但当前 IHttpContentSerializer ({SerializerType}) 未实现 ISynchronousContentSerializer，" +
+                  "已回退默认序列化路径（fast-path 不生效）。")]
+    public static partial void RequestBodySerializationFastPathFallback(ILogger logger, string mode, string serializerType);
 #else
     private static readonly Action<ILogger, string, Exception?> s_tokenManagerRegistered =
         LoggerMessage.Define<string>(LogLevel.Debug, new EventId(131, nameof(TokenManagerRegistered)),
@@ -597,6 +604,15 @@ internal static partial class MudHttpClientLog
             "跳过不支持后台刷新的令牌管理器: {Name}");
     public static void TokenManagerSkippedNoBackgroundRefresh(ILogger logger, string name)
         => s_tokenManagerSkippedNoBackgroundRefresh(logger, name, null);
+
+    // ---- CFG-39（v3.1）----
+
+    private static readonly Action<ILogger, string, string, Exception?> s_requestBodySerializationFastPathFallback =
+        LoggerMessage.Define<string, string>(LogLevel.Debug, new EventId(166, nameof(RequestBodySerializationFastPathFallback)),
+            "RequestBodySerialization 配置为 {Mode}，但当前 IHttpContentSerializer ({SerializerType}) 未实现 ISynchronousContentSerializer，" +
+            "已回退默认序列化路径（fast-path 不生效）。");
+    public static void RequestBodySerializationFastPathFallback(ILogger logger, string mode, string serializerType)
+        => s_requestBodySerializationFastPathFallback(logger, mode, serializerType, null);
 #endif
 
     #endregion

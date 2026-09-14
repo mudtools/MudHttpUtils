@@ -1240,8 +1240,9 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         if (cacheAttr == null)
             return (false, 300, null, false, false);
 
-        var durationSeconds = AttributeDataHelper.GetAttributeIntValue(
-            cacheAttr, 0, HttpClientGeneratorConstants.CacheDurationSecondsProperty, 300);
+        // CFG-28 / I-9：统一为「命名参数优先」口径（C# 特性赋值语义）
+        var durationSeconds = AttributeDataHelper.GetIntValuePreferNamed(
+            cacheAttr, HttpClientGeneratorConstants.CacheDurationSecondsProperty, 0) ?? 300;
 
         var keyTemplate = AttributeDataHelper.GetStringValueFromAttribute(
             cacheAttr, [HttpClientGeneratorConstants.CacheKeyTemplateProperty]);
@@ -1264,11 +1265,14 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         if (retryAttr == null)
             return (false, 3, 1000, true, false);
 
-        var maxRetries = AttributeDataHelper.GetAttributeIntValue(
-            retryAttr, 0, HttpClientGeneratorConstants.RetryMaxRetriesProperty, 3);
+        // CFG-28 / I-9：位置参数与命名参数并存时命名参数优先
+        var maxRetries = AttributeDataHelper.GetIntValuePreferNamed(
+            retryAttr, HttpClientGeneratorConstants.RetryMaxRetriesProperty, 0) ?? 3;
 
-        var delayMilliseconds = AttributeDataHelper.GetIntValueFromAttribute(
-            retryAttr, HttpClientGeneratorConstants.RetryDelayMillisecondsProperty, 1000);
+        // CFG-28（High，回归修复）：双参构造函数 [Retry(a, b)] 的位置参数 b 必须被读取
+        // —— 修复前此读取点只查 NamedArguments，导致 b 自诞生起从未生效（恒回退 1000）。
+        var delayMilliseconds = AttributeDataHelper.GetIntValuePreferNamed(
+            retryAttr, HttpClientGeneratorConstants.RetryDelayMillisecondsProperty, 1) ?? 1000;
 
         var useExponentialBackoff = AttributeDataHelper.GetBoolValueFromAttribute(
             retryAttr, HttpClientGeneratorConstants.RetryUseExponentialBackoffProperty, true);
@@ -1288,17 +1292,20 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         if (cbAttr == null)
             return (false, 5, 30, 0, 10);
 
-        var failureThreshold = AttributeDataHelper.GetAttributeIntValue(
-            cbAttr, 0, HttpClientGeneratorConstants.CircuitBreakerFailureThresholdProperty, 5);
+        // CFG-28 / I-9：统一为「命名参数优先」口径
+        var failureThreshold = AttributeDataHelper.GetIntValuePreferNamed(
+            cbAttr, HttpClientGeneratorConstants.CircuitBreakerFailureThresholdProperty, 0) ?? 5;
 
-        var breakDurationSeconds = AttributeDataHelper.GetIntValueFromAttribute(
-            cbAttr, HttpClientGeneratorConstants.CircuitBreakerBreakDurationSecondsProperty, 30);
+        // 以下三项无构造函数位置参数（CircuitBreakerAttribute 构造函数仅 1 个参数），
+        // 传 -1 显式声明「仅命名参数」，避免未来新增构造函数时静默取到错误索引。
+        var breakDurationSeconds = AttributeDataHelper.GetIntValuePreferNamed(
+            cbAttr, HttpClientGeneratorConstants.CircuitBreakerBreakDurationSecondsProperty, -1) ?? 30;
 
-        var samplingDurationSeconds = AttributeDataHelper.GetIntValueFromAttribute(
-            cbAttr, HttpClientGeneratorConstants.CircuitBreakerSamplingDurationSecondsProperty, 0);
+        var samplingDurationSeconds = AttributeDataHelper.GetIntValuePreferNamed(
+            cbAttr, HttpClientGeneratorConstants.CircuitBreakerSamplingDurationSecondsProperty, -1) ?? 0;
 
-        var minimumThroughput = AttributeDataHelper.GetIntValueFromAttribute(
-            cbAttr, HttpClientGeneratorConstants.CircuitBreakerMinimumThroughputProperty, 10);
+        var minimumThroughput = AttributeDataHelper.GetIntValuePreferNamed(
+            cbAttr, HttpClientGeneratorConstants.CircuitBreakerMinimumThroughputProperty, -1) ?? 10;
 
         return (true, failureThreshold, breakDurationSeconds, samplingDurationSeconds, minimumThroughput);
     }
@@ -1311,19 +1318,11 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         if (timeoutAttr == null)
             return (false, 0);
 
-        var timeoutMilliseconds = 0;
-
-        if (timeoutAttr.ConstructorArguments.Length > 0 &&
-            timeoutAttr.ConstructorArguments[0].Value is int constructorTimeout)
-        {
-            timeoutMilliseconds = constructorTimeout;
-        }
-
-        if (timeoutMilliseconds <= 0)
-        {
-            timeoutMilliseconds = AttributeDataHelper.GetIntValueFromAttribute(
-                timeoutAttr, HttpClientGeneratorConstants.TimeoutMillisecondsProperty, 0);
-        }
+        // CFG-28 / CFG-32 / I-9：统一为「命名参数优先」口径。
+        // 旧实现为「先位置参数，仅当 <= 0 时才回退命名参数」——命名参数不是后写优先，而是"补位"，
+        // 与 C# 特性赋值语义相反；且非正值被静默接受（值域校验见 HTTPCLIENT027）。
+        var timeoutMilliseconds = AttributeDataHelper.GetIntValuePreferNamed(
+            timeoutAttr, HttpClientGeneratorConstants.TimeoutMillisecondsProperty, 0) ?? 0;
 
         return (true, timeoutMilliseconds);
     }

@@ -209,6 +209,26 @@ Mud.HttpUtils 存在四个超时入口，**单位不同**且**生效层级不同
 > **乘积效应**：令牌恢复与 HTTP 重试叠加时，最坏请求次数 = `(1 + RecoveryMaxRetries) × (1 + HttpRetries)`。
 > 文档提示，不做运行时跨包探测（`Client` 不引用 `Resilience`，见方案 ADR）。
 
+#### 方法级 `[Retry]` 的**覆盖面子集**（CFG-35）
+
+方法级 `[Retry]` 并非「整体替换全局重试配置」，而是<b>只覆盖下列三项</b>；其余项<b>恒取自全局</b> `RetryOptions`：
+
+| 配置项 | 方法级 `[Retry]` 可覆盖 | 生效来源 |
+| :--- | :---: | :--- |
+| `MaxRetries` | ✅ | 方法级（`RetryAttribute.MaxRetries`，位置参数 `[Retry(n, …)]` 或命名赋值） |
+| `DelayMilliseconds` | ✅ | 方法级（`RetryAttribute.DelayMilliseconds`） |
+| `UseExponentialBackoff` | ✅ | 方法级（`RetryAttribute.UseExponentialBackoff`） |
+| `RetryStatusCodes` | ❌ | **全局** `RetryOptions.RetryStatusCodes` |
+| `OnRetry` | ❌ | **全局** `RetryOptions.OnRetry` |
+| `UseJitter` | ❌ | **全局** `RetryOptions.UseJitter` |
+
+> **实践含义**：声明了 `[Retry]` 的方法上，`RetryOptions.RetryStatusCodes`（如空数组 = 不按状态码重试）
+> 与 `OnRetry`（全局回调）**依然生效**，`UseJitter` 也沿用全局设置。
+> 如需方法级控制这些项，请改用全局 `RetryOptions` 或按接口拆分命名客户端。
+>
+> **赋值口径（CFG-28 / I-9）**：`[Retry(a, b, DelayMilliseconds = c)]` 中命名参数优先（C# 特性赋值语义），
+> 即生效延迟为 `c`；仅 `[Retry(a, b)]` 时生效延迟为 `b`（修复前该位置参数被忽略，恒取 1000）。
+
 ### CircuitBreakerOptions
 
 | 属性 | 类型 | 默认值 | 说明 |
