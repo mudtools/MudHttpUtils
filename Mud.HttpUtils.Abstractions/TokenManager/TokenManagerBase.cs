@@ -455,18 +455,21 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         if (activity != null && MudHttpActivitySource.IsMudActivity(activity))
             activity.SetTag(MudHttpActivitySource.Tags.MudTokenManagerKey, tmKey);
 
-        // 写入 DiagnosticSource 事件 + Activity Event
-        MudHttpActivitySource.AddActivityEvent(
-            MudHttpDiagnosticNames.TokenRefreshed,
-            () => new TokenRefreshDiagnosticPayload(tokenManagerKey, success, isFallback, elapsedMs),
-            MudHttpDiagnosticNames.TokenRefreshed,
-            new[]
-            {
-                new KeyValuePair<string, object?>("token_manager_key", tmKey),
-                new KeyValuePair<string, object?>("success", success),
-                new KeyValuePair<string, object?>("is_fallback", isFallback),
-                new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
-            });
+        // 写入 DiagnosticSource 事件 + Activity Event（G28：门控前移 + 惰性 tags 工厂）
+        if (MudHttpActivitySource.EventsEnabled)
+        {
+            MudHttpActivitySource.AddActivityEvent(
+                MudHttpDiagnosticNames.TokenRefreshed,
+                () => new TokenRefreshDiagnosticPayload(tokenManagerKey, success, isFallback, elapsedMs),
+                MudHttpDiagnosticNames.TokenRefreshed,
+                () => new[]
+                {
+                    new KeyValuePair<string, object?>("token_manager_key", tmKey),
+                    new KeyValuePair<string, object?>("success", success),
+                    new KeyValuePair<string, object?>("is_fallback", isFallback),
+                    new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+                });
+        }
     }
 
     /// <summary>

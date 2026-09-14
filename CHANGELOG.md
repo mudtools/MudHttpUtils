@@ -27,6 +27,16 @@
 
 ### 可观测性
 
+- **去重协议（标记先行）**：`EnhancedHttpClient` 外层观察窗口通过 `IsObserved` 检查后**立即** `MarkObserved` 再采集。此前"先采集、完成后标记"的时序使组合路径（`AddMudHttpClient` + EnhancedHttpClient）对同一请求产生双 Span、双指标、双事件；修复后任一路径（工厂裸用 / 组合 / 直连）单次请求**至多一个请求 Span、一组请求指标、一对请求事件**。组合路径不再产生内层请求 Span（行为修复，Span 拓扑变化）。
+- **组合路径 4xx 语义校准（OBS-2）**：4xx 触发 `EnsureSuccessStatusCodeAsync` 抛 `ApiException` 的路径由 `outcome=error` + Span Error 校准为 `outcome=client_error` + Span Ok（与 `TracingDelegatingHandler` 路径的 `GetOutcome` 对齐，4xx 属正常业务流）；5xx/网络错误仍为 `error` + Span Error。指标取值变化，消费方如按 `outcome=error` 聚合失败率需同步调整。
+- **取消语义校准（G32）**：请求被取消（OCE 且调用方令牌已触发）记 `outcome=cancelled`，Span 保持未设置状态（OTel：被取消的 Span 不设 Error）；HttpClient 超时路径（TCE 且令牌未触发）仍记 `error`/timeout；`RequestFailed` 诊断事件在取消路径保持发出（事件成对性）。
+- **异常消息脱敏（G30）**：`RecordError` 写入 Span 的 `exception.message` 与 SetStatus 描述经 `MessageSanitizer` 脱敏（`Authorization: Bearer xyz` 形态的异常消息不再携带原始敏感值）。
+- **下载事件/大文件日志 URL 脱敏（G26/G27）**：`DownloadStarted/Completed/Failed` 事件 payload 与 tags、`DownloadLargeFileAsync` 失败日志中的 URL 一律经 `SensitiveUrlRedactor` 脱敏（受 `RedactUrlInTelemetry` 开关约束）；`ApiException.RequestUri` 保持完整 URI 边界不变。
+- **缓存键遥测脱敏（G29）**：`CacheResponseInterceptor` 的日志与 `CacheHit/CacheMiss` 事件中的缓存键经掩码（`CacheDiagnosticPayload.Key` 为脱敏值）；缓存查找/存储仍使用原始键，命中语义不受影响。掩码器可选注入（`ISensitiveDataMasker`），缺省回退 `MessageSanitizer`。
+- **诊断事件真零分配（G28）**：`AddActivityEvent` 的 tags 参数改为惰性工厂 `Func<IEnumerable<KVP>?>`（项目未发布，直接改签名，调用点全部迁移）；新增 `MudHttpActivitySource.EventsEnabled` 调用点门控探针，`EmitDiagnosticEvents=false` 时连 lambda 闭包、payload/tags 工厂与实参数组都不构造。
+- **下载可观测性双路径对齐（G33）**：下载阶段指标（`mud.http.download.bytes`/`duration`）与事件提升为 `MudHttpObservability` 共享内部方法，`EnhancedHttpClient` 直连路径下载（`DownloadAsync`/`DownloadLargeAsync`）与执行器路径（`IHttpRequestExecutor.DownloadAsync`）同源采集。
+- **ObservableGauge 白名单治理（R-3）**：`CircuitBreakerStateObserver.CurrentStates` 的 `policy_key` 维度纳入 `MetricTagAllowlist` 治理（新增 `MudHttpMeter.IsTagAllowed`，与 `FilterTags` 共享查找集）；白名单收缩移除 `policy_key` 时 Measurement 不携带 tags。
+- **请求属性键常量收敛（G31）**：`MudHttpObservability` 的 `__mud_*` 属性键提升为公共常量（含新增 `CapturedRequestContentPropertyKey`），`EnhancedHttpClient`/`TracingDelegatingHandler`/`MudHttpMeter` 调用点统一引用，消除字面量散落。
 - **指标高基数治理**：移除 `cache_key` 等高基数 tag；`MudHttpMeter.FilterTags` 按 `MetricTagAllowlist` 统一过滤所有指标维度（默认保留内建维度，零分配快路径）。
 - **诊断事件开关**：`MudHttpObservabilityOptions.EmitDiagnosticEvents`（默认 `true`）可整体关闭诊断事件（ActivityEvent / DiagnosticSource），高频场景归零事件构造开销。
 - **流式枚举三态**：流式枚举提前退出（`break`/`Take(n)`）记为成功，中途抛异常才记 error。

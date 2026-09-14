@@ -1100,7 +1100,7 @@ public class ObservabilityTests
             MudHttpDiagnosticNames.RetryOccurred,
             () => new { policy_key = "policy", retry_count = 1, delay_ms = 100.0 },
             MudHttpDiagnosticNames.RetryOccurred,
-            new[]
+            () => new[]
             {
                 new KeyValuePair<string, object?>("retry_count", 1),
                 new KeyValuePair<string, object?>("delay_ms", 100.0),
@@ -1130,7 +1130,7 @@ public class ObservabilityTests
             MudHttpDiagnosticNames.RetryOccurred,
             () => null,
             MudHttpDiagnosticNames.RetryOccurred,
-            new[] { new KeyValuePair<string, object?>("retry_count", 1) });
+            () => new[] { new KeyValuePair<string, object?>("retry_count", 1) });
 
         // 非 Mud Activity 不应被添加事件
         activity!.Events.Should().BeEmpty();
@@ -1144,7 +1144,7 @@ public class ObservabilityTests
             MudHttpDiagnosticNames.RetryOccurred,
             () => new { policy_key = "policy", retry_count = 1, delay_ms = 50.0 },
             MudHttpDiagnosticNames.RetryOccurred,
-            new[] { new KeyValuePair<string, object?>("retry_count", 1) });
+            () => new[] { new KeyValuePair<string, object?>("retry_count", 1) });
     }
 
     [Fact]
@@ -1234,6 +1234,76 @@ public class ObservabilityTests
         activity!.GetTagItem(MudHttpActivitySource.Tags.MudCacheHit).Should().Be(true);
         var events = activity.Events.ToList();
         events.Should().Contain(e => e.Name == MudHttpDiagnosticNames.CacheHit);
+    }
+
+    // ============ G29：缓存键遥测脱敏（缓存查找键保持原样） ============
+
+    [Fact]
+    public void CacheHit_Telemetry_Masks_Sensitive_CacheKey_Without_Affecting_Lookup()
+    {
+        using var listener = CreateMudActivityListener();
+        ActivitySource.AddActivityListener(listener);
+
+        // Client.Tests 类间并行执行，静态开关可能被并行类翻转：显式置为所需值并恢复（§6.2 惯例）
+        var eventsOriginal = MudHttpObservabilityOptions.EmitDiagnosticEvents;
+        MudHttpObservabilityOptions.EmitDiagnosticEvents = true;
+        try
+        {
+            var logger = new CapturingLogger<CacheResponseInterceptor>();
+            var cache = new MemoryHttpResponseCache();
+            var interceptor = new CacheResponseInterceptor(cache, logger);
+            const string sensitiveKey = "GET https://api.example.com/users?access_token=supersecret123";
+            cache.Set(sensitiveKey, "payload", TimeSpan.FromSeconds(60));
+
+            using var activity = MudHttpActivitySource.Instance.StartActivity("g29", ActivityKind.Client);
+
+            // 同一原始 key 两次 TryGet 行为一致：掩码不得影响缓存命中语义
+            interceptor.TryGet<string>(sensitiveKey, out var first).Should().BeTrue();
+            first.Should().Be("payload");
+            interceptor.TryGet<string>(sensitiveKey, out var second).Should().BeTrue();
+            second.Should().Be("payload");
+
+            // 日志输出脱敏
+            logger.Messages.Should().NotBeEmpty();
+            logger.Messages.Should().Contain(m => m.Contains("***"));
+            logger.Messages.Should().NotContain(m => m.Contains("supersecret123"));
+
+            // CacheHit 事件 payload 与 tags 脱敏（两次命中各一个事件）
+            var hitEvents = activity!.Events.Where(e => e.Name == MudHttpDiagnosticNames.CacheHit).ToList();
+            hitEvents.Should().HaveCount(2);
+            foreach (var evt in hitEvents)
+            {
+                var tagValue = evt.Tags.FirstOrDefault(t => t.Key == "cache_key").Value as string;
+                tagValue.Should().NotBeNull();
+                tagValue.Should().Contain("***");
+                tagValue.Should().NotContain("supersecret123");
+            }
+        }
+        finally
+        {
+            MudHttpObservabilityOptions.EmitDiagnosticEvents = eventsOriginal;
+        }
+    }
+
+    [Fact]
+    public void CacheSet_And_Remove_Logs_Masked_CacheKey()
+    {
+        var logger = new CapturingLogger<CacheResponseInterceptor>();
+        var cache = new MemoryHttpResponseCache();
+        var interceptor = new CacheResponseInterceptor(cache, logger);
+        const string sensitiveKey = "GET https://api.example.com/orders?api_key=secretkey999";
+
+        interceptor.Set(sensitiveKey, "v", TimeSpan.FromSeconds(60));
+
+        // 缓存存储使用原始键：Set 后可命中（掩码只影响遥测输出）
+        interceptor.TryGet<string>(sensitiveKey, out var value).Should().BeTrue();
+        value.Should().Be("v");
+
+        interceptor.Remove(sensitiveKey);
+        interceptor.TryGet<string>(sensitiveKey, out _).Should().BeFalse("Remove 应作用于原始键");
+
+        logger.Messages.Should().NotContain(m => m.Contains("secretkey999"));
+        logger.Messages.Should().Contain(m => m.Contains("***"));
     }
 
     [Fact]

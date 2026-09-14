@@ -51,7 +51,10 @@ public static class HttpClientServiceCollectionExtensions
             : services.AddHttpClient(clientName);
 
         // 注册分布式追踪与指标采集 DelegatingHandler
-        // 无 ActivityListener/MeterListener 订阅时零开销，由 IsObserved 标记去重避免与 EnhancedHttpClient 兜底重复
+        // 无 ActivityListener/MeterListener 订阅时零开销。
+        // 去重协议（标记先行）：EnhancedHttpClient 外层观察窗口通过 IsObserved 检查后立即 MarkObserved，
+        // 因此组合路径上本 Handler 判定 __mud_observed 已存在而整体短路，单次请求仅外层采集一次；
+        // 工厂裸用 HttpClient（无 Enhanced 包装）时无标记，由本 Handler 照常采集。
         // HC-02 修复：TracingDelegatingHandler 为无状态设计，使用单例实例避免每次请求创建新对象，降低 GC 压力。
         // HC-03 修复：IHttpClientFactory 要求每个 handler 管道使用独立的 DelegatingHandler 实例（InnerHandler 不可重复设置）。
         // 使用工厂委托每次创建新实例，Handler 管道生命周期由 IHttpClientFactory 管理（默认 2 分钟）。

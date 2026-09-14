@@ -1,4 +1,4 @@
-// -----------------------------------------------------------------------
+﻿// -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2026
 //  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
@@ -354,7 +354,7 @@ public class DefaultHttpRequestExecutor(
 
         // 下载阶段可观测性：测量响应体读取耗时与字节数（HTTP 请求层已由 SendRawAsync 采集）
         var clientName = MudHttpObservability.GetClientName(request);
-        RecordDownloadStarted(request, clientName);
+        MudHttpObservability.RecordDownloadStarted(request, clientName);
         var sw = ValueStopwatch.StartNew();
 
         try
@@ -387,7 +387,7 @@ public class DefaultHttpRequestExecutor(
                 var bytes = await guardedContent.ReadAsByteArrayAsync().ConfigureAwait(false);
 #endif
                 var elapsed = sw.GetElapsedTime().TotalMilliseconds;
-                RecordDownloadCompleted(request, clientName, bytes?.Length ?? 0, elapsed);
+                MudHttpObservability.RecordDownloadCompleted(request, clientName, bytes?.Length ?? 0, elapsed);
                 return bytes;
             }
 
@@ -397,13 +397,13 @@ public class DefaultHttpRequestExecutor(
             var unguardedBytes = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
 #endif
             var elapsedMs2 = sw.GetElapsedTime().TotalMilliseconds;
-            RecordDownloadCompleted(request, clientName, unguardedBytes?.Length ?? 0, elapsedMs2);
+            MudHttpObservability.RecordDownloadCompleted(request, clientName, unguardedBytes?.Length ?? 0, elapsedMs2);
             return unguardedBytes;
         }
         catch (Exception ex)
         {
             var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
-            RecordDownloadFailed(request, clientName, elapsedMs, ex);
+            MudHttpObservability.RecordDownloadFailed(request, clientName, elapsedMs, ex);
             throw;
         }
     }
@@ -444,7 +444,7 @@ public class DefaultHttpRequestExecutor(
 
         // 下载阶段可观测性：测量响应体下载与文件写入耗时和字节数（HTTP 请求层已由 SendRawAsync 采集）
         var clientName = MudHttpObservability.GetClientName(request);
-        RecordDownloadStarted(request, clientName);
+        MudHttpObservability.RecordDownloadStarted(request, clientName);
         var sw = ValueStopwatch.StartNew();
 
         try
@@ -489,12 +489,12 @@ public class DefaultHttpRequestExecutor(
             var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
             // 通过 fileStream.Position 获取实际写入字节数（避免 FileInfo.Length 因缓冲区未刷新而返回 0）
             var bytes = fileStream.Position;
-            RecordDownloadCompleted(request, clientName, bytes, elapsedMs);
+            MudHttpObservability.RecordDownloadCompleted(request, clientName, bytes, elapsedMs);
         }
         catch (Exception ex)
         {
             var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
-            RecordDownloadFailed(request, clientName, elapsedMs, ex);
+            MudHttpObservability.RecordDownloadFailed(request, clientName, elapsedMs, ex);
             throw;
         }
     }
@@ -890,82 +890,5 @@ public class DefaultHttpRequestExecutor(
         if (string.IsNullOrEmpty(contentType))
             return false;
         return contentType!.IndexOf("xml", StringComparison.OrdinalIgnoreCase) >= 0;
-    }
-
-    /// <summary>
-    /// 发出下载开始事件（标记响应体下载阶段开始）。
-    /// </summary>
-    private static void RecordDownloadStarted(HttpRequestMessage request, string? clientName)
-    {
-        MudHttpActivitySource.AddActivityEvent(
-            MudHttpDiagnosticNames.DownloadStarted,
-            () => new DownloadDiagnosticPayload(
-                request.Method.Method, request.RequestUri?.ToString(), clientName, 0, 0),
-            MudHttpDiagnosticNames.DownloadStarted,
-            new[]
-            {
-                new KeyValuePair<string, object?>("method", request.Method.Method),
-                new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
-                new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
-            });
-    }
-
-    /// <summary>
-    /// 发出下载完成事件并记录字节数/耗时指标。
-    /// </summary>
-    private static void RecordDownloadCompleted(
-        HttpRequestMessage request, string? clientName, long bytes, double elapsedMs)
-    {
-        MudHttpActivitySource.AddActivityEvent(
-            MudHttpDiagnosticNames.DownloadCompleted,
-            () => new DownloadDiagnosticPayload(
-                request.Method.Method, request.RequestUri?.ToString(), clientName, bytes, elapsedMs),
-            MudHttpDiagnosticNames.DownloadCompleted,
-            new[]
-            {
-                new KeyValuePair<string, object?>("method", request.Method.Method),
-                new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
-                new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
-                new KeyValuePair<string, object?>("bytes", bytes),
-                new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
-            });
-
-        // R-1：指标 tag 白名单过滤
-        var tags = MudHttpMeter.FilterTags(new KeyValuePair<string, object?>[]
-        {
-            new("client_name", clientName ?? "(default)"),
-            new("outcome", "success"),
-        });
-        MudHttpMeter.DownloadBytesCounter.Add(bytes, tags);
-        MudHttpMeter.DownloadDuration.Record(elapsedMs, tags);
-    }
-
-    /// <summary>
-    /// 发出下载失败事件并记录耗时指标（字节数无法确定，不记录）。
-    /// </summary>
-    private static void RecordDownloadFailed(
-        HttpRequestMessage request, string? clientName, double elapsedMs, Exception ex)
-    {
-        MudHttpActivitySource.AddActivityEvent(
-            MudHttpDiagnosticNames.DownloadFailed,
-            () => new DownloadErrorDiagnosticPayload(
-                request.Method.Method, request.RequestUri?.ToString(), clientName, elapsedMs, ex),
-            MudHttpDiagnosticNames.DownloadFailed,
-            new[]
-            {
-                new KeyValuePair<string, object?>("method", request.Method.Method),
-                new KeyValuePair<string, object?>("url", request.RequestUri?.ToString()),
-                new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
-                new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
-                new KeyValuePair<string, object?>("exception_type", ex.GetType().Name),
-            });
-
-        // R-1：指标 tag 白名单过滤
-        var tags = MudHttpMeter.FilterTags(new KeyValuePair<string, object?>[]
-        {
-            new("client_name", clientName ?? "(default)"),
-            new("outcome", "error"),
-        });
-        MudHttpMeter.DownloadDuration.Record(elapsedMs, tags);
     }
 }

@@ -109,7 +109,7 @@ DI 服务依赖（ILogger / IHttpRequestInterceptor / IHttpResponseInterceptor /
 | `RedactUrlInTelemetry` | `true` | 是否对 Span tag / 日志 / 诊断事件中的 URL 脱敏（掩码 `access_token` 等敏感 query 值） |
 | `RecordFullUrlOnSuccess` | `false` | 成功请求的 Span tag 是否记录**完整 URL**。默认仅记录 `scheme://host/path`（不含 query，防泄漏并控制 tag 基数） |
 | `MetricTagAllowlist` | 全部内建维度 | 指标 tag 白名单，白名单之外的维度被丢弃（防高基数） |
-| `EmitDiagnosticEvents` | `true` | 是否发出诊断事件（`ActivityEvent` / `DiagnosticSource`）；关闭仅影响事件构造，不影响 Span 与指标 |
+| `EmitDiagnosticEvents` | `true` | 是否发出诊断事件（`ActivityEvent` / `DiagnosticSource`）；关闭为**真零分配**（调用点门控，不构造 payload/tags 工厂），不影响 Span 与指标 |
 
 ```csharp
 // 编程式配置 EnhancedHttpClientOptions
@@ -614,6 +614,24 @@ services.AddMudHttpHealthChecks(Configuration);
 | `MudHttpObservability` <sup>internal</sup> | 可观测性辅助工具（internal），提供指标记录和追踪标签管理            |
 
 > `TracingDelegatingHandler` 作为 `DelegatingHandler` 注入到 HttpClient 管道中，自动创建分布式追踪 Activity 并记录请求方法、URL、状态码、耗时等信息。配合 `Mud.HttpUtils.OpenTelemetry` 包可一键导出到 OTLP 收集器。
+
+#### 去重协议（标记先行）
+
+多条执行路径共用同一套采集逻辑时，通过请求属性 `__mud_observed` 去重，协议为**"谁通过检查，谁立即标记；外层观察窗口覆盖整个弹性循环，内层一律短路"**：
+
+| 场景 | 采集方 | Span 数 | 请求数据指标 |
+|---|---|---|---|
+| `AddMudHttpClient` + `HttpClientFactoryEnhancedClient`（默认组合路径） | Enhanced 外层窗口 | 1 | 1 组 |
+| 裸 `factory.CreateClient(name).SendAsync(...)`（不经过 Enhanced） | `TracingDelegatingHandler` | 1 | 1 组 |
+| 直连 `new EnhancedHttpClient(new HttpClient(...))`（无 Handler） | Enhanced 外层窗口 | 1 | 1 组 |
+| 组合路径 + Polly 重试（克隆拷贝 `__mud_*`） | 仅外层窗口一次（重试次数经 `__mud_retry_count` / Activity tag 体现） | 1 | 1 组 |
+| 组合路径 + 令牌恢复（恢复克隆剥离 `__mud_*`） | 外层窗口 1 次 + 恢复尝试由管道独立采集 | 2（不同请求） | 各 1 组 |
+
+补充语义：
+
+- **取消**：请求被取消（OCE 且调用方令牌已触发）记 `outcome=cancelled`，Span 不设 Error（OTel 语义）；HttpClient 超时仍记 `error`。
+- **4xx 业务流**：4xx 触发 `ApiException` 的路径记 `outcome=client_error` + Span Ok（与 Handler 路径一致），5xx/网络错误记 `outcome=error` + Span Error。
+- **零开销降级**：`EmitDiagnosticEvents=false` 时事件路径零分配（调用点门控 + 惰性 payload/tags 工厂）；全部 10 个指标仪表维度受 `MetricTagAllowlist` 约束（含 ObservableGauge）。
 
 #### URL 安全验证
 

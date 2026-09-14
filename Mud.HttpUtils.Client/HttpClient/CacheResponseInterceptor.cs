@@ -24,13 +24,26 @@ namespace Mud.HttpUtils;
 ///   <item>记录缓存操作的日志</item>
 /// </list>
 /// <para>缓存拦截器的顺序为100,可以在请求管道中适当位置执行。</para>
+/// <para>G29：缓存查找键保持原样（掩码值不能用作查找键，否则破坏命中语义），
+/// 仅日志与诊断事件等<strong>遥测输出</strong>经掩码处理。掩码器可选注入，
+/// 缺省回退 <see cref="MessageSanitizer"/> 内置词表（与 M2-#18 回退链同口径）。</para>
 /// </remarks>
 /// <seealso cref="IHttpResponseInterceptor"/>
 /// <seealso cref="IHttpResponseCache"/>
-public class CacheResponseInterceptor(IHttpResponseCache cache, ILogger<CacheResponseInterceptor> logger) : ICacheResponseInterceptor
+public class CacheResponseInterceptor(
+    IHttpResponseCache cache,
+    ILogger<CacheResponseInterceptor> logger,
+    ISensitiveDataMasker? sensitiveDataMasker = null) : ICacheResponseInterceptor
 {
     private readonly IHttpResponseCache _cache = cache ?? throw new ArgumentNullException(nameof(cache));
     private readonly ILogger<CacheResponseInterceptor> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly ISensitiveDataMasker? _sensitiveDataMasker = sensitiveDataMasker;
+
+    /// <summary>
+    /// G29：遥测输出专用的脱敏缓存键（缓存查找仍用原始 key）。
+    /// </summary>
+    private string SafeKey(string key)
+        => MessageSanitizer.SanitizeWith(_sensitiveDataMasker, key, 200);
 
     /// <inheritdoc/>
     public int Order => 100;
@@ -59,7 +72,7 @@ public class CacheResponseInterceptor(IHttpResponseCache cache, ILogger<CacheRes
 
         if (_cache.TryGet(key, out value))
         {
-            MudHttpClientLog.CacheHit(_logger, key);
+            MudHttpClientLog.CacheHit(_logger, SafeKey(key));
             // M1-#6：cache_key 含完整 URL/参数（高基数），不得作为指标 tag（会打爆时序后端）；
             // 高基数信息保留在下方 Activity 事件中；R-1：经白名单过滤
             MudHttpMeter.CacheCounter.Add(1, MudHttpMeter.FilterTags(
@@ -69,14 +82,19 @@ public class CacheResponseInterceptor(IHttpResponseCache cache, ILogger<CacheRes
             if (isMudActivity)
                 currentActivity!.SetTag(MudHttpActivitySource.Tags.MudCacheHit, true);
 
-            MudHttpActivitySource.AddActivityEvent(
-                MudHttpDiagnosticNames.CacheHit,
-                () => new CacheDiagnosticPayload(key, hit: true),
-                MudHttpDiagnosticNames.CacheHit,
-                [
-                    new KeyValuePair<string, object?>("cache_key", key),
-                    new KeyValuePair<string, object?>("hit", true),
-                ]);
+            // G28/G29：门控前移 + 惰性工厂 + 遥测键脱敏
+            if (MudHttpActivitySource.EventsEnabled)
+            {
+                MudHttpActivitySource.AddActivityEvent(
+                    MudHttpDiagnosticNames.CacheHit,
+                    () => new CacheDiagnosticPayload(SafeKey(key), hit: true),
+                    MudHttpDiagnosticNames.CacheHit,
+                    () => new[]
+                    {
+                        new KeyValuePair<string, object?>("cache_key", SafeKey(key)),
+                        new KeyValuePair<string, object?>("hit", true),
+                    });
+            }
             return true;
         }
 
@@ -89,14 +107,19 @@ public class CacheResponseInterceptor(IHttpResponseCache cache, ILogger<CacheRes
         if (isMudActivity)
             currentActivity!.SetTag(MudHttpActivitySource.Tags.MudCacheHit, false);
 
-        MudHttpActivitySource.AddActivityEvent(
-            MudHttpDiagnosticNames.CacheMiss,
-            () => new CacheDiagnosticPayload(key, hit: false),
-            MudHttpDiagnosticNames.CacheMiss,
-            [
-                new KeyValuePair<string, object?>("cache_key", key),
-                new KeyValuePair<string, object?>("hit", false),
-            ]);
+        // G28/G29：门控前移 + 惰性工厂 + 遥测键脱敏
+        if (MudHttpActivitySource.EventsEnabled)
+        {
+            MudHttpActivitySource.AddActivityEvent(
+                MudHttpDiagnosticNames.CacheMiss,
+                () => new CacheDiagnosticPayload(SafeKey(key), hit: false),
+                MudHttpDiagnosticNames.CacheMiss,
+                () => new[]
+                {
+                    new KeyValuePair<string, object?>("cache_key", SafeKey(key)),
+                    new KeyValuePair<string, object?>("hit", false),
+                });
+        }
         return false;
     }
 
@@ -113,14 +136,16 @@ public class CacheResponseInterceptor(IHttpResponseCache cache, ILogger<CacheRes
             return;
 
         _cache.Set(key, value, expirationRelativeToNow, useSlidingExpiration);
-        MudHttpClientLog.CacheSet(_logger, key, expirationRelativeToNow.TotalSeconds, useSlidingExpiration);
+        // G29：日志输出用脱敏键（缓存存储仍用原始 key）
+        MudHttpClientLog.CacheSet(_logger, SafeKey(key), expirationRelativeToNow.TotalSeconds, useSlidingExpiration);
     }
 
     /// <inheritdoc/>
     public void Remove(string key)
     {
         _cache.Remove(key);
-        MudHttpClientLog.CacheRemoved(_logger, key);
+        // G29：日志输出用脱敏键（缓存移除仍用原始 key）
+        MudHttpClientLog.CacheRemoved(_logger, SafeKey(key));
     }
 
     /// <inheritdoc/>

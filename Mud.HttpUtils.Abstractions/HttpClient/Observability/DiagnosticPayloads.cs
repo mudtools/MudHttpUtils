@@ -33,6 +33,7 @@ public sealed class TokenRefreshDiagnosticPayload(string? tokenManagerKey, bool 
 /// <summary>缓存命中/未命中事件的诊断负载。</summary>
 public sealed class CacheDiagnosticPayload(string? key, bool hit)
 {
+    /// <summary>缓存键（G29：遥测输出为掩码后的脱敏值，非缓存查找用原始键）。</summary>
     public string? Key { get; } = key;
     public bool Hit { get; } = hit;
     public DateTimeOffset Timestamp { get; } = DateTimeOffset.UtcNow;
@@ -44,7 +45,7 @@ public sealed class DownloadDiagnosticPayload(string method, string? url, string
     /// <summary>HTTP 方法。</summary>
     public string Method { get; } = method;
 
-    /// <summary>请求 URL。</summary>
+    /// <summary>请求 URL（G26：经 SensitiveUrlRedactor 脱敏，敏感 query 值已掩码）。</summary>
     public string? Url { get; } = url;
 
     /// <summary>客户端名称。</summary>
@@ -66,7 +67,7 @@ public sealed class DownloadErrorDiagnosticPayload(string method, string? url, s
     /// <summary>HTTP 方法。</summary>
     public string Method { get; } = method;
 
-    /// <summary>请求 URL。</summary>
+    /// <summary>请求 URL（G26：经 SensitiveUrlRedactor 脱敏，敏感 query 值已掩码）。</summary>
     public string? Url { get; } = url;
 
     /// <summary>客户端名称。</summary>

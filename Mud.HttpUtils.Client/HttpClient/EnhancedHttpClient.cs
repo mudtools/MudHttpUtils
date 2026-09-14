@@ -1,4 +1,4 @@
-// -----------------------------------------------------------------------
+﻿// -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
 //  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
@@ -253,7 +253,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             () => SendRequestAsync<TResult>(
                 request,
                 jsonSerializerOptions: jsonSerializerOptions, // M3-#23：object? 透传，保留 JsonTypeInfo<T> 快路径
-                cancellationToken: cancellationToken));
+                cancellationToken: cancellationToken),
+            cancellationToken);
     }
 
     /// <inheritdoc cref="IBaseHttpClient.DownloadAsync"/>
@@ -271,7 +272,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         return await ExecuteWithObservabilityAsync(
             request,
             "下载文件", "文件下载完成", "文件下载失败", uri,
-            () => DownloadFileAsync(request, cancellationToken: cancellationToken));
+            () => DownloadFileAsync(request, cancellationToken: cancellationToken),
+            cancellationToken);
     }
 
     /// <inheritdoc cref="IBaseHttpClient.DownloadLargeAsync"/>
@@ -302,7 +304,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         return await ExecuteWithObservabilityAsync(
         request,
         $"下载大文件到: {filePath}", $"大文件下载完成: {filePath}", $"大文件下载失败: {filePath}", uri,
-        () => DownloadLargeFileAsync(request, filePath, bufferSize: bufferSize, overwrite: overwrite, progress: progress, cancellationToken: cancellationToken));
+        () => DownloadLargeFileAsync(request, filePath, bufferSize: bufferSize, overwrite: overwrite, progress: progress, cancellationToken: cancellationToken),
+        cancellationToken);
     }
 
     /// <inheritdoc cref="IBaseHttpClient.SendRawAsync"/>
@@ -327,7 +330,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 MudHttpObservability.SetStatusCode(request, (int)response.StatusCode);
                 MudHttpObservability.SetContentLength(request, response.Content.Headers.ContentLength);
                 return response;
-            });
+            },
+            cancellationToken);
     }
 
     /// <inheritdoc cref="IBaseHttpClient.SendStreamAsync"/>
@@ -361,7 +365,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 #endif
                 return new DisposableStream(stream, response);
-            });
+            },
+            cancellationToken);
     }
 
     /// <inheritdoc cref="IBaseHttpClient.SendAsAsyncEnumerable"/>
@@ -384,8 +389,11 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             ? MudHttpObservability.CreateLoggerScope(_logger, request, ClientName)
             : null;
 
-        // 若已被 TracingDelegatingHandler 采集，则不重复创建 Activity/指标（去重）
+        // 若已被更外层观察窗口采集，则不重复创建 Activity/指标（去重）。
+        // 去重协议（标记先行）：通过检查即立即标记，使内层 Handler 与重试克隆短路。
         var alreadyObserved = MudHttpObservability.IsObserved(request);
+        if (!alreadyObserved)
+            MudHttpObservability.MarkObserved(request);
         var activity = alreadyObserved ? null : MudHttpObservability.StartRequestActivity(request, ClientName);
         var sw = alreadyObserved ? default : ValueStopwatch.StartNew();
         var recordedSuccess = false;
@@ -394,13 +402,14 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         HttpResponseMessage? response = null;
 
         // 路径 B 兜底：发出 RequestStarted 事件，与 TracingDelegatingHandler 路径 A 保持一致
-        if (!alreadyObserved)
+        // （G28：门控前移到调用点，关闭状态下不构造工厂）
+        if (!alreadyObserved && MudHttpActivitySource.EventsEnabled)
         {
             MudHttpActivitySource.AddActivityEvent(
                 MudHttpDiagnosticNames.RequestStarted,
                 () => new HttpRequestDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName),
                 MudHttpDiagnosticNames.RequestStarted,
-                new[]
+                () => new[]
                 {
                     new KeyValuePair<string, object?>("method", request.Method.Method),
                     new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
@@ -526,7 +535,17 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             {
                 var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
                 // M2-#13：三态 —— faulted 记 error（真实异常）；完整枚举与提前退出（break）都记成功
-                if (pendingException != null)
+                // G32/OBS-2：取消与 4xx ApiException 语义校准（同 ExecuteWithObservabilityAsync 三态）；
+                // RequestFailed 事件在三态下均保持发出（事件成对性，G19 教训）
+                if (pendingException is OperationCanceledException && cancellationToken.IsCancellationRequested)
+                {
+                    MudHttpObservability.RecordCancellation(activity, elapsedMs, ClientName, request);
+                }
+                else if (pendingException is ApiException apiEx && (int)apiEx.StatusCode >= 400 && (int)apiEx.StatusCode < 500)
+                {
+                    MudHttpObservability.RecordOutcomeFromStatusCode(activity, (int)apiEx.StatusCode, elapsedMs, ClientName, request);
+                }
+                else if (pendingException != null)
                 {
                     MudHttpObservability.RecordError(
                         activity,
@@ -534,20 +553,6 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                         elapsedMs,
                         ClientName,
                         request);
-
-                    // RequestFailed 事件（异常类型与实际抛出一致）
-                    MudHttpActivitySource.AddActivityEvent(
-                        MudHttpDiagnosticNames.RequestFailed,
-                        () => new HttpRequestErrorDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, elapsedMs, pendingException),
-                        MudHttpDiagnosticNames.RequestFailed,
-                        new[]
-                        {
-                            new KeyValuePair<string, object?>("method", request.Method.Method),
-                            new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
-                            new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
-                            new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
-                            new KeyValuePair<string, object?>("exception_type", pendingException.GetType().Name),
-                        });
                 }
                 else
                 {
@@ -555,20 +560,40 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
                     // RequestStopped 事件（recordedSuccess 区分完整枚举与提前退出，仅作为事件 tag，非指标维度）
                     int statusCode = 0;
-                    if (MudHttpObservability.TryGetProperty(request, "__mud_status_code", out var sc) && sc is int code)
+                    if (MudHttpObservability.TryGetProperty(request, MudHttpObservability.StatusCodePropertyKey, out var sc) && sc is int code)
                         statusCode = code;
+                    if (MudHttpActivitySource.EventsEnabled)
+                    {
+                        MudHttpActivitySource.AddActivityEvent(
+                            MudHttpDiagnosticNames.RequestStopped,
+                            () => new HttpResponseDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, statusCode, elapsedMs),
+                            MudHttpDiagnosticNames.RequestStopped,
+                            () => new[]
+                            {
+                                new KeyValuePair<string, object?>("method", request.Method.Method),
+                                new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
+                                new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
+                                new KeyValuePair<string, object?>("status_code", statusCode),
+                                new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+                                new KeyValuePair<string, object?>("stream_completed", recordedSuccess),
+                            });
+                    }
+                }
+
+                // RequestFailed 事件（取消 / 4xx / 真实异常三态均发出，异常类型与实际抛出一致）
+                if (pendingException != null && MudHttpActivitySource.EventsEnabled)
+                {
                     MudHttpActivitySource.AddActivityEvent(
-                        MudHttpDiagnosticNames.RequestStopped,
-                        () => new HttpResponseDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, statusCode, elapsedMs),
-                        MudHttpDiagnosticNames.RequestStopped,
-                        new[]
+                        MudHttpDiagnosticNames.RequestFailed,
+                        () => new HttpRequestErrorDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, elapsedMs, pendingException),
+                        MudHttpDiagnosticNames.RequestFailed,
+                        () => new[]
                         {
                             new KeyValuePair<string, object?>("method", request.Method.Method),
                             new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
                             new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
-                            new KeyValuePair<string, object?>("status_code", statusCode),
                             new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
-                            new KeyValuePair<string, object?>("stream_completed", recordedSuccess),
+                            new KeyValuePair<string, object?>("exception_type", pendingException.GetType().Name),
                         });
                 }
                 MudHttpObservability.MarkObserved(request);
@@ -606,8 +631,11 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             ? MudHttpObservability.CreateLoggerScope(_logger, request, ClientName)
             : null;
 
-        // 若已被 TracingDelegatingHandler 采集，则不重复创建 Activity/指标（去重）
+        // 若已被更外层观察窗口采集，则不重复创建 Activity/指标（去重）。
+        // 去重协议（标记先行）：通过检查即立即标记，使内层 Handler 与重试克隆短路。
         var alreadyObserved = MudHttpObservability.IsObserved(request);
+        if (!alreadyObserved)
+            MudHttpObservability.MarkObserved(request);
         var activity = alreadyObserved ? null : MudHttpObservability.StartRequestActivity(request, ClientName);
         var sw = alreadyObserved ? default : ValueStopwatch.StartNew();
         var recordedSuccess = false;
@@ -615,14 +643,14 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         Exception? pendingException = null;
         HttpResponseMessage? response = null;
 
-        // 路径 B 兜底：发出 RequestStarted 事件
-        if (!alreadyObserved)
+        // 路径 B 兜底：发出 RequestStarted 事件（G28：门控前移到调用点）
+        if (!alreadyObserved && MudHttpActivitySource.EventsEnabled)
         {
             MudHttpActivitySource.AddActivityEvent(
                 MudHttpDiagnosticNames.RequestStarted,
                 () => new HttpRequestDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName),
                 MudHttpDiagnosticNames.RequestStarted,
-                new[]
+                () => new[]
                 {
                     new KeyValuePair<string, object?>("method", request.Method.Method),
                     new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
@@ -726,7 +754,17 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             if (!alreadyObserved)
             {
                 var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
-                if (pendingException != null)
+                // G32/OBS-2：取消与 4xx ApiException 语义校准（同第一个重载三态）；
+                // RequestFailed 事件在三态下均保持发出（事件成对性，G19 教训）
+                if (pendingException is OperationCanceledException && cancellationToken.IsCancellationRequested)
+                {
+                    MudHttpObservability.RecordCancellation(activity, elapsedMs, ClientName, request);
+                }
+                else if (pendingException is ApiException apiEx && (int)apiEx.StatusCode >= 400 && (int)apiEx.StatusCode < 500)
+                {
+                    MudHttpObservability.RecordOutcomeFromStatusCode(activity, (int)apiEx.StatusCode, elapsedMs, ClientName, request);
+                }
+                else if (pendingException != null)
                 {
                     MudHttpObservability.RecordError(
                         activity,
@@ -734,39 +772,46 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                         elapsedMs,
                         ClientName,
                         request);
-
-                    MudHttpActivitySource.AddActivityEvent(
-                        MudHttpDiagnosticNames.RequestFailed,
-                        () => new HttpRequestErrorDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, elapsedMs, pendingException),
-                        MudHttpDiagnosticNames.RequestFailed,
-                        new[]
-                        {
-                            new KeyValuePair<string, object?>("method", request.Method.Method),
-                            new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
-                            new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
-                            new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
-                            new KeyValuePair<string, object?>("exception_type", pendingException.GetType().Name),
-                        });
                 }
                 else
                 {
                     MudHttpObservability.RecordSuccessFromRequest(activity, request, elapsedMs, ClientName);
 
                     int statusCode = 0;
-                    if (MudHttpObservability.TryGetProperty(request, "__mud_status_code", out var sc) && sc is int code)
+                    if (MudHttpObservability.TryGetProperty(request, MudHttpObservability.StatusCodePropertyKey, out var sc) && sc is int code)
                         statusCode = code;
+                    if (MudHttpActivitySource.EventsEnabled)
+                    {
+                        MudHttpActivitySource.AddActivityEvent(
+                            MudHttpDiagnosticNames.RequestStopped,
+                            () => new HttpResponseDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, statusCode, elapsedMs),
+                            MudHttpDiagnosticNames.RequestStopped,
+                            () => new[]
+                            {
+                                new KeyValuePair<string, object?>("method", request.Method.Method),
+                                new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
+                                new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
+                                new KeyValuePair<string, object?>("status_code", statusCode),
+                                new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+                                new KeyValuePair<string, object?>("stream_completed", recordedSuccess),
+                            });
+                    }
+                }
+
+                // RequestFailed 事件（取消 / 4xx / 真实异常三态均发出）
+                if (pendingException != null && MudHttpActivitySource.EventsEnabled)
+                {
                     MudHttpActivitySource.AddActivityEvent(
-                        MudHttpDiagnosticNames.RequestStopped,
-                        () => new HttpResponseDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, statusCode, elapsedMs),
-                        MudHttpDiagnosticNames.RequestStopped,
-                        new[]
+                        MudHttpDiagnosticNames.RequestFailed,
+                        () => new HttpRequestErrorDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, elapsedMs, pendingException),
+                        MudHttpDiagnosticNames.RequestFailed,
+                        () => new[]
                         {
                             new KeyValuePair<string, object?>("method", request.Method.Method),
                             new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
                             new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
-                            new KeyValuePair<string, object?>("status_code", statusCode),
                             new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
-                            new KeyValuePair<string, object?>("stream_completed", recordedSuccess),
+                            new KeyValuePair<string, object?>("exception_type", pendingException.GetType().Name),
                         });
                 }
                 MudHttpObservability.MarkObserved(request);
@@ -798,7 +843,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         return await ExecuteWithObservabilityAsync(
             request,
             "发送XML请求", "XML请求完成", "XML请求失败", uri,
-            () => SendXmlRequestAsync<TResult>(request, encoding, cancellationToken));
+            () => SendXmlRequestAsync<TResult>(request, encoding, cancellationToken),
+            cancellationToken);
     }
 
     /// <inheritdoc cref="IXmlHttpClient.PostAsXmlAsync{TRequest,TResult}"/>
@@ -875,7 +921,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         return await ExecuteWithObservabilityAsync(
             request,
             "发送XML GET请求", "XML GET请求完成", "XML GET请求失败", uri,
-            () => SendXmlRequestAsync<TResult>(request, encoding, cancellationToken));
+            () => SendXmlRequestAsync<TResult>(request, encoding, cancellationToken),
+            cancellationToken);
     }
 
     private async Task<TResult?> SendXmlWithBodyAsync<TRequest, TResult>(
@@ -895,7 +942,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         return await ExecuteWithObservabilityAsync(
             request,
             operation, completeMsg, errorMsg, uri,
-            () => SendXmlRequestAsync<TResult>(request, encoding, cancellationToken));
+            () => SendXmlRequestAsync<TResult>(request, encoding, cancellationToken),
+            cancellationToken);
     }
 
     #endregion
@@ -1063,9 +1111,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         if (capturedRequestContent != null)
         {
 #if NETSTANDARD2_0
-            request.Properties["__mud_captured_request_content"] = capturedRequestContent;
+            request.Properties[MudHttpObservability.CapturedRequestContentPropertyKey] = capturedRequestContent;
 #else
-            request.Options.TryAdd("__mud_captured_request_content", capturedRequestContent);
+            request.Options.TryAdd(MudHttpObservability.CapturedRequestContentPropertyKey, capturedRequestContent);
 #endif
         }
 
@@ -1075,7 +1123,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             operation, completeMsg, errorMsg, validatedUri,
             () => SendRequestAsync<TResult>(
                 request,
-                cancellationToken: cancellationToken));
+                cancellationToken: cancellationToken),
+            cancellationToken);
     }
 
     /// <summary>
@@ -1114,7 +1163,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             operation, completeMsg, errorMsg, validatedUri,
             () => SendRequestAsync<TResult>(
                 request,
-                cancellationToken: cancellationToken));
+                cancellationToken: cancellationToken),
+            cancellationToken);
     }
 
     #endregion
@@ -1545,23 +1595,42 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 _logger.DownloadFileLarge(requestUri!, contentLength.GetValueOrDefault() / (1024.0 * 1024.0));
             }
 
-            if (_maxSuccessResponseBytes > 0)
+            // G33：下载阶段可观测性（仅响应体读取阶段；HTTP 请求层已由外层观察窗口采集，不同仪表不构成重复计数）
+            MudHttpObservability.RecordDownloadStarted(httpRequestMessage, ClientName);
+            var downloadSw = ValueStopwatch.StartNew();
+            try
             {
+                byte[]? bytes;
+                if (_maxSuccessResponseBytes > 0)
+                {
 #if NETSTANDARD2_0
-                using var guardedStream = GuardSuccessStream(await response.Content.ReadAsStreamAsync().ConfigureAwait(false), requestUri);
+                    using var guardedStream = GuardSuccessStream(await response.Content.ReadAsStreamAsync().ConfigureAwait(false), requestUri);
 #else
-                await using var guardedStream = GuardSuccessStream(await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false), requestUri);
+                    await using var guardedStream = GuardSuccessStream(await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false), requestUri);
 #endif
-                using var buffered = new MemoryStream();
-                await guardedStream.CopyToAsync(buffered, DefaultBufferSize, cancellationToken).ConfigureAwait(false);
-                return buffered.ToArray();
-            }
+                    using var buffered = new MemoryStream();
+                    await guardedStream.CopyToAsync(buffered, DefaultBufferSize, cancellationToken).ConfigureAwait(false);
+                    bytes = buffered.ToArray();
+                }
+                else
+                {
+#if NETSTANDARD2_0
+                    bytes = await response.Content.ReadAsByteArrayAsync();
+#else
+                    bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+#endif
+                }
 
-#if NETSTANDARD2_0
-            return await response.Content.ReadAsByteArrayAsync();
-#else
-            return await response.Content.ReadAsByteArrayAsync(cancellationToken);
-#endif
+                MudHttpObservability.RecordDownloadCompleted(
+                    httpRequestMessage, ClientName, bytes?.Length ?? 0, downloadSw.GetElapsedTime().TotalMilliseconds);
+                return bytes;
+            }
+            catch (Exception ex)
+            {
+                MudHttpObservability.RecordDownloadFailed(
+                    httpRequestMessage, ClientName, downloadSw.GetElapsedTime().TotalMilliseconds, ex);
+                throw;
+            }
         }, requestUri!, cancellationToken);
     }
 
@@ -1582,8 +1651,13 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         if (bufferSize <= 0)
             throw new ArgumentException("缓冲区大小必须大于0", nameof(bufferSize));
 
-        string? requestUri = httpRequestMessage.RequestUri?.ToString();
+        // G27：日志输出用 URL 脱敏（与 DownloadFileAsync 的 SafeUrl 模式对齐；发送路径不受影响）
+        string? requestUri = SafeUrl(httpRequestMessage.RequestUri) is var safe && safe.Length > 0 ? safe : null;
         string directoryPath = Path.GetDirectoryName(filePath)!;
+
+        // G33：下载阶段可观测性状态（downloadStarted 区分"响应头到达前失败"与"响应体阶段失败"）
+        var downloadStarted = false;
+        var downloadSw = default(ValueStopwatch);
 
         try
         {
@@ -1611,6 +1685,11 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 requestUri!,
                 contentLength.HasValue ? contentLength.Value / (1024.0 * 1024.0) : 0.0,
                 filePath);
+
+            // G33：下载阶段可观测性（仅响应体下载与文件写入阶段；HTTP 请求层已由外层观察窗口采集）
+            MudHttpObservability.RecordDownloadStarted(httpRequestMessage, ClientName);
+            downloadSw = ValueStopwatch.StartNew();
+            downloadStarted = true;
 
 #if NETSTANDARD2_0
             using var contentStream = await response.Content.ReadAsStreamAsync();
@@ -1688,6 +1767,11 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             var fileInfo = new FileInfo(filePath);
             _logger.DownloadFileCompleted(filePath, fileInfo.Length / (1024.0 * 1024.0));
 
+            // G33：下载完成（字节数以落盘文件大小为准，含 chunked 无 Content-Length 场景）
+            MudHttpObservability.RecordDownloadCompleted(
+                httpRequestMessage, ClientName, fileInfo.Length,
+                downloadStarted ? downloadSw.GetElapsedTime().TotalMilliseconds : 0);
+
             return fileInfo;
         }
         catch (Exception ex)
@@ -1697,6 +1781,13 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             if (ex is IOException && !overwrite)
             {
                 throw;
+            }
+
+            // G33：下载阶段失败（响应头到达前的失败不记入下载耗时指标）
+            if (downloadStarted)
+            {
+                MudHttpObservability.RecordDownloadFailed(
+                    httpRequestMessage, ClientName, downloadSw.GetElapsedTime().TotalMilliseconds, ex);
             }
 
             // 清理部分下载的文件
@@ -1868,10 +1959,10 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         if (requestMsg != null)
         {
 #if NETSTANDARD2_0
-            if (requestMsg.Properties.TryGetValue("__mud_captured_request_content", out var captured))
+            if (requestMsg.Properties.TryGetValue(MudHttpObservability.CapturedRequestContentPropertyKey, out var captured))
                 capturedRequestContent = captured as string;
 #else
-            if (requestMsg.Options.TryGetValue(new HttpRequestOptionsKey<string>("__mud_captured_request_content"), out var captured))
+            if (requestMsg.Options.TryGetValue(new HttpRequestOptionsKey<string>(MudHttpObservability.CapturedRequestContentPropertyKey), out var captured))
                 capturedRequestContent = captured;
 #endif
         }
@@ -2019,7 +2110,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// 带可观测性采集的请求执行包装。
     /// 在 <see cref="ExecuteWithLoggingAsync{T}"/> 之外再添加 BeginScope + Activity + 指标采集，
     /// 覆盖直接 <c>new EnhancedHttpClient(new HttpClient(), ...)</c> 路径（不经 IHttpClientFactory）。
-    /// 与 <see cref="TracingDelegatingHandler"/> 通过 __mud_observed 标记去重。
+    /// 与 <see cref="TracingDelegatingHandler"/> 通过 __mud_observed 标记去重：
+    /// 去重协议为"标记先行"——本层通过 IsObserved 检查即立即 MarkObserved 成为唯一采集方，
+    /// 内层 Handler 与弹性重试克隆（Properties 完整拷贝携带标记）全部短路。
     /// </summary>
     private async Task<T> ExecuteWithObservabilityAsync<T>(
         HttpRequestMessage request,
@@ -2027,7 +2120,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         string completeMessage,
         string errorMessage,
         string uri,
-        Func<Task<T>> action)
+        Func<Task<T>> action,
+        CancellationToken cancellationToken = default)
     {
         // 设置 client_name 到请求属性，供下游 DelegatingHandler 读取
         MudHttpObservability.SetClientName(request, ClientName);
@@ -2036,26 +2130,34 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             ? MudHttpObservability.CreateLoggerScope(_logger, request, ClientName)
             : null;
 
-        // 已被 TracingDelegatingHandler 采集过则跳过 Activity/指标创建（仅执行业务逻辑）
+        // 已被更外层观察窗口采集过则跳过 Activity/指标创建（仅执行业务逻辑）
         if (MudHttpObservability.IsObserved(request))
         {
             return await ExecuteWithLoggingAsync(operation, completeMessage, errorMessage, uri, action).ConfigureAwait(false);
         }
 
+        // 去重协议（标记先行）：本层通过检查即成为唯一采集方，先标记再采集，
+        // 使内层 TracingDelegatingHandler 与弹性重试克隆（Properties 完整拷贝）全部短路。
+        MudHttpObservability.MarkObserved(request);
+
         var activity = MudHttpObservability.StartRequestActivity(request, ClientName);
         var sw = ValueStopwatch.StartNew();
 
         // 路径 B 兜底：发出 RequestStarted 事件，与 TracingDelegatingHandler 路径 A 保持一致
-        MudHttpActivitySource.AddActivityEvent(
-            MudHttpDiagnosticNames.RequestStarted,
-            () => new HttpRequestDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName),
-            MudHttpDiagnosticNames.RequestStarted,
-            new[]
-            {
-                new KeyValuePair<string, object?>("method", request.Method.Method),
-                new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
-                new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
-            });
+        // （G28：门控前移到调用点，关闭状态下不构造工厂）
+        if (MudHttpActivitySource.EventsEnabled)
+        {
+            MudHttpActivitySource.AddActivityEvent(
+                MudHttpDiagnosticNames.RequestStarted,
+                () => new HttpRequestDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName),
+                MudHttpDiagnosticNames.RequestStarted,
+                () => new[]
+                {
+                    new KeyValuePair<string, object?>("method", request.Method.Method),
+                    new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
+                    new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
+                });
+        }
 
         try
         {
@@ -2065,20 +2167,23 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
             // RequestStopped 事件：从请求属性读取状态码（由 ExecuteWithLoggingAsync 内部 SetStatusCode 写入）
             int statusCode = 0;
-            if (MudHttpObservability.TryGetProperty(request, "__mud_status_code", out var sc) && sc is int code)
+            if (MudHttpObservability.TryGetProperty(request, MudHttpObservability.StatusCodePropertyKey, out var sc) && sc is int code)
                 statusCode = code;
-            MudHttpActivitySource.AddActivityEvent(
-                MudHttpDiagnosticNames.RequestStopped,
-                () => new HttpResponseDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, statusCode, elapsedMs),
-                MudHttpDiagnosticNames.RequestStopped,
-                new[]
-                {
-                    new KeyValuePair<string, object?>("method", request.Method.Method),
-                    new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
-                    new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
-                    new KeyValuePair<string, object?>("status_code", statusCode),
-                    new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
-                });
+            if (MudHttpActivitySource.EventsEnabled)
+            {
+                MudHttpActivitySource.AddActivityEvent(
+                    MudHttpDiagnosticNames.RequestStopped,
+                    () => new HttpResponseDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, statusCode, elapsedMs),
+                    MudHttpDiagnosticNames.RequestStopped,
+                    () => new[]
+                    {
+                        new KeyValuePair<string, object?>("method", request.Method.Method),
+                        new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
+                        new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
+                        new KeyValuePair<string, object?>("status_code", statusCode),
+                        new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+                    });
+            }
 
             MudHttpObservability.MarkObserved(request);
             return result;
@@ -2086,21 +2191,43 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         catch (Exception ex)
         {
             var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
-            MudHttpObservability.RecordError(activity, ex, elapsedMs, ClientName, request);
+
+            // G32 语义校准（三态）：
+            // ① 取消（OCE 且调用方令牌已触发）→ outcome=cancelled，Span 不设 Error（OTel 语义）；
+            //    HttpClient 超时路径的 TCE 满足 !IsCancellationRequested，仍走 error/timeout，不受影响。
+            // ② OBS-2：4xx 驱动的 ApiException 属正常业务流（调用方以异常感知失败），
+            //    与 Handler 路径同语义：outcome=client_error + Span Ok（G10 延伸到异常驱动路径）。
+            // ③ 其余异常 → RecordError（outcome=error + Span Error）。
+            // RequestFailed 诊断事件在三态下均保持发出（事件成对性，G19 教训）。
+            if (ex is OperationCanceledException && cancellationToken.IsCancellationRequested)
+            {
+                MudHttpObservability.RecordCancellation(activity, elapsedMs, ClientName, request);
+            }
+            else if (ex is ApiException apiEx && (int)apiEx.StatusCode >= 400 && (int)apiEx.StatusCode < 500)
+            {
+                MudHttpObservability.RecordOutcomeFromStatusCode(activity, (int)apiEx.StatusCode, elapsedMs, ClientName, request);
+            }
+            else
+            {
+                MudHttpObservability.RecordError(activity, ex, elapsedMs, ClientName, request);
+            }
 
             // RequestFailed 事件
-            MudHttpActivitySource.AddActivityEvent(
-                MudHttpDiagnosticNames.RequestFailed,
-                () => new HttpRequestErrorDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, elapsedMs, ex),
-                MudHttpDiagnosticNames.RequestFailed,
-                new[]
-                {
-                    new KeyValuePair<string, object?>("method", request.Method.Method),
-                    new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
-                    new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
-                    new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
-                    new KeyValuePair<string, object?>("exception_type", ex.GetType().Name),
-                });
+            if (MudHttpActivitySource.EventsEnabled)
+            {
+                MudHttpActivitySource.AddActivityEvent(
+                    MudHttpDiagnosticNames.RequestFailed,
+                    () => new HttpRequestErrorDiagnosticPayload(request.Method.Method, SafeUrl(request.RequestUri), ClientName, elapsedMs, ex),
+                    MudHttpDiagnosticNames.RequestFailed,
+                    () => new[]
+                    {
+                        new KeyValuePair<string, object?>("method", request.Method.Method),
+                        new KeyValuePair<string, object?>("url", SafeUrl(request.RequestUri)),
+                        new KeyValuePair<string, object?>("client_name", ClientName ?? "(default)"),
+                        new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+                        new KeyValuePair<string, object?>("exception_type", ex.GetType().Name),
+                    });
+            }
 
             MudHttpObservability.MarkObserved(request);
             throw;

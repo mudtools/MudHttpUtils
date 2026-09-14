@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Net.Http;
 using Microsoft.Extensions.Logging;
 using Mud.HttpUtils.Helpers;
+using Mud.HttpUtils.Observability;
 
 namespace Mud.HttpUtils;
 
@@ -25,12 +26,17 @@ namespace Mud.HttpUtils;
 /// </remarks>
 internal static class MudHttpObservability
 {
-    private const string ObservedPropertyKey = "__mud_observed";
-    private const string ClientNamePropertyKey = "__mud_client_name";
-    private const string RetryCountPropertyKey = "__mud_retry_count";
-    private const string StatusCodePropertyKey = "__mud_status_code";
-    private const string ContentLengthPropertyKey = "__mud_content_length";
-    private const string CorrelationIdPropertyKey = "__mud_correlation_id";
+    // G31：请求属性键统一收敛为公共常量（类本身 internal，可见性不变），
+    // 消除 "__mud_*" 字面量在调用点散落（EnhancedHttpClient / TracingDelegatingHandler 等统一引用）。
+    public const string ObservedPropertyKey = "__mud_observed";
+    public const string ClientNamePropertyKey = "__mud_client_name";
+    public const string RetryCountPropertyKey = "__mud_retry_count";
+    public const string StatusCodePropertyKey = "__mud_status_code";
+    public const string ContentLengthPropertyKey = "__mud_content_length";
+    public const string CorrelationIdPropertyKey = "__mud_correlation_id";
+
+    /// <summary>捕获的请求体（CaptureRequestContent 启用时写入，供 ApiException 构造读取）。</summary>
+    public const string CapturedRequestContentPropertyKey = "__mud_captured_request_content";
 
     /// <summary>
     /// 启动 HTTP 请求 Activity；当 ActivitySource 无监听器时返回 <c>null</c>。
@@ -166,24 +172,27 @@ internal static class MudHttpObservability
         string? clientName,
         HttpRequestMessage? request = null)
     {
+        // G30：异常消息进入遥测前脱敏（SetStatus 描述与 exception.message 同源）
+        var sanitizedMessage = MessageSanitizer.SanitizeWith(null, ex.Message, 500);
+
         if (activity != null)
         {
-            activity.SetStatus(ActivityStatusCode.Error, ex.Message);
+            activity.SetStatus(ActivityStatusCode.Error, sanitizedMessage);
 #if NET8_0_OR_GREATER
             // .NET 8+ 手动创建标准 exception 事件（符合 OTel Span Exceptions 规范）
             // 不依赖 ActivityExtensions.RecordException 扩展方法（需要额外引用 System.Diagnostics.DiagnosticSource 包）
             var exceptionTags = new ActivityTagsCollection
             {
-                { "exception.type", ex.GetType().FullName },
-                { "exception.message", ex.Message },
-                { "exception.stacktrace", ex.StackTrace },
+                { MudHttpActivitySource.Tags.ExceptionType, ex.GetType().FullName },
+                { MudHttpActivitySource.Tags.ExceptionMessage, sanitizedMessage },
+                { MudHttpActivitySource.Tags.ExceptionStackTrace, ex.StackTrace },
             };
-            activity.AddEvent(new ActivityEvent("exception", tags: exceptionTags));
+            activity.AddEvent(new ActivityEvent(MudHttpActivitySource.Tags.ExceptionEventName, tags: exceptionTags));
 #else
             // netstandard2.0 / net6.0 降级为 tag（保持与旧版本兼容）
-            activity.SetTag("exception.type", ex.GetType().FullName);
-            activity.SetTag("exception.message", ex.Message);
-            activity.SetTag("exception.stacktrace", ex.StackTrace);
+            activity.SetTag(MudHttpActivitySource.Tags.ExceptionType, ex.GetType().FullName);
+            activity.SetTag(MudHttpActivitySource.Tags.ExceptionMessage, sanitizedMessage);
+            activity.SetTag(MudHttpActivitySource.Tags.ExceptionStackTrace, ex.StackTrace);
 #endif
         }
 
@@ -192,6 +201,38 @@ internal static class MudHttpObservability
         MudHttpMeter.RequestCounter.Add(1, tags);
         MudHttpMeter.RequestDuration.Record(elapsedMs, tags);
     }
+
+    /// <summary>
+    /// G32：记录取消（OCE 且 cancellationToken 已触发）语义。
+    /// 指标 <c>outcome=cancelled</c>；Span 保持未设置状态（OTel：被取消的 Span 不设 Error）。
+    /// 诊断事件仍由调用方发出 <c>RequestFailed</c>（事件成对性，G19 教训）。
+    /// </summary>
+    public static void RecordCancellation(
+        Activity? activity,
+        double elapsedMs,
+        string? clientName,
+        HttpRequestMessage? request = null)
+    {
+        // Span 不设置 Error 状态（保持未设置，符合 OTel 取消语义）
+        var tags = MudHttpMeter.FilterTags(BuildRequestTags(clientName, request, outcome: "cancelled").ToArray());
+        MudHttpMeter.RequestCounter.Add(1, tags);
+        MudHttpMeter.RequestDuration.Record(elapsedMs, tags);
+    }
+
+    /// <summary>
+    /// OBS-2：按状态码记录结果语义（异常驱动路径复用）。
+    /// 4xx → <c>outcome=client_error</c> + Span Ok（与 Handler 路径 <c>GetOutcome</c> 对齐，G10 语义延伸）；
+    /// 5xx → <c>outcome=server_error</c> + Span Error。
+    /// 供 4xx 触发 <c>EnsureSuccessStatusCodeAsync</c> 抛 <see cref="ApiException"/> 的调用方
+    /// 以异常感知失败、但业务上属正常流的路径使用（G32/OBS-2 语义校准批次）。
+    /// </summary>
+    public static void RecordOutcomeFromStatusCode(
+        Activity? activity,
+        int statusCode,
+        double elapsedMs,
+        string? clientName,
+        HttpRequestMessage? request = null)
+        => RecordOutcome(activity, statusCode, contentLength: null, elapsedMs, clientName, request);
 
     /// <summary>
     /// 在请求属性中记录响应状态码（供 EnhancedHttpClient 内部路径使用）。
@@ -347,6 +388,94 @@ internal static class MudHttpObservability
         if (uri is { IsAbsoluteUri: true } absUri)
             return absUri.Host;
         return "(unknown)";
+    }
+
+    /// <summary>
+    /// G33：发出下载开始事件（标记响应体下载阶段开始，双路径共享）。
+    /// URL 经 <see cref="SensitiveUrlRedactor.Redact"/> 脱敏（G26）；门控前移到调用点（G28）。
+    /// </summary>
+    internal static void RecordDownloadStarted(HttpRequestMessage request, string? clientName)
+    {
+        if (!MudHttpActivitySource.EventsEnabled)
+            return;
+
+        MudHttpActivitySource.AddActivityEvent(
+            MudHttpDiagnosticNames.DownloadStarted,
+            () => new DownloadDiagnosticPayload(
+                request.Method.Method, SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()), clientName, 0, 0),
+            MudHttpDiagnosticNames.DownloadStarted,
+            () => new[]
+            {
+                new KeyValuePair<string, object?>("method", request.Method.Method),
+                new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.Redact(request.RequestUri?.ToString())),
+                new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
+            });
+    }
+
+    /// <summary>
+    /// G33：发出下载完成事件并记录字节数/耗时指标（双路径共享）。
+    /// 下载指标与请求指标为不同仪表，接入不构成重复计数。
+    /// </summary>
+    internal static void RecordDownloadCompleted(
+        HttpRequestMessage request, string? clientName, long bytes, double elapsedMs)
+    {
+        if (MudHttpActivitySource.EventsEnabled)
+        {
+            MudHttpActivitySource.AddActivityEvent(
+                MudHttpDiagnosticNames.DownloadCompleted,
+                () => new DownloadDiagnosticPayload(
+                    request.Method.Method, SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()), clientName, bytes, elapsedMs),
+                MudHttpDiagnosticNames.DownloadCompleted,
+                () => new[]
+                {
+                    new KeyValuePair<string, object?>("method", request.Method.Method),
+                    new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.Redact(request.RequestUri?.ToString())),
+                    new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
+                    new KeyValuePair<string, object?>("bytes", bytes),
+                    new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+                });
+        }
+
+        // R-1：指标 tag 白名单过滤
+        var tags = MudHttpMeter.FilterTags(new KeyValuePair<string, object?>[]
+        {
+            new("client_name", clientName ?? "(default)"),
+            new("outcome", "success"),
+        });
+        MudHttpMeter.DownloadBytesCounter.Add(bytes, tags);
+        MudHttpMeter.DownloadDuration.Record(elapsedMs, tags);
+    }
+
+    /// <summary>
+    /// G33：发出下载失败事件并记录耗时指标（字节数无法确定，不记录；双路径共享）。
+    /// </summary>
+    internal static void RecordDownloadFailed(
+        HttpRequestMessage request, string? clientName, double elapsedMs, Exception ex)
+    {
+        if (MudHttpActivitySource.EventsEnabled)
+        {
+            MudHttpActivitySource.AddActivityEvent(
+                MudHttpDiagnosticNames.DownloadFailed,
+                () => new DownloadErrorDiagnosticPayload(
+                    request.Method.Method, SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()), clientName, elapsedMs, ex),
+                MudHttpDiagnosticNames.DownloadFailed,
+                () => new[]
+                {
+                    new KeyValuePair<string, object?>("method", request.Method.Method),
+                    new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.Redact(request.RequestUri?.ToString())),
+                    new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
+                    new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+                    new KeyValuePair<string, object?>("exception_type", ex.GetType().Name),
+                });
+        }
+
+        // R-1：指标 tag 白名单过滤
+        var tags = MudHttpMeter.FilterTags(new KeyValuePair<string, object?>[]
+        {
+            new("client_name", clientName ?? "(default)"),
+            new("outcome", "error"),
+        });
+        MudHttpMeter.DownloadDuration.Record(elapsedMs, tags);
     }
 
     /// <summary>

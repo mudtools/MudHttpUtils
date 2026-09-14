@@ -12,6 +12,7 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
@@ -362,6 +363,53 @@ public class M3P2FixTests
         MudHttpObservabilityOptions.MetricTagAllowlist.Should().Contain("client_name");
     }
 
+    [Fact]
+    public void CircuitBreakerGauge_Respects_MetricTagAllowlist()
+    {
+        // R-3：ObservableGauge 的 policy_key 维度受白名单治理（与 FilterTags 同一 allowlist 事实源）
+        CircuitBreakerStateObserver.Clear();
+        var original = MudHttpObservabilityOptions.MetricTagAllowlist;
+        try
+        {
+            CircuitBreakerStateObserver.SetState("gauge_cb", CircuitBreakerState.Open);
+
+            var measurements = new List<Measurement<int>>();
+            using var meterListener = new MeterListener
+            {
+                InstrumentPublished = (instrument, listener) =>
+                {
+                    if (instrument.Meter.Name == MudHttpMeter.MeterName && instrument.Name == "mud.http.circuit_breaker.state")
+                        listener.EnableMeasurementEvents(instrument);
+                }
+            };
+            meterListener.SetMeasurementEventCallback<int>((instrument, value, tags, _) =>
+                measurements.Add(new Measurement<int>(value, tags.ToArray())));
+            meterListener.Start();
+
+            // 默认白名单含 policy_key → Measurement 携带 policy_key tag
+            meterListener.RecordObservableInstruments();
+            measurements.Should().ContainSingle();
+            measurements[0].Tags.ToArray().Should().Contain(t => t.Key == "policy_key" && Equals(t.Value, "gauge_cb"));
+
+            // 收缩白名单（移除 policy_key）→ Measurement 无任何 tags
+            MudHttpObservabilityOptions.MetricTagAllowlist =
+                new HashSet<string>(StringComparer.Ordinal) { "client_name", "outcome" };
+            measurements.Clear();
+            meterListener.RecordObservableInstruments();
+            measurements.Should().ContainSingle();
+            measurements[0].Tags.ToArray().Should().BeEmpty("policy_key 已被白名单收缩移除（R-3）");
+
+            // IsTagAllowed 与 FilterTags 共享同一判定（internal 经 InternalsVisibleTo 供测试）
+            MudHttpMeter.IsTagAllowed("client_name").Should().BeTrue();
+            MudHttpMeter.IsTagAllowed("policy_key").Should().BeFalse();
+        }
+        finally
+        {
+            MudHttpObservabilityOptions.MetricTagAllowlist = original;
+            CircuitBreakerStateObserver.Clear();
+        }
+    }
+
     #endregion
 
     #region R-2 诊断事件开关（EmitDiagnosticEvents）
@@ -382,9 +430,73 @@ public class M3P2FixTests
                 "Mud.HttpUtils.M3.Test.Event",
                 () => new object(),
                 "m3.r2.test.event",
-                new[] { new KeyValuePair<string, object?>("k", "v") });
+                () => new[] { new KeyValuePair<string, object?>("k", "v") });
 
             activity!.Events.Should().BeEmpty();
+        }
+        finally
+        {
+            MudHttpObservabilityOptions.EmitDiagnosticEvents = original;
+        }
+    }
+
+    [Fact]
+    public void AddActivityEvent_WhenDisabled_DoesNotInvokeTagFactory()
+    {
+        // G28：关闭开关后 payload 工厂与 tags 工厂都不得被调用（零分配承诺的机制验证）
+        using var listener = CreateMudActivityListener();
+        ActivitySource.AddActivityListener(listener);
+
+        var original = MudHttpObservabilityOptions.EmitDiagnosticEvents;
+        try
+        {
+            MudHttpObservabilityOptions.EmitDiagnosticEvents = false;
+            using var activity = MudHttpActivitySource.Instance.StartActivity("m3-g28-test", ActivityKind.Client);
+
+            var payloadInvocations = 0;
+            var tagsInvocations = 0;
+            MudHttpActivitySource.AddActivityEvent(
+                "Mud.HttpUtils.G28.Test.Event",
+                () => { payloadInvocations++; return new object(); },
+                "g28.test.event",
+                () => { tagsInvocations++; return new[] { new KeyValuePair<string, object?>("k", "v") }; });
+
+            activity!.Events.Should().BeEmpty();
+            payloadInvocations.Should().Be(0, "payload 工厂不得被调用");
+            tagsInvocations.Should().Be(0, "tags 工厂不得被调用");
+        }
+        finally
+        {
+            MudHttpObservabilityOptions.EmitDiagnosticEvents = original;
+        }
+    }
+
+    [Fact]
+    public void AddActivityEvent_WhenEnabled_InvokesTagsFactoryOnce()
+    {
+        using var listener = CreateMudActivityListener();
+        ActivitySource.AddActivityListener(listener);
+
+        var original = MudHttpObservabilityOptions.EmitDiagnosticEvents;
+        try
+        {
+            MudHttpObservabilityOptions.EmitDiagnosticEvents = true;
+            using var activity = MudHttpActivitySource.Instance.StartActivity("m3-g28-on", ActivityKind.Client);
+
+            var tagsInvocations = 0;
+            MudHttpActivitySource.AddActivityEvent(
+                "Mud.HttpUtils.G28.Test.Event",
+                () => new object(),
+                "g28.test.event",
+                () =>
+                {
+                    tagsInvocations++;
+                    return new[] { new KeyValuePair<string, object?>("k", "v") };
+                });
+
+            var evt = activity!.Events.Should().ContainSingle(e => e.Name == "g28.test.event").Subject;
+            evt.Tags.Should().Contain(t => t.Key == "k" && Equals(t.Value, "v"));
+            tagsInvocations.Should().Be(1, "开启时 tags 工厂被惰性调用一次");
         }
         finally
         {
@@ -408,7 +520,7 @@ public class M3P2FixTests
                 "Mud.HttpUtils.M3.Test.Event",
                 () => new object(),
                 "m3.r2.test.event",
-                new[] { new KeyValuePair<string, object?>("k", "v") });
+                () => new[] { new KeyValuePair<string, object?>("k", "v") });
 
             activity!.Events.Should().ContainSingle(e => e.Name == "m3.r2.test.event");
         }

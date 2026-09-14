@@ -19,14 +19,19 @@ namespace Mud.HttpUtils;
 /// <para>仅在通过 <c>IHttpClientBuilder.AddHttpMessageHandler&lt;TracingDelegatingHandler&gt;()</c> 注册时生效，
 /// 适用于 IHttpClientFactory 路径。对于直接 <c>new EnhancedHttpClient(new HttpClient(), ...)</c> 的场景，
 /// <see cref="EnhancedHttpClient.ExecuteWithLoggingAsync{T}"/> 内部会调用 <see cref="MudHttpObservability"/> 进行兜底采集。</para>
-/// <para>两条路径通过 <c>request.Properties["__mud_observed"]</c> 标记去重，避免重复记录。</para>
+/// <para>两条路径通过 <c>__mud_observed</c> 标记去重，协议为"标记先行"：
+/// 采集方（EnhancedHttpClient 外层观察窗口或本 Handler）通过 IsObserved 检查后立即 MarkObserved 再采集，
+/// 后到者短路。组合路径（AddMudHttpClient + EnhancedHttpClient）上外层先标记，本 Handler 整体短路；
+/// 工厂裸用 HttpClient（无 Enhanced 包装）时无标记，由本 Handler 照常采集；
+/// 令牌恢复克隆剥离 __mud_* 标记，恢复尝试由本 Handler 独立采集（NEW-HC-10 语义）。</para>
 /// </remarks>
 public sealed class TracingDelegatingHandler : DelegatingHandler
 {
     /// <summary>
     /// 标记请求已被可观测性采集的属性键。
+    /// G31：收敛为 <see cref="MudHttpObservability.ObservedPropertyKey"/> 的统一引用（单一事实源）。
     /// </summary>
-    public const string ObservedPropertyKey = "__mud_observed";
+    public const string ObservedPropertyKey = MudHttpObservability.ObservedPropertyKey;
 
     /// <summary>
     /// NEW-HC-01：共享的无状态单例实例。
@@ -50,16 +55,20 @@ public sealed class TracingDelegatingHandler : DelegatingHandler
         var activity = MudHttpObservability.StartRequestActivity(request, clientName);
         var sw = ValueStopwatch.StartNew();
 
-        MudHttpActivitySource.AddActivityEvent(
-            MudHttpDiagnosticNames.RequestStarted,
-            () => new HttpRequestDiagnosticPayload(request.Method.Method, SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()), clientName),
-            MudHttpDiagnosticNames.RequestStarted,
-            new[]
-            {
-                new KeyValuePair<string, object?>("method", request.Method.Method),
-                new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.Redact(request.RequestUri?.ToString())),
-                new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
-            });
+        // G28：门控前移到调用点，关闭状态下不构造 payload/tags 工厂（零分配）
+        if (MudHttpActivitySource.EventsEnabled)
+        {
+            MudHttpActivitySource.AddActivityEvent(
+                MudHttpDiagnosticNames.RequestStarted,
+                () => new HttpRequestDiagnosticPayload(request.Method.Method, SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()), clientName),
+                MudHttpDiagnosticNames.RequestStarted,
+                () => new[]
+                {
+                    new KeyValuePair<string, object?>("method", request.Method.Method),
+                    new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.Redact(request.RequestUri?.ToString())),
+                    new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
+                });
+        }
 
         HttpResponseMessage? response = null;
         try
@@ -69,49 +78,61 @@ public sealed class TracingDelegatingHandler : DelegatingHandler
             MudHttpObservability.RecordResponse(activity, response, elapsedMs, clientName);
             MudHttpObservability.MarkObserved(request);
 
-            MudHttpActivitySource.AddActivityEvent(
-                MudHttpDiagnosticNames.RequestStopped,
-                () => new HttpResponseDiagnosticPayload(
-                    request.Method.Method,
-                    SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()),
-                    clientName,
-                    (int)response.StatusCode,
-                    elapsedMs),
-                MudHttpDiagnosticNames.RequestStopped,
-                new[]
-                {
-                    new KeyValuePair<string, object?>("method", request.Method.Method),
-                    new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.Redact(request.RequestUri?.ToString())),
-                    new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
-                    new KeyValuePair<string, object?>("status_code", (int)response.StatusCode),
-                    new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
-                });
+            if (MudHttpActivitySource.EventsEnabled)
+            {
+                MudHttpActivitySource.AddActivityEvent(
+                    MudHttpDiagnosticNames.RequestStopped,
+                    () => new HttpResponseDiagnosticPayload(
+                        request.Method.Method,
+                        SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()),
+                        clientName,
+                        (int)response.StatusCode,
+                        elapsedMs),
+                    MudHttpDiagnosticNames.RequestStopped,
+                    () => new[]
+                    {
+                        new KeyValuePair<string, object?>("method", request.Method.Method),
+                        new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.Redact(request.RequestUri?.ToString())),
+                        new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
+                        new KeyValuePair<string, object?>("status_code", (int)response.StatusCode),
+                        new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+                    });
+            }
 
             return response;
         }
         catch (Exception ex)
         {
             var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
-            MudHttpObservability.RecordError(activity, ex, elapsedMs, clientName);
+
+            // G32：取消（OCE 且调用方令牌已触发）→ outcome=cancelled，Span 不设 Error（OTel 语义）；
+            // 超时路径的 TCE 满足 !IsCancellationRequested，仍走 error/timeout。其余异常走 RecordError。
+            if (ex is OperationCanceledException && cancellationToken.IsCancellationRequested)
+                MudHttpObservability.RecordCancellation(activity, elapsedMs, clientName);
+            else
+                MudHttpObservability.RecordError(activity, ex, elapsedMs, clientName);
             MudHttpObservability.MarkObserved(request);
 
-            MudHttpActivitySource.AddActivityEvent(
-                MudHttpDiagnosticNames.RequestFailed,
-                () => new HttpRequestErrorDiagnosticPayload(
-                    request.Method.Method,
-                    SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()),
-                    clientName,
-                    elapsedMs,
-                    ex),
-                MudHttpDiagnosticNames.RequestFailed,
-                new[]
-                {
-                    new KeyValuePair<string, object?>("method", request.Method.Method),
-                    new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.Redact(request.RequestUri?.ToString())),
-                    new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
-                    new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
-                    new KeyValuePair<string, object?>("exception_type", ex.GetType().Name),
-                });
+            if (MudHttpActivitySource.EventsEnabled)
+            {
+                MudHttpActivitySource.AddActivityEvent(
+                    MudHttpDiagnosticNames.RequestFailed,
+                    () => new HttpRequestErrorDiagnosticPayload(
+                        request.Method.Method,
+                        SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()),
+                        clientName,
+                        elapsedMs,
+                        ex),
+                    MudHttpDiagnosticNames.RequestFailed,
+                    () => new[]
+                    {
+                        new KeyValuePair<string, object?>("method", request.Method.Method),
+                        new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.Redact(request.RequestUri?.ToString())),
+                        new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
+                        new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
+                        new KeyValuePair<string, object?>("exception_type", ex.GetType().Name),
+                    });
+            }
 
             throw;
         }
