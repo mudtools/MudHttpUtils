@@ -39,7 +39,7 @@ public class StandardOAuth2TokenManagerTests
     {
         var act = () => new StandardOAuth2TokenManager(
             new HttpClient(),
-            null!,
+            (IOptions<OAuth2Options>)null!,
             NullLogger<StandardOAuth2TokenManager>.Instance);
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("options");

@@ -87,6 +87,59 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     }
 
     /// <summary>
+    /// TMR-12：初始化 StandardOAuth2TokenManager 实例，支持自定义令牌缓存注入。
+    /// </summary>
+    /// <param name="httpClient">HttpClient 实例。</param>
+    /// <param name="options">OAuth2 配置选项。</param>
+    /// <param name="tokenCache">令牌缓存实现（可选）。为 null 时使用基类默认的 <see cref="ConcurrentDictionaryTokenCache{T}"/>。</param>
+    /// <param name="logger">日志记录器（可选）。</param>
+    /// <param name="secretProvider">安全密钥提供程序（可选）。</param>
+    /// <param name="contentSerializer">HTTP 内容序列化器（可选）。</param>
+    public StandardOAuth2TokenManager(
+        HttpClient httpClient,
+        IOptions<OAuth2Options> options,
+        ITokenCache<CredentialToken>? tokenCache,
+        ILogger<StandardOAuth2TokenManager>? logger = null,
+        ISecretProvider? secretProvider = null,
+        IHttpContentSerializer? contentSerializer = null)
+        : base(tokenCache ?? new ConcurrentDictionaryTokenCache<CredentialToken>())
+    {
+        _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
+        _logger = logger ?? NullLogger<StandardOAuth2TokenManager>.Instance;
+        _secretProvider = secretProvider;
+        _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
+        _clientSecretCache = new ClientSecretCache(TimeSpan.FromSeconds(Options.ClientSecretCacheTtlSeconds));
+    }
+
+    /// <summary>
+    /// TMR-12：初始化 StandardOAuth2TokenManager 实例，支持自定义令牌缓存注入 + 配置热更新。
+    /// </summary>
+    /// <param name="httpClient">HttpClient 实例。</param>
+    /// <param name="optionsMonitor">OAuth2 配置选项监视器，支持热更新。</param>
+    /// <param name="tokenCache">令牌缓存实现（可选）。为 null 时使用基类默认的 <see cref="ConcurrentDictionaryTokenCache{T}"/>。</param>
+    /// <param name="logger">日志记录器（可选）。</param>
+    /// <param name="secretProvider">安全密钥提供程序（可选）。</param>
+    /// <param name="contentSerializer">HTTP 内容序列化器（可选）。</param>
+    public StandardOAuth2TokenManager(
+        HttpClient httpClient,
+        IOptionsMonitor<OAuth2Options> optionsMonitor,
+        ITokenCache<CredentialToken>? tokenCache,
+        ILogger<StandardOAuth2TokenManager>? logger = null,
+        ISecretProvider? secretProvider = null,
+        IHttpContentSerializer? contentSerializer = null)
+        : base(tokenCache ?? new ConcurrentDictionaryTokenCache<CredentialToken>())
+    {
+        _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        _optionsMonitor = optionsMonitor ?? throw new ArgumentNullException(nameof(optionsMonitor));
+        _options = optionsMonitor.CurrentValue ?? throw new ArgumentNullException(nameof(optionsMonitor));
+        _logger = logger ?? NullLogger<StandardOAuth2TokenManager>.Instance;
+        _secretProvider = secretProvider;
+        _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
+        _clientSecretCache = new ClientSecretCache(TimeSpan.FromSeconds(Options.ClientSecretCacheTtlSeconds));
+    }
+
+    /// <summary>
     /// 解析客户端密钥，优先从 ISecretProvider 获取，回退到配置值。
     /// </summary>
     private async Task<string?> ResolveClientSecretAsync()

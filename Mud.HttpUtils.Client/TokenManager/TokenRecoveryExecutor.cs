@@ -57,9 +57,27 @@ public class TokenRecoveryExecutor
     private TokenRecoveryOptions Options => _optionsMonitor?.CurrentValue ?? _staticOptions ?? new TokenRecoveryOptions();
 
     // 并发刷新去重：同一时间段内多个 401 只触发一次令牌刷新
-    private readonly ConcurrentDictionary<string, Task<string?>> _credentialRefreshTasks = new();
-    private readonly ConcurrentDictionary<string, Task<string?>> _userRefreshTasks = new();
+    // TMR-12：刷新结果在 TTL 窗口内保留，窗口内后续 401 直接复用结果而不重新刷新
+    private readonly ConcurrentDictionary<string, DedupEntry> _credentialRefreshTasks = new();
+    private readonly ConcurrentDictionary<string, DedupEntry> _userRefreshTasks = new();
     private const string CredentialRefreshKey = "__credential";
+
+    /// <summary>
+    /// TMR-12：去重条目——包含进行中的 Task 或已完成的结果 + 过期时间戳。
+    /// </summary>
+    private sealed class DedupEntry
+    {
+        /// <summary>进行中的刷新任务（完成后置 null）。</summary>
+        public Task<string?>? Task;
+        /// <summary>刷新结果（Task 完成后赋值）。</summary>
+        public string? Result;
+        /// <summary>结果是否为成功（非 null/空）。</summary>
+        public bool IsSuccess;
+        /// <summary>结果过期时间戳（UTC ticks）。</summary>
+        public long ExpiresAt;
+
+        public bool IsExpired => DateTimeOffset.UtcNow.UtcTicks > ExpiresAt;
+    }
 
     /// <summary>
     /// 初始化令牌恢复执行器。
@@ -618,62 +636,79 @@ public class TokenRecoveryExecutor
     }
 
     /// <summary>
-    /// TMR-04：执行令牌刷新，使用 ConcurrentDictionary 去重，确保同一时间窗口内多个 401 只触发一次刷新。
+    /// TMR-04/TMR-12：执行令牌刷新，使用 ConcurrentDictionary 去重，确保同一时间窗口内多个 401 只触发一次刷新。
     /// 去重键含 scope：managerKey + "\u001F" + ScopeKeyBuilder.Build(scopes)，避免同管理器不同 scope 的并发 401 被合并。
+    /// TMR-12：刷新完成后结果在 RefreshDedupWindowSeconds 窗口内保留，窗口内后续 401 直接复用结果。
     /// </summary>
     private async Task<string?> RefreshTokenWithDedupAsync(
         string managerKey, ITokenManager credentialManager, string[]? scopes, CancellationToken cancellationToken)
     {
         var scopeKey = scopes is { Length: > 0 } ? ScopeKeyBuilder.Build(scopes) : ScopeKeyBuilder.DefaultKey;
         var dedupKey = managerKey + "\u001F" + scopeKey;
+        var dedupWindow = Options.RefreshDedupWindowSeconds;
         while (true)
         {
-            var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var existing = _credentialRefreshTasks.GetOrAdd(dedupKey, tcs.Task);
+            // TMR-12：先检查是否有未过期的已完成结果
+            if (_credentialRefreshTasks.TryGetValue(dedupKey, out var existingEntry))
+            {
+                if (existingEntry.Task == null && !existingEntry.IsExpired)
+                {
+                    // 窗口内复用已有结果
+                    return existingEntry.Result;
+                }
 
-            if (ReferenceEquals(existing, tcs.Task))
+                if (existingEntry.Task != null && !existingEntry.Task.IsCompleted)
+                {
+                    // 另一个线程正在刷新，等待其结果（等待线程仅受自身 CT 约束，不影响共享刷新）
+                    try
+                    {
+                        var token = await WaitForTaskAsync(existingEntry.Task, cancellationToken).ConfigureAwait(false);
+
+                        // 验证获取到的令牌是否有效（可能在等待期间令牌又被另一个 401 失效了）
+                        if (!string.IsNullOrEmpty(token))
+                            return token;
+
+                        // 令牌为空，重新尝试刷新
+                        _credentialRefreshTasks.TryRemove(dedupKey, out _);
+                    }
+                    catch
+                    {
+                        // 刷新线程失败了，清除后重试
+                        _credentialRefreshTasks.TryRemove(dedupKey, out _);
+                        throw;
+                    }
+                    continue;
+                }
+
+                // 条目已过期或 Task 已完成但未被清理 → 尝试替换
+                _credentialRefreshTasks.TryRemove(dedupKey, out _);
+            }
+
+            var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var newEntry = new DedupEntry { Task = tcs.Task };
+
+            if (_credentialRefreshTasks.TryAdd(dedupKey, newEntry))
             {
                 // 当前线程赢得了刷新权
                 try
                 {
                     var token = await RefreshCredentialWithIsolationAsync(credentialManager, scopes).ConfigureAwait(false);
                     tcs.SetResult(token);
+                    // TMR-12：保留结果在 TTL 窗口内
+                    newEntry.Task = null;
+                    newEntry.Result = token;
+                    newEntry.IsSuccess = !string.IsNullOrEmpty(token);
+                    newEntry.ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(dedupWindow).UtcTicks;
                     return token;
                 }
                 catch (Exception ex)
                 {
                     tcs.SetException(ex);
-                    throw;
-                }
-                finally
-                {
-                    // 延迟移除，让等待中的线程有机会获取结果
                     _credentialRefreshTasks.TryRemove(dedupKey, out _);
-                }
-            }
-            else
-            {
-                // 另一个线程正在刷新，等待其结果（等待线程仅受自身 CT 约束，不影响共享刷新）
-                try
-                {
-                    var token = await WaitForTaskAsync(existing, cancellationToken).ConfigureAwait(false);
-
-                    // 验证获取到的令牌是否有效（可能在等待期间令牌又被另一个 401 失效了）
-                    if (!string.IsNullOrEmpty(token))
-                        return token;
-
-                    // 令牌为空，重新尝试刷新
-                    _credentialRefreshTasks.TryRemove(dedupKey, out _);
-                }
-                catch
-                {
-                    // 刷新线程失败了，清除后重试
-                    _credentialRefreshTasks.TryRemove(dedupKey, out _);
-
-                    // 直接抛出，避免无限重试
                     throw;
                 }
             }
+            // TryAdd 失败 → 另一个线程抢先，循环重试
         }
     }
 
@@ -742,52 +777,73 @@ public class TokenRecoveryExecutor
     }
 
     /// <summary>
-    /// TMR-05：执行用户令牌刷新，使用 ConcurrentDictionary 按 userId + scope 去重。
+    /// TMR-05/TMR-12：执行用户令牌刷新，使用 ConcurrentDictionary 按 userId + scope 去重。
     /// 去重键含 scope：managerKey + "\u001F" + userId + "\u001F" + scopeKey。
+    /// TMR-12：刷新完成后结果在 RefreshDedupWindowSeconds 窗口内保留，窗口内后续 401 直接复用结果。
     /// </summary>
     private async Task<string?> RefreshUserTokenWithDedupAsync(
         string managerKey, string userId, IUserTokenManager userTokenManager, string[]? scopes, CancellationToken cancellationToken)
     {
         var scopeKey = scopes is { Length: > 0 } ? ScopeKeyBuilder.Build(scopes) : ScopeKeyBuilder.DefaultKey;
         var dedupKey = managerKey + "\u001F" + userId + "\u001F" + scopeKey;
+        var dedupWindow = Options.RefreshDedupWindowSeconds;
         while (true)
         {
-            var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var existing = _userRefreshTasks.GetOrAdd(dedupKey, tcs.Task);
+            // TMR-12：先检查是否有未过期的已完成结果
+            if (_userRefreshTasks.TryGetValue(dedupKey, out var existingEntry))
+            {
+                if (existingEntry.Task == null && !existingEntry.IsExpired)
+                {
+                    // 窗口内复用已有结果
+                    return existingEntry.Result;
+                }
 
-            if (ReferenceEquals(existing, tcs.Task))
+                if (existingEntry.Task != null && !existingEntry.Task.IsCompleted)
+                {
+                    // 另一个线程正在刷新，等待其结果
+                    try
+                    {
+                        var token = await WaitForTaskAsync(existingEntry.Task, cancellationToken).ConfigureAwait(false);
+                        if (!string.IsNullOrEmpty(token))
+                            return token;
+                        _userRefreshTasks.TryRemove(dedupKey, out _);
+                    }
+                    catch
+                    {
+                        _userRefreshTasks.TryRemove(dedupKey, out _);
+                        throw;
+                    }
+                    continue;
+                }
+
+                // 条目已过期或 Task 已完成但未被清理 → 尝试替换
+                _userRefreshTasks.TryRemove(dedupKey, out _);
+            }
+
+            var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var newEntry = new DedupEntry { Task = tcs.Task };
+
+            if (_userRefreshTasks.TryAdd(dedupKey, newEntry))
             {
                 try
                 {
                     var token = await RefreshUserTokenWithIsolationAsync(userId, userTokenManager, scopes).ConfigureAwait(false);
                     tcs.SetResult(token);
+                    // TMR-12：保留结果在 TTL 窗口内
+                    newEntry.Task = null;
+                    newEntry.Result = token;
+                    newEntry.IsSuccess = !string.IsNullOrEmpty(token);
+                    newEntry.ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(dedupWindow).UtcTicks;
                     return token;
                 }
                 catch (Exception ex)
                 {
                     tcs.SetException(ex);
-                    throw;
-                }
-                finally
-                {
-                    _userRefreshTasks.TryRemove(dedupKey, out _);
-                }
-            }
-            else
-            {
-                try
-                {
-                    var token = await WaitForTaskAsync(existing, cancellationToken).ConfigureAwait(false);
-                    if (!string.IsNullOrEmpty(token))
-                        return token;
-                    _userRefreshTasks.TryRemove(dedupKey, out _);
-                }
-                catch
-                {
                     _userRefreshTasks.TryRemove(dedupKey, out _);
                     throw;
                 }
             }
+            // TryAdd 失败 → 另一个线程抢先，循环重试
         }
     }
 

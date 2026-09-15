@@ -244,7 +244,8 @@ public class TokenRecoveryDelegatingHandlerTests
             return new HttpResponseMessage(HttpStatusCode.Unauthorized);
         });
 
-        var options = new TokenRecoveryOptions { RecoveryMaxRetries = 3 };
+        // TMR-12：禁用去重窗口，确保每次重试独立刷新（测试多次重试计数）
+        var options = new TokenRecoveryOptions { RecoveryMaxRetries = 3, RefreshDedupWindowSeconds = 0 };
         var handler = CreateHandler(mockTokenManager.Object, options, innerHandler);
         var invoker = new HttpMessageInvoker(handler);
 
@@ -276,7 +277,8 @@ public class TokenRecoveryDelegatingHandlerTests
                 : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("success") };
         });
 
-        var options = new TokenRecoveryOptions { RecoveryMaxRetries = 5 };
+        // TMR-12：禁用去重窗口，确保每次重试独立刷新
+        var options = new TokenRecoveryOptions { RecoveryMaxRetries = 5, RefreshDedupWindowSeconds = 0 };
         var handler = CreateHandler(mockTokenManager.Object, options, innerHandler);
         var invoker = new HttpMessageInvoker(handler);
 

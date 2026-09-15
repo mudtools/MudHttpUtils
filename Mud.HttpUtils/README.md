@@ -907,8 +907,8 @@ services.AddMudHttpClient("myApi", "https://api.example.com");
 | `ITokenManager`                  | 通用令牌管理，提供 `GetTokenAsync`、`GetOrRefreshTokenAsync` 方法 |
 | `IUserTokenManager`              | 用户令牌管理，继承 `ITokenManager`，提供用户级令牌获取与刷新      |
 | `ICurrentUserId`                 | 当前用户标识，提供 `GetCurrentUserIdAsync` 方法                   |
-| `ITokenStore`                    | 令牌持久化存储契约，支持分布式缓存或数据库持久化                  |
-| `IUserTokenStore`                | 用户级令牌持久化存储契约，继承 `ITokenStore`，按用户标识隔离      |
+| `ITokenStore`                    | 令牌持久化存储契约（独立持久化，当前**不被** `ITokenManager` 管线消费；管理器使用 `ITokenCache<T>` 内存级缓存） |
+| `IUserTokenStore`                | 用户级令牌持久化存储契约，继承 `ITokenStore`，按用户标识隔离（同上，不被管理器直接消费）      |
 | `ITokenRefreshBackgroundService` | 令牌后台刷新服务契约                                              |
 | `TokenManagerBase`               | 令牌管理器抽象基类，提供并发安全的令牌刷新实现                    |
 | `UserTokenManagerBase`           | 用户令牌管理器抽象基类，提供并发安全的用户级令牌刷新实现          |
@@ -1119,8 +1119,8 @@ var hmacProvider = appContext.GetService<IHmacSignatureProvider>();
 | `IHttpResponseCache`             | 响应缓存契约（TryGet、Set、Remove）                                                                               |
 | `ITokenManager`                  | 通用令牌管理                                                                                                      |
 | `IUserTokenManager`              | 用户令牌管理                                                                                                      |
-| `ITokenStore`                    | 令牌持久化存储契约                                                                                                |
-| `IUserTokenStore`                | 用户级令牌持久化存储契约                                                                                          |
+| `ITokenStore`                    | 令牌持久化存储契约（独立持久化，当前不被 `ITokenManager` 管线消费）                                              |
+| `IUserTokenStore`                | 用户级令牌持久化存储契约（同上，不被管理器直接消费）                                                              |
 | `ITokenRefreshBackgroundService` | 令牌后台刷新服务契约                                                                                              |
 | `IMudAppContext`                 | 应用上下文（含 GetService<T>）                                                                                    |
 | `IAppManager<T>`                 | 多应用管理器（含 ConfigurationChanged 事件）                                                                      |

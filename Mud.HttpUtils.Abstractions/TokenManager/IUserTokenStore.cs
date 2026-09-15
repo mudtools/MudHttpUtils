@@ -12,6 +12,11 @@ namespace Mud.HttpUtils;
 /// <summary>
 /// 用户级令牌持久化存储契约，支持按用户标识隔离令牌数据。
 /// </summary>
+/// <remarks>
+/// <b>TMR-12 契约定性</b>：此接口为独立持久化契约，当前<b>不被</b> <see cref="ITokenManager"/> 管线消费
+/// （管理器使用 <see cref="ITokenCache{T}"/> 进行内存级缓存）。如需多实例共享令牌，
+/// 请实现 <see cref="ITokenCache{T}"/> 并注入管理器。异步令牌缓存契约列入 v2 提案。
+/// </remarks>
 public interface IUserTokenStore : ITokenStore
 {
     /// <summary>
