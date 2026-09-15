@@ -114,16 +114,9 @@ internal static class AotDtoCoverageAnalyzer
         // 实际需要覆盖集合时才执行全量扫描（含引用程序集）。
         var coveredTypes = CollectCoveredTypes(compilation);
 
-        // 触发门控：仅当"本编译单元自身声明了 JsonSerializerContext"时才运行 AOT004/AOT005。
-        // 原因：覆盖集合自 P1-4（ADR-03）起会同时扫描引用程序集，而 Mud.HttpUtils 各库内部
-        // 都自带 internal Context（MudHttpJsonContext / OAuth2JsonContext / ProblemDetailsJsonContext …），
-        // 因此"coveredTypes.Count == 0"不再是有效的门控——任何引用本库的工程都会命中。
-        // 若不以"本地声明 Context"作为接入信号，所有未选择 AOT 源生成工作流的消费方
-        // （本仓库的 HttpClientApiDemo / ResilienceDemo / HttpClientDemo 等）都会被大量噪音诊断淹没。
-        // 注意：仍使用引用程序集解析出的覆盖集合做判定（跨程序集 DTO+Context 场景不误报，见 ADR-03）。
-        // [T6 修复] forceRun=true 时跳过 hasLocalContext 门控，用于 DTO+Context 均在引用程序集的共享包场景。
-        if (!forceRun && coveredTypes.Count == 0)
-            return diagnostics.ToImmutable();
+        // [P0-4 修复] 删除 coveredTypes.Count == 0 门控：空 Context（骨架刚创建、无 [JsonSerializable]）
+        // 时 IsCovered 恒 false，所有 DTO 正确报 AOT004——正是期望行为（引导用户补注册）。
+        // 保留第一门控 HasLocalJsonSerializerContext（JIT 零配置消费方零噪音，T7 语义不变）。
 
         // 2. 查找 HttpClientApiAttribute 符号
         var httpClientApiAttr = compilation.GetTypeByMetadataName(HttpClientApiAttributeFullName);
@@ -231,45 +224,60 @@ internal static class AotDtoCoverageAnalyzer
         if (httpJsonSerializableAttr == null)
             return diagnostics.ToImmutable();
 
+        // [P1-3 修复] 先做 O(语法树) 探测收集本编译标注类型列表，空则直接返回；
+        // 非空才计算覆盖集合（避免无标注类型的项目白付全量引用程序集扫描），对齐 T7 范式。
+        var annotatedTypes = GetLocalAnnotatedTypes(compilation, httpJsonSerializableAttr);
+        if (annotatedTypes.Count == 0)
+            return diagnostics.ToImmutable();
+
         // [T7 修复] 覆盖集合内部会复用按 Compilation 缓存的本地 Context 探测结果，
         // 本编译语法树不会因 AOT006 路径被二次遍历。
         var coveredTypes = CollectCoveredTypes(compilation);
 
-        foreach (var syntaxTree in compilation.SyntaxTrees)
+        foreach (var typeSymbol in annotatedTypes)
         {
             if (cancellationToken.IsCancellationRequested)
                 return diagnostics.ToImmutable();
 
-            var semanticModel = compilation.GetSemanticModel(syntaxTree);
-            var root = syntaxTree.GetRoot(cancellationToken);
+            // 已覆盖（含集合/Nullable 解包）或为基元/字符串/枚举 → 跳过
+            if (IsCovered(typeSymbol, coveredTypes) || QuerySerializationClassifier.IsSimple(typeSymbol))
+                continue;
 
-            foreach (var typeDecl in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
-            {
-                if (cancellationToken.IsCancellationRequested)
-                    return diagnostics.ToImmutable();
-
-                var typeSymbol = semanticModel.GetDeclaredSymbol(typeDecl, cancellationToken) as INamedTypeSymbol;
-                if (typeSymbol == null)
-                    continue;
-
-                var hasHttpJsonSerializable = typeSymbol.GetAttributes()
-                    .Any(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, httpJsonSerializableAttr));
-                if (!hasHttpJsonSerializable)
-                    continue;
-
-                // 已覆盖（含集合/Nullable 解包）或为基元/字符串/枚举 → 跳过
-                if (IsCovered(typeSymbol, coveredTypes) || QuerySerializationClassifier.IsSimple(typeSymbol))
-                    continue;
-
-                diagnostics.Add(Diagnostic.Create(
-                    Diagnostics.AotJsonSerializableNotCovered,
-                    typeSymbol.Locations.FirstOrDefault() ?? typeDecl.GetLocation(),
-                    TypeProps(typeSymbol),
-                    typeSymbol.ToDisplayString()));
-            }
+            diagnostics.Add(Diagnostic.Create(
+                Diagnostics.AotJsonSerializableNotCovered,
+                typeSymbol.Locations.FirstOrDefault(),
+                TypeProps(typeSymbol),
+                typeSymbol.ToDisplayString()));
         }
 
         return diagnostics.ToImmutable();
+    }
+
+    /// <summary>
+    /// [P1-3] 获取本编译单元中所有标注 [HttpJsonSerializable] 的类型（按 Compilation 缓存）。
+    /// </summary>
+    private static readonly ConditionalWeakTable<Compilation, List<INamedTypeSymbol>> _annotatedTypesCache = new();
+
+    private static List<INamedTypeSymbol> GetLocalAnnotatedTypes(Compilation compilation, INamedTypeSymbol attrSymbol)
+        => _annotatedTypesCache.GetValue(compilation, c => ComputeLocalAnnotatedTypes(c, attrSymbol));
+
+    private static List<INamedTypeSymbol> ComputeLocalAnnotatedTypes(Compilation compilation, INamedTypeSymbol attrSymbol)
+    {
+        var result = new List<INamedTypeSymbol>();
+        foreach (var syntaxTree in compilation.SyntaxTrees)
+        {
+            var semanticModel = compilation.GetSemanticModel(syntaxTree);
+            var root = syntaxTree.GetRoot();
+            foreach (var typeDecl in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
+            {
+                if (semanticModel.GetDeclaredSymbol(typeDecl) is INamedTypeSymbol typeSymbol &&
+                    typeSymbol.GetAttributes().Any(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, attrSymbol)))
+                {
+                    result.Add(typeSymbol);
+                }
+            }
+        }
+        return result;
     }
 
     /// <summary>
@@ -483,6 +491,9 @@ internal static class AotDtoCoverageAnalyzer
         var queryAttr = analysisContext.QueryAttribute;
         var queryMapAttr = analysisContext.QueryMapAttribute;
 
+        // [P1-5 修复] 每方法只调用一次 GetMethodSerializationMethod，存局部变量复用。
+        var serializationMethod = GetMethodSerializationMethod(method);
+
         foreach (var param in method.Parameters)
         {
             // [T1 修复] 数组参数解包——[Body] 数组的元素类型需要 Context 覆盖。
@@ -497,8 +508,7 @@ internal static class AotDtoCoverageAnalyzer
                 if (bodyAttr != null && param.GetAttributes()
                     .Any(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, bodyAttr)))
                 {
-                    var ser = GetMethodSerializationMethod(method);
-                    if (ser is "FormUrlEncoded" or "Xml")
+                    if (serializationMethod is "FormUrlEncoded" or "Xml")
                         continue;
 
                     if (arrayType.ElementType is INamedTypeSymbol arrayElem &&
@@ -529,8 +539,7 @@ internal static class AotDtoCoverageAnalyzer
             {
                 // FormUrlEncoded / Xml Body 不走 JSON 序列化，无需 JsonSerializerContext 覆盖，跳过 AOT004 检查。
                 // [Phase2 修复 2.5] 增加 Xml 豁免，防止 XML 方法被 AOT004 误报。
-                var ser = GetMethodSerializationMethod(method);
-                if (ser is "FormUrlEncoded" or "Xml")
+                if (serializationMethod is "FormUrlEncoded" or "Xml")
                     continue;
 
                 if (!IsCovered(paramType, coveredTypes) && !QuerySerializationClassifier.IsSimple(paramType))
@@ -617,7 +626,9 @@ internal static class AotDtoCoverageAnalyzer
                         QuerySerializationClassifier.IsSimple(responseElemNamed))
                         return;
 
-                    if (GetMethodSerializationMethod(method) is "Xml")
+                    // [P1-7] XML / FormUrlEncoded 响应不走 JSON 反序列化，豁免 AOT004。
+                    // FormUrlEncoded 响应体按字符串返回（生成器端 MethodGenerator 不走 JSON 反序列化）。
+                    if (serializationMethod is "Xml" or "FormUrlEncoded")
                         return;
 
                     if (!IsCovered(responseElemNamed, coveredTypes))
@@ -653,7 +664,8 @@ internal static class AotDtoCoverageAnalyzer
                 return;
 
             // XML 序列化方法豁免：响应端用 XML 反序列化，不需要 JsonSerializerContext 覆盖。
-            if (GetMethodSerializationMethod(method) is "Xml")
+            // [P1-7] FormUrlEncoded 响应也不走 JSON 反序列化（响应体按字符串返回），同样豁免。
+            if (serializationMethod is "Xml" or "FormUrlEncoded")
                 return;
 
             // 3) 其余才做覆盖判定
@@ -666,6 +678,21 @@ internal static class AotDtoCoverageAnalyzer
                     interfaceSymbol.Name,
                     method.Name,
                     responseType.ToDisplayString()));
+            }
+            // [P0-2] 多态覆盖校验：类型声明了 [JsonDerivedType] 但派生类型未被 Context 覆盖 → AOT 下反序列化派生实例会抛异常
+            else if (IsCovered(responseType, coveredTypes) && HasJsonDerivedTypeDeclaration(responseType))
+            {
+                var uncoveredDerived = GetUncoveredDerivedTypes(responseType, coveredTypes);
+                if (uncoveredDerived.Count > 0)
+                {
+                    diagnostics.Add(Diagnostic.Create(
+                        Diagnostics.AotDtoNotCoveredByContext,
+                        method.Locations.FirstOrDefault(),
+                        TypeProps(responseType),
+                        interfaceSymbol.Name,
+                        method.Name,
+                        responseType.ToDisplayString() + $"（基类声明了 [JsonDerivedType] 但派生类型 [{string.Join(", ", uncoveredDerived.Select(t => t.Name))}] 未被 Context 覆盖，AOT 下反序列化将抛 NotSupportedException）"));
+                }
             }
         }
     }
@@ -786,4 +813,35 @@ internal static class AotDtoCoverageAnalyzer
 
         return returnType.TypeArguments[0];
     }
+
+        /// <summary>
+        /// [P0-2] 判断类型自身是否声明了 [JsonDerivedType] 特性。
+        /// 只有声明了 [JsonDerivedType] 的类型才参与 STJ 多态序列化，
+        /// 未声明的非 sealed 类不会被 STJ 按多态处理，无需检查派生类型覆盖。
+        /// </summary>
+        private static bool HasJsonDerivedTypeDeclaration(INamedTypeSymbol type)
+        {
+            return type.GetAttributes().Any(a => a.AttributeClass?.Name == "JsonDerivedTypeAttribute");
+        }
+
+        /// <summary>
+        /// [P0-2] 获取类型通过 [JsonDerivedType] 声明的派生类型中未被 Context 覆盖的类型。
+        /// </summary>
+        private static List<INamedTypeSymbol> GetUncoveredDerivedTypes(INamedTypeSymbol type, HashSet<INamedTypeSymbol> coveredTypes)
+        {
+            var result = new List<INamedTypeSymbol>();
+            foreach (var attr in type.GetAttributes())
+            {
+                if (attr.AttributeClass?.Name != "JsonDerivedTypeAttribute")
+                    continue;
+                // [JsonDerivedType(typeof(Dog))] 的第一个构造参数是派生类型
+                if (attr.ConstructorArguments.Length > 0 &&
+                    attr.ConstructorArguments[0].Value is INamedTypeSymbol derivedType)
+                {
+                    if (!IsCovered(derivedType, coveredTypes))
+                        result.Add(derivedType);
+                }
+            }
+            return result;
+        }
 }

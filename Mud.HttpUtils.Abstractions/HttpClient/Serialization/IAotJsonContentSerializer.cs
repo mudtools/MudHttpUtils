@@ -11,12 +11,19 @@ using System.Text.Json.Serialization.Metadata;
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// 可选能力接口：基于 <see cref="JsonTypeInfo{T}"/> 的 AOT 安全 JSON 序列化快车道。
+/// 基于 <see cref="JsonTypeInfo{T}"/> 的 AOT 安全 JSON 序列化快车道接口。
 /// </summary>
 /// <remarks>
 /// <para>
 /// 与 <see cref="ISynchronousContentSerializer"/> / <see cref="IStreamingContentSerializer"/> 同属
 /// "可选能力接口" 范式：实现者通常同时实现 <see cref="IHttpContentSerializer"/>，但本接口不强制继承。
+/// </para>
+/// <para>
+/// <b>接线状态</b>：默认实现 <c>SystemTextJsonContentSerializer</c> 已实现本接口，
+/// 生成器产出的调用点经 <c>IHttpContentSerializer</c> 的 options 槽位传入 <c>JsonTypeInfo&lt;T&gt;</c>
+/// （见 <c>ToHttpContent&lt;T&gt;(T, object?)</c> 和 <c>Deserialize&lt;T&gt;(string, object?)</c> 的
+/// <c>JsonTypeInfo&lt;T&gt;</c> 分支），运行时接线已存在。
+/// 自定义 <see cref="IHttpContentSerializer"/> 实现者可选实现本接口以获得快车道能力。
 /// </para>
 /// <para>
 /// <b>为什么需要它</b>：<see cref="IHttpContentSerializer"/> 的泛型方法依赖注入的
@@ -26,7 +33,7 @@ namespace Mud.HttpUtils;
 /// 实现零反射、零动态代码的序列化，且不依赖运行时的 resolver 组合顺序。
 /// </para>
 /// <para>
-/// 调用方应通过能力探测（<c>serializer as IAotJsonContentSerializer</c>）选择快车道；
+/// 调用方可通过能力探测（<c>serializer as IAotJsonContentSerializer</c>）选择快车道；
 /// 未实现时回退到 <see cref="IHttpContentSerializer"/> 的 options 路径。
 /// </para>
 /// </remarks>

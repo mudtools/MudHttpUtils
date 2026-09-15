@@ -34,7 +34,9 @@ namespace Mud.HttpUtils;
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     WriteIndented = false)]
 [JsonSerializable(typeof(Dictionary<string, string>))]
-[JsonSerializable(typeof(Dictionary<string, object>))]
+// [P1-6] 移除 Dictionary<string, object> 注册：源生成 typeof(object) 元数据在 Native AOT 下
+// 对非基元运行时值抛 NotSupportedException。库内无调用方。消费方如需 object 值字典，
+// 请自行在 Context 上挂 ObjectToInferredTypesConverter。
 internal partial class MudHttpJsonContext : JsonSerializerContext
 {
 }

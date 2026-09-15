@@ -25,14 +25,17 @@
   -->
 
   <PropertyGroup>
-    <!-- [AOT v4 Phase 17.1 / D16 / T3 修复] 判定语义与 Mud.HttpUtils.Generator 的 AotModeResolver 保持一致：
-       显式 MudAotRuntimeMode（aot / jit）> PublishAot > 关闭。
-       IsAotCompatible=true（仅声明 AOT 友好、不实际发布 AOT）不自动激活，避免库项目误触发工具未安装警告。
-       消费方仍可用 <MudEnableJsonContextScaffolder>true</MudEnableJsonContextScaffolder> 显式覆盖，
-       或用 <MudEnableJsonContextScaffolder>false</MudEnableJsonContextScaffolder> 显式禁用。
+<!-- [AOT v4 Phase 17.1 / D16 / T3 修复] 判定语义与 Mud.HttpUtils.Generator 的 AotModeResolver 保持一致：
+显式 MudAotRuntimeMode（aot / jit）> PublishAot > 关闭。
+IsAotCompatible=true（仅声明 AOT 友好、不实际发布 AOT）不自动激活，避免库项目误触发工具未安装警告。
+消费方仍可用 <MudEnableJsonContextScaffolder>true</MudEnableJsonContextScaffolder> 显式覆盖，
+或用 <MudEnableJsonContextScaffolder>false</MudEnableJsonContextScaffolder> 显式禁用。
 
-       注意：显式 jit 必须【先于】PublishAot 判定——AotModeResolver 中显式 jit 会否决 PublishAot
-       （JIT 部署的项目即使携带 PublishAot 属性也不应激活脚手架），否则两处口径再次分叉。 -->
+注意：显式 jit 必须【先于】PublishAot 判定——AotModeResolver 中显式 jit 会否决 PublishAot
+（JIT 部署的项目即使携带 PublishAot 属性也不应激活脚手架），否则两处口径再次分叉。
+
+[P2-5] 语义漂移防线：此处的三态判定是 AotModeResolver 的 MSBuild DSL 复刻。
+改动判定语义时必须同步：AotModeResolver.cs（类注释）+ ci.yml 探针用例（aot-publish / aot-packageref 作业）。 -->
     <MudEnableJsonContextScaffolder Condition="'$(MudEnableJsonContextScaffolder)' == '' AND '$(MudAotRuntimeMode)' == 'jit'">false</MudEnableJsonContextScaffolder>
     <MudEnableJsonContextScaffolder Condition="'$(MudEnableJsonContextScaffolder)' == '' AND '$(MudAotRuntimeMode)' == 'aot'">true</MudEnableJsonContextScaffolder>
     <MudEnableJsonContextScaffolder Condition="'$(MudEnableJsonContextScaffolder)' == '' AND '$(PublishAot)' == 'true'">true</MudEnableJsonContextScaffolder>
@@ -43,6 +46,11 @@
     <MudJsonContextToolCommand Condition="'$(MudJsonContextToolCommand)' == ''">mud-jsonctx</MudJsonContextToolCommand>
   </PropertyGroup>
 
+  <!-- [P0-1 修复] 声明生成文件 Item，供增量判定与失败清理使用 -->
+  <ItemGroup>
+    <MudGeneratedContextFiles Include="$(MudJsonContextOutputPath)\**\*.g.cs" />
+  </ItemGroup>
+
   <!-- [重要] 重入保护：脚手架内部使用 MSBuildWorkspace 评估本项目，而 MSBuildWorkspace 会发起
        "设计时构建"（DesignTimeBuild=true）并同样执行 BeforeCompile 目标。若本目标不加防护，
        嵌套评估会再次触发本目标 → 再次运行脚手架 → 无限递归（表现为构建不断派生 dotnet 进程、
@@ -52,6 +60,8 @@
             在 MSBuild 属性层面表现为 'true'）。 -->
   <Target Name="MudGenerateJsonContext"
           BeforeTargets="BeforeCompile"
+          Inputs="$(MSBuildProjectFullPath)"
+          Outputs="@(MudGeneratedContextFiles->'%(FullPath)')"
           Condition="'$(MudEnableJsonContextScaffolder)' == 'true' AND '$(DesignTimeBuild)' != 'true' AND '$(MudJsonContextScaffolderRunning)' != 'true'">
     <Message Importance="high" Text="[Mud] 运行 JsonContextScaffolder 生成 JSON Context（pre-build）" />
     <!-- 脚手架内部使用 MSBuildWorkspace 重新评估本项目，需清除外层构建注入的 MSBuild 环境变量，
@@ -61,9 +71,12 @@
           ContinueOnError="true">
       <Output TaskParameter="ExitCode" PropertyName="_MudJsonCtxExitCode" />
     </Exec>
+    <!-- [P0-1 修复] 生成失败即清理陈旧产物：宁可编译期缺类型报错，不可让旧 Context 静默参与编译 -->
+    <Delete Files="@(MudGeneratedContextFiles)"
+            Condition="'$(_MudJsonCtxExitCode)' != '0' AND '$(_MudJsonCtxExitCode)' != ''" />
     <Message Condition="'$(_MudJsonCtxExitCode)' != '0' AND '$(_MudJsonCtxExitCode)' != ''"
              Importance="high"
-             Text="[Mud] JsonContextScaffolder 未成功执行（退出码 $(_MudJsonCtxExitCode)）。请确认已安装工具：dotnet tool install --global Mud.HttpUtils.JsonContextScaffolder；或手动运行并将生成的 .g.cs 签入版本控制。" />
+             Text="[Mud] JsonContextScaffolder 执行失败（退出码 $(_MudJsonCtxExitCode)），已清理陈旧 Context 产物。请安装工具后重试；或在项目 .csproj 中设置 MudJsonContextOutputPath 指向源码目录（如 Generated\）即可将产物纳入版本控制。" />
   </Target>
 
   <Target Name="MudIncludeGeneratedJsonContext"

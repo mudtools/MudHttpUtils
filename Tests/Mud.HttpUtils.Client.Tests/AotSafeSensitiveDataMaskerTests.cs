@@ -119,10 +119,10 @@ public class AotSafeSensitiveDataMaskerTests
         result.Should().Be("[TestPersonDto]");
     }
 
-    // === T5 验收：派生类型在 fallback 开启时走基类规则 ===
+    // === T5 验收：派生类型在 fallback 开启时降级为类型占位输出（P0-3 修复） ===
 
     [Fact]
-    public void DerivedType_FallbackEnabled_UsesBaseRule()
+    public void DerivedType_FallbackEnabled_ReturnsTypeOnlyFallback()
     {
         var capture = new LogCapture();
         var masker = new AotSafeSensitiveDataMasker(capture, enableBaseTypeFallback: true);
@@ -135,7 +135,9 @@ public class AotSafeSensitiveDataMaskerTests
 
         var result = masker.MaskObject(new TestDerivedDto { BaseId = 42, ExtraField = "extra" });
 
-        result.Should().Contain("\"baseId\":42");
+        // [P0-3] 回退命中时降级为类型占位输出，不输出任何字段值
+        result.Should().Be("[TestDerivedDto, BaseType=TestBaseDto]");
+        result.Should().NotContain("baseId");
         result.Should().NotContain("extra");
 
         // 派生类型应触发一次性告警（引导补注册专用规则）
@@ -164,7 +166,7 @@ public class AotSafeSensitiveDataMaskerTests
     }
 
     [Fact]
-    public void DerivedType_FallbackEnabled_DeepHierarchy_WalksBaseChain()
+    public void DerivedType_FallbackEnabled_DeepHierarchy_ReturnsTypeOnly()
     {
         var masker = new AotSafeSensitiveDataMasker(
             logger: null,
@@ -179,7 +181,9 @@ public class AotSafeSensitiveDataMaskerTests
         var result = masker.MaskObject(
             new TestDeepDerivedDto { GrandBaseId = 99, MidId = 5, LeafId = 1 });
 
-        result.Should().Contain("\"grandBaseId\":99");
+        // [P0-3] 深层继承链同样降级为类型占位输出
+        // TestMidDto 未注册，遍历到 TestGrandBaseDto 才命中
+        result.Should().Be("[TestDeepDerivedDto, BaseType=TestGrandBaseDto]");
     }
 
     // === T5 评审补充：已注册类型的精确匹配不受 fallback 影响 ===
@@ -238,6 +242,72 @@ public class AotSafeSensitiveDataMaskerTests
         {
             result.Should().Contain("\"id\":");
         }
+    }
+
+    // === P1-8 Golden 测试：AotSafeSensitiveDataMasker.Mask 与 DefaultSensitiveDataMasker.Mask 逐字节对拍 ===
+    // 安全契约锁定：两实现的 Mask 方法必须产出完全一致的字符串，防止行为漂移。
+    // 任一侧 Mask 逻辑改动后必须同步对拍期望值，否则此测试变红。
+
+#pragma warning disable CS0618 // DefaultSensitiveDataMasker 标注了 [Obsolete]，golden 对拍需使用
+    private static readonly DefaultSensitiveDataMasker s_reflectionMasker = new();
+#pragma warning restore CS0618
+
+    [Theory]
+    [InlineData("secret123", SensitiveDataMaskMode.Mask, 2, 2, "se***23")]
+    [InlineData("ab", SensitiveDataMaskMode.Mask, 2, 2, "***")]
+    [InlineData("", SensitiveDataMaskMode.Hide, 2, 2, "***")]
+    [InlineData("abcdef", SensitiveDataMaskMode.TypeOnly, 2, 2, "[String, Length=6]")]
+    [InlineData("HelloWorld", SensitiveDataMaskMode.Mask, 2, 3, "He***rld")]
+    [InlineData("HelloWorld", SensitiveDataMaskMode.Hide, 2, 2, "***")]
+    [InlineData("HelloWorld", SensitiveDataMaskMode.TypeOnly, 2, 2, "[String, Length=10]")]
+    [InlineData("x", SensitiveDataMaskMode.Mask, 2, 2, "***")]
+    [InlineData("1234567890", SensitiveDataMaskMode.Mask, 3, 4, "123***7890")]
+    [InlineData("", SensitiveDataMaskMode.Mask, 2, 2, "***")]
+    [InlineData("LongEnoughString", SensitiveDataMaskMode.Mask, 0, 0, "***")]
+    [InlineData("LongEnoughString", SensitiveDataMaskMode.Mask, 4, 4, "Long***ring")]
+    public void Mask_GoldenParity_AotVsReflection_ByteForByte(
+        string value, SensitiveDataMaskMode mode, int prefix, int suffix, string expected)
+    {
+        var aotMasker = new AotSafeSensitiveDataMasker();
+        var aotResult = aotMasker.Mask(value, mode, prefix, suffix);
+        var reflectionResult = s_reflectionMasker.Mask(value, mode, prefix, suffix);
+
+        aotResult.Should().Be(expected, "AOT 实现应匹配 golden 期望值");
+        reflectionResult.Should().Be(expected, "反射实现应匹配 golden 期望值");
+        aotResult.Should().Be(reflectionResult, "两实现必须逐字节一致");
+    }
+
+    [Theory]
+    [InlineData(null, SensitiveDataMaskMode.Mask, 2, 2, "***")]
+    [InlineData(null, SensitiveDataMaskMode.Hide, 2, 2, "***")]
+    [InlineData(null, SensitiveDataMaskMode.TypeOnly, 2, 2, "***")]
+    public void Mask_GoldenParity_NullValue_BothReturnMaskString(
+        string? value, SensitiveDataMaskMode mode, int prefix, int suffix, string expected)
+    {
+        var aotMasker = new AotSafeSensitiveDataMasker();
+        var aotResult = aotMasker.Mask(value!, mode, prefix, suffix);
+        var reflectionResult = s_reflectionMasker.Mask(value!, mode, prefix, suffix);
+
+        aotResult.Should().Be(expected);
+        reflectionResult.Should().Be(expected);
+        aotResult.Should().Be(reflectionResult);
+    }
+
+    [Theory]
+    [InlineData("ab", SensitiveDataMaskMode.Mask, 1, 1, "***")]              // length == prefix+suffix → 全掩码
+    [InlineData("abc", SensitiveDataMaskMode.Mask, 1, 2, "***")]             // length == prefix+suffix → 全掩码
+    [InlineData("abcd", SensitiveDataMaskMode.Mask, 2, 2, "***")]            // length == prefix+suffix → 全掩码
+    [InlineData("abcde", SensitiveDataMaskMode.Mask, 2, 2, "ab***de")]       // length 5 > 4 → 部分保留
+    public void Mask_GoldenParity_BoundaryConditions(
+        string value, SensitiveDataMaskMode mode, int prefix, int suffix, string expected)
+    {
+        var aotMasker = new AotSafeSensitiveDataMasker();
+        var aotResult = aotMasker.Mask(value, mode, prefix, suffix);
+        var reflectionResult = s_reflectionMasker.Mask(value, mode, prefix, suffix);
+
+        aotResult.Should().Be(expected, "边界条件：长度 <= prefix+suffix 时应全掩码");
+        reflectionResult.Should().Be(expected);
+        aotResult.Should().Be(reflectionResult);
     }
 
     // === 测试 DTO ===

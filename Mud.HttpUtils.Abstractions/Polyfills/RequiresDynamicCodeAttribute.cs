@@ -5,7 +5,9 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
-#if !NET6_0_OR_GREATER
+// [P2-1] guard 修正：RequiresDynamicCodeAttribute 自 .NET 7 起 in-box（.NET 6 不包含此 API）。
+// 原 guard !NET6_0_OR_GREATER 会在 net6.0 下跳过 polyfill 定义，导致 net6.0 缺失此类型。
+#if !NET7_0_OR_GREATER
 // ReSharper disable once CheckNamespace
 namespace System.Diagnostics.CodeAnalysis;
 

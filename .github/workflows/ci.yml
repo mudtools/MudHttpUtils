@@ -171,6 +171,10 @@ jobs:
       - name: Publish AOT FullTrim (net10.0)
         run: dotnet publish Demos/AotFullTrimVerificationDemo/AotFullTrimVerificationDemo.csproj -c Release -f net10.0 -r ${{ matrix.rid }} -p:AotStrictMode=true
 
+      # [P2-4] FullTrim 补 net8.0：net8/net10 裁剪器行为有差异，net8 是当前 LTS 主力。
+      - name: Publish AOT FullTrim (net8.0)
+        run: dotnet publish Demos/AotFullTrimVerificationDemo/AotFullTrimVerificationDemo.csproj -c Release -f net8.0 -r ${{ matrix.rid }} -p:AotStrictMode=true
+
       - name: Run AOT binary (net10.0) and verify AOT_OK
         shell: bash
         run: |
@@ -250,6 +254,33 @@ jobs:
                 echo "✓ Scene $SCENE executed (FullTrim)"
               else
                 echo "✗ Scene $SCENE NOT found in output (FullTrim)"
+                exit 1
+              fi
+            done
+          else
+            echo "Binary not found at $BIN_PATH"
+            exit 1
+          fi
+
+      # [P2-4] 运行 FullTrim net8.0 验证二进制并断言 AOT_OK
+      - name: Run AOT FullTrim binary (net8.0) and verify AOT_OK
+        shell: bash
+        run: |
+          BIN_PATH="Demos/AotFullTrimVerificationDemo/bin/Release/net8.0/${{ matrix.rid }}/publish/AotFullTrimVerificationDemo"
+          if [ -f "$BIN_PATH" ]; then
+            OUTPUT=$("$BIN_PATH" 2>&1 || true)
+            echo "$OUTPUT"
+            if echo "$OUTPUT" | grep -q "AOT_OK"; then
+              echo "✓ AOT FullTrim verification passed (net8.0)"
+            else
+              echo "✗ FullTrim verification FAILED (net8.0) - AOT_OK not found in output"
+              exit 1
+            fi
+            for SCENE in "JsonSerialization" "AotSafeMasker" "EncryptContent" "QueryParameters" "GeneratedContext"; do
+              if echo "$OUTPUT" | grep -Fq "[SCENE] $SCENE"; then
+                echo "✓ Scene $SCENE executed (FullTrim net8.0)"
+              else
+                echo "✗ Scene $SCENE NOT found in output (FullTrim net8.0)"
                 exit 1
               fi
             done

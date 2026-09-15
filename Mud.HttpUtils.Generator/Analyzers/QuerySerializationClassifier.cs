@@ -30,6 +30,11 @@ namespace Mud.HttpUtils.Analyzers;
 /// 已知限制：<c>object</c> 被视作简单类型（与生成器 <c>TypeDetectionHelper.IsSimpleType</c> 对齐），
 /// 因此 <c>[Query] object</c> 不报 AOT005。
 /// </para>
+/// <para>
+/// [P2-3] 契约锁定：本方法与 <c>TypeDetectionHelper.IsSimpleType</c> 的判定一致性由
+/// <c>QuerySerializationClassifierContractTests.IsSimple_ParityBetweenClassifierAndTypeDetectionHelper</c> 锁定。
+/// 新增简单类型时须同步两处判定，否则契约测试变红。
+/// </para>
 /// </remarks>
 internal static class QuerySerializationClassifier
 {

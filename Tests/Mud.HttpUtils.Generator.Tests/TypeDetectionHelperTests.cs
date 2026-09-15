@@ -50,6 +50,7 @@ public class TypeDetectionHelperTests
     [InlineData("int[]", true)]
     [InlineData("string[]", true)]
     [InlineData("double[]", true)]
+    [InlineData("object[]", true)]  // [P2-3] object 是简单类型，object[] 是简单数组
     public void IsSimpleType_SimpleArrays_ReturnsTrue(string typeName, bool expected)
     {
         TypeDetectionHelper.IsSimpleType(typeName).Should().Be(expected);
@@ -61,7 +62,7 @@ public class TypeDetectionHelperTests
     [InlineData("UserData", false)]
     [InlineData("Stream", false)]
     [InlineData("CancellationToken", false)]
-    [InlineData("object[]", false)]
+    // [P2-3] object[] 现在是简单数组（object 被加入简单类型列表，与 QuerySerializationClassifier.IsSimple 对齐）
     public void IsSimpleType_ComplexTypes_ReturnsFalse(string typeName, bool expected)
     {
         TypeDetectionHelper.IsSimpleType(typeName).Should().Be(expected);

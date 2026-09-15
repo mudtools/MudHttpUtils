@@ -210,3 +210,37 @@
 | BC-15 | `GetAllApps` 返回快照数组 | 依赖 live 视图"自动看到新注册项"的宿主会观察到变化 | 改用 `ConfigurationChanged` 事件 |
 | BC-16 | keyed 客户端从 `Transient` 改为 `Singleton` | 同一命名客户端的每次解析返回同一实例 | 如需每次新实例，使用 `AddMudHttpClient(..., optionsLifetime: Transient)` |
 | BC-17 | 生成代码的 `Current` 属性移除 setter，改用 `SwitchTo` 方法 | 直接写 `generatedClient.Current = value` 编译失败 | 改用 `generatedClient.SwitchTo(value)` 或 `UseApp`/`BeginScope` |
+
+---
+
+### AOT 支持体系 Bug 修复与功能完善（2026-09，依据 `.docs/AOT支持体系Bug修复与功能完善方案_20260915.md`）
+
+> 19 项（P0×4 / P1×8 / P2×7），含多维评审结论。涉及包：`Mud.HttpUtils.Generator`、`Mud.HttpUtils.Attributes`、`Mud.HttpUtils.Client`、`Mud.HttpUtils.Abstractions`。
+
+#### P0 正确性缺陷修复
+
+- **P0-1 包内 targets 陈旧产物清理**（`Mud.HttpUtils.Attributes`）：脚手架生成失败时删除输出目录中的陈旧 `.g.cs`，使"工具坏了"呈现为编译期缺类型错误而非运行时崩溃。补齐 `Inputs`/`Outputs` 增量判定。
+- **P0-2 AOT004 多态覆盖校验**（`Mud.HttpUtils.Generator`）：类型声明了 `[JsonDerivedType]` 但派生类型未被 Context 覆盖时报 AOT004，防止 AOT 下反序列化派生实例抛 `NotSupportedException`。
+- **P0-3 `AotSafeSensitiveDataMasker` 基类回退漏脱敏收窄**（`Mud.HttpUtils.Client`）：`enableBaseTypeFallback=true` 时回退命中降级为 `[TypeName, BaseType=BaseType]` 类型占位输出，不再使用基类规则（防止派生类新增敏感字段明文输出）。
+- **P0-4 AOT004/005 空门控漏洞修复**（`Mud.HttpUtils.Generator`）：删除 `coveredTypes.Count == 0` 提前返回门控，空 Context 下所有 DTO 正确报 AOT004。
+
+#### P1 能力完善与性能
+
+- **P1-1 `IAotJsonContentSerializer` doc 注释更新**（`Mud.HttpUtils.Abstractions`）：接口注释由"可选能力"改为"运行时已默认接线"，明确 `SystemTextJsonContentSerializer` 已实现且生成器调用链已通过 options 槽位传入 `JsonTypeInfo<T>`。
+- **P1-2 AOT007 廉价预门控**（`Mud.HttpUtils.Generator`）：`AotXmlRejectionAnalyzer` 进入全量分析前做 O(语法树文本) 预筛，无 `SerializationMethod`/`ResponseContentType` 信号直接返回。
+- **P1-3 AOT006 本地标注预门控**（`Mud.HttpUtils.Generator`）：`AotDtoCoverageAnalyzer` 先做语法树探测收集本地标注类型，空则直接返回，复用缓存避免二次遍历。
+- **P1-4 `ToHttpContent<T>` AOT 路径改 Utf8Bytes**（`Mud.HttpUtils.Client`）：AOT 下默认走 `SerializeToUtf8Bytes → ByteArrayContent`，避免 string→UTF8 双次编码。JIT 保持 `StringContent` 既有语义。
+- **P1-5 `GetMethodSerializationMethod` 调用收敛**（`Mud.HttpUtils.Generator`）：同方法内 4 次调用收敛为 1 次局部变量。
+- **P1-6 移除 `Dictionary<string, object>` 注册**（`Mud.HttpUtils.Client`）：`MudHttpJsonContext` 删除 `typeof(Dictionary<string, object>)` 源生成注册，消除 AOT 下对非基元值抛 `NotSupportedException` 的潜伏雷。
+- **P1-7 FormUrlEncoded 响应豁免对齐**（`Mud.HttpUtils.Generator`）：响应端数组解包分支补齐 `FormUrlEncoded` 豁免，与 Body 端口径对齐。FormUrlEncoded 响应不走 JSON 反序列化。
+- **P1-8 脱敏字符串行为 golden 测试**（`Tests`）：`Mask` 方法双实现（AOT vs 反射）逐字节对拍，锁定安全契约。
+
+#### P2 工程化加固
+
+- **P2-1 Polyfill guard 修正**（`Mud.HttpUtils.Abstractions`）：`RequiresDynamicCodeAttribute` guard 从 `!NET6_0_OR_GREATER` 修正为 `!NET7_0_OR_GREATER`（该 API 自 .NET 7 起 in-box）。`XmlSerialize.cs` 删除四处冗余内层 `#if NET6_0_OR_GREATER` guard。
+- **P2-2 脚手架 CLI 整洁度**（`Tools`）：删除 no-op `--scan-http-client-api` 分支，help 文本同步。
+- **P2-3 QuerySerializationClassifier 契约级对齐测试**（`Tests`）：新增对拍测试枚举代表性类型，锁定 `IsSimple` 与 `TypeDetectionHelper.IsSimpleType` 判定一致性。
+- **P2-4 CI FullTrim 补 net8.0**（`.github/workflows`）：FullTrim 验证从仅 net10.0 扩展到 net8.0 + net10.0。
+- **P2-5 AotModeResolver / targets 语义漂移防线文档化**（`Mud.HttpUtils.Generator` + `Mud.HttpUtils.Attributes`）：在 `AotModeResolver.cs` 类注释与 targets 注释中互引对方 + CI 探针名。
+- **P2-6 归并说明**：与 P1-7 合并。
+- **P2-7 CHANGELOG 与文档同步**：本条目。

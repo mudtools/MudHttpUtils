@@ -10,6 +10,11 @@ namespace Mud.HttpUtils;
 /// <summary>
 /// 类型检测工具类
 /// </summary>
+/// <remarks>
+/// [P2-3] 契约锁定：<see cref="IsSimpleType(string)"/> 与 <c>QuerySerializationClassifier.IsSimple</c>
+/// 的判定一致性由 <c>QuerySerializationClassifierContractTests.IsSimple_ParityBetweenClassifierAndTypeDetectionHelper</c> 锁定。
+/// 新增简单类型时须同步两处判定。
+/// </remarks>
 internal static class TypeDetectionHelper
 {
     /// <summary>
@@ -26,6 +31,7 @@ internal static class TypeDetectionHelper
             or "DateTime" or "System.DateTime" or "Guid" or "System.Guid"
             or "byte" or "sbyte" or "short" or "ushort" or "uint" or "ulong"
             or "char"
+            or "object" or "System.Object"
             or "DateTimeOffset" or "System.DateTimeOffset"
             or "TimeSpan" or "System.TimeSpan"
             or "DateOnly" or "System.DateOnly"

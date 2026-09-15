@@ -86,6 +86,25 @@ internal static class AotXmlRejectionAnalyzer
 
         var serializationMethodAttr = compilation.GetTypeByMetadataName(SerializationMethodAttributeFullName);
 
+        // [P1-2] 廉价预门控：全语法树文本不含 "SerializationMethod" 即无方法/接口级 Xml 特性，
+        // 且无 [ResponseContentType] 等 content-type 信号 → 无 XML 可能，直接返回（零漏报超集近似）。
+        // 使用 GetText().ToString() 避免 ToString() 对大语法树的额外 allocations。
+        var mayUseXml = false;
+        foreach (var tree in compilation.SyntaxTrees)
+        {
+            if (cancellationToken.IsCancellationRequested)
+                return diagnostics.ToImmutable();
+            var text = tree.GetText().ToString();
+            if (text.Contains("SerializationMethod", StringComparison.Ordinal) ||
+                text.Contains("ResponseContentType", StringComparison.Ordinal))
+            {
+                mayUseXml = true;
+                break;
+            }
+        }
+        if (!mayUseXml)
+            return diagnostics.ToImmutable();
+
         // 复用 AotDtoCoverageAnalyzer 已验证的遍历模式：从 SyntaxTrees 获取 InterfaceDeclarationSyntax，
         // 再通过 SemanticModel.GetDeclaredSymbol 获取 INamedTypeSymbol。
         foreach (var syntaxTree in compilation.SyntaxTrees)

@@ -76,7 +76,8 @@ public class AotSafeSensitiveDataMasker : ISensitiveDataMasker
     /// <param name="logger">日志记录器（可选）。未注册类型命中时发出一次性告警。</param>
     /// <param name="enableBaseTypeFallback">
     /// 是否启用基类注册兜底（默认 false）。
-    /// 开启时：未注册但存在可赋值的已注册基类时使用基类规则并告警。
+    /// [P0-3 修复] 开启时：未注册但存在可赋值的已注册基类时，降级为类型占位输出（TypeOnly）而非使用基类规则，
+    /// 防止派生类新增敏感字段明文输出。告警引导用户注册派生类型专用规则。
     /// </param>
     public AotSafeSensitiveDataMasker(ILogger? logger = null, bool enableBaseTypeFallback = false)
     {
@@ -157,21 +158,23 @@ public class AotSafeSensitiveDataMasker : ISensitiveDataMasker
             return masker(obj);
 
         // [T5 修复] 基类注册兜底（可选开关）
+        // [P0-3 修复] 回退命中时降级为类型占位输出（TypeOnly），而非使用基类规则，
+        // 防止派生类新增敏感字段不在基类规则视野内导致明文输出。
         if (_enableBaseTypeFallback)
         {
             var baseType = type.BaseType;
             while (baseType != null)
             {
-                if (_maskers.TryGetValue(baseType, out var baseMasker))
+                if (_maskers.TryGetValue(baseType, out _))
                 {
                     WarnUnregistered(
-                        $"AotSafeSensitiveDataMasker: 类型 {type} 未注册脱敏规则，已回退到基类 {baseType} 规则。请调用 Register<{type.Name}>() 注册专用规则。",
+                        $"AotSafeSensitiveDataMasker: 类型 {type} 未注册脱敏规则，检测到基类 {baseType} 已注册，为防漏脱敏已降级为类型占位输出。请调用 Register<{type.Name}>() 注册专用规则。",
                         type,
-                        "AotSafeSensitiveDataMasker: 类型 {Type} 未注册脱敏规则，已回退到基类 {BaseType} 规则。请调用 Register<{TypeName}>() 注册专用规则。",
+                        "AotSafeSensitiveDataMasker: 类型 {Type} 未注册脱敏规则，检测到基类 {BaseType} 已注册，为防漏脱敏已降级为类型占位输出。请调用 Register<{TypeName}>() 注册专用规则。",
                         type,
                         baseType,
                         type.Name);
-                    return baseMasker(obj);
+                    return $"[{type.Name}, BaseType={baseType.Name}]";
                 }
                 baseType = baseType.BaseType;
             }

@@ -804,6 +804,25 @@ public class ContractFileUploadRequest { ... }
 
 详见 [`Mud.HttpUtils.JsonContextScaffolder` 工具文档](../Tools/Mud.HttpUtils.JsonContextScaffolder/README.md) 与 [`Mud.HttpUtils.Generator` 文档](../Mud.HttpUtils.Generator/README.md#aot-json-序列化诊断aot) 的 AOT 诊断章节。
 
+### 多态序列化与 `[JsonDerivedType]`（P0-2）
+
+当 `[HttpClientApi]` 接口方法的响应类型声明为基类，且基类标注了 `[JsonDerivedType]` 参与多态序列化时，**所有声明的派生类型也必须被 `JsonSerializerContext` 覆盖**。否则 AOT 下反序列化派生实例会抛 `NotSupportedException`。
+
+```csharp
+// 正确：Dog 已被 Context 覆盖
+[JsonDerivedType(typeof(Dog))]
+public class Animal { public string Name { get; set; } }
+public class Dog : Animal { public string Breed { get; set; } }
+
+// AOT004 会报：Dog 未被 Context 覆盖
+```
+
+> 未标注 `[JsonDerivedType]` 的非 sealed 类不会被 STJ 按多态处理，无需额外检查。
+
+### AOT 安全脱敏（P0-3）
+
+`AotSafeSensitiveDataMasker` 的 `enableBaseTypeFallback` 开关在开启时，未注册的派生类型回退命中基类规则后**降级为类型占位输出** `[TypeName, BaseType=BaseTypeName]`，而非使用基类规则——防止派生类新增敏感字段不在基类规则视野内导致明文输出。请为每个需要脱敏的派生类型显式调用 `Register<T>()`。
+
 ## QueryAttribute 详解
 
 | 属性           | 类型     | 默认值 | 说明                                                                 |

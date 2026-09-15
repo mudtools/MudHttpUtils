@@ -99,6 +99,17 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
         }
 #endif
         var opts = ResolveOptions(options);
+#if NET5_0_OR_GREATER
+        // [P1-4] 纵深防御：AOT 下默认走 SerializeToUtf8Bytes → ByteArrayContent，
+        // 避免 string→UTF8 双次编码。JIT 保持 StringContent 既有语义。
+        if (!System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported)
+        {
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(item, opts);
+            var content = new ByteArrayContent(bytes);
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+            return content;
+        }
+#endif
         var json = JsonSerializer.Serialize(item, opts);
         return new StringContent(json, Encoding.UTF8, "application/json");
     }

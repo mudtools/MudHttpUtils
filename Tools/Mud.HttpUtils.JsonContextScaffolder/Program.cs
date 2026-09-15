@@ -62,9 +62,6 @@ for (var i = 0; i < args.Length; i++)
         case "--auto-derived-types":
             autoDerivedTypes = true;
             break;
-        case "--scan-http-client-api":
-            scanHttpClientApi = true;
-            break;
         case "--no-scan-http-client-api":
             scanHttpClientApi = false;
             break;
@@ -207,7 +204,7 @@ static void PrintHelp()
                              注意：多态序列化（以【基类静态类型】序列化/反序列化派生实例）必须由基类
                              元数据携带 [JsonDerivedType]，该特性只能标注在用户类型声明上，生成文件
                              无法替用户类型附加——本开关不能替代它。
-      --scan-http-client-api  扫描 [HttpClientApi] 接口，自动发现返回类型和 [Body] 参数中的闭合泛型（默认开启）
+      --scan-http-client-api  扫描 [HttpClientApi] 接口，自动发现返回类型和 [Body] 参数中的闭合泛型（默认开启，此开关已废弃）
       --no-scan-http-client-api  禁用 [HttpClientApi] 接口扫描
       -h, --help             显示帮助
 

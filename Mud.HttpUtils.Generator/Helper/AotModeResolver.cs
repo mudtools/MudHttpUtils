@@ -24,6 +24,14 @@ internal enum AotRuntimeMode
 /// <summary>
 /// [F10] Native AOT 运行期模式的集中判定。
 /// <para>优先级：<c>MudAotRuntimeMode</c> 显式配置 &gt; <c>PublishAot</c> &gt; <c>IsAotCompatible</c>（仅降级提示）。</para>
+/// <para>
+/// [P2-5] 语义漂移防线：本类的三态判定语义在以下位置被复刻，修改时必须同步：
+/// <list type="bullet">
+/// <item><c>Mud.HttpUtils.Attributes/build/Mud.HttpUtils.JsonContextScaffolder.targets</c> — MSBuild DSL 复刻 <c>MudEnableJsonContextScaffolder</c> 判定</item>
+/// <item><c>.github/workflows/ci.yml</c> — aot-publish / aot-packageref 两个作业的探针用例</item>
+/// </list>
+/// 改动判定语义时，必须同步 targets 的 <c>MudEnableJsonContextScaffolder</c> 条件与 ci.yml 探针用例。
+/// </para>
 /// </summary>
 internal static class AotModeResolver
 {

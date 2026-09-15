@@ -940,6 +940,7 @@ services.AddSensitiveDataMasker<DefaultSensitiveDataMasker>(); // 反射读取 [
 - 通过 `AddMudHttpClientJsonContext(...)`（.NET 8+）注册消费方 `JsonSerializerContext`，由 `HttpContentSerializerFactory.BuildOptions` 自动与库内置 `MudHttpJsonContext.Default` 合并。
 - 配合 `Mud.HttpUtils.JsonContextScaffolder` 脚手架自动生成包含闭合泛型（如 `FeishuApiResult<T>`）的 `JsonSerializerContext`，或手动将 `[HttpJsonSerializable]` 标注类型加入 `JsonSerializerContext`。
 - `SystemTextJsonContentSerializer` 在 AOT 环境下仅使用源生成元数据，不在运行时反射。
+- `SystemTextJsonContentSerializer` 已实现 `IAotJsonContentSerializer` 接口（.NET 8+），生成器产出的调用点经 `IHttpContentSerializer` 的 options 槽位传入 `JsonTypeInfo<T>` 走快车道（`SerializeToUtf8Bytes → ByteArrayContent`）。AOT 下 `ToHttpContent<T>` 默认路径也走 Utf8Bytes 纵深防御（P1-4）。
 
 > 详见 [`Mud.HttpUtils.JsonContextScaffolder` 工具文档](../Tools/Mud.HttpUtils.JsonContextScaffolder/README.md) 与 [`Mud.HttpUtils.Abstractions` 文档](../Mud.HttpUtils.Abstractions/README.md#native-aot-支持) 的 AOT 章节。
 
