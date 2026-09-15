@@ -32,17 +32,11 @@ public class AsyncLocalAppContextSwitcher : IAppContextHolder
         return new AppContextScope(previous, this);
     }
 
-    private sealed class AppContextScope : IDisposable
+    private sealed class AppContextScope(IMudAppContext? previous, AsyncLocalAppContextSwitcher switcher) : IDisposable
     {
-        private readonly IMudAppContext? _previous;
-        private readonly AsyncLocalAppContextSwitcher _switcher;
+        private readonly IMudAppContext? _previous = previous;
+        private readonly AsyncLocalAppContextSwitcher _switcher = switcher;
         private int _disposed;
-
-        public AppContextScope(IMudAppContext? previous, AsyncLocalAppContextSwitcher switcher)
-        {
-            _previous = previous;
-            _switcher = switcher;
-        }
 
         public void Dispose()
         {
