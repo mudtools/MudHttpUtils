@@ -198,7 +198,27 @@ public static class HttpClientServiceCollectionExtensions
         // 注册 URL 参数格式化器（Phase 4.3）
         services.TryAddSingleton<IUrlParameterFormatter, DefaultUrlParameterFormatter>();
         services.TryAddSingleton<IUrlParameterKeyFormatter, CamelCaseUrlParameterKeyFormatter>();
+
+        // B4：挂接 AppManagerDiagnostics 诊断出口，使订阅者异常可被 ILogger 记录。
+        // 使用一次性工厂（结果丢弃）确保在容器构建阶段即完成挂接。
+        services.TryAddSingleton<AppManagerDiagnosticsWiring>(sp =>
+        {
+            var logger = sp.GetService<ILogger<DefaultAppManager<IMudAppContext>>>();
+            if (logger != null)
+            {
+                AppManagerDiagnostics.SubscriberFailed = (ex, appKey, changeType) =>
+                    logger.LogWarning(ex,
+                        "AppManager ConfigurationChanged 订阅者异常：AppKey={AppKey}, ChangeType={ChangeType}",
+                        AppKeyValidator.ToSafeText(appKey), changeType);
+            }
+            return new AppManagerDiagnosticsWiring();
+        });
     }
+
+    /// <summary>
+    /// 内部占位类型，用于驱动 AppManagerDiagnostics 的 DI 解析（一次性挂接）。
+    /// </summary>
+    internal sealed class AppManagerDiagnosticsWiring;
 
     /// <summary>
     /// 添加基于 <see cref="IHttpClientFactory"/> 的 <see cref="HttpClientFactoryEnhancedClient"/> 到依赖注入容器，
@@ -727,7 +747,8 @@ public static class HttpClientServiceCollectionExtensions
             throw new ArgumentNullException(nameof(services));
 
         services.TryAddSingleton<ICurrentUserContext, TContext>();
-        services.TryAddSingleton<IAppContextHolder, AsyncLocalAppContextSwitcher>();
+        // A1 修复：统一走 AddMudHttpAppContextHolder()，避免重复注册逻辑分叉。
+        services.AddMudHttpAppContextHolder();
         return services;
     }
 

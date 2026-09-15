@@ -511,6 +511,10 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         else
         {
             codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 HttpClient 包装实现类（瞬时服务）");
+            // A3：为默认模式接口自动注册 IAppManager<IMudAppContext> 工厂（TryAddSingleton，不覆盖宿主注册）。
+            // 消除 UseApp/BeginScope 在缺少 IAppManager 注册时抛 InvalidOperationException 的静默降级。
+            codeBuilder.AppendLine("            services.TryAddSingleton<global::Mud.HttpUtils.IAppManager<global::Mud.HttpUtils.IMudAppContext>>(sp =>");
+            codeBuilder.AppendLine("                new global::Mud.HttpUtils.DefaultAppManager<global::Mud.HttpUtils.IMudAppContext>());");
         }
 
         var httpClientName = $"{api.InterfaceName}_HttpClient";

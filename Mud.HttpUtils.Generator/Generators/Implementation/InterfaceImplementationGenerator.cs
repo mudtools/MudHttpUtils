@@ -447,6 +447,7 @@ internal class InterfaceImplementationGenerator
         if (!context.HasHttpClient)
         {
             context.MarkMemberProvided("Current");
+            context.MarkMemberProvided("SwitchTo");
             context.MarkMemberProvided("BeginScope");
             context.MarkMemberProvided("UseApp");
             context.MarkMemberProvided("UseDefaultApp");

@@ -675,6 +675,17 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("        public IMudAppContext? Current");
             codeBuilder.AppendLine("        {");
             codeBuilder.AppendLine("            get => _appContextHolder.Current;");
+            codeBuilder.AppendLine("            init => _appContextHolder.SwitchTo(value);");
+            codeBuilder.AppendLine("        }");
+            codeBuilder.AppendLine();
+
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 将当前应用上下文切换为指定实例（不返回作用域，不自动恢复）。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine("        /// <param name=\"context\">目标应用上下文实例。可为 <c>null</c> 以清除当前上下文。</param>");
+            codeBuilder.AppendLine("        public void SwitchTo(IMudAppContext? context)");
+            codeBuilder.AppendLine("        {");
+            codeBuilder.AppendLine("            _appContextHolder.SwitchTo(context);");
             codeBuilder.AppendLine("        }");
             codeBuilder.AppendLine();
 
@@ -697,6 +708,17 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        public IMudAppContext? Current");
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            get => _appContextHolder.Current;");
+        codeBuilder.AppendLine("            init => _appContextHolder.SwitchTo(value);");
+        codeBuilder.AppendLine("        }");
+        codeBuilder.AppendLine();
+
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// 将当前应用上下文切换为指定实例（不返回作用域，不自动恢复）。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        /// <param name=\"context\">目标应用上下文实例。可为 <c>null</c> 以清除当前上下文。</param>");
+        codeBuilder.AppendLine("        public void SwitchTo(IMudAppContext? context)");
+        codeBuilder.AppendLine("        {");
+        codeBuilder.AppendLine("            _appContextHolder.SwitchTo(context);");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
 

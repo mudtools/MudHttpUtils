@@ -263,10 +263,11 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
             {
                 ((EventHandler<AppConfigurationChangedEventArgs>)handler).Invoke(this, e);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // 订阅者故障不得影响注册表状态机。
-                // Abstractions 层无日志依赖，静默吞没；由宿主在 ConfigurationChanged 的其他订阅者中记录。
+                // Abstractions 层无日志依赖，通过 AppManagerDiagnostics 可注入委托输出诊断。
+                AppManagerDiagnostics.SubscriberFailed?.Invoke(ex, e.AppKey, e.ChangeType);
             }
         }
     }
