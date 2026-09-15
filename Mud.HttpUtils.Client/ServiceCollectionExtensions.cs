@@ -25,6 +25,11 @@ namespace Mud.HttpUtils;
 /// </summary>
 public static class HttpClientServiceCollectionExtensions
 {
+    // H-6：SSRF 连接期校验启用引导的进程级一次性门控。
+    // 已注册 IIpAddressPolicy（AddMudHttpClientSsrfProtection(IServiceCollection)）但命名客户端
+    // 未启用 handler 级连接期校验时，记录一次 Info 引导日志（避免每次解析重复刷屏）。
+    private static int _ssrfGuidanceLogged;
+
     /// <summary>
     /// 添加基于 <see cref="IHttpClientFactory"/> 的 <see cref="HttpClientFactoryEnhancedClient"/> 到依赖注入容器，
     /// 并注册为 <see cref="IEnhancedHttpClient"/> 服务。
@@ -127,9 +132,12 @@ public static class HttpClientServiceCollectionExtensions
         string clientName,
         bool setAsDefault)
     {
-#if NET8_0_OR_GREATER
+#if NET6_0_OR_GREATER
         // D4：与 EnhancedHttpClientFactory 的永久缓存语义对齐，避免同一命名客户端
         // 在 factory 路径与 keyed 路径解析出不同实例（生命周期语义分裂）。
+        // [遗留修复] 原为 #if NET8_0_OR_GREATER：keyed DI API 由 Microsoft.Extensions.DependencyInjection 8.x
+        // 包提供、net6.0 可用，而 EnhancedHttpClientFactory 的 net6 路径已走 GetRequiredKeyedService；
+        // 门控过宽导致 net6.0 下命名客户端 keyed 注册缺失（HttpClientResolverTests 确定性失败）。
         services.AddKeyedSingleton<IEnhancedHttpClient>(
             clientName,
             (sp, key) => CreateEnhancedClient(sp, (string)key));
@@ -860,6 +868,18 @@ public static class HttpClientServiceCollectionExtensions
 
         var jsonOptions = sp.GetService<IOptions<JsonSerializerOptions>>();
         var contentSerializer = sp.GetService<IHttpContentSerializer>();
+
+        // H-6：SSRF 连接期校验启用引导（一次性 Info）。
+        // 已注册 IIpAddressPolicy（AddMudHttpClientSsrfProtection(IServiceCollection)）但命名客户端未
+        // 在 builder 上启用 handler 级连接期校验（AddMudHttpClientSsrfProtection(builder)）时，提示启用，
+        // 以对实际建连 IP 执行准入校验、根治 DNS rebinding TOCTOU。
+        if (options.Logger != null
+            && _ssrfGuidanceLogged == 0
+            && sp.GetService<IIpAddressPolicy>() != null)
+        {
+            if (Interlocked.Exchange(ref _ssrfGuidanceLogged, 1) == 0)
+                MudHttpClientLog.SsrfGuidance(options.Logger);
+        }
 
         return new HttpClientFactoryEnhancedClient(factory, clientName, encryptionProvider, options, jsonOptions: jsonOptions, contentSerializer: contentSerializer);
     }

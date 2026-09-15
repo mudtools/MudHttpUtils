@@ -121,7 +121,8 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
         return Policy<TResult>
             .Handle<HttpRequestException>(ex => ShouldRetry(ex, retryStatusCodes))
             .Or<TimeoutRejectedException>()
-            .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
+            // M4-H-3：平台超时（HttpClient.Timeout）计入重试；用户取消（inner 为 TCE 而非 TimeoutException）排除
+            .Or<TaskCanceledException>(TaskCancellationClassifier.IsPlatformTimeout)
             .WaitAndRetryAsync(
                 retryOptions.MaxRetryAttempts,
                 // M-1/M2-#11：统一走 ComputeBackoff（含抖动开关），全局与方法级共用同一实现
@@ -243,7 +244,8 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             return Policy
                 .Handle<HttpRequestException>()
                 .Or<TimeoutRejectedException>()
-                .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
+                // M4-H-3：平台超时计入熔断失败；用户取消排除
+                .Or<TaskCanceledException>(TaskCancellationClassifier.IsPlatformTimeout)
                 .AdvancedCircuitBreakerAsync(
                     failureThreshold: failureRate,
                     samplingDuration: TimeSpan.FromSeconds(cbOptions.SamplingDurationSeconds),
@@ -271,7 +273,8 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
         return Policy
             .Handle<HttpRequestException>()
             .Or<TimeoutRejectedException>()
-            .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
+            // M4-H-3：平台超时计入熔断失败；用户取消排除
+            .Or<TaskCanceledException>(TaskCancellationClassifier.IsPlatformTimeout)
             .CircuitBreakerAsync(
                 exceptionsAllowedBeforeBreaking: cbOptions.FailureThreshold,
                 durationOfBreak: TimeSpan.FromSeconds(cbOptions.BreakDurationSeconds),
@@ -374,7 +377,8 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 var cbPolicy = Policy
                     .Handle<HttpRequestException>()
                     .Or<TimeoutRejectedException>()
-                    .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
+                    // M4-H-3：平台超时计入熔断失败；用户取消排除
+                    .Or<TaskCanceledException>(TaskCancellationClassifier.IsPlatformTimeout)
                     .AdvancedCircuitBreakerAsync(
                         failureThreshold: failureRate,
                         samplingDuration: TimeSpan.FromSeconds(samplingDurationSeconds),
@@ -405,7 +409,8 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 var cbPolicy = Policy
                     .Handle<HttpRequestException>()
                     .Or<TimeoutRejectedException>()
-                    .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
+                    // M4-H-3：平台超时计入熔断失败；用户取消排除
+                    .Or<TaskCanceledException>(TaskCancellationClassifier.IsPlatformTimeout)
                     .CircuitBreakerAsync(
                         exceptionsAllowedBeforeBreaking: failureThreshold,
                         durationOfBreak: TimeSpan.FromSeconds(breakDurationSeconds),
@@ -446,7 +451,8 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             var retryPolicy = Policy<TResult>
                 .Handle<HttpRequestException>(ex => ShouldRetry(ex, retryStatusCodes))
                 .Or<TimeoutRejectedException>()
-                .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
+                // M4-H-3：平台超时计入重试；用户取消排除
+                .Or<TaskCanceledException>(TaskCancellationClassifier.IsPlatformTimeout)
                 .WaitAndRetryAsync(
                     maxRetries,
                     // M2-#11：方法级重试统一走 ComputeBackoff（含抖动，与全局重试一致）

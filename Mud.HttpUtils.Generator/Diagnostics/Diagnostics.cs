@@ -172,6 +172,24 @@ internal static class Diagnostics
     isEnabledByDefault: true,
     customTags: WellKnownDiagnosticTags.NotConfigurable);
 
+    /// <summary>
+    /// 文件下载方法（<c>[FilePath]</c>）与 <c>[Cache]</c> 组合时报告。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 文件下载（<c>DownloadLargeAsync</c> 编排）语义是"写入本地文件"，不存在可复用的响应体，
+    /// 故缓存对文件下载不适用。此警告使"<c>[Cache]</c> 静默失效"编译期可见。
+    /// 级别为 Warning（非 Error）：代码可编译且语义正确，仅缓存未参与，不影响既有工程构建。
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor CacheWithFileDownloadWarning = new(
+        id: "HTTPCLIENT030",
+        title: "[Cache] 不适用于文件下载方法",
+        messageFormat: "接口 {0} 的方法 {1} 使用了 [Cache] 特性，但其返回类型为文件下载（[FilePath]），文件下载已写入本地文件且不存在可复用的响应体，缓存不会生效。请移除 [Cache]。",
+        category: "代码生成",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     public static readonly DiagnosticDescriptor HttpClientPathParameterMismatch = new(
         id: "HTTPCLIENT013",
         title: "路径参数不匹配",

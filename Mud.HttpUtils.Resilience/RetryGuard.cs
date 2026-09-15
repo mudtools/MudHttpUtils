@@ -74,8 +74,10 @@ internal static class PollyExceptionNormalizer
 {
     /// <summary>
     /// 尝试把 Polly 内部异常归一化为 <see cref="ApiRequestException"/>；无需包装时返回 null。
+    /// M4-H-3：平台超时（<see cref="HttpClient.Timeout"/>，TCE 特征 inner 为 TimeoutException）漏出时归一为
+    /// <c>isTimeout:true</c>；用户取消（调用方 token 已触发）与其余 TCE 不归一（原样重抛，保持取消语义）。
     /// </summary>
-    public static ApiRequestException? TryNormalize(Exception ex, string? requestUri)
+    public static ApiRequestException? TryNormalize(Exception ex, string? requestUri, CancellationToken userToken = default)
     {
         if (ex is TimeoutRejectedException)
         {
@@ -87,6 +89,16 @@ internal static class PollyExceptionNormalizer
         {
             return new ApiRequestException(
                 $"熔断器已打开: {requestUri}", ex, isCircuitOpen: true, requestUri: requestUri);
+        }
+
+        if (ex is TaskCanceledException tce)
+        {
+            // 用户取消不归一（保持 OperationCanceled 语义）；仅平台超时（inner 为 TimeoutException）归一
+            if (TaskCancellationClassifier.Classify(tce, userToken) == TaskCancellationClassifier.Category.PlatformTimeout)
+            {
+                return new ApiRequestException(
+                    $"请求超时 (平台 HttpClient.Timeout): {requestUri}", ex, isTimeout: true, requestUri: requestUri);
+            }
         }
 
         return null;
@@ -112,7 +124,7 @@ internal static class PollyExceptionNormalizer
         {
             return await execute().ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is TimeoutRejectedException or BrokenCircuitException)
+        catch (Exception ex) when (ex is TimeoutRejectedException or BrokenCircuitException or TaskCanceledException)
         {
             var normalized = TryNormalize(ex, request?.RequestUri?.ToString());
             if (normalized != null)
@@ -132,7 +144,7 @@ internal static class PollyExceptionNormalizer
         {
             return await execute().ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is TimeoutRejectedException or BrokenCircuitException)
+        catch (Exception ex) when (ex is TimeoutRejectedException or BrokenCircuitException or TaskCanceledException)
         {
             var normalized = TryNormalize(ex, requestUri);
             if (normalized != null)

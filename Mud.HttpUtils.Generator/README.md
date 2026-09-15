@@ -754,6 +754,7 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 | `HTTPCLIENT026` | Error | `[CircuitBreaker]` 参数值域越界（四条件共用本 ID）：① `FailureThreshold < 1`；② `SamplingDurationSeconds > 0` 且 `FailureThreshold > 100`；③ `SamplingDurationSeconds > 0` 且 `MinimumThroughput < 2`；④ `BreakDurationSeconds <= 0` | 条件①改 `FailureThreshold >= 1`；条件②高级熔断下 `FailureThreshold` 是失败率百分比（1–100），否则运行时被静默压成 100%；条件③`MinimumThroughput` 须 ≥ 2；条件④`BreakDurationSeconds` 须 > 0 | 否 | 是 |
 | `HTTPCLIENT027` | Error | `[Timeout(ms)]` 有效取值 `<= 0`（含负值；命名参数 `TimeoutMilliseconds` 与位置参数并存时命名参数优先） | 改为正毫秒数；如需取消方法级超时请移除 `[Timeout]` 特性（未声明即 `MethodTimeoutEnabled = false`，不会触发本诊断） | 否 | 是 |
 | `HTTPCLIENT028` | Warning | 继承模式下派生类与基类的应用切换来源不同（TokenManage 与默认模式混合），生成的 `UseApp`/`BeginScope` 使用 `new` 隐藏基类成员 | 通过派生接口调用切换方法，或统一两级的 TokenManage 配置 | 否 | 是 |
+| `HTTPCLIENT030` | Warning | `[Cache]` 应用于文件下载方法（含 `[FilePath]` 参数） | 文件下载写入本地文件、不存在可复用的响应体，缓存不会生效；请移除 `[Cache]` | 否 | 是 |
 
 > **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010`、`HTTPCLIENT019` 当前**未使用**（ID 保留为占位，不重新分配）。
 > - `HTTPCLIENT010`：`BaseAddress` 已移除（CFG-27），使用直接编译错误 `CS0117`，无需生成器提示。

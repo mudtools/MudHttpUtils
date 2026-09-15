@@ -94,6 +94,66 @@ jobs:
           exit $status
 
   # ──────────────────────────────────────────────
+  # PublicAPI 契约门禁（H-4）
+  # ──────────────────────────────────────────────
+  # 以 -p:PublicApiStrictMode=true 构建全部发布库 × 各自 TFM。
+  # PublicApiAnalyzers 将 RS0016（代码含基线未登记的公共符号）/RS0017（基线含代码已删除的符号）
+  # 升级为 error —— 任何公共 API 变更未同步基线（PublicAPI/<tfm>/PublicAPI.*.txt）即构建失败。
+  # 基线重建：tools/rebuild-publicapi.ps1（勿在 CI 伪造基线）。
+  publicapi-gate:
+    name: PublicAPI 契约门禁
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 多 TFM 发布库 × 4
+          - { library: Mud.HttpUtils.Abstractions, target_framework: netstandard2.0 }
+          - { library: Mud.HttpUtils.Abstractions, target_framework: net6.0 }
+          - { library: Mud.HttpUtils.Abstractions, target_framework: net8.0 }
+          - { library: Mud.HttpUtils.Abstractions, target_framework: net10.0 }
+          - { library: Mud.HttpUtils.Client, target_framework: netstandard2.0 }
+          - { library: Mud.HttpUtils.Client, target_framework: net6.0 }
+          - { library: Mud.HttpUtils.Client, target_framework: net8.0 }
+          - { library: Mud.HttpUtils.Client, target_framework: net10.0 }
+          - { library: Mud.HttpUtils.Resilience, target_framework: netstandard2.0 }
+          - { library: Mud.HttpUtils.Resilience, target_framework: net6.0 }
+          - { library: Mud.HttpUtils.Resilience, target_framework: net8.0 }
+          - { library: Mud.HttpUtils.Resilience, target_framework: net10.0 }
+          - { library: Mud.HttpUtils.OpenTelemetry, target_framework: netstandard2.0 }
+          - { library: Mud.HttpUtils.OpenTelemetry, target_framework: net6.0 }
+          - { library: Mud.HttpUtils.OpenTelemetry, target_framework: net8.0 }
+          - { library: Mud.HttpUtils.OpenTelemetry, target_framework: net10.0 }
+          - { library: Mud.HttpUtils.Newtonsoft.Json, target_framework: netstandard2.0 }
+          - { library: Mud.HttpUtils.Newtonsoft.Json, target_framework: net6.0 }
+          - { library: Mud.HttpUtils.Newtonsoft.Json, target_framework: net8.0 }
+          - { library: Mud.HttpUtils.Newtonsoft.Json, target_framework: net10.0 }
+          - { library: Mud.HttpUtils.Xml, target_framework: netstandard2.0 }
+          - { library: Mud.HttpUtils.Xml, target_framework: net6.0 }
+          - { library: Mud.HttpUtils.Xml, target_framework: net8.0 }
+          - { library: Mud.HttpUtils.Xml, target_framework: net10.0 }
+          - { library: Mud.HttpUtils.Testing, target_framework: netstandard2.0 }
+          - { library: Mud.HttpUtils.Testing, target_framework: net6.0 }
+          - { library: Mud.HttpUtils.Testing, target_framework: net8.0 }
+          - { library: Mud.HttpUtils.Testing, target_framework: net10.0 }
+          # 单 TFM 发布库（ns2.0）
+          - { library: Mud.HttpUtils.Attributes, target_framework: netstandard2.0 }
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Build with PublicAPI strict mode
+        run: dotnet build ${{ matrix.library }}/${{ matrix.library }}.csproj -f ${{ matrix.target_framework }} --configuration Release -p:PublicApiStrictMode=true
+
+  # ──────────────────────────────────────────────
   # Demo 项目构建
   # ──────────────────────────────────────────────
   build-demos:

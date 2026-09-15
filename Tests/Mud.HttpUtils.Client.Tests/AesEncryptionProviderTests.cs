@@ -326,6 +326,18 @@ public class AesEncryptionProviderTests
     #region M2-#7 认证加密回归 (T-7.x)
 
     /// <summary>
+    /// 与 <c>DefaultAesEncryptionProvider.IsGcmAvailable</c> 一致的判定：
+    /// 库仅在 net8.0+ 且 <see cref="AesGcm.IsSupported"/> 时才产出 v2(0x02) 信封；
+    /// net6.0/netstandard2.0 恒走 v3(CBC+HMAC)（net6 的 AesGcm 仅 Windows 可用，库按 TFM 门控保证跨平台一致）。
+    /// </summary>
+    private static bool IsGcmProducing =>
+#if NET8_0_OR_GREATER
+        AesGcm.IsSupported;
+#else
+        false;
+#endif
+
+    /// <summary>
     /// T-7.1 / T-7.4 验收：认证加密密文必须带版本前缀。
     /// net8+（AesGcm 可用）→ 0x02；否则 → 0x03（CBC+HMAC）。
     /// </summary>
@@ -333,7 +345,7 @@ public class AesEncryptionProviderTests
     public void AuthenticatedEncryption_Encrypt_ProducesVersionPrefix()
     {
         var provider = CreateProvider();
-        var expected = AesGcm.IsSupported ? (byte)0x02 : (byte)0x03;
+        var expected = IsGcmProducing ? (byte)0x02 : (byte)0x03;
 
         var bytes = Convert.FromBase64String(provider.Encrypt("test"));
 
@@ -444,7 +456,7 @@ public class AesEncryptionProviderTests
     [Fact]
     public void Envelope_VersionSpace_Gcm_HasPrefix02()
     {
-        if (!AesGcm.IsSupported) return;   // 环境不支持 GCM 时由下一条用例覆盖 0x03
+        if (!IsGcmProducing) return;   // 库不产出 GCM 的 TFM（net6/netstandard2.0）时由下一条用例覆盖 0x03
 
         var provider = CreateProvider();
 
@@ -573,7 +585,7 @@ public class AesEncryptionProviderTests
         var act = () => provider.DecryptBytes(input);
 
         act.Should().Throw<CryptographicException>()
-            .WithMessage(AesGcm.IsSupported ? "*密文数据格式无效*" : "*AesGcm*");
+            .WithMessage(IsGcmProducing ? "*密文数据格式无效*" : "*AesGcm*");
     }
 
     /// <summary>往返一致性：空明文 / 1 字节 / 1MB，覆盖 0x02 与 0x03 两种格式。</summary>

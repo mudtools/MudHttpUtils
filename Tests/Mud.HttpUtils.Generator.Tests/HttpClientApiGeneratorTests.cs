@@ -178,6 +178,56 @@ namespace TestNamespace
 
     #endregion
 
+    #region F-1: HTTPCLIENT030 —— [Cache] 不适用于文件下载方法
+
+    [Fact]
+    public void Generator_FilePathDownloadWithCache_ReportsHTTPCLIENT030()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Get(""/files/{fileId}/download"")]
+        [Cache(60)]
+        Task DownloadFileAsync([Path] string fileId, [FilePath] string filePath);
+    }
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        diagnostics.Should().Contain(d => d.Id == "HTTPCLIENT030",
+            "文件下载方法声明 [Cache] 特性时应报告 HTTPCLIENT030 警告");
+    }
+
+    [Fact]
+    public void Generator_FilePathDownloadWithoutCache_NoHTTPCLIENT030()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Get(""/files/{fileId}/download"")]
+        Task DownloadFileAsync([Path] string fileId, [FilePath] string filePath);
+    }
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        diagnostics.Where(d => d.Id == "HTTPCLIENT030").Should().BeEmpty();
+    }
+
+    #endregion
+
     #region 代码生成验证
 
     [Fact]

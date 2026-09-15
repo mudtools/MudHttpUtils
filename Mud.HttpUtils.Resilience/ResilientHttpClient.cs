@@ -280,7 +280,11 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         // M2-#19/N-3：首次不克隆 —— 直接枚举原请求，保持流式上传/进度语义。
         // 流式读取阶段无法被 Polly 包装（IAsyncEnumerable 为拉取模型），连接建立期重试
         // 由调用方自行包装（见接口 remarks），故此处无"重试时再克隆"的路径。
-        await foreach (var item in _innerClient.SendAsAsyncEnumerable<TResult>(request, jsonSerializerOptions, cancellationToken).ConfigureAwait(false))
+        // H-9：首个元素前施加 StreamConnectTimeoutSeconds 连接期超时守卫（见 ExecuteStreamCoreAsync）。
+        await foreach (var item in ExecuteStreamCoreAsync(
+            request,
+            ct => _innerClient.SendAsAsyncEnumerable<TResult>(request, jsonSerializerOptions, ct),
+            cancellationToken).ConfigureAwait(false))
         {
             yield return item;
         }
@@ -311,12 +315,56 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
         // M2-#19/N-3：首次不克隆（与非泛型流式重载同构）
-        await foreach (var item in _innerClient.SendAsAsyncEnumerable<TResult>(request, jsonTypeInfo, cancellationToken).ConfigureAwait(false))
+        // H-9：首个元素前施加 StreamConnectTimeoutSeconds 连接期超时守卫（见 ExecuteStreamCoreAsync）。
+        await foreach (var item in ExecuteStreamCoreAsync(
+            request,
+            ct => _innerClient.SendAsAsyncEnumerable<TResult>(request, jsonTypeInfo, ct),
+            cancellationToken).ConfigureAwait(false))
         {
             yield return item;
         }
     }
 #endif
+
+    /// <summary>
+    /// H-9 共享流式核心：对<b>首次 MoveNextAsync（连接建立 + 首个元素产出）</b>施加
+    /// <see cref="TimeoutOptions.StreamConnectTimeoutSeconds"/> 超时守卫（原生 CTS，绕开 Polly）。
+    /// </summary>
+    /// <remarks>
+    /// 连接建立期超时、读取期不限制：用与用户 token 链接的 CTS 限制首个元素；首元素一旦产出即
+    /// 取消计时（CancelAfter(InfiniteTimeSpan)），恢复纯用户 token 语义，长连接读取不被强制断路。
+    /// </remarks>
+    private async IAsyncEnumerable<TResult> ExecuteStreamCoreAsync<TResult>(
+        HttpRequestMessage request,
+        Func<CancellationToken, IAsyncEnumerable<TResult>> innerStreamFactory,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var connectTimeoutSeconds = _options?.Timeout.StreamConnectTimeoutSeconds ?? 0;
+        var connectTimeout = connectTimeoutSeconds > 0 ? TimeSpan.FromSeconds(connectTimeoutSeconds) : (TimeSpan?)null;
+
+        using var cts = connectTimeout.HasValue
+            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+            : null;
+
+        // 无连接期限制时透传用户 token；有限制时用链接 CTS（含用户 token + 计时）。
+        var effectiveToken = cts?.Token ?? cancellationToken;
+
+        if (cts != null)
+            cts.CancelAfter(connectTimeout!.Value);
+
+        var firstElement = true;
+        await foreach (var item in innerStreamFactory(effectiveToken).ConfigureAwait(false))
+        {
+            if (firstElement)
+            {
+                firstElement = false;
+                // 连接建立成功（首元素已产出）：解除连接期计时，恢复用户 token 语义
+                if (cts != null)
+                    cts.CancelAfter(Timeout.InfiniteTimeSpan);
+            }
+            yield return item;
+        }
+    }
 
     /// <inheritdoc />
     public async Task<TResult?> SendAsync<TResult>(

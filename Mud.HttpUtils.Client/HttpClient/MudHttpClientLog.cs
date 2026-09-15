@@ -404,6 +404,14 @@ internal static partial class MudHttpClientLog
     [LoggerMessage(EventId = 167, Level = LogLevel.Warning,
         Message = "per-app 弹性策略缓存已达上限 ({MaxCachedApps})，新应用将不缓存，回退全局策略。")]
     public static partial void AppResilienceCacheFull(ILogger logger, int maxCachedApps);
+
+    // ---- H-6：SSRF 连接期校验启用引导（EventId 168，一次性 Info）----
+
+    [LoggerMessage(EventId = 168, Level = LogLevel.Information,
+        Message = "已注册 IIpAddressPolicy（AddMudHttpClientSsrfProtection(IServiceCollection)），但当前命名客户端未经过 handler 级连接期校验。" +
+                  "若在 URL 校验白名单外的域名上启用白名单直通，DNS rebinding 到内网 IP 将不受连接期防护。建议在该命名客户端的 " +
+                  "IHttpClientBuilder 上调用 AddMudHttpClientSsrfProtection(builder)（net6.0+）启用连接建立时的 IP 准入校验。")]
+    public static partial void SsrfGuidance(ILogger logger);
 #else
     private static readonly Action<ILogger, string, Exception?> s_tokenManagerRegistered =
         LoggerMessage.Define<string>(LogLevel.Debug, new EventId(131, nameof(TokenManagerRegistered)),
@@ -635,6 +643,16 @@ internal static partial class MudHttpClientLog
             "per-app 弹性策略缓存已达上限 ({MaxCachedApps})，新应用将不缓存，回退全局策略。");
     public static void AppResilienceCacheFull(ILogger logger, int maxCachedApps)
         => s_appResilienceCacheFull(logger, maxCachedApps, null);
+
+    // ---- H-6：SSRF 连接期校验启用引导（EventId 168，一次性 Info）----
+
+    private static readonly Action<ILogger, Exception?> s_ssrfGuidance =
+        LoggerMessage.Define(LogLevel.Information, new EventId(168, nameof(SsrfGuidance)),
+            "已注册 IIpAddressPolicy（AddMudHttpClientSsrfProtection(IServiceCollection)），但当前命名客户端未经过 handler 级连接期校验。" +
+            "若在 URL 校验白名单外的域名上启用白名单直通，DNS rebinding 到内网 IP 将不受连接期防护。建议在该命名客户端的 " +
+            "IHttpClientBuilder 上调用 AddMudHttpClientSsrfProtection(builder)（net6.0+）启用连接建立时的 IP 准入校验。");
+    public static void SsrfGuidance(ILogger logger)
+        => s_ssrfGuidance(logger, null);
 #endif
 
     #endregion

@@ -175,7 +175,12 @@ public static class UrlValidator
 
         var host = uri.Host;
 
-        // 白名单域名跳过所有后续检查（配置桶 + 运行期桶的并集）
+        // 白名单域名跳过所有后续检查（配置桶 + 运行期桶的并集）。
+        // H-6 信任边界声明：白名单域名由配置方保证可信（含其历次 DNS 解析结果），此处仅按 host 字符串
+        // 判定放行，不做私有 IP 检查。若未启用连接期校验（SsrfSafeSocketsHttpHandler + IIpAddressPolicy，
+        // net6.0+ opt-in），白名单域名被 DNS rebinding 解析到内网 IP 将不受防护。
+        // 生产环境推荐：AddMudHttpClientSsrfProtection(services) + 每个客户端 builder 上
+        // AddMudHttpClientSsrfProtection(builder)。二者互补：此处管控"是否放行"，连接期校验管控"实际连到哪"。
         if (IsDomainAllowedByAnySnapshot(host))
             return;
 

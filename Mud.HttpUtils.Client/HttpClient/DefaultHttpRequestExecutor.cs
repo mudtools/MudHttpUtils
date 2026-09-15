@@ -1,4 +1,4 @@
-﻿// -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2026
 //  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
@@ -139,7 +139,7 @@ public class DefaultHttpRequestExecutor(
 
         // Phase 2 (T2.3)：发送前捕获请求体（启用时）
         string? capturedRequestContent = _captureRequestContent
-        ? await CaptureRequestContentAsync(request).ConfigureAwait(false)
+        ? await CaptureRequestContentAsync(request, cancellationToken).ConfigureAwait(false)
         : null;
 
         // Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
@@ -198,7 +198,8 @@ public class DefaultHttpRequestExecutor(
             catch (Exception ex) when (ex is InvalidOperationException || ex is System.Xml.XmlException)
             {
                 throw CreateApiException(response.StatusCode,
-                    "Failed to deserialize XML response: " + ex.Message + ". Raw content: " + rawContent,
+                    "Failed to deserialize XML response: " + ex.Message + ". Raw content: "
+                    + LimitedContentReader.TruncateForDiagnostics(rawContent, _maxExceptionContentLength),
                     request.RequestUri?.ToString(), capturedRequestContent);
             }
         }
@@ -213,7 +214,8 @@ public class DefaultHttpRequestExecutor(
             catch (JsonException ex)
             {
                 throw CreateApiException(response.StatusCode,
-                    "Failed to deserialize JSON response: " + ex.Message + ". Raw content: " + rawContent,
+                    "Failed to deserialize JSON response: " + ex.Message + ". Raw content: "
+                    + LimitedContentReader.TruncateForDiagnostics(rawContent, _maxExceptionContentLength),
                     request.RequestUri?.ToString(), capturedRequestContent);
             }
         }
@@ -292,7 +294,8 @@ public class DefaultHttpRequestExecutor(
                 var deserializerName = IsXmlContentType(descriptor.ResponseContentType)
                     ? "XML" : "JSON";
                 return new Response<TInner>(statusCode,
-                    $"Failed to deserialize {deserializerName} response: " + ex.Message + ". Raw content: " + rawContent,
+                    $"Failed to deserialize {deserializerName} response: " + ex.Message + ". Raw content: "
+                    + LimitedContentReader.TruncateForDiagnostics(rawContent, _maxExceptionContentLength),
                     responseHeaders);
             }
 
@@ -313,7 +316,7 @@ public class DefaultHttpRequestExecutor(
     {
         // Phase 2 (T2.3)：发送前捕获请求体（启用时）
         string? capturedRequestContent = _captureRequestContent
-        ? await CaptureRequestContentAsync(request).ConfigureAwait(false)
+        ? await CaptureRequestContentAsync(request, cancellationToken).ConfigureAwait(false)
         : null;
 
         // Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
@@ -348,7 +351,7 @@ public class DefaultHttpRequestExecutor(
     {
         // Phase 2 (T2.3)：发送前捕获请求体（启用时）
         string? capturedRequestContent = _captureRequestContent
-        ? await CaptureRequestContentAsync(request).ConfigureAwait(false)
+        ? await CaptureRequestContentAsync(request, cancellationToken).ConfigureAwait(false)
         : null;
 
         // Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
@@ -426,7 +429,7 @@ public class DefaultHttpRequestExecutor(
     }
 
     /// <inheritdoc/>
-    public async Task DownloadLargeAsync(
+    public Task DownloadLargeAsync(
         HttpRequestMessage request,
         IBaseHttpClient httpClient,
         string filePath,
@@ -435,10 +438,67 @@ public class DefaultHttpRequestExecutor(
         ResponseDescriptor? descriptor = null,
         IProgress<long>? progress = null,
         CancellationToken cancellationToken = default)
+        => DownloadLargeCoreAsync(request, httpClient, filePath, overwrite, bufferSize, descriptor, progress, cancellationToken);
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// F-1（M4）：文件下载方法级弹性编排版。Cache 对文件下载语义不适用（HTTPCLIENT030 已阻止
+    /// <c>[Cache]</c> 与文件下载组合），故此处仅应用弹性策略（Retry/CircuitBreaker/Timeout），
+    /// 编排口径与 <see cref="ExecuteAsync(HttpRequestMessage, IBaseHttpClient, ExecutionDescriptor, CancellationToken)"/> 保持一致。
+    /// </remarks>
+    public async Task DownloadLargeAsync(
+        HttpRequestMessage request,
+        IBaseHttpClient httpClient,
+        string filePath,
+        bool overwrite,
+        int bufferSize,
+        ExecutionDescriptor executionDescriptor,
+        IProgress<long>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var effectiveResolver = ResolveEffectiveResilienceResolver();
+        if (executionDescriptor.Resilience != null && effectiveResolver != null)
+        {
+            // 设置 SkipResilience 标记，避免全局 ResilientHttpClient 双重包装弹性策略
+            SetSkipResilienceFlag(request);
+            var policyWrapper = effectiveResolver.ResolvePolicyWrapper<object>(
+                executionDescriptor.Resilience, request);
+
+            if (policyWrapper != null)
+            {
+                Func<HttpRequestMessage, CancellationToken, Task<object?>> coreExecute = async (req, ct) =>
+                {
+                    await DownloadLargeCoreAsync(req, httpClient, filePath, overwrite, bufferSize,
+                        executionDescriptor.Response, progress, ct).ConfigureAwait(false);
+                    return null;
+                };
+
+                await policyWrapper(coreExecute, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+        }
+
+        await DownloadLargeCoreAsync(request, httpClient, filePath, overwrite, bufferSize,
+            executionDescriptor.Response, progress, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 大文件下载核心实现（发送 + 状态校验 + 流式写盘）。
+    /// 被非编排版（接口成员）与 F-1 编排版（<see cref="ExecutionDescriptor"/>）共用。
+    /// </summary>
+    private async Task DownloadLargeCoreAsync(
+        HttpRequestMessage request,
+        IBaseHttpClient httpClient,
+        string filePath,
+        bool overwrite,
+        int bufferSize,
+        ResponseDescriptor? descriptor,
+        IProgress<long>? progress,
+        CancellationToken cancellationToken)
     {
         // Phase 2 (T2.3)：发送前捕获请求体（启用时）
         string? capturedRequestContent = _captureRequestContent
-        ? await CaptureRequestContentAsync(request).ConfigureAwait(false)
+        ? await CaptureRequestContentAsync(request, cancellationToken).ConfigureAwait(false)
         : null;
 
         // Phase 3 (T3.4/T3.5)：应用 HttpVersion 与请求消息选项
@@ -597,7 +657,7 @@ public class DefaultHttpRequestExecutor(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         if (_captureRequestContent)
-            await CaptureRequestContentAsync(request).ConfigureAwait(false);
+            await CaptureRequestContentAsync(request, cancellationToken).ConfigureAwait(false);
 
         await foreach (var item in streamFactory(cancellationToken).ConfigureAwait(false))
             yield return item;
@@ -829,14 +889,22 @@ public class DefaultHttpRequestExecutor(
     /// <summary>
     /// Phase 2 (T2.3)：捕获请求体字符串（发送前调用）。
     /// 读取失败不影响请求发送，返回 null。捕获长度受 MaxExceptionContentLength 约束（#16）。
+    /// M4-H-2：非可重放内容（<see cref="IRequestContentReplayHint.IsReplayable"/> == false）自动跳过捕获。
+    /// M4-H-8：取消令牌透传（原 <see cref="CancellationToken.None"/> 改为外层 token）。
     /// </summary>
-    private async Task<string?> CaptureRequestContentAsync(HttpRequestMessage? request)
+    private async Task<string?> CaptureRequestContentAsync(
+        HttpRequestMessage? request, CancellationToken cancellationToken)
     {
         if (request?.Content == null) return null;
+
+        // M4-H-2：不可重放内容跳过捕获 —— 读取会耗尽一次性源流，随后发送将得到空/截断请求体
+        if (!RequestContentCaptureUtils.CanCapture(request.Content, _logger))
+            return null;
+
         try
         {
             var (content, _) = await LimitedContentReader
-                .ReadLimitedStringAsync(request.Content, _maxExceptionContentLength, CancellationToken.None)
+                .ReadLimitedStringAsync(request.Content, _maxExceptionContentLength, cancellationToken)
                 .ConfigureAwait(false);
             return content;
         }

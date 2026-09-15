@@ -635,6 +635,32 @@ namespace TestNamespace
     }
 
     /// <summary>
+    /// 场景 21a: [FilePath] 下载 + [Retry] —— 方法级弹性编排生效，路由到编排版 DownloadLargeAsync（ExecutionDescriptor）。
+    /// F-1（M4）。
+    /// </summary>
+    [Fact]
+    public Task Snapshot_FilePathDownload_WithRetry_ShouldEmitOrchestratedDownload()
+    {
+        var source = """
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Get("/files/{fileId}/download")]
+        [Retry(3, 100)]
+        Task DownloadFileAsync([Path] string fileId, [FilePath] string filePath);
+    }
+}
+""";
+        var (driver, outputCompilation) = VerifyFixture.RunGeneratorDriver(source);
+        return VerifyFixture.VerifyGenerator(driver, outputCompilation);
+    }
+
+    /// <summary>
     /// 场景 22: [InheritedFrom] 继承模式。
     /// </summary>
     [Fact]

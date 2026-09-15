@@ -207,6 +207,20 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     methodInfo.ReturnType));
         }
 
+        // F-1（M4）：[Cache] 不适用于文件下载（[FilePath]）方法 —— 文件下载写入本地文件、无复用响应体，
+        // 缓存不会生效。Warning 级别使"配置静默失效"编译期可见（HTTPCLIENT030）。
+        if (methodInfo.CacheEnabled && IsFilePathDownload(methodInfo))
+        {
+            var fileDownloadSyntax = methodSymbol.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
+            var fileDownloadLocation = fileDownloadSyntax?.GetLocation() ?? context.InterfaceDeclaration.GetLocation();
+            context.ProductionContext.ReportDiagnostic(
+                Diagnostic.Create(
+                    Diagnostics.CacheWithFileDownloadWarning,
+                    fileDownloadLocation,
+                    context.InterfaceSymbol.Name,
+                    methodSymbol.Name));
+        }
+
         var hasTokenManager = !string.IsNullOrEmpty(context.Configuration.TokenManager);
         var hasHttpClient = !string.IsNullOrEmpty(context.Configuration.HttpClient);
         var needsTokenInjection = ShouldInjectToken(methodInfo, hasTokenManager, hasHttpClient);
@@ -552,10 +566,26 @@ internal class MethodGenerator : ICodeFragmentGenerator
             var progressArg = progressParam != null ? progressParam.Name : "null";
 
             // 构造 ResponseDescriptor 以支持 AllowAnyStatusCode
-            codeBuilder.AppendLine($"            await {executor}.DownloadLargeAsync(__httpRequest, {httpClientExpr}, {filePathParam.Name}, {overwrite.ToString().ToLowerInvariant()}, {bufferSize},");
-            codeBuilder.Append("                ");
-            WriteResponseDescriptorCode(codeBuilder, methodInfo, deserializeType, indent: "                ");
-            codeBuilder.AppendLine($", progress: {progressArg}{cancellationTokenArg}).ConfigureAwait(false);");
+            // F-1（M4）：方法级弹性编排 —— Retry/CircuitBreaker/Timeout 生效时路由到编排版
+            // DownloadLargeAsync（ExecutionDescriptor）；否则走非编排版（ResponseDescriptor）。[Cache] 与
+            // 文件下载不适用（HTTPCLIENT030 已警示）。
+            var hasFileDownloadResilience = methodInfo.RetryEnabled ||
+                methodInfo.CircuitBreakerEnabled || methodInfo.MethodTimeoutEnabled;
+
+            if (hasFileDownloadResilience)
+            {
+                codeBuilder.AppendLine($"            await {executor}.DownloadLargeAsync(__httpRequest, {httpClientExpr}, {filePathParam.Name}, {overwrite.ToString().ToLowerInvariant()}, {bufferSize},");
+                codeBuilder.Append("                ");
+                WriteExecutionDescriptorCode(codeBuilder, context, methodInfo, deserializeType, indent: "                ");
+                codeBuilder.AppendLine($", progress: {progressArg}{cancellationTokenArg}).ConfigureAwait(false);");
+            }
+            else
+            {
+                codeBuilder.AppendLine($"            await {executor}.DownloadLargeAsync(__httpRequest, {httpClientExpr}, {filePathParam.Name}, {overwrite.ToString().ToLowerInvariant()}, {bufferSize},");
+                codeBuilder.Append("                ");
+                WriteResponseDescriptorCode(codeBuilder, methodInfo, deserializeType, indent: "                ");
+                codeBuilder.AppendLine($", progress: {progressArg}{cancellationTokenArg}).ConfigureAwait(false);");
+            }
             return;
         }
 
@@ -909,6 +939,12 @@ internal class MethodGenerator : ICodeFragmentGenerator
         var innerReturnType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
         return IsHttpResponseMessageType(innerReturnType) || IsStreamType(innerReturnType);
     }
+
+    /// <summary>
+    /// F-1（M4）：检测是否为文件下载方法（含 <c>[FilePath]</c> 参数，生成器将路由到 <c>DownloadLargeAsync</c>）。
+    /// </summary>
+    private static bool IsFilePathDownload(MethodAnalysisResult methodInfo)
+        => methodInfo.Parameters.Any(p => p.Attributes.Any(a => a.Name == HttpClientGeneratorConstants.FilePathAttribute));
 
     /// <summary>
     /// 检测返回类型是否为 Response&lt;T&gt;，并提取内部类型 T。

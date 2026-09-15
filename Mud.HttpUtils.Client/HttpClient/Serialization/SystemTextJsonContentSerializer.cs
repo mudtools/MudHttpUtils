@@ -481,7 +481,7 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
     /// <summary>
     /// 流式 JSON <see cref="HttpContent"/>：在发送时使用 <c>Utf8JsonWriter</c> 同步写入请求流，不缓冲全部内容。
     /// </summary>
-    private sealed class StreamingJsonContent<T> : HttpContent
+    private sealed class StreamingJsonContent<T> : HttpContent, IRequestContentReplayHint
     {
         private readonly T _item;
         private readonly JsonSerializerOptions _options;
@@ -492,6 +492,11 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
             _options = options;
             Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
         }
+
+        /// <summary>
+        /// M4-H-2：可重放 —— 本内容持有 item 引用，每次发送重新序列化，读取捕获不会耗尽源流。
+        /// </summary>
+        bool IRequestContentReplayHint.IsReplayable => true;
 
         // M3-#28：两参遗留重载仅 netstandard2.0 / 旧 HttpClient 路径可达（.NET 5+ 的 HttpClient
         // 优先调用下方三参重载并传递真实 CancellationToken）。两参重载拿不到令牌，故使用

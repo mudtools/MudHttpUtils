@@ -78,6 +78,7 @@ public class ConfigP0FixTests
         nameof(EnhancedHttpClientOptions.RequestInterceptors),
         nameof(EnhancedHttpClientOptions.ResponseInterceptors),
         nameof(EnhancedHttpClientOptions.SensitiveDataMasker),
+        nameof(EnhancedHttpClientOptions.AppAccessAuthorizer),
     };
 
     private static readonly HashSet<string> ExpectedCopiedProperties = new()

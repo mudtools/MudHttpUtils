@@ -1,8 +1,11 @@
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Mud.HttpUtils.Client.Tests;
 
 namespace Mud.HttpUtils.Tests;
 
@@ -178,6 +181,74 @@ public class SsrfProtectionTests
     private sealed class LoopbackOnlyPolicy : IIpAddressPolicy
     {
         public bool IsAllowed(IPAddress address) => IPAddress.IsLoopback(address);
+    }
+
+    #endregion
+
+    #region M4-C/H-6 连接期校验启用引导（一次性 Info 日志）
+
+    /// <summary>
+    /// 已注册 <see cref="IIpAddressPolicy"/>（AddMudHttpClientSsrfProtection(IServiceCollection)）
+    /// 但命名客户端未启用 handler 级连接期校验时，首次创建客户端记录一次 Info 引导日志
+    /// （进程级 Interlocked 门控，多次创建仅一条）。
+    /// </summary>
+    [Fact]
+    public void SsrfGuidance_RegisteredPolicy_NoHandlerProtection_LogsOnce()
+    {
+        var gate = typeof(HttpClientServiceCollectionExtensions)
+            .GetField("_ssrfGuidanceLogged", BindingFlags.Static | BindingFlags.NonPublic)!;
+        gate.SetValue(null, 0);
+
+        var logger = new CapturingLogger<HttpClientFactoryEnhancedClient>();
+        try
+        {
+            var services = new ServiceCollection();
+            services.AddMudHttpClientSsrfProtection();
+            services.AddSingleton<ILogger<HttpClientFactoryEnhancedClient>>(logger);
+            services.AddMudHttpClient("no-handler-protection",
+                client => client.BaseAddress = new Uri("https://api.example.com"));
+
+            using var sp = services.BuildServiceProvider();
+            var factory = sp.GetRequiredService<IEnhancedHttpClientFactory>();
+
+            _ = factory.CreateClient("no-handler-protection");
+            _ = factory.CreateClient("no-handler-protection");
+            _ = factory.CreateClient("no-handler-protection");
+
+            // 多次创建仅触发一次引导日志
+            logger.Messages.Should().ContainSingle(m => m.Contains("连接期校验"));
+        }
+        finally
+        {
+            gate.SetValue(null, 0);
+        }
+    }
+
+    /// <summary>未注册策略 → 不记录引导日志。</summary>
+    [Fact]
+    public void SsrfGuidance_NoPolicyRegistered_DoesNotLog()
+    {
+        var gate = typeof(HttpClientServiceCollectionExtensions)
+            .GetField("_ssrfGuidanceLogged", BindingFlags.Static | BindingFlags.NonPublic)!;
+        gate.SetValue(null, 0);
+
+        var logger = new CapturingLogger<HttpClientFactoryEnhancedClient>();
+        try
+        {
+            var services = new ServiceCollection();
+            services.AddSingleton<ILogger<HttpClientFactoryEnhancedClient>>(logger);
+            services.AddMudHttpClient("no-policy",
+                client => client.BaseAddress = new Uri("https://api.example.com"));
+
+            using var sp = services.BuildServiceProvider();
+            _ = sp.GetRequiredService<IEnhancedHttpClientFactory>().CreateClient("no-policy");
+
+            logger.Messages.Should().NotContain(m => m.Contains("连接期校验"));
+        }
+        finally
+        {
+            gate.SetValue(null, 0);
+        }
     }
 
     #endregion

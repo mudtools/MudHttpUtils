@@ -20,10 +20,10 @@ namespace Mud.HttpUtils;
 /// <see cref="EnhancedHttpClient"/> 构造兜底、<see cref="DefaultHttpRequestExecutor"/> 兜底统一调用。
 /// </para>
 /// <para>
-/// <b>多目标框架守卫</b>：<see cref="System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver"/>
-/// 仅在 .NET 8+ 可用，<c>MudHttpJsonContext</c> 仅在 .NET 8+ 可用。
-/// 本项目目标框架为 <c>netstandard2.0;net6.0;net8.0;net10.0</c>，
-/// 故 resolver 合并逻辑用 <c>#if NET8_0_OR_GREATER</c> 条件编译包裹。
+/// <b>多目标框架说明</b>：<see cref="System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver"/> 等
+/// resolver 类型在 netstandard2.0/net6.0 下由 System.Text.Json ≥ 8.0 NuGet 包提供（见 DefaultJsonContext.cs
+/// 的 T11 修复），故合并逻辑对所有 TFM 生效；仅 <see cref="System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported"/>
+/// 的 JIT/AOT 分支判断需要 net6.0+（netstandard2.0 无该属性，且不参与 Native AOT，恒走 JIT 合并路径）。
 /// </para>
 /// </remarks>
 public static class HttpContentSerializerFactory
@@ -49,7 +49,7 @@ public static class HttpContentSerializerFactory
     /// JIT 分支实例化。Roslyn AOT 分析器不做跨运行时布尔的流分析，故此处显式压制并注明理由。
     /// 返回值始终为新实例（或安全副本），避免消费方改写共享静态状态。
     /// </remarks>
-#if NET8_0_OR_GREATER
+#if NET6_0_OR_GREATER
     [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
         Justification = "DefaultJsonTypeInfoResolver 仅在 RuntimeFeature.IsDynamicCodeSupported==true 的 JIT 分支实例化；AOT 分支只组合源生成 context，永不执行该行。")]
     [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
@@ -63,10 +63,14 @@ public static class HttpContentSerializerFactory
         object? explicitResolver = null)
 #endif
     {
-#if NET8_0_OR_GREATER
         // 优先使用 EnhancedHttpClientOptions.JsonTypeInfoResolver（编程式注入）
-        // 其次使用 IOptions<JsonSerializerOptions>.TypeInfoResolver（DI 注入）
-        System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver? resolver = explicitResolver;
+        // 其次使用 IOptions<JsonSerializerOptions>.TypeInfoResolver（DI 注入）。
+        // netstandard2.0/net6.0 下 explicitResolver 形参为 object?（公共 API 兼容），按接口强转。
+        // [遗留修复] 旧实现以 #if NET8_0_OR_GREATER 包裹整个合并逻辑，net6/netstandard2.0 走 #else
+        // 直接返回默认选项副本，静默丢弃消费方注入的 resolver（JsonOptionsAotTests 在 net6 上确定性失败）。
+        // T11 已证明 resolver 类型由 System.Text.Json ≥ 8.0 包覆盖所有 TFM，故合并逻辑不再按 TFM 裁剪。
+        System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver? resolver =
+            explicitResolver as System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver;
         resolver ??= injected?.TypeInfoResolver;
 
         // 库内置兜底上下文（始终包含，保证内部类型可用）
@@ -75,6 +79,7 @@ public static class HttpContentSerializerFactory
         if (resolver != null)
         {
             // 消费方提供了 resolver
+#if NET6_0_OR_GREATER
             if (System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported)
             {
                 // JIT：再 Combine 一个 DefaultJsonTypeInfoResolver 作反射兜底，兼容未声明类型
@@ -90,9 +95,19 @@ public static class HttpContentSerializerFactory
             {
                 TypeInfoResolver = System.Text.Json.Serialization.Metadata.JsonTypeInfoResolver.Combine(resolver, builtIn)
             };
+#else
+            // netstandard2.0：无 RuntimeFeature.IsDynamicCodeSupported，且不参与 Native AOT，恒走 JIT 合并路径
+            return new JsonSerializerOptions(s_defaultJsonSerializerOptions)
+            {
+                TypeInfoResolver = System.Text.Json.Serialization.Metadata.JsonTypeInfoResolver.Combine(
+                    resolver, builtIn,
+                    new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver())
+            };
+#endif
         }
 
         // 未提供 resolver：
+#if NET6_0_OR_GREATER
         if (System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported == false)
         {
             // AOT 且未提供 resolver：仅组合库内置上下文，避免回退反射
@@ -101,8 +116,9 @@ public static class HttpContentSerializerFactory
                 TypeInfoResolver = builtIn
             };
         }
+#endif
 
-        // JIT 且未提供 resolver：必须合并库内置上下文（builtIn）+ 反射兜底（DefaultJsonTypeInfoResolver）。
+        // JIT（或 netstandard2.0）且未提供 resolver：必须合并库内置上下文（builtIn）+ 反射兜底（DefaultJsonTypeInfoResolver）。
         // 若此处只返回无 resolver 的裸副本，库内部类型（MudHttpJsonContext 覆盖的类型）在消费方
         // 未注入 resolver 时将无法解析，默认序列化器在“零配置”场景下会退化为不可用。
         // 返回副本而非共享静态实例，避免消费方通过 Options 属性改写库级共享状态。
@@ -112,9 +128,6 @@ public static class HttpContentSerializerFactory
                 builtIn,
                 new System.Text.Json.Serialization.Metadata.DefaultJsonTypeInfoResolver())
         };
-#else
-        return new JsonSerializerOptions(s_defaultJsonSerializerOptions);
-#endif
     }
 
     /// <summary>

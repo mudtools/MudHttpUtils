@@ -27,13 +27,19 @@ namespace Mud.HttpUtils;
 /// </example>
 /// <seealso cref="HttpContent"/>
 /// <seealso cref="IProgress{T}"/>
-public class ProgressableStreamContent : HttpContent
+public class ProgressableStreamContent : HttpContent, IRequestContentReplayHint
 {
     private const int DefaultBufferSize = 4096;
 
     private readonly HttpContent _content;
     private readonly int _bufferSize;
     private readonly IProgress<long>? _progress;
+
+    /// <summary>
+    /// M4-H-2：不可重放 —— 读取本内容会经 <c>SerializeToStreamAsync</c> 消耗底层源流（一次性），
+    /// 捕获请求体时须跳过以免发送空/截断请求体。
+    /// </summary>
+    bool IRequestContentReplayHint.IsReplayable => false;
 
     /// <summary>
     /// 初始化 <see cref="ProgressableStreamContent"/> 类的新实例。

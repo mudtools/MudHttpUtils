@@ -430,6 +430,7 @@ services.AddSingleton<IIpAddressPolicy, MyDebugIpPolicy>();
 
 - 被策略拒绝的连接抛出 `InvalidOperationException`。
 - 默认 `AllowCustomBaseUrls = false` 时强制 HTTPS + 白名单（fail-closed）；`AllowCustomBaseUrls = true` 放行自定义 URL 时，必须自行校验 URL 来源。
+- **信任边界声明**：白名单域名由配置方保证可信（含其 DNS 解析结果）。未启用连接期校验时，白名单域名一旦被 DNS rebinding 解析到内网 IP，将不受连接期防护。生产环境推荐：`AddMudHttpClientSsrfProtection(services)` 注册策略 + 在每个命名客户端的 `IHttpClientBuilder` 上 `AddMudHttpClientSsrfProtection(builder)` 启用连接建立时的 IP 准入校验（net6.0+）。
 - DNS 解析结果带 TTL 缓存（默认 5 分钟），并发场景下同域名解析受锁保护（单飞）。
 
 #### 遥测脱敏（默认开启）

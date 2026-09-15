@@ -1,4 +1,4 @@
-﻿// -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
 //  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
@@ -1098,14 +1098,18 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         string? capturedRequestContent = null;
         if (_captureRequestContent && content != null)
         {
-            try
+            // M4-H-2：不可重放内容跳过捕获，避免读取耗尽一次性源流
+            if (RequestContentCaptureUtils.CanCapture(content, _logger))
             {
-                var (captured, _) = await LimitedContentReader
-                    .ReadLimitedStringAsync(content, EffectiveMaxErrorContentLength, cancellationToken)
-                    .ConfigureAwait(false);
-                capturedRequestContent = captured;
+                try
+                {
+                    var (captured, _) = await LimitedContentReader
+                        .ReadLimitedStringAsync(content, EffectiveMaxErrorContentLength, cancellationToken)
+                        .ConfigureAwait(false);
+                    capturedRequestContent = captured;
+                }
+                catch { /* 读取失败不影响请求发送 */ }
             }
-            catch { /* 读取失败不影响请求发送 */ }
         }
 
         using var request = new HttpRequestMessage(method, requestUri)

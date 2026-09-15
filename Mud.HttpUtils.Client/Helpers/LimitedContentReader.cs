@@ -122,6 +122,24 @@ internal static class LimitedContentReader
     }
 
     /// <summary>
+    /// 对已读入内存的诊断字符串执行字符级截断（M4-H-1），与 <see cref="ReadLimitedStringAsync"/> 保持同一限量口径。
+    /// </summary>
+    /// <param name="content">已读入内存的原始字符串。</param>
+    /// <param name="maxChars">最大字符数；<c>0</c> 或负数表示不限制（原样返回）。</param>
+    /// <returns>未超限时原样返回；超限时截取前 <paramref name="maxChars"/> 字符并追加 <c>...[已截断]</c> 标记。</returns>
+    /// <remarks>
+    /// 供反序列化失败路径使用：此时完整成功响应体已读入内存，无法再在读取阶段限量，
+    /// 故在此对已就绪字符串做字符级截断，避免超大/含 PII 的成功响应体未经脱敏进入异常传播链。
+    /// </remarks>
+    public static string TruncateForDiagnostics(string content, int maxChars)
+    {
+        if (maxChars <= 0 || string.IsNullOrEmpty(content) || content.Length <= maxChars)
+            return content;
+
+        return content.Substring(0, maxChars) + TruncatedSuffix;
+    }
+
+    /// <summary>
     /// 以字节数上限缓冲 <see cref="HttpContent"/>（用于请求克隆前的限量拷贝）。
     /// </summary>
     /// <param name="content">要缓冲的 HTTP 内容。</param>

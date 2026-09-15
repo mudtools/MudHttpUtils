@@ -40,7 +40,18 @@ internal sealed class SuccessResponseGuardStream : Stream
     public override bool CanSeek => _inner.CanSeek;
     public override bool CanWrite => false;
     public override long Length => _inner.Length;
-    public override long Position { get => _inner.Position; set => throw new NotSupportedException(); }
+    public override long Position
+    {
+        get => _inner.Position;
+        set
+        {
+            // STJ 反序列化对可 seek 流会先探测 BOM 再回卷重读（Position = 0 / Seek(0, Begin)）。
+            // 必须支持回卷而非抛 NotSupportedException，否则可 seek 的响应体在守卫模式下功能全坏。
+            // 回卷时同步减少已读计数，避免重复读取同一段导致超限误报。
+            _inner.Position = value;
+            _totalRead = Math.Min(_totalRead, value);
+        }
+    }
 
     public override void Flush() => _inner.Flush();
 
@@ -79,7 +90,13 @@ internal sealed class SuccessResponseGuardStream : Stream
         }
     }
 
-    public override long Seek(long offset, SeekOrigin origin) => _inner.Seek(offset, origin);
+    public override long Seek(long offset, SeekOrigin origin)
+    {
+        // 与 Position 回卷语义一致：STJ 等反序列化器对可 seek 流的回卷探测不得误伤计数。
+        var newPos = _inner.Seek(offset, origin);
+        _totalRead = Math.Min(_totalRead, newPos);
+        return newPos;
+    }
     public override void SetLength(long value) => throw new NotSupportedException();
     public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
 
