@@ -863,8 +863,10 @@ internal class RequestBuilder
             else
             {
                 // 非 string 类型：使用格式化表达式
+                // FIX-05: property.Format 必须转义，否则含 " 或 \ 的格式串会导致生成代码语法错误
+                var escapedPropertyFormat = StringEscapeHelper.EscapeString(property.Format);
                 var formatExpression = !string.IsNullOrEmpty(property.Format)
-                    ? $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{property.Format}}}\", {property.Name})"
+                    ? $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{escapedPropertyFormat}}}\", {property.Name})"
                     : $"{property.Name}.ToString()";
 
                 // 值类型不会为 null，直接添加

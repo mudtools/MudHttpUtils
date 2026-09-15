@@ -170,12 +170,16 @@ internal class InterfaceImplementationGenerator
         _codeBuilder.AppendLine("}");
         _codeBuilder.AppendLine();
 
-        // 使用命名空间文件夹 + 类名的方式（如 MyApp/Apis/Implementation/UserServiceImpl.g.cs），
-        // 比扁平命名（UserServiceImpl.g.cs）更清晰地反映代码结构，并避免跨命名空间同名接口冲突
+        // FIX-03: hintName 必须唯一。原实现仅用 ClassName（来自 interfaceSymbol.Name，不含元数），
+        // 导致 IFoo<T> 与 IFoo（同命名空间）产生相同 hintName → CS8785 全量产物消失。
+        // 修复：纳入泛型元数（`1, `2…）与嵌套类型路径（Outer_）。
         var namespacePath = generatorContext.NamespaceName.Replace('.', '/');
+        var nestingSuffix = BuildNestingSuffix(_interfaceSymbol);
+        var aritySuffix = _interfaceSymbol.Arity > 0 ? $"`{_interfaceSymbol.Arity}" : string.Empty;
+        var fullClassName = $"{nestingSuffix}{generatorContext.ClassName}{aritySuffix}";
         var fileName = string.IsNullOrEmpty(namespacePath)
-            ? $"{generatorContext.ClassName}.g.cs"
-            : $"{namespacePath}/{generatorContext.ClassName}.g.cs";
+            ? $"{fullClassName}.g.cs"
+            : $"{namespacePath}/{fullClassName}.g.cs";
         TransitiveCodeGenerator.AddSourceValidated(_context, fileName, _codeBuilder.ToString());
     }
 
@@ -1081,6 +1085,28 @@ internal class InterfaceImplementationGenerator
             return (bool)namedArg;
 
         return null;
+    }
+
+    /// <summary>
+    /// FIX-03: 构建接口的嵌套类型路径后缀（如 "Outer_"），用于 hintName 唯一化。
+    /// 顶级接口返回空字符串；嵌套接口返回从外到内的类型名用 "_" 连接。
+    /// </summary>
+    private static string BuildNestingSuffix(INamedTypeSymbol interfaceSymbol)
+    {
+        if (interfaceSymbol.ContainingType is null)
+            return string.Empty;
+
+        var parts = new List<string>();
+        var current = interfaceSymbol.ContainingType;
+        while (current is not null)
+        {
+            // 嵌套类型的 Name 也不含元数，但嵌套接口本身已有 Arity 后缀，
+            // 包含类型链只需用名称（不含元数），因为同一嵌套链中不会出现同名不同元数的包含类型。
+            parts.Insert(0, current.Name);
+            current = current.ContainingType;
+        }
+
+        return string.Join("_", parts) + "_";
     }
 
 }

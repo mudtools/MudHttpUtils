@@ -156,6 +156,41 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
             return string.Empty;
         }
 
+        // FIX-08: 校验 HeaderType 是合法的类型名
+        if (!string.IsNullOrEmpty(headerType) && !CSharpCodeValidator.IsValidCSharpIdentifier(headerType))
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.EventHandlerGenerationError, eventClass.GetLocation(),
+                eventClass.Identifier.Text, $"HeaderType '{headerType}' 不是合法的类型名"));
+            return string.Empty;
+        }
+
+        // FIX-08: 校验 ConstructorParameters 是合法的参数列表
+        if (!string.IsNullOrEmpty(constructorParams))
+        {
+            var parsedParams = SyntaxFactory.ParseParameterList($"({constructorParams})");
+            if (parsedParams.ContainsDiagnostics)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    Diagnostics.EventHandlerGenerationError, eventClass.GetLocation(),
+                    eventClass.Identifier.Text, $"ConstructorParameters 语法无效：{constructorParams}"));
+                return string.Empty;
+            }
+        }
+
+        // FIX-08: 校验 ConstructorBaseCall 是合法的表达式列表
+        if (!string.IsNullOrEmpty(constructorBaseCall))
+        {
+            var parsedArgs = SyntaxFactory.ParseArgumentList($"({constructorBaseCall})");
+            if (parsedArgs.ContainsDiagnostics)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    Diagnostics.EventHandlerGenerationError, eventClass.GetLocation(),
+                    eventClass.Identifier.Text, $"ConstructorBaseCall 语法无效：{constructorBaseCall}"));
+                return string.Empty;
+            }
+        }
+
         // 获取生成的类名（统一通过 GetGeneratedClassName，确保 nameof(...) 表达式被正确处理，
         // 与 GenerateUniqueFileName 中的文件名生成逻辑保持一致）
         var generatedClassName = GetGeneratedClassName(eventClass, eventHandlerAttribute);

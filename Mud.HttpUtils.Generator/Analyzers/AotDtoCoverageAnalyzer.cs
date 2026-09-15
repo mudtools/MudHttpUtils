@@ -697,6 +697,21 @@ internal static class AotDtoCoverageAnalyzer
         => type is IArrayTypeSymbol { ElementType.SpecialType: SpecialType.System_Byte };
 
     /// <summary>
+    /// FIX-04: 判断类型是否为 System.Collections.Generic 下的已知集合类型。
+    /// 仅集合类型的单参泛型参数才会被解包做覆盖判定（如 List&lt;UserDto&gt; → UserDto），
+    /// 包装类型（如 ApiResponse&lt;UserDto&gt;）不解包。
+    /// </summary>
+    private static readonly HashSet<string> CollectionTypeNames = new(StringComparer.Ordinal)
+    {
+        "List", "IList", "IReadOnlyList", "IEnumerable", "IReadOnlyCollection",
+        "ICollection", "HashSet", "ISet", "IReadOnlySet", "Queue", "Stack", "LinkedList",
+    };
+
+    private static bool IsCollectionLike(INamedTypeSymbol type) =>
+        type.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic"
+        && CollectionTypeNames.Contains(type.Name);
+
+    /// <summary>
     /// 检查类型是否被 Context 覆盖（包括集合类型解包）。
     /// </summary>
     private static bool IsCovered(INamedTypeSymbol type, HashSet<INamedTypeSymbol> coveredTypes)
@@ -714,7 +729,10 @@ internal static class AotDtoCoverageAnalyzer
         }
 
         // 解包集合类型：List<T>, IEnumerable<T>, etc.
+        // FIX-04: 原实现对所有单参泛型一律解包，导致 ApiResponse<UserDto> 被误判为“已覆盖”（仅注册 UserDto 时）。
+        // 修复：仅对 System.Collections.Generic 下的已知集合类型解包，包装类型（如 ApiResponse<T>）不解包。
         if (type.IsGenericType && type.TypeArguments.Length == 1 &&
+            IsCollectionLike(type) &&
             type.TypeArguments[0] is INamedTypeSymbol elementType)
         {
             if (coveredTypes.Contains(elementType))

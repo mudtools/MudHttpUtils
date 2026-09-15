@@ -667,6 +667,10 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         if (_context.HasHttpClient)
             return;
 
+        // FIX-02: 接口显式声明 Current 时，访问器形态必须与接口一致，否则 CS8854/CS0535。
+        // 判定口径与 InterfaceContractCompletionGenerator 保持一致（单一事实源）。
+        var currentAccessor = ResolveCurrentAccessor(_context);
+
         if (!_context.HasTokenManager)
         {
             codeBuilder.AppendLine("        /// <summary>");
@@ -675,7 +679,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("        public IMudAppContext? Current");
             codeBuilder.AppendLine("        {");
             codeBuilder.AppendLine("            get => _appContextHolder.Current;");
-            codeBuilder.AppendLine("            init => _appContextHolder.SwitchTo(value);");
+            codeBuilder.AppendLine($"            {currentAccessor} => _appContextHolder.SwitchTo(value);");
             codeBuilder.AppendLine("        }");
             codeBuilder.AppendLine();
 
@@ -708,7 +712,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        public IMudAppContext? Current");
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            get => _appContextHolder.Current;");
-        codeBuilder.AppendLine("            init => _appContextHolder.SwitchTo(value);");
+        codeBuilder.AppendLine($"            {currentAccessor} => _appContextHolder.SwitchTo(value);");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
 
@@ -831,6 +835,26 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         // 基类为非 TokenManager 模式时，派生类引入新的切换源（_tokenManager vs _appManager），语义不同，
         // 用 new 明确"这是独立实现"，并配合 XML 警告宿主不要通过基类引用调用切换方法。
         return _context.Configuration.BaseHasTokenManager ? "public override " : "public new ";
+    }
+
+    /// <summary>
+    /// FIX-02: 解析 Current 属性的访问器形态（init/set），与接口声明保持一致。
+    /// 接口显式声明 Current { get; set; } 时，实现必须用 set 而非 init（CS8854）。
+    /// 接口显式声明 Current { get; init; } 时，实现必须用 init。
+    /// 接口未声明 Current 时，维持 init 语义（由基础设施提供，允许对象初始化期赋值）。
+    /// 判定口径与 InterfaceContractCompletionGenerator.cs:166-170 保持一致（单一事实源）。
+    /// </summary>
+    private static string ResolveCurrentAccessor(GeneratorContext context)
+    {
+        var declared = context.InterfaceSymbol.GetMembers("Current")
+            .OfType<IPropertySymbol>()
+            .FirstOrDefault(p => p.Parameters.Length == 0);
+
+        if (declared?.SetMethod is { } setter)
+            return setter.IsInitOnly ? "init" : "set";
+
+        // 接口未声明（由基础设施提供）：维持既有 init 语义，避免行为面变更
+        return "init";
     }
 
     private void GenerateBeginScopeMethod(StringBuilder codeBuilder)

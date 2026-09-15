@@ -41,6 +41,10 @@ namespace TestNamespace.Internal
         /// </summary>
         private readonly IMudAppContext _defaultAppContext;
         /// <summary>
+        /// 应用切换授权器（可选）。非 null 时 UseApp/BeginScope 将先做授权判定。
+        /// </summary>
+        private readonly IAppAccessAuthorizer? _appAuthorizer;
+        /// <summary>
         /// HTTP 请求执行器，统一处理响应反序列化和错误处理。
         /// </summary>
         private readonly IHttpRequestExecutor _executor;
@@ -73,26 +77,35 @@ namespace TestNamespace.Internal
 #if !NETSTANDARD2_0
         [System.Diagnostics.CodeAnalysis.DynamicDependency(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof(global::Mud.HttpUtils.RestService))]
 #endif
-        public TestApi(IMudAppContext appContext, IAppContextHolder appContextHolder, IHttpRequestExecutor executor, IAppManager<IMudAppContext>? appManager = null, IHttpResponseCache? cacheProvider = null, IResiliencePolicyResolver? resilienceResolver = null, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null)
+        public TestApi(IMudAppContext appContext, IAppContextHolder appContextHolder, IHttpRequestExecutor executor, IAppManager<IMudAppContext>? appManager = null, IAppAccessAuthorizer? appAuthorizer = null, IHttpResponseCache? cacheProvider = null, IResiliencePolicyResolver? resilienceResolver = null, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null)
         {
             _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
             _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
             _appContextHolder = appContextHolder ?? throw new ArgumentNullException(nameof(appContextHolder));
             _defaultAppContext = appContext ?? throw new ArgumentNullException(nameof(appContext));
-            _appContextHolder.Current = _defaultAppContext;
             _appManager = appManager;
+            _appAuthorizer = appAuthorizer;
             _cacheProvider = cacheProvider;
             _resilienceResolver = resilienceResolver;
             _executor = executor ?? throw new ArgumentNullException(nameof(executor));
         }
 
         /// <summary>
-        /// 获取或设置当前的应用上下文。
+        /// 获取当前的应用上下文。
         /// </summary>
         public IMudAppContext? Current
         {
             get => _appContextHolder.Current;
-            set => _appContextHolder.Current = value;
+            init => _appContextHolder.SwitchTo(value);
+        }
+
+        /// <summary>
+        /// 将当前应用上下文切换为指定实例（不返回作用域，不自动恢复）。
+        /// </summary>
+        /// <param name="context">目标应用上下文实例。可为 <c>null</c> 以清除当前上下文。</param>
+        public void SwitchTo(IMudAppContext? context)
+        {
+            _appContextHolder.SwitchTo(context);
         }
 
         /// <summary>
@@ -113,10 +126,10 @@ namespace TestNamespace.Internal
         {
             if (_appManager == null)
                 throw new InvalidOperationException("当前模式不支持按 AppKey 切换应用上下文。请注册 IAppManager<IMudAppContext> 服务。");
+            if (_appAuthorizer is not null && !_appAuthorizer.CanSwitchTo(appKey))
+                throw new UnauthorizedAccessException($"当前调用主体无权切换到应用 '{appKey}'。");
             var context = _appManager.GetApp(appKey);
-            if(context == null)
-                throw new InvalidOperationException($"无法找到指定的应用上下文，AppKey: {appKey}");
-            _appContextHolder.Current = context;
+            _appContextHolder.SwitchTo(context);
             return context;
         }
 
@@ -127,7 +140,7 @@ namespace TestNamespace.Internal
         public IMudAppContext UseDefaultApp()
         {
             var context = _appManager?.GetDefaultApp() ?? _defaultAppContext;
-            _appContextHolder.Current = context;
+            _appContextHolder.SwitchTo(context);
             return context;
         }
 
@@ -151,9 +164,9 @@ namespace TestNamespace.Internal
         {
             if (_appManager == null)
                 throw new InvalidOperationException("当前模式不支持按 AppKey 切换应用上下文。请注册 IAppManager<IMudAppContext> 服务。");
+            if (_appAuthorizer is not null && !_appAuthorizer.CanSwitchTo(appKey))
+                throw new UnauthorizedAccessException($"当前调用主体无权切换到应用 '{appKey}'。");
             var context = _appManager.GetApp(appKey);
-            if(context == null)
-                throw new InvalidOperationException($"无法找到指定的应用上下文，AppKey: {appKey}");
             return _appContextHolder.BeginScope(context);
         }
 

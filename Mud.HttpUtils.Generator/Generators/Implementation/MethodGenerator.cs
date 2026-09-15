@@ -978,14 +978,14 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
             if (interfaceHeader.Replace)
             {
-                codeBuilder.AppendLine($"            // 替换接口定义的Header: {interfaceHeader.Name}");
+                codeBuilder.AppendLine($"            // 替换接口定义的Header: {escapedHeaderName}");
                 codeBuilder.AppendLine($"            if (__httpRequest.Headers.Contains(\"{escapedHeaderName}\"))");
                 codeBuilder.AppendLine($"                __httpRequest.Headers.Remove(\"{escapedHeaderName}\");");
                 codeBuilder.AppendLine($"            __httpRequest.Headers.Add(\"{escapedHeaderName}\", \"{escapedHeaderValue}\");");
             }
             else
             {
-                codeBuilder.AppendLine($"            // 添加接口定义的Header: {interfaceHeader.Name}");
+                codeBuilder.AppendLine($"            // 添加接口定义的Header: {escapedHeaderName}");
                 // 避免对不允许重复的 Header（如 Authorization）调用 Add 抛出 ArgumentException
                 codeBuilder.AppendLine($"            if (!__httpRequest.Headers.Contains(\"{escapedHeaderName}\"))");
                 codeBuilder.AppendLine($"                __httpRequest.Headers.Add(\"{escapedHeaderName}\", \"{escapedHeaderValue}\");");

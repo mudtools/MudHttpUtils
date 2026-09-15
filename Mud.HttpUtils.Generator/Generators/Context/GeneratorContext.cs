@@ -137,6 +137,23 @@ internal class GeneratorContext
     public Dictionary<IMethodSymbol, MethodAnalysisResult> MethodAnalysisCache { get; } = new(SymbolEqualityComparer.Default);
 
     /// <summary>
+    /// FIX-13: 方法级特性缓存，避免同一方法的 GetAttributes() 被多次调用产生额外分配。
+    /// InterfaceImplementationGenerator 的 ReportRetryNonIdempotentWithoutAllow / ReportMethodTimeoutConflicts /
+    /// ReportResilienceAttributeValueRangeViolations 以及 PrecomputeXmlResponseTypes 各自遍历方法特性，
+    /// 不缓存时每个方法最多 4 次 GetAttributes() 调用。
+    /// </summary>
+    private readonly Dictionary<IMethodSymbol, ImmutableArray<AttributeData>> _methodAttributes =
+        new(SymbolEqualityComparer.Default);
+
+    /// <summary>
+    /// FIX-13: 获取方法特性（带缓存），避免重复分配。
+    /// </summary>
+    public ImmutableArray<AttributeData> GetMethodAttributes(IMethodSymbol method) =>
+        _methodAttributes.TryGetValue(method, out var cached)
+            ? cached
+            : (_methodAttributes[method] = method.GetAttributes());
+
+    /// <summary>
     /// 当前接口（含父接口）的所有方法列表，在构造函数中一次性计算并缓存。
     /// 避免 MethodGenerator、InterfaceImplementationGenerator 等多处重复调用 TypeSymbolHelper.GetAllMethods。
     /// </summary>

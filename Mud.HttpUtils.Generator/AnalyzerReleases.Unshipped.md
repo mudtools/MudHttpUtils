@@ -48,6 +48,7 @@ HTTPCLIENT024 | 代码生成 | Error | 接口成员未生成实现（已发射�
 HTTPCLIENT025 | 代码生成 | Warning | 直达返回类型不参与 Cache/Resilience 编排
 HTTPCLIENT026 | 代码生成 | Error | [CircuitBreaker] 特性参数取值超出有效域
 HTTPCLIENT027 | 代码生成 | Error | [Timeout] 特性参数必须为正毫秒数
+HTTPCLIENT028 | 代码生成 | Warning | 继承模式下应用切换成员被隐藏
 HTTPCLIENTREG001 | 代码生成 | Error | HttpClient API 注册生成错误
 HTTPCLIENTREG002 | 代码生成 | Error | RegistryGroupName 不是有效 C# 标识符
 MUD001 | Mud.HttpUtils.Interface | Error | HttpClientApi 方法缺少 HTTP 方法特性

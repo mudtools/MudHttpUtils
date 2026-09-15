@@ -71,8 +71,10 @@ internal class HeaderParameterBinder : IParameterBinder
         }
         else
         {
+            // FIX-05: formatString 必须转义，否则含 " 或 \ 的格式串会导致生成代码语法错误
+            var escapedFormat = StringEscapeHelper.EscapeString(formatString);
             var formatExpression = !string.IsNullOrEmpty(formatString)
-                ? $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{formatString}}}\", {parameter.Name})"
+                ? $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{escapedFormat}}}\", {parameter.Name})"
                 : $"{parameter.Name}.ToString()";
             if (shouldReplace)
             {

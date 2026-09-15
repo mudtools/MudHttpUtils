@@ -62,6 +62,9 @@ internal static class StringEscapeHelper
                 case '\r': sb.Append("\\r"); break;
                 case '\t': sb.Append("\\t"); break;
                 case '\v': sb.Append("\\v"); break;
+            case '\u0085': sb.Append("\\u0085"); break;
+            case '\u2028': sb.Append("\\u2028"); break;
+            case '\u2029': sb.Append("\\u2029"); break;
                 default: sb.Append(c); break;
             }
         }
@@ -72,7 +75,8 @@ internal static class StringEscapeHelper
     {
         return c == '\\' || c == '\"' || c == '\0' || c == '\a' ||
                c == '\b' || c == '\f' || c == '\n' || c == '\r' ||
-               c == '\t' || c == '\v';
+               c == '\t' || c == '\v' ||
+               c == '\u0085' || c == '\u2028' || c == '\u2029';
     }
 
     /// <summary>

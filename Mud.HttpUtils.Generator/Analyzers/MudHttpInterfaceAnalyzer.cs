@@ -80,54 +80,63 @@ public class MudHttpInterfaceAnalyzer : DiagnosticAnalyzer
 
     private static void AnalyzeInterface(SyntaxNodeAnalysisContext context)
     {
-        var interfaceDecl = (InterfaceDeclarationSyntax)context.Node;
-        var interfaceSymbol = context.SemanticModel.GetDeclaredSymbol(interfaceDecl);
-        if (interfaceSymbol == null) return;
-
-        // 检查是否有 [HttpClientApi] 特性（特性名集合与生成器共用同一常量，避免名称清单漂移）。
-        var hasHttpClientApi = interfaceSymbol.GetAttributes()
-            .Any(a => HttpClientGeneratorConstants.HttpClientApiAttributeNames
-                .Contains(a.AttributeClass?.Name, StringComparer.Ordinal));
-        if (!hasHttpClientApi) return;
-
-        // [F9/E-5] 接口级 [IgnoreGenerator]：该接口的全部方法一律跳过（"接口级忽略 = 生成器完全不介入"）。
-        if (GeneratorAttributeFilters.HasIgnoreGenerator(interfaceSymbol))
-            return;
-
-        foreach (var method in interfaceSymbol.GetMembers().OfType<IMethodSymbol>())
+        // FIX-09: 分析器异常护栏（对齐 AOT 侧），AD0001 会整轮禁用分析器
+        try
         {
-            if (method.MethodKind != MethodKind.Ordinary) continue;
+            var interfaceDecl = (InterfaceDeclarationSyntax)context.Node;
+            var interfaceSymbol = context.SemanticModel.GetDeclaredSymbol(interfaceDecl);
+            if (interfaceSymbol == null) return;
 
-            // [F9/E-5] 方法级 [IgnoreGenerator]：跳过该方法的 MUD001/MUD002。
-            if (GeneratorAttributeFilters.HasIgnoreGenerator(method))
-                continue;
+            // 检查是否有 [HttpClientApi] 特性（特性名集合与生成器共用同一常量，避免名称清单漂移）。
+            var hasHttpClientApi = interfaceSymbol.GetAttributes()
+                .Any(a => HttpClientGeneratorConstants.HttpClientApiAttributeNames
+                    .Contains(a.AttributeClass?.Name, StringComparer.Ordinal));
+            if (!hasHttpClientApi) return;
 
-            // 一次性获取方法特性列表，避免两处重复调用 GetAttributes() 产生额外分配。
-            var methodAttributes = method.GetAttributes();
+            // [F9/E-5] 接口级 [IgnoreGenerator]：该接口的全部方法一律跳过（"接口级忽略 = 生成器完全不介入"）。
+            if (GeneratorAttributeFilters.HasIgnoreGenerator(interfaceSymbol))
+                return;
 
-            // MUD001：检查 HTTP 方法特性。
-            // 与生成器门控口径一致：仅已知 HTTP 方法特性名（生成器由特性名推导 HTTP 动词）。
-            var httpMethodAttribute = MethodAnalyzer.FindHttpMethodAttributeFromAttributes(methodAttributes);
-            if (httpMethodAttribute == null)
+            foreach (var method in interfaceSymbol.GetMembers().OfType<IMethodSymbol>())
             {
-                var location = method.Locations.FirstOrDefault() ?? interfaceDecl.GetLocation();
-                context.ReportDiagnostic(Diagnostic.Create(
-                    Diagnostics.MudMethodMissingHttpMethodAttribute,
-                    location,
-                    method.Name));
-            }
+                if (method.MethodKind != MethodKind.Ordinary) continue;
 
-            // MUD002：检查返回类型
-            var returnType = method.ReturnType;
-            if (!IsGeneratorSupportedReturnType(returnType))
-            {
-                var location = method.Locations.FirstOrDefault() ?? interfaceDecl.GetLocation();
-                context.ReportDiagnostic(Diagnostic.Create(
-                    Diagnostics.MudMethodInvalidReturnType,
-                    location,
-                    method.Name,
-                    returnType.ToDisplayString()));
+                // [F9/E-5] 方法级 [IgnoreGenerator]：跳过该方法的 MUD001/MUD002。
+                if (GeneratorAttributeFilters.HasIgnoreGenerator(method))
+                    continue;
+
+                // 一次性获取方法特性列表，避免两处重复调用 GetAttributes() 产生额外分配。
+                var methodAttributes = method.GetAttributes();
+
+                // MUD001：检查 HTTP 方法特性。
+                // 与生成器门控口径一致：仅已知 HTTP 方法特性名（生成器由特性名推导 HTTP 动词）。
+                var httpMethodAttribute = MethodAnalyzer.FindHttpMethodAttributeFromAttributes(methodAttributes);
+                if (httpMethodAttribute == null)
+                {
+                    var location = method.Locations.FirstOrDefault() ?? interfaceDecl.GetLocation();
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        Diagnostics.MudMethodMissingHttpMethodAttribute,
+                        location,
+                        method.Name));
+                }
+
+                // MUD002：检查返回类型
+                var returnType = method.ReturnType;
+                if (!IsGeneratorSupportedReturnType(returnType))
+                {
+                    var location = method.Locations.FirstOrDefault() ?? interfaceDecl.GetLocation();
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        Diagnostics.MudMethodInvalidReturnType,
+                        location,
+                        method.Name,
+                        returnType.ToDisplayString()));
+                }
             }
+        }
+        catch (Exception ex)
+        {
+            // 分析器宁少报不可抛：AD0001 会整轮禁用分析器
+            GeneratorDebugLogger.LogError(nameof(MudHttpInterfaceAnalyzer), ex);
         }
     }
 }

@@ -73,95 +73,125 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
     /// </summary>
     private static void AnalyzeMethodDeclaration(SyntaxNodeAnalysisContext context)
     {
-        if (context.Node is not MethodDeclarationSyntax method)
-            return;
-
-        // 仅处理 HttpClientApi 接口成员（方法所属类型为接口且被 [HttpClientApi] 标记）
-        if (method.Parent is not InterfaceDeclarationSyntax interfaceDecl)
-            return;
-
-        var interfaceSymbol = context.SemanticModel.GetDeclaredSymbol(interfaceDecl, context.CancellationToken);
-        if (interfaceSymbol == null)
-            return;
-
-        var hasHttpClientApi = interfaceSymbol.GetAttributes().Any(a =>
-            a.AttributeClass?.Name is "HttpClientApiAttribute" or "HttpClientApi");
-        if (!hasHttpClientApi)
-            return;
-
-        // 查找方法上的 [Token] 特性并解析 InjectionMode
-        var tokenAttribute = method.AttributeLists
-            .SelectMany(al => al.Attributes)
-            .FirstOrDefault(a => a.Name.ToString() is "Token" or "TokenAttribute");
-        if (tokenAttribute == null)
-            return;
-
-        var injectionModeQuery = false;
-        foreach (var arg in tokenAttribute.ArgumentList?.Arguments ?? default(SeparatedSyntaxList<AttributeArgumentSyntax>))
+        // FIX-09: 分析器异常护栏
+        try
         {
-            // 命名参数 InjectionMode = TokenInjectionMode.Query（枚举成员访问或字符串字面量）
-            if (arg.NameEquals == null || !arg.NameEquals.Name.ToString().Equals("InjectionMode", StringComparison.Ordinal))
-                continue;
+            if (context.Node is not MethodDeclarationSyntax method)
+                return;
 
-            var exprText = arg.Expression.ToString();
-            if (exprText.EndsWith("Query", StringComparison.Ordinal))
+            // 仅处理 HttpClientApi 接口成员（方法所属类型为接口且被 [HttpClientApi] 标记）
+            if (method.Parent is not InterfaceDeclarationSyntax interfaceDecl)
+                return;
+
+            var interfaceSymbol = context.SemanticModel.GetDeclaredSymbol(interfaceDecl, context.CancellationToken);
+            if (interfaceSymbol == null)
+                return;
+
+            var hasHttpClientApi = interfaceSymbol.GetAttributes().Any(a =>
+                a.AttributeClass?.Name is "HttpClientApiAttribute" or "HttpClientApi");
+            if (!hasHttpClientApi)
+                return;
+
+            // 查找方法上的 [Token] 特性并解析 InjectionMode
+            var tokenAttribute = method.AttributeLists
+                .SelectMany(al => al.Attributes)
+                .FirstOrDefault(a => a.Name.ToString() is "Token" or "TokenAttribute");
+            if (tokenAttribute == null)
+                return;
+
+            var injectionModeQuery = false;
+            foreach (var arg in tokenAttribute.ArgumentList?.Arguments ?? default(SeparatedSyntaxList<AttributeArgumentSyntax>))
             {
-                injectionModeQuery = true;
-                break;
+                // 命名参数 InjectionMode = TokenInjectionMode.Query（枚举成员访问或字符串字面量）
+                if (arg.NameEquals == null || !arg.NameEquals.Name.ToString().Equals("InjectionMode", StringComparison.Ordinal))
+                    continue;
+
+                var exprText = arg.Expression.ToString();
+                if (exprText.EndsWith("Query", StringComparison.Ordinal))
+                {
+                    injectionModeQuery = true;
+                    break;
+                }
             }
+
+            if (!injectionModeQuery)
+                return;
+
+            context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.MudQueryTokenInjectionMode,
+                tokenAttribute.GetLocation(),
+                interfaceSymbol.ToDisplayString()));
         }
-
-        if (!injectionModeQuery)
-            return;
-
-        context.ReportDiagnostic(Diagnostic.Create(
-            Diagnostics.MudQueryTokenInjectionMode,
-            tokenAttribute.GetLocation(),
-            interfaceSymbol.ToDisplayString()));
+        catch (Exception ex)
+        {
+            GeneratorDebugLogger.LogError(nameof(TokenManagerLifetimeAnalyzer), ex);
+        }
     }
 
     private static void AnalyzeInvocation(SyntaxNodeAnalysisContext context)
     {
-        if (context.Node is not InvocationExpressionSyntax invocation)
-            return;
+        // FIX-09: 分析器异常护栏
+        try
+        {
+            if (context.Node is not InvocationExpressionSyntax invocation)
+                return;
 
-        if (context.SemanticModel.GetSymbolInfo(invocation, context.CancellationToken).Symbol is not IMethodSymbol methodSymbol)
-            return;
+            // FIX-14: 语法级快速过滤——仅当调用方为已知的 DI 注册方法名时才继续，
+            // 避免对全量 InvocationExpression 做 GetSymbolInfo（零语义成本过滤）。
+            if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
+            {
+                var name = memberAccess.Name.Identifier.ValueText;
+                if (!NonSingletonMethods.Contains(name))
+                    return;
+            }
+            else
+            {
+                // 非成员访问表达式（如局部函数调用），不可能是 DI 注册方法
+                return;
+            }
 
-        // 仅命中 IServiceCollection 的 DI 生命周期扩展方法。
-        if (!IsDiLifetimeMethod(methodSymbol))
-            return;
+            if (context.SemanticModel.GetSymbolInfo(invocation, context.CancellationToken).Symbol is not IMethodSymbol methodSymbol)
+                return;
 
-        // 提取本次注册的服务类型与实现类型。
-        // 若为 null 表示无法静态解析（例如基于非泛型工厂且无法推断返回类型），跳过以避免误报。
-        if (!TryResolveRegisteredTypes(context, methodSymbol, invocation, out var serviceType, out var implementationType))
-            return;
+            // 仅命中 IServiceCollection 的 DI 生命周期扩展方法。
+            if (!IsDiLifetimeMethod(methodSymbol))
+                return;
 
-        // 需要判定"被注册的（服务或实现）类型是 ITokenManager 或实现了 ITokenManager"。
-        var iTokenManager = context.Compilation.GetTypeByMetadataName(ITokenManagerFullName);
-        if (iTokenManager == null)
-            return;
+            // 提取本次注册的服务类型与实现类型。
+            // 若为 null 表示无法静态解析（例如基于非泛型工厂且无法推断返回类型），跳过以避免误报。
+            if (!TryResolveRegisteredTypes(context, methodSymbol, invocation, out var serviceType, out var implementationType))
+                return;
 
-        var registered = serviceType ?? implementationType;
-        if (registered == null)
-            return;
+            // 需要判定"被注册的（服务或实现）类型是 ITokenManager 或实现了 ITokenManager"。
+            var iTokenManager = context.Compilation.GetTypeByMetadataName(ITokenManagerFullName);
+            if (iTokenManager == null)
+                return;
 
-        // 服务类型为具体实现且隐式实现 ITokenManager，或实现类型（区别于服务类型时）实现了 ITokenManager。
-        var twoPartRegistration = serviceType != null && implementationType != null
-                                  && !SymbolEqualityComparer.Default.Equals(serviceType, implementationType);
-        var isTokenManager = IsImplementationOf(registered, iTokenManager)
-                             || (twoPartRegistration && IsImplementationOf(implementationType!, iTokenManager));
+            var registered = serviceType ?? implementationType;
+            if (registered == null)
+                return;
 
-        if (!isTokenManager)
-            return;
+            // 服务类型为具体实现且隐式实现 ITokenManager，或实现类型（区别于服务类型时）实现了 ITokenManager。
+            var twoPartRegistration = serviceType != null && implementationType != null
+                                      && !SymbolEqualityComparer.Default.Equals(serviceType, implementationType);
+            var isTokenManager = IsImplementationOf(registered, iTokenManager)
+                                 || (twoPartRegistration && IsImplementationOf(implementationType!, iTokenManager));
 
-        var reportedTypeName = (implementationType ?? serviceType!)?.ToDisplayString()
-                               ?? registered.ToDisplayString();
-        context.ReportDiagnostic(Diagnostic.Create(
-            Diagnostics.MudNonSingletonTokenManager,
-            invocation.GetLocation(),
-            reportedTypeName,
-            methodSymbol.Name));
+            if (!isTokenManager)
+                return;
+
+            var reportedTypeName = (implementationType ?? serviceType!)?.ToDisplayString()
+                                   ?? registered.ToDisplayString();
+            context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.MudNonSingletonTokenManager,
+                invocation.GetLocation(),
+                reportedTypeName,
+                methodSymbol.Name));
+        }
+        catch (Exception ex)
+        {
+            GeneratorDebugLogger.LogError(nameof(TokenManagerLifetimeAnalyzer), ex);
+        }
     }
 
     private static bool IsDiLifetimeMethod(IMethodSymbol method)
