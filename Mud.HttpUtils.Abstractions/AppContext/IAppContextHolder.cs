@@ -26,5 +26,10 @@ public interface IAppContextHolder
     /// </summary>
     /// <param name="context">要切换到的应用上下文实例。</param>
     /// <returns>一个 <see cref="IDisposable"/> 对象，释放时恢复之前的上下文。</returns>
+    /// <remarks>
+    /// <b>归属约束</b>：返回的 <see cref="IDisposable"/> 必须在其创建的异步流程内释放。
+    /// 跨执行上下文释放（例如在别的 <c>Task.Run</c> 中释放）不会被识别为本作用域的还原点，
+    /// 以免覆盖其它流程的合法上下文写入。
+    /// </remarks>
     IDisposable BeginScope(IMudAppContext context);
 }

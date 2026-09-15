@@ -103,9 +103,14 @@ public static class UrlValidator
         if (domains == null)
             throw new ArgumentNullException(nameof(domains));
 
-        Volatile.Write(ref _configurationDomains, BuildDomainSet(domains));
+        // C4 审计：白名单是全局安全边界，任何整体替换都必须可追溯（谁、从什么变成什么）。
+        var previous = GetAllowedDomains();
+        var next = BuildDomainSet(domains);
+        Volatile.Write(ref _configurationDomains, next);
         // 公开契约：调用后白名单恰好等于传入集合 ⇒ 运行期桶必须清空
         Volatile.Write(ref _runtimeDomains, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+        AllowedDomainAuditLog.Record(previous, next);
     }
 
     /// <summary>

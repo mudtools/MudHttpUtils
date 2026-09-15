@@ -73,4 +73,16 @@ public class MudHttpClientOptions
     /// <para>注意：启用此选项会放宽 URL 验证策略，请确保在受信任的环境中使用。</para>
     /// </remarks>
     public bool AllowCustomBaseUrls { get; set; }
+
+    /// <summary>
+    /// 该命名客户端所属的应用标识（多应用/多租户场景使用）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 设置后建立"命名客户端 → 应用"的显式映射，使 per-app 弹性策略（按 AppKey 解析）
+    /// 与实例隔离（按 clientName 解析）语义对齐；同一 AppKey 可绑定多个命名客户端。
+    /// </para>
+    /// <para>为 null 时该客户端不参与 per-app 策略路由，行为与既有版本一致。</para>
+    /// </remarks>
+    public string? AppKey { get; set; }
 }

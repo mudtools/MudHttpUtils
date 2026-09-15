@@ -364,6 +364,28 @@ internal static class Diagnostics
         category: "代码生成",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    /// <summary>
+    /// A4：继承模式下派生类使用 <c>new</c> 隐藏基类的应用切换成员（UseApp/BeginScope/UseDefaultApp 等）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 当派生接口使用 TokenManager 模式而基接口使用默认模式（或反过来）时，两级的切换来源不同
+    /// （<c>_tokenManager</c> vs <c>_appManager</c>），生成器必须使用 <c>new</c> 而非 <c>override</c>。
+    /// 这意味着通过基类引用调用切换方法会走基类实现，可能指向错误的应用上下文来源。
+    /// </para>
+    /// <para>
+    /// 级别为 Warning：代码可编译且语义正确（<c>new</c> 是合法的 C# 修饰符），但存在调用路径分叉风险。
+    /// 不加 <see cref="WellKnownDiagnosticTags.NotConfigurable"/>（用户可通过统一两级的 TokenManage 配置修复）。
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor AppSwitchMemberHidden = new(
+        id: "HTTPCLIENT028",
+        title: "继承模式下应用切换成员被隐藏",
+        messageFormat: "接口 {0} 继承自 {1} 且两者应用切换来源不同（TokenManage 与默认模式混合），生成的 UseApp/BeginScope 使用 new 隐藏基类成员。请通过派生接口调用切换方法，或统一两级的 TokenManage 配置。",
+        category: "代码生成",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
     #endregion
 
     #region HttpClient注册生成器诊断信息 (HTTPCLIENTREG001-002)

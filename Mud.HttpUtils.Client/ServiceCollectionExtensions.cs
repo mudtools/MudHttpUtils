@@ -72,6 +72,9 @@ public static class HttpClientServiceCollectionExtensions
             return new MemoryHttpResponseCache(maxCacheSize, cleanupInterval);
         });
 
+        // A1 修复：任何客户端注册路径都能用多应用
+        services.AddMudHttpAppContextHolder();
+
         RegisterNamedClient(services, clientName, setAsDefault);
 
         return httpClientBuilder;
@@ -165,6 +168,7 @@ public static class HttpClientServiceCollectionExtensions
             var resilienceResolver = sp.GetService<IResiliencePolicyResolver>();
             var appResilienceResolver = sp.GetService<IAppResiliencePolicyResolver>();
             var appContextHolder = sp.GetService<IAppContextHolder>();
+            var appManager = sp.GetService<IAppManager<IMudAppContext>>();
             var contentSerializer = sp.GetService<IHttpContentSerializer>();
             // Phase 2 (T2.1)：从 DI 解析异常擦除器（用户可通过 services.AddSingleton<IExceptionRedactor>() 注册）
             var exceptionRedactor = sp.GetService<IExceptionRedactor>();
@@ -175,7 +179,7 @@ public static class HttpClientServiceCollectionExtensions
             return new DefaultHttpRequestExecutor(
                 logger ?? NullLogger<DefaultHttpRequestExecutor>.Instance,
                 cacheProvider, resilienceResolver, appResilienceResolver,
-                appContextHolder, contentSerializer,
+                appContextHolder, appManager, contentSerializer,
                 exceptionRedactor: exceptionRedactor,
                 maxExceptionContentLength: enhancedOptions?.MaxExceptionContentLength,
                 captureRequestContent: enhancedOptions?.CaptureRequestContent ?? false,
@@ -748,6 +752,29 @@ public static class HttpClientServiceCollectionExtensions
             throw new ArgumentNullException(nameof(services));
 
         services.TryAddSingleton<ICurrentUserContext, DefaultCurrentUserContext<CurrentUserInfo>>();
+        services.AddMudHttpAppContextHolder();
+        return services;
+    }
+
+    /// <summary>
+    /// 注册默认的应用上下文持有器（<see cref="AsyncLocalAppContextSwitcher"/>，单例）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 多应用（多租户）场景下必须注册：<c>DefaultHttpRequestExecutor</c> 依赖它才能解析当前应用的
+    /// AppKey 并启用 per-app 弹性策略；生成的 API 客户端实现类也需要它才能切换应用上下文。
+    /// </para>
+    /// <para>
+    /// 使用 <c>TryAddSingleton</c>，不会覆盖宿主已注册的自定义实现。
+    /// </para>
+    /// </remarks>
+    /// <param name="services">服务集合。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    public static IServiceCollection AddMudHttpAppContextHolder(this IServiceCollection services)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
         services.TryAddSingleton<IAppContextHolder, AsyncLocalAppContextSwitcher>();
         return services;
     }
@@ -769,6 +796,7 @@ public static class HttpClientServiceCollectionExtensions
         options.RequestInterceptors = sp.GetServices<IHttpRequestInterceptor>();
         options.ResponseInterceptors = sp.GetServices<IHttpResponseInterceptor>();
         options.SensitiveDataMasker = sp.GetService<ISensitiveDataMasker>();
+        options.AppAccessAuthorizer = sp.GetService<IAppAccessAuthorizer>();
 
         // CFG-08：强制解析白名单热更新订阅者（惰性单例），确保首个客户端创建时即建立订阅。
         _ = sp.GetService<AllowedDomainsReloader>();
@@ -850,6 +878,10 @@ public static class HttpClientServiceCollectionExtensions
         // 使用 Configure<T>(IConfiguration) 重载（而非 section.Bind 的 Action<T> 重载），
         // 以注册 ConfigurationChangeTokenSource，支持 IOptionsMonitor<T> 热更新。
         services.Configure<MudHttpClientApplicationOptions>(section);
+
+        // A1 修复：配置入口即隐式声明"多应用/多租户"意图，自动补齐上下文持有器，
+        // 避免 per-app 能力因缺少一次 AddCurrentUserContext 调用而静默失效。
+        services.AddMudHttpAppContextHolder();
 
         // CFG-02：启动期校验（DefaultClientName 指向无 BaseAddress 客户端 → Fail）+ 后置警告（其余跳过项）。
         services.TryAddSingleton<IValidateOptions<MudHttpClientApplicationOptions>, MudHttpClientApplicationOptionsValidator>();

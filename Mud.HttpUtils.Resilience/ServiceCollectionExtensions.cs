@@ -73,8 +73,53 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// 注册 Mud.HttpUtils 弹性策略服务，从配置文件绑定弹性策略选项。
+    /// 注册 per-app 弹性策略解析器（按应用隔离重试/超时/熔断）。
     /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <param name="perAppOptionsFactory">按 appKey 获取专属弹性选项的工厂；返回 null 表示该应用无专属策略（回退全局）。</param>
+    /// <param name="configureDefaultOptions">全局（默认）弹性选项配置委托（可选）。</param>
+    /// <param name="maxCachedApps">per-app 缓存上限，默认 1024。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <remarks>
+    /// <para>
+    /// 内部同时确保 <see cref="IResiliencePolicyResolver"/> 已注册（<c>TryAddSingleton</c>），
+    /// 并订阅 <c>IOptionsMonitor&lt;ResilienceOptions&gt;</c> 变更：配置热更新会清空 per-app 缓存，
+    /// 使新配置在下一次请求生效。
+    /// </para>
+    /// <para>
+    /// 若同时注册了 <see cref="IAppContextHolder"/>（由 <c>AddMudHttpAppContextHolder()</c> 或配置入口自动补齐），
+    /// <c>DefaultHttpRequestExecutor</c> 即会按当前 AppKey 路由到该应用的专属策略。
+    /// </para>
+    /// </remarks>
+    public static IServiceCollection AddMudHttpAppResilience(
+        this IServiceCollection services,
+        Func<string, ResilienceOptions?> perAppOptionsFactory,
+        Action<ResilienceOptions>? configureDefaultOptions = null,
+        int maxCachedApps = 1024)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+        if (perAppOptionsFactory == null)
+            throw new ArgumentNullException(nameof(perAppOptionsFactory));
+
+        services.AddMudHttpResilience(configureDefaultOptions);
+
+        services.TryAddSingleton<IAppResiliencePolicyResolver>(sp =>
+        {
+            var resolver = new AppResiliencePolicyResolver(
+                perAppOptionsFactory,
+                sp.GetService<ILogger<AppResiliencePolicyResolver>>(),
+                maxCachedApps);
+
+            // IOptionsMonitor 在未注册 Options 的老容器中可能为 null，需容错
+            if (sp.GetService<IOptionsMonitor<ResilienceOptions>>() is { } monitor)
+                resolver.SubscribeToOptionChanges(monitor);
+
+            return resolver;
+        });
+
+        return services;
+    }
     /// <param name="services">服务集合。</param>
     /// <param name="configuration">配置实例，用于绑定弹性策略选项。</param>
     /// <param name="configurationSectionPath">配置文件中弹性策略节点的路径，默认为 <see cref="ResilienceOptions.SectionName"/>。</param>

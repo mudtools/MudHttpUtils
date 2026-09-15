@@ -53,7 +53,7 @@ internal static class EnhancedHttpClientOptionsCloner
             JsonTypeInfoResolver = source.JsonTypeInfoResolver,
 #endif
             // 接口/委托属性由 DI 覆盖，此处不拷贝：
-            // Logger / RequestInterceptors / ResponseInterceptors / SensitiveDataMasker
+            // Logger / RequestInterceptors / ResponseInterceptors / SensitiveDataMasker / AppAccessAuthorizer
         };
     }
 }

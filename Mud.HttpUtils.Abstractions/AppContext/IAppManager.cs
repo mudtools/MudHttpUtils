@@ -104,6 +104,38 @@ public interface IAppManager<TAppContext>
     event EventHandler<AppConfigurationChangedEventArgs> ConfigurationChanged;
 
     /// <summary>
+    /// 获取或设置当前默认应用的标识。未设置时返回 null。
+    /// </summary>
+    string? DefaultAppKey { get; }
+
+    /// <summary>
+    /// 设置默认应用。应用不存在时抛出 <see cref="InvalidOperationException"/>。
+    /// </summary>
+    /// <param name="appKey">应用标识。</param>
+    /// <exception cref="ArgumentException">appKey 为空或格式不合法。</exception>
+    /// <exception cref="InvalidOperationException">appKey 对应的应用未注册。</exception>
+    void SetDefaultApp(string appKey);
+
+    /// <summary>
+    /// 尝试设置默认应用（不抛异常）。
+    /// </summary>
+    /// <param name="appKey">应用标识。</param>
+    /// <returns>设置成功返回 true；应用不存在或 appKey 不合法返回 false。</returns>
+    bool TrySetDefaultApp(string appKey);
+
+    /// <summary>
+    /// 异步更新应用上下文：先执行 <see cref="IAsyncInitializable.InitializeAsync"/>，再原子替换。
+    /// </summary>
+    /// <param name="appKey">应用标识。</param>
+    /// <param name="appContext">新的应用上下文实例。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <remarks>
+    /// 与 <see cref="UpdateApp"/> 的区别：本方法保证新上下文完成异步初始化后才可见。
+    /// 初始化失败时新上下文不被注册，且（若实现 <see cref="IDisposable"/>）会被释放后重新抛出。
+    /// </remarks>
+    Task UpdateAppAsync(string appKey, TAppContext appContext, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 注册上下文切换器工厂委托，避免运行时反射创建实例。
     /// </summary>
     /// <typeparam name="TContextSwitcher">上下文切换器类型。</typeparam>

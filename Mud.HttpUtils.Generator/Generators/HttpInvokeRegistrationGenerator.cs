@@ -329,6 +329,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         sb.AppendLine("                    options?.ResilienceResolver,");
         sb.AppendLine("                    appResilienceResolver: null,");
         sb.AppendLine("                    appContextHolder: appContextHolder,");
+        sb.AppendLine("                    appManager: null,");
         sb.AppendLine("                    contentSerializer: options?.ContentSerializer,");
         sb.AppendLine("                    exceptionRedactor: options?.ExceptionRedactor,");
         sb.AppendLine("                    maxExceptionContentLength: options?.MaxExceptionContentLength,");
@@ -346,6 +347,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         sb.AppendLine("                    appContextHolder,");
         sb.AppendLine("                    executor,");
         sb.AppendLine("                    appManager: null,");
+        sb.AppendLine("                    appAuthorizer: options?.AppAccessAuthorizer,");
         sb.AppendLine("                    cacheProvider: options?.CacheProvider,");
         sb.AppendLine("                    resilienceResolver: options?.ResilienceResolver,");
         sb.AppendLine("                    contentSerializer: options?.ContentSerializer,");

@@ -48,6 +48,14 @@ public sealed class EnhancedHttpClientOptions : IEnhancedClientConfig
     public ISensitiveDataMasker? SensitiveDataMasker { get; set; }
 
     /// <summary>
+    /// 获取或设置应用切换授权器。为 null 时不执行授权判定（仅存在性校验）。
+    /// </summary>
+    /// <remarks>
+    /// 多租户场景下必须注册，否则外部传入的 appKey 可跨租户读取他人应用上下文。
+    /// </remarks>
+    public IAppAccessAuthorizer? AppAccessAuthorizer { get; set; }
+
+    /// <summary>
     /// 获取或设置是否允许自定义基础URL。
     /// </summary>
     /// <value>如果允许自定义基础URL则为 <c>true</c>;否则为 <c>false</c>。默认为 <c>false</c>。</value>

@@ -90,6 +90,15 @@ public sealed class GeneratedClientOptions : IEnhancedClientConfig
     public ISensitiveDataMasker? SensitiveDataMasker { get; set; }
 
     /// <summary>
+    /// 获取或设置应用切换授权器。为 null 时不执行授权判定（仅存在性校验）。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="SensitiveDataMasker"/> 同为"可选服务从容器或选项注入"的能力。
+    /// 仅对声明了应用切换能力的生成模式（默认模式 / TokenManage 模式）生效。
+    /// </remarks>
+    public IAppAccessAuthorizer? AppAccessAuthorizer { get; set; }
+
+    /// <summary>
     /// 获取或设置应用上下文实例。
     /// </summary>
     /// <value>应用上下文实例。默认模式下为必需（为 null 时工厂委托抛出异常），因为 <see cref="IMudAppContext"/> 没有通用默认实现。</value>

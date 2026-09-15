@@ -43,6 +43,24 @@ internal sealed class MudHttpClientApplicationOptionsValidator
                 "请补充 BaseAddress，或修正 DefaultClientName。");
         }
 
+        // A2：AppKey 格式校验（防日志注入/内存放大）。
+        foreach (var kvp in options.Clients)
+        {
+            var appKey = kvp.Value.AppKey;
+            if (string.IsNullOrWhiteSpace(appKey))
+                continue;
+
+            try
+            {
+                AppKeyValidator.Validate(appKey, nameof(MudHttpClientOptions.AppKey));
+            }
+            catch (ArgumentException ex)
+            {
+                return ValidateOptionsResult.Fail(
+                    $"MudHttpClients:Clients:{kvp.Key}:AppKey 非法：{ex.Message}");
+            }
+        }
+
         return ValidateOptionsResult.Success;
     }
 }

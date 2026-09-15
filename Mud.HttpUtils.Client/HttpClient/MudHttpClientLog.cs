@@ -396,6 +396,10 @@ internal static partial class MudHttpClientLog
         Message = "RequestBodySerialization 配置为 {Mode}，但当前 IHttpContentSerializer ({SerializerType}) 未实现 ISynchronousContentSerializer，" +
                   "已回退默认序列化路径（fast-path 不生效）。")]
     public static partial void RequestBodySerializationFastPathFallback(ILogger logger, string mode, string serializerType);
+
+    [LoggerMessage(EventId = 167, Level = LogLevel.Warning,
+        Message = "per-app 弹性策略缓存已达上限 ({MaxCachedApps})，新应用将不缓存，回退全局策略。")]
+    public static partial void AppResilienceCacheFull(ILogger logger, int maxCachedApps);
 #else
     private static readonly Action<ILogger, string, Exception?> s_tokenManagerRegistered =
         LoggerMessage.Define<string>(LogLevel.Debug, new EventId(131, nameof(TokenManagerRegistered)),
@@ -613,6 +617,14 @@ internal static partial class MudHttpClientLog
             "已回退默认序列化路径（fast-path 不生效）。");
     public static void RequestBodySerializationFastPathFallback(ILogger logger, string mode, string serializerType)
         => s_requestBodySerializationFastPathFallback(logger, mode, serializerType, null);
+
+    // ---- 多应用管理（EventId 167+）----
+
+    private static readonly Action<ILogger, int, Exception?> s_appResilienceCacheFull =
+        LoggerMessage.Define<int>(LogLevel.Warning, new EventId(167, nameof(AppResilienceCacheFull)),
+            "per-app 弹性策略缓存已达上限 ({MaxCachedApps})，新应用将不缓存，回退全局策略。");
+    public static void AppResilienceCacheFull(ILogger logger, int maxCachedApps)
+        => s_appResilienceCacheFull(logger, maxCachedApps, null);
 #endif
 
     #endregion

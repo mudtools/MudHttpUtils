@@ -46,6 +46,7 @@ public class DefaultHttpRequestExecutor(
     IResiliencePolicyResolver? resilienceResolver = null,
     IAppResiliencePolicyResolver? appResilienceResolver = null,
     IAppContextHolder? appContextHolder = null,
+    IAppManager<IMudAppContext>? appManager = null,
     IHttpContentSerializer? contentSerializer = null,
     // Phase 2 运行时消费参数
     IExceptionRedactor? exceptionRedactor = null,
@@ -66,6 +67,7 @@ public class DefaultHttpRequestExecutor(
     private readonly IResiliencePolicyResolver? _resilienceResolver = resilienceResolver;
     private readonly IAppResiliencePolicyResolver? _appResilienceResolver = appResilienceResolver;
     private readonly IAppContextHolder? _appContextHolder = appContextHolder;
+    private readonly IAppManager<IMudAppContext>? _appManager = appManager;
     private readonly ILogger _logger = logger ?? NullLogger<DefaultHttpRequestExecutor>.Instance;
     private readonly IHttpContentSerializer _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
     // Phase 2 字段
@@ -90,9 +92,24 @@ public class DefaultHttpRequestExecutor(
     /// </summary>
     private IResiliencePolicyResolver? ResolveEffectiveResilienceResolver()
     {
-        if (_appResilienceResolver != null && _appContextHolder != null)
+        if (_appResilienceResolver != null)
         {
-            var currentAppKey = _appContextHolder.Current?.AppKey;
+            // 1) 显式环境上下文优先（UseApp / BeginScope 建立）
+            var currentAppKey = _appContextHolder?.Current?.AppKey;
+
+            // 2) 回退：由注册表给出默认应用（不再依赖构造函数写入环境上下文）
+            if (string.IsNullOrEmpty(currentAppKey) && _appManager != null)
+            {
+                try
+                {
+                    currentAppKey = _appManager.GetDefaultApp().AppKey;
+                }
+                catch
+                {
+                    // 默认应用未设置时不阻断请求，回退到全局策略
+                }
+            }
+
             if (!string.IsNullOrEmpty(currentAppKey))
             {
                 var perAppResolver = _appResilienceResolver.ResolveResolver(currentAppKey!);
