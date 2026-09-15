@@ -191,6 +191,12 @@ public class TokenRecoveryExecutor
             return CreateUnauthorizedResponse(request);
         }
 
+        // SR-M6（P2.4，D9）注册表路由：解析一次、全链路复用（失效+刷新+重试走同一管理器实例）。
+        // 解析失败回退注入实例 + Warning（不 fail-fast——生成器默认键场景的 401 恢复可用性优先）；
+        // 用户级恢复解析到非 IUserTokenManager 时同样回退（TK-06：绝不用租户管理器执行用户级恢复）。
+        var resolvedCredentialManager = ResolveManager(recoveryContext);
+        var resolvedUserManager = isUserTokenRecovery ? ResolveUserManager(recoveryContext) : null;
+
         // 创建令牌恢复子 Activity（mud.token.recovery）
         var recoveryActivity = MudHttpActivitySource.Instance.HasListeners()
             ? MudHttpActivitySource.Instance.StartActivity(MudHttpActivitySource.ActivityNameTokenRecovery, ActivityKind.Internal)
@@ -210,11 +216,12 @@ public class TokenRecoveryExecutor
 
                 string? newToken = null;
 
-                if (isUserTokenRecovery && _userTokenManager != null)
+                if (isUserTokenRecovery)
                 {
                     try
                     {
-                        newToken = await RefreshUserTokenWithDedupAsync(tokenManagerKey ?? "", recoveryContext!.UserId!, cancellationToken).ConfigureAwait(false);
+                        newToken = await RefreshUserTokenWithDedupAsync(
+                            tokenManagerKey ?? "", recoveryContext!.UserId!, resolvedUserManager!, cancellationToken).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
@@ -226,7 +233,8 @@ public class TokenRecoveryExecutor
                 {
                     try
                     {
-                        newToken = await RefreshTokenWithDedupAsync(tokenManagerKey ?? "", cancellationToken).ConfigureAwait(false);
+                        newToken = await RefreshTokenWithDedupAsync(
+                            tokenManagerKey ?? "", resolvedCredentialManager, cancellationToken).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
@@ -536,7 +544,8 @@ public class TokenRecoveryExecutor
     /// SR-M6（P2.4，D9）去重键升级：__credential → managerKey + "\u001F" + "__credential"，
     /// 消除不同管理器的共享刷新被错误合并（执行器跨应用共享场景）。
     /// </remarks>
-    private async Task<string?> RefreshTokenWithDedupAsync(string managerKey, CancellationToken cancellationToken)
+    private async Task<string?> RefreshTokenWithDedupAsync(
+        string managerKey, ITokenManager credentialManager, CancellationToken cancellationToken)
     {
         var dedupKey = managerKey + "\u001F" + CredentialRefreshKey;
         while (true)
@@ -549,7 +558,7 @@ public class TokenRecoveryExecutor
                 // 当前线程赢得了刷新权
                 try
                 {
-                    var token = await RefreshCredentialWithIsolationAsync(managerKey).ConfigureAwait(false);
+                    var token = await RefreshCredentialWithIsolationAsync(credentialManager).ConfigureAwait(false);
                     tcs.SetResult(token);
                     return token;
                 }
@@ -591,9 +600,9 @@ public class TokenRecoveryExecutor
     }
 
     /// <summary>
-    /// SR-M6（P2.4，D9）按 TokenManagerKey 解析本次恢复应使用的令牌管理器。
+    /// SR-M6（P2.4，D9）按 TokenRecoveryContext.TokenManagerKey 解析本次恢复应使用的租户令牌管理器。
     /// 注册表缺席 / 键为空 / 解析失败 → 回退构造注入实例（解析失败记 Warning，不 fail-fast——
-    /// 生成器默认键场景的 401 恢复可用性优先）。
+    /// 生成器默认键场景的 401 恢复可用性优先）。解析在恢复循环外完成一次，失效+刷新+重试全链路复用。
     /// </summary>
     private ITokenManager ResolveManager(TokenRecoveryContext? ctx)
     {
@@ -611,17 +620,33 @@ public class TokenRecoveryExecutor
     }
 
     /// <summary>
+    /// SR-M6（P2.4，D9）用户级恢复的管理器解析：与 <see cref="ResolveManager"/> 同语义，但要求
+    /// 解析结果实现 <see cref="IUserTokenManager"/>——解析失败或解析到非用户管理器（租户实例）时
+    /// 一律回退构造注入实例并记 Warning（TK-06：绝不用租户管理器执行用户级恢复，凭据错配防线）。
+    /// </summary>
+    private IUserTokenManager ResolveUserManager(TokenRecoveryContext? ctx)
+    {
+        var injected = _userTokenManager!;               // 调用点已保证非空（isUserTokenRecovery 分支）
+        var key = ctx?.TokenManagerKey;
+        if (string.IsNullOrEmpty(key) || _managerRegistry == null)
+            return injected;                             // 既有行为（单管理器绑定）
+
+        if (_managerRegistry.Resolve(key!) is IUserTokenManager userManager)
+            return userManager;
+
+        MudHttpClientLog.TokenManagerUnresolved(_logger, key!);   // Warning：回退注入实例
+        return injected;
+    }
+
+    /// <summary>
     /// 以取消隔离方式执行租户令牌刷新：刷新操作自身不受调用方 CT 影响，仅受"刷新超时"约束。
     /// 保持原有行为：InvalidateTokenAsync 失败仅记录日志，不阻止后续刷新。
     /// </summary>
-    private async Task<string?> RefreshCredentialWithIsolationAsync(string managerKey)
+    /// <param name="tokenManager">SR-M6（D9）经注册表解析的管理器（解析失败时为构造注入实例）。</param>
+    private async Task<string?> RefreshCredentialWithIsolationAsync(ITokenManager tokenManager)
     {
         using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(_options.RefreshTimeoutSeconds));
         var refreshCt = timeoutCts.Token;
-
-        // SR-M6（D9）：经注册表路由后的管理器执行失效 + 刷新（全链路走正确管理器）
-        var manager = ResolveManagerByKeyOrNull(managerKey);
-        var tokenManager = manager ?? _tokenManager;
 
         try
         {
@@ -635,14 +660,6 @@ public class TokenRecoveryExecutor
         return await tokenManager.GetOrRefreshTokenAsync(refreshCt).ConfigureAwait(false);
     }
 
-    /// <summary>SR-M6（D9）：由去重键反查管理器（键即 TokenManagerKey）；非注册表模式返回 null。</summary>
-    private ITokenManager? ResolveManagerByKeyOrNull(string managerKey)
-    {
-        if (_managerRegistry == null)
-            return null;
-        return _managerRegistry.Resolve(managerKey);
-    }
-
     /// <summary>
     /// 执行用户令牌刷新，使用 ConcurrentDictionary 按 userId 去重。
     /// </summary>
@@ -651,7 +668,8 @@ public class TokenRecoveryExecutor
     /// 共享刷新；等待线程仅使用自身的取消令牌等待结果，互不影响。
     /// SR-M6（P2.4，D9）去重键升级：userId → managerKey + "\u001F" + userId（跨管理器隔离）。
     /// </remarks>
-    private async Task<string?> RefreshUserTokenWithDedupAsync(string managerKey, string userId, CancellationToken cancellationToken)
+    private async Task<string?> RefreshUserTokenWithDedupAsync(
+        string managerKey, string userId, IUserTokenManager userTokenManager, CancellationToken cancellationToken)
     {
         var dedupKey = managerKey + "\u001F" + userId;
         while (true)
@@ -663,7 +681,7 @@ public class TokenRecoveryExecutor
             {
                 try
                 {
-                    var token = await RefreshUserTokenWithIsolationAsync(userId).ConfigureAwait(false);
+                    var token = await RefreshUserTokenWithIsolationAsync(userId, userTokenManager).ConfigureAwait(false);
                     tcs.SetResult(token);
                     return token;
                 }
@@ -699,10 +717,10 @@ public class TokenRecoveryExecutor
     /// 以取消隔离方式执行用户令牌刷新：刷新操作自身不受调用方 CT 影响，仅受"刷新超时"约束。
     /// 保持原有行为：RemoveTokenAsync 失败仅记录日志，不阻止后续刷新。
     /// </summary>
-    private async Task<string?> RefreshUserTokenWithIsolationAsync(string userId)
+    /// <param name="userId">用户标识。</param>
+    /// <param name="userTokenManager">SR-M6（D9）经注册表解析的用户管理器（解析失败时为构造注入实例）。</param>
+    private async Task<string?> RefreshUserTokenWithIsolationAsync(string userId, IUserTokenManager userTokenManager)
     {
-        // 调用方 RefreshUserTokenWithDedupAsync 已保证 _userTokenManager 非空
-        var userTokenManager = _userTokenManager!;
         using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(_options.RefreshTimeoutSeconds));
         var refreshCt = timeoutCts.Token;
 

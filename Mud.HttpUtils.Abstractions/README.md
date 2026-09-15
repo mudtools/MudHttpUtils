@@ -147,6 +147,7 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 | `IUserTokenStore`                | 用户级令牌持久化存储契约，继承 `ITokenStore`，按用户标识隔离                                         |
 | `IEncryptedTokenStore`           | 加密令牌持久化存储契约，继承 `ITokenStore`，提供自动加密/解密能力                                    |
 | `ITokenRefreshBackgroundService` | 令牌后台刷新服务契约，提供 `StartAsync`、`StopAsync` 和 `RefreshAllAsync` 方法                       |
+| `ITokenManagerRegistry`          | 令牌管理器注册表契约（SR-M6）：按 `TokenRecoveryContext.TokenManagerKey` 解析管理器实例，供 401 恢复执行器按键路由；未知键返回 null（由调用方回退） |
 | `TokenManagerBase`               | 令牌管理器抽象基类，提供并发安全的令牌刷新实现，支持绝对过期保护（`MaxCacheLifetimeSeconds`）         |
 | `OAuth2TokenManagerBase`         | OAuth2 标准流程抽象基类，继承 `TokenManagerBase`，内置 Authorization Code / Client Credentials / ROPC / Refresh Token 流程 |
 | `TokenTypes`                     | 令牌类型常量类，提供标准化的令牌类型标识符                                                           |
@@ -162,9 +163,9 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 | 类型                            | 说明                                                                                               |
 | ------------------------------- | -------------------------------------------------------------------------------------------------- |
 | `TokenRequest`                  | Token 请求参数，封装获取令牌所需的全部信息（`TokenManagerKey`、`UserId`、`Scopes`）                |
-| `TokenRefreshBackgroundOptions` | 令牌后台刷新配置（`Enabled`、`RefreshIntervalSeconds`、`RetryDelaySeconds`、`StopOnError`） |
-| `TokenRecoveryOptions`          | 令牌恢复配置（`Enabled`、`RecoveryMaxRetries`、`TokenScheme`），控制 401 响应时的自动刷新与重试     |
-| `TokenRecoveryContext`          | 令牌恢复上下文，携带注入模式信息供 `TokenRecoveryDelegatingHandler` 使用                            |
+| `TokenRefreshBackgroundOptions` | 令牌后台刷新配置（`Enabled`、`RefreshIntervalSeconds`、`RetryDelaySeconds`、`StopOnError`、`MaxConsecutiveFailures`） |
+| `TokenRecoveryOptions`          | 令牌恢复配置（`Enabled`、`RecoveryMaxRetries`、`TokenScheme`、`RefreshTimeoutSeconds`、`MaxCachedRequestBodyBytes`），控制 401 响应时的自动刷新与重试 |
+| `TokenRecoveryContext`          | 令牌恢复上下文，携带注入模式信息供 `TokenRecoveryDelegatingHandler` 使用（`UserId` 必须来自受信上下文，恢复执行器校验与 `ICurrentUserContext` 的一致性；`TokenManagerKey` 经 `ITokenManagerRegistry` 路由） |
 | `TokenInjectionMode`            | 令牌注入模式枚举（`Header`、`Query`、`Path`、`ApiKey`、`HmacSignature`、`BasicAuth`、`Cookie`）    |
 | `UserTokenInfo`                 | 用户令牌信息模型                                                                                   |
 | `CredentialToken`               | 凭证令牌模型                                                                                       |

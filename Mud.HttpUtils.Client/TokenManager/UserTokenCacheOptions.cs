@@ -18,7 +18,7 @@ public class UserTokenCacheOptions
     public const string SectionName = "MudHttpUserTokenCache";
 
     /// <summary>
-    /// 默认缓存容量限制（用户数量）。
+    /// 默认缓存容量限制（用户 × 作用域条目数）。
     /// </summary>
     public const int DefaultSizeLimit = 10000;
 
@@ -43,7 +43,8 @@ public class UserTokenCacheOptions
     public const double DefaultCompactionPercentage = 0.2;
 
     /// <summary>
-    /// 缓存容量限制（用户数量），默认 <see cref="DefaultSizeLimit"/>（10000）。
+    /// 缓存容量限制，默认 <see cref="DefaultSizeLimit"/>（10000）。SR-M1（P2.2，D7）起计数单位为
+    /// <b>用户 × 作用域条目</b>（同一用户多作用域授权各占一个条目）——容量规划按活跃授权组合估算。
     /// 当缓存数量超过此值时，将自动淘汰过期令牌和最久未访问的令牌。必须大于 0。
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">设置小于等于 0 的值时抛出。</exception>

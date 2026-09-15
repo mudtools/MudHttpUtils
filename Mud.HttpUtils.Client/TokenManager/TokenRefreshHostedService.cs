@@ -84,16 +84,9 @@ public sealed class TokenRefreshHostedService(
         if (tokenManager == null)
             throw new ArgumentNullException(nameof(tokenManager));
 
-        // SR-M4（P3.2，D14）注册守卫（与 TokenRefreshBackgroundService 同源）：跳过不支持后台刷新的令牌管理器
-        if (!tokenManager.SupportsBackgroundRefresh)
-        {
-            MudHttpClientLog.TokenManagerSkippedNoBackgroundRefresh(_logger, name ?? tokenManager.GetType().Name);
-            return;
-        }
-
-        var key = name ?? Guid.NewGuid().ToString("N");
-        _tokenManagers[key] = tokenManager;
-        MudHttpClientLog.TokenManagerRegistered(_logger, key);
+        // SR-M4（P3.2，D14）注册守卫统一：经 TokenRefreshHelper.TryRegisterTokenManager 单一实现，
+        // 与 TokenRefreshBackgroundService（netstandard2.0）同源，消除双实现行为漂移。
+        TokenRefreshHelper.TryRegisterTokenManager(_tokenManagers, tokenManager, name, _logger);
     }
 
     /// <summary>

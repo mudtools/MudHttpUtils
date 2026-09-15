@@ -26,7 +26,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     private readonly ITokenCache<CredentialToken> _tokenCache;
     // P2.2（TK-05/09/24）键控锁表统一管理作用域锁，替代原有的 ConcurrentDictionary<string, Lazy<SemaphoreSlim>>。
     private readonly KeyedLockTable _keyedLockTable = new();
-    // SR-L9（P3.10）：不再 readonly——仅 SupportsTenantMaintenance=true 时分配（用户管理器跳过）。
+    // SR-L9（P3.10，D14-V5）：可空——仅 SupportsTenantMaintenance=true 时分配（用户管理器跳过，避免 NRE 面不置 null 释放路径）。
     private readonly Timer? _cleanupTimer;
     private readonly Timer? _lockCleanupTimer;
     private readonly object _cleanupLock = new();

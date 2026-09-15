@@ -16,9 +16,9 @@ namespace Mud.HttpUtils;
 /// </summary>
 public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 {
-    // NEW-TM-06 修复：改用 Lazy<SemaphoreSlim> + ExecutionAndPublication，与基类 TokenManagerBase 对齐。
-    // 避免裸 GetOrAdd 在并发下多次执行工厂导致互斥锁失效。
-    // P2.2（TK-05/09/24）升级为 KeyedLockTable，以 retire 协议统一锁生命周期。
+    // NEW-TM-06 修复（裸 GetOrAdd 并发多执行工厂导致互斥失效）→ P2.2（TK-05/09/24）升级为
+    // KeyedLockTable（retire 协议 + 引用计数），与基类 TokenManagerBase 统一锁生命周期实现。
+    // SR-M1（P2.2，D7）后锁键为 userId 或 userId + "\u001F" + scopeKey 复合键，按作用域隔离。
     private readonly KeyedLockTable _userLockTable = new();
     private readonly ITokenCache<UserTokenInfo> _userTokenCache;
     private readonly UserTokenCacheOptions _cacheOptions;
