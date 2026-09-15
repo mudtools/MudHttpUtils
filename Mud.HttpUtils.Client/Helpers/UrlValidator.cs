@@ -8,6 +8,10 @@ namespace Mud.HttpUtils;
 /// </summary>
 public static class UrlValidator
 {
+    // C4-P2：DI 化过渡桥接。DI 注册时赋值，静态方法转发到 DI 实例；
+    // 未注册时为 null，退化为进程级私有实例（行为与现状等价）。
+    internal static IUrlValidator? Instance;
+
     // M1-#4：白名单改为不可变快照 + Volatile.Write 原子替换。
     // 并发 ConfigureAllowedDomains 与 ValidateUrl 不再出现 "Collection was modified" 或读到空集的空窗期；
     // 读取方只读不写，快照引用在被替换前始终完整可用。

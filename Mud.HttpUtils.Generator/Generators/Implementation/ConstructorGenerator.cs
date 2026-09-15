@@ -670,12 +670,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         if (!_context.HasTokenManager)
         {
             codeBuilder.AppendLine("        /// <summary>");
-            codeBuilder.AppendLine("        /// 获取或设置当前的应用上下文。");
+            codeBuilder.AppendLine("        /// 获取当前的应用上下文。");
             codeBuilder.AppendLine("        /// </summary>");
             codeBuilder.AppendLine("        public IMudAppContext? Current");
             codeBuilder.AppendLine("        {");
             codeBuilder.AppendLine("            get => _appContextHolder.Current;");
-            codeBuilder.AppendLine("            set => _appContextHolder.Current = value;");
             codeBuilder.AppendLine("        }");
             codeBuilder.AppendLine();
 
@@ -698,7 +697,6 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        public IMudAppContext? Current");
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            get => _appContextHolder.Current;");
-        codeBuilder.AppendLine("            set => _appContextHolder.Current = value;");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
 
@@ -750,7 +748,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("            if (_appAuthorizer is not null && !_appAuthorizer.CanSwitchTo(appKey))");
         codeBuilder.AppendLine("                throw new UnauthorizedAccessException($\"当前调用主体无权切换到应用 '{appKey}'。\");");
         codeBuilder.AppendLine($"            var context = {managerField}.GetApp(appKey);");
-        codeBuilder.AppendLine("            _appContextHolder.Current = context;");
+        codeBuilder.AppendLine("            _appContextHolder.SwitchTo(context);");
         codeBuilder.AppendLine("            return context;");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
@@ -770,7 +768,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         {
             codeBuilder.AppendLine($"            var context = {managerField}.GetDefaultApp();");
         }
-        codeBuilder.AppendLine("            _appContextHolder.Current = context;");
+        codeBuilder.AppendLine("            _appContextHolder.SwitchTo(context);");
         codeBuilder.AppendLine("            return context;");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();

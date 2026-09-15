@@ -141,7 +141,7 @@ sequenceDiagram
 > **关键设计**：
 > - **零运行时反射**：生成代码直接调用 `IHttpRequestExecutor` 与 `IEnhancedHttpClient`，核心路径无反射（仅 `FormUrlEncoded` Body、`QueryMap` 复杂类型、XML 序列化等少数场景保留反射）。
 > - **装饰器叠加**：`ResilientHttpClient` 实现 `IEnhancedHttpClient` 并包装内层客户端，因此弹性策略、令牌恢复、追踪等能力可逐层叠加而不侵入业务接口。
-> - **多租户隔离**：`IAppContextHolder` / `IAppManager<T>` / `AppResiliencePolicyResolver` 为不同 App 维护独立的上下文与弹性策略。
+> - **多租户隔离**：`IAppContextHolder` / `IAppManager<T>` / `AppResiliencePolicyResolver` 为不同 App 维护独立的上下文与弹性策略。多租户场景**必须**调用 `AddMudHttpAppContextHolder()`（或使用配置入口 `AddMudHttpClientsFromConfiguration` 自动补齐）+ `AddMudHttpAppResilience(...)` 才能获得 per-app 弹性隔离；多租户场景**必须**注册 `IAppAccessAuthorizer` 防止跨租户越权。
 
 ### 🚀 快速开始
 

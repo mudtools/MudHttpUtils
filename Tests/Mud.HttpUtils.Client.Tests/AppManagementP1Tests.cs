@@ -226,12 +226,12 @@ public class AppManagementP1Tests
         var ctxB = CreateTestContext("ctxB");
 
         // 在当前 flow 设置 ctxA
-        switcher.Current = ctxA;
+        switcher.SwitchTo(ctxA);
 
         // 在另一个 flow 中创建 scope，然后在另一个 flow 中 Dispose
         var scope = await Task.Run(() =>
         {
-            switcher.Current = ctxB;
+            switcher.SwitchTo(ctxB);
             return switcher.BeginScope(ctxB);
         });
 
@@ -245,7 +245,7 @@ public class AppManagementP1Tests
         // 当前 flow 的 Current 应该仍然指向 ctxA（或被还原，但不应该是 ctxB 的 previous）
         switcher.Current.Should().BeSameAs(ctxA);
 
-        switcher.Current = null;
+        switcher.SwitchTo(null);
     }
 
     [Fact]
@@ -258,7 +258,7 @@ public class AppManagementP1Tests
         // 在另一个 flow 中创建 scope
         var scope = await Task.Run(() =>
         {
-            switcher.Current = null;
+            switcher.SwitchTo(null);
             return switcher.BeginScope(ctxC);
         });
 

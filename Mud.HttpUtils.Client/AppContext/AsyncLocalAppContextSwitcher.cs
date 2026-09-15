@@ -17,7 +17,13 @@ public class AsyncLocalAppContextSwitcher : IAppContextHolder
     public IMudAppContext? Current
     {
         get => _context.Value;
-        set => _context.Value = value;
+        init => _context.Value = value;
+    }
+
+    /// <inheritdoc/>
+    public void SwitchTo(IMudAppContext? context)
+    {
+        _context.Value = context;
     }
 
     /// <inheritdoc/>

@@ -128,7 +128,9 @@ public static class HttpClientServiceCollectionExtensions
         bool setAsDefault)
     {
 #if NET8_0_OR_GREATER
-        services.AddKeyedTransient<IEnhancedHttpClient>(
+        // D4：与 EnhancedHttpClientFactory 的永久缓存语义对齐，避免同一命名客户端
+        // 在 factory 路径与 keyed 路径解析出不同实例（生命周期语义分裂）。
+        services.AddKeyedSingleton<IEnhancedHttpClient>(
             clientName,
             (sp, key) => CreateEnhancedClient(sp, (string)key));
 #endif
@@ -779,6 +781,24 @@ public static class HttpClientServiceCollectionExtensions
         return services;
     }
 
+    /// <summary>
+    /// 注册 URL 验证器到 DI 容器（C4-P2：DI 化过渡）。
+    /// </summary>
+    /// <remarks>
+    /// 注册后，<see cref="UrlValidator"/> 静态方法的调用将被转发到 DI 实例。
+    /// 未注册时静态方法退化为进程级私有实例，行为与现状等价。
+    /// </remarks>
+    /// <param name="services">服务集合。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    public static IServiceCollection AddMudHttpUrlValidator(this IServiceCollection services)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        services.TryAddSingleton<IUrlValidator, DefaultUrlValidator>();
+        return services;
+    }
+
     private static HttpClientFactoryEnhancedClient CreateEnhancedClient(IServiceProvider sp, string clientName)
     {
         var factory = sp.GetRequiredService<IHttpClientFactory>();
@@ -886,6 +906,20 @@ public static class HttpClientServiceCollectionExtensions
         // CFG-02：启动期校验（DefaultClientName 指向无 BaseAddress 客户端 → Fail）+ 后置警告（其余跳过项）。
         services.TryAddSingleton<IValidateOptions<MudHttpClientApplicationOptions>, MudHttpClientApplicationOptionsValidator>();
         services.TryAddSingleton<IPostConfigureOptions<MudHttpClientApplicationOptions>, MudHttpClientApplicationOptionsPostConfigure>();
+
+        // A1/P0：多应用管理接线自检注册
+        services.TryAddSingleton<IValidateOptions<MudHttpAppManagementOptions>, MudHttpAppManagementOptionsValidator>();
+#if NET6_0_OR_GREATER
+        services.AddOptions<MudHttpAppManagementOptions>().ValidateOnStart();
+#endif
+
+        // D4：注册配置变更通知器，使 keyed Singleton 客户端在配置变更时失效缓存。
+#if NET6_0_OR_GREATER
+        services.TryAddSingleton<EnhancedHttpClientFactoryChangeNotifier>();
+#endif
+
+        // C4-P2：注册 URL 验证器到 DI，支持按应用隔离白名单与配置热更新。
+        services.TryAddSingleton<IUrlValidator, DefaultUrlValidator>();
 
         var options = new MudHttpClientApplicationOptions();
         section.Bind(options);
@@ -1255,5 +1289,63 @@ public static class HttpClientServiceCollectionExtensions
         services.AddMudHttpClient(clientName, configureHttpClient, setAsDefault: true);
 
         return services;
+    }
+
+    /// <summary>
+    /// 手动校验多应用管理接线完整性（供 netstandard2.0 宿主与单元测试调用）。
+    /// </summary>
+    /// <param name="serviceProvider">服务提供者。</param>
+    /// <exception cref="InvalidOperationException">接线不完整时抛出，消息列出缺失项与修复指引。</exception>
+    /// <remarks>
+    /// <para>
+    /// 检查项：
+    /// <list type="bullet">
+    ///   <item><description><see cref="IAppContextHolder"/> 是否注册（缺失则 per-app 弹性隔离不可用）</description></item>
+    ///   <item><description><see cref="IAppManager{IMudAppContext}"/> 是否注册（缺失则应用切换不可用）</description></item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// .NET 6+ 宿主可通过 <c>ValidateOnStart</c> 自动执行；netstandard2.0 宿主需在启动后手动调用本方法。
+    /// </para>
+    /// </remarks>
+    public static void ValidateMudHttpAppManagement(this IServiceProvider serviceProvider)
+    {
+        if (serviceProvider == null)
+            throw new ArgumentNullException(nameof(serviceProvider));
+
+        var errors = new List<string>();
+
+        // 检查 IAppContextHolder
+        var appContextHolder = serviceProvider.GetService<IAppContextHolder>();
+        if (appContextHolder == null)
+        {
+            errors.Add(
+                "IAppContextHolder 未注册。多应用/多租户场景下必须注册，" +
+                "请调用 services.AddMudHttpAppContextHolder() 或使用配置入口 AddMudHttpClientsFromConfiguration 自动补齐。");
+        }
+
+        // 检查 IAppManager<IMudAppContext>
+        var appManager = serviceProvider.GetService<IAppManager<IMudAppContext>>();
+        if (appManager == null)
+        {
+            errors.Add(
+                "IAppManager<IMudAppContext> 未注册。应用切换（UseApp/BeginScope）依赖此服务，" +
+                "请注册 DefaultAppManager<IMudAppContext> 或自定义实现。");
+        }
+
+        // 检查 IAppAccessAuthorizer（多租户场景必须）
+        var authorizer = serviceProvider.GetService<IAppAccessAuthorizer>();
+        if (authorizer == null)
+        {
+            errors.Add(
+                "IAppAccessAuthorizer 未注册。多租户场景下必须注册授权器以防止跨租户越权，" +
+                "请调用 services.AddSingleton<IAppAccessAuthorizer, YourAuthorizer>()。");
+        }
+
+        if (errors.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "多应用管理接线不完整：\n" + string.Join("\n", errors.Select((e, i) => $"  {i + 1}. {e}")));
+        }
     }
 }

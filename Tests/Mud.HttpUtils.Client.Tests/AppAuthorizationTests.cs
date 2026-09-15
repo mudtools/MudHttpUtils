@@ -35,7 +35,7 @@ public class AppAuthorizationTests
 
         var mockAppManager = new Mock<IAppManager<IMudAppContext>>();
         var existingContext = CreateTestContext("app1");
-        holder.Current = existingContext;
+        holder.SwitchTo(existingContext);
 
         // Act — 模拟生成器产出的 UseApp 守卫链路
         var act = () =>
@@ -43,7 +43,7 @@ public class AppAuthorizationTests
             if (mockAuthorizer.Object is not null && !mockAuthorizer.Object.CanSwitchTo("other"))
                 throw new UnauthorizedAccessException("当前调用主体无权切换到应用 'other'。");
             var context = mockAppManager.Object.GetApp("other");
-            holder.Current = context;
+            holder.SwitchTo(context);
             return context;
         };
 
@@ -58,7 +58,7 @@ public class AppAuthorizationTests
         mockAppManager.Verify(m => m.GetApp(It.IsAny<string>()), Times.Never);
 
         // 清理
-        holder.Current = null;
+        holder.SwitchTo(null);
     }
 
     [Fact]
@@ -71,7 +71,7 @@ public class AppAuthorizationTests
 
         var mockAppManager = new Mock<IAppManager<IMudAppContext>>();
         var existingContext = CreateTestContext("app1");
-        holder.Current = existingContext;
+        holder.SwitchTo(existingContext);
 
         // Act — 模拟生成器产出的 BeginScope(appKey) 守卫链路
         var act = () =>
@@ -89,7 +89,7 @@ public class AppAuthorizationTests
         holder.Current.Should().BeSameAs(existingContext);
         mockAppManager.Verify(m => m.GetApp(It.IsAny<string>()), Times.Never);
 
-        holder.Current = null;
+        holder.SwitchTo(null);
     }
 
     [Fact]
@@ -135,21 +135,21 @@ public class AppAuthorizationTests
         mockAppManager.Setup(m => m.GetApp("app2")).Returns(targetContext);
 
         var original = CreateTestContext("app1");
-        holder.Current = original;
+        holder.SwitchTo(original);
 
         // Act — 模拟生成器产出的 UseApp 链路
         IMudAppContext result;
         if (mockAuthorizer.Object is not null && !mockAuthorizer.Object.CanSwitchTo("app2"))
             throw new UnauthorizedAccessException();
         result = mockAppManager.Object.GetApp("app2");
-        holder.Current = result;
+        holder.SwitchTo(result);
 
         // Assert
         result.Should().BeSameAs(targetContext);
         holder.Current.Should().BeSameAs(targetContext);
         mockAppManager.Verify(m => m.GetApp("app2"), Times.Once);
 
-        holder.Current = null;
+        holder.SwitchTo(null);
     }
 
     [Fact]
@@ -165,7 +165,7 @@ public class AppAuthorizationTests
         mockAppManager.Setup(m => m.GetApp("app2")).Returns(targetContext);
 
         var original = CreateTestContext("app1");
-        holder.Current = original;
+        holder.SwitchTo(original);
 
         // Act — 模拟生成器产出的 BeginScope(appKey) 链路
         IDisposable scope;
@@ -181,7 +181,7 @@ public class AppAuthorizationTests
         scope.Dispose();
         holder.Current.Should().BeSameAs(original);
 
-        holder.Current = null;
+        holder.SwitchTo(null);
     }
 
     #endregion

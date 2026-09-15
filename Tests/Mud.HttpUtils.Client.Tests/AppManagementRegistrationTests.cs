@@ -193,6 +193,60 @@ public class AppManagementRegistrationTests
 
     #endregion
 
+    #region ValidateMudHttpAppManagement
+
+    [Fact]
+    public void ValidateMudHttpAppManagement_ThrowsWhenIAppContextHolderMissing()
+    {
+        // Arrange — 只有 IAppManager，没有 IAppContextHolder
+        var services = new ServiceCollection();
+        services.AddSingleton<IAppManager<IMudAppContext>, DefaultAppManager<IMudAppContext>>();
+        var sp = services.BuildServiceProvider();
+
+        // Act
+        var act = () => sp.ValidateMudHttpAppManagement();
+
+        // Assert — 异常消息含修复指引
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IAppContextHolder*");
+    }
+
+    [Fact]
+    public void ValidateMudHttpAppManagement_ThrowsWhenAllMissing()
+    {
+        // Arrange — 空容器
+        var services = new ServiceCollection();
+        var sp = services.BuildServiceProvider();
+
+        // Act
+        var act = () => sp.ValidateMudHttpAppManagement();
+
+        // Assert — 异常消息含所有缺失项
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*IAppContextHolder*")
+            .WithMessage("*IAppManager*")
+            .WithMessage("*IAppAccessAuthorizer*");
+    }
+
+    [Fact]
+    public void ValidateMudHttpAppManagement_DoesNotThrowWhenAllRegistered()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddMudHttpAppContextHolder();
+        services.AddSingleton<IAppManager<IMudAppContext>, DefaultAppManager<IMudAppContext>>();
+        services.AddSingleton<IAppAccessAuthorizer, TestAuthorizer>();
+        var sp = services.BuildServiceProvider();
+
+        // Act
+        var act = () => sp.ValidateMudHttpAppManagement();
+
+        // Assert — 全部注册时不抛异常
+        act.Should().NotThrow();
+    }
+
+    #endregion
+
     #region 辅助
 
     private sealed class TestAuthorizer : IAppAccessAuthorizer

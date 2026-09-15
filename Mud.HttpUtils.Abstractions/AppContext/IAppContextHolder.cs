@@ -17,9 +17,31 @@ namespace Mud.HttpUtils;
 public interface IAppContextHolder
 {
     /// <summary>
-    /// 获取或设置当前的应用上下文。
+    /// 获取当前的应用上下文。
     /// </summary>
-    IMudAppContext? Current { get; set; }
+    /// <remarks>
+    /// <b>写入约束（4.5/P3 收敛）</b>：本属性的 setter 已改为 <c>init</c>，
+    /// 仅允许在对象初始化阶段设置。运行时切换应用上下文请使用 
+    /// <see cref="SwitchTo"/> 或 <see cref="BeginScope"/> 方法，
+    /// 或生成代码中的 <c>UseApp</c>/<c>UseDefaultApp</c> 方法。
+    /// </remarks>
+    IMudAppContext? Current { get; init; }
+
+    /// <summary>
+    /// 将当前应用上下文切换为指定实例（不返回作用域，不自动恢复）。
+    /// </summary>
+    /// <param name="context">目标应用上下文实例。可为 <c>null</c> 以清除当前上下文。</param>
+    /// <remarks>
+    /// <para>
+    /// 本方法取代了对 <see cref="Current"/> 的直接写入，是运行时切换应用上下文的推荐入口。
+    /// 与 <see cref="BeginScope"/> 的区别：本方法不返回 <see cref="IDisposable"/>，不自动恢复前值。
+    /// </para>
+    /// <para>
+    /// 适用于生成代码中的 <c>UseApp</c>/<c>UseDefaultApp</c> 方法。
+    /// 如需自动恢复，请使用 <see cref="BeginScope"/>。
+    /// </para>
+    /// </remarks>
+    void SwitchTo(IMudAppContext? context);
 
     /// <summary>
     /// 创建一个应用上下文作用域，切换到指定的应用上下文，并在作用域结束时自动恢复之前的上下文。

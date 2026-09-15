@@ -134,3 +134,59 @@
 > **不计入破坏性**：`HttpVersion*` 默认值改为 `null`（无可观察行为差异，原方案登记的 `BC-8` 经复核**撤销**）；
 > `TokenRefreshBackgroundOptions` 绑定入口（原 CFG-37）经复核**撤销** —— `OptionsBuilder<T>.Bind(IConfiguration)`
 > 与 `Configure<T>(IConfiguration)` 等价，均注册 `ConfigurationChangeTokenSource<T>`。
+
+---
+
+### 多应用管理 Bug 修复与功能完善（2026-09，依据 `.docs/多应用管理-Bug修复与功能完善方案.md`）
+
+> 23 条审查问题（高 3 / 中 12 / 低 8）按根因聚类为 4 类（R1–R4），分 Phase（P0→P1→P2）落地。
+
+#### 新增（Added）
+
+- **`IAppAccessAuthorizer` 接口**（Abstractions）：多租户场景下的应用切换授权契约。注册后，生成代码的 `UseApp`/`BeginScope(appKey)` 在调用 `IAppManager.GetApp` 之前先做授权判定，未授权时抛 `UnauthorizedAccessException` 且环境上下文不发生任何变更。
+- **`AppKeyValidator`**（Abstractions，internal）：零正则、AOT 安全的应用标识格式校验器。覆盖 `RegisterApp`/`GetApp`/`HasApp`/`RemoveApp`/`TryGetApp`/`SetDefaultApp`/`TrySetDefaultApp` 入口，以及 `MudHttpClientOptions.AppKey` 配置校验。异常消息使用 `ToSafeText` 防日志注入。
+- **`AddMudHttpAppContextHolder()`**（Client）：显式注册 `IAppContextHolder` 单例。`AddMudHttpClient`/`AddMudHttpClientsFromConfiguration` 自动补齐。
+- **`AddMudHttpAppResilience(...)`**（Resilience）：一条调用完成 per-app 弹性策略接线（含 `IAppResiliencePolicyResolver` 注册 + `IOptionsMonitor` 变更订阅 + 缓存失效）。
+- **`ValidateMudHttpAppManagement()`**（Client）：手动校验多应用管理接线完整性（全 TFM 可用）。检查 `IAppContextHolder`/`IAppManager`/`IAppAccessAuthorizer` 注册，缺失时抛含修复指引的异常。
+- **`MudHttpAppManagementOptions` + 校验器**（Client）：多应用管理接线自检选项与启动期校验器。.NET 6+ 通过 `ValidateOnStart` 自动执行。
+- **`IAppManager<T>` 扩展成员**：`SetDefaultApp`/`TrySetDefaultApp`/`DefaultAppKey`/`UpdateAppAsync`/`RegisterSwitcherFactory`。
+- **`IAppContextHolder.SwitchTo(IMudAppContext?)`**：取代对 `Current` 的直接写入，是运行时切换应用上下文的推荐入口。
+- **`IUrlValidator` 接口 + `DefaultUrlValidator` 实现**（Client，C4-P2 双轨过渡）：`UrlValidator` 静态类保留为门面，DI 注册后静态调用转发到 DI 实例。
+- **`AppManagementHealthCheck`**（Client）：多应用管理接线健康检查，注册为 `mud_app_management`，在 `/health` 端点观测 `IAppContextHolder`/`IAppManager`/`IAppAccessAuthorizer` 注册状态。
+- **`AllowedDomainAuditLog`**（Client，internal）：白名单整体替换审计出口，记录 before/after 快照与 added/removed 差异集合。
+- **`EnhancedHttpClientFactoryChangeNotifier`**（Client，internal）：订阅 `IOptionsMonitor<MudHttpClientApplicationOptions>` 变更，触发 `IEnhancedHttpClientFactory.InvalidateAll()` 使配置热更新对 keyed Singleton 客户端生效。
+- **`HTTPCLIENT028` 诊断**：继承模式下 `UseApp`/`BeginScope` 使用 `new` 隐藏基类成员时报告 Warning。
+- **`AppResiliencePolicyResolver` 缓存管理**：`Invalidate(appKey)`/`InvalidateAll()`/`SubscribeToOptionChanges(IOptionsMonitor)` + 基数保护（`maxCachedApps`，默认 1024）。
+- **`AsyncLocalAppContextSwitcher` scope 归属校验**（B8）：`BeginScope` 记录 owner 值，释放时仅当 `Current == owner` 才回滚，避免跨执行上下文释放污染。
+- **`DefaultAppManager` 并发安全改进**：默认键改为 `Volatile.Read/Write`；移除默认应用时回退到任一剩余应用；`GetAllApps` 返回快照；`RegisterApp` 用 `TryAdd` 消除竞态；事件逐订阅者隔离。
+- **`MudHttpClientOptions.AppKey`**：建立"命名客户端 → 应用"的显式映射。
+- **`GeneratedClientOptions.AppAccessAuthorizer`** + **`EnhancedHttpClientOptions.AppAccessAuthorizer`**：可选服务从容器或选项注入。
+
+#### 修复（Fixed）
+
+| # | 问题 | 修复 |
+| --- | --- | --- |
+| B1 | 构造函数无条件写 `_appContextHolder.Current` 覆盖已有上下文 | 删除构造函数写入，`Current` 由 `UseApp`/`SwitchTo`/`BeginScope` 显式驱动 |
+| B2 | `GetDefaultApp` 在并发移除时抛误导性"未找到应用标识" | 二次读取容忍并发窗口；错误消息明确"默认应用已被移除" |
+| B3 | 默认应用移除后置空，后续请求全部硬失败 | 回退到任一剩余应用 |
+| B4 | `RegisterApp` 的 `ContainsKey`+索引器赋值有竞态；事件订阅者异常影响状态机 | `TryAdd` 判定变更类型；事件逐订阅者隔离 |
+| B5 | `RegisterAppAsync` 与 `UpdateApp` 初始化语义不一致 | 新增 `UpdateAppAsync`，失败时释放新上下文 |
+| B6 | 初始化失败的上下文被注册 | `InitializeWithCleanupAsync` 失败后 Dispose |
+| B7 | `GetAllApps` 返回 live 视图 | 返回快照数组 |
+| B8 | `BeginScope` 跨 flow 释放覆盖他人上下文 | owner 归属校验 |
+| C1 | `UseApp` 无授权、appKey 无校验 | `IAppAccessAuthorizer` 守卫 + `AppKeyValidator` |
+| C2 | 异常消息插值原始 appKey | `AppKeyValidator.ToSafeText` |
+| C3 | appKey 无字符集/长度校验 | `AppKeyValidator.Validate` |
+| C4 | 白名单整体替换无审计 | `AllowedDomainAuditLog` |
+| D2 | `AppResiliencePolicyResolver` 缓存不可失效、无基数保护 | `Invalidate`/`InvalidateAll` + 基数上限 + 选项变更订阅 |
+| D3 | `AppResiliencePolicyResolver._maxCloneContentSize` 死字段 | 删除 |
+
+#### 变更（Changed）
+
+| # | 变更 | 影响面 | 迁移指引 |
+| --- | --- | --- | --- |
+| BC-13 | `IAppContextHolder.Current` 的 setter 从 `set` 改为 `init` | 直接写 `holder.Current = value` 的代码编译失败 | 改用 `holder.SwitchTo(value)` |
+| BC-14 | `IAppManager<T>` 新增成员（`SetDefaultApp`/`TrySetDefaultApp`/`DefaultAppKey`/`UpdateAppAsync`/`RegisterSwitcherFactory`） | 第三方实现 `IAppManager<T>` 需实现新成员 | 实现新成员（可委托到 `DefaultAppManager`） |
+| BC-15 | `GetAllApps` 返回快照数组 | 依赖 live 视图"自动看到新注册项"的宿主会观察到变化 | 改用 `ConfigurationChanged` 事件 |
+| BC-16 | keyed 客户端从 `Transient` 改为 `Singleton` | 同一命名客户端的每次解析返回同一实例 | 如需每次新实例，使用 `AddMudHttpClient(..., optionsLifetime: Transient)` |
+| BC-17 | 生成代码的 `Current` 属性移除 setter，改用 `SwitchTo` 方法 | 直接写 `generatedClient.Current = value` 编译失败 | 改用 `generatedClient.SwitchTo(value)` 或 `UseApp`/`BeginScope` |

@@ -579,6 +579,20 @@ appManager.ConfigurationChanged += (sender, args) =>
 
 > `DefaultAppManager<T>` 新增 `ConfigurationChanged` 事件，支持应用配置热更新通知。`IMudAppContext` 新增 `GetService<T>()` 方法，支持从应用上下文中解析 DI 服务。`AsyncLocalAppContextSwitcher` 实现 `IAppContextHolder`，用于在当前异步上下文中切换/持有时应用上下文。
 
+#### 多应用接线清单
+
+多应用（多租户）场景需要注册以下服务。使用 `AddMudHttpClientsFromConfiguration` 配置入口时会自动补齐 `IAppContextHolder`，其余需显式注册：
+
+| 隔离机制 | 对应服务/Key | 注册 API | 缺失时的症状 |
+| --- | --- | --- | --- |
+| 应用上下文持有器 | `IAppContextHolder` | `AddMudHttpAppContextHolder()` | per-app 弹性隔离不可用；`DefaultHttpRequestExecutor` 无法解析当前 AppKey |
+| 应用管理器 | `IAppManager<IMudAppContext>` | `services.AddSingleton<IAppManager<IMudAppContext>, DefaultAppManager<IMudAppContext>>()` | `UseApp`/`BeginScope(appKey)` 不可用；生成代码抛 `InvalidOperationException` |
+| per-app 弹性策略 | `IAppResiliencePolicyResolver` | `AddMudHttpAppResilience(perAppOptionsFactory)` | per-app 策略退化为全局策略 |
+| 应用切换授权器 | `IAppAccessAuthorizer` | `services.AddSingleton<IAppAccessAuthorizer, YourAuthorizer>()` | 跨租户越权风险（外部传入 appKey 不受限） |
+| URL 验证器 | `IUrlValidator` | `AddMudHttpUrlValidator()` | 静态调用与既有行为等价；DI 注册后可按应用隔离白名单 |
+
+> 可调用 `serviceProvider.ValidateMudHttpAppManagement()` 手动校验接线完整性（全 TFM 可用，供 netstandard2.0 宿主与单元测试使用）。也可调用 `AddMudHttpHealthChecks()` 注册 `mud_app_management` 健康检查，在 `/health` 端点观测多应用接线状态。
+
 ### 工具类
 
 | 类型               | 说明                                       |

@@ -36,7 +36,7 @@ public class ConstructorNoSideEffectTests
         // Arrange — 预设一个已存在的上下文
         var holder = new AsyncLocalAppContextSwitcher();
         var existingContext = CreateTestContext("app1");
-        holder.Current = existingContext;
+        holder.SwitchTo(existingContext);
 
         // Act — 模拟生成类构造场景：
         // 生成类构造函数接收 holder 作为 DI 依赖，不调用 holder.Current = ...
@@ -47,7 +47,7 @@ public class ConstructorNoSideEffectTests
         holder.Current.Should().BeSameAs(existingContext);
 
         // 清理
-        holder.Current = null;
+        holder.SwitchTo(null);
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public class ConstructorNoSideEffectTests
 
         // Act — 仅显式设置才改变 Current
         var ctxA = CreateTestContext("appA");
-        holder.Current = ctxA;
+        holder.SwitchTo(ctxA);
         holder.Current.Should().BeSameAs(ctxA);
 
         // 模拟构造新客户端（不触碰 Current）
@@ -68,7 +68,7 @@ public class ConstructorNoSideEffectTests
         holder.Current.Should().BeSameAs(ctxA);
 
         // 清理
-        holder.Current = null;
+        holder.SwitchTo(null);
     }
 
     [Fact]
@@ -77,7 +77,7 @@ public class ConstructorNoSideEffectTests
         // Arrange
         var holder = new AsyncLocalAppContextSwitcher();
         var original = CreateTestContext("original");
-        holder.Current = original;
+        holder.SwitchTo(original);
 
         // Act
         var scoped = CreateTestContext("scoped");
@@ -89,7 +89,7 @@ public class ConstructorNoSideEffectTests
         // Assert — 作用域结束后恢复
         holder.Current.Should().BeSameAs(original);
 
-        holder.Current = null;
+        holder.SwitchTo(null);
     }
 
     private static TestAppContext CreateTestContext(string appKey) => new(appKey);

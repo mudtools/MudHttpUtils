@@ -265,7 +265,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         if (!hasHttpClient)
         {
             // TokenManager 模式：_appContextHolder.Current 为 null 时回退到默认应用，与 GetTokenAsync 中的回退逻辑保持一致。
-            // Default 模式（无 TokenManager）：构造函数已初始化 _appContextHolder.Current = _defaultAppContext，正常情况下不会为 null，
+            // Default 模式（无 TokenManager）：Current 由 UseApp/UseDefaultApp/SwitchTo 显式设置，不再由构造函数初始化。
             // 保留 throw 作为安全网，防止异常状态下静默使用错误上下文。
             if (hasTokenManager)
             {

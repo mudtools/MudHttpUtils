@@ -72,7 +72,11 @@ public static class MudHttpHealthChecksExtensions
             .AddCheck<MudCircuitBreakerHealthCheck>(
                 MudCircuitBreakerHealthCheck.Name,
                 failureStatus: options.CircuitBreaker.FailureStatus,
-                tags: new[] { "mud", "resilience" });
+                tags: new[] { "mud", "resilience" })
+            .AddCheck<AppManagementHealthCheck>(
+                AppManagementHealthCheck.Name,
+                failureStatus: options.AppManagement.FailureStatus,
+                tags: new[] { "mud", "app" });
 
         // 注册熔断器健康检查选项为单例，供 MudCircuitBreakerHealthCheck 通过 DI 注入
         services.AddSingleton(cbOptions);
@@ -117,6 +121,7 @@ public static class MudHttpHealthChecksExtensions
             o.CircuitBreaker.MaxOpenCount = options.CircuitBreaker.MaxOpenCount;
             o.CircuitBreaker.MaxHalfOpenCount = options.CircuitBreaker.MaxHalfOpenCount;
             o.CircuitBreaker.FailureStatus = options.CircuitBreaker.FailureStatus;
+            o.AppManagement.FailureStatus = options.AppManagement.FailureStatus;
         });
     }
 }
@@ -131,6 +136,9 @@ public sealed class MudHttpHealthChecksOptions
 
     /// <summary>熔断器健康检查选项。</summary>
     public CircuitBreakerHealthCheckSettings CircuitBreaker { get; set; } = new();
+
+    /// <summary>多应用管理健康检查选项。</summary>
+    public AppManagementHealthCheckSettings AppManagement { get; set; } = new();
 }
 
 /// <summary>
@@ -156,4 +164,13 @@ public sealed class CircuitBreakerHealthCheckSettings
 
     /// <summary>失败时返回的健康状态，默认 Unhealthy。</summary>
     public HealthStatus? FailureStatus { get; set; } = HealthStatus.Unhealthy;
+}
+
+/// <summary>
+/// 多应用管理健康检查配置（含失败状态）。
+/// </summary>
+public sealed class AppManagementHealthCheckSettings
+{
+    /// <summary>失败时返回的健康状态，默认 Degraded。</summary>
+    public HealthStatus? FailureStatus { get; set; } = HealthStatus.Degraded;
 }
