@@ -128,6 +128,9 @@ internal class InterfaceImplementationGenerator
         // CFG-07：方法级 [Timeout] 超过接口级 HttpClient 超时时发出 Warning
         ReportMethodTimeoutConflicts(generatorContext);
 
+        // CFG-29 / CFG-32：方法级 [CircuitBreaker] / [Timeout] 特性参数值域校验（Error）
+        ReportResilienceAttributeValueRangeViolations(generatorContext);
+
         // 必须在生成器循环之前登记：MethodGenerator 需要据此决定是否补发占位方法，
         // 而其执行顺序早于 AccessTokenGenerator 等后续片段生成器。
         RegisterInfrastructureMembers(generatorContext);
@@ -924,8 +927,10 @@ internal class InterfaceImplementationGenerator
             if (timeoutAttr == null)
                 continue;
 
-            var methodTimeoutMs = AttributeDataHelper.GetAttributeIntValue(
-                timeoutAttr, 0, HttpClientGeneratorConstants.TimeoutMillisecondsProperty, -1);
+            // CFG-28 / I-9：与 MethodAnalyzer 同口径（命名参数优先），
+            // 否则 [Timeout(0, TimeoutMilliseconds = 5000)] 会读到位置值 0 而漏过本冲突检查。
+            var methodTimeoutMs = AttributeDataHelper.GetIntValuePreferNamed(
+                timeoutAttr, HttpClientGeneratorConstants.TimeoutMillisecondsProperty, 0) ?? -1;
             if (methodTimeoutMs <= 0 || methodTimeoutMs <= interfaceTimeoutMs)
                 continue;
 
@@ -942,6 +947,120 @@ internal class InterfaceImplementationGenerator
                 interfaceTimeoutSeconds));
         }
     }
+
+    /// <summary>
+    /// CFG-29 / CFG-32：校验方法级 <c>[CircuitBreaker]</c> / <c>[Timeout]</c> 的特性参数取值域。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为何必须在生成器侧</b>：Roslyn 从不实例化 Attribute，写在 Attribute <c>setter</c> 中的校验永不执行
+    /// （见 <see cref="Diagnostics.CircuitBreakerAttributeValueOutOfRange"/> 备注）。本方法是这两类特性唯一可行的
+    /// 编译期防线，把「运行期静默降级」前移为「构建失败」（v2 §3.1 不静默原则）。
+    /// </para>
+    /// <para>
+    /// <b>取值口径</b>：一律经 <see cref="AttributeDataHelper.GetIntValuePreferNamed"/>（命名参数优先，不变量 I-9），
+    /// 与 <c>MethodAnalyzer</c> 的分析口径逐位一致 —— 否则会出现「生成器按 5 校验、生成代码按 200 生效」的口径分裂。
+    /// </para>
+    /// <para>
+    /// <b>位置</b>：以特性语法节点为诊断位置（IDE 可直接定位到 <c>[CircuitBreaker(...)]</c> 行）。
+    /// </para>
+    /// </remarks>
+    private void ReportResilienceAttributeValueRangeViolations(GeneratorContext context)
+    {
+        foreach (var method in context.AllMethods)
+        {
+            var attributes = method.GetAttributes();
+
+            ReportCircuitBreakerRangeViolation(method, attributes);
+            ReportTimeoutRangeViolation(method, attributes);
+        }
+    }
+
+    /// <summary>
+    /// CFG-29：<c>[CircuitBreaker]</c> 四个值域条件（均为 Error，共用 <c>HTTPCLIENT026</c>）。
+    /// </summary>
+    private void ReportCircuitBreakerRangeViolation(IMethodSymbol method, ImmutableArray<AttributeData> attributes)
+    {
+        var cbAttr = attributes
+            .FirstOrDefault(a => HttpClientGeneratorConstants.CircuitBreakerAttributeNames.Contains(a.AttributeClass?.Name));
+        if (cbAttr == null)
+            return;
+
+        var failureThreshold = AttributeDataHelper.GetIntValuePreferNamed(
+            cbAttr, HttpClientGeneratorConstants.CircuitBreakerFailureThresholdProperty, 0) ?? 5;
+        var breakDurationSeconds = AttributeDataHelper.GetIntValuePreferNamed(
+            cbAttr, HttpClientGeneratorConstants.CircuitBreakerBreakDurationSecondsProperty, -1) ?? 30;
+        var samplingDurationSeconds = AttributeDataHelper.GetIntValuePreferNamed(
+            cbAttr, HttpClientGeneratorConstants.CircuitBreakerSamplingDurationSecondsProperty, -1) ?? 0;
+        var minimumThroughput = AttributeDataHelper.GetIntValuePreferNamed(
+            cbAttr, HttpClientGeneratorConstants.CircuitBreakerMinimumThroughputProperty, -1) ?? 10;
+
+        string? detail = null;
+
+        if (failureThreshold < 1)
+        {
+            detail = $"FailureThreshold = {failureThreshold}，须 ≥ 1" +
+                     (samplingDurationSeconds > 0
+                         ? "（当前 SamplingDurationSeconds > 0，该值为采样窗口内的失败率百分比）"
+                         : "（当前 SamplingDurationSeconds = 0，该值为连续失败次数上限；≤ 0 会使熔断策略构建失败）");
+        }
+        else if (samplingDurationSeconds > 0 && failureThreshold > 100)
+        {
+            detail = $"FailureThreshold = {failureThreshold}，超范围" +
+                     "（SamplingDurationSeconds > 0 时该值表示失败率百分比，须 ≤ 100；运行时会被静默按 100% 处理）";
+        }
+        else if (samplingDurationSeconds > 0 && minimumThroughput < 2)
+        {
+            detail = $"MinimumThroughput = {minimumThroughput}，须 ≥ 2" +
+                     "（Polly AdvancedCircuitBreakerAsync 下限要求）";
+        }
+        else if (breakDurationSeconds <= 0)
+        {
+            detail = $"BreakDurationSeconds = {breakDurationSeconds}，须 > 0";
+        }
+
+        if (detail == null)
+            return;
+
+        _context.ReportDiagnostic(Diagnostic.Create(
+            Diagnostics.CircuitBreakerAttributeValueOutOfRange,
+            GetAttributeLocation(cbAttr, method),
+            _interfaceSymbol.Name,
+            method.Name,
+            detail));
+    }
+
+    /// <summary>
+    /// CFG-32：<c>[Timeout]</c> 有效值必须为正毫秒数（Error，<c>HTTPCLIENT027</c>）。
+    /// 不误报「未声明 <c>[Timeout]</c>」（该情形表示 <c>MethodTimeoutEnabled = false</c>）。
+    /// </summary>
+    private void ReportTimeoutRangeViolation(IMethodSymbol method, ImmutableArray<AttributeData> attributes)
+    {
+        var timeoutAttr = attributes
+            .FirstOrDefault(a => HttpClientGeneratorConstants.TimeoutAttributeNames.Contains(a.AttributeClass?.Name));
+        if (timeoutAttr == null)
+            return;
+
+        var timeoutMilliseconds = AttributeDataHelper.GetIntValuePreferNamed(
+            timeoutAttr, HttpClientGeneratorConstants.TimeoutMillisecondsProperty, 0) ?? 0;
+        if (timeoutMilliseconds > 0)
+            return;
+
+        _context.ReportDiagnostic(Diagnostic.Create(
+            Diagnostics.TimeoutAttributeNonPositive,
+            GetAttributeLocation(timeoutAttr, method),
+            _interfaceSymbol.Name,
+            method.Name,
+            $"{timeoutMilliseconds}ms"));
+    }
+
+    /// <summary>
+    /// 取特性语法节点位置（优先），回退方法位置，再回退接口声明位置。
+    /// </summary>
+    private Location GetAttributeLocation(AttributeData attribute, IMethodSymbol method)
+        => (attribute.ApplicationSyntaxReference?.GetSyntax()?.GetLocation()
+            ?? method.Locations.FirstOrDefault()
+            ?? _interfaceDecl.GetLocation())!;
 
     /// <summary>
     /// 从方法的 Token 特性中提取 RequiresUserId 值

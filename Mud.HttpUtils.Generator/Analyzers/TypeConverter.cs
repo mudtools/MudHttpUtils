@@ -30,6 +30,16 @@ internal static class TypeConverter
             return parameterType.IsValueType ? "default" : "null";
         }
 
+        // [回归修复] 2.0.4 重构引入：Nullable<T>（int?/bool?/枚举? 等）的 SpecialType 为
+        // System_Nullable_T，不在下方 switch 覆盖之列，其显式默认值（如 int? x = 10、bool? b = true）
+        // 会落入兜底分支被格式化为字符串字面量 "10"/"true"，与 int?/bool? 基类型不匹配（CS1750）。
+        // 旧版 ParameterListBuilder 直接保留源码默认值 token，无此问题。此处先解包内部类型再走对应分支。
+        if (parameterType is INamedTypeSymbol { ConstructedFrom.SpecialType: SpecialType.System_Nullable_T } nullableType
+            && nullableType.TypeArguments.Length == 1)
+        {
+            return GetDefaultValueLiteral(nullableType.TypeArguments[0], defaultValue);
+        }
+
         switch (parameterType.SpecialType)
         {
             case SpecialType.System_String:

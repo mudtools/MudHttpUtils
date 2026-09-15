@@ -11,10 +11,19 @@ public static class UrlValidator
     // M1-#4：白名单改为不可变快照 + Volatile.Write 原子替换。
     // 并发 ConfigureAllowedDomains 与 ValidateUrl 不再出现 "Collection was modified" 或读到空集的空窗期；
     // 读取方只读不写，快照引用在被替换前始终完整可用。
-    private static HashSet<string> _allowedDomains = new(StringComparer.OrdinalIgnoreCase);
+    //
+    // CFG-34（v3.1）：白名单按「来源」分桶 —— 配置桶（来自 appsettings / ConfigureAllowedDomains）
+    // 与运行期桶（来自 AddAllowedDomain）。配置热更新重放只写配置桶，
+    // 从而不再清除运行期通过 AddAllowedDomain 新增的域名。
+    // 两桶各自独立 Volatile 槽，读端各取一次快照后取并集 —— 仍保持「无空窗」特性（I-6）。
+    private static HashSet<string> _configurationDomains = new(StringComparer.OrdinalIgnoreCase);
+    private static HashSet<string> _runtimeDomains = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>当前白名单快照（读端只读，写端经整体替换更新）。</summary>
-    private static HashSet<string> AllowedDomainsSnapshot => Volatile.Read(ref _allowedDomains);
+    /// <summary>配置来源白名单快照（读端只读，写端经整体替换更新）。</summary>
+    private static HashSet<string> ConfigurationDomainsSnapshot => Volatile.Read(ref _configurationDomains);
+
+    /// <summary>运行期来源白名单快照（读端只读，写端经整体替换更新）。</summary>
+    private static HashSet<string> RuntimeDomainsSnapshot => Volatile.Read(ref _runtimeDomains);
 
     private static readonly List<IPNetwork> _privateNetworks;
 
@@ -74,22 +83,66 @@ public static class UrlValidator
     }
 
     /// <summary>
-    /// 配置允许的域名白名单（替换默认白名单）。
+    /// 配置允许的域名白名单（整体替换：配置桶置为 <paramref name="domains"/>，并清空运行期桶）。
     /// 线程安全：整体构建新集合并原子替换，并发调用期间不存在"空集"瞬间。
     /// </summary>
     /// <param name="domains">允许的域名集合</param>
+    /// <remarks>
+    /// <para>
+    /// <b>语义（CFG-34）</b>：本公开 API 的既有契约是「调用后白名单<b>恰好</b>等于传入集合」，
+    /// 故同时清空运行期桶（<see cref="AddAllowedDomain"/> 所写的那一桶）。
+    /// </para>
+    /// <para>
+    /// <b>配置热更新请用 <see cref="SetConfigurationDomains"/></b>（仅替换配置桶）：
+    /// <c>AllowedDomainsReloader</c> 在每次 <c>IConfigurationRoot.Reload()</c> 时重放配置，
+    /// 若走本方法会把运行期新增域名一并抹掉。
+    /// </para>
+    /// </remarks>
     public static void ConfigureAllowedDomains(IEnumerable<string> domains)
     {
         if (domains == null)
             throw new ArgumentNullException(nameof(domains));
 
-        var newSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Volatile.Write(ref _configurationDomains, BuildDomainSet(domains));
+        // 公开契约：调用后白名单恰好等于传入集合 ⇒ 运行期桶必须清空
+        Volatile.Write(ref _runtimeDomains, new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// 仅替换「配置来源」白名单桶，<b>保留</b>运行期经 <see cref="AddAllowedDomain"/> 新增的域名。
+    /// </summary>
+    /// <param name="domains">配置来源允许的域名集合。</param>
+    /// <remarks>
+    /// <para>
+    /// <b>CFG-34</b>：供配置热更新重放（<c>AllowedDomainsReloader</c>）使用。
+    /// 修复前重放调用 <see cref="ConfigureAllowedDomains"/>，会整体覆盖运行期增量 ——
+    /// 与 <c>MudHttpClientApplicationOptions</c> XML 文档承诺的「可在运行时用
+    /// <c>AddAllowedDomain</c>/<c>RemoveAllowedDomain</c> 动态修改白名单」相矛盾。
+    /// </para>
+    /// <para>
+    /// <b>不变量 I-13</b>：配置重放<b>不得</b>清除运行期写入的域名。
+    /// </para>
+    /// <para>
+    /// 线程安全与 <see cref="ConfigureAllowedDomains"/> 一致（复制后整体替换，无空窗）。
+    /// </para>
+    /// </remarks>
+    internal static void SetConfigurationDomains(IEnumerable<string> domains)
+    {
+        if (domains == null)
+            throw new ArgumentNullException(nameof(domains));
+
+        Volatile.Write(ref _configurationDomains, BuildDomainSet(domains));
+    }
+
+    private static HashSet<string> BuildDomainSet(IEnumerable<string> domains)
+    {
+        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var domain in domains)
         {
             if (!string.IsNullOrWhiteSpace(domain))
-                newSet.Add(domain.Trim());
+                set.Add(domain.Trim());
         }
-        Volatile.Write(ref _allowedDomains, newSet);
+        return set;
     }
 
     /// <summary>
@@ -113,8 +166,8 @@ public static class UrlValidator
 
         var host = uri.Host;
 
-        // 白名单域名跳过所有后续检查
-        if (IsDomainAllowedBySnapshot(host))
+        // 白名单域名跳过所有后续检查（配置桶 + 运行期桶的并集）
+        if (IsDomainAllowedByAnySnapshot(host))
             return;
 
         if (!allowCustomBaseUrls)
@@ -130,9 +183,10 @@ public static class UrlValidator
                 throw new InvalidOperationException($"非标准 HTTPS 端口: {uri.Port}");
             }
 
-            if (AllowedDomainsSnapshot.Count > 0)
+            var allowedSnapshot = GetAllowedDomains();
+            if (allowedSnapshot.Count > 0)
             {
-                var allowedDomains = string.Join(", ", AllowedDomainsSnapshot.OrderBy(d => d));
+                var allowedDomains = string.Join(", ", allowedSnapshot.OrderBy(d => d));
                 throw new InvalidOperationException(
                     $"域名 '{host}' 不在白名单中。允许的域名: {allowedDomains}." +
                     "如需使用自定义域名，请设置 allowCustomBaseUrls=true（注意安全风险）。");
@@ -169,14 +223,17 @@ public static class UrlValidator
     }
 
     /// <summary>
-    /// 检查主机名是否在允许的域名白名单中（基于当前快照判定，含子域名匹配）。
+    /// 检查主机名是否在允许的域名白名单中（配置桶与运行期桶的并集，含子域名匹配）。
     /// </summary>
-    private static bool IsDomainAllowedBySnapshot(string host)
+    private static bool IsDomainAllowedByAnySnapshot(string host)
     {
-        var snapshot = AllowedDomainsSnapshot;
-        if (snapshot.Count == 0)
-            return false;
-        return IsAllowedDomain(host, snapshot);
+        // 各自取一次快照后判定：任一次并发写入最多使判定略微滞后，不会出现「空集」误判。
+        var configurationSnapshot = ConfigurationDomainsSnapshot;
+        if (configurationSnapshot.Count > 0 && IsAllowedDomain(host, configurationSnapshot))
+            return true;
+
+        var runtimeSnapshot = RuntimeDomainsSnapshot;
+        return runtimeSnapshot.Count > 0 && IsAllowedDomain(host, runtimeSnapshot);
     }
 
     /// <summary>
@@ -283,39 +340,68 @@ public static class UrlValidator
     }
 
     /// <summary>
-    /// 获取当前允许的域名白名单（返回快照副本，线程安全）。
+    /// 获取当前允许的域名白名单（配置桶与运行期桶的并集快照副本，线程安全）。
     /// </summary>
     public static IReadOnlyCollection<string> GetAllowedDomains()
     {
-        return AllowedDomainsSnapshot.ToArray();
+        var configurationSnapshot = ConfigurationDomainsSnapshot;
+        var runtimeSnapshot = RuntimeDomainsSnapshot;
+
+        if (runtimeSnapshot.Count == 0)
+            return configurationSnapshot.ToArray();
+        if (configurationSnapshot.Count == 0)
+            return runtimeSnapshot.ToArray();
+
+        var union = new HashSet<string>(configurationSnapshot, StringComparer.OrdinalIgnoreCase);
+        union.UnionWith(runtimeSnapshot);
+        return union.ToArray();
     }
 
     /// <summary>
     /// 添加自定义域名到白名单（运行时扩展）。线程安全（复制快照后整体替换）。
     /// </summary>
+    /// <remarks>
+    /// <b>CFG-34</b>：本方法只写「运行期桶」，因此配置热更新重放（<see cref="SetConfigurationDomains"/>）
+    /// 不会清除此处新增的域名（不变量 I-13）。
+    /// 如需让新增域名参与「整体替换」语义，请改用 <see cref="ConfigureAllowedDomains"/>。
+    /// </remarks>
     public static void AddAllowedDomain(string domain)
     {
         if (string.IsNullOrWhiteSpace(domain))
             throw new ArgumentNullException(nameof(domain));
 
-        var current = AllowedDomainsSnapshot;
+        var current = RuntimeDomainsSnapshot;
         var newSet = new HashSet<string>(current, StringComparer.OrdinalIgnoreCase);
         newSet.Add(domain.Trim().ToLowerInvariant());
-        Volatile.Write(ref _allowedDomains, newSet);
+        Volatile.Write(ref _runtimeDomains, newSet);
     }
 
     /// <summary>
     /// 从白名单中移除域名。线程安全（复制快照后整体替换）。
     /// </summary>
+    /// <remarks>
+    /// <b>CFG-34</b>：运行期桶的移除是<b>永久</b>的；配置桶的移除会在下一次配置热更新重放时被配置值重新覆盖
+    /// （配置是来源真相）。如需彻底清空，请调用 <see cref="ConfigureAllowedDomains"/>。
+    /// </remarks>
     public static void RemoveAllowedDomain(string domain)
     {
         if (string.IsNullOrWhiteSpace(domain))
             throw new ArgumentNullException(nameof(domain));
 
-        var current = AllowedDomainsSnapshot;
-        var newSet = new HashSet<string>(current, StringComparer.OrdinalIgnoreCase);
-        newSet.Remove(domain.Trim());
-        Volatile.Write(ref _allowedDomains, newSet);
+        var trimmed = domain.Trim();
+
+        var runtimeCurrent = RuntimeDomainsSnapshot;
+        var runtimeNew = new HashSet<string>(runtimeCurrent, StringComparer.OrdinalIgnoreCase);
+        runtimeNew.Remove(trimmed);
+        Volatile.Write(ref _runtimeDomains, runtimeNew);
+
+        var configurationCurrent = ConfigurationDomainsSnapshot;
+        if (configurationCurrent.Count > 0)
+        {
+            var configurationNew = new HashSet<string>(configurationCurrent, StringComparer.OrdinalIgnoreCase);
+            configurationNew.Remove(trimmed);
+            Volatile.Write(ref _configurationDomains, configurationNew);
+        }
     }
 
     /// <summary>

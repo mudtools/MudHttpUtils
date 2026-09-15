@@ -52,6 +52,12 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     private readonly ILogger _logger;
     private readonly HttpClient _httpClient;
     private readonly bool _enableLogging;
+
+    /// <summary>
+    /// CFG-39：请求体序列化 fast-path 回退的「单次记录」门控（0 = 尚未记录，1 = 已记录）。
+    /// 回退是<b>配置与服务长期不变</b>的稳定事实，每请求记录会刷屏，故仅在首次回退时记一次 Debug。
+    /// </summary>
+    private int _fastPathFallbackLogged;
     private readonly IHttpRequestInterceptor[] _requestInterceptors;
     private readonly IHttpResponseInterceptor[] _responseInterceptors;
     private readonly ISensitiveDataMasker? _sensitiveDataMasker;
@@ -1145,7 +1151,17 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 : syncSerializer.ToHttpContentSynchronous(item);
         }
 
-        // 序列化器未实现 fast-path 接口，回退到默认路径
+        // 序列化器未实现 fast-path 接口，回退到默认路径。
+        // CFG-39 / 不变量 I-15：配置已设置但因条件未满足而回退，必须留下 Debug 级及以上日志；
+        // 用 Interlocked 门控只记一次，避免每请求刷屏（该回退条件在整个客户端生命周期内恒定）。
+        if (Interlocked.Exchange(ref _fastPathFallbackLogged, 1) == 0)
+        {
+            MudHttpClientLog.RequestBodySerializationFastPathFallback(
+                _logger,
+                _requestBodySerialization.ToString(),
+                _contentSerializer.GetType().Name);
+        }
+
         return _contentSerializer.ToHttpContent(item);
     }
 

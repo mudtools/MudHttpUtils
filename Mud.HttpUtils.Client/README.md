@@ -50,14 +50,14 @@ var baseAddress = httpClient.BaseAddress;
 | `ResponseInterceptors` | `IEnumerable<IHttpResponseInterceptor>?` | `null` | 响应拦截器集合 |
 | `SensitiveDataMasker` | `ISensitiveDataMasker?` | `null` | 敏感数据掩码器 |
 | `AllowCustomBaseUrls` | `bool` | `false` | 是否允许自定义基础 URL（可能带来 SSRF 风险，谨慎使用） |
-| `RequestBodySerialization` | `RequestBodySerializationMode` | `Default` | 请求体序列化模式（`Buffered`/`Streamed` 需 `ISynchronousContentSerializer`） |
+| `RequestBodySerialization` | `RequestBodySerializationMode` | `Default` | 请求体序列化模式（`Buffered`/`Streamed` 需 `ISynchronousContentSerializer`；条件不满足时**回退默认路径**并记一次 `Debug` 日志，EventId 166） |
 | `ExceptionRedactor` | `IExceptionRedactor?` | `null` | 异常擦除器（在异常传播前清除敏感数据） |
 | `MaxExceptionContentLength` | `int?` | `null`（生效值 10240） | 错误响应体最大读取字符数（读取阶段生效，防 OOM）。`null` 时使用默认值 10240（`HttpExecutionConstants.DefaultMaxExceptionContentLength`）；设为 `0` 或负数表示不限制。截断时带 `...[已截断]` 后缀 |
 | `CaptureRequestContent` | `bool` | `false` | 是否在发送前捕获请求体字符串（用于异常调试） |
 | `UrlResolution` | `UrlResolutionMode` | `Default` | URL 解析模式 |
 | `MaxSuccessResponseBytes` | `long` | `0` | 成功响应体最大字节数（`0` = 不限制；超限抛 `ApiRequestException`） |
-| `HttpVersion` <sup>net6+</sup> | `Version?` | `HttpVersion.Version11` | HTTP 版本 |
-| `HttpVersionPolicy` <sup>net6+</sup> | `HttpVersionPolicy?` | `RequestVersionOrLower` | HTTP 版本策略 |
+| `HttpVersion` <sup>net6+</sup> | `Version?` | `null`（不干预） | 写入 `HttpRequestMessage.Version`；`null` 时保持构造默认值 1.1 |
+| `HttpVersionPolicy` <sup>net6+</sup> | `HttpVersionPolicy?` | `null`（不干预） | 写入 `HttpRequestMessage.VersionPolicy`；`null` 时保持构造默认值 `RequestVersionOrLower` |
 | `HttpRequestMessageOptions` | `Dictionary<string, object?>?` | `null` | 写入 `HttpRequestMessage.Options` 的键值对预设 |
 | `JsonTypeInfoResolver` <sup>net8+</sup> | `IJsonTypeInfoResolver?` | `null` | Native AOT 下用于 JSON 源生成的类型解析器 |
 
@@ -84,6 +84,28 @@ DI 服务依赖（ILogger / IHttpRequestInterceptor / IHttpResponseInterceptor /
 | `RequestInterceptor` / `ResponseInterceptor` | ✅ | ✅ | ❌ 该路径不适用（无 DI 生成路径不经过 `EnhancedHttpClient`） |
 | `Logger` | ✅（DI） | ✅ | ⚠️ 固定 `NullLogger`（无 DI 路径） |
 | `RestService.ForGenerated<T>(IServiceProvider)` | — | — | 从容器解析全部依赖，**不接受** `GeneratedClientOptions` |
+
+> **HTTP 版本配置注意（CFG-30）**：本库两条路径均**自建 `HttpRequestMessage` 后调用 `HttpClient.SendAsync`**，
+> 而 `HttpClient.DefaultRequestVersion` / `DefaultVersionPolicy` 官方文档明确**不适用于 `SendAsync`**
+> （仅作用于 `GetAsync`/`PostAsync` 等由 `HttpClient` 内部创建请求的便捷重载）。
+> 因此如需 HTTP/2、HTTP/3，请通过 `EnhancedHttpClientOptions.HttpVersion`（或 `GeneratedClientOptions.HttpVersion`）显式配置。
+
+#### 配置热更新能力矩阵（CFG-36 / F-3）
+
+`IConfigurationRoot.Reload()` 对各配置项的生效情况**并不一致**，下表为契约（请勿假设「改了配置就生效」）：
+
+| 配置项 | 载体 | 热更新 | 生效时机 | 说明 |
+| :--- | :--- | :---: | :--- | :--- |
+| `MudHttpClients:Clients:<name>.AllowCustomBaseUrls` | `MudHttpClientApplicationOptions` | ✅ | 下一次创建/解析客户端 | `CreateEnhancedClient` 每次读取 `IOptionsMonitor.CurrentValue` |
+| `MudHttpClients:AllowedDomains` | `MudHttpClientApplicationOptions` → `UrlValidator` | ✅ | `OnChange` 立即重放 | 只替换「配置桶」，**不清除**运行期 `UrlValidator.AddAllowedDomain` 新增的域名（CFG-34） |
+| `MudHttpClients:Clients:<name>.BaseAddress` / `TimeoutSeconds` / `DefaultHeaders` | 注册期快照 | ❌ | 需重启 | 注册期由 `section.Bind` 生成局部快照并被 `ConfigureHttpClient` 委托闭包捕获；`IOptionsMonitor` 会更新，但已注册的 `HttpClient` 配置不会（CFG-36） |
+| `EnhancedHttpClientOptions.*`（编程式） | `IOptions<EnhancedHttpClientOptions>` | ❌ | 需重启 | 客户端创建时克隆单例值 |
+| `TokenRefreshBackground:*` | `TokenRefreshBackgroundOptions` | ⚠️ 选项可热更新 | 宿主服务仅启动期读取一次 | 已注册 `ConfigurationChangeTokenSource`，但 `TokenRefreshHostedService` 不重读（有意行为） |
+| `MudHttpOpenTelemetry:*` | 局部实例绑定 | ❌ | 需重启 | OTel SDK 的 `TracerProvider`/`MeterProvider` 构建后不可变；该重载亦不把选项注册进 DI 选项管道 |
+| `MudHttpTokenRecovery:*` / `OAuth2:*` 等 | 各自 `IOptionsMonitor` | ✅ | 依消费方读取时机 | 以各 `XXXOptions.SectionName` 为准 |
+
+> **判据**：由 `IHttpClientFactory` 施加到 `HttpClient` 上的配置（`BaseAddress` / `Timeout` / `DefaultRequestHeaders`）
+> **仅在注册期读取一次**；除非改用 `IHttpClientBuilder.ConfigureHttpClient` 委托逐次读取（本库当前未采用，见 CFG-36 方案 B）。
 
 #### AOT JSON 解析器优先级链（CFG-17）
 
@@ -244,10 +266,22 @@ services.AddSingleton<IHmacSignatureProvider, DefaultHmacSignatureProvider>();
 
 | 类                           | 说明                                                                          |
 | ---------------------------- | ----------------------------------------------------------------------------- |
-| `DefaultSensitiveDataMasker` | `ISensitiveDataMasker` 默认实现，支持 `Hide`、`Mask`、`TypeOnly` 三种脱敏模式 |
+| `DefaultSensitiveDataMasker` | **非 AOT** 的反射式实现：自动读取属性上的 `[SensitiveData]` 并脱敏，支持 `Hide`、`Mask`、`TypeOnly` 三种模式。已标注 `[Obsolete]`（AOT 不安全） |
+| `AotSafeSensitiveDataMasker` | **AOT 安全**的编译期字典式实现：**忽略 `[SensitiveData]`**，必须通过 `Register<T>(...)` 显式登记 DTO；未登记类型返回 `[TypeName]` |
+
+> **`[SensitiveData]` 生效前提（CFG-33，三态必须区分）**：
+> 1. **未注册掩码器** ⇒ 特性**完全无效**（`AddMudHttpClient` **不会**默认注册掩码器；DI 中 `ISensitiveDataMasker` 为 `null`）；
+> 2. `services.AddSensitiveDataMasker()` ⇒ 注册的是 `AotSafeSensitiveDataMasker`，它**按设计忽略 `[SensitiveData]`** ⇒ 特性**仍然无效**（需改用 `Register<T>` 登记类型）；
+> 3. **仅** `services.AddSensitiveDataMasker<DefaultSensitiveDataMasker>()`（或手动 `AddSingleton<ISensitiveDataMasker, DefaultSensitiveDataMasker>()`）才会反射读取 `[SensitiveData]` —— 该实现**非 AOT 安全**。
+>
+> 上述任一「无效」情形都**不会**产生编译期或运行期提示，请务必按需求显式选择实现。
 
 ```csharp
-services.AddSingleton<ISensitiveDataMasker, DefaultSensitiveDataMasker>();
+// 非 AOT：反射读取 [SensitiveData]（CFG-33 第 ③ 态）
+services.AddSensitiveDataMasker<DefaultSensitiveDataMasker>();
+
+// AOT：编译期字典式，需显式 Register<T>（CFG-33 第 ② 态；[SensitiveData] 不参与）
+services.AddSensitiveDataMasker();
 
 // 使用
 var masker = serviceProvider.GetRequiredService<ISensitiveDataMasker>();
@@ -833,8 +867,9 @@ services.AddSingleton<IHttpResponseInterceptor, CacheResponseInterceptor>();
 ```csharp
 services.AddSingleton<ISensitiveDataMasker, DefaultSensitiveDataMasker>();
 // 或使用便捷扩展方法
-services.AddSensitiveDataMasker();                 // 注册 DefaultSensitiveDataMasker
+services.AddSensitiveDataMasker();                 // 注册 AotSafeSensitiveDataMasker（编译期字典式，需 Register<T>；忽略 [SensitiveData]）
 services.AddSensitiveDataMasker<MyMasker>();        // 注册自定义实现
+services.AddSensitiveDataMasker<DefaultSensitiveDataMasker>(); // 反射读取 [SensitiveData]（非 AOT）
 ```
 
 ### 便捷注册扩展方法

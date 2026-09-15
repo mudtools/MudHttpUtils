@@ -97,3 +97,40 @@
 | scope 键（SR-M5） | 原样拼接（可重复/大小写分裂） | Distinct + Ordinal 规范化 | 无（字面量 scope 数组不受影响） |
 | 401 异常类型（SR-M2） | `InvalidOperationException` | `OAuth2TokenException : InvalidOperationException` | 无（catch 基类兼容） |
 | 租户绑定（SR-H5） | 无检测 | bind-once 拒绝跨租户 | 共享凭据设计覆写 `EnforceTenantBinding=false` |
+
+### 配置参数审查整改（CFG-28 ~ CFG-39，2026-09 第三轮）
+
+> 依据 `.docs/配置参数审查整改与功能完善方案-v3.md`（v3.1，含三视角复核修订）。全部 10 项有效发现已实施。
+> **前提**：项目未发布，无老数据兼容义务，故直接修正语义而不做兼容分支。
+
+#### 修复（Fixed）
+
+- **`[Retry(maxRetries, delayMilliseconds)]` 的位置参数从未生效（CFG-28，High）**：生成器读取 `DelayMilliseconds` 时只查特性命名参数，双参构造函数的位置参数自诞生起被丢弃（恒回退 1000）。修复后 `[Retry(5, 250)]` 生效延迟为 250ms。同时把 `Cache` / `Retry` / `CircuitBreaker` / `Timeout` 共 5 处读取点统一为「**命名参数优先**」口径（还原 C# 特性赋值语义：命名参数在构造函数之后赋值），并新增 `AttributeDataHelperTests` 与 `AttributeParameterContractTests`（特性可写属性 ↔ 生成器读取点机器守卫）封堵同类回归。
+- **`[CircuitBreaker]` 参数值域无校验 + 静默 clamp（CFG-29，High）**：`FailureThreshold > 100`（高级熔断模式）在运行时被**静默压成 100%**；`FailureThreshold < 1` / `MinimumThroughput < 2`（高级模式）/ `BreakDurationSeconds <= 0` 会让 Polly 在建策略或运行时抛异常。新增编译期诊断 **`HTTPCLIENT026`（Error）**。
+- **`[Timeout(0)]` / 负值无校验（CFG-32）**：此前会生成 `TimeoutEnabled=true, TimeoutMilliseconds=0`（策略语义不可预期）。新增编译期诊断 **`HTTPCLIENT027`（Error）**；未声明 `[Timeout]` 仍表示 `TimeoutEnabled=false`，不会误报。
+- **配置热更新重放会清除运行期白名单增量（CFG-34）**：`UrlValidator` 白名单改为**来源分桶**（配置桶 / 运行期桶），配置重放只替换配置桶。`AddAllowedDomain` 新增的域名不再因 `IConfigurationRoot.Reload()` 而消失（与 `MudHttpClientApplicationOptions` 文档承诺一致）。
+- **`RequestBodySerialization` fast-path 静默回退（CFG-39）**：序列化器未实现 `ISynchronousContentSerializer` 时的回退改为记一次 `Debug` 日志（`EventId 166`，单次门控防刷屏）。
+
+#### 变更（Changed）
+
+- **`EnhancedHttpClientOptions.HttpVersion` / `HttpVersionPolicy` 默认值 `Version11` / `RequestVersionOrLower` → `null`（CFG-30）**：与无 DI 路径的 `GeneratedClientOptions` 对齐为「未配置即不干预」。**无可观察行为差异**（`HttpRequestMessage.Version` 构造默认值本就是 1.1）；同时明确：`HttpClient.DefaultRequestVersion` 官方文档规定**不适用于 `SendAsync`**，本库两路径均自建请求经 `SendAsync` 发送，如需 HTTP/2、HTTP/3 请显式配置 `HttpVersion`。
+- **文档**：`GeneratedClientOptions.GeneratedOnlyMode` 三态语义澄清（两条分支均抛异常，仅消息不同；库内不存在反射回退）；`[SensitiveData]` 三态前提（未注册 / `AddSensitiveDataMasker()` 注册的是 `AotSafeSensitiveDataMasker` 且忽略特性 / 仅 `DefaultSensitiveDataMasker` 生效）；`[Retry]` 方法级**覆盖面子集**（`RetryStatusCodes` / `OnRetry` / `UseJitter` 恒取自全局）；`AddSensitiveDataMasker()` 的实现名（原 README 误写为 `DefaultSensitiveDataMasker`）；`Client/README.md` 新增「配置热更新能力矩阵」。
+
+#### 编译期破坏性变更（仅命中本就无效的配置）
+
+| # | 变更 | 触发条件 | 迁移动作 |
+| --- | --- | --- | --- |
+| **BC-9** | 新增 `HTTPCLIENT026`（Error） | `[CircuitBreaker]` 的 `FailureThreshold < 1`；或 `SamplingDurationSeconds > 0` 且 `FailureThreshold > 100` / `MinimumThroughput < 2`；或 `BreakDurationSeconds <= 0` | 按诊断消息修正取值（高级模式下 `FailureThreshold` 为 1–100 的失败率百分比） |
+| **BC-10** | 新增 `HTTPCLIENT027`（Error） | `[Timeout(ms)]` 有效取值 `<= 0`（含命名参数与位置参数并存时的生效值） | 改为正毫秒数，或移除 `[Timeout]` |
+
+#### 行为变更（缺陷修复 / 语义对齐）
+
+| # | 变更 | 影响面 | 迁移动作 |
+| --- | --- | --- | --- |
+| **BC-11** | `[Retry(a, b)]` 的位置参数 `b` 开始真正生效 | 使用双参构造且 `b != 1000` 的接口，重试退避由固定 1000ms 变为 `b` | 若确需 1000ms，显式写 `[Retry(a, 1000)]` |
+| **BC-12** | 同一参数同时用位置参数与命名参数赋值时，**命名参数优先**（`Retry` / `Cache` / `CircuitBreaker` / `Timeout`） | 仅影响「同一参数同时以两种方式赋值」的极端写法 | 删除其一 |
+| — | 白名单来源分桶（CFG-34） | `AddAllowedDomain` 增量不再被配置重放清除；`ConfigureAllowedDomains` 仍为「整体替换两桶」 | 无（原行为即缺陷） |
+
+> **不计入破坏性**：`HttpVersion*` 默认值改为 `null`（无可观察行为差异，原方案登记的 `BC-8` 经复核**撤销**）；
+> `TokenRefreshBackgroundOptions` 绑定入口（原 CFG-37）经复核**撤销** —— `OptionsBuilder<T>.Bind(IConfiguration)`
+> 与 `Configure<T>(IConfiguration)` 等价，均注册 `ConfigurationChangeTokenSource<T>`。

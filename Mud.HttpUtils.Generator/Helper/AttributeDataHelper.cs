@@ -37,6 +37,12 @@ internal static class AttributeDataHelper
     /// <param name="propertyName">命名参数名称</param>
     /// <param name="defaultValue">默认值</param>
     /// <returns>整型值：优先返回构造函数参数，其次命名参数，最后默认值</returns>
+    /// <remarks>
+    /// <b>CFG-28（v3.1）</b>：本方法的「位置优先」口径与 C# 特性赋值语义（构造先于命名参数赋值）<b>相反</b>，
+    /// 已由 <see cref="GetIntValuePreferNamed(AttributeData?, string, int)"/> 取代，新代码<b>不得</b>再使用本方法。
+    /// 保留仅为控制单批回归面；后续作为清理项移除。
+    /// </remarks>
+    [Obsolete("口径与 C# 特性赋值语义相反，请改用 GetIntValuePreferNamed。仅保留以控制回归面。")]
     public static int GetAttributeIntValue(
         AttributeData attribute,
         int constructorParameterIndex,
@@ -56,6 +62,49 @@ internal static class AttributeDataHelper
 
         // 再检查命名参数
         return GetIntValueFromAttribute(attribute, propertyName, defaultValue);
+    }
+
+    /// <summary>
+    /// 从特性读取整型值，优先级遵循 C# 特性赋值语义：<b>命名参数（在构造函数之后赋值）优先于构造函数位置参数</b>。
+    /// </summary>
+    /// <param name="attribute">特性数据；为 <c>null</c> 时返回 <c>null</c>。</param>
+    /// <param name="propertyName">命名参数（属性）名称，不区分大小写。</param>
+    /// <param name="constructorParameterIndex">构造函数参数索引；小于 0 表示不检查位置参数。</param>
+    /// <returns>读取到的值；命名参数与位置参数皆无（或类型不匹配）时返回 <c>null</c>。</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>CFG-28 / 不变量 I-9</b>：C# 特性的求值顺序为「调用构造函数 → 依次赋值命名参数」，
+    /// 因此当同一参数同时以位置与命名形式出现时（如 <c>[Retry(5, 250, DelayMilliseconds = 700)]</c>），
+    /// 命名参数是<b>后写</b>的一方，必须优先。此前的两类口径
+    /// （<see cref="GetIntValueFromAttribute"/> 只读命名、<see cref="GetAttributeIntValue"/> 位置优先）
+    /// 都会在某些写法下取到与编译结果不一致的值。
+    /// </para>
+    /// <para>
+    /// <b>CFG-28 回归背景</b>：<c>RetryAttribute(int maxRetries, int delayMilliseconds)</c> 的位置参数
+    /// <c>delayMilliseconds</c> 因读取点只查 <c>NamedArguments</c> 而<b>自诞生起从未生效</b>（恒回退 1000）。
+    /// </para>
+    /// </remarks>
+    public static int? GetIntValuePreferNamed(AttributeData? attribute, string propertyName, int constructorParameterIndex)
+    {
+        if (attribute == null)
+            return null;
+
+        // 命名参数优先（C# 特性赋值：构造之后赋值的属性覆盖构造期取值）
+        foreach (var named in attribute.NamedArguments)
+        {
+            if (named.Key.Equals(propertyName, StringComparison.OrdinalIgnoreCase) && named.Value.Value is int namedValue)
+                return namedValue;
+        }
+
+        // 其次构造函数位置参数
+        if (constructorParameterIndex >= 0 &&
+            attribute.ConstructorArguments.Length > constructorParameterIndex &&
+            attribute.ConstructorArguments[constructorParameterIndex].Value is int constructorValue)
+        {
+            return constructorValue;
+        }
+
+        return null;
     }
 
     /// <summary>

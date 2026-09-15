@@ -751,6 +751,8 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 | `HTTPCLIENT023` | Info | 检测到 `-p:ForceHttpGenerator=true`，增量缓存被强制失效 | 无需处理（逃生舱生效提示，F4） | 否 | 否 |
 | `HTTPCLIENT024` | Error | 接口成员未被生成实现，已发射占位实现（含无条件化特性的属性/事件、不受支持的返回类型/参数修饰符等） | 改用受支持的接口成员形态，或标注 `[IgnoreGenerator]` 自行实现。占位成员在运行期调用会抛 `NotSupportedException` | 否 | 是 |
 | `HTTPCLIENT025` | Warning | 直达返回类型（`HttpResponseMessage` / `Stream`）与 `[Cache]`/`[Retry]`/`[CircuitBreaker]`/`[Timeout]` 组合 | 直达返回绕过请求执行器，编排配置不会生效；如需缓存/弹性编排请改用 `Task<T>` 等普通响应体返回类型 | 否 | 是 |
+| `HTTPCLIENT026` | Error | `[CircuitBreaker]` 参数值域越界（四条件共用本 ID）：① `FailureThreshold < 1`；② `SamplingDurationSeconds > 0` 且 `FailureThreshold > 100`；③ `SamplingDurationSeconds > 0` 且 `MinimumThroughput < 2`；④ `BreakDurationSeconds <= 0` | 条件①改 `FailureThreshold >= 1`；条件②高级熔断下 `FailureThreshold` 是失败率百分比（1–100），否则运行时被静默压成 100%；条件③`MinimumThroughput` 须 ≥ 2；条件④`BreakDurationSeconds` 须 > 0 | 否 | 是 |
+| `HTTPCLIENT027` | Error | `[Timeout(ms)]` 有效取值 `<= 0`（含负值；命名参数 `TimeoutMilliseconds` 与位置参数并存时命名参数优先） | 改为正毫秒数；如需取消方法级超时请移除 `[Timeout]` 特性（未声明即 `MethodTimeoutEnabled = false`，不会触发本诊断） | 否 | 是 |
 
 > **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010`、`HTTPCLIENT019` 当前**未使用**（ID 保留为占位，不重新分配）。
 > - `HTTPCLIENT010`：`BaseAddress` 已移除（CFG-27），使用直接编译错误 `CS0117`，无需生成器提示。
