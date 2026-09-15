@@ -77,14 +77,14 @@ public class UserTokenInfo : CurrentUserInfo
     /// </summary>
     /// <param name="thresholdSeconds">过期阈值（秒），默认 300 秒（5 分钟）。</param>
     /// <returns>如果访问令牌有效，则为 true；否则为 false。</returns>
+    /// <remarks>TMR-12：委托 <see cref="TokenExpiryPolicy"/> 统一判定，消除重复实现。</remarks>
     public bool IsAccessTokenValid(int thresholdSeconds = 300)
     {
         if (string.IsNullOrEmpty(AccessToken) || AccessTokenExpireTime <= 0)
             return false;
 
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var thresholdMs = thresholdSeconds * 1000L;
-        return AccessTokenExpireTime - thresholdMs > now;
+        return TokenExpiryPolicy.IsValid(AccessTokenExpireTime, now, thresholdSeconds);
     }
 
     /// <summary>

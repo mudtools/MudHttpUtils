@@ -33,7 +33,7 @@ public class AesEncryptionOptions
     public byte[] Key
     {
         get => _key != null ? (byte[])_key.Clone() : Array.Empty<byte>();
-        set => _key = value;
+        set => _key = value is null ? null : (byte[])value.Clone();
     }
 
     // CFG-27：原 IV 属性已移除 —— 从 v1.8.0 起 IV 在每次加密时自动随机生成，
@@ -78,7 +78,8 @@ public class AesEncryptionOptions
     /// <summary>
     /// 安全清除密钥，防止敏感数据残留在内存中。
     /// 注意：此方法会清零 Key 数组，调用后此实例将不可用。
-    /// 通常不需要手动调用，因为 DefaultAesEncryptionProvider 会在构造时克隆密钥。
+    /// TMR-06 修订：DefaultAesEncryptionProvider 不再调用此方法（IOptions<T>.Value 视为只读）。
+    /// 此方法保留供用户显式调用（如启动期一次性构造后销毁 options）。
     /// </summary>
     public void ClearSensitiveData()
     {

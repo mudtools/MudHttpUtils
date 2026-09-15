@@ -374,6 +374,10 @@ internal static partial class MudHttpClientLog
         Message = "用户身份不一致：上下文主体用户 '{PrincipalUserId}' 与恢复请求用户 '{ContextUserId}' 不匹配，拒绝恢复并返回 401")]
     public static partial void UserTokenIdentityMismatch(ILogger logger, string principalUserId, string contextUserId);
 
+    [LoggerMessage(EventId = 166, Level = LogLevel.Warning,
+        Message = "用户令牌管理器非 UserTokenManagerBase 派生类，无法执行 scope 精准失效，降级为整用户清除 (UserId={UserId})")]
+    public static partial void UserTokenScopeInvalidationFallback(ILogger logger, string userId);
+
     [LoggerMessage(EventId = 162, Level = LogLevel.Warning,
         Message = "令牌管理器（{MetricsKey}）已绑定租户 '{ExistingTenant}'，不能用于租户 '{RequestedTenant}' 的请求。跨租户复用同一管理器实例会导致令牌/凭据错配；若确属共享凭据设计，请覆写 EnforceTenantBinding 返回 false。")]
     public static partial void TenantBindingRejected(ILogger logger, string metricsKey, string existingTenant, string requestedTenant);
@@ -584,6 +588,12 @@ internal static partial class MudHttpClientLog
             "用户身份不一致：上下文主体用户 '{PrincipalUserId}' 与恢复请求用户 '{ContextUserId}' 不匹配，拒绝恢复并返回 401");
     public static void UserTokenIdentityMismatch(ILogger logger, string principalUserId, string contextUserId)
         => s_userTokenIdentityMismatch(logger, principalUserId, contextUserId, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_userTokenScopeInvalidationFallback =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(166, nameof(UserTokenScopeInvalidationFallback)),
+            "用户令牌管理器非 UserTokenManagerBase 派生类，无法执行 scope 精准失效，降级为整用户清除 (UserId={UserId})");
+    public static void UserTokenScopeInvalidationFallback(ILogger logger, string userId)
+        => s_userTokenScopeInvalidationFallback(logger, userId, null);
 
     private static readonly Action<ILogger, string, string, string, Exception?> s_tenantBindingRejected =
         LoggerMessage.Define<string, string, string>(LogLevel.Warning, new EventId(162, nameof(TenantBindingRejected)),

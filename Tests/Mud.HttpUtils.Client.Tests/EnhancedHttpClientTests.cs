@@ -716,7 +716,11 @@ public class EnhancedHttpClientTests : IClassFixture<UrlValidatorFixture>
 
         var client = CreateClient(handler.Object);
         using var cts = new CancellationTokenSource();
-        await cts.CancelAsync();
+        #if NET8_0_OR_GREATER
+            await cts.CancelAsync();
+#else
+            cts.Cancel();
+#endif
 
         var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/test");
         var act = async () => await client.SendAsync<TestData>(request, cancellationToken: cts.Token);

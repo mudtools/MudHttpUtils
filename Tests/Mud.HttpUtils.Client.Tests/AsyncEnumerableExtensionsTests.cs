@@ -142,7 +142,11 @@ public class AsyncEnumerableExtensionsTests : IClassFixture<UrlValidatorFixture>
             count++;
             if (count >= 3)
             {
+                #if NET8_0_OR_GREATER
                 await cts.CancelAsync();
+#else
+                cts.Cancel();
+#endif
                 break;
             }
         }

@@ -62,9 +62,9 @@ public sealed class EncryptedTokenCache<T> : ITokenCache<T> where T : class
             value = JsonSerializer.Deserialize<T>(plain, s_jsonOptions);
             return value != null;
         }
-        catch (Exception ex) when (ex is JsonException or CryptographicException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            // §0.3-V3：密钥轮换/密文损坏/反序列化失败 → miss（不抛出），上层重新获取令牌
+            // TMR-08：放宽异常白名单——FormatException / ObjectDisposedException / 其他非取消异常均按 miss 处理
             value = null;
             return false;
         }

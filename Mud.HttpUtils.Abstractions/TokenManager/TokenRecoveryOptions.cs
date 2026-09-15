@@ -54,13 +54,22 @@ public class TokenRecoveryOptions
     private double _refreshTimeoutSeconds = 30;
 
     /// <summary>
-    /// SR-H2/H3（P1.4，D4）401 恢复重试可缓冲的请求体最大字节数，默认 10MB（10 * 1024 * 1024）。
+    /// 401 恢复重试可缓冲的请求体最大字节数，默认 1MB（1 * 1024 * 1024）。
     /// <para>
-    /// 缓冲在<b>读取阶段</b>施加限制（含未声明 Content-Length 的 chunked / 流式请求），
-    /// 实际读取超过此上限时立即弃置已缓冲数据并放弃 401 恢复（返回 401，不进行无体重试，
-    /// 避免服务端按"空请求"语义处理造成数据完整性事故）。
+    /// <b>三态体处理模型</b>（D1 修订）：
+    /// <list type="bullet">
+    /// <item><b>无体</b>（<c>Content == null</c>）：正常发送 + 正常恢复。</item>
+    /// <item><b>可缓冲</b>（<c>0 &lt; limit</c> 且读取未超限）：首次发送用缓冲回填的 <see cref="System.Net.Http.ByteArrayContent"/>（可重放），401 后用同一份字节重试。</item>
+    /// <item><b>不可缓冲</b>（超限 / <c>limit == 0</c>）：原样发送原内容（不做任何预读改写），401 后返回真实 401 响应，记 <c>TokenRecoveryBodyNotRecoverable</c> 事件。</item>
+    /// </list>
     /// </para>
-    /// <para>设为 0 表示禁用请求体缓存：所有带体请求在 401 后一律不进入恢复重试（GET / 无体请求不受影响）。</para>
+    /// <para>
+    /// 设为 <c>0</c> 表示<b>流式优先模式</b>：不缓冲请求体、不进行 401 重试，但请求正常发送。
+    /// 适用于超大上传场景，避免内存峰值。
+    /// </para>
+    /// <para>
+    /// 内存代价：并发体缓冲峰值 = 并发数 × min(体大小, limit)。默认 1MB × 100 并发 = 100MB 瞬时分配。
+    /// </para>
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">设置小于 0 的值时抛出。</exception>
     public long MaxCachedRequestBodyBytes
@@ -68,5 +77,5 @@ public class TokenRecoveryOptions
         get => _maxCachedRequestBodyBytes;
         set => _maxCachedRequestBodyBytes = value >= 0 ? value : throw new ArgumentOutOfRangeException(nameof(MaxCachedRequestBodyBytes), "请求体缓冲上限不能为负数。");
     }
-    private long _maxCachedRequestBodyBytes = 10 * 1024 * 1024;
+    private long _maxCachedRequestBodyBytes = 1 * 1024 * 1024;
 }

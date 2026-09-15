@@ -115,9 +115,9 @@ public class TokenRecoveryExecutorTests
             },
             CancellationToken.None).ConfigureAwait(false);
 
-        // 新行为：放弃 401 恢复（无体重试被禁止），直接返回 401
+        // TMR-01 修订：超限请求仍正常发送一次，返回真实 401，不进入恢复重试
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        sendCount.Should().Be(0, "超限请求体应零缓冲短路：甚至不发起首次发送");
+        sendCount.Should().Be(1, "超限请求仍正常发送一次（TMR-01：禁止重试 ≠ 禁止发送）");
         mockTokenManager.Verify(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()), Times.Never,
             "超限带体请求不进入恢复刷新链路");
         response.Dispose();

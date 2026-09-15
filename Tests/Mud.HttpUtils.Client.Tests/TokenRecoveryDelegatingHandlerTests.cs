@@ -152,7 +152,7 @@ public class TokenRecoveryDelegatingHandlerTests
     }
 
     [Fact]
-    public async Task SendAsync_WhenTokenRefreshFails_Returns401WithErrorMessage()
+    public async Task SendAsync_WhenTokenRefreshFails_ReturnsReal401()
     {
         var mockTokenManager = new Mock<ITokenManager>();
         mockTokenManager
@@ -171,12 +171,13 @@ public class TokenRecoveryDelegatingHandlerTests
         var response = await invoker.SendAsync(CreateRequest(), CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        // D3：恢复失败返回真实 401，不再合成响应（不含"令牌刷新失败"文本）
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("令牌刷新失败");
+        body.Should().NotContain("令牌刷新失败", "恢复失败时返回服务端真实 401 而非合成响应（D3）");
     }
 
     [Fact]
-    public async Task SendAsync_WhenTokenRefreshReturnsNull_Returns401WithErrorMessage()
+    public async Task SendAsync_WhenTokenRefreshReturnsNull_ReturnsReal401()
     {
         var mockTokenManager = new Mock<ITokenManager>();
         mockTokenManager
@@ -195,12 +196,13 @@ public class TokenRecoveryDelegatingHandlerTests
         var response = await invoker.SendAsync(CreateRequest(), CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        // D3：恢复失败返回真实 401，不再合成响应（不含"令牌刷新失败"文本）
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("令牌刷新失败");
+        body.Should().NotContain("令牌刷新失败", "恢复失败时返回服务端真实 401 而非合成响应（D3）");
     }
 
     [Fact]
-    public async Task SendAsync_WhenTokenRefreshReturnsEmpty_Returns401WithErrorMessage()
+    public async Task SendAsync_WhenTokenRefreshReturnsEmpty_ReturnsReal401()
     {
         var mockTokenManager = new Mock<ITokenManager>();
         mockTokenManager
@@ -219,8 +221,9 @@ public class TokenRecoveryDelegatingHandlerTests
         var response = await invoker.SendAsync(CreateRequest(), CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        // D3：恢复失败返回真实 401，不再合成响应（不含"令牌刷新失败"文本）
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("令牌刷新失败");
+        body.Should().NotContain("令牌刷新失败", "恢复失败时返回服务端真实 401 而非合成响应（D3）");
     }
 
     [Fact]

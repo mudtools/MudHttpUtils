@@ -8,6 +8,24 @@
 
 > 依据 `.docs/00-总体方案.md §5.2` 确立的默认行为基线整理。项目未发布，本表内容是"首版行为"而非"变更"。
 
+### 令牌恢复（Token Recovery）
+
+- **超限请求体仍发送**（TMR-01）：`MaxCachedRequestBodyBytes` 超限时不再阻止请求发送，而是正常发送原请求并在收到 401 后放弃重试（返回真实 401）。旧行为为零发送，违反"禁止重试 ≠ 禁止发送"原则。
+- **缓冲结果回填请求内容**（TMR-02）：缓冲成功后用 `ByteArrayContent` 替换原内容，保证首次发送与重试发送体同源，修复不可重放内容（`StreamContent` 等）首次发送体丢失问题。
+- **恢复失败返回真实 401**（TMR-03）：所有恢复失败分支（刷新失败/超时/注入不支持/重试耗尽/跨主机等）统一返回服务端真实 401 响应（含 `WWW-Authenticate` 与服务端错误体），不再合成 401。重试成功时释放原始 401。
+- **重试克隆体泄漏修复**（TMR-03b）：每轮重试结束后释放 `retryRequest`，跨主机/注入不支持分支也补齐一致。
+- **默认体缓冲上限调整**（D6）：`MaxCachedRequestBodyBytes` 默认值从 10MB 下调为 1MB（量化依据：10MB × 100 并发 = 1GB 瞬时分配）。
+- **`MaxCachedRequestBodyBytes = 0` 语义变更**：从"带体请求一律失败"改为"流式优先模式：不缓冲、不重试，但正常发送"。
+- **scope 感知恢复**（TMR-04）：`TokenRecoveryContext` 新增 `Scopes` 属性，401 恢复链路按正确作用域失效/刷新/去重，不再恒走默认作用域。生成器同步写入 scope。
+- **用户级精准失效**（TMR-05）：`UserTokenManagerBase` 新增 `InvalidateUserTokenAsync(userId, scopes, ct)` 虚方法，scoped 401 恢复不再清空该用户全部作用域。非基类实现降级为 `RemoveTokenAsync` + Warning。
+- **加密选项只读**（TMR-06）：`DefaultAesEncryptionProvider` 不再在构造时调用 `ClearSensitiveData()`；`AesEncryptionOptions.Key` setter 改为克隆，消除"清零调用方数组"的隐蔽副作用。同一 `IOptions<AesEncryptionOptions>` 可多次构造 provider。
+- **注入净化**（TMR-08）：令牌值含 CR/LF 时拒绝注入并返回真实 401（防 header 注入）；Cookie 值按 `Uri.EscapeDataString` 编码（防 `;` 注入额外属性）；注入阶段 `FormatException`/`InvalidOperationException` 归一为恢复失败（不穿透）；`EncryptedTokenCache` 异常白名单放宽为非 `OperationCanceledException` 均按 miss 处理。
+- **用户令牌读路径去锁**（TMR-09）：`MemoryCacheTokenCache.TryGet` 改为无锁读（`IMemoryCache` 自身线程安全，影子索引容忍弱一致），消除热路径全局串行。写/清/压缩路径保留 Gate。
+- **构造期多余分配修复**（TMR-10）：`UserTokenManagerBase` 无加密分支不再分配 `MemoryCacheTokenCache<string>`（含独立 `MemoryCache` 实例）后被丢弃。
+- **过期判定收敛**（TMR-12）：`UserTokenInfo.IsAccessTokenValid` 改为委托 `TokenExpiryPolicy.IsValid`，消除第二份过期判定逻辑。
+- **多 TFM 测试覆盖**（TMR-13）：`Client.Tests` 的 `TargetFrameworks` 扩展为 `net6.0;net8.0;net10.0`，覆盖 `#if !NET8_0_OR_GREATER` 条件编译分支。net6.0 不兼容的测试文件（AOT/SSRF/Config 相关）以条件编译排除。
+- **AOT OAuth2 端到端验证**（TMR-14）：`AotVerificationDemo` 新增场景 17 `DemoOAuth2EndToEnd`，使用自定义 `OAuth2MockHandler` 打桩令牌端点与自省端点，构造真实 `StandardOAuth2TokenManager` 实例，验证 `GetOrRefreshTokenAsync` → HTTP POST → `OAuth2JsonContext` 反序列化 → `CredentialToken` 返回，以及 `IntrospectTokenAsync` → `TokenIntrospectionResult` 返回的完整链路在 Native AOT 下正确工作。
+
 ### 安全
 
 - **URL 脱敏默认开启**：Span tag、日志、诊断事件中的 URL 默认掩码敏感 query 值（`access_token` / `refresh_token` / `api_key` 等），词表复用 `MessageSanitizer`。`MudHttpObservabilityOptions.RedactUrlInTelemetry = false` 可关闭（仅排障用途）。

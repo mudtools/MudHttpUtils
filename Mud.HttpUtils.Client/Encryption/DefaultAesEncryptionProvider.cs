@@ -78,9 +78,8 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
             throw new ArgumentNullException(nameof(options));
 
         options.Value.Validate();
-        _key = (byte[])options.Value.Key.Clone();
+        _key = options.Value.Key;      // getter 已返回克隆（TMR-06：不再修改 options.Value）
         var requireCrossRuntimePortable = options.Value.RequireCrossRuntimePortable;
-        options.Value.ClearSensitiveData();
 
         _useGcm = ResolveUseGcm(requireCrossRuntimePortable);
 

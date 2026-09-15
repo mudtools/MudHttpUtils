@@ -69,34 +69,31 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
     /// <inheritdoc />
     public bool TryGet(string key, out T? value)
     {
-        // NEW-TM-10 修复：Dispose 后访问抛 ObjectDisposedException，这里提前检查返回 false
+        // TMR-09：读路径去锁——IMemoryCache 自身线程安全，影子索引容忍弱一致。
+        // 写/清/压缩路径保留 Gate；Dispose 后 IMemoryCache.TryGetValue 返回 false（不抛）。
         if (_disposed)
         {
             value = default;
             return false;
         }
-        // SR-L1（P3.5，D14）：TryGet 纳入 _sync，消除与 Dispose 的 check-then-act 窗口
-        // （原实现在锁外读 IMemoryCache，Dispose 并发交错可能抛 ObjectDisposedException）。
-        // 用户令牌读路径为同步内存操作，锁开销可忽略。
-        lock (_sync)
+        try
         {
-            if (_disposed)
-            {
-                value = default;
-                return false;
-            }
-            // P3.2（C2，TK-16）读_IMemoryCache 是唯一数据源；影子索引仅在命中但索引缺失时兜底写入，
-            // 保证 Count/Keys 与 TryGet 语义一致（IMemoryCache 后台驱逐不阻塞读）。
             if (_cache.TryGetValue(key, out var obj) && obj is T typed)
             {
                 value = typed;
                 _keys.TryAdd(key, 0);
                 return true;
             }
-
-            value = null;
+        }
+        catch
+        {
+            // ObjectDisposedException 兜底：Dispose 与 TryGet 并发交错时 BCL 可能抛异常
+            value = default;
             return false;
         }
+
+        value = null;
+        return false;
     }
 
     /// <inheritdoc />

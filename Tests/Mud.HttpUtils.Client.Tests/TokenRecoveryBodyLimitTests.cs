@@ -25,11 +25,10 @@ public class TokenRecoveryBodyLimitTests
     }
 
     /// <summary>
-    /// 无 Content-Length 的 16MB chunked 流：峰值缓冲 ≤ 上限（10MB）+ 8KB，超限即弃置返回 401，
-    /// 不进行无体重试（不发起第二次 sendFunc）。
+    /// 无 Content-Length 的 16MB chunked 流：超限不缓冲但仍发送，返回真实 401，不进行重试。
     /// </summary>
     [Fact]
-    public async Task Recovery_ChunkedBody_ShouldLimitBuffer()
+    public async Task Recovery_ChunkedBody_ShouldSendButNotRetry()
     {
         var manager = CreateAlwaysValidManager();
         var executor = CreateExecutor(manager.Object);
@@ -37,6 +36,42 @@ public class TokenRecoveryBodyLimitTests
         var request = new HttpRequestMessage(HttpMethod.Post, "https://api.example.com/upload")
         {
             Content = new ChunkedStreamContent(16 * 1024 * 1024),   // 16MB，无 Content-Length
+            Headers = { Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "stale") }
+        };
+
+        var sendCount = 0;
+        HttpResponseMessage? sentResponse = null;
+        var response = await executor.ExecuteAsync(
+            request,
+            (req, ct) =>
+            {
+                Interlocked.Increment(ref sendCount);
+                sentResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+                return Task.FromResult(sentResponse);
+            },
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized, "超限 chunked 带体请求返回真实 401");
+        sendCount.Should().Be(1, "超限请求仍正常发送一次（TMR-01：禁止重试 ≠ 禁止发送）");
+        response.Should().BeSameAs(sentResponse, "返回的是服务端真实响应实例（D3：响应保真）");
+        manager.Verify(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()), Times.Never,
+            "超限带体请求不进入恢复链路");
+        response.Dispose();
+    }
+
+    /// <summary>
+    /// Content-Length = 100MB 声明：不缓冲但仍发送一次，返回真实 401（不读取流缓冲）。
+    /// </summary>
+    [Fact]
+    public async Task Recovery_DeclaredOversizeBody_ShouldSendButNotBuffer()
+    {
+        var manager = CreateAlwaysValidManager();
+        var executor = CreateExecutor(manager.Object);
+
+        var oversize = new OversizeDeclaredContent(100 * 1024 * 1024);
+        var request = new HttpRequestMessage(HttpMethod.Post, "https://api.example.com/upload")
+        {
+            Content = oversize,
             Headers = { Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "stale") }
         };
 
@@ -50,44 +85,19 @@ public class TokenRecoveryBodyLimitTests
             },
             CancellationToken.None);
 
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized, "超限 chunked 带体请求放弃 401 恢复（数据完整性优先）");
-        sendCount.Should().Be(0, "缓冲在发送前进行：超限判定短路后连首次发送都不发起（无体重试被禁止）");
-        response.Dispose();
-    }
-
-    /// <summary>
-    /// Content-Length = 100MB 声明：零缓冲直接 401（不读取流）。
-    /// </summary>
-    [Fact]
-    public async Task Recovery_DeclaredOversizeBody_ShouldNotBuffer()
-    {
-        var manager = CreateAlwaysValidManager();
-        var executor = CreateExecutor(manager.Object);
-
-        var oversize = new OversizeDeclaredContent(100 * 1024 * 1024);
-        var request = new HttpRequestMessage(HttpMethod.Post, "https://api.example.com/upload")
-        {
-            Content = oversize,
-            Headers = { Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "stale") }
-        };
-
-        var response = await executor.ExecuteAsync(
-            request,
-            (req, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized)),
-            CancellationToken.None);
-
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        oversize.StreamRequestedCount.Should().Be(0, "声明超限：零缓冲（不触达流读取）");
+        sendCount.Should().Be(1, "超限请求仍正常发送一次（TMR-01）");
+        oversize.StreamRequestedCount.Should().Be(0, "声明超限：零缓冲（不预读流），但发送时流仍会被序列化");
         manager.Verify(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()), Times.Never,
             "超限带体请求不进入恢复链路");
         response.Dispose();
     }
 
     /// <summary>
-    /// 带体请求但 MaxCachedRequestBodyBytes = 0（禁用体缓存）：直接 401，无体重试被禁止。
+    /// 带体请求但 MaxCachedRequestBodyBytes = 0（流式优先模式）：仍正常发送，返回真实 401，不重试。
     /// </summary>
     [Fact]
-    public async Task Recovery_DisabledBodyCache_ShouldReturn401WithoutRetry()
+    public async Task Recovery_DisabledBodyCache_ShouldStillSend()
     {
         var manager = CreateAlwaysValidManager();
         var executor = CreateExecutor(manager.Object, new TokenRecoveryOptions { MaxCachedRequestBodyBytes = 0 });
@@ -109,7 +119,7 @@ public class TokenRecoveryBodyLimitTests
             CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        sendCount.Should().Be(0, "禁用体缓存时带体请求在缓冲阶段即被短路：不发起任何发送");
+        sendCount.Should().Be(1, "流式优先模式下带体请求仍正常发送一次（TMR-01）");
         manager.Verify(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()), Times.Never);
         response.Dispose();
     }

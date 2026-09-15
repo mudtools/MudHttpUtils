@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Mud.HttpUtils;
 using Mud.HttpUtils.Resilience;
 using System.Net;
@@ -70,6 +71,8 @@ public class Program
         DemoPolymorphismRoundTrip();
         Console.WriteLine($"[SCENE] {nameof(DemoEncryptedTokenCache)}");
         DemoEncryptedTokenCache();
+        Console.WriteLine($"[SCENE] {nameof(DemoOAuth2EndToEnd)}");
+        await DemoOAuth2EndToEnd();
 
         Console.WriteLine("\n=== AOT 验证示例完成 ===");
 
@@ -1050,6 +1053,90 @@ public class Program
         }
 
         Console.WriteLine("  [✓] EncryptedTokenCache 加密往返/密文驻留/损坏 miss 均正确（AOT 安全）");
+        Console.WriteLine();
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // 场景 17：OAuth2 端到端验证（TMR-14：StandardOAuth2TokenManager 实际路径）
+    // ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 验证 <see cref="StandardOAuth2TokenManager"/> 的完整 HTTP + 反序列化 + 缓存链路
+    /// 在 Native AOT 下正确工作（TMR-14）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 此场景使用自定义 <see cref="OAuth2MockHandler"/> 打桩令牌端点与自省端点，
+    /// 构造真实的 <see cref="StandardOAuth2TokenManager"/> 实例（注入 <see cref="HttpClient"/> + <see cref="IOptions{OAuth2Options}"/>），
+    /// 验证以下端到端路径：
+    /// </para>
+    /// <list type="number">
+    /// <item><c>GetOrRefreshTokenAsync</c> → 发送 HTTP POST 到令牌端点 → 反序列化 <c>OAuth2TokenResponse</c> → 返回 <c>CredentialToken</c>（含 access_token/refresh_token/expired）。</item>
+    /// <item><c>IntrospectTokenAsync</c> → 发送 HTTP POST 到自省端点 → 反序列化 <c>TokenIntrospectionResult</c> → 返回 active/client_id/scope 等字段。</item>
+    /// </list>
+    /// <para>
+    /// 关键 AOT 验证点：<see cref="OAuth2JsonContext"/> 的源生成类型元数据
+    /// （<c>OAuth2TokenResponse</c> + <c>TokenIntrospectionResult</c>）在 AOT 裁剪后仍可用，
+    /// 且 <see cref="StandardOAuth2TokenManager"/> 内部的 <c>FormUrlEncodedContent</c> 构造、
+    /// HTTP 发送、JSON 反序列化全链路 AOT 安全。
+    /// </para>
+    /// </remarks>
+    private static async Task DemoOAuth2EndToEnd()
+    {
+        Console.WriteLine("--- 17. OAuth2 端到端验证（StandardOAuth2TokenManager 真实路径，TMR-14）---");
+
+        try
+        {
+            // 构造打桩 handler 与 HttpClient
+            using var mockHandler = new OAuth2MockHandler();
+            using var httpClient = new HttpClient(mockHandler)
+            {
+                BaseAddress = new Uri("https://fake.example")
+            };
+
+            // 构造 OAuth2Options（RequireHttps=false 以允许 fake.example 的 HTTP 打桩）
+            var options = Options.Create(new OAuth2Options
+            {
+                ClientId = "test-client",
+                ClientSecret = "test-secret",
+                TokenEndpoint = "/token",
+                IntrospectionEndpoint = "/introspect",
+                RequireHttps = false
+            });
+
+            // 构造真实的 StandardOAuth2TokenManager 实例
+            var manager = new StandardOAuth2TokenManager(httpClient, options);
+
+            // 1. 验证 GetOrRefreshTokenAsync（Client Credentials 流程）
+            var token = await manager.GetOrRefreshTokenAsync();
+            Console.WriteLine($"  GetOrRefreshTokenAsync => token={token[..Math.Min(16, token.Length)]}...");
+            Assert(!string.IsNullOrEmpty(token), "GetOrRefreshTokenAsync 返回空令牌");
+            Assert(mockHandler.TokenRequestCount >= 1, "令牌端点未被调用");
+
+            // 2. 验证 IntrospectTokenAsync
+            var introspection = await manager.IntrospectTokenAsync(token);
+            Console.WriteLine($"  IntrospectTokenAsync => Active={introspection.Active}, ClientId={introspection.ClientId}, Scopes={string.Join(" ", introspection.Scopes ?? [])}");
+            Assert(introspection.Active, "IntrospectionResult.Active 应为 true");
+            Assert(introspection.ClientId == "test-client", $"ClientId 应为 test-client，实际为 {introspection.ClientId}");
+            Assert(introspection.Scopes is { Length: 2 }, $"Scopes 应有 2 个元素，实际为 {introspection.Scopes?.Length ?? 0}");
+            Assert(mockHandler.IntrospectionRequestCount >= 1, "自省端点未被调用");
+
+            // 3. 验证 GetOrRefreshCredentialTokenAsync 返回完整凭证令牌
+            var credential = await manager.GetOrRefreshCredentialTokenAsync();
+            var accessToken = credential.AccessToken ?? string.Empty;
+            var accessTokenPreview = accessToken.Length > 16 ? accessToken[..16] : accessToken;
+            Console.WriteLine($"  GetOrRefreshCredentialTokenAsync => AccessToken={accessTokenPreview}..., RefreshToken={(credential.RefreshToken != null ? "present" : "null")}, Expire={credential.Expire}");
+            Assert(!string.IsNullOrEmpty(credential.AccessToken), "CredentialToken.AccessToken 为空");
+            Assert(!string.IsNullOrEmpty(credential.RefreshToken), "CredentialToken.RefreshToken 为空");
+            Assert(credential.Expire > 0, "CredentialToken.Expire 应为正数");
+
+            Console.WriteLine("  [✓] OAuth2 端到端验证通过（令牌获取 + 令牌自省 + 凭证令牌缓存，AOT 安全）");
+        }
+        catch (Exception ex)
+        {
+            HandleUnexpected("DemoOAuth2EndToEnd", ex);
+        }
+
         Console.WriteLine();
     }
 

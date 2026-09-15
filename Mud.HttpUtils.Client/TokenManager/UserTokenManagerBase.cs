@@ -100,17 +100,23 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
             return;
         }
 
-        var defaultCache = new MemoryCacheTokenCache<string>(
-            _cacheOptions.SizeLimit,
-            _cacheOptions.CleanupIntervalSeconds,
-            _cacheOptions.CompactionPercentage);
-
-        _userTokenCache = encryption != null
-            ? new EncryptedTokenCache<UserTokenInfo>(defaultCache, encryption)
-            : new MemoryCacheTokenCache<UserTokenInfo>(
+        // TMR-10：延迟创建——无加密分支不再分配 MemoryCacheTokenCache<string>（含独立 MemoryCache 实例）
+        if (encryption != null)
+        {
+            // 加密分支：需要 string 缓存作为加密包装的底层
+            var stringCache = new MemoryCacheTokenCache<string>(
                 _cacheOptions.SizeLimit,
                 _cacheOptions.CleanupIntervalSeconds,
                 _cacheOptions.CompactionPercentage);
+            _userTokenCache = new EncryptedTokenCache<UserTokenInfo>(stringCache, encryption);
+        }
+        else
+        {
+            _userTokenCache = new MemoryCacheTokenCache<UserTokenInfo>(
+                _cacheOptions.SizeLimit,
+                _cacheOptions.CleanupIntervalSeconds,
+                _cacheOptions.CompactionPercentage);
+        }
     }
 
     /// <inheritdoc />
@@ -358,6 +364,31 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
             return Task.CompletedTask;
 
         RemoveUserTokenFromCache(userId);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// TMR-05：仅失效指定用户与作用域的缓存条目（不触碰该用户其他作用域）。
+    /// </summary>
+    /// <param name="userId">用户标识。</param>
+    /// <param name="scopes">作用域集合。为空或 null 时退化为整用户失效（调用 <see cref="InvalidateUserTokenAsync(string, CancellationToken)"/>）。</param>
+    /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+    public virtual Task InvalidateUserTokenAsync(string userId, string[]? scopes, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(userId))
+            return Task.CompletedTask;
+
+        if (scopes is not { Length: > 0 })
+        {
+            RemoveUserTokenFromCache(userId);
+            return Task.CompletedTask;
+        }
+
+        // 精准失效：仅移除该复合键条目 + 退休对应锁 + 清退避项
+        var key = GetUserCacheKey(userId, scopes);
+        _userTokenCache.TryRemove(key, out _);
+        _userLockTable.TryRetire(key);
+        _userRefreshFailures.TryRemove(key, out _);
         return Task.CompletedTask;
     }
 

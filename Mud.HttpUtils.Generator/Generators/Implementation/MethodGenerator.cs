@@ -1147,6 +1147,13 @@ internal class MethodGenerator : ICodeFragmentGenerator
         var tokenManagerKey = TokenMethodHelper.GetMethodTokenManagerKey(context, methodInfo);
         var escapedTokenManagerKey = StringEscapeHelper.EscapeString(tokenManagerKey);
 
+        // TMR-04：写入 Scopes，使恢复执行器能按正确的作用域失效和刷新令牌。
+        var effectiveScopes = methodInfo.MethodTokenScopes ?? methodInfo.InterfaceTokenScopes;
+        var scopes = TokenHelper.ParseScopes(effectiveScopes);
+        var scopesArg = scopes.Length > 0
+            ? $"new[] {{ {string.Join(", ", scopes.Select(s => $"\"{StringEscapeHelper.EscapeString(s)}\""))} }}"
+            : "null";
+
         // Query 模式需要 QueryParameterName 才能在恢复时重新注入查询参数
         string? queryParamName = null;
         string? escapedQueryParamName = null;
@@ -1167,6 +1174,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         if (escapedQueryParamName != null)
             codeBuilder.AppendLine($"{indent}    QueryParameterName = \"{escapedQueryParamName}\",");
         codeBuilder.AppendLine($"{indent}    TokenManagerKey = \"{escapedTokenManagerKey}\",");
+        codeBuilder.AppendLine($"{indent}    Scopes = {scopesArg},");
         codeBuilder.AppendLine($"{indent}    UserId = {userIdExpr}");
         codeBuilder.AppendLine($"{indent}}};");
         codeBuilder.AppendLine($"{indent}#else");
@@ -1179,6 +1187,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         if (escapedQueryParamName != null)
             codeBuilder.AppendLine($"{indent}    QueryParameterName = \"{escapedQueryParamName}\",");
         codeBuilder.AppendLine($"{indent}    TokenManagerKey = \"{escapedTokenManagerKey}\",");
+        codeBuilder.AppendLine($"{indent}    Scopes = {scopesArg},");
         codeBuilder.AppendLine($"{indent}    UserId = {userIdExpr}");
         codeBuilder.AppendLine($"{indent}}});");
         codeBuilder.AppendLine($"{indent}#endif");
