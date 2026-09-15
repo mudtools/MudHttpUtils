@@ -6,6 +6,30 @@ namespace Mud.HttpUtils;
 internal static class TokenRefreshHelper
 {
     /// <summary>
+    /// SR-M4（P3.2，D14）后台刷新注册守卫的单一实现：<see cref="ITokenManager.SupportsBackgroundRefresh"/>
+    /// 为 false 的管理器静默跳过并记日志。两个后台服务（net6+ <see cref="TokenRefreshHostedService"/> 与
+    /// netstandard2.0 <see cref="TokenRefreshBackgroundService"/>）共用，消除双实现行为漂移（单一真相原则）。
+    /// </summary>
+    /// <returns>true = 允许注册；false = 已跳过（调用方不得登记该管理器）。</returns>
+    public static bool TryRegisterTokenManager(
+        ConcurrentDictionary<string, ITokenManager> tokenManagers,
+        ITokenManager tokenManager,
+        string? name,
+        ILogger logger)
+    {
+        if (!tokenManager.SupportsBackgroundRefresh)
+        {
+            MudHttpClientLog.TokenManagerSkippedNoBackgroundRefresh(logger, name ?? tokenManager.GetType().Name);
+            return false;
+        }
+
+        var key = name ?? Guid.NewGuid().ToString("N");
+        tokenManagers[key] = tokenManager;
+        MudHttpClientLog.TokenManagerRegistered(logger, key);
+        return true;
+    }
+
+    /// <summary>
     /// 刷新所有已注册的令牌管理器，返回是否应继续后台刷新调度。
     /// </summary>
     /// <remarks>

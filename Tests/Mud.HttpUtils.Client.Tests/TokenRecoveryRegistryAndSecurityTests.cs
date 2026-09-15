@@ -68,7 +68,9 @@ public class TokenRecoveryRegistryAndSecurityTests
     {
         var injected = CreateManagerReturning("token-from-injected");
         var registry = new DelegateTokenManagerRegistry(_ => null);   // 未知 key → null
-        var executor = new TokenRecoveryExecutor(injected.Object, userTokenManager: null, managerRegistry: registry);
+        var logger = new CapturingLogger();
+        var executor = new TokenRecoveryExecutor(
+            injected.Object, userTokenManager: null, options: null, logger: logger, managerRegistry: registry);
 
         var request = CreateAuthorizedRequest();
         request.Options.Set(
@@ -84,6 +86,110 @@ public class TokenRecoveryRegistryAndSecurityTests
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, "解析失败回退注入实例：恢复仍成功（不 fail-fast）");
         injected.Verify(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()), Times.Once);
+
+        // SR-M6（D9）可观测性：解析失败必须记 Warning（EventId 160，TokenManagerUnresolved）
+        logger.Messages.Should().Contain(m => m.Contains("unknown-key") && m.Contains("回退"),
+            "解析失败需记 Warning 便于排查注册表键配置错误");
+        response.Dispose();
+    }
+
+    [Fact]
+    public async Task Recovery_WithoutRegistryKey_ShouldNotTouchRegistry()
+    {
+        // 未显式指定 TokenManagerKey 时不得用类型名等可观测性键去查询注册表（语义：键缺失 = 单管理器绑定）
+        var injected = CreateManagerReturning("token-from-injected");
+        var registryCalled = 0;
+        var registry = new DelegateTokenManagerRegistry(_ => { Interlocked.Increment(ref registryCalled); return null; });
+        var executor = new TokenRecoveryExecutor(
+            injected.Object, userTokenManager: null, managerRegistry: registry);
+
+        var request = CreateAuthorizedRequest();   // 无 TokenRecoveryContext
+
+        var response = await executor.ExecuteAsync(
+            request,
+            (req, ct) => Task.FromResult(req.Headers.Authorization?.Parameter == "token-from-injected"
+                ? new HttpResponseMessage(HttpStatusCode.OK)
+                : new HttpResponseMessage(HttpStatusCode.Unauthorized)),
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        registryCalled.Should().Be(0, "键缺失时回退注入实例，不应触发注册表查询");
+        response.Dispose();
+    }
+
+    [Fact]
+    public async Task Recovery_UserLevel_RegistryHit_ShouldRouteToKeyedUserManager()
+    {
+        // SR-M6（D9）用户级恢复同样经注册表路由：命中 IUserTokenManager 时走 key 对应实例
+        var injectedUser = new Mock<IUserTokenManager>();
+        var keyedUser = new Mock<IUserTokenManager>();
+        foreach (var manager in new[] { injectedUser, keyedUser })
+        {
+            manager.Setup(m => m.RemoveTokenAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(true);
+            manager.Setup(m => m.GetOrRefreshTokenAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync("keyed-user-token");
+        }
+
+        var tenantManager = CreateManagerReturning("tenant-token");
+        var registry = new DelegateTokenManagerRegistry(key => key == "user-mgr" ? keyedUser.Object : null);
+        var executor = new TokenRecoveryExecutor(
+            tenantManager.Object, injectedUser.Object, currentUserContext: null, managerRegistry: registry);
+
+        var request = CreateAuthorizedRequest();
+        request.Options.Set(
+            new HttpRequestOptionsKey<TokenRecoveryContext>(TokenRecoveryContext.PropertyKey),
+            new TokenRecoveryContext { UserId = "user-1", TokenManagerKey = "user-mgr" });
+
+        var response = await executor.ExecuteAsync(
+            request,
+            (req, ct) => Task.FromResult(req.Headers.Authorization?.Parameter == "keyed-user-token"
+                ? new HttpResponseMessage(HttpStatusCode.OK)
+                : new HttpResponseMessage(HttpStatusCode.Unauthorized)),
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, "用户级恢复命中 key 对应的用户管理器");
+        keyedUser.Verify(m => m.GetOrRefreshTokenAsync("user-1", It.IsAny<CancellationToken>()), Times.Once);
+        injectedUser.Verify(m => m.GetOrRefreshTokenAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never,
+            "注入实例零调用（全链路走 key 对应管理器）");
+        tenantManager.Verify(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()), Times.Never);
+        response.Dispose();
+    }
+
+    [Fact]
+    public async Task Recovery_UserLevel_RegistryResolvesTenantManager_ShouldFallbackToInjected()
+    {
+        // TK-06 防线：注册表解析到非 IUserTokenManager（租户实例）时绝不用它执行用户级恢复
+        var injectedUser = new Mock<IUserTokenManager>();
+        injectedUser.Setup(m => m.RemoveTokenAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        injectedUser.Setup(m => m.GetOrRefreshTokenAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("injected-user-token");
+
+        var tenantManager = CreateManagerReturning("tenant-token");
+        var logger = new CapturingLogger();
+        var registry = new DelegateTokenManagerRegistry(key => key == "user-mgr" ? tenantManager.Object : null);
+        var executor = new TokenRecoveryExecutor(
+            tenantManager.Object, injectedUser.Object, currentUserContext: null, options: null,
+            logger: logger, managerRegistry: registry);
+
+        var request = CreateAuthorizedRequest();
+        request.Options.Set(
+            new HttpRequestOptionsKey<TokenRecoveryContext>(TokenRecoveryContext.PropertyKey),
+            new TokenRecoveryContext { UserId = "user-1", TokenManagerKey = "user-mgr" });
+
+        var response = await executor.ExecuteAsync(
+            request,
+            (req, ct) => Task.FromResult(req.Headers.Authorization?.Parameter == "injected-user-token"
+                ? new HttpResponseMessage(HttpStatusCode.OK)
+                : new HttpResponseMessage(HttpStatusCode.Unauthorized)),
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, "解析到租户管理器 → 回退注入的用户管理器（凭据错配防线）");
+        injectedUser.Verify(m => m.GetOrRefreshTokenAsync("user-1", It.IsAny<CancellationToken>()), Times.Once);
+        tenantManager.Verify(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()), Times.Never,
+            "绝不用租户管理器执行用户级恢复");
+        logger.Messages.Should().Contain(m => m.Contains("user-mgr") && m.Contains("回退"), "回退需记 Warning");
         response.Dispose();
     }
 

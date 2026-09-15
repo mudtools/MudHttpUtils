@@ -68,6 +68,8 @@ public class Program
         DemoModuleInitializerAutoRegistration();
         Console.WriteLine($"[SCENE] {nameof(DemoPolymorphismRoundTrip)}");
         DemoPolymorphismRoundTrip();
+        Console.WriteLine($"[SCENE] {nameof(DemoEncryptedTokenCache)}");
+        DemoEncryptedTokenCache();
 
         Console.WriteLine("\n=== AOT 验证示例完成 ===");
 
@@ -995,6 +997,59 @@ public class Program
         Console.WriteLine("  [✓] 跳过（JsonSourceGeneration 仅在 .NET 8+ 可用）");
 #endif
 
+        Console.WriteLine();
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // 场景 16：EncryptedTokenCache 加密缓存往返验证（SR-M8 AOT 门禁载体）
+    // ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// 验证 <see cref="EncryptedTokenCache{T}"/>（SR-M8 用户令牌内存态加密包装）在 Native AOT 下：
+    /// Set→Get 往返等值、底层驻留密文（无明文凭据子串）、篡改密文按 miss 处理不抛出。
+    /// </summary>
+    /// <remarks>
+    /// 使用 <see cref="EncryptedTokenCache{String}"/>（值为字符串，无需反射序列化元数据）验证
+    /// AEAD 加密引擎与缓存包装链路本身 AOT 安全；含对象图序列化的场景（如 UserTokenInfo）
+    /// 在 AOT 下应传入基于预生成 JsonSerializerContext 的自定义包装（见 EncryptedTokenCache XML 文档 AOT 注意）。
+    /// </remarks>
+    private static void DemoEncryptedTokenCache()
+    {
+        Console.WriteLine("--- 16. EncryptedTokenCache 加密缓存往返验证（SR-M8）---");
+
+        var encryption = new DefaultAesEncryptionProvider(Microsoft.Extensions.Options.Options.Create(
+            new AesEncryptionOptions
+            {
+                Key = Convert.FromBase64String("AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=")   // 32 字节测试密钥
+            }));
+
+        using var inner = new MemoryCacheTokenCache<string>();
+        using var cache = new EncryptedTokenCache<string>(inner, encryption);
+
+        const string secret = "aot-demo-access-token-value";
+        cache.Set("user-1", secret);
+
+        // 底层驻留的是密文（无明文凭据子串）
+        var cipherFound = inner.TryGet("user-1", out var cipher);
+        Assert(cipherFound && cipher != null, "底层缓存未取到密文");
+        if (cipher != null && cipher.Contains(secret, StringComparison.Ordinal))
+        {
+            Assert(false, "底层缓存出现了明文凭据（加密包装未生效）");
+        }
+
+        // 往返等值
+        var restoredFound = cache.TryGet("user-1", out var restored);
+        Assert(restoredFound && restored == secret, "EncryptedTokenCache 往返等值失败");
+
+        // 篡改密文 → miss 不抛出（触发上层重新获取）
+        if (cipher != null)
+        {
+            var corrupted = cipher.Substring(0, Math.Max(1, cipher.Length - 2)) + (cipher.EndsWith("aa", StringComparison.Ordinal) ? "bb" : "aa");
+            inner.Set("user-1", corrupted);
+            Assert(!cache.TryGet("user-1", out _), "篡改密文应按 miss 处理而非命中");
+        }
+
+        Console.WriteLine("  [✓] EncryptedTokenCache 加密往返/密文驻留/损坏 miss 均正确（AOT 安全）");
         Console.WriteLine();
     }
 

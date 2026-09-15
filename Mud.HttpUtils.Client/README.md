@@ -276,6 +276,9 @@ var maskedObj = masker.MaskObject(userRequest);
 | `MemoryUserTokenStore`            | `IUserTokenStore` 内存默认实现，按用户 ID 隔离，支持 `ClearUserAsync` 等     |
 | `MemoryEncryptedTokenStore`       | `IEncryptedTokenStore` 内存默认实现，自动加密/解密令牌数据                   |
 | `MemoryCacheTokenCache<T>`        | `ITokenCache<T>` 内存缓存实现（基于 `IMemoryCache`），供 `TokenManagerBase` 使用 |
+| `EncryptedTokenCache<T>`          | `ITokenCache<T>` 加密包装：值经 `IEncryptionProvider` 加密后以密文驻留内存（SR-M8），配合 `UserTokenManagerBase` 加密构造重载使用 |
+| `OAuth2TokenException`            | OAuth2 令牌请求失败的类型化异常（继承 `InvalidOperationException`，携带 `ErrorCode` / `ErrorDescription` / `HttpStatusCode`，SR-M2） |
+| `DelegateTokenManagerRegistry`    | `ITokenManagerRegistry` 委托实现，配合 `AddTokenManagerRegistry` 为 401 恢复提供按键路由（SR-M6） |
 | `DefaultFormContent`              | `IFormContent` 默认实现，基于 `Dictionary<string, string>`                   |
 
 > `TokenManagerBase` 与 `UserTokenManagerBase` 的抽象基类定义位于 `Mud.HttpUtils.Abstractions` 包；`OAuth2TokenManagerBase`（OAuth2 抽象基类）亦定义于 Abstractions。`DefaultTokenProvider` 为 `internal` 类型，由框架在内部使用。`DefaultCurrentUserContext<TUser>` 为泛型实现，使用时需指定用户类型（如 `DefaultCurrentUserContext<MyUser>`，`MyUser` 继承 `CurrentUserInfo`）。
@@ -330,7 +333,18 @@ services.AddSingleton<IEncryptionProvider, DefaultAesEncryptionProvider>(/* 配�
 services.AddSingleton<IEncryptedTokenStore, MemoryEncryptedTokenStore>();
 ```
 
-> `MemoryTokenStore` 基于 `ConcurrentDictionary` 实现线程安全的令牌管理，支持过期自动清理。`MemoryUserTokenStore` 为每个用户维护独立的存储空间。`MemoryEncryptedTokenStore` 在存储前自动加密令牌数据，读取时自动解密，适用于对安全性要求较高的场景。
+> `MemoryTokenStore` 基于 `ConcurrentDictionary` 实现线程安全的令牌管理，支持过期自动清理。`MemoryUserTokenStore` 为每个用户维护独立的存储空间（外层 userId 比较器为 **Ordinal**——`"User1"` 与 `"user1"` 是两个用户，大小写归一化责任在调用方入口，SR-H4）。`MemoryEncryptedTokenStore` 在存储前自动加密令牌数据，读取时自动解密，适用于对安全性要求较高的场景。
+
+#### 令牌管理安全加固（SR 轮行为要点）
+
+| 能力 | 说明 |
+| --- | --- |
+| 租户绑定守卫（SR-H5） | `TokenManagerBase` bind-once：单实例被不同 AppKey 共享时快速失败（合法共享场景覆写 `EnforceTenantBinding = false`） |
+| 用户令牌按 scope 隔离（SR-M1） | `GetOrRefreshTokenAsync(userId, scopes)` 按 `userId × scope` 复合键隔离缓存与锁；`RemoveTokenAsync(userId)` / `InvalidateUserTokenAsync(userId)` 清除该用户**全部作用域**（登出语义）；刷新失败负缓存指数退避（30s→60s→120s→240s→300s 封顶，SR-M3） |
+| 内存态加密缓存（SR-M8） | `UserTokenManagerBase` 构造重载传入 `IEncryptionProvider` 即以 `EncryptedTokenCache<T>` 包装默认缓存，密文损坏按 miss 处理触发重新获取 |
+| 401 恢复按键路由（SR-M6） | `AddTokenManagerRegistry` 注册解析委托后，恢复执行器按 `TokenRecoveryContext.TokenManagerKey` 路由失效/刷新/重试全链路（含用户级；解析到非用户管理器一律回退注入实例）；解析失败回退 + Warning |
+| 请求体读取阶段限量（SR-H2/H3） | 401 恢复的请求体缓冲含 chunked 硬上限（`MaxCachedRequestBodyBytes`，默认 10MB）；超限/禁用体缓存的带体请求**不进行无体重试**，直接返回 401 |
+| userId 一致性校验（SR-M7/L2） | 恢复执行器与 `DefaultTokenProvider` 校验 `TokenRecoveryContext.UserId` 与受信 `ICurrentUserContext.UserId` 一致性，不一致即拒绝；详见 `.docs/multi-tenant-best-practices.md` |
 
 #### 默认表单内容
 
@@ -360,6 +374,8 @@ var httpContent = formContent.ToHttpContent(); // FormUrlEncodedContent
 | `IntrospectionEndpoint` | `string` | `""` | 令牌内省端点 URL |
 | `RequireHttps` | `bool` | `true` | 是否强制 HTTPS 端点 |
 | `ExpirySafetyMarginSeconds` | `int` | `60` | 令牌过期安全边际（秒），提前刷新以避免使用过期令牌 |
+| `ClientSecretCacheTtlSeconds` | `int` | `300` | 密钥缓存 TTL（秒），密钥轮换后 TTL 过期即重新解析（`0` = 不缓存；未启用安全提供程序时不进入缓存路径） |
+| `AllowDefaultScopeRefreshTokenFallback` | `bool` | `false` | 是否允许当前作用域缺 refresh_token 时回退默认作用域凭据（SR-M9 默认关闭，防跨作用域凭据串用；仅 IdP 支持"统一刷新令牌"时显式开启） |
 
 > **安全提示**：当同时设置 `ClientSecret` 和 `ClientSecretProviderName` 时，`ClientSecretProviderName` 优先生效。建议仅设置其中之一以避免混淆。`AddMudHttpOAuth2FromConfiguration` 会在启动时自动检测此冲突并记录警告日志。
 
@@ -399,7 +415,7 @@ services.AddMudHttpOAuth2FromConfiguration(configuration);
 
 | 属性 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `SizeLimit` | `int` | `10000` | 缓存容量限制（用户数量） |
+| `SizeLimit` | `int` | `10000` | 缓存容量限制（SR-M1 起计数单位为**用户 × 作用域条目**，容量规划按活跃授权组合估算） |
 | `ExpireThresholdSeconds` | `int` | `300` | 令牌过期提前量（秒），即将过期时触发刷新 |
 | `CleanupIntervalSeconds` | `int` | `300` | 缓存清理间隔（秒） |
 | `SlidingExpirationSeconds` | `int` | `3600` | 滑动过期时间（秒），未访问则自动移除 |
@@ -452,6 +468,8 @@ services.AddMudHttpClientsFromConfiguration(configuration);
 | `Enabled` | `bool` | `true` | 是否启用令牌恢复机制 |
 | `RecoveryMaxRetries` | `int` | `1` | 令牌恢复的最大重试次数（必须 >= 0，启动时由 `TokenRecoveryOptionsValidator` 校验） |
 | `TokenScheme` | `string` | `"Bearer"` | 令牌的认证方案（不能为空，启动时校验） |
+| `RefreshTimeoutSeconds` | `double` | `30` | 令牌刷新的超时兜底（秒），取消隔离后刷新任务仅受本超时约束 |
+| `MaxCachedRequestBodyBytes` | `long` | `10485760` | 401 恢复可缓冲的请求体上限（字节），读取阶段限量含 chunked；超限/带体不重试直接返回 401，`0` = 禁用体缓存 |
 
 ```csharp
 // 通过代码配置
@@ -488,6 +506,7 @@ services.AddMudHttpTokenRecoveryFromConfiguration(configuration);
 | `RefreshIntervalSeconds` | `int` | `300` | 刷新间隔（秒），必须大于 0 |
 | `RetryDelaySeconds` | `int` | `60` | 刷新失败后重试延迟（秒），必须大于 0 |
 | `StopOnError` | `bool` | `false` | 刷新失败时是否停止服务 |
+| `MaxConsecutiveFailures` | `int` | `0` | 连续失败周期数达到该阈值时停止服务（`0` = 不因连续失败停止，与 `StopOnError` 正交） |
 
 ```csharp
 // 通过代码配置
