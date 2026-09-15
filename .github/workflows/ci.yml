@@ -437,6 +437,128 @@ jobs:
           fi
           echo "✓ Scaffolder activation matches AotModeResolver semantics"
 
+      # [P0-1] 脚手架 targets 的增量语义与失败清理门禁（与上面 T3 探针同属脚手架行为，故同作业同 OS 门控）。
+      # 断言四件事（用假工具脚本替代真实 mud-jsonctx，自包含且确定性）：
+      #   1) 干净构建必须真正执行脚手架 —— Outputs 若只有 $(MudJsonContextOutputPath)\**\*.g.cs，
+      #      MSBuild 会因"没有输出"直接跳过目标，导致首次生成永不发生（本轮复核发现的回归）；
+      #   2) 源文件未变更时不得重跑（增量生效）；
+      #   3) 源文件变更后必须重跑 —— Inputs 必须含全部编译源文件，只声明 .csproj 会漏掉 DTO 变更；
+      #   4) 工具失败时删除陈旧 .g.cs 与时间戳 —— 消费方构建应以"类型缺失"编译错误失败（而非静默通过），
+      #      且时间戳被删除使下一次构建必定重试。
+      - name: Verify scaffolder incrementality and stale-artifact cleanup (P0-1)
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          TEST_DIR="$WORKSPACE/.tmp-scaffolder-p01"
+          rm -rf "$TEST_DIR"
+          mkdir -p "$TEST_DIR"
+
+          cat > "$TEST_DIR/fake-scaffolder.sh" << 'EOF'
+          #!/bin/sh
+          # 假脚手架：记录调用次数，按 -o 参数写出可编译的 Context
+          echo ran >> "$(dirname "$0")/runs.log"
+          out=""
+          prev=""
+          for a in "$@"; do
+            if [ "$prev" = "-o" ]; then out="$a"; fi
+            prev="$a"
+          done
+          mkdir -p "$out"
+          printf 'namespace ProbeNs { internal class AppJsonContext { } }\n' > "$out/AppJsonContext.g.cs"
+          exit 0
+          EOF
+
+          cat > "$TEST_DIR/fail-scaffolder.sh" << 'EOF'
+          #!/bin/sh
+          exit 3
+          EOF
+
+          # 消费方代码引用生成的 Context：陈旧/缺失产物必须表现为编译错误
+          cat > "$TEST_DIR/Consumer.cs" << 'EOF'
+          namespace ProbeNs;
+          internal sealed class Consumer { public string ContextName => typeof(AppJsonContext).Name; }
+          EOF
+
+          cat > "$TEST_DIR/Probe.csproj" << 'EOF'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <TargetFramework>net8.0</TargetFramework>
+              <MudEnableJsonContextScaffolder>true</MudEnableJsonContextScaffolder>
+              <MudJsonContextOutputPath>$(MSBuildProjectDirectory)/obj/Gen</MudJsonContextOutputPath>
+              <MudJsonContextToolCommand>$(MSBuildProjectDirectory)/fake-scaffolder.sh</MudJsonContextToolCommand>
+            </PropertyGroup>
+            <Import Project="$(WORKSPACE)/Mud.HttpUtils.Attributes/build/Mud.HttpUtils.JsonContextScaffolder.targets" />
+          </Project>
+          EOF
+
+          chmod +x "$TEST_DIR/fake-scaffolder.sh" "$TEST_DIR/fail-scaffolder.sh"
+
+          runs() {
+            if [ -f "$TEST_DIR/runs.log" ]; then
+              wc -l < "$TEST_DIR/runs.log" | tr -d ' '
+            else
+              echo 0
+            fi
+          }
+
+          fail=0
+
+          # 1) 干净构建：必须真正生成
+          dotnet build "$TEST_DIR/Probe.csproj" -v:q
+          if [ ! -f "$TEST_DIR/obj/Gen/AppJsonContext.g.cs" ]; then
+            echo "::error::P0-1 FAILED: 干净构建后未生成 Context（Outputs 为空会让 MSBuild 直接跳过目标）"
+            fail=1
+          fi
+          if [ "$(runs)" != "1" ]; then
+            echo "::error::P0-1 FAILED: 首次构建应执行 1 次脚手架，实际 $(runs)"
+            fail=1
+          fi
+
+          # 2) 无变更：不得重跑
+          dotnet build "$TEST_DIR/Probe.csproj" -v:q
+          if [ "$(runs)" != "1" ]; then
+            echo "::error::P0-1 FAILED: 源未变更却重跑了脚手架（实际 $(runs)）"
+            fail=1
+          fi
+
+          # 3) 源文件变更：必须重跑（Inputs 必须含编译源文件）
+          touch "$TEST_DIR/Consumer.cs"
+          dotnet build "$TEST_DIR/Probe.csproj" -v:q
+          if [ "$(runs)" != "2" ]; then
+            echo "::error::P0-1 FAILED: 源文件变更后未重跑脚手架（实际 $(runs)）"
+            fail=1
+          fi
+
+          # 4) 生成失败：陈旧产物与时间戳必须被清理 → 消费方构建以缺类型错误失败
+          touch "$TEST_DIR/Consumer.cs"
+          set +e
+          out=$(dotnet build "$TEST_DIR/Probe.csproj" -p:MudJsonContextToolCommand="$TEST_DIR/fail-scaffolder.sh" -v:q 2>&1)
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ] || ! grep -q "AppJsonContext" <<< "$out"; then
+            echo "$out"
+            echo "::error::P0-1 FAILED: 工具失败后构建未以缺类型编译错误失败（陈旧产物未被清理？）"
+            fail=1
+          fi
+          if [ -f "$TEST_DIR/obj/Gen/AppJsonContext.g.cs" ]; then
+            echo "::error::P0-1 FAILED: 失败后陈旧 .g.cs 仍然存在"
+            fail=1
+          fi
+          if [ -f "$TEST_DIR/obj/Gen/MudJsonContextScaffolder.stamp" ]; then
+            echo "::error::P0-1 FAILED: 失败后时间戳仍然存在（下次构建不会重试）"
+            fail=1
+          fi
+
+          rm -rf "$TEST_DIR"
+          if [ "$fail" -ne 0 ]; then
+            echo "✗ Scaffolder incrementality / cleanup gate FAILED"
+            exit 1
+          fi
+          echo "✓ Scaffolder incrementality + stale-artifact cleanup verified (P0-1)"
+
   aot-packageref:
     name: AOT PackageRef 验证
     runs-on: ubuntu-latest

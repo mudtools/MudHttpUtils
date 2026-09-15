@@ -41,6 +41,12 @@ IsAotCompatible=true（仅声明 AOT 友好、不实际发布 AOT）不自动激
     <MudEnableJsonContextScaffolder Condition="'$(MudEnableJsonContextScaffolder)' == '' AND '$(PublishAot)' == 'true'">true</MudEnableJsonContextScaffolder>
     <MudEnableJsonContextScaffolder Condition="'$(MudEnableJsonContextScaffolder)' == ''">false</MudEnableJsonContextScaffolder>
     <MudJsonContextOutputPath Condition="'$(MudJsonContextOutputPath)' == ''">$(IntermediateOutputPath)GeneratedJsonContext</MudJsonContextOutputPath>
+    <!-- [P0-1 修复] 增量判定的「时间戳」输出。必须以单个属性（而非通配 Item）形式参与 Outputs：
+         MSBuild 在 Outputs 求值为空时直接跳过目标（"Skipping target ... because it has no outputs"），
+         若 Outputs 只有 $(MudJsonContextOutputPath)\**\*.g.cs，则干净构建（尚无 .g.cs）时目标恒被跳过
+         —— 脚手架永远不会首次生成 Context。时间戳路径恒非空，同时让"工具成功但未产出任何文件"
+         的工程也能正确命中增量（后续构建不重复执行）。 -->
+    <MudJsonContextStampFile>$(MudJsonContextOutputPath)\MudJsonContextScaffolder.stamp</MudJsonContextStampFile>
     <!-- 优先使用 DotNetToolReference 解析出的本地路径；否则回退到 PATH 上的命令名 -->
     <MudJsonContextToolCommand Condition="'$(MudJsonContextToolCommand)' == '' AND '$(DotNetToolMud_HttpUtils_JsonContextScaffolder)' != ''">$(DotNetToolMud_HttpUtils_JsonContextScaffolder)mud-jsonctx$(ExeExtension)</MudJsonContextToolCommand>
     <MudJsonContextToolCommand Condition="'$(MudJsonContextToolCommand)' == ''">mud-jsonctx</MudJsonContextToolCommand>
@@ -49,6 +55,18 @@ IsAotCompatible=true（仅声明 AOT 友好、不实际发布 AOT）不自动激
   <!-- [P0-1 修复] 声明生成文件 Item，供增量判定与失败清理使用 -->
   <ItemGroup>
     <MudGeneratedContextFiles Include="$(MudJsonContextOutputPath)\**\*.g.cs" />
+  </ItemGroup>
+
+  <!-- [P0-1 修复] 增量判定输入项：项目文件 + 全部编译源文件。
+       缺陷背景：若 Inputs 只声明 $(MSBuildProjectFullPath)，则"新增/修改 [HttpJsonSerializable] DTO"
+       不会改变 .csproj 时间戳 → 目标被判为最新 → 脚手架被跳过 → 上一次的陈旧 .g.cs 继续参与编译，
+       新 DTO 没有源生成元数据，AOT 运行时才崩（正是 P0-1 要防的失败模式）。
+       此处复用 SDK 默认 Compile 项（默认 glob 已排除 obj/bin），并在工程求值期展开，
+       因而既含默认 glob 源文件，也含项目内显式 Include 的源文件；
+       构建期由其它目标追加的 Compile 项（如 obj 下的 AssemblyInfo）刻意不在其中——
+       那些是构建产物，纳入 Inputs 会导致每次构建都重跑脚手架（增量彻底失效）。 -->
+  <ItemGroup>
+    <MudScaffolderSource Include="@(Compile)" />
   </ItemGroup>
 
   <!-- [重要] 重入保护：脚手架内部使用 MSBuildWorkspace 评估本项目，而 MSBuildWorkspace 会发起
@@ -60,8 +78,8 @@ IsAotCompatible=true（仅声明 AOT 友好、不实际发布 AOT）不自动激
             在 MSBuild 属性层面表现为 'true'）。 -->
   <Target Name="MudGenerateJsonContext"
           BeforeTargets="BeforeCompile"
-          Inputs="$(MSBuildProjectFullPath)"
-          Outputs="@(MudGeneratedContextFiles->'%(FullPath)')"
+          Inputs="$(MSBuildProjectFullPath);@(MudScaffolderSource)"
+          Outputs="$(MudJsonContextStampFile);@(MudGeneratedContextFiles->'%(FullPath)')"
           Condition="'$(MudEnableJsonContextScaffolder)' == 'true' AND '$(DesignTimeBuild)' != 'true' AND '$(MudJsonContextScaffolderRunning)' != 'true'">
     <Message Importance="high" Text="[Mud] 运行 JsonContextScaffolder 生成 JSON Context（pre-build）" />
     <!-- 脚手架内部使用 MSBuildWorkspace 重新评估本项目，需清除外层构建注入的 MSBuild 环境变量，
@@ -71,8 +89,16 @@ IsAotCompatible=true（仅声明 AOT 友好、不实际发布 AOT）不自动激
           ContinueOnError="true">
       <Output TaskParameter="ExitCode" PropertyName="_MudJsonCtxExitCode" />
     </Exec>
-    <!-- [P0-1 修复] 生成失败即清理陈旧产物：宁可编译期缺类型报错，不可让旧 Context 静默参与编译 -->
+    <!-- [P0-1 修复] 成功：续写增量时间戳（输出目录可能尚不存在，先建目录） -->
+    <MakeDir Directories="$(MudJsonContextOutputPath)"
+             Condition="'$(_MudJsonCtxExitCode)' == '0'" />
+    <Touch Files="$(MudJsonContextStampFile)" AlwaysCreate="true"
+           Condition="'$(_MudJsonCtxExitCode)' == '0'" />
+    <!-- [P0-1 修复] 生成失败即清理陈旧产物：宁可编译期缺类型报错，不可让旧 Context 静默参与编译。
+         时间戳一并删除，使下一次构建必定重试（否则失败的构建会被增量判定为"最新"而永不重试）。 -->
     <Delete Files="@(MudGeneratedContextFiles)"
+            Condition="'$(_MudJsonCtxExitCode)' != '0' AND '$(_MudJsonCtxExitCode)' != ''" />
+    <Delete Files="$(MudJsonContextStampFile)"
             Condition="'$(_MudJsonCtxExitCode)' != '0' AND '$(_MudJsonCtxExitCode)' != ''" />
     <Message Condition="'$(_MudJsonCtxExitCode)' != '0' AND '$(_MudJsonCtxExitCode)' != ''"
              Importance="high"
@@ -84,8 +110,15 @@ IsAotCompatible=true（仅声明 AOT 友好、不实际发布 AOT）不自动激
           Condition="'$(MudEnableJsonContextScaffolder)' == 'true' AND Exists('$(MudJsonContextOutputPath)')"
           DependsOnTargets="MudGenerateJsonContext">
     <ItemGroup>
+      <!-- [P0-1 / P2-2 修复] 先 Remove 再 Include：当 MudJsonContextOutputPath 被配置到源码目录
+           （失败提示中推荐的做法，以便把产物纳入版本控制）时，SDK 默认 Compile glob 已包含这些 .g.cs，
+           直接再 Include 会让同一源文件进入编译两次（CS2002「源文件被指定多次」）。 -->
+      <Compile Remove="$(MudJsonContextOutputPath)\**\*.g.cs" />
       <Compile Include="$(MudJsonContextOutputPath)\**\*.g.cs" />
       <FileWrites Include="$(MudJsonContextOutputPath)\**\*.g.cs" />
+      <!-- 增量时间戳同样登记为 FileWrites：否则 dotnet clean 后时间戳残留，
+           下一次构建可能被误判为"最新"而跳过生成。 -->
+      <FileWrites Include="$(MudJsonContextStampFile)" />
     </ItemGroup>
   </Target>
 

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Mud.HttpUtils.Analyzers;
 
@@ -291,5 +292,155 @@ public class AotXmlRejectionTests
 
         diagnostics.Should().NotContain(d => d.Id == "AOT007",
             "显式声明 JIT 运行期后不应再报告 AOT007（F11 逃生舱）");
+    }
+
+    // ───────────────────────── P1-2：语法级预门控零漏报回归 ─────────────────────────
+    // XML 判定的三个信号源必须全部能穿过预门控（任何一处遗漏 = AOT007 静默漏报）。
+    // 说明：初版预门控为"全语法树文本含 SerializationMethod/ResponseContentType"，
+    // 而生成器会为每个方法发射 `ResponseContentType = "..."`，使该门控在真实构建中恒为放行；
+    // 现改为只扫描 [HttpClientApi] 接口自身的特性语法（见 AotXmlRejectionAnalyzer.MayUseXml）。
+
+    private static ImmutableArray<Diagnostic> AnalyzeAot007(string source)
+        => Mud.HttpUtils.Analyzers.AotXmlRejectionAnalyzer
+            .Analyze(CreateCompilation(source), isAotContext: true, CancellationToken.None)
+            .Where(d => d.Id == "AOT007")
+            .ToImmutableArray();
+
+    /// <summary>信号 1：HTTP 方法特性的 <c>ContentType</c> 命名参数声明 XML。</summary>
+    [Fact]
+    public void P12_XmlViaMethodContentTypeNamedArgument_ReportsAot007()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi("https://api.example.com")]
+                public interface IApi
+                {
+                    [Post("/api/data", ContentType = "application/xml")]
+                    Task<string> PostAsync([Body] MyDto data);
+                }
+
+                public class MyDto { public string Name { get; set; } }
+            }
+            """;
+
+        AnalyzeAot007(source).Should().ContainSingle(
+            "ContentType = \"application/xml\" 必须穿过预门控并报 AOT007");
+    }
+
+    /// <summary>信号 2：HTTP 方法特性的 <c>ResponseContentType</c> 命名参数声明 XML。</summary>
+    [Fact]
+    public void P12_XmlViaResponseContentTypeNamedArgument_ReportsAot007()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi("https://api.example.com")]
+                public interface IApi
+                {
+                    [Post("/api/data", ResponseContentType = "application/xml")]
+                    Task<string> PostAsync([Body] MyDto data);
+                }
+
+                public class MyDto { public string Name { get; set; } }
+            }
+            """;
+
+        AnalyzeAot007(source).Should().ContainSingle(
+            "ResponseContentType = \"application/xml\" 必须穿过预门控并报 AOT007");
+    }
+
+    /// <summary>信号 3：<c>[Body("application/xml")]</c> 位置参数声明 XML。</summary>
+    [Fact]
+    public void P12_XmlViaBodyPositionalContentType_ReportsAot007()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi("https://api.example.com")]
+                public interface IApi
+                {
+                    [Post("/api/data")]
+                    Task<string> PostAsync([Body("application/xml")] string xmlData);
+                }
+            }
+            """;
+
+        AnalyzeAot007(source).Should().ContainSingle(
+            "[Body(\"application/xml\")] 必须穿过预门控并报 AOT007");
+    }
+
+    /// <summary>信号 4：接口级 <c>[SerializationMethod(Xml)]</c> 对全部方法生效。</summary>
+    [Fact]
+    public void P12_XmlViaInterfaceLevelSerializationMethod_ReportsAot007()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi("https://api.example.com")]
+                [SerializationMethod(SerializationMethod.Xml)]
+                public interface IApi
+                {
+                    [Post("/api/data")]
+                    Task<string> PostAsync([Body] MyDto data);
+                }
+
+                public class MyDto { public string Name { get; set; } }
+            }
+            """;
+
+        AnalyzeAot007(source).Should().ContainSingle(
+            "接口级 [SerializationMethod(Xml)] 必须穿过预门控并报 AOT007");
+    }
+
+    /// <summary>
+    /// [P1-2 零误报] 纯 JSON 接口（10 接口 × 10 方法）不得报 AOT007，
+    /// 且预门控不得因"跳过分析"而影响判定正确性（本用例同时是预门控的规模/耗时基准）。
+    /// </summary>
+    [Fact]
+    public void P12_PureJsonInterfaces_NoAot007_Benchmark()
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("using System.Threading.Tasks;");
+        builder.AppendLine("using Mud.HttpUtils.Attributes;");
+        builder.AppendLine("namespace TestNamespace {");
+        for (var i = 0; i < 10; i++)
+        {
+            builder.AppendLine($"[HttpClientApi(\"https://api.example.com\")]");
+            builder.AppendLine($"public interface IApi{i} {{");
+            for (var j = 0; j < 10; j++)
+            {
+                builder.AppendLine($"    [Post(\"/api/{i}/{j}\")]");
+                builder.AppendLine($"    Task<Dto{i}> Post{i}_{j}Async([Body] Dto{i} data);");
+            }
+            builder.AppendLine("}");
+            builder.AppendLine($"public class Dto{i} {{ public int Id {{ get; set; }} }}");
+        }
+        builder.AppendLine("}");
+
+        var compilation = CreateCompilation(builder.ToString());
+        var stopwatch = Stopwatch.StartNew();
+        var diagnostics = Mud.HttpUtils.Analyzers.AotXmlRejectionAnalyzer
+            .Analyze(compilation, isAotContext: true, CancellationToken.None);
+        stopwatch.Stop();
+
+        diagnostics.Should().NotContain(d => d.Id == "AOT007",
+            "纯 JSON 工程不应产生 AOT007（预门控不得把非 XML 方法误判为 XML）");
+        // 软断言：仅作为性能基准留痕（预门控跳过全部方法的 MethodAnalyzer 分析，
+        // 正常应在秒级以内完成；此断言给出宽松上界以避免 CI 抖动导致假失败）。
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(30),
+            $"预门控后 100 个纯 JSON 方法的分析应保持轻量，实际耗时 {stopwatch.Elapsed}");
     }
 }

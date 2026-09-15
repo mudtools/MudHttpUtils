@@ -626,9 +626,14 @@ internal static class AotDtoCoverageAnalyzer
                         QuerySerializationClassifier.IsSimple(responseElemNamed))
                         return;
 
-                    // [P1-7] XML / FormUrlEncoded 响应不走 JSON 反序列化，豁免 AOT004。
-                    // FormUrlEncoded 响应体按字符串返回（生成器端 MethodGenerator 不走 JSON 反序列化）。
-                    if (serializationMethod is "Xml" or "FormUrlEncoded")
+                    // XML 响应走 XmlSerializer 反序列化，不需要 JsonSerializerContext 覆盖
+                    // （AOT 上下文下 XML 方法已被 AOT007 拒绝，该路径不可达）。
+                    // [P1-7 复核修正] 响应端**不得**豁免 FormUrlEncoded：执行器只按响应 content-type
+                    // 区分「XML vs JSON」两条反序列化路径（DefaultHttpRequestExecutor.SendAndDeserializeAsync），
+                    // 不存在 form-urlencoded 分支；MethodGenerator 对 FormUrlEncoded 只改写请求体
+                    // （RequestBuilder.GenerateUrlEncodedBodyParameter），响应仍走
+                    // IHttpContentSerializer.Deserialize<TResult>。豁免 FormUrlEncoded 会造成 AOT004 漏报。
+                    if (serializationMethod == "Xml")
                         return;
 
                     if (!IsCovered(responseElemNamed, coveredTypes))
@@ -664,12 +669,12 @@ internal static class AotDtoCoverageAnalyzer
                 return;
 
             // XML 序列化方法豁免：响应端用 XML 反序列化，不需要 JsonSerializerContext 覆盖。
-            // [P1-7] FormUrlEncoded 响应也不走 JSON 反序列化（响应体按字符串返回），同样豁免。
-            if (serializationMethod is "Xml" or "FormUrlEncoded")
+            // [P1-7 复核修正] FormUrlEncoded 不豁免（理由见上：响应仍走 JSON 反序列化）。
+            if (serializationMethod == "Xml")
                 return;
 
-            // 3) 其余才做覆盖判定
-            if (!IsCovered(responseType, coveredTypes) && !QuerySerializationClassifier.IsSimple(responseType))
+            // 3) 其余才做覆盖判定（简单类型已在上面提前 return，故此处无需再判 IsSimple）
+            if (!IsCovered(responseType, coveredTypes))
             {
                 diagnostics.Add(Diagnostic.Create(
                     Diagnostics.AotDtoNotCoveredByContext,
@@ -679,9 +684,11 @@ internal static class AotDtoCoverageAnalyzer
                     method.Name,
                     responseType.ToDisplayString()));
             }
-            // [P0-2] 多态覆盖校验：类型声明了 [JsonDerivedType] 但派生类型未被 Context 覆盖 → AOT 下反序列化派生实例会抛异常
-            else if (IsCovered(responseType, coveredTypes) && HasJsonDerivedTypeDeclaration(responseType))
+            else
             {
+                // [P0-2] 多态覆盖校验：类型自身已被覆盖，但它在 [JsonDerivedType] 中声明的派生类型未被覆盖时
+                // 仍会在 AOT 下失败（STJ 多态反序列化需要派生类型的元数据）。
+                // 仅在「类型自身已覆盖」分支可达——未覆盖时上面的主判定已报告，避免重复诊断。
                 var uncoveredDerived = GetUncoveredDerivedTypes(responseType, coveredTypes);
                 if (uncoveredDerived.Count > 0)
                 {
@@ -691,7 +698,7 @@ internal static class AotDtoCoverageAnalyzer
                         TypeProps(responseType),
                         interfaceSymbol.Name,
                         method.Name,
-                        responseType.ToDisplayString() + $"（基类声明了 [JsonDerivedType] 但派生类型 [{string.Join(", ", uncoveredDerived.Select(t => t.Name))}] 未被 Context 覆盖，AOT 下反序列化将抛 NotSupportedException）"));
+                        responseType.ToDisplayString() + $"（声明了 [JsonDerivedType] 但其派生类型 [{string.Join(", ", uncoveredDerived.Select(t => t.Name))}] 未被 Context 覆盖，AOT 下反序列化派生实例将抛 NotSupportedException）"));
                 }
             }
         }
@@ -814,34 +821,37 @@ internal static class AotDtoCoverageAnalyzer
         return returnType.TypeArguments[0];
     }
 
-        /// <summary>
-        /// [P0-2] 判断类型自身是否声明了 [JsonDerivedType] 特性。
-        /// 只有声明了 [JsonDerivedType] 的类型才参与 STJ 多态序列化，
-        /// 未声明的非 sealed 类不会被 STJ 按多态处理，无需检查派生类型覆盖。
-        /// </summary>
-        private static bool HasJsonDerivedTypeDeclaration(INamedTypeSymbol type)
+    /// <summary>
+    /// [P0-2] 获取类型通过 <c>[JsonDerivedType]</c> 声明的派生类型中未被 Context 覆盖的类型。
+    /// 返回空集合即表示"该类型的多态覆盖完整"（含"未声明 <c>[JsonDerivedType]</c>"这一情形）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>只读类型自身</b>的 <c>[JsonDerivedType]</c>，<b>不</b>向上遍历基类链：
+    /// 基类上的声明描述的是"基类的多态派生集合"（可能含兄弟类型），当响应类型本身就是某个派生类型时，
+    /// 兄弟类型未覆盖并不会导致该响应失败，沿基类链收集会把无关的兄弟类型算作缺失（误报）；
+    /// 而在 <c>AotStrictMode</c> 下 AOT004 会升级为 Error，误报即等于阻断构建。
+    /// </para>
+    /// <para>
+    /// 同理，未声明 <c>[JsonDerivedType]</c> 的非 sealed 类不参与 STJ 多态读写
+    /// （按声明类型静态序列化，不会抛 <c>NotSupportedException</c>），返回空集合即不报诊断。
+    /// </para>
+    /// </remarks>
+    private static List<INamedTypeSymbol> GetUncoveredDerivedTypes(INamedTypeSymbol type, HashSet<INamedTypeSymbol> coveredTypes)
+    {
+        var result = new List<INamedTypeSymbol>();
+        foreach (var attr in type.GetAttributes())
         {
-            return type.GetAttributes().Any(a => a.AttributeClass?.Name == "JsonDerivedTypeAttribute");
-        }
-
-        /// <summary>
-        /// [P0-2] 获取类型通过 [JsonDerivedType] 声明的派生类型中未被 Context 覆盖的类型。
-        /// </summary>
-        private static List<INamedTypeSymbol> GetUncoveredDerivedTypes(INamedTypeSymbol type, HashSet<INamedTypeSymbol> coveredTypes)
-        {
-            var result = new List<INamedTypeSymbol>();
-            foreach (var attr in type.GetAttributes())
+            if (attr.AttributeClass?.Name != "JsonDerivedTypeAttribute")
+                continue;
+            // [JsonDerivedType(typeof(Dog))] 的第一个构造参数是派生类型
+            if (attr.ConstructorArguments.Length > 0 &&
+                attr.ConstructorArguments[0].Value is INamedTypeSymbol derivedType)
             {
-                if (attr.AttributeClass?.Name != "JsonDerivedTypeAttribute")
-                    continue;
-                // [JsonDerivedType(typeof(Dog))] 的第一个构造参数是派生类型
-                if (attr.ConstructorArguments.Length > 0 &&
-                    attr.ConstructorArguments[0].Value is INamedTypeSymbol derivedType)
-                {
-                    if (!IsCovered(derivedType, coveredTypes))
-                        result.Add(derivedType);
-                }
+                if (!IsCovered(derivedType, coveredTypes))
+                    result.Add(derivedType);
             }
-            return result;
         }
+        return result;
+    }
 }

@@ -821,7 +821,28 @@ public class Dog : Animal { public string Breed { get; set; } }
 
 ### AOT 安全脱敏（P0-3）
 
-`AotSafeSensitiveDataMasker` 的 `enableBaseTypeFallback` 开关在开启时，未注册的派生类型回退命中基类规则后**降级为类型占位输出** `[TypeName, BaseType=BaseTypeName]`，而非使用基类规则——防止派生类新增敏感字段不在基类规则视野内导致明文输出。请为每个需要脱敏的派生类型显式调用 `Register<T>()`。
+`AotSafeSensitiveDataMasker` 要求显式 `Register<T>()` 注册脱敏规则。当类型未注册、但其某个基类已注册时，**不会套用基类规则**（基类规则看不到派生类新增的敏感字段，套用会导致明文输出），两种取值都只输出类型占位串：
+
+| `enableBaseTypeFallback` | 回退输出 | 适用场景 |
+| --- | --- | --- |
+| `false`（默认） | `[TypeName]` | 不需要区分"基类已注册"这一线索 |
+| `true` | `[TypeName, BaseType=BaseTypeName]` | 便于定位"注册了基类、忘了派生类"的遗漏 |
+
+两者都会发出一次性告警（注入了 `ILogger` 走日志，否则回退 `Console.Error`），且都不输出任何字段值。请为每个需要脱敏的派生类型显式调用 `Register<T>()`。
+
+### 内置 `MudHttpJsonContext` 的 `Dictionary<string, object>` 处置（P1-6）
+
+库内置兜底 Context `MudHttpJsonContext` **不再**注册 `Dictionary<string, object>`：源生成的 `typeof(object)` 元数据在 Native AOT 下对非基元运行时值会抛 `NotSupportedException`，属"看起来能编译、上线才崩"的潜伏雷。库内无该注册的调用方；`Dictionary<string, string>` 注册保留。
+
+消费方若确需以 `object` 为值的字典参与 JSON 序列化，请在**自己的** `JsonSerializerContext` 上挂 `ObjectToInferredTypesConverter`：
+
+```csharp
+[JsonSourceGenerationOptions(Converters = [typeof(ObjectToInferredTypesConverter)])]
+[JsonSerializable(typeof(Dictionary<string, object>))]
+internal partial class AppJsonContext : JsonSerializerContext;
+```
+
+> 非泛型 `IEncryptableHttpClient.EncryptContent(object, ...)` 内部会构造 `Dictionary<string, object>`，该重载已标注 `[Obsolete]` + `[RequiresUnreferencedCode]`/`[RequiresDynamicCode]`，AOT 场景请改用泛型重载 `EncryptContent<T>`。
 
 ## QueryAttribute 详解
 

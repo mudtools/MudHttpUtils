@@ -260,6 +260,215 @@ public class AotDtoCoverageAnalyzerTests
             "未声明本地 JsonSerializerContext 的工程不应收到覆盖类诊断（避免非 AOT 工程噪音）");
     }
 
+    /// <summary>
+    /// [P0-4] 本地声明了 <c>JsonSerializerContext</c> 但没有任何 <c>[JsonSerializable]</c>（空骨架）时，
+    /// AOT004/AOT005 不得静默——"刚创建 Context 骨架、还没补注册"恰是最需要诊断引导的时刻。
+    /// </summary>
+    /// <remarks>
+    /// 历史缺陷：<c>AnalyzeCore</c> 在 <c>coveredTypes.Count == 0</c> 时提前返回，导致空 Context 下
+    /// <c>IsCovered</c> 恒 false 但诊断全被吞掉。删除该门控后，所有 DTO 正确报 AOT004（期望行为）。
+    /// </remarks>
+    [Fact]
+    public void EmptyLocalContext_ReportsAot004_ForAllDtos()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                public class ResponseDto { public int Id { get; set; } }
+                public class BodyDto { public string Name { get; set; } }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Post("/x")]
+                    Task<ResponseDto> PostAsync([Body] BodyDto body, [Query] BodyDto criteria);
+                }
+
+                // 空骨架 Context：无任何 [JsonSerializable] → 覆盖集合为空
+                internal sealed partial class AppJsonContext : System.Text.Json.Serialization.JsonSerializerContext
+                {
+                    public AppJsonContext(System.Text.Json.JsonSerializerOptions options) : base(options) { }
+                    protected override System.Text.Json.JsonSerializerOptions? GeneratedSerializerOptions => null;
+                    public override System.Text.Json.Serialization.Metadata.JsonTypeInfo? GetTypeInfo(System.Type type) => null;
+                }
+            }
+            """;
+
+        var diagnostics = Analyze(source);
+
+        diagnostics.Should().Contain(
+            d => d.Id == "AOT004" && d.GetMessage(null).Contains("ResponseDto"),
+            "空 Context 下响应 DTO 必须报 AOT004（P0-4：已删除 coveredTypes.Count == 0 门控）");
+        diagnostics.Should().Contain(
+            d => d.Id == "AOT004" && d.GetMessage(null).Contains("BodyDto"),
+            "空 Context 下 [Body] DTO 必须报 AOT004");
+        diagnostics.Should().Contain(
+            d => d.Id == "AOT005" && d.GetMessage(null).Contains("BodyDto"),
+            "空 Context 下走 JSON 序列化的 [Query] 参数必须报 AOT005");
+    }
+
+    // ───────────────────────── AOT004 多态覆盖校验（P0-2） ─────────────────────────
+
+    /// <summary>自定义 Context 样板（无 [JsonSerializable]，由调用方按需在源里补齐）。</summary>
+    private const string EmptyContextBoilerplate = """
+        internal sealed partial class AppJsonContext : System.Text.Json.Serialization.JsonSerializerContext
+        {
+            public AppJsonContext(System.Text.Json.JsonSerializerOptions options) : base(options) { }
+            protected override System.Text.Json.JsonSerializerOptions? GeneratedSerializerOptions => null;
+            public override System.Text.Json.Serialization.Metadata.JsonTypeInfo? GetTypeInfo(System.Type type) => null;
+        }
+        """;
+
+    private static ImmutableArray<Diagnostic> AnalyzeAot004(string source)
+        => Analyze(source).Where(d => d.Id == "AOT004").ToImmutableArray();
+
+    /// <summary>
+    /// [P0-2 正例] 响应以多态基类声明、基类自身已被 Context 覆盖，但其 <c>[JsonDerivedType]</c>
+    /// 声明的派生类型未被覆盖 → 仍报 AOT004（AOT 下反序列化派生实例会抛 NotSupportedException）。
+    /// </summary>
+    [Fact]
+    public void Response_PolymorphicType_UncoveredDerived_ReportsAot004()
+    {
+        var source = $$"""
+            using System.Text.Json.Serialization;
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [JsonDerivedType(typeof(Dog))]
+                public class Animal { public string Name { get; set; } }
+
+                public class Dog : Animal { public string Breed { get; set; } }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Get("/animal")]
+                    Task<Animal> GetAsync();
+                }
+
+                [JsonSerializable(typeof(Animal))]
+                {{EmptyContextBoilerplate}}
+            }
+            """;
+
+        var aot004 = AnalyzeAot004(source);
+
+        aot004.Should().ContainSingle("Animal 已覆盖但派生类型 Dog 未覆盖，多态反序列化在 AOT 下会失败");
+        aot004[0].GetMessage().Should().Contain("Dog", "诊断需指名未覆盖的派生类型");
+        aot004[0].Location.Should().NotBe(Location.None, "诊断需定位到方法（与既有 AOT004 定位契约一致）");
+    }
+
+    /// <summary>[P0-2 反例] 基类与其 <c>[JsonDerivedType]</c> 派生类型均被 Context 覆盖 → 不报。</summary>
+    [Fact]
+    public void Response_PolymorphicType_AllDerivedCovered_DoesNotReportAot004()
+    {
+        var source = $$"""
+            using System.Text.Json.Serialization;
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [JsonDerivedType(typeof(Dog))]
+                public class Animal { public string Name { get; set; } }
+
+                public class Dog : Animal { public string Breed { get; set; } }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Get("/animal")]
+                    Task<Animal> GetAsync();
+                }
+
+                [JsonSerializable(typeof(Animal))]
+                [JsonSerializable(typeof(Dog))]
+                {{EmptyContextBoilerplate}}
+            }
+            """;
+
+        AnalyzeAot004(source).Should().BeEmpty("基类与全部派生类型均已覆盖时不应报 AOT004");
+    }
+
+    /// <summary>
+    /// [P0-2 反例] 响应类型为非 sealed 类但<b>未声明</b> <c>[JsonDerivedType]</c>（即便存在派生类）→ 不报。
+    /// </summary>
+    /// <remarks>
+    /// STJ 只对声明了 <c>[JsonDerivedType]</c> 的类型启用多态读写；未声明时按声明类型静态序列化，
+    /// 派生实例不会触发 NotSupportedException。若此处报 AOT004，任何"基类 + 派生类"的常规 DTO
+    /// 都会被误报（在 <c>AotStrictMode</c> 下升级为 Error 直接阻断构建）。
+    /// </remarks>
+    [Fact]
+    public void Response_NonPolymorphicNonSealedType_DoesNotReportAot004()
+    {
+        var source = $$"""
+            using System.Text.Json.Serialization;
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                // 非 sealed 且无 [JsonDerivedType]，存在派生类但 STJ 不做多态处理
+                public class Animal { public string Name { get; set; } }
+
+                public class Dog : Animal { public string Breed { get; set; } }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Get("/animal")]
+                    Task<Animal> GetAsync();
+                }
+
+                [JsonSerializable(typeof(Animal))]
+                {{EmptyContextBoilerplate}}
+            }
+            """;
+
+        AnalyzeAot004(source).Should().BeEmpty(
+            "未声明 [JsonDerivedType] 的类型不参与 STJ 多态序列化，不应报多态覆盖缺失");
+    }
+
+    /// <summary>[P0-2 反例] sealed 类响应与接口响应（均无 [JsonDerivedType]）→ 不报。</summary>
+    [Fact]
+    public void Response_SealedOrInterfaceType_DoesNotReportAot004()
+    {
+        var source = $$"""
+            using System.Text.Json.Serialization;
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                public sealed class SealedDto { public int Id { get; set; } }
+
+                public interface IMarker { }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Get("/sealed")]
+                    Task<SealedDto> GetSealedAsync();
+
+                    [Get("/iface")]
+                    Task<IMarker> GetInterfaceAsync();
+                }
+
+                [JsonSerializable(typeof(SealedDto))]
+                [JsonSerializable(typeof(IMarker))]
+                {{EmptyContextBoilerplate}}
+            }
+            """;
+
+        AnalyzeAot004(source).Should().BeEmpty(
+            "sealed 类与接口响应没有 [JsonDerivedType] 声明，不应报多态覆盖缺失");
+    }
+
     // ───────────────────────── AOT004：响应类型解包（Task/ValueTask/Nullable/List） ─────────────────────────
 
     /// <summary>

@@ -220,27 +220,49 @@
 #### P0 正确性缺陷修复
 
 - **P0-1 包内 targets 陈旧产物清理**（`Mud.HttpUtils.Attributes`）：脚手架生成失败时删除输出目录中的陈旧 `.g.cs`，使"工具坏了"呈现为编译期缺类型错误而非运行时崩溃。补齐 `Inputs`/`Outputs` 增量判定。
+  - 增量输入补入**全部编译源文件**（`@(MudScaffolderSource)`←`@(Compile)`）：仅用 `.csproj` 作输入时，新增/修改 `[HttpJsonSerializable]` DTO 不会改变项目文件时间戳，目标被判为最新 → 脚手架被跳过 → 陈旧 Context 继续参与编译。
+  - 增量输出补入**时间戳文件**（`MudJsonContextScaffolder.stamp`）：MSBuild 在 `Outputs` 求值为空时直接跳过目标，只声明 `\*\*\*.g.cs` 会让干净构建（尚无产物）恒被跳过 → 脚手架永远不会首次生成 Context。时间戳同时让"工具成功但未产出文件"的工程也能命中增量。
+  - 失败时一并删除时间戳（否则失败会被增量判定为"最新"而永不重试），并把时间戳登记进 `FileWrites`（`dotnet clean` 后不残留）。
+  - `MudIncludeGeneratedJsonContext` 改为先 `Compile Remove` 再 `Include`：当 `MudJsonContextOutputPath` 指向源码目录（失败提示推荐的签入做法）时避免同一文件重复进入编译（CS2002）。
 - **P0-2 AOT004 多态覆盖校验**（`Mud.HttpUtils.Generator`）：类型声明了 `[JsonDerivedType]` 但派生类型未被 Context 覆盖时报 AOT004，防止 AOT 下反序列化派生实例抛 `NotSupportedException`。
+  - 判定只在**类型自身**的 `[JsonDerivedType]` 声明上展开（不沿基类链收集派生类型）：基类声明描述的是"基类的多态派生集合"，若响应类型本身是某个派生类型，其兄弟类型未覆盖并不会导致该响应失败，沿基类链收集会产生误报。
+  - 未声明 `[JsonDerivedType]` 的类型不参与 STJ 多态读写，不报多态覆盖缺失（否则任何"基类 + 派生类"的常规 DTO 都会被误报，在 `AotStrictMode` 下升级为 Error 阻断构建）。
 - **P0-3 `AotSafeSensitiveDataMasker` 基类回退漏脱敏收窄**（`Mud.HttpUtils.Client`）：`enableBaseTypeFallback=true` 时回退命中降级为 `[TypeName, BaseType=BaseType]` 类型占位输出，不再使用基类规则（防止派生类新增敏感字段明文输出）。
 - **P0-4 AOT004/005 空门控漏洞修复**（`Mud.HttpUtils.Generator`）：删除 `coveredTypes.Count == 0` 提前返回门控，空 Context 下所有 DTO 正确报 AOT004。
 
 #### P1 能力完善与性能
 
 - **P1-1 `IAotJsonContentSerializer` doc 注释更新**（`Mud.HttpUtils.Abstractions`）：接口注释由"可选能力"改为"运行时已默认接线"，明确 `SystemTextJsonContentSerializer` 已实现且生成器调用链已通过 options 槽位传入 `JsonTypeInfo<T>`。
-- **P1-2 AOT007 廉价预门控**（`Mud.HttpUtils.Generator`）：`AotXmlRejectionAnalyzer` 进入全量分析前做 O(语法树文本) 预筛，无 `SerializationMethod`/`ResponseContentType` 信号直接返回。
+- **P1-2 AOT007 廉价预门控**（`Mud.HttpUtils.Generator`）：`AotXmlRejectionAnalyzer` 在调用重型 `MethodAnalyzer.AnalyzeMethod` 前做**特性语法级**预筛。
+  - 初版按方案做「全语法树文本含 `SerializationMethod`/`ResponseContentType`」预筛，但本仓库生成器为**每个**方法发射 `ResponseContentType = "..."`（`MethodGenerator.WriteResponseDescriptorCode`），生成树必然命中该 token → 预门控在真实构建中恒为放行（零收益 + 平白多一次全仓文本扫描）。现改为只扫描 `[HttpClientApi]` 接口自身的特性语法。
+  - 零漏报口径：XML 的三个信号源（`[SerializationMethod(...)]`、HTTP 方法特性的 `ResponseContentType`/`ContentType` 命名参数、`[Body("application/xml")]` 位置参数）逐一对应到特性文本 token（`SerializationMethod` / `ContentType` / `xml`），命中即放行到全量分析。
 - **P1-3 AOT006 本地标注预门控**（`Mud.HttpUtils.Generator`）：`AotDtoCoverageAnalyzer` 先做语法树探测收集本地标注类型，空则直接返回，复用缓存避免二次遍历。
 - **P1-4 `ToHttpContent<T>` AOT 路径改 Utf8Bytes**（`Mud.HttpUtils.Client`）：AOT 下默认走 `SerializeToUtf8Bytes → ByteArrayContent`，避免 string→UTF8 双次编码。JIT 保持 `StringContent` 既有语义。
 - **P1-5 `GetMethodSerializationMethod` 调用收敛**（`Mud.HttpUtils.Generator`）：同方法内 4 次调用收敛为 1 次局部变量。
 - **P1-6 移除 `Dictionary<string, object>` 注册**（`Mud.HttpUtils.Client`）：`MudHttpJsonContext` 删除 `typeof(Dictionary<string, object>)` 源生成注册，消除 AOT 下对非基元值抛 `NotSupportedException` 的潜伏雷。
-- **P1-7 FormUrlEncoded 响应豁免对齐**（`Mud.HttpUtils.Generator`）：响应端数组解包分支补齐 `FormUrlEncoded` 豁免，与 Body 端口径对齐。FormUrlEncoded 响应不走 JSON 反序列化。
+- **P1-7 FormUrlEncoded 响应豁免**（`Mud.HttpUtils.Generator`）：**经复核后撤销**。实施时曾按方案在响应端豁免 `FormUrlEncoded`（依据"响应体按字符串返回"），但代码核对表明该依据不成立——`RequestBuilder.GenerateUrlEncodedBodyParameter` 只改写**请求体**，响应端由 `DefaultHttpRequestExecutor.SendAndDeserializeAsync` 按响应 content-type 分派，只区分「XML vs JSON」两条路径，`[SerializationMethod(FormUrlEncoded)]` 方法的复杂响应 DTO 仍经 `IHttpContentSerializer.Deserialize<T>` 反序列化。豁免会造成 AOT004 漏报，故响应端只保留 XML 豁免（AOT 上下文下 XML 方法已被 AOT007 拒绝、该路径不可达）。
 - **P1-8 脱敏字符串行为 golden 测试**（`Tests`）：`Mask` 方法双实现（AOT vs 反射）逐字节对拍，锁定安全契约。
 
 #### P2 工程化加固
 
-- **P2-1 Polyfill guard 修正**（`Mud.HttpUtils.Abstractions`）：`RequiresDynamicCodeAttribute` guard 从 `!NET6_0_OR_GREATER` 修正为 `!NET7_0_OR_GREATER`（该 API 自 .NET 7 起 in-box）。`XmlSerialize.cs` 删除四处冗余内层 `#if NET6_0_OR_GREATER` guard。
-- **P2-2 脚手架 CLI 整洁度**（`Tools`）：删除 no-op `--scan-http-client-api` 分支，help 文本同步。
+- **P2-1 Polyfill guard 修正**（`Mud.HttpUtils.Abstractions`）：`RequiresDynamicCodeAttribute` guard 从 `!NET6_0_OR_GREATER` 修正为 `!NET7_0_OR_GREATER`（该 API 自 .NET 7 起 in-box）。`XmlSerialize.cs` 删除四处冗余内层 `#if NET6_0_OR_GREATER` guard。guard 锚点规则（"必须对齐该 API 的 in-box 首个 TFM，而非仓库当前最低 TFM"）记录在 `Directory.Build.targets`。
+- **P2-2 脚手架 CLI 整洁度**（`Tools`）：删除 no-op `--scan-http-client-api` 分支；help 文本同步（该开关不再列于「选项」，「说明」中注明已移除且传入会被忽略），包 targets 的失败提示改为引导设置 `MudJsonContextOutputPath` 指向源码目录。
 - **P2-3 QuerySerializationClassifier 契约级对齐测试**（`Tests`）：新增对拍测试枚举代表性类型，锁定 `IsSimple` 与 `TypeDetectionHelper.IsSimpleType` 判定一致性。
 - **P2-4 CI FullTrim 补 net8.0**（`.github/workflows`）：FullTrim 验证从仅 net10.0 扩展到 net8.0 + net10.0。
-- **P2-5 AotModeResolver / targets 语义漂移防线文档化**（`Mud.HttpUtils.Generator` + `Mud.HttpUtils.Attributes`）：在 `AotModeResolver.cs` 类注释与 targets 注释中互引对方 + CI 探针名。
-- **P2-6 归并说明**：与 P1-7 合并。
+- **P2-5 AotModeResolver / targets 语义漂移防线文档化**（`Mud.HttpUtils.Generator` + `Mud.HttpUtils.Attributes`）：在 `AotModeResolver.cs` 类注释与 targets 注释中互引对方 + CI 探针名；新增 `.github/PULL_REQUEST_TEMPLATE.md` 检查项。
+- **P2-6 归并说明**：与 P1-7 合并（该合并结论经复核后撤销，见 P1-7）。
 - **P2-7 CHANGELOG 与文档同步**：本条目。
+
+#### 复核修复（第二轮，2026-09-15）
+
+对上述 19 项落地结果做代码级复核后修复的缺陷（均已带回归测试）：
+
+- **P0-1 增量声明导致干净构建永不生成 Context**（`Mud.HttpUtils.Attributes`）：`Outputs` 仅含 `\*\*\*.g.cs` 时，MSBuild 因"输出为空"直接跳过目标；已改用时间戳文件兜底并补入源文件输入（详见 P0-1）。
+- **P1-7 FormUrlEncoded 响应豁免造成 AOT004 漏报**（`Mud.HttpUtils.Generator`）：已撤销响应端 `FormUrlEncoded` 豁免（详见 P1-7）。
+- **P1-2 预门控恒放行**（`Mud.HttpUtils.Generator`）：改为特性语法级预门控（详见 P1-2）。
+- **文档纠偏**（`Mud.HttpUtils.Client` / `Mud.HttpUtils.Abstractions`）：`AotSafeSensitiveDataMasker.MaskObject` 的 `<remarks>` 原称"开启 `enableBaseTypeFallback` 时使用基类规则并告警"，与实现（降级为类型占位输出）矛盾，已按实现改写；构造函数参数说明同步澄清"两种取值都不会套用基类规则"。
+- **README 补齐**（`Mud.HttpUtils.Attributes` / `Mud.HttpUtils.Client`）：补 `[JsonDerivedType]` 多态要求、基类回退脱敏语义、`Dictionary<string, object>` 注册移除结论与替代做法（自行挂 `ObjectToInferredTypesConverter`）。
+- **测试补齐**（`Tests`）：新增 AOT004 多态覆盖 4 例（未覆盖派生类型报错 / 全部覆盖不报 / 无 `[JsonDerivedType]` 不报 / sealed 与接口响应不报）、AOT004 空 Context 3 断言、AOT007 预门控 5 例（四类 XML 信号零漏报 + 纯 JSON 100 方法零误报基准）、FormUrlEncoded 未覆盖响应 DTO 必报 AOT004。
+
+> 说明：P1-4 的 AOT 分支（`RuntimeFeature.IsDynamicCodeSupported == false`）无法在 JIT 单元测试中覆盖，由 CI 的 AOT/FullTrim 发布作业端到端验证。
+

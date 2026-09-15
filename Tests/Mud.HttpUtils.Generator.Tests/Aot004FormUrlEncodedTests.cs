@@ -108,6 +108,43 @@ public class Aot004FormUrlEncodedTests
     }
 
     /// <summary>
+    /// FormUrlEncoded 方法的**响应**仍走 JSON 反序列化：<c>[SerializationMethod(FormUrlEncoded)]</c>
+    /// 只改写请求体，响应端由 <c>DefaultHttpRequestExecutor.SendAndDeserializeAsync</c> 按响应
+    /// content-type 分派，仅区分「XML vs JSON」两条路径——不存在 form-urlencoded 分支。
+    /// </summary>
+    /// <remarks>
+    /// [P1-7 复核修正] 曾有改动把 FormUrlEncoded 也加入响应端豁免（理由是"响应体按字符串返回"），
+    /// 但生成器只对请求体做 URL 编码（<c>RequestBuilder.GenerateUrlEncodedBodyParameter</c>），
+    /// 响应为复杂 DTO 时仍生成 <c>ExecuteAsync&lt;T&gt;</c>（JSON 反序列化）。
+    /// 该豁免会让未覆盖的响应 DTO 静默漏报，AOT 运行时才抛 NotSupportedException，故本用例锁定"必须报"。
+    /// </remarks>
+    private const string FormUrlEncodedWithJsonResponseSource = """
+        using System.Threading.Tasks;
+        using Mud.HttpUtils.Attributes;
+        using System.Text.Json.Serialization;
+
+        namespace TestNamespace
+        {
+            [HttpClientApi("https://api.example.com")]
+            public interface IFormWithResponseApi
+            {
+                [Post("/submit")]
+                [SerializationMethod(SerializationMethod.FormUrlEncoded)]
+                Task<ResultDto> SubmitAsync([Body] FormData data);
+            }
+
+            // 覆盖 OtherDto（使覆盖集合非空），但【未】覆盖响应 DTO ResultDto。
+            [JsonSourceGenerationOptions]
+            [JsonSerializable(typeof(OtherDto))]
+            internal partial class AppJsonContext : JsonSerializerContext { }
+
+            public class FormData { public string Name { get; set; } }
+            public class ResultDto { public int Id { get; set; } }
+            public class OtherDto { public string X { get; set; } }
+        }
+        """;
+
+    /// <summary>
     /// 验证 FormUrlEncoded Body 不触发 AOT004（Phase 20.1 误报修正）。
     /// </summary>
     [Fact]
@@ -117,6 +154,18 @@ public class Aot004FormUrlEncodedTests
 
         diagnostics.Should().NotContain(d => d.Id == "AOT004",
             "FormUrlEncoded Body 不走 JSON 序列化，不应触发 AOT004（Phase 20.1 修正）");
+    }
+
+    /// <summary>
+    /// [P1-7 复核] FormUrlEncoded 方法的未覆盖响应 DTO 必须报 AOT004（响应端不得豁免 FormUrlEncoded）。
+    /// </summary>
+    [Fact]
+    public void FormUrlEncodedResponse_UncoveredDto_TriggersAOT004()
+    {
+        var diagnostics = RunGeneratorAndAnalyzers(FormUrlEncodedWithJsonResponseSource);
+
+        diagnostics.Should().Contain(d => d.Id == "AOT004",
+            "FormUrlEncoded 只改写请求体，响应仍按 JSON 反序列化，故未覆盖的响应 DTO 必须报 AOT004");
     }
 
     /// <summary>

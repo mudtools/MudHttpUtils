@@ -43,6 +43,11 @@ namespace Mud.HttpUtils.Analyzers;
 /// <c>ResponseContentType</c>、<c>GetEffectiveContentType()</c>）+ <see cref="ContentTypeHelper.IsXmlContentType"/>，
 /// 与 <c>RequestBuilder</c>/<c>MethodGenerator</c>/<c>InterfaceImplementationGenerator</c> 的 XML 判定逻辑一致。
 /// </para>
+/// <para>
+/// [P1-2] 每个方法在进入全量 <see cref="MethodAnalyzer.AnalyzeMethod"/> 前先经
+/// <see cref="MayUseXml"/> 做<b>特性语法级</b>预门控（纯语法，不解析语义），
+/// 使「仅启用 AOT 分析器但完全不用 XML」的库项目不再为每个方法付出全量分析成本。
+/// </para>
 /// </remarks>
 internal static class AotXmlRejectionAnalyzer
 {
@@ -86,25 +91,6 @@ internal static class AotXmlRejectionAnalyzer
 
         var serializationMethodAttr = compilation.GetTypeByMetadataName(SerializationMethodAttributeFullName);
 
-        // [P1-2] 廉价预门控：全语法树文本不含 "SerializationMethod" 即无方法/接口级 Xml 特性，
-        // 且无 [ResponseContentType] 等 content-type 信号 → 无 XML 可能，直接返回（零漏报超集近似）。
-        // 使用 GetText().ToString() 避免 ToString() 对大语法树的额外 allocations。
-        var mayUseXml = false;
-        foreach (var tree in compilation.SyntaxTrees)
-        {
-            if (cancellationToken.IsCancellationRequested)
-                return diagnostics.ToImmutable();
-            var text = tree.GetText().ToString();
-            if (text.Contains("SerializationMethod", StringComparison.Ordinal) ||
-                text.Contains("ResponseContentType", StringComparison.Ordinal))
-            {
-                mayUseXml = true;
-                break;
-            }
-        }
-        if (!mayUseXml)
-            return diagnostics.ToImmutable();
-
         // 复用 AotDtoCoverageAnalyzer 已验证的遍历模式：从 SyntaxTrees 获取 InterfaceDeclarationSyntax，
         // 再通过 SemanticModel.GetDeclaredSymbol 获取 INamedTypeSymbol。
         foreach (var syntaxTree in compilation.SyntaxTrees)
@@ -135,6 +121,10 @@ internal static class AotXmlRejectionAnalyzer
                 {
                     if (cancellationToken.IsCancellationRequested)
                         return diagnostics.ToImmutable();
+
+                    // [P1-2] 廉价预门控：只对该方法可能使用 XML 时才调用重型 MethodAnalyzer.AnalyzeMethod。
+                    if (!MayUseXml(method, interfaceDecl, cancellationToken))
+                        continue;
 
                     MethodAnalysisResult methodInfo;
                     try
@@ -184,5 +174,89 @@ internal static class AotXmlRejectionAnalyzer
         }
 
         return diagnostics.ToImmutable();
+    }
+
+    /// <summary>
+    /// [P1-2] 语法级 XML 预门控：仅当该方法<b>可能</b>使用 XML 时才调用重型
+    /// <see cref="MethodAnalyzer.AnalyzeMethod"/>（后者会解析 URL、参数、返回值等全部语义信息）。
+    /// </summary>
+    /// <param name="method">待判定的方法符号。</param>
+    /// <param name="interfaceDecl">方法所属接口的语法声明（接口级特性对全部方法生效）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>可能存在 XML 信号时返回 <c>true</c>（放行到全量分析）。</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么不是「全语法树文本」预筛</b>：初版按 P1-2 方案做 O(全语法树文本) 匹配，
+    /// 但本仓库的生成器会为<b>每个</b>方法发射 <c>ResponseContentType = "..."</c>
+    /// （见 <c>MethodGenerator.WriteResponseDescriptorCode</c>），生成树必然命中该 token，
+    /// 使预门控在真实构建中<b>恒为放行</b>——不仅零收益，还平白多出一次全仓文本扫描。
+    /// 故改为只扫描 <c>[HttpClientApi]</c> 接口自身的特性语法（体量极小）。
+    /// </para>
+    /// <para>
+    /// <b>零漏报口径</b>：XML 判定的三个信号源全部来自特性语法，逐一对应到本方法的扫描范围：
+    /// <list type="number">
+    /// <item><c>[SerializationMethod(...)]</c>（方法级 / 接口级）→ 命中「SerializationMethod」token；</item>
+    /// <item>HTTP 方法特性的 <c>ResponseContentType</c> 命名参数 → 含「ContentType」token；</item>
+    /// <item>HTTP 方法特性 / <c>[Body]</c> 的 <c>ContentType</c>（含 <c>[Body("application/xml")]</c> 位置参数）
+    /// → 命中「xml」token（大小写不敏感）或「ContentType」token。</item>
+    /// </list>
+    /// 判定为超集近似：命中即进入全量分析（可能最终判定非 XML，仅多付一次分析成本）。
+    /// <b>新增 XML 信号源时必须同步扩展 <see cref="AttributeMaySignalXml"/></b>，否则 AOT007 会静默漏报。
+    /// </para>
+    /// </remarks>
+    private static bool MayUseXml(
+        IMethodSymbol method,
+        InterfaceDeclarationSyntax interfaceDecl,
+        CancellationToken cancellationToken)
+    {
+        // 接口级信号（接口级 [SerializationMethod(Xml)] / [HttpClientApi(ContentType = "...")]）对全部方法生效
+        if (HasXmlSignal(interfaceDecl.AttributeLists))
+            return true;
+
+        var methodSyntax = method.DeclaringSyntaxReferences.FirstOrDefault()
+            ?.GetSyntax(cancellationToken) as MethodDeclarationSyntax;
+
+        // 语法不可用（极端场景）→ 保守放行，宁可多分析不可漏报
+        if (methodSyntax == null)
+            return true;
+
+        if (HasXmlSignal(methodSyntax.AttributeLists))
+            return true;
+
+        foreach (var parameter in methodSyntax.ParameterList.Parameters)
+        {
+            if (HasXmlSignal(parameter.AttributeLists))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>扫描一组特性列表是否含 XML 信号（超集近似，详见 <see cref="MayUseXml"/>）。</summary>
+    private static bool HasXmlSignal(SyntaxList<AttributeListSyntax> attributeLists)
+    {
+        foreach (var attributeList in attributeLists)
+        {
+            foreach (var attribute in attributeList.Attributes)
+            {
+                if (AttributeMaySignalXml(attribute))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 单个特性语法是否可能携带 XML 信号（特性名、命名参数名、字面量内容三处，文本级超集判定）。
+    /// </summary>
+    private static bool AttributeMaySignalXml(AttributeSyntax attribute)
+    {
+        var text = attribute.ToString();
+        return text.IndexOf("SerializationMethod", StringComparison.Ordinal) >= 0
+            // 命名参数 ResponseContentType / ContentType（"ResponseContentType" 含 "ContentType" 子串）
+            || text.IndexOf("ContentType", StringComparison.Ordinal) >= 0
+            // 字面量内容类型（如 [Body("application/xml")]、[Post("/x", ResponseContentType = "text/xml")]）
+            || text.IndexOf("xml", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 }

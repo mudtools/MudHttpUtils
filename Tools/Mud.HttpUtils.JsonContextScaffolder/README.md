@@ -158,6 +158,10 @@ dotnet add package Mud.HttpUtils.JsonContextScaffolder   # 仅用于 DotNetToolR
 </PropertyGroup>
 ```
 
-开启后，`BeforeCompile` 阶段会自动执行 `mud-jsonctx --project <本项目> -o <输出> --auto-derived-types` 并将生成的 `*.g.cs` 纳入编译。工具未安装时仅输出**警告**（不中断构建），你可改回手动运行并签入生成结果。
+开启后，`BeforeCompile` 阶段会自动执行 `mud-jsonctx --project <本项目> -o <输出> --auto-derived-types` 并将生成的 `*.g.cs` 纳入编译。
+
+**增量行为**：目标以「项目文件 + 全部编译源文件」为输入、以「生成产物 + 时间戳文件」为输出做增量判定——源文件未变时不会重复执行；新增/修改标注类型会重新生成（`.csproj` 时间戳无关）。注意：故意**不**把 `obj` 下由构建生成的 `Compile` 项纳入输入，否则每次构建都会重跑。
+
+**失败行为**（工具未安装 / 执行失败）：打印 high 重要性提示并**删除输出目录中的陈旧 `*.g.cs` 与时间戳**。这样"工具坏了"会表现为**编译期缺类型错误**（消费方代码引用生成的 Context 时），而不是让上一次构建的旧 Context 继续参与编译、把问题推迟到 AOT 运行时；同时因时间戳被删除，下一次构建必定重试。若要手动维护产物，请把 `<MudJsonContextOutputPath>` 指向源码目录（如 `Generated\`）并签入，此时目标会先 `Compile Remove` 再 `Include`，不会重复编译同一文件。
 
 > 该目标默认不启用（`MudEnableJsonContextScaffolder=false`），对未选择该工作流的消费方**零影响**。

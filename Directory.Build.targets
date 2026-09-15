@@ -19,6 +19,22 @@
 		<WarningsAsErrors>$(WarningsAsErrors);IL2026;IL2046;IL2050;IL2057;IL2067;IL2070;IL2072;IL2075;IL2080;IL2091;IL3050;IL3051;AOT004;AOT005;AOT006;AOT007</WarningsAsErrors>
 	</PropertyGroup>
 
+	<!-- ─────────────────────────────────────────────────────────────
+	     [P2-1] Polyfill guard 锚点规则（改 Mud.HttpUtils.Abstractions/Polyfills/*.cs 前必读）
+
+	     Polyfill 的 `#if !NETx_0_OR_GREATER` guard 必须对齐**该 API 首次 in-box 的 TFM**，
+	     而不是"仓库当前最低 TFM"。仓库最低 TFM（netstandard2.0 / net6.0）与 API 引入版本
+	     并不一致，写错会得到两种相反的故障：
+	       · guard 过宽（如 RequiresDynamicCode 写成 !NET6_0_OR_GREATER）→ net6.0 下跳过定义，
+	         而该 API 在 net6.0 尚不存在 ⇒ net6.0 编译失败；
+	       · guard 过窄（如对 .NET 6 起就 in-box 的属性仍写 !NET7_0_OR_GREATER）→ 新 TFM 下
+	         重复定义同名类型 ⇒ 与 BCL 类型冲突。
+	     现有锚点：RequiresUnreferencedCode / DynamicallyAccessedMembers / DynamicDependency /
+	     UnconditionalSuppressMessage = !NET6_0_OR_GREATER；RequiresDynamicCode = !NET7_0_OR_GREATER；
+	     IsExternalInit = !NET6_0_OR_GREATER（语言特性要求，非 BCL API）。
+	     另：嵌套同类 guard（如 `#if NET7_0_OR_GREATER` 内再写 `#if NET6_0_OR_GREATER`）恒真，属冗余，不要保留。
+	     ───────────────────────────────────────────────────────────── -->
+
 	<!-- Phase 5.4: PublicAPI per-TFM 基线管理
 	     仅对发布库（有 PackageId、非源生成器/分析器、有构建输出、非测试项目）启用。
 	     在 Directory.Build.targets 中声明，因为 PackageId 等属性在项目文件中设置，

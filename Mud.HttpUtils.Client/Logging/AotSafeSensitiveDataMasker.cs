@@ -75,9 +75,11 @@ public class AotSafeSensitiveDataMasker : ISensitiveDataMasker
     /// </summary>
     /// <param name="logger">日志记录器（可选）。未注册类型命中时发出一次性告警。</param>
     /// <param name="enableBaseTypeFallback">
-    /// 是否启用基类注册兜底（默认 false）。
-    /// [P0-3 修复] 开启时：未注册但存在可赋值的已注册基类时，降级为类型占位输出（TypeOnly）而非使用基类规则，
-    /// 防止派生类新增敏感字段明文输出。告警引导用户注册派生类型专用规则。
+    /// [P0-3 修复] 未注册类型回退时是否<b>检测并标注</b>已注册的基类（默认 false）。
+    /// 无论取值如何都<b>不会套用基类规则</b>——基类规则看不到派生类新增的敏感字段，
+    /// 套用会导致明文输出（原实现即如此）：
+    /// <c>true</c> → 回退输出 <c>[派生类型名, BaseType=基类名]</c>（便于定位"注册了基类忘了派生类"）；
+    /// <c>false</c> → 回退输出 <c>[派生类型名]</c>。两者都不输出任何字段值，且都会发出一次性告警。
     /// </param>
     public AotSafeSensitiveDataMasker(ILogger? logger = null, bool enableBaseTypeFallback = false)
     {
@@ -144,8 +146,9 @@ public class AotSafeSensitiveDataMasker : ISensitiveDataMasker
     /// 引导消费方补充注册：注入了 <see cref="ILogger"/> 时走日志，否则回退 <see cref="Console.Error"/>——
     /// 脱敏是安全相关路径，禁止静默（"未注册 → 输出 [TypeName]"本身是 fail-safe，
     /// 但静默会让消费方永远发现不了遗漏注册）。
-    /// 若 <see cref="_enableBaseTypeFallback"/> 开启，
-    /// 命中未注册但存在可赋值的已注册基类时使用基类规则并告警。
+    /// [P0-3 修复] 若 <see cref="_enableBaseTypeFallback"/> 开启，命中「未注册但存在已注册基类」时
+    /// <b>不会</b>套用基类规则，而是降级为带基类名的类型占位输出（<c>[TypeName, BaseType=BaseType]</c>）
+    /// 并告警；两条路径均不输出任何字段值，差别仅在于占位串是否附带基类名。
     /// </para>
     /// </remarks>
     public virtual string MaskObject(object obj)

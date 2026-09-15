@@ -204,7 +204,6 @@ static void PrintHelp()
                              注意：多态序列化（以【基类静态类型】序列化/反序列化派生实例）必须由基类
                              元数据携带 [JsonDerivedType]，该特性只能标注在用户类型声明上，生成文件
                              无法替用户类型附加——本开关不能替代它。
-      --scan-http-client-api  扫描 [HttpClientApi] 接口，自动发现返回类型和 [Body] 参数中的闭合泛型（默认开启，此开关已废弃）
       --no-scan-http-client-api  禁用 [HttpClientApi] 接口扫描
       -h, --help             显示帮助
 
@@ -219,6 +218,9 @@ static void PrintHelp()
       同时扫描 [HttpClientApi] 接口的方法返回类型（含 Task<T[]> 数组根）和 [Body] 参数类型，
       自动发现闭合泛型（如 FeishuApiResult<T>）与数组根并注册到独立的 Context。
       生成的文件应提交到版本控制，仅在实体变更时重跑。
+
+      已移除的开关：--scan-http-client-api（扫描 [HttpClientApi] 是默认行为，该开关无效果），
+      传入时会被忽略；如需关闭扫描请用 --no-scan-http-client-api。
 
       AOT002（开放泛型）告警仅在项目包含 net8.0 以下 TFM 时报告：
       项目目标框架从 .csproj / 同级 Directory.Build.props 的 TargetFramework(s) 读取。
