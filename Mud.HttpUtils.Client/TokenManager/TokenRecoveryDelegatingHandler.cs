@@ -7,6 +7,7 @@
 
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace Mud.HttpUtils;
 
@@ -84,6 +85,42 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
     {
         _recoveryExecutor = new TokenRecoveryExecutor(
             tokenManager, userTokenManager, currentUserContext, options, logger, managerRegistry);
+    }
+
+    /// <summary>
+    /// TMR-07：初始化令牌恢复委托处理器，支持配置热更新（IOptionsMonitor）。
+    /// </summary>
+    /// <param name="tokenManager">令牌管理器，用于刷新和失效令牌。</param>
+    /// <param name="optionsMonitor">令牌恢复配置选项监视器，支持热更新。</param>
+    /// <param name="logger">日志记录器（可选）。</param>
+    public TokenRecoveryDelegatingHandler(
+        ITokenManager tokenManager,
+        IOptionsMonitor<TokenRecoveryOptions> optionsMonitor,
+        ILogger<TokenRecoveryDelegatingHandler>? logger = null)
+    {
+        _recoveryExecutor = new TokenRecoveryExecutor(
+            tokenManager, optionsMonitor, logger);
+    }
+
+    /// <summary>
+    /// TMR-07：初始化令牌恢复委托处理器（支持用户级令牌恢复 + 配置热更新）。
+    /// </summary>
+    /// <param name="tokenManager">令牌管理器，用于刷新和失效令牌。</param>
+    /// <param name="userTokenManager">用户令牌管理器，用于用户级令牌恢复（可选）。</param>
+    /// <param name="currentUserContext">当前用户上下文，用于获取用户 ID（可选）。</param>
+    /// <param name="optionsMonitor">令牌恢复配置选项监视器，支持热更新。</param>
+    /// <param name="logger">日志记录器（可选）。</param>
+    /// <param name="managerRegistry">SR-M6（P2.4，D9）令牌管理器注册表（可选），按 TokenManagerKey 路由恢复链路。</param>
+    public TokenRecoveryDelegatingHandler(
+        ITokenManager tokenManager,
+        IUserTokenManager? userTokenManager,
+        ICurrentUserContext? currentUserContext,
+        IOptionsMonitor<TokenRecoveryOptions> optionsMonitor,
+        ILogger<TokenRecoveryDelegatingHandler>? logger = null,
+        ITokenManagerRegistry? managerRegistry = null)
+    {
+        _recoveryExecutor = new TokenRecoveryExecutor(
+            tokenManager, userTokenManager, currentUserContext, optionsMonitor, logger, managerRegistry);
     }
 
     /// <inheritdoc />

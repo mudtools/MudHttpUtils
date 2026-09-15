@@ -9,6 +9,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Mud.HttpUtils.Helpers;
 
 namespace Mud.HttpUtils;
@@ -46,8 +47,14 @@ public class TokenRecoveryExecutor
     private readonly IUserTokenManager? _userTokenManager;
     private readonly ICurrentUserContext? _currentUserContext;
     private readonly ITokenManagerRegistry? _managerRegistry;
-    private readonly TokenRecoveryOptions _options;
+    private readonly TokenRecoveryOptions? _staticOptions;
+    private readonly IOptionsMonitor<TokenRecoveryOptions>? _optionsMonitor;
     private readonly ILogger _logger;
+
+    /// <summary>
+    /// TMR-07：当前生效的令牌恢复选项。优先走 IOptionsMonitor（热更新），回退静态快照。
+    /// </summary>
+    private TokenRecoveryOptions Options => _optionsMonitor?.CurrentValue ?? _staticOptions ?? new TokenRecoveryOptions();
 
     // 并发刷新去重：同一时间段内多个 401 只触发一次令牌刷新
     private readonly ConcurrentDictionary<string, Task<string?>> _credentialRefreshTasks = new();
@@ -66,8 +73,49 @@ public class TokenRecoveryExecutor
         ILogger? logger = null)
     {
         _tokenManager = tokenManager ?? throw new ArgumentNullException(nameof(tokenManager));
-        _options = options ?? new TokenRecoveryOptions();
+        _staticOptions = options ?? new TokenRecoveryOptions();
         _logger = logger ?? NullLogger.Instance;
+    }
+
+    /// <summary>
+    /// TMR-07：初始化令牌恢复执行器，支持配置热更新（IOptionsMonitor）。
+    /// </summary>
+    /// <param name="tokenManager">令牌管理器，用于刷新和失效令牌。</param>
+    /// <param name="optionsMonitor">令牌恢复配置选项监视器，支持热更新。</param>
+    /// <param name="logger">日志记录器（可选）。</param>
+    public TokenRecoveryExecutor(
+        ITokenManager tokenManager,
+        IOptionsMonitor<TokenRecoveryOptions> optionsMonitor,
+        ILogger? logger = null)
+    {
+        _tokenManager = tokenManager ?? throw new ArgumentNullException(nameof(tokenManager));
+        _optionsMonitor = optionsMonitor ?? throw new ArgumentNullException(nameof(optionsMonitor));
+        _logger = logger ?? NullLogger.Instance;
+    }
+
+    /// <summary>
+    /// TMR-07：初始化令牌恢复执行器（支持用户级令牌恢复 + 配置热更新）。
+    /// </summary>
+    /// <param name="tokenManager">令牌管理器，用于刷新和失效令牌。</param>
+    /// <param name="userTokenManager">用户令牌管理器，用于用户级令牌恢复（可选）。</param>
+    /// <param name="currentUserContext">当前用户上下文，用于获取用户 ID（可选）。</param>
+    /// <param name="optionsMonitor">令牌恢复配置选项监视器，支持热更新。</param>
+    /// <param name="logger">日志记录器（可选）。</param>
+    /// <param name="managerRegistry">SR-M6（P2.4，D9）：令牌管理器注册表（可选）。</param>
+    public TokenRecoveryExecutor(
+        ITokenManager tokenManager,
+        IUserTokenManager? userTokenManager,
+        ICurrentUserContext? currentUserContext,
+        IOptionsMonitor<TokenRecoveryOptions> optionsMonitor,
+        ILogger? logger = null,
+        ITokenManagerRegistry? managerRegistry = null)
+    {
+        _tokenManager = tokenManager ?? throw new ArgumentNullException(nameof(tokenManager));
+        _optionsMonitor = optionsMonitor ?? throw new ArgumentNullException(nameof(optionsMonitor));
+        _userTokenManager = userTokenManager;
+        _currentUserContext = currentUserContext;
+        _logger = logger ?? NullLogger.Instance;
+        _managerRegistry = managerRegistry;
     }
 
     /// <summary>
@@ -106,7 +154,7 @@ public class TokenRecoveryExecutor
         Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> sendFunc,
         CancellationToken cancellationToken)
     {
-        if (!_options.Enabled)
+        if (!Options.Enabled)
             return await sendFunc(request, cancellationToken).ConfigureAwait(false);
 
         if (!ShouldAttemptRecovery(request))
@@ -114,7 +162,7 @@ public class TokenRecoveryExecutor
 
         // D1 修订：三态体处理模型——缓冲只判定"能否缓冲"，不做任何提前返回。
         // 不可缓冲的请求体仍正常发送，仅放弃 401 重试（禁止重试 ≠ 禁止发送）。
-        var maxCachedRequestBodySize = _options.MaxCachedRequestBodyBytes;
+        var maxCachedRequestBodySize = Options.MaxCachedRequestBodyBytes;
         byte[]? contentBytes = null;
 
         if (request.Content != null && maxCachedRequestBodySize > 0)
@@ -215,10 +263,10 @@ public class TokenRecoveryExecutor
 
         try
         {
-            for (var retry = 0; retry < _options.RecoveryMaxRetries; retry++)
+            for (var retry = 0; retry < Options.RecoveryMaxRetries; retry++)
             {
                 // P1.4（TK-03）URI 脱敏：防止 Path/Query 注入模式令牌随日志泄漏
-                MudHttpClientLog.TokenRecoveryAttempting(_logger, retry + 1, _options.RecoveryMaxRetries, request.Method.Method, SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()));
+                MudHttpClientLog.TokenRecoveryAttempting(_logger, retry + 1, Options.RecoveryMaxRetries, request.Method.Method, SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()));
 
                 string? newToken = null;
 
@@ -307,7 +355,7 @@ public class TokenRecoveryExecutor
             }
 
             // P1.4（TK-03）URI 脱敏
-            MudHttpClientLog.TokenRecoveryExhausted(_logger, _options.RecoveryMaxRetries, request.Method.Method, SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()));
+            MudHttpClientLog.TokenRecoveryExhausted(_logger, Options.RecoveryMaxRetries, request.Method.Method, SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()));
 
             return response;   // D3：恢复耗尽，返回真实 401
         }
@@ -340,12 +388,12 @@ public class TokenRecoveryExecutor
     {
         var recoveryContext = GetRecoveryContext(request);
         if (recoveryContext != null)
-            return _options.RecoveryMaxRetries > 0;
+            return Options.RecoveryMaxRetries > 0;
 
         if (request.Headers.Authorization == null)
             return false;
 
-        if (_options.RecoveryMaxRetries <= 0)
+        if (Options.RecoveryMaxRetries <= 0)
             return false;
 
         return true;
@@ -374,7 +422,7 @@ public class TokenRecoveryExecutor
     {
         if (context == null)
         {
-            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(_options.TokenScheme, token);
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(Options.TokenScheme, token);
             return true;
         }
 
@@ -676,7 +724,7 @@ public class TokenRecoveryExecutor
     /// <param name="scopes">恢复上下文中的作用域集合，为空时走默认作用域。</param>
     private async Task<string?> RefreshCredentialWithIsolationAsync(ITokenManager tokenManager, string[]? scopes)
     {
-        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(_options.RefreshTimeoutSeconds));
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(Options.RefreshTimeoutSeconds));
         var refreshCt = timeoutCts.Token;
 
         try
@@ -752,7 +800,7 @@ public class TokenRecoveryExecutor
     /// <param name="scopes">恢复上下文中的作用域集合。</param>
     private async Task<string?> RefreshUserTokenWithIsolationAsync(string userId, IUserTokenManager userTokenManager, string[]? scopes)
     {
-        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(_options.RefreshTimeoutSeconds));
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(Options.RefreshTimeoutSeconds));
         var refreshCt = timeoutCts.Token;
 
         try

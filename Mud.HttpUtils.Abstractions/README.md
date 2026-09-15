@@ -164,7 +164,7 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 | ------------------------------- | -------------------------------------------------------------------------------------------------- |
 | `TokenRequest`                  | Token 请求参数，封装获取令牌所需的全部信息（`TokenManagerKey`、`UserId`、`Scopes`）                |
 | `TokenRefreshBackgroundOptions` | 令牌后台刷新配置（`Enabled`、`RefreshIntervalSeconds`、`RetryDelaySeconds`、`StopOnError`、`MaxConsecutiveFailures`） |
-| `TokenRecoveryOptions`          | 令牌恢复配置（`Enabled`、`RecoveryMaxRetries`、`TokenScheme`、`RefreshTimeoutSeconds`、`MaxCachedRequestBodyBytes`），控制 401 响应时的自动刷新与重试 |
+| `TokenRecoveryOptions`          | 令牌恢复配置（`Enabled`、`RecoveryMaxRetries`、`TokenScheme`、`RefreshTimeoutSeconds`、`MaxCachedRequestBodyBytes`、`RefreshDedupWindowSeconds`），控制 401 响应时的自动刷新与重试 |
 | `TokenRecoveryContext`          | 令牌恢复上下文，携带注入模式信息供 `TokenRecoveryDelegatingHandler` 使用（`UserId` 必须来自受信上下文，恢复执行器校验与 `ICurrentUserContext` 的一致性；`TokenManagerKey` 经 `ITokenManagerRegistry` 路由） |
 | `TokenInjectionMode`            | 令牌注入模式枚举（`Header`、`Query`、`Path`、`ApiKey`、`HmacSignature`、`BasicAuth`、`Cookie`）    |
 | `UserTokenInfo`                 | 用户令牌信息模型                                                                                   |

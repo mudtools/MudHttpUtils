@@ -78,4 +78,19 @@ public class TokenRecoveryOptions
         set => _maxCachedRequestBodyBytes = value >= 0 ? value : throw new ArgumentOutOfRangeException(nameof(MaxCachedRequestBodyBytes), "请求体缓冲上限不能为负数。");
     }
     private long _maxCachedRequestBodyBytes = 1 * 1024 * 1024;
+
+    /// <summary>
+    /// TMR-12：令牌刷新去重窗口（秒），默认 2。
+    /// <para>
+    /// 在去重窗口内，多个并发 401 共享同一次刷新结果，避免刷新风暴。
+    /// 窗口过期后，后续 401 会触发新一轮刷新。
+    /// </para>
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">设置小于 0 的值时抛出。</exception>
+    public double RefreshDedupWindowSeconds
+    {
+        get => _refreshDedupWindowSeconds;
+        set => _refreshDedupWindowSeconds = value >= 0 ? value : throw new ArgumentOutOfRangeException(nameof(RefreshDedupWindowSeconds), "去重窗口秒数不能为负数。");
+    }
+    private double _refreshDedupWindowSeconds = 2;
 }

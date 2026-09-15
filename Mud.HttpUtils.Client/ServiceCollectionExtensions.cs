@@ -1140,8 +1140,9 @@ public static class HttpClientServiceCollectionExtensions
         services.Configure<TokenRecoveryOptions>(configuration.GetSection(sectionPath));
         // 注册校验器，在选项绑定时验证 RecoveryMaxRetries 和 TokenScheme 的取值范围
         services.TryAddSingleton<IValidateOptions<TokenRecoveryOptions>, TokenRecoveryOptionsValidator>();
-        // 注册 TokenRecoveryOptions 为可解析服务，使 TokenRecoveryDelegatingHandler 的可选构造函数参数
-        // 能通过 DI 自动解析配置绑定的值（而非始终使用默认 null → new TokenRecoveryOptions()）。
+        // TMR-07：注册 TokenRecoveryOptions 为可解析服务（使旧构造函数兼容），
+        // 但 TokenRecoveryDelegatingHandler / TokenRecoveryExecutor 的 IOptionsMonitor 重载
+        // 直接从 DI 解析 IOptionsMonitor<TokenRecoveryOptions>，实现热更新。
         // NEW-HC-05 修复：使用 TryAddSingleton 避免覆盖已注册的 TokenRecoveryOptions
         services.TryAddSingleton(resolver => resolver.GetRequiredService<IOptions<TokenRecoveryOptions>>().Value);
         return services;

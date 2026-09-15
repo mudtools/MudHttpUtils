@@ -377,7 +377,7 @@ services.AddSingleton<IEncryptedTokenStore, MemoryEncryptedTokenStore>();
 | 用户令牌按 scope 隔离（SR-M1） | `GetOrRefreshTokenAsync(userId, scopes)` 按 `userId × scope` 复合键隔离缓存与锁；`RemoveTokenAsync(userId)` / `InvalidateUserTokenAsync(userId)` 清除该用户**全部作用域**（登出语义）；刷新失败负缓存指数退避（30s→60s→120s→240s→300s 封顶，SR-M3） |
 | 内存态加密缓存（SR-M8） | `UserTokenManagerBase` 构造重载传入 `IEncryptionProvider` 即以 `EncryptedTokenCache<T>` 包装默认缓存，密文损坏按 miss 处理触发重新获取 |
 | 401 恢复按键路由（SR-M6） | `AddTokenManagerRegistry` 注册解析委托后，恢复执行器按 `TokenRecoveryContext.TokenManagerKey` 路由失效/刷新/重试全链路（含用户级；解析到非用户管理器一律回退注入实例）；解析失败回退 + Warning |
-| 请求体读取阶段限量（SR-H2/H3） | 401 恢复的请求体缓冲含 chunked 硬上限（`MaxCachedRequestBodyBytes`，默认 10MB）；超限/禁用体缓存的带体请求**不进行无体重试**，直接返回 401 |
+| 请求体三态处理（TMR-01/02，D1 修订） | 401 恢复的请求体缓冲含 chunked 硬上限（`MaxCachedRequestBodyBytes`，默认 1MB）；三态模型：**无体**正常恢复、**可缓冲**首次与重试同源、**不可缓冲**原样发送但放弃重试（返回真实 401）。`MaxCachedRequestBodyBytes = 0` = 流式优先模式（不缓冲、不重试，但正常发送） |
 | userId 一致性校验（SR-M7/L2） | 恢复执行器与 `DefaultTokenProvider` 校验 `TokenRecoveryContext.UserId` 与受信 `ICurrentUserContext.UserId` 一致性，不一致即拒绝；详见 `.docs/multi-tenant-best-practices.md` |
 
 #### 默认表单内容
@@ -503,7 +503,8 @@ services.AddMudHttpClientsFromConfiguration(configuration);
 | `RecoveryMaxRetries` | `int` | `1` | 令牌恢复的最大重试次数（必须 >= 0，启动时由 `TokenRecoveryOptionsValidator` 校验） |
 | `TokenScheme` | `string` | `"Bearer"` | 令牌的认证方案（不能为空，启动时校验） |
 | `RefreshTimeoutSeconds` | `double` | `30` | 令牌刷新的超时兜底（秒），取消隔离后刷新任务仅受本超时约束 |
-| `MaxCachedRequestBodyBytes` | `long` | `10485760` | 401 恢复可缓冲的请求体上限（字节），读取阶段限量含 chunked；超限/带体不重试直接返回 401，`0` = 禁用体缓存 |
+| `MaxCachedRequestBodyBytes` | `long` | `1048576` | 401 恢复可缓冲的请求体上限（字节），默认 1MB；三态模型：超限/`0` = 不缓冲但正常发送（返回真实 401，不重试） |
+| `RefreshDedupWindowSeconds` | `double` | `2` | 令牌刷新去重窗口（秒），窗口内并发 401 共享同一次刷新结果，窗口过期后触发新一轮刷新 |
 
 ```csharp
 // 通过代码配置

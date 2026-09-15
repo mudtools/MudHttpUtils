@@ -23,6 +23,8 @@
 - **用户令牌读路径去锁**（TMR-09）：`MemoryCacheTokenCache.TryGet` 改为无锁读（`IMemoryCache` 自身线程安全，影子索引容忍弱一致），消除热路径全局串行。写/清/压缩路径保留 Gate。
 - **构造期多余分配修复**（TMR-10）：`UserTokenManagerBase` 无加密分支不再分配 `MemoryCacheTokenCache<string>`（含独立 `MemoryCache` 实例）后被丢弃。
 - **过期判定收敛**（TMR-12）：`UserTokenInfo.IsAccessTokenValid` 改为委托 `TokenExpiryPolicy.IsValid`，消除第二份过期判定逻辑。
+- **去重窗口**（TMR-12）：`TokenRecoveryOptions` 新增 `RefreshDedupWindowSeconds`（默认 2 秒），窗口内并发 401 共享同一次刷新结果。
+- **配置热更新**（TMR-07）：`TokenRecoveryExecutor` / `TokenRecoveryDelegatingHandler` / `StandardOAuth2TokenManager` 新增 `IOptionsMonitor<T>` 构造重载，支持配置热更新（`TokenRecoveryOptions` / `OAuth2Options` 在下一次请求/刷新时自动拾取新值）。`UserTokenCacheOptions` / `TokenRefreshBackgroundOptions` 仍为启动期生效（文档已标注）。
 - **多 TFM 测试覆盖**（TMR-13）：`Client.Tests` 的 `TargetFrameworks` 扩展为 `net6.0;net8.0;net10.0`，覆盖 `#if !NET8_0_OR_GREATER` 条件编译分支。net6.0 不兼容的测试文件（AOT/SSRF/Config 相关）以条件编译排除。
 - **AOT OAuth2 端到端验证**（TMR-14）：`AotVerificationDemo` 新增场景 17 `DemoOAuth2EndToEnd`，使用自定义 `OAuth2MockHandler` 打桩令牌端点与自省端点，构造真实 `StandardOAuth2TokenManager` 实例，验证 `GetOrRefreshTokenAsync` → HTTP POST → `OAuth2JsonContext` 反序列化 → `CredentialToken` 返回，以及 `IntrospectTokenAsync` → `TokenIntrospectionResult` 返回的完整链路在 Native AOT 下正确工作。
 

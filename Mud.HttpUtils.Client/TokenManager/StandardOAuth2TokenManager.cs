@@ -14,10 +14,16 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 {
     private readonly HttpClient _httpClient;
     private readonly OAuth2Options _options;
+    private readonly IOptionsMonitor<OAuth2Options>? _optionsMonitor;
     private readonly ILogger _logger;
     private readonly ISecretProvider? _secretProvider;
     private readonly ClientSecretCache _clientSecretCache; // P1.8（TK-13）TTL 缓存，密钥轮换可被拾取、工厂故障不缓存
     private readonly IHttpContentSerializer _contentSerializer;
+
+    /// <summary>
+    /// TMR-07：当前生效的 OAuth2 选项。优先走 IOptionsMonitor（热更新），回退静态快照。
+    /// </summary>
+    private OAuth2Options Options => _optionsMonitor?.CurrentValue ?? _options;
 
     private static readonly JsonSerializerOptions s_jsonOptions = new()
     {
@@ -48,7 +54,36 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         _logger = logger ?? NullLogger<StandardOAuth2TokenManager>.Instance;
         _secretProvider = secretProvider;
         _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
-        _clientSecretCache = new ClientSecretCache(TimeSpan.FromSeconds(_options.ClientSecretCacheTtlSeconds));
+        _clientSecretCache = new ClientSecretCache(TimeSpan.FromSeconds(Options.ClientSecretCacheTtlSeconds));
+    }
+
+    /// <summary>
+    /// TMR-07：初始化 StandardOAuth2TokenManager 实例，支持配置热更新（IOptionsMonitor）。
+    /// </summary>
+    /// <param name="httpClient">HttpClient 实例。</param>
+    /// <param name="optionsMonitor">OAuth2 配置选项监视器，支持热更新。</param>
+    /// <param name="logger">日志记录器（可选）。</param>
+    /// <param name="secretProvider">安全密钥提供程序（可选）。</param>
+    /// <param name="contentSerializer">HTTP 内容序列化器（可选）。</param>
+    /// <remarks>
+    /// <see cref="ClientSecretCache"/> 的 TTL 在构造时固定，不支持热更新（需重建管理器才能生效）。
+    /// 其他选项（<see cref="OAuth2Options.TokenEndpoint"/> / <see cref="OAuth2Options.ClientSecret"/> 等）
+    /// 在下一次刷新时自动拾取新值。
+    /// </remarks>
+    public StandardOAuth2TokenManager(
+        HttpClient httpClient,
+        IOptionsMonitor<OAuth2Options> optionsMonitor,
+        ILogger<StandardOAuth2TokenManager>? logger = null,
+        ISecretProvider? secretProvider = null,
+        IHttpContentSerializer? contentSerializer = null)
+    {
+        _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        _optionsMonitor = optionsMonitor ?? throw new ArgumentNullException(nameof(optionsMonitor));
+        _options = optionsMonitor.CurrentValue ?? throw new ArgumentNullException(nameof(optionsMonitor));
+        _logger = logger ?? NullLogger<StandardOAuth2TokenManager>.Instance;
+        _secretProvider = secretProvider;
+        _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
+        _clientSecretCache = new ClientSecretCache(TimeSpan.FromSeconds(Options.ClientSecretCacheTtlSeconds));
     }
 
     /// <summary>
@@ -56,11 +91,11 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// </summary>
     private async Task<string?> ResolveClientSecretAsync()
     {
-        if (_secretProvider != null && !string.IsNullOrEmpty(_options.ClientSecretProviderName))
+        if (_secretProvider != null && !string.IsNullOrEmpty(Options.ClientSecretProviderName))
         {
             try
             {
-                var secret = await _secretProvider.GetSecretAsync(_options.ClientSecretProviderName).ConfigureAwait(false);
+                var secret = await _secretProvider.GetSecretAsync(Options.ClientSecretProviderName).ConfigureAwait(false);
                 if (!string.IsNullOrEmpty(secret))
                     return secret;
             }
@@ -70,7 +105,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
             }
         }
 
-        return _options.ClientSecret;
+        return Options.ClientSecret;
     }
 
     /// <summary>
@@ -80,8 +115,8 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// </summary>
     private Task<string?> GetClientSecretAsync(CancellationToken cancellationToken = default)
     {
-        if (_secretProvider == null || string.IsNullOrEmpty(_options.ClientSecretProviderName))
-            return Task.FromResult<string?>(_options.ClientSecret);
+        if (_secretProvider == null || string.IsNullOrEmpty(Options.ClientSecretProviderName))
+            return Task.FromResult<string?>(Options.ClientSecret);
 
         return _clientSecretCache.GetAsync(ResolveClientSecretAsync, cancellationToken);
     }
@@ -93,7 +128,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// </summary>
     private void ValidateEndpointHttps(string endpoint, string endpointName)
     {
-        if (!_options.RequireHttps)
+        if (!Options.RequireHttps)
             return;
 
         if (!string.IsNullOrEmpty(endpoint) &&
@@ -119,7 +154,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
             ["grant_type"] = "authorization_code",
             ["code"] = code,
             ["redirect_uri"] = redirectUri,
-            ["client_id"] = _options.ClientId
+            ["client_id"] = Options.ClientId
         };
 
         return await RequestTokenAsync(parameters, cancellationToken).ConfigureAwait(false);
@@ -195,7 +230,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     {
         if (string.IsNullOrWhiteSpace(token))
             throw new ArgumentException("令牌不能为空", nameof(token));
-        if (string.IsNullOrWhiteSpace(_options.RevocationEndpoint))
+        if (string.IsNullOrWhiteSpace(Options.RevocationEndpoint))
             throw new InvalidOperationException("未配置撤销端点 (RevocationEndpoint)");
 
         var parameters = new Dictionary<string, string>
@@ -210,7 +245,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 
         try
         {
-        using var request = new HttpRequestMessage(HttpMethod.Post, _options.RevocationEndpoint);
+        using var request = new HttpRequestMessage(HttpMethod.Post, Options.RevocationEndpoint);
         var clientSecret = await GetClientSecretAsync(cancellationToken).ConfigureAwait(false);
         ApplyClientAuthentication(request, parameters, clientSecret);
         request.Content = new FormUrlEncodedContent(parameters);
@@ -233,7 +268,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     {
         if (string.IsNullOrWhiteSpace(token))
             throw new ArgumentException("令牌不能为空", nameof(token));
-        if (string.IsNullOrWhiteSpace(_options.IntrospectionEndpoint))
+        if (string.IsNullOrWhiteSpace(Options.IntrospectionEndpoint))
             throw new InvalidOperationException("未配置内省端点 (IntrospectionEndpoint)");
 
         var parameters = new Dictionary<string, string>
@@ -241,7 +276,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
             ["token"] = token
         };
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, _options.IntrospectionEndpoint);
+        using var request = new HttpRequestMessage(HttpMethod.Post, Options.IntrospectionEndpoint);
         var introspectSecret = await GetClientSecretAsync(cancellationToken).ConfigureAwait(false);
         ApplyClientAuthentication(request, parameters, introspectSecret);
         request.Content = new FormUrlEncodedContent(parameters);
@@ -323,7 +358,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         }
 
         // 回退默认作用域（"统一刷新令牌"服务端场景），默认关闭（SR-M9）
-        if (_options.AllowDefaultScopeRefreshTokenFallback)
+        if (Options.AllowDefaultScopeRefreshTokenFallback)
         {
             var defaultToken = GetCachedCredentialToken(DefaultScopeKey);
             if (defaultToken?.RefreshToken != null)
@@ -381,7 +416,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     {
         ValidateTokenEndpoint();
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, _options.TokenEndpoint);
+        using var request = new HttpRequestMessage(HttpMethod.Post, Options.TokenEndpoint);
 
         // SR-L7（P2.3，D8-3）：先建参数字典 → 认证注入（可能向字典补 client_id）→ 再建 FormUrlEncodedContent。
         // 重构前：Content 先行创建，公共客户端（空 Secret）的 client_id 无法走请求体。
@@ -473,36 +508,36 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     private void ApplyClientAuthentication(
         HttpRequestMessage request, Dictionary<string, string> parameters, string? clientSecret)
     {
-        if (string.IsNullOrWhiteSpace(_options.ClientId))
+        if (string.IsNullOrWhiteSpace(Options.ClientId))
             return;
 
         if (!string.IsNullOrWhiteSpace(clientSecret))
         {
             var credentials = Convert.ToBase64String(
-                Encoding.UTF8.GetBytes($"{_options.ClientId}:{clientSecret}"));
+                Encoding.UTF8.GetBytes($"{Options.ClientId}:{clientSecret}"));
             request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", credentials);
         }
         else
         {
             // 公共客户端：client_id 走请求体（RFC 6749 §2.3.1），不发送弱 Basic 头
-            parameters["client_id"] = _options.ClientId;
+            parameters["client_id"] = Options.ClientId;
             MudHttpClientLog.PublicClientAuthUsed(_logger);
         }
     }
 
     private void ValidateTokenEndpoint()
     {
-        if (string.IsNullOrWhiteSpace(_options.TokenEndpoint))
+        if (string.IsNullOrWhiteSpace(Options.TokenEndpoint))
             throw new InvalidOperationException("未配置令牌端点 (TokenEndpoint)");
 
-        ValidateEndpointHttps(_options.TokenEndpoint, "令牌端点 (TokenEndpoint)");
+        ValidateEndpointHttps(Options.TokenEndpoint, "令牌端点 (TokenEndpoint)");
     }
 
     private long CalculateExpire(long? expiresIn)
     {
         if (expiresIn.HasValue && expiresIn.Value > 0)
         {
-            var safetyMargin = Math.Max(0, _options.ExpirySafetyMarginSeconds);
+            var safetyMargin = Math.Max(0, Options.ExpirySafetyMarginSeconds);
             return DateTimeOffset.UtcNow.AddSeconds(expiresIn.Value - safetyMargin).ToUnixTimeMilliseconds();
         }
 
