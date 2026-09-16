@@ -1088,7 +1088,7 @@ services.AddSingleton<IAppManager<FeishuContext>, DefaultAppManager<FeishuContex
 var appManager = serviceProvider.GetRequiredService<IAppManager<FeishuContext>>();
 appManager.ConfigurationChanged += (sender, args) =>
 {
-    Console.WriteLine($"应用 {args.AppId} 配置已变更");
+    Console.WriteLine($"应用 {args.AppKey} 配置已变更");
 };
 ```
 

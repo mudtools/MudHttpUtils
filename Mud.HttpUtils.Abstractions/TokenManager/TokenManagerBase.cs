@@ -139,6 +139,11 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     public abstract Task<string> GetTokenAsync(CancellationToken cancellationToken = default);
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <b>MT-11</b>：本默认实现<b>忽略 <paramref name="scopes"/></b>，直接转调无参重载。
+    /// 支持按作用域取令牌的子类<b>必须覆写本重载</b>，否则调用方会静默拿到默认作用域令牌
+    /// （scope 错配 / 潜在越权）。<see cref="StandardOAuth2TokenManager"/> 已覆写。
+    /// </remarks>
     public virtual Task<string> GetTokenAsync(string[]? scopes, CancellationToken cancellationToken = default)
     {
         return GetTokenAsync(cancellationToken);
@@ -151,6 +156,20 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <b>MT-27 实现约定（子类必读）</b>：
+    /// <list type="bullet">
+    /// <item><description>本方法在<b>持有作用域键控锁（<see cref="KeyedLockTable"/>）期间</b>调用
+    /// <see cref="RefreshTokenCoreAsync"/> / <see cref="RefreshTokenWithScopesAsync"/>。</description></item>
+    /// <item><description>该锁基于 <see cref="SemaphoreSlim"/>，<b>不可重入</b>：
+    /// 刷新实现内部<b>不得</b>再次调用本管理器的 <see cref="GetOrRefreshTokenAsync(string[], CancellationToken)"/>
+    /// 或 <see cref="GetTokenAsync(CancellationToken)"/>，否则将<b>自锁死</b>（同线程永久等待自己持有的信号量）。</description></item>
+    /// <item><description>需要复用已缓存令牌时，请在刷新实现内使用 <see cref="GetCachedCredentialToken()"/> /
+    /// <see cref="GetCachedCredentialToken(string)"/> 等<b>不加锁</b>的读取入口。</description></item>
+    /// <item><description>取消语义：若取消发生在"等待锁"阶段，锁不会被获取，缓存保持原状；
+    /// 若发生在"持有锁刷新"阶段，异常向上传播且<b>不会写入半成品缓存</b>（写入仅在刷新成功后执行）。</description></item>
+    /// </list>
+    /// </remarks>
     public virtual async Task<string> GetOrRefreshTokenAsync(string[]? scopes, CancellationToken cancellationToken = default)
     {
         if (_disposed)
@@ -695,6 +714,12 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// SR-H1（P1.3）测试观测钩子：维护 Timer 是否仍在运行（经 InternalsVisibleTo 供测试断言 Dispose 后 Timer 停止）。
     /// </summary>
     internal bool TimersActive => !_timersStopped;
+
+    /// <summary>
+    /// MT-15：是否已释放。供 <see cref="TokenRefreshHelper"/> 区分
+    /// 「管理器已被释放（应反注册）」与「管理器<b>暂时</b>不可用（不应永久反注册）」。
+    /// </summary>
+    internal bool IsDisposed => _disposed;
 
     /// <summary>
     /// SR-M5（P3.3）测试观测钩子：作用域缓存当前条目数（供断言硬上限 LRU 收敛）。

@@ -626,14 +626,16 @@ internal static class Diagnostics
 
     // SR-L6（P3.9，D13）：Query 注入模式令牌进入 URL → 代理 / 访问日志 / 浏览器历史不可控。
     // 库内遥测已由 SensitiveUrlRedactor 脱敏，外部系统不受控；生产环境建议 Header。
-    // Info 级（可抑制）——§0.3-V7 修订：不在生成物发射 #warning（避免污染消费方构建）。
+    // MT-21（BC-22）：级别由 Info 提升为 Warning（Info 在默认构建下几乎不可见，等于没有提示），
+    // 并把覆盖范围从 Query 扩展到 Path（令牌进 URL 路径，留存面与 Query 等同）。
+    // 不在生成物发射 #warning（避免污染消费方构建），仍然可抑制。
     public static readonly DiagnosticDescriptor MudQueryTokenInjectionMode = new(
         id: DiagnosticIds.MudQueryTokenInjectionMode,
-        title: "Query 令牌注入模式存在泄露面",
-        messageFormat: "接口 {0} 使用 Query 令牌注入模式：令牌将进入请求 URL，可能被代理 / 访问日志 / 浏览器历史等不受控的外部系统记录。库内遥测已脱敏，但外部系统不受控；生产环境建议改用 Header 注入模式。",
+        title: "Query / Path 令牌注入模式存在泄露面",
+        messageFormat: "接口 {0} 使用 {1} 令牌注入模式：令牌将进入请求 URL 或路径，可能被代理 / 访问日志 / 浏览器历史等不受控的外部系统记录。库内遥测已脱敏，但外部系统不受控；生产环境建议改用 Header 注入模式。",
         category: "Mud.HttpUtils.Security",
-        DiagnosticSeverity.Info,
+        DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
-        description: "Query 注入模式令牌进入 URL，存在日志/历史泄露面；建议生产环境使用 Header 模式.");
+        description: "Query / Path 注入模式令牌进入 URL，存在日志/历史泄露面；建议生产环境使用 Header 模式.");
     #endregion
 }

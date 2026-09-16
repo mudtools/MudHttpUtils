@@ -139,11 +139,37 @@ namespace TestNamespace.Internal
         /// <returns>返回切换后的应用上下文。</returns>
         public IMudAppContext UseApp(string appKey)
         {
-            if (_appAuthorizer is not null && !_appAuthorizer.CanSwitchTo(appKey))
-                throw new UnauthorizedAccessException($"当前调用主体无权切换到应用 '{appKey}'。");
+            if (!global::Mud.HttpUtils.AppKey.IsValid(appKey))
+                throw new global::System.ArgumentException("appKey 格式非法：只能由字母、数字、'.'、'_'、'-' 组成，首字符必须是字母或数字，长度不超过 128。", nameof(appKey));
+            if (_appAuthorizer == null)
+                throw new InvalidOperationException("多应用切换需要授权器：请注册 IAppAccessAuthorizer 实现（例如 services.AddSingleton<IAppAccessAuthorizer, YourAuthorizer>()）；若为单应用或完全受信场景，请显式注册 Mud.HttpUtils.AllowAllAppAccessAuthorizer 以表明放行意图。");
+            if (!_appAuthorizer.CanSwitchTo(appKey))
+                throw new UnauthorizedAccessException("当前调用主体无权切换到目标应用（IAppAccessAuthorizer.CanSwitchTo 返回 false）。");
             var context = _tokenManager.GetApp(appKey);
             _appContextHolder.SwitchTo(context);
             return context;
+        }
+
+        /// <summary>
+        /// 切换到指定的应用上下文，并返回作用域以在结束时自动恢复。
+        /// </summary>
+        /// <remarks>
+        /// <b>推荐使用本方法替代 <see cref="UseApp"/></b>：<c>UseApp</c> 的无作用域切换（<c>SwitchTo</c>）
+        /// 不会自动归还上下文，若调用方未显式切回，后续请求（尤其是后台任务、长生命周期单例编排、
+        /// <c>IAsyncEnumerable</c> 未逐段开作用域等场景）可能串到错误的应用并读取到错误应用的令牌。
+        /// </remarks>
+        /// <param name="appKey">应用的唯一标识符。</param>
+        /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。建议配合 <c>using</c> 使用。</returns>
+        public IDisposable UseAppScope(string appKey)
+        {
+            if (!global::Mud.HttpUtils.AppKey.IsValid(appKey))
+                throw new global::System.ArgumentException("appKey 格式非法：只能由字母、数字、'.'、'_'、'-' 组成，首字符必须是字母或数字，长度不超过 128。", nameof(appKey));
+            if (_appAuthorizer == null)
+                throw new InvalidOperationException("多应用切换需要授权器：请注册 IAppAccessAuthorizer 实现（例如 services.AddSingleton<IAppAccessAuthorizer, YourAuthorizer>()）；若为单应用或完全受信场景，请显式注册 Mud.HttpUtils.AllowAllAppAccessAuthorizer 以表明放行意图。");
+            if (!_appAuthorizer.CanSwitchTo(appKey))
+                throw new UnauthorizedAccessException("当前调用主体无权切换到目标应用（IAppAccessAuthorizer.CanSwitchTo 返回 false）。");
+            var context = _tokenManager.GetApp(appKey);
+            return _appContextHolder.BeginScope(context);
         }
 
         /// <summary>
@@ -175,8 +201,12 @@ namespace TestNamespace.Internal
         /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>
         public IDisposable BeginScope(string appKey)
         {
-            if (_appAuthorizer is not null && !_appAuthorizer.CanSwitchTo(appKey))
-                throw new UnauthorizedAccessException($"当前调用主体无权切换到应用 '{appKey}'。");
+            if (!global::Mud.HttpUtils.AppKey.IsValid(appKey))
+                throw new global::System.ArgumentException("appKey 格式非法：只能由字母、数字、'.'、'_'、'-' 组成，首字符必须是字母或数字，长度不超过 128。", nameof(appKey));
+            if (_appAuthorizer == null)
+                throw new InvalidOperationException("多应用切换需要授权器：请注册 IAppAccessAuthorizer 实现（例如 services.AddSingleton<IAppAccessAuthorizer, YourAuthorizer>()）；若为单应用或完全受信场景，请显式注册 Mud.HttpUtils.AllowAllAppAccessAuthorizer 以表明放行意图。");
+            if (!_appAuthorizer.CanSwitchTo(appKey))
+                throw new UnauthorizedAccessException("当前调用主体无权切换到目标应用（IAppAccessAuthorizer.CanSwitchTo 返回 false）。");
             var context = _tokenManager.GetApp(appKey);
             return _appContextHolder.BeginScope(context);
         }

@@ -286,6 +286,12 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         if (string.IsNullOrWhiteSpace(Options.RevocationEndpoint))
             throw new InvalidOperationException("未配置撤销端点 (RevocationEndpoint)");
 
+        // MT-09：与 TokenEndpoint 一致，在<b>运行期</b>校验端点安全性。
+        // 原实现仅在选项绑定期（OAuth2OptionsValidator）校验 revoke/introspect 端点，
+        // 编程式构造 OAuth2Options（Options.Create）或绕过校验器时，
+        // client_secret（Basic 头）与待撤销/内省令牌会经明文 HTTP 发出。
+        ValidateEndpointHttps(Options.RevocationEndpoint, "撤销端点 (RevocationEndpoint)");
+
         var parameters = new Dictionary<string, string>
         {
             ["token"] = token
@@ -323,6 +329,9 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
             throw new ArgumentException("令牌不能为空", nameof(token));
         if (string.IsNullOrWhiteSpace(Options.IntrospectionEndpoint))
             throw new InvalidOperationException("未配置内省端点 (IntrospectionEndpoint)");
+
+        // MT-09：同 RevokeTokenAsync —— 运行期校验内省端点的传输安全。
+        ValidateEndpointHttps(Options.IntrospectionEndpoint, "内省端点 (IntrospectionEndpoint)");
 
         var parameters = new Dictionary<string, string>
         {
@@ -430,6 +439,20 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     public override async Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
     {
         return await base.GetOrRefreshTokenAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// MT-11：修复 <c>ITokenManager.GetTokenAsync(scopes)</c> 契约静默失效。
+    /// 基类 <see cref="TokenManagerBase.GetTokenAsync(string[], CancellationToken)"/> 的默认实现忽略 scopes
+    /// 并转调无参重载，而本类此前<b>只覆写了无参重载</b> —— 调用方以为拿到了受限作用域令牌，
+    /// 实际返回的是默认作用域令牌（scope 错配，且默认作用域可能权限更宽）。
+    /// </remarks>
+    public override Task<string> GetTokenAsync(string[]? scopes, CancellationToken cancellationToken = default)
+    {
+        return scopes is { Length: > 0 }
+            ? GetOrRefreshTokenAsync(scopes, cancellationToken)
+            : GetOrRefreshTokenAsync(cancellationToken);
     }
 
     /// <summary>

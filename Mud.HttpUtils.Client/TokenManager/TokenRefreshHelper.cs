@@ -86,10 +86,28 @@ internal static class TokenRefreshHelper
                     MudHttpClientLog.TokenRefreshCompleted(logger, kvp.Key);
                 }
             }
-            catch (ObjectDisposedException)
+            catch (ObjectDisposedException ex)
             {
-                MudHttpClientLog.TokenManagerDisposed(logger, kvp.Key);
-                tokenManagers.TryRemove(kvp.Key, out _);
+                // MT-15：原实现把任何 ObjectDisposedException 都当作"管理器已释放"并<b>永久反注册</b>，
+                // 且没有任何恢复机制 —— 一次内部资源短期不可用（或宿主重建管理器）就会让该管理器的
+                // 后台刷新永久停止，而宿主仍显示"健康"。
+                // 现在只有确认管理器自身已 Dispose 时才反注册；否则按普通失败处理（保留登记、计入连续失败）。
+                if (kvp.Value is TokenManagerBase baseManager && baseManager.IsDisposed)
+                {
+                    MudHttpClientLog.TokenManagerDisposed(logger, kvp.Key);
+                    tokenManagers.TryRemove(kvp.Key, out _);
+                }
+                else
+                {
+                    MudHttpClientLog.TokenRefreshFailed(logger, kvp.Key, ex);
+                    cycleHadFailure = true;
+
+                    if (options.StopOnError)
+                    {
+                        MudHttpClientLog.TokenRefreshFailedAndStopped(logger, kvp.Key);
+                        return false;
+                    }
+                }
             }
             catch (Exception ex)
             {

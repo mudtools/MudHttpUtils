@@ -43,23 +43,46 @@ internal sealed class ClientSecretCache
     /// <param name="factory">解析工厂（内部应已 try/catch 回退配置值，不应抛出）。</param>
     /// <param name="ct">取消令牌。</param>
     /// <returns>解析出的密钥。</returns>
+    /// <remarks>
+    /// <b>MT-04</b>：修复 TTL 语义反转。原实现在 <c>_ttl == TimeSpan.Zero</c> 时把
+    /// <c>_expiresAtTicks</c> 写成 <see cref="long.MaxValue"/>，使"TTL=0"实际等价于
+    /// <b>永久缓存</b> —— 与 <see cref="OAuth2Options.ClientSecretCacheTtlSeconds"/> 文档承诺的
+    /// "设为 0 表示不缓存（每次刷新都重新解析密钥）"完全相反，密钥轮换永不生效。
+    /// 现在 TTL &lt;= 0 直接短路走工厂，不进入缓存路径。
+    /// <para>
+    /// 同时修正两点：① <c>_value</c> 改为 <see cref="Volatile.Read"/>，消除非同步读；
+    /// ② 工厂返回 null/空时不写入缓存（避免把"未就绪"固化），与类注释"故障不缓存"一致。
+    /// </para>
+    /// </remarks>
     public async Task<string?> GetAsync(Func<Task<string?>> factory, CancellationToken ct)
     {
+        // MT-04：TTL <= 0 表示不缓存（每次都重新解析），直接短路。
+        if (_ttl <= TimeSpan.Zero)
+            return await factory().ConfigureAwait(false);
+
         var now = DateTimeOffset.UtcNow.UtcTicks;
-        if (_value != null && now < Volatile.Read(ref _expiresAtTicks))
-            return _value;
+        var cached = Volatile.Read(ref _value);
+        if (cached != null && now < Volatile.Read(ref _expiresAtTicks))
+            return cached;
 
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
             // 双重检查：等待闸期间可能有其他线程已写入有效缓存
             now = DateTimeOffset.UtcNow.UtcTicks;
-            if (_value != null && now < _expiresAtTicks)
-                return _value;
+            cached = Volatile.Read(ref _value);
+            if (cached != null && now < Volatile.Read(ref _expiresAtTicks))
+                return cached;
 
             var resolved = await factory().ConfigureAwait(false);
-            _value = resolved;
-            _expiresAtTicks = _ttl > TimeSpan.Zero ? now + _ttl.Ticks : long.MaxValue;
+
+            // MT-04：空结果不缓存（解析出空串说明密钥源异常/未就绪，不应固化）。
+            if (!string.IsNullOrEmpty(resolved))
+            {
+                Volatile.Write(ref _value, resolved);
+                Volatile.Write(ref _expiresAtTicks, now + _ttl.Ticks);
+            }
+
             return resolved;
         }
         finally

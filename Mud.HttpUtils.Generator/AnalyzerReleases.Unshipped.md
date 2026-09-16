@@ -57,4 +57,4 @@ HTTPCLIENTREG002 | 代码生成 | Error | RegistryGroupName 不是有效 C# 标�
 MUD001 | Mud.HttpUtils.Interface | Error | HttpClientApi 方法缺少 HTTP 方法特性
 MUD002 | Mud.HttpUtils.Interface | Error | HttpClientApi 方法返回类型无效
 MUD004 | Mud.HttpUtils.DependencyInjection | Warning | ITokenManager 实现应注册为 Singleton
-MUD005 | Mud.HttpUtils.Security | Info | Query 令牌注入模式存在泄露面
+MUD005 | Mud.HttpUtils.Security | Warning | Query / Path 令牌注入模式存在泄露面（MT-21：Info 升为 Warning，覆盖范围扩展至 Path）

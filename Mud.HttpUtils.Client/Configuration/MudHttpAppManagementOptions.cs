@@ -19,8 +19,24 @@ public sealed class MudHttpAppManagementOptions
     /// <summary>是否要求必须注册 <see cref="IAppManager{IMudAppContext}"/>。默认 <c>false</c>（仅告警不阻断）。</summary>
     public bool RequireAppManager { get; set; }
 
+    /// <summary>
+    /// MT-02：是否要求必须注册 <see cref="IAppAccessAuthorizer"/>。默认 <c>false</c>（仅告警不阻断）。
+    /// </summary>
+    /// <remarks>
+    /// MT-02（BC-18）已将生成代码 <c>UseApp</c>/<c>BeginScope(appKey)</c> 改为「授权器缺失即抛异常」，
+    /// 因此未注册授权器时按 appKey 切换在运行期必然失败。此处仅决定是否把该缺陷提升为<b>启动期阻断</b>；
+    /// 多租户宿主建议设为 <c>true</c>，把接线缺陷前移到启动阶段。
+    /// </remarks>
+    public bool RequireAppAccessAuthorizer { get; set; }
+
     /// <summary>已注册应用（用于校验 DefaultClientName/AppKey 映射闭合）。默认为空。</summary>
     public IList<string> RegisteredAppKeys { get; } = new List<string>();
+
+    /// <summary>
+    /// MT-02：是否要求 <see cref="RegisteredAppKeys"/> 中的应用必须已在
+    /// <see cref="IAppManager{IMudAppContext}"/> 中注册。默认 <c>false</c>（仅告警不阻断）。
+    /// </summary>
+    public bool RequireRegisteredAppKeys { get; set; }
 }
 
 /// <summary>

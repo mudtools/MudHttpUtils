@@ -1,1 +1,9 @@
 #nullable enable
+Mud.HttpUtils.UserTokenInfo.IssuedAt.get -> long
+Mud.HttpUtils.UserTokenInfo.IssuedAt.set -> void
+Mud.HttpUtils.TokenRecoveryOptions.MaxDedupEntries.get -> int
+Mud.HttpUtils.TokenRecoveryOptions.MaxDedupEntries.set -> void
+Mud.HttpUtils.AppKey
+Mud.HttpUtils.AppKey.MaxLength = 128 -> int
+static Mud.HttpUtils.AppKey.IsValid(string? value) -> bool
+static Mud.HttpUtils.AppKey.ToSafeText(string? value) -> string!

@@ -1864,15 +1864,6 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
     #region 辅助方法
 
-    private string ValidateRequest(HttpRequestMessage request)
-    {
-        request.ThrowIfNull();
-        var uri = SafeUrl(request.RequestUri);
-        // 校验使用原始 URL（脱敏掩码会破坏 URL 结构校验语义）
-        ValidateUrl(request.RequestUri?.ToString());
-        return uri;
-    }
-
     /// <summary>M5-HC-07：异步请求校验 —— DNS 相关判定 await，消除 sync-over-async。</summary>
     private async ValueTask<string> ValidateRequestAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
@@ -1972,41 +1963,6 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 #endif
             }
         }
-    }
-
-    /// <summary>
-    /// 验证URL的有效性
-    /// </summary>
-    private void ValidateUrl(string? url)
-    {
-        if (url is null)
-            throw new ArgumentNullException(nameof(url), "URL不能为空");
-
-        if (string.IsNullOrWhiteSpace(url))
-            throw new ArgumentException("URL不能为空", nameof(url));
-
-        if (Uri.IsWellFormedUriString(url, UriKind.Absolute))
-        {
-            // 验证绝对URL是否安全
-            UrlValidator.ValidateUrl(url, allowCustomBaseUrls: _allowCustomBaseUrls);
-            return;
-        }
-
-        if (Uri.IsWellFormedUriString(url, UriKind.Relative))
-        {
-            if (_httpClient.BaseAddress is null)
-            {
-                throw new InvalidOperationException(
-                    "HttpClient未配置BaseAddress，无法使用相对URL");
-            }
-            // 验证BaseAddress是否安全
-            UrlValidator.ValidateBaseUrl(_httpClient.BaseAddress?.ToString(), allowCustomBaseUrls: _allowCustomBaseUrls);
-            return;
-        }
-
-        throw new ArgumentException(
-            $"URL格式不正确: '{url}'。必须是有效的绝对URL或相对URL。",
-            nameof(url));
     }
 
     /// <summary>

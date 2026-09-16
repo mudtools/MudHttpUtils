@@ -5,6 +5,8 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Security.Cryptography;
 using System.Text.Json;
 
@@ -30,6 +32,8 @@ public sealed class EncryptedTokenCache<T> : ITokenCache<T> where T : class
 {
     private readonly ITokenCache<string> _inner;
     private readonly IEncryptionProvider _encryption;
+    // MT-25：解密失败此前完全静默（类注释却承诺"返回 false + Warning 日志"），排障时无从下手。
+    private readonly ILogger _logger;
 
     private static readonly JsonSerializerOptions s_jsonOptions = new()
     {
@@ -42,9 +46,21 @@ public sealed class EncryptedTokenCache<T> : ITokenCache<T> where T : class
     /// <param name="inner">底层字符串缓存（如 <see cref="MemoryCacheTokenCache{String}"/>）。</param>
     /// <param name="encryption">加密提供程序。</param>
     public EncryptedTokenCache(ITokenCache<string> inner, IEncryptionProvider encryption)
+        : this(inner, encryption, null)
+    {
+    }
+
+    /// <summary>
+    /// MT-25：初始化加密令牌缓存包装（带日志记录器，使密文损坏 / 反序列化失败可观测）。
+    /// </summary>
+    /// <param name="inner">底层字符串缓存（如 <see cref="MemoryCacheTokenCache{String}"/>）。</param>
+    /// <param name="encryption">加密提供程序。</param>
+    /// <param name="logger">日志记录器（可选）。为 null 时静默（与历史行为一致）。</param>
+    public EncryptedTokenCache(ITokenCache<string> inner, IEncryptionProvider encryption, ILogger? logger)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         _encryption = encryption ?? throw new ArgumentNullException(nameof(encryption));
+        _logger = logger ?? NullLogger.Instance;
     }
 
     /// <inheritdoc />
@@ -65,6 +81,9 @@ public sealed class EncryptedTokenCache<T> : ITokenCache<T> where T : class
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // TMR-08：放宽异常白名单——FormatException / ObjectDisposedException / 其他非取消异常均按 miss 处理
+            // MT-25：按 miss 处理的同时记录 Warning，使"密钥轮换导致密文不可解"等场景可被观测
+            // （此前完全静默，与类注释承诺的"返回 false + Warning 日志"不符）。
+            _logger.LogWarning(ex, "加密令牌缓存条目解密/反序列化失败，按缓存未命中处理（Key={Key}）", key);
             value = null;
             return false;
         }

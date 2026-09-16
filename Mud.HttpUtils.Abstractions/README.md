@@ -182,12 +182,16 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 | `IAppContextSwitcher` | 多应用切换，提供 `CurrentContext` 属性和 `SwitchToAsync` 方法                   |
 | `IAppContextHolder`   | 应用上下文持有器，提供 `Current` 属性（只读 + `SwitchTo` 方法运行时切换）和 `BeginScope(IMudAppContext)` 方法（如 `AsyncLocalAppContextSwitcher`） |
 | `IAsyncInitializable` | 异步初始化接口，`RegisterAppAsync` 等场景用于延迟初始化应用上下文              |
-| `IAppManager<T>`      | 多应用管理器，提供按 AppId 获取上下文、注册/移除应用、配置变更通知、默认应用切换的能力        |
+| `IAppManager<T>`      | 多应用管理器，提供按 AppKey 获取上下文、注册/移除应用、配置变更通知、默认应用切换的能力        |
 | `IAppAccessAuthorizer` | 应用切换授权器，多租户场景下判定当前调用主体是否有权切换到指定应用              |
 
 > `IMudAppContext` 新增 `GetService<T>()` 方法，支持从应用上下文中解析已注册的 DI 服务（如 `IApiKeyProvider`、`IHmacSignatureProvider` 等）。`IAppManager<T>` 新增 `ConfigurationChanged` 事件，支持应用配置热更新通知。
 >
-> **注册约定**：`IAppManager<IMudAppContext>` 不由库自动注册（宿主需显式注册 `DefaultAppManager<IMudAppContext>` 或自定义实现）。`IAppContextHolder` 由 `AddMudHttpAppContextHolder()` 或配置入口 `AddMudHttpClientsFromConfiguration` 自动补齐。`IAppAccessAuthorizer` 为可选注册——多租户场景必须注册。
+> **注册约定**：`IAppManager<IMudAppContext>` 不由库自动注册（宿主需显式注册 `DefaultAppManager<IMudAppContext>` 或自定义实现）。`IAppContextHolder` 由 `AddMudHttpAppContextHolder()` 或配置入口 `AddMudHttpClientsFromConfiguration` 自动补齐。
+>
+> **`IAppAccessAuthorizer` 为必注册项（MT-02 / BC-18）**：生成代码的 `UseApp(appKey)` / `BeginScope(appKey)` / `UseAppScope(appKey)` 在**未注册授权器时直接抛 `InvalidOperationException`**（默认拒绝，取代此前的静默放行——后者允许调用方凭请求参数中的 `appKey` 切换到任意租户应用并读取其令牌）。多租户宿主请注册业务授权器；单应用 / 完全受信 / 迁移过渡场景请**显式**注册 `AllowAllAppAccessAuthorizer` 以表明放行意图。可用 `AddMudHttpAppManagementStartupValidation()` 把该检查前移到启动期（`MudHttpAppManagementOptions.RequireAppAccessAuthorizer = true` 时缺失即阻断启动）。
+>
+> **上下文归还约束（MT-19）**：`UseApp(appKey)` / `SwitchTo(...)` 是**无作用域**切换，**不会自动归还**上下文。长生命周期宿主（后台服务、单例编排、`IAsyncEnumerable` 未逐段开作用域等）应优先使用 **`UseAppScope(appKey)`** / `BeginScope(appKey)` / `UseDefaultAppScope()` 并配合 `using`，否则后续请求可能串到错误的应用并读取到该应用的令牌。
 >
 > **`IAppContextHolder.BeginScope` 归属约束**：返回的 `IDisposable` 必须在其创建的异步流程内释放。跨执行上下文释放（例如在别的 `Task.Run` 中释放）不会被识别为本作用域的还原点，以免覆盖其它流程的合法上下文写入。
 >

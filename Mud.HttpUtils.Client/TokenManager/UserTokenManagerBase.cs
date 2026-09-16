@@ -28,6 +28,13 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     private readonly ConcurrentDictionary<string, long> _userRefreshFailures = new();
     private const int MaxUserRefreshBackoffSeconds = 300;
 
+    // MT-06：用户侧维护定时器。
+    // 原实现中 CleanupOrphanedLocks() 为 protected 且全仓无调用者，叠加
+    // SupportsTenantMaintenance=false（基类 300s/600s Timer 不启动）后，
+    // _userRefreshFailures 与 _userLockTable 完全依赖调用方主动清扫 —— 实际等于无回收。
+    // 这里引入单个 Timer 周期性驱动，成本为「每管理器 1 个 Timer」。
+    private readonly Timer? _userMaintenanceTimer;
+
     /// <summary>
     /// SR-M1（P2.2，D7）用户复合键分隔符（Unit Separator 控制字符）：
     /// 与裸 userId 键空间不相交、不可能出现在合法 userId 内。
@@ -97,11 +104,8 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         if (userTokenCache != null)
         {
             _userTokenCache = userTokenCache;
-            return;
         }
-
-        // TMR-10：延迟创建——无加密分支不再分配 MemoryCacheTokenCache<string>（含独立 MemoryCache 实例）
-        if (encryption != null)
+        else if (encryption != null)
         {
             // 加密分支：需要 string 缓存作为加密包装的底层
             var stringCache = new MemoryCacheTokenCache<string>(
@@ -116,6 +120,31 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
                 _cacheOptions.SizeLimit,
                 _cacheOptions.CleanupIntervalSeconds,
                 _cacheOptions.CompactionPercentage);
+        }
+
+        // MT-06：启动用户侧维护定时器（周期取 UserTokenCacheOptions.CleanupIntervalSeconds）。
+        // 回调内部已 try/catch 兜底，异常不会外溢为进程级故障。
+        var interval = TimeSpan.FromSeconds(
+            _cacheOptions.CleanupIntervalSeconds > 0 ? _cacheOptions.CleanupIntervalSeconds : 300);
+        _userMaintenanceTimer = new Timer(
+            _ => SafeCleanup(),
+            null,
+            interval,
+            interval);
+    }
+
+    /// <summary>
+    /// MT-06：定时器回调包装——回收孤立锁与过期退避条目，异常不外溢。
+    /// </summary>
+    private void SafeCleanup()
+    {
+        try
+        {
+            CleanupOrphanedLocks();
+        }
+        catch
+        {
+            // 清扫失败不得影响令牌主链路；此处无日志依赖（用户管理器可能无 ILogger）。
         }
     }
 
@@ -398,8 +427,11 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
             return false;
 
         // P1.3（TK-04）收敛：有效期判定统一委托 TokenExpiryPolicy，与 TokenManagerBase 严格一致
+        // MT-07：改用 TTL 感知的 4 参重载，避免短 TTL 用户令牌"刚签发即被判为需刷新"
+        // （原 3 参版本下，TTL=300s 且阈值=300s 的令牌 expire-threshold <= now 恒成立，缓存永不命中）。
+        // IssuedAt 为 0 时 EffectiveThresholdSeconds 退化为配置阈值，存量数据行为不变。
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        return TokenExpiryPolicy.IsValid(tokenInfo.AccessTokenExpireTime, now, UserExpireThresholdSeconds);
+        return TokenExpiryPolicy.IsValid(tokenInfo.IssuedAt, tokenInfo.AccessTokenExpireTime, now, UserExpireThresholdSeconds);
     }
 
     /// <summary>
@@ -428,17 +460,51 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     private void RecordUserRefreshFailure(string cacheKey)
     {
         // GetOrAdd + AddOrUpdate 维护连续失败次数（值 = 下次允许刷新 ticks；以 30s 起步逐次翻倍）
-        var count = 0;
         _userRefreshFailures.AddOrUpdate(cacheKey,
             _ => DateTimeOffset.UtcNow.AddSeconds(UserBackoffSeconds(1)).UtcTicks,
             (_, existingTicks) =>
             {
                 // 已在退避（理论上锁内前置检查已拦截，防御并发兜底）：失败次数近似按窗口推进
-                count = 1;
                 return Math.Max(existingTicks,
                     DateTimeOffset.UtcNow.AddSeconds(UserBackoffSeconds(1)).UtcTicks);
             });
+
+        // MT-06：退避表原为无界（唯一清扫入口 CleanupOrphanedLocks 无调用者）。
+        // 高基数 userId + IdP 故障时会持续累积。这里在写入后做两阶段收缩：
+        // ① 清除窗口已过期的条目；② 仍超过 SizeLimit 时批量移除多余条目。
+        TrimUserRefreshFailures();
     }
+
+    /// <summary>
+    /// MT-06：退避表有界收缩。上限取 <see cref="UserTokenCacheOptions.SizeLimit"/>（与用户令牌缓存同量级）。
+    /// </summary>
+    private void TrimUserRefreshFailures()
+    {
+        var limit = _cacheOptions.SizeLimit > 0 ? _cacheOptions.SizeLimit : 1;
+        if (_userRefreshFailures.Count <= limit)
+            return;
+
+        var nowTicks = DateTimeOffset.UtcNow.UtcTicks;
+        foreach (var kvp in _userRefreshFailures)
+        {
+            if (_userRefreshFailures.Count <= limit)
+                return;
+            if (nowTicks >= kvp.Value)
+            {
+                _userRefreshFailures.TryRemove(kvp.Key, out _);
+            }
+        }
+
+        foreach (var kvp in _userRefreshFailures)
+        {
+            if (_userRefreshFailures.Count <= limit)
+                return;
+            _userRefreshFailures.TryRemove(kvp.Key, out _);
+        }
+    }
+
+    /// <summary>MT-06 测试观测钩子（经 InternalsVisibleTo）：退避表当前条目数。</summary>
+    internal int RefreshFailureCountForTest => _userRefreshFailures.Count;
 
     /// <summary>
     /// SR-L9（P3.10，D14-V5）：用户令牌管理器不支持租户层维护 Timer——
@@ -470,19 +536,26 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// </summary>
     protected override void Dispose(bool disposing)
     {
-        if (_disposed)
-            return;
-
-        // NEW-TM-11 修复：先设置标志，使并发 GetOrRefreshTokenAsync 立即感知 Dispose 状态
-        _disposed = true;
-
-        if (disposing)
+        // MT-22：原实现在 _disposed 已置位时直接 return，跳过 base.Dispose(disposing)，
+        // 与 TokenManagerBase 自述契约（"无论标志状态如何都必须调用 base.Dispose"）冲突。
+        // 若派生类先置 _disposed 再调 base.Dispose，基类释放会被整体跳过。
+        if (!_disposed)
         {
-            _userTokenCache?.Dispose();
+            // NEW-TM-11 修复：先设置标志，使并发 GetOrRefreshTokenAsync 立即感知 Dispose 状态
+            _disposed = true;
 
-            // P2.2（TK-05/09/24）KeyedLockTable.Dispose 不 Dispose SemaphoreSlim，
-            // 保证在途 Releaser 的 Release 安全（修复 TK-08）。
-            _userLockTable.Dispose();
+            if (disposing)
+            {
+                // MT-06：停止用户侧维护定时器
+                _userMaintenanceTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+                _userMaintenanceTimer?.Dispose();
+
+                _userTokenCache?.Dispose();
+
+                // P2.2（TK-05/09/24）KeyedLockTable.Dispose 不 Dispose SemaphoreSlim，
+                // 保证在途 Releaser 的 Release 安全（修复 TK-08）。
+                _userLockTable.Dispose();
+            }
         }
 
         base.Dispose(disposing);

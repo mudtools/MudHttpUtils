@@ -29,6 +29,40 @@ public static class UrlValidator
     /// <summary>运行期来源白名单快照（读端只读，写端经整体替换更新）。</summary>
     private static HashSet<string> RuntimeDomainsSnapshot => Volatile.Read(ref _runtimeDomains);
 
+    // MT-10：白名单命中后是否仍强制 HTTPS。默认 false（安全默认）。
+    // 原实现中白名单命中即 `return`，早于 scheme/端口校验 —— 只要域名进了白名单，
+    // 用 http:// 承载令牌（Header/Query/Cookie 任一注入模式）也会被放行，令牌明文上网。
+    private static volatile bool _allowInsecureWhitelistedDomains;
+
+    /// <summary>
+    /// MT-10：配置「白名单域名是否允许非 HTTPS 访问」（逃生门）。internal：由
+    /// <see cref="MudHttpClientApplicationOptions.AllowInsecureWhitelistedDomains"/> 经
+    /// <c>AllowedDomainsReloader</c> 重放写入。
+    /// </summary>
+    internal static void SetAllowInsecureWhitelistedDomains(bool allow)
+        => _allowInsecureWhitelistedDomains = allow;
+
+    /// <summary>
+    /// MT-10：白名单命中后的传输安全校验。回环地址豁免（保留本地开发），
+    /// 除非显式开启 <see cref="MudHttpClientApplicationOptions.AllowInsecureWhitelistedDomains"/>。
+    /// </summary>
+    private static void EnsureWhitelistedHostIsSecure(Uri uri, string host)
+    {
+        if (_allowInsecureWhitelistedDomains)
+            return;
+
+        if (string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (IsLoopbackAddress(host))
+            return;
+
+        throw new InvalidOperationException(
+            $"域名 '{host}' 在白名单中，但仅允许 HTTPS 协议（当前协议: {uri.Scheme}）。" +
+            "令牌等凭据会随明文 HTTP 外发；如确需在受信内网使用 HTTP，请设置 " +
+            "MudHttpClients:AllowInsecureWhitelistedDomains=true。");
+    }
+
     private static readonly List<IPNetwork> _privateNetworks;
 
     // M2-#8.1：DNS 缓存改为 MemoryCache —— 条目带 TTL（默认 5 分钟，不再永久缓存），
@@ -211,6 +245,12 @@ public static class UrlValidator
     /// <exception cref="ArgumentNullException">URL 为空时抛出</exception>
     /// <exception cref="ArgumentException">URL 格式无效时抛出</exception>
     /// <exception cref="InvalidOperationException">当 URL 不在白名单或包含私有 IP 时抛出</exception>
+    /// <remarks>
+    /// <b>MT-28 使用约定</b>：本同步重载在 <c>allowCustomBaseUrls = true</c> 时会做 <b>sync-over-async DNS 解析</b>
+    /// （<c>SemaphoreSlim.Wait()</c> + <c>Dns.GetHostAddressesAsync().GetAwaiter().GetResult()</c>），
+    /// 在高并发下存在<b>线程池饥饿</b>风险。<b>请勿在请求主链路调用</b> —— 库内发送路径已全部改用
+    /// <see cref="ValidateUrlAsync"/>（零 sync-over-async）。本重载仅为同步宿主/配置期校验保留。
+    /// </remarks>
     public static void ValidateUrl(string? url, bool allowCustomBaseUrls = false)
     {
         if (string.IsNullOrWhiteSpace(url))
@@ -224,14 +264,18 @@ public static class UrlValidator
 
         var host = uri.Host;
 
-        // 白名单域名跳过所有后续检查（配置桶 + 运行期桶的并集）。
+        // 白名单域名跳过 IP / 内网域名检查（配置桶 + 运行期桶的并集）。
         // H-6 信任边界声明：白名单域名由配置方保证可信（含其历次 DNS 解析结果），此处仅按 host 字符串
         // 判定放行，不做私有 IP 检查。若未启用连接期校验（SsrfSafeSocketsHttpHandler + IIpAddressPolicy，
         // net6.0+ opt-in），白名单域名被 DNS rebinding 解析到内网 IP 将不受防护。
         // 生产环境推荐：AddMudHttpClientSsrfProtection(services) + 每个客户端 builder 上
         // AddMudHttpClientSsrfProtection(builder)。二者互补：此处管控"是否放行"，连接期校验管控"实际连到哪"。
+        // MT-10：但传输安全（HTTPS）不再因白名单而豁免 —— 否则 http:// 会明文承载令牌。
         if (IsDomainAllowedByAnySnapshot(host))
+        {
+            EnsureWhitelistedHostIsSecure(uri, host);
             return;
+        }
 
         if (!allowCustomBaseUrls)
         {
@@ -292,9 +336,12 @@ public static class UrlValidator
 
         var host = uri.Host;
 
-        // 白名单域名跳过后续检查（与同步版一致）
+        // 白名单域名跳过 IP / 内网域名检查（与同步版一致）；MT-10：仍强制 HTTPS。
         if (IsDomainAllowedByAnySnapshot(host))
+        {
+            EnsureWhitelistedHostIsSecure(uri, host);
             return;
+        }
 
         if (!allowCustomBaseUrls)
         {

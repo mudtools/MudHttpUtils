@@ -574,7 +574,7 @@ services.AddSingleton<IAppManager<FeishuContext>, DefaultAppManager<FeishuContex
 var appManager = serviceProvider.GetRequiredService<IAppManager<FeishuContext>>();
 appManager.ConfigurationChanged += (sender, args) =>
 {
-    Console.WriteLine($"应用 {args.AppId} 配置已变更");
+    Console.WriteLine($"应用 {args.AppKey} 配置已变更");
 };
 ```
 
@@ -589,7 +589,7 @@ appManager.ConfigurationChanged += (sender, args) =>
 | 应用上下文持有器 | `IAppContextHolder` | `AddMudHttpAppContextHolder()` | per-app 弹性隔离不可用；`DefaultHttpRequestExecutor` 无法解析当前 AppKey |
 | 应用管理器 | `IAppManager<IMudAppContext>` | `services.AddSingleton<IAppManager<IMudAppContext>, DefaultAppManager<IMudAppContext>>()` | `UseApp`/`BeginScope(appKey)` 不可用；生成代码抛 `InvalidOperationException` |
 | per-app 弹性策略 | `IAppResiliencePolicyResolver` | `AddMudHttpAppResilience(perAppOptionsFactory)` | per-app 策略退化为全局策略 |
-| 应用切换授权器 | `IAppAccessAuthorizer` | `services.AddSingleton<IAppAccessAuthorizer, YourAuthorizer>()` | 跨租户越权风险（外部传入 appKey 不受限） |
+| 应用切换授权器 | `IAppAccessAuthorizer` | `services.AddSingleton<IAppAccessAuthorizer, YourAuthorizer>()`；单应用/受信场景用 `AllowAllAppAccessAuthorizer` 显式放行 | **必须注册**（MT-02 / BC-18）：未注册时 `UseApp` / `BeginScope(appKey)` / `UseAppScope(appKey)` 直接抛 `InvalidOperationException`（默认拒绝） |
 | URL 验证器 | `IUrlValidator` | `AddMudHttpUrlValidator()` | 静态调用与既有行为等价；DI 注册后可按应用隔离白名单 |
 
 > 可调用 `serviceProvider.ValidateMudHttpAppManagement()` 手动校验接线完整性（全 TFM 可用，供 netstandard2.0 宿主与单元测试使用）。也可调用 `AddMudHttpHealthChecks()` 注册 `mud_app_management` 健康检查，在 `/health` 端点观测多应用接线状态。

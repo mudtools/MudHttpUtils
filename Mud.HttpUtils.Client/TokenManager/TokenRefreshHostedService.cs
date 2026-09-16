@@ -143,7 +143,17 @@ public sealed class TokenRefreshHostedService(
                 MudHttpClientLog.TokenRefreshServiceStopping(_logger);
                 break;
             }
-            catch (Exception ex) when (!_tokenManagers.IsEmpty && !_options.StopOnError)
+            // MT-15：StopOnError=true 时原 when 过滤器不成立（!StopOnError 为 false），异常会逃出 ExecuteAsync，
+            // 由 BackgroundService 按 BackgroundServiceExceptionBehavior 处理（默认 StopHost —— 连同宿主一起停止），
+            // 与本节注释「刻意不抛异常」直接矛盾。这里补上该分支：记 Critical 后优雅 break。
+            catch (Exception ex) when (_options.StopOnError)
+            {
+                MudHttpClientLog.TokenRefreshFailedAndStopped(_logger, string.Join(",", _tokenManagers.Keys));
+                System.Diagnostics.Debug.WriteLine(
+                    $"[Mud.HttpUtils] TokenRefreshHostedService: StopOnError=true，刷新异常后停止调度。{ex}");
+                break;
+            }
+            catch (Exception ex) when (!_tokenManagers.IsEmpty)
             {
                 MudHttpClientLog.TokenRefreshFailedWithRetry(_logger, _options.RetryDelaySeconds, ex);
 

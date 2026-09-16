@@ -806,7 +806,7 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 | `MUD001` | Error | `[HttpClientApi]` 接口方法缺少 HTTP 方法特性 | 为方法标注 `[Get]`/`[Post]`/`[Put]`/`[Delete]`/`[Patch]`/`[Head]`/`[Options]`；标注 `[IgnoreGenerator]` 的接口/方法豁免。注意生成器由**特性名**推导 HTTP 动词，故继承 `HttpMethodAttribute` 的自定义特性不受支持（会产出 `CS0117`） | 否 | 是 |
 | `MUD002` | Error | `[HttpClientApi]` 接口方法返回类型不受生成器支持 | 返回**异步形态**：`Task`/`Task<T>`/`ValueTask`/`ValueTask<T>`/`IAsyncEnumerable<T>`（响应体 `T` 可为任意类型，含 `byte[]`/`Stream`/`HttpResponseMessage`/自定义类型）。裸 `byte[]`/`Stream`/`HttpResponseMessage`/`void` 均不受支持（生成器会产出不可编译代码） | 否 | 是 |<!-- supported-return-shapes: Task, Task<T>, ValueTask, ValueTask<T>, IAsyncEnumerable<T> -->
 | `MUD004` | Warning | `ITokenManager` 的实现以 `AddScoped`/`AddTransient`/`TryAddScoped`/`TryAddTransient` 注册（该实现内部维护令牌缓存与并发锁，非 Singleton 会令并发安全机制失效并重复刷新令牌） | 改用 `AddSingleton`/`TryAddSingleton` | 否 | 是 |
-| `MUD005` | Info | `[HttpClientApi]` 接口方法使用 `[Token(InjectionMode = Query)]` 注入模式：令牌进入请求 URL，可能被代理 / 访问日志 / 浏览器历史等不受控的外部系统记录（库内遥测已由 `SensitiveUrlRedactor` 脱敏，外部系统不受控） | 生产环境改用 Header 注入模式（`InjectionMode.Header`）或确认目标环境的日志治理覆盖令牌参数 | 否 | 是 |
+| `MUD005` | Warning | `[HttpClientApi]` 接口（方法级或接口级）使用 `[Token(InjectionMode = Query)]` 或 `[Token(InjectionMode = Path)]` 注入模式：令牌进入请求 URL / 路径，可能被代理 / 访问日志 / 浏览器历史等不受控的外部系统记录（库内遥测已由 `SensitiveUrlRedactor` 脱敏，外部系统不受控） | 生产环境改用 Header 注入模式（`InjectionMode.Header`）或确认目标环境的日志治理覆盖令牌参数 | 否 | 是 |
 
 #### 诊断排查顺序与可抑制性
 

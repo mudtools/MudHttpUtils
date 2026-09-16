@@ -1,1 +1,13 @@
 #nullable enable
+Mud.HttpUtils.AllowAllAppAccessAuthorizer
+Mud.HttpUtils.AllowAllAppAccessAuthorizer.AllowAllAppAccessAuthorizer() -> void
+Mud.HttpUtils.AllowAllAppAccessAuthorizer.CanSwitchTo(string! appKey) -> bool
+Mud.HttpUtils.MudHttpAppManagementOptions.RequireAppAccessAuthorizer.get -> bool
+Mud.HttpUtils.MudHttpAppManagementOptions.RequireAppAccessAuthorizer.set -> void
+Mud.HttpUtils.MudHttpAppManagementOptions.RequireRegisteredAppKeys.get -> bool
+Mud.HttpUtils.MudHttpAppManagementOptions.RequireRegisteredAppKeys.set -> void
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpAppManagementStartupValidation(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+Mud.HttpUtils.MudHttpClientApplicationOptions.AllowInsecureWhitelistedDomains.get -> bool
+Mud.HttpUtils.MudHttpClientApplicationOptions.AllowInsecureWhitelistedDomains.set -> void
+Mud.HttpUtils.EncryptedTokenCache<T>.EncryptedTokenCache(Mud.HttpUtils.ITokenCache<string!>! inner, Mud.HttpUtils.IEncryptionProvider! encryption, Microsoft.Extensions.Logging.ILogger? logger) -> void
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpClients(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Mud.HttpUtils.MudHttpClientApplicationOptions!>! configure) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

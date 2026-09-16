@@ -1190,7 +1190,10 @@ internal class MethodGenerator : ICodeFragmentGenerator
         {
             var cookieName = !string.IsNullOrEmpty(methodInfo.InterfaceTokenName) ? methodInfo.InterfaceTokenName : "access_token";
             var escapedCookieName = StringEscapeHelper.EscapeString(cookieName);
-            codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"Cookie\", \"{escapedCookieName}=\" + access_token);");
+            // MT-20：Cookie 值按 RFC 6265 编码，与 401 恢复路径（TokenRecoveryExecutor.ApplyTokenToRequest）保持一致。
+            // 原生成代码为裸拼接 `"name=" + access_token`，令牌中若含 ';' / ',' / 空格 可注入额外 Cookie 属性；
+            // 而恢复路径已做 Uri.EscapeDataString —— 同一框架两条路径行为不一致。
+            codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"Cookie\", \"{escapedCookieName}=\" + System.Uri.EscapeDataString(access_token));");
         }
 
         if (ShouldGenerateTokenRecoveryContext(context, methodInfo))

@@ -424,6 +424,35 @@ internal static partial class MudHttpClientLog
     [LoggerMessage(EventId = 170, Level = LogLevel.Warning,
         Message = "弹性策略缓存已达上限 ({MaxPolicyCacheSize})，新作用域将不缓存策略实例。")]
     public static partial void PolicyCacheFull(ILogger logger, int maxPolicyCacheSize);
+
+    // ---- MT 轮新增事件（EventId 171-175）：多应用与令牌管理缺陷修复 ----
+
+    [LoggerMessage(EventId = 171, Level = LogLevel.Warning,
+        Message = "令牌恢复放弃：请求被重定向到非同源主机（原始主机 '{OriginalHost}' → 最终主机 '{FinalHost}'），" +
+                  "继续恢复会把刷新后的令牌发往第三方，已返回真实 401。")]
+    public static partial void TokenRecoveryRedirectDetected(ILogger logger, string? originalHost, string? finalHost);
+
+    [LoggerMessage(EventId = 172, Level = LogLevel.Warning,
+        Message = "源生成器自动注册了空的 DefaultAppManager<IMudAppContext>（未注册任何应用）。" +
+                  "此时 UseApp/BeginScope(appKey) 与 GetDefaultApp() 必然失败。请显式注册应用管理器并调用 RegisterApp 注册应用。")]
+    public static partial void EmptyAppManagerAutoRegistered(ILogger logger);
+
+    [LoggerMessage(EventId = 173, Level = LogLevel.Debug,
+        Message = "配置节 '{SectionPath}' 不存在，AddMudHttpClientsFromConfiguration 未注册任何命名客户端。请确认配置节名拼写。")]
+    public static partial void MudHttpClientsSectionMissing(ILogger logger, string sectionPath);
+
+    [LoggerMessage(EventId = 174, Level = LogLevel.Warning,
+        Message = "命名客户端 '{RequestedName}' 未命中（客户端名大小写敏感），已回退匹配 '{ActualName}'。请统一大小写。")]
+    public static partial void ClientNameCaseFallbackUsed(ILogger logger, string requestedName, string actualName);
+
+    [LoggerMessage(EventId = 175, Level = LogLevel.Warning,
+        Message = "上下文切换器工厂被重复注册并覆盖：{SwitcherType}。后注册的工厂生效。")]
+    public static partial void SwitcherFactoryOverwritten(ILogger logger, string switcherType);
+
+    [LoggerMessage(EventId = 176, Level = LogLevel.Warning,
+        Message = "命名客户端名称区分大小写，但配置中存在仅大小写不同的多个键：{CollisionNames}。" +
+                  "它们会被视为不同客户端，请合并为同一个键，否则其中一个配置不会生效。")]
+    public static partial void MudHttpClientNameCaseCollision(ILogger logger, string collisionNames);
 #else
     private static readonly Action<ILogger, string, Exception?> s_tokenManagerRegistered =
         LoggerMessage.Define<string>(LogLevel.Debug, new EventId(131, nameof(TokenManagerRegistered)),
@@ -681,6 +710,44 @@ internal static partial class MudHttpClientLog
             "弹性策略缓存已达上限 ({MaxPolicyCacheSize})，新作用域将不缓存策略实例。");
     public static void PolicyCacheFull(ILogger logger, int maxPolicyCacheSize)
         => s_policyCacheFull(logger, maxPolicyCacheSize, null);
+
+    // ---- MT 轮新增事件（EventId 171-175）：多应用与令牌管理缺陷修复 ----
+
+    private static readonly Action<ILogger, string?, string?, Exception?> s_tokenRecoveryRedirectDetected =
+        LoggerMessage.Define<string?, string?>(LogLevel.Warning, new EventId(171, nameof(TokenRecoveryRedirectDetected)),
+            "令牌恢复放弃：请求被重定向到非同源主机（原始主机 '{OriginalHost}' → 最终主机 '{FinalHost}'），继续恢复会把刷新后的令牌发往第三方，已返回真实 401。");
+    public static void TokenRecoveryRedirectDetected(ILogger logger, string? originalHost, string? finalHost)
+        => s_tokenRecoveryRedirectDetected(logger, originalHost, finalHost, null);
+
+    private static readonly Action<ILogger, Exception?> s_emptyAppManagerAutoRegistered =
+        LoggerMessage.Define(LogLevel.Warning, new EventId(172, nameof(EmptyAppManagerAutoRegistered)),
+            "源生成器自动注册了空的 DefaultAppManager<IMudAppContext>（未注册任何应用）。此时 UseApp/BeginScope(appKey) 与 GetDefaultApp() 必然失败。请显式注册应用管理器并调用 RegisterApp 注册应用。");
+    public static void EmptyAppManagerAutoRegistered(ILogger logger)
+        => s_emptyAppManagerAutoRegistered(logger, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_mudHttpClientsSectionMissing =
+        LoggerMessage.Define<string>(LogLevel.Debug, new EventId(173, nameof(MudHttpClientsSectionMissing)),
+            "配置节 '{SectionPath}' 不存在，AddMudHttpClientsFromConfiguration 未注册任何命名客户端。请确认配置节名拼写。");
+    public static void MudHttpClientsSectionMissing(ILogger logger, string sectionPath)
+        => s_mudHttpClientsSectionMissing(logger, sectionPath, null);
+
+    private static readonly Action<ILogger, string, string, Exception?> s_clientNameCaseFallbackUsed =
+        LoggerMessage.Define<string, string>(LogLevel.Warning, new EventId(174, nameof(ClientNameCaseFallbackUsed)),
+            "命名客户端 '{RequestedName}' 未命中（客户端名大小写敏感），已回退匹配 '{ActualName}'。请统一大小写。");
+    public static void ClientNameCaseFallbackUsed(ILogger logger, string requestedName, string actualName)
+        => s_clientNameCaseFallbackUsed(logger, requestedName, actualName, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_switcherFactoryOverwritten =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(175, nameof(SwitcherFactoryOverwritten)),
+            "上下文切换器工厂被重复注册并覆盖：{SwitcherType}。后注册的工厂生效。");
+    public static void SwitcherFactoryOverwritten(ILogger logger, string switcherType)
+        => s_switcherFactoryOverwritten(logger, switcherType, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_mudHttpClientNameCaseCollision =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(176, nameof(MudHttpClientNameCaseCollision)),
+            "命名客户端名称区分大小写，但配置中存在仅大小写不同的多个键：{CollisionNames}。它们会被视为不同客户端，请合并为同一个键，否则其中一个配置不会生效。");
+    public static void MudHttpClientNameCaseCollision(ILogger logger, string collisionNames)
+        => s_mudHttpClientNameCaseCollision(logger, collisionNames, null);
 #endif
 
     #endregion

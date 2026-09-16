@@ -345,7 +345,9 @@ public class AesEncryptionProviderTests
     public void AuthenticatedEncryption_Encrypt_ProducesVersionPrefix()
     {
         var provider = CreateProvider();
-        var expected = IsGcmProducing ? (byte)0x02 : (byte)0x03;
+        // M5-HC-13：EnableKeySeparation 默认 true ⇒ CBC+HMAC 产出 v4(0x04) 信封；
+        // v3(0x03) 仅在显式关闭密钥分离时产出。本用例的 CreateProvider 使用默认选项。
+        var expected = IsGcmProducing ? (byte)0x02 : (byte)0x04;
 
         var bytes = Convert.FromBase64String(provider.Encrypt("test"));
 

@@ -16,6 +16,11 @@ namespace Mud.HttpUtils.Generator.Tests;
 /// 的对外文档契约「默认 50 秒」不一致，BC-1）。本组测试锁定：未显式设置 <c>Timeout</c> 时生成
 /// <c>TimeSpan.FromSeconds(50)</c>；显式设置时使用显式值。
 /// </para>
+/// <para>
+/// MT-14（BC-21）：注册入口由裸 <c>services.AddHttpClient</c> 改为
+/// <c>HttpClientServiceCollectionExtensions.AddMudHttpClient</c>（完全限定调用，避免依赖消费方 using），
+/// 使生成客户端获得 keyed 注册与 <c>CreateEnhancedClient</c> 的配置覆盖。本组同步锁定该契约。
+/// </para>
 /// </summary>
 public class RegistrationTimeoutGenerationTests
 {
@@ -55,8 +60,11 @@ public class RegistrationTimeoutGenerationTests
 
         generated.Should().NotBeNullOrEmpty("带 [HttpClientApi] 的接口应生成注册代码");
         generated.Should().Contain(
-            "client.Timeout = TimeSpan.FromSeconds(50);",
+            "global::System.TimeSpan.FromSeconds(50);",
             "未显式设置 Timeout 时必须使用文档契约默认值 50（CFG-03 / BC-1）");
+        generated.Should().Contain(
+            "HttpClientServiceCollectionExtensions.AddMudHttpClient(services,",
+            "MT-14（BC-21）：注册必须经 AddMudHttpClient，使 keyed 注册与配置覆盖对生成客户端生效");
     }
 
     [Fact]
@@ -80,7 +88,7 @@ public class RegistrationTimeoutGenerationTests
 
         generated.Should().NotBeNullOrEmpty();
         generated.Should().Contain(
-            "client.Timeout = TimeSpan.FromSeconds(77);",
+            "client.Timeout = global::System.TimeSpan.FromSeconds(77);",
             "显式设置的 Timeout 必须原样传导至生成的命名 HttpClient");
         generated.Should().NotContain("TimeSpan.FromSeconds(50);",
             "显式设置时不应混入默认值");

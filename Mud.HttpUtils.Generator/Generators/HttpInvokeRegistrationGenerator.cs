@@ -513,16 +513,29 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
             codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 HttpClient 包装实现类（瞬时服务）");
             // A3：为默认模式接口自动注册 IAppManager<IMudAppContext> 工厂（TryAddSingleton，不覆盖宿主注册）。
             // 消除 UseApp/BeginScope 在缺少 IAppManager 注册时抛 InvalidOperationException 的静默降级。
+            // MT-14：该自动注册的实例<b>未注册任何应用</b>，UseApp/GetDefaultApp 仍会失败，
+            // 因此把失败信息从"未注册 IAppManager"改为"已注册但未注册应用"，避免误导性降级。
             codeBuilder.AppendLine("            services.TryAddSingleton<global::Mud.HttpUtils.IAppManager<global::Mud.HttpUtils.IMudAppContext>>(sp =>");
-            codeBuilder.AppendLine("                new global::Mud.HttpUtils.DefaultAppManager<global::Mud.HttpUtils.IMudAppContext>());");
+            codeBuilder.AppendLine("            {");
+            codeBuilder.AppendLine("                var loggerFactory = sp.GetService<Microsoft.Extensions.Logging.ILoggerFactory>();");
+            codeBuilder.AppendLine("                loggerFactory?.CreateLogger(\"Mud.HttpUtils.AppManager\")?.LogWarning(\"源生成器自动注册了空的 DefaultAppManager<IMudAppContext>（未注册任何应用）。UseApp/BeginScope(appKey) 与 GetDefaultApp() 将失败，请显式注册应用管理器并调用 RegisterApp。\");");
+            codeBuilder.AppendLine("                return new global::Mud.HttpUtils.DefaultAppManager<global::Mud.HttpUtils.IMudAppContext>();");
+            codeBuilder.AppendLine("            });");
         }
 
         var httpClientName = $"{api.InterfaceName}_HttpClient";
         var timeoutSeconds = api.Timeout;
 
-        codeBuilder.AppendLine($"            services.AddHttpClient(\"{httpClientName}\", client =>");
+        // MT-14（BC-21）：原实现调用裸 services.AddHttpClient，绕过 AddMudHttpClient 的整套接线，
+        // 导致：① 无 keyed IEnhancedHttpClient 注册；② CreateEnhancedClient 的配置覆盖
+        // （AllowCustomBaseUrls / DefaultHeaders / BaseAddress）对生成客户端不生效；
+        // ③ 不注册 TracingDelegatingHandler、IAppContextHolder 等基础设施。
+        // 改用 AddMudHttpClient 后与宿主手动注册的命名客户端完全同构。
+        // 以完全限定的静态调用形式发出，避免依赖消费方是否开启了 `using Mud.HttpUtils;`
+        // （生成文件不发出任何 using 指令）。
+        codeBuilder.AppendLine($"            global::Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpClient(services, \"{httpClientName}\", client =>");
         codeBuilder.AppendLine($"            {{");
-        codeBuilder.AppendLine($"                client.Timeout = TimeSpan.FromSeconds({timeoutSeconds});");
+        codeBuilder.AppendLine($"                client.Timeout = global::System.TimeSpan.FromSeconds({timeoutSeconds});");
         // BaseAddress 应通过 AddMudHttpClient(clientName, baseAddress) 在运行时配置，此处不生成
         codeBuilder.AppendLine($"            }});");
         codeBuilder.AppendLine($"            services.AddTransient<{fullyQualifiedInterface}, {fullyQualifiedImplementation}>();");

@@ -8,10 +8,12 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Mud.HttpUtils.Client;
+using System.Diagnostics;
 using System.Text.Json;
 #if NET6_0_OR_GREATER
 using System.Diagnostics.CodeAnalysis;
@@ -132,6 +134,25 @@ public static class HttpClientServiceCollectionExtensions
         string clientName,
         bool setAsDefault)
     {
+        // MT-23：重复注册同一 clientName 时，keyed 路径（AddKeyedSingleton，后者胜）与非 keyed 默认路径
+        // （TryAddTransient，前者胜）会解析出**不同**实例，行为不确定；同时每次重复调用都会向
+        // IHttpClientFactory 的 handler 管道再叠加一个 TracingDelegatingHandler。
+        // 这里只做可观测性提示（不改变既有"胜者"语义，避免引入额外破坏性变更）。
+        // 仅 net6+ 有 keyed 注册可供探测；netstandard2.0 路径不缓存，语义天然一致，无需检测。
+#if NET6_0_OR_GREATER
+        if (services.Any(d =>
+                d.ServiceType == typeof(IEnhancedHttpClient)
+                && d.IsKeyedService
+                && d.ServiceKey is string key
+                && string.Equals(key, clientName, StringComparison.Ordinal)))
+        {
+            Debug.WriteLine(
+                $"[Mud.HttpUtils] 命名客户端 '{clientName}' 被重复注册。keyed 解析将使用最后一次注册，" +
+                "非 keyed 的 IEnhancedHttpClient 默认解析仍指向第一次注册的客户端，二者可能不一致；" +
+                "且 handler 管道会叠加重复的 TracingDelegatingHandler。请避免对同一名称多次调用 AddMudHttpClient。");
+        }
+#endif
+
 #if NET6_0_OR_GREATER
         // D4：与 EnhancedHttpClientFactory 的永久缓存语义对齐，避免同一命名客户端
         // 在 factory 路径与 keyed 路径解析出不同实例（生命周期语义分裂）。
@@ -218,6 +239,10 @@ public static class HttpClientServiceCollectionExtensions
                     logger.LogWarning(ex,
                         "AppManager ConfigurationChanged 订阅者异常：AppKey={AppKey}, ChangeType={ChangeType}",
                         AppKeyValidator.ToSafeText(appKey), changeType);
+
+                // MT-08：切换器工厂被覆盖的可观测性（原先静默覆盖）。
+                AppManagerDiagnostics.SwitcherFactoryOverwritten =
+                    switcherType => MudHttpClientLog.SwitcherFactoryOverwritten(logger, switcherType);
             }
             return new AppManagerDiagnosticsWiring();
         });
@@ -850,6 +875,18 @@ public static class HttpClientServiceCollectionExtensions
         // CFG-08：强制解析白名单热更新订阅者（惰性单例），确保首个客户端创建时即建立订阅。
         _ = sp.GetService<AllowedDomainsReloader>();
 
+        // MT-03：强制解析「只注册未解析」的接线组件。
+        // 二者此前仅 TryAddSingleton 注册，全仓无任何解析点 ⇒ 构造逻辑从未执行：
+        //   · AppManagerDiagnosticsWiring —— AppManagerDiagnostics.SubscriberFailed 恒为 null，
+        //     DefaultAppManager.OnConfigurationChanged 的订阅者异常被完全静默吞掉；
+        //   · EnhancedHttpClientFactoryChangeNotifier —— 从不订阅 IOptionsMonitor.OnChange，
+        //     keyed Singleton 客户端缓存永不失效，AllowCustomBaseUrls / BaseAddress / DefaultHeaders
+        //     的热更新完全不生效（CHANGELOG 声称其已生效，与实现不符）。
+        _ = sp.GetService<AppManagerDiagnosticsWiring>();
+#if NET6_0_OR_GREATER
+        _ = sp.GetService<EnhancedHttpClientFactoryChangeNotifier>();
+#endif
+
         var optionsMonitor = sp.GetService<IOptionsMonitor<MudHttpClientApplicationOptions>>();
         if (optionsMonitor != null)
         {
@@ -933,13 +970,76 @@ public static class HttpClientServiceCollectionExtensions
 
         var section = configuration.GetSection(sectionPath);
         if (!section.Exists())
+        {
+            // MT-12：原实现完全静默，配置节名拼写错误时宿主无从察觉（"配了却没生效"的常见根因）。
+            // 此处无 ILogger 可用（容器尚未构建），退化为 Debug 输出：Debug 构建可见、Release 零成本。
+            Debug.WriteLine(
+                $"[Mud.HttpUtils] 配置节 '{sectionPath}' 不存在，AddMudHttpClientsFromConfiguration 未注册任何命名客户端。请确认配置节名拼写。");
             return services;
+        }
 
         // 将配置注册到 DI，以便 CreateEnhancedClient 可以读取 AllowCustomBaseUrls 等属性
         // 使用 Configure<T>(IConfiguration) 重载（而非 section.Bind 的 Action<T> 重载），
         // 以注册 ConfigurationChangeTokenSource，支持 IOptionsMonitor<T> 热更新。
         services.Configure<MudHttpClientApplicationOptions>(section);
 
+        var options = new MudHttpClientApplicationOptions();
+        section.Bind(options);
+
+        AddMudHttpClientInfrastructure(services, options);
+
+        return services;
+    }
+
+    /// <summary>
+    /// MT-26：以编程式委托配置多命名客户端（AOT 友好），等价于
+    /// <see cref="AddMudHttpClientsFromConfiguration"/> 但不使用 <see cref="IConfiguration"/> 反射绑定。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <param name="configure">配置多客户端选项的委托。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> 或 <paramref name="configure"/> 为 null 时抛出。</exception>
+    /// <remarks>
+    /// <para>
+    /// Native AOT 场景的推荐入口：多处 <c>RequiresUnreferencedCode</c> /
+    /// <c>RequiresDynamicCode</c> 的 <c>Justification</c> 文本已引用本重载作为 AOT 替代路径
+    /// （此前该重载并不存在，属文档与实现不符）。
+    /// </para>
+    /// <para>
+    /// 注意：编程式委托不产生 <c>ConfigurationChangeTokenSource</c>，因此
+    /// <see cref="MudHttpClientApplicationOptions"/> 的**后续**热更新不生效（首值即终值）。
+    /// 需要配置热更新请改用 <see cref="AddMudHttpClientsFromConfiguration"/>。
+    /// </para>
+    /// </remarks>
+    public static IServiceCollection AddMudHttpClients(
+        this IServiceCollection services,
+        Action<MudHttpClientApplicationOptions> configure)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+        if (configure == null)
+            throw new ArgumentNullException(nameof(configure));
+
+        services.Configure(configure);
+
+        // 构造一次快照用于注册命名客户端（与配置入口同构）。
+        var options = new MudHttpClientApplicationOptions();
+        configure(options);
+
+        AddMudHttpClientInfrastructure(services, options);
+
+        return services;
+    }
+
+    /// <summary>
+    /// 多客户端注册的共用基础设施与逐客户端注册逻辑（配置入口 / 委托入口共用，保证两条路径行为一致）。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <param name="options">多客户端选项快照。</param>
+    private static void AddMudHttpClientInfrastructure(
+        IServiceCollection services,
+        MudHttpClientApplicationOptions options)
+    {
         // A1 修复：配置入口即隐式声明"多应用/多租户"意图，自动补齐上下文持有器，
         // 避免 per-app 能力因缺少一次 AddCurrentUserContext 调用而静默失效。
         services.AddMudHttpAppContextHolder();
@@ -953,8 +1053,13 @@ public static class HttpClientServiceCollectionExtensions
 #if NET6_0_OR_GREATER
         services.AddOptions<MudHttpAppManagementOptions>().ValidateOnStart();
 #endif
+        // MT-02：挂接真正的启动期接线自检（消费三个 Require* 开关与 RegisteredAppKeys）。
+        // 默认全部为「仅告警」，不阻断既有宿主的启动。
+        services.AddMudHttpAppManagementStartupValidation();
 
         // D4：注册配置变更通知器，使 keyed Singleton 客户端在配置变更时失效缓存。
+        // MT-03：订阅的建立由 CreateEnhancedClient 中的强制解析驱动（与 AllowedDomainsReloader 同惯例），
+        // 保证「首个客户端被创建」之前订阅一定存在；组件本身为单例，随容器释放退订。
 #if NET6_0_OR_GREATER
         services.TryAddSingleton<EnhancedHttpClientFactoryChangeNotifier>();
 #endif
@@ -962,17 +1067,17 @@ public static class HttpClientServiceCollectionExtensions
         // C4-P2：注册 URL 验证器到 DI，支持按应用隔离白名单与配置热更新。
         services.TryAddSingleton<IUrlValidator, DefaultUrlValidator>();
 
-        var options = new MudHttpClientApplicationOptions();
-        section.Bind(options);
-
-        // 自动配置全局域名白名单
+        // 自动配置全局域名白名单（种子值）
         if (options.AllowedDomains.Count > 0)
         {
             UrlValidator.ConfigureAllowedDomains(options.AllowedDomains);
         }
 
+        // MT-10：同步「白名单是否允许非 HTTPS」种子值（热更新路径由 AllowedDomainsReloader 重放）。
+        UrlValidator.SetAllowInsecureWhitelistedDomains(options.AllowInsecureWhitelistedDomains);
+
         // CFG-08：注册白名单热更新订阅者（首次同步应用 + 变更重放）。
-        // 解析时机见 AllowedDomainsReloader（net6+ 由 IHostedService 包装保证启动期解析）。
+        // 解析时机见 AllowedDomainsReloader（保证启动期解析）。
         services.TryAddSingleton<AllowedDomainsReloader>();
 
         foreach (var kvp in options.Clients)
@@ -980,14 +1085,20 @@ public static class HttpClientServiceCollectionExtensions
             var clientName = kvp.Key;
             var clientOptions = kvp.Value;
 
-            if (string.IsNullOrWhiteSpace(clientOptions.BaseAddress))
-                continue;
+            // MT-12：原实现在缺少 BaseAddress 时直接 continue，导致该客户端的
+            // TimeoutSeconds / DefaultHeaders / AllowCustomBaseUrls / AppKey 全部静默丢弃
+            // （仅由 IPostConfigureOptions 记一条 Warning）。现在仍注册客户端，仅不设置 BaseAddress：
+            // 超时与默认头照常生效；相对 URL 请求仍会按 HttpClient 语义失败并给出明确异常。
+            var hasBaseAddress = !string.IsNullOrWhiteSpace(clientOptions.BaseAddress);
+            var baseAddress = hasBaseAddress ? new Uri(clientOptions.BaseAddress!) : null;
 
-            var isDefault = string.Equals(clientName, options.DefaultClientName, StringComparison.OrdinalIgnoreCase);
+            // MT-13：客户端名统一 Ordinal（与命名 HttpClient / keyed DI / _clientCache 一致）。
+            var isDefault = string.Equals(clientName, options.DefaultClientName, StringComparison.Ordinal);
 
             services.AddMudHttpClient(clientName, client =>
             {
-                client.BaseAddress = new Uri(clientOptions.BaseAddress);
+                if (baseAddress != null)
+                    client.BaseAddress = baseAddress;
 
                 if (clientOptions.TimeoutSeconds.HasValue)
                     client.Timeout = TimeSpan.FromSeconds(clientOptions.TimeoutSeconds.Value);
@@ -1001,8 +1112,6 @@ public static class HttpClientServiceCollectionExtensions
                 }
             }, setAsDefault: isDefault);
         }
-
-        return services;
     }
 
     /// <summary>
@@ -1389,5 +1498,33 @@ public static class HttpClientServiceCollectionExtensions
             throw new InvalidOperationException(
                 "多应用管理接线不完整：\n" + string.Join("\n", errors.Select((e, i) => $"  {i + 1}. {e}")));
         }
+    }
+
+    /// <summary>
+    /// MT-02：把多应用管理接线自检挂接为启动期托管服务，使 <see cref="MudHttpAppManagementOptions"/>
+    /// 的三个开关（<c>RequireAppContextHolder</c> / <c>RequireAppManager</c> / <c>RequireAppAccessAuthorizer</c>）
+    /// 与 <c>RegisteredAppKeys</c> 真正被消费。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">参数为 null 时抛出。</exception>
+    /// <remarks>
+    /// <para>
+    /// 与 <see cref="ValidateMudHttpAppManagement"/>（手动调用、三项全为必需、缺失即抛）不同，
+    /// 本方法按 <see cref="MudHttpAppManagementOptions"/> 的开关决定「阻断启动」还是「仅记 Warning」，
+    /// 便于单应用宿主与多租户宿主各取所需。
+    /// </para>
+    /// <para>
+    /// 已由 <c>AddMudHttpClientsFromConfiguration</c> 自动挂接（MT-02）。
+    /// </para>
+    /// </remarks>
+    public static IServiceCollection AddMudHttpAppManagementStartupValidation(this IServiceCollection services)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        services.AddOptions<MudHttpAppManagementOptions>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, AppManagementStartupValidator>());
+        return services;
     }
 }
