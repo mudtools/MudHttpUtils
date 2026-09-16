@@ -912,6 +912,60 @@ public class AotDtoCoverageAnalyzerTests
         diagnostics.Where(d => d.Id == "AOT006").Should().BeEmpty();
     }
 
+    [Fact]
+    public void HttpJsonSerializable_OpenGenericCoveredByUnboundRegistration_NoAot006()
+    {
+        // 开放泛型（WidgetBase<T>）由 Scaffolder 以 unbound 形态 typeof(WidgetBase<>) 注册，
+        // 分析器应将其识别为已覆盖，不得误报 AOT006（修复见 AotDtoCoverageAnalyzer.IsCovered）。
+        var source = $$"""
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpJsonSerializable]
+                public abstract class WidgetBase<TValue> { public TValue? Value { get; set; } }
+
+                [System.Text.Json.Serialization.JsonSerializable(typeof(WidgetBase<>))]
+                internal sealed partial class AppJsonContext : System.Text.Json.Serialization.JsonSerializerContext
+                {
+                    public AppJsonContext(System.Text.Json.JsonSerializerOptions options) : base(options) { }
+                    protected override System.Text.Json.JsonSerializerOptions? GeneratedSerializerOptions => null;
+                    public override System.Text.Json.Serialization.Metadata.JsonTypeInfo? GetTypeInfo(System.Type type) => null;
+                }
+            }
+            """;
+
+        var diagnostics = AotDtoCoverageAnalyzer.AnalyzeHttpJsonSerializableCoverage(
+            CreateCompilation(source), CancellationToken.None);
+
+        diagnostics.Where(d => d.Id == "AOT006").Should().BeEmpty(
+            "开放泛型已由 unbound <> 注册覆盖，不应报 AOT006");
+    }
+
+    [Fact]
+    public void HttpJsonSerializable_OpenGenericNotCovered_ReportsAot006()
+    {
+        var source = $$"""
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpJsonSerializable]
+                public abstract class WidgetBase<TValue> { public TValue? Value { get; set; } }
+
+                {{ContextBoilerplate}}
+            }
+            """;
+
+        var diagnostics = AotDtoCoverageAnalyzer.AnalyzeHttpJsonSerializableCoverage(
+            CreateCompilation(source), CancellationToken.None);
+
+        diagnostics.Should().Contain(d => d.Id == "AOT006",
+            "开放泛型标注了 [HttpJsonSerializable] 但未被任何 Context 覆盖时应报 AOT006");
+    }
+
     // ───────────────────────── M10：引用程序集（PE 引用）Context 覆盖 ─────────────────────────
 
     [Fact]

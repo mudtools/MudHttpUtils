@@ -797,6 +797,15 @@ internal static class AotDtoCoverageAnalyzer
         if (coveredTypes.Contains(type))
             return true;
 
+        // [开放泛型覆盖] 开放泛型声明（如 WidgetBase<T>）已由 Scaffolder 以 unbound 形态（typeof(WidgetBase<>)）
+        // 注册于 Context（README「开放泛型：<T> 类型以 <> 写入 context，仅在 NET8_0_OR_GREATER 下源生成」）。
+        // 但 SymbolEqualityComparer 无法把「类型定义符号」与「unbound 泛型符号」判为相等，导致此类类型被误报 AOT006。
+        // 故对开放泛型定义做一次 ConstructUnboundGenericType 归一化匹配，消除该误报。
+        if (type.IsGenericType && type.IsDefinition && type.TypeParameters.Length > 0)
+        {
+            return coveredTypes.Contains(type.ConstructUnboundGenericType());
+        }
+
         // 解包 Nullable<T>
         if (type.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T &&
             type.TypeArguments.Length > 0 &&
