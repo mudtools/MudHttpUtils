@@ -755,6 +755,8 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 | `HTTPCLIENT027` | Error | `[Timeout(ms)]` 有效取值 `<= 0`（含负值；命名参数 `TimeoutMilliseconds` 与位置参数并存时命名参数优先） | 改为正毫秒数；如需取消方法级超时请移除 `[Timeout]` 特性（未声明即 `MethodTimeoutEnabled = false`，不会触发本诊断） | 否 | 是 |
 | `HTTPCLIENT028` | Warning | 继承模式下派生类与基类的应用切换来源不同（TokenManage 与默认模式混合），生成的 `UseApp`/`BeginScope` 使用 `new` 隐藏基类成员 | 通过派生接口调用切换方法，或统一两级的 TokenManage 配置 | 否 | 是 |
 | `HTTPCLIENT030` | Warning | `[Cache]` 应用于文件下载方法（含 `[FilePath]` 参数） | 文件下载写入本地文件、不存在可复用的响应体，缓存不会生效；请移除 `[Cache]` | 否 | 是 |
+| `HTTPCLIENT031` | Error | `[Cache]` 方法的默认缓存键包含无法稳定表达的参数（复杂对象 / `[Body]` / `[QueryMap]` / 非标量数组等）且未提供 `CacheKeyTemplate` | 默认键会退化为类型名，导致不同请求命中同一缓存并返回错误数据。请改用 `[Cache(..., CacheKeyTemplate = "…")]` 显式声明键模板，或移除 `[Cache]` | 否 | 是 |
+| `HTTPCLIENT032` | Warning | `[Cache]` 提供了 `CacheKeyTemplate`，但模板未引用某 Unsafe 参数 | 不同取值可能命中同一缓存（串键）。请在模板中加入该参数（字面量检查，尽力而为） | 否 | 是 |
 
 > **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010`、`HTTPCLIENT019` 当前**未使用**（ID 保留为占位，不重新分配）。
 > - `HTTPCLIENT010`：`BaseAddress` 已移除（CFG-27），使用直接编译错误 `CS0117`，无需生成器提示。

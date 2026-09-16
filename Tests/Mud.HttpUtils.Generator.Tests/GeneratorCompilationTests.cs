@@ -2,6 +2,22 @@ namespace Mud.HttpUtils.Generator.Tests;
 
 public class GeneratorCompilationTests
 {
+    /// <summary>
+    /// [G6-A / GEN-10] 模拟 <c>&lt;ImplicitUsings&gt;enable&lt;/ImplicitUsings&gt;</c> 的标准隐式 using。
+    /// 原用例的输入源省略了这些 using（真实消费项目在项目文件中全局启用），
+    /// 因此直接编译会因缺 using 而失败；补齐后再做整体编译断言，输入等价于合法消费配置。
+    /// </summary>
+    private const string ImplicitUsingsPreamble = """
+        global using System;
+        global using System.Collections.Generic;
+        global using System.IO;
+        global using System.Linq;
+        global using System.Net.Http;
+        global using System.Threading;
+        global using System.Threading.Tasks;
+
+        """;
+
     private Compilation CreateCompilation(string source)
     {
         var references = BasicReferenceAssemblies.GetReferences();
@@ -16,11 +32,20 @@ public class GeneratorCompilationTests
 
     private (ImmutableArray<Diagnostic> diagnostics, Compilation outputCompilation) RunGenerator(string source)
     {
-        var compilation = CreateCompilation(source);
+        var compilation = CreateCompilation(ImplicitUsingsPreamble + source);
         var generator = new HttpInvokeClassSourceGenerator();
         CSharpGeneratorDriver driver = CSharpGeneratorDriver.Create(generator);
 
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
+
+        // [G6-A / GEN-10] 真编译断言：既有实现只断言「生成器自身诊断 + 文本 Contains」，
+        // 从不检查 outputCompilation.GetDiagnostics() → 生成不可编译代码时测试仍静默通过。
+        // 现补齐「输入 + 生成产物」整体无 Error 级编译诊断断言（与 VerifyFixture 口径一致）。
+        var errors = outputCompilation.GetDiagnostics()
+            .Where(d => d.Severity == DiagnosticSeverity.Error)
+            .ToArray();
+        errors.Should().BeEmpty(
+            $"生成产物必须可编译（GEN-10）；错误：{string.Join("\n", errors.Select(e => e.ToString()))}");
 
         return (diagnostics, outputCompilation);
     }
@@ -265,7 +290,6 @@ namespace TestNamespace
     public interface ITestApi
     {
         [Post(""/upload"")]
-        [MultipartForm]
         Task<string> UploadAsync([Upload] Stream fileStream, [Form] string description);
     }
 }";
@@ -321,7 +345,7 @@ using Mud.HttpUtils.Attributes;
 namespace TestNamespace
 {
     [HttpClientApi]
-    [InterfaceQuery(Name = ""version"", Value = ""v1"")]
+    [InterfaceQuery("version", "v1")]
     public interface ITestApi
     {
         [Get(""/data"")]

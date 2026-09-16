@@ -18,12 +18,12 @@ Mud.HttpUtils.Resilience.CircuitBreakerOptions.MinimumThroughput.set -> void
 Mud.HttpUtils.Resilience.CircuitBreakerOptions.SamplingDurationSeconds.get -> int
 Mud.HttpUtils.Resilience.CircuitBreakerOptions.SamplingDurationSeconds.set -> void
 Mud.HttpUtils.Resilience.IResiliencePolicyProvider
-Mud.HttpUtils.Resilience.IResiliencePolicyProvider.GetCircuitBreakerPolicy<TResult>() -> Polly.IAsyncPolicy<TResult>!
-Mud.HttpUtils.Resilience.IResiliencePolicyProvider.GetCombinedPolicy<TResult>() -> Polly.IAsyncPolicy<TResult>!
-Mud.HttpUtils.Resilience.IResiliencePolicyProvider.GetMethodPolicy<TResult>(bool retryEnabled = false, int maxRetries = 3, int delayMilliseconds = 1000, bool useExponentialBackoff = true, bool circuitBreakerEnabled = false, int failureThreshold = 5, int breakDurationSeconds = 30, bool timeoutEnabled = false, int timeoutMilliseconds = 30000, int samplingDurationSeconds = 0, int minimumThroughput = 10) -> Polly.IAsyncPolicy<TResult>!
-Mud.HttpUtils.Resilience.IResiliencePolicyProvider.GetRetryPolicy<TResult>() -> Polly.IAsyncPolicy<TResult>!
-Mud.HttpUtils.Resilience.IResiliencePolicyProvider.GetTimeoutAndCircuitBreakerPolicy<TResult>() -> Polly.IAsyncPolicy<TResult>!
-Mud.HttpUtils.Resilience.IResiliencePolicyProvider.GetTimeoutPolicy<TResult>() -> Polly.IAsyncPolicy<TResult>!
+Mud.HttpUtils.Resilience.IResiliencePolicyProvider.GetCircuitBreakerPolicy<TResult>(string! scope) -> Polly.IAsyncPolicy<TResult>!
+Mud.HttpUtils.Resilience.IResiliencePolicyProvider.GetCombinedPolicy<TResult>(string! scope) -> Polly.IAsyncPolicy<TResult>!
+Mud.HttpUtils.Resilience.IResiliencePolicyProvider.GetMethodPolicy<TResult>(bool retryEnabled, int maxRetries, int delayMilliseconds, bool useExponentialBackoff, bool circuitBreakerEnabled, int failureThreshold, int breakDurationSeconds, bool timeoutEnabled, int timeoutMilliseconds, int samplingDurationSeconds, int minimumThroughput, string! scope) -> Polly.IAsyncPolicy<TResult>!
+Mud.HttpUtils.Resilience.IResiliencePolicyProvider.GetRetryPolicy<TResult>(string! scope) -> Polly.IAsyncPolicy<TResult>!
+Mud.HttpUtils.Resilience.IResiliencePolicyProvider.GetTimeoutAndCircuitBreakerPolicy<TResult>(string! scope) -> Polly.IAsyncPolicy<TResult>!
+Mud.HttpUtils.Resilience.IResiliencePolicyProvider.GetTimeoutPolicy<TResult>(string! scope) -> Polly.IAsyncPolicy<TResult>!
 Mud.HttpUtils.Resilience.Observability.RetryDiagnosticPayload
 Mud.HttpUtils.Resilience.Observability.RetryDiagnosticPayload.DelayMs.get -> double
 Mud.HttpUtils.Resilience.Observability.RetryDiagnosticPayload.ExceptionType.get -> string?
@@ -37,12 +37,12 @@ Mud.HttpUtils.Resilience.Observability.TimeoutDiagnosticPayload.TimeoutDiagnosti
 Mud.HttpUtils.Resilience.Observability.TimeoutDiagnosticPayload.TimeoutMs.get -> double
 Mud.HttpUtils.Resilience.Observability.TimeoutDiagnosticPayload.Timestamp.get -> System.DateTimeOffset
 Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider
-Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetCircuitBreakerPolicy<TResult>() -> Polly.IAsyncPolicy<TResult>!
-Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetCombinedPolicy<TResult>() -> Polly.IAsyncPolicy<TResult>!
-Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetMethodPolicy<TResult>(bool retryEnabled = false, int maxRetries = 3, int delayMilliseconds = 1000, bool useExponentialBackoff = true, bool circuitBreakerEnabled = false, int failureThreshold = 5, int breakDurationSeconds = 30, bool timeoutEnabled = false, int timeoutMilliseconds = 30000, int samplingDurationSeconds = 0, int minimumThroughput = 10) -> Polly.IAsyncPolicy<TResult>!
-Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetRetryPolicy<TResult>() -> Polly.IAsyncPolicy<TResult>!
-Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetTimeoutAndCircuitBreakerPolicy<TResult>() -> Polly.IAsyncPolicy<TResult>!
-Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetTimeoutPolicy<TResult>() -> Polly.IAsyncPolicy<TResult>!
+Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetCircuitBreakerPolicy<TResult>(string! scope) -> Polly.IAsyncPolicy<TResult>!
+Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetCombinedPolicy<TResult>(string! scope) -> Polly.IAsyncPolicy<TResult>!
+Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetMethodPolicy<TResult>(bool retryEnabled, int maxRetries, int delayMilliseconds, bool useExponentialBackoff, bool circuitBreakerEnabled, int failureThreshold, int breakDurationSeconds, bool timeoutEnabled, int timeoutMilliseconds, int samplingDurationSeconds, int minimumThroughput, string! scope) -> Polly.IAsyncPolicy<TResult>!
+Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetRetryPolicy<TResult>(string! scope) -> Polly.IAsyncPolicy<TResult>!
+Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetTimeoutAndCircuitBreakerPolicy<TResult>(string! scope) -> Polly.IAsyncPolicy<TResult>!
+Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetTimeoutPolicy<TResult>(string! scope) -> Polly.IAsyncPolicy<TResult>!
 Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.PollyResiliencePolicyProvider(Microsoft.Extensions.Options.IOptions<Mud.HttpUtils.Resilience.ResilienceOptions!>! options, Microsoft.Extensions.Logging.ILogger<Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider!>? logger = null) -> void
 Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.PollyResiliencePolicyProvider(Mud.HttpUtils.Resilience.ResilienceOptions? options = null, Microsoft.Extensions.Logging.ILogger? logger = null) -> void
 Mud.HttpUtils.Resilience.ResilienceConstants
@@ -51,7 +51,15 @@ Mud.HttpUtils.Resilience.ResilienceOptions.CircuitBreaker.get -> Mud.HttpUtils.R
 Mud.HttpUtils.Resilience.ResilienceOptions.CircuitBreaker.set -> void
 Mud.HttpUtils.Resilience.ResilienceOptions.MaxCloneContentSize.get -> long
 Mud.HttpUtils.Resilience.ResilienceOptions.MaxCloneContentSize.set -> void
+Mud.HttpUtils.Resilience.ResilienceOptions.MaxPolicyCacheSize.get -> int
+Mud.HttpUtils.Resilience.ResilienceOptions.MaxPolicyCacheSize.set -> void
+Mud.HttpUtils.Resilience.ResilienceOptions.PolicyScope.get -> Mud.HttpUtils.Resilience.ResiliencePolicyScope
+Mud.HttpUtils.Resilience.ResilienceOptions.PolicyScope.set -> void
 Mud.HttpUtils.Resilience.ResilienceOptions.ResilienceOptions() -> void
+Mud.HttpUtils.Resilience.ResiliencePolicyScope
+Mud.HttpUtils.Resilience.ResiliencePolicyScope.Global = 0 -> Mud.HttpUtils.Resilience.ResiliencePolicyScope
+Mud.HttpUtils.Resilience.ResiliencePolicyScope.PerClient = 2 -> Mud.HttpUtils.Resilience.ResiliencePolicyScope
+Mud.HttpUtils.Resilience.ResiliencePolicyScope.PerHost = 1 -> Mud.HttpUtils.Resilience.ResiliencePolicyScope
 Mud.HttpUtils.Resilience.ResilienceOptions.Retry.get -> Mud.HttpUtils.Resilience.RetryOptions!
 Mud.HttpUtils.Resilience.ResilienceOptions.Retry.set -> void
 Mud.HttpUtils.Resilience.ResilienceOptions.Timeout.get -> Mud.HttpUtils.Resilience.TimeoutOptions!

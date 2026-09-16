@@ -4,9 +4,9 @@ using Mud.HttpUtils.Resilience;
 namespace Mud.HttpUtils.Resilience.Tests;
 
 /// <summary>
-/// ShouldRetry 行为测试：验证重试状态码判断逻辑（问题 7 / M3-#20 修复验证）。
-/// 在 netstandard2.0 下，HttpRequestException 没有 StatusCode 属性，
-/// ShouldRetry 通过 Data["HttpStatusCode"] 获取结构化状态码（无状态码 = 传输层故障，判定重试）。
+/// ShouldRetry 行为测试：验证重试状态码判断逻辑（问�?7 / M3-#20 修复验证）�?
+/// �?netstandard2.0 下，HttpRequestException 没有 StatusCode 属性，
+/// ShouldRetry 通过 Data["HttpStatusCode"] 获取结构化状态码（无状态码 = 传输层故障，判定重试）�?
 /// </summary>
 public class ShouldRetryTests
 {
@@ -25,7 +25,7 @@ public class ShouldRetryTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetRetryPolicy<HttpResponseMessage>();
+        var policy = provider.GetRetryPolicy<HttpResponseMessage>(It.IsAny<string>());
 
         var attempt = 0;
         Func<Task<HttpResponseMessage>> action = () =>
@@ -59,7 +59,7 @@ public class ShouldRetryTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetRetryPolicy<HttpResponseMessage>();
+        var policy = provider.GetRetryPolicy<HttpResponseMessage>(It.IsAny<string>());
 
         var attempt = 0;
         Func<Task<HttpResponseMessage>> action = () =>
@@ -88,7 +88,7 @@ public class ShouldRetryTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetRetryPolicy<HttpResponseMessage>();
+        var policy = provider.GetRetryPolicy<HttpResponseMessage>(It.IsAny<string>());
 
         var attempt = 0;
         Func<Task<HttpResponseMessage>> action = () =>
@@ -119,7 +119,7 @@ public class ShouldRetryTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetRetryPolicy<HttpResponseMessage>();
+        var policy = provider.GetRetryPolicy<HttpResponseMessage>(It.IsAny<string>());
 
         var attempt = 0;
         Func<Task<HttpResponseMessage>> action = () =>
@@ -150,7 +150,7 @@ public class ShouldRetryTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetRetryPolicy<HttpResponseMessage>();
+        var policy = provider.GetRetryPolicy<HttpResponseMessage>(It.IsAny<string>());
 
         using var cts = new CancellationTokenSource();
         cts.Cancel();
@@ -165,7 +165,7 @@ public class ShouldRetryTests
         var act = async () => await policy.ExecuteAsync(action);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
-        attempt.Should().Be(1); // 取消导致的异常不应重试
+        attempt.Should().Be(1); // 取消导致的异常不应重�?
     }
 
     [Fact]
@@ -174,11 +174,18 @@ public class ShouldRetryTests
         var provider = new PollyResiliencePolicyProvider(new ResilienceOptions());
 
         var policy = provider.GetMethodPolicy<string>(
+            retryEnabled: false,
+            maxRetries: 3,
+            delayMilliseconds: 1000,
+            useExponentialBackoff: true,
             circuitBreakerEnabled: true,
             failureThreshold: 50,
             breakDurationSeconds: 30,
+            timeoutEnabled: false,
+            timeoutMilliseconds: 30000,
             samplingDurationSeconds: 60,
-            minimumThroughput: 10);
+            minimumThroughput: 10,
+            scope: "global");
 
         policy.Should().NotBeNull();
 
@@ -196,9 +203,15 @@ public class ShouldRetryTests
             retryEnabled: true,
             maxRetries: 2,
             delayMilliseconds: 1,
+            useExponentialBackoff: true,
             circuitBreakerEnabled: true,
             failureThreshold: 5,
-            breakDurationSeconds: 30);
+            breakDurationSeconds: 30,
+            timeoutEnabled: false,
+            timeoutMilliseconds: 30000,
+            samplingDurationSeconds: 0,
+            minimumThroughput: 10,
+            scope: "global");
 
         policy.Should().NotBeNull();
 
@@ -224,14 +237,23 @@ public class ShouldRetryTests
         var provider = new PollyResiliencePolicyProvider(new ResilienceOptions());
 
         var policy1 = provider.GetMethodPolicy<string>(
-            retryEnabled: true, maxRetries: 3, delayMilliseconds: 1000);
+            retryEnabled: true, maxRetries: 3, delayMilliseconds: 1000,
+            useExponentialBackoff: true, circuitBreakerEnabled: false, failureThreshold: 5,
+            breakDurationSeconds: 30, timeoutEnabled: false, timeoutMilliseconds: 30000,
+            samplingDurationSeconds: 0, minimumThroughput: 10, scope: "global");
         var policy2 = provider.GetMethodPolicy<string>(
-            retryEnabled: true, maxRetries: 3, delayMilliseconds: 1000);
+            retryEnabled: true, maxRetries: 3, delayMilliseconds: 1000,
+            useExponentialBackoff: true, circuitBreakerEnabled: false, failureThreshold: 5,
+            breakDurationSeconds: 30, timeoutEnabled: false, timeoutMilliseconds: 30000,
+            samplingDurationSeconds: 0, minimumThroughput: 10, scope: "global");
 
         policy1.Should().BeSameAs(policy2);
 
         var policy3 = provider.GetMethodPolicy<string>(
-            retryEnabled: true, maxRetries: 5, delayMilliseconds: 1000);
+            retryEnabled: true, maxRetries: 5, delayMilliseconds: 1000,
+            useExponentialBackoff: true, circuitBreakerEnabled: false, failureThreshold: 5,
+            breakDurationSeconds: 30, timeoutEnabled: false, timeoutMilliseconds: 30000,
+            samplingDurationSeconds: 0, minimumThroughput: 10, scope: "global");
 
         policy3.Should().NotBeSameAs(policy1);
     }

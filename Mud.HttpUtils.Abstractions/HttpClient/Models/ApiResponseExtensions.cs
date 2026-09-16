@@ -38,7 +38,9 @@ public static class ApiResponseExtensions
     {
         if ((int)response.StatusCode < 200 || (int)response.StatusCode >= 300)
         {
+#pragma warning disable CS0618 // ResponseMessage 已废弃，但此处仅为兼容自定义执行器路径
             var requestUri = response.ResponseMessage?.RequestMessage?.RequestUri?.ToString();
+#pragma warning restore CS0618
             throw new ApiException(response.StatusCode, response.ErrorContent, requestUri);
         }
         return response;

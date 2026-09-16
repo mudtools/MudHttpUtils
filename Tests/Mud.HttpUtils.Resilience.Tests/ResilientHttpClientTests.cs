@@ -63,9 +63,9 @@ public class ResilientHttpClientTests
     }
 
     /// <summary>
-    /// M3-#21 smoke：WithBaseAddress 后日志仍可用。
-    /// 字段已收强为 <c>ILogger&lt;ResilientHttpClient&gt;</c>，WithBaseAddress 直接透传原 logger（无向下强转点）；
-    /// 新实例走非幂等跳过重试路径时应正常写出日志。
+    /// M3-#21 smoke：WithBaseAddress 后日志仍可用�?
+    /// 字段已收强为 <c>ILogger&lt;ResilientHttpClient&gt;</c>，WithBaseAddress 直接透传�?logger（无向下强转点）�?
+    /// 新实例走非幂等跳过重试路径时应正常写出日志�?
     /// </summary>
     [Fact]
     public async Task WithBaseAddress_ThenSend_LoggerStillUsable()
@@ -76,7 +76,7 @@ public class ResilientHttpClientTests
             .Setup(c => c.PostAsJsonAsync<string, string>(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Returns<string, string, CancellationToken>((_, _, _) => Task.FromException<string?>(new HttpRequestException("boom")));
         var mockLogger = new Mock<ILogger<ResilientHttpClient>>();
-        // LoggerMessage 源生成代码先检查 IsEnabled，默认 false 会跳过写日志
+        // LoggerMessage 源生成代码先检�?IsEnabled，默�?false 会跳过写日志
         mockLogger.Setup(l => l.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
         var policyProvider = new PollyResiliencePolicyProvider(new ResilienceOptions
         {
@@ -89,7 +89,7 @@ public class ResilientHttpClientTests
         var act = () => rebased.PostAsJsonAsync<string, string>("https://api.example.com/orders", "payload");
         await act.Should().ThrowAsync<HttpRequestException>();
 
-        // 非幂等 POST 默认跳过重试（仅 1 次调用），该路径经新实例的 _logger 写日志
+        // 非幂�?POST 默认跳过重试（仅 1 次调用），该路径经新实例�?_logger 写日�?
         mockInner.Verify(c => c.PostAsJsonAsync<string, string>(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
         mockLogger.Verify(
             l => l.Log(
@@ -138,7 +138,7 @@ public class ResilientHttpClientTests
         mockInner.Setup(c => c.SendAsync<string>(It.IsAny<HttpRequestMessage>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("result");
         var mockPolicyProvider = new Mock<IResiliencePolicyProvider>();
-        mockPolicyProvider.Setup(p => p.GetTimeoutAndCircuitBreakerPolicy<string>())
+        mockPolicyProvider.Setup(p => p.GetTimeoutAndCircuitBreakerPolicy<string>(It.IsAny<string>()))
             .Returns(Polly.Policy.NoOpAsync<string>());
         var mockLogger = new Mock<ILogger<ResilientHttpClient>>();
         var options = new ResilienceOptions { MaxCloneContentSize = 100 };
@@ -155,8 +155,8 @@ public class ResilientHttpClientTests
         await client.SendAsync<string>(request);
 
         mockInner.Verify(c => c.SendAsync<string>(It.IsAny<HttpRequestMessage>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
-        mockPolicyProvider.Verify(p => p.GetCombinedPolicy<string>(), Times.Never);
-        mockPolicyProvider.Verify(p => p.GetTimeoutAndCircuitBreakerPolicy<string>(), Times.Once);
+        mockPolicyProvider.Verify(p => p.GetCombinedPolicy<string>(It.IsAny<string>()), Times.Never);
+        mockPolicyProvider.Verify(p => p.GetTimeoutAndCircuitBreakerPolicy<string>(It.IsAny<string>()), Times.Once);
     }
 
     [Fact]
@@ -166,7 +166,7 @@ public class ResilientHttpClientTests
         mockInner.Setup(c => c.SendAsync<string>(It.IsAny<HttpRequestMessage>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("result");
         var mockPolicyProvider = new Mock<IResiliencePolicyProvider>();
-        mockPolicyProvider.Setup(p => p.GetCombinedPolicy<string>())
+        mockPolicyProvider.Setup(p => p.GetCombinedPolicy<string>(It.IsAny<string>()))
             .Returns(Polly.Policy.NoOpAsync<string>());
         var mockLogger = new Mock<ILogger<ResilientHttpClient>>();
         var options = new ResilienceOptions { MaxCloneContentSize = 10 * 1024 * 1024 };
@@ -177,7 +177,7 @@ public class ResilientHttpClientTests
 
         await client.SendAsync<string>(request);
 
-        mockPolicyProvider.Verify(p => p.GetCombinedPolicy<string>(), Times.Once);
+        mockPolicyProvider.Verify(p => p.GetCombinedPolicy<string>(It.IsAny<string>()), Times.Once);
     }
 
     [Fact]
@@ -187,7 +187,7 @@ public class ResilientHttpClientTests
         mockInner.Setup(c => c.SendAsync<string>(It.IsAny<HttpRequestMessage>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("result");
         var mockPolicyProvider = new Mock<IResiliencePolicyProvider>();
-        mockPolicyProvider.Setup(p => p.GetCombinedPolicy<string>())
+        mockPolicyProvider.Setup(p => p.GetCombinedPolicy<string>(It.IsAny<string>()))
             .Returns(Polly.Policy.NoOpAsync<string>());
         var mockLogger = new Mock<ILogger<ResilientHttpClient>>();
 
@@ -197,7 +197,7 @@ public class ResilientHttpClientTests
 
         await client.SendAsync<string>(request);
 
-        mockPolicyProvider.Verify(p => p.GetCombinedPolicy<string>(), Times.Once);
+        mockPolicyProvider.Verify(p => p.GetCombinedPolicy<string>(It.IsAny<string>()), Times.Once);
     }
 
     [Fact]
@@ -207,7 +207,7 @@ public class ResilientHttpClientTests
         mockInner.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
         var mockPolicyProvider = new Mock<IResiliencePolicyProvider>();
-        mockPolicyProvider.Setup(p => p.GetTimeoutAndCircuitBreakerPolicy<HttpResponseMessage>())
+        mockPolicyProvider.Setup(p => p.GetTimeoutAndCircuitBreakerPolicy<HttpResponseMessage>(It.IsAny<string>()))
             .Returns(Polly.Policy.NoOpAsync<HttpResponseMessage>());
         var mockLogger = new Mock<ILogger<ResilientHttpClient>>();
         var options = new ResilienceOptions { MaxCloneContentSize = 100 };
@@ -224,8 +224,8 @@ public class ResilientHttpClientTests
         await client.SendRawAsync(request);
 
         mockInner.Verify(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()), Times.Once);
-        mockPolicyProvider.Verify(p => p.GetCombinedPolicy<HttpResponseMessage>(), Times.Never);
-        mockPolicyProvider.Verify(p => p.GetTimeoutAndCircuitBreakerPolicy<HttpResponseMessage>(), Times.Once);
+        mockPolicyProvider.Verify(p => p.GetCombinedPolicy<HttpResponseMessage>(It.IsAny<string>()), Times.Never);
+        mockPolicyProvider.Verify(p => p.GetTimeoutAndCircuitBreakerPolicy<HttpResponseMessage>(It.IsAny<string>()), Times.Once);
     }
 
     [Fact]
@@ -235,7 +235,7 @@ public class ResilientHttpClientTests
         mockInner.Setup(c => c.SendAsync<string>(It.IsAny<HttpRequestMessage>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("result");
         var mockPolicyProvider = new Mock<IResiliencePolicyProvider>();
-        mockPolicyProvider.Setup(p => p.GetCombinedPolicy<string>())
+        mockPolicyProvider.Setup(p => p.GetCombinedPolicy<string>(It.IsAny<string>()))
             .Returns(Polly.Policy.NoOpAsync<string>());
         var mockLogger = new Mock<ILogger<ResilientHttpClient>>();
 
@@ -251,7 +251,7 @@ public class ResilientHttpClientTests
         await client.SendAsync<string>(request);
 
         mockInner.Verify(c => c.SendAsync<string>(It.IsAny<HttpRequestMessage>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
-        mockPolicyProvider.Verify(p => p.GetCombinedPolicy<string>(), Times.Never);
+        mockPolicyProvider.Verify(p => p.GetCombinedPolicy<string>(It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
@@ -261,7 +261,7 @@ public class ResilientHttpClientTests
         mockInner.Setup(c => c.SendAsync<string>(It.IsAny<HttpRequestMessage>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("result");
         var mockPolicyProvider = new Mock<IResiliencePolicyProvider>();
-        mockPolicyProvider.Setup(p => p.GetCombinedPolicy<string>())
+        mockPolicyProvider.Setup(p => p.GetCombinedPolicy<string>(It.IsAny<string>()))
             .Returns(Polly.Policy.NoOpAsync<string>());
         var mockLogger = new Mock<ILogger<ResilientHttpClient>>();
 
@@ -271,7 +271,7 @@ public class ResilientHttpClientTests
 
         await client.SendAsync<string>(request);
 
-        mockPolicyProvider.Verify(p => p.GetCombinedPolicy<string>(), Times.Once);
+        mockPolicyProvider.Verify(p => p.GetCombinedPolicy<string>(It.IsAny<string>()), Times.Once);
     }
 
     [Fact]
@@ -281,7 +281,7 @@ public class ResilientHttpClientTests
         mockInner.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new HttpResponseMessage(System.Net.HttpStatusCode.OK));
         var mockPolicyProvider = new Mock<IResiliencePolicyProvider>();
-        mockPolicyProvider.Setup(p => p.GetCombinedPolicy<HttpResponseMessage>())
+        mockPolicyProvider.Setup(p => p.GetCombinedPolicy<HttpResponseMessage>(It.IsAny<string>()))
             .Returns(Polly.Policy.NoOpAsync<HttpResponseMessage>());
         var mockLogger = new Mock<ILogger<ResilientHttpClient>>();
 
@@ -297,6 +297,6 @@ public class ResilientHttpClientTests
         await client.SendRawAsync(request);
 
         mockInner.Verify(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()), Times.Once);
-        mockPolicyProvider.Verify(p => p.GetCombinedPolicy<HttpResponseMessage>(), Times.Never);
+        mockPolicyProvider.Verify(p => p.GetCombinedPolicy<HttpResponseMessage>(It.IsAny<string>()), Times.Never);
     }
 }

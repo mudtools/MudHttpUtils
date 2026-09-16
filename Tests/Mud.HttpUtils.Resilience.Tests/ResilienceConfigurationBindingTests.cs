@@ -467,7 +467,7 @@ public class ResilienceConfigurationBindingTests
         var provider = new PollyResiliencePolicyProvider(options);
 
         var callCount = 0;
-        var policy = provider.GetRetryPolicy<string>();
+        var policy = provider.GetRetryPolicy<string>("global");
         await Assert.ThrowsAsync<HttpRequestException>(async () =>
         {
             await policy.ExecuteAsync(async _ =>
@@ -496,7 +496,7 @@ public class ResilienceConfigurationBindingTests
         var provider = new PollyResiliencePolicyProvider(options);
 
         var callCount = 0;
-        var policy = provider.GetRetryPolicy<string>();
+        var policy = provider.GetRetryPolicy<string>("global");
         await Assert.ThrowsAsync<TimeoutRejectedException>(async () =>
         {
             await policy.ExecuteAsync(async _ =>
@@ -525,7 +525,7 @@ public class ResilienceConfigurationBindingTests
         var provider = new PollyResiliencePolicyProvider(options);
 
         var callCount = 0;
-        var policy = provider.GetRetryPolicy<string>();
+        var policy = provider.GetRetryPolicy<string>("global");
         await Assert.ThrowsAsync<HttpRequestException>(async () =>
         {
             await policy.ExecuteAsync(async _ =>

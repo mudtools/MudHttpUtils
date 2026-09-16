@@ -38,18 +38,20 @@ public class AsyncEnumerableExtensionsTests : IClassFixture<UrlValidatorFixture>
     }
 
     [Fact]
-    public async Task SendAsAsyncEnumerable_WithNullClient_ThrowsNullReferenceException()
+    public async Task StreamNdJsonAsync_WithNullClient_ThrowsArgumentNullException()
     {
+        // M5-HC-10：扩展方法重命名后不再被实例方法遮蔽，null 守卫可达
         IBaseHttpClient client = null!;
         var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/stream");
 
         var act = async () =>
         {
-            var enumerator = client.SendAsAsyncEnumerable<string>(request).GetAsyncEnumerator();
+            var enumerator = AsyncEnumerableExtensions.StreamNdJsonAsync<string>(client, request).GetAsyncEnumerator();
             await enumerator.MoveNextAsync();
         };
 
-        await act.Should().ThrowAsync<NullReferenceException>();
+        await act.Should().ThrowAsync<ArgumentNullException>()
+            .WithParameterName("client");
     }
 
     [Fact]

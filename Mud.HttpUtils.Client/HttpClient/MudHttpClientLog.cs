@@ -412,6 +412,18 @@ internal static partial class MudHttpClientLog
                   "若在 URL 校验白名单外的域名上启用白名单直通，DNS rebinding 到内网 IP 将不受连接期防护。建议在该命名客户端的 " +
                   "IHttpClientBuilder 上调用 AddMudHttpClientSsrfProtection(builder)（net6.0+）启用连接建立时的 IP 准入校验。")]
     public static partial void SsrfGuidance(ILogger logger);
+
+    // ---- M5-HC-05：不可重放内容跳过重试（EventId 169）----
+
+    [LoggerMessage(EventId = 169, Level = LogLevel.Warning,
+        Message = "请求体不可安全重放（原因: {Reason}），已跳过重试（超时/熔断仍生效）。")]
+    public static partial void RetrySkippedNonReplayable(ILogger logger, string reason);
+
+    // ---- M5-HC-06：策略缓存超限（EventId 170）----
+
+    [LoggerMessage(EventId = 170, Level = LogLevel.Warning,
+        Message = "弹性策略缓存已达上限 ({MaxPolicyCacheSize})，新作用域将不缓存策略实例。")]
+    public static partial void PolicyCacheFull(ILogger logger, int maxPolicyCacheSize);
 #else
     private static readonly Action<ILogger, string, Exception?> s_tokenManagerRegistered =
         LoggerMessage.Define<string>(LogLevel.Debug, new EventId(131, nameof(TokenManagerRegistered)),
@@ -653,6 +665,22 @@ internal static partial class MudHttpClientLog
             "IHttpClientBuilder 上调用 AddMudHttpClientSsrfProtection(builder)（net6.0+）启用连接建立时的 IP 准入校验。");
     public static void SsrfGuidance(ILogger logger)
         => s_ssrfGuidance(logger, null);
+
+    // ---- M5-HC-05：不可重放内容跳过重试（EventId 169）----
+
+    private static readonly Action<ILogger, string, Exception?> s_retrySkippedNonReplayable =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(169, nameof(RetrySkippedNonReplayable)),
+            "请求体不可安全重放（原因: {Reason}），已跳过重试（超时/熔断仍生效）。");
+    public static void RetrySkippedNonReplayable(ILogger logger, string reason)
+        => s_retrySkippedNonReplayable(logger, reason, null);
+
+    // ---- M5-HC-06：策略缓存超限（EventId 170）----
+
+    private static readonly Action<ILogger, int, Exception?> s_policyCacheFull =
+        LoggerMessage.Define<int>(LogLevel.Warning, new EventId(170, nameof(PolicyCacheFull)),
+            "弹性策略缓存已达上限 ({MaxPolicyCacheSize})，新作用域将不缓存策略实例。");
+    public static void PolicyCacheFull(ILogger logger, int maxPolicyCacheSize)
+        => s_policyCacheFull(logger, maxPolicyCacheSize, null);
 #endif
 
     #endregion

@@ -128,13 +128,22 @@ public class Response<T> : IApiResponse<T>
     public string? ErrorContent { get; }
 
     /// <summary>
-    /// 获取响应头集合（保留原类型，向后兼容）。
+    /// 获取响应头集合（仅含<strong>响应级头</strong>，不含 Content-* 头）。
     /// </summary>
+    /// <remarks>
+    /// M5-HC-14：由执行器以 <c>response.Headers</c> 填充，故不含 <c>Content-Type</c> / <c>Content-Length</c> 等内容头。
+    /// 若需内容头，请解析 <see cref="RawContent"/> 或改用直达返回类型 <see cref="HttpResponseMessage"/>。
+    /// </remarks>
     public Dictionary<string, List<string>>? ResponseHeaders { get; }
 
     /// <summary>
-    /// 获取原始 HttpResponseMessage（可选，默认 null）。
+    /// 获取原始 HttpResponseMessage。
     /// </summary>
+    /// <remarks>
+    /// M5-HC-14：框架默认执行器在方法内 <c>using</c> 释放响应，本属性恒为 <c>null</c>。
+    /// 仅当自定义 <c>IHttpRequestExecutor</c> 自行保有响应时才可能非 null。
+    /// </remarks>
+    [Obsolete("框架默认执行器恒返回 null（响应已在方法内释放）。如需原始响应，请改用直达返回类型 HttpResponseMessage。")]
     public HttpResponseMessage? ResponseMessage { get; }
 
     /// <summary>

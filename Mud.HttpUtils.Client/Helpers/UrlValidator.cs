@@ -38,7 +38,9 @@ public static class UrlValidator
     private const int DnsCacheCapacity = 10_000;
     private const int DnsStripeCount = 32;
 
-    private static readonly object[] DnsStripes = Enumerable.Range(0, DnsStripeCount).Select(_ => new object()).ToArray();
+    // M5-HC-07：条带锁改为 SemaphoreSlim —— 支持异步等待，消除 sync-over-async 线程阻塞
+    private static readonly SemaphoreSlim[] DnsStripes =
+        Enumerable.Range(0, DnsStripeCount).Select(_ => new SemaphoreSlim(1, 1)).ToArray();
 
     /// <summary>DNS 缓存 TTL（默认 5 分钟）。internal 仅供测试验证"过期后重新解析"，生产代码勿改。</summary>
     internal static TimeSpan DnsCacheTtl { get; set; } = TimeSpan.FromMinutes(5);
@@ -48,14 +50,21 @@ public static class UrlValidator
 
     private static readonly MemoryCache DnsCache = new(new MemoryCacheOptions { SizeLimit = DnsCacheCapacity });
 
+    private static SemaphoreSlim DnsStripeFor(string host)
+        => DnsStripes[(uint)host.GetHashCode() % DnsStripeCount];
+
+    /// <summary>
+    /// 同步 DNS 解析（保留兼容）。cache miss 时会阻塞等待 —— 异步路径请用 <see cref="ResolveWithCacheAsync"/>。
+    /// </summary>
     private static IPAddress[] ResolveWithCache(string host)
     {
         if (DnsCache.Get(host) is IPAddress[] cached)
             return cached;
 
-        lock (DnsStripes[(uint)host.GetHashCode() % DnsStripeCount])
+        var stripe = DnsStripeFor(host);
+        stripe.Wait();
+        try
         {
-            // 双检：同 stripe 的其他 key 调用可能已写入本 key 的条目
             if (DnsCache.Get(host) is IPAddress[] cachedAgain)
                 return cachedAgain;
 
@@ -67,6 +76,46 @@ public static class UrlValidator
                 Size = 1,
             });
             return addresses;
+        }
+        finally
+        {
+            stripe.Release();
+        }
+    }
+
+    /// <summary>M5-HC-07：异步 DNS 解析（SemaphoreSlim 条带锁 + await，无 sync-over-async）。</summary>
+    private static async Task<IPAddress[]> ResolveWithCacheAsync(string host, CancellationToken cancellationToken = default)
+    {
+        if (DnsCache.Get(host) is IPAddress[] cached)
+            return cached;
+
+        var stripe = DnsStripeFor(host);
+        await stripe.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (DnsCache.Get(host) is IPAddress[] cachedAgain)
+                return cachedAgain;
+
+            IPAddress[] addresses;
+            if (DnsResolveOverride != null)
+            {
+                addresses = DnsResolveOverride(host);
+            }
+            else
+            {
+                addresses = await Dns.GetHostAddressesAsync(host).ConfigureAwait(false);
+            }
+
+            DnsCache.Set(host, addresses, new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = DnsCacheTtl,
+                Size = 1,
+            });
+            return addresses;
+        }
+        finally
+        {
+            stripe.Release();
         }
     }
 
@@ -220,6 +269,114 @@ public static class UrlValidator
         if (IsInternalDomain(host))
         {
             throw new InvalidOperationException($"检测到内网域名: {host}");
+        }
+    }
+
+    /// <summary>
+    /// M5-HC-07：异步版 URL 安全校验 —— DNS 解析走 await，消除 sync-over-async 线程阻塞。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="ValidateUrl"/> 逐项语义一致；<c>AllowCustomBaseUrls = false</c> 路径零 DNS 调用。
+    /// </remarks>
+    public static async ValueTask ValidateUrlAsync(
+        string? url, bool allowCustomBaseUrls = false, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            throw new ArgumentNullException(nameof(url), "URL 不能为空");
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) ||
+            !Uri.IsWellFormedUriString(url, UriKind.Absolute))
+        {
+            throw new ArgumentException($"URL 格式无效: {url}", nameof(url));
+        }
+
+        var host = uri.Host;
+
+        // 白名单域名跳过后续检查（与同步版一致）
+        if (IsDomainAllowedByAnySnapshot(host))
+            return;
+
+        if (!allowCustomBaseUrls)
+        {
+            if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException($"仅允许 HTTPS 协议，当前协议: {uri.Scheme}");
+            }
+
+            if (!IsStandardHttpsPort(uri))
+            {
+                throw new InvalidOperationException($"非标准 HTTPS 端口: {uri.Port}");
+            }
+
+            var allowedSnapshot = GetAllowedDomains();
+            if (allowedSnapshot.Count > 0)
+            {
+                var allowedDomains = string.Join(", ", allowedSnapshot.OrderBy(d => d));
+                throw new InvalidOperationException(
+                    $"域名 '{host}' 不在白名单中。允许的域名: {allowedDomains}." +
+                    "如需使用自定义域名，请设置 allowCustomBaseUrls=true（注意安全风险）。");
+            }
+
+            throw new InvalidOperationException(
+                $"域名 '{host}' 未通过验证。未配置域名白名单，请先调用 ConfigureAllowedDomains 配置允许的域名，" +
+                "或设置 allowCustomBaseUrls=true（注意安全风险）。");
+        }
+
+        // 自定义模式：异步 DNS 判定私有 IP / 回环
+        var isPrivate = await IsPrivateIpAddressAsync(host, cancellationToken).ConfigureAwait(false);
+        if (isPrivate)
+        {
+            var isLoopback = await IsLoopbackAddressAsync(host, cancellationToken).ConfigureAwait(false);
+            if (!isLoopback)
+                throw new InvalidOperationException($"不允许访问私有 IP 地址: {host}");
+        }
+
+        if (IsInternalDomain(host))
+        {
+            throw new InvalidOperationException($"检测到内网域名: {host}");
+        }
+    }
+
+    private static async Task<bool> IsPrivateIpAddressAsync(string host, CancellationToken cancellationToken)
+    {
+        if (IPAddress.TryParse(host, out var ipAddress))
+            return IsPrivateIpAddress(ipAddress);
+
+        try
+        {
+            var addresses = await ResolveWithCacheAsync(host, cancellationToken).ConfigureAwait(false);
+            return addresses.Any(IsPrivateIpAddress);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return true;
+        }
+    }
+
+    private static async Task<bool> IsLoopbackAddressAsync(string host, CancellationToken cancellationToken)
+    {
+        if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (IPAddress.TryParse(host, out var ipAddress))
+            return IPAddress.IsLoopback(ipAddress);
+
+        try
+        {
+            var addresses = await ResolveWithCacheAsync(host, cancellationToken).ConfigureAwait(false);
+            return addresses.Any(IPAddress.IsLoopback);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return false;
         }
     }
 

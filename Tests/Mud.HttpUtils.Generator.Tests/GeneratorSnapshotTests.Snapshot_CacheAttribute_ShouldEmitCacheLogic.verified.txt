@@ -5,6 +5,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
@@ -207,7 +208,7 @@ namespace TestNamespace.Internal
                        VaryByUser = false,
                        UseSlidingExpiration = false,
                    },
-                       CacheKey = $"GetDataAsync",
+                       CacheKey = "GetDataAsync",
                },
                 null, cancellationToken: default).ConfigureAwait(false);
         }

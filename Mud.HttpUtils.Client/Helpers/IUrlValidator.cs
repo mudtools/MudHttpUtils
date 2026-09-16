@@ -41,6 +41,9 @@ public interface IUrlValidator
     /// <summary>验证 URL 是否安全（在白名单域名内且不包含私有 IP 地址）。</summary>
     void ValidateUrl(string? url, bool allowCustomBaseUrls = false);
 
+    /// <summary>M5-HC-07：异步验证 URL 是否安全（DNS 解析不阻塞调用线程）。</summary>
+    System.Threading.Tasks.ValueTask ValidateUrlAsync(string? url, bool allowCustomBaseUrls = false, System.Threading.CancellationToken cancellationToken = default);
+
     /// <summary>验证基础 URL 是否安全。</summary>
     void ValidateBaseUrl(string? baseUrl, bool allowCustomBaseUrls = false);
 

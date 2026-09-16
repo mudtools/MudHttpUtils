@@ -190,6 +190,29 @@ internal static class Diagnostics
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    /// <summary>
+    /// M5-HC-04：[Cache] 方法的默认缓存键包含无法稳定表达的参数（复杂对象/[Body]/数组元素非标量等）。
+    /// 无 CacheKeyTemplate 时报告 Error —— 静默串键比编译失败更危险。
+    /// </summary>
+    public static readonly DiagnosticDescriptor CacheKeyUnsafeParameterError = new(
+        id: "HTTPCLIENT031",
+        title: "[Cache] 方法的缓存键包含无法稳定表达的参数",
+        messageFormat: "接口 {0} 的方法 {1} 使用了 [Cache]，但参数 '{2}'（类型 {3}）无法稳定映射为缓存键。默认键会退化为类型名，导致不同请求命中同一缓存并返回错误数据。请改用 [Cache(..., CacheKeyTemplate = \"…\")] 显式声明键模板，或移除 [Cache]。",
+        category: "代码生成",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    /// <summary>
+    /// M5-HC-04：CacheKeyTemplate 未引用某 Unsafe 参数，可能串键（尽力而为的字面检查）。
+    /// </summary>
+    public static readonly DiagnosticDescriptor CacheKeyTemplateMissingParameterWarning = new(
+        id: "HTTPCLIENT032",
+        title: "[Cache] CacheKeyTemplate 未覆盖参数",
+        messageFormat: "接口 {0} 的方法 {1} 的 CacheKeyTemplate 未引用参数 '{2}'，不同取值可能命中同一缓存。",
+        category: "代码生成",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     public static readonly DiagnosticDescriptor HttpClientPathParameterMismatch = new(
         id: "HTTPCLIENT013",
         title: "路径参数不匹配",

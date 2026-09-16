@@ -341,7 +341,6 @@ namespace TestNamespace
     public interface ITestApi
     {
         [Post(""/upload"")]
-        [MultipartForm]
         Task<string> UploadAsync([Upload] Stream file);
     }
 }";
@@ -349,12 +348,11 @@ namespace TestNamespace
         var (_, outputCompilation) = RunGenerator(source);
         var generatedCode = GetGeneratedCode(outputCompilation);
 
-        if (generatedCode != null)
-        {
-            // MultipartFormDataContent 应使用 using var 声明，确保异常时也能释放资源
-            generatedCode.Should().Contain("using var __multipartContent = new System.Net.Http.MultipartFormDataContent()",
-                "MultipartFormDataContent 应使用 using var 声明以防止资源泄漏");
-        }
+        generatedCode.Should().NotBeNullOrEmpty();
+
+        // MultipartFormDataContent 应使用 using var 声明，确保异常时也能释放资源
+        generatedCode.Should().Contain("using var __multipartContent = new System.Net.Http.MultipartFormDataContent()",
+            "MultipartFormDataContent 应使用 using var 声明以防止资源泄漏");
     }
 
     [Fact]
@@ -368,7 +366,7 @@ using Mud.HttpUtils.Attributes;
 namespace TestNamespace
 {
     [HttpClientApi]
-    [InterfaceQuery(Name = ""version"", Value = ""v1"")]
+    [InterfaceQuery("version", "v1")]
     public interface ITestApi
     {
         [Get(""/data"")]
@@ -379,19 +377,18 @@ namespace TestNamespace
         var (_, outputCompilation) = RunGenerator(source);
         var generatedCode = GetGeneratedCode(outputCompilation);
 
-        if (generatedCode != null)
+        generatedCode.Should().NotBeNullOrEmpty();
+
+        // 验证属性声明和默认值在同一行
+        var lines = generatedCode.Split('\n');
+        var propertyLines = lines.Where(l => l.Contains("get; set;")).ToList();
+        foreach (var line in propertyLines)
         {
-            // 验证属性声明和默认值在同一行
-            var lines = generatedCode.Split('\n');
-            var propertyLines = lines.Where(l => l.Contains("get; set;")).ToList();
-            foreach (var line in propertyLines)
+            // 如果有默认值，应该在同一行
+            if (line.Contains("= "))
             {
-                // 如果有默认值，应该在同一行
-                if (line.Contains("= "))
-                {
-                    line.Should().MatchRegex(@"get;\s*set;\s*\}\s*=\s*.+;",
-                        "属性默认值应与属性声明在同一行");
-                }
+                line.Should().MatchRegex(@"get;\s*set;\s*\}\s*=\s*.+;",
+                    "属性默认值应与属性声明在同一行");
             }
         }
     }
@@ -423,13 +420,12 @@ namespace TestNamespace
         var (_, outputCompilation) = RunGenerator(source);
         var generatedCode = GetGeneratedCode(outputCompilation);
 
-        if (generatedCode != null)
-        {
-            // 对于非 string 返回类型，解密逻辑不应使用 string.IsNullOrEmpty
-            // (此处仅验证代码生成不崩溃，实际解密代码在 EnableEncrypt 场景下才会出现)
-            generatedCode.Should().NotContain("string.IsNullOrEmpty(__result)",
-                "非 string 类型的解密检查不应使用 string.IsNullOrEmpty");
-        }
+        generatedCode.Should().NotBeNullOrEmpty();
+
+        // 对于非 string 返回类型，解密逻辑不应使用 string.IsNullOrEmpty
+        // (此处仅验证代码生成不崩溃，实际解密代码在 EnableEncrypt 场景下才会出现)
+        generatedCode.Should().NotContain("string.IsNullOrEmpty(__result)",
+            "非 string 类型的解密检查不应使用 string.IsNullOrEmpty");
     }
 
     [Fact]
@@ -453,13 +449,12 @@ namespace TestNamespace
         var (_, outputCompilation) = RunGenerator(source);
         var generatedCode = GetGeneratedCode(outputCompilation);
 
-        if (generatedCode != null)
-        {
-            generatedCode.Should().Contain("string.IsNullOrWhiteSpace(keyword)",
-                "string 查询参数验证应使用 IsNullOrWhiteSpace");
-            generatedCode.Should().NotContain("string.IsNullOrEmpty(keyword)",
-                "string 查询参数验证不应使用 IsNullOrEmpty");
-        }
+        generatedCode.Should().NotBeNullOrEmpty();
+
+        generatedCode.Should().Contain("string.IsNullOrWhiteSpace(keyword)",
+            "string 查询参数验证应使用 IsNullOrWhiteSpace");
+        generatedCode.Should().NotContain("string.IsNullOrEmpty(keyword)",
+            "string 查询参数验证不应使用 IsNullOrEmpty");
     }
 
     [Fact]
@@ -484,17 +479,16 @@ namespace TestNamespace
         var (_, outputCompilation) = RunGenerator(source);
         var generatedCode = GetGeneratedCode(outputCompilation);
 
-        if (generatedCode != null)
-        {
-            generatedCode.Should().NotContain("if (option == null)",
-                "重构后不应再检查 option 是否为 null（参数已移除）");
-            generatedCode.Should().NotContain("throw new ArgumentNullException(nameof(option))",
-                "重构后不应再对 option 抛出 ArgumentNullException（参数已移除）");
-            generatedCode.Should().Contain("IHttpContentSerializer",
-                "生成类应依赖 IHttpContentSerializer");
-            generatedCode.Should().Contain("HttpContentSerializerFactory.CreateDefault()",
-                "未注入序列化器时应使用工厂创建默认实例");
-        }
+        generatedCode.Should().NotBeNullOrEmpty();
+
+        generatedCode.Should().NotContain("if (option == null)",
+            "重构后不应再检查 option 是否为 null（参数已移除）");
+        generatedCode.Should().NotContain("throw new ArgumentNullException(nameof(option))",
+            "重构后不应再对 option 抛出 ArgumentNullException（参数已移除）");
+        generatedCode.Should().Contain("IHttpContentSerializer",
+            "生成类应依赖 IHttpContentSerializer");
+        generatedCode.Should().Contain("HttpContentSerializerFactory.CreateDefault()",
+            "未注入序列化器时应使用工厂创建默认实例");
     }
 
     [Fact]
@@ -503,6 +497,7 @@ namespace TestNamespace
         // 验证修复：_disposed 字段使用 int + Interlocked.CompareExchange 保证线程安全
         var source = @"
 using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 
 namespace TestNamespace
 {
@@ -523,13 +518,12 @@ namespace TestNamespace
         var (_, outputCompilation) = RunGenerator(source);
         var generatedCode = GetGeneratedCode(outputCompilation);
 
-        if (generatedCode != null)
-        {
-            generatedCode.Should().Contain("private int _disposed",
-                "AppContextScope._disposed 应使用 int 类型");
-            generatedCode.Should().Contain("System.Threading.Interlocked.CompareExchange(ref _disposed, 1, 0)",
-                "AppContextScope.Dispose 应使用 Interlocked.CompareExchange 保证原子性");
-        }
+        generatedCode.Should().NotBeNullOrEmpty();
+
+        generatedCode.Should().Contain("private int _disposed",
+            "AppContextScope._disposed 应使用 int 类型");
+        generatedCode.Should().Contain("System.Threading.Interlocked.CompareExchange(ref _disposed, 1, 0)",
+            "AppContextScope.Dispose 应使用 Interlocked.CompareExchange 保证原子性");
     }
 
     [Fact]
@@ -579,11 +573,10 @@ namespace TestNamespace
         var (_, outputCompilation) = RunGenerator(source);
         var generatedCode = GetGeneratedCode(outputCompilation);
 
-        if (generatedCode != null)
-        {
-            generatedCode.Should().Contain("NETSTANDARD2_0",
-                "Patch 方法应生成条件编译代码");
-        }
+        generatedCode.Should().NotBeNullOrEmpty();
+
+        generatedCode.Should().Contain("NETSTANDARD2_0",
+            "Patch 方法应生成条件编译代码");
     }
 
     [Fact]
@@ -615,13 +608,12 @@ namespace TestNamespace
         var (_, outputCompilation) = RunGenerator(source);
         var generatedCode = GetGeneratedCode(outputCompilation);
 
-        if (generatedCode != null)
-        {
-            generatedCode.Should().Contain("GetUsersAsync");
-            generatedCode.Should().Contain("CreateUserAsync");
-            generatedCode.Should().Contain("UpdateUserAsync");
-            generatedCode.Should().Contain("DeleteUserAsync");
-        }
+        generatedCode.Should().NotBeNullOrEmpty();
+
+        generatedCode.Should().Contain("GetUsersAsync");
+        generatedCode.Should().Contain("CreateUserAsync");
+        generatedCode.Should().Contain("UpdateUserAsync");
+        generatedCode.Should().Contain("DeleteUserAsync");
     }
 
     #endregion
@@ -797,15 +789,14 @@ namespace TestNamespace
         var (_, outputCompilation) = RunGenerator(source);
         var generatedCode = GetGeneratedCode(outputCompilation);
 
-        if (generatedCode != null)
-        {
-            generatedCode.Should().Contain("var __appContext = _appContextHolder.Current",
-                "TokenManage 模式下应捕获 _appContextHolder.Current 到局部变量 __appContext");
-            generatedCode.Should().Contain("__appContext.HttpClient",
-                "应使用 __appContext.HttpClient 而非 _appContextHolder.Current!.HttpClient");
-            generatedCode.Should().NotContain("_appContextHolder.Current!.HttpClient",
-                "不应直接使用 _appContextHolder.Current!.HttpClient");
-        }
+        generatedCode.Should().NotBeNullOrEmpty();
+
+        generatedCode.Should().Contain("var __appContext = _appContextHolder.Current",
+            "TokenManage 模式下应捕获 _appContextHolder.Current 到局部变量 __appContext");
+        generatedCode.Should().Contain("__appContext.HttpClient",
+            "应使用 __appContext.HttpClient 而非 _appContextHolder.Current!.HttpClient");
+        generatedCode.Should().NotContain("_appContextHolder.Current!.HttpClient",
+            "不应直接使用 _appContextHolder.Current!.HttpClient");
     }
 
     [Fact]
@@ -829,11 +820,10 @@ namespace TestNamespace
         var (_, outputCompilation) = RunGenerator(source);
         var generatedCode = GetGeneratedCode(outputCompilation);
 
-        if (generatedCode != null)
-        {
-            generatedCode.Should().NotContain("var __appContext = _appContextHolder.Current",
-                "HttpClient 属性模式下不应生成 __appContext 局部变量");
-        }
+        generatedCode.Should().NotBeNullOrEmpty();
+
+        generatedCode.Should().NotContain("var __appContext = _appContextHolder.Current",
+            "HttpClient 属性模式下不应生成 __appContext 局部变量");
     }
 
     #endregion
@@ -864,13 +854,12 @@ namespace TestNamespace
         var (_, outputCompilation) = RunGenerator(source);
         var generatedCode = GetGeneratedCode(outputCompilation);
 
-        if (generatedCode != null)
-        {
-            generatedCode.Should().Contain("ExecuteAsync<string>(",
-                "弹性策略模式下应通过 ExecuteAsync 统一调用执行器");
-            generatedCode.Should().Contain("RetryEnabled = true",
-                "ExecutionDescriptor 中应配置 RetryEnabled = true");
-        }
+        generatedCode.Should().NotBeNullOrEmpty();
+
+        generatedCode.Should().Contain("ExecuteAsync<string>(",
+            "弹性策略模式下应通过 ExecuteAsync 统一调用执行器");
+        generatedCode.Should().Contain("RetryEnabled = true",
+            "ExecutionDescriptor 中应配置 RetryEnabled = true");
     }
 
     #endregion
@@ -936,13 +925,12 @@ namespace TestNamespace
         var (_, outputCompilation) = RunGenerator(source);
         var generatedCode = GetGeneratedCode(outputCompilation);
 
-        if (generatedCode != null)
-        {
-            generatedCode.Should().Contain("!string.IsNullOrWhiteSpace(Name)",
-                "FormContent 字符串属性应使用 IsNullOrWhiteSpace");
-            generatedCode.Should().NotContain("string.IsNullOrEmpty(Name)",
-                "FormContent 字符串属性不应使用 IsNullOrEmpty");
-        }
+        generatedCode.Should().NotBeNullOrEmpty();
+
+        generatedCode.Should().Contain("!string.IsNullOrWhiteSpace(Name)",
+            "FormContent 字符串属性应使用 IsNullOrWhiteSpace");
+        generatedCode.Should().NotContain("string.IsNullOrEmpty(Name)",
+            "FormContent 字符串属性不应使用 IsNullOrEmpty");
     }
 
     #endregion
@@ -977,11 +965,10 @@ namespace TestNamespace
         var (_, outputCompilation) = RunGenerator(source);
         var generatedCode = GetGeneratedCode(outputCompilation);
 
-        if (generatedCode != null)
-        {
-            generatedCode.Should().Contain("GetApiKeyAsync").And.Contain("ConfigureAwait(false)",
-                "GetApiKeyAsync 调用应使用 ConfigureAwait(false)");
-        }
+        generatedCode.Should().NotBeNullOrEmpty();
+
+        generatedCode.Should().Contain("GetApiKeyAsync").And.Contain("ConfigureAwait(false)",
+            "GetApiKeyAsync 调用应使用 ConfigureAwait(false)");
     }
 
     #endregion

@@ -1,1 +1,4 @@
 #nullable enable
+
+static Mud.HttpUtils.UrlValidator.ValidateUrlAsync(string? url, bool allowCustomBaseUrls = false, System.Threading.CancellationToken cancellationToken = default) -> System.Threading.Tasks.ValueTask
+Mud.HttpUtils.IUrlValidator.ValidateUrlAsync(string? url, bool allowCustomBaseUrls = false, System.Threading.CancellationToken cancellationToken = default) -> System.Threading.Tasks.ValueTask

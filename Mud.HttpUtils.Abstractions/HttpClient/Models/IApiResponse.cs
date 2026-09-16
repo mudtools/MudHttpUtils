@@ -25,6 +25,10 @@ public interface IApiResponse
     /// <summary>响应头（含 content header）。</summary>
     IReadOnlyDictionary<string, IReadOnlyList<string>> Headers { get; }
 
-    /// <summary>原始 HttpResponseMessage（可能为 null，如缓存命中场景）。</summary>
+    /// <summary>
+    /// 原始 HttpResponseMessage。
+    /// </summary>
+    /// <remarks>M5-HC-14：框架默认执行器恒返回 null（响应已在方法内释放）。</remarks>
+    [System.Obsolete("框架默认执行器恒返回 null。如需原始响应，请改用直达返回类型 HttpResponseMessage。")]
     HttpResponseMessage? ResponseMessage { get; }
 }

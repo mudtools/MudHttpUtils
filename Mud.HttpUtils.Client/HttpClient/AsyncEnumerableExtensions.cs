@@ -9,8 +9,12 @@ using System.Text.Json.Serialization.Metadata;
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// IBaseHttpClient 的 IAsyncEnumerable 扩展方法
+/// IBaseHttpClient 的 NDJSON 流式扩展方法。
 /// </summary>
+/// <remarks>
+/// M5-HC-10：原名 <c>SendAsAsyncEnumerable</c> 与 <see cref="IBaseHttpClient"/> 实例方法同名同形参，
+/// 被实例方法遮蔽（扩展方法不可达）。重命名为语义化名称后 null 守卫恢复可达。
+/// </remarks>
 public static class AsyncEnumerableExtensions
 {
     /// <summary>
@@ -23,14 +27,14 @@ public static class AsyncEnumerableExtensions
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>流式返回的异步枚举。</returns>
     /// <remarks>
-    /// <b>Native AOT 注意</b>：此重载使用 <see cref="JsonSerializerOptions"/> 进行开放泛型反序列化，
-    /// AOT 场景下须确保 <typeparamref name="T"/> 已在 <see cref="JsonSerializerContext"/> 中声明。
-    /// 推荐使用 <see cref="SendAsAsyncEnumerable{T}(IBaseHttpClient, HttpRequestMessage, JsonTypeInfo{T}, CancellationToken)"/> 重载。
+    /// <b>Native AOT 注意</b>：此重载使用开放泛型反序列化，
+    /// AOT 场景下须确保 <typeparamref name="T"/> 已在 <see cref="System.Text.Json.Serialization.Metadata.JsonTypeInfo{T}"/> 对应的 Context 中声明。
+    /// 推荐使用 <see cref="StreamNdJsonAsync{T}(IBaseHttpClient, HttpRequestMessage, JsonTypeInfo{T}, CancellationToken)"/> 重载。
     /// </remarks>
 #if NET8_0_OR_GREATER
     [RequiresUnreferencedCode("NDJSON 反序列化使用开放泛型 JsonSerializer.Deserialize<T>，AOT 场景须确保 T 已在 JsonSerializerContext 中声明。推荐使用 JsonTypeInfo<T> 重载。")]
 #endif
-    public static async IAsyncEnumerable<T> SendAsAsyncEnumerable<T>(
+    public static async IAsyncEnumerable<T> StreamNdJsonAsync<T>(
         this IBaseHttpClient client,
         HttpRequestMessage request,
         object? jsonSerializerOptions = null,
@@ -63,7 +67,7 @@ public static class AsyncEnumerableExtensions
     /// <param name="jsonTypeInfo">来自 <see cref="JsonSerializerContext"/> 的类型信息（AOT 安全）。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>流式返回的异步枚举。</returns>
-    public static async IAsyncEnumerable<T> SendAsAsyncEnumerable<T>(
+    public static async IAsyncEnumerable<T> StreamNdJsonAsync<T>(
         this IBaseHttpClient client,
         HttpRequestMessage request,
         JsonTypeInfo<T> jsonTypeInfo,

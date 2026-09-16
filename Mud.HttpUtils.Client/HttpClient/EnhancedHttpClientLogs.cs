@@ -30,9 +30,10 @@ internal static class EnhancedHttpClientLogs
 
     private static readonly Action<ILogger, string, string, Exception?> s_jsonResponseBodyRaw =
         LoggerMessage.Define<string, string>(
-            LogLevel.Debug,
+            // M5-HC-03：降为 Trace —— 默认生产级别（Information/Warning）不输出原始响应体
+            LogLevel.Trace,
             new EventId(2, nameof(JsonResponseBodyRaw)),
-            "原始JSON响应内容: {Url}\n{Response}");
+            "原始JSON响应内容（已脱敏）: {Url}\n{Response}");
 
     private static readonly Action<ILogger, string, string, Exception?> s_jsonDeserializeSuccess =
         LoggerMessage.Define<string, string>(
@@ -48,9 +49,10 @@ internal static class EnhancedHttpClientLogs
 
     private static readonly Action<ILogger, string, string, Exception?> s_xmlResponseBodyRaw =
         LoggerMessage.Define<string, string>(
-            LogLevel.Debug,
+            // M5-HC-03：降为 Trace —— 默认生产级别不输出原始响应体
+            LogLevel.Trace,
             new EventId(5, nameof(XmlResponseBodyRaw)),
-            "原始XML响应内容: {Url}\n{XmlResponse}");
+            "原始XML响应内容（已脱敏）: {Url}\n{XmlResponse}");
 
     private static readonly Action<ILogger, string, string, Exception?> s_xmlDeserializeSuccess =
         LoggerMessage.Define<string, string>(
@@ -122,7 +124,7 @@ internal static class EnhancedHttpClientLogs
         LoggerMessage.Define<string, string, string, string?>(
             LogLevel.Error,
             new EventId(31, nameof(JsonDeserializeFailedDetailed)),
-            "JSON反序列化失败: {Url}\n期望类型: {ExpectedType}\n原始响应: {RawResponse}\n错误位置: {Path}");
+            "JSON反序列化失败: {Url}\n期望类型: {ExpectedType}\n原始响应（已脱敏）: {RawResponse}\n错误位置: {Path}");
 
     private static readonly Action<ILogger, string, string, Exception> s_jsonDeserializeFailedSimple =
         LoggerMessage.Define<string, string>(
@@ -158,7 +160,7 @@ internal static class EnhancedHttpClientLogs
         LoggerMessage.Define<string, string, string>(
             LogLevel.Error,
             new EventId(37, nameof(XmlDeserializeFailed)),
-            "XML反序列化失败: {Url}\n期望类型: {ExpectedType}\n原始XML响应: {XmlResponse}");
+            "XML反序列化失败: {Url}\n期望类型: {ExpectedType}\n原始XML响应（已脱敏）: {XmlResponse}");
 
     private static readonly Action<ILogger, string, string, Exception> s_largeFileDownloadFailed =
         LoggerMessage.Define<string, string>(
