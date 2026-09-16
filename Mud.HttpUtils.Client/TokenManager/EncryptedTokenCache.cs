@@ -5,6 +5,7 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using Microsoft.Extensions.Logging;
 using System.Security.Cryptography;
 using System.Text.Json;
 
@@ -30,6 +31,9 @@ public sealed class EncryptedTokenCache<T> : ITokenCache<T> where T : class
 {
     private readonly ITokenCache<string> _inner;
     private readonly IEncryptionProvider _encryption;
+    // TMX-11：实例级序列化选项（可注入携寄 JsonTypeInfoResolver 的选项以支持 AOT/裁剪）
+    private readonly JsonSerializerOptions _jsonOptions;
+    private readonly ILogger? _logger;
 
     private static readonly JsonSerializerOptions s_jsonOptions = new()
     {
@@ -45,6 +49,19 @@ public sealed class EncryptedTokenCache<T> : ITokenCache<T> where T : class
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         _encryption = encryption ?? throw new ArgumentNullException(nameof(encryption));
+        _jsonOptions = s_jsonOptions;
+    }
+
+    /// <summary>
+    /// TMX-11：允许注入携寄 JsonTypeInfoResolver 的序列化选项（AOT/裁剪场景）与诊断日志。
+    /// 序列化失败时降级为"不缓存"（与 TryGet 对称），绝不打断令牌流水线。
+    /// </summary>
+    public EncryptedTokenCache(ITokenCache<string> inner, IEncryptionProvider encryption,
+        JsonSerializerOptions? serializerOptions, ILogger? logger = null)
+        : this(inner, encryption)
+    {
+        _jsonOptions = serializerOptions ?? s_jsonOptions;
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -59,7 +76,7 @@ public sealed class EncryptedTokenCache<T> : ITokenCache<T> where T : class
         try
         {
             var plain = _encryption.Decrypt(cipher);
-            value = JsonSerializer.Deserialize<T>(plain, s_jsonOptions);
+            value = JsonSerializer.Deserialize<T>(plain, _jsonOptions);
             return value != null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -84,16 +101,26 @@ public sealed class EncryptedTokenCache<T> : ITokenCache<T> where T : class
             return;
         }
 
-        var plain = JsonSerializer.Serialize(value, s_jsonOptions);
+        string plain;
+        try { plain = JsonSerializer.Serialize(value, _jsonOptions); }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // TMX-11：与 TryGet 对称——序列化不可用时降级为"不缓存"，绝不打断令牌流水线
+            if (_logger != null)
+                MudHttpClientLog.TokenCacheSerializationFailed(_logger, typeof(T).Name, ex.Message, ex);
+            return;
+        }
         _inner.Set(key, _encryption.Encrypt(plain), absoluteExpirationRelativeToNow, slidingExpiration, postEvictionCallback);
     }
 
     /// <inheritdoc />
     public bool TryRemove(string key, out T? removed)
     {
-        // 密文无值语义：移除按底层结果转发，removed 恒 null（加密包装不还原被移除值）
+        // TMX-15-1 (B8)：先 TryGet 解密得到 removed，使 InvalidateTokenAsync 能返回失效前令牌
+        T? value = default;
+        var hasValue = TryGet(key, out value);
         var result = _inner.TryRemove(key, out _);
-        removed = null;
+        removed = hasValue ? value : null;
         return result;
     }
 

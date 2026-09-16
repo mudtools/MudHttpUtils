@@ -111,7 +111,9 @@ public class TokenManagerBaseConcurrencyTests
 
         await Task.WhenAll(tasks);
 
-        counter.Count.Should().BeGreaterOrEqualTo(1);
+        // TMX-16：弱断言修正——原 BeGreaterOrEqualTo(1) 固化了缺陷。
+        // TMX-04 负缓存窗口下 5 并发仅 1 次刷新尝试（其余 4 被负缓存抑制）。
+        counter.Count.Should().Be(1);
     }
 
     #endregion

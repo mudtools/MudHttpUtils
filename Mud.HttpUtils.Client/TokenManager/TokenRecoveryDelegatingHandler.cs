@@ -5,6 +5,7 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -104,6 +105,8 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
 
     /// <summary>
     /// TMR-07：初始化令牌恢复委托处理器（支持用户级令牌恢复 + 配置热更新）。
+    /// TMX-08：DI 激活唯一构造入口——<see cref="ActivatorUtilitiesConstructorAttribute"/> 标注确保
+    /// <c>ActivatorUtilities</c> 确定性地选择此 ctor（最完整且全部可选依赖带默认值）。
     /// </summary>
     /// <param name="tokenManager">令牌管理器，用于刷新和失效令牌。</param>
     /// <param name="userTokenManager">用户令牌管理器，用于用户级令牌恢复（可选）。</param>
@@ -111,6 +114,7 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
     /// <param name="optionsMonitor">令牌恢复配置选项监视器，支持热更新。</param>
     /// <param name="logger">日志记录器（可选）。</param>
     /// <param name="managerRegistry">SR-M6（P2.4，D9）令牌管理器注册表（可选），按 TokenManagerKey 路由恢复链路。</param>
+    [ActivatorUtilitiesConstructor]
     public TokenRecoveryDelegatingHandler(
         ITokenManager tokenManager,
         IUserTokenManager? userTokenManager,

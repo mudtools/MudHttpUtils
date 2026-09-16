@@ -111,6 +111,14 @@ public static class MudHttpMeter
             description: "令牌恢复（401 重试）次数与结果");
 
     /// <summary>
+    /// TMX-04：令牌刷新被负缓存窗口抑制的次数（维度：token_manager_key）。
+    /// 当刷新失败后 5 秒（默认）内的后续调用不再发起新刷新，直接重抛上次异常时计数。
+    /// </summary>
+    public static readonly Counter<long> TokenRefreshSuppressedCounter =
+        Instance.CreateCounter<long>("mud.token.refresh.suppressed", unit: "{operation}",
+            description: "因刷新失败负缓存窗口而跳过的刷新次数");
+
+    /// <summary>
     /// 文件下载字节数计数（维度：client_name, outcome）。
     /// 仅统计响应体下载阶段（不含等待响应头时间）。
     /// </summary>

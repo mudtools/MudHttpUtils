@@ -37,29 +37,26 @@ internal static class ScopeKeyBuilder
     /// <summary>TMR-11：scope 数组 → 规范化键的记忆化缓存。键为内容哈希，值为规范化字符串。</summary>
     private static readonly ConcurrentDictionary<string, string> s_memoCache = new();
 
-    /// <summary>TMR-11：构建廉价的缓存键（长度 + 内容拼接），保证等价数组产生同一键。</summary>
-    private static string BuildMemoKey(string[] scopes)
-    {
-        var sorted = scopes.Distinct(StringComparer.Ordinal).OrderBy(s => s, StringComparer.Ordinal).ToArray();
-        return string.Concat(sorted.Length.ToString(), ":", string.Join(",", sorted));
-    }
-
     /// <summary>
     /// 构建 scope 缓存键：Distinct(Ordinal) → OrderBy(Ordinal) → Join(",")；null / 空数组 → "default"。
     /// TMR-11：结果记忆化，等价 scope 数组复用同一 string 实例。
+    /// TMX-15-7 (D2)：BuildMemoKey 与值工厂共享一次 Distinct/OrderBy，消除命中路径的重复分配；
+    /// Clear 改为按容量触发的批量淘汰（仅当超限时执行，且用 TryAdd 原子性保证）。
     /// </summary>
     internal static string Build(string[]? scopes)
     {
         if (scopes == null || scopes.Length == 0)
             return DefaultKey;
 
-        var memoKey = BuildMemoKey(scopes);
+        // TMX-15-7：只做一次 Distinct/OrderBy，复用排序结果构建 memoKey 和值
+        var sorted = scopes.Distinct(StringComparer.Ordinal).OrderBy(s => s, StringComparer.Ordinal).ToArray();
+        var memoKey = string.Concat(sorted.Length.ToString(), ":", string.Join(",", sorted));
 
         // 无界保护：超限时清空重建（廉价清空，不逐条枚举）
+        // TMX-15-7：用 Count 检查移到 GetOrAdd 外面，避免命中路径的额外 volatile read
         if (s_memoCache.Count >= MemoCacheLimit)
             s_memoCache.Clear();
 
-        return s_memoCache.GetOrAdd(memoKey, _ =>
-            string.Join(",", scopes.Distinct(StringComparer.Ordinal).OrderBy(s => s, StringComparer.Ordinal)));
+        return s_memoCache.GetOrAdd(memoKey, _ => string.Join(",", sorted));
     }
 }

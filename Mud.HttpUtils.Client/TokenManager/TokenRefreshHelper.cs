@@ -23,7 +23,8 @@ internal static class TokenRefreshHelper
             return false;
         }
 
-        var key = name ?? Guid.NewGuid().ToString("N");
+        // TMX-15-3 (B11)：默认键用类型全名，同实例重复注册幂等覆盖（原 Guid 每次生成新键 → 重复刷新）
+        var key = name ?? tokenManager.GetType().FullName!;
         tokenManagers[key] = tokenManager;
         MudHttpClientLog.TokenManagerRegistered(logger, key);
         return true;

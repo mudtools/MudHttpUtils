@@ -42,6 +42,23 @@ public class AotDtoCoverageAnalyzerTests
     private static ImmutableArray<Diagnostic> Analyze(string source, params MetadataReference[] extraReferences)
         => AotDtoCoverageAnalyzer.Analyze(CreateCompilation(source, extraReferences), CancellationToken.None);
 
+    // [AOT006 误报修复] 模拟 SDK 按 TFM 注入 defines 的编译（netstandard2.0 / net6.0 / net8.0+）。
+    private static Compilation CreateCompilationWithDefines(
+        string source, string[] preprocessorSymbols, params MetadataReference[] extraReferences)
+    {
+        var syntaxTree = CSharpSyntaxTree.ParseText(
+            source, new CSharpParseOptions(preprocessorSymbols: preprocessorSymbols));
+        var references = BasicReferenceAssemblies.GetReferences();
+        if (extraReferences.Length > 0)
+            references.AddRange(extraReferences);
+
+        return CSharpCompilation.Create(
+            "TestAssembly",
+            new[] { syntaxTree },
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
     // ───────────────────────── AOT005：[Query] 不适用类型零误报 ─────────────────────────
 
     [Theory]
@@ -751,6 +768,85 @@ public class AotDtoCoverageAnalyzerTests
 
         diagnostics.Should().Contain(d => d.Id == "AOT006",
             "[HttpJsonSerializable] 类型未被任何 Context 覆盖时应报告 AOT006");
+    }
+
+    // [AOT006 误报修复] 脚手架生成的 Context 整体包裹在 #if NET8_0_OR_GREATER 中，
+    // netstandard2.0 / net6.0 等 TFM 编译里 Context 缺席属预期（反射兜底）——不应报 AOT006。
+    [Theory]
+    [InlineData("NETSTANDARD2_0_OR_GREATER")]
+    [InlineData("NET6_0_OR_GREATER")]
+    public void HttpJsonSerializable_NotCovered_LegacyTfm_SuppressesAot006(string legacyDefine)
+    {
+        var source = $$"""
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpJsonSerializable]
+                public class UncoveredDto { public int Id { get; set; } }
+            }
+            """;
+
+        var compilation = CreateCompilationWithDefines(source, new[] { "DEBUG", "TRACE", legacyDefine });
+
+        var diagnostics = AotDtoCoverageAnalyzer.AnalyzeHttpJsonSerializableCoverage(
+            compilation, CancellationToken.None);
+
+        diagnostics.Should().NotContain(d => d.Id == "AOT006",
+            "net8.0 以下 TFM 的编译中脚手架 Context 被 #if 编译排除，缺席属预期行为，不应报 AOT006");
+    }
+
+    // [AOT006 误报修复] net8.0+ 编译携带 NET8_0_OR_GREATER 时行为不变：未覆盖仍报告。
+    [Fact]
+    public void HttpJsonSerializable_NotCovered_Net8PlusTfm_ReportsAot006()
+    {
+        var source = $$"""
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpJsonSerializable]
+                public class UncoveredDto { public int Id { get; set; } }
+            }
+            """;
+
+        var compilation = CreateCompilationWithDefines(source, new[] { "DEBUG", "TRACE", "NET8_0_OR_GREATER" });
+
+        var diagnostics = AotDtoCoverageAnalyzer.AnalyzeHttpJsonSerializableCoverage(
+            compilation, CancellationToken.None);
+
+        diagnostics.Should().Contain(d => d.Id == "AOT006",
+            "net8.0+ 编译中脚手架 Context 存在，未覆盖类型仍应报告 AOT006");
+    }
+
+    // [AOT006 误报修复] 低版本 TFM 跳过的仅是「Context 缺席」场景；手写 Context 已覆盖时本就无诊断，
+    // 该用例锚定「跳过门控不会反向吞掉已覆盖场景」——与 net8+ 行为一致（均为 0 条）。
+    [Fact]
+    public void HttpJsonSerializable_Covered_LegacyTfm_NoAot006()
+    {
+        var source = $$"""
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpJsonSerializable]
+                public class CoveredDto { public int Id { get; set; } }
+
+                {{ContextBoilerplate}}
+            }
+            """;
+
+        var compilation = CreateCompilationWithDefines(
+            source, new[] { "DEBUG", "TRACE", "NETSTANDARD2_0_OR_GREATER" });
+
+        var diagnostics = AotDtoCoverageAnalyzer.AnalyzeHttpJsonSerializableCoverage(
+            compilation, CancellationToken.None);
+
+        diagnostics.Should().NotContain(d => d.Id == "AOT006",
+            "类型已被 Context 覆盖时无论 TFM 都不应报告 AOT006");
     }
 
     // [F6] AOT006 迁出增量生成管道后，由独立 DiagnosticAnalyzer（编译分析阶段）承载。

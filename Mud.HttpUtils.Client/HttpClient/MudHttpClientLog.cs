@@ -630,7 +630,7 @@ internal static partial class MudHttpClientLog
     // ---- CFG-39（v3.1）----
 
     private static readonly Action<ILogger, string, string, Exception?> s_requestBodySerializationFastPathFallback =
-        LoggerMessage.Define<string, string>(LogLevel.Debug, new EventId(166, nameof(RequestBodySerializationFastPathFallback)),
+        LoggerMessage.Define<string, string>(LogLevel.Debug, new EventId(169, nameof(RequestBodySerializationFastPathFallback)),  // TMX-17：原 166 与 UserTokenScopeInvalidationFallback 重复，改为 169
             "RequestBodySerialization 配置为 {Mode}，但当前 IHttpContentSerializer ({SerializerType}) 未实现 ISynchronousContentSerializer，" +
             "已回退默认序列化路径（fast-path 不生效）。");
     public static void RequestBodySerializationFastPathFallback(ILogger logger, string mode, string serializerType)
@@ -654,6 +654,20 @@ internal static partial class MudHttpClientLog
     public static void SsrfGuidance(ILogger logger)
         => s_ssrfGuidance(logger, null);
 #endif
+
+    // ---- TMX-04 / TMX-11：新增可观测性日志（EventId 170/171）----
+
+    private static readonly Action<ILogger, Exception?> s_tokenRefreshSuppressed =
+        LoggerMessage.Define(LogLevel.Debug, new EventId(170, nameof(TokenRefreshSuppressed)),
+            "令牌刷新被负缓存窗口抑制（TMX-04），窗口内等待者直接复用上次失败结果。");
+    public static void TokenRefreshSuppressed(ILogger logger)
+        => s_tokenRefreshSuppressed(logger, null);
+
+    private static readonly Action<ILogger, string, string, Exception?> s_tokenCacheSerializationFailed =
+        LoggerMessage.Define<string, string>(LogLevel.Warning, new EventId(171, nameof(TokenCacheSerializationFailed)),
+            "加密缓存序列化失败，降级为不缓存（type={Type}）：{Message}");
+    public static void TokenCacheSerializationFailed(ILogger logger, string type, string message, Exception ex)
+        => s_tokenCacheSerializationFailed(logger, type, message, ex);
 
     #endregion
 }

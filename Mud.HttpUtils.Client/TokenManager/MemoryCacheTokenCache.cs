@@ -81,7 +81,8 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
             if (_cache.TryGetValue(key, out var obj) && obj is T typed)
             {
                 value = typed;
-                _keys.TryAdd(key, 0);
+                // TMX-15-8 (D3)：_keys.TryAdd 移出读路径——键已在 Set 时登记，
+                // 读路径无需重复 TryAdd（影子索引容忍弱一致，Compact 按实际缓存条目为准）
                 return true;
             }
         }

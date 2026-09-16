@@ -151,4 +151,18 @@ public class ProgressableStreamContent : HttpContent, IRequestContentReplayHint
         }
         base.Dispose(disposing);
     }
+
+    // TMX-13：内部访问器，供 Rebind 使用
+
+    internal HttpContent InnerContent => _content;
+    internal IProgress<long>? Progress => _progress;
+    internal int BufferSize => _bufferSize;
+
+    /// <summary>
+    /// TMX-13：以同一进度回调与缓冲尺寸重新包装新的底层内容（令牌恢复体回填用）。
+    /// </summary>
+    /// <param name="content">新的底层内容（如缓冲后的 ByteArrayContent）。</param>
+    /// <returns>新的 <see cref="ProgressableStreamContent"/> 实例，复用原进度回调与缓冲尺寸。</returns>
+    internal ProgressableStreamContent Rebind(HttpContent content)
+        => new(content ?? throw new ArgumentNullException(nameof(content)), _progress, _bufferSize);
 }

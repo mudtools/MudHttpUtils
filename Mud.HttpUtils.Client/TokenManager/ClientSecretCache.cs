@@ -39,12 +39,18 @@ internal sealed class ClientSecretCache
 
     /// <summary>
     /// 获取缓存的密钥；未命中或已过期时通过 <paramref name="factory"/> 解析并写入缓存。
+    /// TMX-01：TTL &lt;= 0 时短路返回工厂结果（不读缓存、不进闸门、不写缓存）——修正原实现 TTL=0 反而永久缓存（long.MaxValue）的语义反转。
+    /// TMX-09：工厂签名贯通取消令牌，使密钥解析可被 <c>RefreshTimeoutSeconds</c> 兜底中断。
     /// </summary>
-    /// <param name="factory">解析工厂（内部应已 try/catch 回退配置值，不应抛出）。</param>
+    /// <param name="factory">解析工厂（内部应已 try/catch 回退配置值，不应抛出）。接收取消令牌以便支持超时中断。</param>
     /// <param name="ct">取消令牌。</param>
     /// <returns>解析出的密钥。</returns>
-    public async Task<string?> GetAsync(Func<Task<string?>> factory, CancellationToken ct)
+    public async Task<string?> GetAsync(Func<CancellationToken, Task<string?>> factory, CancellationToken ct)
     {
+        // TMX-01：TTL<=0 即"不缓存"——不读缓存、不进闸门、不写缓存
+        if (_ttl <= TimeSpan.Zero)
+            return await factory(ct).ConfigureAwait(false);
+
         var now = DateTimeOffset.UtcNow.UtcTicks;
         if (_value != null && now < Volatile.Read(ref _expiresAtTicks))
             return _value;
@@ -57,9 +63,10 @@ internal sealed class ClientSecretCache
             if (_value != null && now < _expiresAtTicks)
                 return _value;
 
-            var resolved = await factory().ConfigureAwait(false);
+            var resolved = await factory(ct).ConfigureAwait(false);
             _value = resolved;
-            _expiresAtTicks = _ttl > TimeSpan.Zero ? now + _ttl.Ticks : long.MaxValue;
+            // TMX-01：TTL 自"解析完成"起算（原实现用进闸门前时间，密钥服务慢时会"落位即过期"）
+            _expiresAtTicks = DateTimeOffset.UtcNow.UtcTicks + _ttl.Ticks;
             return resolved;
         }
         finally
