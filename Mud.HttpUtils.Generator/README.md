@@ -792,7 +792,7 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 | `AOT003` | Warning | 多态类型缺少 `[JsonDerivedType]` 标注 | 在基类声明上补充 `[JsonDerivedType]`；`--auto-derived-types` 仅注册派生类为独立 root，不能替代基类上的 `[JsonDerivedType]` | 否 | 是 |
 | `AOT004` | Warning | `[HttpClientApi]` 方法的请求/响应 DTO 未被任何 `JsonSerializerContext` 覆盖；**或**响应类型自身已覆盖、但其 `[JsonDerivedType]` 声明的派生类型未覆盖（多态反序列化仍会失败） | 标注 `[HttpJsonSerializable]` 并运行 `dotnet mud-jsonctx`，或手动将类型（含 `[JsonDerivedType]` 声明的派生类型）加入现有 `JsonSerializerContext` | 是（`AotJsonContextCodeFixProvider`，自动向用户可编辑的 `JsonSerializerContext` 追加 `[JsonSerializable(typeof(T))]`，或新建 `partial` 扩展类） | 是 |
 | `AOT005` | Warning | 查询参数类型使用 JSON 序列化但未被 `JsonSerializerContext` 覆盖 | 将类型纳入 `JsonSerializerContext`，或实现 `IQueryParameter` 接口 | 是（`AotJsonContextCodeFixProvider`，同 AOT004 修复逻辑） | 是 |
-| `AOT006` | Warning | 标注了 `[HttpJsonSerializable]` 的类型未被任何 `JsonSerializerContext` 覆盖 | 运行 `dotnet mud-jsonctx`，或将此类型加入 `JsonSerializerContext` | 是（`AotJsonContextCodeFixProvider`，同 AOT004 修复逻辑） | 是 |
+| `AOT006` | Warning | 标注了 `[HttpJsonSerializable]` 的类型未被任何 `JsonSerializerContext` 覆盖（仅在 net8.0+ 编译中检查；netstandard2.0 / net6.0 等 net8.0 以下 TFM 的编译中，脚手架 Context 被 `#if NET8_0_OR_GREATER` 编译排除、运行期走反射兜底，Context 缺席属预期，不报告） | 运行 `dotnet mud-jsonctx`，或将此类型加入 `JsonSerializerContext` | 是（`AotJsonContextCodeFixProvider`，同 AOT004 修复逻辑） | 是 |
 | `AOT007` | Error / Warning（F10/F11 分级，同一 ID） | AOT 相关上下文下使用 XML 序列化 | 改用 `[SerializationMethod(SerializationMethod.Json)]`，或在非 AOT 部署场景使用 XML。级别分级：确认 Native AOT（`PublishAot=true` / `MudAotRuntimeMode=aot`）→ Error；仅 `IsAotCompatible=true`（未声明运行期 AOT）→ Warning；显式 `MudAotRuntimeMode=jit` 或关闭 `IsAotCompatible` → 不报告 | 是（`AotXmlCodeFixProvider`，将方法改为 JSON 序列化） | 是 |
 
 #### 接口规范 / DI 生命周期分析器诊断（MUD*）

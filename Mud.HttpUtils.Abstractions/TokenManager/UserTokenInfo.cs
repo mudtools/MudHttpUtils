@@ -74,6 +74,8 @@ public class UserTokenInfo : CurrentUserInfo
 
     /// <summary>
     /// 检查访问令牌是否有效。
+    /// TMX-03：补齐 TTL 感知阈值——短 TTL 令牌的有效提前量被钳位为 min(thresholdSeconds, ttl/2)，
+    /// 避免"提前量过大导致 token 刚签发即被判为需刷新"（与 TokenManagerBase.TryGetValidToken 一致）。
     /// </summary>
     /// <param name="thresholdSeconds">过期阈值（秒），默认 300 秒（5 分钟）。</param>
     /// <returns>如果访问令牌有效，则为 true；否则为 false。</returns>
@@ -84,7 +86,11 @@ public class UserTokenInfo : CurrentUserInfo
             return false;
 
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        return TokenExpiryPolicy.IsValid(AccessTokenExpireTime, now, thresholdSeconds);
+        // TMX-03：issuedAt 优先取 LastRefreshedAt，回退 CreatedAt
+        var stamp = LastRefreshedAt ?? CreatedAt;
+        var issuedAt = stamp == default ? 0
+            : new DateTimeOffset(DateTime.SpecifyKind(stamp, DateTimeKind.Utc)).ToUnixTimeMilliseconds();
+        return TokenExpiryPolicy.IsValid(issuedAt, AccessTokenExpireTime, now, thresholdSeconds);
     }
 
     /// <summary>

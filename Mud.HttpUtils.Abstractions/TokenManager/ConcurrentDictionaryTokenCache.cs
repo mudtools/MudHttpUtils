@@ -56,8 +56,11 @@ public class ConcurrentDictionaryTokenCache<T> : ITokenCache<T> where T : class
 
         if (_cache.TryGetValue(key, out var entry))
         {
-            // TM-01 修复：在单个条目上更新访问时间，保证原子性
-            Interlocked.Exchange(ref entry.LastAccessTicks, DateTime.UtcNow.Ticks);
+            // TMX-15-8 (D3)：LRU 时间戳降采样——距上次更新 < 1s 跳过 Interlocked.Exchange
+            var nowTicks = DateTime.UtcNow.Ticks;
+            var last = entry.LastAccessTicks;
+            if (nowTicks - last >= TimeSpan.TicksPerSecond)
+                Interlocked.Exchange(ref entry.LastAccessTicks, nowTicks);
             value = entry.Value;
             return true;
         }

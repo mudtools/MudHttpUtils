@@ -14,6 +14,14 @@ namespace Mud.HttpUtils;
 /// 用户令牌管理器抽象基类，提供并发安全的用户级令牌刷新实现。
 /// 使用 <see cref="ITokenCache{T}"/> 管理用户令牌缓存，支持容量限制、滑动过期和自动清理。
 /// </summary>
+/// <remarks>
+/// <para><b>锁非重入不变式（TMX-15-4 / B12）</b>：<see cref="KeyedLockTable"/> 按 userId（或 userId+scope）的键控锁
+/// <b>不支持重入</b>。派生类在 <see cref="RefreshUserTokenAsync"/> 实现中
+/// <b>禁止</b>回调 <see cref="GetOrRefreshTokenAsync(string?, string[]?, CancellationToken)"/> 或
+/// <see cref="GetTokenAsync(string?, string[]?, CancellationToken)"/>——
+/// 否则同一线程尝试再次获取同一键的锁将导致不可恢复的死锁。
+/// 若确需在刷新过程中获取另一用户的令牌，应使用独立的 <see cref="ITokenManager"/> 实例。</para>
+/// </remarks>
 public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 {
     // NEW-TM-06 修复（裸 GetOrAdd 并发多执行工厂导致互斥失效）→ P2.2（TK-05/09/24）升级为
@@ -23,10 +31,22 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     private readonly ITokenCache<UserTokenInfo> _userTokenCache;
     private readonly UserTokenCacheOptions _cacheOptions;
 
-    // SR-M3（P3.1，D10-B）用户刷新负缓存：键 → 下次允许刷新的 UTC ticks。
+    // SR-M3（P3.1，D10-B）用户刷新负缓存：键 → (连续失败次数, 下次允许刷新的 UTC ticks)。
+    // TMX-06：退避表结构由"截止时间"升级为"计数 + 截止时间"，AddOrUpdate 用 prev.Count + 1 推进，
+    // 使 UserBackoffSeconds(n) 的指数能力生效（原实现两分支均用 UserBackoffSeconds(1) = 恒定 30s）。
     // 与租户路径 _consecutiveFallbacks 指数退避模式对齐，阻断 IdP 故障时的按 userId 刷新风暴。
-    private readonly ConcurrentDictionary<string, long> _userRefreshFailures = new();
+    private readonly ConcurrentDictionary<string, BackoffState> _userRefreshFailures = new();
     private const int MaxUserRefreshBackoffSeconds = 300;
+
+    /// <summary>
+    /// TMX-06：退避状态（连续失败次数 + 截止时间）。值类型，无堆分配。
+    /// </summary>
+    private readonly struct BackoffState
+    {
+        public readonly int Count;
+        public readonly long UntilTicks;
+        public BackoffState(int count, long untilTicks) { Count = count; UntilTicks = untilTicks; }
+    }
 
     /// <summary>
     /// SR-M1（P2.2，D7）用户复合键分隔符（Unit Separator 控制字符）：
@@ -123,9 +143,13 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     public abstract Task<string?> GetTokenAsync(string? userId, CancellationToken cancellationToken = default);
 
     /// <inheritdoc />
+    /// <remarks>
+    /// TMX-07：默认实现走 scope 感知路径（与 <see cref="GetOrRefreshTokenAsync(string?, string[]?, CancellationToken)"/> 一致），
+    /// 不再静默返回默认作用域令牌。不支持 scope 的派生类应覆写并抛 <see cref="NotSupportedException"/>。
+    /// </remarks>
     public virtual Task<string?> GetTokenAsync(string? userId, string[]? scopes, CancellationToken cancellationToken = default)
     {
-        return GetTokenAsync(userId, cancellationToken);
+        return GetOrRefreshTokenAsync(userId, scopes, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -143,7 +167,16 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         CancellationToken cancellationToken = default);
 
     /// <inheritdoc />
-    public abstract Task<bool> RemoveTokenAsync(string userId, CancellationToken cancellationToken = default);
+        /// <summary>
+    /// TMX-14：默认实现按登出语义清除该用户全部作用域条目（含锁与退避），
+    /// 派生类如需额外动作（如调用 IdP revoke）应覆写并调用 base。
+    /// </summary>
+    public virtual Task<bool> RemoveTokenAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(userId)) return Task.FromResult(false);
+        RemoveUserTokenFromCache(userId);           // 已含全部作用域 + TryRetire + 清退避
+        return Task.FromResult(true);
+    }
 
     /// <inheritdoc />
     public virtual Task<bool> HasValidTokenAsync(string userId, CancellationToken cancellationToken = default)
@@ -204,7 +237,9 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         if (IsUserTokenValid(cachedInfo))
         {
             // SR-C1（P1.2）触发面收敛：删除缓存命中路径上的 TryCleanupUserLock。
-            // 锁回收由两重兜底承担：① 缓存驱逐回调 OnUserTokenEvicted → TryRetire；② CleanupOrphanedLocks 周期清扫。
+            // TMX-05：锁回收由三重承担：① 缓存驱逐回调 OnUserTokenEvicted → TryRetire；
+            // ② 失败/退避分支显式 TryRetire（TMX-05）；③ 宿主或派生类可调用 CleanupExpiredUserTokens 兜底
+            // （框架不保证调用：用户令牌管理器不启动租户维护 Timer，见 SupportsTenantMaintenance）。
             return cachedInfo!.AccessToken;
         }
 
@@ -217,7 +252,11 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
             // SR-M3（P3.1，D10-B）刷新负缓存：退避窗口内不发起刷新（IdP 故障时阻断按 userId 的刷新风暴）
             if (IsInUserRefreshBackoff(cacheKey))
+            {
+                // TMX-05：窗口内不发请求，且该 key 当前无可用条目 → 退休锁，避免孤儿条目累积
+                _userLockTable.TryRetire(cacheKey);
                 return null;
+            }
 
             var refreshedInfo = await RefreshUserTokenAsync(userId!, cancellationToken).ConfigureAwait(false);
             if (refreshedInfo != null)
@@ -228,6 +267,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
             }
 
             RecordUserRefreshFailure(cacheKey);
+            _userLockTable.TryRetire(cacheKey);      // TMX-05：失败无条目 → 锁无复用价值
             return null;
         }
     }
@@ -242,6 +282,9 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         if (string.IsNullOrEmpty(userId) || tokenInfo == null)
             return;
 
+        // TMX-03：以"进入缓存时刻"作为 issuedAt 的可信来源（仅填空，不覆盖派生实现给出的 IdP 签发时间）
+        tokenInfo.LastRefreshedAt ??= DateTime.UtcNow;
+
         TimeSpan? absoluteExpiration = null;
         var remainingMs = tokenInfo.AccessTokenExpireTime - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         if (remainingMs > 0)
@@ -252,6 +295,17 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         var slidingExpiration = TimeSpan.FromSeconds(_cacheOptions.SlidingExpirationSeconds);
 
         _userTokenCache.Set(userId, tokenInfo, absoluteExpiration, slidingExpiration, OnUserTokenEvicted);
+    }
+
+    /// <summary>
+    /// TMX-03：解析 issuedAt 的 Unix 毫秒时间戳。优先取 LastRefreshedAt，回退 CreatedAt。
+    /// 两者均为 default 时返回 null，由调用方回退到配置阈值（与旧行为一致）。
+    /// </summary>
+    private static long? ResolveIssuedAtUnixMs(UserTokenInfo info)
+    {
+        var stamp = info.LastRefreshedAt ?? info.CreatedAt;
+        if (stamp == default) return null;
+        return new DateTimeOffset(DateTime.SpecifyKind(stamp, DateTimeKind.Utc)).ToUnixTimeMilliseconds();
     }
 
     private void OnUserTokenEvicted(string cacheKey)
@@ -325,7 +379,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         var nowTicks = DateTimeOffset.UtcNow.UtcTicks;
         foreach (var kvp in _userRefreshFailures.ToList())
         {
-            if (nowTicks >= kvp.Value || !_userTokenCache.TryGet(kvp.Key, out _))
+            if (nowTicks >= kvp.Value.UntilTicks || !_userTokenCache.TryGet(kvp.Key, out _))
                 _userRefreshFailures.TryRemove(kvp.Key, out _);
         }
     }
@@ -398,8 +452,13 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
             return false;
 
         // P1.3（TK-04）收敛：有效期判定统一委托 TokenExpiryPolicy，与 TokenManagerBase 严格一致
+        // TMX-03：用户令牌补齐 TTL 感知阈值——短 TTL 令牌的有效提前量被钳位为 min(configuredThreshold, ttl/2)，
+        // 避免"提前量过大导致 token 刚签发即被判为需刷新"（与租户路径 TokenManagerBase.TryGetValidToken 一致）。
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        return TokenExpiryPolicy.IsValid(tokenInfo.AccessTokenExpireTime, now, UserExpireThresholdSeconds);
+        var issuedAt = ResolveIssuedAtUnixMs(tokenInfo);
+        return issuedAt.HasValue
+            ? TokenExpiryPolicy.IsValid(issuedAt.Value, tokenInfo.AccessTokenExpireTime, now, UserExpireThresholdSeconds)
+            : TokenExpiryPolicy.IsValid(tokenInfo.AccessTokenExpireTime, now, UserExpireThresholdSeconds);
     }
 
     /// <summary>
@@ -416,8 +475,8 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// <summary>SR-M3：是否处于刷新退避窗口内（窗口内不发起刷新，直接返回 null——既有契约）。</summary>
     private bool IsInUserRefreshBackoff(string cacheKey)
     {
-        return _userRefreshFailures.TryGetValue(cacheKey, out var untilTicks)
-            && DateTimeOffset.UtcNow.UtcTicks < untilTicks;
+        return _userRefreshFailures.TryGetValue(cacheKey, out var s)
+            && DateTimeOffset.UtcNow.UtcTicks < s.UntilTicks;
     }
 
     /// <summary>SR-M3：刷新成功即清除退避条目。</summary>
@@ -427,17 +486,26 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// <summary>SR-M3：刷新失败记录退避窗口（按 cacheKey 维护连续失败计数）。</summary>
     private void RecordUserRefreshFailure(string cacheKey)
     {
-        // GetOrAdd + AddOrUpdate 维护连续失败次数（值 = 下次允许刷新 ticks；以 30s 起步逐次翻倍）
-        var count = 0;
+        // TMX-06：AddOrUpdate 用 prev.Count + 1 推进，使 UserBackoffSeconds(n) 的指数能力生效
         _userRefreshFailures.AddOrUpdate(cacheKey,
-            _ => DateTimeOffset.UtcNow.AddSeconds(UserBackoffSeconds(1)).UtcTicks,
-            (_, existingTicks) =>
+            _ => new BackoffState(1, DateTimeOffset.UtcNow.AddSeconds(UserBackoffSeconds(1)).UtcTicks),
+            (_, prev) =>
             {
-                // 已在退避（理论上锁内前置检查已拦截，防御并发兜底）：失败次数近似按窗口推进
-                count = 1;
-                return Math.Max(existingTicks,
-                    DateTimeOffset.UtcNow.AddSeconds(UserBackoffSeconds(1)).UtcTicks);
+                var next = prev.Count + 1;
+                return new BackoffState(next, DateTimeOffset.UtcNow.AddSeconds(UserBackoffSeconds(next)).UtcTicks);
             });
+        SweepExpiredBackoffEntries();     // TMX-05：机会式清扫
+    }
+
+    /// <summary>
+    /// TMX-05：退避表机会式清扫——每次写入失败记录时顺带丢弃窗口已过条目（不新增定时器）。
+    /// </summary>
+    private void SweepExpiredBackoffEntries()
+    {
+        var nowTicks = DateTimeOffset.UtcNow.UtcTicks;
+        foreach (var kv in _userRefreshFailures)
+            if (kv.Value.UntilTicks <= nowTicks)
+                _userRefreshFailures.TryRemove(kv.Key, out _);
     }
 
     /// <summary>

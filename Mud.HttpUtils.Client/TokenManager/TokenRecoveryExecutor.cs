@@ -53,14 +53,17 @@ public class TokenRecoveryExecutor
 
     /// <summary>
     /// TMR-07：当前生效的令牌恢复选项。优先走 IOptionsMonitor（热更新），回退静态快照。
+    /// TMX-15-9 (D4)：删除不可达的 `?? new TokenRecoveryOptions()`——每个 ctor 至少设置 _staticOptions 或 _optionsMonitor 之一。
     /// </summary>
-    private TokenRecoveryOptions Options => _optionsMonitor?.CurrentValue ?? _staticOptions ?? new TokenRecoveryOptions();
+    private TokenRecoveryOptions Options => _optionsMonitor?.CurrentValue ?? _staticOptions!;
 
     // 并发刷新去重：同一时间段内多个 401 只触发一次令牌刷新
     // TMR-12：刷新结果在 TTL 窗口内保留，窗口内后续 401 直接复用结果而不重新刷新
     private readonly ConcurrentDictionary<string, DedupEntry> _credentialRefreshTasks = new();
     private readonly ConcurrentDictionary<string, DedupEntry> _userRefreshTasks = new();
     private const string CredentialRefreshKey = "__credential";
+    // TMX-15-2 (B6)：去重表过期条目清理上界——每次写入新条目时顺带清理至多 N 个过期条目，避免全表扫描
+    private const int DedupCleanupMaxPerWrite = 8;
 
     /// <summary>
     /// TMR-12：去重条目——包含进行中的 Task 或已完成的结果 + 过期时间戳。
@@ -77,6 +80,21 @@ public class TokenRecoveryExecutor
         public long ExpiresAt;
 
         public bool IsExpired => DateTimeOffset.UtcNow.UtcTicks > ExpiresAt;
+    }
+
+    /// <summary>
+    /// TMX-15-2 (B6)：机会式清理去重表中的过期条目。
+    /// 每次写入新条目时调用，至多清理 DedupCleanupMaxPerWrite 个过期条目，避免全表扫描。
+    /// </summary>
+    private static void SweepExpiredDedupEntries(ConcurrentDictionary<string, DedupEntry> table)
+    {
+        var cleaned = 0;
+        foreach (var kv in table)
+        {
+            if (cleaned >= DedupCleanupMaxPerWrite) break;
+            if (kv.Value.Task == null && kv.Value.IsExpired)
+                table.TryRemove(kv.Key, out _);
+        }
     }
 
     /// <summary>
@@ -202,7 +220,14 @@ public class TokenRecoveryExecutor
                     continue;
                 buffered.Headers.TryAddWithoutValidation(h.Key, h.Value);
             }
-            request.Content = buffered;
+
+            // TMX-13：保留上传进度语义（前序 T3 转正）——若原内容为 ProgressableStreamContent，
+            // 以同一 IProgress<long> 与 bufferSize 重新包装缓冲体。
+            request.Content = original is ProgressableStreamContent p ? p.Rebind(buffered) : buffered;
+
+            // TMX-02：所有权转移——原内容已被 TryBufferContentAsync 读至 EOF 且不再被引用，
+            // 由本流程负责释放（否则其包裹的流永不关闭——ProgressableStreamContent.Dispose 会释放内层内容）
+            original.Dispose();
         }
 
         // 无条件发送原请求（TMR-01：不可缓冲也必须发送）
@@ -284,7 +309,7 @@ public class TokenRecoveryExecutor
             for (var retry = 0; retry < Options.RecoveryMaxRetries; retry++)
             {
                 // P1.4（TK-03）URI 脱敏：防止 Path/Query 注入模式令牌随日志泄漏
-                MudHttpClientLog.TokenRecoveryAttempting(_logger, retry + 1, Options.RecoveryMaxRetries, request.Method.Method, SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()));
+                MudHttpClientLog.TokenRecoveryAttempting(_logger, retry + 1, Options.RecoveryMaxRetries, request.Method.Method, RedactForLog(request, recoveryContext));  // TMX-12
 
                 string? newToken = null;
 
@@ -373,7 +398,7 @@ public class TokenRecoveryExecutor
             }
 
             // P1.4（TK-03）URI 脱敏
-            MudHttpClientLog.TokenRecoveryExhausted(_logger, Options.RecoveryMaxRetries, request.Method.Method, SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()));
+            MudHttpClientLog.TokenRecoveryExhausted(_logger, Options.RecoveryMaxRetries, request.Method.Method, RedactForLog(request, recoveryContext));  // TMX-12
 
             return response;   // D3：恢复耗尽，返回真实 401
         }
@@ -431,10 +456,38 @@ public class TokenRecoveryExecutor
     }
 
     /// <summary>
-    /// TMR-08：令牌值净化——CR/LF 一律拒绝（防 header 注入）。
+    /// TMX-12：恢复日志用脱敏——Query 注入模式下对已知令牌参数名做无条件掩码（不依赖全局开关与词表）。
     /// </summary>
-    private static bool IsSafeTokenValue(string? token) =>
-        !string.IsNullOrEmpty(token) && token.AsSpan().IndexOfAny('\r', '\n') < 0;
+    private static string RedactForLog(HttpRequestMessage request, TokenRecoveryContext? ctx)
+    {
+        var url = request.RequestUri?.ToString() ?? string.Empty;
+        if (ctx?.InjectionMode != TokenInjectionMode.Query || string.IsNullOrEmpty(ctx.QueryParameterName))
+            return SensitiveUrlRedactor.Redact(url);
+
+        var qIndex = url.IndexOf('?');
+        if (qIndex < 0 || qIndex == url.Length - 1) return SensitiveUrlRedactor.Redact(url);
+
+        var head = url.Substring(0, qIndex + 1);
+        var masked = string.Join("&", url.Substring(qIndex + 1).Split('&').Select(p =>
+        {
+            var eq = p.IndexOf('=');
+            if (eq < 0) return p;
+            return string.Equals(Uri.UnescapeDataString(p.Substring(0, eq)), ctx.QueryParameterName, StringComparison.Ordinal)
+                ? p.Substring(0, eq) + "=***REDACTED***" : p;
+        }));
+        return head + masked;
+    }
+
+    /// <summary>
+    /// TMR-08：令牌值净化——CR/LF 一律拒绝（防 header 注入）。
+    /// TMX-12：扩展为拒绝所有 C0 控制字符（含 \0）与 DEL，避免 FormatException 诊断歧义。
+    /// </summary>
+    private static bool IsSafeTokenValue(string? token)
+    {
+        if (string.IsNullOrEmpty(token)) return false;
+        foreach (var c in token) if (c < 0x20 || c == 0x7F) return false;
+        return true;
+    }
 
     private bool ApplyTokenToRequest(HttpRequestMessage request, string token, TokenRecoveryContext? context)
     {
@@ -581,7 +634,7 @@ public class TokenRecoveryExecutor
         clone.VersionPolicy = original.VersionPolicy;
 #endif
 
-        if (contentBytes != null && contentBytes.Length > 0)
+        if (contentBytes != null)                 // TMX-02：允许长度 0，保持 Content-Type 等体头
         {
             clone.Content = new ByteArrayContent(contentBytes);
 
@@ -689,6 +742,8 @@ public class TokenRecoveryExecutor
 
             if (_credentialRefreshTasks.TryAdd(dedupKey, newEntry))
             {
+                // TMX-15-2 (B6)：写入新条目时机会式清理过期条目
+                SweepExpiredDedupEntries(_credentialRefreshTasks);
                 // 当前线程赢得了刷新权
                 try
                 {
@@ -825,6 +880,8 @@ public class TokenRecoveryExecutor
 
             if (_userRefreshTasks.TryAdd(dedupKey, newEntry))
             {
+                // TMX-15-2 (B6)：写入新条目时机会式清理过期条目
+                SweepExpiredDedupEntries(_userRefreshTasks);
                 try
                 {
                     var token = await RefreshUserTokenWithIsolationAsync(userId, userTokenManager, scopes).ConfigureAwait(false);

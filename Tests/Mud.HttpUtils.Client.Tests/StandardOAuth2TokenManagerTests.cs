@@ -177,17 +177,17 @@ public class StandardOAuth2TokenManagerTests
         var resolverCount = 0;
         var cache = new ClientSecretCache(TimeSpan.FromMilliseconds(100));
 
-        var first = await cache.GetAsync(async () => Interlocked.Increment(ref resolverCount).ToString(), CancellationToken.None);
+        var first = await cache.GetAsync(_ => Task.FromResult(Interlocked.Increment(ref resolverCount).ToString()), CancellationToken.None);
         first.Should().Be("1");
 
         // TTL 未过期：命中缓存，不重新解析
-        var cached = await cache.GetAsync(async () => Interlocked.Increment(ref resolverCount).ToString(), CancellationToken.None);
+        var cached = await cache.GetAsync(_ => Task.FromResult(Interlocked.Increment(ref resolverCount).ToString()), CancellationToken.None);
         cached.Should().Be("1");
         resolverCount.Should().Be(1, "TTL 内应命中缓存");
 
         // 等待 TTL 过期：重新解析，拾取新密钥
         await Task.Delay(150).ConfigureAwait(false);
-        var rotated = await cache.GetAsync(async () => Interlocked.Increment(ref resolverCount).ToString(), CancellationToken.None);
+        var rotated = await cache.GetAsync(_ => Task.FromResult(Interlocked.Increment(ref resolverCount).ToString()), CancellationToken.None);
         rotated.Should().Be("2");
         resolverCount.Should().Be(2, "TTL 过期后应重新解析");
     }
@@ -202,18 +202,18 @@ public class StandardOAuth2TokenManagerTests
         var call = 0;
 
         // 第一次调用工厂返回 null（模拟解析失败/未命中）
-        var first = await cache.GetAsync(async () =>
+        var first = await cache.GetAsync(_ =>
         {
             call++;
-            return call == 1 ? null : "resolved-secret";
+            return Task.FromResult<string?>(call == 1 ? null : "resolved-secret");
         }, CancellationToken.None);
         first.Should().BeNull();
 
         // 第二次调用应重新执行工厂（故障不被永久缓存）
-        var second = await cache.GetAsync(async () =>
+        var second = await cache.GetAsync(_ =>
         {
             call++;
-            return call == 2 ? "resolved-secret" : "unexpected";
+            return Task.FromResult<string?>(call == 2 ? "resolved-secret" : "unexpected");
         }, CancellationToken.None);
         second.Should().Be("resolved-secret");
         call.Should().Be(2, "工厂故障后下一次调用应重新解析");

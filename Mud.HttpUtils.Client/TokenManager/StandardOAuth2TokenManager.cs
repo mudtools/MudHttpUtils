@@ -141,17 +141,21 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 
     /// <summary>
     /// 解析客户端密钥，优先从 ISecretProvider 获取，回退到配置值。
+    /// TMX-09：贯通取消令牌。注意 <see cref="ISecretProvider"/> 接口无 CT 重载，
+    /// 故在前置 ct.ThrowIfCancellationRequested() 后调用（至少可中断长时间挂起的密钥解析）。
     /// </summary>
-    private async Task<string?> ResolveClientSecretAsync()
+    private async Task<string?> ResolveClientSecretAsync(CancellationToken ct)
     {
         if (_secretProvider != null && !string.IsNullOrEmpty(Options.ClientSecretProviderName))
         {
             try
             {
+                ct.ThrowIfCancellationRequested();
                 var secret = await _secretProvider.GetSecretAsync(Options.ClientSecretProviderName).ConfigureAwait(false);
                 if (!string.IsNullOrEmpty(secret))
                     return secret;
             }
+            catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
                 MudHttpClientLog.SecretProviderFallback(_logger, ex);
@@ -171,7 +175,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         if (_secretProvider == null || string.IsNullOrEmpty(Options.ClientSecretProviderName))
             return Task.FromResult<string?>(Options.ClientSecret);
 
-        return _clientSecretCache.GetAsync(ResolveClientSecretAsync, cancellationToken);
+        return _clientSecretCache.GetAsync(ct => ResolveClientSecretAsync(ct), cancellationToken);
     }
 
     /// <summary>
@@ -443,7 +447,18 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 
         var currentToken = GetCachedCredentialToken();
         if (currentToken != null)
-            return currentToken;
+            // TMX-15-5 (C6)：返回字段克隆，避免调用方改写缓存实例导致缓存污染
+            return new CredentialToken
+            {
+                Msg = currentToken.Msg,
+                Code = currentToken.Code,
+                Expire = currentToken.Expire,
+                AccessToken = currentToken.AccessToken,
+                IssuedAt = currentToken.IssuedAt,
+                RefreshToken = currentToken.RefreshToken,
+                RefreshTokenExpire = currentToken.RefreshTokenExpire,
+                Scope = currentToken.Scope,
+            };
 
         throw new InvalidOperationException("令牌刷新成功但无法获取凭证令牌信息。");
     }

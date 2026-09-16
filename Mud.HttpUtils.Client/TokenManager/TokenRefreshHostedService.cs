@@ -156,6 +156,12 @@ public sealed class TokenRefreshHostedService(
                     break;
                 }
             }
+            catch (Exception ex)                                   // TMX-10：任何未归类异常都不得逃出 ExecuteAsync
+            {
+                MudHttpClientLog.TokenRefreshFailedWithRetry(_logger, _options.RetryDelaySeconds, ex);
+                MudHttpClientLog.TokenRefreshFailedAndStopped(_logger, string.Join(",", _tokenManagers.Keys));
+                break;                                             // 仅停本服务，宿主继续
+            }
         }
 
         MudHttpClientLog.TokenRefreshServiceStopped(_logger);

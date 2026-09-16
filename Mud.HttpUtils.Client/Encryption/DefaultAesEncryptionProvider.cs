@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using System.Security.Cryptography;
+using System.Threading;
 
 namespace Mud.HttpUtils;
 
@@ -60,6 +61,22 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
 
     private byte[] _key;
     private bool _disposed;
+
+    /// <summary>
+    /// TMX-15-6 (C7)：以 Volatile.Read 读取密钥，消除与 Dispose 清零的竞态。
+    /// Dispose 可能在另一线程执行 SecurityHelper.ClearBytes(_key)，
+    /// 不加 volatile 读则加密/解密线程可能读到已清零的密钥。
+    /// </summary>
+    private byte[] KeyForCrypto
+    {
+        get
+        {
+            var key = Volatile.Read(ref _key);
+            if (key == null || key.Length == 0)
+                throw new ObjectDisposedException(nameof(DefaultAesEncryptionProvider));
+            return key;
+        }
+    }
 
     /// <summary>net8+ 是否可用 AesGcm 且未被 <see cref="AesEncryptionOptions.RequireCrossRuntimePortable"/> 关闭。</summary>
     private readonly bool _useGcm;
@@ -253,7 +270,8 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
         var cipher = new byte[plainBytes.Length];
         var tag = new byte[GcmTagSize];
 
-        using var gcm = new AesGcm(_key, GcmTagSize);
+        var key = KeyForCrypto;  // TMX-15-6
+        using var gcm = new AesGcm(key, GcmTagSize);
         gcm.Encrypt(nonce, plainBytes, cipher, tag);
 
         var result = new byte[1 + GcmNonceSize + GcmTagSize + cipher.Length];
@@ -273,8 +291,9 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
         Buffer.BlockCopy(fullBytes, 1 + GcmNonceSize, tag, 0, GcmTagSize);
         Buffer.BlockCopy(fullBytes, 1 + GcmNonceSize + GcmTagSize, cipher, 0, cipher.Length);
 
+        var key = KeyForCrypto;  // TMX-15-6
         var plain = new byte[cipher.Length];
-        using var gcm = new AesGcm(_key, GcmTagSize);
+        using var gcm = new AesGcm(key, GcmTagSize);
         gcm.Decrypt(nonce, cipher, tag, plain);   // 校验失败抛 AuthenticationTagMismatchException（CryptographicException 子类）
         return plain;
     }
@@ -284,8 +303,9 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
 
     private byte[] EncryptCbcThenHmac(byte[] plainBytes)
     {
+        var key = KeyForCrypto;  // TMX-15-6
         using var aes = Aes.Create();
-        aes.Key = _key;
+        aes.Key = key;
         aes.Mode = CipherMode.CBC;
         aes.Padding = PaddingMode.PKCS7;
         aes.GenerateIV();
@@ -318,8 +338,9 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
         if (!SecurityHelper.FixedTimeEquals(computed, mac))
             throw new CryptographicException("密文完整性校验失败");
 
+        var key = KeyForCrypto;  // TMX-15-6
         using var aes = Aes.Create();
-        aes.Key = _key;
+        aes.Key = key;
         aes.Mode = CipherMode.CBC;
         aes.Padding = PaddingMode.PKCS7;
         aes.IV = iv;
@@ -337,7 +358,8 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
     /// </remarks>
     private byte[] ComputeHmac(byte[] iv, byte[] cipherBytes)
     {
-        using var hmac = new HMACSHA256(_key);
+        var key = KeyForCrypto;  // TMX-15-6
+        using var hmac = new HMACSHA256(key);
         hmac.TransformBlock(iv, 0, iv.Length, null, 0);
         hmac.TransformFinalBlock(cipherBytes, 0, cipherBytes.Length);
         return hmac.Hash!;

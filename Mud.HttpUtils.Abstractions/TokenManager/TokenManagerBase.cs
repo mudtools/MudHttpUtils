@@ -32,6 +32,25 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     private readonly object _cleanupLock = new();
     // P1.3（TK-04）降级令牌连续命中的计数，用于指数退避；成功刷新时复位为 0。
     private int _consecutiveFallbacks;
+
+    // TMX-04：刷新失败负缓存——窗口内同 scopeKey 的等待者直接重抛同一失败，不再发起刷新。
+    // 键为 scopeKey，值为 (Exception, UntilMs)。窗口过期后条目在 CleanupExpiredTokens 中被清理。
+    private readonly ConcurrentDictionary<string, FailedRefresh> _recentFailures = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// TMX-04：刷新失败负缓存窗口（秒），默认 5；0 = 关闭（恢复"每个等待者各刷一次"的旧行为）。
+    /// </summary>
+    protected virtual int NegativeCacheSeconds => 5;
+
+    /// <summary>
+    /// TMX-04：负缓存条目（异常 + 过期时间）。
+    /// </summary>
+    private readonly struct FailedRefresh
+    {
+        public readonly Exception Exception;
+        public readonly long UntilMs;
+        public FailedRefresh(Exception ex, long untilMs) { Exception = ex; UntilMs = untilMs; }
+    }
     /// <summary>
     /// 指示对象是否已释放。
     /// </summary>
@@ -139,9 +158,13 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     public abstract Task<string> GetTokenAsync(CancellationToken cancellationToken = default);
 
     /// <inheritdoc />
+    /// <remarks>
+    /// TMX-07：默认实现走 scope 感知路径（与 <see cref="GetOrRefreshTokenAsync(string[]?, CancellationToken)"/> 一致），
+    /// 不再静默返回默认作用域令牌。不支持 scope 的派生类应覆写并抛 <see cref="NotSupportedException"/>。
+    /// </remarks>
     public virtual Task<string> GetTokenAsync(string[]? scopes, CancellationToken cancellationToken = default)
     {
-        return GetTokenAsync(cancellationToken);
+        return GetOrRefreshTokenAsync(scopes, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -151,6 +174,12 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// <para><b>取消传播语义（TMX-15-11 / B9）</b>：直接调用路径下，首个调用方的 <paramref name="cancellationToken"/>
+    /// 会传入锁内刷新操作。若该调用方取消，则正在进行的共享刷新将被中止，其余等待者将在各自重试时发起新的刷新。
+    /// 此行为是"尊重调用方取消"的有意设计，并非缺陷。</para>
+    /// <para>401 恢复路径已做取消隔离（<c>TokenRecoveryExecutor</c> 使用独立 CT），不受此语义影响。</para>
+    /// </remarks>
     public virtual async Task<string> GetOrRefreshTokenAsync(string[]? scopes, CancellationToken cancellationToken = default)
     {
         if (_disposed)
@@ -175,11 +204,35 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                 return lockedToken!.AccessToken!;
             }
 
-            var token = await RefreshTokenWithRetryCoreAsync(
-                scopes == null || scopes.Length == 0
-                    ? ct => RefreshTokenCoreAsync(ct)
-                    : ct => RefreshTokenWithScopesAsync(scopes, ct),
-                cancellationToken).ConfigureAwait(false);
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var negativeCacheSeconds = NegativeCacheSeconds;
+
+            // TMX-04：窗口内复用上次失败，阻断"等待者串行各刷一次"
+            if (negativeCacheSeconds > 0
+                && _recentFailures.TryGetValue(scopeKey, out var failed)
+                && failed.UntilMs > nowMs)
+            {
+                MudHttpMeter.TokenRefreshSuppressedCounter.Add(1,
+                    MudHttpMeter.FilterTags(new KeyValuePair<string, object?>[] { new("token_manager_key", MetricsKey) }));
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failed.Exception).Throw();
+            }
+
+            CredentialToken token;
+            try
+            {
+                token = await RefreshTokenWithRetryCoreAsync(
+                    scopes == null || scopes.Length == 0
+                        ? ct => RefreshTokenCoreAsync(ct)
+                        : ct => RefreshTokenWithScopesAsync(scopes, ct),
+                    cancellationToken).ConfigureAwait(false);
+                if (negativeCacheSeconds > 0) _recentFailures.TryRemove(scopeKey, out _);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)   // 取消不是"刷新失败"
+            {
+                if (negativeCacheSeconds > 0)
+                    _recentFailures[scopeKey] = new FailedRefresh(ex, nowMs + negativeCacheSeconds * 1000L);
+                throw;
+            }
 
             if (token == null || string.IsNullOrEmpty(token.AccessToken))
                 throw new InvalidOperationException($"令牌刷新返回了无效的凭证：AccessToken 为空。（ScopeKey={scopeKey}）");
@@ -603,6 +656,13 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                         _tokenCache.TryRemove(key, out _);
                         _keyedLockTable.TryRetire(key);   // P2.2（TK-05/09/24）经 retire 协议统一回收
                     }
+                }
+
+                // TMX-04：顺带清理过期的负缓存条目
+                foreach (var kv in _recentFailures)
+                {
+                    if (kv.Value.UntilMs <= now)
+                        _recentFailures.TryRemove(kv.Key, out _);
                 }
             }
         }

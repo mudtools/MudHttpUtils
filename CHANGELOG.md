@@ -28,6 +28,25 @@
 - **多 TFM 测试覆盖**（TMR-13）：`Client.Tests` 的 `TargetFrameworks` 扩展为 `net6.0;net8.0;net10.0`，覆盖 `#if !NET8_0_OR_GREATER` 条件编译分支。net6.0 不兼容的测试文件（AOT/SSRF/Config 相关）以条件编译排除。
 - **AOT OAuth2 端到端验证**（TMR-14）：`AotVerificationDemo` 新增场景 17 `DemoOAuth2EndToEnd`，使用自定义 `OAuth2MockHandler` 打桩令牌端点与自省端点，构造真实 `StandardOAuth2TokenManager` 实例，验证 `GetOrRefreshTokenAsync` → HTTP POST → `OAuth2JsonContext` 反序列化 → `CredentialToken` 返回，以及 `IntrospectTokenAsync` → `TokenIntrospectionResult` 返回的完整链路在 Native AOT 下正确工作。
 
+### 令牌管理器深度审查修复（TMX-01 ~ TMX-17）
+
+- **密钥缓存 TTL=0 语义修正**（TMX-01）：`ClientSecretCacheTtlSeconds=0` 从"永久缓存"修正为"不缓存"（每次解析都调用工厂），与文档承诺一致。TTL 起算点从"进闸门前"改为"工厂返回后"，避免密钥服务慢时"落位即过期"。
+- **恢复体缓冲所有权转移**（TMX-02）：带体请求经令牌恢复流程缓冲后，原请求内容的所有权移交恢复流程并在发送前释放。空体请求重试保留 `Content-Type` 等体头。进度回调语义保持（TMX-13）。
+- **用户令牌短 TTL 钳位**（TMX-03）：用户令牌的过期阈值现已支持 TTL 感知（与租户路径一致），短 TTL 令牌不再"签发即需刷新"。
+- **失败单飞负缓存**（TMX-04）：刷新失败后 5 秒内同 scopeKey 的等待者直接复用上次失败（不再各刷一次）。`protected virtual int NegativeCacheSeconds => 5` 可覆写为 0 关闭。抑制次数通过 `mud.token.refresh.suppressed` 指标可观测。
+- **用户侧锁/退避表回收**（TMX-05）：刷新失败/退避分支立即 `_userLockTable.TryRetire(cacheKey)`，退避表机会式清扫过期条目，消除无界增长。
+- **退避真实指数序列**（TMX-06）：用户刷新退避从恒定 30s 恢复为 30/60/120/240/300s 指数增长（`UserBackoffSeconds(n)` 的指数能力生效）。
+- **`GetTokenAsync(scopes)` 契约校正**（TMX-07）：默认实现改为走 scope 感知路径（与 `GetOrRefreshTokenAsync(scopes)` 一致），不再静默返回默认作用域令牌。
+- **DI 构造确定性**（TMX-08）：`TokenRecoveryDelegatingHandler` 标注 `[ActivatorUtilitiesConstructor]`，容器解析时确定性选择最完整 ctor。
+- **密钥解析贯通取消令牌**（TMX-09）：`ClientSecretCache.GetAsync` 工厂签名接受 `CancellationToken`，密钥服务挂起时可被 `RefreshTimeoutSeconds` 中断。
+- **后台服务异常兜底与热更新**（TMX-10）：`StopOnError=true` 时异常不再逃出 `ExecuteAsync`（仅停本服务，宿主继续）。`TokenRefreshHostedService` 改用 `IOptionsMonitor<T>` 支持配置热更新。
+- **加密缓存 AOT 与降级**（TMX-11）：`EncryptedTokenCache` 新增注入 `JsonSerializerOptions` 与 `ILogger` 的 ctor 重载（AOT/裁剪场景）。`Set` 序列化失败从抛异常降级为"不缓存 + Warning 日志"（与 `TryGet` 对称）。
+- **恢复日志脱敏**（TMX-12）：Query 注入模式下对已知令牌参数名做无条件掩码（不依赖全局开关）。控制字符（含 `\0`/DEL）拦截扩展。
+- **进度回调转正**（TMX-13）：`ProgressableStreamContent.Rebind` 内部方法保证恢复体回填后进度回调语义不变。
+- **登出契约**（TMX-14）：`RemoveTokenAsync` 从 `abstract` 改为 `virtual` + 默认实现（清除该用户全部作用域条目，含锁与退避）。派生类可覆写以补充 IdP 侧撤销。
+- **微缺陷批量收口**（TMX-15）：11 项微缺陷修复，包括加密缓存 `TryRemove` 返回解密值、去重表机会式清理、默认注册键改用类型全名、锁非重入文档、缓存返回克隆、加密密钥 `Volatile.Read` 竞态修复、ScopeKey 优化、LRU 时间戳降采样、Options 死代码清理、`IsExpiringSoon` 委托统一实现。
+- **EventId 去重**（TMX-17）：`RequestBodySerializationFastPathFallback` 的 EventId 从重复的 166 改为 169；新增 `TokenRefreshSuppressed`(170) 与 `TokenCacheSerializationFailed`(171) 日志。
+
 ### 安全
 
 - **URL 脱敏默认开启**：Span tag、日志、诊断事件中的 URL 默认掩码敏感 query 值（`access_token` / `refresh_token` / `api_key` 等），词表复用 `MessageSanitizer`。`MudHttpObservabilityOptions.RedactUrlInTelemetry = false` 可关闭（仅排障用途）。
@@ -237,6 +256,7 @@
   - 初版按方案做「全语法树文本含 `SerializationMethod`/`ResponseContentType`」预筛，但本仓库生成器为**每个**方法发射 `ResponseContentType = "..."`（`MethodGenerator.WriteResponseDescriptorCode`），生成树必然命中该 token → 预门控在真实构建中恒为放行（零收益 + 平白多一次全仓文本扫描）。现改为只扫描 `[HttpClientApi]` 接口自身的特性语法。
   - 零漏报口径：XML 的三个信号源（`[SerializationMethod(...)]`、HTTP 方法特性的 `ResponseContentType`/`ContentType` 命名参数、`[Body("application/xml")]` 位置参数）逐一对应到特性文本 token（`SerializationMethod` / `ContentType` / `xml`），命中即放行到全量分析。
 - **P1-3 AOT006 本地标注预门控**（`Mud.HttpUtils.Generator`）：`AotDtoCoverageAnalyzer` 先做语法树探测收集本地标注类型，空则直接返回，复用缓存避免二次遍历。
+- **AOT006 低版本 TFM 误报修复**（`Mud.HttpUtils.Generator`）：脚手架生成的 Context 整体包裹在 `#if NET8_0_OR_GREATER` 中（net8.0 以下走反射兜底、不做源生成），netstandard2.0 / net6.0 等 TFM 的编译里 Context 缺席属预期行为，`HttpJsonSerializableCoverageAnalyzer` 原实现一律报 AOT006 属误报。现按编译 `PreprocessorSymbolNames` 判定：无 `NET8_0_OR_GREATER` 的编译跳过 AOT006（无法判定时保持原行为），net8.0+ 行为不变。
 - **P1-4 `ToHttpContent<T>` AOT 路径改 Utf8Bytes**（`Mud.HttpUtils.Client`）：AOT 下默认走 `SerializeToUtf8Bytes → ByteArrayContent`，避免 string→UTF8 双次编码。JIT 保持 `StringContent` 既有语义。
 - **P1-5 `GetMethodSerializationMethod` 调用收敛**（`Mud.HttpUtils.Generator`）：同方法内 4 次调用收敛为 1 次局部变量。
 - **P1-6 移除 `Dictionary<string, object>` 注册**（`Mud.HttpUtils.Client`）：`MudHttpJsonContext` 删除 `typeof(Dictionary<string, object>)` 源生成注册，消除 AOT 下对非基元值抛 `NotSupportedException` 的潜伏雷。

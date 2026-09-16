@@ -230,6 +230,13 @@ internal static class AotDtoCoverageAnalyzer
         if (annotatedTypes.Count == 0)
             return diagnostics.ToImmutable();
 
+        // [AOT006 误报修复] 低版本 TFM 门控：脚手架生成的 Context 整体包裹在 #if NET8_0_OR_GREATER 中
+        // （见 Tools/Mud.HttpUtils.JsonContextScaffolder/JsonContextGenerator.cs——net8.0 以下走反射兜底，
+        // 不做源生成），因此 netstandard2.0 / net6.0 等 TFM 的编译里 Context 缺席是【预期行为】，
+        // 原实现一律报 AOT006 属误报 → 按 TFM 跳过。net8.0+ 编译与既有一切行为不变。
+        if (!HasNet8OrGreaterDefine(compilation))
+            return diagnostics.ToImmutable();
+
         // [T7 修复] 覆盖集合内部会复用按 Compilation 缓存的本地 Context 探测结果，
         // 本编译语法树不会因 AOT006 路径被二次遍历。
         var coveredTypes = CollectCoveredTypes(compilation);
@@ -278,6 +285,42 @@ internal static class AotDtoCoverageAnalyzer
             }
         }
         return result;
+    }
+
+    /// <summary>
+    /// 判定编译单元是否面向 net8.0+（任一语法树携带 NET8_0_OR_GREATER 预处理符号）。
+    /// </summary>
+    /// <remarks>
+    /// [AOT006 误报修复] SDK 多目标编译会按 TFM 拆分为多个 <see cref="Compilation"/>，
+    /// 各自携带对应 TFM 的 defines（netstandard2.0 → NETSTANDARD2_0_OR_GREATER，
+    /// net6.0 → NET6_0_OR_GREATER，均不含 NET8_0_OR_GREATER）。
+    /// 由于脚手架生成的 Context 在 #if NET8_0_OR_GREATER 中（net8.0 以下反射兜底），
+    /// 低版本 TFM 编译里 Context 缺席属预期，AOT006 应整体跳过。
+    /// 无法判定（无语法树 / ParseOptions 缺失，如部分测试构造）时返回 true，保持原行为继续分析。
+    /// </remarks>
+    private static bool HasNet8OrGreaterDefine(Compilation compilation)
+    {
+        foreach (var syntaxTree in compilation.SyntaxTrees)
+        {
+            var parseOptions = syntaxTree.Options;
+            if (parseOptions is null)
+                continue;
+
+            var defines = parseOptions.PreprocessorSymbolNames;
+            if (defines is null || !defines.Any())
+                continue; // 未注入 defines（如测试手工构造的编译）→ 无法判定，保持原行为继续分析
+
+            // SDK 按 TFM 生成 defines，同一 Compilation 内所有语法树一致，取第一棵可判定即可。
+            foreach (var define in defines)
+            {
+                if (define == "NET8_0_OR_GREATER")
+                    return true;
+            }
+
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
