@@ -104,6 +104,20 @@ public class DocumentationContractTests
     }
 
     [Fact]
+    public void ReadmeIdempotency_HasIgnoreGeneratorSupportedSurfaceGuard()
+    {
+        // [GEN-14][§8.2] 防复发：README 不得把 [IgnoreGenerator] 描述/示例为支持「属性/字段」标注面。
+        // IgnoreGeneratorAttribute 已按 E-2 决策收窄为 Interface | Method，属性/字段标注会触发 CS0592。
+        // 精准守卫：拦截「[IgnoreGenerator] 标注在属性/字段声明上」的代码示例（接口/方法合法示例不受影响）。
+        var readme = ReadReadme();
+        var propertyExamplePattern = new Regex(
+            @"\[IgnoreGenerator\]\s*(?:\r?\n){0,2}\s*(?:public\s+)?[A-Za-z_][A-Za-z0-9_]*\s*\{[^}]*get;",
+            RegexOptions.Compiled);
+        propertyExamplePattern.IsMatch(readme).Should().BeFalse(
+            "README 不得出现注明 [IgnoreGenerator] 标注属性的示例（支持面已收窄为接口/方法；属性/字段请改用占位实现 + HTTPCLIENT024 提示）");
+    }
+
+    [Fact]
     public void ReadmeDiagnosticIds_AllExistInDiagnostics_WithConsistentSeverity()
     {
         var readme = ReadReadmeDiagnostics();

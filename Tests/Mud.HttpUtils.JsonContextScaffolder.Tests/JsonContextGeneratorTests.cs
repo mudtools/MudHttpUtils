@@ -1,4 +1,4 @@
-﻿using FluentAssertions;
+using FluentAssertions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Mud.HttpUtils.Attributes;
@@ -1151,7 +1151,7 @@ public class JsonContextGeneratorTests
     }
 
     [Fact]
-    public void Generate_HttpClientApi_ReportsAOT004Info()
+    public void Generate_HttpClientApi_ReportsAOT104Info()
     {
         var source = """
             using Mud.HttpUtils.Attributes;
@@ -1178,7 +1178,41 @@ public class JsonContextGeneratorTests
 
         generator.Generate(compilation);
 
-        generator.Diagnostics.Should().Contain(d => d.Id == "AOT004" && d.Severity == ScaffolderDiagnosticSeverity.Info);
+        generator.Diagnostics.Should().Contain(d => d.Id == "AOT104" && d.Severity == ScaffolderDiagnosticSeverity.Info);
+    }
+
+    [Fact]
+    public void Generate_HttpClientApi_NoLongerEmitsAOT004()
+    {
+        // 反向断言（[§8.4] 防复发）：段位隔离后脚手架 Info 诊断已更名为 AOT104，
+        // 脚手架输出中不得再出现旧 ID "AOT004"，避免与生成器侧 AOT004（Warning，DTO 未覆盖）发生双语义冲突。
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            using System.Text.Json.Serialization;
+            using System.Threading.Tasks;
+            namespace TestApp;
+
+            public class Result<T> where T : class
+            {
+                [JsonPropertyName("data")]
+                public T? Data { get; set; }
+            }
+            public class MyData { public string? Name { get; set; } }
+
+            [HttpClientApi]
+            public interface IMyApi
+            {
+                [Get("/api/data")]
+                Task<Result<MyData>?> GetDataAsync();
+            }
+            """;
+        var compilation = CreateCompilation(source, assemblyName: "TestApp");
+        var generator = new JsonContextGenerator();
+
+        generator.Generate(compilation);
+
+        generator.Diagnostics.Should().NotContain(d => d.Id == "AOT004",
+            "脚手架侧接口扫描 Info 诊断已更名为 AOT104，不得再输出 AOT004");
     }
 
     [Fact]

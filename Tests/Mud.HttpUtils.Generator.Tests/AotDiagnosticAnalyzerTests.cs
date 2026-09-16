@@ -251,6 +251,49 @@ public class AotDiagnosticAnalyzerTests
             "未声明本地 JsonSerializerContext 时不应报告 AOT004（触发门控语义不变）");
     }
 
+    /// <summary>
+    /// [GEN-20][§8.7] AOT004 响应端诊断的定位应落在「返回类型节点/方法声明」范围内，
+    /// 而非整个接口声明。
+    /// </summary>
+    [Fact]
+    public void Aot004_ResponseDto_LocationOnReturnTypeOrMethod()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using System.Text.Json.Serialization;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi]
+                public interface IApi
+                {
+                    [Get("/dto")]
+                    Task<RespDto> GetAsync();
+                }
+
+                // 覆盖 OtherDto 使覆盖集合非空，但未覆盖 RespDto → 响应 DTO 报 AOT004。
+                [JsonSerializable(typeof(OtherDto))]
+                internal partial class Ctx : JsonSerializerContext { }
+
+                public class RespDto { public int Id { get; set; } }
+                public class OtherDto { public int X { get; set; } }
+            }
+            """;
+
+        var diagnostics = RunAnalyzersOnly(source);
+        var aot004 = diagnostics.Should().ContainSingle(
+            d => d.Id == "AOT004", "未覆盖实现对应的响应 DTO 必须报 AOT004").Subject;
+
+        aot004.Location.IsInSource.Should().BeTrue("AOT004 必须落在源码内（而非 None/文件级）");
+        var sourceTree = aot004.Location.SourceTree;
+        var spanText = sourceTree.GetText().ToString(aot004.Location.SourceSpan);
+        spanText.Should().Contain("RespDto",
+            "响应端 AOT004 定位应落在返回类型节点上（GEN-20），span 文本须含目标 DTO 类型名");
+        spanText.Should().NotContain("interface IApi",
+            "AOT004 定位不得回退到整个接口声明（GEN-20）");
+    }
+
     // ───────────────────────── 生成器侧不得重复上报 ─────────────────────────
 
     /// <summary>

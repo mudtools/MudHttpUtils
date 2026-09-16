@@ -9,14 +9,15 @@
 ; 4. 本包尚未正式发布，全部规则位于 "New Rules"；首次发布时整段迁入 Shipped 文件。
 ;
 ; 与 README 诊断表的一致性由 Tests/Mud.HttpUtils.Generator.Tests/DocumentationContractTests.cs 守卫。
+;
+; GEN-15（§8.3）：AOT001/AOT002/AOT003 描述符已迁移到
+; Tools/Mud.HttpUtils.JsonContextScaffolder（pre-build 工具，不参与 analyzers 分发），
+; 由脚手架在生成期以字符串 ID 报告，故不再出现在本发布跟踪表中。
 
 ### New Rules
 
 Rule ID | Category | Severity | Notes
 --------|----------|----------|-------
-AOT001 | AOT | Warning | JSON Context 类名冲突
-AOT002 | AOT | Warning | 开放泛型在低版本 TFM 上标注 [HttpJsonSerializable]
-AOT003 | AOT | Warning | 多态类型缺少 [JsonDerivedType]
 AOT004 | AOT | Warning | DTO 未被任何 JsonSerializerContext 覆盖
 AOT005 | AOT | Warning | 查询参数类型使用 JSON 序列化但未被 Context 覆盖
 AOT006 | AOT | Warning | [HttpJsonSerializable] 类型未被 Context 覆盖

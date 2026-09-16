@@ -1,4 +1,4 @@
-﻿// -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
 //  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
@@ -66,16 +66,6 @@ internal class GenerationConfiguration
     /// 用于决定是否在构造函数中注入 ICurrentUserContext。
     /// </summary>
     public bool AnyMethodRequiresUserId { get; set; }
-
-    /// <summary>
-    /// 接口级 Scopes（从 [Token(Scopes = "...")] 特性获取）。
-    /// </summary>
-    public string? InterfaceScopes { get; set; }
-
-    /// <summary>
-    /// 接口级 Token 注入名称（从 [Token(Name = "...")] 特性获取）。
-    /// </summary>
-    public string? InterfaceTokenName { get; set; }
 
     /// <summary>
     /// 接口的基础路径前缀（从 [BasePath] 特性获取）

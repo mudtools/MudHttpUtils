@@ -622,9 +622,6 @@ internal class InterfaceImplementationGenerator
 
         var tokenManagerKey = GetInterfaceTokenManagerKey();
         var requiresUserId = GetInterfaceRequiresUserId();
-        var interfaceScopes = GetInterfaceTokenScopes();
-        var interfaceTokenName = GetInterfaceTokenName();
-
         var basePath = ExtractBasePath();
 
         return new GenerationConfiguration
@@ -649,8 +646,6 @@ internal class InterfaceImplementationGenerator
             IsUserAccessToken = tokenType == "UserAccessToken",
             TokenManagerKey = tokenManagerKey,
             RequiresUserId = requiresUserId,
-            InterfaceScopes = interfaceScopes,
-            InterfaceTokenName = interfaceTokenName,
             BasePath = basePath
         };
     }
@@ -699,30 +694,6 @@ internal class InterfaceImplementationGenerator
             _interfaceSymbol,
             HttpClientGeneratorConstants.TokenAttributeNames);
         return TokenHelper.GetRequiresUserIdFromAttribute(tokenAttribute);
-    }
-
-    /// <summary>
-    /// 从接口的 Token 特性中提取 Scopes 值
-    /// </summary>
-    private string? GetInterfaceTokenScopes()
-    {
-        var tokenAttribute = AttributeDataHelper.GetAttributeDataFromSymbol(
-            _interfaceSymbol,
-            HttpClientGeneratorConstants.TokenAttributeNames);
-        return TokenHelper.GetScopesFromAttribute(tokenAttribute);
-    }
-
-    /// <summary>
-    /// 从接口的 Token 特性中提取 Name 值
-    /// </summary>
-    private string? GetInterfaceTokenName()
-    {
-        var tokenAttribute = AttributeDataHelper.GetAttributeDataFromSymbol(
-            _interfaceSymbol,
-            HttpClientGeneratorConstants.TokenAttributeNames);
-        if (tokenAttribute == null)
-            return null;
-        return AttributeDataHelper.GetStringValueFromAttribute(tokenAttribute, ["Name"]);
     }
 
     /// <summary>
@@ -1088,9 +1059,15 @@ internal class InterfaceImplementationGenerator
     }
 
     /// <summary>
-    /// FIX-03: 构建接口的嵌套类型路径后缀（如 "Outer_"），用于 hintName 唯一化。
-    /// 顶级接口返回空字符串；嵌套接口返回从外到内的类型名用 "_" 连接。
+    /// FIX-03: 构建接口的嵌套类型路径后缀（如 "Outer+Inner+_"），用于 hintName 唯一化。
+    /// 顶级接口返回空字符串；嵌套接口返回从外到内的类型名用 "+" 连接。
     /// </summary>
+    /// <remarks>
+    /// [GEN-17][§8.5] 旧实现用 "_" 连接，导致「A{class B_C{IFoo}}」与「A{class B{class C{IFoo}}}」
+    /// 平铺后均得到 "B_C_" 后缀 → hintName 冲突（CS8785/产物覆盖）。
+    /// 改用元数据名风格的分隔符 "+"（在文件路径中合法、且与用户类型名中的 "_" 可区分），消除平铺歧义：
+    ///   B_C 嵌套链 → "B_C+_IFoo"；B→C 两层嵌套 → "B+C+_IFoo"。
+    /// </remarks>
     private static string BuildNestingSuffix(INamedTypeSymbol interfaceSymbol)
     {
         if (interfaceSymbol.ContainingType is null)
@@ -1106,7 +1083,7 @@ internal class InterfaceImplementationGenerator
             current = current.ContainingType;
         }
 
-        return string.Join("_", parts) + "_";
+        return string.Join("+", parts) + "_";
     }
 
 }

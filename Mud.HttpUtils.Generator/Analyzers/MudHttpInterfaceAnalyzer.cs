@@ -99,7 +99,8 @@ public class MudHttpInterfaceAnalyzer : DiagnosticAnalyzer
 
             foreach (var method in interfaceSymbol.GetMembers().OfType<IMethodSymbol>())
             {
-                if (method.MethodKind != MethodKind.Ordinary) continue;
+                // [GEN-22][§8.7] 口径统一：仅普通显式声明的方法（排除属性/索引器访问器等非 Ordinary 及隐式成员）。
+                if (method.MethodKind != MethodKind.Ordinary || method.IsImplicitlyDeclared) continue;
 
                 // [F9/E-5] 方法级 [IgnoreGenerator]：跳过该方法的 MUD001/MUD002。
                 if (GeneratorAttributeFilters.HasIgnoreGenerator(method))
@@ -113,7 +114,9 @@ public class MudHttpInterfaceAnalyzer : DiagnosticAnalyzer
                 var httpMethodAttribute = MethodAnalyzer.FindHttpMethodAttributeFromAttributes(methodAttributes);
                 if (httpMethodAttribute == null)
                 {
-                    var location = method.Locations.FirstOrDefault() ?? interfaceDecl.GetLocation();
+                    // [GEN-20][§8.7] 定位提升：优先方法声明语法节点，接口声明为回退。
+                    var location = method.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax().GetLocation()
+                        ?? interfaceDecl.GetLocation();
                     context.ReportDiagnostic(Diagnostic.Create(
                         Diagnostics.MudMethodMissingHttpMethodAttribute,
                         location,
@@ -124,7 +127,9 @@ public class MudHttpInterfaceAnalyzer : DiagnosticAnalyzer
                 var returnType = method.ReturnType;
                 if (!IsGeneratorSupportedReturnType(returnType))
                 {
-                    var location = method.Locations.FirstOrDefault() ?? interfaceDecl.GetLocation();
+                    // [GEN-20][§8.7] 定位提升：优先方法声明语法节点，接口声明为回退。
+                    var location = method.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax().GetLocation()
+                        ?? interfaceDecl.GetLocation();
                     context.ReportDiagnostic(Diagnostic.Create(
                         Diagnostics.MudMethodInvalidReturnType,
                         location,

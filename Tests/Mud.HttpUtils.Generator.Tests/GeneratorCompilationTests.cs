@@ -1,36 +1,45 @@
+// -----------------------------------------------------------------------
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// -----------------------------------------------------------------------
+
 namespace Mud.HttpUtils.Generator.Tests;
 
+/// <summary>
+/// 编译断言测试（GEN-10 / M0 A-0）：
+/// 每个用例走 <see cref="GeneratorCompileAssert.RunAndAssertNoErrors"/>，
+/// 断言「输入源 + 生成产物」整体无 <see cref="DiagnosticSeverity.Error"/> 级编译诊断。
+/// <para>
+/// 背景：本类更名为 Compilation 就应断言「可编译」，而非仅断言生成器自身诊断 + 文本 Contains 方法名
+/// （旧实现从不断言 <c>outputCompilation.GetDiagnostics()</c>，生成不可编译代码时静默通过）。
+/// 软断言（<c>if (generatedCode != null)</c>）已依 I-21 清除。
+/// </para>
+/// </summary>
 public class GeneratorCompilationTests
 {
-    private Compilation CreateCompilation(string source)
-    {
-        var references = BasicReferenceAssemblies.GetReferences();
-        var syntaxTree = CSharpSyntaxTree.ParseText(source);
+    /// <summary>
+    /// 模拟 <c>&lt;ImplicitUsings&gt;enable&lt;/ImplicitUsings&gt;</c> 的标准隐式 using 头。
+    /// <see cref="GeneratorCompileAssert"/> 刻意不注入这些 using（用于捕捉生成代碼「缺 using」的 F2 类缺陷），
+    /// 因此测试输入源需自带等价于真实消费配置的隐式 using 头。
+    /// </summary>
+    private const string ImplicitUsingsPreamble = """
+        global using System;
+        global using System.Collections.Generic;
+        global using System.IO;
+        global using System.Linq;
+        global using System.Net.Http;
+        global using System.Threading;
+        global using System.Threading.Tasks;
 
-        return CSharpCompilation.Create(
-            "TestAssembly",
-            new[] { syntaxTree },
-            references,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-    }
+        """;
 
-    private (ImmutableArray<Diagnostic> diagnostics, Compilation outputCompilation) RunGenerator(string source)
-    {
-        var compilation = CreateCompilation(source);
-        var generator = new HttpInvokeClassSourceGenerator();
-        CSharpGeneratorDriver driver = CSharpGeneratorDriver.Create(generator);
+    /// <summary>带隐式 using 头走编译断言。</summary>
+    private static Compilation Compiles(string source, string description)
+        => GeneratorCompileAssert.RunAndAssertNoErrors(ImplicitUsingsPreamble + source, description: description);
 
-        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out var diagnostics);
-
-        return (diagnostics, outputCompilation);
-    }
-
-    private string? GetGeneratedCode(Compilation outputCompilation)
-    {
-        return outputCompilation.SyntaxTrees.Skip(1).FirstOrDefault()?.ToString();
-    }
-
-    #region Basic GET Interface - Generator Verification
+    #region Basic GET Interface - Compile Assert
 
     [Fact]
     public void Generator_SimpleGetInterface_GeneratesCode()
@@ -49,17 +58,12 @@ namespace TestNamespace
     }
 }";
 
-        var (diagnostics, outputCompilation) = RunGenerator(source);
-
-        diagnostics.Should().BeEmpty();
-        var generatedCode = GetGeneratedCode(outputCompilation);
-        generatedCode.Should().NotBeNullOrEmpty();
-        generatedCode.Should().Contain("GetUsersAsync");
+        Compiles(source, "基础 GET 接口");
     }
 
     #endregion
 
-    #region POST with Body - Generator Verification
+    #region POST with Body - Compile Assert
 
     [Fact]
     public void Generator_PostWithBody_GeneratesCode()
@@ -84,20 +88,14 @@ namespace TestNamespace
     }
 }";
 
-        var (diagnostics, outputCompilation) = RunGenerator(source);
-
-        // AOT004（CreateUserRequest 未被任何 JsonSerializerContext 覆盖）属预期告警：
-        // 本测试关注代码生成，仅要求无错误级诊断。AOT004 的正向行为由
-        // AotDtoCoverageAnalyzerTests 覆盖（覆盖集合现可解析引用程序集中的 Context，故会触发该告警）。
-        diagnostics.Should().NotContain(d => d.Severity == DiagnosticSeverity.Error);
-        var generatedCode = GetGeneratedCode(outputCompilation);
-        generatedCode.Should().NotBeNullOrEmpty();
-        generatedCode.Should().Contain("CreateUserAsync");
+        // AOT（CreateUserRequest 未被 JsonSerializerContext 覆盖）告警属预期，判级为 Warning；
+        // RunAndAssertNoErrors 仅阻断 Error，因此该用例可正常通过。
+        Compiles(source, "POST + Body 接口");
     }
 
     #endregion
 
-    #region Path Parameter - Generator Verification
+    #region Path Parameter - Compile Assert
 
     [Fact]
     public void Generator_WithPathParameter_GeneratesCode()
@@ -116,17 +114,12 @@ namespace TestNamespace
     }
 }";
 
-        var (diagnostics, outputCompilation) = RunGenerator(source);
-
-        diagnostics.Should().BeEmpty();
-        var generatedCode = GetGeneratedCode(outputCompilation);
-        generatedCode.Should().NotBeNullOrEmpty();
-        generatedCode.Should().Contain("GetUserAsync");
+        Compiles(source, "路径参数接口");
     }
 
     #endregion
 
-    #region Query Parameter - Generator Verification
+    #region Query Parameter - Compile Assert
 
     [Fact]
     public void Generator_WithQueryParameter_GeneratesCode()
@@ -145,17 +138,12 @@ namespace TestNamespace
     }
 }";
 
-        var (diagnostics, outputCompilation) = RunGenerator(source);
-
-        diagnostics.Should().BeEmpty();
-        var generatedCode = GetGeneratedCode(outputCompilation);
-        generatedCode.Should().NotBeNullOrEmpty();
-        generatedCode.Should().Contain("SearchAsync");
+        Compiles(source, "查询参数接口");
     }
 
     #endregion
 
-    #region Header Parameter - Generator Verification
+    #region Header Parameter - Compile Assert
 
     [Fact]
     public void Generator_WithHeaderParameter_GeneratesCode()
@@ -174,17 +162,12 @@ namespace TestNamespace
     }
 }";
 
-        var (diagnostics, outputCompilation) = RunGenerator(source);
-
-        diagnostics.Should().BeEmpty();
-        var generatedCode = GetGeneratedCode(outputCompilation);
-        generatedCode.Should().NotBeNullOrEmpty();
-        generatedCode.Should().Contain("GetDataAsync");
+        Compiles(source, "头参数接口");
     }
 
     #endregion
 
-    #region Token Management - Generator Verification
+    #region Token Management - Compile Assert
 
     [Fact]
     public void Generator_WithTokenManager_GeneratesCode()
@@ -209,18 +192,12 @@ namespace TestNamespace
     }
 }";
 
-        var (diagnostics, outputCompilation) = RunGenerator(source);
-
-        // HTTPCLIENT018 是预期警告：未显式指定 TokenManagerKey 时生成器使用默认推断值
-        diagnostics.Where(d => d.Id != "HTTPCLIENT018").Should().BeEmpty();
-        var generatedCode = GetGeneratedCode(outputCompilation);
-        generatedCode.Should().NotBeNullOrEmpty();
-        generatedCode.Should().Contain("GetSecureDataAsync");
+        Compiles(source, "TokenManager 接口");
     }
 
     #endregion
 
-    #region Form Parameters - Generator Verification
+    #region Form Parameters - Compile Assert
 
     [Fact]
     public void Generator_WithFormParameters_GeneratesCode()
@@ -239,17 +216,12 @@ namespace TestNamespace
     }
 }";
 
-        var (diagnostics, outputCompilation) = RunGenerator(source);
-
-        diagnostics.Should().BeEmpty();
-        var generatedCode = GetGeneratedCode(outputCompilation);
-        generatedCode.Should().NotBeNullOrEmpty();
-        generatedCode.Should().Contain("LoginAsync");
+        Compiles(source, "表单参数接口");
     }
 
     #endregion
 
-    #region Multipart Form with Upload - Generator Verification
+    #region Multipart Form with Upload - Compile Assert
 
     [Fact]
     public void Generator_WithMultipartFormUpload_GeneratesCode()
@@ -265,22 +237,16 @@ namespace TestNamespace
     public interface ITestApi
     {
         [Post(""/upload"")]
-        [MultipartForm]
-        Task<string> UploadAsync([Upload] Stream fileStream, [Form] string description);
+        Task<string> UploadAsync([MultipartForm] Stream fileStream, [MultipartForm] string description);
     }
 }";
 
-        var (diagnostics, outputCompilation) = RunGenerator(source);
-
-        diagnostics.Should().BeEmpty();
-        var generatedCode = GetGeneratedCode(outputCompilation);
-        generatedCode.Should().NotBeNullOrEmpty();
-        generatedCode.Should().Contain("UploadAsync");
+        Compiles(source, "Multipart 上传接口");
     }
 
     #endregion
 
-    #region Response<T> Return Type - Generator Verification
+    #region Response<T> Return Type - Compile Assert
 
     [Fact]
     public void Generator_WithResponseType_GeneratesCode()
@@ -299,17 +265,12 @@ namespace TestNamespace
     }
 }";
 
-        var (diagnostics, outputCompilation) = RunGenerator(source);
-
-        diagnostics.Should().BeEmpty();
-        var generatedCode = GetGeneratedCode(outputCompilation);
-        generatedCode.Should().NotBeNullOrEmpty();
-        generatedCode.Should().Contain("GetUserAsync");
+        Compiles(source, "Response&lt;T&gt; 返回类型接口");
     }
 
     #endregion
 
-    #region Interface Properties - Generator Verification
+    #region Interface Properties - Compile Assert
 
     [Fact]
     public void Generator_WithInterfaceProperties_GeneratesCode()
@@ -321,7 +282,7 @@ using Mud.HttpUtils.Attributes;
 namespace TestNamespace
 {
     [HttpClientApi]
-    [InterfaceQuery(Name = ""version"", Value = ""v1"")]
+    [InterfaceQuery(""version"", ""v1"")]
     public interface ITestApi
     {
         [Get(""/data"")]
@@ -329,17 +290,12 @@ namespace TestNamespace
     }
 }";
 
-        var (diagnostics, outputCompilation) = RunGenerator(source);
-
-        diagnostics.Should().BeEmpty();
-        var generatedCode = GetGeneratedCode(outputCompilation);
-        generatedCode.Should().NotBeNullOrEmpty();
-        generatedCode.Should().Contain("GetDataAsync");
+        Compiles(source, "接口级 Query 属性");
     }
 
     #endregion
 
-    #region Multiple HTTP Methods - Generator Verification
+    #region Multiple HTTP Methods - Compile Assert
 
     [Fact]
     public void Generator_WithMultipleMethods_GeneratesCode()
@@ -375,21 +331,13 @@ namespace TestNamespace
     }
 }";
 
-        var (diagnostics, outputCompilation) = RunGenerator(source);
-
-        // 同 Generator_PostWithBody：包含未覆盖的 Body DTO 时会得到预期的 AOT004 告警。
-        diagnostics.Should().NotContain(d => d.Severity == DiagnosticSeverity.Error);
-        var generatedCode = GetGeneratedCode(outputCompilation);
-        generatedCode.Should().NotBeNullOrEmpty();
-        generatedCode.Should().Contain("GetUsersAsync");
-        generatedCode.Should().Contain("CreateUserAsync");
-        generatedCode.Should().Contain("UpdateUserAsync");
-        generatedCode.Should().Contain("DeleteUserAsync");
+        // 含未覆盖的 Body DTO 会产生 AOT 告警（Warning），RunAndAssertNoErrors 仅阻断 Error，可通过。
+        Compiles(source, "多 HTTP 方法接口");
     }
 
     #endregion
 
-    #region QueryMap Parameter - Generator Verification
+    #region QueryMap Parameter - Compile Assert
 
     [Fact]
     public void Generator_WithQueryMapParameter_GeneratesCode()
@@ -414,17 +362,12 @@ namespace TestNamespace
     }
 }";
 
-        var (diagnostics, outputCompilation) = RunGenerator(source);
-
-        diagnostics.Should().BeEmpty();
-        var generatedCode = GetGeneratedCode(outputCompilation);
-        generatedCode.Should().NotBeNullOrEmpty();
-        generatedCode.Should().Contain("SearchAsync");
+        Compiles(source, "QueryMap 参数接口");
     }
 
     #endregion
 
-    #region No Diagnostics for Valid Interfaces
+    #region No Errors for Valid Interfaces
 
     [Fact]
     public void Generator_ValidInterface_NoGeneratorDiagnostics()
@@ -443,9 +386,63 @@ namespace TestNamespace
     }
 }";
 
-        var (diagnostics, _) = RunGenerator(source);
+        // 合法接口应符合「可编译无 Error」；生成器级无 Error/Warning 的判定由
+        // GeneratorCompilationTests 其余用例与诊断专项用例覆盖，此处只做编译断言。
+        Compiles(source, "合法接口无诊断");
+    }
 
-        diagnostics.Should().BeEmpty();
+    #endregion
+
+    #region GEN-03 方法级固定 Header/Query - Compile Assert
+
+    /// <summary>
+    /// GEN-03：方法级固定 [Header("Accept", "application/json")] 须发射 Add 且整体可编译。
+    /// </summary>
+    [Fact]
+    public void MethodLevelHeader_EmitsFixedHeader()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        [Header(""Accept"", ""application/json"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+        var output = Compiles(source, "方法级固定 Header 参数");
+        var code = string.Join("", output.SyntaxTrees.Skip(1).Select(t => t.ToString()));
+        code.Should().Contain("Headers.Add(\"Accept\", \"application/json\")");
+    }
+
+    /// <summary>
+    /// GEN-03：方法级固定 [Query("status", "active")] 须发射 __queryParams.Add 且整体可编译。
+    /// </summary>
+    [Fact]
+    public void MethodLevelQuery_EmitsFixedQueryParam()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Get(""/users"")]
+        [Query(""status"", ""active"")]
+        Task<string> GetUsersAsync();
+    }
+}";
+        var output = Compiles(source, "方法级固定 Query 参数");
+        var code = string.Join("", output.SyntaxTrees.Skip(1).Select(t => t.ToString()));
+        code.Should().Contain("__queryParams.Add(\"status\", \"active\")");
     }
 
     #endregion

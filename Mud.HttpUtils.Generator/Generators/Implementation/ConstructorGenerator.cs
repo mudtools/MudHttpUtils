@@ -489,9 +489,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         // （netstandard2.1+ 才内置），需用 #if 包裹避免 netstandard2.0 消费项目编译失败
         if (_context.EmitGeneratedCodeMarkers)
         {
-            codeBuilder.AppendLine("#if !NETSTANDARD2_0");
+            // B-3（GEN-07）：!NETSTANDARD2_0 → NET5_0_OR_GREATER（DynamicDependency 是 .NET 5+ 才可用，
+            // 且 netstandard2.0 消费项目的 #if 分支语义与能力符号对齐）。
+            codeBuilder.AppendLine(GeneratedCodeGuards.Net5OrGreater);
             codeBuilder.AppendLine("        [System.Diagnostics.CodeAnalysis.DynamicDependency(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof(global::Mud.HttpUtils.RestService))]");
-            codeBuilder.AppendLine("#endif");
+            codeBuilder.AppendLine(GeneratedCodeGuards.EndIf);
         }
         var signature = $"        public {className}({string.Join(", ", parameters)})";
         codeBuilder.Append(signature);

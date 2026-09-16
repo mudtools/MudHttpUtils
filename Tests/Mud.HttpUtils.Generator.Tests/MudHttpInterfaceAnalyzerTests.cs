@@ -107,7 +107,15 @@ public class MudHttpInterfaceAnalyzerTests
             """;
 
         var diagnostics = Analyze(source);
-        diagnostics.Should().Contain(d => d.Id == "MUD001");
+        var mud001 = diagnostics.Single(d => d.Id == "MUD001");
+
+        // [GEN-20][§8.7] 定位应落在方法声明范围内，而非整个接口声明。
+        mud001.Location.IsInSource.Should().BeTrue();
+        var spanText = mud001.Location.SourceTree.GetText().ToString(mud001.Location.SourceSpan);
+        spanText.Should().Contain("MissingAttribute",
+            "MUD001 定位应落在方法声明上（GEN-20），span 文本须含方法名");
+        spanText.Should().NotContain("interface IApi",
+            "MUD001 定位不得回退到整个接口声明（GEN-20）");
     }
 
     [Fact]

@@ -12,6 +12,16 @@ namespace Mud.HttpUtils.Generators.Implementation;
 /// </summary>
 internal class RequestBuilder
 {
+    /// <summary>
+    /// GEN-04（B-1）：按特性语义解析 format 位置。<c>[Path("yyyy-MM-dd")]</c> 的首参即 formatString
+    /// （<see cref="PathAttribute"/> 的构造参数），<c>[Query("name","format")]</c> 的第二个位置参数是 format。
+    /// 移除了此前对 <see cref="HttpClientGeneratorConstants.PathAttributes"/> 的显式排除（源于「Path 首参是 name」的错误假设，
+    /// 参见文档 §7.1 修复点 3 / PathAttribute.cs 构造签名）。
+    /// </summary>
+    private string GetFormatString(ParameterAttributeInfo attribute)
+        => AttributeArgumentReader.GetString(attribute,
+            AttributeArgumentReader.ResolveFormatPosition(attribute.Name),
+            "FormatString", "Format");
 
     /// <summary>
     /// 生成 URL 字符串
@@ -55,8 +65,11 @@ internal class RequestBuilder
     /// </summary>
     private string BuildUrlWithPlaceholders(string urlTemplate, List<ParameterInfo> pathParams, MethodAnalysisResult? methodInfo = null)
     {
-        // 转义 URL 模板中的特殊字符（\ 和 "），占位符 {name} 不含这些字符，转义不影响后续替换
-        var sb = new StringBuilder(StringEscapeHelper.EscapeString(urlTemplate));
+        // 先 C# 字面量转义，再插值转义（I-16 / GEN-01）：
+        // 模板被发射进 $"...{}..." 插值字符串，单花括号会造成插值洞。
+        // EscapeForInterpolation 将 { } 双写为 {{ }}，此后模板内不存在单花括号，
+        // 未匹配的占位符将保留为 {{token}}（发射后运行期为 {token} 字面量）。
+        var sb = new StringBuilder(EscapeForInterpolation(StringEscapeHelper.EscapeString(urlTemplate)));
         var hasPathParams = pathParams.Any();
 
         if (methodInfo != null)
@@ -129,14 +142,33 @@ internal class RequestBuilder
         => GetPathParameterName(pathAttr, paramName);
 
     /// <summary>
+    /// 占位符检索键与实际替换值不变，仅检索键改为转义形态（I-16 / GEN-01）。
+    /// 模板花括号已被 <see cref="EscapeForInterpolation"/> 双写为 {{…}}，故在此把传入的
+    /// {name} 检索键也转义为 {{name}}，再交给 <see cref="ReplacePlaceholderCore"/> 做大小写不敏感替换。
+    /// 替换值本身保持单花括号的插值片段（如 {access_token}、{Uri.EscapeDataString(id)}），
+    /// 发射进 $“…” 后即成为真正的插值孔。
+    /// </summary>
+    private static void ReplacePlaceholder(StringBuilder sb, string placeholder, string replacement)
+        => ReplacePlaceholderCore(sb, EscapeForInterpolation(placeholder), replacement);
+
+    /// <summary>
+    /// I-16：把将发起进插值字符串的文本转义为插值字面量，从构造上杜绝 { } 插值洞。
+    /// 注意本方法只服务于花括号插值场景，不处理 C# 字符串字面量转义（那是
+    /// <see cref="StringEscapeHelper.EscapeString"/> 的职责），二者保持单一职责、互不污染。
+    /// </summary>
+    internal static string EscapeForInterpolation(string text)
+        => text.Replace("{", "{{").Replace("}", "}}");
+
+    /// <summary>
     /// 大小写不敏感替换（F3）：URL 模板 <c>{id}</c> 与 <c>[Path]</c> 参数 <c>Id</c> 应视为同一占位符。
     /// 生成阶段统一改用本方法，避免「校验阶段 OrdinalIgnoreCase、生成阶段 Ordinal」的语义分叉。
     /// URL 模板规模很小（单条路径），此处以清晰为优先。
+    /// 检索键为转义形态（{{id}}），直接对转义后的模板 sb 操作。
     /// </summary>
-    private static void ReplacePlaceholder(StringBuilder sb, string placeholder, string replacement)
+    private static void ReplacePlaceholderCore(StringBuilder sb, string escapedPlaceholder, string replacement)
     {
         var current = sb.ToString();
-        if (current.IndexOf(placeholder, StringComparison.OrdinalIgnoreCase) < 0)
+        if (current.IndexOf(escapedPlaceholder, StringComparison.OrdinalIgnoreCase) < 0)
             return;
 
         // netstandard2.0 无 string.Replace(string, string, StringComparison) 重载，
@@ -147,7 +179,7 @@ internal class RequestBuilder
         var index = 0;
         while (true)
         {
-            var found = current.IndexOf(placeholder, index, StringComparison.OrdinalIgnoreCase);
+            var found = current.IndexOf(escapedPlaceholder, index, StringComparison.OrdinalIgnoreCase);
             if (found < 0)
             {
                 newText.Append(current, index, current.Length - index);
@@ -155,7 +187,7 @@ internal class RequestBuilder
             }
             newText.Append(current, index, found - index);
             newText.Append(replacement);
-            index = found + placeholder.Length;
+            index = found + escapedPlaceholder.Length;
         }
 
         sb.Clear();
@@ -190,12 +222,15 @@ internal class RequestBuilder
 
         var hasInterfaceQueryParams = methodInfo.InterfaceQueryParameters.Any();
 
-        if (!queryParams.Any() && !hasTokenQuery && !interfaceQueryProperties.Any() && !hasInterfaceQueryParams)
+        // GEN-03：方法级固定查询参数（仅支持常量值）
+        var hasMethodQueryParams = methodInfo.MethodQueryParameters.Any();
+
+        if (!queryParams.Any() && !hasTokenQuery && !interfaceQueryProperties.Any() && !hasInterfaceQueryParams && !hasMethodQueryParams)
             return;
 
         // 按需声明变量：仅当参数或接口配置实际引用时才生成
         var needsQueryParams = hasTokenQuery || hasInterfaceQueryParams || interfaceQueryProperties.Any() ||
-            queryParams.Any(QueryParameterBinder.UsesQueryParams);
+            queryParams.Any(QueryParameterBinder.UsesQueryParams) || hasMethodQueryParams;
         var needsRawQueryPairs = queryParams.Any(QueryParameterBinder.UsesRawQueryPairs);
 
         if (needsQueryParams)
@@ -227,6 +262,15 @@ internal class RequestBuilder
             }
         }
 
+        // GEN-03：方法级固定查询参数（在参数级与接口级查询之后追加，仅支持常量值）
+        foreach (var methodQuery in methodInfo.MethodQueryParameters)
+        {
+            if (!string.IsNullOrEmpty(methodQuery.Name) && methodQuery.Value != null)
+            {
+                codeBuilder.AppendLine($"            __queryParams.Add(\"{StringEscapeHelper.EscapeString(methodQuery.Name)}\", \"{StringEscapeHelper.EscapeString(methodQuery.Value)}\");");
+            }
+        }
+
         if (needsQueryParams)
         {
             codeBuilder.AppendLine("            if (__queryParams.Count > 0)");
@@ -250,12 +294,13 @@ internal class RequestBuilder
     {
         if (methodInfo.HttpMethod.Equals("patch", StringComparison.OrdinalIgnoreCase))
         {
-            codeBuilder.AppendLine("#if NETSTANDARD2_0");
+            // B-3（GEN-07）：NETSTANDARD2_0 → NET5_0_OR_GREATER（反向；HttpMethod.PATCH 是 .NET 5+ 能力符号）。
+            codeBuilder.AppendLine(GeneratedCodeGuards.Net5OrGreater);
+            codeBuilder.AppendLine($"            using var __httpRequest = new HttpRequestMessage(HttpMethod.{methodInfo.HttpMethod}, __url);");
+            codeBuilder.AppendLine(GeneratedCodeGuards.Else);
             codeBuilder.AppendLine("            var __httpMethod = new HttpMethod(\"PATCH\");");
             codeBuilder.AppendLine($"            using var __httpRequest = new HttpRequestMessage(__httpMethod, __url);");
-            codeBuilder.AppendLine("#else");
-            codeBuilder.AppendLine($"            using var __httpRequest = new HttpRequestMessage(HttpMethod.{methodInfo.HttpMethod}, __url);");
-            codeBuilder.AppendLine("#endif");
+            codeBuilder.AppendLine(GeneratedCodeGuards.EndIf);
         }
         else
         {
@@ -266,11 +311,12 @@ internal class RequestBuilder
         // 全局路径 ResilientHttpClient 与方法级路径 ResiliencePolicyResolver 均识别）
         if (methodInfo.RetryEnabled && methodInfo.RetryAllowNonIdempotent)
         {
-            codeBuilder.AppendLine("#if NETSTANDARD2_0");
-            codeBuilder.AppendLine($"            __httpRequest.Properties[HttpExecutionConstants.AllowNonIdempotentRetryPropertyKey] = true;");
-            codeBuilder.AppendLine("#else");
+            // B-3（GEN-07）：NETSTANDARD2_0 → NET5_0_OR_GREATER（反向；Options.TryAdd 是 .NET 5+ 能力符号）。
+            codeBuilder.AppendLine(GeneratedCodeGuards.Net5OrGreater);
             codeBuilder.AppendLine($"            __httpRequest.Options.TryAdd(HttpExecutionConstants.AllowNonIdempotentRetryPropertyKey, true);");
-            codeBuilder.AppendLine("#endif");
+            codeBuilder.AppendLine(GeneratedCodeGuards.Else);
+            codeBuilder.AppendLine($"            __httpRequest.Properties[HttpExecutionConstants.AllowNonIdempotentRetryPropertyKey] = true;");
+            codeBuilder.AppendLine(GeneratedCodeGuards.EndIf);
         }
     }
 
@@ -690,8 +736,10 @@ internal class RequestBuilder
 
     internal string GetTokenQueryName(MethodAnalysisResult methodInfo)
     {
-        if (!string.IsNullOrEmpty(methodInfo.InterfaceTokenName))
-            return methodInfo.InterfaceTokenName;
+        // GEN-09：方法级 Token(Name) > 接口级 > 默认。
+        var tokenName = methodInfo.EffectiveTokenName;
+        if (!string.IsNullOrEmpty(tokenName))
+            return tokenName;
 
         var queryAttr = methodInfo.InterfaceAttributes?.FirstOrDefault(attr => attr.StartsWith("Query:", StringComparison.Ordinal));
         if (!string.IsNullOrEmpty(queryAttr))
@@ -702,10 +750,12 @@ internal class RequestBuilder
 
     internal string? GetTokenHeaderName(MethodAnalysisResult methodInfo)
     {
+        // GEN-09：方法级 Token(Name) > 接口级。
+        var tokenName = methodInfo.EffectiveTokenName;
         if (!string.IsNullOrEmpty(methodInfo.InterfaceTokenInjectionMode) &&
             methodInfo.InterfaceTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeHeader &&
-            !string.IsNullOrEmpty(methodInfo.InterfaceTokenName))
-            return methodInfo.InterfaceTokenName;
+            !string.IsNullOrEmpty(tokenName))
+            return tokenName;
 
         var headerAttr = methodInfo.InterfaceAttributes?.FirstOrDefault(attr => attr.StartsWith("Header:", StringComparison.Ordinal));
         if (!string.IsNullOrEmpty(headerAttr))
@@ -845,6 +895,10 @@ internal class RequestBuilder
 
             if (isStringType)
             {
+                // [GEN-18][§8.6] 运行期守卫：net4x/netstandard2.0 编译的 HttpClient 不校验头值 CR/LF，
+                // 显式拒绝含 CR/LF 的头值以阻止头部注入。
+                codeBuilder.AppendLine($"            if (!global::Mud.HttpUtils.HttpHeaderValueValidator.IsValid({property.Name}))");
+                codeBuilder.AppendLine($"                throw new global::System.ArgumentException(\"HTTP 头值包含非法字符（CR/LF）。\", nameof({property.Name}));");
                 // string 类型：null/空白时跳过
                 codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({property.Name}))");
                 if (shouldReplace)
@@ -906,50 +960,7 @@ internal class RequestBuilder
         }
     }
 
-    private static readonly HashSet<string> FormatStringFirstArgAttributes = new HashSet<string>(StringComparer.Ordinal)
-    {
-        HttpClientGeneratorConstants.QueryAttribute,
-        HttpClientGeneratorConstants.ArrayQueryAttribute,
-    };
-
-    private static readonly HashSet<string> FirstArgIsNameAttributes = new HashSet<string>(StringComparer.Ordinal)
-    {
-        HttpClientGeneratorConstants.HeaderAttribute,
-    };
-
-    private string GetFormatString(ParameterAttributeInfo attribute)
-    {
-        if (FirstArgIsNameAttributes.Contains(attribute.Name))
-        {
-            return attribute.NamedArguments.TryGetValue("FormatString", out var formatString)
-                ? formatString as string
-                : attribute.NamedArguments.TryGetValue("Format", out var formatAlias)
-                    ? formatAlias as string
-                    : null;
-        }
-
-        if (attribute.Arguments.Length > 1)
-        {
-            return attribute.Arguments[1] as string ?? "";
-        }
-
-        if (attribute.Arguments.Length == 1
-            && !HttpClientGeneratorConstants.PathAttributes.Contains(attribute.Name)
-            && !FormatStringFirstArgAttributes.Contains(attribute.Name))
-        {
-            return attribute.Arguments[0] as string ?? "";
-        }
-
-        if (attribute.NamedArguments.TryGetValue("FormatString", out var fs))
-            return fs as string;
-
-        if (attribute.NamedArguments.TryGetValue("Format", out var f))
-            return f as string;
-
-        return null;
-    }
-
-private string GetBodyContentType(ParameterAttributeInfo bodyAttr)
+    private string GetBodyContentType(ParameterAttributeInfo bodyAttr)
     {
         // 先检查构造函数参数（如 [Body("application/xml")]）
         if (bodyAttr.Arguments.Length > 0)

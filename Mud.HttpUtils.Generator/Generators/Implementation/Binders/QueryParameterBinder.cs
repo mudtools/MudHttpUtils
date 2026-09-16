@@ -1,3 +1,4 @@
+using Mud.HttpUtils;
 using Mud.HttpUtils.Models;
 
 // [Phase4 修复 5.1] CA1308（建议把 ToLowerInvariant 换成 ToUpperInvariant）在本文件内属**误报**：
@@ -168,12 +169,17 @@ internal class QueryParameterBinder : IParameterBinder
             else
             {
                 // 无专用重载的类型（如 byte, char, DateTimeOffset, TimeSpan 等）：回退到 ToString()
+                // GEN-06（B-2）：回退分支显式 Invariant，避免按 CurrentCulture 生成区域敏感串
+                // （DateTimeOffset/TimeSpan/DateOnly/TimeOnly 已被 IsSimpleType 收录但不在 WithFormat 白名单）。
+                // 仅对「可格式化值类型」追加 provider 参数；object 等非 IFormattable 引用类型保持 .ToString()，
+                // 避免 object.ToString(IFormatProvider) 不存在导致 CS0117。
+                var isFormattableValueType = TypeDetectionHelper.IsValueType(param.Type);
                 if (TypeDetectionHelper.IsNullableType(param.Type))
                 {
                     // 使用 ?. 运算符，Add() 会跳过 null 值；allowNull 时用 AddAllowNull 保留空键。
                     var formatExpression = !string.IsNullOrEmpty(formatString)
-                        ? $"?.ToString(\"{StringEscapeHelper.EscapeString(formatString)}\")"
-                        : "?.ToString()";
+                        ? $"?.ToString(\"{StringEscapeHelper.EscapeString(formatString)}\", global::System.Globalization.CultureInfo.InvariantCulture)"
+                        : (isFormattableValueType ? "?.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)" : "?.ToString()");
                     var method = allowNull ? "AddAllowNull" : "Add";
                     codeBuilder.AppendLine($"{indent}__queryParams.{method}(\"{escapedName}\", {param.Name}{formatExpression});");
                 }
@@ -181,8 +187,8 @@ internal class QueryParameterBinder : IParameterBinder
                 {
                     // 非可空值类型永远有值，allowNull 无意义
                     var formatExpression = !string.IsNullOrEmpty(formatString)
-                        ? $".ToString(\"{StringEscapeHelper.EscapeString(formatString)}\")"
-                        : ".ToString()";
+                        ? $".ToString(\"{StringEscapeHelper.EscapeString(formatString)}\", global::System.Globalization.CultureInfo.InvariantCulture)"
+                        : (isFormattableValueType ? ".ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)" : ".ToString()");
                     codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{escapedName}\", {param.Name}{formatExpression});");
                 }
             }
@@ -294,7 +300,14 @@ internal class QueryParameterBinder : IParameterBinder
             else
             {
                 // 无专用重载：回退到 ToString()
-                codeBuilder.AppendLine($"{indent}        __queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", __item.ToString());");
+                // GEN-06（B-2）：数组元素路径同样显式 Invariant（TimeSpan[]、DateTimeOffset[] 等），
+                // 避免按 CurrentCulture 生成区域敏感串；非可格式化值类型保持 .ToString()。
+                var elementIsFormattable = TypeDetectionHelper.IsValueType(elementType)
+                                           && !TypeDetectionHelper.IsNullableType(elementType);
+                var itemToString = elementIsFormattable
+                    ? "__item.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)"
+                    : "__item.ToString()";
+                codeBuilder.AppendLine($"{indent}        __queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", {itemToString});");
             }
 
             codeBuilder.AppendLine($"{indent}    }}");
@@ -670,21 +683,25 @@ internal class QueryParameterBinder : IParameterBinder
 
     private static string GetQueryParameterName(ParameterAttributeInfo attr, string defaultName)
     {
-        // CFG-04 / B-3：优先构造参数（[Query("name")]），其次命名参数（[Query(Name = "name")]）。
-        var fromConstructor = attr.Arguments.FirstOrDefault()?.ToString();
-        if (!string.IsNullOrEmpty(fromConstructor))
-            return fromConstructor;
-
-        if (attr.NamedArguments.TryGetValue("Name", out var nameValue)
-            && nameValue is string name
-            && !string.IsNullOrEmpty(name))
+        // CFG-04 / B-3 / GEN-05：优先级 Name（命名参数或位置 0）> AliasAs > 参数名。
+        // Name 与首参（[Query("name")]）一致，经 AttributeArgumentReader 统一读取，避免此前 QueryParameterBinder.cs:671-684
+        // 与 MethodAnalyzer 接口属性路径的口径分叉。
+        var name = AttributeArgumentReader.GetString(attr, AttributeArgumentReader.ResolveNamePosition(attr.Name), "Name");
+        if (!string.IsNullOrEmpty(name))
             return name;
+
+        // GEN-05：参数级 [Query(AliasAs = "keyword")] 生效。
+        var alias = AttributeArgumentReader.GetString(attr, null, "AliasAs");
+        if (!string.IsNullOrEmpty(alias))
+            return alias;
 
         return defaultName;
     }
 
     private static string? GetFormatString(ParameterAttributeInfo attr)
     {
-        return attr.NamedArguments.TryGetValue("Format", out var format) && format is string f ? f : null;
+        // GEN-04：[Query("bth", "yyyy-MM-dd")] 的位置 format（ResolveFormatPosition=1）需生效，
+        // 此前只读 NamedArguments["Format"] 导致位置 format 被丢弃。
+        return AttributeArgumentReader.GetString(attr, AttributeArgumentReader.ResolveFormatPosition(attr.Name), "Format");
     }
 }

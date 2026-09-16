@@ -222,4 +222,144 @@ public class QueryAttributeConfigFixTests
         // 嵌套：filter.Outer + 展平 separator(',') + Inner
         code.Should().Contain("\"filter.Outer,Inner\"");
     }
+
+    /// <summary>
+    /// GEN-04（B-1）：<c>[Query("bth", "yyyy-MM-dd")]</c> 的位置 format 需生效。
+    /// 此前 GetFormatString 只读 NamedArguments["Format"]，位置 format 被丢弃。
+    /// </summary>
+    [Fact]
+    public void GEN04_QueryPositionalFormat_IsConsumed()
+    {
+        var code = GenerateFor(new ParameterInfo
+        {
+            Name = "reportDate",
+            Type = "System.DateTime",
+            Attributes =
+            [
+                new ParameterAttributeInfo
+                {
+                    Name = "QueryAttribute",
+                    Arguments = ["bth", "yyyy-MM-dd"],
+                },
+            ],
+        });
+
+        // 位置参数 [1] 即 format，应落到 Add(name, value, "yyyy-MM-dd")。
+        code.Should().Contain("yyyy-MM-dd");
+    }
+
+    /// <summary>
+    /// GEN-04（B-1）：<c>[Path("yyyy-MM-dd")]</c> 的首参即 formatString（PathAttribute 构造参数），
+    /// 此前 RequestBuilder.GetFormatString 显式排除 PathAttributes 导致 format 被丢弃。
+    /// </summary>
+    [Fact]
+    public void GEN04_PathPositionalFormat_IsConsumed()
+    {
+        var methodInfo = CreateMethodInfo(
+        [
+            new ParameterInfo
+            {
+                Name = "birth",
+                Type = "System.DateTime",
+                Attributes =
+                [
+                    new ParameterAttributeInfo
+                    {
+                        Name = "PathAttribute",
+                        Arguments = ["yyyy-MM-dd"],
+                    },
+                ],
+            },
+        ]);
+        methodInfo.UrlTemplate = "/reports/{birth}";
+
+        var result = _requestBuilder.BuildUrlString(methodInfo);
+        result.Should().Contain("yyyy-MM-dd");
+    }
+
+    /// <summary>
+    /// GEN-05（B-1）：参数级 [Header] 的 Name（命名参数或位置 0）> AliasAs > 参数名。
+    /// 此前 HeaderParameterBinder 只读 Arguments[0]，[Header(Name="X-Tenant")] / [Header(AliasAs="X-Alias")] 落回参数名。
+    /// </summary>
+    [Fact]
+    public void GEN05_ParameterLevelHeaderNameAndAliasAs_AreConsumed()
+    {
+        var headerBinder = new HeaderParameterBinder();
+        var methodInfo = CreateMethodInfo([]);
+
+        // Name（命名参数）生效
+        var nameBuilder = new StringBuilder();
+        headerBinder.GenerateBindingCode(nameBuilder, new ParameterInfo
+        {
+            Name = "tenant",
+            Type = "string",
+            Attributes =
+            [
+                new ParameterAttributeInfo
+                {
+                    Name = "HeaderAttribute",
+                    NamedArguments = new Dictionary<string, object?> { ["Name"] = "X-Tenant" },
+                },
+            ],
+        }, methodInfo, "        ");
+        nameBuilder.ToString().Should().Contain("\"X-Tenant\"");
+
+        // AliasAs 生效（Name 未提供时回退）
+        var aliasBuilder = new StringBuilder();
+        headerBinder.GenerateBindingCode(aliasBuilder, new ParameterInfo
+        {
+            Name = "traceId",
+            Type = "string",
+            Attributes =
+            [
+                new ParameterAttributeInfo
+                {
+                    Name = "HeaderAttribute",
+                    NamedArguments = new Dictionary<string, object?> { ["AliasAs"] = "X-Trace-Id" },
+                },
+            ],
+        }, methodInfo, "        ");
+        aliasBuilder.ToString().Should().Contain("\"X-Trace-Id\"");
+    }
+
+    /// <summary>
+    /// GEN-06（B-2）：DateTimeOffset（无专用 Add 重载）的回退 ToString 必须显式 Invariant，
+    /// 避免按 CurrentCulture 生成区域敏感串。
+    /// </summary>
+    [Fact]
+    public void Query_DateTimeOffset_UsesInvariantCulture()
+    {
+        var code = GenerateFor(new ParameterInfo
+        {
+            Name = "stamp",
+            Type = "DateTimeOffset",
+            Attributes =
+            [
+                new ParameterAttributeInfo { Name = "QueryAttribute" },
+            ],
+        });
+
+        code.Should().Contain("CultureInfo.InvariantCulture");
+        code.Should().Contain("stamp.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)");
+    }
+
+    /// <summary>
+    /// GEN-06（B-2）：TimeSpan[]（无专用 Add 重载的数组元素）的回退 ToString 必须显式 Invariant。
+    /// </summary>
+    [Fact]
+    public void Query_TimeSpanArray_UsesInvariantCulture()
+    {
+        var code = GenerateFor(new ParameterInfo
+        {
+            Name = "durations",
+            Type = "TimeSpan[]",
+            Attributes =
+            [
+                new ParameterAttributeInfo { Name = "QueryAttribute" },
+            ],
+        });
+
+        code.Should().Contain("CultureInfo.InvariantCulture");
+        code.Should().Contain("__item.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)");
+    }
 }

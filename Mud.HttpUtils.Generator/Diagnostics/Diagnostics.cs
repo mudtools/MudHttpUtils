@@ -158,7 +158,7 @@ internal static class Diagnostics
     public static readonly DiagnosticDescriptor CacheWithDirectReturnTypeWarning = new(
         id: "HTTPCLIENT025",
         title: "直达返回类型不参与 Cache/Resilience 编排",
-        messageFormat: "接口 {0} 的方法 {1} 的返回类型 '{2}' 属直达返回（HttpResponseMessage/Stream），生成代码将绕过请求执行器直接调用客户端 API，因此 [Cache]、[Retry]、[CircuitBreaker]、[Timeout] 等编排配置不会生效。如需缓存/弹性编排，请改用 Task<T> 等普通响应体返回类型。",
+        messageFormat: "接口 {0} 的方法 {1} 的返回类型 '{2}' 属直达返回（HttpResponseMessage/Stream/IAsyncEnumerable<T> 流式返回），生成代码将绕过请求执行器直接调用客户端 API，因此 [Cache]、[Retry]、[CircuitBreaker]、[Timeout] 等编排配置不会生效。如需缓存/弹性编排，请改用 Task<T> 等普通响应体返回类型。",
         category: "代码生成",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -466,32 +466,10 @@ internal static class Diagnostics
     #region AOT JSON 序列化诊断信息 (AOT001-007)
     // 诊断由 HttpJsonContextScaffolder（pre-build 工具）或独立分析器报告。
     // 前缀 AOT 遵循仓库 XXXNNN 约定（3-6 字符前缀 + 3 位数字）。
-    // CFG-24：AOT001~AOT003 的触发点位于脚手架/独立分析器（以字符串 ID 产出），本区域内的描述符
-    // 集中登记 ID 与元数据（供脚手架引用与一致性核对）；与其触发点分离属有意设计，非死代码。
-
-    public static readonly DiagnosticDescriptor AotDuplicateSerializerClassName = new(
-        id: "AOT001",
-        title: "AOT JSON Context 类名冲突",
-        messageFormat: "SerializerClassName '{0}' 存在冲突的 NamingPolicy 配置。同一 Context 内只能使用一个命名策略。建议统一配置或拆分为不同分组。",
-        category: "AOT",
-        DiagnosticSeverity.Warning,
-        isEnabledByDefault: true);
-
-    public static readonly DiagnosticDescriptor AotOpenGenericOnLegacyTfm = new(
-        id: "AOT002",
-        title: "开放泛型类型在低版本 TFM 上标注 [HttpJsonSerializable]",
-        messageFormat: "类型 '{0}' 是开放泛型，在 net8.0 以下不支持源生成开放泛型。低版本将走反射兜底，AOT 下不可用。",
-        category: "AOT",
-        DiagnosticSeverity.Warning,
-        isEnabledByDefault: true);
-
-    public static readonly DiagnosticDescriptor AotPolymorphismWithoutJsonDerivedType = new(
-        id: "AOT003",
-        title: "多态类型缺少 [JsonDerivedType] 标注",
-        messageFormat: "类型 '{0}' 存在基类（多态序列化），但未标注 [JsonDerivedType]。以基类反序列化派生类时源生成不含派生类型，可能丢字段。建议在同程序集内补充 [JsonDerivedType] 或由 Scaffolder 自动补全。",
-        category: "AOT",
-        DiagnosticSeverity.Warning,
-        isEnabledByDefault: true);
+    // GEN-15（§8.3）：AOT001/AOT002/AOT003 描述符已迁移到
+    // Tools/Mud.HttpUtils.JsonContextScaffolder/ (ScaffolderAotDiagnostics)，由脚手架在生成期报告，
+    // 不再参与本生成器/分析器分发。此处不保留其字段，避免「貌似已实现」的错觉（I-20 可达性守卫兜底）。
+    // 生成器/分析器侧仅登记 AOT004/AOT005/AOT006/AOT007。
 
     public static readonly DiagnosticDescriptor AotDtoNotCoveredByContext = new(
         id: DiagnosticIds.AotDtoNotCoveredByContext,

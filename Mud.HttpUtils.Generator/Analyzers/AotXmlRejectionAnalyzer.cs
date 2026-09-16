@@ -122,6 +122,11 @@ internal static class AotXmlRejectionAnalyzer
                     if (cancellationToken.IsCancellationRequested)
                         return diagnostics.ToImmutable();
 
+                    // [GEN-22][§8.7] 与 MudHttpInterfaceAnalyzer.cs:102 同口径：仅普通显式声明的方法，
+                    // 排除属性/索引器访问器等非 Ordinary 及隐式成员，消除「同一接口在两分析器中方法集合不同」的口径漂移。
+                    if (method.MethodKind != MethodKind.Ordinary || method.IsImplicitlyDeclared)
+                        continue;
+
                     // [P1-2] 廉价预门控：只对该方法可能使用 XML 时才调用重型 MethodAnalyzer.AnalyzeMethod。
                     if (!MayUseXml(method, interfaceDecl, cancellationToken))
                         continue;
@@ -162,7 +167,12 @@ internal static class AotXmlRejectionAnalyzer
                         location = attr?.ApplicationSyntaxReference?.GetSyntax(cancellationToken).GetLocation();
                     }
 
-                    location ??= method.Locations.FirstOrDefault() ?? interfaceDecl.GetLocation();
+                    // [GEN-20][§8.7] 定位提升：无 [SerializationMethod(Xml)] 特性时（XML 由
+                    // ResponseContentType/Body 推断），优先定位到 [Get]/[Post] 等 HTTP 方法特性语法，
+                    // 再回退到方法声明，最后才回退到接口声明——span 落在特性或方法声明范围内，而非整个接口。
+                    location ??= GetHttpMethodAttributeSyntaxLocation(method, cancellationToken)
+                        ?? method.Locations.FirstOrDefault()
+                        ?? interfaceDecl.GetLocation();
 
                     diagnostics.Add(Diagnostic.Create(
                         effectiveDescriptor,
@@ -258,5 +268,16 @@ internal static class AotXmlRejectionAnalyzer
             || text.IndexOf("ContentType", StringComparison.Ordinal) >= 0
             // 字面量内容类型（如 [Body("application/xml")]、[Post("/x", ResponseContentType = "text/xml")]）
             || text.IndexOf("xml", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    /// <summary>
+    /// [GEN-20][§8.7] 定位 [Get]/[Post] 等 HTTP 方法特性在源码中的位置（用于诊断定位优先于整个方法）。
+    /// </summary>
+    private static Location? GetHttpMethodAttributeSyntaxLocation(IMethodSymbol method, CancellationToken cancellationToken)
+    {
+        var httpAttr = MethodAnalyzer.FindHttpMethodAttributeFromAttributes(method.GetAttributes());
+        if (httpAttr == null)
+            return null;
+        return httpAttr.ApplicationSyntaxReference?.GetSyntax(cancellationToken).GetLocation();
     }
 }

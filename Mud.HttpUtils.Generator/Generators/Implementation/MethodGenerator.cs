@@ -317,7 +317,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
             if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModeApiKey)
             {
-                var apiKeyName = methodInfo.InterfaceTokenName;
+                // GEN-09：方法级 Token(Name) 优先于接口级。
+                var apiKeyName = methodInfo.EffectiveTokenName;
                 if (!string.IsNullOrEmpty(apiKeyName))
                     // [Phase2 修复 1.8] 对 apiKeyName 转义。
                     codeBuilder.AppendLine($"            var access_token = await GetApiKeyAsync(\"{StringEscapeHelper.EscapeString(apiKeyName!)}\").ConfigureAwait(false);");
@@ -515,6 +516,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         if (methodInfo.InterfaceHeaderAttributes?.Any() == true)
             GenerateInterfaceHeaders(codeBuilder, context, methodInfo);
+
+        // GEN-03：方法级固定 [Header]（在接口级静态 Header 之后发射，Replace 才能覆盖接口级）
+        GenerateMethodLevelFixedHeaders(codeBuilder, methodInfo);
 
         var cancellationTokenArg = GetCancellationTokenParams(methodInfo);
         var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
@@ -854,11 +858,14 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     .ToList();
             }
 
-            // 先转义模板字面量部分（\ 和 "），占位符 {0}、{1} 不含这些字符，转义不影响后续替换
-            var resolvedTemplate = StringEscapeHelper.EscapeString(methodInfo.CacheKeyTemplate!);
+            // 先 C# 字面量转义，再插值转义（I-16 / GEN-01）：
+            // CacheKey 模板同样被发射进 $"...{}..." 插值字符串，单花括号会造成插值洞。
+            // EscapeForInterpolation 将 { } 双写为 {{ }}，随后 {{i}} 与下方替换键 {{i}} 匹配；
+            // 未匹配的 {name}/{垃圾花括号 保留为 {{...}}（运行期为 {name} 字面量）。
+            var resolvedTemplate = RequestBuilder.EscapeForInterpolation(StringEscapeHelper.EscapeString(methodInfo.CacheKeyTemplate!));
             for (var i = 0; i < orderedParams.Count; i++)
             {
-                resolvedTemplate = resolvedTemplate.Replace($"{{{i}}}", $"{{{orderedParams[i].Name}}}");
+                resolvedTemplate = resolvedTemplate.Replace($"{{{{{i}}}}}", $"{{{orderedParams[i].Name}}}");
             }
 
             return $"{varyPrefix}$\"{resolvedTemplate}\"";
@@ -930,14 +937,20 @@ internal class MethodGenerator : ICodeFragmentGenerator
     /// 判断方法是否为「直达返回」：绕过请求执行器、直接调用客户端原始 API。
     /// </summary>
     /// <remarks>
-    /// 当前直达返回类型为 <c>HttpResponseMessage</c>（SendRawAsync）与 <c>Stream</c>（SendStreamAsync）。
+    /// 当前直达返回类型为 <c>HttpResponseMessage</c>（SendRawAsync）、<c>Stream</c>（SendStreamAsync）
+    /// 与 <c>IAsyncEnumerable&lt;T&gt;</c>（SendAsAsyncEnumerable，GEN-08）。
     /// 该路径不参与 Cache/Resilience/Response&lt;T&gt; 编排，故与编排配置组合时报告
     /// <c>HTTPCLIENT025</c>（Warning），避免配置静默失效。
     /// </remarks>
     private static bool IsDirectReturnType(MethodAnalysisResult methodInfo)
     {
         var innerReturnType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
-        return IsHttpResponseMessageType(innerReturnType) || IsStreamType(innerReturnType);
+        // GEN-08（B-4）：IAsyncEnumerable<T> 同样走早退分支（SendAsAsyncEnumerable 绕过执行器，
+        // 不参与 Cache/Resilience/Response<T> 编排，见 :538-548 早退），故一并视为「直达返回」，
+        // 使 HTTPCLIENT025 对流式返回 + 编排组合给出编译期提示，避免「配置静默失效」。
+        return methodInfo.IsAsyncEnumerableReturn
+            || IsHttpResponseMessageType(innerReturnType)
+            || IsStreamType(innerReturnType);
     }
 
     /// <summary>
@@ -1029,6 +1042,47 @@ internal class MethodGenerator : ICodeFragmentGenerator
         }
     }
 
+    /// <summary>
+    /// GEN-03：发射方法级固定 [Header] 特性（在接口级静态 Header 之后调用）。
+    /// 发射顺序靠后使 Replace 能覆盖接口级同名头；HeaderMergeMode == Ignore 时跳过方法级固定头
+    /// （与 [HeaderMerge(Ignore)] 的「只使用接口级头部」语义一致）。
+    /// </summary>
+    private void GenerateMethodLevelFixedHeaders(StringBuilder codeBuilder, MethodAnalysisResult methodInfo)
+    {
+        // HeaderMergeMode.Ignore：跳过方法级固定头
+        if (methodInfo.HeaderMergeMode == "Ignore")
+            return;
+
+        if (methodInfo.MethodHeaderAttributes == null || methodInfo.MethodHeaderAttributes.Count == 0)
+            return;
+
+        foreach (var methodHeader in methodInfo.MethodHeaderAttributes)
+        {
+            if (string.IsNullOrEmpty(methodHeader.Name) || methodHeader.Value == null)
+                continue;
+
+            var headerValue = methodHeader.Value.ToString() ?? "null";
+            var escapedHeaderName = StringEscapeHelper.EscapeString(methodHeader.Name);
+            var escapedHeaderValue = StringEscapeHelper.EscapeString(headerValue);
+
+            if (methodHeader.Replace)
+            {
+                // 方法级 Replace 覆盖接口级同名头：先移除再添加
+                codeBuilder.AppendLine($"            // 方法级替换Header: {escapedHeaderName}");
+                codeBuilder.AppendLine($"            if (__httpRequest.Headers.Contains(\"{escapedHeaderName}\"))");
+                codeBuilder.AppendLine($"                __httpRequest.Headers.Remove(\"{escapedHeaderName}\");");
+                codeBuilder.AppendLine($"            __httpRequest.Headers.Add(\"{escapedHeaderName}\", \"{escapedHeaderValue}\");");
+            }
+            else
+            {
+                codeBuilder.AppendLine($"            // 方法级添加Header: {escapedHeaderName}");
+                // 避免对不允许重复的 Header（如 Authorization）调用 Add 抛出 ArgumentException
+                codeBuilder.AppendLine($"            if (!__httpRequest.Headers.Contains(\"{escapedHeaderName}\"))");
+                codeBuilder.AppendLine($"                __httpRequest.Headers.Add(\"{escapedHeaderName}\", \"{escapedHeaderValue}\");");
+            }
+        }
+    }
+
     private bool ShouldInjectToken(MethodAnalysisResult methodInfo, bool hasTokenManager, bool hasHttpClient)
     {
         // HttpClient 模式下不注入 Token
@@ -1106,7 +1160,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         }
         else if (IsTokenCookieMode(methodInfo))
         {
-            var cookieName = !string.IsNullOrEmpty(methodInfo.InterfaceTokenName) ? methodInfo.InterfaceTokenName : "access_token";
+            var cookieName = !string.IsNullOrEmpty(methodInfo.EffectiveTokenName) ? methodInfo.EffectiveTokenName : "access_token";
             var escapedCookieName = StringEscapeHelper.EscapeString(cookieName);
             codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"Cookie\", \"{escapedCookieName}=\" + access_token);");
         }
@@ -1157,7 +1211,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
     {
         var injectionMode = methodInfo.EffectiveTokenInjectionMode;
         var headerName = GetTokenHeaderName(methodInfo);
-        var cookieName = !string.IsNullOrEmpty(methodInfo.InterfaceTokenName) ? methodInfo.InterfaceTokenName : "access_token";
+        var cookieName = !string.IsNullOrEmpty(methodInfo.EffectiveTokenName) ? methodInfo.EffectiveTokenName : "access_token";
         var requiresUserId = TokenMethodHelper.MethodRequiresUserId(context, methodInfo);
         var userIdExpr = requiresUserId ? "_currentUserContext.UserId" : "null";
 
@@ -1200,20 +1254,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 escapedQueryParamName = StringEscapeHelper.EscapeString(queryParamName);
         }
 
-        codeBuilder.AppendLine($"{indent}#if NETSTANDARD2_0");
-        codeBuilder.AppendLine($"{indent}__httpRequest.Properties[\"__Mud_HttpUtils_TokenRecoveryContext\"] = new Mud.HttpUtils.TokenRecoveryContext");
-        codeBuilder.AppendLine($"{indent}{{");
-        codeBuilder.AppendLine($"{indent}    InjectionMode = {injectionModeValue},");
-        codeBuilder.AppendLine($"{indent}    HeaderName = \"{escapedHeaderName}\",");
-        codeBuilder.AppendLine($"{indent}    TokenScheme = \"{escapedTokenScheme}\",");
-        codeBuilder.AppendLine($"{indent}    CookieName = \"{escapedCookieName}\",");
-        if (escapedQueryParamName != null)
-            codeBuilder.AppendLine($"{indent}    QueryParameterName = \"{escapedQueryParamName}\",");
-        codeBuilder.AppendLine($"{indent}    TokenManagerKey = \"{escapedTokenManagerKey}\",");
-        codeBuilder.AppendLine($"{indent}    Scopes = {scopesArg},");
-        codeBuilder.AppendLine($"{indent}    UserId = {userIdExpr}");
-        codeBuilder.AppendLine($"{indent}}};");
-        codeBuilder.AppendLine($"{indent}#else");
+        // B-3（GEN-07）：NETSTANDARD2_0 → NET5_0_OR_GREATER（反向；Options.TryAdd 是 .NET 5+ 能力符号）。
+        codeBuilder.AppendLine(GeneratedCodeGuards.Net5OrGreater);
         codeBuilder.AppendLine($"{indent}__httpRequest.Options.TryAdd(\"__Mud_HttpUtils_TokenRecoveryContext\", new Mud.HttpUtils.TokenRecoveryContext");
         codeBuilder.AppendLine($"{indent}{{");
         codeBuilder.AppendLine($"{indent}    InjectionMode = {injectionModeValue},");
@@ -1226,7 +1268,20 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine($"{indent}    Scopes = {scopesArg},");
         codeBuilder.AppendLine($"{indent}    UserId = {userIdExpr}");
         codeBuilder.AppendLine($"{indent}}});");
-        codeBuilder.AppendLine($"{indent}#endif");
+        codeBuilder.AppendLine(GeneratedCodeGuards.Else);
+        codeBuilder.AppendLine($"{indent}__httpRequest.Properties[\"__Mud_HttpUtils_TokenRecoveryContext\"] = new Mud.HttpUtils.TokenRecoveryContext");
+        codeBuilder.AppendLine($"{indent}{{");
+        codeBuilder.AppendLine($"{indent}    InjectionMode = {injectionModeValue},");
+        codeBuilder.AppendLine($"{indent}    HeaderName = \"{escapedHeaderName}\",");
+        codeBuilder.AppendLine($"{indent}    TokenScheme = \"{escapedTokenScheme}\",");
+        codeBuilder.AppendLine($"{indent}    CookieName = \"{escapedCookieName}\",");
+        if (escapedQueryParamName != null)
+            codeBuilder.AppendLine($"{indent}    QueryParameterName = \"{escapedQueryParamName}\",");
+        codeBuilder.AppendLine($"{indent}    TokenManagerKey = \"{escapedTokenManagerKey}\",");
+        codeBuilder.AppendLine($"{indent}    Scopes = {scopesArg},");
+        codeBuilder.AppendLine($"{indent}    UserId = {userIdExpr}");
+        codeBuilder.AppendLine($"{indent}}};");
+        codeBuilder.AppendLine(GeneratedCodeGuards.EndIf);
     }
 
     /// <summary>

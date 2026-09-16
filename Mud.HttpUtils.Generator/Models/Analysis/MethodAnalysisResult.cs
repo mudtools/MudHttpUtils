@@ -84,6 +84,18 @@ internal class MethodAnalysisResult
     public List<InterfaceHeaderAttributeInfo> InterfaceHeaderAttributes { get; set; } = [];
 
     /// <summary>
+    /// 方法级固定Header特性列表（从方法上的 [Header] 特性获取，GEN-03）。
+    /// Replace 为 true 的方法级头可覆盖接口级同名头。
+    /// </summary>
+    public List<InterfaceHeaderAttributeInfo> MethodHeaderAttributes { get; set; } = [];
+
+    /// <summary>
+    /// 方法级固定Query参数列表（从方法上的 [Query] 特性获取，GEN-03）。
+    /// 仅支持常量值（QueryAttribute(name, value) 或 Name+Value）。
+    /// </summary>
+    public List<InterfaceQueryParameterInfo> MethodQueryParameters { get; set; } = [];
+
+    /// <summary>
     /// 方法级别的内容类型（从HTTP方法特性的ContentType属性获取，如 [Post(ContentType = "application/xml")]）
     /// </summary>
     public string? MethodContentType { get; set; }
@@ -144,6 +156,18 @@ internal class MethodAnalysisResult
     /// 方法级优先于接口级。如果未指定，使用接口级的 InterfaceTokenInjectionMode。
     /// </summary>
     public string? MethodTokenInjectionMode { get; set; }
+
+    /// <summary>
+    /// 方法级 Token 名称（从方法上的 [Token(Name = "...")] 特性获取，GEN-09）。
+    /// 方法级优先于接口级。未指定时为 null，生成器按「方法级 → 接口级 → 默认」回退。
+    /// </summary>
+    public string? MethodTokenName { get; set; }
+
+    /// <summary>
+    /// 获取有效的 Token 名称：方法级优先于接口级（GEN-09 优先级「方法级 &gt; 接口级 &gt; 默认」）。
+    /// 影响 Header 名、ApiKey 名、Cookie 名、Query 名四处消费点。
+    /// </summary>
+    public string? EffectiveTokenName => MethodTokenName ?? InterfaceTokenName;
 
     /// <summary>
     /// 获取有效的 Token 注入模式：方法级优先于接口级。

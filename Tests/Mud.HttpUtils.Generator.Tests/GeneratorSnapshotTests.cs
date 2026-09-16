@@ -698,4 +698,58 @@ namespace TestNamespace
     }
 
     #endregion
+
+    #region GEN-03 方法级固定 Header/Query — 场景 23-24（基线新增，不允许既有基线漂移）
+
+    /// <summary>
+    /// 场景 23: 方法级固定 [Header("Accept", "application/json")]（GEN-03）。
+    /// </summary>
+    [Fact]
+    public Task Snapshot_MethodLevelFixedHeader()
+    {
+        var source = """
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Get("/users")]
+        [Header("Accept", "application/json")]
+        Task<string> GetUsersAsync();
+    }
+}
+""";
+        var (driver, outputCompilation) = VerifyFixture.RunGeneratorDriver(source);
+        return VerifyFixture.VerifyGenerator(driver, outputCompilation);
+    }
+
+    /// <summary>
+    /// 场景 24: 方法级固定 [Query("status", "active")]（GEN-03）。
+    /// </summary>
+    [Fact]
+    public Task Snapshot_MethodLevelFixedQuery()
+    {
+        var source = """
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Get("/users")]
+        [Query("status", "active")]
+        Task<string> GetUsersAsync();
+    }
+}
+""";
+        var (driver, outputCompilation) = VerifyFixture.RunGeneratorDriver(source);
+        return VerifyFixture.VerifyGenerator(driver, outputCompilation);
+    }
+
+    #endregion
 }

@@ -362,7 +362,7 @@ internal class GeneratorContext
         {
             if (namedArg.Key == HttpClientGeneratorConstants.TokenInjectionModeProperty)
             {
-                var modeName = GetTokenInjectionModeName(namedArg.Value.Value);
+                var modeName = GetTokenInjectionModeName(namedArg.Value);
                 return modeName == targetMode;
             }
         }
@@ -371,10 +371,11 @@ internal class GeneratorContext
     }
 
     /// <summary>
-    /// 从 TypedConstant 获取 TokenInjectionMode 枚举名称。
+    /// 从 <see cref="TypedConstant"/>（TokenInjectionMode 枚举参数）获取注入模式字符串。
     /// 委托至 TokenHelper.GetTokenInjectionModeName 统一实现，覆盖全部 7 种注入模式。
+    /// [D-3 选项 1] 现在把整个 <see cref="TypedConstant"/> 传入（而非剥离后的底层整数值）。
     /// </summary>
-    private static string GetTokenInjectionModeName(object? value)
+    private static string GetTokenInjectionModeName(TypedConstant value)
     {
         return TokenHelper.GetTokenInjectionModeName(value);
     }

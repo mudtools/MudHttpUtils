@@ -59,9 +59,9 @@ namespace TestNamespace.Internal
         /// </summary>
         private readonly IHttpResponseCache? _cacheProvider;
         /// <summary>
-        /// 弹性策略解析器，用于方法级重试、熔断、超时等弹性策略的运行时编排。
+        /// 弹性策略解析器（可选，未声明 [Retry]/[CircuitBreaker]/[Timeout] 特性时由 DI 注入）。
         /// </summary>
-        private readonly IResiliencePolicyResolver _resilienceResolver;
+        private readonly IResiliencePolicyResolver? _resilienceResolver;
 
         /// <summary>
         /// 构建 <see cref = "TestApi"/> 类的实例。
@@ -73,11 +73,11 @@ namespace TestNamespace.Internal
         /// <param name="executor">HTTP请求执行器，统一处理响应反序列化和错误处理（由 DI 注入，可替换为自定义实现）</param>
         /// <param name="appManager">应用管理器（可选，注册后支持多应用切换）</param>
         /// <param name="cacheProvider">HTTP响应缓存提供器（可选，未声明 [Cache] 特性时由 DI 注入）</param>
-        /// <param name="resilienceResolver">弹性策略解析器</param>
+        /// <param name="resilienceResolver">弹性策略解析器（可选，未声明 [Retry]/[CircuitBreaker]/[Timeout] 特性时由 DI 注入）</param>
 #if NET5_0_OR_GREATER
         [System.Diagnostics.CodeAnalysis.DynamicDependency(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof(global::Mud.HttpUtils.RestService))]
 #endif
-        public TestApi(IMudAppContext appContext, IAppContextHolder appContextHolder, IHttpRequestExecutor executor, IResiliencePolicyResolver resilienceResolver, IAppManager<IMudAppContext>? appManager = null, IAppAccessAuthorizer? appAuthorizer = null, IHttpResponseCache? cacheProvider = null, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null)
+        public TestApi(IMudAppContext appContext, IAppContextHolder appContextHolder, IHttpRequestExecutor executor, IAppManager<IMudAppContext>? appManager = null, IAppAccessAuthorizer? appAuthorizer = null, IHttpResponseCache? cacheProvider = null, IResiliencePolicyResolver? resilienceResolver = null, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null)
         {
             _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
             _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
@@ -86,7 +86,7 @@ namespace TestNamespace.Internal
             _appManager = appManager;
             _appAuthorizer = appAuthorizer;
             _cacheProvider = cacheProvider;
-            _resilienceResolver = resilienceResolver ?? throw new ArgumentNullException(nameof(resilienceResolver));
+            _resilienceResolver = resilienceResolver;
             _executor = executor ?? throw new ArgumentNullException(nameof(executor));
         }
 
@@ -181,22 +181,19 @@ namespace TestNamespace.Internal
         [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
             Justification = "生成的 JSON 序列化/反序列化通过注入的 IHttpContentSerializer（其 options 含消费方 JsonSerializerContext resolver）保证 AOT 安全，T 的类型元数据已由消费方的 JsonSerializerContext 保留.")]
 #endif
-        public async global::System.Threading.Tasks.Task DownloadFileAsync(string fileId, string filePath)
+        public async global::System.Threading.Tasks.Task<string> GetUsersAsync()
         {
-            if (string.IsNullOrWhiteSpace(fileId))
-            {
-                throw new ArgumentNullException(nameof(fileId));
-            }
-            if (string.IsNullOrWhiteSpace(filePath))
-            {
-                throw new ArgumentNullException(nameof(filePath));
-            }
             var __appContext = _appContextHolder.Current ?? throw new InvalidOperationException("无法找到当前服务的应用上下文。");
 
-            var __url = $"/files/{Uri.EscapeDataString(fileId)}/download";
+            var __url = $"/users";
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Get, __url);
 
-            await _executor.DownloadLargeAsync(__httpRequest, __appContext.HttpClient, filePath, true, 81920,
+            // 方法级添加Header: Accept
+            if (!__httpRequest.Headers.Contains("Accept"))
+                __httpRequest.Headers.Add("Accept", "application/json");
+            return await _executor.ExecuteAsync<string>(
+                __httpRequest,
+                __appContext.HttpClient,
                 new ExecutionDescriptor
                {
                    Response = new ResponseDescriptor
@@ -205,23 +202,10 @@ namespace TestNamespace.Internal
                        IsResponseType = false,
                        ResponseContentType = "",
                        EnableDecrypt = false,
-                       IsVoidReturn = true,
+                       IsVoidReturn = false,
                    },
-                   Resilience = new ResilienceExecutionOptions
-                   {
-                       RetryEnabled = true,
-                       MaxRetries = 3,
-                       DelayMilliseconds = 100,
-                       UseExponentialBackoff = true,
-                       CircuitBreakerEnabled = false,
-                       FailureThreshold = 5,
-                       BreakDurationSeconds = 30,
-                       SamplingDurationSeconds = 0,
-                       MinimumThroughput = 10,
-                       TimeoutEnabled = false,
-                       TimeoutMilliseconds = 0,
-                   },
-               }, progress: null, cancellationToken: default).ConfigureAwait(false);
+               },
+                null, cancellationToken: default).ConfigureAwait(false);
         }
 
     }

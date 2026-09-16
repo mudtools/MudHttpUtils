@@ -118,4 +118,103 @@ public class GeneratedCodeEscapeTests
             source,
             description: "ApiKey 模式令牌名含双引号时生成代码必须可编译（Phase2 1.8）");
     }
+
+    /// <summary>
+    /// [GEN-09] 方法级 <c>[Token(Name = "…")]</c> 的 Name 含双引号 → 生成代码必须转义为
+    /// <c>\"</c>，并作为 ApiKey 名在两处（注入 + 恢复上下文）正确落地。
+    /// </summary>
+    [Fact]
+    public void MethodLevelTokenNameWithQuotes_GeneratesCompilableCode()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                public interface ITestTokenManager
+                {
+                    IMudAppContext GetDefaultApp();
+                    IMudAppContext GetApp(string appKey);
+                }
+
+                [HttpClientApi(TokenManage = "ITestTokenManager")]
+                [Token(Name = "X-Interface-Token", InjectionMode = TokenInjectionMode.ApiKey)]
+                public interface IApiKeyApi
+                {
+                    [Get("/data")]
+                    [Token(Name = "X-Method\"Key", InjectionMode = TokenInjectionMode.ApiKey)]
+                    Task<string> GetAsync();
+                }
+            }
+            """;
+
+        GeneratorCompileAssert.RunAndAssertNoErrors(
+            source,
+            description: "方法级 ApiKey 令牌名含双引号时生成代码必须可编译（GEN-09）");
+    }
+
+    /// <summary>
+    /// [GEN-18][§8.6] 含 [Header] 参数时，生成代码必须发射运行期 CR/LF 校验守卫
+    /// （net4x/netstandard2.0 编译的 HttpClient 不校验头值，存在头部注入风险）。
+    /// </summary>
+    [Fact]
+    public void HeaderValue_WithCrLf_Throws()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi]
+                public interface IHeaderApi
+                {
+                    [Get("/data")]
+                    Task<string> GetAsync([Header("X-Token")] string token);
+                }
+            }
+            """;
+
+        var output = GeneratorCompileAssert.RunAndAssertNoErrors(
+            source,
+            description: "含 [Header] 参数时生成代码必须可编译（GEN-18）");
+
+        var generated = string.Join("\n", output.SyntaxTrees.Skip(1).Select(t => t.ToString()));
+        generated.Should().Contain("HttpHeaderValueValidator.IsValid(token)",
+            "生成代码必须发射运行期 CR/LF 校验守卫（GEN-18）");
+        generated.Should().Contain("ArgumentException",
+            "守卫失败时应抛出带参数名提示的 ArgumentException（GEN-18）");
+    }
+
+    /// <summary>
+    /// [GEN-01] CacheKeyTemplate 含花括号（含未配对的 <c>{bad</c>）→ 必须转义为 <c>{{…}}</c>，
+    /// 否则 <c>{bad</c> 会成为插值孔导致生成的 CacheKey 插值串不可编译（CS1733/CS1006）。
+    /// </summary>
+    [Fact]
+    public void CacheKeyTemplate_WithBraces_Compiles()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi]
+                public interface ICacheApi
+                {
+                    [Get("/products")]
+                    [Cache(60, CacheKeyTemplate = "/u/{id}?{bad", UseSlidingExpiration = true)]
+                    Task<string> GetAsync([Path] int id);
+                }
+            }
+            """;
+
+        GeneratorCompileAssert.RunAndAssertNoErrors(
+            source,
+            description: "CacheKeyTemplate 含花括号（含未配对 {bad）时必须转义，生成的 CacheKey 插值串才可编译（GEN-01）");
+    }
 }

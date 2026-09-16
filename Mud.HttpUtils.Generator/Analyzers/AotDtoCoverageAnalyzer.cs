@@ -12,6 +12,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Mud.HttpUtils.Analyzers;
 
@@ -158,6 +159,11 @@ internal static class AotDtoCoverageAnalyzer
                 {
                     if (cancellationToken.IsCancellationRequested)
                         return diagnostics.ToImmutable();
+
+                    // [GEN-22][§8.7] 与 MudHttpInterfaceAnalyzer.cs:102 同口径：仅普通显式声明的方法，
+                    // 排除属性/索引器访问器等非 Ordinary 及隐式成员，消除「同一接口在两分析器中方法集合不同」的口径漂移。
+                    if (method.MethodKind != MethodKind.Ordinary || method.IsImplicitlyDeclared)
+                        continue;
 
                     CheckMethodDtoCoverage(compilation, diagnostics, interfaceSymbol, method, coveredTypes, analysisContext);
                 }
@@ -520,6 +526,20 @@ internal static class AotDtoCoverageAnalyzer
     }
 
     /// <summary>
+    /// [GEN-20][§8.7] 计算响应 DTO 诊断的定位：返回类型语法节点优先，方法声明为回退。
+    /// </summary>
+    /// <remarks>
+    /// 使 AOT004 响应端诊断的 <see cref="Location.Span"/> 落在返回类型节点上（而非整个方法/接口）。
+    /// </remarks>
+    private static Location GetResponseLocation(IMethodSymbol method)
+    {
+        var syntax = method.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
+        if (syntax is MethodDeclarationSyntax methodDecl && methodDecl.ReturnType is { } returnType)
+            return returnType.GetLocation();
+        return method.Locations.FirstOrDefault() ?? Location.None;
+    }
+
+    /// <summary>
     /// 检查单个方法的 DTO 覆盖情况（AOT004 + AOT005）。
     /// </summary>
     private static void CheckMethodDtoCoverage(
@@ -683,7 +703,7 @@ internal static class AotDtoCoverageAnalyzer
                     {
                         diagnostics.Add(Diagnostic.Create(
                             Diagnostics.AotDtoNotCoveredByContext,
-                            method.Locations.FirstOrDefault(),
+                            GetResponseLocation(method),
                             TypeProps(responseElemNamed),
                             interfaceSymbol.Name,
                             method.Name,
@@ -721,7 +741,7 @@ internal static class AotDtoCoverageAnalyzer
             {
                 diagnostics.Add(Diagnostic.Create(
                     Diagnostics.AotDtoNotCoveredByContext,
-                    method.Locations.FirstOrDefault(),
+                    GetResponseLocation(method),
                     TypeProps(responseType),
                     interfaceSymbol.Name,
                     method.Name,
@@ -737,7 +757,7 @@ internal static class AotDtoCoverageAnalyzer
                 {
                     diagnostics.Add(Diagnostic.Create(
                         Diagnostics.AotDtoNotCoveredByContext,
-                        method.Locations.FirstOrDefault(),
+                        GetResponseLocation(method),
                         TypeProps(responseType),
                         interfaceSymbol.Name,
                         method.Name,

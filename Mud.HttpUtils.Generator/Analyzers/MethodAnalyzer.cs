@@ -92,7 +92,7 @@ internal static class MethodAnalyzer
 
         var methodTokenScopes = AnalyzeMethodTokenScopes(methodAttributes);
 
-        var (methodTokenManagerKey, methodRequiresUserId, methodTokenInjectionMode, methodTokenScheme) = AnalyzeMethodTokenExtended(methodAttributes);
+        var (methodTokenManagerKey, methodRequiresUserId, methodTokenInjectionMode, methodTokenScheme, methodTokenName) = AnalyzeMethodTokenExtended(methodAttributes);
 
         var tokenParameterName = parameters
             .FirstOrDefault(p => p.Attributes.Any(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.Name)))?
@@ -104,6 +104,8 @@ internal static class MethodAnalyzer
         var interfaceProperties = cachedInterfaceProperties ?? AnalyzeInterfaceProperties(interfaceDecl, compilation, semanticModel);
         var headerMergeMode = AnalyzeHeaderMergeMode(methodSymbol, methodAttributes, interfaceAttrs);
         var serializationMethod = AnalyzeSerializationMethod(methodSymbol, methodAttributes, interfaceAttrs);
+        // GEN-03：分析方法的固定 [Header] / [Query] 特性（方法级）
+        var (methodHeaderAttributes, methodQueryParameters) = AnalyzeMethodLevelFixedAttributes(methodAttributes);
 
         var returnTypeFullName = TypeSymbolHelper.GetTypeFullName(methodSymbol.ReturnType);
         // IAsyncEnumerable<T> 识别：统一由 ReturnTypeSupport 按符号判定。
@@ -140,6 +142,7 @@ internal static class MethodAnalyzer
             MethodTokenScopes = methodTokenScopes,
             MethodTokenInjectionMode = methodTokenInjectionMode,
             MethodTokenScheme = methodTokenScheme,
+            MethodTokenName = methodTokenName,
             TokenParameterName = tokenParameterName,
             MethodTokenManagerKey = methodTokenManagerKey,
             MethodRequiresUserId = methodRequiresUserId,
@@ -149,6 +152,8 @@ internal static class MethodAnalyzer
             InterfaceProperties = interfaceProperties,
             HeaderMergeMode = headerMergeMode,
             SerializationMethod = serializationMethod,
+            MethodHeaderAttributes = methodHeaderAttributes,
+            MethodQueryParameters = methodQueryParameters,
             CacheEnabled = cacheEnabled,
             CacheDurationSeconds = cacheDurationSeconds,
             CacheKeyTemplate = cacheKeyTemplate,
@@ -411,10 +416,12 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
     }
 
     /// <summary>
-    /// 从 TypedConstant 获取 TokenInjectionMode 枚举名称。
-    /// 委托至 TokenHelper.GetTokenInjectionModeName 统一实现，避免重复代码。
+    /// 从 <see cref="TypedConstant"/>（TokenInjectionMode 枚举参数）获取注入模式字符串。
+    /// 委托至 TokenHelper.GetTokenInjectionModeName 统一实现，覆盖全部 7 种注入模式。
+    /// [D-3 选项 1] 现在把整个 <see cref="TypedConstant"/> 传入（而非剥离后的底层整数值），
+    /// 使 reader 能按枚举类型反解成员名。
     /// </summary>
-    private static string GetTokenInjectionModeName(object? value)
+    private static string GetTokenInjectionModeName(TypedConstant value)
     {
         return TokenHelper.GetTokenInjectionModeName(value);
     }
@@ -702,6 +709,49 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         return (queryParams, pathParams);
     }
 
+    /// <summary>
+    /// GEN-03：分析方法级固定 [Header] / [Query] 特性。
+    /// Header 复用 <c>GetHeaderName</c>/<c>GetHeaderValue</c>/<c>GetHeaderReplace</c> 读取
+    /// Name/AliasAs/Value/Replace；Query 仅支持常量值（两个位置参数 或 Name+Value）。
+    /// </summary>
+    private static (List<InterfaceHeaderAttributeInfo> headers, List<InterfaceQueryParameterInfo> queries)
+        AnalyzeMethodLevelFixedAttributes(ImmutableArray<AttributeData> methodAttributes)
+    {
+        var headers = new List<InterfaceHeaderAttributeInfo>();
+        var queries = new List<InterfaceQueryParameterInfo>();
+
+        foreach (var attr in methodAttributes)
+        {
+            if (HasAttributeWithName(attr, "HeaderAttribute"))
+            {
+                var headerName = GetHeaderName(attr);
+                if (string.IsNullOrEmpty(headerName))
+                    continue;
+                headers.Add(new InterfaceHeaderAttributeInfo
+                {
+                    Name = headerName,
+                    Value = GetHeaderValue(attr),
+                    Replace = GetHeaderReplace(attr)
+                });
+            }
+            else if (HasAttributeWithName(attr, "QueryAttribute"))
+            {
+                var queryName = AttributeDataHelper.GetStringValueFromAttribute(attr, ["Name", "AliasAs"], 0);
+                if (string.IsNullOrEmpty(queryName))
+                    continue;
+                // 方法级固定查询参数的"值"：QueryAttribute 无 Value 属性，第二个位置参数映射到 Format；
+                // 依次回退读取命名 Value/Format/FormatString，再到位置参数 [1]。
+                var queryValue = attr.NamedArguments
+                    .FirstOrDefault(arg => arg.Key is "Value" or "Format" or "FormatString").Value.Value;
+                if (queryValue == null && attr.ConstructorArguments.Length > 1)
+                    queryValue = attr.ConstructorArguments[1].Value;
+                queries.Add(new InterfaceQueryParameterInfo { Name = queryName, Value = queryValue?.ToString() });
+            }
+        }
+
+        return (headers, queries);
+    }
+
     internal static List<InterfacePropertyInfo> AnalyzeInterfaceProperties(InterfaceDeclarationSyntax interfaceDecl, Compilation compilation, SemanticModel? semanticModel)
     {
         var properties = new List<InterfacePropertyInfo>();
@@ -909,9 +959,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
 
         if (methodAttr != null)
         {
-            var mode = methodAttr.ConstructorArguments.Length > 0
-                ? methodAttr.ConstructorArguments[0].Value?.ToString()
-                : null;
+            var mode = ReadHeaderMergeMode(methodAttr);
             if (!string.IsNullOrEmpty(mode))
                 return mode;
         }
@@ -921,14 +969,38 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
 
         if (interfaceAttr != null)
         {
-            var mode = interfaceAttr.ConstructorArguments.Length > 0
-                ? interfaceAttr.ConstructorArguments[0].Value?.ToString()
-                : null;
+            var mode = ReadHeaderMergeMode(interfaceAttr);
             if (!string.IsNullOrEmpty(mode))
                 return mode;
         }
 
         return "Append";
+    }
+
+    /// <summary>
+    /// I-17 / GEN-02：读取 [HeaderMerge] 的模式，走 <see cref="AttributeArgumentReader.GetEnumMemberName"/>
+    /// 反解枚举成员名。兼容位置参数与命名参数 <c>Mode</c>。
+    /// </summary>
+    private static string? ReadHeaderMergeMode(AttributeData headerMergeAttr)
+    {
+        // 位置参数（构造参数）：[HeaderMerge(HeaderMergeMode.Replace)]
+        if (headerMergeAttr.ConstructorArguments.Length > 0)
+        {
+            var positional = AttributeArgumentReader.GetEnumMemberName(headerMergeAttr.ConstructorArguments[0]);
+            if (!string.IsNullOrEmpty(positional))
+                return positional;
+        }
+
+        // 命名参数：[HeaderMerge(Mode = HeaderMergeMode.Ignore)]
+        if (headerMergeAttr.NamedArguments.Length > 0
+            && headerMergeAttr.NamedArguments.FirstOrDefault(na => na.Key == "Mode").Value is { } namedArg)
+        {
+            var named = AttributeArgumentReader.GetEnumMemberName(namedArg);
+            if (!string.IsNullOrEmpty(named))
+                return named;
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -963,28 +1035,20 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
     /// 读取 <c>[SerializationMethod]</c> 的枚举名（<c>Json</c> / <c>Xml</c> / <c>FormUrlEncoded</c>）。
     /// </summary>
     /// <remarks>
-    /// <b>重要</b>：Roslyn 的 <c>TypedConstant.Value</c> 对枚举参数返回的是<b>底层整数值</b>，
+    /// <b>重要 [D-3 选项 1]</b>：Roslyn 的 <c>TypedConstant.Value</c> 对枚举参数返回的是<b>底层整数值</b>，
     /// 直接 <c>ToString()</c> 会得到 "0"/"1"/"2"。历史实现正是如此，导致生成器与 AOT007 中所有
     /// <c>== "Xml"</c> / <c>== "FormUrlEncoded"</c> 比较全部失效（[SerializationMethod(Xml)] 声明的
-    /// 方法被当作 JSON 处理，AOT007 也不会触发）。此处统一映射为枚举名。
+    /// 方法被当作 JSON 处理，AOT007 也不会触发）。
+    /// 此处经 <see cref="AttributeArgumentReader.GetEnumMemberName"/>（统一「特性参数读取」入口）按
+    /// **枚举成员常量值**反解枚举名，独立于成员定义顺序（消除历史手写 <c>switch(i)</c> 的顺序耦合）。
     /// </remarks>
     internal static string? ReadSerializationMethodName(AttributeData attr)
     {
         if (attr.ConstructorArguments.Length == 0)
             return null;
 
-        return attr.ConstructorArguments[0].Value switch
-        {
-            int i => i switch
-            {
-                0 => "Json",
-                1 => "Xml",
-                2 => "FormUrlEncoded",
-                _ => null
-            },
-            string s when !string.IsNullOrEmpty(s) => s,
-            _ => null
-        };
+        var memberName = AttributeArgumentReader.GetEnumMemberName(attr.ConstructorArguments[0]);
+        return string.IsNullOrEmpty(memberName) ? null : memberName;
     }
 
     /// <summary>
@@ -1093,7 +1157,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         {
             if (namedArg.Key == HttpClientGeneratorConstants.TokenInjectionModeProperty)
             {
-                return GetTokenInjectionModeName(namedArg.Value.Value);
+                return GetTokenInjectionModeName(namedArg.Value);
             }
         }
 
@@ -1179,13 +1243,13 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
     /// <summary>
     /// 从已缓存的特性列表中分析方法级别 Token 特性的 TokenManagerKey 和 RequiresUserId
     /// </summary>
-    private static (string? tokenManagerKey, bool? requiresUserId, string? injectionMode, string? scheme) AnalyzeMethodTokenExtended(ImmutableArray<AttributeData> attributes)
+    private static (string? tokenManagerKey, bool? requiresUserId, string? injectionMode, string? scheme, string? tokenName) AnalyzeMethodTokenExtended(ImmutableArray<AttributeData> attributes)
     {
         var tokenAttr = attributes
             .FirstOrDefault(attr => HasAttributeWithName(attr, "TokenAttribute"));
 
         if (tokenAttr == null)
-            return (null, null, null, null);
+            return (null, null, null, null, null);
 
         var tokenManagerKey = TokenHelper.GetTokenManagerKeyFromAttribute(tokenAttr);
         var requiresUserIdValue = tokenAttr.NamedArguments
@@ -1194,8 +1258,11 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         bool? requiresUserId = requiresUserIdValue is bool b ? b : (bool?)null;
         var injectionMode = GetTokenInjectionMode(tokenAttr);
         var scheme = GetTokenScheme(tokenAttr);
+        // GEN-09：方法级 [Token(Name = "...")] 名称提取（与接口级 GetInterfaceTokenName 同口径，
+        // 仅读 NamedArguments["Name"]）。
+        var tokenName = AttributeDataHelper.GetStringValueFromAttribute(tokenAttr, ["Name"]);
 
-        return (tokenManagerKey, requiresUserId, injectionMode, scheme);
+        return (tokenManagerKey, requiresUserId, injectionMode, scheme, tokenName);
     }
 
     /// <summary>

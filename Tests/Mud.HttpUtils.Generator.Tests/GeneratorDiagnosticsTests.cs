@@ -563,6 +563,149 @@ namespace TestNamespace
 
     #endregion
 
+    #region GEN-08 - 流式返回编排静默失效（HTTPCLIENT025）
+
+    [Fact]
+    public void StreamingWithCache_ReportsHTTPCLIENT025()
+    {
+        var source = @"
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Get(""/items"")]
+        [Cache]
+        IAsyncEnumerable<string> StreamAsync();
+    }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        // IAsyncEnumerable<T> 直达返回（SendAsAsyncEnumerable 绕过执行器）+ [Cache] → HTTPCLIENT025
+        diagnostics.Should().Contain(d => d.Id == "HTTPCLIENT025",
+            "流式返回不走 Cache/Resilience 编排，[Cache] 会静默失效，必须编译期提示");
+    }
+
+    [Fact]
+    public void StreamingWithRetry_ReportsHTTPCLIENT025()
+    {
+        var source = @"
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Get(""/items"")]
+        [Retry]
+        IAsyncEnumerable<string> StreamAsync();
+    }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        diagnostics.Should().Contain(d => d.Id == "HTTPCLIENT025",
+            "流式返回 + [Retry] 组合同样应报告 HTTPCLIENT025（重试不会生效）");
+    }
+
+    [Fact]
+    public void StreamingWithoutResilience_NoDiagnostic()
+    {
+        var source = @"
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Get(""/items"")]
+        IAsyncEnumerable<string> StreamAsync();
+    }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        diagnostics.Should().NotContain(d => d.Id == "HTTPCLIENT025",
+            "无 [Cache]/[Retry]/[CircuitBreaker]/[Timeout] 时流式返回不应误报 HTTPCLIENT025");
+    }
+
+    #endregion
+
+    /// <summary>
+    /// [GEN-17][§8.5] 嵌套接口平铺后 hintName 唯一性碰撞守卫。
+    /// <para>
+    /// 构造文档所述两组歧义结构：
+    /// 「A{class B_C{IFoo}}」（包含类型名为含下划线的 B_C）与
+    /// 「A{class B{class C{IFoo}}}」（B 内含两层嵌套 C）。
+    /// 旧实现用 "_" 连接嵌套链，两组结构平铺后均得到 "B_C_" 后缀 → hintName 冲突（CS8785/产物覆盖）。
+    /// 修复后跨层使用 "+" 分隔符使二者分别得到 "B_C_Foo" 与 "B+C_Foo"（生成类名取接口名去 I 前缀）。
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void NestedInterface_FlattenedNameCollision()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+using System.Threading.Tasks;
+
+namespace TestNamespace
+{
+    // 情形一：包含类型名为 B_C（含下划线）
+    public class B_C
+    {
+        [HttpClientApi]
+        public interface IFoo { [Get(""/x"")] Task<string> X(); }
+    }
+
+    // 情形二：包含类型链 B → C 两层嵌套
+    public class B
+    {
+        public class C
+        {
+            [HttpClientApi]
+            public interface IFoo { [Get(""/y"")] Task<string> Y(); }
+        }
+    }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        diagnostics.Should().NotContain(d => d.Id == "CS8785",
+            "嵌套链平铺后 hintName 不得冲突（否则 CS8785 全量产物消失）");
+
+        var hintNames = driver.GetRunResult().Results
+            .SelectMany(r => r.GeneratedSources.Select(s => s.HintName))
+            .ToArray();
+
+        // 生成类名取接口名去 I 前缀后的「Foo」，前缀分别为 B_C_ 与 B+C_，
+        // 关键不变量是二者必须不同（含下划线单层 vs 跨层 + 分隔），否则 hintName 撞名。
+        hintNames.Should().Contain(h => h.Contains("B_C_Foo", StringComparison.Ordinal),
+            "情形一（B_C 单层含下划线）应产出带 B_C_Foo 的 hintName（无跨层分隔符）");
+        hintNames.Should().Contain(h => h.Contains("B+C_Foo", StringComparison.Ordinal),
+            "情形二（B→C 两层嵌套）应产出带 B+C_Foo 的 hintName，与情形一区分");
+        hintNames.Count(h => h.Contains("Foo", StringComparison.Ordinal)).Should().Be(2,
+            "两个 IFoo 嵌套接口（B_C 内与 B→C 内）必须各自生成一次，不得其一被覆盖");
+    }
+
     /// <summary>
     /// 捕获 Trace.WriteLine 的输出内容，用于验证 GeneratorDebugLogger.LogError 的行为。
     /// </summary>

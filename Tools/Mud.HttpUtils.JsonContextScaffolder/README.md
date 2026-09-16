@@ -121,16 +121,26 @@ internal partial class FeishuAIJsonContext;
 - 未显式指定 `NamingPolicy` 时自动推导：超过 50% 的属性 `[JsonPropertyName]` 符合 `snake_case_lower` → `SnakeCaseLower`，否则 `CamelCase`（与库默认一致）。
 - 同一 Context 内共享一个命名策略，冲突会报 AOT001 警告。
 
-## 诊断（AOT001-AOT006）
+## 诊断（AOT001-AOT003、AOT104）
 
 - **AOT001**：同一 `SerializerClassName` 下存在冲突的 `NamingPolicy` 配置。
 - **AOT002**：标注了开放泛型类型，且项目包含 net8.0 以下 TFM（该 TFM 下不支持源生成开放泛型，AOT 不可用）。全部目标 TFM 均为 net8.0+ 时不再报告。
 - **AOT003**：类型存在基类（多态）但未标注 `[JsonDerivedType]`（未启用 `--auto-derived-types` 时报告）。`--auto-derived-types` 仅额外注册派生类型为独立 `[JsonSerializable]` root，**不能**替代基类上的 `[JsonDerivedType]` 特性——多态序列化（以基类类型序列化派生实例）仍需手动在基类声明上标注。
-- **AOT004**：`[HttpClientApi]` 接口扫描信息——当扫描发现类型并自动注册时，以 Info 级别报告发现数量和目标 Context。
+- **AOT104**：`[HttpClientApi]` 接口扫描信息——当扫描发现类型并自动注册时，以 Info 级别报告发现数量和目标 Context。
 - **AOT005**：`[Query]`/`[QueryMap]` 中以 JSON 序列化的复杂参数类型未被 `JsonSerializerContext` 覆盖。
 - **AOT006**：类型标注了 `[HttpJsonSerializable]` 却未被任何已引用的 `JsonSerializerContext` 覆盖。**这正是“脚手架未运行 / 未接入构建”的编译期信号**——一旦出现即说明标注的实体没有对应生成的 Context，AOT 下会漏元数据。
 
-> AOT004–AOT006 默认以 **Warning** 形式提示（不阻断生成）。在 CI 严格模式下（`-p:AotStrictMode=true`，见 `AotVerificationDemo`/`AotPackageRefDemo` 的 `WarningsAsErrors`）会升级为 **Error**，从而强制消费方构建必须接入脚手架或手写 Context。
+> **段位隔离**：`AOT001 ~ AOT099` 归生成器/分析器（登记于 `Mud.HttpUtils.Generator` 的 `Diagnostics.cs` + `AnalyzerReleases.Unshipped.md`），由脚手架工具在**生成期**报告的接口扫描信息归 `AOT1xx` 段。其中 `AOT104` 由本工具在生成期以 **Info** 级别报告；`AOT005`/`AOT006` 由 `Mud.HttpUtils.Generator` 的分析器在编译期报告（二者语义不同，勿混淆）。
+
+### 迁移指引（AOT004 → AOT104）
+
+本工具曾在脚手架侧以 `AOT004`（Info）报告「接口扫描发现 N 个类型」；该 ID 与生成器侧 `AOT004`（Warning，DTO 未被覆盖）冲突——同一 ID 两种级别两种含义。自本版本起，脚手架侧已更名为 **`AOT104`**。
+
+| 旧 ID | 旧语义 | 新 ID | 新语义 |
+| --- | --- | --- | --- |
+| `AOT004`（Info） | `[HttpClientApi]` 接口扫描发现类型并自动注册（脚手架生成期） | `AOT104` | 同上，段位隔离后归 `AOT1xx` 段 |
+
+若您的 CI / 脚本按诊断 ID 过滤或抑制了脚手架输出，请将过滤规则中的 `AOT004` 更新为 `AOT104`。生成器侧用于「DTO 未被 `JsonSerializerContext` 覆盖」的 `AOT004`（Warning）**不受影响、保持原语义**。
 
 ## 自动接入构建（可选 MSBuild 目标）
 

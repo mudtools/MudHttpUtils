@@ -151,7 +151,7 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
         var headerType = GetAttributeParameter(eventHandlerAttribute, "HeaderType", "");
 
         // 验证基类名合法性
-        if (!ValidateBaseClassName(inheritedFrom, context, eventClass.GetLocation()))
+        if (!ValidateBaseClassName(eventClass, inheritedFrom, context))
         {
             return string.Empty;
         }
@@ -349,14 +349,16 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
     /// <returns>参数值</returns>
     private string GetAttributeParameter(AttributeData attribute, string parameterName, string defaultValue = "")
     {
-        // 优先使用AttributeDataHelper的命名参数方法
-        var namedValue = AttributeDataHelper.GetStringValueFromAttribute(attribute, parameterName, defaultValue);
-        if (!string.IsNullOrEmpty(namedValue))
+        // [GEN-13][§8.1] 显式提供的命名参数（含空串）须原样返回，不再回退默认值。
+        // 否则 InheritedFrom="" 会被静默替换为默认基类名，无法进入 ValidateBaseClassName
+        // 校验并触发 EHSG001（GEN-13 报告实证「为类  生成…」的空前缀即源于此条链路）。
+        foreach (var namedArg in attribute.NamedArguments)
         {
-            return namedValue;
+            if (namedArg.Key.Equals(parameterName, StringComparison.OrdinalIgnoreCase))
+                return namedArg.Value.Value?.ToString() ?? string.Empty;
         }
 
-        // 如果命名参数中没有找到，检查构造函数参数
+        // 未提供命名参数时，沿用原逻辑：构造函数位置参数优先，其次默认值。
         return AttributeDataHelper.GetStringValueFromAttributeConstructor(attribute, parameterName) ?? defaultValue;
     }
 
@@ -428,21 +430,36 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
     }
 
     /// <summary>
+    /// 报告 EHSG001「事件处理器代码生成错误」诊断。
+    /// </summary>
+    /// <remarks>
+    /// [GEN-13][§8.1] {0} 统一传目标类名（<paramref name="syntax"/> 的声明名），
+    /// 避免「为类  生成…」空前缀（旧实现错误地把基类名 baseClassName 传给 {0}）。
+    /// </remarks>
+    /// <param name="context">源代码生成上下文。</param>
+    /// <param name="syntax">目标事件类声明。</param>
+    /// <param name="message">错误描述（{1}）。</param>
+    private static void ReportGenerationError(SourceProductionContext context, ClassDeclarationSyntax syntax, string message)
+    {
+        context.ReportDiagnostic(Diagnostic.Create(
+            Diagnostics.EventHandlerGenerationError,
+            syntax.GetLocation(),
+            syntax.Identifier.Text,
+            message));
+    }
+
+    /// <summary>
     /// 验证基类名的合法性
     /// </summary>
+    /// <param name="eventClass">目标事件类声明（用于报告 {0} 类名）。</param>
     /// <param name="baseClassName">基类名</param>
     /// <param name="context">源代码生成上下文</param>
-    /// <param name="location">诊断位置</param>
     /// <returns>是否合法</returns>
-    private bool ValidateBaseClassName(string baseClassName, SourceProductionContext context, Location location)
+    private bool ValidateBaseClassName(ClassDeclarationSyntax eventClass, string baseClassName, SourceProductionContext context)
     {
         if (string.IsNullOrWhiteSpace(baseClassName))
         {
-            context.ReportDiagnostic(Diagnostic.Create(
-                Diagnostics.EventHandlerGenerationError,
-                location,
-                baseClassName,
-                "Base class name cannot be empty or whitespace"));
+            ReportGenerationError(context, eventClass, "Base class name cannot be empty or whitespace");
             return false;
         }
 
@@ -451,11 +468,7 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
         {
             if (!CSharpCodeValidator.IsValidCSharpIdentifier(part))
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    Diagnostics.EventHandlerGenerationError,
-                    location,
-                    baseClassName,
-                    $"Base class name contains invalid identifier '{part}'"));
+                ReportGenerationError(context, eventClass, $"Base class name contains invalid identifier '{part}'");
                 return false;
             }
         }
@@ -466,11 +479,7 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
             var closeCount = baseClassName.Count(c => c == '>');
             if (openCount != closeCount)
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    Diagnostics.EventHandlerGenerationError,
-                    location,
-                    baseClassName,
-                    "Invalid generic type syntax: unmatched angle brackets"));
+                ReportGenerationError(context, eventClass, "Invalid generic type syntax: unmatched angle brackets");
                 return false;
             }
         }

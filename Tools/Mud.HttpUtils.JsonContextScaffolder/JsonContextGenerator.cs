@@ -156,7 +156,7 @@ public class JsonContextGenerator
             }
 
             Diagnostics.Add(new ScaffolderDiagnostic(
-                "AOT004",
+                "AOT104",
                 ScaffolderDiagnosticSeverity.Info,
                 $"[HttpClientApi] 接口扫描发现 {discoveredTypes.Count} 个类型（含闭合泛型），已自动纳入 {groups[0].SerializerClassName}JsonContext。",
                 null));
@@ -206,9 +206,10 @@ public class JsonContextGenerator
         foreach (var group in conflictGroups)
         {
             var policies = string.Join(", ", group.Select(t => $"{t.Symbol.ToDisplayString()}={t.NamingPolicy}"));
+            var aot001 = ScaffolderAotDiagnostics.AotDuplicateSerializerClassName;
             Diagnostics.Add(new ScaffolderDiagnostic(
-                "AOT001",
-                ScaffolderDiagnosticSeverity.Warning,
+                aot001.Id,
+                ScaffolderAotDiagnostics.ToScaffolderSeverity(aot001.DefaultSeverity),
                 $"SerializerClassName '{group.Key}' 存在冲突的 NamingPolicy 配置：{policies}。同一 Context 内只能使用一个命名策略，当前采用第一个非 Default 值。建议统一配置或拆分为不同分组。",
                 group.Key));
         }
@@ -237,9 +238,10 @@ public class JsonContextGenerator
         {
             if (type.Symbol.IsGenericType && type.Symbol.TypeParameters.Length > 0)
             {
+                var aot002 = ScaffolderAotDiagnostics.AotOpenGenericOnLegacyTfm;
                 Diagnostics.Add(new ScaffolderDiagnostic(
-                    "AOT002",
-                    ScaffolderDiagnosticSeverity.Warning,
+                    aot002.Id,
+                    ScaffolderAotDiagnostics.ToScaffolderSeverity(aot002.DefaultSeverity),
                     $"类型 '{type.Symbol.ToDisplayString()}' 是开放泛型，且项目包含 net8.0 以下 TFM——开放泛型在该 TFM 下不参与源生成（走反射兜底），Native AOT 下不可用。若所有目标 TFM 均为 net8.0+，可忽略本告警。",
                     type.Symbol.ToDisplayString()));
             }
@@ -312,9 +314,10 @@ public class JsonContextGenerator
 
             if (!hasJsonDerivedType)
             {
+                var aot003 = ScaffolderAotDiagnostics.AotPolymorphismWithoutJsonDerivedType;
                 Diagnostics.Add(new ScaffolderDiagnostic(
-                    "AOT003",
-                    ScaffolderDiagnosticSeverity.Warning,
+                    aot003.Id,
+                    ScaffolderAotDiagnostics.ToScaffolderSeverity(aot003.DefaultSeverity),
                     $"类型 '{type.Symbol.ToDisplayString()}' 存在基类 '{type.Symbol.BaseType.ToDisplayString()}'（多态序列化），但未标注 [JsonDerivedType]。以基类反序列化/序列化派生类时源生成不含派生类型映射。修复：在基类声明上标注 [JsonDerivedType(typeof(派生类型))]（派生类型较多时使用 JsonDerivedTypeAttribute 的 typeDiscriminator 形式）；--auto-derived-types 仅能额外注册派生类型为独立根，不能替代本特性。",
                     type.Symbol.ToDisplayString()));
             }

@@ -1,1 +1,3 @@
 #nullable enable
+Mud.HttpUtils.HttpHeaderValueValidator.HttpHeaderValueValidator() -> void
+static bool Mud.HttpUtils.HttpHeaderValueValidator.IsValid(string? value) -> bool

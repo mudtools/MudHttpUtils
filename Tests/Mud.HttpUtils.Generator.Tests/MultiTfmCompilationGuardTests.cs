@@ -59,10 +59,27 @@ public class MultiTfmCompilationGuardTests
     public void GeneratedCode_CompilesUnder_Net80()
         => AssertCompilesUnderTfm(["NET8_0_OR_GREATER", "NET6_0_OR_GREATER", "NET5_0_OR_GREATER", "NET7_0_OR_GREATER"]);
 
+    /// <summary>net9.0 消费端：[G6-D / D-2] 补当前缺 net6.0 …… 之上的空白。
+    /// 证 net9 符号集（含全部 NET5_0_OR_GREATER～NET9_0_OR_GREATER 前缀）下生成产物仍无错编译，
+    /// 覆盖 .NET 应用（BinaryFormatter 于 net9 起不可用等 BCL 能力差异）消费本生成器的编译期边界。</summary>
+    [Fact]
+    public void GeneratedCode_CompilesUnder_Net90()
+        => AssertCompilesUnderTfm([
+            "NET9_0_OR_GREATER", "NET8_0_OR_GREATER", "NET7_0_OR_GREATER",
+            "NET6_0_OR_GREATER", "NET5_0_OR_GREATER",
+        ]);
+
     /// <summary>无任何 TFM 符号（消费端未定义任何条件符号）——验证 <c>#else</c> 兜底分支可编译。</summary>
     [Fact]
     public void GeneratedCode_CompilesUnder_NoTfmSymbols()
         => AssertCompilesUnderTfm([]);
+
+    /// <summary>net4x 消费端（B-3 · GEN-07）：定义 NETFRAMEWORK/NET472 而非 NETSTANDARD2_0，
+    /// 经 netstandard2.0 资产消费本库——能力符号改由 NET5_0_OR_GREATER 表达，net4x 走 #else 回退分支，
+    /// 不得引用 .NET 5+ 才有的 API（HttpMethod.PATCH / Options.TryAdd）。</summary>
+    [Fact]
+    public void GeneratedCode_CompilesUnder_Net472()
+        => AssertCompilesUnderTfm(["NETFRAMEWORK", "NET472"]);
 
     private static void AssertCompilesUnderTfm(string[] preprocessorSymbols)
     {

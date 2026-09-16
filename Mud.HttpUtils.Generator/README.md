@@ -30,7 +30,7 @@ Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为
 - **原始字符串请求体**：支持 `[Body(RawString = true)]` 直接发送原始字符串，支持 `[Body(UseStringContent = true)]` 发送字符串内容
 - **继承支持**：支持生成抽象类、类继承、接口继承
 - **事件处理器生成**：通过 `[GenerateEventHandler]` 特性自动生成事件处理器代码
-- **忽略生成**：支持通过 `[IgnoreGenerator]` 特性忽略特定代码生成（可标注接口、方法、属性、字段）
+- **忽略生成**：支持通过 `[IgnoreGenerator]` 特性忽略特定代码生成（接口级=完全不介入；方法级=跳过该方法）
 - **缓存支持**：识别 `[Cache]` 特性，配合 `CacheResponseInterceptor` 实现响应缓存
 - **安全认证**：识别 `TokenInjectionMode.ApiKey` 和 `TokenInjectionMode.HmacSignature` 模式
 - **日志脱敏**：识别 `[SensitiveData]` 特性，配合 `ISensitiveDataMasker` 实现日志脱敏
@@ -392,6 +392,8 @@ Task<List<User>> GetUsersAsync(
 Task<User> GetUserAsync([Header("X-Custom-Header")] string customValue);
 ```
 
+> **平台差异（CRLF 校验，GEN-18）**：.NET Core / .NET 5+ 的 `HttpRequestHeaders.Add` 会校验头值并拒绝含回车/换行（`\r`/`\n`）的值；但 net4x / netstandard2.0 编译的 `HttpClient` 不校验，直接透传 → 存在**头部注入**风险。为收敛平台差异，生成器对每个 Header（参数级与接口属性级、字符串型）额外发射运行期守卫 `Mud.HttpUtils.HttpHeaderValueValidator.IsValid(...)`，遇 CR/LF 立即抛 `ArgumentException`（带参数名）。该守卫对所有目标框架统一生效，与运行时 TFM 无关。
+
 #### Body 参数
 
 ```csharp
@@ -750,7 +752,7 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 | `HTTPCLIENT022` | Warning | 方法使用 `Path`/`HmacSignature` 令牌注入模式 | 该模式不被令牌恢复处理器支持，刷新后的新令牌无法重新注入；改用 `Header`/`Query`/`ApiKey`/`Cookie`/`BasicAuth` 模式 | 否 | 是 |
 | `HTTPCLIENT023` | Info | 检测到 `-p:ForceHttpGenerator=true`，增量缓存被强制失效 | 无需处理（逃生舱生效提示，F4） | 否 | 否 |
 | `HTTPCLIENT024` | Error | 接口成员未被生成实现，已发射占位实现（含无条件化特性的属性/事件、不受支持的返回类型/参数修饰符等） | 改用受支持的接口成员形态，或标注 `[IgnoreGenerator]` 自行实现。占位成员在运行期调用会抛 `NotSupportedException` | 否 | 是 |
-| `HTTPCLIENT025` | Warning | 直达返回类型（`HttpResponseMessage` / `Stream`）与 `[Cache]`/`[Retry]`/`[CircuitBreaker]`/`[Timeout]` 组合 | 直达返回绕过请求执行器，编排配置不会生效；如需缓存/弹性编排请改用 `Task<T>` 等普通响应体返回类型 | 否 | 是 |
+| `HTTPCLIENT025` | Warning | 直达返回类型（`HttpResponseMessage` / `Stream` / `IAsyncEnumerable<T>` 流式返回）与 `[Cache]`/`[Retry]`/`[CircuitBreaker]`/`[Timeout]` 组合 | 直达返回绕过请求执行器，编排配置不会生效；如需缓存/弹性编排请改用 `Task<T>` 等普通响应体返回类型 | 否 | 是 |
 | `HTTPCLIENT026` | Error | `[CircuitBreaker]` 参数值域越界（四条件共用本 ID）：① `FailureThreshold < 1`；② `SamplingDurationSeconds > 0` 且 `FailureThreshold > 100`；③ `SamplingDurationSeconds > 0` 且 `MinimumThroughput < 2`；④ `BreakDurationSeconds <= 0` | 条件①改 `FailureThreshold >= 1`；条件②高级熔断下 `FailureThreshold` 是失败率百分比（1–100），否则运行时被静默压成 100%；条件③`MinimumThroughput` 须 ≥ 2；条件④`BreakDurationSeconds` 须 > 0 | 否 | 是 |
 | `HTTPCLIENT027` | Error | `[Timeout(ms)]` 有效取值 `<= 0`（含负值；命名参数 `TimeoutMilliseconds` 与位置参数并存时命名参数优先） | 改为正毫秒数；如需取消方法级超时请移除 `[Timeout]` 特性（未声明即 `MethodTimeoutEnabled = false`，不会触发本诊断） | 否 | 是 |
 | `HTTPCLIENT028` | Warning | 继承模式下派生类与基类的应用切换来源不同（TokenManage 与默认模式混合），生成的 `UseApp`/`BeginScope` 使用 `new` 隐藏基类成员 | 通过派生接口调用切换方法，或统一两级的 TokenManage 配置 | 否 | 是 |
@@ -783,13 +785,10 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 
 #### AOT JSON 序列化诊断（AOT*）
 
-`AOT*` 系列诊断用于保障 Native AOT 场景下的 JSON 序列化可用性。其中 `AOT004`/`AOT005`/`AOT006` 由 `Mud.HttpUtils.Generator` 中的 `AotDtoCoverageAnalyzer` 报告（`AOT006` 经独立诊断分析器承载，见下），`AOT007` 由 `AotXmlRejectionAnalyzer` 报告（仅在 AOT 上下文下）；`AOT001`/`AOT002`/`AOT003` 由 `HttpJsonContextScaffolder` 脚手架工具在生成期报告。
+`AOT*` 系列诊断用于保障 Native AOT 场景下的 JSON 序列化可用性。其中 `AOT004`/`AOT005`/`AOT006` 由 `Mud.HttpUtils.Generator` 中的 `AotDtoCoverageAnalyzer` 报告（`AOT006` 经独立诊断分析器承载，见下），`AOT007` 由 `AotXmlRejectionAnalyzer` 报告（仅在 AOT 上下文下）。**段位隔离**：`AOT001~AOT099` 归生成器/分析器，`AOT1xx` 归脚手架工具——`HttpJsonContextScaffolder` 在生成期报告 `AOT001`/`AOT002`/`AOT003`/`AOT104`；其中的 `AOT104`（Info，接口扫描发现信息）即旧版的脚手架侧 `AOT004`（Info），已更名以与本表 `AOT004`（Warning，DTO 未被 `JsonSerializerContext` 覆盖）区分。
 
 | 诊断 ID | 严重级别 | 触发条件 | 解决方案 | 可自动修复 | 可抑制 |
 |---------|----------|----------|----------|------------|--------|
-| `AOT001` | Warning | 同一 `JsonSerializerContext` 内存在冲突的 `NamingPolicy` 配置 | 统一命名策略，或拆分为不同分组 | 否 | 是 |
-| `AOT002` | Warning | 开放泛型类型在 net8.0 以下标注 `[HttpJsonSerializable]` | 升级 TFM 至 net8.0+，或避免在低版本使用开放泛型源生成 | 否 | 是 |
-| `AOT003` | Warning | 多态类型缺少 `[JsonDerivedType]` 标注 | 在基类声明上补充 `[JsonDerivedType]`；`--auto-derived-types` 仅注册派生类为独立 root，不能替代基类上的 `[JsonDerivedType]` | 否 | 是 |
 | `AOT004` | Warning | `[HttpClientApi]` 方法的请求/响应 DTO 未被任何 `JsonSerializerContext` 覆盖；**或**响应类型自身已覆盖、但其 `[JsonDerivedType]` 声明的派生类型未覆盖（多态反序列化仍会失败） | 标注 `[HttpJsonSerializable]` 并运行 `dotnet mud-jsonctx`，或手动将类型（含 `[JsonDerivedType]` 声明的派生类型）加入现有 `JsonSerializerContext` | 是（`AotJsonContextCodeFixProvider`，自动向用户可编辑的 `JsonSerializerContext` 追加 `[JsonSerializable(typeof(T))]`，或新建 `partial` 扩展类） | 是 |
 | `AOT005` | Warning | 查询参数类型使用 JSON 序列化但未被 `JsonSerializerContext` 覆盖 | 将类型纳入 `JsonSerializerContext`，或实现 `IQueryParameter` 接口 | 是（`AotJsonContextCodeFixProvider`，同 AOT004 修复逻辑） | 是 |
 | `AOT006` | Warning | 标注了 `[HttpJsonSerializable]` 的类型未被任何 `JsonSerializerContext` 覆盖（仅在 net8.0+ 编译中检查；netstandard2.0 / net6.0 等 net8.0 以下 TFM 的编译中，脚手架 Context 被 `#if NET8_0_OR_GREATER` 编译排除、运行期走反射兜底，Context 缺席属预期，不报告） | 运行 `dotnet mud-jsonctx`，或将此类型加入 `JsonSerializerContext` | 是（`AotJsonContextCodeFixProvider`，同 AOT004 修复逻辑） | 是 |
@@ -1007,16 +1006,9 @@ public interface IInternalApi { }
 [IgnoreGenerator]
 [Post("/internal")]
 Task InternalMethodAsync([Body] object data);
-
-// 忽略属性/字段
-public class UserRequest
-{
-    public string Name { get; set; }
-
-    [IgnoreGenerator]
-    public string InternalField { get; set; }
-}
 ```
+
+> **支持的标注面**：`[IgnoreGenerator]` 仅允许标注在**接口**与**方法**上（接口级=完全不介入；方法级=跳过该方法）。属性/字段不支持标注该特性（会触发 CS0592）。若需跳过某个属性/字段，请改用占位实现 + `HTTPCLIENT024` 提示（见下节）。
 
 ### 未实现成员的占位实现
 
