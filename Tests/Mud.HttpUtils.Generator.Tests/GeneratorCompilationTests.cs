@@ -345,7 +345,7 @@ using Mud.HttpUtils.Attributes;
 namespace TestNamespace
 {
     [HttpClientApi]
-    [InterfaceQuery("version", "v1")]
+    [InterfaceQuery(""version"", ""v1"")]
     public interface ITestApi
     {
         [Get(""/data"")]

@@ -283,6 +283,7 @@ namespace TestNamespace
     {
         var source = @"
 using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 using System.IO;
 
 namespace TestNamespace
@@ -333,6 +334,7 @@ namespace TestNamespace
         // 验证修复：MultipartFormDataContent 应使用 using var 声明以防止异常时资源泄漏
         var source = @"
 using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 using System.IO;
 
 namespace TestNamespace
@@ -346,7 +348,7 @@ namespace TestNamespace
 }";
 
         var (_, outputCompilation) = RunGenerator(source);
-        var generatedCode = GetGeneratedCode(outputCompilation);
+        var generatedCode = GetAllGeneratedCode(outputCompilation);
 
         generatedCode.Should().NotBeNullOrEmpty();
 
@@ -366,7 +368,7 @@ using Mud.HttpUtils.Attributes;
 namespace TestNamespace
 {
     [HttpClientApi]
-    [InterfaceQuery("version", "v1")]
+    [InterfaceQuery(""version"", ""v1"")]
     public interface ITestApi
     {
         [Get(""/data"")]
@@ -494,7 +496,8 @@ namespace TestNamespace
     [Fact]
     public void Generator_WithAppContextScope_GeneratesInterlockedDisposed()
     {
-        // 验证修复：_disposed 字段使用 int + Interlocked.CompareExchange 保证线程安全
+        // M5 修正：生成类不再自带 AppContextScope/_disposed，而是委托 IAppContextHolder.BeginScope。
+        // 本用例锁定「TokenManage 模式生成 BeginScope 委托」的现行契约（避免生成器静默丢失应用切换能力）。
         var source = @"
 using Mud.HttpUtils;
 using Mud.HttpUtils.Attributes;
@@ -516,14 +519,16 @@ namespace TestNamespace
 }";
 
         var (_, outputCompilation) = RunGenerator(source);
-        var generatedCode = GetGeneratedCode(outputCompilation);
+        var generatedCode = GetAllGeneratedCode(outputCompilation);
 
         generatedCode.Should().NotBeNullOrEmpty();
 
-        generatedCode.Should().Contain("private int _disposed",
-            "AppContextScope._disposed 应使用 int 类型");
-        generatedCode.Should().Contain("System.Threading.Interlocked.CompareExchange(ref _disposed, 1, 0)",
-            "AppContextScope.Dispose 应使用 Interlocked.CompareExchange 保证原子性");
+        generatedCode.Should().Contain("public IDisposable BeginScope(",
+            "TokenManage 模式应生成 BeginScope 应用切换作用域方法");
+        generatedCode.Should().Contain("_appContextHolder.BeginScope(",
+            "BeginScope 应委托 IAppContextHolder（线程安全由运行时 AppContextScope 保证）");
+        generatedCode.Should().Contain("public IDisposable UseDefaultAppScope()",
+            "应生成 UseDefaultAppScope 自动恢复作用域方法");
     }
 
     [Fact]
@@ -904,6 +909,7 @@ namespace TestNamespace
     public void Generator_WithFormContentClass_UsesIsNullOrWhiteSpaceForStrings()
     {
         // 验证修复 BUG：FormContent 字符串属性应使用 IsNullOrWhiteSpace 而非 IsNullOrEmpty
+        // FormContent 由独立 FormContentGenerator 产出，须与 HttpInvokeClassSourceGenerator 一并运行
         var source = @"
 using System.Text.Json.Serialization;
 using Mud.HttpUtils.Attributes;
@@ -922,8 +928,22 @@ namespace TestNamespace
     }
 }";
 
-        var (_, outputCompilation) = RunGenerator(source);
-        var generatedCode = GetGeneratedCode(outputCompilation);
+        var syntaxTree = CSharpSyntaxTree.ParseText(source);
+        var references = BasicReferenceAssemblies.GetReferences();
+        var compilation = CSharpCompilation.Create(
+            "TestAssembly",
+            new[] { syntaxTree },
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var formContentGeneratorType = TestHelper.GetType("Mud.HttpUtils.FormContentGenerator");
+        var formContentGenerator = (IIncrementalGenerator)Activator.CreateInstance(formContentGeneratorType)!;
+        CSharpGeneratorDriver driver = CSharpGeneratorDriver.Create(
+            new HttpInvokeClassSourceGenerator(),
+            formContentGenerator);
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
+
+        var generatedCode = GetAllGeneratedCode(outputCompilation);
 
         generatedCode.Should().NotBeNullOrEmpty();
 

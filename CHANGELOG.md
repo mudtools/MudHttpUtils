@@ -35,6 +35,9 @@
 - **错误内容默认截断**：`ApiException.Content` 与 `ApiException.RequestContent` 默认在读取阶段截断为 10240 字符（`MaxExceptionContentLength`，`0`/负 = 不限制），两条路径（内置方法 / 生成代码）行为一致，截断内容带 `...[已截断]` 后缀。
 - **认证加密默认开启**：AES 加密始终使用认证加密（net8+/net10 用 AES-GCM，netstandard2.0/net6 用 AES-CBC+HMAC-SHA256），密文带 1 字节信封版本前缀，解密仅按前缀分派。
 - **SSRF 防护（.NET 6+ opt-in）**：`AddMudHttpClientSsrfProtection()` 提供连接期 IP 准入校验（`IIpAddressPolicy`），根治 DNS rebinding；DNS 解析结果带 TTL 缓存（默认 5 分钟）。
+- **M5 日志脱敏收口**：Error 级反序列化失败日志（EventId 31/37）写入前经 `SanitizeContent`（masker 回退 `MessageSanitizer`）脱敏并限量 500 字符；Debug 原始体日志（EventId 2/5）降为 Trace 并同样脱敏（HC-03）。`SanitizeContent` 失败时返回 `[脱敏失败]`，不影响请求路径。
+- **M5 AES/HMAC 密钥分离**：`AesEncryptionOptions.EnableKeySeparation`（默认 `true`），HKDF-Expand 派生 enc/mac 子密钥；CBC+HMAC 产出信封 **0x04**；旧格式 0x03 仍可解密（HC-13）。
+- **M5 缓存键编译期门禁**：`[Cache]` + Unsafe 参数（复杂对象/[Body]/[QueryMap] 等）且无 `CacheKeyTemplate` → `HTTPCLIENT031` Error；默认键表达式改 InvariantCulture + `string.Join`（HC-04）。
 
 ### 可靠性 / 弹性
 
@@ -44,6 +47,10 @@
 - **超时/熔断异常归一**：Polly `TimeoutRejectedException` / `BrokenCircuitException` 统一包装为 `ApiRequestException`（`IsTimeout` / `IsCircuitOpen`），全局与方法级路径一致。
 - **成功响应体可选守卫**：`MaxSuccessResponseBytes`（默认 `0` = 不限制）提供 Content-Length 预判 + 读取阶段守卫流，超限抛 `ApiRequestException`。
 - **chunked 空响应体容忍**：空响应体（含无 `Content-Length` 的 chunked 空体）返回 `default(T)` 而非抛反序列化异常。
+- **M5 响应释放契约**：`SendAndValidateAsync` / `SendStreamAsync` 非 2xx 或拦截器异常路径释放 `HttpResponseMessage`（HC-01/02），消除连接池占用泄漏。
+- **M5 重试克隆快照**：首次克隆成功后将缓冲字节写入源请求属性袋（`__mud_clone_snapshot`），后续重试直接复用，消除非 seekable 流「第 N 次克隆空体」；`CopyMetadata` 排除该键。不可重放 chunked 内容预判跳过重试（HC-05）。
+- **M5 端点级熔断隔离**：`ResilienceOptions.PolicyScope` 默认 `PerHost`，策略缓存键含 host/client 维度，服务 A 故障不再误熔断服务 B/C；`Global` 可回退历史语义；`MaxPolicyCacheSize`（默认 512）限制策略实例数（HC-06）。
+- **M5 异步 URL 校验**：`UrlValidator.ValidateUrlAsync` + DNS 条带锁改 `SemaphoreSlim`，消除 `AllowCustomBaseUrls=true` 场景的 sync-over-async 线程阻塞（HC-07）。
 
 ### 可观测性
 

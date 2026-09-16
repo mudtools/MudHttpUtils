@@ -52,7 +52,7 @@ var baseAddress = httpClient.BaseAddress;
 | `AllowCustomBaseUrls` | `bool` | `false` | 是否允许自定义基础 URL（可能带来 SSRF 风险，谨慎使用） |
 | `RequestBodySerialization` | `RequestBodySerializationMode` | `Default` | 请求体序列化模式（`Buffered`/`Streamed` 需 `ISynchronousContentSerializer`；条件不满足时**回退默认路径**并记一次 `Debug` 日志，EventId 166） |
 | `ExceptionRedactor` | `IExceptionRedactor?` | `null` | 异常擦除器（在异常传播前清除敏感数据） |
-| `MaxExceptionContentLength` | `int?` | `null`（生效值 10240） | 错误响应体最大读取字符数（读取阶段生效，防 OOM）。`null` 时使用默认值 10240（`HttpExecutionConstants.DefaultMaxExceptionContentLength`）；设为 `0` 或负数表示不限制。截断时带 `...[已截断]` 后缀 |
+| `MaxExceptionContentLength` | `int?` | `null`（生效值 10240） | 错误响应体最大读取字符数（读取阶段生效，防 OOM）。`null` 时使用默认值 10240；设为 `0` 或负数表示不限制。截断时带 `...[已截断]` 后缀。**M5-HC-03**：日志侧错误响应体窗口 200 字符、反序列化失败日志窗口 500 字符，与本配置独立 |
 | `CaptureRequestContent` | `bool` | `false` | 是否在发送前捕获请求体字符串（用于异常调试） |
 | `UrlResolution` | `UrlResolutionMode` | `Default` | URL 解析模式 |
 | `MaxSuccessResponseBytes` | `long` | `0` | 成功响应体最大字节数（`0` = 不限制；超限抛 `ApiRequestException`） |
