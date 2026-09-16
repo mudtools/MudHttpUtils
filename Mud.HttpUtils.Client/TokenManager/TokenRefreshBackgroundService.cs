@@ -5,6 +5,7 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -48,9 +49,11 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
 
     /// <summary>
     /// 初始化 TokenRefreshBackgroundService 实例，使用 IOptions 配置。
+    /// TMX-10/D8：DI 激活唯一构造入口（Timer 版不支持热更新，仍为快照）。
     /// </summary>
     /// <param name="options">后台刷新配置选项（IOptions 模式）。</param>
     /// <param name="logger">日志记录器（可选）。</param>
+    [ActivatorUtilitiesConstructor]
     public TokenRefreshBackgroundService(
         IOptions<TokenRefreshBackgroundOptions> options,
         ILogger<TokenRefreshBackgroundService>? logger = null)

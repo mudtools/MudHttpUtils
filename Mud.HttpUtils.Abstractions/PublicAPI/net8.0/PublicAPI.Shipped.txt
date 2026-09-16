@@ -841,6 +841,7 @@ static readonly Mud.HttpUtils.MudHttpMeter.RetryCounter -> System.Diagnostics.Me
 static readonly Mud.HttpUtils.MudHttpMeter.TokenRecoveryCounter -> System.Diagnostics.Metrics.Counter<long>!
 static readonly Mud.HttpUtils.MudHttpMeter.TokenRefreshCounter -> System.Diagnostics.Metrics.Counter<long>!
 static readonly Mud.HttpUtils.MudHttpMeter.TokenRefreshDuration -> System.Diagnostics.Metrics.Histogram<double>!
+static readonly Mud.HttpUtils.MudHttpMeter.TokenRefreshSuppressedCounter -> System.Diagnostics.Metrics.Counter<long>!
 virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.GetAllApps() -> System.Collections.Generic.IEnumerable<TAppContext>!
 virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.GetApp(string! appKey) -> TAppContext
 virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.GetDefaultApp() -> TAppContext
@@ -868,6 +869,7 @@ virtual Mud.HttpUtils.TokenManagerBase.MaxCacheLifetimeSeconds.get -> int
 virtual Mud.HttpUtils.TokenManagerBase.MaxFallbackLifetimeSeconds.get -> int
 virtual Mud.HttpUtils.TokenManagerBase.MaxRefreshRetryCount.get -> int
 virtual Mud.HttpUtils.TokenManagerBase.MaxScopeCacheSize.get -> int
+virtual Mud.HttpUtils.TokenManagerBase.NegativeCacheSeconds.get -> int
 virtual Mud.HttpUtils.TokenManagerBase.MetricsKey.get -> string!
 virtual Mud.HttpUtils.TokenManagerBase.RefreshRetryDelayMilliseconds.get -> int
 virtual Mud.HttpUtils.TokenManagerBase.RefreshTokenWithScopesAsync(string![]? scopes, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task<Mud.HttpUtils.CredentialToken!>!

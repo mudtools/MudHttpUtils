@@ -100,7 +100,7 @@ DI 服务依赖（ILogger / IHttpRequestInterceptor / IHttpResponseInterceptor /
 | `MudHttpClients:AllowedDomains` | `MudHttpClientApplicationOptions` → `UrlValidator` | ✅ | `OnChange` 立即重放 | 只替换「配置桶」，**不清除**运行期 `UrlValidator.AddAllowedDomain` 新增的域名（CFG-34） |
 | `MudHttpClients:Clients:<name>.BaseAddress` / `TimeoutSeconds` / `DefaultHeaders` | 注册期快照 | ❌ | 需重启 | 注册期由 `section.Bind` 生成局部快照并被 `ConfigureHttpClient` 委托闭包捕获；`IOptionsMonitor` 会更新，但已注册的 `HttpClient` 配置不会（CFG-36） |
 | `EnhancedHttpClientOptions.*`（编程式） | `IOptions<EnhancedHttpClientOptions>` | ❌ | 需重启 | 客户端创建时克隆单例值 |
-| `TokenRefreshBackground:*` | `TokenRefreshBackgroundOptions` | ⚠️ 选项可热更新 | 宿主服务仅启动期读取一次 | 已注册 `ConfigurationChangeTokenSource`，但 `TokenRefreshHostedService` 不重读（有意行为） |
+| `TokenRefreshBackground:*` | `TokenRefreshBackgroundOptions` | ✅ (TMX-10) | 下一轮刷新周期 | `TokenRefreshHostedService` 改用 `IOptionsMonitor<T>`，每轮循环读取 `CurrentValue`。ns2.0 Timer 版（`TokenRefreshBackgroundService`）仍为快照，不支持热更新 |
 | `MudHttpOpenTelemetry:*` | 局部实例绑定 | ❌ | 需重启 | OTel SDK 的 `TracerProvider`/`MeterProvider` 构建后不可变；该重载亦不把选项注册进 DI 选项管道 |
 | `MudHttpTokenRecovery:*` / `OAuth2:*` 等 | 各自 `IOptionsMonitor` | ✅ | 依消费方读取时机 | 以各 `XXXOptions.SectionName` 为准 |
 

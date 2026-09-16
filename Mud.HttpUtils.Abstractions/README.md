@@ -148,7 +148,7 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 | `IEncryptedTokenStore`           | 加密令牌持久化存储契约，继承 `ITokenStore`，提供自动加密/解密能力                                    |
 | `ITokenRefreshBackgroundService` | 令牌后台刷新服务契约，提供 `StartAsync`、`StopAsync` 和 `RefreshAllAsync` 方法                       |
 | `ITokenManagerRegistry`          | 令牌管理器注册表契约（SR-M6）：按 `TokenRecoveryContext.TokenManagerKey` 解析管理器实例，供 401 恢复执行器按键路由；未知键返回 null（由调用方回退） |
-| `TokenManagerBase`               | 令牌管理器抽象基类，提供并发安全的令牌刷新实现，支持绝对过期保护（`MaxCacheLifetimeSeconds`）         |
+| `TokenManagerBase`               | 令牌管理器抽象基类，提供并发安全的令牌刷新实现，支持绝对过期保护（`MaxCacheLifetimeSeconds`）。TMX-04：刷新失败后 5s 负缓存窗口（`protected virtual int NegativeCacheSeconds => 5`，覆写为 0 可关闭）。TMX-07：`GetTokenAsync(scopes)` 默认走 scope 感知路径，不支持 scope 的派生类应覆写并抛 `NotSupportedException` |
 | `OAuth2TokenManagerBase`         | OAuth2 标准流程抽象基类，继承 `TokenManagerBase`，内置 Authorization Code / Client Credentials / ROPC / Refresh Token 流程 |
 | `TokenTypes`                     | 令牌类型常量类，提供标准化的令牌类型标识符                                                           |
 | `ITokenCache<T>`                 | 令牌缓存契约（TryGet、Set、TryRemove、Count、Keys、Clear、Compact），`TokenManagerBase` 的核心依赖   |
@@ -408,7 +408,7 @@ ITokenManager (GetTokenAsync, GetOrRefreshTokenAsync)
 ├── IUserTokenManager (GetTokenAsync(userId), GetOrRefreshTokenAsync(userId), ...)
 ├── TokenManagerBase (并发安全刷新基类)
 │   └── OAuth2TokenManagerBase (OAuth2 标准流程基类)
-│   └── [UserTokenManagerBase — 用户级并发安全刷新基类，位于 Mud.HttpUtils.Client]
+│   └── [UserTokenManagerBase — 用户级并发安全刷新基类，位于 Mud.HttpUtils.Client。锁非重入（TMX-15-4/B12）：RefreshUserTokenAsync 中禁止回调 GetOrRefreshTokenAsync/GetTokenAsync，否则死锁]
 
 ICurrentUserContext (UserId) — 当前用户上下文（推荐，线程安全）
 ITokenProvider (GetTokenAsync) — Token 提供器（统一封装 Token 获取逻辑）

@@ -208,6 +208,8 @@ Mud.HttpUtils 存在四个超时入口，**单位不同**且**生效层级不同
 
 > **乘积效应**：令牌恢复与 HTTP 重试叠加时，最坏请求次数 = `(1 + RecoveryMaxRetries) × (1 + HttpRetries)`。
 > 文档提示，不做运行时跨包探测（`Client` 不引用 `Resilience`，见方案 ADR）。
+>
+> **401 计入 `RetryStatusCodes` 时的刷新放大上界**（TMX-16）：当 `RetryStatusCodes` 含 401 且 `RecoveryMaxRetries=1` + `MaxRetryAttempts=2` 时，最坏刷新次数 ≤ 2（恢复侧去重窗口 + 负缓存窗口共同阻断放大）。对照用例：`Recovery_UnderPollyRetry_ShouldBoundRefreshAttempts`。
 
 #### 方法级 `[Retry]` 的**覆盖面子集**（CFG-35）
 

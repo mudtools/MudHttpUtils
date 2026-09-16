@@ -1,11 +1,12 @@
 // -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
-//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
 #if NET6_0_OR_GREATER
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -30,6 +31,8 @@ namespace Mud.HttpUtils;
 ///   <item>支持多令牌管理器注册</item>
 /// </list>
 /// <para>此服务仅在 .NET 6.0 或更高版本中可用。</para>
+/// <para>TMX-10：支持配置热更新——运行期修改 <c>RefreshIntervalSeconds</c>/<c>StopOnError</c>/
+/// <c>MaxConsecutiveFailures</c> 等选项在下一轮刷新周期生效。</para>
 /// </remarks>
 /// <example>
 /// <code>
@@ -46,20 +49,49 @@ namespace Mud.HttpUtils;
 /// <seealso cref="BackgroundService"/>
 /// <seealso cref="ITokenManager"/>
 /// <seealso cref="TokenRefreshBackgroundOptions"/>
-/// <remarks>
-/// 初始化 <see cref="TokenRefreshHostedService"/> 类的新实例。
-/// </remarks>
-/// <param name="options">令牌刷新后台服务配置选项。</param>
-/// <param name="logger">日志记录器。</param>
-/// <exception cref="ArgumentNullException"><paramref name="options"/> 或 <paramref name="logger"/> 为 null。</exception>
-public sealed class TokenRefreshHostedService(
-    IOptions<TokenRefreshBackgroundOptions> options,
-    ILogger<TokenRefreshHostedService> logger) : BackgroundService, ITokenRefreshBackgroundService
+public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefreshBackgroundService
 {
     private readonly ConcurrentDictionary<string, ITokenManager> _tokenManagers = new(StringComparer.OrdinalIgnoreCase);
-    private readonly TokenRefreshBackgroundOptions _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
-    private readonly ILogger<TokenRefreshHostedService> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    private readonly IOptionsMonitor<TokenRefreshBackgroundOptions> _optionsMonitor;
+    private readonly ILogger<TokenRefreshHostedService> _logger;
     private readonly TokenRefreshLoopState _loopState = new(); // P1.6（TK-10-max）跨周期保留连续失败计数
+
+    /// <summary>
+    /// TMX-10：当前生效的配置（每次循环读取 CurrentValue，支持运行期热更新）。
+    /// </summary>
+    private TokenRefreshBackgroundOptions Options => _optionsMonitor.CurrentValue;
+
+    /// <summary>
+    /// 初始化 <see cref="TokenRefreshHostedService"/> 类的新实例。
+    /// TMX-10/D8：DI 激活唯一构造入口——<see cref="ActivatorUtilitiesConstructorAttribute"/> 标注确保
+    /// <c>ActivatorUtilities</c> 确定性地选择此 ctor，支持配置热更新。
+    /// </summary>
+    /// <param name="optionsMonitor">令牌刷新后台服务配置选项监视器，支持热更新。</param>
+    /// <param name="logger">日志记录器。</param>
+    /// <exception cref="ArgumentNullException"><paramref name="optionsMonitor"/> 或 <paramref name="logger"/> 为 null。</exception>
+    [ActivatorUtilitiesConstructor]
+    public TokenRefreshHostedService(
+        IOptionsMonitor<TokenRefreshBackgroundOptions> optionsMonitor,
+        ILogger<TokenRefreshHostedService> logger)
+    {
+        _optionsMonitor = optionsMonitor ?? throw new ArgumentNullException(nameof(optionsMonitor));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// 初始化 <see cref="TokenRefreshHostedService"/> 类的新实例（向后兼容 IOptions 重载，不支持热更新）。
+    /// </summary>
+    /// <param name="options">令牌刷新后台服务配置选项（快照）。</param>
+    /// <param name="logger">日志记录器。</param>
+    public TokenRefreshHostedService(
+        IOptions<TokenRefreshBackgroundOptions> options,
+        ILogger<TokenRefreshHostedService> logger)
+        : this(options != null
+            ? new OptionsWrapperMonitor<TokenRefreshBackgroundOptions>(options.Value)
+            : throw new ArgumentNullException(nameof(options)),
+            logger)
+    {
+    }
 
     /// <summary>
     /// 初始化 <see cref="TokenRefreshHostedService"/> 类的新实例，绑定单个令牌管理器（向后兼容）。
@@ -73,6 +105,19 @@ public sealed class TokenRefreshHostedService(
         IOptions<TokenRefreshBackgroundOptions> options,
         ILogger<TokenRefreshHostedService> logger)
         : this(options, logger)
+    {
+        if (tokenManager != null)
+            RegisterTokenManager(tokenManager);
+    }
+
+    /// <summary>
+    /// TMX-10：初始化并绑定单个令牌管理器（IOptionsMonitor 重载，支持热更新）。
+    /// </summary>
+    public TokenRefreshHostedService(
+        ITokenManager tokenManager,
+        IOptionsMonitor<TokenRefreshBackgroundOptions> optionsMonitor,
+        ILogger<TokenRefreshHostedService> logger)
+        : this(optionsMonitor, logger)
     {
         if (tokenManager != null)
             RegisterTokenManager(tokenManager);
@@ -105,10 +150,13 @@ public sealed class TokenRefreshHostedService(
     /// <para>如果 <see cref="TokenRefreshBackgroundOptions.StopOnError"/> 为 <c>true</c>，或连续失败次数达到
     /// <see cref="TokenRefreshBackgroundOptions.MaxConsecutiveFailures"/>，刷新失败后本服务将记录 Critical 并优雅停止
     /// （仅停止本服务，宿主继续运行——刻意不抛异常，避免 .NET BackgroundServiceExceptionBehavior 默认 StopHost 连带停止整个应用）。</para>
+    /// <para>TMX-10：配置在每轮循环开始时读取 <see cref="IOptionsMonitor{T}"/>.CurrentValue，
+    /// 运行期修改的 <c>RefreshIntervalSeconds</c>/<c>StopOnError</c>/<c>MaxConsecutiveFailures</c> 等在下一轮生效。</para>
     /// </remarks>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!_options.Enabled)
+        var current = Options;  // TMX-10：每轮循环读取 CurrentValue，支持热更新
+        if (!current.Enabled)
         {
             MudHttpClientLog.TokenRefreshServiceDisabled(_logger);
             return;
@@ -119,16 +167,17 @@ public sealed class TokenRefreshHostedService(
             MudHttpClientLog.TokenRefreshNoManagersRegistered(_logger);
         }
 
-        MudHttpClientLog.TokenRefreshServiceStarted(_logger, _options.RefreshIntervalSeconds, _tokenManagers.Count);
+        MudHttpClientLog.TokenRefreshServiceStarted(_logger, current.RefreshIntervalSeconds, _tokenManagers.Count);
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            current = Options;  // TMX-10：每轮拾取最新配置
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(_options.RefreshIntervalSeconds), stoppingToken);
+                await Task.Delay(TimeSpan.FromSeconds(current.RefreshIntervalSeconds), stoppingToken);
 
                 var shouldContinue = await TokenRefreshHelper.RefreshAllTokenManagersAsync(
-                    _tokenManagers, _logger, _options, stoppingToken, _loopState);
+                    _tokenManagers, _logger, current, stoppingToken, _loopState);
                 if (!shouldContinue)
                 {
                     // P1.6（TK-10）StopOnError / MaxConsecutiveFailures 触发停止：记录 Critical 后优雅 break。
@@ -143,13 +192,13 @@ public sealed class TokenRefreshHostedService(
                 MudHttpClientLog.TokenRefreshServiceStopping(_logger);
                 break;
             }
-            catch (Exception ex) when (!_tokenManagers.IsEmpty && !_options.StopOnError)
+            catch (Exception ex) when (!_tokenManagers.IsEmpty && !current.StopOnError)
             {
-                MudHttpClientLog.TokenRefreshFailedWithRetry(_logger, _options.RetryDelaySeconds, ex);
+                MudHttpClientLog.TokenRefreshFailedWithRetry(_logger, current.RetryDelaySeconds, ex);
 
                 try
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(_options.RetryDelaySeconds), stoppingToken);
+                    await Task.Delay(TimeSpan.FromSeconds(current.RetryDelaySeconds), stoppingToken);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -158,7 +207,7 @@ public sealed class TokenRefreshHostedService(
             }
             catch (Exception ex)                                   // TMX-10：任何未归类异常都不得逃出 ExecuteAsync
             {
-                MudHttpClientLog.TokenRefreshFailedWithRetry(_logger, _options.RetryDelaySeconds, ex);
+                MudHttpClientLog.TokenRefreshUnhandledException(_logger, ex);
                 MudHttpClientLog.TokenRefreshFailedAndStopped(_logger, string.Join(",", _tokenManagers.Keys));
                 break;                                             // 仅停本服务，宿主继续
             }

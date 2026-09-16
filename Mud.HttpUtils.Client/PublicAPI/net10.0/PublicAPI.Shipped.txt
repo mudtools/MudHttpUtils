@@ -110,6 +110,7 @@ Mud.HttpUtils.EncryptedTokenCache<T>.Compact(double percentage) -> void
 Mud.HttpUtils.EncryptedTokenCache<T>.Count.get -> int
 Mud.HttpUtils.EncryptedTokenCache<T>.Dispose() -> void
 Mud.HttpUtils.EncryptedTokenCache<T>.EncryptedTokenCache(Mud.HttpUtils.ITokenCache<string!>! inner, Mud.HttpUtils.IEncryptionProvider! encryption) -> void
+Mud.HttpUtils.EncryptedTokenCache<T>.EncryptedTokenCache(Mud.HttpUtils.ITokenCache<string!>! inner, Mud.HttpUtils.IEncryptionProvider! encryption, System.Text.Json.JsonSerializerOptions? serializerOptions, Microsoft.Extensions.Logging.ILogger? logger = null) -> void
 Mud.HttpUtils.EncryptedTokenCache<T>.Keys.get -> System.Collections.Generic.IEnumerable<string!>!
 Mud.HttpUtils.EncryptedTokenCache<T>.Set(string! key, T? value) -> void
 Mud.HttpUtils.EncryptedTokenCache<T>.Set(string! key, T? value, System.TimeSpan? absoluteExpirationRelativeToNow, System.TimeSpan? slidingExpiration, System.Action<string!>? postEvictionCallback = null) -> void
@@ -412,7 +413,9 @@ Mud.HttpUtils.TokenRefreshHostedService.RegisterTokenManager(Mud.HttpUtils.IToke
 Mud.HttpUtils.TokenRefreshHostedService.StartAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Mud.HttpUtils.TokenRefreshHostedService.StopAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Mud.HttpUtils.TokenRefreshHostedService.TokenRefreshHostedService(Microsoft.Extensions.Options.IOptions<Mud.HttpUtils.TokenRefreshBackgroundOptions!>! options, Microsoft.Extensions.Logging.ILogger<Mud.HttpUtils.TokenRefreshHostedService!>! logger) -> void
+Mud.HttpUtils.TokenRefreshHostedService.TokenRefreshHostedService(Microsoft.Extensions.Options.IOptionsMonitor<Mud.HttpUtils.TokenRefreshBackgroundOptions!>! optionsMonitor, Microsoft.Extensions.Logging.ILogger<Mud.HttpUtils.TokenRefreshHostedService!>! logger) -> void
 Mud.HttpUtils.TokenRefreshHostedService.TokenRefreshHostedService(Mud.HttpUtils.ITokenManager! tokenManager, Microsoft.Extensions.Options.IOptions<Mud.HttpUtils.TokenRefreshBackgroundOptions!>! options, Microsoft.Extensions.Logging.ILogger<Mud.HttpUtils.TokenRefreshHostedService!>! logger) -> void
+Mud.HttpUtils.TokenRefreshHostedService.TokenRefreshHostedService(Mud.HttpUtils.ITokenManager! tokenManager, Microsoft.Extensions.Options.IOptionsMonitor<Mud.HttpUtils.TokenRefreshBackgroundOptions!>! optionsMonitor, Microsoft.Extensions.Logging.ILogger<Mud.HttpUtils.TokenRefreshHostedService!>! logger) -> void
 Mud.HttpUtils.TracingDelegatingHandler
 Mud.HttpUtils.TracingDelegatingHandler.TracingDelegatingHandler() -> void
 Mud.HttpUtils.UrlValidator
@@ -447,7 +450,7 @@ abstract Mud.HttpUtils.UserTokenManagerBase.GetTokenAsync(string? userId, System
 abstract Mud.HttpUtils.UserTokenManagerBase.GetTokenInfoAsync(string! userId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.UserTokenInfo?>!
 abstract Mud.HttpUtils.UserTokenManagerBase.GetUserTokenWithCodeAsync(string! code, string! redirectUri, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.UserTokenInfo?>!
 abstract Mud.HttpUtils.UserTokenManagerBase.RefreshUserTokenAsync(string! userId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.UserTokenInfo?>!
-abstract Mud.HttpUtils.UserTokenManagerBase.RemoveTokenAsync(string! userId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+virtual Mud.HttpUtils.UserTokenManagerBase.RemoveTokenAsync(string! userId, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
 const Mud.HttpUtils.MudCircuitBreakerHealthCheck.Name = "mud_circuit_breaker" -> string!
 const Mud.HttpUtils.MudCircuitBreakerHealthCheckOptions.SectionName = "CircuitBreaker" -> string!
 const Mud.HttpUtils.MudHttpClientApplicationOptions.SectionName = "MudHttpClients" -> string!

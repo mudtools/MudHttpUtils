@@ -13,7 +13,7 @@ namespace Mud.HttpUtils;
 /// <remarks>
 /// <para>.NET 6+ 使用 <c>[LoggerMessage]</c> 源生成器（零分配、级别短路）；</para>
 /// <para>netstandard2.0 fallback 到 <c>LoggerMessage.Define</c>（同样零分配，但需要在运行时构建委托）。</para>
-/// <para>EventId 规划：1-50 EnhancedHttpClient（已分配）；51-100 预留；101-120 Resilience；121-130 Cache；131-156 TokenManager（已分配，含 151-156）；157-165 SR 轮（Token 安审查修复）；166 CFG-39（序列化 fast-path 回退）；167+ 预留。</para>
+/// <para>EventId 规划：1-50 EnhancedHttpClient（已分配）；51-100 预留；101-120 Resilience；121-130 Cache；131-156 TokenManager（已分配，含 151-156）；157-165 SR 轮（Token 安审查修复）；166 UserTokenScopeInvalidationFallback；167 AppResilienceCacheFull；168 SsrfGuidance；169 RequestBodySerializationFastPathFallback（TMX-17：原 166 改为 169 去重）；170 TokenRefreshSuppressed（TMX-04）；171 TokenCacheSerializationFailed（TMX-11）；172+ 预留。</para>
 /// </remarks>
 internal static partial class MudHttpClientLog
 {

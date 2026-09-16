@@ -205,7 +205,7 @@ public class TokenRefreshBackgroundServiceTests
     {
         var logger = new Mock<ILogger<TokenRefreshHostedService>>().Object;
 
-        var act = () => new TokenRefreshHostedService(null!, logger);
+        var act = () => new TokenRefreshHostedService((IOptions<TokenRefreshBackgroundOptions>)null!, logger);
 
         act.Should().Throw<ArgumentNullException>().WithParameterName("options");
     }
