@@ -692,7 +692,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
                 var value = attr.ConstructorArguments.Length > 1 ? attr.ConstructorArguments[1].Value?.ToString() : null;
                 if (!string.IsNullOrEmpty(name))
                 {
-                    queryParams.Add(new InterfaceQueryParameterInfo { Name = name, Value = value });
+                    queryParams.Add(new InterfaceQueryParameterInfo { Name = name!, Value = value });
                 }
             }
             else if (HttpClientGeneratorConstants.InterfacePathAttributeNames.Contains(attr.AttributeClass?.Name))
@@ -701,7 +701,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
                 var value = attr.ConstructorArguments.Length > 1 ? attr.ConstructorArguments[1].Value?.ToString() : null;
                 if (!string.IsNullOrEmpty(name))
                 {
-                    pathParams.Add(new InterfacePathParameterInfo { Name = name, Value = value });
+                    pathParams.Add(new InterfacePathParameterInfo { Name = name!, Value = value });
                 }
             }
         }
@@ -745,7 +745,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
                     .FirstOrDefault(arg => arg.Key is "Value" or "Format" or "FormatString").Value.Value;
                 if (queryValue == null && attr.ConstructorArguments.Length > 1)
                     queryValue = attr.ConstructorArguments[1].Value;
-                queries.Add(new InterfaceQueryParameterInfo { Name = queryName, Value = queryValue?.ToString() });
+                queries.Add(new InterfaceQueryParameterInfo { Name = queryName!, Value = queryValue?.ToString() });
             }
         }
 
@@ -961,7 +961,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         {
             var mode = ReadHeaderMergeMode(methodAttr);
             if (!string.IsNullOrEmpty(mode))
-                return mode;
+                return mode!;
         }
 
         var interfaceAttr = interfaceAttrs
@@ -971,7 +971,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         {
             var mode = ReadHeaderMergeMode(interfaceAttr);
             if (!string.IsNullOrEmpty(mode))
-                return mode;
+                return mode!;
         }
 
         return "Append";
@@ -1015,7 +1015,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         {
             var method = ReadSerializationMethodName(methodAttr);
             if (!string.IsNullOrEmpty(method))
-                return method;
+                return method!;
         }
 
         var interfaceAttr = interfaceAttrs
@@ -1025,7 +1025,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         {
             var method = ReadSerializationMethodName(interfaceAttr);
             if (!string.IsNullOrEmpty(method))
-                return method;
+                return method!;
         }
 
         return "Json";

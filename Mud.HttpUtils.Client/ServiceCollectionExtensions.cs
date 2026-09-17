@@ -17,7 +17,6 @@ using System.Diagnostics;
 using System.Text.Json;
 #if NET6_0_OR_GREATER
 using System.Diagnostics.CodeAnalysis;
-using Microsoft.Extensions.Hosting;
 #endif
 
 namespace Mud.HttpUtils;
@@ -94,7 +93,7 @@ public static class HttpClientServiceCollectionExtensions
     /// <remarks>
     /// 本方法仅注册策略，不改变任何 HttpClient 行为。如需<b>连接期校验</b>（在建立 TCP 连接时对实际建连 IP 执行准入校验，
     /// 根治 DNS rebinding TOCTOU），请在 <see cref="IHttpClientBuilder"/> 上继续调用
-    /// <see cref="AddMudHttpClientSsrfProtection(IHttpClientBuilder)"/>（net6.0+）。
+    /// <c>AddMudHttpClientSsrfProtection(IHttpClientBuilder)</c>（net6.0+）。
     /// </remarks>
     /// <param name="services">服务集合。</param>
     /// <returns>服务集合（链式调用）。</returns>
@@ -161,7 +160,8 @@ public static class HttpClientServiceCollectionExtensions
         //     且配置变更 → InvalidateAll → 下一次解析真正重建实例并重新读取配置。
         services.AddKeyedTransient<IEnhancedHttpClient>(
             clientName,
-            (sp, key) => sp.GetRequiredService<IEnhancedHttpClientFactory>().CreateClient((string)key));
+            (sp, key) => sp.GetRequiredService<IEnhancedHttpClientFactory>().CreateClient(
+                key as string ?? throw new InvalidOperationException("命名客户端的 keyed 解析键必须为非 null 字符串。")));
 #endif
 
         services.Configure<EnhancedHttpClientFactoryOptions>(options =>
@@ -454,7 +454,7 @@ public static class HttpClientServiceCollectionExtensions
     /// </summary>
     /// <param name="services">服务集合。</param>
     /// <remarks>
-    /// <para>NET6+：使用 <see cref="TokenRefreshHostedService"/>（基于 BackgroundService）。</para>
+    /// <para>NET6+：使用 <c>TokenRefreshHostedService</c>（基于 BackgroundService）。</para>
     /// <para>netstandard2.0：使用 <see cref="TokenRefreshBackgroundService"/>（基于 Timer）。</para>
     /// <para>
     /// NET6+ 中，先注册为单例，再通过工厂委托分别注册为 <see cref="Microsoft.Extensions.Hosting.IHostedService"/> 和
@@ -792,7 +792,7 @@ public static class HttpClientServiceCollectionExtensions
     /// <returns>服务集合（链式调用）。</returns>
     /// <exception cref="ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
     /// <remarks>
-    /// 此方法注册 <see cref="DefaultCurrentUserContext"/> 作为默认的当前用户上下文实现。
+    /// 此方法注册 <see cref="DefaultCurrentUserContext{TUser}"/> 作为默认的当前用户上下文实现。
     /// 当前用户上下文用于获取当前请求的用户信息。
     /// </remarks>
     /// <example>

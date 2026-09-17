@@ -23,7 +23,7 @@ internal static class AppKeyValidator
     /// <param name="paramName">异常参数名。</param>
     internal static void Validate(string? value, string paramName)
     {
-        if (string.IsNullOrWhiteSpace(value))
+        if (value is null || string.IsNullOrWhiteSpace(value))
             throw new ArgumentException("应用标识不能为空。", paramName);
 
         if (value.Length > MaxLength)
@@ -46,7 +46,7 @@ internal static class AppKeyValidator
     /// <summary>把标识转换为可安全写入日志/异常消息的文本（截断 + 过滤控制字符）。</summary>
     internal static string ToSafeText(string? value)
     {
-        if (string.IsNullOrEmpty(value))
+        if (value is null || value.Length == 0)
             return string.Empty;
 
         var limit = value.Length > MaxLength ? MaxLength : value.Length;

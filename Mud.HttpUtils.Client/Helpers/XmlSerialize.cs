@@ -147,7 +147,9 @@ public sealed class XmlSerialize
 
             using var stream = new MemoryStream(encoding.GetBytes(xml));
             using var reader = XmlReader.Create(stream, settings);
-            return (T)serializer.Deserialize(reader);
+            // XmlSerializer.Deserialize 返回 object?；契约上调用方已保证 xml 非空且类型匹配，
+            // 此处显式声明非空以保持既有返回值语义（null 时行为与修复前一致）。
+            return (T)serializer.Deserialize(reader)!;
         }
         catch (InvalidOperationException ex)
         {

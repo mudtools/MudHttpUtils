@@ -82,6 +82,11 @@ public class MemoryUserTokenStore : IUserTokenStore
         return Task.FromResult<IEnumerable<string>>(allTypes);
     }
 
+    /// <summary>
+    /// 清空全部用户令牌缓存条目。
+    /// </summary>
+    /// <param name="cancellationToken">取消令牌（内存实现不检查取消，仅为契约对齐）。</param>
+    /// <returns>表示清空操作完成的任务。</returns>
     public Task ClearAsync(CancellationToken cancellationToken = default)
     {
         _userStore.Clear();

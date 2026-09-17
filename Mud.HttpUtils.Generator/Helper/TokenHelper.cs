@@ -67,7 +67,7 @@ internal static class TokenHelper
     /// <returns>Scopes数组，空时返回空数组</returns>
     public static string[] ParseScopes(string? scopesValue)
     {
-        if (string.IsNullOrWhiteSpace(scopesValue))
+        if (scopesValue is null || scopesValue.Trim().Length == 0)
             return Array.Empty<string>();
 
         return scopesValue
@@ -160,7 +160,7 @@ internal static class TokenHelper
         if (string.IsNullOrEmpty(memberName))
             return HttpClientGeneratorConstants.TokenInjectionModeHeader;
 
-        return MapTokenInjectionMode(memberName);
+        return MapTokenInjectionMode(memberName!);
     }
 
     /// <summary>

@@ -35,7 +35,10 @@ internal static class ResiliencePolicyScopeResolver
 #else
         if (request.Options.TryGetValue(new HttpRequestOptionsKey<string>(ClientNamePropertyKey), out var name))
             return name;
+        // 兼容历史写入路径：客户端名可能仍写在已过时的 Properties 上。
+#pragma warning disable CS0618 // HttpRequestMessage.Properties 已过时
         return request.Properties.TryGetValue(ClientNamePropertyKey, out var v) ? v as string : null;
+#pragma warning restore CS0618 // HttpRequestMessage.Properties 已过时
 #endif
     }
 }

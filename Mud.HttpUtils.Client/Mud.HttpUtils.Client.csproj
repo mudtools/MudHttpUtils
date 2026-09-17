@@ -8,6 +8,14 @@
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>
+		<!-- RS0026（PublicApiAnalyzers）：本库刻意为若干公共成员同时提供「可选参数重载」组合，
+		     用于在不破坏既有调用点的前提下扩展能力：
+		       · TokenRecoveryExecutor / TokenRecoveryDelegatingHandler —— 新增 IAppContextHolder
+		         参数时保留旧构造签名（同一可选参数集的两个重载）；
+		       · StreamNdJsonAsync —— 非 AOT 重载与 JsonTypeInfo<T> AOT 重载并存；
+		       · StandardOAuth2TokenManager.GetTokenAsync —— 同时实现 ITokenManager 的两个重载。
+		     按 RS0026 建议去掉可选参数会直接造成消费方源码破坏性变更，故显式登记该权衡。 -->
+		<NoWarn>$(NoWarn);RS0026</NoWarn>
 	</PropertyGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\Mud.HttpUtils.Abstractions\Mud.HttpUtils.Abstractions.csproj" />

@@ -15,7 +15,7 @@ namespace Mud.HttpUtils;
 /// <para>生成器在未显式指定 TokenManagerKey 时会写入由 TokenType 推断的默认键
 /// （见 TokenMethodHelper），因此<b>解析失败返回 null（由调用方决定回退策略）而非 fail-fast</b>，
 /// 避免击穿所有默认场景的 401 恢复可用性。</para>
-/// <para>默认实现：<see cref="DelegateTokenManagerRegistry"/>（Client 包，配合
+/// <para>默认实现：<c>DelegateTokenManagerRegistry</c>（Client 包，配合
 /// <c>AddTokenManagerRegistry</c> DI 助手）。</para>
 /// </remarks>
 public interface ITokenManagerRegistry

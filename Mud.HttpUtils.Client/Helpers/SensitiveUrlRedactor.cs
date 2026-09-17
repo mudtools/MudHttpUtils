@@ -31,8 +31,8 @@ internal static class SensitiveUrlRedactor
     /// <returns>脱敏后的 URL；无 query 或未命中敏感键时与输入一致。</returns>
     public static string Redact(string? url)
     {
-        if (string.IsNullOrEmpty(url))
-            return url ?? string.Empty;
+        if (url is null || url.Length == 0)
+            return string.Empty;
 
         // M1-#5.3：运维开关。关闭时保留完整 URL（仅供已自行治理日志下游的排障场景）。
         // 不影响 ApiException.RequestUri（始终保留完整 URI）与 URL 安全校验（始终用原始 URL）。

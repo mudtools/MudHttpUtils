@@ -45,7 +45,7 @@ public readonly struct RefreshStats(
     public DateTimeOffset? LastFailureAt { get; } = lastFailureAt;
 
     /// <summary>
-    /// 将统计转换为字典，便于健康检查 <see cref="Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult"/> 的 data 字段输出。
+    /// 将统计转换为字典，便于健康检查 <c>HealthCheckResult</c> 的 data 字段输出。
     /// </summary>
     public IReadOnlyDictionary<string, object?> ToDictionary()
     {

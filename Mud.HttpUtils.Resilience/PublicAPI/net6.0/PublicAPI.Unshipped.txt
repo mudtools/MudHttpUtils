@@ -1,1 +1,3 @@
-#nullable enable
+﻿#nullable enable
+*REMOVED*Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.PollyResiliencePolicyProvider(Mud.HttpUtils.Resilience.ResilienceOptions? options = null, Microsoft.Extensions.Logging.ILogger? logger = null) -> void
+*REMOVED*Mud.HttpUtils.Resilience.ResilientHttpClient.SendAsAsyncEnumerable<TResult>(System.Net.Http.HttpRequestMessage! request, System.Text.Json.Serialization.Metadata.JsonTypeInfo<TResult>! jsonTypeInfo, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<TResult>!

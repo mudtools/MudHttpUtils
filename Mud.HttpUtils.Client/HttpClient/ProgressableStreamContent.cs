@@ -127,7 +127,7 @@ public class ProgressableStreamContent : HttpContent, IRequestContentReplayHint
     /// <param name="length">当返回时,包含内容的长度(如果可计算);否则为 -1。</param>
     /// <returns>如果可以计算内容长度,则为 <c>true</c>;否则为 <c>false</c>。</returns>
     /// <remarks>
-    /// 此方法从内部内容的 <see cref="HttpContentHeaders.ContentLength"/> 头部获取长度信息。
+    /// 此方法从内部内容的 <c>ContentLength</c> 头部获取长度信息。
     /// 如果内部内容未指定 Content-Length,则返回 <c>false</c>。
     /// </remarks>
     protected override bool TryComputeLength(out long length)

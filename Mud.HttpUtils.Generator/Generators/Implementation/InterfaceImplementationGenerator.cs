@@ -216,7 +216,7 @@ internal class InterfaceImplementationGenerator
         {
             // HttpClient 类型校验仅输出诊断不阻断生成：GetTypeByMetadataName 需要完全限定名，
             // 用户可能使用短名称引用同编译中的类型，阻断会导致误报。错误诊断已足以提示用户。
-            ValidateHttpClientType(configuration.HttpClient);
+            ValidateHttpClientType(configuration.HttpClient!);
         }
 
         if (!string.IsNullOrEmpty(configuration.TokenManager))
@@ -230,7 +230,7 @@ internal class InterfaceImplementationGenerator
             var hasTokenManager = !string.IsNullOrEmpty(configuration.TokenManager);
             var validationResult = BaseClassValidator.ValidateBaseClass(
                 _compilation,
-                configuration.InheritedFrom,
+                configuration.InheritedFrom!,
                 hasTokenManager,
                 _interfaceSymbol.ContainingNamespace);
 
@@ -302,7 +302,7 @@ internal class InterfaceImplementationGenerator
         if (string.IsNullOrEmpty(configuration.TokenManager))
             return true;
 
-        var tokenManagerTypeName = configuration.TokenManager;
+        var tokenManagerTypeName = configuration.TokenManager!;
         var tokenManagerType = ResolveType(tokenManagerTypeName);
 
         if (tokenManagerType == null)
@@ -666,7 +666,7 @@ internal class InterfaceImplementationGenerator
 
         var contentTypeArg = attribute.NamedArguments.FirstOrDefault(a => a.Key == "ContentType");
         var contentType = contentTypeArg.Value.Value?.ToString();
-        return string.IsNullOrEmpty(contentType) ? HttpClientGeneratorConstants.DefaultContentType : contentType;
+        return string.IsNullOrEmpty(contentType) ? HttpClientGeneratorConstants.DefaultContentType : contentType!;
     }
 
     /// <summary>
@@ -797,7 +797,7 @@ internal class InterfaceImplementationGenerator
                         var innerType = TypeSymbolHelper.ExtractResponseInnerType(deserializeType);
                         if (!string.IsNullOrEmpty(innerType) && innerType != "void" && innerType != "System.Void")
                         {
-                            context.XmlResponseTypes.Add(innerType);
+                            context.XmlResponseTypes.Add(innerType!);
                         }
                     }
                     else

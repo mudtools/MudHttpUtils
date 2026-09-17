@@ -1,0 +1,14 @@
+<Project>
+
+	<!-- 显式导入仓库根 Directory.Build.props（就近遮蔽规则，见 Tests/Directory.Build.props 的说明）。 -->
+	<Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)..'))" />
+
+	<PropertyGroup>
+		<!-- 示例工程不是交付物：不生成 XML 文档。
+		     此前仅 HttpClientApiDemo / HttpClientApiPublicDemo / CommonClassLibrary 等
+		     逐个在 csproj 中设置 GenerateDocumentationFile=false，其余示例（含共享项工程
+		     CommonClassPubliceLibrary）继承根属性 true 并产生 CS1591。此处统一收敛。 -->
+		<GenerateDocumentationFile>false</GenerateDocumentationFile>
+	</PropertyGroup>
+
+</Project>

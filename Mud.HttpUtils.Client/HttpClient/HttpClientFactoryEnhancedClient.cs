@@ -37,6 +37,9 @@ public class HttpClientFactoryEnhancedClient : EnhancedHttpClient
     private readonly IOptions<JsonSerializerOptions>? _jsonOptions;
     private readonly IHttpContentSerializer? _contentSerializer;
 
+    /// <summary>
+    /// 获取本客户端使用的加密提供程序（未注入时为 <c>null</c>）。
+    /// </summary>
     protected override IEncryptionProvider? EncryptionProvider => _encryptionProvider;
 
     /// <summary>
@@ -48,6 +51,7 @@ public class HttpClientFactoryEnhancedClient : EnhancedHttpClient
     /// <param name="options">配置选项（可选）。</param>
     /// <param name="overrideBaseAddress">覆盖的基地址（可选）。</param>
     /// <param name="jsonOptions">JSON 序列化选项（可选，用于 Native AOT 场景注入 JsonSerializerContext）。</param>
+    /// <param name="contentSerializer">HTTP 内容序列化器（可选，未注入时由基类回退到默认 SystemTextJsonContentSerializer）。</param>
     /// <exception cref="ArgumentNullException">factory 或 clientName 为 null</exception>
     public HttpClientFactoryEnhancedClient(
         IHttpClientFactory factory,

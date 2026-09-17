@@ -1,0 +1,29 @@
+<Project>
+
+	<!-- 显式导入仓库根 Directory.Build.props：
+	     MSBuild 只向上找到**第一个** Directory.Build.props 即停止（就近即止，不聚合），
+	     因此本文件会“遮蔽”根文件中的全局属性。显式 Import 保证继承关系不丢失。 -->
+	<Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)..'))" />
+
+	<PropertyGroup>
+		<!-- 测试工程不是交付物：不生成 XML 文档。
+		     根 Directory.Build.props 的 GenerateDocumentationFile=true 面向发布包，
+		     对测试类只会产生大量 CS1591（且各测试工程此前的取值互不一致：部分显式 true、
+		     部分显式 false）。此处统一收敛，避免"靠逐个 csproj 设置"的漂移。 -->
+		<GenerateDocumentationFile>false</GenerateDocumentationFile>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<!-- 测试工程不是 AOT/裁剪交付物：默认关闭 AOT 与裁剪分析器。
+		     Directory.Build.targets 已在 AotStrictMode 清单中显式排除 *.Tests / *.Benchmarks，
+		     理由同源——测试代码中的反射/动态代码用法属测试基建，分析器只会产生无法消除的
+		     IL1xxx/IL3xxx 噪声。
+		     注意：个别测试工程（Mud.HttpUtils.Client.Tests / Resilience.Tests）在自身 csproj 中
+		     显式设置 IsAotCompatible=true / EnableAotAnalyzer=true 作为"库 AOT 标注向消费方传播"
+		     的金丝雀，csproj 属性在本文件之后求值，会覆盖此处默认值，故该金丝雀行为保持不变。 -->
+		<IsAotCompatible>false</IsAotCompatible>
+		<EnableAotAnalyzer>false</EnableAotAnalyzer>
+		<EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+	</PropertyGroup>
+
+</Project>

@@ -68,7 +68,9 @@ internal static class TypeSymbolHelper
         INamedTypeSymbol interfaceSymbol,
         HashSet<INamedTypeSymbol> visitedInterfaces,
         bool includeParentInterfaces,
-        HashSet<string> excludedInterfaces,
+        // 显式标注可空：方法体已按「null = 不排除任何接口」处理（见下方 null 判定），
+        // 声明为非空会使该判定成为死代码并对递归传递产生 CS8604。
+        HashSet<string>? excludedInterfaces,
         List<IMethodSymbol> results)
     {
         // 避免循环引用
@@ -138,10 +140,10 @@ internal static class TypeSymbolHelper
         }
         catch (Exception ex)
         {
-            // 如果无法访问AllInterfaces属性（例如符号未完全解析），返回null
-            // 在设计时这是安全的，因为编译时会重新检查
+            // 无法访问 AllInterfaces 属性（例如符号未完全解析）时返回空集合；
+            // 在设计时这是安全的，因为编译时会重新检查。
             GeneratorDebugLogger.LogError("SafeGetAllInterfaces", ex);
-            return null;
+            return Enumerable.Empty<INamedTypeSymbol>();
         }
     }
 
@@ -240,7 +242,7 @@ internal static class TypeSymbolHelper
     private static void AddIfNotNull(List<string> list, string? value)
     {
         if (!string.IsNullOrEmpty(value))
-            list.Add(value);
+            list.Add(value!);
     }
 
     #endregion
@@ -533,9 +535,10 @@ internal static class TypeSymbolHelper
     /// </summary>
     private static ITypeSymbol GetNullableUnderlyingType(this ITypeSymbol typeSymbol)
     {
-        if (typeSymbol is INamedTypeSymbol { ConstructedFrom.SpecialType: SpecialType.System_Nullable_T } nullableType)
+        if (typeSymbol is INamedTypeSymbol { ConstructedFrom.SpecialType: SpecialType.System_Nullable_T } nullableType
+            && nullableType.TypeArguments.Length > 0)
         {
-            return nullableType.TypeArguments.FirstOrDefault();
+            return nullableType.TypeArguments[0];
         }
         return typeSymbol;
     }

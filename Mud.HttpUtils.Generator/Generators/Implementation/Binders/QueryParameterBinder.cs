@@ -688,12 +688,12 @@ internal class QueryParameterBinder : IParameterBinder
         // 与 MethodAnalyzer 接口属性路径的口径分叉。
         var name = AttributeArgumentReader.GetString(attr, AttributeArgumentReader.ResolveNamePosition(attr.Name), "Name");
         if (!string.IsNullOrEmpty(name))
-            return name;
+            return name!;
 
         // GEN-05：参数级 [Query(AliasAs = "keyword")] 生效。
         var alias = AttributeArgumentReader.GetString(attr, null, "AliasAs");
         if (!string.IsNullOrEmpty(alias))
-            return alias;
+            return alias!;
 
         return defaultName;
     }

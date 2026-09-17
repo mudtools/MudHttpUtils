@@ -14,14 +14,14 @@ internal class RequestBuilder
 {
     /// <summary>
     /// GEN-04（B-1）：按特性语义解析 format 位置。<c>[Path("yyyy-MM-dd")]</c> 的首参即 formatString
-    /// （<see cref="PathAttribute"/> 的构造参数），<c>[Query("name","format")]</c> 的第二个位置参数是 format。
+    /// （<c>PathAttribute</c> 的构造参数），<c>[Query("name","format")]</c> 的第二个位置参数是 format。
     /// 移除了此前对 <see cref="HttpClientGeneratorConstants.PathAttributes"/> 的显式排除（源于「Path 首参是 name」的错误假设，
     /// 参见文档 §7.1 修复点 3 / PathAttribute.cs 构造签名）。
     /// </summary>
     private string GetFormatString(ParameterAttributeInfo attribute)
         => AttributeArgumentReader.GetString(attribute,
             AttributeArgumentReader.ResolveFormatPosition(attribute.Name),
-            "FormatString", "Format");
+            "FormatString", "Format")!;
 
     /// <summary>
     /// 生成 URL 字符串
@@ -51,7 +51,7 @@ internal class RequestBuilder
         // 规则3：正常情况，拼接 BasePath
         if (!string.IsNullOrEmpty(basePath))
         {
-            var normalizedBasePath = basePath.TrimEnd('/');
+            var normalizedBasePath = basePath!.TrimEnd('/');
             var normalizedUrlTemplate = urlTemplate.TrimStart('/');
             var combinedPath = $"{normalizedBasePath}/{normalizedUrlTemplate}";
             return BuildUrlWithPlaceholders(combinedPath, pathParams, methodInfo);
@@ -759,11 +759,11 @@ internal class RequestBuilder
         // GEN-09：方法级 Token(Name) > 接口级 > 默认。
         var tokenName = methodInfo.EffectiveTokenName;
         if (!string.IsNullOrEmpty(tokenName))
-            return tokenName;
+            return tokenName!;
 
         var queryAttr = methodInfo.InterfaceAttributes?.FirstOrDefault(attr => attr.StartsWith("Query:", StringComparison.Ordinal));
         if (!string.IsNullOrEmpty(queryAttr))
-            return queryAttr.Substring(6);
+            return queryAttr!.Substring(6);
 
         return "access_token";
     }
@@ -779,7 +779,7 @@ internal class RequestBuilder
 
         var headerAttr = methodInfo.InterfaceAttributes?.FirstOrDefault(attr => attr.StartsWith("Header:", StringComparison.Ordinal));
         if (!string.IsNullOrEmpty(headerAttr))
-            return headerAttr.Substring(7);
+            return headerAttr!.Substring(7);
 
         return null;
     }
@@ -809,7 +809,7 @@ internal class RequestBuilder
             return;
         }
 
-        if (formatString.Contains("{0}"))
+        if (formatString!.Contains("{0}"))
         {
             var escapedFormat = StringEscapeHelper.EscapeString(formatString);
             var formatExpr = $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{escapedFormat}\", {paramName})";
@@ -987,7 +987,7 @@ internal class RequestBuilder
         {
             var ctorContentType = bodyAttr.Arguments[0]?.ToString();
             if (!string.IsNullOrEmpty(ctorContentType))
-                return ctorContentType;
+                return ctorContentType!;
         }
 
         // 再检查命名参数（如 [Body(ContentType = "application/xml")]）

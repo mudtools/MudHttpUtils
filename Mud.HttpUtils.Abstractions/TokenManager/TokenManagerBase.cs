@@ -55,6 +55,10 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// 指示对象是否已释放。
     /// </summary>
     protected volatile bool _disposed;
+
+    /// <summary>
+    /// 默认作用域键（<c>"default"</c>）。当调用方未指定作用域时，令牌缓存按此键归属。
+    /// </summary>
     protected const string DefaultScopeKey = "default";
     private const int CleanupIntervalSeconds = 300;
     private const int LockCleanupIntervalSeconds = 600;
@@ -159,10 +163,10 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
     /// <inheritdoc />
     /// <remarks>
-    /// TMX-07：默认实现走 scope 感知路径（与 <see cref="GetOrRefreshTokenAsync(string[]?, CancellationToken)"/> 一致），
+    /// TMX-07：默认实现走 scope 感知路径（与 <see cref="GetOrRefreshTokenAsync(string[], CancellationToken)"/> 一致），
     /// 不再静默返回默认作用域令牌。不支持 scope 的派生类应覆写并抛 <see cref="NotSupportedException"/>
     /// （MT-11：否则调用方会静默拿到默认作用域令牌，构成 scope 错配 / 潜在越权风险；
-    /// 支持按作用域取令牌的子类<b>必须覆写本重载</b>，<see cref="StandardOAuth2TokenManager"/> 已覆写）。
+    /// 支持按作用域取令牌的子类<b>必须覆写本重载</b>，<c>StandardOAuth2TokenManager</c>（Client 程序集）已覆写）。
     /// </remarks>
     public virtual Task<string> GetTokenAsync(string[]? scopes, CancellationToken cancellationToken = default)
     {
@@ -776,7 +780,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     internal bool TimersActive => !_timersStopped;
 
     /// <summary>
-    /// MT-15：是否已释放。供 <see cref="TokenRefreshHelper"/> 区分
+    /// MT-15：是否已释放。供 <c>TokenRefreshHelper</c>（Client 程序集）区分
     /// 「管理器已被释放（应反注册）」与「管理器<b>暂时</b>不可用（不应永久反注册）」。
     /// </summary>
     internal bool IsDisposed => _disposed;

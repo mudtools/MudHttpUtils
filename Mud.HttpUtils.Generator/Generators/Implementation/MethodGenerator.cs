@@ -1559,7 +1559,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         if (methodInfo.IsValid && methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModePath
             && !string.IsNullOrEmpty(methodInfo.InterfaceTokenName))
         {
-            tokenPathPlaceholders.Add(methodInfo.InterfaceTokenName);
+            tokenPathPlaceholders.Add(methodInfo.InterfaceTokenName!);
         }
 
         var missingInMethod = templatePlaceholders

@@ -67,8 +67,10 @@ internal sealed class KeyedLockTable : IDisposable
         {
             var entry = _entries.GetOrAdd(key, _ => new Entry());
             Interlocked.Increment(ref entry.Waiters);
-            // SR-C1（P1.1）：显式 Volatile.Read 消除对 volatile 成员读取的隐式依赖（语义等价）。
-            if (!Volatile.Read(ref entry.Retired))
+            // SR-C1（P1.1）：Retired 声明为 volatile，直接读取即具备 volatile 语义。
+            // 此处刻意不写 Volatile.Read(ref entry.Retired)：对 volatile 字段取 ref 会触发 CS0420
+            // （“对 volatile 字段的引用不被视为 volatile”），而语义与直接读取完全等价。
+            if (!entry.Retired)
             {
                 try
                 {

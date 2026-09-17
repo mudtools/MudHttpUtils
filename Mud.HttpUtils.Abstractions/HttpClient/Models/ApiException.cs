@@ -15,7 +15,7 @@ namespace Mud.HttpUtils;
 /// <remarks>
 /// <para>
 /// 当 HTTP 响应的状态码表示错误（4xx 或 5xx）时，如果方法未标记
-/// <see cref="AllowAnyStatusCodeAttribute"/> 且返回类型不是 <see cref="Response{T}"/>，
+/// <c>AllowAnyStatusCodeAttribute</c>（定义于 Attributes 程序集）且返回类型不是 <see cref="Response{T}"/>，
 /// 则会抛出此异常。
 /// </para>
 /// </remarks>
@@ -107,7 +107,7 @@ public class ApiException : HttpRequestException
 
     /// <summary>
     /// 供运输层异常子类（如 <see cref="ApiRequestException"/>）使用的受保护构造函数。
-    /// 运输层失败无 HTTP 状态码，故不要求 <paramref name="statusCode"/>，<see cref="StatusCode"/> 取默认值 0。
+    /// 运输层失败无 HTTP 状态码，故不要求 <c>statusCode</c>，<see cref="StatusCode"/> 取默认值 0。
     /// </summary>
     /// <param name="message">异常消息。</param>
     /// <param name="requestUri">请求 URI。</param>
@@ -122,7 +122,7 @@ public class ApiException : HttpRequestException
     /// 获取 HTTP 状态码。
     /// </summary>
     /// <remarks>
-    /// 在 NET 5+ 上，此属性使用 <c>new</c> 关键字隐藏基类 <see cref="HttpRequestException.StatusCode"/>（nullable），
+    /// 在 NET 5+ 上，此属性使用 <c>new</c> 关键字隐藏基类 <c>HttpRequestException.StatusCode</c>（nullable），
     /// 提供 non-nullable 版本。两者返回相同的逻辑值。
     /// </remarks>
 #if NET5_0_OR_GREATER

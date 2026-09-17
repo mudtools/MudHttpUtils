@@ -83,6 +83,7 @@ public class DefaultApiKeyProvider : IApiKeyProvider
         if (string.IsNullOrEmpty(apiKey))
             throw new InvalidOperationException($"未找到 API Key 配置: {configKey}");
 
-        return Task.FromResult(apiKey);
+        // apiKey 的非空性已由上方 IsNullOrEmpty 守卫收敛。
+        return Task.FromResult(apiKey!);
     }
 }
