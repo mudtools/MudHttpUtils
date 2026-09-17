@@ -22,21 +22,21 @@ public interface IBasePathTestApi
     /// 实际路径: /api/v1/users/{id}
     /// </summary>
     [Get("users/{id}")]
-    Task<UserInfo> GetUserAsync([Path] int id, CancellationToken cancellationToken = default);
+    Task<UserInfo?> GetUserAsync([Path] int id, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 正常场景：Base Path + Method Path（无路径参数）
     /// 实际路径: /api/v1/users
     /// </summary>
     [Get("users")]
-    Task<List<UserInfo>> GetUsersAsync([Query] string? name = null, CancellationToken cancellationToken = default);
+    Task<List<UserInfo>?> GetUsersAsync([Query] string? name = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 忽略 Base Path：Method Path 以 / 开头
     /// 实际路径: /admin/users（忽略 BasePath）
     /// </summary>
     [Get("/admin/users")]
-    Task<List<UserInfo>> GetAdminUsersAsync(CancellationToken cancellationToken = default);
+    Task<List<UserInfo>?> GetAdminUsersAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 正常场景：POST 请求 + Base Path
