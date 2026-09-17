@@ -25,7 +25,7 @@ namespace Mud.HttpUtils;
 /// <para>工作流程：</para>
 /// <list type="number">
 ///   <item>保存请求体内容（在发送前读取，避免流被消耗后无法重试）</item>
-///   <item>通过 <paramref name="sendFunc"/> 发送请求</item>
+///   <item>通过 <c>sendFunc</c> 发送请求</item>
 ///   <item>如果收到 401 响应：使缓存令牌失效 → 强制刷新令牌 → 构建新请求并应用令牌 → 重试</item>
 ///   <item>根据 <see cref="TokenRecoveryOptions.RecoveryMaxRetries"/> 配置重复步骤 3，直到成功或达到最大重试次数</item>
 /// </list>
@@ -396,7 +396,7 @@ public class TokenRecoveryExecutor
                         MudHttpClientLog.TokenInjectionUnsupported(_logger, $"CRLF_in_token");
                         return response;   // D3：返回真实 401
                     }
-                    applied = ApplyTokenToRequest(retryRequest, newToken, recoveryContext);
+                    applied = ApplyTokenToRequest(retryRequest, newToken!, recoveryContext);
                 }
                 catch (Exception ex) when (ex is FormatException or InvalidOperationException)
                 {
@@ -488,8 +488,11 @@ public class TokenRecoveryExecutor
 #else
         if (request.Options.TryGetValue(new HttpRequestOptionsKey<TokenRecoveryContext>(TokenRecoveryContext.PropertyKey), out var value))
             return value;
+        // 兼容历史写入路径：旧代码可能把上下文写在已过时的 Properties 上，此处刻意保留回读。
+#pragma warning disable CS0618 // HttpRequestMessage.Properties 已过时
         if (request.Properties.TryGetValue(TokenRecoveryContext.PropertyKey, out var legacyValue))
             return legacyValue as TokenRecoveryContext;
+#pragma warning restore CS0618 // HttpRequestMessage.Properties 已过时
         return null;
 #endif
     }
@@ -523,7 +526,7 @@ public class TokenRecoveryExecutor
     /// </summary>
     private static bool IsSafeTokenValue(string? token)
     {
-        if (string.IsNullOrEmpty(token)) return false;
+        if (token is null || token.Length == 0) return false;
         foreach (var c in token) if (c < 0x20 || c == 0x7F) return false;
         return true;
     }
@@ -597,7 +600,7 @@ public class TokenRecoveryExecutor
                 var queryUri = request.RequestUri;
                 if (queryUri != null)
                 {
-                    var newQuery = ReplaceQueryParameter(queryUri.Query, context.QueryParameterName, token);
+                    var newQuery = ReplaceQueryParameter(queryUri.Query, context.QueryParameterName!, token);
                     var builder = new UriBuilder(queryUri) { Query = newQuery };
                     request.RequestUri = builder.Uri;
                     return true;
@@ -708,12 +711,16 @@ public class TokenRecoveryExecutor
         //   2. ExecuteWithObservabilityAsync 检测到已 observed 跳过指标采集，重试耗时与状态码不计入指标
         //   3. __mud_status_code 被覆盖，Jaeger 中看不到 401→200 的恢复轨迹
         // 业务属性（如 TokenRecoveryContext）不受 __mud_ 前缀限制，仍正常复制。
+        // 兼容 netstandard2.0 与历史写入路径：Properties 已过时但仍需按原语义复制非 __mud_ 属性。
+#pragma warning disable CS0618 // HttpRequestMessage.Properties 已过时
         foreach (var property in original.Properties)
         {
             if (property.Key.StartsWith("__mud_", StringComparison.Ordinal))
                 continue;
             clone.Properties.Add(property);
         }
+#pragma warning restore CS0618 // HttpRequestMessage.Properties 已过时
+
 
 #if !NETSTANDARD2_0
         foreach (var option in original.Options)
@@ -781,7 +788,7 @@ public class TokenRecoveryExecutor
     /// <returns><c>true</c> = 允许使用该管理器；<c>false</c> = 被守卫拒绝（已记结构化告警，调用方应返回真实 401）。</returns>
     /// <remarks>
     /// <para>
-    /// 与 <see cref="DefaultTokenProvider"/> 中的守卫同语义（bind-once）：管理器实例一旦绑定到某个 appKey，
+    /// 与 <c>DefaultTokenProvider</c> 中的守卫同语义（bind-once）：管理器实例一旦绑定到某个 appKey，
     /// 后续以其它 appKey 使用即被拒绝。
     /// </para>
     /// <para>

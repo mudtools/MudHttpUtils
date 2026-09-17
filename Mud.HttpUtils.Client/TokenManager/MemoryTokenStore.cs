@@ -161,7 +161,7 @@ public class MemoryTokenStore : ITokenStore
     /// </summary>
     /// <remarks>
     /// M2-#15：不可变条目 —— 任何字段更新都经 <c>With*</c> 方法派生新实例，
-    /// 由 <see cref="ConcurrentDictionary{TKey,TValue}.AddOrUpdate"/> 原子替换，
+    /// 由 <c>ConcurrentDictionary.AddOrUpdate</c> 原子替换，
     /// 并发 Set/Set 交错不会丢失更新，读方不会读到半更新状态。
     /// </remarks>
     internal sealed class TokenEntry

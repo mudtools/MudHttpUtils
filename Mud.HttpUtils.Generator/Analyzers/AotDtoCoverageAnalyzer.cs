@@ -56,12 +56,12 @@ internal static class AotDtoCoverageAnalyzer
         var methodAttr = method.GetAttributes().FirstOrDefault(IsSerializationMethodAttribute);
         var methodLevel = methodAttr != null ? MethodAnalyzer.ReadSerializationMethodName(methodAttr) : null;
         if (!string.IsNullOrEmpty(methodLevel))
-            return methodLevel;
+            return methodLevel!;
 
         var interfaceAttr = method.ContainingType.GetAttributes().FirstOrDefault(IsSerializationMethodAttribute);
         var interfaceLevel = interfaceAttr != null ? MethodAnalyzer.ReadSerializationMethodName(interfaceAttr) : null;
 
-        return string.IsNullOrEmpty(interfaceLevel) ? "Json" : interfaceLevel;
+        return string.IsNullOrEmpty(interfaceLevel) ? "Json" : interfaceLevel!;
 
         static bool IsSerializationMethodAttribute(AttributeData a)
             => a.AttributeClass?.Name == "SerializationMethodAttribute";
@@ -529,7 +529,7 @@ internal static class AotDtoCoverageAnalyzer
     /// [GEN-20][§8.7] 计算响应 DTO 诊断的定位：返回类型语法节点优先，方法声明为回退。
     /// </summary>
     /// <remarks>
-    /// 使 AOT004 响应端诊断的 <see cref="Location.Span"/> 落在返回类型节点上（而非整个方法/接口）。
+    /// 使 AOT004 响应端诊断的 <c>Location.Span</c> 落在返回类型节点上（而非整个方法/接口）。
     /// </remarks>
     private static Location GetResponseLocation(IMethodSymbol method)
     {
@@ -719,9 +719,10 @@ internal static class AotDtoCoverageAnalyzer
             // 1) Response<T> → 取内部 T（生成器端 MethodGenerator.IsResponseType 分支）。
             if (IsResponseWrapper(responseType))
             {
-                responseType = GetResponseInnerType(responseType);
-                if (responseType == null)
+                var inner = GetResponseInnerType(responseType);
+                if (inner == null)
                     return;
+                responseType = inner;
             }
 
             // 2) 非 JSON 契约的 Task<T> 返回（生成器不走反序列化）→ 跳过：

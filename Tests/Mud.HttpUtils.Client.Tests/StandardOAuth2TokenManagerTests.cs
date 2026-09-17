@@ -186,7 +186,7 @@ public class StandardOAuth2TokenManagerTests
         resolverCount.Should().Be(1, "TTL 内应命中缓存");
 
         // 等待 TTL 过期：重新解析，拾取新密钥
-        await Task.Delay(150).ConfigureAwait(false);
+        await Task.Delay(150);
         var rotated = await cache.GetAsync(_ => Task.FromResult(Interlocked.Increment(ref resolverCount).ToString()), CancellationToken.None);
         rotated.Should().Be("2");
         resolverCount.Should().Be(2, "TTL 过期后应重新解析");

@@ -18,7 +18,7 @@ using Mud.HttpUtils;
 
 namespace TestNamespace.Internal
 {
-    [global::System.CodeDom.Compiler.GeneratedCode("Mud.HttpUtils.Generator", "2.0.5")]
+    [global::System.CodeDom.Compiler.GeneratedCode("Mud.HttpUtils.Generator", "2.0.6")]
     internal partial class TestApi : global::TestNamespace.ITestApi
     {
         /// <summary>
@@ -215,7 +215,7 @@ namespace TestNamespace.Internal
         /// <summary>
         /// <inheritdoc />
         /// </summary>
-        [global::System.CodeDom.Compiler.GeneratedCode("Mud.HttpUtils.Generator", "2.0.5")]
+        [global::System.CodeDom.Compiler.GeneratedCode("Mud.HttpUtils.Generator", "2.0.6")]
 #if NET6_0_OR_GREATER
         [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("ReflectionAnalysis", "IL2026",
             Justification = "生成的 JSON 序列化/反序列化通过注入的 IHttpContentSerializer（其 options 含消费方 JsonSerializerContext resolver）保证 AOT 安全，T 的类型元数据已由消费方的 JsonSerializerContext 保留.")]
@@ -229,7 +229,7 @@ namespace TestNamespace.Internal
             var __url = $"/data";
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Get, __url);
 
-            return await _executor.ExecuteAsync<string>(
+            return (await _executor.ExecuteAsync<string>(
                 __httpRequest,
                 __appContext.HttpClient,
                 new ExecutionDescriptor
@@ -243,7 +243,7 @@ namespace TestNamespace.Internal
                        IsVoidReturn = false,
                    },
                },
-                null, cancellationToken: default).ConfigureAwait(false);
+                null, cancellationToken: default).ConfigureAwait(false))!;
         }
 
         /// <summary>

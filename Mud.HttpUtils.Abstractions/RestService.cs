@@ -34,7 +34,7 @@ namespace Mud.HttpUtils;
 /// 可选通过 <c>[ModuleInitializer]</c> 自动注册（net5.0+）。netstandard2.0 需手动调用注册或使用 DI 入口。
 /// </para>
 /// <para>
-/// 若接口未标记 <c>[HttpClientApi]</c> 特性或未注册源生成实现，<see cref="ForGenerated{T}"/>
+/// 若接口未标记 <c>[HttpClientApi]</c> 特性或未注册源生成实现，<c>ForGenerated&lt;T&gt;</c>
 /// 将抛出 <see cref="InvalidOperationException"/> 指回生成输出。
 /// </para>
 /// </remarks>

@@ -78,7 +78,7 @@ public class CredentialToken
     /// </summary>
     internal static string Redact(string? value)
     {
-        if (string.IsNullOrEmpty(value))
+        if (value is null || value.Length == 0)
             return "<null>";
         var prefix = value.Length > 6 ? value.Substring(0, 6) : value;
         return prefix + "***(" + value.Length + ")";

@@ -59,4 +59,16 @@ internal class InterfacePropertyInfo
     /// 请求头的别名，用于映射到不同的请求头名称。仅对 AttributeType == "Header" 的属性有效。
     /// </summary>
     public string? AliasAs { get; set; }
+
+    /// <summary>
+    /// 该属性是否由<b>当前接口自身</b>声明（而非继承自基接口链）。
+    /// </summary>
+    /// <remarks>
+    /// [继承模式 CS0108 修复] <c>[HttpClientApi(InheritedFrom = ...)]</c> 指定基类时，基类由生成器按
+    /// <c>InheritedFromInterfaceName</c> 对应的基接口生成，
+    /// 因而<b>已实现基接口链上的</b> <c>[Query]</c>/<c>[Path]</c>/<c>[Header]</c> 属性。
+    /// 派生类若再次发射同名属性，会构成「隐藏继承的成员」（CS0108）。
+    /// 故派生类只发射本接口自身声明的属性；非继承模式下该标记不影响发射行为。
+    /// </remarks>
+    public bool IsDeclaredOnCurrentInterface { get; set; } = true;
 }

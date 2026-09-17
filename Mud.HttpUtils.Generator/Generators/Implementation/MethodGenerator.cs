@@ -690,25 +690,28 @@ internal class MethodGenerator : ICodeFragmentGenerator
             return;
         }
 
+        // [警告修复] ExecuteAsync<TResult>/ExecuteAsResponseAsync<TInner> 的返回类型为 Task<TResult?>/Task<Response<TInner>?>，
+        // 与接口方法声明的非空返回类型（如 Task<UserInfo>）之间会产生 CS8603（可能返回 null 引用）。
+        // 非空契约由执行器保证（失败路径抛 ApiException 而非返回 default），故此处以空宽容运算符 `!` 显式收敛标注。
         if (IsResponseType(deserializeType, out var innerType))
         {
-            codeBuilder.AppendLine($"            return await {executor}.ExecuteAsResponseAsync<{innerType}>(");
+            codeBuilder.AppendLine($"            return (await {executor}.ExecuteAsResponseAsync<{innerType}>(");
             codeBuilder.AppendLine("                __httpRequest,");
             codeBuilder.AppendLine($"                {httpClientExpr},");
             codeBuilder.Append("                ");
             WriteExecutionDescriptorCode(codeBuilder, context, methodInfo, deserializeType, indent: "                ");
             codeBuilder.AppendLine(",");
-            codeBuilder.AppendLine($"                null{cancellationTokenArg}).ConfigureAwait(false);");
+            codeBuilder.AppendLine($"                null{cancellationTokenArg}).ConfigureAwait(false))!;");
         }
         else
         {
-            codeBuilder.AppendLine($"            return await {executor}.ExecuteAsync<{deserializeType}>(");
+            codeBuilder.AppendLine($"            return (await {executor}.ExecuteAsync<{deserializeType}>(");
             codeBuilder.AppendLine("                __httpRequest,");
             codeBuilder.AppendLine($"                {httpClientExpr},");
             codeBuilder.Append("                ");
             WriteExecutionDescriptorCode(codeBuilder, context, methodInfo, deserializeType, indent: "                ");
             codeBuilder.AppendLine(",");
-            codeBuilder.AppendLine($"                null{cancellationTokenArg}).ConfigureAwait(false);");
+            codeBuilder.AppendLine($"                null{cancellationTokenArg}).ConfigureAwait(false))!;");
         }
     }
 
@@ -1556,7 +1559,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         if (methodInfo.IsValid && methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModePath
             && !string.IsNullOrEmpty(methodInfo.InterfaceTokenName))
         {
-            tokenPathPlaceholders.Add(methodInfo.InterfaceTokenName);
+            tokenPathPlaceholders.Add(methodInfo.InterfaceTokenName!);
         }
 
         var missingInMethod = templatePlaceholders

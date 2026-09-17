@@ -19,6 +19,11 @@ public sealed class TimeoutDiagnosticPayload
     /// <summary>事件时间戳（UTC）。</summary>
     public DateTimeOffset Timestamp { get; }
 
+    /// <summary>
+    /// 初始化超时诊断负载。
+    /// </summary>
+    /// <param name="policyKey">策略键。</param>
+    /// <param name="timeoutMs">超时时长（毫秒）。</param>
     public TimeoutDiagnosticPayload(string policyKey, double timeoutMs)
     {
         PolicyKey = policyKey;

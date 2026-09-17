@@ -113,7 +113,7 @@ public class TokenRecoveryExecutorTests
                 Interlocked.Increment(ref sendCount);
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
             },
-            CancellationToken.None).ConfigureAwait(false);
+            CancellationToken.None);
 
         // TMR-01 修订：超限请求仍正常发送一次，返回真实 401，不进入恢复重试
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);

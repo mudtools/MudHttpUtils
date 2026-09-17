@@ -23,7 +23,7 @@ namespace Mud.HttpUtils;
 /// 这允许调用者自行决定如何处理错误响应。
 /// </para>
 /// <para>
-/// 使用 <see cref="AllowAnyStatusCodeAttribute"/> 标记接口或方法时，
+/// 使用 <c>AllowAnyStatusCodeAttribute</c>（定义于 Attributes 程序集）标记接口或方法时，
 /// 返回类型应使用 <see cref="Response{T}"/> 以获取完整的响应信息。
 /// </para>
 /// <para>
@@ -77,7 +77,11 @@ public class Response<T> : IApiResponse<T>
         Content = content;
         RawContent = rawContent;
         ResponseHeaders = responseHeaders;
+        // 构造函数需填充已过时的 ResponseMessage 属性（保留既有行为与二进制兼容），
+        // CS0618 提示只应出现在外部读取方，故此处定点抑制。
+#pragma warning disable CS0618 // 类型或成员已过时
         ResponseMessage = responseMessage;
+#pragma warning restore CS0618 // 类型或成员已过时
         // 当状态码表示错误时，rawContent 即为错误内容
         ErrorContent = (int)statusCode < 200 || (int)statusCode >= 300 ? rawContent : null;
         // 显式转换：Dictionary<string,List<string>> -> Dictionary<string,IReadOnlyList<string>>
@@ -101,7 +105,10 @@ public class Response<T> : IApiResponse<T>
         RawContent = errorContent;
         ErrorContent = errorContent;
         ResponseHeaders = responseHeaders;
+        // 同上：构造期填充已过时属性，定点抑制 CS0618。
+#pragma warning disable CS0618 // 类型或成员已过时
         ResponseMessage = responseMessage;
+#pragma warning restore CS0618 // 类型或成员已过时
         // 显式转换：Dictionary<string,List<string>> -> Dictionary<string,IReadOnlyList<string>>
         _headersView = responseHeaders?
             .ToDictionary(kv => kv.Key, kv => (IReadOnlyList<string>)kv.Value);

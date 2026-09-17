@@ -88,6 +88,13 @@ internal class GenerationConfiguration
     public bool BaseHasTokenManager { get; set; }
 
     /// <summary>
+    /// 基类是否声明了 <c>_appAuthorizer</c> 字段（即基类为非 HttpClient 模式）。
+    /// 为 true 时派生类不得重复声明同名字段（CS0108 隐藏基类成员），
+    /// 且因基类字段为 <c>readonly</c>（派生类构造函数无权赋值），须改为在 <c>base(...)</c> 调用中透传 <c>appAuthorizer</c>。
+    /// </summary>
+    public bool BaseHasAppAuthorizer { get; set; }
+
+    /// <summary>
     /// InheritedFrom 对应的基接口名称（用于排除基接口方法，避免多基接口场景下遗漏方法）。
     /// </summary>
     public string? InheritedFromInterfaceName { get; set; }

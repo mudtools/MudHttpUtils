@@ -383,8 +383,10 @@ internal class FormContentGenerator : TransitiveCodeGenerator
         else
         {
             // 引用类型：添加 null 检查
+            // [警告修复] object.ToString() 的返回类型标注为 string?，非空引用类型参数（StringContent(string)）
+            // 会触发消费方 CS8604（可能传入 null 引用实参）。此处已做 != null 判定，用 `!` 收敛标注。
             sb.AppendLine($"        if ({propertyName} != null)");
-            sb.AppendLine($"            formData.Add(new StringContent({propertyName}.ToString()), \"{escapedJsonName}\");");
+            sb.AppendLine($"            formData.Add(new StringContent({propertyName}.ToString()!), \"{escapedJsonName}\");");
         }
     }
 

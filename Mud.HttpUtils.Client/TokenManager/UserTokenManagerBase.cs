@@ -17,8 +17,8 @@ namespace Mud.HttpUtils;
 /// <remarks>
 /// <para><b>锁非重入不变式（TMX-15-4 / B12）</b>：<see cref="KeyedLockTable"/> 按 userId（或 userId+scope）的键控锁
 /// <b>不支持重入</b>。派生类在 <see cref="RefreshUserTokenAsync"/> 实现中
-/// <b>禁止</b>回调 <see cref="GetOrRefreshTokenAsync(string?, string[]?, CancellationToken)"/> 或
-/// <see cref="GetTokenAsync(string?, string[]?, CancellationToken)"/>——
+/// <b>禁止</b>回调 <see cref="GetOrRefreshTokenAsync(string, string[], CancellationToken)"/> 或
+/// <see cref="GetTokenAsync(string, string[], CancellationToken)"/>——
 /// 否则同一线程尝试再次获取同一键的锁将导致不可恢复的死锁。
 /// 若确需在刷新过程中获取另一用户的令牌，应使用独立的 <see cref="ITokenManager"/> 实例。</para>
 /// </remarks>
@@ -173,7 +173,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
     /// <inheritdoc />
     /// <remarks>
-    /// TMX-07：默认实现走 scope 感知路径（与 <see cref="GetOrRefreshTokenAsync(string?, string[]?, CancellationToken)"/> 一致），
+    /// TMX-07：默认实现走 scope 感知路径（与 <see cref="GetOrRefreshTokenAsync(string, string[], CancellationToken)"/> 一致），
     /// 不再静默返回默认作用域令牌。不支持 scope 的派生类应覆写并抛 <see cref="NotSupportedException"/>。
     /// </remarks>
     public virtual Task<string?> GetTokenAsync(string? userId, string[]? scopes, CancellationToken cancellationToken = default)

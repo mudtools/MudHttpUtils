@@ -58,7 +58,10 @@ public sealed class TokenRefreshHealthCheck : IHealthCheck
         CancellationToken cancellationToken = default)
     {
         var stats = TokenRefreshStatsCollector.GetSnapshot(_options.WindowSeconds);
-        var data = stats.ToDictionary();
+        // HealthCheckResult 的 data 形参为 IReadOnlyDictionary<string, object>（值不可空）；
+        // TokenRefreshStatsCollector.ToDictionary() 返回 object? 值（其实现从不写入 null），
+        // 故投影为 object 值以消除 CS8620，同时保持统计口径不变。
+        var data = stats.ToDictionary().ToDictionary(kv => kv.Key, kv => kv.Value!);
 
         // 冷启动或低样本量：返回 Healthy 避免误报
         if (stats.Total < _options.MinSampleSize)

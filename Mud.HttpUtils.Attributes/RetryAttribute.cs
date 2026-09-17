@@ -27,6 +27,10 @@ namespace Mud.HttpUtils.Attributes;
 [AttributeUsage(AttributeTargets.Method, AllowMultiple = false)]
 public sealed class RetryAttribute : Attribute
 {
+    /// <summary>
+    /// 初始化 <see cref="RetryAttribute"/>，仅指定最大重试次数（延迟由全局配置决定）。
+    /// </summary>
+    /// <param name="maxRetries">最大重试次数（不含首次调用）。</param>
     public RetryAttribute(int maxRetries = 3)
     {
         MaxRetries = maxRetries;

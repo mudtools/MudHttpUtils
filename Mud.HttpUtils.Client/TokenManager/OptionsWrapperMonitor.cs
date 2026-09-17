@@ -12,6 +12,8 @@ namespace Mud.HttpUtils;
 /// TMX-10：将 <see cref="IOptions{T}"/> 的快照值包装为 <see cref="IOptionsMonitor{T}"/>，
 /// 供向后兼容的 IOptions 重载使用。CurrentValue 恒返回构造时传入的值（不支持热更新）。
 /// </summary>
+[System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2091",
+    Justification = "本类型只包装调用方已构造的实例（CurrentValue 直接返回同一引用），从不通过 IOptionsMonitor 的 PublicParameterlessConstructor 约束实例化 T，故该约束在本实现中不适用。")]
 internal sealed class OptionsWrapperMonitor<T> : IOptionsMonitor<T> where T : class
 {
     private readonly T _value;

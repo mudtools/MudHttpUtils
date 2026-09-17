@@ -163,7 +163,7 @@ public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefresh
     /// <param name="stoppingToken">用于监控是否请求停止服务的取消令牌。</param>
     /// <returns>表示后台服务执行操作的任务。</returns>
     /// <remarks>
-    /// <para>此方法实现了一个定时循环,按照配置的间隔逐一调用所有已注册令牌管理器的 <see cref="ITokenManager.GetOrRefreshTokenAsync"/> 刷新令牌。</para>
+    /// <para>此方法实现了一个定时循环,按照配置的间隔逐一调用所有已注册令牌管理器的 <c>GetOrRefreshTokenAsync</c> 刷新令牌。</para>
     /// <para>异常处理策略:</para>
     /// <list type="number">
     ///   <item><see cref="OperationCanceledException"/>: 服务正常停止时捕获,优雅退出</item>

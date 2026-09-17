@@ -86,7 +86,8 @@ internal sealed class DefaultTokenProvider(
         if (!string.IsNullOrEmpty(principalUserId)
             && !string.Equals(principalUserId, request.UserId, StringComparison.Ordinal))
         {
-            MudHttpClientLog.UserTokenIdentityMismatch(_logger, principalUserId!, request.UserId);
+            // request.UserId 为可空；主体存在而请求侧为空同属不一致，故日志以占位符呈现 null。
+            MudHttpClientLog.UserTokenIdentityMismatch(_logger, principalUserId!, request.UserId ?? "(null)");
             throw new InvalidOperationException(
                 $"用户身份不一致：上下文主体用户 '{principalUserId}' 与请求用户 '{request.UserId}' 不匹配，已拒绝获取用户令牌。");
         }
@@ -106,7 +107,7 @@ internal sealed class DefaultTokenProvider(
 
         if (string.IsNullOrEmpty(token))
         {
-            MudHttpClientLog.UserTokenRetrievalFailed(_logger, request.UserId, request.TokenManagerKey);
+            MudHttpClientLog.UserTokenRetrievalFailed(_logger, request.UserId ?? "(null)", request.TokenManagerKey);
             throw new InvalidOperationException(
                 $"获取用户令牌失败，UserId: '{request.UserId}'，TokenManagerKey: '{request.TokenManagerKey}'。");
         }

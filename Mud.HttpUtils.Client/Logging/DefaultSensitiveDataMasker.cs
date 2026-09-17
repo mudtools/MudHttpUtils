@@ -109,7 +109,7 @@ public class DefaultSensitiveDataMasker : ISensitiveDataMasker
     /// <returns>该类型的属性掩码信息数组。</returns>
     /// <remarks>
     /// <para>
-    /// 该方法使用 <see cref="ConcurrentDictionary{TKey,TValue}.GetOrAdd"/> 实现线程安全的缓存。
+    /// 该方法使用 <c>ConcurrentDictionary.GetOrAdd</c> 实现线程安全的缓存。
     /// 首次访问某个类型时会进行反射分析，后续访问将直接从缓存中获取，避免重复反射开销。
     /// </para>
     /// <para>

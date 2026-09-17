@@ -56,10 +56,14 @@ public class TypeConverterTests
     }
 
     [Fact]
-    public void StringDefault_ShouldReturnNullLiteral()
+    public void StringDefault_ShouldReturnDefaultForgivingLiteral()
     {
+        // 引用类型的 default 必须输出 `default!` 而非 `null`：
+        // 接口声明 `AppCredentials credentials = default`（非空引用类型）时，生成签名若写成
+        // `= null` 会让消费方编译报 CS8625（无法将 null 字面量转换为非 null 的引用类型）。
+        // `default!` 是合法的可选参数默认值常量表达式，且语义与 `default`（即 null）完全一致。
         var literal = GetDefaultValueLiteralForType("string");
-        literal.Should().Be("null");
+        literal.Should().Be("default!");
     }
 
     [Fact]

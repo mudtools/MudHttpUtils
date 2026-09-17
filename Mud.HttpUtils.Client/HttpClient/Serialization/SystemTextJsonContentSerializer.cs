@@ -75,7 +75,7 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
     /// 序列化经 <see cref="JsonSerializerOptions.TypeInfoResolver"/> 解析 <typeparamref name="T"/> 的元数据。
     /// <b>Native AOT 契约</b>：options 必须携带源生成 <c>JsonSerializerContext</c> 且覆盖
     /// <typeparamref name="T"/>；否则运行时会抛出受控异常（见构造函数守卫与
-    /// <see cref="IAotJsonContentSerializer"/>）。
+    /// <c>IAotJsonContentSerializer</c>）。
     /// <para>
     /// [T4 修复] options 槽位接受 <c>JsonSerializerOptions</c> 或 <c>JsonTypeInfo&lt;T&gt;</c>，
     /// 与 <see cref="Deserialize{T}(string, object?)"/> 全方法对称。
@@ -158,7 +158,7 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
     /// <inheritdoc/>
     /// <remarks>
     /// <b>非 AOT 路径</b>：使用运行时 <see cref="System.Type"/> 分派，AOT 下需要动态元数据生成。
-    /// AOT 场景请改用 <see cref="IAotJsonContentSerializer"/> 的 <c>JsonTypeInfo&lt;T&gt;</c> 重载，
+    /// AOT 场景请改用 <c>IAotJsonContentSerializer</c> 的 <c>JsonTypeInfo&lt;T&gt;</c> 重载，
     /// 或泛型重载 <see cref="Serialize{T}(T, object?)"/>。
     /// </remarks>
 #if NET6_0_OR_GREATER

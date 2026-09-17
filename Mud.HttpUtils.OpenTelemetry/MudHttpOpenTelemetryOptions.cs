@@ -15,7 +15,7 @@ namespace Mud.HttpUtils.OpenTelemetry;
 /// Mud.HttpUtils OpenTelemetry 适配包的配置选项。
 /// </summary>
 /// <remarks>
-/// 用于 <see cref="MudHttpOpenTelemetryExtensions.AddMudHttpOpenTelemetry"/> 配置追踪、指标、导出器等。
+/// 用于 <see cref="MudHttpOpenTelemetryExtensions"/> 上的 <c>AddMudHttpOpenTelemetry</c> 扩展方法配置追踪、指标、导出器等。
 /// 所有开关默认开启，调用方按需关闭。
 /// </remarks>
 public class MudHttpOpenTelemetryOptions

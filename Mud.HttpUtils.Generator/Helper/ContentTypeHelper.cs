@@ -19,7 +19,7 @@ internal static class ContentTypeHelper
     /// <returns>如果是 XML 类型返回 true，否则返回 false</returns>
     public static bool IsXmlContentType(string? contentType)
     {
-        if (string.IsNullOrEmpty(contentType))
+        if (contentType is null || contentType.Length == 0)
             return false;
 
         return contentType.IndexOf("xml", StringComparison.OrdinalIgnoreCase) >= 0;

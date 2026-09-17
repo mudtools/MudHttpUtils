@@ -273,7 +273,12 @@ public static class MudHttpOpenTelemetryExtensions
         return protocol switch
         {
             OtlpExportProtocol.HttpProtobuf => OtelOtlpExportProtocol.HttpProtobuf,
+            // OTel SDK 将 OtlpExportProtocol.Grpc 标记为过时（其 .NET Standard / .NET Framework
+            // 资产缺少配套 HttpClientFactory 时不受支持），但并未提供等价的替代常量。
+            // 本库默认导出端点 http://localhost:4317 即 gRPC，映射关系必须保留以维持既有行为。
+#pragma warning disable CS0618 // 类型或成员已过时
             _ => OtelOtlpExportProtocol.Grpc
+#pragma warning restore CS0618 // 类型或成员已过时
         };
     }
 }

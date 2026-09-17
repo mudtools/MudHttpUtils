@@ -229,7 +229,7 @@ internal class GeneratorContext
             if (!string.IsNullOrEmpty(configuration.InheritedFrom))
             {
                 if (!string.IsNullOrEmpty(configuration.InheritedFromInterfaceName))
-                    allMethods = TypeSymbolHelper.GetAllMethods(interfaceSymbol, true, [configuration.InheritedFromInterfaceName]).ToList();
+                    allMethods = TypeSymbolHelper.GetAllMethods(interfaceSymbol, true, [configuration.InheritedFromInterfaceName!]).ToList();
                 else
                     allMethods = interfaceSymbol.GetMembers().OfType<IMethodSymbol>().ToList();
             }

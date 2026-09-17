@@ -22,7 +22,7 @@ namespace Mud.HttpUtils;
 /// <para>
 /// <b>多目标框架说明</b>：<see cref="System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver"/> 等
 /// resolver 类型在 netstandard2.0/net6.0 下由 System.Text.Json ≥ 8.0 NuGet 包提供（见 DefaultJsonContext.cs
-/// 的 T11 修复），故合并逻辑对所有 TFM 生效；仅 <see cref="System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported"/>
+/// 的 T11 修复），故合并逻辑对所有 TFM 生效；仅 <c>RuntimeFeature.IsDynamicCodeSupported</c>
 /// 的 JIT/AOT 分支判断需要 net6.0+（netstandard2.0 无该属性，且不参与 Native AOT，恒走 JIT 合并路径）。
 /// </para>
 /// </remarks>
@@ -45,7 +45,7 @@ public static class HttpContentSerializerFactory
     /// <returns>合并后的 <see cref="JsonSerializerOptions"/> 实例。</returns>
     /// <remarks>
     /// AOT 分支只组合源生成上下文；<c>DefaultJsonTypeInfoResolver</c> 仅在
-    /// <see cref="System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported"/> 为 true 的
+    /// <c>RuntimeFeature.IsDynamicCodeSupported</c> 为 true 的
     /// JIT 分支实例化。Roslyn AOT 分析器不做跨运行时布尔的流分析，故此处显式压制并注明理由。
     /// 返回值始终为新实例（或安全副本），避免消费方改写共享静态状态。
     /// </remarks>

@@ -55,7 +55,7 @@ public sealed class ArrayQueryAttribute : Attribute
     /// </summary>
     /// <remarks>
     /// 如果设置了分隔符，数组将序列化为单个查询参数（如 ?ids=1,2,3）。
-    /// 如果为 null，数组将作为多个同名参数发送（如 ?ids=1&ids=2&ids=3）。
+    /// 如果为 null，数组将作为多个同名参数发送（如 ?ids=1&amp;ids=2&amp;ids=3）。
     /// </remarks>
     public string? Separator { get; set; }
 }

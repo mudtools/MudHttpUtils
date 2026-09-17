@@ -58,10 +58,10 @@ public class CircuitBreakerOptions
 
     /// <summary>
     /// 采样窗口时间（秒）。默认 0。
-    /// <para>当此值大于 0 时，启用基于采样窗口的高级熔断策略（<see cref="Polly.CircuitBreaker.AdvancedCircuitBreakerAsync"/>）：</para>
+    /// <para>当此值大于 0 时，启用基于采样窗口的高级熔断策略（Polly <c>AdvancedCircuitBreakerAsync</c>）：</para>
     /// <para>- <see cref="FailureThreshold"/> 表示采样窗口内的失败率百分比（1-100）</para>
     /// <para>- 在采样窗口内，至少需要 <see cref="MinimumThroughput"/> 次请求才会触发熔断评估</para>
-    /// <para>当此值为 0 时，使用基于连续失败计数的简单熔断策略（<see cref="Polly.CircuitBreaker.CircuitBreakerAsync"/>）：</para>
+    /// <para>当此值为 0 时，使用基于连续失败计数的简单熔断策略（Polly <c>CircuitBreakerAsync</c>）：</para>
     /// <para>- <see cref="FailureThreshold"/> 表示连续失败的次数</para>
     /// </summary>
     public int SamplingDurationSeconds
@@ -83,7 +83,7 @@ public class CircuitBreakerOptions
     /// 采样窗口内的最小吞吐量。默认 10。必须 >= 2。
     /// 仅在 <see cref="SamplingDurationSeconds"/> 大于 0 时生效。
     /// <para>在采样窗口内，请求数必须达到此值后，才会开始计算失败率。</para>
-    /// <para>Polly <see cref="Polly.CircuitBreaker.AdvancedCircuitBreakerAsync"/> 要求此值 >= 2。</para>
+    /// <para>Polly <c>AdvancedCircuitBreakerAsync</c> 要求此值 >= 2。</para>
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">设置小于 2 的值时抛出。</exception>
     public int MinimumThroughput
