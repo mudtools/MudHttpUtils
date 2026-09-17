@@ -11,7 +11,7 @@
 	</PropertyGroup>
 	<ItemGroup>
 		<InternalsVisibleTo Include="Mud.HttpUtils.Resilience.Tests" />
-		<!-- 2.0.8（BC-32）：PollyResiliencePolicyProvider 的无 DI 快照构造已 internal，集成测试仍直接构造它。 -->
+		<!-- BC-32：PollyResiliencePolicyProvider 的无 DI 快照构造已 internal，集成测试仍直接构造它。 -->
 		<InternalsVisibleTo Include="Mud.HttpUtils.Integration.Tests" />
 	</ItemGroup>
 	<ItemGroup>

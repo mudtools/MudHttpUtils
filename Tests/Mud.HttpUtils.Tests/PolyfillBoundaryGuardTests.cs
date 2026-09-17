@@ -3,11 +3,11 @@ using System.Linq;
 namespace Mud.HttpUtils.Tests;
 
 /// <summary>
-/// Polyfill 边界护栏（2.0.8 / BC-29）。
+/// Polyfill 边界护栏（BC-29）。
 /// <para>
 /// 规则：polyfill 的 <c>#if</c> 锚点必须对齐「该 API 的 in-box 首个 TFM」，且**资产矩阵必须覆盖该边界**，
 /// 否则更上游的 TFM 会解析到更低 TFM 的资产并与其 BCL 类型撞名：
-/// 实测 net7.0 下游引用 2.0.7（Abstractions 只到 net6.0）时，
+/// 实测 net7.0 下游引用本地验证包（Abstractions 只到 net6.0）时，
 /// 只要在自身代码标注 <c>[RequiresDynamicCode]</c> 即报
 /// <c>error CS0433: 类型"RequiresDynamicCodeAttribute"同时存在于 Mud.HttpUtils.Abstractions 和 System.Runtime</c>。
 /// </para>

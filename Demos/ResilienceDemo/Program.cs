@@ -234,7 +234,7 @@ public class Program
             }
         };
 
-        // 2.0.8（BC-32）：无 DI 快照构造已 internal，非 DI 场景用 Options.Create 包装配置。
+        // BC-32：无 DI 快照构造已 internal，非 DI 场景用 Options.Create 包装配置。
         var provider = new PollyResiliencePolicyProvider(Options.Create(customOptions));
         var cbPolicy = provider.GetCircuitBreakerPolicy<string?>("global");
 

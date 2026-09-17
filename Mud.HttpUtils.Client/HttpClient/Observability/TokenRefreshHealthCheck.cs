@@ -28,7 +28,7 @@ public sealed class TokenRefreshHealthCheck : IHealthCheck
     /// <param name="options">健康检查配置选项。</param>
     /// <exception cref="ArgumentNullException"><paramref name="options"/> 为 null。</exception>
     /// <remarks>
-    /// 2.0.8（BC-33）：本重载与 <see cref="TokenRefreshHealthCheck(TokenRefreshHealthCheckOptions)"/> 元数相同，
+    /// BC-33：本重载与 <see cref="TokenRefreshHealthCheck(TokenRefreshHealthCheckOptions)"/> 元数相同，
     /// 而健康检查经 <c>AddCheck&lt;T&gt;</c> → <c>ActivatorUtilities.GetServiceOrCreateInstance&lt;T&gt;</c> 激活，
     /// 两个构造在「<c>IOptions&lt;T&gt;</c> 已注册」时都可满足 ⇒ 抛"多个构造函数"异常。
     /// 注意：该路径用 ActivatorUtilities（其<b>尊重</b>本特性），而非容器默认构造选择

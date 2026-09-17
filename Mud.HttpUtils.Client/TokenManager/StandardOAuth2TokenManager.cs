@@ -43,7 +43,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// <param name="secretProvider">安全密钥提供程序（可选）。</param>
     /// <param name="contentSerializer">HTTP 内容序列化器（可选）。未注入时使用 <see cref="HttpContentSerializerFactory.CreateDefault"/> 默认实现。</param>
     /// <remarks>
-    /// 2.0.8（BC-30）：internal —— 容器默认构造选择要求「同元数公共构造至多一个」。
+    /// BC-30：internal —— 容器默认构造选择要求「同元数公共构造至多一个」。
     /// 本快照重载与下面的 <see cref="StandardOAuth2TokenManager(HttpClient, IOptionsMonitor{OAuth2Options}, ILogger{StandardOAuth2TokenManager}?, ISecretProvider?, IHttpContentSerializer?)"/>
     /// 元数相同且均可被容器满足（<c>AddOptions</c> 同时注册 <c>IOptions&lt;T&gt;</c> 与 <c>IOptionsMonitor&lt;T&gt;</c>），
     /// 解析时抛 <c>"The following constructors are ambiguous"</c>。需要热更新的宿主请使用 IOptionsMonitor 重载；
@@ -109,7 +109,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// <param name="logger">日志记录器（可选）。</param>
     /// <param name="secretProvider">安全密钥提供程序（可选）。</param>
     /// <param name="contentSerializer">HTTP 内容序列化器（可选）。</param>
-    /// <remarks>2.0.8（BC-30）：internal，理由见 <see cref="StandardOAuth2TokenManager(HttpClient, IOptions{OAuth2Options}, ILogger{StandardOAuth2TokenManager}?, ISecretProvider?, IHttpContentSerializer?)"/>；
+    /// <remarks>BC-30：internal，理由见 <see cref="StandardOAuth2TokenManager(HttpClient, IOptions{OAuth2Options}, ILogger{StandardOAuth2TokenManager}?, ISecretProvider?, IHttpContentSerializer?)"/>；
     /// 外部请改用带 <see cref="IOptionsMonitor{T}"/> 的重载（支持热更新）。</remarks>
     internal StandardOAuth2TokenManager(
         HttpClient httpClient,

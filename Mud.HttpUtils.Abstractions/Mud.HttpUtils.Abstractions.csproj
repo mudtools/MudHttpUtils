@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
-		<!-- 2.0.8（BC-29）：必须包含 net7.0 资产。本包在 netstandard2.0/net6.0 资产中携带
+		<!-- BC-29：必须包含 net7.0 资产。本包在 netstandard2.0/net6.0 资产中携带
 		     System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute polyfill（该 API 自 .NET 7 起 in-box）。
 		     缺少 net7.0 资产时，net7.0 下游会解析到 net6.0 资产，从而与其 BCL 中的同名类型冲突：
 		     error CS0433（下游只要在自身代码中标注 [RequiresDynamicCode] 即触发）。 -->

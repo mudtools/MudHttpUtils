@@ -11,12 +11,12 @@ using Mud.HttpUtils;
 namespace Mud.HttpUtils.Tests;
 
 /// <summary>
-/// DI 构造歧义护栏（2.0.8 / BC-30/31/32/33）。
+/// DI 构造歧义护栏（BC-30/31/32/33）。
 /// <para>
 /// 背景：<c>ActivatorUtilitiesConstructorAttribute</c> <b>不被容器默认构造选择尊重</b>
 /// （只对 <c>ActivatorUtilities</c> 生效）。当同一类型存在两个元数相同、且都能被容器满足的公共构造时，
 /// <c>GetRequiredService&lt;T&gt;()</c> / <c>AddSingleton&lt;T&gt;()</c> 会抛
-/// "The following constructors are ambiguous"。2.0.6/2.0.7 的 TMX-19 只修了 3 个类型，
+/// "The following constructors are ambiguous"。首轮验证迭代的 TMX-19 只修了 3 个类型，
 /// 漏掉了 <see cref="TokenRecoveryDelegatingHandler"/>（组件文档推荐的
 /// <c>AddHttpMessageHandler&lt;T&gt;()</c> 用法直接失败）、<see cref="StandardOAuth2TokenManager"/>
 /// 与 <c>PollyResiliencePolicyProvider</c>。
@@ -119,7 +119,7 @@ public class DiAmbiguityGuardTests
 
     /// <summary>
     /// 组件文档推荐的 <c>AddHttpMessageHandler&lt;TokenRecoveryDelegatingHandler&gt;()</c> 用法
-    /// 必须能真正构造出 HttpClient（该扩展经容器解析处理器，2.0.7 在首个 CreateClient 即抛歧义）。
+    /// 必须能真正构造出 HttpClient（该扩展经容器解析处理器，修复前在首个 CreateClient 即抛歧义）。
     /// </summary>
     [Fact]
     public void AddHttpMessageHandler_TokenRecoveryDelegatingHandler_ShouldCreateClient()

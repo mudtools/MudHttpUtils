@@ -5,7 +5,7 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
-// [2.0.8 / BC-29] guard 修正：RequiresDynamicCodeAttribute 自 **.NET 7** 起 in-box
+// [BC-29] guard 修正：RequiresDynamicCodeAttribute 自 **.NET 7** 起 in-box
 // （实测 net7.0 编译中 System.Runtime, Version=7.0.0.0 已包含该类型；.NET 5/.NET 6 不包含）。
 // 原 guard !NET8_0_OR_GREATER 会让 netstandard2.0 / net6.0 资产在 .NET 7 下游下重复定义该类型：
 // 下游一旦在自身代码中标注 [RequiresDynamicCode]，编译器即报

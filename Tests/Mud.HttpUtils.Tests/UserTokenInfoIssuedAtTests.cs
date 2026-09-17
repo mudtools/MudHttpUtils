@@ -3,7 +3,7 @@ using Mud.HttpUtils;
 namespace Mud.HttpUtils.Tests;
 
 /// <summary>
-/// 用户令牌签发时间（<see cref="UserTokenInfo.IssuedAt"/>）守恒测试（2.0.8 / BC-34）。
+/// 用户令牌签发时间（<see cref="UserTokenInfo.IssuedAt"/>）守恒测试（BC-34）。
 /// <para>
 /// 背景：TTL 感知过期提前量 <c>min(配置阈值, ttl/2)</c> 仅在 <c>IssuedAt &gt; 0</c> 时生效
 /// （见 <see cref="TokenExpiryPolicy"/>）；而「从 UserTokenInfo 复制」的两个入口此前未透传该字段，
