@@ -255,7 +255,7 @@ namespace TestNamespace.Internal
                 UserId = null
             };
 #endif
-            return await _executor.ExecuteAsync<string>(
+            return (await _executor.ExecuteAsync<string>(
                 __httpRequest,
                 __appContext.HttpClient,
                 new ExecutionDescriptor
@@ -269,7 +269,7 @@ namespace TestNamespace.Internal
                        IsVoidReturn = false,
                    },
                },
-                null, cancellationToken: default).ConfigureAwait(false);
+                null, cancellationToken: default).ConfigureAwait(false))!;
         }
 
         /// <summary>

@@ -221,7 +221,7 @@ namespace TestNamespace.Internal
             var __url = $"/users/{Uri.EscapeDataString((userId).ToString() ?? string.Empty)}/posts/{Uri.EscapeDataString((postId).ToString() ?? string.Empty)}";
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Get, __url);
 
-            return await _executor.ExecuteAsync<string>(
+            return (await _executor.ExecuteAsync<string>(
                 __httpRequest,
                 __appContext.HttpClient,
                 new ExecutionDescriptor
@@ -235,7 +235,7 @@ namespace TestNamespace.Internal
                        IsVoidReturn = false,
                    },
                },
-                null, cancellationToken: default).ConfigureAwait(false);
+                null, cancellationToken: default).ConfigureAwait(false))!;
         }
 
     }

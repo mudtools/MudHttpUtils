@@ -421,8 +421,28 @@ internal class RequestBuilder
             var propertyName = methodInfo.BodyEncryptPropertyName ?? "data";
             var serializeType = methodInfo.BodyEncryptSerializeType ?? "Json";
             string httpClient = hasHttpClient ? "_httpClient" : "__appContext.HttpClient";
+            var escapedPropertyName = StringEscapeHelper.EscapeString(propertyName);
 
-            codeBuilder.AppendLine($"            var __encryptedContent = {httpClient}.EncryptContent({bodyParam.Name}, \"{StringEscapeHelper.EscapeString(propertyName)}\", SerializeType.{serializeType});");
+            if (serializeType == "Xml")
+            {
+                // EncryptContent(object, string, SerializeType) 已标记 [Obsolete]（运行时反射，AOT 不安全），
+                // 但泛型 AOT 安全重载仅支持 JSON，XML 加密无替代 API。故在调用点就地抑制消费方的 CS0618；
+                // AOT 不安全事实由 XML 路径既有的 AOT 诊断（AOT007）与方法级 IL2026/IL3050 抑制承担。
+                codeBuilder.AppendLine("#pragma warning disable CS0618 // XML 加密无 AOT 安全重载，只能沿用已过时的 object 重载");
+                codeBuilder.AppendLine($"            var __encryptedContent = {httpClient}.EncryptContent({bodyParam.Name}, \"{escapedPropertyName}\", SerializeType.{serializeType});");
+                codeBuilder.AppendLine("#pragma warning restore CS0618");
+            }
+            else
+            {
+                // [警告修复] 改用 AOT 安全的泛型重载 EncryptContent<T>(T, string)：原 object 重载在消费方编译时
+                // 会产生 CS0618（已过时）及 IL2026/IL3050（反射/动态代码）告警，泛型重载语义等价且零反射。
+                var encryptTypeName = bodyParam.Type.TrimEnd();
+                if (encryptTypeName.EndsWith("?", StringComparison.Ordinal))
+                    encryptTypeName = encryptTypeName.Substring(0, encryptTypeName.Length - 1).TrimEnd();
+
+                codeBuilder.AppendLine($"            var __encryptedContent = {httpClient}.EncryptContent<{encryptTypeName}>({bodyParam.Name}, \"{escapedPropertyName}\");");
+            }
+
             codeBuilder.AppendLine($"            using var __encryptedStrContent = new StringContent(__encryptedContent, Encoding.UTF8, {contentTypeExpression});");
             codeBuilder.AppendLine($"            __httpRequest.Content = __encryptedStrContent;");
         }

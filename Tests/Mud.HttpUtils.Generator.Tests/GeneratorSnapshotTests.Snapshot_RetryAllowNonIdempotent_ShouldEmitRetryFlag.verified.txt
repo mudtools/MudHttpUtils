@@ -226,7 +226,7 @@ namespace TestNamespace.Internal
             __httpRequest.Properties[HttpExecutionConstants.AllowNonIdempotentRetryPropertyKey] = true;
 #endif
 
-            return await _executor.ExecuteAsync<string>(
+            return (await _executor.ExecuteAsync<string>(
                 __httpRequest,
                 __appContext.HttpClient,
                 new ExecutionDescriptor
@@ -254,7 +254,7 @@ namespace TestNamespace.Internal
                        TimeoutMilliseconds = 0,
                    },
                },
-                null, cancellationToken: default).ConfigureAwait(false);
+                null, cancellationToken: default).ConfigureAwait(false))!;
         }
 
     }

@@ -119,11 +119,18 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("        public string? CurrentUserId => _currentUserContext.UserId;");
         }
 
-        // 继承模式下也需生成 _appAuthorizer 字段（UseApp/BeginScope 守卫引用此字段）
-        codeBuilder.AppendLine("        /// <summary>");
-        codeBuilder.AppendLine("        /// 应用切换授权器（可选）。非 null 时 UseApp/BeginScope 将先做授权判定。");
-        codeBuilder.AppendLine("        /// </summary>");
-        codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IAppAccessAuthorizer? _appAuthorizer;");
+        // 继承模式下 _appAuthorizer 字段的归属：
+        //   · 基类为非 HttpClient 模式时，抽象基类已声明 protected readonly _appAuthorizer 且其构造函数已赋值；
+        //     派生类若再次声明会触发 CS0108（隐藏继承成员），而基类 readonly 字段又无法在派生类构造函数中赋值
+        //     （CS0191），故派生类改为在 base(...) 调用中透传 appAuthorizer，并直接复用基类字段。
+        //   · 基类为 HttpClient 模式（无该字段）时，才由派生类自行声明并初始化。
+        if (!_context.Configuration.BaseHasAppAuthorizer)
+        {
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 应用切换授权器（可选）。非 null 时 UseApp/BeginScope 将先做授权判定。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IAppAccessAuthorizer? _appAuthorizer;");
+        }
 
         codeBuilder.AppendLine();
     }
@@ -335,6 +342,14 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             {
                 propLine += " = string.Empty;";
             }
+            else if (!property.Type.TrimEnd().EndsWith("?", StringComparison.Ordinal))
+            {
+                // [警告修复] 非可空接口属性（如 [Query] string ApiKey { get; set; }）既无接口初始值，
+                // 也不由生成的构造函数赋值（取值由消费方通过对象初始化器/配置绑定在调用前写入），
+                // 若不带初始值会触发 CS8618（退出构造函数时不可为 null 的属性必须包含非 null 值）。
+                // 用 `default!` 保持原运行期语义（默认 null）并显式表达「由消费方稍后赋值」的意图。
+                propLine += " = default!;";
+            }
             codeBuilder.AppendLine(propLine);
         }
 
@@ -539,6 +554,12 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             {
                 baseParameters.Add("resilienceResolver");
             }
+            // 基类持有 _appAuthorizer 时由基类构造函数完成赋值（派生类不再自行声明/赋值，见 GenerateFieldsForInheritedMode）。
+            // 使用命名实参，避免与基类可选参数的声明顺序耦合。
+            if (_context.Configuration.BaseHasAppAuthorizer)
+            {
+                baseParameters.Add("appAuthorizer: appAuthorizer");
+            }
             // logger 使用命名参数传递，避免基类可选参数顺序不匹配的问题
             // contentSerializer 同样使用命名参数传递（Phase 3.1 全量收敛）
             codeBuilder.AppendLine($" : base({string.Join(", ", baseParameters)}, logger: logger, contentSerializer: contentSerializer)");
@@ -627,8 +648,12 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             {
                 codeBuilder.AppendLine("            _resilienceResolver = resilienceResolver ?? throw new ArgumentNullException(nameof(resilienceResolver));");
             }
-            // 继承模式下也需初始化 _appAuthorizer（UseApp/BeginScope 守卫引用此字段）
-            codeBuilder.AppendLine("            _appAuthorizer = appAuthorizer;");
+            // 继承模式下 _appAuthorizer 的赋值：基类持有该字段时由其构造函数完成（此处再赋值既会隐藏基类字段，
+            // 也会因基类字段 readonly 而编译失败 CS0191）；仅当基类没有该字段时由派生类自行初始化。
+            if (!_context.Configuration.BaseHasAppAuthorizer)
+            {
+                codeBuilder.AppendLine("            _appAuthorizer = appAuthorizer;");
+            }
         }
 
         codeBuilder.AppendLine("        }");

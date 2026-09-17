@@ -229,7 +229,7 @@ namespace TestNamespace.Internal
             var __url = $"/base";
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Get, __url);
 
-            return await _executor.ExecuteAsync<string>(
+            return (await _executor.ExecuteAsync<string>(
                 __httpRequest,
                 __appContext.HttpClient,
                 new ExecutionDescriptor
@@ -243,7 +243,7 @@ namespace TestNamespace.Internal
                        IsVoidReturn = false,
                    },
                },
-                null, cancellationToken: default).ConfigureAwait(false);
+                null, cancellationToken: default).ConfigureAwait(false))!;
         }
 
         /// <summary>
@@ -305,10 +305,6 @@ namespace TestNamespace.Internal
     [global::System.CodeDom.Compiler.GeneratedCode("Mud.HttpUtils.Generator", "2.0.5")]
     internal partial class DerivedApi : BaseApi, global::TestNamespace.IDerivedApi
     {
-        /// <summary>
-        /// 应用切换授权器（可选）。非 null 时 UseApp/BeginScope 将先做授权判定。
-        /// </summary>
-        private readonly IAppAccessAuthorizer? _appAuthorizer;
 
         /// <summary>
         /// 构建 <see cref = "DerivedApi"/> 类的实例。
@@ -323,9 +319,8 @@ namespace TestNamespace.Internal
 #if NET5_0_OR_GREATER
         [System.Diagnostics.CodeAnalysis.DynamicDependency(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof(global::Mud.HttpUtils.RestService))]
 #endif
-        public DerivedApi(ITestTokenManager appManager, IAppContextHolder appContextHolder, ITokenProvider tokenProvider, IHttpRequestExecutor executor, IAppAccessAuthorizer? appAuthorizer = null, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null) : base(appManager, appContextHolder, tokenProvider, executor, logger: logger, contentSerializer: contentSerializer)
+        public DerivedApi(ITestTokenManager appManager, IAppContextHolder appContextHolder, ITokenProvider tokenProvider, IHttpRequestExecutor executor, IAppAccessAuthorizer? appAuthorizer = null, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null) : base(appManager, appContextHolder, tokenProvider, executor, appAuthorizer: appAuthorizer, logger: logger, contentSerializer: contentSerializer)
         {
-            _appAuthorizer = appAuthorizer;
         }
 
         /// <summary>
@@ -359,7 +354,7 @@ namespace TestNamespace.Internal
             var __url = $"/derived";
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Get, __url);
 
-            return await _executor.ExecuteAsync<string>(
+            return (await _executor.ExecuteAsync<string>(
                 __httpRequest,
                 __appContext.HttpClient,
                 new ExecutionDescriptor
@@ -373,7 +368,7 @@ namespace TestNamespace.Internal
                        IsVoidReturn = false,
                    },
                },
-                null, cancellationToken: default).ConfigureAwait(false);
+                null, cancellationToken: default).ConfigureAwait(false))!;
         }
 
         /// <summary>

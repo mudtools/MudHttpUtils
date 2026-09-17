@@ -27,7 +27,11 @@ internal static class TypeConverter
             // F1 修复：defaultValue 为 null 时，「值类型参数（含 struct/枚举/可空值类型）的 default」必须
             // 使用 default 字面量，仅引用类型使用 null。原实现只特判 CancellationToken（按 ToDisplayString
             // 字符串比较），对自定义 struct 的 = default 输出非法 "null"。
-            return parameterType.IsValueType ? "default" : "null";
+            //
+            // [警告修复] 引用类型不得输出 `null` 字面量：接口声明 `T p = default`（T 为非空引用类型）时，
+            // 生成签名若写成 `T p = null` 会触发消费方 CS8625（无法将 null 字面量转换为非 null 的引用类型）。
+            // 改用 `default!`：既是合法的可选参数默认值常量表达式，又与原 `default` 语义完全一致（默认值为 null）。
+            return parameterType.IsValueType ? "default" : "default!";
         }
 
         // [回归修复] 2.0.4 重构引入：Nullable<T>（int?/bool?/枚举? 等）的 SpecialType 为

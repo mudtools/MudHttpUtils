@@ -224,7 +224,7 @@ namespace TestNamespace.Internal
             // 方法级添加Header: Accept
             if (!__httpRequest.Headers.Contains("Accept"))
                 __httpRequest.Headers.Add("Accept", "application/json");
-            return await _executor.ExecuteAsync<string>(
+            return (await _executor.ExecuteAsync<string>(
                 __httpRequest,
                 __appContext.HttpClient,
                 new ExecutionDescriptor
@@ -238,7 +238,7 @@ namespace TestNamespace.Internal
                        IsVoidReturn = false,
                    },
                },
-                null, cancellationToken: default).ConfigureAwait(false);
+                null, cancellationToken: default).ConfigureAwait(false))!;
         }
 
     }

@@ -224,7 +224,7 @@ namespace TestNamespace.Internal
             // 添加接口定义的Header: X-API-Version
             if (!__httpRequest.Headers.Contains("X-API-Version"))
                 __httpRequest.Headers.Add("X-API-Version", "2.0");
-            return await _executor.ExecuteAsync<string>(
+            return (await _executor.ExecuteAsync<string>(
                 __httpRequest,
                 __appContext.HttpClient,
                 new ExecutionDescriptor
@@ -238,7 +238,7 @@ namespace TestNamespace.Internal
                        IsVoidReturn = false,
                    },
                },
-                null, cancellationToken: default).ConfigureAwait(false);
+                null, cancellationToken: default).ConfigureAwait(false))!;
         }
 
     }
