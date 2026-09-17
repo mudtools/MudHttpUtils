@@ -163,6 +163,9 @@ public class UserTokenInfo : CurrentUserInfo
             UnionId = unionId,
             AccessToken = token?.AccessToken,
             AccessTokenExpireTime = token?.AccessTokenExpireTime ?? 0,
+            // 2.0.8：补齐 IssuedAt 透传——此前仅 CredentialToken 重载透传，经本重载流转的令牌
+            // 会丢失签发时间，使 TTL 感知阈值（min(配置阈值, ttl/2)）静默退化为配置阈值。
+            IssuedAt = token?.IssuedAt ?? 0,
             RefreshToken = token?.RefreshToken,
             RefreshTokenExpireTime = token?.RefreshTokenExpireTime ?? 0,
             Scope = token?.Scope,
@@ -202,6 +205,11 @@ public class UserTokenInfo : CurrentUserInfo
     {
         AccessToken = token?.AccessToken;
         AccessTokenExpireTime = token?.AccessTokenExpireTime ?? 0;
+        // 2.0.8：补充 IssuedAt 透传（与 CredentialToken 重载及 FromCredentialToken 保持一致）。
+        if (token is not null && token.IssuedAt > 0)
+        {
+            IssuedAt = token.IssuedAt;
+        }
         if (!string.IsNullOrEmpty(token?.RefreshToken))
         {
             RefreshToken = token?.RefreshToken;

@@ -1,6 +1,75 @@
 # CHANGELOG
 
-项目尚未发布（当前版本 2.0.6，所有 `PublicAPI.Shipped.txt` 为空）。本文件记录**首个正式版本的行为基线**，作为首次发布的 Release Notes 依据。
+项目尚未发布（当前版本 2.0.8，所有 `PublicAPI.Shipped.txt` 为空）。本文件记录**首个正式版本的行为基线**，作为首次发布的 Release Notes 依据。
+
+---
+
+## 2.0.8（下游升级验证缺陷修复，2026-09-17）
+
+> 依据第三方项目 MudFeishu 对 2.0.7 本地包的实机升级验证结论修复（详见 MudFeishu 仓库
+> `documents/MudHttpUtils-2.0.7-升级验证报告.md`）。全部附带机器护栏测试。
+
+#### 修复（Fixed）
+
+- **发布的 2.0.7 包是 Debug 构建（BC-1，严重）**：`pack_debug.ps1` 直接使用
+  `-Configuration Debug` 且写入与 `pack.ps1` **同一个** `artifacts/` 目录 ⇒ 发布目录里是未优化的 Debug 程序集
+  （实测包内 `AssemblyConfigurationAttribute = Debug`、`DebuggableAttribute` 含 `DisableOptimizations`，
+  与仓库 `bin/Debug/**` 逐文件字节一致）。现将 `pack_debug.ps1` 改为 `pack.ps1` 的**薄封装**
+  （固定 `-Configuration Debug -OutputDir artifacts-debug`，不再触碰发布目录），
+  并在 `pack.ps1` 中新增**打包后校验**：包内每个 DLL 必须与 `bin/<Configuration>/<tfm>/` 同名产物
+  **SHA256 一致**，否则打包失败——"以 Debug 冒充 Release"与"缓存陈旧错版打包"从此不可能静默通过。
+- **打包清单漂移导致静默少发包（BC-2）**：`pack_debug.ps1` 的项目清单漏了 `Mud.HttpUtils.Xml`，
+  实测 2.0.7 artifacts 只有 8 个包（缺 `Mud.HttpUtils.Xml` 与 `Mud.HttpUtils.JsonContextScaffolder`）。
+  现清单唯一（只有 `pack.ps1` 维护），并新增**预期包集合校验**（10 个含 Xml 与 JsonContextScaffolder）。
+- **DI 构造歧义未彻底修复（BC-30/31/32，严重）**：TMX-19 只把 3 个类型的非主构造改为 `internal`，
+  遗漏了同样"快照 / IOptionsMonitor 同元数"的类型。实测容器解析直接抛
+  `The following constructors are ambiguous`：
+  - `TokenRecoveryDelegatingHandler`（4 个公共构造，4 参与 7 参各有一对）——最严重的是
+    **组件文档推荐的 `AddHttpMessageHandler<TokenRecoveryDelegatingHandler>()` 用法在首个 `CreateClient` 即失败**
+    （该扩展经 `b.Services.GetRequiredService<THandler>()` 走容器解析，`ActivatorUtilitiesConstructorAttribute`
+    对此无效）；
+  - `StandardOAuth2TokenManager`（`IOptions` / `IOptionsMonitor` 同元数）；
+  - `PollyResiliencePolicyProvider`（`(IOptions<ResilienceOptions>, ILogger<T>)` / `(ResilienceOptions, ILogger)`）。
+  现统一收敛为「每个元数至多一个公共构造」，其余改 `internal`（IVT 已覆盖测试工程；
+  `Mud.HttpUtils.Resilience` 新增对 `Mud.HttpUtils.Integration.Tests` 的 IVT）。
+- **`TokenRefreshHealthCheck` 同元数双构造（BC-33）**：经 `AddCheck<T>` → `ActivatorUtilities` 激活，
+  两个 1 参构造在 `IOptions<T>` 已注册时都可满足。该路径**尊重** `[ActivatorUtilitiesConstructor]`，
+  故在 DI 构造上标注该特性（与 BC-30/31/32 的容器路径处理方式不同，注释已说明差异）。
+- **`RequiresDynamicCodeAttribute` polyfill 边界取错（BC-29，严重）**：该 API 自 **.NET 7** 起 in-box
+  （实测 net7.0 编译中 `System.Runtime, Version=7.0.0.0` 已包含），而 guard 取的是 `!NET8_0_OR_GREATER`。
+  更关键的是**资产缺口**：Abstractions 只到 net6.0，net7.0 下游会解析 net6.0 资产，
+  于是在自身代码标注 `[RequiresDynamicCode]` 即报
+  `error CS0433: 类型"RequiresDynamicCodeAttribute"同时存在于 Mud.HttpUtils.Abstractions 和 System.Runtime`。
+  修复：guard 改为 `!NET7_0_OR_GREATER`（对齐 in-box 首个 TFM），并**为 Abstractions 增加 net7.0 资产**
+  （含 `PublicAPI/net7.0/` 契约文件），使 net7.0 下游解析到不含 polyfill 的资产。
+- **`UserTokenInfo` 的两个"从 UserTokenInfo 复制"入口丢失 `IssuedAt`（BC-34）**：
+  `FromCredentialToken(UserTokenInfo, …)` 与 `UpdateFromCredentialToken(UserTokenInfo)` 未透传该字段，
+  使经其流转的令牌 TTL 感知阈值静默退化。现两处补齐。
+- **组件仓库源码编码损坏**：`1302883` 把 `Directory.Build.props` 的中文注释与 `PackageTags` 写成乱码，
+  已恢复（同处把版本号提升为 2.0.8）。
+
+#### 新增（Added）
+
+- **机器护栏（`Tests/Mud.HttpUtils.Tests`）**：
+  - `DiAmbiguityGuardTests`：① 静态扫描 4 个程序集的公共类型，断言**不存在元数相同的多个公共实例构造函数**
+    （例外清单逐条给出理由）；② 曾经抛歧义的 6 个类型必须能被容器解析；
+    ③ `AddHttpMessageHandler<TokenRecoveryDelegatingHandler>()` 必须能真正构造出 HttpClient；
+    ④ `TokenRefreshHealthCheck` 必须能被 `ActivatorUtilities` 激活。
+  - `PolyfillBoundaryGuardTests`：断言 polyfill 的 `#if` 锚点与 API 的 in-box 首个 TFM 一致
+    （`RequiresUnreferencedCode` → .NET 6、`RequiresDynamicCode` → .NET 7），
+    且 Abstractions 必带 net7.0 资产与配套公共 API 契约文件。
+  - `UserTokenInfoIssuedAtTests`：两条复制路径的 `IssuedAt` 守恒 + 短 TTL 令牌签发瞬间仍有效的语义用例。
+
+#### 破坏性变更（Breaking）
+
+| # | 变更 | 影响面 | 迁移动作 |
+| --- | --- | --- | --- |
+| **BC-29** | `RequiresDynamicCodeAttribute` polyfill guard `!NET8_0_OR_GREATER` → `!NET7_0_OR_GREATER`，并为 `Mud.HttpUtils.Abstractions` 增加 net7.0 资产 | net7.0 下游（原会 CS0433）；net6.0 下游自备同名 polyfill 时原 CS0436 告警消失 | 无（包体积略增） |
+| **BC-30** | `StandardOAuth2TokenManager` 的两个 `IOptions<OAuth2Options>` 快照构造改为 `internal` | 手工 `new StandardOAuth2TokenManager(httpClient, Options.Create(...))` 的下游 | 改用 `IOptionsMonitor<OAuth2Options>` 重载（支持热更新） |
+| **BC-31** | `TokenRecoveryDelegatingHandler` 的两个 `TokenRecoveryOptions` 快照构造改为 `internal` | 手工 `new TokenRecoveryDelegatingHandler(manager, new TokenRecoveryOptions())` 的下游 | 改用 `IOptionsMonitor<TokenRecoveryOptions>` 重载；DI 路径（含 `AddHttpMessageHandler<T>`）行为修复 |
+| **BC-32** | `PollyResiliencePolicyProvider(ResilienceOptions?, ILogger?)` 改为 `internal` | 无 DI 场景直接构造该重载的下游 | 改用 `new PollyResiliencePolicyProvider(Options.Create(options))` |
+| **BC-33** | `TokenRefreshHealthCheck` 的 `IOptions<T>` 构造标注 `[ActivatorUtilitiesConstructor]` | 无（仅消除 ActivatorUtilities 路径的构造歧义） | 无 |
+| **BC-34** | `UserTokenInfo.FromCredentialToken(UserTokenInfo, …)` / `UpdateFromCredentialToken(UserTokenInfo)` 开始透传 `IssuedAt` | 依赖"复制后 IssuedAt 归零"的调用方（无正当场景） | 无 |
 
 ---
 

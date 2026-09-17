@@ -8,6 +8,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Mud.HttpUtils;
 using Mud.HttpUtils.OpenTelemetry;
 using Mud.HttpUtils.Resilience;
@@ -233,7 +234,8 @@ public class Program
             }
         };
 
-        var provider = new PollyResiliencePolicyProvider(customOptions);
+        // 2.0.8（BC-32）：无 DI 快照构造已 internal，非 DI 场景用 Options.Create 包装配置。
+        var provider = new PollyResiliencePolicyProvider(Options.Create(customOptions));
         var cbPolicy = provider.GetCircuitBreakerPolicy<string?>("global");
 
         for (int i = 1; i <= 5; i++)

@@ -59,7 +59,14 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
     /// <param name="options">令牌恢复配置选项（可选）。</param>
     /// <param name="logger">日志记录器（可选）。</param>
     /// <param name="appContextHolder">L-1：应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
-    public TokenRecoveryDelegatingHandler(
+    /// <remarks>
+    /// 2.0.8（BC-31）：internal —— 与 <see cref="TokenRecoveryDelegatingHandler(ITokenManager, IOptionsMonitor{TokenRecoveryOptions}, ILogger{TokenRecoveryDelegatingHandler}?, IAppContextHolder?)"/>
+    /// 元数相同且均可被容器满足，容器默认构造选择会抛 <c>"The following constructors are ambiguous"</c>。
+    /// 注意 <c>ActivatorUtilitiesConstructorAttribute</c> 对容器无效，故必须收敛公共构造。
+    /// 这与文档推荐的 <c>AddHttpMessageHandler&lt;TokenRecoveryDelegatingHandler&gt;()</c> 用法直接相关：
+    /// 该扩展经 <c>b.Services.GetRequiredService&lt;THandler&gt;()</c> 解析处理器（容器路径，非 ActivatorUtilities）。
+    /// </remarks>
+    internal TokenRecoveryDelegatingHandler(
         ITokenManager tokenManager,
         TokenRecoveryOptions? options = null,
         ILogger<TokenRecoveryDelegatingHandler>? logger = null,
@@ -79,7 +86,9 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
     /// <param name="logger">日志记录器（可选）。</param>
     /// <param name="managerRegistry">SR-M6（P2.4，D9）令牌管理器注册表（可选），按 TokenManagerKey 路由恢复链路。</param>
     /// <param name="appContextHolder">L-1：应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
-    public TokenRecoveryDelegatingHandler(
+    /// <remarks>2.0.8（BC-31）：internal，理由见 <see cref="TokenRecoveryDelegatingHandler(ITokenManager, TokenRecoveryOptions?, ILogger{TokenRecoveryDelegatingHandler}?, IAppContextHolder?)"/>；
+    /// 外部请改用带 <see cref="IOptionsMonitor{T}"/> 的重载（支持热更新）。</remarks>
+    internal TokenRecoveryDelegatingHandler(
         ITokenManager tokenManager,
         IUserTokenManager? userTokenManager,
         ICurrentUserContext? currentUserContext = null,

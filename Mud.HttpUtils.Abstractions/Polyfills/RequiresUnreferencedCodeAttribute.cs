@@ -5,6 +5,8 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+// guard 锚点：RequiresUnreferencedCodeAttribute 自 .NET 6 起 in-box（与 API 的首个 in-box TFM 对齐；
+// 见 RequiresDynamicCodeAttribute.cs 中 BC-29 对「锚点取错 TFM 导致下游 CS0433」的说明）。
 #if !NET6_0_OR_GREATER
 // ReSharper disable once CheckNamespace
 namespace System.Diagnostics.CodeAnalysis;

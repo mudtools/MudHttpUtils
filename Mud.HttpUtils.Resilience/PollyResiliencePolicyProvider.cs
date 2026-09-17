@@ -72,7 +72,13 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     /// </summary>
     /// <param name="options">弹性策略配置选项。</param>
     /// <param name="logger">日志记录器（可选）。</param>
-    public PollyResiliencePolicyProvider(
+    /// <remarks>
+    /// 2.0.8（BC-32）：internal —— 与 <see cref="PollyResiliencePolicyProvider(IOptions{ResilienceOptions}, ILogger{PollyResiliencePolicyProvider}?)"/>
+    /// 元数相同且均可被容器满足（<c>ResilienceOptions</c> 与 <c>ILogger</c> 均带默认值 ⇒ 容器视为可满足），
+    /// 按类型注册进 DI 时抛 <c>"The following constructors are ambiguous"</c>。
+    /// 无 DI 场景请改用 <c>new PollyResiliencePolicyProvider(Options.Create(options))</c>。
+    /// </remarks>
+    internal PollyResiliencePolicyProvider(
         ResilienceOptions? options = null,
         ILogger? logger = null)
     {
