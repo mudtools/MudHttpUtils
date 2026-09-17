@@ -38,12 +38,11 @@ public class UserTokenManagerLockCleanupTests
     {
         using var manager = new TestUserTokenManagerForLockCleanup();
 
-        // 先获取令牌创建锁
-        var result = manager.GetOrRefreshTokenAsync("orphan-user").Result;
-        result.Should().Be("refreshed-token-for-orphan-user");
-
-        // 手动移除缓存条目但保留锁（模拟 PostEvictionCallback 未触发的场景）
-        manager.RemoveCacheEntryOnly("orphan-user");
+        // 直接在锁表中制造"孤立锁"：获取后立即释放（retire 协议下未退休的释放不摘除条目）。
+        // 该 userId 从未写入缓存 ⇒ 不存在驱逐回调，确定性地模拟 PostEvictionCallback 未触发的场景。
+        // （原实现经 cache.TryRemove 移除缓存条目来制造孤立锁，但 MemoryCache 的驱逐回调是
+        //   异步触发的：OnUserTokenEvicted → TryRetire 可能在断言前抢先移除空闲锁 ⇒ 偶发失败。）
+        manager.CreateReleasedLock("orphan-user");
 
         // 锁应该还存在
         manager.UserLockCount.Should().Be(1);
@@ -173,6 +172,21 @@ public class UserTokenManagerLockCleanupTests
             // 释放 Releaser（内部递减 Waiters，若已退休则完成移除）
             _heldReleaser?.Dispose();
             _heldReleaser = null;
+        }
+
+        /// <summary>
+        /// 在锁表中创建一个"获取后已释放"的条目（孤立锁：该键在缓存中从未存在）。
+        /// retire 协议保证：未退休条目释放后仍保留在表中，仅供 CleanupOrphanedLocks 兜底回收。
+        /// </summary>
+        public void CreateReleasedLock(string userId)
+        {
+            var field = typeof(UserTokenManagerBase)
+                .GetField("_userLockTable", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            if (field?.GetValue(this) is KeyedLockTable table)
+            {
+                var releaser = table.AcquireAsync(userId, CancellationToken.None).AsTask().GetAwaiter().GetResult();
+                releaser.Dispose();
+            }
         }
 
         private KeyedLockTable.Releaser? _heldReleaser;
