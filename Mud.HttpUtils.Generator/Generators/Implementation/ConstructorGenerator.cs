@@ -322,6 +322,17 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     private void GenerateInterfaceProperties(StringBuilder codeBuilder)
     {
         var properties = _context.InterfaceProperties;
+
+        // [继承模式 CS0108 修复] InheritedFromInterfaceName 非空表示本类派生自生成器按基接口生成的基类；
+        // 该基类已实现基接口链上的 [Query]/[Path]/[Header] 属性，派生类再发射同名属性会隐藏基类成员
+        // （CS0108：「X 隐藏继承的成员」）。故此处只保留**本接口自身声明**的属性。
+        // 与 InterfaceContractCompletionGenerator 的口径互补：后者对（含基接口的）全部属性名让路，
+        // 理由是基类负责实现 —— 两者合起来保证基接口属性只由基类实现一次。
+        if (!string.IsNullOrEmpty(_context.Configuration.InheritedFromInterfaceName))
+        {
+            properties = properties.Where(p => p.IsDeclaredOnCurrentInterface).ToList();
+        }
+
         if (properties.Count == 0)
             return;
 

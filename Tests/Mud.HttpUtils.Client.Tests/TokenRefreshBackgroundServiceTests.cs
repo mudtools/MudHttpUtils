@@ -627,14 +627,14 @@ public class TokenRefreshBackgroundServiceTests
                 UpdateMax(ref maxConcurrent, c);
                 Interlocked.Increment(ref tickCount);
                 // 模拟远端慢响应：刷新耗时超过刷新间隔，制造 Timer 重叠触发窗口
-                await Task.Delay(1500).ConfigureAwait(false);
+                await Task.Delay(1500);
                 Interlocked.Decrement(ref current);
                 return "token";
             });
         service.RegisterTokenManager(manager.Object, "slow-manager");
 
         await service.StartAsync();
-        await Task.Delay(TimeSpan.FromSeconds(4)).ConfigureAwait(false);
+        await Task.Delay(TimeSpan.FromSeconds(4));
         await service.StopAsync();
         service.Dispose();
 

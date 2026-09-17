@@ -32,23 +32,23 @@ public class KeyedLockTableBackoffTests
         // 持有者：持锁后立即 TryRetire（制造 "Retired=true 且 Waiters>0" 的病理窗口）并等待放行
         var holder = Task.Run(async () =>
         {
-            using (await table.AcquireAsync(key, CancellationToken.None).ConfigureAwait(false))
+            using (await table.AcquireAsync(key, CancellationToken.None))
             {
                 table.TryRetire(key);
                 retiredMarked.TrySetResult(true);
-                await releaseHolder.Task.ConfigureAwait(false);
+                await releaseHolder.Task;
             }
         });
 
         // 确保持有者已标记 Retired 后再放等待者进入：等待者必然取到退休条目 → 退避分支
-        await retiredMarked.Task.ConfigureAwait(false);
+        await retiredMarked.Task;
 
         var waiters = new Task[workers];
         for (var i = 0; i < workers; i++)
         {
             waiters[i] = Task.Run(async () =>
             {
-                using (await table.AcquireAsync(key, CancellationToken.None).ConfigureAwait(false))
+                using (await table.AcquireAsync(key, CancellationToken.None))
                 {
                     // 拿到锁即成功（退避后重取新条目）
                 }
@@ -56,11 +56,11 @@ public class KeyedLockTableBackoffTests
         }
 
         // 给等待者时间进入退休退避分支（多次 1ms 退避循环），然后放行持有者
-        await Task.Delay(100).ConfigureAwait(false);
+        await Task.Delay(100);
         releaseHolder.TrySetResult(true);
 
         var all = Task.WhenAll(waiters.Append(holder));
-        var finished = await Task.WhenAny(all, Task.Delay(10_000)).ConfigureAwait(false);
+        var finished = await Task.WhenAny(all, Task.Delay(10_000));
         finished.Should().BeSameAs(all, "退避修复后不应再有活锁/死锁");
 
         // 退避计数有界：等待期间每等待者约 1 次/ms → 100ms 窗口 × workers 量级上限
@@ -83,7 +83,7 @@ public class KeyedLockTableBackoffTests
 
         await ConcurrencyHarness.RunAsync(2000, async _ =>
         {
-            using (await table.AcquireAsync(key, CancellationToken.None).ConfigureAwait(false))
+            using (await table.AcquireAsync(key, CancellationToken.None))
             {
                 var nowActive = Interlocked.Increment(ref active);
                 InterlockedExchangeMax(ref maxInCritical, nowActive);
@@ -98,7 +98,7 @@ public class KeyedLockTableBackoffTests
                     Interlocked.Decrement(ref active);
                 }
             }
-        }).ConfigureAwait(false);
+        });
 
         maxInCritical.Should().BeLessThanOrEqualTo(1, "retire 协议互斥未被 D1 退避改动破坏");
     }
@@ -122,7 +122,7 @@ public class KeyedLockTableBackoffTests
 
         for (var i = 0; i < 1000; i++)
         {
-            var token = await manager.GetOrRefreshTokenAsync("hit-user").ConfigureAwait(false);
+            var token = await manager.GetOrRefreshTokenAsync("hit-user");
             token.Should().Be("cached-token");
         }
 

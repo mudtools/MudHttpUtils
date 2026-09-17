@@ -30,7 +30,7 @@ public class KeyedLockTableConcurrencyTests
         await ConcurrencyHarness.RunAsync(2000, async _ =>
         {
             // 持锁临界区
-            using (await table.AcquireAsync(key, CancellationToken.None).ConfigureAwait(false))
+            using (await table.AcquireAsync(key, CancellationToken.None))
             {
                 var nowActive = Interlocked.Increment(ref active);
                 InterlockedExchangeMax(ref maxInCritical, nowActive);
@@ -46,7 +46,7 @@ public class KeyedLockTableConcurrencyTests
                     Interlocked.Decrement(ref active);
                 }
             }
-        }).ConfigureAwait(false);
+        });
 
         // 任意时刻进入临界区不得超过 1（互斥未拆分）
         maxInCritical.Should().BeLessThanOrEqualTo(1);
@@ -72,7 +72,7 @@ public class KeyedLockTableConcurrencyTests
         {
             await ConcurrencyHarness.RunAsync(perRound, async i =>
             {
-                using (await table.AcquireAsync(key, CancellationToken.None).ConfigureAwait(false))
+                using (await table.AcquireAsync(key, CancellationToken.None))
                 {
                     // 一半线程主动退休，制造 retire 与 acquire 恰好并发窗口
                     if (i % 2 == 0)
@@ -81,7 +81,7 @@ public class KeyedLockTableConcurrencyTests
                     }
                     await Task.Yield();
                 }
-            }).ConfigureAwait(false);
+            });
         }
 
         // 所有 Releaser 已释放：Waiters 不泄漏。释放后条目要么被移除（Count 小），
@@ -89,7 +89,7 @@ public class KeyedLockTableConcurrencyTests
         table.Count.Should().BeLessThanOrEqualTo(1);
 
         // 条目可被下一轮复用：再次获取应成功
-        using (await table.AcquireAsync(key, CancellationToken.None).ConfigureAwait(false))
+        using (await table.AcquireAsync(key, CancellationToken.None))
         {
         }
         table.Count.Should().BeLessThanOrEqualTo(1);
@@ -103,7 +103,7 @@ public class KeyedLockTableConcurrencyTests
     {
         using var table = new KeyedLockTable();
 
-        using (await table.AcquireAsync("k", CancellationToken.None).ConfigureAwait(false))
+        using (await table.AcquireAsync("k", CancellationToken.None))
         {
         }
 

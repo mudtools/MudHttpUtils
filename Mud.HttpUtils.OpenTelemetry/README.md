@@ -7,9 +7,13 @@
 ## 目标框架
 
 - `netstandard2.0`
-- `net6.0`
 - `net8.0`
 - `net10.0`
+
+> **关于 net6.0**：本包不提供 net6.0 资产。其依赖 `OpenTelemetry 1.16.0` 已不再提供 net6.0 资产，
+> 最接近的资产是 `netstandard2.0`，而该资产声明依赖 `Microsoft.Extensions.* 10.0.0`（官方不支持
+> net6.0）。net6.0 应用消费本包时由 NuGet 自动回落选择 `netstandard2.0` 资产，**功能完全一致**
+> （本包源码不含任何 TFM 相关的行为分支，net6.0 与 netstandard2.0 资产本就针对同一组引用程序集编译）。
 
 ## 安装
 

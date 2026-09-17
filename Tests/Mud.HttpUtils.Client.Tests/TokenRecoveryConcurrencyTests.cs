@@ -74,7 +74,7 @@ public class TokenRecoveryConcurrencyTests
                 // 通知等待者刷新已开始
                 refreshStarted.TrySetResult(true);
                 // 等待信号以延迟刷新完成，扩大去重窗口
-                await refreshContinue.Task.ConfigureAwait(false);
+                await refreshContinue.Task;
                 return "new-token";
             });
 
@@ -100,13 +100,13 @@ public class TokenRecoveryConcurrencyTests
             .ToArray();
 
         // 等待第一个刷新请求开始
-        await refreshStarted.Task.ConfigureAwait(false);
+        await refreshStarted.Task;
         // 短暂延迟确保其他请求也进入恢复流程
-        await Task.Delay(50).ConfigureAwait(false);
+        await Task.Delay(50);
         // 释放刷新完成信号
         refreshContinue.SetResult(true);
 
-        var responses = await Task.WhenAll(tasks).ConfigureAwait(false);
+        var responses = await Task.WhenAll(tasks);
 
         // 所有请求应成功
         responses.Should().AllSatisfy(r => r.StatusCode.Should().Be(HttpStatusCode.OK));
@@ -137,7 +137,7 @@ public class TokenRecoveryConcurrencyTests
                 Interlocked.Increment(ref refreshCallCount);
                 refreshStarted.TrySetResult(true);
                 // 挂起刷新，模拟远端慢响应，扩大去重窗口
-                await refreshContinue.Task.ConfigureAwait(false);
+                await refreshContinue.Task;
                 return "new-token";
             });
 
@@ -156,12 +156,14 @@ public class TokenRecoveryConcurrencyTests
 
         // 两个调用方并发发起请求
         using var ctsA = new CancellationTokenSource();
-        invoker.SendAsync(CreateRequest(), ctsA.Token);
+        // 刻意的「发射后不管」：调用方 A 的取消不应影响调用方 B 的恢复流程，
+        // 其返回任务在用例结束前不做断言（避免 CS4014 提示未等待）。
+        _ = invoker.SendAsync(CreateRequest(), ctsA.Token);
         var taskB = invoker.SendAsync(CreateRequest(), CancellationToken.None);
 
         // 等待刷新真正开始（只有一个线程赢得刷新权）
         await refreshStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        await Task.Delay(50).ConfigureAwait(false);
+        await Task.Delay(50);
 
         // 调用方 A 在刷新进行中取消
         ctsA.Cancel();
@@ -170,7 +172,7 @@ public class TokenRecoveryConcurrencyTests
         refreshContinue.SetResult(true);
 
         // 调用方 B 应正常成功（其等待不被 A 的取消影响）
-        var responseB = await taskB.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+        var responseB = await taskB.WaitAsync(TimeSpan.FromSeconds(5));
         responseB.StatusCode.Should().Be(HttpStatusCode.OK);
 
         // 调用方 A 的请求因取消而失败，但共享刷新只发生了一次
@@ -207,7 +209,7 @@ public class TokenRecoveryConcurrencyTests
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
-            return await _handler(request).ConfigureAwait(false);
+            return await _handler(request);
         }
     }
 }

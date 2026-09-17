@@ -795,7 +795,15 @@ internal class RequestBuilder
             {
                 if (isStringType)
                 {
-                    ReplacePlaceholder(sb, placeholder, $"{{Uri.EscapeDataString({paramName})}}");
+                    // [CS8604 修复] 可空 string 路径参数（如 `string? task_id`）直接传入 EscapeDataString
+                    // 会触发 CS8604（其形参 stringToEscape 声明为非空）。
+                    // 按「保持既有运行期语义」处理：null 时仍然抛 ArgumentNullException，
+                    // 只是把参数名指向真正的路径参数（原先由 EscapeDataString 内部抛出，ParamName 是 stringToEscape），
+                    // 同时让流分析判定表达式非空。非可空 string 参数不受影响，生成文本保持简短。
+                    var stringExpr = paramType.TrimEnd().EndsWith("?", StringComparison.Ordinal)
+                        ? $"{paramName} ?? throw new System.ArgumentNullException(nameof({paramName}))"
+                        : paramName;
+                    ReplacePlaceholder(sb, placeholder, $"{{Uri.EscapeDataString({stringExpr})}}");
                 }
                 else
                 {

@@ -24,7 +24,7 @@ public class TokenIsolationAndGuardTests
 
         // 首个租户键绑定成功（BindTenantGuard 经 InternalsVisibleTo 直调，与 DefaultTokenProvider 路径等价）
         manager.BindTenantGuard("app-A");
-        var tokenA = await manager.GetOrRefreshTokenAsync("user-in-A").ConfigureAwait(false);
+        var tokenA = await manager.GetOrRefreshTokenAsync("user-in-A");
         tokenA.Should().NotBeNull();
 
         // 不同租户键 → 拒绝（凭据错配防线）
@@ -41,7 +41,7 @@ public class TokenIsolationAndGuardTests
         manager.BindTenantGuard("same-app");
         manager.BindTenantGuard("same-app");   // 同键重复绑定幂等通过
 
-        var token = await manager.GetOrRefreshTokenAsync("user-1").ConfigureAwait(false);
+        var token = await manager.GetOrRefreshTokenAsync("user-1");
         token.Should().NotBeNull();
         await Task.CompletedTask;
     }
@@ -59,7 +59,7 @@ public class TokenIsolationAndGuardTests
         manager.BindTenantGuard("tenant-A");
         manager.BindTenantGuard("tenant-B");   // 覆写 EnforceTenantBinding=false：合法共享场景
 
-        var token = await manager.GetOrRefreshTokenAsync("shared-user").ConfigureAwait(false);
+        var token = await manager.GetOrRefreshTokenAsync("shared-user");
         token.Should().NotBeNull();
         await Task.CompletedTask;
     }
@@ -74,11 +74,11 @@ public class TokenIsolationAndGuardTests
         using var manager = new P2ScopeCountingUserTokenManager();
 
         // 先以 ["read:admin"] 获取
-        var adminToken = await manager.GetOrRefreshTokenAsync("user-1", new[] { "read:admin" }).ConfigureAwait(false);
+        var adminToken = await manager.GetOrRefreshTokenAsync("user-1", new[] { "read:admin" });
         adminToken.Should().NotBeNull();
 
         // ["read:basic"] 调用不得复用 admin 条目 → 触发独立刷新
-        var basicToken = await manager.GetOrRefreshTokenAsync("user-1", new[] { "read:basic" }).ConfigureAwait(false);
+        var basicToken = await manager.GetOrRefreshTokenAsync("user-1", new[] { "read:basic" });
         basicToken.Should().NotBeNull();
 
         manager.RefreshCount.Should().Be(2, "不同 scope 各自触发刷新（缓存按 userId × scope 复合键隔离）");
@@ -90,9 +90,9 @@ public class TokenIsolationAndGuardTests
     {
         using var manager = new P2ScopeCountingUserTokenManager();
 
-        var t1 = await manager.GetOrRefreshTokenAsync("user-1", new[] { "read:admin", "read:basic" }).ConfigureAwait(false);
+        var t1 = await manager.GetOrRefreshTokenAsync("user-1", new[] { "read:admin", "read:basic" });
         // 乱序等价 → ScopeKeyBuilder 规范化命中同一缓存
-        var t2 = await manager.GetOrRefreshTokenAsync("user-1", new[] { "read:basic", "read:admin" }).ConfigureAwait(false);
+        var t2 = await manager.GetOrRefreshTokenAsync("user-1", new[] { "read:basic", "read:admin" });
 
         t1.Should().Be(t2);
         manager.RefreshCount.Should().Be(1, "相同 scope 集合（乱序）命中同一缓存");
@@ -103,8 +103,8 @@ public class TokenIsolationAndGuardTests
     {
         using var manager = new P2ScopeCountingUserTokenManager();
 
-        var t1 = await manager.GetOrRefreshTokenAsync("user-1", new[] { "a", "a" }).ConfigureAwait(false);
-        var t2 = await manager.GetOrRefreshTokenAsync("user-1", new[] { "a" }).ConfigureAwait(false);
+        var t1 = await manager.GetOrRefreshTokenAsync("user-1", new[] { "a", "a" });
+        var t2 = await manager.GetOrRefreshTokenAsync("user-1", new[] { "a" });
 
         t1.Should().Be(t2);
         manager.RefreshCount.Should().Be(1, "{\"a\",\"a\"} 与 {\"a\"} 规范化为同一键（Distinct）");
@@ -115,15 +115,15 @@ public class TokenIsolationAndGuardTests
     {
         using var manager = new P2ScopeCountingUserTokenManager();
 
-        var t1 = await manager.GetOrRefreshTokenAsync("user-1").ConfigureAwait(false);
-        var t2 = await manager.GetOrRefreshTokenAsync("user-1").ConfigureAwait(false);
+        var t1 = await manager.GetOrRefreshTokenAsync("user-1");
+        var t2 = await manager.GetOrRefreshTokenAsync("user-1");
 
         t1.Should().Be("token-for-user-1-default");
         t2.Should().Be(t1);
         manager.RefreshCount.Should().Be(1, "无 scopes 重载作用于默认作用域条目（裸 userId 键，现网调用零影响）");
 
         // 有 scopes 调用不命中默认条目（键空间隔离）
-        var t3 = await manager.GetOrRefreshTokenAsync("user-1", new[] { "s" }).ConfigureAwait(false);
+        var t3 = await manager.GetOrRefreshTokenAsync("user-1", new[] { "s" });
         manager.RefreshCount.Should().Be(2);
     }
 
@@ -132,13 +132,13 @@ public class TokenIsolationAndGuardTests
     {
         using var manager = new P2ScopeCountingUserTokenManager();
 
-        await manager.GetOrRefreshTokenAsync("user-1", new[] { "a" }).ConfigureAwait(false);
-        await manager.GetOrRefreshTokenAsync("user-1", new[] { "b" }).ConfigureAwait(false);
-        await manager.GetOrRefreshTokenAsync("user-1").ConfigureAwait(false);
+        await manager.GetOrRefreshTokenAsync("user-1", new[] { "a" });
+        await manager.GetOrRefreshTokenAsync("user-1", new[] { "b" });
+        await manager.GetOrRefreshTokenAsync("user-1");
         manager.CachedUserTokenCountValue.Should().Be(3, "默认条目 + 2 个作用域条目");
 
         // 登出 = 清除该用户全部作用域
-        await manager.RemoveTokenAsync("user-1").ConfigureAwait(false);
+        await manager.RemoveTokenAsync("user-1");
 
         manager.CachedUserTokenCountValue.Should().Be(0, "登出清除该用户全部作用域条目（D7 配套 1）");
         manager.UserLockTableCountForTest.Should().Be(0, "对应锁键全部退休");
@@ -229,12 +229,12 @@ public class TokenIsolationAndGuardTests
         using var manager = new P2FailingUserTokenManager();
 
         // 第一次失败刷新：记录退避窗口
-        var first = await manager.GetOrRefreshTokenAsync("failing-user").ConfigureAwait(false);
+        var first = await manager.GetOrRefreshTokenAsync("failing-user");
         first.Should().BeNull();
         manager.RefreshAttempts.Should().Be(1);
 
         // 退避窗口内（30s 起步）第二次调用不发起刷新（直接 null）
-        var second = await manager.GetOrRefreshTokenAsync("failing-user").ConfigureAwait(false);
+        var second = await manager.GetOrRefreshTokenAsync("failing-user");
         second.Should().BeNull();
         manager.RefreshAttempts.Should().Be(1, "退避窗口内不发起刷新（阻断按 userId 的刷新风暴）");
     }
@@ -244,12 +244,12 @@ public class TokenIsolationAndGuardTests
     {
         using var manager = new P2FailingUserTokenManager();
 
-        await manager.GetOrRefreshTokenAsync("failing-user").ConfigureAwait(false);
+        await manager.GetOrRefreshTokenAsync("failing-user");
 
         // 登出重置退避（D10-B：RemoveTokenAsync 亦清除退避条目）
-        await manager.RemoveTokenAsync("failing-user").ConfigureAwait(false);
+        await manager.RemoveTokenAsync("failing-user");
 
-        var token = await manager.GetOrRefreshTokenAsync("failing-user").ConfigureAwait(false);
+        var token = await manager.GetOrRefreshTokenAsync("failing-user");
         token.Should().BeNull();
         manager.RefreshAttempts.Should().Be(2, "登出重置退避后再次尝试刷新");
     }
@@ -295,7 +295,7 @@ public class TokenIsolationAndGuardTests
         public int CacheCountForTest => CacheCountInternal;
 
         public async Task<string> GetTokenForScopeAsync(string scope)
-            => await GetOrRefreshTokenAsync(new[] { scope }).ConfigureAwait(false);
+            => await GetOrRefreshTokenAsync(new[] { scope });
     }
 
     [Fact]
@@ -306,7 +306,7 @@ public class TokenIsolationAndGuardTests
         // 灌入 20 个未过期 scope（MaxScopeCacheSize=8）
         for (var i = 0; i < 20; i++)
         {
-            await manager.GetTokenForScopeAsync($"scope-{i}").ConfigureAwait(false);
+            await manager.GetTokenForScopeAsync($"scope-{i}");
         }
 
         manager.CacheCountForTest.Should().BeLessThanOrEqualTo(8,

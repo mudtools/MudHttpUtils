@@ -7,8 +7,13 @@
 		<LangVersion>13.0</LangVersion>
 		<IsPackable>false</IsPackable>
 		<IsTestProject>true</IsTestProject>
-		<EnableAotAnalyzer>true</EnableAotAnalyzer>
-		<IsAotCompatible>true</IsAotCompatible>
+		<!-- 不再单独开启 AOT 分析器：测试工程不属 AOT 交付物（见 Tests/Directory.Build.props
+		     与 Directory.Build.targets 的 AotStrictMode 排除清单），而用例中大量对
+		     JsonSerializer.Deserialize / ConfigurationBinder.Bind / XmlSerializer 的调用
+		     是**刻意**覆盖非 AOT 路径，只会产生 490+ 条不可消除的 IL3050。
+		     库侧 AOT 契约仍由两处独立守卫：(a) 库工程的 AotStrictMode 把 IL2026/IL3050 升为 error；
+		     (b) AotAttributeAnnotationTests 以反射断言库成员的 RUC/RDC 标注存在——该用例与
+		         本分析器开关无关。 -->
 	</PropertyGroup>
 
 	<!-- TMR-13: net6.0 不兼容的测试文件用条件编译排除 -->
@@ -32,6 +37,15 @@
 		</PackageReference>
 		<PackageReference Include="FluentAssertions" Version="7.0.0" />
 		<PackageReference Include="Moq" Version="4.20.72" />
+	</ItemGroup>
+
+	<!-- Microsoft.Extensions.* 10.x 官方不支持 net6.0（其 buildTransitive targets 会发出
+	     "doesn't support net6.0" 告警）。按 TFM 切分版本，口径与 Mud.HttpUtils.Client 库
+	     自身的依赖切分一致：net6.0 用 8.0.x，net8.0/net10.0 用 10.0.9。 -->
+	<ItemGroup Condition="'$(TargetFramework)' == 'net6.0'">
+		<PackageReference Include="Microsoft.Extensions.Configuration" Version="8.0.0" />
+	</ItemGroup>
+	<ItemGroup Condition="'$(TargetFramework)' != 'net6.0'">
 		<PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.9" />
 	</ItemGroup>
 

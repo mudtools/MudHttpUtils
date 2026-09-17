@@ -9,21 +9,37 @@
 		<!-- 测试工程不是交付物：不生成 XML 文档。
 		     根 Directory.Build.props 的 GenerateDocumentationFile=true 面向发布包，
 		     对测试类只会产生大量 CS1591（且各测试工程此前的取值互不一致：部分显式 true、
-		     部分显式 false）。此处统一收敛，避免"靠逐个 csproj 设置"的漂移。 -->
+		     部分显式 false）。此处统一收敛，避免“靠逐个 csproj 设置”的漂移。 -->
 		<GenerateDocumentationFile>false</GenerateDocumentationFile>
 	</PropertyGroup>
 
 	<PropertyGroup>
-		<!-- 测试工程不是 AOT/裁剪交付物：默认关闭 AOT 与裁剪分析器。
+		<!-- 测试工程不是 AOT/裁剪交付物：默认关闭 AOT、裁剪与单文件分析器。
 		     Directory.Build.targets 已在 AotStrictMode 清单中显式排除 *.Tests / *.Benchmarks，
 		     理由同源——测试代码中的反射/动态代码用法属测试基建，分析器只会产生无法消除的
 		     IL1xxx/IL3xxx 噪声。
-		     注意：个别测试工程（Mud.HttpUtils.Client.Tests / Resilience.Tests）在自身 csproj 中
-		     显式设置 IsAotCompatible=true / EnableAotAnalyzer=true 作为"库 AOT 标注向消费方传播"
-		     的金丝雀，csproj 属性在本文件之后求值，会覆盖此处默认值，故该金丝雀行为保持不变。 -->
+		     特别说明：库侧的 AOT 契约**不因此放松**——它由两处独立守卫：
+		       (a) Directory.Build.targets 的 AotStrictMode 把库工程的 IL2026/IL3050 升级为 error；
+		       (b) 用例 AotAttributeAnnotationTests 以反射断言库成员的 RUC/RDC 标注确实存在。
+		     二者都不依赖「测试工程开启 AOT 分析器」。 -->
 		<IsAotCompatible>false</IsAotCompatible>
 		<EnableAotAnalyzer>false</EnableAotAnalyzer>
 		<EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+		<EnableSingleFileAnalyzer>false</EnableSingleFileAnalyzer>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<!-- 测试代码的告警收敛（仅测试工程，库/工具工程不受影响）。
+		     以下类别在测试中是**刻意的构造**，逐点改写只会增加噪声成本：
+		       · CS0618 —— 用例需要覆盖已过时 API 的兼容路径（如 DefaultSensitiveDataMasker、
+		         EnhancedHttpClient.EncryptContent(object,...)）；
+		       · CS8618 / CS8625 / CS8620 / CS8619 / CS8601 / CS8604 / CS8602
+		         —— 用例刻意传 null、构造半初始化 DTO、做宽松强转，用于断言边界与异常路径；
+		       · xUnit1031 —— 既有用例大量以 .Result/.Wait() 断言**同步**语义（死锁风险是分析器的
+		         理论关切，但这些用例本身即验证阻塞路径）。改为 async 属独立的测试重构，不属本次
+		         告警收敛范围，此处显式登记为待办。
+		     注意 xUnit1030（测试内不应 ConfigureAwait(false)）**未被抑制**，已在源码中逐点移除。 -->
+		<NoWarn>$(NoWarn);CS0618;CS8618;CS8625;CS8620;CS8619;CS8601;CS8604;CS8602;xUnit1031</NoWarn>
 	</PropertyGroup>
 
 </Project>

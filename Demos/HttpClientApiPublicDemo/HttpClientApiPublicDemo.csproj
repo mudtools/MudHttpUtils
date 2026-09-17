@@ -3,6 +3,9 @@
 	<PropertyGroup>
 		<TargetFrameworks>netstandard2.0;net8.0;net9.0;net10.0</TargetFrameworks>
 		<ImplicitUsings>enable</ImplicitUsings>
+		<!-- 保持 enable：生成器按 build_property.Nullable=="enable" 决定是否为生成代码发射
+		     `#nullable enable`；本工程经 PackageReference 消费，该属性已注册为
+		     CompilerVisibleProperty，改成 annotations 会让生成代码失去该指令并引发 CS8669。 -->
 		<Nullable>enable</Nullable>
 		<GenerateDocumentationFile>false</GenerateDocumentationFile>
 		<!-- 本工程刻意消费"已发布"的 NuGet 包（见下方 PackageReference），用于验证消费方体验。
@@ -10,6 +13,15 @@
 		     XmlSerializer 静态字段），本仓库无法修复已发布包，故退出 AOT 严格模式
 		     （严格模式用于锁死本仓库源码的 AOT 契约）。 -->
 		<MudExcludeFromAotStrictMode>true</MudExcludeFromAotStrictMode>
+		<!-- 同理：显式声明非 AOT 运行期模式，抑制 AOT007 降级提示。 -->
+		<MudAotRuntimeMode>jit</MudAotRuntimeMode>
+		<!-- 抑制项分三类，均由「已发布包」或「刻意覆盖的边界夹具」产生，本仓库无法/不应修复：
+		     1) 已发布 2.0.5 生成器的产出：CS8603/CS8625（生成代码可空性）、
+		        CS0108（派生类重复声明 _appAuthorizer 等）、
+		        CS0618（调用已过时的 HttpRequestMessage.Properties 兼容路径）；
+		     2) 共享 DTO 夹具的可空性（CS8618/CS8604）—— 属性由 JSON 反序列化落点决定；
+		     3) 共享夹具刻意覆盖的边界场景（MUD005 / HTTPCLIENT011 / 018 / 022 / 028）。 -->
+		<NoWarn>$(NoWarn);CS8603;CS8625;CS8618;CS8604;CS0108;CS0618;MUD005;HTTPCLIENT011;HTTPCLIENT018;HTTPCLIENT022;HTTPCLIENT028</NoWarn>
 	</PropertyGroup>
 	<ItemGroup>
 		<PackageReference Include="Mud.HttpUtils" Version="2.0.5" />

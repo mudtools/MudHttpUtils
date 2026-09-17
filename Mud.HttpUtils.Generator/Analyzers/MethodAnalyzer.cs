@@ -802,15 +802,15 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
 
             if (queryAttr != null)
             {
-                properties.Add(CreatePropertyInfo(property, queryAttr, "Query", propertyDecl, model));
+                properties.Add(CreatePropertyInfo(property, queryAttr, "Query", propertyDecl, model, isDeclaredOnCurrentInterface: true));
             }
             else if (pathAttr != null)
             {
-                properties.Add(CreatePropertyInfo(property, pathAttr, "Path", propertyDecl, model));
+                properties.Add(CreatePropertyInfo(property, pathAttr, "Path", propertyDecl, model, isDeclaredOnCurrentInterface: true));
             }
             else if (headerAttr != null)
             {
-                properties.Add(CreatePropertyInfo(property, headerAttr, "Header", propertyDecl, model));
+                properties.Add(CreatePropertyInfo(property, headerAttr, "Header", propertyDecl, model, isDeclaredOnCurrentInterface: true));
             }
         }
 
@@ -855,21 +855,21 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
 
                 if (queryAttr != null)
                 {
-                    properties.Add(CreatePropertyInfo(property, queryAttr, "Query", propertyDecl, model));
+                    properties.Add(CreatePropertyInfo(property, queryAttr, "Query", propertyDecl, model, isDeclaredOnCurrentInterface: false));
                 }
                 else if (pathAttr != null)
                 {
-                    properties.Add(CreatePropertyInfo(property, pathAttr, "Path", propertyDecl, model));
+                    properties.Add(CreatePropertyInfo(property, pathAttr, "Path", propertyDecl, model, isDeclaredOnCurrentInterface: false));
                 }
                 else if (headerAttr != null)
                 {
-                    properties.Add(CreatePropertyInfo(property, headerAttr, "Header", propertyDecl, model));
+                    properties.Add(CreatePropertyInfo(property, headerAttr, "Header", propertyDecl, model, isDeclaredOnCurrentInterface: false));
                 }
             }
         }
     }
 
-    private static InterfacePropertyInfo CreatePropertyInfo(IPropertySymbol property, AttributeData attribute, string attributeType, PropertyDeclarationSyntax? propertyDecl, SemanticModel model)
+    private static InterfacePropertyInfo CreatePropertyInfo(IPropertySymbol property, AttributeData attribute, string attributeType, PropertyDeclarationSyntax? propertyDecl, SemanticModel model, bool isDeclaredOnCurrentInterface = true)
     {
         var propertyInfo = new InterfacePropertyInfo
         {
@@ -877,7 +877,9 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
             Type = TypeSymbolHelper.GetTypeFullName(property.Type),
             AttributeType = attributeType,
             // GEN-05 修复：捕获接口属性是否为只读，用于决定生成的实现属性是否包含 setter。
-            IsReadOnly = property.IsReadOnly
+            IsReadOnly = property.IsReadOnly,
+            // [继承模式 CS0108 修复] 由调用方区分「本接口自身声明」与「继承自基接口」，见属性注释。
+            IsDeclaredOnCurrentInterface = isDeclaredOnCurrentInterface
         };
 
         if (attribute.ConstructorArguments.Length > 0)

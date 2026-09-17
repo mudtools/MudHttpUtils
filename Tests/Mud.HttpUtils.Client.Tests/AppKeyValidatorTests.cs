@@ -75,6 +75,9 @@ public class AppKeyValidatorTests
         var act = () => AppKeyValidator.Validate(appKey, nameof(appKey));
         act.Should().Throw<ArgumentException>()
             .WithParameterName(nameof(appKey));
+
+        // 数据驱动的前提断言：确保用例确实覆盖了目标非法字符（此前该参数未参与断言）。
+        appKey.Should().Contain(illegalChar.ToString(), "用例数据本身应包含待验证的非法字符");
     }
 
     [Fact]

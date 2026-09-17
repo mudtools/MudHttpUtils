@@ -50,7 +50,7 @@ public class TokenManagerDisposeChainTests
             {
                 try
                 {
-                    await manager.GetOrRefreshTokenAsync("race-user").ConfigureAwait(false);
+                    await manager.GetOrRefreshTokenAsync("race-user");
                 }
                 catch (ObjectDisposedException)
                 {
@@ -61,7 +61,7 @@ public class TokenManagerDisposeChainTests
             {
                 manager.Dispose();
             }
-        }).ConfigureAwait(false);
+        });
 
         manager.Dispose();
         manager.TimersActiveForTest.Should().BeFalse();
@@ -69,7 +69,7 @@ public class TokenManagerDisposeChainTests
 
     private sealed class DisposeProbeUserTokenManager : UserTokenManagerBase
     {
-        public bool TimersActiveForTest => base.TimersActiveForTest;
+        public new bool TimersActiveForTest => base.TimersActiveForTest;
         public override Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
             => GetOrRefreshTokenAsync(cancellationToken);
 
