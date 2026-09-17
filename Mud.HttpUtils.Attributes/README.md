@@ -16,7 +16,7 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 
 | 特性                     | 用途                 | 目标      | 关键属性                                                                                                                 |
 | ------------------------ | -------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `HttpClientApiAttribute` | 标注 HTTP API 接口   | Interface | `BaseAddress`, `ContentType`, `Timeout`, `TokenManage`, `HttpClient`, `RegistryGroupName`, `IsAbstract`, `InheritedFrom` |
+| `HttpClientApiAttribute` | 标注 HTTP API 接口   | Interface | `ContentType`, `Timeout`, `TokenManage`, `HttpClient`, `RegistryGroupName`, `IsAbstract`, `InheritedFrom` |
 | `BasePathAttribute`      | 标注接口基础路径前缀 | Interface | `Path`                                                                                                                   |
 
 ### HTTP 方法特性
@@ -49,7 +49,7 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 | `QueryMapAttribute`       | 查询参数映射（对象/字典展开） | Parameter / Property           | `PropertySeparator`, `SerializationMethod`, `UrlEncode`, `IncludeNullValues`                                   |
 | `RawQueryStringAttribute` | 原始查询字符串                | Parameter                      | `PrependQuestionMark`                                                                                          |
 | `ArrayQueryAttribute`     | 数组查询参数                  | Parameter                      | `Separator`                                                                                                    |
-| `HeaderAttribute`         | 请求头参数                    | Parameter / Method / Interface | `Name`, `Value`, `AliasAs`, `Replace`                                                                          |
+| `HeaderAttribute`         | 请求头参数                    | Parameter / Method / Interface / Property | `Name`, `Value`, `AliasAs`, `Replace`, `FormatString`                                                          |
 | `BodyAttribute`           | 请求体参数                    | Parameter                      | `ContentType`, `EnableEncrypt`, `EncryptSerializeType`, `EncryptPropertyName`, `RawString`, `UseStringContent` |
 | `TokenAttribute`          | 令牌参数                      | Parameter / Interface / Method | `TokenType`, `InjectionMode`, `Name`, `Scopes`, `Replace`, `TokenManagerKey`, `RequiresUserId`                 |
 | `FilePathAttribute`       | 文件路径参数（上传/下载）     | Parameter / Property          | `BufferSize`、`Overwrite`                                                                                      |
@@ -62,7 +62,7 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 
 | 特性             | 用途         | 目标   | 关键属性                                                                                |
 | ---------------- | ------------ | ------ | --------------------------------------------------------------------------------------- |
-| `CacheAttribute` | 响应缓存标注 | Method | `DurationSeconds`, `CacheKeyTemplate`, `VaryByUser`, `UseSlidingExpiration`, `Priority` |
+| `CacheAttribute` | 响应缓存标注 | Method | `DurationSeconds`, `CacheKeyTemplate`, `VaryByUser`, `UseSlidingExpiration`（`Priority` 已随 CFG-27 移除，见下文） |
 
 ### 弹性策略特性
 
@@ -76,13 +76,13 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 
 | 特性                     | 用途             | 目标                 | 关键属性                                   |
 | ------------------------ | ---------------- | -------------------- | ------------------------------------------ |
-| `SensitiveDataAttribute` | 标记敏感数据属性 | Property / Parameter | `MaskMode`, `PrefixLength`, `SuffixLength` |
+| `SensitiveDataAttribute` | 标记敏感数据属性 | Property（**仅属性**，CFG-11 收窄） | `MaskMode`, `PrefixLength`, `SuffixLength` |
 
 ### 控制特性
 
 | 特性                           | 用途                   | 目标                                  |
 | ------------------------------ | ---------------------- | ------------------------------------- |
-| `IgnoreGeneratorAttribute`     | 忽略代码生成           | Interface / Method / Property / Field |
+| `IgnoreGeneratorAttribute`     | 忽略代码生成（接口级=完全不介入；方法级=仅跳过该方法） | Interface / Method（E-2 收窄） |
 | `AllowAnyStatusCodeAttribute`  | 允许任意 HTTP 状态码   | Interface / Method                    |
 | `HeaderMergeAttribute`         | 头部合并模式控制       | Interface / Method                    |
 | `SerializationMethodAttribute` | 请求体序列化方法控制   | Interface / Method                    |
@@ -96,7 +96,7 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 | `HeaderMergeMode`        | 头部合并模式（`Append` / `Replace` / `Ignore`），配合 `HeaderMergeAttribute` |
 | `SerializationMethod`    | 请求体序列化方法（`Json` / `Xml` / `FormUrlEncoded`），配合 `SerializationMethodAttribute` |
 | `QuerySerializationMethod` | QueryMap 序列化方法（`ToString` / `Json`），配合 `QueryMapAttribute` |
-| `CachePriority`          | ⚠️ 已过时：缓存优先级（`Low` / `Normal` / `High` / `NeverRemove`）   |
+| ~~`CachePriority`~~      | ❌ 已移除（CFG-27）：缓存优先级枚举，运行时无消费点                   |
 
 > `TokenInjectionMode`（`Header` / `Query` / `Path` / `ApiKey` / `HmacSignature` / `BasicAuth` / `Cookie`）与 `SensitiveDataMaskMode`（`Hide` / `Mask` / `TypeOnly`）见对应章节。
 
@@ -166,7 +166,8 @@ public interface IHttpClientApi { }
 ```
 
 > **注意**：`HttpClient` 与 `TokenManage` 互斥，同时定义时 `HttpClient` 优先。
-> `BaseAddress` 构造函数和属性已废弃，请通过 `AddMudHttpClient(clientName, baseAddress)` 配置基地址。
+> **CFG-27**：`BaseAddress` 构造函数与属性**已移除**（此前为 `[Obsolete(error: true)]`）。
+> 使用将产生编译错误 `CS0117`；请通过 `AddMudHttpClient(clientName, baseAddress)` 或 `AddMudHttpGeneratedClient<T>(clientName)` 配置基地址。
 
 ### 全部属性
 
@@ -179,7 +180,6 @@ public interface IHttpClientApi { }
 | `RegistryGroupName` | `string?` | `null`               | 注册组名称，影响生成的注册方法名                               |
 | `IsAbstract`        | `bool`    | `false`              | 是否生成抽象类                                                 |
 | `InheritedFrom`     | `string?` | `null`               | 继承的基类名称                                                 |
-| `BaseAddress`       | `string?` | `null`               | ⚠️ 已过时：构造函数与属性均已废弃，请通过 `AddMudHttpClient(clientName, baseAddress)` 配置基地址 |
 
 ## BodyAttribute 详解
 
@@ -308,10 +308,12 @@ Task<PublicData> GetPublicDataAsync();
 | `DurationSeconds`      | `int`           | `300`    | 缓存持续时间（秒）                                      |
 | `CacheKeyTemplate`     | `string?`       | `null`   | 缓存键模板                                              |
 | `VaryByUser`           | `bool`          | `false`  | 是否按用户区分缓存                                      |
-| `UseSlidingExpiration` | `bool`          | `false`  | ⚠️ 已过时：当前未被生成器处理，将在未来版本中移除或实现 |
-| `Priority`             | `CachePriority` | `Normal` | ⚠️ 已过时：当前未被生成器处理，将在未来版本中移除或实现 |
+| `UseSlidingExpiration` | `bool`          | `false`  | ✅ 已支持：下沉为 `CacheOptions.UseSlidingExpiration`，生成代码生效 |
 
-> `CachePriority` 枚举（`Low` / `Normal` / `High` / `NeverRemove`）同样已标记为 `[Obsolete]`，请勿在新代码中使用 `UseSlidingExpiration` 与 `Priority`。
+> **CFG-D04 修正**：`UseSlidingExpiration` **受生成器支持**，请勿标记为未生效。
+>
+> **CFG-27**：`Priority` 属性（及 `CachePriority` 枚举）**已移除** —— 生成器从未处理该属性，运行时无消费点；
+> 随之移除诊断 `HTTPCLIENT019`（`[Cache]` 当前已无被忽略的属性）。
 
 ```csharp
 [Get("/users/{id}")]
@@ -319,7 +321,7 @@ Task<PublicData> GetPublicDataAsync();
 Task<User> GetUserAsync([Path] int id);
 
 [Get("/config")]
-[Cache(300, CacheKeyTemplate = "config:{0}", UseSlidingExpiration = true, Priority = CachePriority.High)]
+[Cache(300, CacheKeyTemplate = "config:{0}", UseSlidingExpiration = true)]
 Task<Config> GetConfigAsync();
 ```
 
@@ -439,6 +441,12 @@ Task DownloadWithProgressAsync(int id, [FilePath] string savePath, IProgress<lon
 | `MaskMode`     | `SensitiveDataMaskMode` | `Mask` | 脱敏模式                    |
 | `PrefixLength` | `int`                   | `2`    | 前缀保留长度（`Mask` 模式） |
 | `SuffixLength` | `int`                   | `2`    | 后缀保留长度（`Mask` 模式） |
+
+> **作用目标（CFG-11）**：`[SensitiveData]` **仅对对象属性生效** —— `DefaultSensitiveDataMasker` 通过反射遍历 `Type.GetProperties()` 读取该特性；
+> `AotSafeSensitiveDataMasker` 则由编译期注册驱动，完全忽略该特性。
+> `AttributeUsage` 已收窄为仅 `Property`：标注在**方法参数**上会产生编译错误 `CS0592`
+> （此前允许标注但不会产生任何掩码效果，属静默失效）。
+> 如需对请求体/参数脱敏，请在请求 DTO 的属性上标注，或实现自定义 `ISensitiveDataMasker`。
 
 脱敏模式说明：
 
@@ -564,7 +572,7 @@ Task<SearchResult> SearchAsync([RawQueryString] string queryString);
 
 ## 接口级动态属性
 
-`PathAttribute` 和 `QueryAttribute` 现在支持应用到接口属性（`AttributeTargets.Property`），用于定义全局参数：
+`PathAttribute`、`QueryAttribute` 和 `HeaderAttribute` 现在支持应用到接口属性（`AttributeTargets.Property`），用于定义全局参数（接口级 Header 属性支持 `Replace`、`FormatString`、`AliasAs` 参数）：
 
 ```csharp
 [HttpClientApi(HttpClient = "IEnhancedHttpClient")]
@@ -598,6 +606,25 @@ await api.GetUsersAsync();
 ```
 
 > **优先级**：方法参数优先级高于接口属性。如果方法参数与接口属性同名，方法参数值会覆盖接口属性值。
+>
+> **接口级 Header 属性**：`[Header]` 可标记在接口属性上，作为所有方法的动态请求头。支持 `Replace`（替换同名请求头）与 `FormatString`（格式化值，如 GUID 的 `"N"`）；当 `HeaderMergeMode` 为 `Ignore` 时该属性 Header 被跳过，`Replace` 时先移除同名头再添加；若 Header 名为 `Authorization` 且存在 TokenManager，则该属性 Header 由 Token 注入机制处理而被跳过。属性级 Header 在方法参数 Header 之后、接口级静态 Header 之前生成（动态优先于静态）。
+
+```csharp
+[HttpClientApi(HttpClient = "IEnhancedHttpClient")]
+[BasePath("{tenantId}/api/v1")]
+public interface ITenantApi
+{
+    [Path("tenantId")] string TenantId { get; set; }
+    [Query("apiKey")] string ApiKey { get; set; }
+
+    // 接口级 Header 动态属性
+    [Header("X-App-Version")] string AppVersion { get; set; }
+    [Header("X-Trace-Id", FormatString = "N")] Guid TraceId { get; set; }
+
+    [Get("users")]
+    Task<List<User>> GetUsersAsync();
+}
+```
 
 ## RetryAttribute 详解
 
@@ -756,6 +783,66 @@ public class UserCreatedEvent
     public string UserName { get; set; }
 }
 ```
+
+## HttpJsonSerializableAttribute 详解（Native AOT 支持）
+
+标注在需纳入 JSON 源生成的实体/DTO 上（支持 `class` / `struct` / `record`），用于 Native AOT 场景。Scaffolder 会按此特性聚合生成 `JsonSerializerContext` 源文件，使 STJ 源生成在 AOT 下获得类型元数据。
+
+| 属性 | 类型 | 默认值 | 说明 |
+| ---- | ---- | ------ | ---- |
+| `SerializerClassName` | `string?` | `null`（自动派生） | 生成的 Context 类名（不含 `JsonContext` 后缀）；同名实体合并进同一 Context |
+| `NamingPolicy` | `JsonNamingPolicyHint` | `Default`（自动推导） | JSON 命名策略：`Default`（按 `[JsonPropertyName]` 模式自动推导）/ `CamelCase` / `SnakeCaseLower` / `SnakeCaseUpper` / `KebabCaseLower` / `KebabCaseUpper` |
+
+```csharp
+[HttpJsonSerializable(SerializerClassName = "FeishuAI", NamingPolicy = JsonNamingPolicyHint.SnakeCaseLower)]
+public class ContractFileUploadRequest { ... }
+```
+
+> **工作流**：标注实体 → 运行 `Mud.HttpUtils.JsonContextScaffolder` 脚手架（`dotnet mud-jsonctx --project <你的.csproj>`）自动生成 `XxxJsonContext.g.cs` → 在 .NET 8+ 启动注册 `services.AddMudHttpClientJsonContext(FeishuAIJsonContext.Default)`。`HttpContentSerializerFactory.BuildOptions` 会自动合并消费方 resolver 与库内置 `MudHttpJsonContext.Default`。
+>
+> **编译期保障**：若类型标注了 `[HttpJsonSerializable]` 却未被任何 `JsonSerializerContext` 覆盖，源生成器会发出 `AOT006` 编译诊断（可由 `Mud.HttpUtils.CodeFixes` 的 `AotJsonContextCodeFixProvider` 一键修复）；`[HttpClientApi]` 接口的闭合泛型返回/Body 类型未被覆盖则发出 `AOT004`/`AOT005`。CI 严格模式（`-p:AotStrictMode=true`）下这些诊断升级为 Error。
+
+详见 [`Mud.HttpUtils.JsonContextScaffolder` 工具文档](../Tools/Mud.HttpUtils.JsonContextScaffolder/README.md) 与 [`Mud.HttpUtils.Generator` 文档](../Mud.HttpUtils.Generator/README.md#aot-json-序列化诊断aot) 的 AOT 诊断章节。
+
+### 多态序列化与 `[JsonDerivedType]`（P0-2）
+
+当 `[HttpClientApi]` 接口方法的响应类型声明为基类，且基类标注了 `[JsonDerivedType]` 参与多态序列化时，**所有声明的派生类型也必须被 `JsonSerializerContext` 覆盖**。否则 AOT 下反序列化派生实例会抛 `NotSupportedException`。
+
+```csharp
+// 正确：Dog 已被 Context 覆盖
+[JsonDerivedType(typeof(Dog))]
+public class Animal { public string Name { get; set; } }
+public class Dog : Animal { public string Breed { get; set; } }
+
+// AOT004 会报：Dog 未被 Context 覆盖
+```
+
+> 未标注 `[JsonDerivedType]` 的非 sealed 类不会被 STJ 按多态处理，无需额外检查。
+
+### AOT 安全脱敏（P0-3）
+
+`AotSafeSensitiveDataMasker` 要求显式 `Register<T>()` 注册脱敏规则。当类型未注册、但其某个基类已注册时，**不会套用基类规则**（基类规则看不到派生类新增的敏感字段，套用会导致明文输出），两种取值都只输出类型占位串：
+
+| `enableBaseTypeFallback` | 回退输出 | 适用场景 |
+| --- | --- | --- |
+| `false`（默认） | `[TypeName]` | 不需要区分"基类已注册"这一线索 |
+| `true` | `[TypeName, BaseType=BaseTypeName]` | 便于定位"注册了基类、忘了派生类"的遗漏 |
+
+两者都会发出一次性告警（注入了 `ILogger` 走日志，否则回退 `Console.Error`），且都不输出任何字段值。请为每个需要脱敏的派生类型显式调用 `Register<T>()`。
+
+### 内置 `MudHttpJsonContext` 的 `Dictionary<string, object>` 处置（P1-6）
+
+库内置兜底 Context `MudHttpJsonContext` **不再**注册 `Dictionary<string, object>`：源生成的 `typeof(object)` 元数据在 Native AOT 下对非基元运行时值会抛 `NotSupportedException`，属"看起来能编译、上线才崩"的潜伏雷。库内无该注册的调用方；`Dictionary<string, string>` 注册保留。
+
+消费方若确需以 `object` 为值的字典参与 JSON 序列化，请在**自己的** `JsonSerializerContext` 上挂 `ObjectToInferredTypesConverter`：
+
+```csharp
+[JsonSourceGenerationOptions(Converters = [typeof(ObjectToInferredTypesConverter)])]
+[JsonSerializable(typeof(Dictionary<string, object>))]
+internal partial class AppJsonContext : JsonSerializerContext;
+```
+
+> 非泛型 `IEncryptableHttpClient.EncryptContent(object, ...)` 内部会构造 `Dictionary<string, object>`，该重载已标注 `[Obsolete]` + `[RequiresUnreferencedCode]`/`[RequiresDynamicCode]`，AOT 场景请改用泛型重载 `EncryptContent<T>`。
 
 ## QueryAttribute 详解
 

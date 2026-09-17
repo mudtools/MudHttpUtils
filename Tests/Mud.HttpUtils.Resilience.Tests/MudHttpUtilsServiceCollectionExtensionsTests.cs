@@ -237,7 +237,6 @@ public class MudHttpUtilsServiceCollectionExtensionsTests
             opts =>
             {
                 opts.Key = Convert.FromBase64String("MTIzNDU2Nzg5MDEyMzQ1Ng==");
-                opts.IV = Convert.FromBase64String("MTIzNDU2Nzg5MDEyMzQ1Ng==");
             },
             client => client.BaseAddress = new Uri("https://api.example.com"));
 
@@ -256,7 +255,6 @@ public class MudHttpUtilsServiceCollectionExtensionsTests
             opts =>
             {
                 opts.Key = Convert.FromBase64String("MTIzNDU2Nzg5MDEyMzQ1Ng==");
-                opts.IV = Convert.FromBase64String("MTIzNDU2Nzg5MDEyMzQ1Ng==");
             },
             client => client.BaseAddress = new Uri("https://api.example.com"),
             configureResilienceOptions: resilience =>

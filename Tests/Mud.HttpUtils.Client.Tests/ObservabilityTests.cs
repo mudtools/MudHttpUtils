@@ -413,10 +413,38 @@ public class ObservabilityTests
         activity.Should().NotBeNull();
         activity!.Kind.Should().Be(ActivityKind.Client);
         activity.GetTagItem(MudHttpActivitySource.Tags.HttpMethod).Should().Be("POST");
-        activity.GetTagItem(MudHttpActivitySource.Tags.HttpUrl).Should().Be("https://api.example.com/path?query=1");
+        // CFG-05：默认（RecordFullUrlOnSuccess=false）仅记录 scheme://host/path，不含 query。
+        activity.GetTagItem(MudHttpActivitySource.Tags.HttpUrl).Should().Be("https://api.example.com/path");
         activity.GetTagItem(MudHttpActivitySource.Tags.HttpScheme).Should().Be("https");
         activity.GetTagItem(MudHttpActivitySource.Tags.HttpHost).Should().Be("api.example.com");
         activity.GetTagItem(MudHttpActivitySource.Tags.MudClientName).Should().Be("client_a");
+    }
+
+    [Fact]
+    public void Observability_StartRequestActivity_RecordFullUrl_IncludesQuery()
+    {
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == MudHttpActivitySource.Name,
+            SampleUsingParentId = (ref ActivityCreationOptions<string> _) => ActivitySamplingResult.AllData,
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var original = MudHttpObservabilityOptions.RecordFullUrlOnSuccess;
+        try
+        {
+            MudHttpObservabilityOptions.RecordFullUrlOnSuccess = true;
+            var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/path?query=1");
+            using var activity = MudHttpObservability.StartRequestActivity(request, "client_a");
+
+            activity.Should().NotBeNull();
+            activity!.GetTagItem(MudHttpActivitySource.Tags.HttpUrl).Should().Be("https://api.example.com/path?query=1");
+        }
+        finally
+        {
+            MudHttpObservabilityOptions.RecordFullUrlOnSuccess = original;
+        }
     }
 
     [Fact]
@@ -1072,7 +1100,7 @@ public class ObservabilityTests
             MudHttpDiagnosticNames.RetryOccurred,
             () => new { policy_key = "policy", retry_count = 1, delay_ms = 100.0 },
             MudHttpDiagnosticNames.RetryOccurred,
-            new[]
+            () => new[]
             {
                 new KeyValuePair<string, object?>("retry_count", 1),
                 new KeyValuePair<string, object?>("delay_ms", 100.0),
@@ -1102,7 +1130,7 @@ public class ObservabilityTests
             MudHttpDiagnosticNames.RetryOccurred,
             () => null,
             MudHttpDiagnosticNames.RetryOccurred,
-            new[] { new KeyValuePair<string, object?>("retry_count", 1) });
+            () => new[] { new KeyValuePair<string, object?>("retry_count", 1) });
 
         // 非 Mud Activity 不应被添加事件
         activity!.Events.Should().BeEmpty();
@@ -1116,7 +1144,7 @@ public class ObservabilityTests
             MudHttpDiagnosticNames.RetryOccurred,
             () => new { policy_key = "policy", retry_count = 1, delay_ms = 50.0 },
             MudHttpDiagnosticNames.RetryOccurred,
-            new[] { new KeyValuePair<string, object?>("retry_count", 1) });
+            () => new[] { new KeyValuePair<string, object?>("retry_count", 1) });
     }
 
     [Fact]
@@ -1208,6 +1236,76 @@ public class ObservabilityTests
         events.Should().Contain(e => e.Name == MudHttpDiagnosticNames.CacheHit);
     }
 
+    // ============ G29：缓存键遥测脱敏（缓存查找键保持原样） ============
+
+    [Fact]
+    public void CacheHit_Telemetry_Masks_Sensitive_CacheKey_Without_Affecting_Lookup()
+    {
+        using var listener = CreateMudActivityListener();
+        ActivitySource.AddActivityListener(listener);
+
+        // Client.Tests 类间并行执行，静态开关可能被并行类翻转：显式置为所需值并恢复（§6.2 惯例）
+        var eventsOriginal = MudHttpObservabilityOptions.EmitDiagnosticEvents;
+        MudHttpObservabilityOptions.EmitDiagnosticEvents = true;
+        try
+        {
+            var logger = new CapturingLogger<CacheResponseInterceptor>();
+            var cache = new MemoryHttpResponseCache();
+            var interceptor = new CacheResponseInterceptor(cache, logger);
+            const string sensitiveKey = "GET https://api.example.com/users?access_token=supersecret123";
+            cache.Set(sensitiveKey, "payload", TimeSpan.FromSeconds(60));
+
+            using var activity = MudHttpActivitySource.Instance.StartActivity("g29", ActivityKind.Client);
+
+            // 同一原始 key 两次 TryGet 行为一致：掩码不得影响缓存命中语义
+            interceptor.TryGet<string>(sensitiveKey, out var first).Should().BeTrue();
+            first.Should().Be("payload");
+            interceptor.TryGet<string>(sensitiveKey, out var second).Should().BeTrue();
+            second.Should().Be("payload");
+
+            // 日志输出脱敏
+            logger.Messages.Should().NotBeEmpty();
+            logger.Messages.Should().Contain(m => m.Contains("***"));
+            logger.Messages.Should().NotContain(m => m.Contains("supersecret123"));
+
+            // CacheHit 事件 payload 与 tags 脱敏（两次命中各一个事件）
+            var hitEvents = activity!.Events.Where(e => e.Name == MudHttpDiagnosticNames.CacheHit).ToList();
+            hitEvents.Should().HaveCount(2);
+            foreach (var evt in hitEvents)
+            {
+                var tagValue = evt.Tags.FirstOrDefault(t => t.Key == "cache_key").Value as string;
+                tagValue.Should().NotBeNull();
+                tagValue.Should().Contain("***");
+                tagValue.Should().NotContain("supersecret123");
+            }
+        }
+        finally
+        {
+            MudHttpObservabilityOptions.EmitDiagnosticEvents = eventsOriginal;
+        }
+    }
+
+    [Fact]
+    public void CacheSet_And_Remove_Logs_Masked_CacheKey()
+    {
+        var logger = new CapturingLogger<CacheResponseInterceptor>();
+        var cache = new MemoryHttpResponseCache();
+        var interceptor = new CacheResponseInterceptor(cache, logger);
+        const string sensitiveKey = "GET https://api.example.com/orders?api_key=secretkey999";
+
+        interceptor.Set(sensitiveKey, "v", TimeSpan.FromSeconds(60));
+
+        // 缓存存储使用原始键：Set 后可命中（掩码只影响遥测输出）
+        interceptor.TryGet<string>(sensitiveKey, out var value).Should().BeTrue();
+        value.Should().Be("v");
+
+        interceptor.Remove(sensitiveKey);
+        interceptor.TryGet<string>(sensitiveKey, out _).Should().BeFalse("Remove 应作用于原始键");
+
+        logger.Messages.Should().NotContain(m => m.Contains("secretkey999"));
+        logger.Messages.Should().Contain(m => m.Contains("***"));
+    }
+
     [Fact]
     public void CacheInterceptor_TryGetMiss_Sets_Activity_Tag_And_CacheMissEvent()
     {
@@ -1289,22 +1387,25 @@ public class ObservabilityTests
     // ============ v2 修复：TokenRefreshStatsCollector 动态保留期 ============
 
     [Fact]
-    public void TokenRefreshStatsCollector_SetRetention_Expands_Retention()
+    public void TokenRefreshStatsCollector_SetRetention_Expands_And_Shrinks_Retention()
     {
         // 注意：本测试与 HealthChecksTests 共享 ObservabilityTestCollection，串行执行
-        // 不能假定初始保留期为 5 分钟，仅验证扩大行为
+        // 不能假定初始保留期为 5 分钟，仅验证 SetRetention 行为
+        // NEW-OB-01 修复：SetRetention 允许扩大和缩小保留期，缩小时清理超出新窗口的事件
+
+        // 扩大保留期
         TokenRefreshStatsCollector.SetRetention(TimeSpan.FromMinutes(30));
-
         TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(30));
 
-        // 重新设回较小值不应生效（仅允许扩大）
+        // 缩小保留期（NEW-OB-01：允许缩小，并清理超出新窗口的事件）
         TokenRefreshStatsCollector.SetRetention(TimeSpan.FromMinutes(1));
-        TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(30));
+        TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(1));
 
-        // 负值不应生效
+        // 零值/负值不应生效
         TokenRefreshStatsCollector.SetRetention(TimeSpan.Zero);
-        TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(30));
+        TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(1));
 
+        // 再次扩大保留期
         TokenRefreshStatsCollector.SetRetention(TimeSpan.FromMinutes(60));
         TokenRefreshStatsCollector.CurrentRetention.Should().Be(TimeSpan.FromMinutes(60));
     }

@@ -331,7 +331,7 @@ services.AddSingleton<IHttpResponseCache, MemoryHttpResponseCache>();
 services.AddSingleton<IHttpResponseInterceptor, CacheResponseInterceptor>();
 ```
 
-> `CacheAttribute` 支持 `DurationSeconds`、`CacheKeyTemplate`、`VaryByUser`、`UseSlidingExpiration`、`Priority` 属性。`MemoryHttpResponseCache` 使用 `IMemoryCache` 作为底层存储，可替换为 Redis 等分布式缓存。
+> `CacheAttribute` 支持 `DurationSeconds`、`CacheKeyTemplate`、`VaryByUser`、`UseSlidingExpiration` 属性（`Priority` 已随 CFG-27 移除：生成器从未处理该属性，运行时无消费点）。`MemoryHttpResponseCache` 使用 `IMemoryCache` 作为底层存储，可替换为 Redis 等分布式缓存。
 
 ## 日志脱敏
 
@@ -419,7 +419,8 @@ var result = await uploadApi.UploadAsync(formData);
 public interface IExampleApi { }
 ```
 
-> `BaseAddress` 构造函数和属性已废弃，请通过 `AddMudHttpClient(clientName, baseAddress)` 配置基地址。
+> **CFG-27**：`BaseAddress` 构造函数与属性**已移除**（使用将产生编译错误 `CS0117`）。
+> 请通过 `AddMudHttpClient(clientName, baseAddress)` 或 `AddMudHttpGeneratedClient<T>(clientName)` 配置基地址。
 > 生成器会在注册代码中生成 `client.Timeout` 设置，使 Timeout 属性真正生效。
 
 ### HTTP 方法特性
@@ -906,8 +907,8 @@ services.AddMudHttpClient("myApi", "https://api.example.com");
 | `ITokenManager`                  | 通用令牌管理，提供 `GetTokenAsync`、`GetOrRefreshTokenAsync` 方法 |
 | `IUserTokenManager`              | 用户令牌管理，继承 `ITokenManager`，提供用户级令牌获取与刷新      |
 | `ICurrentUserId`                 | 当前用户标识，提供 `GetCurrentUserIdAsync` 方法                   |
-| `ITokenStore`                    | 令牌持久化存储契约，支持分布式缓存或数据库持久化                  |
-| `IUserTokenStore`                | 用户级令牌持久化存储契约，继承 `ITokenStore`，按用户标识隔离      |
+| `ITokenStore`                    | 令牌持久化存储契约（独立持久化，当前**不被** `ITokenManager` 管线消费；管理器使用 `ITokenCache<T>` 内存级缓存） |
+| `IUserTokenStore`                | 用户级令牌持久化存储契约，继承 `ITokenStore`，按用户标识隔离（同上，不被管理器直接消费）      |
 | `ITokenRefreshBackgroundService` | 令牌后台刷新服务契约                                              |
 | `TokenManagerBase`               | 令牌管理器抽象基类，提供并发安全的令牌刷新实现                    |
 | `UserTokenManagerBase`           | 用户令牌管理器抽象基类，提供并发安全的用户级令牌刷新实现          |
@@ -1087,7 +1088,7 @@ services.AddSingleton<IAppManager<FeishuContext>, DefaultAppManager<FeishuContex
 var appManager = serviceProvider.GetRequiredService<IAppManager<FeishuContext>>();
 appManager.ConfigurationChanged += (sender, args) =>
 {
-    Console.WriteLine($"应用 {args.AppId} 配置已变更");
+    Console.WriteLine($"应用 {args.AppKey} 配置已变更");
 };
 ```
 
@@ -1098,6 +1099,10 @@ appManager.ConfigurationChanged += (sender, args) =>
 var apiKeyProvider = appContext.GetService<IApiKeyProvider>();
 var hmacProvider = appContext.GetService<IHmacSignatureProvider>();
 ```
+
+> **上下文归还约束**：`UseApp(appKey)` / `SwitchTo(...)` 只写入 `AsyncLocal`，**不会自动归还**。在长生命周期宿主中，未归还的切换会让同一异步流上的后续请求继续看到上一个应用（可能读到其它租户的令牌）。请求处理路径请优先使用作用域式 `UseAppScope(appKey)`（`using` 自动归还）或生成客户端的 `BeginScope(appKey)`；后台任务 / `Task.Run` 内部请建立自己的作用域，不要依赖调用方残留的上下文。完整示例见 `Mud.HttpUtils.Client` README 的「上下文归还约束」章节。
+
+> **应用切换授权**：未注册 `IAppAccessAuthorizer` 时，`UseApp` / `BeginScope(appKey)` / `UseAppScope(appKey)` 会**直接抛 `InvalidOperationException`**（默认拒绝，MT-02 / BC-18）。单应用/受信场景请显式注册 `AllowAllAppAccessAuthorizer` 将"放行"写成代码中的意图。
 
 ## 核心接口
 
@@ -1118,8 +1123,8 @@ var hmacProvider = appContext.GetService<IHmacSignatureProvider>();
 | `IHttpResponseCache`             | 响应缓存契约（TryGet、Set、Remove）                                                                               |
 | `ITokenManager`                  | 通用令牌管理                                                                                                      |
 | `IUserTokenManager`              | 用户令牌管理                                                                                                      |
-| `ITokenStore`                    | 令牌持久化存储契约                                                                                                |
-| `IUserTokenStore`                | 用户级令牌持久化存储契约                                                                                          |
+| `ITokenStore`                    | 令牌持久化存储契约（独立持久化，当前不被 `ITokenManager` 管线消费）                                              |
+| `IUserTokenStore`                | 用户级令牌持久化存储契约（同上，不被管理器直接消费）                                                              |
 | `ITokenRefreshBackgroundService` | 令牌后台刷新服务契约                                                                                              |
 | `IMudAppContext`                 | 应用上下文（含 GetService<T>）                                                                                    |
 | `IAppManager<T>`                 | 多应用管理器（含 ConfigurationChanged 事件）                                                                      |

@@ -60,66 +60,72 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     /// </summary>
     private void GenerateFieldsForInheritedMode(StringBuilder codeBuilder)
     {
-            // 当基类没有 TokenManager 但派生类有时，需要生成自己的令牌相关字段
-            if (_context.HasTokenManager && !_context.Configuration.BaseHasTokenManager)
-            {
-                codeBuilder.AppendLine("        /// <summary>");
-                codeBuilder.AppendLine($"        /// 用于HttpClient客户端操作操作使用的的<see cref = \"{_context.Configuration.TokenManagerType}\"/> 令牌管理实例。");
-                codeBuilder.AppendLine("        /// </summary>");
-                codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly {_context.Configuration.TokenManagerType} _tokenManager;");
+        // 当基类没有 TokenManager 但派生类有时，需要生成自己的令牌相关字段
+        if (_context.HasTokenManager && !_context.Configuration.BaseHasTokenManager)
+        {
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine($"        /// 用于HttpClient客户端操作操作使用的的<see cref = \"{_context.Configuration.TokenManagerType}\"/> 令牌管理实例。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly {_context.Configuration.TokenManagerType} _tokenManager;");
 
-                codeBuilder.AppendLine("        /// <summary>");
-                codeBuilder.AppendLine("        /// 令牌提供器，用于获取访问令牌。");
-                codeBuilder.AppendLine("        /// </summary>");
-                codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly ITokenProvider _tokenProvider;");
-            }
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 令牌提供器，用于获取访问令牌。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly ITokenProvider _tokenProvider;");
+        }
 
-            if (_context.HasTokenManager && _context.Configuration.AnyMethodRequiresUserId)
-            {
-                codeBuilder.AppendLine("        /// <summary>");
-                codeBuilder.AppendLine("        /// 当前用户上下文，用于获取当前用户ID。");
-                codeBuilder.AppendLine("        /// </summary>");
-                codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly ICurrentUserContext _currentUserContext;");
-            }
+        if (_context.HasTokenManager && _context.Configuration.AnyMethodRequiresUserId)
+        {
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 当前用户上下文，用于获取当前用户ID。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly ICurrentUserContext _currentUserContext;");
+        }
 
-            // 当派生类有新的缓存/弹性策略方法但基类没有时，需要生成自己的字段
-            if (_context.HasCache && !_context.Configuration.BaseHasCache)
-            {
-                codeBuilder.AppendLine("        /// <summary>");
-                codeBuilder.AppendLine("        /// HTTP响应缓存提供器，用于缓存接口方法的响应结果。");
-                codeBuilder.AppendLine("        /// </summary>");
-                codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IHttpResponseCache _cacheProvider;");
-            }
+        // 当派生类有新的缓存/弹性策略方法但基类没有时，需要生成自己的字段
+        if (_context.HasCache && !_context.Configuration.BaseHasCache)
+        {
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// HTTP响应缓存提供器，用于缓存接口方法的响应结果。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IHttpResponseCache _cacheProvider;");
+        }
 
-            if (_context.HasResilience && !_context.Configuration.BaseHasResilience)
-            {
-                codeBuilder.AppendLine("        /// <summary>");
-                codeBuilder.AppendLine("        /// 弹性策略解析器，用于方法级重试、烕断、超时等弹性策略的运行时编排。");
-                codeBuilder.AppendLine("        /// </summary>");
-                codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IResiliencePolicyResolver _resilienceResolver;");
-            }
+        if (_context.HasResilience && !_context.Configuration.BaseHasResilience)
+        {
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 弹性策略解析器，用于方法级重试、烕断、超时等弹性策略的运行时编排。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IResiliencePolicyResolver _resilienceResolver;");
+        }
 
-            if (_context.ImplementsICurrentUserId && _context.Configuration.AnyMethodRequiresUserId)
-            {
-                codeBuilder.AppendLine();
-                codeBuilder.AppendLine("        /// <summary>");
-                codeBuilder.AppendLine("        /// 当前用户ID（ICurrentUserId 实现），委托给 ICurrentUserContext。");
-                codeBuilder.AppendLine("        /// </summary>");
-                codeBuilder.AppendLine("        public string? CurrentUserId");
-                codeBuilder.AppendLine("        {");
-                codeBuilder.AppendLine("            get => _currentUserContext.UserId;");
-                codeBuilder.AppendLine("        }");
-            }
-            else if (_context.Configuration.AnyMethodRequiresUserId)
-            {
-                codeBuilder.AppendLine();
-                codeBuilder.AppendLine("        /// <summary>");
-                codeBuilder.AppendLine("        /// 当前用户ID，委托给 ICurrentUserContext.UserId。");
-                codeBuilder.AppendLine("        /// </summary>");
-                codeBuilder.AppendLine("        public string? CurrentUserId => _currentUserContext.UserId;");
-            }
-
+        if (_context.ImplementsICurrentUserId && _context.Configuration.AnyMethodRequiresUserId)
+        {
             codeBuilder.AppendLine();
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 当前用户ID（ICurrentUserId 实现），委托给 ICurrentUserContext。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine("        public string? CurrentUserId");
+            codeBuilder.AppendLine("        {");
+            codeBuilder.AppendLine("            get => _currentUserContext.UserId;");
+            codeBuilder.AppendLine("        }");
+        }
+        else if (_context.Configuration.AnyMethodRequiresUserId)
+        {
+            codeBuilder.AppendLine();
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 当前用户ID，委托给 ICurrentUserContext.UserId。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine("        public string? CurrentUserId => _currentUserContext.UserId;");
+        }
+
+        // 继承模式下也需生成 _appAuthorizer 字段（UseApp/BeginScope 守卫引用此字段）
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// 应用切换授权器（可选）。非 null 时 UseApp/BeginScope 将先做授权判定。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IAppAccessAuthorizer? _appAuthorizer;");
+
+        codeBuilder.AppendLine();
     }
 
     /// <summary>
@@ -128,9 +134,9 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     private void GenerateFieldsForNonInheritedMode(StringBuilder codeBuilder)
     {
         codeBuilder.AppendLine("        /// <summary>");
-        codeBuilder.AppendLine("        /// 用于JSON内容序列化与反序列化操作的<see cref = \"JsonSerializerOptions\"/> 参数实例。");
+        codeBuilder.AppendLine("        /// HTTP 内容序列化器，统一处理 JSON 序列化/反序列化操作。");
         codeBuilder.AppendLine("        /// </summary>");
-        codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly JsonSerializerOptions _jsonSerializerOptions;");
+        codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IHttpContentSerializer _contentSerializer;");
 
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine("        /// 日志记录器，用于记录 HTTP 请求执行过程中的错误和调试信息。");
@@ -162,6 +168,12 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
                 codeBuilder.AppendLine("        /// </summary>");
                 codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly ICurrentUserContext _currentUserContext;");
             }
+
+            // TokenManager 模式下也生成 _appAuthorizer 字段（UseApp/BeginScope 守卫引用此字段）
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 应用切换授权器（可选）。非 null 时 UseApp/BeginScope 将先做授权判定。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IAppAccessAuthorizer? _appAuthorizer;");
         }
         else if (_context.HasHttpClient)
         {
@@ -186,6 +198,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("        /// 默认应用上下文，在 _appManager 为 null 时作为后备。");
             codeBuilder.AppendLine("        /// </summary>");
             codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IMudAppContext _defaultAppContext;");
+
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 应用切换授权器（可选）。非 null 时 UseApp/BeginScope 将先做授权判定。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IAppAccessAuthorizer? _appAuthorizer;");
         }
 
         // 所有非继承模式均生成 _executor 字段（DI 注入，无状态设计）
@@ -268,8 +285,27 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine();
             foreach (var xmlType in _context.XmlResponseTypes.OrderBy(t => t))
             {
-                var safeFieldName = GetXmlSerializerFieldName(xmlType);
-                codeBuilder.AppendLine($"        private static readonly System.Xml.Serialization.XmlSerializer {safeFieldName} = new System.Xml.Serialization.XmlSerializer(typeof({xmlType}));");
+                var safeFieldName = RequestBuilder.GetXmlSerializerFieldReference(xmlType);
+                if (_context.IsAotEnabled)
+                {
+                    // [AOT v4 Phase 18.3 / D19] AOT 上下文：XmlSerializer 构造函数在 .NET 7+ BCL 中标注
+                    // [RequiresDynamicCode]，Native AOT 无法静态分析，静态字段初始化会触发 IL3050。
+                    // 故不生成静态字段，改为“延迟抛出的只读属性”，使 {safeFieldName} 引用仍可被编译
+                    // （RequestBuilder.cs:347 的 .Serialize 调用、MethodGenerator.cs:411 的 XmlSerializer 赋值），
+                    // 运行时一旦真正走 XML 路径即抛 PlatformNotSupportedException。
+                    // 此为防御纵深：AOT007 分析器（Phase 18.2）已优先以 Error 阻断 XML 方法的构建。
+                    codeBuilder.AppendLine($"        private static System.Xml.Serialization.XmlSerializer {safeFieldName} => throw new System.PlatformNotSupportedException(\"XML 序列化在 Native AOT 下不被支持，请改用 [SerializationMethod(SerializationMethod.Json)]。\");");
+                }
+                else
+                {
+                    // 非 AOT：生成静态 XmlSerializer 缓存字段。
+                    // XmlSerializer 构造函数在 .NET 7+ BCL 中标注 RUC/RDC；此处为按设计的非 AOT 运行时路径
+                    // （XML 方法在 AOT 上下文由 AOT007 编译期阻断），用 #pragma 局部豁免 AOT 分析告警，
+                    // 避免这些"已知且预期"的告警污染消费方的生成代码构建（严格模式下会变为错误）。
+                    codeBuilder.AppendLine("#pragma warning disable IL2026, IL3050");
+                    codeBuilder.AppendLine($"        private static readonly System.Xml.Serialization.XmlSerializer {safeFieldName} = new System.Xml.Serialization.XmlSerializer(typeof({xmlType}));");
+                    codeBuilder.AppendLine("#pragma warning restore IL2026, IL3050");
+                }
             }
         }
 
@@ -314,7 +350,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine($"        /// 构建 <see cref = \"{className}\"/> 类的实例。");
         codeBuilder.AppendLine("        /// </summary>");
-        codeBuilder.AppendLine("        /// <param name=\"option\">Json序列化参数</param>");
+        codeBuilder.AppendLine("        /// <param name=\"contentSerializer\">HTTP 内容序列化器（可选,未注入时使用默认 SystemTextJsonContentSerializer）</param>");
         codeBuilder.AppendLine("        /// <param name=\"logger\">日志记录器（可选）</param>");
 
         if (_context.HasTokenManager)
@@ -327,6 +363,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
                 codeBuilder.AppendLine("        /// <param name=\"currentUserContext\">当前用户上下文</param>");
             }
             codeBuilder.AppendLine("        /// <param name=\"executor\">HTTP请求执行器，统一处理响应反序列化和错误处理（由 DI 注入，可替换为自定义实现）</param>");
+            codeBuilder.AppendLine("        /// <param name=\"appAuthorizer\">应用切换授权器（可选，非 null 时 UseApp/BeginScope 将先做授权判定）</param>");
         }
         else if (_context.HasHttpClient)
         {
@@ -373,33 +410,38 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     /// </summary>
     private void GenerateConstructorSignature(StringBuilder codeBuilder, string className)
     {
-        var parameters = new List<string>
-        {
-            "IOptions<JsonSerializerOptions> option"
-        };
+        // [F15 修复] C# 要求「可选参数必须出现在所有必需参数之后」（CS1737）。
+        // 原实现把可选的 appManager = null 放在必需 cacheProvider/resilienceResolver 之前，
+        // 当接口声明 [Cache]/[Retry] 等特性时产出不可编译的构造函数（快照固化了非法代码）。
+        // 修复：先收集必需参数，再收集可选参数，最后拼接。
+        var requiredParameters = new List<string>();
+        var optionalParameters = new List<string>();
 
         if (_context.HasTokenManager)
         {
-            parameters.Add($"{_context.Configuration.TokenManagerType} appManager");
-            parameters.Add("IAppContextHolder appContextHolder");
-            parameters.Add("ITokenProvider tokenProvider");
+            requiredParameters.Add($"{_context.Configuration.TokenManagerType} appManager");
+            requiredParameters.Add("IAppContextHolder appContextHolder");
+            requiredParameters.Add("ITokenProvider tokenProvider");
             if (_context.Configuration.AnyMethodRequiresUserId)
             {
-                parameters.Add("ICurrentUserContext currentUserContext");
+                requiredParameters.Add("ICurrentUserContext currentUserContext");
             }
-            parameters.Add("IHttpRequestExecutor executor");
+            requiredParameters.Add("IHttpRequestExecutor executor");
+            // TokenManager 模式下也需要 appAuthorizer 可选参数（UseApp/BeginScope 守卫引用此字段）
+            optionalParameters.Add("IAppAccessAuthorizer? appAuthorizer = null");
         }
         else if (_context.HasHttpClient)
         {
-            parameters.Add($"{_context.Configuration.HttpClient} httpClient");
-            parameters.Add("IHttpRequestExecutor executor");
+            requiredParameters.Add($"{_context.Configuration.HttpClient} httpClient");
+            requiredParameters.Add("IHttpRequestExecutor executor");
         }
         else
         {
-            parameters.Add("IMudAppContext appContext");
-            parameters.Add("IAppContextHolder appContextHolder");
-            parameters.Add("IHttpRequestExecutor executor");
-            parameters.Add("IAppManager<IMudAppContext>? appManager = null");
+            requiredParameters.Add("IMudAppContext appContext");
+            requiredParameters.Add("IAppContextHolder appContextHolder");
+            requiredParameters.Add("IHttpRequestExecutor executor");
+            optionalParameters.Add("IAppManager<IMudAppContext>? appManager = null");
+            optionalParameters.Add("IAppAccessAuthorizer? appAuthorizer = null");
         }
 
         // 构造函数需要接受 cacheProvider/resilienceResolver 如果派生类自己需要或基类需要
@@ -408,37 +450,57 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
 
         if (needsCacheParam)
         {
-            parameters.Add("IHttpResponseCache cacheProvider");
+            requiredParameters.Add("IHttpResponseCache cacheProvider");
         }
         else if (!_context.HasInheritedFrom)
         {
             // 所有非继承模式下始终接受可选的 cacheProvider，允许 DI 注入的全局缓存服务传递给执行器
-            parameters.Add("IHttpResponseCache? cacheProvider = null");
+            optionalParameters.Add("IHttpResponseCache? cacheProvider = null");
         }
 
         if (needsResilienceParam)
         {
-            parameters.Add("IResiliencePolicyResolver resilienceResolver");
+            requiredParameters.Add("IResiliencePolicyResolver resilienceResolver");
         }
         else if (!_context.HasInheritedFrom)
         {
             // 所有非继承模式下始终接受可选的 resilienceResolver，允许 DI 注入的全局弹性策略服务传递给执行器
-            parameters.Add("IResiliencePolicyResolver? resilienceResolver = null");
+            optionalParameters.Add("IResiliencePolicyResolver? resilienceResolver = null");
         }
 
-        // 非继承模式下在参数列表末尾添加可选的 logger 参数
-        // 继承模式下也添加 logger 参数，用于传递给基类构造函数
-        parameters.Add("ILogger? logger = null");
+        // 在参数列表末尾添加可选的 contentSerializer 和 logger 参数
+        // contentSerializer 必须放在所有必需参数之后（C# 要求可选参数在必需参数之后）
+        // 继承模式下 contentSerializer 使用命名参数传递给基类构造函数
+        optionalParameters.Add("IHttpContentSerializer? contentSerializer = null");
+        optionalParameters.Add("ILogger? logger = null");
 
+        // 继承模式下也需要 appAuthorizer 参数（UseApp/BeginScope 守卫引用此字段）
+        // 注意：TokenManager 模式已在上方分支中添加了 appAuthorizer，此处仅补充非 TokenManager 的继承模式
+        if (_context.HasInheritedFrom && !_context.HasTokenManager)
+        {
+            optionalParameters.Add("IAppAccessAuthorizer? appAuthorizer = null");
+        }
+
+        var parameters = requiredParameters.Concat(optionalParameters).ToList();
+
+        // T5.4: DynamicDependency 标注，防止 trimmer 在 AOT 下裁剪生成类型及 RestService 成员
+        // 该特性仅允许用于构造函数、方法、字段声明，故放在构造函数上而非类声明上
+        // 注意：DynamicDependencyAttribute / DynamicallyAccessedMemberTypes 在 netstandard2.0 下不可用
+        // （netstandard2.1+ 才内置），需用 #if 包裹避免 netstandard2.0 消费项目编译失败
+        if (_context.EmitGeneratedCodeMarkers)
+        {
+            // B-3（GEN-07）：!NETSTANDARD2_0 → NET5_0_OR_GREATER（DynamicDependency 是 .NET 5+ 才可用，
+            // 且 netstandard2.0 消费项目的 #if 分支语义与能力符号对齐）。
+            codeBuilder.AppendLine(GeneratedCodeGuards.Net5OrGreater);
+            codeBuilder.AppendLine("        [System.Diagnostics.CodeAnalysis.DynamicDependency(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof(global::Mud.HttpUtils.RestService))]");
+            codeBuilder.AppendLine(GeneratedCodeGuards.EndIf);
+        }
         var signature = $"        public {className}({string.Join(", ", parameters)})";
         codeBuilder.Append(signature);
 
         if (_context.HasInheritedFrom)
         {
-            var baseParameters = new List<string>
-            {
-                "option",
-            };
+            var baseParameters = new List<string>();
             if (_context.HasTokenManager)
             {
                 if (_context.Configuration.BaseHasTokenManager)
@@ -478,7 +540,8 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
                 baseParameters.Add("resilienceResolver");
             }
             // logger 使用命名参数传递，避免基类可选参数顺序不匹配的问题
-            codeBuilder.AppendLine($" : base({string.Join(", ", baseParameters)}, logger: logger)");
+            // contentSerializer 同样使用命名参数传递（Phase 3.1 全量收敛）
+            codeBuilder.AppendLine($" : base({string.Join(", ", baseParameters)}, logger: logger, contentSerializer: contentSerializer)");
         }
         else
         {
@@ -490,36 +553,36 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     /// 生成构造函数体
     /// </summary>
     private void GenerateConstructorBody(StringBuilder codeBuilder)
-    {
-        codeBuilder.AppendLine("        {");
-
-        if (!_context.HasInheritedFrom)
         {
-            codeBuilder.AppendLine("            if (option == null)");
-            codeBuilder.AppendLine("                throw new ArgumentNullException(nameof(option));");
-            codeBuilder.AppendLine("            _jsonSerializerOptions = option.Value ?? throw new InvalidOperationException(\"JsonSerializerOptions 选项值不能为 null。\");");
-            codeBuilder.AppendLine("            _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;");
+            codeBuilder.AppendLine("        {");
+
+            if (!_context.HasInheritedFrom)
+            {
+                codeBuilder.AppendLine("            _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();");
+                codeBuilder.AppendLine("            _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;");
 
             if (_context.HasTokenManager)
             {
                 codeBuilder.AppendLine("            _tokenManager = appManager ?? throw new ArgumentNullException(nameof(appManager));");
                 codeBuilder.AppendLine("            _appContextHolder = appContextHolder ?? throw new ArgumentNullException(nameof(appContextHolder));");
                 codeBuilder.AppendLine("            _tokenProvider = tokenProvider ?? throw new ArgumentNullException(nameof(tokenProvider));");
-                if (_context.Configuration.AnyMethodRequiresUserId)
-                {
-                    codeBuilder.AppendLine("            _currentUserContext = currentUserContext ?? throw new ArgumentNullException(nameof(currentUserContext));");
-                }
-            }
-            else if (_context.HasHttpClient)
+            if (_context.Configuration.AnyMethodRequiresUserId)
             {
-                codeBuilder.AppendLine("            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));");
+                codeBuilder.AppendLine("            _currentUserContext = currentUserContext ?? throw new ArgumentNullException(nameof(currentUserContext));");
             }
+            // TokenManager 模式下也需初始化 _appAuthorizer（UseApp/BeginScope 守卫引用此字段）
+            codeBuilder.AppendLine("            _appAuthorizer = appAuthorizer;");
+        }
+        else if (_context.HasHttpClient)
+        {
+            codeBuilder.AppendLine("            _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));");
+        }
             else
             {
                 codeBuilder.AppendLine("            _appContextHolder = appContextHolder ?? throw new ArgumentNullException(nameof(appContextHolder));");
                 codeBuilder.AppendLine("            _defaultAppContext = appContext ?? throw new ArgumentNullException(nameof(appContext));");
-                codeBuilder.AppendLine("            _appContextHolder.Current = _defaultAppContext;");
                 codeBuilder.AppendLine("            _appManager = appManager;");
+                codeBuilder.AppendLine("            _appAuthorizer = appAuthorizer;");
             }
 
             if (_context.HasCache)
@@ -564,6 +627,8 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             {
                 codeBuilder.AppendLine("            _resilienceResolver = resilienceResolver ?? throw new ArgumentNullException(nameof(resilienceResolver));");
             }
+            // 继承模式下也需初始化 _appAuthorizer（UseApp/BeginScope 守卫引用此字段）
+            codeBuilder.AppendLine("            _appAuthorizer = appAuthorizer;");
         }
 
         codeBuilder.AppendLine("        }");
@@ -604,15 +669,29 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         if (_context.HasHttpClient)
             return;
 
+        // FIX-02: 接口显式声明 Current 时，访问器形态必须与接口一致，否则 CS8854/CS0535。
+        // 判定口径与 InterfaceContractCompletionGenerator 保持一致（单一事实源）。
+        var currentAccessor = ResolveCurrentAccessor(_context);
+
         if (!_context.HasTokenManager)
         {
             codeBuilder.AppendLine("        /// <summary>");
-            codeBuilder.AppendLine("        /// 获取或设置当前的应用上下文。");
+            codeBuilder.AppendLine("        /// 获取当前的应用上下文。");
             codeBuilder.AppendLine("        /// </summary>");
             codeBuilder.AppendLine("        public IMudAppContext? Current");
             codeBuilder.AppendLine("        {");
             codeBuilder.AppendLine("            get => _appContextHolder.Current;");
-            codeBuilder.AppendLine("            set => _appContextHolder.Current = value;");
+            codeBuilder.AppendLine($"            {currentAccessor} => _appContextHolder.SwitchTo(value);");
+            codeBuilder.AppendLine("        }");
+            codeBuilder.AppendLine();
+
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 将当前应用上下文切换为指定实例（不返回作用域，不自动恢复）。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine("        /// <param name=\"context\">目标应用上下文实例。可为 <c>null</c> 以清除当前上下文。</param>");
+            codeBuilder.AppendLine("        public void SwitchTo(IMudAppContext? context)");
+            codeBuilder.AppendLine("        {");
+            codeBuilder.AppendLine("            _appContextHolder.SwitchTo(context);");
             codeBuilder.AppendLine("        }");
             codeBuilder.AppendLine();
 
@@ -635,7 +714,17 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        public IMudAppContext? Current");
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            get => _appContextHolder.Current;");
-        codeBuilder.AppendLine("            set => _appContextHolder.Current = value;");
+        codeBuilder.AppendLine($"            {currentAccessor} => _appContextHolder.SwitchTo(value);");
+        codeBuilder.AppendLine("        }");
+        codeBuilder.AppendLine();
+
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// 将当前应用上下文切换为指定实例（不返回作用域，不自动恢复）。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        /// <param name=\"context\">目标应用上下文实例。可为 <c>null</c> 以清除当前上下文。</param>");
+        codeBuilder.AppendLine("        public void SwitchTo(IMudAppContext? context)");
+        codeBuilder.AppendLine("        {");
+        codeBuilder.AppendLine("            _appContextHolder.SwitchTo(context);");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
 
@@ -651,10 +740,41 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine();
     }
 
+    /// <summary>
+    /// MT-02（BC-18）+ MT-18：生成 <c>UseApp</c> / <c>BeginScope(string)</c> / <c>UseAppScope</c> 共用的守卫。
+    /// <list type="number">
+    ///   <item><description>appKey 格式校验（零正则，经 public 门面 <c>Mud.HttpUtils.AppKey.IsValid</c>）——
+    ///     授权器不应承担格式校验职责，且格式非法时不应进入授权/查找流程。</description></item>
+    ///   <item><description>授权器缺失即抛 <see cref="InvalidOperationException"/>（默认拒绝，取代原「未注册即放行」）。</description></item>
+    ///   <item><description>授权判定失败即抛 <see cref="UnauthorizedAccessException"/>。</description></item>
+    /// </list>
+    /// 所有异常消息均不插值原始 appKey（可能来自请求参数 ⇒ 日志注入面）。
+    /// </summary>
+    private static void GenerateAppKeyGuard(StringBuilder codeBuilder)
+    {
+        codeBuilder.AppendLine("            if (!global::Mud.HttpUtils.AppKey.IsValid(appKey))");
+        codeBuilder.AppendLine("                throw new global::System.ArgumentException(\"appKey 格式非法：只能由字母、数字、'.'、'_'、'-' 组成，首字符必须是字母或数字，长度不超过 128。\", nameof(appKey));");
+        codeBuilder.AppendLine("            if (_appAuthorizer == null)");
+        codeBuilder.AppendLine("                throw new InvalidOperationException(\"多应用切换需要授权器：请注册 IAppAccessAuthorizer 实现（例如 services.AddSingleton<IAppAccessAuthorizer, YourAuthorizer>()）；若为单应用或完全受信场景，请显式注册 Mud.HttpUtils.AllowAllAppAccessAuthorizer 以表明放行意图。\");");
+        codeBuilder.AppendLine("            if (!_appAuthorizer.CanSwitchTo(appKey))");
+        codeBuilder.AppendLine("                throw new UnauthorizedAccessException(\"当前调用主体无权切换到目标应用（IAppAccessAuthorizer.CanSwitchTo 返回 false）。\");");
+    }
+
     private void GenerateUseAppMethod(StringBuilder codeBuilder)
     {
         if (_context.HasHttpClient)
             return;
+
+        // HTTPCLIENT028：继承模式下使用 new 隐藏基类切换成员时报告 Warning
+        if (_context.HasInheritedFrom && !_context.Configuration.BaseHasTokenManager)
+        {
+            _context.ProductionContext.ReportDiagnostic(
+                Diagnostic.Create(
+                    Diagnostics.AppSwitchMemberHidden,
+                    _context.InterfaceDeclaration.GetLocation(),
+                    _context.InterfaceSymbol.Name,
+                    _context.Configuration.InheritedFrom ?? "基类"));
+        }
 
         var isDefaultMode = !_context.HasTokenManager;
         // GEN-01 修复：TokenManager 模式下字段名为 _tokenManager，Default 模式下为 _appManager。
@@ -666,18 +786,49 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <returns>返回切换后的应用上下文。</returns>");
         // GEN-02 修复：移除 [Obsolete] 标记。UseApp 仍是 GetWebApi 模式下的有效路径，
         // BeginScope 用于需要自动恢复的作用域场景，两者并非替代关系而是互补关系。
-        codeBuilder.AppendLine($"        public IMudAppContext UseApp(string appKey)");
+        codeBuilder.AppendLine($"        {ResolveAppMemberModifier()}IMudAppContext UseApp(string appKey)");
         codeBuilder.AppendLine("        {");
         if (isDefaultMode)
         {
             codeBuilder.AppendLine("            if (_appManager == null)");
             codeBuilder.AppendLine("                throw new InvalidOperationException(\"当前模式不支持按 AppKey 切换应用上下文。请注册 IAppManager<IMudAppContext> 服务。\");");
         }
+        // MT-02（BC-18）：授权器改为「默认拒绝」。
+        // 原实现为 `is not null && !CanSwitchTo(...)` ⇒ 宿主漏注册 IAppAccessAuthorizer 时静默放行，
+        // 调用方可凭请求参数中的 appKey 切换到任意租户应用并读取其令牌（跨租户越权）。
+        // 未注册即抛异常，把"放行"变为需显式声明的意图（注册 AllowAllAppAccessAuthorizer）。
+        // MT-18：先做 appKey 格式校验（授权器不应承担格式校验职责），异常消息经 AppKey.ToSafeText 过滤
+        //（appKey 可能来自请求参数，直接插值构成日志注入面）。
+        GenerateAppKeyGuard(codeBuilder);
         codeBuilder.AppendLine($"            var context = {managerField}.GetApp(appKey);");
-        codeBuilder.AppendLine("            if(context == null)");
-        codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到指定的应用上下文，AppKey: {appKey}\");");
-        codeBuilder.AppendLine("            _appContextHolder.Current = context;");
+        codeBuilder.AppendLine("            _appContextHolder.SwitchTo(context);");
         codeBuilder.AppendLine("            return context;");
+        codeBuilder.AppendLine("        }");
+        codeBuilder.AppendLine();
+
+        // MT-19：与无作用域的 UseApp 对称，提供「按 appKey 切换 + 作用域自动归还」的安全入口。
+        // UseApp 依赖 AsyncLocal，异常路径或长生命周期宿主（后台任务 / 单例编排）下会残留上下文，
+        // 导致后续请求串到错误应用；宿主应优先使用本方法。
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// 切换到指定的应用上下文，并返回作用域以在结束时自动恢复。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        /// <remarks>");
+        codeBuilder.AppendLine("        /// <b>推荐使用本方法替代 <see cref=\"UseApp\"/></b>：<c>UseApp</c> 的无作用域切换（<c>SwitchTo</c>）");
+        codeBuilder.AppendLine("        /// 不会自动归还上下文，若调用方未显式切回，后续请求（尤其是后台任务、长生命周期单例编排、");
+        codeBuilder.AppendLine("        /// <c>IAsyncEnumerable</c> 未逐段开作用域等场景）可能串到错误的应用并读取到错误应用的令牌。");
+        codeBuilder.AppendLine("        /// </remarks>");
+        codeBuilder.AppendLine("        /// <param name=\"appKey\">应用的唯一标识符。</param>");
+        codeBuilder.AppendLine("        /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。建议配合 <c>using</c> 使用。</returns>");
+        codeBuilder.AppendLine($"        {ResolveAppMemberModifier()}IDisposable UseAppScope(string appKey)");
+        codeBuilder.AppendLine("        {");
+        if (isDefaultMode)
+        {
+            codeBuilder.AppendLine("            if (_appManager == null)");
+            codeBuilder.AppendLine("                throw new InvalidOperationException(\"当前模式不支持按 AppKey 切换应用上下文。请注册 IAppManager<IMudAppContext> 服务。\");");
+        }
+        GenerateAppKeyGuard(codeBuilder);
+        codeBuilder.AppendLine($"            var context = {managerField}.GetApp(appKey);");
+        codeBuilder.AppendLine("            return _appContextHolder.BeginScope(context);");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
 
@@ -686,7 +837,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine("        /// <returns>返回默认的应用上下文。</returns>");
         // GEN-02 修复：移除 [Obsolete] 标记，理由同上。
-        codeBuilder.AppendLine($"        public IMudAppContext UseDefaultApp()");
+        codeBuilder.AppendLine($"        {ResolveAppMemberModifier()}IMudAppContext UseDefaultApp()");
         codeBuilder.AppendLine("        {");
         if (isDefaultMode)
         {
@@ -695,10 +846,8 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         else
         {
             codeBuilder.AppendLine($"            var context = {managerField}.GetDefaultApp();");
-            codeBuilder.AppendLine("            if(context == null)");
-            codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到默认的应用上下文。\");");
         }
-        codeBuilder.AppendLine("            _appContextHolder.Current = context;");
+        codeBuilder.AppendLine("            _appContextHolder.SwitchTo(context);");
         codeBuilder.AppendLine("            return context;");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
@@ -709,7 +858,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// 推荐使用此方法替代 UseDefaultApp()，确保上下文自动恢复。");
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine("        /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>");
-        codeBuilder.AppendLine($"        public IDisposable UseDefaultAppScope()");
+        codeBuilder.AppendLine($"        {ResolveAppMemberModifier()}IDisposable UseDefaultAppScope()");
         codeBuilder.AppendLine("        {");
         if (isDefaultMode)
         {
@@ -718,14 +867,47 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         else
         {
             codeBuilder.AppendLine($"            var context = {managerField}.GetDefaultApp();");
-            codeBuilder.AppendLine("            if(context == null)");
-            codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到默认的应用上下文。\");");
         }
         codeBuilder.AppendLine("            return _appContextHolder.BeginScope(context);");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
 
         GenerateBeginScopeMethod(codeBuilder);
+    }
+
+    /// <summary>
+    /// A4：继承模式下按"基类是否已有同签名成员"选择 override / new，避免 CS0108 与调用路径分叉。
+    /// </summary>
+    /// <returns>方法修饰符字符串（含尾随空格）。</returns>
+    private string ResolveAppMemberModifier()
+    {
+        if (!_context.HasInheritedFrom)
+            return "public ";
+
+        // 基类为 TokenManager 模式时，派生类的切换方法应覆盖基类实现（语义一致，_tokenManager 同源）；
+        // 基类为非 TokenManager 模式时，派生类引入新的切换源（_tokenManager vs _appManager），语义不同，
+        // 用 new 明确"这是独立实现"，并配合 XML 警告宿主不要通过基类引用调用切换方法。
+        return _context.Configuration.BaseHasTokenManager ? "public override " : "public new ";
+    }
+
+    /// <summary>
+    /// FIX-02: 解析 Current 属性的访问器形态（init/set），与接口声明保持一致。
+    /// 接口显式声明 Current { get; set; } 时，实现必须用 set 而非 init（CS8854）。
+    /// 接口显式声明 Current { get; init; } 时，实现必须用 init。
+    /// 接口未声明 Current 时，维持 init 语义（由基础设施提供，允许对象初始化期赋值）。
+    /// 判定口径与 InterfaceContractCompletionGenerator.cs:166-170 保持一致（单一事实源）。
+    /// </summary>
+    private static string ResolveCurrentAccessor(GeneratorContext context)
+    {
+        var declared = context.InterfaceSymbol.GetMembers("Current")
+            .OfType<IPropertySymbol>()
+            .FirstOrDefault(p => p.Parameters.Length == 0);
+
+        if (declared?.SetMethod is { } setter)
+            return setter.IsInitOnly ? "init" : "set";
+
+        // 接口未声明（由基础设施提供）：维持既有 init 语义，避免行为面变更
+        return "init";
     }
 
     private void GenerateBeginScopeMethod(StringBuilder codeBuilder)
@@ -742,31 +924,19 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine("        /// <param name=\"appKey\">应用的唯一标识符。</param>");
         codeBuilder.AppendLine("        /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>");
-        codeBuilder.AppendLine("        public IDisposable BeginScope(string appKey)");
+        codeBuilder.AppendLine($"        {ResolveAppMemberModifier()}IDisposable BeginScope(string appKey)");
         codeBuilder.AppendLine("        {");
         if (isDefaultMode)
         {
             codeBuilder.AppendLine("            if (_appManager == null)");
             codeBuilder.AppendLine("                throw new InvalidOperationException(\"当前模式不支持按 AppKey 切换应用上下文。请注册 IAppManager<IMudAppContext> 服务。\");");
         }
+        // MT-02（BC-18）+ MT-18：同上，BeginScope(appKey) 亦改为默认拒绝，并前置格式校验。
+        GenerateAppKeyGuard(codeBuilder);
         codeBuilder.AppendLine($"            var context = {managerField}.GetApp(appKey);");
-        codeBuilder.AppendLine("            if(context == null)");
-        codeBuilder.AppendLine("                throw new InvalidOperationException($\"无法找到指定的应用上下文，AppKey: {appKey}\");");
         codeBuilder.AppendLine("            return _appContextHolder.BeginScope(context);");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
     }
 
-    private static string GetXmlSerializerFieldName(string typeName)
-    {
-        var safeName = typeName
-            .Replace("<", "_")
-            .Replace(">", "_")
-            .Replace(",", "_")
-            .Replace(" ", "")
-            .Replace(".", "_")
-            .Replace("[", "_")
-            .Replace("]", "_");
-        return $"_xmlSerializer_{safeName}";
-    }
 }

@@ -6,6 +6,7 @@
 // -----------------------------------------------------------------------
 
 using System.Diagnostics;
+using Mud.HttpUtils.Helpers;
 
 namespace Mud.HttpUtils.Models;
 
@@ -74,7 +75,10 @@ internal readonly struct InterfaceModel : IEquatable<InterfaceModel>
         Syntax = syntax;
         Context = context;
         Symbol = context.SemanticModel.GetDeclaredSymbol(syntax) as INamedTypeSymbol;
-        Fingerprint = BuildFingerprint(syntax, context);
+        // [本轮核验修复 / A.5 修订 2] 直接复用上面已解析的 Symbol：
+        // 原实现在 BuildFingerprint 内部再次调用 GetDeclaredSymbol，同一符号被解析两次
+        // （GetDeclaredSymbol 非零成本，且与「不二次调用」的方案修订相悖）。
+        Fingerprint = BuildFingerprint(syntax, Symbol, context);
     }
 
     /// <summary>
@@ -82,39 +86,92 @@ internal readonly struct InterfaceModel : IEquatable<InterfaceModel>
     /// 关键属性变更（如 TokenManager 类型重命名）或继承关系变更会使指纹变化，触发重新生成，
     /// 避免 Context 中的 SemanticModel 来自过期编译。
     /// </summary>
+    /// <param name="syntax">接口声明节点（带 [HttpClientApi] 的那个 partial 声明）。</param>
+    /// <param name="interfaceSymbol">已由构造函数解析的接口符号；语法有误时为 null。</param>
+    /// <param name="context">特性语法上下文（提供 Attributes）。</param>
     // NEW-GEN-10 说明：指纹不包含基接口内部方法，这是已接受的权衡。
     // 若基接口添加新方法，用户需手动"触摸"派生接口文件（如添加空行再删除）强制重新生成，
     // 或使用 dotnet build -p:ForceHttpGenerator=true 强制重新生成。
-    private static string BuildFingerprint(InterfaceDeclarationSyntax syntax, GeneratorAttributeSyntaxContext context)
+    private static string BuildFingerprint(
+        InterfaceDeclarationSyntax syntax,
+        INamedTypeSymbol? interfaceSymbol,
+        GeneratorAttributeSyntaxContext context)
     {
-        var sourceText = syntax.ToString();
+        // 仅取节点结构化文本,排除前导/尾随琐事(注释、空白),使纯注释变更不触发重新生成。
+        // v1.5(Phase 2.3):原实现用 syntax.ToString() 会包含注释等 trivia,导致"仅注释变更"
+        // 也会改变指纹触发重生成;改为 WithoutTrivia() 后,注释/空白不再是生成缓存的失效因素。
+        var sourceText = syntax.WithoutTrivia().ToString();
 
-        // 预估容量：源文本 + 基接口信息（约 32 字节/基接口）+ 特性信息（约 128 字节）
-        var baseListCount = syntax.BaseList?.Types.Count ?? 0;
-        var estimatedCapacity = sourceText.Length + (baseListCount * 32) + 128;
-        var sb = new StringBuilder(estimatedCapacity);
+        // 使用 ValueStringBuilder（栈分配 + ArrayPool 回退）替代 StringBuilder，减少 GC 压力（W5 修复）
+        var sb = new ValueStringBuilder(stackalloc char[512]);
         sb.Append(sourceText);
+
+        // [F5 修复] 纳入同一接口的其余 partial 声明。原实现仅取 ctx.TargetNode（带特性的那个 partial 声明），
+        // partial 兄弟声明变化（新增方法/特性改签名）不会失效指纹 → 生成的实现类缺少数成员。
+        // 任一兄弟 partial 声明变化都会触发该接口重生成（准确性提升，非过度失效）；trivia 变化仍被排除。
+        if (interfaceSymbol != null)
+        {
+            foreach (var reference in interfaceSymbol.DeclaringSyntaxReferences
+                         .OrderBy(r => r.SyntaxTree.FilePath, StringComparer.Ordinal)
+                         .ThenBy(r => r.Span.Start))
+            {
+                if (reference.SyntaxTree == syntax.SyntaxTree && reference.Span == syntax.Span)
+                    continue; // 跳过主声明
+
+                if (reference.GetSyntax(cancellationToken: default) is InterfaceDeclarationSyntax other)
+                {
+                    sb.Append('|');
+                    sb.Append("Partial:");
+                    sb.Append(other.WithoutTrivia().ToString());
+                }
+            }
+
+            // [Phase2 修复 3.1 / 审查 1.5] 纳入声明所在命名空间与包含类型（复用上一步已解析的 symbol，
+            // 不二次调用 GetDeclaredSymbol）。
+            // 原因：源文本指纹对「接口被整体移动到另一个命名空间 / 嵌套到另一个类型中」不敏感——
+            // 语法树换了、但接口声明文本与继承列表不变 ⇒ 指纹相同 ⇒ 下游命中缓存 ⇒ 生成产物停留在
+            // 旧命名空间，生成的实现类引用过期类型名导致编译错误（且必须手工"触摸"或 ForceHttpGenerator 才能恢复）。
+            sb.Append('|');
+            sb.Append("Ns:");
+            sb.Append(interfaceSymbol.ContainingNamespace?.ToDisplayString() ?? string.Empty);
+            sb.Append("|Ct:");
+            sb.Append(interfaceSymbol.ContainingType?.ToDisplayString() ?? string.Empty);
+        }
 
         // 纳入继承层次：当基接口列表变化时（如添加/移除基接口），指纹随之变化
         if (syntax.BaseList != null)
         {
             foreach (var baseType in syntax.BaseList.Types)
             {
-                sb.Append('|').Append("Base:").Append(baseType.ToString());
+                sb.Append('|');
+                sb.Append("Base:");
+                sb.Append(baseType.ToString());
             }
         }
 
-        // 仅纳入影响生成代码的关键属性，避免过度失效
+        // 纳入影响生成代码的关键属性，避免过度失效
         if (!context.Attributes.IsDefaultOrEmpty)
         {
             foreach (var attr in context.Attributes)
             {
+                // 构造函数参数：纳入所有值，避免通过构造函数传入的配置变化不触发重新生成
+                foreach (var arg in attr.ConstructorArguments)
+                {
+                    sb.Append('|');
+                    sb.Append("Ctor=");
+                    sb.Append(arg.Value?.ToString() ?? string.Empty);
+                }
+
+                // 命名参数：仅纳入影响生成代码的关键属性，避免过度失效
                 foreach (var arg in attr.NamedArguments)
                 {
                     if (arg.Key is "HttpClient" or "TokenManage" or "InheritedFrom"
                         or "IsAbstract" or "ContentType" or "Timeout")
                     {
-                        sb.Append('|').Append(arg.Key).Append('=').Append(arg.Value.Value);
+                        sb.Append('|');
+                        sb.Append(arg.Key);
+                        sb.Append('=');
+                        sb.Append(arg.Value.Value?.ToString() ?? string.Empty);
                     }
                 }
             }

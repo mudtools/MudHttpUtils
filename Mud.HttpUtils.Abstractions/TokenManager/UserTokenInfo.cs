@@ -33,6 +33,17 @@ public class UserTokenInfo : CurrentUserInfo
     public long AccessTokenExpireTime { get; set; }
 
     /// <summary>
+    /// MT-07：获取或设置访问令牌的签发时间（Unix 时间戳，毫秒）。默认 0 表示未知。
+    /// </summary>
+    /// <remarks>
+    /// 供 <see cref="TokenExpiryPolicy.EffectiveThresholdSeconds"/> 计算 TTL 感知的过期提前量
+    /// （<c>min(配置阈值, ttl/2)</c>）。短 TTL 令牌在固定 300 秒提前量下会"刚签发即被判为需刷新"，
+    /// 导致缓存永不命中、每次请求都刷新。
+    /// <para>为 0 时退化为使用配置的过期提前量，与历史行为一致（存量数据零破坏）。</para>
+    /// </remarks>
+    public long IssuedAt { get; set; }
+
+    /// <summary>
     /// 获取或设置刷新令牌，用于获取新的访问令牌。
     /// </summary>
     public string? RefreshToken { get; set; }
@@ -74,17 +85,24 @@ public class UserTokenInfo : CurrentUserInfo
 
     /// <summary>
     /// 检查访问令牌是否有效。
+    /// TMX-03：补齐 TTL 感知阈值——短 TTL 令牌的有效提前量被钳位为 min(thresholdSeconds, ttl/2)，
+    /// 避免"提前量过大导致 token 刚签发即被判为需刷新"（与 TokenManagerBase.TryGetValidToken 一致）。
     /// </summary>
     /// <param name="thresholdSeconds">过期阈值（秒），默认 300 秒（5 分钟）。</param>
     /// <returns>如果访问令牌有效，则为 true；否则为 false。</returns>
+    /// <remarks>TMR-12：委托 <see cref="TokenExpiryPolicy"/> 统一判定，消除重复实现。</remarks>
     public bool IsAccessTokenValid(int thresholdSeconds = 300)
     {
         if (string.IsNullOrEmpty(AccessToken) || AccessTokenExpireTime <= 0)
             return false;
 
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var thresholdMs = thresholdSeconds * 1000L;
-        return AccessTokenExpireTime - thresholdMs > now;
+        // MT-07：IssuedAt 由 StandardOAuth2TokenManager 填充（签发时间，Unix 毫秒）。
+        // TMX-22（P1）：直接透传 IssuedAt，缺失（<=0）时由 TokenExpiryPolicy 退化为配置阈值（与历史行为一致）。
+        // 此前 TMX-03 回退 LastRefreshedAt/CreatedAt 作 issuedAt 代理——但 CreatedAt 属性初始化器
+        // 自动取 UtcNow 且语义是"记录创建时间"而非"令牌签发时间"，会使阈值被错误钳位为
+        // min(threshold, ttl/2)，把临近过期的令牌误判为有效（缓存复用过期边缘令牌）。
+        return TokenExpiryPolicy.IsValid(IssuedAt, AccessTokenExpireTime, now, thresholdSeconds);
     }
 
     /// <summary>
@@ -117,6 +135,8 @@ public class UserTokenInfo : CurrentUserInfo
             UnionId = unionId,
             AccessToken = token?.AccessToken,
             AccessTokenExpireTime = token?.Expire ?? 0,
+            // MT-07：透传签发时间，供 TTL 感知阈值使用
+            IssuedAt = token?.IssuedAt ?? 0,
             RefreshToken = token?.RefreshToken,
             RefreshTokenExpireTime = token?.RefreshTokenExpire ?? 0,
             Scope = token?.Scope,
@@ -143,6 +163,9 @@ public class UserTokenInfo : CurrentUserInfo
             UnionId = unionId,
             AccessToken = token?.AccessToken,
             AccessTokenExpireTime = token?.AccessTokenExpireTime ?? 0,
+            // BC-34：补齐 IssuedAt 透传——此前仅 CredentialToken 重载透传，经本重载流转的令牌
+            // 会丢失签发时间，使 TTL 感知阈值（min(配置阈值, ttl/2)）静默退化为配置阈值。
+            IssuedAt = token?.IssuedAt ?? 0,
             RefreshToken = token?.RefreshToken,
             RefreshTokenExpireTime = token?.RefreshTokenExpireTime ?? 0,
             Scope = token?.Scope,
@@ -160,6 +183,8 @@ public class UserTokenInfo : CurrentUserInfo
     {
         AccessToken = token?.AccessToken;
         AccessTokenExpireTime = token?.Expire ?? 0;
+        // MT-07：透传签发时间（CredentialToken 已由 StandardOAuth2TokenManager 填充 IssuedAt）
+        IssuedAt = token?.IssuedAt ?? 0;
         if (!string.IsNullOrEmpty(token?.RefreshToken))
         {
             RefreshToken = token?.RefreshToken;
@@ -180,6 +205,11 @@ public class UserTokenInfo : CurrentUserInfo
     {
         AccessToken = token?.AccessToken;
         AccessTokenExpireTime = token?.AccessTokenExpireTime ?? 0;
+        // BC-34：补充 IssuedAt 透传（与 CredentialToken 重载及 FromCredentialToken 保持一致）。
+        if (token is not null && token.IssuedAt > 0)
+        {
+            IssuedAt = token.IssuedAt;
+        }
         if (!string.IsNullOrEmpty(token?.RefreshToken))
         {
             RefreshToken = token?.RefreshToken;

@@ -5,6 +5,7 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using System.Diagnostics;
 using Mud.HttpUtils.Analyzers;
 
 namespace Mud.HttpUtils.Generators.Context;
@@ -12,6 +13,7 @@ namespace Mud.HttpUtils.Generators.Context;
 /// <summary>
 /// 生成上下文
 /// </summary>
+[DebuggerDisplay("{InterfaceSymbol?.Name} (Methods={AllMethods.Count}, HasToken={HasTokenManager}, HasCache={HasCache})")]
 internal class GeneratorContext
 {
     public Compilation Compilation { get; }
@@ -47,6 +49,27 @@ internal class GeneratorContext
     public bool HasQueryMap { get; set; }
 
     /// <summary>
+    /// 消费方项目是否启用 AOT（build_property.IsAotCompatible=true 或 build_property.PublishAot=true）。
+    /// 由 <see cref="HttpInvokeClassSourceGenerator"/> 从 AnalyzerConfigOptions.GlobalOptions 读取后逐层传入。
+    /// 用于 AOT 下 XML 静态字段的条件化生成（见 ConstructorGenerator）。
+    /// </summary>
+    public bool IsAotEnabled { get; }
+
+    /// <summary>
+    /// [v2.4 §3.4 D-03 修复] 是否在生成代码头部发射 #nullable enable。
+    /// 由 HttpInvokeClassSourceGenerator 从 build_property.Nullable 读取后逐层传入。
+    /// 默认 true（向后兼容）。消费项目 Nullable=disable 时不发射，避免冗余告警。
+    /// </summary>
+    public bool EmitNullableEnable { get; }
+
+    /// <summary>
+    /// [D-06 修复] 是否在生成代码上标注 [GeneratedCode] 特性。
+    /// 由 HttpInvokeClassSourceGenerator 从 build_property.MudEmitGeneratedCodeMarkers 读取后逐层传入。
+    /// 默认 true（向后兼容）。设为 false 时不标注，便于调试生成代码中的警告。
+    /// </summary>
+    public bool EmitGeneratedCodeMarkers { get; }
+
+    /// <summary>
     /// 接口中是否有方法使用了 XML 响应类型，需要生成 XmlSerializer 静态缓存字段
     /// </summary>
     public bool HasXmlResponse { get; set; }
@@ -74,6 +97,31 @@ internal class GeneratorContext
     public IReadOnlyList<InterfacePropertyInfo> InterfaceProperties { get; set; } = [];
 
     /// <summary>
+    /// 已由各片段生成器发射的成员名集合（方法/属性/事件名，含重载）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 用途：契约补全（<see cref="Mud.HttpUtils.Generators.Implementation.InterfaceContractCompletionGenerator"/>
+    /// 与 <c>MethodGenerator</c> 的占位实现）必须避开生成器<b>按模式无条件发射</b>的成员，
+    /// 否则会产生重复成员（CS0111/CS0102）。
+    /// </para>
+    /// <para>
+    /// 典型无条件成员：AppContext 模式的 <c>Current</c>/<c>BeginScope</c>/<c>UseApp</c>/<c>UseDefaultApp</c>/
+    /// <c>UseDefaultAppScope</c>/<c>CurrentUserId</c>，令牌模式的 <c>GetTokenAsync</c>/<c>GetApiKeyAsync</c>/
+    /// <c>GetTokenManagerKey</c> 等。这些成员与「接口是否声明」无关，故无法由符号侧推导。
+    /// </para>
+    /// <para>
+    /// 约定：新增发射点时须同步 <see cref="MarkMemberProvided"/>，否则契约补全可能发射同名占位成员。
+    /// </para>
+    /// </remarks>
+    public HashSet<string> ProvidedMemberNames { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 登记一个已发射的成员名（供契约补全避让）。见 <see cref="ProvidedMemberNames"/>。
+    /// </summary>
+    public void MarkMemberProvided(string memberName) => ProvidedMemberNames.Add(memberName);
+
+    /// <summary>
     /// 接口符号的特性列表，在构造函数中一次性计算并缓存。
     /// 避免在 <see cref="GetOrAnalyzeMethod"/> 和 <see cref="DetectFeatures"/> 中重复调用
     /// <c>INamedTypeSymbol.GetAttributes()</c> 产生多次分配。
@@ -87,6 +135,23 @@ internal class GeneratorContext
     /// 不可跨实例共享或在多线程环境下并发读写。
     /// </summary>
     public Dictionary<IMethodSymbol, MethodAnalysisResult> MethodAnalysisCache { get; } = new(SymbolEqualityComparer.Default);
+
+    /// <summary>
+    /// FIX-13: 方法级特性缓存，避免同一方法的 GetAttributes() 被多次调用产生额外分配。
+    /// InterfaceImplementationGenerator 的 ReportRetryNonIdempotentWithoutAllow / ReportMethodTimeoutConflicts /
+    /// ReportResilienceAttributeValueRangeViolations 以及 PrecomputeXmlResponseTypes 各自遍历方法特性，
+    /// 不缓存时每个方法最多 4 次 GetAttributes() 调用。
+    /// </summary>
+    private readonly Dictionary<IMethodSymbol, ImmutableArray<AttributeData>> _methodAttributes =
+        new(SymbolEqualityComparer.Default);
+
+    /// <summary>
+    /// FIX-13: 获取方法特性（带缓存），避免重复分配。
+    /// </summary>
+    public ImmutableArray<AttributeData> GetMethodAttributes(IMethodSymbol method) =>
+        _methodAttributes.TryGetValue(method, out var cached)
+            ? cached
+            : (_methodAttributes[method] = method.GetAttributes());
 
     /// <summary>
     /// 当前接口（含父接口）的所有方法列表，在构造函数中一次性计算并缓存。
@@ -137,7 +202,10 @@ internal class GeneratorContext
         InterfaceDeclarationSyntax interfaceDeclaration,
         SemanticModel semanticModel,
         SourceProductionContext productionContext,
-        GenerationConfiguration configuration)
+        GenerationConfiguration configuration,
+        bool isAotEnabled = false,
+        bool emitNullableEnable = true,
+        bool emitGeneratedCodeMarkers = true)
     {
         Compilation = compilation;
         InterfaceSymbol = interfaceSymbol;
@@ -145,6 +213,9 @@ internal class GeneratorContext
         SemanticModel = semanticModel;
         ProductionContext = productionContext;
         Configuration = configuration;
+        IsAotEnabled = isAotEnabled;
+        EmitNullableEnable = emitNullableEnable;
+        EmitGeneratedCodeMarkers = emitGeneratedCodeMarkers;
 
         ClassName = TypeSymbolHelper.GetImplementationClassName(interfaceSymbol.Name);
         NamespaceName = SyntaxHelper.GetNamespaceName(interfaceDeclaration, HttpClientGeneratorConstants.ImplementationNamespaceSuffix);
@@ -291,7 +362,7 @@ internal class GeneratorContext
         {
             if (namedArg.Key == HttpClientGeneratorConstants.TokenInjectionModeProperty)
             {
-                var modeName = GetTokenInjectionModeName(namedArg.Value.Value);
+                var modeName = GetTokenInjectionModeName(namedArg.Value);
                 return modeName == targetMode;
             }
         }
@@ -300,10 +371,11 @@ internal class GeneratorContext
     }
 
     /// <summary>
-    /// 从 TypedConstant 获取 TokenInjectionMode 枚举名称。
+    /// 从 <see cref="TypedConstant"/>（TokenInjectionMode 枚举参数）获取注入模式字符串。
     /// 委托至 TokenHelper.GetTokenInjectionModeName 统一实现，覆盖全部 7 种注入模式。
+    /// [D-3 选项 1] 现在把整个 <see cref="TypedConstant"/> 传入（而非剥离后的底层整数值）。
     /// </summary>
-    private static string GetTokenInjectionModeName(object? value)
+    private static string GetTokenInjectionModeName(TypedConstant value)
     {
         return TokenHelper.GetTokenInjectionModeName(value);
     }

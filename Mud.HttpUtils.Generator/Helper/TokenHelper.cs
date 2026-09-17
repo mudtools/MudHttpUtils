@@ -82,7 +82,7 @@ internal static class TokenHelper
     /// </summary>
     /// <returns>默认Token类型为AccessToken（OAuth2 通用类型）</returns>
     /// <remarks>
-    /// 此处使用字符串字面量而非 <see cref="TokenTypes.AccessToken"/> 常量，
+    /// 此处使用字符串字面量而非 <c>TokenTypes.AccessToken</c> 常量，
     /// 因为源生成器项目无法引用 Abstractions 程序集。
     /// 值必须与 <c>Mud.HttpUtils.TokenTypes.AccessToken</c> 保持一致。
     /// </remarks>
@@ -145,11 +145,32 @@ internal static class TokenHelper
     }
 
     /// <summary>
-    /// 从 TypedConstant 获取 TokenInjectionMode 枚举名称。
-    /// 注意：序号必须与 Mud.HttpUtils.Attributes.TokenInjectionMode 枚举定义保持一致：
-    ///   0 = Header, 1 = Query, 2 = Path, 3 = ApiKey, 4 = HmacSignature, 5 = BasicAuth, 6 = Cookie
-    /// 生成器无法引用包含枚举定义的程序集，因此使用硬编码序号是必要的妥协。
+    /// [D-3 选项 1] 从 TokenInjectionMode 枚举型 <see cref="TypedConstant"/> 获取注入模式字符串。
+    /// 经 <see cref="AttributeArgumentReader.GetEnumMemberName"/>（统一「特性参数读取」入口）按
+    /// **枚举成员常量值**反解成员名，独立于枚举成员定义顺序。
+    /// 注：生成器无法引用 Abstractions 里的枚举类型，历史实现依赖手写 <c>switch(i)</c> 序号（0..6）——
+    /// 该顺序耦合已不再进入生产特性读取路径（见兼容入口 <see cref="GetTokenInjectionModeName(object?)"/>）。
     /// </summary>
+    public static string GetTokenInjectionModeName(TypedConstant arg)
+    {
+        if (arg.Value is null)
+            return HttpClientGeneratorConstants.TokenInjectionModeHeader;
+
+        var memberName = AttributeArgumentReader.GetEnumMemberName(arg);
+        if (string.IsNullOrEmpty(memberName))
+            return HttpClientGeneratorConstants.TokenInjectionModeHeader;
+
+        return MapTokenInjectionMode(memberName);
+    }
+
+    /// <summary>
+    /// 从历史惯用输入（整数序号 / 枚举名字符串 / 全限定名）解析注入模式。
+    /// </summary>
+    /// <remarks>
+    /// [D-3 选项 1] 本入口仅为兼容历史约定输入保留；生产特性读取路径应走
+    /// <see cref="GetTokenInjectionModeName(TypedConstant)"/>。其中整数序号映射与枚举定义顺序
+    /// 耦合的历史妥协（0=Header…6=Cookie）仅存于此兼容分支，不再作为生产读取路径。
+    /// </remarks>
     public static string GetTokenInjectionModeName(object? value)
     {
         if (value == null)
@@ -177,16 +198,19 @@ internal static class TokenHelper
         var lastDot = str.LastIndexOf('.');
         var name = lastDot >= 0 ? str.Substring(lastDot + 1) : str;
 
-        return name switch
-        {
-            "Header" => HttpClientGeneratorConstants.TokenInjectionModeHeader,
-            "Query" => HttpClientGeneratorConstants.TokenInjectionModeQuery,
-            "Path" => HttpClientGeneratorConstants.TokenInjectionModePath,
-            "ApiKey" => HttpClientGeneratorConstants.TokenInjectionModeApiKey,
-            "HmacSignature" => HttpClientGeneratorConstants.TokenInjectionModeHmacSignature,
-            "BasicAuth" => HttpClientGeneratorConstants.TokenInjectionModeBasicAuth,
-            "Cookie" => HttpClientGeneratorConstants.TokenInjectionModeCookie,
-            _ => HttpClientGeneratorConstants.TokenInjectionModeHeader
-        };
+        return MapTokenInjectionMode(name);
     }
+
+    /// <summary>按枚举成员名映射注入模式常量字符串（与枚举成员定义顺序无关）。</summary>
+    private static string MapTokenInjectionMode(string name) => name switch
+    {
+        "Header" => HttpClientGeneratorConstants.TokenInjectionModeHeader,
+        "Query" => HttpClientGeneratorConstants.TokenInjectionModeQuery,
+        "Path" => HttpClientGeneratorConstants.TokenInjectionModePath,
+        "ApiKey" => HttpClientGeneratorConstants.TokenInjectionModeApiKey,
+        "HmacSignature" => HttpClientGeneratorConstants.TokenInjectionModeHmacSignature,
+        "BasicAuth" => HttpClientGeneratorConstants.TokenInjectionModeBasicAuth,
+        "Cookie" => HttpClientGeneratorConstants.TokenInjectionModeCookie,
+        _ => HttpClientGeneratorConstants.TokenInjectionModeHeader
+    };
 }

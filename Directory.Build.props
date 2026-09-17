@@ -1,6 +1,6 @@
-<Project>
+﻿<Project>
 	<PropertyGroup>
-		<Version>2.0.1</Version>
+		<Version>2.0.5</Version>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<TreatWarningsAsErrors>false</TreatWarningsAsErrors>
@@ -17,7 +17,7 @@
 		<Authors>Mud Studio</Authors>
 		<Company>Mud Studio</Company>
 		<LangVersion>latest</LangVersion>
-		<NoWarn>CA1707;CA1021;CA1822;RS1035</NoWarn>
+		<NoWarn>CA1707;CA1021;CA1822;RS1035;NETSDK1210</NoWarn>
 		<AnalyzerLanguage>cs</AnalyzerLanguage>
 		<InjectIsExternalInitOnLegacy>true</InjectIsExternalInitOnLegacy>
 		<GeneratePackageOnBuild>false</GeneratePackageOnBuild>
@@ -25,4 +25,21 @@
 		<CodeAnalysisTreatWarningsAsErrors>false</CodeAnalysisTreatWarningsAsErrors>
 		<BaseOutputPath>..\bin</BaseOutputPath>
 	</PropertyGroup>
+
+	<!-- AOT 兼容性配置：仅在 .NET 8+ TFM 上启用 AOT 分析器。
+	     netstandard2.0 与 net6.0 不支持 AOT 分析器，设置 IsAotCompatible 无实际效果。
+	     各 csproj 不再单独设置 IsAotCompatible/EnableAotAnalyzer，统一由此处管控。 -->
+	<PropertyGroup Condition="'$(TargetFramework)' != 'netstandard2.0' AND '$(TargetFramework)' != 'net6.0' AND '$(IsAotCompatible)' == ''">
+		<IsAotCompatible>true</IsAotCompatible>
+		<EnableAotAnalyzer>true</EnableAotAnalyzer>
+	</PropertyGroup>
+
+	<!-- netstandard2.0/net6.0 不支持 AOT 分析器，抑制 NETSDK1210 噪声告警 -->
+	<PropertyGroup Condition="'$(TargetFramework)' == 'netstandard2.0' OR '$(TargetFramework)' == 'net6.0'">
+		<NoWarn>$(NoWarn);NETSDK1210</NoWarn>
+	</PropertyGroup>
+
+	<!-- 说明：AOT 严格模式的 WarningsAsErrors 注入已移至 Directory.Build.targets。
+	     原因：本文件在项目文件【之前】导入，无法读取项目内定义的属性（如单个工程的
+	     <MudExcludeFromAotStrictMode>true</MudExcludeFromAotStrictMode> 退出开关）。 -->
 </Project>

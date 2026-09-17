@@ -84,6 +84,18 @@ internal class MethodAnalysisResult
     public List<InterfaceHeaderAttributeInfo> InterfaceHeaderAttributes { get; set; } = [];
 
     /// <summary>
+    /// 方法级固定Header特性列表（从方法上的 [Header] 特性获取，GEN-03）。
+    /// Replace 为 true 的方法级头可覆盖接口级同名头。
+    /// </summary>
+    public List<InterfaceHeaderAttributeInfo> MethodHeaderAttributes { get; set; } = [];
+
+    /// <summary>
+    /// 方法级固定Query参数列表（从方法上的 [Query] 特性获取，GEN-03）。
+    /// 仅支持常量值（QueryAttribute(name, value) 或 Name+Value）。
+    /// </summary>
+    public List<InterfaceQueryParameterInfo> MethodQueryParameters { get; set; } = [];
+
+    /// <summary>
     /// 方法级别的内容类型（从HTTP方法特性的ContentType属性获取，如 [Post(ContentType = "application/xml")]）
     /// </summary>
     public string? MethodContentType { get; set; }
@@ -146,9 +158,39 @@ internal class MethodAnalysisResult
     public string? MethodTokenInjectionMode { get; set; }
 
     /// <summary>
+    /// 方法级 Token 名称（从方法上的 [Token(Name = "...")] 特性获取，GEN-09）。
+    /// 方法级优先于接口级。未指定时为 null，生成器按「方法级 → 接口级 → 默认」回退。
+    /// </summary>
+    public string? MethodTokenName { get; set; }
+
+    /// <summary>
+    /// 获取有效的 Token 名称：方法级优先于接口级（GEN-09 优先级「方法级 &gt; 接口级 &gt; 默认」）。
+    /// 影响 Header 名、ApiKey 名、Cookie 名、Query 名四处消费点。
+    /// </summary>
+    public string? EffectiveTokenName => MethodTokenName ?? InterfaceTokenName;
+
+    /// <summary>
     /// 获取有效的 Token 注入模式：方法级优先于接口级。
     /// </summary>
     public string EffectiveTokenInjectionMode => MethodTokenInjectionMode ?? InterfaceTokenInjectionMode ?? "Header";
+
+    /// <summary>
+    /// 方法级 Token 注入方案（Scheme，从方法上的 [Token(Scheme = "...")] 特性获取）。
+    /// 方法级优先于接口级。未指定时为 null，生成器按注入模式回退（BasicAuth→"Basic"，其余→"Bearer"）。
+    /// </summary>
+    public string? MethodTokenScheme { get; set; }
+
+    /// <summary>
+    /// 接口级 Token 注入方案（Scheme，从接口上的 [Token(Scheme = "...")] 特性获取）。
+    /// </summary>
+    public string? InterfaceTokenScheme { get; set; }
+
+    /// <summary>
+    /// 获取有效的 Token 注入方案：方法级优先于接口级；均未指定时按注入模式回退默认值。
+    /// </summary>
+    public string EffectiveTokenScheme
+        => MethodTokenScheme ?? InterfaceTokenScheme
+            ?? (EffectiveTokenInjectionMode == "BasicAuth" ? "Basic" : "Bearer");
 
     /// <summary>
     /// 方法参数中标记了 [Token] 特性的参数名称。
@@ -207,6 +249,9 @@ internal class MethodAnalysisResult
 
     public bool CacheVaryByUser { get; set; }
 
+    /// <summary>是否使用滑动过期（[Cache(UseSlidingExpiration = true)]，M3-#27）。</summary>
+    public bool CacheUseSlidingExpiration { get; set; }
+
     public bool RetryEnabled { get; set; }
 
     public int RetryMaxRetries { get; set; } = 3;
@@ -214,6 +259,9 @@ internal class MethodAnalysisResult
     public int RetryDelayMilliseconds { get; set; } = 1000;
 
     public bool RetryUseExponentialBackoff { get; set; } = true;
+
+    /// <summary>是否允许对非幂等 HTTP 方法重试（[Retry(AllowNonIdempotent = true)]，M2-#12）。</summary>
+    public bool RetryAllowNonIdempotent { get; set; }
 
     public bool CircuitBreakerEnabled { get; set; }
 

@@ -9,8 +9,7 @@ public class HttpClientFactoryEnhancedClientTests
     {
         var options = new AesEncryptionOptions
         {
-            Key = Convert.FromBase64String("MTIzNDU2Nzg5MDEyMzQ1Ng=="),
-            IV = Convert.FromBase64String("MTIzNDU2Nzg5MDEyMzQ1Ng==")
+            Key = Convert.FromBase64String("MTIzNDU2Nzg5MDEyMzQ1Ng==")
         };
         return new DefaultAesEncryptionProvider(Options.Create(options));
     }

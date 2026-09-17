@@ -19,7 +19,9 @@ internal static class SyntaxHelper
     public static bool TryGetParentSyntax<T>(SyntaxNode syntaxNode, out T result)
         where T : SyntaxNode
     {
-        result = null;
+        // [Phase4 修复 5.1] null! 而非 null（CS8625）：泛型约束 T : SyntaxNode 使 T 为非空引用类型，
+        // 但 Try* 模式在「未找到」时必须把 out 参数置空，调用方以返回值判定可用性。
+        result = null!;
         if (syntaxNode == null)
             return false;
 

@@ -6,6 +6,7 @@
 // -----------------------------------------------------------------------
 
 using System.Collections.Concurrent;
+using System.Threading;
 
 namespace Mud.HttpUtils;
 
@@ -19,7 +20,8 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     private readonly ConcurrentDictionary<string, TAppContext> _apps = new();
     private readonly ConcurrentDictionary<Type, Func<TAppContext, IAppContextSwitcher>> _switcherFactories = new();
     private string? _defaultAppKey;
-    private readonly object _defaultAppLock = new();
+    // MT-08：默认应用键的读-改-写（RemoveApp 回退）与 GetDefaultApp 的重试均在此锁内完成。
+    private readonly object _defaultKeyLock = new();
 
     /// <summary>
     /// 应用配置变更事件。
@@ -29,13 +31,12 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     /// <inheritdoc />
     public virtual TAppContext GetApp(string appKey)
     {
-        if (string.IsNullOrWhiteSpace(appKey))
-            throw new ArgumentException("应用标识不能为空", nameof(appKey));
+        AppKeyValidator.Validate(appKey, nameof(appKey));
 
         if (_apps.TryGetValue(appKey, out var context))
             return context;
 
-        throw new InvalidOperationException($"未找到应用标识为 '{appKey}' 的应用上下文。请先调用 RegisterApp 注册应用。");
+        throw new InvalidOperationException($"未找到应用标识为 '{AppKeyValidator.ToSafeText(appKey)}' 的应用上下文。请先调用 RegisterApp 注册应用。");
     }
 
     /// <inheritdoc />
@@ -47,64 +48,118 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
             return false;
         }
 
+        try
+        {
+            AppKeyValidator.Validate(appKey, nameof(appKey));
+        }
+        catch (ArgumentException)
+        {
+            appContext = default;
+            return false;
+        }
+
         return _apps.TryGetValue(appKey, out appContext);
     }
 
     /// <inheritdoc />
     public void RegisterApp(string appKey, TAppContext appContext, bool isDefault = false)
     {
-        if (string.IsNullOrWhiteSpace(appKey))
-            throw new ArgumentException("应用标识不能为空", nameof(appKey));
+        AppKeyValidator.Validate(appKey, nameof(appKey));
         if (appContext == null)
             throw new ArgumentNullException(nameof(appContext));
 
-        var isUpdate = _apps.ContainsKey(appKey);
-        _apps[appKey] = appContext;
+        // B4：以 TryAdd 的返回值判定变更类型，消除 ContainsKey + 索引器赋值的 check-then-act 竞态。
+        var changeType = _apps.TryAdd(appKey, appContext)
+            ? AppConfigurationChangeType.Added
+            : AppConfigurationChangeType.Updated;
+        if (changeType == AppConfigurationChangeType.Updated)
+            _apps[appKey] = appContext;
 
         if (isDefault)
-        {
-            lock (_defaultAppLock)
-            {
-                _defaultAppKey = appKey;
-            }
-        }
+            Volatile.Write(ref _defaultAppKey, appKey);
 
         OnConfigurationChanged(new AppConfigurationChangedEventArgs(
-            appKey,
-            isUpdate ? AppConfigurationChangeType.Updated : AppConfigurationChangeType.Added));
+            appKey, changeType));
     }
 
     /// <inheritdoc />
     public async Task RegisterAppAsync(string appKey, TAppContext appContext, bool isDefault = false, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(appKey))
-            throw new ArgumentException("应用标识不能为空", nameof(appKey));
+        AppKeyValidator.Validate(appKey, nameof(appKey));
         if (appContext == null)
             throw new ArgumentNullException(nameof(appContext));
 
-        if (appContext is IAsyncInitializable asyncInitializable)
-        {
-            await asyncInitializable.InitializeAsync(cancellationToken).ConfigureAwait(false);
-        }
+        await InitializeWithCleanupAsync(appContext, cancellationToken).ConfigureAwait(false);
 
         RegisterApp(appKey, appContext, isDefault);
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// 本方法不触发 <see cref="IAsyncInitializable.InitializeAsync"/>。需要异步初始化请使用 <see cref="UpdateAppAsync"/>。
+    /// </remarks>
     public virtual void UpdateApp(string appKey, TAppContext appContext)
     {
-        if (string.IsNullOrWhiteSpace(appKey))
-            throw new ArgumentException("应用标识不能为空", nameof(appKey));
+        AppKeyValidator.Validate(appKey, nameof(appKey));
         if (appContext == null)
             throw new ArgumentNullException(nameof(appContext));
 
-        if (!_apps.TryGetValue(appKey, out _))
-            throw new InvalidOperationException($"未找到应用标识为 '{appKey}' 的应用上下文，无法更新。请先调用 RegisterApp 注册应用。");
+        // MT-08：原实现为 TryGetValue（判存在）+ 索引器赋值，属典型 check-then-act。
+        // 并发窗口内若 RemoveApp 抢先执行，索引器赋值会"复活"一个已被删除的应用
+        // （已撤销的凭据重新可被取用）。TryUpdate 以旧值为 CAS 条件原子替换。
+        if (!_apps.TryGetValue(appKey, out var existing))
+            throw new InvalidOperationException($"未找到应用标识为 '{AppKeyValidator.ToSafeText(appKey)}' 的应用上下文，无法更新。请先调用 RegisterApp 注册应用。");
 
-        _apps[appKey] = appContext;
+        if (!_apps.TryUpdate(appKey, appContext, existing))
+            throw new InvalidOperationException($"应用标识为 '{AppKeyValidator.ToSafeText(appKey)}' 的应用上下文在更新期间被移除或替换，更新已放弃。");
 
         OnConfigurationChanged(new AppConfigurationChangedEventArgs(
             appKey, AppConfigurationChangeType.Updated));
+    }
+
+    /// <inheritdoc />
+    public async Task UpdateAppAsync(string appKey, TAppContext appContext, CancellationToken cancellationToken = default)
+    {
+        AppKeyValidator.Validate(appKey, nameof(appKey));
+        if (appContext == null)
+            throw new ArgumentNullException(nameof(appContext));
+
+        if (!_apps.TryGetValue(appKey, out var existing))
+            throw new InvalidOperationException(
+                $"未找到应用标识为 '{AppKeyValidator.ToSafeText(appKey)}' 的应用上下文，无法更新。请先调用 RegisterApp 注册应用。");
+
+        // 先完成异步初始化（失败时由 InitializeWithCleanupAsync 释放新上下文后抛出）。
+        await InitializeWithCleanupAsync(appContext, cancellationToken).ConfigureAwait(false);
+
+        // MT-08：初始化期间旧上下文可能已被 RemoveApp 移除（或已被他人替换）。
+        // 原子 CAS 替换；失败时释放新上下文并抛出，避免"复活已删除应用"与上下文泄漏。
+        if (!_apps.TryUpdate(appKey, appContext, existing))
+        {
+            (appContext as IDisposable)?.Dispose();
+            throw new InvalidOperationException(
+                $"应用标识为 '{AppKeyValidator.ToSafeText(appKey)}' 的应用上下文在异步初始化期间被移除或替换，更新已放弃。");
+        }
+
+        OnConfigurationChanged(new AppConfigurationChangedEventArgs(appKey, AppConfigurationChangeType.Updated));
+    }
+
+    /// <summary>
+    /// 异步初始化辅助：失败时释放上下文后重新抛出。
+    /// </summary>
+    private static async Task InitializeWithCleanupAsync(TAppContext appContext, CancellationToken cancellationToken)
+    {
+        if (appContext is not IAsyncInitializable asyncInitializable)
+            return;
+
+        try
+        {
+            await asyncInitializable.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            (appContext as IDisposable)?.Dispose();
+            throw;
+        }
     }
 
     /// <inheritdoc />
@@ -112,6 +167,15 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     {
         if (string.IsNullOrWhiteSpace(appKey))
             return false;
+
+        try
+        {
+            AppKeyValidator.Validate(appKey, nameof(appKey));
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
 
         var removed = _apps.TryRemove(appKey, out var context);
 
@@ -121,10 +185,28 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
             // 上下文由 GC 回收。若需立即释放，应用应显式调用 context.Dispose()。
             // 注意：原 M-10 修复中的立即 Dispose 会导致在途 HTTP 请求的 HttpClient/TokenManager 被释放。
 
-            lock (_defaultAppLock)
+            // B3：默认应用被移除时回退到任一剩余应用，而非置空导致后续所有请求硬失败。
+            // MT-08：原实现为「Volatile 读 → Keys.FirstOrDefault() → Volatile 写」的非原子 RMW，
+            // 且 FirstOrDefault 的顺序不确定、取到的键可能在窗口内已被其他线程删除，
+            // 从而把默认应用写成"已被删除的键"。改为锁内完成，并校验候选键确实存在。
+            if (Volatile.Read(ref _defaultAppKey) == appKey)
             {
-                if (_defaultAppKey == appKey)
-                    _defaultAppKey = null;
+                lock (_defaultKeyLock)
+                {
+                    if (Volatile.Read(ref _defaultAppKey) == appKey)
+                    {
+                        string? fallback = null;
+                        foreach (var candidate in _apps.Keys)
+                        {
+                            if (_apps.ContainsKey(candidate))
+                            {
+                                fallback = candidate;
+                                break;
+                            }
+                        }
+                        Volatile.Write(ref _defaultAppKey, fallback);
+                    }
+                }
             }
 
             OnConfigurationChanged(new AppConfigurationChangedEventArgs(
@@ -138,32 +220,54 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     /// <remarks>
     /// MA-03 修复：标记为 virtual，允许子类（如 FeishuAppManager）override 而非使用 new 隐藏。
     /// 此前该方法非 virtual，子类使用 new 隐藏后，通过 IAppManager 接口调用时仍执行基类方法，导致 FeishuAppManager 的默认应用解析逻辑被绕过。
+    /// B2：二次读取容忍"默认应用刚被移除"的并发窗口，避免把"默认应用已被移除"
+    /// 误报为"未找到应用标识 xxx"。
     /// </remarks>
     public virtual TAppContext GetDefaultApp()
     {
-        string? defaultKey;
-        lock (_defaultAppLock)
-        {
-            defaultKey = _defaultAppKey;
-        }
-
+        var defaultKey = Volatile.Read(ref _defaultAppKey);
         if (string.IsNullOrEmpty(defaultKey))
             throw new InvalidOperationException("未设置默认应用。请在注册应用时设置 isDefault = true。");
 
-        return GetApp(defaultKey!);
+        if (_apps.TryGetValue(defaultKey!, out var context))
+            return context;
+
+        // MT-08：原"二次读取"循环两次迭代读取同一组变量（除外部改写外行为完全一致），
+        // 并不能容忍"默认应用刚被移除"的窗口。改为锁内收敛：从仍存在的应用里选一个作为新默认值，
+        // 只在确实无任何应用时才抛出。
+        lock (_defaultKeyLock)
+        {
+            foreach (var candidate in _apps.Keys)
+            {
+                if (_apps.TryGetValue(candidate, out var fallbackContext))
+                {
+                    Volatile.Write(ref _defaultAppKey, candidate);
+                    return fallbackContext;
+                }
+            }
+        }
+
+        throw new InvalidOperationException("默认应用已被移除或未注册，请重新调用 SetDefaultApp 指定默认应用。");
     }
 
     /// <inheritdoc />
-    public virtual IEnumerable<TAppContext> GetAllApps()
-    {
-        return _apps.Values;
-    }
+    /// <remarks>B7：返回快照数组，保证事件回调/缓存重建期间视图稳定。</remarks>
+    public virtual IEnumerable<TAppContext> GetAllApps() => _apps.Values.ToArray();
 
     /// <inheritdoc />
     public virtual bool HasApp(string appKey)
     {
         if (string.IsNullOrWhiteSpace(appKey))
             return false;
+
+        try
+        {
+            AppKeyValidator.Validate(appKey, nameof(appKey));
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
 
         return _apps.ContainsKey(appKey);
     }
@@ -189,9 +293,60 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     /// 触发配置变更事件。
     /// </summary>
     /// <param name="e">事件参数。</param>
+    /// <remarks>
+    /// B4：逐订阅者隔离，避免单个订阅者异常把"已提交的状态变更"表现为"注册失败"。
+    /// </remarks>
     protected virtual void OnConfigurationChanged(AppConfigurationChangedEventArgs e)
     {
-        ConfigurationChanged?.Invoke(this, e);
+        var handlers = ConfigurationChanged;
+        if (handlers is null) return;
+
+        foreach (var handler in handlers.GetInvocationList())
+        {
+            try
+            {
+                ((EventHandler<AppConfigurationChangedEventArgs>)handler).Invoke(this, e);
+            }
+            catch (Exception ex)
+            {
+                // 订阅者故障不得影响注册表状态机。
+                // Abstractions 层无日志依赖，通过 AppManagerDiagnostics 可注入委托输出诊断。
+                AppManagerDiagnostics.SubscriberFailed?.Invoke(ex, e.AppKey, e.ChangeType);
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public string? DefaultAppKey => Volatile.Read(ref _defaultAppKey);
+
+    /// <inheritdoc />
+    public bool TrySetDefaultApp(string appKey)
+    {
+        if (string.IsNullOrWhiteSpace(appKey))
+            return false;
+
+        try
+        {
+            AppKeyValidator.Validate(appKey, nameof(appKey));
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+
+        if (!_apps.ContainsKey(appKey))
+            return false;
+
+        Volatile.Write(ref _defaultAppKey, appKey);
+        return true;
+    }
+
+    /// <inheritdoc />
+    public virtual void SetDefaultApp(string appKey)
+    {
+        if (!TrySetDefaultApp(appKey))
+            throw new InvalidOperationException(
+                $"无法设置默认应用：应用标识 '{AppKeyValidator.ToSafeText(appKey)}' 未注册。");
     }
 
     private TContextSwitcher CreateContextSwitcher<TContextSwitcher>(TAppContext context)
@@ -217,6 +372,15 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
         if (factory == null)
             throw new ArgumentNullException(nameof(factory));
 
-        _switcherFactories[typeof(TContextSwitcher)] = ctx => factory(ctx);
+        var switcherType = typeof(TContextSwitcher);
+
+        // MT-08：索引器赋值会静默覆盖先前注册的工厂，导致"注册了却不生效"难以排查。
+        // 覆盖时通过诊断出口记一次告警（由 Client 层的 AppManagerDiagnosticsWiring 接到 ILogger）。
+        if (_switcherFactories.ContainsKey(switcherType))
+        {
+            AppManagerDiagnostics.SwitcherFactoryOverwritten?.Invoke(switcherType.Name);
+        }
+
+        _switcherFactories[switcherType] = ctx => factory(ctx);
     }
 }

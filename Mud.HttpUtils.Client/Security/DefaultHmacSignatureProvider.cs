@@ -126,42 +126,9 @@ public class DefaultHmacSignatureProvider : IHmacSignatureProvider
             return false;
         }
 
-#if NETSTANDARD2_0
-        return FixedTimeEquals(signatureBytes, expectedBytes);
-#else
-        return CryptographicOperations.FixedTimeEquals(signatureBytes, expectedBytes);
-#endif
+        // B-6：常量时间比较收敛到 SecurityHelper（与 DefaultAesEncryptionProvider 共用唯一实现）
+        return SecurityHelper.FixedTimeEquals(signatureBytes, expectedBytes);
     }
-
-#if NETSTANDARD2_0
-    /// <summary>
-    /// 在 .NET Standard 2.0 环境下实现的定时字节数组比较方法，防止时序攻击。
-    /// </summary>
-    /// <param name="left">第一个字节数组。</param>
-    /// <param name="right">第二个字节数组。</param>
-    /// <returns>如果两个字节数组完全相同则返回 true，否则返回 false。</returns>
-    /// <remarks>
-    /// <para>
-    /// 该方法使用异或（XOR）操作累积比较结果，确保比较时间与数据内容无关。
-    /// 这是防止时序攻击的关键安全措施。
-    /// </para>
-    /// </remarks>
-    private static bool FixedTimeEquals(byte[] left, byte[] right)
-    {
-        if (left.Length != right.Length)
-            return false;
-
-        var length = left.Length;
-        var result = 0;
-
-        for (var i = 0; i < length; i++)
-        {
-            result |= left[i] ^ right[i];
-        }
-
-        return result == 0;
-    }
-#endif
 
     /// <summary>
     /// 构建用于 HMAC 签名的签名字符串。

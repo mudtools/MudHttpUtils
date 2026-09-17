@@ -164,7 +164,8 @@ public class QueryMapHelperTests
 
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, true, false);
 
-        queryParams["Name"].Should().BeNull();
+        // M2-#16A：includeNullValues=true 时 null 序列化为空串（Name=），不再被静默丢弃
+        queryParams["Name"].Should().Be("");
         queryParams["Age"].Should().Be("25");
     }
 
@@ -270,7 +271,8 @@ public class QueryMapHelperTests
         QueryMapHelper.FlattenObjectToQueryParams(obj, "", ".", queryParams, true, false);
 
         queryParams["Filter.status"].Should().Be("active");
-        queryParams["Filter.empty"].Should().BeNull();
+        // M2-#16A：includeNullValues=true 时 null 序列化为空串（key=），不再被静默丢弃
+        queryParams["Filter.empty"].Should().Be("");
     }
 
     #endregion

@@ -31,7 +31,7 @@ public class PollyResiliencePolicyProviderTests
         var options = new ResilienceOptions { Retry = { Enabled = true } };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetRetryPolicy<object>();
+        var policy = provider.GetRetryPolicy<object>(It.IsAny<string>());
 
         policy.Should().NotBeNull();
     }
@@ -42,7 +42,7 @@ public class PollyResiliencePolicyProviderTests
         var options = new ResilienceOptions { Retry = { Enabled = false } };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetRetryPolicy<object>();
+        var policy = provider.GetRetryPolicy<object>(It.IsAny<string>());
 
         policy.Should().NotBeNull();
     }
@@ -53,7 +53,7 @@ public class PollyResiliencePolicyProviderTests
         var options = new ResilienceOptions { Timeout = { Enabled = true } };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetTimeoutPolicy<object>();
+        var policy = provider.GetTimeoutPolicy<object>(It.IsAny<string>());
 
         policy.Should().NotBeNull();
     }
@@ -64,7 +64,7 @@ public class PollyResiliencePolicyProviderTests
         var options = new ResilienceOptions { Timeout = { Enabled = false } };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetTimeoutPolicy<object>();
+        var policy = provider.GetTimeoutPolicy<object>(It.IsAny<string>());
 
         policy.Should().NotBeNull();
     }
@@ -75,7 +75,7 @@ public class PollyResiliencePolicyProviderTests
         var options = new ResilienceOptions { CircuitBreaker = { Enabled = true } };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetCircuitBreakerPolicy<object>();
+        var policy = provider.GetCircuitBreakerPolicy<object>(It.IsAny<string>());
 
         policy.Should().NotBeNull();
     }
@@ -86,7 +86,7 @@ public class PollyResiliencePolicyProviderTests
         var options = new ResilienceOptions { CircuitBreaker = { Enabled = false } };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetCircuitBreakerPolicy<object>();
+        var policy = provider.GetCircuitBreakerPolicy<object>(It.IsAny<string>());
 
         policy.Should().NotBeNull();
     }
@@ -108,7 +108,7 @@ public class PollyResiliencePolicyProviderTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetCircuitBreakerPolicy<object>();
+        var policy = provider.GetCircuitBreakerPolicy<object>(It.IsAny<string>());
 
         policy.Should().NotBeNull();
     }
@@ -116,7 +116,7 @@ public class PollyResiliencePolicyProviderTests
     [Fact]
     public void GetCircuitBreakerPolicy_WithoutSamplingDuration_UsesSimpleCircuitBreaker()
     {
-        // SamplingDurationSeconds = 0 时应使用简单熔断策略（连续失败计数）
+        // SamplingDurationSeconds = 0 时应使用简单熔断策略（连续失败计数�?
         var options = new ResilienceOptions
         {
             CircuitBreaker =
@@ -129,7 +129,7 @@ public class PollyResiliencePolicyProviderTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetCircuitBreakerPolicy<object>();
+        var policy = provider.GetCircuitBreakerPolicy<object>(It.IsAny<string>());
 
         policy.Should().NotBeNull();
     }
@@ -140,7 +140,7 @@ public class PollyResiliencePolicyProviderTests
         var options = new ResilienceOptions();
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetCombinedPolicy<object>();
+        var policy = provider.GetCombinedPolicy<object>(It.IsAny<string>());
 
         policy.Should().NotBeNull();
     }
@@ -156,7 +156,7 @@ public class PollyResiliencePolicyProviderTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetCombinedPolicy<object>();
+        var policy = provider.GetCombinedPolicy<object>(It.IsAny<string>());
 
         policy.Should().NotBeNull();
     }
@@ -181,7 +181,7 @@ public class PollyResiliencePolicyProviderTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetRetryPolicy<HttpResponseMessage>();
+        var policy = provider.GetRetryPolicy<HttpResponseMessage>(It.IsAny<string>());
 
         Func<Task<HttpResponseMessage>> action = () =>
             throw new HttpRequestException("test error");
@@ -209,7 +209,7 @@ public class PollyResiliencePolicyProviderTests
         };
         var provider = new PollyResiliencePolicyProvider(Options.Create(options));
 
-        var policy = provider.GetRetryPolicy<HttpResponseMessage>();
+        var policy = provider.GetRetryPolicy<HttpResponseMessage>(It.IsAny<string>());
 
         Func<Task<HttpResponseMessage>> action = () =>
             throw new HttpRequestException("test error");
@@ -233,7 +233,7 @@ public class PollyResiliencePolicyProviderTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetRetryPolicy<HttpResponseMessage>();
+        var policy = provider.GetRetryPolicy<HttpResponseMessage>(It.IsAny<string>());
 
         Func<Task<HttpResponseMessage>> action = () =>
             throw new HttpRequestException("test error");

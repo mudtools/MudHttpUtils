@@ -26,6 +26,7 @@ jobs:
           - Tests/Mud.HttpUtils.Generator.Tests/Mud.HttpUtils.Generator.Tests.csproj
           - Tests/Mud.HttpUtils.Client.Tests/Mud.HttpUtils.Client.Tests.csproj
           - Tests/Mud.HttpUtils.Resilience.Tests/Mud.HttpUtils.Resilience.Tests.csproj
+          - Tests/Mud.HttpUtils.JsonContextScaffolder.Tests/Mud.HttpUtils.JsonContextScaffolder.Tests.csproj
 
     steps:
       - name: Checkout
@@ -46,6 +47,111 @@ jobs:
 
       - name: Run tests
         run: dotnet test ${{ matrix.test_project }} --no-build --configuration Release --logger "console;verbosity=detailed"
+
+      # ── 仅分析器通道（方案 §3.5 / §5.4）──────────────────────────────
+      # 探针工程 Tests/AnalyzerOnlyProbe 刻意包含违规样例（MUD001/MUD002/MUD004），
+      # 构建必然失败，故本步骤以「诊断是否出现」为断言（grep），而非以构建成功为准。
+      # 为什么需要：csc 的 CommonCompiler.CompileAndEmit 在声明阶段有闸门
+      #   if (HasUnsuppressableErrors(diagnostics)) return;
+      # （IsUnsuppressableError := DefaultSeverity == Error && 带 NotConfigurable 标签），
+      # 源生成器诊断已并入该 bag —— 一旦命中，分析器驱动永不执行、MUD* 整体不呈现。
+      # 关闭源生成器即消除该连坐路径，使接口规范诊断必然可见。
+      # 门禁有效性自检：删除任一违规样例，对应 grep 断言即失败 → 本步骤变红。
+      - name: 分析器专用验证（禁用源生成器）
+        if: matrix.test_project == 'Tests/Mud.HttpUtils.Generator.Tests/Mud.HttpUtils.Generator.Tests.csproj'
+        shell: bash
+        run: |
+          set +e
+          output=$(dotnet build Tests/AnalyzerOnlyProbe/AnalyzerOnlyProbe.csproj -c Release -p:DisableMudSourceGenerator=true 2>&1)
+          echo "$output"
+          status=0
+          for id in MUD001 MUD002 MUD004; do
+            if ! grep -q "$id" <<< "$output"; then
+              echo "::error::分析器诊断 $id 未呈现：探针样例缺失，或分析器在真实编译中被抑制"
+              status=1
+            fi
+          done
+          exit $status
+
+      # ── 连坐抑制回归（方案 §1.2 / §3.3）──────────────────────────────
+      # 生成器开启时，Error 级生成器诊断（HTTPCLIENT004，已按标签分层去掉 NotConfigurable）
+      # 不得再连坐抑制分析器诊断 MUD001。若有人把 NotConfigurable 加回 HTTPCLIENT004，
+      # MUD001 会消失 → 本步骤变红（标签分层决策的端到端守卫）。
+      - name: 连坐抑制回归验证（生成器开启）
+        if: matrix.test_project == 'Tests/Mud.HttpUtils.Generator.Tests/Mud.HttpUtils.Generator.Tests.csproj'
+        shell: bash
+        run: |
+          set +e
+          output=$(dotnet build Tests/AnalyzerOnlyProbe/AnalyzerOnlyProbe.csproj -c Release 2>&1)
+          echo "$output"
+          status=0
+          for id in HTTPCLIENT004 MUD001; do
+            if ! grep -q "$id" <<< "$output"; then
+              echo "::error::期望诊断 $id 未呈现（生成器 Error 诊断连坐抑制了分析器诊断？）"
+              status=1
+            fi
+          done
+          exit $status
+
+  # ──────────────────────────────────────────────
+  # PublicAPI 契约门禁（H-4）
+  # ──────────────────────────────────────────────
+  # 以 -p:PublicApiStrictMode=true 构建全部发布库 × 各自 TFM。
+  # PublicApiAnalyzers 将 RS0016（代码含基线未登记的公共符号）/RS0017（基线含代码已删除的符号）
+  # 升级为 error —— 任何公共 API 变更未同步基线（PublicAPI/<tfm>/PublicAPI.*.txt）即构建失败。
+  # 基线重建：tools/rebuild-publicapi.ps1（勿在 CI 伪造基线）。
+  publicapi-gate:
+    name: PublicAPI 契约门禁
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # 多 TFM 发布库 × 4
+          - { library: Mud.HttpUtils.Abstractions, target_framework: netstandard2.0 }
+          - { library: Mud.HttpUtils.Abstractions, target_framework: net6.0 }
+          - { library: Mud.HttpUtils.Abstractions, target_framework: net8.0 }
+          - { library: Mud.HttpUtils.Abstractions, target_framework: net10.0 }
+          - { library: Mud.HttpUtils.Client, target_framework: netstandard2.0 }
+          - { library: Mud.HttpUtils.Client, target_framework: net6.0 }
+          - { library: Mud.HttpUtils.Client, target_framework: net8.0 }
+          - { library: Mud.HttpUtils.Client, target_framework: net10.0 }
+          - { library: Mud.HttpUtils.Resilience, target_framework: netstandard2.0 }
+          - { library: Mud.HttpUtils.Resilience, target_framework: net6.0 }
+          - { library: Mud.HttpUtils.Resilience, target_framework: net8.0 }
+          - { library: Mud.HttpUtils.Resilience, target_framework: net10.0 }
+          - { library: Mud.HttpUtils.OpenTelemetry, target_framework: netstandard2.0 }
+          - { library: Mud.HttpUtils.OpenTelemetry, target_framework: net6.0 }
+          - { library: Mud.HttpUtils.OpenTelemetry, target_framework: net8.0 }
+          - { library: Mud.HttpUtils.OpenTelemetry, target_framework: net10.0 }
+          - { library: Mud.HttpUtils.Newtonsoft.Json, target_framework: netstandard2.0 }
+          - { library: Mud.HttpUtils.Newtonsoft.Json, target_framework: net6.0 }
+          - { library: Mud.HttpUtils.Newtonsoft.Json, target_framework: net8.0 }
+          - { library: Mud.HttpUtils.Newtonsoft.Json, target_framework: net10.0 }
+          - { library: Mud.HttpUtils.Xml, target_framework: netstandard2.0 }
+          - { library: Mud.HttpUtils.Xml, target_framework: net6.0 }
+          - { library: Mud.HttpUtils.Xml, target_framework: net8.0 }
+          - { library: Mud.HttpUtils.Xml, target_framework: net10.0 }
+          - { library: Mud.HttpUtils.Testing, target_framework: netstandard2.0 }
+          - { library: Mud.HttpUtils.Testing, target_framework: net6.0 }
+          - { library: Mud.HttpUtils.Testing, target_framework: net8.0 }
+          - { library: Mud.HttpUtils.Testing, target_framework: net10.0 }
+          # 单 TFM 发布库（ns2.0）
+          - { library: Mud.HttpUtils.Attributes, target_framework: netstandard2.0 }
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Build with PublicAPI strict mode
+        run: dotnet build ${{ matrix.library }}/${{ matrix.library }}.csproj -f ${{ matrix.target_framework }} --configuration Release -p:PublicApiStrictMode=true
 
   # ──────────────────────────────────────────────
   # Demo 项目构建
@@ -78,6 +184,524 @@ jobs:
 
       - name: Build
         run: dotnet build ${{ matrix.demo_project }} --no-restore --configuration Release
+
+  # ──────────────────────────────────────────────
+  # Native AOT 发布验证
+  # ──────────────────────────────────────────────
+  aot-publish:
+    name: AOT 发布验证 (${{ matrix.rid }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: windows-latest
+            rid: win-x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      # Native AOT 需要目标平台的原生工具链
+      # Ubuntu: clang, zlib1g-dev 已预装在 github runner 中
+      # Windows: MSVC 已预装
+      - name: Install AOT prerequisites (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang zlib1g-dev
+
+      - name: Publish AOT (net10.0)
+        run: dotnet publish Demos/AotVerificationDemo/AotVerificationDemo.csproj -c Release -f net10.0 -r ${{ matrix.rid }} -p:AotStrictMode=true
+
+      - name: Publish AOT (net8.0)
+        run: dotnet publish Demos/AotVerificationDemo/AotVerificationDemo.csproj -c Release -f net8.0 -r ${{ matrix.rid }} -p:AotStrictMode=true
+
+      # [T9 修复] TrimMode=full 纳入 CI 硬门禁：验证完整裁剪模式下无遗漏的反射依赖。
+      - name: Publish AOT FullTrim (net10.0)
+        run: dotnet publish Demos/AotFullTrimVerificationDemo/AotFullTrimVerificationDemo.csproj -c Release -f net10.0 -r ${{ matrix.rid }} -p:AotStrictMode=true
+
+      # [P2-4] FullTrim 补 net8.0：net8/net10 裁剪器行为有差异，net8 是当前 LTS 主力。
+      - name: Publish AOT FullTrim (net8.0)
+        run: dotnet publish Demos/AotFullTrimVerificationDemo/AotFullTrimVerificationDemo.csproj -c Release -f net8.0 -r ${{ matrix.rid }} -p:AotStrictMode=true
+
+      - name: Run AOT binary (net10.0) and verify AOT_OK
+        shell: bash
+        run: |
+          BIN_PATH="Demos/AotVerificationDemo/bin/Release/net10.0/${{ matrix.rid }}/publish/AotVerificationDemo"
+          if [ -f "$BIN_PATH" ]; then
+            OUTPUT=$("$BIN_PATH" 2>&1 || true)
+            echo "$OUTPUT"
+            if echo "$OUTPUT" | grep -q "AOT_OK"; then
+              echo "✓ AOT runtime verification passed (net10.0)"
+            else
+              echo "✗ AOT runtime verification FAILED (net10.0) - AOT_OK not found in output"
+              exit 1
+            fi
+            # [v2.4 §1.4 + AOT 体系修复] 关键场景硬门禁断言。
+            # [修复] 原断言使用 Program.cs 中的方法名（Demo*），但 Demo 输出从未打印方法名 →
+            # 断言恒失败。现 Demo 在每个场景前打印 ASCII 标记行 "[SCENE] {方法名}"，此处按其断言
+            # （grep -F 逐字匹配，避免 [QueryMap] 之类被当作正则字符类）。
+            for SCENE in "DemoResponseTypeWrapping" "DemoComplexQueryJsonSerialization" "DemoQueryMapFeatureCoverage" "DemoSensitiveDataMasker" "DemoPolymorphismRoundTrip"; do
+              if echo "$OUTPUT" | grep -Fq "[SCENE] $SCENE"; then
+                echo "✓ Scene $SCENE executed (net10.0)"
+              else
+                echo "✗ Scene $SCENE NOT found in output (net10.0)"
+                exit 1
+              fi
+            done
+          else
+            echo "Binary not found at $BIN_PATH"
+            exit 1
+          fi
+
+      - name: Run AOT binary (net8.0) and verify AOT_OK
+        shell: bash
+        run: |
+          BIN_PATH="Demos/AotVerificationDemo/bin/Release/net8.0/${{ matrix.rid }}/publish/AotVerificationDemo"
+          if [ -f "$BIN_PATH" ]; then
+            OUTPUT=$("$BIN_PATH" 2>&1 || true)
+            echo "$OUTPUT"
+            if echo "$OUTPUT" | grep -q "AOT_OK"; then
+              echo "✓ AOT runtime verification passed (net8.0)"
+            else
+              echo "✗ AOT runtime verification FAILED (net8.0) - AOT_OK not found in output"
+              exit 1
+            fi
+            # [v2.4 §1.4 + AOT 体系修复] 关键场景硬门禁断言（说明见 net10.0 步骤）
+            for SCENE in "DemoResponseTypeWrapping" "DemoComplexQueryJsonSerialization" "DemoQueryMapFeatureCoverage" "DemoSensitiveDataMasker" "DemoPolymorphismRoundTrip"; do
+              if echo "$OUTPUT" | grep -Fq "[SCENE] $SCENE"; then
+                echo "✓ Scene $SCENE executed (net8.0)"
+              else
+                echo "✗ Scene $SCENE NOT found in output (net8.0)"
+                exit 1
+              fi
+            done
+          else
+            echo "Binary not found at $BIN_PATH"
+            exit 1
+          fi
+
+      # [T9 修复] 运行 FullTrim 验证二进制并断言 AOT_OK
+      - name: Run AOT FullTrim binary and verify AOT_OK
+        shell: bash
+        run: |
+          BIN_PATH="Demos/AotFullTrimVerificationDemo/bin/Release/net10.0/${{ matrix.rid }}/publish/AotFullTrimVerificationDemo"
+          if [ -f "$BIN_PATH" ]; then
+            OUTPUT=$("$BIN_PATH" 2>&1 || true)
+            echo "$OUTPUT"
+            if echo "$OUTPUT" | grep -q "AOT_OK"; then
+              echo "✓ AOT FullTrim verification passed (net10.0)"
+            else
+              echo "✗ FullTrim verification FAILED - AOT_OK not found in output"
+              exit 1
+            fi
+            # [T10 修复 + AOT 体系修复] 关键场景硬门禁断言（含场景 3 去虚化后的 EncryptContent round-trip）。
+            # 场景标识已改为 ASCII（RunScenarioAsync 打印 "[SCENE] {id}"）：原断言用中文场景名且
+            # 只是在失败分支才打印，断言方向与实现相反 → 门禁必然红。
+            for SCENE in "JsonSerialization" "AotSafeMasker" "EncryptContent" "QueryParameters" "GeneratedContext"; do
+              if echo "$OUTPUT" | grep -Fq "[SCENE] $SCENE"; then
+                echo "✓ Scene $SCENE executed (FullTrim)"
+              else
+                echo "✗ Scene $SCENE NOT found in output (FullTrim)"
+                exit 1
+              fi
+            done
+          else
+            echo "Binary not found at $BIN_PATH"
+            exit 1
+          fi
+
+      # [P2-4] 运行 FullTrim net8.0 验证二进制并断言 AOT_OK
+      - name: Run AOT FullTrim binary (net8.0) and verify AOT_OK
+        shell: bash
+        run: |
+          BIN_PATH="Demos/AotFullTrimVerificationDemo/bin/Release/net8.0/${{ matrix.rid }}/publish/AotFullTrimVerificationDemo"
+          if [ -f "$BIN_PATH" ]; then
+            OUTPUT=$("$BIN_PATH" 2>&1 || true)
+            echo "$OUTPUT"
+            if echo "$OUTPUT" | grep -q "AOT_OK"; then
+              echo "✓ AOT FullTrim verification passed (net8.0)"
+            else
+              echo "✗ FullTrim verification FAILED (net8.0) - AOT_OK not found in output"
+              exit 1
+            fi
+            for SCENE in "JsonSerialization" "AotSafeMasker" "EncryptContent" "QueryParameters" "GeneratedContext"; do
+              if echo "$OUTPUT" | grep -Fq "[SCENE] $SCENE"; then
+                echo "✓ Scene $SCENE executed (FullTrim net8.0)"
+              else
+                echo "✗ Scene $SCENE NOT found in output (FullTrim net8.0)"
+                exit 1
+              fi
+            done
+          else
+            echo "Binary not found at $BIN_PATH"
+            exit 1
+          fi
+
+  # ──────────────────────────────────────────────
+  # NuGet 包消费方 AOT 发布验证（PackageReference 路径）
+  # ──────────────────────────────────────────────
+      # [AOT v4 Phase 21.1 / D12] XML 路径在 AOT 下的拒绝验证（AOT007）。
+      # 使用 github.workspace 传递路径，临时项目创建在仓库子目录下以自动继承 Directory.Build.props。
+      # 仅设置 IsAotCompatible=true（触发 AOT007 分析器的 AOT 上下文检测）；不设置 PublishAot=true，
+      # 因 dotnet build 即可触发 AOT007 编译期诊断，无需实际 AOT 发布。
+      #
+      # 说明（本轮修复三处探针缺陷，原探针恒红）：
+      #   1. 必须显式 ProjectReference Mud.HttpUtils.Attributes：Client/Abstractions 均不引用它，
+      #      缺引用时探针源码 CS0246 全量失败，`grep AOT007` 必然找不到（历史探针即如此）；
+      #   2. 接口必须放在显式命名空间：全局命名空间的 [HttpClientApi] 会触发 HTTPCLIENTREG001
+      #      （Error + NotConfigurable），csc 的 Declare 阶段"连坐闸门"会让同一编译中的**全部**
+      #      分析器诊断不再呈现（含 AOT007）——即使 AOT 上下文判定正确也看不到；
+      #   3. 分级与逃生舱需一并门禁：仅 IsAotCompatible=true → Warning；显式 MudAotRuntimeMode=jit
+      #      → 不报告（F11 修复后的三态语义）。
+      - name: Verify XML path is rejected in AOT (AOT007)
+        shell: bash
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          # 用例 1 在严格模式下 AOT007 被升级为 Error ⇒ 构建必然失败，故必须关闭 -e
+          # （GitHub Actions 的 shell: bash 默认以 `bash -e` 执行，失败的命令替换会直接中断脚本）。
+          set +e
+          TEST_DIR="$WORKSPACE/.tmp-xml-aot-test"
+          rm -rf "$TEST_DIR"
+          mkdir -p "$TEST_DIR"
+          cat > "$TEST_DIR/Test.csproj" << 'EOF'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net10.0</TargetFramework>
+              <IsAotCompatible>true</IsAotCompatible>
+            </PropertyGroup>
+            <ItemGroup>
+              <ProjectReference Include="..\Mud.HttpUtils.Attributes\Mud.HttpUtils.Attributes.csproj" />
+              <ProjectReference Include="..\Mud.HttpUtils.Client\Mud.HttpUtils.Client.csproj" />
+              <ProjectReference Include="..\Mud.HttpUtils.Generator\Mud.HttpUtils.Generator.csproj" OutputItemType="Analyzer" />
+            </ItemGroup>
+            <!-- [D18] ProjectReference 场景需显式注册 CompilerVisibleProperty，
+                 否则 AotXmlRejectionAnalyzer 读不到 build_property.IsAotCompatible，AOT007 不会触发。 -->
+            <ItemGroup>
+              <CompilerVisibleProperty Include="IsAotCompatible" />
+              <CompilerVisibleProperty Include="PublishAot" />
+              <CompilerVisibleProperty Include="MudAotRuntimeMode" />
+            </ItemGroup>
+          </Project>
+          EOF
+          cat > "$TEST_DIR/Program.cs" << 'EOF'
+          using Mud.HttpUtils.Attributes;
+
+          namespace XmlAotProbe
+          {
+              [HttpClientApi]
+              public interface IXmlApi
+              {
+                  [Post("/api/data"), SerializationMethod(SerializationMethod.Xml)]
+                  System.Threading.Tasks.Task<string> PostDataAsync([Body] MyDto data);
+              }
+
+              public class MyDto { public string Name { get; set; } }
+
+              internal static class Program { private static void Main() { } }
+          }
+          EOF
+          fail=0
+
+          # 用例 1：仅 IsAotCompatible=true（模糊态）→ 必须报 AOT007（Warning，严格模式下升级为 Error）。
+          out_ambiguous=$(dotnet build "$TEST_DIR/Test.csproj" -p:AotStrictMode=true 2>&1)
+          if echo "$out_ambiguous" | grep -q "AOT007"; then
+            echo "✓ AOT007 reported for XML path with IsAotCompatible only (warning/error per strict mode)"
+          else
+            echo "$out_ambiguous"
+            echo "✗ AOT007 not reported for XML path in AOT (IsAotCompatible only)"
+            fail=1
+          fi
+
+          # 用例 2：显式 MudAotRuntimeMode=jit（F11 逃生舱）→ 不得报告 AOT007。
+          out_jit=$(dotnet build "$TEST_DIR/Test.csproj" -p:MudAotRuntimeMode=jit 2>&1)
+          if echo "$out_jit" | grep -q "AOT007"; then
+            echo "$out_jit"
+            echo "✗ AOT007 reported despite explicit MudAotRuntimeMode=jit (F11 escape hatch broken)"
+            fail=1
+          else
+            echo "✓ No AOT007 under explicit MudAotRuntimeMode=jit"
+          fi
+
+          rm -rf "$TEST_DIR"
+          exit $fail
+
+      # [T3 修复] 脚手架激活条件与 AotModeResolver 语义一致性探针。
+      # 覆盖：显式 MudAotRuntimeMode=aot 激活（无需 PublishAot）；显式 jit 否决 PublishAot；
+      #       无属性时关闭（IsAotCompatible 不自动激活，D16 语义不变）。
+      # 断言方式：探针工程把"属性值"与"目标是否真的执行"写成标记文件（AfterTargets 在目标被条件跳过时
+      # 不会执行，故 ran.txt 存在即为目标执行过的证据），避免依赖中文日志 grep 的跨平台编码差异。
+      - name: Verify scaffolder activation aligns with AotModeResolver (T3)
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          TEST_DIR="$WORKSPACE/.tmp-scaffolder-activation"
+          rm -rf "$TEST_DIR"
+          mkdir -p "$TEST_DIR"
+          cat > "$TEST_DIR/Test.csproj" << 'EOF'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <TargetFramework>net10.0</TargetFramework>
+            </PropertyGroup>
+            <Import Project="..\Mud.HttpUtils.Attributes\build\Mud.HttpUtils.JsonContextScaffolder.targets" />
+            <Target Name="ProbeWriteActivationState" BeforeTargets="BeforeCompile">
+              <WriteLinesToFile File="$(MSBuildProjectDirectory)\activation.txt"
+                                Lines="MudEnableJsonContextScaffolder=$(MudEnableJsonContextScaffolder)"
+                                Overwrite="true" />
+            </Target>
+            <Target Name="ProbeWriteRanMarker" AfterTargets="MudGenerateJsonContext"
+                    Condition="'$(MudEnableJsonContextScaffolder)' == 'true'">
+              <WriteLinesToFile File="$(MSBuildProjectDirectory)\ran.txt" Lines="ran" Overwrite="true" />
+            </Target>
+          </Project>
+          EOF
+          check() {
+            local label="$1" wantFlag="$2" wantRan="$3"
+            shift 3
+            rm -f "$TEST_DIR/activation.txt" "$TEST_DIR/ran.txt"
+            dotnet build "$TEST_DIR/Test.csproj" "$@" > /dev/null 2>&1 || true
+            local state="(none)"
+            [ -f "$TEST_DIR/activation.txt" ] && state=$(tr -d '\r' < "$TEST_DIR/activation.txt")
+            local ran="no"
+            [ -f "$TEST_DIR/ran.txt" ] && ran="yes"
+            echo "  $label => $state | targetRan=$ran"
+            if [ "$state" != "MudEnableJsonContextScaffolder=$wantFlag" ] || [ "$ran" != "$wantRan" ]; then
+              echo "::error::T3 alignment FAILED ($label): expected MudEnableJsonContextScaffolder=$wantFlag/targetRan=$wantRan, got $state/targetRan=$ran"
+              return 1
+            fi
+          }
+          fail=0
+          check "MudAotRuntimeMode=aot" true yes -p:MudAotRuntimeMode=aot || fail=1
+          check "MudAotRuntimeMode=jit" false no -p:MudAotRuntimeMode=jit || fail=1
+          check "PublishAot+explicit jit vetoes" false no -p:PublishAot=true -p:MudAotRuntimeMode=jit || fail=1
+          check "PublishAot" true yes -p:PublishAot=true || fail=1
+          rm -rf "$TEST_DIR"
+          if [ "$fail" -ne 0 ]; then
+            echo "✗ Scaffolder activation semantics diverge from AotModeResolver"
+            exit 1
+          fi
+          echo "✓ Scaffolder activation matches AotModeResolver semantics"
+
+      # [P0-1] 脚手架 targets 的增量语义与失败清理门禁（与上面 T3 探针同属脚手架行为，故同作业同 OS 门控）。
+      # 断言四件事（用假工具脚本替代真实 mud-jsonctx，自包含且确定性）：
+      #   1) 干净构建必须真正执行脚手架 —— Outputs 若只有 $(MudJsonContextOutputPath)\**\*.g.cs，
+      #      MSBuild 会因"没有输出"直接跳过目标，导致首次生成永不发生（本轮复核发现的回归）；
+      #   2) 源文件未变更时不得重跑（增量生效）；
+      #   3) 源文件变更后必须重跑 —— Inputs 必须含全部编译源文件，只声明 .csproj 会漏掉 DTO 变更；
+      #   4) 工具失败时删除陈旧 .g.cs 与时间戳 —— 消费方构建应以"类型缺失"编译错误失败（而非静默通过），
+      #      且时间戳被删除使下一次构建必定重试。
+      - name: Verify scaffolder incrementality and stale-artifact cleanup (P0-1)
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          TEST_DIR="$WORKSPACE/.tmp-scaffolder-p01"
+          rm -rf "$TEST_DIR"
+          mkdir -p "$TEST_DIR"
+
+          cat > "$TEST_DIR/fake-scaffolder.sh" << 'EOF'
+          #!/bin/sh
+          # 假脚手架：记录调用次数，按 -o 参数写出可编译的 Context
+          echo ran >> "$(dirname "$0")/runs.log"
+          out=""
+          prev=""
+          for a in "$@"; do
+            if [ "$prev" = "-o" ]; then out="$a"; fi
+            prev="$a"
+          done
+          mkdir -p "$out"
+          printf 'namespace ProbeNs { internal class AppJsonContext { } }\n' > "$out/AppJsonContext.g.cs"
+          exit 0
+          EOF
+
+          cat > "$TEST_DIR/fail-scaffolder.sh" << 'EOF'
+          #!/bin/sh
+          exit 3
+          EOF
+
+          # 消费方代码引用生成的 Context：陈旧/缺失产物必须表现为编译错误
+          cat > "$TEST_DIR/Consumer.cs" << 'EOF'
+          namespace ProbeNs;
+          internal sealed class Consumer { public string ContextName => typeof(AppJsonContext).Name; }
+          EOF
+
+          cat > "$TEST_DIR/Probe.csproj" << 'EOF'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <TargetFramework>net8.0</TargetFramework>
+              <MudEnableJsonContextScaffolder>true</MudEnableJsonContextScaffolder>
+              <MudJsonContextOutputPath>$(MSBuildProjectDirectory)/obj/Gen</MudJsonContextOutputPath>
+              <MudJsonContextToolCommand>$(MSBuildProjectDirectory)/fake-scaffolder.sh</MudJsonContextToolCommand>
+            </PropertyGroup>
+            <Import Project="$(WORKSPACE)/Mud.HttpUtils.Attributes/build/Mud.HttpUtils.JsonContextScaffolder.targets" />
+          </Project>
+          EOF
+
+          chmod +x "$TEST_DIR/fake-scaffolder.sh" "$TEST_DIR/fail-scaffolder.sh"
+
+          runs() {
+            if [ -f "$TEST_DIR/runs.log" ]; then
+              wc -l < "$TEST_DIR/runs.log" | tr -d ' '
+            else
+              echo 0
+            fi
+          }
+
+          fail=0
+
+          # 1) 干净构建：必须真正生成
+          dotnet build "$TEST_DIR/Probe.csproj" -v:q
+          if [ ! -f "$TEST_DIR/obj/Gen/AppJsonContext.g.cs" ]; then
+            echo "::error::P0-1 FAILED: 干净构建后未生成 Context（Outputs 为空会让 MSBuild 直接跳过目标）"
+            fail=1
+          fi
+          if [ "$(runs)" != "1" ]; then
+            echo "::error::P0-1 FAILED: 首次构建应执行 1 次脚手架，实际 $(runs)"
+            fail=1
+          fi
+
+          # 2) 无变更：不得重跑
+          dotnet build "$TEST_DIR/Probe.csproj" -v:q
+          if [ "$(runs)" != "1" ]; then
+            echo "::error::P0-1 FAILED: 源未变更却重跑了脚手架（实际 $(runs)）"
+            fail=1
+          fi
+
+          # 3) 源文件变更：必须重跑（Inputs 必须含编译源文件）
+          touch "$TEST_DIR/Consumer.cs"
+          dotnet build "$TEST_DIR/Probe.csproj" -v:q
+          if [ "$(runs)" != "2" ]; then
+            echo "::error::P0-1 FAILED: 源文件变更后未重跑脚手架（实际 $(runs)）"
+            fail=1
+          fi
+
+          # 4) 生成失败：陈旧产物与时间戳必须被清理 → 消费方构建以缺类型错误失败
+          touch "$TEST_DIR/Consumer.cs"
+          set +e
+          out=$(dotnet build "$TEST_DIR/Probe.csproj" -p:MudJsonContextToolCommand="$TEST_DIR/fail-scaffolder.sh" -v:q 2>&1)
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ] || ! grep -q "AppJsonContext" <<< "$out"; then
+            echo "$out"
+            echo "::error::P0-1 FAILED: 工具失败后构建未以缺类型编译错误失败（陈旧产物未被清理？）"
+            fail=1
+          fi
+          if [ -f "$TEST_DIR/obj/Gen/AppJsonContext.g.cs" ]; then
+            echo "::error::P0-1 FAILED: 失败后陈旧 .g.cs 仍然存在"
+            fail=1
+          fi
+          if [ -f "$TEST_DIR/obj/Gen/MudJsonContextScaffolder.stamp" ]; then
+            echo "::error::P0-1 FAILED: 失败后时间戳仍然存在（下次构建不会重试）"
+            fail=1
+          fi
+
+          rm -rf "$TEST_DIR"
+          if [ "$fail" -ne 0 ]; then
+            echo "✗ Scaffolder incrementality / cleanup gate FAILED"
+            exit 1
+          fi
+          echo "✓ Scaffolder incrementality + stale-artifact cleanup verified (P0-1)"
+
+  aot-packageref:
+    name: AOT PackageRef 验证
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Install AOT prerequisites (Linux)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang zlib1g-dev
+
+      - name: Restore solution
+        run: dotnet restore Mud.HttpUtils.slnx
+
+      - name: Build solution
+        run: dotnet build Mud.HttpUtils.slnx --no-restore --configuration Release
+
+      - name: Pack all projects to artifacts/
+        run: |
+          dotnet pack Mud.HttpUtils.Abstractions/Mud.HttpUtils.Abstractions.csproj --no-build --configuration Release --output artifacts
+          dotnet pack Mud.HttpUtils.Attributes/Mud.HttpUtils.Attributes.csproj --no-build --configuration Release --output artifacts
+          dotnet pack Mud.HttpUtils.Client/Mud.HttpUtils.Client.csproj --no-build --configuration Release --output artifacts
+          dotnet pack Mud.HttpUtils.Resilience/Mud.HttpUtils.Resilience.csproj --no-build --configuration Release --output artifacts
+          dotnet pack Mud.HttpUtils/Mud.HttpUtils.csproj --no-build --configuration Release --output artifacts
+          dotnet pack Mud.HttpUtils.Generator/Mud.HttpUtils.Generator.csproj --no-build --configuration Release --output artifacts
+          dotnet pack Mud.HttpUtils.OpenTelemetry/Mud.HttpUtils.OpenTelemetry.csproj --no-build --configuration Release --output artifacts
+          # [AOT v4 Phase 17.2 / D3] 补齐 Scaffolder 工具包，PackageRef 模式下脚手架才能工作（被现有 nuget.config 的 local 源自动识别）
+          dotnet pack Tools/Mud.HttpUtils.JsonContextScaffolder/Mud.HttpUtils.JsonContextScaffolder.csproj --no-build --configuration Release --output artifacts
+
+
+      - name: Restore AotPackageRefDemo (local NuGet source)
+        run: dotnet restore Demos/AotPackageRefDemo/AotPackageRefDemo.csproj
+
+      - name: Publish AOT (PackageReference, net8.0)
+        run: dotnet publish Demos/AotPackageRefDemo/AotPackageRefDemo.csproj -c Release -f net8.0 -r linux-x64 -p:AotStrictMode=true --no-restore -o Demos/AotPackageRefDemo/publish-net8
+
+      - name: Publish AOT (PackageReference, net10.0)
+        run: dotnet publish Demos/AotPackageRefDemo/AotPackageRefDemo.csproj -c Release -f net10.0 -r linux-x64 -p:AotStrictMode=true --no-restore -o Demos/AotPackageRefDemo/publish-net10
+
+      - name: Run AOT binary (net8.0) and verify AOT_OK
+        shell: bash
+        run: |
+          BIN_PATH="Demos/AotPackageRefDemo/publish-net8/AotPackageRefDemo"
+          if [ -f "$BIN_PATH" ]; then
+            OUTPUT=$("$BIN_PATH" 2>&1 || true)
+            echo "$OUTPUT"
+            if echo "$OUTPUT" | grep -q "AOT_OK"; then
+              echo "✓ AOT PackageRef verification passed (net8.0)"
+            else
+              echo "✗ AOT PackageRef verification FAILED (net8.0) - AOT_OK not found in output"
+              exit 1
+            fi
+          else
+            echo "Binary not found at $BIN_PATH"
+            exit 1
+          fi
+
+      - name: Run AOT binary (net10.0) and verify AOT_OK
+        shell: bash
+        run: |
+          BIN_PATH="Demos/AotPackageRefDemo/publish-net10/AotPackageRefDemo"
+          if [ -f "$BIN_PATH" ]; then
+            OUTPUT=$("$BIN_PATH" 2>&1 || true)
+            echo "$OUTPUT"
+            if echo "$OUTPUT" | grep -q "AOT_OK"; then
+              echo "✓ AOT PackageRef verification passed (net10.0)"
+            else
+              echo "✗ AOT PackageRef verification FAILED (net10.0) - AOT_OK not found in output"
+              exit 1
+            fi
+          else
+            echo "Binary not found at $BIN_PATH"
+            exit 1
+          fi
 
   # ──────────────────────────────────────────────
   # 主项目及子包构建与发布
@@ -123,6 +747,9 @@ jobs:
 
       - name: Pack Generator
         run: dotnet pack Mud.HttpUtils.Generator/Mud.HttpUtils.Generator.csproj --no-build --configuration Release --output artifacts
+
+      - name: Pack JsonContextScaffolder (dotnet tool)
+        run: dotnet pack Tools/Mud.HttpUtils.JsonContextScaffolder/Mud.HttpUtils.JsonContextScaffolder.csproj --configuration Release --output artifacts
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

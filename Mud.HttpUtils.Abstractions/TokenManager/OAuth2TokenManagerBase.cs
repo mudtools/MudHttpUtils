@@ -13,6 +13,17 @@ namespace Mud.HttpUtils;
 public abstract class OAuth2TokenManagerBase : TokenManagerBase
 {
     /// <summary>
+    /// 默认构造函数，使用基类默认的 <see cref="ConcurrentDictionaryTokenCache{T}"/>。
+    /// </summary>
+    protected OAuth2TokenManagerBase() : base() { }
+
+    /// <summary>
+    /// TMR-12：使用自定义令牌缓存初始化。
+    /// </summary>
+    /// <param name="tokenCache">令牌缓存实现。</param>
+    protected OAuth2TokenManagerBase(ITokenCache<CredentialToken> tokenCache) : base(tokenCache) { }
+
+    /// <summary>
     /// 通过授权码获取令牌（Authorization Code Flow）。
     /// </summary>
     /// <param name="code">授权码。</param>

@@ -8,6 +8,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Mud.HttpUtils;
 using Mud.HttpUtils.OpenTelemetry;
 using Mud.HttpUtils.Resilience;
@@ -158,10 +159,12 @@ public class Program
 
         var policyProvider = services.GetRequiredService<IResiliencePolicyProvider>();
 
-        var retryPolicy = policyProvider.GetRetryPolicy<WeatherForecast?>();
-        var timeoutPolicy = policyProvider.GetTimeoutPolicy<WeatherForecast?>();
-        var circuitBreakerPolicy = policyProvider.GetCircuitBreakerPolicy<WeatherForecast?>();
-        var combinedPolicy = policyProvider.GetCombinedPolicy<WeatherForecast?>();
+        // M5-HC-06：Get* 方法需指定策略隔离 scope（按 host / Named Client 隔离熔断器等策略实例）。
+        // Demo 无隔离诉求，传 "global" 使用共享策略实例。
+        var retryPolicy = policyProvider.GetRetryPolicy<WeatherForecast?>("global");
+        var timeoutPolicy = policyProvider.GetTimeoutPolicy<WeatherForecast?>("global");
+        var circuitBreakerPolicy = policyProvider.GetCircuitBreakerPolicy<WeatherForecast?>("global");
+        var combinedPolicy = policyProvider.GetCombinedPolicy<WeatherForecast?>("global");
 
         Console.WriteLine($"  重试策略: {retryPolicy.GetType().Name}");
         Console.WriteLine($"  超时策略: {timeoutPolicy.GetType().Name}");
@@ -182,7 +185,7 @@ public class Program
         Console.WriteLine("--- 2. 重试策略行为演示 ---");
 
         var policyProvider = services.GetRequiredService<IResiliencePolicyProvider>();
-        var retryPolicy = policyProvider.GetRetryPolicy<string?>();
+        var retryPolicy = policyProvider.GetRetryPolicy<string?>("global");
 
         int attemptCount = 0;
 
@@ -231,8 +234,9 @@ public class Program
             }
         };
 
-        var provider = new PollyResiliencePolicyProvider(customOptions);
-        var cbPolicy = provider.GetCircuitBreakerPolicy<string?>();
+        // BC-32：无 DI 快照构造已 internal，非 DI 场景用 Options.Create 包装配置。
+        var provider = new PollyResiliencePolicyProvider(Options.Create(customOptions));
+        var cbPolicy = provider.GetCircuitBreakerPolicy<string?>("global");
 
         for (int i = 1; i <= 5; i++)
         {

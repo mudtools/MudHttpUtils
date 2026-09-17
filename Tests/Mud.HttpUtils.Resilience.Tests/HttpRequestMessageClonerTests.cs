@@ -141,4 +141,37 @@ public class HttpRequestMessageClonerTests
         clone.Should().NotBeNull();
         clone.Content.Should().BeNull();
     }
+
+    // M4-C/H-7：TryCloneAsync 透传 CancellationToken —— 克隆阶段被取消时 OperationCanceledException
+    // 即时上抛（不被内部 InvalidOperationException 捕获），而非静默返回 null 或继续克隆。
+    [Fact]
+    public async Task TryCloneAsync_WithCancelledToken_ThrowsOperationCanceled()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var original = new HttpRequestMessage(HttpMethod.Post, "https://api.example.com/test")
+        {
+            Content = new StringContent("""{"name":"test"}""", Encoding.UTF8, "application/json")
+        };
+
+        var act = async () => await HttpRequestMessageCloner.TryCloneAsync(original, cancellationToken: cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    // M4-C/H-7：未取消的 token 不改变既有语义（克隆成功）。
+    [Fact]
+    public async Task TryCloneAsync_WithActiveToken_StillSucceeds()
+    {
+        using var cts = new CancellationTokenSource();
+        var original = new HttpRequestMessage(HttpMethod.Post, "https://api.example.com/test")
+        {
+            Content = new StringContent("body", Encoding.UTF8, "text/plain")
+        };
+
+        var clone = await HttpRequestMessageCloner.TryCloneAsync(original, cancellationToken: cts.Token);
+
+        clone.Should().NotBeNull();
+        (await clone!.Content!.ReadAsStringAsync()).Should().Be("body");
+    }
 }

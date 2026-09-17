@@ -37,6 +37,21 @@ public class OAuth2Options
     public string? ClientSecretProviderName { get; set; }
 
     /// <summary>
+    /// P1.8（TK-13）客户端密钥缓存的 TTL（秒），默认 300。
+    /// 用于控制从 <see cref="ISecretProvider"/> 解析得到的密钥在内存中的缓存时长，
+    /// 以便密钥轮换后能在 TTL 过期后被重新解析。
+    /// <para>设为 0 表示不缓存（每次刷新都重新解析密钥）。</para>
+    /// <para>当 <see cref="ClientSecretProviderName"/> 为空（不启用安全提供程序）时，直接返回配置值，不进入缓存路径。</para>
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">设置小于 0 的值时抛出。</exception>
+    public int ClientSecretCacheTtlSeconds
+    {
+        get => _clientSecretCacheTtlSeconds;
+        set => _clientSecretCacheTtlSeconds = value >= 0 ? value : throw new ArgumentOutOfRangeException(nameof(ClientSecretCacheTtlSeconds), "客户端密钥缓存 TTL 不能为负数。");
+    }
+    private int _clientSecretCacheTtlSeconds = 300;
+
+    /// <summary>
     /// 校验配置是否存在互斥冲突：当同时设置 <see cref="ClientSecret"/> 和 <see cref="ClientSecretProviderName"/> 时返回警告消息。
     /// </summary>
     /// <returns>警告消息；如果无冲突则返回 null。</returns>
@@ -78,5 +93,40 @@ public class OAuth2Options
     /// 令牌缓存层面的提前刷新由 <see cref="TokenManagerBase.ExpireThresholdSeconds"/> 和
     /// <see cref="UserTokenCacheOptions.ExpireThresholdSeconds"/> 控制（默认 300 秒）。</para>
     /// </summary>
-    public int ExpirySafetyMarginSeconds { get; set; } = 60;
+    /// <exception cref="ArgumentOutOfRangeException">设置小于 0 的值时抛出。</exception>
+    public int ExpirySafetyMarginSeconds
+    {
+        get => _expirySafetyMarginSeconds;
+        set => _expirySafetyMarginSeconds = value >= 0 ? value : throw new ArgumentOutOfRangeException(nameof(ExpirySafetyMarginSeconds), "令牌过期安全边际不能为负数。");
+    }
+    private int _expirySafetyMarginSeconds = 60;
+
+    /// <summary>
+    /// SR-M9（P2.6，D11-2）是否允许在当前作用域缺少 refresh_token 时回退默认作用域的 refresh_token。默认 false。
+    /// <para>
+    /// 对签发绑定 audience/scope 的 refresh_token 的 IdP，跨作用域回退等于拿 A 授权的凭据换 B scope
+    /// 的令牌（越权令牌落地），故默认关闭。仅当 IdP 明确支持"统一刷新令牌"（所有 scope 共享一个
+    /// refresh_token）时才应显式开启。
+    /// </para>
+    /// </summary>
+    public bool AllowDefaultScopeRefreshTokenFallback { get; set; }
+
+    /// <summary>
+    /// P2.9（TK-22）安全的调试字符串：对 <see cref="ClientSecret"/> 做脱敏（保留前缀 + 长度），
+    /// 防止结构化日志或配置转储中泄漏明文客户端密钥。
+    /// </summary>
+    public override string ToString()
+        => $"OAuth2Options{{ ClientId={ClientId}, ClientSecret={RedactSecret(ClientSecret)}, " +
+           $"ClientSecretProviderName={(string.IsNullOrEmpty(ClientSecretProviderName) ? "(none)" : ClientSecretProviderName)}, " +
+           $"ClientSecretCacheTtlSeconds={ClientSecretCacheTtlSeconds}, TokenEndpoint={TokenEndpoint}, " +
+           $"RevocationEndpoint={RevocationEndpoint}, IntrospectionEndpoint={IntrospectionEndpoint}, " +
+           $"RequireHttps={RequireHttps}, ExpirySafetyMarginSeconds={ExpirySafetyMarginSeconds} }}";
+
+    private static string RedactSecret(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return "<null>";
+        var prefix = value.Length > 4 ? value.Substring(0, 4) : value;
+        return prefix + "***(" + value.Length + ")";
+    }
 }

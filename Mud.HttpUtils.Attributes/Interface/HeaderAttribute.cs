@@ -8,12 +8,16 @@
 namespace Mud.HttpUtils.Attributes;
 
 /// <summary>
-/// 标记参数、方法或接口作为 HTTP 请求头（Header）。
+/// 标记参数、方法、接口或属性作为 HTTP 请求头（Header）。
 /// </summary>
 /// <remarks>
 /// <para>
-/// 应用于方法参数、接口或方法上，指示将参数添加为 HTTP 请求头。支持自定义请求头名称、值和替换模式。
+/// 应用于方法参数、接口、方法或接口属性上，指示将参数或属性值添加为 HTTP 请求头。支持自定义请求头名称、值和替换模式。
 /// 可以在方法级别应用多次以添加多个固定请求头。
+/// </para>
+/// <para>
+/// 当应用于接口属性时，生成的实现类将包含对应的可读写属性，属性值会作为请求头应用于接口的所有方法。
+/// 这与接口级固定 Header（使用构造函数指定值）不同——属性级 Header 的值在运行时动态设置。
 /// </para>
 /// </remarks>
 /// <example>
@@ -30,9 +34,20 @@ namespace Mud.HttpUtils.Attributes;
 /// // 使用别名和替换模式
 /// [Post("/api/data")]
 /// Task SendDataAsync([Header("Authorization", Replace = true)] string auth);
+/// 
+/// // 接口属性作为动态请求头
+/// [HttpClientApi]
+/// public interface IUserApi
+/// {
+///     [Header("X-Tenant-Id")]
+///     string TenantId { get; set; }
+/// 
+///     [Get("/api/users")]
+///     Task&lt;List&lt;User&gt;&gt; GetUsersAsync();
+/// }
 /// </code>
 /// </example>
-[AttributeUsage(AttributeTargets.Method | AttributeTargets.Interface | AttributeTargets.Parameter, AllowMultiple = true)]
+[AttributeUsage(AttributeTargets.Method | AttributeTargets.Interface | AttributeTargets.Parameter | AttributeTargets.Property, AllowMultiple = true)]
 public sealed class HeaderAttribute : Attribute
 {
     /// <summary>

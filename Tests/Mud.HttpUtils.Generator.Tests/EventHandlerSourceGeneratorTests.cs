@@ -327,4 +327,30 @@ namespace TestNamespace
         generatedCode.Should().NotBeNullOrEmpty();
         generatedCode.Should().Contain("CustomBaseHandler<CustomEventResult>", "应使用自定义基类名");
     }
+
+    [Fact]
+    public void Generator_WithEmptyInheritedFrom_ReportsEHSG001WithClassName()
+    {
+        // [GEN-13][§8.1] 基类名非法时 EHSG001 的 {0} 必须是目标类名（而非基类名），
+        // 避免旧实现输出「为类  生成…」的空前缀。
+        var source = @"
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [GenerateEventHandler(EventType = ""user.created"", InheritedFrom = """")]
+    public class InvalidInheritResult
+    {
+        public string Data { get; set; }
+    }
+}";
+
+        var (diagnostics, _) = RunGenerator(source);
+
+        var error = diagnostics.Should().ContainSingle(
+            d => d.Id == "EHSG001", "非法基类名必须触发 EHSG001 诊断").Subject;
+        error.GetMessage().Should().Contain("InvalidInheritResult", "消息 {0} 应包含目标类名");
+        error.GetMessage().Should().NotContain("为类  ", "消息不得出现「为类  生成…」的空前缀");
+        error.GetMessage().Should().Contain("Base class name cannot be empty");
+    }
 }

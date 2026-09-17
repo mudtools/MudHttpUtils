@@ -17,7 +17,13 @@ public class AsyncLocalAppContextSwitcher : IAppContextHolder
     public IMudAppContext? Current
     {
         get => _context.Value;
-        set => _context.Value = value;
+        init => _context.Value = value;
+    }
+
+    /// <inheritdoc/>
+    public void SwitchTo(IMudAppContext? context)
+    {
+        _context.Value = context;
     }
 
     /// <inheritdoc/>
@@ -27,29 +33,36 @@ public class AsyncLocalAppContextSwitcher : IAppContextHolder
             throw new ArgumentNullException(nameof(context));
 
         var previous = _context.Value;
+        // B8：记录本作用域写入的值，用于释放时归属判定。
+        var owner = context;
         _context.Value = context;
 
-        return new AppContextScope(previous, this);
+        return new AppContextScope(previous, owner, this);
     }
 
-    private sealed class AppContextScope : IDisposable
+    private sealed class AppContextScope(
+        IMudAppContext? previous,
+        IMudAppContext owner,
+        AsyncLocalAppContextSwitcher switcher) : IDisposable
     {
-        private readonly IMudAppContext? _previous;
-        private readonly AsyncLocalAppContextSwitcher _switcher;
+        private readonly IMudAppContext? _previous = previous;
+        private readonly IMudAppContext _owner = owner;
+        private readonly AsyncLocalAppContextSwitcher _switcher = switcher;
         private int _disposed;
-
-        public AppContextScope(IMudAppContext? previous, AsyncLocalAppContextSwitcher switcher)
-        {
-            _previous = previous;
-            _switcher = switcher;
-        }
 
         public void Dispose()
         {
-            if (Interlocked.Exchange(ref _disposed, 1) == 0)
-            {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+                return;
+
+            // B8：仅当环境上下文仍等于本作用域写入的值时才回滚。
+            // 跨执行上下文释放（如 Task.Run(() => scope.Dispose())）时不会把"他人的当前值"改写成陈旧值，
+            // 同时避免把 ctxA 的 previous 写入 ctxB。代价是该场景下 ctxA 的值不再被自动还原，
+            // 由宿主显式 UseDefaultApp/BeginScope 收敛。
+            if (ReferenceEquals(_switcher._context.Value, _owner))
                 _switcher._context.Value = _previous;
-            }
+            else if (_switcher._context.Value is null)
+                _switcher._context.Value = _previous;
         }
     }
 }

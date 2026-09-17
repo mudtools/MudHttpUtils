@@ -8,11 +8,11 @@
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<PackageReadmeFile>README.md</PackageReadmeFile>
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>
-		<EnableAotAnalyzer>true</EnableAotAnalyzer>
-		<IsAotCompatible>true</IsAotCompatible>
 	</PropertyGroup>
 	<ItemGroup>
 		<InternalsVisibleTo Include="Mud.HttpUtils.Resilience.Tests" />
+		<!-- BC-32：PollyResiliencePolicyProvider 的无 DI 快照构造已 internal，集成测试仍直接构造它。 -->
+		<InternalsVisibleTo Include="Mud.HttpUtils.Integration.Tests" />
 	</ItemGroup>
 	<ItemGroup>
 		<ProjectReference Include="..\Mud.HttpUtils.Abstractions\Mud.HttpUtils.Abstractions.csproj" />

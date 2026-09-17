@@ -50,11 +50,23 @@ public sealed class TokenRecoveryContext
     /// <summary>
     /// 获取或设置用户 ID，用于用户级令牌恢复。
     /// <para>当令牌需要用户上下文时，生成代码将当前用户 ID 附加到此属性。</para>
+    /// <para><b>SR-M7（P2.5）：必须来自服务端受信上下文</b>——恢复执行器将校验本值与
+    /// <see cref="ICurrentUserContext"/> 主体身份的一致性，不一致即拒绝恢复（返回 401）。
+    /// 此校验是纵深防御层，不是完整授权模型。</para>
     /// </summary>
     public string? UserId { get; set; }
 
     /// <summary>
     /// 获取或设置令牌管理器查找键，用于在恢复时定位正确的令牌管理器。
+    /// <para>SR-M6（P2.4，D9）：配置 <see cref="ITokenManagerRegistry"/> 后，恢复执行器按本键
+    /// 经注册表路由失效/刷新/重试全链路；未注册表或解析失败时回退构造注入实例（记 Warning）。</para>
     /// </summary>
     public string? TokenManagerKey { get; set; }
+
+    /// <summary>
+    /// 获取或设置令牌作用域集合，用于 401 恢复时按正确的作用域失效和刷新令牌。
+    /// <para>TMR-04（D2 修订）：与取令牌路径同源，缺失时按默认作用域恢复。</para>
+    /// <para>生成代码写入 <c>methodInfo.MethodTokenScopes ?? methodInfo.InterfaceTokenScopes</c> 的解析结果。</para>
+    /// </summary>
+    public string[]? Scopes { get; set; }
 }

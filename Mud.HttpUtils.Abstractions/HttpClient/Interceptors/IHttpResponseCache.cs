@@ -10,6 +10,10 @@ namespace Mud.HttpUtils;
 /// <summary>
 /// HTTP 响应缓存接口，提供请求结果的缓存功能。
 /// </summary>
+/// <remarks>
+/// <para><b>M5-HC-08 契约</b>：缓存<b>按引用</b>存储并返回调用方提供的值；命中返回同一实例。
+/// 请勿修改缓存命中的对象，或使用不可变/仅读类型。如需隔离可变对象，可注册 <see cref="ICacheValueCloner"/>。</para>
+/// </remarks>
 public interface IHttpResponseCache
 {
     /// <summary>
@@ -56,6 +60,18 @@ public interface IHttpResponseCache
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>缓存或获取的响应数据。</returns>
     Task<T?> GetOrFetchAsync<T>(string key, Func<Task<T>> fetchFunc, TimeSpan expiration, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 尝试从缓存中获取响应，如果缓存未命中则执行获取函数并缓存结果（支持滑动过期）。
+    /// </summary>
+    /// <typeparam name="T">响应类型。</typeparam>
+    /// <param name="key">缓存键。</param>
+    /// <param name="fetchFunc">缓存未命中时执行的数据获取函数。</param>
+    /// <param name="expiration">缓存过期时间。</param>
+    /// <param name="useSlidingExpiration">是否使用滑动过期策略。为 true 时，每次访问将重置过期时间。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>缓存或获取的响应数据。</returns>
+    Task<T?> GetOrFetchAsync<T>(string key, Func<Task<T>> fetchFunc, TimeSpan expiration, bool useSlidingExpiration, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 异步移除指定键的缓存。

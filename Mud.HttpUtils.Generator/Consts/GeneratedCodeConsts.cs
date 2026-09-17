@@ -30,4 +30,29 @@ internal sealed class GeneratedCodeConsts
             return "1.2.5";
         }
     }
+
+    /// <summary>生成器自身版本号（用于增量 salt，见 E-3）。</summary>
+    internal static string GeneratorVersion => s_cachedVersion.Value;
+
+    /// <summary>
+    /// 实现类生成文件必须引用的命名空间（生成代码引用的类型均需在此可见）。
+    /// <para>单一事实源：审计 F2 的成因正是 <c>ClassStructureGenerator</c> 私有静态列表、
+    /// <c>HttpInvokeBaseSourceGenerator.GetFileUsingNameSpaces()</c>（又被子类 override）与
+    /// BCL 实际依赖形成三份分叉。所有「实现类生成文件」的 using 头必须引用本列表。</para>
+    /// </summary>
+    public static readonly string[] ImplementationFileUsings =
+    [
+        "System",
+        "System.Collections.Generic",   // Dictionary<,>（[Form]/FormUrlEncoded，审计 F2）
+        "System.Globalization",         // CultureInfo.InvariantCulture（M5-HC-04 缓存键）
+        "System.Linq",                  // Any/Where/Select（数组 [Query]/[ArrayQuery]，审计 F2）
+        "System.Net.Http",
+        "System.Text",
+        "System.Text.Json",
+        "System.Threading",
+        "System.Threading.Tasks",
+        "Microsoft.Extensions.Logging",
+        "Microsoft.Extensions.Options",
+        "Mud.HttpUtils",
+    ];
 }

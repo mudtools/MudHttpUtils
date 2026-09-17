@@ -13,7 +13,7 @@ namespace Mud.HttpUtils;
 /// <remarks>
 /// <para>.NET 6+ 使用 <c>[LoggerMessage]</c> 源生成器（零分配、级别短路）；</para>
 /// <para>netstandard2.0 fallback 到 <c>LoggerMessage.Define</c>（同样零分配，但需要在运行时构建委托）。</para>
-/// <para>EventId 规划：1-50 EnhancedHttpClient（已分配）；51-100 预留；101-120 Resilience；121-130 Cache；131-150 TokenManager。</para>
+/// <para>EventId 规划：1-50 EnhancedHttpClient（已分配）；51-100 预留；101-120 Resilience；121-130 Cache；131-156 TokenManager（已分配，含 151-156）；157-165 SR 轮（Token 安审查修复）；166 UserTokenScopeInvalidationFallback；167 AppResilienceCacheFull；168 SsrfGuidance；169 RequestBodySerializationFastPathFallback（TMX-17：原 166 改为 169 去重）；170 TokenRefreshSuppressed（TMX-04）；171 TokenCacheSerializationFailed（TMX-11）；172+ 预留。</para>
 /// </remarks>
 internal static partial class MudHttpClientLog
 {
@@ -63,6 +63,10 @@ internal static partial class MudHttpClientLog
     [LoggerMessage(EventId = 111, Level = LogLevel.Warning,
         Message = "RetryStatusCodes 配置为空数组，仅 HttpRequestException（无 StatusCode）/TimeoutRejectedException/TaskCanceledException 会触发重试。如需使用默认状态码 [408,429,500,502,503,504]，请移除该配置项或设为 null。")]
     public static partial void RetryStatusCodesEmptyArray(ILogger logger);
+
+    [LoggerMessage(EventId = 112, Level = LogLevel.Information,
+        Message = "HTTP 方法 {Method} 为非幂等方法，默认跳过重试（保留超时和熔断）。如需重试请设置 [Retry(AllowNonIdempotent = true)] 或 RetryOptions.AllowNonIdempotentRetry = true。")]
+    public static partial void RetrySkippedNonIdempotent(ILogger logger, string method);
 #else
     private static readonly Action<ILogger, double, int, int, Exception?> s_retryAttempting =
         LoggerMessage.Define<double, int, int>(LogLevel.Warning, new EventId(101, nameof(RetryAttempting)),
@@ -125,6 +129,84 @@ internal static partial class MudHttpClientLog
         LoggerMessage.Define(LogLevel.Warning, new EventId(111, nameof(RetryStatusCodesEmptyArray)),
             "RetryStatusCodes 配置为空数组，仅 HttpRequestException（无 StatusCode）/TimeoutRejectedException/TaskCanceledException 会触发重试。如需使用默认状态码 [408,429,500,502,503,504]，请移除该配置项或设为 null。");
     public static void RetryStatusCodesEmptyArray(ILogger logger) => s_retryStatusCodesEmptyArray(logger, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_retrySkippedNonIdempotent =
+        LoggerMessage.Define<string>(LogLevel.Information, new EventId(112, nameof(RetrySkippedNonIdempotent)),
+            "HTTP 方法 {Method} 为非幂等方法，默认跳过重试（保留超时和熔断）。如需重试请设置 [Retry(AllowNonIdempotent = true)] 或 RetryOptions.AllowNonIdempotentRetry = true。");
+    public static void RetrySkippedNonIdempotent(ILogger logger, string method)
+        => s_retrySkippedNonIdempotent(logger, method, null);
+#endif
+
+    #endregion
+
+    #region Config 模块 (EventId: 113-120)
+
+#if NET6_0_OR_GREATER
+    [LoggerMessage(EventId = 113, Level = LogLevel.Warning,
+        Message = "MudHttpClients:Clients:{ClientName} 未配置 BaseAddress，该客户端不会被注册，其 TimeoutSeconds/DefaultHeaders/AllowCustomBaseUrls 配置将被忽略。")]
+    public static partial void ClientSkippedMissingBaseAddress(ILogger logger, string clientName);
+
+    [LoggerMessage(EventId = 114, Level = LogLevel.Information,
+        Message = "已应用 UrlValidator 域名白名单（{Count} 项）。")]
+    public static partial void AllowedDomainsApplied(ILogger logger, int count);
+
+    [LoggerMessage(EventId = 115, Level = LogLevel.Warning,
+        Message = "Retry.AllowNonIdempotentRetry = true，RetryableHttpMethods 将被忽略（所有 HTTP 方法均允许重试）。如需仅重试幂等方法，请将其设为 false。")]
+    public static partial void RetryableHttpMethodsIgnored(ILogger logger);
+
+    // EventId 116 已废弃：原 AesEncryptionOptions.EnableAuthenticatedEncryption=false 安全警告，
+    // 触发点随「AES 信封版本前缀歧义消除方案（OPT-C，移除裸 CBC 路径）」一并移除。编号冻结，不再复用。
+
+    [LoggerMessage(EventId = 119, Level = LogLevel.Information,
+        Message = "AesEncryptionProvider：当前运行时不支持 AesGcm，已使用 CBC + HMAC-SHA256（信封版本 0x03）进行认证加密。如需密文可跨 netstandard2.0/net6.0 运行时解密，可显式设置 AesEncryptionOptions.RequireCrossRuntimePortable = true。")]
+    public static partial void AesGcmUnavailableFallbackToCbcHmac(ILogger logger);
+
+    [LoggerMessage(EventId = 117, Level = LogLevel.Warning,
+        Message = "检测到响应缓存双入口同时配置：AddHttpResponseCache 已显式注册 IHttpResponseCache，配置节 MudHttpClients:ResponseCache 将被忽略（TryAddSingleton 先注册者生效）。")]
+    public static partial void ResponseCacheConfigurationIgnored(ILogger logger);
+
+    [LoggerMessage(EventId = 118, Level = LogLevel.Debug,
+        Message = "客户端 {ClientName} 的 AllowCustomBaseUrls 被覆盖为 {NewValue}（原值 {OldValue}）。")]
+    public static partial void AllowCustomBaseUrlsOverridden(ILogger logger, string clientName, bool newValue, bool oldValue);
+#else
+    private static readonly Action<ILogger, string, Exception?> s_clientSkippedMissingBaseAddress =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(113, nameof(ClientSkippedMissingBaseAddress)),
+            "MudHttpClients:Clients:{ClientName} 未配置 BaseAddress，该客户端不会被注册，其 TimeoutSeconds/DefaultHeaders/AllowCustomBaseUrls 配置将被忽略。");
+    public static void ClientSkippedMissingBaseAddress(ILogger logger, string clientName)
+        => s_clientSkippedMissingBaseAddress(logger, clientName, null);
+
+    private static readonly Action<ILogger, int, Exception?> s_allowedDomainsApplied =
+        LoggerMessage.Define<int>(LogLevel.Information, new EventId(114, nameof(AllowedDomainsApplied)),
+            "已应用 UrlValidator 域名白名单（{Count} 项）。");
+    public static void AllowedDomainsApplied(ILogger logger, int count)
+        => s_allowedDomainsApplied(logger, count, null);
+
+    private static readonly Action<ILogger, Exception?> s_retryableHttpMethodsIgnored =
+        LoggerMessage.Define(LogLevel.Warning, new EventId(115, nameof(RetryableHttpMethodsIgnored)),
+            "Retry.AllowNonIdempotentRetry = true，RetryableHttpMethods 将被忽略（所有 HTTP 方法均允许重试）。如需仅重试幂等方法，请将其设为 false。");
+    public static void RetryableHttpMethodsIgnored(ILogger logger)
+        => s_retryableHttpMethodsIgnored(logger, null);
+
+    // EventId 116 已废弃：原 AesEncryptionOptions.EnableAuthenticatedEncryption=false 安全警告，
+    // 触发点随「AES 信封版本前缀歧义消除方案（OPT-C，移除裸 CBC 路径）」一并移除。编号冻结，不再复用。
+
+    private static readonly Action<ILogger, Exception?> s_aesGcmUnavailableFallbackToCbcHmac =
+        LoggerMessage.Define(LogLevel.Information, new EventId(119, nameof(AesGcmUnavailableFallbackToCbcHmac)),
+            "AesEncryptionProvider：当前运行时不支持 AesGcm，已使用 CBC + HMAC-SHA256（信封版本 0x03）进行认证加密。如需密文可跨 netstandard2.0/net6.0 运行时解密，可显式设置 AesEncryptionOptions.RequireCrossRuntimePortable = true。");
+    public static void AesGcmUnavailableFallbackToCbcHmac(ILogger logger)
+        => s_aesGcmUnavailableFallbackToCbcHmac(logger, null);
+
+    private static readonly Action<ILogger, Exception?> s_responseCacheConfigurationIgnored =
+        LoggerMessage.Define(LogLevel.Warning, new EventId(117, nameof(ResponseCacheConfigurationIgnored)),
+            "检测到响应缓存双入口同时配置：AddHttpResponseCache 已显式注册 IHttpResponseCache，配置节 MudHttpClients:ResponseCache 将被忽略（TryAddSingleton 先注册者生效）。");
+    public static void ResponseCacheConfigurationIgnored(ILogger logger)
+        => s_responseCacheConfigurationIgnored(logger, null);
+
+    private static readonly Action<ILogger, string, bool, bool, Exception?> s_allowCustomBaseUrlsOverridden =
+        LoggerMessage.Define<string, bool, bool>(LogLevel.Debug, new EventId(118, nameof(AllowCustomBaseUrlsOverridden)),
+            "客户端 {ClientName} 的 AllowCustomBaseUrls 被覆盖为 {NewValue}（原值 {OldValue}）。");
+    public static void AllowCustomBaseUrlsOverridden(ILogger logger, string clientName, bool newValue, bool oldValue)
+        => s_allowCustomBaseUrlsOverridden(logger, clientName, newValue, oldValue, null);
 #endif
 
     #endregion
@@ -265,6 +347,114 @@ internal static partial class MudHttpClientLog
     [LoggerMessage(EventId = 155, Level = LogLevel.Warning,
         Message = "获取令牌失败，TokenManagerKey: '{TokenManagerKey}'。")]
     public static partial void TokenRetrievalFailed(ILogger logger, string? tokenManagerKey);
+
+    [LoggerMessage(EventId = 156, Level = LogLevel.Warning,
+        Message = "令牌恢复放弃：重试请求主机 '{RetryHost}' 与原始主机 '{OriginalHost}' 不一致，可能被重定向到不受信任的地址，拒绝继续恢复。")]
+    public static partial void TokenRecoveryHostMismatch(ILogger logger, string? retryHost, string? originalHost);
+
+    // ---- SR 轮新增事件（EventId 157-162；151-156 已分配，见 §0.3-V1 评审修订）----
+
+    [LoggerMessage(EventId = 157, Level = LogLevel.Warning,
+        Message = "请求体大小 {DeclaredLength} 超过恢复缓冲上限或不可恢复，已放弃 401 恢复（无体重试被禁止），直接返回 401。")]
+    public static partial void TokenRecoveryBodyNotRecoverable(ILogger logger, long? declaredLength);
+
+    [LoggerMessage(EventId = 158, Level = LogLevel.Warning,
+        Message = "刷新令牌被 IdP 拒绝（error={ErrorCode}），已清除可疑 refresh_token 并回退 client_credentials（ScopeKey={ScopeKey}）")]
+    public static partial void RefreshTokenRejected(ILogger logger, string scopeKey, string? errorCode);
+
+    [LoggerMessage(EventId = 159, Level = LogLevel.Debug,
+        Message = "公共客户端认证：client_id 经请求体传递（未配置 ClientSecret）")]
+    public static partial void PublicClientAuthUsed(ILogger logger);
+
+    [LoggerMessage(EventId = 160, Level = LogLevel.Warning,
+        Message = "TokenManagerKey '{TokenManagerKey}' 未能在注册表解析到令牌管理器，回退到构造注入的管理器实例")]
+    public static partial void TokenManagerUnresolved(ILogger logger, string tokenManagerKey);
+
+    [LoggerMessage(EventId = 161, Level = LogLevel.Error,
+        Message = "用户身份不一致：上下文主体用户 '{PrincipalUserId}' 与恢复请求用户 '{ContextUserId}' 不匹配，拒绝恢复并返回 401")]
+    public static partial void UserTokenIdentityMismatch(ILogger logger, string principalUserId, string contextUserId);
+
+    // L-4：EventId 由 166 改为 177 —— 166 已被 RequestBodySerializationFastPathFallback 占用
+    //（CHANGELOG 已将其登记为 166），二者共用会让日志消费方无法按 EventId 区分语义。
+    [LoggerMessage(EventId = 177, Level = LogLevel.Warning,
+        Message = "用户令牌管理器非 UserTokenManagerBase 派生类，无法执行 scope 精准失效，降级为整用户清除 (UserId={UserId})")]
+    public static partial void UserTokenScopeInvalidationFallback(ILogger logger, string userId);
+
+    [LoggerMessage(EventId = 162, Level = LogLevel.Warning,
+        Message = "令牌管理器（{MetricsKey}）已绑定租户 '{ExistingTenant}'，不能用于租户 '{RequestedTenant}' 的请求。跨租户复用同一管理器实例会导致令牌/凭据错配；若确属共享凭据设计，请覆写 EnforceTenantBinding 返回 false。")]
+    public static partial void TenantBindingRejected(ILogger logger, string metricsKey, string existingTenant, string requestedTenant);
+
+    [LoggerMessage(EventId = 163, Level = LogLevel.Information,
+        Message = "当前作用域（{ScopeKey}）缺少 refresh_token，已回退默认作用域刷新令牌（AllowDefaultScopeRefreshTokenFallback=true）。请确认 IdP 支持统一刷新令牌，否则可能造成越权令牌。")]
+    public static partial void DefaultScopeRefreshFallbackUsed(ILogger logger, string scopeKey);
+
+    [LoggerMessage(EventId = 164, Level = LogLevel.Debug,
+        Message = "用户令牌刷新处于退避窗口（CacheKey={CacheKey}），本次不发起刷新")]
+    public static partial void UserRefreshBackoffActive(ILogger logger, string cacheKey);
+
+    [LoggerMessage(EventId = 165, Level = LogLevel.Information,
+        Message = "跳过不支持后台刷新的令牌管理器: {Name}")]
+    public static partial void TokenManagerSkippedNoBackgroundRefresh(ILogger logger, string name);
+
+    // ---- CFG-39（v3.1）：配置已设置但条件未满足而回退的可观测性（EventId 166 起）----
+
+    [LoggerMessage(EventId = 166, Level = LogLevel.Debug,
+        Message = "RequestBodySerialization 配置为 {Mode}，但当前 IHttpContentSerializer ({SerializerType}) 未实现 ISynchronousContentSerializer，" +
+                  "已回退默认序列化路径（fast-path 不生效）。")]
+    public static partial void RequestBodySerializationFastPathFallback(ILogger logger, string mode, string serializerType);
+
+    [LoggerMessage(EventId = 167, Level = LogLevel.Warning,
+        Message = "per-app 弹性策略缓存已达上限 ({MaxCachedApps})，新应用将不缓存，回退全局策略。")]
+    public static partial void AppResilienceCacheFull(ILogger logger, int maxCachedApps);
+
+    // ---- H-6：SSRF 连接期校验启用引导（EventId 168，一次性 Info）----
+
+    [LoggerMessage(EventId = 168, Level = LogLevel.Information,
+        Message = "已注册 IIpAddressPolicy（AddMudHttpClientSsrfProtection(IServiceCollection)），但当前命名客户端未经过 handler 级连接期校验。" +
+                  "若在 URL 校验白名单外的域名上启用白名单直通，DNS rebinding 到内网 IP 将不受连接期防护。建议在该命名客户端的 " +
+                  "IHttpClientBuilder 上调用 AddMudHttpClientSsrfProtection(builder)（net6.0+）启用连接建立时的 IP 准入校验。")]
+    public static partial void SsrfGuidance(ILogger logger);
+
+    // ---- M5-HC-05：不可重放内容跳过重试（EventId 169）----
+
+    [LoggerMessage(EventId = 169, Level = LogLevel.Warning,
+        Message = "请求体不可安全重放（原因: {Reason}），已跳过重试（超时/熔断仍生效）。")]
+    public static partial void RetrySkippedNonReplayable(ILogger logger, string reason);
+
+    // ---- M5-HC-06：策略缓存超限（EventId 170）----
+
+    [LoggerMessage(EventId = 170, Level = LogLevel.Warning,
+        Message = "弹性策略缓存已达上限 ({MaxPolicyCacheSize})，新作用域将不缓存策略实例。")]
+    public static partial void PolicyCacheFull(ILogger logger, int maxPolicyCacheSize);
+
+    // ---- MT 轮新增事件（EventId 171-175）：多应用与令牌管理缺陷修复 ----
+
+    [LoggerMessage(EventId = 171, Level = LogLevel.Warning,
+        Message = "令牌恢复放弃：请求被重定向到非同源主机（原始主机 '{OriginalHost}' → 最终主机 '{FinalHost}'），" +
+                  "继续恢复会把刷新后的令牌发往第三方，已返回真实 401。")]
+    public static partial void TokenRecoveryRedirectDetected(ILogger logger, string? originalHost, string? finalHost);
+
+    [LoggerMessage(EventId = 172, Level = LogLevel.Warning,
+        Message = "源生成器自动注册了空的 DefaultAppManager<IMudAppContext>（未注册任何应用）。" +
+                  "此时 UseApp/BeginScope(appKey) 与 GetDefaultApp() 必然失败。请显式注册应用管理器并调用 RegisterApp 注册应用。")]
+    public static partial void EmptyAppManagerAutoRegistered(ILogger logger);
+
+    [LoggerMessage(EventId = 173, Level = LogLevel.Debug,
+        Message = "配置节 '{SectionPath}' 不存在，AddMudHttpClientsFromConfiguration 未注册任何命名客户端。请确认配置节名拼写。")]
+    public static partial void MudHttpClientsSectionMissing(ILogger logger, string sectionPath);
+
+    [LoggerMessage(EventId = 174, Level = LogLevel.Warning,
+        Message = "命名客户端 '{RequestedName}' 未命中（客户端名大小写敏感），已回退匹配 '{ActualName}'。请统一大小写。")]
+    public static partial void ClientNameCaseFallbackUsed(ILogger logger, string requestedName, string actualName);
+
+    [LoggerMessage(EventId = 175, Level = LogLevel.Warning,
+        Message = "上下文切换器工厂被重复注册并覆盖：{SwitcherType}。后注册的工厂生效。")]
+    public static partial void SwitcherFactoryOverwritten(ILogger logger, string switcherType);
+
+    [LoggerMessage(EventId = 176, Level = LogLevel.Warning,
+        Message = "命名客户端名称区分大小写，但配置中存在仅大小写不同的多个键：{CollisionNames}。" +
+                  "它们会被视为不同客户端，请合并为同一个键，否则其中一个配置不会生效。")]
+    public static partial void MudHttpClientNameCaseCollision(ILogger logger, string collisionNames);
 #else
     private static readonly Action<ILogger, string, Exception?> s_tokenManagerRegistered =
         LoggerMessage.Define<string>(LogLevel.Debug, new EventId(131, nameof(TokenManagerRegistered)),
@@ -411,7 +601,173 @@ internal static partial class MudHttpClientLog
             "获取令牌失败，TokenManagerKey: '{TokenManagerKey}'。");
     public static void TokenRetrievalFailed(ILogger logger, string? tokenManagerKey)
         => s_tokenRetrievalFailed(logger, tokenManagerKey, null);
+
+    private static readonly Action<ILogger, string?, string?, Exception?> s_tokenRecoveryHostMismatch =
+        LoggerMessage.Define<string?, string?>(LogLevel.Warning, new EventId(156, nameof(TokenRecoveryHostMismatch)),
+            "令牌恢复放弃：重试请求主机 '{RetryHost}' 与原始主机 '{OriginalHost}' 不一致，可能被重定向到不受信任的地址，拒绝继续恢复。");
+    public static void TokenRecoveryHostMismatch(ILogger logger, string? retryHost, string? originalHost)
+        => s_tokenRecoveryHostMismatch(logger, retryHost, originalHost, null);
+
+    // ---- SR 轮新增事件（EventId 157-162）ns2.0 fallback ----
+
+    private static readonly Action<ILogger, long?, Exception?> s_tokenRecoveryBodyNotRecoverable =
+        LoggerMessage.Define<long?>(LogLevel.Warning, new EventId(157, nameof(TokenRecoveryBodyNotRecoverable)),
+            "请求体大小 {DeclaredLength} 超过恢复缓冲上限或不可恢复，已放弃 401 恢复（无体重试被禁止），直接返回 401。");
+    public static void TokenRecoveryBodyNotRecoverable(ILogger logger, long? declaredLength)
+        => s_tokenRecoveryBodyNotRecoverable(logger, declaredLength, null);
+
+    private static readonly Action<ILogger, string, string?, Exception?> s_refreshTokenRejected =
+        LoggerMessage.Define<string, string?>(LogLevel.Warning, new EventId(158, nameof(RefreshTokenRejected)),
+            "刷新令牌被 IdP 拒绝（error={ErrorCode}），已清除可疑 refresh_token 并回退 client_credentials（ScopeKey={ScopeKey}）");
+    public static void RefreshTokenRejected(ILogger logger, string scopeKey, string? errorCode)
+        => s_refreshTokenRejected(logger, scopeKey, errorCode, null);
+
+    private static readonly Action<ILogger, Exception?> s_publicClientAuthUsed =
+        LoggerMessage.Define(LogLevel.Debug, new EventId(159, nameof(PublicClientAuthUsed)),
+            "公共客户端认证：client_id 经请求体传递（未配置 ClientSecret）");
+    public static void PublicClientAuthUsed(ILogger logger)
+        => s_publicClientAuthUsed(logger, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_tokenManagerUnresolved =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(160, nameof(TokenManagerUnresolved)),
+            "TokenManagerKey '{TokenManagerKey}' 未能在注册表解析到令牌管理器，回退到构造注入的管理器实例");
+    public static void TokenManagerUnresolved(ILogger logger, string tokenManagerKey)
+        => s_tokenManagerUnresolved(logger, tokenManagerKey, null);
+
+    private static readonly Action<ILogger, string, string, Exception?> s_userTokenIdentityMismatch =
+        LoggerMessage.Define<string, string>(LogLevel.Error, new EventId(161, nameof(UserTokenIdentityMismatch)),
+            "用户身份不一致：上下文主体用户 '{PrincipalUserId}' 与恢复请求用户 '{ContextUserId}' 不匹配，拒绝恢复并返回 401");
+    public static void UserTokenIdentityMismatch(ILogger logger, string principalUserId, string contextUserId)
+        => s_userTokenIdentityMismatch(logger, principalUserId, contextUserId, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_userTokenScopeInvalidationFallback =
+        // L-4：EventId 由 166 改为 177（与 #if 分支同步；166 归属 RequestBodySerializationFastPathFallback）
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(177, nameof(UserTokenScopeInvalidationFallback)),
+            "用户令牌管理器非 UserTokenManagerBase 派生类，无法执行 scope 精准失效，降级为整用户清除 (UserId={UserId})");
+    public static void UserTokenScopeInvalidationFallback(ILogger logger, string userId)
+        => s_userTokenScopeInvalidationFallback(logger, userId, null);
+
+    private static readonly Action<ILogger, string, string, string, Exception?> s_tenantBindingRejected =
+        LoggerMessage.Define<string, string, string>(LogLevel.Warning, new EventId(162, nameof(TenantBindingRejected)),
+            "令牌管理器（{MetricsKey}）已绑定租户 '{ExistingTenant}'，不能用于租户 '{RequestedTenant}' 的请求。跨租户复用同一管理器实例会导致令牌/凭据错配；若确属共享凭据设计，请覆写 EnforceTenantBinding 返回 false。");
+    public static void TenantBindingRejected(ILogger logger, string metricsKey, string existingTenant, string requestedTenant)
+        => s_tenantBindingRejected(logger, metricsKey, existingTenant, requestedTenant, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_defaultScopeRefreshFallbackUsed =
+        LoggerMessage.Define<string>(LogLevel.Information, new EventId(163, nameof(DefaultScopeRefreshFallbackUsed)),
+            "当前作用域（{ScopeKey}）缺少 refresh_token，已回退默认作用域刷新令牌（AllowDefaultScopeRefreshTokenFallback=true）。请确认 IdP 支持统一刷新令牌，否则可能造成越权令牌。");
+    public static void DefaultScopeRefreshFallbackUsed(ILogger logger, string scopeKey)
+        => s_defaultScopeRefreshFallbackUsed(logger, scopeKey, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_userRefreshBackoffActive =
+        LoggerMessage.Define<string>(LogLevel.Debug, new EventId(164, nameof(UserRefreshBackoffActive)),
+            "用户令牌刷新处于退避窗口（CacheKey={CacheKey}），本次不发起刷新");
+    public static void UserRefreshBackoffActive(ILogger logger, string cacheKey)
+        => s_userRefreshBackoffActive(logger, cacheKey, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_tokenManagerSkippedNoBackgroundRefresh =
+        LoggerMessage.Define<string>(LogLevel.Information, new EventId(165, nameof(TokenManagerSkippedNoBackgroundRefresh)),
+            "跳过不支持后台刷新的令牌管理器: {Name}");
+    public static void TokenManagerSkippedNoBackgroundRefresh(ILogger logger, string name)
+        => s_tokenManagerSkippedNoBackgroundRefresh(logger, name, null);
+
+    // ---- CFG-39（v3.1）----
+
+    private static readonly Action<ILogger, string, string, Exception?> s_requestBodySerializationFastPathFallback =
+        // TMX-21：与 #if 分支同步使用 166 —— UserTokenScopeInvalidationFallback 已迁至 177，166 空出；
+        // 此前 TMX-17 误改为 169，与 RetrySkippedNonReplayable 撞号（跨分支日志聚合错位）。
+        LoggerMessage.Define<string, string>(LogLevel.Debug, new EventId(166, nameof(RequestBodySerializationFastPathFallback)),
+            "RequestBodySerialization 配置为 {Mode}，但当前 IHttpContentSerializer ({SerializerType}) 未实现 ISynchronousContentSerializer，" +
+            "已回退默认序列化路径（fast-path 不生效）。");
+    public static void RequestBodySerializationFastPathFallback(ILogger logger, string mode, string serializerType)
+        => s_requestBodySerializationFastPathFallback(logger, mode, serializerType, null);
+
+    // ---- 多应用管理（EventId 167+）----
+
+    private static readonly Action<ILogger, int, Exception?> s_appResilienceCacheFull =
+        LoggerMessage.Define<int>(LogLevel.Warning, new EventId(167, nameof(AppResilienceCacheFull)),
+            "per-app 弹性策略缓存已达上限 ({MaxCachedApps})，新应用将不缓存，回退全局策略。");
+    public static void AppResilienceCacheFull(ILogger logger, int maxCachedApps)
+        => s_appResilienceCacheFull(logger, maxCachedApps, null);
+
+    // ---- H-6：SSRF 连接期校验启用引导（EventId 168，一次性 Info）----
+
+    private static readonly Action<ILogger, Exception?> s_ssrfGuidance =
+        LoggerMessage.Define(LogLevel.Information, new EventId(168, nameof(SsrfGuidance)),
+            "已注册 IIpAddressPolicy（AddMudHttpClientSsrfProtection(IServiceCollection)），但当前命名客户端未经过 handler 级连接期校验。" +
+            "若在 URL 校验白名单外的域名上启用白名单直通，DNS rebinding 到内网 IP 将不受连接期防护。建议在该命名客户端的 " +
+            "IHttpClientBuilder 上调用 AddMudHttpClientSsrfProtection(builder)（net6.0+）启用连接建立时的 IP 准入校验。");
+    public static void SsrfGuidance(ILogger logger)
+        => s_ssrfGuidance(logger, null);
+
+    // ---- M5-HC-05：不可重放内容跳过重试（EventId 169）----
+
+    private static readonly Action<ILogger, string, Exception?> s_retrySkippedNonReplayable =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(169, nameof(RetrySkippedNonReplayable)),
+            "请求体不可安全重放（原因: {Reason}），已跳过重试（超时/熔断仍生效）。");
+    public static void RetrySkippedNonReplayable(ILogger logger, string reason)
+        => s_retrySkippedNonReplayable(logger, reason, null);
+
+    // ---- M5-HC-06：策略缓存超限（EventId 170）----
+
+    private static readonly Action<ILogger, int, Exception?> s_policyCacheFull =
+        LoggerMessage.Define<int>(LogLevel.Warning, new EventId(170, nameof(PolicyCacheFull)),
+            "弹性策略缓存已达上限 ({MaxPolicyCacheSize})，新作用域将不缓存策略实例。");
+    public static void PolicyCacheFull(ILogger logger, int maxPolicyCacheSize)
+        => s_policyCacheFull(logger, maxPolicyCacheSize, null);
+
+    // ---- MT 轮新增事件（EventId 171-175）：多应用与令牌管理缺陷修复 ----
+
+    private static readonly Action<ILogger, string?, string?, Exception?> s_tokenRecoveryRedirectDetected =
+        LoggerMessage.Define<string?, string?>(LogLevel.Warning, new EventId(171, nameof(TokenRecoveryRedirectDetected)),
+            "令牌恢复放弃：请求被重定向到非同源主机（原始主机 '{OriginalHost}' → 最终主机 '{FinalHost}'），继续恢复会把刷新后的令牌发往第三方，已返回真实 401。");
+    public static void TokenRecoveryRedirectDetected(ILogger logger, string? originalHost, string? finalHost)
+        => s_tokenRecoveryRedirectDetected(logger, originalHost, finalHost, null);
+
+    private static readonly Action<ILogger, Exception?> s_emptyAppManagerAutoRegistered =
+        LoggerMessage.Define(LogLevel.Warning, new EventId(172, nameof(EmptyAppManagerAutoRegistered)),
+            "源生成器自动注册了空的 DefaultAppManager<IMudAppContext>（未注册任何应用）。此时 UseApp/BeginScope(appKey) 与 GetDefaultApp() 必然失败。请显式注册应用管理器并调用 RegisterApp 注册应用。");
+    public static void EmptyAppManagerAutoRegistered(ILogger logger)
+        => s_emptyAppManagerAutoRegistered(logger, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_mudHttpClientsSectionMissing =
+        LoggerMessage.Define<string>(LogLevel.Debug, new EventId(173, nameof(MudHttpClientsSectionMissing)),
+            "配置节 '{SectionPath}' 不存在，AddMudHttpClientsFromConfiguration 未注册任何命名客户端。请确认配置节名拼写。");
+    public static void MudHttpClientsSectionMissing(ILogger logger, string sectionPath)
+        => s_mudHttpClientsSectionMissing(logger, sectionPath, null);
+
+    private static readonly Action<ILogger, string, string, Exception?> s_clientNameCaseFallbackUsed =
+        LoggerMessage.Define<string, string>(LogLevel.Warning, new EventId(174, nameof(ClientNameCaseFallbackUsed)),
+            "命名客户端 '{RequestedName}' 未命中（客户端名大小写敏感），已回退匹配 '{ActualName}'。请统一大小写。");
+    public static void ClientNameCaseFallbackUsed(ILogger logger, string requestedName, string actualName)
+        => s_clientNameCaseFallbackUsed(logger, requestedName, actualName, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_switcherFactoryOverwritten =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(175, nameof(SwitcherFactoryOverwritten)),
+            "上下文切换器工厂被重复注册并覆盖：{SwitcherType}。后注册的工厂生效。");
+    public static void SwitcherFactoryOverwritten(ILogger logger, string switcherType)
+        => s_switcherFactoryOverwritten(logger, switcherType, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_mudHttpClientNameCaseCollision =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(176, nameof(MudHttpClientNameCaseCollision)),
+            "命名客户端名称区分大小写，但配置中存在仅大小写不同的多个键：{CollisionNames}。它们会被视为不同客户端，请合并为同一个键，否则其中一个配置不会生效。");
+    public static void MudHttpClientNameCaseCollision(ILogger logger, string collisionNames)
+        => s_mudHttpClientNameCaseCollision(logger, collisionNames, null);
 #endif
+
+    // ---- TMX-04 / TMX-11：新增可观测性日志（EventId 170/171）----
+
+    private static readonly Action<ILogger, Exception?> s_tokenRefreshSuppressed =
+        LoggerMessage.Define(LogLevel.Debug, new EventId(170, nameof(TokenRefreshSuppressed)),
+            "令牌刷新被负缓存窗口抑制（TMX-04），窗口内等待者直接复用上次失败结果。");
+    public static void TokenRefreshSuppressed(ILogger logger)
+        => s_tokenRefreshSuppressed(logger, null);
+
+    private static readonly Action<ILogger, string, string, Exception?> s_tokenCacheSerializationFailed =
+        LoggerMessage.Define<string, string>(LogLevel.Warning, new EventId(171, nameof(TokenCacheSerializationFailed)),
+            "加密缓存序列化失败，降级为不缓存（type={Type}）：{Message}");
+    public static void TokenCacheSerializationFailed(ILogger logger, string type, string message, Exception ex)
+        => s_tokenCacheSerializationFailed(logger, type, message, ex);
 
     #endregion
 }

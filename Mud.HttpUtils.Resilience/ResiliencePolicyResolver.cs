@@ -26,12 +26,13 @@ public sealed class ResiliencePolicyResolver : IResiliencePolicyResolver
     private readonly IResiliencePolicyProvider _policyProvider;
     private readonly ILogger _logger;
     private readonly long _maxCloneContentSize;
+    private readonly ResilienceOptions? _resilienceOptions;
 
     /// <summary>
     /// 初始化 <see cref="ResiliencePolicyResolver"/> 实例。
     /// </summary>
     /// <param name="policyProvider">弹性策略提供器。</param>
-    /// <param name="options">弹性策略配置选项（可选，用于获取 MaxCloneContentSize）。</param>
+    /// <param name="options">弹性策略配置选项（可选，用于获取 MaxCloneContentSize 与 Retry 幂等性配置）。</param>
     /// <param name="logger">日志记录器（可选）。</param>
     public ResiliencePolicyResolver(
         IResiliencePolicyProvider policyProvider,
@@ -40,7 +41,8 @@ public sealed class ResiliencePolicyResolver : IResiliencePolicyResolver
     {
         _policyProvider = policyProvider ?? throw new ArgumentNullException(nameof(policyProvider));
         _logger = logger ?? NullLogger<ResiliencePolicyResolver>.Instance;
-        _maxCloneContentSize = options?.Value?.MaxCloneContentSize ?? HttpRequestMessageCloner.DefaultMaxContentSize;
+        _resilienceOptions = options?.Value;
+        _maxCloneContentSize = _resilienceOptions?.MaxCloneContentSize ?? HttpRequestMessageCloner.DefaultMaxContentSize;
     }
 
     /// <inheritdoc/>
@@ -57,8 +59,21 @@ public sealed class ResiliencePolicyResolver : IResiliencePolicyResolver
         if (!options.RetryEnabled && !options.CircuitBreakerEnabled && !options.TimeoutEnabled)
             return null;
 
+        // M2-#12：非幂等方法默认不重试（防重复提交）——方法级 [Retry] 与全局路径语义一致。
+        // 不可重试时把 retryEnabled 降级为 false（策略退化为超时+熔断，静默关闭重试并记录日志）。
+        var retryEnabled = options.RetryEnabled;
+        if (retryEnabled && !RetryGuard.IsRetryAllowedForMethod(requestTemplate, _resilienceOptions))
+        {
+            MudHttpClientLog.RetrySkippedNonIdempotent(_logger, requestTemplate.Method.Method);
+            retryEnabled = false;
+        }
+
+        // M5-HC-06：按端点解析作用域
+        var policyScope = _resilienceOptions?.PolicyScope ?? ResiliencePolicyScope.PerHost;
+        var scope = ResiliencePolicyScopeResolver.Resolve(requestTemplate, policyScope);
+
         var policy = _policyProvider.GetMethodPolicy<TResult>(
-            retryEnabled: options.RetryEnabled,
+            retryEnabled: retryEnabled,
             maxRetries: options.MaxRetries,
             delayMilliseconds: options.DelayMilliseconds,
             useExponentialBackoff: options.UseExponentialBackoff,
@@ -68,29 +83,59 @@ public sealed class ResiliencePolicyResolver : IResiliencePolicyResolver
             timeoutEnabled: options.TimeoutEnabled,
             timeoutMilliseconds: options.TimeoutMilliseconds,
             samplingDurationSeconds: options.SamplingDurationSeconds,
-            minimumThroughput: options.MinimumThroughput);
+            minimumThroughput: options.MinimumThroughput,
+            scope: scope);
 
         return (coreExecute, cancellationToken) =>
         {
             var context = new Context();
-            return policy.ExecuteAsync(
-                async (ctx, ct) =>
-                {
-                    var clonedRequest = await HttpRequestMessageCloner.CloneAsync(requestTemplate, _maxCloneContentSize).ConfigureAwait(false);
-                    // 从 Context 读取 retry_count（首次执行时不存在，重试时由 onRetry 回调写入）
-                    if (ctx.TryGetValue(PollyResiliencePolicyProvider.RetryCountContextKey, out var rc) && rc is int retryCount)
-                        MudHttpObservability.RecordRetryCount(clonedRequest, retryCount);
-                    try
+            // M2-#10：Polly 异常（超时/熔断）在策略边界外汇一为 ApiRequestException（方法级路径不经过 ResilientHttpClient）
+            // M2-#19/N-3：首次尝试不克隆（闭包标志判定，不依赖 provider 写入 RetryCountContextKey），
+            // 保持流式上传与进度语义；仅重试时克隆。
+            var isFirstAttempt = true;
+            return PollyExceptionNormalizer.ExecuteAsync(
+                requestTemplate,
+                () => policy.ExecuteAsync(
+                    async (ctx, ct) =>
                     {
-                        return await coreExecute(clonedRequest, ct).ConfigureAwait(false);
-                    }
-                    finally
-                    {
-                        clonedRequest.Dispose();
-                    }
-                },
-                context,
-                cancellationToken);
+                        var isRetry = !isFirstAttempt;
+                        isFirstAttempt = false;
+                        HttpRequestMessage execRequest;
+                        bool ownsRequest;
+                        if (isRetry)
+                        {
+                            // M5-HC-05 (3)：改用 TryCloneAsync —— 克隆不可行时抛出原始故障
+                            var cloned = await HttpRequestMessageCloner
+                                .TryCloneAsync(requestTemplate, _maxCloneContentSize, ct).ConfigureAwait(false);
+                            if (cloned == null)
+                            {
+                                throw ctx.TryGetValue(PollyResiliencePolicyProvider.LastExceptionContextKey, out var last) && last is Exception ex
+                                    ? ex
+                                    : new InvalidOperationException("请求体在重试时无法克隆，已中止重试。");
+                            }
+                            execRequest = cloned;
+                            ownsRequest = true;
+                        }
+                        else
+                        {
+                            execRequest = requestTemplate;
+                            ownsRequest = false;    // 原请求生命周期归调用方，不得 dispose
+                        }
+
+                        try
+                        {
+                            if (isRetry && ctx.TryGetValue(PollyResiliencePolicyProvider.RetryCountContextKey, out var rc) && rc is int retryCount)
+                                MudHttpObservability.RecordRetryCount(execRequest, retryCount);
+                            return await coreExecute(execRequest, ct).ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            if (ownsRequest)
+                                execRequest.Dispose();
+                        }
+                    },
+                    context,
+                    cancellationToken));
         };
     }
 }

@@ -31,6 +31,21 @@ public class HttpMethodAttribute : Attribute
     }
 
     /// <summary>
+    /// 初始化 <see cref="HttpMethodAttribute"/> 类的新实例，使用字符串指定 HTTP 方法。
+    /// </summary>
+    /// <param name="httpMethod">HTTP 请求方法字符串（如 "GET"、"POST"、"PURGE" 等）。</param>
+    /// <param name="requestUri">请求 URI，可以为相对路径或绝对路径。</param>
+    /// <remarks>
+    /// 此重载为便捷构造函数，避免调用方写 <c>new HttpMethod("PURGE")</c> 样板代码。
+    /// 内部通过 <c>new HttpMethod(httpMethod)</c> 创建实例。
+    /// </remarks>
+    public HttpMethodAttribute(string httpMethod, string? requestUri = null)
+    {
+        HttpMethod = new HttpMethod(httpMethod);
+        RequestUri = requestUri;
+    }
+
+    /// <summary>
     /// 获取或设置 HTTP 请求方法。
     /// </summary>
     public HttpMethod HttpMethod { get; set; }

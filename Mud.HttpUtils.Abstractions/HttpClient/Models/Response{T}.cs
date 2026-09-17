@@ -5,7 +5,10 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Net;
+using System.Net.Http;
 
 namespace Mud.HttpUtils;
 
@@ -23,13 +26,17 @@ namespace Mud.HttpUtils;
 /// 使用 <see cref="AllowAnyStatusCodeAttribute"/> 标记接口或方法时，
 /// 返回类型应使用 <see cref="Response{T}"/> 以获取完整的响应信息。
 /// </para>
+/// <para>
+/// v1.5：实现 <see cref="IApiResponse{T}"/> 协变接口（移除 sealed，二进制兼容），
+/// 允许 <see cref="Response{T}"/> 被装饰器/包装器替换。
+/// </para>
 /// </remarks>
 /// <example>
 /// <code>
 /// [AllowAnyStatusCode]
 /// [Get("/api/users/{id}")]
 /// Task&lt;Response&lt;User&gt;&gt; GetUserAsync(int id);
-/// 
+///
 /// // 使用示例
 /// var response = await api.GetUserAsync(1);
 /// if (response.StatusCode == HttpStatusCode.OK)
@@ -42,8 +49,19 @@ namespace Mud.HttpUtils;
 /// }
 /// </code>
 /// </example>
-public sealed class Response<T>
+public class Response<T> : IApiResponse<T>
 {
+    /// <summary>
+    /// 静态只读空字典，用于显式接口实现 <see cref="IApiResponse.Headers"/> 的 null 兜底，避免每次访问分配新字典（v1.4 性能修正）。
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> _emptyHeaders =
+        new ReadOnlyDictionary<string, IReadOnlyList<string>>(new Dictionary<string, IReadOnlyList<string>>());
+
+    /// <summary>
+    /// 构造时一次性转换并缓存的只读响应头视图（v1.3 性能修正：避免 hot path 每次访问新建字典）。
+    /// </summary>
+    private readonly IReadOnlyDictionary<string, IReadOnlyList<string>>? _headersView;
+
     /// <summary>
     /// 初始化表示成功响应的 <see cref="Response{T}"/> 实例。
     /// </summary>
@@ -51,13 +69,21 @@ public sealed class Response<T>
     /// <param name="content">反序列化的响应内容。</param>
     /// <param name="rawContent">原始响应内容字符串。</param>
     /// <param name="responseHeaders">响应头。</param>
-    public Response(HttpStatusCode statusCode, T? content, string? rawContent, System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<string>>? responseHeaders)
+    /// <param name="responseMessage">原始 HttpResponseMessage（可选，默认 null）。</param>
+    public Response(HttpStatusCode statusCode, T? content, string? rawContent,
+        Dictionary<string, List<string>>? responseHeaders, HttpResponseMessage? responseMessage = null)
     {
         StatusCode = statusCode;
         Content = content;
         RawContent = rawContent;
         ResponseHeaders = responseHeaders;
-        ErrorContent = null;
+        ResponseMessage = responseMessage;
+        // 当状态码表示错误时，rawContent 即为错误内容
+        ErrorContent = (int)statusCode < 200 || (int)statusCode >= 300 ? rawContent : null;
+        // 显式转换：Dictionary<string,List<string>> -> Dictionary<string,IReadOnlyList<string>>
+        // (IReadOnlyList<out T> 协变不触发隐式引用转换,需显式 ToDictionary)
+        _headersView = responseHeaders?
+            .ToDictionary(kv => kv.Key, kv => (IReadOnlyList<string>)kv.Value);
     }
 
     /// <summary>
@@ -66,13 +92,19 @@ public sealed class Response<T>
     /// <param name="statusCode">HTTP 状态码。</param>
     /// <param name="errorContent">错误响应内容字符串。</param>
     /// <param name="responseHeaders">响应头。</param>
-    public Response(HttpStatusCode statusCode, string? errorContent, System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<string>>? responseHeaders)
+    /// <param name="responseMessage">原始 HttpResponseMessage（可选，默认 null）。</param>
+    public Response(HttpStatusCode statusCode, string? errorContent,
+        Dictionary<string, List<string>>? responseHeaders, HttpResponseMessage? responseMessage = null)
     {
         StatusCode = statusCode;
         Content = default;
         RawContent = errorContent;
         ErrorContent = errorContent;
         ResponseHeaders = responseHeaders;
+        ResponseMessage = responseMessage;
+        // 显式转换：Dictionary<string,List<string>> -> Dictionary<string,IReadOnlyList<string>>
+        _headersView = responseHeaders?
+            .ToDictionary(kv => kv.Key, kv => (IReadOnlyList<string>)kv.Value);
     }
 
     /// <summary>
@@ -96,14 +128,39 @@ public sealed class Response<T>
     public string? ErrorContent { get; }
 
     /// <summary>
-    /// 获取响应头集合。
+    /// 获取响应头集合（仅含<strong>响应级头</strong>，不含 Content-* 头）。
     /// </summary>
-    public System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<string>>? ResponseHeaders { get; }
+    /// <remarks>
+    /// M5-HC-14：由执行器以 <c>response.Headers</c> 填充，故不含 <c>Content-Type</c> / <c>Content-Length</c> 等内容头。
+    /// 若需内容头，请解析 <see cref="RawContent"/> 或改用直达返回类型 <see cref="HttpResponseMessage"/>。
+    /// </remarks>
+    public Dictionary<string, List<string>>? ResponseHeaders { get; }
+
+    /// <summary>
+    /// 获取原始 HttpResponseMessage。
+    /// </summary>
+    /// <remarks>
+    /// M5-HC-14：框架默认执行器在方法内 <c>using</c> 释放响应，本属性恒为 <c>null</c>。
+    /// 仅当自定义 <c>IHttpRequestExecutor</c> 自行保有响应时才可能非 null。
+    /// </remarks>
+    [Obsolete("框架默认执行器恒返回 null（响应已在方法内释放）。如需原始响应，请改用直达返回类型 HttpResponseMessage。")]
+    public HttpResponseMessage? ResponseMessage { get; }
 
     /// <summary>
     /// 获取一个值，该值指示响应是否成功（状态码在 200-299 范围内）。
     /// </summary>
     public bool IsSuccessStatusCode => (int)StatusCode >= 200 && (int)StatusCode <= 299;
+
+    /// <summary>
+    /// 获取一个值，该值指示是否有内容（响应体非空且成功反序列化）。
+    /// </summary>
+    public bool HasContent => Content is not null;
+
+    /// <summary>
+    /// 显式接口实现：返回缓存的只读响应头视图，null 时返回静态空字典（零分配）。
+    /// </summary>
+    IReadOnlyDictionary<string, IReadOnlyList<string>> IApiResponse.Headers
+        => _headersView ?? _emptyHeaders;
 
     /// <summary>
     /// 获取响应内容。如果响应不成功，则抛出 <see cref="ApiException"/>。

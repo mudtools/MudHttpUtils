@@ -240,6 +240,79 @@ public class DefaultHttpRequestExecutorTests
     }
 
     [Fact]
+    public async Task SendAndDeserializeAsync_InvalidJson_LargeBody_RawContentLimited_H1()
+    {
+        // M4-H-1：反序列化失败路径嵌入异常消息的 raw content 必须受 MaxExceptionContentLength 限量
+        // （默认 10240），避免超长成功响应体被原样塞入异常消息导致内存/日志膨胀。T-1.x 验收。
+        var bigInvalidJson = new string('{', 50 * 1024); // 结构非法但超长的响应体
+        var mockClient = new Mock<IBaseHttpClient>();
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CreateResponse(content: bigInvalidJson));
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
+
+        var ex = await FluentActions.Awaiting(() =>
+            executor.SendAndDeserializeAsync<TestUser>(
+                CreateRequest(), mockClient.Object, JsonDescriptor(), null))
+            .Should().ThrowAsync<ApiException>();
+
+        ex.Which.Content.Should().Contain("Failed to deserialize JSON response");
+        var limit = HttpExecutionConstants.DefaultMaxExceptionContentLength;
+        ex.Which.Content.Should().Contain(
+            $"Raw content: {new string('{', limit)}...[已截断]",
+            "反序列化失败路径的 raw content 应按上限截断并追加截断后缀（H-1）");
+        ex.Which.Content!.Length.Should().BeLessThan(bigInvalidJson.Length);
+    }
+
+    [Fact]
+    public async Task SendAndDeserializeAsync_NonReplayableContent_CaptureSkipped_H2()
+    {
+        // M4-H-2：声明为不可重放（IRequestContentReplayHint.IsReplayable=false）的 HttpContent，
+        // 捕获请求体时必须跳过，避免读取一次性源流导致后续发送空/截断请求体。T-2.x 验收。
+        var mockClient = new Mock<IBaseHttpClient>();
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CreateResponse(HttpStatusCode.InternalServerError, "server-error"));
+        var executor = new DefaultHttpRequestExecutor(
+            NullLogger<DefaultHttpRequestExecutor>.Instance,
+            captureRequestContent: true);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, TestUri)
+        {
+            Content = new NonReplayableContent(),
+        };
+
+        var ex = await FluentActions.Awaiting(() =>
+            executor.SendAndDeserializeAsync<TestUser>(
+                request, mockClient.Object, JsonDescriptor(allowAnyStatusCode: false), null))
+            .Should().ThrowAsync<ApiException>();
+
+        ex.Which.RequestContent.Should().BeNull("不可重放内容不应被捕获（H-2 守卫）；回填需为 null");
+    }
+
+    [Fact]
+    public async Task SendAndDeserializeAsync_ReplayableContent_StillCaptured_H2()
+    {
+        // M4-H-2 对照组：可重放内容（普通 StringContent）仍正常捕获，守卫不破坏既有行为。
+        var mockClient = new Mock<IBaseHttpClient>();
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CreateResponse(HttpStatusCode.InternalServerError, "server-error"));
+        var executor = new DefaultHttpRequestExecutor(
+            NullLogger<DefaultHttpRequestExecutor>.Instance,
+            captureRequestContent: true);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, TestUri)
+        {
+            Content = new StringContent("""{"name":"x"}""", Encoding.UTF8, "application/json"),
+        };
+
+        var ex = await FluentActions.Awaiting(() =>
+            executor.SendAndDeserializeAsync<TestUser>(
+                request, mockClient.Object, JsonDescriptor(allowAnyStatusCode: false), null))
+            .Should().ThrowAsync<ApiException>();
+
+        ex.Which.RequestContent.Should().NotBeNull("可重放内容应正常捕获（H-2 对照组）");
+    }
+
+    [Fact]
     public async Task SendAndDeserializeAsync_InvalidXml_ShouldThrowApiException()
     {
         var invalidXml = """<TestUser><Id>not_int</Id></TestUser>""";
@@ -431,9 +504,10 @@ public class DefaultHttpRequestExecutorTests
                 It.IsAny<string>(),
                 It.IsAny<Func<Task<TestUser?>>>(),
                 It.IsAny<TimeSpan>(),
+                It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()))
-            .Returns<string, Func<Task<TestUser?>>, TimeSpan, CancellationToken>(
-                async (key, fetch, exp, ct) =>
+            .Returns<string, Func<Task<TestUser?>>, TimeSpan, bool, CancellationToken>(
+                async (key, fetch, exp, sliding, ct) =>
                 {
                     fetchedValue = await fetch();
                     return fetchedValue;
@@ -452,7 +526,7 @@ public class DefaultHttpRequestExecutorTests
         result!.Id.Should().Be(20);
         mockCache.Verify(c => c.GetOrFetchAsync(
             "test-key", It.IsAny<Func<Task<TestUser?>>>(), TimeSpan.FromSeconds(60),
-            It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
         mockClient.Verify(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
@@ -466,6 +540,7 @@ public class DefaultHttpRequestExecutorTests
                 It.IsAny<string>(),
                 It.IsAny<Func<Task<TestUser?>>>(),
                 It.IsAny<TimeSpan>(),
+                It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(cachedUser);
         var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance, mockCache.Object);
@@ -526,9 +601,10 @@ public class DefaultHttpRequestExecutorTests
                 It.IsAny<string>(),
                 It.IsAny<Func<Task<TestUser?>>>(),
                 It.IsAny<TimeSpan>(),
+                It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()))
-            .Returns<string, Func<Task<TestUser?>>, TimeSpan, CancellationToken>(
-                async (key, fetch, exp, ct) => await fetch());
+            .Returns<string, Func<Task<TestUser?>>, TimeSpan, bool, CancellationToken>(
+                async (key, fetch, exp, sliding, ct) => await fetch());
         var mockResolver = new Mock<IResiliencePolicyResolver>();
         mockResolver.Setup(r => r.ResolvePolicyWrapper<TestUser>(
                 It.IsAny<ResilienceExecutionOptions>(), It.IsAny<HttpRequestMessage>()))
@@ -551,7 +627,7 @@ public class DefaultHttpRequestExecutorTests
         // 缓存应被调用一次（包裹弹性策略）
         mockCache.Verify(c => c.GetOrFetchAsync(
             "combo-key", It.IsAny<Func<Task<TestUser?>>>(), TimeSpan.FromSeconds(30),
-            It.IsAny<CancellationToken>()), Times.Once);
+            It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
         // 弹性策略解析器应被调用一次
         mockResolver.Verify(r => r.ResolvePolicyWrapper<TestUser>(
             It.IsAny<ResilienceExecutionOptions>(), It.IsAny<HttpRequestMessage>()), Times.Once);
@@ -569,6 +645,7 @@ public class DefaultHttpRequestExecutorTests
                 It.IsAny<string>(),
                 It.IsAny<Func<Task<TestUser?>>>(),
                 It.IsAny<TimeSpan>(),
+                It.IsAny<bool>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(cachedUser);
         var mockResolver = new Mock<IResiliencePolicyResolver>();
@@ -727,7 +804,7 @@ public class DefaultHttpRequestExecutorTests
 
         var tempFile = Path.Combine(Path.GetTempPath(), $"mud_test_{Guid.NewGuid():N}.bin");
         var reportedBytes = new List<long>();
-        var progress = new Progress<long>(b => reportedBytes.Add(b));
+        var progress = new RecordingProgress(reportedBytes);
         try
         {
             await executor.DownloadLargeAsync(CreateRequest(), mockClient.Object, tempFile, progress: progress);
@@ -735,6 +812,84 @@ public class DefaultHttpRequestExecutorTests
             // 验证进度报告至少触发一次，且最终累计等于数据长度
             reportedBytes.Should().NotBeEmpty();
             reportedBytes.Last().Should().Be(data.Length);
+            File.Exists(tempFile).Should().BeTrue();
+            (await File.ReadAllBytesAsync(tempFile)).Should().Equal(data);
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public async Task DownloadLargeAsync_WithResilience_ShouldApplyResilienceWrapperAndWriteFile()
+    {
+        var data = new byte[] { 1, 2, 3, 4, 5, 6 };
+        var mockClient = new Mock<IBaseHttpClient>();
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(data)
+        };
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
+        var mockResolver = new Mock<IResiliencePolicyResolver>();
+        mockResolver.Setup(r => r.ResolvePolicyWrapper<object>(
+                It.IsAny<ResilienceExecutionOptions>(), It.IsAny<HttpRequestMessage>()))
+            .Returns<ResilienceExecutionOptions, HttpRequestMessage>(
+                (options, requestTemplate) =>
+                    (coreExecute, ct) => coreExecute(requestTemplate, ct));
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance, null, mockResolver.Object);
+
+        var descriptor = new ExecutionDescriptor
+        {
+            Response = JsonDescriptor(isVoid: true),
+            Resilience = new ResilienceExecutionOptions { RetryEnabled = true, MaxRetries = 3 }
+        };
+
+        var tempFile = Path.Combine(Path.GetTempPath(), $"mud_test_{Guid.NewGuid():N}.bin");
+        try
+        {
+            await executor.DownloadLargeAsync(CreateRequest(), mockClient.Object, tempFile, true, 81920, descriptor);
+
+            mockResolver.Verify(r => r.ResolvePolicyWrapper<object>(
+                It.IsAny<ResilienceExecutionOptions>(), It.IsAny<HttpRequestMessage>()), Times.Once);
+            mockClient.Verify(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()), Times.Once);
+            File.Exists(tempFile).Should().BeTrue();
+            (await File.ReadAllBytesAsync(tempFile)).Should().Equal(data);
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public async Task DownloadLargeAsync_WithResilienceButNullResolver_ShouldFallBackToDirectSend()
+    {
+        var data = new byte[] { 7, 8, 9 };
+        var mockClient = new Mock<IBaseHttpClient>();
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(data)
+        };
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
+
+        var descriptor = new ExecutionDescriptor
+        {
+            Response = JsonDescriptor(isVoid: true),
+            Resilience = new ResilienceExecutionOptions { RetryEnabled = true, MaxRetries = 3 }
+        };
+
+        var tempFile = Path.Combine(Path.GetTempPath(), $"mud_test_{Guid.NewGuid():N}.bin");
+        try
+        {
+            await executor.DownloadLargeAsync(CreateRequest(), mockClient.Object, tempFile, true, 81920, descriptor);
+
+            mockClient.Verify(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()), Times.Once);
             File.Exists(tempFile).Should().BeTrue();
             (await File.ReadAllBytesAsync(tempFile)).Should().Equal(data);
         }
@@ -887,6 +1042,71 @@ public class DefaultHttpRequestExecutorTests
         capturedDurations[0].Tags.Should().Contain(t => t.Key == "outcome" && (string?)t.Value == "error");
     }
 
+    #region M1-#16.2 异常擦除器在执行器路径被调用
+
+    [Fact]
+    public async Task SendAndDeserializeAsync_NonSuccess_InvokesExceptionRedactor_OnExecutorPath()
+    {
+        // T-16.2：生成代码路径（DefaultHttpRequestExecutor）抛 ApiException 前调用 IExceptionRedactor，
+        // 与内置方法路径（EnhancedHttpClient.Diag_CaptureFlow）行为一致；且 ApiException.RequestUri
+        // 保留完整 URI（#5.4），RequestContent 受 MaxExceptionContentLength 约束（#16）。
+        ApiException? seen = null;
+        var redactor = new DelegateExceptionRedactor(ex => seen = ex);
+
+        var mockClient = new Mock<IBaseHttpClient>();
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CreateResponse(HttpStatusCode.InternalServerError, "err-body"));
+
+        var executor = new DefaultHttpRequestExecutor(
+            NullLogger<DefaultHttpRequestExecutor>.Instance,
+            exceptionRedactor: redactor,
+            captureRequestContent: true);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, TestUri)
+        {
+            Content = new StringContent("""{"name":"x"}""", Encoding.UTF8, "application/json"),
+        };
+
+        var act = () => executor.SendAndDeserializeAsync<TestUser>(
+            request, mockClient.Object, JsonDescriptor(allowAnyStatusCode: false), null);
+
+        (await act.Should().ThrowAsync<ApiException>()).Which.Content.Should().Be("err-body");
+
+        seen.Should().NotBeNull("执行器路径应在抛出前调用 IExceptionRedactor");
+        seen!.Content.Should().Be("err-body");
+        seen.RequestContent.Should().NotBeNull("CaptureRequestContent=true 时应回填请求体");
+        seen.RequestUri.Should().Be(TestUri.ToString(), "ApiException.RequestUri 保留完整 URI（#5.4）");
+    }
+
+    #endregion
+
+    #region M1-N-1 两条路径错误响应体默认上限一致
+
+    [Fact]
+    public async Task SendAndDeserializeAsync_NonSuccess_DefaultLimit_MatchesEnhancedClientPath_T1_2()
+    {
+        // T-1.2 / N-1：生成代码路径（DefaultHttpRequestExecutor）默认 maxExceptionContentLength = null → 10240，
+        // 与内置方法路径（EnhancedHttpClient.ErrorContent_DefaultLimit_AppliesWithoutExplicitConfig）结果长度一致。
+        var bigError = new string('x', 50 * 1024);
+        var mockClient = new Mock<IBaseHttpClient>();
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CreateResponse(HttpStatusCode.InternalServerError, bigError));
+
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
+
+        var ex = await FluentActions.Awaiting(() =>
+            executor.SendAndDeserializeAsync<TestUser>(
+                CreateRequest(), mockClient.Object, JsonDescriptor(allowAnyStatusCode: false), null))
+            .Should().ThrowAsync<ApiException>();
+
+        ex.Which.Content.Should().NotBeNull();
+        ex.Which.Content!.Length.Should().Be(
+            HttpExecutionConstants.DefaultMaxExceptionContentLength + "...[已截断]".Length);
+        ex.Which.Content.Should().EndWith("...[已截断]");
+    }
+
+    #endregion
+
     /// <summary>
     /// 自定义 HttpContent，其 SerializeToStreamAsync 抛出异常，用于测试下载失败场景。
     /// HttpContent.ReadAsByteArrayAsync 内部会调用 SerializeToStreamAsync，因此会传播异常。
@@ -900,6 +1120,27 @@ public class DefaultHttpRequestExecutorTests
         {
             length = 0;
             return false;
+        }
+    }
+
+    /// <summary>
+    /// M4-H-2：声明为不可重放（<see cref="IRequestContentReplayHint.IsReplayable"/>=false）的内容，
+    /// 捕获请求体时须被守卫跳过，避免消费一次性源流。
+    /// </summary>
+    private sealed class NonReplayableContent : HttpContent, IRequestContentReplayHint
+    {
+        bool IRequestContentReplayHint.IsReplayable => false;
+
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        {
+            var bytes = Encoding.UTF8.GetBytes("non-replayable-body");
+            return stream.WriteAsync(bytes, 0, bytes.Length);
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 20;
+            return true;
         }
     }
 

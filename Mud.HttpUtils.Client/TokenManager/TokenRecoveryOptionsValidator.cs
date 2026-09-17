@@ -26,6 +26,10 @@ public class TokenRecoveryOptionsValidator : IValidateOptions<TokenRecoveryOptio
         if (string.IsNullOrWhiteSpace(options.TokenScheme))
             failures.Add("TokenRecoveryOptions: TokenScheme 不能为 null 或空字符串。");
 
+        // SR-H2/H3（P1.4，D4）请求体缓冲上限非负校验（属性 setter 已防御，此处覆盖配置绑定路径）
+        if (options.MaxCachedRequestBodyBytes < 0)
+            failures.Add($"TokenRecoveryOptions: MaxCachedRequestBodyBytes 不能为负数，当前值为 {options.MaxCachedRequestBodyBytes}。");
+
         return failures.Count > 0
             ? ValidateOptionsResult.Fail(failures)
             : ValidateOptionsResult.Success;

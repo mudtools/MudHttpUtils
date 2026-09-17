@@ -50,6 +50,10 @@ public sealed class CacheOptions
     /// 缓存键模板，支持占位符（例如 {userId}），用于生成缓存键。
     /// </summary>
     public string? KeyTemplate { get; set; }
+    /// <summary>
+    /// 是否使用滑动过期策略（M3-#27）：为 true 时，每次缓存命中将顺延过期时间。
+    /// </summary>
+    public bool UseSlidingExpiration { get; set; }
 }
 
 /// <summary>

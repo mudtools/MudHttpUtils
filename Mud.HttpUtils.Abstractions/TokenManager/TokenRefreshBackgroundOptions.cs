@@ -24,13 +24,23 @@ public class TokenRefreshBackgroundOptions
     public const string SectionName = "TokenRefreshBackground";
 
     /// <summary>
+    /// 默认刷新间隔（秒）。
+    /// </summary>
+    public const int DefaultRefreshIntervalSeconds = 300;
+
+    /// <summary>
+    /// 默认重试延迟（秒）。
+    /// </summary>
+    public const int DefaultRetryDelaySeconds = 60;
+
+    /// <summary>
     /// 获取或设置是否启用后台刷新，默认 false。
     /// 需要显式设置为 true 以启用令牌主动刷新后台服务。
     /// </summary>
     public bool Enabled { get; set; } = false;
 
     /// <summary>
-    /// 刷新间隔（秒），默认 300 秒（5 分钟）。必须大于 0。
+    /// 刷新间隔（秒），默认 <see cref="DefaultRefreshIntervalSeconds"/>（300 秒 = 5 分钟）。必须大于 0。
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">设置小于等于 0 的值时抛出。</exception>
     public int RefreshIntervalSeconds
@@ -38,10 +48,10 @@ public class TokenRefreshBackgroundOptions
         get => _refreshIntervalSeconds;
         set => _refreshIntervalSeconds = value > 0 ? value : throw new ArgumentOutOfRangeException(nameof(RefreshIntervalSeconds), "刷新间隔必须大于 0 秒。");
     }
-    private int _refreshIntervalSeconds = 300;
+    private int _refreshIntervalSeconds = DefaultRefreshIntervalSeconds;
 
     /// <summary>
-    /// 刷新失败后重试延迟（秒），默认 60 秒（1 分钟）。必须大于 0。
+    /// 刷新失败后重试延迟（秒），默认 <see cref="DefaultRetryDelaySeconds"/>（60 秒 = 1 分钟）。必须大于 0。
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">设置小于等于 0 的值时抛出。</exception>
     public int RetryDelaySeconds
@@ -49,10 +59,24 @@ public class TokenRefreshBackgroundOptions
         get => _retryDelaySeconds;
         set => _retryDelaySeconds = value > 0 ? value : throw new ArgumentOutOfRangeException(nameof(RetryDelaySeconds), "重试延迟必须大于 0 秒。");
     }
-    private int _retryDelaySeconds = 60;
+    private int _retryDelaySeconds = DefaultRetryDelaySeconds;
 
     /// <summary>
     /// 获取或设置刷新失败时是否停止服务，默认 false。
     /// </summary>
     public bool StopOnError { get; set; } = false;
+
+    /// <summary>
+    /// P1.6（TK-10-max）连续失败的刷新周期数达到该阈值时停止服务，默认 0 表示不因连续失败次数停止（无限重试）。
+    /// 与 <see cref="StopOnError"/> 正交：<see cref="StopOnError"/> 为 true 时任一周期内首个失败即停止；
+    /// 本属性用于在 <see cref="StopOnError"/> 为 false 时提供"连续失败 N 次后停止"的可选语义。
+    /// 必须大于等于 0。
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">设置小于 0 的值时抛出。</exception>
+    public int MaxConsecutiveFailures
+    {
+        get => _maxConsecutiveFailures;
+        set => _maxConsecutiveFailures = value >= 0 ? value : throw new ArgumentOutOfRangeException(nameof(MaxConsecutiveFailures), "最大连续失败次数不能为负数。");
+    }
+    private int _maxConsecutiveFailures = 0;
 }

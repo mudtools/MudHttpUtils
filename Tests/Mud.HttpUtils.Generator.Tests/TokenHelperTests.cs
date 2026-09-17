@@ -291,6 +291,61 @@ public class TokenHelperTests
 
     #endregion
 
+    #region GEN-09：方法级 Token(Name) 覆盖接口级 TokenName
+
+    /// <summary>
+    /// GEN-09（B-5）：方法级 <c>[Token(Name = "…")]</c> 的 <c>Name</c> 须覆盖接口级
+    /// <see cref="TokenAttribute.Name"/>（优先级：方法级 &gt; 接口级 &gt; 默认）。
+    /// Header / ApiKey / Cookie / Query 四种注入模式各验证一条；断言生成产物
+    /// 消费方法级名且不再引用接口级名。
+    /// </summary>
+    [Theory]
+    [InlineData(TokenInjectionMode.Header)]
+    [InlineData(TokenInjectionMode.Query)]
+    [InlineData(TokenInjectionMode.ApiKey)]
+    [InlineData(TokenInjectionMode.Cookie)]
+    public void MethodLevelTokenName_OverridesInterfaceName(TokenInjectionMode mode)
+    {
+        const string InterfaceTokenName = "X-Interface-Token";
+        const string MethodTokenName = "X-Method-Token";
+
+        var source = $@"
+using System.Threading.Tasks;
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{{
+    public interface ITestTokenManager
+    {{
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }}
+
+    [HttpClientApi(TokenManage = ""ITestTokenManager"")]
+    [Token(Name = ""{InterfaceTokenName}"", InjectionMode = TokenInjectionMode.{mode})]
+    public interface ITokenApi
+    {{
+        [Get(""/data"")]
+        [Token(Name = ""{MethodTokenName}"", InjectionMode = TokenInjectionMode.{mode})]
+        Task<string> GetAsync();
+    }}
+}}";
+
+        var output = GeneratorCompileAssert.RunAndAssertNoErrors(
+            source,
+            description: $"GEN-09：{mode} 模式下方法级 Token 名覆盖接口级后生成代码必须可编译");
+
+        var generated = string.Join("\n", output.SyntaxTrees.Skip(1).Select(t => t.ToString()));
+
+        generated.Should().Contain(MethodTokenName, $"{mode} 模式必须消费方法级 Token 名");
+        generated.Should().NotContain(
+            InterfaceTokenName,
+            $"{mode} 模式方法级 Token 名必须覆盖接口级 Token 名（不得再引用接口级名）");
+    }
+
+    #endregion
+
     private static AttributeData? CreateAttributeData(string attributeSource)
     {
         var source = $@"

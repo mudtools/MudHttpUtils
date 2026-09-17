@@ -111,6 +111,14 @@ public static class MudHttpMeter
             description: "令牌恢复（401 重试）次数与结果");
 
     /// <summary>
+    /// TMX-04：令牌刷新被负缓存窗口抑制的次数（维度：token_manager_key）。
+    /// 当刷新失败后 5 秒（默认）内的后续调用不再发起新刷新，直接重抛上次异常时计数。
+    /// </summary>
+    public static readonly Counter<long> TokenRefreshSuppressedCounter =
+        Instance.CreateCounter<long>("mud.token.refresh.suppressed", unit: "{operation}",
+            description: "因刷新失败负缓存窗口而跳过的刷新次数");
+
+    /// <summary>
     /// 文件下载字节数计数（维度：client_name, outcome）。
     /// 仅统计响应体下载阶段（不含等待响应头时间）。
     /// </summary>
@@ -129,6 +137,79 @@ public static class MudHttpMeter
             "mud.http.download.duration",
             unit: "ms",
             description: "文件下载耗时分布（仅响应体下载阶段）");
+
+    private static readonly IReadOnlyCollection<string> s_defaultAllowlist = MudHttpObservabilityOptions.MetricTagAllowlist;
+    private static IReadOnlyCollection<string>? s_lookupSource;
+    private static volatile HashSet<string>? s_lookup;
+
+    /// <summary>
+    /// G20/R-3：policy_key 维度键的唯一字面量定义（CircuitBreakerStateObserver 事件 tags、Gauge 与
+    /// PollyResiliencePolicyProvider 指标 tags 共用）。public 以便 Resilience 项目引用（无 InternalsVisibleTo）。
+    /// </summary>
+    public const string PolicyKeyTag = "policy_key";
+
+    /// <summary>
+    /// R-1：按 <see cref="MudHttpObservabilityOptions.MetricTagAllowlist"/> 过滤指标维度，
+    /// 白名单之外的 tag 被丢弃（#6 高基数治理的机制化防线）。所有指标写入点统一调用。
+    /// </summary>
+    /// <remarks>
+    /// 默认白名单（引用未变更时）直接返回原数组（零分配）；白名单被替换后按引用变更重建查找集。
+    /// </remarks>
+    public static KeyValuePair<string, object?>[] FilterTags(KeyValuePair<string, object?>[] tags)
+    {
+        var allowlist = MudHttpObservabilityOptions.MetricTagAllowlist;
+
+        // 默认白名单 = 当前全部内建维度：跳过过滤（零分配快路径）
+        if (ReferenceEquals(allowlist, s_defaultAllowlist))
+            return tags;
+
+        var lookup = EnsureLookup(allowlist);
+
+        var filtered = new List<KeyValuePair<string, object?>>(tags.Length);
+        foreach (var tag in tags)
+        {
+            if (lookup.Contains(tag.Key))
+                filtered.Add(tag);
+        }
+
+        return filtered.ToArray();
+    }
+
+    /// <summary>
+    /// R-3：判断指定 tag 键是否在当前 <see cref="MudHttpObservabilityOptions.MetricTagAllowlist"/> 内。
+    /// 供 ObservableGauge 等逐值写入点在回调内做一次性键判定（避免逐 Measurement 的数组分配）。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="FilterTags"/> 共享 <see cref="EnsureLookup"/> 的查找集与引用变更检测逻辑（单一事实源）。
+    /// </remarks>
+    internal static bool IsTagAllowed(string key)
+    {
+        var allowlist = MudHttpObservabilityOptions.MetricTagAllowlist;
+
+        // 默认白名单 = 当前全部内建维度：快路径
+        if (ReferenceEquals(allowlist, s_defaultAllowlist))
+            return true;
+
+        return EnsureLookup(allowlist).Contains(key);
+    }
+
+    /// <summary>
+    /// 获取（或按引用变更重建）当前白名单对应的 Ordinal 查找集。FilterTags 与 IsTagAllowed 共用。
+    /// </summary>
+    private static HashSet<string> EnsureLookup(IReadOnlyCollection<string> allowlist)
+    {
+        var lookup = s_lookup;
+        if (lookup is null || !ReferenceEquals(s_lookupSource, allowlist))
+        {
+            lookup = new HashSet<string>(
+                allowlist ?? Array.Empty<string>(),
+                StringComparer.Ordinal);
+            s_lookupSource = allowlist;
+            s_lookup = lookup;
+        }
+
+        return lookup;
+    }
 }
 
 /// <summary>
@@ -152,6 +233,8 @@ public enum CircuitBreakerState
 /// <remarks>
 /// 使用 <see cref="ConcurrentDictionary{TKey, TValue}"/> 实现无锁读写。
 /// Polly v7 经典 API 没有原生的状态变化事件，需要在 onBreak/onReset/onHalfOpen 回调中手动调用 <see cref="SetState"/>。
+/// <para><strong>不变量（守门规则）</strong>：policy key 必须有界（静态常量或方法级派生键，基数以接口方法数为上界），
+/// 禁止引入按请求派生的键，否则字典将无界增长；<c>RemoveState</c> 当前无生产调用方正是依赖该不变量。</para>
 /// </remarks>
 public static class CircuitBreakerStateObserver
 {
@@ -176,16 +259,19 @@ public static class CircuitBreakerStateObserver
         if (activity != null && MudHttpActivitySource.IsMudActivity(activity))
             activity.SetTag(MudHttpActivitySource.Tags.MudCircuitBreakerState, stateString);
 
-        // 写入 DiagnosticSource 事件 + Activity Event
-        MudHttpActivitySource.AddActivityEvent(
-            MudHttpDiagnosticNames.CircuitBreakerStateChanged,
-            () => new CircuitBreakerDiagnosticPayload(policyKey, stateString),
-            MudHttpDiagnosticNames.CircuitBreakerStateChanged,
-            new[]
-            {
-                new KeyValuePair<string, object?>("policy_key", policyKey),
-                new KeyValuePair<string, object?>("state", stateString),
-            });
+        // 写入 DiagnosticSource 事件 + Activity Event（G28：门控前移 + 惰性 tags 工厂，消除 tags 先构造）
+        if (MudHttpActivitySource.EventsEnabled)
+        {
+            MudHttpActivitySource.AddActivityEvent(
+                MudHttpDiagnosticNames.CircuitBreakerStateChanged,
+                () => new CircuitBreakerDiagnosticPayload(policyKey, stateString),
+                MudHttpDiagnosticNames.CircuitBreakerStateChanged,
+                () => new[]
+                {
+                    new KeyValuePair<string, object?>(MudHttpMeter.PolicyKeyTag, policyKey),
+                    new KeyValuePair<string, object?>("state", stateString),
+                });
+        }
     }
 
     /// <summary>
@@ -204,15 +290,22 @@ public static class CircuitBreakerStateObserver
     /// 获取所有 policyKey 的当前状态，作为 ObservableGauge 的观测值集合。
     /// </summary>
     /// <returns>观测值集合。</returns>
+    /// <remarks>
+    /// R-3：回调内仅做一次性 <c>policy_key</c> 白名单键判定（<see cref="MudHttpMeter.IsTagAllowed"/>），
+    /// 不做逐 Measurement 的 <see cref="MudHttpMeter.FilterTags"/>（数组分配）；
+    /// 白名单收缩移除 <c>policy_key</c> 时，Measurement 不携带任何 tags。
+    /// </remarks>
     public static IEnumerable<Measurement<int>> CurrentStates
     {
         get
         {
+            var includeKey = MudHttpMeter.IsTagAllowed(MudHttpMeter.PolicyKeyTag);
             foreach (var kvp in s_states)
             {
-                yield return new Measurement<int>(
-                    (int)kvp.Value,
-                    new KeyValuePair<string, object?>("policy_key", kvp.Key));
+                yield return includeKey
+                    ? new Measurement<int>((int)kvp.Value,
+                        new KeyValuePair<string, object?>(MudHttpMeter.PolicyKeyTag, kvp.Key))
+                    : new Measurement<int>((int)kvp.Value);
             }
         }
     }

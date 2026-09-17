@@ -1,7 +1,11 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFramework>net8.0</TargetFramework>
+		<!-- [T14] 多目标：生成器单测与宿主 TFM 无关，但引用程序集集合（MetadataReference 来自宿主运行时的 BCL）
+		     与 #if 分支随 TFM 不同，多跑一个 TFM 可提前暴露"只在某个运行时才出现"的差异。
+		     说明：文档原计划加 net6.0，但测试宿主需实际安装对应运行时（CI setup-dotnet 与开发机均只有
+		     8.0/10.0），加 net6.0 会让 `dotnet test` 直接失败 → 改用 net10.0（同为受支持且已安装的 LTS）。 -->
+		<TargetFrameworks>net8.0;net10.0</TargetFrameworks>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<LangVersion>13.0</LangVersion>
@@ -12,6 +16,8 @@
 
 	<ItemGroup>
 		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+		<PackageReference Include="Verify.SourceGenerators" Version="2.5.0" />
+		<PackageReference Include="Verify.Xunit" Version="28.2.0" />
 		<PackageReference Include="xunit" Version="2.9.2" />
 		<PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
 			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -22,7 +28,8 @@
 			<PrivateAssets>all</PrivateAssets>
 		</PackageReference>
 		<PackageReference Include="FluentAssertions" Version="7.0.0" />
-		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.12.0" />
+		<PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.11.0" />
+		<PackageReference Include="Microsoft.CodeAnalysis" Version="4.11.0" />
 	</ItemGroup>
 
 	<ItemGroup>

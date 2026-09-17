@@ -22,9 +22,10 @@ internal static class ArgumentNullExceptionExtensions
     {
         if (argument is null)
         {
+            // [Phase4 修复 5.1] 回退名不再使用空字符串字面量（CA2208：paramName 必须是本方法的参数名之一）。
             throw paramName != null
                 ? new ArgumentNullException(paramName)
-                : new ArgumentNullException("", "参数不能为空");
+                : new ArgumentNullException(nameof(argument), "参数不能为空");
         }
     }
 
@@ -36,14 +37,10 @@ internal static class ArgumentNullExceptionExtensions
     /// <exception cref="ArgumentNullException"></exception>
     public static void ThrowIfNullOrEmpty(this string? argument, string? paramName = null)
     {
-        if (argument == null)
-            throw paramName != null
-               ? new ArgumentNullException(paramName)
-               : new ArgumentNullException("", "参数不能为空");
-
+        // [Phase4 修复 5.1] 回退名不再使用空字符串字面量（CA2208：paramName 必须是本方法的参数名之一）。
         if (string.IsNullOrEmpty(argument))
             throw paramName != null
                ? new ArgumentNullException(paramName)
-               : new ArgumentNullException("", "参数不能为空");
+               : new ArgumentNullException(nameof(argument), "参数不能为空或空字符串");
     }
 }

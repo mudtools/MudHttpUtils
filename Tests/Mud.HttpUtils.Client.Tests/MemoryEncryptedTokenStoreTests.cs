@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Moq;
 
 namespace Mud.HttpUtils.Client.Tests;
@@ -214,6 +215,67 @@ public class MemoryEncryptedTokenStoreTests
         var result = await _store.GetAccessTokenAsync("tenantaccesstoken");
 
         result.Should().Be("access_123");
+    }
+
+    #endregion
+
+    #region NEW-TM-14：Decrypt 异常包装为 InvalidOperationException
+
+    [Fact]
+    public async Task GetAccessTokenAsync_WhenDecryptThrows_ShouldWrapInInvalidOperationException()
+    {
+        // Arrange：让 Decrypt 抛出异常（模拟密钥轮换、密文损坏）
+        // 构造函数已配置 Encrypt 正常，先 SetAccessToken 触发 Encrypt
+        await _store.SetAccessTokenAsync("TestToken", "my_secret", 3600);
+
+        // 重新配置 Decrypt 抛异常
+        _encryptionProviderMock.Setup(p => p.Decrypt(It.IsAny<string>()))
+            .Throws(new CryptographicException("密钥不匹配"));
+
+        // Act
+        var act = async () => await _store.GetAccessTokenAsync("TestToken");
+
+        // Assert：应抛 InvalidOperationException，包含可能原因说明
+        var ex = await act.Should().ThrowAsync<InvalidOperationException>();
+        ex.Which.Message.Should().Contain("解密失败");
+        ex.Which.Message.Should().Contain("密钥轮换");
+        ex.Which.InnerException.Should().BeOfType<CryptographicException>();
+    }
+
+    [Fact]
+    public async Task GetRefreshTokenAsync_WhenDecryptThrows_ShouldWrapInInvalidOperationException()
+    {
+        // Arrange
+        await _store.SetRefreshTokenAsync("TestToken", "my_refresh");
+
+        _encryptionProviderMock.Setup(p => p.Decrypt(It.IsAny<string>()))
+            .Throws(new InvalidOperationException("IV 不匹配"));
+
+        // Act
+        var act = async () => await _store.GetRefreshTokenAsync("TestToken");
+
+        // Assert
+        var ex = await act.Should().ThrowAsync<InvalidOperationException>();
+        ex.Which.Message.Should().Contain("解密失败");
+        ex.Which.Message.Should().Contain("IV 不匹配");
+    }
+
+    [Fact]
+    public async Task GetAccessTokenAsync_WhenDecryptThrowsOperationCanceledException_ShouldPropagateDirectly()
+    {
+        // Arrange：OperationCanceledException 不应被包装，应直接传播
+        await _store.SetAccessTokenAsync("TestToken", "my_secret", 3600);
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        _encryptionProviderMock.Setup(p => p.Decrypt(It.IsAny<string>()))
+            .Throws(new OperationCanceledException(cts.Token));
+
+        // Act
+        var act = async () => await _store.GetAccessTokenAsync("TestToken", cts.Token);
+
+        // Assert：应直接抛 OperationCanceledException，不被包装为 InvalidOperationException
+        await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
     #endregion

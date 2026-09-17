@@ -1,0 +1,57 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    「仅分析器」CI 探针工程（方案 §3.5 / §5.4）
+    ============================================================
+    用途：在真实 csc 编译中验证「关闭源生成器后，接口规范分析器诊断（MUD001/MUD002/MUD004）确实可见」。
+
+    背景（已定位到 Roslyn 源码的机制）：
+      csc 的 CommonCompiler.CompileAndEmit 在声明阶段有一道闸门
+          if (HasUnsuppressableErrors(diagnostics)) { ... return; }
+      其中 Diagnostic.IsUnsuppressableError() := DefaultSeverity == Error && IsNotConfigurable()，
+      IsNotConfigurable() 即「CustomTags 含 NotConfigurable」。该闸门在源生成器已运行、
+      生成器诊断已并入同一 DiagnosticBag 之后求值 —— 只要存在一条「Error + NotConfigurable」
+      的生成器诊断，csc 就提前 return，分析器驱动永不执行，MUD* 整体不呈现（"连坐抑制"）。
+
+    本工程的样例文件刻意包含三类违规（缺 HTTP 方法特性 / 裸 string 返回 / AddScoped 注册 ITokenManager），
+    因此**构建必然失败**（MUD001/MUD002 为 Error）—— 这是设计意图，CI 断言这三条诊断均出现。
+    为免污染常规构建，本工程**不在 Mud.HttpUtils.slnx 中**，也不被 test.ps1 / pack.ps1 枚举；
+    仅由 .github/workflows/ci.yml 的「分析器专用验证（禁生成器）」步骤显式构建，例如：
+
+        dotnet build Tests/AnalyzerOnlyProbe/AnalyzerOnlyProbe.csproj -c Release -p:DisableMudSourceGenerator=true
+
+    门禁有效性自检：删掉任一违规样例，CI 中对应的 grep 断言即失败（步骤变红）。
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <AssemblyName>Mud.HttpUtils.AnalyzerOnlyProbe</AssemblyName>
+    <!-- SuppressionProbeSamples 用指针参数触发 HTTPCLIENT004，需要 unsafe 上下文。 -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- 探针代码本身不是交付物：免除公共 API 基线与 AOT 严格模式（其样例刻意"写坏"）。 -->
+    <MudExcludeFromAotStrictMode>true</MudExcludeFromAotStrictMode>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 生成器/分析器以 Analyzer 形式加载（ReferenceOutputAssembly=false：探针代码不引用生成器类型）。 -->
+    <ProjectReference Include="..\..\Mud.HttpUtils.Generator\Mud.HttpUtils.Generator.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\Mud.HttpUtils.Attributes\Mud.HttpUtils.Attributes.csproj" />
+    <ProjectReference Include="..\..\Mud.HttpUtils.Client\Mud.HttpUtils.Client.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 探针以 ProjectReference 消费生成器（而非 NuGet 包），故包的 build/*.props 不会被自动导入；
+         必须在此显式注册，-p:DisableMudSourceGenerator=true 才能经 build_property.* 传给生成器。 -->
+    <CompilerVisibleProperty Include="DisableMudSourceGenerator" />
+  </ItemGroup>
+
+</Project>

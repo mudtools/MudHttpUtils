@@ -50,7 +50,7 @@ public class Program
         services.AddMudHttpClient("encryptedApi", encryption =>
         {
             encryption.Key = Convert.FromBase64String("YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXoxMjM0NTY=");
-            encryption.IV = Convert.FromBase64String("YWJjZGVmZ2hpamtsbW5vcA==");
+            // CFG-27：IV 属性已移除（v1.8.0 起自动随机生成）。
         }, client =>
         {
             client.BaseAddress = new Uri("https://secure-api.example.com");

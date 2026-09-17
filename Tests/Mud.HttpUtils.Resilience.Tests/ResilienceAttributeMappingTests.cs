@@ -23,7 +23,7 @@ public class ResilienceAttributeMappingTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetRetryPolicy<HttpResponseMessage>();
+        var policy = provider.GetRetryPolicy<HttpResponseMessage>("global");
 
         policy.Should().NotBeNull();
         policy.Should().NotBeOfType(Policy.NoOpAsync<HttpResponseMessage>().GetType());
@@ -38,7 +38,7 @@ public class ResilienceAttributeMappingTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetRetryPolicy<HttpResponseMessage>();
+        var policy = provider.GetRetryPolicy<HttpResponseMessage>("global");
 
         policy.Should().NotBeNull();
     }
@@ -63,7 +63,7 @@ public class ResilienceAttributeMappingTests
             }
         };
         var provider = new PollyResiliencePolicyProvider(options);
-        var policy = provider.GetRetryPolicy<HttpResponseMessage>();
+        var policy = provider.GetRetryPolicy<HttpResponseMessage>("global");
 
         policy.Should().NotBeNull();
     }
@@ -87,7 +87,7 @@ public class ResilienceAttributeMappingTests
             }
         };
         var provider = new PollyResiliencePolicyProvider(options);
-        var policy = provider.GetRetryPolicy<HttpResponseMessage>();
+        var policy = provider.GetRetryPolicy<HttpResponseMessage>("global");
 
         policy.Should().NotBeNull();
     }
@@ -109,7 +109,7 @@ public class ResilienceAttributeMappingTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetTimeoutPolicy<HttpResponseMessage>();
+        var policy = provider.GetTimeoutPolicy<HttpResponseMessage>("global");
 
         policy.Should().NotBeNull();
     }
@@ -123,7 +123,7 @@ public class ResilienceAttributeMappingTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetTimeoutPolicy<HttpResponseMessage>();
+        var policy = provider.GetTimeoutPolicy<HttpResponseMessage>("global");
 
         policy.Should().NotBeNull();
     }
@@ -146,7 +146,7 @@ public class ResilienceAttributeMappingTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetCircuitBreakerPolicy<HttpResponseMessage>();
+        var policy = provider.GetCircuitBreakerPolicy<HttpResponseMessage>("global");
 
         policy.Should().NotBeNull();
     }
@@ -160,7 +160,7 @@ public class ResilienceAttributeMappingTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetCircuitBreakerPolicy<HttpResponseMessage>();
+        var policy = provider.GetCircuitBreakerPolicy<HttpResponseMessage>("global");
 
         policy.Should().NotBeNull();
     }
@@ -178,8 +178,8 @@ public class ResilienceAttributeMappingTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy1 = provider.GetRetryPolicy<HttpResponseMessage>();
-        var policy2 = provider.GetRetryPolicy<HttpResponseMessage>();
+        var policy1 = provider.GetRetryPolicy<HttpResponseMessage>("global");
+        var policy2 = provider.GetRetryPolicy<HttpResponseMessage>("global");
 
         policy1.Should().BeSameAs(policy2);
     }
@@ -193,8 +193,8 @@ public class ResilienceAttributeMappingTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy1 = provider.GetTimeoutPolicy<HttpResponseMessage>();
-        var policy2 = provider.GetTimeoutPolicy<HttpResponseMessage>();
+        var policy1 = provider.GetTimeoutPolicy<HttpResponseMessage>("global");
+        var policy2 = provider.GetTimeoutPolicy<HttpResponseMessage>("global");
 
         policy1.Should().BeSameAs(policy2);
     }
@@ -208,8 +208,8 @@ public class ResilienceAttributeMappingTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy1 = provider.GetCircuitBreakerPolicy<HttpResponseMessage>();
-        var policy2 = provider.GetCircuitBreakerPolicy<HttpResponseMessage>();
+        var policy1 = provider.GetCircuitBreakerPolicy<HttpResponseMessage>("global");
+        var policy2 = provider.GetCircuitBreakerPolicy<HttpResponseMessage>("global");
 
         policy1.Should().BeSameAs(policy2);
     }
@@ -229,7 +229,7 @@ public class ResilienceAttributeMappingTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetCombinedPolicy<HttpResponseMessage>();
+        var policy = provider.GetCombinedPolicy<HttpResponseMessage>("global");
 
         policy.Should().NotBeNull();
     }
@@ -245,7 +245,7 @@ public class ResilienceAttributeMappingTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetCombinedPolicy<HttpResponseMessage>();
+        var policy = provider.GetCombinedPolicy<HttpResponseMessage>("global");
 
         policy.Should().NotBeNull();
     }
@@ -261,7 +261,7 @@ public class ResilienceAttributeMappingTests
         };
         var provider = new PollyResiliencePolicyProvider(options);
 
-        var policy = provider.GetCombinedPolicy<HttpResponseMessage>();
+        var policy = provider.GetCombinedPolicy<HttpResponseMessage>("global");
 
         policy.Should().NotBeNull();
     }
@@ -409,7 +409,7 @@ public class ResilienceAttributeMappingTests
         var provider = serviceProvider.GetRequiredService<PollyResiliencePolicyProvider>();
 
         provider.Should().NotBeNull();
-        var retryPolicy = provider.GetRetryPolicy<HttpResponseMessage>();
+        var retryPolicy = provider.GetRetryPolicy<HttpResponseMessage>("global");
         retryPolicy.Should().NotBeNull();
     }
 

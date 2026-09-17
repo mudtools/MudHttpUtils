@@ -7,7 +7,6 @@
 
 using System.Collections.Concurrent;
 using System.Reflection;
-using System.Text.Json;
 
 namespace Mud.HttpUtils;
 
@@ -20,13 +19,22 @@ public static class QueryMapHelper
 
     private static readonly ConcurrentDictionary<Type, PropertyInfo[]> PropertyCache = new();
 
+    /// <summary>
+    /// 未注入序列化器时的默认实例，确保 JSON 序列化至少使用库默认选项（含 MudHttpJsonContext.Default）。
+    /// </summary>
+    private static readonly IHttpContentSerializer s_defaultSerializer = HttpContentSerializerFactory.CreateDefault();
+
 
     /// <summary>
     /// 递归解释查询参数对象，将其属性展平为键值对，并添加到 QueryParameterBuilder 中。支持基本类型、字符串、枚举、日期时间、GUID，以及实现了 IQueryParameter 接口的对象。对于复杂对象，会继续递归展平其属性。可以选择是否包含 null 值，是否使用 JSON 序列化，以及是否对键和值进行 URL 编码。
     /// </summary>
 #if NET6_0_OR_GREATER
-    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2072:Target parameter return value does not satisfy DynamicallyAccessedMemberTypes requirements")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2072",
+        Justification = "该方法已标注 RequiresUnreferencedCode，属显式非 AOT 回退路径；IL2072 来自 GetProperties 返回值赋给参数。")]
     [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("QueryMap uses reflection to flatten POCO objects and is not compatible with Native AOT. Consider using IQueryParameter or individual [Query] parameters instead.")]
+#endif
+#if NET7_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.RequiresDynamicCode("QueryMap 通过 IHttpContentSerializer.Serialize(object, Type) 使用运行时类型分派，Native AOT 不支持。请改用 IQueryParameter 或独立的 [Query] 参数。")]
 #endif
     public static void FlattenObjectToQueryParams(
         object obj,
@@ -37,7 +45,8 @@ public static class QueryMapHelper
         bool useJsonSerialization,
         bool urlEncode = true,
         List<string>? rawPairs = null,
-        int depth = 0)
+        int depth = 0,
+        IHttpContentSerializer? contentSerializer = null)
     {
         if (obj == null)
         {
@@ -46,6 +55,7 @@ public static class QueryMapHelper
 
         if (depth > MaxFlattenRecursionDepth) throw new InvalidOperationException("Maximum recursion depth exceeded while flattening object of type " + obj.GetType().Name + ". This may be caused by a circular reference.");
 
+        var serializer = contentSerializer ?? s_defaultSerializer;
         var properties = PropertyCache.GetOrAdd(obj.GetType(), t => t.GetProperties());
         foreach (var prop in properties)
         {
@@ -71,7 +81,7 @@ public static class QueryMapHelper
             {
                 string stringValue;
                 if (useJsonSerialization)
-                    stringValue = JsonSerializer.Serialize(value);
+                    stringValue = serializer.Serialize(value, type);
                 else
                     stringValue = value.ToString() ?? string.Empty;
 
@@ -96,7 +106,7 @@ public static class QueryMapHelper
             }
             else
             {
-                FlattenObjectToQueryParams(value, key, separator, queryParams, includeNullValues, useJsonSerialization, urlEncode, rawPairs, depth + 1);
+                FlattenObjectToQueryParams(value, key, separator, queryParams, includeNullValues, useJsonSerialization, urlEncode, rawPairs, depth + 1, contentSerializer);
             }
         }
     }

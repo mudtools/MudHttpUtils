@@ -10,6 +10,11 @@ namespace Mud.HttpUtils;
 /// <summary>
 /// 类型检测工具类
 /// </summary>
+/// <remarks>
+/// [P2-3] 契约锁定：<see cref="IsSimpleType(string)"/> 与 <c>QuerySerializationClassifier.IsSimple</c>
+/// 的判定一致性由 <c>QuerySerializationClassifierContractTests.IsSimple_ParityBetweenClassifierAndTypeDetectionHelper</c> 锁定。
+/// 新增简单类型时须同步两处判定。
+/// </remarks>
 internal static class TypeDetectionHelper
 {
     /// <summary>
@@ -26,6 +31,7 @@ internal static class TypeDetectionHelper
             or "DateTime" or "System.DateTime" or "Guid" or "System.Guid"
             or "byte" or "sbyte" or "short" or "ushort" or "uint" or "ulong"
             or "char"
+            or "object" or "System.Object"
             or "DateTimeOffset" or "System.DateTimeOffset"
             or "TimeSpan" or "System.TimeSpan"
             or "DateOnly" or "System.DateOnly"
@@ -105,7 +111,7 @@ internal static class TypeDetectionHelper
     }
 
     /// <summary>
-    /// 查询参数 Add 重载类型，用于确定 <see cref="QueryParameterBuilder.Add"/> 方法的重载选择。
+    /// 查询参数 Add 重载类型，用于确定 <c>QueryParameterBuilder.Add</c> 方法的重载选择。
     /// </summary>
     public enum QueryAddOverloadKind
     {
@@ -152,11 +158,25 @@ internal static class TypeDetectionHelper
     }
 
     /// <summary>
-    /// 检查是否为 IAsyncEnumerable{T} 类型，并提取元素类型
+    /// 检查是否为 IAsyncEnumerable{T} 类型，并提取元素类型（<b>仅</b>字符串工具）。
     /// </summary>
     /// <param name="typeName">类型名称字符串</param>
     /// <param name="elementType">提取的元素类型（如果匹配）</param>
     /// <returns>是否为 IAsyncEnumerable{T} 类型</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>不得用于"生成器能力判定"（能力门禁）</b>：生产路径的 <c>IAsyncEnumerable&lt;T&gt;</c> 判定已统一由
+    /// <c>ReturnTypeSupport.IsAsyncEnumerable</c>（按符号名 + 元数）承担。
+    /// </para>
+    /// <para>
+    /// 历史缺陷即由此产生：本方法用正则匹配 <c>^IAsyncEnumerable&lt;…&gt;$</c>，而它接收的
+    /// <c>TypeSymbolHelper.GetTypeFullName</c> 返回值是<b>限定名</b>
+    /// （<c>System.Collections.Generic.IAsyncEnumerable&lt;T&gt;</c>），正则永不命中 →
+    /// 生成器的流式分支成为死代码，生成结果退化为「非 async 方法体内含 await」→ <c>CS4032</c>。
+    /// 凡"生成器是否支持某返回类型"的判断，一律走 <c>ReturnTypeSupport</c>。
+    /// </para>
+    /// <para>保留本方法是因为其有独立单测（纯字符串解析语义），勿在能力判定中复用。</para>
+    /// </remarks>
     public static bool IsAsyncEnumerableType(string typeName, out string? elementType)
     {
         elementType = null;

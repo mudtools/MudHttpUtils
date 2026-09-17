@@ -36,9 +36,12 @@ namespace Mud.HttpUtils.Attributes;
 /// 
 /// 注册和使用：
 /// <code>
-/// // 注册
-/// builder.Services.AddMudHttpClient&lt;IUserApi&gt;("UserApi", "https://api.example.com");
-/// 
+/// // 注册（推荐：为标记 [HttpClientApi] 的接口注册源生成客户端）
+/// builder.Services.AddMudHttpGeneratedClient&lt;IUserApi&gt;("UserApi");
+///
+/// // 或先注册命名 HttpClient 的基地址
+/// builder.Services.AddMudHttpClient("UserApi", "https://api.example.com");
+///
 /// // 使用
 /// var userApi = serviceProvider.GetRequiredService&lt;IUserApi&gt;();
 /// var user = await userApi.GetUserAsync(123);
@@ -54,11 +57,9 @@ public sealed class HttpClientApiAttribute : Attribute
     {
     }
 
-    [Obsolete("此构造函数已被弃用，请使用 AddMudHttpClient(clientName, baseAddress) 配置基地址。", error: true)]
-    public HttpClientApiAttribute(string baseAddress)
-    {
-        BaseAddress = baseAddress;
-    }
+    // CFG-27：原 HttpClientApiAttribute(string baseAddress) 构造函数与 BaseAddress 属性已移除
+    // （此前为 [Obsolete(error: true)]，使用即编译错误 CS0619；移除后使用将报 CS0117「不存在该成员」）。
+    // 迁移：通过 AddMudHttpClient(clientName, baseAddress) 或 AddMudHttpGeneratedClient<T>(clientName) 配置基地址。
 
     /// <summary>
     /// 获取或设置请求的默认内容类型。
@@ -66,14 +67,21 @@ public sealed class HttpClientApiAttribute : Attribute
     /// <value>默认为 "application/json"。</value>
     public string ContentType { get; set; } = "application/json";
 
-    [Obsolete("此属性已被弃用，请使用 AddMudHttpClient(clientName, baseAddress) 配置基地址。", error: true)]
-    public string? BaseAddress { get; }
+    /// <summary>
+    /// 未显式设置 <see cref="Timeout"/> 时的默认请求超时时间（秒）。
+    /// </summary>
+    /// <remarks>
+    /// <para>CFG-03：本常量为「默认超时」的单一真相源，生成器以字面量（50）回退并由一致性测试锁定。</para>
+    /// <para>注意：该默认值仅作用于生成器产出的命名 HttpClient；
+    /// 手动 <c>AddMudHttpClient(name, baseAddress)</c> 注册的客户端使用 HttpClient 自身默认超时（100 秒）。</para>
+    /// </remarks>
+    public const int DefaultTimeoutSeconds = 50;
 
     /// <summary>
     /// 获取或设置请求超时时间（秒）。
     /// </summary>
-    /// <value>默认为 50 秒。</value>
-    public int Timeout { get; set; } = 50;
+    /// <value>默认为 50 秒（<see cref="DefaultTimeoutSeconds"/>）。</value>
+    public int Timeout { get; set; } = DefaultTimeoutSeconds;
 
     /// <summary>
     /// 获取或设置服务注册组名称，用于将客户端分组管理。

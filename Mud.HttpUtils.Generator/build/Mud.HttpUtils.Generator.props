@@ -1,0 +1,40 @@
+<Project>
+
+  <!--
+    Mud.HttpUtils.Generator 随包分发的 MSBuild props。
+    ============================================================
+    使 AOT 上下文属性对源生成器/分析器可见（以 build_property.* 形式出现在 AnalyzerConfigOptions.GlobalOptions 中）。
+    仅声明 CompilerVisibleProperty，不包含任何 MSBuild <Target>，
+    与 Mud.HttpUtils.Attributes 包的脚手架 targets 性质不同，不会产生双包 Target 冲突。
+
+    背景：MSBuild 属性默认不会暴露给 Roslyn 分析器；只有注册为 CompilerVisibleProperty 的属性
+    才能通过 build_property.<Name> 键被读取。AOT007 诊断（AotXmlRejectionAnalyzer）与 XML 静态字段
+    条件化（ConstructorGenerator）依赖此机制判定项目是否处于 AOT 上下文。
+  -->
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="IsAotCompatible" />
+    <CompilerVisibleProperty Include="PublishAot" />
+    <!-- [F10] 运行期 AOT 模式显式三态（auto 默认 / jit / aot）：
+         MudAotRuntimeMode=aot 时 AOT007 按 Error 阻断；jit 时显式承担运行期 XML 风险（Warning）；
+         未设置时按 PublishAot 判定。注册后经 build_property.MudAotRuntimeMode 读取。 -->
+    <CompilerVisibleProperty Include="MudAotRuntimeMode" />
+    <!-- [v2.4 §3.4 D-03] 消费项目 nullable 配置：决定生成代码是否发射 #nullable enable。
+         未注册时 build_property.Nullable 恒取默认值 → EmitNullableEnable 恒为 true，配置静默失效。 -->
+    <CompilerVisibleProperty Include="Nullable" />
+    <!-- 消费项目自定义 HttpClientOptions 类名（读取 build_property.HttpClientOptionsName）。
+         未注册时恒取默认值 HttpClientOptions。 -->
+    <CompilerVisibleProperty Include="HttpClientOptionsName" />
+    <!-- T5.3: 全局禁用源生成器（调试与渐进迁移） -->
+    <CompilerVisibleProperty Include="DisableMudSourceGenerator" />
+    <!-- T5.5: 控制是否生成 [GeneratedCode] 标记（false 时不抑制生成代码中的警告） -->
+    <CompilerVisibleProperty Include="MudEmitGeneratedCodeMarkers" />
+    <!-- [F4] 增量强制失效逃生舱：-p:ForceHttpGenerator=true 时生成器下游步骤强制重跑。
+         未注册时 build_property.ForceHttpGenerator 恒取默认 false，逃生舱静默失效。 -->
+    <CompilerVisibleProperty Include="ForceHttpGenerator" />
+    <!-- [T6 修复] AOT004/AOT005 覆盖分析显式 opt-in：共享 Context 包场景下消费工程不声明 Context
+         时默认不检查；设为 true 时强制运行覆盖分析（forceRun），用于 DTO+Context 均在独立共享包的场景。 -->
+    <CompilerVisibleProperty Include="MudEnableAotCoverageAnalysis" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,209 @@
+// -----------------------------------------------------------------------
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规的许可证的要求。
+//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// -----------------------------------------------------------------------
+
+namespace Mud.HttpUtils;
+
+/// <summary>
+/// 源生成 API 客户端的无 DI 工厂配置选项。
+/// </summary>
+/// <remarks>
+/// <para>
+/// 供 <see cref="RestService.ForGenerated{T}(HttpClient, GeneratedClientOptions?)"/> 使用，
+/// 携带源生成实现类构造函数所需的可选服务依赖。
+/// </para>
+/// <para>
+/// 大多数属性为可选（null 时使用默认实现）。但 <see cref="AppContext"/> 在默认模式接口下为必需——
+/// 源生成的工厂委托会在 <see cref="AppContext"/> 为 null 时抛出 <see cref="InvalidOperationException"/>，
+/// 因为 <see cref="IMudAppContext"/> 没有通用默认实现。
+/// </para>
+/// <para>
+/// AOT 场景下，建议至少提供 <see cref="ContentSerializer"/>（含 <c>TypeInfoResolver</c>）以确保 JSON 序列化 AOT 安全。
+/// </para>
+/// <para>
+/// 注意：此类型位于 Abstractions 层，仅携带 Abstractions 中定义的接口。
+/// <c>ILogger</c> 等需 <c>Microsoft.Extensions.Logging</c> 的依赖不在此处提供，
+/// 生成实现类构造函数接受 <c>ILogger?</c> 可选参数。
+/// </para>
+/// <para>
+/// CFG-06（能力边界显式声明，非静默）：
+/// <list type="bullet">
+///   <item><description><b>Logger</b>：无 DI 路径固定使用 <c>NullLogger</c>（生成工厂硬编码 <c>logger: null</c>），
+///   不产生任何日志。如需日志，请使用 DI 路径。</description></item>
+///   <item><description><b>RequestInterceptor / ResponseInterceptor</b>：无 DI 路径<b>不生效</b>（见对应属性说明）。</description></item>
+///   <item><description><b>SensitiveDataMasker</b>：已接线生效。</description></item>
+///   <item><description><b>JsonTypeInfoResolver</b>：通过 <see cref="ContentSerializer"/> 承载；
+///   若仅设置本属性而未提供序列化器，AOT 下 JSON 元数据可能不可用。</description></item>
+/// </list>
+/// </para>
+/// </remarks>
+public sealed class GeneratedClientOptions : IEnhancedClientConfig
+{
+    /// <summary>
+    /// 获取或设置 HTTP 内容序列化器。
+    /// </summary>
+    /// <value>HTTP 内容序列化器实例。为 null 时使用 <c>SystemTextJsonContentSerializer</c> 默认实例。</value>
+    /// <remarks>
+    /// AOT 场景下应提供含 <c>TypeInfoResolver</c> 的序列化器实例，确保 JSON 源生成元数据可用。
+    /// </remarks>
+    public IHttpContentSerializer? ContentSerializer { get; set; }
+
+    /// <summary>
+    /// 获取或设置请求拦截器。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// CFG-06：无 DI 路径（<c>RestService.ForGenerated&lt;T&gt;(HttpClient, GeneratedClientOptions)</c>）当前
+    /// <b>不支持拦截器</b>——生成实现类经 <c>DefaultHttpRequestExecutor</c> 直接发送请求，未接入拦截器管道。
+    /// 如需请求/响应拦截，请使用 DI 路径（<c>AddMudHttpClient</c> + <c>IHttpRequestInterceptor</c> 注册）。
+    /// </para>
+    /// </remarks>
+    public IHttpRequestInterceptor? RequestInterceptor { get; set; }
+
+    /// <summary>
+    /// 获取或设置响应拦截器。
+    /// </summary>
+    /// <remarks>
+    /// <para>CFG-06：无 DI 路径当前<b>不支持</b>，语义与 <see cref="RequestInterceptor"/> 相同。</para>
+    /// </remarks>
+    public IHttpResponseInterceptor? ResponseInterceptor { get; set; }
+
+    /// <summary>
+    /// 获取或设置 HTTP 响应缓存提供器。
+    /// </summary>
+    public IHttpResponseCache? CacheProvider { get; set; }
+
+    /// <summary>
+    /// 获取或设置弹性策略解析器。
+    /// </summary>
+    public IResiliencePolicyResolver? ResilienceResolver { get; set; }
+
+    /// <summary>
+    /// 获取或设置敏感数据掩码器。
+    /// </summary>
+    /// <remarks>
+    /// CFG-06：已接线至 <c>DefaultHttpRequestExecutor</c>（错误响应日志脱敏）。
+    /// </remarks>
+    public ISensitiveDataMasker? SensitiveDataMasker { get; set; }
+
+    /// <summary>
+    /// 获取或设置应用切换授权器。为 null 时不执行授权判定（仅存在性校验）。
+    /// </summary>
+    /// <remarks>
+    /// 与 <see cref="SensitiveDataMasker"/> 同为"可选服务从容器或选项注入"的能力。
+    /// 仅对声明了应用切换能力的生成模式（默认模式 / TokenManage 模式）生效。
+    /// </remarks>
+    public IAppAccessAuthorizer? AppAccessAuthorizer { get; set; }
+
+    /// <summary>
+    /// 获取或设置应用上下文实例。
+    /// </summary>
+    /// <value>应用上下文实例。默认模式下为必需（为 null 时工厂委托抛出异常），因为 <see cref="IMudAppContext"/> 没有通用默认实现。</value>
+    /// <remarks>
+    /// <para>
+    /// 仅用于源生成的默认模式接口（未声明 <c>TokenManager</c> 或 <c>HttpClient</c> 包装类型）。
+    /// 消费方需自行构造 <see cref="IMudAppContext"/> 实现并赋值。
+    /// </para>
+    /// <para>
+    /// HttpClient / TokenManager 模式接口不通过 ModuleInitializer 注册，此属性对它们无意义。
+    /// </para>
+    /// </remarks>
+    public IMudAppContext? AppContext { get; set; }
+
+    /// <summary>
+    /// 获取或设置应用上下文持有器。
+    /// </summary>
+    /// <value>应用上下文持有器实例。为 null 时工厂委托创建默认 <c>AsyncLocalAppContextSwitcher</c> 实例。</value>
+    /// <remarks>
+    /// 仅用于源生成的默认模式接口。为 null 时由工厂委托内部创建 <c>AsyncLocalAppContextSwitcher</c>（位于 <c>Mud.HttpUtils.Client</c>）。
+    /// </remarks>
+    public IAppContextHolder? AppContextHolder { get; set; }
+
+    /// <summary>
+    /// 获取或设置异常擦除器（在异常传播前清除敏感数据）。
+    /// </summary>
+    /// <value>默认为 <c>null</c>（不执行擦除）。</value>
+    public IExceptionRedactor? ExceptionRedactor { get; set; }
+
+    /// <summary>
+    /// 获取或设置错误响应体最大读取字符数（防止恶意/超大错误响应导致 OOM）。
+    /// </summary>
+    /// <value>默认为 <c>null</c>（使用默认上限 <c>10240</c> 字符；设为 <c>0</c> 或负数表示不限制）。</value>
+    public int? MaxExceptionContentLength { get; set; }
+
+    /// <summary>
+    /// 获取或设置是否在发送前捕获请求体字符串（用于异常调试）。
+    /// </summary>
+    /// <value>默认为 <c>false</c>（不捕获）。</value>
+    public bool CaptureRequestContent { get; set; }
+
+    /// <summary>
+    /// 获取或设置实例级"仅生成模式"覆盖（仅影响异常消息的措辞，见备注）。
+    /// </summary>
+    /// <value>
+    /// <c>null</c>（默认）= 生效值取全局 <see cref="RestService.GeneratedOnlyMode"/>；
+    /// <c>true</c> = 生效值恒为「仅生成模式」；
+    /// <c>false</c> = 生效值恒为「非仅生成模式」。
+    /// </value>
+    /// <remarks>
+    /// <para>
+    /// <b>CFG-31（v3.1）语义澄清</b>：本属性的三态<b>不影响成功路径</b> ——
+    /// 只要工厂委托已注册（<c>[ModuleInitializer]</c> 自动注册或手动
+    /// <see cref="RestService.RegisterGeneratedFactory{T}"/>），三种取值都会直接返回实现实例。
+    /// </para>
+    /// <para>
+    /// <b>真正的作用域是「工厂未注册」这一失败路径</b>：<see cref="RestService.ForGenerated{T}(HttpClient, GeneratedClientOptions?)"/>
+    /// <b>两条分支都抛 <see cref="InvalidOperationException"/></b>，区别仅在消息文本：
+    /// 生效值为 <c>true</c> 时给出「generated-only 模式」引导语，<c>false</c> 时给出常规注册引导语。
+    /// </para>
+    /// <para>
+    /// <b>本库不存在反射回退实现</b>（一级目标是 Native AOT，<c>RestService</c> 明确无反射回退），
+    /// 因此本属性<b>不能</b>用于「某租户回退反射」；它保留用于未来引入回退实现时的开关位，
+    /// 当前价值是把失败消息区分成两种，便于诊断。
+    /// </para>
+    /// </remarks>
+    public bool? GeneratedOnlyMode { get; set; }
+
+#if NET6_0_OR_GREATER
+    /// <summary>
+    /// 获取或设置 HTTP 版本（应用到生成的请求消息）。
+    /// </summary>
+    /// <value>默认为 <c>null</c>（使用 HttpClient 默认版本）。</value>
+    public Version? HttpVersion { get; set; }
+
+    /// <summary>
+    /// 获取或设置 HTTP 版本策略。
+    /// </summary>
+    /// <value>默认为 <c>null</c>（使用 HttpClient 默认策略）。</value>
+    public System.Net.Http.HttpVersionPolicy? HttpVersionPolicy { get; set; }
+#endif
+
+    /// <summary>
+    /// 获取或设置写入 <see cref="System.Net.Http.HttpRequestMessage"/> 的键值对预设。
+    /// </summary>
+    /// <value>默认为 <c>null</c>（不预设）。</value>
+    public Dictionary<string, object?>? HttpRequestMessageOptions { get; set; }
+
+#if NET8_0_OR_GREATER
+    /// <summary>
+    /// 获取或设置 Native AOT 下的 JSON 类型解析器。
+    /// </summary>
+    /// <value>默认为 <c>null</c>（不生效）。</value>
+    /// <remarks>
+    /// <para>
+    /// <b>CFG-06（不静默声明）</b>：无 DI 路径（<c>RestService.ForGenerated&lt;T&gt;(HttpClient, GeneratedClientOptions)</c>）
+    /// 当前<b>不直接消费</b>本属性 —— 生成工厂仅传递 <see cref="ContentSerializer"/>，
+    /// JSON 元数据由其携带的 <c>TypeInfoResolver</c> 承载（AOT JSON 解析器优先级链见 Client README CFG-17）。
+    /// </para>
+    /// <para>
+    /// 因此仅设置本属性而未提供含 <c>TypeInfoResolver</c> 的 <see cref="ContentSerializer"/> 时，
+    /// 本属性不产生任何效果（AOT 下 JSON 元数据可能不可用）。
+    /// 请改用 <see cref="ContentSerializer"/> 注入含源生成上下文的序列化器。
+    /// </para>
+    /// </remarks>
+    public System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver? JsonTypeInfoResolver { get; set; }
+#endif
+}

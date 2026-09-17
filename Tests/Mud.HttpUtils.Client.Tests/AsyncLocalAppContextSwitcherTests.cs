@@ -15,18 +15,18 @@ public class AsyncLocalAppContextSwitcherTests
     {
         var context = CreateTestContext("app1");
 
-        _switcher.Current = context;
+        _switcher.SwitchTo(context);
 
         _switcher.Current.Should().BeSameAs(context);
 
-        _switcher.Current = null;
+        _switcher.SwitchTo(null);
     }
 
     [Fact]
     public void Current_SetNull_ClearsValue()
     {
-        _switcher.Current = CreateTestContext("app1");
-        _switcher.Current = null;
+        _switcher.SwitchTo(CreateTestContext("app1"));
+        _switcher.SwitchTo(null);
 
         _switcher.Current.Should().BeNull();
     }
@@ -36,7 +36,7 @@ public class AsyncLocalAppContextSwitcherTests
     {
         var original = CreateTestContext("original");
         var scoped = CreateTestContext("scoped");
-        _switcher.Current = original;
+        _switcher.SwitchTo(original);
 
         using (_switcher.BeginScope(scoped))
         {
@@ -45,7 +45,7 @@ public class AsyncLocalAppContextSwitcherTests
 
         _switcher.Current.Should().BeSameAs(original);
 
-        _switcher.Current = null;
+        _switcher.SwitchTo(null);
     }
 
     [Fact]
@@ -62,7 +62,7 @@ public class AsyncLocalAppContextSwitcherTests
         var level0 = CreateTestContext("level0");
         var level1 = CreateTestContext("level1");
         var level2 = CreateTestContext("level2");
-        _switcher.Current = level0;
+        _switcher.SwitchTo(level0);
 
         using (_switcher.BeginScope(level1))
         {
@@ -78,7 +78,7 @@ public class AsyncLocalAppContextSwitcherTests
 
         _switcher.Current.Should().BeSameAs(level0);
 
-        _switcher.Current = null;
+        _switcher.SwitchTo(null);
     }
 
     [Fact]
@@ -86,7 +86,7 @@ public class AsyncLocalAppContextSwitcherTests
     {
         var original = CreateTestContext("original");
         var scoped = CreateTestContext("scoped");
-        _switcher.Current = original;
+        _switcher.SwitchTo(original);
 
         var scope = _switcher.BeginScope(scoped);
         scope.Dispose();
@@ -95,26 +95,26 @@ public class AsyncLocalAppContextSwitcherTests
 
         _switcher.Current.Should().BeSameAs(original);
 
-        _switcher.Current = null;
+        _switcher.SwitchTo(null);
     }
 
     [Fact]
     public async Task BeginScope_FlowsAcrossAsyncBoundary()
     {
         var context = CreateTestContext("async-context");
-        _switcher.Current = context;
+        _switcher.SwitchTo(context);
 
         await Task.Yield();
 
         _switcher.Current.Should().BeSameAs(context);
 
-        _switcher.Current = null;
+        _switcher.SwitchTo(null);
     }
 
     [Fact]
     public async Task BeginScope_IsolatedAcrossConcurrentTasks()
     {
-        _switcher.Current = null;
+        _switcher.SwitchTo(null);
 
         var task1 = Task.Run(async () =>
         {

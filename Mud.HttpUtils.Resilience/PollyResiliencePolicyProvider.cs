@@ -8,11 +8,11 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Mud.HttpUtils.Observability;
+using Mud.HttpUtils.Resilience.Observability;
 using Polly;
 using Polly.Timeout;
 using System.Collections.Concurrent;
-using Mud.HttpUtils.Observability;
-using Mud.HttpUtils.Resilience.Observability;
 
 namespace Mud.HttpUtils.Resilience;
 
@@ -49,6 +49,12 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     internal const string RetryCountContextKey = "__mud_retry_count";
 
     /// <summary>
+    /// M5-HC-05：Polly Context 中存储触发本次重试的原始异常的键。
+    /// 克隆失败时回填该异常，避免根因被 InvalidOperationException 掩盖。
+    /// </summary>
+    internal const string LastExceptionContextKey = "__mud_last_exception";
+
+    /// <summary>
     /// 初始化 PollyResiliencePolicyProvider 实例。
     /// </summary>
     /// <param name="options">弹性策略配置选项。</param>
@@ -66,7 +72,13 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     /// </summary>
     /// <param name="options">弹性策略配置选项。</param>
     /// <param name="logger">日志记录器（可选）。</param>
-    public PollyResiliencePolicyProvider(
+    /// <remarks>
+    /// BC-32：internal —— 与 <see cref="PollyResiliencePolicyProvider(IOptions{ResilienceOptions}, ILogger{PollyResiliencePolicyProvider}?)"/>
+    /// 元数相同且均可被容器满足（<c>ResilienceOptions</c> 与 <c>ILogger</c> 均带默认值 ⇒ 容器视为可满足），
+    /// 按类型注册进 DI 时抛 <c>"The following constructors are ambiguous"</c>。
+    /// 无 DI 场景请改用 <c>new PollyResiliencePolicyProvider(Options.Create(options))</c>。
+    /// </remarks>
+    internal PollyResiliencePolicyProvider(
         ResilienceOptions? options = null,
         ILogger? logger = null)
     {
@@ -79,25 +91,40 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     {
         public Type ResultType { get; }
         public string PolicyKind { get; }
-        public PolicyCacheKey(Type resultType, string policyKind) { ResultType = resultType; PolicyKind = policyKind; }
-        public override bool Equals(object? obj) => obj is PolicyCacheKey other && ResultType == other.ResultType && PolicyKind == other.PolicyKind;
+        /// <summary>M5-HC-06：路由作用域键（host/client/global）。</summary>
+        public string Scope { get; }
+
+        public PolicyCacheKey(Type resultType, string policyKind, string scope = "global")
+        {
+            ResultType = resultType;
+            PolicyKind = policyKind;
+            Scope = scope;
+        }
+
+        public override bool Equals(object? obj) =>
+            obj is PolicyCacheKey other
+            && ResultType == other.ResultType
+            && PolicyKind == other.PolicyKind
+            && Scope == other.Scope;
+
         public override int GetHashCode()
         {
             unchecked
             {
-                return (ResultType.GetHashCode() * 397) ^ (PolicyKind?.GetHashCode() ?? 0);
+                var hash = (ResultType.GetHashCode() * 397) ^ (PolicyKind?.GetHashCode() ?? 0);
+                return (hash * 397) ^ (Scope?.GetHashCode() ?? 0);
             }
         }
     }
 
     /// <inheritdoc />
-    public IAsyncPolicy<TResult> GetRetryPolicy<TResult>()
+    public IAsyncPolicy<TResult> GetRetryPolicy<TResult>(string scope)
     {
-        var key = new PolicyCacheKey(typeof(TResult), "retry");
-        return (IAsyncPolicy<TResult>)_policyCache.GetOrAdd(key, _ => BuildRetryPolicy<TResult>());
+        var key = new PolicyCacheKey(typeof(TResult), "retry", scope);
+        return (IAsyncPolicy<TResult>)GetOrAddPolicy(key, () => BuildRetryPolicy<TResult>(scope));
     }
 
-    private IAsyncPolicy<TResult> BuildRetryPolicy<TResult>()
+    private IAsyncPolicy<TResult> BuildRetryPolicy<TResult>(string scope = "global")
     {
         var retryOptions = _options.Retry;
 
@@ -116,51 +143,50 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             // 空数组表示用户有意禁用状态码重试（仅异常触发重试），记录警告
             MudHttpClientLog.RetryStatusCodesEmptyArray(_logger);
         }
-        var policyKey = PolicyKeyGlobalRetry;
+        // M5-HC-06：policyKey 携带作用域，便于日志/事件定位
+        var policyKey = scope == "global" ? PolicyKeyGlobalRetry : $"{scope}:retry";
 
         return Policy<TResult>
             .Handle<HttpRequestException>(ex => ShouldRetry(ex, retryStatusCodes))
             .Or<TimeoutRejectedException>()
-            .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
+            // M4-H-3：平台超时（HttpClient.Timeout）计入重试；用户取消（inner 为 TCE 而非 TimeoutException）排除
+            .Or<TaskCanceledException>(TaskCancellationClassifier.IsPlatformTimeout)
             .WaitAndRetryAsync(
                 retryOptions.MaxRetryAttempts,
-                retryAttempt =>
-                {
-                    // M-1 修复：添加随机抖动(Jitter)，避免高并发下多实例同步重试导致"重试风暴"。
-                    // 退避 = 基础退避 + [0, baseDelay/4) 的随机抖动
-                    var baseDelayMs = retryOptions.UseExponentialBackoff
-                        ? Math.Min(
-                            retryOptions.DelayMilliseconds * Math.Pow(2, retryAttempt - 1),
-                            60000)
-                        : retryOptions.DelayMilliseconds;
-                    var jitterMs = GetJitterMilliseconds(baseDelayMs);
-                    return TimeSpan.FromMilliseconds(baseDelayMs + jitterMs);
-                },
+                // M-1/M2-#11：统一走 ComputeBackoff（含抖动开关），全局与方法级共用同一实现
+                retryAttempt => ComputeBackoff(
+                    retryOptions.UseExponentialBackoff, retryOptions.DelayMilliseconds, retryAttempt),
                 onRetryAsync: async (outcome, timeSpan, retryCount, context) =>
                 {
                     MudHttpClientLog.RetryAttempting(_logger, timeSpan.TotalMilliseconds, retryCount, retryOptions.MaxRetryAttempts, outcome.Exception);
-                    MudHttpMeter.RetryCounter.Add(1,
-                        new KeyValuePair<string, object?>("policy_key", policyKey),
-                        new KeyValuePair<string, object?>("outcome", "retry"),
-                        new KeyValuePair<string, object?>("retry_count", retryCount));
+                    // R-1：指标 tag 白名单过滤
+                    MudHttpMeter.RetryCounter.Add(1, MudHttpMeter.FilterTags(
+                        new KeyValuePair<string, object?>[] { new(MudHttpMeter.PolicyKeyTag, policyKey), new("outcome", "retry"), new("retry_count", retryCount) }));
 
                     // 将重试次数写入 Polly Context，供 ResilientHttpClient 在克隆请求时读取并写入请求属性
                     context[RetryCountContextKey] = retryCount;
+                    // M5-HC-05：保存原始异常，供克隆失败时回填根因
+                    if (outcome.Exception != null)
+                        context[LastExceptionContextKey] = outcome.Exception;
 
                     // 将重试次数写入当前 Activity tag（Polly 回调在请求 Activity 上下文内执行）
                     MudHttpObservability.RecordRetryCount(null, retryCount);
 
-                    MudHttpActivitySource.AddActivityEvent(
-                        MudHttpDiagnosticNames.RetryOccurred,
-                        () => new RetryDiagnosticPayload(policyKey, retryCount, timeSpan.TotalMilliseconds, outcome.Exception?.GetType().Name),
-                        MudHttpDiagnosticNames.RetryOccurred,
-                        new[]
-                        {
-                            new KeyValuePair<string, object?>("policy_key", policyKey),
-                            new KeyValuePair<string, object?>("retry_count", retryCount),
-                            new KeyValuePair<string, object?>("delay_ms", timeSpan.TotalMilliseconds),
-                            new KeyValuePair<string, object?>("exception_type", outcome.Exception?.GetType().Name),
-                        });
+                    // G28：门控前移到调用点，关闭状态下不构造 payload/tags 工厂（零分配）
+                    if (MudHttpActivitySource.EventsEnabled)
+                    {
+                        MudHttpActivitySource.AddActivityEvent(
+                            MudHttpDiagnosticNames.RetryOccurred,
+                            () => new RetryDiagnosticPayload(policyKey, retryCount, timeSpan.TotalMilliseconds, outcome.Exception?.GetType().Name),
+                            MudHttpDiagnosticNames.RetryOccurred,
+                            () => new[]
+                            {
+                                new KeyValuePair<string, object?>(MudHttpMeter.PolicyKeyTag, policyKey),
+                                new KeyValuePair<string, object?>("retry_count", retryCount),
+                                new KeyValuePair<string, object?>("delay_ms", timeSpan.TotalMilliseconds),
+                                new KeyValuePair<string, object?>("exception_type", outcome.Exception?.GetType().Name),
+                            });
+                    }
 
                     if (retryOptions.OnRetry != null)
                     {
@@ -176,14 +202,30 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 });
     }
 
-    /// <inheritdoc />
-    public IAsyncPolicy<TResult> GetTimeoutPolicy<TResult>()
+    /// <summary>M5-HC-06：带容量上限的策略缓存写入。超限时不缓存并打 Warning。</summary>
+    private object GetOrAddPolicy(PolicyCacheKey key, Func<object> factory)
     {
-        var key = new PolicyCacheKey(typeof(TResult), "timeout");
-        return (IAsyncPolicy<TResult>)_policyCache.GetOrAdd(key, _ => BuildTimeoutPolicy<TResult>());
+        if (_policyCache.TryGetValue(key, out var existing))
+            return existing;
+
+        var max = _options.MaxPolicyCacheSize;
+        if (max > 0 && _policyCache.Count >= max)
+        {
+            MudHttpClientLog.PolicyCacheFull(_logger, max);
+            return factory();
+        }
+
+        return _policyCache.GetOrAdd(key, _ => factory());
     }
 
-    private IAsyncPolicy<TResult> BuildTimeoutPolicy<TResult>()
+    /// <inheritdoc />
+    public IAsyncPolicy<TResult> GetTimeoutPolicy<TResult>(string scope)
+    {
+        var key = new PolicyCacheKey(typeof(TResult), "timeout", scope);
+        return (IAsyncPolicy<TResult>)GetOrAddPolicy(key, () => BuildTimeoutPolicy<TResult>(scope));
+    }
+
+    private IAsyncPolicy<TResult> BuildTimeoutPolicy<TResult>(string scope = "global")
     {
         var timeoutOptions = _options.Timeout;
 
@@ -192,7 +234,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             return Policy.NoOpAsync<TResult>();
         }
 
-        var policyKey = PolicyKeyGlobalTimeout;
+        var policyKey = scope == "global" ? PolicyKeyGlobalTimeout : $"{scope}:timeout";
 
         return Policy.TimeoutAsync<TResult>(
             TimeSpan.FromSeconds(timeoutOptions.TimeoutSeconds),
@@ -200,33 +242,36 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             onTimeoutAsync: (context, timespan, task) =>
             {
                 MudHttpClientLog.RequestTimeout(_logger, timespan.TotalSeconds);
-                MudHttpMeter.RetryCounter.Add(1,
-                    new KeyValuePair<string, object?>("policy_key", policyKey),
-                    new KeyValuePair<string, object?>("outcome", "timeout"));
+                // R-1：指标 tag 白名单过滤
+                MudHttpMeter.RetryCounter.Add(1, MudHttpMeter.FilterTags(
+                    new KeyValuePair<string, object?>[] { new(MudHttpMeter.PolicyKeyTag, policyKey), new("outcome", "timeout") }));
 
-                // 写入 TimeoutOccurred Span 事件，与 RetryOccurred 对称
-                MudHttpActivitySource.AddActivityEvent(
-                    MudHttpDiagnosticNames.TimeoutOccurred,
-                    () => new TimeoutDiagnosticPayload(policyKey, timespan.TotalMilliseconds),
-                    MudHttpDiagnosticNames.TimeoutOccurred,
-                    new[]
-                    {
-                        new KeyValuePair<string, object?>("policy_key", policyKey),
-                        new KeyValuePair<string, object?>("timeout_ms", timespan.TotalMilliseconds),
-                    });
+                // 写入 TimeoutOccurred Span 事件，与 RetryOccurred 对称（G28：门控前移 + 惰性工厂）
+                if (MudHttpActivitySource.EventsEnabled)
+                {
+                    MudHttpActivitySource.AddActivityEvent(
+                        MudHttpDiagnosticNames.TimeoutOccurred,
+                        () => new TimeoutDiagnosticPayload(policyKey, timespan.TotalMilliseconds),
+                        MudHttpDiagnosticNames.TimeoutOccurred,
+                        () => new[]
+                        {
+                            new KeyValuePair<string, object?>(MudHttpMeter.PolicyKeyTag, policyKey),
+                            new KeyValuePair<string, object?>("timeout_ms", timespan.TotalMilliseconds),
+                        });
+                }
 
                 return Task.CompletedTask;
             });
     }
 
     /// <inheritdoc />
-    public IAsyncPolicy<TResult> GetCircuitBreakerPolicy<TResult>()
+    public IAsyncPolicy<TResult> GetCircuitBreakerPolicy<TResult>(string scope)
     {
-        var key = new PolicyCacheKey(typeof(TResult), "circuitBreaker");
-        return (IAsyncPolicy<TResult>)_policyCache.GetOrAdd(key, _ => BuildCircuitBreakerPolicy<TResult>());
+        var key = new PolicyCacheKey(typeof(TResult), "circuitBreaker", scope);
+        return (IAsyncPolicy<TResult>)GetOrAddPolicy(key, () => BuildCircuitBreakerPolicy<TResult>(scope));
     }
 
-    private IAsyncPolicy<TResult> BuildCircuitBreakerPolicy<TResult>()
+    private IAsyncPolicy<TResult> BuildCircuitBreakerPolicy<TResult>(string scope = "global")
     {
         var cbOptions = _options.CircuitBreaker;
 
@@ -235,7 +280,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             return Policy.NoOpAsync<TResult>();
         }
 
-        var policyKey = PolicyKeyGlobalCircuitBreaker;
+        var policyKey = scope == "global" ? PolicyKeyGlobalCircuitBreaker : $"{scope}:circuitBreaker";
 
         if (cbOptions.SamplingDurationSeconds > 0)
         {
@@ -246,7 +291,8 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             return Policy
                 .Handle<HttpRequestException>()
                 .Or<TimeoutRejectedException>()
-                .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
+                // M4-H-3：平台超时计入熔断失败；用户取消排除
+                .Or<TaskCanceledException>(TaskCancellationClassifier.IsPlatformTimeout)
                 .AdvancedCircuitBreakerAsync(
                     failureThreshold: failureRate,
                     samplingDuration: TimeSpan.FromSeconds(cbOptions.SamplingDurationSeconds),
@@ -274,7 +320,8 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
         return Policy
             .Handle<HttpRequestException>()
             .Or<TimeoutRejectedException>()
-            .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
+            // M4-H-3：平台超时计入熔断失败；用户取消排除
+            .Or<TaskCanceledException>(TaskCancellationClassifier.IsPlatformTimeout)
             .CircuitBreakerAsync(
                 exceptionsAllowedBeforeBreaking: cbOptions.FailureThreshold,
                 durationOfBreak: TimeSpan.FromSeconds(cbOptions.BreakDurationSeconds),
@@ -297,38 +344,40 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     }
 
     /// <inheritdoc />
-    public IAsyncPolicy<TResult> GetCombinedPolicy<TResult>()
+    public IAsyncPolicy<TResult> GetCombinedPolicy<TResult>(string scope)
     {
-        var key = new PolicyCacheKey(typeof(TResult), "combined");
-        return (IAsyncPolicy<TResult>)_policyCache.GetOrAdd(key, _ => BuildCombinedPolicy<TResult>());
+        var key = new PolicyCacheKey(typeof(TResult), "combined", scope);
+        return (IAsyncPolicy<TResult>)GetOrAddPolicy(key, () => BuildCombinedPolicy<TResult>(scope));
     }
 
-    private IAsyncPolicy<TResult> BuildCombinedPolicy<TResult>()
+    private IAsyncPolicy<TResult> BuildCombinedPolicy<TResult>(string scope = "global")
     {
-        var retryPolicy = GetRetryPolicy<TResult>();
-        var timeoutPolicy = GetTimeoutPolicy<TResult>();
-        var circuitBreakerPolicy = GetCircuitBreakerPolicy<TResult>();
+        var retryPolicy = GetRetryPolicy<TResult>(scope);
+        var timeoutPolicy = GetTimeoutPolicy<TResult>(scope);
+        var circuitBreakerPolicy = GetCircuitBreakerPolicy<TResult>(scope);
 
         return retryPolicy.WrapAsync(circuitBreakerPolicy).WrapAsync(timeoutPolicy);
     }
 
     /// <inheritdoc />
     public IAsyncPolicy<TResult> GetMethodPolicy<TResult>(
-        bool retryEnabled = false,
-        int maxRetries = 3,
-        int delayMilliseconds = 1000,
-        bool useExponentialBackoff = true,
-        bool circuitBreakerEnabled = false,
-        int failureThreshold = 5,
-        int breakDurationSeconds = 30,
-        bool timeoutEnabled = false,
-        int timeoutMilliseconds = 30000,
-        int samplingDurationSeconds = 0,
-        int minimumThroughput = 10)
+        bool retryEnabled,
+        int maxRetries,
+        int delayMilliseconds,
+        bool useExponentialBackoff,
+        bool circuitBreakerEnabled,
+        int failureThreshold,
+        int breakDurationSeconds,
+        bool timeoutEnabled,
+        int timeoutMilliseconds,
+        int samplingDurationSeconds,
+        int minimumThroughput,
+        string scope)
     {
         var key = new PolicyCacheKey(typeof(TResult),
-            $"method:R={retryEnabled}:{maxRetries}:{delayMilliseconds}:{useExponentialBackoff}:CB={circuitBreakerEnabled}:{failureThreshold}:{breakDurationSeconds}:T={timeoutEnabled}:{timeoutMilliseconds}:S={samplingDurationSeconds}:{minimumThroughput}");
-        return (IAsyncPolicy<TResult>)_policyCache.GetOrAdd(key, _ => BuildMethodPolicy<TResult>(
+            $"method:R={retryEnabled}:{maxRetries}:{delayMilliseconds}:{useExponentialBackoff}:CB={circuitBreakerEnabled}:{failureThreshold}:{breakDurationSeconds}:T={timeoutEnabled}:{timeoutMilliseconds}:S={samplingDurationSeconds}:{minimumThroughput}",
+            scope);
+        return (IAsyncPolicy<TResult>)GetOrAddPolicy(key, () => BuildMethodPolicy<TResult>(
             retryEnabled, maxRetries, delayMilliseconds, useExponentialBackoff,
             circuitBreakerEnabled, failureThreshold, breakDurationSeconds,
             timeoutEnabled, timeoutMilliseconds, samplingDurationSeconds, minimumThroughput, key.PolicyKind));
@@ -358,9 +407,9 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 onTimeoutAsync: (context, timespan, task) =>
                 {
                     MudHttpClientLog.RequestTimeoutMs(_logger, timespan.TotalMilliseconds);
-                    MudHttpMeter.RetryCounter.Add(1,
-                        new KeyValuePair<string, object?>("policy_key", policyKey),
-                        new KeyValuePair<string, object?>("outcome", "timeout"));
+                    // R-1：指标 tag 白名单过滤
+                    MudHttpMeter.RetryCounter.Add(1, MudHttpMeter.FilterTags(
+                        new KeyValuePair<string, object?>[] { new(MudHttpMeter.PolicyKeyTag, policyKey), new("outcome", "timeout") }));
                     return Task.CompletedTask;
                 });
             policy = timeoutPolicy;
@@ -377,7 +426,8 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 var cbPolicy = Policy
                     .Handle<HttpRequestException>()
                     .Or<TimeoutRejectedException>()
-                    .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
+                    // M4-H-3：平台超时计入熔断失败；用户取消排除
+                    .Or<TaskCanceledException>(TaskCancellationClassifier.IsPlatformTimeout)
                     .AdvancedCircuitBreakerAsync(
                         failureThreshold: failureRate,
                         samplingDuration: TimeSpan.FromSeconds(samplingDurationSeconds),
@@ -408,7 +458,8 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 var cbPolicy = Policy
                     .Handle<HttpRequestException>()
                     .Or<TimeoutRejectedException>()
-                    .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
+                    // M4-H-3：平台超时计入熔断失败；用户取消排除
+                    .Or<TaskCanceledException>(TaskCancellationClassifier.IsPlatformTimeout)
                     .CircuitBreakerAsync(
                         exceptionsAllowedBeforeBreaking: failureThreshold,
                         durationOfBreak: TimeSpan.FromSeconds(breakDurationSeconds),
@@ -449,40 +500,43 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             var retryPolicy = Policy<TResult>
                 .Handle<HttpRequestException>(ex => ShouldRetry(ex, retryStatusCodes))
                 .Or<TimeoutRejectedException>()
-                .Or<TaskCanceledException>(ex => !ex.CancellationToken.IsCancellationRequested)
+                // M4-H-3：平台超时计入重试；用户取消排除
+                .Or<TaskCanceledException>(TaskCancellationClassifier.IsPlatformTimeout)
                 .WaitAndRetryAsync(
                     maxRetries,
-                    retryAttempt => useExponentialBackoff
-                        ? TimeSpan.FromMilliseconds(
-                            Math.Min(
-                                delayMilliseconds * Math.Pow(2, retryAttempt - 1),
-                                60000))
-                        : TimeSpan.FromMilliseconds(delayMilliseconds),
+                    // M2-#11：方法级重试统一走 ComputeBackoff（含抖动，与全局重试一致）
+                    retryAttempt => ComputeBackoff(useExponentialBackoff, delayMilliseconds, retryAttempt),
                     onRetryAsync: async (outcome, timeSpan, retryCount, context) =>
                     {
                         MudHttpClientLog.RetryAttempting(_logger, timeSpan.TotalMilliseconds, retryCount, maxRetries, outcome.Exception);
-                        MudHttpMeter.RetryCounter.Add(1,
-                            new KeyValuePair<string, object?>("policy_key", policyKey),
-                            new KeyValuePair<string, object?>("outcome", "retry"),
-                            new KeyValuePair<string, object?>("retry_count", retryCount));
+                        // R-1：指标 tag 白名单过滤
+                        MudHttpMeter.RetryCounter.Add(1, MudHttpMeter.FilterTags(
+                            new KeyValuePair<string, object?>[] { new(MudHttpMeter.PolicyKeyTag, policyKey), new("outcome", "retry"), new("retry_count", retryCount) }));
 
                         // 将重试次数写入 Polly Context，供 ResilientHttpClient 在克隆请求时读取并写入请求属性
                         context[RetryCountContextKey] = retryCount;
+                        // M5-HC-05：保存原始异常，供克隆失败时回填根因
+                        if (outcome.Exception != null)
+                            context[LastExceptionContextKey] = outcome.Exception;
 
                         // 将重试次数写入当前 Activity tag（Polly 回调在请求 Activity 上下文内执行）
                         MudHttpObservability.RecordRetryCount(null, retryCount);
 
-                        MudHttpActivitySource.AddActivityEvent(
-                            MudHttpDiagnosticNames.RetryOccurred,
-                            () => new RetryDiagnosticPayload(policyKey, retryCount, timeSpan.TotalMilliseconds, outcome.Exception?.GetType().Name),
-                            MudHttpDiagnosticNames.RetryOccurred,
-                            new[]
-                            {
-                                new KeyValuePair<string, object?>("policy_key", policyKey),
-                                new KeyValuePair<string, object?>("retry_count", retryCount),
-                                new KeyValuePair<string, object?>("delay_ms", timeSpan.TotalMilliseconds),
-                                new KeyValuePair<string, object?>("exception_type", outcome.Exception?.GetType().Name),
-                            });
+                        // G28：门控前移到调用点（方法级重试，v1.0 清单曾漏计本处）
+                        if (MudHttpActivitySource.EventsEnabled)
+                        {
+                            MudHttpActivitySource.AddActivityEvent(
+                                MudHttpDiagnosticNames.RetryOccurred,
+                                () => new RetryDiagnosticPayload(policyKey, retryCount, timeSpan.TotalMilliseconds, outcome.Exception?.GetType().Name),
+                                MudHttpDiagnosticNames.RetryOccurred,
+                                () => new[]
+                                {
+                                    new KeyValuePair<string, object?>(MudHttpMeter.PolicyKeyTag, policyKey),
+                                    new KeyValuePair<string, object?>("retry_count", retryCount),
+                                    new KeyValuePair<string, object?>("delay_ms", timeSpan.TotalMilliseconds),
+                                    new KeyValuePair<string, object?>("exception_type", outcome.Exception?.GetType().Name),
+                                });
+                        }
 
                         if (onRetryCallback != null)
                         {
@@ -504,13 +558,13 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     }
 
     /// <inheritdoc />
-    public IAsyncPolicy<TResult> GetTimeoutAndCircuitBreakerPolicy<TResult>()
+    public IAsyncPolicy<TResult> GetTimeoutAndCircuitBreakerPolicy<TResult>(string scope)
     {
-        var key = new PolicyCacheKey(typeof(TResult), "timeoutAndCircuitBreaker");
-        return (IAsyncPolicy<TResult>)_policyCache.GetOrAdd(key, _ =>
+        var key = new PolicyCacheKey(typeof(TResult), "timeoutAndCircuitBreaker", scope);
+        return (IAsyncPolicy<TResult>)GetOrAddPolicy(key, () =>
         {
-            var timeoutPolicy = GetTimeoutPolicy<TResult>();
-            var circuitBreakerPolicy = GetCircuitBreakerPolicy<TResult>();
+            var timeoutPolicy = GetTimeoutPolicy<TResult>(scope);
+            var circuitBreakerPolicy = GetCircuitBreakerPolicy<TResult>(scope);
             return circuitBreakerPolicy.WrapAsync(timeoutPolicy);
         });
     }
@@ -536,36 +590,68 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 #endif
     }
 
+    /// <summary>
+    /// M2-#11：统一的重试退避计算（全局重试与方法级 [Retry] 共用）。
+    /// 退避 = 指数退避（上限 60s）或固定延迟 + 可选随机抖动 [0, baseDelay/4)。
+    /// </summary>
+    /// <param name="useExponentialBackoff">是否指数退避。</param>
+    /// <param name="baseDelayMs">基础延迟（毫秒）。</param>
+    /// <param name="attempt">当前重试次数（从 1 开始）。</param>
+    /// <returns>本次重试的退避时长。</returns>
+    private TimeSpan ComputeBackoff(bool useExponentialBackoff, double baseDelayMs, int attempt)
+    {
+        var delay = useExponentialBackoff
+            ? Math.Min(baseDelayMs * Math.Pow(2, attempt - 1), 60000)
+            : baseDelayMs;
+
+        // RetryOptions.UseJitter（默认 true）控制抖动；关闭时恢复纯指数/固定退避
+        if (_options.Retry.UseJitter)
+            delay += GetJitterMilliseconds(delay);
+
+        return TimeSpan.FromMilliseconds(delay);
+    }
+
+    /// <summary>
+    /// M3-#20：重试判定统一为结构化状态码检查（netstandard2.0 与 net6+ 行为一致）。
+    /// </summary>
+    /// <remarks>
+    /// 状态码来源：net5+ 读 <see cref="HttpRequestException.StatusCode"/>（<see cref="ApiException"/>
+    /// 构造时已传入 base）；netstandard2.0 读 <c>Data["HttpStatusCode"]</c>（由
+    /// <c>EnhancedHttpClient.EnsureSuccessStatusCodeAsync</c> 与 <c>DefaultHttpRequestExecutor.CreateApiException</c>
+    /// 统一写入，两 TFM 均有）。删除了 ns2.0 原有的"异常消息文本猜测"分支 —— 该分支在无状态码时
+    /// 与 net6+ 的 <c>return true</c> 结论可能不同，违反多 TFM 行为一致要求。
+    /// </remarks>
     private static bool ShouldRetry(HttpRequestException exception, int[] retryStatusCodes)
     {
-#if NETSTANDARD2_0
-        // netstandard2.0 的 HttpRequestException 没有 StatusCode 属性
-        // 尝试从 Data 字典获取（由 EnhancedHttpClient.EnsureSuccessStatusCodeAsync 设置）
-        if (exception.Data.Contains("HttpStatusCode") && exception.Data["HttpStatusCode"] is int code)
-        {
+        if (TryGetStatusCode(exception, out var code))
             return retryStatusCodes.Contains(code);
-        }
 
-        // 如果没有状态码信息，回退到不重试客户端错误的保守策略
-        // 仅当异常消息包含可识别的服务器错误状态码时才重试
-        var message = exception.Message ?? string.Empty;
-        foreach (var retryCode in retryStatusCodes)
-        {
-            if (message.Contains($" {retryCode} "))
-                return true;
-        }
-
-        // 无法确定状态码时，保守地重试（保持向后兼容）
+        // 无状态码 = 传输层故障（连接失败、DNS、TLS）→ 重试（两 TFM 一致）
         return true;
+    }
+
+    /// <summary>
+    /// M3-#20：从异常中提取结构化状态码；不可得时返回 false。
+    /// </summary>
+    private static bool TryGetStatusCode(HttpRequestException ex, out int code)
+    {
+#if NETSTANDARD2_0
+        // netstandard2.0 的 HttpRequestException 没有 StatusCode 属性，
+        // 从 Data 字典获取（由框架的 ApiException 构造路径统一写入）
+        if (ex.Data.Contains("HttpStatusCode") && ex.Data["HttpStatusCode"] is int c)
+        {
+            code = c;
+            return true;
+        }
 #else
-        if (exception.StatusCode.HasValue)
+        if (ex.StatusCode.HasValue)
         {
-            var statusCode = (int)exception.StatusCode.Value;
-            return retryStatusCodes.Contains(statusCode);
+            code = (int)ex.StatusCode.Value;
+            return true;
         }
-
-        return true;
 #endif
+        code = 0;
+        return false;
     }
 
     private static int[] GetDefaultRetryStatusCodes()

@@ -5,6 +5,8 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using System.Globalization;
+
 namespace Mud.HttpUtils.Tests;
 
 /// <summary>
@@ -56,6 +58,32 @@ public class QueryParameterTests
         parameters.Should().HaveCount(3);
         parameters.First(p => p.Key == "keyword").Value.Should().BeNull();
         parameters.First(p => p.Key == "pageIndex").Value.Should().Be("0");
+    }
+
+    /// <summary>
+    /// GEN-06（B-2）：<see cref="QueryParameterBuilder"/> 的值类型重载（经 AddNullableWithValueToString）
+    /// 必须使用 <see cref="System.Globalization.CultureInfo.InvariantCulture"/> 格式化，
+    /// 在 de-DE 等使用 ',' 作为小数分隔符的区域下，二进制流/查询串仍使用 '.' 且不随 CurrentCulture 漂移。
+    /// </summary>
+    [Fact]
+    public void QueryParameterBuilder_FormatsValueWithInvariantCulture_UnderDe_DE()
+    {
+        var original = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+
+            var builder = new QueryParameterBuilder();
+            builder.Add("amount", 12.5m, formatString: null);
+
+            // Invariant：12.5（'.'）；若按 de-DE 会产出 12,5（','）破坏 URL 语义。
+            builder.Build().Should().Contain("12.5");
+            builder.Build().Should().NotContain("12,5");
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
     }
 
     private class TestSearchCriteria : IQueryParameter

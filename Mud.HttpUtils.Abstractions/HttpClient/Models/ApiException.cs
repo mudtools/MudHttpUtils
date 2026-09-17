@@ -33,7 +33,7 @@ namespace Mud.HttpUtils;
 /// }
 /// </code>
 /// </example>
-public class ApiException : Exception
+public class ApiException : HttpRequestException
 {
     /// <summary>
     /// 初始化 <see cref="ApiException"/> 类的新实例。
@@ -41,7 +41,11 @@ public class ApiException : Exception
     /// <param name="statusCode">HTTP 状态码。</param>
     /// <param name="content">响应内容。</param>
     public ApiException(HttpStatusCode statusCode, string? content)
+#if NET5_0_OR_GREATER
+        : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}).", null, statusCode)
+#else
         : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}).")
+#endif
     {
         StatusCode = statusCode;
         Content = content;
@@ -54,7 +58,11 @@ public class ApiException : Exception
     /// <param name="content">响应内容。</param>
     /// <param name="requestUri">请求 URI。</param>
     public ApiException(HttpStatusCode statusCode, string? content, string? requestUri)
+#if NET5_0_OR_GREATER
+        : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}) for request: {requestUri}.", null, statusCode)
+#else
         : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}) for request: {requestUri}.")
+#endif
     {
         StatusCode = statusCode;
         Content = content;
@@ -68,7 +76,11 @@ public class ApiException : Exception
     /// <param name="content">响应内容。</param>
     /// <param name="innerException">内部异常。</param>
     public ApiException(HttpStatusCode statusCode, string? content, Exception innerException)
+#if NET5_0_OR_GREATER
+        : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}).", innerException, statusCode)
+#else
         : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}).", innerException)
+#endif
     {
         StatusCode = statusCode;
         Content = content;
@@ -82,7 +94,11 @@ public class ApiException : Exception
     /// <param name="requestUri">请求 URI。</param>
     /// <param name="innerException">内部异常。</param>
     public ApiException(HttpStatusCode statusCode, string? content, string? requestUri, Exception innerException)
+#if NET5_0_OR_GREATER
+        : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}) for request: {requestUri}.", innerException, statusCode)
+#else
         : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}) for request: {requestUri}.", innerException)
+#endif
     {
         StatusCode = statusCode;
         Content = content;
@@ -90,19 +106,62 @@ public class ApiException : Exception
     }
 
     /// <summary>
+    /// 供运输层异常子类（如 <see cref="ApiRequestException"/>）使用的受保护构造函数。
+    /// 运输层失败无 HTTP 状态码，故不要求 <paramref name="statusCode"/>，<see cref="StatusCode"/> 取默认值 0。
+    /// </summary>
+    /// <param name="message">异常消息。</param>
+    /// <param name="requestUri">请求 URI。</param>
+    /// <param name="innerException">内部异常（通常为原始运输层异常）。</param>
+    protected ApiException(string message, string? requestUri, Exception? innerException)
+        : base(message, innerException)
+    {
+        RequestUri = requestUri;
+    }
+
+    /// <summary>
     /// 获取 HTTP 状态码。
     /// </summary>
+    /// <remarks>
+    /// 在 NET 5+ 上，此属性使用 <c>new</c> 关键字隐藏基类 <see cref="HttpRequestException.StatusCode"/>（nullable），
+    /// 提供 non-nullable 版本。两者返回相同的逻辑值。
+    /// </remarks>
+#if NET5_0_OR_GREATER
+    public new HttpStatusCode StatusCode { get; }
+#else
     public HttpStatusCode StatusCode { get; }
+#endif
 
     /// <summary>
-    /// 获取响应内容。
+    /// 获取或设置响应内容。
     /// </summary>
-    public string? Content { get; }
+    /// <remarks>
+    /// setter 供 <see cref="IExceptionRedactor"/> 在异常传播前清除敏感数据。
+    /// </remarks>
+    public string? Content { get; set; }
 
     /// <summary>
-    /// 获取请求 URI。
+    /// 获取或设置请求 URI。
     /// </summary>
-    public string? RequestUri { get; }
+    /// <remarks>
+    /// setter 供 <see cref="IExceptionRedactor"/> 在异常传播前清除敏感数据。
+    /// </remarks>
+    public string? RequestUri { get; set; }
+
+    /// <summary>
+    /// 获取或设置请求体内容（捕获发送前的请求体字符串）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 仅在 <c>CaptureRequestContent</c> 启用时填充。请求体常含凭据或 PII，
+    /// 应配合 <see cref="IExceptionRedactor"/> 在传播前擦除。
+    /// </para>
+    /// </remarks>
+    public string? RequestContent { get; set; }
+
+    /// <summary>
+    /// 获取一个值，指示是否已捕获请求内容。
+    /// </summary>
+    public bool HasRequestContent => !string.IsNullOrEmpty(RequestContent);
 
     /// <summary>
     /// 尝试将响应内容反序列化为指定类型。

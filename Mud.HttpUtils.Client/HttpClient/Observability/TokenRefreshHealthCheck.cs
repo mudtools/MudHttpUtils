@@ -3,6 +3,7 @@
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
 // -----------------------------------------------------------------------
 
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 
@@ -21,12 +22,30 @@ public sealed class TokenRefreshHealthCheck : IHealthCheck
     /// </summary>
     public const string Name = "mud_token_refresh";
 
+    /// <summary>
+    /// 初始化健康检查（DI 路径）。
+    /// </summary>
+    /// <param name="options">健康检查配置选项。</param>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> 为 null。</exception>
+    /// <remarks>
+    /// BC-33：本重载与 <see cref="TokenRefreshHealthCheck(TokenRefreshHealthCheckOptions)"/> 元数相同，
+    /// 而健康检查经 <c>AddCheck&lt;T&gt;</c> → <c>ActivatorUtilities.GetServiceOrCreateInstance&lt;T&gt;</c> 激活，
+    /// 两个构造在「<c>IOptions&lt;T&gt;</c> 已注册」时都可满足 ⇒ 抛"多个构造函数"异常。
+    /// 注意：该路径用 ActivatorUtilities（其<b>尊重</b>本特性），而非容器默认构造选择
+    /// （<c>AddHttpMessageHandler</c> / <c>AddSingleton&lt;T&gt;()</c> 那类路径<b>不</b>尊重，见 BC-31）。
+    /// </remarks>
+    [ActivatorUtilitiesConstructor]
     public TokenRefreshHealthCheck(IOptions<TokenRefreshHealthCheckOptions> options)
     {
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         ValidateOptions();
     }
 
+    /// <summary>
+    /// 初始化健康检查（无 DI 场景）。
+    /// </summary>
+    /// <param name="options">健康检查配置选项。</param>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> 为 null。</exception>
     public TokenRefreshHealthCheck(TokenRefreshHealthCheckOptions options)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));

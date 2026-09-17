@@ -6,6 +6,10 @@
 // -----------------------------------------------------------------------
 
 using System.Collections.Immutable;
+using System.Linq;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Mud.HttpUtils;
 
@@ -20,45 +24,115 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
     private const string DefaultHttpClientOptionsName = "HttpClientOptions";
 
     /// <inheritdoc/>
-    protected override void ExecuteGenerator(
-        ImmutableArray<InterfaceModel> interfaces,
-        SourceProductionContext context,
-        AnalyzerConfigOptionsProvider configOptionsProvider)
+    public override void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        if (interfaces.IsDefaultOrEmpty || configOptionsProvider == null)
+        base.Initialize(context);
+
+        // [F6 修复 + Phase2 修复 3.2] AOT004 / AOT005 / AOT006 / AOT007 均已迁出增量生成管道，
+        // 由独立 DiagnosticAnalyzer（编译分析阶段）承载：
+        //   - AOT006 → HttpJsonSerializableCoverageAnalyzer（F6）；
+        //   - AOT004 / AOT005 → AotDtoCoverageDiagnosticAnalyzer（Phase2 3.2）；
+        //   - AOT007 → AotXmlRejectionDiagnosticAnalyzer（Phase2 3.2）。
+        // 原实现由生成管道下游上报，重算依赖接口指纹失效（只改 Context / AOT 配置时不重算），
+        // 且 Combine(CompilationProvider) 会污染增量图。迁移后生成管道只产出源码，不再持有诊断职责。
+    }
+
+
+    /// <summary>
+    /// 逐接口生成实现类（Phase3 per-item 注册点：改 1 个接口只重跑 1 个接口）。
+    /// </summary>
+    /// <inheritdoc/>
+    protected override void ExecuteInterfaceGenerator(
+        InterfaceModel model,
+        SourceProductionContext context,
+        AnalyzerConfigOptionsProvider configOptionsProvider,
+        string generationSalt)
+    {
+        if (configOptionsProvider == null)
+            return;
+
+        // T5.3: 全局禁用开关（调试与渐进迁移）
+        if (ProjectConfigHelper.ReadConfigValueAsBool(configOptionsProvider.GlobalOptions, "build_property.DisableMudSourceGenerator", false))
             return;
 
         var httpClientOptionsName = DefaultHttpClientOptionsName;
         ProjectConfigHelper.ReadProjectOptions(configOptionsProvider.GlobalOptions, "build_property.HttpClientOptionsName",
            val => httpClientOptionsName = val, DefaultHttpClientOptionsName);
 
-        foreach (var model in interfaces)
+        // [AOT v4 Phase 18.3 / D19] 读取 AOT 上下文。
+        // [F10 修复] 不再以「IsAotCompatible 是否启用」充当 Native AOT 判定：
+        //   - AotRuntimeMode = MudAotRuntimeMode 显式配置 > PublishAot > 默认 Jit；
+        //   - isAotEnabled（驱动 ConstructorGenerator 的 XML 静态字段替换）仅当「确实 AOT」时为 true。
+        // 注：AOT007 的分级（Error/Warning）随诊断迁移至 AotXmlRejectionDiagnosticAnalyzer，
+        // 该分析器自行经 AotModeResolver 读取同一份配置，本处不再需要 isAotAnalyzerOnly。
+        var aotMode = AotModeResolver.Resolve(configOptionsProvider.GlobalOptions);
+        var isAotEnabled = aotMode == AotRuntimeMode.Aot;
+
+        // [v2.4 §3.4 D-03 修复] 读取消费项目 nullable 配置，条件化发射 #nullable enable
+        EmitNullableEnable = ProjectConfigHelper.ReadConfigValue(
+            configOptionsProvider.GlobalOptions, "build_property.Nullable", "enable") == "enable";
+
+        // [D-06 修复] 读取 MudEmitGeneratedCodeMarkers 开关，控制生成代码 [GeneratedCode] 标注
+        var emitGeneratedCodeMarkers = ProjectConfigHelper.ReadConfigValueAsBool(
+            configOptionsProvider.GlobalOptions, "build_property.MudEmitGeneratedCodeMarkers", true);
+
+        var interfaceDecl = model.Syntax;
+        var semanticModel = model.Context.SemanticModel;
+        var compilation = semanticModel.Compilation;
+
+        // 使用 InterfaceModel 中预解析的 Symbol，避免重复调用 GetDeclaredSymbol
+        if (model.Symbol is not INamedTypeSymbol interfaceSymbol)
         {
-            if (context.CancellationToken.IsCancellationRequested)
-                return;
+            return;
+        }
 
-            var interfaceDecl = model.Syntax;
-            var semanticModel = model.Context.SemanticModel;
-            var compilation = semanticModel.Compilation;
-
-            // 使用 InterfaceModel 中预解析的 Symbol，避免重复调用 GetDeclaredSymbol
-            if (model.Symbol is not INamedTypeSymbol interfaceSymbol)
-            {
-                continue;
-            }
-
-            try
-            {
-                ProcessInterface(compilation, interfaceDecl, interfaceSymbol, semanticModel, context, httpClientOptionsName);
-            }
-            catch (Exception ex)
-            {
-                HandleInterfaceProcessingException(ex, interfaceDecl, context);
-            }
+        try
+        {
+            ProcessInterface(compilation, interfaceDecl, interfaceSymbol, semanticModel, context, httpClientOptionsName, isAotEnabled, EmitNullableEnable, emitGeneratedCodeMarkers);
+        }
+        catch (Exception ex)
+        {
+            HandleInterfaceProcessingException(ex, interfaceDecl, context);
         }
     }
 
-    private void ProcessInterface(Compilation compilation, InterfaceDeclarationSyntax interfaceDecl, INamedTypeSymbol interfaceSymbol, SemanticModel semanticModel, SourceProductionContext context, string httpClientOptionsName)
+    /// <summary>
+    /// 全局生成逻辑：本生成器的逐接口产物已由 <see cref="ExecuteInterfaceGenerator"/> 产出，
+    /// 此处仅承担「每次生成运行只应上报一次」的全局诊断（逃生舱生效提示）。
+    /// </summary>
+    /// <inheritdoc/>
+    protected override void ExecuteGenerator(
+        ImmutableArray<InterfaceModel> interfaces,
+        SourceProductionContext context,
+        AnalyzerConfigOptionsProvider configOptionsProvider,
+        string generationSalt)
+    {
+        if (interfaces.IsDefaultOrEmpty || configOptionsProvider == null)
+            return;
+
+        // T5.3: 全局禁用开关（调试与渐进迁移）
+        if (ProjectConfigHelper.ReadConfigValueAsBool(configOptionsProvider.GlobalOptions, "build_property.DisableMudSourceGenerator", false))
+            return;
+
+        // [F4] 逃生舱生效提示：ForceHttpGenerator=true 强制刷新了增量缓存，输出可观测提示，
+        // 避免用户无法确认开关是否生效。（salt 值本身不写入生成内容。）
+        // 放在全局注册点：逐接口注册点会按接口数重复上报同一诊断。
+        if (generationSalt.EndsWith("|force", StringComparison.Ordinal))
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.IncrementalCacheForcedInvalidation,
+                Location.None));
+        }
+
+        // [Phase2 修复 3.2 / 审查 1.6] AOT004 / AOT005 / AOT007 已迁出生成管道：
+        // 由独立 DiagnosticAnalyzer 承载（AotDtoCoverageDiagnosticAnalyzer / AotXmlRejectionDiagnosticAnalyzer，
+        // 与 AOT006 的 HttpJsonSerializableCoverageAnalyzer 同一范本）。
+        // 原因：诊断挂在生成管道下游时，其重算依赖接口指纹失效——只改 JsonSerializerContext 或
+        // AOT 配置（接口声明未变）时下游节点命中缓存，诊断不会重算（陈旧/漏报）。
+        // 迁移后生成器只负责产出源码，职责单一，诊断随编译变化自然重算。
+    }
+
+    private void ProcessInterface(Compilation compilation, InterfaceDeclarationSyntax interfaceDecl, INamedTypeSymbol interfaceSymbol, SemanticModel semanticModel, SourceProductionContext context, string httpClientOptionsName, bool isAotEnabled, bool emitNullableEnable, bool emitGeneratedCodeMarkers)
     {
         var interfaceCodeGenerator = new InterfaceImplementationGenerator(
             compilation,
@@ -66,13 +140,23 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
             interfaceSymbol,
             semanticModel,
             context,
-            httpClientOptionsName);
+            httpClientOptionsName,
+            isAotEnabled,
+            emitNullableEnable,
+            emitGeneratedCodeMarkers);
 
         interfaceCodeGenerator.GenerateCode();
     }
 
     private void HandleInterfaceProcessingException(Exception ex, InterfaceDeclarationSyntax interfaceDecl, SourceProductionContext context)
     {
+        // 异常消息分流（[Phase4 修复 2.3] 后的现行行为，注释已同步）：
+        //   - 预期异常（InvalidOperationException/ArgumentException）→ FormatExceptionMessage
+        //     （DEBUG 含堆栈便于本地排查，Release 仅消息）；
+        //   - 非预期异常（NullReferenceException 等生成器内部 Bug）→ 恒定 `类型名: 消息`，
+        //     完整堆栈只走 GeneratorDebugLogger.LogError(Trace)，**不再**写入诊断消息——
+        //     诊断消息会进入 IDE 错误列表/CI 日志，带本机路径的堆栈属信息泄漏。
+        // （历史注释曾写「始终使用 ex.ToString() 保留完整堆栈」，与 §5.2 修复后的实现相反，已更正。）
         var descriptor = ex switch
         {
             InvalidOperationException => Diagnostics.HttpClientApiSyntaxError,
@@ -80,6 +164,19 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
             _ => Diagnostics.HttpClientApiGenerationError
         };
 
-        ReportErrorDiagnostic(context, descriptor, interfaceDecl.Identifier.Text, ex, interfaceDecl.GetLocation());
+        // 对于非预期异常，[Phase4 修复 2.3] 不再将完整堆栈写入诊断消息（泄漏本机路径），
+        // 改为仅输出类型名+消息；完整堆栈仅走 GeneratorDebugLogger.LogError（Trace/文件）。
+        if (descriptor == Diagnostics.HttpClientApiGenerationError)
+        {
+            var safeMessage = $"{ex.GetType().Name}: {ex.Message}";
+            context.ReportDiagnostic(Diagnostic.Create(descriptor, interfaceDecl.GetLocation() ?? Location.None,
+                interfaceDecl.Identifier.Text, safeMessage));
+            // 同时通过 GeneratorDebugLogger.LogError 记录完整堆栈到 Trace（Release 也可输出）
+            GeneratorDebugLogger.LogError($"InterfaceProcessing_{interfaceDecl.Identifier.Text}", ex);
+        }
+        else
+        {
+            ReportErrorDiagnostic(context, descriptor, interfaceDecl.Identifier.Text, ex, interfaceDecl.GetLocation());
+        }
     }
 }

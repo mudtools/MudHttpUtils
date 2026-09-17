@@ -58,6 +58,7 @@ internal static class ParameterAnalyzer
         {
             Name = parameter.Name,
             Type = TypeSymbolHelper.GetTypeFullName(parameter.Type),
+            TypeSymbol = parameter.Type,
             Attributes = parameter.GetAttributes().Select(attr => new ParameterAttributeInfo
             {
                 Name = attr.AttributeClass?.Name ?? "",
@@ -71,6 +72,17 @@ internal static class ParameterAnalyzer
         {
             parameterInfo.DefaultValue = parameter.ExplicitDefaultValue;
             parameterInfo.DefaultValueLiteral = TypeConverter.GetDefaultValueLiteral(parameter.Type, parameter.ExplicitDefaultValue);
+        }
+
+        // [F14 修复] 参数修饰符校验：ref/out/in/params 及指针类型生成器不支持。
+        // 在 MethodGenerator 侧报告 HTTPCLIENT004（Error）并跳过生成，避免产出 CS0177/CS0269 等不可编译代码。
+        if (parameter.RefKind != RefKind.None || parameter.IsParams || parameter.Type.TypeKind == TypeKind.Pointer)
+        {
+            var modifier = parameter.IsParams
+                ? "params"
+                : parameter.RefKind == RefKind.None ? "指针" : parameter.RefKind.ToString();
+            parameterInfo.UnsupportedReason =
+                $"参数 {parameter.Name} 使用了 {modifier} 修饰符/指针类型，生成器不支持";
         }
 
         // 未标注任何 HTTP 参数特性的参数，根据类型自动推断默认特性

@@ -14,13 +14,52 @@ namespace Mud.HttpUtils;
 /// 用户令牌管理器抽象基类，提供并发安全的用户级令牌刷新实现。
 /// 使用 <see cref="ITokenCache{T}"/> 管理用户令牌缓存，支持容量限制、滑动过期和自动清理。
 /// </summary>
+/// <remarks>
+/// <para><b>锁非重入不变式（TMX-15-4 / B12）</b>：<see cref="KeyedLockTable"/> 按 userId（或 userId+scope）的键控锁
+/// <b>不支持重入</b>。派生类在 <see cref="RefreshUserTokenAsync"/> 实现中
+/// <b>禁止</b>回调 <see cref="GetOrRefreshTokenAsync(string?, string[]?, CancellationToken)"/> 或
+/// <see cref="GetTokenAsync(string?, string[]?, CancellationToken)"/>——
+/// 否则同一线程尝试再次获取同一键的锁将导致不可恢复的死锁。
+/// 若确需在刷新过程中获取另一用户的令牌，应使用独立的 <see cref="ITokenManager"/> 实例。</para>
+/// </remarks>
 public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 {
-    // NEW-TM-06 修复：改用 Lazy<SemaphoreSlim> + ExecutionAndPublication，与基类 TokenManagerBase 对齐。
-    // 避免裸 GetOrAdd 在并发下多次执行工厂导致互斥锁失效。
-    private readonly ConcurrentDictionary<string, Lazy<SemaphoreSlim>> _userLocks = new();
+    // NEW-TM-06 修复（裸 GetOrAdd 并发多执行工厂导致互斥失效）→ P2.2（TK-05/09/24）升级为
+    // KeyedLockTable（retire 协议 + 引用计数），与基类 TokenManagerBase 统一锁生命周期实现。
+    // SR-M1（P2.2，D7）后锁键为 userId 或 userId + "\u001F" + scopeKey 复合键，按作用域隔离。
+    private readonly KeyedLockTable _userLockTable = new();
     private readonly ITokenCache<UserTokenInfo> _userTokenCache;
     private readonly UserTokenCacheOptions _cacheOptions;
+
+    // SR-M3（P3.1，D10-B）用户刷新负缓存：键 → (连续失败次数, 下次允许刷新的 UTC ticks)。
+    // TMX-06：退避表结构由"截止时间"升级为"计数 + 截止时间"，AddOrUpdate 用 prev.Count + 1 推进，
+    // 使 UserBackoffSeconds(n) 的指数能力生效（原实现两分支均用 UserBackoffSeconds(1) = 恒定 30s）。
+    // 与租户路径 _consecutiveFallbacks 指数退避模式对齐，阻断 IdP 故障时的按 userId 刷新风暴。
+    private readonly ConcurrentDictionary<string, BackoffState> _userRefreshFailures = new();
+    private const int MaxUserRefreshBackoffSeconds = 300;
+
+    // MT-06：用户侧维护定时器。
+    // 原实现中 CleanupOrphanedLocks() 为 protected 且全仓无调用者，叠加
+    // SupportsTenantMaintenance=false（基类 300s/600s Timer 不启动）后，
+    // _userRefreshFailures 与 _userLockTable 完全依赖调用方主动清扫 —— 实际等于无回收。
+    // 这里引入单个 Timer 周期性驱动，成本为「每管理器 1 个 Timer」。
+    private readonly Timer? _userMaintenanceTimer;
+
+    /// <summary>
+    /// TMX-06：退避状态（连续失败次数 + 截止时间）。值类型，无堆分配。
+    /// </summary>
+    private readonly struct BackoffState
+    {
+        public readonly int Count;
+        public readonly long UntilTicks;
+        public BackoffState(int count, long untilTicks) { Count = count; UntilTicks = untilTicks; }
+    }
+
+    /// <summary>
+    /// SR-M1（P2.2，D7）用户复合键分隔符（Unit Separator 控制字符）：
+    /// 与裸 userId 键空间不相交、不可能出现在合法 userId 内。
+    /// </summary>
+    internal const char UserScopeKeySeparator = '\u001F';
 
     /// <summary>
     /// 获取用户令牌过期提前量（秒），默认 300 秒（5 分钟）。
@@ -65,21 +104,81 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// <param name="userTokenCache">用户令牌缓存实现。为 null 时使用默认的 <see cref="MemoryCacheTokenCache{T}"/>。</param>
     /// <param name="cacheOptions">缓存配置选项。为 null 时使用默认配置。</param>
     protected UserTokenManagerBase(ITokenCache<UserTokenInfo>? userTokenCache, UserTokenCacheOptions? cacheOptions = null)
+        : this(userTokenCache, cacheOptions, null)
+    {
+    }
+
+    /// <summary>
+    /// SR-M8（P3.4，D12）初始化用户令牌管理器基类，可选启用内存态加密缓存。
+    /// </summary>
+    /// <param name="userTokenCache">用户令牌缓存实现。为 null 时使用默认缓存（<paramref name="encryption"/> 非空时自动包装为加密缓存）。</param>
+    /// <param name="cacheOptions">缓存配置选项。为 null 时使用默认配置。</param>
+    /// <param name="encryption">加密提供程序。null = 既有明文行为（零破坏）；非空且未显式传入缓存时，以 <see cref="EncryptedTokenCache{T}"/> 包装默认 <see cref="MemoryCacheTokenCache{String}"/>。</param>
+    protected UserTokenManagerBase(
+        ITokenCache<UserTokenInfo>? userTokenCache,
+        UserTokenCacheOptions? cacheOptions,
+        IEncryptionProvider? encryption)
     {
         _cacheOptions = cacheOptions ?? new UserTokenCacheOptions();
-        _userTokenCache = userTokenCache ?? new MemoryCacheTokenCache<UserTokenInfo>(
-            _cacheOptions.SizeLimit,
-            _cacheOptions.CleanupIntervalSeconds,
-            _cacheOptions.CompactionPercentage);
+
+        if (userTokenCache != null)
+        {
+            _userTokenCache = userTokenCache;
+        }
+        else if (encryption != null)
+        {
+            // 加密分支：需要 string 缓存作为加密包装的底层
+            var stringCache = new MemoryCacheTokenCache<string>(
+                _cacheOptions.SizeLimit,
+                _cacheOptions.CleanupIntervalSeconds,
+                _cacheOptions.CompactionPercentage);
+            _userTokenCache = new EncryptedTokenCache<UserTokenInfo>(stringCache, encryption);
+        }
+        else
+        {
+            _userTokenCache = new MemoryCacheTokenCache<UserTokenInfo>(
+                _cacheOptions.SizeLimit,
+                _cacheOptions.CleanupIntervalSeconds,
+                _cacheOptions.CompactionPercentage);
+        }
+
+        // MT-06：启动用户侧维护定时器（周期取 UserTokenCacheOptions.CleanupIntervalSeconds）。
+        // 回调内部已 try/catch 兜底，异常不会外溢为进程级故障。
+        var interval = TimeSpan.FromSeconds(
+            _cacheOptions.CleanupIntervalSeconds > 0 ? _cacheOptions.CleanupIntervalSeconds : 300);
+        _userMaintenanceTimer = new Timer(
+            _ => SafeCleanup(),
+            null,
+            interval,
+            interval);
+    }
+
+    /// <summary>
+    /// MT-06：定时器回调包装——回收孤立锁与过期退避条目，异常不外溢。
+    /// </summary>
+    private void SafeCleanup()
+    {
+        try
+        {
+            CleanupOrphanedLocks();
+        }
+        catch
+        {
+            // 清扫失败不得影响令牌主链路；此处无日志依赖（用户管理器可能无 ILogger）。
+        }
     }
 
     /// <inheritdoc />
     public abstract Task<string?> GetTokenAsync(string? userId, CancellationToken cancellationToken = default);
 
     /// <inheritdoc />
+    /// <remarks>
+    /// TMX-07：默认实现走 scope 感知路径（与 <see cref="GetOrRefreshTokenAsync(string?, string[]?, CancellationToken)"/> 一致），
+    /// 不再静默返回默认作用域令牌。不支持 scope 的派生类应覆写并抛 <see cref="NotSupportedException"/>。
+    /// </remarks>
     public virtual Task<string?> GetTokenAsync(string? userId, string[]? scopes, CancellationToken cancellationToken = default)
     {
-        return GetTokenAsync(userId, cancellationToken);
+        return GetOrRefreshTokenAsync(userId, scopes, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -97,7 +196,16 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         CancellationToken cancellationToken = default);
 
     /// <inheritdoc />
-    public abstract Task<bool> RemoveTokenAsync(string userId, CancellationToken cancellationToken = default);
+        /// <summary>
+    /// TMX-14：默认实现按登出语义清除该用户全部作用域条目（含锁与退避），
+    /// 派生类如需额外动作（如调用 IdP revoke）应覆写并调用 base。
+    /// </summary>
+    public virtual Task<bool> RemoveTokenAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(userId)) return Task.FromResult(false);
+        RemoveUserTokenFromCache(userId);           // 已含全部作用域 + TryRetire + 清退避
+        return Task.FromResult(true);
+    }
 
     /// <inheritdoc />
     public virtual Task<bool> HasValidTokenAsync(string userId, CancellationToken cancellationToken = default)
@@ -116,55 +224,81 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// <inheritdoc />
     public async Task<string?> GetOrRefreshTokenAsync(string? userId, CancellationToken cancellationToken = default)
     {
+        // 无 scopes 重载：键 = userId（默认作用域条目，现网调用零影响）
+        return await GetOrRefreshTokenCoreAsync(userId, cacheKeyOverride: null, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// SR-M1（P2.2，D7）：有 scopes 重载按 userId × scope 复合键隔离缓存与锁，
+    /// 修复"先以 ['read:admin'] 获取的令牌被后续 ['read:basic'] 调用直接复用"的权限范围错配。
+    /// </remarks>
+    public virtual async Task<string?> GetOrRefreshTokenAsync(string? userId, string[]? scopes, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(userId))
+            return null;
+
+        if (scopes == null || scopes.Length == 0)
+        {
+            // 空 scopes 数组与 null 语义一致：默认作用域条目
+            return await GetOrRefreshTokenCoreAsync(userId, cacheKeyOverride: null, cancellationToken).ConfigureAwait(false);
+        }
+
+        var compositeKey = GetUserCacheKey(userId!, scopes);
+        return await GetOrRefreshTokenCoreAsync(userId, compositeKey, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// SR-M1（P2.2，D7）核心路径：<paramref name="cacheKeyOverride"/> 为 null 时键 = userId（默认作用域），
+    /// 非空时键 = userId + "\u001F" + scopeKey 复合键。缓存与 _userLockTable 键同步隔离。
+    /// </summary>
+    private async Task<string?> GetOrRefreshTokenCoreAsync(string? userId, string? cacheKeyOverride, CancellationToken cancellationToken)
+    {
         if (string.IsNullOrEmpty(userId))
             return null;
 
         if (_disposed)
             throw new ObjectDisposedException(GetType().Name);
 
-        var cachedInfo = GetUserTokenFromCache(userId!);
+        var cacheKey = cacheKeyOverride ?? userId!;
+
+        var cachedInfo = GetUserTokenFromCache(cacheKey);
         if (IsUserTokenValid(cachedInfo))
         {
-            TryCleanupUserLock(userId!);
+            // SR-C1（P1.2）触发面收敛：删除缓存命中路径上的 TryCleanupUserLock。
+            // TMX-05：锁回收由三重承担：① 缓存驱逐回调 OnUserTokenEvicted → TryRetire；
+            // ② 失败/退避分支显式 TryRetire（TMX-05）；③ 宿主或派生类可调用 CleanupExpiredUserTokens 兜底
+            // （框架不保证调用：用户令牌管理器不启动租户维护 Timer，见 SupportsTenantMaintenance）。
             return cachedInfo!.AccessToken;
         }
 
-        // NEW-TM-06 修复：使用 Lazy<SemaphoreSlim> + ExecutionAndPublication 模式，
-        // 确保同一 userId 的并发请求拿到相同的 SemaphoreSlim 实例。
-        var userLock = _userLocks.GetOrAdd(userId!, _ => new Lazy<SemaphoreSlim>(
-            () => new SemaphoreSlim(1, 1), LazyThreadSafetyMode.ExecutionAndPublication)).Value;
-        var acquired = false;
-        try
+        // P2.2（TK-05/09/24）从键控锁表获取用户锁，retire 协议保证互斥（SR-M1 后按复合键隔离）。
+        using (var releaser = await _userLockTable.AcquireAsync(cacheKey, cancellationToken).ConfigureAwait(false))
         {
-            await userLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-            acquired = true;
-
-            cachedInfo = GetUserTokenFromCache(userId!);
+            cachedInfo = GetUserTokenFromCache(cacheKey);
             if (IsUserTokenValid(cachedInfo))
                 return cachedInfo!.AccessToken;
+
+            // SR-M3（P3.1，D10-B）刷新负缓存：退避窗口内不发起刷新（IdP 故障时阻断按 userId 的刷新风暴）
+            if (IsInUserRefreshBackoff(cacheKey))
+            {
+                // TMX-05：窗口内不发请求，且该 key 当前无可用条目 → 退休锁，避免孤儿条目累积
+                _userLockTable.TryRetire(cacheKey);
+                return null;
+            }
 
             var refreshedInfo = await RefreshUserTokenAsync(userId!, cancellationToken).ConfigureAwait(false);
             if (refreshedInfo != null)
             {
-                UpdateUserTokenCache(userId!, refreshedInfo);
+                RecordUserRefreshSuccess(cacheKey);
+                UpdateUserTokenCache(cacheKey, refreshedInfo);
                 return refreshedInfo.AccessToken;
             }
 
+            RecordUserRefreshFailure(cacheKey);
+            _userLockTable.TryRetire(cacheKey);      // TMX-05：失败无条目 → 锁无复用价值
             return null;
         }
-        finally
-        {
-            if (acquired) userLock.Release();
-        }
-    }
-
-    /// <inheritdoc />
-    public virtual Task<string?> GetOrRefreshTokenAsync(string? userId, string[]? scopes, CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrEmpty(userId))
-            return Task.FromResult<string?>(null);
-
-        return GetOrRefreshTokenAsync(userId, cancellationToken);
     }
 
     /// <summary>
@@ -176,6 +310,9 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     {
         if (string.IsNullOrEmpty(userId) || tokenInfo == null)
             return;
+
+        // TMX-03：以"进入缓存时刻"作为 issuedAt 的可信来源（仅填空，不覆盖派生实现给出的 IdP 签发时间）
+        tokenInfo.LastRefreshedAt ??= DateTime.UtcNow;
 
         TimeSpan? absoluteExpiration = null;
         var remainingMs = tokenInfo.AccessTokenExpireTime - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -189,19 +326,47 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         _userTokenCache.Set(userId, tokenInfo, absoluteExpiration, slidingExpiration, OnUserTokenEvicted);
     }
 
-    private void OnUserTokenEvicted(string userId)
+    private void OnUserTokenEvicted(string cacheKey)
     {
-        TryRemoveAndDisposeLock(userId);
+        // P2.2（TK-05/09/24）统一走 retire 协议：TryRetire 内部保证
+        // 仅当无等待者时移除；若锁正被占用则仅标记退休，由最后一个 Releaser 完成移除。
+        // 彻底消除原实现中“缓存驱逐时移除在途锁导致互斥失效”的缺陷。
+        _userLockTable.TryRetire(cacheKey);
     }
 
     /// <summary>
     /// 从缓存中移除用户令牌。
+    /// SR-M1（P2.2，D7）：userId 为裸 userId 时同步清除该用户<b>全部作用域</b>条目（登出语义）。
     /// </summary>
     /// <param name="userId">用户标识。</param>
     protected void RemoveUserTokenFromCache(string userId)
     {
-        _userTokenCache.TryRemove(userId, out _);
-        TryRemoveAndDisposeLock(userId);
+        RemoveUserCacheEntries(userId, includeAllScopes: true);
+    }
+
+    /// <summary>
+    /// SR-M1（P2.2，D7）按前缀解析移除该用户全部作用域的缓存条目并退休对应锁。
+    /// Keys 枚举与 TryRemove 的竞态无害（条目已消失则 no-op）。
+    /// </summary>
+    private void RemoveUserCacheEntries(string userId, bool includeAllScopes)
+    {
+        _userTokenCache.TryRemove(userId, out _);   // 默认作用域条目（裸 userId 键）
+        _userLockTable.TryRetire(userId);
+        _userRefreshFailures.TryRemove(userId, out _);   // 登出重置退避（D10-B）
+
+        if (!includeAllScopes)
+            return;
+
+        var prefix = userId + UserScopeKeySeparator;
+        foreach (var key in _userTokenCache.Keys.ToList())
+        {
+            if (key.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                _userTokenCache.TryRemove(key, out _);
+                _userLockTable.TryRetire(key);
+                _userRefreshFailures.TryRemove(key, out _);
+            }
+        }
     }
 
     /// <summary>
@@ -221,39 +386,20 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// </summary>
     protected void CleanupOrphanedLocks()
     {
-        var orphanedKeys = new List<string>();
-
-        foreach (var kvp in _userLocks)
+        // P2.2（TK-05/09/24）经 retire 协议统一回收缓存中已不存在的用户锁。
+        foreach (var key in _userLockTable.Keys.ToList())
         {
-            if (!_userTokenCache.TryGet(kvp.Key, out _))
-            {
-                // NEW-TM-06 修复：适配 Lazy<SemaphoreSlim>，同时处理未创建的 Lazy
-                if (!kvp.Value.IsValueCreated || kvp.Value.Value.CurrentCount == 1)
-                    orphanedKeys.Add(kvp.Key);
-            }
+            if (!_userTokenCache.TryGet(key, out _))
+                _userLockTable.TryRetire(key);
         }
 
-        foreach (var key in orphanedKeys)
+        // SR-M3（P3.1，D10-B）顺带清扫退避表：已无缓存条目或窗口已过期的条目移除，防无界增长。
+        var nowTicks = DateTimeOffset.UtcNow.UtcTicks;
+        foreach (var kvp in _userRefreshFailures.ToList())
         {
-            TryRemoveAndDisposeLock(key);
+            if (nowTicks >= kvp.Value.UntilTicks || !_userTokenCache.TryGet(kvp.Key, out _))
+                _userRefreshFailures.TryRemove(kvp.Key, out _);
         }
-    }
-
-    /// <summary>
-    /// 尝试清理指定用户的锁资源。
-    /// 当缓存命中且锁处于空闲状态时，主动释放锁以避免内存泄漏。
-    /// </summary>
-    /// <param name="userId">用户标识。</param>
-    private void TryCleanupUserLock(string userId)
-    {
-        if (!_userLocks.TryGetValue(userId, out var lazyLock))
-            return;
-
-        // NEW-TM-06 修复：适配 Lazy<SemaphoreSlim>
-        if (!lazyLock.IsValueCreated || lazyLock.Value.CurrentCount != 1)
-            return;
-
-        TryRemoveAndDisposeLock(userId);
     }
 
     /// <summary>
@@ -261,14 +407,22 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// </summary>
     protected int CachedUserTokenCount => _userTokenCache.Count;
 
+    /// <summary>
+    /// SR-C1（P1.2）测试观测钩子：用户锁表当前条目数（经 InternalsVisibleTo 供测试断言锁条目不 churn）。
+    /// </summary>
+    internal int UserLockTableCountForTest => _userLockTable.Count;
+
     /// <inheritdoc />
-    public override async Task<TokenResult> InvalidateTokenAsync(string[]? scopes = null, CancellationToken cancellationToken = default)
+    public override Task<TokenResult> InvalidateTokenAsync(string[]? scopes = null, CancellationToken cancellationToken = default)
     {
-        var result = await base.InvalidateTokenAsync(scopes, cancellationToken).ConfigureAwait(false);
-
-        CleanupExpiredUserTokens();
-
-        return result;
+        // P2.8（TK-14）语义收敛：用户令牌管理器无法仅凭 scopes 定位到具体用户，租户级
+        // InvalidateTokenAsync 对用户令牌无意义。若实现静默调用 base（清空共享凭据缓存）或
+        // 紧凑用户缓存，会产生"调用方以为用户令牌已失效，实则其他用户令牌也被连带影响"的歧义。
+        // 故明确抛出 NotSupportedException，引导调用方改用按用户定位的 InvalidateUserTokenAsync(userId) /
+        // RemoveTokenAsync(userId)。
+        throw new NotSupportedException(
+            "UserTokenManagerBase 不支持租户级 InvalidateTokenAsync。请使用 InvalidateUserTokenAsync(userId) " +
+            "或 RemoveTokenAsync(userId) 使指定用户的令牌失效。");
     }
 
     /// <summary>
@@ -286,24 +440,137 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     }
 
     /// <summary>
-    /// 安全移除并释放用户锁。
-    /// NEW-TM-07 修复：仅从字典移除，不立即 Dispose，避免 TOCTOU 竞态破坏互斥。
-    /// 与基类 TokenManagerBase.TryRemoveScopeLock 修复策略一致：
-    /// 移除后新来线程通过 GetOrAdd 创建新 Lazy&lt;SemaphoreSlim&gt;，
-    /// 已持有旧锁引用的线程仍可安全使用，由 GC 终结器释放资源。
+    /// TMR-05：仅失效指定用户与作用域的缓存条目（不触碰该用户其他作用域）。
     /// </summary>
-    private void TryRemoveAndDisposeLock(string userId)
+    /// <param name="userId">用户标识。</param>
+    /// <param name="scopes">作用域集合。为空或 null 时退化为整用户失效（调用 <see cref="InvalidateUserTokenAsync(string, CancellationToken)"/>）。</param>
+    /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+    public virtual Task InvalidateUserTokenAsync(string userId, string[]? scopes, CancellationToken cancellationToken = default)
     {
-        _userLocks.TryRemove(userId, out _);
+        if (string.IsNullOrEmpty(userId))
+            return Task.CompletedTask;
+
+        if (scopes is not { Length: > 0 })
+        {
+            RemoveUserTokenFromCache(userId);
+            return Task.CompletedTask;
+        }
+
+        // 精准失效：仅移除该复合键条目 + 退休对应锁 + 清退避项
+        var key = GetUserCacheKey(userId, scopes);
+        _userTokenCache.TryRemove(key, out _);
+        _userLockTable.TryRetire(key);
+        _userRefreshFailures.TryRemove(key, out _);
+        return Task.CompletedTask;
     }
 
     private bool IsUserTokenValid(UserTokenInfo? tokenInfo)
     {
-        if (tokenInfo == null || string.IsNullOrEmpty(tokenInfo.AccessToken))
+        if (tokenInfo == null || string.IsNullOrEmpty(tokenInfo.AccessToken) || tokenInfo.AccessTokenExpireTime <= 0)
             return false;
 
-        return tokenInfo.IsAccessTokenValid(UserExpireThresholdSeconds);
+        // P1.3（TK-04）收敛：有效期判定统一委托 TokenExpiryPolicy，与 TokenManagerBase 严格一致
+        // MT-07：改用 TTL 感知的 4 参重载，避免短 TTL 用户令牌"刚签发即被判为需刷新"
+        // （原 3 参版本下，TTL=300s 且阈值=300s 的令牌 expire-threshold <= now 恒成立，缓存永不命中）。
+        // TMX-22（P1）：直接透传 IdP 填充的 IssuedAt，缺失（<=0）时由 EffectiveThresholdSeconds
+        // 退化为配置阈值。此前回退 LastRefreshedAt/CreatedAt 的代理语义错误（CreatedAt 是记录
+        // 创建时间且自动初始化为 UtcNow，并非令牌签发时间），会把临近过期令牌误判为有效。
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        return TokenExpiryPolicy.IsValid(tokenInfo.IssuedAt, tokenInfo.AccessTokenExpireTime, now, UserExpireThresholdSeconds);
     }
+
+    /// <summary>
+    /// SR-M1（P2.2，D7）构建用户 × 作用域复合缓存键：userId + US + ScopeKeyBuilder 规范化 scope 键。
+    /// 无 scopes 时不经此方法（键 = 裸 userId，保持既有键）。
+    /// </summary>
+    private static string GetUserCacheKey(string userId, string[] scopes)
+        => userId + UserScopeKeySeparator + ScopeKeyBuilder.Build(scopes);
+
+    /// <summary>SR-M3（P3.1，D10-B）退避序列：30s → 60s → 120s → 240s → 300s（封顶）。</summary>
+    private static int UserBackoffSeconds(int n)
+        => Math.Min(30 << Math.Min(n - 1, 3), MaxUserRefreshBackoffSeconds);
+
+    /// <summary>SR-M3：是否处于刷新退避窗口内（窗口内不发起刷新，直接返回 null——既有契约）。</summary>
+    private bool IsInUserRefreshBackoff(string cacheKey)
+    {
+        return _userRefreshFailures.TryGetValue(cacheKey, out var s)
+            && DateTimeOffset.UtcNow.UtcTicks < s.UntilTicks;
+    }
+
+    /// <summary>SR-M3：刷新成功即清除退避条目。</summary>
+    private void RecordUserRefreshSuccess(string cacheKey)
+        => _userRefreshFailures.TryRemove(cacheKey, out _);
+
+    /// <summary>SR-M3：刷新失败记录退避窗口（按 cacheKey 维护连续失败计数）。</summary>
+    private void RecordUserRefreshFailure(string cacheKey)
+    {
+        // TMX-06：AddOrUpdate 用 prev.Count + 1 推进，使 UserBackoffSeconds(n) 的指数能力生效
+        _userRefreshFailures.AddOrUpdate(cacheKey,
+            _ => new BackoffState(1, DateTimeOffset.UtcNow.AddSeconds(UserBackoffSeconds(1)).UtcTicks),
+            (_, prev) =>
+            {
+                var next = prev.Count + 1;
+                return new BackoffState(next, DateTimeOffset.UtcNow.AddSeconds(UserBackoffSeconds(next)).UtcTicks);
+            });
+
+        // TMX-05：机会式清扫（不新增定时器）；
+        // MT-06：仍超过 SizeLimit 时批量收缩，阻断高基数 userId + IdP 故障下的无界增长。
+        SweepExpiredBackoffEntries();
+        TrimUserRefreshFailures();
+    }
+
+    /// <summary>
+    /// TMX-05：退避表机会式清扫——每次写入失败记录时顺带丢弃窗口已过条目（不新增定时器）。
+    /// </summary>
+    private void SweepExpiredBackoffEntries()
+    {
+        var nowTicks = DateTimeOffset.UtcNow.UtcTicks;
+        foreach (var kv in _userRefreshFailures)
+            if (kv.Value.UntilTicks <= nowTicks)
+                _userRefreshFailures.TryRemove(kv.Key, out _);
+    }
+
+    /// <summary>
+    /// MT-06：测试观测钩子（经 InternalsVisibleTo）—— 用户退避表的当前条目数。
+    /// </summary>
+    internal int UserRefreshFailureCountForTest => _userRefreshFailures.Count;
+
+    /// <summary>
+    /// MT-06：退避表有界收缩。上限取 <see cref="UserTokenCacheOptions.SizeLimit"/>（与用户令牌缓存同量级）。
+    /// </summary>
+    private void TrimUserRefreshFailures()
+    {
+        var limit = _cacheOptions.SizeLimit > 0 ? _cacheOptions.SizeLimit : 1;
+        if (_userRefreshFailures.Count <= limit)
+            return;
+
+        var nowTicks = DateTimeOffset.UtcNow.UtcTicks;
+        foreach (var kvp in _userRefreshFailures)
+        {
+            if (_userRefreshFailures.Count <= limit)
+                return;
+            if (nowTicks >= kvp.Value.UntilTicks)
+            {
+                _userRefreshFailures.TryRemove(kvp.Key, out _);
+            }
+        }
+
+        foreach (var kvp in _userRefreshFailures)
+        {
+            if (_userRefreshFailures.Count <= limit)
+                return;
+            _userRefreshFailures.TryRemove(kvp.Key, out _);
+        }
+    }
+
+    /// <summary>MT-06 测试观测钩子（经 InternalsVisibleTo）：退避表当前条目数。</summary>
+    internal int RefreshFailureCountForTest => _userRefreshFailures.Count;
+
+    /// <summary>
+    /// SR-L9（P3.10，D14-V5）：用户令牌管理器不支持租户层维护 Timer——
+    /// 用户令牌经 IMemoryCache 自带过期/驱逐，两个租户 Timer（300s/600s）对其无意义，跳过分配。
+    /// </summary>
+    protected override bool SupportsTenantMaintenance => false;
 
     /// <summary>
     /// 从缓存中获取指定用户的令牌信息。
@@ -317,30 +584,38 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     }
 
     /// <summary>
-    /// 释放资源。
-    /// NEW-TM-11 修复：调整 Dispose 顺序，先设置 _disposed 标志再释放资源，
-    /// 避免并发 GetOrRefreshTokenAsync 在资源释放期间通过 _disposed 检查。
+    /// SR-H1（P1.3）测试观测桥：暴露基类 TimersActive（internal，经 Abstractions→Client
+    /// InternalsVisibleTo 可见）供测试断言 Dispose 后 Timer 停止。
     /// </summary>
-    /// <param name="disposing">是否释放托管资源。</param>
+    internal bool TimersActiveForTest => base.TimersActive;
+
+    /// <summary>
+    /// SR-H1（P1.3）Dispose 顺序说明（NEW-TM-11 语义保持）：
+    /// 先置 _disposed（并发 GetOrRefreshTokenAsync 立即感知）→ 释放用户缓存/锁表 →
+    /// base.Dispose 停 Timer → 释放租户锁表/缓存。在新契约（基类可重入幂等）下基类释放必然执行。
+    /// </summary>
     protected override void Dispose(bool disposing)
     {
-        if (_disposed)
-            return;
-
-        // NEW-TM-11 修复：先设置标志，使并发 GetOrRefreshTokenAsync 立即感知 Dispose 状态
-        _disposed = true;
-
-        if (disposing)
+        // MT-22：原实现在 _disposed 已置位时直接 return，跳过 base.Dispose(disposing)，
+        // 与 TokenManagerBase 自述契约（"无论标志状态如何都必须调用 base.Dispose"）冲突。
+        // 若派生类先置 _disposed 再调 base.Dispose，基类释放会被整体跳过。
+        if (!_disposed)
         {
-            _userTokenCache?.Dispose();
+            // NEW-TM-11 修复：先设置标志，使并发 GetOrRefreshTokenAsync 立即感知 Dispose 状态
+            _disposed = true;
 
-            // NEW-TM-06 修复：适配 Lazy<SemaphoreSlim>
-            foreach (var lazyLock in _userLocks.Values)
+            if (disposing)
             {
-                if (lazyLock.IsValueCreated)
-                    lazyLock.Value.Dispose();
+                // MT-06：停止用户侧维护定时器
+                _userMaintenanceTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+                _userMaintenanceTimer?.Dispose();
+
+                _userTokenCache?.Dispose();
+
+                // P2.2（TK-05/09/24）KeyedLockTable.Dispose 不 Dispose SemaphoreSlim，
+                // 保证在途 Releaser 的 Release 安全（修复 TK-08）。
+                _userLockTable.Dispose();
             }
-            _userLocks.Clear();
         }
 
         base.Dispose(disposing);

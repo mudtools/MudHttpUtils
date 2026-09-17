@@ -66,5 +66,24 @@ public interface IBaseHttpClient
     /// <param name="jsonSerializerOptions">JSON 序列化选项，用于控制反序列化行为。</param>
     /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
     /// <returns>异步可枚举的响应元素流。</returns>
+    /// <remarks>
+    /// <b>Native AOT 注意</b>：此重载使用开放泛型 JSON 反序列化，AOT 场景下须确保 <typeparamref name="TResult"/> 已在
+    /// <c>JsonSerializerContext</c> 中声明。推荐使用 <c>SendAsAsyncEnumerable(JsonTypeInfo&lt;TResult&gt;)</c> 重载。
+    /// </remarks>
     IAsyncEnumerable<TResult> SendAsAsyncEnumerable<TResult>(HttpRequestMessage request, object? jsonSerializerOptions = null, CancellationToken cancellationToken = default);
+
+#if NET8_0_OR_GREATER
+    /// <summary>
+    /// 异步发送 HTTP 请求并以流式方式返回 IAsyncEnumerable 结果（Native AOT 安全重载）。
+    /// </summary>
+    /// <typeparam name="TResult">每个响应元素的类型，必须在 <see cref="System.Text.Json.Serialization.JsonSerializerContext"/> 中声明。</typeparam>
+    /// <param name="request">HTTP 请求消息。</param>
+    /// <param name="jsonTypeInfo">来自 <see cref="System.Text.Json.Serialization.JsonSerializerContext"/> 的类型信息（AOT 安全）。</param>
+    /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+    /// <returns>异步可枚举的响应元素流。</returns>
+    IAsyncEnumerable<TResult> SendAsAsyncEnumerable<TResult>(
+        HttpRequestMessage request,
+        System.Text.Json.Serialization.Metadata.JsonTypeInfo<TResult> jsonTypeInfo,
+        CancellationToken cancellationToken = default);
+#endif
 }

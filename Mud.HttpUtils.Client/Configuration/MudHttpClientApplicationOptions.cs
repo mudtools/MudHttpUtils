@@ -43,10 +43,17 @@ public class MudHttpClientApplicationOptions
     /// 命名的 HttpClient 配置集合
     /// </summary>
     /// <remarks>
-    /// 键为客户端名称，值为该客户端的配置选项。
-    /// 客户端名称不区分大小写。
+    /// <para>键为客户端名称，值为该客户端的配置选项。</para>
+    /// <para>
+    /// <b>MT-13（BC-25）</b>：客户端名称<b>区分大小写</b>（<see cref="StringComparer.Ordinal"/>）。
+    /// 此前本字典使用 <c>OrdinalIgnoreCase</c>，而命名 HttpClient（<c>AddHttpClient</c>）、
+    /// keyed DI 注册、<see cref="IEnhancedHttpClientFactory"/> 缓存与
+    /// <see cref="DefaultAppManager{TAppContext}"/> 均使用 <c>Ordinal</c> ——
+    /// 于是「配置写 <c>Default</c>、代码传 <c>default</c>」会出现
+    /// <b>配置覆盖生效但客户端解析失败</b>的分裂行为。现统一为 <c>Ordinal</c>，语义唯一。
+    /// </para>
     /// </remarks>
-    public Dictionary<string, MudHttpClientOptions> Clients { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    public Dictionary<string, MudHttpClientOptions> Clients { get; set; } = new(StringComparer.Ordinal);
 
     /// <summary>
     /// 默认客户端名称
@@ -66,6 +73,21 @@ public class MudHttpClientApplicationOptions
     /// <para>如需在运行时动态修改白名单，可使用 <see cref="UrlValidator.AddAllowedDomain"/> 和 <see cref="UrlValidator.RemoveAllowedDomain"/>。</para>
     /// </remarks>
     public List<string> AllowedDomains { get; set; } = [];
+
+    /// <summary>
+    /// MT-10：是否允许白名单域名使用非 HTTPS 协议访问。默认 <c>false</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 修复前：白名单命中即整体跳过后续校验（含 scheme 检查），因此 <c>AllowedDomains</c> 中的域名
+    /// 即使以 <c>http://</c> 访问也会被放行 —— 令牌（Header / Query / Cookie 任一注入模式）将<b>明文上网</b>。
+    /// </para>
+    /// <para>
+    /// 现在白名单域名仍强制 HTTPS（回环地址豁免，保留本地开发）。
+    /// 确需在完全受信内网使用 HTTP 时，可显式开启本开关。
+    /// </para>
+    /// </remarks>
+    public bool AllowInsecureWhitelistedDomains { get; set; }
 
     /// <summary>
     /// HTTP 响应缓存配置

@@ -52,6 +52,43 @@ public class RetryOptions
     public int[]? RetryStatusCodes { get; set; }
 
     /// <summary>
+    /// 获取或设置是否在重试退避中加入随机抖动（Jitter）。默认 true。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 抖动范围为 <c>[0, 基础退避/4)</c>，用于避免多实例高并发下的"重试风暴"（Thundering Herd）。
+    /// 全局重试与方法级（<c>[Retry]</c> 特性）重试共用本配置。
+    /// </para>
+    /// <para>设为 false 可恢复纯指数/固定退避（仅建议测试断言时使用）。</para>
+    /// </remarks>
+    public bool UseJitter { get; set; } = true;
+
+    /// <summary>
+    /// 获取或设置是否允许对非幂等 HTTP 方法（POST/PATCH 等未在 <see cref="RetryableHttpMethods"/> 中的方法）重试。默认 false。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 默认关闭：非幂等请求重试可能导致重复提交（如下单、扣款）。
+    /// 需要显式为特定接口开启时，使用 <c>[Retry(AllowNonIdempotent = true)]</c> 特性（方法级），
+    /// 或设置本属性（全局）。跳过重试的请求仍受超时与熔断策略保护。
+    /// </para>
+    /// </remarks>
+    public bool AllowNonIdempotentRetry { get; set; }
+
+    /// <summary>
+    /// 获取或设置允许重试的 HTTP 方法集合（不区分大小写）。
+    /// 默认包含幂等方法：GET、HEAD、OPTIONS、PUT、DELETE、TRACE。
+    /// </summary>
+    /// <remarks>
+    /// 仅当 <see cref="AllowNonIdempotentRetry"/> 为 false 时生效；
+    /// 方法级 <c>[Retry(AllowNonIdempotent = true)]</c> 标记的请求不受本集合约束。
+    /// </remarks>
+    public HashSet<string> RetryableHttpMethods { get; set; } = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "GET", "HEAD", "OPTIONS", "PUT", "DELETE", "TRACE",
+    };
+
+    /// <summary>
     /// 获取或设置重试前的回调委托。
     /// </summary>
     /// <remarks>

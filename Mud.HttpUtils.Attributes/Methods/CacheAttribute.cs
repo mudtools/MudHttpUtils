@@ -13,7 +13,7 @@ namespace Mud.HttpUtils.Attributes;
 /// <remarks>
 /// <para>
 /// 应用于方法上，指示该方法的响应结果应被缓存。支持自定义缓存时长、缓存键模板、
-/// 滑动过期和优先级等配置。
+/// 按用户区分与滑动过期等配置。
 /// </para>
 /// </remarks>
 /// <example>
@@ -28,9 +28,9 @@ namespace Mud.HttpUtils.Attributes;
 /// [Cache(600, CacheKeyTemplate = "user_{id}", UseSlidingExpiration = true)]
 /// Task&lt;User&gt; GetUserAsync(int id);
 /// 
-/// // 按用户区分缓存和高优先级
+/// // 按用户区分缓存
 /// [Get("/api/profile")]
-/// [Cache(300, VaryByUser = true, Priority = CachePriority.High)]
+/// [Cache(300, VaryByUser = true)]
 /// Task&lt;Profile&gt; GetProfileAsync();
 /// </code>
 /// </example>
@@ -69,41 +69,13 @@ public sealed class CacheAttribute : Attribute
     /// </summary>
     /// <remarks>
     /// 启用后，每次访问缓存项都会重置过期时间。
+    /// 生成器已支持该属性 —— 经 <see cref="Mud.HttpUtils.CacheOptions.UseSlidingExpiration"/>
+    /// 传递至缓存层（<c>IHttpResponseCache.Set(key, value, expiration, useSlidingExpiration)</c>）。
     /// </remarks>
-    [Obsolete("UseSlidingExpiration 当前未被生成器处理，将在未来版本中移除或实现。")]
     public bool UseSlidingExpiration { get; set; }
 
     /// <summary>
-    /// 获取或设置缓存项的优先级。
-    /// </summary>
-    /// <value>默认为 <see cref="CachePriority.Normal"/>。</value>
-    [Obsolete("Priority 当前未被生成器处理，将在未来版本中移除或实现。")]
-    public CachePriority Priority { get; set; } = CachePriority.Normal;
-}
-
-/// <summary>
-/// 缓存优先级枚举，定义缓存项在内存压力下的保留策略。
-/// </summary>
-[Obsolete("CachePriority 当前未被生成器处理，将在未来版本中移除或实现。")]
-public enum CachePriority
-{
-    /// <summary>
-    /// 低优先级，在内存压力下最先被移除。
-    /// </summary>
-    Low,
-
-    /// <summary>
-    /// 普通优先级，默认的缓存保留策略。
-    /// </summary>
-    Normal,
-
-    /// <summary>
-    /// 高优先级，在内存压力下较晚被移除。
-    /// </summary>
-    High,
-
-    /// <summary>
-    /// 永不移除，除非显式删除或过期。
-    /// </summary>
-    NeverRemove
+    // CFG-27：原 Priority 属性与 CachePriority 枚举已移除 —— 生成器从未处理该属性
+    // （此前为 [Obsolete] 警告，设置时产生 HTTPCLIENT019 提示；移除后使用将报 CS0117/CS0246）。
+    // 该属性无运行时消费点，属静默失效配置，故直接移除而非保留。
 }

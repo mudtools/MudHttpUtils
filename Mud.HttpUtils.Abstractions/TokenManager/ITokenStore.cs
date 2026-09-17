@@ -13,6 +13,11 @@ namespace Mud.HttpUtils;
 /// <remarks>
 /// 实现此接口以将令牌持久化到分布式缓存、数据库或其他存储介质中，
 /// 从而在应用重启或跨实例部署时保持令牌状态。
+/// <para>
+/// <b>TMR-12 契约定性</b>：此接口为独立持久化契约，当前<b>不被</b> <see cref="ITokenManager"/> 管线消费
+/// （管理器使用 <see cref="ITokenCache{T}"/> 进行内存级缓存）。如需多实例共享令牌，
+/// 请实现 <see cref="ITokenCache{T}"/> 并注入管理器。异步令牌缓存契约列入 v2 提案。
+/// </para>
 /// </remarks>
 public interface ITokenStore
 {

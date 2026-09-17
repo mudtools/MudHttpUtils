@@ -30,6 +30,16 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 
 > `IEnhancedHttpClient` 是 `IBaseHttpClient`、`IJsonHttpClient`、`IXmlHttpClient`、`IEncryptableHttpClient` 的组合接口，提供完整的 HTTP 客户端能力。新增 `WithBaseAddress` 方法支持运行时动态切换基地址，`BaseAddress` 属性获取当前基地址。`IFormContent` 用于 multipart/form-data 场景，支持通过 `IProgress<long>` 报告上传进度。`IEnhancedHttpClientFactory` 用于按名称创建或获取缓存的 `IEnhancedHttpClient` 实例，在 .NET 8+ 上通过 Keyed Service 解析。
 
+### HTTP 内容序列化器接口
+
+| 类型 | 说明 |
+| ---- | ---- |
+| `IHttpContentSerializer` | HTTP 内容序列化器抽象，统一封装请求体序列化、响应反序列化、NDJSON 流式解析、加密内容序列化等全部 JSON 操作，不再直接调用 `JsonSerializer` |
+| `IQueryParameter` | AOT 兼容查询参数接口，配合 `QueryParameterBuilder` 在编译期构建 URL 查询字符串，避免运行时反射 |
+| `QueryParameterBuilder` | 查询参数构建器，提供流式 API 构建 URL 查询字符串 |
+
+> `IHttpContentSerializer` 是 Mud.HttpUtils 序列化的统一入口。所有 JSON 序列化/反序列化（请求体、响应、加密内容、NDJSON 逐行解析等）均通过此抽象进行，默认实现 `SystemTextJsonContentSerializer`（位于 `Mud.HttpUtils.Client`）行为等价于直接调用 `JsonSerializer`，保证向后兼容。消费方可注入自定义实现以切换序列化引擎（如 Newtonsoft.Json / XML）。`IHttpContentSerializer` 是 Native AOT 友好的关键设计：AOT 路径下由源生成器在编译期提供字段名映射，绕过 `GetFieldNameForProperty` 的反射读取。
+
 ### HTTP 拦截器与缓存接口
 
 | 接口                       | 说明                                              |
@@ -73,9 +83,19 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 | 类型                   | 说明                                                            |
 | ---------------------- | --------------------------------------------------------------- |
 | `IEncryptionProvider`  | 加密提供程序接口，定义 `Encrypt` 和 `Decrypt` 方法              |
-| `AesEncryptionOptions` | AES 加密配置选项，包含 `Key` 属性和 `Validate()` 验证方法（`IV` 已废弃，v1.8.0 起自动随机生成） |
+| `AesEncryptionOptions` | AES 加密配置选项，包含 `Key` 属性、`RequireCrossRuntimePortable` 属性和 `Validate()` 验证方法（`IV` 已移除（CFG-27），v1.8.0 起自动随机生成） |
 
 > `AesEncryptionOptions` 支持通过配置文件绑定（配置节名称：`MudHttpAesEncryption`），密钥长度支持 AES-128（16 字节）、AES-192（24 字节）、AES-256（32 字节）。
+>
+> `DefaultAesEncryptionProvider` **始终使用认证加密**，密文首字节为信封版本前缀，解密仅按该前缀分派（与配置无关）：
+>
+> | 版本 | 布局 | 产出条件 | 可在哪些目标框架解密 |
+> | :--- | :--- | :--- | :--- |
+> | `0x02` | `[0x02][nonce(12)][tag(16)][密文]`（AesGcm） | net8.0/net10.0 且 `AesGcm.IsSupported` 且 `RequireCrossRuntimePortable=false`（默认） | 仅 net8.0+ |
+> | `0x03` | `[0x03][IV(16)][MAC(32)][密文]`（CBC + HMAC-SHA256，Encrypt-then-MAC） | 其余运行时；或 `RequireCrossRuntimePortable=true` | 全部（ns2.0/net6/net8/net10） |
+>
+> 版本字节 `0x00`（保留哨兵）与 `0x01`（v1 裸 CBC，路径已移除）**永不复用**；`0x04`~`0xFF` 预留给未来扩展。
+> 若密文需跨进程传输到低版本目标框架的服务，请在加密侧设置 `RequireCrossRuntimePortable = true`。
 >
 > 通过 `AddMudHttpAesEncryptionFromConfiguration` 扩展方法（位于 `Mud.HttpUtils.Client` 包）从 `IConfiguration` 一键注册：
 >
@@ -127,7 +147,8 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 | `IUserTokenStore`                | 用户级令牌持久化存储契约，继承 `ITokenStore`，按用户标识隔离                                         |
 | `IEncryptedTokenStore`           | 加密令牌持久化存储契约，继承 `ITokenStore`，提供自动加密/解密能力                                    |
 | `ITokenRefreshBackgroundService` | 令牌后台刷新服务契约，提供 `StartAsync`、`StopAsync` 和 `RefreshAllAsync` 方法                       |
-| `TokenManagerBase`               | 令牌管理器抽象基类，提供并发安全的令牌刷新实现，支持绝对过期保护（`MaxCacheLifetimeSeconds`）         |
+| `ITokenManagerRegistry`          | 令牌管理器注册表契约（SR-M6）：按 `TokenRecoveryContext.TokenManagerKey` 解析管理器实例，供 401 恢复执行器按键路由；未知键返回 null（由调用方回退） |
+| `TokenManagerBase`               | 令牌管理器抽象基类，提供并发安全的令牌刷新实现，支持绝对过期保护（`MaxCacheLifetimeSeconds`）。TMX-04：刷新失败后 5s 负缓存窗口（`protected virtual int NegativeCacheSeconds => 5`，覆写为 0 可关闭）。TMX-07：`GetTokenAsync(scopes)` 默认走 scope 感知路径，不支持 scope 的派生类应覆写并抛 `NotSupportedException` |
 | `OAuth2TokenManagerBase`         | OAuth2 标准流程抽象基类，继承 `TokenManagerBase`，内置 Authorization Code / Client Credentials / ROPC / Refresh Token 流程 |
 | `TokenTypes`                     | 令牌类型常量类，提供标准化的令牌类型标识符                                                           |
 | `ITokenCache<T>`                 | 令牌缓存契约（TryGet、Set、TryRemove、Count、Keys、Clear、Compact），`TokenManagerBase` 的核心依赖   |
@@ -142,9 +163,9 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 | 类型                            | 说明                                                                                               |
 | ------------------------------- | -------------------------------------------------------------------------------------------------- |
 | `TokenRequest`                  | Token 请求参数，封装获取令牌所需的全部信息（`TokenManagerKey`、`UserId`、`Scopes`）                |
-| `TokenRefreshBackgroundOptions` | 令牌后台刷新配置（`Enabled`、`RefreshIntervalSeconds`、`RetryDelaySeconds`、`StopOnError`） |
-| `TokenRecoveryOptions`          | 令牌恢复配置（`Enabled`、`RecoveryMaxRetries`、`TokenScheme`），控制 401 响应时的自动刷新与重试     |
-| `TokenRecoveryContext`          | 令牌恢复上下文，携带注入模式信息供 `TokenRecoveryDelegatingHandler` 使用                            |
+| `TokenRefreshBackgroundOptions` | 令牌后台刷新配置（`Enabled`、`RefreshIntervalSeconds`、`RetryDelaySeconds`、`StopOnError`、`MaxConsecutiveFailures`） |
+| `TokenRecoveryOptions`          | 令牌恢复配置（`Enabled`、`RecoveryMaxRetries`、`TokenScheme`、`RefreshTimeoutSeconds`、`MaxCachedRequestBodyBytes`、`RefreshDedupWindowSeconds`），控制 401 响应时的自动刷新与重试 |
+| `TokenRecoveryContext`          | 令牌恢复上下文，携带注入模式信息供 `TokenRecoveryDelegatingHandler` 使用（`UserId` 必须来自受信上下文，恢复执行器校验与 `ICurrentUserContext` 的一致性；`TokenManagerKey` 经 `ITokenManagerRegistry` 路由） |
 | `TokenInjectionMode`            | 令牌注入模式枚举（`Header`、`Query`、`Path`、`ApiKey`、`HmacSignature`、`BasicAuth`、`Cookie`）    |
 | `UserTokenInfo`                 | 用户令牌信息模型                                                                                   |
 | `CredentialToken`               | 凭证令牌模型                                                                                       |
@@ -159,11 +180,22 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 | --------------------- | ------------------------------------------------------------------------------- |
 | `IMudAppContext`      | 应用上下文，封装 `IEnhancedHttpClient`、Token 管理器和 `GetService<T>` 服务解析 |
 | `IAppContextSwitcher` | 多应用切换，提供 `CurrentContext` 属性和 `SwitchToAsync` 方法                   |
-| `IAppContextHolder`   | 应用上下文持有器，提供 `Current` 属性和 `BeginScope(IMudAppContext)` 方法（如 `AsyncLocalAppContextSwitcher`） |
+| `IAppContextHolder`   | 应用上下文持有器，提供 `Current` 属性（只读 + `SwitchTo` 方法运行时切换）和 `BeginScope(IMudAppContext)` 方法（如 `AsyncLocalAppContextSwitcher`） |
 | `IAsyncInitializable` | 异步初始化接口，`RegisterAppAsync` 等场景用于延迟初始化应用上下文              |
-| `IAppManager<T>`      | 多应用管理器，提供按 AppId 获取上下文、注册/移除应用、配置变更通知的能力        |
+| `IAppManager<T>`      | 多应用管理器，提供按 AppKey 获取上下文、注册/移除应用、配置变更通知、默认应用切换的能力        |
+| `IAppAccessAuthorizer` | 应用切换授权器，多租户场景下判定当前调用主体是否有权切换到指定应用              |
 
 > `IMudAppContext` 新增 `GetService<T>()` 方法，支持从应用上下文中解析已注册的 DI 服务（如 `IApiKeyProvider`、`IHmacSignatureProvider` 等）。`IAppManager<T>` 新增 `ConfigurationChanged` 事件，支持应用配置热更新通知。
+>
+> **注册约定**：`IAppManager<IMudAppContext>` 不由库自动注册（宿主需显式注册 `DefaultAppManager<IMudAppContext>` 或自定义实现）。`IAppContextHolder` 由 `AddMudHttpAppContextHolder()` 或配置入口 `AddMudHttpClientsFromConfiguration` 自动补齐。
+>
+> **`IAppAccessAuthorizer` 为必注册项（MT-02 / BC-18）**：生成代码的 `UseApp(appKey)` / `BeginScope(appKey)` / `UseAppScope(appKey)` 在**未注册授权器时直接抛 `InvalidOperationException`**（默认拒绝，取代此前的静默放行——后者允许调用方凭请求参数中的 `appKey` 切换到任意租户应用并读取其令牌）。多租户宿主请注册业务授权器；单应用 / 完全受信 / 迁移过渡场景请**显式**注册 `AllowAllAppAccessAuthorizer` 以表明放行意图。可用 `AddMudHttpAppManagementStartupValidation()` 把该检查前移到启动期（`MudHttpAppManagementOptions.RequireAppAccessAuthorizer = true` 时缺失即阻断启动）。
+>
+> **上下文归还约束（MT-19）**：`UseApp(appKey)` / `SwitchTo(...)` 是**无作用域**切换，**不会自动归还**上下文。长生命周期宿主（后台服务、单例编排、`IAsyncEnumerable` 未逐段开作用域等）应优先使用 **`UseAppScope(appKey)`** / `BeginScope(appKey)` / `UseDefaultAppScope()` 并配合 `using`，否则后续请求可能串到错误的应用并读取到该应用的令牌。
+>
+> **`IAppContextHolder.BeginScope` 归属约束**：返回的 `IDisposable` 必须在其创建的异步流程内释放。跨执行上下文释放（例如在别的 `Task.Run` 中释放）不会被识别为本作用域的还原点，以免覆盖其它流程的合法上下文写入。
+>
+> **`IAppContextHolder.Current` 写入约束**：`Current` 属性的 setter 为 `init`，仅允许在对象初始化阶段设置。运行时切换应用上下文请使用 `SwitchTo` 方法或 `BeginScope` 方法。
 
 ### 数据模型与枚举
 
@@ -380,7 +412,7 @@ ITokenManager (GetTokenAsync, GetOrRefreshTokenAsync)
 ├── IUserTokenManager (GetTokenAsync(userId), GetOrRefreshTokenAsync(userId), ...)
 ├── TokenManagerBase (并发安全刷新基类)
 │   └── OAuth2TokenManagerBase (OAuth2 标准流程基类)
-│   └── [UserTokenManagerBase — 用户级并发安全刷新基类，位于 Mud.HttpUtils.Client]
+│   └── [UserTokenManagerBase — 用户级并发安全刷新基类，位于 Mud.HttpUtils.Client。锁非重入（TMX-15-4/B12）：RefreshUserTokenAsync 中禁止回调 GetOrRefreshTokenAsync/GetTokenAsync，否则死锁]
 
 ICurrentUserContext (UserId) — 当前用户上下文（推荐，线程安全）
 ITokenProvider (GetTokenAsync) — Token 提供器（统一封装 Token 获取逻辑）
@@ -399,10 +431,21 @@ TokenInjectionMode (Header, Query, Path, ApiKey, HmacSignature, BasicAuth, Cooki
 TokenTypes (常量: TenantAccessToken, UserAccessToken, Bearer, Basic)
 Response<T> (StatusCode, Content, RawContent, ErrorContent, ResponseHeaders, IsSuccessStatusCode, GetContentOrThrow)
 ApiException (StatusCode, ErrorContent)
-AesEncryptionOptions (Key, Validate) — IV 已废弃，v1.8.0 起自动随机生成
+AesEncryptionOptions (Key, RequireCrossRuntimePortable, Validate) — IV 已移除（CFG-27），v1.8.0 起自动随机生成；始终认证加密
 TokenRefreshBackgroundOptions (Enabled, RefreshIntervalSeconds, RetryDelaySeconds, StopOnError)
 [UserTokenCacheOptions — 位于 Mud.HttpUtils.Client]
 ```
+
+## Native AOT 支持
+
+Mud.HttpUtils 全面支持 .NET Native AOT 编译，核心设计目标是**编译期确定 JSON 元数据、运行期零反射兜底**：
+
+- **序列化抽象 `IHttpContentSerializer`**：所有 JSON 操作经统一抽象进行，AOT 路径下由源生成器在编译期提供字段名映射，避免运行时反射。
+- **AOT 兼容查询参数**：`IQueryParameter` / `QueryParameterBuilder` 在编译期构建 URL 查询字符串。
+- **JSON 源生成上下文**：消费方通过 `[HttpJsonSerializable]`（见 `Mud.HttpUtils.Attributes`）标注实体/DTO，并用 `JsonContextScaffolder` 脚手架（`Mud.HttpUtils.JsonContextScaffolder` 工具）自动生成 `JsonSerializerContext`，或手动注册到 `JsonSerializerContext` 后通过 `AddMudHttpClientJsonContext`（.NET 8+）接入合并。
+- **编译期诊断**：源生成器会发出 `AOT001`–`AOT007` 系列诊断（部分可由 `Mud.HttpUtils.CodeFixes` 代码修复器一键修复），在 CI 严格模式（`-p:AotStrictMode=true`）下升级为 Error，强制消费方构建必须接入 Context，避免 AOT 下漏元数据导致运行时失败。
+
+> 详细工作流与脚手架用法参见 [`Mud.HttpUtils.JsonContextScaffolder` 工具文档](../Tools/Mud.HttpUtils.JsonContextScaffolder/README.md) 与 [`Mud.HttpUtils.Generator` 文档](../Mud.HttpUtils.Generator/README.md) 的「AOT JSON 序列化诊断」章节。
 
 ## 设计原则
 

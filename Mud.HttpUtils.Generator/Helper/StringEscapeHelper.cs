@@ -15,12 +15,22 @@ internal static class StringEscapeHelper
     /// <summary>
     /// 转义字符串中的特殊字符，生成C#字符串字面量
     /// </summary>
-    /// <param name="value">原始字符串</param>
-    /// <returns>转义后的字符串</returns>
-    public static string EscapeString(string value)
+    /// <param name="value">原始字符串（允许为 null，按空串处理）。</param>
+    /// <returns>转义后的字符串；<paramref name="value"/> 为 null 时返回空串（绝不返回 null）。</returns>
+    /// <remarks>
+    /// [Phase4 修复 5.1] 两处修正：
+    /// <list type="number">
+    ///   <item>参数与返回语义一致化：原实现在 <paramref name="value"/> 为 null 时
+    ///   <c>return value;</c> 会<strong>返回 null</strong>（违反非空返回契约，调用方产出的字面量会静默变空）；
+    ///   现明确返回 <see cref="string.Empty"/>。</item>
+    ///   <item>参数放宽为 <c>string?</c>：调用点普遍传入「可能为 null 的令牌键/内容类型」，
+    ///   原签名迫使调用方在无实际校验意义处添加 <c>!</c>，或产生 CS8604 噪声。</item>
+    /// </list>
+    /// </remarks>
+    public static string EscapeString(string? value)
     {
         if (string.IsNullOrEmpty(value))
-            return value;
+            return string.Empty;
 
         // 检查是否包含需要转义的字符，避免无转义需求时的 StringBuilder 分配
         bool needsEscape = false;
@@ -52,6 +62,9 @@ internal static class StringEscapeHelper
                 case '\r': sb.Append("\\r"); break;
                 case '\t': sb.Append("\\t"); break;
                 case '\v': sb.Append("\\v"); break;
+                case '\u0085': sb.Append("\\u0085"); break;
+                case '\u2028': sb.Append("\\u2028"); break;
+                case '\u2029': sb.Append("\\u2029"); break;
                 default: sb.Append(c); break;
             }
         }
@@ -62,7 +75,8 @@ internal static class StringEscapeHelper
     {
         return c == '\\' || c == '\"' || c == '\0' || c == '\a' ||
                c == '\b' || c == '\f' || c == '\n' || c == '\r' ||
-               c == '\t' || c == '\v';
+               c == '\t' || c == '\v' ||
+               c == '\u0085' || c == '\u2028' || c == '\u2029';
     }
 
     /// <summary>

@@ -5,7 +5,9 @@
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 using Mud.HttpUtils.Observability;
 
 namespace Mud.HttpUtils;
@@ -49,6 +51,9 @@ public static class MudHttpHealthChecksExtensions
             o.MinSampleSize = options.TokenRefresh.MinSampleSize;
         });
 
+        // 注册配置级校验器，使无效配置在启动时即被检测
+        services.TryAddSingleton<IValidateOptions<TokenRefreshHealthCheckOptions>, TokenRefreshHealthCheckOptionsValidator>();
+
         var cbOptions = new MudCircuitBreakerHealthCheckOptions
         {
             MaxOpenCount = options.CircuitBreaker.MaxOpenCount,
@@ -67,7 +72,11 @@ public static class MudHttpHealthChecksExtensions
             .AddCheck<MudCircuitBreakerHealthCheck>(
                 MudCircuitBreakerHealthCheck.Name,
                 failureStatus: options.CircuitBreaker.FailureStatus,
-                tags: new[] { "mud", "resilience" });
+                tags: new[] { "mud", "resilience" })
+            .AddCheck<AppManagementHealthCheck>(
+                AppManagementHealthCheck.Name,
+                failureStatus: options.AppManagement.FailureStatus,
+                tags: new[] { "mud", "app" });
 
         // 注册熔断器健康检查选项为单例，供 MudCircuitBreakerHealthCheck 通过 DI 注入
         services.AddSingleton(cbOptions);
@@ -82,6 +91,12 @@ public static class MudHttpHealthChecksExtensions
     /// <param name="configuration">配置实例。</param>
     /// <param name="sectionPath">配置节点路径，默认 "MudHttpHealthChecks"。</param>
     /// <returns>服务集合（链式调用）。</returns>
+#if NET6_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Microsoft.Extensions.Configuration.ConfigurationBinder", "IL2026:RequiresUnreferencedCode",
+        Justification = "配置绑定路径在 AOT 下需通过委托式重载 AddMudHttpHealthChecks(Action<MudHttpHealthChecksOptions>) 替代。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050:RequiresDynamicCode",
+        Justification = "配置绑定路径在 AOT 下需通过委托式重载替代。")]
+#endif
     public static IServiceCollection AddMudHttpHealthChecks(
         this IServiceCollection services,
         IConfiguration configuration,
@@ -106,6 +121,7 @@ public static class MudHttpHealthChecksExtensions
             o.CircuitBreaker.MaxOpenCount = options.CircuitBreaker.MaxOpenCount;
             o.CircuitBreaker.MaxHalfOpenCount = options.CircuitBreaker.MaxHalfOpenCount;
             o.CircuitBreaker.FailureStatus = options.CircuitBreaker.FailureStatus;
+            o.AppManagement.FailureStatus = options.AppManagement.FailureStatus;
         });
     }
 }
@@ -120,6 +136,9 @@ public sealed class MudHttpHealthChecksOptions
 
     /// <summary>熔断器健康检查选项。</summary>
     public CircuitBreakerHealthCheckSettings CircuitBreaker { get; set; } = new();
+
+    /// <summary>多应用管理健康检查选项。</summary>
+    public AppManagementHealthCheckSettings AppManagement { get; set; } = new();
 }
 
 /// <summary>
@@ -145,4 +164,13 @@ public sealed class CircuitBreakerHealthCheckSettings
 
     /// <summary>失败时返回的健康状态，默认 Unhealthy。</summary>
     public HealthStatus? FailureStatus { get; set; } = HealthStatus.Unhealthy;
+}
+
+/// <summary>
+/// 多应用管理健康检查配置（含失败状态）。
+/// </summary>
+public sealed class AppManagementHealthCheckSettings
+{
+    /// <summary>失败时返回的健康状态，默认 Degraded。</summary>
+    public HealthStatus? FailureStatus { get; set; } = HealthStatus.Degraded;
 }

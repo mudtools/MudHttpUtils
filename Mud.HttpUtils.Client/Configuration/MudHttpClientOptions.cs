@@ -73,4 +73,15 @@ public class MudHttpClientOptions
     /// <para>注意：启用此选项会放宽 URL 验证策略，请确保在受信任的环境中使用。</para>
     /// </remarks>
     public bool AllowCustomBaseUrls { get; set; }
+
+    // MT-24（BC-26）：已移除 AppKey 属性。
+    // 该属性原声明「建立命名客户端 → 应用的显式映射，使 per-app 弹性策略与实例隔离语义对齐」，
+    // 但实现中除格式校验外<b>没有任何消费点</b>：
+    //   · DefaultHttpRequestExecutor.ResolveEffectiveResilienceResolver 只读
+    //     IAppContextHolder.Current?.AppKey（再回退 IAppManager.GetDefaultApp().AppKey），
+    //     执行器为 Singleton，无法感知 per-client 配置；
+    //   · CreateEnhancedClient 虽会读取 MudHttpClientApplicationOptions.Clients，
+    //     但只消费 AllowCustomBaseUrls。
+    // 保留一个"看起来能配置、实际不生效"的公共属性比删除更危险（制造错误的配置信心）。
+    // 命名客户端与应用的真实关联方式：在请求前通过 UseApp/BeginScope(appKey) 建立环境上下文。
 }

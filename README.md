@@ -9,6 +9,12 @@
 [![Mud.HttpUtils.Resilience](https://img.shields.io/nuget/v/Mud.HttpUtils.Resilience?label=Mud.HttpUtils.Resilience "Mud.HttpUtils.Resilience")](https://www.nuget.org/packages/Mud.HttpUtils.Resilience/ "Mud.HttpUtils.Resilience") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Resilience "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Resilience/ "downloads")
 [![Mud.HttpUtils.Generator](https://img.shields.io/nuget/v/Mud.HttpUtils.Generator?label=Mud.HttpUtils.Generator "Mud.HttpUtils.Generator")](https://www.nuget.org/packages/Mud.HttpUtils.Generator/ "Mud.HttpUtils.Generator") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Generator "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Generator/ "downloads")
 [![Mud.HttpUtils.OpenTelemetry](https://img.shields.io/nuget/v/Mud.HttpUtils.OpenTelemetry?label=Mud.HttpUtils.OpenTelemetry "Mud.HttpUtils.OpenTelemetry")](https://www.nuget.org/packages/Mud.HttpUtils.OpenTelemetry/ "Mud.HttpUtils.OpenTelemetry") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.OpenTelemetry "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.OpenTelemetry/ "downloads")
+[![Mud.HttpUtils.Newtonsoft.Json](https://img.shields.io/nuget/v/Mud.HttpUtils.Newtonsoft.Json?label=Mud.HttpUtils.Newtonsoft.Json "Mud.HttpUtils.Newtonsoft.Json")](https://www.nuget.org/packages/Mud.HttpUtils.Newtonsoft.Json/ "Mud.HttpUtils.Newtonsoft.Json") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Newtonsoft.Json "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Newtonsoft.Json/ "downloads")
+[![Mud.HttpUtils.Xml](https://img.shields.io/nuget/v/Mud.HttpUtils.Xml?label=Mud.HttpUtils.Xml "Mud.HttpUtils.Xml")](https://www.nuget.org/packages/Mud.HttpUtils.Xml/ "Mud.HttpUtils.Xml") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Xml "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Xml/ "downloads")
+[![Mud.HttpUtils.Testing](https://img.shields.io/nuget/v/Mud.HttpUtils.Testing?label=Mud.HttpUtils.Testing "Mud.HttpUtils.Testing")](https://www.nuget.org/packages/Mud.HttpUtils.Testing/ "Mud.HttpUtils.Testing") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Testing "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Testing/ "downloads")
+[![Mud.HttpUtils.Analyzers](https://img.shields.io/nuget/v/Mud.HttpUtils.Analyzers?label=Mud.HttpUtils.Analyzers "Mud.HttpUtils.Analyzers")](https://www.nuget.org/packages/Mud.HttpUtils.Analyzers/ "Mud.HttpUtils.Analyzers") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Analyzers "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Analyzers/ "downloads")
+[![Mud.HttpUtils.CodeFixes](https://img.shields.io/nuget/v/Mud.HttpUtils.CodeFixes?label=Mud.HttpUtils.CodeFixes "Mud.HttpUtils.CodeFixes")](https://www.nuget.org/packages/Mud.HttpUtils.CodeFixes/ "Mud.HttpUtils.CodeFixes") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.CodeFixes "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.CodeFixes/ "downloads")
+[![Mud.HttpUtils.JsonContextScaffolder](https://img.shields.io/nuget/v/Mud.HttpUtils.JsonContextScaffolder?label=Mud.HttpUtils.JsonContextScaffolder "Mud.HttpUtils.JsonContextScaffolder")](https://www.nuget.org/packages/Mud.HttpUtils.JsonContextScaffolder/ "Mud.HttpUtils.JsonContextScaffolder") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.JsonContextScaffolder "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.JsonContextScaffolder/ "downloads")
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE-MIT)
 
 **基于 Roslyn 的声明式 HTTP 客户端源代码生成器**
@@ -21,8 +27,10 @@ Mud.HttpUtils 是一个基于 Roslyn 源代码生成器的声明式 HTTP 客户�
 
 ### ✨ 核心特性
 
-- 🚀 **编译时生成，最小化运行时开销**：编译时生成代码，核心路径零反射，性能优异。部分高级场景（如 `FormUrlEncoded` Body 模式、`QueryMap` 复杂类型）存在少量反射调用
+- 🚀 **编译时生成，最小化运行时开销**：编译时生成代码，核心路径零反射，性能优异。QueryMap 嵌套复杂类型已支持递归编译期展平（AOT 安全），仅极端深度回退到反射
 - 🎯 **类型安全**：强类型 API 调用，编译时检查错误
+- 🚀 **Native AOT 兼容**：统一序列化抽象 `IHttpContentSerializer` + `JsonContextScaffolder` 脚手架自动生成 `JsonSerializerContext` + `AOT001`–`AOT007` 编译期诊断（CI 严格模式可升级为 Error），实现零反射 Native AOT 构建
+- 🔗 **无 DI 入口**：通过 `RestService.ForGenerated<T>(HttpClient, GeneratedClientOptions?)` 在不依赖 DI 容器的场景下创建 AOT 安全的客户端实例，配合 `[ModuleInitializer]` 自动注册工厂
 - 📝 **声明式编程**：通过特性标注定义 HTTP API，简洁直观
 - 🔧 **功能丰富**：支持多种 HTTP 方法、参数类型、内容格式、Token 认证、加密传输等
 - 🛡️ **弹性策略**：内置重试、超时、熔断策略，基于 Polly 实现
@@ -51,6 +59,12 @@ Mud.HttpUtils 是一个基于 Roslyn 源代码生成器的声明式 HTTP 客户�
 | **Mud.HttpUtils.Resilience**   | 弹性策略（Polly）                                                                                | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Resilience.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Resilience/)     | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Resilience.svg)     |
 | **Mud.HttpUtils.Generator**   | 源代码生成器                                                                                     | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Generator.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Generator/)       | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Generator.svg)     |
 | **Mud.HttpUtils.OpenTelemetry** | OpenTelemetry 可观测性适配                                                                   | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.OpenTelemetry.svg)](https://www.nuget.org/packages/Mud.HttpUtils.OpenTelemetry/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.OpenTelemetry.svg) |
+| **Mud.HttpUtils.Newtonsoft.Json** | Newtonsoft.Json 序列化器适配 | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Newtonsoft.Json.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Newtonsoft.Json/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Newtonsoft.Json.svg) |
+| **Mud.HttpUtils.Xml** | XML 序列化器适配 | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Xml.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Xml/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Xml.svg) |
+| **Mud.HttpUtils.Testing** | 测试辅助包（StubHttp mock 服务器、网络行为模拟） | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Testing.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Testing/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Testing.svg) |
+| **Mud.HttpUtils.Analyzers** | 独立分析器项目（接口规范诊断） | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Analyzers.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Analyzers/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Analyzers.svg) |
+| **Mud.HttpUtils.CodeFixes** | 代码修复提供器 | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.CodeFixes.svg)](https://www.nuget.org/packages/Mud.HttpUtils.CodeFixes/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.CodeFixes.svg) |
+| **Mud.HttpUtils.JsonContextScaffolder** | JsonSerializerContext 脚手架工具 | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.JsonContextScaffolder.svg)](https://www.nuget.org/packages/Mud.HttpUtils.JsonContextScaffolder/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.JsonContextScaffolder.svg) |
 
 ### 🏛️ 系统架构
 
@@ -127,7 +141,7 @@ sequenceDiagram
 > **关键设计**：
 > - **零运行时反射**：生成代码直接调用 `IHttpRequestExecutor` 与 `IEnhancedHttpClient`，核心路径无反射（仅 `FormUrlEncoded` Body、`QueryMap` 复杂类型、XML 序列化等少数场景保留反射）。
 > - **装饰器叠加**：`ResilientHttpClient` 实现 `IEnhancedHttpClient` 并包装内层客户端，因此弹性策略、令牌恢复、追踪等能力可逐层叠加而不侵入业务接口。
-> - **多租户隔离**：`IAppContextHolder` / `IAppManager<T>` / `AppResiliencePolicyResolver` 为不同 App 维护独立的上下文与弹性策略。
+> - **多租户隔离**：`IAppContextHolder` / `IAppManager<T>` / `AppResiliencePolicyResolver` 为不同 App 维护独立的上下文与弹性策略。多租户场景**必须**调用 `AddMudHttpAppContextHolder()`（或使用配置入口 `AddMudHttpClientsFromConfiguration` 自动补齐）+ `AddMudHttpAppResilience(...)` 才能获得 per-app 弹性隔离；多租户场景**必须**注册 `IAppAccessAuthorizer` 防止跨租户越权。
 
 ### 🚀 快速开始
 
@@ -304,6 +318,18 @@ services.AddMudHttpUtils("myApi", "https://api.example.com", options =>
 });
 ```
 
+**非幂等方法防护**：默认仅对幂等方法（GET/HEAD/OPTIONS/PUT/DELETE/TRACE）重试，POST/PATCH 等非幂等方法退化为超时+熔断（防重复提交）。超时与熔断对所有方法始终生效。如需对非幂等方法重试：
+
+```csharp
+// 全局开关
+options.Retry.AllowNonIdempotentRetry = true;
+
+// 或方法级标注
+[Post("/orders")]
+[Retry(AllowNonIdempotent = true)]
+Task<Order> CreateOrderAsync([Body] CreateOrderRequest request);
+```
+
 也支持从 `appsettings.json` 绑定：
 
 ```json
@@ -384,6 +410,55 @@ Task<Response> PostSecureAsync(
 Task<SecureData> GetSecureDataAsync([Body] Request request);
 ```
 
+> 默认 AES 实现为认证加密（AES-GCM / AES-CBC+HMAC），密文带版本前缀，无需额外 MAC 配置。
+
+#### SSRF 防护（.NET 6+）
+
+URL 来自用户输入时，建议启用连接期 IP 准入校验，根治 DNS rebinding（URL 校验期与实际建连期解析结果可能不一致）：
+
+```csharp
+// 1. 注册 IP 准入策略（默认实现拒绝私网/回环/链路本地地址，fail-closed）
+services.AddMudHttpClientSsrfProtection();
+
+// 2. 为命中的 HttpClient 启用连接期校验（建连时对实际连接的 IP 执行准入校验）
+services.AddMudHttpClient("myApi", "https://api.example.com")
+    .AddMudHttpClientSsrfProtection();
+
+// 自定义准入策略：注册自己的 IIpAddressPolicy 替换默认实现（如本地调试放行 localhost）
+services.AddSingleton<IIpAddressPolicy, MyDebugIpPolicy>();
+```
+
+- 被策略拒绝的连接抛出 `InvalidOperationException`。
+- 默认 `AllowCustomBaseUrls = false` 时强制 HTTPS + 白名单（fail-closed）；`AllowCustomBaseUrls = true` 放行自定义 URL 时，必须自行校验 URL 来源。
+- **信任边界声明**：白名单域名由配置方保证可信（含其 DNS 解析结果）。未启用连接期校验时，白名单域名一旦被 DNS rebinding 解析到内网 IP，将不受连接期防护。生产环境推荐：`AddMudHttpClientSsrfProtection(services)` 注册策略 + 在每个命名客户端的 `IHttpClientBuilder` 上 `AddMudHttpClientSsrfProtection(builder)` 启用连接建立时的 IP 准入校验（net6.0+）。
+- DNS 解析结果带 TTL 缓存（默认 5 分钟），并发场景下同域名解析受锁保护（单飞）。
+
+#### 遥测脱敏（默认开启）
+
+Span tag、日志与诊断事件中的 URL 默认脱敏（掩码 `access_token` / `refresh_token` / `api_key` 等敏感 query 值），防止令牌随遥测泄漏：
+
+```csharp
+// 全局开关（静态属性，需在进程启动时设置）
+MudHttpObservabilityOptions.RedactUrlInTelemetry = true;   // 默认 true：URL 脱敏
+MudHttpObservabilityOptions.RecordFullUrlOnSuccess = false; // 默认 false：成功请求仅记录 scheme://host/path（不含 query）
+MudHttpObservabilityOptions.EmitDiagnosticEvents = true;    // 默认 true：诊断事件（ActivityEvent / DiagnosticSource）
+```
+
+- 脱敏只掩码敏感 query 键的值，保留键名与 URL 结构，兼顾排障；未命中敏感词表的 query 原样保留。
+- `RecordFullUrlOnSuccess = true` 时成功请求也记录完整 URL，但仍受 `RedactUrlInTelemetry` 约束；错误路径（`ApiException.RequestUri`）始终保留完整 URI，由 `IExceptionRedactor` 兜底擦除。
+- 指标 tag 白名单：`MudHttpObservabilityOptions.MetricTagAllowlist` 控制所有指标维度（默认包含 `client_name`/`method`/`host`/`outcome`/`status_code`/`policy_key`/`token_manager_key`/`retry_count`），白名单之外的维度被丢弃，从机制上杜绝高基数 tag（如 `cache_key`）打爆时序后端。
+
+#### 错误内容上限（默认 10240）
+
+错误响应体（`ApiException.Content`）与捕获的请求体（`ApiException.RequestContent`）默认在**读取阶段**截断为 10240 字符，防止恶意/超大响应导致 OOM：
+
+```csharp
+o.MaxExceptionContentLength = 10240;  // 默认 10240；设为 0 或负数 = 不限制
+```
+
+- 内置方法路径（`EnhancedHttpClient`）与生成代码路径（`DefaultHttpRequestExecutor`）默认值一致（10240），截断内容带 `...[已截断]` 后缀。
+- `MaxSuccessResponseBytes`（默认 `0` = 不限制）可为成功响应体设置字节级守卫：已知长度（Content-Length）预判超限即抛 `ApiRequestException`，chunked 无长度场景由守卫流在读取阶段拦截。流式下载（`DownloadLargeAsync`/流式枚举）不受此限。
+
 #### 令牌管理
 
 ```csharp
@@ -395,7 +470,7 @@ ICurrentUserContext     // 当前用户上下文（线程安全的用户 ID 传�
 TokenRequest           // Token 请求参数（TokenManagerKey, UserId, Scopes）
 ITokenStore            // 令牌持久化存储契约
 IUserTokenStore        // 用户级令牌持久化存储契约
-TokenManagerBase          // 令牌管理器抽象基类（并发安全刷新）
+TokenManagerBase          // 令牌管理器抽象基类（并发安全刷新，支持 MetricsKey 覆写）
 UserTokenManagerBase      // 用户令牌管理器抽象基类（并发安全刷新）
 TokenTypes                // 令牌类型常量（TenantAccessToken、UserAccessToken 等）
 MemoryTokenStore          // 内存令牌存储默认实现（ITokenStore）
@@ -419,6 +494,15 @@ public interface IFeishuUserApi { }
 // 使用 TokenManagerKey 解耦业务概念和技术查找键
 [Token(TokenType = "UserAccessToken", TokenManagerKey = "FeishuUser")]
 public interface IFeishuContactApi { }
+
+// 覆写 MetricsKey 使指标维度可区分（多实例场景下避免监控数据混叠）
+public class MyNamedTokenManager : TokenManagerBase
+{
+    public MyNamedTokenManager(string instanceName) => _instanceName = instanceName;
+    protected override string MetricsKey => _instanceName;
+    private readonly string _instanceName;
+    // 必须实现：GetCachedTokenAsync / RefreshTokenCoreAsync
+}
 ```
 
 #### 多命名客户端
@@ -459,6 +543,11 @@ var response = await _httpClient.SendRawAsync(request);
 var stream = await _httpClient.SendStreamAsync(request);
 ```
 
+> `SendStreamAsync` 返回的流**所有权归调用方**（由调用方负责 `Dispose`，释放即同时释放底层 `HttpResponseMessage`）。
+> 接口方法也可直接声明 `Task<Stream>` 返回 —— 生成器会发射 `SendStreamAsync` 直达调用；
+> 该路径不参与 `[Cache]`/`[Retry]`/`[CircuitBreaker]`/`[Timeout]` 编排与 `Response<T>` 包装
+> （生成期以 `HTTPCLIENT025` 提示）。详见生成器包 README 的「直达返回」一节。
+
 #### 文件上传与下载
 
 ```csharp
@@ -474,6 +563,17 @@ Task DownloadFileAsync([Path] string fileId, [FilePath(BufferSize = 81920)] stri
 [Get("/files/{fileId}/content")]
 Task<byte[]> DownloadFileContentAsync([Path] string fileId);
 ```
+
+**成功响应体守卫（可选）**：限制反序列化路径的成功响应体大小，超限抛 `ApiRequestException`；`0`（默认）= 不限制：
+
+```csharp
+services.Configure<EnhancedHttpClientOptions>(o =>
+{
+    o.MaxSuccessResponseBytes = 10 * 1024 * 1024; // 10 MB
+});
+```
+
+超大文件请改用流式落盘（`[FilePath]` 下载路径不受守卫约束）。
 
 #### 接口级动态属性
 
@@ -626,6 +726,12 @@ MudHttpUtils/
 ├── Mud.HttpUtils.OpenTelemetry/      # OpenTelemetry 可观测性适配
 │   ├── MudHttpOpenTelemetryExtensions    # 一键开启 Tracing + Metrics
 │   └── MudHttpOpenTelemetryOptions       # 配置选项
+├── Mud.HttpUtils.Newtonsoft.Json/   # Newtonsoft.Json 序列化器适配
+├── Mud.HttpUtils.Xml/              # XML 序列化器适配
+├── Mud.HttpUtils.Testing/          # 测试辅助包（StubHttp + NetworkBehavior）
+├── Mud.HttpUtils.Analyzers/         # 独立分析器项目
+├── Mud.HttpUtils.CodeFixes/         # 代码修复提供器
+├── Mud.HttpUtils.JsonContextScaffolder/ # JsonSerializerContext 脚手架
 ├── Demos/                            # 示例项目
 └── Tests/                            # 测试项目
 ```
@@ -641,6 +747,13 @@ MudHttpUtils/
 | Mud.HttpUtils.Resilience   | 弹性策略                   | [README](Mud.HttpUtils.Resilience/README.md)   |
 | Mud.HttpUtils.Generator    | 源代码生成器               | [README](Mud.HttpUtils.Generator/README.md)    |
 | Mud.HttpUtils.OpenTelemetry | OpenTelemetry 可观测性    | [README](Mud.HttpUtils.OpenTelemetry/README.md) |
+| Mud.HttpUtils.Newtonsoft.Json | Newtonsoft.Json 序列化器适配 | [README](Mud.HttpUtils.Newtonsoft.Json/README.md) |
+| Mud.HttpUtils.Xml           | XML 序列化器适配           | [README](Mud.HttpUtils.Xml/README.md)          |
+| Mud.HttpUtils.Testing       | 测试辅助包                 | [README](Mud.HttpUtils.Testing/README.md)      |
+| Mud.HttpUtils.Analyzers     | 独立分析器                 | [README](Mud.HttpUtils.Analyzers/README.md)   |
+| Mud.HttpUtils.CodeFixes    | 代码修复提供器             | [README](Mud.HttpUtils.CodeFixes/README.md)    |
+| Mud.HttpUtils.JsonContextScaffolder | JsonContext 脚手架 | [README](Mud.HttpUtils.JsonContextScaffolder/README.md) |
+| 变更记录                       | 行为基线与版本说明          | [CHANGELOG](CHANGELOG.md)                          |
 
 ### ⚡ 性能说明
 
@@ -669,15 +782,29 @@ Mud.HttpUtils 通过 Roslyn 源代码生成器在编译时生成强类型的 HTT
 | `HTTPCLIENT007` | Error | 同时指定 `HttpClient` 和 `TokenManage` | 两者互斥，只设置其中一个 |
 | `HTTPCLIENT008` | Error | 加密配置但 HttpClient 类型不支持加密 | 使用 `IEnhancedHttpClient` 或移除加密配置 |
 | `HTTPCLIENT009` | Warning | XML 请求但 HttpClient 类型不支持 XML | 使用 `IEnhancedHttpClient` 或修改 Content-Type |
-| `HTTPCLIENT010` | Warning | 使用了已弃用的 `BaseAddress` 参数 | 改用 `AddMudHttpClient(clientName, baseAddress)` |
 | `HTTPCLIENT011` | Warning | `[Cache]` 与 `Response<T>` 返回类型组合 | 缓存会存储状态码和响应头，建议使用普通返回类型 |
-| `HTTPCLIENT012` | Error | 泛型接口不支持代码生成 | 改为非泛型接口或为每个类型参数创建独立接口 |
+| `HTTPCLIENT012` | Info | 泛型接口：生成器将转发类型参数与约束 | 无需处理，仅供感知（泛型接口**已支持**代码生成） |
 | `HTTPCLIENT013` | Error | URL 模板中的路径占位符与 `[Path]` 参数不匹配 | 确保 URL 模板中的 `{placeholder}` 与方法中的 `[Path]` 参数一一对应 |
+| `HTTPCLIENT014` | Warning | 指定的 `HttpClient` 类型在当前编译中未找到 | 确认类型名称正确，或确保已注册对应命名客户端 |
+| `HTTPCLIENT015` | Error | `TokenManage` 类型未找到 | 确认类型名称正确，或确保包含该类型的项目已引用 |
+| `HTTPCLIENT016` | Error | `TokenManage` 类型缺少必需方法 | 提供 `IMudAppContext GetDefaultApp()` / `GetApp(string)` 或实现 `IAppManager<T>` |
+| `HTTPCLIENT017` | Warning | `HttpClient` 类型无法解析，加密/XML 兼容性校验被跳过 | 使用完全限定名确保类型可解析 |
+| `HTTPCLIENT018` | Warning | `TokenManagerKey` 使用默认推断值 | 多接口共享同一 TokenManager 时显式指定 `TokenManagerKey` 或 `TokenType` |
+| ~~`HTTPCLIENT019`~~ | — | ❌ 已移除（CFG-27）：其唯一触发点 `CacheAttribute.Priority` 已删除 | 无需处理（ID 保留为未使用占位） |
+| `HTTPCLIENT020` | Warning | 非幂等方法声明 `[Retry]` 但未设 `AllowNonIdempotent` | 运行时将跳过重试；如服务端可安全重复执行请显式开启 |
+| `HTTPCLIENT021` | Warning | 方法级 `[Timeout]` 超过接口级 `HttpClient` 超时 | `HttpClient.Timeout` 是硬上限，调小 `[Timeout]` 或提高 `[HttpClientApi(Timeout=…)]` |
+| `HTTPCLIENT022` | Warning | 方法使用 `Path`/`HmacSignature` 令牌注入模式 | 令牌恢复处理器（`TokenRecoveryDelegatingHandler`/`TokenRecoveryEnhancedClient`）不支持这两种模式，刷新后的新令牌无法重新注入，恢复将静默失败并返回 401。如需令牌恢复能力请改用 `Header`/`Query`/`ApiKey`/`Cookie`/`BasicAuth` 模式 |
 | `HTTPCLIENTREG001` | Error | 注册代码生成失败 | 检查接口定义和 DI 注册配置 |
 | `HTTPCLIENTREG002` | Error | `RegistryGroupName` 不是有效 C# 标识符 | 使用字母、数字、下划线组成，以字母或下划线开头 |
+| `EHSG001` | Error | 事件处理器代码生成失败 | 检查被处理类型定义与配置 |
 | `FORM001` | Error | FormContent 代码生成错误 | 检查 FormContent 类定义 |
 | `FORM002` | Error | FormContent 缺少 `[FilePath]` 属性 | 必须且只能有一个属性标记 `[FilePath]` |
 | `FORM003` | Error | FormContent 存在多个 `[FilePath]` 属性 | 只保留一个 `[FilePath]` 属性 |
+| `MUD004` | Warning | `ITokenManager` 实现未注册为 Singleton | `ITokenManager` 的实现类内部维护令牌缓存与并发锁（如 `SemaphoreSlim`），Scoped/Transient 注册会使每个请求持有独立缓存实例，导致并发安全机制失效与重复刷新令牌。请改用 `AddSingleton`/`TryAddSingleton` |
+
+> **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010`、`HTTPCLIENT019` 当前**未使用**（ID 保留为占位，不重新分配）。
+> - `HTTPCLIENT010`：`HttpClientApiAttribute.BaseAddress` **已移除**（CFG-27），使用直接编译错误 `CS0117`。
+> - `HTTPCLIENT019`：`CacheAttribute.Priority` **已移除**（CFG-27），`[Cache]` 已无被忽略的属性。
 
 ### 🧪 测试
 

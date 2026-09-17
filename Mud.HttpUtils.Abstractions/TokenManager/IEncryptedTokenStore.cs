@@ -15,6 +15,11 @@ namespace Mud.HttpUtils;
 /// <remarks>
 /// 当安全要求较高时（如存储 OAuth2 令牌、用户访问令牌等），应使用此接口替代 <see cref="ITokenStore"/>。
 /// 实现类应使用 <see cref="IEncryptionProvider"/> 或其他加密机制确保令牌在存储介质中的安全性。
+/// <para>
+/// <b>TMR-12 契约定性</b>：此接口为独立持久化契约，当前<b>不被</b> <see cref="ITokenManager"/> 管线消费
+/// （管理器使用 <see cref="ITokenCache{T}"/> 进行内存级缓存，加密包装由 <c>EncryptedTokenCache&lt;T&gt;</c> 承担）。
+/// 如需多实例共享令牌，请实现 <see cref="ITokenCache{T}"/> 并注入管理器。异步令牌缓存契约列入 v2 提案。
+/// </para>
 /// </remarks>
 public interface IEncryptedTokenStore : ITokenStore
 {

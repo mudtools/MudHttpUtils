@@ -56,6 +56,10 @@ var cloned = await HttpRequestMessageCloner.CloneAsync(request, maxContentSize: 
 ```
 
 > 当请求体大小超过 `MaxCloneContentSize` 时，`ResilientHttpClient` 会自动跳过重试策略，避免克隆大请求体的性能开销。适用于大文件上传等场景。
+>
+> **M5-HC-05**：首次克隆成功后写入源请求快照（`__mud_clone_snapshot`），后续重试直接复用，消除非 seekable 流「第 N 次克隆空体」；不可重放 chunked 内容预判跳过重试（保留超时/熔断）。
+>
+> **M5-HC-06**：默认 `PolicyScope = PerHost`，不同 host / Named Client 各自独立熔断，避免跨服务故障放大。需要全进程共享时设 `PolicyScope = Global`。
 
 ### 方法级 / Per-App 弹性策略
 
@@ -161,6 +165,8 @@ flowchart TD
 | `Timeout` | `TimeoutOptions` | — | 超时策略配置 |
 | `CircuitBreaker` | `CircuitBreakerOptions` | — | 熔断策略配置 |
 | `MaxCloneContentSize` | `long` | `10485760` (10MB) | 请求克隆的最大内容大小（字节），-1 表示不限制 |
+| `PolicyScope` | `ResiliencePolicyScope` | `PerHost` | **M5-HC-06**：熔断等策略隔离作用域（PerHost / PerClient / Global） |
+| `MaxPolicyCacheSize` | `int` | `512` | **M5-HC-06**：策略缓存容量上限，超限不缓存并打 Warning |
 
 ### RetryOptions
 
@@ -170,6 +176,9 @@ flowchart TD
 | `MaxRetryAttempts` | `int` | `3` | 最大重试次数 |
 | `DelayMilliseconds` | `int` | `1000` | 基础延迟时间（毫秒） |
 | `UseExponentialBackoff` | `bool` | `true` | 是否使用指数退避 |
+| `UseJitter` | `bool` | `true` | 退避是否加入随机抖动（范围 `[0, 基础退避/4)`），避免多实例"重试风暴" |
+| `AllowNonIdempotentRetry` | `bool` | `false` | 是否允许非幂等方法重试。为 `true` 时 **`RetryableHttpMethods` 将被忽略**（所有方法均可重试，启动期记录警告，CFG-09） |
+| `RetryableHttpMethods` | `HashSet<string>` | `GET/HEAD/OPTIONS/PUT/DELETE/TRACE` | 允许重试的 HTTP 方法集合（不区分大小写）。**仅当 `AllowNonIdempotentRetry=false` 时生效** |
 | `RetryStatusCodes` | `int[]?` | `null`（运行时回退到 `[408, 429, 500, 502, 503, 504]`） | 触发重试的 HTTP 状态码。`null`（未设置）使用默认值；`[]`（空数组）表示不重试任何状态码，仅 `HttpRequestException`/`TimeoutRejectedException`/`TaskCanceledException` 触发重试（运行时记录警告日志） |
 | `OnRetry` | `Func<Exception?, int, TimeSpan, Task>?` | `null` | 重试回调函数（仅支持代码配置，无法从 IConfiguration 绑定） |
 
@@ -179,6 +188,54 @@ flowchart TD
 |------|------|--------|------|
 | `Enabled` | `bool` | `true` | 是否启用超时策略 |
 | `TimeoutSeconds` | `int` | `30` | 超时时间（秒） |
+
+### 超时层级与单位对照表（CFG-13）
+
+Mud.HttpUtils 存在四个超时入口，**单位不同**且**生效层级不同**：
+
+| 入口 | 单位 | 默认 | 生效层级 | 说明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `MudHttpClientOptions.TimeoutSeconds` | 秒 | `null`（HttpClient 默认 100s） | **外层硬上限**（`HttpClient.Timeout`） | 由 `AddMudHttpClientsFromConfiguration` 设置 |
+| `HttpClientApiAttribute.Timeout` | 秒 | `50`（`DefaultTimeoutSeconds`） | 生成注册的命名 HttpClient 超时 | 仅生成客户端；见 CFG-03 |
+| `TimeoutOptions.TimeoutSeconds` | 秒 | `30` | 全局 Polly 单次超时 | 全局弹性策略 |
+| `TimeoutAttribute.TimeoutMilliseconds` | **毫秒** | 必填 | 方法级 Polly 超时 | 方法级弹性策略 |
+
+> **生效顺序**：`HttpClient.Timeout`（外层硬上限）⊃ `Timeout(options)`（全局 Polly）⊃ `[Timeout]`（方法级 Polly）。
+> 外层硬上限会**封顶**内层：当 `HttpClient.Timeout` 短于方法级 `[Timeout]` 时，Polly 超时永不触发
+> —— 编译期由生成器诊断 **HTTPCLIENT021** 提示（CFG-07）。
+
+### 重试叠加关系（CFG-14）
+
+| 入口 | 语义 | 互斥关系 |
+| :--- | :--- | :--- |
+| `RetryOptions.MaxRetryAttempts` | 全局 HTTP 重试 | 与方法级 `[Retry]` **互斥**（`SkipResilience` 标记，方法级优先，仅应用一次） |
+| `RetryAttribute.MaxRetries` | 方法级 HTTP 重试 | 同上 |
+| `TokenRecoveryOptions.RecoveryMaxRetries`（`Mud.HttpUtils.Client`） | 401 令牌恢复重试 | 与 HTTP 重试**不互斥** |
+
+> **乘积效应**：令牌恢复与 HTTP 重试叠加时，最坏请求次数 = `(1 + RecoveryMaxRetries) × (1 + HttpRetries)`。
+> 文档提示，不做运行时跨包探测（`Client` 不引用 `Resilience`，见方案 ADR）。
+>
+> **401 计入 `RetryStatusCodes` 时的刷新放大上界**（TMX-16）：当 `RetryStatusCodes` 含 401 且 `RecoveryMaxRetries=1` + `MaxRetryAttempts=2` 时，最坏刷新次数 ≤ 2（恢复侧去重窗口 + 负缓存窗口共同阻断放大）。对照用例：`Recovery_UnderPollyRetry_ShouldBoundRefreshAttempts`。
+
+#### 方法级 `[Retry]` 的**覆盖面子集**（CFG-35）
+
+方法级 `[Retry]` 并非「整体替换全局重试配置」，而是<b>只覆盖下列三项</b>；其余项<b>恒取自全局</b> `RetryOptions`：
+
+| 配置项 | 方法级 `[Retry]` 可覆盖 | 生效来源 |
+| :--- | :---: | :--- |
+| `MaxRetries` | ✅ | 方法级（`RetryAttribute.MaxRetries`，位置参数 `[Retry(n, …)]` 或命名赋值） |
+| `DelayMilliseconds` | ✅ | 方法级（`RetryAttribute.DelayMilliseconds`） |
+| `UseExponentialBackoff` | ✅ | 方法级（`RetryAttribute.UseExponentialBackoff`） |
+| `RetryStatusCodes` | ❌ | **全局** `RetryOptions.RetryStatusCodes` |
+| `OnRetry` | ❌ | **全局** `RetryOptions.OnRetry` |
+| `UseJitter` | ❌ | **全局** `RetryOptions.UseJitter` |
+
+> **实践含义**：声明了 `[Retry]` 的方法上，`RetryOptions.RetryStatusCodes`（如空数组 = 不按状态码重试）
+> 与 `OnRetry`（全局回调）**依然生效**，`UseJitter` 也沿用全局设置。
+> 如需方法级控制这些项，请改用全局 `RetryOptions` 或按接口拆分命名客户端。
+>
+> **赋值口径（CFG-28 / I-9）**：`[Retry(a, b, DelayMilliseconds = c)]` 中命名参数优先（C# 特性赋值语义），
+> 即生效延迟为 `c`；仅 `[Retry(a, b)]` 时生效延迟为 `b`（修复前该位置参数被忽略，恒取 1000）。
 
 ### CircuitBreakerOptions
 
@@ -282,7 +339,7 @@ services.AddMudHttpResilienceDecorator(configuration, "MudHttpResilience");
 
 > 高级模式下 `FailureThreshold = 50` 表示采样窗口内失败率达 50% 时触发熔断，至少需要 `MinimumThroughput` 次请求。
 
-> **配置热更新**：当通过 `IConfiguration` 绑定（如 `AddMudHttpResilience(configuration)`）时，`ResilienceOptions` 支持 `IOptionsMonitor<ResilienceOptions>` 热更新。修改 `appsettings.json` 中的弹性策略配置后，无需重启应用即可生效（策略提供器会在下次请求时读取最新配置）。
+> **配置热更新说明**：当通过 `IConfiguration` 绑定（如 `AddMudHttpResilience(configuration)`）时，`ResilienceOptions` 的配置绑定本身支持 `IOptionsMonitor<ResilienceOptions>` 变更通知。但 `PollyResiliencePolicyProvider` 注册为单例，并通过 `IOptions<ResilienceOptions>`（非 `IOptionsMonitor`）读取配置，因此 Polly 策略在应用启动时创建一次，**不会**在运行时自动热更新。如需更新弹性策略，请重启应用或重新注册策略提供器。
 >
 > **注意**：`OnRetry` 回调委托为代码类型，无法从配置文件绑定。如需设置 `OnRetry`，请使用 `Action<ResilienceOptions>` 委托重载。
 
@@ -370,3 +427,4 @@ options.MaxCloneContentSize = -1;
 - **性能保护**：通过 `MaxCloneContentSize` 限制克隆大小，避免大请求体的克隆开销
 - **可观测性**：通过 `OnRetry` 支持自定义重试回调，便于日志记录和指标收集；内置诊断事件负载（`RetryDiagnosticPayload`、`TimeoutDiagnosticPayload`）支持分布式追踪
 - **配置灵活**：支持代码配置和配置文件绑定
+- **AOT 兼容**：`ResilientHttpClient` 装饰器与策略编排均为静态类型与委托，无运行时反射，可在 Native AOT 下使用

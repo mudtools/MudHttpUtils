@@ -3,10 +3,13 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Mud.HttpUtils;
 using Mud.HttpUtils.Attributes;
 using Mud.HttpUtils.Resilience;
+using System.Text.Json;
 
 namespace Mud.HttpUtils.Integration.Tests;
 
@@ -51,8 +54,10 @@ public class TokenInjectionIntegrationTests : IDisposable
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddOptions();
-        services.AddSingleton<IEnhancedHttpClient>(new DirectEnhancedHttpClient(_httpClient));
+        services.AddSingleton<IEnhancedHttpClient>(new DirectEnhancedHttpClient(_httpClient, new EnhancedHttpClientOptions { AllowCustomBaseUrls = true }));
         services.AddSingleton<ITokenManager, IntegrationTestTokenManager>();
+        services.TryAddSingleton<IHttpContentSerializer>(sp => HttpContentSerializerFactory.CreateDefault(sp.GetService<IOptions<JsonSerializerOptions>>()?.Value));
+        services.TryAddSingleton<IHttpRequestExecutor, DefaultHttpRequestExecutor>();
         services.AddWebApiHttpClient();
         _services = services.BuildServiceProvider();
     }
@@ -179,9 +184,11 @@ public class ResilienceIntegrationTests : IDisposable
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddOptions();
-        var innerClient = new DirectEnhancedHttpClient(_httpClient);
+        var innerClient = new DirectEnhancedHttpClient(_httpClient, new EnhancedHttpClientOptions { AllowCustomBaseUrls = true });
         var policyProvider = new PollyResiliencePolicyProvider(resilienceOptions);
         services.AddSingleton<IEnhancedHttpClient>(new ResilientHttpClient(innerClient, policyProvider));
+        services.TryAddSingleton<IHttpContentSerializer>(sp => HttpContentSerializerFactory.CreateDefault(sp.GetService<IOptions<JsonSerializerOptions>>()?.Value));
+        services.TryAddSingleton<IHttpRequestExecutor, DefaultHttpRequestExecutor>();
         services.AddWebApiHttpClient();
         _services = services.BuildServiceProvider();
     }

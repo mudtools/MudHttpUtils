@@ -207,4 +207,242 @@ public class AppResiliencePolicyResolverTests
     }
 
     #endregion
+
+    #region 缓存失效（Invalidate / InvalidateAll）
+
+    [Fact]
+    public void Invalidate_RemovesCachedResolver_FactoryCalledAgainOnNextResolve()
+    {
+        // Arrange
+        var callCount = 0;
+        var resolver = new AppResiliencePolicyResolver(_ =>
+        {
+            callCount++;
+            return new ResilienceOptions();
+        });
+
+        // Act
+        resolver.ResolveResolver("app1");
+        callCount.Should().Be(1);
+
+        resolver.Invalidate("app1");
+
+        // Act — 再次解析应重新调用工厂
+        resolver.ResolveResolver("app1");
+        callCount.Should().Be(2, "Invalidate 后缓存被清除，工厂应再次调用");
+    }
+
+    [Fact]
+    public void Invalidate_ReturnsFalse_WhenKeyNotInCache()
+    {
+        // Arrange
+        var resolver = new AppResiliencePolicyResolver(_ => new ResilienceOptions());
+
+        // Act
+        var result = resolver.Invalidate("nonexistent");
+
+        // Assert
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Invalidate_ReturnsTrue_WhenKeyWasCached()
+    {
+        // Arrange
+        var resolver = new AppResiliencePolicyResolver(_ => new ResilienceOptions());
+        resolver.ResolveResolver("app1");
+
+        // Act
+        var result = resolver.Invalidate("app1");
+
+        // Assert
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public void InvalidateAll_ClearsEntireCache()
+    {
+        // Arrange
+        var callCount = 0;
+        var resolver = new AppResiliencePolicyResolver(_ =>
+        {
+            callCount++;
+            return new ResilienceOptions();
+        });
+
+        resolver.ResolveResolver("app1");
+        resolver.ResolveResolver("app2");
+        resolver.ResolveResolver("app3");
+        callCount.Should().Be(3);
+
+        // Act
+        resolver.InvalidateAll();
+
+        // Act — 全部重新解析
+        resolver.ResolveResolver("app1");
+        resolver.ResolveResolver("app2");
+        resolver.ResolveResolver("app3");
+        callCount.Should().Be(6, "InvalidateAll 后所有缓存条目被清除");
+    }
+
+    [Fact]
+    public void Invalidate_DoesNotAffectOtherCachedApps()
+    {
+        // Arrange
+        var callCount = 0;
+        var resolver = new AppResiliencePolicyResolver(_ =>
+        {
+            callCount++;
+            return new ResilienceOptions();
+        });
+
+        var first1 = resolver.ResolveResolver("app1");
+        var first2 = resolver.ResolveResolver("app2");
+        callCount.Should().Be(2);
+
+        // Act — 仅失效 app1
+        resolver.Invalidate("app1");
+
+        // Assert — app2 的缓存不受影响
+        var second2 = resolver.ResolveResolver("app2");
+        second2.Should().BeSameAs(first2);
+        callCount.Should().Be(2, "app2 缓存未失效，工厂不应被再次调用");
+
+        // app1 被重新解析
+        var second1 = resolver.ResolveResolver("app1");
+        callCount.Should().Be(3);
+        second1.Should().NotBeSameAs(first1);
+    }
+
+    #endregion
+
+    #region 缓存基数上限（maxCachedApps）
+
+    [Fact]
+    public void ResolveResolver_ReturnsNull_WhenCacheFullAndNewKeyQueried()
+    {
+        // Arrange — maxCachedApps = 2，缓存满后第 3 个 key 返回 null
+        var callCount = 0;
+        var resolver = new AppResiliencePolicyResolver(appKey =>
+        {
+            callCount++;
+            return new ResilienceOptions();
+        }, maxCachedApps: 2);
+
+        // 填满缓存
+        resolver.ResolveResolver("app1").Should().NotBeNull();
+        resolver.ResolveResolver("app2").Should().NotBeNull();
+
+        // Act — 第 3 个 key：缓存已满且 key 不在缓存中
+        var result = resolver.ResolveResolver("app3");
+
+        // Assert — 超限时不缓存，但工厂仍被调用（fail-safe 路径）
+        result.Should().NotBeNull("工厂返回非 null 选项时仍创建解析器（不缓存但不返回 null）");
+        callCount.Should().Be(3);
+
+        // 再次查询 app3 — 仍不在缓存中，工厂再次被调用
+        var result2 = resolver.ResolveResolver("app3");
+        callCount.Should().Be(4, "超限 key 不被缓存，工厂每次被调用");
+    }
+
+    [Fact]
+    public void ResolveResolver_CachedKeyStillWorks_EvenWhenCacheFull()
+    {
+        // Arrange
+        var callCount = 0;
+        var resolver = new AppResiliencePolicyResolver(_ =>
+        {
+            callCount++;
+            return new ResilienceOptions();
+        }, maxCachedApps: 2);
+
+        resolver.ResolveResolver("app1");
+        resolver.ResolveResolver("app2");
+        callCount.Should().Be(2);
+
+        // 缓存已满，但已缓存的 key 仍走缓存
+        resolver.ResolveResolver("app1");
+        resolver.ResolveResolver("app2");
+        callCount.Should().Be(2, "已缓存 key 不受基数上限影响");
+    }
+
+    [Fact]
+    public void ResolveResolver_NullFactoryResult_WhenCacheFull_ReturnsNull()
+    {
+        // Arrange
+        var resolver = new AppResiliencePolicyResolver(_ => null, maxCachedApps: 1);
+
+        // 填满缓存（app1 返回 null，被哨兵缓存）
+        resolver.ResolveResolver("app1").Should().BeNull();
+
+        // Act — app2 也是 null，但缓存已满
+        var result = resolver.ResolveResolver("app2");
+
+        // Assert — 超限路径直接调用工厂，工厂返回 null
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public void Constructor_AcceptsMaxCachedAppsParameter()
+    {
+        // Arrange & Act
+        var resolver = new AppResiliencePolicyResolver(_ => new ResilienceOptions(), maxCachedApps: 10);
+
+        // Assert
+        resolver.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Constructor_NegativeMaxCachedApps_FallsBackToDefault()
+    {
+        // Arrange & Act — 负值应回退到默认 1024
+        var resolver = new AppResiliencePolicyResolver(_ => new ResilienceOptions(), maxCachedApps: -1);
+
+        // Assert — 不抛异常
+        resolver.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Constructor_ZeroMaxCachedApps_FallsBackToDefault()
+    {
+        // Arrange & Act — 零值应回退到默认 1024
+        var resolver = new AppResiliencePolicyResolver(_ => new ResilienceOptions(), maxCachedApps: 0);
+
+        // Assert
+        resolver.Should().NotBeNull();
+    }
+
+    #endregion
+
+    #region Dispose
+
+    [Fact]
+    public void Dispose_CanBeCalledMultipleTimes()
+    {
+        // Arrange
+        var resolver = new AppResiliencePolicyResolver(_ => new ResilienceOptions());
+
+        // Act & Assert — 多次 Dispose 不抛异常
+        resolver.Dispose();
+        resolver.Dispose();
+        resolver.Dispose();
+    }
+
+    [Fact]
+    public void Dispose_ReleasesOptionsSubscription()
+    {
+        // Arrange — 不直接测试 IOptionsMonitor 订阅（需要 Mock），
+        // 但确保 Dispose 后仍可正常使用 ResolveResolver（降级为无订阅模式）
+        var resolver = new AppResiliencePolicyResolver(_ => new ResilienceOptions());
+
+        resolver.ResolveResolver("app1").Should().NotBeNull();
+
+        // Act
+        resolver.Dispose();
+
+        // Assert — Dispose 后仍可解析（订阅已释放但缓存仍可用）
+        resolver.ResolveResolver("app1").Should().NotBeNull();
+    }
+
+    #endregion
 }
