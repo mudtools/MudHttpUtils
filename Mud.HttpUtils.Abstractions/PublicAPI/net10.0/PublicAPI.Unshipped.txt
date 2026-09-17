@@ -1,1 +1,15 @@
-#nullable enable
+﻿#nullable enable
+Mud.HttpUtils.AesEncryptionOptions.EnableKeySeparation.get -> bool
+Mud.HttpUtils.AesEncryptionOptions.EnableKeySeparation.set -> void
+Mud.HttpUtils.AppKey
+Mud.HttpUtils.ICacheValueCloner
+Mud.HttpUtils.ICacheValueCloner.Clone<T>(T? value) -> T?
+Mud.HttpUtils.ITokenRefreshBackgroundService.IsStopped.get -> bool
+Mud.HttpUtils.ITokenRefreshBackgroundService.RestartAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.TokenRecoveryOptions.MaxDedupEntries.get -> int
+Mud.HttpUtils.TokenRecoveryOptions.MaxDedupEntries.set -> void
+Mud.HttpUtils.UserTokenInfo.IssuedAt.get -> long
+Mud.HttpUtils.UserTokenInfo.IssuedAt.set -> void
+const Mud.HttpUtils.AppKey.MaxLength = 128 -> int
+static Mud.HttpUtils.AppKey.IsValid(string? value) -> bool
+static Mud.HttpUtils.AppKey.ToSafeText(string? value) -> string!

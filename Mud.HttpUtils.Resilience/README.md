@@ -56,6 +56,10 @@ var cloned = await HttpRequestMessageCloner.CloneAsync(request, maxContentSize: 
 ```
 
 > 当请求体大小超过 `MaxCloneContentSize` 时，`ResilientHttpClient` 会自动跳过重试策略，避免克隆大请求体的性能开销。适用于大文件上传等场景。
+>
+> **M5-HC-05**：首次克隆成功后写入源请求快照（`__mud_clone_snapshot`），后续重试直接复用，消除非 seekable 流「第 N 次克隆空体」；不可重放 chunked 内容预判跳过重试（保留超时/熔断）。
+>
+> **M5-HC-06**：默认 `PolicyScope = PerHost`，不同 host / Named Client 各自独立熔断，避免跨服务故障放大。需要全进程共享时设 `PolicyScope = Global`。
 
 ### 方法级 / Per-App 弹性策略
 
@@ -161,6 +165,8 @@ flowchart TD
 | `Timeout` | `TimeoutOptions` | — | 超时策略配置 |
 | `CircuitBreaker` | `CircuitBreakerOptions` | — | 熔断策略配置 |
 | `MaxCloneContentSize` | `long` | `10485760` (10MB) | 请求克隆的最大内容大小（字节），-1 表示不限制 |
+| `PolicyScope` | `ResiliencePolicyScope` | `PerHost` | **M5-HC-06**：熔断等策略隔离作用域（PerHost / PerClient / Global） |
+| `MaxPolicyCacheSize` | `int` | `512` | **M5-HC-06**：策略缓存容量上限，超限不缓存并打 Warning |
 
 ### RetryOptions
 

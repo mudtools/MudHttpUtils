@@ -268,8 +268,6 @@ Mud.HttpUtils.MudHttpClientNamingPresets
 Mud.HttpUtils.MudHttpClientOptions
 Mud.HttpUtils.MudHttpClientOptions.AllowCustomBaseUrls.get -> bool
 Mud.HttpUtils.MudHttpClientOptions.AllowCustomBaseUrls.set -> void
-Mud.HttpUtils.MudHttpClientOptions.AppKey.get -> string?
-Mud.HttpUtils.MudHttpClientOptions.AppKey.set -> void
 Mud.HttpUtils.MudHttpClientOptions.BaseAddress.get -> string?
 Mud.HttpUtils.MudHttpClientOptions.BaseAddress.set -> void
 Mud.HttpUtils.MudHttpClientOptions.DefaultHeaders.get -> System.Collections.Generic.Dictionary<string!, string!>?

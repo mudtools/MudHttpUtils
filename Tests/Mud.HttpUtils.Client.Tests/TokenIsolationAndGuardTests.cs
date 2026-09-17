@@ -332,8 +332,26 @@ public class TokenIsolationAndGuardTests
         ScopeKeyBuilder.Build(Array.Empty<string>()).Should().Be("default");
 
         // 基类 GetScopeKey 委托同一实现（单一真相）
+        // MT-16：分隔符为不可见 US（U+001F）
         using var manager = new SmallCacheManager();
-        manager.GetScopeKeyForTest(new[] { "b", "a", "b" }).Should().Be("a,b");
+        manager.GetScopeKeyForTest(new[] { "b", "a", "b" }).Should().Be("a\u001Fb");
+    }
+
+    /// <summary>
+    /// MT-16：scope 键分隔符改为不可见 US 后，「元素内含分隔符」不再与「多元素」碰撞。
+    /// </summary>
+    [Fact]
+    public void ScopeKeyBuilder_ElementContainingSeparator_DoesNotCollide()
+    {
+        var single = ScopeKeyBuilder.Build(new[] { "a\u001Fb" });
+        var pair = ScopeKeyBuilder.Build(new[] { "a", "b" });
+
+        single.Should().NotBe(pair,
+            "MT-16：[\"a\\u001Fb\"] 与 [\"a\",\"b\"] 必须产出不同键，否则两个语义不同的作用域会共享缓存条目与锁");
+
+        // 转义可逆：不同输入不碰撞
+        ScopeKeyBuilder.Build(new[] { "a,b" }).Should().NotBe(pair);
+        ScopeKeyBuilder.Build(new[] { "a\u001E\u001Fb" }).Should().NotBe(single);
     }
 
     #endregion

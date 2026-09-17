@@ -70,7 +70,8 @@ internal static class TokenRefreshHelper
     {
         if (tokenManagers.IsEmpty)
         {
-            state.ConsecutiveFailures = 0;
+            // L-9：统一经 Reset() 原子复位（与 RestartAsync 并发安全）
+            state.Reset();
             return true;
         }
 
@@ -87,10 +88,28 @@ internal static class TokenRefreshHelper
                     MudHttpClientLog.TokenRefreshCompleted(logger, kvp.Key);
                 }
             }
-            catch (ObjectDisposedException)
+            catch (ObjectDisposedException ex)
             {
-                MudHttpClientLog.TokenManagerDisposed(logger, kvp.Key);
-                tokenManagers.TryRemove(kvp.Key, out _);
+                // MT-15：原实现把任何 ObjectDisposedException 都当作"管理器已释放"并<b>永久反注册</b>，
+                // 且没有任何恢复机制 —— 一次内部资源短期不可用（或宿主重建管理器）就会让该管理器的
+                // 后台刷新永久停止，而宿主仍显示"健康"。
+                // 现在只有确认管理器自身已 Dispose 时才反注册；否则按普通失败处理（保留登记、计入连续失败）。
+                if (kvp.Value is TokenManagerBase baseManager && baseManager.IsDisposed)
+                {
+                    MudHttpClientLog.TokenManagerDisposed(logger, kvp.Key);
+                    tokenManagers.TryRemove(kvp.Key, out _);
+                }
+                else
+                {
+                    MudHttpClientLog.TokenRefreshFailed(logger, kvp.Key, ex);
+                    cycleHadFailure = true;
+
+                    if (options.StopOnError)
+                    {
+                        MudHttpClientLog.TokenRefreshFailedAndStopped(logger, kvp.Key);
+                        return false;
+                    }
+                }
             }
             catch (Exception ex)
             {
@@ -106,17 +125,19 @@ internal static class TokenRefreshHelper
         }
 
         // 全成功则复位连续失败计数，否则累加
+        // L-9：改为原子操作，与 RestartAsync 的 Reset() 并发安全（此前为普通字段读写）。
         if (!cycleHadFailure)
         {
-            state.ConsecutiveFailures = 0;
+            state.Reset();
         }
         else
         {
-            state.ConsecutiveFailures++;
+            Interlocked.Increment(ref state.ConsecutiveFailures);
         }
 
         // MaxConsecutiveFailures > 0 且达到阈值：停止调度（与 StopOnError 正交）
-        if (options.MaxConsecutiveFailures > 0 && state.ConsecutiveFailures >= options.MaxConsecutiveFailures)
+        var consecutiveFailures = Volatile.Read(ref state.ConsecutiveFailures);
+        if (options.MaxConsecutiveFailures > 0 && consecutiveFailures >= options.MaxConsecutiveFailures)
         {
             MudHttpClientLog.TokenRefreshFailedAndStopped(logger, "(max-consecutive-failures)");
             return false;
@@ -133,4 +154,12 @@ internal sealed class TokenRefreshLoopState
 {
     /// <summary>连续失败的刷新周期数。</summary>
     public int ConsecutiveFailures;
+
+    /// <summary>
+    /// L-9：复位连续失败计数（供 <c>RestartAsync</c> 使用）。
+    /// </summary>
+    /// <remarks>
+    /// 使用 <see cref="Interlocked.Exchange(ref int, int)"/> 保证与刷新循环内的自增/归零并发安全。
+    /// </remarks>
+    public void Reset() => Interlocked.Exchange(ref ConsecutiveFailures, 0);
 }

@@ -49,6 +49,12 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     internal const string RetryCountContextKey = "__mud_retry_count";
 
     /// <summary>
+    /// M5-HC-05：Polly Context 中存储触发本次重试的原始异常的键。
+    /// 克隆失败时回填该异常，避免根因被 InvalidOperationException 掩盖。
+    /// </summary>
+    internal const string LastExceptionContextKey = "__mud_last_exception";
+
+    /// <summary>
     /// 初始化 PollyResiliencePolicyProvider 实例。
     /// </summary>
     /// <param name="options">弹性策略配置选项。</param>
@@ -79,25 +85,40 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     {
         public Type ResultType { get; }
         public string PolicyKind { get; }
-        public PolicyCacheKey(Type resultType, string policyKind) { ResultType = resultType; PolicyKind = policyKind; }
-        public override bool Equals(object? obj) => obj is PolicyCacheKey other && ResultType == other.ResultType && PolicyKind == other.PolicyKind;
+        /// <summary>M5-HC-06：路由作用域键（host/client/global）。</summary>
+        public string Scope { get; }
+
+        public PolicyCacheKey(Type resultType, string policyKind, string scope = "global")
+        {
+            ResultType = resultType;
+            PolicyKind = policyKind;
+            Scope = scope;
+        }
+
+        public override bool Equals(object? obj) =>
+            obj is PolicyCacheKey other
+            && ResultType == other.ResultType
+            && PolicyKind == other.PolicyKind
+            && Scope == other.Scope;
+
         public override int GetHashCode()
         {
             unchecked
             {
-                return (ResultType.GetHashCode() * 397) ^ (PolicyKind?.GetHashCode() ?? 0);
+                var hash = (ResultType.GetHashCode() * 397) ^ (PolicyKind?.GetHashCode() ?? 0);
+                return (hash * 397) ^ (Scope?.GetHashCode() ?? 0);
             }
         }
     }
 
     /// <inheritdoc />
-    public IAsyncPolicy<TResult> GetRetryPolicy<TResult>()
+    public IAsyncPolicy<TResult> GetRetryPolicy<TResult>(string scope)
     {
-        var key = new PolicyCacheKey(typeof(TResult), "retry");
-        return (IAsyncPolicy<TResult>)_policyCache.GetOrAdd(key, _ => BuildRetryPolicy<TResult>());
+        var key = new PolicyCacheKey(typeof(TResult), "retry", scope);
+        return (IAsyncPolicy<TResult>)GetOrAddPolicy(key, () => BuildRetryPolicy<TResult>(scope));
     }
 
-    private IAsyncPolicy<TResult> BuildRetryPolicy<TResult>()
+    private IAsyncPolicy<TResult> BuildRetryPolicy<TResult>(string scope = "global")
     {
         var retryOptions = _options.Retry;
 
@@ -116,7 +137,8 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             // 空数组表示用户有意禁用状态码重试（仅异常触发重试），记录警告
             MudHttpClientLog.RetryStatusCodesEmptyArray(_logger);
         }
-        var policyKey = PolicyKeyGlobalRetry;
+        // M5-HC-06：policyKey 携带作用域，便于日志/事件定位
+        var policyKey = scope == "global" ? PolicyKeyGlobalRetry : $"{scope}:retry";
 
         return Policy<TResult>
             .Handle<HttpRequestException>(ex => ShouldRetry(ex, retryStatusCodes))
@@ -137,6 +159,9 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 
                     // 将重试次数写入 Polly Context，供 ResilientHttpClient 在克隆请求时读取并写入请求属性
                     context[RetryCountContextKey] = retryCount;
+                    // M5-HC-05：保存原始异常，供克隆失败时回填根因
+                    if (outcome.Exception != null)
+                        context[LastExceptionContextKey] = outcome.Exception;
 
                     // 将重试次数写入当前 Activity tag（Polly 回调在请求 Activity 上下文内执行）
                     MudHttpObservability.RecordRetryCount(null, retryCount);
@@ -171,14 +196,30 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 });
     }
 
-    /// <inheritdoc />
-    public IAsyncPolicy<TResult> GetTimeoutPolicy<TResult>()
+    /// <summary>M5-HC-06：带容量上限的策略缓存写入。超限时不缓存并打 Warning。</summary>
+    private object GetOrAddPolicy(PolicyCacheKey key, Func<object> factory)
     {
-        var key = new PolicyCacheKey(typeof(TResult), "timeout");
-        return (IAsyncPolicy<TResult>)_policyCache.GetOrAdd(key, _ => BuildTimeoutPolicy<TResult>());
+        if (_policyCache.TryGetValue(key, out var existing))
+            return existing;
+
+        var max = _options.MaxPolicyCacheSize;
+        if (max > 0 && _policyCache.Count >= max)
+        {
+            MudHttpClientLog.PolicyCacheFull(_logger, max);
+            return factory();
+        }
+
+        return _policyCache.GetOrAdd(key, _ => factory());
     }
 
-    private IAsyncPolicy<TResult> BuildTimeoutPolicy<TResult>()
+    /// <inheritdoc />
+    public IAsyncPolicy<TResult> GetTimeoutPolicy<TResult>(string scope)
+    {
+        var key = new PolicyCacheKey(typeof(TResult), "timeout", scope);
+        return (IAsyncPolicy<TResult>)GetOrAddPolicy(key, () => BuildTimeoutPolicy<TResult>(scope));
+    }
+
+    private IAsyncPolicy<TResult> BuildTimeoutPolicy<TResult>(string scope = "global")
     {
         var timeoutOptions = _options.Timeout;
 
@@ -187,7 +228,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             return Policy.NoOpAsync<TResult>();
         }
 
-        var policyKey = PolicyKeyGlobalTimeout;
+        var policyKey = scope == "global" ? PolicyKeyGlobalTimeout : $"{scope}:timeout";
 
         return Policy.TimeoutAsync<TResult>(
             TimeSpan.FromSeconds(timeoutOptions.TimeoutSeconds),
@@ -218,13 +259,13 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     }
 
     /// <inheritdoc />
-    public IAsyncPolicy<TResult> GetCircuitBreakerPolicy<TResult>()
+    public IAsyncPolicy<TResult> GetCircuitBreakerPolicy<TResult>(string scope)
     {
-        var key = new PolicyCacheKey(typeof(TResult), "circuitBreaker");
-        return (IAsyncPolicy<TResult>)_policyCache.GetOrAdd(key, _ => BuildCircuitBreakerPolicy<TResult>());
+        var key = new PolicyCacheKey(typeof(TResult), "circuitBreaker", scope);
+        return (IAsyncPolicy<TResult>)GetOrAddPolicy(key, () => BuildCircuitBreakerPolicy<TResult>(scope));
     }
 
-    private IAsyncPolicy<TResult> BuildCircuitBreakerPolicy<TResult>()
+    private IAsyncPolicy<TResult> BuildCircuitBreakerPolicy<TResult>(string scope = "global")
     {
         var cbOptions = _options.CircuitBreaker;
 
@@ -233,7 +274,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             return Policy.NoOpAsync<TResult>();
         }
 
-        var policyKey = PolicyKeyGlobalCircuitBreaker;
+        var policyKey = scope == "global" ? PolicyKeyGlobalCircuitBreaker : $"{scope}:circuitBreaker";
 
         if (cbOptions.SamplingDurationSeconds > 0)
         {
@@ -297,38 +338,40 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     }
 
     /// <inheritdoc />
-    public IAsyncPolicy<TResult> GetCombinedPolicy<TResult>()
+    public IAsyncPolicy<TResult> GetCombinedPolicy<TResult>(string scope)
     {
-        var key = new PolicyCacheKey(typeof(TResult), "combined");
-        return (IAsyncPolicy<TResult>)_policyCache.GetOrAdd(key, _ => BuildCombinedPolicy<TResult>());
+        var key = new PolicyCacheKey(typeof(TResult), "combined", scope);
+        return (IAsyncPolicy<TResult>)GetOrAddPolicy(key, () => BuildCombinedPolicy<TResult>(scope));
     }
 
-    private IAsyncPolicy<TResult> BuildCombinedPolicy<TResult>()
+    private IAsyncPolicy<TResult> BuildCombinedPolicy<TResult>(string scope = "global")
     {
-        var retryPolicy = GetRetryPolicy<TResult>();
-        var timeoutPolicy = GetTimeoutPolicy<TResult>();
-        var circuitBreakerPolicy = GetCircuitBreakerPolicy<TResult>();
+        var retryPolicy = GetRetryPolicy<TResult>(scope);
+        var timeoutPolicy = GetTimeoutPolicy<TResult>(scope);
+        var circuitBreakerPolicy = GetCircuitBreakerPolicy<TResult>(scope);
 
         return retryPolicy.WrapAsync(circuitBreakerPolicy).WrapAsync(timeoutPolicy);
     }
 
     /// <inheritdoc />
     public IAsyncPolicy<TResult> GetMethodPolicy<TResult>(
-        bool retryEnabled = false,
-        int maxRetries = 3,
-        int delayMilliseconds = 1000,
-        bool useExponentialBackoff = true,
-        bool circuitBreakerEnabled = false,
-        int failureThreshold = 5,
-        int breakDurationSeconds = 30,
-        bool timeoutEnabled = false,
-        int timeoutMilliseconds = 30000,
-        int samplingDurationSeconds = 0,
-        int minimumThroughput = 10)
+        bool retryEnabled,
+        int maxRetries,
+        int delayMilliseconds,
+        bool useExponentialBackoff,
+        bool circuitBreakerEnabled,
+        int failureThreshold,
+        int breakDurationSeconds,
+        bool timeoutEnabled,
+        int timeoutMilliseconds,
+        int samplingDurationSeconds,
+        int minimumThroughput,
+        string scope)
     {
         var key = new PolicyCacheKey(typeof(TResult),
-            $"method:R={retryEnabled}:{maxRetries}:{delayMilliseconds}:{useExponentialBackoff}:CB={circuitBreakerEnabled}:{failureThreshold}:{breakDurationSeconds}:T={timeoutEnabled}:{timeoutMilliseconds}:S={samplingDurationSeconds}:{minimumThroughput}");
-        return (IAsyncPolicy<TResult>)_policyCache.GetOrAdd(key, _ => BuildMethodPolicy<TResult>(
+            $"method:R={retryEnabled}:{maxRetries}:{delayMilliseconds}:{useExponentialBackoff}:CB={circuitBreakerEnabled}:{failureThreshold}:{breakDurationSeconds}:T={timeoutEnabled}:{timeoutMilliseconds}:S={samplingDurationSeconds}:{minimumThroughput}",
+            scope);
+        return (IAsyncPolicy<TResult>)GetOrAddPolicy(key, () => BuildMethodPolicy<TResult>(
             retryEnabled, maxRetries, delayMilliseconds, useExponentialBackoff,
             circuitBreakerEnabled, failureThreshold, breakDurationSeconds,
             timeoutEnabled, timeoutMilliseconds, samplingDurationSeconds, minimumThroughput, key.PolicyKind));
@@ -466,6 +509,9 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 
                         // 将重试次数写入 Polly Context，供 ResilientHttpClient 在克隆请求时读取并写入请求属性
                         context[RetryCountContextKey] = retryCount;
+                        // M5-HC-05：保存原始异常，供克隆失败时回填根因
+                        if (outcome.Exception != null)
+                            context[LastExceptionContextKey] = outcome.Exception;
 
                         // 将重试次数写入当前 Activity tag（Polly 回调在请求 Activity 上下文内执行）
                         MudHttpObservability.RecordRetryCount(null, retryCount);
@@ -506,13 +552,13 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     }
 
     /// <inheritdoc />
-    public IAsyncPolicy<TResult> GetTimeoutAndCircuitBreakerPolicy<TResult>()
+    public IAsyncPolicy<TResult> GetTimeoutAndCircuitBreakerPolicy<TResult>(string scope)
     {
-        var key = new PolicyCacheKey(typeof(TResult), "timeoutAndCircuitBreaker");
-        return (IAsyncPolicy<TResult>)_policyCache.GetOrAdd(key, _ =>
+        var key = new PolicyCacheKey(typeof(TResult), "timeoutAndCircuitBreaker", scope);
+        return (IAsyncPolicy<TResult>)GetOrAddPolicy(key, () =>
         {
-            var timeoutPolicy = GetTimeoutPolicy<TResult>();
-            var circuitBreakerPolicy = GetCircuitBreakerPolicy<TResult>();
+            var timeoutPolicy = GetTimeoutPolicy<TResult>(scope);
+            var circuitBreakerPolicy = GetCircuitBreakerPolicy<TResult>(scope);
             return circuitBreakerPolicy.WrapAsync(timeoutPolicy);
         });
     }

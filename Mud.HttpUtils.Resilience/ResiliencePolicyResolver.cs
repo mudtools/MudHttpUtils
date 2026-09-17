@@ -68,6 +68,10 @@ public sealed class ResiliencePolicyResolver : IResiliencePolicyResolver
             retryEnabled = false;
         }
 
+        // M5-HC-06：按端点解析作用域
+        var policyScope = _resilienceOptions?.PolicyScope ?? ResiliencePolicyScope.PerHost;
+        var scope = ResiliencePolicyScopeResolver.Resolve(requestTemplate, policyScope);
+
         var policy = _policyProvider.GetMethodPolicy<TResult>(
             retryEnabled: retryEnabled,
             maxRetries: options.MaxRetries,
@@ -79,7 +83,8 @@ public sealed class ResiliencePolicyResolver : IResiliencePolicyResolver
             timeoutEnabled: options.TimeoutEnabled,
             timeoutMilliseconds: options.TimeoutMilliseconds,
             samplingDurationSeconds: options.SamplingDurationSeconds,
-            minimumThroughput: options.MinimumThroughput);
+            minimumThroughput: options.MinimumThroughput,
+            scope: scope);
 
         return (coreExecute, cancellationToken) =>
         {
@@ -99,8 +104,16 @@ public sealed class ResiliencePolicyResolver : IResiliencePolicyResolver
                         bool ownsRequest;
                         if (isRetry)
                         {
-                            execRequest = await HttpRequestMessageCloner
-                                .CloneAsync(requestTemplate, _maxCloneContentSize, ct).ConfigureAwait(false);
+                            // M5-HC-05 (3)：改用 TryCloneAsync —— 克隆不可行时抛出原始故障
+                            var cloned = await HttpRequestMessageCloner
+                                .TryCloneAsync(requestTemplate, _maxCloneContentSize, ct).ConfigureAwait(false);
+                            if (cloned == null)
+                            {
+                                throw ctx.TryGetValue(PollyResiliencePolicyProvider.LastExceptionContextKey, out var last) && last is Exception ex
+                                    ? ex
+                                    : new InvalidOperationException("请求体在重试时无法克隆，已中止重试。");
+                            }
+                            execRequest = cloned;
                             ownsRequest = true;
                         }
                         else

@@ -56,6 +56,20 @@ public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefresh
     private readonly ILogger<TokenRefreshHostedService> _logger;
     private readonly TokenRefreshLoopState _loopState = new(); // P1.6（TK-10-max）跨周期保留连续失败计数
 
+    // L-9：主动停止（StopOnError / MaxConsecutiveFailures）后的可观测与恢复通道。
+    private readonly SemaphoreSlim _restartGate = new(1, 1);
+    private volatile bool _stopped;
+
+    // L-9：宿主停止令牌。BackgroundService.StoppingToken 在 net6.0 不可用（本项目依赖的
+    // Microsoft.Extensions.Hosting.Abstractions 版本亦未在 net8/net10 提供该属性），
+    // 故统一捕获 ExecuteAsync 收到的令牌：单次写入、只读消费，竞态良性。
+    // 该字段仅在循环已运行（_stopped 可能为 true）后才被 RestartAsync 读取，届时必然已赋值。
+    private CancellationToken _hostStoppingToken;
+
+    /// <inheritdoc />
+    /// <remarks>L-9：仅反映「因刷新失败而主动停止调度」，宿主正常停止不会使其为 true。</remarks>
+    public bool IsStopped => _stopped;
+
     /// <summary>
     /// TMX-10：当前生效的配置（每次循环读取 CurrentValue，支持运行期热更新）。
     /// </summary>
@@ -167,11 +181,21 @@ public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefresh
             MudHttpClientLog.TokenRefreshNoManagersRegistered(_logger);
         }
 
-        MudHttpClientLog.TokenRefreshServiceStarted(_logger, current.RefreshIntervalSeconds, _tokenManagers.Count);
+        _hostStoppingToken = stoppingToken;
+        await RunLoopAsync(stoppingToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// L-9：刷新调度循环主体。抽出为独立方法，使 <see cref="RestartAsync"/> 能在主动停止后重新进入循环。
+    /// </summary>
+    /// <param name="stoppingToken">宿主停止令牌。</param>
+    private async Task RunLoopAsync(CancellationToken stoppingToken)
+    {
+        MudHttpClientLog.TokenRefreshServiceStarted(_logger, Options.RefreshIntervalSeconds, _tokenManagers.Count);
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            current = Options;  // TMX-10：每轮拾取最新配置
+            var current = Options;  // TMX-10：每轮拾取最新配置
             try
             {
                 await Task.Delay(TimeSpan.FromSeconds(current.RefreshIntervalSeconds), stoppingToken);
@@ -183,6 +207,9 @@ public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefresh
                     // P1.6（TK-10）StopOnError / MaxConsecutiveFailures 触发停止：记录 Critical 后优雅 break。
                     // 刻意不抛异常——.NET 6+ BackgroundServiceExceptionBehavior 默认 StopHost 会将宿主一并停止。
                     // 本服务停止后宿主继续运行，其余托管服务不受影响。
+                    // L-9：置位 IsStopped，使运维侧能区分「服务在跑但没活干」与「已停止调度」，
+                    // 并可通过 RestartAsync 复位恢复（无需重启进程）。
+                    _stopped = true;
                     MudHttpClientLog.TokenRefreshFailedAndStopped(_logger, string.Join(",", _tokenManagers.Keys));
                     break;
                 }
@@ -192,7 +219,18 @@ public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefresh
                 MudHttpClientLog.TokenRefreshServiceStopping(_logger);
                 break;
             }
-            catch (Exception ex) when (!_tokenManagers.IsEmpty && !current.StopOnError)
+            // MT-15：StopOnError=true 时原 when 过滤器不成立（!StopOnError 为 false），异常会逃出 ExecuteAsync，
+            // 由 BackgroundService 按 BackgroundServiceExceptionBehavior 处理（默认 StopHost —— 连同宿主一起停止），
+            // 与本节注释「刻意不抛异常」直接矛盾。这里补上该分支：记 Critical 后优雅 break。
+            catch (Exception ex) when (Options.StopOnError)
+            {
+                _stopped = true;
+                MudHttpClientLog.TokenRefreshFailedAndStopped(_logger, string.Join(",", _tokenManagers.Keys));
+                System.Diagnostics.Debug.WriteLine(
+                    $"[Mud.HttpUtils] TokenRefreshHostedService: StopOnError=true，刷新异常后停止调度。{ex}");
+                break;
+            }
+            catch (Exception ex) when (!_tokenManagers.IsEmpty)
             {
                 MudHttpClientLog.TokenRefreshFailedWithRetry(_logger, current.RetryDelaySeconds, ex);
 
@@ -214,6 +252,41 @@ public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefresh
         }
 
         MudHttpClientLog.TokenRefreshServiceStopped(_logger);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// L-9：复位连续失败计数后重新进入调度循环；服务仍在运行或宿主正在停止时为无操作（幂等）。
+    /// 新循环以 fire-and-forget 方式运行（内部已 try/catch，异常不会逃逸）。
+    /// </remarks>
+    public async Task RestartAsync(CancellationToken cancellationToken = default)
+    {
+        if (!Options.Enabled)
+        {
+            MudHttpClientLog.TokenRefreshServiceDisabled(_logger);
+            return;
+        }
+
+        await _restartGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!_stopped)
+                return;   // 幂等：仍在运行
+
+            var hostToken = _hostStoppingToken;
+            if (hostToken.IsCancellationRequested)
+                return;   // 宿主正在停止，重启无意义
+
+            _loopState.Reset();
+            _stopped = false;
+
+            // 不 await：RestartAsync 需立即返回，循环在后台继续运行（与 BackgroundService 的启动语义一致）。
+            _ = Task.Run(() => RunLoopAsync(hostToken), CancellationToken.None);
+        }
+        finally
+        {
+            _restartGate.Release();
+        }
     }
 
     /// <inheritdoc />

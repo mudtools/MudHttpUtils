@@ -92,35 +92,46 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
             if (!hasHttpClientApi)
                 return;
 
-            // 查找方法上的 [Token] 特性并解析 InjectionMode
-            var tokenAttribute = method.AttributeLists
-                .SelectMany(al => al.Attributes)
-                .FirstOrDefault(a => a.Name.ToString() is "Token" or "TokenAttribute");
+            // MT-21：方法级优先，其次回退到接口级 [Token] —— 生成器解析作用域/注入模式时
+            // 同样遵循「方法级覆盖接口级」语义（MethodTokenScopes ?? InterfaceTokenScopes），
+            // 原实现只看方法级，导致接口级 [Token(InjectionMode = Query/Path)] 完全无提示。
+            var tokenAttribute =
+                method.AttributeLists.SelectMany(al => al.Attributes)
+                    .FirstOrDefault(a => a.Name.ToString() is "Token" or "TokenAttribute")
+                ?? interfaceDecl.AttributeLists.SelectMany(al => al.Attributes)
+                    .FirstOrDefault(a => a.Name.ToString() is "Token" or "TokenAttribute");
+
             if (tokenAttribute == null)
                 return;
 
-            var injectionModeQuery = false;
+            string? urlBorneMode = null;
             foreach (var arg in tokenAttribute.ArgumentList?.Arguments ?? default(SeparatedSyntaxList<AttributeArgumentSyntax>))
             {
-                // 命名参数 InjectionMode = TokenInjectionMode.Query（枚举成员访问或字符串字面量）
+                // 命名参数 InjectionMode = TokenInjectionMode.Query / Path（枚举成员访问或字符串字面量）
                 if (arg.NameEquals == null || !arg.NameEquals.Name.ToString().Equals("InjectionMode", StringComparison.Ordinal))
                     continue;
 
                 var exprText = arg.Expression.ToString();
                 if (exprText.EndsWith("Query", StringComparison.Ordinal))
                 {
-                    injectionModeQuery = true;
+                    urlBorneMode = "Query";
+                    break;
+                }
+                if (exprText.EndsWith("Path", StringComparison.Ordinal))
+                {
+                    urlBorneMode = "Path";
                     break;
                 }
             }
 
-            if (!injectionModeQuery)
+            if (urlBorneMode == null)
                 return;
 
             context.ReportDiagnostic(Diagnostic.Create(
                 Diagnostics.MudQueryTokenInjectionMode,
                 tokenAttribute.GetLocation(),
-                interfaceSymbol.ToDisplayString()));
+                interfaceSymbol.ToDisplayString(),
+                urlBorneMode));
         }
         catch (Exception ex)
         {

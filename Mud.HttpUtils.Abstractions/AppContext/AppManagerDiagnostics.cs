@@ -32,4 +32,14 @@ internal static class AppManagerDiagnostics
     /// <param name="appKey">触发变更的应用标识（已安全过滤）。</param>
     /// <param name="changeType">变更类型。</param>
     internal static Action<Exception, string, AppConfigurationChangeType>? SubscriberFailed { get; set; }
+
+    /// <summary>
+    /// MT-08：上下文切换器工厂被重复注册并覆盖时的诊断委托。默认 null（静默）。
+    /// </summary>
+    /// <param name="switcherTypeName">被覆盖的切换器类型名。</param>
+    /// <remarks>
+    /// <see cref="DefaultAppManager{TAppContext}.RegisterSwitcherFactory{TContextSwitcher}"/> 使用索引器赋值，
+    /// 重复注册会静默覆盖先前工厂，导致"注册了却未生效"的隐蔽问题。
+    /// </remarks>
+    internal static Action<string>? SwitcherFactoryOverwritten { get; set; }
 }

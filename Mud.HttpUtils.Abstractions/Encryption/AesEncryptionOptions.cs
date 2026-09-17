@@ -61,6 +61,16 @@ public class AesEncryptionOptions
     public bool RequireCrossRuntimePortable { get; set; }
 
     /// <summary>
+    /// M5-HC-13：是否启用 AES/HMAC 密钥分离（HKDF 派生 enc/mac 子密钥），默认 <c>true</c>。
+    /// </summary>
+    /// <remarks>
+    /// 启用后 CBC+HMAC 路径产出信封 <c>0x04</c>（<c>[0x04][IV(16)][MAC(32)][密文]</c>），
+    /// AES 加密与 HMAC 使用不同子密钥（密码学"密钥分离"最佳实践）。
+    /// 旧格式 <c>0x03</c> 仍可解密（向后兼容）。设为 <c>false</c> 可回退到 <c>0x03</c> 共用主密钥行为。
+    /// </remarks>
+    public bool EnableKeySeparation { get; set; } = true;
+
+    /// <summary>
     /// 验证 AES 加密选项的有效性。
     /// </summary>
     /// <exception cref="InvalidOperationException">

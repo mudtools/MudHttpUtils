@@ -48,6 +48,11 @@ internal sealed class DefaultUrlValidator : IUrlValidator
         => UrlValidator.ValidateUrl(url, allowCustomBaseUrls);
 
     /// <inheritdoc/>
+    public System.Threading.Tasks.ValueTask ValidateUrlAsync(
+        string? url, bool allowCustomBaseUrls = false, System.Threading.CancellationToken cancellationToken = default)
+        => UrlValidator.ValidateUrlAsync(url, allowCustomBaseUrls, cancellationToken);
+
+    /// <inheritdoc/>
     public void ValidateBaseUrl(string? baseUrl, bool allowCustomBaseUrls = false)
         => UrlValidator.ValidateBaseUrl(baseUrl, allowCustomBaseUrls);
 

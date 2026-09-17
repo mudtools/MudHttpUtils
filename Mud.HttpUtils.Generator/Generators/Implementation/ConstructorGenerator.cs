@@ -740,6 +740,26 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine();
     }
 
+    /// <summary>
+    /// MT-02（BC-18）+ MT-18：生成 <c>UseApp</c> / <c>BeginScope(string)</c> / <c>UseAppScope</c> 共用的守卫。
+    /// <list type="number">
+    ///   <item><description>appKey 格式校验（零正则，经 public 门面 <c>Mud.HttpUtils.AppKey.IsValid</c>）——
+    ///     授权器不应承担格式校验职责，且格式非法时不应进入授权/查找流程。</description></item>
+    ///   <item><description>授权器缺失即抛 <see cref="InvalidOperationException"/>（默认拒绝，取代原「未注册即放行」）。</description></item>
+    ///   <item><description>授权判定失败即抛 <see cref="UnauthorizedAccessException"/>。</description></item>
+    /// </list>
+    /// 所有异常消息均不插值原始 appKey（可能来自请求参数 ⇒ 日志注入面）。
+    /// </summary>
+    private static void GenerateAppKeyGuard(StringBuilder codeBuilder)
+    {
+        codeBuilder.AppendLine("            if (!global::Mud.HttpUtils.AppKey.IsValid(appKey))");
+        codeBuilder.AppendLine("                throw new global::System.ArgumentException(\"appKey 格式非法：只能由字母、数字、'.'、'_'、'-' 组成，首字符必须是字母或数字，长度不超过 128。\", nameof(appKey));");
+        codeBuilder.AppendLine("            if (_appAuthorizer == null)");
+        codeBuilder.AppendLine("                throw new InvalidOperationException(\"多应用切换需要授权器：请注册 IAppAccessAuthorizer 实现（例如 services.AddSingleton<IAppAccessAuthorizer, YourAuthorizer>()）；若为单应用或完全受信场景，请显式注册 Mud.HttpUtils.AllowAllAppAccessAuthorizer 以表明放行意图。\");");
+        codeBuilder.AppendLine("            if (!_appAuthorizer.CanSwitchTo(appKey))");
+        codeBuilder.AppendLine("                throw new UnauthorizedAccessException(\"当前调用主体无权切换到目标应用（IAppAccessAuthorizer.CanSwitchTo 返回 false）。\");");
+    }
+
     private void GenerateUseAppMethod(StringBuilder codeBuilder)
     {
         if (_context.HasHttpClient)
@@ -773,11 +793,42 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("            if (_appManager == null)");
             codeBuilder.AppendLine("                throw new InvalidOperationException(\"当前模式不支持按 AppKey 切换应用上下文。请注册 IAppManager<IMudAppContext> 服务。\");");
         }
-        codeBuilder.AppendLine("            if (_appAuthorizer is not null && !_appAuthorizer.CanSwitchTo(appKey))");
-        codeBuilder.AppendLine("                throw new UnauthorizedAccessException($\"当前调用主体无权切换到应用 '{appKey}'。\");");
+        // MT-02（BC-18）：授权器改为「默认拒绝」。
+        // 原实现为 `is not null && !CanSwitchTo(...)` ⇒ 宿主漏注册 IAppAccessAuthorizer 时静默放行，
+        // 调用方可凭请求参数中的 appKey 切换到任意租户应用并读取其令牌（跨租户越权）。
+        // 未注册即抛异常，把"放行"变为需显式声明的意图（注册 AllowAllAppAccessAuthorizer）。
+        // MT-18：先做 appKey 格式校验（授权器不应承担格式校验职责），异常消息经 AppKey.ToSafeText 过滤
+        //（appKey 可能来自请求参数，直接插值构成日志注入面）。
+        GenerateAppKeyGuard(codeBuilder);
         codeBuilder.AppendLine($"            var context = {managerField}.GetApp(appKey);");
         codeBuilder.AppendLine("            _appContextHolder.SwitchTo(context);");
         codeBuilder.AppendLine("            return context;");
+        codeBuilder.AppendLine("        }");
+        codeBuilder.AppendLine();
+
+        // MT-19：与无作用域的 UseApp 对称，提供「按 appKey 切换 + 作用域自动归还」的安全入口。
+        // UseApp 依赖 AsyncLocal，异常路径或长生命周期宿主（后台任务 / 单例编排）下会残留上下文，
+        // 导致后续请求串到错误应用；宿主应优先使用本方法。
+        codeBuilder.AppendLine("        /// <summary>");
+        codeBuilder.AppendLine("        /// 切换到指定的应用上下文，并返回作用域以在结束时自动恢复。");
+        codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        /// <remarks>");
+        codeBuilder.AppendLine("        /// <b>推荐使用本方法替代 <see cref=\"UseApp\"/></b>：<c>UseApp</c> 的无作用域切换（<c>SwitchTo</c>）");
+        codeBuilder.AppendLine("        /// 不会自动归还上下文，若调用方未显式切回，后续请求（尤其是后台任务、长生命周期单例编排、");
+        codeBuilder.AppendLine("        /// <c>IAsyncEnumerable</c> 未逐段开作用域等场景）可能串到错误的应用并读取到错误应用的令牌。");
+        codeBuilder.AppendLine("        /// </remarks>");
+        codeBuilder.AppendLine("        /// <param name=\"appKey\">应用的唯一标识符。</param>");
+        codeBuilder.AppendLine("        /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。建议配合 <c>using</c> 使用。</returns>");
+        codeBuilder.AppendLine($"        {ResolveAppMemberModifier()}IDisposable UseAppScope(string appKey)");
+        codeBuilder.AppendLine("        {");
+        if (isDefaultMode)
+        {
+            codeBuilder.AppendLine("            if (_appManager == null)");
+            codeBuilder.AppendLine("                throw new InvalidOperationException(\"当前模式不支持按 AppKey 切换应用上下文。请注册 IAppManager<IMudAppContext> 服务。\");");
+        }
+        GenerateAppKeyGuard(codeBuilder);
+        codeBuilder.AppendLine($"            var context = {managerField}.GetApp(appKey);");
+        codeBuilder.AppendLine("            return _appContextHolder.BeginScope(context);");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
 
@@ -880,8 +931,8 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("            if (_appManager == null)");
             codeBuilder.AppendLine("                throw new InvalidOperationException(\"当前模式不支持按 AppKey 切换应用上下文。请注册 IAppManager<IMudAppContext> 服务。\");");
         }
-        codeBuilder.AppendLine("            if (_appAuthorizer is not null && !_appAuthorizer.CanSwitchTo(appKey))");
-        codeBuilder.AppendLine("                throw new UnauthorizedAccessException($\"当前调用主体无权切换到应用 '{appKey}'。\");");
+        // MT-02（BC-18）+ MT-18：同上，BeginScope(appKey) 亦改为默认拒绝，并前置格式校验。
+        GenerateAppKeyGuard(codeBuilder);
         codeBuilder.AppendLine($"            var context = {managerField}.GetApp(appKey);");
         codeBuilder.AppendLine("            return _appContextHolder.BeginScope(context);");
         codeBuilder.AppendLine("        }");

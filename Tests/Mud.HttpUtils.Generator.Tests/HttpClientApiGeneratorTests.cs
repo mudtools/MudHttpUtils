@@ -283,6 +283,7 @@ namespace TestNamespace
     {
         var source = @"
 using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
 using System.IO;
 
 namespace TestNamespace
@@ -347,7 +348,7 @@ namespace TestNamespace
 }";
 
         var (_, outputCompilation) = RunGenerator(source);
-        var generatedCode = GetGeneratedCode(outputCompilation);
+        var generatedCode = GetAllGeneratedCode(outputCompilation);
 
         generatedCode.Should().NotBeNullOrEmpty();
 
@@ -367,7 +368,7 @@ using Mud.HttpUtils.Attributes;
 namespace TestNamespace
 {
     [HttpClientApi]
-    [InterfaceQuery(Name = ""version"", Value = ""v1"")]
+    [InterfaceQuery(""version"", ""v1"")]
     public interface ITestApi
     {
         [Get(""/data"")]
@@ -527,6 +528,8 @@ namespace TestNamespace
             "AppContextScope 作用域切换应委托给 _appContextHolder 以保证线程安全");
         generatedCode.Should().Contain("public IMudAppContext UseApp(string appKey)",
             "AppContextScope 应用切换应生成 UseApp 方法");
+        generatedCode.Should().Contain("public IDisposable UseDefaultAppScope()",
+            "应生成 UseDefaultAppScope 自动恢复作用域方法");
     }
 
     [Fact]
@@ -908,6 +911,7 @@ namespace TestNamespace
     public void Generator_WithFormContentClass_UsesIsNullOrWhiteSpaceForStrings()
     {
         // 验证修复 BUG：FormContent 字符串属性应使用 IsNullOrWhiteSpace 而非 IsNullOrEmpty
+        // FormContent 由独立 FormContentGenerator 产出，须与 HttpInvokeClassSourceGenerator 一并运行
         var source = @"
 using System.Text.Json.Serialization;
 using Mud.HttpUtils.Attributes;
@@ -933,6 +937,7 @@ namespace TestNamespace
         var generator = (IIncrementalGenerator)Activator.CreateInstance(generatorType)!;
         var driver = CSharpGeneratorDriver.Create(generator).RunGenerators(compilation);
         var generatedCode = string.Join("\n", driver.GetRunResult().GeneratedTrees.Select(t => t.ToString()));
+
 
         generatedCode.Should().NotBeNullOrEmpty();
 

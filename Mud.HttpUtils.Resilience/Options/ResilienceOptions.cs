@@ -40,4 +40,18 @@ public class ResilienceOptions
     /// 设置为 -1 表示不限制大小（不推荐）。
     /// </remarks>
     public long MaxCloneContentSize { get; set; } = HttpRequestMessageCloner.DefaultMaxContentSize;
+
+    /// <summary>
+    /// M5-HC-06：弹性策略（熔断器等）的作用域，默认 <see cref="ResiliencePolicyScope.PerHost"/>。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ResiliencePolicyScope.PerHost"/>：不同 host / Named Client 各自独立熔断，避免跨服务故障放大。
+    /// <see cref="ResiliencePolicyScope.Global"/>：全进程共享（历史语义，可一键回退）。
+    /// </remarks>
+    public ResiliencePolicyScope PolicyScope { get; set; } = ResiliencePolicyScope.PerHost;
+
+    /// <summary>
+    /// M5-HC-06：策略缓存容量上限，默认 512。超限后新作用域不缓存并打 Warning。
+    /// </summary>
+    public int MaxPolicyCacheSize { get; set; } = 512;
 }

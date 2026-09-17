@@ -143,7 +143,7 @@ public class RetryOptionsTests
             }
         };
         var provider = new PollyResiliencePolicyProvider(options);
-        var policy = provider.GetRetryPolicy<HttpResponseMessage>();
+        var policy = provider.GetRetryPolicy<HttpResponseMessage>("global");
 
         var act = async () => await policy.ExecuteAsync(() =>
             Task.FromException<HttpResponseMessage>(new HttpRequestException(
@@ -173,7 +173,7 @@ public class RetryOptionsTests
             }
         };
         var provider = new PollyResiliencePolicyProvider(options);
-        var policy = provider.GetRetryPolicy<HttpResponseMessage>();
+        var policy = provider.GetRetryPolicy<HttpResponseMessage>("global");
 
         var act = async () => await policy.ExecuteAsync(() =>
             Task.FromException<HttpResponseMessage>(new HttpRequestException(

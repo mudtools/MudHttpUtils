@@ -52,6 +52,10 @@ internal sealed class AllowedDomainsReloader : IDisposable
         // CFG-34：只替换「配置来源」桶，保留运行期经 UrlValidator.AddAllowedDomain 新增的域名；
         // 若改用 ConfigureAllowedDomains（整体替换两桶），运行期增量会在每次 Reload 后消失（不变量 I-13）。
         UrlValidator.SetConfigurationDomains(domains);
+
+        // MT-10：同步「白名单是否允许非 HTTPS」逃生门（首次应用 + 热更新重放均生效）。
+        UrlValidator.SetAllowInsecureWhitelistedDomains(options?.AllowInsecureWhitelistedDomains ?? false);
+
         MudHttpClientLog.AllowedDomainsApplied(_logger, domains.Count);
     }
 

@@ -221,6 +221,12 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     methodSymbol.Name));
         }
 
+        // M5-HC-04：缓存键安全门禁
+        if (methodInfo.CacheEnabled)
+        {
+            ReportCacheKeyDiagnostics(context, methodInfo, methodSymbol);
+        }
+
         var hasTokenManager = !string.IsNullOrEmpty(context.Configuration.TokenManager);
         var hasHttpClient = !string.IsNullOrEmpty(context.Configuration.HttpClient);
         var needsTokenInjection = ShouldInjectToken(methodInfo, hasTokenManager, hasHttpClient);
@@ -832,8 +838,66 @@ internal class MethodGenerator : ICodeFragmentGenerator
     }
 
     /// <summary>
+    /// M5-HC-04：[Cache] 缓存键安全门禁 —— Unsafe 参数无模板报 Error；模板未覆盖 Unsafe 参数报 Warning。
+    /// </summary>
+    private static void ReportCacheKeyDiagnostics(
+        GeneratorContext context,
+        MethodAnalysisResult methodInfo,
+        Microsoft.CodeAnalysis.IMethodSymbol methodSymbol)
+    {
+        var location = methodSymbol.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax()?.GetLocation()
+            ?? context.InterfaceDeclaration.GetLocation();
+
+        var unsafeParams = methodInfo.Parameters
+            .Where(p => !TypeDetectionHelper.IsCancellationToken(p.Type)
+                && CacheKeySafety.Classify(p) == CacheKeySafety.Classification.Unsafe)
+            .ToList();
+
+        if (unsafeParams.Count == 0)
+            return;
+
+        if (string.IsNullOrEmpty(methodInfo.CacheKeyTemplate))
+        {
+            // 无模板 + Unsafe 参数 → Error（失败快于静默串键）
+            foreach (var p in unsafeParams)
+            {
+                context.ProductionContext.ReportDiagnostic(
+                    Diagnostic.Create(
+                        Diagnostics.CacheKeyUnsafeParameterError,
+                        location,
+                        context.InterfaceSymbol.Name,
+                        methodSymbol.Name,
+                        p.Name,
+                        p.Type));
+            }
+        }
+        else
+        {
+            // 有模板：尽力而为检查模板字面量是否出现参数名
+            var template = methodInfo.CacheKeyTemplate!;
+            foreach (var p in unsafeParams)
+            {
+                if (!template.Contains(p.Name, StringComparison.Ordinal))
+                {
+                    context.ProductionContext.ReportDiagnostic(
+                        Diagnostic.Create(
+                            Diagnostics.CacheKeyTemplateMissingParameterWarning,
+                            location,
+                            context.InterfaceSymbol.Name,
+                            methodSymbol.Name,
+                            p.Name));
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// 生成缓存键表达式（仅当 Cache 启用时调用）。
     /// </summary>
+    /// <remarks>
+    /// M5-HC-04：默认键按参数安全分级生成 —— 标量走 InvariantCulture，
+    /// 简单数组走 string.Join + InvariantCulture；Unsafe 参数不生成默认键（由诊断拦截）。
+    /// </remarks>
     private string GenerateCacheKeyExpression(GeneratorContext context, MethodAnalysisResult methodInfo)
     {
         var userIdExpression = context.Configuration.AnyMethodRequiresUserId
@@ -871,18 +935,36 @@ internal class MethodGenerator : ICodeFragmentGenerator
             return $"{varyPrefix}$\"{resolvedTemplate}\"";
         }
 
-        var keyBuilder = new StringBuilder();
-        keyBuilder.Append($"{varyPrefix}$\"{methodInfo.MethodName}");
-
+        // M5-HC-04：按安全分级生成键片段
+        var segments = new List<string>();
         foreach (var param in methodInfo.Parameters)
         {
-            if (!TypeDetectionHelper.IsCancellationToken(param.Type))
+            if (TypeDetectionHelper.IsCancellationToken(param.Type))
+                continue;
+
+            var classification = CacheKeySafety.Classify(param);
+            switch (classification)
             {
-                keyBuilder.Append($"|{{{param.Name}}}");
+                case CacheKeySafety.Classification.KeySafeScalar:
+                    segments.Add(CacheKeySafety.ScalarKeyExpression(param.Name));
+                    break;
+                case CacheKeySafety.Classification.KeySafeCollection:
+                    segments.Add(CacheKeySafety.CollectionKeyExpression(param.Name));
+                    break;
+                case CacheKeySafety.Classification.Unsafe:
+                    // Unsafe 不进默认键（HTTPCLIENT031 已在调用点拦截）；此处兜底仍拼接类型名占位
+                    segments.Add($"\"{param.Type}\"");
+                    break;
             }
         }
 
-        keyBuilder.Append('"');
+        var keyBuilder = new StringBuilder();
+        keyBuilder.Append(varyPrefix);
+        keyBuilder.Append($"\"{methodInfo.MethodName}\"");
+        foreach (var segment in segments)
+        {
+            keyBuilder.Append(" + \"|\" + ").Append(segment);
+        }
         return keyBuilder.ToString();
     }
 
@@ -1162,7 +1244,10 @@ internal class MethodGenerator : ICodeFragmentGenerator
         {
             var cookieName = !string.IsNullOrEmpty(methodInfo.EffectiveTokenName) ? methodInfo.EffectiveTokenName : "access_token";
             var escapedCookieName = StringEscapeHelper.EscapeString(cookieName);
-            codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"Cookie\", \"{escapedCookieName}=\" + access_token);");
+            // MT-20：Cookie 值按 RFC 6265 编码，与 401 恢复路径（TokenRecoveryExecutor.ApplyTokenToRequest）保持一致。
+            // 原生成代码为裸拼接 `"name=" + access_token`，令牌中若含 ';' / ',' / 空格 可注入额外 Cookie 属性；
+            // 而恢复路径已做 Uri.EscapeDataString —— 同一框架两条路径行为不一致。
+            codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"Cookie\", \"{escapedCookieName}=\" + System.Uri.EscapeDataString(access_token));");
         }
 
         if (ShouldGenerateTokenRecoveryContext(context, methodInfo))

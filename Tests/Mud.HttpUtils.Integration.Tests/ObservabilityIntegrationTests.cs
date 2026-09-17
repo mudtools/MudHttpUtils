@@ -334,7 +334,7 @@ public class ObservabilityIntegrationTests : IDisposable
         using var activity = MudHttpActivitySource.Instance.StartActivity("retry-test", ActivityKind.Client);
         activity.Should().NotBeNull("应在 ActivityListener 启用时创建 Activity");
 
-        var retryPolicy = provider.GetRetryPolicy<HttpResponseMessage>();
+        var retryPolicy = provider.GetRetryPolicy<HttpResponseMessage>("global");
 
         var result = await retryPolicy.ExecuteAsync(() =>
         {

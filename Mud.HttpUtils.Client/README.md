@@ -52,7 +52,7 @@ var baseAddress = httpClient.BaseAddress;
 | `AllowCustomBaseUrls` | `bool` | `false` | 是否允许自定义基础 URL（可能带来 SSRF 风险，谨慎使用） |
 | `RequestBodySerialization` | `RequestBodySerializationMode` | `Default` | 请求体序列化模式（`Buffered`/`Streamed` 需 `ISynchronousContentSerializer`；条件不满足时**回退默认路径**并记一次 `Debug` 日志，EventId 166） |
 | `ExceptionRedactor` | `IExceptionRedactor?` | `null` | 异常擦除器（在异常传播前清除敏感数据） |
-| `MaxExceptionContentLength` | `int?` | `null`（生效值 10240） | 错误响应体最大读取字符数（读取阶段生效，防 OOM）。`null` 时使用默认值 10240（`HttpExecutionConstants.DefaultMaxExceptionContentLength`）；设为 `0` 或负数表示不限制。截断时带 `...[已截断]` 后缀 |
+| `MaxExceptionContentLength` | `int?` | `null`（生效值 10240） | 错误响应体最大读取字符数（读取阶段生效，防 OOM）。`null` 时使用默认值 10240；设为 `0` 或负数表示不限制。截断时带 `...[已截断]` 后缀。**M5-HC-03**：日志侧错误响应体窗口 200 字符、反序列化失败日志窗口 500 字符，与本配置独立 |
 | `CaptureRequestContent` | `bool` | `false` | 是否在发送前捕获请求体字符串（用于异常调试） |
 | `UrlResolution` | `UrlResolutionMode` | `Default` | URL 解析模式 |
 | `MaxSuccessResponseBytes` | `long` | `0` | 成功响应体最大字节数（`0` = 不限制；超限抛 `ApiRequestException`） |
@@ -558,6 +558,32 @@ services.AddTokenRefreshBackgroundService(options =>
 >
 > `RefreshIntervalSeconds` 和 `RetryDelaySeconds` 设置为 0 或负数时将抛出 `ArgumentOutOfRangeException`。此外，`AddTokenRefreshBackgroundService` 的**两个重载**（`Action<TokenRefreshBackgroundOptions>` 与 `IConfiguration`）均会注册 `TokenRefreshBackgroundOptionsValidator`，当 `RetryDelaySeconds` 大于等于 `RefreshIntervalSeconds` 时返回校验失败（会抛出 `OptionsValidationException` 阻止启动 —— 重试延迟跨越下一个刷新周期可能导致刷新逻辑混乱）。
 
+#### 停止可观测与恢复（L-9）
+
+后台刷新在 `StopOnError = true` 或连续失败达到 `MaxConsecutiveFailures` 时会**优雅停止调度**（仅记 Critical，宿主继续运行）。`ITokenRefreshBackgroundService` 提供两个成员用于观测与恢复（netstandard2.0 与 net6+ 两条实现语义一致）：
+
+| 成员 | 说明 |
+| --- | --- |
+| `IsStopped` | 是否已因刷新失败而主动停止调度。**宿主正常停止（`StopAsync`）不会使其为 `true`** —— 可据此区分"服务在跑但没活干"与"已停止调度"，适合接入健康检查。 |
+| `RestartAsync(ct)` | 复位连续失败计数后重新进入调度循环。**幂等**：服务仍在运行时为无操作；宿主正在停止时不生效。 |
+
+```csharp
+var refreshService = serviceProvider.GetRequiredService<ITokenRefreshBackgroundService>();
+
+// 健康检查中暴露
+if (refreshService.IsStopped)
+{
+    // IdP 恢复后手动恢复，无需重启进程
+    await refreshService.RestartAsync();
+}
+```
+
+> 修复前不存在任何恢复通道：一次网络抖动导致连续失败达阈值后，该管理器的后台刷新会**永久停止**，只能重启进程。
+
+#### 密钥缓存 TTL 热更新（L-10）
+
+`OAuth2Options.ClientSecretCacheTtlSeconds` 支持 **`IOptionsMonitor` 热更新**：TTL 在每次解析密钥时读取当前值，修改配置无需重建令牌管理器（重建会连带丢失令牌缓存）。设为 `0` 表示不缓存（每次刷新都重新解析密钥）。
+
 ### 应用上下文
 
 > 应用上下文的接口（`IMudAppContext`、`IAppManager<T>`、`IAppContextSwitcher`）与默认管理器实现（`DefaultAppManager<T>`）定义于 `Mud.HttpUtils.Abstractions` 包。本包提供基于 `AsyncLocal` 的上下文持有器实现。
@@ -574,7 +600,7 @@ services.AddSingleton<IAppManager<FeishuContext>, DefaultAppManager<FeishuContex
 var appManager = serviceProvider.GetRequiredService<IAppManager<FeishuContext>>();
 appManager.ConfigurationChanged += (sender, args) =>
 {
-    Console.WriteLine($"应用 {args.AppId} 配置已变更");
+    Console.WriteLine($"应用 {args.AppKey} 配置已变更");
 };
 ```
 
@@ -589,10 +615,56 @@ appManager.ConfigurationChanged += (sender, args) =>
 | 应用上下文持有器 | `IAppContextHolder` | `AddMudHttpAppContextHolder()` | per-app 弹性隔离不可用；`DefaultHttpRequestExecutor` 无法解析当前 AppKey |
 | 应用管理器 | `IAppManager<IMudAppContext>` | `services.AddSingleton<IAppManager<IMudAppContext>, DefaultAppManager<IMudAppContext>>()` | `UseApp`/`BeginScope(appKey)` 不可用；生成代码抛 `InvalidOperationException` |
 | per-app 弹性策略 | `IAppResiliencePolicyResolver` | `AddMudHttpAppResilience(perAppOptionsFactory)` | per-app 策略退化为全局策略 |
-| 应用切换授权器 | `IAppAccessAuthorizer` | `services.AddSingleton<IAppAccessAuthorizer, YourAuthorizer>()` | 跨租户越权风险（外部传入 appKey 不受限） |
+| 应用切换授权器 | `IAppAccessAuthorizer` | `services.AddSingleton<IAppAccessAuthorizer, YourAuthorizer>()`；单应用/受信场景用 `AllowAllAppAccessAuthorizer` 显式放行 | **必须注册**（MT-02 / BC-18）：未注册时 `UseApp` / `BeginScope(appKey)` / `UseAppScope(appKey)` 直接抛 `InvalidOperationException`（默认拒绝） |
 | URL 验证器 | `IUrlValidator` | `AddMudHttpUrlValidator()` | 静态调用与既有行为等价；DI 注册后可按应用隔离白名单 |
 
 > 可调用 `serviceProvider.ValidateMudHttpAppManagement()` 手动校验接线完整性（全 TFM 可用，供 netstandard2.0 宿主与单元测试使用）。也可调用 `AddMudHttpHealthChecks()` 注册 `mud_app_management` 健康检查，在 `/health` 端点观测多应用接线状态。
+
+#### 上下文归还约束（重要）
+
+`UseApp(appKey)` / `SwitchTo(...)` 是**无作用域**切换：它们只写入 `AsyncLocal`，**不会自动归还**上一个上下文。在 ASP.NET Core 这类长生命周期宿主中，一次未归还的切换会让**同一个异步流上的后续请求**继续看到上一个应用 —— 即读取到其它租户的令牌。
+
+因此：
+
+- **请求处理路径**：优先使用 `UseAppScope(appKey)`（`using` 自动归还）或生成客户端的 `BeginScope(appKey)`。
+
+```csharp
+// 推荐：作用域式切换，离开 using 自动归还
+using (_client.UseAppScope("app-a"))
+{
+    await _client.CallApiAsync();
+}
+
+// 或不使用作用域，改为显式在 finally 中归还
+var previous = _appContextHolder.Current;
+try
+{
+    _appContextHolder.SwitchTo(appAContext);
+    await _client.CallApiAsync();
+}
+finally
+{
+    _appContextHolder.SwitchTo(previous);   // 必须归还
+}
+```
+
+- **后台任务 / `Task.Run` / `Parallel.ForEach`**：`AsyncLocal` 会随执行上下文**流式传播**到子任务。若后台任务需要独立轮询多个应用，务必在任务内部建立自己的作用域，不要依赖调用方残留的上下文：
+
+```csharp
+// 后台任务：每个应用独立作用域，互不串扰
+foreach (var appKey in appKeys)
+{
+    await Task.Run(async () =>
+    {
+        using (_client.UseAppScope(appKey))   // 子任务内建立自己的上下文
+        {
+            await _client.SyncDataAsync();
+        }
+    });
+}
+```
+
+> 跨执行上下文的 `using` 释放**不会回滚**（`AsyncLocal` 语义使然）：作用域必须在**建立它的同一个异步流**内释放。若把 `BeginScope` 的返回值传递给另一个 `Task.Run` 去 `Dispose`，回滚不会生效，且可能把陈旧上下文写回。
 
 ### 工具类
 
@@ -825,6 +897,7 @@ sequenceDiagram
 > - **令牌获取零反射、零上下文持有**：`DefaultTokenProvider` 不持有 `IMudAppContext`，而是通过每次调用的 `TokenRequest`（含 `UserId`）接收上下文，确保 `UseApp()`/`UseDefaultApp()` 切换正确传播。
 > - **并发安全刷新**：`TokenManagerBase` 使用 `SemaphoreSlim(1,1)` 保证同一时刻仅一个线程刷新；`UserTokenManagerBase` 通过 `IMemoryCache` 按用户隔离并控制容量（`SizeLimit`）。
 > - **401 自愈**：`TokenRecoveryDelegatingHandler` 与 `TokenRecoveryEnhancedClient` 共享 `TokenRecoveryExecutor`，在 `RecoveryMaxRetries` 次数内自动刷新并重试，与弹性装饰器的重试互不干扰。
+> - **恢复链路租户守卫（L-1）**：`TokenRecoveryExecutor` 解析出的令牌管理器与取令牌路径同样受 `BindTenantGuard` 约束（bind-once：管理器实例绑定首个 AppKey 后，其它 AppKey 使用即被拒绝）。被拒绝时**不向调用方抛异常**，而是记 `TenantBindingRejected` 告警（EventId 162）并返回服务端真实 401，与其余恢复失败分支语义一致。守卫跳过条件：管理器非 `TokenManagerBase` 派生类 / 未注入 `IAppContextHolder` / 当前无应用上下文 / 管理器覆写 `EnforceTenantBinding = false`。
 > - **后台刷新**：`TokenRefreshHostedService`（.NET 6+）/ `TokenRefreshBackgroundService`（netstandard2.0）按 `RefreshIntervalSeconds` 主动刷新，避免临界过期。
 
 ## 安装

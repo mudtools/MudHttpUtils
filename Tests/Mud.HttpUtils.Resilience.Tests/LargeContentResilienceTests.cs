@@ -6,7 +6,7 @@ using Polly;
 namespace Mud.HttpUtils.Resilience.Tests;
 
 /// <summary>
-/// 大内容请求弹性策略测试：验证大内容请求跳过重试但保留超时和熔断（问题 9 修复验证）。
+/// 大内容请求弹性策略测试：验证大内容请求跳过重试但保留超时和熔断（问题 9 修复验证）�?
 /// </summary>
 public class LargeContentResilienceTests
 {
@@ -15,7 +15,7 @@ public class LargeContentResilienceTests
     {
         var provider = new PollyResiliencePolicyProvider(new ResilienceOptions());
 
-        var policy = provider.GetTimeoutAndCircuitBreakerPolicy<string>();
+        var policy = provider.GetTimeoutAndCircuitBreakerPolicy<string>(It.IsAny<string>());
 
         policy.Should().NotBeNull();
     }
@@ -25,8 +25,8 @@ public class LargeContentResilienceTests
     {
         var provider = new PollyResiliencePolicyProvider(new ResilienceOptions());
 
-        var policy1 = provider.GetTimeoutAndCircuitBreakerPolicy<string>();
-        var policy2 = provider.GetTimeoutAndCircuitBreakerPolicy<string>();
+        var policy1 = provider.GetTimeoutAndCircuitBreakerPolicy<string>(It.IsAny<string>());
+        var policy2 = provider.GetTimeoutAndCircuitBreakerPolicy<string>(It.IsAny<string>());
 
         policy1.Should().BeSameAs(policy2);
     }
@@ -38,7 +38,7 @@ public class LargeContentResilienceTests
         mockInner.Setup(c => c.SendAsync<string>(It.IsAny<HttpRequestMessage>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync("result");
         var mockPolicyProvider = new Mock<IResiliencePolicyProvider>();
-        mockPolicyProvider.Setup(p => p.GetTimeoutAndCircuitBreakerPolicy<string>())
+        mockPolicyProvider.Setup(p => p.GetTimeoutAndCircuitBreakerPolicy<string>(It.IsAny<string>()))
             .Returns(Polly.Policy.NoOpAsync<string>());
         var mockLogger = new Mock<ILogger<ResilientHttpClient>>();
         var options = new ResilienceOptions { MaxCloneContentSize = 100 };
@@ -54,8 +54,8 @@ public class LargeContentResilienceTests
 
         await client.SendAsync<string>(request);
 
-        mockPolicyProvider.Verify(p => p.GetTimeoutAndCircuitBreakerPolicy<string>(), Times.Once);
-        mockPolicyProvider.Verify(p => p.GetCombinedPolicy<string>(), Times.Never);
+        mockPolicyProvider.Verify(p => p.GetTimeoutAndCircuitBreakerPolicy<string>(It.IsAny<string>()), Times.Once);
+        mockPolicyProvider.Verify(p => p.GetCombinedPolicy<string>(It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
@@ -67,7 +67,7 @@ public class LargeContentResilienceTests
             .Callback<HttpRequestMessage, object?, CancellationToken>((req, _, _) => capturedRequest.Add(req))
             .ReturnsAsync("result");
         var mockPolicyProvider = new Mock<IResiliencePolicyProvider>();
-        mockPolicyProvider.Setup(p => p.GetTimeoutAndCircuitBreakerPolicy<string>())
+        mockPolicyProvider.Setup(p => p.GetTimeoutAndCircuitBreakerPolicy<string>(It.IsAny<string>()))
             .Returns(Polly.Policy.NoOpAsync<string>());
         var mockLogger = new Mock<ILogger<ResilientHttpClient>>();
         var options = new ResilienceOptions { MaxCloneContentSize = 100 };
@@ -95,7 +95,7 @@ public class LargeContentResilienceTests
         mockInner.Setup(c => c.DownloadLargeAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<IProgress<long>?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FileInfo("test.txt"));
         var mockPolicyProvider = new Mock<IResiliencePolicyProvider>();
-        mockPolicyProvider.Setup(p => p.GetTimeoutAndCircuitBreakerPolicy<FileInfo>())
+        mockPolicyProvider.Setup(p => p.GetTimeoutAndCircuitBreakerPolicy<FileInfo>(It.IsAny<string>()))
             .Returns(Polly.Policy.NoOpAsync<FileInfo>());
         var mockLogger = new Mock<ILogger<ResilientHttpClient>>();
         var options = new ResilienceOptions { MaxCloneContentSize = 100 };
@@ -111,7 +111,7 @@ public class LargeContentResilienceTests
 
         await client.DownloadLargeAsync(request, "test.txt");
 
-        mockPolicyProvider.Verify(p => p.GetTimeoutAndCircuitBreakerPolicy<FileInfo>(), Times.Once);
-        mockPolicyProvider.Verify(p => p.GetCombinedPolicy<FileInfo>(), Times.Never);
+        mockPolicyProvider.Verify(p => p.GetTimeoutAndCircuitBreakerPolicy<FileInfo>(It.IsAny<string>()), Times.Once);
+        mockPolicyProvider.Verify(p => p.GetCombinedPolicy<FileInfo>(It.IsAny<string>()), Times.Never);
     }
 }

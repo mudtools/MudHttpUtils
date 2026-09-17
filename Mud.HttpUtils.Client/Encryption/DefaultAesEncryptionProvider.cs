@@ -46,6 +46,11 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
     /// <summary>v3：CBC + HMAC-SHA256（Encrypt-then-MAC）。布局 <c>[0x03][IV(16)][MAC(32)][密文]</c>。</summary>
     private const byte EnvelopeVersionCbcHmac = 0x03;
 
+    /// <summary>
+    /// v4：CBC + HMAC-SHA256 + HKDF 密钥分离。布局 <c>[0x04][IV(16)][MAC(32)][密文]</c>（M5-HC-13）。
+    /// </summary>
+    private const byte EnvelopeVersionCbcHmacKeySep = 0x04;
+
     // ---- 尺寸常量 ----
 
     private const int IvSizeBytes = 16;
@@ -60,6 +65,11 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
     private const int MinCbcHmacLength = 1 + IvSizeBytes + HmacTagSize + CipherBlockSizeBytes; // 65
 
     private byte[] _key;
+    /// <summary>M5-HC-13：HKDF 派生的 AES 加密子密钥（EnableKeySeparation 时使用）。</summary>
+    private byte[]? _encKey;
+    /// <summary>M5-HC-13：HKDF 派生的 HMAC 子密钥（EnableKeySeparation 时使用）。</summary>
+    private byte[]? _macKey;
+    private readonly bool _enableKeySeparation;
     private bool _disposed;
 
     /// <summary>
@@ -97,6 +107,14 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
         options.Value.Validate();
         _key = options.Value.Key;      // getter 已返回克隆（TMR-06：不再修改 options.Value）
         var requireCrossRuntimePortable = options.Value.RequireCrossRuntimePortable;
+        _enableKeySeparation = options.Value.EnableKeySeparation;
+
+        // M5-HC-13：HKDF 派生 enc/mac 子密钥（纯托管，全 TFM 可用）
+        if (_enableKeySeparation)
+        {
+            _encKey = HkdfExpand(_key, "Mud.HttpUtils:AES:enc", _key.Length);
+            _macKey = HkdfExpand(_key, "Mud.HttpUtils:AES:mac", 32);
+        }
 
         _useGcm = ResolveUseGcm(requireCrossRuntimePortable);
 
@@ -190,6 +208,8 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
         _disposed = true;
         SecurityHelper.ClearBytes(_key);
         _key = [];
+        if (_encKey != null) { SecurityHelper.ClearBytes(_encKey); _encKey = []; }
+        if (_macKey != null) { SecurityHelper.ClearBytes(_macKey); _macKey = []; }
     }
 
     private static bool ResolveUseGcm(bool requireCrossRuntimePortable)
@@ -241,12 +261,17 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
 
             case EnvelopeVersionCbcHmac:
                 EnsureMinLength(fullBytes.Length, MinCbcHmacLength, "v3 CBC+HMAC");
-                return DecryptCbcThenHmac(fullBytes);
+                return DecryptCbcThenHmac(fullBytes, keySeparated: false);
+
+            case EnvelopeVersionCbcHmacKeySep:
+                // M5-HC-13：HKDF 密钥分离格式
+                EnsureMinLength(fullBytes.Length, MinCbcHmacLength, "v4 CBC+HMAC (key-separated)");
+                return DecryptCbcThenHmac(fullBytes, keySeparated: true);
 
             default:
                 // 0x00（保留哨兵）、0x01（v1 裸 CBC，已废弃且编号冻结）以及所有未分配值均在此拒绝。
                 throw new CryptographicException(
-                    $"密文格式无法识别：缺少 Mud.HttpUtils 信封版本前缀（期望 0x02 或 0x03），"
+                    $"密文格式无法识别：缺少 Mud.HttpUtils 信封版本前缀（期望 0x02、0x03 或 0x04），"
                     + $"实际首字节为 0x{fullBytes[0]:X2}。");
         }
     }
@@ -299,13 +324,17 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
     }
 #endif
 
-    // ---- v3：CBC + HMAC-SHA256 Encrypt-then-MAC（全目标框架） ----
+    // ---- v3/v4：CBC + HMAC-SHA256 Encrypt-then-MAC（全目标框架） ----
 
     private byte[] EncryptCbcThenHmac(byte[] plainBytes)
     {
         var key = KeyForCrypto;  // TMX-15-6
+        // M5-HC-13：启用密钥分离时产出 0x04，否则回退 0x03
+        var version = _enableKeySeparation ? EnvelopeVersionCbcHmacKeySep : EnvelopeVersionCbcHmac;
+        var aesKey = _enableKeySeparation ? Volatile.Read(ref _encKey)! : key;
+
         using var aes = Aes.Create();
-        aes.Key = key;
+        aes.Key = aesKey;
         aes.Mode = CipherMode.CBC;
         aes.Padding = PaddingMode.PKCS7;
         aes.GenerateIV();
@@ -314,17 +343,17 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
         var cipherBytes = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
 
         // MAC 覆盖 IV + 密文（Encrypt-then-MAC）
-        var mac = ComputeHmac(aes.IV, cipherBytes);
+        var mac = ComputeHmac(aes.IV, cipherBytes, useSeparatedMacKey: _enableKeySeparation);
 
         var result = new byte[1 + IvSizeBytes + HmacTagSize + cipherBytes.Length];
-        result[0] = EnvelopeVersionCbcHmac;
+        result[0] = version;
         Buffer.BlockCopy(aes.IV, 0, result, 1, IvSizeBytes);
         Buffer.BlockCopy(mac, 0, result, 1 + IvSizeBytes, HmacTagSize);
         Buffer.BlockCopy(cipherBytes, 0, result, 1 + IvSizeBytes + HmacTagSize, cipherBytes.Length);
         return result;
     }
 
-    private byte[] DecryptCbcThenHmac(byte[] fullBytes)
+    private byte[] DecryptCbcThenHmac(byte[] fullBytes, bool keySeparated)
     {
         var iv = new byte[IvSizeBytes];
         var mac = new byte[HmacTagSize];
@@ -334,11 +363,11 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
         Buffer.BlockCopy(fullBytes, 1 + IvSizeBytes + HmacTagSize, cipherBytes, 0, cipherBytes.Length);
 
         // 常量时间 MAC 校验（先验 MAC 再解密，防填充预言子）
-        var computed = ComputeHmac(iv, cipherBytes);
+        var computed = ComputeHmac(iv, cipherBytes, useSeparatedMacKey: keySeparated);
         if (!SecurityHelper.FixedTimeEquals(computed, mac))
             throw new CryptographicException("密文完整性校验失败");
 
-        var key = KeyForCrypto;  // TMX-15-6
+        var key = keySeparated ? Volatile.Read(ref _encKey) ?? KeyForCrypto : KeyForCrypto;  // TMX-15-6
         using var aes = Aes.Create();
         aes.Key = key;
         aes.Mode = CipherMode.CBC;
@@ -352,16 +381,37 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
     /// <summary>
     /// 计算 <c>HMAC-SHA256(IV || 密文)</c>。
     /// </summary>
-    /// <remarks>
-    /// 使用 <c>TransformBlock</c> + <c>TransformFinalBlock</c> 流式喂入，
-    /// 避免 <c>IV.Concat(cipher).ToArray()</c> 产生的中间数组分配（不是冗余写法，勿"简化"为 ComputeHash）。
-    /// </remarks>
-    private byte[] ComputeHmac(byte[] iv, byte[] cipherBytes)
+    private byte[] ComputeHmac(byte[] iv, byte[] cipherBytes, bool useSeparatedMacKey = false)
     {
-        var key = KeyForCrypto;  // TMX-15-6
+        var key = useSeparatedMacKey && _macKey != null ? Volatile.Read(ref _macKey)! : KeyForCrypto;  // TMX-15-6
         using var hmac = new HMACSHA256(key);
         hmac.TransformBlock(iv, 0, iv.Length, null, 0);
         hmac.TransformFinalBlock(cipherBytes, 0, cipherBytes.Length);
         return hmac.Hash!;
+    }
+
+    /// <summary>M5-HC-13：HKDF-Expand（RFC 5869）—— 以主密钥为 PRK，info 区分用途，产出指定长度子密钥。</summary>
+    private static byte[] HkdfExpand(byte[] prk, string info, int length)
+    {
+        var infoBytes = System.Text.Encoding.UTF8.GetBytes(info);
+        var result = new byte[length];
+        var t = Array.Empty<byte>();
+        var offset = 0;
+        byte counter = 1;
+
+        using var hmac = new HMACSHA256(prk);
+        while (offset < length)
+        {
+            var input = new byte[t.Length + infoBytes.Length + 1];
+            Buffer.BlockCopy(t, 0, input, 0, t.Length);
+            Buffer.BlockCopy(infoBytes, 0, input, t.Length, infoBytes.Length);
+            input[input.Length - 1] = counter++;
+
+            t = hmac.ComputeHash(input);
+            var toCopy = Math.Min(t.Length, length - offset);
+            Buffer.BlockCopy(t, 0, result, offset, toCopy);
+            offset += toCopy;
+        }
+        return result;
     }
 }

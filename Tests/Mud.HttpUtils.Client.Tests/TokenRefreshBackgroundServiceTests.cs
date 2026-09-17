@@ -450,23 +450,57 @@ public class TokenRefreshBackgroundServiceTests
         result.Should().BeFalse();
     }
 
+    /// <summary>
+    /// MT-15：管理器<b>自身未 Dispose</b> 时抛出的 <see cref="ObjectDisposedException"/>
+    /// （例如内部资源短期不可用）不得导致永久反注册 —— 原实现会把任何 ODE 都当作"已释放"移除登记。
+    /// </summary>
     [Fact]
-    public async Task RefreshAllTokenManagersAsync_ObjectDisposedException_RemovesManager()
+    public async Task RefreshAllTokenManagersAsync_ObjectDisposedException_NotDisposedManager_KeepsRegistration()
     {
         var tokenManagers = new ConcurrentDictionary<string, ITokenManager>();
-        var tokenManagerMock = new Mock<ITokenManager>();
+        var tokenManagerMock = new Mock<TokenManagerBase>();
         tokenManagerMock.Setup(t => t.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
             .ThrowsAsync(new ObjectDisposedException("TestManager"));
-        tokenManagers["disposed"] = tokenManagerMock.Object;
+        tokenManagers["transient"] = tokenManagerMock.Object;
 
         var logger = new Mock<ILogger>().Object;
-        var options = new TokenRefreshBackgroundOptions { StopOnError = true };
+        var options = new TokenRefreshBackgroundOptions { StopOnError = false };
 
         var result = await TokenRefreshHelper.RefreshAllTokenManagersAsync(
             tokenManagers, logger, options, CancellationToken.None);
 
         result.Should().BeTrue();
-        tokenManagers.ContainsKey("disposed").Should().BeFalse();
+        tokenManagers.ContainsKey("transient").Should().BeTrue(
+            "MT-15：未 Dispose 的管理器不得因一次 ObjectDisposedException 被永久反注册");
+    }
+
+    /// <summary>
+    /// MT-15：仅当管理器<b>确实已 Dispose</b> 时才反注册（保留原有清理语义）。
+    /// </summary>
+    [Fact]
+    public async Task RefreshAllTokenManagersAsync_ObjectDisposedException_DisposedManager_RemovesManager()
+    {
+        var tokenManagers = new ConcurrentDictionary<string, ITokenManager>();
+        // CallBase = true：Dispose 为 virtual，Loose mock 会拦截且不调用基类实现，
+        // 导致 _disposed 永不被置位（无法构造"确实已释放"的场景）。
+        var tokenManagerMock = new Mock<TokenManagerBase> { CallBase = true };
+        tokenManagerMock.Setup(t => t.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ObjectDisposedException("TestManager"));
+
+        var manager = tokenManagerMock.Object;
+        manager.Dispose();
+        manager.IsDisposed.Should().BeTrue("前置条件：管理器已 Dispose");
+        tokenManagers["disposed"] = manager;
+
+        var logger = new Mock<ILogger>().Object;
+        var options = new TokenRefreshBackgroundOptions { StopOnError = false };
+
+        var result = await TokenRefreshHelper.RefreshAllTokenManagersAsync(
+            tokenManagers, logger, options, CancellationToken.None);
+
+        result.Should().BeTrue();
+        tokenManagers.ContainsKey("disposed").Should().BeFalse(
+            "已 Dispose 的管理器应被移出后台刷新登记");
     }
 
     [Fact]

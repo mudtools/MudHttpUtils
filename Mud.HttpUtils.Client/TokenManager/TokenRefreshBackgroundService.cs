@@ -32,6 +32,14 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
     private int _running; // P1.6（TK-11）重入闸：同一时刻只允许一个刷新编排在运行
     private bool _disposed;
 
+    // L-9：主动停止（StopOnError / MaxConsecutiveFailures）后的可观测与恢复通道。
+    private readonly SemaphoreSlim _restartGate = new(1, 1);
+    private volatile bool _stopped;
+
+    /// <inheritdoc />
+    /// <remarks>L-9：仅反映「因刷新失败而主动停止调度」，<see cref="StopAsync"/> 不会使其为 true。</remarks>
+    public bool IsStopped => _stopped;
+
     /// <summary>
     /// 初始化 TokenRefreshBackgroundService 实例。
     /// </summary>
@@ -153,6 +161,35 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
         return Task.CompletedTask;
     }
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// L-9：复位连续失败计数后重建 Timer 恢复调度；服务仍在运行或已释放时分别无操作 / 抛
+    /// <see cref="ObjectDisposedException"/>（与 <see cref="StartAsync"/> 一致）。
+    /// </remarks>
+    public async Task RestartAsync(CancellationToken cancellationToken = default)
+    {
+        if (_disposed)
+            throw new ObjectDisposedException(nameof(TokenRefreshBackgroundService));
+
+        await _restartGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!_stopped)
+                return;   // 幂等：仍在运行
+
+            _loopState.Reset();
+            _stopped = false;
+
+            // StartAsync 内部为「先停旧 Timer 再建新 Timer」的幂等实现（P1.6/TK-11），
+            // 可直接复用，无需重复 Timer 交换逻辑。
+            await StartAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _restartGate.Release();
+        }
+    }
+
     private async void RefreshTokenCallback(object? state)
     {
         // P1.6（TK-11）重入闸：Timer 可能在上一轮刷新尚未结束时再次触发，
@@ -170,6 +207,8 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
                 _tokenManagers, _logger, _options, CancellationToken.None, _loopState).ConfigureAwait(false);
             if (!shouldContinue)
             {
+                // L-9：置位 IsStopped，使运维侧可探测"已停止调度"并可通过 RestartAsync 恢复。
+                _stopped = true;
                 // SR-L3（P3.6）：回调读 Timer 引用经 Volatile.Read（锁外安全读）
                 Volatile.Read(ref _timer)?.Change(Timeout.Infinite, Timeout.Infinite);
             }

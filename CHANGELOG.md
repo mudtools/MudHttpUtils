@@ -8,6 +8,72 @@
 
 > 依据 `.docs/00-总体方案.md §5.2` 确立的默认行为基线整理。项目未发布，本表内容是"首版行为"而非"变更"。
 
+### 多应用与令牌管理深度审查修复（MT 轮，2026-09）
+
+> 依据 `.docs/多应用与令牌管理-Bug修复与功能完善方案.md`（v1.1，含实施期验证与方案修订）。
+> 覆盖关系：`DefaultAppManager` / `AsyncLocal` 上下文、`TokenManagerBase` / `UserTokenManagerBase` /
+> `TokenRecovery*` / `StandardOAuth2TokenManager` / `ScopeKeyBuilder` / `UrlValidator` / 生成器应用切换与注册。
+> 全部改动已在 `Mud.HttpUtils.Abstractions` / `Client` / `Generator` 与 `Client.Tests`（net6/8/10）、
+> `Generator.Tests`（net8.0）上验证通过。
+
+#### 修复（Fixed）
+
+- **401 恢复跨主机校验恒真（MT-01，严重）**：`IsSameHost` 比较的是 `request.RequestUri` 与由它克隆出的 `retryRequest.RequestUri` ⇒ **恒真**，重定向防护形同虚设。现改为读取 `HttpResponseMessage.RequestMessage.RequestUri`（BCL 在每次 30x 后更新的最终落点）：首跳即跨主机 ⇒ 放弃恢复并返回真实 401；重试途中跨主机 ⇒ 记 Warning（可观测）。修复前 `ApiKey` / 自定义 Header 注入模式在服务端重定向到外部主机时会把刷新后的令牌发往第三方。
+- **`IAppAccessAuthorizer` 未注册即放行（MT-02，严重）**：生成代码由 `_appAuthorizer is not null && !CanSwitchTo(...)` 改为 **未注册即抛 `InvalidOperationException`**（默认拒绝），并前置 appKey 格式校验；`UseApp` / `BeginScope(string)` / 新增 `UseAppScope` 共用同一守卫；异常消息不再插值原始 appKey（防日志注入）。
+- **只注册未解析的接线组件（MT-03）**：`EnhancedHttpClientFactoryChangeNotifier` 与 `AppManagerDiagnosticsWiring` 此前**全仓无任何解析点** ⇒ ① keyed Singleton 客户端缓存永不失效，`AllowCustomBaseUrls` / `BaseAddress` / `DefaultHeaders` 热更新完全不生效（与本文档旧表述不符）；② 订阅者异常被彻底静默吞掉。现由 `CreateEnhancedClient` 强制解析（与 `AllowedDomainsReloader` 同惯例）。
+- **`ClientSecretCacheTtlSeconds = 0` 语义反转（MT-04）**：原实现把 `_expiresAtTicks` 写成 `long.MaxValue`，使"TTL=0（不缓存）"实际等价于**永久缓存**，密钥轮换永不生效。现 TTL<=0 直通工厂；`_value` 改 `Volatile.Read`；空结果不写缓存。
+- **去重刷新产生未观察任务异常（MT-05）**：原以 `TaskCompletionSource` 转发刷新结果，失败路径 `SetException` 且无等待者时异常永不成为已观察异常（可致进程崩溃）。现改用「条目即任务」（`Lazy<Task<T>>`，`ExecutionAndPublication`），赢者与等待者 await 同一任务；同时消除 ns2.0 `WaitForTaskAsync` 的取消注册滞留。
+- **401 恢复去重表无界增长（MT-06）**：新增 `RefreshDedupTable`（有界 + 过期清理 + 溢出收缩），键含 `userId` 的高基数场景不再无界增长；`TokenRecoveryOptions` 新增 `MaxDedupEntries`（默认 1024）。
+- **用户退避表无回收渠道（MT-06）**：`_userRefreshFailures` 唯一清扫入口 `CleanupOrphanedLocks()` 为 `protected` 且全仓无调用者（用户管理器 `SupportsTenantMaintenance=false`，基类 Timer 不启动）。现由 `UserTokenManagerBase` 自有维护 Timer 周期性驱动，并在写入后按 `SizeLimit` 收缩。
+- **用户侧缺失 TTL 感知过期阈值（MT-07）**：`UserTokenInfo.IsAccessTokenValid` / `UserTokenManagerBase.IsUserTokenValid` 使用 3 参 `TokenExpiryPolicy.IsValid`，而租户路径使用 4 参（`min(阈值, ttl/2)`）⇒ 短 TTL 用户令牌"刚签发即被判为需刷新"，缓存永不命中。现改用 4 参；`UserTokenInfo` 新增 `IssuedAt`（为 0 时退化为配置阈值，存量数据零破坏）。
+- **`DefaultAppManager` 并发状态机（MT-08）**：`UpdateApp` / `UpdateAppAsync` 由 check-then-act 改为 `TryUpdate` 原子 CAS（并释放被放弃的新上下文），消除"并发 `RemoveApp` 后复活已删除应用"；`RemoveApp` 默认键回退改为锁内 + 存在性校验；`GetDefaultApp` 的无效"二次读取"改为锁内从现存应用收敛；`RegisterSwitcherFactory` 重复注册不再静默覆盖（记 Warning）。
+- **revoke / introspect 端点缺运行期 HTTPS 校验（MT-09）**：仅 `TokenEndpoint` 有运行期校验；编程式构造 `OAuth2Options` 时 `client_secret` 与待内省令牌可经明文 HTTP 发出。现两个方法均复用 `ValidateEndpointHttps`。
+- **白名单域名绕过 HTTPS 强制（MT-10，含新开关）**：白名单命中即整体跳过后续校验（含 scheme）⇒ `http://` 可明文承载令牌。现白名单只豁免 IP/内网域名检查，仍强制 HTTPS（回环豁免）；新增 `MudHttpClientApplicationOptions.AllowInsecureWhitelistedDomains` 作为显式逃生门（默认 `false`）。
+- **`ITokenManager.GetTokenAsync(scopes)` 静默丢弃 scopes（MT-11）**：基类默认实现忽略 scopes，而 `StandardOAuth2TokenManager` 此前只覆写无参重载 ⇒ 调用方以为拿到受限作用域令牌，实际是默认作用域。现覆写带 scopes 重载，并在基类 XML 明确"支持 scope 的子类必须覆写"。
+- **配置静默丢弃（MT-12）**：无 `BaseAddress` 的客户端此前直接 `continue`，其 `TimeoutSeconds` / `DefaultHeaders` / `AllowCustomBaseUrls` 全部静默失效。现仍注册客户端（仅不设 BaseAddress）；配置节不存在时输出 Debug 提示。
+- **客户端名大小写语义分裂（MT-13）**：`Clients` 字典为 `OrdinalIgnoreCase`，而命名 HttpClient / keyed DI / `_clientCache` / `_apps` 为 `Ordinal` ⇒ "配置写 `Default`、代码传 `default`"会出现**配置覆盖生效但客户端解析失败**。现统一为 `Ordinal`，并在后置配置器检测"仅大小写不同的重复键"记 Warning；解析失败消息提示大小写敏感。
+- **生成器注册与宿主配置脱节（MT-14）**：生成注册由裸 `services.AddHttpClient(...)` 改为 `AddMudHttpClient(...)`（完全限定调用），使生成客户端获得 keyed 注册、`TracingDelegatingHandler` 与 `CreateEnhancedClient` 的配置覆盖；自动注册的空 `DefaultAppManager` 现在会记录 Warning（不再把"未注册应用"伪装成"未注册 IAppManager"）。
+- **后台刷新健壮性（MT-15）**：`ObjectDisposedException` 不再无条件永久反注册（仅在管理器**确实**已 `Dispose` 时移除，否则按普通失败处理）；`StopOnError=true` 时异常不再逃出 `ExecuteAsync`（原会触发 `BackgroundServiceExceptionBehavior` 默认 `StopHost` 连带停止宿主，与注释矛盾），改为记 Critical 后优雅退出。
+- **上下文字符串拼接键碰撞（MT-16）**：`ScopeKeyBuilder` 分隔符由 `","` 改为不可见 US（U+001F）并对元素内 U+001E/U+001F 做可逆转义 —— 修复 `["a,b"]` 与 `["a","b"]` 产出同一缓存键（共享缓存条目与锁 ⇒ 作用域越权面）。
+- **`UserTokenManagerBase.Dispose(bool)` 跳过基类释放（MT-22）**：原在 `_disposed` 已置位时直接 `return`，与 `TokenManagerBase` 自述契约冲突；现无论标志状态都调用 `base.Dispose(disposing)`。
+- **`EncryptedTokenCache` 解密失败静默（MT-25）**：按类注释承诺补日志（新增带 `ILogger` 的构造重载），密钥轮换导致的解密失败可观测。
+- **死代码清理（MT-28）**：删除 `EnhancedHttpClient` 中无调用者的同步 `ValidateRequest` / 私有 `ValidateUrl`（其路径含 sync-over-async DNS 解析）；`UrlValidator.ValidateUrl` 同步重载补 XML 说明"勿在请求主链路调用"。
+- **文档与实现不符修正（MT-26）**：README 中 `args.AppId` → `args.AppKey`（3 处）；新增 `AddMudHttpClients(Action<MudHttpClientApplicationOptions>)` 委托式重载（多处 `RequiresUnreferencedCode` 的 `Justification` 早已引用它，此前并不存在）。
+
+#### 新增（Added）
+
+- **`AllowAllAppAccessAuthorizer`**（Client）：显式声明"放行一切应用切换"的授权器，用于单应用 / 完全受信 / 迁移过渡场景，把隐式放行变为可审计意图。
+- **`AddMudHttpAppManagementStartupValidation()`**（Client，net6+ 注册 `IHostedService`）：把多应用接线自检挂到启动期。
+- **`MudHttpAppManagementOptions.RequireAppAccessAuthorizer` / `RequireRegisteredAppKeys`**：使该选项的三个 `Require*` 开关与 `RegisteredAppKeys` **真正被消费**（此前仅做 appKey 格式校验，挂在 `ValidateOnStart()` 上却毫无实质检查）。
+- **`AppKey`（Abstractions，public 静态门面）**：`IsValid` / `ToSafeText` / `MaxLength`。源生成器产物位于消费方程序集，无法访问 `internal` 的 `AppKeyValidator`，而生成代码需要格式前置校验与安全文本化。
+- **`TokenRecoveryOptions.MaxDedupEntries`**（默认 1024）：401 去重表条目上限。
+- **`MudHttpClientApplicationOptions.AllowInsecureWhitelistedDomains`**（默认 `false`）：白名单域名允许非 HTTPS 的逃生门。
+- **`UserTokenInfo.IssuedAt`**：令牌签发时间，供 TTL 感知过期阈值使用。
+- **`UseAppScope(string appKey)`**（生成产物）：与无作用域的 `UseApp` 对称的"切换 + 自动归还"入口，与既有 `UseDefaultAppScope()` 对齐。
+- **`AddMudHttpClients(Action<MudHttpClientApplicationOptions>)`**（Client）：AOT 友好的委托式多客户端注册入口。
+- **`EncryptedTokenCache<T>(ITokenCache<string>, IEncryptionProvider, ILogger?)`** 构造重载。
+- **MT 回归护栏**：`Tests/Mud.HttpUtils.Client.Tests/MtRoundRegressionTests.cs`（16 条用例，覆盖 MT-01/02/04/05/06/07/10/11/16，每条在修复前必然失败）。
+
+#### 变更（Changed）
+
+| # | 变更 | 影响面 | 迁移动作 |
+| --- | --- | --- | --- |
+| **BC-18** | `IAppAccessAuthorizer` 未注册时 `UseApp` / `BeginScope(appKey)` / `UseAppScope(appKey)` 抛 `InvalidOperationException`（原静默放行） | 未注册授权器却按 appKey 切换的宿主 | 多租户注册业务授权器；单应用/受信场景显式注册 `AllowAllAppAccessAuthorizer` |
+| **BC-19** | 白名单域名仍强制 HTTPS（原 `http://` 放行） | `AllowedDomains` 内域名使用 http | 改用 https，或设 `AllowInsecureWhitelistedDomains = true` |
+| **BC-20** | `ScopeKeyBuilder` 分隔符 `","` → US（U+001F）+ 元素内转义 | 运行期缓存键形态；依赖键字符串格式的自定义 `ITokenCache` 实现 | 无（进程内缓存，无持久化） |
+| **BC-21** | 生成器注册由 `AddHttpClient` 改为 `AddMudHttpClient` | 全部 `[HttpClientApi]` 接口 | 无（自动生效）；命名客户端多出 keyed 注册与 `TracingDelegatingHandler` |
+| **BC-22** | `MUD005` 由 Info 升为 Warning，并覆盖 `InjectionMode = Path` 与方法级/接口级 `[Token]` | 使用 Query / Path 令牌注入的接口 | 改用 Header 注入，或按诊断抑制 |
+| **BC-25** | `MudHttpClientApplicationOptions.Clients` 比较器由 `OrdinalIgnoreCase` 改为 `Ordinal` | 配置中存在仅大小写不同的客户端名，或代码传名与配置大小写不一致 | 统一大小写；解析失败消息会提示大小写敏感 |
+| **BC-26** | 移除 `MudHttpClientOptions.AppKey` | 在 appsettings 中配置该键（无编译影响）；依赖该属性读取的代码 | 命名客户端与应用的真实关联方式：请求前 `UseApp`/`BeginScope(appKey)` 建立环境上下文 |
+| **BC-23** | `ITokenRefreshBackgroundService` 新增 `IsStopped` / `RestartAsync(CancellationToken)` | 自行实现该接口的宿主（非继承库内实现） | 补两个成员：`IsStopped` 可返回 `false`（或不跟踪），`RestartAsync` 可返回 `Task.CompletedTask` |
+| **BC-24** | 命名客户端 keyed 注册由 `AddKeyedSingleton` 改为 `AddKeyedTransient`（并回指 `EnhancedHttpClientFactory` 缓存） | 解析 `[FromKeyedServices(name)] IEnhancedHttpClient` 的宿主 | **无行为破坏**：解析到的仍是同一实例（单缓存 = 工厂缓存）。差别仅在配置热更新后 keyed 路径会与工厂路径**同步**拿到新实例（原实现永久缓存，热更新不生效） |
+| — | `UserTokenInfo.IsAccessTokenValid` / `UserTokenManagerBase.IsUserTokenValid` 改用 TTL 感知阈值 | 短 TTL 用户令牌的刷新频率显著下降（缓存命中率提升） | 无（无 `IssuedAt` 的存量数据退化为配置阈值） |
+| — | 后台刷新对 `ObjectDisposedException` 的处理 | 未 Dispose 的管理器不再被反注册 | 无（原行为属缺陷） |
+| — | 401 恢复链路新增租户绑定守卫 | 注册表扁平命名空间下同名管理器跨应用复用 | 若确属共享凭据设计，覆写 `TokenManagerBase.EnforceTenantBinding => false`（同取令牌路径既有逃生门） |
+| — | `ClientSecretCache` TTL 改为按需读取（`IOptionsMonitor` 热更新） | `OAuth2Options.ClientSecretCacheTtlSeconds` 变更即时生效 | 无（原为构造时固化） |
+
+> **不计入破坏性**：`MUD005` 级别提升仅影响诊断可见性（仍可抑制）；`AppKey` 移除不产生编译错误（仅删除一个从未被消费的配置面）。`BC-24` 对解析方无可观察行为变化，仅使配置热更新真正生效。
+
 ### 令牌恢复（Token Recovery）
 
 - **超限请求体仍发送**（TMR-01）：`MaxCachedRequestBodyBytes` 超限时不再阻止请求发送，而是正常发送原请求并在收到 401 后放弃重试（返回真实 401）。旧行为为零发送，违反"禁止重试 ≠ 禁止发送"原则。
@@ -54,6 +120,9 @@
 - **错误内容默认截断**：`ApiException.Content` 与 `ApiException.RequestContent` 默认在读取阶段截断为 10240 字符（`MaxExceptionContentLength`，`0`/负 = 不限制），两条路径（内置方法 / 生成代码）行为一致，截断内容带 `...[已截断]` 后缀。
 - **认证加密默认开启**：AES 加密始终使用认证加密（net8+/net10 用 AES-GCM，netstandard2.0/net6 用 AES-CBC+HMAC-SHA256），密文带 1 字节信封版本前缀，解密仅按前缀分派。
 - **SSRF 防护（.NET 6+ opt-in）**：`AddMudHttpClientSsrfProtection()` 提供连接期 IP 准入校验（`IIpAddressPolicy`），根治 DNS rebinding；DNS 解析结果带 TTL 缓存（默认 5 分钟）。
+- **M5 日志脱敏收口**：Error 级反序列化失败日志（EventId 31/37）写入前经 `SanitizeContent`（masker 回退 `MessageSanitizer`）脱敏并限量 500 字符；Debug 原始体日志（EventId 2/5）降为 Trace 并同样脱敏（HC-03）。`SanitizeContent` 失败时返回 `[脱敏失败]`，不影响请求路径。
+- **M5 AES/HMAC 密钥分离**：`AesEncryptionOptions.EnableKeySeparation`（默认 `true`），HKDF-Expand 派生 enc/mac 子密钥；CBC+HMAC 产出信封 **0x04**；旧格式 0x03 仍可解密（HC-13）。
+- **M5 缓存键编译期门禁**：`[Cache]` + Unsafe 参数（复杂对象/[Body]/[QueryMap] 等）且无 `CacheKeyTemplate` → `HTTPCLIENT031` Error；默认键表达式改 InvariantCulture + `string.Join`（HC-04）。
 
 ### 可靠性 / 弹性
 
@@ -63,6 +132,10 @@
 - **超时/熔断异常归一**：Polly `TimeoutRejectedException` / `BrokenCircuitException` 统一包装为 `ApiRequestException`（`IsTimeout` / `IsCircuitOpen`），全局与方法级路径一致。
 - **成功响应体可选守卫**：`MaxSuccessResponseBytes`（默认 `0` = 不限制）提供 Content-Length 预判 + 读取阶段守卫流，超限抛 `ApiRequestException`。
 - **chunked 空响应体容忍**：空响应体（含无 `Content-Length` 的 chunked 空体）返回 `default(T)` 而非抛反序列化异常。
+- **M5 响应释放契约**：`SendAndValidateAsync` / `SendStreamAsync` 非 2xx 或拦截器异常路径释放 `HttpResponseMessage`（HC-01/02），消除连接池占用泄漏。
+- **M5 重试克隆快照**：首次克隆成功后将缓冲字节写入源请求属性袋（`__mud_clone_snapshot`），后续重试直接复用，消除非 seekable 流「第 N 次克隆空体」；`CopyMetadata` 排除该键。不可重放 chunked 内容预判跳过重试（HC-05）。
+- **M5 端点级熔断隔离**：`ResilienceOptions.PolicyScope` 默认 `PerHost`，策略缓存键含 host/client 维度，服务 A 故障不再误熔断服务 B/C；`Global` 可回退历史语义；`MaxPolicyCacheSize`（默认 512）限制策略实例数（HC-06）。
+- **M5 异步 URL 校验**：`UrlValidator.ValidateUrlAsync` + DNS 条带锁改 `SemaphoreSlim`，消除 `AllowCustomBaseUrls=true` 场景的 sync-over-async 线程阻塞（HC-07）。
 
 ### 可观测性
 

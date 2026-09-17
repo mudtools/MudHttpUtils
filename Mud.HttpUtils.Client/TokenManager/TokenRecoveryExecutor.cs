@@ -51,6 +51,10 @@ public class TokenRecoveryExecutor
     private readonly IOptionsMonitor<TokenRecoveryOptions>? _optionsMonitor;
     private readonly ILogger _logger;
 
+    // L-1：应用上下文持有器（可选）。用于在恢复链路解析出管理器后执行租户绑定守卫，
+    // 与 DefaultTokenProvider 的守卫形成闭环（此前仅令牌获取路径有守卫，恢复路径没有）。
+    private readonly IAppContextHolder? _appContextHolder;
+
     /// <summary>
     /// TMR-07：当前生效的令牌恢复选项。优先走 IOptionsMonitor（热更新），回退静态快照。
     /// TMX-15-9 (D4)：删除不可达的 `?? new TokenRecoveryOptions()`——每个 ctor 至少设置 _staticOptions 或 _optionsMonitor 之一。
@@ -59,43 +63,15 @@ public class TokenRecoveryExecutor
 
     // 并发刷新去重：同一时间段内多个 401 只触发一次令牌刷新
     // TMR-12：刷新结果在 TTL 窗口内保留，窗口内后续 401 直接复用结果而不重新刷新
-    private readonly ConcurrentDictionary<string, DedupEntry> _credentialRefreshTasks = new();
-    private readonly ConcurrentDictionary<string, DedupEntry> _userRefreshTasks = new();
-    private const string CredentialRefreshKey = "__credential";
-    // TMX-15-2 (B6)：去重表过期条目清理上界——每次写入新条目时顺带清理至多 N 个过期条目，避免全表扫描
-    private const int DedupCleanupMaxPerWrite = 8;
+    // MT-05/MT-06：去重逻辑收敛到 RefreshDedupTable（条目即任务 + 条目数硬上限）
+    private readonly RefreshDedupTable _credentialRefreshTasks;
+    private readonly RefreshDedupTable _userRefreshTasks;
 
-    /// <summary>
-    /// TMR-12：去重条目——包含进行中的 Task 或已完成的结果 + 过期时间戳。
-    /// </summary>
-    private sealed class DedupEntry
-    {
-        /// <summary>进行中的刷新任务（完成后置 null）。</summary>
-        public Task<string?>? Task;
-        /// <summary>刷新结果（Task 完成后赋值）。</summary>
-        public string? Result;
-        /// <summary>结果是否为成功（非 null/空）。</summary>
-        public bool IsSuccess;
-        /// <summary>结果过期时间戳（UTC ticks）。</summary>
-        public long ExpiresAt;
+    /// <summary>测试观测钩子（经 InternalsVisibleTo）：租户级去重表当前条目数。</summary>
+    internal int CredentialDedupCountForTest => _credentialRefreshTasks.Count;
 
-        public bool IsExpired => DateTimeOffset.UtcNow.UtcTicks > ExpiresAt;
-    }
-
-    /// <summary>
-    /// TMX-15-2 (B6)：机会式清理去重表中的过期条目。
-    /// 每次写入新条目时调用，至多清理 DedupCleanupMaxPerWrite 个过期条目，避免全表扫描。
-    /// </summary>
-    private static void SweepExpiredDedupEntries(ConcurrentDictionary<string, DedupEntry> table)
-    {
-        var cleaned = 0;
-        foreach (var kv in table)
-        {
-            if (cleaned >= DedupCleanupMaxPerWrite) break;
-            if (kv.Value.Task == null && kv.Value.IsExpired)
-                table.TryRemove(kv.Key, out _);
-        }
-    }
+    /// <summary>测试观测钩子（经 InternalsVisibleTo）：用户级去重表当前条目数。</summary>
+    internal int UserDedupCountForTest => _userRefreshTasks.Count;
 
     /// <summary>
     /// 初始化令牌恢复执行器。
@@ -103,14 +79,24 @@ public class TokenRecoveryExecutor
     /// <param name="tokenManager">令牌管理器，用于刷新和失效令牌。</param>
     /// <param name="options">令牌恢复配置选项（可选）。</param>
     /// <param name="logger">日志记录器（可选）。</param>
+    /// <param name="appContextHolder">
+    /// L-1：应用上下文持有器（可选）。提供时，恢复链路解析出的令牌管理器会先执行
+    /// <c>BindTenantGuard(当前 appKey)</c> 租户绑定守卫；为 null 或当前无应用上下文时跳过（与既有行为一致）。
+    /// </param>
     public TokenRecoveryExecutor(
         ITokenManager tokenManager,
         TokenRecoveryOptions? options = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        IAppContextHolder? appContextHolder = null)
     {
         _tokenManager = tokenManager ?? throw new ArgumentNullException(nameof(tokenManager));
         _staticOptions = options ?? new TokenRecoveryOptions();
         _logger = logger ?? NullLogger.Instance;
+        _appContextHolder = appContextHolder;
+
+        var maxDedup = _staticOptions.MaxDedupEntries;
+        _credentialRefreshTasks = new RefreshDedupTable(maxDedup);
+        _userRefreshTasks = new RefreshDedupTable(maxDedup);
     }
 
     /// <summary>
@@ -119,14 +105,21 @@ public class TokenRecoveryExecutor
     /// <param name="tokenManager">令牌管理器，用于刷新和失效令牌。</param>
     /// <param name="optionsMonitor">令牌恢复配置选项监视器，支持热更新。</param>
     /// <param name="logger">日志记录器（可选）。</param>
+    /// <param name="appContextHolder">L-1：应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
     public TokenRecoveryExecutor(
         ITokenManager tokenManager,
         IOptionsMonitor<TokenRecoveryOptions> optionsMonitor,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        IAppContextHolder? appContextHolder = null)
     {
         _tokenManager = tokenManager ?? throw new ArgumentNullException(nameof(tokenManager));
         _optionsMonitor = optionsMonitor ?? throw new ArgumentNullException(nameof(optionsMonitor));
         _logger = logger ?? NullLogger.Instance;
+        _appContextHolder = appContextHolder;
+
+        var maxDedup = optionsMonitor.CurrentValue?.MaxDedupEntries ?? 1024;
+        _credentialRefreshTasks = new RefreshDedupTable(maxDedup);
+        _userRefreshTasks = new RefreshDedupTable(maxDedup);
     }
 
     /// <summary>
@@ -138,13 +131,15 @@ public class TokenRecoveryExecutor
     /// <param name="optionsMonitor">令牌恢复配置选项监视器，支持热更新。</param>
     /// <param name="logger">日志记录器（可选）。</param>
     /// <param name="managerRegistry">SR-M6（P2.4，D9）：令牌管理器注册表（可选）。</param>
+    /// <param name="appContextHolder">L-1：应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
     public TokenRecoveryExecutor(
         ITokenManager tokenManager,
         IUserTokenManager? userTokenManager,
         ICurrentUserContext? currentUserContext,
         IOptionsMonitor<TokenRecoveryOptions> optionsMonitor,
         ILogger? logger = null,
-        ITokenManagerRegistry? managerRegistry = null)
+        ITokenManagerRegistry? managerRegistry = null,
+        IAppContextHolder? appContextHolder = null)
     {
         _tokenManager = tokenManager ?? throw new ArgumentNullException(nameof(tokenManager));
         _optionsMonitor = optionsMonitor ?? throw new ArgumentNullException(nameof(optionsMonitor));
@@ -152,6 +147,11 @@ public class TokenRecoveryExecutor
         _currentUserContext = currentUserContext;
         _logger = logger ?? NullLogger.Instance;
         _managerRegistry = managerRegistry;
+        _appContextHolder = appContextHolder;
+
+        var maxDedup = optionsMonitor.CurrentValue?.MaxDedupEntries ?? 1024;
+        _credentialRefreshTasks = new RefreshDedupTable(maxDedup);
+        _userRefreshTasks = new RefreshDedupTable(maxDedup);
     }
 
     /// <summary>
@@ -164,14 +164,16 @@ public class TokenRecoveryExecutor
     /// <param name="logger">日志记录器（可选）。</param>
     /// <param name="managerRegistry">SR-M6（P2.4，D9）：令牌管理器注册表（可选）。非空时按
     /// TokenRecoveryContext.TokenManagerKey 路由到正确管理器；解析失败回退注入实例 + Warning。</param>
+    /// <param name="appContextHolder">L-1：应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
     public TokenRecoveryExecutor(
         ITokenManager tokenManager,
         IUserTokenManager? userTokenManager,
         ICurrentUserContext? currentUserContext = null,
         TokenRecoveryOptions? options = null,
         ILogger? logger = null,
-        ITokenManagerRegistry? managerRegistry = null)
-        : this(tokenManager, options, logger)
+        ITokenManagerRegistry? managerRegistry = null,
+        IAppContextHolder? appContextHolder = null)
+        : this(tokenManager, options, logger, appContextHolder)
     {
         _userTokenManager = userTokenManager;
         _currentUserContext = currentUserContext;
@@ -233,8 +235,22 @@ public class TokenRecoveryExecutor
         // 无条件发送原请求（TMR-01：不可缓冲也必须发送）
         var response = await sendFunc(request, cancellationToken).ConfigureAwait(false);
 
+        // MT-01：记录本次发送后的最终落点 URI（BCL 在每次 30x 重定向后更新 response.RequestMessage.RequestUri）。
+        // 原实现比较 request.RequestUri 与由它克隆出的 retryRequest.RequestUri —— 两者同源，校验恒真形同虚设。
+        var finalUri = response.RequestMessage?.RequestUri ?? request.RequestUri;
+
         if (response.StatusCode != HttpStatusCode.Unauthorized)
             return response;
+
+        // MT-01：首次发送即发生跨主机重定向 —— 放弃恢复。
+        // 此时若继续恢复，重试请求会被发往（或被重定向到）第三方主机，导致刷新后的令牌外泄。
+        // 注：Authorization / Basic 方案依赖 HttpClient 自身的跨主机剥离兜底，但自定义 Header（ApiKey 等）不在此列。
+        if (!IsSameHost(request.RequestUri, finalUri))
+        {
+            MudHttpClientLog.TokenRecoveryRedirectDetected(
+                _logger, request.RequestUri?.Host, finalUri?.Host);
+            return response;   // D3：返回真实 401
+        }
 
         // TMR-01：不可缓冲的带体请求 → 返回真实 401，不重试、不伪造（D3）
         if (contentBytes == null && request.Content != null)
@@ -291,8 +307,14 @@ public class TokenRecoveryExecutor
         // SR-M6（P2.4，D9）注册表路由：解析一次、全链路复用（失效+刷新+重试走同一管理器实例）。
         // 解析失败回退注入实例 + Warning（不 fail-fast——生成器默认键场景的 401 恢复可用性优先）；
         // 用户级恢复解析到非 IUserTokenManager 时同样回退（TK-06：绝不用租户管理器执行用户级恢复）。
+        // L-1：解析结果若被租户绑定守卫拒绝则返回 null（已记结构化告警）→ 与其它恢复失败分支一致返回真实 401。
         var resolvedCredentialManager = ResolveManager(recoveryContext);
+        if (resolvedCredentialManager == null)
+            return response;   // D3：返回服务端真实 401
+
         var resolvedUserManager = isUserTokenRecovery ? ResolveUserManager(recoveryContext) : null;
+        if (isUserTokenRecovery && resolvedUserManager == null)
+            return response;   // D3：租户守卫拒绝用户令牌管理器
 
         // 创建令牌恢复子 Activity（mud.token.recovery）
         var recoveryActivity = MudHttpActivitySource.Instance.HasListeners()
@@ -348,11 +370,12 @@ public class TokenRecoveryExecutor
 
                 var retryRequest = BuildRetryRequest(request, contentBytes, recoveryContext);
 
-                // P1.4（TK-~redirect）跨主机校验：重试请求 host 与原始请求 host 不一致说明发生了
-                // 重定向到不受信任的地址，放弃恢复，避免将令牌外发到第三方主机。此分支不计数重试。
-                if (!IsSameHost(request.RequestUri, retryRequest.RequestUri))
+                // P1.4（TK-~redirect）+ MT-01：重试目标主机必须与「首次发送的最终落点」同源。
+                // 原实现比较 request.RequestUri 与克隆体 RequestUri（两者同源，恒真）；
+                // 现与 finalUri（已含首次重定向结果）比较，恢复真正的语义。
+                if (!IsSameHost(finalUri, retryRequest.RequestUri))
                 {
-                    MudHttpClientLog.TokenRecoveryHostMismatch(_logger, retryRequest.RequestUri?.Host, request.RequestUri?.Host);
+                    MudHttpClientLog.TokenRecoveryHostMismatch(_logger, retryRequest.RequestUri?.Host, finalUri?.Host);
                     if (retryRequest != request) retryRequest.Dispose();
                     return response;   // D3：返回真实 401
                 }
@@ -381,6 +404,15 @@ public class TokenRecoveryExecutor
                 }
 
                 var retryResponse = await sendFunc(retryRequest, cancellationToken).ConfigureAwait(false);
+
+                // MT-01：重试请求在发送途中被重定向到外部主机 —— 新令牌已被发往第三方，无法挽回，
+                // 但必须可观测（否则安全事件完全静默）。此处只记日志，不改变返回语义。
+                var retryFinalUri = retryResponse.RequestMessage?.RequestUri ?? retryRequest.RequestUri;
+                if (!IsSameHost(retryRequest.RequestUri, retryFinalUri))
+                {
+                    MudHttpClientLog.TokenRecoveryRedirectDetected(
+                        _logger, retryRequest.RequestUri?.Host, retryFinalUri?.Host);
+                }
 
                 if (retryResponse.StatusCode != HttpStatusCode.Unauthorized)
                 {
@@ -693,78 +725,19 @@ public class TokenRecoveryExecutor
     /// 去重键含 scope：managerKey + "\u001F" + ScopeKeyBuilder.Build(scopes)，避免同管理器不同 scope 的并发 401 被合并。
     /// TMR-12：刷新完成后结果在 RefreshDedupWindowSeconds 窗口内保留，窗口内后续 401 直接复用结果。
     /// </summary>
-    private async Task<string?> RefreshTokenWithDedupAsync(
+    private Task<string?> RefreshTokenWithDedupAsync(
         string managerKey, ITokenManager credentialManager, string[]? scopes, CancellationToken cancellationToken)
     {
         var scopeKey = scopes is { Length: > 0 } ? ScopeKeyBuilder.Build(scopes) : ScopeKeyBuilder.DefaultKey;
         var dedupKey = managerKey + "\u001F" + scopeKey;
-        var dedupWindow = Options.RefreshDedupWindowSeconds;
-        while (true)
-        {
-            // TMR-12：先检查是否有未过期的已完成结果
-            if (_credentialRefreshTasks.TryGetValue(dedupKey, out var existingEntry))
-            {
-                if (existingEntry.Task == null && !existingEntry.IsExpired)
-                {
-                    // 窗口内复用已有结果
-                    return existingEntry.Result;
-                }
 
-                if (existingEntry.Task != null && !existingEntry.Task.IsCompleted)
-                {
-                    // 另一个线程正在刷新，等待其结果（等待线程仅受自身 CT 约束，不影响共享刷新）
-                    try
-                    {
-                        var token = await WaitForTaskAsync(existingEntry.Task, cancellationToken).ConfigureAwait(false);
-
-                        // 验证获取到的令牌是否有效（可能在等待期间令牌又被另一个 401 失效了）
-                        if (!string.IsNullOrEmpty(token))
-                            return token;
-
-                        // 令牌为空，重新尝试刷新
-                        _credentialRefreshTasks.TryRemove(dedupKey, out _);
-                    }
-                    catch
-                    {
-                        // 刷新线程失败了，清除后重试
-                        _credentialRefreshTasks.TryRemove(dedupKey, out _);
-                        throw;
-                    }
-                    continue;
-                }
-
-                // 条目已过期或 Task 已完成但未被清理 → 尝试替换
-                _credentialRefreshTasks.TryRemove(dedupKey, out _);
-            }
-
-            var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var newEntry = new DedupEntry { Task = tcs.Task };
-
-            if (_credentialRefreshTasks.TryAdd(dedupKey, newEntry))
-            {
-                // TMX-15-2 (B6)：写入新条目时机会式清理过期条目
-                SweepExpiredDedupEntries(_credentialRefreshTasks);
-                // 当前线程赢得了刷新权
-                try
-                {
-                    var token = await RefreshCredentialWithIsolationAsync(credentialManager, scopes).ConfigureAwait(false);
-                    tcs.SetResult(token);
-                    // TMR-12：保留结果在 TTL 窗口内
-                    newEntry.Task = null;
-                    newEntry.Result = token;
-                    newEntry.IsSuccess = !string.IsNullOrEmpty(token);
-                    newEntry.ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(dedupWindow).UtcTicks;
-                    return token;
-                }
-                catch (Exception ex)
-                {
-                    tcs.SetException(ex);
-                    _credentialRefreshTasks.TryRemove(dedupKey, out _);
-                    throw;
-                }
-            }
-            // TryAdd 失败 → 另一个线程抢先，循环重试
-        }
+        // MT-05/MT-06：去重与有界收敛统一委托 RefreshDedupTable。
+        // 刷新工厂本身即为共享任务（不再经 TaskCompletionSource 转发），
+        // 因此失败时不存在"无人 await 的任务"，根除未观察任务异常。
+        return _credentialRefreshTasks.GetOrRefreshAsync(
+            dedupKey,
+            () => RefreshCredentialWithIsolationAsync(credentialManager, scopes),
+            Options.RefreshDedupWindowSeconds);
     }
 
     /// <summary>
@@ -772,19 +745,79 @@ public class TokenRecoveryExecutor
     /// 注册表缺席 / 键为空 / 解析失败 → 回退构造注入实例（解析失败记 Warning，不 fail-fast——
     /// 生成器默认键场景的 401 恢复可用性优先）。解析在恢复循环外完成一次，失效+刷新+重试全链路复用。
     /// </summary>
-    private ITokenManager ResolveManager(TokenRecoveryContext? ctx)
+    private ITokenManager? ResolveManager(TokenRecoveryContext? ctx)
     {
         var key = ctx?.TokenManagerKey;
         if (string.IsNullOrEmpty(key) || _managerRegistry == null)
-            return _tokenManager;                        // 既有行为（单管理器绑定）
+        {
+            // 既有行为（单管理器绑定）；L-1：注入实例同样受守卫约束
+            return TryEnforceTenantBinding(_tokenManager) ? _tokenManager : null;
+        }
 
         var resolved = _managerRegistry.Resolve(key!);
         if (resolved == null)
         {
             MudHttpClientLog.TokenManagerUnresolved(_logger, key!);   // Warning：回退注入实例
-            return _tokenManager;
+            return TryEnforceTenantBinding(_tokenManager) ? _tokenManager : null;
         }
-        return resolved;                                 // 命中：失效+刷新+重试全链路走正确管理器
+
+        // L-1：命中：先做租户绑定守卫，再交给失效+刷新+重试全链路。
+        // 注册表是宿主级扁平命名空间，两个应用注册同名管理器时 Resolve 可能返回**另一个租户**的实例；
+        // 守卫在此 fail-closed（返回 null → 恢复流程按失败处理 → 返回真实 401）。
+        return TryEnforceTenantBinding(resolved) ? resolved : null;
+    }
+
+    /// <summary>
+    /// L-1：恢复链路的租户绑定守卫。
+    /// </summary>
+    /// <param name="manager">本次恢复将要使用的令牌管理器。</param>
+    /// <returns><c>true</c> = 允许使用该管理器；<c>false</c> = 被守卫拒绝（已记结构化告警，调用方应返回真实 401）。</returns>
+    /// <remarks>
+    /// <para>
+    /// 与 <see cref="DefaultTokenProvider"/> 中的守卫同语义（bind-once）：管理器实例一旦绑定到某个 appKey，
+    /// 后续以其它 appKey 使用即被拒绝。
+    /// </para>
+    /// <para>
+    /// 此前守卫**仅在令牌获取路径**执行，恢复路径可绕过 —— 当宿主使用<b>扁平</b>
+    /// <see cref="ITokenManagerRegistry"/> 且两个应用注册了同名 key 时，
+    /// 应用 A 的 401 可能触发应用 B 的令牌被失效/刷新（凭据错配 / 跨租户越权）。
+    /// </para>
+    /// <para>
+    /// 跳过条件（与既有行为一致，不引入新的误报）：
+    /// ① <paramref name="manager"/> 非 <see cref="TokenManagerBase"/> 派生类；
+    /// ② 未注入 <see cref="IAppContextHolder"/>（无 DI / 第三方宿主自建执行器时）；
+    /// ③ 当前无应用上下文（<c>Current?.AppKey</c> 为空）；
+    /// ④ 管理器覆写 <c>EnforceTenantBinding = false</c>（合法共享凭据设计）。
+    /// </para>
+    /// <para>
+    /// 拒绝时**不向调用方抛异常**：与其余恢复失败分支保持一致（D3 —— 返回服务端真实 401），
+    /// 仅记录结构化告警（<c>TenantBindingRejected</c>，EventId 162）。
+    /// </para>
+    /// </remarks>
+    private bool TryEnforceTenantBinding(ITokenManager manager)
+    {
+        if (manager is not TokenManagerBase baseManager)
+            return true;
+
+        var appKey = _appContextHolder?.Current?.AppKey;
+        if (string.IsNullOrEmpty(appKey))
+            return true;
+
+        try
+        {
+            // BindTenantGuard 内部已处理 EnforceTenantBinding=false 的逃生门与同键幂等。
+            baseManager.BindTenantGuard(appKey!);
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            MudHttpClientLog.TenantBindingRejected(
+                _logger,
+                manager.GetType().Name,
+                baseManager.BoundTenant ?? "(未绑定)",
+                appKey!);
+            return false;
+        }
     }
 
     /// <summary>
@@ -792,18 +825,24 @@ public class TokenRecoveryExecutor
     /// 解析结果实现 <see cref="IUserTokenManager"/>——解析失败或解析到非用户管理器（租户实例）时
     /// 一律回退构造注入实例并记 Warning（TK-06：绝不用租户管理器执行用户级恢复，凭据错配防线）。
     /// </summary>
-    private IUserTokenManager ResolveUserManager(TokenRecoveryContext? ctx)
+    private IUserTokenManager? ResolveUserManager(TokenRecoveryContext? ctx)
     {
         var injected = _userTokenManager!;               // 调用点已保证非空（isUserTokenRecovery 分支）
         var key = ctx?.TokenManagerKey;
         if (string.IsNullOrEmpty(key) || _managerRegistry == null)
-            return injected;                             // 既有行为（单管理器绑定）
+        {
+            // 既有行为（单管理器绑定）；L-1：注入实例同样受守卫约束
+            return TryEnforceTenantBinding(injected) ? injected : null;
+        }
 
         if (_managerRegistry.Resolve(key!) is IUserTokenManager userManager)
-            return userManager;
+        {
+            // L-1：解析命中同样受守卫约束
+            return TryEnforceTenantBinding(userManager) ? userManager : null;
+        }
 
         MudHttpClientLog.TokenManagerUnresolved(_logger, key!);   // Warning：回退注入实例
-        return injected;
+        return TryEnforceTenantBinding(injected) ? injected : null;
     }
 
     /// <summary>
@@ -836,72 +875,17 @@ public class TokenRecoveryExecutor
     /// 去重键含 scope：managerKey + "\u001F" + userId + "\u001F" + scopeKey。
     /// TMR-12：刷新完成后结果在 RefreshDedupWindowSeconds 窗口内保留，窗口内后续 401 直接复用结果。
     /// </summary>
-    private async Task<string?> RefreshUserTokenWithDedupAsync(
+    private Task<string?> RefreshUserTokenWithDedupAsync(
         string managerKey, string userId, IUserTokenManager userTokenManager, string[]? scopes, CancellationToken cancellationToken)
     {
         var scopeKey = scopes is { Length: > 0 } ? ScopeKeyBuilder.Build(scopes) : ScopeKeyBuilder.DefaultKey;
         var dedupKey = managerKey + "\u001F" + userId + "\u001F" + scopeKey;
-        var dedupWindow = Options.RefreshDedupWindowSeconds;
-        while (true)
-        {
-            // TMR-12：先检查是否有未过期的已完成结果
-            if (_userRefreshTasks.TryGetValue(dedupKey, out var existingEntry))
-            {
-                if (existingEntry.Task == null && !existingEntry.IsExpired)
-                {
-                    // 窗口内复用已有结果
-                    return existingEntry.Result;
-                }
 
-                if (existingEntry.Task != null && !existingEntry.Task.IsCompleted)
-                {
-                    // 另一个线程正在刷新，等待其结果
-                    try
-                    {
-                        var token = await WaitForTaskAsync(existingEntry.Task, cancellationToken).ConfigureAwait(false);
-                        if (!string.IsNullOrEmpty(token))
-                            return token;
-                        _userRefreshTasks.TryRemove(dedupKey, out _);
-                    }
-                    catch
-                    {
-                        _userRefreshTasks.TryRemove(dedupKey, out _);
-                        throw;
-                    }
-                    continue;
-                }
-
-                // 条目已过期或 Task 已完成但未被清理 → 尝试替换
-                _userRefreshTasks.TryRemove(dedupKey, out _);
-            }
-
-            var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-            var newEntry = new DedupEntry { Task = tcs.Task };
-
-            if (_userRefreshTasks.TryAdd(dedupKey, newEntry))
-            {
-                // TMX-15-2 (B6)：写入新条目时机会式清理过期条目
-                SweepExpiredDedupEntries(_userRefreshTasks);
-                try
-                {
-                    var token = await RefreshUserTokenWithIsolationAsync(userId, userTokenManager, scopes).ConfigureAwait(false);
-                    tcs.SetResult(token);
-                    // TMR-12：保留结果在 TTL 窗口内
-                    newEntry.Task = null;
-                    newEntry.Result = token;
-                    newEntry.IsSuccess = !string.IsNullOrEmpty(token);
-                    newEntry.ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(dedupWindow).UtcTicks;
-                    return token;
-                }
-                catch (Exception ex)
-                {
-                    tcs.SetException(ex);
-                    _userRefreshTasks.TryRemove(dedupKey, out _);
-                    throw;
-                }
-            }
-            // TryAdd 失败 → 另一个线程抢先，循环重试
-        }
+        // MT-05/MT-06：同租户级路径，统一委托 RefreshDedupTable（含 userId 的高基数键受条目上限约束）。
+        return _userRefreshTasks.GetOrRefreshAsync(
+            dedupKey,
+            () => RefreshUserTokenWithIsolationAsync(userId, userTokenManager, scopes),
+            Options.RefreshDedupWindowSeconds);
     }
 
     /// <summary>
@@ -955,30 +939,11 @@ public class TokenRecoveryExecutor
     }
 
     /// <summary>
-    /// 尝试等待指定任务，等待线程仅受自身取消令牌约束；
-    /// net5+ 使用 <c>Task.WaitAsync</c>，netstandard2.0 使用 <c>Task.WhenAny</c> + <c>Task.Delay</c> 实现同等效果。
+    /// MT-05 说明：原 <c>WaitForTaskAsync</c>（等待者在自身 CT 取消时提前脱离共享刷新任务）已随
+    /// 「条目即任务」改造一并移除 —— 现在所有等待者与赢者 await 同一个 <see cref="Task"/>，
+    /// 共享刷新不受任一调用方取消影响（取消隔离语义保持一致），异常也必然被观察。
+    /// 移除后同时消除了 ns2.0 路径 <c>Task.Delay(Timeout.Infinite, ct)</c> 的取消注册滞留（SR-L8 已知问题）。
     /// </summary>
-    /// <remarks>
-    /// SR-L8（P3.10，D14）已知模式（保留现状）：ns2.0 路径 Task.Delay(Timeout.Infinite, ct) 的注册项
-    /// 在取消触发后滞留直至完成——滞留量级 = 等待者被取消的次数（每项一个 Timer 注册，量级可忽略）。
-    /// 改用局部 CancellationTokenSource.CancelAfter 可消除滞留但引入额外分配与取消传播路径，
-    /// 收益低于成本，按决策文档化不改（见 §0.3 / D14 表）。
-    /// </remarks>
-    private static async Task<T> WaitForTaskAsync<T>(Task<T> task, CancellationToken cancellationToken)
-    {
-#if NETSTANDARD2_0
-        if (task.IsCompleted)
-            return await task.ConfigureAwait(false);
-
-        var completed = await Task.WhenAny(task, Task.Delay(Timeout.Infinite, cancellationToken)).ConfigureAwait(false);
-        if (completed != task)
-            throw new OperationCanceledException(cancellationToken);
-        return await task.ConfigureAwait(false);
-#else
-        return await task.WaitAsync(cancellationToken).ConfigureAwait(false);
-#endif
-    }
-
     private static string ReplaceQueryParameter(string? queryString, string paramName, string newValue)
     {
         var query = queryString ?? "";

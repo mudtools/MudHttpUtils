@@ -12,6 +12,9 @@ namespace Mud.HttpUtils;
 /// <summary>
 /// 基于内存的 HTTP 响应缓存默认实现，支持 LRU 淘汰策略。
 /// </summary>
+/// <remarks>
+/// M5-HC-08：条目元数据不可变 + CAS（M2-#14）；值对象按引用共享 —— 命中返回同一实例，请勿修改。
+/// </remarks>
 public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
 {
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new();

@@ -1088,7 +1088,7 @@ services.AddSingleton<IAppManager<FeishuContext>, DefaultAppManager<FeishuContex
 var appManager = serviceProvider.GetRequiredService<IAppManager<FeishuContext>>();
 appManager.ConfigurationChanged += (sender, args) =>
 {
-    Console.WriteLine($"应用 {args.AppId} 配置已变更");
+    Console.WriteLine($"应用 {args.AppKey} 配置已变更");
 };
 ```
 
@@ -1099,6 +1099,10 @@ appManager.ConfigurationChanged += (sender, args) =>
 var apiKeyProvider = appContext.GetService<IApiKeyProvider>();
 var hmacProvider = appContext.GetService<IHmacSignatureProvider>();
 ```
+
+> **上下文归还约束**：`UseApp(appKey)` / `SwitchTo(...)` 只写入 `AsyncLocal`，**不会自动归还**。在长生命周期宿主中，未归还的切换会让同一异步流上的后续请求继续看到上一个应用（可能读到其它租户的令牌）。请求处理路径请优先使用作用域式 `UseAppScope(appKey)`（`using` 自动归还）或生成客户端的 `BeginScope(appKey)`；后台任务 / `Task.Run` 内部请建立自己的作用域，不要依赖调用方残留的上下文。完整示例见 `Mud.HttpUtils.Client` README 的「上下文归还约束」章节。
+
+> **应用切换授权**：未注册 `IAppAccessAuthorizer` 时，`UseApp` / `BeginScope(appKey)` / `UseAppScope(appKey)` 会**直接抛 `InvalidOperationException`**（默认拒绝，MT-02 / BC-18）。单应用/受信场景请显式注册 `AllowAllAppAccessAuthorizer` 将"放行"写成代码中的意图。
 
 ## 核心接口
 

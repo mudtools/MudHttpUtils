@@ -23,7 +23,11 @@ public sealed class HttpClientResolver(IEnhancedHttpClientFactory clientFactory)
             throw new ArgumentNullException(nameof(clientName));
 
         if (!TryGetClient(clientName, out var client) || client == null)
-            throw new InvalidOperationException($"未注册名为 '{clientName}' 的 HttpClient。请先调用 AddMudHttpClient 注册。");
+            // MT-13：客户端名区分大小写（Ordinal），与配置字典 / keyed DI / 命名 HttpClient 一致。
+            // 失败消息中显式提示该点，避免"配置写 Default、代码传 default"的排查成本。
+            throw new InvalidOperationException(
+                $"未注册名为 '{clientName}' 的 HttpClient。请先调用 AddMudHttpClient 注册。" +
+                "注意：客户端名称区分大小写，请确认与注册/配置中的大小写完全一致。");
 
         return client;
     }

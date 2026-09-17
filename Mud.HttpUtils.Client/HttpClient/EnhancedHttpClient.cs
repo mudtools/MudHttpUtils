@@ -104,6 +104,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
     private const int DefaultBufferSize = 81920;
     private const int MaxDebugLogBodyLength = 32768;
+    /// <summary>M5-HC-03：日志侧响应体窗口（与 DefaultHttpRequestExecutor 日志口径一致为 500；错误响应体落日志用 200，进 ApiException 用 EffectiveMaxErrorContentLength）。</summary>
+    private const int LogBodyMaxLength = 500;
     // N-1：默认上限统一至 HttpExecutionConstants（单一真相源），与 DefaultHttpRequestExecutor 路径一致
     private const int MaxErrorContentLength = HttpExecutionConstants.DefaultMaxExceptionContentLength;
 
@@ -185,7 +187,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         options ??= new EnhancedHttpClientOptions();
         _logger = options.Logger ?? NullLogger.Instance;
-        _enableLogging = _logger != NullLogger.Instance;
+        // M5-HC-11：NullLogger.Instance 与 NullLogger<T>.Instance 对所有级别 IsEnabled 恒为 false。
+        // 用 Critical（最高级别）零反射判定「有真实日志」，替代原先对 NullLogger.Instance 的引用比较。
+        _enableLogging = _logger.IsEnabled(LogLevel.Critical);
         _requestInterceptors = options.RequestInterceptors?.OrderBy(i => i.Order).ToArray() ?? Array.Empty<IHttpRequestInterceptor>();
         _responseInterceptors = options.ResponseInterceptors?.OrderBy(i => i.Order).ToArray() ?? Array.Empty<IHttpResponseInterceptor>();
         _sensitiveDataMasker = options.SensitiveDataMasker;
@@ -251,7 +255,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         object? jsonSerializerOptions = null,
         CancellationToken cancellationToken = default)
     {
-        var uri = ValidateRequest(request);
+        var uri = await ValidateRequestAsync(request, cancellationToken).ConfigureAwait(false);
 
         return await ExecuteWithObservabilityAsync(
             request,
@@ -273,7 +277,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         HttpRequestMessage request,
         CancellationToken cancellationToken = default)
     {
-        var uri = ValidateRequest(request);
+        var uri = await ValidateRequestAsync(request, cancellationToken).ConfigureAwait(false);
 
         return await ExecuteWithObservabilityAsync(
             request,
@@ -305,7 +309,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         if (string.IsNullOrWhiteSpace(filePath))
             throw new ArgumentException("文件路径不能为空", nameof(filePath));
 
-        var uri = ValidateRequest(request);
+        var uri = await ValidateRequestAsync(request, cancellationToken).ConfigureAwait(false);
 
         return await ExecuteWithObservabilityAsync(
         request,
@@ -324,7 +328,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         HttpRequestMessage request,
         CancellationToken cancellationToken = default)
     {
-        var uri = ValidateRequest(request);
+        var uri = await ValidateRequestAsync(request, cancellationToken).ConfigureAwait(false);
 
         return await ExecuteWithObservabilityAsync(
             request,
@@ -350,7 +354,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         HttpRequestMessage request,
         CancellationToken cancellationToken = default)
     {
-        var uri = ValidateRequest(request);
+        var uri = await ValidateRequestAsync(request, cancellationToken).ConfigureAwait(false);
 
         return await ExecuteWithObservabilityAsync(
             request,
@@ -359,18 +363,28 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             {
                 var response = await SendCoreAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 
-                await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
+                // M5-HC-02：校验/读流失败时必须释放响应，否则连接泄漏且调用方无引用可释放
+                try
+                {
+                    await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
 
-                // 流式响应需要在响应头到达时即记录状态码（响应体可能在 Dispose 后才读取）
-                MudHttpObservability.SetStatusCode(request, (int)response.StatusCode);
-                MudHttpObservability.SetContentLength(request, response.Content.Headers.ContentLength);
+                    // 流式响应需要在响应头到达时即记录状态码（响应体可能在 Dispose 后才读取）
+                    MudHttpObservability.SetStatusCode(request, (int)response.StatusCode);
+                    MudHttpObservability.SetContentLength(request, response.Content.Headers.ContentLength);
 
 #if NETSTANDARD2_0
-                var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                    var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 #else
-                var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+                    var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 #endif
-                return new DisposableStream(stream, response);
+                    // 所有权转移：stream + response 由 DisposableStream 统一持有/释放
+                    return new DisposableStream(stream, response);
+                }
+                catch
+                {
+                    response.Dispose();
+                    throw;
+                }
             },
             cancellationToken);
     }
@@ -385,7 +399,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
      object? jsonSerializerOptions = null,
      [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var uri = ValidateRequest(request);
+        var uri = await ValidateRequestAsync(request, cancellationToken).ConfigureAwait(false);
 
         // 可观测性：设置 client_name 供下游 DelegatingHandler 读取
         MudHttpObservability.SetClientName(request, ClientName);
@@ -627,7 +641,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         if (jsonTypeInfo == null)
             throw new ArgumentNullException(nameof(jsonTypeInfo));
 
-        var uri = ValidateRequest(request);
+        var uri = await ValidateRequestAsync(request, cancellationToken).ConfigureAwait(false);
 
         // 可观测性：设置 client_name 供下游 DelegatingHandler 读取
         MudHttpObservability.SetClientName(request, ClientName);
@@ -844,7 +858,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         Encoding? encoding = null,
         CancellationToken cancellationToken = default)
     {
-        var uri = ValidateRequest(request);
+        var uri = await ValidateRequestAsync(request, cancellationToken).ConfigureAwait(false);
 
         return await ExecuteWithObservabilityAsync(
             request,
@@ -923,7 +937,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         requestUri = ResolveRequestUri(requestUri)!;
         using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
         ApplyRequestConfig(request);
-        var uri = ValidateRequest(request);
+        var uri = await ValidateRequestAsync(request, cancellationToken).ConfigureAwait(false);
         return await ExecuteWithObservabilityAsync(
             request,
             "发送XML GET请求", "XML GET请求完成", "XML GET请求失败", uri,
@@ -944,7 +958,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             Content = new StringContent(xmlContent, enc, "application/xml")
         };
         ApplyRequestConfig(request);
-        var uri = ValidateRequest(request);
+        var uri = await ValidateRequestAsync(request, cancellationToken).ConfigureAwait(false);
         return await ExecuteWithObservabilityAsync(
             request,
             operation, completeMsg, errorMsg, uri,
@@ -1127,7 +1141,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 #endif
         }
 
-        var validatedUri = ValidateRequest(request);
+        var validatedUri = await ValidateRequestAsync(request, cancellationToken).ConfigureAwait(false);
         return await ExecuteWithObservabilityAsync(
             request,
             operation, completeMsg, errorMsg, validatedUri,
@@ -1177,7 +1191,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         requestUri = ResolveRequestUri(requestUri)!;
         using var request = new HttpRequestMessage(method, requestUri);
         ApplyRequestConfig(request);
-        var validatedUri = ValidateRequest(request);
+        var validatedUri = await ValidateRequestAsync(request, cancellationToken).ConfigureAwait(false);
         return await ExecuteWithObservabilityAsync(
             request,
             operation, completeMsg, errorMsg, validatedUri,
@@ -1265,15 +1279,25 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             HttpCompletionOption.ResponseHeadersRead,
             cancellationToken).ConfigureAwait(false);
 
-        await ExecuteResponseInterceptorsAsync(response, cancellationToken).ConfigureAwait(false);
+        // M5-HC-01：失败/拦截器异常路径必须释放响应，否则连接不归还连接池。
+        // EnsureSuccessStatusCodeAsync 已在抛异常前读完错误内容写入 ApiException，此处释放不影响诊断信息。
+        try
+        {
+            await ExecuteResponseInterceptorsAsync(response, cancellationToken).ConfigureAwait(false);
 
-        // 将状态码与内容长度存入请求属性，供 ExecuteWithObservabilityAsync 采集指标使用
-        MudHttpObservability.SetStatusCode(request, (int)response.StatusCode);
-        MudHttpObservability.SetContentLength(request, response.Content.Headers.ContentLength);
+            // 将状态码与内容长度存入请求属性，供 ExecuteWithObservabilityAsync 采集指标使用
+            MudHttpObservability.SetStatusCode(request, (int)response.StatusCode);
+            MudHttpObservability.SetContentLength(request, response.Content.Headers.ContentLength);
 
-        await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
+            await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
 
-        return response;
+            return response; // 所有权转移给调用方（调用点均为 using var）
+        }
+        catch
+        {
+            response.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -1316,7 +1340,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
                 var options = jsonSerializerOptions;
 
-                if (_enableLogging && _logger.IsEnabled(LogLevel.Debug))
+                if (_logger.IsEnabled(LogLevel.Trace))
                 {
                     using var memoryStream = new MemoryStream();
                     await CopyUpToAsync(stream, memoryStream, MaxDebugLogBodyLength + 1, cancellationToken).ConfigureAwait(false);
@@ -1343,7 +1367,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                         rawResponse = await reader.ReadToEndAsync().ConfigureAwait(false);
 #endif
                     }
-                    _logger.JsonResponseBodyRaw(requestUri!, rawResponse);
+                    // M5-HC-03：Trace 级原始体同样脱敏 + 限量，与错误响应体路径同口径
+                    _logger.JsonResponseBodyRaw(requestUri!, SanitizeContent(rawResponse, LogBodyMaxLength));
 
                     memoryStream.Position = 0;
 
@@ -1356,7 +1381,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                     }
                     catch (JsonException jsonEx)
                     {
-                        _logger.JsonDeserializeFailedDetailed(requestUri!, typeof(TResult).Name, rawResponse, jsonEx.Path, jsonEx);
+                        // M5-HC-03：Error 日志写入前统一脱敏 + 限量（masker 回退 MessageSanitizer）
+                        _logger.JsonDeserializeFailedDetailed(requestUri!, typeof(TResult).Name,
+                            SanitizeContent(rawResponse, LogBodyMaxLength), jsonEx.Path, jsonEx);
                         throw new JsonException($"反序列化到类型 {typeof(TResult).Name} 失败: {jsonEx.Message}", jsonEx);
                     }
                 }
@@ -1411,9 +1438,10 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 // N-2：成功响应体守卫（Content-Length 预判 + 读取阶段校验，保留 charset 语义）
                 var xmlContent = await ReadXmlContentStringAsync(response, requestUri, cancellationToken).ConfigureAwait(false);
 
-                if (_enableLogging && _logger.IsEnabled(LogLevel.Debug))
+                if (_logger.IsEnabled(LogLevel.Trace))
                 {
-                    _logger.XmlResponseBodyRaw(requestUri!, xmlContent);
+                    // M5-HC-03：Trace 级原始体脱敏 + 限量
+                    _logger.XmlResponseBodyRaw(requestUri!, SanitizeContent(xmlContent, LogBodyMaxLength));
                 }
 
                 if (string.IsNullOrWhiteSpace(xmlContent))
@@ -1430,7 +1458,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 }
                 catch (InvalidOperationException xmlEx)
                 {
-                    _logger.XmlDeserializeFailed(requestUri!, typeof(TResult).Name, xmlContent, xmlEx);
+                    // M5-HC-03：Error 日志写入前统一脱敏 + 限量
+                    _logger.XmlDeserializeFailed(requestUri!, typeof(TResult).Name,
+                        SanitizeContent(xmlContent, LogBodyMaxLength), xmlEx);
                     throw new InvalidOperationException($"XML反序列化到类型 {typeof(TResult).Name} 失败: {xmlEx.Message}", xmlEx);
                 }
             },
@@ -1834,13 +1864,42 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
     #region 辅助方法
 
-    private string ValidateRequest(HttpRequestMessage request)
+    /// <summary>M5-HC-07：异步请求校验 —— DNS 相关判定 await，消除 sync-over-async。</summary>
+    private async ValueTask<string> ValidateRequestAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         request.ThrowIfNull();
         var uri = SafeUrl(request.RequestUri);
-        // 校验使用原始 URL（脱敏掩码会破坏 URL 结构校验语义）
-        ValidateUrl(request.RequestUri?.ToString());
-        return uri;
+        var url = request.RequestUri?.ToString();
+
+        if (url is null)
+            throw new ArgumentNullException(nameof(url), "URL不能为空");
+        if (string.IsNullOrWhiteSpace(url))
+            throw new ArgumentException("URL不能为空", nameof(url));
+
+        if (Uri.IsWellFormedUriString(url, UriKind.Absolute))
+        {
+            await UrlValidator.ValidateUrlAsync(url, allowCustomBaseUrls: _allowCustomBaseUrls, cancellationToken)
+                .ConfigureAwait(false);
+            return uri;
+        }
+
+        if (Uri.IsWellFormedUriString(url, UriKind.Relative))
+        {
+            if (_httpClient.BaseAddress is null)
+            {
+                throw new InvalidOperationException("HttpClient未配置BaseAddress，无法使用相对URL");
+            }
+            // 相对 URL：校验 BaseAddress（绝对 URI 走异步 DNS 通道）
+            await UrlValidator.ValidateUrlAsync(
+                _httpClient.BaseAddress?.ToString(),
+                allowCustomBaseUrls: _allowCustomBaseUrls,
+                cancellationToken).ConfigureAwait(false);
+            return uri;
+        }
+
+        throw new ArgumentException(
+            $"URL格式不正确: '{url}'。必须是有效的绝对URL或相对URL。",
+            nameof(url));
     }
 
     /// <summary>
@@ -1904,41 +1963,6 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 #endif
             }
         }
-    }
-
-    /// <summary>
-    /// 验证URL的有效性
-    /// </summary>
-    private void ValidateUrl(string? url)
-    {
-        if (url is null)
-            throw new ArgumentNullException(nameof(url), "URL不能为空");
-
-        if (string.IsNullOrWhiteSpace(url))
-            throw new ArgumentException("URL不能为空", nameof(url));
-
-        if (Uri.IsWellFormedUriString(url, UriKind.Absolute))
-        {
-            // 验证绝对URL是否安全
-            UrlValidator.ValidateUrl(url, allowCustomBaseUrls: _allowCustomBaseUrls);
-            return;
-        }
-
-        if (Uri.IsWellFormedUriString(url, UriKind.Relative))
-        {
-            if (_httpClient.BaseAddress is null)
-            {
-                throw new InvalidOperationException(
-                    "HttpClient未配置BaseAddress，无法使用相对URL");
-            }
-            // 验证BaseAddress是否安全
-            UrlValidator.ValidateBaseUrl(_httpClient.BaseAddress?.ToString(), allowCustomBaseUrls: _allowCustomBaseUrls);
-            return;
-        }
-
-        throw new ArgumentException(
-            $"URL格式不正确: '{url}'。必须是有效的绝对URL或相对URL。",
-            nameof(url));
     }
 
     /// <summary>
@@ -2089,12 +2113,21 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     private string SanitizeContent(string content, int maxLength = 200)
     {
         // M2-#18：统一脱敏入口（masker 回退 MessageSanitizer），与生成代码路径共用
-        return MessageSanitizer.SanitizeWith(_sensitiveDataMasker, content, maxLength);
+        // M5-HC-03：自定义 masker 缺陷不得影响请求/日志路径
+        try
+        {
+            return MessageSanitizer.SanitizeWith(_sensitiveDataMasker, content, maxLength);
+        }
+        catch
+        {
+            return "[脱敏失败]";
+        }
     }
 
     private void LogOperation(string operation, string uri)
     {
-        if (_enableLogging && _logger.IsEnabled(LogLevel.Debug))
+        // M5-HC-11：NullLogger.IsEnabled 恒 false，无需再与 _enableLogging 组合
+        if (_logger.IsEnabled(LogLevel.Debug))
         {
             _logger.HttpClientOperation(operation, uri);
         }
@@ -2102,7 +2135,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
     private bool LogRequestError(string errorMessage, string uri, Exception ex)
     {
-        if (_enableLogging && _logger.IsEnabled(LogLevel.Error))
+        if (_logger.IsEnabled(LogLevel.Error))
         {
             _logger.HttpClientError(errorMessage, uri, ex);
         }
@@ -2391,12 +2424,14 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// <param name="baseAddress">基地址字符串。</param>
     /// <returns>新的 <see cref="IEnhancedHttpClient"/> 实例。</returns>
     /// <exception cref="ArgumentException"><paramref name="baseAddress"/> 为空或仅包含空白字符。</exception>
+    /// <exception cref="FormatException"><paramref name="baseAddress"/> 不是合法的绝对 URI（由 <see cref="Uri"/> 构造函数抛出）。</exception>
     public virtual IEnhancedHttpClient WithBaseAddress(string baseAddress)
     {
         if (string.IsNullOrWhiteSpace(baseAddress))
             throw new ArgumentException("基地址不能为空", nameof(baseAddress));
 
-        return WithBaseAddress(new Uri(baseAddress));
+        // M5-HC-12：显式 Absolute —— 拒绝相对地址，避免延迟到 ValidateUrl 阶段才失败
+        return WithBaseAddress(new Uri(baseAddress, UriKind.Absolute));
     }
 
     /// <inheritdoc cref="IEnhancedHttpClient.WithBaseAddress(Uri)"/>
@@ -2454,9 +2489,10 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         public override void SetLength(long value) => _innerStream.SetLength(value);
         public override void Write(byte[] buffer, int offset, int count) => _innerStream.Write(buffer, offset, count);
 
-#if !NETSTANDARD2_0
+        // M5-HC-09：ns2.0 补齐 ReadAsync(byte[],int,int,CT) —— Stream 基类默认实现退化为同步 Read
         public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
             => _innerStream.ReadAsync(buffer, offset, count, cancellationToken);
+#if !NETSTANDARD2_0
         public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
             => _innerStream.ReadAsync(buffer, cancellationToken);
 #endif

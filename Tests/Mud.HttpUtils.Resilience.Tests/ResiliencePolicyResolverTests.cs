@@ -88,7 +88,7 @@ public class ResiliencePolicyResolverTests
         mockProvider.Verify(p => p.GetMethodPolicy<string>(It.IsAny<bool>(), It.IsAny<int>(),
             It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<bool>(), It.IsAny<int>(),
             It.IsAny<int>(), It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(),
-            It.IsAny<int>()), Times.Never);
+            It.IsAny<int>(), It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
@@ -98,7 +98,7 @@ public class ResiliencePolicyResolverTests
         mockProvider.Setup(p => p.GetMethodPolicy<string>(
                 It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(),
                 It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(),
-                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>()))
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>()))
             .Returns(Policy.NoOpAsync<string>());
         var resolver = new ResiliencePolicyResolver(mockProvider.Object);
 
@@ -108,7 +108,7 @@ public class ResiliencePolicyResolverTests
         mockProvider.Verify(p => p.GetMethodPolicy<string>(
             It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(),
             It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(),
-            It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>()), Times.Once);
+            It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>()), Times.Once);
     }
 
     [Fact]
@@ -154,7 +154,7 @@ public class ResiliencePolicyResolverTests
         mockProvider.Setup(p => p.GetMethodPolicy<string>(
                 It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(),
                 It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(),
-                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>()))
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>()))
             .Returns(retryPolicy);
         var resolver = new ResiliencePolicyResolver(mockProvider.Object);
 
@@ -201,7 +201,7 @@ public class ResiliencePolicyResolverTests
         mockProvider.Setup(p => p.GetMethodPolicy<string>(
                 It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(),
                 It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(),
-                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>()))
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>()))
             .Returns(retryPolicy);
         var resolver = new ResiliencePolicyResolver(mockProvider.Object);
 
@@ -238,7 +238,7 @@ public class ResiliencePolicyResolverTests
         mockProvider.Setup(p => p.GetMethodPolicy<string>(
                 It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(),
                 It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(),
-                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>()))
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>()))
             .Returns(noOpPolicy);
         var resolver = new ResiliencePolicyResolver(mockProvider.Object);
 
@@ -279,7 +279,7 @@ public class ResiliencePolicyResolverTests
         mockProvider.Setup(p => p.GetMethodPolicy<string>(
                 It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(),
                 It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(),
-                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>()))
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>()))
             .Returns(retryPolicy);
         var options = Options.Create(new ResilienceOptions { MaxCloneContentSize = 100 });
         var resolver = new ResiliencePolicyResolver(mockProvider.Object, options);
@@ -309,7 +309,7 @@ public class ResiliencePolicyResolverTests
         mockProvider.Setup(p => p.GetMethodPolicy<string>(
                 It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(),
                 It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(),
-                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>()))
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>()))
             .Returns(noOpPolicy);
         var options = Options.Create(new ResilienceOptions { MaxCloneContentSize = 100 });
         var resolver = new ResiliencePolicyResolver(mockProvider.Object, options);
@@ -342,7 +342,7 @@ public class ResiliencePolicyResolverTests
         mockProvider.Setup(p => p.GetMethodPolicy<string>(
                 It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(),
                 It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(),
-                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>()))
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>()))
             .Returns(Policy.NoOpAsync<string>());
         var resolver = new ResiliencePolicyResolver(mockProvider.Object);
 
@@ -367,7 +367,8 @@ public class ResiliencePolicyResolverTests
             true, 5, 200, true,       // retry
             true, 3, 10,              // circuit breaker
             true, 5000,               // timeout
-            30, 8                     // sampling
+            30, 8,                    // sampling
+            It.IsAny<string>()        // scope (M5-HC-06)
         ), Times.Once);
     }
 
@@ -379,7 +380,7 @@ public class ResiliencePolicyResolverTests
         mockProvider.Setup(p => p.GetMethodPolicy<string>(
                 It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(),
                 It.IsAny<bool>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<bool>(),
-                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>()))
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>()))
             .Returns(noOpPolicy);
         var resolver = new ResiliencePolicyResolver(mockProvider.Object);
 

@@ -757,6 +757,8 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 | `HTTPCLIENT027` | Error | `[Timeout(ms)]` 有效取值 `<= 0`（含负值；命名参数 `TimeoutMilliseconds` 与位置参数并存时命名参数优先） | 改为正毫秒数；如需取消方法级超时请移除 `[Timeout]` 特性（未声明即 `MethodTimeoutEnabled = false`，不会触发本诊断） | 否 | 是 |
 | `HTTPCLIENT028` | Warning | 继承模式下派生类与基类的应用切换来源不同（TokenManage 与默认模式混合），生成的 `UseApp`/`BeginScope` 使用 `new` 隐藏基类成员 | 通过派生接口调用切换方法，或统一两级的 TokenManage 配置 | 否 | 是 |
 | `HTTPCLIENT030` | Warning | `[Cache]` 应用于文件下载方法（含 `[FilePath]` 参数） | 文件下载写入本地文件、不存在可复用的响应体，缓存不会生效；请移除 `[Cache]` | 否 | 是 |
+| `HTTPCLIENT031` | Error | `[Cache]` 方法的默认缓存键包含无法稳定表达的参数（复杂对象 / `[Body]` / `[QueryMap]` / 非标量数组等）且未提供 `CacheKeyTemplate` | 默认键会退化为类型名，导致不同请求命中同一缓存并返回错误数据。请改用 `[Cache(..., CacheKeyTemplate = "…")]` 显式声明键模板，或移除 `[Cache]` | 否 | 是 |
+| `HTTPCLIENT032` | Warning | `[Cache]` 提供了 `CacheKeyTemplate`，但模板未引用某 Unsafe 参数 | 不同取值可能命中同一缓存（串键）。请在模板中加入该参数（字面量检查，尽力而为） | 否 | 是 |
 
 > **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010`、`HTTPCLIENT019` 当前**未使用**（ID 保留为占位，不重新分配）。
 > - `HTTPCLIENT010`：`BaseAddress` 已移除（CFG-27），使用直接编译错误 `CS0117`，无需生成器提示。
@@ -803,7 +805,7 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 | `MUD001` | Error | `[HttpClientApi]` 接口方法缺少 HTTP 方法特性 | 为方法标注 `[Get]`/`[Post]`/`[Put]`/`[Delete]`/`[Patch]`/`[Head]`/`[Options]`；标注 `[IgnoreGenerator]` 的接口/方法豁免。注意生成器由**特性名**推导 HTTP 动词，故继承 `HttpMethodAttribute` 的自定义特性不受支持（会产出 `CS0117`） | 否 | 是 |
 | `MUD002` | Error | `[HttpClientApi]` 接口方法返回类型不受生成器支持 | 返回**异步形态**：`Task`/`Task<T>`/`ValueTask`/`ValueTask<T>`/`IAsyncEnumerable<T>`（响应体 `T` 可为任意类型，含 `byte[]`/`Stream`/`HttpResponseMessage`/自定义类型）。裸 `byte[]`/`Stream`/`HttpResponseMessage`/`void` 均不受支持（生成器会产出不可编译代码） | 否 | 是 |<!-- supported-return-shapes: Task, Task<T>, ValueTask, ValueTask<T>, IAsyncEnumerable<T> -->
 | `MUD004` | Warning | `ITokenManager` 的实现以 `AddScoped`/`AddTransient`/`TryAddScoped`/`TryAddTransient` 注册（该实现内部维护令牌缓存与并发锁，非 Singleton 会令并发安全机制失效并重复刷新令牌） | 改用 `AddSingleton`/`TryAddSingleton` | 否 | 是 |
-| `MUD005` | Info | `[HttpClientApi]` 接口方法使用 `[Token(InjectionMode = Query)]` 注入模式：令牌进入请求 URL，可能被代理 / 访问日志 / 浏览器历史等不受控的外部系统记录（库内遥测已由 `SensitiveUrlRedactor` 脱敏，外部系统不受控） | 生产环境改用 Header 注入模式（`InjectionMode.Header`）或确认目标环境的日志治理覆盖令牌参数 | 否 | 是 |
+| `MUD005` | Warning | `[HttpClientApi]` 接口（方法级或接口级）使用 `[Token(InjectionMode = Query)]` 或 `[Token(InjectionMode = Path)]` 注入模式：令牌进入请求 URL / 路径，可能被代理 / 访问日志 / 浏览器历史等不受控的外部系统记录（库内遥测已由 `SensitiveUrlRedactor` 脱敏，外部系统不受控） | 生产环境改用 Header 注入模式（`InjectionMode.Header`）或确认目标环境的日志治理覆盖令牌参数 | 否 | 是 |
 
 #### 诊断排查顺序与可抑制性
 

@@ -160,7 +160,9 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// <inheritdoc />
     /// <remarks>
     /// TMX-07：默认实现走 scope 感知路径（与 <see cref="GetOrRefreshTokenAsync(string[]?, CancellationToken)"/> 一致），
-    /// 不再静默返回默认作用域令牌。不支持 scope 的派生类应覆写并抛 <see cref="NotSupportedException"/>。
+    /// 不再静默返回默认作用域令牌。不支持 scope 的派生类应覆写并抛 <see cref="NotSupportedException"/>
+    /// （MT-11：否则调用方会静默拿到默认作用域令牌，构成 scope 错配 / 潜在越权风险；
+    /// 支持按作用域取令牌的子类<b>必须覆写本重载</b>，<see cref="StandardOAuth2TokenManager"/> 已覆写）。
     /// </remarks>
     public virtual Task<string> GetTokenAsync(string[]? scopes, CancellationToken cancellationToken = default)
     {
@@ -179,6 +181,18 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// 会传入锁内刷新操作。若该调用方取消，则正在进行的共享刷新将被中止，其余等待者将在各自重试时发起新的刷新。
     /// 此行为是"尊重调用方取消"的有意设计，并非缺陷。</para>
     /// <para>401 恢复路径已做取消隔离（<c>TokenRecoveryExecutor</c> 使用独立 CT），不受此语义影响。</para>
+    /// <para><b>MT-27 实现约定（子类必读）</b>：</para>
+    /// <list type="bullet">
+    /// <item><description>本方法在<b>持有作用域键控锁（<see cref="KeyedLockTable"/>）期间</b>调用
+    /// <see cref="RefreshTokenCoreAsync"/> / <see cref="RefreshTokenWithScopesAsync"/>。</description></item>
+    /// <item><description>该锁基于 <see cref="SemaphoreSlim"/>，<b>不可重入</b>：
+    /// 刷新实现内部<b>不得</b>再次调用本管理器的 <see cref="GetOrRefreshTokenAsync(string[], CancellationToken)"/>
+    /// 或 <see cref="GetTokenAsync(CancellationToken)"/>，否则将<b>自锁死</b>（同线程永久等待自己持有的信号量）。</description></item>
+    /// <item><description>需要复用已缓存令牌时，请在刷新实现内使用 <see cref="GetCachedCredentialToken()"/> /
+    /// <see cref="GetCachedCredentialToken(string)"/> 等<b>不加锁</b>的读取入口。</description></item>
+    /// <item><description>取消语义：若取消发生在"等待锁"阶段，锁不会被获取，缓存保持原状；
+    /// 若发生在"持有锁刷新"阶段，异常向上传播且<b>不会写入半成品缓存</b>（写入仅在刷新成功后执行）。</description></item>
+    /// </list>
     /// </remarks>
     public virtual async Task<string> GetOrRefreshTokenAsync(string[]? scopes, CancellationToken cancellationToken = default)
     {
@@ -384,6 +398,11 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                 $"令牌管理器（{MetricsKey}）已绑定租户 '{existing}'，不能用于租户 '{tenantKey}' 的请求。" +
                 "跨租户复用同一管理器实例会导致令牌/凭据错配；若确属共享凭据设计，请覆写 EnforceTenantBinding 返回 false。");
     }
+
+    /// <summary>
+    /// L-1：当前已绑定的租户键（null = 尚未绑定）。供恢复链路在守卫拒绝时输出结构化告警。
+    /// </summary>
+    internal string? BoundTenant => Volatile.Read(ref _tenantBinding);
 
     /// <summary>
     /// SR-L9（P3.10，D14-V5）是否启动租户层维护 Timer（过期清理 300s / 锁清理 600s）。默认 true。
@@ -755,6 +774,12 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// SR-H1（P1.3）测试观测钩子：维护 Timer 是否仍在运行（经 InternalsVisibleTo 供测试断言 Dispose 后 Timer 停止）。
     /// </summary>
     internal bool TimersActive => !_timersStopped;
+
+    /// <summary>
+    /// MT-15：是否已释放。供 <see cref="TokenRefreshHelper"/> 区分
+    /// 「管理器已被释放（应反注册）」与「管理器<b>暂时</b>不可用（不应永久反注册）」。
+    /// </summary>
+    internal bool IsDisposed => _disposed;
 
     /// <summary>
     /// SR-M5（P3.3）测试观测钩子：作用域缓存当前条目数（供断言硬上限 LRU 收敛）。

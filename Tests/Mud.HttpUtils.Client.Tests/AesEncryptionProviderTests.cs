@@ -345,7 +345,9 @@ public class AesEncryptionProviderTests
     public void AuthenticatedEncryption_Encrypt_ProducesVersionPrefix()
     {
         var provider = CreateProvider();
-        var expected = IsGcmProducing ? (byte)0x02 : (byte)0x03;
+        // M5-HC-13：EnableKeySeparation 默认 true ⇒ CBC+HMAC 产出 v4(0x04) 信封；
+        // v3(0x03) 仅在显式关闭密钥分离时产出。本用例的 CreateProvider 使用默认选项。
+        var expected = IsGcmProducing ? (byte)0x02 : (byte)0x04;
 
         var bytes = Convert.FromBase64String(provider.Encrypt("test"));
 
@@ -468,23 +470,23 @@ public class AesEncryptionProviderTests
     }
 
     /// <summary>
-    /// AE-4：非 GCM 运行时（或 <c>RequireCrossRuntimePortable=true</c>）→ 密文首字节恒为 0x03。
+    /// AE-4：非 GCM 运行时（或 <c>RequireCrossRuntimePortable=true</c>）→ 密文首字节恒为 0x04（M5-HC-13 默认密钥分离）。
     /// </summary>
     [Fact]
-    public void Envelope_VersionSpace_CbcHmac_HasPrefix03()
+    public void Envelope_VersionSpace_CbcHmac_HasPrefix04()
     {
         var provider = CreateProvider(requireCrossRuntimePortable: AesGcm.IsSupported);
 
         for (var i = 0; i < 200; i++)
         {
             var bytes = Convert.FromBase64String(provider.Encrypt("payload " + i));
-            bytes[0].Should().Be((byte)0x03);
+            bytes[0].Should().Be((byte)0x04);
         }
     }
 
     /// <summary>
-    /// AE-5（B-3）：net8+ 上强制 <c>RequireCrossRuntimePortable=true</c> → 产出 0x03，
-    /// 且该密文仍可被默认（GCM）provider 解密（解密侧按前缀分派，与配置无关）。
+    /// AE-5（B-3）：net8+ 上强制 <c>RequireCrossRuntimePortable=true</c> → 产出 0x04，
+    /// 且该密文仍可被默认 provider 解密（解密侧按前缀分派，与配置无关）。
     /// </summary>
     [Fact]
     public void Envelope_CrossRuntimePortable_ProducesCbcHmacOnNet8()
@@ -494,7 +496,7 @@ public class AesEncryptionProviderTests
 
         var cipher = Convert.FromBase64String(portable.Encrypt(plain));
 
-        cipher[0].Should().Be((byte)0x03);
+        cipher[0].Should().Be((byte)0x04);
         CreateProvider().Decrypt(Convert.ToBase64String(cipher)).Should().Be(plain);
     }
 
@@ -513,8 +515,8 @@ public class AesEncryptionProviderTests
             CreateProvider(requireCrossRuntimePortable: true).Encrypt(plain));
 
         // 两种前缀都必须是合法版本字节（非 GCM 环境下两者均为 0x03，断言仍成立）
-        gcmCipher[0].Should().BeOneOf((byte)0x02, (byte)0x03);
-        cbcHmacCipher[0].Should().BeOneOf((byte)0x02, (byte)0x03);
+        gcmCipher[0].Should().BeOneOf((byte)0x02, (byte)0x03, (byte)0x04);
+        cbcHmacCipher[0].Should().BeOneOf((byte)0x02, (byte)0x03, (byte)0x04);
 
         var reader = CreateProvider(requireCrossRuntimePortable: requireCrossRuntimePortable);
         reader.Decrypt(Convert.ToBase64String(gcmCipher)).Should().Be(plain);
@@ -533,7 +535,7 @@ public class AesEncryptionProviderTests
 
         for (var b = 0; b <= 0xFF; b++)
         {
-            if (b is 0x02 or 0x03) continue;
+            if (b is 0x02 or 0x03 or 0x04) continue;
 
             var input = new byte[1 + 16 + 32 + 16];
             input[0] = (byte)b;

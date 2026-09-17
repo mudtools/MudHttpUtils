@@ -37,29 +37,17 @@ internal sealed class MudHttpClientApplicationOptionsValidator
             && options.Clients.TryGetValue(options.DefaultClientName, out var defaultClient)
             && string.IsNullOrWhiteSpace(defaultClient.BaseAddress))
         {
+            // MT-12 后：无 BaseAddress 的客户端仍会被注册（Timeout/DefaultHeaders 生效），
+            // 但它作为「默认客户端」时无法承载相对 URL 请求 ⇒ 仍视为不可用组合。
             return ValidateOptionsResult.Fail(
                 $"MudHttpClients:DefaultClientName 指向的客户端 '{options.DefaultClientName}' 未配置 BaseAddress，" +
-                "该客户端不会被注册，其 TimeoutSeconds / DefaultHeaders / AllowCustomBaseUrls 将被忽略。" +
+                "该客户端无法处理相对 URL 请求（其 TimeoutSeconds / DefaultHeaders 仍会生效）。" +
                 "请补充 BaseAddress，或修正 DefaultClientName。");
         }
 
-        // A2：AppKey 格式校验（防日志注入/内存放大）。
-        foreach (var kvp in options.Clients)
-        {
-            var appKey = kvp.Value.AppKey;
-            if (string.IsNullOrWhiteSpace(appKey))
-                continue;
-
-            try
-            {
-                AppKeyValidator.Validate(appKey, nameof(MudHttpClientOptions.AppKey));
-            }
-            catch (ArgumentException ex)
-            {
-                return ValidateOptionsResult.Fail(
-                    $"MudHttpClients:Clients:{kvp.Key}:AppKey 非法：{ex.Message}");
-            }
-        }
+        // MT-24（BC-26）：原 MudHttpClientOptions.AppKey 已移除（死配置），此处对应的格式校验一并移除。
+        // 应用标识的格式约束仍由 AppKeyValidator（AppManager 注册/查询入口）与
+        // MudHttpAppManagementOptions.RegisteredAppKeys 校验承担。
 
         return ValidateOptionsResult.Success;
     }

@@ -140,7 +140,8 @@ public class TokenManagerBaseTests
 
         var token = await manager.GetOrRefreshTokenAsync(new[] { "read", "write" });
 
-        token.Should().Be("scoped-token:read,write");
+        // MT-16：scope 键分隔符由 "," 改为不可见 US（U+001F），避免 ["a,b"] 与 ["a","b"] 键碰撞。
+        token.Should().Be("scoped-token:read\u001Fwrite");
     }
 
     [Fact]

@@ -93,4 +93,21 @@ public class TokenRecoveryOptions
         set => _refreshDedupWindowSeconds = value >= 0 ? value : throw new ArgumentOutOfRangeException(nameof(RefreshDedupWindowSeconds), "去重窗口秒数不能为负数。");
     }
     private double _refreshDedupWindowSeconds = 2;
+
+    /// <summary>
+    /// MT-06：刷新去重表的条目数上限，默认 1024。
+    /// <para>
+    /// 去重键为 <c>managerKey + US + [userId + US +] scopeKey</c>。用户级恢复时键中含 userId，
+    /// 在用户基数大 + 401 风暴的场景下若无上限会构成无界内存增长。
+    /// 超过上限时先清除已过期条目，仍超限则按枚举顺序淘汰多余条目（仅保证有界性，不保证精确 LRU）。
+    /// </para>
+    /// <para>设为较小时会以「更早失去去重保护」换取更小的内存占用；设为 1 等价于几乎不去重。</para>
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">设置小于等于 0 的值时抛出。</exception>
+    public int MaxDedupEntries
+    {
+        get => _maxDedupEntries;
+        set => _maxDedupEntries = value > 0 ? value : throw new ArgumentOutOfRangeException(nameof(MaxDedupEntries), "去重表条目上限必须大于 0。");
+    }
+    private int _maxDedupEntries = 1024;
 }

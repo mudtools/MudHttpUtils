@@ -54,7 +54,10 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         _logger = logger ?? NullLogger<StandardOAuth2TokenManager>.Instance;
         _secretProvider = secretProvider;
         _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
-        _clientSecretCache = new ClientSecretCache(TimeSpan.FromSeconds(Options.ClientSecretCacheTtlSeconds));
+        // L-10：TTL 通过委托按需读取（Options 在 IOptionsMonitor 构造下即为热更新来源），
+        // 使 ClientSecretCacheTtlSeconds 的配置变更无需重建管理器即可生效。
+        _clientSecretCache = new ClientSecretCache(
+            () => TimeSpan.FromSeconds(Options.ClientSecretCacheTtlSeconds));
     }
 
     /// <summary>
@@ -66,8 +69,9 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// <param name="secretProvider">安全密钥提供程序（可选）。</param>
     /// <param name="contentSerializer">HTTP 内容序列化器（可选）。</param>
     /// <remarks>
-    /// <see cref="ClientSecretCache"/> 的 TTL 在构造时固定，不支持热更新（需重建管理器才能生效）。
-    /// 其他选项（<see cref="OAuth2Options.TokenEndpoint"/> / <see cref="OAuth2Options.ClientSecret"/> 等）
+    /// L-10：<see cref="ClientSecretCache"/> 的 TTL <b>同样支持热更新</b> —— 每次解析密钥时
+    /// 读取 <see cref="OAuth2Options.ClientSecretCacheTtlSeconds"/> 的当前值；
+    /// 其余选项（<see cref="OAuth2Options.TokenEndpoint"/> / <see cref="OAuth2Options.ClientSecret"/> 等）
     /// 在下一次刷新时自动拾取新值。
     /// </remarks>
     public StandardOAuth2TokenManager(
@@ -83,7 +87,10 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         _logger = logger ?? NullLogger<StandardOAuth2TokenManager>.Instance;
         _secretProvider = secretProvider;
         _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
-        _clientSecretCache = new ClientSecretCache(TimeSpan.FromSeconds(Options.ClientSecretCacheTtlSeconds));
+        // L-10：TTL 通过委托按需读取（Options 在 IOptionsMonitor 构造下即为热更新来源），
+        // 使 ClientSecretCacheTtlSeconds 的配置变更无需重建管理器即可生效。
+        _clientSecretCache = new ClientSecretCache(
+            () => TimeSpan.FromSeconds(Options.ClientSecretCacheTtlSeconds));
     }
 
     /// <summary>
@@ -109,7 +116,10 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         _logger = logger ?? NullLogger<StandardOAuth2TokenManager>.Instance;
         _secretProvider = secretProvider;
         _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
-        _clientSecretCache = new ClientSecretCache(TimeSpan.FromSeconds(Options.ClientSecretCacheTtlSeconds));
+        // L-10：TTL 通过委托按需读取（Options 在 IOptionsMonitor 构造下即为热更新来源），
+        // 使 ClientSecretCacheTtlSeconds 的配置变更无需重建管理器即可生效。
+        _clientSecretCache = new ClientSecretCache(
+            () => TimeSpan.FromSeconds(Options.ClientSecretCacheTtlSeconds));
     }
 
     /// <summary>
@@ -136,7 +146,10 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         _logger = logger ?? NullLogger<StandardOAuth2TokenManager>.Instance;
         _secretProvider = secretProvider;
         _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
-        _clientSecretCache = new ClientSecretCache(TimeSpan.FromSeconds(Options.ClientSecretCacheTtlSeconds));
+        // L-10：TTL 通过委托按需读取（Options 在 IOptionsMonitor 构造下即为热更新来源），
+        // 使 ClientSecretCacheTtlSeconds 的配置变更无需重建管理器即可生效。
+        _clientSecretCache = new ClientSecretCache(
+            () => TimeSpan.FromSeconds(Options.ClientSecretCacheTtlSeconds));
     }
 
     /// <summary>
@@ -290,6 +303,12 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         if (string.IsNullOrWhiteSpace(Options.RevocationEndpoint))
             throw new InvalidOperationException("未配置撤销端点 (RevocationEndpoint)");
 
+        // MT-09：与 TokenEndpoint 一致，在<b>运行期</b>校验端点安全性。
+        // 原实现仅在选项绑定期（OAuth2OptionsValidator）校验 revoke/introspect 端点，
+        // 编程式构造 OAuth2Options（Options.Create）或绕过校验器时，
+        // client_secret（Basic 头）与待撤销/内省令牌会经明文 HTTP 发出。
+        ValidateEndpointHttps(Options.RevocationEndpoint, "撤销端点 (RevocationEndpoint)");
+
         var parameters = new Dictionary<string, string>
         {
             ["token"] = token
@@ -327,6 +346,9 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
             throw new ArgumentException("令牌不能为空", nameof(token));
         if (string.IsNullOrWhiteSpace(Options.IntrospectionEndpoint))
             throw new InvalidOperationException("未配置内省端点 (IntrospectionEndpoint)");
+
+        // MT-09：同 RevokeTokenAsync —— 运行期校验内省端点的传输安全。
+        ValidateEndpointHttps(Options.IntrospectionEndpoint, "内省端点 (IntrospectionEndpoint)");
 
         var parameters = new Dictionary<string, string>
         {
@@ -434,6 +456,20 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     public override async Task<string> GetTokenAsync(CancellationToken cancellationToken = default)
     {
         return await base.GetOrRefreshTokenAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// MT-11：修复 <c>ITokenManager.GetTokenAsync(scopes)</c> 契约静默失效。
+    /// 基类 <see cref="TokenManagerBase.GetTokenAsync(string[], CancellationToken)"/> 的默认实现忽略 scopes
+    /// 并转调无参重载，而本类此前<b>只覆写了无参重载</b> —— 调用方以为拿到了受限作用域令牌，
+    /// 实际返回的是默认作用域令牌（scope 错配，且默认作用域可能权限更宽）。
+    /// </remarks>
+    public override Task<string> GetTokenAsync(string[]? scopes, CancellationToken cancellationToken = default)
+    {
+        return scopes is { Length: > 0 }
+            ? GetOrRefreshTokenAsync(scopes, cancellationToken)
+            : GetOrRefreshTokenAsync(cancellationToken);
     }
 
     /// <summary>

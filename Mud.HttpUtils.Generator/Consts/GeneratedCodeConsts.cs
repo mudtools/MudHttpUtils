@@ -44,6 +44,7 @@ internal sealed class GeneratedCodeConsts
     [
         "System",
         "System.Collections.Generic",   // Dictionary<,>（[Form]/FormUrlEncoded，审计 F2）
+        "System.Globalization",         // CultureInfo.InvariantCulture（M5-HC-04 缓存键）
         "System.Linq",                  // Any/Where/Select（数组 [Query]/[ArrayQuery]，审计 F2）
         "System.Net.Http",
         "System.Text",
