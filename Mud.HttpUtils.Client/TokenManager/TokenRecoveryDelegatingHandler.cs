@@ -57,13 +57,15 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
     /// <param name="tokenManager">令牌管理器，用于刷新和失效令牌。</param>
     /// <param name="options">令牌恢复配置选项（可选）。</param>
     /// <param name="logger">日志记录器（可选）。</param>
+    /// <param name="appContextHolder">L-1：应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
     public TokenRecoveryDelegatingHandler(
         ITokenManager tokenManager,
         TokenRecoveryOptions? options = null,
-        ILogger<TokenRecoveryDelegatingHandler>? logger = null)
+        ILogger<TokenRecoveryDelegatingHandler>? logger = null,
+        IAppContextHolder? appContextHolder = null)
     {
         _recoveryExecutor = new TokenRecoveryExecutor(
-            tokenManager, options: options, logger: logger);
+            tokenManager, options: options, logger: logger, appContextHolder: appContextHolder);
     }
 
     /// <summary>
@@ -75,16 +77,18 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
     /// <param name="options">令牌恢复配置选项（可选）。</param>
     /// <param name="logger">日志记录器（可选）。</param>
     /// <param name="managerRegistry">SR-M6（P2.4，D9）令牌管理器注册表（可选），按 TokenManagerKey 路由恢复链路。</param>
+    /// <param name="appContextHolder">L-1：应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
     public TokenRecoveryDelegatingHandler(
         ITokenManager tokenManager,
         IUserTokenManager? userTokenManager,
         ICurrentUserContext? currentUserContext = null,
         TokenRecoveryOptions? options = null,
         ILogger<TokenRecoveryDelegatingHandler>? logger = null,
-        ITokenManagerRegistry? managerRegistry = null)
+        ITokenManagerRegistry? managerRegistry = null,
+        IAppContextHolder? appContextHolder = null)
     {
         _recoveryExecutor = new TokenRecoveryExecutor(
-            tokenManager, userTokenManager, currentUserContext, options, logger, managerRegistry);
+            tokenManager, userTokenManager, currentUserContext, options, logger, managerRegistry, appContextHolder);
     }
 
     /// <summary>
@@ -93,13 +97,15 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
     /// <param name="tokenManager">令牌管理器，用于刷新和失效令牌。</param>
     /// <param name="optionsMonitor">令牌恢复配置选项监视器，支持热更新。</param>
     /// <param name="logger">日志记录器（可选）。</param>
+    /// <param name="appContextHolder">L-1：应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
     public TokenRecoveryDelegatingHandler(
         ITokenManager tokenManager,
         IOptionsMonitor<TokenRecoveryOptions> optionsMonitor,
-        ILogger<TokenRecoveryDelegatingHandler>? logger = null)
+        ILogger<TokenRecoveryDelegatingHandler>? logger = null,
+        IAppContextHolder? appContextHolder = null)
     {
         _recoveryExecutor = new TokenRecoveryExecutor(
-            tokenManager, optionsMonitor, logger);
+            tokenManager, optionsMonitor, logger, appContextHolder);
     }
 
     /// <summary>
@@ -111,16 +117,18 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
     /// <param name="optionsMonitor">令牌恢复配置选项监视器，支持热更新。</param>
     /// <param name="logger">日志记录器（可选）。</param>
     /// <param name="managerRegistry">SR-M6（P2.4，D9）令牌管理器注册表（可选），按 TokenManagerKey 路由恢复链路。</param>
+    /// <param name="appContextHolder">L-1：应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
     public TokenRecoveryDelegatingHandler(
         ITokenManager tokenManager,
         IUserTokenManager? userTokenManager,
         ICurrentUserContext? currentUserContext,
         IOptionsMonitor<TokenRecoveryOptions> optionsMonitor,
         ILogger<TokenRecoveryDelegatingHandler>? logger = null,
-        ITokenManagerRegistry? managerRegistry = null)
+        ITokenManagerRegistry? managerRegistry = null,
+        IAppContextHolder? appContextHolder = null)
     {
         _recoveryExecutor = new TokenRecoveryExecutor(
-            tokenManager, userTokenManager, currentUserContext, optionsMonitor, logger, managerRegistry);
+            tokenManager, userTokenManager, currentUserContext, optionsMonitor, logger, managerRegistry, appContextHolder);
     }
 
     /// <inheritdoc />

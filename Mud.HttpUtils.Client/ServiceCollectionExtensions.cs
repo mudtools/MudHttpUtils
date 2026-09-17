@@ -154,14 +154,14 @@ public static class HttpClientServiceCollectionExtensions
 #endif
 
 #if NET6_0_OR_GREATER
-        // D4：与 EnhancedHttpClientFactory 的永久缓存语义对齐，避免同一命名客户端
-        // 在 factory 路径与 keyed 路径解析出不同实例（生命周期语义分裂）。
-        // [遗留修复] 原为 #if NET8_0_OR_GREATER：keyed DI API 由 Microsoft.Extensions.DependencyInjection 8.x
-        // 包提供、net6.0 可用，而 EnhancedHttpClientFactory 的 net6 路径已走 GetRequiredKeyedService；
-        // 门控过宽导致 net6.0 下命名客户端 keyed 注册缺失（HttpClientResolverTests 确定性失败）。
-        services.AddKeyedSingleton<IEnhancedHttpClient>(
+        // L-6：keyed 解析回指 EnhancedHttpClientFactory 的缓存，使「命名客户端 = 进程内单例」
+        // 的语义由**单缓存**承担：
+        //   · 修复前为 AddKeyedSingleton —— 容器永久缓存实例，配置热更新（InvalidateAll）对本路径无效；
+        //   · 改为 Transient + 回指工厂后，keyed 与工厂路径返回**同一实例**（同缓存），
+        //     且配置变更 → InvalidateAll → 下一次解析真正重建实例并重新读取配置。
+        services.AddKeyedTransient<IEnhancedHttpClient>(
             clientName,
-            (sp, key) => CreateEnhancedClient(sp, (string)key));
+            (sp, key) => sp.GetRequiredService<IEnhancedHttpClientFactory>().CreateClient((string)key));
 #endif
 
         services.Configure<EnhancedHttpClientFactoryOptions>(options =>

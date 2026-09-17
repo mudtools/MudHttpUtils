@@ -51,6 +51,10 @@ public class TokenRecoveryExecutor
     private readonly IOptionsMonitor<TokenRecoveryOptions>? _optionsMonitor;
     private readonly ILogger _logger;
 
+    // L-1：应用上下文持有器（可选）。用于在恢复链路解析出管理器后执行租户绑定守卫，
+    // 与 DefaultTokenProvider 的守卫形成闭环（此前仅令牌获取路径有守卫，恢复路径没有）。
+    private readonly IAppContextHolder? _appContextHolder;
+
     /// <summary>
     /// TMR-07：当前生效的令牌恢复选项。优先走 IOptionsMonitor（热更新），回退静态快照。
     /// </summary>
@@ -74,14 +78,20 @@ public class TokenRecoveryExecutor
     /// <param name="tokenManager">令牌管理器，用于刷新和失效令牌。</param>
     /// <param name="options">令牌恢复配置选项（可选）。</param>
     /// <param name="logger">日志记录器（可选）。</param>
+    /// <param name="appContextHolder">
+    /// L-1：应用上下文持有器（可选）。提供时，恢复链路解析出的令牌管理器会先执行
+    /// <c>BindTenantGuard(当前 appKey)</c> 租户绑定守卫；为 null 或当前无应用上下文时跳过（与既有行为一致）。
+    /// </param>
     public TokenRecoveryExecutor(
         ITokenManager tokenManager,
         TokenRecoveryOptions? options = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        IAppContextHolder? appContextHolder = null)
     {
         _tokenManager = tokenManager ?? throw new ArgumentNullException(nameof(tokenManager));
         _staticOptions = options ?? new TokenRecoveryOptions();
         _logger = logger ?? NullLogger.Instance;
+        _appContextHolder = appContextHolder;
 
         var maxDedup = _staticOptions.MaxDedupEntries;
         _credentialRefreshTasks = new RefreshDedupTable(maxDedup);
@@ -94,14 +104,17 @@ public class TokenRecoveryExecutor
     /// <param name="tokenManager">令牌管理器，用于刷新和失效令牌。</param>
     /// <param name="optionsMonitor">令牌恢复配置选项监视器，支持热更新。</param>
     /// <param name="logger">日志记录器（可选）。</param>
+    /// <param name="appContextHolder">L-1：应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
     public TokenRecoveryExecutor(
         ITokenManager tokenManager,
         IOptionsMonitor<TokenRecoveryOptions> optionsMonitor,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        IAppContextHolder? appContextHolder = null)
     {
         _tokenManager = tokenManager ?? throw new ArgumentNullException(nameof(tokenManager));
         _optionsMonitor = optionsMonitor ?? throw new ArgumentNullException(nameof(optionsMonitor));
         _logger = logger ?? NullLogger.Instance;
+        _appContextHolder = appContextHolder;
 
         var maxDedup = optionsMonitor.CurrentValue?.MaxDedupEntries ?? 1024;
         _credentialRefreshTasks = new RefreshDedupTable(maxDedup);
@@ -117,13 +130,15 @@ public class TokenRecoveryExecutor
     /// <param name="optionsMonitor">令牌恢复配置选项监视器，支持热更新。</param>
     /// <param name="logger">日志记录器（可选）。</param>
     /// <param name="managerRegistry">SR-M6（P2.4，D9）：令牌管理器注册表（可选）。</param>
+    /// <param name="appContextHolder">L-1：应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
     public TokenRecoveryExecutor(
         ITokenManager tokenManager,
         IUserTokenManager? userTokenManager,
         ICurrentUserContext? currentUserContext,
         IOptionsMonitor<TokenRecoveryOptions> optionsMonitor,
         ILogger? logger = null,
-        ITokenManagerRegistry? managerRegistry = null)
+        ITokenManagerRegistry? managerRegistry = null,
+        IAppContextHolder? appContextHolder = null)
     {
         _tokenManager = tokenManager ?? throw new ArgumentNullException(nameof(tokenManager));
         _optionsMonitor = optionsMonitor ?? throw new ArgumentNullException(nameof(optionsMonitor));
@@ -131,6 +146,7 @@ public class TokenRecoveryExecutor
         _currentUserContext = currentUserContext;
         _logger = logger ?? NullLogger.Instance;
         _managerRegistry = managerRegistry;
+        _appContextHolder = appContextHolder;
 
         var maxDedup = optionsMonitor.CurrentValue?.MaxDedupEntries ?? 1024;
         _credentialRefreshTasks = new RefreshDedupTable(maxDedup);
@@ -147,14 +163,16 @@ public class TokenRecoveryExecutor
     /// <param name="logger">日志记录器（可选）。</param>
     /// <param name="managerRegistry">SR-M6（P2.4，D9）：令牌管理器注册表（可选）。非空时按
     /// TokenRecoveryContext.TokenManagerKey 路由到正确管理器；解析失败回退注入实例 + Warning。</param>
+    /// <param name="appContextHolder">L-1：应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
     public TokenRecoveryExecutor(
         ITokenManager tokenManager,
         IUserTokenManager? userTokenManager,
         ICurrentUserContext? currentUserContext = null,
         TokenRecoveryOptions? options = null,
         ILogger? logger = null,
-        ITokenManagerRegistry? managerRegistry = null)
-        : this(tokenManager, options, logger)
+        ITokenManagerRegistry? managerRegistry = null,
+        IAppContextHolder? appContextHolder = null)
+        : this(tokenManager, options, logger, appContextHolder)
     {
         _userTokenManager = userTokenManager;
         _currentUserContext = currentUserContext;
@@ -281,8 +299,14 @@ public class TokenRecoveryExecutor
         // SR-M6（P2.4，D9）注册表路由：解析一次、全链路复用（失效+刷新+重试走同一管理器实例）。
         // 解析失败回退注入实例 + Warning（不 fail-fast——生成器默认键场景的 401 恢复可用性优先）；
         // 用户级恢复解析到非 IUserTokenManager 时同样回退（TK-06：绝不用租户管理器执行用户级恢复）。
+        // L-1：解析结果若被租户绑定守卫拒绝则返回 null（已记结构化告警）→ 与其它恢复失败分支一致返回真实 401。
         var resolvedCredentialManager = ResolveManager(recoveryContext);
+        if (resolvedCredentialManager == null)
+            return response;   // D3：返回服务端真实 401
+
         var resolvedUserManager = isUserTokenRecovery ? ResolveUserManager(recoveryContext) : null;
+        if (isUserTokenRecovery && resolvedUserManager == null)
+            return response;   // D3：租户守卫拒绝用户令牌管理器
 
         // 创建令牌恢复子 Activity（mud.token.recovery）
         var recoveryActivity = MudHttpActivitySource.Instance.HasListeners()
@@ -685,19 +709,79 @@ public class TokenRecoveryExecutor
     /// 注册表缺席 / 键为空 / 解析失败 → 回退构造注入实例（解析失败记 Warning，不 fail-fast——
     /// 生成器默认键场景的 401 恢复可用性优先）。解析在恢复循环外完成一次，失效+刷新+重试全链路复用。
     /// </summary>
-    private ITokenManager ResolveManager(TokenRecoveryContext? ctx)
+    private ITokenManager? ResolveManager(TokenRecoveryContext? ctx)
     {
         var key = ctx?.TokenManagerKey;
         if (string.IsNullOrEmpty(key) || _managerRegistry == null)
-            return _tokenManager;                        // 既有行为（单管理器绑定）
+        {
+            // 既有行为（单管理器绑定）；L-1：注入实例同样受守卫约束
+            return TryEnforceTenantBinding(_tokenManager) ? _tokenManager : null;
+        }
 
         var resolved = _managerRegistry.Resolve(key!);
         if (resolved == null)
         {
             MudHttpClientLog.TokenManagerUnresolved(_logger, key!);   // Warning：回退注入实例
-            return _tokenManager;
+            return TryEnforceTenantBinding(_tokenManager) ? _tokenManager : null;
         }
-        return resolved;                                 // 命中：失效+刷新+重试全链路走正确管理器
+
+        // L-1：命中：先做租户绑定守卫，再交给失效+刷新+重试全链路。
+        // 注册表是宿主级扁平命名空间，两个应用注册同名管理器时 Resolve 可能返回**另一个租户**的实例；
+        // 守卫在此 fail-closed（返回 null → 恢复流程按失败处理 → 返回真实 401）。
+        return TryEnforceTenantBinding(resolved) ? resolved : null;
+    }
+
+    /// <summary>
+    /// L-1：恢复链路的租户绑定守卫。
+    /// </summary>
+    /// <param name="manager">本次恢复将要使用的令牌管理器。</param>
+    /// <returns><c>true</c> = 允许使用该管理器；<c>false</c> = 被守卫拒绝（已记结构化告警，调用方应返回真实 401）。</returns>
+    /// <remarks>
+    /// <para>
+    /// 与 <see cref="DefaultTokenProvider"/> 中的守卫同语义（bind-once）：管理器实例一旦绑定到某个 appKey，
+    /// 后续以其它 appKey 使用即被拒绝。
+    /// </para>
+    /// <para>
+    /// 此前守卫**仅在令牌获取路径**执行，恢复路径可绕过 —— 当宿主使用<b>扁平</b>
+    /// <see cref="ITokenManagerRegistry"/> 且两个应用注册了同名 key 时，
+    /// 应用 A 的 401 可能触发应用 B 的令牌被失效/刷新（凭据错配 / 跨租户越权）。
+    /// </para>
+    /// <para>
+    /// 跳过条件（与既有行为一致，不引入新的误报）：
+    /// ① <paramref name="manager"/> 非 <see cref="TokenManagerBase"/> 派生类；
+    /// ② 未注入 <see cref="IAppContextHolder"/>（无 DI / 第三方宿主自建执行器时）；
+    /// ③ 当前无应用上下文（<c>Current?.AppKey</c> 为空）；
+    /// ④ 管理器覆写 <c>EnforceTenantBinding = false</c>（合法共享凭据设计）。
+    /// </para>
+    /// <para>
+    /// 拒绝时**不向调用方抛异常**：与其余恢复失败分支保持一致（D3 —— 返回服务端真实 401），
+    /// 仅记录结构化告警（<c>TenantBindingRejected</c>，EventId 162）。
+    /// </para>
+    /// </remarks>
+    private bool TryEnforceTenantBinding(ITokenManager manager)
+    {
+        if (manager is not TokenManagerBase baseManager)
+            return true;
+
+        var appKey = _appContextHolder?.Current?.AppKey;
+        if (string.IsNullOrEmpty(appKey))
+            return true;
+
+        try
+        {
+            // BindTenantGuard 内部已处理 EnforceTenantBinding=false 的逃生门与同键幂等。
+            baseManager.BindTenantGuard(appKey!);
+            return true;
+        }
+        catch (InvalidOperationException)
+        {
+            MudHttpClientLog.TenantBindingRejected(
+                _logger,
+                manager.GetType().Name,
+                baseManager.BoundTenant ?? "(未绑定)",
+                appKey!);
+            return false;
+        }
     }
 
     /// <summary>
@@ -705,18 +789,24 @@ public class TokenRecoveryExecutor
     /// 解析结果实现 <see cref="IUserTokenManager"/>——解析失败或解析到非用户管理器（租户实例）时
     /// 一律回退构造注入实例并记 Warning（TK-06：绝不用租户管理器执行用户级恢复，凭据错配防线）。
     /// </summary>
-    private IUserTokenManager ResolveUserManager(TokenRecoveryContext? ctx)
+    private IUserTokenManager? ResolveUserManager(TokenRecoveryContext? ctx)
     {
         var injected = _userTokenManager!;               // 调用点已保证非空（isUserTokenRecovery 分支）
         var key = ctx?.TokenManagerKey;
         if (string.IsNullOrEmpty(key) || _managerRegistry == null)
-            return injected;                             // 既有行为（单管理器绑定）
+        {
+            // 既有行为（单管理器绑定）；L-1：注入实例同样受守卫约束
+            return TryEnforceTenantBinding(injected) ? injected : null;
+        }
 
         if (_managerRegistry.Resolve(key!) is IUserTokenManager userManager)
-            return userManager;
+        {
+            // L-1：解析命中同样受守卫约束
+            return TryEnforceTenantBinding(userManager) ? userManager : null;
+        }
 
         MudHttpClientLog.TokenManagerUnresolved(_logger, key!);   // Warning：回退注入实例
-        return injected;
+        return TryEnforceTenantBinding(injected) ? injected : null;
     }
 
     /// <summary>

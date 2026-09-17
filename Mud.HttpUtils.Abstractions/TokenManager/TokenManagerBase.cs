@@ -352,6 +352,11 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     }
 
     /// <summary>
+    /// L-1：当前已绑定的租户键（null = 尚未绑定）。供恢复链路在守卫拒绝时输出结构化告警。
+    /// </summary>
+    internal string? BoundTenant => Volatile.Read(ref _tenantBinding);
+
+    /// <summary>
     /// SR-L9（P3.10，D14-V5）是否启动租户层维护 Timer（过期清理 300s / 锁清理 600s）。默认 true。
     /// 用户令牌管理器覆写 false 以跳过其永不使用的租户层 Timer 资源。
     /// <para>注意：仅跳过 Timer 分配；<c>_tokenCache</c> / <c>_keyedLockTable</c> 仍保留分配（避免基类

@@ -476,6 +476,11 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     }
 
     /// <summary>
+    /// MT-06：测试观测钩子（经 InternalsVisibleTo）—— 用户退避表的当前条目数。
+    /// </summary>
+    internal int UserRefreshFailureCountForTest => _userRefreshFailures.Count;
+
+    /// <summary>
     /// MT-06：退避表有界收缩。上限取 <see cref="UserTokenCacheOptions.SizeLimit"/>（与用户令牌缓存同量级）。
     /// </summary>
     private void TrimUserRefreshFailures()

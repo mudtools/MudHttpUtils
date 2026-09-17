@@ -65,10 +65,14 @@
 | **BC-22** | `MUD005` 由 Info 升为 Warning，并覆盖 `InjectionMode = Path` 与方法级/接口级 `[Token]` | 使用 Query / Path 令牌注入的接口 | 改用 Header 注入，或按诊断抑制 |
 | **BC-25** | `MudHttpClientApplicationOptions.Clients` 比较器由 `OrdinalIgnoreCase` 改为 `Ordinal` | 配置中存在仅大小写不同的客户端名，或代码传名与配置大小写不一致 | 统一大小写；解析失败消息会提示大小写敏感 |
 | **BC-26** | 移除 `MudHttpClientOptions.AppKey` | 在 appsettings 中配置该键（无编译影响）；依赖该属性读取的代码 | 命名客户端与应用的真实关联方式：请求前 `UseApp`/`BeginScope(appKey)` 建立环境上下文 |
+| **BC-23** | `ITokenRefreshBackgroundService` 新增 `IsStopped` / `RestartAsync(CancellationToken)` | 自行实现该接口的宿主（非继承库内实现） | 补两个成员：`IsStopped` 可返回 `false`（或不跟踪），`RestartAsync` 可返回 `Task.CompletedTask` |
+| **BC-24** | 命名客户端 keyed 注册由 `AddKeyedSingleton` 改为 `AddKeyedTransient`（并回指 `EnhancedHttpClientFactory` 缓存） | 解析 `[FromKeyedServices(name)] IEnhancedHttpClient` 的宿主 | **无行为破坏**：解析到的仍是同一实例（单缓存 = 工厂缓存）。差别仅在配置热更新后 keyed 路径会与工厂路径**同步**拿到新实例（原实现永久缓存，热更新不生效） |
 | — | `UserTokenInfo.IsAccessTokenValid` / `UserTokenManagerBase.IsUserTokenValid` 改用 TTL 感知阈值 | 短 TTL 用户令牌的刷新频率显著下降（缓存命中率提升） | 无（无 `IssuedAt` 的存量数据退化为配置阈值） |
 | — | 后台刷新对 `ObjectDisposedException` 的处理 | 未 Dispose 的管理器不再被反注册 | 无（原行为属缺陷） |
+| — | 401 恢复链路新增租户绑定守卫 | 注册表扁平命名空间下同名管理器跨应用复用 | 若确属共享凭据设计，覆写 `TokenManagerBase.EnforceTenantBinding => false`（同取令牌路径既有逃生门） |
+| — | `ClientSecretCache` TTL 改为按需读取（`IOptionsMonitor` 热更新） | `OAuth2Options.ClientSecretCacheTtlSeconds` 变更即时生效 | 无（原为构造时固化） |
 
-> **不计入破坏性**：`MUD005` 级别提升仅影响诊断可见性（仍可抑制）；`AppKey` 移除不产生编译错误（仅删除一个从未被消费的配置面）。
+> **不计入破坏性**：`MUD005` 级别提升仅影响诊断可见性（仍可抑制）；`AppKey` 移除不产生编译错误（仅删除一个从未被消费的配置面）。`BC-24` 对解析方无可观察行为变化，仅使配置热更新真正生效。
 
 ### 令牌恢复（Token Recovery）
 

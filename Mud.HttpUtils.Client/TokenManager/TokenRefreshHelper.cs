@@ -69,7 +69,8 @@ internal static class TokenRefreshHelper
     {
         if (tokenManagers.IsEmpty)
         {
-            state.ConsecutiveFailures = 0;
+            // L-9：统一经 Reset() 原子复位（与 RestartAsync 并发安全）
+            state.Reset();
             return true;
         }
 
@@ -123,17 +124,19 @@ internal static class TokenRefreshHelper
         }
 
         // 全成功则复位连续失败计数，否则累加
+        // L-9：改为原子操作，与 RestartAsync 的 Reset() 并发安全（此前为普通字段读写）。
         if (!cycleHadFailure)
         {
-            state.ConsecutiveFailures = 0;
+            state.Reset();
         }
         else
         {
-            state.ConsecutiveFailures++;
+            Interlocked.Increment(ref state.ConsecutiveFailures);
         }
 
         // MaxConsecutiveFailures > 0 且达到阈值：停止调度（与 StopOnError 正交）
-        if (options.MaxConsecutiveFailures > 0 && state.ConsecutiveFailures >= options.MaxConsecutiveFailures)
+        var consecutiveFailures = Volatile.Read(ref state.ConsecutiveFailures);
+        if (options.MaxConsecutiveFailures > 0 && consecutiveFailures >= options.MaxConsecutiveFailures)
         {
             MudHttpClientLog.TokenRefreshFailedAndStopped(logger, "(max-consecutive-failures)");
             return false;
@@ -150,4 +153,12 @@ internal sealed class TokenRefreshLoopState
 {
     /// <summary>连续失败的刷新周期数。</summary>
     public int ConsecutiveFailures;
+
+    /// <summary>
+    /// L-9：复位连续失败计数（供 <c>RestartAsync</c> 使用）。
+    /// </summary>
+    /// <remarks>
+    /// 使用 <see cref="Interlocked.Exchange(ref int, int)"/> 保证与刷新循环内的自增/归零并发安全。
+    /// </remarks>
+    public void Reset() => Interlocked.Exchange(ref ConsecutiveFailures, 0);
 }

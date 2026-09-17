@@ -374,7 +374,9 @@ internal static partial class MudHttpClientLog
         Message = "用户身份不一致：上下文主体用户 '{PrincipalUserId}' 与恢复请求用户 '{ContextUserId}' 不匹配，拒绝恢复并返回 401")]
     public static partial void UserTokenIdentityMismatch(ILogger logger, string principalUserId, string contextUserId);
 
-    [LoggerMessage(EventId = 166, Level = LogLevel.Warning,
+    // L-4：EventId 由 166 改为 177 —— 166 已被 RequestBodySerializationFastPathFallback 占用
+    //（CHANGELOG 已将其登记为 166），二者共用会让日志消费方无法按 EventId 区分语义。
+    [LoggerMessage(EventId = 177, Level = LogLevel.Warning,
         Message = "用户令牌管理器非 UserTokenManagerBase 派生类，无法执行 scope 精准失效，降级为整用户清除 (UserId={UserId})")]
     public static partial void UserTokenScopeInvalidationFallback(ILogger logger, string userId);
 
@@ -639,7 +641,8 @@ internal static partial class MudHttpClientLog
         => s_userTokenIdentityMismatch(logger, principalUserId, contextUserId, null);
 
     private static readonly Action<ILogger, string, Exception?> s_userTokenScopeInvalidationFallback =
-        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(166, nameof(UserTokenScopeInvalidationFallback)),
+        // L-4：EventId 由 166 改为 177（与 #if 分支同步；166 归属 RequestBodySerializationFastPathFallback）
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(177, nameof(UserTokenScopeInvalidationFallback)),
             "用户令牌管理器非 UserTokenManagerBase 派生类，无法执行 scope 精准失效，降级为整用户清除 (UserId={UserId})");
     public static void UserTokenScopeInvalidationFallback(ILogger logger, string userId)
         => s_userTokenScopeInvalidationFallback(logger, userId, null);

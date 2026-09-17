@@ -54,7 +54,10 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         _logger = logger ?? NullLogger<StandardOAuth2TokenManager>.Instance;
         _secretProvider = secretProvider;
         _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
-        _clientSecretCache = new ClientSecretCache(TimeSpan.FromSeconds(Options.ClientSecretCacheTtlSeconds));
+        // L-10：TTL 通过委托按需读取（Options 在 IOptionsMonitor 构造下即为热更新来源），
+        // 使 ClientSecretCacheTtlSeconds 的配置变更无需重建管理器即可生效。
+        _clientSecretCache = new ClientSecretCache(
+            () => TimeSpan.FromSeconds(Options.ClientSecretCacheTtlSeconds));
     }
 
     /// <summary>
@@ -66,8 +69,9 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// <param name="secretProvider">安全密钥提供程序（可选）。</param>
     /// <param name="contentSerializer">HTTP 内容序列化器（可选）。</param>
     /// <remarks>
-    /// <see cref="ClientSecretCache"/> 的 TTL 在构造时固定，不支持热更新（需重建管理器才能生效）。
-    /// 其他选项（<see cref="OAuth2Options.TokenEndpoint"/> / <see cref="OAuth2Options.ClientSecret"/> 等）
+    /// L-10：<see cref="ClientSecretCache"/> 的 TTL <b>同样支持热更新</b> —— 每次解析密钥时
+    /// 读取 <see cref="OAuth2Options.ClientSecretCacheTtlSeconds"/> 的当前值；
+    /// 其余选项（<see cref="OAuth2Options.TokenEndpoint"/> / <see cref="OAuth2Options.ClientSecret"/> 等）
     /// 在下一次刷新时自动拾取新值。
     /// </remarks>
     public StandardOAuth2TokenManager(
@@ -83,7 +87,10 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         _logger = logger ?? NullLogger<StandardOAuth2TokenManager>.Instance;
         _secretProvider = secretProvider;
         _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
-        _clientSecretCache = new ClientSecretCache(TimeSpan.FromSeconds(Options.ClientSecretCacheTtlSeconds));
+        // L-10：TTL 通过委托按需读取（Options 在 IOptionsMonitor 构造下即为热更新来源），
+        // 使 ClientSecretCacheTtlSeconds 的配置变更无需重建管理器即可生效。
+        _clientSecretCache = new ClientSecretCache(
+            () => TimeSpan.FromSeconds(Options.ClientSecretCacheTtlSeconds));
     }
 
     /// <summary>
@@ -109,7 +116,10 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         _logger = logger ?? NullLogger<StandardOAuth2TokenManager>.Instance;
         _secretProvider = secretProvider;
         _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
-        _clientSecretCache = new ClientSecretCache(TimeSpan.FromSeconds(Options.ClientSecretCacheTtlSeconds));
+        // L-10：TTL 通过委托按需读取（Options 在 IOptionsMonitor 构造下即为热更新来源），
+        // 使 ClientSecretCacheTtlSeconds 的配置变更无需重建管理器即可生效。
+        _clientSecretCache = new ClientSecretCache(
+            () => TimeSpan.FromSeconds(Options.ClientSecretCacheTtlSeconds));
     }
 
     /// <summary>
@@ -136,7 +146,10 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         _logger = logger ?? NullLogger<StandardOAuth2TokenManager>.Instance;
         _secretProvider = secretProvider;
         _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
-        _clientSecretCache = new ClientSecretCache(TimeSpan.FromSeconds(Options.ClientSecretCacheTtlSeconds));
+        // L-10：TTL 通过委托按需读取（Options 在 IOptionsMonitor 构造下即为热更新来源），
+        // 使 ClientSecretCacheTtlSeconds 的配置变更无需重建管理器即可生效。
+        _clientSecretCache = new ClientSecretCache(
+            () => TimeSpan.FromSeconds(Options.ClientSecretCacheTtlSeconds));
     }
 
     /// <summary>

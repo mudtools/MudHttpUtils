@@ -77,6 +77,31 @@ public class MtRoundRegressionTests
         calls.Should().Be(2, "空结果（密钥源未就绪）不得被固化到缓存");
     }
 
+    /// <summary>
+    /// L-10：TTL 由委托按需读取，配置热更新后无需重建管理器即生效。
+    /// 修复前 TTL 在构造时固化，`ClientSecretCacheTtlSeconds` 变更必须重建管理器
+    /// （重建会连带丢失令牌缓存）。
+    /// </summary>
+    [Fact]
+    public async Task ClientSecretCache_TtlHotReload_ShouldTakeEffectWithoutRecreation()
+    {
+        var ttl = TimeSpan.FromMinutes(5);
+        var calls = 0;
+        var cache = new ClientSecretCache(() => ttl);
+
+        await cache.GetAsync(() => { calls++; return Task.FromResult<string?>("s"); }, CancellationToken.None);
+        await cache.GetAsync(() => { calls++; return Task.FromResult<string?>("s"); }, CancellationToken.None);
+        calls.Should().Be(1, "TTL 窗口内应命中缓存");
+
+        // 模拟配置热更新：TTL 改为 0（不缓存）
+        ttl = TimeSpan.Zero;
+
+        await cache.GetAsync(() => { calls++; return Task.FromResult<string?>("s"); }, CancellationToken.None);
+        await cache.GetAsync(() => { calls++; return Task.FromResult<string?>("s"); }, CancellationToken.None);
+
+        calls.Should().Be(3, "L-10：TTL 热更新后应立即生效（此处期望每次都重新解析）");
+    }
+
     #endregion
 
     #region MT-05 / MT-06 RefreshDedupTable
