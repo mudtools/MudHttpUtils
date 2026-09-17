@@ -10,9 +10,15 @@
 namespace System.Diagnostics.CodeAnalysis;
 
 /// <summary>Polyfill: 标记成员的使用需要可能被裁剪的代码。</summary>
+/// <remarks>
+/// TMX-20（P1）：public —— polyfill 的意义在于让 <b>下游消费方</b> 在缺少 BCL 类型的 TFM
+/// （netstandard2.0）上也能应用裁剪标注；internal 会使下游标注直接 CS0122。
+/// guard 保持 <c>!NET6_0_OR_GREATER</c>：.NET 6+ BCL 已含同名公开类型，
+/// 若在 net6.0 资产中重复定义公开版本，下游将因双程序集同名类型产生 CS0433。
+/// </remarks>
 [ExcludeFromCodeCoverage]
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Constructor | AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Event, Inherited = false)]
-internal sealed class RequiresUnreferencedCodeAttribute : Attribute
+public sealed class RequiresUnreferencedCodeAttribute : Attribute
 {
     /// <summary>初始化 <see cref="RequiresUnreferencedCodeAttribute"/> 实例。</summary>
     /// <param name="message">描述为何需要此代码的消息。</param>

@@ -43,9 +43,14 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
     /// <summary>
     /// 初始化 TokenRefreshBackgroundService 实例。
     /// </summary>
+    /// <remarks>
+    /// TMX-19（P0）：internal —— 容器默认构造选择要求「唯一公共构造」，
+    /// 多个公共构造会使 DI 解析抛 "The following constructors are ambiguous"。
+    /// 外部直接 <c>new</c> 场景请使用唯一公共构造（<see cref="TokenRefreshBackgroundService(IOptions{TokenRefreshBackgroundOptions}, ILogger{TokenRefreshBackgroundService}?)"/>）。
+    /// </remarks>
     /// <param name="options">后台刷新配置选项。</param>
     /// <param name="logger">日志记录器（可选）。</param>
-    public TokenRefreshBackgroundService(
+    internal TokenRefreshBackgroundService(
         TokenRefreshBackgroundOptions? options = null,
         ILogger<TokenRefreshBackgroundService>? logger = null)
     {
@@ -72,10 +77,11 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
     /// <summary>
     /// 初始化 TokenRefreshBackgroundService 实例，绑定单个令牌管理器（向后兼容）。
     /// </summary>
+    /// <remarks>TMX-19（P0）：internal，理由见 <see cref="TokenRefreshBackgroundService(TokenRefreshBackgroundOptions?, ILogger{TokenRefreshBackgroundService}?)"/>。</remarks>
     /// <param name="tokenManager">令牌管理器。</param>
     /// <param name="options">后台刷新配置选项。</param>
     /// <param name="logger">日志记录器（可选）。</param>
-    public TokenRefreshBackgroundService(
+    internal TokenRefreshBackgroundService(
         ITokenManager tokenManager,
         TokenRefreshBackgroundOptions? options = null,
         ILogger<TokenRefreshBackgroundService>? logger = null)
@@ -88,10 +94,11 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
     /// <summary>
     /// 初始化 TokenRefreshBackgroundService 实例，绑定单个令牌管理器（向后兼容）。
     /// </summary>
+    /// <remarks>TMX-19（P0）：internal，理由见 <see cref="TokenRefreshBackgroundService(TokenRefreshBackgroundOptions?, ILogger{TokenRefreshBackgroundService}?)"/>。</remarks>
     /// <param name="tokenManager">令牌管理器。</param>
     /// <param name="options">后台刷新配置选项（IOptions 模式）。</param>
     /// <param name="logger">日志记录器（可选）。</param>
-    public TokenRefreshBackgroundService(
+    internal TokenRefreshBackgroundService(
         ITokenManager tokenManager,
         IOptions<TokenRefreshBackgroundOptions> options,
         ILogger<TokenRefreshBackgroundService>? logger = null)

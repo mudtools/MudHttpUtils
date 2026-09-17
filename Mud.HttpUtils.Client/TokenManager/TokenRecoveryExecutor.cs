@@ -83,7 +83,12 @@ public class TokenRecoveryExecutor
     /// L-1：应用上下文持有器（可选）。提供时，恢复链路解析出的令牌管理器会先执行
     /// <c>BindTenantGuard(当前 appKey)</c> 租户绑定守卫；为 null 或当前无应用上下文时跳过（与既有行为一致）。
     /// </param>
-    public TokenRecoveryExecutor(
+    /// <remarks>
+    /// TMX-19（P0）：internal —— 容器默认构造选择要求「IOptionsMonitor 快照两族构造不同时公开」，
+    /// 否则同元数构造均可满足时 DI 解析抛 "The following constructors are ambiguous"。
+    /// 快照路径经本类内部/同程序集 <see cref="TokenRecoveryDelegatingHandler"/> 使用。
+    /// </remarks>
+    internal TokenRecoveryExecutor(
         ITokenManager tokenManager,
         TokenRecoveryOptions? options = null,
         ILogger? logger = null,
@@ -165,7 +170,9 @@ public class TokenRecoveryExecutor
     /// <param name="managerRegistry">SR-M6（P2.4，D9）：令牌管理器注册表（可选）。非空时按
     /// TokenRecoveryContext.TokenManagerKey 路由到正确管理器；解析失败回退注入实例 + Warning。</param>
     /// <param name="appContextHolder">L-1：应用上下文持有器（可选），用于恢复链路的租户绑定守卫。</param>
-    public TokenRecoveryExecutor(
+    /// <remarks>TMX-19（P0）：internal（快照路径），理由见 <see cref="TokenRecoveryExecutor(ITokenManager, TokenRecoveryOptions?, ILogger?, IAppContextHolder?)"/>；
+    /// 外部请改用 IOptionsMonitor 重载（TMR-07 热更新）。</remarks>
+    internal TokenRecoveryExecutor(
         ITokenManager tokenManager,
         IUserTokenManager? userTokenManager,
         ICurrentUserContext? currentUserContext = null,

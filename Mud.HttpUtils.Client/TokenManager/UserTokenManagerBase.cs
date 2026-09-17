@@ -326,17 +326,6 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         _userTokenCache.Set(userId, tokenInfo, absoluteExpiration, slidingExpiration, OnUserTokenEvicted);
     }
 
-    /// <summary>
-    /// TMX-03：解析 issuedAt 的 Unix 毫秒时间戳。优先取 LastRefreshedAt，回退 CreatedAt。
-    /// 两者均为 default 时返回 null，由调用方回退到配置阈值（与旧行为一致）。
-    /// </summary>
-    private static long? ResolveIssuedAtUnixMs(UserTokenInfo info)
-    {
-        var stamp = info.LastRefreshedAt ?? info.CreatedAt;
-        if (stamp == default) return null;
-        return new DateTimeOffset(DateTime.SpecifyKind(stamp, DateTimeKind.Utc)).ToUnixTimeMilliseconds();
-    }
-
     private void OnUserTokenEvicted(string cacheKey)
     {
         // P2.2（TK-05/09/24）统一走 retire 协议：TryRetire 内部保证
@@ -483,13 +472,11 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         // P1.3（TK-04）收敛：有效期判定统一委托 TokenExpiryPolicy，与 TokenManagerBase 严格一致
         // MT-07：改用 TTL 感知的 4 参重载，避免短 TTL 用户令牌"刚签发即被判为需刷新"
         // （原 3 参版本下，TTL=300s 且阈值=300s 的令牌 expire-threshold <= now 恒成立，缓存永不命中）。
-        // TMX-03：优先取 IdP 填充的 IssuedAt；缺失时回退 LastRefreshedAt/CreatedAt（存量数据兼容）。
-        // 两者均不可得时传 0，EffectiveThresholdSeconds 退化为配置阈值，存量数据行为不变。
+        // TMX-22（P1）：直接透传 IdP 填充的 IssuedAt，缺失（<=0）时由 EffectiveThresholdSeconds
+        // 退化为配置阈值。此前回退 LastRefreshedAt/CreatedAt 的代理语义错误（CreatedAt 是记录
+        // 创建时间且自动初始化为 UtcNow，并非令牌签发时间），会把临近过期令牌误判为有效。
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        var issuedAt = tokenInfo.IssuedAt > 0
-            ? tokenInfo.IssuedAt
-            : ResolveIssuedAtUnixMs(tokenInfo) ?? 0;
-        return TokenExpiryPolicy.IsValid(issuedAt, tokenInfo.AccessTokenExpireTime, now, UserExpireThresholdSeconds);
+        return TokenExpiryPolicy.IsValid(tokenInfo.IssuedAt, tokenInfo.AccessTokenExpireTime, now, UserExpireThresholdSeconds);
     }
 
     /// <summary>

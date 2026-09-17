@@ -97,17 +97,12 @@ public class UserTokenInfo : CurrentUserInfo
             return false;
 
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        // MT-07：优先使用签发时间 IssuedAt（由 StandardOAuth2TokenManager 填充）；
-        // TMX-03：缺失时回退 LastRefreshedAt/CreatedAt（存量数据兼容）。
-        // 两者均不可得时传 0，由 TokenExpiryPolicy 退化为配置阈值（与历史行为一致）。
-        var issuedAt = IssuedAt;
-        if (issuedAt <= 0)
-        {
-            var stamp = LastRefreshedAt ?? CreatedAt;
-            issuedAt = stamp == default ? 0
-                : new DateTimeOffset(DateTime.SpecifyKind(stamp, DateTimeKind.Utc)).ToUnixTimeMilliseconds();
-        }
-        return TokenExpiryPolicy.IsValid(issuedAt, AccessTokenExpireTime, now, thresholdSeconds);
+        // MT-07：IssuedAt 由 StandardOAuth2TokenManager 填充（签发时间，Unix 毫秒）。
+        // TMX-22（P1）：直接透传 IssuedAt，缺失（<=0）时由 TokenExpiryPolicy 退化为配置阈值（与历史行为一致）。
+        // 此前 TMX-03 回退 LastRefreshedAt/CreatedAt 作 issuedAt 代理——但 CreatedAt 属性初始化器
+        // 自动取 UtcNow 且语义是"记录创建时间"而非"令牌签发时间"，会使阈值被错误钳位为
+        // min(threshold, ttl/2)，把临近过期的令牌误判为有效（缓存复用过期边缘令牌）。
+        return TokenExpiryPolicy.IsValid(IssuedAt, AccessTokenExpireTime, now, thresholdSeconds);
     }
 
     /// <summary>

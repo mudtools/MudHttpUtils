@@ -13,8 +13,9 @@
 	</PropertyGroup>
 
 	<!-- TMR-13: net6.0 不兼容的测试文件用条件编译排除 -->
+	<!-- TMX-20（P1）：AotAttributeAnnotationTests 原因 polyfill internal 而在 net6.0 排除；
+	     polyfill 恢复 public 后恢复纳入 net6.0 编译（兼作 P1 回归护栏）。 -->
 	<ItemGroup Condition="'$(TargetFramework)' == 'net6.0'">
-		<Compile Remove="AotAttributeAnnotationTests.cs" />
 		<Compile Remove="ConfigP0FixTests.cs" />
 		<Compile Remove="SsrfProtectionTests.cs" />
 	</ItemGroup>

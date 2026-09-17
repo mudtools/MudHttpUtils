@@ -95,9 +95,16 @@ public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefresh
     /// <summary>
     /// 初始化 <see cref="TokenRefreshHostedService"/> 类的新实例（向后兼容 IOptions 重载，不支持热更新）。
     /// </summary>
+    /// <remarks>
+    /// TMX-19（P0）：internal —— 容器默认构造选择要求「唯一公共构造」。
+    /// 多个公共构造会使 <c>AddSingleton&lt;TokenRefreshHostedService&gt;()</c> 在解析时抛
+    /// "The following constructors are ambiguous"（<see cref="ActivatorUtilitiesConstructorAttribute"/>
+    /// 仅对 <c>ActivatorUtilities</c> 生效，不参与容器默认构造选择）。
+    /// 外部直接 <c>new</c> 场景请使用唯一公共构造（IOptionsMonitor 重载）。
+    /// </remarks>
     /// <param name="options">令牌刷新后台服务配置选项（快照）。</param>
     /// <param name="logger">日志记录器。</param>
-    public TokenRefreshHostedService(
+    internal TokenRefreshHostedService(
         IOptions<TokenRefreshBackgroundOptions> options,
         ILogger<TokenRefreshHostedService> logger)
         : this(options != null
@@ -110,11 +117,12 @@ public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefresh
     /// <summary>
     /// 初始化 <see cref="TokenRefreshHostedService"/> 类的新实例，绑定单个令牌管理器（向后兼容）。
     /// </summary>
+    /// <remarks>TMX-19（P0）：internal，理由见 <see cref="TokenRefreshHostedService(IOptions{TokenRefreshBackgroundOptions}, ILogger{TokenRefreshHostedService})"/>。</remarks>
     /// <param name="tokenManager">令牌管理器实例。</param>
     /// <param name="options">令牌刷新后台服务配置选项。</param>
     /// <param name="logger">日志记录器。</param>
     /// <exception cref="ArgumentNullException"><paramref name="tokenManager"/>、<paramref name="options"/> 或 <paramref name="logger"/> 为 null。</exception>
-    public TokenRefreshHostedService(
+    internal TokenRefreshHostedService(
         ITokenManager tokenManager,
         IOptions<TokenRefreshBackgroundOptions> options,
         ILogger<TokenRefreshHostedService> logger)
@@ -127,7 +135,8 @@ public sealed class TokenRefreshHostedService : BackgroundService, ITokenRefresh
     /// <summary>
     /// TMX-10：初始化并绑定单个令牌管理器（IOptionsMonitor 重载，支持热更新）。
     /// </summary>
-    public TokenRefreshHostedService(
+    /// <remarks>TMX-19（P0）：internal，理由见 <see cref="TokenRefreshHostedService(IOptions{TokenRefreshBackgroundOptions}, ILogger{TokenRefreshHostedService})"/>。</remarks>
+    internal TokenRefreshHostedService(
         ITokenManager tokenManager,
         IOptionsMonitor<TokenRefreshBackgroundOptions> optionsMonitor,
         ILogger<TokenRefreshHostedService> logger)

@@ -1,12 +1,31 @@
 # CHANGELOG
 
-项目尚未发布（当前版本 2.0.4，所有 `PublicAPI.Shipped.txt` 为空）。本文件记录**首个正式版本的行为基线**，作为首次发布的 Release Notes 依据。
+项目尚未发布（当前版本 2.0.6，所有 `PublicAPI.Shipped.txt` 为空）。本文件记录**首个正式版本的行为基线**，作为首次发布的 Release Notes 依据。
 
 ---
 
 ## Unreleased（首个正式基线，将作为 2.1.0）
 
 > 依据 `.docs/00-总体方案.md §5.2` 确立的默认行为基线整理。项目未发布，本表内容是"首版行为"而非"变更"。
+
+### 下游升级验证缺陷修复（TMX-19 ~ TMX-22，2026-09-17）
+
+> 依据第三方项目 MudFeishu 对 2.0.5 本地包的实机升级验证结论修复，全部附带回归护栏。
+
+#### 修复（Fixed）
+
+- **后台刷新服务 DI 构造歧义（TMX-19，严重）**：`TokenRefreshHostedService`（net6+）与 `TokenRefreshBackgroundService`（ns2.0）均存在多个公共构造（IOptionsMonitor 热更新重载与 IOptions 快照重载同元数且均可满足），容器默认构造选择在解析 `AddSingleton<TokenRefreshHostedService>()` 时抛 "The following constructors are ambiguous"——`[ActivatorUtilitiesConstructor]` 仅对 `ActivatorUtilities` 生效，不参与容器默认构造选择。现各保留**唯一公共构造**（IOptionsMonitor / IOptions 主构造），其余兼容重载改为 `internal`（本程序集与 IVT 测试不受影响）。同族修复：`TokenRecoveryExecutor` 快照构造（`TokenRecoveryOptions` 重载）改为 `internal`，仅保留 IOptionsMonitor 两个公共构造（不同元数，容器可确定性选择）——集成测试证实其经 DI 解析同样抛歧义。
+- **Polyfill 特性误 internal（TMX-20，破坏性）**：2.0.5 将 `System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute`（`#if !NET6_0_OR_GREATER`）与 `RequiresDynamicCodeAttribute` 改为 `internal`，导致下游在 netstandard2.0/net6.0 上无法应用裁剪/AOT 标注（CS0122），属于未声明的源破坏性变更。现恢复 **public**（polyfill 的意义即供下游标注）；guard 保持/修正为「BCL 已含同名类型的 TFM 不重复定义」，避免下游 CS0433 双定义歧义。`RequiresDynamicCodeAttribute` 的 in-box 版本注释由「.NET 7」修正为「.NET 8」（guard 相应调整为 `!NET8_0_OR_GREATER`，对本组件现有 TFM 矩阵产物无差异）。
+- **EventId 169 跨分支撞号（TMX-21）**：`#else`（ns2.0）分支中 `RequestBodySerializationFastPathFallback` 被 TMX-17 误改为 169，与 `RetrySkippedNonReplayable` 撞号（169 已被占用），且与 `#if` 分支（166）不一致——跨 TFM 日志聚合错位。现与 `#if` 分支同步使用 166（`UserTokenScopeInvalidationFallback` 迁至 177 后 166 已空出）。
+- **用户令牌过期阈值代理错误（TMX-22，严重）**：`UserTokenInfo.IsAccessTokenValid` / `UserTokenManagerBase.IsUserTokenValid` 在 `IssuedAt<=0` 时回退 `LastRefreshedAt/CreatedAt` 作签发时间代理——但 `CreatedAt` 属性初始化器自动取 `DateTime.UtcNow` 且语义是"记录创建时间"而非"令牌签发时间"，导致阈值被错误钳位为 `min(threshold, ttl/2)`，**临近过期的令牌被误判为有效**（缓存复用过期边缘令牌）。现 `IssuedAt<=0` 直接退化为配置阈值（与 MT-07 契约及回归测试一致）。
+- **生成器快照版本漂移**：`GeneratorSnapshotTests` 的 verified 快照停留在 2.0.4 版本串，2.0.5 打包时未随版本 bump 重生成（26 条用例带病打包）。已随 2.0.6 重新接受。
+
+#### 破坏性变更（Breaking）
+
+| # | 变更 | 影响面 | 迁移动作 |
+| --- | --- | --- | --- |
+| **BC-27** | `TokenRefreshHostedService` / `TokenRefreshBackgroundService` / `TokenRecoveryExecutor` 的非主构造由 public 改为 internal | 直接 `new` 这些兼容重载的下游代码 | 改用唯一公共构造（IOptionsMonitor / IOptions 重载，支持热更新）；DI 注册路径无影响且不再抛歧义 |
+| **BC-28** | Polyfill 特性（`RequiresUnreferencedCodeAttribute` / `RequiresDynamicCodeAttribute`）由 internal 恢复 public（2.0.4 曾为 public） | 2.0.5 中在 netstandard2.0/net6.0 标注失败（CS0122）的下游 | 无需动作，恢复可标注；net8+ 无变化 |
 
 ### 多应用与令牌管理深度审查修复（MT 轮，2026-09）
 

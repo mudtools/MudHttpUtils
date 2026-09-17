@@ -674,7 +674,9 @@ internal static partial class MudHttpClientLog
     // ---- CFG-39（v3.1）----
 
     private static readonly Action<ILogger, string, string, Exception?> s_requestBodySerializationFastPathFallback =
-        LoggerMessage.Define<string, string>(LogLevel.Debug, new EventId(169, nameof(RequestBodySerializationFastPathFallback)),  // TMX-17：原 166 与 UserTokenScopeInvalidationFallback 重复，改为 169
+        // TMX-21：与 #if 分支同步使用 166 —— UserTokenScopeInvalidationFallback 已迁至 177，166 空出；
+        // 此前 TMX-17 误改为 169，与 RetrySkippedNonReplayable 撞号（跨分支日志聚合错位）。
+        LoggerMessage.Define<string, string>(LogLevel.Debug, new EventId(166, nameof(RequestBodySerializationFastPathFallback)),
             "RequestBodySerialization 配置为 {Mode}，但当前 IHttpContentSerializer ({SerializerType}) 未实现 ISynchronousContentSerializer，" +
             "已回退默认序列化路径（fast-path 不生效）。");
     public static void RequestBodySerializationFastPathFallback(ILogger logger, string mode, string serializerType)
