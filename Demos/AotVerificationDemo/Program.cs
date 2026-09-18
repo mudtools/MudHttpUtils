@@ -1027,7 +1027,11 @@ public class Program
             }));
 
         using var inner = new MemoryCacheTokenCache<string>();
-        using var cache = new EncryptedTokenCache<string>(inner, encryption);
+        // [场景16修复] TMX-11：AOT 场景必须注入携寄 JsonTypeInfoResolver 的序列化选项
+        // （EncryptedTokenCache 类注释「AOT 注意」的明确要求）。此前使用默认反射选项，
+        // AOT 下 JsonSerializer.Serialize 抛 NotSupportedException → Set 按契约静默降级为
+        // "不缓存"（NullLogger 不可见）→ 底层缓存为空 → 密文驻留/往返断言双双失败。
+        using var cache = new EncryptedTokenCache<string>(inner, encryption, TokenCacheJsonContext.Default.Options);
 
         const string secret = "aot-demo-access-token-value";
         cache.Set("user-1", secret);
@@ -1052,7 +1056,11 @@ public class Program
             Assert(!cache.TryGet("user-1", out _), "篡改密文应按 miss 处理而非命中");
         }
 
-        Console.WriteLine("  [✓] EncryptedTokenCache 加密往返/密文驻留/损坏 miss 均正确（AOT 安全）");
+        // [场景16修复] 成功标记改为条件打印：此前无条件打印，断言失败时输出自相矛盾。
+        if (s_failed == 0)
+        {
+            Console.WriteLine("  [✓] EncryptedTokenCache 加密往返/密文驻留/损坏 miss 均正确（AOT 安全）");
+        }
         Console.WriteLine();
     }
 

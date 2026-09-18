@@ -318,9 +318,17 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         sb.AppendLine("                    ?? throw new System.InvalidOperationException(");
         sb.AppendLine($"                        \"ForGenerated<{api.InterfaceName}> requires options.AppContext to be set. \" +");
         sb.AppendLine("                        \"IMudAppContext has no default implementation; construct one and assign to GeneratedClientOptions.AppContext.\");");
-        // AppContextHolder 为可选，为 null 时创建默认 AsyncLocalAppContextSwitcher
-        sb.AppendLine("                var appContextHolder = options?.AppContextHolder");
-        sb.AppendLine("                    ?? new global::Mud.HttpUtils.AsyncLocalAppContextSwitcher();");
+        // AppContextHolder 为可选：为 null 时创建默认 AsyncLocalAppContextSwitcher。
+        // [AOT demo 场景13修复] 新建的 holder 此前从未 SwitchTo(appContext)，方法体的
+        // _appContextHolder.Current 恒为 null → ForGenerated 无 DI 入口调用任意方法即抛
+        // "无法找到当前服务的应用上下文"。options 显式传入的 holder 归调用方所有（可能共享），
+        // 不得擅自切换；仅对工厂新建的 holder 注入 appContext。
+        sb.AppendLine("                var appContextHolder = options?.AppContextHolder;");
+        sb.AppendLine("                if (appContextHolder is null)");
+        sb.AppendLine("                {");
+        sb.AppendLine("                    appContextHolder = new global::Mud.HttpUtils.AsyncLocalAppContextSwitcher();");
+        sb.AppendLine("                    appContextHolder.SwitchTo(appContext);");
+        sb.AppendLine("                }");
         // DefaultHttpRequestExecutor 构造函数：第一个参数是 ILogger<DefaultHttpRequestExecutor>，不是 HttpClient
         sb.AppendLine("                var executorLogger = Microsoft.Extensions.Logging.Abstractions.NullLogger<global::Mud.HttpUtils.DefaultHttpRequestExecutor>.Instance;");
         sb.AppendLine("                var executor = new global::Mud.HttpUtils.DefaultHttpRequestExecutor(");

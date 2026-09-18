@@ -256,7 +256,7 @@ namespace TestNamespace.Internal
         /// <returns>返回访问令牌</returns>
         private async Task<string> GetTokenAsync(string tokenManagerKey, string? userId = null, string[]? scopes = null, CancellationToken cancellationToken = default)
         {
-            // G-1 修复：查询方法不应有写入副作用。移除 _appContextHolder.Current = appContext 赋值，
+            // 查询方法不应有写入副作用。移除 _appContextHolder.Current = appContext 赋值，
             // 改为只读回退到默认应用。上下文切换由构造函数初始化或显式 UseApp 调用负责。
             var appContext = _appContextHolder.Current ?? _tokenManager.GetDefaultApp();
             var request = new TokenRequest
@@ -395,7 +395,7 @@ namespace TestNamespace.Internal
         /// <returns>返回访问令牌</returns>
         private async Task<string> GetTokenAsync(string tokenManagerKey, string? userId = null, string[]? scopes = null, CancellationToken cancellationToken = default)
         {
-            // G-1 修复：查询方法不应有写入副作用。移除 _appContextHolder.Current = appContext 赋值，
+            // 查询方法不应有写入副作用。移除 _appContextHolder.Current = appContext 赋值，
             // 改为只读回退到默认应用。上下文切换由构造函数初始化或显式 UseApp 调用负责。
             var appContext = _appContextHolder.Current ?? _tokenManager.GetDefaultApp();
             var request = new TokenRequest

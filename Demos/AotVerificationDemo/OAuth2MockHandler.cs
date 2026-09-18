@@ -18,8 +18,8 @@ namespace AotVerificationDemo;
 /// </para>
 /// <para>
 /// 令牌端点返回标准 <c>OAuth2TokenResponse</c> JSON（<c>access_token</c>/<c>refresh_token</c>/<c>expires_in</c>）；
-/// 自省端点返回 <c>TokenIntrospectionResult</c> JSON（<c>active</c>/<c>client_id</c>/<c>scope</c>）。
-/// 序列化格式与 <see cref="OAuth2JsonContext"/> 的 <c>SnakeCaseLower</c> 命名策略一致。
+/// 自省端点返回 <c>TokenIntrospectionResult</c> JSON（<c>active</c>/<c>client_id</c>/<c>scopes</c>）。
+/// 序列化格式与 <see cref="Mud.HttpUtils.OAuth2JsonContext"/> 的 <c>SnakeCaseLower</c> 命名策略一致。
 /// </para>
 /// </remarks>
 internal sealed class OAuth2MockHandler : HttpMessageHandler
@@ -29,8 +29,12 @@ internal sealed class OAuth2MockHandler : HttpMessageHandler
         "\"expires_in\":3600,\"token_type\":\"Bearer\",\"scope\":\"read write\"}";
 
     private const string IntrospectionResponseJson =
+        // [场景17修复] TokenIntrospectionResult.Scopes 经 OAuth2JsonContext 的 SnakeCaseLower
+        // 策略映射为 JSON 字段 "scopes"（string[]）。RFC 7662 的标准字段是单数 "scope"
+        // （空格分隔字符串），与库现行契约不一致——真实 RFC 服务器返回 "scope" 时库将解析不到
+        // 作用域（已知兼容性缺口，待库侧决策）。此处按库契约提供数组形式。
         "{\"active\":true,\"client_id\":\"test-client\",\"username\":\"testuser\"," +
-        "\"scope\":\"read write\",\"token_type\":\"Bearer\",\"exp\":9999999999}";
+        "\"scopes\":[\"read\",\"write\"],\"token_type\":\"Bearer\",\"exp\":9999999999}";
 
     /// <summary>
     /// 记录收到的令牌端点请求数（供断言验证请求确实到达）。
