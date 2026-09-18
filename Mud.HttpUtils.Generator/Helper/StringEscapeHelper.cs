@@ -29,7 +29,7 @@ internal static class StringEscapeHelper
     /// </remarks>
     public static string EscapeString(string? value)
     {
-        if (string.IsNullOrEmpty(value))
+        if (value is null || value.Length == 0)
             return string.Empty;
 
         // 检查是否包含需要转义的字符，避免无转义需求时的 StringBuilder 分配

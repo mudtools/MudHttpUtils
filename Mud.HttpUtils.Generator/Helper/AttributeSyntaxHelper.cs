@@ -55,7 +55,7 @@ internal static class AttributeSyntaxHelper
         string? attributeName)
         where T : MemberDeclarationSyntax
     {
-        if (string.IsNullOrEmpty(attributeName) || memberDeclaration == null)
+        if (attributeName is null || attributeName.Length == 0 || memberDeclaration == null)
             return ImmutableArray<AttributeSyntax>.Empty;
 
         var attributeShortName = attributeName.Replace("Attribute", "");

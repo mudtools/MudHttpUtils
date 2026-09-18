@@ -29,7 +29,7 @@ public static class AsyncEnumerableExtensions
     /// <remarks>
     /// <b>Native AOT 注意</b>：此重载使用开放泛型反序列化，
     /// AOT 场景下须确保 <typeparamref name="T"/> 已在 <see cref="System.Text.Json.Serialization.Metadata.JsonTypeInfo{T}"/> 对应的 Context 中声明。
-    /// 推荐使用 <see cref="StreamNdJsonAsync{T}(IBaseHttpClient, HttpRequestMessage, JsonTypeInfo{T}, CancellationToken)"/> 重载。
+    /// 推荐使用接收 <c>JsonTypeInfo&lt;T&gt;</c> 的 <c>StreamNdJsonAsync</c> 重载。
     /// </remarks>
 #if NET8_0_OR_GREATER
     [RequiresUnreferencedCode("NDJSON 反序列化使用开放泛型 JsonSerializer.Deserialize<T>，AOT 场景须确保 T 已在 JsonSerializerContext 中声明。推荐使用 JsonTypeInfo<T> 重载。")]
@@ -64,7 +64,7 @@ public static class AsyncEnumerableExtensions
     /// <typeparam name="T">每行数据的类型。</typeparam>
     /// <param name="client">HTTP 客户端。</param>
     /// <param name="request">HTTP 请求消息。</param>
-    /// <param name="jsonTypeInfo">来自 <see cref="JsonSerializerContext"/> 的类型信息（AOT 安全）。</param>
+    /// <param name="jsonTypeInfo">来自 <c>JsonSerializerContext</c> 的类型信息（AOT 安全）。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>流式返回的异步枚举。</returns>
     public static async IAsyncEnumerable<T> StreamNdJsonAsync<T>(

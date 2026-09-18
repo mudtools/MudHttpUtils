@@ -9,8 +9,8 @@ namespace Mud.HttpUtils;
 /// </summary>
 /// <remarks>
 /// <list type="bullet">
-///   <item><see cref="KeySafeScalar"/>：基元/string/decimal/Guid/DateTime 等，可稳定映射为 InvariantCulture 字符串。</item>
-///   <item><see cref="KeySafeCollection"/>：元素为 KeySafeScalar 的数组，可用 string.Join 参与键。</item>
+///   <item><see cref="Classification.KeySafeScalar"/>：基元/string/decimal/Guid/DateTime 等，可稳定映射为 InvariantCulture 字符串。</item>
+///   <item><see cref="Classification.KeySafeCollection"/>：元素为 KeySafeScalar 的数组，可用 string.Join 参与键。</item>
 ///   <item><see cref="Unsafe"/>：自定义对象 / [Body] / [QueryMap] / Stream 等，默认键会退化为类型名 → 串键。</item>
 /// </list>
 /// Unsafe 参数在无 <c>CacheKeyTemplate</c> 时触发 HTTPCLIENT031（Error）。
@@ -23,14 +23,6 @@ internal static class CacheKeySafety
         KeySafeCollection,
         Unsafe,
     }
-
-    /// <summary>不参与缓存键的参数特性（CancellationToken / Token 等）。</summary>
-    private static readonly HashSet<string> IgnoredAttributes = new(StringComparer.Ordinal)
-    {
-        "CancellationToken",
-        "TokenAttribute",
-        "Token",
-    };
 
     /// <summary>强制 Unsafe 的参数特性（Body / Form / Upload / QueryMap / Stream 语义）。</summary>
     private static readonly HashSet<string> ForceUnsafeAttributes = new(StringComparer.Ordinal)

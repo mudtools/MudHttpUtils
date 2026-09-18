@@ -615,7 +615,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     /// M3-#20：重试判定统一为结构化状态码检查（netstandard2.0 与 net6+ 行为一致）。
     /// </summary>
     /// <remarks>
-    /// 状态码来源：net5+ 读 <see cref="HttpRequestException.StatusCode"/>（<see cref="ApiException"/>
+    /// 状态码来源：net5+ 读 <c>HttpRequestException.StatusCode</c>（<see cref="ApiException"/>
     /// 构造时已传入 base）；netstandard2.0 读 <c>Data["HttpStatusCode"]</c>（由
     /// <c>EnhancedHttpClient.EnsureSuccessStatusCodeAsync</c> 与 <c>DefaultHttpRequestExecutor.CreateApiException</c>
     /// 统一写入，两 TFM 均有）。删除了 ns2.0 原有的"异常消息文本猜测"分支 —— 该分支在无状态码时

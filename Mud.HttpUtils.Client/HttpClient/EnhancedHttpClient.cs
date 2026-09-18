@@ -175,7 +175,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// </summary>
     /// <param name="httpClient">HttpClient实例</param>
     /// <param name="options">配置选项（可选，默认为 null，表示使用默认配置）。</param>
-    /// <param name="jsonOptions">JSON 序列化选项（可选，用于 Native AOT 场景注入 <see cref="JsonSerializerContext"/>）。</param>
+    /// <param name="jsonOptions">JSON 序列化选项（可选，用于 Native AOT 场景注入 <c>JsonSerializerContext</c>）。</param>
     /// <param name="contentSerializer">HTTP 内容序列化器（可选,未注入时使用默认 SystemTextJsonContentSerializer）</param>
     /// <exception cref="ArgumentNullException"></exception>
     protected EnhancedHttpClient(
@@ -224,7 +224,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// </summary>
     /// <remarks>
     /// 所有公共 HTTP 方法（<see cref="SendAsync{TResult}"/>、<see cref="SendRawAsync"/>、
-    /// <see cref="DownloadAsync"/>、<see cref="SendStreamAsync"/>、<see cref="SendAsAsyncEnumerable{TResult}"/> 等）
+    /// <see cref="DownloadAsync"/>、<see cref="SendStreamAsync"/>、<c>SendAsAsyncEnumerable&lt;TResult&gt;</c> 等）
     /// 最终都通过此方法发送 HTTP 请求。子类重写后可拦截所有请求路径。
     /// </remarks>
     /// <param name="request">HTTP请求消息</param>
@@ -389,7 +389,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             cancellationToken);
     }
 
-    /// <inheritdoc cref="IBaseHttpClient.SendAsAsyncEnumerable"/>
+    /// <inheritdoc cref="IBaseHttpClient.SendAsAsyncEnumerable{TResult}(HttpRequestMessage, object?, CancellationToken)"/>
 #if NET8_0_OR_GREATER
     [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("ReflectionAnalysis", "IL2026:RequiresUnreferencedCode",
         Justification = "通过注入的 IHttpContentSerializer（其 options 含消费方 JsonSerializerContext resolver）保证 AOT 安全。")]
@@ -2301,14 +2301,15 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// <typeparam name="T">每行数据反序列化的目标类型。</typeparam>
     /// <param name="stream">包含 NDJSON 内容的流。</param>
     /// <param name="options">JSON 序列化选项；为 null 时使用 <see cref="JsonSerializer"/> 默认选项。</param>
+    /// <param name="contentSerializer">HTTP 内容序列化器，负责逐行反序列化。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>流式返回的异步枚举。</returns>
     /// <remarks>
     /// 此方法使用 <see cref="StreamReader"/> 读取流。调用方应负责释放底层 <paramref name="stream"/>（StreamReader 释放时也会释放流，重复释放是幂等的）。
     /// <para>
     /// <b>Native AOT 注意</b>：此重载使用开放泛型 <c>JsonSerializer.Deserialize&lt;T&gt;</c>，
-    /// AOT 场景下须确保 <typeparamref name="T"/> 已在 <see cref="JsonSerializerContext"/> 中声明，
-    /// 否则可能静默返回空对象。推荐使用 <see cref="ParseNdJsonStreamAsync{T}(Stream, System.Text.Json.Serialization.Metadata.JsonTypeInfo{T}, CancellationToken)"/> 重载。
+    /// AOT 场景下须确保 <typeparamref name="T"/> 已在 <c>JsonSerializerContext</c> 中声明，
+    /// 否则可能静默返回空对象。推荐使用接收 <c>JsonTypeInfo&lt;T&gt;</c> 的 <c>ParseNdJsonStreamAsync</c> 重载。
     /// </para>
     /// </remarks>
 #if NET8_0_OR_GREATER
@@ -2354,7 +2355,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// </summary>
     /// <typeparam name="T">每行数据反序列化的目标类型。</typeparam>
     /// <param name="stream">包含 NDJSON 内容的流。</param>
-    /// <param name="jsonTypeInfo">来自 <see cref="JsonSerializerContext"/> 的类型信息（AOT 安全）。</param>
+    /// <param name="jsonTypeInfo">来自 <c>JsonSerializerContext</c> 的类型信息（AOT 安全）。</param>
+    /// <param name="contentSerializer">HTTP 内容序列化器，负责逐行反序列化。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>流式返回的异步枚举。</returns>
     internal static async IAsyncEnumerable<T> ParseNdJsonStreamAsync<T>(

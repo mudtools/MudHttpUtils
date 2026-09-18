@@ -68,6 +68,17 @@ public static class VerifyFixture
         }
 
         var settings = new VerifySettings();
+        // 版本脱敏：生成代码的 [GeneratedCode] 特性烧录组件版本号，任何版本提升都会导致全部快照失效。
+        // 统一归一化为 <VERSION> 占位符，使快照仅反映代码形状（版本变更不再需要重新接受快照）。
+        settings.AddScrubber(sb =>
+        {
+            var scrubbed = System.Text.RegularExpressions.Regex.Replace(
+                sb.ToString(),
+                "(GeneratedCode\\(\"Mud\\.HttpUtils\\.Generator\",\\s*\")[^\"]+(\")",
+                "${1}<VERSION>${2}");
+            sb.Clear();
+            sb.Append(scrubbed);
+        });
         await Verify.Verify(combined.ToString(), settings, sourceFile);
     }
 

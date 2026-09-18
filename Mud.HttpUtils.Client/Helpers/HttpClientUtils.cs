@@ -47,7 +47,7 @@ public sealed class HttpClientUtils
     public static ByteArrayContent CreateFileContent(string? fileName, byte[] fileBytes)
     {
         // 参数验证 - 使用更精确的异常消息
-        if (string.IsNullOrWhiteSpace(fileName))
+        if (fileName is null || string.IsNullOrWhiteSpace(fileName))
             throw new ArgumentNullException(nameof(fileName), "文件名不能为空或仅包含空白字符。");
 
         if (fileBytes == null || fileBytes.Length == 0)

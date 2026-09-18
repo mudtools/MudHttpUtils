@@ -133,7 +133,7 @@ internal static class AttributeDataHelper
     /// <summary>
     /// 从特性数据中获取字符串属性值。
     /// </summary>
-    public static string? GetStringValueFromAttribute(AttributeData attribute, string propertyName, string? defaultValue = null)
+    public static string? GetStringValueFromAttribute(AttributeData? attribute, string propertyName, string? defaultValue = null)
     {
         return GetStringValueFromAttribute(attribute, [propertyName], -1, defaultValue);
     }
@@ -146,7 +146,12 @@ internal static class AttributeDataHelper
     /// <param name="constructorParameterIndex">构造函数参数索引</param>
     /// <param name="defaultValue">默认值</param>
     /// <returns>参数值</returns>
-    public static string? GetStringValueFromAttribute(AttributeData attribute, string[] namedParameterNames, int constructorParameterIndex = -1, string? defaultValue = null)
+    /// <remarks>
+    /// [Phase4 修复 5.1] 参数放宽为 <c>AttributeData?</c>：方法体首行即做 null 判定并返回
+    /// <paramref name="defaultValue"/>，原签名却声明为非空，迫使调用方在无意义处加 <c>!</c>（CS8604）。
+    /// 与 <see cref="GetBoolValueFromAttribute"/> 的口径一致。
+    /// </remarks>
+    public static string? GetStringValueFromAttribute(AttributeData? attribute, string[] namedParameterNames, int constructorParameterIndex = -1, string? defaultValue = null)
     {
         if (attribute == null)
             return defaultValue;
@@ -202,7 +207,7 @@ internal static class AttributeDataHelper
     /// </summary>
     public static string? GetStringValueFromAttributeConstructor(AttributeData? attributeData, string propertyName)
     {
-        return GetStringValueFromAttribute(attributeData, [propertyName], 0);
+        return attributeData is null ? null : GetStringValueFromAttribute(attributeData, [propertyName], 0);
     }
 
     /// <summary>

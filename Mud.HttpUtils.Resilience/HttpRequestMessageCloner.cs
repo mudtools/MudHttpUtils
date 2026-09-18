@@ -130,13 +130,14 @@ internal static class HttpRequestMessageCloner
 #if NETSTANDARD2_0
         request.Properties[CloneSnapshotPropertyKey] = contentBytes;
 #else
-        ((IDictionary<string, object>)request.Options)[CloneSnapshotPropertyKey] = contentBytes;
+        // HttpRequestOptions 实现的是 IDictionary<string, object?>（值类型为可空 object）。
+        ((IDictionary<string, object?>)request.Options)[CloneSnapshotPropertyKey] = contentBytes;
 #endif
     }
 
     /// <summary>
     /// 把源请求的元数据（Version / VersionPolicy / Properties / Options / 请求头）复制到目标请求。
-    /// 供 <see cref="CloneAsync"/> 与 <see cref="ResilientHttpClient"/> 的下载路径克隆共用，避免多处漂移。
+    /// 供 <c>CloneAsync</c> 与 <see cref="ResilientHttpClient"/> 的下载路径克隆共用，避免多处漂移。
     /// </summary>
     /// <remarks>M5-HC-05：排除 <see cref="CloneSnapshotPropertyKey"/>，避免克隆体携带无用大数组引用。</remarks>
     internal static void CopyMetadata(HttpRequestMessage source, HttpRequestMessage target)
@@ -169,12 +170,15 @@ internal static class HttpRequestMessageCloner
                 continue;
             target.Options.TryAdd(option.Key, option.Value);
         }
+        // 兼容历史写入路径：部分内部属性仍写在已过时的 Properties 上，需按原语义复制。
+#pragma warning disable CS0618 // HttpRequestMessage.Properties 已过时
         foreach (var kvp in source.Properties)
         {
             if (kvp.Key == CloneSnapshotPropertyKey)
                 continue;
             target.Properties[kvp.Key] = kvp.Value;
         }
+#pragma warning restore CS0618 // HttpRequestMessage.Properties 已过时
 #endif
     }
 

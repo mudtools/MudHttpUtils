@@ -24,11 +24,19 @@ public sealed class MudCircuitBreakerHealthCheck : IHealthCheck
     /// </summary>
     public const string Name = "mud_circuit_breaker";
 
+    /// <summary>
+    /// 初始化熔断器健康检查。
+    /// </summary>
+    /// <param name="options">健康检查判定阈值选项。</param>
+    /// <exception cref="ArgumentNullException">当 <paramref name="options"/> 为 <c>null</c> 时抛出。</exception>
     public MudCircuitBreakerHealthCheck(MudCircuitBreakerHealthCheckOptions options)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
     }
 
+    /// <summary>
+    /// 使用默认阈值初始化熔断器健康检查。
+    /// </summary>
     public MudCircuitBreakerHealthCheck()
         : this(new MudCircuitBreakerHealthCheckOptions())
     {
@@ -75,7 +83,8 @@ public sealed class MudCircuitBreakerHealthCheck : IHealthCheck
             }
         }
 
-        var data = new Dictionary<string, object?>
+        // HealthCheckResult 的 data 形参为 IReadOnlyDictionary<string, object>（值不可空）。
+        var data = new Dictionary<string, object>
         {
             ["total_policies"] = states.Count,
             ["open_count"] = openCount,

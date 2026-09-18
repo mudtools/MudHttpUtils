@@ -142,7 +142,7 @@ public class DefaultHmacSignatureProvider : IHmacSignatureProvider
     /// <code>
     /// HTTP_METHOD
     /// /path/to/resource
-    /// sorted=query&parameters=here
+    /// sorted=query&amp;parameters=here
     /// base64EncodedRequestBody (optional)
     /// </code>
     /// </para>
@@ -161,7 +161,7 @@ public class DefaultHmacSignatureProvider : IHmacSignatureProvider
         sb.Append('\n');
 
         var query = request.RequestUri?.Query;
-        if (!string.IsNullOrEmpty(query) && query.Length > 1)
+        if (query is { Length: > 1 })
         {
             var queryString = query.StartsWith("?") ? query.Substring(1) : query;
             var sortedParams = queryString

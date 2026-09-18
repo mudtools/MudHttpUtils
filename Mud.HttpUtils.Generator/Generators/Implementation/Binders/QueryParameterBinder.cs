@@ -282,14 +282,26 @@ internal class QueryParameterBinder : IParameterBinder
         codeBuilder.AppendLine($"{indent}if ({param.Name} != null && {param.Name}.Any())");
         codeBuilder.AppendLine($"{indent}{{");
 
+        // 数组元素类型（两种模式共用）
+        var elementType = GetArrayElementType(param.Type);
+
+        // [CS0472 修复] 元素为**非可空值类型**时（如 int[]），`__item != null` 恒为 true，
+        // 生成代码会触发 CS0472（“int 类型的值永不等于 int? 类型的 null，该表达式的结果始终为 true”）。
+        // 该过滤对值类型元素本就没有意义 —— 仅对**引用类型 / 可空值类型**元素保留非空过滤，
+        // 运行期语义不变（非可空值类型元素不可能为 null）。
+        // 优先用 Roslyn 符号精确判定（自定义 struct[] 亦能识别），符号缺失时回退字符串启发式。
+        // 两条发射路径（重复参数 / 分隔符）共用同一过滤片段。
+        var whereClause = ArrayElementsMayBeNull(param, elementType)
+            ? ".Where(__item => __item != null)"
+            : string.Empty;
+
         if (effectiveSeparator == null)
         {
             // 重复参数模式: query1=val1&query1=val2&query1=val3
-            // 提取数组元素类型，尝试使用类型专用的 Add 重载
-            var elementType = GetArrayElementType(param.Type);
+            // 尝试使用类型专用的 Add 重载
             var elementOverloadKind = TypeDetectionHelper.GetQueryAddOverloadKind(elementType);
 
-            codeBuilder.AppendLine($"{indent}    foreach (var __item in {param.Name}.Where(__item => __item != null))");
+            codeBuilder.AppendLine($"{indent}    foreach (var __item in {param.Name}{whereClause})");
             codeBuilder.AppendLine($"{indent}    {{");
 
             if (elementOverloadKind == TypeDetectionHelper.QueryAddOverloadKind.WithFormat)
@@ -315,7 +327,7 @@ internal class QueryParameterBinder : IParameterBinder
         else
         {
             // 分隔符模式: query1=val1;val2;val3
-            codeBuilder.AppendLine($"{indent}    var __joinedValues = string.Join(\"{StringEscapeHelper.EscapeString(effectiveSeparator)}\", {param.Name}.Where(__item => __item != null).Select(__item => __item.ToString()));");
+            codeBuilder.AppendLine($"{indent}    var __joinedValues = string.Join(\"{StringEscapeHelper.EscapeString(effectiveSeparator)}\", {param.Name}{whereClause}.Select(__item => __item.ToString()));");
             codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", __joinedValues);");
         }
 
@@ -655,6 +667,27 @@ internal class QueryParameterBinder : IParameterBinder
         return type;
     }
 
+    /// <summary>
+    /// 判断数组/集合参数的元素是否可能为 null（决定是否发射 <c>.Where(__item => __item != null)</c> 过滤）。
+    /// 优先使用 Roslyn 符号精确判定；符号缺失时回退为字符串启发式（已知非空值类型别名/常见 System 值类型）。
+    /// </summary>
+    private static bool ArrayElementsMayBeNull(ParameterInfo param, string elementType)
+    {
+        if (param.TypeSymbol is IArrayTypeSymbol arraySymbol)
+        {
+            var element = arraySymbol.ElementType;
+            if (element.IsValueType)
+                return element.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T;
+            return true;
+        }
+
+        // 可空后缀（string[]? 是数组可空，元素可空性未知；int?[] 元素可空）→ 保守过滤
+        if (elementType.EndsWith("?", StringComparison.Ordinal))
+            return true;
+
+        return !TypeDetectionHelper.IsValueType(elementType);
+    }
+
     private static void GenerateRawQueryStringParameter(StringBuilder codeBuilder, ParameterInfo param, ParameterAttributeInfo attr, string indent)
     {
         var rawQsVar = $"__rawQS_{param.Name}";
@@ -688,12 +721,12 @@ internal class QueryParameterBinder : IParameterBinder
         // 与 MethodAnalyzer 接口属性路径的口径分叉。
         var name = AttributeArgumentReader.GetString(attr, AttributeArgumentReader.ResolveNamePosition(attr.Name), "Name");
         if (!string.IsNullOrEmpty(name))
-            return name;
+            return name!;
 
         // GEN-05：参数级 [Query(AliasAs = "keyword")] 生效。
         var alias = AttributeArgumentReader.GetString(attr, null, "AliasAs");
         if (!string.IsNullOrEmpty(alias))
-            return alias;
+            return alias!;
 
         return defaultName;
     }

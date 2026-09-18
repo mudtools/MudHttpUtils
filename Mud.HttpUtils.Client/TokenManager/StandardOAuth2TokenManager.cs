@@ -168,12 +168,14 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// </summary>
     private async Task<string?> ResolveClientSecretAsync(CancellationToken ct)
     {
-        if (_secretProvider != null && !string.IsNullOrEmpty(Options.ClientSecretProviderName))
+        var providerName = Options.ClientSecretProviderName;
+        if (_secretProvider != null && !string.IsNullOrEmpty(providerName))
         {
             try
             {
                 ct.ThrowIfCancellationRequested();
-                var secret = await _secretProvider.GetSecretAsync(Options.ClientSecretProviderName).ConfigureAwait(false);
+                // providerName 的非空性已由上方守卫收敛（netstandard2.0 无 NotNullWhen 标注）。
+                var secret = await _secretProvider.GetSecretAsync(providerName!).ConfigureAwait(false);
                 if (!string.IsNullOrEmpty(secret))
                     return secret;
             }
@@ -325,7 +327,8 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 
         if (!string.IsNullOrWhiteSpace(tokenTypeHint))
         {
-            parameters["token_type_hint"] = tokenTypeHint;
+            // tokenTypeHint 的非空性已由上方 IsNullOrWhiteSpace 守卫收敛。
+            parameters["token_type_hint"] = tokenTypeHint!;
         }
 
         try

@@ -131,7 +131,7 @@ public readonly struct TokenResult
     /// </example>
     public static TokenResult FromCredentialToken(CredentialToken token)
     {
-        if (token == null || string.IsNullOrEmpty(token.AccessToken))
+        if (token is null || token.AccessToken is null || token.AccessToken.Length == 0)
             return Empty;
 
         return new TokenResult(token.AccessToken, token.Expire, token.Scope);

@@ -206,7 +206,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
     private static string ResolveRegistrationNamespace(Compilation compilation)
     {
         var assemblyName = compilation.AssemblyName;
-        if (string.IsNullOrWhiteSpace(assemblyName))
+        if (assemblyName is null || assemblyName.Trim().Length == 0)
             return FallbackNamespace;
 
         return assemblyName.Split('.')

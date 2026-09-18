@@ -371,9 +371,9 @@ internal class FormContentGenerator : TransitiveCodeGenerator
 
         if (isString)
         {
-            // 字符串类型：添加非空判断
+            // 字符串类型：添加非空判断（守卫内 `!` 消除可空形参的 CS8604；运行期守卫已保证非 null/空白）
             sb.AppendLine($"        if (!string.IsNullOrWhiteSpace({propertyName}))");
-            sb.AppendLine($"            formData.Add(new StringContent({propertyName}), \"{escapedJsonName}\");");
+            sb.AppendLine($"            formData.Add(new StringContent({propertyName}!), \"{escapedJsonName}\");");
         }
         else if (isValueType)
         {
@@ -382,9 +382,12 @@ internal class FormContentGenerator : TransitiveCodeGenerator
         }
         else
         {
-            // 引用类型：添加 null 检查
+            // 引用类型 / 可空值类型：添加 null 检查（此分支同时覆盖二者，见上方 isValueType 的判定）。
+            // [CS8604 修复] object.ToString() 与 Nullable<T>.ToString() 的返回类型均标注为 string?，
+            // 而非空引用形参 StringContent(string) 会触发消费方 CS8604（可能传入 null 引用实参）。
+            // 此处已做 != null 判定，用 `!` 收敛标注，不改变运行期语义。
             sb.AppendLine($"        if ({propertyName} != null)");
-            sb.AppendLine($"            formData.Add(new StringContent({propertyName}.ToString()), \"{escapedJsonName}\");");
+            sb.AppendLine($"            formData.Add(new StringContent({propertyName}.ToString()!), \"{escapedJsonName}\");");
         }
     }
 

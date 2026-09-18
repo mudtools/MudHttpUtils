@@ -119,11 +119,21 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("        public string? CurrentUserId => _currentUserContext.UserId;");
         }
 
-        // 继承模式下也需生成 _appAuthorizer 字段（UseApp/BeginScope 守卫引用此字段）
-        codeBuilder.AppendLine("        /// <summary>");
-        codeBuilder.AppendLine("        /// 应用切换授权器（可选）。非 null 时 UseApp/BeginScope 将先做授权判定。");
-        codeBuilder.AppendLine("        /// </summary>");
-        codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IAppAccessAuthorizer? _appAuthorizer;");
+        // 继承模式下 _appAuthorizer 字段的归属：
+        //   · 基类为非 HttpClient 模式（TokenManager / AppContext）时，抽象基类已声明 protected readonly
+        //     _appAuthorizer 且其构造函数已赋值；派生类若再次声明会触发 CS0108（隐藏继承成员），
+        //     且基类 readonly 字段无法在派生类构造函数中赋值（CS0191），故派生类只在 base(...) 调用中
+        //     透传 appAuthorizer 并复用基类字段——曾因漏传该参数且派生类重复声明私有字段，导致基类
+        //     UseApp/BeginScope 守卫读取的字段恒为 null，继承接口的生成客户端在 MT-02 默认拒绝语义下
+        //     应用切换永远抛异常（P0）。
+        //   · 基类为 HttpClient 模式（无该字段）时，才由派生类自行声明并初始化。
+        if (!_context.Configuration.BaseHasAppAuthorizer)
+        {
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 应用切换授权器（可选）。非 null 时 UseApp/BeginScope 将先做授权判定。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IAppAccessAuthorizer? _appAuthorizer;");
+        }
 
         codeBuilder.AppendLine();
     }
@@ -315,6 +325,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     private void GenerateInterfaceProperties(StringBuilder codeBuilder)
     {
         var properties = _context.InterfaceProperties;
+
         if (properties.Count == 0)
             return;
 
@@ -324,6 +335,12 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
 
         foreach (var property in properties)
         {
+            // [继承模式 CS0108 修复] InheritedFrom 目标基接口及其祖先接口的属性已由基类实现并声明；
+            // 派生类仅通过 RequestBuilder 注入其值（继承可访问），重复声明会产生 CS0108（「隐藏继承的成员」）。
+            // 注意只跳过该基接口链：派生侧新增基接口的属性基类并未实现，仍须由派生类发射，否则接口契约缺失。
+            if (property.IsFromInheritedBase)
+                continue;
+
             // GEN-05 修复：接口属性为只读时（仅 getter），生成的实现属性也不生成 setter，保持接口契约一致。
             var accessor = property.IsReadOnly ? "{ get; }" : "{ get; set; }";
             var propLine = $"        public {property.Type} {property.Name} {accessor}";
@@ -331,9 +348,19 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             {
                 propLine += $" = {property.DefaultValue};";
             }
-            else if (property.AttributeType == "Path" && (property.Type == "string" || property.Type == "String") && !property.IsReadOnly)
+            else if ((property.AttributeType == "Path" || property.AttributeType == "Header") &&
+                     (property.Type == "string" || property.Type == "String") && !property.IsReadOnly)
             {
+                // Header/Path 字符串属性以空串初始化，消除非空自动属性的 CS8618（运行期由调用方/注入器赋值）
                 propLine += " = string.Empty;";
+            }
+            else if (!property.Type.TrimEnd().EndsWith("?", StringComparison.Ordinal))
+            {
+                // [警告修复] 非可空接口属性（如 [Query] string ApiKey { get; set; }）既无接口初始值，
+                // 也不由生成的构造函数赋值（取值由消费方通过对象初始化器/配置绑定在调用前写入），
+                // 若不带初始值会触发 CS8618（退出构造函数时不可为 null 的属性必须包含非 null 值）。
+                // 用 `default!` 保持原运行期语义（默认 null）并显式表达「由消费方稍后赋值」的意图。
+                propLine += " = default!;";
             }
             codeBuilder.AppendLine(propLine);
         }
@@ -474,9 +501,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         optionalParameters.Add("IHttpContentSerializer? contentSerializer = null");
         optionalParameters.Add("ILogger? logger = null");
 
-        // 继承模式下也需要 appAuthorizer 参数（UseApp/BeginScope 守卫引用此字段）
-        // 注意：TokenManager 模式已在上方分支中添加了 appAuthorizer，此处仅补充非 TokenManager 的继承模式
-        if (_context.HasInheritedFrom && !_context.HasTokenManager)
+        // 继承模式下也需要 appAuthorizer 参数（UseApp/BeginScope 守卫引用此字段）。
+        // 注意：TokenManager 与 AppContext（else）分支上方均已添加该参数，此处仅补充 HttpClient 模式的继承场景
+        // （基类为非 HttpClient 模式时须向基类透传 appAuthorizer）。此前条件误写为 !HasTokenManager，
+        // 导致 AppContext 模式基类的派生类重复声明同名参数（CS0100），生成代码无法编译。
+        if (_context.HasInheritedFrom && _context.HasHttpClient)
         {
             optionalParameters.Add("IAppAccessAuthorizer? appAuthorizer = null");
         }
@@ -539,9 +568,18 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             {
                 baseParameters.Add("resilienceResolver");
             }
+            // 基类持有 _appAuthorizer 时由基类构造函数完成赋值（派生类不再自行声明/赋值，见 GenerateFieldsForInheritedMode）。
+            // 必须向基类转发 appAuthorizer：基类的 UseApp/BeginScope 守卫读取的是基类自己的 _appAuthorizer 字段，
+            // 漏传会使其恒为 null（MT-02 默认拒绝语义下继承客户端的应用切换永远抛异常）。
+            // 使用命名实参，避免与基类可选参数的声明顺序耦合。
+            if (_context.Configuration.BaseHasAppAuthorizer)
+            {
+                baseParameters.Add("appAuthorizer: appAuthorizer");
+            }
             // logger 使用命名参数传递，避免基类可选参数顺序不匹配的问题
             // contentSerializer 同样使用命名参数传递（Phase 3.1 全量收敛）
-            codeBuilder.AppendLine($" : base({string.Join(", ", baseParameters)}, logger: logger, contentSerializer: contentSerializer)");
+            var namedArgs = "logger: logger, contentSerializer: contentSerializer";
+            codeBuilder.AppendLine($" : base({string.Join(", ", baseParameters)}, {namedArgs})");
         }
         else
         {
@@ -627,8 +665,12 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             {
                 codeBuilder.AppendLine("            _resilienceResolver = resilienceResolver ?? throw new ArgumentNullException(nameof(resilienceResolver));");
             }
-            // 继承模式下也需初始化 _appAuthorizer（UseApp/BeginScope 守卫引用此字段）
-            codeBuilder.AppendLine("            _appAuthorizer = appAuthorizer;");
+            // 仅当派生类声明了自己的 _appAuthorizer 字段（基类无该字段，即基类为 HttpClient 模式）时
+            // 才在此初始化；BaseHasAppAuthorizer=true 时该字段属于基类，由 base(...) 命名参数转发初始化。
+            if (!_context.Configuration.BaseHasAppAuthorizer)
+            {
+                codeBuilder.AppendLine("            _appAuthorizer = appAuthorizer;");
+            }
         }
 
         codeBuilder.AppendLine("        }");

@@ -35,7 +35,7 @@ namespace Mud.HttpUtils;
 /// <para>
 /// <see cref="Serialize(object?, Type, object?)"/> 使用运行时类型分派，是<b>显式的非 AOT 路径</b>
 /// （已标注 <c>[RequiresUnreferencedCode]</c> / <c>[RequiresDynamicCode]</c>）。
-/// 需要显式 <c>JsonTypeInfo&lt;T&gt;</c> 的 AOT 快车道请使用 <see cref="IAotJsonContentSerializer"/>。
+/// 需要显式 <c>JsonTypeInfo&lt;T&gt;</c> 的 AOT 快车道请使用 <c>IAotJsonContentSerializer</c>（定义于 Client 程序集）。
 /// </para>
 /// </remarks>
 public interface IHttpContentSerializer
@@ -77,7 +77,7 @@ public interface IHttpContentSerializer
     /// <returns>JSON 字符串。</returns>
     /// <remarks>
     /// <b>非 AOT 路径</b>：使用运行时 <see cref="System.Type"/> 分派，AOT 下需要动态元数据生成。
-    /// AOT 场景请改用 <see cref="IAotJsonContentSerializer"/> 的 <c>JsonTypeInfo&lt;T&gt;</c> 重载，
+    /// AOT 场景请改用 <c>IAotJsonContentSerializer</c> 的 <c>JsonTypeInfo&lt;T&gt;</c> 重载，
     /// 或使用泛型重载 <see cref="Serialize{T}(T, object?)"/> 并确保 <paramref name="type"/> 已被
     /// 源生成 <c>JsonSerializerContext</c> 覆盖。
     /// </remarks>

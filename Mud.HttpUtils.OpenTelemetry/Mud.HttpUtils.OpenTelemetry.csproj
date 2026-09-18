@@ -1,6 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
-		<TargetFrameworks>netstandard2.0;net6.0;net8.0;net10.0</TargetFrameworks>
+		<!-- 不含 net6.0：OpenTelemetry 1.16.0 已不再提供 net6.0 资产，其最接近的资产是
+		     netstandard2.0，而该资产声明依赖 Microsoft.Extensions.* 10.0.0 —— 后者官方
+		     不支持 net6.0，直接消费会在下游产生一片「X doesn't support net6.0」告警。
+		     由于本工程源码仅有一处 TFM 条件编译且只是 AOT 抑制特性（无任何行为差异），
+		     其 net6.0 资产与 netstandard2.0 资产逐语义等价（两者都只能针对 M.E.* 的
+		     netstandard2.0 资产编译）。故移除 net6.0：net6.0 消费方由 NuGet 回落选择
+		     netstandard2.0 资产，行为不变，同时不再宣告一个不受依赖支持的 TFM。 -->
+		<TargetFrameworks>netstandard2.0;net8.0;net10.0</TargetFrameworks>
 		<PackageId>Mud.HttpUtils.OpenTelemetry</PackageId>
 		<Description>Mud HttpUtils OpenTelemetry 适配包，一键开启 Mud HttpUtils 的分布式追踪与指标采集。</Description>
 		<PackageTags>HttpUtils;HttpClient;OpenTelemetry;OTel;Tracing;Metrics;Observability;DI;Mud HttpUtils</PackageTags>

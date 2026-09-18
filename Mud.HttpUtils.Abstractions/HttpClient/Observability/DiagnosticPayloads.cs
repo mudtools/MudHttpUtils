@@ -23,10 +23,19 @@ public sealed class CircuitBreakerDiagnosticPayload(string policyKey, string sta
 /// <summary>令牌刷新完成事件的诊断负载。</summary>
 public sealed class TokenRefreshDiagnosticPayload(string? tokenManagerKey, bool success, bool isFallback, double elapsedMs)
 {
+    /// <summary>令牌管理器查找键（可能为 null，表示默认令牌）。</summary>
     public string? TokenManagerKey { get; } = tokenManagerKey;
+
+    /// <summary>刷新是否成功。</summary>
     public bool Success { get; } = success;
+
+    /// <summary>是否走了兜底（降级）路径。</summary>
     public bool IsFallback { get; } = isFallback;
+
+    /// <summary>刷新耗时（毫秒）。</summary>
     public double ElapsedMs { get; } = elapsedMs;
+
+    /// <summary>事件时间戳（UTC）。</summary>
     public DateTimeOffset Timestamp { get; } = DateTimeOffset.UtcNow;
 }
 
@@ -35,7 +44,11 @@ public sealed class CacheDiagnosticPayload(string? key, bool hit)
 {
     /// <summary>缓存键（G29：遥测输出为掩码后的脱敏值，非缓存查找用原始键）。</summary>
     public string? Key { get; } = key;
+
+    /// <summary>是否命中缓存。</summary>
     public bool Hit { get; } = hit;
+
+    /// <summary>事件时间戳（UTC）。</summary>
     public DateTimeOffset Timestamp { get; } = DateTimeOffset.UtcNow;
 }
 

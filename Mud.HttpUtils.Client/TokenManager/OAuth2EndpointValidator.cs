@@ -17,7 +17,7 @@ namespace Mud.HttpUtils;
 /// <para>TK-17：HTTPS 配置不一致——校验器仅做前缀匹配（拒绝合法的 localhost 开发端点），
 /// 运行期却额外允许 localhost/127.0.0.1，两处判定不一致导致"启动期报错、运行期放行"的矛盾。</para>
 /// <para>TK-19：前缀校验可绕过——<c>"https://foo"</c> 这类畸形字符串可通过 <c>StartsWith("https://")</c>，
-/// 但实际不会被 HttpClient 正常解析；本实现以 <see cref="Uri.TryCreate"/> 严格解析。</para>
+/// 但实际不会被 HttpClient 正常解析；本实现以 <c>Uri.TryCreate</c> 严格解析。</para>
 /// </remarks>
 internal static class OAuth2EndpointValidator
 {

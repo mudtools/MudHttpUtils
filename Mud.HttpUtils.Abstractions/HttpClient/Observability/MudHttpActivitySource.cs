@@ -14,7 +14,7 @@ namespace Mud.HttpUtils;
 /// </summary>
 /// <remarks>
 /// 提供 W3C TraceContext 兼容的 ActivitySource，用于跟踪 HTTP 请求的全链路。
-/// 当无监听器订阅时，<see cref="ActivitySource.StartActivity"/> 返回 <c>null</c>，零开销降级。
+/// 当无监听器订阅时，<c>ActivitySource.StartActivity</c> 返回 <c>null</c>，零开销降级。
 /// 此静态源放在 Abstractions 项目中，以便 TokenManagerBase / EnhancedHttpClient / PollyResiliencePolicyProvider 共用。
 /// </remarks>
 public static class MudHttpActivitySource

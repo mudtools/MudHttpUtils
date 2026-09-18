@@ -41,7 +41,7 @@ public enum SensitiveDataMaskMode
 /// <remarks>
 /// <para>
 /// 该接口通常与日志系统集成，在记录 HTTP 请求/响应、认证信息等场景中使用。
-/// 可以通过 <see cref="SensitiveDataAttribute"/> 特性标记需要掩码的字段或属性。
+/// 可以通过 <c>SensitiveDataAttribute</c>（定义于 Attributes 程序集）特性标记需要掩码的字段或属性。
 /// </para>
 /// <para>
 /// 实现者应该考虑性能影响，因为掩码操作可能在高频日志记录中被调用。

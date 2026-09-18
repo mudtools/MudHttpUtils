@@ -40,7 +40,9 @@ internal sealed class AppManagementHealthCheck : IHealthCheck
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
-        var data = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        // HealthCheckResult 的 data 形参为 IReadOnlyDictionary<string, object>（值不可空），
+        // 故此处直接使用 object 值类型，避免调用点隐式转换产生的 CS8620。
+        var data = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
         var status = HealthStatus.Healthy;
         var issues = new List<string>();
 

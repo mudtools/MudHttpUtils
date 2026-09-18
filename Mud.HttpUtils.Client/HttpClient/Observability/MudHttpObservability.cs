@@ -331,8 +331,9 @@ internal static class MudHttpObservability
             // retry_count 在每次重试时都需要更新（不像 __mud_observed 等只设置一次），
             // 因此直接设置而非 TrySetProperty.TryAdd（后者在 .NET 5+ 上不会覆盖现有值）
 #if NET5_0_OR_GREATER
-            // HttpRequestOptions 通过 IDictionary<string,object> 接口写入以覆盖现有值
-            ((IDictionary<string, object>)request.Options)[RetryCountPropertyKey] = retryCount;
+            // HttpRequestOptions 通过 IDictionary<string,object?> 接口写入以覆盖现有值
+            // （HttpRequestOptions 实现的是 IDictionary<string, object?>，值类型为可空 object）。
+            ((IDictionary<string, object?>)request.Options)[RetryCountPropertyKey] = retryCount;
 #else
             request.Properties[RetryCountPropertyKey] = retryCount;
 #endif
@@ -363,9 +364,12 @@ internal static class MudHttpObservability
 #if NET5_0_OR_GREATER
         if (request.Options.TryGetValue(new HttpRequestOptionsKey<object>(key), out value))
             return true;
-        // .NET 5+ 也保留 Properties 兼容旧代码
+        // .NET 5+ 也保留 Properties 兼容旧代码（历史写入路径仍可能落在 Properties 上）。
+#pragma warning disable CS0618 // HttpRequestMessage.Properties 已过时：此处刻意保留旧属性读取以兼容历史写入
         if (request.Properties.TryGetValue(key, out value))
             return true;
+#pragma warning restore CS0618 // HttpRequestMessage.Properties 已过时
+
         return false;
 #else
         return request.Properties.TryGetValue(key, out value);
