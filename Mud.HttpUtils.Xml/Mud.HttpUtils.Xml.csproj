@@ -2,7 +2,7 @@
 	<PropertyGroup>
 		<TargetFrameworks>netstandard2.0;net6.0;net8.0;net10.0</TargetFrameworks>
 		<PackageId>Mud.HttpUtils.Xml</PackageId>
-		<Description>Mud.HttpUtils 的 XML 序列化器实现，提供 IHttpContentSerializer。</Description>
+		<Description>Mud.HttpUtils 的 XML 序列化器实现，提供 IHttpContentSerializer；基于 XmlSerializer 运行时动态程序集，不支持 Native AOT/裁剪。</Description>
 		<PackageTags>HttpUtils;HttpClient;XML;序列化;Mud HttpUtils</PackageTags>
 		<Product>Mud Http Utils</Product>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>

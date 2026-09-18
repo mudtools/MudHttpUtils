@@ -2,7 +2,7 @@
 	<PropertyGroup>
 		<TargetFrameworks>netstandard2.0;net6.0;net8.0;net10.0</TargetFrameworks>
 		<PackageId>Mud.HttpUtils.Newtonsoft.Json</PackageId>
-		<Description>Mud HttpUtils 的 Newtonsoft.Json 序列化器实现，提供 IHttpContentSerializer + ISynchronousContentSerializer。</Description>
+		<Description>Mud HttpUtils 的 Newtonsoft.Json 序列化器实现，提供 IHttpContentSerializer + ISynchronousContentSerializer；依赖运行时反射，不支持 Native AOT/裁剪。</Description>
 		<PackageTags>HttpUtils;HttpClient;Newtonsoft;Json;序列化;Mud HttpUtils</PackageTags>
 		<Product>Mud Http Utils</Product>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>

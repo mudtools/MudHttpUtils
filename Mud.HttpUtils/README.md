@@ -20,6 +20,27 @@ Mud.HttpUtils 是 Mud.HttpUtils 生态的**元包（Metapackage）**，自动引
 - `net8.0`
 - `net10.0`
 
+## Native AOT 支持
+
+`Mud.HttpUtils` 元包及其聚合的核心子模块（Abstractions / Attributes / Client / Resilience）在设计上即面向 **Native AOT** 与**裁剪（Trimming）**：核心路径（JSON 序列化/反序列化、URL 构建、请求头处理）完全避免运行时反射，由源代码生成器在编译期产出强类型实现。
+
+- **序列化抽象 `IHttpContentSerializer`**：所有 JSON 操作统一经此抽象进行，默认实现 `SystemTextJsonContentSerializer`（基于 `System.Text.Json`）在 AOT 环境下仅使用源生成元数据，运行时零反射。
+- **AOT 编译期诊断**：源生成器（`Mud.HttpUtils.Generator`）发出 `AOT001`–`AOT007` 诊断（部分可由代码修复器一键修复），CI 严格模式 `-p:AotStrictMode=true` 下升级为 Error。
+- **脚手架工具**：`Mud.HttpUtils.JsonContextScaffolder`（`mud-jsonctx`）为 `[HttpJsonSerializable]` 标注类型生成 `JsonSerializerContext`，彻底消除 JSON 反射。
+
+**启用 Native AOT：**
+
+```xml
+<PropertyGroup>
+  <PublishAot>true</PublishAot>
+  <IsAotCompatible>true</IsAotCompatible>
+</PropertyGroup>
+```
+
+> ⚠️ `Mud.HttpUtils.Newtonsoft.Json` 与 `Mud.HttpUtils.Xml` 序列化器依赖运行时反射/动态代码生成，**不支持** Native AOT/裁剪。AOT 项目请使用默认的 System.Text.Json 序列化。
+
+详见 [项目根 README](../README.md) 的「Native AOT 与裁剪支持」章节，以及 [`Mud.HttpUtils.Generator`](../Mud.HttpUtils.Generator/README.md) 与 [`Mud.HttpUtils.JsonContextScaffolder`](../Tools/Mud.HttpUtils.JsonContextScaffolder/README.md) 文档。
+
 ## 安装
 
 ```bash
@@ -1266,6 +1287,8 @@ options.Retry.Enabled = false;
 > 可选安装 `Mud.HttpUtils.OpenTelemetry` 包以获得分布式追踪与指标采集能力。
 
 ## 版本历史
+
+> 自 **2.0.5**（首个 NuGet 正式版本）起的 Release Notes 详见仓库根目录 [`CHANGELOG.md`](../CHANGELOG.md)。本节以下为早期本地迭代版本的摘要。
 
 ### 2.0.0
 

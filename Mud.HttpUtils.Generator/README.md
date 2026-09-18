@@ -56,7 +56,7 @@ dotnet add package Mud.HttpUtils.Generator
 
 > 源代码生成器需配合运行时库 `Mud.HttpUtils` 一起使用。
 
-> **v2.1+ 合并包**：本包已包含接口规范 / DI 生命周期分析器（`MUD001`/`MUD002`/`MUD004`，已并入生成器程序集）和代码修复器（`HTTPCLIENT005`/`007`、`AOT004`/`005`/`006`/`007` 一键修复，独立程序集）。`Mud.HttpUtils.Analyzers` 与 `Mud.HttpUtils.CodeFixes` 均已不再作为独立包存在，无需单独安装。
+> **自 2.0.7 起合并包**：本包已包含接口规范 / DI 生命周期分析器（`MUD001`/`MUD002`/`MUD004`，已并入生成器程序集）和代码修复器（`HTTPCLIENT005`/`007`、`AOT004`/`005`/`006`/`007` 一键修复，独立程序集）。`Mud.HttpUtils.Analyzers` 与 `Mud.HttpUtils.CodeFixes` 均已不再作为独立包存在，无需单独安装。
 
 ## 快速开始
 

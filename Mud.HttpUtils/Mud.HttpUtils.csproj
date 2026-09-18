@@ -5,8 +5,8 @@
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<IncludeBuildOutput>false</IncludeBuildOutput>
 		<SuppressDependenciesWhenPacking>false</SuppressDependenciesWhenPacking>
-		<Description>Mud HttpUtils 元包，自动引用 Abstractions、Attributes、Client 和 Resilience 子模块。</Description>
-		<PackageTags>HttpUtils;HttpClient;WebAPI;弹性策略;重试;熔断;超时;DI;元包;Mud HttpUtils</PackageTags>
+		<Description>Mud HttpUtils 元包，自动引用 Abstractions、Attributes、Client 和 Resilience 子模块；Native AOT 与裁剪兼容（System.Text.Json）。</Description>
+		<PackageTags>HttpUtils;HttpClient;WebAPI;弹性策略;重试;熔断;超时;DI;元包;Mud HttpUtils;AOT;NativeAOT</PackageTags>
 		<Product>Mud Http Utils</Product>
 		<PackageId>Mud.HttpUtils</PackageId>
 		<GenerateDocumentationFile>True</GenerateDocumentationFile>

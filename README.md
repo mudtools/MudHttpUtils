@@ -11,9 +11,6 @@
 [![Mud.HttpUtils.OpenTelemetry](https://img.shields.io/nuget/v/Mud.HttpUtils.OpenTelemetry?label=Mud.HttpUtils.OpenTelemetry "Mud.HttpUtils.OpenTelemetry")](https://www.nuget.org/packages/Mud.HttpUtils.OpenTelemetry/ "Mud.HttpUtils.OpenTelemetry") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.OpenTelemetry "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.OpenTelemetry/ "downloads")
 [![Mud.HttpUtils.Newtonsoft.Json](https://img.shields.io/nuget/v/Mud.HttpUtils.Newtonsoft.Json?label=Mud.HttpUtils.Newtonsoft.Json "Mud.HttpUtils.Newtonsoft.Json")](https://www.nuget.org/packages/Mud.HttpUtils.Newtonsoft.Json/ "Mud.HttpUtils.Newtonsoft.Json") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Newtonsoft.Json "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Newtonsoft.Json/ "downloads")
 [![Mud.HttpUtils.Xml](https://img.shields.io/nuget/v/Mud.HttpUtils.Xml?label=Mud.HttpUtils.Xml "Mud.HttpUtils.Xml")](https://www.nuget.org/packages/Mud.HttpUtils.Xml/ "Mud.HttpUtils.Xml") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Xml "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Xml/ "downloads")
-[![Mud.HttpUtils.Testing](https://img.shields.io/nuget/v/Mud.HttpUtils.Testing?label=Mud.HttpUtils.Testing "Mud.HttpUtils.Testing")](https://www.nuget.org/packages/Mud.HttpUtils.Testing/ "Mud.HttpUtils.Testing") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Testing "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Testing/ "downloads")
-[![Mud.HttpUtils.Analyzers](https://img.shields.io/nuget/v/Mud.HttpUtils.Analyzers?label=Mud.HttpUtils.Analyzers "Mud.HttpUtils.Analyzers")](https://www.nuget.org/packages/Mud.HttpUtils.Analyzers/ "Mud.HttpUtils.Analyzers") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Analyzers "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Analyzers/ "downloads")
-[![Mud.HttpUtils.CodeFixes](https://img.shields.io/nuget/v/Mud.HttpUtils.CodeFixes?label=Mud.HttpUtils.CodeFixes "Mud.HttpUtils.CodeFixes")](https://www.nuget.org/packages/Mud.HttpUtils.CodeFixes/ "Mud.HttpUtils.CodeFixes") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.CodeFixes "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.CodeFixes/ "downloads")
 [![Mud.HttpUtils.JsonContextScaffolder](https://img.shields.io/nuget/v/Mud.HttpUtils.JsonContextScaffolder?label=Mud.HttpUtils.JsonContextScaffolder "Mud.HttpUtils.JsonContextScaffolder")](https://www.nuget.org/packages/Mud.HttpUtils.JsonContextScaffolder/ "Mud.HttpUtils.JsonContextScaffolder") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.JsonContextScaffolder "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.JsonContextScaffolder/ "downloads")
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE-MIT)
 
@@ -23,7 +20,7 @@
 
 ### 📖 项目简介
 
-Mud.HttpUtils 是一个基于 Roslyn 源代码生成器的声明式 HTTP 客户端框架，通过特性标注的方式自动生成类型安全的 HTTP API 客户端代码。无需手写 HttpClient 调用代码，只需定义接口并添加特性标注，编译器会自动生成完整的实现代码。
+Mud.HttpUtils 是一个基于 Roslyn 源代码生成器的声明式 HTTP 客户端框架，Native AOT 兼容，通过特性标注的方式自动生成类型安全的 HTTP API 客户端代码。无需手写 HttpClient 调用代码，只需定义接口并添加特性标注，编译器会自动生成完整的实现代码。
 
 ### ✨ 核心特性
 
@@ -50,21 +47,20 @@ Mud.HttpUtils 是一个基于 Roslyn 源代码生成器的声明式 HTTP 客户�
 
 ### 📦 NuGet 包
 
-| 组件                          | 描述                                                                                             | NuGet                                                                                                                               | 下载                                                                    |
-| ----------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| **Mud.HttpUtils**              | 元包：Abstractions + Attributes + Client + Resilience                                            | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.svg)](https://www.nuget.org/packages/Mud.HttpUtils/)                           | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.svg)               |
-| **Mud.HttpUtils.Abstractions** | 纯接口定义，最小依赖                                                                             | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Abstractions.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Abstractions/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Abstractions.svg)   |
-| **Mud.HttpUtils.Attributes**   | 特性定义                                                                                         | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Attributes.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Attributes/)     | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Attributes.svg)    |
-| **Mud.HttpUtils.Client**       | 客户端实现 + DI 注册                                                                             | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Client.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Client/)             | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Client.svg)        |
-| **Mud.HttpUtils.Resilience**   | 弹性策略（Polly）                                                                                | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Resilience.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Resilience/)     | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Resilience.svg)     |
-| **Mud.HttpUtils.Generator**   | 源代码生成器                                                                                     | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Generator.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Generator/)       | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Generator.svg)     |
-| **Mud.HttpUtils.OpenTelemetry** | OpenTelemetry 可观测性适配                                                                   | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.OpenTelemetry.svg)](https://www.nuget.org/packages/Mud.HttpUtils.OpenTelemetry/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.OpenTelemetry.svg) |
-| **Mud.HttpUtils.Newtonsoft.Json** | Newtonsoft.Json 序列化器适配 | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Newtonsoft.Json.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Newtonsoft.Json/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Newtonsoft.Json.svg) |
-| **Mud.HttpUtils.Xml** | XML 序列化器适配 | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Xml.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Xml/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Xml.svg) |
-| **Mud.HttpUtils.Testing** | 测试辅助包（StubHttp mock 服务器、网络行为模拟） | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Testing.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Testing/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Testing.svg) |
-| **Mud.HttpUtils.Analyzers** | 独立分析器项目（接口规范诊断） | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Analyzers.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Analyzers/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Analyzers.svg) |
-| **Mud.HttpUtils.CodeFixes** | 代码修复提供器 | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.CodeFixes.svg)](https://www.nuget.org/packages/Mud.HttpUtils.CodeFixes/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.CodeFixes.svg) |
-| **Mud.HttpUtils.JsonContextScaffolder** | JsonSerializerContext 脚手架工具 | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.JsonContextScaffolder.svg)](https://www.nuget.org/packages/Mud.HttpUtils.JsonContextScaffolder/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.JsonContextScaffolder.svg) |
+| 组件                                    | 描述                                                  | NuGet                                                                                                                                                   | 下载                                                                              |
+| --------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| **Mud.HttpUtils**                       | 元包：Abstractions + Attributes + Client + Resilience | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.svg)](https://www.nuget.org/packages/Mud.HttpUtils/)                                             | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.svg)                       |
+| **Mud.HttpUtils.Abstractions**          | 纯接口定义，最小依赖                                  | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Abstractions.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Abstractions/)                   | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Abstractions.svg)          |
+| **Mud.HttpUtils.Attributes**            | 特性定义                                              | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Attributes.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Attributes/)                       | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Attributes.svg)            |
+| **Mud.HttpUtils.Client**                | 客户端实现 + DI 注册                                  | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Client.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Client/)                               | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Client.svg)                |
+| **Mud.HttpUtils.Resilience**            | 弹性策略（Polly）                                     | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Resilience.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Resilience/)                       | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Resilience.svg)            |
+| **Mud.HttpUtils.Generator**             | 源代码生成器（已内置接口规范分析器与代码修复）        | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Generator.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Generator/)                         | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Generator.svg)             |
+| **Mud.HttpUtils.OpenTelemetry**         | OpenTelemetry 可观测性适配                            | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.OpenTelemetry.svg)](https://www.nuget.org/packages/Mud.HttpUtils.OpenTelemetry/)                 | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.OpenTelemetry.svg)         |
+| **Mud.HttpUtils.Newtonsoft.Json**       | Newtonsoft.Json 序列化器适配                          | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Newtonsoft.Json.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Newtonsoft.Json/)             | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Newtonsoft.Json.svg)       |
+| **Mud.HttpUtils.Xml**                   | XML 序列化器适配                                      | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Xml.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Xml/)                                     | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Xml.svg)                   |
+| **Mud.HttpUtils.JsonContextScaffolder** | JsonSerializerContext 脚手架工具                      | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.JsonContextScaffolder.svg)](https://www.nuget.org/packages/Mud.HttpUtils.JsonContextScaffolder/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.JsonContextScaffolder.svg) |
+
+> 说明：上表仅列出已发布到 NuGet 的包。`Mud.HttpUtils.Testing` 为测试辅助库，**不随版本发布**；`Mud.HttpUtils.Analyzers` 与 `Mud.HttpUtils.CodeFixes` **已合并进 `Mud.HttpUtils.Generator`**，随源生成器包一并发布，无需单独安装。
 
 ### 🏛️ 系统架构
 
@@ -139,6 +135,7 @@ sequenceDiagram
 ```
 
 > **关键设计**：
+>
 > - **零运行时反射**：生成代码直接调用 `IHttpRequestExecutor` 与 `IEnhancedHttpClient`，核心路径无反射（仅 `FormUrlEncoded` Body、`QueryMap` 复杂类型、XML 序列化等少数场景保留反射）。
 > - **装饰器叠加**：`ResilientHttpClient` 实现 `IEnhancedHttpClient` 并包装内层客户端，因此弹性策略、令牌恢复、追踪等能力可逐层叠加而不侵入业务接口。
 > - **多租户隔离**：`IAppContextHolder` / `IAppManager<T>` / `AppResiliencePolicyResolver` 为不同 App 维护独立的上下文与弹性策略。多租户场景**必须**调用 `AddMudHttpAppContextHolder()`（或使用配置入口 `AddMudHttpClientsFromConfiguration` 自动补齐）+ `AddMudHttpAppResilience(...)` 才能获得 per-app 弹性隔离；多租户场景**必须**注册 `IAppAccessAuthorizer` 防止跨租户越权。
@@ -254,14 +251,14 @@ public class UserService
 | `[Upload]`                        | 文件上传参数（支持自定义字段名/文件名/内容类型） | `[Upload(FieldName = "doc")] IFormFile file`       |
 | `[FilePath]`                      | 文件下载路径                                     | `[FilePath] string savePath`                       |
 | `[Token]`                         | Token 认证（支持参数/接口/方法级别）             | `[Token(TokenTypes.UserAccessToken)] string token` |
-| `[Retry]`                         | 方法级重试策略标注                               | `[Retry(MaxRetries = 3)]`                           |
-| `[Timeout]`                       | 方法级超时策略标注                               | `[Timeout(30000)]`                                  |
-| `[CircuitBreaker]`                | 方法级熔断策略标注                               | `[CircuitBreaker(FailureThreshold = 5)]`            |
-| `[HeaderMerge]`                   | 头部合并模式控制（接口/方法级别）                | `[HeaderMerge(HeaderMergeMode.Replace)]`            |
-| `[SerializationMethod]`           | 请求体序列化方法控制（接口/方法级别）            | `[SerializationMethod(SerializationMethod.Xml)]`    |
-| `[InterfacePath]`                 | 接口级固定路径参数                               | `[InterfacePath("tenantId", "default")]`            |
+| `[Retry]`                         | 方法级重试策略标注                               | `[Retry(MaxRetries = 3)]`                          |
+| `[Timeout]`                       | 方法级超时策略标注                               | `[Timeout(30000)]`                                 |
+| `[CircuitBreaker]`                | 方法级熔断策略标注                               | `[CircuitBreaker(FailureThreshold = 5)]`           |
+| `[HeaderMerge]`                   | 头部合并模式控制（接口/方法级别）                | `[HeaderMerge(HeaderMergeMode.Replace)]`           |
+| `[SerializationMethod]`           | 请求体序列化方法控制（接口/方法级别）            | `[SerializationMethod(SerializationMethod.Xml)]`   |
+| `[InterfacePath]`                 | 接口级固定路径参数                               | `[InterfacePath("tenantId", "default")]`           |
 | `[InterfaceQuery]`                | 接口级固定查询参数                               | `[InterfaceQuery("version", "2.0")]`               |
-| `[AllowAnyStatusCode]`            | 允许任意 HTTP 状态码（不抛异常）                 | `[AllowAnyStatusCode]`                              |
+| `[AllowAnyStatusCode]`            | 允许任意 HTTP 状态码（不抛异常）                 | `[AllowAnyStatusCode]`                             |
 
 #### 内容类型管理
 
@@ -720,7 +717,7 @@ MudHttpUtils/
 │   ├── PollyResiliencePolicyProvider # Polly 策略提供器
 │   ├── HttpRequestMessageCloner      # 请求克隆工具
 │   └── ServiceCollectionExtensions   # AddMudHttpResilienceDecorator() 注册
-├── Mud.HttpUtils.Generator/          # 源代码生成器
+├── Mud.HttpUtils.Generator/          # 源代码生成器（含分析器与代码修复）
 │   ├── HttpInvokeClassSourceGenerator    # 实现类生成器
 │   └── HttpInvokeRegistrationGenerator   # 注册代码生成器（含 Timeout 配置）
 ├── Mud.HttpUtils.OpenTelemetry/      # OpenTelemetry 可观测性适配
@@ -728,9 +725,7 @@ MudHttpUtils/
 │   └── MudHttpOpenTelemetryOptions       # 配置选项
 ├── Mud.HttpUtils.Newtonsoft.Json/   # Newtonsoft.Json 序列化器适配
 ├── Mud.HttpUtils.Xml/              # XML 序列化器适配
-├── Mud.HttpUtils.Testing/          # 测试辅助包（StubHttp + NetworkBehavior）
-├── Mud.HttpUtils.Analyzers/         # 独立分析器项目
-├── Mud.HttpUtils.CodeFixes/         # 代码修复提供器
+├── Mud.HttpUtils.CodeFixes/         # 代码修复提供器（打包进 Generator，不单独发布）
 ├── Mud.HttpUtils.JsonContextScaffolder/ # JsonSerializerContext 脚手架
 ├── Demos/                            # 示例项目
 └── Tests/                            # 测试项目
@@ -738,22 +733,19 @@ MudHttpUtils/
 
 ### 📚 详细文档
 
-| 包名                       | 说明                       | 文档                                           |
-| -------------------------- | -------------------------- | ---------------------------------------------- |
-| Mud.HttpUtils              | 元包，一站式引用 + DI 注册 | [README](Mud.HttpUtils/README.md)              |
-| Mud.HttpUtils.Abstractions | 接口定义，最小依赖         | [README](Mud.HttpUtils.Abstractions/README.md) |
-| Mud.HttpUtils.Attributes   | 特性标注                   | [README](Mud.HttpUtils.Attributes/README.md)   |
-| Mud.HttpUtils.Client       | 客户端实现                 | [README](Mud.HttpUtils.Client/README.md)       |
-| Mud.HttpUtils.Resilience   | 弹性策略                   | [README](Mud.HttpUtils.Resilience/README.md)   |
-| Mud.HttpUtils.Generator    | 源代码生成器               | [README](Mud.HttpUtils.Generator/README.md)    |
-| Mud.HttpUtils.OpenTelemetry | OpenTelemetry 可观测性    | [README](Mud.HttpUtils.OpenTelemetry/README.md) |
-| Mud.HttpUtils.Newtonsoft.Json | Newtonsoft.Json 序列化器适配 | [README](Mud.HttpUtils.Newtonsoft.Json/README.md) |
-| Mud.HttpUtils.Xml           | XML 序列化器适配           | [README](Mud.HttpUtils.Xml/README.md)          |
-| Mud.HttpUtils.Testing       | 测试辅助包                 | [README](Mud.HttpUtils.Testing/README.md)      |
-| Mud.HttpUtils.Analyzers     | 独立分析器                 | [README](Mud.HttpUtils.Analyzers/README.md)   |
-| Mud.HttpUtils.CodeFixes    | 代码修复提供器             | [README](Mud.HttpUtils.CodeFixes/README.md)    |
-| Mud.HttpUtils.JsonContextScaffolder | JsonContext 脚手架 | [README](Mud.HttpUtils.JsonContextScaffolder/README.md) |
-| 变更记录                       | 行为基线与版本说明          | [CHANGELOG](CHANGELOG.md)                          |
+| 包名                                | 说明                               | 文档                                                          |
+| ----------------------------------- | ---------------------------------- | ------------------------------------------------------------- |
+| Mud.HttpUtils                       | 元包，一站式引用 + DI 注册         | [README](Mud.HttpUtils/README.md)                             |
+| Mud.HttpUtils.Abstractions          | 接口定义，最小依赖                 | [README](Mud.HttpUtils.Abstractions/README.md)                |
+| Mud.HttpUtils.Attributes            | 特性标注                           | [README](Mud.HttpUtils.Attributes/README.md)                  |
+| Mud.HttpUtils.Client                | 客户端实现                         | [README](Mud.HttpUtils.Client/README.md)                      |
+| Mud.HttpUtils.Resilience            | 弹性策略                           | [README](Mud.HttpUtils.Resilience/README.md)                  |
+| Mud.HttpUtils.Generator             | 源代码生成器（含分析器与代码修复） | [README](Mud.HttpUtils.Generator/README.md)                   |
+| Mud.HttpUtils.OpenTelemetry         | OpenTelemetry 可观测性             | [README](Mud.HttpUtils.OpenTelemetry/README.md)               |
+| Mud.HttpUtils.Newtonsoft.Json       | Newtonsoft.Json 序列化器适配       | [README](Mud.HttpUtils.Newtonsoft.Json/README.md)             |
+| Mud.HttpUtils.Xml                   | XML 序列化器适配                   | [README](Mud.HttpUtils.Xml/README.md)                         |
+| Mud.HttpUtils.JsonContextScaffolder | JsonContext 脚手架                 | [README](Tools/Mud.HttpUtils.JsonContextScaffolder/README.md) |
+| 变更记录                            | 行为基线与版本说明                 | [CHANGELOG](CHANGELOG.md)                                     |
 
 ### ⚡ 性能说明
 
@@ -761,48 +753,117 @@ Mud.HttpUtils 通过 Roslyn 源代码生成器在编译时生成强类型的 HTT
 
 **存在反射的场景**（仅限以下高级特性）：
 
-| 场景 | 反射调用 | 影响范围 |
-|------|----------|----------|
-| `[Body(ContentType = "application/x-www-form-urlencoded")]` | 使用 `FormUrlEncodedContent` 时通过反射读取对象属性 | 仅限 FormUrlEncoded Body 模式 |
-| `[QueryMap]` 复杂类型展开 | 通过反射读取对象属性展开为查询参数 | 仅限 QueryMap 非字典类型 |
-| XML 序列化/反序列化 | `XmlSerializer` 内部使用反射（已通过静态字段缓存优化） | 仅限 XML Content-Type |
+| 场景                                                        | 反射调用                                               | 影响范围                      |
+| ----------------------------------------------------------- | ------------------------------------------------------ | ----------------------------- |
+| `[Body(ContentType = "application/x-www-form-urlencoded")]` | 使用 `FormUrlEncodedContent` 时通过反射读取对象属性    | 仅限 FormUrlEncoded Body 模式 |
+| `[QueryMap]` 复杂类型展开                                   | 通过反射读取对象属性展开为查询参数                     | 仅限 QueryMap 非字典类型      |
+| XML 序列化/反序列化                                         | `XmlSerializer` 内部使用反射（已通过静态字段缓存优化） | 仅限 XML Content-Type         |
 
 对于性能敏感的场景，建议优先使用 JSON 序列化（`System.Text.Json` 原生支持 AOT）和简单类型的查询参数。
+
+### 🚀 Native AOT 与裁剪支持
+
+Mud.HttpUtils 在设计之初即面向 **Native AOT** 与**裁剪（Trimming）**：核心路径（JSON 序列化/反序列化、URL 构建、请求头处理）完全避免运行时反射，由源代码生成器在编译期产出强类型实现。
+
+**各包 AOT/裁剪兼容情况：**
+
+| 包 | AOT/裁剪 | 说明 |
+|----|:--------:|------|
+| Mud.HttpUtils（元包） | ✅ | 聚合核心子包，AOT 兼容 |
+| Mud.HttpUtils.Abstractions | ✅ | 纯接口定义，无反射 |
+| Mud.HttpUtils.Attributes | ✅ | 仅特性定义，无反射 |
+| Mud.HttpUtils.Client | ✅ | `System.Text.Json` 序列化，AOT 安全 |
+| Mud.HttpUtils.Resilience | ✅ | 装饰器与策略编排均为静态类型与委托 |
+| Mud.HttpUtils.Generator | ✅ | 生成 AOT/裁剪安全代码，内含 `AOT001`–`AOT007` 编译期诊断 |
+| Mud.HttpUtils.OpenTelemetry | ✅ | 自有 API 无反射；导出能力依赖上游 OpenTelemetry SDK |
+| Mud.HttpUtils.JsonContextScaffolder | ✅ | 生成 `JsonSerializerContext`，消除 JSON 反射 |
+| Mud.HttpUtils.Newtonsoft.Json | ❌ | Newtonsoft.Json 依赖运行时反射，已标注 `[RequiresUnreferencedCode]` |
+| Mud.HttpUtils.Xml | ❌ | `XmlSerializer` 运行期生成动态程序集，已标注 `[RequiresDynamicCode]` |
+
+**启用 Native AOT：**
+
+```xml
+<PropertyGroup>
+  <PublishAot>true</PublishAot>
+  <IsAotCompatible>true</IsAotCompatible>
+</PropertyGroup>
+```
+
+1. 保持使用 `System.Text.Json`（默认 AOT 安全）；如需为特定 DTO 生成序列化上下文，运行脚手架工具 `mud-jsonctx`（`Mud.HttpUtils.JsonContextScaffolder`）为 `[HttpJsonSerializable]` 标注类型产出 `JsonSerializerContext`。
+2. 源生成器会读取 `IsAotCompatible` / `PublishAot` 等构建属性，在编译期给出 `AOT001`–`AOT007` 诊断。
+3. CI 严格模式可用 `-p:AotStrictMode=true` 将 `AOT004`–`AOT007` 及相关 IL 警告升级为 Error（详见「编译警告参考」）。
+
+> ⚠️ Native AOT 项目中请勿使用 `Mud.HttpUtils.Newtonsoft.Json` 与 `Mud.HttpUtils.Xml`，二者依赖运行时反射/动态代码生成，与 AOT/裁剪不兼容。
+
+### 🚀 Native AOT 与裁剪支持
+
+Mud.HttpUtils 在设计之初即面向 **Native AOT** 与**裁剪（Trimming）**：核心路径（JSON 序列化/反序列化、URL 构建、请求头处理）完全避免运行时反射，由源代码生成器在编译期产出强类型实现。
+
+**各包 AOT/裁剪兼容情况：**
+
+| 包 | AOT/裁剪 | 说明 |
+|----|:--------:|------|
+| Mud.HttpUtils（元包） | ✅ | 聚合核心子包，AOT 兼容 |
+| Mud.HttpUtils.Abstractions | ✅ | 纯接口定义，无反射 |
+| Mud.HttpUtils.Attributes | ✅ | 仅特性定义，无反射 |
+| Mud.HttpUtils.Client | ✅ | `System.Text.Json` 序列化，AOT 安全 |
+| Mud.HttpUtils.Resilience | ✅ | 装饰器与策略编排均为静态类型与委托 |
+| Mud.HttpUtils.Generator | ✅ | 生成 AOT/裁剪安全代码，内含 `AOT001`–`AOT007` 编译期诊断 |
+| Mud.HttpUtils.OpenTelemetry | ✅ | 自有 API 无反射；导出能力依赖上游 OpenTelemetry SDK |
+| Mud.HttpUtils.JsonContextScaffolder | ✅ | 生成 `JsonSerializerContext`，消除 JSON 反射 |
+| Mud.HttpUtils.Newtonsoft.Json | ❌ | Newtonsoft.Json 依赖运行时反射，已标注 `[RequiresUnreferencedCode]` |
+| Mud.HttpUtils.Xml | ❌ | `XmlSerializer` 运行期生成动态程序集，已标注 `[RequiresDynamicCode]` |
+
+**启用 Native AOT：**
+
+```xml
+<PropertyGroup>
+  <PublishAot>true</PublishAot>
+  <IsAotCompatible>true</IsAotCompatible>
+</PropertyGroup>
+```
+
+1. 保持使用 `System.Text.Json`（默认 AOT 安全）；如需为特定 DTO 生成序列化上下文，运行脚手架工具 `mud-jsonctx`（`Mud.HttpUtils.JsonContextScaffolder`）为 `[HttpJsonSerializable]` 标注类型产出 `JsonSerializerContext`。
+2. 源生成器会读取 `IsAotCompatible` / `PublishAot` 等构建属性，在编译期给出 `AOT001`–`AOT007` 诊断。
+3. CI 严格模式可用 `-p:AotStrictMode=true` 将 `AOT004`–`AOT007` 及相关 IL 警告升级为 Error（详见「编译警告参考」）。
+
+> ⚠️ Native AOT 项目中请勿使用 `Mud.HttpUtils.Newtonsoft.Json` 与 `Mud.HttpUtils.Xml`，二者依赖运行时反射/动态代码生成，与 AOT/裁剪不兼容。
 
 ### 🔔 编译警告参考
 
 源代码生成器在编译时会对不合理的 API 定义产生警告或错误，帮助开发者在编译阶段发现问题。
 
-| Diagnostic ID | 严重级别 | 触发条件 | 解决方案 |
-|---------------|----------|----------|----------|
-| `HTTPCLIENT001` | Error | 生成接口实现时发生异常 | 检查接口定义是否正确，查看内部异常信息 |
-| `HTTPCLIENT003` | Error | 接口语法分析失败 | 确保接口定义符合 C# 语法规范 |
-| `HTTPCLIENT004` | Error | 参数配置错误 | 检查参数特性配置是否正确 |
-| `HTTPCLIENT005` | Error | URL 模板格式无效 | 检查 `[Get]`/`[Post]` 等特性中的 URL 模板 |
-| `HTTPCLIENT007` | Error | 同时指定 `HttpClient` 和 `TokenManage` | 两者互斥，只设置其中一个 |
-| `HTTPCLIENT008` | Error | 加密配置但 HttpClient 类型不支持加密 | 使用 `IEnhancedHttpClient` 或移除加密配置 |
-| `HTTPCLIENT009` | Warning | XML 请求但 HttpClient 类型不支持 XML | 使用 `IEnhancedHttpClient` 或修改 Content-Type |
-| `HTTPCLIENT011` | Warning | `[Cache]` 与 `Response<T>` 返回类型组合 | 缓存会存储状态码和响应头，建议使用普通返回类型 |
-| `HTTPCLIENT012` | Info | 泛型接口：生成器将转发类型参数与约束 | 无需处理，仅供感知（泛型接口**已支持**代码生成） |
-| `HTTPCLIENT013` | Error | URL 模板中的路径占位符与 `[Path]` 参数不匹配 | 确保 URL 模板中的 `{placeholder}` 与方法中的 `[Path]` 参数一一对应 |
-| `HTTPCLIENT014` | Warning | 指定的 `HttpClient` 类型在当前编译中未找到 | 确认类型名称正确，或确保已注册对应命名客户端 |
-| `HTTPCLIENT015` | Error | `TokenManage` 类型未找到 | 确认类型名称正确，或确保包含该类型的项目已引用 |
-| `HTTPCLIENT016` | Error | `TokenManage` 类型缺少必需方法 | 提供 `IMudAppContext GetDefaultApp()` / `GetApp(string)` 或实现 `IAppManager<T>` |
-| `HTTPCLIENT017` | Warning | `HttpClient` 类型无法解析，加密/XML 兼容性校验被跳过 | 使用完全限定名确保类型可解析 |
-| `HTTPCLIENT018` | Warning | `TokenManagerKey` 使用默认推断值 | 多接口共享同一 TokenManager 时显式指定 `TokenManagerKey` 或 `TokenType` |
-| ~~`HTTPCLIENT019`~~ | — | ❌ 已移除（CFG-27）：其唯一触发点 `CacheAttribute.Priority` 已删除 | 无需处理（ID 保留为未使用占位） |
-| `HTTPCLIENT020` | Warning | 非幂等方法声明 `[Retry]` 但未设 `AllowNonIdempotent` | 运行时将跳过重试；如服务端可安全重复执行请显式开启 |
-| `HTTPCLIENT021` | Warning | 方法级 `[Timeout]` 超过接口级 `HttpClient` 超时 | `HttpClient.Timeout` 是硬上限，调小 `[Timeout]` 或提高 `[HttpClientApi(Timeout=…)]` |
-| `HTTPCLIENT022` | Warning | 方法使用 `Path`/`HmacSignature` 令牌注入模式 | 令牌恢复处理器（`TokenRecoveryDelegatingHandler`/`TokenRecoveryEnhancedClient`）不支持这两种模式，刷新后的新令牌无法重新注入，恢复将静默失败并返回 401。如需令牌恢复能力请改用 `Header`/`Query`/`ApiKey`/`Cookie`/`BasicAuth` 模式 |
-| `HTTPCLIENTREG001` | Error | 注册代码生成失败 | 检查接口定义和 DI 注册配置 |
-| `HTTPCLIENTREG002` | Error | `RegistryGroupName` 不是有效 C# 标识符 | 使用字母、数字、下划线组成，以字母或下划线开头 |
-| `EHSG001` | Error | 事件处理器代码生成失败 | 检查被处理类型定义与配置 |
-| `FORM001` | Error | FormContent 代码生成错误 | 检查 FormContent 类定义 |
-| `FORM002` | Error | FormContent 缺少 `[FilePath]` 属性 | 必须且只能有一个属性标记 `[FilePath]` |
-| `FORM003` | Error | FormContent 存在多个 `[FilePath]` 属性 | 只保留一个 `[FilePath]` 属性 |
-| `MUD004` | Warning | `ITokenManager` 实现未注册为 Singleton | `ITokenManager` 的实现类内部维护令牌缓存与并发锁（如 `SemaphoreSlim`），Scoped/Transient 注册会使每个请求持有独立缓存实例，导致并发安全机制失效与重复刷新令牌。请改用 `AddSingleton`/`TryAddSingleton` |
+| Diagnostic ID       | 严重级别 | 触发条件                                                           | 解决方案                                                                                                                                                                                                                           |
+| ------------------- | -------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HTTPCLIENT001`     | Error    | 生成接口实现时发生异常                                             | 检查接口定义是否正确，查看内部异常信息                                                                                                                                                                                             |
+| `HTTPCLIENT003`     | Error    | 接口语法分析失败                                                   | 确保接口定义符合 C# 语法规范                                                                                                                                                                                                       |
+| `HTTPCLIENT004`     | Error    | 参数配置错误                                                       | 检查参数特性配置是否正确                                                                                                                                                                                                           |
+| `HTTPCLIENT005`     | Error    | URL 模板格式无效                                                   | 检查 `[Get]`/`[Post]` 等特性中的 URL 模板                                                                                                                                                                                          |
+| `HTTPCLIENT007`     | Error    | 同时指定 `HttpClient` 和 `TokenManage`                             | 两者互斥，只设置其中一个                                                                                                                                                                                                           |
+| `HTTPCLIENT008`     | Error    | 加密配置但 HttpClient 类型不支持加密                               | 使用 `IEnhancedHttpClient` 或移除加密配置                                                                                                                                                                                          |
+| `HTTPCLIENT009`     | Warning  | XML 请求但 HttpClient 类型不支持 XML                               | 使用 `IEnhancedHttpClient` 或修改 Content-Type                                                                                                                                                                                     |
+| `HTTPCLIENT011`     | Warning  | `[Cache]` 与 `Response<T>` 返回类型组合                            | 缓存会存储状态码和响应头，建议使用普通返回类型                                                                                                                                                                                     |
+| `HTTPCLIENT012`     | Info     | 泛型接口：生成器将转发类型参数与约束                               | 无需处理，仅供感知（泛型接口**已支持**代码生成）                                                                                                                                                                                   |
+| `HTTPCLIENT013`     | Error    | URL 模板中的路径占位符与 `[Path]` 参数不匹配                       | 确保 URL 模板中的 `{placeholder}` 与方法中的 `[Path]` 参数一一对应                                                                                                                                                                 |
+| `HTTPCLIENT014`     | Warning  | 指定的 `HttpClient` 类型在当前编译中未找到                         | 确认类型名称正确，或确保已注册对应命名客户端                                                                                                                                                                                       |
+| `HTTPCLIENT015`     | Error    | `TokenManage` 类型未找到                                           | 确认类型名称正确，或确保包含该类型的项目已引用                                                                                                                                                                                     |
+| `HTTPCLIENT016`     | Error    | `TokenManage` 类型缺少必需方法                                     | 提供 `IMudAppContext GetDefaultApp()` / `GetApp(string)` 或实现 `IAppManager<T>`                                                                                                                                                   |
+| `HTTPCLIENT017`     | Warning  | `HttpClient` 类型无法解析，加密/XML 兼容性校验被跳过               | 使用完全限定名确保类型可解析                                                                                                                                                                                                       |
+| `HTTPCLIENT018`     | Warning  | `TokenManagerKey` 使用默认推断值                                   | 多接口共享同一 TokenManager 时显式指定 `TokenManagerKey` 或 `TokenType`                                                                                                                                                            |
+| ~~`HTTPCLIENT019`~~ | —        | ❌ 已移除（CFG-27）：其唯一触发点 `CacheAttribute.Priority` 已删除 | 无需处理（ID 保留为未使用占位）                                                                                                                                                                                                    |
+| `HTTPCLIENT020`     | Warning  | 非幂等方法声明 `[Retry]` 但未设 `AllowNonIdempotent`               | 运行时将跳过重试；如服务端可安全重复执行请显式开启                                                                                                                                                                                 |
+| `HTTPCLIENT021`     | Warning  | 方法级 `[Timeout]` 超过接口级 `HttpClient` 超时                    | `HttpClient.Timeout` 是硬上限，调小 `[Timeout]` 或提高 `[HttpClientApi(Timeout=…)]`                                                                                                                                                |
+| `HTTPCLIENT022`     | Warning  | 方法使用 `Path`/`HmacSignature` 令牌注入模式                       | 令牌恢复处理器（`TokenRecoveryDelegatingHandler`/`TokenRecoveryEnhancedClient`）不支持这两种模式，刷新后的新令牌无法重新注入，恢复将静默失败并返回 401。如需令牌恢复能力请改用 `Header`/`Query`/`ApiKey`/`Cookie`/`BasicAuth` 模式 |
+| `HTTPCLIENTREG001`  | Error    | 注册代码生成失败                                                   | 检查接口定义和 DI 注册配置                                                                                                                                                                                                         |
+| `HTTPCLIENTREG002`  | Error    | `RegistryGroupName` 不是有效 C# 标识符                             | 使用字母、数字、下划线组成，以字母或下划线开头                                                                                                                                                                                     |
+| `EHSG001`           | Error    | 事件处理器代码生成失败                                             | 检查被处理类型定义与配置                                                                                                                                                                                                           |
+| `FORM001`           | Error    | FormContent 代码生成错误                                           | 检查 FormContent 类定义                                                                                                                                                                                                            |
+| `FORM002`           | Error    | FormContent 缺少 `[FilePath]` 属性                                 | 必须且只能有一个属性标记 `[FilePath]`                                                                                                                                                                                              |
+| `FORM003`           | Error    | FormContent 存在多个 `[FilePath]` 属性                             | 只保留一个 `[FilePath]` 属性                                                                                                                                                                                                       |
+| `MUD004`            | Warning  | `ITokenManager` 实现未注册为 Singleton                             | `ITokenManager` 的实现类内部维护令牌缓存与并发锁（如 `SemaphoreSlim`），Scoped/Transient 注册会使每个请求持有独立缓存实例，导致并发安全机制失效与重复刷新令牌。请改用 `AddSingleton`/`TryAddSingleton`                             |
 
 > **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010`、`HTTPCLIENT019` 当前**未使用**（ID 保留为占位，不重新分配）。
+>
 > - `HTTPCLIENT010`：`HttpClientApiAttribute.BaseAddress` **已移除**（CFG-27），使用直接编译错误 `CS0117`。
 > - `HTTPCLIENT019`：`CacheAttribute.Priority` **已移除**（CFG-27），`[Cache]` 已无被忽略的属性。
 
