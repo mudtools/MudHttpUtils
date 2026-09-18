@@ -195,7 +195,7 @@ public class UserService
 
 ```csharp
 [HttpClientApi]
-[Token(TokenTypes.TenantAccessToken)]
+[Token("TenantAccessToken")]
 public interface IFeishuApi
 {
     [Get("/api/v1/user/{id}")]
@@ -482,11 +482,11 @@ Task<UserInfo> CreateUserAsync([Body] UserRequest request);
 | `[Body(RawString = true)]`        | 原始字符串请求体                      | `[Body(RawString = true)] string content`          |
 | `[Body(UseStringContent = true)]` | 字符串内容请求体                      | `[Body(UseStringContent = true)] string content`   |
 | `[FormContent]`                   | 表单数据                              | `[FormContent] IFormContent formData`              |
-| `[Form]`                          | 表单字段（URL编码）                   | `[Form("username")] string user`                   |
+| `[Form]`                          | 表单字段（URL编码）                   | `[Form(FieldName = "username")] string user`       |
 | `[MultipartForm]`                 | 多部分表单字段                        | `[MultipartForm] IFormFile file`                   |
 | `[Upload]`                        | 文件上传参数                          | `[Upload(FieldName = "doc")] IFormFile file`       |
 | `[FilePath]`                      | 文件下载路径                          | `[FilePath] string savePath`                       |
-| `[Token]`                         | Token 认证（支持参数/接口/方法级别）  | `[Token(TokenTypes.UserAccessToken)] string token` |
+| `[Token]`                         | Token 认证（支持参数/接口/方法级别）  | `[Token("UserAccessToken")] string token`          |
 | `[Retry]`                         | 方法级重试策略标注                               | `[Retry(MaxRetries = 3)]`                           |
 | `[Timeout]`                       | 方法级超时策略标注                               | `[Timeout(30000)]`                                  |
 | `[CircuitBreaker]`                | 方法级熔断策略标注                               | `[CircuitBreaker(FailureThreshold = 5)]`            |
@@ -526,30 +526,30 @@ Task<Response> PostSecureAsync(
 ### TokenAttribute 与 TokenTypes
 
 ```csharp
-// 接口级设置 Token 类型（建议使用 TokenTypes 常量）
-[Token(TokenTypes.TenantAccessToken)]
+// 接口级设置 Token 类型（通用类型用 TokenTypes 常量，平台自定义类型用字符串字面量）
+[Token("TenantAccessToken")]
 public interface IMyApi { }
 
 // 方法级 Token
 [Get("/api/user/profile")]
-[Token(TokenTypes.UserAccessToken, Scopes = "user:read")]
+[Token("UserAccessToken", Scopes = "user:read")]
 Task<Profile> GetProfileAsync();
 
 // 参数级设置 Token 类型
 [Get("/users/{id}")]
 Task<User> GetUserAsync(
     [Path] int id,
-    [Token(TokenTypes.UserAccessToken)] string? token = null
+    [Token("UserAccessToken")] string? token = null
 );
 
 // Token 注入模式
-[Token(TokenTypes.AppAccessToken, InjectionMode = TokenInjectionMode.Header, Name = "Authorization")]
+[Token("AppAccessToken", InjectionMode = TokenInjectionMode.Header, Name = "Authorization")]
 
 // Token 作用域
-[Token(TokenTypes.UserAccessToken, Scopes = "user:read,user:write")]
+[Token("UserAccessToken", Scopes = "user:read,user:write")]
 
 // 使用 RequiresUserId 自动获取用户级令牌
-[Token(TokenTypes.UserAccessToken, RequiresUserId = true)]
+[Token("UserAccessToken", RequiresUserId = true)]
 public interface IUserApi { }
 
 // 使用 TokenManagerKey 解耦业务概念和技术查找键
@@ -935,16 +935,20 @@ services.AddMudHttpClient("myApi", "https://api.example.com");
 | `UserTokenManagerBase`           | 用户令牌管理器抽象基类，提供并发安全的用户级令牌刷新实现          |
 | `TokenTypes`                     | 令牌类型常量类，提供标准化的令牌类型标识符                        |
 
-### 使用 TokenTypes 常量
+### 使用 Token 类型常量
+
+`TokenTypes` 提供标准化的令牌类型标识符（`Bearer`、`Basic`、`AccessToken`、`RefreshToken`）。
+平台自定义令牌类型（如飞书的 `TenantAccessToken` / `UserAccessToken`）不在核心库中定义，
+请使用字符串字面量，或自定义常量类（如 `FeishuTokenTypes`）：
 
 ```csharp
 using Mud.HttpUtils;
 
-[Token(TokenTypes.TenantAccessToken)]
-public interface IFeishuApi { }
+[Token(TokenTypes.AccessToken)]      // 通用访问令牌
+public interface IApi { }
 
-[Token(TokenTypes.UserAccessToken)]
-public interface IUserApi { }
+[Token("TenantAccessToken")]         // 平台自定义类型使用字符串字面量
+public interface IFeishuApi { }
 ```
 
 ### 实现自定义令牌管理器
@@ -1187,13 +1191,22 @@ services.AddMudHttpUtils("myApi", "https://api.example.com", options =>
 });
 ```
 
-### 3. 使用 TokenTypes 常量
+### 3. 使用 Token 类型常量
 
-避免在 Token 特性中硬编码字符串，使用 `TokenTypes` 常量类：
+`TokenTypes` 仅提供通用标识符（`Bearer`、`Basic`、`AccessToken`、`RefreshToken`）；
+平台自定义令牌类型（如 `TenantAccessToken`）请使用字符串字面量，或自定义常量类避免散落字符串：
 
 ```csharp
-[Token(TokenTypes.TenantAccessToken)]   // 推荐
-[Token("TenantAccessToken")]            // 不推荐
+[Token(TokenTypes.AccessToken)]      // 通用访问令牌（内置常量）
+[Token("TenantAccessToken")]         // 平台自定义令牌类型（字符串字面量）
+
+// 自定义常量类，避免散落字符串
+public static class FeishuTokenTypes
+{
+    public const string TenantAccessToken = "TenantAccessToken";
+}
+
+[Token(FeishuTokenTypes.TenantAccessToken)]
 ```
 
 ### 4. 配置 URL 安全验证

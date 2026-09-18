@@ -183,7 +183,7 @@ public interface IUserApi
     Task<UploadResult> UploadAsync([Upload] IFormFile file);
 
     [Post("/login")]
-    Task<LoginResult> LoginAsync([Form("username")] string user, [Form("password")] string pass);
+    Task<LoginResult> LoginAsync([Form(FieldName = "username")] string user, [Form(FieldName = "password")] string pass);
 }
 ```
 
@@ -246,11 +246,11 @@ public class UserService
 | `[Body(RawString = true)]`        | 原始字符串请求体                                 | `[Body(RawString = true)] string content`          |
 | `[Body(UseStringContent = true)]` | 字符串内容请求体                                 | `[Body(UseStringContent = true)] string content`   |
 | `[FormContent]`                   | 表单数据                                         | `[FormContent] IFormContent formData`              |
-| `[Form]`                          | 表单字段（`application/x-www-form-urlencoded`）  | `[Form("username")] string user`                   |
+| `[Form]`                          | 表单字段（`application/x-www-form-urlencoded`）  | `[Form(FieldName = "username")] string user`       |
 | `[MultipartForm]`                 | 多部分表单字段（`multipart/form-data`）          | `[MultipartForm] IFormFile file`                   |
 | `[Upload]`                        | 文件上传参数（支持自定义字段名/文件名/内容类型） | `[Upload(FieldName = "doc")] IFormFile file`       |
 | `[FilePath]`                      | 文件下载路径                                     | `[FilePath] string savePath`                       |
-| `[Token]`                         | Token 认证（支持参数/接口/方法级别）             | `[Token(TokenTypes.UserAccessToken)] string token` |
+| `[Token]`                         | Token 认证（支持参数/接口/方法级别）             | `[Token("UserAccessToken")] string token`          |
 | `[Retry]`                         | 方法级重试策略标注                               | `[Retry(MaxRetries = 3)]`                          |
 | `[Timeout]`                       | 方法级超时策略标注                               | `[Timeout(30000)]`                                 |
 | `[CircuitBreaker]`                | 方法级熔断策略标注                               | `[CircuitBreaker(FailureThreshold = 5)]`           |
@@ -360,19 +360,19 @@ Task<Order> CreateOrderAsync([Body] CreateOrderRequest request);
 #### Token 认证
 
 ```csharp
-// 接口级 Token（建议使用 TokenTypes 常量）
-[Token(TokenTypes.TenantAccessToken)]
+// 接口级 Token（通用类型用 TokenTypes 常量，平台自定义类型用字符串字面量或自定义常量类）
+[Token("TenantAccessToken")]
 public interface IApi { }
 
 // 参数级 Token
 [Get("/users/{id}")]
-Task<User> GetUserAsync([Path] int id, [Token(TokenTypes.UserAccessToken)] string? token = null);
+Task<User> GetUserAsync([Path] int id, [Token("UserAccessToken")] string? token = null);
 
 // Token 注入模式：Header（默认）、Query、Path、ApiKey、HmacSignature、BasicAuth、Cookie
-[Token(TokenTypes.AppAccessToken, InjectionMode = TokenInjectionMode.Header, Name = "Authorization")]
+[Token("AppAccessToken", InjectionMode = TokenInjectionMode.Header, Name = "Authorization")]
 
 // 使用 RequiresUserId 自动获取用户级令牌
-[Token(TokenTypes.UserAccessToken, RequiresUserId = true)]
+[Token("UserAccessToken", RequiresUserId = true)]
 public interface IUserApi { }
 
 // 使用 TokenManagerKey 解耦业务概念和技术查找键

@@ -19,8 +19,8 @@ namespace Mud.HttpUtils.Attributes;
 /// <code>
 /// [Post("/api/login")]
 /// Task&lt;LoginResult&gt; LoginAsync(
-///     [Form("username")] string user, 
-///     [Form("password")] string pass);
+///     [Form(FieldName = "username")] string user, 
+///     [Form(FieldName = "password")] string pass);
 /// </code>
 /// </example>
 [AttributeUsage(AttributeTargets.Parameter, AllowMultiple = false)]

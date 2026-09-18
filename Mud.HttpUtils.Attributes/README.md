@@ -226,18 +226,24 @@ Task SendTextAsync([Body(UseStringContent = true)] object message);
 
 > **RequiresUserId**：当设置为 `true` 时，生成的代码将通过 `ICurrentUserContext` 获取当前用户 ID，并将其传递给 `ITokenProvider` 以获取用户级令牌。如果未显式指定，则根据 `TokenType` 自动推断：`TokenType` 为 `"UserAccessToken"` 时默认为 `true`，否则默认为 `false`。
 
-### 使用 TokenTypes 常量
+### 使用 Token 类型
+
+`TokenTypes` 提供标准化标识符（`Bearer`、`Basic`、`AccessToken`、`RefreshToken`）；
+平台自定义类型（如 `TenantAccessToken` / `UserAccessToken`）使用字符串字面量：
 
 ```csharp
 using Mud.HttpUtils;
 
-[Token(TokenTypes.TenantAccessToken)]
+[Token(TokenTypes.AccessToken)]
+public interface IApi { }
+
+[Token("TenantAccessToken")]
 public interface IFeishuApi { }
 
 [Get("/users/{id}")]
 Task<User> GetUserAsync(
     [Path] int id,
-    [Token(TokenTypes.UserAccessToken)] string? token = null
+    [Token("UserAccessToken")] string? token = null
 );
 ```
 
@@ -267,7 +273,7 @@ public interface IHmacApi { }
 
 ```csharp
 // 指定令牌作用域
-[Token(TokenTypes.UserAccessToken, Scopes = "user:read,user:write")]
+[Token("UserAccessToken", Scopes = "user:read,user:write")]
 public interface IScopedApi { }
 
 // 方法级别令牌
@@ -366,8 +372,8 @@ public interface IUserApi { }
 ```csharp
 [Post("/api/login")]
 Task<LoginResult> LoginAsync(
-    [Form("username")] string user,
-    [Form("password")] string pass);
+    [Form(FieldName = "username")] string user,
+    [Form(FieldName = "password")] string pass);
 ```
 
 ## MultipartFormAttribute 详解

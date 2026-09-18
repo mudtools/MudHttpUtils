@@ -429,8 +429,8 @@ Task SendTextAsync([Body(UseStringContent = true)] object message);
 ```csharp
 [Post("/api/login")]
 Task<LoginResult> LoginAsync(
-    [Form("username")] string user,
-    [Form("password")] string pass);
+    [Form(FieldName = "username")] string user,
+    [Form(FieldName = "password")] string pass);
 ```
 
 #### MultipartForm 参数（多部分表单字段）
