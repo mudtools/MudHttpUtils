@@ -4,6 +4,39 @@
 
 ---
 
+## 2.0.6（生成器警告治理与继承客户端修复，2026-09-17）
+
+> 依据第三方项目 MudFeishu 的全量编译警告治理（2758 → 12 条）过程中的实机发现修复。
+
+#### 修复（Fixed）
+
+- **继承接口的生成客户端应用切换永远抛异常（P0）**：`ConstructorGenerator` 在继承模式下未向基类构造函数
+  转发 `appAuthorizer`，且派生类重复声明私有 `_appAuthorizer` 字段——基类 `UseApp`/`BeginScope`/`UseAppScope`
+  守卫读取的是基类自己的字段（恒为 null），在 MT-02 默认拒绝语义下，凡继承自 `[HttpClientApi(IsAbstract = true)]`
+  基接口的生成客户端，应用切换在注册了授权器的情况下也必然抛异常。现派生类经 base(...) 命名参数转发
+  `appAuthorizer`，且不再重复声明该字段（同时消除下游约 1184 条 CS0108）。
+- **继承模式下派生类重复实现基接口的 [Header]/[Query]/[Path] 属性（CS0108/CS8618）**：
+  `AnalyzeInterfaceProperties` 现标记来自 InheritedFrom 基接口链的属性（`IsFromInheritedBase`），
+  派生类只注入其值、不再重复声明；`[Header]` 字符串属性以 `= string.Empty` 初始化（消除 CS8618）。
+- **生成代码的值类型空过滤（CS0472）**：`QueryParameterBinder` 对 `int[]` 等非可空值类型元素数组
+  不再发射恒真的 `.Where(__item => __item != null)`（重复参数与分隔符两条路径，优先用 Roslyn 符号判定）。
+- **生成代码的可空实参（CS8604）**：`FormContentGenerator` 字符串守卫分支与可空值类型 `ToString()` 分支
+  补 null 容忍标注；`RequestBuilder` 对可空字符串路径参数转义时合并 `?? string.Empty`。
+
+#### 新增（Added）
+
+- **JsonContextScaffolder SYSLIB1031 防护**：同一 Context 内默认 TypeInfo 属性名（短名 / 数组=元素短名+Array /
+  闭包泛型=定义名+类型参数名拼接）冲突时，自动为第二个及之后的根发射 `TypeInfoPropertyName`（完整名转标识符）。
+- **快照测试版本脱敏**：`VerifyFixture` 对 `[GeneratedCode]` 版本串归一化为 `<VERSION>`，
+  版本提升不再需要重新接受 GeneratorSnapshotTests 快照。
+
+> 已知残留（非生成器缺陷）：STJ 源生成器为 DTO 闭包隐式生成的 `T[]` 类型信息按元素短名命名，
+> 同一 Context 内两个不同命名空间的同名 DTO（如 `Approval.ApprovalCreateViewers` /
+> `ApprovalExternal.ApprovalCreateViewers`）的隐式数组属性名必然冲突（SYSLIB1031），
+> 需下游重命名 DTO 类型方可根治；对运行期仅影响该隐式类型的元数据查表路径。
+
+---
+
 ## 2.0.5（首个 NuGet 正式版本，2026-09-17）
 
 > 依据第三方项目 MudFeishu 对前序本地验证包（第二轮迭代）的实机升级验证结论修复

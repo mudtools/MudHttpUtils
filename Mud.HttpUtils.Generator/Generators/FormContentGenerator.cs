@@ -371,9 +371,9 @@ internal class FormContentGenerator : TransitiveCodeGenerator
 
         if (isString)
         {
-            // 字符串类型：添加非空判断
+            // 字符串类型：添加非空判断（守卫内 `!` 消除可空形参的 CS8604；运行期守卫已保证非 null/空白）
             sb.AppendLine($"        if (!string.IsNullOrWhiteSpace({propertyName}))");
-            sb.AppendLine($"            formData.Add(new StringContent({propertyName}), \"{escapedJsonName}\");");
+            sb.AppendLine($"            formData.Add(new StringContent({propertyName}!), \"{escapedJsonName}\");");
         }
         else if (isValueType)
         {
@@ -382,9 +382,9 @@ internal class FormContentGenerator : TransitiveCodeGenerator
         }
         else
         {
-            // 引用类型：添加 null 检查
+            // 引用类型 / 可空值类型：添加 null 检查（守卫内 `!` 消除 Nullable<T>.ToString() 返回 string? 的 CS8604）
             sb.AppendLine($"        if ({propertyName} != null)");
-            sb.AppendLine($"            formData.Add(new StringContent({propertyName}.ToString()), \"{escapedJsonName}\");");
+            sb.AppendLine($"            formData.Add(new StringContent({propertyName}.ToString()!), \"{escapedJsonName}\");");
         }
     }
 

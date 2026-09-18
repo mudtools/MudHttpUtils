@@ -59,4 +59,10 @@ internal class InterfacePropertyInfo
     /// 请求头的别名，用于映射到不同的请求头名称。仅对 AttributeType == "Header" 的属性有效。
     /// </summary>
     public string? AliasAs { get; set; }
+
+    /// <summary>
+    /// 是否声明自继承基接口（InheritedFrom 指向的 [HttpClientApi] 基接口及其祖先）。
+    /// 为 true 时基类实现已包含该属性，派生类只应注入其值、不得重复声明（否则 CS0108 隐藏基类成员）。
+    /// </summary>
+    public bool IsFromInheritedBase { get; set; }
 }

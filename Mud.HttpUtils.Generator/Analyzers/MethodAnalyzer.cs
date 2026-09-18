@@ -752,7 +752,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         return (headers, queries);
     }
 
-    internal static List<InterfacePropertyInfo> AnalyzeInterfaceProperties(InterfaceDeclarationSyntax interfaceDecl, Compilation compilation, SemanticModel? semanticModel)
+    internal static List<InterfacePropertyInfo> AnalyzeInterfaceProperties(InterfaceDeclarationSyntax interfaceDecl, Compilation compilation, SemanticModel? semanticModel, ITypeSymbol? inheritedBaseInterface = null)
     {
         var properties = new List<InterfacePropertyInfo>();
 
@@ -768,7 +768,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
 
         // 遍历当前接口及其所有基接口的属性，确保基接口中定义的 [Query]/[Path] 属性也能被识别
         var visitedProperties = new HashSet<IPropertySymbol>(SymbolEqualityComparer.Default);
-        CollectInterfaceProperties(interfaceSymbol, propertyDecls, model, properties, visitedProperties);
+        CollectInterfaceProperties(interfaceSymbol, propertyDecls, model, properties, visitedProperties, inheritedBaseInterface);
 
         return properties;
     }
@@ -778,7 +778,8 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         Dictionary<string, PropertyDeclarationSyntax> propertyDecls,
         SemanticModel model,
         List<InterfacePropertyInfo> properties,
-        HashSet<IPropertySymbol> visitedProperties)
+        HashSet<IPropertySymbol> visitedProperties,
+        ITypeSymbol? inheritedBaseInterface = null)
     {
         foreach (var property in interfaceSymbol.GetMembers().OfType<IPropertySymbol>())
         {
@@ -817,6 +818,12 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         // 递归处理所有基接口
         foreach (var baseInterface in interfaceSymbol.AllInterfaces)
         {
+            // 来自「继承基接口（InheritedFrom 指向的 [HttpClientApi] 接口）及其祖先」的属性，
+            // 基类实现已包含：派生类只注入其值、不重复声明（否则 CS0108 隐藏基类成员）。
+            var isFromInheritedBase = inheritedBaseInterface != null &&
+                (SymbolEqualityComparer.Default.Equals(baseInterface, inheritedBaseInterface) ||
+                 baseInterface.AllInterfaces.Contains(inheritedBaseInterface, SymbolEqualityComparer.Default));
+
             foreach (var property in baseInterface.GetMembers().OfType<IPropertySymbol>())
             {
                 if (!visitedProperties.Add(property))
@@ -855,15 +862,21 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
 
                 if (queryAttr != null)
                 {
-                    properties.Add(CreatePropertyInfo(property, queryAttr, "Query", propertyDecl, model));
+                    var info = CreatePropertyInfo(property, queryAttr, "Query", propertyDecl, model);
+                    info.IsFromInheritedBase = isFromInheritedBase;
+                    properties.Add(info);
                 }
                 else if (pathAttr != null)
                 {
-                    properties.Add(CreatePropertyInfo(property, pathAttr, "Path", propertyDecl, model));
+                    var info = CreatePropertyInfo(property, pathAttr, "Path", propertyDecl, model);
+                    info.IsFromInheritedBase = isFromInheritedBase;
+                    properties.Add(info);
                 }
                 else if (headerAttr != null)
                 {
-                    properties.Add(CreatePropertyInfo(property, headerAttr, "Header", propertyDecl, model));
+                    var info = CreatePropertyInfo(property, headerAttr, "Header", propertyDecl, model);
+                    info.IsFromInheritedBase = isFromInheritedBase;
+                    properties.Add(info);
                 }
             }
         }

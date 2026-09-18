@@ -288,8 +288,12 @@ internal class QueryParameterBinder : IParameterBinder
             // 提取数组元素类型，尝试使用类型专用的 Add 重载
             var elementType = GetArrayElementType(param.Type);
             var elementOverloadKind = TypeDetectionHelper.GetQueryAddOverloadKind(elementType);
+            // CS0472 防护：非可空值类型元素（int[] 等）不存在 null，发射 `!= null` 过滤会恒真告警；
+            // 仅引用类型 / 可空值类型元素需要过滤
+            var elementMayBeNull = ArrayElementsMayBeNull(param, elementType);
+            var whereClause = elementMayBeNull ? $".Where(__item => __item != null)" : string.Empty;
 
-            codeBuilder.AppendLine($"{indent}    foreach (var __item in {param.Name}.Where(__item => __item != null))");
+            codeBuilder.AppendLine($"{indent}    foreach (var __item in {param.Name}{whereClause})");
             codeBuilder.AppendLine($"{indent}    {{");
 
             if (elementOverloadKind == TypeDetectionHelper.QueryAddOverloadKind.WithFormat)
@@ -315,7 +319,11 @@ internal class QueryParameterBinder : IParameterBinder
         else
         {
             // 分隔符模式: query1=val1;val2;val3
-            codeBuilder.AppendLine($"{indent}    var __joinedValues = string.Join(\"{StringEscapeHelper.EscapeString(effectiveSeparator)}\", {param.Name}.Where(__item => __item != null).Select(__item => __item.ToString()));");
+            var elementType2 = GetArrayElementType(param.Type);
+            var whereClause = ArrayElementsMayBeNull(param, elementType2)
+                ? $".Where(__item => __item != null)"
+                : string.Empty;
+            codeBuilder.AppendLine($"{indent}    var __joinedValues = string.Join(\"{StringEscapeHelper.EscapeString(effectiveSeparator)}\", {param.Name}{whereClause}.Select(__item => __item.ToString()));");
             codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", __joinedValues);");
         }
 
@@ -653,6 +661,27 @@ internal class QueryParameterBinder : IParameterBinder
         if (type.EndsWith("[]", StringComparison.OrdinalIgnoreCase))
             return type.Substring(0, type.Length - 2);
         return type;
+    }
+
+    /// <summary>
+    /// 判断数组/集合参数的元素是否可能为 null（决定是否发射 <c>.Where(__item => __item != null)</c> 过滤）。
+    /// 优先使用 Roslyn 符号精确判定；符号缺失时回退为字符串启发式（已知非空值类型别名/常见 System 值类型）。
+    /// </summary>
+    private static bool ArrayElementsMayBeNull(ParameterInfo param, string elementType)
+    {
+        if (param.TypeSymbol is IArrayTypeSymbol arraySymbol)
+        {
+            var element = arraySymbol.ElementType;
+            if (element.IsValueType)
+                return element.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T;
+            return true;
+        }
+
+        // 可空后缀（string[]? 是数组可空，元素可空性未知；int?[] 元素可空）→ 保守过滤
+        if (elementType.EndsWith("?", StringComparison.Ordinal))
+            return true;
+
+        return !TypeDetectionHelper.IsValueType(elementType);
     }
 
     private static void GenerateRawQueryStringParameter(StringBuilder codeBuilder, ParameterInfo param, ParameterAttributeInfo attr, string indent)

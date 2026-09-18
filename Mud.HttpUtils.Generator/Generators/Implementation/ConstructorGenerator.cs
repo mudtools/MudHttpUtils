@@ -119,11 +119,19 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("        public string? CurrentUserId => _currentUserContext.UserId;");
         }
 
-        // 继承模式下也需生成 _appAuthorizer 字段（UseApp/BeginScope 守卫引用此字段）
-        codeBuilder.AppendLine("        /// <summary>");
-        codeBuilder.AppendLine("        /// 应用切换授权器（可选）。非 null 时 UseApp/BeginScope 将先做授权判定。");
-        codeBuilder.AppendLine("        /// </summary>");
-        codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IAppAccessAuthorizer? _appAuthorizer;");
+        // 继承模式下：若基类同为生成产物且含 TokenManager（BaseHasTokenManager=true），
+        // 基类已声明 _appAuthorizer 字段并经 base(...) 命名参数接收授权器（见 GenerateBaseConstructorCall），
+        // 派生类不得重复声明——曾因未向基类转发该参数且派生类重复声明私有字段，导致基类
+        // UseApp/BeginScope 守卫读取的字段恒为 null，继承接口的生成客户端在 MT-02 默认拒绝语义下
+        // 应用切换永远抛异常（P0），同时产生大量 CS0108。
+        // 仅当派生类自带 UseApp 守卫（HasTokenManager && !BaseHasTokenManager）时才声明自己的字段。
+        if (!_context.Configuration.BaseHasTokenManager)
+        {
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 应用切换授权器（可选）。非 null 时 UseApp/BeginScope 将先做授权判定。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine($"        {_context.FieldAccessibility}readonly IAppAccessAuthorizer? _appAuthorizer;");
+        }
 
         codeBuilder.AppendLine();
     }
@@ -324,6 +332,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
 
         foreach (var property in properties)
         {
+            // 继承模式下，基接口（InheritedFrom 链）的属性已由基类实现并声明；
+            // 派生类仅通过 RequestBuilder 注入其值（public 继承可访问），重复声明会产生 CS0108。
+            if (property.IsFromInheritedBase)
+                continue;
+
             // GEN-05 修复：接口属性为只读时（仅 getter），生成的实现属性也不生成 setter，保持接口契约一致。
             var accessor = property.IsReadOnly ? "{ get; }" : "{ get; set; }";
             var propLine = $"        public {property.Type} {property.Name} {accessor}";
@@ -331,8 +344,10 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             {
                 propLine += $" = {property.DefaultValue};";
             }
-            else if (property.AttributeType == "Path" && (property.Type == "string" || property.Type == "String") && !property.IsReadOnly)
+            else if ((property.AttributeType == "Path" || property.AttributeType == "Header") &&
+                     (property.Type == "string" || property.Type == "String") && !property.IsReadOnly)
             {
+                // Header/Path 字符串属性以空串初始化，消除非空自动属性的 CS8618（运行期由调用方/注入器赋值）
                 propLine += " = string.Empty;";
             }
             codeBuilder.AppendLine(propLine);
@@ -541,7 +556,14 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             }
             // logger 使用命名参数传递，避免基类可选参数顺序不匹配的问题
             // contentSerializer 同样使用命名参数传递（Phase 3.1 全量收敛）
-            codeBuilder.AppendLine($" : base({string.Join(", ", baseParameters)}, logger: logger, contentSerializer: contentSerializer)");
+            // BaseHasTokenManager=true 时必须向基类转发 appAuthorizer：基类的 UseApp/BeginScope 守卫
+            // 读取的是基类自己的 _appAuthorizer 字段，漏传会使其恒为 null（默认拒绝语义下应用切换永远抛异常）。
+            var namedArgs = "logger: logger, contentSerializer: contentSerializer";
+            if (_context.Configuration.BaseHasTokenManager)
+            {
+                namedArgs = "appAuthorizer: appAuthorizer, " + namedArgs;
+            }
+            codeBuilder.AppendLine($" : base({string.Join(", ", baseParameters)}, {namedArgs})");
         }
         else
         {
@@ -627,8 +649,12 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             {
                 codeBuilder.AppendLine("            _resilienceResolver = resilienceResolver ?? throw new ArgumentNullException(nameof(resilienceResolver));");
             }
-            // 继承模式下也需初始化 _appAuthorizer（UseApp/BeginScope 守卫引用此字段）
-            codeBuilder.AppendLine("            _appAuthorizer = appAuthorizer;");
+            // 仅当派生类声明了自己的 _appAuthorizer 字段（基类无 TokenManager，派生类自带 UseApp 守卫）时
+            // 才在此初始化；BaseHasTokenManager=true 时该字段属于基类，由 base(...) 命名参数转发初始化。
+            if (!_context.Configuration.BaseHasTokenManager)
+            {
+                codeBuilder.AppendLine("            _appAuthorizer = appAuthorizer;");
+            }
         }
 
         codeBuilder.AppendLine("        }");

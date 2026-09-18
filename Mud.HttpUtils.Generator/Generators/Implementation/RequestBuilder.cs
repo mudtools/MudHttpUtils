@@ -775,7 +775,9 @@ internal class RequestBuilder
             {
                 if (isStringType)
                 {
-                    ReplacePlaceholder(sb, placeholder, $"{{Uri.EscapeDataString({paramName})}}");
+                    // CS8604 防护：可空字符串路径参数（string?）转义时合并为空串（EscapeDataString 形参非可空）
+                    var nullCoalesce = paramType.Contains('?') ? " ?? string.Empty" : string.Empty;
+                    ReplacePlaceholder(sb, placeholder, $"{{Uri.EscapeDataString({paramName}{nullCoalesce})}}");
                 }
                 else
                 {

@@ -827,23 +827,59 @@ public class JsonContextGenerator
         sb.AppendLine("    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,");
         sb.AppendLine("    WriteIndented = false)]");
 
+        // 组装本 Context 的全部注册根（主类型 + 可选的自动派生类型），统一做 SYSLIB1031 重名防护
+        var roots = new List<(ITypeSymbol Type, string Comment)>();
         foreach (var type in group.Types)
         {
-            var typeofExpr = GetTypeOfExpression(type);
-            sb.AppendLine($"[JsonSerializable(typeof({typeofExpr}))]");
+            roots.Add((type, string.Empty));
+        }
 
-            // P2.2: 自动检测同程序集内的派生类并生成 [JsonSerializable(typeof(derived))]。
-            // 注意：--auto-derived-types 注册派生类型为独立 [JsonSerializable] root，
-            // 仅覆盖 Serialize<Derived> 静态调用，不能替代基类上的 [JsonDerivedType] 特性。
-            // 多态序列化（以基类类型序列化派生实例）仍需用户在基类声明上标注 [JsonDerivedType]。
-            if (autoDerivedTypes)
+        // P2.2: 自动检测同程序集内的派生类并生成 [JsonSerializable(typeof(derived))]。
+        // 注意：--auto-derived-types 注册派生类型为独立 [JsonSerializable] root，
+        // 仅覆盖 Serialize<Derived> 静态调用，不能替代基类上的 [JsonDerivedType] 特性。
+        // 多态序列化（以基类类型序列化派生实例）仍需用户在基类声明上标注 [JsonDerivedType]。
+        if (autoDerivedTypes)
+        {
+            foreach (var type in group.Types)
             {
                 foreach (var derived in FindDerivedTypes(compilation, type))
                 {
-                    var derivedExpr = GetTypeOfExpression(derived);
-                    sb.AppendLine($"[JsonSerializable(typeof({derivedExpr}))] // 派生类型已注册为独立根；多态（以基类类型序列化）仍需在基类上标注 [JsonDerivedType]");
+                    roots.Add((derived, " // 派生类型已注册为独立根；多态（以基类类型序列化）仍需在基类上标注 [JsonDerivedType]"));
                 }
             }
+        }
+
+        // SYSLIB1031 防护：STJ 源生成器以「默认 TypeInfo 属性名」（具名类型=简单名；数组=元素默认名+"Array"；
+        // 闭包泛型=定义名+按序拼接类型参数默认名）作为 Context 上的属性名，同名即冲突——
+        // 仅第一个生成元数据并告警 SYSLIB1031。对冲突组内除首个出现外的类型显式指定
+        // TypeInfoPropertyName（完整名转合法标识符，确定性可复现）；首个保留默认名以兼容既有引用。
+        var defaultNames = roots.Select(r => GetDefaultTypeInfoPropertyName(r.Type)).ToList();
+        var duplicateNames = defaultNames
+            .GroupBy(n => n, StringComparer.Ordinal)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToHashSet(StringComparer.Ordinal);
+        var usedPropertyNames = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var (root, index) in roots.Select((r, i) => (r, i)))
+        {
+            var typeofExpr = GetTypeOfExpression(root.Type);
+            var args = $"typeof({typeofExpr})";
+            var comment = root.Comment;
+
+            if (duplicateNames.Contains(defaultNames[index]) && !usedPropertyNames.Add(defaultNames[index]))
+            {
+                var baseIdentifier = ToTypeInfoPropertyIdentifier(root.Type);
+                var candidate = baseIdentifier;
+                for (var suffix = 1; !usedPropertyNames.Add(candidate); suffix++)
+                {
+                    candidate = $"{baseIdentifier}_{suffix}";
+                }
+                args += $", TypeInfoPropertyName = \"{candidate}\"";
+                comment = " // SYSLIB1031 防护：默认 TypeInfo 属性名与本 Context 内其他根冲突，已显式重命名" + comment;
+            }
+
+            sb.AppendLine($"[JsonSerializable({args})]{comment}");
         }
 
         sb.AppendLine($"internal partial class {className} : JsonSerializerContext");
@@ -852,6 +888,58 @@ public class JsonContextGenerator
         sb.AppendLine("#endif");
 
         return new JsonContextFile(fileName, sb.ToString(), className, group.Types.Count);
+    }
+
+    /// <summary>
+    /// 计算 STJ 源生成器为注册根分配的「默认 TypeInfo 属性名」：
+    /// 具名类型取简单名（去元数）；数组取「元素默认名 + Array」；闭包泛型取「定义名 + 按序拼接类型参数默认名」。
+    /// 用于提前识别 <see href="https://learn.microsoft.com/dotnet/fundamentals/syslib-diagnostics/syslib1031">SYSLIB1031</see>
+    /// 的重名冲突并显式指定 TypeInfoPropertyName。
+    /// </summary>
+    private static string GetDefaultTypeInfoPropertyName(ITypeSymbol type)
+    {
+        switch (type)
+        {
+            case IArrayTypeSymbol arrayType:
+                return GetDefaultTypeInfoPropertyName(arrayType.ElementType) + "Array";
+            case INamedTypeSymbol { IsDefinition: false, TypeArguments.Length: > 0 } constructed:
+            {
+                var name = new StringBuilder(constructed.OriginalDefinition.Name);
+                foreach (var arg in constructed.TypeArguments)
+                {
+                    name.Append(GetDefaultTypeInfoPropertyName(arg));
+                }
+
+                return name.ToString();
+            }
+            case INamedTypeSymbol named:
+                return named.Name;
+            case ITypeParameterSymbol typeParameter:
+                return typeParameter.Name;
+            default:
+                return type.Name;
+        }
+    }
+
+    /// <summary>
+    /// 将类型的完整名（含命名空间与泛型参数）转换为合法且确定性的 C# 标识符，用作 TypeInfoPropertyName。
+    /// </summary>
+    private static string ToTypeInfoPropertyIdentifier(ITypeSymbol type)
+    {
+        var display = type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var builder = new StringBuilder(display.Length);
+        foreach (var ch in display)
+        {
+            builder.Append(char.IsLetterOrDigit(ch) || ch == '_' ? ch : '_');
+        }
+
+        var collapsed = Regex.Replace(builder.ToString(), "_{2,}", "_").Trim('_');
+        if (collapsed.StartsWith("global_", StringComparison.Ordinal))
+        {
+            collapsed = collapsed["global_".Length..];
+        }
+
+        return collapsed.Length == 0 ? "Type" : collapsed;
     }
 
     /// <summary>

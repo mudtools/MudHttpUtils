@@ -255,8 +255,16 @@ internal class GeneratorContext
         // AnalyzeMethod 作为 cachedInterfaceProperties，避免对每个方法重复扫描基接口属性树（O(N×M) -> O(M)）
         try
         {
+            // 继承模式下解析 InheritedFrom 指向的基接口符号，用于标记「基类已实现、派生类不得重复声明」的属性
+            ITypeSymbol? inheritedBaseInterface = null;
+            if (!string.IsNullOrEmpty(configuration.InheritedFromInterfaceName))
+            {
+                inheritedBaseInterface = interfaceSymbol.AllInterfaces.FirstOrDefault(i =>
+                    string.Equals(i.Name, configuration.InheritedFromInterfaceName, StringComparison.Ordinal));
+            }
+
             InterfaceProperties = MethodAnalyzer.AnalyzeInterfaceProperties(
-                interfaceDeclaration, compilation, semanticModel);
+                interfaceDeclaration, compilation, semanticModel, inheritedBaseInterface);
         }
         catch (Exception ex)
         {
