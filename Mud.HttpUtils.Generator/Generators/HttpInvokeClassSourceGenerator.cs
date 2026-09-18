@@ -157,6 +157,19 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
         //     完整堆栈只走 GeneratorDebugLogger.LogError(Trace)，**不再**写入诊断消息——
         //     诊断消息会进入 IDE 错误列表/CI 日志，带本机路径的堆栈属信息泄漏。
         // （历史注释曾写「始终使用 ex.ToString() 保留完整堆栈」，与 §5.2 修复后的实现相反，已更正。）
+        // [HTTPCLIENT004 误报修复] 兜底分流：Roslyn 的 Compilation.GetSemanticModel 在语法树不属于
+        // 该编译时抛出 paramName 为 "syntaxTree" 的 ArgumentException（"编译中不包含 SyntaxTree"）。
+        // 这是 IDE 增量重放场景下生成器内部的「语义模型/语法树代际不一致」状态，与用户接口的
+        // 参数配置无关；把它当作 ArgumentException 上报会伪装成 HTTPCLIENT004「参数配置错误」误报。
+        // 处理策略：不上报诊断（避免误报），仅记录完整堆栈到 Trace 供排障；语法侧分析已在
+        // SemanticModelCache.TryGet 各调用点降级，生成流程继续（必要时由编译器给出真实的下游错误）。
+        if (ex is ArgumentException { ParamName: "syntaxTree" } syntaxTreeMismatch)
+        {
+            GeneratorDebugLogger.LogError(
+                $"InterfaceProcessing_{interfaceDecl.Identifier.Text}_SyntaxTreeNotInCompilation", syntaxTreeMismatch);
+            return;
+        }
+
         var descriptor = ex switch
         {
             InvalidOperationException => Diagnostics.HttpClientApiSyntaxError,

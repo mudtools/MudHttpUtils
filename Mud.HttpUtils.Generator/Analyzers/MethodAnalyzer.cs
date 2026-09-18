@@ -800,7 +800,15 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
     {
         var properties = new List<InterfacePropertyInfo>();
 
-        var model = semanticModel ?? SemanticModelCache.GetOrCreate(compilation, interfaceDecl.SyntaxTree);
+        // [HTTPCLIENT004 误报修复] 语义模型不可用（语法树不属于当前编译）时降级为空属性集，
+        // 而不是让 ArgumentException 沿生成管道上抛。
+        var model = semanticModel;
+        if (model == null
+            && (!SemanticModelCache.TryGet(compilation, interfaceDecl.SyntaxTree, out model) || model == null))
+        {
+            return properties;
+        }
+
         var interfaceSymbol = model.GetDeclaredSymbol(interfaceDecl) as INamedTypeSymbol;
 
         if (interfaceSymbol == null)

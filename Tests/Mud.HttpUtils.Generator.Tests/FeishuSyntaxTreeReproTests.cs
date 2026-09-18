@@ -4,6 +4,8 @@
 
 namespace Mud.HttpUtils.Generator.Tests;
 
+using Mud.HttpUtils.Analyzers;
+
 /// <summary>
 /// 复现 IFeishuV1DriveFiles 触发的 HTTPCLIENT004「编译中不包含 SyntaxTree (Parameter 'syntaxTree')」误报。
 /// 结构对齐真实场景：基接口与派生接口位于不同源文件（不同 SyntaxTree），派生接口带 [Token] 与 [HttpClientApi(IsAbstract = true)]。
@@ -243,5 +245,34 @@ public class FeishuSyntaxTreeReproTests
 
         // 同一编译内的语法树不受影响
         SemanticModelCache.TryGet(compilationB, treeInB, out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public void AnalyzeInterfaceProperties_ForeignTree_ReturnsEmptyWithoutThrowing()
+    {
+        var treeInA = CSharpSyntaxTree.ParseText("namespace N { public interface IInA { } }", path: "A.cs");
+        var treeInB = CSharpSyntaxTree.ParseText(
+            "namespace N { public interface IInB { [Mud.HttpUtils.Attributes.Query(\"q\")] string Q { get; } } }",
+            path: "B.cs");
+        var compilationA = CSharpCompilation.Create("PropC_A", [treeInA], BasicReferenceAssemblies.GetReferences());
+        var foreignDecl = treeInB.GetRoot().DescendantNodes().OfType<InterfaceDeclarationSyntax>().Single();
+
+        var properties = MethodAnalyzer.AnalyzeInterfaceProperties(foreignDecl, compilationA, semanticModel: null);
+
+        properties.Should().BeEmpty("外部语法树应降级为空属性集，而不是抛出 ArgumentException");
+    }
+
+    [Fact]
+    public void GetAllBaseInterfaceSyntaxNodes_ForeignTree_ReturnsEmptyWithoutThrowing()
+    {
+        var treeInA = CSharpSyntaxTree.ParseText("namespace N { public interface IInA { } }", path: "A.cs");
+        var treeInB = CSharpSyntaxTree.ParseText("namespace N { public interface IInB { } }", path: "B.cs");
+        var compilationA = CSharpCompilation.Create("BaseC_A", [treeInA], BasicReferenceAssemblies.GetReferences());
+        var foreignDecl = treeInB.GetRoot().DescendantNodes().OfType<InterfaceDeclarationSyntax>().Single();
+
+        var act = () => MethodAnalyzer.GetAllBaseInterfaceSyntaxNodes(compilationA, foreignDecl, semanticModel: null);
+
+        act.Should().NotThrow("外部语法树应终止该分支遍历（yield break），而不是抛出 ArgumentException");
+        act().Should().BeEmpty();
     }
 }
