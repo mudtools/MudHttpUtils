@@ -4,12 +4,34 @@
 		<OutputType>Library</OutputType>
 		<TargetFrameworks>netstandard2.0;net8.0;net9.0;net10.0</TargetFrameworks>
 		<ImplicitUsings>enable</ImplicitUsings>
+		<!-- 保持 enable：生成器按 build_property.Nullable=="enable" 决定是否为生成代码发射
+		     `#nullable enable`，改成 annotations 会让生成代码失去该指令并引发 CS8669。 -->
 		<Nullable>enable</Nullable>
 		<LangVersion>13.0</LangVersion>
 		<EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
 		<EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
 		<GenerateDocumentationFile>false</GenerateDocumentationFile>
+		<!-- 示例刻意以 Native AOT 之外的方式运行：显式声明 jit 运行期模式，
+		     使 AOT007（XML 序列化在「仅启用 AOT 分析器但未发布 AOT」时的降级提示）不再报告。
+		     本工程经 ProjectReference 消费生成器，故需自行注册 CompilerVisibleProperty
+		     （包消费方由 Mud.HttpUtils.Generator.props 自动注册）。 -->
+		<MudAotRuntimeMode>jit</MudAotRuntimeMode>
+		<!-- 抑制项均由「共享夹具」产生，本仓库不应修复：
+		     1) 可空性（CS8618/CS8625/CS8603/CS8604）—— HttpClientApiDemo.Share 中大量 DTO 是
+		        「JSON 反序列化落点」，属性可空性由运行时 API 负载而非编译期契约决定
+		        （`public string X { get; set; }`）。示例的价值在于演示生成器行为，不在 DTO 契约；
+		     2) 刻意覆盖的边界场景（MUD005 / HTTPCLIENT011 / 018 / 022 / 028）：
+		        · MUD005        —— 故意用 Query/Path 令牌注入模式；
+		        · HTTPCLIENT022 —— 故意用 Path 注入以演示"不支持令牌恢复"的限制；
+		        · HTTPCLIENT018 —— 故意不指定 TokenManagerKey 以演示默认值；
+		        · HTTPCLIENT028 —— 故意混用两级 TokenManage 以覆盖 new 隐藏场景；
+		        · HTTPCLIENT011 —— 故意组合缓存与响应类型。 -->
+		<NoWarn>$(NoWarn);CS8618;CS8625;CS8603;CS8604;MUD005;HTTPCLIENT011;HTTPCLIENT018;HTTPCLIENT022;HTTPCLIENT028</NoWarn>
 	</PropertyGroup>
+
+	<ItemGroup>
+		<CompilerVisibleProperty Include="MudAotRuntimeMode" />
+	</ItemGroup>
 
 	<ItemGroup>
 		<CompilerVisibleProperty Include="EnforceExtendedAnalyzerRules" />

@@ -10,10 +10,10 @@ namespace Mud.HttpUtils;
 /// <summary>
 /// 白名单整体替换的审计事件。
 /// </summary>
-/// <param name="Previous">变更前的域名集合快照。</param>
-/// <param name="Next">变更后的域名集合快照。</param>
-/// <param name="Added">新增的域名集合。</param>
-/// <param name="Removed">移除的域名集合。</param>
+/// <param name="previous">变更前的域名集合快照。</param>
+/// <param name="next">变更后的域名集合快照。</param>
+/// <param name="added">新增的域名集合。</param>
+/// <param name="removed">移除的域名集合。</param>
 public readonly struct AllowedDomainsChangedEvent(
     System.Collections.Generic.IReadOnlyCollection<string> previous,
     System.Collections.Generic.IReadOnlyCollection<string> next,

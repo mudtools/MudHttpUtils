@@ -12,7 +12,7 @@ namespace Mud.HttpUtils;
 /// </summary>
 /// <remarks>
 /// <para>
-/// 此接口定义 <see cref="EnhancedHttpClientOptions"/>（编程式 DI 路径）与
+/// 此接口定义 <c>EnhancedHttpClientOptions</c>（编程式 DI 路径，定义于 Client 程序集）与
 /// <see cref="GeneratedClientOptions"/>（无 DI 工厂路径）之间共享的配置属性。
 /// </para>
 /// <para>

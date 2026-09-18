@@ -692,7 +692,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
                 var value = attr.ConstructorArguments.Length > 1 ? attr.ConstructorArguments[1].Value?.ToString() : null;
                 if (!string.IsNullOrEmpty(name))
                 {
-                    queryParams.Add(new InterfaceQueryParameterInfo { Name = name, Value = value });
+                    queryParams.Add(new InterfaceQueryParameterInfo { Name = name!, Value = value });
                 }
             }
             else if (HttpClientGeneratorConstants.InterfacePathAttributeNames.Contains(attr.AttributeClass?.Name))
@@ -701,7 +701,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
                 var value = attr.ConstructorArguments.Length > 1 ? attr.ConstructorArguments[1].Value?.ToString() : null;
                 if (!string.IsNullOrEmpty(name))
                 {
-                    pathParams.Add(new InterfacePathParameterInfo { Name = name, Value = value });
+                    pathParams.Add(new InterfacePathParameterInfo { Name = name!, Value = value });
                 }
             }
         }
@@ -745,7 +745,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
                     .FirstOrDefault(arg => arg.Key is "Value" or "Format" or "FormatString").Value.Value;
                 if (queryValue == null && attr.ConstructorArguments.Length > 1)
                     queryValue = attr.ConstructorArguments[1].Value;
-                queries.Add(new InterfaceQueryParameterInfo { Name = queryName, Value = queryValue?.ToString() });
+                queries.Add(new InterfaceQueryParameterInfo { Name = queryName!, Value = queryValue?.ToString() });
             }
         }
 
@@ -820,9 +820,10 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         {
             // 来自「继承基接口（InheritedFrom 指向的 [HttpClientApi] 接口）及其祖先」的属性，
             // 基类实现已包含：派生类只注入其值、不重复声明（否则 CS0108 隐藏基类成员）。
+            // 判定口径 = 基接口本身或其祖先命中 InheritedFrom 目标（派生侧新增基接口的属性仍由派生类发射）。
             var isFromInheritedBase = inheritedBaseInterface != null &&
                 (SymbolEqualityComparer.Default.Equals(baseInterface, inheritedBaseInterface) ||
-                 baseInterface.AllInterfaces.Contains(inheritedBaseInterface, SymbolEqualityComparer.Default));
+                 inheritedBaseInterface.AllInterfaces.Contains(baseInterface, SymbolEqualityComparer.Default));
 
             foreach (var property in baseInterface.GetMembers().OfType<IPropertySymbol>())
             {
@@ -891,6 +892,8 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
             AttributeType = attributeType,
             // GEN-05 修复：捕获接口属性是否为只读，用于决定生成的实现属性是否包含 setter。
             IsReadOnly = property.IsReadOnly
+            // [继承模式 CS0108 修复] IsFromInheritedBase 由基接口分支（见 AnalyzeInterfaceProperties）按
+            // InheritedFrom 目标链单独标记，默认 false 表示由当前接口自身（或派生侧新增基接口）声明。
         };
 
         if (attribute.ConstructorArguments.Length > 0)
@@ -974,7 +977,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         {
             var mode = ReadHeaderMergeMode(methodAttr);
             if (!string.IsNullOrEmpty(mode))
-                return mode;
+                return mode!;
         }
 
         var interfaceAttr = interfaceAttrs
@@ -984,7 +987,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         {
             var mode = ReadHeaderMergeMode(interfaceAttr);
             if (!string.IsNullOrEmpty(mode))
-                return mode;
+                return mode!;
         }
 
         return "Append";
@@ -1028,7 +1031,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         {
             var method = ReadSerializationMethodName(methodAttr);
             if (!string.IsNullOrEmpty(method))
-                return method;
+                return method!;
         }
 
         var interfaceAttr = interfaceAttrs
@@ -1038,7 +1041,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         {
             var method = ReadSerializationMethodName(interfaceAttr);
             if (!string.IsNullOrEmpty(method))
-                return method;
+                return method!;
         }
 
         return "Json";

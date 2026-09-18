@@ -26,20 +26,25 @@ namespace Mud.HttpUtils;
 /// <para>
 /// 初始化 <see cref="DefaultHttpRequestExecutor"/>。
 /// </para>
+/// <para>
+/// net6.0+ 目标另有 <c>httpVersion</c> / <c>httpVersionPolicy</c> 两个可选参数（Phase 3 T3.4），
+/// 为 <c>null</c> 时使用 HttpClient 的默认版本与策略；netstandard2.0 目标不含这两个参数。
+/// </para>
 /// </remarks>
 /// <param name="logger">日志记录器。用于记录 HTTP 错误响应内容，便于排查远程 API 返回的错误详情。</param>
 /// <param name="cacheProvider">HTTP 响应缓存提供器（可选）。</param>
 /// <param name="resilienceResolver">全局弹性策略解析器（可选）。</param>
 /// <param name="appResilienceResolver">按应用解析弹性策略的解析器（可选）。优先于 <paramref name="resilienceResolver"/>。</param>
 /// <param name="appContextHolder">应用上下文持有器（可选）。用于在多应用场景下获取当前应用的 AppKey。</param>
+/// <param name="appManager">应用管理器（可选）。用于解析/回填应用上下文（如默认应用）。</param>
 /// <param name="contentSerializer">HTTP 内容序列化器（可选）。不提供时使用 <see cref="SystemTextJsonContentSerializer"/> 默认实现。</param>
 /// <param name="exceptionRedactor">异常擦除器（Phase 2 T2.1）。在异常抛出前擦除敏感数据，为 null 时不执行擦除。</param>
 /// <param name="maxExceptionContentLength">错误响应体最大读取字符数（Phase 2 T2.2）。为 null 时使用默认值 10240（<see cref="HttpExecutionConstants.DefaultMaxExceptionContentLength"/>）；设为 0 或负数表示不限制。读取阶段生效，防止恶意/超大响应导致 OOM。</param>
 /// <param name="captureRequestContent">是否在发送前捕获请求体字符串（Phase 2 T2.3）。为 true 时存入 <see cref="ApiException.RequestContent"/> 供调试，捕获长度同样受 <paramref name="maxExceptionContentLength"/> 约束。</param>
 /// <param name="maxSuccessResponseBytes">成功响应体最大字节数（N-2 可选守卫）。默认 0 = 不限制；设为正数后，成功响应体超过该字节数时抛 <see cref="ApiRequestException"/>（Content-Length 预判 + 守卫流读取阶段校验，不缓冲超限内容）。</param>
-/// <param name="httpVersion">HTTP 版本（Phase 3 T3.4）。为 null 时使用 HttpClient 默认版本。</param>
-/// <param name="httpVersionPolicy">HTTP 版本策略（Phase 3 T3.4）。为 null 时使用 HttpClient 默认策略。</param>
+/// <param name="sensitiveDataMasker">日志脱敏掩码器（可选）。为 null 时使用默认掩码策略（M2-#18）。</param>
 /// <param name="httpRequestMessageOptions">请求消息选项预设（Phase 3 T3.5）。为 null 时不预设。</param>
+#pragma warning disable CS1573 // net6.0+ 专属参数 httpVersion / httpVersionPolicy 的说明见 <remarks>，无法逐 TFM 出具 <param> 标记
 public class DefaultHttpRequestExecutor(
     ILogger<DefaultHttpRequestExecutor> logger,
     IHttpResponseCache? cacheProvider = null,
@@ -63,6 +68,7 @@ public class DefaultHttpRequestExecutor(
 #endif
     Dictionary<string, object?>? httpRequestMessageOptions = null) : IHttpRequestExecutor
 {
+#pragma warning restore CS1573 // net6.0+ 专属参数 httpVersion / httpVersionPolicy 的说明见 <remarks>
     private readonly IHttpResponseCache? _cacheProvider = cacheProvider;
     private readonly IResiliencePolicyResolver? _resilienceResolver = resilienceResolver;
     private readonly IAppResiliencePolicyResolver? _appResilienceResolver = appResilienceResolver;
@@ -466,11 +472,11 @@ public class DefaultHttpRequestExecutor(
 
             if (policyWrapper != null)
             {
-                Func<HttpRequestMessage, CancellationToken, Task<object?>> coreExecute = async (req, ct) =>
+                Func<HttpRequestMessage, CancellationToken, Task<object>> coreExecute = async (req, ct) =>
                 {
                     await DownloadLargeCoreAsync(req, httpClient, filePath, overwrite, bufferSize,
                         executionDescriptor.Response, progress, ct).ConfigureAwait(false);
-                    return null;
+                    return null!;
                 };
 
                 await policyWrapper(coreExecute, cancellationToken).ConfigureAwait(false);
@@ -725,10 +731,10 @@ public class DefaultHttpRequestExecutor(
 
             if (policyWrapper != null)
             {
-                Func<HttpRequestMessage, CancellationToken, Task<object?>> coreExecute = async (req, ct) =>
+                Func<HttpRequestMessage, CancellationToken, Task<object>> coreExecute = async (req, ct) =>
                 {
                     await SendAsync(req, httpClient, descriptor.Response, ct).ConfigureAwait(false);
-                    return null;
+                    return null!;
                 };
 
                 await policyWrapper(coreExecute, cancellationToken).ConfigureAwait(false);

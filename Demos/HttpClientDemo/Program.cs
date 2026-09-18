@@ -150,12 +150,12 @@ public class Program
 
         if (resolver.TryGetClient("userApi", out var userClient))
         {
-            Console.WriteLine($"  成功获取 userApi 客户端: {userClient.GetType().Name}");
+            Console.WriteLine($"  成功获取 userApi 客户端: {userClient!.GetType().Name}");
         }
 
         if (resolver.TryGetClient("orderApi", out var orderClient))
         {
-            Console.WriteLine($"  成功获取 orderApi 客户端: {orderClient.GetType().Name}");
+            Console.WriteLine($"  成功获取 orderApi 客户端: {orderClient!.GetType().Name}");
         }
 
         if (!resolver.TryGetClient("nonExistentApi", out _))
@@ -190,7 +190,7 @@ public class Program
         {
             resolver.GetClient("unknownApi");
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
             Console.WriteLine($"  GetClient(\"unknownApi\") 抛出 InvalidOperationException（预期行为）");
         }

@@ -264,6 +264,42 @@ public class TokenRecoveryEnhancedClientTests : IClassFixture<UrlValidatorFixtur
     }
 
     /// <summary>
+    /// COMP-2 回归：<c>WithBaseAddress</c> 必须保留派生类型 —— 基类实现返回
+    /// <c>new HttpClientFactoryEnhancedClient(...)</c>，对 sealed 的 <see cref="TokenRecoveryEnhancedClient"/>
+    /// 会**静默丢弃** 401 令牌自动恢复能力（调用点无任何编译期/运行期提示）。
+    /// </summary>
+    [Fact]
+    public void WithBaseAddress_ShouldPreserveTokenRecoveryClientType_AndApplyNewBaseAddress()
+    {
+        var factory = new FakeHttpClientFactory(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        var recoveryExecutor = new TokenRecoveryExecutor(new Mock<ITokenManager>().Object);
+        var client = new TokenRecoveryEnhancedClient(factory, "test", recoveryExecutor);
+        var newBaseAddress = new Uri("https://open.feishu.cn/v2/");
+
+        var cloned = client.WithBaseAddress(newBaseAddress);
+
+        cloned.Should().BeOfType<TokenRecoveryEnhancedClient>(
+            "WithBaseAddress 必须保留派生类型，否则令牌恢复能力被静默丢弃（COMP-2）");
+        cloned.BaseAddress.Should().Be(newBaseAddress);
+    }
+
+    /// <summary>
+    /// 基类路径保持既有行为：仍返回 <see cref="HttpClientFactoryEnhancedClient"/> 并应用新基地址。
+    /// </summary>
+    [Fact]
+    public void WithBaseAddress_BaseClient_ShouldReturnBaseTypeWithNewBaseAddress()
+    {
+        var factory = new FakeHttpClientFactory(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        var client = new HttpClientFactoryEnhancedClient(factory, "test");
+        var newBaseAddress = new Uri("https://open.feishu.cn/v2/");
+
+        var cloned = client.WithBaseAddress(newBaseAddress);
+
+        cloned.Should().BeOfType<HttpClientFactoryEnhancedClient>();
+        cloned.BaseAddress.Should().Be(newBaseAddress);
+    }
+
+    /// <summary>
     /// 简易 IHttpClientFactory 实现，返回包装了 FakeHttpMessageHandler 的 HttpClient。
     /// </summary>
     private sealed class FakeHttpClientFactory : IHttpClientFactory

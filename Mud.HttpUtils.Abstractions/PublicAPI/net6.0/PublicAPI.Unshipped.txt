@@ -10,6 +10,13 @@ Mud.HttpUtils.TokenRecoveryOptions.MaxDedupEntries.get -> int
 Mud.HttpUtils.TokenRecoveryOptions.MaxDedupEntries.set -> void
 Mud.HttpUtils.UserTokenInfo.IssuedAt.get -> long
 Mud.HttpUtils.UserTokenInfo.IssuedAt.set -> void
+System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute
+System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute.ExcludeStatics.get -> bool
+System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute.ExcludeStatics.set -> void
+System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute.Message.get -> string!
+System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute.RequiresDynamicCodeAttribute(string! message) -> void
+System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute.Url.get -> string?
+System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute.Url.set -> void
 const Mud.HttpUtils.AppKey.MaxLength = 128 -> int
 static Mud.HttpUtils.AppKey.IsValid(string? value) -> bool
 static Mud.HttpUtils.AppKey.ToSafeText(string? value) -> string!

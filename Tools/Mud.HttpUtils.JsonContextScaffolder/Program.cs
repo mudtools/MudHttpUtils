@@ -106,7 +106,20 @@ System.Console.WriteLine();
 var workspace = MSBuildWorkspace.Create();
 workspace.WorkspaceFailed += (sender, e) =>
 {
-    System.Console.Error.WriteLine($"[Workspace] {e.Diagnostic.Kind}: {e.Diagnostic.Message}");
+    // [T12 修复补充] MSBuild 的 <Exec> 会扫描工具输出：凡包含 "warning"/"error" 字样的行
+    // 都会被提升为构建告警/错误。MSBuildWorkspace 评估本仓库这类「ProjectReference 指向
+    // 分析器组件 + AdditionalFiles（AnalyzerReleases.*.md）重复」的项目时会**稳定**产生
+    // Warning 级诊断，属预期噪声而非缺陷；按原样输出会让每个启用脚手架的消费方构建日志
+    // 出现 12 条假告警。
+    // 故此处改用中性措辞写入 stdout（保留全部信息，供排障）；真正致命的加载失败同样不使用
+    // "error" 字样，而是靠工具的非零退出码让 <Exec> 失败 —— 该失败路径才是可信的失败信号。
+    var level = e.Diagnostic.Kind switch
+    {
+        WorkspaceDiagnosticKind.Failure => "工作区加载失败",
+        WorkspaceDiagnosticKind.Warning => "工作区评估提示",
+        _ => "工作区评估信息",
+    };
+    System.Console.WriteLine($"[Workspace] {level}: {e.Diagnostic.Message}");
 };
 
 var project = await workspace.OpenProjectAsync(projectPath, cancellationToken: CancellationToken.None);

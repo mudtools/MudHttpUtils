@@ -17,6 +17,11 @@
 		<IsPackable>true</IsPackable>
 		<PackAsTool>true</PackAsTool>
 		<ToolCommandName>mud-jsonctx</ToolCommandName>
+		<!-- RS2008：本工程是 pre-build 工具（PackAsTool），不参与 analyzers 分发，
+		     其 DiagnosticDescriptor 仅作为 AOT001-003 的 ID / 严重级别唯一事实源，
+		     不作为分析器诊断对外发布，因此不需要 AnalyzerReleases 发布跟踪文件。
+		     （与 ScaffolderAotDiagnostics 的 XML 注释声明一致。） -->
+		<NoWarn>$(NoWarn);RS2008</NoWarn>
 	</PropertyGroup>
 
 	<ItemGroup>

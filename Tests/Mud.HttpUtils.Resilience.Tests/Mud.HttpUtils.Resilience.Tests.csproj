@@ -7,9 +7,8 @@
 		<LangVersion>13.0</LangVersion>
 		<IsPackable>false</IsPackable>
 		<IsTestProject>true</IsTestProject>
-		<GenerateDocumentationFile>True</GenerateDocumentationFile>
-		<EnableAotAnalyzer>true</EnableAotAnalyzer>
-		<IsAotCompatible>true</IsAotCompatible>
+		<!-- 同 Mud.HttpUtils.Client.Tests：测试工程不属 AOT 交付物，
+		     库侧 AOT 契约由库工程 AotStrictMode + 反射断言用例守卫。 -->
 	</PropertyGroup>
 
 	<ItemGroup>

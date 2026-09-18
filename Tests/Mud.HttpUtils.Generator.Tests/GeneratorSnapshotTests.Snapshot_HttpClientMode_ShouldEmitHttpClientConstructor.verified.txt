@@ -91,7 +91,7 @@ namespace TestNamespace.Internal
             var __url = $"/data";
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Get, __url);
 
-            return await _executor.ExecuteAsync<string>(
+            return (await _executor.ExecuteAsync<string>(
                 __httpRequest,
                 _httpClient,
                 new ExecutionDescriptor
@@ -105,7 +105,7 @@ namespace TestNamespace.Internal
                        IsVoidReturn = false,
                    },
                },
-                null, cancellationToken: default).ConfigureAwait(false);
+                null, cancellationToken: default).ConfigureAwait(false))!;
         }
 
     }

@@ -25,6 +25,13 @@ public sealed class RetryDiagnosticPayload
     /// <summary>事件时间戳（UTC）。</summary>
     public DateTimeOffset Timestamp { get; }
 
+    /// <summary>
+    /// 初始化重试诊断负载。
+    /// </summary>
+    /// <param name="policyKey">策略键。</param>
+    /// <param name="retryCount">重试次数（第几次重试）。</param>
+    /// <param name="delayMs">本次重试延迟（毫秒）。</param>
+    /// <param name="exceptionType">触发重试的异常类型名（可能为 null）。</param>
     public RetryDiagnosticPayload(string policyKey, int retryCount, double delayMs, string? exceptionType)
     {
         PolicyKey = policyKey;

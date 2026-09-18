@@ -14,14 +14,14 @@ internal class RequestBuilder
 {
     /// <summary>
     /// GEN-04（B-1）：按特性语义解析 format 位置。<c>[Path("yyyy-MM-dd")]</c> 的首参即 formatString
-    /// （<see cref="PathAttribute"/> 的构造参数），<c>[Query("name","format")]</c> 的第二个位置参数是 format。
+    /// （<c>PathAttribute</c> 的构造参数），<c>[Query("name","format")]</c> 的第二个位置参数是 format。
     /// 移除了此前对 <see cref="HttpClientGeneratorConstants.PathAttributes"/> 的显式排除（源于「Path 首参是 name」的错误假设，
     /// 参见文档 §7.1 修复点 3 / PathAttribute.cs 构造签名）。
     /// </summary>
     private string GetFormatString(ParameterAttributeInfo attribute)
         => AttributeArgumentReader.GetString(attribute,
             AttributeArgumentReader.ResolveFormatPosition(attribute.Name),
-            "FormatString", "Format");
+            "FormatString", "Format")!;
 
     /// <summary>
     /// 生成 URL 字符串
@@ -51,7 +51,7 @@ internal class RequestBuilder
         // 规则3：正常情况，拼接 BasePath
         if (!string.IsNullOrEmpty(basePath))
         {
-            var normalizedBasePath = basePath.TrimEnd('/');
+            var normalizedBasePath = basePath!.TrimEnd('/');
             var normalizedUrlTemplate = urlTemplate.TrimStart('/');
             var combinedPath = $"{normalizedBasePath}/{normalizedUrlTemplate}";
             return BuildUrlWithPlaceholders(combinedPath, pathParams, methodInfo);
@@ -421,8 +421,28 @@ internal class RequestBuilder
             var propertyName = methodInfo.BodyEncryptPropertyName ?? "data";
             var serializeType = methodInfo.BodyEncryptSerializeType ?? "Json";
             string httpClient = hasHttpClient ? "_httpClient" : "__appContext.HttpClient";
+            var escapedPropertyName = StringEscapeHelper.EscapeString(propertyName);
 
-            codeBuilder.AppendLine($"            var __encryptedContent = {httpClient}.EncryptContent({bodyParam.Name}, \"{StringEscapeHelper.EscapeString(propertyName)}\", SerializeType.{serializeType});");
+            if (serializeType == "Xml")
+            {
+                // EncryptContent(object, string, SerializeType) 已标记 [Obsolete]（运行时反射，AOT 不安全），
+                // 但泛型 AOT 安全重载仅支持 JSON，XML 加密无替代 API。故在调用点就地抑制消费方的 CS0618；
+                // AOT 不安全事实由 XML 路径既有的 AOT 诊断（AOT007）与方法级 IL2026/IL3050 抑制承担。
+                codeBuilder.AppendLine("#pragma warning disable CS0618 // XML 加密无 AOT 安全重载，只能沿用已过时的 object 重载");
+                codeBuilder.AppendLine($"            var __encryptedContent = {httpClient}.EncryptContent({bodyParam.Name}, \"{escapedPropertyName}\", SerializeType.{serializeType});");
+                codeBuilder.AppendLine("#pragma warning restore CS0618");
+            }
+            else
+            {
+                // [警告修复] 改用 AOT 安全的泛型重载 EncryptContent<T>(T, string)：原 object 重载在消费方编译时
+                // 会产生 CS0618（已过时）及 IL2026/IL3050（反射/动态代码）告警，泛型重载语义等价且零反射。
+                var encryptTypeName = bodyParam.Type.TrimEnd();
+                if (encryptTypeName.EndsWith("?", StringComparison.Ordinal))
+                    encryptTypeName = encryptTypeName.Substring(0, encryptTypeName.Length - 1).TrimEnd();
+
+                codeBuilder.AppendLine($"            var __encryptedContent = {httpClient}.EncryptContent<{encryptTypeName}>({bodyParam.Name}, \"{escapedPropertyName}\");");
+            }
+
             codeBuilder.AppendLine($"            using var __encryptedStrContent = new StringContent(__encryptedContent, Encoding.UTF8, {contentTypeExpression});");
             codeBuilder.AppendLine($"            __httpRequest.Content = __encryptedStrContent;");
         }
@@ -739,11 +759,11 @@ internal class RequestBuilder
         // GEN-09：方法级 Token(Name) > 接口级 > 默认。
         var tokenName = methodInfo.EffectiveTokenName;
         if (!string.IsNullOrEmpty(tokenName))
-            return tokenName;
+            return tokenName!;
 
         var queryAttr = methodInfo.InterfaceAttributes?.FirstOrDefault(attr => attr.StartsWith("Query:", StringComparison.Ordinal));
         if (!string.IsNullOrEmpty(queryAttr))
-            return queryAttr.Substring(6);
+            return queryAttr!.Substring(6);
 
         return "access_token";
     }
@@ -759,7 +779,7 @@ internal class RequestBuilder
 
         var headerAttr = methodInfo.InterfaceAttributes?.FirstOrDefault(attr => attr.StartsWith("Header:", StringComparison.Ordinal));
         if (!string.IsNullOrEmpty(headerAttr))
-            return headerAttr.Substring(7);
+            return headerAttr!.Substring(7);
 
         return null;
     }
@@ -775,9 +795,15 @@ internal class RequestBuilder
             {
                 if (isStringType)
                 {
-                    // CS8604 防护：可空字符串路径参数（string?）转义时合并为空串（EscapeDataString 形参非可空）
-                    var nullCoalesce = paramType.Contains('?') ? " ?? string.Empty" : string.Empty;
-                    ReplacePlaceholder(sb, placeholder, $"{{Uri.EscapeDataString({paramName}{nullCoalesce})}}");
+                    // [CS8604 修复] 可空 string 路径参数（如 `string? task_id`）直接传入 EscapeDataString
+                    // 会触发 CS8604（其形参 stringToEscape 声明为非空）。
+                    // 按「保持既有运行期语义」处理：null 时仍然抛 ArgumentNullException，
+                    // 只是把参数名指向真正的路径参数（原先由 EscapeDataString 内部抛出，ParamName 是 stringToEscape），
+                    // 同时让流分析判定表达式非空。非可空 string 参数不受影响，生成文本保持简短。
+                    var stringExpr = paramType.TrimEnd().EndsWith("?", StringComparison.Ordinal)
+                        ? $"{paramName} ?? throw new System.ArgumentNullException(nameof({paramName}))"
+                        : paramName;
+                    ReplacePlaceholder(sb, placeholder, $"{{Uri.EscapeDataString({stringExpr})}}");
                 }
                 else
                 {
@@ -791,7 +817,7 @@ internal class RequestBuilder
             return;
         }
 
-        if (formatString.Contains("{0}"))
+        if (formatString!.Contains("{0}"))
         {
             var escapedFormat = StringEscapeHelper.EscapeString(formatString);
             var formatExpr = $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{escapedFormat}\", {paramName})";
@@ -969,7 +995,7 @@ internal class RequestBuilder
         {
             var ctorContentType = bodyAttr.Arguments[0]?.ToString();
             if (!string.IsNullOrEmpty(ctorContentType))
-                return ctorContentType;
+                return ctorContentType!;
         }
 
         // 再检查命名参数（如 [Body(ContentType = "application/xml")]）

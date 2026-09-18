@@ -24,7 +24,7 @@ public static class HttpHeaderValueValidator
     /// <returns><c>true</c> 表示合法（含 null / 空白）；否则 <c>false</c>。</returns>
     public static bool IsValid(string? value)
     {
-        if (string.IsNullOrEmpty(value))
+        if (value is null || value.Length == 0)
             return true;
 
         // 避免分配 char[]，逐字符核对 CR/LF。

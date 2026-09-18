@@ -78,6 +78,10 @@ public sealed class EncryptedTokenCache<T> : ITokenCache<T> where T : class
     }
 
     /// <inheritdoc />
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "令牌缓存值经注入的 JsonSerializerOptions 序列化；AOT/裁剪场景由调用方注入携寄 JsonTypeInfoResolver（源生成上下文）的选项（TMX-11，见类注释「AOT 注意」）。默认选项的反射路径仅服务非 AOT 宿主。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
+        Justification = "同上：反射反序列化仅在调用方未注入 JsonTypeInfoResolver 的非 AOT 场景下发生。")]
     public bool TryGet(string key, out T? value)
     {
         if (!_inner.TryGet(key, out var cipher) || cipher == null)
@@ -108,6 +112,10 @@ public sealed class EncryptedTokenCache<T> : ITokenCache<T> where T : class
         => Set(key, value, null, null, null);
 
     /// <inheritdoc />
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "与 TryGet 对称：反射序列化仅在调用方未注入携寄 JsonTypeInfoResolver 的 JsonSerializerOptions 时发生（TMX-11）。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
+        Justification = "同上：AOT 宿主须注入 JsonTypeInfoResolver，届时不会走到反射重载。")]
     public void Set(string key, T? value, TimeSpan? absoluteExpirationRelativeToNow, TimeSpan? slidingExpiration, Action<string>? postEvictionCallback = null)
     {
         if (value == null)

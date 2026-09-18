@@ -17,7 +17,7 @@ namespace Mud.HttpUtils;
 /// </para>
 /// <para>
 /// 线程安全：<see cref="SemaphoreSlim"/> 确保同一时刻只有一个线程执行工厂解析并写入缓存，
-/// 避免缓存击穿（Stampede）；读取路径通过 <see cref="Volatile.Read(ref long)"/> 保证 <c>_expiresAtTicks</c>
+/// 避免缓存击穿（Stampede）；读取路径通过 <c>Volatile.Read</c> 保证 <c>_expiresAtTicks</c>
 /// 跨线程可见性。
 /// </para>
 /// </remarks>
@@ -67,7 +67,7 @@ internal sealed class ClientSecretCache
     /// "设为 0 表示不缓存（每次刷新都重新解析密钥）"完全相反，密钥轮换永不生效。
     /// 现在 TTL &lt;= 0 直接短路走工厂，不进入缓存路径。
     /// <para>
-    /// 同时修正两点：① <c>_value</c> 改为 <see cref="Volatile.Read"/>/<see cref="Volatile.Write"/>，消除非同步读写；
+    /// 同时修正两点：① <c>_value</c> 改为 <c>Volatile.Read</c>/<c>Volatile.Write</c>，消除非同步读写；
     /// ② 工厂返回 null/空时不写入缓存（避免把"未就绪"固化），与类注释"故障不缓存"一致。
     /// <b>L-10</b>：TTL 每次调用时从 <c>ttlProvider</c> 读取，配置热更新即时生效。
     /// <b>TMX-09</b>：工厂签名贯通取消令牌，密钥解析可被 <c>RefreshTimeoutSeconds</c> 兜底中断。

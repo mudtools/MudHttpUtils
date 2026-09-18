@@ -13,7 +13,7 @@ namespace Mud.HttpUtils;
 /// <remarks>
 /// 此接口是 Token 获取逻辑的统一抽象层，将 Token 的查找、获取、刷新逻辑
 /// 从代码生成的类中剥离到运行时服务。
-/// 默认实现为 <see cref="Client.DefaultTokenProvider"/>。
+/// 默认实现为 <c>DefaultTokenProvider</c>（Client 程序集，命名空间同为 <c>Mud.HttpUtils</c>）。
 ///
 /// 重要：appContext 参数由生成代码传入 _appContext.Value，
 /// 以确保 UseApp()/UseDefaultApp() 上下文切换的正确性。

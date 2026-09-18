@@ -11,7 +11,7 @@ using System.Reflection;
 namespace Mud.HttpUtils.Newtonsoft.Json;
 
 /// <summary>
-/// 基于 <see cref="Newtonsoft.Json.JsonSerializer"/> 的 <see cref="IHttpContentSerializer"/> 实现。
+/// 基于 <see cref="JsonSerializer"/> 的 <see cref="IHttpContentSerializer"/> 实现。
 /// 同时实现 <see cref="ISynchronousContentSerializer"/>（Newtonsoft.Json 本身是同步序列化）。
 /// </summary>
 /// <remarks>
@@ -123,7 +123,7 @@ public class NewtonsoftJsonContentSerializer(JsonSerializerSettings? settings = 
 
     /// <inheritdoc/>
     /// <remarks>
-    /// 返回 <see cref="PushStreamContent"/>，在发送时通过同步 <c>JsonSerializer.Serialize</c> 写入请求流。
+    /// 返回 <see cref="NewtonsoftStreamingContent{T}"/>，在发送时通过同步 <c>JsonSerializer.Serialize</c> 写入请求流。
     /// </remarks>
 #if NET6_0_OR_GREATER
     [System.Diagnostics.CodeAnalysis.RequiresUnreferencedCode("Newtonsoft.Json uses reflection. Not AOT-compatible.")]

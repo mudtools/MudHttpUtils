@@ -15,7 +15,7 @@ namespace Mud.HttpUtils;
 /// </summary>
 /// <remarks>
 /// <para>
-/// 返回 <c>null</c> 表示不抛异常（类似 <see cref="AllowAnyStatusCodeAttribute"/> 的效果）。
+/// 返回 <c>null</c> 表示不抛异常（类似 <c>AllowAnyStatusCodeAttribute</c> 的效果）。
 /// </para>
 /// <para>
 /// 默认实现抛出 <see cref="ApiException"/>（含状态码、内容、URI），确保向后兼容。

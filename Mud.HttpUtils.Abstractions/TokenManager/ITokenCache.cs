@@ -12,7 +12,7 @@ namespace Mud.HttpUtils;
 /// </summary>
 /// <typeparam name="T">缓存值类型。</typeparam>
 /// <remarks>
-/// 此接口抽象了令牌缓存的底层存储机制，使 <see cref="TokenManagerBase"/> 和 <see cref="UserTokenManagerBase"/>
+/// 此接口抽象了令牌缓存的底层存储机制，使 <see cref="TokenManagerBase"/> 和 <c>UserTokenManagerBase</c>（Client 程序集）
 /// 可以使用统一的缓存接口，同时允许替换为自定义实现（如 Redis、数据库等）。
 /// <para>
 /// 默认实现：<see cref="ConcurrentDictionaryTokenCache{T}"/>（基于 ConcurrentDictionary，适用于租户级令牌）。

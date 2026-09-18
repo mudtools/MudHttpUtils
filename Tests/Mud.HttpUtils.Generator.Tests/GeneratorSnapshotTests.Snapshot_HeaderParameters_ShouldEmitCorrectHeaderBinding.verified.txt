@@ -228,7 +228,7 @@ namespace TestNamespace.Internal
                 throw new global::System.ArgumentException("HTTP 头值包含非法字符（CR/LF）。", nameof(requestId));
             __httpRequest.Headers.Add("X-Request-Id", requestId);
 
-            return await _executor.ExecuteAsync<string>(
+            return (await _executor.ExecuteAsync<string>(
                 __httpRequest,
                 __appContext.HttpClient,
                 new ExecutionDescriptor
@@ -242,7 +242,7 @@ namespace TestNamespace.Internal
                        IsVoidReturn = false,
                    },
                },
-                null, cancellationToken: default).ConfigureAwait(false);
+                null, cancellationToken: default).ConfigureAwait(false))!;
         }
 
     }

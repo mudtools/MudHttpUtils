@@ -14,7 +14,7 @@ namespace Mud.HttpUtils;
 /// </summary>
 /// <remarks>
 /// <para>
-/// 仅对「确定不可用」的组合返回 <see cref="ValidateOptionsResult.Fail"/>：
+/// 仅对「确定不可用」的组合返回 <c>ValidateOptionsResult.Fail</c>：
 /// <see cref="MudHttpClientApplicationOptions.DefaultClientName"/> 指向一个未配置
 /// <see cref="MudHttpClientOptions.BaseAddress"/> 的客户端 —— 该客户端不会被注册，
 /// 其 <c>TimeoutSeconds</c> / <c>DefaultHeaders</c> / <c>AllowCustomBaseUrls</c> 必然全部失效。
@@ -33,8 +33,11 @@ internal sealed class MudHttpClientApplicationOptionsValidator
         if (options is null)
             return ValidateOptionsResult.Success;
 
-        if (!string.IsNullOrWhiteSpace(options.DefaultClientName)
-            && options.Clients.TryGetValue(options.DefaultClientName, out var defaultClient)
+        var defaultClientName = options.DefaultClientName;
+        if (!string.IsNullOrWhiteSpace(defaultClientName)
+            // 上一行的空白判定在 netstandard2.0 目标上没有 NotNullWhen 标注，
+            // 故显式使用 ! 声明此处可空性已由守卫收敛。
+            && options.Clients.TryGetValue(defaultClientName!, out var defaultClient)
             && string.IsNullOrWhiteSpace(defaultClient.BaseAddress))
         {
             // MT-12 后：无 BaseAddress 的客户端仍会被注册（Timeout/DefaultHeaders 生效），

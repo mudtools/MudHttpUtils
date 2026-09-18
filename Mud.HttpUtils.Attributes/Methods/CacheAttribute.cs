@@ -73,9 +73,8 @@ public sealed class CacheAttribute : Attribute
     /// 传递至缓存层（<c>IHttpResponseCache.Set(key, value, expiration, useSlidingExpiration)</c>）。
     /// </remarks>
     public bool UseSlidingExpiration { get; set; }
-
-    /// <summary>
-    // CFG-27：原 Priority 属性与 CachePriority 枚举已移除 —— 生成器从未处理该属性
-    // （此前为 [Obsolete] 警告，设置时产生 HTTPCLIENT019 提示；移除后使用将报 CS0117/CS0246）。
-    // 该属性无运行时消费点，属静默失效配置，故直接移除而非保留。
 }
+
+// CFG-27：原 Priority 属性与 CachePriority 枚举已移除 —— 生成器从未处理该属性
+// （此前为 [Obsolete] 警告，设置时产生 HTTPCLIENT019 提示；移除后使用将报 CS0117/CS0246）。
+// 该属性无运行时消费点，属静默失效配置，故直接移除而非保留。

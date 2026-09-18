@@ -160,7 +160,12 @@ public class AotAttributeAnnotationTests
         attr.Should().NotBeNull("FlattenObjectToQueryParams 应标注 [RequiresUnreferencedCode]");
         attr!.Message.Should().Contain("AOT");
     }
+#endif
 
+    // 库侧 [RequiresDynamicCode] 的 guard 锚点是 NET7_0_OR_GREATER（RequiresDynamicCodeAttribute
+    // 自 .NET 7 起 in-box；net6.0 由 Abstractions 的 public polyfill 承接但库刻意不标注），
+    // 故本断言必须对齐 NET7+，否则 net6.0 下必然失败。
+#if NET7_0_OR_GREATER
     [Fact]
     public void QueryMapHelper_FlattenObjectToQueryParams_HasRequiresDynamicCodeAttribute()
     {
@@ -238,8 +243,11 @@ public class AotAttributeAnnotationTests
 
         method!.GetCustomAttribute<RequiresUnreferencedCodeAttribute>()
             .Should().NotBeNull("非泛型 Serialize 使用运行时类型分派，应标注 [RequiresUnreferencedCode]");
+        // 库侧 RDC 的 guard 锚点是 NET7_0_OR_GREATER（见类型级注释），net6.0 下该标注不存在。
+#if NET7_0_OR_GREATER
         method.GetCustomAttribute<RequiresDynamicCodeAttribute>()
             .Should().NotBeNull("非泛型 Serialize 使用运行时类型分派，应标注 [RequiresDynamicCode]");
+#endif
     }
 
     [Fact]
@@ -253,8 +261,11 @@ public class AotAttributeAnnotationTests
 
         method!.GetCustomAttribute<RequiresUnreferencedCodeAttribute>()
             .Should().NotBeNull("object 重载使用运行时类型分派与 XML 序列化，应标注 [RequiresUnreferencedCode]");
+        // 库侧 RDC 的 guard 锚点是 NET7_0_OR_GREATER（见类型级注释），net6.0 下该标注不存在。
+#if NET7_0_OR_GREATER
         method.GetCustomAttribute<RequiresDynamicCodeAttribute>()
             .Should().NotBeNull("object 重载使用运行时类型分派，应标注 [RequiresDynamicCode]");
+#endif
     }
 
     [Fact]

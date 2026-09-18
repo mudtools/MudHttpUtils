@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace Mud.HttpUtils;
 
+#if NET6_0_OR_GREATER
 /// <summary>
 /// 配置变更通知器：订阅 <see cref="IOptionsMonitor{T}"/> 变更并在配置变更时清空
 /// <see cref="IEnhancedHttpClientFactory"/> 的缓存，使 AllowCustomBaseUrls / DefaultHeaders
@@ -17,7 +18,6 @@ namespace Mud.HttpUtils;
 /// <c>ClientFactories</c> 字典不缓存，语义天然一致）。
 /// D4：keyed 客户端提升为 Singleton 后，配置变更需显式触发失效。
 /// </remarks>
-#if NET6_0_OR_GREATER
 internal sealed class EnhancedHttpClientFactoryChangeNotifier : IDisposable
 {
     private readonly IDisposable? _subscription;

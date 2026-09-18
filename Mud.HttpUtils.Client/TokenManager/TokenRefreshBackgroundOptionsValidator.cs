@@ -15,7 +15,7 @@ namespace Mud.HttpUtils;
 /// 当 <see cref="TokenRefreshBackgroundOptions.Enabled"/> 为 <c>true</c> 且
 /// <see cref="TokenRefreshBackgroundOptions.RetryDelaySeconds"/> 大于等于
 /// <see cref="TokenRefreshBackgroundOptions.RefreshIntervalSeconds"/> 时，
-/// 返回 <see cref="ValidateOptionsResult.Fail"/>（<b>会抛出 <see cref="OptionsValidationException"/>，阻止应用启动</b>），
+/// 返回 <c>ValidateOptionsResult.Fail</c>（<b>会抛出 <see cref="OptionsValidationException"/>，阻止应用启动</b>），
 /// 避免重试延迟吞掉整个刷新周期导致服务实际停摆。
 /// </para>
 /// <para>CFG-12：原注释误述为「记录警告但不阻止启动」，与实现相反，现已按实现语义修正。</para>

@@ -16,7 +16,7 @@ namespace Mud.HttpUtils.Attributes;
 /// 应用此特性后，错误状态码不再抛出异常，而是返回响应内容。
 /// </para>
 /// <para>
-/// 建议与 <see cref="HttpClient.Response{T}"/> 返回类型配合使用，
+/// 建议与 <see cref="Mud.HttpUtils.Response{T}"/> 返回类型配合使用，
 /// 以便同时获取状态码和响应内容。
 /// </para>
 /// <para>

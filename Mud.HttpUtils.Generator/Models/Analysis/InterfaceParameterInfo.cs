@@ -64,5 +64,12 @@ internal class InterfacePropertyInfo
     /// 是否声明自继承基接口（InheritedFrom 指向的 [HttpClientApi] 基接口及其祖先）。
     /// 为 true 时基类实现已包含该属性，派生类只应注入其值、不得重复声明（否则 CS0108 隐藏基类成员）。
     /// </summary>
+    /// <remarks>
+    /// [继承模式 CS0108 修复] <c>[HttpClientApi(InheritedFrom = ...)]</c> 指定基类时，基类由生成器按
+    /// <c>InheritedFromInterfaceName</c> 对应的基接口生成，因而<b>已实现该基接口及其祖先接口上的</b>
+    /// <c>[Query]</c>/<c>[Path]</c>/<c>[Header]</c> 属性；派生类若再次发射同名属性会构成「隐藏继承的成员」（CS0108），
+    /// 故派生类只发射其余（本接口自身声明、以及派生侧新增基接口声明）的属性。
+    /// 非继承模式下该标记恒为 false，不影响发射行为。
+    /// </remarks>
     public bool IsFromInheritedBase { get; set; }
 }

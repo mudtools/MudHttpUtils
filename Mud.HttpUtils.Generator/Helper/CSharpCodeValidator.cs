@@ -33,7 +33,7 @@ internal static class CSharpCodeValidator
     /// <returns>如果合法返回true，否则返回false</returns>
     public static bool IsValidCSharpIdentifier(string? identifier)
     {
-        if (string.IsNullOrEmpty(identifier))
+        if (identifier is null || identifier.Length == 0)
             return false;
 
         // 检查第一个字符是否为字母或下划线（不能以数字开头）
@@ -150,7 +150,7 @@ internal static class CSharpCodeValidator
 
         if (!IsValidCSharpIdentifier(registryGroupName))
         {
-            ReportInvalidRegistryGroupName(context, location, registryGroupName);
+            ReportInvalidRegistryGroupName(context, location, registryGroupName!);
             return false;
         }
 

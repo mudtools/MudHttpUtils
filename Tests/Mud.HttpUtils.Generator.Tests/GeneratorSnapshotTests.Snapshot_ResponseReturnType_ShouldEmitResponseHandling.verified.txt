@@ -221,7 +221,7 @@ namespace TestNamespace.Internal
             var __url = $"/users/{Uri.EscapeDataString((id).ToString() ?? string.Empty)}";
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Get, __url);
 
-            return await _executor.ExecuteAsResponseAsync<string>(
+            return (await _executor.ExecuteAsResponseAsync<string>(
                 __httpRequest,
                 __appContext.HttpClient,
                 new ExecutionDescriptor
@@ -235,7 +235,7 @@ namespace TestNamespace.Internal
                        IsVoidReturn = false,
                    },
                },
-                null, cancellationToken: default).ConfigureAwait(false);
+                null, cancellationToken: default).ConfigureAwait(false))!;
         }
 
     }

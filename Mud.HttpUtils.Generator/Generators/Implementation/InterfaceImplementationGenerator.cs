@@ -216,7 +216,7 @@ internal class InterfaceImplementationGenerator
         {
             // HttpClient 类型校验仅输出诊断不阻断生成：GetTypeByMetadataName 需要完全限定名，
             // 用户可能使用短名称引用同编译中的类型，阻断会导致误报。错误诊断已足以提示用户。
-            ValidateHttpClientType(configuration.HttpClient);
+            ValidateHttpClientType(configuration.HttpClient!);
         }
 
         if (!string.IsNullOrEmpty(configuration.TokenManager))
@@ -230,7 +230,7 @@ internal class InterfaceImplementationGenerator
             var hasTokenManager = !string.IsNullOrEmpty(configuration.TokenManager);
             var validationResult = BaseClassValidator.ValidateBaseClass(
                 _compilation,
-                configuration.InheritedFrom,
+                configuration.InheritedFrom!,
                 hasTokenManager,
                 _interfaceSymbol.ContainingNamespace);
 
@@ -302,7 +302,7 @@ internal class InterfaceImplementationGenerator
         if (string.IsNullOrEmpty(configuration.TokenManager))
             return true;
 
-        var tokenManagerTypeName = configuration.TokenManager;
+        var tokenManagerTypeName = configuration.TokenManager!;
         var tokenManagerType = ResolveType(tokenManagerTypeName);
 
         if (tokenManagerType == null)
@@ -529,6 +529,7 @@ internal class InterfaceImplementationGenerator
 
         // 自动检测 InheritedFrom：如果未显式指定，检查是否有带 [HttpClientApi(IsAbstract = true)] 的基接口
         var baseHasTokenManager = false;
+        var baseHasAppAuthorizer = false;
         string? inheritedFromInterfaceName = null;
         if (string.IsNullOrEmpty(inheritedFrom))
         {
@@ -548,6 +549,8 @@ internal class InterfaceImplementationGenerator
                     var baseTokenManage = AttributeDataHelper.GetStringValueFromAttribute(baseApiAttr, HttpClientGeneratorConstants.TokenManageProperty);
                     var baseHttpClient = AttributeDataHelper.GetStringValueFromAttribute(baseApiAttr, HttpClientGeneratorConstants.HttpClientProperty);
                     baseHasTokenManager = !string.IsNullOrWhiteSpace(baseTokenManage) && string.IsNullOrWhiteSpace(baseHttpClient);
+                    // 基类为非 HttpClient 模式（TokenManager / AppContext）时，其生成的抽象基类会声明 protected _appAuthorizer 字段。
+                    baseHasAppAuthorizer = string.IsNullOrWhiteSpace(baseHttpClient);
                     break;
                 }
             }
@@ -577,6 +580,8 @@ internal class InterfaceImplementationGenerator
                             var baseTokenManage = AttributeDataHelper.GetStringValueFromAttribute(baseApiAttr, HttpClientGeneratorConstants.TokenManageProperty);
                             var baseHttpClient = AttributeDataHelper.GetStringValueFromAttribute(baseApiAttr, HttpClientGeneratorConstants.HttpClientProperty);
                             baseHasTokenManager = !string.IsNullOrWhiteSpace(baseTokenManage) && string.IsNullOrWhiteSpace(baseHttpClient);
+                            // 同上：基类非 HttpClient 模式时声明 protected _appAuthorizer，派生类改为透传而非重复声明。
+                            baseHasAppAuthorizer = string.IsNullOrWhiteSpace(baseHttpClient);
                         }
                     }
                 }
@@ -641,6 +646,7 @@ internal class InterfaceImplementationGenerator
             BaseHasCache = baseHasCache,
             BaseHasResilience = baseHasResilience,
             BaseHasTokenManager = baseHasTokenManager,
+            BaseHasAppAuthorizer = baseHasAppAuthorizer,
             InheritedFromInterfaceName = inheritedFromInterfaceName,
             TokenType = tokenType,
             IsUserAccessToken = tokenType == "UserAccessToken",
@@ -660,7 +666,7 @@ internal class InterfaceImplementationGenerator
 
         var contentTypeArg = attribute.NamedArguments.FirstOrDefault(a => a.Key == "ContentType");
         var contentType = contentTypeArg.Value.Value?.ToString();
-        return string.IsNullOrEmpty(contentType) ? HttpClientGeneratorConstants.DefaultContentType : contentType;
+        return string.IsNullOrEmpty(contentType) ? HttpClientGeneratorConstants.DefaultContentType : contentType!;
     }
 
     /// <summary>
@@ -791,7 +797,7 @@ internal class InterfaceImplementationGenerator
                         var innerType = TypeSymbolHelper.ExtractResponseInnerType(deserializeType);
                         if (!string.IsNullOrEmpty(innerType) && innerType != "void" && innerType != "System.Void")
                         {
-                            context.XmlResponseTypes.Add(innerType);
+                            context.XmlResponseTypes.Add(innerType!);
                         }
                     }
                     else
