@@ -465,6 +465,9 @@ internal class InterfaceImplementationGenerator
             context.MarkMemberProvided("GetApiKeyAsync");
             context.MarkMemberProvided("ApplyHmacSignatureAsync");
             context.MarkMemberProvided("GetTokenManagerKey");
+            // [F-Identity] 令牌身份解析接缝（虚方法，非接口成员，登记以防占位实现重名冲突）
+            context.MarkMemberProvided("ResolveTokenManagerKey");
+            context.MarkMemberProvided("ResolveTokenUserId");
         }
     }
 

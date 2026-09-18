@@ -38,12 +38,48 @@ internal static class SemanticModelCache
     /// <exception cref="ArgumentNullException">当 compilation 或 syntaxTree 为 null 时抛出</exception>
     public static SemanticModel GetOrCreate(Compilation compilation, SyntaxTree syntaxTree)
     {
+        if (!TryGet(compilation, syntaxTree, out var semanticModel))
+            throw new ArgumentException(
+                $"编译中不包含 SyntaxTree '{syntaxTree.FilePath}'。请使用 <see cref=\"TryGet\"/> 处理可降级场景。",
+                nameof(syntaxTree));
+        return semanticModel!;
+    }
+
+    /// <summary>
+    /// 尝试获取（或创建）语义模型，语法树不属于当前编译时返回 <c>false</c> 而不是抛出异常。
+    /// </summary>
+    /// <remarks>
+    /// [HTTPCLIENT004 误报修复] Roslyn 的 <c>Compilation.GetSemanticModel</c> 在传入不属于该编译的
+    /// SyntaxTree 时会抛出 <see cref="ArgumentException"/>（paramName 为 "syntaxTree"）。在 IDE 增量
+    /// 生成场景下，缓存的 <c>InterfaceModel</c> 可能携带旧编译的 SemanticModel/语法树，当派生分析
+    /// （基接口语法定位、方法语法匹配等）把来自不同代际编译的语法树与当前编译组合时即触发该异常，
+    /// 经 <c>HandleInterfaceProcessingException</c> 包装为误导性的 HTTPCLIENT004「参数配置错误」。
+    /// 语法树不在当前编译中属于可降级场景：调用方应走符号侧降级路径（返回 null / 跳过该子树），
+    /// 而不是让整个接口生成失败。
+    /// </remarks>
+    /// <param name="compilation">编译对象</param>
+    /// <param name="syntaxTree">语法树</param>
+    /// <param name="semanticModel">获取到的语义模型；返回 <c>false</c> 时为 <c>null</c></param>
+    /// <returns>语法树属于当前编译且成功获取语义模型时为 <c>true</c></returns>
+    public static bool TryGet(Compilation compilation, SyntaxTree syntaxTree, out SemanticModel? semanticModel)
+    {
         if (compilation == null)
             throw new ArgumentNullException(nameof(compilation));
         if (syntaxTree == null)
             throw new ArgumentNullException(nameof(syntaxTree));
 
+        // 包含性校验：Compilation.GetSemanticModel 对外部语法树抛 ArgumentException 的唯一前提。
+        // 此处提前短路并降级，避免异常沿生成管道上抛伪装成用户代码错误（HTTPCLIENT004 误报）。
+        if (!compilation.ContainsSyntaxTree(syntaxTree))
+        {
+            GeneratorDebugLogger.LogError("SemanticModelCache.SyntaxTreeNotInCompilation", new InvalidOperationException(
+                $"SyntaxTree '{syntaxTree.FilePath}' 不在当前编译 '{compilation.AssemblyName}' 中，已降级处理（跳过语法侧分析）。"));
+            semanticModel = null;
+            return false;
+        }
+
         var innerDict = _cache.GetOrCreateValue(compilation);
-        return innerDict.GetOrAdd(syntaxTree, tree => compilation.GetSemanticModel(tree));
+        semanticModel = innerDict.GetOrAdd(syntaxTree, tree => compilation.GetSemanticModel(tree));
+        return true;
     }
 }

@@ -321,6 +321,20 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 : "null";
             var userIdArg = requiresUserId ? "_currentUserContext.UserId" : "null";
 
+            // [F-Identity] 令牌身份解析：方法级显式 [Token(TokenManagerKey/TokenType)] 保持字面量（显式选择优先）；
+            // 接口级键与用户标识改经虚接缝 ResolveTokenManagerKey / ResolveTokenUserId 解析。
+            // 默认实现为恒等透传（独立类/基类行为不变），派生类（如用户态接口）覆盖接缝后，
+            // 从基接口继承的方法在派生类实例上即以派生身份（UserAccessToken + 当前用户）取令牌，
+            // 修复"用户态接口继承方法实际使用基类租户令牌"的身份漂移缺陷。
+            var isMethodLevelTokenKey = !string.IsNullOrEmpty(methodInfo.MethodTokenManagerKey);
+            var escapedTokenManagerKey = StringEscapeHelper.EscapeString(tokenManagerKey);
+            var tokenKeyExpr = isMethodLevelTokenKey
+                ? $"\"{escapedTokenManagerKey}\""
+                : $"ResolveTokenManagerKey(\"{escapedTokenManagerKey}\")";
+            var userIdExpr = isMethodLevelTokenKey
+                ? userIdArg
+                : $"ResolveTokenUserId({userIdArg})";
+
             if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModeApiKey)
             {
                 // GEN-09：方法级 Token(Name) 优先于接口级。
@@ -337,29 +351,25 @@ internal class MethodGenerator : ICodeFragmentGenerator
             }
             else if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModeBasicAuth)
             {
-                // [Phase2 修复 1.8] 对 tokenManagerKey 转义，同 TokenMethodHelper.cs:37 已有做法。
-                var escapedTokenManagerKey = StringEscapeHelper.EscapeString(tokenManagerKey);
                 if (!string.IsNullOrEmpty(tokenParamName) && !tokenParamHasHeader)
                 {
-                    codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({tokenParamName}) ? {tokenParamName} : await GetTokenAsync(\"{escapedTokenManagerKey}\", {userIdArg}, {scopesArg}).ConfigureAwait(false);");
+                    codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({tokenParamName}) ? {tokenParamName} : await GetTokenAsync({tokenKeyExpr}, {userIdExpr}, {scopesArg}).ConfigureAwait(false);");
                 }
                 else
                 {
-                    codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(\"{escapedTokenManagerKey}\", {userIdArg}, {scopesArg}).ConfigureAwait(false);");
+                    codeBuilder.AppendLine($"            var access_token = await GetTokenAsync({tokenKeyExpr}, {userIdExpr}, {scopesArg}).ConfigureAwait(false);");
                 }
                 codeBuilder.AppendLine($"            var __basicCredentials = System.Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(access_token));");
             }
             else
             {
-                // [Phase2 修复 1.8] 对 tokenManagerKey 转义，同 TokenMethodHelper.cs:37 已有做法。
-                var escapedTokenManagerKey = StringEscapeHelper.EscapeString(tokenManagerKey);
                 if (!string.IsNullOrEmpty(tokenParamName) && !tokenParamHasHeader)
                 {
-                    codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({tokenParamName}) ? {tokenParamName} : await GetTokenAsync(\"{escapedTokenManagerKey}\", {userIdArg}, {scopesArg}).ConfigureAwait(false);");
+                    codeBuilder.AppendLine($"            var access_token = !string.IsNullOrWhiteSpace({tokenParamName}) ? {tokenParamName} : await GetTokenAsync({tokenKeyExpr}, {userIdExpr}, {scopesArg}).ConfigureAwait(false);");
                 }
                 else
                 {
-                    codeBuilder.AppendLine($"            var access_token = await GetTokenAsync(\"{escapedTokenManagerKey}\", {userIdArg}, {scopesArg}).ConfigureAwait(false);");
+                    codeBuilder.AppendLine($"            var access_token = await GetTokenAsync({tokenKeyExpr}, {userIdExpr}, {scopesArg}).ConfigureAwait(false);");
                 }
             }
         }
@@ -1298,7 +1308,19 @@ internal class MethodGenerator : ICodeFragmentGenerator
         var headerName = GetTokenHeaderName(methodInfo);
         var cookieName = !string.IsNullOrEmpty(methodInfo.EffectiveTokenName) ? methodInfo.EffectiveTokenName : "access_token";
         var requiresUserId = TokenMethodHelper.MethodRequiresUserId(context, methodInfo);
-        var userIdExpr = requiresUserId ? "_currentUserContext.UserId" : "null";
+        var userIdArg = requiresUserId ? "_currentUserContext.UserId" : "null";
+
+        // [F-Identity] 与令牌获取调用点保持同一身份解析口径：
+        // 方法级显式键保持字面量；接口级键经 ResolveTokenManagerKey / ResolveTokenUserId 虚接缝解析，
+        // 使恢复执行器在继承方法被派生类（如用户态接口）覆盖身份后仍能定位到正确的令牌管理器与用户。
+        var isMethodLevelTokenKey = !string.IsNullOrEmpty(methodInfo.MethodTokenManagerKey);
+        var escapedTokenManagerKey = StringEscapeHelper.EscapeString(TokenMethodHelper.GetMethodTokenManagerKey(context, methodInfo));
+        var tokenKeyExpr = isMethodLevelTokenKey
+            ? $"\"{escapedTokenManagerKey}\""
+            : $"ResolveTokenManagerKey(\"{escapedTokenManagerKey}\")";
+        var userIdExpr = isMethodLevelTokenKey
+            ? userIdArg
+            : $"ResolveTokenUserId({userIdArg})";
 
         // 对所有插入字符串字面量的用户输入进行转义，防止生成代码编译失败
         var escapedHeaderName = StringEscapeHelper.EscapeString(headerName);
@@ -1318,10 +1340,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         };
 
         // P2.5（TK-07）：将 TokenManagerKey 写入恢复上下文，使恢复执行器能据此定位管理器并标识可观测维度。
-        // GetMethodTokenManagerKey 始终返回非空（含默认回退），因此直接转义后写死；仅当有跟踪值时也保持简单性。
-        var tokenManagerKey = TokenMethodHelper.GetMethodTokenManagerKey(context, methodInfo);
-        var escapedTokenManagerKey = StringEscapeHelper.EscapeString(tokenManagerKey);
-
+        // [F-Identity] 经虚接缝解析（见上方 tokenKeyExpr / userIdExpr），继承方法被派生类覆盖身份后仍能正确恢复。
         // TMR-04：写入 Scopes，使恢复执行器能按正确的作用域失效和刷新令牌。
         var effectiveScopes = methodInfo.MethodTokenScopes ?? methodInfo.InterfaceTokenScopes;
         var scopes = TokenHelper.ParseScopes(effectiveScopes);
@@ -1349,7 +1368,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine($"{indent}    CookieName = \"{escapedCookieName}\",");
         if (escapedQueryParamName != null)
             codeBuilder.AppendLine($"{indent}    QueryParameterName = \"{escapedQueryParamName}\",");
-        codeBuilder.AppendLine($"{indent}    TokenManagerKey = \"{escapedTokenManagerKey}\",");
+        codeBuilder.AppendLine($"{indent}    TokenManagerKey = {tokenKeyExpr},");
         codeBuilder.AppendLine($"{indent}    Scopes = {scopesArg},");
         codeBuilder.AppendLine($"{indent}    UserId = {userIdExpr}");
         codeBuilder.AppendLine($"{indent}}});");
@@ -1362,7 +1381,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine($"{indent}    CookieName = \"{escapedCookieName}\",");
         if (escapedQueryParamName != null)
             codeBuilder.AppendLine($"{indent}    QueryParameterName = \"{escapedQueryParamName}\",");
-        codeBuilder.AppendLine($"{indent}    TokenManagerKey = \"{escapedTokenManagerKey}\",");
+        codeBuilder.AppendLine($"{indent}    TokenManagerKey = {tokenKeyExpr},");
         codeBuilder.AppendLine($"{indent}    Scopes = {scopesArg},");
         codeBuilder.AppendLine($"{indent}    UserId = {userIdExpr}");
         codeBuilder.AppendLine($"{indent}}};");

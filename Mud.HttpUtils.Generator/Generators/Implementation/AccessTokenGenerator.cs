@@ -32,12 +32,79 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
 
         GenerateGetTokenAsyncMethod(codeBuilder);
         GenerateGetTokenAsyncNoParamMethod(codeBuilder);
+        GenerateTokenIdentityResolvers(codeBuilder);
 
         if (_context.HasApiKeyInjection)
             GenerateGetApiKeyAsyncMethod(codeBuilder);
 
         if (_context.HasHmacSignatureInjection)
             GenerateApplyHmacSignatureAsyncMethod(codeBuilder);
+    }
+
+    /// <summary>
+    /// 生成令牌身份解析接缝（[F-Identity]）：<c>ResolveTokenManagerKey</c> / <c>ResolveTokenUserId</c>。
+    /// </summary>
+    /// <remarks>
+    /// 接口级令牌键与用户标识的方法体调用统一经此接缝解析：独立类与基类的默认实现为恒等透传（行为不变）；
+    /// 继承模式（InheritedFrom）下派生类覆盖接缝后，从基接口继承的方法在派生类实例上
+    /// 即以派生身份（如用户态接口的 UserAccessToken + 当前用户）取令牌，
+    /// 修复"用户态接口继承方法实际使用基类租户令牌"的身份漂移缺陷。
+    /// 方法级显式 [Token] 键不经过接缝（显式选择始终优先）。
+    /// </remarks>
+    private void GenerateTokenIdentityResolvers(StringBuilder codeBuilder)
+    {
+        var accessibility = _context.GetTokenAsyncAccessibility;
+        // GetTokenAsyncAccessibility 的值域为 "public override" / "public virtual"，须以 Contains 判定重写形态。
+        var isOverride = accessibility.Contains("override");
+        // 仅当派生类显式配置了令牌身份（TokenType / TokenManagerKey）时才覆盖接缝，
+        // 避免未显式配置身份的派生类意外改变从基接口继承方法的令牌身份（向后兼容）。
+        var hasExplicitTokenIdentity = !string.IsNullOrEmpty(_context.Configuration.TokenManagerKey)
+            || !string.IsNullOrEmpty(_context.Configuration.TokenType);
+        // 用户标识覆盖要求派生类存在 _currentUserContext 字段（AnyMethodRequiresUserId 保证其已发射）。
+        var hasCurrentUserContext = _context.Configuration.AnyMethodRequiresUserId;
+
+        if (isOverride && hasExplicitTokenIdentity)
+        {
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 解析本次请求的令牌管理器查找键（[F-Identity] 令牌身份接缝）。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine("        /// <param name=\"defaultTokenManagerKey\">由声明接口解析出的默认查找键。</param>");
+            codeBuilder.AppendLine("        /// <returns>实际用于定位令牌管理器的查找键。</returns>");
+            codeBuilder.AppendLine($"        {accessibility} string ResolveTokenManagerKey(string defaultTokenManagerKey) => _tokenManagerKey;");
+            codeBuilder.AppendLine();
+        }
+        else if (!isOverride)
+        {
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 解析本次请求的令牌管理器查找键（[F-Identity] 令牌身份接缝）。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine("        /// <param name=\"defaultTokenManagerKey\">由声明接口解析出的默认查找键。</param>");
+            codeBuilder.AppendLine("        /// <returns>实际用于定位令牌管理器的查找键。</returns>");
+            codeBuilder.AppendLine($"        {accessibility} string ResolveTokenManagerKey(string defaultTokenManagerKey) => defaultTokenManagerKey;");
+            codeBuilder.AppendLine();
+        }
+        // isOverride 但未显式配置身份时不发射覆盖：继承基类恒等透传，与基类行为保持一致。
+
+        if (isOverride && hasExplicitTokenIdentity && hasCurrentUserContext)
+        {
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 解析本次请求的用户标识（[F-Identity] 令牌身份接缝）。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine("        /// <param name=\"defaultUserId\">由声明接口解析出的默认用户标识。</param>");
+            codeBuilder.AppendLine("        /// <returns>实际用于获取用户令牌的用户标识。</returns>");
+            codeBuilder.AppendLine($"        {accessibility} string? ResolveTokenUserId(string? defaultUserId) => _currentUserContext.UserId;");
+            codeBuilder.AppendLine();
+        }
+        else if (!isOverride)
+        {
+            codeBuilder.AppendLine("        /// <summary>");
+            codeBuilder.AppendLine("        /// 解析本次请求的用户标识（[F-Identity] 令牌身份接缝）。");
+            codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine("        /// <param name=\"defaultUserId\">由声明接口解析出的默认用户标识。</param>");
+            codeBuilder.AppendLine("        /// <returns>实际用于获取用户令牌的用户标识。</returns>");
+            codeBuilder.AppendLine($"        {accessibility} string? ResolveTokenUserId(string? defaultUserId) => defaultUserId;");
+            codeBuilder.AppendLine();
+        }
     }
 
     /// <summary>
@@ -55,7 +122,7 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <returns>返回访问令牌</returns>");
         codeBuilder.AppendLine("        private async Task<string> GetTokenAsync(string tokenManagerKey, string? userId = null, string[]? scopes = null, CancellationToken cancellationToken = default)");
         codeBuilder.AppendLine("        {");
-        codeBuilder.AppendLine("            // G-1 修复：查询方法不应有写入副作用。移除 _appContextHolder.Current = appContext 赋值，");
+        codeBuilder.AppendLine("            // 查询方法不应有写入副作用。移除 _appContextHolder.Current = appContext 赋值，");
         codeBuilder.AppendLine("            // 改为只读回退到默认应用。上下文切换由构造函数初始化或显式 UseApp 调用负责。");
         codeBuilder.AppendLine("            var appContext = _appContextHolder.Current ?? _tokenManager.GetDefaultApp();");
         codeBuilder.AppendLine("            var request = new TokenRequest");
@@ -93,7 +160,8 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <returns>包含访问令牌的字符串任务。</returns>");
         codeBuilder.AppendLine($"        {accessibility} async Task<string> GetTokenAsync()");
         codeBuilder.AppendLine("        {");
-        codeBuilder.AppendLine($"            return await GetTokenAsync(\"{StringEscapeHelper.EscapeString(tokenManagerKey)}\", {userIdArg}).ConfigureAwait(false);");
+        // [F-Identity] 无参便捷入口同样经身份接缝解析，避免派生类（用户态）仍以基接口字面量键取令牌。
+        codeBuilder.AppendLine($"            return await GetTokenAsync(ResolveTokenManagerKey(\"{StringEscapeHelper.EscapeString(tokenManagerKey)}\"), ResolveTokenUserId({userIdArg})).ConfigureAwait(false);");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
     }
@@ -109,7 +177,7 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            if (keyName != null && string.IsNullOrWhiteSpace(keyName))");
         codeBuilder.AppendLine("                throw new System.ArgumentException(\"API Key name cannot be whitespace.\", nameof(keyName));");
-        codeBuilder.AppendLine("            // G-1 修复：查询方法不应有写入副作用。移除 _appContextHolder.Current = appContext 赋值，");
+        codeBuilder.AppendLine("            // 查询方法不应有写入副作用。移除 _appContextHolder.Current = appContext 赋值，");
         codeBuilder.AppendLine("            // 改为只读回退到默认应用。上下文切换由构造函数初始化或显式 UseApp 调用负责。");
         codeBuilder.AppendLine("            var appContext = _appContextHolder.Current ?? _tokenManager.GetDefaultApp();");
         codeBuilder.AppendLine("            var apiKeyProvider = appContext.GetService<IApiKeyProvider>();");
@@ -128,7 +196,7 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <param name=\"request\">HTTP 请求消息。</param>");
         codeBuilder.AppendLine("        private async Task ApplyHmacSignatureAsync(HttpRequestMessage request)");
         codeBuilder.AppendLine("        {");
-        codeBuilder.AppendLine("            // G-1 修复：查询方法不应有写入副作用。移除 _appContextHolder.Current = appContext 赋值，");
+        codeBuilder.AppendLine("            // 查询方法不应有写入副作用。移除 _appContextHolder.Current = appContext 赋值，");
         codeBuilder.AppendLine("            // 改为只读回退到默认应用。上下文切换由构造函数初始化或显式 UseApp 调用负责。");
         codeBuilder.AppendLine("            var appContext = _appContextHolder.Current ?? _tokenManager.GetDefaultApp();");
         codeBuilder.AppendLine("            var hmacProvider = appContext.GetService<IHmacSignatureProvider>();");

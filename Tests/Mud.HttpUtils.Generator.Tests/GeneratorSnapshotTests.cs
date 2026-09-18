@@ -752,4 +752,51 @@ namespace TestNamespace
     }
 
     #endregion
+
+    #region 令牌身份接缝 — 场景 25（[F-Identity]）
+
+    /// <summary>
+    /// 场景 25: InheritedFrom 令牌身份切换（[F-Identity]）。
+    /// 基接口以租户身份声明（IsAbstract 生成 abstract 基类），用户态派生接口显式声明
+    /// UserAccessToken + RequiresUserId。派生类应覆盖 ResolveTokenManagerKey / ResolveTokenUserId
+    /// 接缝，使从基接口继承的方法在派生类实例上以用户身份取令牌；
+    /// 基类方法体须以接缝调用（而非字面量）解析令牌键与用户标识。
+    /// </summary>
+    [Fact]
+    public Task Snapshot_InheritedFromTokenIdentity_ShouldEmitIdentitySeams()
+    {
+        var source = """
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    [Token("TenantAccessToken")]
+    [HttpClientApi(TokenManage = "ITestTokenManager", IsAbstract = true)]
+    public interface IBaseApi
+    {
+        [Get("/base")]
+        Task<string> GetBaseDataAsync();
+    }
+
+    [Token("UserAccessToken", RequiresUserId = true)]
+    [HttpClientApi(TokenManage = "ITestTokenManager", InheritedFrom = "BaseApi")]
+    public interface IDerivedUserApi : IBaseApi, ICurrentUserId
+    {
+        [Get("/derived")]
+        Task<string> GetDerivedDataAsync();
+    }
+}
+""";
+        var (driver, outputCompilation) = VerifyFixture.RunGeneratorDriver(source);
+        return VerifyFixture.VerifyGenerator(driver, outputCompilation);
+    }
+
+    #endregion
 }

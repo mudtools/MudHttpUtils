@@ -73,8 +73,9 @@ internal static class MethodAnalyzer
         ImmutableArray<AttributeData> interfaceAttrs;
         if (cachedInterfaceAttributes.IsDefault)
         {
-            var interfaceModel = semanticModel ?? SemanticModelCache.GetOrCreate(compilation, interfaceDecl.SyntaxTree);
-            var interfaceSymbol = interfaceModel.GetDeclaredSymbol(interfaceDecl) as INamedTypeSymbol;
+            // [HTTPCLIENT004 误报修复] 语义模型不可用（如语法树不属于当前编译）时降级为空特性集，
+            // 而不是让 ArgumentException 沿生成管道上抛为「接口参数配置错误」。
+            var interfaceSymbol = ResolveInterfaceSymbol(compilation, interfaceDecl, semanticModel);
             interfaceAttrs = interfaceSymbol?.GetAttributes() ?? ImmutableArray<AttributeData>.Empty;
         }
         else
@@ -451,6 +452,28 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
     }
 
     /// <summary>
+    /// 解析接口声明的类型符号；语义模型不可用时返回 <c>null</c>（降级）。
+    /// </summary>
+    /// <remarks>
+    /// [HTTPCLIENT004 误报修复] 统一封装「优先复用调用方语义模型，否则经
+    /// <see cref="SemanticModelCache.TryGet"/> 获取」的解析逻辑，语法树不属于当前编译时
+    /// 静默降级而不是抛出 ArgumentException。
+    /// </remarks>
+    private static INamedTypeSymbol? ResolveInterfaceSymbol(
+        Compilation compilation,
+        InterfaceDeclarationSyntax interfaceDecl,
+        SemanticModel? semanticModel)
+    {
+        if (semanticModel != null)
+            return semanticModel.GetDeclaredSymbol(interfaceDecl) as INamedTypeSymbol;
+
+        if (!SemanticModelCache.TryGet(compilation, interfaceDecl.SyntaxTree, out var model) || model == null)
+            return null;
+
+        return model.GetDeclaredSymbol(interfaceDecl) as INamedTypeSymbol;
+    }
+
+    /// <summary>
     /// 查询方法的语法对象
     /// </summary>
     public static MethodDeclarationSyntax? FindMethodSyntax(
@@ -501,7 +524,13 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
 
             // 语义分析未精确匹配，尝试通过参数类型符号匹配（避免重载误判）
             // 候选方法位于同一接口声明，共享同一 SyntaxTree，获取一次 SemanticModel
-            var fallbackModel = SemanticModelCache.GetOrCreate(compilation, interfaceSyntax.SyntaxTree);
+            // [HTTPCLIENT004 误报修复] 语义模型不可用时走既有降级路径：返回 null，由调用方以符号侧信息兜底。
+            if (!SemanticModelCache.TryGet(compilation, interfaceSyntax.SyntaxTree, out var fallbackModel)
+                || fallbackModel == null)
+            {
+                return null;
+            }
+
             foreach (var candidate in candidates)
             {
                 if (TryMatchByParameterTypes(candidate, methodSymbol, fallbackModel))
@@ -585,7 +614,15 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         SemanticModel? semanticModel,
         HashSet<INamedTypeSymbol> visited)
     {
-        var model = semanticModel ?? SemanticModelCache.GetOrCreate(compilation, interfaceDecl.SyntaxTree);
+        var model = semanticModel;
+        if (model == null)
+        {
+            // [HTTPCLIENT004 误报修复] 语法树不属于当前编译时无法构建语义模型，等同接口符号解析失败，
+            // 与下方 interfaceSymbol == null 的处理一致：终止该分支的基接口语法遍历。
+            if (!SemanticModelCache.TryGet(compilation, interfaceDecl.SyntaxTree, out model) || model == null)
+                yield break;
+        }
+
         var interfaceSymbol = model.GetDeclaredSymbol(interfaceDecl);
 
         if (interfaceSymbol == null)
@@ -602,7 +639,14 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
             var baseInterfaceSyntax = GetInterfaceDeclarationSyntax(compilation, baseInterface);
             if (baseInterfaceSyntax != null)
             {
-                var baseInterfaceModel = SemanticModelCache.GetOrCreate(compilation, baseInterfaceSyntax.SyntaxTree);
+                // [HTTPCLIENT004 误报修复] 基接口语法树不属于当前编译时跳过该子树（降级），
+                // 避免对外部语法树调用 GetSemanticModel 抛出 ArgumentException 中断整个接口生成。
+                if (!SemanticModelCache.TryGet(compilation, baseInterfaceSyntax.SyntaxTree, out var baseInterfaceModel)
+                    || baseInterfaceModel == null)
+                {
+                    continue;
+                }
+
                 foreach (var deeperBase in GetAllBaseInterfaceSyntaxNodesCore(compilation, baseInterfaceSyntax, baseInterfaceModel, visited))
                 {
                     yield return deeperBase;

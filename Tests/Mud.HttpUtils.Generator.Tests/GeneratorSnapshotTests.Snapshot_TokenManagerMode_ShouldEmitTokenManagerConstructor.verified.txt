@@ -274,8 +274,22 @@ namespace TestNamespace.Internal
         /// <returns>包含访问令牌的字符串任务。</returns>
         public virtual async Task<string> GetTokenAsync()
         {
-            return await GetTokenAsync("AccessToken", null).ConfigureAwait(false);
+            return await GetTokenAsync(ResolveTokenManagerKey("AccessToken"), ResolveTokenUserId(null)).ConfigureAwait(false);
         }
+
+        /// <summary>
+        /// 解析本次请求的令牌管理器查找键（[F-Identity] 令牌身份接缝）。
+        /// </summary>
+        /// <param name="defaultTokenManagerKey">由声明接口解析出的默认查找键。</param>
+        /// <returns>实际用于定位令牌管理器的查找键。</returns>
+        public virtual string ResolveTokenManagerKey(string defaultTokenManagerKey) => defaultTokenManagerKey;
+
+        /// <summary>
+        /// 解析本次请求的用户标识（[F-Identity] 令牌身份接缝）。
+        /// </summary>
+        /// <param name="defaultUserId">由声明接口解析出的默认用户标识。</param>
+        /// <returns>实际用于获取用户令牌的用户标识。</returns>
+        public virtual string? ResolveTokenUserId(string? defaultUserId) => defaultUserId;
 
     }
 }
