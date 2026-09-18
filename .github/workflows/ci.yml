@@ -27,6 +27,10 @@ jobs:
           - Tests/Mud.HttpUtils.Client.Tests/Mud.HttpUtils.Client.Tests.csproj
           - Tests/Mud.HttpUtils.Resilience.Tests/Mud.HttpUtils.Resilience.Tests.csproj
           - Tests/Mud.HttpUtils.JsonContextScaffolder.Tests/Mud.HttpUtils.JsonContextScaffolder.Tests.csproj
+          - Tests/Mud.HttpUtils.Tests/Mud.HttpUtils.Tests.csproj
+          - Tests/Mud.HttpUtils.OpenTelemetry.Tests/Mud.HttpUtils.OpenTelemetry.Tests.csproj
+          - Tests/Mud.HttpUtils.CodeFixes.Tests/Mud.HttpUtils.CodeFixes.Tests.csproj
+          - Tests/Mud.HttpUtils.Integration.Tests/Mud.HttpUtils.Integration.Tests.csproj
 
     steps:
       - name: Checkout
@@ -107,9 +111,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # 多 TFM 发布库 × 4
+          # 多 TFM 发布库 × 各自 TFM（OpenTelemetry 已移除 net6.0 资产；
+          # Abstractions 按 BC-29 新增 net7.0 资产）
           - { library: Mud.HttpUtils.Abstractions, target_framework: netstandard2.0 }
           - { library: Mud.HttpUtils.Abstractions, target_framework: net6.0 }
+          - { library: Mud.HttpUtils.Abstractions, target_framework: net7.0 }
           - { library: Mud.HttpUtils.Abstractions, target_framework: net8.0 }
           - { library: Mud.HttpUtils.Abstractions, target_framework: net10.0 }
           - { library: Mud.HttpUtils.Client, target_framework: netstandard2.0 }
@@ -121,7 +127,6 @@ jobs:
           - { library: Mud.HttpUtils.Resilience, target_framework: net8.0 }
           - { library: Mud.HttpUtils.Resilience, target_framework: net10.0 }
           - { library: Mud.HttpUtils.OpenTelemetry, target_framework: netstandard2.0 }
-          - { library: Mud.HttpUtils.OpenTelemetry, target_framework: net6.0 }
           - { library: Mud.HttpUtils.OpenTelemetry, target_framework: net8.0 }
           - { library: Mud.HttpUtils.OpenTelemetry, target_framework: net10.0 }
           - { library: Mud.HttpUtils.Newtonsoft.Json, target_framework: netstandard2.0 }
@@ -167,6 +172,8 @@ jobs:
           - Demos/HttpClientApiPublicDemo/HttpClientApiPublicDemo.csproj
           - Demos/HttpClientDemo/HttpClientDemo.csproj
           - Demos/ResilienceDemo/ResilienceDemo.csproj
+          - Demos/CommonClassLibrary/CommonClassLibrary.csproj
+          - Demos/CommonClassPubliceLibrary/CommonClassPubliceLibrary.csproj
 
     steps:
       - name: Checkout
@@ -741,6 +748,18 @@ jobs:
 
       - name: Pack Resilience
         run: dotnet pack Mud.HttpUtils.Resilience/Mud.HttpUtils.Resilience.csproj --no-build --configuration Release --output artifacts
+
+      - name: Pack OpenTelemetry
+        run: dotnet pack Mud.HttpUtils.OpenTelemetry/Mud.HttpUtils.OpenTelemetry.csproj --no-build --configuration Release --output artifacts
+
+      - name: Pack Newtonsoft.Json
+        run: dotnet pack Mud.HttpUtils.Newtonsoft.Json/Mud.HttpUtils.Newtonsoft.Json.csproj --no-build --configuration Release --output artifacts
+
+      - name: Pack Xml
+        run: dotnet pack Mud.HttpUtils.Xml/Mud.HttpUtils.Xml.csproj --no-build --configuration Release --output artifacts
+
+      - name: Pack Testing
+        run: dotnet pack Tests/Mud.HttpUtils.Testing/Mud.HttpUtils.Testing.csproj --no-build --configuration Release --output artifacts
 
       - name: Pack Mud.HttpUtils (meta package)
         run: dotnet pack Mud.HttpUtils/Mud.HttpUtils.csproj --no-build --configuration Release --output artifacts
