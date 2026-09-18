@@ -36,7 +36,7 @@ namespace Mud.HttpUtils.Generator.Tests;
 /// </remarks>
 public class GeneratorSourceContractTests
 {
-    private const string GeneratorRoot = @"..\..\..\..\Mud.HttpUtils.Generator";
+    private const string GeneratorRoot = @"../../../../Mud.HttpUtils.Generator";
 
     /// <summary>字符串比较形式标记。</summary>
     private static readonly string[] ComparisonMarkers =

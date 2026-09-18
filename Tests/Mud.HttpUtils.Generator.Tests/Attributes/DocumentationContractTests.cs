@@ -24,8 +24,8 @@ namespace Mud.HttpUtils.Generator.Tests;
 /// </summary>
 public class DocumentationContractTests
 {
-    private const string GeneratorReadmePath = @"..\..\..\..\Mud.HttpUtils.Generator\README.md";
-    private const string GeneratorPropsPath = @"..\..\..\..\Mud.HttpUtils.Generator\build\Mud.HttpUtils.Generator.props";
+    private const string GeneratorReadmePath = @"../../../../Mud.HttpUtils.Generator/README.md";
+    private const string GeneratorPropsPath = @"../../../../Mud.HttpUtils.Generator/build/Mud.HttpUtils.Generator.props";
 
     /// <summary>占位白名单：ID 允许在 Diagnostics.cs 中定义但不出现在 README 诊断表（README 用注记说明）。</summary>
     private static readonly HashSet<string> PlaceholderDiagnosticIds = new(StringComparer.Ordinal)
@@ -209,7 +209,7 @@ public class DocumentationContractTests
         registered.Should().NotBeEmpty();
 
         var generatorSources = Directory.EnumerateFiles(
-            Path.GetFullPath(@"..\..\..\..\Mud.HttpUtils.Generator"),
+            Path.GetFullPath(@"../../../../Mud.HttpUtils.Generator"),
             "*.cs",
             SearchOption.AllDirectories);
 
@@ -228,7 +228,7 @@ public class DocumentationContractTests
     {
         var registered = ReadRegisteredProperties();
         var generatorSources = Directory.EnumerateFiles(
-            Path.GetFullPath(@"..\..\..\..\Mud.HttpUtils.Generator"),
+            Path.GetFullPath(@"../../../../Mud.HttpUtils.Generator"),
             "*.cs",
             SearchOption.AllDirectories);
 
