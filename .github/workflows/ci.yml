@@ -137,10 +137,11 @@ jobs:
           - { library: Mud.HttpUtils.Xml, target_framework: net6.0 }
           - { library: Mud.HttpUtils.Xml, target_framework: net8.0 }
           - { library: Mud.HttpUtils.Xml, target_framework: net10.0 }
-          - { library: Mud.HttpUtils.Testing, target_framework: netstandard2.0 }
-          - { library: Mud.HttpUtils.Testing, target_framework: net6.0 }
-          - { library: Mud.HttpUtils.Testing, target_framework: net8.0 }
-          - { library: Mud.HttpUtils.Testing, target_framework: net10.0 }
+          # Testing 位于 Tests/ 子目录，需显式给出工程路径（其余库在根目录，按 {library}/{library}.csproj 约定）
+          - { library: Mud.HttpUtils.Testing, project_path: Tests/Mud.HttpUtils.Testing/Mud.HttpUtils.Testing.csproj, target_framework: netstandard2.0 }
+          - { library: Mud.HttpUtils.Testing, project_path: Tests/Mud.HttpUtils.Testing/Mud.HttpUtils.Testing.csproj, target_framework: net6.0 }
+          - { library: Mud.HttpUtils.Testing, project_path: Tests/Mud.HttpUtils.Testing/Mud.HttpUtils.Testing.csproj, target_framework: net8.0 }
+          - { library: Mud.HttpUtils.Testing, project_path: Tests/Mud.HttpUtils.Testing/Mud.HttpUtils.Testing.csproj, target_framework: net10.0 }
           # 单 TFM 发布库（ns2.0）
           - { library: Mud.HttpUtils.Attributes, target_framework: netstandard2.0 }
 
@@ -156,7 +157,7 @@ jobs:
             10.0.x
 
       - name: Build with PublicAPI strict mode
-        run: dotnet build ${{ matrix.library }}/${{ matrix.library }}.csproj -f ${{ matrix.target_framework }} --configuration Release -p:PublicApiStrictMode=true
+        run: dotnet build ${{ matrix.project_path || format('{0}/{0}.csproj', matrix.library) }} -f ${{ matrix.target_framework }} --configuration Release -p:PublicApiStrictMode=true
 
   # ──────────────────────────────────────────────
   # Demo 项目构建
@@ -245,7 +246,8 @@ jobs:
       - name: Run AOT binary (net10.0) and verify AOT_OK
         shell: bash
         run: |
-          BIN_PATH="Demos/AotVerificationDemo/bin/Release/net10.0/${{ matrix.rid }}/publish/AotVerificationDemo"
+          # Directory.Build.props 设 BaseOutputPath=..\bin：产物在 Demos/bin/...（非默认的 Demos/<proj>/bin/...）
+          BIN_PATH="Demos/bin/Release/net10.0/${{ matrix.rid }}/publish/AotVerificationDemo"
           if [ -f "$BIN_PATH" ]; then
             OUTPUT=$("$BIN_PATH" 2>&1 || true)
             echo "$OUTPUT"
@@ -275,7 +277,7 @@ jobs:
       - name: Run AOT binary (net8.0) and verify AOT_OK
         shell: bash
         run: |
-          BIN_PATH="Demos/AotVerificationDemo/bin/Release/net8.0/${{ matrix.rid }}/publish/AotVerificationDemo"
+          BIN_PATH="Demos/bin/Release/net8.0/${{ matrix.rid }}/publish/AotVerificationDemo"
           if [ -f "$BIN_PATH" ]; then
             OUTPUT=$("$BIN_PATH" 2>&1 || true)
             echo "$OUTPUT"
@@ -303,7 +305,7 @@ jobs:
       - name: Run AOT FullTrim binary and verify AOT_OK
         shell: bash
         run: |
-          BIN_PATH="Demos/AotFullTrimVerificationDemo/bin/Release/net10.0/${{ matrix.rid }}/publish/AotFullTrimVerificationDemo"
+          BIN_PATH="Demos/bin/Release/net10.0/${{ matrix.rid }}/publish/AotFullTrimVerificationDemo"
           if [ -f "$BIN_PATH" ]; then
             OUTPUT=$("$BIN_PATH" 2>&1 || true)
             echo "$OUTPUT"
@@ -333,7 +335,7 @@ jobs:
       - name: Run AOT FullTrim binary (net8.0) and verify AOT_OK
         shell: bash
         run: |
-          BIN_PATH="Demos/AotFullTrimVerificationDemo/bin/Release/net8.0/${{ matrix.rid }}/publish/AotFullTrimVerificationDemo"
+          BIN_PATH="Demos/bin/Release/net8.0/${{ matrix.rid }}/publish/AotFullTrimVerificationDemo"
           if [ -f "$BIN_PATH" ]; then
             OUTPUT=$("$BIN_PATH" 2>&1 || true)
             echo "$OUTPUT"
