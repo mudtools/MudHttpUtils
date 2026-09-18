@@ -697,6 +697,137 @@ namespace TestNamespace
         return VerifyFixture.VerifyGenerator(driver, outputCompilation);
     }
 
+    /// <summary>
+    /// 场景 22a: [InheritedFrom] 继承模式 + 接口属性 —— InheritedFrom 基接口链（目标及其祖先接口）上的
+    /// [Query]/[Header] 属性由抽象基类声明一次，派生类不得重复发射（CS0108「隐藏继承的成员」回归守卫）。
+    /// 合并冲突解决方案锁定：跳过口径为「InheritedFrom 目标基接口的闭包」（目标 + 其祖先），
+    /// 而非「派生接口的全部基接口」（后者会连带跳过派生侧新增基接口的属性，见场景 22b）。
+    /// </summary>
+    [Fact]
+    public Task Snapshot_InheritedFromMode_WithInterfaceProperties_ShouldNotRedeclareBaseChainProperties()
+    {
+        var source = """
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    /// <summary>祖先接口：共享查询属性（由 BaseApi 一并实现）。</summary>
+    public interface ISharedApi
+    {
+        [Query]
+        string SharedKey { get; set; }
+    }
+
+    [HttpClientApi(TokenManage = "ITestTokenManager", IsAbstract = true)]
+    public interface IBaseApi : ISharedApi
+    {
+        [Header("X-Tenant")]
+        string TenantId { get; set; }
+
+        [Get("/base")]
+        Task<string> GetBaseDataAsync();
+    }
+
+    [HttpClientApi(TokenManage = "ITestTokenManager", InheritedFrom = "BaseApi")]
+    public interface IDerivedApi : IBaseApi
+    {
+        [Get("/derived")]
+        Task<string> GetDerivedDataAsync();
+    }
+}
+""";
+        var (driver, outputCompilation) = VerifyFixture.RunGeneratorDriver(source);
+        return VerifyFixture.VerifyGenerator(driver, outputCompilation);
+    }
+
+    /// <summary>
+    /// 场景 22b: [InheritedFrom] 继承模式 + 派生侧新增基接口 —— 新增基接口（不在 InheritedFrom 目标闭包内）的
+    /// 接口属性**必须**由派生类发射，否则接口契约缺失（CS0535），且派生类自身的成员声明不得被基类遮蔽。
+    /// 该用例排除「跳过派生接口全部基接口属性」的过宽口径。
+    /// </summary>
+    [Fact]
+    public Task Snapshot_InheritedFromMode_WithExtraBaseInterface_ShouldEmitDerivedSideProperties()
+    {
+        var source = """
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    /// <summary>派生侧新增基接口：不在 InheritedFrom 目标的继承链内，基类不会实现其属性。</summary>
+    public interface IExtraApi
+    {
+        [Query]
+        string ExtraKey { get; set; }
+    }
+
+    [HttpClientApi(TokenManage = "ITestTokenManager", IsAbstract = true)]
+    public interface IBaseApi
+    {
+        [Get("/base")]
+        Task<string> GetBaseDataAsync();
+    }
+
+    [HttpClientApi(TokenManage = "ITestTokenManager", InheritedFrom = "BaseApi")]
+    public interface IDerivedApi : IBaseApi, IExtraApi
+    {
+        [Get("/derived")]
+        Task<string> GetDerivedDataAsync();
+    }
+}
+""";
+        var (driver, outputCompilation) = VerifyFixture.RunGeneratorDriver(source);
+        return VerifyFixture.VerifyGenerator(driver, outputCompilation);
+    }
+
+    /// <summary>
+    /// 场景 22c: [InheritedFrom] 继承模式（AppContext 模式基类 + 派生类）—— 基类为非 HttpClient 模式时
+    /// 已声明 protected readonly _appAuthorizer，派生类不得重复声明（CS0108），且必须在 base(...) 中
+    /// 透传 appAuthorizer（漏传会使基类守卫字段恒为 null，MT-02 默认拒绝语义下应用切换必然抛异常，P0）。
+    /// 该用例锁定判定口径为 BaseHasAppAuthorizer（与发射器「是否声明该字段」同源），而非 BaseHasTokenManager
+    /// （后者在 AppContext 模式基类下为 false，会错误地让派生类重复声明并不透传）。
+    /// </summary>
+    [Fact]
+    public Task Snapshot_InheritedFromMode_AppContextBase_ShouldForwardAppAuthorizer()
+    {
+        var source = """
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi(IsAbstract = true)]
+    public interface IBaseApi
+    {
+        [Get("/base")]
+        Task<string> GetBaseDataAsync();
+    }
+
+    [HttpClientApi(InheritedFrom = "BaseApi")]
+    public interface IDerivedApi : IBaseApi
+    {
+        [Get("/derived")]
+        Task<string> GetDerivedDataAsync();
+    }
+}
+""";
+        var (driver, outputCompilation) = VerifyFixture.RunGeneratorDriver(source);
+        return VerifyFixture.VerifyGenerator(driver, outputCompilation);
+    }
+
     #endregion
 
     #region GEN-03 方法级固定 Header/Query — 场景 23-24（基线新增，不允许既有基线漂移）

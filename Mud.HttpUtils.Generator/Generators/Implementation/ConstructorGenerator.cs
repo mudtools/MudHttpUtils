@@ -501,9 +501,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         optionalParameters.Add("IHttpContentSerializer? contentSerializer = null");
         optionalParameters.Add("ILogger? logger = null");
 
-        // 继承模式下也需要 appAuthorizer 参数（UseApp/BeginScope 守卫引用此字段）
-        // 注意：TokenManager 模式已在上方分支中添加了 appAuthorizer，此处仅补充非 TokenManager 的继承模式
-        if (_context.HasInheritedFrom && !_context.HasTokenManager)
+        // 继承模式下也需要 appAuthorizer 参数（UseApp/BeginScope 守卫引用此字段）。
+        // 注意：TokenManager 与 AppContext（else）分支上方均已添加该参数，此处仅补充 HttpClient 模式的继承场景
+        // （基类为非 HttpClient 模式时须向基类透传 appAuthorizer）。此前条件误写为 !HasTokenManager，
+        // 导致 AppContext 模式基类的派生类重复声明同名参数（CS0100），生成代码无法编译。
+        if (_context.HasInheritedFrom && _context.HasHttpClient)
         {
             optionalParameters.Add("IAppAccessAuthorizer? appAuthorizer = null");
         }

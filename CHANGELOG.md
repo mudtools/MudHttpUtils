@@ -25,6 +25,11 @@
 - **生成代码的可空实参（CS8604）**：`FormContentGenerator` 字符串守卫分支与可空值类型 `ToString()` 分支
   补 null 容忍标注；`RequestBuilder` 对可空字符串路径参数转义时补 `?? throw new ArgumentNullException(nameof(...))`
   （保持既有「null 即抛异常」的运行期语义，仅把参数名指向真正的路径参数）。
+- **继承模式下 AppContext 模式基类的派生类生成代码无法编译（CS0100）**：`ConstructorGenerator` 为继承模式
+  补充 `appAuthorizer` 可选参数的条件误写为 `!HasTokenManager`，与 AppContext 分支重复添加同名参数，
+  凡继承自 AppContext 模式 `[HttpClientApi(IsAbstract = true)]` 基接口的派生客户端均无法编译。
+  现改为仅补充 HttpClient 模式的继承场景（该缺陷在合并基线即已存在，因既有快照仅覆盖 TokenManager
+  模式基类而未被发现，本轮合并新增场景 22a-22c 回归快照时暴露并修复）。
 
 #### 新增（Added）
 
