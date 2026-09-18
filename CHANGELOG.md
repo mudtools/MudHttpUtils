@@ -16,12 +16,15 @@
   基接口的生成客户端，应用切换在注册了授权器的情况下也必然抛异常。现派生类经 base(...) 命名参数转发
   `appAuthorizer`，且不再重复声明该字段（同时消除下游约 1184 条 CS0108）。
 - **继承模式下派生类重复实现基接口的 [Header]/[Query]/[Path] 属性（CS0108/CS8618）**：
-  `AnalyzeInterfaceProperties` 现标记来自 InheritedFrom 基接口链的属性（`IsFromInheritedBase`），
+  `AnalyzeInterfaceProperties` 现标记来自 InheritedFrom 基接口链的属性（`IsFromInheritedBase`，
+  口径为该基接口**及其祖先接口**，派生侧新增基接口的属性仍由派生类发射以保证接口契约完整），
   派生类只注入其值、不再重复声明；`[Header]` 字符串属性以 `= string.Empty` 初始化（消除 CS8618）。
 - **生成代码的值类型空过滤（CS0472）**：`QueryParameterBinder` 对 `int[]` 等非可空值类型元素数组
-  不再发射恒真的 `.Where(__item => __item != null)`（重复参数与分隔符两条路径，优先用 Roslyn 符号判定）。
+  不再发射恒真的 `.Where(__item => __item != null)`（重复参数与分隔符两条路径共用同一过滤片段，
+  优先用 Roslyn 符号判定，自定义 struct[] 同样识别）。
 - **生成代码的可空实参（CS8604）**：`FormContentGenerator` 字符串守卫分支与可空值类型 `ToString()` 分支
-  补 null 容忍标注；`RequestBuilder` 对可空字符串路径参数转义时合并 `?? string.Empty`。
+  补 null 容忍标注；`RequestBuilder` 对可空字符串路径参数转义时补 `?? throw new ArgumentNullException(nameof(...))`
+  （保持既有「null 即抛异常」的运行期语义，仅把参数名指向真正的路径参数）。
 
 #### 新增（Added）
 
