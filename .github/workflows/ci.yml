@@ -252,7 +252,7 @@ jobs:
           if [ -f "$BIN_PATH" ]; then
             OUTPUT=$("$BIN_PATH" 2>&1 || true)
             echo "$OUTPUT"
-            if echo "$OUTPUT" | grep -q "AOT_OK"; then
+            if grep -q "AOT_OK" <<< "$OUTPUT"; then
               echo "✓ AOT runtime verification passed (net10.0)"
             else
               echo "✗ AOT runtime verification FAILED (net10.0) - AOT_OK not found in output"
@@ -263,7 +263,7 @@ jobs:
             # 断言恒失败。现 Demo 在每个场景前打印 ASCII 标记行 "[SCENE] {方法名}"，此处按其断言
             # （grep -F 逐字匹配，避免 [QueryMap] 之类被当作正则字符类）。
             for SCENE in "DemoResponseTypeWrapping" "DemoComplexQueryJsonSerialization" "DemoQueryMapFeatureCoverage" "DemoSensitiveDataMasker" "DemoPolymorphismRoundTrip"; do
-              if echo "$OUTPUT" | grep -Fq "[SCENE] $SCENE"; then
+              if grep -Fq "[SCENE] $SCENE" <<< "$OUTPUT"; then
                 echo "✓ Scene $SCENE executed (net10.0)"
               else
                 echo "✗ Scene $SCENE NOT found in output (net10.0)"
@@ -282,7 +282,7 @@ jobs:
           if [ -f "$BIN_PATH" ]; then
             OUTPUT=$("$BIN_PATH" 2>&1 || true)
             echo "$OUTPUT"
-            if echo "$OUTPUT" | grep -q "AOT_OK"; then
+            if grep -q "AOT_OK" <<< "$OUTPUT"; then
               echo "✓ AOT runtime verification passed (net8.0)"
             else
               echo "✗ AOT runtime verification FAILED (net8.0) - AOT_OK not found in output"
@@ -290,7 +290,7 @@ jobs:
             fi
             # [v2.4 §1.4 + AOT 体系修复] 关键场景硬门禁断言（说明见 net10.0 步骤）
             for SCENE in "DemoResponseTypeWrapping" "DemoComplexQueryJsonSerialization" "DemoQueryMapFeatureCoverage" "DemoSensitiveDataMasker" "DemoPolymorphismRoundTrip"; do
-              if echo "$OUTPUT" | grep -Fq "[SCENE] $SCENE"; then
+              if grep -Fq "[SCENE] $SCENE" <<< "$OUTPUT"; then
                 echo "✓ Scene $SCENE executed (net8.0)"
               else
                 echo "✗ Scene $SCENE NOT found in output (net8.0)"
@@ -310,7 +310,7 @@ jobs:
           if [ -f "$BIN_PATH" ]; then
             OUTPUT=$("$BIN_PATH" 2>&1 || true)
             echo "$OUTPUT"
-            if echo "$OUTPUT" | grep -q "AOT_OK"; then
+            if grep -q "AOT_OK" <<< "$OUTPUT"; then
               echo "✓ AOT FullTrim verification passed (net10.0)"
             else
               echo "✗ FullTrim verification FAILED - AOT_OK not found in output"
@@ -320,7 +320,7 @@ jobs:
             # 场景标识已改为 ASCII（RunScenarioAsync 打印 "[SCENE] {id}"）：原断言用中文场景名且
             # 只是在失败分支才打印，断言方向与实现相反 → 门禁必然红。
             for SCENE in "JsonSerialization" "AotSafeMasker" "EncryptContent" "QueryParameters" "GeneratedContext"; do
-              if echo "$OUTPUT" | grep -Fq "[SCENE] $SCENE"; then
+              if grep -Fq "[SCENE] $SCENE" <<< "$OUTPUT"; then
                 echo "✓ Scene $SCENE executed (FullTrim)"
               else
                 echo "✗ Scene $SCENE NOT found in output (FullTrim)"
@@ -340,14 +340,14 @@ jobs:
           if [ -f "$BIN_PATH" ]; then
             OUTPUT=$("$BIN_PATH" 2>&1 || true)
             echo "$OUTPUT"
-            if echo "$OUTPUT" | grep -q "AOT_OK"; then
+            if grep -q "AOT_OK" <<< "$OUTPUT"; then
               echo "✓ AOT FullTrim verification passed (net8.0)"
             else
               echo "✗ FullTrim verification FAILED (net8.0) - AOT_OK not found in output"
               exit 1
             fi
             for SCENE in "JsonSerialization" "AotSafeMasker" "EncryptContent" "QueryParameters" "GeneratedContext"; do
-              if echo "$OUTPUT" | grep -Fq "[SCENE] $SCENE"; then
+              if grep -Fq "[SCENE] $SCENE" <<< "$OUTPUT"; then
                 echo "✓ Scene $SCENE executed (FullTrim net8.0)"
               else
                 echo "✗ Scene $SCENE NOT found in output (FullTrim net8.0)"
@@ -684,7 +684,7 @@ jobs:
           if [ -f "$BIN_PATH" ]; then
             OUTPUT=$("$BIN_PATH" 2>&1 || true)
             echo "$OUTPUT"
-            if echo "$OUTPUT" | grep -q "AOT_OK"; then
+            if grep -q "AOT_OK" <<< "$OUTPUT"; then
               echo "✓ AOT PackageRef verification passed (net8.0)"
             else
               echo "✗ AOT PackageRef verification FAILED (net8.0) - AOT_OK not found in output"
@@ -702,7 +702,7 @@ jobs:
           if [ -f "$BIN_PATH" ]; then
             OUTPUT=$("$BIN_PATH" 2>&1 || true)
             echo "$OUTPUT"
-            if echo "$OUTPUT" | grep -q "AOT_OK"; then
+            if grep -q "AOT_OK" <<< "$OUTPUT"; then
               echo "✓ AOT PackageRef verification passed (net10.0)"
             else
               echo "✗ AOT PackageRef verification FAILED (net10.0) - AOT_OK not found in output"
