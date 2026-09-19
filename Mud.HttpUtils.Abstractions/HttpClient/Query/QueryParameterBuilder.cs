@@ -228,7 +228,12 @@ public sealed class QueryParameterBuilder(string baseUrl)
 
         // M3-#25（方案 B）：相对 baseUrl 不适用 UriBuilder（要求绝对 URI），降级为字符串拼接
         // （合法且常见："/api/users" + "?page=1"）
-        if (!Uri.TryCreate(_baseUrl, UriKind.Absolute, out _))
+        // [跨平台] Unix 上 .NET 6 会把前导 '/' 的字符串（如 "/relative"）解析为 file:// 绝对 URI
+        // （.NET 8+ 已移除该行为），故除 UriKind.Absolute 外还须要求 http/https scheme，
+        // 否则 Linux + net6 会误入 UriBuilder 分支抛 UriFormatException。
+        if (!Uri.TryCreate(_baseUrl, UriKind.Absolute, out var absUri)
+            || (absUri.Scheme != Uri.UriSchemeHttp && absUri.Scheme != Uri.UriSchemeHttps)
+            || absUri.Host.Length == 0)
         {
             _cachedQueryString = _baseUrl + (query.Length > 0 ? "?" + query : string.Empty);
             return _cachedQueryString;

@@ -83,7 +83,14 @@ public class XmlContentSerializer : IHttpContentSerializer
     private string SerializeToString(object? item, Type type)
     {
         var serializer = new XmlSerializer(type);
-        using var sw = new EncodingAwareStringWriter(_settings.WriterSettings.Encoding);
+        // [跨平台] XmlWriter 包装 TextWriter 时采用 TextWriter.NewLine 作为缩进换行符，
+        // 而 StringWriter.NewLine 默认为 Environment.NewLine（Linux 为 "\n"、Windows 为 "\r\n"），
+        // 会导致缩进输出随平台漂移。显式对齐 WriterSettings.NewLineChars（默认 "\r\n"），
+        // 使字符串路径与 MemoryStream 路径（直接使用 NewLineChars）跨平台一致。
+        using var sw = new EncodingAwareStringWriter(_settings.WriterSettings.Encoding)
+        {
+            NewLine = _settings.WriterSettings.NewLineChars
+        };
         using var xmlWriter = XmlWriter.Create(sw, _settings.WriterSettings);
         serializer.Serialize(xmlWriter, item);
         xmlWriter.Flush();

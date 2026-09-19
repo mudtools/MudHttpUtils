@@ -51,7 +51,17 @@ jobs:
         run: dotnet build ${{ matrix.test_project }} --no-restore --configuration Release
 
       - name: Run tests
-        run: dotnet test ${{ matrix.test_project }} --no-build --configuration Release --logger "console;verbosity=detailed"
+        run: dotnet test ${{ matrix.test_project }} --no-build --configuration Release --logger "console;verbosity=detailed" --logger "trx;LogFilePrefix=results"
+
+      # 失败自诊断：trx 内含精确失败用例名 + 错误消息/堆栈，无需翻 console 日志
+      - name: Upload test results (trx)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ strategy.job-index }}
+          path: '**/TestResults/*.trx'
+          retention-days: 7
+          if-no-files-found: ignore
 
       # ── 仅分析器通道（方案 §3.5 / §5.4）──────────────────────────────
       # 探针工程 Tests/AnalyzerOnlyProbe 刻意包含违规样例（MUD001/MUD002/MUD004），
