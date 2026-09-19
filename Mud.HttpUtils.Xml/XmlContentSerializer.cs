@@ -83,10 +83,8 @@ public class XmlContentSerializer : IHttpContentSerializer
     private string SerializeToString(object? item, Type type)
     {
         var serializer = new XmlSerializer(type);
-        // [跨平台] XmlWriter 包装 TextWriter 时采用 TextWriter.NewLine 作为缩进换行符，
-        // 而 StringWriter.NewLine 默认为 Environment.NewLine（Linux 为 "\n"、Windows 为 "\r\n"），
-        // 会导致缩进输出随平台漂移。显式对齐 WriterSettings.NewLineChars（默认 "\r\n"），
-        // 使字符串路径与 MemoryStream 路径（直接使用 NewLineChars）跨平台一致。
+        // [跨平台] StringWriter.NewLine 显式对齐 WriterSettings.NewLineChars，
+        // 确保 XmlWriter 缩进换行（取自 NewLineChars）与编码感知 StringWriter 的行为一致。
         using var sw = new EncodingAwareStringWriter(_settings.WriterSettings.Encoding)
         {
             NewLine = _settings.WriterSettings.NewLineChars
@@ -185,7 +183,12 @@ public class XmlContentSerializerSettings
     {
         Encoding = System.Text.Encoding.UTF8,
         Indent = false,
-        OmitXmlDeclaration = false
+        OmitXmlDeclaration = false,
+        // [跨平台] 固化换行符：XmlWriter 实际使用的缩进换行来自 NewLineChars，
+        // 而 .NET 默认值会随平台漂移（Linux 为 "\n"、Windows 为 "\r\n"），导致缩进输出
+        // 在不同 OS 上不一致。显式设为 "\r\n"（文档语义的默认值），保证字符串/字节两条
+        // 序列化路径跨平台、跨 TFM 输出一致。消费方仍可按需覆盖。
+        NewLineChars = "\r\n"
     };
 
     /// <summary>
