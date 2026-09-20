@@ -306,7 +306,7 @@ internal class GeneratorContext
 
             foreach (var method in allMethods)
             {
-                var methodAttrs = method.GetAttributes();
+                var methodAttrs = GetMethodAttributes(method);
 
                 // Cache 检测
                 if (!HasCacheVaryByUser)

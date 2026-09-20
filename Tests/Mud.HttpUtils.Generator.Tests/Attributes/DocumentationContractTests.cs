@@ -37,6 +37,14 @@ public class DocumentationContractTests
         new(@"\|[ \t]*`(?<id>[A-Z][A-Z0-9]*\d{3})`[ \t]*\|[ \t]*(?<severity>[^|]+?)[ \t]*\|",
             RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
+    /// <summary>
+    /// build_property. 之后的属性名应为合法 C# 标识符（MSBuild 属性名注册值亦为标识符）。
+    /// 用「最长标识符前缀」提取，避免 XML 文档注释中的全角标点（如 ）。《》等）污染截取结果
+    /// （G7-06 在 GeneratorConfigSnapshot 的 XML 注释含 <c>build_property.HttpClientOptionsName）。</c> 曾被误报为未注册属性）。
+    /// </summary>
+    private static readonly Regex BuildPropertyKeyRegex =
+        new(@"^[A-Za-z_][A-Za-z0-9_]*", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     private static string ReadReadme()
         => File.ReadAllText(Path.GetFullPath(GeneratorReadmePath));
 
@@ -239,8 +247,10 @@ public class DocumentationContractTests
                 var idx = line.IndexOf("build_property.", StringComparison.Ordinal);
                 if (idx < 0) return null;
                 var rest = line.Substring(idx + "build_property.".Length).Trim();
-                var end = rest.IndexOfAny(['"', ',', ' ', ')', ';', '=', '<', '>', '`']);
-                return end > 0 ? rest.Substring(0, end) : rest;
+                // 仅提取合法标识符前缀：XML 注释中的全角标点（）。《》等）与自然语言后缀一律截断，
+                // 与 props 注册名（均为合法 C# 标识符）保持同一字符集，杜绝解析歧义。
+                var match = BuildPropertyKeyRegex.Match(rest);
+                return match.Success ? match.Value : null;
             })
             .Where(k => k != null)
             .Select(k => k!)

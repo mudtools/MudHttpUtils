@@ -900,6 +900,130 @@ public class DefaultHttpRequestExecutorTests
         }
     }
 
+    // ─────────────── [G7-02 / G7-03] Overwrite 语义与半写防护 ───────────────
+
+    /// <summary>
+    /// G7-02：<c>Overwrite=false</c> 且目标文件已存在时必须拒绝下载（抛 <see cref="IOException"/>），
+    /// 且原文件字节保持不变（修复前 FileMode.Create 恒覆盖，静默覆盖已有文件）。
+    /// </summary>
+    [Fact]
+    public async Task DownloadLarge_OverwriteFalse_ExistingFile_Throws_AndPreservesContent()
+    {
+        var data = new byte[] { 1, 2, 3, 4, 5 };
+        var mockClient = new Mock<IBaseHttpClient>();
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(data)
+        };
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
+
+        var tempFile = Path.Combine(Path.GetTempPath(), $"mud_test_{Guid.NewGuid():N}.bin");
+        try
+        {
+            await File.WriteAllTextAsync(tempFile, "OLD");
+
+            var act = async () => await executor.DownloadLargeAsync(CreateRequest(), mockClient.Object, tempFile, overwrite: false);
+
+            await act.Should().ThrowAsync<IOException>()
+                .WithMessage("文件已存在:*")
+                .WithMessage("*" + tempFile + "*");
+
+            // 原文件不得被触碰
+            (await File.ReadAllTextAsync(tempFile)).Should().Be("OLD",
+                "Overwrite=false 拒绝后原文件字节必须保持不变");
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+            if (File.Exists(tempFile + ".mudtmp"))
+                File.Delete(tempFile + ".mudtmp");
+        }
+    }
+
+    /// <summary>
+    /// G7-02：<c>Overwrite=true</c>（默认）且目标文件已存在时必须用新内容替换。
+    /// </summary>
+    [Fact]
+    public async Task DownloadLarge_OverwriteTrue_ExistingFile_Replaced()
+    {
+        var data = new byte[] { 9, 8, 7 };
+        var mockClient = new Mock<IBaseHttpClient>();
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(data)
+        };
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
+
+        var tempFile = Path.Combine(Path.GetTempPath(), $"mud_test_{Guid.NewGuid():N}.bin");
+        try
+        {
+            await File.WriteAllTextAsync(tempFile, "OLD-CONTENT");
+
+            await executor.DownloadLargeAsync(CreateRequest(), mockClient.Object, tempFile);
+
+            (await File.ReadAllBytesAsync(tempFile)).Should().Equal(data,
+                "Overwrite=true 必须用新内容覆盖已有文件");
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+            if (File.Exists(tempFile + ".mudtmp"))
+                File.Delete(tempFile + ".mudtmp");
+        }
+    }
+
+    /// <summary>
+    /// G7-03：下载中途取消必须不残留半写文件 —— 最终路径不得出现文件（或仍为旧完整内容），
+    /// 临时文件（<c>.mudtmp</c>）必须被清理。
+    /// </summary>
+    [Fact]
+    public async Task DownloadLarge_Cancel_Midway_LeavesNoPartialFinalFile()
+    {
+        var data = new byte[1024 * 1024]; // 1 MiB，确保中途取消发生在字节流复制过程中
+        new Random(42).NextBytes(data);
+        var contentStream = new PartialThenBlockingStream(data, blockAfterBytes: 81920);
+        var mockClient = new Mock<IBaseHttpClient>();
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StreamContent(contentStream)
+        };
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
+
+        var tempFile = Path.Combine(Path.GetTempPath(), $"mud_test_{Guid.NewGuid():N}.bin");
+        using var cts = new CancellationTokenSource();
+        try
+        {
+            var downloadTask = executor.DownloadLargeAsync(CreateRequest(), mockClient.Object, tempFile, cancellationToken: cts.Token);
+
+            // 确定性触发：等待流已写出大部分数据并进入阻塞点，再取消
+            await contentStream.WhenBlocked.WaitAsync(TimeSpan.FromSeconds(10));
+            cts.Cancel();
+
+            var act = async () => await downloadTask;
+            await act.Should().ThrowAsync<OperationCanceledException>();
+
+            File.Exists(tempFile).Should().BeFalse(
+                "G7-03：取消后最终路径不得残留半写文件（修复前直接写最终路径，取消后残留半写）");
+            File.Exists(tempFile + ".mudtmp").Should().BeFalse(
+                "G7-03：取消后临时文件必须被尽力清理");
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+            if (File.Exists(tempFile + ".mudtmp"))
+                File.Delete(tempFile + ".mudtmp");
+        }
+    }
+
     #endregion
 
     #region Download Observability
@@ -1106,6 +1230,59 @@ public class DefaultHttpRequestExecutorTests
     }
 
     #endregion
+
+    /// <summary>
+    /// G7-03 测试辅助流：先正常读出（供 <c>CopyToAsync</c> 写入临时文件）前
+    /// <paramref name="blockAfterBytes"/> 字节到流尾的数据，随后在下一个读请求处
+    /// 触发 <see cref="WhenBlocked"/> 并进入无限等待（随取消令牌抛
+    /// <see cref="OperationCanceledException"/>），模拟下载中途取消。
+    /// </summary>
+    private sealed class PartialThenBlockingStream : Stream
+    {
+        private readonly byte[] _data;
+        private readonly int _blockAfterBytes;
+        private readonly TaskCompletionSource _whenBlocked = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _position;
+
+        public PartialThenBlockingStream(byte[] data, int blockAfterBytes)
+        {
+            _data = data;
+            _blockAfterBytes = blockAfterBytes;
+        }
+
+        /// <summary>读取位置推进到阻塞点（即将进入无限等待）时完成。</summary>
+        public Task WhenBlocked => _whenBlocked.Task;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => _data.Length;
+        public override long Position { get => _position; set => throw new NotSupportedException(); }
+        public override void Flush() { }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException("仅支持异步读取路径");
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException("仅支持异步读取路径");
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var remaining = _data.Length - _position;
+            if (remaining <= _blockAfterBytes)
+            {
+                _whenBlocked.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+                return 0;
+            }
+
+            var toCopy = Math.Min(buffer.Length, remaining);
+            _data.AsMemory(_position, toCopy).CopyTo(buffer);
+            _position += toCopy;
+            return toCopy;
+        }
+    }
 
     /// <summary>
     /// 自定义 HttpContent，其 SerializeToStreamAsync 抛出异常，用于测试下载失败场景。

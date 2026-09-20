@@ -568,6 +568,16 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             {
                 baseParameters.Add("resilienceResolver");
             }
+            // [G7-01] 基类为默认模式（构造函数持有可选 IAppManager<IMudAppContext>? appManager → _appManager 字段）时，
+            // 派生类必须透传 appManager，否则 DI 注入被丢弃，基类 _appManager 恒为 null，
+            // UseApp/BeginScope(appKey) 恒抛「当前模式不支持」（多应用不可用，P0）。
+            // 位置约束：C# 命名实参后不得跟按位置实参（CS8323），故本命名实参必须位于全部位置实参之后
+            // （与 appAuthorizer 同为命名实参，顺序无关）。仅基类为默认模式时透传；
+            // 基类为 TokenManager/HttpClient 模式时派生 appManager 形参类型不匹配，不得传。
+            if (_context.Configuration.BaseHasAppManager)
+            {
+                baseParameters.Add("appManager: appManager");
+            }
             // 基类持有 _appAuthorizer 时由基类构造函数完成赋值（派生类不再自行声明/赋值，见 GenerateFieldsForInheritedMode）。
             // 必须向基类转发 appAuthorizer：基类的 UseApp/BeginScope 守卫读取的是基类自己的 _appAuthorizer 字段，
             // 漏传会使其恒为 null（MT-02 默认拒绝语义下继承客户端的应用切换永远抛异常）。

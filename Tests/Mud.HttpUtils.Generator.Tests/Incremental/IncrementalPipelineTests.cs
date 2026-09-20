@@ -413,6 +413,51 @@ public class IncrementalPipelineTests
             $"实际 Reason 序列：[{string.Join(", ", reasons)}]");
     }
 
+    // ─────────────── [G7-06] 配置值快照：Provider 实例重建但值相同时下游缓存命中 ───────────────
+
+    /// <summary>
+    /// [G7-06] 两个「内容相同、实例不同」的 <see cref="AnalyzerConfigOptionsProvider"/> 构建的
+    /// <see cref="GeneratorConfigSnapshot"/> 必须值相等（Comparer.Equals == true 且 HashCode 相同）。
+    /// <para>
+    /// 这是 IDE 增量恢复的防线：Provider 类型无 <c>Equals</c>（引用相等），若 Combine 图仍以引用型
+    /// provider 为输入，则 IDE 重建 provider 实例（值未变）时下游恒 <c>Modified</c>（缓存全量失效）。
+    /// G7-06 改为值相等快照后，此断言钉死「值相等 → 快照相等 → 下游 Cached」的语义。
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void ProviderInstanceRecreated_SameValues_ShouldBeValueEqual()
+    {
+        var providerA = new TestAnalyzerConfigOptionsProvider(new Dictionary<string, string>());
+        var providerB = new TestAnalyzerConfigOptionsProvider(new Dictionary<string, string>());
+
+        var snapshotA = GeneratorConfigSnapshot.Create(providerA);
+        var snapshotB = GeneratorConfigSnapshot.Create(providerB);
+
+        GeneratorConfigSnapshot.Comparer.Equals(snapshotA, snapshotB)
+            .Should().BeTrue("配置值相同（空字典）时，不同 provider 实例的快照必须值相等");
+        GeneratorConfigSnapshot.Comparer.GetHashCode(snapshotA)
+            .Should().Be(GeneratorConfigSnapshot.Comparer.GetHashCode(snapshotB),
+                "值相等快照的散列必须一致，否则融入 Combine 图后退化为引用比较");
+    }
+
+    /// <summary>
+    /// [G7-06] 配置值真正变化（ForceHttpGenerator 翻转）时快照必须不相等（下游 Modified）。
+    /// <para>与 <see cref="ForceHttpGenerator_ShouldChangeSaltValue"/> 互为两面：salt 与快照双通道失效。</para>
+    /// </summary>
+    [Fact]
+    public void ForceFlip_ConfigSnapshotShouldDiffer()
+    {
+        var normalProvider = new TestAnalyzerConfigOptionsProvider(new Dictionary<string, string>());
+        var forceProvider = new TestAnalyzerConfigOptionsProvider(
+            new Dictionary<string, string> { ["build_property.ForceHttpGenerator"] = "true" });
+
+        var normalSnapshot = GeneratorConfigSnapshot.Create(normalProvider);
+        var forceSnapshot = GeneratorConfigSnapshot.Create(forceProvider);
+
+        GeneratorConfigSnapshot.Comparer.Equals(normalSnapshot, forceSnapshot)
+            .Should().BeFalse("ForceHttpGenerator 翻转必须使快照不相等，否则逃生舱在下游 Combine 中静默失效");
+    }
+
     private static string GetSaltOutput(AnalyzerConfigOptionsProvider provider)
     {
         GeneratorDriver driver = CSharpGeneratorDriver.Create(

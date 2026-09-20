@@ -142,6 +142,49 @@ public class ReturnTypeCapabilityContractTests
     }
 
     /// <summary>
+    /// G7-09：直达/流式返回类型必须在生成 XML 中携带「所有权」remarks（生成面契约），
+    /// 避免调用方误用导致底层 HTTP 响应泄漏。
+    /// </summary>
+    /// <remarks>
+    /// 守卫三组典型的「用户自管」返回形态，断言各自应有的所有权提示与释放指引关键字；
+    /// 与 G7-16（手动枚举器 + ConfigureAwait(false)）联动：流式所有权文档在有正确落点后不得回退。
+    /// </remarks>
+    [Theory]
+    [InlineData("Task<HttpResponseMessage> GetRawAsync();", "SendRawAsync(", "所有权归调用方", "Dispose")]
+    [InlineData("Task<Stream> GetStreamAsync();", "SendStreamAsync(", "所有权归调用方", "Dispose")]
+    [InlineData("IAsyncEnumerable<Dto> StreamAsync();", "SendAsAsyncEnumerable<", "流式返回所有权", "释放枚举器")]
+    public void DirectOrStreamReturnType_EmitsOwnershipRemarks(
+        string declaration, string expectedCall, string ownershipKeyword, string disposeKeyword)
+    {
+        var source = BuildSource(declaration);
+
+        var output = GeneratorCompileAssert.RunAndAssertNoErrors(
+            source, description: $"G7-09 所有权 remarks：{declaration}");
+
+        var generated = GetGeneratedCode(output);
+        generated.Should().Contain(expectedCall, $"受支持的返回类型必须走对应生成分支：{declaration}");
+        generated.Should().Contain(ownershipKeyword,
+            $"G7-09：{declaration} 的生成 XML 必须包含所有权提示文字（防止调用方误用泄漏响应）");
+        generated.Should().Contain(disposeKeyword,
+            $"G7-09：{declaration} 的生成 XML 必须包含释放指引关键字");
+    }
+
+    /// <summary>
+    /// G7-09 反面守卫：执行器拥有响应生命周期的普通返回类型不得携带所有权 remarks，保持生成面精简。
+    /// </summary>
+    [Fact]
+    public void OrdinaryReturnType_DoesNotEmitOwnershipRemarks()
+    {
+        var source = BuildSource("Task<string> GetAsync();");
+
+        var output = GeneratorCompileAssert.RunAndAssertNoErrors(
+            source, description: "返回 Task<string> 的接口");
+
+        GetGeneratedCode(output).Should().NotContain("所有权",
+            "G7-09：普通返回类型的响应生命周期由执行器持有，调用方无需释放，不得追加所有权 remarks");
+    }
+
+    /// <summary>
     /// 不受支持返回类型样本：必须发射占位实现 + 报告 HTTPCLIENT024，且 MUD002 必须报告；生成代码仍可编译。
     /// </summary>
     [Theory]

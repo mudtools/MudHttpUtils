@@ -102,4 +102,18 @@ internal ref struct ValueStringBuilder
         }
         return s;
     }
+
+    /// <summary>
+    /// 归还池化缓冲区（幂等）。<see cref="ToString"/> 已归还时再次调用无副作用。
+    /// 调用方应在 <c>try/finally</c> 中调用，确保 <see cref="Grow(int)"/>/<see cref="Append(char)"/> 抛异常
+    /// （如 OOM）时池租用不泄漏（G7-18）。
+    /// </summary>
+    public void Dispose()
+    {
+        if (_arrayToReturnToPool != null)
+        {
+            ArrayPool<char>.Shared.Return(_arrayToReturnToPool);
+            _arrayToReturnToPool = null;
+        }
+    }
 }

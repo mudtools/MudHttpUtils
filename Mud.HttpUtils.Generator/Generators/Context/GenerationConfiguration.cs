@@ -95,6 +95,16 @@ internal class GenerationConfiguration
     public bool BaseHasAppAuthorizer { get; set; }
 
     /// <summary>
+    /// [G7-01] 基类是否为默认（AppContext）模式：既未设 <c>HttpClient</c> 亦未设 <c>TokenManage</c>。
+    /// 为 true 时基类构造函数持有可选参数 <c>IAppManager&lt;IMudAppContext&gt;? appManager</c>
+    /// （映射为基类 <c>_appManager</c> 字段），派生类必须在 <c>base(...)</c> 中透传 <c>appManager: appManager</c>，
+    /// 否则 DI 注入的 appManager 被丢弃，基类 <c>_appManager</c> 恒为 null，
+    /// UseApp/BeginScope(appKey) 抛「当前模式不支持」（多应用不可用，P0）。
+    /// 与 <c>BaseHasAppAuthorizer</c>（非 HttpClient 即 true）不同，本旗标仅默认模式为 true。
+    /// </summary>
+    public bool BaseHasAppManager { get; set; }
+
+    /// <summary>
     /// InheritedFrom 对应的基接口名称（用于排除基接口方法，避免多基接口场景下遗漏方法）。
     /// </summary>
     public string? InheritedFromInterfaceName { get; set; }

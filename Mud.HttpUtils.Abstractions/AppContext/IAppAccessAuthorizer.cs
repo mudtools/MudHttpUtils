@@ -16,8 +16,14 @@ namespace Mud.HttpUtils;
 /// 接受外部传入的 appKey。若 appKey 来源于请求参数，必须经本接口授权，否则可跨租户读取他人应用上下文与令牌。
 /// </para>
 /// <para>
-/// 未注册实现时保持既有行为（不授权、仅存在性校验），以保持向后兼容；
-/// 多租户宿主应显式注册实现，例如：
+/// <b>MT-02（BC-18）默认拒绝</b>：未注册本接口实现时，生成代码的
+/// <c>UseApp(appKey)</c> / <c>UseAppScope(appKey)</c> / <c>BeginScope(appKey)</c>
+/// 会直接抛出 <see cref="InvalidOperationException"/>（接线缺陷，而非业务拒绝）——
+/// 不存在"未注册即放行"的隐式行为。
+/// </para>
+/// <para>
+/// 单应用或完全受信场景请<b>显式</b>注册 <c>AllowAllAppAccessAuthorizer</c> 以表明放行意图；
+/// 多租户宿主应实现与当前调用主体（租户 / 用户）绑定的授权器，例如：
 /// <code>
 /// services.AddSingleton&lt;IAppAccessAuthorizer, PrincipalBoundAppAuthorizer&gt;();
 /// </code>

@@ -90,6 +90,10 @@ DI 服务依赖（ILogger / IHttpRequestInterceptor / IHttpResponseInterceptor /
 > （仅作用于 `GetAsync`/`PostAsync` 等由 `HttpClient` 内部创建请求的便捷重载）。
 > 因此如需 HTTP/2、HTTP/3，请通过 `EnhancedHttpClientOptions.HttpVersion`（或 `GeneratedClientOptions.HttpVersion`）显式配置。
 
+> **生成客户端与命名客户端（G7-04a）**：`[HttpClientApi]` 接口的注册代码会调用 `AddMudHttpClient("{接口名}_HttpClient", ...)` 注册命名客户端；但实现类构造函数注入的是**类型级** `IEnhancedHttpClient` / `IHttpRequestExecutor`（`RegisterNamedClient` 的 `TryAdd` 先注册者胜）。因此 `{接口名}_HttpClient` 只有在被注册为**默认** `IEnhancedHttpClient` 时才被实现类实际使用；否则接口级 `[HttpClientApi(Timeout)]` 对该接口的请求**不生效**。多接口共存时各命名客户端配置不按命名隔离（生成器报 `HTTPCLIENT033` Info 提示）。详见 Generator README「生成客户端命名」。
+
+> **无 DI 工厂路径能力子集（G7-15）**：仅**默认模式**（未声明 `HttpClient`/`TokenManage`）接口进入 `RestService.RegisterGeneratedFactory`（`ForGenerated<T>`）；其能力子集为 Cache / ResilienceResolver / SensitiveDataMasker / ExceptionRedactor / HttpVersion（net6+）/ AppAccessAuthorizer，**不含** 交互式 Logger（固定 `NullLogger`）、`maxSuccessResponseBytes`、TokenManager/HttpClient 模式。上表「③ 无 DI」一列即该子集的速览。
+
 #### 配置热更新能力矩阵（CFG-36 / F-3）
 
 `IConfigurationRoot.Reload()` 对各配置项的生效情况**并不一致**，下表为契约（请勿假设「改了配置就生效」）：
@@ -619,6 +623,27 @@ appManager.ConfigurationChanged += (sender, args) =>
 | URL 验证器 | `IUrlValidator` | `AddMudHttpUrlValidator()` | 静态调用与既有行为等价；DI 注册后可按应用隔离白名单 |
 
 > 可调用 `serviceProvider.ValidateMudHttpAppManagement()` 手动校验接线完整性（全 TFM 可用，供 netstandard2.0 宿主与单元测试使用）。也可调用 `AddMudHttpHealthChecks()` 注册 `mud_app_management` 健康检查，在 `/health` 端点观测多应用接线状态。
+
+> **自动注册 ≠ 应用已注册（G7-13）**：默认模式接口的注册代码会 `TryAddSingleton<IAppManager<IMudAppContext>>(sp => new DefaultAppManager<IMudAppContext>())` 自动注册一个**空**管理器（不覆盖宿主显式注册）。该自动注册仅消除「未注册 IAppManager」的误导性错误——其内部**未注册任何应用**，`UseApp`/`GetDefaultApp`/`BeginScope(appKey)` 依旧失败（抛 `InvalidOperationException`，消息明示「已注册但未注册应用」），且仅在 `ILoggerFactory` 存在时以 `LogWarning` 提示。需要多应用切换时**必须**显式注册应用管理器并调用 `RegisterApp`；**请勿把自动注册的空管理器当作应用已注册**。
+
+#### 令牌键与租户隔离（G7-12）
+
+取令牌链路固定为以下架构契约（**缓存键不含 AppKey**）：
+
+```
+生成键（TokenManagerKey / TokenType）
+  → ITokenProvider.GetTokenAsync(appContext, request)
+  → appContext.GetTokenManager(key)      // 租户维度 = 每 App 注册的管理器实例
+  → TokenManagerBase 缓存键 = scopeKey    // 无 appKey（DP-6：刻意设计，勿改键）
+  → BindTenantGuard(appContext.AppKey)   // 默认 EnforceTenantBinding = true（bind-once）
+```
+
+- **租户隔离的载体是「每 App 独立管理器实例」+ `BindTenantGuard` bind-once 守卫，不是缓存键**：
+  - `RegisterApp` 时应为每个 App 注册独立的管理器实例，`IMudAppContext.GetTokenManager(key)` 返回对应 App 的实例（`DefaultAppManager` 下由宿主自持上下文映射）；
+  - `DefaultTokenProvider` 在取令牌前统一执行 `BindTenantGuard(appContext.AppKey)`——同一 `TokenManagerBase` 实例被其它 AppKey 复用时 fail-closed（抛 `InvalidOperationException`，消息含 `MetricsKey` 与已绑定租户）；
+  - 401 恢复链路（`TokenRecoveryExecutor`，含扁平 `ITokenManagerRegistry` 路由）同受守卫约束：被拒时记 `TenantBindingRejected` 告警（EventId 162）并返回服务端真实 401，不向调用方抛异常。
+- **⚠️ 禁止回退**：多个 App 共享同一 `TokenManagerBase` 实例且 `EnforceTenantBinding = false`，除非能自证这些 App 的凭据**不含租户属性**（如共享静态客户端凭据）；跨租户复用同一实例会导致令牌/凭据错配，后果由宿主承担。
+- **键结构稳定**：`TokenManagerBase` 缓存与锁按 `scopeKey`（作用域键）组织，`GetTokenManagerKey` / `MetricsKey` 组成不含 AppKey；将 AppKey 并入键会破坏单应用缓存语义与指标兼容性，**不提供也不建议**该变体。生成键（`TokenManage` / `[Token]`）只声明「取哪个键的令牌」，键 → 实例的解析由宿主应用上下文决定。
 
 #### 上下文归还约束（重要）
 

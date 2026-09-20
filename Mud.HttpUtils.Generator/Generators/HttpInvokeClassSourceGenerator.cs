@@ -21,8 +21,6 @@ namespace Mud.HttpUtils;
 [Generator(LanguageNames.CSharp)]
 internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
 {
-    private const string DefaultHttpClientOptionsName = "HttpClientOptions";
-
     /// <inheritdoc/>
     public override void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -45,19 +43,17 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
     protected override void ExecuteInterfaceGenerator(
         InterfaceModel model,
         SourceProductionContext context,
-        AnalyzerConfigOptionsProvider configOptionsProvider,
+        GeneratorConfigSnapshot configSnapshot,
         string generationSalt)
     {
-        if (configOptionsProvider == null)
+        if (configSnapshot == null)
             return;
 
-        // T5.3: 全局禁用开关（调试与渐进迁移）
-        if (ProjectConfigHelper.ReadConfigValueAsBool(configOptionsProvider.GlobalOptions, "build_property.DisableMudSourceGenerator", false))
+        // T5.3: 全局禁用开关（调试与渐进迁移）；G7-06 起从配置值快照读取
+        if (configSnapshot.Disable)
             return;
 
-        var httpClientOptionsName = DefaultHttpClientOptionsName;
-        ProjectConfigHelper.ReadProjectOptions(configOptionsProvider.GlobalOptions, "build_property.HttpClientOptionsName",
-           val => httpClientOptionsName = val, DefaultHttpClientOptionsName);
+        var httpClientOptionsName = configSnapshot.OptionsName;
 
         // [AOT v4 Phase 18.3 / D19] 读取 AOT 上下文。
         // [F10 修复] 不再以「IsAotCompatible 是否启用」充当 Native AOT 判定：
@@ -65,16 +61,13 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
         //   - isAotEnabled（驱动 ConstructorGenerator 的 XML 静态字段替换）仅当「确实 AOT」时为 true。
         // 注：AOT007 的分级（Error/Warning）随诊断迁移至 AotXmlRejectionDiagnosticAnalyzer，
         // 该分析器自行经 AotModeResolver 读取同一份配置，本处不再需要 isAotAnalyzerOnly。
-        var aotMode = AotModeResolver.Resolve(configOptionsProvider.GlobalOptions);
-        var isAotEnabled = aotMode == AotRuntimeMode.Aot;
+        var isAotEnabled = configSnapshot.AotMode == AotRuntimeMode.Aot;
 
         // [v2.4 §3.4 D-03 修复] 读取消费项目 nullable 配置，条件化发射 #nullable enable
-        EmitNullableEnable = ProjectConfigHelper.ReadConfigValue(
-            configOptionsProvider.GlobalOptions, "build_property.Nullable", "enable") == "enable";
+        EmitNullableEnable = configSnapshot.NullableEnable;
 
         // [D-06 修复] 读取 MudEmitGeneratedCodeMarkers 开关，控制生成代码 [GeneratedCode] 标注
-        var emitGeneratedCodeMarkers = ProjectConfigHelper.ReadConfigValueAsBool(
-            configOptionsProvider.GlobalOptions, "build_property.MudEmitGeneratedCodeMarkers", true);
+        var emitGeneratedCodeMarkers = configSnapshot.EmitMarkers;
 
         var interfaceDecl = model.Syntax;
         var semanticModel = model.Context.SemanticModel;
@@ -104,14 +97,14 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
     protected override void ExecuteGenerator(
         ImmutableArray<InterfaceModel> interfaces,
         SourceProductionContext context,
-        AnalyzerConfigOptionsProvider configOptionsProvider,
+        GeneratorConfigSnapshot configSnapshot,
         string generationSalt)
     {
-        if (interfaces.IsDefaultOrEmpty || configOptionsProvider == null)
+        if (interfaces.IsDefaultOrEmpty || configSnapshot == null)
             return;
 
-        // T5.3: 全局禁用开关（调试与渐进迁移）
-        if (ProjectConfigHelper.ReadConfigValueAsBool(configOptionsProvider.GlobalOptions, "build_property.DisableMudSourceGenerator", false))
+        // T5.3: 全局禁用开关（调试与渐进迁移）；G7-06 起从配置值快照读取
+        if (configSnapshot.Disable)
             return;
 
         // [F4] 逃生舱生效提示：ForceHttpGenerator=true 强制刷新了增量缓存，输出可观测提示，

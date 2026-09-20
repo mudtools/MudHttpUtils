@@ -15,7 +15,7 @@ Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为
 - **HttpClient 模式**：支持通过 `HttpClient` 属性直接注入 HttpClient 接口，与 `TokenManage` 互斥
 - **依赖注入**：自动生成服务注册扩展方法 `AddWebApiHttpClient()`
 - **智能注释**：根据运行模式自动生成 DI 依赖提示注释
-- **Timeout 生效**：`[HttpClientApi(Timeout = N)]` 中的 `Timeout` 属性大于 0 时，生成器会在注册代码中生成 `client.Timeout` 设置
+- **Timeout 生效**：`[HttpClientApi(Timeout = N)]` 中的 `Timeout` 属性大于 0 时，生成器在注册代码中为命名客户端 `{接口名}_HttpClient` 生成 `client.Timeout` 设置（该超时属于命名客户端；实现类实际使用的 HttpClient 是否为其默认实例取决于注册顺序，见「生成客户端命名」）
 
 ### 高级功能
 
@@ -33,7 +33,7 @@ Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为
 - **忽略生成**：支持通过 `[IgnoreGenerator]` 特性忽略特定代码生成（接口级=完全不介入；方法级=跳过该方法）
 - **缓存支持**：识别 `[Cache]` 特性，配合 `CacheResponseInterceptor` 实现响应缓存
 - **安全认证**：识别 `TokenInjectionMode.ApiKey` 和 `TokenInjectionMode.HmacSignature` 模式
-- **日志脱敏**：识别 `[SensitiveData]` 特性，配合 `ISensitiveDataMasker` 实现日志脱敏
+- **日志脱敏**：`[SensitiveData]` 特性由**运行时掩码器**（`ISensitiveDataMasker`，如 `DefaultSensitiveDataMasker`）消费；生成器**不读取**该特性的 MaskMode/Prefix/Suffix，也不据此生成任何处理代码。AOT 掩码器 `AotSafeSensitiveDataMasker` 甚至**忽略**该特性，需 `Register<T>` 显式登记
 - **Token Scopes**：识别 `[Token(Scopes = "...")]` 特性，支持 OAuth2 令牌作用域
 - **Base Path 支持**：识别 `[BasePath]` 特性，支持接口级统一路径前缀，支持占位符
 - **接口级动态属性**：识别接口上标记 `[Query]`/`[Path]`/`[Header]` 的属性，生成实现类属性并应用于所有方法
@@ -265,25 +265,21 @@ public static partial class HttpClientApiExtensions
 
 #### Timeout 配置生成
 
-当 `[HttpClientApi(Timeout = N)]` 中 `Timeout > 0` 时，生成器会在注册方法中添加 `client.Timeout` 设置：
+当 `[HttpClientApi(Timeout = N)]` 中 `Timeout > 0` 时，生成器会在注册方法中为命名客户端 `{接口名}_HttpClient` 设置 `client.Timeout`：
 
 ```csharp
-[HttpClientApi(HttpClient = "IEnhancedHttpClient", Timeout = 50)]
+[HttpClientApi(Timeout = 50)]
 public interface IMyApi { }
 
-// 生成的注册代码：
-services.AddTransient<global::MyApp.IMyApi>(sp =>
+// 生成的注册代码（节选）：
+global::Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpClient(services, "IMyApi_HttpClient", client =>
 {
-    var httpClient = sp.GetRequiredService<global::Mud.HttpUtils.IEnhancedHttpClient>();
-    var client = httpClient as global::Mud.HttpUtils.HttpClientFactoryEnhancedClient;
-    if (client != null)
-    {
-        var innerClient = client.Client;
-        innerClient.Timeout = TimeSpan.FromMilliseconds(50000);
-    }
-    return new global::MyApp.Internal.MyApi(option, httpClient);
+    client.Timeout = global::System.TimeSpan.FromSeconds(50);
 });
+services.AddTransient<global::MyApp.IMyApi, global::MyApp.Internal.MyApi>();
 ```
+
+> **注意**：`[HttpClientApi(Timeout)]` 写入的是**该命名客户端**的 `Timeout`（注册期快照）。实现类构造函数注入的是**类型级** `IEnhancedHttpClient` / `IHttpRequestExecutor`——命名客户端仅在对应名称被注册为默认 `IEnhancedHttpClient`（`TryAdd` 先注册者胜）时才被实现类实际使用。多接口共存时各命名客户端的 `Timeout`/`BaseAddress` 不按命名隔离，详见「生成客户端命名」。
 
 #### 智能注释提示
 
@@ -309,6 +305,54 @@ public interface IAnotherExternalApi { }
 // 生成 AddExternalWebApiHttpClient() 方法
 services.AddExternalWebApiHttpClient();
 ```
+
+### 生成客户端命名（G7-04a）
+
+每个 `[HttpClientApi]` 接口的注册代码都会生成一个**命名客户端**：
+
+- **客户端名**：`{接口名}_HttpClient`（例如 `IUserApi` → `IUserApi_HttpClient`）；
+- **注册方式**：`HttpClientServiceCollectionExtensions.AddMudHttpClient(services, "{接口名}_HttpClient", client => { client.Timeout = ...; })`（完全限定静态调用），与宿主手动注册的命名客户端完全同构（keyed 注册、`CreateEnhancedClient` 配置覆盖、基础设施 Handler 一致）；
+- **消费方式**：实现类构造函数注入**类型级** `IEnhancedHttpClient` / `IHttpRequestExecutor`——`RegisterNamedClient` 以 `TryAddTransient` 注册，**先注册者胜**。
+
+由此得出三条结论：
+
+1. 若宿主通过 `AddMudHttpClient("{接口名}_HttpClient", baseAddress)` 期望影响生成客户端，必须保证该名称成为**默认** `IEnhancedHttpClient`（注册顺序在前，或在 `AddMudHttpClient` 重载中指定 `setAsDefault: true`）；
+2. `[HttpClientApi(Timeout)]` 写入的是该命名客户端的 `Timeout`，**不一定等于**实现类实际使用的 `HttpClient.Timeout`；
+3. 同一编译存在 **≥2 个** `[HttpClientApi]` 接口时，生成器报告 `HTTPCLIENT033`（Info）：各接口的命名客户端配置可能未按命名隔离。
+
+### 多应用切换与信任边界（G7-11）
+
+默认模式（含继承默认模式）的生成实现类提供两类应用切换入口，安全语义不同：
+
+| 入口 | 强制校验 | 语义 |
+| --- | --- | --- |
+| `UseApp(appKey)` / `UseAppScope(appKey)` / `BeginScope(appKey)` | **格式校验 + 授权判定 + 默认拒绝**（未注册 `IAppAccessAuthorizer` 即抛 `InvalidOperationException`；无授权器不放行） | appKey 来自外部输入，必须经授权 |
+| `SwitchTo(IMudAppContext)` / `BeginScope(IMudAppContext)` / `Current` setter | **无校验（受信路径）** | 调用方已持有 `IMudAppContext` 实例，框架无法校验其来源 |
+
+因此：
+
+1. **受信边界**：宿主不得向不可信代码暴露 `IAppManager.GetApp` 或已解析的应用上下文——否则 `SwitchTo`/`Current` setter 成为越权旁路；
+2. **优先使用** `UseAppScope` / `BeginScope(appKey)`：`UseApp` 的无作用域切换（`SwitchTo`）在长生命周期宿主导航后**不会自动归还** AsyncLocal 上下文，后台任务 / `IAsyncEnumerable` 等场景可能串到错误应用（详见 Client README「上下文归还约束」）。
+
+### 令牌键与租户隔离（G7-12）
+
+Token 管理模式的取令牌链路是**固定架构契约**，**缓存键不含 AppKey**——租户隔离依赖「每 App 独立管理器实例 + bind-once 守卫」，**不是**改键结构：
+
+```
+生成键（TokenManagerKey：接口级 [HttpClientApi(TokenManage)] 或 [Token("…")]/[Token(TokenType=…)] 提取）
+  → ITokenProvider.GetTokenAsync(appContext, request)
+  → appContext.GetTokenManager(key)      // 租户维度 = 每 App 注册的管理器实例
+  → TokenManagerBase 缓存键 = scopeKey    // 无 appKey（DP-6，刻意设计）
+  → BindTenantGuard(appContext.AppKey)   // 默认 EnforceTenantBinding = true（bind-once）
+```
+
+要点：
+
+1. **不改键结构（DP-6）**：`TokenManagerBase` 的缓存与锁按 `scopeKey`（作用域键）组织，`GetTokenManagerKey` / `MetricsKey` 组成不含 AppKey。把 AppKey 并入键会破坏单应用缓存语义与指标兼容性；租户隔离由运行时守卫承载，**切勿自行改键**。
+2. **租户维度 = 每 App 的管理器实例**：宿主 `RegisterApp` 时应为每个 App 注册**独立**的令牌管理器实例（`IMudAppContext.GetTokenManager(key)` 返回该 App 自己的实例）；`DefaultTokenProvider` 取令牌前统一执行 `BindTenantGuard(appContext.AppKey)`——`TokenManagerBase` 派生实例为 **bind-once**：首用 AppKey 与后续请求 AppKey 不一致即抛 `InvalidOperationException`（fail-closed）。
+3. **401 恢复链路同受守卫约束**：`TokenRecoveryExecutor`（含 `ITokenManagerRegistry` 扁平路由场景）解析出的管理器同样触发 bind-once；被拒时记 `TenantBindingRejected` 告警（EventId 162）并返回真实 401，不向调用方抛异常。
+4. **⚠️ 禁止**：多个 App 共享同一 `TokenManagerBase` 实例且 `EnforceTenantBinding = false`——除非能自证这些 App 的凭据**不含租户属性**（如共享的静态客户端凭据）。该配置即显式声明「凭据无租户属性」，后果由宿主承担。
+5. **生成键的语义边界**：`TokenManage` / `[Token]` 只声明「取哪个 TokenManagerKey 的令牌」，**不约束**该键在哪些 App 可用；键 → 实例的解析完全由宿主应用上下文实现决定。
 
 ## 特性详解
 
@@ -354,11 +398,11 @@ Body 参数级 > 方法级 > 接口级 > 默认值 (application/json)
 
 #### Path 参数
 
-`[Path]` 也可以使用别名 `[Route]`（两者等价）：
+路径参数仅支持 `[Path]` 特性。**不存在 `[Route]` 特性**（早期文档中的「别名」为幻影特性，相关示例均已修正）：
 
 ```csharp
 [Get("/users/{id}/posts/{postId}")]
-Task<Post> GetPostAsync([Path] int id, [Route] int postId);
+Task<Post> GetPostAsync([Path] int id, [Path] int postId);
 ```
 
 #### Query 参数
@@ -380,8 +424,8 @@ Task<List<User>> GetUsersAsync(
 ```csharp
 [Get("/users")]
 Task<List<User>> GetUsersAsync(
-    [ArrayQuery] int[] ids,              // 默认分号分隔
-    [ArrayQuery(Separator = ",")] string[] tags  // 逗号分隔
+    [ArrayQuery] int[] ids,              // 默认分隔符为逗号（","）
+    [ArrayQuery(Separator = ";")] string[] tags  // 显式指定分号分隔
 );
 ```
 
@@ -684,7 +728,7 @@ Task<SearchResult> SearchAsync([RawQueryString] string queryString);
 // 生成: /api/search?keyword=test&page=1
 ```
 
-> `[RawQueryString]` 直接附加原始字符串到 URL，不做任何编码或处理。`PrependQuestionMark` 属性控制是否添加 `?` 前缀（默认 `true`）。
+> `[RawQueryString]` 直接附加原始字符串到 URL，不做任何编码或处理。**不存在 `PrependQuestionMark` 属性**（早期文档幻影属性）：`?` 前缀由生成器按请求 URL 是否已含查询串自动处理。
 
 ### Response\<T\> 包装类型
 
@@ -759,6 +803,7 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 | `HTTPCLIENT030` | Warning | `[Cache]` 应用于文件下载方法（含 `[FilePath]` 参数） | 文件下载写入本地文件、不存在可复用的响应体，缓存不会生效；请移除 `[Cache]` | 否 | 是 |
 | `HTTPCLIENT031` | Error | `[Cache]` 方法的默认缓存键包含无法稳定表达的参数（复杂对象 / `[Body]` / `[QueryMap]` / 非标量数组等）且未提供 `CacheKeyTemplate` | 默认键会退化为类型名，导致不同请求命中同一缓存并返回错误数据。请改用 `[Cache(..., CacheKeyTemplate = "…")]` 显式声明键模板，或移除 `[Cache]` | 否 | 是 |
 | `HTTPCLIENT032` | Warning | `[Cache]` 提供了 `CacheKeyTemplate`，但模板未引用某 Unsafe 参数 | 不同取值可能命中同一缓存（串键）。请在模板中加入该参数（字面量检查，尽力而为） | 否 | 是 |
+| `HTTPCLIENT033` | Info | 同一编译 ≥2 个 `[HttpClientApi]` 接口共存：实现类按类型级 `IEnhancedHttpClient` 解析，各接口命名客户端及其 `[HttpClientApi(Timeout)]` 配置可能未按命名隔离（G7-04a） | 多接口场景将对应命名客户端注册为默认 `IEnhancedHttpClient`，或阅读「生成客户端命名」章节 | 否 | 否 |
 
 > **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010`、`HTTPCLIENT019` 当前**未使用**（ID 保留为占位，不重新分配）。
 > - `HTTPCLIENT010`：`BaseAddress` 已移除（CFG-27），使用直接编译错误 `CS0117`，无需生成器提示。

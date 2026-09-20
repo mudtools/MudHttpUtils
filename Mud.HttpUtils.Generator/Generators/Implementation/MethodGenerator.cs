@@ -260,6 +260,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine($"        /// <summary>");
         codeBuilder.AppendLine($"        /// <inheritdoc />");
         codeBuilder.AppendLine($"        /// </summary>");
+        AppendOwnershipRemarks(codeBuilder, methodInfo);
         codeBuilder.AppendLine($"        {GeneratedCodeConsts.HttpGeneratedCodeAttribute}");
         var asyncKeyword = (methodInfo.IsAsyncMethod || methodInfo.IsAsyncEnumerableReturn) ? "async " : "";
         var virtualKeyword = isVirtual ? "virtual " : "";
@@ -558,9 +559,22 @@ internal class MethodGenerator : ICodeFragmentGenerator
             var cancellationTokenParam = methodInfo.Parameters
                 .FirstOrDefault(p => TypeDetectionHelper.IsCancellationToken(p.Type));
             var cancellationTokenName = cancellationTokenParam?.Name ?? "default";
-            codeBuilder.AppendLine($"            await foreach (var __item in {executor}.SendAsAsyncEnumerable<{elementType}>(__httpRequest, {httpClientExpr}, null, {cancellationTokenName}))");
+
+            // G7-16：C# 的 foreach 表达式不支持 ConfigureAwait，故改用手动 IAsyncEnumerator 形态以
+            // 应用 ConfigureAwait(false)（与库内 await 一致性约定）。
+            // try/finally 承担 `await foreach` 编译器在正常/异常路径自动 Dispose 枚举器的同等职责
+            // （与 G7-09 所有权文档一致：完整枚举或异常均释放枚举器，提前 break 由 finally 兜底）。
+            codeBuilder.AppendLine($"            var __enumerator = {executor}.SendAsAsyncEnumerable<{elementType}>(__httpRequest, {httpClientExpr}, null, {cancellationTokenName}).GetAsyncEnumerator({cancellationTokenName});");
+            codeBuilder.AppendLine("            try");
             codeBuilder.AppendLine("            {");
-            codeBuilder.AppendLine("                yield return __item;");
+            codeBuilder.AppendLine("                while (await __enumerator.MoveNextAsync().ConfigureAwait(false))");
+            codeBuilder.AppendLine("                {");
+            codeBuilder.AppendLine("                    yield return __enumerator.Current;");
+            codeBuilder.AppendLine("                }");
+            codeBuilder.AppendLine("            }");
+            codeBuilder.AppendLine("            finally");
+            codeBuilder.AppendLine("            {");
+            codeBuilder.AppendLine("                await __enumerator.DisposeAsync().ConfigureAwait(false);");
             codeBuilder.AppendLine("            }");
             return;
         }
@@ -997,6 +1011,41 @@ internal class MethodGenerator : ICodeFragmentGenerator
     private static bool IsVoidInnerReturnType(string type)
     {
         return type == "void" || type == "System.Void";
+    }
+
+    /// <summary>
+    /// G7-09：为直达/流式返回类型追加所有权 remarks（XML 文档注释），避免调用方误用导致响应泄漏。
+    /// 执行器拥有响应生命周期的普通返回类型（<c>byte[]</c>/<c>Task&lt;T&gt;</c> 等）不追加，保持生成面精简。
+    /// 与 G7-16（手动枚举器 + ConfigureAwait(false)）联动：流式所有权文档在此有正确落点。
+    /// </summary>
+    private static void AppendOwnershipRemarks(StringBuilder codeBuilder, MethodAnalysisResult methodInfo)
+    {
+        if (methodInfo.IsAsyncEnumerableReturn)
+        {
+            codeBuilder.AppendLine("        /// <remarks>");
+            codeBuilder.AppendLine("        /// 流式返回所有权：请完整枚举（<c>await foreach</c> 自动释放枚举器），或在使用后显式释放枚举器；");
+            codeBuilder.AppendLine("        /// 若提前中断枚举（<c>break</c>）而未释放枚举器，可能泄漏底层 HTTP 响应。");
+            codeBuilder.AppendLine("        /// </remarks>");
+            return;
+        }
+
+        var innerReturnType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
+        if (IsHttpResponseMessageType(innerReturnType))
+        {
+            codeBuilder.AppendLine("        /// <remarks>");
+            codeBuilder.AppendLine("        /// 所有权归调用方：返回的 <c>HttpResponseMessage</c> 须由调用方 <c>Dispose</c>（如 <c>using</c>）；");
+            codeBuilder.AppendLine("        /// 该路径为直达返回，不经过 Cache/Resilience 编排。");
+            codeBuilder.AppendLine("        /// </remarks>");
+            return;
+        }
+
+        if (IsStreamType(innerReturnType))
+        {
+            codeBuilder.AppendLine("        /// <remarks>");
+            codeBuilder.AppendLine("        /// 所有权归调用方：返回的 <c>Stream</c> 读取完毕后必须 <c>Dispose</c>；");
+            codeBuilder.AppendLine("        /// 底层 HTTP 响应由包装流一并释放。");
+            codeBuilder.AppendLine("        /// </remarks>");
+        }
     }
 
     /// <summary>

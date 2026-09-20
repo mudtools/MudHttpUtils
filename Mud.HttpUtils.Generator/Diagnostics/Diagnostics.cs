@@ -213,6 +213,30 @@ internal static class Diagnostics
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    /// <summary>
+    /// G7-04a：同一编译 ≥2 个 <c>[HttpClientApi]</c> 接口共存时，提示命名客户端与实现类解析脱节。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 注册端生成 <c>AddMudHttpClient("{Interface}_HttpClient", ...)</c> 命名客户端，但实现类构造函数
+    /// 注入的是<b>类型级</b> <c>IEnhancedHttpClient</c> / <c>IHttpRequestExecutor</c>（<c>RegisterNamedClient</c>
+    /// 以 <c>TryAddTransient</c> 注册，先注册者胜）。因此各接口的命名客户端与 <c>[HttpClientApi(Timeout)]</c>
+    /// 配置仅在对应名称被注册为默认 <c>IEnhancedHttpClient</c> 时才生效，多接口场景下不按命名隔离。
+    /// </para>
+    /// <para>
+    /// 级别为 Info（非 Error/Warning）：代码可编译且多数单接口场景语义正确，提示语引导阅读 README；
+    /// 仅当同一编译 ≥2 个接口时报告，避免噪音。<b>不加</b> <see cref="WellKnownDiagnosticTags.NotConfigurable"/>
+    /// （用户可通过注册命名客户端为默认实例修复，且需避免连坐抑制分析器诊断，见本文件顶部标签分层准则）。
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor HttpClientNamedClientBindingMismatch = new(
+        id: DiagnosticIds.HttpClientNamedClientBindingMismatch,
+        title: "多个 [HttpClientApi] 接口共存时命名客户端配置可能未按命名隔离",
+        messageFormat: "检测到 {0} 个 [HttpClientApi] 接口共存。实现类通过类型级 IEnhancedHttpClient 解析客户端，各接口的命名客户端（{{接口名}}_HttpClient）与其 [HttpClientApi(Timeout)] 配置仅在对应名称被注册为默认 IEnhancedHttpClient 时生效，接口之间不按命名隔离。请阅读 README「生成客户端命名」章节。",
+        category: "代码生成",
+        DiagnosticSeverity.Info,
+        isEnabledByDefault: true);
+
     public static readonly DiagnosticDescriptor HttpClientPathParameterMismatch = new(
         id: "HTTPCLIENT013",
         title: "路径参数不匹配",

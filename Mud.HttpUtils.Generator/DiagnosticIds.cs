@@ -37,6 +37,9 @@ internal static class DiagnosticIds
     /// <summary>HTTPCLIENT007：HttpClient 与 TokenManage 互斥。</summary>
     public const string HttpClientAndTokenManagerMutuallyExclusive = "HTTPCLIENT007";
 
+    /// <summary>HTTPCLIENT033：同一编译 ≥2 个 [HttpClientApi] 接口时提示命名客户端绑定脱节（G7-04a）。</summary>
+    public const string HttpClientNamedClientBindingMismatch = "HTTPCLIENT033";
+
     // ── AOT JSON 序列化 ──
 
     /// <summary>AOT004：DTO 未被任何 JsonSerializerContext 覆盖。</summary>

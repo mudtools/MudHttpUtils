@@ -24,24 +24,35 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
     protected override void ExecuteGenerator(
         ImmutableArray<InterfaceModel> interfaces,
         SourceProductionContext context,
-        AnalyzerConfigOptionsProvider configOptionsProvider,
+        GeneratorConfigSnapshot configSnapshot,
         string generationSalt)
     {
-        if (interfaces.IsDefaultOrEmpty || configOptionsProvider == null)
+        if (interfaces.IsDefaultOrEmpty || configSnapshot == null)
             return;
 
-        // T5.3: 全局禁用开关（调试与渐进迁移）
-        if (ProjectConfigHelper.ReadConfigValueAsBool(configOptionsProvider.GlobalOptions, "build_property.DisableMudSourceGenerator", false))
+        // T5.3: 全局禁用开关（调试与渐进迁移）；G7-06 起从配置值快照读取
+        if (configSnapshot.Disable)
             return;
 
         // [v2.4 §3.4] 读取消费项目 nullable 配置，条件化发射 #nullable enable
-        EmitNullableEnable = ProjectConfigHelper.ReadConfigValue(
-            configOptionsProvider.GlobalOptions, "build_property.Nullable", "enable") == "enable";
+        EmitNullableEnable = configSnapshot.NullableEnable;
 
         var httpClientApis = CollectHttpClientApis(interfaces, context);
 
         if (httpClientApis.Count == 0)
             return;
+
+        // G7-04a：同一编译 ≥2 个 [HttpClientApi] 接口共存时提示命名客户端绑定脱节。
+        // 实现类构造函数注入类型级 IEnhancedHttpClient/IHttpRequestExecutor（不按命名客户端解析），
+        // 各接口的命名客户端与 [HttpClientApi(Timeout)] 配置仅在对应名称成为默认 IEnhancedHttpClient 时生效。
+        // 级别 Info + 仅多接口报告，避免单接口工程的构建噪音（与 G7-13 降噪口径一致）。
+        if (httpClientApis.Count >= 2)
+        {
+            context.ReportDiagnostic(Diagnostic.Create(
+                Diagnostics.HttpClientNamedClientBindingMismatch,
+                httpClientApis[0].Location ?? Location.None,
+                httpClientApis.Count));
+        }
 
         var compilation = interfaces[0].Context.SemanticModel.Compilation;
 
@@ -541,6 +552,10 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         // 改用 AddMudHttpClient 后与宿主手动注册的命名客户端完全同构。
         // 以完全限定的静态调用形式发出，避免依赖消费方是否开启了 `using Mud.HttpUtils;`
         // （生成文件不发出任何 using 指令）。
+        // G7-04a：命名客户端仅在该名称成为默认 IEnhancedHttpClient 时被实现类使用。
+        // 实现类构造函数注入类型级 IEnhancedHttpClient/IHttpRequestExecutor（RegisterNamedClient 先注册者胜），
+        // 因此多接口共存时各命名客户端的 Timeout/BaseAddress 不按命名隔离，请阅读 README「生成客户端命名」章节。
+        codeBuilder.AppendLine("            // 注意：实现类当前通过类型级 IEnhancedHttpClient 解析；命名客户端（" + httpClientName + "）仅在该名称被注册为默认 IEnhancedHttpClient 时生效。");
         codeBuilder.AppendLine($"            global::Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpClient(services, \"{httpClientName}\", client =>");
         codeBuilder.AppendLine($"            {{");
         codeBuilder.AppendLine($"                client.Timeout = global::System.TimeSpan.FromSeconds({timeoutSeconds});");

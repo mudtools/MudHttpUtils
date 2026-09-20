@@ -103,81 +103,89 @@ internal readonly struct InterfaceModel : IEquatable<InterfaceModel>
         var sourceText = syntax.WithoutTrivia().ToString();
 
         // 使用 ValueStringBuilder（栈分配 + ArrayPool 回退）替代 StringBuilder，减少 GC 压力（W5 修复）
+        // G7-18：try/finally 保证 Append/Grow 抛异常（如 OOM）时池租用归还；ToString 成功路径已归还，Dispose 幂等。
         var sb = new ValueStringBuilder(stackalloc char[512]);
-        sb.Append(sourceText);
-
-        // [F5 修复] 纳入同一接口的其余 partial 声明。原实现仅取 ctx.TargetNode（带特性的那个 partial 声明），
-        // partial 兄弟声明变化（新增方法/特性改签名）不会失效指纹 → 生成的实现类缺少数成员。
-        // 任一兄弟 partial 声明变化都会触发该接口重生成（准确性提升，非过度失效）；trivia 变化仍被排除。
-        if (interfaceSymbol != null)
+        try
         {
-            foreach (var reference in interfaceSymbol.DeclaringSyntaxReferences
-                         .OrderBy(r => r.SyntaxTree.FilePath, StringComparer.Ordinal)
-                         .ThenBy(r => r.Span.Start))
+            sb.Append(sourceText);
+
+            // [F5 修复] 纳入同一接口的其余 partial 声明。原实现仅取 ctx.TargetNode（带特性的那个 partial 声明），
+            // partial 兄弟声明变化（新增方法/特性改签名）不会失效指纹 → 生成的实现类缺少数成员。
+            // 任一兄弟 partial 声明变化都会触发该接口重生成（准确性提升，非过度失效）；trivia 变化仍被排除。
+            if (interfaceSymbol != null)
             {
-                if (reference.SyntaxTree == syntax.SyntaxTree && reference.Span == syntax.Span)
-                    continue; // 跳过主声明
-
-                if (reference.GetSyntax(cancellationToken: default) is InterfaceDeclarationSyntax other)
+                foreach (var reference in interfaceSymbol.DeclaringSyntaxReferences
+                             .OrderBy(r => r.SyntaxTree.FilePath, StringComparer.Ordinal)
+                             .ThenBy(r => r.Span.Start))
                 {
-                    sb.Append('|');
-                    sb.Append("Partial:");
-                    sb.Append(other.WithoutTrivia().ToString());
-                }
-            }
+                    if (reference.SyntaxTree == syntax.SyntaxTree && reference.Span == syntax.Span)
+                        continue; // 跳过主声明
 
-            // [Phase2 修复 3.1 / 审查 1.5] 纳入声明所在命名空间与包含类型（复用上一步已解析的 symbol，
-            // 不二次调用 GetDeclaredSymbol）。
-            // 原因：源文本指纹对「接口被整体移动到另一个命名空间 / 嵌套到另一个类型中」不敏感——
-            // 语法树换了、但接口声明文本与继承列表不变 ⇒ 指纹相同 ⇒ 下游命中缓存 ⇒ 生成产物停留在
-            // 旧命名空间，生成的实现类引用过期类型名导致编译错误（且必须手工"触摸"或 ForceHttpGenerator 才能恢复）。
-            sb.Append('|');
-            sb.Append("Ns:");
-            sb.Append(interfaceSymbol.ContainingNamespace?.ToDisplayString() ?? string.Empty);
-            sb.Append("|Ct:");
-            sb.Append(interfaceSymbol.ContainingType?.ToDisplayString() ?? string.Empty);
-        }
-
-        // 纳入继承层次：当基接口列表变化时（如添加/移除基接口），指纹随之变化
-        if (syntax.BaseList != null)
-        {
-            foreach (var baseType in syntax.BaseList.Types)
-            {
-                sb.Append('|');
-                sb.Append("Base:");
-                sb.Append(baseType.ToString());
-            }
-        }
-
-        // 纳入影响生成代码的关键属性，避免过度失效
-        if (!context.Attributes.IsDefaultOrEmpty)
-        {
-            foreach (var attr in context.Attributes)
-            {
-                // 构造函数参数：纳入所有值，避免通过构造函数传入的配置变化不触发重新生成
-                foreach (var arg in attr.ConstructorArguments)
-                {
-                    sb.Append('|');
-                    sb.Append("Ctor=");
-                    sb.Append(arg.Value?.ToString() ?? string.Empty);
-                }
-
-                // 命名参数：仅纳入影响生成代码的关键属性，避免过度失效
-                foreach (var arg in attr.NamedArguments)
-                {
-                    if (arg.Key is "HttpClient" or "TokenManage" or "InheritedFrom"
-                        or "IsAbstract" or "ContentType" or "Timeout")
+                    if (reference.GetSyntax(cancellationToken: default) is InterfaceDeclarationSyntax other)
                     {
                         sb.Append('|');
-                        sb.Append(arg.Key);
-                        sb.Append('=');
-                        sb.Append(arg.Value.Value?.ToString() ?? string.Empty);
+                        sb.Append("Partial:");
+                        sb.Append(other.WithoutTrivia().ToString());
+                    }
+                }
+
+                // [Phase2 修复 3.1 / 审查 1.5] 纳入声明所在命名空间与包含类型（复用上一步已解析的 symbol，
+                // 不二次调用 GetDeclaredSymbol）。
+                // 原因：源文本指纹对「接口被整体移动到另一个命名空间 / 嵌套到另一个类型中」不敏感——
+                // 语法树换了、但接口声明文本与继承列表不变 ⇒ 指纹相同 ⇒ 下游命中缓存 ⇒ 生成产物停留在
+                // 旧命名空间，生成的实现类引用过期类型名导致编译错误（且必须手工"触摸"或 ForceHttpGenerator 才能恢复）。
+                sb.Append('|');
+                sb.Append("Ns:");
+                sb.Append(interfaceSymbol.ContainingNamespace?.ToDisplayString() ?? string.Empty);
+                sb.Append("|Ct:");
+                sb.Append(interfaceSymbol.ContainingType?.ToDisplayString() ?? string.Empty);
+            }
+
+            // 纳入继承层次：当基接口列表变化时（如添加/移除基接口），指纹随之变化
+            if (syntax.BaseList != null)
+            {
+                foreach (var baseType in syntax.BaseList.Types)
+                {
+                    sb.Append('|');
+                    sb.Append("Base:");
+                    sb.Append(baseType.ToString());
+                }
+            }
+
+            // 纳入影响生成代码的关键属性，避免过度失效
+            if (!context.Attributes.IsDefaultOrEmpty)
+            {
+                foreach (var attr in context.Attributes)
+                {
+                    // 构造函数参数：纳入所有值，避免通过构造函数传入的配置变化不触发重新生成
+                    foreach (var arg in attr.ConstructorArguments)
+                    {
+                        sb.Append('|');
+                        sb.Append("Ctor=");
+                        sb.Append(arg.Value?.ToString() ?? string.Empty);
+                    }
+
+                    // 命名参数：仅纳入影响生成代码的关键属性，避免过度失效
+                    foreach (var arg in attr.NamedArguments)
+                    {
+                        if (arg.Key is "HttpClient" or "TokenManage" or "InheritedFrom"
+                            or "IsAbstract" or "ContentType" or "Timeout")
+                        {
+                            sb.Append('|');
+                            sb.Append(arg.Key);
+                            sb.Append('=');
+                            sb.Append(arg.Value.Value?.ToString() ?? string.Empty);
+                        }
                     }
                 }
             }
-        }
 
-        return sb.ToString();
+            return sb.ToString();
+        }
+        finally
+        {
+            sb.Dispose();
+        }
     }
 
     public bool Equals(InterfaceModel other) =>

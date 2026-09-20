@@ -686,14 +686,26 @@ internal class RequestBuilder
 
             if (!string.IsNullOrEmpty(contentType))
             {
+                // G7-19：不能使用 `using var` —— 其作用域为 if 块，会在请求构造完成（发送）前 Dispose，
+                // 底层流被提前释放 → MultipartFormDataContent 发送时抛 ObjectDisposedException。
+                // 正确形态：仅异常路径 Dispose（MediaTypeHeaderValue 构造/Add 抛异常时回收包装对象），
+                // 成功路径所有权已转移给 __multipartContent。
                 codeBuilder.AppendLine($"            if ({uploadParam.Name} != null)");
                 codeBuilder.AppendLine("            {");
                 codeBuilder.AppendLine($"                var __{uploadParam.Name}Content = new System.Net.Http.StreamContent({uploadParam.Name});");
-                codeBuilder.AppendLine($"                __{uploadParam.Name}Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(\"{StringEscapeHelper.EscapeString(contentType)}\");");
+                codeBuilder.AppendLine("                try");
+                codeBuilder.AppendLine("                {");
+                codeBuilder.AppendLine($"                    __{uploadParam.Name}Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(\"{StringEscapeHelper.EscapeString(contentType)}\");");
                 if (!string.IsNullOrEmpty(fileName))
-                    codeBuilder.AppendLine($"                __multipartContent.Add(__{uploadParam.Name}Content, \"{StringEscapeHelper.EscapeString(fieldName)}\", \"{StringEscapeHelper.EscapeString(fileName)}\");");
+                    codeBuilder.AppendLine($"                    __multipartContent.Add(__{uploadParam.Name}Content, \"{StringEscapeHelper.EscapeString(fieldName)}\", \"{StringEscapeHelper.EscapeString(fileName)}\");");
                 else
-                    codeBuilder.AppendLine($"                __multipartContent.Add(__{uploadParam.Name}Content, \"{StringEscapeHelper.EscapeString(fieldName)}\");");
+                    codeBuilder.AppendLine($"                    __multipartContent.Add(__{uploadParam.Name}Content, \"{StringEscapeHelper.EscapeString(fieldName)}\");");
+                codeBuilder.AppendLine("                }");
+                codeBuilder.AppendLine("                catch");
+                codeBuilder.AppendLine("                {");
+                codeBuilder.AppendLine($"                    __{uploadParam.Name}Content.Dispose(); // 仅异常路径释放（成功路径所有权已归 multipart）");
+                codeBuilder.AppendLine("                    throw;");
+                codeBuilder.AppendLine("                }");
                 codeBuilder.AppendLine("            }");
             }
             else

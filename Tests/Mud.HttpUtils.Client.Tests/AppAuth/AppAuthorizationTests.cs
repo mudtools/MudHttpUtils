@@ -13,13 +13,18 @@ namespace Mud.HttpUtils.Client.Tests;
 /// 且被拦截时 IAppManager.GetApp 不被调用（零副作用）。
 /// </summary>
 /// <remarks>
-/// 生成器产出的 UseApp/BeginScope 方法结构如下：
+/// 生成器产出的 UseApp/BeginScope(appKey) 方法守卫结构如下（与
+/// <c>ApplicationSwitchGuardContractTests</c> + 生成快照一致，MT-02 默认拒绝）：
 /// <code>
-/// if (_appAuthorizer is not null && !_appAuthorizer.CanSwitchTo(appKey))
-///     throw new UnauthorizedAccessException(...);
-/// var context = _appManager.GetApp(appKey);
+/// if (!global::Mud.HttpUtils.AppKey.IsValid(appKey))           // 1. 格式前置校验
+///     throw new ArgumentException("appKey 格式非法：…", nameof(appKey));
+/// if (_appAuthorizer == null)                                    // 2. 默认拒绝（无授权器不放行）
+///     throw new InvalidOperationException("多应用切换需要授权器：请注册 IAppAccessAuthorizer 实现 …AllowAllAppAccessAuthorizer…");
+/// if (!_appAuthorizer.CanSwitchTo(appKey))                       // 3. 授权判定
+///     throw new UnauthorizedAccessException("当前调用主体无权切换到目标应用…");
+/// var context = _appManager.GetApp(appKey);                      // 4. 才允许查找应用
 /// </code>
-/// 本测试通过 Mock 模拟此链路，验证守卫顺序与副作用约束。
+/// 本测试通过 Mock 模拟此链路，验证守卫顺序与副作用约束（GetApp 不得在拒绝路径被调用）。
 /// </remarks>
 public class AppAuthorizationTests
 {
@@ -37,10 +42,14 @@ public class AppAuthorizationTests
         var existingContext = CreateTestContext("app1");
         holder.SwitchTo(existingContext);
 
-        // Act — 模拟生成器产出的 UseApp 守卫链路
+        // Act — 模拟生成器产出的 UseApp 守卫链路（MT-02 默认拒绝）
         var act = () =>
         {
-            if (mockAuthorizer.Object is not null && !mockAuthorizer.Object.CanSwitchTo("other"))
+            if (!Mud.HttpUtils.AppKey.IsValid("other"))
+                throw new ArgumentException("appKey 格式非法。", nameof(AppKey));
+            if (mockAuthorizer.Object == null)
+                throw new InvalidOperationException("多应用切换需要授权器：请注册 IAppAccessAuthorizer 实现。");
+            if (!mockAuthorizer.Object.CanSwitchTo("other"))
                 throw new UnauthorizedAccessException("当前调用主体无权切换到应用 'other'。");
             var context = mockAppManager.Object.GetApp("other");
             holder.SwitchTo(context);
@@ -76,7 +85,11 @@ public class AppAuthorizationTests
         // Act — 模拟生成器产出的 BeginScope(appKey) 守卫链路
         var act = () =>
         {
-            if (mockAuthorizer.Object is not null && !mockAuthorizer.Object.CanSwitchTo("forbidden"))
+            if (!Mud.HttpUtils.AppKey.IsValid("forbidden"))
+                throw new ArgumentException("appKey 格式非法。", nameof(AppKey));
+            if (mockAuthorizer.Object == null)
+                throw new InvalidOperationException("多应用切换需要授权器：请注册 IAppAccessAuthorizer 实现。");
+            if (!mockAuthorizer.Object.CanSwitchTo("forbidden"))
                 throw new UnauthorizedAccessException("当前调用主体无权切换到应用 'forbidden'。");
             var context = mockAppManager.Object.GetApp("forbidden");
             return holder.BeginScope(context);
@@ -107,7 +120,11 @@ public class AppAuthorizationTests
         // Act
         var act = () =>
         {
-            if (mockAuthorizer.Object is not null && !mockAuthorizer.Object.CanSwitchTo("target"))
+            if (!Mud.HttpUtils.AppKey.IsValid("target"))
+                throw new ArgumentException("appKey 格式非法。", nameof(AppKey));
+            if (mockAuthorizer.Object == null)
+                throw new InvalidOperationException();
+            if (!mockAuthorizer.Object.CanSwitchTo("target"))
                 throw new UnauthorizedAccessException();
             // 以下代码不应被执行
             _ = mockAppManager.Object.GetApp("target");
@@ -139,7 +156,11 @@ public class AppAuthorizationTests
 
         // Act — 模拟生成器产出的 UseApp 链路
         IMudAppContext result;
-        if (mockAuthorizer.Object is not null && !mockAuthorizer.Object.CanSwitchTo("app2"))
+        if (!Mud.HttpUtils.AppKey.IsValid("app2"))
+            throw new ArgumentException("appKey 格式非法。", nameof(AppKey));
+        if (mockAuthorizer.Object == null)
+            throw new InvalidOperationException();
+        if (!mockAuthorizer.Object.CanSwitchTo("app2"))
             throw new UnauthorizedAccessException();
         result = mockAppManager.Object.GetApp("app2");
         holder.SwitchTo(result);
@@ -169,7 +190,11 @@ public class AppAuthorizationTests
 
         // Act — 模拟生成器产出的 BeginScope(appKey) 链路
         IDisposable scope;
-        if (mockAuthorizer.Object is not null && !mockAuthorizer.Object.CanSwitchTo("app2"))
+        if (!Mud.HttpUtils.AppKey.IsValid("app2"))
+            throw new ArgumentException("appKey 格式非法。", nameof(AppKey));
+        if (mockAuthorizer.Object == null)
+            throw new InvalidOperationException();
+        if (!mockAuthorizer.Object.CanSwitchTo("app2"))
             throw new UnauthorizedAccessException();
         var context = mockAppManager.Object.GetApp("app2");
         scope = holder.BeginScope(context);
@@ -186,27 +211,90 @@ public class AppAuthorizationTests
 
     #endregion
 
-    #region 无授权器（null authorizer）
+    #region 无授权器（null authorizer → 默认拒绝）
 
+    // G7-05：原 UseApp_NoAuthorizerRegistered_FallsThroughToGetApp 断言「null 放行」，
+    // 与 MT-02 默认拒绝语义（生成守卫 _appAuthorizer==null → InvalidOperationException）相悖，已删除。
     [Fact]
-    public void UseApp_NoAuthorizerRegistered_FallsThroughToGetApp()
+    public void UseApp_NoAuthorizerRegistered_ThrowsInvalidOperation()
     {
         // Arrange — 当 IAppAccessAuthorizer 未注册时，生成代码中的 _appAuthorizer 为 null，
-        // 守卫条件 (_appAuthorizer is not null && ...) 短路为 false，不拦截。
+        // 生成守卫第一步即抛 InvalidOperationException（默认拒绝），不得调用 GetApp。
         var targetContext = CreateTestContext("app2");
         var mockAppManager = new Mock<IAppManager<IMudAppContext>>();
         mockAppManager.Setup(m => m.GetApp("app2")).Returns(targetContext);
 
-        // Act — 模拟 _appAuthorizer = null 时的链路
+        // Act — 模拟 _appAuthorizer = null 时的链路（MT-02 / G7-05）
         IAppAccessAuthorizer? nullAuthorizer = null;
-        IMudAppContext result;
-        if (nullAuthorizer is not null && !nullAuthorizer.CanSwitchTo("app2"))
-            throw new UnauthorizedAccessException();
-        result = mockAppManager.Object.GetApp("app2");
+        var act = () =>
+        {
+            if (!Mud.HttpUtils.AppKey.IsValid("app2"))
+                throw new ArgumentException("appKey 格式非法。", nameof(AppKey));
+            if (nullAuthorizer == null)
+                throw new InvalidOperationException(
+                    "多应用切换需要授权器：请注册 IAppAccessAuthorizer 实现（例如 services.AddSingleton<IAppAccessAuthorizer, YourAuthorizer>()）；" +
+                    "若为单应用或完全受信场景，请显式注册 Mud.HttpUtils.AllowAllAppAccessAuthorizer 以表明放行意图。");
+            if (!nullAuthorizer.CanSwitchTo("app2"))
+                throw new UnauthorizedAccessException();
+            return mockAppManager.Object.GetApp("app2");
+        };
 
-        // Assert — 直接走到 GetApp
-        result.Should().BeSameAs(targetContext);
-        mockAppManager.Verify(m => m.GetApp("app2"), Times.Once);
+        // Assert — 默认拒绝：null → IOE，且异常消息给出显式放行逃生门（AllowAllAppAccessAuthorizer）
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*AllowAllAppAccessAuthorizer*");
+        mockAppManager.Verify(m => m.GetApp("app2"), Times.Never);
+    }
+
+    [Fact]
+    public void BeginScope_NoAuthorizerRegistered_ThrowsInvalidOperation()
+    {
+        // Arrange
+        var mockAppManager = new Mock<IAppManager<IMudAppContext>>();
+
+        // Act — null 授权器 → IOE（与 UseApp 同守卫）
+        IAppAccessAuthorizer? nullAuthorizer = null;
+        var act = () =>
+        {
+            if (!Mud.HttpUtils.AppKey.IsValid("app2"))
+                throw new ArgumentException("appKey 格式非法。", nameof(AppKey));
+            if (nullAuthorizer == null)
+                throw new InvalidOperationException("多应用切换需要授权器：请注册 IAppAccessAuthorizer 实现。");
+            var context = mockAppManager.Object.GetApp("app2");
+            return new AsyncLocalAppContextSwitcher().BeginScope(context);
+        };
+
+        // Assert
+        act.Should().Throw<InvalidOperationException>();
+        mockAppManager.Verify(m => m.GetApp(It.IsAny<string>()), Times.Never);
+    }
+
+    #endregion
+
+    #region 格式校验（守卫顺序：格式 → 授权器缺失 → 授权判定 → GetApp）
+
+    [Fact]
+    public void UseApp_InvalidAppKeyFormat_ThrowsArgumentException_BeforeAuthorization()
+    {
+        // Arrange — 非法格式必须最先被拦截：授权器不得被调用（授权器不负责任何格式校验）
+        var mockAuthorizer = new Mock<IAppAccessAuthorizer>();
+        var mockAppManager = new Mock<IAppManager<IMudAppContext>>();
+
+        // Act
+        var act = () =>
+        {
+            if (!Mud.HttpUtils.AppKey.IsValid("非法 key!"))
+                throw new ArgumentException("appKey 格式非法。", nameof(AppKey));
+            if (mockAuthorizer.Object == null)
+                throw new InvalidOperationException();
+            if (!mockAuthorizer.Object.CanSwitchTo("非法 key!"))
+                throw new UnauthorizedAccessException();
+            return mockAppManager.Object.GetApp("非法 key!");
+        };
+
+        // Assert
+        act.Should().Throw<ArgumentException>();
+        mockAuthorizer.Verify(a => a.CanSwitchTo(It.IsAny<string>()), Times.Never);
+        mockAppManager.Verify(m => m.GetApp(It.IsAny<string>()), Times.Never);
     }
 
     #endregion
@@ -236,8 +324,12 @@ public class AppAuthorizationTests
         var context = CreateTestContext("app1");
         mockAppManager.Setup(m => m.GetApp("app1")).Returns(context);
 
-        // Act
-        if (alwaysAllow is not null && !alwaysAllow.CanSwitchTo("app1"))
+        // Act — 显式放行授权器（显式注册 = 有意图的放行，非默认拒绝的例外）
+        if (!Mud.HttpUtils.AppKey.IsValid("app1"))
+            throw new ArgumentException("appKey 格式非法。", nameof(AppKey));
+        if (alwaysAllow == null)
+            throw new InvalidOperationException();
+        if (!alwaysAllow.CanSwitchTo("app1"))
             throw new UnauthorizedAccessException();
         _ = mockAppManager.Object.GetApp("app1");
 
@@ -255,7 +347,11 @@ public class AppAuthorizationTests
         // Act
         var act = () =>
         {
-            if (alwaysDeny is not null && !alwaysDeny.CanSwitchTo("any-app"))
+            if (!Mud.HttpUtils.AppKey.IsValid("any-app"))
+                throw new ArgumentException("appKey 格式非法。", nameof(AppKey));
+            if (alwaysDeny == null)
+                throw new InvalidOperationException();
+            if (!alwaysDeny.CanSwitchTo("any-app"))
                 throw new UnauthorizedAccessException();
             _ = mockAppManager.Object.GetApp("any-app");
         };

@@ -530,52 +530,82 @@ public class DefaultHttpRequestExecutor(
         MudHttpObservability.RecordDownloadStarted(request, clientName);
         var sw = ValueStopwatch.StartNew();
 
+        // G7-02：Overwrite 语义与特性声明对齐（同 EnhancedHttpClient 口径）——
+        //   overwrite=true  → 允许覆盖（FileMode.Create 截断）；
+        //   overwrite=false → 目标已存在时抛 IOException，原文件字节保持不变。
+        // G7-03：半写防护——先写同目录临时文件，复制完成并关闭流后原子落盘：
+        //   下载失败/取消仅可能残留 tmp（由 catch 尽力清理），最终路径永不出现半写文件。
+        var tmpPath = filePath + ".mudtmp";
+        var tmpMode = FileMode.Create; // tmp 为本组件自有残留文件，可安全复用/回收
+
         try
         {
-            // 流式写入文件
-            if (overwrite && File.Exists(filePath))
-                File.Delete(filePath);
-
             var dir = Path.GetDirectoryName(filePath);
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
 
-            var totalBytesWritten = 0L;
+            // overwrite=false 时先快速失败（避免下载完成后才拒绝）；最终正确性由落盘阶段再次保证。
+            if (!overwrite && File.Exists(filePath))
+                throw new IOException($"文件已存在: {filePath}");
+
+            long bytesWritten;
 
 #if NET6_0_OR_GREATER
-            await using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize, useAsync: true);
-            await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            await using (var fileStream = new FileStream(tmpPath, tmpMode, FileAccess.Write, FileShare.None, bufferSize, useAsync: true))
+            {
+                await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 
-            // 若调用方未提供 progress 回调，则直接 CopyToAsync，避免每 buffer 的进度报告开销
-            if (progress == null)
-            {
-                await contentStream.CopyToAsync(fileStream, bufferSize, cancellationToken).ConfigureAwait(false);
+                // 若调用方未提供 progress 回调，则直接 CopyToAsync，避免每 buffer 的进度报告开销
+                if (progress == null)
+                {
+                    await contentStream.CopyToAsync(fileStream, bufferSize, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    await CopyToWithProgressAsync(contentStream, fileStream, bufferSize, progress, 0, cancellationToken).ConfigureAwait(false);
+                }
+                bytesWritten = fileStream.Position;
             }
-            else
-            {
-                await CopyToWithProgressAsync(contentStream, fileStream, bufferSize, progress, totalBytesWritten, cancellationToken).ConfigureAwait(false);
-            }
+            // 流已关闭（Windows 下 File.Move 才可移动）；overwrite 语义由 Move 的 overwrite 参数强制
+            File.Move(tmpPath, filePath, overwrite);
 #else
-            using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize);
-            using var contentStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+            using (var fileStream = new FileStream(tmpPath, tmpMode, FileAccess.Write, FileShare.None, bufferSize))
+            {
+                using var contentStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 
-            if (progress == null)
-            {
-                await contentStream.CopyToAsync(fileStream, bufferSize).ConfigureAwait(false);
+                if (progress == null)
+                {
+                    await contentStream.CopyToAsync(fileStream, bufferSize).ConfigureAwait(false);
+                }
+                else
+                {
+                    await CopyToWithProgressAsync(contentStream, fileStream, bufferSize, progress, 0, cancellationToken).ConfigureAwait(false);
+                }
+                bytesWritten = fileStream.Position;
             }
-            else
-            {
-                await CopyToWithProgressAsync(contentStream, fileStream, bufferSize, progress, totalBytesWritten, cancellationToken).ConfigureAwait(false);
-            }
+            // netstandard2.0：File.Move 无 overwrite 重载；
+            // overwrite=false 且目标已存在 → Move 抛 IOException（与 CreateNew 语义一致）。
+            if (overwrite && File.Exists(filePath))
+                File.Delete(filePath);
+            File.Move(tmpPath, filePath);
 #endif
 
             var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
-            // 通过 fileStream.Position 获取实际写入字节数（避免 FileInfo.Length 因缓冲区未刷新而返回 0）
-            var bytes = fileStream.Position;
-            MudHttpObservability.RecordDownloadCompleted(request, clientName, bytes, elapsedMs);
+            // 以已写入字节数（而非 FileInfo.Length）报告，避免缓冲区未刷新导致读数为 0
+            MudHttpObservability.RecordDownloadCompleted(request, clientName, bytesWritten, elapsedMs);
         }
         catch (Exception ex)
         {
+            // G7-03：尽力清理临时文件；删除失败仅记录到调试输出，不掩盖原始异常。
+            try
+            {
+                if (File.Exists(tmpPath))
+                    File.Delete(tmpPath);
+            }
+            catch
+            {
+                System.Diagnostics.Debug.WriteLine($"[Mud.HttpUtils] 下载失败后清理临时文件失败: {tmpPath}");
+            }
             var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
             MudHttpObservability.RecordDownloadFailed(request, clientName, elapsedMs, ex);
             throw;

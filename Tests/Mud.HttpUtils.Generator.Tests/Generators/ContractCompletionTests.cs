@@ -157,8 +157,15 @@ public class ContractCompletionTests
             source, description: "返回 IAsyncEnumerable<string> 的接口");
 
         var generated = GetGeneratedCode(output);
-        generated.Should().Contain("async", "流式方法体含 await foreach，必须声明为 async");
-        generated.Should().Contain("await foreach");
+        generated.Should().Contain("async", "流式方法体含 await 枚举循环，必须声明为 async");
+        // G7-16：C# 的 foreach 表达式不支持 ConfigureAwait，故改用手动 IAsyncEnumerator 三段式；
+        // 断言生成方法体为 GetAsyncEnumerator + MoveNextAsync().ConfigureAwait(false) +
+        // DisposeAsync().ConfigureAwait(false)，且 try/finally 承担编译器自动释放枚举器的同等职责。
+        generated.Should().Contain(".GetAsyncEnumerator(", "G7-16：流式分支必须手动获取枚举器（await foreach 不支持 ConfigureAwait）");
+        generated.Should().Contain("MoveNextAsync().ConfigureAwait(false)",
+            "G7-16：MoveNextAsync 必须 ConfigureAwait(false)（与库内 await 一致性约定）");
+        generated.Should().Contain("DisposeAsync().ConfigureAwait(false)",
+            "G7-16：finally 中必须释放枚举器且 ConfigureAwait(false)（正常/异常路径兜底，与 G7-09 所有权文档一致）");
         generated.Should().Contain("SendAsAsyncEnumerable<string>");
 
         RunGenerator(source).Diagnostics.Should().NotContain(d => d.Id == "HTTPCLIENT024",

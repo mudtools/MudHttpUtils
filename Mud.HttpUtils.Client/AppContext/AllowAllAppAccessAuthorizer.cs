@@ -13,7 +13,7 @@ namespace Mud.HttpUtils;
 /// <remarks>
 /// <para>
 /// <b>MT-02（BC-18）</b>：<see cref="IAppAccessAuthorizer"/> 未注册时，生成代码的
-/// <c>UseApp(appKey)</c> / <c>BeginScope(appKey)</c> 会直接抛出
+/// <c>UseApp(appKey)</c> / <c>UseAppScope(appKey)</c> / <c>BeginScope(appKey)</c> 会直接抛出
 /// <see cref="InvalidOperationException"/>（默认拒绝），以消除"调用方可凭请求参数中的 appKey
 /// 切换到任意租户应用并读取其令牌"的越权面。
 /// </para>

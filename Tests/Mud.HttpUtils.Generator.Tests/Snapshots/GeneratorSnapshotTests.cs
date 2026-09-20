@@ -543,6 +543,40 @@ namespace TestNamespace
         return VerifyFixture.VerifyGenerator(driver, outputCompilation);
     }
 
+    /// <summary>
+    /// 场景 18b（G7-F 补）：[Token] 令牌注入（Cookie 模式）。
+    /// 钉死 MT-20 转义契约：Cookie 名经 <c>StringEscapeHelper.EscapeString</c> 转义为合法 C#
+    /// 字符串字面量，Cookie 值经 <c>System.Uri.EscapeDataString</c> 编码 —— 防止令牌中
+    /// ';' / ',' / 空格 注入额外 Cookie 属性（修复前为裸字符串拼接）。修复前本模式无 verified 快照守卫。
+    /// </summary>
+    [Fact]
+    public Task Snapshot_TokenCookieMode_ShouldEmitEscapedCookie()
+    {
+        var source = """
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    [HttpClientApi(TokenManage = "ITestTokenManager")]
+    public interface ITestApi
+    {
+        [Get("/secure-data")]
+        [Token(TokenType = "AccessToken", InjectionMode = TokenInjectionMode.Cookie, Name = "session\\token")]
+        Task<string> GetSecureDataAsync();
+    }
+}
+""";
+        var (driver, outputCompilation) = VerifyFixture.RunGeneratorDriver(source);
+        return VerifyFixture.VerifyGenerator(driver, outputCompilation);
+    }
+
     #endregion
 
     #region 接口级配置 — 场景 19-20

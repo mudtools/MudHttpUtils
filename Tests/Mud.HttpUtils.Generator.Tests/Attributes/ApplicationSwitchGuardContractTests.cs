@@ -123,4 +123,110 @@ public class ApplicationSwitchGuardContractTests
             "三个应用切换入口（UseApp / BeginScope / UseAppScope）都必须带授权器守卫，" +
             $"实际守卫数 {guardCount} —— 漏掉任一个都会成为越权旁路");
     }
+
+    #region G7-01 继承默认模式 appManager 透传契约
+
+    private const string InheritedDefaultModeSource = """
+        using Mud.HttpUtils;
+        using Mud.HttpUtils.Attributes;
+
+        namespace TestNamespace
+        {
+            [HttpClientApi(IsAbstract = true)]
+            public interface IBaseApi
+            {
+                [Get("/base")]
+                System.Threading.Tasks.Task<string> GetBaseDataAsync();
+            }
+
+            [HttpClientApi(InheritedFrom = "BaseApi")]
+            public interface IDerivedApi : IBaseApi
+            {
+                [Get("/derived")]
+                System.Threading.Tasks.Task<string> GetDerivedDataAsync();
+            }
+        }
+        """;
+
+    private const string InheritedTokenManagerModeSource = """
+        using Mud.HttpUtils;
+        using Mud.HttpUtils.Attributes;
+
+        namespace TestNamespace
+        {
+            public interface ITestTokenManager
+            {
+                IMudAppContext GetDefaultApp();
+                IMudAppContext GetApp(string appKey);
+            }
+
+            [HttpClientApi(TokenManage = "ITestTokenManager", IsAbstract = true)]
+            public interface IBaseApi
+            {
+                [Get("/base")]
+                System.Threading.Tasks.Task<string> GetBaseDataAsync();
+            }
+
+            [HttpClientApi(TokenManage = "ITestTokenManager", InheritedFrom = "BaseApi")]
+            public interface IDerivedApi : IBaseApi
+            {
+                [Get("/derived")]
+                System.Threading.Tasks.Task<string> GetDerivedDataAsync();
+            }
+        }
+        """;
+
+    private static string ExtractImplementation(string source)
+    {
+        var (_, outputCompilation) = VerifyFixture.RunGeneratorDriver(source);
+
+        // G7-01 修复：基类与派生类是两个独立生成文件（BaseApi.g.cs / DerivedApi.g.cs），
+        // 而 appManager/appAuthorizer 的「基类声明 + 派生类透传」横跨两者 —— 只取单个文件
+        // 会漏掉透传断言（此前实现取第一个文件 = 基类，导致 ShouldForwardAppManager 误报失败）。
+        // 因此与 VerifyGenerator 同口径：过滤辅助文件后拼接全部实现类文件再断言。
+        var implementations = outputCompilation.SyntaxTrees
+            .Skip(1)
+            .Select(t => (Name: System.IO.Path.GetFileName(t.FilePath), Text: t.ToString()))
+            .Where(x => !x.Name.Contains("Preserve")
+                        && !x.Name.Contains("Registration")
+                        && !x.Name.Contains("EventHandler")
+                        && !x.Name.Contains("FormContent")
+                        && !x.Name.Contains("TokenProvider"))
+            .Select(x => x.Text)
+            .ToArray();
+
+        implementations.Should().NotBeEmpty("应产出接口实现类");
+        return string.Join("\n// ===== 分隔 =====\n", implementations);
+    }
+
+    /// <summary>
+    /// G7-01：继承默认模式（基类既无 HttpClient 亦无 TokenManage）时，派生类构造函数必须在
+    /// <c>base(...)</c> 中透传 <c>appManager: appManager</c>，否则 DI 注入被丢弃，基类 _appManager
+    /// 恒为 null → UseApp/BeginScope(appKey) 恒抛「当前模式不支持」（多应用不可用，P0）。
+    /// 与 appAuthorizer 透传（MT-02 P0 修复）同一模式：基类字段由基类构造函数赋值。
+    /// </summary>
+    [Fact]
+    public void GeneratedCode_InheritedDefaultModeBase_ShouldForwardAppManager()
+    {
+        var code = ExtractImplementation(InheritedDefaultModeSource);
+
+        code.Should().Contain("appManager: appManager",
+            "G7-01：默认模式基类的派生类构造函数必须透传 appManager（命名实参，与 appAuthorizer 同构）");
+    }
+
+    /// <summary>
+    /// G7-01 防误加：继承 TokenManager 模式基类时，派生类 <b>不得</b> 生成 <c>appManager: appManager</c>
+    /// （派生 appManager 形参类型为 TokenManager，与基类 IAppManager&lt;IMudAppContext&gt; 形参不匹配，
+    /// 误加会导致基类调用编译失败）。该用例钉死「仅默认模式基类透传」的判定口径（BaseHasAppManager）。
+    /// </summary>
+    [Fact]
+    public void GeneratedCode_TokenManagerBaseInheritance_ShouldNotForwardIAppManager()
+    {
+        var code = ExtractImplementation(InheritedTokenManagerModeSource);
+
+        code.Should().NotContain("appManager: appManager",
+            "G7-01 防误加：TokenManager 模式基类不得透传命名实参 appManager（类型不匹配），仅默认模式基类透传");
+    }
+
+    #endregion
 }

@@ -395,12 +395,51 @@ internal class InterfaceImplementationGenerator
         if (typeName.Contains('.'))
             return null;
 
-        // 全局命名空间扫描作为最终回退，仅处理简单类型名
+        // G7-07：全树回退扫描收敛——优先扫描「当前编译 SyntaxTrees 涉及的命名空间」，
+        // 避免新 Compilation 冷启动时遍历引用程序集（BCL）整棵命名空间树的重复付费。
+        // 覆盖主场景：TokenManage/InheritedFrom/HttpClient 中引用的自定义类型几乎总是
+        // 声明在消费方源码（该命名空间必然出现在 SyntaxTrees 中）。
+        var foundInSource = FindTypeInSourceNamespaces(typeName);
+        if (foundInSource != null)
+            return foundInSource;
+
+        // 保底：维持原全树递归（行为不变，仅成本更高）；覆盖「类型来自引用程序集且未被
+        // 快速路径（全名/Mud.HttpUtils 前缀/接口命名空间前缀）命中」的边缘场景。
         foreach (var ns in _compilation.GlobalNamespace.GetNamespaceMembers())
         {
             type = FindTypeInNamespace(ns, typeName);
             if (type != null)
                 return type;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// G7-07：在「当前编译 SyntaxTrees 已声明/引用的命名空间」中查找简单类型名。
+    /// </summary>
+    /// <remarks>
+    /// 收敛策略：仅对出现在语法树 <c>namespace</c> 声明中的命名空间执行
+    /// <see cref="Compilation.GetTypeByMetadataName(string)"/> 精确查找——该 API 为哈希查表，开销远低于
+    /// 递归遍历命名空间成员；且源码中实际使用的自定义类型所在命名空间必然出现在 SyntaxTrees 中。
+    /// 未命中时由调用方保底回退原全树递归，语义不变。
+    /// </remarks>
+    private INamedTypeSymbol? FindTypeInSourceNamespaces(string typeName)
+    {
+        foreach (var tree in _compilation.SyntaxTrees)
+        {
+            var root = tree.GetRoot(cancellationToken: default);
+            foreach (var nsDecl in root.DescendantNodes().OfType<NamespaceDeclarationSyntax>())
+            {
+                var nsName = nsDecl.Name.ToString();
+                if (string.IsNullOrEmpty(nsName))
+                    continue;
+
+                // 仅处理非全局命名空间（全局内部的类型走完整全名路径已在前面快速路径覆盖）
+                var type = _compilation.GetTypeByMetadataName($"{nsName}.{typeName}");
+                if (type != null)
+                    return type;
+            }
         }
 
         return null;
@@ -533,6 +572,8 @@ internal class InterfaceImplementationGenerator
         // 自动检测 InheritedFrom：如果未显式指定，检查是否有带 [HttpClientApi(IsAbstract = true)] 的基接口
         var baseHasTokenManager = false;
         var baseHasAppAuthorizer = false;
+        // G7-01：基类是否为默认（AppContext）模式——既未设 HttpClient 亦未设 TokenManage。
+        var baseHasAppManager = false;
         string? inheritedFromInterfaceName = null;
         if (string.IsNullOrEmpty(inheritedFrom))
         {
@@ -554,6 +595,8 @@ internal class InterfaceImplementationGenerator
                     baseHasTokenManager = !string.IsNullOrWhiteSpace(baseTokenManage) && string.IsNullOrWhiteSpace(baseHttpClient);
                     // 基类为非 HttpClient 模式（TokenManager / AppContext）时，其生成的抽象基类会声明 protected _appAuthorizer 字段。
                     baseHasAppAuthorizer = string.IsNullOrWhiteSpace(baseHttpClient);
+                    // [G7-01] 默认模式基类（无 HttpClient 且无 TokenManage）持有 _appManager 字段，派生类必须透传 appManager。
+                    baseHasAppManager = string.IsNullOrWhiteSpace(baseHttpClient) && string.IsNullOrWhiteSpace(baseTokenManage);
                     break;
                 }
             }
@@ -585,6 +628,8 @@ internal class InterfaceImplementationGenerator
                             baseHasTokenManager = !string.IsNullOrWhiteSpace(baseTokenManage) && string.IsNullOrWhiteSpace(baseHttpClient);
                             // 同上：基类非 HttpClient 模式时声明 protected _appAuthorizer，派生类改为透传而非重复声明。
                             baseHasAppAuthorizer = string.IsNullOrWhiteSpace(baseHttpClient);
+                            // [G7-01] 默认模式基类（无 HttpClient 且无 TokenManage）持有 _appManager 字段，派生类必须透传 appManager。
+                            baseHasAppManager = string.IsNullOrWhiteSpace(baseHttpClient) && string.IsNullOrWhiteSpace(baseTokenManage);
                         }
                     }
                 }
@@ -650,6 +695,7 @@ internal class InterfaceImplementationGenerator
             BaseHasResilience = baseHasResilience,
             BaseHasTokenManager = baseHasTokenManager,
             BaseHasAppAuthorizer = baseHasAppAuthorizer,
+            BaseHasAppManager = baseHasAppManager,
             InheritedFromInterfaceName = inheritedFromInterfaceName,
             TokenType = tokenType,
             IsUserAccessToken = tokenType == "UserAccessToken",
@@ -775,7 +821,7 @@ internal class InterfaceImplementationGenerator
         foreach (var method in methods)
         {
             // 与 MethodGenerator 口径一致：仅已知 HTTP 方法特性名（生成器由特性名推导动词）。
-            var isHttpMethod = MethodAnalyzer.FindHttpMethodAttributeFromAttributes(method.GetAttributes()) != null;
+            var isHttpMethod = MethodAnalyzer.FindHttpMethodAttributeFromAttributes(context.GetMethodAttributes(method)) != null;
             if (!isHttpMethod)
                 continue;
 
@@ -849,14 +895,14 @@ internal class InterfaceImplementationGenerator
 
         foreach (var method in context.AllMethods)
         {
-            var retryAttr = method.GetAttributes()
+            var retryAttr = context.GetMethodAttributes(method)
                 .FirstOrDefault(attr => HttpClientGeneratorConstants.RetryAttributeNames.Contains(attr.AttributeClass?.Name));
 
             if (retryAttr == null)
                 continue;
 
             // 需要知道该方法的 HTTP 方法名：从 Http 特性推断
-            var httpAttr = MethodAnalyzer.FindHttpMethodAttributeFromAttributes(method.GetAttributes());
+            var httpAttr = MethodAnalyzer.FindHttpMethodAttributeFromAttributes(context.GetMethodAttributes(method));
             var httpMethodName = httpAttr?.AttributeClass?.Name;
             if (httpMethodName == null)
                 continue;
@@ -907,7 +953,7 @@ internal class InterfaceImplementationGenerator
 
         foreach (var method in context.AllMethods)
         {
-            var timeoutAttr = method.GetAttributes()
+            var timeoutAttr = context.GetMethodAttributes(method)
                 .FirstOrDefault(a => HttpClientGeneratorConstants.TimeoutAttributeNames.Contains(a.AttributeClass?.Name));
             if (timeoutAttr == null)
                 continue;
@@ -954,7 +1000,7 @@ internal class InterfaceImplementationGenerator
     {
         foreach (var method in context.AllMethods)
         {
-            var attributes = method.GetAttributes();
+            var attributes = context.GetMethodAttributes(method);
 
             ReportCircuitBreakerRangeViolation(method, attributes);
             ReportTimeoutRangeViolation(method, attributes);
