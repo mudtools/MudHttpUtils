@@ -24,7 +24,7 @@ namespace Mud.HttpUtils.Generator.Tests;
 /// </remarks>
 public class NoSoftAssertTests
 {
-    private const string TestsRoot = @"../../../../Tests/Mud.HttpUtils.Generator.Tests";
+    private const string TestsRoot = @"../../../../../Tests/Mud.HttpUtils.Generator.Tests";
 
     private static readonly Regex NonNullGuardRegex = new(
         @"if\s*\([^)]*!=\s*null\s*\)",

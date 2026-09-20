@@ -30,7 +30,7 @@ namespace Mud.HttpUtils.Generator.Tests;
 /// </remarks>
 public class AttributeParameterContractTests
 {
-    private const string GeneratorRoot = @"../../../../Mud.HttpUtils.Generator";
+    private const string GeneratorRoot = @"../../../../../Mud.HttpUtils.Generator";
 
     /// <summary>
     /// 显式豁免：由生成器<strong>之外</strong>的消费方读取，或语义上不属于生成器的配置面。

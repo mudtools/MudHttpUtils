@@ -26,6 +26,18 @@
 		<BaseOutputPath>..\bin</BaseOutputPath>
 	</PropertyGroup>
 
+	<!-- 测试项目独立输出目录：.Tests 后缀项目不再共享 Tests/bin。
+	     问题背景：所有测试项目默认输出到共享 Tests/bin，并行运行 dotnet test 时不同 TFM
+	     的引用依赖（如 Microsoft.Extensions.Logging.Abstractions）在同一目录内互相覆盖/锁定
+	     → CS1705 版本不匹配等偶发失败。此处回退为各项目自己的 bin\（与团队标准布局一致，
+	     也呼应 .gitignore 中 /Tests/<Proj>/bin、/Tests/<Proj>/obj 的既有条目）。
+	     为什么放 props 而非 targets：OutputPath 默认值在 Microsoft.NET.Sdk.targets 内生成，
+	     targets 晚于其导入，再改 BaseOutputPath 已不生效；props 在项目文件前导入，条件覆盖有效。
+	     仅按项目名后缀匹配，不影响 AnalysisOnlyProbe/Benchmarks/Testing 等非 .Tests 项目。 -->
+	<PropertyGroup Condition="$(MSBuildProjectName.EndsWith('.Tests'))">
+		<BaseOutputPath>bin\</BaseOutputPath>
+	</PropertyGroup>
+
 	<!-- AOT 兼容性配置：仅在 .NET 8+ TFM 上启用 AOT 分析器。
 	     netstandard2.0 与 net6.0 不支持 AOT 分析器，设置 IsAotCompatible 无实际效果。
 	     各 csproj 不再单独设置 IsAotCompatible/EnableAotAnalyzer，统一由此处管控。 -->

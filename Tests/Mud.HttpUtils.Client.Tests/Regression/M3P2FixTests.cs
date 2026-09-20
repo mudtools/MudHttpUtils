@@ -386,6 +386,12 @@ public class M3P2FixTests
                 measurements.Add(new Measurement<int>(value, tags.ToArray())));
             meterListener.Start();
 
+            // 确定性启用测量事件：MudHttpMeter 为进程级惰性静态源，其类型初始化时机取决于
+            // 本测试之外是否有其它并行类先访问它 —— 若 gauge 在 listener.Start() 之前已创建，
+            // InstrumentPublished 不会触发，RecordObservableInstruments 将永远无测量（隔离运行必失败）。
+            // 显式 EnableMeasurementEvents(静态实例) 不依赖仪器创建时序，先访问亦顺带完成类型初始化。
+            meterListener.EnableMeasurementEvents(MudHttpMeter.CircuitBreakerState);
+
             // 默认白名单含 policy_key → Measurement 携带 policy_key tag
             meterListener.RecordObservableInstruments();
             measurements.Should().ContainSingle();

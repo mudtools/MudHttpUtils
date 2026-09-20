@@ -19,7 +19,7 @@ namespace Mud.HttpUtils.Integration.Tests;
 /// </remarks>
 public class ConfigAuditRegressionTests
 {
-    private const string ClientReadmePath = @"../../../../Mud.HttpUtils.Client/README.md";
+    private const string ClientReadmePath = @"../../../../../Mud.HttpUtils.Client/README.md";
 
     // ========================================================================
     // 配置节名契约：重命名会静默使现有 appsettings.json 失效（用户侧无错误提示）

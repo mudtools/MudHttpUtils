@@ -31,8 +31,8 @@ namespace Mud.HttpUtils.CodeFixes.Tests;
 /// </remarks>
 public class ReadmeFixableContractTests
 {
-    private const string GeneratorReadmePath = @"../../../../Mud.HttpUtils.Generator/README.md";
-    private const string CodeFixesReadmePath = @"../../../../Mud.HttpUtils.CodeFixes/README.md";
+    private const string GeneratorReadmePath = @"../../../../../Mud.HttpUtils.Generator/README.md";
+    private const string CodeFixesReadmePath = @"../../../../../Mud.HttpUtils.CodeFixes/README.md";
 
     /// <summary>匹配诊断表行首的 ID 列：<c>| `AOT004` | …</c>。</summary>
     private static readonly Regex RowStartRegex =

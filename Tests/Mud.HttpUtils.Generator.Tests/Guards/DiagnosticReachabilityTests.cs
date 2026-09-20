@@ -30,7 +30,7 @@ namespace Mud.HttpUtils.Generator.Tests;
 /// </remarks>
 public class DiagnosticReachabilityTests
 {
-    private const string GeneratorRoot = @"../../../../Mud.HttpUtils.Generator";
+    private const string GeneratorRoot = @"../../../../../Mud.HttpUtils.Generator";
 
     /// <summary>
     /// 保留占位白名单：刻意无报告点、不视为死诊断的 ID

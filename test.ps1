@@ -77,7 +77,14 @@ foreach ($testProject in $TestProjects) {
         $filterArg = "--filter `"$Filter`""
     }
 
-    $command = "dotnet test `"$RootDir\$testProject`" -c $Configuration --no-build --verbosity normal $filterArg"
+    # 说明：不再使用 --no-build。原因：test.ps1 的 $TestProjects 列表中包含
+    # Tests/Mud.HttpUtils.Tests —— 该工程不在 Mud.HttpUtils.slnx（解决方案构建不会产出其 DLL），
+    # 旧共享输出布局下靠 Tests/bin 的历史遗留产物侥幸通过；Directory.Build.props 已改为
+    # 各 .Tests 项目独立输出目录后，该路径不再有遗留产物，--no-build 会直接失败。
+    # 现在各测试项目输出目录互相隔离（并行构建不会互锁），dotnet test 自带增量构建：
+    # 已由 slnx 构建过的项目按 MSBuild up-to-date 直接跳过，未构建的（如 Mud.HttpUtils.Tests）
+    # 自动补齐，语义最稳。
+    $command = "dotnet test `"$RootDir\$testProject`" -c $Configuration --verbosity normal $filterArg"
     Invoke-Expression $command
 
     if ($LASTEXITCODE -ne 0) {
