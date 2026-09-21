@@ -317,7 +317,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
             var tokenManagerKey = TokenMethodHelper.GetMethodTokenManagerKey(context, methodInfo);
             var requiresUserId = TokenMethodHelper.MethodRequiresUserId(context, methodInfo);
-            var effectiveScopes = methodInfo.MethodTokenScopes ?? methodInfo.InterfaceTokenScopes;
+            var effectiveScopes = methodInfo.EffectiveTokenScopes;
             var scopes = TokenHelper.ParseScopes(effectiveScopes);
 
             // [Phase2 修复 1.8] 对 scopes 元素转义，防止含 " \ 等特殊字符产出非法 C#。
@@ -1306,8 +1306,10 @@ internal class MethodGenerator : ICodeFragmentGenerator
         if (!hasTokenManager)
             return false;
 
-        if (!string.IsNullOrEmpty(methodInfo.MethodTokenInjectionMode) ||
-            !string.IsNullOrEmpty(methodInfo.InterfaceTokenInjectionMode))
+        // G8-20：改走模型访问器（原始接口级字段只允许出现在模型/解析器中，见
+        // EffectiveTokenFieldUsageGuardTests）；语义不变 —— 未显式声明模式时返回 false
+        //（不能用 EffectiveTokenInjectionMode，它带 "Header" 默认值）。
+        if (methodInfo.HasExplicitTokenInjectionMode)
             return true;
 
         return methodInfo.InterfaceAttributes?.Any(attr =>
@@ -1502,7 +1504,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         // P2.5（TK-07）：将 TokenManagerKey 写入恢复上下文，使恢复执行器能据此定位管理器并标识可观测维度。
         // [F-Identity] 经虚接缝解析（见上方 tokenKeyExpr / userIdExpr），继承方法被派生类覆盖身份后仍能正确恢复。
         // TMR-04：写入 Scopes，使恢复执行器能按正确的作用域失效和刷新令牌。
-        var effectiveScopes = methodInfo.MethodTokenScopes ?? methodInfo.InterfaceTokenScopes;
+        var effectiveScopes = methodInfo.EffectiveTokenScopes;
         var scopes = TokenHelper.ParseScopes(effectiveScopes);
         var scopesArg = scopes.Length > 0
             ? $"new[] {{ {string.Join(", ", scopes.Select(s => $"\"{StringEscapeHelper.EscapeString(s)}\""))} }}"

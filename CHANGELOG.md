@@ -6,8 +6,8 @@
 
 ## 2.0.10（Generator 四主线专项审查修复 G8-*，2026-09-21）
 
-> 依据《08 · Generator 四主线专项审查修复与功能完善方案》（v2.0，含独立复核结论 §13）实施，
-> 覆盖 G8-01～G8-19 共 18 项（含复核新增的 G8-18/G8-19）。
+> 依据《08 · Generator 四主线专项审查修复与功能完善方案》（v2.2，含独立复核结论 §13 与第二轮同族扫描 §16）实施，
+> 覆盖 G8-01～G8-21 共 20 项（含复核新增的 G8-18/G8-19，以及第二轮同族扫描新增的 G8-20/G8-21）。
 
 #### 修复（Fixed）
 
@@ -47,6 +47,16 @@
   `ITokenManager` 不一致）、`DefaultWrapSuffix`、`BasePathAttributeNames` 三个死常量，以及
   `PathAttributes` / `ParameterAnalyzer` / `AttributeArgumentReader` 中的 `Route`/`RouteAttribute` 幻影条目
   （`Attributes` 程序集中不存在 `RouteAttribute` 类型）；参数特性名单源化到 `HttpClientGeneratorConstants`。
+- **`[Token]` + `[Header]` 参数的头名解析（G8-20，与 G8-01/G8-19 同族第 3 例）**：`HeaderParameterBinder`
+  中的「令牌参数默认头名」回退逻辑存在三重错误 —— 直读**接口级** `Name`（忽略方法级）、把 `Name` 与
+  **Scheme 字面量**（`"Bearer"`/`"Basic"`）比对（分支不可达）、未命中时头名落回**参数名**。
+  结果：`[Token(Name = "X-Trace-Token")][Header] string token`（未显式给头名）会发出 `token: <值>`
+  而非 `X-Trace-Token: <值>`（服务端取不到令牌 ⇒ 401）。
+  现按注释抽为 `TokenMethodHelper.GetTokenHeaderName` 单一事实源，与令牌注入路径共享
+  「有效级 `Name`，仅 `Header`/`ApiKey` 模式消费；未声明时回退 `Authorization`」；
+  显式头名（`[Header(Name/AliasAs)]`）仍最优先，非 `Header`/`ApiKey` 模式保持参数名回退（语义不变）。
+- **`EffectiveTokenScopes` 单一事实源（G8-21）**：`MethodTokenScopes ?? InterfaceTokenScopes` 原先在
+  `MethodGenerator` 内联两次（令牌取用 + `TokenRecoveryContext` 生成），现收敛为模型访问器。
 
 #### 新增（Added）
 
@@ -59,11 +69,24 @@
 - **信任边界 XML 注释（G8-10）**：受信路径三入口（`Current` setter / `SwitchTo(IMudAppContext)` /
   `BeginScope(IMudAppContext)`）的生成物注释显式声明「不执行 appKey 校验与授权判定」并指向 `UseAppScope`。
 
+#### 内部改进
+
+- **同族缺陷复发守卫（G8-20 附带）**：新增 `Guards/EffectiveTokenFieldUsageGuardTests.cs` ——
+  接口级令牌字段（`InterfaceTokenName` / `InterfaceTokenInjectionMode` / `InterfaceTokenScheme` /
+  `InterfaceTokenScopes`）**只允许**出现在模型（`MethodAnalysisResult.cs`）与解析器（`MethodAnalyzer.cs`）中，
+  其余生成器文件直读即构建期失败并给出整改指引。同族「口径分裂」缺陷在本轮已出现 3 次
+  （G8-01 → G8-19 → G8-20），该守卫把复发成本从「运行期 401 静默失效」降为「一条测试失败」；
+  守卫自带自检用例（合成违规必须命中 / 注释提及不得命中）以避免恒真。
+- **模型访问器补齐**：新增 `MethodAnalysisResult.HasExplicitTokenInjectionMode`（供「是否需要取令牌」判定，
+  与带默认值的 `EffectiveTokenInjectionMode` 区分）与 `EffectiveTokenScopes`，
+  使原始接口级字段的消费点全部收进模型。
+
 #### 行为变更与迁移说明
 
 | 编号 | 变更前 | 变更后 | 迁移提示 |
 | --- | --- | --- | --- |
 | G8-19 | ApiKey 模式的 `Name` 无效，密钥注入 `Authorization` | 密钥注入 `Name` 指定的头（未声明 `Name` 时仍为 `Authorization`） | 若服务端此前「将错就错」按 `Authorization` 取值，请改为在 `[Token]` 显式声明 `Name = "Authorization"`，或调整服务端取值头名 |
+| G8-20 | `[Token]` + **无名** `[Header]` 参数的头名 = **参数名**（如 `token`） | 头名 = 令牌头名（有效级 `Name`；`Header` 模式未声明 `Name` 时为 `Authorization`） | 显式传名（`[Header("x-token")]`）的既有用法产物**逐字不变**；仅修正「未显式传名」的用法（此前服务端必然收不到令牌） |
 | G8-04 | 5 种混合模式继承组合产出不可编译代码且无诊断 | `HTTPCLIENT035`（Error）阻断；「基 Default × 派生 TokenManage」修正为可编译 | ① 统一两级 `HttpClient`/`TokenManage` 配置；② 改用 `InheritedFrom` 指向宿主自维护抽象基类 |
 | G8-05 | multipart 的 8 个站点在 `Add` 抛异常时不释放刚构造的 `HttpContent`（`StreamContent` 情形保持调用方流打开） | 异常路径统一 `Dispose()`（对 `StreamContent` 即**关闭调用方流**，与既有 `ContentType` 分支同语义） | 仅在请求构造失败（请求不会发送）的窄路径生效；依赖失败后继续复用该流的调用方需自行包裹不可释放流 |
 | G8-08 | 无 DI 工厂无法配置 `MaxSuccessResponseBytes` | 经 `IEnhancedClientConfig` 可配置（`0` = 不限制） | **外部自实现 `IEnhancedClientConfig` 的代码需补齐该成员**（库内两实现已同步） |

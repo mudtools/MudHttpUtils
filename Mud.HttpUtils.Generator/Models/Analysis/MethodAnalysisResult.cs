@@ -152,10 +152,39 @@ internal class MethodAnalysisResult
     public string? MethodTokenScopes { get; set; }
 
     /// <summary>
+    /// 获取有效的 Token 作用域：方法级优先于接口级（与 <see cref="EffectiveTokenName"/> /
+    /// <see cref="EffectiveTokenInjectionMode"/> / <see cref="EffectiveTokenScheme"/> 同一「有效级」口径）。
+    /// </summary>
+    /// <remarks>
+    /// G8-21：原表达式 <c>MethodTokenScopes ?? InterfaceTokenScopes</c> 在
+    /// <c>MethodGenerator</c> 中出现两次（令牌取用与 <c>TokenRecoveryContext</c> 生成），
+    /// 属「同一规则两处内联」的漂移面；收敛为本属性后与其余 Effective* 访问器一致。
+    /// </remarks>
+    public string? EffectiveTokenScopes => MethodTokenScopes ?? InterfaceTokenScopes;
+
+    /// <summary>
     /// 方法级 Token 注入模式（从方法上的 [Token(InjectionMode = ...)] 特性获取）。
     /// 方法级优先于接口级。如果未指定，使用接口级的 InterfaceTokenInjectionMode。
     /// </summary>
     public string? MethodTokenInjectionMode { get; set; }
+
+    /// <summary>
+    /// 是否<b>显式声明</b>了令牌注入模式（方法级或接口级任一非空）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>不可用 <see cref="EffectiveTokenInjectionMode"/> 代替</b>：后者带 <c>"Header"</c> 默认值，
+    /// 会把「未声明」误判为「已声明」。本属性用于「是否需要取令牌」的判定
+    /// （<c>MethodGenerator.ShouldInjectToken</c>），必须保持「未声明 ⇒ false」语义。
+    /// </para>
+    /// <para>
+    /// G8-20 附带收敛：本属性把「原始接口级字段」的最后两个消费点（ShouldInjectToken）也收进模型，
+    /// 使 <c>InterfaceToken*</c> 字段仅存在于模型与解析器中 —— 由
+    /// <c>EffectiveTokenFieldUsageGuardTests</c> 强制（其余文件必须走 Effective*/HasExplicit* 访问器）。
+    /// </para>
+    /// </remarks>
+    public bool HasExplicitTokenInjectionMode
+        => !string.IsNullOrEmpty(MethodTokenInjectionMode) || !string.IsNullOrEmpty(InterfaceTokenInjectionMode);
 
     /// <summary>
     /// 方法级 Token 名称（从方法上的 [Token(Name = "...")] 特性获取，GEN-09）。

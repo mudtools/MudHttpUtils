@@ -66,7 +66,8 @@ public sealed class TokenRecoveryContext
     /// <summary>
     /// 获取或设置令牌作用域集合，用于 401 恢复时按正确的作用域失效和刷新令牌。
     /// <para>TMR-04（D2 修订）：与取令牌路径同源，缺失时按默认作用域恢复。</para>
-    /// <para>生成代码写入 <c>methodInfo.MethodTokenScopes ?? methodInfo.InterfaceTokenScopes</c> 的解析结果。</para>
+    /// <para>生成代码写入 <c>methodInfo.EffectiveTokenScopes</c> 的解析结果（G8-21：方法级 Scopes 优先于接口级，
+    /// 与取令牌路径共用模型访问器，不再两处内联同一表达式）。</para>
     /// </summary>
     public string[]? Scopes { get; set; }
 }

@@ -16,6 +16,47 @@ internal static class TokenMethodHelper
         return !context.HasHttpClient && context.HasTokenManager;
     }
 
+    /// <summary>
+    /// 解析「令牌头名」（G8-20 · 单一事实源）。
+    /// </summary>
+    /// <param name="methodInfo">方法分析结果。</param>
+    /// <returns>令牌头名；无法解析时返回 <c>null</c>（由调用方按场景回退 <c>Authorization</c>）。</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>规则（与令牌注入路径完全同源）</b>：
+    /// ① 仅 <c>Header</c> / <c>ApiKey</c> 模式消费 <c>Name</c>（其余模式的 <c>Name</c> 语义不是头名：
+    /// <c>Query</c> 是查询参数名、<c>Cookie</c> 是 Cookie 名、<c>BasicAuth</c> 由 <c>Scheme</c> 决定、
+    /// <c>Path</c> 是 URL 占位符名）；
+    /// ② 名称取<b>有效级</b>（方法级 <c>[Token(Name)]</c> &gt; 接口级）；
+    /// ③ 兼容遗留标记：接口级 <c>[Header("Authorization")]</c> 会被
+    /// <c>MethodAnalyzer.AnalyzeInterfaceAttributes</c> 记为伪属性 <c>"Header:{name}"</c>，作为回退来源。
+    /// </para>
+    /// <para>
+    /// <b>为何必须共享</b>：本规则此前在 <c>RequestBuilder</c>（令牌注入）与 <c>HeaderParameterBinder</c>
+    /// （参数绑定）各有一份，后者还额外把 <c>Name</c> 与 Scheme 字面量（<c>"Bearer"</c>/<c>"Basic"</c>）比对，
+    /// 导致分支不可达、头名落回参数名（服务端取不到令牌 ⇒ 401）。抽出本方法后两处不可能再漂移，
+    /// 并由 <c>EffectiveTokenFieldUsageGuardTests</c> 阻止「绕过本方法直读接口级字段」的回归。
+    /// </para>
+    /// </remarks>
+    public static string? GetTokenHeaderName(MethodAnalysisResult methodInfo)
+    {
+        var mode = methodInfo.EffectiveTokenInjectionMode;
+        var tokenName = methodInfo.EffectiveTokenName;
+        if ((mode == HttpClientGeneratorConstants.TokenInjectionModeHeader ||
+             mode == HttpClientGeneratorConstants.TokenInjectionModeApiKey) &&
+            !string.IsNullOrEmpty(tokenName))
+        {
+            return tokenName;
+        }
+
+        var headerAttr = methodInfo.InterfaceAttributes?
+            .FirstOrDefault(attr => attr.StartsWith("Header:", StringComparison.Ordinal));
+        if (!string.IsNullOrEmpty(headerAttr))
+            return headerAttr!.Substring("Header:".Length);
+
+        return null;
+    }
+
     public static void GenerateTokenManagerKeyFieldAndMethod(StringBuilder codeBuilder, GeneratorContext context)
     {
         if (!ShouldGenerateTokenMethods(context))

@@ -878,26 +878,14 @@ internal class RequestBuilder
     internal string? GetTokenHeaderName(MethodAnalysisResult methodInfo)
     {
         // GEN-09：方法级 Token(Name) > 接口级。
-        // G8-01：门控「模式」同样取有效级 —— 原实现用 InterfaceTokenInjectionMode，
+        // G8-01：门控「模式」取有效级 —— 原实现用 InterfaceTokenInjectionMode，
         // 使方法级 [Token(InjectionMode = Header, Name = "X-Custom")] 落回调用方的
         // "Authorization" 兜底（静默写错头名，且 TokenRecoveryContext.HeaderName 一并错误）。
-        // G8-19：ApiKey 模式同样必须消费 Name —— 它是「密钥注入的头名」
-        //（README：Name = Header/Query 的名称；Attributes/README.md:264 示例 Name = "X-API-Key"），
-        // 原实现只对 Header 模式返回 Name，使 ApiKey 的密钥被写到 Authorization 头
-        //（服务端按 X-API-Key 取值必然 401），且与恢复路径 TokenRecoveryExecutor 的
-        // HeaderName 语义脱节。
-        var tokenName = methodInfo.EffectiveTokenName;
-        var mode = methodInfo.EffectiveTokenInjectionMode;
-        if ((mode == HttpClientGeneratorConstants.TokenInjectionModeHeader ||
-             mode == HttpClientGeneratorConstants.TokenInjectionModeApiKey) &&
-            !string.IsNullOrEmpty(tokenName))
-            return tokenName;
-
-        var headerAttr = methodInfo.InterfaceAttributes?.FirstOrDefault(attr => attr.StartsWith("Header:", StringComparison.Ordinal));
-        if (!string.IsNullOrEmpty(headerAttr))
-            return headerAttr!.Substring(7);
-
-        return null;
+        // G8-19：ApiKey 模式同样必须消费 Name（README 示例 Name = "X-API-Key"），
+        // 原实现只对 Header 模式返回 Name，使密钥被写到 Authorization 头。
+        // G8-20：规则已抽为 TokenMethodHelper.GetTokenHeaderName —— 与 HeaderParameterBinder
+        //（参数绑定路径）共享同一份，避免两处口径再次漂移（此前 binder 侧把 Name 与 Scheme 字面量比对）。
+        return TokenMethodHelper.GetTokenHeaderName(methodInfo);
     }
 
     private void FormatUrlParameter(StringBuilder sb, string placeholderName, string? formatString, bool urlEncode, string paramName, string paramType)

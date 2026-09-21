@@ -22,13 +22,26 @@ internal class HeaderParameterBinder : IParameterBinder
         var formatString = GetFormatString(headerAttr);
         var replace = headerAttr.NamedArguments.TryGetValue("Replace", out var replaceVal) && replaceVal is true;
 
-        string? interfaceHeaderName = GetTokenHeaderName(methodInfo);
         var isTokenParam = parameter.Attributes.Any(attr =>
             HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.Name));
 
-        if (isTokenParam && !string.IsNullOrEmpty(interfaceHeaderName) && string.IsNullOrEmpty(explicitHeaderName))
+        // G8-20：令牌参数（[Token] + [Header]，且未显式给头名）的默认头名 = **令牌注入头名**
+        //（与注入路径共享 TokenMethodHelper.GetTokenHeaderName —— 有效级 Name，仅 Header/ApiKey 模式消费；
+        // 未声明时回退 Authorization）。
+        // 修复前：本分支读接口级 InterfaceTokenName 并把 Name 与 Scheme 字面量（"Bearer"/"Basic"）比对 ⇒
+        // 分支不可达，头名落回**参数名**（如 token），服务端按 Name 指定的头取值必然 401。
+        // 显式头名（[Header(Name/AliasAs)]）仍然最优先（GEN-05 契约不变）。
+        if (isTokenParam && string.IsNullOrEmpty(explicitHeaderName))
         {
-            headerName = interfaceHeaderName;
+            var tokenMode = methodInfo.EffectiveTokenInjectionMode;
+            var isHeaderCarryingMode =
+                tokenMode == HttpClientGeneratorConstants.TokenInjectionModeHeader ||
+                tokenMode == HttpClientGeneratorConstants.TokenInjectionModeApiKey;
+
+            // 非 Header/ApiKey 令牌模式（Query/Cookie/BasicAuth/Path/HmacSignature）下，
+            // [Header] 无名参数保持 GEN-05 的「参数名」回退，不扩大改动面。
+            if (isHeaderCarryingMode)
+                headerName = TokenMethodHelper.GetTokenHeaderName(methodInfo) ?? "Authorization";
         }
 
         var headerMergeMode = methodInfo.HeaderMergeMode;
@@ -92,18 +105,8 @@ internal class HeaderParameterBinder : IParameterBinder
         }
     }
 
-    private static string? GetTokenHeaderName(MethodAnalysisResult methodInfo)
-    {
-        if (methodInfo.InterfaceTokenName == null)
-            return null;
-
-        return methodInfo.InterfaceTokenName switch
-        {
-            "Bearer" => "Authorization",
-            "Basic" => "Authorization",
-            _ => null
-        };
-    }
+    // G8-20：原私有 GetTokenHeaderName（读接口级 Name 并与 Scheme 字面量 "Bearer"/"Basic" 比对）已删除，
+    // 统一改用 TokenMethodHelper.GetTokenHeaderName —— 单一事实源，与令牌注入路径同口径。
 
     private static string? GetFormatString(ParameterAttributeInfo attr)
     {
