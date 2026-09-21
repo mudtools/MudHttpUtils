@@ -40,6 +40,9 @@ internal static class DiagnosticIds
     /// <summary>HTTPCLIENT033：同一编译 ≥2 个 [HttpClientApi] 接口时提示命名客户端绑定脱节（G7-04a）。</summary>
     public const string HttpClientNamedClientBindingMismatch = "HTTPCLIENT033";
 
+    /// <summary>HTTPCLIENT034：[Cache(VaryByUser=true)] 但接口无用户身份来源，键退化为 user:anonymous。</summary>
+    public const string HttpClientVaryByUserWithoutIdentity = "HTTPCLIENT034";
+
     // ── AOT JSON 序列化 ──
 
     /// <summary>AOT004：DTO 未被任何 JsonSerializerContext 覆盖。</summary>

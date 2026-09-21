@@ -74,6 +74,41 @@ namespace TestNamespace
     }
 
     /// <summary>
+    /// 场景: HmacSignature 注入模式（F-02 回归，与 <see cref="SnapshotInputSources"/> 同名样本对齐）。
+    /// 固化发射顺序：签名调用位于 using var __httpRequest 与 Body/Header 组装之后、Send 之前。
+    /// </summary>
+    [Fact]
+    public Task Snapshot_HmacSignatureMode_ShouldEmitDeferredSignature()
+    {
+        var (driver, outputCompilation) = VerifyFixture.RunGeneratorDriver(
+            SnapshotInputSources.All.First(s => s.Name == nameof(Snapshot_HmacSignatureMode_ShouldEmitDeferredSignature)).Source);
+        return VerifyFixture.VerifyGenerator(driver, outputCompilation);
+    }
+
+    /// <summary>
+    /// 场景: [Cache] 多接口同名方法（F-01 层A 回归，与 <see cref="SnapshotInputSources"/> 同名样本对齐）。
+    /// 固化默认缓存键首段含接口全名的键结构。
+    /// </summary>
+    [Fact]
+    public Task Snapshot_CacheMultiInterfaceSameName_ShouldIsolateCacheKeys()
+    {
+        var (driver, outputCompilation) = VerifyFixture.RunGeneratorDriver(
+            SnapshotInputSources.All.First(s => s.Name == nameof(Snapshot_CacheMultiInterfaceSameName_ShouldIsolateCacheKeys)).Source);
+        return VerifyFixture.VerifyGenerator(driver, outputCompilation);
+    }
+
+    /// <summary>
+    /// 场景: 默认模式 + [Cache] + [Retry]（F-04 生成文本侧回归，与 <see cref="SnapshotInputSources"/> 同名样本对齐）。
+    /// </summary>
+    [Fact]
+    public Task Snapshot_DefaultModeWithCacheAndRetry_ShouldCompileRegistration()
+    {
+        var (driver, outputCompilation) = VerifyFixture.RunGeneratorDriver(
+            SnapshotInputSources.All.First(s => s.Name == nameof(Snapshot_DefaultModeWithCacheAndRetry_ShouldCompileRegistration)).Source);
+        return VerifyFixture.VerifyGenerator(driver, outputCompilation);
+    }
+
+    /// <summary>
     /// 场景 3: PUT 方法 + Path + Body 参数。
     /// </summary>
     [Fact]

@@ -157,10 +157,33 @@ public class DefaultHmacSignatureProvider : IHmacSignatureProvider
         sb.Append(request.Method.Method.ToUpperInvariant());
         sb.Append('\n');
 
-        sb.Append(request.RequestUri?.AbsolutePath ?? "/");
+        // F-02 延迟签名发射点使相对 URI 请求首次可运行：生成代码在 BaseAddress 解析前以相对 URI
+        // 构造 HttpRequestMessage，而 AbsolutePath/Query 对相对 URI 会抛 InvalidOperationException，
+        // 故对相对 URI 手动拆分路径与查询串（客户端签名与服务端重建须使用同一口径）。
+        var uri = request.RequestUri;
+        string path;
+        string query;
+        if (uri is null)
+        {
+            path = "/";
+            query = string.Empty;
+        }
+        else if (uri.IsAbsoluteUri)
+        {
+            path = uri.AbsolutePath;
+            query = uri.Query;
+        }
+        else
+        {
+            var raw = uri.ToString();
+            var queryIndex = raw.IndexOf('?');
+            path = queryIndex >= 0 ? raw[..queryIndex] : raw;
+            query = queryIndex >= 0 ? raw[queryIndex..] : string.Empty;
+        }
+
+        sb.Append(path);
         sb.Append('\n');
 
-        var query = request.RequestUri?.Query;
         if (query is { Length: > 1 })
         {
             var queryString = query.StartsWith("?") ? query.Substring(1) : query;

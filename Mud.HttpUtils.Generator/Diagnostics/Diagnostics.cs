@@ -214,6 +214,22 @@ internal static class Diagnostics
         isEnabledByDefault: true);
 
     /// <summary>
+    /// F-03：[Cache(VaryByUser=true)] 但接口既未继承 ICurrentUserId 也无 [Token(RequiresUserId=true)]，
+    /// 用户维度退化为 "user:anonymous"（全体用户共享同一缓存）。
+    /// <para>
+    /// 级别为 Warning（非 Error）：实现类的可写属性 CurrentUserId 是合法的宿主手动赋值通道，
+    /// 属「可用但易错」路径，故仅编译期提示，不阻断构建。
+    /// </para>
+    /// </summary>
+    public static readonly DiagnosticDescriptor VaryByUserWithoutIdentitySourceWarning = new(
+        id: DiagnosticIds.HttpClientVaryByUserWithoutIdentity,
+        title: "[Cache] VaryByUser 缺少用户身份来源",
+        messageFormat: "接口 {0} 的方法 {1} 启用了 Cache(VaryByUser=true)，但接口未继承 ICurrentUserId 且无 [Token(RequiresUserId=true)]，缓存键将退化为 \"user:anonymous\"（全体用户共享）。请为接口继承 ICurrentUserId、为方法添加 [Token(RequiresUserId=true)]，或移除 VaryByUser。",
+        category: "代码生成",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    /// <summary>
     /// G7-04a：同一编译 ≥2 个 <c>[HttpClientApi]</c> 接口共存时，提示命名客户端与实现类解析脱节。
     /// </summary>
     /// <remarks>
@@ -248,7 +264,9 @@ internal static class Diagnostics
     public static readonly DiagnosticDescriptor HttpClientTypeNotFound = new(
         id: "HTTPCLIENT014",
         title: "HttpClient 类型未找到",
-        messageFormat: "接口 {0} 指定的 HttpClient 类型 '{1}' 在当前编译中未找到。请确认类型名称是否正确，或确保已通过 AddMudHttpClient 注册了对应的命名客户端。",
+        // F-07：双错可诊断性——014 不阻断生成（可抑制策略），类型缺失必然在后续产生指向生成文件的
+        // CS0246。追加引导语句把两个错误显式关联，避免用户把它们当独立问题分别排查。
+        messageFormat: "接口 {0} 指定的 HttpClient 类型 '{1}' 在当前编译中未找到。请确认类型名称是否正确，或确保已通过 AddMudHttpClient 注册了对应的命名客户端。实现类生成将继续进行，随后可能出现指向生成文件的 CS0246（类型 '{1}' 未找到），两者为同一根因，无需分别排查。",
         category: "代码生成",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);

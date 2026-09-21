@@ -56,13 +56,12 @@ internal class FormContentGenerator : TransitiveCodeGenerator
             .Collect()
             .WithTrackingName("FormContent_Collected");
 
-        var completeData = formContentModels
-            .Combine(context.AnalyzerConfigOptionsProvider)
-            .WithTrackingName("FormContent_CompleteData");
-
-        context.RegisterSourceOutput(completeData,
-            (ctx, provider) => ExecuteGenerator(
-                formContentModels: provider.Left,
+        // F-06：删除原 `.Combine(context.AnalyzerConfigOptionsProvider)`——ExecuteGenerator 从未消费
+        // 该 Right 值，Combine 只会让 AnalyzerConfigOptionsProvider（编辑器配置变化即失效）无谓地
+        // 击穿上方逐节点缓存，跟踪节点 FormContent_CompleteData 不再依赖 Provider。
+        context.RegisterSourceOutput(formContentModels,
+            (ctx, models) => ExecuteGenerator(
+                formContentModels: models,
                 context: ctx));
     }
 

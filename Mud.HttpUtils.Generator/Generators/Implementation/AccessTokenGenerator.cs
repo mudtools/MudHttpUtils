@@ -34,7 +34,10 @@ internal class AccessTokenGenerator : ICodeFragmentGenerator
         GenerateGetTokenAsyncNoParamMethod(codeBuilder);
         GenerateTokenIdentityResolvers(codeBuilder);
 
-        if (_context.HasApiKeyInjection)
+        // F-02 连带缺陷（T-01 编译断言检出）：ApplyHmacSignatureAsync 内部调用 GetApiKeyAsync("HmacSecretKey")，
+        // 但该成员此前仅在 HasApiKeyInjection 时生成——HmacSignature-only 接口编译报 CS0103
+        //（此前被 CS0841 掩盖，从未有 HMAC 全接口编译验证）。HMAC 签名依赖 ApiKey 通道获取签名密钥，二者取并集。
+        if (_context.HasApiKeyInjection || _context.HasHmacSignatureInjection)
             GenerateGetApiKeyAsyncMethod(codeBuilder);
 
         if (_context.HasHmacSignatureInjection)

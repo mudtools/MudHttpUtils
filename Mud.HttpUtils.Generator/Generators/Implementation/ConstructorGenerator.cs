@@ -750,6 +750,10 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("        /// <summary>");
             codeBuilder.AppendLine("        /// 创建一个应用上下文作用域，切换到指定的应用上下文，并在作用域结束时自动恢复之前的上下文。");
             codeBuilder.AppendLine("        /// </summary>");
+            codeBuilder.AppendLine("        /// <remarks>");
+            codeBuilder.AppendLine("        /// <b>警告</b>：请在创建作用域的同一执行上下文中以 <c>using</c> 释放；跨执行上下文/");
+            codeBuilder.AppendLine("        /// 其他线程的乱序释放会跳过回滚并可能残留上下文。长生命周期/后台任务请显式包络。");
+            codeBuilder.AppendLine("        /// </remarks>");
             codeBuilder.AppendLine("        /// <param name=\"context\">要切换到的应用上下文实例。</param>");
             codeBuilder.AppendLine("        /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>");
             codeBuilder.AppendLine("        public IDisposable BeginScope(IMudAppContext context)");
@@ -783,6 +787,10 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine("        /// 创建一个应用上下文作用域，切换到指定的应用上下文，并在作用域结束时自动恢复之前的上下文。");
         codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        /// <remarks>");
+        codeBuilder.AppendLine("        /// <b>警告</b>：请在创建作用域的同一执行上下文中以 <c>using</c> 释放；跨执行上下文/");
+        codeBuilder.AppendLine("        /// 其他线程的乱序释放会跳过回滚并可能残留上下文。长生命周期/后台任务请显式包络。");
+        codeBuilder.AppendLine("        /// </remarks>");
         codeBuilder.AppendLine("        /// <param name=\"context\">要切换到的应用上下文实例。</param>");
         codeBuilder.AppendLine("        /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>");
         codeBuilder.AppendLine("        public IDisposable BeginScope(IMudAppContext context)");
@@ -835,6 +843,11 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine("        /// 切换到指定的应用上下文。");
         codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        /// <remarks>");
+        codeBuilder.AppendLine("        /// <b>警告</b>：本方法基于 AsyncLocal 切换且无作用域保护，不要与 <c>using</c>/BeginScope 作用域");
+        codeBuilder.AppendLine("        /// 混用造成乱序释放——作用域释放时的归属判定会跳过非自身环境的回滚，可能导致上下文残留；");
+        codeBuilder.AppendLine("        /// 长生命周期/后台任务请使用 <see cref=\"UseAppScope\"/> 显式包络。");
+        codeBuilder.AppendLine("        /// </remarks>");
         codeBuilder.AppendLine("        /// <returns>返回切换后的应用上下文。</returns>");
         // GEN-02 修复：移除 [Obsolete] 标记。UseApp 仍是 GetWebApi 模式下的有效路径，
         // BeginScope 用于需要自动恢复的作用域场景，两者并非替代关系而是互补关系。
@@ -868,6 +881,8 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <b>推荐使用本方法替代 <see cref=\"UseApp\"/></b>：<c>UseApp</c> 的无作用域切换（<c>SwitchTo</c>）");
         codeBuilder.AppendLine("        /// 不会自动归还上下文，若调用方未显式切回，后续请求（尤其是后台任务、长生命周期单例编排、");
         codeBuilder.AppendLine("        /// <c>IAsyncEnumerable</c> 未逐段开作用域等场景）可能串到错误的应用并读取到错误应用的令牌。");
+        codeBuilder.AppendLine("        /// <b>警告</b>：请勿在 using 之外手动 Dispose 或跨执行上下文乱序释放——");
+        codeBuilder.AppendLine("        /// 归属判定会跳过非自身环境的回滚并可能残留上下文。");
         codeBuilder.AppendLine("        /// </remarks>");
         codeBuilder.AppendLine("        /// <param name=\"appKey\">应用的唯一标识符。</param>");
         codeBuilder.AppendLine("        /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。建议配合 <c>using</c> 使用。</returns>");
@@ -974,6 +989,10 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine("        /// 创建一个应用上下文作用域，切换到指定的应用上下文，并在作用域结束时自动恢复之前的上下文。");
         codeBuilder.AppendLine("        /// </summary>");
+        codeBuilder.AppendLine("        /// <remarks>");
+        codeBuilder.AppendLine("        /// <b>警告</b>：请在创建作用域的同一执行上下文中以 <c>using</c> 释放；跨执行上下文/");
+        codeBuilder.AppendLine("        /// 其他线程的乱序释放会跳过回滚并可能残留上下文。长生命周期/后台任务请显式包络。");
+        codeBuilder.AppendLine("        /// </remarks>");
         codeBuilder.AppendLine("        /// <param name=\"appKey\">应用的唯一标识符。</param>");
         codeBuilder.AppendLine("        /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>");
         codeBuilder.AppendLine($"        {ResolveAppMemberModifier()}IDisposable BeginScope(string appKey)");

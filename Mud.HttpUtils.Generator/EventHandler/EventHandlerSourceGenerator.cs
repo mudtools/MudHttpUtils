@@ -55,13 +55,12 @@ internal class EventHandlerSourceGenerator : TransitiveCodeGenerator
             .Collect()
             .WithTrackingName("EventHandler_Collected");
 
-        var completeData = classModels
-            .Combine(context.AnalyzerConfigOptionsProvider)
-            .WithTrackingName("EventHandler_CompleteData");
-
-        context.RegisterSourceOutput(completeData,
-            (ctx, provider) => ExecuteGenerator(
-                classModels: provider.Left,
+        // F-06：删除原 `.Combine(context.AnalyzerConfigOptionsProvider)`——ExecuteGenerator 从未消费
+        // 该 Right 值，Combine 只会让 AnalyzerConfigOptionsProvider（编辑器配置变化即失效）无谓地
+        // 击穿上方逐节点缓存，跟踪节点 EventHandler_CompleteData 不再依赖 Provider。
+        context.RegisterSourceOutput(classModels,
+            (ctx, models) => ExecuteGenerator(
+                classModels: models,
                 context: ctx));
     }
 

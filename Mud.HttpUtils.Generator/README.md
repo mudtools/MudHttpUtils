@@ -263,6 +263,33 @@ public static partial class HttpClientApiExtensions
 }
 ```
 
+#### 默认模式的工厂化注册
+
+**默认模式**（未指定 `HttpClient` / `TokenManage`）的实现类构造必需 `IMudAppContext`，裸 `AddTransient` 在 DI 容器中无法解析该参数。因此默认模式生成**工厂 lambda 注册**（HttpClient / TokenManager 模式仍为裸注册，其构造参数均可由 DI 直接满足）：
+
+```csharp
+services.AddTransient<global::MyApp.IConfigApi>(sp =>
+{
+    var appManager = sp.GetRequiredService<global::Mud.HttpUtils.IAppManager<global::Mud.HttpUtils.IMudAppContext>>();
+    return new global::MyApp.Internal.ConfigApi(
+        appContext: appManager.GetDefaultApp(),                                  // DI 注入的默认应用语义
+        appContextHolder: sp.GetRequiredService<global::Mud.HttpUtils.IAppContextHolder>(),
+        executor: sp.GetRequiredService<global::Mud.HttpUtils.IHttpRequestExecutor>(),
+        appManager: appManager,
+        appAuthorizer: sp.GetService<global::Mud.HttpUtils.IAppAccessAuthorizer>(),
+        cacheProvider: sp.GetRequiredService<global::Mud.HttpUtils.IHttpResponseCache>(),  // 仅接口含 [Cache] 时
+        resilienceResolver: null,                                                // 仅接口含弹性特性时 GetRequiredService
+        contentSerializer: sp.GetService<global::Mud.HttpUtils.IHttpContentSerializer>(),
+        logger: sp.GetService<global::Microsoft.Extensions.Logging.ILogger>());
+});
+```
+
+语义要点：
+
+- **fail-closed**：未注册默认应用（`RegisterApp(..., isDefault: true)`）时，解析即抛 `InvalidOperationException`（消息指向注册应用），不再产生「无法解析 IMudAppContext」的晦涩 DI 错误；
+- **必需依赖用 `GetRequiredService`**（缺注册报错清晰），可选依赖用 `GetService`（保持构造默认值语义）；
+- 方法**执行**上下文仍由 `UseApp` / `SwitchTo` 经 `IAppContextHolder` 显式设置，工厂注入的默认应用仅满足构造与 DI 激活。
+
 #### Timeout 配置生成
 
 当 `[HttpClientApi(Timeout = N)]` 中 `Timeout > 0` 时，生成器会在注册方法中为命名客户端 `{接口名}_HttpClient` 设置 `client.Timeout`：
@@ -332,7 +359,8 @@ services.AddExternalWebApiHttpClient();
 因此：
 
 1. **受信边界**：宿主不得向不可信代码暴露 `IAppManager.GetApp` 或已解析的应用上下文——否则 `SwitchTo`/`Current` setter 成为越权旁路；
-2. **优先使用** `UseAppScope` / `BeginScope(appKey)`：`UseApp` 的无作用域切换（`SwitchTo`）在长生命周期宿主导航后**不会自动归还** AsyncLocal 上下文，后台任务 / `IAsyncEnumerable` 等场景可能串到错误应用（详见 Client README「上下文归还约束」）。
+2. **优先使用** `UseAppScope` / `BeginScope(appKey)`：`UseApp` 的无作用域切换（`SwitchTo`）在长生命周期宿主导航后**不会自动归还** AsyncLocal 上下文，后台任务 / `IAsyncEnumerable` 等场景可能串到错误应用（详见 Client README「上下文归还约束」）；
+3. **⚠️ 乱序释放警示**：不要把 `UseApp`（无作用域切换）与 `using`/`BeginScope` 作用域**混用**——作用域释放时的归属判定会跳过非自身环境的回滚，导致上下文残留到非预期应用（行为已由测试锁定，修复需作用域栈方案）；长生命周期/后台任务请使用 `UseAppScope` 显式包络，作用域请始终以 `using` 在**创建它的同一执行上下文**中释放。
 
 ### 令牌键与租户隔离（G7-12）
 
@@ -596,6 +624,21 @@ Task<Config> GetConfigAsync();
 
 > `[Cache]` 特性标记的方法，配合 `CacheResponseInterceptor` 实现响应缓存。`CacheAttribute` 支持 `DurationSeconds`、`CacheKeyTemplate`、`VaryByUser`、`UseSlidingExpiration` 属性（`Priority` 已随 CFG-27 移除，生成器从未处理该属性）。
 
+#### 默认缓存键结构
+
+未提供 `CacheKeyTemplate` 时，生成器按以下结构组装缓存键（`IHttpResponseCache` 为进程级单例，键必须显式携带接口与应用维度，防止串缓存）：
+
+```text
+{AppKey}␟{接口全名}.{方法名}|{user:userId}|{参数段...}
+  ├─ AppKey 前缀：运行端按 IAppContextHolder.Current（UseApp/BeginScope）→ 默认应用 → "default" 解析（F-01 层B）
+  ├─ 接口全名：不同接口的同名同参方法互不命中（F-01 层A）
+  └─ user 段：仅 VaryByUser=true 时出现；缺少身份来源时退化为 user:anonymous（编译期 HTTPCLIENT034 警告）
+```
+
+> **兼容性（升级注意）**：键结构变更意味着**升级后既有缓存条目全量失效一次**（新键无法命中旧键），属预期行为，不造成脏读。
+>
+> **`CacheKeyTemplate` 分支例外**：自定义模板是用户显式声明的键语义，生成器**不**注入接口名段；跨接口冲突风险由模板作者自负。
+
 > **注意**：不建议将 `Response<T>` 返回类型与 `[Cache]` 特性组合使用。缓存会存储整个 `Response<T>` 对象（包括 StatusCode 和 ResponseHeaders），可能导致后续请求返回过期的状态码和响应头。生成器会对此组合发出 HTTPCLIENT011 编译警告。
 
 ### Base Path 支持
@@ -804,6 +847,7 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 | `HTTPCLIENT031` | Error | `[Cache]` 方法的默认缓存键包含无法稳定表达的参数（复杂对象 / `[Body]` / `[QueryMap]` / 非标量数组等）且未提供 `CacheKeyTemplate` | 默认键会退化为类型名，导致不同请求命中同一缓存并返回错误数据。请改用 `[Cache(..., CacheKeyTemplate = "…")]` 显式声明键模板，或移除 `[Cache]` | 否 | 是 |
 | `HTTPCLIENT032` | Warning | `[Cache]` 提供了 `CacheKeyTemplate`，但模板未引用某 Unsafe 参数 | 不同取值可能命中同一缓存（串键）。请在模板中加入该参数（字面量检查，尽力而为） | 否 | 是 |
 | `HTTPCLIENT033` | Info | 同一编译 ≥2 个 `[HttpClientApi]` 接口共存：实现类按类型级 `IEnhancedHttpClient` 解析，各接口命名客户端及其 `[HttpClientApi(Timeout)]` 配置可能未按命名隔离（G7-04a） | 多接口场景将对应命名客户端注册为默认 `IEnhancedHttpClient`，或阅读「生成客户端命名」章节 | 否 | 否 |
+| `HTTPCLIENT034` | Warning | `[Cache(VaryByUser = true)]` 但接口未继承 `ICurrentUserId` 且无 `[Token(RequiresUserId = true)]`：用户维度退化为 `user:anonymous`，全体用户共享同一缓存 | 为接口继承 `ICurrentUserId`、为方法添加 `[Token(RequiresUserId = true)]`，或移除 `VaryByUser`（也可通过实现类可写属性 `CurrentUserId` 手动赋值，属易错路径） | 否 | 是 |
 
 > **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010`、`HTTPCLIENT019` 当前**未使用**（ID 保留为占位，不重新分配）。
 > - `HTTPCLIENT010`：`BaseAddress` 已移除（CFG-27），使用直接编译错误 `CS0117`，无需生成器提示。

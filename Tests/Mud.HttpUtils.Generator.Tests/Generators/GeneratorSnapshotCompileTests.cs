@@ -470,5 +470,77 @@ namespace TestNamespace
     }
 }
 """),
+        // ── T-01（评审改版）：缺陷回归样本，入 SnapshotInputSources 后自动获得快照级 + 编译断言双覆盖 ──
+
+        // F-02 回归：HmacSignature 全接口样本。修复前 __httpRequest 先使用后声明（CS0841），
+        // 修复后签名调用延迟至请求组装完成后（using 声明之后、Send 之前）。含 [Body] 验证签名覆盖请求体。
+        new("Snapshot_HmacSignatureMode_ShouldEmitDeferredSignature", """
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    public class CreateOrderRequest
+    {
+        public string Sku { get; set; } = string.Empty;
+    }
+
+    [HttpClientApi(TokenManage = "ITestTokenManager")]
+    [Token(TokenType = "AccessToken", InjectionMode = TokenInjectionMode.HmacSignature)]
+    public interface ITestApi
+    {
+        [Post("/orders")]
+        Task<string> CreateOrderAsync([Body] CreateOrderRequest request);
+    }
+}
+"""),
+        // F-01 层A 回归：两接口同名同参方法各标 [Cache]，默认键首段须含接口全名（跨接口隔离）。
+        new("Snapshot_CacheMultiInterfaceSameName_ShouldIsolateCacheKeys", """
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface IFooApi
+    {
+        [Get("/foo/users/{id}")]
+        [Cache(60)]
+        Task<string> GetUserAsync([Path] int id);
+    }
+
+    [HttpClientApi]
+    public interface IBarApi
+    {
+        [Get("/bar/users/{id}")]
+        [Cache(60)]
+        Task<string> GetUserAsync([Path] int id);
+    }
+}
+"""),
+        // F-04 生成文本侧回归：默认模式 + [Cache] + [Retry]，实现类构造（含必需 cacheProvider/resilienceResolver）
+        // 与注册产物工厂 lambda 一并被编译断言覆盖（Registration 文件被 VerifyGenerator 快照跳过，但参与编译）。
+        new("Snapshot_DefaultModeWithCacheAndRetry_ShouldCompileRegistration", """
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Get("/data")]
+        [Cache(60)]
+        [Retry(3, 1000)]
+        Task<string> GetDataAsync();
+    }
+}
+"""),
     };
 }

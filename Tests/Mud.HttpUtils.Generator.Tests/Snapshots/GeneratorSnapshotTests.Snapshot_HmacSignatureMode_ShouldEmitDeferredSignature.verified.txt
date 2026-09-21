@@ -34,13 +34,13 @@ namespace TestNamespace.Internal
         /// </summary>
         private readonly IAppContextHolder _appContextHolder;
         /// <summary>
-        /// 应用管理器（可选），用于通过 AppKey 查找应用上下文。注册后支持多应用切换。
+        /// 用于HttpClient客户端操作操作使用的的<see cref = "ITestTokenManager"/> 令牌管理实例。
         /// </summary>
-        private readonly IAppManager<IMudAppContext>? _appManager;
+        private readonly ITestTokenManager _tokenManager;
         /// <summary>
-        /// 默认应用上下文，在 _appManager 为 null 时作为后备。
+        /// 令牌提供器，用于获取访问令牌。
         /// </summary>
-        private readonly IMudAppContext _defaultAppContext;
+        private readonly ITokenProvider _tokenProvider;
         /// <summary>
         /// 应用切换授权器（可选）。非 null 时 UseApp/BeginScope 将先做授权判定。
         /// </summary>
@@ -69,22 +69,23 @@ namespace TestNamespace.Internal
         /// </summary>
         /// <param name="contentSerializer">HTTP 内容序列化器（可选,未注入时使用默认 SystemTextJsonContentSerializer）</param>
         /// <param name="logger">日志记录器（可选）</param>
-        /// <param name="appContext">应用上下文</param>
+        /// <param name="appManager">应用令牌管理器</param>
         /// <param name="appContextHolder">应用上下文持有器</param>
+        /// <param name="tokenProvider">令牌提供器</param>
         /// <param name="executor">HTTP请求执行器，统一处理响应反序列化和错误处理（由 DI 注入，可替换为自定义实现）</param>
-        /// <param name="appManager">应用管理器（可选，注册后支持多应用切换）</param>
+        /// <param name="appAuthorizer">应用切换授权器（可选，非 null 时 UseApp/BeginScope 将先做授权判定）</param>
         /// <param name="cacheProvider">HTTP响应缓存提供器（可选，未声明 [Cache] 特性时由 DI 注入）</param>
         /// <param name="resilienceResolver">弹性策略解析器（可选，未声明 [Retry]/[CircuitBreaker]/[Timeout] 特性时由 DI 注入）</param>
 #if NET5_0_OR_GREATER
         [System.Diagnostics.CodeAnalysis.DynamicDependency(System.Diagnostics.CodeAnalysis.DynamicallyAccessedMemberTypes.All, typeof(global::Mud.HttpUtils.RestService))]
 #endif
-        public TestApi(IMudAppContext appContext, IAppContextHolder appContextHolder, IHttpRequestExecutor executor, IAppManager<IMudAppContext>? appManager = null, IAppAccessAuthorizer? appAuthorizer = null, IHttpResponseCache? cacheProvider = null, IResiliencePolicyResolver? resilienceResolver = null, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null)
+        public TestApi(ITestTokenManager appManager, IAppContextHolder appContextHolder, ITokenProvider tokenProvider, IHttpRequestExecutor executor, IAppAccessAuthorizer? appAuthorizer = null, IHttpResponseCache? cacheProvider = null, IResiliencePolicyResolver? resilienceResolver = null, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null)
         {
             _contentSerializer = contentSerializer ?? HttpContentSerializerFactory.CreateDefault();
             _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+            _tokenManager = appManager ?? throw new ArgumentNullException(nameof(appManager));
             _appContextHolder = appContextHolder ?? throw new ArgumentNullException(nameof(appContextHolder));
-            _defaultAppContext = appContext ?? throw new ArgumentNullException(nameof(appContext));
-            _appManager = appManager;
+            _tokenProvider = tokenProvider ?? throw new ArgumentNullException(nameof(tokenProvider));
             _appAuthorizer = appAuthorizer;
             _cacheProvider = cacheProvider;
             _resilienceResolver = resilienceResolver;
@@ -92,7 +93,20 @@ namespace TestNamespace.Internal
         }
 
         /// <summary>
-        /// 获取当前的应用上下文。
+        /// 令牌管理器查找键。保留供子类覆盖使用。
+        /// 新代码应使用 GetTokenAsync(tokenManagerKey, ...) 方法指定查找键。
+        /// </summary>
+        private readonly string _tokenManagerKey = "AccessToken";
+
+        /// <summary>
+        /// 获取用于远程API访问的Token令牌管理器查找键。
+        /// 保留供子类覆盖使用。新代码应使用 GetTokenAsync(tokenManagerKey, ...) 方法指定查找键。
+        /// </summary>
+        /// <returns>返回Token令牌管理器查找键。</returns>
+        protected virtual string GetTokenManagerKey() => _tokenManagerKey;
+
+        /// <summary>
+        /// 获取或设置当前的应用上下文。
         /// </summary>
         public IMudAppContext? Current
         {
@@ -134,15 +148,13 @@ namespace TestNamespace.Internal
         /// <returns>返回切换后的应用上下文。</returns>
         public IMudAppContext UseApp(string appKey)
         {
-            if (_appManager == null)
-                throw new InvalidOperationException("当前模式不支持按 AppKey 切换应用上下文。请注册 IAppManager<IMudAppContext> 服务。");
             if (!global::Mud.HttpUtils.AppKey.IsValid(appKey))
                 throw new global::System.ArgumentException("appKey 格式非法：只能由字母、数字、'.'、'_'、'-' 组成，首字符必须是字母或数字，长度不超过 128。", nameof(appKey));
             if (_appAuthorizer == null)
                 throw new InvalidOperationException("多应用切换需要授权器：请注册 IAppAccessAuthorizer 实现（例如 services.AddSingleton<IAppAccessAuthorizer, YourAuthorizer>()）；若为单应用或完全受信场景，请显式注册 Mud.HttpUtils.AllowAllAppAccessAuthorizer 以表明放行意图。");
             if (!_appAuthorizer.CanSwitchTo(appKey))
                 throw new UnauthorizedAccessException("当前调用主体无权切换到目标应用（IAppAccessAuthorizer.CanSwitchTo 返回 false）。");
-            var context = _appManager.GetApp(appKey);
+            var context = _tokenManager.GetApp(appKey);
             _appContextHolder.SwitchTo(context);
             return context;
         }
@@ -161,15 +173,13 @@ namespace TestNamespace.Internal
         /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。建议配合 <c>using</c> 使用。</returns>
         public IDisposable UseAppScope(string appKey)
         {
-            if (_appManager == null)
-                throw new InvalidOperationException("当前模式不支持按 AppKey 切换应用上下文。请注册 IAppManager<IMudAppContext> 服务。");
             if (!global::Mud.HttpUtils.AppKey.IsValid(appKey))
                 throw new global::System.ArgumentException("appKey 格式非法：只能由字母、数字、'.'、'_'、'-' 组成，首字符必须是字母或数字，长度不超过 128。", nameof(appKey));
             if (_appAuthorizer == null)
                 throw new InvalidOperationException("多应用切换需要授权器：请注册 IAppAccessAuthorizer 实现（例如 services.AddSingleton<IAppAccessAuthorizer, YourAuthorizer>()）；若为单应用或完全受信场景，请显式注册 Mud.HttpUtils.AllowAllAppAccessAuthorizer 以表明放行意图。");
             if (!_appAuthorizer.CanSwitchTo(appKey))
                 throw new UnauthorizedAccessException("当前调用主体无权切换到目标应用（IAppAccessAuthorizer.CanSwitchTo 返回 false）。");
-            var context = _appManager.GetApp(appKey);
+            var context = _tokenManager.GetApp(appKey);
             return _appContextHolder.BeginScope(context);
         }
 
@@ -179,7 +189,7 @@ namespace TestNamespace.Internal
         /// <returns>返回默认的应用上下文。</returns>
         public IMudAppContext UseDefaultApp()
         {
-            var context = _appManager?.GetDefaultApp() ?? _defaultAppContext;
+            var context = _tokenManager.GetDefaultApp();
             _appContextHolder.SwitchTo(context);
             return context;
         }
@@ -191,7 +201,7 @@ namespace TestNamespace.Internal
         /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>
         public IDisposable UseDefaultAppScope()
         {
-            var context = _appManager?.GetDefaultApp() ?? _defaultAppContext;
+            var context = _tokenManager.GetDefaultApp();
             return _appContextHolder.BeginScope(context);
         }
 
@@ -206,15 +216,13 @@ namespace TestNamespace.Internal
         /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>
         public IDisposable BeginScope(string appKey)
         {
-            if (_appManager == null)
-                throw new InvalidOperationException("当前模式不支持按 AppKey 切换应用上下文。请注册 IAppManager<IMudAppContext> 服务。");
             if (!global::Mud.HttpUtils.AppKey.IsValid(appKey))
                 throw new global::System.ArgumentException("appKey 格式非法：只能由字母、数字、'.'、'_'、'-' 组成，首字符必须是字母或数字，长度不超过 128。", nameof(appKey));
             if (_appAuthorizer == null)
                 throw new InvalidOperationException("多应用切换需要授权器：请注册 IAppAccessAuthorizer 实现（例如 services.AddSingleton<IAppAccessAuthorizer, YourAuthorizer>()）；若为单应用或完全受信场景，请显式注册 Mud.HttpUtils.AllowAllAppAccessAuthorizer 以表明放行意图。");
             if (!_appAuthorizer.CanSwitchTo(appKey))
                 throw new UnauthorizedAccessException("当前调用主体无权切换到目标应用（IAppAccessAuthorizer.CanSwitchTo 返回 false）。");
-            var context = _appManager.GetApp(appKey);
+            var context = _tokenManager.GetApp(appKey);
             return _appContextHolder.BeginScope(context);
         }
 
@@ -229,20 +237,17 @@ namespace TestNamespace.Internal
         [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
             Justification = "生成的 JSON 序列化/反序列化通过注入的 IHttpContentSerializer（其 options 含消费方 JsonSerializerContext resolver）保证 AOT 安全，T 的类型元数据已由消费方的 JsonSerializerContext 保留.")]
 #endif
-        public async global::System.Threading.Tasks.Task<string> GetDataAsync(string requestId)
+        public async global::System.Threading.Tasks.Task<string> CreateOrderAsync(global::TestNamespace.CreateOrderRequest request)
         {
-            if (string.IsNullOrWhiteSpace(requestId))
-            {
-                throw new ArgumentNullException(nameof(requestId));
-            }
-            var __appContext = _appContextHolder.Current ?? throw new InvalidOperationException("无法找到当前服务的应用上下文。");
+            if (request == null)
+                throw new ArgumentNullException(nameof(request));
+            var __appContext = _appContextHolder.Current ?? _tokenManager.GetDefaultApp();
 
-            var __url = $"/data";
-            using var __httpRequest = new HttpRequestMessage(HttpMethod.Get, __url);
-            if (!global::Mud.HttpUtils.HttpHeaderValueValidator.IsValid(requestId))
-                throw new global::System.ArgumentException("HTTP 头值包含非法字符（CR/LF）。", nameof(requestId));
-            __httpRequest.Headers.Add("X-Request-Id", requestId);
+            var __url = $"/orders";
+            using var __httpRequest = new HttpRequestMessage(HttpMethod.Post, __url);
 
+            __httpRequest.Content = _contentSerializer.ToHttpContent(request);
+            await ApplyHmacSignatureAsync(__httpRequest).ConfigureAwait(false);
             return (await _executor.ExecuteAsync<string>(
                 __httpRequest,
                 __appContext.HttpClient,
@@ -258,6 +263,86 @@ namespace TestNamespace.Internal
                    },
                },
                 null, cancellationToken: default).ConfigureAwait(false))!;
+        }
+
+        /// <summary>
+        /// 获取访问令牌。
+        /// </summary>
+        /// <param name="tokenManagerKey">令牌管理器查找键。</param>
+        /// <param name="userId">用户ID（可选）。</param>
+        /// <param name="scopes">令牌作用域数组（可选）。</param>
+        /// <param name="cancellationToken">取消令牌。</param>
+        /// <returns>返回访问令牌</returns>
+        private async Task<string> GetTokenAsync(string tokenManagerKey, string? userId = null, string[]? scopes = null, CancellationToken cancellationToken = default)
+        {
+            // 查询方法不应有写入副作用。移除 _appContextHolder.Current = appContext 赋值，
+            // 改为只读回退到默认应用。上下文切换由构造函数初始化或显式 UseApp 调用负责。
+            var appContext = _appContextHolder.Current ?? _tokenManager.GetDefaultApp();
+            var request = new TokenRequest
+            {
+                TokenManagerKey = tokenManagerKey,
+                UserId = userId,
+                Scopes = scopes
+            };
+            return await _tokenProvider.GetTokenAsync(appContext, request, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// 异步获取当前应用上下文的访问令牌。
+        /// </summary>
+        /// <returns>包含访问令牌的字符串任务。</returns>
+        public virtual async Task<string> GetTokenAsync()
+        {
+            return await GetTokenAsync(ResolveTokenManagerKey("AccessToken"), ResolveTokenUserId(null)).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// 解析本次请求的令牌管理器查找键（[F-Identity] 令牌身份接缝）。
+        /// </summary>
+        /// <param name="defaultTokenManagerKey">由声明接口解析出的默认查找键。</param>
+        /// <returns>实际用于定位令牌管理器的查找键。</returns>
+        public virtual string ResolveTokenManagerKey(string defaultTokenManagerKey) => defaultTokenManagerKey;
+
+        /// <summary>
+        /// 解析本次请求的用户标识（[F-Identity] 令牌身份接缝）。
+        /// </summary>
+        /// <param name="defaultUserId">由声明接口解析出的默认用户标识。</param>
+        /// <returns>实际用于获取用户令牌的用户标识。</returns>
+        public virtual string? ResolveTokenUserId(string? defaultUserId) => defaultUserId;
+
+        /// <summary>
+        /// 获取 API Key。
+        /// </summary>
+        /// <param name="keyName">API Key 名称（可选）。</param>
+        /// <returns>返回 API Key</returns>
+        private async Task<string> GetApiKeyAsync(string? keyName = null)
+        {
+            if (keyName != null && string.IsNullOrWhiteSpace(keyName))
+                throw new System.ArgumentException("API Key name cannot be whitespace.", nameof(keyName));
+            // 查询方法不应有写入副作用。移除 _appContextHolder.Current = appContext 赋值，
+            // 改为只读回退到默认应用。上下文切换由构造函数初始化或显式 UseApp 调用负责。
+            var appContext = _appContextHolder.Current ?? _tokenManager.GetDefaultApp();
+            var apiKeyProvider = appContext.GetService<IApiKeyProvider>();
+            if(apiKeyProvider == null)
+                throw new InvalidOperationException("无法找到 IApiKeyProvider 服务，请先注册 ApiKey 提供器。");
+            return await apiKeyProvider.GetApiKeyAsync(keyName).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// 为 HTTP 请求应用 HMAC 签名。
+        /// </summary>
+        /// <param name="request">HTTP 请求消息。</param>
+        private async Task ApplyHmacSignatureAsync(HttpRequestMessage request)
+        {
+            // 查询方法不应有写入副作用。移除 _appContextHolder.Current = appContext 赋值，
+            // 改为只读回退到默认应用。上下文切换由构造函数初始化或显式 UseApp 调用负责。
+            var appContext = _appContextHolder.Current ?? _tokenManager.GetDefaultApp();
+            var hmacProvider = appContext.GetService<IHmacSignatureProvider>();
+            if(hmacProvider == null)
+                throw new InvalidOperationException("无法找到 IHmacSignatureProvider 服务，请先注册 HMAC 签名提供器。");
+            var secretKey = await GetApiKeyAsync("HmacSecretKey").ConfigureAwait(false);
+            var signature = await hmacProvider.GenerateSignatureAsync(request, secretKey).ConfigureAwait(false);
+            request.Headers.Add("X-Hmac-Signature", signature);
         }
 
     }

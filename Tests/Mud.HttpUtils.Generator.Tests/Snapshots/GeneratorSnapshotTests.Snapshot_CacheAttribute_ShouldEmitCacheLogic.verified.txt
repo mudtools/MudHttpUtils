@@ -112,6 +112,10 @@ namespace TestNamespace.Internal
         /// <summary>
         /// 创建一个应用上下文作用域，切换到指定的应用上下文，并在作用域结束时自动恢复之前的上下文。
         /// </summary>
+        /// <remarks>
+        /// <b>警告</b>：请在创建作用域的同一执行上下文中以 <c>using</c> 释放；跨执行上下文/
+        /// 其他线程的乱序释放会跳过回滚并可能残留上下文。长生命周期/后台任务请显式包络。
+        /// </remarks>
         /// <param name="context">要切换到的应用上下文实例。</param>
         /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>
         public IDisposable BeginScope(IMudAppContext context)
@@ -122,6 +126,11 @@ namespace TestNamespace.Internal
         /// <summary>
         /// 切换到指定的应用上下文。
         /// </summary>
+        /// <remarks>
+        /// <b>警告</b>：本方法基于 AsyncLocal 切换且无作用域保护，不要与 <c>using</c>/BeginScope 作用域
+        /// 混用造成乱序释放——作用域释放时的归属判定会跳过非自身环境的回滚，可能导致上下文残留；
+        /// 长生命周期/后台任务请使用 <see cref="UseAppScope"/> 显式包络。
+        /// </remarks>
         /// <returns>返回切换后的应用上下文。</returns>
         public IMudAppContext UseApp(string appKey)
         {
@@ -145,6 +154,8 @@ namespace TestNamespace.Internal
         /// <b>推荐使用本方法替代 <see cref="UseApp"/></b>：<c>UseApp</c> 的无作用域切换（<c>SwitchTo</c>）
         /// 不会自动归还上下文，若调用方未显式切回，后续请求（尤其是后台任务、长生命周期单例编排、
         /// <c>IAsyncEnumerable</c> 未逐段开作用域等场景）可能串到错误的应用并读取到错误应用的令牌。
+        /// <b>警告</b>：请勿在 using 之外手动 Dispose 或跨执行上下文乱序释放——
+        /// 归属判定会跳过非自身环境的回滚并可能残留上下文。
         /// </remarks>
         /// <param name="appKey">应用的唯一标识符。</param>
         /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。建议配合 <c>using</c> 使用。</returns>
@@ -187,6 +198,10 @@ namespace TestNamespace.Internal
         /// <summary>
         /// 创建一个应用上下文作用域，切换到指定的应用上下文，并在作用域结束时自动恢复之前的上下文。
         /// </summary>
+        /// <remarks>
+        /// <b>警告</b>：请在创建作用域的同一执行上下文中以 <c>using</c> 释放；跨执行上下文/
+        /// 其他线程的乱序释放会跳过回滚并可能残留上下文。长生命周期/后台任务请显式包络。
+        /// </remarks>
         /// <param name="appKey">应用的唯一标识符。</param>
         /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>
         public IDisposable BeginScope(string appKey)
@@ -240,7 +255,7 @@ namespace TestNamespace.Internal
                        VaryByUser = false,
                        UseSlidingExpiration = false,
                    },
-                       CacheKey = "GetDataAsync",
+                       CacheKey = "global::TestNamespace.ITestApi.GetDataAsync",
                },
                 null, cancellationToken: default).ConfigureAwait(false))!;
         }

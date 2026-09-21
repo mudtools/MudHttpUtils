@@ -171,6 +171,27 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
             ? TypeSymbolHelper.GetTypeAllDisplayString(compilation, effectiveTokenManage!)
             : null;
 
+        // F-04：扫描接口（含继承链）方法级特性，判定 cacheProvider / resilienceResolver 在
+        // 工厂注册中是否必需解析，与 ConstructorGenerator 的 needsCacheParam / needsResilienceParam
+        // 口径一致（HasCache || 基接口存在 [Cache]）。AllInterfaces 已覆盖继承链。
+        var hasCache = false;
+        var hasResilience = false;
+        foreach (var method in interfaceSymbol.GetMembers()
+            .Concat(interfaceSymbol.AllInterfaces.SelectMany(i => i.GetMembers()))
+            .OfType<IMethodSymbol>())
+        {
+            foreach (var attr in method.GetAttributes())
+            {
+                var attrName = attr.AttributeClass?.Name;
+                if (HttpClientGeneratorConstants.CacheAttributeNames.Contains(attrName))
+                    hasCache = true;
+                if (HttpClientGeneratorConstants.RetryAttributeNames.Contains(attrName)
+                    || HttpClientGeneratorConstants.CircuitBreakerAttributeNames.Contains(attrName)
+                    || HttpClientGeneratorConstants.TimeoutAttributeNames.Contains(attrName))
+                    hasResilience = true;
+            }
+        }
+
         return new HttpClientApiInfo(
             interfaceSymbol.Name,
             implementationName,
@@ -179,7 +200,11 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
             timeout,
             registryGroupName,
             httpClient,
-            tokenManagerType);
+            tokenManagerType)
+        {
+            HasCache = hasCache,
+            HasResilience = hasResilience
+        };
     }
 
     private int ExtractTimeoutParameter(AttributeData httpClientApiAttribute)
@@ -561,6 +586,32 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         codeBuilder.AppendLine($"                client.Timeout = global::System.TimeSpan.FromSeconds({timeoutSeconds});");
         // BaseAddress 应通过 AddMudHttpClient(clientName, baseAddress) 在运行时配置，此处不生成
         codeBuilder.AppendLine($"            }});");
-        codeBuilder.AppendLine($"            services.AddTransient<{fullyQualifiedInterface}, {fullyQualifiedImplementation}>();");
+
+        // F-04：默认模式（无 HttpClient / TokenManager）构造必需 IMudAppContext，裸 AddTransient<IFoo, Impl>
+        // 在 DI 容器无法解析该参数（空容器或未注册 IMudAppContext 时激活即抛）。
+        // 工厂化注册：以「DI 注入的默认应用」语义显式化 GetDefaultApp()（未注册默认应用时 fail-closed，
+        // 异常消息指向注册应用），必需依赖 GetRequiredService（缺注册报错清晰）、可选依赖 GetService
+        // （保持构造默认值语义）。TokenManager / HttpClient 模式构造参数均可由 DI 直接满足，维持裸注册。
+        if (string.IsNullOrEmpty(api.HttpClientType) && string.IsNullOrEmpty(api.TokenManagerType))
+        {
+            codeBuilder.AppendLine($"            services.AddTransient<{fullyQualifiedInterface}>(sp =>");
+            codeBuilder.AppendLine("            {");
+            codeBuilder.AppendLine("                var appManager = sp.GetRequiredService<global::Mud.HttpUtils.IAppManager<global::Mud.HttpUtils.IMudAppContext>>();");
+            codeBuilder.AppendLine($"                return new {fullyQualifiedImplementation}(");
+            codeBuilder.AppendLine("                    appContext: appManager.GetDefaultApp(),");
+            codeBuilder.AppendLine("                    appContextHolder: sp.GetRequiredService<global::Mud.HttpUtils.IAppContextHolder>(),");
+            codeBuilder.AppendLine("                    executor: sp.GetRequiredService<global::Mud.HttpUtils.IHttpRequestExecutor>(),");
+            codeBuilder.AppendLine("                    appManager: appManager,");
+            codeBuilder.AppendLine("                    appAuthorizer: sp.GetService<global::Mud.HttpUtils.IAppAccessAuthorizer>(),");
+            codeBuilder.AppendLine($"                    cacheProvider: {(api.HasCache ? "sp.GetRequiredService<global::Mud.HttpUtils.IHttpResponseCache>()" : "null")},");
+            codeBuilder.AppendLine($"                    resilienceResolver: {(api.HasResilience ? "sp.GetRequiredService<global::Mud.HttpUtils.IResiliencePolicyResolver>()" : "null")},");
+            codeBuilder.AppendLine("                    contentSerializer: sp.GetService<global::Mud.HttpUtils.IHttpContentSerializer>(),");
+            codeBuilder.AppendLine("                    logger: sp.GetService<global::Microsoft.Extensions.Logging.ILogger>());");
+            codeBuilder.AppendLine("            });");
+        }
+        else
+        {
+            codeBuilder.AppendLine($"            services.AddTransient<{fullyQualifiedInterface}, {fullyQualifiedImplementation}>();");
+        }
     }
 }

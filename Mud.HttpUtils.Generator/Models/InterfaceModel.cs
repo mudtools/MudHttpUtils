@@ -165,17 +165,17 @@ internal readonly struct InterfaceModel : IEquatable<InterfaceModel>
                         sb.Append(arg.Value?.ToString() ?? string.Empty);
                     }
 
-                    // 命名参数：仅纳入影响生成代码的关键属性，避免过度失效
+                    // 命名参数：全量纳入指纹。
+                    // 原白名单（HttpClient/TokenManage/InheritedFrom/IsAbstract/ContentType/Timeout）漏掉了
+                    // RegistryGroupName 等参与生成产物的参数——白名单分支变化时注册产物不更新，属静默失效。
+                    // 全量纳入的代价仅是「非相关命名参数变化多触发一次 per-item 重生成」，命名参数实参
+                    // 变化本属低频事件，正确性优先。
                     foreach (var arg in attr.NamedArguments)
                     {
-                        if (arg.Key is "HttpClient" or "TokenManage" or "InheritedFrom"
-                            or "IsAbstract" or "ContentType" or "Timeout")
-                        {
-                            sb.Append('|');
-                            sb.Append(arg.Key);
-                            sb.Append('=');
-                            sb.Append(arg.Value.Value?.ToString() ?? string.Empty);
-                        }
+                        sb.Append('|');
+                        sb.Append(arg.Key);
+                        sb.Append('=');
+                        sb.Append(arg.Value.Value?.ToString() ?? string.Empty);
                     }
                 }
             }

@@ -1,4 +1,4 @@
-﻿// -----------------------------------------------------------------------
+// -----------------------------------------------------------------------
 //  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
 //  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
 //  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
@@ -65,4 +65,19 @@ internal sealed class HttpClientApiInfo : HttpClientApiInfoBase
     /// 当 [HttpClientApi(TokenManage = "IFeishuAppManager")] 设置了 TokenManage 属性时，构造函数依赖此类型。
     /// </remarks>
     public string? TokenManagerType { get; }
+
+    /// <summary>
+    /// 接口（含继承链）是否存在 [Cache] 方法。
+    /// </summary>
+    /// <remarks>
+    /// 注册生成器据此决定工厂 lambda 中 cacheProvider 是必需解析
+    /// （GetRequiredService，缺注册报错清晰）还是传 null，口径与 ConstructorGenerator
+    /// 的 needsCacheParam 一致（HasCache || 继承基接口存在 [Cache]）。
+    /// </remarks>
+    public bool HasCache { get; set; }
+
+    /// <summary>
+    /// 接口（含继承链）是否存在弹性特性方法（[Retry] / [CircuitBreaker] / [Timeout]）。
+    /// </summary>
+    public bool HasResilience { get; set; }
 }

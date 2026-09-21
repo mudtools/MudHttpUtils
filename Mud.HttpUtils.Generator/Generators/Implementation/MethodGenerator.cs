@@ -348,7 +348,10 @@ internal class MethodGenerator : ICodeFragmentGenerator
             }
             else if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModeHmacSignature)
             {
-                codeBuilder.AppendLine($"            await ApplyHmacSignatureAsync(__httpRequest).ConfigureAwait(false);");
+                // F-02：HMAC 签名不在令牌获取块发射。__httpRequest 在 GenerateExecutorCall → GenerateRequestSetup
+                // 中才声明（先使用后声明，CS0841）；且即使声明顺序正确，此处对空请求签名也是语义错误
+                // （签名输入应为 方法 + 路径 + Body + 头最终态）。实际发射延迟至 GenerateExecutorCall 中
+                // 请求组装完成后、发送前（成员生成不受影响：ApplyHmacSignatureAsync 由 HasHmacSignatureInjection 门控）。
             }
             else if (injectionMode == HttpClientGeneratorConstants.TokenInjectionModeBasicAuth)
             {
@@ -536,6 +539,14 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         // GEN-03：方法级固定 [Header]（在接口级静态 Header 之后发射，Replace 才能覆盖接口级）
         GenerateMethodLevelFixedHeaders(codeBuilder, methodInfo);
+
+        // F-02：HMAC 签名在请求组装完成后（Body / 接口级 / 方法级头均已就绪）、发送前执行；
+        // 置于返回类型分支分叉之前，IAsyncEnumerable 等直达路径同样先签名再发送。
+        if (needsTokenInjection &&
+            methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeHmacSignature)
+        {
+            codeBuilder.AppendLine("            await ApplyHmacSignatureAsync(__httpRequest).ConfigureAwait(false);");
+        }
 
         var cancellationTokenArg = GetCancellationTokenParams(methodInfo);
         var deserializeType = methodInfo.IsAsyncMethod ? methodInfo.AsyncInnerReturnType : methodInfo.ReturnType;
@@ -880,6 +891,22 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 && CacheKeySafety.Classify(p) == CacheKeySafety.Classification.Unsafe)
             .ToList();
 
+        // F-03：VaryByUser 缺少用户身份来源 → 键退化为 "user:anonymous"（全体用户共享同一缓存）。
+        // 必须置于下方 unsafeParams 提前 return 之前——无 Unsafe 参数的方法恰恰是 VaryByUser
+        // 最常见的使用形态，放在 return 之后诊断将永远不可达。调用点已由 CacheEnabled 门禁，
+        // 无需重复判定 Cache 启用。
+        if (methodInfo.CacheVaryByUser
+            && !context.Configuration.AnyMethodRequiresUserId
+            && !context.ImplementsICurrentUserId)
+        {
+            context.ProductionContext.ReportDiagnostic(
+                Diagnostic.Create(
+                    Diagnostics.VaryByUserWithoutIdentitySourceWarning,
+                    location,
+                    context.InterfaceSymbol.Name,
+                    methodSymbol.Name));
+        }
+
         if (unsafeParams.Count == 0)
             return;
 
@@ -985,9 +1012,22 @@ internal class MethodGenerator : ICodeFragmentGenerator
             }
         }
 
+        // F-01 层A：默认键首段改为「接口全名.方法名」，堵跨接口同名方法同参串缓存。
+        // 键结构："{InterfaceFQN}.{MethodName}" + "|" + ["user:{id}" +] 参数段；
+        // VaryByUser 前缀自首段移至接口段之后（随升级一次性全量缓存失效，用户维度语义不变）。
+        // CacheKeyTemplate 显式模板分支（上方）豁免接口名注入：模板为用户显式键语义，改写违背显式意图。
         var keyBuilder = new StringBuilder();
-        keyBuilder.Append(varyPrefix);
-        keyBuilder.Append($"\"{methodInfo.MethodName}\"");
+        keyBuilder.Append('"')
+            .Append(context.InterfaceSymbol.ToDisplayString(Microsoft.CodeAnalysis.SymbolDisplayFormat.FullyQualifiedFormat))
+            .Append('.')
+            .Append(methodInfo.MethodName)
+            .Append('"');
+        if (methodInfo.CacheVaryByUser)
+        {
+            keyBuilder.Append(" + \"|\" + \"user:\" + (")
+                .Append(userIdExpression)
+                .Append(" ?? \"anonymous\")");
+        }
         foreach (var segment in segments)
         {
             keyBuilder.Append(" + \"|\" + ").Append(segment);

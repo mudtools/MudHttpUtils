@@ -149,4 +149,82 @@ public class CacheKeySafetyDiagnosticTests
 
         diagnostics.Where(d => d.Id is "HTTPCLIENT031" or "HTTPCLIENT032").Should().BeEmpty();
     }
+
+    // ── F-03：HTTPCLIENT034（VaryByUser 缺少用户身份来源） ──
+
+    [Fact]
+    public void CacheVaryByUser_NoIdentitySource_ReportsHTTPCLIENT034Warning()
+    {
+        var source = Usings + """
+            namespace TestNamespace
+            {
+                [HttpClientApi]
+                public interface ITestApi
+                {
+                    [Get("/x")]
+                    [Cache(60, VaryByUser = true)]
+                    Task<string> MAsync([Query] int id);
+                }
+            }
+            """;
+
+        var (diagnostics, _) = Run(source);
+
+        diagnostics.Should().Contain(d => d.Id == "HTTPCLIENT034" && d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Warning,
+            "VaryByUser + 无用户身份来源应报 HTTPCLIENT034 Warning");
+    }
+
+    [Fact]
+    public void CacheVaryByUser_InterfaceInheritsICurrentUserId_NoHTTPCLIENT034()
+    {
+        var source = Usings + """
+            namespace TestNamespace
+            {
+                [HttpClientApi]
+                public interface ITestApi : ICurrentUserId
+                {
+                    [Get("/x")]
+                    [Cache(60, VaryByUser = true)]
+                    Task<string> MAsync([Query] int id);
+                }
+            }
+            """;
+
+        var (diagnostics, _) = Run(source);
+
+        diagnostics.Where(d => d.Id == "HTTPCLIENT034").Should().BeEmpty(
+            "接口继承 ICurrentUserId 后 VaryByUser 有身份来源，不应报 HTTPCLIENT034");
+    }
+
+    [Fact]
+    public void CacheVaryByUser_WithTokenRequiresUserId_NoHTTPCLIENT034()
+    {
+        var source = Usings + """
+            namespace TestNamespace
+            {
+                public interface ITestTokenManager
+                {
+                    IMudAppContext GetDefaultApp();
+                    IMudAppContext GetApp(string appKey);
+                }
+
+                [HttpClientApi(TokenManage = "ITestTokenManager")]
+                public interface ITestApi
+                {
+                    [Get("/x")]
+                    [Cache(60, VaryByUser = true)]
+                    Task<string> MAsync([Query] int id);
+
+                    [Get("/y")]
+                    [Token(RequiresUserId = true)]
+                    Task<string> M2Async();
+                }
+            }
+            """;
+
+        var (diagnostics, _) = Run(source);
+
+        diagnostics.Where(d => d.Id == "HTTPCLIENT034").Should().BeEmpty(
+            "[Token(RequiresUserId=true)] 提供用户身份来源，不应报 HTTPCLIENT034");
+    }
 }

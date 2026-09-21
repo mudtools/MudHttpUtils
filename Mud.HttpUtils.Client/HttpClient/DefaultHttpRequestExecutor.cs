@@ -127,6 +127,36 @@ public class DefaultHttpRequestExecutor(
         return _resilienceResolver;
     }
 
+    /// <summary>
+    /// 解析当前缓存键的应用维度前缀（F-01 层B）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="IHttpResponseCache"/> 为进程级单例，缓存键必须显式携带应用维度，否则
+    /// AsyncLocal 切换应用后同名同参请求会跨应用串缓存。取键口径与
+    /// <see cref="ResolveEffectiveResilienceResolver"/> 的 per-app 策略解析一致：
+    /// 显式环境上下文（UseApp / BeginScope）优先，回退默认应用；默认应用未设置时回退
+    /// <c>"default"</c>（fail-open 仅影响键维度隔离，不产生脏读）。
+    /// </para>
+    /// </remarks>
+    private string ResolveCurrentCacheScopeKey()
+    {
+        var currentAppKey = _appContextHolder?.Current?.AppKey;
+        if (string.IsNullOrEmpty(currentAppKey) && _appManager != null)
+        {
+            try
+            {
+                currentAppKey = _appManager.GetDefaultApp().AppKey;
+            }
+            catch
+            {
+                // 默认应用未设置时不阻断请求，回退 "default"（与弹性路径容错口径一致）
+            }
+        }
+
+        return string.IsNullOrEmpty(currentAppKey) ? "default" : currentAppKey!;
+    }
+
     /// <inheritdoc/>
     // XML 响应路径在 Native AOT 下不可达：AOT007（编译期）拒绝 XML 方法，ConstructorGenerator 在
     // AOT 上下文中将 XmlSerializer 字段改为抛 PlatformNotSupportedException 的属性。故此处压制 IL2026 是安全的。
@@ -828,8 +858,10 @@ public class DefaultHttpRequestExecutor(
                 {
                     var expiration = TimeSpan.FromSeconds(descriptor.Cache.DurationSeconds);
                     // 透传滑动过期语义
+                    // F-01 层B：键前置应用维度前缀，堵跨应用串缓存（与仅缓存路径口径一致）
+                    var scopedKey = $"{ResolveCurrentCacheScopeKey()}\u001F{descriptor.CacheKey}";
                     return await _cacheProvider.GetOrFetchAsync(
-                        descriptor.CacheKey,
+                        scopedKey,
                         () => ResilienceWrapped(cancellationToken),
                         expiration,
                         descriptor.Cache.UseSlidingExpiration,
@@ -845,8 +877,10 @@ public class DefaultHttpRequestExecutor(
         {
             var expiration = TimeSpan.FromSeconds(descriptor.Cache.DurationSeconds);
             // 透传滑动过期语义
+            // F-01 层B：键前置应用维度前缀，堵跨应用串缓存（与弹性+缓存路径口径一致）
+            var scopedKey = $"{ResolveCurrentCacheScopeKey()}\u001F{descriptor.CacheKey}";
             return await _cacheProvider.GetOrFetchAsync(
-                descriptor.CacheKey,
+                scopedKey,
                 () => coreExecute(request, cancellationToken),
                 expiration,
                 descriptor.Cache.UseSlidingExpiration,

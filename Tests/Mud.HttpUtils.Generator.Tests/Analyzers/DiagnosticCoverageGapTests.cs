@@ -126,6 +126,10 @@ public class DiagnosticCoverageGapTests
         var d = diagnostics.Where(x => x.Id == "HTTPCLIENT014").ToList();
         d.Should().ContainSingle("HttpClient 类型无法解析时必须报 HTTPCLIENT014 提示用户检查类型名");
         d[0].Severity.Should().Be(DiagnosticSeverity.Warning);
+
+        // F-07：消息必须包含引导语句，把 014 与后续 CS0246 显式关联（双错同一根因）
+        d[0].GetMessage().Should().Contain("两者为同一根因，无需分别排查",
+            "HTTPCLIENT014 消息应引导用户将后续 CS0246 与本诊断关联");
     }
 
     /// <summary>

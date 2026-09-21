@@ -4,6 +4,59 @@
 
 ---
 
+## 2.0.9（生成器评审修复——缓存键、HMAC、诊断与 DI 注册，2026-09-21）
+
+> 依据《生成器专项评审修复方案》（generator-review-fix-plan-2026-09-21）实施，
+> 覆盖 F-01～F-08 八项缺陷/改进及实施中发现的连带缺陷（C-1～C-3）。
+
+#### 修复（Fixed）
+
+- **跨接口/跨应用缓存键冲突（F-01，破坏性）**：默认缓存键原先仅由 `{方法名}|{参数}` 构成——
+  不同接口的同名方法、不同应用（多应用场景）的同名方法共享同一缓存条目，导致数据串号。
+  现改为双层结构：生成端在键首注入接口全名（层A）；运行端在键前附加当前应用键前缀
+  `{AppKey}␟{CacheKey}`（层B，无应用上下文时回退 `default`）。
+  **升级后既有缓存条目全部失效一次**（键结构变更，非兼容变更）；显式 `CacheKeyTemplate` 分支不受层A影响。
+- **HMAC 签名时机错误**：签名原先在 Content 就绪前计算，带体请求签出的是空体摘要，
+  服务端验签必然失败（该路径此前无法编译到达）。现签名发射点迁移至 Body/头就绪之后、发送之前；
+  连带修复 `DefaultHmacSignatureProvider` 对相对 URI（如 `new Uri("/api/x", UriKind.Relative)`）
+  取 `AbsolutePath` 抛 `InvalidOperationException` 的崩溃（C-2）。
+- **HTTPCLIENT014 诊断消息易误导**：`HttpClient` 类型未找到时，消息只指向类型本身，
+  而用户实际看到的是随后一串指向生成文件的 CS0246。现消息追加提示：
+  「实现类生成将继续进行，随后可能出现指向生成文件的 CS0246（类型 '{1}' 未找到），两者为同一根因，无需分别排查」。
+- **编辑器配置变化无谓失效生成器缓存**：`FormContentGenerator` / `EventHandlerSourceGenerator`
+  的 pipeline 对未消费的 `AnalyzerConfigOptionsProvider` 做了 `.Combine`，任何编辑器配置变化
+  （如 analyzer 严重级别调整）都会使这两个生成器全量重跑。现移除该 Combine，跟踪节点与实际消费对齐。
+
+#### 新增（Added）
+
+- **新诊断 HTTPCLIENT034**：`[Cache(VaryByUser = true)]` 但接口既未继承 `ICurrentUserId`、
+  又无任何 `[Token(RequiresUserId = true)]` 方法时，缓存键的用户维度退化为 `user:anonymous`
+  （全体用户共享同一缓存）。现编译期报 Warning，提示补身份来源或移除 `VaryByUser`。
+- **默认模式 DI 注册工厂化（F-04，语义变化）**：默认模式（既无 `HttpClientType` 又无 `TokenManage`）的
+  生成客户端原先以 `AddTransient<IFoo, Impl>()` 裸注册，必需的 `IMudAppContext` 在 DI 解析时无从提供
+  （该模式此前实际不可用）。现改为工厂 lambda 注册：`appContext` 由
+  `IAppManager<IMudAppContext>.GetDefaultApp()` 提供——**未注册默认应用时解析即抛异常（fail-closed）**；
+  必需依赖走 `GetRequiredService`，可选依赖（授权器/序列化器/日志）走 `GetService`；
+  缓存/弹性提供器按接口特性（含继承链）按需注入。
+  注意：生成方法的执行上下文仍由 `IAppContextHolder.Current` 决定，宿主需 `SwitchTo`/`BeginScope` 设置。
+
+#### 内部改进
+
+- **接口指纹全量命名参数**：`InterfaceModel` 原先仅白名单命名参数参与指纹，
+  `RegistryGroupName` 等参数变化不触发重生成（静默失效）。现全量写入指纹。
+- **作用域乱序释放警示**：`UseApp`/`BeginScope`/`UseAppScope` 生成成员的 XML 注释追加
+  乱序释放警示（跨执行上下文 Dispose 时回滚链断裂，终态可能残留中间应用的值），并补 4 个锁定测试固化既有 B8 语义（行为本身未变更）。
+
+#### 行为变更与迁移说明
+
+| 编号 | 变更前 | 变更后 | 迁移提示 |
+| --- | --- | --- | --- |
+| F-01 | 默认缓存键 = `{方法名}\|{参数}` | `{AppKey}␟{接口全名}.{方法名}\|{user段}\|{参数段}` | 升级后缓存全量失效一次；跨接口/跨应用串号消除。依赖旧键格式做外部对账的下游需调整 |
+| F-02 | HMAC 在 Content 就绪前签名（带体请求验签失败） | Body/头就绪后、发送前签名 | 服务端验签从此可用；此前自行绕过验签的宿主可恢复校验 |
+| F-04 | 默认模式客户端裸注册（运行期缺应用上下文） | 工厂注入默认应用；未设置默认应用时解析即抛异常 | 启动时需 `RegisterApp(..., isDefault: true)`；方法执行前需经 `IAppContextHolder` 设置上下文 |
+
+---
+
 ## 2.0.8（Token 管理第二轮缺陷修复——Phase 1 止血，2026-09-21）
 
 > 依据 `Token 管理第二轮缺陷修复与能力完善方案`（TR 轮）实施。本轮为 Phase 1（P0 止血），

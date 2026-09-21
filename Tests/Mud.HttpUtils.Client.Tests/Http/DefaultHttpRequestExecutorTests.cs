@@ -524,8 +524,9 @@ public class DefaultHttpRequestExecutorTests
         var result = await executor.ExecuteAsync<TestUser>(CreateRequest(), mockClient.Object, descriptor, null);
 
         result!.Id.Should().Be(20);
+        // F-01 层B：缓存键前置应用作用域（进程级缓存单例），无应用上下文时回退 "default"
         mockCache.Verify(c => c.GetOrFetchAsync(
-            "test-key", It.IsAny<Func<Task<TestUser?>>>(), TimeSpan.FromSeconds(60),
+            "default\u001Ftest-key", It.IsAny<Func<Task<TestUser?>>>(), TimeSpan.FromSeconds(60),
             It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
         mockClient.Verify(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()), Times.Once);
     }
@@ -624,9 +625,9 @@ public class DefaultHttpRequestExecutorTests
         var result = await executor.ExecuteAsync<TestUser>(CreateRequest(), mockClient.Object, descriptor, null);
 
         result!.Id.Should().Be(50);
-        // 缓存应被调用一次（包裹弹性策略）
+        // 缓存应被调用一次（包裹弹性策略）；F-01 层B：键前置应用作用域，无应用上下文时回退 "default"
         mockCache.Verify(c => c.GetOrFetchAsync(
-            "combo-key", It.IsAny<Func<Task<TestUser?>>>(), TimeSpan.FromSeconds(30),
+            "default\u001Fcombo-key", It.IsAny<Func<Task<TestUser?>>>(), TimeSpan.FromSeconds(30),
             It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Once);
         // 弹性策略解析器应被调用一次
         mockResolver.Verify(r => r.ResolvePolicyWrapper<TestUser>(
