@@ -872,7 +872,18 @@ public class TokenRecoveryExecutor
 
         try
         {
-            await tokenManager.InvalidateTokenAsync(scopes, refreshCt).ConfigureAwait(false);
+            // TR-02：优先走"仅清访问令牌"（internal 入口），保留 refresh_token 以支持自愈——
+            // 整条 InvalidateTokenAsync 会把 refresh_token 一并销毁，迫使恢复降级为 client_credentials
+            // 或重新授权。非 TokenManagerBase 派生实现退化为既有整条失效（记 Warning，行为与历史一致）。
+            if (tokenManager is TokenManagerBase baseManager)
+            {
+                baseManager.InvalidateCachedAccessToken(scopes);
+            }
+            else
+            {
+                MudHttpClientLog.AccessTokenInvalidationFallback(_logger, tokenManager.GetType().Name);
+                await tokenManager.InvalidateTokenAsync(scopes, refreshCt).ConfigureAwait(false);
+            }
         }
         catch (Exception invalidateEx)
         {
@@ -917,9 +928,11 @@ public class TokenRecoveryExecutor
         try
         {
             // TMR-05：精准失效——基类实现走 scoped 虚方法，非基类降级为整用户清除 + Warning
+            // TR-02（用户级）：优先走"仅清访问令牌字段"（internal 入口，保留 RefreshToken 支持自愈，
+            // 且不触发派生类对 InvalidateUserTokenAsync 的覆写副作用——401 恢复不应撤销 IdP 侧凭据）。
             if (userTokenManager is UserTokenManagerBase baseManager)
             {
-                await baseManager.InvalidateUserTokenAsync(userId, scopes, refreshCt).ConfigureAwait(false);
+                baseManager.InvalidateCachedUserAccessToken(userId, scopes);
             }
             else
             {

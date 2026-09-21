@@ -98,24 +98,15 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// TR-03：收敛到五参重载。原实现直接 <c>_cache.Set(key, value)</c>，存在两处契约缺口：
+    /// ① 未注册驱逐回调 → 影子索引 <c>_keys</c> 在 Compact / 过期驱逐后残留，<c>Count</c>/<c>Keys</c> 失真、
+    ///    上层硬上限 LRU 分支（TokenManagerBase.UpdateToken）被反复误触发；
+    /// ② 未设置 <c>Size</c> → <see cref="MemoryCacheOptions.SizeLimit"/> 非空时 IMemoryCache 拒绝写入（抛 InvalidOperationException）。
+    /// 委托五参重载后，"通过 <see cref="ITokenCache{T}"/> 的任何写入"都具有相同的驱逐回调语义与 Size 语义。
+    /// </remarks>
     public void Set(string key, T? value)
-    {
-        // NEW-TM-10 修复：Dispose 后不再写入，避免 ObjectDisposedException
-        if (_disposed)
-            return;
-        if (value == null)
-        {
-            RemoveKeyInternal(key);
-            return;
-        }
-
-        lock (_sync)
-        {
-            if (_disposed) return;
-            _cache.Set(key, value);
-            _keys.TryAdd(key, 0);
-        }
-    }
+        => Set(key, value, absoluteExpirationRelativeToNow: null, slidingExpiration: null, postEvictionCallback: null);
 
     /// <inheritdoc />
     public void Set(string key, T? value, TimeSpan? absoluteExpirationRelativeToNow, TimeSpan? slidingExpiration, Action<string>? postEvictionCallback = null)
@@ -209,8 +200,17 @@ public class MemoryCacheTokenCache<T> : ITokenCache<T> where T : class
             if (_cache is MemoryCache mc)
             {
                 mc.Compact(percentage);
-                // Compact 后同步影子索引：Compact 仅移除过期/低优先级条目，
-                // 由于无枚举器无法精确知晓被 Compact 的 key，跳过（驱逐回调已处理已过期条目）。
+            }
+            // TR-03（P0.1）：BCL Compact 的驱逐回调是<b>异步</b>触发的（2026-09-21 最小实验：
+            // Compact(1.0) 返回时回调尚未执行，条目随后才逐个回调）。立即对账影子索引，
+            // 保证 Compact 返回后 Count/Keys 即时准确（上层 LRU 硬上限分支依赖该计数）。
+            // 稍后异步执行的回调会 TryRemove 已移除的键，无副作用。
+            foreach (var key in _keys.Keys)
+            {
+                if (!_cache.TryGetValue(key, out _))
+                {
+                    _keys.TryRemove(key, out _);
+                }
             }
         }
     }

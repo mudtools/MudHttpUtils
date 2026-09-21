@@ -4,6 +4,53 @@
 
 ---
 
+## 2.0.8（Token 管理第二轮缺陷修复——Phase 1 止血，2026-09-21）
+
+> 依据 `Token 管理第二轮缺陷修复与能力完善方案`（TR 轮）实施。本轮为 Phase 1（P0 止血），
+> 全部附带先红后绿的机器护栏测试；Phase 2/3（TR-06~TR-13）后续版本跟进。
+
+#### 修复（Fixed）
+
+- **DI 注册的三个服务类型解析为 3 个独立实例（TR-01，BE-1）**：`AddMudHttpTokenManager<T>()`
+  原先以三条 `implementationType` 注册（具体类型 / `ITokenManager` / `IUserTokenManager`），
+  MS.DI 按 `ServiceIdentifier` 分别缓存单例 ⇒ 三个服务类型各自持有独立实例——缓存、锁表、
+  后台刷新登记全部分裂，`ITokenManager` 与 `IUserTokenManager` 的写入互不可见。
+  现具体类型注册一次，两接口经工厂转发到同一实例（与组件文档"注册一个管理器"的承诺对齐）。
+- **401 恢复整条清除缓存导致 refresh_token 流程静默降级（TR-02，BE-2）**：恢复链路原先调用
+  `InvalidateTokenAsync` 清除整条凭据（含 refresh_token），随后刷新读到 null RefreshToken
+  静默降级 client_credentials——仅支持 refresh_token 的 IdP 上自愈彻底失效。
+  现 `TokenManagerBase` 新增 `InvalidateCachedAccessToken`（仅清访问令牌字段、保留 RefreshToken），
+  `TokenRecoveryExecutor` 切换到该失效语义；`UserTokenManagerBase` 对应新增
+  `InvalidateCachedUserAccessToken`（经 `UpdateUserTokenCachePreservingExpiry` 保留过期元数据）。
+  **`InvalidateTokenAsync` 显式调用方的既有行为不变。**
+- **登出后可能被在途刷新"复活"（TR-04，BE-3）**：登出（`RemoveTokenAsync` / `InvalidateUserTokenAsync`）
+  与在途刷新并发时，刷新完成即写回缓存 ⇒ 登出后 `HasValidTokenAsync` 再度返回 true。
+  现引入写入代际守卫（`ConcurrentDictionary<string, StrongBox<long>>` + `Interlocked.Increment`）：
+  登出递增代际，在途刷新写回前比对代际、不一致即丢弃。代际表条目由
+  `CleanupOrphanedLocks` 清扫，不构成无界增长。
+- **仅有 scope 化条目时会话级查询恒返回 false（TR-05，BE-4）**：`HasValidTokenAsync` /
+  `CanRefreshTokenAsync` 原先只读裸 `userId` 键，与写入视图（`userId␟scopeKey` 复合键）不对齐。
+  现改为按 `userId + '\u001F'` 前缀扫描视图，覆盖该用户全部 scope 化条目，且前缀精确匹配
+  不泄漏其他用户（"mal" 不命中 "mallory"）。
+- **两参 `Set` 与五参 `Set` 契约不一致（TR-03）**：`MemoryCacheTokenCache<T>` 两参 `Set` 原先直接
+  `_cache.Set(key, value)`，① `SizeLimit` 非空时抛 `InvalidOperationException`（未设置 Size）；
+  ② 未注册驱逐回调 ⇒ 影子索引在驱逐后残留、`Count`/`Keys` 失真。现两参收敛为五参重载委托。
+- **`Compact` 返回后影子索引滞后（TR-03 附加）**：实测（2026-09-21 最小实验）BCL
+  `MemoryCache.Compact` 的驱逐回调是**异步**触发的——`Compact(1.0)` 返回时回调尚未执行，
+  靠回调同步影子索引不可靠。现 `Compact` 内对 `_keys` 逐键与 IMemoryCache 对账，
+  保证返回后 `Count`/`Keys` 即时准确（上层 LRU 硬上限分支依赖该计数）。
+
+#### 行为变更与迁移说明
+
+| 编号 | 变更前 | 变更后 | 迁移提示 |
+| --- | --- | --- | --- |
+| BE-1 | `ITokenManager` / `IUserTokenManager` / 具体类型解析为 3 个实例 | 解析为同一实例 | 与文档承诺对齐；实例数下降会减少 IdP 调用量。依赖"实例隔离"的下游需自查（`EnforceTenantBinding` 守卫兜底跨租户误用） |
+| BE-2 | 401 恢复先整条清除缓存（含 refresh_token） | 仅清访问令牌字段 | refresh_token 型 IdP 恢复成功率提升；显式调用 `InvalidateTokenAsync` 的行为不变 |
+| BE-3 | 登出后可能在途刷新把令牌写回 | 在途结果被丢弃 | 登出为最终一致；`RemoveTokenAsync` 返回后令牌不会再出现 |
+| BE-4 | `HasValidTokenAsync` 在仅有 scope 化条目时返回 false | 返回 true | 修正实现与 `IUserTokenManager` 文档承诺不一致；依赖"false 语义"判定重新登录的宿主请改用 `CanRefreshTokenAsync` |
+
+---
+
 ## 2.0.6（生成器警告治理与继承客户端修复，2026-09-17）
 
 > 依据第三方项目 MudFeishu 的全量编译警告治理（2758 → 12 条）过程中的实机发现修复。

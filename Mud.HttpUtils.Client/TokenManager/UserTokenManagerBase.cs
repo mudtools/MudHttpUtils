@@ -7,6 +7,7 @@
 
 using Microsoft.Extensions.Options;
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 
 namespace Mud.HttpUtils;
 
@@ -37,6 +38,13 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     // 与租户路径 _consecutiveFallbacks 指数退避模式对齐，阻断 IdP 故障时的按 userId 刷新风暴。
     private readonly ConcurrentDictionary<string, BackoffState> _userRefreshFailures = new();
     private const int MaxUserRefreshBackoffSeconds = 300;
+
+    // TR-04：写入代际守卫 —— 每个 cacheKey 维护单调递增的"写入代际"。
+    // 登出 / 失效 / scoped 精准失效在移除缓存条目时递增代际；刷新写回前比对进入刷新时的代际，
+    // 不一致即丢弃写回（"用户已登出但在途刷新把新令牌写回"的令牌复活问题）。
+    // 用 StrongBox<long> + Interlocked 保证递增原子性（直接对 ConcurrentDictionary<string,long> 的
+    // 值做 Interlocked.Increment 不可行；读路径经 Volatile.Read 无锁）。
+    private readonly ConcurrentDictionary<string, StrongBox<long>> _writeGenerations = new(StringComparer.Ordinal);
 
     // MT-06：用户侧维护定时器。
     // 原实现中 CleanupOrphanedLocks() 为 protected 且全仓无调用者，叠加
@@ -208,17 +216,48 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// TR-05：会话级可见性。除默认作用域条目外，同时涵盖该用户的全部 scope 化条目
+    /// （键前缀 userId + U+001F），与 <see cref="GetOrRefreshTokenAsync(string, string[], CancellationToken)"/>
+    /// 的写入视图对齐（此前查询视图只读裸 userId 键，仅有 scope 化条目时恒返回 false）。
+    /// </remarks>
     public virtual Task<bool> HasValidTokenAsync(string userId, CancellationToken cancellationToken = default)
     {
-        var cachedInfo = GetUserTokenFromCache(userId);
-        return Task.FromResult(IsUserTokenValid(cachedInfo));
+        if (string.IsNullOrEmpty(userId)) return Task.FromResult(false);
+        if (IsUserTokenValid(GetUserTokenFromCache(userId))) return Task.FromResult(true);
+
+        var prefix = userId + UserScopeKeySeparator;
+        foreach (var key in _userTokenCache.Keys)
+        {
+            if (key.StartsWith(prefix, StringComparison.Ordinal)
+                && IsUserTokenValid(GetUserTokenFromCache(key)))
+            {
+                return Task.FromResult(true);
+            }
+        }
+        return Task.FromResult(false);
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// TR-05：会话级可见性（与 <see cref="HasValidTokenAsync(string, CancellationToken)"/> 同构）：
+    /// 涵盖默认作用域条目与该用户的全部 scope 化条目，任一条目持有 RefreshToken 即返回 true。
+    /// </remarks>
     public virtual Task<bool> CanRefreshTokenAsync(string userId, CancellationToken cancellationToken = default)
     {
-        var cachedInfo = GetUserTokenFromCache(userId);
-        return Task.FromResult(cachedInfo?.RefreshToken != null);
+        if (string.IsNullOrEmpty(userId)) return Task.FromResult(false);
+        if (GetUserTokenFromCache(userId)?.RefreshToken != null) return Task.FromResult(true);
+
+        var prefix = userId + UserScopeKeySeparator;
+        foreach (var key in _userTokenCache.Keys)
+        {
+            if (key.StartsWith(prefix, StringComparison.Ordinal)
+                && GetUserTokenFromCache(key)?.RefreshToken != null)
+            {
+                return Task.FromResult(true);
+            }
+        }
+        return Task.FromResult(false);
     }
 
     /// <inheritdoc />
@@ -287,9 +326,20 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
                 return null;
             }
 
+            // TR-04：记录进入刷新前的代际；刷新期间若发生登出/失效（代际变化），
+            // 本次刷新的结果必须被丢弃，否则用户已登出但令牌被写回（"令牌复活"）。
+            var generationAtStart = CurrentWriteGeneration(cacheKey);
+
             var refreshedInfo = await RefreshUserTokenAsync(userId!, cancellationToken).ConfigureAwait(false);
             if (refreshedInfo != null)
             {
+                if (CurrentWriteGeneration(cacheKey) != generationAtStart)
+                {
+                    // TR-04：写回被代际守卫丢弃 —— 调用方按"未取得令牌"处理（登出语义：最终一致）。
+                    _userLockTable.TryRetire(cacheKey);
+                    return null;
+                }
+
                 RecordUserRefreshSuccess(cacheKey);
                 UpdateUserTokenCache(cacheKey, refreshedInfo);
                 return refreshedInfo.AccessToken;
@@ -353,6 +403,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         _userTokenCache.TryRemove(userId, out _);   // 默认作用域条目（裸 userId 键）
         _userLockTable.TryRetire(userId);
         _userRefreshFailures.TryRemove(userId, out _);   // 登出重置退避（D10-B）
+        BumpWriteGeneration(userId);                // TR-04：作废该键在途刷新的写回
 
         if (!includeAllScopes)
             return;
@@ -365,9 +416,31 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
                 _userTokenCache.TryRemove(key, out _);
                 _userLockTable.TryRetire(key);
                 _userRefreshFailures.TryRemove(key, out _);
+                BumpWriteGeneration(key);           // TR-04：scope 化条目同样作废写回
             }
         }
     }
+
+    #region TR-04 写入代际守卫
+
+    /// <summary>TR-04：读取 cacheKey 的当前写入代际（无条目为 0，无锁）。</summary>
+    private long CurrentWriteGeneration(string cacheKey)
+        => _writeGenerations.TryGetValue(cacheKey, out var box) ? Volatile.Read(ref box.Value) : 0;
+
+    /// <summary>TR-04：递增 cacheKey 的写入代际（Interlocked 原子递增）。</summary>
+    private void BumpWriteGeneration(string cacheKey)
+    {
+        var box = _writeGenerations.GetOrAdd(cacheKey, _ => new StrongBox<long>(0));
+        Interlocked.Increment(ref box.Value);
+    }
+
+    /// <summary>
+    /// TR-04：测试观测钩子（经 InternalsVisibleTo）—— 写入代际表当前条目数，
+    /// 供断言 CleanupOrphanedLocks 清扫后代际表不无界增长。
+    /// </summary>
+    internal int WriteGenerationCountForTest => _writeGenerations.Count;
+
+    #endregion
 
     /// <summary>
     /// 清理所有过期的用户令牌缓存和对应的锁资源。
@@ -399,6 +472,15 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         {
             if (nowTicks >= kvp.Value.UntilTicks || !_userTokenCache.TryGet(kvp.Key, out _))
                 _userRefreshFailures.TryRemove(kvp.Key, out _);
+        }
+
+        // TR-04：同处清扫写入代际表（无缓存条目且无锁条目时移除，防无界增长）。
+        // netstandard2.0 无 IEnumerable.ToHashSet 扩展，用 HashSet 构造函数。
+        var lockKeys = new HashSet<string>(_userLockTable.Keys, StringComparer.Ordinal);
+        foreach (var kv in _writeGenerations.ToList())
+        {
+            if (!_userTokenCache.TryGet(kv.Key, out _) && !lockKeys.Contains(kv.Key))
+                _writeGenerations.TryRemove(kv.Key, out _);
         }
     }
 
@@ -461,7 +543,47 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         _userTokenCache.TryRemove(key, out _);
         _userLockTable.TryRetire(key);
         _userRefreshFailures.TryRemove(key, out _);
+        BumpWriteGeneration(key);                       // TR-04：作废在途刷新的写回（防令牌复活）
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// TR-02（用户级对称入口）仅失效指定用户 + 作用域条目的<b>访问令牌字段</b>，
+    /// 保留 RefreshToken 等其余字段，供 401 恢复链路自愈使用（整条移除会把 refresh_token 一并销毁，
+    /// 迫使恢复降级为重新授权）。同时递增写入代际（TR-04），丢弃并发在途刷新的写回。
+    /// 空条目为 no-op（无需补偿）。
+    /// </summary>
+    /// <param name="userId">用户标识。</param>
+    /// <param name="scopes">作用域集合。空或 null 时作用于默认作用域条目（裸 userId 键）。</param>
+    internal void InvalidateCachedUserAccessToken(string userId, string[]? scopes)
+    {
+        var key = scopes is { Length: > 0 } ? GetUserCacheKey(userId, scopes) : userId;
+
+        if (_userTokenCache.TryGet(key, out var existing) && existing != null)
+        {
+            existing.AccessToken = null;
+            existing.AccessTokenExpireTime = 0;
+            existing.IssuedAt = 0;
+            UpdateUserTokenCachePreservingExpiry(key, existing);
+        }
+
+        // 访问令牌已失效 ⇒ 该键任何在途刷新结果都不得写回（与租户路径 InvalidateCachedAccessToken 语义对齐）
+        BumpWriteGeneration(key);
+    }
+
+    /// <summary>
+    /// TR-02 内部写入：与 <see cref="UpdateUserTokenCache"/> 相同的过期语义（绝对过期 = 剩余有效期），
+    /// 但写入方为本管理器的失效操作（非刷新结果），不重置 LastRefreshedAt。
+    /// </summary>
+    private void UpdateUserTokenCachePreservingExpiry(string key, UserTokenInfo tokenInfo)
+    {
+        TimeSpan? absoluteExpiration = null;
+        var remainingMs = tokenInfo.AccessTokenExpireTime - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        if (remainingMs > 0)
+            absoluteExpiration = TimeSpan.FromMilliseconds(remainingMs);
+
+        var slidingExpiration = TimeSpan.FromSeconds(_cacheOptions.SlidingExpirationSeconds);
+        _userTokenCache.Set(key, tokenInfo, absoluteExpiration, slidingExpiration, OnUserTokenEvicted);
     }
 
     private bool IsUserTokenValid(UserTokenInfo? tokenInfo)

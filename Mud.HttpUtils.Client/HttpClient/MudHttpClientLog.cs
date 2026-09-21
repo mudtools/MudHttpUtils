@@ -13,7 +13,7 @@ namespace Mud.HttpUtils;
 /// <remarks>
 /// <para>.NET 6+ 使用 <c>[LoggerMessage]</c> 源生成器（零分配、级别短路）；</para>
 /// <para>netstandard2.0 fallback 到 <c>LoggerMessage.Define</c>（同样零分配，但需要在运行时构建委托）。</para>
-/// <para>EventId 规划：1-50 EnhancedHttpClient（已分配）；51-100 预留；101-120 Resilience；121-130 Cache；131-156 TokenManager（已分配，含 151-156）；157-165 SR 轮（Token 安审查修复）；166 UserTokenScopeInvalidationFallback；167 AppResilienceCacheFull；168 SsrfGuidance；169 RequestBodySerializationFastPathFallback（TMX-17：原 166 改为 169 去重）；170 TokenRefreshSuppressed（TMX-04）；171 TokenCacheSerializationFailed（TMX-11）；172+ 预留。</para>
+/// <para>EventId 规划：1-50 EnhancedHttpClient（已分配）；51-100 预留；101-120 Resilience；121-130 Cache；131-156 TokenManager（已分配，含 151-156）；157-165 SR 轮（Token 安审查修复）；166 UserTokenScopeInvalidationFallback；167 AppResilienceCacheFull；168 SsrfGuidance；169 RequestBodySerializationFastPathFallback（TMX-17：原 166 改为 169 去重）；170 TokenRefreshSuppressed（TMX-04）；171 TokenCacheSerializationFailed（TMX-11）；172-177 已分配（见各定义处注释，177 UserTokenScopeInvalidationFallback）；178+ TR 轮（Token 第二轮：178 AccessTokenInvalidationFallback；179 TokenCacheEncryptionDisabled，TR-09 预留）。</para>
 /// </remarks>
 internal static partial class MudHttpClientLog
 {
@@ -380,6 +380,13 @@ internal static partial class MudHttpClientLog
         Message = "用户令牌管理器非 UserTokenManagerBase 派生类，无法执行 scope 精准失效，降级为整用户清除 (UserId={UserId})")]
     public static partial void UserTokenScopeInvalidationFallback(ILogger logger, string userId);
 
+    // ---- TR 轮新增事件（EventId 178+）：Token 管理第二轮缺陷修复 ----
+
+    [LoggerMessage(EventId = 178, Level = LogLevel.Warning,
+        Message = "令牌管理器 {ManagerTypeName} 非 TokenManagerBase 派生类，无法仅失效缓存条目的访问令牌字段，" +
+                  "降级为整条凭据失效（InvalidateTokenAsync，行为与历史一致，refresh_token 将被清除）")]
+    public static partial void AccessTokenInvalidationFallback(ILogger logger, string managerTypeName);
+
     [LoggerMessage(EventId = 162, Level = LogLevel.Warning,
         Message = "令牌管理器（{MetricsKey}）已绑定租户 '{ExistingTenant}'，不能用于租户 '{RequestedTenant}' 的请求。跨租户复用同一管理器实例会导致令牌/凭据错配；若确属共享凭据设计，请覆写 EnforceTenantBinding 返回 false。")]
     public static partial void TenantBindingRejected(ILogger logger, string metricsKey, string existingTenant, string requestedTenant);
@@ -646,6 +653,15 @@ internal static partial class MudHttpClientLog
             "用户令牌管理器非 UserTokenManagerBase 派生类，无法执行 scope 精准失效，降级为整用户清除 (UserId={UserId})");
     public static void UserTokenScopeInvalidationFallback(ILogger logger, string userId)
         => s_userTokenScopeInvalidationFallback(logger, userId, null);
+
+    // ---- TR 轮新增事件（EventId 178+）：与 #if NET6_0_OR_GREATER 分支同 EventId（TMX-21 教训）----
+
+    private static readonly Action<ILogger, string, Exception?> s_accessTokenInvalidationFallback =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(178, nameof(AccessTokenInvalidationFallback)),
+            "令牌管理器 {ManagerTypeName} 非 TokenManagerBase 派生类，无法仅失效缓存条目的访问令牌字段，" +
+            "降级为整条凭据失效（InvalidateTokenAsync，行为与历史一致，refresh_token 将被清除）");
+    public static void AccessTokenInvalidationFallback(ILogger logger, string managerTypeName)
+        => s_accessTokenInvalidationFallback(logger, managerTypeName, null);
 
     private static readonly Action<ILogger, string, string, string, Exception?> s_tenantBindingRejected =
         LoggerMessage.Define<string, string, string>(LogLevel.Warning, new EventId(162, nameof(TenantBindingRejected)),

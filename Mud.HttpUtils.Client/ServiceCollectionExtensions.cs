@@ -1209,13 +1209,21 @@ public static class HttpClientServiceCollectionExtensions
         if (services == null)
             throw new ArgumentNullException(nameof(services));
 
-        // 令牌管理器必须有状态，默认强制 Singleton。仅显式选择 Scoped/Transient 时按请求生命周期注册。
+        // TR-01：令牌管理器是有状态组件（持有令牌缓存、单飞行锁、后台刷新登记），
+        // 三个服务类型必须解析到**同一实例**。此前三条注册均以 implementationType 描述，
+        // MS.DI 的单例缓存键为 ServiceIdentifier（含 ServiceType），三条注册即三个独立实例，
+        // 导致 ITokenManager 与 IUserTokenManager 分属两个缓存/两把锁/两份后台刷新登记，
+        // 与本方法 XML 文档（上方 remarks）"确保按接口注入两处均解析到同一实例"的承诺矛盾。
+        // 修正：具体类型注册一次，两个接口经工厂转发到同一实例。
+        services.Add(new Microsoft.Extensions.DependencyInjection.ServiceDescriptor(typeof(TManager), typeof(TManager), lifetime));
+        services.Add(new Microsoft.Extensions.DependencyInjection.ServiceDescriptor(
+            typeof(ITokenManager), sp => sp.GetRequiredService<TManager>(), lifetime));
+
         if (typeof(IUserTokenManager).IsAssignableFrom(typeof(TManager)))
         {
-            services.Add(new Microsoft.Extensions.DependencyInjection.ServiceDescriptor(typeof(IUserTokenManager), typeof(TManager), lifetime));
+            services.Add(new Microsoft.Extensions.DependencyInjection.ServiceDescriptor(
+                typeof(IUserTokenManager), sp => sp.GetRequiredService<TManager>(), lifetime));
         }
-        services.Add(new Microsoft.Extensions.DependencyInjection.ServiceDescriptor(typeof(ITokenManager), typeof(TManager), lifetime));
-        services.Add(new Microsoft.Extensions.DependencyInjection.ServiceDescriptor(typeof(TManager), typeof(TManager), lifetime));
 
         return services;
     }

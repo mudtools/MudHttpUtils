@@ -375,6 +375,30 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     }
 
     /// <summary>
+    /// TR-02 仅失效缓存条目的访问令牌字段（AccessToken / Expire / IssuedAt），
+    /// 保留 refresh_token / refresh_token_expire / scope。
+    /// 供 401 恢复链路使用：恢复的目标是"重新拿一个访问令牌"，而非"作废该作用域的全部凭据"
+    /// （后者会销毁可用于自愈的 refresh_token，迫使走 client_credentials 或重新授权）。
+    /// 与 <see cref="InvalidateCachedRefreshToken"/> 构成对称的字段级失效对，两者互不代偿。
+    /// </summary>
+    /// <param name="scopeKey">作用域缓存键。</param>
+    internal void InvalidateCachedAccessToken(string scopeKey)
+    {
+        if (_tokenCache.TryGet(scopeKey, out var existing) && existing != null)
+        {
+            existing.AccessToken = null;
+            existing.Expire = 0;
+            existing.IssuedAt = 0;
+            _tokenCache.Set(scopeKey, existing);   // 字段级保留 refresh_token
+        }
+    }
+
+    /// <summary>TR-02 按作用域失效访问令牌（null/空数组 ⇒ 默认作用域）。</summary>
+    /// <param name="scopes">令牌作用域数组。</param>
+    internal void InvalidateCachedAccessToken(string[]? scopes)
+        => InvalidateCachedAccessToken(GetScopeKey(scopes));
+
+    /// <summary>
     /// SR-H5（P2.1，D6）租户绑定键（bind-once）。null = 尚未绑定。
     /// 绑定键 = <c>IMudAppContext.AppKey</c>（多租户在本框架的投影即多 App）。
     /// </summary>
