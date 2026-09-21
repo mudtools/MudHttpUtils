@@ -530,6 +530,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
         _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager);
 
         codeBuilder.AppendLine();
+        // FIX-02：请求体内容在方法级声明，由 __httpRequest.Dispose() 在方法返回时统一释放。
+        // §0.2 原则 10：禁止在发送点之前的嵌套块内声明 using var（会在发送前 Dispose）。
+        codeBuilder.AppendLine("            System.Net.Http.HttpContent? __bodyContent = null;");
         _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient);
 
         GenerateTokenInjection(codeBuilder, context, methodInfo, needsTokenInjection, "            ");
@@ -1659,6 +1662,14 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     p.Attributes.First(attr => HttpClientGeneratorConstants.PathAttributes.Contains(attr.Name)),
                     p.Name)),
             StringComparer.OrdinalIgnoreCase);
+
+        // FIX-05：纳入接口级 Path 来源（[InterfacePath] 特性 + 接口属性 [Path]），
+        // 防止接口声明了路径占位符但方法参数未标注 [Path] 时误报 HTTPCLIENT013 Error。
+        // 接口级来源不参与 extra 判定（接口声明了 [InterfacePath] 却无方法用它时不应反向误报）。
+        foreach (var p in methodInfo.InterfacePathParameters)
+            pathParams.Add(p.Name);
+        foreach (var p in methodInfo.InterfaceProperties.Where(x => x.AttributeType == "Path"))
+            pathParams.Add(p.ParameterName ?? p.Name);
 
         // 当 Token 使用 Path 注入模式时，URL 模板中的 Token 占位符应由 Token 注入机制替换，
         // 不需要对应的 [Path] 参数，因此将 Token 占位符从缺失列表中排除

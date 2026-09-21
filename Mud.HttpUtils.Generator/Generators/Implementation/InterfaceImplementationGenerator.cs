@@ -574,6 +574,8 @@ internal class InterfaceImplementationGenerator
         var baseHasAppAuthorizer = false;
         // G7-01：基类是否为默认（AppContext）模式——既未设 HttpClient 亦未设 TokenManage。
         var baseHasAppManager = false;
+        // FIX-06：基类是否需要 currentUserContext 参数，按与 ComputeAnyMethodRequiresUserId 同口径求值。
+        var baseRequiresUserId = false;
         string? inheritedFromInterfaceName = null;
         if (string.IsNullOrEmpty(inheritedFrom))
         {
@@ -597,6 +599,8 @@ internal class InterfaceImplementationGenerator
                     baseHasAppAuthorizer = string.IsNullOrWhiteSpace(baseHttpClient);
                     // [G7-01] 默认模式基类（无 HttpClient 且无 TokenManage）持有 _appManager 字段，派生类必须透传 appManager。
                     baseHasAppManager = string.IsNullOrWhiteSpace(baseHttpClient) && string.IsNullOrWhiteSpace(baseTokenManage);
+                    // FIX-06：对基接口符号求值 BaseRequiresUserId（复用同一口径，不重写第二份判定 —— §0.2 原则 9）。
+                    baseRequiresUserId = baseHasTokenManager && ComputeRequiresUserIdForInterface(baseInterface, baseApiAttr);
                     break;
                 }
             }
@@ -630,6 +634,8 @@ internal class InterfaceImplementationGenerator
                             baseHasAppAuthorizer = string.IsNullOrWhiteSpace(baseHttpClient);
                             // [G7-01] 默认模式基类（无 HttpClient 且无 TokenManage）持有 _appManager 字段，派生类必须透传 appManager。
                             baseHasAppManager = string.IsNullOrWhiteSpace(baseHttpClient) && string.IsNullOrWhiteSpace(baseTokenManage);
+                            // FIX-06：对基接口符号求值 BaseRequiresUserId（复用同一口径，不重写第二份判定 —— §0.2 原则 9）。
+                            baseRequiresUserId = baseHasTokenManager && ComputeRequiresUserIdForInterface(baseInterface, baseApiAttr);
                         }
                     }
                 }
@@ -696,6 +702,8 @@ internal class InterfaceImplementationGenerator
             BaseHasTokenManager = baseHasTokenManager,
             BaseHasAppAuthorizer = baseHasAppAuthorizer,
             BaseHasAppManager = baseHasAppManager,
+            // FIX-06：与 BaseHasTokenManager 同级，由 ComputeRequiresUserIdForInterface 按同一口径求值。
+            BaseRequiresUserId = baseRequiresUserId,
             InheritedFromInterfaceName = inheritedFromInterfaceName,
             TokenType = tokenType,
             IsUserAccessToken = tokenType == "UserAccessToken",
@@ -795,6 +803,42 @@ internal class InterfaceImplementationGenerator
         }
 
         context.Configuration.AnyMethodRequiresUserId = false;
+    }
+
+    /// <summary>
+    /// FIX-06：对指定接口符号按与 <see cref="ComputeAnyMethodRequiresUserId"/> 同一口径求值是否需要 UserId。
+    /// 复用同一判定逻辑（接口级 Token 特性 → IsUserAccessToken 推断 → 方法级 Token 特性），不重写第二份判定 —— §0.2 原则 9。
+    /// </summary>
+    /// <param name="interfaceSymbol">基接口符号</param>
+    /// <param name="apiAttr">基接口的 [HttpClientApi] 特性（未使用，保留以匹配调用点签名并支持未来扩展）</param>
+    /// <returns>如果基接口的任何方法需要 UserId 则返回 true，否则 false</returns>
+    private static bool ComputeRequiresUserIdForInterface(INamedTypeSymbol interfaceSymbol, AttributeData? apiAttr)
+    {
+        // 与 ComputeAnyMethodRequiresUserId 同口径：先检查接口级 [Token(RequiresUserId=...)] 特性
+        var tokenAttribute = AttributeDataHelper.GetAttributeDataFromSymbol(
+            interfaceSymbol,
+            HttpClientGeneratorConstants.TokenAttributeNames);
+        var requiresUserId = TokenHelper.GetRequiresUserIdFromAttribute(tokenAttribute);
+
+        // 与 ComputeAnyMethodRequiresUserId 同口径：推断 IsUserAccessToken
+        var tokenType = TokenHelper.GetTokenTypeFromAttribute(tokenAttribute);
+        var isUserAccessToken = tokenType == "UserAccessToken";
+
+        // 接口级判定：显式 RequiresUserId 或 IsUserAccessToken 推断
+        var interfaceRequiresUserId = requiresUserId ?? isUserAccessToken;
+        if (interfaceRequiresUserId)
+            return true;
+
+        // 与 ComputeAnyMethodRequiresUserId 同口径：遍历方法级 [Token(RequiresUserId=true)]
+        var allMethods = TypeSymbolHelper.GetAllMethods(interfaceSymbol, true);
+        foreach (var method in allMethods)
+        {
+            var methodRequiresUserId = GetMethodRequiresUserId(method);
+            if (methodRequiresUserId == true)
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>

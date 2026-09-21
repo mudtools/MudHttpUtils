@@ -538,8 +538,12 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
                     baseParameters.Add("appManager");
                     baseParameters.Add("appContextHolder");
                     baseParameters.Add("tokenProvider");
-                    // 注意：currentUserContext 不传递给基类，因为基类可能没有 AnyMethodRequiresUserId。
-                    // 派生类在自己的字段中存储 currentUserContext。
+                    // FIX-06：基类需要 userId 时必须传入 currentUserContext（位置实参顺序敏感）。
+                    // 必须置于 tokenProvider 之后、executor 之前（基类构造函数形参顺序）。
+                    if (_context.Configuration.BaseRequiresUserId)
+                    {
+                        baseParameters.Add("currentUserContext");
+                    }
                 }
                 else
                 {

@@ -88,6 +88,15 @@ internal class GenerationConfiguration
     public bool BaseHasTokenManager { get; set; }
 
     /// <summary>
+    /// FIX-06：基类是否需要 currentUserContext 参数。
+    /// 为 true 时派生类 base(...) 调用必须传入 currentUserContext（位置实参顺序敏感），
+    /// 否则基类需 userId 时实参错位（CS1503 + CS7036）。
+    /// 与 <see cref="AnyMethodRequiresUserId"/>（派生类自身判定）同口径，
+    /// 对基接口符号求值并赋值（复用 ComputeAnyMethodRequiresUserId，不得重写第二份判定 —— §0.2 原则 9）。
+    /// </summary>
+    public bool BaseRequiresUserId { get; set; }
+
+    /// <summary>
     /// 基类是否声明了 <c>_appAuthorizer</c> 字段（即基类为非 HttpClient 模式）。
     /// 为 true 时派生类不得重复声明同名字段（CS0108 隐藏基类成员），
     /// 且因基类字段为 <c>readonly</c>（派生类构造函数无权赋值），须改为在 <c>base(...)</c> 调用中透传 <c>appAuthorizer</c>。

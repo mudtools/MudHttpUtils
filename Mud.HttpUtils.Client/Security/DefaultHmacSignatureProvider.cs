@@ -177,8 +177,10 @@ public class DefaultHmacSignatureProvider : IHmacSignatureProvider
         {
             var raw = uri.ToString();
             var queryIndex = raw.IndexOf('?');
-            path = queryIndex >= 0 ? raw[..queryIndex] : raw;
-            query = queryIndex >= 0 ? raw[queryIndex..] : string.Empty;
+            // FIX-01：netstandard2.0 不支持 range/index 运算符（CS0518）。
+            // 使用 Substring 替代，零 polyfill 依赖，行为等价。
+            path = queryIndex >= 0 ? raw.Substring(0, queryIndex) : raw;
+            query = queryIndex >= 0 ? raw.Substring(queryIndex) : string.Empty;
         }
 
         sb.Append(path);

@@ -275,7 +275,9 @@ internal class RequestBuilder
         {
             codeBuilder.AppendLine("            if (__queryParams.Count > 0)");
             codeBuilder.AppendLine("            {");
-            codeBuilder.AppendLine("                __url += \"?\" + __queryParams.ToString();");
+            // FIX-04：缺少 Contains("?") 守卫，与 RawQueryString 混用时产生双 ?。
+            // §0.2 原则 9：统一 query 追加口径（与 :285 的 __rawQueryPairs 一致）。
+            codeBuilder.AppendLine("                __url += (__url.Contains(\"?\") ? \"&\" : \"?\") + __queryParams.ToString();");
             codeBuilder.AppendLine("            }");
         }
         if (needsRawQueryPairs)
@@ -608,8 +610,10 @@ internal class RequestBuilder
                 }
             }
 
-            codeBuilder.AppendLine("                using var __bodyFormContent = new System.Net.Http.FormUrlEncodedContent(__bodyFormParams);");
-            codeBuilder.AppendLine("                __httpRequest.Content = __bodyFormContent;");
+            // FIX-02：`using var` 的作用域为嵌套块（if body != null），会在 executor 调用前 Dispose。
+            // §0.2 原则 10：请求体内容一律在方法级声明，发送后统一释放。
+            codeBuilder.AppendLine("                __bodyContent = new System.Net.Http.FormUrlEncodedContent(__bodyFormParams);");
+            codeBuilder.AppendLine("                __httpRequest.Content = __bodyContent;");
         }
         else
         {
@@ -627,8 +631,9 @@ internal class RequestBuilder
             codeBuilder.AppendLine("                        __bodyFormParams[__prop.Name] = __val.ToString() ?? \"\";");
             codeBuilder.AppendLine("                    }");
             codeBuilder.AppendLine("                }");
-            codeBuilder.AppendLine("                using var __bodyFormContent = new System.Net.Http.FormUrlEncodedContent(__bodyFormParams);");
-            codeBuilder.AppendLine("                __httpRequest.Content = __bodyFormContent;");
+            // FIX-02：同 TypeSymbol 路径，不在嵌套块内 using var。
+            codeBuilder.AppendLine("                __bodyContent = new System.Net.Http.FormUrlEncodedContent(__bodyFormParams);");
+            codeBuilder.AppendLine("                __httpRequest.Content = __bodyContent;");
             codeBuilder.AppendLine($"#if NET6_0_OR_GREATER");
             codeBuilder.AppendLine($"#pragma warning restore IL2072");
             codeBuilder.AppendLine($"#endif");
@@ -674,6 +679,36 @@ internal class RequestBuilder
                     codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StringContent({formProp.Name}.ToString() ?? \"\"), \"{StringEscapeHelper.EscapeString(fieldName)}\");");
                     codeBuilder.AppendLine("            }");
                 }
+            }
+        }
+
+        // FIX-03：[MultipartForm] 参数值接线（D-3 决策 a：参数即 part）。
+        // 原实现中 multipartFormParam 仅作布尔判断，参数值被丢弃。
+        // 顺序：先 formParams（现有）→ 再 multipartFormParam → 再 uploadParams。
+        if (multipartFormParam != null)
+        {
+            var mpAttr = multipartFormParam.Attributes.FirstOrDefault(a => a.Name == HttpClientGeneratorConstants.MultipartFormAttribute);
+            var fieldName = AttributeArgumentReader.GetString(mpAttr, null, "FieldName") ?? multipartFormParam.Name;
+            var escapedFieldName = StringEscapeHelper.EscapeString(fieldName);
+
+            if (TypeDetectionHelper.IsStringType(multipartFormParam.Type))
+            {
+                codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({multipartFormParam.Name}))");
+                codeBuilder.AppendLine("            {");
+                codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StringContent({multipartFormParam.Name}), \"{escapedFieldName}\");");
+                codeBuilder.AppendLine("            }");
+            }
+            else if (TypeDetectionHelper.IsValueType(multipartFormParam.Type) && !TypeDetectionHelper.IsNullableType(multipartFormParam.Type))
+            {
+                codeBuilder.AppendLine($"            __multipartContent.Add(new System.Net.Http.StringContent({multipartFormParam.Name}.ToString() ?? \"\"), \"{escapedFieldName}\");");
+            }
+            else
+            {
+                // 引用类型或可空值类型：加 null 检查
+                codeBuilder.AppendLine($"            if ({multipartFormParam.Name} != null)");
+                codeBuilder.AppendLine("            {");
+                codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StringContent({multipartFormParam.Name}.ToString() ?? \"\"), \"{escapedFieldName}\");");
+                codeBuilder.AppendLine("            }");
             }
         }
 
