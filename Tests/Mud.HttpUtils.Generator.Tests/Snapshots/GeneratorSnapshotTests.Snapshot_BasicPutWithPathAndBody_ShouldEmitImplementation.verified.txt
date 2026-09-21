@@ -251,7 +251,6 @@ namespace TestNamespace.Internal
             var __url = $"/users/{Uri.EscapeDataString((id).ToString() ?? string.Empty)}";
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Put, __url);
 
-            System.Net.Http.HttpContent? __bodyContent = null;
             __httpRequest.Content = _contentSerializer.ToHttpContent(request);
             return (await _executor.ExecuteAsync<string>(
                 __httpRequest,

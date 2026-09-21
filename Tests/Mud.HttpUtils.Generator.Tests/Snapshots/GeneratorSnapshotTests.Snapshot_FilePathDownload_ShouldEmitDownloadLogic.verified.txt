@@ -265,7 +265,6 @@ namespace TestNamespace.Internal
             var __url = $"/files/{Uri.EscapeDataString(fileId)}/download";
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Get, __url);
 
-            System.Net.Http.HttpContent? __bodyContent = null;
             await _executor.DownloadLargeAsync(__httpRequest, __appContext.HttpClient, filePath, true, 81920,
                 new ResponseDescriptor
             {

@@ -254,7 +254,6 @@ namespace TestNamespace.Internal
             __httpRequest.Properties[HttpExecutionConstants.AllowNonIdempotentRetryPropertyKey] = true;
 #endif
 
-            System.Net.Http.HttpContent? __bodyContent = null;
             return (await _executor.ExecuteAsync<string>(
                 __httpRequest,
                 __appContext.HttpClient,

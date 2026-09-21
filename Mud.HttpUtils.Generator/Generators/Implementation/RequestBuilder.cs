@@ -559,6 +559,18 @@ internal class RequestBuilder
         var isNonNullableValueType = TypeDetectionHelper.IsValueType(bodyParam.Type) && !TypeDetectionHelper.IsNullableType(bodyParam.Type);
         var needsNullCheck = !isNonNullableValueType && !bodyParam.IsValidated;
 
+        // [FIX-02 复核] 本方法是全库唯一的「条件创建请求体内容」路径，内容对象在**创建点**即把所有权
+        // 移交给 __httpRequest.Content（最终由方法级 `using var __httpRequest` 在发送完成之后释放）。
+        // 由此推出两条硬约束：
+        //   1) 禁止对该内容使用 `using var` 或任何可释放局部变量 —— needsNullCheck 为真时其作用域是
+        //      `if` 块，会在 executor 发送前 Dispose，请求体变成已释放对象（ObjectDisposedException）；
+        //   2) 无需方法级 `__bodyContent` 槽位 —— 历史上由 MethodGenerator 无条件宣告供本方法写入，
+        //      导致所有其它方法都产出「赋值未使用」的局部变量（CS0219 泄漏到消费方构建）。
+        // 缩进随 `if` 块是否存在自适应，避免出现「多一层缩进却无对应块」的产物。
+        var bodyIndent = needsNullCheck ? "                " : "            ";
+        var innerIndent = bodyIndent + "    ";
+        var deepestIndent = innerIndent + "    ";
+
         if (needsNullCheck)
         {
             codeBuilder.AppendLine($"            if ({bodyParam.Name} != null)");
@@ -588,7 +600,7 @@ internal class RequestBuilder
                 currentType = currentType.BaseType;
             }
 
-            codeBuilder.AppendLine($"                var __bodyFormParams = new global::System.Collections.Generic.Dictionary<string, string>();");
+            codeBuilder.AppendLine($"{bodyIndent}var __bodyFormParams = new global::System.Collections.Generic.Dictionary<string, string>();");
 
             foreach (var prop in properties)
             {
@@ -600,23 +612,21 @@ internal class RequestBuilder
                 if (isValueType && !isNullable)
                 {
                     // 非可空值类型：直接 ToString()
-                    codeBuilder.AppendLine($"                __bodyFormParams[\"{propName}\"] = {bodyParam.Name}.{propName}.ToString() ?? \"\";");
+                    codeBuilder.AppendLine($"{bodyIndent}__bodyFormParams[\"{propName}\"] = {bodyParam.Name}.{propName}.ToString() ?? \"\";");
                 }
                 else
                 {
                     // 引用类型或可空值类型：加 null 检查
-                    codeBuilder.AppendLine($"                var __val_{propName} = {bodyParam.Name}.{propName};");
-                    codeBuilder.AppendLine($"                if (__val_{propName} != null)");
-                    codeBuilder.AppendLine("                {");
-                    codeBuilder.AppendLine($"                    __bodyFormParams[\"{propName}\"] = __val_{propName}.ToString() ?? \"\";");
-                    codeBuilder.AppendLine("                }");
+                    codeBuilder.AppendLine($"{bodyIndent}var __val_{propName} = {bodyParam.Name}.{propName};");
+                    codeBuilder.AppendLine($"{bodyIndent}if (__val_{propName} != null)");
+                    codeBuilder.AppendLine($"{bodyIndent}{{");
+                    codeBuilder.AppendLine($"{innerIndent}__bodyFormParams[\"{propName}\"] = __val_{propName}.ToString() ?? \"\";");
+                    codeBuilder.AppendLine($"{bodyIndent}}}");
                 }
             }
 
-            // FIX-02：`using var` 的作用域为嵌套块（if body != null），会在 executor 调用前 Dispose。
-            // §0.2 原则 10：请求体内容一律在方法级声明，发送后统一释放。
-            codeBuilder.AppendLine("                __bodyContent = new System.Net.Http.FormUrlEncodedContent(__bodyFormParams);");
-            codeBuilder.AppendLine("                __httpRequest.Content = __bodyContent;");
+            // 所有权移交：创建点直接赋给 Content，不引入可释放局部变量（见方法顶部约束说明）。
+            codeBuilder.AppendLine($"{bodyIndent}__httpRequest.Content = new System.Net.Http.FormUrlEncodedContent(__bodyFormParams);");
         }
         else
         {
@@ -624,19 +634,18 @@ internal class RequestBuilder
             codeBuilder.AppendLine($"#if NET6_0_OR_GREATER");
             codeBuilder.AppendLine($"#pragma warning disable IL2072");
             codeBuilder.AppendLine($"#endif");
-            codeBuilder.AppendLine($"                var __bodyFormParams = new global::System.Collections.Generic.Dictionary<string, string>();");
-            codeBuilder.AppendLine($"                var __bodyProperties = {bodyParam.Name}.GetType().GetProperties();");
-            codeBuilder.AppendLine($"                foreach (var __prop in __bodyProperties)");
-            codeBuilder.AppendLine("                {");
-            codeBuilder.AppendLine($"                    var __val = __prop.GetValue({bodyParam.Name});");
-            codeBuilder.AppendLine("                    if (__val != null)");
-            codeBuilder.AppendLine("                    {");
-            codeBuilder.AppendLine("                        __bodyFormParams[__prop.Name] = __val.ToString() ?? \"\";");
-            codeBuilder.AppendLine("                    }");
-            codeBuilder.AppendLine("                }");
-            // FIX-02：同 TypeSymbol 路径，不在嵌套块内 using var。
-            codeBuilder.AppendLine("                __bodyContent = new System.Net.Http.FormUrlEncodedContent(__bodyFormParams);");
-            codeBuilder.AppendLine("                __httpRequest.Content = __bodyContent;");
+            codeBuilder.AppendLine($"{bodyIndent}var __bodyFormParams = new global::System.Collections.Generic.Dictionary<string, string>();");
+            codeBuilder.AppendLine($"{bodyIndent}var __bodyProperties = {bodyParam.Name}.GetType().GetProperties();");
+            codeBuilder.AppendLine($"{bodyIndent}foreach (var __prop in __bodyProperties)");
+            codeBuilder.AppendLine($"{bodyIndent}{{");
+            codeBuilder.AppendLine($"{innerIndent}var __val = __prop.GetValue({bodyParam.Name});");
+            codeBuilder.AppendLine($"{innerIndent}if (__val != null)");
+            codeBuilder.AppendLine($"{innerIndent}{{");
+            codeBuilder.AppendLine($"{deepestIndent}__bodyFormParams[__prop.Name] = __val.ToString() ?? \"\";");
+            codeBuilder.AppendLine($"{innerIndent}}}");
+            codeBuilder.AppendLine($"{bodyIndent}}}");
+            // 所有权移交：同 TypeSymbol 路径。
+            codeBuilder.AppendLine($"{bodyIndent}__httpRequest.Content = new System.Net.Http.FormUrlEncodedContent(__bodyFormParams);");
             codeBuilder.AppendLine($"#if NET6_0_OR_GREATER");
             codeBuilder.AppendLine($"#pragma warning restore IL2072");
             codeBuilder.AppendLine($"#endif");

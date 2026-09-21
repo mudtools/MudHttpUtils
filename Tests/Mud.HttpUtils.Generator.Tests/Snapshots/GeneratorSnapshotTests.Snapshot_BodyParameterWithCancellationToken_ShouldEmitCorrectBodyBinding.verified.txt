@@ -251,7 +251,6 @@ namespace TestNamespace.Internal
             var __url = $"/submit";
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Post, __url);
 
-            System.Net.Http.HttpContent? __bodyContent = null;
             __httpRequest.Content = _contentSerializer.ToHttpContent(request);
             return (await _executor.ExecuteAsync<string>(
                 __httpRequest,

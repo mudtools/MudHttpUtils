@@ -256,7 +256,6 @@ namespace TestNamespace.Internal
                 throw new global::System.ArgumentException("HTTP 头值包含非法字符（CR/LF）。", nameof(requestId));
             __httpRequest.Headers.Add("X-Request-Id", requestId);
 
-            System.Net.Http.HttpContent? __bodyContent = null;
             return (await _executor.ExecuteAsync<string>(
                 __httpRequest,
                 __appContext.HttpClient,

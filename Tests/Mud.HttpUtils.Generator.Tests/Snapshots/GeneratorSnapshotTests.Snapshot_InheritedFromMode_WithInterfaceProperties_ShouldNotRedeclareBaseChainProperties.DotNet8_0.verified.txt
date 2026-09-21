@@ -275,7 +275,6 @@ namespace TestNamespace.Internal
                 if (!__httpRequest.Headers.Contains("X-Tenant"))
                     __httpRequest.Headers.Add("X-Tenant", TenantId);
 
-            System.Net.Http.HttpContent? __bodyContent = null;
             return (await _executor.ExecuteAsync<string>(
                 __httpRequest,
                 __appContext.HttpClient,
@@ -431,7 +430,6 @@ namespace TestNamespace.Internal
                 if (!__httpRequest.Headers.Contains("X-Tenant"))
                     __httpRequest.Headers.Add("X-Tenant", TenantId);
 
-            System.Net.Http.HttpContent? __bodyContent = null;
             return (await _executor.ExecuteAsync<string>(
                 __httpRequest,
                 __appContext.HttpClient,

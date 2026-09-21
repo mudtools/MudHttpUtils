@@ -269,7 +269,6 @@ namespace TestNamespace.Internal
             var __url = $"/base";
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Get, __url);
 
-            System.Net.Http.HttpContent? __bodyContent = null;
             if (!string.IsNullOrEmpty(access_token))
             {
                 for (var __i = 0; __i < access_token.Length; __i++)
@@ -457,7 +456,6 @@ namespace TestNamespace.Internal
             var __url = $"/derived";
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Get, __url);
 
-            System.Net.Http.HttpContent? __bodyContent = null;
             if (!string.IsNullOrEmpty(access_token))
             {
                 for (var __i = 0; __i < access_token.Length; __i++)

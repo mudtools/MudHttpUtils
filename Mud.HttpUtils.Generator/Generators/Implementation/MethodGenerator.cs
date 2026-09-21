@@ -534,9 +534,17 @@ internal class MethodGenerator : ICodeFragmentGenerator
         _requestBuilder.GenerateInterfaceHeaderProperties(codeBuilder, methodInfo, hasTokenManager);
 
         codeBuilder.AppendLine();
-        // FIX-02：请求体内容在方法级声明，由 __httpRequest.Dispose() 在方法返回时统一释放。
-        // §0.2 原则 10：禁止在发送点之前的嵌套块内声明 using var（会在发送前 Dispose）。
-        codeBuilder.AppendLine("            System.Net.Http.HttpContent? __bodyContent = null;");
+
+        // [FIX-02 复核] 请求体内容的释放责任与声明位置 —— 两形态二选一，均由**创建点**自己承担：
+        //   ① 条件创建（[Body] + [SerializationMethod(FormUrlEncoded)]：内容只在 `if (body != null)` 内构造）
+        //      → 在创建点直接赋给 __httpRequest.Content（所有权转移，由 using var __httpRequest 统一释放）；
+        //        不得使用 using var：其作用域是嵌套块，会在 executor 发送前 Dispose（§0.2 原则 10 的原始约束）。
+        //   ② 无条件创建（RawString / UseStringContent / XML / [Form] / [FormContent] / multipart）
+        //      → 在创建点以方法级 using var 声明，方法退出（发送之后）释放。
+        // 历史上此处无条件宣告了方法级 `__bodyContent` 槽位供 ① 使用，但除 ① 之外无人写入，
+        // 使每个方法都带一个「赋值未使用」的局部变量 —— 生成代码编译即 CS0219，泄漏到消费方构建
+        // （消费方启用 TreatWarningsAsErrors 时直接失败，且库方无法替其关闭）。
+        // 故槽位已删除，改由各创建点自行声明；此处仅保留分隔空行。
         _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient);
 
         GenerateTokenInjection(codeBuilder, context, methodInfo, needsTokenInjection, "            ");

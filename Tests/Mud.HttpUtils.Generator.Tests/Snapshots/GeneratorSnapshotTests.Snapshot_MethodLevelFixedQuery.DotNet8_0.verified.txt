@@ -255,7 +255,6 @@ namespace TestNamespace.Internal
             }
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Get, __url);
 
-            System.Net.Http.HttpContent? __bodyContent = null;
             return (await _executor.ExecuteAsync<string>(
                 __httpRequest,
                 __appContext.HttpClient,

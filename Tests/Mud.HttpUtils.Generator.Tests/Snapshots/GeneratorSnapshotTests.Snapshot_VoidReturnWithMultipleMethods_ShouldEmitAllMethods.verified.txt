@@ -249,7 +249,6 @@ namespace TestNamespace.Internal
             var __url = $"/users";
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Get, __url);
 
-            System.Net.Http.HttpContent? __bodyContent = null;
             return (await _executor.ExecuteAsync<System.Collections.Generic.List<string>>(
                 __httpRequest,
                 __appContext.HttpClient,
@@ -289,7 +288,6 @@ namespace TestNamespace.Internal
             var __url = $"/users";
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Post, __url);
 
-            System.Net.Http.HttpContent? __bodyContent = null;
             __httpRequest.Content = _contentSerializer.ToHttpContent(name);
             await _executor.ExecuteAsync(
                 __httpRequest,
@@ -325,7 +323,6 @@ namespace TestNamespace.Internal
             var __url = $"/users/{Uri.EscapeDataString((id).ToString() ?? string.Empty)}";
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Delete, __url);
 
-            System.Net.Http.HttpContent? __bodyContent = null;
             await _executor.ExecuteAsync(
                 __httpRequest,
                 __appContext.HttpClient,

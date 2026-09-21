@@ -93,6 +93,50 @@ namespace TestNamespace
         Compiles(source, "POST + Body 接口");
     }
 
+    /// <summary>
+    /// [FIX-02 复核] <c>[Body]</c> + <c>[SerializationMethod(FormUrlEncoded)]</c> —— 全库唯一的
+    /// 「条件创建请求体内容」路径（内容在 <c>if (body != null)</c> 内构造）。
+    /// </summary>
+    /// <remarks>
+    /// 该路径没有快照基线（快照侧的 CS0219 守卫覆盖不到），故在此做端到端编译断言并锁定所有权形状：
+    /// 内容在创建点直接移交 <c>__httpRequest.Content</c>，既不得使用 <c>using var</c>
+    /// （作用域为 <c>if</c> 块 ⇒ 请求体在发送前被 Dispose），也不得依赖跨类共享的
+    /// <c>__bodyContent</c> 槽位（除本路径外无人写入 ⇒ 其余方法全部产出 CS0219）。
+    /// </remarks>
+    [Fact]
+    public void Generator_FormUrlEncodedBody_TransfersContentOwnershipWithoutDeadLocal()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public class LoginForm
+    {
+        public string Username { get; set; }
+        public string Password { get; set; }
+    }
+
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Post(""/login"")]
+        [SerializationMethod(SerializationMethod.FormUrlEncoded)]
+        Task<string> LoginAsync([Body] LoginForm form);
+    }
+}";
+
+        // CS0219（赋值未使用的局部变量）由 GeneratorCompileAssert 的守卫统一阻断。
+        var compilation = Compiles(source, "FormUrlEncoded Body 接口");
+
+        var generated = string.Join("\n", compilation.SyntaxTrees.Skip(1).Select(t => t.ToString()));
+        generated.Should().Contain("__httpRequest.Content = new System.Net.Http.FormUrlEncodedContent(__bodyFormParams);");
+        generated.Should().NotContain("__bodyContent");
+        generated.Should().NotContain("using var __bodyFormParams");
+        generated.Should().NotContain("using var __bodyProperties");
+    }
+
     #endregion
 
     #region Path Parameter - Compile Assert

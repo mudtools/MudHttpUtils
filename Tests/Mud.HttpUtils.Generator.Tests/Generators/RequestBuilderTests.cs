@@ -1162,6 +1162,82 @@ public class RequestBuilderTests
         code.Should().Contain("FormUrlEncodedContent");
     }
 
+    /// <summary>
+    /// [FIX-02 复核] 条件创建的请求体内容必须在**创建点**把所有权移交 <c>__httpRequest.Content</c>：
+    /// 既不得声明跨类共享的方法级 <c>__bodyContent</c> 槽位（除本路径外无人写入 ⇒ 每个方法都带一个
+    /// 「赋值未使用」的局部变量，CS0219 泄漏到消费方构建），也不得对该内容使用 <c>using var</c>
+    /// （作用域为 <c>if</c> 块 ⇒ 请求体在发送前被 Dispose）。
+    /// </summary>
+    [Fact]
+    public void GenerateBodyParameter_FormUrlEncoded_TransfersContentOwnershipWithoutDisposableLocal()
+    {
+        var typeSymbol = GetTypeSymbolFromCompilation("""
+            public class TestOwnershipBody
+            {
+                public string Name { get; set; }
+            }
+            """, "TestOwnershipBody");
+
+        var methodInfo = CreateMethodInfo("/api/login", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "form",
+                Type = "TestOwnershipBody",
+                TypeSymbol = typeSymbol,
+                Attributes = [new ParameterAttributeInfo { Name = "BodyAttribute" }]
+            }
+        });
+        methodInfo.SerializationMethod = "FormUrlEncoded";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: true);
+        var code = codeBuilder.ToString();
+
+        // 创建点直接移交所有权（由 using var __httpRequest 在发送之后统一释放）
+        code.Should().Contain("__httpRequest.Content = new System.Net.Http.FormUrlEncodedContent(__bodyFormParams);");
+
+        // 不得引用跨类共享槽位，也不得引入可释放的局部变量
+        code.Should().NotContain("__bodyContent");
+        code.Should().NotContain("using var");
+    }
+
+    /// <summary>
+    /// [FIX-02 复核] 无需 null 检查时（参数已验证）不得出现 <c>if</c> 块，
+    /// 且产物缩进应回到方法体级（12 空格）而非块级（16 空格）——避免「多一层缩进却无对应块」。
+    /// </summary>
+    [Fact]
+    public void GenerateBodyParameter_FormUrlEncodedWithoutNullCheck_UsesMethodLevelIndent()
+    {
+        var typeSymbol = GetTypeSymbolFromCompilation("""
+            public class TestNoGuardBody
+            {
+                public string Name { get; set; }
+            }
+            """, "TestNoGuardBody");
+
+        var methodInfo = CreateMethodInfo("/api/login", new List<ParameterInfo>
+        {
+            new()
+            {
+                Name = "form",
+                Type = "TestNoGuardBody",
+                TypeSymbol = typeSymbol,
+                IsValidated = true, // 已由 ParameterValidationHelper 校验 ⇒ needsNullCheck = false
+                Attributes = [new ParameterAttributeInfo { Name = "BodyAttribute" }]
+            }
+        });
+        methodInfo.SerializationMethod = "FormUrlEncoded";
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateBodyParameter(codeBuilder, methodInfo, hasHttpClient: true);
+        var code = codeBuilder.ToString();
+
+        code.Should().NotContain("if (form != null)");
+        code.Should().Contain("            var __bodyFormParams = new global::System.Collections.Generic.Dictionary<string, string>();");
+        code.Should().NotContain("                var __bodyFormParams");
+    }
+
     // [F13] 字面量转义收口：ContentType 含 " 或 \ 时必须转义，否则产出非法 C#。
     // 走 UseStringContent=true 的 StringContent 分支（该分支把 content type 作为字符串字面量写入）。
 

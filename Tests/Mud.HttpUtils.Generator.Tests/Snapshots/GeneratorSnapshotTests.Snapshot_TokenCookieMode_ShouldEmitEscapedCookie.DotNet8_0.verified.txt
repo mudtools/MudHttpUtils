@@ -258,7 +258,6 @@ namespace TestNamespace.Internal
             var __url = $"/secure-data";
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Get, __url);
 
-            System.Net.Http.HttpContent? __bodyContent = null;
             __httpRequest.Headers.Add("Cookie", "session\\token=" + System.Uri.EscapeDataString(access_token));
 #if NET5_0_OR_GREATER
             __httpRequest.Options.TryAdd("__Mud_HttpUtils_TokenRecoveryContext", new Mud.HttpUtils.TokenRecoveryContext

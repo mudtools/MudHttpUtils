@@ -249,7 +249,6 @@ namespace TestNamespace.Internal
             var __url = $"/users";
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Get, __url);
 
-            System.Net.Http.HttpContent? __bodyContent = null;
             // 方法级添加Header: Accept
             if (!__httpRequest.Headers.Contains("Accept"))
                 __httpRequest.Headers.Add("Accept", "application/json");
