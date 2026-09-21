@@ -246,6 +246,15 @@ namespace TestNamespace.Internal
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Get, __url);
 
             System.Net.Http.HttpContent? __bodyContent = null;
+            if (!string.IsNullOrEmpty(access_token))
+            {
+                for (var __i = 0; __i < access_token.Length; __i++)
+            {
+                    var __c = access_token[__i];
+                    if (__c < '\x20' || __c == '\x7F')
+                        throw new global::System.InvalidOperationException("令牌值包含非法控制字符，已拒绝请求头注入。");
+                }
+            }
             __httpRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", access_token);
 #if NET5_0_OR_GREATER
             __httpRequest.Options.TryAdd("__Mud_HttpUtils_TokenRecoveryContext", new Mud.HttpUtils.TokenRecoveryContext
@@ -425,6 +434,15 @@ namespace TestNamespace.Internal
             using var __httpRequest = new HttpRequestMessage(HttpMethod.Get, __url);
 
             System.Net.Http.HttpContent? __bodyContent = null;
+            if (!string.IsNullOrEmpty(access_token))
+            {
+                for (var __i = 0; __i < access_token.Length; __i++)
+            {
+                    var __c = access_token[__i];
+                    if (__c < '\x20' || __c == '\x7F')
+                        throw new global::System.InvalidOperationException("令牌值包含非法控制字符，已拒绝请求头注入。");
+                }
+            }
             __httpRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", access_token);
 #if NET5_0_OR_GREATER
             __httpRequest.Options.TryAdd("__Mud_HttpUtils_TokenRecoveryContext", new Mud.HttpUtils.TokenRecoveryContext

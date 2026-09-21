@@ -70,10 +70,11 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
         ITokenManager tokenManager,
         TokenRecoveryOptions? options = null,
         ILogger<TokenRecoveryDelegatingHandler>? logger = null,
-        IAppContextHolder? appContextHolder = null)
+        IAppContextHolder? appContextHolder = null,
+        MudMultiTenantOptions? multiTenantOptions = null)
     {
         _recoveryExecutor = new TokenRecoveryExecutor(
-            tokenManager, options: options, logger: logger, appContextHolder: appContextHolder);
+            tokenManager, options: options, logger: logger, appContextHolder: appContextHolder, multiTenantOptions: multiTenantOptions);
     }
 
     /// <summary>
@@ -95,10 +96,11 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
         TokenRecoveryOptions? options = null,
         ILogger<TokenRecoveryDelegatingHandler>? logger = null,
         ITokenManagerRegistry? managerRegistry = null,
-        IAppContextHolder? appContextHolder = null)
+        IAppContextHolder? appContextHolder = null,
+        MudMultiTenantOptions? multiTenantOptions = null)
     {
         _recoveryExecutor = new TokenRecoveryExecutor(
-            tokenManager, userTokenManager, currentUserContext, options, logger, managerRegistry, appContextHolder);
+            tokenManager, userTokenManager, currentUserContext, options, logger, managerRegistry, appContextHolder, multiTenantOptions);
     }
 
     /// <summary>
@@ -112,10 +114,11 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
         ITokenManager tokenManager,
         IOptionsMonitor<TokenRecoveryOptions> optionsMonitor,
         ILogger<TokenRecoveryDelegatingHandler>? logger = null,
-        IAppContextHolder? appContextHolder = null)
+        IAppContextHolder? appContextHolder = null,
+        MudMultiTenantOptions? multiTenantOptions = null)
     {
         _recoveryExecutor = new TokenRecoveryExecutor(
-            tokenManager, optionsMonitor, logger, appContextHolder);
+            tokenManager, optionsMonitor, logger, appContextHolder, multiTenantOptions);
     }
 
     /// <summary>
@@ -138,10 +141,11 @@ public class TokenRecoveryDelegatingHandler : DelegatingHandler
         IOptionsMonitor<TokenRecoveryOptions> optionsMonitor,
         ILogger<TokenRecoveryDelegatingHandler>? logger = null,
         ITokenManagerRegistry? managerRegistry = null,
-        IAppContextHolder? appContextHolder = null)
+        IAppContextHolder? appContextHolder = null,
+        MudMultiTenantOptions? multiTenantOptions = null)
     {
         _recoveryExecutor = new TokenRecoveryExecutor(
-            tokenManager, userTokenManager, currentUserContext, optionsMonitor, logger, managerRegistry, appContextHolder);
+            tokenManager, userTokenManager, currentUserContext, optionsMonitor, logger, managerRegistry, appContextHolder, multiTenantOptions);
     }
 
     /// <inheritdoc />

@@ -57,11 +57,30 @@ public class ApiExceptionTests
     }
 
     [Fact]
-    public void ApiException_MessageWithUri_ContainsUri()
+    public void ApiException_MessageWithUri_ContainsRedactedUri()
     {
+        // FIX-12：URI 无 query 时消息保留完整路径
         var exception = new ApiException(HttpStatusCode.NotFound, "not found", "https://api.example.com/users/1");
 
         exception.Message.Should().Contain("https://api.example.com/users/1");
+        // 完整 URI 保留在 RequestUri 属性中
+        exception.RequestUri.Should().Be("https://api.example.com/users/1");
+    }
+
+    [Fact]
+    public void ApiException_MessageWithUriQuery_QueryRedactedFromMessage()
+    {
+        // FIX-12：含敏感 query 的 URI 在消息中仅保留 scheme://host/path，不含 query
+        var uri = "https://api.example.com/v1/data?access_token=secret-key&page=1";
+        var exception = new ApiException(HttpStatusCode.NotFound, "not found", uri);
+
+        // 消息中不应包含 query 部分
+        exception.Message.Should().Contain("https://api.example.com/v1/data");
+        exception.Message.Should().NotContain("access_token=secret-key");
+        exception.Message.Should().NotContain("page=1");
+
+        // 完整 URI 仍保留在 RequestUri 属性中（供 IExceptionRedactor 擦除）
+        exception.RequestUri.Should().Be(uri);
     }
 
     [Fact]

@@ -24,4 +24,11 @@ System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute.Url.get -> str
 System.Diagnostics.CodeAnalysis.RequiresUnreferencedCodeAttribute.Url.set -> void
 const Mud.HttpUtils.AppKey.MaxLength = 128 -> int
 static Mud.HttpUtils.AppKey.IsValid(string? value) -> bool
+Mud.HttpUtils.MissingAppContextPolicy
+Mud.HttpUtils.MissingAppContextPolicy.FallbackToDefaultApp = 1 -> Mud.HttpUtils.MissingAppContextPolicy
+Mud.HttpUtils.MissingAppContextPolicy.Reject = 0 -> Mud.HttpUtils.MissingAppContextPolicy
+Mud.HttpUtils.MudMultiTenantOptions
+Mud.HttpUtils.MudMultiTenantOptions.MissingContextPolicy.get -> Mud.HttpUtils.MissingAppContextPolicy
+Mud.HttpUtils.MudMultiTenantOptions.MissingContextPolicy.set -> void
+Mud.HttpUtils.MudMultiTenantOptions.MudMultiTenantOptions() -> void
 static Mud.HttpUtils.AppKey.ToSafeText(string? value) -> string!

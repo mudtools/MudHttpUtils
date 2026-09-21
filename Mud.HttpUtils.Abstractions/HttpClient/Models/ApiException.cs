@@ -57,11 +57,15 @@ public class ApiException : HttpRequestException
     /// <param name="statusCode">HTTP 状态码。</param>
     /// <param name="content">响应内容。</param>
     /// <param name="requestUri">请求 URI。</param>
+    /// <remarks>
+    /// FIX-12：异常消息中的 URI 仅保留 scheme://host/path（不含 query），防止敏感查询参数（如 access_token）随 Message 泄漏。
+    /// 完整 URI 保留在 <see cref="RequestUri"/> 属性中，可由 <see cref="IExceptionRedactor"/> 在传播前擦除。
+    /// </remarks>
     public ApiException(HttpStatusCode statusCode, string? content, string? requestUri)
 #if NET5_0_OR_GREATER
-        : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}) for request: {requestUri}.", null, statusCode)
+        : base(BuildMessage(statusCode, requestUri), null, statusCode)
 #else
-        : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}) for request: {requestUri}.")
+        : base(BuildMessage(statusCode, requestUri))
 #endif
     {
         StatusCode = statusCode;
@@ -93,11 +97,14 @@ public class ApiException : HttpRequestException
     /// <param name="content">响应内容。</param>
     /// <param name="requestUri">请求 URI。</param>
     /// <param name="innerException">内部异常。</param>
+    /// <remarks>
+    /// FIX-12：异常消息中的 URI 仅保留 scheme://host/path（不含 query），防止敏感查询参数泄漏。
+    /// </remarks>
     public ApiException(HttpStatusCode statusCode, string? content, string? requestUri, Exception innerException)
 #if NET5_0_OR_GREATER
-        : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}) for request: {requestUri}.", innerException, statusCode)
+        : base(BuildMessage(statusCode, requestUri), innerException, statusCode)
 #else
-        : base($"HTTP request failed with status code {(int)statusCode} ({statusCode}) for request: {requestUri}.", innerException)
+        : base(BuildMessage(statusCode, requestUri), innerException)
 #endif
     {
         StatusCode = statusCode;
@@ -116,6 +123,40 @@ public class ApiException : HttpRequestException
         : base(message, innerException)
     {
         RequestUri = requestUri;
+    }
+
+    /// <summary>
+    /// FIX-12：构建异常消息，对 URI 进行脱敏（仅保留 scheme://host/path，不含 query）。
+    /// 防止敏感查询参数（如 access_token、api_key）随异常消息泄漏到日志和调用方。
+    /// </summary>
+    /// <param name="statusCode">HTTP 状态码。</param>
+    /// <param name="requestUri">请求 URI（可能含敏感 query 参数）。</param>
+    /// <returns>脱敏后的异常消息。</returns>
+    private static string BuildMessage(HttpStatusCode statusCode, string? requestUri)
+    {
+        var redactedUri = RedactUri(requestUri);
+        return string.IsNullOrEmpty(redactedUri)
+            ? $"HTTP request failed with status code {(int)statusCode} ({statusCode})."
+            : $"HTTP request failed with status code {(int)statusCode} ({statusCode}) for request: {redactedUri}.";
+    }
+
+    /// <summary>
+    /// FIX-12：对 URI 进行脱敏——仅保留 scheme://host/path，不含 query 部分。
+    /// query 中可能包含 access_token、api_key 等敏感参数，直接嵌入异常消息会造成信息泄漏。
+    /// </summary>
+    /// <param name="uri">原始 URI 字符串。</param>
+    /// <returns>脱敏后的 URI（无 query 部分）；无效 URI 原样返回以保持排障信息。</returns>
+    private static string? RedactUri(string? uri)
+    {
+        if (string.IsNullOrEmpty(uri))
+            return uri;
+
+        // 尝试移除 query 部分（? 及之后的所有内容）
+        var qIndex = uri!.IndexOf('?');
+        if (qIndex >= 0)
+            return uri.Substring(0, qIndex);
+
+        return uri;
     }
 
     /// <summary>

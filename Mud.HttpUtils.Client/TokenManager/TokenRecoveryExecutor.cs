@@ -55,6 +55,10 @@ public class TokenRecoveryExecutor
     // 与 DefaultTokenProvider 的守卫形成闭环（此前仅令牌获取路径有守卫，恢复路径没有）。
     private readonly IAppContextHolder? _appContextHolder;
 
+    // FIX-09：多租户选项（可选）。控制应用上下文缺失时的 fail-open/fail-closed 决策。
+    // 默认 MissingAppContextPolicy.Reject（fail-closed）；设为 FallbackToDefaultApp 可回退旧行为。
+    private readonly MudMultiTenantOptions? _multiTenantOptions;
+
     /// <summary>
     /// TMR-07：当前生效的令牌恢复选项。优先走 IOptionsMonitor（热更新），回退静态快照。
     /// TMX-15-9 (D4)：删除不可达的 `?? new TokenRecoveryOptions()`——每个 ctor 至少设置 _staticOptions 或 _optionsMonitor 之一。
@@ -92,12 +96,14 @@ public class TokenRecoveryExecutor
         ITokenManager tokenManager,
         TokenRecoveryOptions? options = null,
         ILogger? logger = null,
-        IAppContextHolder? appContextHolder = null)
+        IAppContextHolder? appContextHolder = null,
+        MudMultiTenantOptions? multiTenantOptions = null)
     {
         _tokenManager = tokenManager ?? throw new ArgumentNullException(nameof(tokenManager));
         _staticOptions = options ?? new TokenRecoveryOptions();
         _logger = logger ?? NullLogger.Instance;
         _appContextHolder = appContextHolder;
+        _multiTenantOptions = multiTenantOptions;
 
         var maxDedup = _staticOptions.MaxDedupEntries;
         _credentialRefreshTasks = new RefreshDedupTable(maxDedup);
@@ -115,12 +121,14 @@ public class TokenRecoveryExecutor
         ITokenManager tokenManager,
         IOptionsMonitor<TokenRecoveryOptions> optionsMonitor,
         ILogger? logger = null,
-        IAppContextHolder? appContextHolder = null)
+        IAppContextHolder? appContextHolder = null,
+        MudMultiTenantOptions? multiTenantOptions = null)
     {
         _tokenManager = tokenManager ?? throw new ArgumentNullException(nameof(tokenManager));
         _optionsMonitor = optionsMonitor ?? throw new ArgumentNullException(nameof(optionsMonitor));
         _logger = logger ?? NullLogger.Instance;
         _appContextHolder = appContextHolder;
+        _multiTenantOptions = multiTenantOptions;
 
         var maxDedup = optionsMonitor.CurrentValue?.MaxDedupEntries ?? 1024;
         _credentialRefreshTasks = new RefreshDedupTable(maxDedup);
@@ -144,7 +152,8 @@ public class TokenRecoveryExecutor
         IOptionsMonitor<TokenRecoveryOptions> optionsMonitor,
         ILogger? logger = null,
         ITokenManagerRegistry? managerRegistry = null,
-        IAppContextHolder? appContextHolder = null)
+        IAppContextHolder? appContextHolder = null,
+        MudMultiTenantOptions? multiTenantOptions = null)
     {
         _tokenManager = tokenManager ?? throw new ArgumentNullException(nameof(tokenManager));
         _optionsMonitor = optionsMonitor ?? throw new ArgumentNullException(nameof(optionsMonitor));
@@ -153,6 +162,7 @@ public class TokenRecoveryExecutor
         _logger = logger ?? NullLogger.Instance;
         _managerRegistry = managerRegistry;
         _appContextHolder = appContextHolder;
+        _multiTenantOptions = multiTenantOptions;
 
         var maxDedup = optionsMonitor.CurrentValue?.MaxDedupEntries ?? 1024;
         _credentialRefreshTasks = new RefreshDedupTable(maxDedup);
@@ -179,8 +189,9 @@ public class TokenRecoveryExecutor
         TokenRecoveryOptions? options = null,
         ILogger? logger = null,
         ITokenManagerRegistry? managerRegistry = null,
-        IAppContextHolder? appContextHolder = null)
-        : this(tokenManager, options, logger, appContextHolder)
+        IAppContextHolder? appContextHolder = null,
+        MudMultiTenantOptions? multiTenantOptions = null)
+        : this(tokenManager, options, logger, appContextHolder, multiTenantOptions)
     {
         _userTokenManager = userTokenManager;
         _currentUserContext = currentUserContext;
@@ -737,13 +748,14 @@ public class TokenRecoveryExecutor
     /// <summary>
     /// TMR-04/TMR-12：执行令牌刷新，使用 ConcurrentDictionary 去重，确保同一时间窗口内多个 401 只触发一次刷新。
     /// 去重键含 scope：managerKey + "\u001F" + ScopeKeyBuilder.Build(scopes)，避免同管理器不同 scope 的并发 401 被合并。
+    /// FIX-10：去重键增加 AppKey 维度（前缀），避免多租户同 managerKey 的 401 恢复被错误合并。
     /// TMR-12：刷新完成后结果在 RefreshDedupWindowSeconds 窗口内保留，窗口内后续 401 直接复用结果。
     /// </summary>
     private Task<string?> RefreshTokenWithDedupAsync(
         string managerKey, ITokenManager credentialManager, string[]? scopes, CancellationToken cancellationToken)
     {
         var scopeKey = scopes is { Length: > 0 } ? ScopeKeyBuilder.Build(scopes) : ScopeKeyBuilder.DefaultKey;
-        var dedupKey = managerKey + "\u001F" + scopeKey;
+        var dedupKey = BuildTenantScopedDedupKey(managerKey, scopeKey);
 
         // MT-05/MT-06：去重与有界收敛统一委托 RefreshDedupTable。
         // 刷新工厂本身即为共享任务（不再经 TaskCompletionSource 转发），
@@ -800,8 +812,15 @@ public class TokenRecoveryExecutor
     /// 跳过条件（与既有行为一致，不引入新的误报）：
     /// ① <paramref name="manager"/> 非 <see cref="TokenManagerBase"/> 派生类；
     /// ② 未注入 <see cref="IAppContextHolder"/>（无 DI / 第三方宿主自建执行器时）；
-    /// ③ 当前无应用上下文（<c>Current?.AppKey</c> 为空）；
+    /// ③ 当前无应用上下文（<c>Current?.AppKey</c> 为空）且 <c>MudMultiTenantOptions.MissingContextPolicy = FallbackToDefaultApp</c>；
     /// ④ 管理器覆写 <c>EnforceTenantBinding = false</c>（合法共享凭据设计）。
+    /// </para>
+    /// <para>
+    /// FIX-09（EL-9）：已注入 <see cref="IAppContextHolder"/> 但当前无应用上下文时，改读 <see cref="MudMultiTenantOptions.MissingContextPolicy"/> 决策：
+    /// • <see cref="MissingAppContextPolicy.Reject"/>（默认）：fail-closed，返回 <c>false</c>，恢复流程返回真实 401；
+    /// • <see cref="MissingAppContextPolicy.FallbackToDefaultApp"/>：维持旧行为，跳过守卫（<c>return true</c>）。
+    /// 注意：未注入 <see cref="IAppContextHolder"/>（无 DI / 第三方宿主自建执行器）时不读策略，始终跳过守卫——
+    /// 该场景不涉及多租户，守卫无意义。
     /// </para>
     /// <para>
     /// 拒绝时**不向调用方抛异常**：与其余恢复失败分支保持一致（D3 —— 返回服务端真实 401），
@@ -815,7 +834,23 @@ public class TokenRecoveryExecutor
 
         var appKey = _appContextHolder?.Current?.AppKey;
         if (string.IsNullOrEmpty(appKey))
+        {
+            // FIX-09（EL-9）：已注入 IAppContextHolder 但当前无应用上下文时，改读 MudMultiTenantOptions 决策。
+            // 未注入 IAppContextHolder 时（_appContextHolder == null）：跳过守卫——该场景不涉及多租户。
+            if (_appContextHolder == null)
+                return true;
+
+            // 已注入但上下文缺失：读策略。
+            // Reject（默认）：fail-closed — 拒绝恢复，返回真实 401。
+            // FallbackToDefaultApp：维持旧行为 — 跳过守卫，允许恢复。
+            var policy = _multiTenantOptions?.MissingContextPolicy ?? MissingAppContextPolicy.Reject;
+            if (policy == MissingAppContextPolicy.Reject)
+            {
+                MudHttpClientLog.MissingAppContextRejected(_logger, manager.GetType().Name);
+                return false;
+            }
             return true;
+        }
 
         try
         {
@@ -898,19 +933,48 @@ public class TokenRecoveryExecutor
     /// <summary>
     /// TMR-05/TMR-12：执行用户令牌刷新，使用 ConcurrentDictionary 按 userId + scope 去重。
     /// 去重键含 scope：managerKey + "\u001F" + userId + "\u001F" + scopeKey。
+    /// FIX-10：去重键增加 AppKey 维度（前缀），避免多租户同 managerKey 的用户令牌 401 恢复被错误合并。
     /// TMR-12：刷新完成后结果在 RefreshDedupWindowSeconds 窗口内保留，窗口内后续 401 直接复用结果。
     /// </summary>
     private Task<string?> RefreshUserTokenWithDedupAsync(
         string managerKey, string userId, IUserTokenManager userTokenManager, string[]? scopes, CancellationToken cancellationToken)
     {
         var scopeKey = scopes is { Length: > 0 } ? ScopeKeyBuilder.Build(scopes) : ScopeKeyBuilder.DefaultKey;
-        var dedupKey = managerKey + "\u001F" + userId + "\u001F" + scopeKey;
+        var dedupKey = BuildTenantScopedDedupKey(managerKey, userId, scopeKey);
 
         // MT-05/MT-06：同租户级路径，统一委托 RefreshDedupTable（含 userId 的高基数键受条目上限约束）。
         return _userRefreshTasks.GetOrRefreshAsync(
             dedupKey,
             () => RefreshUserTokenWithIsolationAsync(userId, userTokenManager, scopes),
             Options.RefreshDedupWindowSeconds);
+    }
+
+    /// <summary>
+    /// FIX-10：构建含 AppKey 维度的去重键。
+    /// 在多租户场景中，两个不同 App 使用同一个 managerKey（如默认键场景）时，
+    /// 若去重键不含 AppKey，它们的 401 恢复会被合并为一次刷新——但不同租户的令牌不同，
+    /// 合并刷新会导致一个租户拿到另一个租户的令牌（跨租户越权）。
+    /// </summary>
+    /// <remarks>
+    /// 键格式：<c>appKey + "\u001F" + managerKey + ["\u001F" + userId] + "\u001F" + scopeKey</c>。
+    /// AppKey 为空时使用固定占位符 <c>"_no_tenant"</c>（单租户/无 DI 场景的旧行为等价）。
+    /// 分隔符 U+001F 与 ScopeKeyBuilder 一致，避免键碰撞。
+    /// </remarks>
+    private string BuildTenantScopedDedupKey(string managerKey, string scopeKey)
+    {
+        var appKey = _appContextHolder?.Current?.AppKey;
+        var prefix = string.IsNullOrEmpty(appKey) ? "_no_tenant" : appKey;
+        return prefix + "\u001F" + managerKey + "\u001F" + scopeKey;
+    }
+
+    /// <summary>
+    /// FIX-10：构建含 AppKey 维度的用户令牌去重键（含 userId）。
+    /// </summary>
+    private string BuildTenantScopedDedupKey(string managerKey, string userId, string scopeKey)
+    {
+        var appKey = _appContextHolder?.Current?.AppKey;
+        var prefix = string.IsNullOrEmpty(appKey) ? "_no_tenant" : appKey;
+        return prefix + "\u001F" + managerKey + "\u001F" + userId + "\u001F" + scopeKey;
     }
 
     /// <summary>

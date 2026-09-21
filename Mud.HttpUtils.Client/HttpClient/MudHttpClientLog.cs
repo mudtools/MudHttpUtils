@@ -462,6 +462,13 @@ internal static partial class MudHttpClientLog
         Message = "命名客户端名称区分大小写，但配置中存在仅大小写不同的多个键：{CollisionNames}。" +
                   "它们会被视为不同客户端，请合并为同一个键，否则其中一个配置不会生效。")]
     public static partial void MudHttpClientNameCaseCollision(ILogger logger, string collisionNames);
+
+    // ---- FIX-09：401 恢复守卫改读 EL-9 策略 ----
+
+    [LoggerMessage(EventId = 180, Level = LogLevel.Warning,
+        Message = "401 令牌恢复被拒绝：当前无应用上下文且 MissingAppContextPolicy=Reject（{ManagerTypeName}）。" +
+                  "配置 MudMultiTenantOptions.MissingContextPolicy = FallbackToDefaultApp 可回退到旧行为（跳过守卫）。")]
+    public static partial void MissingAppContextRejected(ILogger logger, string managerTypeName);
 #else
     private static readonly Action<ILogger, string, Exception?> s_tokenManagerRegistered =
         LoggerMessage.Define<string>(LogLevel.Debug, new EventId(131, nameof(TokenManagerRegistered)),
@@ -769,6 +776,15 @@ internal static partial class MudHttpClientLog
             "命名客户端名称区分大小写，但配置中存在仅大小写不同的多个键：{CollisionNames}。它们会被视为不同客户端，请合并为同一个键，否则其中一个配置不会生效。");
     public static void MudHttpClientNameCaseCollision(ILogger logger, string collisionNames)
         => s_mudHttpClientNameCaseCollision(logger, collisionNames, null);
+
+    // ---- FIX-09：401 恢复守卫改读 EL-9 策略 ----
+
+    private static readonly Action<ILogger, string, Exception?> s_missingAppContextRejected =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(180, nameof(MissingAppContextRejected)),
+            "401 令牌恢复被拒绝：当前无应用上下文且 MissingAppContextPolicy=Reject（{ManagerTypeName}）。" +
+            "配置 MudMultiTenantOptions.MissingContextPolicy = FallbackToDefaultApp 可回退到旧行为（跳过守卫）。");
+    public static void MissingAppContextRejected(ILogger logger, string managerTypeName)
+        => s_missingAppContextRejected(logger, managerTypeName, null);
 #endif
 
     // ---- TMX-04 / TMX-11：新增可观测性日志（EventId 170/171）----

@@ -539,18 +539,20 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         if (!string.IsNullOrEmpty(api.HttpClientType))
         {
             codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 HttpClient 包装实现类（瞬时服务）");
-            codeBuilder.AppendLine($"            // 注意：实现类构造函数依赖 {api.HttpClientType}，请确保已通过 AddMudHttpClient 等方法注册此服务");
-            // HttpClient 模式下，实现类构造函数还需注入 IHttpRequestExecutor。
-            // 使用 TryAddTransient 自动注册默认执行器（若用户未自定义注册）。
-            // DefaultHttpRequestExecutor 构造函数的 cacheProvider 和 resilienceResolver 为可选参数，
-            // DI 容器会在对应服务已注册时自动注入，未注册时使用默认值 null。
-            codeBuilder.AppendLine("            services.TryAddTransient<global::Mud.HttpUtils.IBaseHttpClient>(sp => sp.GetRequiredService<global::Mud.HttpUtils.IEnhancedHttpClient>());");
-            codeBuilder.AppendLine("            services.TryAddTransient<global::Mud.HttpUtils.IHttpRequestExecutor, global::Mud.HttpUtils.DefaultHttpRequestExecutor>();");
+            codeBuilder.AppendLine($"            // 注意：实现类构造函数依赖 {api.HttpClientType}，请确保已通过 services.AddMudHttpClient() 注册此服务及 IHttpRequestExecutor 等基础设施。");
+            // FIX-07：移除生成器对 IBaseHttpClient / IHttpRequestExecutor 的自动注册。
+            // 原实现在此发射 TryAddTransient，早于宿主 AddMudHttpClient 内部的 TryAddSingleton，
+            // 导致后者的 cacheProvider/resilienceResolver/exceptionRedactor/sensitiveDataMasker 全被抢占为 null。
+            // 基础设施注册所有权收敛至 AddMudHttpClient（EL-4 落地）。
         }
         else if (!string.IsNullOrEmpty(api.TokenManagerType))
         {
             codeBuilder.AppendLine($"            // 注册 {api.InterfaceName} 的 HttpClient 包装实现类（瞬时服务）");
-            codeBuilder.AppendLine($"            // 注意：实现类构造函数依赖 {api.TokenManagerType}，请确保已注册此令牌管理器服务");
+            codeBuilder.AppendLine($"            // 注意：实现类构造函数依赖 {api.TokenManagerType}，请确保已注册此令牌管理器服务。");
+            codeBuilder.AppendLine($"            // 必需依赖：ITokenProvider、IAppContextHolder");
+            codeBuilder.AppendLine($"            // 可选依赖（需 UserId 时）：ICurrentUserContext");
+            codeBuilder.AppendLine($"            // 可选依赖（缓存/弹性）：IHttpResponseCache、IResiliencePolicyResolver —— 请通过 services.AddMudHttpClient() 注册。");
+            // FIX-07：TokenManager 模式同理不再自动注册基础设施服务。
         }
         else
         {

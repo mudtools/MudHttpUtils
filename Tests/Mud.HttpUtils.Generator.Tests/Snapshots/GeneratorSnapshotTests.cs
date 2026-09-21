@@ -998,5 +998,46 @@ namespace TestNamespace
         return VerifyFixture.VerifyGenerator(driver, outputCompilation);
     }
 
+    /// <summary>
+    /// FIX-06 正向验证：基接口自身声明 RequiresUserId=true 时，派生类 base(...) 调用必须传入 currentUserContext。
+    /// 此场景验证 BaseRequiresUserId=true 的正确传递——基类构造函数含 ICurrentUserContext 参数，
+    /// 派生类 base(...) 必须按位置实参传入 currentUserContext（CS7036 缺参数 / CS1503 类型不匹配防护）。
+    /// </summary>
+    [Fact]
+    public Task Snapshot_InheritedFromBaseRequiresUserId_ShouldPassCurrentUserContextToBase()
+    {
+        var source = """
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    [Token("UserAccessToken", RequiresUserId = true)]
+    [HttpClientApi(TokenManage = "ITestTokenManager", IsAbstract = true)]
+    public interface IBaseUserApi
+    {
+        [Get("/base")]
+        Task<string> GetBaseDataAsync();
+    }
+
+    [Token("UserAccessToken", RequiresUserId = true)]
+    [HttpClientApi(TokenManage = "ITestTokenManager", InheritedFrom = "BaseUserApi")]
+    public interface IDerivedUserApi : IBaseUserApi, ICurrentUserId
+    {
+        [Get("/derived")]
+        Task<string> GetDerivedDataAsync();
+    }
+}
+""";
+        var (driver, outputCompilation) = VerifyFixture.RunGeneratorDriver(source);
+        return VerifyFixture.VerifyGenerator(driver, outputCompilation);
+    }
+
     #endregion
 }

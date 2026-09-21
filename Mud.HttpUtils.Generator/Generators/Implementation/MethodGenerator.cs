@@ -934,7 +934,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             var template = methodInfo.CacheKeyTemplate!;
             foreach (var p in unsafeParams)
             {
-                if (!template.Contains(p.Name, StringComparison.Ordinal))
+                if (!template.Contains(p.Name))
                 {
                     context.ProductionContext.ReportDiagnostic(
                         Diagnostic.Create(
@@ -1321,6 +1321,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         if (IsTokenHeaderMode(methodInfo) || IsTokenApiKeyMode(methodInfo))
         {
+            // FIX-11：令牌注入前统一 CR/LF 守卫，防请求头注入（与恢复路径 IsSafeTokenValue 对称）。
+            EmitTokenValueGuard(codeBuilder, indent);
+
             var headerName = GetTokenHeaderName(methodInfo);
             var escapedHeaderName = StringEscapeHelper.EscapeString(headerName);
 
@@ -1341,6 +1344,9 @@ internal class MethodGenerator : ICodeFragmentGenerator
         }
         else if (IsTokenBasicAuthMode(methodInfo))
         {
+            // FIX-11：BasicAuth 模式同样需要守卫（令牌值拼入 Authorization 头）。
+            EmitTokenValueGuard(codeBuilder, indent);
+
             // P2.6（TK-21）：BasicAuth 使用令牌方案（Scheme），默认 "Basic"。
             var scheme = StringEscapeHelper.EscapeString(methodInfo.EffectiveTokenScheme);
             codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"Authorization\", $\"{scheme} {{__basicCredentials}}\");");
@@ -1357,6 +1363,38 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         if (ShouldGenerateTokenRecoveryContext(context, methodInfo))
             GenerateTokenRecoveryContext(codeBuilder, context, methodInfo, indent);
+    }
+
+    /// <summary>
+    /// FIX-11：发射令牌值 CR/LF 守卫代码，在令牌注入请求头之前对 access_token 做运行时检查。
+    /// 与恢复路径 TokenRecoveryExecutor.IsSafeTokenValue 对称——拒绝 CR/LF 及所有 C0 控制字符与 DEL。
+    /// 守卫失败时抛出 InvalidOperationException 以中断请求发送，防止恶意令牌值通过 \r\n 注入额外 HTTP 头。
+    /// </summary>
+    /// <param name="codeBuilder">代码缓冲区。</param>
+    /// <param name="indent">缩进前缀。</param>
+    /// <remarks>
+    /// 此守卫覆盖 Header、ApiKey、BasicAuth 三种将令牌值直接写入 HTTP 头的注入模式。
+    /// Cookie 模式因值经 Uri.EscapeDataString 编码，控制字符已被转义，无需守卫。
+    /// Path 模式令牌值进入 URL 路径段，由 URL 编码处理；HmacSignature 模式令牌参与签名而非直接注入头。
+    /// </remarks>
+    private static void EmitTokenValueGuard(StringBuilder codeBuilder, string indent)
+    {
+        // 生成代码等价于：
+        //   for (var __i = 0; __i < access_token.Length; __i++)
+        //   {
+        //       var __c = access_token[__i];
+        //       if (__c < '\x20' || __c == '\x7F')
+        //           throw new InvalidOperationException("令牌值包含非法控制字符，已拒绝请求头注入。");
+        //   }
+        codeBuilder.AppendLine($"{indent}if (!string.IsNullOrEmpty(access_token))");
+        codeBuilder.AppendLine($"{indent}{{");
+        codeBuilder.AppendLine($"{indent}    for (var __i = 0; __i < access_token.Length; __i++)");
+        codeBuilder.AppendLine($"{indent}{{");
+        codeBuilder.AppendLine($"{indent}        var __c = access_token[__i];");
+        codeBuilder.AppendLine($"{indent}        if (__c < '\\x20' || __c == '\\x7F')");
+        codeBuilder.AppendLine($"{indent}            throw new global::System.InvalidOperationException(\"令牌值包含非法控制字符，已拒绝请求头注入。\");");
+        codeBuilder.AppendLine($"{indent}    }}");
+        codeBuilder.AppendLine($"{indent}}}");
     }
 
     /// <summary>

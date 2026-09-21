@@ -153,8 +153,9 @@ public class TokenRecoveryTenantGuardTests
     }
 
     [Fact]
-    public async Task Recovery_WithoutAppContext_ShouldSkipGuard()
+    public async Task Recovery_WithoutAppContext_ShouldRejectByDefault()
     {
+        // FIX-09（EL-9）：已注入 IAppContextHolder 但当前无上下文时，默认 MissingAppContextPolicy.Reject。
         var manager = new TenantBoundManager();
         var registry = new DelegateTokenManagerRegistry(_ => manager);
         var executor = new TokenRecoveryExecutor(
@@ -168,7 +169,28 @@ public class TokenRecoveryTenantGuardTests
             RequestWithRecoveryContext("k"), UnauthorizedSender(), CancellationToken.None);
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        manager.RefreshCount.Should().BeGreaterThan(0, "当前无应用上下文时守卫跳过");
+        manager.RefreshCount.Should().Be(0, "FIX-09：默认 Reject 策略下无上下文应 fail-closed，拒绝恢复");
+    }
+
+    [Fact]
+    public async Task Recovery_WithoutAppContext_WithFallbackPolicy_ShouldSkipGuard()
+    {
+        // FIX-09（EL-9）：FallbackToDefaultApp 策略下维持旧行为——跳过守卫，允许恢复。
+        var manager = new TenantBoundManager();
+        var registry = new DelegateTokenManagerRegistry(_ => manager);
+        var executor = new TokenRecoveryExecutor(
+            manager,
+            new TokenRecoveryOptions { RecoveryMaxRetries = 1 },
+            NullLogger.Instance,
+            new FakeAppContextHolder(null),   // 已注入但当前无上下文
+            new MudMultiTenantOptions { MissingContextPolicy = MissingAppContextPolicy.FallbackToDefaultApp });
+        manager.BindTenantGuard("app-a");
+
+        var response = await executor.ExecuteAsync(
+            RequestWithRecoveryContext("k"), UnauthorizedSender(), CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        manager.RefreshCount.Should().BeGreaterThan(0, "FallbackToDefaultApp 策略下守卫跳过，恢复正常执行");
     }
 
     [Fact]
