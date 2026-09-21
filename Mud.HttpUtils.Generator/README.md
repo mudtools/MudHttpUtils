@@ -362,6 +362,8 @@ services.AddExternalWebApiHttpClient();
 2. **优先使用** `UseAppScope` / `BeginScope(appKey)`：`UseApp` 的无作用域切换（`SwitchTo`）在长生命周期宿主导航后**不会自动归还** AsyncLocal 上下文，后台任务 / `IAsyncEnumerable` 等场景可能串到错误应用（详见 Client README「上下文归还约束」）；
 3. **⚠️ 乱序释放警示**：不要把 `UseApp`（无作用域切换）与 `using`/`BeginScope` 作用域**混用**——作用域释放时的归属判定会跳过非自身环境的回滚，导致上下文残留到非预期应用（行为已由测试锁定，修复需作用域栈方案）；长生命周期/后台任务请使用 `UseAppScope` 显式包络，作用域请始终以 `using` 在**创建它的同一执行上下文**中释放。
 
+> **生成物注释同步（G8-10）**：上表的受信路径三入口（`Current` setter / `SwitchTo(IMudAppContext)` / `BeginScope(IMudAppContext)`）已在**生成的实现类 XML 注释**中显式声明信任边界（「直接接受 `IMudAppContext` 实例，**不执行** appKey 格式校验与 `IAppAccessAuthorizer` 授权判定」），并指向 `UseAppScope` / `BeginScope(string)` 作为不可信输入的正确入口。此前该结论只落在本文档与 `UseApp`/`UseAppScope` 的注释上，实例入口无任何提示（G7-11 的落地缺口）。契约由 `ApplicationSwitchGuardContractTests.ContextBasedSwitch_DocumentsTrustBoundary` 守卫。
+
 ### 令牌键与租户隔离（G7-12）
 
 Token 管理模式的取令牌链路是**固定架构契约**，**缓存键不含 AppKey**——租户隔离依赖「每 App 独立管理器实例 + bind-once 守卫」，**不是**改键结构：
@@ -595,10 +597,21 @@ Token 注入模式：
 | `Header`        | 注入到 HTTP Header（默认）                                        |
 | `Query`         | 注入到 URL Query 参数                                             |
 | `Path`          | 注入到 URL Path                                                   |
-| `ApiKey`        | API Key 认证，通过 `IApiKeyProvider` 获取密钥注入到请求头         |
+| `ApiKey`        | API Key 认证，通过 `IApiKeyProvider` 获取密钥注入到请求头（**头名取 `Name`**，G8-19） |
 | `HmacSignature` | HMAC 签名认证，通过 `IHmacSignatureProvider` 计算签名注入到请求头 |
 | `BasicAuth`     | HTTP Basic 认证，将凭据编码为 Base64 注入到 Authorization 请求头  |
-| `Cookie`        | 注入到 Cookie 请求头                                              |
+| `Cookie`        | 注入到 Cookie 请求头（值按 RFC 6265 做 `Uri.EscapeDataString` 编码） |
+
+> **模式判定口径（G8-01）**：注入模式与令牌名（`Name`）一律按**有效级**解析 ——
+> **方法级 `[Token]` > 接口级 `[Token]` > 默认值**。方法级与接口级声明使用同一套解析结果，
+> 覆盖 `Header` / `Query` / `Path` / `ApiKey` / `Cookie` 五处消费点（`TokenAttribute` 的
+> `AttributeUsage` 含 `AttributeTargets.Method`，故方法级声明是一等契约）。
+>
+> **Path 模式的 URL 编码（G8-02）**：`Path` 模式把令牌值注入 URL 路径段，替换值统一为
+> `System.Uri.EscapeDataString(access_token)`（与同模板内 `[Path]` 参数同口径），
+> 因此令牌中的 `?` / `#` / `&` / `/` **无法**改写请求目标。
+> 但编码**不消除**「令牌进入 URL」本身的留存面（代理日志 / 访问日志 / 浏览器历史）——
+> 该风险由 `MUD005` 单独提示，且 `Path` 模式不被令牌恢复处理器支持（`HTTPCLIENT022`）。
 
 > ⚠️ **安全约束：`[Token]` / `[HttpClientApi]` 的字符串属性只接受「键名 / 标识符」，不得放置任何机密。**
 >
@@ -848,6 +861,8 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 | `HTTPCLIENT032` | Warning | `[Cache]` 提供了 `CacheKeyTemplate`，但模板未引用某 Unsafe 参数 | 不同取值可能命中同一缓存（串键）。请在模板中加入该参数（字面量检查，尽力而为） | 否 | 是 |
 | `HTTPCLIENT033` | Info | 同一编译 ≥2 个 `[HttpClientApi]` 接口共存：实现类按类型级 `IEnhancedHttpClient` 解析，各接口命名客户端及其 `[HttpClientApi(Timeout)]` 配置可能未按命名隔离（G7-04a） | 多接口场景将对应命名客户端注册为默认 `IEnhancedHttpClient`，或阅读「生成客户端命名」章节 | 否 | 否 |
 | `HTTPCLIENT034` | Warning | `[Cache(VaryByUser = true)]` 但接口未继承 `ICurrentUserId` 且无 `[Token(RequiresUserId = true)]`：用户维度退化为 `user:anonymous`，全体用户共享同一缓存 | 为接口继承 `ICurrentUserId`、为方法添加 `[Token(RequiresUserId = true)]`，或移除 `VaryByUser`（也可通过实现类可写属性 `CurrentUserId` 手动赋值，属易错路径） | 否 | 是 |
+| `HTTPCLIENT035` | Error | 继承组合的运行模式不匹配（G8-04）：基接口为 `HttpClient`/`TokenManage`/默认模式，而派生接口为另一模式 ⇒ 生成的 `base(...)` 位置实参类型与基类构造函数不匹配（必然编译失败） | 二选一：① 统一两级配置（令基接口与派生接口使用一致的 `HttpClient` / `TokenManage` 设置）；② 改用 `[HttpClientApi(InheritedFrom = "…")]` 指向宿主自维护的抽象基类。**支持的组合**：基/派生同为 `Default`、同为 `TokenManage`、同为 `HttpClient`，以及「基 `Default` × 派生 `TokenManage`」 | 否 | 是 |
+| `HTTPCLIENT036` | Warning | `[FilePath(BufferSize = …)]` 超过支持上界（4 MiB），生成器已夹取到上界（G8-06） | 调小 `BufferSize`（4 MiB 已远超任何合理下载缓冲：默认 81920 字节）；不修改即按上界运行，不会 OOM | 否 | 是 |
 
 > **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010`、`HTTPCLIENT019` 当前**未使用**（ID 保留为占位，不重新分配）。
 > - `HTTPCLIENT010`：`BaseAddress` 已移除（CFG-27），使用直接编译错误 `CS0117`，无需生成器提示。

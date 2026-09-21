@@ -32,7 +32,15 @@ internal static class HttpClientGeneratorConstants
     /// </summary>
     public static readonly HashSet<string> SupportedHttpMethodsSet = new(SupportedHttpMethods, StringComparer.Ordinal);
 
-    public static readonly HashSet<string> PathAttributes = new HashSet<string>(StringComparer.Ordinal) { "PathAttribute", "Path", "RouteAttribute", "Route" };
+    /// <summary>
+    /// 路径参数特性名（长名 + 短名）。
+    /// </summary>
+    /// <remarks>
+    /// G8-12：原集合含 <c>"RouteAttribute"</c>/<c>"Route"</c> 两个**幻影条目** ——
+    /// <c>Mud.HttpUtils.Attributes</c> 中不存在 <c>RouteAttribute</c> 类型（全仓无 <c>class RouteAttribute</c>），
+    /// 「早期文档的别名」从来不可能命中，属纯负债。已删除（`Generator/README.md` 已自认不存在 <c>[Route]</c>）。
+    /// </remarks>
+    public static readonly HashSet<string> PathAttributes = new HashSet<string>(StringComparer.Ordinal) { "PathAttribute", "Path" };
     public const string QueryAttribute = "QueryAttribute";
     public const string ArrayQueryAttribute = "ArrayQueryAttribute";
     public const string HeaderAttribute = "HeaderAttribute";
@@ -78,7 +86,8 @@ internal static class HttpClientGeneratorConstants
     // CFG-22：BaseAddressProperty 为死常量（全仓仅定义、无读取），已删除。
     // [HttpClientApi(BaseAddress = …)] 使用处会直接产生编译错误 CS0619（属性标注 [Obsolete(error: true)]）。
 
-    public static readonly string[] BasePathAttributeNames = ["BasePathAttribute", "BasePath"];
+    // G8-12：原 BasePathAttributeNames 常量已删除（全仓零引用；真实判定为硬编码，
+    // 见 InterfaceImplementationGenerator.ExtractBasePath：「BasePathAttribute」/「BasePath」）。
 
     public static readonly string[] AllowAnyStatusCodeAttributeNames = ["AllowAnyStatusCodeAttribute", "AllowAnyStatusCode"];
 
@@ -95,6 +104,44 @@ internal static class HttpClientGeneratorConstants
     public static readonly string[] RetryAttributeNames = ["RetryAttribute", "Retry"];
     public static readonly string[] CircuitBreakerAttributeNames = ["CircuitBreakerAttribute", "CircuitBreaker"];
     public static readonly string[] TimeoutAttributeNames = ["TimeoutAttribute", "Timeout"];
+
+    /// <summary>
+    /// 所有已知的「HTTP 参数特性」名称集合（长名 + 短名）。
+    /// 参数若未标注其中任何一个，且不属于特殊类型，则按类型自动推断默认特性：简单类型 → <c>[Query]</c>、复杂类型 → <c>[Body]</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>G8-12 单一事实源</b>：原集合私有于 <c>ParameterAnalyzer</c>，与 <see cref="PathAttributes"/>、
+    /// <see cref="QueryAttribute"/> 等常量形成**第三份副本**（三处独立维护同一批特性名 ⇒ 改名/新增时静默失配）。
+    /// 现收敛到本类，由 <c>ConstantUsageGuardTests</c> 与 <c>ParameterAttributeNamesTests</c> 双向钉死成员集合。
+    /// </para>
+    /// <para>
+    /// <b>刻意不含</b>非参数级特性（<c>[Cache]</c>/<c>[Retry]</c>/<c>[CircuitBreaker]</c>/<c>[Timeout]</c>/
+    /// <c>[HeaderMerge]</c>/<c>[SerializationMethod]</c>/<c>[AllowUnmatchedRouteParameters]</c>）——
+    /// 它们不是「参数的 HTTP 语义标注」，纳入会改变自动推断行为（如把 <c>[Cache]</c> 参数当作已标注而漏推断）。
+    /// </para>
+    /// </remarks>
+    public static readonly HashSet<string> HttpParameterAttributeNames = new(StringComparer.Ordinal)
+    {
+        // Path（与 PathAttributes 保持同源；G8-12 已移除 Route* 幻影条目）
+        "PathAttribute", "Path",
+        // Query 系列
+        "QueryAttribute", "Query",
+        "ArrayQueryAttribute", "ArrayQuery",
+        "QueryMapAttribute", "QueryMap",
+        "RawQueryStringAttribute", "RawQueryString",
+        // Header
+        "HeaderAttribute", "Header",
+        // Body 系列
+        "BodyAttribute", "Body",
+        "FormContentAttribute", "FormContent",
+        "MultipartFormAttribute", "MultipartForm",
+        "UploadAttribute", "Upload",
+        "FormAttribute", "Form",
+        "FilePathAttribute", "FilePath",
+        // Token
+        "TokenAttribute", "Token"
+    };
 
     // Resilience相关命名参数
     public const string RetryMaxRetriesProperty = "MaxRetries";
@@ -120,8 +167,26 @@ internal static class HttpClientGeneratorConstants
     /// </summary>
     public const int DefaultHttpClientTimeoutSeconds = 50;
 
-    public const string DefaultTokenManageInterface = "ITokenManage";
-    public const string DefaultWrapSuffix = "Wrap";
+    // G8-12：以下 3 个死常量已删除（全仓词边界检索确认「仅定义处命中」，属纯负债）：
+    //   · BasePathAttributeNames —— 真实判定为硬编码（InterfaceImplementationGenerator.ExtractBasePath）
+    //   · DefaultTokenManageInterface = "ITokenManage" —— 无消费且**值错误**（真实约定见 BaseClassValidator：「ITokenManager」）
+    //   · DefaultWrapSuffix = "Wrap" —— 真实判定为硬编码（BaseClassValidator.IsGeneratedClass）
     public const string DefaultContentType = "application/json";
     public const string ImplementationNamespaceSuffix = "Internal";
+
+    /// <summary>
+    /// G8-06：文件下载默认缓冲区大小（字节），与 <c>DefaultHttpRequestExecutor.DownloadLargeAsync</c> 的默认值一致。
+    /// </summary>
+    public const int DefaultDownloadBufferSize = 81920;
+
+    /// <summary>
+    /// G8-06：<c>[FilePath(BufferSize = …)]</c> 的支持上界（4 MiB）。
+    /// </summary>
+    /// <remarks>
+    /// BufferSize 最终用于 <c>new byte[bufferSize]</c> 与
+    /// <c>new FileStream(…, bufferSize, …)</c>；特性 setter 不会被 Roslyn 实例化，
+    /// 故超大值（如 <c>int.MaxValue</c>）只能在生成器侧夹取（HTTPCLIENT036）+ 运行库侧二次夹取。
+    /// 4 MiB 已远超任何合理的文件下载缓冲（默认 80 KiB），并且小于大对象堆压力阈值。
+    /// </remarks>
+    public const int MaxSupportedDownloadBufferSize = 4 * 1024 * 1024;
 }

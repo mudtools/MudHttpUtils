@@ -530,36 +530,45 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         if (_context.HasInheritedFrom)
         {
             var baseParameters = new List<string>();
-            if (_context.HasTokenManager)
+
+            // G8-04：位置实参必须按「**基类**运行模式」分派，而不是按派生侧模式猜。
+            // 原实现只读派生侧字段（HasTokenManager/HasHttpClient），使 9 种「基类 × 派生」组合中
+            // 5 种产出与基类构造函数形参不匹配的 base(...)（CS1503/CS1729），且因 BaseClassValidator
+            // 对生成类名短路而**无任何诊断**。
+            // 基类确为生成的抽象类（InheritedFromInterfaceName 非空）时，模式可由三个 BaseHas* 旗标唯一推导；
+            // 否则（InheritedFrom 指向宿主自维护基类）无法判定，保持既有「按派生侧模式」的启发式以零行为变化。
+            var baseIsGeneratedClass = !string.IsNullOrEmpty(_context.Configuration.InheritedFromInterfaceName);
+            var baseMode = baseIsGeneratedClass
+                ? _context.Configuration.BaseRuntimeMode
+                : (_context.HasHttpClient ? BaseRuntimeMode.HttpClient : BaseRuntimeMode.Default);
+
+            switch (baseMode)
             {
-                if (_context.Configuration.BaseHasTokenManager)
-                {
-                    // 基类有 TokenManager，直接传递令牌参数
+                case BaseRuntimeMode.TokenManager:
+                    // 基类为 TokenManager 模式：位置实参须与基类构造函数
+                    // (TokenManagerType, IAppContextHolder, ITokenProvider, [ICurrentUserContext,] IHttpRequestExecutor, …) 对齐。
                     baseParameters.Add("appManager");
                     baseParameters.Add("appContextHolder");
                     baseParameters.Add("tokenProvider");
-                    // FIX-06：基类需要 userId 时必须传入 currentUserContext（位置实参顺序敏感）。
+                    // FIX-06：基类需要 userId 时须传入 currentUserContext（位置实参顺序敏感），
                     // 必须置于 tokenProvider 之后、executor 之前（基类构造函数形参顺序）。
                     if (_context.Configuration.BaseRequiresUserId)
                     {
                         baseParameters.Add("currentUserContext");
                     }
-                }
-                else
-                {
-                    // 基类没有 TokenManager，传递 appContext 而非 appManager
-                    baseParameters.Add("appManager.GetDefaultApp()");
+                    break;
+
+                case BaseRuntimeMode.HttpClient:
+                    // 基类为 HttpClient 模式：首参为 HttpClient 实例。
+                    baseParameters.Add("httpClient");
+                    break;
+
+                default:
+                    // 基类为默认（AppContext）模式：首参为 IMudAppContext。
+                    // 派生侧持有令牌源时，回传其默认应用（基类不持有令牌管理器）。
+                    baseParameters.Add(_context.HasTokenManager ? "appManager.GetDefaultApp()" : "appContext");
                     baseParameters.Add("appContextHolder");
-                }
-            }
-            else if (_context.HasHttpClient)
-            {
-                baseParameters.Add("httpClient");
-            }
-            else
-            {
-                baseParameters.Add("appContext");
-                baseParameters.Add("appContextHolder");
+                    break;
             }
             // 始终传递 executor 给基类（所有模式均接受 executor 参数）
             baseParameters.Add("executor");
@@ -578,7 +587,15 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             // 位置约束：C# 命名实参后不得跟按位置实参（CS8323），故本命名实参必须位于全部位置实参之后
             // （与 appAuthorizer 同为命名实参，顺序无关）。仅基类为默认模式时透传；
             // 基类为 TokenManager/HttpClient 模式时派生 appManager 形参类型不匹配，不得传。
-            if (_context.Configuration.BaseHasAppManager)
+            // G8-04（第 5 处修复点）：条件必须**对称**收窄为 `BaseHasAppManager && 派生为默认模式`。
+            // 仅凭 BaseHasAppManager 不够：当「基 Default × 派生 TokenManager」时基类确为默认模式，
+            // 但派生侧名为 appManager 的形参类型是 **TokenManagerType**（非 IAppManager<IMudAppContext>）
+            // ⇒ 透传产生 CS1503「参数 4: 无法从 ITestTokenManager 转换为 IAppManager<IMudAppContext>?」。
+            // 该组合在 HTTPCLIENT028 中明确被文档化为「可编译（new 隐藏基类成员）」的受支持形态，
+            // 故本项属修复而非收紧能力：HashTokenManager 时基类 _appManager 保持 null，
+            // 基类视角的 UseApp/BeginScope(appKey) 会抛「当前模式不支持」——正是 HTTPCLIENT028 所警示的调用路径分叉。
+            // 注意：这不是 07:192 所禁止的「引入 BaseHasHttpClient 双条件」，而是补齐半条件。
+            if (_context.Configuration.BaseHasAppManager && !_context.HasTokenManager)
             {
                 baseParameters.Add("appManager: appManager");
             }
@@ -734,6 +751,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("        /// <summary>");
             codeBuilder.AppendLine("        /// 获取当前的应用上下文。");
             codeBuilder.AppendLine("        /// </summary>");
+            AppendContextTrustBoundaryRemarks(codeBuilder);
             codeBuilder.AppendLine("        public IMudAppContext? Current");
             codeBuilder.AppendLine("        {");
             codeBuilder.AppendLine("            get => _appContextHolder.Current;");
@@ -745,6 +763,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("        /// 将当前应用上下文切换为指定实例（不返回作用域，不自动恢复）。");
             codeBuilder.AppendLine("        /// </summary>");
             codeBuilder.AppendLine("        /// <param name=\"context\">目标应用上下文实例。可为 <c>null</c> 以清除当前上下文。</param>");
+            AppendContextTrustBoundaryRemarks(codeBuilder);
             codeBuilder.AppendLine("        public void SwitchTo(IMudAppContext? context)");
             codeBuilder.AppendLine("        {");
             codeBuilder.AppendLine("            _appContextHolder.SwitchTo(context);");
@@ -757,6 +776,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             codeBuilder.AppendLine("        /// <remarks>");
             codeBuilder.AppendLine("        /// <b>警告</b>：请在创建作用域的同一执行上下文中以 <c>using</c> 释放；跨执行上下文/");
             codeBuilder.AppendLine("        /// 其他线程的乱序释放会跳过回滚并可能残留上下文。长生命周期/后台任务请显式包络。");
+            AppendContextTrustBoundaryRemarksLines(codeBuilder);
             codeBuilder.AppendLine("        /// </remarks>");
             codeBuilder.AppendLine("        /// <param name=\"context\">要切换到的应用上下文实例。</param>");
             codeBuilder.AppendLine("        /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>");
@@ -771,6 +791,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine("        /// 获取或设置当前的应用上下文。");
         codeBuilder.AppendLine("        /// </summary>");
+        AppendContextTrustBoundaryRemarks(codeBuilder);
         codeBuilder.AppendLine("        public IMudAppContext? Current");
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            get => _appContextHolder.Current;");
@@ -782,6 +803,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// 将当前应用上下文切换为指定实例（不返回作用域，不自动恢复）。");
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine("        /// <param name=\"context\">目标应用上下文实例。可为 <c>null</c> 以清除当前上下文。</param>");
+        AppendContextTrustBoundaryRemarks(codeBuilder);
         codeBuilder.AppendLine("        public void SwitchTo(IMudAppContext? context)");
         codeBuilder.AppendLine("        {");
         codeBuilder.AppendLine("            _appContextHolder.SwitchTo(context);");
@@ -794,6 +816,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// <remarks>");
         codeBuilder.AppendLine("        /// <b>警告</b>：请在创建作用域的同一执行上下文中以 <c>using</c> 释放；跨执行上下文/");
         codeBuilder.AppendLine("        /// 其他线程的乱序释放会跳过回滚并可能残留上下文。长生命周期/后台任务请显式包络。");
+        AppendContextTrustBoundaryRemarksLines(codeBuilder);
         codeBuilder.AppendLine("        /// </remarks>");
         codeBuilder.AppendLine("        /// <param name=\"context\">要切换到的应用上下文实例。</param>");
         codeBuilder.AppendLine("        /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>");
@@ -802,6 +825,32 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("            return _appContextHolder.BeginScope(context);");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
+    }
+
+    /// <summary>
+    /// G8-10（承接 G7-11）：为「直接接受 <see cref="IMudAppContext"/> 实例」的实例入口追加<b>信任边界</b> <c>&lt;remarks&gt;</c>。
+    /// </summary>
+    /// <remarks>
+    /// 07 G7-11 + DP-7 已定论：这些入口<b>不做</b>授权校验（调用方已持有上下文实例时上游即已越权，
+    /// 校验无法证明实例归属），只需明确信任边界。本方法把该结论落到<b>生成物 XML 注释</b> ——
+    /// 07 的落点覆盖了 README 与 <c>UseApp</c>/<c>UseAppScope</c>，但这三处实例入口没有。
+    /// </remarks>
+    private static void AppendContextTrustBoundaryRemarks(StringBuilder codeBuilder)
+    {
+        codeBuilder.AppendLine("        /// <remarks>");
+        AppendContextTrustBoundaryRemarksLines(codeBuilder);
+        codeBuilder.AppendLine("        /// </remarks>");
+    }
+
+    /// <summary>
+    /// 信任边界 remarks 的正文行（单独抽出，供已存在 <c>&lt;remarks&gt;</c> 的 <c>BeginScope(IMudAppContext)</c> 合并使用 ——
+    /// 同一成员不得出现两个 <c>&lt;remarks&gt;</c> 元素）。
+    /// </summary>
+    private static void AppendContextTrustBoundaryRemarksLines(StringBuilder codeBuilder)
+    {
+        codeBuilder.AppendLine("        /// <b>信任边界</b>：本重载直接接受 <see cref=\"IMudAppContext\"/> 实例，<b>不执行</b> appKey 格式校验与");
+        codeBuilder.AppendLine("        /// <see cref=\"IAppAccessAuthorizer\"/> 授权判定 —— 仅当实例来源本身可信（由 DI 或已授权的应用管理器提供）时使用。");
+        codeBuilder.AppendLine("        /// 若 appKey 来自请求参数等不可信输入，请改用 <see cref=\"UseAppScope\"/> / <see cref=\"BeginScope(string)\"/>（含默认拒绝守卫）。");
     }
 
     /// <summary>

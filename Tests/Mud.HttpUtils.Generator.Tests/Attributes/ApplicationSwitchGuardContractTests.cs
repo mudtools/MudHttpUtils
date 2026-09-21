@@ -219,6 +219,35 @@ public class ApplicationSwitchGuardContractTests
     /// （派生 appManager 形参类型为 TokenManager，与基类 IAppManager&lt;IMudAppContext&gt; 形参不匹配，
     /// 误加会导致基类调用编译失败）。该用例钉死「仅默认模式基类透传」的判定口径（BaseHasAppManager）。
     /// </summary>
+    /// <summary>
+    /// G8-10（承接 G7-11）：受信路径三入口（<c>Current</c> setter / <c>SwitchTo(IMudAppContext)</c> /
+    /// <c>BeginScope(IMudAppContext)</c>）的生成物 XML 注释必须声明<b>信任边界</b>。
+    /// </summary>
+    /// <remarks>
+    /// 07 G7-11 已定「不加授权校验，只明确信任边界」，但落点只覆盖 README 与 <c>UseApp</c>/<c>UseAppScope</c>；
+    /// 三处<b>实例入口</b>此前无任何提示（<c>BeginScope(IMudAppContext)</c> 仅有线程归属警告）。
+    /// 本用例把「生成物自带信任边界声明」钉死，避免结论只存在于文档而使用者看不到。
+    /// </remarks>
+    [Fact]
+    public void ContextBasedSwitch_DocumentsTrustBoundary()
+    {
+        var code = ExtractImplementation(InheritedDefaultModeSource);
+
+        code.Should().Contain("信任边界",
+            "G8-10：实例入口必须声明信任边界（不执行 appKey 校验与授权判定）");
+        code.Should().Contain("不执行",
+            "G8-10：必须明确「不执行」授权判定，而非含糊表述");
+        code.Should().Contain("UseAppScope",
+            "G8-10：必须指向不可信输入的正确入口（UseAppScope / BeginScope(string)）");
+
+        // 三处实例入口都应有 remarks（Current / SwitchTo / BeginScope(IMudAppContext)）：
+        // 统计信任边界段落出现次数（Current 1 + SwitchTo 1 + BeginScope 1 = 3）。
+        var trustBoundarySections = System.Text.RegularExpressions.Regex
+            .Matches(code, "<b>信任边界</b>").Count;
+        trustBoundarySections.Should().BeGreaterThanOrEqualTo(3,
+            $"受信路径三入口（Current / SwitchTo / BeginScope(IMudAppContext)）都应声明信任边界；实际 {trustBoundarySections} 处");
+    }
+
     [Fact]
     public void GeneratedCode_TokenManagerBaseInheritance_ShouldNotForwardIAppManager()
     {

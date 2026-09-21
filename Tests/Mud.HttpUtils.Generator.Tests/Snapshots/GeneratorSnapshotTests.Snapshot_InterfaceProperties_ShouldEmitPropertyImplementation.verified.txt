@@ -100,6 +100,11 @@ namespace TestNamespace.Internal
         /// <summary>
         /// 获取当前的应用上下文。
         /// </summary>
+        /// <remarks>
+        /// <b>信任边界</b>：本重载直接接受 <see cref="IMudAppContext"/> 实例，<b>不执行</b> appKey 格式校验与
+        /// <see cref="IAppAccessAuthorizer"/> 授权判定 —— 仅当实例来源本身可信（由 DI 或已授权的应用管理器提供）时使用。
+        /// 若 appKey 来自请求参数等不可信输入，请改用 <see cref="UseAppScope"/> / <see cref="BeginScope(string)"/>（含默认拒绝守卫）。
+        /// </remarks>
         public IMudAppContext? Current
         {
             get => _appContextHolder.Current;
@@ -110,6 +115,11 @@ namespace TestNamespace.Internal
         /// 将当前应用上下文切换为指定实例（不返回作用域，不自动恢复）。
         /// </summary>
         /// <param name="context">目标应用上下文实例。可为 <c>null</c> 以清除当前上下文。</param>
+        /// <remarks>
+        /// <b>信任边界</b>：本重载直接接受 <see cref="IMudAppContext"/> 实例，<b>不执行</b> appKey 格式校验与
+        /// <see cref="IAppAccessAuthorizer"/> 授权判定 —— 仅当实例来源本身可信（由 DI 或已授权的应用管理器提供）时使用。
+        /// 若 appKey 来自请求参数等不可信输入，请改用 <see cref="UseAppScope"/> / <see cref="BeginScope(string)"/>（含默认拒绝守卫）。
+        /// </remarks>
         public void SwitchTo(IMudAppContext? context)
         {
             _appContextHolder.SwitchTo(context);
@@ -121,6 +131,9 @@ namespace TestNamespace.Internal
         /// <remarks>
         /// <b>警告</b>：请在创建作用域的同一执行上下文中以 <c>using</c> 释放；跨执行上下文/
         /// 其他线程的乱序释放会跳过回滚并可能残留上下文。长生命周期/后台任务请显式包络。
+        /// <b>信任边界</b>：本重载直接接受 <see cref="IMudAppContext"/> 实例，<b>不执行</b> appKey 格式校验与
+        /// <see cref="IAppAccessAuthorizer"/> 授权判定 —— 仅当实例来源本身可信（由 DI 或已授权的应用管理器提供）时使用。
+        /// 若 appKey 来自请求参数等不可信输入，请改用 <see cref="UseAppScope"/> / <see cref="BeginScope(string)"/>（含默认拒绝守卫）。
         /// </remarks>
         /// <param name="context">要切换到的应用上下文实例。</param>
         /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>

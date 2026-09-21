@@ -1025,6 +1025,112 @@ public class DefaultHttpRequestExecutorTests
         }
     }
 
+    /// <summary>
+    /// G8-07：<b>非取消</b>的失败路径（服务端 5xx）同样不得残留任何文件 ——
+    /// 既有断言只覆盖取消路径，失败路径仅有「日志脱敏」断言（对称缺口）。
+    /// </summary>
+    [Fact]
+    public async Task DownloadLarge_ServerError_LeavesNoResidualFiles()
+    {
+        var mockClient = new Mock<IBaseHttpClient>();
+        var response = new HttpResponseMessage(HttpStatusCode.InternalServerError)
+        {
+            Content = new StringContent("boom")
+        };
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
+
+        var tempFile = Path.Combine(Path.GetTempPath(), $"mud_test_{Guid.NewGuid():N}.bin");
+        try
+        {
+            var act = async () => await executor.DownloadLargeAsync(CreateRequest(), mockClient.Object, tempFile);
+            await act.Should().ThrowAsync<HttpRequestException>();
+
+            File.Exists(tempFile).Should().BeFalse(
+                "G8-07：失败路径不得在最终路径留下文件");
+            File.Exists(tempFile + ".mudtmp").Should().BeFalse(
+                "G8-07：失败路径的临时文件必须被尽力清理（与取消路径同语义）");
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+            if (File.Exists(tempFile + ".mudtmp"))
+                File.Delete(tempFile + ".mudtmp");
+        }
+    }
+
+    /// <summary>
+    /// G8-06：<c>bufferSize</c> 超大（<c>int.MaxValue</c>）时运行库必须夹取到上界而非 OOM /
+    /// <see cref="ArgumentOutOfRangeException"/>（与生成器侧 HTTPCLIENT036 夹取同语义的纵深防御）。
+    /// </summary>
+    [Fact]
+    public async Task DownloadLarge_WithHugeBufferSize_DoesNotThrow()
+    {
+        var data = new byte[300 * 1024];
+        new Random(7).NextBytes(data);
+        var mockClient = new Mock<IBaseHttpClient>();
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(data)
+        };
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
+
+        var tempFile = Path.Combine(Path.GetTempPath(), $"mud_test_{Guid.NewGuid():N}.bin");
+        try
+        {
+            await executor.DownloadLargeAsync(CreateRequest(), mockClient.Object, tempFile, bufferSize: int.MaxValue);
+
+            (await File.ReadAllBytesAsync(tempFile)).Should().Equal(data,
+                "G8-06：超大 bufferSize 被夹取后下载内容必须完整（夹取不得改变语义）");
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+            if (File.Exists(tempFile + ".mudtmp"))
+                File.Delete(tempFile + ".mudtmp");
+        }
+    }
+
+    /// <summary>
+    /// G8-06：<c>bufferSize &lt;= 0</c> 时运行库归一为默认值（81920），不抛异常
+    /// （与生成器侧「非正值静默归一」同语义）。
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task DownloadLarge_WithNonPositiveBufferSize_UsesDefault(int bufferSize)
+    {
+        var data = new byte[] { 1, 2, 3, 4, 5 };
+        var mockClient = new Mock<IBaseHttpClient>();
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ByteArrayContent(data)
+        };
+        mockClient.Setup(c => c.SendRawAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(response);
+        var executor = new DefaultHttpRequestExecutor(NullLogger<DefaultHttpRequestExecutor>.Instance);
+
+        var tempFile = Path.Combine(Path.GetTempPath(), $"mud_test_{Guid.NewGuid():N}.bin");
+        try
+        {
+            await executor.DownloadLargeAsync(CreateRequest(), mockClient.Object, tempFile, bufferSize: bufferSize);
+
+            (await File.ReadAllBytesAsync(tempFile)).Should().Equal(data);
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+            if (File.Exists(tempFile + ".mudtmp"))
+                File.Delete(tempFile + ".mudtmp");
+        }
+    }
+
     #endregion
 
     #region Download Observability

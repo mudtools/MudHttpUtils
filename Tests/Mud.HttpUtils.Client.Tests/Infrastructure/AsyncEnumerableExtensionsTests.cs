@@ -175,6 +175,112 @@ public class AsyncEnumerableExtensionsTests : IClassFixture<UrlValidatorFixture>
         results[1].Name.Should().Be("AlsoValid");
     }
 
+    // ─────────────── [G8-07] 枚举器/响应流的释放强断言 ───────────────
+
+    /// <summary>
+    /// 可计数的流包装器（G8-07 前置基建）：断言「提前中断 / 取消枚举」时底层响应流确实被释放。
+    /// </summary>
+    /// <remarks>
+    /// 既有取消用例只断言元素计数（<see cref="SendAsAsyncEnumerable_WithCancellation_StopsEnumeration"/>），
+    /// 无法发现「流未释放 ⇒ HTTP 响应泄漏」；此处以 <see cref="DisposeAsync"/> 计数补齐该缺口。
+    /// </remarks>
+    private sealed class TrackingStream : Stream
+    {
+        private readonly MemoryStream _inner;
+
+        public TrackingStream(byte[] data) => _inner = new MemoryStream(data);
+
+        /// <summary>释放次数（含 DisposeAsync 触发的 Dispose(true)）。</summary>
+        public int DisposeCount { get; private set; }
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => _inner.Length;
+        public override long Position { get => _inner.Position; set => throw new NotSupportedException(); }
+
+        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+        public override void Flush() { }
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            // 幂等计数：流可能被 Dispose 与 DisposeAsync 各触发一次（.NET 允许重复释放）。
+            if (disposing && DisposeCount == 0)
+                DisposeCount++;
+            base.Dispose(disposing);
+        }
+    }
+
+    private static (IBaseHttpClient Client, TrackingStream Stream) CreateTrackingNdJsonClient(int itemCount)
+    {
+        var ndjson = string.Join("\n", Enumerable.Range(1, itemCount).Select(i => $"{{\"Name\":\"Item{i}\",\"Value\":{i}}}")) + "\n";
+        var stream = new TrackingStream(Encoding.UTF8.GetBytes(ndjson));
+
+        var client = new Mock<IBaseHttpClient>();
+        client.Setup(c => c.SendStreamAsync(It.IsAny<HttpRequestMessage>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(stream);
+
+        return (client.Object, stream);
+    }
+
+    /// <summary>
+    /// G8-07：提前 <c>break</c> 中断枚举 ⇒ 底层响应流必须被释放（否则 HTTP 响应泄漏）。
+    /// </summary>
+    [Fact]
+    public async Task SendAsAsyncEnumerable_BreakMidEnumeration_DisposesStream()
+    {
+        var (client, stream) = CreateTrackingNdJsonClient(100);
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/stream");
+
+        var count = 0;
+        await foreach (var _ in client.StreamNdJsonAsync<TestItem>(request))
+        {
+            if (++count >= 3)
+                break;
+        }
+
+        count.Should().Be(3);
+        stream.DisposeCount.Should().Be(1,
+            "提前中断枚举必须由 await using 释放底层响应流，否则响应（含连接）泄漏");
+    }
+
+    /// <summary>
+    /// G8-07：取消枚举 ⇒ 底层响应流同样必须被释放（成功/取消/异常三条路径的释放语义必须一致）。
+    /// </summary>
+    [Fact]
+    public async Task SendAsAsyncEnumerable_Cancellation_DisposesStream()
+    {
+        var (client, stream) = CreateTrackingNdJsonClient(100);
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/stream");
+        using var cts = new CancellationTokenSource();
+        var count = 0;
+
+        try
+        {
+            await foreach (var _ in client.StreamNdJsonAsync<TestItem>(request, cancellationToken: cts.Token))
+            {
+                if (++count >= 3)
+                {
+#if NET8_0_OR_GREATER
+                    await cts.CancelAsync();
+#else
+                    cts.Cancel();
+#endif
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 取消在读取阶段抛出属合法路径；关键断言是「流已被释放」。
+        }
+
+        stream.DisposeCount.Should().Be(1, "取消路径同样必须释放底层响应流");
+    }
+
     public class TestItem
     {
         public string Name { get; set; } = "";

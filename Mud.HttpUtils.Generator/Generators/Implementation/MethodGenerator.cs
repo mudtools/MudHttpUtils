@@ -36,6 +36,10 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         foreach (var methodSymbol in methodsToGenerate)
         {
+            // G8-17（承接 G7-08）：方法级特性统一走上下文缓存（GeneratorContext.GetMethodAttributes），
+            // 避免同一方法的 GetAttributes() 在本循环内被调用 2 次以上（每次都会分配新的 ImmutableArray）。
+            var methodAttrs = context.GetMethodAttributes(methodSymbol);
+
             // 属性/事件访问器（PropertyGet/PropertySet/EventAdd/EventRemove 等）不是接口的独立方法成员：
             // 它们随属性/事件整体由 InterfaceContractCompletionGenerator（或 ConstructorGenerator 的
             // 接口属性发射）处理；若在此按独立方法发射，会与属性访问器同名冲突（CS0082）。
@@ -48,7 +52,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             // 无法映射到合法动词（会产出 CS0117）。该限制与 MUD001 分析器口径一致，
             // 报告给用户的是明确的 MUD001，而不是一段运行期才抛异常的占位实现。
             var isHttpMethod = MethodAnalyzer.FindHttpMethodAttributeFromAttributes(
-                methodSymbol.GetAttributes()) != null;
+                methodAttrs) != null;
             if (!isHttpMethod)
             {
                 // 缺少 HTTP 方法特性：生成器无法生成 HTTP 调用实现。
@@ -80,12 +84,12 @@ internal class MethodGenerator : ICodeFragmentGenerator
                         : "生成器无法为该成员生成 HTTP 调用实现（原因见该成员上的其它诊断）");
             }
 
-            if (HasCacheAttribute(methodSymbol))
+            if (HasCacheAttribute(methodAttrs))
             {
                 context.HasCache = true;
             }
 
-            if (HasResilienceAttribute(methodSymbol))
+            if (HasResilienceAttribute(methodAttrs))
             {
                 context.HasResilience = true;
             }
@@ -381,7 +385,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine();
 
         // 统一调用执行器：Cache/Resilience 编排由运行时执行器处理，消除生成器中的三分支互斥逻辑
-        GenerateExecutorCall(codeBuilder, context, methodInfo, hasHttpClient, needsTokenInjection, executor, httpClientExpr);
+        GenerateExecutorCall(codeBuilder, context, methodSymbol, methodInfo, hasHttpClient, needsTokenInjection, executor, httpClientExpr);
 
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
@@ -515,7 +519,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
     /// IAsyncEnumerable/byte[]/文件下载等特殊返回类型跳过编排，直接调用对应的执行器方法。
     /// </summary>
     private void GenerateExecutorCall(StringBuilder codeBuilder, GeneratorContext context,
-        MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection, string executor, string httpClientExpr)
+        IMethodSymbol methodSymbol, MethodAnalysisResult methodInfo, bool hasHttpClient, bool needsTokenInjection, string executor, string httpClientExpr)
     {
         var basePath = context.Configuration.BasePath;
         var urlCode = _requestBuilder.BuildUrlString(methodInfo, basePath);
@@ -600,9 +604,32 @@ internal class MethodGenerator : ICodeFragmentGenerator
         {
             // 从 [FilePath(BufferSize = ..., Overwrite = ...)] 读取配置
             var filePathAttr = filePathParam.Attributes.First(a => a.Name == HttpClientGeneratorConstants.FilePathAttribute);
-            var bufferSize = 81920;
-            if (filePathAttr.NamedArguments.TryGetValue("BufferSize", out var bsVal) && bsVal is int bs && bs > 0)
-                bufferSize = bs;
+            var bufferSize = HttpClientGeneratorConstants.DefaultDownloadBufferSize;
+            if (filePathAttr.NamedArguments.TryGetValue("BufferSize", out var bsVal) && bsVal is int bs)
+            {
+                // G8-06：BufferSize 最终用于 new byte[bufferSize]（进度路径）与
+                // new FileStream(…, bufferSize, …) / CopyToAsync(stream, bufferSize)；
+                // 特性 setter 不会被 Roslyn 实例化 ⇒ 运行期无拦截点，生成器是唯一防线。
+                // 策略：<= 0 保持既有归一语义（回退默认值，静默，见 07 §G7-B）；
+                //       超上界夹取 + HTTPCLIENT036（Warning，不阻断构建）。
+                if (bs > HttpClientGeneratorConstants.MaxSupportedDownloadBufferSize)
+                {
+                    bufferSize = HttpClientGeneratorConstants.MaxSupportedDownloadBufferSize;
+                    context.ProductionContext.ReportDiagnostic(Diagnostic.Create(
+                        Diagnostics.FilePathBufferSizeOutOfRange,
+                        GetFilePathAttributeLocation(methodSymbol, context)
+                            ?? GetMethodSyntax(methodSymbol, context)?.GetLocation()
+                            ?? context.InterfaceDeclaration.GetLocation(),
+                        context.InterfaceSymbol.Name,
+                        methodInfo.MethodName,
+                        bs,
+                        HttpClientGeneratorConstants.MaxSupportedDownloadBufferSize));
+                }
+                else if (bs > 0)
+                {
+                    bufferSize = bs;
+                }
+            }
 
             var overwrite = true;
             if (filePathAttr.NamedArguments.TryGetValue("Overwrite", out var owVal) && owVal is bool ow)
@@ -1642,15 +1669,22 @@ internal class MethodGenerator : ICodeFragmentGenerator
         return true;
     }
 
-    private static bool HasCacheAttribute(IMethodSymbol methodSymbol)
+    /// <summary>
+    /// G8-17：改收「已缓存的方法特性数组」（<see cref="GeneratorContext.GetMethodAttributes"/>），
+    /// 不再自行调用 <c>methodSymbol.GetAttributes()</c>（每次调用都会分配新的 <c>ImmutableArray</c>）。
+    /// </summary>
+    private static bool HasCacheAttribute(ImmutableArray<AttributeData> methodAttributes)
     {
-        return methodSymbol.GetAttributes()
+        return methodAttributes
             .Any(attr => HttpClientGeneratorConstants.CacheAttributeNames.Contains(attr.AttributeClass?.Name));
     }
 
-    private static bool HasResilienceAttribute(IMethodSymbol methodSymbol)
+    /// <summary>
+    /// G8-17：同 <see cref="HasCacheAttribute"/>，改收已缓存的方法特性数组。
+    /// </summary>
+    private static bool HasResilienceAttribute(ImmutableArray<AttributeData> methodAttributes)
     {
-        return methodSymbol.GetAttributes()
+        return methodAttributes
             .Any(attr =>
                 HttpClientGeneratorConstants.RetryAttributeNames.Contains(attr.AttributeClass?.Name) ||
                 HttpClientGeneratorConstants.CircuitBreakerAttributeNames.Contains(attr.AttributeClass?.Name) ||
@@ -1689,7 +1723,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         if (templatePlaceholders.Count == 0)
             return;
 
-        var pathParams = new HashSet<string>(
+        var methodPathParams = new HashSet<string>(
             // [F3 修复] 单一事实源：与生成阶段（RequestBuilder.GetPathParameterName）共用相同的
             // 占位符名解析，[Path(Name = "userId")] int id 不再被误报为占位符缺失。
             // methodInfo.Parameters 已由 ParameterAnalyzer 解析为 ParameterAttributeInfo（含 Name/Arguments/NamedArguments），
@@ -1701,29 +1735,40 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     p.Name)),
             StringComparer.OrdinalIgnoreCase);
 
-        // FIX-05：纳入接口级 Path 来源（[InterfacePath] 特性 + 接口属性 [Path]），
+        // FIX-05：接口级 Path 来源（[InterfacePath] 特性 + 接口属性 [Path]）**仅供「缺失」判定**，
         // 防止接口声明了路径占位符但方法参数未标注 [Path] 时误报 HTTPCLIENT013 Error。
-        // 接口级来源不参与 extra 判定（接口声明了 [InterfacePath] 却无方法用它时不应反向误报）。
+        //
+        // G8-18（构建红基线修复）：接口级 Path **不得**参与「多余」判定 ——
+        // 接口 [Path] 属性/ [InterfacePath] 常服务于接口级 [BasePath("…/{name}/…")] 的占位符
+        // （如 [BasePath("{tenantId}/api/v1")] + 属性 [Path("tenantId")]），
+        // 而本校验只比对方法级 UrlTemplate（不含 BasePath）⇒ 若复用同一集合，
+        // 合法用法会被判为「方法参数多余」并报 Error（阻断构建）。
+        // 原实现把接口级来源并入 pathParams（同时供 missing/extra 使用），与紧邻注释自相矛盾。
+        var interfacePathNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var p in methodInfo.InterfacePathParameters)
-            pathParams.Add(p.Name);
+            interfacePathNames.Add(p.Name);
         foreach (var p in methodInfo.InterfaceProperties.Where(x => x.AttributeType == "Path"))
-            pathParams.Add(p.ParameterName ?? p.Name);
+            interfacePathNames.Add(p.ParameterName ?? p.Name);
 
         // 当 Token 使用 Path 注入模式时，URL 模板中的 Token 占位符应由 Token 注入机制替换，
         // 不需要对应的 [Path] 参数，因此将 Token 占位符从缺失列表中排除
         // 使用已缓存的 methodInfo，避免重复调用 AnalyzeMethod
+        // G8-01：模式与名称均取「有效级」（方法级 > 接口级），否则方法级 Path 模式会被误报。
         var tokenPathPlaceholders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (methodInfo.IsValid && methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModePath
-            && !string.IsNullOrEmpty(methodInfo.InterfaceTokenName))
+            && !string.IsNullOrEmpty(methodInfo.EffectiveTokenName))
         {
-            tokenPathPlaceholders.Add(methodInfo.InterfaceTokenName!);
+            tokenPathPlaceholders.Add(methodInfo.EffectiveTokenName!);
         }
 
         var missingInMethod = templatePlaceholders
-            .Where(p => !pathParams.Contains(p) && !tokenPathPlaceholders.Contains(p))
+            .Where(p => !methodPathParams.Contains(p)
+                     && !interfacePathNames.Contains(p)
+                     && !tokenPathPlaceholders.Contains(p))
             .ToList();
 
-        var extraInMethod = pathParams
+        // 反向判定只统计「方法参数」来源：接口级 Path 可能服务 BasePath 或父级模板，不构成多余。
+        var extraInMethod = methodPathParams
             .Where(p => !templatePlaceholders.Contains(p))
             .ToList();
 
@@ -1778,6 +1823,27 @@ internal class MethodGenerator : ICodeFragmentGenerator
     private static MethodDeclarationSyntax? GetMethodSyntax(IMethodSymbol methodSymbol, GeneratorContext context)
         => MethodAnalyzer.FindMethodSyntax(
             context.Compilation, methodSymbol, context.InterfaceDeclaration, context.SemanticModel);
+
+    /// <summary>
+    /// G8-06：定位方法上 <c>[FilePath(…)]</c> 特性的语法位置（优先特性节点，无法命中时由调用方回退方法/接口）。
+    /// </summary>
+    private static Location? GetFilePathAttributeLocation(IMethodSymbol methodSymbol, GeneratorContext context)
+    {
+        var methodSyntax = GetMethodSyntax(methodSymbol, context);
+        if (methodSyntax == null)
+            return null;
+
+        var attrSyntax = methodSyntax.AttributeLists
+            .SelectMany(list => list.Attributes)
+            .FirstOrDefault(attr =>
+            {
+                var name = attr.Name.ToString();
+                return name.EndsWith("FilePath", StringComparison.Ordinal)
+                    || name.EndsWith("FilePathAttribute", StringComparison.Ordinal);
+            });
+
+        return attrSyntax?.GetLocation();
+    }
 
     /// <summary>
     /// [Phase1 修复 1.1] 定位 HTTP 方法特性的第一个参数（URL 字面量）的语法位置。

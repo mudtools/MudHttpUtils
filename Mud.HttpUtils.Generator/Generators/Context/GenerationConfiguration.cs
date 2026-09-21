@@ -10,6 +10,25 @@ using System.Diagnostics;
 namespace Mud.HttpUtils.Generators.Context;
 
 /// <summary>
+/// 基类（<c>InheritedFrom</c> 指向的生成器产出抽象类）的运行模式。
+/// </summary>
+/// <remarks>
+/// G8-04：仅用于 <c>base(...)</c> 位置实参分派。<b>不是</b>新的可写状态 ——
+/// 由 <see cref="GenerationConfiguration.BaseRuntimeMode"/> 从三个既有 <c>BaseHas*</c> 旗标唯一推导。
+/// </remarks>
+internal enum BaseRuntimeMode
+{
+    /// <summary>默认（AppContext）模式：基类构造函数 <c>(IMudAppContext, IAppContextHolder, IHttpRequestExecutor, …)</c>。</summary>
+    Default,
+
+    /// <summary>TokenManager 模式：基类构造函数 <c>(TokenManagerType, IAppContextHolder, ITokenProvider, [ICurrentUserContext,] IHttpRequestExecutor, …)</c>。</summary>
+    TokenManager,
+
+    /// <summary>HttpClient 模式：基类构造函数 <c>(HttpClientType, IHttpRequestExecutor, …)</c>。</summary>
+    HttpClient,
+}
+
+/// <summary>
 /// 生成配置
 /// </summary>
 [DebuggerDisplay("TokenManager={TokenManager} HttpClient={HttpClient} IsAbstract={IsAbstract}")]
@@ -117,4 +136,30 @@ internal class GenerationConfiguration
     /// InheritedFrom 对应的基接口名称（用于排除基接口方法，避免多基接口场景下遗漏方法）。
     /// </summary>
     public string? InheritedFromInterfaceName { get; set; }
+
+    /// <summary>
+    /// 基类的运行模式（供 <c>base(...)</c> 位置实参分派，G8-04）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 由三个 <c>BaseHas*</c> 旗标<b>唯一推导</b>（<c>HttpClient</c> 模式 ⇔ 基类设了 HttpClient ⇔
+    /// <see cref="BaseHasAppAuthorizer"/> 为 false；<c>TokenManager</c> 模式 ⇔ <see cref="BaseHasTokenManager"/>；
+    /// 其余为 <c>Default</c> ⇔ <see cref="BaseHasAppManager"/>）：
+    /// 任何一方发生变化，本属性随之变化，**不存在第二事实源**，也不可能与旗标不一致。
+    /// </para>
+    /// <para>
+    /// <b>职责边界（勿混淆）</b>：本属性<b>仅</b>用于 <c>base(...)</c> 实参分派；
+    /// <c>appManager: appManager</c> 的透传条件必须继续使用 <see cref="BaseHasAppManager"/>（07:192 结论），
+    /// 字段归属判定继续使用 <see cref="BaseHasAppAuthorizer"/>。
+    /// </para>
+    /// <para>
+    /// <b>前提</b>：仅当 <see cref="InheritedFromInterfaceName"/> 非空（基类确为生成的抽象类）时才有意义；
+    /// <c>InheritedFrom</c> 指向宿主自维护基类时三者皆 false，本属性会推导为 <c>Default</c>，
+    /// 此时 <c>ConstructorGenerator</c> 会退回「按派生侧模式」的既有启发式（见该处注释）。
+    /// </para>
+    /// </remarks>
+    public BaseRuntimeMode BaseRuntimeMode
+        => !BaseHasAppAuthorizer ? BaseRuntimeMode.HttpClient
+         : BaseHasTokenManager ? BaseRuntimeMode.TokenManager
+         : BaseRuntimeMode.Default;
 }

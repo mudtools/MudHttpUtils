@@ -217,4 +217,72 @@ public class GeneratedCodeEscapeTests
             source,
             description: "CacheKeyTemplate 含花括号（含未配对 {bad）时必须转义，生成的 CacheKey 插值串才可编译（GEN-01）");
     }
+
+    /// <summary>
+    /// G8-05：multipart 的「直接构造 + Add」站点必须发射<b>异常路径释放</b>守卫
+    /// （局部变量 → try → Add → catch → Dispose → throw）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>MultipartFormDataContent.Add</c> 会对 name/fileName 做头部校验；实测（.NET 10）：
+    /// 含 CR/LF → <c>FormatException</c>、含 <c>"</c> 或空白 → <c>ArgumentException</c>，
+    /// 且抛出点在 <c>base.Add(content)</c> 之前 ⇒ 刚构造的 <c>HttpContent</c> 未移交 multipart。
+    /// 带 <c>ContentType</c> 的分支（G7-19）早已做「仅异常路径 Dispose」，其余 8 个站点此前未保护 ⇒
+    /// 分支间行为不一致（异常路径有时释放调用方流、有时不释放）。
+    /// </para>
+    /// <para>
+    /// <b>副作用（有意为之）</b>：<c>StreamContent.Dispose()</c> 会关闭调用方传入的流（实测）。
+    /// 此时请求构造已失败、不会再发送，故统一选择释放以消除不确定性。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void MultipartAdd_Sites_EmitExceptionPathDisposeGuard()
+    {
+        const string source = """
+            using System.IO;
+            using System.Threading.Tasks;
+            using Mud.HttpUtils;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                public class UserInfo
+                {
+                    public int Id { get; set; }
+                }
+
+                [HttpClientApi]
+                public interface IMultipartApi
+                {
+                    [Post("/upload")]
+                    Task<string> UploadAsync(
+                        [Form(FieldName = "field")] string title,
+                        [Form(FieldName = "count")] int count,
+                        [Form(FieldName = "note")] UserInfo? note,
+                        [MultipartForm] string payload,
+                        [Upload(FieldName = "file", FileName = "a.txt")] Stream file,
+                        [Upload(FieldName = "file2", FileName = "b.txt", ContentType = "text/plain")] Stream file2);
+                }
+            }
+            """;
+
+        var output = GeneratorCompileAssert.RunAndAssertNoErrors(
+            source,
+            description: "multipart（[Form]/[MultipartForm]/[Upload]）生成代码必须可编译（G8-05）");
+
+        var generated = string.Join("\n", output.SyntaxTrees.Skip(1).Select(t => t.ToString()));
+
+        // 本输入共 6 个 multipart 内容站点：
+        //   [Form] ×3（string / 非可空值类型 / 引用类型）+ [MultipartForm] ×1 + [Upload] ×2（无 ContentType / 带 ContentType）。
+        // 第一个 [Upload] 走 G8-05 新增的守卫；带 ContentType 的走 G7-19 既有守卫。
+        // 两者注释前缀一致（仅 G7-19 多一个「已」字），故用共同前缀匹配。
+        var disposeGuards = System.Text.RegularExpressions.Regex
+            .Matches(generated, "仅异常路径释放（成功路径所有权")
+            .Count;
+
+        disposeGuards.Should().BeGreaterThanOrEqualTo(6,
+            $"每个「直接构造 + Add」站点都必须有异常路径 Dispose；实际 {disposeGuards} 处");
+        generated.Should().Contain("catch", "守卫必须位于 catch 块中（仅在 Add 抛异常时释放）");
+        generated.Should().Contain("throw;", "释放后必须原样重抛，不得吞掉异常");
+    }
 }

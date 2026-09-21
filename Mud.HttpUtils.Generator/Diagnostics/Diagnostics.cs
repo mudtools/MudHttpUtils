@@ -337,7 +337,9 @@ internal static class Diagnostics
     public static readonly DiagnosticDescriptor TokenRecoveryUnsupportedInjectionMode = new(
         id: "HTTPCLIENT022",
         title: "Path/HmacSignature 令牌注入模式不支持令牌恢复",
-        messageFormat: "接口 {0} 的方法 {1} 使用令牌注入模式 '{2}'。该模式不被令牌恢复处理器（TokenRecoveryDelegatingHandler / TokenRecoveryEnhancedClient）支持：令牌过期触发 401 后，刷新得到的新令牌无法重新注入（Path 无法重写 URL 中的令牌，HmacSignature 无法用新令牌重算签名）。恢复将静默失败并返回 401。如需令牌恢复能力，请改用 Header/Query/ApiKey/Cookie/BasicAuth 注入模式。",
+        // DP-5（G8-02）：Path 已补 URL 编码（RFC 3986），文案须同步说明「编码已补齐、但 URL 留存面仍在」，
+        // 避免诊断文案与实际能力脱节（MUD005 另覆盖「令牌进入 URL」的留存风险）。
+        messageFormat: "接口 {0} 的方法 {1} 使用令牌注入模式 '{2}'。该模式不被令牌恢复处理器（TokenRecoveryDelegatingHandler / TokenRecoveryEnhancedClient）支持：令牌过期触发 401 后，刷新得到的新令牌无法重新注入（Path 无法重写 URL 中的令牌，HmacSignature 无法用新令牌重算签名）。恢复将静默失败并返回 401。另请注意：Path 模式的令牌值会进入请求 URL（已按 RFC 3986 做 URI 编码，可防止改写请求目标，但无法避免代理/访问日志/浏览器历史中的留存）。如需令牌恢复能力，请改用 Header/Query/ApiKey/Cookie/BasicAuth 注入模式。",
         category: "代码生成",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
@@ -466,6 +468,56 @@ internal static class Diagnostics
         id: "HTTPCLIENT028",
         title: "继承模式下应用切换成员被隐藏",
         messageFormat: "接口 {0} 继承自 {1} 且两者应用切换来源不同（TokenManage 与默认模式混合），生成的 UseApp/BeginScope 使用 new 隐藏基类成员。请通过派生接口调用切换方法，或统一两级的 TokenManage 配置。",
+        category: "代码生成",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    /// <summary>
+    /// G8-04：继承链上「基类运行模式」与「派生类运行模式」不匹配，生成的 <c>base(...)</c> 位置实参
+    /// 类型必然错位（CS1503/CS1729 指向生成文件），而 <c>BaseClassValidator</c> 对生成类名（无命名空间点）
+    /// 会短路跳过校验 ⇒ 此前是「无诊断的不可编译产物」。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>支持的组合</b>（9 组中仅 4 组）：基/派生同为 Default、同为 TokenManager、同为 HttpClient，
+    /// 以及「基 Default × 派生 TokenManager」（派生持有令牌源，可向基类回传 <c>AppManager.GetDefaultApp()</c>）。
+    /// 其余 5 组缺少基类构造函数所需的「源」（<c>ITokenProvider</c>/令牌管理器、<c>HttpClient</c>、<c>IMudAppContext</c>），
+    /// 无法在不改变派生类构造函数签名的前提下补齐。
+    /// </para>
+    /// <para>
+    /// 级别为 <b>Error</b>（fail-fast，未发布无兼容义务）：<b>不加</b>
+    /// <see cref="WellKnownDiagnosticTags.NotConfigurable"/> —— 用户可通过统一两级配置或
+    /// <c>InheritedFrom</c> 指向自维护基类修复；加该标签会连坐抑制同一编译中的全部分析器诊断
+    /// （见本文件顶部标签分层准则）。
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor BaseRuntimeModeMismatch = new(
+        id: "HTTPCLIENT035",
+        title: "继承组合的运行模式不匹配",
+        messageFormat: "接口 {0} 的继承组合不受支持：基接口 '{1}' 为 {2} 模式，本接口为 {3} 模式，生成的 base(...) 实参类型与基类构造函数不匹配（编译必然失败）。请二选一：① 统一两级配置（令基接口与本接口使用一致的 HttpClient / TokenManage 设置）；② 改用 [HttpClientApi(InheritedFrom = \"…\")] 指向宿主自维护的抽象基类。",
+        category: "代码生成",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    /// <summary>
+    /// G8-06：<c>[FilePath(BufferSize = …)]</c> 超出支持上界，生成器已夹取到上界并提示。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// BufferSize 最终用于 <c>new byte[bufferSize]</c>（进度回调路径）与
+    /// <c>new FileStream(…, bufferSize, …)</c> / <c>CopyToAsync(stream, bufferSize)</c>。
+    /// 特性 setter 不会被执行（Roslyn 不实例化 Attribute），运行期无任何拦截点 ⇒
+    /// 生成器是唯一可行的防线。策略为「夹取 + Warning」而非 Error：超大值属非法输入，
+    /// 夹取后语义安全，不必阻断既有构建。
+    /// </para>
+    /// <para>
+    /// <c>&lt;= 0</c> 不报告（保持既有归一语义：回退默认值，见 07 §G7-B）。
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor FilePathBufferSizeOutOfRange = new(
+        id: "HTTPCLIENT036",
+        title: "[FilePath(BufferSize)] 超出支持上界",
+        messageFormat: "接口 {0} 的方法 {1} 的 [FilePath(BufferSize = {2})] 超出支持上界，已夹取为 {3} 字节。BufferSize 用于分配下载缓冲区，超大值会直接导致 OutOfMemoryException 或 ArgumentOutOfRangeException。",
         category: "代码生成",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);

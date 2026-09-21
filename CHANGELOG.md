@@ -4,6 +4,73 @@
 
 ---
 
+## 2.0.10（Generator 四主线专项审查修复 G8-*，2026-09-21）
+
+> 依据《08 · Generator 四主线专项审查修复与功能完善方案》（v2.0，含独立复核结论 §13）实施，
+> 覆盖 G8-01～G8-19 共 18 项（含复核新增的 G8-18/G8-19）。
+
+#### 修复（Fixed）
+
+- **构建红基线（G8-18，P0）**：`HTTPCLIENT013` 的「多余占位符」判定误把**接口级 `[Path]` 来源**算入，
+  而接口 `[Path]` 属性 / `[InterfacePath]` 的典型用途是为接口级 `[BasePath("{tenantId}/…")]` 提供占位符
+  （校验只比对方法级 URL 模板，不含 BasePath）⇒ 合法用法被判「方法参数多余」并报 Error，
+  **`dotnet build` 直接失败（实测 24 个 error：6 个 Demo 用例 × 4 TFM）**。
+  现按集合职责分离：接口级来源只参与「缺失」判定，不参与「多余」判定（方法参数来源仍严格校验）。
+- **令牌注入模式/名称口径分裂（G8-01，P0）**：注入模式与 `Name` 一律按**有效级**解析
+  （方法级 `[Token]` > 接口级 > 默认）。修复前 `Query`/`Path` 只认接口级声明 ⇒
+  方法级 `[Token(InjectionMode = Query)]` **取到令牌后丢弃**（请求静默无令牌）；
+  方法级 `Path` 占位符不替换且误报 `HTTPCLIENT013`；
+  方法级 `Header` 的自定义头名被落回 `Authorization`。
+- **ApiKey 模式的 `Name` 被丢弃（G8-19，P0）**：`[Token(InjectionMode = ApiKey, Name = "X-API-Key")]`
+  的 `Name`（注入头名）此前完全不生效，API Key 被写进 `Authorization` 头
+  （服务端按 `X-API-Key` 取值必然 401），且 401 恢复路径按同一错误头名重注入。现 `Header`/`ApiKey` 共用同一名称解析。
+- **Path 模式令牌未做 URL 编码（G8-02）**：令牌值进入 URL 路径段但现在统一经
+  `System.Uri.EscapeDataString`（与同模板 `[Path]` 参数同口径），令牌中的 `?`/`#`/`&`/`/` 无法再改写请求目标。
+- **混合运行模式的继承组合产出不可编译 `base(...)`（G8-04，P0）**：`base(...)` 位置实参此前只按**派生侧**模式生成，
+  而 `BaseClassValidator` 对生成类名短路跳过校验 ⇒ 9 种「基类 × 派生」组合中 5 种产出与基类构造函数形参不匹配的
+  `base(...)`（CS1503/CS1729）**且无任何诊断**。现按**基类运行模式**分派实参并引入 `HTTPCLIENT035`（Error）阻断
+  不支持的组合；同时修复 `appManager: appManager` 透传条件的**不对称**（缺失 `!HasTokenManager` 判断 ⇒
+  「基 Default × 派生 TokenManage」误传类型不匹配的实参）。
+- **multipart 内容构造无异常路径保护（G8-05）**：`MultipartFormDataContent.Add` 会对 name/fileName 做头部校验
+  （实测：含 CR/LF → `FormatException`；含 `"`/空白 → `ArgumentException`），抛出点在 `base.Add` 之前 ⇒
+  刚构造的 `HttpContent` 未移交。8 个「直接构造 + Add」站点现统一为「局部变量 + try/catch + 异常路径 Dispose + throw」，
+  与带 `ContentType` 的 G7-19 分支同构。
+- **`[FilePath(BufferSize)]` 仅校验下界（G8-06）**：超大值（如 `int.MaxValue`）会直接 OOM 或抛
+  `ArgumentOutOfRangeException`（特性 setter 不会被 Roslyn 实例化 ⇒ 运行期无拦截点）。
+  现生成器夹取到 4 MiB 上界并报 `HTTPCLIENT036`（Warning），运行库侧同步做防御性夹取。
+- **契约补全漏登记 `UseAppScope`（G8-15）**：接口一旦声明同名成员即产生重复成员（CS0111/CS0102）。
+- **空 `IAppManager` 的失败信息不指向真因（G8-09）**：生成器自动注册的空 `DefaultAppManager` 的
+  `LogWarning` 依赖 `ILoggerFactory`（`AddMudHttpClient` 不注册日志基础设施 ⇒ 裸容器完全静默），
+  随后 `GetDefaultApp()` 的原始消息只说明「未设置默认应用」。现生成工厂以**单语句 try/catch** 包装该调用并重抛
+  带根因与修复步骤的异常（保留 `InnerException`）。
+- **死常量与幻影特性名（G8-12）**：删除 `DefaultTokenManageInterface`（值 `"ITokenManage"` 与真实约定
+  `ITokenManager` 不一致）、`DefaultWrapSuffix`、`BasePathAttributeNames` 三个死常量，以及
+  `PathAttributes` / `ParameterAnalyzer` / `AttributeArgumentReader` 中的 `Route`/`RouteAttribute` 幻影条目
+  （`Attributes` 程序集中不存在 `RouteAttribute` 类型）；参数特性名单源化到 `HttpClientGeneratorConstants`。
+
+#### 新增（Added）
+
+- **新诊断 `HTTPCLIENT035`（Error）**：继承组合的基类/派生运行模式不匹配（`base(...)` 实参必然类型错位）。
+  支持的组合：基/派生同为 `Default`、同为 `TokenManage`、同为 `HttpClient`，以及「基 `Default` × 派生 `TokenManage`」。
+- **新诊断 `HTTPCLIENT036`（Warning）**：`[FilePath(BufferSize)]` 超出支持上界（4 MiB），已夹取。
+- **`IEnhancedClientConfig.MaxSuccessResponseBytes`（`long`，G8-08）**：无 DI 工厂路径
+  （`RestService.ForGenerated`）此前无法配置「成功响应体大小守卫」（DI 路径早已接线）。现提升到共享契约，
+  两实现（`EnhancedHttpClientOptions` / `GeneratedClientOptions`）由接口保证同步。
+- **信任边界 XML 注释（G8-10）**：受信路径三入口（`Current` setter / `SwitchTo(IMudAppContext)` /
+  `BeginScope(IMudAppContext)`）的生成物注释显式声明「不执行 appKey 校验与授权判定」并指向 `UseAppScope`。
+
+#### 行为变更与迁移说明
+
+| 编号 | 变更前 | 变更后 | 迁移提示 |
+| --- | --- | --- | --- |
+| G8-19 | ApiKey 模式的 `Name` 无效，密钥注入 `Authorization` | 密钥注入 `Name` 指定的头（未声明 `Name` 时仍为 `Authorization`） | 若服务端此前「将错就错」按 `Authorization` 取值，请改为在 `[Token]` 显式声明 `Name = "Authorization"`，或调整服务端取值头名 |
+| G8-04 | 5 种混合模式继承组合产出不可编译代码且无诊断 | `HTTPCLIENT035`（Error）阻断；「基 Default × 派生 TokenManage」修正为可编译 | ① 统一两级 `HttpClient`/`TokenManage` 配置；② 改用 `InheritedFrom` 指向宿主自维护抽象基类 |
+| G8-05 | multipart 的 8 个站点在 `Add` 抛异常时不释放刚构造的 `HttpContent`（`StreamContent` 情形保持调用方流打开） | 异常路径统一 `Dispose()`（对 `StreamContent` 即**关闭调用方流**，与既有 `ContentType` 分支同语义） | 仅在请求构造失败（请求不会发送）的窄路径生效；依赖失败后继续复用该流的调用方需自行包裹不可释放流 |
+| G8-08 | 无 DI 工厂无法配置 `MaxSuccessResponseBytes` | 经 `IEnhancedClientConfig` 可配置（`0` = 不限制） | **外部自实现 `IEnhancedClientConfig` 的代码需补齐该成员**（库内两实现已同步） |
+| G8-13 | `AllowUnmatchedRouteParametersAttribute` 位于 `Mud.HttpUtils` | 迁入 `Mud.HttpUtils.Attributes`（该程序集内唯一命名空间例外） | 改用 `using Mud.HttpUtils.Attributes;`（通常已存在）；未发布，不提供类型转发 |
+
+---
+
 ## 2.0.9（生成器评审修复——缓存键、HMAC、诊断与 DI 注册，2026-09-21）
 
 > 依据《生成器专项评审修复方案》（generator-review-fix-plan-2026-09-21）实施，

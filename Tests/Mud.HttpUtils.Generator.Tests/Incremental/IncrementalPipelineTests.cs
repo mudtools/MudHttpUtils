@@ -458,6 +458,52 @@ public class IncrementalPipelineTests
             .Should().BeFalse("ForceHttpGenerator 翻转必须使快照不相等，否则逃生舱在下游 Combine 中静默失效");
     }
 
+    // ─────────────── [G8-16] 全局注册点的失效方向断言 ───────────────
+
+    /// <summary>
+    /// [G8-16] 任一接口变更 ⇒ <b>全局注册点</b>（<c>HttpInvokeBase_GlobalData</c>）必须 Modified。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 既有断言只覆盖「无关编辑 ⇒ 全局注册点 Cached」（<c>CommentOrWhitespaceEdit_ShouldCacheEntireChain</c>），
+    /// <b>缺</b>「方向相反」的一半：全局产物需要全量接口视野（DI 注册扩展方法按全部接口生成），
+    /// 任一接口变化都必须重跑 —— 若该节点被上游误判为 Cached，DI 注册会<b>静默陈旧</b>
+    /// （新增/修改的接口不被注册），属难以发现的运行期缺陷。
+    /// </para>
+    /// <para>
+    /// 同时以逐接口注册点（<c>HttpInvokeBase_CompleteData</c>）作对照：恰好 1 个元素 Modified，
+    /// 形成「一边只重跑 1 个 / 一边必然全跑」的粒度对照。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public async Task AnyInterfaceChange_ShouldModifyGlobalDataRegistrationPoint()
+    {
+        var driver = CreateTrackedDriver(TwoInterfaces);
+        driver = driver.RunGenerators(Compile(TwoInterfaces));
+
+        driver = driver.RunGenerators(Compile(TwoInterfaces_SignatureEdited));
+        var tracked = driver.GetRunResult().Results[0].TrackedSteps;
+
+        var globalSteps = tracked.FirstOrDefault(kvp => kvp.Key == "HttpInvokeBase_GlobalData").Value;
+        globalSteps.Should().NotBeNullOrEmpty("应存在全局注册点的追踪步骤 HttpInvokeBase_GlobalData");
+
+        var globalReasons = globalSteps.SelectMany(s => s.Outputs).Select(o => o.Reason).ToList();
+        globalReasons.Should().NotBeEmpty("HttpInvokeBase_GlobalData 应产出元素");
+        globalReasons.Should().Contain(IncrementalStepRunReason.Modified,
+            "任一接口变更必须让全局注册点 Modified，否则 DI 注册产物会静默陈旧" +
+            $"（实际 Reason 序列：[{string.Join(", ", globalReasons)}]）");
+
+        // 对照：逐接口注册点只应对被编辑的那个接口 Modified。
+        var perInterfaceSteps = tracked.FirstOrDefault(kvp => kvp.Key == "HttpInvokeBase_CompleteData").Value;
+        perInterfaceSteps.Should().NotBeNullOrEmpty("应存在逐接口注册点的追踪步骤 HttpInvokeBase_CompleteData");
+
+        var perInterfaceReasons = perInterfaceSteps.SelectMany(s => s.Outputs).Select(o => o.Reason).ToList();
+        perInterfaceReasons.Count(r => r == IncrementalStepRunReason.Modified)
+            .Should().Be(1, "两个接口仅编辑 1 个 ⇒ 逐接口注册点恰好 1 个 Modified（真 per-interface 增量）");
+
+        await Task.CompletedTask;
+    }
+
     private static string GetSaltOutput(AnalyzerConfigOptionsProvider provider)
     {
         GeneratorDriver driver = CSharpGeneratorDriver.Create(

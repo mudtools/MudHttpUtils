@@ -54,6 +54,14 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
                 httpClientApis.Count));
         }
 
+        // G8-14：此处 Compilation 可能来自**上一轮编译**（InterfaceModel 的等价性由源码指纹决定，
+        // 仅当接口声明变化时才会重新 transform）。因此它**只允许**用于跨编译稳定的信息：
+        //   · _compilation.AssemblyName（ResolveRegistrationNamespace，:242-252）
+        //   · 生成注释中的类型全名（TypeSymbolHelper.GetTypeAllDisplayString）
+        // 新增用法前必须评估「编译代际一致性」——与历史 HTTPCLIENT004（语法树/编译代际不一致）同源的
+        // 易复发模式（见 HttpInvokeBaseSourceGenerator.Initialize 的「已接受的权衡」说明）。
+        // 若将来确实需要新鲜 Compilation，须注意：引入 CompilationProvider 会把全局注册点退化为
+        // 编译级粒度（每次编辑重跑）——本册 §10 已登记为「不做」。
         var compilation = interfaces[0].Context.SemanticModel.Compilation;
 
         // 1. 生成 HttpClientApiExtensions.g.cs（DI 注册扩展方法）
@@ -377,6 +385,9 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         sb.AppendLine("                    contentSerializer: options?.ContentSerializer,");
         sb.AppendLine("                    exceptionRedactor: options?.ExceptionRedactor,");
         sb.AppendLine("                    maxExceptionContentLength: options?.MaxExceptionContentLength,");
+        // G8-08：接线成功响应体守卫（DI 路径早已接通；无 DI 工厂此前遗漏 ⇒ 能力缺口）。
+        // 语义与 DI 路径一致：0 = 不限制。
+        sb.AppendLine("                    maxSuccessResponseBytes: options?.MaxSuccessResponseBytes ?? 0,");
         sb.AppendLine("                    captureRequestContent: options?.CaptureRequestContent ?? false,");
         // CFG-06：接线敏感数据掩码器（无 DI 路径此前完全缺失脱敏能力，属安全缺口）
         sb.AppendLine("                    sensitiveDataMasker: options?.SensitiveDataMasker,");
@@ -599,8 +610,27 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
             codeBuilder.AppendLine($"            services.AddTransient<{fullyQualifiedInterface}>(sp =>");
             codeBuilder.AppendLine("            {");
             codeBuilder.AppendLine("                var appManager = sp.GetRequiredService<global::Mud.HttpUtils.IAppManager<global::Mud.HttpUtils.IMudAppContext>>();");
+            // G8-09（DP-6 方案 A）：解析期的「空管理器」失败必须自带根因与修复步骤。
+            // 背景：TryAddSingleton 自动注册的 DefaultAppManager 不含任何应用，其 LogWarning 依赖
+            // ILoggerFactory（AddMudHttpClient 不注册日志基础设施 ⇒ 裸容器下完全静默），
+            // 而 GetDefaultApp() 抛出的原始消息只说明"未设置默认应用"，不指向真因。
+            // 约束：try 块**只包住 GetDefaultApp() 单语句** —— DefaultAppManager.GetApp() 会先经
+            // AppKeyValidator 抛 ArgumentException，包住其它调用会误吞并改变消息语义。
+            codeBuilder.AppendLine("                global::Mud.HttpUtils.IMudAppContext __appContext;");
+            codeBuilder.AppendLine("                try");
+            codeBuilder.AppendLine("                {");
+            codeBuilder.AppendLine("                    __appContext = appManager.GetDefaultApp();");
+            codeBuilder.AppendLine("                }");
+            codeBuilder.AppendLine("                catch (global::System.InvalidOperationException ex)");
+            codeBuilder.AppendLine("                {");
+            codeBuilder.AppendLine("                    throw new global::System.InvalidOperationException(");
+            codeBuilder.AppendLine("                        \"源生成器已自动注册空的 IAppManager<IMudAppContext>（未注册任何应用），因此无法解析默认应用。请二选一：\" +");
+            codeBuilder.AppendLine("                        \"① 注册自定义应用管理器，并在启动时调用 RegisterApp(appKey, context, isDefault: true)；\" +");
+            codeBuilder.AppendLine("                        \"② 单应用场景请注册 IAppManager<IMudAppContext>（例如 DefaultAppManager<IMudAppContext>）并把唯一应用注册为默认。\",");
+            codeBuilder.AppendLine("                        ex);");
+            codeBuilder.AppendLine("                }");
             codeBuilder.AppendLine($"                return new {fullyQualifiedImplementation}(");
-            codeBuilder.AppendLine("                    appContext: appManager.GetDefaultApp(),");
+            codeBuilder.AppendLine("                    appContext: __appContext,");
             codeBuilder.AppendLine("                    appContextHolder: sp.GetRequiredService<global::Mud.HttpUtils.IAppContextHolder>(),");
             codeBuilder.AppendLine("                    executor: sp.GetRequiredService<global::Mud.HttpUtils.IHttpRequestExecutor>(),");
             codeBuilder.AppendLine("                    appManager: appManager,");

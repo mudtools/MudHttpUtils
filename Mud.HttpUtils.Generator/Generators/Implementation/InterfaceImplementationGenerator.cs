@@ -245,8 +245,48 @@ internal class InterfaceImplementationGenerator
             }
         }
 
+        // G8-04：继承组合的「运行模式」一致性 —— base(...) 位置实参只能按基类模式分派，
+        // 故基类要求的「源」必须在派生侧可得。仅当基类确为生成的抽象类
+        // （InheritedFromInterfaceName 非空）时可判定；InheritedFrom 指向宿主自维护基类时
+        // 三旗标皆 false（无法推知真实契约），不得据此判错。
+        if (!string.IsNullOrEmpty(configuration.InheritedFrom) &&
+            !string.IsNullOrEmpty(configuration.InheritedFromInterfaceName))
+        {
+            var derivedMode = !string.IsNullOrEmpty(configuration.HttpClient) ? BaseRuntimeMode.HttpClient
+                            : !string.IsNullOrEmpty(configuration.TokenManager) ? BaseRuntimeMode.TokenManager
+                            : BaseRuntimeMode.Default;
+            var baseMode = configuration.BaseRuntimeMode;
+
+            // 受支持：同源（X,X），以及「基 Default × 派生 TokenManager」
+            //（派生持有令牌源，可向基类回传 appManager.GetDefaultApp()）。
+            var isSupported = baseMode == derivedMode
+                || (baseMode == BaseRuntimeMode.Default && derivedMode == BaseRuntimeMode.TokenManager);
+
+            if (!isSupported)
+            {
+                _context.ReportDiagnostic(Diagnostic.Create(
+                    Diagnostics.BaseRuntimeModeMismatch,
+                    GetHttpClientApiAttributeLocation() ?? _interfaceDecl.GetLocation(),
+                    _interfaceSymbol.Name,
+                    configuration.InheritedFromInterfaceName!,
+                    DescribeBaseRuntimeMode(baseMode),
+                    DescribeBaseRuntimeMode(derivedMode)));
+                isValid = false;
+            }
+        }
+
         return isValid;
     }
+
+    /// <summary>
+    /// G8-04：把 <see cref="BaseRuntimeMode"/> 转为诊断文案用的模式名（与 <c>[HttpClientApi]</c> 术语一致）。
+    /// </summary>
+    private static string DescribeBaseRuntimeMode(BaseRuntimeMode mode) => mode switch
+    {
+        BaseRuntimeMode.TokenManager => "TokenManage",
+        BaseRuntimeMode.HttpClient => "HttpClient",
+        _ => "默认（AppContext）",
+    };
 
     private void ValidateHttpClientType(string httpClientType)
     {
@@ -493,6 +533,10 @@ internal class InterfaceImplementationGenerator
             context.MarkMemberProvided("SwitchTo");
             context.MarkMemberProvided("BeginScope");
             context.MarkMemberProvided("UseApp");
+            // G8-15：UseAppScope 同样由 GenerateUseAppMethod 无条件发射
+            // （`$"{ResolveAppMemberModifier()}IDisposable UseAppScope(string appKey)"`），
+            // 此前漏登记 ⇒ 接口声明同名成员时契约补全会发射重复成员（CS0111/CS0102）。
+            context.MarkMemberProvided("UseAppScope");
             context.MarkMemberProvided("UseDefaultApp");
             context.MarkMemberProvided("UseDefaultAppScope");
         }

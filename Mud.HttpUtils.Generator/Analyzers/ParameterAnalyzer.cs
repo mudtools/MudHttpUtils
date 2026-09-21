@@ -15,31 +15,15 @@ namespace Mud.HttpUtils.Analyzers;
 internal static class ParameterAnalyzer
 {
     /// <summary>
-    /// 所有已知的 HTTP 参数特性名称集合。
+    /// 所有已知的 HTTP 参数特性名称集合（单一事实源：<see cref="HttpClientGeneratorConstants.HttpParameterAttributeNames"/>）。
     /// 参数若未标注其中任何一个，且不属于特殊类型，则根据类型自动推断默认特性：
     /// 简单类型使用 [Query]，复杂类型使用 [Body]。
     /// </summary>
-    private static readonly HashSet<string> KnownHttpParameterAttributes = new(StringComparer.Ordinal)
-    {
-        // Path / Route
-        "PathAttribute", "Path", "RouteAttribute", "Route",
-        // Query 系列
-        "QueryAttribute", "Query",
-        "ArrayQueryAttribute", "ArrayQuery",
-        "QueryMapAttribute", "QueryMap",
-        "RawQueryStringAttribute", "RawQueryString",
-        // Header
-        "HeaderAttribute", "Header",
-        // Body 系列
-        "BodyAttribute", "Body",
-        "FormContentAttribute", "FormContent",
-        "MultipartFormAttribute", "MultipartForm",
-        "UploadAttribute", "Upload",
-        "FormAttribute", "Form",
-        "FilePathAttribute", "FilePath",
-        // Token
-        "TokenAttribute", "Token"
-    };
+    /// <remarks>
+    /// G8-12：原实现在此维护**第三份副本**（另有 <c>PathAttributes</c> 与各 <c>*Attribute</c> 常量），
+    /// 且含 <c>RouteAttribute</c>/<c>Route</c> 幻影条目。现改为引用常量类，消除漂移面。
+    /// </remarks>
+    private static HashSet<string> KnownHttpParameterAttributes => HttpClientGeneratorConstants.HttpParameterAttributeNames;
 
     /// <summary>
     /// 分析方法的所有参数

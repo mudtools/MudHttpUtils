@@ -55,6 +55,8 @@ HTTPCLIENT031 | 代码生成 | Error | [Cache] 缓存键包含无法稳定表达
 HTTPCLIENT032 | 代码生成 | Warning | [Cache] CacheKeyTemplate 未覆盖 Unsafe 参数（M5-HC-04）
 HTTPCLIENT033 | 代码生成 | Info | 多 [HttpClientApi] 接口共存时命名客户端配置可能未按命名隔离（G7-04a）
 HTTPCLIENT034 | 代码生成 | Warning | [Cache(VaryByUser=true)] 但接口无用户身份来源，键退化为 user:anonymous
+HTTPCLIENT035 | 代码生成 | Error | 继承组合的运行模式不匹配（G8-04：base(...) 实参类型必然错位）
+HTTPCLIENT036 | 代码生成 | Warning | [FilePath(BufferSize)] 超出支持上界，已夹取（G8-06）
 HTTPCLIENTREG001 | 代码生成 | Error | HttpClient API 注册生成错误
 HTTPCLIENTREG002 | 代码生成 | Error | RegistryGroupName 不是有效 C# 标识符
 MUD001 | Mud.HttpUtils.Interface | Error | HttpClientApi 方法缺少 HTTP 方法特性

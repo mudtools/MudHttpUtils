@@ -6,6 +6,11 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 
 **仅依赖 Mud.HttpUtils.Abstractions**，自身无其他外部依赖。
 
+> **命名空间约定**：本程序集内的全部特性均位于 `Mud.HttpUtils.Attributes`（G8-13 起，含此前唯一的例外
+> `AllowUnmatchedRouteParametersAttribute`，原位于 `Mud.HttpUtils` —— 见「破坏性变更」）。
+> 源生成器按**简单名**匹配特性，因此新增/改名特性前必须核对 `Mud.HttpUtils.Generator/README.md` 的匹配表
+> 与 `HttpClientGeneratorConstants`，否则特性会静默失效且无诊断。
+
 ## 目标框架
 
 - `netstandard2.0`
@@ -33,25 +38,26 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 
 所有 HTTP 方法特性继承自 `HttpMethodAttribute`，支持以下公共属性：
 
-| 属性                    | 类型      | 说明             |
-| ----------------------- | --------- | ---------------- |
-| `Route`                 | `string`  | 请求路径模板     |
-| `ContentType`           | `string?` | 请求内容类型     |
-| `ResponseContentType`   | `string?` | 响应内容类型     |
-| `ResponseEnableDecrypt` | `bool`    | 响应是否启用解密 |
+| 属性                    | 类型            | 说明                                              |
+| ----------------------- | --------------- | ------------------------------------------------- |
+| `HttpMethod`            | `HttpMethod`    | HTTP 方法（由构造函数按特性名推导）               |
+| `RequestUri`            | `string?`       | 请求路径模板（G8-13：原文档误记为 `Route`，已修正） |
+| `ContentType`           | `string?`       | 请求内容类型                                      |
+| `ResponseContentType`   | `string?`       | 响应内容类型                                      |
+| `ResponseEnableDecrypt` | `bool`          | 响应是否启用解密                                  |
 
 ### 参数特性
 
 | 特性                      | 用途                          | 目标                           | 关键属性                                                                                                       |
 | ------------------------- | ----------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------- |
 | `PathAttribute`           | 路径参数                      | Parameter / Property           | `Name`, `Format`, `UrlEncode`                                                                                  |
-| `QueryAttribute`          | 查询参数                      | Parameter / Property           | `Name`, `Encode`, `Format`                                                                                     |
+| `QueryAttribute`          | 查询参数                      | Parameter / Property           | `Name`, `Format`, `AliasAs`, `Separator`, `Prefix`, `CollectionFormat`, `TreatAsString`, `SerializeNull`（G8-13：原文档误记 Encode，已修正 —— 编码语义在 `QueryMapAttribute.UrlEncode`） |
 | `QueryMapAttribute`       | 查询参数映射（对象/字典展开） | Parameter / Property           | `PropertySeparator`, `SerializationMethod`, `UrlEncode`, `IncludeNullValues`                                   |
-| `RawQueryStringAttribute` | 原始查询字符串                | Parameter                      | `PrependQuestionMark`                                                                                          |
+| `RawQueryStringAttribute` | 原始查询字符串                | Parameter                      | （空标记特性，无属性；G8-13：原文档误记 PrependQuestionMark，已删除）                                          |
 | `ArrayQueryAttribute`     | 数组查询参数                  | Parameter                      | `Separator`                                                                                                    |
 | `HeaderAttribute`         | 请求头参数                    | Parameter / Method / Interface / Property | `Name`, `Value`, `AliasAs`, `Replace`, `FormatString`                                                          |
 | `BodyAttribute`           | 请求体参数                    | Parameter                      | `ContentType`, `EnableEncrypt`, `EncryptSerializeType`, `EncryptPropertyName`, `RawString`, `UseStringContent` |
-| `TokenAttribute`          | 令牌参数                      | Parameter / Interface / Method | `TokenType`, `InjectionMode`, `Name`, `Scopes`, `Replace`, `TokenManagerKey`, `RequiresUserId`                 |
+| `TokenAttribute`          | 令牌参数                      | Parameter / Interface / Method | `TokenType`, `InjectionMode`, `Name`, `Scopes`, `TokenManagerKey`, `Scheme`, `RequiresUserId`（G8-13：原文档误记 Replace 且漏列 `Scheme`，已修正） |
 | `FilePathAttribute`       | 文件路径参数（上传/下载）     | Parameter / Property          | `BufferSize`、`Overwrite`                                                                                      |
 | `FormContentAttribute`    | 表单内容参数                  | Parameter / Class              | —                                                                                                              |
 | `FormAttribute`           | 表单字段（URL 编码）          | Parameter                      | `FieldName`                                                                                                    |
@@ -62,7 +68,7 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 
 | 特性             | 用途         | 目标   | 关键属性                                                                                |
 | ---------------- | ------------ | ------ | --------------------------------------------------------------------------------------- |
-| `CacheAttribute` | 响应缓存标注 | Method | `DurationSeconds`, `CacheKeyTemplate`, `VaryByUser`, `UseSlidingExpiration`（`Priority` 已随 CFG-27 移除，见下文） |
+| `CacheAttribute` | 响应缓存标注 | Method | `DurationSeconds`, `CacheKeyTemplate`, `VaryByUser`, `UseSlidingExpiration`（原 Priority 属性已随 CFG-27 移除，见下文） |
 
 ### 弹性策略特性
 
@@ -218,8 +224,8 @@ Task SendTextAsync([Body(UseStringContent = true)] object message);
 | `InjectionMode`   | `TokenInjectionMode` | `Header`              | Token 注入模式                                              |
 | `Name`            | `string?`            | `null`                | 自定义 Header/Query 名称                                    |
 | `Scopes`          | `string?`            | `null`                | 令牌作用域，多个作用域用逗号分隔                            |
-| `Replace`         | `bool`               | `true`                | 是否替换已有 Header                                         |
 | `TokenManagerKey` | `string?`            | 同 `TokenType`        | 令牌管理器查找键，默认与 `TokenType` 相同，用于解耦业务概念（TokenType）和技术查找键 |
+| `Scheme`          | `string?`            | 见说明                | 令牌方案前缀；未指定时按注入模式回退（`BasicAuth` → `"Basic"`，其余 → `"Bearer"`） |
 | `RequiresUserId`  | `bool`               | `false`               | 是否需要用户 ID，为 true 时通过 `ICurrentUserContext` 获取  |
 
 > **TokenManagerKey**：当指定此值时，代码生成器将使用此键而非 `TokenType` 从 `IMudAppContext` 中查找令牌管理器。此属性用于解耦业务概念和技术查找键，例如多个不同的 `TokenType` 可以映射到同一个 `TokenManager`。如果未指定，则使用 `TokenType` 作为查找键。
@@ -564,9 +570,9 @@ Task<SearchResult> SearchAsync(
 
 直接传递原始查询字符串，不做任何编码或处理：
 
-| 属性                  | 类型   | 默认值 | 说明                        |
-| --------------------- | ------ | ------ | --------------------------- |
-| `PrependQuestionMark` | `bool` | `true` | 是否在字符串前添加 `?` 前缀 |
+> **G8-13 修正**：`RawQueryStringAttribute` 是**空标记特性**（无任何属性）。
+> 原文档记录的 `PrependQuestionMark` 从未存在于该类型上；`?` 的补齐由生成代码统一负责
+> （`__url += (__url.Contains("?") ? "&" : "?") + …`），无需也不可由特性控制。
 
 ```csharp
 [Get("/api/search")]

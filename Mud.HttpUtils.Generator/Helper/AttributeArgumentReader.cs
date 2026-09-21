@@ -112,7 +112,8 @@ internal static class AttributeArgumentReader
         {
             "Query" or "QueryAttribute" or
             "ArrayQuery" or "ArrayQueryAttribute" => 1,
-            "Path" or "PathAttribute" or "Route" or "RouteAttribute" => 0,
+            // G8-12：移除 "Route"/"RouteAttribute"（幻影特性，Attributes 程序集中不存在该类型）。
+            "Path" or "PathAttribute" => 0,
             _ => null,
         };
 }

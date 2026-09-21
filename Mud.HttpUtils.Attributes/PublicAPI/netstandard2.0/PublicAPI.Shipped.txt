@@ -1,6 +1,6 @@
 #nullable enable
-Mud.HttpUtils.AllowUnmatchedRouteParametersAttribute
-Mud.HttpUtils.AllowUnmatchedRouteParametersAttribute.AllowUnmatchedRouteParametersAttribute() -> void
+Mud.HttpUtils.Attributes.AllowUnmatchedRouteParametersAttribute
+Mud.HttpUtils.Attributes.AllowUnmatchedRouteParametersAttribute.AllowUnmatchedRouteParametersAttribute() -> void
 Mud.HttpUtils.Attributes.AllowAnyStatusCodeAttribute
 Mud.HttpUtils.Attributes.AllowAnyStatusCodeAttribute.AllowAnyStatusCodeAttribute() -> void
 Mud.HttpUtils.Attributes.ArrayQueryAttribute

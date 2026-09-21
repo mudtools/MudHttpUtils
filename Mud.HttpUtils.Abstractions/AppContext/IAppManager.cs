@@ -11,6 +11,20 @@ namespace Mud.HttpUtils;
 /// 应用管理器接口，用于管理和访问多个应用上下文。
 /// </summary>
 /// <typeparam name="TAppContext">应用上下文的类型，必须实现 <see cref="IMudAppContext"/> 接口。</typeparam>
+/// <remarks>
+/// <para>
+/// <b>appKey 大小写语义（G8-11）</b>：<c>appKey</c> <b>区分大小写</b> ——
+/// <c>"Tenant"</c> 与 <c>"tenant"</c> 视为两个不同应用。默认实现
+/// （<c>DefaultAppManager&lt;TAppContext&gt;</c>）内部使用序数语义的字典，
+/// <see cref="AppKey.IsValid"/> 也<b>不做</b>任何大小写归一化。
+/// 宿主注册与查询必须使用完全一致的文本；该行为属<b>有意契约</b>
+/// （由 <c>AppManagerCaseSensitivityTests</c> 钉死），若需大小写不敏感请由宿主自行归一化后再传入。
+/// </para>
+/// <para>
+/// 异常消息中回显 appKey 时必须经 <see cref="AppKey.ToSafeText"/>（截断到 128 字符 + 控制字符替换为
+/// <c>_</c>），该文本<b>仅</b>用于日志/异常，<b>不得</b>用于查找。
+/// </para>
+/// </remarks>
 public interface IAppManager<TAppContext>
     where TAppContext : IMudAppContext
 {

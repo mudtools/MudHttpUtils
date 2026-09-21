@@ -612,6 +612,40 @@ namespace TestNamespace
         return VerifyFixture.VerifyGenerator(driver, outputCompilation);
     }
 
+    /// <summary>
+    /// 场景 18c（G8-02 新增）：[Token] 令牌注入（Path 模式）。
+    /// 钉死两项契约：① 令牌占位符被替换（修复前方法级 Path 完全不替换）；
+    /// ② 替换值为 <c>System.Uri.EscapeDataString(access_token)</c> —— 与同模板内 <c>[Path]</c> 参数同口径，
+    /// 防止令牌中的 <c>?</c>/<c>#</c>/<c>&amp;</c>/<c>/</c> 改写请求目标（G8-02）。
+    /// </summary>
+    [Fact]
+    public Task Snapshot_TokenPathMode_ShouldUrlEncodeToken()
+    {
+        var source = """
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    public interface ITestTokenManager
+    {
+        IMudAppContext GetDefaultApp();
+        IMudAppContext GetApp(string appKey);
+    }
+
+    [HttpClientApi(TokenManage = "ITestTokenManager")]
+    public interface ITestApi
+    {
+        [Get("/token/{access_token}")]
+        [Token(TokenType = "AccessToken", InjectionMode = TokenInjectionMode.Path, Name = "access_token")]
+        Task<string> GetDataAsync();
+    }
+}
+""";
+        var (driver, outputCompilation) = VerifyFixture.RunGeneratorDriver(source);
+        return VerifyFixture.VerifyGenerator(driver, outputCompilation);
+    }
+
     #endregion
 
     #region 接口级配置 — 场景 19-20

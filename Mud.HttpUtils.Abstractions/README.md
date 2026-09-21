@@ -196,6 +196,10 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 > **`IAppContextHolder.BeginScope` 归属约束**：返回的 `IDisposable` 必须在其创建的异步流程内释放。跨执行上下文释放（例如在别的 `Task.Run` 中释放）不会被识别为本作用域的还原点，以免覆盖其它流程的合法上下文写入。
 >
 > **`IAppContextHolder.Current` 写入约束**：`Current` 属性的 setter 为 `init`，仅允许在对象初始化阶段设置。运行时切换应用上下文请使用 `SwitchTo` 方法或 `BeginScope` 方法。
+>
+> **appKey 大小写语义（G8-11）**：`appKey` **区分大小写** —— `"Tenant"` 与 `"tenant"` 是两个独立应用。`AppKey.IsValid` 与 `DefaultAppManager<TAppContext>` 均**不做**大小写归一化（后者内部为序数语义字典）。宿主注册与查询必须使用完全一致的文本；若需大小写不敏感，请由宿主自行归一化后再传入。该行为属有意契约，由 `AppManagerCaseSensitivityTests`（Client.Tests）钉死。
+>
+> **`AppKey.ToSafeText` 仅用于日志/异常（G8-11）**：语义为「截断到 128 字符 + 控制字符（含 CR/LF/NUL）替换为 `_`」，**不得**用于查找或作为键。查找必须使用原始 `appKey`；若直接把不可信 appKey 插值进日志/异常会构成日志注入面，故库内所有异常消息统一经该门面过滤。
 
 ### 数据模型与枚举
 

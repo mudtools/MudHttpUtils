@@ -5,7 +5,7 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
-namespace Mud.HttpUtils;
+namespace Mud.HttpUtils.Attributes;
 
 /// <summary>
 /// 标记接口允许路由模板中存在未匹配的 <c>{token}</c> 占位符（编译期决策）。
@@ -18,6 +18,13 @@ namespace Mud.HttpUtils;
 /// </para>
 /// <para>
 /// 未标记此特性时，未匹配的占位符将触发编译器警告或异常（默认行为不变）。
+/// </para>
+/// <para>
+/// <b>命名空间（G8-13 · 破坏性变更 BC2）</b>：本类型原位于 <c>Mud.HttpUtils</c>，是
+/// <c>Mud.HttpUtils.Attributes</c> 程序集内唯一的命名空间例外；为保持公开面一致性已迁入
+/// <see cref="Mud.HttpUtils.Attributes"/>（与其余全部特性一致）。消费方改用
+/// <c>using Mud.HttpUtils.Attributes;</c> 即可（该 using 通常已存在）。
+/// 源生成器按<strong>简单名</strong>匹配特性，故对生成行为无影响。
 /// </para>
 /// </remarks>
 [AttributeUsage(AttributeTargets.Interface, AllowMultiple = false, Inherited = true)]

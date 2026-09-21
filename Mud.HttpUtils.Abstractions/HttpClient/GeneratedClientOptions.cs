@@ -135,6 +135,17 @@ public sealed class GeneratedClientOptions : IEnhancedClientConfig
     public int? MaxExceptionContentLength { get; set; }
 
     /// <summary>
+    /// 获取或设置<b>成功</b>响应体的最大字节数守卫（<c>0</c> = 不限制）。
+    /// </summary>
+    /// <value>默认为 <c>0</c>（不限制）。</value>
+    /// <remarks>
+    /// G8-08：无 DI 工厂路径此前<b>无法</b>配置该守卫（DI 路径早已接线），现经共享契约
+    /// <see cref="IEnhancedClientConfig"/> 贯通；生成工厂将其透传给
+    /// <c>DefaultHttpRequestExecutor(maxSuccessResponseBytes: …)</c>，与 DI 路径语义一致。
+    /// </remarks>
+    public long MaxSuccessResponseBytes { get; set; }
+
+    /// <summary>
     /// 获取或设置是否在发送前捕获请求体字符串（用于异常调试）。
     /// </summary>
     /// <value>默认为 <c>false</c>（不捕获）。</value>

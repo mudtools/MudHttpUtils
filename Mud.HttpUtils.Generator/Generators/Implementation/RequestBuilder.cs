@@ -74,11 +74,14 @@ internal class RequestBuilder
 
         if (methodInfo != null)
         {
-            var isTokenPathMode = methodInfo.InterfaceTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModePath;
-            if (isTokenPathMode && !string.IsNullOrEmpty(methodInfo.InterfaceTokenName))
+            // G8-01/G8-02：令牌占位符的「模式」与「名称」统一取有效级（方法级 > 接口级）；
+            // 替换值为 URI 编码后的令牌（与下方 [Path] 参数的 Uri.EscapeDataString 同口径，
+            // 防止令牌中的 ?/#/&// 改写请求目标）。
+            var isTokenPathMode = methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModePath;
+            if (isTokenPathMode && !string.IsNullOrEmpty(methodInfo.EffectiveTokenName))
             {
-                var tokenPlaceholder = $"{{{methodInfo.InterfaceTokenName}}}";
-                ReplacePlaceholder(sb, tokenPlaceholder, "{access_token}");
+                var tokenPlaceholder = $"{{{methodInfo.EffectiveTokenName}}}";
+                ReplacePlaceholder(sb, tokenPlaceholder, "{System.Uri.EscapeDataString(access_token)}");
             }
 
             foreach (var pathParam in methodInfo.InterfacePathParameters)
@@ -664,19 +667,27 @@ internal class RequestBuilder
                 {
                     codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({formProp.Name}))");
                     codeBuilder.AppendLine("            {");
-                    codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StringContent({formProp.Name}), \"{StringEscapeHelper.EscapeString(fieldName)}\");");
+                    // G8-05：构造 + Add 之间必须有异常路径释放（Add 的 name/fileName 头部校验会抛
+                    // FormatException/ArgumentException），与 G7-19 的 StreamContent 分支同构。
+                    EmitAddContent(codeBuilder, "                ",
+                        $"new System.Net.Http.StringContent({formProp.Name})",
+                        $"__{formProp.Name}Content", fieldName, fileName: null);
                     codeBuilder.AppendLine("            }");
                 }
                 else if (TypeDetectionHelper.IsValueType(formProp.Type) && !TypeDetectionHelper.IsNullableType(formProp.Type))
                 {
                     // 非可空值类型（int、long、Guid 等）永远不会为 null，无需 null 检查
-                    codeBuilder.AppendLine($"            __multipartContent.Add(new System.Net.Http.StringContent({formProp.Name}.ToString() ?? \"\"), \"{StringEscapeHelper.EscapeString(fieldName)}\");");
+                    EmitAddContent(codeBuilder, "            ",
+                        $"new System.Net.Http.StringContent({formProp.Name}.ToString() ?? \"\")",
+                        $"__{formProp.Name}Content", fieldName, fileName: null);
                 }
                 else
                 {
                     codeBuilder.AppendLine($"            if ({formProp.Name} != null)");
                     codeBuilder.AppendLine("            {");
-                    codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StringContent({formProp.Name}.ToString() ?? \"\"), \"{StringEscapeHelper.EscapeString(fieldName)}\");");
+                    EmitAddContent(codeBuilder, "                ",
+                        $"new System.Net.Http.StringContent({formProp.Name}.ToString() ?? \"\")",
+                        $"__{formProp.Name}Content", fieldName, fileName: null);
                     codeBuilder.AppendLine("            }");
                 }
             }
@@ -695,19 +706,25 @@ internal class RequestBuilder
             {
                 codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({multipartFormParam.Name}))");
                 codeBuilder.AppendLine("            {");
-                codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StringContent({multipartFormParam.Name}), \"{escapedFieldName}\");");
+                EmitAddContent(codeBuilder, "                ",
+                    $"new System.Net.Http.StringContent({multipartFormParam.Name})",
+                    $"__{multipartFormParam.Name}Content", fieldName, fileName: null);
                 codeBuilder.AppendLine("            }");
             }
             else if (TypeDetectionHelper.IsValueType(multipartFormParam.Type) && !TypeDetectionHelper.IsNullableType(multipartFormParam.Type))
             {
-                codeBuilder.AppendLine($"            __multipartContent.Add(new System.Net.Http.StringContent({multipartFormParam.Name}.ToString() ?? \"\"), \"{escapedFieldName}\");");
+                EmitAddContent(codeBuilder, "            ",
+                    $"new System.Net.Http.StringContent({multipartFormParam.Name}.ToString() ?? \"\")",
+                    $"__{multipartFormParam.Name}Content", fieldName, fileName: null);
             }
             else
             {
                 // 引用类型或可空值类型：加 null 检查
                 codeBuilder.AppendLine($"            if ({multipartFormParam.Name} != null)");
                 codeBuilder.AppendLine("            {");
-                codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StringContent({multipartFormParam.Name}.ToString() ?? \"\"), \"{escapedFieldName}\");");
+                EmitAddContent(codeBuilder, "                ",
+                    $"new System.Net.Http.StringContent({multipartFormParam.Name}.ToString() ?? \"\")",
+                    $"__{multipartFormParam.Name}Content", fieldName, fileName: null);
                 codeBuilder.AppendLine("            }");
             }
         }
@@ -747,15 +764,56 @@ internal class RequestBuilder
             {
                 codeBuilder.AppendLine($"            if ({uploadParam.Name} != null)");
                 codeBuilder.AppendLine("            {");
-                if (!string.IsNullOrEmpty(fileName))
-                    codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StreamContent({uploadParam.Name}), \"{StringEscapeHelper.EscapeString(fieldName)}\", \"{StringEscapeHelper.EscapeString(fileName)}\");");
-                else
-                    codeBuilder.AppendLine($"                __multipartContent.Add(new System.Net.Http.StreamContent({uploadParam.Name}), \"{StringEscapeHelper.EscapeString(fieldName)}\");");
+                // G8-05：无 ContentType 的 StreamContent 同样需要异常路径释放（与上方 G7-19 分支同构）。
+                EmitAddContent(codeBuilder, "                ",
+                    $"new System.Net.Http.StreamContent({uploadParam.Name})",
+                    $"__{uploadParam.Name}Content", fieldName, fileName);
                 codeBuilder.AppendLine("            }");
             }
         }
 
         codeBuilder.AppendLine("            __httpRequest.Content = __multipartContent;");
+    }
+
+    /// <summary>
+    /// G8-05：发射「构造 <see cref="System.Net.Http.HttpContent"/> + 加入 multipart」的**受保护形态**
+    /// （与 G7-19 的带 ContentType 分支同构）：局部变量 → try → Add → catch → 仅异常路径 <c>Dispose()</c> → <c>throw</c>。
+    /// </summary>
+    /// <param name="codeBuilder">代码缓冲区。</param>
+    /// <param name="indent">当前语句缩进（站点缩进分 12/16 空格两类，故必须传入）。</param>
+    /// <param name="contentExpr">构造 <see cref="System.Net.Http.HttpContent"/> 的表达式。</param>
+    /// <param name="contentVar">局部变量名（须在各分支内唯一）。</param>
+    /// <param name="fieldName">multipart 的 name（已由调用方转义）。</param>
+    /// <param name="fileName">multipart 的 fileName；<c>null</c> 时不发射该实参。</param>
+    /// <remarks>
+    /// <para>
+    /// <b>为何需要</b>：<c>MultipartFormDataContent.Add</c> 会对 name/fileName 做头部校验，
+    /// 非法值（含 CR/LF、<c>"</c>、空白）会抛 <c>FormatException</c>/<c>ArgumentException</c>，
+    /// 且抛出点在 <c>base.Add(content)</c> 之前 ⇒ 刚构造的 <c>HttpContent</c> 未移交给 multipart。
+    /// </para>
+    /// <para>
+    /// <b>副作用（有意为之）</b>：对 <c>StreamContent</c> 而言 <c>Dispose()</c> 会**关闭调用方传入的流**。
+    /// 带 ContentType 的 G7-19 分支早已是此语义，本方法仅消除分支间不一致；此时请求构造已失败、不会再发送。
+    /// </para>
+    /// </remarks>
+    private static void EmitAddContent(StringBuilder codeBuilder, string indent, string contentExpr,
+        string contentVar, string fieldName, string? fileName)
+    {
+        var addArgs = fileName is null
+            ? $"\"{StringEscapeHelper.EscapeString(fieldName)}\""
+            : $"\"{StringEscapeHelper.EscapeString(fieldName)}\", \"{StringEscapeHelper.EscapeString(fileName)}\"";
+        var inner = indent + "    ";
+
+        codeBuilder.AppendLine($"{indent}var {contentVar} = {contentExpr};");
+        codeBuilder.AppendLine($"{indent}try");
+        codeBuilder.AppendLine($"{indent}{{");
+        codeBuilder.AppendLine($"{inner}__multipartContent.Add({contentVar}, {addArgs});");
+        codeBuilder.AppendLine($"{indent}}}");
+        codeBuilder.AppendLine($"{indent}catch");
+        codeBuilder.AppendLine($"{indent}{{");
+        codeBuilder.AppendLine($"{inner}{contentVar}.Dispose(); // 仅异常路径释放（成功路径所有权归 multipart）");
+        codeBuilder.AppendLine($"{inner}throw;");
+        codeBuilder.AppendLine($"{indent}}}");
     }
 
     private static string GetUploadFieldName(ParameterAttributeInfo uploadAttr, string paramName)
@@ -794,8 +852,10 @@ internal class RequestBuilder
 
     private bool ShouldGenerateTokenQuery(MethodAnalysisResult methodInfo)
     {
-        if (!string.IsNullOrEmpty(methodInfo.InterfaceTokenInjectionMode) &&
-            methodInfo.InterfaceTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeQuery)
+        // G8-01：与 ShouldInjectToken / GenerateTokenInjection 统一按「有效级」解析
+        //（方法级 > 接口级）。原实现只认接口级，导致方法级 [Token(InjectionMode = Query)]
+        // 取到 access_token 后因无注入语句而被静默丢弃（请求无令牌）。
+        if (methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeQuery)
             return true;
 
         return methodInfo.InterfaceAttributes?.Any(attr => attr.StartsWith("Query:", StringComparison.Ordinal)) == true;
@@ -818,9 +878,18 @@ internal class RequestBuilder
     internal string? GetTokenHeaderName(MethodAnalysisResult methodInfo)
     {
         // GEN-09：方法级 Token(Name) > 接口级。
+        // G8-01：门控「模式」同样取有效级 —— 原实现用 InterfaceTokenInjectionMode，
+        // 使方法级 [Token(InjectionMode = Header, Name = "X-Custom")] 落回调用方的
+        // "Authorization" 兜底（静默写错头名，且 TokenRecoveryContext.HeaderName 一并错误）。
+        // G8-19：ApiKey 模式同样必须消费 Name —— 它是「密钥注入的头名」
+        //（README：Name = Header/Query 的名称；Attributes/README.md:264 示例 Name = "X-API-Key"），
+        // 原实现只对 Header 模式返回 Name，使 ApiKey 的密钥被写到 Authorization 头
+        //（服务端按 X-API-Key 取值必然 401），且与恢复路径 TokenRecoveryExecutor 的
+        // HeaderName 语义脱节。
         var tokenName = methodInfo.EffectiveTokenName;
-        if (!string.IsNullOrEmpty(methodInfo.InterfaceTokenInjectionMode) &&
-            methodInfo.InterfaceTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeHeader &&
+        var mode = methodInfo.EffectiveTokenInjectionMode;
+        if ((mode == HttpClientGeneratorConstants.TokenInjectionModeHeader ||
+             mode == HttpClientGeneratorConstants.TokenInjectionModeApiKey) &&
             !string.IsNullOrEmpty(tokenName))
             return tokenName;
 

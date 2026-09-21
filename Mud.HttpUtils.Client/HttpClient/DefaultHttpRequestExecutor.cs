@@ -518,6 +518,16 @@ public class DefaultHttpRequestExecutor(
             executionDescriptor.Response, progress, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>G8-06：下载缓冲区默认值（与 <c>DownloadLargeAsync</c> 的默认形参一致）。</summary>
+    private const int DefaultDownloadBufferSize = 81920;
+
+    /// <summary>
+    /// G8-06：下载缓冲区上界（4 MiB）。
+    /// 与生成器侧 <c>HttpClientGeneratorConstants.MaxSupportedDownloadBufferSize</c> **必须一致**，
+    /// 由 <c>DownloadBufferSizeContractTests</c>（Client.Tests）守护。
+    /// </summary>
+    private const int MaxDownloadBufferSize = 4 * 1024 * 1024;
+
     /// <summary>
     /// 大文件下载核心实现（发送 + 状态校验 + 流式写盘）。
     /// 被非编排版（接口成员）与 F-1 编排版（<see cref="ExecutionDescriptor"/>）共用。
@@ -532,6 +542,12 @@ public class DefaultHttpRequestExecutor(
         IProgress<long>? progress,
         CancellationToken cancellationToken)
     {
+        // G8-06（纵深防御）：bufferSize 来自 [FilePath(BufferSize = …)]，生成器侧已夹取到上界并报
+        // HTTPCLIENT036；此处对**任何调用方**（含绕过生成器手写调用本 API 的场景）再夹取一次，
+        // 避免 new byte[bufferSize] / new FileStream(…, bufferSize, …) 直接 OOM 或抛
+        // ArgumentOutOfRangeException。<= 0 归一回默认值（保持既有语义）。
+        bufferSize = bufferSize <= 0 ? DefaultDownloadBufferSize : Math.Min(bufferSize, MaxDownloadBufferSize);
+
         // Phase 2 (T2.3)：发送前捕获请求体（启用时）
         string? capturedRequestContent = _captureRequestContent
         ? await CaptureRequestContentAsync(request, cancellationToken).ConfigureAwait(false)
@@ -568,6 +584,17 @@ public class DefaultHttpRequestExecutor(
         var tmpPath = filePath + ".mudtmp";
         var tmpMode = FileMode.Create; // tmp 为本组件自有残留文件，可安全复用/回收
 
+        // G8-06（纵深防御）：源生成器已对 [FilePath(BufferSize)] 做上界夹取并报 HTTPCLIENT036，
+        // 但手写调用方可能直接调用 DownloadLargeAsync 传入任意 bufferSize。
+        // 该值最终用于 new byte[bufferSize]（进度路径）与 FileStream(…, bufferSize, …) /
+        // CopyToAsync(stream, bufferSize)，超大值会立即 OOM 或抛 ArgumentOutOfRangeException。
+        // 语义与生成器侧一致：<= 0 归一为默认 81920，> 4 MiB 夹取到上界（零成本防御）。
+        const int MaxSupportedBufferSize = 4 * 1024 * 1024;
+        const int DefaultBufferSize = 81920;
+        var effectiveBufferSize = bufferSize <= 0
+            ? DefaultBufferSize
+            : Math.Min(bufferSize, MaxSupportedBufferSize);
+
         try
         {
             var dir = Path.GetDirectoryName(filePath);
@@ -581,35 +608,35 @@ public class DefaultHttpRequestExecutor(
             long bytesWritten;
 
 #if NET6_0_OR_GREATER
-            await using (var fileStream = new FileStream(tmpPath, tmpMode, FileAccess.Write, FileShare.None, bufferSize, useAsync: true))
+            await using (var fileStream = new FileStream(tmpPath, tmpMode, FileAccess.Write, FileShare.None, effectiveBufferSize, useAsync: true))
             {
                 await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
 
                 // 若调用方未提供 progress 回调，则直接 CopyToAsync，避免每 buffer 的进度报告开销
                 if (progress == null)
                 {
-                    await contentStream.CopyToAsync(fileStream, bufferSize, cancellationToken).ConfigureAwait(false);
+                    await contentStream.CopyToAsync(fileStream, effectiveBufferSize, cancellationToken).ConfigureAwait(false);
                 }
                 else
                 {
-                    await CopyToWithProgressAsync(contentStream, fileStream, bufferSize, progress, 0, cancellationToken).ConfigureAwait(false);
+                    await CopyToWithProgressAsync(contentStream, fileStream, effectiveBufferSize, progress, 0, cancellationToken).ConfigureAwait(false);
                 }
                 bytesWritten = fileStream.Position;
             }
             // 流已关闭（Windows 下 File.Move 才可移动）；overwrite 语义由 Move 的 overwrite 参数强制
             File.Move(tmpPath, filePath, overwrite);
 #else
-            using (var fileStream = new FileStream(tmpPath, tmpMode, FileAccess.Write, FileShare.None, bufferSize))
+            using (var fileStream = new FileStream(tmpPath, tmpMode, FileAccess.Write, FileShare.None, effectiveBufferSize))
             {
                 using var contentStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 
                 if (progress == null)
                 {
-                    await contentStream.CopyToAsync(fileStream, bufferSize).ConfigureAwait(false);
+                    await contentStream.CopyToAsync(fileStream, effectiveBufferSize).ConfigureAwait(false);
                 }
                 else
                 {
-                    await CopyToWithProgressAsync(contentStream, fileStream, bufferSize, progress, 0, cancellationToken).ConfigureAwait(false);
+                    await CopyToWithProgressAsync(contentStream, fileStream, effectiveBufferSize, progress, 0, cancellationToken).ConfigureAwait(false);
                 }
                 bytesWritten = fileStream.Position;
             }

@@ -19,6 +19,12 @@ namespace Mud.HttpUtils;
 /// 故在此暴露只读门面。
 /// </para>
 /// <para>本类型为纯函数式工具，无状态、无分配（除 <see cref="ToSafeText"/> 的必要输出外）。</para>
+/// <para>
+/// <b>大小写语义（G8-11）</b>：appKey <b>区分大小写</b>，且本类<b>不做</b>任何大小写归一化 ——
+/// <c>"Tenant"</c> 与 <c>"tenant"</c> 是两个不同的应用。宿主注册与查询必须使用完全一致的文本
+/// （应用管理器内部以序数语义的字典存储）。该行为属<b>有意契约</b>，由
+/// <c>AppManagerCaseSensitivityTests</c>（Client.Tests）钉死。
+/// </para>
 /// </remarks>
 public static class AppKey
 {
@@ -29,6 +35,7 @@ public static class AppKey
     /// 判断应用标识是否合法：非空、长度不超过 <see cref="MaxLength"/>，
     /// 且仅由字母、数字、<c>'.'</c>、<c>'_'</c>、<c>'-'</c> 组成（首字符必须是字母或数字）。
     /// </summary>
+    /// <remarks>大小写敏感，不做归一化（见类型备注 G8-11）。</remarks>
     /// <param name="value">待校验的应用标识。</param>
     /// <returns>合法返回 <c>true</c>，否则 <c>false</c>。</returns>
     public static bool IsValid(string? value)

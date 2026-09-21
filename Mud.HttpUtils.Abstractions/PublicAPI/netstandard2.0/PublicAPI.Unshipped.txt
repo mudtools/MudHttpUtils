@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 Mud.HttpUtils.AesEncryptionOptions.EnableKeySeparation.get -> bool
 Mud.HttpUtils.AesEncryptionOptions.EnableKeySeparation.set -> void
 Mud.HttpUtils.AppKey
@@ -32,3 +32,7 @@ Mud.HttpUtils.MudMultiTenantOptions.MissingContextPolicy.get -> Mud.HttpUtils.Mi
 Mud.HttpUtils.MudMultiTenantOptions.MissingContextPolicy.set -> void
 Mud.HttpUtils.MudMultiTenantOptions.MudMultiTenantOptions() -> void
 static Mud.HttpUtils.AppKey.ToSafeText(string? value) -> string!
+Mud.HttpUtils.GeneratedClientOptions.MaxSuccessResponseBytes.get -> long
+Mud.HttpUtils.GeneratedClientOptions.MaxSuccessResponseBytes.set -> void
+Mud.HttpUtils.IEnhancedClientConfig.MaxSuccessResponseBytes.get -> long
+Mud.HttpUtils.IEnhancedClientConfig.MaxSuccessResponseBytes.set -> void

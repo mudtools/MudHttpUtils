@@ -34,6 +34,28 @@ public interface IEnhancedClientConfig
     int? MaxExceptionContentLength { get; set; }
 
     /// <summary>
+    /// 获取或设置<b>成功</b>响应体的最大字节数守卫（<c>0</c> = 不限制）。
+    /// </summary>
+    /// <value>默认为 <c>0</c>（不限制）。</value>
+    /// <remarks>
+    /// <para>
+    /// 与 <c>EnhancedHttpClientOptions.MaxSuccessResponseBytes</c>、DI 路径
+    /// （<c>AddMudHttpClient</c> → <c>DefaultHttpRequestExecutor(maxSuccessResponseBytes: …)</c>）保持<b>同源语义</b>：
+    /// 超限时抛 <c>ApiRequestException</c>（Content-Length 预判 + 守卫流读取阶段双重校验）。
+    /// </para>
+    /// <para>
+    /// <b>G8-08</b>：本属性此前只存在于 DI 路径的选项类型上，无 DI 工厂路径
+    /// （<c>RestService.ForGenerated</c>）<b>无法配置</b>该守卫 —— 属能力缺口（其余参数逐位一致）。
+    /// 现提升到共享契约：两实现（<c>EnhancedHttpClientOptions</c> / <see cref="GeneratedClientOptions"/>）
+    /// 必须同步，接口本身即编译期一致性保证。
+    /// </para>
+    /// <para>
+    /// 大文件下载请使用 <c>DownloadLargeAsync</c>（流式落盘），<b>不受</b>本守卫约束。
+    /// </para>
+    /// </remarks>
+    long MaxSuccessResponseBytes { get; set; }
+
+    /// <summary>
     /// 获取或设置是否在发送前捕获请求体字符串（用于异常调试）。
     /// </summary>
     /// <value>默认为 <c>false</c>（不捕获）。</value>
