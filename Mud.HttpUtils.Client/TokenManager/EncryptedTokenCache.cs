@@ -101,7 +101,8 @@ public sealed class EncryptedTokenCache<T> : ITokenCache<T> where T : class
             // TMR-08：放宽异常白名单——FormatException / ObjectDisposedException / 其他非取消异常均按 miss 处理
             // MT-25：按 miss 处理的同时记录 Warning，使"密钥轮换导致密文不可解"等场景可被观测
             // （此前完全静默，与类注释承诺的"返回 false + Warning 日志"不符）。
-            _logger.LogWarning(ex, "加密令牌缓存条目解密/反序列化失败，按缓存未命中处理（Key={Key}）", key);
+            // P3（M6 阶段五）：缓存键含 userId 等 PII（userId + 分隔符 + scope），日志只输出脱敏键。
+            _logger.LogWarning(ex, "加密令牌缓存条目解密/反序列化失败，按缓存未命中处理（Key={Key}）", MessageSanitizer.MaskIdentifier(key));
             value = null;
             return false;
         }

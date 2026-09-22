@@ -110,14 +110,30 @@ function Generate-Baseline($lib, $tfm) {
 
     # 固化：把 Unshipped 的 API 并入 Shipped
     $unshipLines = Get-Content -Path $unshipPath
-    $newApis = $unshipLines | Where-Object { ($_ -and (-not ($_ -like "#nullable*"))) }
+    # `*REMOVED*` 行是"已从 API 面移除"的确认标记，只允许出现在 Unshipped；
+    # 若原样并入 Shipped，PublicApiAnalyzers 会报 RS0024（shipped 文件不得含 removed 成员）。
+    # 本脚本的固化语义是"Shipped = 当前公共 API 面"，故：丢弃 `*REMOVED*` 行本身，
+    # 并据此把对应的旧成员行从 Shipped 中删除。
+    $removedApis = @(
+        $unshipLines |
+            Where-Object { $_ -and $_.TrimStart().StartsWith('*REMOVED*') } |
+            ForEach-Object { $_.TrimStart().Substring('*REMOVED*'.Length) }
+    )
+    $newApis = $unshipLines |
+        Where-Object { $_ -and (-not ($_ -like "#nullable*")) -and (-not $_.TrimStart().StartsWith('*REMOVED*')) }
 
     $existingShip = @()
     if (Test-Path $shipPath) {
         $existingShip = Get-Content -Path $shipPath | Where-Object { ($_ -and (-not ($_ -like "#nullable*"))) }
     }
 
-    $merged = @($existingShip) + @($newApis) | Select-Object -Unique
+    $merged = @($existingShip) + @($newApis) |
+        Where-Object {
+            $_ -and
+            (-not $_.TrimStart().StartsWith('*REMOVED*')) -and
+            ($removedApis -notcontains $_)
+        } |
+        Select-Object -Unique
     # 写入 Shipped（含 "#nullable enable" 表头）
     Write-Utf8NoBom $shipPath (@($Header) + $merged + "")
     # 复位 Unshipped

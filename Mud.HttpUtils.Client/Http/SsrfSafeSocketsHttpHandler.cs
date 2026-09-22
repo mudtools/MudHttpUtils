@@ -86,8 +86,10 @@ public sealed class SsrfSafeSocketsHttpHandler : HttpMessageHandler
         var target = candidates.FirstOrDefault(_policy.IsAllowed);
         if (target is null)
         {
+            // P3（M6 阶段五）：异常消息只回显主机名，不回显解析出的候选 IP 列表 ——
+            // 该消息会进入异常 / 日志链路，披露内网解析结果等于泄漏内网拓扑（DNS 反查辅助）。
             throw new InvalidOperationException(
-                $"不允许连接到目标地址: {host}（解析结果 {string.Join<IPAddress>(", ", candidates)} 均被 IP 准入策略拒绝）");
+                $"不允许连接到目标地址: {host}（DNS 解析结果均被 IP 准入策略拒绝）");
         }
 
         var socket = new Socket(target.AddressFamily, SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };

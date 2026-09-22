@@ -45,6 +45,24 @@ public static class MessageSanitizer
         return Sanitize(content, maxLength: maxLength);
     }
 
+    /// <summary>
+    /// P3（M6 阶段五）：标识符脱敏 —— 令牌缓存键由 <c>userId + 分隔符 + scope</c> 组成（含 PII），
+    /// 日志中不得明文输出。仅保留前 4 个字符（不足以还原原值，但保留跨日志行的关联能力），
+    /// 其余以 <c>***</c> 替代并附原长度，便于判断是否同一键。
+    /// </summary>
+    /// <param name="value">待脱敏的标识符（可为 null / 空）。</param>
+    /// <returns>脱敏后的标识符；null / 空输入返回空串。</returns>
+    internal static string MaskIdentifier(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return string.Empty;
+
+        if (value.Length <= 4)
+            return "***";
+
+        return value.Substring(0, 4) + "***(len=" + value.Length + ")";
+    }
+
     private static readonly HashSet<string> NameSensitiveFields = new(StringComparer.OrdinalIgnoreCase)
     {
         "real_name", "realName", "name"

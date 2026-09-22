@@ -31,13 +31,9 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     private readonly ILogger _logger;
 
     /// <summary>
-    /// 策略缓存。承载两类条目：
-    /// <list type="bullet">
-    /// <item>按结果类型适配的实例（键的 <see cref="PolicyCacheKey.ResultType"/> 为具体类型，值类型 <c>IAsyncPolicy&lt;TResult&gt;</c>）；</item>
-    /// <item>M6-HC-22 引入的「与结果类型无关」的共享策略（键的 <c>ResultType</c> 为 <c>null</c>，值类型 <see cref="AsyncPolicy"/>）——
-    /// 熔断 / 超时策略本身不含 <c>TResult</c>，同一作用域下所有结果类型共用一个实例，失败计数 / 半开状态因此得以合并。</item>
-    /// </list>
-    /// 两类条目共用同一容量上限与同一插入序队列，故共享策略不会绕过 <see cref="ResilienceOptions.MaxPolicyCacheSize"/> 无界增长。
+    /// 策略缓存。承载按结果类型适配的实例（键的 <see cref="PolicyCacheKey.ResultType"/> 为具体类型，
+    /// 值类型 <c>IAsyncPolicy&lt;TResult&gt;</c>）。适配器可廉价重建，故受 <see cref="ResilienceOptions.MaxPolicyCacheSize"/>
+    /// 约束并参与插入序淘汰。
     /// </summary>
     private readonly ConcurrentDictionary<PolicyCacheKey, object> _policyCache = new();
 
@@ -46,6 +42,37 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     /// 替代原"超限即放弃缓存"（后者会使熔断器状态随每次调用重置而失效）。
     /// </summary>
     private readonly ConcurrentQueue<PolicyCacheKey> _policyCacheOrder = new();
+
+    /// <summary>
+    /// M6-HC-22：与结果类型无关的共享策略缓存（键的 <see cref="PolicyCacheKey.ResultType"/> 为 null）。
+    /// 熔断/超时策略实例本身不含 <c>TResult</c>，同一作用域下所有结果类型共用一个实例，
+    /// 失败计数 / 半开状态因此得以合并；按结果类型暴露的 <c>IAsyncPolicy&lt;TResult&gt;</c>
+    /// 由该共享实例经 <c>AsAsyncPolicy&lt;TResult&gt;()</c> 适配。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为何与 <see cref="_policyCache"/> 分册</b>：共享策略承载熔断器状态（失败计数 / 半开），
+    /// 而适配器缓存承载的是无状态的包装实例。二者共用淘汰队列会导致「适配器被淘汰 → 重新解析」
+    /// 时把仍在使用的熔断器状态一并丢弃，使 HC-22 想修的"计数随调用重置"从另一条路径复发
+    /// （方案 §五 HC-22 验收：「超限后第 2 次失败仍计入同一 CB」）。
+    /// </para>
+    /// <para>
+    /// <b>为何仍需上限</b>：scope 取自 host / Named Client 名，基数受部署约束但并非严格有界，
+    /// 故本册同样带插入序淘汰队列，上限取 <see cref="SharedPolicyCacheFloor"/> 与
+    /// <see cref="ResilienceOptions.MaxPolicyCacheSize"/> 的较大者 —— 远高于典型 host 数，
+    /// 仅作 scope 基数异常膨胀（自定义 baseUrl 场景）时的内存兜底，正常负载下不触发淘汰。
+    /// </para>
+    /// </remarks>
+    private readonly ConcurrentDictionary<PolicyCacheKey, AsyncPolicy> _sharedPolicyCache = new();
+
+    /// <summary>M6-HC-22：共享策略缓存的插入序队列（见 <see cref="_sharedPolicyCache"/> 备注）。</summary>
+    private readonly ConcurrentQueue<PolicyCacheKey> _sharedPolicyCacheOrder = new();
+
+    /// <summary>
+    /// M6-HC-22：共享策略缓存的下限容量。共享条目数 = 作用域数 × 2（熔断 + 超时），
+    /// 该下限远高于典型部署的 host 数，确保正常负载下共享熔断器状态永不被淘汰。
+    /// </summary>
+    private const int SharedPolicyCacheFloor = 256;
 
     private const string PolicyKeyGlobalRetry = "global:retry";
     private const string PolicyKeyGlobalTimeout = "global:timeout";
@@ -225,28 +252,18 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 
     /// <summary>M5-HC-06：带容量上限的策略缓存写入；M6-HC-22：超限时按插入序淘汰最旧条目（不再放弃缓存）。</summary>
     private object GetOrAddPolicy(PolicyCacheKey key, Func<object> factory)
-        => GetOrAddCachedPolicy<object>(key, factory);
-
-    /// <summary>
-    /// M6-HC-22：获取（或创建）与结果类型无关的共享策略（熔断 / 超时）。
-    /// 与按结果类型适配的实例共用 <see cref="_policyCache"/> 及同一容量上限。
-    /// </summary>
-    private AsyncPolicy GetOrAddSharedPolicy(PolicyCacheKey key, Func<AsyncPolicy> factory)
-        => GetOrAddCachedPolicy<AsyncPolicy>(key, factory);
-
-    private T GetOrAddCachedPolicy<T>(PolicyCacheKey key, Func<T> factory) where T : class
     {
         if (_policyCache.TryGetValue(key, out var existing))
-            return (T)existing;
+            return existing;
 
         var max = _options.MaxPolicyCacheSize;
         if (max > 0 && _policyCache.Count >= max)
         {
-            TrimPolicyCache(max);
+            TrimPolicyCache(_policyCache, _policyCacheOrder, max, logFull: true);
         }
 
         var created = false;
-        var policy = (T)_policyCache.GetOrAdd(key, _ =>
+        var policy = _policyCache.GetOrAdd(key, _ =>
         {
             created = true;
             return factory();
@@ -259,17 +276,56 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     }
 
     /// <summary>
+    /// M6-HC-22：获取（或创建）与结果类型无关的共享策略（熔断 / 超时）。
+    /// 容量为 <see cref="SharedPolicyCacheFloor"/> 与 <see cref="ResilienceOptions.MaxPolicyCacheSize"/> 的较大者，
+    /// 仅作 scope 基数异常膨胀时的内存兜底（见 <see cref="_sharedPolicyCache"/> 备注）。
+    /// </summary>
+    private AsyncPolicy GetOrAddSharedPolicy(PolicyCacheKey key, Func<AsyncPolicy> factory)
+    {
+        if (_sharedPolicyCache.TryGetValue(key, out var existing))
+            return existing;
+
+        var configured = _options.MaxPolicyCacheSize;
+        var max = configured <= 0 ? 0 : Math.Max(SharedPolicyCacheFloor, configured);
+        if (max > 0 && _sharedPolicyCache.Count >= max)
+        {
+            TrimPolicyCache(_sharedPolicyCache, _sharedPolicyCacheOrder, max, logFull: false);
+        }
+
+        var created = false;
+        var policy = _sharedPolicyCache.GetOrAdd(key, _ =>
+        {
+            created = true;
+            return factory();
+        });
+
+        if (created)
+            _sharedPolicyCacheOrder.Enqueue(key);
+
+        return policy;
+    }
+
+    /// <summary>
     /// M6-HC-22：按插入序淘汰最旧条目（每轮淘汰 <c>max/8</c>，至少 1 条），使缓存容量成为软上限，
     /// 避免原实现"超限即完全放弃缓存"导致的熔断计数丢失与策略实例每次重建。
     /// </summary>
-    private void TrimPolicyCache(int max)
+    /// <param name="cache">目标缓存。</param>
+    /// <param name="order">与 <paramref name="cache"/> 配对的插入序队列。</param>
+    /// <param name="max">容量上限。</param>
+    /// <param name="logFull">是否输出 <c>PolicyCacheFull</c> 警告（共享册的兜底淘汰不重复告警）。</param>
+    private void TrimPolicyCache<TValue>(
+        ConcurrentDictionary<PolicyCacheKey, TValue> cache,
+        ConcurrentQueue<PolicyCacheKey> order,
+        int max,
+        bool logFull)
     {
-        MudHttpClientLog.PolicyCacheFull(_logger, max);
+        if (logFull)
+            MudHttpClientLog.PolicyCacheFull(_logger, max);
 
         var evictCount = Math.Max(1, max / 8);
-        for (var i = 0; i < evictCount && _policyCacheOrder.TryDequeue(out var oldest); i++)
+        for (var i = 0; i < evictCount && order.TryDequeue(out var oldest); i++)
         {
-            _policyCache.TryRemove(oldest, out _);
+            cache.TryRemove(oldest, out _);
         }
     }
 

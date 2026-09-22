@@ -351,5 +351,39 @@ public class PollyResiliencePolicyProviderTests
         await act3.Should().ThrowAsync<BrokenCircuitException>();
     }
 
+    /// <summary>
+    /// M6-HC-22：共享策略册虽与适配器册分册（以保住熔断状态），但仍须有容量兜底，
+    /// 否则 scope 基数异常膨胀时会无界增长。断言：越界后最旧的共享熔断器被淘汰（计数从头开始）。
+    /// </summary>
+    [Fact]
+    public async Task SharedPolicyCache_ScopeCardinalityBeyondFloor_EvictsOldestBreakerState()
+    {
+        var options = new ResilienceOptions
+        {
+            MaxPolicyCacheSize = 8,
+            CircuitBreaker = { Enabled = true, FailureThreshold = 2, BreakDurationSeconds = 30, SamplingDurationSeconds = 0 }
+        };
+        var provider = new PollyResiliencePolicyProvider(options);
+
+        Func<Task<HttpResponseMessage>> fail = () => throw new HttpRequestException("boom");
+
+        // 首个 scope 记 1 次失败（阈值 2，尚未熔断）
+        var first = provider.GetCircuitBreakerPolicy<HttpResponseMessage>("hc22-bound-0");
+        var act1 = async () => await first.ExecuteAsync(fail);
+        await act1.Should().ThrowAsync<HttpRequestException>();
+
+        // 越过共享册下限（256）：最旧的 hc22-bound-0 共享条目被兜底淘汰
+        for (var i = 1; i <= 300; i++)
+        {
+            provider.GetCircuitBreakerPolicy<HttpResponseMessage>($"hc22-bound-{i}").Should().NotBeNull();
+        }
+
+        // 重新解析拿到全新熔断器（计数 0）：第 2 次失败仍为 HttpRequestException，
+        // 而非达阈值后的 BrokenCircuitException —— 证明共享册确实做了有界回收。
+        var again = provider.GetCircuitBreakerPolicy<HttpResponseMessage>("hc22-bound-0");
+        var act2 = async () => await again.ExecuteAsync(fail);
+        await act2.Should().ThrowAsync<HttpRequestException>();
+    }
+
     #endregion
 }

@@ -44,7 +44,6 @@ Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetRetryPolicy<TResult>(s
 Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetTimeoutAndCircuitBreakerPolicy<TResult>(string! scope) -> Polly.IAsyncPolicy<TResult>!
 Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.GetTimeoutPolicy<TResult>(string! scope) -> Polly.IAsyncPolicy<TResult>!
 Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.PollyResiliencePolicyProvider(Microsoft.Extensions.Options.IOptions<Mud.HttpUtils.Resilience.ResilienceOptions!>! options, Microsoft.Extensions.Logging.ILogger<Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider!>? logger = null) -> void
-Mud.HttpUtils.Resilience.PollyResiliencePolicyProvider.PollyResiliencePolicyProvider(Mud.HttpUtils.Resilience.ResilienceOptions? options = null, Microsoft.Extensions.Logging.ILogger? logger = null) -> void
 Mud.HttpUtils.Resilience.ResilienceConstants
 Mud.HttpUtils.Resilience.ResilienceOptions
 Mud.HttpUtils.Resilience.ResilienceOptions.CircuitBreaker.get -> Mud.HttpUtils.Resilience.CircuitBreakerOptions!

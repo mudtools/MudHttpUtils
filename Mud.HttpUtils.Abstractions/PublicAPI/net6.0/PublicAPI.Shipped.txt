@@ -865,4 +865,37 @@ virtual Mud.HttpUtils.TokenManagerBase.RefreshTokenWithScopesAsync(string![]? sc
 virtual Mud.HttpUtils.TokenManagerBase.SupportsBackgroundRefresh.get -> bool
 virtual Mud.HttpUtils.TokenManagerBase.SupportsTenantMaintenance.get -> bool
 volatile Mud.HttpUtils.TokenManagerBase._disposed -> bool
+Mud.HttpUtils.AesEncryptionOptions.EnableKeySeparation.get -> bool
+Mud.HttpUtils.AesEncryptionOptions.EnableKeySeparation.set -> void
+Mud.HttpUtils.AppKey
+Mud.HttpUtils.GeneratedClientOptions.MaxSuccessResponseBytes.get -> long
+Mud.HttpUtils.GeneratedClientOptions.MaxSuccessResponseBytes.set -> void
+Mud.HttpUtils.ICacheValueCloner
+Mud.HttpUtils.ICacheValueCloner.Clone<T>(T? value) -> T?
+Mud.HttpUtils.IEnhancedClientConfig.MaxSuccessResponseBytes.get -> long
+Mud.HttpUtils.IEnhancedClientConfig.MaxSuccessResponseBytes.set -> void
+Mud.HttpUtils.ITokenRefreshBackgroundService.IsStopped.get -> bool
+Mud.HttpUtils.ITokenRefreshBackgroundService.RestartAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.MissingAppContextPolicy
+Mud.HttpUtils.MissingAppContextPolicy.FallbackToDefaultApp = 1 -> Mud.HttpUtils.MissingAppContextPolicy
+Mud.HttpUtils.MissingAppContextPolicy.Reject = 0 -> Mud.HttpUtils.MissingAppContextPolicy
+Mud.HttpUtils.MudMultiTenantOptions
+Mud.HttpUtils.MudMultiTenantOptions.MissingContextPolicy.get -> Mud.HttpUtils.MissingAppContextPolicy
+Mud.HttpUtils.MudMultiTenantOptions.MissingContextPolicy.set -> void
+Mud.HttpUtils.MudMultiTenantOptions.MudMultiTenantOptions() -> void
+Mud.HttpUtils.TokenRecoveryOptions.MaxDedupEntries.get -> int
+Mud.HttpUtils.TokenRecoveryOptions.MaxDedupEntries.set -> void
+Mud.HttpUtils.UserTokenInfo.IssuedAt.get -> long
+Mud.HttpUtils.UserTokenInfo.IssuedAt.set -> void
+System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute
+System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute.ExcludeStatics.get -> bool
+System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute.ExcludeStatics.set -> void
+System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute.Message.get -> string!
+System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute.RequiresDynamicCodeAttribute(string! message) -> void
+System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute.Url.get -> string?
+System.Diagnostics.CodeAnalysis.RequiresDynamicCodeAttribute.Url.set -> void
+const Mud.HttpUtils.AppKey.MaxLength = 128 -> int
+static Mud.HttpUtils.AppKey.IsValid(string? value) -> bool
+static Mud.HttpUtils.AppKey.ToSafeText(string? value) -> string!
+static Mud.HttpUtils.MudHttpMeter.HasListeners.get -> bool
 
