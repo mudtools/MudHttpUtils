@@ -31,6 +31,62 @@ public static class HttpClientServiceCollectionExtensions
     // 未启用 handler 级连接期校验时，记录一次 Info 引导日志（避免每次解析重复刷屏）。
     private static int _ssrfGuidanceLogged;
 
+#if NET6_0_OR_GREATER
+    // M6-HC-03：显式 opt-in（AddMudHttpClientSsrfProtection(builder)）登记表。
+    // 以 IServiceCollection（容器）为弱键、客户端名为值 —— 与 builder 实例解耦
+    //（同一名称重复 AddMudHttpClient 会产生新 builder 实例，但容器与名称不变），
+    // 且不跨容器污染（不同 ServiceCollection 互不影响）。
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<IServiceCollection, HashSet<string>> _ssrfExplicitOptInClients = new();
+
+    private static HashSet<string> SsrfExplicitOptInFor(IServiceCollection services)
+        => _ssrfExplicitOptInClients.GetValue(services, _ => new HashSet<string>(StringComparer.Ordinal));
+
+    /// <summary>
+    /// M6-HC-03（D1-A）：严格模式（<see cref="MudHttpClientOptions.AllowCustomBaseUrls"/>=false）下
+    /// 为命名客户端自动接线连接期 SSRF 校验 primary handler。
+    /// </summary>
+    /// <remarks>
+    /// <para>决策发生在 <b>handler 管道构建期</b>（每次管道重建，默认 2 分钟），与
+    /// <see cref="CreateEnhancedClient"/> 同源口径：客户端配置节
+    /// （<c>MudHttpClients:Clients:&lt;name&gt;.AllowCustomBaseUrls</c>）优先，其次编程式基线
+    /// <see cref="EnhancedHttpClientOptions"/>（默认 false = 严格）。配置热更新随管道重建生效。</para>
+    /// <para>非严格模式返回 <see cref="HttpClientHandler"/>（即工厂默认 primary handler 等价物），行为不变；
+    /// 显式 opt-in 的 ConfigurePrimaryHttpMessageHandler 追加在本自动配置之后（后者胜出），
+    /// 配合登记表实现幂等。</para>
+    /// </remarks>
+    private static void ConfigureSsrfPrimaryHandlerInStrictMode(IHttpClientBuilder builder, string clientName)
+    {
+        if (SsrfExplicitOptInFor(builder.Services).Contains(clientName))
+            return;
+
+        builder.ConfigurePrimaryHttpMessageHandler(sp =>
+        {
+            // M6-HC-05：非严格模式同样关闭自动重定向（重定向逐跳复验统一由
+            // EnhancedHttpClient.SendCoreAsync 手动循环承接），并保持与工厂默认 handler 等价。
+            if (!IsStrictModeForClient(sp, clientName))
+                return new HttpClientHandler { AllowAutoRedirect = false };
+
+            var policy = sp.GetService<IIpAddressPolicy>() ?? new DefaultIpAddressPolicy();
+            return new SsrfSafeSocketsHttpHandler(policy);
+        });
+    }
+
+    /// <summary>
+    /// M6-HC-03：与 <see cref="CreateEnhancedClient"/> 同源的「严格模式」判定 ——
+    /// 客户端配置节覆盖优先，未配置时回退编程式基线（默认严格）。
+    /// </summary>
+    private static bool IsStrictModeForClient(IServiceProvider sp, string clientName)
+    {
+        var clientsSection = sp.GetService<IOptionsMonitor<MudHttpClientApplicationOptions>>()
+            ?.CurrentValue.Clients;
+        if (clientsSection != null && clientsSection.TryGetValue(clientName, out var clientOptions))
+            return !clientOptions.AllowCustomBaseUrls;
+
+        var baseline = sp.GetService<IOptions<EnhancedHttpClientOptions>>()?.Value;
+        return !(baseline?.AllowCustomBaseUrls ?? false);
+    }
+#endif
+
     /// <summary>
     /// 添加基于 <see cref="IHttpClientFactory"/> 的 <see cref="HttpClientFactoryEnhancedClient"/> 到依赖注入容器，
     /// 并注册为 <see cref="IEnhancedHttpClient"/> 服务。
@@ -83,6 +139,21 @@ public static class HttpClientServiceCollectionExtensions
 
         RegisterNamedClient(services, clientName, setAsDefault);
 
+#if NET6_0_OR_GREATER
+        // M6-HC-03（D1-A）：严格模式（AllowCustomBaseUrls=false）下默认启用连接期 SSRF 校验，
+        // 补齐纵深防御：URL 层校验期与建连期解析结果可能不一致（DNS rebinding TOCTOU）。
+        // 幂等：该 builder 所属容器 + 客户端名已显式调用 AddMudHttpClientSsrfProtection(builder) 时跳过；
+        // 非严格模式在 handler 构建期回落工厂默认 handler，行为不变。
+        ConfigureSsrfPrimaryHandlerInStrictMode(httpClientBuilder, clientName);
+#else
+        // M6-HC-05（D2-A）：netstandard2.0 同样关闭主链路自动重定向，
+        // 重定向逐跳复验由 EnhancedHttpClient.SendCoreAsync 手动循环承接（跨 TFM 行为一致）。
+        httpClientBuilder.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        {
+            AllowAutoRedirect = false,
+        });
+#endif
+
         return httpClientBuilder;
     }
 
@@ -121,6 +192,13 @@ public static class HttpClientServiceCollectionExtensions
     {
         if (builder == null)
             throw new ArgumentNullException(nameof(builder));
+
+        // M6-HC-03：登记显式 opt-in（按容器 + 客户端名），使严格模式自动接线跳过该客户端；
+        // 本调用的 ConfigurePrimaryHttpMessageHandler 追加在自动配置之后（后者胜出），双保险幂等。
+        lock (SsrfExplicitOptInFor(builder.Services))
+        {
+            SsrfExplicitOptInFor(builder.Services).Add(builder.Name);
+        }
 
         builder.ConfigurePrimaryHttpMessageHandler(sp =>
             new SsrfSafeSocketsHttpHandler(sp.GetRequiredService<IIpAddressPolicy>()));
@@ -634,6 +712,30 @@ public static class HttpClientServiceCollectionExtensions
     }
 
     /// <summary>
+    /// 注册默认的 HMAC 签名提供者，并指定是否启用防重放签名。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <param name="requireAntiReplay">
+    /// M6-HC-25（D4-A）：为 <c>true</c> 时把 <c>X-Timestamp</c>（Unix 秒）与 <c>X-Nonce</c> 固定置于签名串首两行并写入请求头；
+    /// 为 <c>false</c>（等效于无参重载）时维持原有确定性签名串。
+    /// </param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException">当 <paramref name="services"/> 为 <c>null</c> 时抛出。</exception>
+    /// <remarks>
+    /// 防重放收益依赖<b>服务端</b>实现 nonce 去重与时间窗校验；本提供者不保存任何 nonce 状态。
+    /// </remarks>
+    public static IServiceCollection AddHmacSignatureProvider(
+        this IServiceCollection services,
+        bool requireAntiReplay)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        services.TryAddSingleton<IHmacSignatureProvider>(new DefaultHmacSignatureProvider(requireAntiReplay));
+        return services;
+    }
+
+    /// <summary>
     /// 注册自定义的 API 密钥提供者实现到依赖注入容器。
     /// </summary>
     /// <typeparam name="TProvider">API 密钥提供者的实现类型，必须实现 <see cref="IApiKeyProvider"/> 接口。</typeparam>
@@ -910,9 +1012,15 @@ public static class HttpClientServiceCollectionExtensions
         // 已注册 IIpAddressPolicy（AddMudHttpClientSsrfProtection(IServiceCollection)）但命名客户端未
         // 在 builder 上启用 handler 级连接期校验（AddMudHttpClientSsrfProtection(builder)）时，提示启用，
         // 以对实际建连 IP 执行准入校验、根治 DNS rebinding TOCTOU。
+        // M6-HC-03：严格模式客户端已由注册路径自动接线（ConfigureSsrfPrimaryHandlerInStrictMode），
+        // 不再提示；仅非严格模式（AllowCustomBaseUrls=true）客户端维持引导。
         if (options.Logger != null
             && _ssrfGuidanceLogged == 0
-            && sp.GetService<IIpAddressPolicy>() != null)
+            && sp.GetService<IIpAddressPolicy>() != null
+#if NET6_0_OR_GREATER
+            && !IsStrictModeForClient(sp, clientName)
+#endif
+            )
         {
             if (Interlocked.Exchange(ref _ssrfGuidanceLogged, 1) == 0)
                 MudHttpClientLog.SsrfGuidance(options.Logger);

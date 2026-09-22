@@ -24,6 +24,7 @@ namespace Mud.HttpUtils;
 ///   <item>用户隔离：每个用户的令牌存储在独立的字典中</item>
 ///   <item>线程安全：使用嵌套的 <see cref="ConcurrentDictionary{String, TokenEntry}"/> 确保并发访问安全</item>
 ///   <item>过期检查：获取令牌时自动验证过期时间</item>
+///   <item>桶数有界：写入路径在用户桶数超过 1 万时惰性清扫空壳桶，防海量短命 userId 造成内存滞留（M6-HC-28）</item>
 ///   <item>显式接口实现：<see cref="ITokenStore"/> 的无用户 ID 方法通过显式接口实现提供，调用时需通过接口类型引用</item>
 /// </list>
 /// </para>
@@ -47,6 +48,47 @@ public class MemoryUserTokenStore : IUserTokenStore
     // userId 的大小写归一化责任在调用方入口，存储与缓存层一律 Ordinal。
     // 内层（tokenType）保留 OrdinalIgnoreCase：tokenType 语义不区分大小写，与 MemoryTokenStore 一致。
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, MemoryTokenStore.TokenEntry>> _userStore = new(StringComparer.Ordinal);
+
+    // M6-HC-28：用户桶数上限。超过该值后，下一次写入会顺带触发一次全量空壳桶清扫。
+    // 取 1 万：单个空 ConcurrentDictionary 壳约百字节级，1 万个壳的内存占用仍在可接受范围，
+    // 而全量扫描（1 万次 IsEmpty 判定，无分配）在命中阈值时的一次性成本可忽略。
+    internal const int UserBucketSweepThreshold = 10000;
+
+    // 全量清扫门控（0=空闲，1=进行中）：并发写入者同时越阈值时只放行一次扫描，避免惊群。
+    private int _bucketSweepInProgress;
+
+    /// <summary>
+    /// M6-HC-28：测试观测钩子（经 <c>InternalsVisibleTo</c>）—— 当前用户桶数量，用于断言「桶数有界」。
+    /// </summary>
+    internal int UserBucketCount => _userStore.Count;
+
+    /// <summary>
+    /// M6-HC-28：惰性空壳桶清扫 —— 仅在桶数超过 <see cref="UserBucketSweepThreshold"/> 时触发全量扫描，
+    /// 移除并发 <see cref="RemoveAsync"/> 与过期移除后残留的空内层字典（这些正是桶数无界增长的唯一来源）。
+    /// </summary>
+    /// <remarks>
+    /// 弱一致：并发写入者可能刚向某个空桶填充条目——<c>IsEmpty</c> 为真才移除，误删由下次 Set 恢复（同 SR-L5 口径）。
+    /// 未采用后台心跳清扫：令牌存储是纯内存实现，引入 <c>TokenRefreshBackgroundService</c> 依赖会污染
+    /// <see cref="ITokenStore"/> 的构造契约（其可在无后台服务的宿主中单独注册）。
+    /// </remarks>
+    private void SweepEmptyBucketsIfNeeded()
+    {
+        if (_userStore.Count <= UserBucketSweepThreshold) return;
+        if (Interlocked.Exchange(ref _bucketSweepInProgress, 1) == 1) return;
+
+        try
+        {
+            foreach (var pair in _userStore)
+            {
+                if (pair.Value.IsEmpty)
+                    _userStore.TryRemove(pair.Key, out _);
+            }
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _bucketSweepInProgress, 0);
+        }
+    }
 
     Task<string?> ITokenStore.GetAccessTokenAsync(string tokenType, CancellationToken cancellationToken)
     {
@@ -128,6 +170,11 @@ public class MemoryUserTokenStore : IUserTokenStore
             _ => new MemoryTokenStore.TokenEntry(accessToken, null, DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds)),
             (_, existing) => existing.WithAccessToken(accessToken, DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds)));
 
+        // M6-HC-28：写入路径顺带做惰性空壳桶清扫。必须放在本次 AddOrUpdate 之后 ——
+        // 此时自身桶已非空，扫描不会回收自身刚创建的空桶（否则 AddOrUpdate 会写入已脱离 _userStore 的孤儿字典，
+        // 令牌静默丢失）。桶数未超阈值时为一次 int 比较，不产生扫描。
+        SweepEmptyBucketsIfNeeded();
+
         return Task.CompletedTask;
     }
 
@@ -156,6 +203,9 @@ public class MemoryUserTokenStore : IUserTokenStore
         userTokens.AddOrUpdate(tokenType,
             _ => new MemoryTokenStore.TokenEntry(null, refreshToken, DateTimeOffset.MaxValue),
             (_, existing) => existing.WithRefreshToken(refreshToken));
+
+        // M6-HC-28：同 SetAccessTokenAsync，写入后顺带惰性清扫空壳桶
+        SweepEmptyBucketsIfNeeded();
 
         return Task.CompletedTask;
     }

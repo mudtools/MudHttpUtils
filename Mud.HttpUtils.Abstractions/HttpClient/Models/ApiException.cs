@@ -59,7 +59,9 @@ public class ApiException : HttpRequestException
     /// <param name="requestUri">请求 URI。</param>
     /// <remarks>
     /// FIX-12：异常消息中的 URI 仅保留 scheme://host/path（不含 query），防止敏感查询参数（如 access_token）随 Message 泄漏。
-    /// 完整 URI 保留在 <see cref="RequestUri"/> 属性中，可由 <see cref="IExceptionRedactor"/> 在传播前擦除。
+    /// M6-HC-21：<see cref="RequestUri"/> 由各构造点在传入前统一经 <c>SensitiveUrlRedactor</c> 脱敏
+    /// （剥离 userinfo、掩码敏感 query 值），与 <see cref="ApiRequestException"/> 口径一致；
+    /// 仍可由 <see cref="IExceptionRedactor"/> 在传播前进一步擦除。
     /// </remarks>
     public ApiException(HttpStatusCode statusCode, string? content, string? requestUri)
 #if NET5_0_OR_GREATER

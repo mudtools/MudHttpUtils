@@ -152,6 +152,10 @@ internal static class MudHttpObservability
                 activity.SetStatus(ActivityStatusCode.Ok);
         }
 
+        // M6-HC-17：无 Meter 监听器时指标写入为空操作，提前短路以避免 tags 数组分配
+        if (!MudHttpMeter.HasListeners)
+            return;
+
         var tags = BuildRequestTags(clientName, request, outcome);
 
         if (statusCode > 0)
@@ -196,6 +200,10 @@ internal static class MudHttpObservability
 #endif
         }
 
+        // M6-HC-17：无监听器时短路（tags 构造为真正的开销点）
+        if (!MudHttpMeter.HasListeners)
+            return;
+
         // R-1：指标 tag 白名单过滤（默认白名单 = 全部内建维度，零分配快路径直接返回原数组）
         var tags = MudHttpMeter.FilterTags(BuildRequestTags(clientName, request, outcome: "error").ToArray());
         MudHttpMeter.RequestCounter.Add(1, tags);
@@ -214,6 +222,10 @@ internal static class MudHttpObservability
         HttpRequestMessage? request = null)
     {
         // Span 不设置 Error 状态（保持未设置，符合 OTel 取消语义）
+        // M6-HC-17：无 Meter 监听器时短路
+        if (!MudHttpMeter.HasListeners)
+            return;
+
         var tags = MudHttpMeter.FilterTags(BuildRequestTags(clientName, request, outcome: "cancelled").ToArray());
         MudHttpMeter.RequestCounter.Add(1, tags);
         MudHttpMeter.RequestDuration.Record(elapsedMs, tags);
@@ -440,6 +452,10 @@ internal static class MudHttpObservability
                 });
         }
 
+        // M6-HC-17：无 Meter 监听器时短路
+        if (!MudHttpMeter.HasListeners)
+            return;
+
         // R-1：指标 tag 白名单过滤
         var tags = MudHttpMeter.FilterTags(new KeyValuePair<string, object?>[]
         {
@@ -472,6 +488,10 @@ internal static class MudHttpObservability
                     new KeyValuePair<string, object?>("exception_type", ex.GetType().Name),
                 });
         }
+
+        // M6-HC-17：无 Meter 监听器时短路
+        if (!MudHttpMeter.HasListeners)
+            return;
 
         // R-1：指标 tag 白名单过滤
         var tags = MudHttpMeter.FilterTags(new KeyValuePair<string, object?>[]

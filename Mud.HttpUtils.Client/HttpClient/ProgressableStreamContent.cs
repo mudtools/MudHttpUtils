@@ -1,3 +1,5 @@
+using Mud.HttpUtils.Helpers;
+
 namespace Mud.HttpUtils;
 
 /// <summary>
@@ -29,7 +31,8 @@ namespace Mud.HttpUtils;
 /// <seealso cref="IProgress{T}"/>
 public class ProgressableStreamContent : HttpContent, IRequestContentReplayHint
 {
-    private const int DefaultBufferSize = 4096;
+    // M6-HC-15：默认缓冲由 4096 提升至 81920，与下载/执行器路径一致，减少读调用次数
+    private const int DefaultBufferSize = 81920;
 
     private readonly HttpContent _content;
     private readonly int _bufferSize;
@@ -46,7 +49,7 @@ public class ProgressableStreamContent : HttpContent, IRequestContentReplayHint
     /// </summary>
     /// <param name="content">要包装的HTTP内容。</param>
     /// <param name="progress">进度报告回调。如果为 null,则不报告进度。</param>
-    /// <param name="bufferSize">缓冲区大小(字节),默认为4096。</param>
+    /// <param name="bufferSize">缓冲区大小(字节),默认为81920。</param>
     /// <exception cref="ArgumentNullException"><paramref name="content"/> 为 null。</exception>
     /// <remarks>
     /// 构造函数会复制原始内容的所有头部信息到包装器中。
@@ -73,6 +76,8 @@ public class ProgressableStreamContent : HttpContent, IRequestContentReplayHint
     /// 此方法通过缓冲区读取内部内容的流,并在每次写入目标流后报告累计已传输的字节数。
     /// 进度报告通过 <see cref="IProgress{T}.Report"/> 方法实现。
     /// 仅 netstandard2.0 / 旧重载路径可达，故使用 <see cref="CancellationToken.None"/>（#28 同理）。
+    /// M6-HC-15：无进度回调时走 <see cref="Stream.CopyToAsync(Stream)"/> 快路径，避免每缓冲区的进度开销。
+    /// M6-HC-31：不再 dispose 内容流（其生命周期归 <c>_content</c> 所有），与 net5+ 分支一致。
     /// </remarks>
     protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
         => SerializeToStreamCoreAsync(stream, CancellationToken.None);
@@ -88,37 +93,18 @@ public class ProgressableStreamContent : HttpContent, IRequestContentReplayHint
 
     private async Task SerializeToStreamCoreAsync(Stream stream, CancellationToken cancellationToken)
     {
-        var buffer = new byte[_bufferSize];
-        long totalBytesRead = 0;
-
-#if NETSTANDARD2_0
-        using var contentStream = await _content.ReadAsStreamAsync().ConfigureAwait(false);
-#else
         // 不 dispose 内容流（HttpContent 自有流，生命周期归 _content 所有）
         var contentStream = await _content.ReadAsStreamAsync().ConfigureAwait(false);
-#endif
 
-        while (true)
+        if (_progress is null)
         {
-#if NETSTANDARD2_0
-            var bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
-#else
-            var bytesRead = await contentStream.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
-#endif
-
-            if (bytesRead == 0)
-                break;
-
-            totalBytesRead += bytesRead;
-
-#if NETSTANDARD2_0
-            await stream.WriteAsync(buffer, 0, bytesRead, cancellationToken).ConfigureAwait(false);
-#else
-            await stream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken).ConfigureAwait(false);
-#endif
-
-            _progress?.Report(totalBytesRead);
+            await contentStream.CopyToAsync(stream, _bufferSize, cancellationToken).ConfigureAwait(false);
+            return;
         }
+
+        await ThrottledStreamCopier
+            .CopyWithThrottledProgressAsync(contentStream, stream, _bufferSize, _progress, 0, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>

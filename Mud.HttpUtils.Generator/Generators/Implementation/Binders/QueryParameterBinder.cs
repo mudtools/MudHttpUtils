@@ -295,6 +295,14 @@ internal class QueryParameterBinder : IParameterBinder
             ? ".Where(__item => __item != null)"
             : string.Empty;
 
+        // GEN-06（B-2）/M6-HC-18：元素格式化的统一口径 —— 非可空值类型显式 Invariant，
+        // 避免按 CurrentCulture 生成区域敏感串（TimeSpan[]、DateTimeOffset[] 等）；非可格式化类型保持 .ToString()。
+        var elementIsFormattable = TypeDetectionHelper.IsValueType(elementType)
+                                   && !TypeDetectionHelper.IsNullableType(elementType);
+        var itemToString = elementIsFormattable
+            ? "__item.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)"
+            : "__item.ToString()";
+
         if (effectiveSeparator == null)
         {
             // 重复参数模式: query1=val1&query1=val2&query1=val3
@@ -312,13 +320,6 @@ internal class QueryParameterBinder : IParameterBinder
             else
             {
                 // 无专用重载：回退到 ToString()
-                // GEN-06（B-2）：数组元素路径同样显式 Invariant（TimeSpan[]、DateTimeOffset[] 等），
-                // 避免按 CurrentCulture 生成区域敏感串；非可格式化值类型保持 .ToString()。
-                var elementIsFormattable = TypeDetectionHelper.IsValueType(elementType)
-                                           && !TypeDetectionHelper.IsNullableType(elementType);
-                var itemToString = elementIsFormattable
-                    ? "__item.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)"
-                    : "__item.ToString()";
                 codeBuilder.AppendLine($"{indent}        __queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", {itemToString});");
             }
 
@@ -327,7 +328,7 @@ internal class QueryParameterBinder : IParameterBinder
         else
         {
             // 分隔符模式: query1=val1;val2;val3
-            codeBuilder.AppendLine($"{indent}    var __joinedValues = string.Join(\"{StringEscapeHelper.EscapeString(effectiveSeparator)}\", {param.Name}{whereClause}.Select(__item => __item.ToString()));");
+            codeBuilder.AppendLine($"{indent}    var __joinedValues = string.Join(\"{StringEscapeHelper.EscapeString(effectiveSeparator)}\", {param.Name}{whereClause}.Select(__item => {itemToString}));");
             codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{StringEscapeHelper.EscapeString(paramName)}\", __joinedValues);");
         }
 
@@ -578,7 +579,8 @@ internal class QueryParameterBinder : IParameterBinder
             if (urlEncode)
                 codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{escapedKey}\", {valueExpr});");
             else
-                codeBuilder.AppendLine($"{indent}__rawQueryPairs.Add(System.Uri.EscapeDataString(\"{escapedKey}\") + \"=\" + {valueExpr});");
+                // M6-HC-19：rawPairs 模式语义收敛为「key/value 均不转义」，与 QueryMapHelper 保持一致。
+                codeBuilder.AppendLine($"{indent}__rawQueryPairs.Add(\"{escapedKey}\" + \"=\" + {valueExpr});");
         }
         else
         {
@@ -596,7 +598,7 @@ internal class QueryParameterBinder : IParameterBinder
             if (urlEncode)
                 codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{escapedKey}\", {valueExpr});");
             else
-                codeBuilder.AppendLine($"{indent}    __rawQueryPairs.Add(System.Uri.EscapeDataString(\"{escapedKey}\") + \"=\" + {valueExpr});");
+                codeBuilder.AppendLine($"{indent}    __rawQueryPairs.Add(\"{escapedKey}\" + \"=\" + {valueExpr});");
 
             codeBuilder.AppendLine($"{indent}}}");
 
@@ -607,7 +609,7 @@ internal class QueryParameterBinder : IParameterBinder
                 if (urlEncode)
                     codeBuilder.AppendLine($"{indent}    __queryParams.Add(\"{escapedKey}\", string.Empty);");
                 else
-                    codeBuilder.AppendLine($"{indent}    __rawQueryPairs.Add(System.Uri.EscapeDataString(\"{escapedKey}\") + \"=\");");
+                    codeBuilder.AppendLine($"{indent}    __rawQueryPairs.Add(\"{escapedKey}\" + \"=\");");
                 codeBuilder.AppendLine($"{indent}}}");
             }
         }
@@ -640,7 +642,7 @@ internal class QueryParameterBinder : IParameterBinder
         if (urlEncode)
             codeBuilder.AppendLine($"{indent}        __queryParams.Add(__subKey, __kvp.Value ?? string.Empty);");
         else
-            codeBuilder.AppendLine($"{indent}        __rawQueryPairs.Add(System.Uri.EscapeDataString(__subKey) + \"=\" + (__kvp.Value ?? string.Empty));");
+            codeBuilder.AppendLine($"{indent}        __rawQueryPairs.Add(__subKey + \"=\" + (__kvp.Value ?? string.Empty));");
         codeBuilder.AppendLine($"{indent}    }}");
         codeBuilder.AppendLine($"{indent}}}");
     }

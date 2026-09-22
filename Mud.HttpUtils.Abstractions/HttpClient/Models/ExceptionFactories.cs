@@ -108,13 +108,14 @@ public sealed class DefaultExceptionFactory : IHttpExceptionFactory, IDeserializ
     /// <inheritdoc />
     public Exception? CreateApiException(HttpResponseMessage response, string? content, string? requestUri)
     {
-        return new ApiException(response.StatusCode, content, requestUri);
+        // M6-HC-21：异常对象中的 RequestUri 与 ApiRequestException 口径统一，剥离 userinfo 并掩码敏感 query 值。
+        return new ApiException(response.StatusCode, content, Helpers.SensitiveUrlRedactor.Redact(requestUri));
     }
 
     /// <inheritdoc />
     public Exception CreateDeserializationException(string? content, Type targetType, Exception deserializationException, string? requestUri)
     {
-        return new ApiException(HttpStatusCode.OK, content, requestUri, deserializationException);
+        return new ApiException(HttpStatusCode.OK, content, Helpers.SensitiveUrlRedactor.Redact(requestUri), deserializationException);
     }
 
     /// <inheritdoc />

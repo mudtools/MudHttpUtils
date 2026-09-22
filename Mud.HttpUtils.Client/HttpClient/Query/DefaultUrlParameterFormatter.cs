@@ -55,11 +55,18 @@ public class DefaultUrlParameterFormatter : IUrlParameterFormatter
         }
 
         // IFormattable 支持 format string（通过反射读取特性上的 Format 属性，避免项目间依赖）
-        if (value is IFormattable formattable && attributeProvider is ParameterInfo paramInfo)
+        if (value is IFormattable formattable)
         {
-            var format = TryGetQueryFormat(paramInfo);
-            if (format is not null)
-                return formattable.ToString(format, CultureInfo.InvariantCulture);
+            if (attributeProvider is ParameterInfo paramInfo)
+            {
+                var format = TryGetQueryFormat(paramInfo);
+                if (format is not null)
+                    return formattable.ToString(format, CultureInfo.InvariantCulture);
+            }
+
+            // M6-HC-18：无显式 format 时同样固定 InvariantCulture，
+            // 避免 DateTime/decimal 等按 CurrentCulture 生成区域敏感串（如 ar-SA 的历法/小数分隔符分叉）。
+            return formattable.ToString(null, CultureInfo.InvariantCulture);
         }
 
         return value.ToString();

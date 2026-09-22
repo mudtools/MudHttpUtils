@@ -8,12 +8,16 @@ public class AesEncryptionProviderTests
 {
     private static readonly byte[] TestKey = Convert.FromBase64String("MTIzNDU2Nzg5MDEyMzQ1Ng==");
 
-    private static IEncryptionProvider CreateProvider(byte[]? key = null, bool requireCrossRuntimePortable = false)
+    private static IEncryptionProvider CreateProvider(
+        byte[]? key = null,
+        bool requireCrossRuntimePortable = false,
+        bool enableKeySeparation = true)
     {
         var options = new AesEncryptionOptions
         {
             Key = key ?? (byte[])TestKey.Clone(),
             RequireCrossRuntimePortable = requireCrossRuntimePortable,
+            EnableKeySeparation = enableKeySeparation,
         };
         return new DefaultAesEncryptionProvider(Options.Create(options));
     }
@@ -651,6 +655,58 @@ public class AesEncryptionProviderTests
     {
         new AesEncryptionOptions { Key = (byte[])TestKey.Clone() }
             .RequireCrossRuntimePortable.Should().BeFalse();
+    }
+
+    #endregion
+
+    #region M6-HC-26：AES v4（密钥分离）实例配置不匹配时显式拒绝
+
+    // 说明：net8.0 上启用密钥分离且未要求跨运行时可移植时，加密走 AesGcm 产出 0x02 ——
+    // 与密钥分离无关。为让 2x2 矩阵确定性命中 v4(0x04)/v3(0x03) 信封，
+    // 本组用例统一以 RequireCrossRuntimePortable = true 强制 CBC+HMAC 路径。
+
+    /// <summary>启用密钥分离加密 → 未启用密钥分离解密：显式拒绝（消息含「密钥分离」），不再误报「密文完整性校验失败」。</summary>
+    [Fact]
+    public void HC26_KeySeparatedEncrypt_NonKeySeparatedDecrypt_ThrowsExplicitKeySeparationError()
+    {
+        var encryptor = CreateProvider(requireCrossRuntimePortable: true, enableKeySeparation: true);
+        var decryptor = CreateProvider(requireCrossRuntimePortable: true, enableKeySeparation: false);
+
+        var cipher = Convert.FromBase64String(encryptor.Encrypt("key-separated payload"));
+        cipher[0].Should().Be((byte)0x04, "启用密钥分离的 CBC+HMAC 加密侧必须产出 v4(0x04) 信封");
+
+        var act = () => decryptor.Decrypt(Convert.ToBase64String(cipher));
+
+        act.Should().Throw<CryptographicException>()
+            .WithMessage("*密钥分离*")
+            .WithMessage("*EnableKeySeparation*");
+    }
+
+    /// <summary>启用密钥分离加密 → 启用密钥分离解密：往返成功且明文一致。</summary>
+    [Fact]
+    public void HC26_KeySeparatedEncrypt_KeySeparatedDecrypt_RoundTrips()
+    {
+        var provider = CreateProvider(requireCrossRuntimePortable: true, enableKeySeparation: true);
+        var plain = "密钥分离 往返";
+
+        var cipher = Convert.FromBase64String(provider.Encrypt(plain));
+        cipher[0].Should().Be((byte)0x04);
+
+        provider.Decrypt(Convert.ToBase64String(cipher)).Should().Be(plain);
+    }
+
+    /// <summary>未启用密钥分离加密（v3/0x03）→ 启用密钥分离解密：按既有行为仍可解密（v3 路径不读密钥分离配置）。</summary>
+    [Fact]
+    public void HC26_NonKeySeparatedEncrypt_KeySeparatedDecrypt_RoundTrips()
+    {
+        var encryptor = CreateProvider(requireCrossRuntimePortable: true, enableKeySeparation: false);
+        var decryptor = CreateProvider(requireCrossRuntimePortable: true, enableKeySeparation: true);
+        var plain = "非密钥分离 往返";
+
+        var cipher = Convert.FromBase64String(encryptor.Encrypt(plain));
+        cipher[0].Should().Be((byte)0x03, "未启用密钥分离的 CBC+HMAC 加密侧应产出 v3(0x03) 信封");
+
+        decryptor.Decrypt(Convert.ToBase64String(cipher)).Should().Be(plain);
     }
 
     #endregion

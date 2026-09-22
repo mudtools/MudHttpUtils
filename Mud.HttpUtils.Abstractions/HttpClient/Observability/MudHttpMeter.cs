@@ -37,6 +37,33 @@ public static class MudHttpMeter
     public static readonly Meter Instance = new(MeterName, Version);
 
     /// <summary>
+    /// M6-HC-17：是否存在 Meter 监听器（任一内建 instrument 处于 Enabled 状态）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Counter/Histogram 的 Add/Record 在无监听器时本身已是空操作，真正的开销在于
+    /// <b>调用点构造的 tag 数组</b>。调用方据此在构造 tags 之前短路，实现零监听场景零分配。
+    /// </para>
+    /// <para>
+    /// <see cref="System.Diagnostics.Metrics.Meter"/> 未提供 HasListeners，故以各内建 instrument 的
+    /// <c>Enabled</c> 属性聚合判定：任一 instrument 被监听器启用即视为存在消费者。
+    /// 各 TFM（含 netstandard2.0 经 System.Diagnostics.DiagnosticSource 8.0.1）语义一致。
+    /// </para>
+    /// </remarks>
+    public static bool HasListeners =>
+        RequestCounter.Enabled
+        || RequestDuration.Enabled
+        || CacheCounter.Enabled
+        || TokenRefreshCounter.Enabled
+        || TokenRefreshDuration.Enabled
+        || RetryCounter.Enabled
+        || CircuitBreakerState.Enabled
+        || TokenRecoveryCounter.Enabled
+        || TokenRefreshSuppressedCounter.Enabled
+        || DownloadBytesCounter.Enabled
+        || DownloadDuration.Enabled;
+
+    /// <summary>
     /// HTTP 请求计数（维度：client_name, method, host, status_code, outcome）。
     /// </summary>
     public static readonly Counter<long> RequestCounter =

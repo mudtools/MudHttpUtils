@@ -225,6 +225,24 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     methodSymbol.Name));
         }
 
+        // M6-HC-29（D5-A）：IAsyncEnumerable<T> 流式方法的生成调用恒传 null JsonTypeInfo
+        // （源生成器不可见消费方 JsonSerializerContext，无法自动注入；见 MethodGenerator 流式发射点的 v4 Phase 1 注释）。
+        // JIT 下无害；Native AOT/裁剪下元素类型未进 JsonSerializerContext 时会静默反序列化为 default
+        // （无异常、无日志、流枚举出空元素），属"静默失败"，故以 Warning 默认可见；
+        // 报告点定位在方法声明上，便于使用方就地 #pragma warning disable MUDGEN301 抑制。
+        if (methodInfo.IsAsyncEnumerableReturn && !string.IsNullOrEmpty(methodInfo.AsyncEnumerableElementType))
+        {
+            var streamSyntax = methodSymbol.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
+            var streamLocation = streamSyntax?.GetLocation() ?? context.InterfaceDeclaration.GetLocation();
+            context.ProductionContext.ReportDiagnostic(
+                Diagnostic.Create(
+                    Diagnostics.AsyncEnumerableAotJsonTypeInfoMissingWarning,
+                    streamLocation,
+                    context.InterfaceSymbol.Name,
+                    methodSymbol.Name,
+                    methodInfo.AsyncEnumerableElementType));
+        }
+
         // M5-HC-04：缓存键安全门禁
         if (methodInfo.CacheEnabled)
         {
@@ -527,7 +545,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
         _requestBuilder.GenerateRequestSetup(codeBuilder, methodInfo);
-        _requestBuilder.GenerateHeaderParameters(codeBuilder, methodInfo);
+        // M6-HC-02：传入 context/methodSymbol 以分派 [HeaderCollection] 并发射 HTTPCLIENT037 提示
+        _requestBuilder.GenerateHeaderParameters(codeBuilder, methodInfo, context, methodSymbol);
 
         // 生成接口属性级 Header（动态值，运行时由属性提供）
         var hasTokenManager = !string.IsNullOrEmpty(context.Configuration.TokenManager);

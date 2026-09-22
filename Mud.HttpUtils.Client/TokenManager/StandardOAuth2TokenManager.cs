@@ -238,7 +238,16 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
             ["client_id"] = Options.ClientId
         };
 
-        return await RequestTokenAsync(parameters, cancellationToken).ConfigureAwait(false);
+        // M6-HC-10（RFC 6749 §4.1.3）：授权码换令牌同样必须对机密客户端做客户端认证。
+        // 原实现固定走 RequestTokenAsync（无认证），机密客户端在此流下丢失 client_secret 认证。
+        // 配置了 client_secret（含安全提供程序）时改走 Password/Refresh 同款的
+        // RequestTokenWithClientAuthAsync（Basic 头优先、体兜底）；公共客户端维持现状。
+        var useClientAuth = !string.IsNullOrEmpty(Options.ClientSecret)
+            || !string.IsNullOrEmpty(Options.ClientSecretProviderName);
+
+        return useClientAuth
+            ? await RequestTokenWithClientAuthAsync(parameters, cancellationToken).ConfigureAwait(false)
+            : await RequestTokenAsync(parameters, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>

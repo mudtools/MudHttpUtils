@@ -41,7 +41,8 @@ public static class ApiResponseExtensions
 #pragma warning disable CS0618 // ResponseMessage 已废弃，但此处仅为兼容自定义执行器路径
             var requestUri = response.ResponseMessage?.RequestMessage?.RequestUri?.ToString();
 #pragma warning restore CS0618
-            throw new ApiException(response.StatusCode, response.ErrorContent, requestUri);
+            // M6-HC-21：与其他 ApiException 构造点口径统一，剥离 userinfo 并掩码敏感 query 值。
+            throw new ApiException(response.StatusCode, response.ErrorContent, Helpers.SensitiveUrlRedactor.Redact(requestUri));
         }
         return response;
     }

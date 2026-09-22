@@ -276,12 +276,21 @@ public class DefaultHttpRequestExecutor(
 
         using var response = await httpClient.SendRawAsync(request, cancellationToken).ConfigureAwait(false);
         var statusCode = response.StatusCode;
-        var rawContent = await ReadContentAsync(
-            response, Helpers.SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()), cancellationToken)
-            .ConfigureAwait(false);
         var responseHeaders = response.Headers.ToDictionary(h => h.Key, h => h.Value.ToList());
 
-        if ((int)statusCode >= 200 && (int)statusCode <= 299)
+        var isSuccess = (int)statusCode >= 200 && (int)statusCode <= 299;
+
+        // M6-HC-09：读取路径按状态码分流 —— 2xx 维持成功体守卫语义（SuccessResponseGuardStream），
+        // 非 2xx 改走 ReadErrorContentLimitedAsync（受 MaxExceptionContentLength 三态约束）。
+        // 原实现无条件 ReadContentAsync：在 maxSuccessResponseBytes=0（不限长）时错误体可被无限读取，
+        // 且与 SendAndDeserializeAsync / SendAsync 的错误体限量口径不一致。
+        var rawContent = isSuccess
+            ? await ReadContentAsync(
+                response, Helpers.SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()), cancellationToken)
+                .ConfigureAwait(false)
+            : await ReadErrorContentLimitedAsync(response, cancellationToken).ConfigureAwait(false);
+
+        if (isSuccess)
         {
             // void 内部类型（Response<void> 实际不可声明，此分支为防御性代码）
             if (typeof(TInner) == typeof(void))
@@ -670,39 +679,17 @@ public class DefaultHttpRequestExecutor(
     }
 
     /// <summary>
-    /// 将源流复制到目标流，并在每个缓冲区写入后报告进度。
+    /// M6-HC-15：将源流复制到目标流，并按 100ms 节流上报进度（与 <see cref="EnhancedHttpClient"/> 下载口径一致）。
     /// </summary>
-    private static async Task CopyToWithProgressAsync(
+    private static Task CopyToWithProgressAsync(
         Stream source,
         Stream destination,
         int bufferSize,
         IProgress<long> progress,
         long totalBytesWritten,
         CancellationToken cancellationToken)
-    {
-        var buffer = new byte[bufferSize];
-        int bytesRead;
-
-        while (true)
-        {
-#if NETSTANDARD2_0
-            bytesRead = await source.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
-#else
-            bytesRead = await source.ReadAsync(buffer.AsMemory(0, bufferSize), cancellationToken).ConfigureAwait(false);
-#endif
-            if (bytesRead == 0)
-                break;
-
-#if NETSTANDARD2_0
-            await destination.WriteAsync(buffer, 0, bytesRead, cancellationToken).ConfigureAwait(false);
-#else
-            await destination.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken).ConfigureAwait(false);
-#endif
-
-            totalBytesWritten += bytesRead;
-            progress.Report(totalBytesWritten);
-        }
-    }
+        => ThrottledStreamCopier.CopyWithThrottledProgressAsync(
+            source, destination, bufferSize, progress, totalBytesWritten, cancellationToken);
 
     /// <inheritdoc/>
     /// <remarks>
@@ -1051,7 +1038,8 @@ public class DefaultHttpRequestExecutor(
         string? requestUri,
         string? capturedRequestContent = null)
     {
-        var ex = new ApiException(statusCode, errorContent ?? string.Empty, requestUri);
+        // M6-HC-21：异常对象中的 RequestUri 与 ApiRequestException 口径统一，剥离 userinfo 并掩码敏感 query 值。
+        var ex = new ApiException(statusCode, errorContent ?? string.Empty, Helpers.SensitiveUrlRedactor.Redact(requestUri));
 
         // Phase 2 (T2.3)：设置捕获的请求体
         if (capturedRequestContent != null)

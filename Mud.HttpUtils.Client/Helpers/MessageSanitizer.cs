@@ -20,26 +20,10 @@ public static partial class MessageSanitizer
 public static class MessageSanitizer
 #endif
 {
-    private static readonly HashSet<string> SensitiveFields = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "app_access_token", "appAccessToken", "token", "password", "secret",
-        "access_token", "refresh_token", "auth_token", "session_token",
-        "api_key", "apiKey", "private_key", "privateKey",
-        "phone", "mobile", "tel", "telephone",
-        "email", "mail",
-        "id_card", "idcard", "id_number", "idNumber",
-        "card_no", "card_number", "bank_card", "bankCard",
-        "real_name", "realName",
-        "address", "住址",
-        "passport", "driver_license",
-        // M1-#5：补齐 URL query 中常见的敏感键（与 SensitiveUrlRedactor 共用本词表）
-        "authorization", "code", "client_secret", "signature", "sig", "nonce"
-    };
-
     /// <summary>
-    /// 敏感字段名集合的只读视图（供 <see cref="Helpers.SensitiveUrlRedactor"/> 等 URL 脱敏组件复用，避免维护两份词表）。
+    /// 敏感字段名集合（单一事实源位于 Abstractions 的 <c>SensitiveUrlRedactor</c>，URL query 脱敏共用同一词表）。
     /// </summary>
-    internal static IReadOnlyCollection<string> SensitiveFieldNames => SensitiveFields;
+    private static HashSet<string> SensitiveFields => Helpers.SensitiveUrlRedactor.SensitiveFieldNames;
 
     /// <summary>
     /// M2-#18：统一的日志脱敏入口 —— 优先使用可插拔掩码器（<paramref name="masker"/>），
@@ -73,13 +57,16 @@ public static class MessageSanitizer
     [GeneratedRegex(@"(?i)(token|password|secret|key)\s*[:=]\s*['""]?([^'""\s]{6,})['""]?", RegexOptions.Compiled)]
     private static partial Regex SensitiveKeyValuePattern();
 
-    [GeneratedRegex(@"^1[3-9]\d{9}$")]
+    // M6-HC-06：PII 模式由 ^...$ 锚点（仅整串匹配才掩码）改为查找式 + 边界断言，
+    // 嵌入在任意文本中的 PII（"手机号13812345678已注册"、"a@b.com 主体"）同样被掩码。
+    // 各边界均为单字符类的前/后行断言，无嵌套量词，维持无 ReDoS 结论。
+    [GeneratedRegex(@"(?<![0-9])1[3-9]\d{9}(?![0-9])")]
     private static partial Regex PhonePattern();
 
-    [GeneratedRegex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
+    [GeneratedRegex(@"(?<![\w.+-])[\w.+-]+@[\w-]+\.[\w.-]+(?<!\.)")]
     private static partial Regex EmailPattern();
 
-    [GeneratedRegex(@"^\d{17}[\dXx]$")]
+    [GeneratedRegex(@"(?<![0-9Xx])\d{17}[\dXx](?![0-9Xx])")]
     private static partial Regex IdCardPattern();
 #else
     private static readonly Regex TokenPatternField = new Regex(
@@ -92,9 +79,10 @@ public static class MessageSanitizer
         @"(?i)(token|password|secret|key)\s*[:=]\s*['""]?([^'""\s]{6,})['""]?",
         RegexOptions.Compiled);
 
-    private static readonly Regex PhonePatternField = new Regex(@"^1[3-9]\d{9}$", RegexOptions.Compiled);
-    private static readonly Regex EmailPatternField = new Regex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$", RegexOptions.Compiled);
-    private static readonly Regex IdCardPatternField = new Regex(@"^\d{17}[\dXx]$", RegexOptions.Compiled);
+    // M6-HC-06：与 NET7+ GeneratedRegex 分支同步（查找式 + 边界断言）。
+    private static readonly Regex PhonePatternField = new Regex(@"(?<![0-9])1[3-9]\d{9}(?![0-9])", RegexOptions.Compiled);
+    private static readonly Regex EmailPatternField = new Regex(@"(?<![\w.+-])[\w.+-]+@[\w-]+\.[\w.-]+(?<!\.)", RegexOptions.Compiled);
+    private static readonly Regex IdCardPatternField = new Regex(@"(?<![0-9Xx])\d{17}[\dXx](?![0-9Xx])", RegexOptions.Compiled);
 
     private static Regex TokenPattern() => TokenPatternField;
     private static Regex SensitiveKeyValuePattern() => SensitiveKeyValuePatternField;

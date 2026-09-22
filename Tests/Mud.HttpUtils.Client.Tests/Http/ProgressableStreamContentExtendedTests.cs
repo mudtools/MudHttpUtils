@@ -25,8 +25,10 @@ public class ProgressableStreamContentExtendedTests
     }
 
     [Fact]
-    public async Task SerializeToStreamAsync_SmallBufferSize_ReportsMoreFrequently()
+    public async Task SerializeToStreamAsync_SmallBufferSize_ProgressIsThrottled()
     {
+        // M6-HC-15：小缓冲区虽触发 10 次写入，但进度回调按 100ms 节流（首次 + 收尾），
+        // 不再逐缓冲区上报，避免高频回调堆积。
         var data = new byte[100];
         var originalContent = new ByteArrayContent(data);
 
@@ -38,7 +40,9 @@ public class ProgressableStreamContentExtendedTests
         using var stream = new MemoryStream();
         await progressable.CopyToAsync(stream);
 
-        progressReports.Should().HaveCount(10, "每10字节报告一次进度，100字节应报告10次");
+        progressReports.Should().HaveCountLessOrEqualTo(3, "100字节/10字节缓冲共10次写入，节流后应远少于10次");
+        progressReports.Should().BeInAscendingOrder("进度值应单调递增");
+        progressReports.Last().Should().Be(100, "收尾必须上报完整字节数");
     }
 
     [Fact]

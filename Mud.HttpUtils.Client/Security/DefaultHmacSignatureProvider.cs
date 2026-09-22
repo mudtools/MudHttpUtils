@@ -5,6 +5,7 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using System.Globalization;
 using System.Security.Cryptography;
 
 namespace Mud.HttpUtils;
@@ -30,6 +31,24 @@ namespace Mud.HttpUtils;
 /// <para>
 /// 该实现包含定时比较（constant-time comparison）功能，防止时序攻击（timing attack）。
 /// </para>
+/// <para>
+/// M6-HC-25（D4-A）防重放签名：默认<b>关闭</b>（<see cref="RequireAntiReplay"/> = <c>false</c>，维持既有签名串口径与确定性）。
+/// 开启后签名串首行固定为两行防重放要素，服务端可据此拒绝过期/重复请求：
+/// <code>
+/// X-Timestamp: {Unix 秒}
+/// X-Nonce: {8 字节随机值的十六进制小写}
+/// HTTP_METHOD
+/// /path
+/// sorted=query
+/// base64Body
+/// </code>
+/// 两个值同时写入请求头，使 <see cref="VerifySignatureAsync"/> 能在同一请求上复算一致；
+/// 请求已携带这两个头时直接复用（服务端校验入站请求即依赖此路径，按原值复算签名）。
+/// </para>
+/// <para>
+/// <b>nonce 去重与时间窗校验由服务端负责</b>：本提供者不保存任何 nonce 状态（客户端无状态、无额外内存与跨节点一致性问题）。
+/// 服务端应自行维护 nonce 缓存（建议 TTL 覆盖可接受的时间窗，如 5 分钟）并拒绝时间戳偏移过大的请求。
+/// </para>
 /// </remarks>
 /// <example>
 /// 使用示例：
@@ -45,6 +64,40 @@ namespace Mud.HttpUtils;
 /// </example>
 public class DefaultHmacSignatureProvider : IHmacSignatureProvider
 {
+    /// <summary>防重放时间戳头名（M6-HC-25）。</summary>
+    internal const string TimestampHeaderName = "X-Timestamp";
+
+    /// <summary>防重放随机数头名（M6-HC-25）。</summary>
+    internal const string NonceHeaderName = "X-Nonce";
+
+    /// <summary>
+    /// 初始化签名提供者（默认关闭防重放签名，行为与历史版本一致）。
+    /// </summary>
+    public DefaultHmacSignatureProvider()
+        : this(requireAntiReplay: false)
+    {
+    }
+
+    /// <summary>
+    /// 初始化签名提供者，并指定是否启用防重放签名。
+    /// </summary>
+    /// <param name="requireAntiReplay">
+    /// M6-HC-25（D4-A）：为 <c>true</c> 时把 <c>X-Timestamp</c>（Unix 秒）与 <c>X-Nonce</c>（8 字节随机十六进制）
+    /// 固定置于签名串首两行，并写入请求头；为 <c>false</c>（默认）时维持原有确定性签名串。
+    /// </param>
+    /// <remarks>
+    /// 注意：开启后签名不再确定（同一请求重复生成会得到不同签名），服务端必须实现 nonce 去重与时间窗校验才能获得防重放收益。
+    /// </remarks>
+    public DefaultHmacSignatureProvider(bool requireAntiReplay)
+    {
+        RequireAntiReplay = requireAntiReplay;
+    }
+
+    /// <summary>
+    /// M6-HC-25：是否启用防重放签名（时间戳 + 随机数入签）。默认 <c>false</c>。
+    /// </summary>
+    public bool RequireAntiReplay { get; }
+
     /// <summary>
     /// 异步生成 HTTP 请求的 HMAC 签名。
     /// </summary>
@@ -154,6 +207,19 @@ public class DefaultHmacSignatureProvider : IHmacSignatureProvider
     {
         var sb = new StringBuilder();
 
+        // M6-HC-25：防重放要素固定置于签名串首两行（服务端重建签名串时按同一顺序解析）。
+        if (RequireAntiReplay)
+        {
+            sb.Append(TimestampHeaderName);
+            sb.Append(": ");
+            sb.Append(GetOrAddHeaderValue(request, TimestampHeaderName, CreateTimestamp));
+            sb.Append('\n');
+            sb.Append(NonceHeaderName);
+            sb.Append(": ");
+            sb.Append(GetOrAddHeaderValue(request, NonceHeaderName, CreateNonce));
+            sb.Append('\n');
+        }
+
         sb.Append(request.Method.Method.ToUpperInvariant());
         sb.Append('\n');
 
@@ -207,5 +273,58 @@ public class DefaultHmacSignatureProvider : IHmacSignatureProvider
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// M6-HC-25：读取请求上已有的防重放头值；缺失时按 <paramref name="factory"/> 生成并写回请求头。
+    /// </summary>
+    /// <remarks>
+    /// 复用已有值是<b>验证</b>路径成立的前提：<see cref="VerifySignatureAsync"/> 在同一请求对象上复算签名，
+    /// 服务端则读取入站请求已携带的头值。若每次都生成新值，签名将永远无法自校验通过。
+    /// </remarks>
+    private static string GetOrAddHeaderValue(HttpRequestMessage request, string headerName, Func<string> factory)
+    {
+        if (request.Headers.TryGetValues(headerName, out var values))
+        {
+            foreach (var value in values)
+            {
+                if (!string.IsNullOrEmpty(value))
+                    return value;
+            }
+        }
+
+        var created = factory();
+        request.Headers.Remove(headerName);
+        request.Headers.Add(headerName, created);
+        return created;
+    }
+
+    /// <summary>M6-HC-25：当前 Unix 时间戳（秒，InvariantCulture，跨区域一致）。</summary>
+    private static string CreateTimestamp()
+        => DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>M6-HC-25：8 字节加密安全随机数的十六进制小写表示（16 个字符）。</summary>
+    private static string CreateNonce()
+    {
+        var bytes = new byte[8];
+#if NET6_0_OR_GREATER
+        RandomNumberGenerator.Fill(bytes);
+#else
+        // netstandard2.0 / net6 以下：无静态 Fill，改用实例 API。
+        using (var rng = RandomNumberGenerator.Create())
+        {
+            rng.GetBytes(bytes);
+        }
+#endif
+
+        var chars = new char[bytes.Length * 2];
+        const string hex = "0123456789abcdef";
+        for (var i = 0; i < bytes.Length; i++)
+        {
+            chars[i * 2] = hex[bytes[i] >> 4];
+            chars[i * 2 + 1] = hex[bytes[i] & 0x0F];
+        }
+
+        return new string(chars);
     }
 }

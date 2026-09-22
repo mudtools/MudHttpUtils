@@ -43,6 +43,11 @@ internal static class DiagnosticIds
     /// <summary>HTTPCLIENT034：[Cache(VaryByUser=true)] 但接口无用户身份来源，键退化为 user:anonymous。</summary>
     public const string HttpClientVaryByUserWithoutIdentity = "HTTPCLIENT034";
 
+    // ── 生成器面向消费方的 AOT 接入提示 ──
+
+    /// <summary>MUDGEN301：IAsyncEnumerable 流式方法生成的调用恒传 null JsonTypeInfo，AOT 下需接入 JsonSerializerContext。</summary>
+    public const string AsyncEnumerableAotJsonTypeInfoMissing = "MUDGEN301";
+
     // ── AOT JSON 序列化 ──
 
     /// <summary>AOT004：DTO 未被任何 JsonSerializerContext 覆盖。</summary>

@@ -351,6 +351,9 @@ public class TokenRecoveryExecutor
                 // P1.4（TK-03）URI 脱敏：防止 Path/Query 注入模式令牌随日志泄漏
                 MudHttpClientLog.TokenRecoveryAttempting(_logger, retry + 1, Options.RecoveryMaxRetries, request.Method.Method, RedactForLog(request, recoveryContext));  // TMX-12
 
+                // M6-HC-23：首轮之后的刷新必须绕过「结果复用窗口」——首轮所得的令牌已被服务端判为无效，
+                // 窗口内复用同一结果不会产生任何新令牌（TMR-12 的窗口语义仅适用于并发 401 去重）。
+                var forceRefresh = retry > 0;
                 string? newToken = null;
 
                 if (isUserTokenRecovery)
@@ -358,7 +361,7 @@ public class TokenRecoveryExecutor
                     try
                     {
                         newToken = await RefreshUserTokenWithDedupAsync(
-                            tokenManagerKey ?? "", recoveryContext!.UserId!, resolvedUserManager!, recoveryContext?.Scopes, cancellationToken).ConfigureAwait(false);
+                            tokenManagerKey ?? "", recoveryContext!.UserId!, resolvedUserManager!, recoveryContext?.Scopes, cancellationToken, forceRefresh).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
@@ -371,7 +374,7 @@ public class TokenRecoveryExecutor
                     try
                     {
                         newToken = await RefreshTokenWithDedupAsync(
-                            tokenManagerKey ?? "", resolvedCredentialManager, recoveryContext?.Scopes, cancellationToken).ConfigureAwait(false);
+                            tokenManagerKey ?? "", resolvedCredentialManager, recoveryContext?.Scopes, cancellationToken, forceRefresh).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
@@ -421,7 +424,19 @@ public class TokenRecoveryExecutor
                     return response;   // D3：返回真实 401
                 }
 
-                var retryResponse = await sendFunc(retryRequest, cancellationToken).ConfigureAwait(false);
+                HttpResponseMessage retryResponse;
+                try
+                {
+                    retryResponse = await sendFunc(retryRequest, cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // M6-HC-23：重试发送抛出（含取消 / 连接失败）时，调用方只能拿到异常而无法归还资源，
+                    // 故在此显式释放原始 401 响应与克隆请求（原实现两者均泄漏，取消路径尤为明显），再上抛原异常。
+                    if (retryRequest != request) retryRequest.Dispose();
+                    response.Dispose();
+                    throw;
+                }
 
                 // MT-01：重试请求在发送途中被重定向到外部主机 —— 新令牌已被发往第三方，无法挽回，
                 // 但必须可观测（否则安全事件完全静默）。此处只记日志，不改变返回语义。
@@ -553,6 +568,9 @@ public class TokenRecoveryExecutor
         switch (context.InjectionMode)
         {
             case TokenInjectionMode.Header:
+                // M6-HC-24：注入前经共享校验器复核（netstandard2.0 的 HttpClient 不校验头值，
+                // 直接 Add 会把控制字符写入报文）。不合格返回 false → 调用方记 TokenInjectionUnsupported 并返回真实 401。
+                if (!HttpHeaderValueValidator.IsValid(token)) return false;
                 request.Headers.Remove(context.HeaderName);
                 if (context.HeaderName.Equals("Authorization", StringComparison.OrdinalIgnoreCase))
                 {
@@ -565,6 +583,8 @@ public class TokenRecoveryExecutor
                 return true;
 
             case TokenInjectionMode.ApiKey:
+                // M6-HC-24：同 Header 路径，注入前复核头值合法性。
+                if (!HttpHeaderValueValidator.IsValid(token)) return false;
                 request.Headers.Remove(context.HeaderName);
                 request.Headers.Add(context.HeaderName, token);
                 return true;
@@ -752,7 +772,7 @@ public class TokenRecoveryExecutor
     /// TMR-12：刷新完成后结果在 RefreshDedupWindowSeconds 窗口内保留，窗口内后续 401 直接复用结果。
     /// </summary>
     private Task<string?> RefreshTokenWithDedupAsync(
-        string managerKey, ITokenManager credentialManager, string[]? scopes, CancellationToken cancellationToken)
+        string managerKey, ITokenManager credentialManager, string[]? scopes, CancellationToken cancellationToken, bool forceRefresh = false)
     {
         var scopeKey = scopes is { Length: > 0 } ? ScopeKeyBuilder.Build(scopes) : ScopeKeyBuilder.DefaultKey;
         var dedupKey = BuildTenantScopedDedupKey(managerKey, scopeKey);
@@ -760,10 +780,12 @@ public class TokenRecoveryExecutor
         // MT-05/MT-06：去重与有界收敛统一委托 RefreshDedupTable。
         // 刷新工厂本身即为共享任务（不再经 TaskCompletionSource 转发），
         // 因此失败时不存在"无人 await 的任务"，根除未观察任务异常。
+        // M6-HC-23：forceRefresh=true（恢复循环第 2..N 轮）跳过窗口内的已完成结果，避免复用已被拒绝的令牌。
         return _credentialRefreshTasks.GetOrRefreshAsync(
             dedupKey,
             () => RefreshCredentialWithIsolationAsync(credentialManager, scopes),
-            Options.RefreshDedupWindowSeconds);
+            Options.RefreshDedupWindowSeconds,
+            forceRefresh);
     }
 
     /// <summary>
@@ -937,16 +959,18 @@ public class TokenRecoveryExecutor
     /// TMR-12：刷新完成后结果在 RefreshDedupWindowSeconds 窗口内保留，窗口内后续 401 直接复用结果。
     /// </summary>
     private Task<string?> RefreshUserTokenWithDedupAsync(
-        string managerKey, string userId, IUserTokenManager userTokenManager, string[]? scopes, CancellationToken cancellationToken)
+        string managerKey, string userId, IUserTokenManager userTokenManager, string[]? scopes, CancellationToken cancellationToken, bool forceRefresh = false)
     {
         var scopeKey = scopes is { Length: > 0 } ? ScopeKeyBuilder.Build(scopes) : ScopeKeyBuilder.DefaultKey;
         var dedupKey = BuildTenantScopedDedupKey(managerKey, userId, scopeKey);
 
         // MT-05/MT-06：同租户级路径，统一委托 RefreshDedupTable（含 userId 的高基数键受条目上限约束）。
+        // M6-HC-23：forceRefresh 语义与租户级路径一致。
         return _userRefreshTasks.GetOrRefreshAsync(
             dedupKey,
             () => RefreshUserTokenWithIsolationAsync(userId, userTokenManager, scopes),
-            Options.RefreshDedupWindowSeconds);
+            Options.RefreshDedupWindowSeconds,
+            forceRefresh);
     }
 
     /// <summary>

@@ -48,6 +48,11 @@ public static class HttpContentSerializerFactory
     /// <c>RuntimeFeature.IsDynamicCodeSupported</c> 为 true 的
     /// JIT 分支实例化。Roslyn AOT 分析器不做跨运行时布尔的流分析，故此处显式压制并注明理由。
     /// 返回值始终为新实例（或安全副本），避免消费方改写共享静态状态。
+    /// <para>
+    /// <b>M6-HC-20（D3-A）</b>：<paramref name="injected"/> 非 null 时以其副本为合并基座，
+    /// 消费方设置的命名策略、枚举字符串化、自定义 converter 等全量设置均生效；
+    /// 该参数为 null 时使用库默认模板（CamelCase、大小写不敏感、忽略 null）。
+    /// </para>
     /// </remarks>
 #if NET6_0_OR_GREATER
     [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
@@ -76,6 +81,13 @@ public static class HttpContentSerializerFactory
         // 库内置兜底上下文（始终包含，保证内部类型可用）
         System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver builtIn = MudHttpJsonContext.Default;
 
+        // M6-HC-20（D3-A）：合并基座。消费方注入的 options 非 null 时以其副本为基座，
+        // 保留 camelCase/枚举字符串化/自定义 converter 等全量设置（此前仅取 resolver，其余设置被静默丢弃）；
+        // injected 为 null 时维持库默认模板。始终返回新实例，避免改写消费方或库级共享状态。
+        JsonSerializerOptions mergeBase = injected is null
+            ? new JsonSerializerOptions(s_defaultJsonSerializerOptions)
+            : new JsonSerializerOptions(injected);
+
         if (resolver != null)
         {
             // 消费方提供了 resolver
@@ -83,7 +95,7 @@ public static class HttpContentSerializerFactory
             if (System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported)
             {
                 // JIT：再 Combine 一个 DefaultJsonTypeInfoResolver 作反射兜底，兼容未声明类型
-                return new JsonSerializerOptions(s_defaultJsonSerializerOptions)
+                return new JsonSerializerOptions(mergeBase)
                 {
                     TypeInfoResolver = System.Text.Json.Serialization.Metadata.JsonTypeInfoResolver.Combine(
                         resolver, builtIn,
@@ -91,13 +103,13 @@ public static class HttpContentSerializerFactory
                 };
             }
             // AOT：仅源生成，杜绝静默回退反射
-            return new JsonSerializerOptions(s_defaultJsonSerializerOptions)
+            return new JsonSerializerOptions(mergeBase)
             {
                 TypeInfoResolver = System.Text.Json.Serialization.Metadata.JsonTypeInfoResolver.Combine(resolver, builtIn)
             };
 #else
             // netstandard2.0：无 RuntimeFeature.IsDynamicCodeSupported，且不参与 Native AOT，恒走 JIT 合并路径
-            return new JsonSerializerOptions(s_defaultJsonSerializerOptions)
+            return new JsonSerializerOptions(mergeBase)
             {
                 TypeInfoResolver = System.Text.Json.Serialization.Metadata.JsonTypeInfoResolver.Combine(
                     resolver, builtIn,
@@ -111,7 +123,7 @@ public static class HttpContentSerializerFactory
         if (System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported == false)
         {
             // AOT 且未提供 resolver：仅组合库内置上下文，避免回退反射
-            return new JsonSerializerOptions(s_defaultJsonSerializerOptions)
+            return new JsonSerializerOptions(mergeBase)
             {
                 TypeInfoResolver = builtIn
             };
@@ -122,7 +134,7 @@ public static class HttpContentSerializerFactory
         // 若此处只返回无 resolver 的裸副本，库内部类型（MudHttpJsonContext 覆盖的类型）在消费方
         // 未注入 resolver 时将无法解析，默认序列化器在“零配置”场景下会退化为不可用。
         // 返回副本而非共享静态实例，避免消费方通过 Options 属性改写库级共享状态。
-        return new JsonSerializerOptions(s_defaultJsonSerializerOptions)
+        return new JsonSerializerOptions(mergeBase)
         {
             TypeInfoResolver = System.Text.Json.Serialization.Metadata.JsonTypeInfoResolver.Combine(
                 builtIn,

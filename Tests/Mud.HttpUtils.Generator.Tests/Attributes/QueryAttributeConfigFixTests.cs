@@ -344,6 +344,32 @@ public class QueryAttributeConfigFixTests
     }
 
     /// <summary>
+    /// M6-HC-18：接口级 <c>[Query]</c> 属性的回退 ToString 必须显式 Invariant
+    /// （非 Add 重载白名单的值类型，如 DateTimeOffset / TimeSpan?），
+    /// 否则会按 CurrentCulture 生成区域敏感串。
+    /// </summary>
+    [Fact]
+    public void HC18_InterfaceQueryProperty_NonWhitelistValueType_UsesInvariantCulture()
+    {
+        var methodInfo = CreateMethodInfo([]);
+        methodInfo.InterfaceProperties =
+        [
+            new InterfacePropertyInfo { Name = "timestamp", Type = "DateTimeOffset", AttributeType = "Query" },
+            new InterfacePropertyInfo { Name = "elapsed", Type = "TimeSpan?", AttributeType = "Query" },
+        ];
+
+        var codeBuilder = new StringBuilder();
+        _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
+        var code = codeBuilder.ToString();
+
+        code.Should().Contain("global::System.Globalization.CultureInfo.InvariantCulture");
+        // 非可空值类型：无 ?. 运算符
+        code.Should().Contain("timestamp.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)");
+        // 可空值类型：保留 ?. 以跳过 null
+        code.Should().Contain("elapsed?.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)");
+    }
+
+    /// <summary>
     /// GEN-06（B-2）：TimeSpan[]（无专用 Add 重载的数组元素）的回退 ToString 必须显式 Invariant。
     /// </summary>
     [Fact]

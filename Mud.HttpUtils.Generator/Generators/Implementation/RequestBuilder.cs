@@ -5,6 +5,8 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using Mud.HttpUtils.Generators.Context;
+
 namespace Mud.HttpUtils.Generators.Implementation;
 
 /// <summary>
@@ -328,16 +330,41 @@ internal class RequestBuilder
     /// <summary>
     /// 生成 Header 参数
     /// </summary>
-    public void GenerateHeaderParameters(StringBuilder codeBuilder, MethodAnalysisResult methodInfo)
+    /// <remarks>
+    /// M6-HC-02：此前只接线 <see cref="HeaderParameterBinder"/>，[HeaderCollection] 字典参数
+    /// 被 <see cref="HeaderCollectionParameterBinder"/> 完全忽略（零调用点）——鉴权/租户头静默丢失。
+    /// 现按 CanBind 优先级分派：先 [Header]（单值），否则 [HeaderCollection]（字典批量）。
+    /// 两者均不匹配且参数名含 "header" 时报告 HTTPCLIENT037（Info，低噪音拼写/遗漏提示）。
+    /// </remarks>
+    public void GenerateHeaderParameters(StringBuilder codeBuilder, MethodAnalysisResult methodInfo,
+        GeneratorContext? context = null, IMethodSymbol? methodSymbol = null)
     {
         var headerBinder = new HeaderParameterBinder();
-        var headerParams = methodInfo.Parameters
-            .Where(p => headerBinder.CanBind(p))
-            .ToList();
+        var headerCollectionBinder = new HeaderCollectionParameterBinder();
 
-        foreach (var param in headerParams)
+        foreach (var param in methodInfo.Parameters)
         {
-            headerBinder.GenerateBindingCode(codeBuilder, param, methodInfo, "            ");
+            if (headerBinder.CanBind(param))
+            {
+                headerBinder.GenerateBindingCode(codeBuilder, param, methodInfo, "            ");
+            }
+            else if (headerCollectionBinder.CanBind(param))
+            {
+                headerCollectionBinder.GenerateBindingCode(codeBuilder, param, methodInfo, "            ");
+            }
+            else if (context != null && methodSymbol != null &&
+                     param.Name.Contains("header", StringComparison.OrdinalIgnoreCase))
+            {
+                // M6-HC-02：接线后仍无诊断盲区——名字像 Header 参数却没有任何 Header 特性时给出提示
+                var paramSyntax = methodSymbol.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
+                var location = paramSyntax?.GetLocation() ?? context.InterfaceDeclaration.GetLocation();
+                context.ProductionContext.ReportDiagnostic(Diagnostic.Create(
+                    Diagnostics.SuspectedHeaderParameterMissingAttribute,
+                    location,
+                    context.InterfaceSymbol.Name,
+                    methodSymbol.Name,
+                    param.Name));
+            }
         }
     }
 
@@ -983,17 +1010,33 @@ internal class RequestBuilder
             else if (TypeDetectionHelper.IsValueType(property.Type) && !TypeDetectionHelper.IsNullableType(property.Type))
             {
                 // 非可空值类型（无专用重载，如 byte, char 等）：使用 ToString()
+                // M6-HC-18：显式 Invariant，避免按 CurrentCulture 生成区域敏感串
+                var invariantProvider = "global::System.Globalization.CultureInfo.InvariantCulture";
                 var formatExpression = !string.IsNullOrEmpty(property.Format)
-                    ? $".ToString(\"{StringEscapeHelper.EscapeString(property.Format)}\")"
-                    : ".ToString()";
+                    ? $".ToString(\"{StringEscapeHelper.EscapeString(property.Format)}\", {invariantProvider})"
+                    : $".ToString(null, {invariantProvider})";
                 codeBuilder.AppendLine($"            __queryParams.Add(\"{escapedParamName}\", {property.Name}{formatExpression});");
             }
             else
             {
                 // 可空值类型和引用类型（无专用重载）：使用 ?.ToString()，Add() 会跳过 null 值
-                var formatExpression = !string.IsNullOrEmpty(property.Format)
-                    ? $"?.ToString(\"{StringEscapeHelper.EscapeString(property.Format)}\")"
-                    : "?.ToString()";
+                // M6-HC-18：仅可格式化值类型追加 Invariant（引用类型无 ToString(string, IFormatProvider) 重载）
+                var formatLiteral = !string.IsNullOrEmpty(property.Format)
+                    ? $"\"{StringEscapeHelper.EscapeString(property.Format)}\""
+                    : null;
+                string formatExpression;
+                if (TypeDetectionHelper.IsValueType(property.Type))
+                {
+                    formatExpression = formatLiteral is null
+                        ? "?.ToString(null, global::System.Globalization.CultureInfo.InvariantCulture)"
+                        : $"?.ToString({formatLiteral}, global::System.Globalization.CultureInfo.InvariantCulture)";
+                }
+                else
+                {
+                    formatExpression = formatLiteral is null
+                        ? "?.ToString()"
+                        : $"?.ToString({formatLiteral})";
+                }
                 codeBuilder.AppendLine($"            __queryParams.Add(\"{escapedParamName}\", {property.Name}{formatExpression});");
             }
         }
@@ -1064,38 +1107,58 @@ internal class RequestBuilder
                     ? $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{escapedPropertyFormat}}}\", {property.Name})"
                     : $"{property.Name}.ToString()";
 
+                // M6-HC-30：非 string 头值同样经 CR/LF 校验（ToString/Format 结果运行期才确定，
+                // ns2.0 的 Headers.Add 不拦截）。不合格跳过；Debug 仅输出头名（不输出值，防敏感信息落日志）。
+                var headerValueLocal = $"__ifaceHeaderValue_{property.Name}";
+
                 // 值类型不会为 null，直接添加
                 if (TypeDetectionHelper.IsValueType(property.Type) && !TypeDetectionHelper.IsNullableType(property.Type))
                 {
+                    codeBuilder.AppendLine($"            var {headerValueLocal} = {formatExpression};");
+                    codeBuilder.AppendLine($"            if (!global::Mud.HttpUtils.HttpHeaderValueValidator.IsValid({headerValueLocal}))");
+                    codeBuilder.AppendLine($"                global::System.Diagnostics.Debug.WriteLine(\"[MudHttpUtils] Header 值包含非法字符（CR/LF），已跳过: {escapedHeaderName}\");");
                     if (shouldReplace)
                     {
-                        codeBuilder.AppendLine($"            __httpRequest.Headers.Remove(\"{escapedHeaderName}\");");
-                        codeBuilder.AppendLine($"            __httpRequest.Headers.Add(\"{escapedHeaderName}\", {formatExpression});");
+                        codeBuilder.AppendLine($"            else");
+                        codeBuilder.AppendLine($"            {{");
+                        codeBuilder.AppendLine($"                __httpRequest.Headers.Remove(\"{escapedHeaderName}\");");
+                        codeBuilder.AppendLine($"                __httpRequest.Headers.Add(\"{escapedHeaderName}\", {headerValueLocal});");
+                        codeBuilder.AppendLine($"            }}");
                     }
                     else
                     {
-                        codeBuilder.AppendLine($"            if (!__httpRequest.Headers.Contains(\"{escapedHeaderName}\"))");
-                        codeBuilder.AppendLine($"                __httpRequest.Headers.Add(\"{escapedHeaderName}\", {formatExpression});");
+                        codeBuilder.AppendLine($"            else");
+                        codeBuilder.AppendLine($"            {{");
+                        codeBuilder.AppendLine($"                if (!__httpRequest.Headers.Contains(\"{escapedHeaderName}\"))");
+                        codeBuilder.AppendLine($"                    __httpRequest.Headers.Add(\"{escapedHeaderName}\", {headerValueLocal});");
+                        codeBuilder.AppendLine($"            }}");
                     }
                 }
                 else
                 {
                     // 可空类型：null 时跳过
                     codeBuilder.AppendLine($"            if ({property.Name} != null)");
+                    codeBuilder.AppendLine($"            {{");
+                    codeBuilder.AppendLine($"                var {headerValueLocal} = {formatExpression};");
+                    codeBuilder.AppendLine($"                if (!global::Mud.HttpUtils.HttpHeaderValueValidator.IsValid({headerValueLocal}))");
+                    codeBuilder.AppendLine($"                    global::System.Diagnostics.Debug.WriteLine(\"[MudHttpUtils] Header 值包含非法字符（CR/LF），已跳过: {escapedHeaderName}\");");
                     if (shouldReplace)
                     {
-                        codeBuilder.AppendLine($"            {{");
-                        codeBuilder.AppendLine($"                __httpRequest.Headers.Remove(\"{escapedHeaderName}\");");
-                        codeBuilder.AppendLine($"                __httpRequest.Headers.Add(\"{escapedHeaderName}\", {formatExpression});");
-                        codeBuilder.AppendLine($"            }}");
+                        codeBuilder.AppendLine($"                else");
+                        codeBuilder.AppendLine($"                {{");
+                        codeBuilder.AppendLine($"                    __httpRequest.Headers.Remove(\"{escapedHeaderName}\");");
+                        codeBuilder.AppendLine($"                    __httpRequest.Headers.Add(\"{escapedHeaderName}\", {headerValueLocal});");
+                        codeBuilder.AppendLine($"                }}");
                     }
                     else
                     {
-                        codeBuilder.AppendLine($"            {{");
-                        codeBuilder.AppendLine($"                if (!__httpRequest.Headers.Contains(\"{escapedHeaderName}\"))");
-                        codeBuilder.AppendLine($"                    __httpRequest.Headers.Add(\"{escapedHeaderName}\", {formatExpression});");
-                        codeBuilder.AppendLine($"            }}");
+                        codeBuilder.AppendLine($"                else");
+                        codeBuilder.AppendLine($"                {{");
+                        codeBuilder.AppendLine($"                    if (!__httpRequest.Headers.Contains(\"{escapedHeaderName}\"))");
+                        codeBuilder.AppendLine($"                        __httpRequest.Headers.Add(\"{escapedHeaderName}\", {headerValueLocal});");
+                        codeBuilder.AppendLine($"                }}");
                     }
+                    codeBuilder.AppendLine($"            }}");
                 }
             }
         }

@@ -93,14 +93,26 @@ internal class HeaderParameterBinder : IParameterBinder
             var formatExpression = !string.IsNullOrEmpty(formatString)
                 ? $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{escapedFormat}}}\", {parameter.Name})"
                 : $"{parameter.Name}.ToString()";
+
+            // M6-HC-30：非 string 头值同样经 CR/LF 校验（ToString/Format 结果运行期才确定，
+            // ns2.0 的 Headers.Add 不拦截）。不合格跳过（不发射、不 Remove）；
+            // Debug 仅输出头名（不输出值，防敏感信息落日志）。与 string 分支 GEN-18 同源收敛平台差异。
+            var headerValueLocal = $"__headerValue_{parameter.Name}";
+            codeBuilder.AppendLine($"{indent}var {headerValueLocal} = {formatExpression};");
+            codeBuilder.AppendLine($"{indent}if (!global::Mud.HttpUtils.HttpHeaderValueValidator.IsValid({headerValueLocal}))");
+            codeBuilder.AppendLine($"{indent}    global::System.Diagnostics.Debug.WriteLine(\"[MudHttpUtils] Header 值包含非法字符（CR/LF），已跳过: {escapedHeaderName}\");");
             if (shouldReplace)
             {
-                codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Remove(\"{escapedHeaderName}\");");
-                codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"{escapedHeaderName}\", {formatExpression});");
+                codeBuilder.AppendLine($"{indent}else");
+                codeBuilder.AppendLine($"{indent}{{");
+                codeBuilder.AppendLine($"{indent}    __httpRequest.Headers.Remove(\"{escapedHeaderName}\");");
+                codeBuilder.AppendLine($"{indent}    __httpRequest.Headers.Add(\"{escapedHeaderName}\", {headerValueLocal});");
+                codeBuilder.AppendLine($"{indent}}}");
             }
             else
             {
-                codeBuilder.AppendLine($"{indent}__httpRequest.Headers.Add(\"{escapedHeaderName}\", {formatExpression});");
+                codeBuilder.AppendLine($"{indent}else");
+                codeBuilder.AppendLine($"{indent}    __httpRequest.Headers.Add(\"{escapedHeaderName}\", {headerValueLocal});");
             }
         }
     }

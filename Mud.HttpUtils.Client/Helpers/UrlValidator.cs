@@ -46,6 +46,11 @@ public static class UrlValidator
     /// MT-10：白名单命中后的传输安全校验。回环地址豁免（保留本地开发），
     /// 除非显式开启 <see cref="MudHttpClientApplicationOptions.AllowInsecureWhitelistedDomains"/>。
     /// </summary>
+    /// <remarks>
+    /// <b>M6-HC-08</b>：本同步重载在需要判定回环（主机名非 IP、且协议为 HTTP）时会走
+    /// <see cref="IsLoopbackAddress"/> → <see cref="ResolveWithCache"/> 的 <b>sync-over-async DNS 解析</b>，
+    /// 可能阻塞线程。<b>请求主链路请用 <see cref="EnsureWhitelistedHostIsSecureAsync"/>。</b>
+    /// </remarks>
     private static void EnsureWhitelistedHostIsSecure(Uri uri, string host)
     {
         if (_allowInsecureWhitelistedDomains)
@@ -55,6 +60,29 @@ public static class UrlValidator
             return;
 
         if (IsLoopbackAddress(host))
+            return;
+
+        throw new InvalidOperationException(
+            $"域名 '{host}' 在白名单中，但仅允许 HTTPS 协议（当前协议: {uri.Scheme}）。" +
+            "令牌等凭据会随明文 HTTP 外发；如确需在受信内网使用 HTTP，请设置 " +
+            "MudHttpClients:AllowInsecureWhitelistedDomains=true。");
+    }
+
+    /// <summary>
+    /// M6-HC-08：白名单命中后传输安全校验的异步版 —— 回环判定经
+    /// <see cref="IsLoopbackAddressAsync"/> 走异步 DNS，消除发送路径的 sync-over-async 阻塞。
+    /// </summary>
+    /// <remarks>语义与同步版 <see cref="EnsureWhitelistedHostIsSecure"/> 逐项一致。</remarks>
+    private static async ValueTask EnsureWhitelistedHostIsSecureAsync(
+        Uri uri, string host, CancellationToken cancellationToken)
+    {
+        if (_allowInsecureWhitelistedDomains)
+            return;
+
+        if (string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (await IsLoopbackAddressAsync(host, cancellationToken).ConfigureAwait(false))
             return;
 
         throw new InvalidOperationException(
@@ -337,9 +365,10 @@ public static class UrlValidator
         var host = uri.Host;
 
         // 白名单域名跳过 IP / 内网域名检查（与同步版一致）；MT-10：仍强制 HTTPS。
+        // M6-HC-08：异步版走异步回环判定，发送路径零 sync-over-async DNS。
         if (IsDomainAllowedByAnySnapshot(host))
         {
-            EnsureWhitelistedHostIsSecure(uri, host);
+            await EnsureWhitelistedHostIsSecureAsync(uri, host, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -415,7 +444,9 @@ public static class UrlValidator
         try
         {
             var addresses = await ResolveWithCacheAsync(host, cancellationToken).ConfigureAwait(false);
-            return addresses.Any(IPAddress.IsLoopback);
+            // M6-HC-04：回环豁免改「全部地址为回环」。混合记录 [回环, 私网] 下 Any 语义会把
+            // 私网地址一并豁免（isPrivate=Any=true、isLoopback=Any=true → 不抛出）——绕过私网校验。
+            return addresses.Length > 0 && addresses.All(IPAddress.IsLoopback);
         }
         catch (OperationCanceledException)
         {
@@ -495,8 +526,16 @@ public static class UrlValidator
         }
     }
 
+    // M6-HC-01：IPv4 映射型 IPv6（::ffff:a.b.c.d）必须先归一为 IPv4 再判定。
+    // 否则恶意 DNS 返回映射 AAAA 记录时，::ffff:10.0.0.1 不命中 IPv4 网段
+    // （IPNetwork.Contains 按 AddressFamily 短路），且 IsLoopback(::ffff:127.0.0.1)=False，
+    // URL 层与连接期 DefaultIpAddressPolicy 两道 SSRF 防线同时被绕过。
+    // IsIPv4MappedToIPv6/MapToIPv4 在 netstandard2.0 可用，无 TFM 分叉。
     internal static bool IsPrivateIpAddress(IPAddress ipAddress)
     {
+        if (ipAddress.IsIPv4MappedToIPv6)
+            return IsPrivateIpAddress(ipAddress.MapToIPv4());
+
         if (ipAddress.IsIPv6LinkLocal ||
             ipAddress.IsIPv6SiteLocal ||
             IPAddress.IsLoopback(ipAddress))
@@ -527,7 +566,9 @@ public static class UrlValidator
         try
         {
             var addresses = ResolveWithCache(host);
-            return addresses.Any(IPAddress.IsLoopback);
+            // M6-HC-04：与异步版同口径 —— 回环豁免要求「全部地址为回环」，
+            // 混合记录 [回环, 私网] 不再豁免（同步 ValidateUrl 与 EnsureWhitelistedHostIsSecure 同源受益）。
+            return addresses.Length > 0 && addresses.All(IPAddress.IsLoopback);
         }
         catch
         {

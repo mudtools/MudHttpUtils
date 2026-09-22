@@ -648,6 +648,86 @@ namespace TestNamespace
 
     #endregion
 
+    #region M6-HC-29 - 流式方法 AOT JsonTypeInfo 缺失提示（MUDGEN301）
+
+    private const string StreamingSource = @"
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Get(""/items"")]
+        IAsyncEnumerable<string> StreamAsync();
+    }
+}";
+
+    [Fact]
+    public void StreamingAsyncEnumerable_ReportsMUDGEN301()
+    {
+        var driver = RunGenerator(StreamingSource);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        var diagnostic = diagnostics.Should().ContainSingle(d => d.Id == "MUDGEN301",
+            "IAsyncEnumerable 流式方法的生成调用恒传 null JsonTypeInfo，AOT 下元素类型未入 Context 会静默反序列化为 default").Subject;
+        diagnostic.Severity.Should().Be(DiagnosticSeverity.Warning, "D5-A 决策：静默失败模式必须默认可见，但不阻断构建");
+        diagnostic.GetMessage().Should().Contain("StreamAsync").And.Contain("string");
+
+        // 报告点必须精确落在方法声明上：否则使用方无法就地以 #pragma warning disable MUDGEN301 抑制
+        // （pragma 的生效范围按位置判定）。
+        var span = diagnostic.Location.SourceSpan;
+        diagnostic.Location.SourceTree!.GetText().ToString(span).Should().Contain("StreamAsync",
+            "报告点须定位到方法声明（含方法名），pragma 抑制才能按位置生效");
+    }
+
+    [Fact]
+    public void NonStreamingMethod_DoesNotReportMUDGEN301()
+    {
+        var source = @"
+using System.Threading.Tasks;
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Get(""/items"")]
+        Task<string> GetAsync();
+    }
+}";
+
+        var driver = RunGenerator(source);
+
+        driver.GetRunResult().Diagnostics.Should().NotContain(d => d.Id == "MUDGEN301",
+            "非流式返回类型经执行器注入序列化器（options 含消费方 Context resolver），不存在该提示");
+    }
+
+    /// <summary>
+    /// MUDGEN301 必须可抑制：不加 <c>NotConfigurable</c> 且默认启用
+    /// —— 使用方确认元素类型已入 Context（或仅 JIT 部署）时需能 <c>#pragma warning disable MUDGEN301</c> / <c>NoWarn</c>。
+    /// </summary>
+    [Fact]
+    public void MudGen301_IsSuppressible()
+    {
+        var descriptor = typeof(Diagnostics).GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .Where(f => f.FieldType == typeof(DiagnosticDescriptor))
+            .Select(f => (DiagnosticDescriptor)f.GetValue(null)!)
+            .Single(d => d.Id == "MUDGEN301");
+
+        descriptor.DefaultSeverity.Should().Be(DiagnosticSeverity.Warning);
+        descriptor.IsEnabledByDefault.Should().BeTrue();
+        descriptor.CustomTags.Should().NotContain(WellKnownDiagnosticTags.NotConfigurable,
+            "NotConfigurable 会令 #pragma / NoWarn 抑制失效");
+    }
+
+    #endregion
+
     /// <summary>
     /// [GEN-17][§8.5] 嵌套接口平铺后 hintName 唯一性碰撞守卫。
     /// <para>

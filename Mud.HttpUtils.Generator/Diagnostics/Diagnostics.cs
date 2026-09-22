@@ -65,6 +65,7 @@ internal static class Diagnostics
      *   - EG*: 实体生成器通用 (EG001-002)
      *   - AOT*: AOT JSON 序列化诊断 (AOT001-007)
      *   - MUD*: 接口规范 / DI 生命周期分析器诊断 (MUD001/MUD002/MUD004)
+     *   - MUDGEN*: 生成器面向消费方的 AOT 接入提示 (MUDGEN301)
      */
     #endregion 
 
@@ -162,6 +163,31 @@ internal static class Diagnostics
         category: "代码生成",
         DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
+
+    /// <summary>
+    /// M6-HC-29（D5-A）：<c>IAsyncEnumerable&lt;T&gt;</c> 流式方法的生成代码恒传 <c>null</c> JsonTypeInfo
+    /// （源生成器不可见消费方的 <c>JsonSerializerContext</c> 类型，无法自动注入）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// JIT 下走反射序列化器，行为正确；<b>Native AOT/裁剪</b>下元素类型 T 若不在任何
+    /// <c>JsonSerializerContext</c> 中，反序列化会返回 <c>default</c> —— 这是<b>静默</b>的失败模式
+    /// （无异常、无日志，流枚举出空/默认元素），故选择 Warning（D5-A）而非 Info：
+    /// 提示必须默认可见，且允许使用方以 <c>#pragma warning disable MUDGEN301</c> / <c>NoWarn</c> 显式抑制
+    /// （故不加 <c>NotConfigurable</c>）。
+    /// </para>
+    /// <para>
+    /// 报告点定位在方法声明上（与 HTTPCLIENT030/036 同一口径），便于就地 pragma 抑制。
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor AsyncEnumerableAotJsonTypeInfoMissingWarning = new(
+        id: DiagnosticIds.AsyncEnumerableAotJsonTypeInfoMissing,
+        title: "IAsyncEnumerable 流式方法在 AOT 下需接入 JsonSerializerContext",
+        messageFormat: "接口 {0} 的方法 {1} 返回 IAsyncEnumerable<{2}>，生成代码调用流式重载时传入的 JsonTypeInfo 为 null（源生成器无法推断消费方的 JsonSerializerContext）。JIT 下无影响；Native AOT/裁剪下若元素类型 {2} 未被任何 JsonSerializerContext 覆盖，反序列化会静默返回 default。请将该类型标注 [HttpJsonSerializable] 并运行 'dotnet mud-jsonctx' 生成上下文，或改用 IBaseHttpClient.SendAsAsyncEnumerable<T>(…, JsonTypeInfo<T>, …) / AsyncEnumerableExtensions 的 JsonTypeInfo 重载手动传入。",
+        category: "AOT",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "IAsyncEnumerable 流式方法的生成代码不携带 JsonTypeInfo（AOT 下需消费方接入 JsonSerializerContext）.");
 
     public static readonly DiagnosticDescriptor HttpClientApiGenericInterfaceNotSupported = new(
     id: "HTTPCLIENT012",
@@ -520,6 +546,19 @@ internal static class Diagnostics
         messageFormat: "接口 {0} 的方法 {1} 的 [FilePath(BufferSize = {2})] 超出支持上界，已夹取为 {3} 字节。BufferSize 用于分配下载缓冲区，超大值会直接导致 OutOfMemoryException 或 ArgumentOutOfRangeException。",
         category: "代码生成",
         DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    /// <summary>
+    /// M6-HC-02：参数名疑似 HTTP 头参数（名字含 "header"），但既未匹配 [Header] 也未匹配
+    /// [HeaderCollection]，生成代码不会将其发射到请求头。低噪音 Info 提示——常见根因是
+    /// 特性名拼写错误或遗漏标注。接线修复前的旧行为是完全静默（无任何编译期提示）。
+    /// </summary>
+    public static readonly DiagnosticDescriptor SuspectedHeaderParameterMissingAttribute = new(
+        id: "HTTPCLIENT037",
+        title: "参数疑似 HTTP 头但未标注 Header 特性",
+        messageFormat: "接口 {0} 的方法 {1} 的参数 {2} 名称疑似 HTTP 头参数，但未标注 [Header] 或 [HeaderCollection] 特性，该参数不会写入请求头。若为拼写错误请修正特性名；若该参数确非请求头可忽略本提示。",
+        category: "代码生成",
+        DiagnosticSeverity.Info,
         isEnabledByDefault: true);
     #endregion
 

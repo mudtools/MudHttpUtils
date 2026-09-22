@@ -542,5 +542,51 @@ namespace TestNamespace
     }
 }
 """),
+        // M6-HC-02/HC-30：[HeaderCollection] 字典头接线（此前 binder 零调用点，字典头静默丢失）。
+        // 生成代码须含 foreach 逐项发射与 HttpHeaderValueValidator.IsValid 的 CR/LF 校验（HC-30）。
+        new("Snapshot_HeaderCollection_ShouldEmitForeachWithValidation", """
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Post("/data")]
+        Task<string> PostDataAsync([HeaderCollection] IDictionary<string, string?> headers);
+    }
+}
+"""),
+        // M6-HC-02：[Header]（单值）与 [HeaderCollection]（字典批量）混用 —— 两者均发射且互不干扰。
+        new("Snapshot_HeaderCollection_MixedWithHeader_ShouldEmitBoth", """
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Post("/data")]
+        Task<string> PostDataAsync([Header("X-Request-Id")] string requestId, [HeaderCollection] IDictionary<string, string?> headers);
+    }
+}
+"""),
+        // M6-HC-02：Dictionary<string, object?> 版本 —— 值经 ToString 后发射。
+        new("Snapshot_HeaderCollection_ObjectValues_ShouldUseToString", """
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+
+namespace TestNamespace
+{
+    [HttpClientApi]
+    public interface ITestApi
+    {
+        [Post("/data")]
+        Task<string> PostDataAsync([HeaderCollection] IDictionary<string, object?> headers);
+    }
+}
+"""),
     };
 }

@@ -22,7 +22,7 @@ public class StandardOAuth2TokenManagerHttpInteractionTests
         return handler;
     }
 
-    private static StandardOAuth2TokenManager CreateManager(HttpMessageHandler handler)
+    private static StandardOAuth2TokenManager CreateManager(HttpMessageHandler handler, string? clientSecret = "test-secret")
     {
         var options = new OAuth2Options
         {
@@ -30,7 +30,7 @@ public class StandardOAuth2TokenManagerHttpInteractionTests
             RevocationEndpoint = "https://auth.example.com/revoke",
             IntrospectionEndpoint = "https://auth.example.com/introspect",
             ClientId = "test-client",
-            ClientSecret = "test-secret"
+            ClientSecret = clientSecret
         };
 
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://auth.example.com") };
@@ -110,6 +110,61 @@ public class StandardOAuth2TokenManagerHttpInteractionTests
 
         var assertion = await act.Should().ThrowAsync<OAuth2TokenException>();
         assertion.Which.HttpStatusCode.Should().Be(401);
+    }
+
+    [Fact]
+    public async Task GetTokenByAuthorizationCodeAsync_WithClientSecret_SendsBasicClientAuthentication()
+    {
+        // M6-HC-10：授权码流原固定走 RequestTokenAsync（无认证），机密客户端在此流下丢失 client_secret；
+        // 修复后配置了 client_secret 时改走 RequestTokenWithClientAuthAsync（Basic 头）。
+        var tokenResponse = new { access_token = "auth-code-token", token_type = "Bearer", expires_in = 3600 };
+        string? authScheme = null;
+        string? authParameter = null;
+        string? body = null;
+
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+            .Callback<HttpRequestMessage, CancellationToken>((req, _) =>
+            {
+                authScheme = req.Headers.Authorization?.Scheme;
+                authParameter = req.Headers.Authorization?.Parameter;
+                body = req.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+            })
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(tokenResponse), Encoding.UTF8, "application/json")
+            });
+
+        var manager = CreateManager(handler.Object);
+        await manager.GetTokenByAuthorizationCodeAsync("auth-code", "https://redirect.example.com", CancellationToken.None);
+
+        authScheme.Should().Be("Basic", "HC-10：机密客户端的授权码换取令牌必须携带客户端认证");
+        authParameter.Should().Be(
+            Convert.ToBase64String(Encoding.UTF8.GetBytes("test-client:test-secret")));
+        body.Should().Contain("grant_type=authorization_code");
+    }
+
+    [Fact]
+    public async Task GetTokenByAuthorizationCodeAsync_PublicClient_DoesNotSendClientAuthentication()
+    {
+        // 公共客户端（无 client_secret）维持既有行为：不注入认证头
+        var tokenResponse = new { access_token = "auth-code-token", token_type = "Bearer", expires_in = 3600 };
+        string? authScheme = null;
+
+        var handler = new Mock<HttpMessageHandler>();
+        handler.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+            .Callback<HttpRequestMessage, CancellationToken>((req, _) => authScheme = req.Headers.Authorization?.Scheme)
+            .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(tokenResponse), Encoding.UTF8, "application/json")
+            });
+
+        var manager = CreateManager(handler.Object, clientSecret: null);
+        await manager.GetTokenByAuthorizationCodeAsync("code", "https://redirect.example.com", CancellationToken.None);
+
+        authScheme.Should().BeNull("HC-10：未配置 client_secret 的公共客户端不得发送认证头");
     }
 
     #endregion

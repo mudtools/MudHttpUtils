@@ -231,12 +231,152 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
     /// <param name="completionOption">响应读取选项</param>
     /// <param name="cancellationToken">取消令牌</param>
     /// <returns>HTTP响应消息</returns>
-    protected virtual Task<HttpResponseMessage> SendCoreAsync(
+    protected virtual async Task<HttpResponseMessage> SendCoreAsync(
         HttpRequestMessage request,
         HttpCompletionOption completionOption,
         CancellationToken cancellationToken)
     {
-        return _httpClient.SendAsync(request, completionOption, cancellationToken);
+        // M6-HC-05（D2-A）：主链路 handler 已关闭自动重定向（AllowAutoRedirect=false，见
+        // ServiceCollectionExtensions / SsrfSafeSocketsHttpHandler），此处以手动逐跳循环承接重定向语义，
+        // 并对每个目标执行全套 URL 复验（UrlValidator.ValidateUrlAsync：白名单 / HTTPS / 私网 / 内网域名），
+        // 根治「自动重定向跨主机不复验」的 SSRF 绕过面。
+        // 语义对齐 .NET RedirectHandler：301/302/303 非幂等方法降级为 GET 并丢弃请求体；
+        // 307/308 保留方法与请求体（仅内存型白名单内容可重放，与 M6-HC-11 克隆白名单同口径，
+        // 不可重放则中止抛出 —— 失败快于静默空体）；每跳剥离 Authorization / Cookie；
+        // 跳数上限 10，超限抛 InvalidOperationException。
+        var currentUri = request.RequestUri ?? _httpClient.BaseAddress;
+        var currentMethod = request.Method;
+        var redirectHops = 0;
+        var isRedirect = false;
+
+        while (true)
+        {
+            var outgoing = request;
+            if (isRedirect)
+            {
+                outgoing = new HttpRequestMessage(currentMethod, currentUri)
+                {
+                    Version = request.Version,
+#if NET5_0_OR_GREATER
+                    VersionPolicy = request.VersionPolicy,
+#endif
+                };
+                foreach (var header in request.Headers)
+                    outgoing.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                // 凭据剥离（口径对齐 .NET 内建跨源剥离，扩展为逐跳剥离）
+                outgoing.Headers.Authorization = null;
+                outgoing.Headers.Remove("Authorization");
+                outgoing.Headers.Remove("Cookie");
+                CopyRequestState(request, outgoing);
+
+                if (currentMethod == HttpMethod.Get || currentMethod == HttpMethod.Head)
+                {
+                    // 降级/无体方法：不携带内容
+                }
+                else if (IsReplayableRequestContent(request.Content))
+                {
+                    // 共享内存型内容实例（ByteArray 家族每次发送生成新流，可安全重放）
+                    outgoing.Content = request.Content;
+                }
+            }
+
+            HttpResponseMessage response;
+            try
+            {
+                response = await _httpClient.SendAsync(outgoing, completionOption, cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                if (isRedirect)
+                    outgoing.Dispose();
+                throw;
+            }
+
+            if (isRedirect)
+            {
+                // 解除对共享内容的引用后再释放，避免触达调用方的 HttpRequestMessage.Content
+                outgoing.Content = null;
+                outgoing.Dispose();
+            }
+
+            if (currentUri == null ||
+                !IsRedirectStatus(response.StatusCode) ||
+                response.Headers.Location == null)
+            {
+                return response;
+            }
+
+            if (++redirectHops > MaxRedirectHops)
+            {
+                response.Dispose();
+                throw new InvalidOperationException(
+                    $"重定向次数超过上限（{MaxRedirectHops} 跳）: {currentUri}");
+            }
+
+            var nextUri = new Uri(currentUri, response.Headers.Location);
+
+            // 逐跳复验：与初始请求 ValidateRequestAsync 同源的全套校验（白名单 / HTTPS / 私网 / 内网域名）
+            await UrlValidator.ValidateUrlAsync(nextUri.ToString(), _allowCustomBaseUrls, cancellationToken).ConfigureAwait(false);
+
+            if (IsPreserveMethodRedirect(response.StatusCode) &&
+                request.Content != null &&
+                !IsReplayableRequestContent(request.Content))
+            {
+                response.Dispose();
+                throw new InvalidOperationException(
+                    "收到 307/308 重定向，但请求内容不可重放（非内存型白名单内容）。" +
+                    "为避免重定向后以空体重发（静默数据丢失），已中止请求。" +
+                    "请改用可缓冲内容（byte[]/string/FormUrlEncoded/multipart）或直接请求最终地址。");
+            }
+
+            if (!IsPreserveMethodRedirect(response.StatusCode) &&
+                currentMethod != HttpMethod.Get &&
+                currentMethod != HttpMethod.Head)
+            {
+                // 301/302/303：非 GET/HEAD 方法降级为 GET 并丢弃请求体（对齐 .NET RedirectHandler 语义）
+                currentMethod = HttpMethod.Get;
+            }
+
+            currentUri = nextUri;
+            isRedirect = true;
+
+            // 释放重定向中间响应（Location 已提取，连接归还连接池）
+            response.Dispose();
+        }
+    }
+
+    /// <summary>M6-HC-05：重定向跳数上限。</summary>
+    private const int MaxRedirectHops = 10;
+
+    private static bool IsRedirectStatus(HttpStatusCode statusCode)
+        => statusCode == HttpStatusCode.Moved
+            || statusCode == HttpStatusCode.Found
+            || statusCode == HttpStatusCode.SeeOther
+            || statusCode == HttpStatusCode.TemporaryRedirect
+            || (int)statusCode == 308;
+
+    /// <summary>307/308：保留方法与请求体的重定向。</summary>
+    private static bool IsPreserveMethodRedirect(HttpStatusCode statusCode)
+        => statusCode == HttpStatusCode.TemporaryRedirect || (int)statusCode == 308;
+
+    /// <summary>
+    /// M6-HC-05：请求内容可重放判定 —— 与 M6-HC-11 克隆白名单同口径：
+    /// 仅内存型内容（ByteArray/String/FormUrlEncoded 家族、Multipart）可安全重放
+    /// （ByteArray 家族每次发送生成新流）；StreamContent/自定义内容发送即消费，不可重放。
+    /// </summary>
+    private static bool IsReplayableRequestContent(HttpContent? content)
+        => content == null || content is ByteArrayContent || content is MultipartContent;
+
+    /// <summary>M6-HC-05：跨 TFM 复制请求级状态（Options/Properties），保持可观测性去重标记等随跳传递。</summary>
+    private static void CopyRequestState(HttpRequestMessage source, HttpRequestMessage target)
+    {
+#if NET5_0_OR_GREATER
+        foreach (var option in source.Options)
+            target.Options.TryAdd(option.Key, option.Value);
+#else
+        foreach (var property in source.Properties)
+            target.Properties[property.Key] = property.Value;
+#endif
     }
 
     #region IEnhancedHttpClient 接口实现
@@ -1665,9 +1805,9 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 else
                 {
 #if NETSTANDARD2_0
-                    bytes = await response.Content.ReadAsByteArrayAsync();
+                    bytes = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
 #else
-                    bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+                    bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
 #endif
                 }
 
@@ -1698,12 +1838,23 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         if (string.IsNullOrWhiteSpace(filePath))
             throw new ArgumentException("文件路径不能为空", nameof(filePath));
 
-        if (bufferSize <= 0)
-            throw new ArgumentException("缓冲区大小必须大于0", nameof(bufferSize));
+        // M6-HC-14：bufferSize 上下界钳制 —— 与 DefaultHttpRequestExecutor（G8-06）同口径防御。
+        // 原实现仅拒绝 <= 0；超大值会直接进入 new byte[bufferSize] / new FileStream(…, bufferSize) 触发 OOM。
+        // 越界（< 4 KiB 或 > 4 MiB）一律归一回默认值 81920。
+        const int MaxDownloadBufferSize = 4 * 1024 * 1024;
+        const int MinDownloadBufferSize = 4 * 1024;
+        if (bufferSize < MinDownloadBufferSize || bufferSize > MaxDownloadBufferSize)
+            bufferSize = DefaultBufferSize;
 
         // G27：日志输出用 URL 脱敏（与 DownloadFileAsync 的 SafeUrl 模式对齐；发送路径不受影响）
         string? requestUri = SafeUrl(httpRequestMessage.RequestUri) is var safe && safe.Length > 0 ? safe : null;
         string directoryPath = Path.GetDirectoryName(filePath)!;
+
+        // M6-HC-12/HC-14：临时文件 + 原子落盘（对齐执行器 G7-03 模板）。
+        // fileStreamOpened 区分「构造期 IOException」（如 overwrite=false 且目标已存在 —— 尚未触碰任何
+        // 文件，维持既有语义：不清理、不记失败、直接重抛）与「写入期 IOException」（需清理半写 tmp 并记失败）。
+        var tmpPath = filePath + ".mudtmp";
+        var fileStreamOpened = false;
 
         // G33：下载阶段可观测性状态（downloadStarted 区分"响应头到达前失败"与"响应体阶段失败"）
         var downloadStarted = false;
@@ -1726,8 +1877,6 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                 }
             }
 
-            var fileMode = overwrite ? FileMode.Create : FileMode.CreateNew;
-
             using var response = await SendAndValidateAsync(httpRequestMessage, cancellationToken).ConfigureAwait(false);
 
             var contentLength = response.Content.Headers.ContentLength;
@@ -1742,77 +1891,63 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             downloadStarted = true;
 
 #if NETSTANDARD2_0
-            using var contentStream = await response.Content.ReadAsStreamAsync();
-            using var fileStream = new FileStream(
-                filePath,
-                fileMode,
+            // M6-HC-14：落盘改为 .mudtmp 临时文件，流关闭后再原子 Move，最终路径永不出现半写文件
+            using (var fileStream = new FileStream(
+                tmpPath,
+                FileMode.Create,
                 FileAccess.Write,
                 FileShare.None,
                 bufferSize: bufferSize,
-                useAsync: true);
-#else
-            await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken);
-            await using var fileStream = new FileStream(
-                filePath,
-                fileMode,
-                FileAccess.Write,
-                FileShare.None,
-                bufferSize: bufferSize,
-                useAsync: true);
-#endif
-
-            // 若调用方未提供 progress 回调，则直接 CopyToAsync，避免每 buffer 的进度报告开销
-            if (progress == null)
+                useAsync: true))
             {
-                await contentStream.CopyToAsync(fileStream, bufferSize, cancellationToken).ConfigureAwait(false);
-            }
-            else
-            {
-                var totalBytesWritten = 0L;
-                var buffer = new byte[bufferSize];
-                int bytesRead;
+                fileStreamOpened = true;
+                using var contentStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 
-                // NEW-HC-09 修复：进度回调按时间节流，避免大文件下载时每 buffer（默认 81920 字节）触发一次回调。
-                // GB 级文件每秒可能触发数百到数千次回调，造成 UI 线程高频刷新、IProgress.Post 排队堆积、日志海量输出。
-                // 节流策略：首次上报 + 每隔 100ms 上报一次 + 最后一次上报（确保最终进度被记录）。
-                // 使用 Stopwatch.GetTimestamp() 而非 Environment.TickCount64，兼容 netstandard2.0。
-                var lastReportTimestamp = Stopwatch.GetTimestamp();
-                var timestampToMs = 1000.0 / Stopwatch.Frequency;
-                const double ProgressReportIntervalMs = 100;
-
-                while (true)
+                if (progress == null)
                 {
-#if NETSTANDARD2_0
-                    bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
-#else
-                    bytesRead = await contentStream.ReadAsync(buffer.AsMemory(0, bufferSize), cancellationToken).ConfigureAwait(false);
-#endif
-                    if (bytesRead == 0)
-                        break;
-
-#if NETSTANDARD2_0
-                    await fileStream.WriteAsync(buffer, 0, bytesRead, cancellationToken).ConfigureAwait(false);
-#else
-                    await fileStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken).ConfigureAwait(false);
-#endif
-
-                    totalBytesWritten += bytesRead;
-
-                    // 按时间节流：仅当距上次上报超过 100ms 时才触发回调
-                    var currentTimestamp = Stopwatch.GetTimestamp();
-                    var elapsedMs = (currentTimestamp - lastReportTimestamp) * timestampToMs;
-                    if (elapsedMs >= ProgressReportIntervalMs)
-                    {
-                        progress.Report(totalBytesWritten);
-                        lastReportTimestamp = currentTimestamp;
-                    }
+                    await contentStream.CopyToAsync(fileStream, bufferSize, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    await CopyToWithThrottledProgressAsync(
+                        contentStream, fileStream, bufferSize, progress, cancellationToken).ConfigureAwait(false);
                 }
 
-                // 确保最终进度被上报（无论节流状态）
-                progress.Report(totalBytesWritten);
+                await fileStream.FlushAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            await fileStream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            // netstandard2.0：File.Move 无 overwrite 重载
+            if (overwrite && File.Exists(filePath))
+                File.Delete(filePath);
+            File.Move(tmpPath, filePath);
+#else
+            await using (var fileStream = new FileStream(
+                tmpPath,
+                FileMode.Create,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: bufferSize,
+                useAsync: true))
+            {
+                fileStreamOpened = true;
+                await using var contentStream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+
+                if (progress == null)
+                {
+                    await contentStream.CopyToAsync(fileStream, bufferSize, cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    await CopyToWithThrottledProgressAsync(
+                        contentStream, fileStream, bufferSize, progress, cancellationToken).ConfigureAwait(false);
+                }
+
+                await fileStream.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            // 流已关闭（Windows 下 File.Move 才可移动）；overwrite 语义由 Move 的 overwrite 参数强制
+            File.Move(tmpPath, filePath, overwrite);
+#endif
 
             var fileInfo = new FileInfo(filePath);
             _logger.DownloadFileCompleted(filePath, fileInfo.Length / (1024.0 * 1024.0));
@@ -1826,9 +1961,8 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         }
         catch (Exception ex)
         {
-            // 文件已存在不是下载失败，不清理文件
-            // FileMode.CreateNew 在文件已存在时抛出 IOException
-            if (ex is IOException && !overwrite)
+            // M6-HC-12：构造期 IOException（目标已存在等）尚未写入任何文件 → 维持既有语义直接重抛
+            if (ex is IOException && !fileStreamOpened)
             {
                 throw;
             }
@@ -1840,15 +1974,15 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
                     httpRequestMessage, ClientName, downloadSw.GetElapsedTime().TotalMilliseconds, ex);
             }
 
-            // 清理部分下载的文件
+            // M6-HC-14：清理半写临时文件（最终路径永不出现半写文件）
             try
             {
-                if (File.Exists(filePath))
-                    File.Delete(filePath);
+                if (File.Exists(tmpPath))
+                    File.Delete(tmpPath);
             }
             catch (Exception cleanupEx)
             {
-                _logger.CleanupPartialFileFailed(filePath, cleanupEx);
+                _logger.CleanupPartialFileFailed(tmpPath, cleanupEx);
             }
 
             _logger.LargeFileDownloadFailed(requestUri!, filePath, ex);
@@ -1859,6 +1993,23 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             throw new HttpRequestException($"大文件下载失败: {ex.Message}", ex);
         }
     }
+
+    /// <summary>
+    /// M6-HC-12/HC-14：抽出带时间节流的进度复制（行为与 NEW-HC-09 一致：100ms 节流 + 收尾必报）。
+    /// </summary>
+    /// <remarks>
+    /// NEW-HC-09 修复：进度回调按时间节流，避免大文件下载时每 buffer（默认 81920 字节）触发一次回调。
+    /// GB 级文件每秒可能触发数百到数千次回调，造成 UI 线程高频刷新、IProgress.Post 排队堆积、日志海量输出。
+    /// M6-HC-15：实现下沉至 <see cref="ThrottledStreamCopier"/>，与生成器执行路径、上传路径共用同一口径。
+    /// </remarks>
+    private static Task CopyToWithThrottledProgressAsync(
+        Stream source,
+        Stream destination,
+        int bufferSize,
+        IProgress<long> progress,
+        CancellationToken cancellationToken)
+        => ThrottledStreamCopier.CopyWithThrottledProgressAsync(
+            source, destination, bufferSize, progress, 0, cancellationToken);
 
     #endregion
 
@@ -1995,7 +2146,10 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         _logger.HttpRequestFailedWithResponse(statusCode, sanitizedContent);
 
         // Phase 2 (T2.1/T2.3)：创建 ApiException，应用 ExceptionRedactor 擦除敏感数据，设置 RequestContent
-        var apiEx = new ApiException(response.StatusCode, errorContent, response.RequestMessage?.RequestUri?.ToString());
+        // M6-HC-21：RequestUri 与 ApiRequestException / 执行器路径口径统一（剥离 userinfo、掩码敏感 query 值）。
+        var failedUri = response.RequestMessage?.RequestUri;
+        var apiEx = new ApiException(response.StatusCode, errorContent,
+            failedUri is null ? null : SensitiveUrlRedactor.Redact(failedUri.ToString()));
 
         // Phase 2 (T2.3)：从请求属性读取捕获的请求体
         string? capturedRequestContent = null;

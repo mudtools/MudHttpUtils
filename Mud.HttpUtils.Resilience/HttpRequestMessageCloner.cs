@@ -47,13 +47,21 @@ internal static class HttpRequestMessageCloner
                 {
                     // M1-#2：按 maxContentSize + 1 限量缓冲，Content-Length 缺失（chunked）或被伪造时同样不会超读；
                     // 读取阶段透传取消令牌。
-                    var (bytes, exceeded) = await BufferUpToAsync(
+                    var (bytes, exceeded, failed) = await BufferUpToAsync(
                         request.Content, maxContentSize, cancellationToken).ConfigureAwait(false);
                     if (exceeded)
                     {
                         throw new InvalidOperationException(
                             $"请求体大小超过最大克隆限制 ({maxContentSize:N0} 字节)。" +
                             "大文件上传场景建议禁用重试策略或调整 MaxCloneContentSize 限制。");
+                    }
+                    // M6-HC-11：无声明长度且读得 0 字节 —— 无法区分"合法空体"与"源流已耗尽"，
+                    // 缓存空快照会让重试静默发送空体，故显式拒绝克隆（TryCloneAsync 据此降级为不重试）。
+                    if (failed)
+                    {
+                        throw new InvalidOperationException(
+                            "请求体无声明长度且读取结果为空，无法确认可重放；为避免重试静默发送空体，已拒绝克隆。" +
+                            "请为内容声明 Content-Length 或改用可重放内容（ByteArrayContent 家族 / MultipartContent）。");
                     }
                     contentBytes = bytes;
                 }
@@ -102,9 +110,30 @@ internal static class HttpRequestMessageCloner
             return true;
         }
 
+        // M6-HC-11：无声明长度 + 非内存型白名单内容 → 同样不可重放。
+        // 原预判仅覆盖显式实现 IRequestContentReplayHint 的内容，普通 StreamContent /
+        // 未知自定义 HttpContent 被漏判：克隆阶段读取会耗尽一次性源流，重试时静默发送空体。
+        // 采用"类型白名单"（零消耗，不探测流），与 M6-HC-05 的重定向可重放口径一致。
+        if (!declared.HasValue && !IsKnownReplayableContent(content))
+        {
+            reason = "undeclared-non-replayable-content";
+            return true;
+        }
+
         reason = string.Empty;
         return false;
     }
+
+    /// <summary>
+    /// M6-HC-11：可安全重放的内容白名单 —— 与 <c>EnhancedHttpClient.IsReplayableRequestContent</c>（M6-HC-05）同口径。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="StringContent"/> 与 <see cref="FormUrlEncodedContent"/> 均派生自 <see cref="ByteArrayContent"/>，
+    /// 故本判定一并覆盖；<see cref="MultipartContent"/>（子项为内存型时）每次发送重新生成流，同样可重放。
+    /// 其余类型（StreamContent / PushStreamContent / 自定义）发送即消费，视为不可重放。
+    /// </remarks>
+    private static bool IsKnownReplayableContent(HttpContent content)
+        => content is ByteArrayContent || content is MultipartContent;
 
     private static bool TryGetSnapshot(HttpRequestMessage request, out byte[] snapshot)
     {
@@ -190,7 +219,7 @@ internal static class HttpRequestMessageCloner
     /// 为保持"同一请求可多次克隆"的既有语义，本方法不消耗内容的可重放性
     /// （不 dispose 内容自有流，探测读取依赖 BCL 缓冲内容的 seek 能力）。
     /// </remarks>
-    private static async Task<(byte[] Bytes, bool Exceeded)> BufferUpToAsync(
+    private static async Task<(byte[] Bytes, bool Exceeded, bool Failed)> BufferUpToAsync(
         HttpContent content, long maxBytes, CancellationToken cancellationToken)
     {
         // 快路径：声明长度明确且在限制内 → 直接缓冲（BCL 自带重放支持）
@@ -198,12 +227,12 @@ internal static class HttpRequestMessageCloner
         if (declared.HasValue && declared.Value <= maxBytes)
         {
             var all = await content.ReadAsByteArrayAsync().ConfigureAwait(false);
-            return (all, false);
+            return (all, false, false);
         }
 
         // 声明超限 → 直接判定（不多读一个字节）
         if (declared.HasValue && declared.Value > maxBytes)
-            return (Array.Empty<byte>(), true);
+            return (Array.Empty<byte>(), true, false);
 
         // 无声明长度（chunked / 伪造）：经流限量探测 maxBytes + 1 字节
         var stream = await content.ReadAsStreamAsync().ConfigureAwait(false);
@@ -227,9 +256,15 @@ internal static class HttpRequestMessageCloner
         if (canSeek)
             stream.Position = 0;   // 复位，保持内容可再次读取（重放语义）
 
-        return total > maxBytes
-            ? (ms.ToArray(), true)
-            : (ms.ToArray(), false);
+        if (total > maxBytes)
+            return (ms.ToArray(), true, false);
+
+        // M6-HC-11 兜底守卫：无声明长度且读得 0 字节 —— 无法区分"合法空体"与"一次性源流已耗尽"，
+        // 返回失败以阻止缓存空快照（避免重试静默发送空体）。
+        if (total == 0 && !declared.HasValue)
+            return (Array.Empty<byte>(), false, true);
+
+        return (ms.ToArray(), false, false);
     }
 
     public static async Task<HttpRequestMessage?> TryCloneAsync(

@@ -48,7 +48,11 @@ public static class AsyncEnumerableExtensions
         await using (stream.ConfigureAwait(false))
         {
             var options = jsonSerializerOptions as System.Text.Json.JsonSerializerOptions;
-        var contentSerializer = new SystemTextJsonContentSerializer(options);
+            // M6-HC-31：优先复用客户端注入的序列化器（其 options 承载消费方的 JsonSerializerContext resolver 与自定义设置），
+            // 仅当客户端非 EnhancedHttpClient（如第三方实现 / 测试替身）时才按入参另建默认序列化器。
+            var contentSerializer = client is EnhancedHttpClient enhancedClient
+                ? enhancedClient.ContentSerializer
+                : new SystemTextJsonContentSerializer(options);
 
             await foreach (var item in EnhancedHttpClient.ParseNdJsonStreamAsync<T>(stream, options, contentSerializer, cancellationToken).ConfigureAwait(false))
             {
@@ -82,7 +86,13 @@ public static class AsyncEnumerableExtensions
 
         await using (stream.ConfigureAwait(false))
         {
-            await foreach (var item in EnhancedHttpClient.ParseNdJsonStreamAsync(stream, jsonTypeInfo, HttpContentSerializerFactory.CreateDefault(), cancellationToken).ConfigureAwait(false))
+            // M6-HC-31：同开放泛型重载 —— 复用客户端注入的序列化器，避免另建默认实例导致
+            // 与客户端配置（含 JsonSerializerContext resolver、命名策略）不一致。
+            var contentSerializer = client is EnhancedHttpClient enhancedClient
+                ? enhancedClient.ContentSerializer
+                : HttpContentSerializerFactory.CreateDefault();
+
+            await foreach (var item in EnhancedHttpClient.ParseNdJsonStreamAsync(stream, jsonTypeInfo, contentSerializer, cancellationToken).ConfigureAwait(false))
             {
                 yield return item;
             }

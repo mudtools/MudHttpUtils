@@ -122,4 +122,93 @@ public class TokenRecoveryExecutorTests
             "超限带体请求不进入恢复刷新链路");
         response.Dispose();
     }
+
+    // ============================================================
+    // M6-HC-23：401 恢复重试的 forceRefresh 语义
+    // ============================================================
+
+    /// <summary>
+    /// 第 2 轮恢复必须绕过「结果复用窗口」：两次刷新拿到不同令牌，且最终发送所用令牌为第 2 次刷新的值。
+    /// 首轮仍走 single-flight 去重（窗口内首次刷新）。
+    /// </summary>
+    [Fact]
+    public async Task ExecuteAsync_SecondRetry_ForceRefresh_RefreshesAgainWithNewToken()
+    {
+        var mockTokenManager = new Mock<ITokenManager>();
+        mockTokenManager
+            .Setup(m => m.InvalidateTokenAsync(It.IsAny<string[]>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(TokenResult.Empty);
+        var refreshCount = 0;
+        mockTokenManager
+            .Setup(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() => $"token-{++refreshCount}");
+
+        // 保留默认去重窗口（> 0）：验证强制刷新确实绕过窗口而非窗口恰好失效。
+        var options = new TokenRecoveryOptions { RecoveryMaxRetries = 2, RefreshDedupWindowSeconds = 30 };
+        var executor = new TokenRecoveryExecutor(mockTokenManager.Object, options);
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/test");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "old-token");
+
+        var sentTokens = new List<string?>();
+        var sendCount = 0;
+        var response = await executor.ExecuteAsync(
+            request,
+            (req, _) =>
+            {
+                Interlocked.Increment(ref sendCount);
+                sentTokens.Add(req.Headers.Authorization?.Parameter);
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
+            },
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        sendCount.Should().Be(3, "1 次首发送 + 2 次恢复重试");
+        refreshCount.Should().Be(2, "第 2 轮强刷不得复用第 1 轮已完成的结果");
+        sentTokens[1].Should().Be("token-1");
+        sentTokens[2].Should().Be("token-2", "重试应使用第 2 次刷新得到的新令牌");
+        response.Dispose();
+    }
+
+    /// <summary>
+    /// 取消路径资源归还：在第 2 轮发送时取消 → 抛 <see cref="OperationCanceledException"/>，
+    /// 且发送计数符合预期（不抛非预期异常）。
+    /// </summary>
+    [Fact]
+    public async Task ExecuteAsync_RetrySendCancelled_ThrowsOperationCanceledException()
+    {
+        var mockTokenManager = new Mock<ITokenManager>();
+        mockTokenManager
+            .Setup(m => m.InvalidateTokenAsync(It.IsAny<string[]>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(TokenResult.Empty);
+        mockTokenManager
+            .Setup(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("new-token");
+
+        var options = new TokenRecoveryOptions { RecoveryMaxRetries = 3 };
+        var executor = new TokenRecoveryExecutor(mockTokenManager.Object, options);
+
+        var request = new HttpRequestMessage(HttpMethod.Get, "https://api.example.com/test");
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "old-token");
+
+        using var cts = new CancellationTokenSource();
+        var sendCount = 0;
+
+        var act = async () => await executor.ExecuteAsync(
+            request,
+            (_, ct) =>
+            {
+                var n = Interlocked.Increment(ref sendCount);
+                if (n == 2)
+                {
+                    cts.Cancel();
+                    ct.ThrowIfCancellationRequested();
+                }
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
+            },
+            cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        sendCount.Should().Be(2, "第 2 次发送（首轮重试）被取消，不再进入后续轮次");
+    }
 }

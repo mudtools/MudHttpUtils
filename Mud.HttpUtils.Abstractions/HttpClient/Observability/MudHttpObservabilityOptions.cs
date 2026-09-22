@@ -29,11 +29,12 @@ public static class MudHttpObservabilityOptions
     /// <remarks>
     /// <para>
     /// 设为 <c>false</c> 时保留完整 URL，仅供已自行治理日志下游、明确需要完整 URL 排障的场景。
-    /// 关闭后不影响 <see cref="ApiException.RequestUri"/>（始终保留完整 URI，由 <c>IExceptionRedactor</c> 兜底擦除）
-    /// 与 URL 安全校验（始终使用原始 URL）。
+    /// 关闭后不影响 URL 安全校验（始终使用原始 URL）。
+    /// M6-HC-21：<see cref="ApiException.RequestUri"/> 同样经由本脱敏器处理（剥离 userinfo、掩码敏感 query 值），
+    /// 故该开关会一并影响异常对象中的 URI；需要完整 URI 的调用方可自定义 <c>IExceptionRedactor</c> 或直接读取请求对象。
     /// </para>
     /// <para>
-    /// 脱敏实现见 <c>SensitiveUrlRedactor</c>，敏感键词表复用 <c>MessageSanitizer</c> 的字段词表。
+    /// 脱敏实现见 <c>Helpers.SensitiveUrlRedactor</c>，敏感键词表与其共用同一份字段词表（单一事实源）。
     /// </para>
     /// </remarks>
     public static bool RedactUrlInTelemetry { get; set; } = true;
@@ -44,7 +45,7 @@ public static class MudHttpObservabilityOptions
     /// </summary>
     /// <remarks>
     /// 设为 <c>true</c> 时记录完整 URL，但仍受 <see cref="RedactUrlInTelemetry"/> 约束（敏感 query 值掩码）。
-    /// 错误路径不受本开关影响：<c>ApiException.RequestUri</c> 始终保留完整 URI。
+    /// 错误路径不受本开关影响：<c>ApiException.RequestUri</c> 始终按 <see cref="RedactUrlInTelemetry"/> 脱敏（M6-HC-21）。
     /// </remarks>
     public static bool RecordFullUrlOnSuccess { get; set; } = false;
 

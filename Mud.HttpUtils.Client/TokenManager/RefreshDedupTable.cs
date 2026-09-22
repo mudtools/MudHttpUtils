@@ -84,18 +84,28 @@ internal sealed class RefreshDedupTable
     /// <param name="key">去重键（含管理器键与作用域 / 用户维度）。</param>
     /// <param name="factory">刷新工厂（由本表保证最多执行一次）。</param>
     /// <param name="dedupWindowSeconds">结果复用窗口（秒）。小于等于 0 表示不复用。</param>
+    /// <param name="forceRefresh">
+    /// 为 <c>true</c> 时忽略窗口内<b>已完成</b>的结果，改发起一次新的刷新（用于 401 恢复的第 2..N 轮：
+    /// 首轮刷新所得的令牌已被服务端拒绝，窗口内复用同一结果只会空转）。
+    /// <b>在途</b>刷新（<see cref="Entry.IsCompleted"/> 为 <c>false</c>）仍复用，单飞语义不受影响。
+    /// </param>
     /// <returns>刷新得到的令牌；为 null/空表示刷新未取得可用令牌。</returns>
     public async Task<string?> GetOrRefreshAsync(
         string key,
         Func<Task<string?>> factory,
-        double dedupWindowSeconds)
+        double dedupWindowSeconds,
+        bool forceRefresh = false)
     {
         while (true)
         {
             if (_entries.TryGetValue(key, out var existing) && !existing.IsExpired)
             {
                 // 窗口内（含在途刷新）复用同一任务：并发等待者共享单次刷新，且异常被多方观察。
-                return await existing.Task.ConfigureAwait(false);
+                // HC-23：仅「已完成 + forceRefresh」例外——该结果已被证明无效，必须重新刷新。
+                if (!forceRefresh || !existing.IsCompleted)
+                {
+                    return await existing.Task.ConfigureAwait(false);
+                }
             }
 
             if (existing != null)

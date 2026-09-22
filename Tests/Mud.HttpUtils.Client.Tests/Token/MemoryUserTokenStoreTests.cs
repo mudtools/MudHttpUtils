@@ -292,6 +292,53 @@ public class MemoryUserTokenStoreTests
 
     #endregion
 
+    #region M6-HC-28 空壳桶清扫（桶数有界）
+
+    /// <summary>
+    /// 海量短命 userId 的过期读路径会留下"空内层字典壳"（<c>GetAccessTokenAsync</c> 只移除条目、不移除外层桶）。
+    /// HC-28 的惰性清扫须在桶数越过阈值后的下一次写入把这些空壳回收，且不得误删仍有令牌的桶。
+    /// </summary>
+    [Fact]
+    public async Task SetAccessToken_WhenBucketCountExceedsThreshold_SweepsEmptyBuckets()
+    {
+        var threshold = MemoryUserTokenStore.UserBucketSweepThreshold;
+        var userCount = threshold + 50;
+
+        // 步骤 1：造出 userCount 个桶（每个桶持有一个已过期条目，故清扫期间桶非空、不会被回收）。
+        for (var i = 0; i < userCount; i++)
+            await _store.SetAccessTokenAsync($"user_{i}", "TestToken", $"access_{i}", -1);
+
+        _store.UserBucketCount.Should().BeGreaterThan(threshold, "构造阶段须先越过清扫阈值");
+
+        // 步骤 2：逐个读取（过期 → 条目被移除），桶随之变为空壳。Get 路径不触发清扫，空壳由此滞留。
+        for (var i = 0; i < userCount; i++)
+            (await _store.GetAccessTokenAsync($"user_{i}", "TestToken")).Should().BeNull();
+
+        // 步骤 3：一次写入越过阈值 → 触发惰性全量清扫。
+        await _store.SetAccessTokenAsync("live-user", "TestToken", "live_token", 3600);
+
+        _store.UserBucketCount.Should().BeLessThanOrEqualTo(1,
+            "清扫后只应残留仍有令牌的 live-user 桶，空壳桶必须被回收（桶数有界）");
+        (await _store.GetAccessTokenAsync("live-user", "TestToken")).Should().Be("live_token",
+            "清扫不得误删仍有令牌的桶");
+    }
+
+    [Fact]
+    public async Task SetAccessToken_BelowThreshold_DoesNotSweepNonEmptyBuckets()
+    {
+        // 未越阈值时不扫描：正常令牌读写一律不受影响（防「清扫误删」回归）。
+        for (var i = 0; i < 20; i++)
+            await _store.SetAccessTokenAsync($"user_{i}", "TestToken", $"access_{i}", 3600);
+
+        await _store.SetAccessTokenAsync("user_late", "TestToken", "access_late", 3600);
+
+        for (var i = 0; i < 20; i++)
+            (await _store.GetAccessTokenAsync($"user_{i}", "TestToken")).Should().Be($"access_{i}");
+        (await _store.GetAccessTokenAsync("user_late", "TestToken")).Should().Be("access_late");
+    }
+
+    #endregion
+
     #region Concurrent Access
 
     [Fact]

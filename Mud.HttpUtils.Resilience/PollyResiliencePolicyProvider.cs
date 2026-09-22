@@ -29,7 +29,23 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 {
     private readonly ResilienceOptions _options;
     private readonly ILogger _logger;
+
+    /// <summary>
+    /// 策略缓存。承载两类条目：
+    /// <list type="bullet">
+    /// <item>按结果类型适配的实例（键的 <see cref="PolicyCacheKey.ResultType"/> 为具体类型，值类型 <c>IAsyncPolicy&lt;TResult&gt;</c>）；</item>
+    /// <item>M6-HC-22 引入的「与结果类型无关」的共享策略（键的 <c>ResultType</c> 为 <c>null</c>，值类型 <see cref="AsyncPolicy"/>）——
+    /// 熔断 / 超时策略本身不含 <c>TResult</c>，同一作用域下所有结果类型共用一个实例，失败计数 / 半开状态因此得以合并。</item>
+    /// </list>
+    /// 两类条目共用同一容量上限与同一插入序队列，故共享策略不会绕过 <see cref="ResilienceOptions.MaxPolicyCacheSize"/> 无界增长。
+    /// </summary>
     private readonly ConcurrentDictionary<PolicyCacheKey, object> _policyCache = new();
+
+    /// <summary>
+    /// M6-HC-22：策略缓存插入序队列。超限时按此顺序淘汰最旧条目（FIFO 近似的 LRU），
+    /// 替代原"超限即放弃缓存"（后者会使熔断器状态随每次调用重置而失效）。
+    /// </summary>
+    private readonly ConcurrentQueue<PolicyCacheKey> _policyCacheOrder = new();
 
     private const string PolicyKeyGlobalRetry = "global:retry";
     private const string PolicyKeyGlobalTimeout = "global:timeout";
@@ -89,12 +105,17 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     /// <inheritdoc />
     private sealed class PolicyCacheKey
     {
-        public Type ResultType { get; }
+        /// <summary>
+        /// 结果类型。<c>null</c> 表示"与结果类型无关"的共享策略键（M6-HC-22：
+        /// 熔断/超时策略本身与 <c>TResult</c> 无关，跨结果类型共享同一实例，
+        /// 使同一作用域内的失败计数得以合并）。
+        /// </summary>
+        public Type? ResultType { get; }
         public string PolicyKind { get; }
         /// <summary>M5-HC-06：路由作用域键（host/client/global）。</summary>
         public string Scope { get; }
 
-        public PolicyCacheKey(Type resultType, string policyKind, string scope = "global")
+        public PolicyCacheKey(Type? resultType, string policyKind, string scope = "global")
         {
             ResultType = resultType;
             PolicyKind = policyKind;
@@ -111,7 +132,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
         {
             unchecked
             {
-                var hash = (ResultType.GetHashCode() * 397) ^ (PolicyKind?.GetHashCode() ?? 0);
+                var hash = ((ResultType?.GetHashCode() ?? 0) * 397) ^ (PolicyKind?.GetHashCode() ?? 0);
                 return (hash * 397) ^ (Scope?.GetHashCode() ?? 0);
             }
         }
@@ -202,41 +223,82 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 });
     }
 
-    /// <summary>M5-HC-06：带容量上限的策略缓存写入。超限时不缓存并打 Warning。</summary>
+    /// <summary>M5-HC-06：带容量上限的策略缓存写入；M6-HC-22：超限时按插入序淘汰最旧条目（不再放弃缓存）。</summary>
     private object GetOrAddPolicy(PolicyCacheKey key, Func<object> factory)
+        => GetOrAddCachedPolicy<object>(key, factory);
+
+    /// <summary>
+    /// M6-HC-22：获取（或创建）与结果类型无关的共享策略（熔断 / 超时）。
+    /// 与按结果类型适配的实例共用 <see cref="_policyCache"/> 及同一容量上限。
+    /// </summary>
+    private AsyncPolicy GetOrAddSharedPolicy(PolicyCacheKey key, Func<AsyncPolicy> factory)
+        => GetOrAddCachedPolicy<AsyncPolicy>(key, factory);
+
+    private T GetOrAddCachedPolicy<T>(PolicyCacheKey key, Func<T> factory) where T : class
     {
         if (_policyCache.TryGetValue(key, out var existing))
-            return existing;
+            return (T)existing;
 
         var max = _options.MaxPolicyCacheSize;
         if (max > 0 && _policyCache.Count >= max)
         {
-            MudHttpClientLog.PolicyCacheFull(_logger, max);
-            return factory();
+            TrimPolicyCache(max);
         }
 
-        return _policyCache.GetOrAdd(key, _ => factory());
+        var created = false;
+        var policy = (T)_policyCache.GetOrAdd(key, _ =>
+        {
+            created = true;
+            return factory();
+        });
+
+        if (created)
+            _policyCacheOrder.Enqueue(key);
+
+        return policy;
+    }
+
+    /// <summary>
+    /// M6-HC-22：按插入序淘汰最旧条目（每轮淘汰 <c>max/8</c>，至少 1 条），使缓存容量成为软上限，
+    /// 避免原实现"超限即完全放弃缓存"导致的熔断计数丢失与策略实例每次重建。
+    /// </summary>
+    private void TrimPolicyCache(int max)
+    {
+        MudHttpClientLog.PolicyCacheFull(_logger, max);
+
+        var evictCount = Math.Max(1, max / 8);
+        for (var i = 0; i < evictCount && _policyCacheOrder.TryDequeue(out var oldest); i++)
+        {
+            _policyCache.TryRemove(oldest, out _);
+        }
     }
 
     /// <inheritdoc />
     public IAsyncPolicy<TResult> GetTimeoutPolicy<TResult>(string scope)
     {
+        // 缓存的仍是按结果类型适配后的实例（保持 GetTimeoutPolicy_CachesPolicyByType 的引用标识契约），
+        // 但底层共享策略不含 TResult，故同一作用域的失败/超时观测跨结果类型一致（M6-HC-22）。
         var key = new PolicyCacheKey(typeof(TResult), "timeout", scope);
         return (IAsyncPolicy<TResult>)GetOrAddPolicy(key, () => BuildTimeoutPolicy<TResult>(scope));
     }
 
     private IAsyncPolicy<TResult> BuildTimeoutPolicy<TResult>(string scope = "global")
+        => GetOrAddSharedPolicy(
+            new PolicyCacheKey(resultType: null, "timeout", scope),
+            () => BuildSharedTimeoutPolicy(scope)).AsAsyncPolicy<TResult>();
+
+    private AsyncPolicy BuildSharedTimeoutPolicy(string scope = "global")
     {
         var timeoutOptions = _options.Timeout;
 
         if (!timeoutOptions.Enabled)
         {
-            return Policy.NoOpAsync<TResult>();
+            return Policy.NoOpAsync();
         }
 
         var policyKey = scope == "global" ? PolicyKeyGlobalTimeout : $"{scope}:timeout";
 
-        return Policy.TimeoutAsync<TResult>(
+        return Policy.TimeoutAsync(
             TimeSpan.FromSeconds(timeoutOptions.TimeoutSeconds),
             TimeoutStrategy.Pessimistic,
             onTimeoutAsync: (context, timespan, task) =>
@@ -267,17 +329,24 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     /// <inheritdoc />
     public IAsyncPolicy<TResult> GetCircuitBreakerPolicy<TResult>(string scope)
     {
+        // M6-HC-22：同 GetTimeoutPolicy —— 按结果类型缓存适配后的实例以保证引用标识，
+        // 底层熔断器实例跨结果类型共享，使同一作用域的失败计数真正合并。
         var key = new PolicyCacheKey(typeof(TResult), "circuitBreaker", scope);
         return (IAsyncPolicy<TResult>)GetOrAddPolicy(key, () => BuildCircuitBreakerPolicy<TResult>(scope));
     }
 
     private IAsyncPolicy<TResult> BuildCircuitBreakerPolicy<TResult>(string scope = "global")
+        => GetOrAddSharedPolicy(
+            new PolicyCacheKey(resultType: null, "circuitBreaker", scope),
+            () => BuildSharedCircuitBreakerPolicy(scope)).AsAsyncPolicy<TResult>();
+
+    private AsyncPolicy BuildSharedCircuitBreakerPolicy(string scope = "global")
     {
         var cbOptions = _options.CircuitBreaker;
 
         if (!cbOptions.Enabled)
         {
-            return Policy.NoOpAsync<TResult>();
+            return Policy.NoOpAsync();
         }
 
         var policyKey = scope == "global" ? PolicyKeyGlobalCircuitBreaker : $"{scope}:circuitBreaker";
@@ -312,8 +381,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                     {
                         MudHttpClientLog.CircuitBreakerHalfOpen(_logger);
                         CircuitBreakerStateObserver.SetState(policyKey, CircuitBreakerState.HalfOpen);
-                    })
-                .AsAsyncPolicy<TResult>();
+                    });
         }
 
         // 简单熔断策略：基于连续失败计数模式
@@ -339,8 +407,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 {
                     MudHttpClientLog.CircuitBreakerHalfOpen(_logger);
                     CircuitBreakerStateObserver.SetState(policyKey, CircuitBreakerState.HalfOpen);
-                })
-            .AsAsyncPolicy<TResult>();
+                });
     }
 
     /// <inheritdoc />
@@ -542,7 +609,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                         {
                             try
                             {
-                                await onRetryCallback(outcome.Exception, retryCount, timeSpan);
+                                await onRetryCallback(outcome.Exception, retryCount, timeSpan).ConfigureAwait(false);
                             }
                             catch (Exception callbackEx)
                             {

@@ -15,6 +15,7 @@ public class UrlValidatorAsyncTests : IDisposable
     public void Dispose()
     {
         UrlValidator.DnsResolveOverride = null;
+        UrlValidator.ClearDnsCache();
         _fixture.RestoreDomains();
     }
 
@@ -81,4 +82,49 @@ public class UrlValidatorAsyncTests : IDisposable
         var act = async () => await UrlValidator.ValidateUrlAsync(null);
         await act.Should().ThrowAsync<ArgumentNullException>();
     }
+
+    #region M6-HC-08：白名单命中的传输安全校验改走异步回环判定
+
+    [Fact]
+    public async Task ValidateUrlAsync_WhitelistedDomain_HttpNonLoopback_ThrowsInsecureProtocol()
+    {
+        // HC-08：白名单 + HTTP → 异步回环判定（DNS 解析主机名）→ 非回环一律拒绝
+        UrlValidator.ClearDnsCache();
+        UrlValidator.DnsResolveOverride = _ => new[] { IPAddress.Parse("93.184.216.34") };
+
+        var act = async () => await UrlValidator.ValidateUrlAsync("http://api.example.com/data");
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*仅允许 HTTPS*");
+    }
+
+    [Fact]
+    public async Task ValidateUrlAsync_WhitelistedDomain_HttpLoopback_Allowed()
+    {
+        // HC-08：回环地址豁免（保留本地开发）—— 异步路径与同步版语义一致
+        UrlValidator.ClearDnsCache();
+        UrlValidator.DnsResolveOverride = _ => new[] { IPAddress.Parse("127.0.0.1") };
+
+        var act = async () => await UrlValidator.ValidateUrlAsync("http://api.example.com/data");
+
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task ValidateUrlAsync_WhitelistedDomain_Https_SkipsLoopbackCheck()
+    {
+        // HTTPS 白名单命中直接放行，不触发任何 DNS 解析（异步版保持零 DNS）
+        var dnsCalls = 0;
+        UrlValidator.DnsResolveOverride = _ =>
+        {
+            Interlocked.Increment(ref dnsCalls);
+            return new[] { IPAddress.Parse("93.184.216.34") };
+        };
+
+        await UrlValidator.ValidateUrlAsync("https://api.example.com/data");
+
+        dnsCalls.Should().Be(0, "HTTPS 白名单命中无需回环判定");
+    }
+
+    #endregion
 }

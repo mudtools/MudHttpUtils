@@ -126,10 +126,48 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
         if (TryGet<T>(key, out var cachedValue))
             return cachedValue;
 
-        var fetchLock = _fetchLocks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
-        // M3-#24：超限时回收"不在缓存中"的锁，防止无界增长
-        PruneFetchLocksIfOverCapacity();
-        await fetchLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        // M6-HC-07：单飞锁获取改为"自旋校验"。
+        // 原实现在 GetOrAdd 与 WaitAsync 之间的窗口内，锁可能被 PruneFetchLocks 回收
+        // （回收条件仅判 !_cache.ContainsKey，而回源中的键必然不在 _cache），
+        // 使同 key 的并发调用各自拿到不同锁并重复回源 —— 单飞语义失效。
+        // 修正：回收仅针对"无人持锁"的锁，且持有后校验引用仍为字典中的当前锁；
+        // 自旋上限 2 次，仍不稳定则放弃单飞直接回源（仅退化为并发回源，正确性不受影响）。
+        SemaphoreSlim? fetchLock = null;
+        var acquired = false;
+        for (var attempt = 0; attempt < 2 && !acquired; attempt++)
+        {
+            var candidate = _fetchLocks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+
+            // M3-#24：超限时回收"不在缓存中且无人持锁"的锁，防止无界增长
+            PruneFetchLocks();
+
+            await candidate.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+            // 持有后校验：一旦被本线程持有，回收条件（无人持锁）即不成立，校验结果稳定。
+            if (_fetchLocks.TryGetValue(key, out var current) && ReferenceEquals(current, candidate))
+            {
+                fetchLock = candidate;
+                acquired = true;
+            }
+            else
+            {
+                // candidate 已被回收，不是当前共享锁，释放后重试
+                candidate.Release();
+            }
+        }
+
+        if (!acquired || fetchLock is null)
+        {
+            // 两次自旋仍未取得稳定共享锁：放弃单飞，直接回源
+            var directResult = await fetchFunc().ConfigureAwait(false);
+            if (directResult != null)
+            {
+                Set(key, directResult, expiration, useSlidingExpiration);
+            }
+
+            return directResult;
+        }
+
         try
         {
             if (TryGet<T>(key, out cachedValue))
@@ -183,10 +221,20 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
     }
 
     /// <summary>
-    /// M3-#24：fetch 锁超限回收 —— 优先移除"不在 <see cref="_cache"/> 中"的锁（缓存条目已被清理/淘汰的键）。
-    /// 若全部键均处于活跃回源中，保持现状并在下个清理周期重试（此时不释放，避免破坏互斥语义）。
+    /// M3-#24 / M6-HC-07：fetch 锁超限回收 —— 移除"缓存条目已不存在<b>且当前无人持锁</b>"的锁。
     /// </summary>
-    private void PruneFetchLocksIfOverCapacity()
+    /// <remarks>
+    /// <para>
+    /// <b>M6-HC-07 修正</b>：回收条件原仅判 <c>!_cache.ContainsKey(key)</c>，而"正在回源"的键必然不在
+    /// <see cref="_cache"/> 中（回源完成后才经 <c>Set</c> 写入），故回源中的锁会被误回收，
+    /// 使同 key 的并发调用各自取到不同锁并重复回源 —— 破坏单飞语义。
+    /// 追加"无人持锁"条件可保证活跃回源中的锁不被回收。
+    /// </para>
+    /// <para>
+    /// Timer 清理与 GetOrFetchAsync 共用本方法，消除两份重复逻辑。
+    /// </para>
+    /// </remarks>
+    private void PruneFetchLocks()
     {
         if (_fetchLocks.Count <= _maxFetchLocks)
             return;
@@ -195,15 +243,25 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
         {
             if (_fetchLocks.Count <= _maxFetchLocks)
                 break;
-            if (!_cache.ContainsKey(kvp.Key))
+
+            // 无人持锁 ⇔ SemaphoreSlim(1,1) 的 CurrentCount 为 1（被获取后为 0）
+            if (!_cache.ContainsKey(kvp.Key) && kvp.Value.CurrentCount > 0)
+            {
+                // 按引用比对移除，避免"读到旧锁 → 他线程已换新锁 → 误删新锁"
+#if NET5_0_OR_GREATER
+                _fetchLocks.TryRemove(new KeyValuePair<string, SemaphoreSlim>(kvp.Key, kvp.Value));
+#else
+                // ns2.0 无 TryRemove(KeyValuePair) 重载，回退普通移除
                 _fetchLocks.TryRemove(kvp.Key, out _);
+#endif
+            }
         }
 
         if (_fetchLocks.Count > _maxFetchLocks)
         {
             // M3-#24：用 Trace 而非 Debug —— Release 构建下也可见，运维可接入 TraceListener 观测
             System.Diagnostics.Trace.WriteLine(
-                $"MemoryHttpResponseCache: fetch 锁数量 {_fetchLocks.Count} 超过上限 {_maxFetchLocks}，剩余键均未命中可回收条件（活跃回源中），等待下个清理周期");
+                $"MemoryHttpResponseCache: fetch 锁数量 {_fetchLocks.Count} 超过上限 {_maxFetchLocks}，剩余键均在活跃回源中，等待下个清理周期");
         }
     }
 
@@ -221,21 +279,9 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
                 }
             }
 
-            // NEW-CA-03 修复：仅从字典移除 fetchLock，不立即 Dispose，避免在途操作抛异常
-            foreach (var kvp in _fetchLocks)
-            {
-                if (!_cache.ContainsKey(kvp.Key))
-                {
-                    _fetchLocks.TryRemove(kvp.Key, out _);
-                }
-            }
-
-            // M3-#24：清理后若仍超限（全部键活跃回源中），记录告警便于观测
-            if (_fetchLocks.Count > _maxFetchLocks)
-            {
-                System.Diagnostics.Trace.WriteLine(
-                    $"MemoryHttpResponseCache: fetch 锁数量 {_fetchLocks.Count} 仍超过上限 {_maxFetchLocks}，请检查是否存在大量持续失败的回源请求");
-            }
+            // NEW-CA-03 修复：仅从字典移除 fetchLock，不立即 Dispose，避免在途操作抛异常。
+            // M6-HC-07：与 GetOrFetchAsync 共用同一回收方法（含"无人持锁"判定）。
+            PruneFetchLocks();
         }
         catch (Exception ex)
         {
@@ -261,15 +307,40 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
 
         if (_cache.Count >= _maxCacheSize)
         {
-            var lruEntries = _cache
-                .OrderBy(kvp => kvp.Value.LastAccessTime)
-                .Take(_cache.Count - _maxCacheSize + 1)
-                .Select(kvp => kvp.Key)
-                .ToList();
+            var evictCount = _cache.Count - _maxCacheSize + 1;
 
-            foreach (var key in lruEntries)
+            // M6-HC-16：已满时需淘汰"最久未访问"条目。严格容量语义下 evictCount 恒为 1，
+            // 用单次 O(N) 扫描取最小 LastAccessTime 即可，避免每次 Set 都付出 O(N log N) 全量排序；
+            // 仅在并发导致单次溢出多条（evictCount > 1）时回退到排序选择。
+            if (evictCount == 1)
             {
-                _cache.TryRemove(key, out _);
+                string? oldestKey = null;
+                var oldestAccess = long.MaxValue;
+
+                foreach (var kvp in _cache)
+                {
+                    if (kvp.Value.LastAccessTime < oldestAccess)
+                    {
+                        oldestAccess = kvp.Value.LastAccessTime;
+                        oldestKey = kvp.Key;
+                    }
+                }
+
+                if (oldestKey != null)
+                    _cache.TryRemove(oldestKey, out _);
+            }
+            else
+            {
+                var lruEntries = _cache
+                    .OrderBy(kvp => kvp.Value.LastAccessTime)
+                    .Take(evictCount)
+                    .Select(kvp => kvp.Key)
+                    .ToList();
+
+                foreach (var key in lruEntries)
+                {
+                    _cache.TryRemove(key, out _);
+                }
             }
         }
     }

@@ -28,6 +28,10 @@ public static class QueryMapHelper
     /// <summary>
     /// 递归解释查询参数对象，将其属性展平为键值对，并添加到 QueryParameterBuilder 中。支持基本类型、字符串、枚举、日期时间、GUID，以及实现了 IQueryParameter 接口的对象。对于复杂对象，会继续递归展平其属性。可以选择是否包含 null 值，是否使用 JSON 序列化，以及是否对键和值进行 URL 编码。
     /// </summary>
+    /// <remarks>
+    /// <paramref name="urlEncode"/> 为 false 时会将结果写入 <paramref name="rawPairs"/>，此时 <b>键与值均不做 URL 编码</b>，
+    /// 由调用方负责最终的编码/拼接；该模式适用于需要传入已编码或含特殊分隔符的原始查询串的场景。
+    /// </remarks>
 #if NET6_0_OR_GREATER
     [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2072",
         Justification = "该方法已标注 RequiresUnreferencedCode，属显式非 AOT 回退路径；IL2072 来自 GetProperties 返回值赋给参数。")]
@@ -56,7 +60,8 @@ public static class QueryMapHelper
         if (depth > MaxFlattenRecursionDepth) throw new InvalidOperationException("Maximum recursion depth exceeded while flattening object of type " + obj.GetType().Name + ". This may be caused by a circular reference.");
 
         var serializer = contentSerializer ?? s_defaultSerializer;
-        var properties = PropertyCache.GetOrAdd(obj.GetType(), t => t.GetProperties());
+        // M6-HC-19：过滤索引器属性，避免 prop.GetValue(obj) 因缺少索引实参抛 TargetParameterCountException。
+        var properties = PropertyCache.GetOrAdd(obj.GetType(), t => t.GetProperties().Where(static p => p.GetIndexParameters().Length == 0).ToArray());
         foreach (var prop in properties)
         {
             var value = prop.GetValue(obj);
@@ -69,7 +74,7 @@ public static class QueryMapHelper
                     if (urlEncode && rawPairs == null)
                         queryParams.Add(key, string.Empty);
                     else if (rawPairs != null)
-                        rawPairs.Add(Uri.EscapeDataString(key) + "=");
+                        rawPairs.Add(key + "=");
                     else
                         queryParams.Add(key, string.Empty);
                 }
@@ -86,7 +91,7 @@ public static class QueryMapHelper
                     stringValue = value.ToString() ?? string.Empty;
 
                 if (!urlEncode && rawPairs != null)
-                    rawPairs.Add(Uri.EscapeDataString(key) + "=" + stringValue);
+                    rawPairs.Add(key + "=" + stringValue);
                 else
                     queryParams.Add(key, stringValue);
             }
@@ -98,7 +103,7 @@ public static class QueryMapHelper
                     if (includeNullValues || !string.IsNullOrEmpty(kvp.Value))
                     {
                         if (!urlEncode && rawPairs != null)
-                            rawPairs.Add(Uri.EscapeDataString(subKey) + "=" + (kvp.Value ?? string.Empty));
+                            rawPairs.Add(subKey + "=" + (kvp.Value ?? string.Empty));
                         else
                             queryParams.Add(subKey, kvp.Value ?? string.Empty);
                     }

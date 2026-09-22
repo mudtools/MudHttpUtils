@@ -13,7 +13,7 @@ namespace Mud.HttpUtils;
 /// <remarks>
 /// <para>.NET 6+ 使用 <c>[LoggerMessage]</c> 源生成器（零分配、级别短路）；</para>
 /// <para>netstandard2.0 fallback 到 <c>LoggerMessage.Define</c>（同样零分配，但需要在运行时构建委托）。</para>
-/// <para>EventId 规划：1-50 EnhancedHttpClient（已分配）；51-100 预留；101-120 Resilience；121-130 Cache；131-156 TokenManager（已分配，含 151-156）；157-165 SR 轮（Token 安审查修复）；166 UserTokenScopeInvalidationFallback；167 AppResilienceCacheFull；168 SsrfGuidance；169 RequestBodySerializationFastPathFallback（TMX-17：原 166 改为 169 去重）；170 TokenRefreshSuppressed（TMX-04）；171 TokenCacheSerializationFailed（TMX-11）；172-177 已分配（见各定义处注释，177 UserTokenScopeInvalidationFallback）；178+ TR 轮（Token 第二轮：178 AccessTokenInvalidationFallback；179 TokenCacheEncryptionDisabled，TR-09 预留）。</para>
+/// <para>EventId 规划（M6-HC-13 纠偏为实际分配）：1-50 EnhancedHttpClient（已分配）；51-100 预留；101-120 Resilience；121-130 Cache；131-156 TokenManager（已分配，含 150-156）；157-165 SR 轮 Token 安全修复（157 TokenRecoveryBodyNotRecoverable、158 RefreshTokenRejected、159 PublicClientAuthUsed、160 TokenManagerUnresolved、161 UserTokenIdentityMismatch）；162-165 租户/作用域/退避（162 TenantBindingRejected、163 DefaultScopeRefreshFallbackUsed、164 UserRefreshBackoffActive、165 TokenManagerSkippedNoBackgroundRefresh）；166 RequestBodySerializationFastPathFallback（TMX-17 去重后落点）；167 AppResilienceCacheFull；168 SsrfGuidance；169 RetrySkippedNonReplayable（M5-HC-05）；170 PolicyCacheFull（M5-HC-06）；171-176 MT 轮（171 TokenRecoveryRedirectDetected、172 EmptyAppManagerAutoRegistered、173 MudHttpClientsSectionMissing、174 ClientNameCaseFallbackUsed、175 SwitcherFactoryOverwritten、176 MudHttpClientNameCaseCollision）；177-178 TR 轮（177 UserTokenScopeInvalidationFallback、178 AccessTokenInvalidationFallback）；179 未占用（TR-09 预留）；180 MissingAppContextRejected（FIX-09）；181-182 TMX 轮（181 TokenRefreshSuppressed、182 TokenCacheSerializationFailed，M6-HC-13 由原 170/171 迁移至此以消除撞号）；183 未占用（M6-HC-23 曾拟用于 TokenRefreshReturnedSameToken，最终改采 forceRefresh 方案未占用）。</para>
 /// </remarks>
 internal static partial class MudHttpClientLog
 {
@@ -428,10 +428,10 @@ internal static partial class MudHttpClientLog
         Message = "请求体不可安全重放（原因: {Reason}），已跳过重试（超时/熔断仍生效）。")]
     public static partial void RetrySkippedNonReplayable(ILogger logger, string reason);
 
-    // ---- M5-HC-06：策略缓存超限（EventId 170）----
+    // ---- M5-HC-06：策略缓存超限（EventId 170）；M6-HC-22：语义由"不缓存"改为"按插入序淘汰" ----
 
     [LoggerMessage(EventId = 170, Level = LogLevel.Warning,
-        Message = "弹性策略缓存已达上限 ({MaxPolicyCacheSize})，新作用域将不缓存策略实例。")]
+        Message = "弹性策略缓存已达上限 ({MaxPolicyCacheSize})，已按插入序淘汰最旧策略实例。")]
     public static partial void PolicyCacheFull(ILogger logger, int maxPolicyCacheSize);
 
     // ---- MT 轮新增事件（EventId 171-175）：多应用与令牌管理缺陷修复 ----
@@ -731,11 +731,11 @@ internal static partial class MudHttpClientLog
     public static void RetrySkippedNonReplayable(ILogger logger, string reason)
         => s_retrySkippedNonReplayable(logger, reason, null);
 
-    // ---- M5-HC-06：策略缓存超限（EventId 170）----
+    // ---- M5-HC-06：策略缓存超限（EventId 170）；M6-HC-22：语义由"不缓存"改为"按插入序淘汰" ----
 
     private static readonly Action<ILogger, int, Exception?> s_policyCacheFull =
         LoggerMessage.Define<int>(LogLevel.Warning, new EventId(170, nameof(PolicyCacheFull)),
-            "弹性策略缓存已达上限 ({MaxPolicyCacheSize})，新作用域将不缓存策略实例。");
+            "弹性策略缓存已达上限 ({MaxPolicyCacheSize})，已按插入序淘汰最旧策略实例。");
     public static void PolicyCacheFull(ILogger logger, int maxPolicyCacheSize)
         => s_policyCacheFull(logger, maxPolicyCacheSize, null);
 
@@ -787,16 +787,18 @@ internal static partial class MudHttpClientLog
         => s_missingAppContextRejected(logger, managerTypeName, null);
 #endif
 
-    // ---- TMX-04 / TMX-11：新增可观测性日志（EventId 170/171）----
+    // ---- TMX-04 / TMX-11：新增可观测性日志（EventId 181/182）----
+    // M6-HC-13：原分配 170/171 与 PolicyCacheFull(170)、TokenRecoveryRedirectDetected(171) 撞号，
+    // 跨分支日志聚合错位；迁移至未占用号段 181+（179 仍未占用，180 = MissingAppContextRejected）。
 
     private static readonly Action<ILogger, Exception?> s_tokenRefreshSuppressed =
-        LoggerMessage.Define(LogLevel.Debug, new EventId(170, nameof(TokenRefreshSuppressed)),
+        LoggerMessage.Define(LogLevel.Debug, new EventId(181, nameof(TokenRefreshSuppressed)),
             "令牌刷新被负缓存窗口抑制（TMX-04），窗口内等待者直接复用上次失败结果。");
     public static void TokenRefreshSuppressed(ILogger logger)
         => s_tokenRefreshSuppressed(logger, null);
 
     private static readonly Action<ILogger, string, string, Exception?> s_tokenCacheSerializationFailed =
-        LoggerMessage.Define<string, string>(LogLevel.Warning, new EventId(171, nameof(TokenCacheSerializationFailed)),
+        LoggerMessage.Define<string, string>(LogLevel.Warning, new EventId(182, nameof(TokenCacheSerializationFailed)),
             "加密缓存序列化失败，降级为不缓存（type={Type}）：{Message}");
     public static void TokenCacheSerializationFailed(ILogger logger, string type, string message, Exception ex)
         => s_tokenCacheSerializationFailed(logger, type, message, ex);

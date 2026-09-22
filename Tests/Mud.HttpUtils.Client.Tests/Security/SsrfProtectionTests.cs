@@ -189,11 +189,11 @@ public class SsrfProtectionTests
 
     /// <summary>
     /// 已注册 <see cref="IIpAddressPolicy"/>（AddMudHttpClientSsrfProtection(IServiceCollection)）
-    /// 但命名客户端未启用 handler 级连接期校验时，首次创建客户端记录一次 Info 引导日志
-    /// （进程级 Interlocked 门控，多次创建仅一条）。
+    /// 且客户端为<b>非严格模式</b>（<c>AllowCustomBaseUrls=true</c>，未走 M6-HC-03 自动接线）时，
+    /// 首次创建客户端记录一次 Info 引导日志（进程级 Interlocked 门控，多次创建仅一条）。
     /// </summary>
     [Fact]
-    public void SsrfGuidance_RegisteredPolicy_NoHandlerProtection_LogsOnce()
+    public void SsrfGuidance_RegisteredPolicy_NonStrictMode_LogsOnce()
     {
         var gate = typeof(HttpClientServiceCollectionExtensions)
             .GetField("_ssrfGuidanceLogged", BindingFlags.Static | BindingFlags.NonPublic)!;
@@ -205,6 +205,10 @@ public class SsrfProtectionTests
             var services = new ServiceCollection();
             services.AddMudHttpClientSsrfProtection();
             services.AddSingleton<ILogger<HttpClientFactoryEnhancedClient>>(logger);
+            // M6-HC-03（D1-A）：严格模式（默认）已由注册路径自动接线连接期校验 → 不再提示；
+            // 引导日志仅对非严格模式客户端保留，故此处经配置节显式放开自定义 BaseUrl。
+            services.Configure<MudHttpClientApplicationOptions>(o =>
+                o.Clients["no-handler-protection"] = new MudHttpClientOptions { AllowCustomBaseUrls = true });
             services.AddMudHttpClient("no-handler-protection",
                 client => client.BaseAddress = new Uri("https://api.example.com"));
 
@@ -217,6 +221,40 @@ public class SsrfProtectionTests
 
             // 多次创建仅触发一次引导日志
             logger.Messages.Should().ContainSingle(m => m.Contains("连接期校验"));
+        }
+        finally
+        {
+            gate.SetValue(null, 0);
+        }
+    }
+
+    /// <summary>
+    /// M6-HC-03（D1-A）：严格模式（<c>AllowCustomBaseUrls=false</c>，默认）下连接期 SSRF 校验
+    /// 已由注册路径自动接线，不再输出引导日志 —— 避免误导用户以为未启用。
+    /// </summary>
+    [Fact]
+    public void SsrfGuidance_StrictMode_AutoWired_DoesNotLog()
+    {
+        var gate = typeof(HttpClientServiceCollectionExtensions)
+            .GetField("_ssrfGuidanceLogged", BindingFlags.Static | BindingFlags.NonPublic)!;
+        gate.SetValue(null, 0);
+
+        var logger = new CapturingLogger<HttpClientFactoryEnhancedClient>();
+        try
+        {
+            var services = new ServiceCollection();
+            services.AddMudHttpClientSsrfProtection();
+            services.AddSingleton<ILogger<HttpClientFactoryEnhancedClient>>(logger);
+            services.AddMudHttpClient("strict-auto-wired",
+                client => client.BaseAddress = new Uri("https://api.example.com"));
+
+            using var sp = services.BuildServiceProvider();
+            var factory = sp.GetRequiredService<IEnhancedHttpClientFactory>();
+
+            _ = factory.CreateClient("strict-auto-wired");
+            _ = factory.CreateClient("strict-auto-wired");
+
+            logger.Messages.Should().NotContain(m => m.Contains("连接期校验"));
         }
         finally
         {
@@ -249,6 +287,52 @@ public class SsrfProtectionTests
         {
             gate.SetValue(null, 0);
         }
+    }
+
+    #endregion
+
+    #region M6-HC-01 IPv4 映射地址
+
+    /// <summary>
+    /// M6-HC-01：IPv4 映射型 IPv6（::ffff:a.b.c.d）必须先归一为 IPv4 再判定。
+    /// 修复前 ::ffff:10.0.0.1 不命中 IPv4 网段（IPNetwork.Contains 按 AddressFamily 短路），
+    /// 两道 SSRF 防线（URL 校验期 + 连接期 DefaultIpAddressPolicy）同时被绕过。
+    /// </summary>
+    [Theory]
+    [InlineData("::ffff:10.0.0.1")]      // 私网 10/8
+    [InlineData("::ffff:172.16.0.1")]    // 私网 172.16/12
+    [InlineData("::ffff:192.168.1.1")]   // 私网 192.168/16
+    [InlineData("::ffff:169.254.1.1")]   // 链路本地 169.254/16（云元数据段）
+    [InlineData("::ffff:0.0.0.0")]       // 0.0.0.0/8
+    [InlineData("::ffff:127.0.0.1")]     // 回环：IPAddress.IsLoopback 对映射地址返回 False，修复后经归一应 true
+    public void IsPrivateIpAddress_Ipv4MappedPrivateAddress_ReturnsTrue(string addressText)
+    {
+        var address = IPAddress.Parse(addressText);
+
+        UrlValidator.IsPrivateIpAddress(address).Should().BeTrue(
+            $"IPv4 映射地址 {addressText} 归一后属私网/回环，必须判为 private（SSRF 防线不得绕过）");
+    }
+
+    /// <summary>非映射型公网/文档地址不得误伤。</summary>
+    [Theory]
+    [InlineData("::ffff:8.8.8.8")]   // 映射型公网地址
+    [InlineData("2001:db8::1")]      // 纯 IPv6 文档地址
+    public void IsPrivateIpAddress_NonPrivateAddress_ReturnsFalse(string addressText)
+    {
+        var address = IPAddress.Parse(addressText);
+
+        UrlValidator.IsPrivateIpAddress(address).Should().BeFalse(
+            $"地址 {addressText} 不属私网/回环，不应被判为 private");
+    }
+
+    /// <summary>连接期准入策略（DefaultIpAddressPolicy 直接委托 IsPrivateIpAddress）自动受益于归一化。</summary>
+    [Fact]
+    public void DefaultIpAddressPolicy_Ipv4MappedAddress_BlocksPrivate_AllowsPublic()
+    {
+        var policy = new DefaultIpAddressPolicy();
+
+        policy.IsAllowed(IPAddress.Parse("::ffff:10.0.0.1")).Should().BeFalse("映射型私网地址必须在连接期被拒绝");
+        policy.IsAllowed(IPAddress.Parse("::ffff:8.8.8.8")).Should().BeTrue("映射型公网地址不应被误拒");
     }
 
     #endregion

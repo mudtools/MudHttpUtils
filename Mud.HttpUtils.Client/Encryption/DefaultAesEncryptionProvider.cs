@@ -264,7 +264,17 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
                 return DecryptCbcThenHmac(fullBytes, keySeparated: false);
 
             case EnvelopeVersionCbcHmacKeySep:
-                // M5-HC-13：HKDF 密钥分离格式
+                // M6-HC-26：0x04 的 enc/mac 子密钥由 HKDF 从主密钥派生，未启用密钥分离的实例无此子密钥
+                // （_encKey/_macKey 为 null）。此前会退化用主密钥验 MAC → 抛"密文完整性校验失败"，
+                // 把配置不匹配误报为篡改；此处显式拒绝并给出可操作的修复指引。
+                if (!_enableKeySeparation)
+                {
+                    throw new CryptographicException(
+                        "密文由启用密钥分离的实例产生，当前实例未启用（AesEncryptionOptions.EnableKeySeparation = false）。"
+                        + "请将本实例的 EnableKeySeparation 置为 true；若需与未启用密钥分离的对端互通，"
+                        + "应在加密侧产出 v3(0x03) 信封。");
+                }
+
                 EnsureMinLength(fullBytes.Length, MinCbcHmacLength, "v4 CBC+HMAC (key-separated)");
                 return DecryptCbcThenHmac(fullBytes, keySeparated: true);
 

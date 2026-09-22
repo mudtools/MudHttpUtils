@@ -48,11 +48,21 @@ public static class MudHttpActivitySource
     /// 诊断事件是否启用（G28 调用点门控探针）。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// 所有事件发射点在调用 <see cref="AddActivityEvent"/> 前应先检查本属性：
     /// <c>false</c> 时不得构造 payload/tags 工厂（含 lambda 闭包与实参数组），
-    /// 以保证 <see cref="MudHttpObservabilityOptions.EmitDiagnosticEvents"/>=false 时事件路径零分配。
+    /// 以保证无消费方时事件路径零分配。
+    /// </para>
+    /// <para>
+    /// M6-HC-17：在 <see cref="MudHttpObservabilityOptions.EmitDiagnosticEvents"/> 之外，
+    /// 叠加"是否存在消费方"判定 —— 既无 <see cref="MudHttpDiagnosticListener"/> 订阅者、
+    /// 又无当前 <see cref="Activity"/> 时，事件不可能被任何一方观察到，调用点直接短路，
+    /// 避免闭包与 tags 数组的无谓分配。
+    /// </para>
     /// </remarks>
-    public static bool EventsEnabled => MudHttpObservabilityOptions.EmitDiagnosticEvents;
+    public static bool EventsEnabled =>
+        MudHttpObservabilityOptions.EmitDiagnosticEvents
+        && (MudHttpDiagnosticListener.Instance.HasSubscribers || Activity.Current is not null);
 
     /// <summary>
     /// 在当前 Activity 上记录 Span 事件（同时写入 DiagnosticSource）。

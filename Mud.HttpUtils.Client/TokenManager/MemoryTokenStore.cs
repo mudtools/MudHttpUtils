@@ -49,7 +49,15 @@ public class MemoryTokenStore : ITokenStore
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>访问令牌字符串，如果不存在或已过期则返回 null。</returns>
     /// <remarks>
-    /// 此方法会自动检查令牌的过期时间，如果令牌已过期则返回 null 并从存储中移除。
+    /// <para>此方法会自动检查令牌的过期时间，如果令牌已过期则返回 null 并从存储中移除。</para>
+    /// <para>
+    /// <b>M6-HC-28 弱一致声明（仅 netstandard2.0）</b>：netstandard2.0 缺少
+    /// <c>TryRemove(KeyValuePair&lt;TKey, TValue&gt;)</c> 条件移除重载，该目标框架下过期移除退化为
+    /// 无条件按 key 移除。若恰有并发 <see cref="SetAccessTokenAsync"/> 在同一时刻写入新令牌，
+    /// 新条目可能被本次移除误删（读方看到暂时缺失，而非错误令牌——不会产生越权/串号）。
+    /// 该弱一致窗口由调用方下次 Set 或刷新流程自然恢复，故不做锁内复查（引入全局锁的代价高于收益）。
+    /// net5.0 及以上目标框架走按引用比对的条件移除，无此窗口。
+    /// </para>
     /// </remarks>
     public virtual Task<string?> GetAccessTokenAsync(string tokenType, CancellationToken cancellationToken = default)
     {
@@ -60,10 +68,11 @@ public class MemoryTokenStore : ITokenStore
                 return Task.FromResult<string?>(entry.AccessToken);
             }
             // NEW-TM-08 修复：过期则移除，与文档承诺一致
-            // （ns2.0 无 TryRemove(KeyValuePair) 条件移除重载，回退普通移除）
 #if NET5_0_OR_GREATER
+            // 条件移除：按引用比对，仅当条目仍是我们读到的那个实例时才移除
             _store.TryRemove(new KeyValuePair<string, TokenEntry>(tokenType, entry));
 #else
+            // M6-HC-28：ns2.0 无 TryRemove(KeyValuePair) 重载 → 无条件移除（弱一致，见方法 remarks）
             _store.TryRemove(tokenType, out _);
 #endif
         }
