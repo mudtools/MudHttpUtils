@@ -13,15 +13,15 @@ dotnet add package Mud.HttpUtils.Newtonsoft.Json
 在 DI 中将默认的 JSON 序列化器替换为 Newtonsoft.Json（可传入自定义 `JsonSerializerSettings`）：
 
 ```csharp
-services.AddMudHttpClient<ICatalogApi>(options =>
-{
-    options.BaseAddress = new Uri("https://api.example.com/");
-    options.ContentSerializer = new NewtonsoftJsonContentSerializer(new JsonSerializerSettings
+// TryAdd 先注册者胜：自定义序列化器必须在 AddMudHttpClient 之前注册，
+// 否则 AddMudHttpClient 内部的默认 TryAdd 注册将先生效。
+services.TryAddSingleton<IHttpContentSerializer>(sp =>
+    new NewtonsoftJsonContentSerializer(new JsonSerializerSettings
     {
         NullValueHandling = NullValueHandling.Ignore,
         Formatting = Formatting.None
-    });
-});
+    }));
+services.AddMudHttpClient("catalog", "https://api.example.com/");
 ```
 
 不传参数时使用默认的 `JsonSerializerSettings`，也可通过 `Settings` 属性在初始化后读取或自行构造：
@@ -40,12 +40,14 @@ var order = serializer.Deserialize<Order>(json);
 
 该序列化器实现了 `ISynchronousContentSerializer`：
 
-- **同步请求体**：`ToHttpContentSynchronous<T>` 直接通过 `JsonConvert.SerializeObject` 生成内容；
+- **同步请求体**：`ToHttpContentSynchronous<T>` 直接通过 `JsonConvert.SerializeObject` 生成内容；`item` 为 `null` 时返回空 `ByteArrayContent`，不走序列化；
 - **流式请求体**：`ToStreamingHttpContent<T>` 返回流式内容，在发送时以 `JsonSerializer` 逐步写入请求流，适用于大对象请求体场景。
+
+**null 语义**：`ToHttpContent<T>(null)` 返回 `null`（不生成请求体内容）；`Serialize(null)` 输出字符串 `"null"`。
 
 ## Native AOT 限制（重要）
 
-Newtonsoft.Json 依赖反射与动态代码，**不支持 Native AOT 与裁剪**。本包所有公共成员均已标注 `[RequiresUnreferencedCode]`（复合类型序列化重载额外标注 `[RequiresDynamicCode]`），消费方在启用 AOT/裁剪分析器时会在调用点获得编译期提示。本包自身已设置 `IsAotCompatible=false` 并关闭 AOT/裁剪分析器的"已知噪声"。
+Newtonsoft.Json 依赖反射与动态代码，**不支持 Native AOT 与裁剪**。标注现状：`[RequiresUnreferencedCode]` 仅在 `#if NET6_0_OR_GREATER` 内标注于接口实现成员（`netstandard2.0` 资产无标注，且无 `#else` 分支）；主构造函数与 `Settings` 属性在所有 TFM 上均未标注；`[RequiresDynamicCode]` 仅标注在带 `Type` 的非泛型重载 `Serialize(object?, Type, object?)` 上（`#if NET7_0_OR_GREATER`）。消费方在启用 AOT/裁剪分析器时会在相应调用点获得编译期提示。本包自身已设置 `IsAotCompatible=false` 并关闭 AOT/裁剪分析器的"已知噪声"（非 AOT 路径）。
 
 **Native AOT 场景请使用 `Mud.HttpUtils.Client` 内置的 `SystemTextJsonContentSerializer` + `JsonSerializerContext`（源生成 JSON 序列化）。**
 

@@ -12,7 +12,7 @@
 [![Mud.HttpUtils.Newtonsoft.Json](https://img.shields.io/nuget/v/Mud.HttpUtils.Newtonsoft.Json?label=Mud.HttpUtils.Newtonsoft.Json "Mud.HttpUtils.Newtonsoft.Json")](https://www.nuget.org/packages/Mud.HttpUtils.Newtonsoft.Json/ "Mud.HttpUtils.Newtonsoft.Json") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Newtonsoft.Json "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Newtonsoft.Json/ "downloads")
 [![Mud.HttpUtils.Xml](https://img.shields.io/nuget/v/Mud.HttpUtils.Xml?label=Mud.HttpUtils.Xml "Mud.HttpUtils.Xml")](https://www.nuget.org/packages/Mud.HttpUtils.Xml/ "Mud.HttpUtils.Xml") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.Xml "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.Xml/ "downloads")
 [![Mud.HttpUtils.JsonContextScaffolder](https://img.shields.io/nuget/v/Mud.HttpUtils.JsonContextScaffolder?label=Mud.HttpUtils.JsonContextScaffolder "Mud.HttpUtils.JsonContextScaffolder")](https://www.nuget.org/packages/Mud.HttpUtils.JsonContextScaffolder/ "Mud.HttpUtils.JsonContextScaffolder") [![downloads](https://img.shields.io/nuget/dt/Mud.HttpUtils.JsonContextScaffolder "downloads")](https://www.nuget.org/packages/Mud.HttpUtils.JsonContextScaffolder/ "downloads")
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE-MIT)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **基于 Roslyn 的声明式 HTTP 客户端源代码生成器**
 
@@ -892,6 +892,6 @@ builder.Services.AddMudHttpOpenTelemetry(options =>
 
 ### 📄 许可证
 
-本项目遵循 MIT 许可证。详细信息请参见 [LICENSE-MIT](LICENSE-MIT) 文件。
+本项目遵循 MIT 许可证。详细信息请参见 [LICENSE](LICENSE) 文件。
 
 ---

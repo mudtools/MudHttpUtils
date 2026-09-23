@@ -46,7 +46,7 @@ Mud.HttpUtils.Generator 是一个基于 Roslyn 的源代码生成器，自动为
 - **序列化方法控制**：识别 `[SerializationMethod]` 特性，指定接口或方法级别的请求体序列化方式
 - **接口级固定参数**：识别 `[InterfacePath]` 和 `[InterfaceQuery]` 特性，为接口所有方法自动添加固定路径/查询参数
 - **允许任意状态码**：识别 `[AllowAnyStatusCode]` 特性，错误状态码不抛异常
-- **编译诊断**：提供 `HTTPCLIENT*` / `HTTPCLIENTREG*` / `EHSG*` / `FORM*` / `AOT*` 等多组编译期诊断（错误与警告），其中部分支持通过 IDE 代码修复器（CodeFix）一键修复，详见「编译诊断」章节
+- **编译诊断**：提供 `HTTPCLIENT*` / `HTTPCLIENTREG*` / `EHSG*` / `FORM*` / `AOT*` / `MUD*`（`MUD001`/`MUD002`/`MUD004`/`MUD005`）/ `MUDGEN301` 等多组编译期诊断（错误与警告），其中部分支持通过 IDE 代码修复器（CodeFix）一键修复，详见「编译诊断」章节
 
 ## 安装
 
@@ -56,7 +56,7 @@ dotnet add package Mud.HttpUtils.Generator
 
 > 源代码生成器需配合运行时库 `Mud.HttpUtils` 一起使用。
 
-> **自 2.0.7 起合并包**：本包已包含接口规范 / DI 生命周期分析器（`MUD001`/`MUD002`/`MUD004`，已并入生成器程序集）和代码修复器（`HTTPCLIENT005`/`007`、`AOT004`/`005`/`006`/`007` 一键修复，独立程序集）。`Mud.HttpUtils.Analyzers` 与 `Mud.HttpUtils.CodeFixes` 均已不再作为独立包存在，无需单独安装。
+> **自 2.0.7 起合并包**：本包已包含接口规范 / DI 生命周期分析器（`MUD001`/`MUD002`/`MUD004`/`MUD005`，已并入生成器程序集）和代码修复器（`HTTPCLIENT005`/`007`、`AOT004`/`005`/`006`/`007` 一键修复，独立程序集）。`Mud.HttpUtils.Analyzers` 与 `Mud.HttpUtils.CodeFixes` 均已不再作为独立包存在，无需单独安装。
 
 ## 快速开始
 
@@ -199,7 +199,7 @@ flowchart TD
 public interface IMyApi { }
 
 // 生成的构造函数：
-// public MyApi(IMudAppContext appContext, IAppContextHolder appContextHolder, IHttpRequestExecutor executor, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null)
+// public MyApi(IMudAppContext appContext, IAppContextHolder appContextHolder, IHttpRequestExecutor executor, IAppManager<IMudAppContext>? appManager = null, IAppAccessAuthorizer? appAuthorizer = null, IHttpResponseCache? cacheProvider = null /*声明 [Cache] 时必需无 ?*/, IResiliencePolicyResolver? resilienceResolver = null /*声明弹性特性时必需*/, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null)
 ```
 
 ### 模式二：TokenManager 模式
@@ -211,9 +211,9 @@ public interface IMyApi { }
 public interface IMyApi { }
 
 // 生成的构造函数：
-// public MyApi(IFeishuAppManager appManager, IAppContextHolder appContextHolder, ITokenProvider tokenProvider, IHttpRequestExecutor executor, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null)
+// public MyApi(IFeishuAppManager appManager, IAppContextHolder appContextHolder, ITokenProvider tokenProvider, IHttpRequestExecutor executor, IAppAccessAuthorizer? appAuthorizer = null, IHttpResponseCache? cacheProvider = null /*声明 [Cache] 时必需无 ?*/, IResiliencePolicyResolver? resilienceResolver = null /*声明弹性特性时必需*/, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null)
 // 当 RequiresUserId = true 时：
-// public MyApi(IFeishuAppManager appManager, IAppContextHolder appContextHolder, ITokenProvider tokenProvider, ICurrentUserContext currentUserContext, IHttpRequestExecutor executor, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null)
+// public MyApi(IFeishuAppManager appManager, IAppContextHolder appContextHolder, ITokenProvider tokenProvider, ICurrentUserContext currentUserContext, IHttpRequestExecutor executor, IAppAccessAuthorizer? appAuthorizer = null, IHttpResponseCache? cacheProvider = null /*声明 [Cache] 时必需无 ?*/, IResiliencePolicyResolver? resilienceResolver = null /*声明弹性特性时必需*/, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null)
 ```
 
 ### 模式三：HttpClient 模式（推荐）
@@ -225,7 +225,8 @@ public interface IMyApi { }
 public interface IMyApi { }
 
 // 生成的构造函数：
-// public MyApi(IEnhancedHttpClient httpClient, IHttpRequestExecutor executor, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null)
+// public MyApi(IEnhancedHttpClient httpClient, IHttpRequestExecutor executor, IHttpResponseCache? cacheProvider = null /*声明 [Cache] 时必需无 ?*/, IResiliencePolicyResolver? resilienceResolver = null /*声明弹性特性时必需*/, IHttpContentSerializer? contentSerializer = null, ILogger? logger = null)
+// InheritedFrom 继承场景另含：IAppAccessAuthorizer? appAuthorizer = null
 ```
 
 > **注意**：`HttpClient` 与 `TokenManage` 互斥，同时定义时 `HttpClient` 优先。
@@ -272,8 +273,22 @@ public static partial class HttpClientApiExtensions
 services.AddTransient<global::MyApp.IConfigApi>(sp =>
 {
     var appManager = sp.GetRequiredService<global::Mud.HttpUtils.IAppManager<global::Mud.HttpUtils.IMudAppContext>>();
+    global::Mud.HttpUtils.IMudAppContext __appContext;
+    try
+    {
+        __appContext = appManager.GetDefaultApp();
+    }
+    catch (global::System.InvalidOperationException ex)
+    {
+        // fail-closed：自动注册的空 IAppManager 无法解析默认应用时，抛带根因与修复步骤的异常（inner 保留原始异常）
+        throw new global::System.InvalidOperationException(
+            "源生成器已自动注册空的 IAppManager<IMudAppContext>（未注册任何应用），无法解析默认应用。请二选一：" +
+            "① 注册自定义应用管理器，并在启动时调用 RegisterApp(appKey, context, isDefault: true)；" +
+            "② 单应用场景请注册 IAppManager<IMudAppContext>（如 DefaultAppManager<IMudAppContext>）并把唯一应用注册为默认。",
+            ex);
+    }
     return new global::MyApp.Internal.ConfigApi(
-        appContext: appManager.GetDefaultApp(),                                  // DI 注入的默认应用语义
+        appContext: __appContext,
         appContextHolder: sp.GetRequiredService<global::Mud.HttpUtils.IAppContextHolder>(),
         executor: sp.GetRequiredService<global::Mud.HttpUtils.IHttpRequestExecutor>(),
         appManager: appManager,
@@ -313,11 +328,11 @@ services.AddTransient<global::MyApp.IMyApi, global::MyApp.Internal.MyApi>();
 
 生成器会根据运行模式自动生成 DI 依赖提示：
 
-| 模式         | 生成的注释                                                                                        |
-| ------------ | ------------------------------------------------------------------------------------------------- |
-| HttpClient   | `// 注意：实现类构造函数依赖 IEnhancedHttpClient，请确保已通过 AddMudHttpClient 等方法注册此服务` |
-| TokenManager | `// 注意：实现类构造函数依赖 IFeishuAppManager，请确保已注册此令牌管理器服务`                     |
-| 默认         | `// 注册 XX 的 HttpClient 包装实现类（瞬时服务）`                                                 |
+| 模式         | 生成的注释                                                                                                                                                                                                                                                                                        |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HttpClient   | `// 注意：实现类构造函数依赖 {HttpClientType}，请确保已通过 services.AddMudHttpClient() 注册此服务及 IHttpRequestExecutor 等基础设施。`                                                                                                                                                           |
+| TokenManager | `// 注意：实现类构造函数依赖 IFeishuAppManager，请确保已注册此令牌管理器服务。`<br/>`// 必需依赖：ITokenProvider、IAppContextHolder`<br/>`// 可选依赖（需 UserId 时）：ICurrentUserContext`<br/>`// 可选依赖（缓存/弹性）：IHttpResponseCache、IResiliencePolicyResolver —— 请通过 services.AddMudHttpClient() 注册。` |
+| 默认         | `// 注册 XX 的 HttpClient 包装实现类（瞬时服务）`                                                                                                                                                                                                                                               |
 
 ### 注册组
 
@@ -436,6 +451,8 @@ Body 参数级 > 方法级 > 接口级 > 默认值 (application/json)
 Task<Post> GetPostAsync([Path] int id, [Path] int postId);
 ```
 
+> 接口标记 `[AllowUnmatchedRouteParameters]`（接口级）时，URL 模板中未被 `[Path]` 参数匹配的 `{token}` 占位符保留字面量、放行 `HTTPCLIENT013` 校验，可交由 `DelegatingHandler` / 拦截器后续改写。
+
 #### Query 参数
 
 `[Query]` 除支持数组分隔符（`[Query(Separator = ",")]`，同 `[ArrayQuery]`）外，还支持方法级、接口级固定查询参数（见「接口级固定参数」章节）。
@@ -466,6 +483,8 @@ Task<List<User>> GetUsersAsync(
 [Get("/users")]
 Task<User> GetUserAsync([Header("X-Custom-Header")] string customValue);
 ```
+
+> `[HeaderCollection]` 标记 `IDictionary<string, string?>`（或 `IDictionary<string, object?>`）参数：字典键值对在构造请求时逐项批量写入请求头（动态字典头，与单值 `[Header]` 可混用）。
 
 > **平台差异（CRLF 校验，GEN-18）**：.NET Core / .NET 5+ 的 `HttpRequestHeaders.Add` 会校验头值并拒绝含回车/换行（`\r`/`\n`）的值；但 net4x / netstandard2.0 编译的 `HttpClient` 不校验，直接透传 → 存在**头部注入**风险。为收敛平台差异，生成器对每个 Header（参数级与接口属性级、字符串型）额外发射运行期守卫 `Mud.HttpUtils.HttpHeaderValueValidator.IsValid(...)`，遇 CR/LF 立即抛 `ArgumentException`（带参数名）。该守卫对所有目标框架统一生效，与运行时 TFM 无关。
 
@@ -823,6 +842,17 @@ Mud.HttpUtils.Generator 在编译期即确定 JSON 元数据来源，配合 `Mud
 
 > 完整脚手架用法见 [`Mud.HttpUtils.JsonContextScaffolder` 工具文档](../Tools/Mud.HttpUtils.JsonContextScaffolder/README.md)。
 
+#### 无 DI 入口（Native AOT）
+
+不依赖 DI 容器时，注册代码生成器为**默认模式**接口（无 `HttpClient`/`TokenManage`）额外生成 `GeneratedFactoryRegistration.g.cs`：net5.0+ 下以 `[ModuleInitializer]` 在程序集加载时自动调用 `RestService.RegisterGeneratedFactory<T>(工厂委托)` 注册构造工厂（netstandard2.0 生成普通静态方法 `RegisterAllFactories()`，需手动调用一次）；HttpClient / TokenManager 模式的构造依赖用户自定义类型，**不生成**该工厂，仍须经 DI 解析。注册完成后，用 `RestService.ForGenerated<T>(HttpClient, GeneratedClientOptions?)` 直接创建 AOT 安全的客户端实例（默认模式要求 `options.AppContext` 非空，否则工厂委托抛 `InvalidOperationException`）：
+
+```csharp
+// 无需注册 IServiceCollection / IServiceProvider：
+var api = RestService.ForGenerated<IUserApi>(httpClient,
+    new GeneratedClientOptions { AppContext = appContext });
+var user = await api.GetUserAsync(1);
+```
+
 ## 编译诊断
 
 源代码生成器在编译时会对不合理的 API 定义产生警告或错误，帮助开发者在编译阶段发现问题。
@@ -1031,11 +1061,13 @@ public interface IUserApi
 
 ```csharp
 [Get("/api/data")]
-[Retry(MaxRetries = 3, DelayMilliseconds = 1000, UseExponentialBackoff = true)]
+[Retry(MaxRetries = 3, DelayMilliseconds = 1000, UseExponentialBackoff = true, AllowNonIdempotent = false)]
 [Timeout(30000)]
-[CircuitBreaker(FailureThreshold = 5, BreakDurationSeconds = 30)]
+[CircuitBreaker(FailureThreshold = 5, BreakDurationSeconds = 30, SamplingDurationSeconds = 10, MinimumThroughput = 5)]
 Task<Data> GetDataAsync();
 ```
+
+> **方法级覆盖面（CFG-35）**：`[Retry]` 方法级仅覆盖 `MaxRetries` / `DelayMilliseconds` / `UseExponentialBackoff` / `AllowNonIdempotent`；`RetryStatusCodes` / `OnRetry` / `UseJitter` 恒取全局 `RetryOptions`（无法在方法级配置）。`[CircuitBreaker]` 的 `SamplingDurationSeconds > 0` 时启用高级熔断（`FailureThreshold` 为采样窗口内失败率百分比 1–100，`MinimumThroughput` 为触发评估的最小请求数，见 `HTTPCLIENT026`）。
 
 ### 头部合并控制
 
@@ -1196,33 +1228,64 @@ Task InternalMethodAsync([Body] object data);
 
 ```
 Mud.HttpUtils.Generator/
-├── Analyzers/                    # 代码分析器
+├── Analyzers/                    # 诊断分析器（与源生成器同程序集）
+│   ├── AotDtoCoverageDiagnosticAnalyzer.cs    # AOT004/AOT005 入口（内部调 AotDtoCoverageAnalyzer）
+│   ├── HttpJsonSerializableCoverageAnalyzer.cs # AOT006 入口（内部调 AotDtoCoverageAnalyzer.AnalyzeHttpJsonSerializableCoverage）
+│   ├── AotXmlRejectionDiagnosticAnalyzer.cs   # AOT007 入口
+│   ├── AotDtoCoverageAnalyzer.cs / AotXmlRejectionAnalyzer.cs  # 覆盖分析 / XML 拒绝的核心实现
+│   ├── MudHttpInterfaceAnalyzer.cs            # 接口规范分析（MUD001/MUD002）
+│   ├── TokenManagerLifetimeAnalyzer.cs        # 令牌管理器生命周期（MUD004）
 │   ├── MethodAnalyzer.cs         # 方法分析
 │   └── ParameterAnalyzer.cs      # 参数分析
+├── Consts/                       # 常量定义
+│   ├── HttpClientGeneratorConstants.cs
+│   └── GeneratedCodeConsts.cs
+├── Diagnostics/                  # 诊断描述符
+│   └── Diagnostics.cs
+├── EventHandler/                 # 事件处理器生成
+│   └── EventHandlerSourceGenerator.cs
+├── Extensions/
+│   └── StringExtensions.cs
 ├── Generators/                   # 代码生成器
+│   ├── Base/                     # 生成器接口
+│   │   └── ICodeFragmentGenerator.cs
+│   ├── Context/                  # 生成上下文与配置快照
+│   │   ├── GenerationConfiguration.cs
+│   │   ├── GeneratorConfigSnapshot.cs
+│   │   └── GeneratorContext.cs
 │   ├── Implementation/           # 实现类生成
 │   │   ├── ConstructorGenerator.cs  # 构造函数生成
 │   │   ├── InterfaceContractCompletionGenerator.cs  # 契约补全（未实现成员的占位实现）
 │   │   ├── ContractPlaceholder.cs   # 占位实现的诊断支持（HTTPCLIENT024）
-│   │   └── RequestBuilder.cs     # 请求构建
+│   │   ├── InterfaceImplementationGenerator.cs  # 接口实现类生成
+│   │   ├── MethodGenerator.cs       # 方法实现生成
+│   │   ├── RequestBuilder.cs        # 请求构建
+│   │   ├── AccessTokenGenerator.cs  # Token 获取代码生成
+│   │   ├── ClassStructureGenerator.cs / TokenMethodHelper.cs
+│   │   └── Binders/                 # 参数绑定器
+│   │       ├── IParameterBinder.cs
+│   │       ├── HeaderParameterBinder.cs
+│   │       ├── HeaderCollectionParameterBinder.cs  # [HeaderCollection] 字典批量请求头
+│   │       └── QueryParameterBinder.cs
 │   ├── FormContentGenerator.cs   # FormContent 生成器（支持 JsonPropertyName）
+│   ├── HttpInvokeBaseSourceGenerator.cs          # 增量生成基类
 │   ├── HttpInvokeClassSourceGenerator.cs    # 实现类主生成器
-│   ├── HttpInvokeRegistrationGenerator.cs   # 注册代码生成器（含 Timeout 配置）
-│   ├── InterfaceImplementationGenerator.cs  # 接口实现类生成器
-│   ├── MethodGenerator.cs                   # 方法实现生成器
-│   ├── ConstructorGenerator.cs              # 构造函数生成器
-│   ├── AccessTokenGenerator.cs              # Token 获取代码生成器
-│   └── FormContentGenerator.cs              # FormContent 生成器
-├── Helpers/                      # 辅助类
+│   └── HttpInvokeRegistrationGenerator.cs   # 注册代码生成器（含 Timeout 配置、GeneratedFactoryRegistration.g.cs）
+├── Helper/                       # 辅助类
 │   ├── AttributeDataHelper.cs    # 特性数据辅助
 │   ├── AttributeSyntaxHelper.cs  # 特性语法辅助
+│   ├── CacheKeySafety.cs         # 缓存键 Unsafe 参数安全校验
 │   └── ...
 ├── Models/                       # 数据模型
 │   ├── Analysis/                 # 分析结果模型
 │   └── Metadata/                 # 元数据模型
 │       ├── HttpClientApiInfo.cs        # API 接口信息（含 HttpClientType/TokenManagerType/Timeout）
 │       └── HttpClientApiInfoBase.cs    # 基础 API 信息
-└── Validators/                   # 验证器
+├── Validators/                   # 验证器
+├── build/                        # MSBuild props/targets（含 Analyzer 可见性配置）
+├── AnalyzerReleases.Shipped.md / AnalyzerReleases.Unshipped.md  # 分析器发布说明
+├── AssemblyInfo.cs / DiagnosticIds.cs / GlobalUsings.cs / TransitiveCodeGenerator.cs
+└── Mud.HttpUtils.Generator.csproj
 ```
 
 ## 依赖项
@@ -1248,7 +1311,7 @@ Mud.HttpUtils.Generator/
 
 ## 版本历史
 
-### 2.1.0
+### 2.0.7
 
 - 新增代码修复器 `AotJsonContextCodeFixProvider`（`Mud.HttpUtils.CodeFixes` 程序集）：一键将 `AOT004`/`AOT005`/`AOT006` 指向的 DTO 类型加入现有 `JsonSerializerContext`（或新建 `partial` 扩展类）
 - 新增代码修复器 `AotXmlCodeFixProvider`：将 `AOT007`（AOT 下 XML 序列化）一键改为 JSON 序列化
@@ -1300,6 +1363,6 @@ Mud.HttpUtils.Generator/
 - [Mud.HttpUtils.Attributes](../Mud.HttpUtils.Attributes/) - 特性定义
 - [Mud.HttpUtils.Client](../Mud.HttpUtils.Client/) - 客户端实现
 - [Mud.HttpUtils.Resilience](../Mud.HttpUtils.Resilience/) - 弹性策略
-- [Mud.HttpUtils.Analyzers](../Mud.HttpUtils.Analyzers/) - 独立诊断分析器（已合并到本包，不再单独发布）
+- 独立诊断分析器 `Mud.HttpUtils.Analyzers` —— 已并入本包 `Analyzers/`，不再单独发布
 - [Mud.HttpUtils.CodeFixes](../Mud.HttpUtils.CodeFixes/) - 诊断代码修复器（已合并到本包，不再单独发布）
-- [Mud.HttpUtils.JsonContextScaffolder](../../Tools/Mud.HttpUtils.JsonContextScaffolder/) - AOT JSON 上下文脚手架工具
+- [Mud.HttpUtils.JsonContextScaffolder](../Tools/Mud.HttpUtils.JsonContextScaffolder/) - AOT JSON 上下文脚手架工具

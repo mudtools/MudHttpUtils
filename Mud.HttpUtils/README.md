@@ -165,6 +165,8 @@ public class UserService
 | `AddMudHttpUtils(clientName, baseAddress, enableResilience)`                                        | 带基础地址与 `enableResilience` 开关的重载 |
 
 > `AddMudHttpUtils` 及其相关 DI 扩展方法的实现位于 `Mud.HttpUtils.Resilience` 包（元包通过传递依赖引用），使用前需 `using Mud.HttpUtils.Resilience;`。
+>
+> **无 DI 入口**：不依赖 DI 容器时可通过 `RestService.ForGenerated<T>(HttpClient, GeneratedClientOptions?)` 创建 AOT 安全的客户端实例（详见项目根 README 的「无 DI 入口」说明）。
 
 ### AddMudHttpClient — 仅注册客户端（位于 Mud.HttpUtils.Client 包）
 
@@ -202,14 +204,21 @@ public interface IFeishuApi
     Task<User> GetUserAsync([Path] string id);
 }
 
-// 注册（需自行实现 IMudAppContext）
-services.AddSingleton<IMudAppContext, FeishuAppContext>();
+// 注册 IAppManager 并注册默认应用（需自行实现 IMudAppContext）
+// 2.0.8 起默认模式改为工厂注册：应用上下文由默认应用提供，
+// 未注册默认应用时解析即抛 InvalidOperationException（fail-closed）
+services.AddSingleton<IAppManager<IMudAppContext>>(sp =>
+{
+    var appManager = new DefaultAppManager<IMudAppContext>();
+    appManager.RegisterApp("feishu", new FeishuAppContext(), isDefault: true);
+    return appManager;
+});
 services.AddWebApiHttpClient();
 ```
 
 ### 模式二：TokenManager 模式
 
-适用于需要自定义 Token 管理器的场景。生成的实现类构造函数依赖指定的 Token 管理器类型、`ITokenProvider`（统一 Token 获取逻辑）和 `ICurrentUserContext`（当 `RequiresUserId = true` 时）。
+适用于需要自定义 Token 管理器的场景。生成的实现类构造函数依赖指定的 Token 管理器类型、`IAppContextHolder`、`IHttpRequestExecutor`、`ITokenProvider`（统一 Token 获取逻辑）和 `ICurrentUserContext`（当 `RequiresUserId = true` 时）。
 
 ```csharp
 [HttpClientApi(TokenManage = "IFeishuAppManager")]
@@ -221,7 +230,11 @@ public interface IMyApi
 }
 
 // 生成的构造函数：
-// public MyApi(IOptions<JsonSerializerOptions> option, IFeishuAppManager appManager, ITokenProvider tokenProvider, ICurrentUserContext currentUserContext)
+// public MyApi(IFeishuAppManager appManager, IAppContextHolder appContextHolder, ITokenProvider tokenProvider,
+//              ICurrentUserContext currentUserContext /* 仅 RequiresUserId = true 时 */, IHttpRequestExecutor executor,
+//              IAppAccessAuthorizer? appAuthorizer = null, IHttpResponseCache? cacheProvider = null,
+//              IResiliencePolicyResolver? resilienceResolver = null,
+//              IHttpContentSerializer? contentSerializer = null, ILogger? logger = null)
 // 生成的属性：
 // public string? CurrentUserId => _currentUserContext.UserId;
 
@@ -315,7 +328,7 @@ public interface IApiKeyApi
 services.AddSingleton<IApiKeyProvider, DefaultApiKeyProvider>();
 ```
 
-> `DefaultApiKeyProvider` 从 `IConfiguration` 的 `ApiKey` 或 `ApiKeys:Default` 键读取密钥。可替换为自定义实现（如从 Vault 读取）。
+> `DefaultApiKeyProvider` 从 `IConfiguration` 读取密钥：`keyName` 为空时读 `ApiKey` 键，否则读 `ApiKeys:{keyName}` 键（`ApiKeys:Default` 仅当显式传入 `"Default"` 时命中）。可替换为自定义实现（如从 Vault 读取）。
 
 ### HMAC 签名认证
 
@@ -496,6 +509,8 @@ Task<UserInfo> CreateUserAsync([Body] UserRequest request);
 | `[InterfaceQuery]`                | 接口级固定查询参数                               | `[InterfaceQuery("version", "2.0")]`               |
 | `[AllowAnyStatusCode]`            | 允许任意 HTTP 状态码（不抛异常）                 | `[AllowAnyStatusCode]`                              |
 
+> `[Query]` 还支持方法级固定查询参数：`[Query("name","value")]` 标注在方法上时，为该方法的所有请求附加固定键值对（可标注多次）。
+
 ### BodyAttribute 详解
 
 | 属性                   | 类型            | 默认值   | 说明                                                              |
@@ -503,7 +518,7 @@ Task<UserInfo> CreateUserAsync([Body] UserRequest request);
 | `ContentType`          | `string?`       | `null`   | 请求体内容类型（优先级最高）                                      |
 | `EnableEncrypt`        | `bool`          | `false`  | 是否启用加密                                                      |
 | `EncryptSerializeType` | `SerializeType` | `Json`   | 加密序列化类型                                                    |
-| `EncryptPropertyName`  | `string`        | `"data"` | 加密后的属性名                                                    |
+| `EncryptPropertyName`  | `string?`       | `null`   | 加密后的属性名；未设置时生成器回落为 `"data"`                     |
 | `RawString`            | `bool`          | `false`  | 是否作为原始字符串发送（不进行 JSON 序列化，也不调用 ToString()） |
 | `UseStringContent`     | `bool`          | `false`  | 是否将参数作为字符串内容发送（调用 ToString()）                   |
 
@@ -664,7 +679,8 @@ Task<Data> GetDataAsync();
 | `CacheKeyTemplate`     | `string?`       | `null`   | 缓存键模板                                              |
 | `VaryByUser`           | `bool`          | `false`  | 是否按用户区分缓存                                      |
 | `UseSlidingExpiration` | `bool`          | `false`  | 是否使用滑动过期                                        |
-| `Priority`             | `CachePriority` | `Normal` | 缓存优先级（`Low` / `Normal` / `High` / `NeverRemove`） |
+
+> **CFG-27**：`Priority` 属性（及 `CachePriority` 枚举）**已移除** —— 生成器从未处理该属性，运行时无消费点。
 
 ### SensitiveDataAttribute 详解
 
@@ -860,16 +876,9 @@ public interface IInternalApi { }
 [IgnoreGenerator]
 [Post("/internal")]
 Task InternalMethodAsync([Body] object data);
-
-// 忽略属性/字段
-public class UserRequest
-{
-    public string Name { get; set; }
-
-    [IgnoreGenerator]
-    public string InternalField { get; set; }
-}
 ```
+
+> `[IgnoreGenerator]` 仅支持 Interface / Method（`AttributeUsage` 收窄后标注在属性/字段上会产生编译错误 `CS0592`）。
 
 ## 流式响应
 
@@ -971,10 +980,27 @@ public class MyTokenManager : TokenManagerBase
 
     protected override async Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken)
     {
-        var newToken = await FetchNewTokenAsync(cancellationToken);
+        // 在刷新核心内自行调用 HTTP 令牌端点获取新令牌
+        var dto = await CallTokenEndpointAsync(cancellationToken);
+
+        var token = new CredentialToken
+        {
+            AccessToken = dto.AccessToken,
+            Expire = dto.ExpireTimestampMs   // Unix 毫秒时间戳（net7+ 为 required 属性）
+        };
+
+        // 可选：持久化（签名：tokenType + accessToken + 有效期秒数）
         await _tokenStore.SetAccessTokenAsync(
-            newToken.AccessToken, newToken.ExpiresIn, cancellationToken);
-        return newToken;
+            TokenTypes.AccessToken, token.AccessToken!, dto.ExpiresIn, cancellationToken);
+
+        return token;
+    }
+
+    private async Task<(string AccessToken, long ExpireTimestampMs, long ExpiresIn)>
+        CallTokenEndpointAsync(CancellationToken cancellationToken)
+    {
+        // 调用你的令牌端点（HTTP 请求实现略），返回令牌与有效期
+        throw new NotImplementedException();
     }
 }
 ```
@@ -1133,19 +1159,19 @@ var hmacProvider = appContext.GetService<IHmacSignatureProvider>();
 
 | 接口                             | 说明                                                                                                              |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `IBaseHttpClient`                | 基础 HTTP 操作（SendAsync、SendRawAsync、SendStreamAsync、DownloadAsync）                                         |
-| `IJsonHttpClient`                | JSON 操作（GetAsync、PostAsJsonAsync、DeleteAsJsonAsync 带请求体）                                                |
+| `IBaseHttpClient`                | 基础 HTTP 操作（SendAsync、SendRawAsync、SendStreamAsync、DownloadAsync、DownloadLargeAsync）                               |
+| `IJsonHttpClient`                | JSON 操作（GetAsync\<TResult\>、PostAsJsonAsync\<TRequest,TResult\>、PutAsJsonAsync\<TRequest,TResult\>、DeleteAsJsonAsync\<TResult\>、DeleteAsJsonAsync\<TRequest,TResult\>、PatchAsJsonAsync\<TRequest,TResult\>） |
 | `IXmlHttpClient`                 | XML 操作（SendXmlAsync、PostAsXmlAsync）                                                                          |
 | `IEncryptableHttpClient`         | 加密操作（EncryptContent、DecryptContent），独立接口                                                              |
 | `IEnhancedHttpClient`            | 增强组合接口，继承 IBaseHttpClient、IJsonHttpClient、IXmlHttpClient、IEncryptableHttpClient，支持 WithBaseAddress |
 | `IHttpClientResolver`            | 命名客户端解析（GetClient、TryGetClient）                                                                         |
 | `IFormContent`                   | 表单内容（ToHttpContent、ToHttpContentAsync 支持上传进度）                                                        |
-| `IEncryptionProvider`            | 加密提供程序（Encrypt、Decrypt）                                                                                  |
+| `IEncryptionProvider`            | 加密提供程序（Encrypt、Decrypt、EncryptBytes、DecryptBytes）                                                      |
 | `IApiKeyProvider`                | API Key 提供器（GetApiKeyAsync）                                                                                  |
 | `IHmacSignatureProvider`         | HMAC 签名提供器（GenerateSignatureAsync、VerifySignatureAsync）                                                   |
 | `ISecretProvider`                | 安全密钥提供器（GetSecretAsync）                                                                                  |
 | `ISensitiveDataMasker`           | 敏感数据脱敏器（Mask、MaskObject）                                                                                |
-| `IHttpResponseCache`             | 响应缓存契约（TryGet、Set、Remove）                                                                               |
+| `IHttpResponseCache`             | 响应缓存契约（TryGet、Set（含滑动过期重载）、GetOrFetchAsync×2、Remove、RemoveAsync、ClearAsync）                  |
 | `ITokenManager`                  | 通用令牌管理                                                                                                      |
 | `IUserTokenManager`              | 用户令牌管理                                                                                                      |
 | `ITokenStore`                    | 令牌持久化存储契约（独立持久化，当前不被 `ITokenManager` 管线消费）                                              |
@@ -1158,7 +1184,7 @@ var hmacProvider = appContext.GetService<IHmacSignatureProvider>();
 | `ICurrentUserContext`            | 当前用户上下文（UserId 属性），线程安全的用户 ID 传播                                                              |
 | `IHttpRequestExecutor`           | HTTP 请求执行器，生成代码与运行时之间的桥梁，统一处理反序列化、错误处理、拦截器与弹性策略编排                      |
 | `IAppResiliencePolicyResolver`   | 按应用（App）解析弹性策略的工厂接口                                                                                |
-| `IAppContextHolder`              | 应用上下文持有器（Current / BeginScope），维护当前异步上下文中的应用上下文                                        |
+| `IAppContextHolder`              | 应用上下文持有器（`Current { get; init; }` / `SwitchTo(...)` / `BeginScope(...)`），运行时切换必须经 `SwitchTo`（`Current` setter 为 init，仅对象初始化阶段可写） |
 
 ## 工具类
 
