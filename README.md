@@ -94,17 +94,17 @@ graph TB
     Svc --> IFace
 
     Meta -. "聚合引用" .- Abs
-    Meta -. .- Attr
-    Meta -. .- Client
-    Meta -. .- Res
+    Meta -.- Attr
+    Meta -.- Client
+    Meta -.- Res
 
     Attr -. "依赖" .- Abs
     Client -. "实现接口" .- Abs
     Res -. "装饰 IEnhancedHttpClient" .- Client
-    Res -. .- Abs
+    Res -.- Abs
     OTel -. "采集可观测性源" .- Abs
     SG -. "引用" .- Abs
-    SG -. .- Attr
+    SG -.- Attr
 ```
 
 #### 一次 HTTP 请求的调用链路
@@ -130,7 +130,7 @@ sequenceDiagram
     H->>N: 发送 HttpRequestMessage
     N-->>H: HttpResponseMessage
     H-->>X: 响应拦截 / 反序列化
-    X-->>G: 返回 T / Response&lt;T&gt;
+    X-->>G: 返回 T / Response<T>
     G-->>B: 结果
 ```
 
@@ -760,40 +760,6 @@ Mud.HttpUtils 通过 Roslyn 源代码生成器在编译时生成强类型的 HTT
 | XML 序列化/反序列化                                         | `XmlSerializer` 内部使用反射（已通过静态字段缓存优化） | 仅限 XML Content-Type         |
 
 对于性能敏感的场景，建议优先使用 JSON 序列化（`System.Text.Json` 原生支持 AOT）和简单类型的查询参数。
-
-### 🚀 Native AOT 与裁剪支持
-
-Mud.HttpUtils 在设计之初即面向 **Native AOT** 与**裁剪（Trimming）**：核心路径（JSON 序列化/反序列化、URL 构建、请求头处理）完全避免运行时反射，由源代码生成器在编译期产出强类型实现。
-
-**各包 AOT/裁剪兼容情况：**
-
-| 包 | AOT/裁剪 | 说明 |
-|----|:--------:|------|
-| Mud.HttpUtils（元包） | ✅ | 聚合核心子包，AOT 兼容 |
-| Mud.HttpUtils.Abstractions | ✅ | 纯接口定义，无反射 |
-| Mud.HttpUtils.Attributes | ✅ | 仅特性定义，无反射 |
-| Mud.HttpUtils.Client | ✅ | `System.Text.Json` 序列化，AOT 安全 |
-| Mud.HttpUtils.Resilience | ✅ | 装饰器与策略编排均为静态类型与委托 |
-| Mud.HttpUtils.Generator | ✅ | 生成 AOT/裁剪安全代码，内含 `AOT001`–`AOT007` 编译期诊断 |
-| Mud.HttpUtils.OpenTelemetry | ✅ | 自有 API 无反射；导出能力依赖上游 OpenTelemetry SDK |
-| Mud.HttpUtils.JsonContextScaffolder | ✅ | 生成 `JsonSerializerContext`，消除 JSON 反射 |
-| Mud.HttpUtils.Newtonsoft.Json | ❌ | Newtonsoft.Json 依赖运行时反射，已标注 `[RequiresUnreferencedCode]` |
-| Mud.HttpUtils.Xml | ❌ | `XmlSerializer` 运行期生成动态程序集，已标注 `[RequiresDynamicCode]` |
-
-**启用 Native AOT：**
-
-```xml
-<PropertyGroup>
-  <PublishAot>true</PublishAot>
-  <IsAotCompatible>true</IsAotCompatible>
-</PropertyGroup>
-```
-
-1. 保持使用 `System.Text.Json`（默认 AOT 安全）；如需为特定 DTO 生成序列化上下文，运行脚手架工具 `mud-jsonctx`（`Mud.HttpUtils.JsonContextScaffolder`）为 `[HttpJsonSerializable]` 标注类型产出 `JsonSerializerContext`。
-2. 源生成器会读取 `IsAotCompatible` / `PublishAot` 等构建属性，在编译期给出 `AOT001`–`AOT007` 诊断。
-3. CI 严格模式可用 `-p:AotStrictMode=true` 将 `AOT004`–`AOT007` 及相关 IL 警告升级为 Error（详见「编译警告参考」）。
-
-> ⚠️ Native AOT 项目中请勿使用 `Mud.HttpUtils.Newtonsoft.Json` 与 `Mud.HttpUtils.Xml`，二者依赖运行时反射/动态代码生成，与 AOT/裁剪不兼容。
 
 ### 🚀 Native AOT 与裁剪支持
 
