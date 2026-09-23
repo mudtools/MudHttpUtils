@@ -108,6 +108,25 @@ public class SsrfProtectionTests
         ex.Which.ToString().Should().Contain("不允许连接到目标地址");
     }
 
+    /// <summary>
+    /// P3（M6 阶段五）：拒连异常消息只回显主机名，不回显 DNS 解析出的候选 IP 列表 ——
+    /// 该消息会进入异常 / 日志链路，披露内网解析结果等于泄漏内网拓扑。
+    /// </summary>
+    [Fact]
+    public async Task Handler_DefaultPolicy_RejectMessage_ShouldNotDiscloseResolvedAddresses()
+    {
+        using var handler = new SsrfSafeSocketsHttpHandler(new DefaultIpAddressPolicy());
+        using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
+
+        var act = () => client.GetAsync("http://localhost:9/");
+
+        var ex = await FluentActions.Awaiting(act).Should().ThrowAsync<Exception>();
+        var message = ex.Which.ToString();
+        message.Should().Contain("不允许连接到目标地址: localhost", "主机名仍需保留以支撑排障");
+        message.Should().NotContain("127.0.0.1");
+        message.Should().NotContain("::1");
+    }
+
     /// <summary>按策略放行回环 → 真实建连成功并拿到响应（连接期校验不误伤合法目标）。</summary>
     [Fact]
     public async Task Handler_CustomPolicy_AllowsLoopback_EndToEnd()

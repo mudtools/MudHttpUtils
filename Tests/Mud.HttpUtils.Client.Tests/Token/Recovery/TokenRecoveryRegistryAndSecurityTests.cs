@@ -348,5 +348,30 @@ public class TokenRecoveryRegistryAndSecurityTests
         value.Should().BeNull();
     }
 
+    /// <summary>
+    /// P3（M6 阶段五）：解密失败的 Warning 日志只输出脱敏后的缓存键 ——
+    /// 键形如 <c>userId + 分隔符 + scope</c>（含 PII），明文写入日志即泄漏用户标识。
+    /// </summary>
+    [Fact]
+    public void EncryptedTokenCache_DecryptFailure_WarningLog_ShouldMaskKey()
+    {
+        var inner = new MemoryCacheTokenCache<string>();
+        var logger = new CapturingLogger();
+        using var cache = new EncryptedTokenCache<UserTokenInfo>(inner, CreateEncryptionProvider(), logger);
+
+        const string key = "13812345678:read write";
+        cache.Set(key, new UserTokenInfo { UserId = "13812345678", AccessToken = "tok" });
+
+        inner.TryGet(key, out _).Should().BeTrue();
+        inner.Set(key, "not-a-valid-cipher");
+
+        cache.TryGet(key, out _).Should().BeFalse();
+
+        logger.Messages.Should().Contain(m => m.Contains("加密令牌缓存条目解密/反序列化失败"),
+            "解密失败必须记 Warning（MT-25）");
+        logger.Messages.Should().NotContain(m => m.Contains("13812345678"),
+            "日志中的缓存键必须脱敏，不得输出 userId 明文");
+    }
+
     #endregion
 }

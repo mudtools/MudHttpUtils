@@ -920,6 +920,55 @@ builder.Services.AddMudHttpOpenTelemetry(options =>
 
 自动采集 HTTP 请求计数、请求耗时、缓存命中、令牌刷新、重试次数、熔断器状态、下载字节数、下载耗时等指标。
 
+### ⚠️ 破坏性变更（升级前必读）
+
+> 汇总自 **2.0.9** 起的行为变更。以下条目**不改变公共 API 签名**（少数例外已标注），但会改变运行期行为，升级前请逐条自查。
+
+#### 1. 自动重定向已关闭（跨主机重定向改由手动逐跳复验）
+
+主链路（`EnhancedHttpClient` 及其 primary handler）现统一 `AllowAutoRedirect = false`，重定向由 `EnhancedHttpClient.SendCoreAsync` 的手动循环承接：
+
+- 每一跳都重新执行 `UrlValidator` 全套校验（白名单 / HTTPS / 私网 / 回环）。
+- `301` / `302` / `303`：非 GET / HEAD 请求降级为 GET（丢弃请求体）。
+- `307` / `308`：保留原方法与请求体，但**仅内存型可重放内容**（`ByteArrayContent` / `MultipartContent` 等）可继续；不可重放内容（一次性流）直接中止并抛出，避免发出空体请求。
+- 逐跳剥离 `Authorization` / `Cookie` 等凭据头，跳数上限 10。
+
+**替代路径**：若业务依赖自动重定向，请自行在 primary handler 上开启 `AllowAutoRedirect`（例如自定义 `SocketsHttpHandler`）。此时跨主机重定向**不再被复验**，白名单 / HTTPS / 私网防护对该跳失效，SSRF 风险由使用方自行承担。
+
+#### 2. 注入的 `JsonSerializerOptions` 现在生效
+
+`IHttpContentSerializer` 的 DI 路径此前会**静默丢弃**消费方注入的 `JsonSerializerOptions`（如 camelCase、枚举字符串化、自定义 Converter）。现改为以 `new JsonSerializerOptions(injected)` 副本为合并基座，再叠加框架 resolver 与内置默认值。
+
+- 若你此前"注入了设置但依赖其不生效"，请改为显式传 `null`。
+- 合并顺序：`injected`（副本）→ 框架 resolver → 内置默认 → JIT 兜底默认。
+
+#### 3. 401 恢复的重试轮次不再复用已被拒绝的令牌
+
+`RefreshDedupTable.GetOrRefreshAsync` 新增 `forceRefresh` 参数；401 恢复执行器自第 2 轮起以 `forceRefresh = true` 透传，窗口内不再复用"已被服务端拒绝"的刷新结果。
+
+#### 4. 请求头值校验更严格
+
+`HttpHeaderValueValidator` 由"仅拒绝 CR/LF"改为**拒绝全部 C0 控制字符与 DEL**（保留 HTAB）；Token / ApiKey 注入前同样复核。含控制字符的头值现会被跳过（生成器侧）或拒绝（运行期）。
+
+#### 5. 敏感词表收窄与补充（URL / 日志脱敏覆盖面变化）
+
+- **新增掩码**：`pwd` / `credential` / `sessionid` / `bearer` / `sign` / `auth` / `auth_code` / `authorization_code` / `verify_code` / `sms_code` / `captcha` / `otp` / `home_address` / `detail_address` / `billing_address` / `shipping_address`，以及姓名键 `user_name` / `userName` / `full_name` / `fullName`。
+- **不再掩码**：通用键 `code` / `nonce` / `address` / `name`（过于宽泛，误伤业务字段与排障）。依赖旧行为掩码这些键的场景请改用具体变体键名。
+- **Base64 启发式收紧**：字符串被判为"疑似令牌"需同时满足长度 ≥ 16 与 `=` 填充，普通单词（如 `testuser`）不再被整体掩码。
+
+#### 6. AES 0x04 密文在未启用密钥分离的实例上显式拒绝
+
+密文版本字节为 `0x04`（CBC + HMAC、密钥分离）而解密实例 `AesEncryptionOptions.EnableKeySeparation = false` 时，现**前置显式拒绝**并抛 `CryptographicException`（提示改配置或由加密侧产出 v3 信封），不再回落主密钥后误报"密文完整性校验失败"。
+
+**兼容窗口**：跨版本对端（旧版加密 → 新版解密）需同步升级 `EnableKeySeparation` 配置，或由加密侧在窗口内产出 v3 信封。
+
+#### 7. 其他行为变更（非破坏）
+
+- `ProgressableStreamContent` 默认 `bufferSize` 由 `4096` 提升至 `81920`（与下载 / 执行器路径一致）；显式传参不受影响。
+- 严格模式（`AllowCustomBaseUrls = false`）下默认自动接线连接期 SSRF 校验（此前需显式 opt-in）。
+- 连接期拒连异常消息只回显主机名，不再回显 DNS 解析出的候选 IP 列表（防内网拓扑泄露）。
+- 加密令牌缓存的解密失败 Warning 日志中，缓存键（含 `userId`）改为脱敏输出。
+
 ### 🤝 贡献
 
 欢迎提交 Issue 和 Pull Request 来改进这个项目！

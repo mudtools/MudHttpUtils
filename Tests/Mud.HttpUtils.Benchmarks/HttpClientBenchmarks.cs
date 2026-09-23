@@ -171,3 +171,115 @@ public class TestModels
         public string? Email { get; set; }
     }
 }
+
+/// <summary>
+/// M6 阶段五（§八 8.2）基准对照：为 P2 批次的三项性能改动提供「改动前 / 改动后」可比数据。
+/// <list type="bullet">
+///   <item>HC-16 缓存满载 <c>Set</c>：满载（触发淘汰）vs 未满载（无淘汰）基线。</item>
+///   <item>HC-17 指标 tag 构造：<c>MudHttpMeter.HasListeners</c> 门控 vs 恒构造基线。</item>
+///   <item>HC-15 上传进度吞吐：带进度回调（81920 新默认 / 4096 旧默认）vs 无进度快路径。</item>
+/// </list>
+/// </summary>
+[MemoryDiagnoser]
+[SimpleJob(warmupCount: 3, iterationCount: 10)]
+public class M6Stage5Benchmarks
+{
+    private const int CacheCapacity = 1024;
+    private const int UploadPayloadBytes = 4 * 1024 * 1024;
+
+    private MemoryHttpResponseCache _fullCache = null!;
+    private MemoryHttpResponseCache _warmCache = null!;
+    private byte[] _uploadPayload = null!;
+    private readonly ProgressRecorder _progress = new();
+    private int _setCounter;
+
+    [GlobalSetup]
+    public void Setup()
+    {
+        _fullCache = new MemoryHttpResponseCache(CacheCapacity);
+        for (var i = 0; i < CacheCapacity; i++)
+        {
+            _fullCache.Set($"key-{i}", i, TimeSpan.FromMinutes(10));
+        }
+
+        _warmCache = new MemoryHttpResponseCache(CacheCapacity);
+
+        _uploadPayload = new byte[UploadPayloadBytes];
+        new Random(42).NextBytes(_uploadPayload);
+    }
+
+    [GlobalCleanup]
+    public void Cleanup()
+    {
+        _fullCache.Dispose();
+        _warmCache.Dispose();
+    }
+
+    /// <summary>HC-16：满载时每次 Set 都要选淘汰目标（现按 LastAccessTime 单次 O(N) 扫描）。</summary>
+    [Benchmark(Description = "响应缓存 Set - 满载触发淘汰（HC-16）")]
+    public void CacheSet_AtCapacity()
+        => _fullCache.Set($"overflow-{++_setCounter}", _setCounter, TimeSpan.FromMinutes(10));
+
+    /// <summary>HC-16 对照：未满载（无淘汰分支）时的 Set 基线。</summary>
+    [Benchmark(Description = "响应缓存 Set - 未满载（HC-16 对照基线）")]
+    public void CacheSet_UnderCapacity()
+        => _warmCache.Set($"fresh-{++_setCounter}", _setCounter, TimeSpan.FromMinutes(10));
+
+    /// <summary>HC-17：零监听时经 HasListeners 门控短路，跳过 tags 数组构造。</summary>
+    [Benchmark(Description = "指标 tag 构造 - HasListeners 门控（HC-17）")]
+    public int MetricTags_Gated()
+    {
+        if (!MudHttpMeter.HasListeners)
+        {
+            return 0;
+        }
+
+        return BuildTags().Length;
+    }
+
+    /// <summary>HC-17 对照：不门控，恒构造 tags 数组（HC-17 之前的写入路径行为）。</summary>
+    [Benchmark(Description = "指标 tag 构造 - 恒构造（HC-17 对照基线）")]
+    public int MetricTags_Ungated() => BuildTags().Length;
+
+    /// <summary>HC-15：带进度回调的上传路径（节流复制 + 81920 新默认缓冲）。</summary>
+    [Benchmark(Description = "上传吞吐 - 带进度回调 81920（HC-15）")]
+    public async Task Upload_WithProgress_DefaultBuffer()
+    {
+        using var inner = new ByteArrayContent(_uploadPayload);
+        using var content = new ProgressableStreamContent(inner, _progress);
+        await content.CopyToAsync(Stream.Null);
+    }
+
+    /// <summary>HC-15 对照：带进度回调但沿用旧默认缓冲 4096。</summary>
+    [Benchmark(Description = "上传吞吐 - 带进度回调 4096（HC-15 旧默认对照）")]
+    public async Task Upload_WithProgress_LegacyBuffer()
+    {
+        using var inner = new ByteArrayContent(_uploadPayload);
+        using var content = new ProgressableStreamContent(inner, _progress, 4096);
+        await content.CopyToAsync(Stream.Null);
+    }
+
+    /// <summary>HC-15 对照：无进度回调走 <c>Stream.CopyToAsync</c> 快路径。</summary>
+    [Benchmark(Description = "上传吞吐 - 无进度回调快路径（HC-15 对照）")]
+    public async Task Upload_NoProgress_FastPath()
+    {
+        using var inner = new ByteArrayContent(_uploadPayload);
+        using var content = new ProgressableStreamContent(inner, progress: null);
+        await content.CopyToAsync(Stream.Null);
+    }
+
+    private static KeyValuePair<string, object?>[] BuildTags() =>
+    [
+        new("http.request.method", "GET"),
+        new("url.scheme", "https"),
+        new("server.address", "api.example.com"),
+        new("http.response.status_code", 200),
+    ];
+
+    private sealed class ProgressRecorder : IProgress<long>
+    {
+        public long Last;
+
+        public void Report(long value) => Last = value;
+    }
+}

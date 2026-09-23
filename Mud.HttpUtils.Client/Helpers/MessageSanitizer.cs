@@ -54,7 +54,7 @@ public static class MessageSanitizer
     /// <returns>脱敏后的标识符；null / 空输入返回空串。</returns>
     internal static string MaskIdentifier(string? value)
     {
-        if (string.IsNullOrEmpty(value))
+        if (value is null || value.Length == 0)
             return string.Empty;
 
         if (value.Length <= 4)
@@ -63,13 +63,19 @@ public static class MessageSanitizer
         return value.Substring(0, 4) + "***(len=" + value.Length + ")";
     }
 
+    /// <summary>
+    /// 姓名类敏感字段（按「首字符 + *」掩码）。P3（M6 阶段五）：`name` 过于宽泛
+    /// （产品名 / 文件名 / 城市名等业务字段常直接叫 name），收窄为明确的姓名键名。
+    /// </summary>
     private static readonly HashSet<string> NameSensitiveFields = new(StringComparer.OrdinalIgnoreCase)
     {
-        "real_name", "realName", "name"
+        "real_name", "realName", "user_name", "userName", "full_name", "fullName"
     };
 
 #if NET7_0_OR_GREATER
-    [GeneratedRegex(@"^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$|^[A-Za-z0-9_\-]{20,}$", RegexOptions.IgnoreCase)]
+    // P3（M6 阶段五）：Base64 启发式加「长度阈值 ≥16 且必须带 = 填充」双重约束 ——
+    // 原 `(?:[A-Za-z0-9+/]{4})*` 允许零次重复，使 "test" / "testuser" 等普通单词被判为令牌而整体掩码。
+    [GeneratedRegex(@"^(?=.{16,}$)(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)$|^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$|^[A-Za-z0-9_\-]{20,}$", RegexOptions.IgnoreCase)]
     private static partial Regex TokenPattern();
 
     [GeneratedRegex(@"(?i)(token|password|secret|key)\s*[:=]\s*['""]?([^'""\s]{6,})['""]?", RegexOptions.Compiled)]
@@ -88,7 +94,7 @@ public static class MessageSanitizer
     private static partial Regex IdCardPattern();
 #else
     private static readonly Regex TokenPatternField = new Regex(
-        @"^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$|" +
+        @"^(?=.{16,}$)(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)$|" +
         @"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$|" +
         @"^[A-Za-z0-9_\-]{20,}$",
         RegexOptions.Compiled);

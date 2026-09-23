@@ -47,10 +47,16 @@ internal static class SensitiveUrlRedactor
         "id_card", "idcard", "id_number", "idNumber",
         "card_no", "card_number", "bank_card", "bankCard",
         "real_name", "realName",
-        "address", "住址",
+        "住址",
         "passport", "driver_license",
         // M1-#5：补齐 URL query 中常见的敏感键（与 MessageSanitizer 共用本词表）
-        "authorization", "code", "client_secret", "signature", "sig", "nonce"
+        "authorization", "client_secret", "signature", "sig",
+        // P3（M6 阶段五）：补齐易漏的凭据类键名
+        "pwd", "credential", "sessionid", "session_id", "bearer", "sign", "auth",
+        // P3（M6 阶段五）：`code` / `nonce` / `address` 三个通用键名过于宽泛
+        // （`code` 亦常为业务编码、`address` 亦常为网络地址），收窄为具体变体：
+        "auth_code", "authorization_code", "verify_code", "sms_code", "captcha", "otp",
+        "home_address", "detail_address", "billing_address", "shipping_address"
     };
 
     /// <summary>
