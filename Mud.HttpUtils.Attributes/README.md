@@ -51,11 +51,12 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 | 特性                      | 用途                          | 目标                           | 关键属性                                                                                                       |
 | ------------------------- | ----------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------- |
 | `PathAttribute`           | 路径参数                      | Parameter / Property           | `Name`, `Format`, `UrlEncode`                                                                                  |
-| `QueryAttribute`          | 查询参数                      | Parameter / Property           | `Name`, `Format`, `AliasAs`, `Separator`, `Prefix`, `CollectionFormat`, `TreatAsString`, `SerializeNull`（G8-13：原文档误记 Encode，已修正 —— 编码语义在 `QueryMapAttribute.UrlEncode`） |
+| `QueryAttribute`          | 查询参数                      | Parameter / Property / Method / Interface | `Name`, `Format`, `AliasAs`, `Separator`, `Prefix`, `CollectionFormat`, `TreatAsString`, `SerializeNull`（G8-13：原文档误记 Encode，已修正 —— 编码语义在 `QueryMapAttribute.UrlEncode`） |
 | `QueryMapAttribute`       | 查询参数映射（对象/字典展开） | Parameter / Property           | `PropertySeparator`, `SerializationMethod`, `UrlEncode`, `IncludeNullValues`                                   |
-| `RawQueryStringAttribute` | 原始查询字符串                | Parameter                      | （空标记特性，无属性；G8-13：原文档误记 PrependQuestionMark，已删除）                                          |
-| `ArrayQueryAttribute`     | 数组查询参数                  | Parameter                      | `Separator`                                                                                                    |
+| `RawQueryStringAttribute` | 原始查询字符串                | Parameter / Property           | （空标记特性，无属性；G8-13：原文档误记 PrependQuestionMark，已删除）                                          |
+| `ArrayQueryAttribute`     | 数组查询参数                  | Parameter / Method / Interface | `Separator`                                                                                                    |
 | `HeaderAttribute`         | 请求头参数                    | Parameter / Method / Interface / Property | `Name`, `Value`, `AliasAs`, `Replace`, `FormatString`                                                          |
+| `HeaderCollectionAttribute` | 字典批量动态请求头（与 `[Header]` 单头区分） | Parameter（参数类型 `IDictionary<string, string?>` / `IDictionary<string, object?>`） | —（空标记特性，字典键值对逐个写入请求头） |
 | `BodyAttribute`           | 请求体参数                    | Parameter                      | `ContentType`, `EnableEncrypt`, `EncryptSerializeType`, `EncryptPropertyName`, `RawString`, `UseStringContent` |
 | `TokenAttribute`          | 令牌参数                      | Parameter / Interface / Method | `TokenType`, `InjectionMode`, `Name`, `Scopes`, `TokenManagerKey`, `Scheme`, `RequiresUserId`（G8-13：原文档误记 Replace 且漏列 `Scheme`，已修正） |
 | `FilePathAttribute`       | 文件路径参数（上传/下载）     | Parameter / Property          | `BufferSize`、`Overwrite`                                                                                      |
@@ -72,9 +73,9 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 
 ### 弹性策略特性
 
-| 特性                      | 用途             | 目标   | 关键属性                                                                 |
-| ------------------------- | ---------------- | ------ | ------------------------------------------------------------------------ |
-| `RetryAttribute`          | 方法级重试策略   | Method | `MaxRetries`, `DelayMilliseconds`, `UseExponentialBackoff`               |
+| 特性                      | 用途             | 目标   | 关键属性                                                                                                                                        |
+| ------------------------- | ---------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RetryAttribute`          | 方法级重试策略   | Method | `MaxRetries`, `DelayMilliseconds`, `UseExponentialBackoff`, `AllowNonIdempotent`（默认 false；双构造 `(int maxRetries)` / `(int maxRetries, int delayMilliseconds)`；全局配对 `RetryOptions.AllowNonIdempotentRetry`） |
 | `TimeoutAttribute`        | 方法级超时策略   | Method | `TimeoutMilliseconds`                                                    |
 | `CircuitBreakerAttribute` | 方法级熔断策略   | Method | `FailureThreshold`, `BreakDurationSeconds`, `SamplingDurationSeconds`, `MinimumThroughput` |
 
@@ -94,6 +95,7 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 | `SerializationMethodAttribute` | 请求体序列化方法控制   | Interface / Method                    |
 | `InterfacePathAttribute`       | 接口级固定路径参数     | Interface                             |
 | `InterfaceQueryAttribute`      | 接口级固定查询参数     | Interface                             |
+| `AllowUnmatchedRouteParametersAttribute` | 允许路由模板存在未匹配 `{token}` 占位符（`Inherited = true`，命名空间 `Mud.HttpUtils.Attributes`） | Interface                             |
 
 ### 关联枚举
 
@@ -194,7 +196,7 @@ public interface IHttpClientApi { }
 | `ContentType`          | `string?`       | `null`   | 请求体内容类型（优先级最高）                                      |
 | `EnableEncrypt`        | `bool`          | `false`  | 是否启用加密                                                      |
 | `EncryptSerializeType` | `SerializeType` | `Json`   | 加密序列化类型                                                    |
-| `EncryptPropertyName`  | `string`        | `"data"` | 加密后的属性名                                                    |
+| `EncryptPropertyName`  | `string?`       | `null`   | 加密后的属性名；未设置时生成器回落为 `"data"`                     |
 | `RawString`            | `bool`          | `false`  | 是否作为原始字符串发送（不进行 JSON 序列化，也不调用 ToString()） |
 | `UseStringContent`     | `bool`          | `false`  | 是否将参数作为字符串内容发送（调用 ToString()）                   |
 
@@ -645,6 +647,9 @@ public interface ITenantApi
 | `MaxRetries`           | `int`  | `3`    | 最大重试次数           |
 | `DelayMilliseconds`    | `int`  | `1000` | 基础延迟时间（毫秒）   |
 | `UseExponentialBackoff`| `bool` | `true` | 是否使用指数退避       |
+| `AllowNonIdempotent`   | `bool` | `false`| 是否允许对非幂等方法（POST/PATCH 等）重试；全局配对 `RetryOptions.AllowNonIdempotentRetry` |
+
+> 双构造：`(int maxRetries)`（延迟取全局配置）与 `(int maxRetries, int delayMilliseconds)`。
 
 ```csharp
 [Get("/api/data")]
@@ -861,8 +866,7 @@ internal partial class AppJsonContext : JsonSerializerContext;
 | 属性           | 类型     | 默认值 | 说明                                                                 |
 | -------------- | -------- | ------ | -------------------------------------------------------------------- |
 | `Name`         | `string?`| `null` | 查询参数名称                                                         |
-| `FormatString` | `string?`| `null` | 格式化字符串（如日期格式 `"yyyy-MM-dd"`）                            |
-| `Format`       | `string?`| `null` | `FormatString` 的别名                                                |
+| `Format`       | `string?`| `null` | 格式化字符串（构造函数第二参数，如日期格式 `"yyyy-MM-dd"`）         |
 | `AliasAs`      | `string?`| `null` | 别名，用于映射到不同的查询参数名                                     |
 | `Separator`    | `string?`| `null` | 数组元素分隔符。设置后数组序列化为单个参数（如 `?ids=1;2;3`）；为 null 则多个同名参数 |
 

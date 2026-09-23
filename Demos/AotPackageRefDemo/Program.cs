@@ -5,6 +5,7 @@ using Mud.HttpUtils.OpenTelemetry;
 using Mud.HttpUtils.Resilience;
 using OpenTelemetry;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace AotPackageRefDemo;
 
@@ -19,6 +20,11 @@ public class Program
                 services.Configure<JsonSerializerOptions>(options =>
                 {
                     options.TypeInfoResolver = DemoJsonContext.Default;
+                    // 与 DemoJsonContext 生成配置对齐：外部 options 缺 CamelCase/大小写不敏感时，
+                    // 源生成属性名无法匹配 camelCase JSON（反序列化得到默认值）。
+                    options.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+                    options.PropertyNameCaseInsensitive = true;
+                    options.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
                 });
 
                 // 2. 注册 EnhancedHttpClient（DI 路径经由 IHttpContentSerializer 序列化，options 含消费方 resolver）

@@ -37,7 +37,16 @@
 
 - **方法级属性方式**：`[Post(ContentType = "application/json")]`
 
-支持的内容类型：
+ContentType 优先级（Body > 方法 > 接口）仍然生效，但对**对象 `[Body]`** 而言，生成器只有三种真实序列化分支：
+
+- content-type 为 XML（`application/xml` 及含 `xml` 的形式，如 `application/xml; version=1.0; charset=utf-8`）→ `XmlSerializer` 序列化；
+- raw string / 加密 Body → 生成代码直接使用该 content-type 字面量；
+- **其余一律**经 `IHttpContentSerializer` 走 JSON 序列化——`application/json`、`text/plain`、`text/html`、`application/yaml`、`application/protobuf`、`multipart/form-data` 等声明**不改变对象 Body 的序列化路径**。
+
+URL 编码表单走 `[SerializationMethod(FormUrlEncoded)]` 专用路径，与 `[Post(ContentType = "application/x-www-form-urlencoded")]` 无关。
+
+测试方法覆盖的 content-type 声明（用于优先级/头演示；对象 Body 的序列化路径以上述三种分支为准）：
+
 - JSON (`application/json`)
 - XML (`application/xml`)
 - URL编码 (`application/x-www-form-urlencoded`)
@@ -51,8 +60,8 @@
 
 测试真实世界中的应用场景：
 
-- 钉钉部门 API（JSON 格式）
-- 企业微信部门 API（XML 格式）
+- 钉钉部门 API（`[Body("application/xml")]` → **XML**）
+- 企业微信部门 API（方法级 `ContentType = "application/xml"` 被 `[Body("application/json")]` 覆盖 → **JSON**）
 - 表单提交（URL 编码格式）
 - 文件上传（multipart 格式）
 - GraphQL 查询（JSON 格式）
@@ -133,19 +142,27 @@ HttpClientApiDemo.Share/
 
 ### 编译项目
 
+`HttpClientApiDemo.Share` 仅有 `.shproj` / `.projitems`（共享项目，**没有 csproj**），`dotnet build` 无法直接构建本目录；请构建消费方项目（`Demos/HttpClientApiDemo/HttpClientApiDemo.csproj`、`Demos/HttpClientApiPublicDemo/HttpClientApiPublicDemo.csproj` 均通过 `.projitems` 引入本共享项目）：
+
 ```bash
-cd Demos/HttpClientApiDemo.Share
-dotnet build
+dotnet build Demos/HttpClientApiDemo/HttpClientApiDemo.csproj
 ```
 
 ### 查看生成的代码
 
-生成的代码位于：
+生成的代码嵌套在命名空间子目录中，且项目为多 TFM（`netstandard2.0` / `net8.0` / `net9.0` / `net10.0`），每个 TFM 输出目录各有一份：
+
 ```
-obj/Debug/net10.0/generated/Mud.HttpUtils.Generator/Mud.HttpUtils.HttpInvokeClassSourceGenerator/
+obj/<配置>/<tfm>/generated/Mud.HttpUtils.Generator/Mud.HttpUtils.HttpInvokeClassSourceGenerator/<命名空间>/Internal/*.g.cs
 ```
 
-生成的文件（部分）：
+例如：`obj/Debug/net10.0/generated/Mud.HttpUtils.Generator/Mud.HttpUtils.HttpInvokeClassSourceGenerator/HttpClientApiTest/HttpClientApiTestApis/Internal/ContentTypePriorityTestApi.g.cs`。可用以下命令递归查找全部生成文件：
+
+```powershell
+Get-ChildItem -Recurse -Filter *.g.cs obj
+```
+
+生成的文件（部分，位于上述嵌套目录中）：
 - `ContentTypePriorityTestApi.g.cs`
 - `ContentTypeDefaultTestApi.g.cs`
 - `ContentTypeUsageTestApi.g.cs`
@@ -161,14 +178,14 @@ obj/Debug/net10.0/generated/Mud.HttpUtils.Generator/Mud.HttpUtils.HttpInvokeClas
 编译后，检查生成的代码是否正确应用了内容类型：
 
 1. 打开生成的 `.g.cs` 文件
-2. 查找 `request.Content = new StringContent(...)` 语句
-3. 验证第三个参数（内容类型）是否符合预期
+2. 对象 Body 默认查找 `__httpRequest.Content = _contentSerializer.ToHttpContent(...)`；XML 场景为 `__xmlStrContent` 分支，raw/加密场景使用 content-type 字面量（以 `RequestBuilder.cs` 实际分支为准）
+3. 验证请求体序列化路径与 Content-Type 是否符合预期
 
 ## 使用示例
 
 ### 基本使用
 
-> **注意**：`[HttpClientApi]` 的 `BaseAddress` 构造函数与属性**已移除**（CFG-27，使用将产生编译错误 `CS0117`）。请通过 `AddMudHttpClient(clientName, baseAddress)` 或 `AddMudHttpGeneratedClient<T>(clientName)` 在 DI 注册时配置基地址，接口定义仅保留内容类型等声明。
+> **注意**：`[HttpClientApi]` 的 `BaseAddress` 构造函数与属性**已移除**（CFG-27，使用将产生编译错误 `CS0117`）。请通过 `AddMudHttpClient(clientName, baseAddress)` 或 `AddMudHttpGeneratedClient<T>(clientName)` 在 DI 注册时配置基地址，接口定义仅保留内容类型等声明，例如：`services.AddMudHttpClient("myApi", "https://api.mudtools.cn/");`。`[HttpClientApi]` 其余可用属性：`ContentType`、`RegistryGroupName`、`TokenManage`、`Timeout`、`IsAbstract`、`InheritedFrom`、`HttpClient`；`AddMudHttpGeneratedClient<T>(clientName)` 注册后需配合源生成的 `AddWebApiHttpClient()` 完成接口→实现映射。
 
 ```csharp
 [HttpClientApi(ContentType = "application/xml")]
@@ -187,13 +204,13 @@ public interface IMyApi
 ### Body 参数优先级
 
 ```csharp
-[HttpClientApi("https://api.mudtools.cn/", ContentType = "application/xml")]
+[HttpClientApi(ContentType = "application/xml")]
 public interface IMyApi
 {
-    // Body 参数的 ContentType 优先级最高
+    // Body 参数的 ContentType 优先级最高（仅影响优先级声明）
     [Post("/api/test", ContentType = "application/json")]
     Task<TestResponse> TestAsync([Body(ContentType = "text/html")] TestData data);
-    // 最终使用 text/html
+    // 对象 Body 非 XML → 最终仍走 IHttpContentSerializer JSON 序列化，不是 text/html
 }
 ```
 
@@ -232,46 +249,45 @@ Task<XmlResponse> PostJsonGetXmlAsync([Body] JsonData request);
 
 ```csharp
 // 接口定义
-[HttpClientApi("https://api.mudtools.cn/", ContentType = "application/xml")]
+[HttpClientApi(ContentType = "application/xml")]
 public interface IContentTypePriorityTestApi
 {
     [Post("/api/test/priority1", ContentType = "application/json")]
     Task<TestResponse> TestMethodOverrideInterfaceAsync([Body] TestData data);
 }
 
-// 生成的代码
-httpRequest.Content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+// 生成的代码（对象 Body 非 XML → 经 IHttpContentSerializer 序列化为 JSON）
+__httpRequest.Content = _contentSerializer.ToHttpContent(data);
 ```
 
 ### 默认值示例
 
 ```csharp
 // 接口定义（无 ContentType 特性）
-[HttpClientApi("https://api.mudtools.cn/")]
+[HttpClientApi]
 public interface IContentTypeDefaultTestApi
 {
     [Post("/api/default")]
     Task<TestResponse> TestDefaultFallbackAsync([Body] TestData data);
 }
 
-// 生成的代码
-httpRequest.Content = new StringContent(jsonContent, Encoding.UTF8, GetMediaType(_defaultContentType));
-// _defaultContentType = "application/json"
+// 生成的代码（默认回退 application/json，同样走 IHttpContentSerializer）
+__httpRequest.Content = _contentSerializer.ToHttpContent(data);
 ```
 
 ### Body 参数优先级示例
 
 ```csharp
 // 接口定义
-[HttpClientApi("https://api.mudtools.cn/", ContentType = "application/xml")]
+[HttpClientApi(ContentType = "application/xml")]
 public interface IContentTypePriorityTestApi
 {
     [Post("/api/test/priority3", ContentType = "application/json")]
     Task<TestResponse> TestBodyParameterPriorityAsync([Body(ContentType = "text/html")] TestData data);
 }
 
-// 生成的代码
-httpRequest.Content = new StringContent(jsonContent, Encoding.UTF8, "text/html");
+// 生成的代码（对象 Body 非 XML → 最终走 JSON 序列化，不是 text/html）
+__httpRequest.Content = _contentSerializer.ToHttpContent(data);
 ```
 
 ### 默认参数推断示例
@@ -300,7 +316,9 @@ public interface IDefaultParameterInferenceApi
 var __queryParams = global::Mud.HttpUtils.QueryParameterBuilder.Create();
 __queryParams.Add("keyword", keyword);
 if (__queryParams.Count > 0)
-    __url += "?" + __queryParams.ToString();
+{
+    __url += (__url.Contains("?") ? "&" : "?") + __queryParams.ToString();
+}
 
 // 生成的代码（CreateUserAsync — 复杂类型自动推断为请求体）
 __httpRequest.Content = _contentSerializer.ToHttpContent(user);
@@ -309,15 +327,15 @@ __httpRequest.Content = _contentSerializer.ToHttpContent(user);
 var __queryParams = global::Mud.HttpUtils.QueryParameterBuilder.Create();
 __queryParams.Add("keyword", keyword);           // string → 查询参数
 if (__queryParams.Count > 0)
-    __url += "?" + __queryParams.ToString();
+{
+    __url += (__url.Contains("?") ? "&" : "?") + __queryParams.ToString();
+}
 __httpRequest.Content = _contentSerializer.ToHttpContent(criteria);  // 复杂类型 → 请求体
 ```
 
 ## 相关文档
 
 - [MudCodeGenerator 主 README](../../README.md)
-- [Token 使用示例](../../TokenUsageExample.md)
-- [Token 实现总结](../../TokenImplementationSummary.md)
 
 ## 许可证
 

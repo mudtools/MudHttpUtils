@@ -4,12 +4,13 @@
 
 Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP 客户端、加密、令牌管理、应用上下文、安全认证、日志脱敏、缓存等纯接口定义与基础抽象类。
 
-**最小外部 NuGet 依赖** — `netstandard2.0` 目标仅依赖 `Microsoft.Bcl.AsyncInterfaces`（提供 `IAsyncEnumerable` 等异步支持），`net6.0+` 目标零外部依赖。
+**最小外部 NuGet 依赖** — `netstandard2.0` 目标依赖 `Microsoft.Bcl.AsyncInterfaces`（提供 `IAsyncEnumerable` 等异步支持）与 `System.Diagnostics.DiagnosticSource`；`net6.0` / `net7.0` 目标依赖 `System.Diagnostics.DiagnosticSource`；仅 `net8.0` / `net10.0` 目标零外部依赖。
 
 ## 目标框架
 
 - `netstandard2.0`（兼容 .NET Framework、.NET Core、Xamarin、Unity 等）
 - `net6.0`
+- `net7.0`
 - `net8.0`
 - `net10.0`
 
@@ -20,12 +21,12 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 | 接口                     | 说明           | 核心方法                                                                                                                                                                      |
 | ------------------------ | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `IBaseHttpClient`        | 基础 HTTP 操作 | `SendAsync<TResult>`, `SendRawAsync`, `SendStreamAsync`, `DownloadAsync`, `DownloadLargeAsync`                                                                                |
-| `IJsonHttpClient`        | JSON 操作      | `GetAsync<TResult>`, `PostAsJsonAsync<TResult>`, `PutAsJsonAsync<TResult>`, `DeleteAsJsonAsync<TResult>`, `DeleteAsJsonAsync<TRequest, TResult>`, `PatchAsJsonAsync<TResult>` |
+| `IJsonHttpClient`        | JSON 操作      | `GetAsync<TResult>`, `PostAsJsonAsync<TRequest, TResult>`, `PutAsJsonAsync<TRequest, TResult>`, `DeleteAsJsonAsync<TResult>`, `DeleteAsJsonAsync<TRequest, TResult>`, `PatchAsJsonAsync<TRequest, TResult>` |
 | `IXmlHttpClient`         | XML 操作       | `SendXmlAsync<TResult>`, `PostAsXmlAsync<TResult>`, `PutAsXmlAsync<TResult>`, `GetXmlAsync<TResult>`                                                                          |
 | `IEncryptableHttpClient` | 加密操作       | `EncryptContent`, `DecryptContent`                                                                                                                                            |
 | `IEnhancedHttpClient`    | 增强组合接口   | 继承 `IBaseHttpClient`、`IJsonHttpClient`、`IXmlHttpClient`、`IEncryptableHttpClient`，支持 `WithBaseAddress` 动态切换基地址                                                  |
 | `IHttpClientResolver`    | 命名客户端解析 | `GetClient`, `TryGetClient`                                                                                                                                                   |
-| `IEnhancedHttpClientFactory` | 增强客户端工厂 | `CreateClient`, `RemoveClient`                                                                                                                                            |
+| `IEnhancedHttpClientFactory` | 增强客户端工厂 | `CreateClient(string)`, `bool Invalidate(string)`, `void InvalidateAll()` |
 | `IFormContent`           | 表单内容接口   | `ToHttpContent`, `ToHttpContentAsync`（支持上传进度报告）                                                                                                                     |
 
 > `IEnhancedHttpClient` 是 `IBaseHttpClient`、`IJsonHttpClient`、`IXmlHttpClient`、`IEncryptableHttpClient` 的组合接口，提供完整的 HTTP 客户端能力。新增 `WithBaseAddress` 方法支持运行时动态切换基地址，`BaseAddress` 属性获取当前基地址。`IFormContent` 用于 multipart/form-data 场景，支持通过 `IProgress<long>` 报告上传进度。`IEnhancedHttpClientFactory` 用于按名称创建或获取缓存的 `IEnhancedHttpClient` 实例，在 .NET 8+ 上通过 Keyed Service 解析。
@@ -82,8 +83,8 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 
 | 类型                   | 说明                                                            |
 | ---------------------- | --------------------------------------------------------------- |
-| `IEncryptionProvider`  | 加密提供程序接口，定义 `Encrypt` 和 `Decrypt` 方法              |
-| `AesEncryptionOptions` | AES 加密配置选项，包含 `Key` 属性、`RequireCrossRuntimePortable` 属性和 `Validate()` 验证方法（`IV` 已移除（CFG-27），v1.8.0 起自动随机生成） |
+| `IEncryptionProvider`  | 加密提供程序接口，定义 `Encrypt`、`Decrypt`、`EncryptBytes`、`DecryptBytes` 四个方法    |
+| `AesEncryptionOptions` | AES 加密配置选项，包含 `Key` 属性、`RequireCrossRuntimePortable` 属性、`bool EnableKeySeparation = true`（HKDF 密钥分离，决定 `0x04`/`0x03` 信封）和 `Validate()` 验证方法（`IV` 已移除（CFG-27），v1.8.0 起自动随机生成） |
 
 > `AesEncryptionOptions` 支持通过配置文件绑定（配置节名称：`MudHttpAesEncryption`），密钥长度支持 AES-128（16 字节）、AES-192（24 字节）、AES-256（32 字节）。
 >
@@ -140,13 +141,13 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 | -------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `ITokenManager`                  | 通用令牌管理，提供 `GetTokenAsync`、`GetOrRefreshTokenAsync` 方法，继承 `IDisposable`（**推荐 DI 生命周期：Singleton**） |
 | `IUserTokenManager`              | 用户令牌管理，继承 `ITokenManager`，提供用户级令牌获取与刷新（**推荐 DI 生命周期：Singleton**）      |
-| `ICurrentUserId`                 | 当前用户标识，提供 `GetCurrentUserIdAsync` 方法                                                      |
+| `ICurrentUserId`                 | 当前用户标识，提供 `string? CurrentUserId { get; }` 属性                                                      |
 | `ICurrentUserContext`            | 当前用户上下文，提供 `UserId` 属性，用于线程安全的用户 ID 传播（推荐替代 `ICurrentUserId`）          |
 | `ITokenProvider`                 | Token 提供器，统一封装 Token 查找、获取、刷新逻辑，根据 `TokenRequest` 获取令牌                      |
 | `ITokenStore`                    | 令牌持久化存储契约，支持分布式缓存或数据库持久化，提供 `GetTokenTypesAsync`、`ClearAsync` 批量操作     |
 | `IUserTokenStore`                | 用户级令牌持久化存储契约，继承 `ITokenStore`，按用户标识隔离                                         |
 | `IEncryptedTokenStore`           | 加密令牌持久化存储契约，继承 `ITokenStore`，提供自动加密/解密能力                                    |
-| `ITokenRefreshBackgroundService` | 令牌后台刷新服务契约，提供 `StartAsync`、`StopAsync` 和 `RefreshAllAsync` 方法                       |
+| `ITokenRefreshBackgroundService` | 令牌后台刷新服务契约，提供 `StartAsync`、`StopAsync`、`RegisterTokenManager(ITokenManager, string? name = null)`、`bool IsStopped`、`RestartAsync` 方法 |
 | `ITokenManagerRegistry`          | 令牌管理器注册表契约（SR-M6）：按 `TokenRecoveryContext.TokenManagerKey` 解析管理器实例，供 401 恢复执行器按键路由；未知键返回 null（由调用方回退） |
 | `TokenManagerBase`               | 令牌管理器抽象基类，提供并发安全的令牌刷新实现，支持绝对过期保护（`MaxCacheLifetimeSeconds`）。TMX-04：刷新失败后 5s 负缓存窗口（`protected virtual int NegativeCacheSeconds => 5`，覆写为 0 可关闭）。TMX-07：`GetTokenAsync(scopes)` 默认走 scope 感知路径，不支持 scope 的派生类应覆写并抛 `NotSupportedException` |
 | `OAuth2TokenManagerBase`         | OAuth2 标准流程抽象基类，继承 `TokenManagerBase`，内置 Authorization Code / Client Credentials / ROPC / Refresh Token 流程 |
@@ -179,7 +180,7 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 | 接口                  | 说明                                                                            |
 | --------------------- | ------------------------------------------------------------------------------- |
 | `IMudAppContext`      | 应用上下文，封装 `IEnhancedHttpClient`、Token 管理器和 `GetService<T>` 服务解析 |
-| `IAppContextSwitcher` | 多应用切换，提供 `CurrentContext` 属性和 `SwitchToAsync` 方法                   |
+| `IAppContextSwitcher` | 多应用切换，继承 `IAppContextHolder`，自身成员 `UseApp(string)`、`UseDefaultApp()`、`BeginScope(string appKey)`、`GetTokenAsync()`（并经 `IAppContextHolder` 获得 `Current { get; init; }` / `SwitchTo` / `BeginScope(IMudAppContext)`） |
 | `IAppContextHolder`   | 应用上下文持有器，提供 `Current` 属性（只读 + `SwitchTo` 方法运行时切换）和 `BeginScope(IMudAppContext)` 方法（如 `AsyncLocalAppContextSwitcher`） |
 | `IAsyncInitializable` | 异步初始化接口，`RegisterAppAsync` 等场景用于延迟初始化应用上下文              |
 | `IAppManager<T>`      | 多应用管理器，提供按 AppKey 获取上下文、注册/移除应用、配置变更通知、默认应用切换的能力        |
@@ -257,8 +258,10 @@ public class CustomHttpClient : IEnhancedHttpClient
 ```csharp
 public class KmsEncryptionProvider : IEncryptionProvider
 {
-    public string Encrypt(string plainText) { /* 调用 KMS 加密 */ }
-    public string Decrypt(string cipherText) { /* 调用 KMS 解密 */ }
+    public string Encrypt(string plainText) { /* 调用 KMS 加密 */ throw new NotImplementedException(); }
+    public string Decrypt(string cipherText) { /* 调用 KMS 解密 */ throw new NotImplementedException(); }
+    public byte[] EncryptBytes(byte[] data) { /* 调用 KMS 加密二进制 */ throw new NotImplementedException(); }
+    public byte[] DecryptBytes(byte[] encryptedData) { /* 调用 KMS 解密二进制 */ throw new NotImplementedException(); }
 }
 ```
 
@@ -269,8 +272,13 @@ public class KmsEncryptionProvider : IEncryptionProvider
 ```csharp
 public class RedisTokenStore : ITokenStore
 {
-    public Task<string?> GetAccessTokenAsync(string tokenType, CancellationToken ct = default) { /* 从 Redis 读取 */ }
-    public Task SetAccessTokenAsync(string tokenType, string accessToken, long expiresInSeconds, CancellationToken ct = default) { /* 写入 Redis */ }
+    public Task<string?> GetAccessTokenAsync(string tokenType, CancellationToken ct = default) { /* 从 Redis 读取 */ throw new NotImplementedException(); }
+    public Task SetAccessTokenAsync(string tokenType, string accessToken, long expiresInSeconds, CancellationToken ct = default) { /* 写入 Redis */ throw new NotImplementedException(); }
+    public Task<string?> GetRefreshTokenAsync(string tokenType, CancellationToken ct = default) { throw new NotImplementedException(); }
+    public Task SetRefreshTokenAsync(string tokenType, string refreshToken, CancellationToken ct = default) { throw new NotImplementedException(); }
+    public Task RemoveAsync(string tokenType, CancellationToken ct = default) { throw new NotImplementedException(); }
+    public Task<IEnumerable<string>> GetTokenTypesAsync(CancellationToken ct = default) { throw new NotImplementedException(); }
+    public Task ClearAsync(CancellationToken ct = default) { throw new NotImplementedException(); }
 }
 
 public class DatabaseUserTokenStore : IUserTokenStore
@@ -340,9 +348,14 @@ public class CustomHmacProvider : IHmacSignatureProvider
 ```csharp
 public class RedisHttpResponseCache : IHttpResponseCache
 {
-    public bool TryGet<T>(string key, out T? value) { /* 从 Redis 读取 */ }
-    public void Set<T>(string key, T value, TimeSpan expiration) { /* 写入 Redis */ }
-    public void Remove(string key) { /* 从 Redis 删除 */ }
+    public bool TryGet<T>(string key, out T? value) { /* 从 Redis 读取 */ throw new NotImplementedException(); }
+    public void Set<T>(string key, T? value, TimeSpan absoluteExpirationRelativeToNow) { /* 写入 Redis */ throw new NotImplementedException(); }
+    public void Set<T>(string key, T? value, TimeSpan expirationRelativeToNow, bool useSlidingExpiration) { /* 写入 Redis（滑动过期） */ throw new NotImplementedException(); }
+    public void Remove(string key) { /* 从 Redis 删除 */ throw new NotImplementedException(); }
+    public Task<T?> GetOrFetchAsync<T>(string key, Func<Task<T>> fetchFunc, TimeSpan expiration, CancellationToken cancellationToken = default) { throw new NotImplementedException(); }
+    public Task<T?> GetOrFetchAsync<T>(string key, Func<Task<T>> fetchFunc, TimeSpan expiration, bool useSlidingExpiration, CancellationToken cancellationToken = default) { throw new NotImplementedException(); }
+    public Task RemoveAsync(string key) { throw new NotImplementedException(); }
+    public Task ClearAsync() { throw new NotImplementedException(); }
 }
 ```
 
@@ -386,7 +399,7 @@ IBaseHttpClient (SendAsync, SendRawAsync, SendStreamAsync, DownloadAsync, Downlo
 
 IEncryptableHttpClient (EncryptContent, DecryptContent) — IEnhancedHttpClient 已继承
 IHttpClientResolver (GetClient, TryGetClient) — 独立接口
-IEnhancedHttpClientFactory (CreateClient, RemoveClient) — 增强客户端工厂
+IEnhancedHttpClientFactory (CreateClient(string), bool Invalidate(string), void InvalidateAll()) — 增强客户端工厂
 IFormContent (ToHttpContent, ToHttpContentAsync) — 表单内容，支持上传进度
 
 IHttpRequestExecutor (SendAndDeserializeAsync) — HTTP 请求执行器
@@ -396,7 +409,7 @@ ResponseDescriptor — 响应描述符（反序列化类型、错误处理）
 IHttpRequestInterceptor (OnRequestAsync) — 请求拦截器
 IHttpResponseInterceptor (OnResponseAsync) — 响应拦截器
 ICacheResponseInterceptor — 缓存响应拦截器
-IHttpResponseCache (TryGet, Set, Remove) — 响应缓存契约
+IHttpResponseCache (TryGet, Set×2（含滑动过期重载）, GetOrFetchAsync×2, Remove, RemoveAsync, ClearAsync) — 响应缓存契约
 IResiliencePolicyResolver — 弹性策略解析器接口
 
 MudHttpActivitySource — 分布式追踪源（ActivitySource）
@@ -404,7 +417,7 @@ MudHttpMeter — 指标源（Meter）
 MudHttpDiagnosticListener — 诊断监听器
 TokenRefreshStatsCollector — 令牌刷新统计收集器
 
-IEncryptionProvider (Encrypt, Decrypt) — 加密提供器
+IEncryptionProvider (Encrypt, Decrypt, EncryptBytes, DecryptBytes) — 加密提供器
 IApiKeyProvider (GetApiKeyAsync) — API Key 提供器
 IHmacSignatureProvider (GenerateSignatureAsync, VerifySignatureAsync) — HMAC 签名提供器
 ISecretProvider (GetSecretAsync) — 安全密钥提供器
@@ -412,7 +425,7 @@ ISecretProvider (GetSecretAsync) — 安全密钥提供器
 ISensitiveDataMasker (Mask, MaskObject) — 敏感数据脱敏器
 SensitiveDataMaskMode (Hide, Mask, TypeOnly) — 脱敏模式
 
-ITokenManager (GetTokenAsync, GetOrRefreshTokenAsync)
+ITokenManager (GetTokenAsync, GetOrRefreshTokenAsync, InvalidateTokenAsync(string[]? scopes = null, CancellationToken ct = default), bool SupportsBackgroundRefresh)
 ├── IUserTokenManager (GetTokenAsync(userId), GetOrRefreshTokenAsync(userId), ...)
 ├── TokenManagerBase (并发安全刷新基类)
 │   └── OAuth2TokenManagerBase (OAuth2 标准流程基类)
@@ -425,18 +438,18 @@ TokenRequest (TokenManagerKey, UserId, Scopes) — Token 请求参数
 ITokenStore (GetAccessTokenAsync, SetAccessTokenAsync, ...)
 └── IUserTokenStore (按用户标识隔离的令牌存储)
 
-ITokenRefreshBackgroundService (StartAsync, StopAsync, RefreshAllAsync)
+ITokenRefreshBackgroundService (StartAsync, StopAsync, RegisterTokenManager(ITokenManager, string? name = null), bool IsStopped, RestartAsync)
 
 IMudAppContext (HttpClient, GetTokenManager, GetService<T>)
-├── IAppContextSwitcher (CurrentContext, SwitchToAsync)
-└── IAppManager<T> (GetWebApi, GetDefaultWebApi, RegisterApp, RemoveApp, ConfigurationChanged)
+├── IAppContextSwitcher (UseApp(string), UseDefaultApp(), BeginScope(string), GetTokenAsync(); 继承 IAppContextHolder 获得 Current(init)/SwitchTo/BeginScope)
+└── IAppManager<T> (GetWebApi, GetDefaultWebApi, GetDefaultApp, GetApp, TryGetApp, GetAllApps, HasApp, RemoveApp, RegisterApp, RegisterAppAsync, UpdateApp, UpdateAppAsync, DefaultAppKey, SetDefaultApp, TrySetDefaultApp, RegisterSwitcherFactory, ConfigurationChanged)
 
 TokenInjectionMode (Header, Query, Path, ApiKey, HmacSignature, BasicAuth, Cookie)
-TokenTypes (常量: TenantAccessToken, UserAccessToken, Bearer, Basic)
+TokenTypes (常量: Bearer, Basic, AccessToken, RefreshToken)
 Response<T> (StatusCode, Content, RawContent, ErrorContent, ResponseHeaders, IsSuccessStatusCode, GetContentOrThrow)
 ApiException (StatusCode, ErrorContent)
-AesEncryptionOptions (Key, RequireCrossRuntimePortable, Validate) — IV 已移除（CFG-27），v1.8.0 起自动随机生成；始终认证加密
-TokenRefreshBackgroundOptions (Enabled, RefreshIntervalSeconds, RetryDelaySeconds, StopOnError)
+AesEncryptionOptions (Key, RequireCrossRuntimePortable, EnableKeySeparation = true, Validate) — EnableKeySeparation 为 HKDF 密钥分离开关（决定 0x04/0x03 信封）；IV 已移除（CFG-27），v1.8.0 起自动随机生成；始终认证加密
+TokenRefreshBackgroundOptions (Enabled, RefreshIntervalSeconds, RetryDelaySeconds, StopOnError, MaxConsecutiveFailures)
 [UserTokenCacheOptions — 位于 Mud.HttpUtils.Client]
 ```
 
@@ -453,8 +466,8 @@ Mud.HttpUtils 全面支持 .NET Native AOT 编译，核心设计目标是**编�
 
 ## 设计原则
 
-- **最小外部依赖**：`netstandard2.0` 目标仅依赖 `Microsoft.Bcl.AsyncInterfaces`（提供 `IAsyncEnumerable` 等异步支持），`net6.0+` 目标零外部依赖
-- **最大化兼容性**：支持 `netstandard2.0`、`net6.0`、`net8.0`、`net10.0`，可在 .NET Framework、.NET Core、.NET 5+、Xamarin、Unity 等环境中使用
+- **最小外部依赖**：`netstandard2.0` 目标依赖 `Microsoft.Bcl.AsyncInterfaces`（提供 `IAsyncEnumerable` 等异步支持）与 `System.Diagnostics.DiagnosticSource`；`net6.0` / `net7.0` 目标依赖 `System.Diagnostics.DiagnosticSource`；仅 `net8.0` / `net10.0` 目标零外部依赖
+- **最大化兼容性**：支持 `netstandard2.0`、`net6.0`、`net7.0`、`net8.0`、`net10.0`，可在 .NET Framework、.NET Core、.NET 5+、Xamarin、Unity 等环境中使用
 - **接口稳定性**：接口定义变化频率低，适合作为稳定的依赖基础
 - **组合优于继承**：`IEnhancedHttpClient` 采用组合标记接口设计，实现者可按需实现部分接口
 - **并发安全**：`TokenManagerBase` 提供内置的并发令牌刷新控制（`UserTokenManagerBase` 位于 `Mud.HttpUtils.Client` 包）

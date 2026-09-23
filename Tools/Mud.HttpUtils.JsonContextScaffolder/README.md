@@ -31,7 +31,7 @@ public class ContractFileUploadRequest { ... }
 
 ```bash
 mud-jsonctx --project src/MyApp.DataModels/MyApp.DataModels.csproj
-# 指定输出目录
+# 指定输出目录（亦支持长参数 --output / --help、-h）
 mud-jsonctx -p src/MyApp.DataModels/MyApp.DataModels.csproj -o src/MyApp.DataModels/Generated
 # 仅预览不写入
 mud-jsonctx -p src/MyApp.DataModels/MyApp.DataModels.csproj --dry-run
@@ -55,7 +55,7 @@ services.AddMudHttpClientJsonContext(FeishuAIJsonContext.Default);
 
 ## [HttpClientApi] 接口自动扫描（默认开启）
 
-除了扫描 `[HttpJsonSerializable]` 标注的实体/DTO 外，脚手架还会自动扫描 `[HttpClientApi]` 接口，提取方法返回类型和 `[Body]` 参数类型中的**闭合泛型**（如 `FeishuApiResult<T>`）并注册到独立的 Context 文件中。
+除了扫描 `[HttpJsonSerializable]` 标注的实体/DTO 外，脚手架还会自动扫描 `[HttpClientApi]` 接口，提取方法返回类型和 `[Body]` 参数类型中的**闭合泛型**（如 `FeishuApiResult<T>`）并注册进 JSON Context：存在任一 `[HttpJsonSerializable]` 标注类型时**合并进第一个标注分组**（并报告 AOT104 Info），仅整个程序集零标注时才回退生成独立 Context。
 
 ### 为什么需要这个功能？
 
@@ -68,12 +68,13 @@ services.AddMudHttpClientJsonContext(FeishuAIJsonContext.Default);
 - 提取标注了 `[Body]` 的参数类型
 - **闭合泛型**（如 `FeishuApiResult<X>`）：始终注册，并递归处理类型参数
 - **非泛型自定义类型**：仅当来自当前程序集且未标注 `[HttpJsonSerializable]` 时注册
-- **框架类型**（`System.*` 命名空间、基元类型）：跳过
+- **框架类型**（`System.*` 命名空间、基元类型）：跳过自身；但含用户类型参数的**闭合框架泛型**（如 `List<UserDto>`）会注册自身并递归类型参数
 - **已标注 `[HttpJsonSerializable]` 的类型**：不重复注册
+- **`[SerializationMethod(FormUrlEncoded/Xml)]` 方法**：不走 JSON 序列化，其返回体与 `[Body]` 参数不纳入 JSON Context
 
 ### 生成的 Context
 
-发现类型会生成到独立的 Context 文件中，命名规则为 `{程序集简称}HttpClientApiJsonContext`。例如对 `Mud.Feishu.csproj` 扫描会生成 `FeishuHttpClientApiJsonContext.g.cs`。
+发现类型**不生成独立 Context**：只要程序集中存在任一 `[HttpJsonSerializable]` 标注类型，扫描发现的类型（闭合泛型等）就**合并进第一个标注类型分组**（同时以 AOT104 Info 报告目标 Context）。仅当整个程序集没有任何标注类型时，才回退生成独立的 `{程序集末段}HttpClientApiJsonContext`——例如对 `Mud.Feishu.csproj` 全程序集零标注扫描会生成 `FeishuHttpClientApiJsonContext.g.cs`。
 
 ### 示例
 
@@ -84,7 +85,9 @@ services.AddMudHttpClientJsonContext(FeishuAIJsonContext.Default);
 // ... 数百个手动注册
 internal partial class FeishuApiResultJsonContext : JsonSerializerContext { }
 
-// 扫描后：自动生成 FeishuHttpClientApiJsonContext.g.cs，包含所有闭合泛型
+// 扫描后：存在 [HttpJsonSerializable] 标注时，发现类型合并进第一个标注组
+//（如 FeishuAIJsonContext.g.cs）并报告 AOT104；整个程序集零标注时才回退
+// 生成独立的 FeishuHttpClientApiJsonContext.g.cs
 // 无需手写，运行 mud-jsonctx 即可
 ```
 
@@ -98,7 +101,7 @@ mud-jsonctx --project src/MyApp/MyApp.csproj --no-scan-http-client-api
 
 ## 重要限制与手写补充
 
-- **框架泛型包装无法标注**：如 `List<UserDto>` 这类不是你定义的、或本身为开放/框架泛型包装的根类型，不能（也不应）打 `[HttpJsonSerializable]`。需手写一个 partial 补充（类名须与脚手架生成的 Context 类名一致）：
+- **框架泛型包装（如 `List<UserDto>`）大多无需手写**：`[HttpClientApi]` 扫描能触达的返回类型/[Body] 参数中，含用户类型参数的闭合框架泛型会自动注册自身并递归注册类型参数（前提是对应方法未标注 `[SerializationMethod(FormUrlEncoded/Xml)]`）。**手写 partial 仅对扫描触达不到的根仍需要**（如不出现在任何 `[HttpClientApi]` 返回类型/[Body] 参数中、也未标注 `[HttpJsonSerializable]` 的类型；类名须与脚手架生成的 Context 类名一致）：
 
 ```csharp
 #if NET8_0_OR_GREATER
@@ -112,7 +115,7 @@ internal partial class FeishuAIJsonContext;
 - **闭合泛型自动发现**：`[HttpClientApi]` 接口返回类型中的闭合泛型（如 `FeishuApiResult<T>`）由 `[HttpClientApi]` 扫描自动发现并注册，无需手写。
 - **数组根自动发现**：返回类型或 `[Body]` 参数中的数组（如 `Task<UserDto[]>`、`[Body] UserDto[]`）会同时注册 `typeof(UserDto[])` 与元素类型 `typeof(UserDto)`——STJ 源生成需要数组根自身的元数据才能在 AOT 下解析。
 - **多态（以基类静态类型序列化派生实例）**：使用 `--auto-derived-types` 时脚手架会递归扫描并注册**完整派生层级**（Base → Mid → Leaf），但注册的是**派生类型自己的根**（只覆盖 `Serialize<Derived>` 这类静态调用）。**多态序列化必须由基类元数据携带 `[JsonDerivedType]`**——该特性只能标注在用户类型声明上（`[JsonDerivedType(typeof(Derived), "discriminator")]`），生成的 `.g.cs` 无法替用户类型附加特性，故 `--auto-derived-types` **不能**替代它。未标注时脚手架以 AOT003 提示。
-- **开放泛型**：`<T>` 类型以 `<>` 写入 context，仅在 NET8_0_OR_GREATER 下源生成；更低 TFM 走反射兜底，AOT 不可用。AOT002 告警仅在项目（`TargetFramework(s)`）确实包含 net8.0 以下 TFM 时报告——纯 net8.0/net10.0 项目不再产生该告警。
+- **开放泛型**：`<T>` 类型以 `<>` 写入 context，仅在 NET8_0_OR_GREATER 下源生成；更低 TFM 走反射兜底，AOT 不可用。AOT002 告警在项目（`TargetFramework(s)`）确实包含 net8.0 以下 TFM 时报告——纯 net8.0/net10.0 项目不再产生该告警；`TargetFramework(s)` 为空或无法解析（含 MSBuild 变量）时按未知**保守告警**。
 - 生成的 Context 为 `internal partial`，仅作用于标注类型所在的同一程序集；跨程序集需各自生成。
 
 ## 分组与命名规则
@@ -120,11 +123,12 @@ internal partial class FeishuAIJsonContext;
 - `SerializerClassName` 相同的类型合并到同一 Context；留空时自动派生 `{程序集简称}{顶层命名空间}`。
 - 未显式指定 `NamingPolicy` 时自动推导：超过 50% 的属性 `[JsonPropertyName]` 符合 `snake_case_lower` → `SnakeCaseLower`，否则 `CamelCase`（与库默认一致）。
 - 同一 Context 内共享一个命名策略，冲突会报 AOT001 警告。
+- 同一 Context 内默认 TypeInfo 属性名冲突时，自动为冲突根显式指定 `TypeInfoPropertyName` 防 SYSLIB1031（首个保留默认名兼容既有引用）。
 
 ## 诊断（AOT001-AOT003、AOT104）
 
 - **AOT001**：同一 `SerializerClassName` 下存在冲突的 `NamingPolicy` 配置。
-- **AOT002**：标注了开放泛型类型，且项目包含 net8.0 以下 TFM（该 TFM 下不支持源生成开放泛型，AOT 不可用）。全部目标 TFM 均为 net8.0+ 时不再报告。
+- **AOT002**：标注了开放泛型类型，且项目包含 net8.0 以下 TFM（该 TFM 下不支持源生成开放泛型，AOT 不可用）。全部目标 TFM 均为 net8.0+ 时不再报告；`TargetFramework(s)` 为空或无法解析（含 MSBuild 变量）时按未知**保守报告**。
 - **AOT003**：类型存在基类（多态）但未标注 `[JsonDerivedType]`（未启用 `--auto-derived-types` 时报告）。`--auto-derived-types` 仅额外注册派生类型为独立 `[JsonSerializable]` root，**不能**替代基类上的 `[JsonDerivedType]` 特性——多态序列化（以基类类型序列化派生实例）仍需手动在基类声明上标注。
 - **AOT104**：`[HttpClientApi]` 接口扫描信息——当扫描发现类型并自动注册时，以 Info 级别报告发现数量和目标 Context。
 - **AOT005**：`[Query]`/`[QueryMap]` 中以 JSON 序列化的复杂参数类型未被 `JsonSerializerContext` 覆盖。
@@ -144,7 +148,11 @@ internal partial class FeishuAIJsonContext;
 
 ## 自动接入构建（可选 MSBuild 目标）
 
-手动跑工具并提交 `.g.cs` 适合一次性生成；若希望脚手架随消费方构建**自动**运行（避免遗忘），Mud.HttpUtils 已内置一个**默认关闭**的可选 MSBuild 目标，随 `Mud.HttpUtils.Attributes` 包自动导入消费方工程。
+手动跑工具并提交 `.g.cs` 适合一次性生成；若希望脚手架随消费方构建**自动**运行（避免遗忘），Mud.HttpUtils 已内置一个可选 MSBuild 目标，随 `Mud.HttpUtils.Attributes` 包自动导入消费方工程。是否启用按**三态判定**（与 `AotModeResolver` 一致，显式 `<MudEnableJsonContextScaffolder>` 可覆盖）：
+
+- 显式 `MudAotRuntimeMode=jit` → **否决，关闭**（即使携带 `PublishAot`）；
+- `MudAotRuntimeMode=aot` 或 `PublishAot=true` → **默认自动开启**；
+- 显式 `MudEnableJsonContextScaffolder=false` 或无任何 AOT 属性 → 关闭（仅 `IsAotCompatible=true` 的库项目不激活）。
 
 1. 安装脚手架工具（三选一）：
 
@@ -174,4 +182,4 @@ dotnet add package Mud.HttpUtils.JsonContextScaffolder   # 仅用于 DotNetToolR
 
 **失败行为**（工具未安装 / 执行失败）：打印 high 重要性提示并**删除输出目录中的陈旧 `*.g.cs` 与时间戳**。这样"工具坏了"会表现为**编译期缺类型错误**（消费方代码引用生成的 Context 时），而不是让上一次构建的旧 Context 继续参与编译、把问题推迟到 AOT 运行时；同时因时间戳被删除，下一次构建必定重试。若要手动维护产物，请把 `<MudJsonContextOutputPath>` 指向源码目录（如 `Generated\`）并签入，此时目标会先 `Compile Remove` 再 `Include`，不会重复编译同一文件。
 
-> 该目标默认不启用（`MudEnableJsonContextScaffolder=false`），对未选择该工作流的消费方**零影响**。
+> 该目标按上述三态判定启用：显式 `MudAotRuntimeMode=jit` 否决；`MudAotRuntimeMode=aot` 或 `PublishAot=true` 时默认自动开启；仅显式 `MudEnableJsonContextScaffolder=false` 或无 AOT 属性时关闭（`IsAotCompatible=true` 不激活），对未选择该工作流的消费方**零影响**。

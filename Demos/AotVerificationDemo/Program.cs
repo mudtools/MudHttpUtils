@@ -7,6 +7,7 @@ using Mud.HttpUtils.Resilience;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 #if NET8_0_OR_GREATER
 using System.Text.Json.Serialization.Metadata;
 #endif
@@ -176,6 +177,11 @@ public class Program
             // 仅使用源生成 resolver，不拼接 DefaultJsonTypeInfoResolver
             // 未声明的类型将抛出异常（比静默返回空对象更安全）
             options.TypeInfoResolver = AppJsonContext.Default;
+            // 必须与 AppJsonContext 生成配置一致：外部 options 若缺 CamelCase/大小写不敏感，
+            // 源生成属性名（id/name）无法匹配 JSON，反序列化会得到默认值（Id=0）。
+            options.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+            options.PropertyNameCaseInsensitive = true;
+            options.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
         });
 
         // 2. 注册 EnhancedHttpClient（DI 路径经由 IHttpContentSerializer 序列化，options 含消费方 resolver）
@@ -832,6 +838,10 @@ public class Program
         services.Configure<JsonSerializerOptions>(options =>
         {
             options.TypeInfoResolver = AppJsonContext.Default;
+            // 与 AppJsonContext 生成配置对齐，否则 camelCase JSON 属性无法匹配
+            options.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+            options.PropertyNameCaseInsensitive = true;
+            options.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
         });
 
         // 注册源生成的 API 客户端（含 IResponseApi）
@@ -852,7 +862,9 @@ public class Program
         }
         else
         {
-            Console.WriteLine($"  [!] Response<T> 包装路径异常：StatusCode={response.StatusCode}, Content={response.Content}, Error={response.ErrorContent}");
+            var u = response.Content;
+            Console.WriteLine($"  [!] Response<T> 包装路径异常：StatusCode={response.StatusCode}, Error={response.ErrorContent}");
+            Console.WriteLine($"      Content type={u?.GetType().FullName}, Id={(u is null ? "null" : u.Id.ToString())}, Name={(u is null ? "null" : u.Name ?? "<null>")}, Raw={response.RawContent}");
             throw new InvalidOperationException("Response<T> wrapping path failed in AOT smoke test");
         }
 

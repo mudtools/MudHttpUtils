@@ -5,13 +5,17 @@ namespace AotPackageRefDemo;
 
 // 手动 JsonSerializerContext — 为 AOT 序列化声明类型元数据。
 //
-// 在 Phase 11（脚手架随包分发）落地后，消费方可选择：
-//   1. 标注 [HttpJsonSerializable] + 运行 mud-jsonctx 工具自动生成（推荐）
-//   2. 手动编写 JsonSerializerContext（本文件方式）
+// 本 Demo 有意使用手动 context，不依赖 JsonContextScaffolder：
+//   CI（aot-packageref 作业）在 publish --no-restore 下 DotNetToolReference
+//   解析出的 mud-jsonctx 不在 PATH，脚手架退出码 127 并清理产物，导致
+//   DemoJsonContext 缺失（CS0103）与 AOT006。
 //
-// 本 Demo 使用手动方式，验证 NuGet 包消费下的 AOT 序列化路径。
-// AotDtoCoverageAnalyzer（AOT004）会扫描当前编译单元中的 JsonSerializerContext 子类，
-// 确认 [HttpClientApi] 方法的 DTO 已被覆盖。
+// 已在 AotPackageRefDemo.csproj 显式设置 MudEnableJsonContextScaffolder=false
+// （PublishAot=true 默认会启用脚手架），避免与本文件的 partial 定义产生
+// CS0579（JsonSourceGenerationOptions 重复）与 STJ hintName 冲突（CS8785）。
+//
+// [HttpJsonSerializable] 标注仅用于 AOT006 覆盖检查 / 工具扫描示意；
+// 类型元数据由本文件的 [JsonSerializable] 提供。
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(UserDto))]

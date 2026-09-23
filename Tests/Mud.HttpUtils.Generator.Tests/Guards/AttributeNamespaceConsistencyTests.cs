@@ -32,6 +32,19 @@ public class AttributeNamespaceConsistencyTests
     private const string ExpectedNamespace = "Mud.HttpUtils.Attributes";
     private const string ReadmeRelativePath = @"../../../../../Mud.HttpUtils.Attributes/README.md";
 
+    /// <summary>
+    /// C# 关键字/字面量：README「关键属性」列会用反引号标注默认值与签名片段
+    /// （如 <c>默认 `false`</c>、<c>`(int maxRetries)`</c> 中的类型词），
+    /// 它们不是特性成员，不参与 G8-13 成员存在性校验。
+    /// </summary>
+    private static readonly HashSet<string> NonMemberTokens = new(StringComparer.Ordinal)
+    {
+        "true", "false", "null",
+        "int", "uint", "long", "ulong", "short", "ushort",
+        "byte", "sbyte", "double", "float", "decimal", "bool", "string", "char", "object",
+        "var", "void", "new", "default", "get", "set", "in", "out", "ref",
+    };
+
     private static readonly Assembly AttributesAssembly =
         typeof(Mud.HttpUtils.Attributes.HttpClientApiAttribute).Assembly;
 
@@ -105,7 +118,10 @@ public class AttributeNamespaceConsistencyTests
 
             foreach (var name in declared)
             {
-                // 表头/说明性词汇（如「无属性」）不参与校验：仅要求「像成员名」的标识符可命中。
+                // 表头/说明性词汇（如「无属性」）与 C# 关键字/字面量（如默认 `false`）
+                // 不参与校验：仅要求「像成员名」的标识符可命中。
+                if (NonMemberTokens.Contains(name))
+                    continue;
                 if (!realMembers.Contains(name))
                     problems.Add($"{type.Name}.{name}");
             }

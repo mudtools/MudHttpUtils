@@ -74,8 +74,8 @@ using var provider = services.BuildServiceProvider();
 | `ServiceVersion` | `string` | `MudHttpActivitySource.Version` | OTel Resource 属性 `service.version` |
 | `DeploymentEnvironment` | `string` | `"production"` | OTel Resource 属性 `deployment.environment` |
 | `SamplingRatio` | `double` | `1.0` | 采样比率（0.0~1.0），生产环境建议 0.1~0.3。超出范围将在启动时抛出 `ArgumentOutOfRangeException` |
-| `ExportBatchSize` | `int?` | `null` | OTLP 每批导出最大条目数（映射到 `BatchExportProcessorOptions.MaxExportBatchSize`），`null` 使用 SDK 默认值（512） |
-| `ExportIntervalMilliseconds` | `int?` | `null` | OTLP 批量导出间隔毫秒数（映射到 `BatchExportProcessorOptions.ScheduledDelayMilliseconds`），`null` 使用 SDK 默认值（5000ms） |
+| `ExportBatchSize` | `int?` | `null` | OTLP 每批导出最大条目数（映射到 `BatchExportProcessorOptions.MaxExportBatchSize`）：`null` 或 `0` = 使用 SDK 默认值（512），仅 `>0` 生效；负数启动期抛 `OptionsValidationException` |
+| `ExportIntervalMilliseconds` | `int?` | `null` | OTLP 批量导出间隔毫秒数（映射到 `BatchExportProcessorOptions.ScheduledDelayMilliseconds`）：`null` 或 `0` = 使用 SDK 默认值（5000ms），仅 `>0` 生效；负数启动期抛 `OptionsValidationException` |
 | `OtlpHeaders` | `IDictionary<string, string>?` | `null` | 自定义 OTLP Headers（如认证头） |
 | `ConfigureTracing` | `Action<TracerProviderBuilder>?` | `null` | 自定义追踪配置委托，在 Mud 默认配置之后执行 |
 | `ConfigureMetrics` | `Action<MeterProviderBuilder>?` | `null` | 自定义指标配置委托，在 Mud 默认配置之后执行 |
@@ -151,7 +151,11 @@ builder.Services.AddMudHttpOpenTelemetry(options =>
 |----------------|------|
 | `Mud.HttpUtils.HttpClient` | Mud.HttpUtils 出站 HTTP 请求活动（含 method/url/status/duration） |
 | `System.Net.Http`（.NET 内置） | .NET HttpClient 底层 socket 活动 |
-| `Microsoft.AspNetCore`（.NET 内置） | ASP.NET Core 入站请求活动 |
+| `Microsoft.AspNetCore` | ASP.NET Core 入站请求活动（由 `OpenTelemetry.Instrumentation.AspNetCore` 采集） |
+
+**DiagnosticSource / Span 事件**（Listener：`Mud.HttpUtils.HttpClient`）：`RequestStarted`、`RequestStopped`、`RequestFailed`、`RetryOccurred`、`TimeoutOccurred`、`CircuitBreakerStateChanged`、`CacheHit`、`CacheMiss`、`TokenRefreshed`、`DownloadStarted`、`DownloadCompleted`、`DownloadFailed`。
+
+`outcome` 语义：4xx → `client_error` 且 Span 设 Ok；5xx / 网络错误 → `error`（Span Error）；取消 → `cancelled`，Span 不设 Error。
 
 ### 指标（Metrics）
 
@@ -164,11 +168,34 @@ builder.Services.AddMudHttpOpenTelemetry(options =>
 | `Mud.HttpUtils.HttpClient` | `mud.token.refresh.duration` | 令牌刷新耗时直方图（ms） |
 | `Mud.HttpUtils.HttpClient` | `mud.http.retry` | 重试次数 |
 | `Mud.HttpUtils.HttpClient` | `mud.http.circuit_breaker.state` | 熔断器状态 Gauge |
+| `Mud.HttpUtils.HttpClient` | `mud.token.recovery` | 令牌恢复（401 重试）次数与结果 |
+| `Mud.HttpUtils.HttpClient` | `mud.token.refresh.suppressed` | 失败负缓存窗口抑制的刷新次数 |
+| `Mud.HttpUtils.HttpClient` | `mud.http.download.bytes` | 下载字节数 |
+| `Mud.HttpUtils.HttpClient` | `mud.http.download.duration` | 下载耗时直方图（ms，仅响应体下载阶段） |
 | `System.Net.Http`（.NET 内置） | `http.client.*` | .NET HttpClient 内置指标 |
+
+## 遥测脱敏与高基数治理（默认开启）
+
+`MudHttpObservabilityOptions`（静态开关，建议进程启动时设置）：
+
+| 开关 | 默认 | 说明 |
+|------|------|------|
+| `RedactUrlInTelemetry` | `true` | Span tag / 日志 / 诊断事件中的 URL 掩码 `access_token` 等敏感 query 值 |
+| `RecordFullUrlOnSuccess` | `false` | 成功请求仅记录 `scheme://host/path`；错误路径始终保留完整 URI，由 `IExceptionRedactor` 兜底擦除 |
+| `EmitDiagnosticEvents` | `true` | 诊断事件（ActivityEvent / DiagnosticSource）总开关 |
+| `MetricTagAllowlist` | 全部内建维度 | 指标 tag 白名单：`client_name` / `method` / `host` / `outcome` / `status_code` / `policy_key` / `token_manager_key` / `retry_count`，白名单外维度丢弃 |
+
+```csharp
+// 设置示例（进程启动时）
+MudHttpObservabilityOptions.RedactUrlInTelemetry = true;
+MudHttpObservabilityOptions.RecordFullUrlOnSuccess = false;
+MudHttpObservabilityOptions.EmitDiagnosticEvents = true;
+MudHttpObservabilityOptions.MetricTagAllowlist = new HashSet<string> { "client_name", "outcome" }; // 收缩维度、降低基数
+```
 
 ## 与健康检查配合
 
-`AddMudHttpOpenTelemetry` 与 `AddMudHttpHealthChecks` 可同时使用：
+`AddMudHttpOpenTelemetry` 与 `AddMudHttpHealthChecks` 可同时使用（`AddMudHttpHealthChecks` 定义于 **Mud.HttpUtils.Client** 包，需同时安装 Client 包）：
 
 ```csharp
 builder.Services.AddMudHttpClient("myApi", c => c.BaseAddress = new Uri("https://api.example.com"));
@@ -182,7 +209,7 @@ builder.Services.AddMudHttpOpenTelemetry();
 - **可观测性零开销**：无监听器时 `ActivitySource.StartActivity` 返回 `null`，`Counter.Add` 直接短路
 - **默认即生产可用**：默认开启 Tracing + Metrics + OTLP gRPC 导出至本地 4317
 - **可扩展**：通过 `ConfigureTracing` / `ConfigureMetrics` 委托追加自定义配置
-- **AOT 兼容**：所有 API 均为静态类型与委托，无反射
+- **AOT 兼容**：委托式重载无反射；`IConfiguration` 绑定依赖 ConfigurationBinder（反射），AOT 场景请使用 `Action<MudHttpOpenTelemetryOptions>` 委托重载
 
 ## 依赖项
 
