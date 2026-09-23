@@ -75,7 +75,7 @@ Mud.HttpUtils.Attributes 是 Mud.HttpUtils 的特性定义层，提供 HTTP API 
 
 | 特性                      | 用途             | 目标   | 关键属性                                                                                                                                        |
 | ------------------------- | ---------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `RetryAttribute`          | 方法级重试策略   | Method | `MaxRetries`, `DelayMilliseconds`, `UseExponentialBackoff`, `AllowNonIdempotent`（默认 `false`；双构造 `(int maxRetries)` / `(int maxRetries, int delayMilliseconds)`；全局配对 `RetryOptions.AllowNonIdempotentRetry`） |
+| `RetryAttribute`          | 方法级重试策略   | Method | `MaxRetries`, `DelayMilliseconds`, `UseExponentialBackoff`, `AllowNonIdempotent`（默认 false；双构造 `(int maxRetries)` / `(int maxRetries, int delayMilliseconds)`；全局配对 `RetryOptions.AllowNonIdempotentRetry`） |
 | `TimeoutAttribute`        | 方法级超时策略   | Method | `TimeoutMilliseconds`                                                    |
 | `CircuitBreakerAttribute` | 方法级熔断策略   | Method | `FailureThreshold`, `BreakDurationSeconds`, `SamplingDurationSeconds`, `MinimumThroughput` |
 

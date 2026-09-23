@@ -1,13 +1,24 @@
 #if NET8_0_OR_GREATER
+using System.Text.Json.Serialization;
+
 namespace AotPackageRefDemo;
 
-// 本 Demo 的 DemoJsonContext 由 JsonContextScaffolder（DotNetToolReference）在 pre-build
-// 生成至 obj/<tfm>/GeneratedJsonContext/DemoJsonContext.g.cs（因 Models 标注
-// [HttpJsonSerializable(SerializerClassName = "Demo")]）。
+// 手动 JsonSerializerContext — 为 AOT 序列化声明类型元数据。
 //
-// 不得再在此手工声明 partial DemoJsonContext / [JsonSourceGenerationOptions] /
-// [JsonSerializable]——与脚手架产物重复会导致 CS0579（特性重复）与
-// STJ 源生成器 hintName 冲突（CS8785 → CS0534）。
+// 本 Demo 有意使用手动 context，不依赖 JsonContextScaffolder：
+//   CI（aot-packageref 作业）在 publish --no-restore 下 DotNetToolReference
+//   解析出的 mud-jsonctx 不在 PATH，脚手架退出码 127 并清理产物，导致
+//   DemoJsonContext 缺失（CS0103）与 AOT006。
 //
-// 机制见 AotVerificationDemo.csproj 的 GenerateJsonContext 目标（同为 pre-build 产出真实 .g.cs）。
+// 已在 AotPackageRefDemo.csproj 显式设置 MudEnableJsonContextScaffolder=false
+// （PublishAot=true 默认会启用脚手架），避免与本文件的 partial 定义产生
+// CS0579（JsonSourceGenerationOptions 重复）与 STJ hintName 冲突（CS8785）。
+//
+// [HttpJsonSerializable] 标注仅用于 AOT006 覆盖检查 / 工具扫描示意；
+// 类型元数据由本文件的 [JsonSerializable] 提供。
+
+[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(UserDto))]
+[JsonSerializable(typeof(CreateUserRequest))]
+internal partial class DemoJsonContext : JsonSerializerContext;
 #endif

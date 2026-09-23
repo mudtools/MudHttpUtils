@@ -4,16 +4,15 @@ using Mud.HttpUtils.Attributes;
 namespace AotPackageRefDemo;
 
 // ─────────────────────────────────────────────────────────────
-// JSON DTO 类型 — 由 JsonContextScaffolder 扫描 [HttpJsonSerializable] 生成 DemoJsonContext
+// JSON DTO 类型 — 手动在 DemoJsonContext（JsonContext.cs）中声明以支持 AOT
 // ─────────────────────────────────────────────────────────────
 
 /// <summary>
 /// 用户信息（JSON 响应 DTO）
 /// </summary>
 /// <remarks>
-/// [HttpJsonSerializable] 标注由 JsonContextScaffolder（DotNetToolReference）扫描，
-/// pre-build 生成 DemoJsonContext.g.cs（SerializerClassName = "Demo"）。
-/// 不再手工声明 DemoJsonContext（与脚手架产物冲突会 CS0579/CS0534）。
+/// [HttpJsonSerializable] 供 AOT006 覆盖检查与脚手架扫描示意。
+/// 本 Demo 使用手动 JsonSerializerContext（见 JsonContext.cs），已禁用脚手架。
 /// </remarks>
 [HttpJsonSerializable(SerializerClassName = "Demo", NamingPolicy = JsonNamingPolicyHint.CamelCase)]
 public class UserDto

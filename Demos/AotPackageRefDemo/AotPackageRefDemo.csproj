@@ -16,6 +16,14 @@
 
 	<!-- AOT 严格模式清单定义在 Directory.Build.targets（全仓统一口径），此处不再重复定义。 -->
 
+	<!-- 关闭 Attributes 包自带的 JsonContextScaffolder（PublishAot=true 默认会启用）：
+	     CI aot-packageref 在 publish（no-restore）下 DotNetToolReference 解析的
+	     mud-jsonctx 不在 PATH（退出码 127），且脚手架产物会与 JsonContext.cs
+	     手写 DemoJsonContext 冲突（CS0579/CS8785）。本 Demo 固定用手写 context。 -->
+	<PropertyGroup>
+		<MudEnableJsonContextScaffolder>false</MudEnableJsonContextScaffolder>
+	</PropertyGroup>
+
 	<!-- NuGet 包引用（版本跟随 Directory.Build.props 的 $(Version)） -->
 	<ItemGroup>
 		<PackageReference Include="Mud.HttpUtils.Attributes" Version="$(Version)" />
@@ -29,12 +37,8 @@
 		<PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
 	</ItemGroup>
 
-	<!-- [AOT v4 Phase 17.2 / D9] 使用标准 DotNetToolReference 恢复脚手架工具，由 Attributes targets 自动解析（$(DotNetToolMud_HttpUtils_JsonContextScaffolder)）。
-	     因 PublishAot=true，Phase 17.1 的 targets 会自动激活脚手架；工具包已由 CI 打包至 artifacts/（被 nuget.config 的 local 源识别）。 -->
-	<ItemGroup>
-		<DotNetToolReference Include="Mud.HttpUtils.JsonContextScaffolder" Version="$(Version)" />
-	</ItemGroup>
-
+	<!-- 脚手架已禁用（见上方 MudEnableJsonContextScaffolder=false），不引用 DotNetToolReference：
+	     CI publish（no-restore）下工具不在 PATH，引用只会造成恢复噪音且无法执行。 -->
 
 	<!-- [AOT v4 Phase 18.0 / D18] PackageReference 场景下 Generator 包内 build/*.props 会自动导入并注册
 	     CompilerVisibleProperty；此处显式声明以确保 AOT 上下文属性对分析器可见（幂等，重复声明无害）。 -->
