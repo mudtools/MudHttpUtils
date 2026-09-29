@@ -4,54 +4,60 @@
 
 ---
 
-## 2.0.9（安全 / 性能 / 功能完善，2026-09-23）
+## 2.0.9（安全 / 性能 / 功能完善，2026-09-29）
 
-> 基于第 5 轮全量审查（M6）的 31 项修复与完善（HC-01 ~ HC-31）+ 3 项 P3 安全脱敏收编。**含破坏性行为变更，升级前请先阅读「迁移说明」**。
-
-#### 安全（Security）
-
-- **IPv4 映射型 IPv6 绕过私网判定（HC-01）**：`UrlValidator.IsPrivateIpAddress` 入口归一 `::ffff:10.0.0.1` → `10.0.0.1`，URL 校验期与连接期两道 SSRF 防线同时修复。
-- **连接期 SSRF 校验默认启用（HC-03）**：严格模式（`AllowCustomBaseUrls = false`）下自动接线连接期 IP 准入 handler，无需再显式 opt-in。
-- **回环豁免改为全量语义（HC-04）**：`[回环, 私网]` 混合 DNS 记录不再整体豁免，要求全部为回环且集合非空。
-- **自动重定向关闭（HC-05）**：主链路统一 `AllowAutoRedirect = false`，改由 `EnhancedHttpClient` 手动逐跳复验（白名单 / HTTPS / 私网 / 跳数上限 10 / 逐跳剥离凭据头 / 307·308 仅可重放内容可继续）。
-- **PII 正则去锚点（HC-06）**：手机号 / 邮箱 / 身份证由整串匹配改为查找式，嵌入文本中的 PII 同样掩码。
-- **`authorization_code` 换令牌补客户端认证（HC-10）**：配置 `ClientSecret` 时按 RFC 6749 §4.1.3 走 Basic / 体认证。
-- **`ApiException.RequestUri` 统一脱敏（HC-21）**：5 处构造点经 `SensitiveUrlRedactor`；`SensitiveUrlRedactor` 迁至 `Abstractions` 并新增 userinfo 剥离（HC-27）。
-- **头值控制字符全拒（HC-24）**：由"仅 CR/LF"扩为全部 C0 + DEL（保留 HTAB），Token / ApiKey 注入前复核。
-- **HMAC 可选防重放（HC-25）**：新增 `RequireAntiReplay`（默认 `false`），开启后签名串首两行固定并入 `X-Timestamp` / `X-Nonce` 并写回请求头。
-- **AES 0x04 配置不匹配显式拒绝（HC-26）**：`EnableKeySeparation = false` 实例遇 0x04 密文前置抛 `CryptographicException`，不再误报完整性失败。
-- **P3 脱敏收编**：拒连异常消息只回显主机名（不披露解析 IP 列表）；加密令牌缓存 Warning 日志的缓存键脱敏；敏感词表补 `pwd`/`credential`/`sessionid`/`bearer`/`sign`/`auth` 等，通用键 `code`/`nonce`/`address`/`name` 收窄为具体变体，Base64 启发式加「长度 ≥ 16 且 `=` 填充」约束。
-
-#### 修复（Fixed）
-
-- **`[HeaderCollection]` 生成器零接线（HC-02 + HC-30）**：字典请求头此前静默丢失；现按 `CanBind` 分派绑定器，非 string 头值逐项经 `HttpHeaderValueValidator` 校验。
-- **白名单 HTTP 主机 sync-over-async DNS（HC-08）**：`ValidateUrlAsync` 白名单分支改走异步回环判定。
-- **`SendAsResponseAsync` 错误体绕过上限（HC-09）**：非 2xx 改走 `ReadErrorContentLimitedAsync`，受 `MaxExceptionContentLength` 约束。
-- **重试克隆不可重放预判漏判（HC-11）**：`StreamContent` 等无声明长度且非内存型内容预判为不可重放，`CloneAsync` 抛出 / `TryCloneAsync` 返回 null，避免静默空体提交。
-- **下载半写文件残留（HC-12 + HC-14）**：改 `.mudtmp` 临时文件 + 原子 `Move`；`bufferSize` 钳制到 `[4 KiB, 4 MiB]`。
-- **EventId 撞号（HC-13）**：`TokenRefreshSuppressed` 170→181、`TokenCacheSerializationFailed` 171→182。
-- **`[QueryMap]` 索引器崩溃（HC-19）**：属性过滤补 `GetIndexParameters().Length == 0`；`UrlEncode=false` 语义收敛为「key/value 均不转义」。
-- **熔断缓存键碎片化（HC-22）**：熔断 / 超时策略键剥离 `ResultType`，同一 scope 下不同结果类型共享同一熔断器；策略缓存超限改按插入序淘汰而非放弃缓存，并拆「适配器册 / 共享策略册」双册各自有界。
-- **401 恢复空转（HC-23）**：重试轮次强制刷新（`forceRefresh`），异常 / 取消路径归还克隆请求与原始 401 响应。
-- **AOT 流式反序列化静默降级（HC-29）**：新增生成器诊断 `MUDGEN301`（Warning，category `AOT`）。
-- **文化区域分叉（HC-18）**：URL 参数格式化统一 `InvariantCulture`（`DefaultUrlParameterFormatter` + 生成器 `QueryParameterBinder` / `RequestBuilder`）。
-- **DI 注入序列化设置被丢弃（HC-20）**：以 `new JsonSerializerOptions(injected)` 副本为合并基座。
-- **`TokenStore` ns2.0 竞态与用户桶无界增长（HC-28）**：条件移除补弱一致声明；用户桶惰性清扫（阈值 1 万）。
-- **零散项（HC-31）**：序列化器实例复用、`ConfigureAwait(false)` 补齐、`CanCapture` 拒捕分支、`ProgressableStreamContent` ns2.0 dispose 时机。
-
-#### 性能（Performance）
-
-- **进度回调 100ms 节流（HC-15）**：抽出 `ThrottledStreamCopier` 供下载 / 上传 / 执行器三路共用；`ProgressableStreamContent` 默认缓冲 `4096 → 81920`，无进度回调走 `CopyToAsync` 快路径。
-- **缓存淘汰改按最久未访问（HC-16）**：`MemoryHttpResponseCache` 满载淘汰由全量排序改单次 O(N) 扫描 `LastAccessTime`。
-- **指标 / 诊断按消费方存在性门控（HC-17）**：新增 `MudHttpMeter.HasListeners`，零监听时短路 tags 数组分配。
-- **fetch 锁回收竞态（HC-07）**：`PruneFetchLocks` 仅回收「无缓存条目且无人持锁」的锁，避免破坏缓存单飞。
+> 本版本包含一轮全量安全审查的 31 项修复与完善、多项敏感信息脱敏增强，并新增以业务错误码识别令牌失效的能力。**含破坏性行为变更，升级前请先阅读「迁移说明」**。
 
 #### 新增（Added）
 
-- `MudHttpMeter.HasListeners`（公共观测门控）。
-- `DefaultHmacSignatureProvider(bool requireAntiReplay)` 与 `RequireAntiReplay`；DI 重载 `AddHmacSignatureProvider(services, bool)`。
-- 生成器诊断 `HTTPCLIENT037`（Info，参数名含 "header" 但无 Header 特性）、`MUDGEN301`（Warning，AOT）。
-- `IResiliencePolicyResolver`（Abstractions）解耦执行器与 Resilience 项目。
+- **令牌失效判定器 `ITokenInvalidationDetector`**：注册到 `TokenRecoveryOptions.TokenInvalidationDetector` 后，令牌恢复链路在 HTTP 401 之外，还能识别以业务错误码表达令牌失效的响应（如企业微信恒返 HTTP 200 + `errcode ∈ {40014, 42001, 42007, 42009, 42011}`），识别为失效即进入与 401 一致的「失效缓存令牌 → 去重刷新 → 重试」流程，并完整继承跨主机重定向守卫、userId 一致性校验、租户绑定守卫等既有安全防线。
+  - 两阶段签名：`ShouldInspect(request)` 同步预过滤（无关请求零开销）+ `IsTokenInvalidAsync(response, body, ct)` 异步判定。
+  - 响应体按需捕获：仅当响应声明 Content-Length 且 ≤ `TokenRecoveryOptions.MaxCapturedResponseBodyBytes`（默认 4KB，0 = 禁用）时读流，读毕以等价可读内容替换原内容，调用方无感；声明超限 / chunked / 空体不读流，判定退化为仅 401 语义。
+  - 判定器异常时按「未失效」降级并记 Warning，检测故障不放大为调用失败；首次响应与重试响应共用同一判定函数。
+- **共享令牌管理器标记 `ISharedTokenManager`**：`TokenManagerBase` 派生类实现该接口（全租户共享凭据，如服务商 `provider_access_token` / 套件 `suite_access_token`）后，`EnforceTenantBinding` 默认即为 `false`，租户绑定守卫自动豁免；显式覆写仍优先。零反射、AOT 安全。
+- **HMAC 可选防重放**：新增 `RequireAntiReplay`（默认 `false`）、`DefaultHmacSignatureProvider(bool requireAntiReplay)` 构造重载与 DI 重载 `AddHmacSignatureProvider(services, bool)`；开启后签名串固定并入 `X-Timestamp` / `X-Nonce` 并写回请求头。
+- **公共观测门控 `MudHttpMeter.HasListeners`**：零监听时短路指标 tags 数组分配。
+- **新增生成器诊断**：`HTTPCLIENT037`（参数名含 "header" 但无 Header 特性，Info）、`MUDGEN301`（AOT 下流式反序列化静默降级，Warning）。
+- **`IResiliencePolicyResolver`**：解耦执行器与 Resilience 项目。
+- **新增日志事件**：`TokenRecoveryTriggeredByDetector`（EventId 184，判定器触发恢复）、`TokenInvalidationDetectionFailed`（EventId 185，判定器故障降级）。
+
+#### 安全（Security）
+
+- **SSRF 防线修复与加固**：修复 IPv4 映射型 IPv6 地址（`::ffff:10.0.0.1`）绕过私网判定的问题；严格模式（`AllowCustomBaseUrls = false`）下默认启用连接期 IP 准入校验；`[回环, 私网]` 混合 DNS 记录不再整体豁免，要求全部为回环且集合非空。
+- **自动重定向关闭**：主链路统一 `AllowAutoRedirect = false`，改由 `EnhancedHttpClient` 手动逐跳复验（白名单 / HTTPS / 私网 / 跳数上限 10 / 逐跳剥离凭据头 / 307·308 仅可重放内容可继续）。
+- **PII 脱敏增强**：手机号 / 邮箱 / 身份证改为查找式匹配，嵌入文本中的 PII 同样掩码；敏感词表补 `pwd`/`credential`/`sessionid`/`bearer`/`sign`/`auth` 等，通用键 `code`/`nonce`/`address`/`name` 收窄为具体变体；拒连异常消息只回显主机名，不披露解析 IP 列表；令牌缓存 Warning 日志的缓存键脱敏。
+- **`ApiException.RequestUri` 统一脱敏**：全部构造点经 `SensitiveUrlRedactor` 处理；`SensitiveUrlRedactor` 迁至 `Abstractions` 并新增 userinfo 剥离。
+- **头值校验收紧**：控制字符校验由「仅 CR/LF」扩为全部 C0 + DEL（保留 HTAB），Token / ApiKey 注入前复核。
+- **OAuth 客户端认证**：`authorization_code` 换令牌在配置 `ClientSecret` 时按 RFC 6749 §4.1.3 走 Basic / 体认证。
+- **AES 配置不匹配显式拒绝**：`EnableKeySeparation = false` 实例遇 0x04 密文前置抛 `CryptographicException`，不再误报完整性失败。
+
+#### 修复（Fixed）
+
+- **`[HeaderCollection]` 生成器接线缺失**：字典请求头此前静默丢失，现按 `CanBind` 分派绑定器，非 string 头值逐项校验。
+- **白名单 HTTP 主机 DNS 阻塞**：`ValidateUrlAsync` 白名单分支由同步改异步回环判定。
+- **`SendAsResponseAsync` 错误体绕过上限**：非 2xx 响应改走受限读取，受 `MaxExceptionContentLength` 约束。
+- **重试克隆误判可重放**：`StreamContent` 等无声明长度且非内存型内容预判为不可重放，`CloneAsync` 抛出 / `TryCloneAsync` 返回 null，避免静默空体提交。
+- **下载半写文件残留**：改用 `.mudtmp` 临时文件 + 原子 `Move`；`bufferSize` 钳制到 `[4 KiB, 4 MiB]`。
+- **`[QueryMap]` 索引器属性崩溃**：属性过滤补索引器排除；`UrlEncode=false` 语义收敛为「key/value 均不转义」。
+- **熔断缓存键碎片化**：熔断 / 超时策略键剥离 `ResultType`，同一 scope 下不同结果类型共享同一熔断器；策略缓存改有界按插入序淘汰。
+- **401 恢复空转**：重试轮次强制刷新令牌，异常 / 取消路径正确归还克隆请求与原始 401 响应。
+- **URL 参数文化区域分叉**：格式化统一 `InvariantCulture`（默认格式化器 + 生成器两路）。
+- **DI 注入序列化设置被丢弃**：以 `new JsonSerializerOptions(injected)` 副本为合并基座。
+- **`TokenStore`（netstandard2.0）**：修复条件移除竞态；用户桶改为阈值 1 万的惰性清扫，避免无界增长。
+- **EventId 撞号**：`TokenRefreshSuppressed` 170→181、`TokenCacheSerializationFailed` 171→182。
+- **零散项**：序列化器实例复用、`ConfigureAwait(false)` 补齐、`CanCapture` 拒捕分支、`ProgressableStreamContent` netstandard2.0 dispose 时机。
+
+#### 性能（Performance）
+
+- **进度回调 100ms 节流**：抽出 `ThrottledStreamCopier` 供下载 / 上传 / 执行器共用；`ProgressableStreamContent` 默认缓冲 4096 → 81920，无进度回调走 `CopyToAsync` 快路径。
+- **缓存淘汰优化**：`MemoryHttpResponseCache` 满载淘汰由全量排序改为单次 O(N) 扫描最久未访问条目。
+- **指标 / 诊断按消费方存在性门控**：零监听时短路 tags 数组分配。
+- **fetch 锁回收竞态**：仅回收「无缓存条目且无人持锁」的锁，避免破坏缓存单飞。
+
+#### 兼容性（Compatibility）
+
+- 未注册判定器时，401 短路判定先于一切响应体读取，非 401 响应零额外工作——既有调用方行为不变。
+- `TokenRecoveryOptions` 新增的两个属性为非破坏性变更（引用类型属性不参与配置绑定）。
 
 #### 迁移说明（升级前必读）
 
@@ -62,6 +68,10 @@
 - **AES 0x04**：`EnableKeySeparation = false` 实例遇 0x04 密文显式抛异常 ⇒ 跨版本对端需同步配置，或在兼容窗口内产出 v3 信封。
 - **401 恢复**：重试轮次不再复用窗口内已完成的刷新结果。
 - **公共 API 变更**（已固化 `PublicAPI.Shipped.txt`）：`ProgressableStreamContent` 默认 `bufferSize` 4096→81920；`MudHttpMeter.HasListeners`；`DefaultHmacSignatureProvider(bool)` + `RequireAntiReplay`；`AddHmacSignatureProvider(services, bool)`。
+
+#### 测试（Tests）
+
+- 修复 10 处契约 / 守卫测试的仓库路径解析：改以程序集位置为锚点向上查找 `Mud.HttpUtils.slnx` 哨兵文件，不再依赖 testhost 工作目录的固定层级。
 
 ---
 

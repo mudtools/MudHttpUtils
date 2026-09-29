@@ -24,8 +24,16 @@ namespace Mud.HttpUtils.Generator.Tests;
 /// </summary>
 public class DocumentationContractTests
 {
-    private const string GeneratorReadmePath = @"../../../../Mud.HttpUtils.Generator/README.md";
-    private const string GeneratorPropsPath = @"../../../../Mud.HttpUtils.Generator/build/Mud.HttpUtils.Generator.props";
+    // 修复说明：原实现为相对 CWD 的固定层级 @"../../../../..."——testhost 的工作目录为
+    // 输出目录（bin\Debug\<tfm>，四层到 Tests）时层级差一级，导致 DirectoryNotFoundException
+    // （随「各 .Tests 项目输出目录互相隔离」的输出布局调整而暴露，与测试逻辑无关的存量问题）。
+    // 现统一经 TestRepoRoot 锚定仓库根，与 CWD / 输出布局无关。
+    private static readonly string GeneratorReadmePath =
+        TestRepoRoot.PathOf("Mud.HttpUtils.Generator", "README.md");
+    private static readonly string GeneratorPropsPath =
+        TestRepoRoot.PathOf("Mud.HttpUtils.Generator", "build", "Mud.HttpUtils.Generator.props");
+    private static readonly string GeneratorSourceRoot =
+        TestRepoRoot.PathOf("Mud.HttpUtils.Generator");
 
     /// <summary>占位白名单：ID 允许在 Diagnostics.cs 中定义但不出现在 README 诊断表（README 用注记说明）。</summary>
     private static readonly HashSet<string> PlaceholderDiagnosticIds = new(StringComparer.Ordinal)
@@ -37,11 +45,16 @@ public class DocumentationContractTests
         new(@"\|[ \t]*`(?<id>[A-Z][A-Z0-9]*\d{3})`[ \t]*\|[ \t]*(?<severity>[^|]+?)[ \t]*\|",
             RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
+    /// <summary>生成器源码中 build_property.&lt;key&gt; 引用的键提取（键仅由字母 / 数字 / 下划线 / 点组成）。</summary>
+    private static readonly Regex PropertyKeyRegex =
+        new(@"build_property\.(?<key>[A-Za-z0-9_.]+)",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     private static string ReadReadme()
-        => File.ReadAllText(Path.GetFullPath(GeneratorReadmePath));
+        => File.ReadAllText(GeneratorReadmePath);
 
     private static string ReadProps()
-        => File.ReadAllText(Path.GetFullPath(GeneratorPropsPath));
+        => File.ReadAllText(GeneratorPropsPath);
 
     /// <summary>
     /// 收集 README 全部诊断表中的 (id, severity)。
@@ -209,7 +222,7 @@ public class DocumentationContractTests
         registered.Should().NotBeEmpty();
 
         var generatorSources = Directory.EnumerateFiles(
-            Path.GetFullPath(@"../../../../Mud.HttpUtils.Generator"),
+            GeneratorSourceRoot,
             "*.cs",
             SearchOption.AllDirectories);
 
@@ -228,22 +241,15 @@ public class DocumentationContractTests
     {
         var registered = ReadRegisteredProperties();
         var generatorSources = Directory.EnumerateFiles(
-            Path.GetFullPath(@"../../../../Mud.HttpUtils.Generator"),
+            GeneratorSourceRoot,
             "*.cs",
             SearchOption.AllDirectories);
 
+        // 属性键仅由 [A-Za-z0-9_.] 组成：原实现按 ASCII 分隔符 IndexOfAny 截断，
+        // 中文注释中的全角括号（如「（build_property.X）。」）会把全角字符并入键名造成误报
+        // （此前该测试因路径解析失败从未执行到本断言，属暴露的存量缺陷）。
         var usedKeys = generatorSources
-            .SelectMany(f => File.ReadAllText(f).Split('\n'))
-            .Select(line =>
-            {
-                var idx = line.IndexOf("build_property.", StringComparison.Ordinal);
-                if (idx < 0) return null;
-                var rest = line.Substring(idx + "build_property.".Length).Trim();
-                var end = rest.IndexOfAny(['"', ',', ' ', ')', ';', '=', '<', '>', '`']);
-                return end > 0 ? rest.Substring(0, end) : rest;
-            })
-            .Where(k => k != null)
-            .Select(k => k!)
+            .SelectMany(f => PropertyKeyRegex.Matches(File.ReadAllText(f)).Select(m => m.Groups["key"].Value))
             .ToHashSet(StringComparer.Ordinal);
 
         foreach (var key in usedKeys)

@@ -30,6 +30,10 @@ public class TokenRecoveryOptionsValidator : IValidateOptions<TokenRecoveryOptio
         if (options.MaxCachedRequestBodyBytes < 0)
             failures.Add($"TokenRecoveryOptions: MaxCachedRequestBodyBytes 不能为负数，当前值为 {options.MaxCachedRequestBodyBytes}。");
 
+        // WX-01（Phase A）响应体捕获上限非负校验（属性 setter 已防御，此处覆盖配置绑定路径）
+        if (options.MaxCapturedResponseBodyBytes < 0)
+            failures.Add($"TokenRecoveryOptions: MaxCapturedResponseBodyBytes 不能为负数，当前值为 {options.MaxCapturedResponseBodyBytes}。");
+
         return failures.Count > 0
             ? ValidateOptionsResult.Fail(failures)
             : ValidateOptionsResult.Success;

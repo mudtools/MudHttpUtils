@@ -405,10 +405,12 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     private string? _tenantBinding;
 
     /// <summary>
-    /// SR-H5（P2.1，D6）是否启用租户绑定守卫（防止单实例跨租户共享导致凭据错配）。默认 true。
-    /// 所有租户共享同一 IdP 凭据且令牌无租户属性的合法场景，可覆写为 false（需自证凭据无租户属性）。
+    /// SR-H5（P2.1，D6）是否启用租户绑定守卫（防止单实例跨租户共享导致凭据错配）。
+    /// 默认 true；派生类实现 <see cref="ISharedTokenManager"/>（WX-02：全租户共享凭据标记，
+    /// 如服务商 / 套件令牌）时默认 false。其余特殊场景可覆写为 false（需自证凭据无租户属性）；
+    /// 显式覆写优先于接口标记。
     /// </summary>
-    protected virtual bool EnforceTenantBinding => true;
+    protected virtual bool EnforceTenantBinding => this is not ISharedTokenManager;
 
     /// <summary>
     /// SR-H5（P2.1，D6）bind-once 租户绑定守卫：首个租户键绑定后，不同租户键的请求被拒绝。

@@ -31,7 +31,7 @@ namespace Mud.HttpUtils.Generator.Tests;
 /// </remarks>
 public class ConstantUsageGuardTests
 {
-    private const string GeneratorRoot = @"../../../../../Mud.HttpUtils.Generator";
+    private static readonly string GeneratorRoot = TestRepoRoot.PathOf("Mud.HttpUtils.Generator");
     private const string ConstantsFileName = "HttpClientGeneratorConstants.cs";
 
     [Fact]

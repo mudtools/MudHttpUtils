@@ -39,7 +39,7 @@ namespace Mud.HttpUtils.Generator.Tests;
 /// </remarks>
 public class EffectiveTokenFieldUsageGuardTests
 {
-    private const string GeneratorRoot = @"../../../../../Mud.HttpUtils.Generator";
+    private static readonly string GeneratorRoot = TestRepoRoot.PathOf("Mud.HttpUtils.Generator");
 
     /// <summary>允许直接引用接口级令牌字段的文件（其余文件一律失败）。</summary>
     private static readonly HashSet<string> AllowedFiles = new(StringComparer.OrdinalIgnoreCase)

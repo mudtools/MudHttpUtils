@@ -15,7 +15,8 @@ using Mud.HttpUtils.Helpers;
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// 令牌恢复执行器，封装 401 Unauthorized 时的令牌刷新与请求重试逻辑。
+/// 令牌恢复执行器，封装 401 Unauthorized（默认语义）及经
+/// <see cref="ITokenInvalidationDetector"/> 识别的业务错误码失效（WX-01，如企业微信 HTTP 200 + errcode）时的令牌刷新与请求重试逻辑。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -26,7 +27,7 @@ namespace Mud.HttpUtils;
 /// <list type="number">
 ///   <item>保存请求体内容（在发送前读取，避免流被消耗后无法重试）</item>
 ///   <item>通过 <c>sendFunc</c> 发送请求</item>
-///   <item>如果收到 401 响应：使缓存令牌失效 → 强制刷新令牌 → 构建新请求并应用令牌 → 重试</item>
+///   <item>如果收到失效响应（HTTP 401，或经 <see cref="TokenRecoveryOptions.TokenInvalidationDetector"/> 判定的业务错误码失效）：使缓存令牌失效 → 强制刷新令牌 → 构建新请求并应用令牌 → 重试</item>
 ///   <item>根据 <see cref="TokenRecoveryOptions.RecoveryMaxRetries"/> 配置重复步骤 3，直到成功或达到最大重试次数</item>
 /// </list>
 /// <para>令牌注入模式感知：</para>
@@ -257,7 +258,9 @@ public class TokenRecoveryExecutor
         // 原实现比较 request.RequestUri 与由它克隆出的 retryRequest.RequestUri —— 两者同源，校验恒真形同虚设。
         var finalUri = response.RequestMessage?.RequestUri ?? request.RequestUri;
 
-        if (response.StatusCode != HttpStatusCode.Unauthorized)
+        // WX-01：统一失效判定点（首次响应）——默认语义仅 HTTP 401；注册判定器后追加
+        // 「HTTP 200 + 业务错误码」语义（ShouldInspect 预过滤 + 按需响应体捕获，见 IsTokenInvalidAsync）。
+        if (!await IsTokenInvalidAsync(response, request, cancellationToken).ConfigureAwait(false))
             return response;
 
         // MT-01：首次发送即发生跨主机重定向 —— 放弃恢复。
@@ -447,7 +450,9 @@ public class TokenRecoveryExecutor
                         _logger, retryRequest.RequestUri?.Host, retryFinalUri?.Host);
                 }
 
-                if (retryResponse.StatusCode != HttpStatusCode.Unauthorized)
+                // WX-01：重试响应与首次响应共用同一失效判定（默认 401；判定器注册时含业务错误码），
+                // 防止「首轮识别失效、重试误判成功」或反向的错误。
+                if (!await IsTokenInvalidAsync(retryResponse, retryRequest, cancellationToken).ConfigureAwait(false))
                 {
                     // 重试成功：释放原始 401，返回重试响应
                     response.Dispose();
@@ -457,7 +462,7 @@ public class TokenRecoveryExecutor
                     return retryResponse;
                 }
 
-                // 重试仍返回 401：释放重试响应，继续下一轮或返回原始 401
+                // 重试仍判定为令牌失效（401 或业务错误码）：释放重试响应，继续下一轮或返回原始响应
                 retryResponse.Dispose();
                 if (retryRequest != request) retryRequest.Dispose();   // TMR-03b：修复克隆体泄漏
             }
@@ -490,6 +495,106 @@ public class TokenRecoveryExecutor
                     new("outcome", outcome),
                 }));
         }
+    }
+
+    /// <summary>
+    /// WX-01（Phase A，errcode 令牌失效恢复）：令牌失效统一判定点，首次响应与重试响应共用。
+    /// 默认语义 = HTTP 401（短路在前，无判定器时非 401 响应零额外工作，与既有行为逐字节等价）；
+    /// 注册 <see cref="TokenRecoveryOptions.TokenInvalidationDetector"/> 后追加
+    /// 「HTTP 200 + 业务错误码」语义：先经 <see cref="ITokenInvalidationDetector.ShouldInspect"/>
+    /// 同步预过滤（在读取响应体之前调用，无关请求零捕获开销），再按需限量捕获响应体并交判定器判定。
+    /// 判定器链路中除取消外的任何异常一律降级为「未失效」（记 Warning）——检测故障不得放大为调用失败。
+    /// </summary>
+    private async ValueTask<bool> IsTokenInvalidAsync(
+        HttpResponseMessage response,
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+            return true;
+
+        var detector = Options.TokenInvalidationDetector;
+        if (detector is null)
+            return false;
+
+        try
+        {
+            if (!detector.ShouldInspect(request))
+                return false;
+
+            var body = await TryCaptureResponseBodyAsync(response, cancellationToken).ConfigureAwait(false);
+            var invalid = await detector.IsTokenInvalidAsync(response, body, cancellationToken).ConfigureAwait(false);
+            if (invalid)
+                MudHttpClientLog.TokenRecoveryTriggeredByDetector(_logger, (int)response.StatusCode);
+            return invalid;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            MudHttpClientLog.TokenInvalidationDetectionFailed(_logger, detector.GetType().Name, ex);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// WX-01：按需限量捕获响应体，供失效判定器读取业务错误码。
+    /// 捕获仅发生在「声明 Content-Length 且 ≤ <see cref="TokenRecoveryOptions.MaxCapturedResponseBodyBytes"/>」
+    /// 的响应上：全量读取后以 <see cref="ByteArrayContent"/>（复制除 Content-Length 外的内容头）替换原内容，
+    /// 调用方拿到的响应仍可正常读取。声明超限 / 未知长度（chunked）/ 空体一律不读流（返回 null），
+    /// 保证调用方响应流永不被部分消费污染；「部分捕获 + 组合流回卷」方案已评审否决。
+    /// </summary>
+    private async ValueTask<ReadOnlyMemory<byte>?> TryCaptureResponseBodyAsync(
+        HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var content = response.Content;
+        if (content is null)
+            return null;
+
+        var maxBytes = Options.MaxCapturedResponseBodyBytes;
+        if (maxBytes <= 0)
+            return null;
+
+        if (content.Headers.ContentLength is not long declared || declared <= 0 || declared > maxBytes)
+            return null;
+
+#if NETSTANDARD2_0
+        var stream = await content.ReadAsStreamAsync().ConfigureAwait(false);
+#else
+        var stream = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+#endif
+        var buffered = new byte[declared];
+        var total = 0;
+        while (total < declared)
+        {
+#if NETSTANDARD2_0
+            int read = await stream.ReadAsync(buffered, total, (int)declared - total).ConfigureAwait(false);
+#else
+            int read = await stream.ReadAsync(buffered.AsMemory(total, (int)declared - total), cancellationToken).ConfigureAwait(false);
+#endif
+            if (read <= 0)
+                break;
+            total += read;
+        }
+
+        if (total <= 0)
+            return null;
+
+        var replacement = new ByteArrayContent(buffered, 0, total);
+        foreach (var header in content.Headers)
+        {
+            // 长度头由 ByteArrayContent 自行重新计算，避免「声明长度 ≠ 实际字节数」
+            if (header.Key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase))
+                continue;
+            replacement.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+        response.Content = replacement;
+        // 原内容已被整体消费并替换：显式释放，闭合底层连接流（防连接滞留至 GC 才归还连接池）
+        content.Dispose();
+
+        return buffered.AsMemory(0, total);
     }
 
     private bool ShouldAttemptRecovery(HttpRequestMessage request)

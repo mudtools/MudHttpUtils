@@ -110,4 +110,38 @@ public class TokenRecoveryOptions
         set => _maxDedupEntries = value > 0 ? value : throw new ArgumentOutOfRangeException(nameof(MaxDedupEntries), "去重表条目上限必须大于 0。");
     }
     private int _maxDedupEntries = 1024;
+
+    /// <summary>
+    /// WX-01（Phase A，errcode 令牌失效恢复）：令牌失效判定器（可选，默认 null）。
+    /// <para>
+    /// 注册后，恢复执行器在「HTTP 401」默认语义之外，按判定器识别以业务错误码表达令牌失效的
+    /// 平台响应（如企业微信恒返 HTTP 200 + <c>errcode</c> ∈ {40014, 42001, 42007, 42009, 42011}），
+    /// 识别为失效即进入与 401 一致的「失效缓存令牌 → 刷新 → 重试」链路。
+    /// </para>
+    /// <para>
+    /// 本属性为编程式注入（委托 / 接口实例不可经配置绑定），典型落点是平台 SDK 在命名客户端 /
+    /// 全局注册时的 <c>PostConfigure</c> 中赋值。为 null 时行为与既有版本逐字节等价（仅认 401）。
+    /// </para>
+    /// </summary>
+    public ITokenInvalidationDetector? TokenInvalidationDetector { get; set; }
+
+    /// <summary>
+    /// WX-01（Phase A）：判定器检查响应时可捕获的响应体最大字节数，默认 4096（4KB）。
+    /// <para>
+    /// 仅当响应声明 Content-Length 且 ≤ 本上限时才会读流捕获（读毕以等价可读内容替换原内容，
+    /// 调用方无感）；声明超限 / 未知长度（chunked）/ 空体一律不读流，此时判定器收到
+    /// <c>body = null</c>，应回退到仅凭状态码判定。
+    /// </para>
+    /// <para>
+    /// 与 <see cref="MaxCachedRequestBodyBytes"/>（请求体三态模型）正交，两者独立配置。
+    /// 设为 <c>0</c> 表示禁用响应体捕获（判定器仅凭状态码工作）。
+    /// </para>
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">设置小于 0 的值时抛出。</exception>
+    public int MaxCapturedResponseBodyBytes
+    {
+        get => _maxCapturedResponseBodyBytes;
+        set => _maxCapturedResponseBodyBytes = value >= 0 ? value : throw new ArgumentOutOfRangeException(nameof(MaxCapturedResponseBodyBytes), "响应体捕获上限不能为负数。");
+    }
+    private int _maxCapturedResponseBodyBytes = 4096;
 }

@@ -19,7 +19,20 @@ namespace Mud.HttpUtils.Integration.Tests;
 /// </remarks>
 public class ConfigAuditRegressionTests
 {
-    private const string ClientReadmePath = @"../../../../Mud.HttpUtils.Client/README.md";
+    // 修复说明：原相对 CWD 的固定层级 @"../../../../..." 在「各 .Tests 项目输出目录互相隔离」的
+    // 输出布局下层级差一级，导致 DirectoryNotFoundException（存量缺陷）。现锚定程序集位置向上
+    // 查找仓库哨兵文件（Mud.HttpUtils.slnx），与 CWD / 输出布局无关。
+    private static readonly string ClientReadmePath = FindRepoRoot("Mud.HttpUtils.Client", "README.md");
+
+    private static string FindRepoRoot(params string[] segments)
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null && !File.Exists(Path.Combine(dir.FullName, "Mud.HttpUtils.slnx")))
+            dir = dir.Parent;
+        var root = dir?.FullName
+            ?? throw new InvalidOperationException("无法定位仓库根目录（未找到 Mud.HttpUtils.slnx 哨兵文件）。");
+        return Path.Combine(new[] { root }.Concat(segments).ToArray());
+    }
 
     // ========================================================================
     // 配置节名契约：重命名会静默使现有 appsettings.json 失效（用户侧无错误提示）

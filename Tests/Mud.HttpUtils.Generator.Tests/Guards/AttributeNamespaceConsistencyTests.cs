@@ -30,7 +30,7 @@ namespace Mud.HttpUtils.Generator.Tests;
 public class AttributeNamespaceConsistencyTests
 {
     private const string ExpectedNamespace = "Mud.HttpUtils.Attributes";
-    private const string ReadmeRelativePath = @"../../../../../Mud.HttpUtils.Attributes/README.md";
+    private static readonly string ReadmeRelativePath = TestRepoRoot.PathOf("Mud.HttpUtils.Attributes", "README.md");
 
     /// <summary>
     /// C# 关键字/字面量：README「关键属性」列会用反引号标注默认值与签名片段

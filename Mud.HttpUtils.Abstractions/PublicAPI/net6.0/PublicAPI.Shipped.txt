@@ -898,4 +898,12 @@ const Mud.HttpUtils.AppKey.MaxLength = 128 -> int
 static Mud.HttpUtils.AppKey.IsValid(string? value) -> bool
 static Mud.HttpUtils.AppKey.ToSafeText(string? value) -> string!
 static Mud.HttpUtils.MudHttpMeter.HasListeners.get -> bool
+Mud.HttpUtils.ISharedTokenManager
+Mud.HttpUtils.ITokenInvalidationDetector
+Mud.HttpUtils.ITokenInvalidationDetector.IsTokenInvalidAsync(System.Net.Http.HttpResponseMessage! response, System.ReadOnlyMemory<byte>? body, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
+Mud.HttpUtils.ITokenInvalidationDetector.ShouldInspect(System.Net.Http.HttpRequestMessage! request) -> bool
+Mud.HttpUtils.TokenRecoveryOptions.MaxCapturedResponseBodyBytes.get -> int
+Mud.HttpUtils.TokenRecoveryOptions.MaxCapturedResponseBodyBytes.set -> void
+Mud.HttpUtils.TokenRecoveryOptions.TokenInvalidationDetector.get -> Mud.HttpUtils.ITokenInvalidationDetector?
+Mud.HttpUtils.TokenRecoveryOptions.TokenInvalidationDetector.set -> void
 
