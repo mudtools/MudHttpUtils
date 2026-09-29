@@ -17,7 +17,8 @@ public class Program
         var switcher = new BenchmarkSwitcher(new[]
         {
             typeof(Benchmarks),
-            typeof(HttpClientBenchmarks)
+            typeof(HttpClientBenchmarks),
+            typeof(M6Stage5Benchmarks)
         });
         switcher.Run(args);
     }

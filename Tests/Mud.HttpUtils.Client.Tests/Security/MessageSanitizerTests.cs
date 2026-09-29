@@ -211,12 +211,80 @@ public class MessageSanitizerTests
     [Fact]
     public void Sanitize_WithNameField_ShouldMaskAsNameNotAsToken()
     {
-        var json = @"{""name"":""张三""}";
+        // P3（M6 阶段五）：通用键 `name` 已收窄，改用明确的姓名键名验证「按姓名掩码」语义。
+        var json = @"{""user_name"":""张三""}";
 
         var result = MessageSanitizer.Sanitize(json);
 
         result.Should().NotBeEquivalentTo(json);
         result.Should().NotContain("张三");
+    }
+
+    [Fact]
+    public void Sanitize_WithGenericNameField_ShouldNotOverMask()
+    {
+        // P3（M6 阶段五）：`name` 过于宽泛（产品名 / 城市名等），不再整体掩码。
+        var json = @"{""name"":""Beijing""}";
+
+        var result = MessageSanitizer.Sanitize(json);
+
+        result.Should().Contain("Beijing");
+    }
+
+    [Fact]
+    public void Sanitize_WithShortPlainWord_ShouldNotBeTreatedAsToken()
+    {
+        // P3（M6 阶段五）：Base64 启发式加「长度 ≥16 且带 = 填充」约束后，
+        // "testuser"（8 字符、长度恰为 4 的倍数）不再被误判为令牌而整体掩码。
+        var json = @"{""label"":""testuser""}";
+
+        var result = MessageSanitizer.Sanitize(json);
+
+        result.Should().Contain("testuser");
+    }
+
+    [Theory]
+    [InlineData("pwd")]
+    [InlineData("credential")]
+    [InlineData("sessionid")]
+    [InlineData("bearer")]
+    [InlineData("sign")]
+    [InlineData("auth")]
+    public void Sanitize_WithNewlyAddedCredentialField_ShouldMaskValue(string fieldName)
+    {
+        // P3（M6 阶段五）：补齐易漏的凭据类键名。
+        var json = $@"{{""{fieldName}"":""s3cr3t-value-123456""}}";
+
+        var result = MessageSanitizer.Sanitize(json);
+
+        result.Should().NotContain("s3cr3t-value-123456");
+    }
+
+    [Theory]
+    [InlineData("auth_code")]
+    [InlineData("verify_code")]
+    [InlineData("sms_code")]
+    [InlineData("captcha")]
+    [InlineData("otp")]
+    public void Sanitize_WithNarrowedCodeVariant_ShouldMaskValue(string fieldName)
+    {
+        // P3（M6 阶段五）：`code` 收窄后，具体变体仍需掩码。
+        var json = $@"{{""{fieldName}"":""a1b2c3d4""}}";
+
+        var result = MessageSanitizer.Sanitize(json);
+
+        result.Should().NotContain("a1b2c3d4");
+    }
+
+    [Fact]
+    public void Sanitize_WithGenericCodeField_ShouldNotOverMask()
+    {
+        // P3（M6 阶段五）：通用键 `code` 已收窄（业务编码不应被掩码）。
+        var json = @"{""code"":""PRODUCT-0001""}";
+
+        var result = MessageSanitizer.Sanitize(json);
+
+        result.Should().Contain("PRODUCT-0001");
     }
 
     [Fact]
@@ -243,7 +311,8 @@ public class MessageSanitizerTests
     [Fact]
     public void Sanitize_WithAddressField_ShouldMaskValue()
     {
-        var json = @"{""address"":""北京市朝阳区某某路123号""}";
+        // P3（M6 阶段五）：通用键 `address` 收窄为具体变体（网络地址等场景常直接叫 address）。
+        var json = @"{""home_address"":""北京市朝阳区某某路123号""}";
 
         var result = MessageSanitizer.Sanitize(json);
 
