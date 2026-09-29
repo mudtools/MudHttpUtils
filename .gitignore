@@ -43,10 +43,12 @@
 /Tests/Mud.HttpUtils.Generator.Tests/bin
 /Tests/Mud.HttpUtils.Generator.Tests/obj
 /Tests/Mud.HttpUtils.Generator.Tests/TestResults
-# Verify 快照：只忽略 .received.txt（失败产物），必须跟踪 .verified.txt（测试基线）。
-# 历史规则为 *.txt，导致 22 份 *.verified.txt 从未入库 → 全新检出/CI 上快照测试必然全红。
+# Verify 快照（G9-03 基线卫生）：.received.txt（失败产物）与项目根层级的 .verified.txt（孤儿残留）不入库；
+# 基线只允许存在于测试类旁的子目录（Snapshots\ / Generators\），须显式 accept 后提交。
+# 历史注记：早年规则为 *.txt，导致 22 份 *.verified.txt 从未入库（全新检出/CI 快照测试全红）——
+# 故引入根级反选；现测试类已全部移入子目录，根层级只会出现孤儿残留（G9-03），反选规则一并移除。
 /Tests/Mud.HttpUtils.Generator.Tests/*.received.txt
-!/Tests/Mud.HttpUtils.Generator.Tests/*.verified.txt
+/Tests/Mud.HttpUtils.Generator.Tests/*.verified.txt
 /Tests/Mud.HttpUtils.Tests/bin
 /Tests/Mud.HttpUtils.Tests/obj
 /Tests/Mud.HttpUtils.Benchmarks/bin

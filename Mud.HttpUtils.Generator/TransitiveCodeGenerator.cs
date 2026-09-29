@@ -63,12 +63,6 @@ public abstract class TransitiveCodeGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// [v2.4 §3.4] 是否在生成代码头部发射 #nullable enable。
-    /// 默认为 true（当前行为）。子类可根据消费项目 build_property.Nullable 设置。
-    /// </summary>
-    protected bool EmitNullableEnable { get; set; } = true;
-
-    /// <summary>
     /// 生成通用的文件头部
     /// </summary>
     /// <param name="sb">代码构建器。</param>
@@ -97,11 +91,17 @@ public abstract class TransitiveCodeGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// 生成通用的文件头部（使用子类提供的命名空间）
+    /// 生成通用的文件头部（使用子类提供的命名空间）。
     /// </summary>
-    public void GenerateFileHeader(StringBuilder sb)
+    /// <remarks>
+    /// G9-07：<paramref name="emitNullableEnable"/> 由调用方显式传入（参数化），移除原实例可变属性
+    /// <c>EmitNullableEnable</c>——增量生成器实例跨编译代复用，可变属性依赖「每次 ExecuteGenerator
+    /// 先赋值后生成」的顺序纪律，属脆弱的隐式契约；实现类文件路径（ClassStructureGenerator）已是参数传递，
+    /// 此处对齐为同一机制。
+    /// </remarks>
+    public void GenerateFileHeader(StringBuilder sb, bool emitNullableEnable)
     {
-        GenerateFileHeader(sb, GetFileUsingNameSpaces(), EmitNullableEnable);
+        GenerateFileHeader(sb, GetFileUsingNameSpaces(), emitNullableEnable);
     }
 
 

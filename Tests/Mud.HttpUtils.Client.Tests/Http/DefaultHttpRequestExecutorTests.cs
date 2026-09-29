@@ -8,6 +8,7 @@
 using System.Diagnostics.Metrics;
 using System.Xml.Serialization;
 using Microsoft.Extensions.Logging.Abstractions;
+using Mud.HttpUtils.Client.Tests.Infrastructure;
 
 namespace Mud.HttpUtils.Client.Tests;
 
@@ -1026,6 +1027,86 @@ public class DefaultHttpRequestExecutorTests
     }
 
     /// <summary>
+    /// G9-01 L1（helper 行为测试）：ns2.0 快速路径的分块拷贝
+    /// <see cref="DefaultHttpRequestExecutor.CopyToWithCancellationAsync"/> 必须及时响应取消——
+    /// 逐块前置取消检查 + Read/Write 携带 CT，取消时延上限为一个缓冲区周期（与 NET6+ CopyToAsync(ct) 对齐）。
+    /// </summary>
+    /// <remarks>
+    /// 该 helper 全 TFM 编译（不加 <c>#if</c>），本用例在 NET6+ 宿主直接执行的就是 ns2.0 修复实现本身；
+    /// ns2.0 <c>#else</c> 分支的接线由 L2 文本钉子守护（Client.Tests 无 netstandard2.0 TFM，
+    /// 运行时用例无法执行该分支——与 MultiTfmCompilationGuardTests 的守卫动机一致）。
+    /// </remarks>
+    [Fact]
+    public async Task CopyToWithCancellationAsync_FastPath_RespondsToCancellation()
+    {
+        var data = new byte[1024 * 1024]; // 1 MiB，确保取消发生在分块拷贝中途
+        new Random(42).NextBytes(data);
+        var contentStream = new PartialThenBlockingStream(data, blockAfterBytes: 81920);
+
+        var tempFile = Path.Combine(Path.GetTempPath(), $"mud_test_{Guid.NewGuid():N}.bin");
+        using var cts = new CancellationTokenSource();
+        try
+        {
+            await using var destination = new FileStream(
+                tempFile, FileMode.Create, FileAccess.Write, FileShare.None, 81920);
+            var copyTask = DefaultHttpRequestExecutor.CopyToWithCancellationAsync(
+                contentStream, destination, 81920, cts.Token);
+
+            // 确定性触发：等待已写出第一缓冲块并阻塞在源流读取点，再取消
+            await contentStream.WhenBlocked.WaitAsync(TimeSpan.FromSeconds(10));
+            cts.Cancel();
+
+            // watchdog：取消后 5s 内必须出现终态。若 helper 退化为无 CT 的整段 CopyToAsync，
+            // 源流将无限阻塞、Task.Delay 守护分支胜出——本断言即失败（与修复前行为区分）
+            var winner = await Task.WhenAny(copyTask, Task.Delay(TimeSpan.FromSeconds(5)));
+            winner.Should().Be(copyTask,
+                "取消必须在 5s watchdog 内产生终态（无 CT 的整段拷贝会让源流无限阻塞）");
+
+            var act = async () => await copyTask;
+            await act.Should().ThrowAsync<OperationCanceledException>();
+        }
+        finally
+        {
+            if (File.Exists(tempFile))
+                File.Delete(tempFile);
+        }
+    }
+
+    /// <summary>
+    /// G9-01 L2（ns2.0 分支接线文本钉子）：下载路径不得出现任何不携带 <c>cancellationToken</c> 的
+    /// <c>CopyToAsync</c> 调用（原文缺陷：ns2.0 快速路径 <c>CopyToAsync(fileStream, effectiveBufferSize)</c>
+    /// 无 CT，取消令牌在 body 拷贝主耗时段不被观察），且 ns2.0 快速路径必须接线到全 TFM 的
+    /// <c>CopyToWithCancellationAsync</c> 分块拷贝 helper。
+    /// </summary>
+    [Fact]
+    public void DownloadCopyPaths_MustNotContainCancellationTokenFreeCopyToAsync()
+    {
+        var source = File.ReadAllText(TestRepoRoot.PathOf(
+            "Mud.HttpUtils.Client", "HttpClient", "DefaultHttpRequestExecutor.cs"));
+
+        // 剥离注释行后再扫描：注释中的 API 引用（cref/历史说明）不参与契约断言
+        var code = string.Join('\n', source.Split('\n')
+            .Where(l => !l.TrimStart().StartsWith("//", StringComparison.Ordinal)));
+
+        // 断言 1：所有 CopyToAsync( 调用都必须携带 cancellationToken（覆盖任意流参数名）
+        var index = 0;
+        while ((index = code.IndexOf("CopyToAsync(", index, StringComparison.Ordinal)) >= 0)
+        {
+            var close = code.IndexOf(')', index);
+            close.Should().BeGreaterThan(index, $"CopyToAsync 调用（偏移 {index}）必须有闭合括号");
+            var args = code.Substring(index, close - index);
+            args.Should().Contain("cancellationToken",
+                $"CopyToAsync 调用（偏移 {index}）必须携带取消令牌（G9-01：取消不响应缺陷的回归钉子）");
+            index = close;
+        }
+
+        // 断言 2：ns2.0 快速路径必须经由携带 CT 的分块拷贝 helper
+        code.Should().Contain(
+            "CopyToWithCancellationAsync(contentStream, fileStream, effectiveBufferSize, cancellationToken)",
+            "ns2.0 快速路径必须接线 CopyToWithCancellationAsync（运行时行为由 L1 用例在 NET6+ 宿主执行同一实现）");
+    }
+
+    /// <summary>
     /// G8-07：<b>非取消</b>的失败路径（服务端 5xx）同样不得残留任何文件 ——
     /// 既有断言只覆盖取消路径，失败路径仅有「日志脱敏」断言（对称缺口）。
     /// </summary>
@@ -1389,6 +1470,14 @@ public class DefaultHttpRequestExecutorTests
             _position += toCopy;
             return toCopy;
         }
+
+        /// <summary>
+        /// G9-01：数组版 ReadAsync 委托到 Memory 版实现。基类默认实现会落到同步 <c>Read</c>（本流抛
+        /// NotSupportedException），而 <c>CopyToWithCancellationAsync</c>（全 TFM 使用数组版 API，
+        /// 与真实 ns2.0 HttpContent 流一致）需要走本重载才能被该 helper 的取消用例驱动。
+        /// </summary>
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+            => ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
     }
 
     /// <summary>

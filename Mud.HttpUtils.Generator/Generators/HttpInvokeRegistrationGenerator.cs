@@ -34,9 +34,6 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         if (configSnapshot.Disable)
             return;
 
-        // [v2.4 §3.4] 读取消费项目 nullable 配置，条件化发射 #nullable enable
-        EmitNullableEnable = configSnapshot.NullableEnable;
-
         var httpClientApis = CollectHttpClientApis(interfaces, context);
 
         if (httpClientApis.Count == 0)
@@ -65,11 +62,12 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         var compilation = interfaces[0].Context.SemanticModel.Compilation;
 
         // 1. 生成 HttpClientApiExtensions.g.cs（DI 注册扩展方法）
-        var extensionSourceCode = GenerateExtensionClassCode(compilation, httpClientApis, context);
+        // G9-07：nullable 配置以参数显式下传（原实例可变属性 EmitNullableEnable 已移除）
+        var extensionSourceCode = GenerateExtensionClassCode(compilation, httpClientApis, context, configSnapshot.NullableEnable);
         AddSourceValidated(context, "HttpClientApiExtensions.g.cs", extensionSourceCode);
 
         // 2. T0.2: 生成 GeneratedFactoryRegistration.g.cs（ModuleInitializer 工厂注册）
-        var factorySourceCode = GenerateFactoryRegistrationCode(httpClientApis);
+        var factorySourceCode = GenerateFactoryRegistrationCode(httpClientApis, configSnapshot.NullableEnable);
         if (!string.IsNullOrEmpty(factorySourceCode))
         {
             AddSourceValidated(context, "GeneratedFactoryRegistration.g.cs", factorySourceCode);
@@ -234,12 +232,12 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         ReportErrorDiagnostic(context, Diagnostics.HttpClientRegistrationGenerationError, interfaceSyntax.Identifier.Text, ex, interfaceSyntax.GetLocation());
     }
 
-    private string GenerateSourceCode(Compilation compilation, List<HttpClientApiInfo> apis, SourceProductionContext context)
+    private string GenerateSourceCode(Compilation compilation, List<HttpClientApiInfo> apis, SourceProductionContext context, bool emitNullableEnable)
     {
         // 预估容量：每个API注册约200字符，基础结构约500字符
         var estimatedCapacity = 500 + (apis.Count * 200);
         var codeBuilder = new StringBuilder(estimatedCapacity);
-        GenerateExtensionClass(compilation, codeBuilder, apis, context);
+        GenerateExtensionClass(compilation, codeBuilder, apis, context, emitNullableEnable);
         return codeBuilder.ToString();
     }
 
@@ -259,12 +257,12 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
                 : FallbackNamespace;
     }
 
-    private string GenerateExtensionClassCode(Compilation compilation, List<HttpClientApiInfo> apis, SourceProductionContext context)
-        => GenerateSourceCode(compilation, apis, context);
+    private string GenerateExtensionClassCode(Compilation compilation, List<HttpClientApiInfo> apis, SourceProductionContext context, bool emitNullableEnable)
+        => GenerateSourceCode(compilation, apis, context, emitNullableEnable);
 
-    private void GenerateExtensionClass(Compilation compilation, StringBuilder codeBuilder, List<HttpClientApiInfo> apis, SourceProductionContext context)
+    private void GenerateExtensionClass(Compilation compilation, StringBuilder codeBuilder, List<HttpClientApiInfo> apis, SourceProductionContext context, bool emitNullableEnable)
     {
-        GenerateFileHeader(codeBuilder);
+        GenerateFileHeader(codeBuilder, emitNullableEnable);
 
         codeBuilder.AppendLine();
         // [F7 修复] namespace 取 AssemblyName 时须校验其每个以 . 分隔的段都是合法 C# 标识符；
@@ -292,7 +290,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
     /// HttpClient / TokenManager 模式的实现类构造函数需要用户自定义类型，工厂委托无法构造，需通过 DI 容器使用。
     /// </para>
     /// </summary>
-    private string GenerateFactoryRegistrationCode(List<HttpClientApiInfo> apis)
+    private string GenerateFactoryRegistrationCode(List<HttpClientApiInfo> apis, bool emitNullableEnable)
     {
         // v3.4 L-11：仅对默认模式接口生成注册代码（无 TokenManagerType 且无 HttpClientType）
         var defaultModeApis = apis
@@ -303,7 +301,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
             return string.Empty;
 
         var sb = new StringBuilder(500 + defaultModeApis.Count * 600);
-        GenerateFileHeader(sb);
+        GenerateFileHeader(sb, emitNullableEnable);
 
         sb.AppendLine();
         sb.AppendLine("namespace Mud.HttpUtils");

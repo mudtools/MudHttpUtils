@@ -641,13 +641,16 @@ public class DefaultHttpRequestExecutor(
 
                 if (progress == null)
                 {
-                    await contentStream.CopyToAsync(fileStream, effectiveBufferSize).ConfigureAwait(false);
+                    // G9-01：ns2.0 快速路径改为分块拷贝（逐块携带 CT）。原 CopyToAsync(stream, bufferSize)
+                    // 无 CT 重载，取消令牌在大文件 body 拷贝主耗时段不被观察——取消要等下载完成才生效，
+                    // 与 NET6+ 分支（CopyToAsync(ct)）构成跨 TFM 语义差异。
+                    bytesWritten = await CopyToWithCancellationAsync(contentStream, fileStream, effectiveBufferSize, cancellationToken).ConfigureAwait(false);
                 }
                 else
                 {
                     await CopyToWithProgressAsync(contentStream, fileStream, effectiveBufferSize, progress, 0, cancellationToken).ConfigureAwait(false);
+                    bytesWritten = fileStream.Position;
                 }
-                bytesWritten = fileStream.Position;
             }
             // netstandard2.0：File.Move 无 overwrite 重载；
             // overwrite=false 且目标已存在 → Move 抛 IOException（与 CreateNew 语义一致）。
@@ -690,6 +693,37 @@ public class DefaultHttpRequestExecutor(
         CancellationToken cancellationToken)
         => ThrottledStreamCopier.CopyWithThrottledProgressAsync(
             source, destination, bufferSize, progress, totalBytesWritten, cancellationToken);
+
+    /// <summary>
+    /// G9-01：ns2.0 快速路径的分块拷贝——Read/Write 均携带 CT，逐块前置取消检查，
+    /// 使取消时延上限为一个缓冲区周期（与 NET6+ <see cref="Stream.CopyToAsync(Stream, int, CancellationToken)"/> 语义对齐）。
+    /// </summary>
+    /// <remarks>
+    /// 全 TFM 编译（不加 <c>#if</c>）：ns2.0 与 NET6+ 的数组版 <see cref="Stream.ReadAsync(byte[], int, int, CancellationToken)"/> /
+    /// <c>WriteAsync</c> 语义一致（真实 ns2.0 HttpContent 流即实现数组版重载），NET6+ 编译下 Client.Tests
+    /// 可直接单测本实现，ns2.0 分支接线同一源码——避免 ns2.0 <c>#if</c> 分支成为无测试可执行的行为盲区
+    /// （与 MultiTfmCompilationGuardTests 的守卫动机一致）。internal 供 Client.Tests 经 InternalsVisibleTo 直测。
+    /// 缓冲区一次分配，受 <c>MaxSupportedBufferSize = 4 MiB</c> 夹取上界约束（默认 80 KiB），无 LOH 风险。
+    /// </remarks>
+    internal static async Task<long> CopyToWithCancellationAsync(
+        Stream source,
+        Stream destination,
+        int bufferSize,
+        CancellationToken cancellationToken)
+    {
+        var buffer = new byte[bufferSize];
+        long total = 0;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var read = await source.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+                break;
+            await destination.WriteAsync(buffer, 0, read, cancellationToken).ConfigureAwait(false);
+            total += read;
+        }
+        return total;
+    }
 
     /// <inheritdoc/>
     /// <remarks>

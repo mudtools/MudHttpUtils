@@ -63,9 +63,6 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
         // 该分析器自行经 AotModeResolver 读取同一份配置，本处不再需要 isAotAnalyzerOnly。
         var isAotEnabled = configSnapshot.AotMode == AotRuntimeMode.Aot;
 
-        // [v2.4 §3.4 D-03 修复] 读取消费项目 nullable 配置，条件化发射 #nullable enable
-        EmitNullableEnable = configSnapshot.NullableEnable;
-
         // [D-06 修复] 读取 MudEmitGeneratedCodeMarkers 开关，控制生成代码 [GeneratedCode] 标注
         var emitGeneratedCodeMarkers = configSnapshot.EmitMarkers;
 
@@ -81,7 +78,8 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
 
         try
         {
-            ProcessInterface(compilation, interfaceDecl, interfaceSymbol, semanticModel, context, httpClientOptionsName, isAotEnabled, EmitNullableEnable, emitGeneratedCodeMarkers);
+            // G9-07：nullable 配置以实参显式传递（原实例可变属性 EmitNullableEnable 已移除）
+            ProcessInterface(compilation, interfaceDecl, interfaceSymbol, semanticModel, context, httpClientOptionsName, isAotEnabled, configSnapshot.NullableEnable, emitGeneratedCodeMarkers);
         }
         catch (Exception ex)
         {

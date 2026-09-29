@@ -54,6 +54,13 @@ internal static class HttpClientGeneratorConstants
     public const string QueryMapAttribute = "QueryMapAttribute";
     public const string RawQueryStringAttribute = "RawQueryStringAttribute";
 
+    /// <summary>
+    /// G9-06：库契约 <c>ICurrentUserId</c> 的元数据全名（Abstractions 内定义，非泛型）。
+    /// 供 <c>DetectICurrentUserId</c> 做 <see cref="Compilation.GetTypeByMetadataName(string)"/> 精确匹配——
+    /// 简单名匹配会把消费方自定义同名异源接口误判为库契约实现（触发 CurrentUserId 成员发射）。
+    /// </summary>
+    public const string CurrentUserIdMetadataName = "Mud.HttpUtils.ICurrentUserId";
+
     // Token注入模式
     public const string TokenInjectionModeHeader = "Header";
     public const string TokenInjectionModeQuery = "Query";

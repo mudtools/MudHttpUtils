@@ -61,6 +61,10 @@ public static class AppKey
     /// <summary>
     /// 把应用标识转换为可安全写入日志 / 异常消息的文本（截断到 <see cref="MaxLength"/> 并过滤控制字符）。
     /// </summary>
+    /// <remarks>
+    /// G9-02：本方法实现通用（截断 + 控制字符过滤），不依赖输入语义——亦适用于 userId 等其他
+    /// 外部标识的安全回显（如 <c>DefaultTokenProvider</c> 的用户身份不一致异常），避免后来者误以为仅限 appKey。
+    /// </remarks>
     /// <param name="value">原始应用标识（可含不可信输入）。</param>
     /// <returns>安全文本；输入为 null / 空时返回空字符串。</returns>
     public static string ToSafeText(string? value)

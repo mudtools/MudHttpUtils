@@ -56,13 +56,21 @@ internal class FormContentGenerator : TransitiveCodeGenerator
             .Collect()
             .WithTrackingName("FormContent_Collected");
 
-        // F-06：删除原 `.Combine(context.AnalyzerConfigOptionsProvider)`——ExecuteGenerator 从未消费
-        // 该 Right 值，Combine 只会让 AnalyzerConfigOptionsProvider（编辑器配置变化即失效）无谓地
-        // 击穿上方逐节点缓存，跟踪节点 FormContent_CompleteData 不再依赖 Provider。
-        context.RegisterSourceOutput(formContentModels,
-            (ctx, models) => ExecuteGenerator(
-                formContentModels: models,
-                context: ctx));
+        // F-06：删除原 `.Combine(context.AnalyzerConfigOptionsProvider)`——原 Combine 的 Right 值从未被
+        // 消费，只会让 AnalyzerConfigOptionsProvider（编辑器配置变化即失效）无谓地击穿上方逐节点缓存。
+        // G9-07（对齐 D-03 契约）：FormContent 产物同样需要消费项目 nullable 配置（Nullable=disable 时
+        // 不发射 #nullable enable，与实现类/注册产物一致）——接线**复用 G7-06 值相等快照模式**
+        // （Select(Create) + WithComparer）：消费快照值 + 值相等比较器 = 真实依赖且增量语义正确
+        // （配置值不变 ⇒ Cached；Nullable 真变化 ⇒ 重生成是正确行为），与 F-06 反模式有本质区别。
+        var configSnapshot = context.AnalyzerConfigOptionsProvider
+            .Select(static (provider, _) => GeneratorConfigSnapshot.Create(provider))
+            .WithComparer(GeneratorConfigSnapshot.Comparer);
+
+        context.RegisterSourceOutput(formContentModels.Combine(configSnapshot),
+            (ctx, pair) => ExecuteGenerator(
+                formContentModels: pair.Left,
+                context: ctx,
+                configSnapshot: pair.Right));
     }
 
     /// <summary>
@@ -71,9 +79,12 @@ internal class FormContentGenerator : TransitiveCodeGenerator
     /// <param name="formContentModels">所有标记 [FormContent] 特性的类模型。每个 <see cref="FormContentModel"/>
     /// 通过 <see cref="FormContentModel.Context"/> 携带 <see cref="SemanticModel"/>（含 <see cref="Compilation"/>）。</param>
     /// <param name="context">源代码生成上下文</param>
+    /// <param name="configSnapshot">G7-06 配置值快照（G9-07：从中读取 NullableEnable 显式下传，
+    /// 替代原实例可变属性 <c>EmitNullableEnable</c> 的「先赋值后使用」顺序纪律）。</param>
     private void ExecuteGenerator(
         ImmutableArray<FormContentModel> formContentModels,
-        SourceProductionContext context)
+        SourceProductionContext context,
+        GeneratorConfigSnapshot configSnapshot)
     {
         if (formContentModels.IsDefaultOrEmpty)
             return;
@@ -108,8 +119,8 @@ internal class FormContentGenerator : TransitiveCodeGenerator
                     continue;
                 }
 
-                // 生成代码
-                var generatedCode = GenerateFormContentCode(classDecl, classSymbol, properties, byteArrayPropertyName);
+                // 生成代码（G9-07：nullable 配置显式下传）
+                var generatedCode = GenerateFormContentCode(classDecl, classSymbol, properties, byteArrayPropertyName, configSnapshot.NullableEnable);
 
                 if (!string.IsNullOrEmpty(generatedCode))
                 {
@@ -190,12 +201,15 @@ internal class FormContentGenerator : TransitiveCodeGenerator
     /// <param name="classSymbol">类符号</param>
     /// <param name="properties">属性信息列表</param>
     /// <param name="byteArrayPropertyName">byte[] 属性名（如无则为 null）</param>
+    /// <param name="emitNullableEnable">是否发射 #nullable enable（G9-07：与主生成器同源于 GeneratorConfigSnapshot.NullableEnable，
+    /// 对齐 D-03 契约——Nullable=disable 的消费项目下 FormContent 产物不再发射）</param>
     /// <returns>生成的代码</returns>
     private string GenerateFormContentCode(
         ClassDeclarationSyntax classDecl,
         INamedTypeSymbol classSymbol,
         List<PropertyInfo> properties,
-        string? byteArrayPropertyName)
+        string? byteArrayPropertyName,
+        bool emitNullableEnable)
     {
         var namespaceName = classSymbol.ContainingNamespace?.IsGlobalNamespace == true
             ? null
@@ -204,8 +218,8 @@ internal class FormContentGenerator : TransitiveCodeGenerator
 
         var sb = new StringBuilder();
 
-        // 生成文件头
-        GenerateFileHeader(sb);
+        // 生成文件头（G9-07：参数化 nullable 配置）
+        GenerateFileHeader(sb, emitNullableEnable);
 
         // 生成命名空间和类
         if (!string.IsNullOrEmpty(namespaceName))

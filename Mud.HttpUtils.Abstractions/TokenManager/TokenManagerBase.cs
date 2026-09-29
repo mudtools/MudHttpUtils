@@ -424,8 +424,12 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             return;
         var existing = Interlocked.CompareExchange(ref _tenantBinding, tenantKey, null);
         if (existing != null && !string.Equals(existing, tenantKey, StringComparison.Ordinal))
+            // G9-02：租户键经 AppKeyValidator.ToSafeText 文本化（截断 128 + 控制字符过滤）——
+            // 与 DefaultAppManager 同口径。tenantKey 来自用户实现的 IMudAppContext.AppKey（框架不强制
+            // 再校验），原文插值进异常消息会构成日志注入面（与生成侧「静态消息」纪律对齐）。
             throw new InvalidOperationException(
-                $"令牌管理器（{MetricsKey}）已绑定租户 '{existing}'，不能用于租户 '{tenantKey}' 的请求。" +
+                $"令牌管理器（{MetricsKey}）已绑定租户 '{AppKeyValidator.ToSafeText(existing)}'，" +
+                $"不能用于租户 '{AppKeyValidator.ToSafeText(tenantKey)}' 的请求。" +
                 "跨租户复用同一管理器实例会导致令牌/凭据错配；若确属共享凭据设计，请覆写 EnforceTenantBinding 返回 false。");
     }
 

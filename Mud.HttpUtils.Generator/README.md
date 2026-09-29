@@ -89,6 +89,12 @@ services.AddMudHttpUtils("userApi", "https://api.example.com");
 services.AddWebApiHttpClient();
 ```
 
+> **⚠️ 多接口工程必读（G9-04）**：`[HttpClientApi(Timeout)]` 等接口级配置写入的是**命名客户端** `{接口名}_HttpClient`，
+> 而实现类构造函数注入的是**类型级** `IEnhancedHttpClient`（`TryAdd` 先注册者胜）。只有当对应命名客户端
+> 被注册为**默认** `IEnhancedHttpClient`（第一个注册，或后注册者带 `setAsDefault: true`）时，该接口的
+> `[HttpClientApi(Timeout)]` 配置才实际生效。多接口共存时各命名客户端的配置不按命名隔离——
+> 详见「[生成客户端命名（G7-04a）](#生成客户端命名g7-04a)」。
+
 ### 3. 使用 API
 
 ```csharp
@@ -379,6 +385,10 @@ services.AddExternalWebApiHttpClient();
 3. **⚠️ 乱序释放警示**：不要把 `UseApp`（无作用域切换）与 `using`/`BeginScope` 作用域**混用**——作用域释放时的归属判定会跳过非自身环境的回滚，导致上下文残留到非预期应用（行为已由测试锁定，修复需作用域栈方案）；长生命周期/后台任务请使用 `UseAppScope` 显式包络，作用域请始终以 `using` 在**创建它的同一执行上下文**中释放。
 
 > **生成物注释同步（G8-10）**：上表的受信路径三入口（`Current` setter / `SwitchTo(IMudAppContext)` / `BeginScope(IMudAppContext)`）已在**生成的实现类 XML 注释**中显式声明信任边界（「直接接受 `IMudAppContext` 实例，**不执行** appKey 格式校验与 `IAppAccessAuthorizer` 授权判定」），并指向 `UseAppScope` / `BeginScope(string)` 作为不可信输入的正确入口。此前该结论只落在本文档与 `UseApp`/`UseAppScope` 的注释上，实例入口无任何提示（G7-11 的落地缺口）。契约由 `ApplicationSwitchGuardContractTests.ContextBasedSwitch_DocumentsTrustBoundary` 守卫。
+
+> **威胁模型：实例即凭据（G9-10）**：`IMudAppContext` 实例本身就是应用身份的载体——**任何持有该实例的代码等价于已通过授权**。宿主不得向不可信代码暴露 `IAppManager.GetApp` 的返回值或已解析的应用上下文（否则受信路径三入口即成越权旁路）；不可信 appKey 输入一律走 `UseApp` / `UseAppScope` / `BeginScope(string)`（默认拒绝守卫）。
+
+> **空管理器的可观测性边界（G9-09）**：DI 工厂在缺省应用缺失时自动注册**空的 `IAppManager`** 并尝试 `LogWarning`；未注册日志基础设施（裸容器 / 未接 `ILoggerFactory`）时该告警**不产生任何运行时输出**——这是既定权衡：缺省应用的失败统一由 **DI 解析期异常**给出根因（「已自动注册空的 IAppManager」）与两步修复指引（G8-09），首次解析即获知；编译期 Info 诊断无法区分「宿主已正确注册」与「裸容器」，必为全员噪音，故不做。
 
 ### 令牌键与租户隔离（G7-12）
 

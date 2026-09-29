@@ -27,6 +27,13 @@ internal class InterfaceImplementationGenerator
     // 如遇内存问题，可考虑改用 IncrementalValueProvider 提供的缓存机制。
     private static readonly ConditionalWeakTable<Compilation, ConcurrentDictionary<string, INamedTypeSymbol?>> _typeResolveCache = new();
 
+    /// <summary>
+    /// G9-05：源码命名空间名单缓存（块级 + 文件级）——以 Compilation 为主键的 ConditionalWeakTable，
+    /// 键亡即释（与 <see cref="_typeResolveCache"/> 同失效语义）。避免 N 个未命中快速路径的简单类型名
+    /// 各自重复执行全 SyntaxTrees 枚举。
+    /// </summary>
+    private static readonly ConditionalWeakTable<Compilation, IReadOnlyList<string>> _sourceNamespacesCache = new();
+
     private readonly Compilation _compilation;
     private readonly InterfaceDeclarationSyntax _interfaceDecl;
     private readonly SourceProductionContext _context;
@@ -463,27 +470,48 @@ internal class InterfaceImplementationGenerator
     /// <see cref="Compilation.GetTypeByMetadataName(string)"/> 精确查找——该 API 为哈希查表，开销远低于
     /// 递归遍历命名空间成员；且源码中实际使用的自定义类型所在命名空间必然出现在 SyntaxTrees 中。
     /// 未命中时由调用方保底回退原全树递归，语义不变。
+    /// <para>
+    /// G9-05：命名空间名单按 Compilation 弱引用缓存（键亡即释，与 <see cref="_typeResolveCache"/> /
+    /// SemanticModelCache 同失效语义），修复两点——① N 个未命中快速路径的简单类型名原本各触发一次
+    /// 全 SyntaxTrees 扫描，现共享同一份名单；② 原枚举只识别块级
+    /// <see cref="NamespaceDeclarationSyntax"/>，文件级（C# 10 起主流写法 <c>namespace X;</c>）被漏掉，
+    /// 全部落到更贵的全树保底扫描。<see cref="BaseNamespaceDeclarationSyntax"/> 同时覆盖两者（判定语义不变）。
+    /// </para>
     /// </remarks>
     private INamedTypeSymbol? FindTypeInSourceNamespaces(string typeName)
     {
-        foreach (var tree in _compilation.SyntaxTrees)
+        foreach (var nsName in GetSourceNamespaceNames(_compilation))
         {
-            var root = tree.GetRoot(cancellationToken: default);
-            foreach (var nsDecl in root.DescendantNodes().OfType<NamespaceDeclarationSyntax>())
-            {
-                var nsName = nsDecl.Name.ToString();
-                if (string.IsNullOrEmpty(nsName))
-                    continue;
-
-                // 仅处理非全局命名空间（全局内部的类型走完整全名路径已在前面快速路径覆盖）
-                var type = _compilation.GetTypeByMetadataName($"{nsName}.{typeName}");
-                if (type != null)
-                    return type;
-            }
+            // 仅处理非全局命名空间（全局内部的类型走完整全名路径已在前面快速路径覆盖）
+            var type = _compilation.GetTypeByMetadataName($"{nsName}.{typeName}");
+            if (type != null)
+                return type;
         }
 
         return null;
     }
+
+    /// <summary>
+    /// G9-05：收集当前编译全部 SyntaxTrees 声明的命名空间名（块级 + 文件级，按树序去重）。
+    /// </summary>
+    private static IReadOnlyList<string> GetSourceNamespaceNames(Compilation compilation)
+        => _sourceNamespacesCache.GetValue(compilation, static c =>
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var names = new List<string>();
+            foreach (var tree in c.SyntaxTrees)
+            {
+                foreach (var nsDecl in tree.GetRoot(cancellationToken: default)
+                                           .DescendantNodes().OfType<BaseNamespaceDeclarationSyntax>())
+                {
+                    var nsName = nsDecl.Name.ToString();
+                    if (!string.IsNullOrEmpty(nsName) && seen.Add(nsName))
+                        names.Add(nsName);
+                }
+            }
+
+            return names.ToArray();
+        });
 
     private INamedTypeSymbol? FindTypeInNamespace(INamespaceSymbol ns, string typeName)
     {
@@ -890,8 +918,13 @@ internal class InterfaceImplementationGenerator
     /// </summary>
     private void DetectICurrentUserId(GeneratorContext context)
     {
-        context.ImplementsICurrentUserId = _interfaceSymbol.AllInterfaces
-            .Any(i => i.Name == "ICurrentUserId");
+        // G9-06：收紧为「元数据名精确匹配」（与 ValidateTokenManager 的 IMudAppContext 校验同口径）。
+        // 原简单名匹配（i.Name == "ICurrentUserId"）会把消费方自定义同名异源接口误判为库契约实现，
+        // 触发 CurrentUserId 成员发射，成员形态不一致时产生 CS0737 / 可空性告警等下游噪音。
+        var currentUserIdType = _compilation.GetTypeByMetadataName(HttpClientGeneratorConstants.CurrentUserIdMetadataName);
+        context.ImplementsICurrentUserId = currentUserIdType != null
+            && _interfaceSymbol.AllInterfaces.Any(i =>
+                SymbolEqualityComparer.Default.Equals(i.OriginalDefinition, currentUserIdType));
     }
 
     /// <summary>

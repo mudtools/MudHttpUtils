@@ -357,6 +357,43 @@ public class IncrementalPipelineTests
         normalSalt.Should().NotBe(forceSalt, "ForceHttpGenerator 必须改变下游失效信号，否则逃生舱静默失效");
     }
 
+    /// <summary>
+    /// [G9-08] ForceHttpGenerator 的<b>行为级</b>钉子：逃生舱生效提示诊断（HTTPCLIENT023）的出现性本身就是
+    /// 「force 生效」的端到端可观测出口——normal provider 不报，force provider 恰报一条（Info 级）。
+    /// </summary>
+    /// <remarks>
+    /// 受 Roslyn 4.11 缺少 <c>WithUpdatedAnalyzerConfigOptions</c> 限制，既有断言
+    /// （<see cref="ForceHttpGenerator_ShouldChangeSaltValue"/> / <see cref="ForceFlip_ConfigSnapshotShouldDiffer"/>）
+    /// 只能覆盖「salt 值翻转 + 快照值不等」（值级，Roslyn 等价性语义保证值不等 ⇒ Modified，但未直接断言）。
+    /// 本用例补行为级出口。Roslyn 升级提供 WithUpdatedAnalyzerConfigOptions 后，再补
+    /// 「同 driver 二跑 + 换 provider ⇒ 下游 Modified」的直接断言（TODO 锚点）。
+    /// </remarks>
+    [Fact]
+    public void ForcedInvalidationDiagnostic_ReportedOnlyWhenForce()
+    {
+        const string forcedInvalidationId = "HTTPCLIENT023";
+
+        // normal provider（默认配置）：不报 IncrementalCacheForcedInvalidation
+        var normalProvider = new TestAnalyzerConfigOptionsProvider(new Dictionary<string, string>());
+        var normalDriver = CreateTrackedDriver(BaseInterface, normalProvider);
+        normalDriver = normalDriver.RunGenerators(Compile(BaseInterface));
+        normalDriver.GetRunResult().Diagnostics
+            .Where(d => d.Id == forcedInvalidationId)
+            .Should().BeEmpty("默认（无 force）配置下不得出现逃生舱生效提示诊断");
+
+        // force provider：恰报一条 Info 级诊断（Location 为 None——全局诊断不挂接口位置）
+        var forceProvider = new TestAnalyzerConfigOptionsProvider(
+            new Dictionary<string, string> { ["build_property.ForceHttpGenerator"] = "true" });
+        var forceDriver = CreateTrackedDriver(BaseInterface, forceProvider);
+        forceDriver = forceDriver.RunGenerators(Compile(BaseInterface));
+        var forced = forceDriver.GetRunResult().Diagnostics
+            .Where(d => d.Id == forcedInvalidationId)
+            .ToList();
+        forced.Should().HaveCount(1, "ForceHttpGenerator=true 必须恰好产生一条端到端可观测的生效提示");
+        forced[0].Severity.Should().Be(DiagnosticSeverity.Info);
+        forced[0].Location.SourceTree.Should().BeNull("逃生舱提示为全局诊断，Location 应为 None（不挂接口位置）");
+    }
+
     // ─────────────── [G6-D / D-1 · GEN-21] 实验：provider 实例敏感性（决策门） ───────────────
 
     /// <summary>
