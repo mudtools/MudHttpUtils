@@ -14,22 +14,14 @@ namespace Mud.HttpUtils;
 /// 实现此接口以将令牌持久化到分布式缓存、数据库或其他存储介质中，
 /// 从而在应用重启或跨实例部署时保持令牌状态。
 /// <para>
-/// <b>TMR-12 契约定性</b>：此接口为独立持久化契约，当前<b>不被</b> <see cref="ITokenManager"/> 管线消费
-/// （管理器使用 <see cref="ITokenCache{T}"/> 进行内存级缓存）。如需多实例共享令牌，
-/// 请实现 <see cref="ITokenCache{T}"/> 并注入管理器。异步令牌缓存契约列入 v2 提案。
-/// </para>
-/// <para>
-/// <b>R-P3-04（已废弃）</b>：该契约与令牌管线脱节 —— 注册一个 <c>ITokenStore</c> 实现
-/// <b>不会</b>让令牌获得持久化或跨实例共享能力（管理器只认 <see cref="ITokenCache{T}"/>），
-/// 这构成"看起来生效、实则空转"的静默误解。故标记 <see cref="ObsoleteAttribute"/>：
-/// 新代码请实现 <see cref="ITokenCache{T}"/>；已有实现的宿主可继续使用（属性为警告级），
-/// 并会由 <c>ValidateMudHttpAppManagement</c> 在启动期给出显式告警。
+/// <b>分层定位</b>：本接口是<b>持久化 SPI（Durable，可跨进程/跨实例）</b>，与进程内缓存契约
+/// <see cref="ITokenCache{T}"/>（Volatile，管理器直接消费）是互补层次而非替代关系。
+/// 仅注册本接口的实现<b>不会</b>自动让管理器获得持久化能力 —— 持久化能力须经桥接器
+/// <c>TokenStoreBackedTokenCache&lt;T&gt;</c>（Client 程序集）接入管理器管线；
+/// 进程内缓存场景请实现 <see cref="ITokenCache{T}"/>。
+/// 已注册但未接入管理器的存储会由 <c>ValidateMudHttpAppManagement</c> 在启动期给出提示（EventId 191）。
 /// </para>
 /// </remarks>
-[Obsolete(
-    "ITokenStore 不参与 ITokenManager 令牌管线（管理器只消费 ITokenCache<T>）。" +
-    "如需持久化 / 跨实例共享令牌，请实现 ITokenCache<T> 并注入管理器。",
-    error: false)]
 public interface ITokenStore
 {
     /// <summary>

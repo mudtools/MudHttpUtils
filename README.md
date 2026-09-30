@@ -465,8 +465,8 @@ IUserTokenManager      // 用户令牌管理
 ITokenProvider         // Token 提供器（统一封装 Token 获取逻辑）
 ICurrentUserContext     // 当前用户上下文（线程安全的用户 ID 传播，替代 CurrentUserId 属性）
 TokenRequest           // Token 请求参数（TokenManagerKey, UserId, Scopes）
-ITokenStore            // 令牌持久化存储契约
-IUserTokenStore        // 用户级令牌持久化存储契约
+ITokenStore            // 令牌持久化存储契约（持久化 SPI，与缓存契约互补，见下方分层说明）
+IUserTokenStore        // 用户级令牌持久化存储契约（持久化 SPI，支持按用户隔离）
 TokenManagerBase          // 令牌管理器抽象基类（并发安全刷新，支持 MetricsKey 覆写）
 UserTokenManagerBase      // 用户令牌管理器抽象基类（并发安全刷新）
 TokenTypes                // 令牌类型常量（TenantAccessToken、UserAccessToken 等）
@@ -474,6 +474,28 @@ MemoryTokenStore          // 内存令牌存储默认实现（ITokenStore）
 MemoryUserTokenStore      // 内存用户令牌存储默认实现（IUserTokenStore）
 MemoryEncryptedTokenStore // 内存加密令牌存储默认实现（IEncryptedTokenStore）
 DefaultFormContent        // 默认表单内容实现（IFormContent）
+```
+
+> **持久化 vs 缓存（分层定位）**：`ITokenStore` 家族是**持久化 SPI**（跨进程/跨实例，全异步），`ITokenCache<T>` 是**进程内缓存契约**（全同步，管理器直接消费）—— 两者互补不互替。**仅注册 `ITokenStore` 不会自动让令牌获得持久化能力**：持久化须经 `TokenStoreBackedTokenCache<T>`（内存镜像 + 异步写穿 + `HydrateAsync` 水合）桥接进入管理器管线；进程内缓存场景请实现 `ITokenCache<T>` 并注入管理器。已注册但未接入管理器的存储会在启动期收到 EventId 191 提示。加密只在同一读写链路做一层（store 层加密装饰或缓存层 `EncryptedTokenCache<T>` 二选一）。选型决策表见「令牌存储与缓存选型指南」。
+
+##### 令牌存储与缓存选型指南
+
+| 需求场景 | 选型 | 说明 |
+|---|---|---|
+| 纯进程内缓存（单实例、重启即失） | `ConcurrentDictionaryTokenCache<T>`（默认，租户） / `MemoryCacheTokenCache<T>`（需要绝对+滑动过期与驱逐回调，用户级默认） | 两者能力差异见下表；过期判定口径统一归管理器管线 |
+| 跨进程 / 跨实例持久化（Redis / DB） | 自定义 `ITokenStore` / `IUserTokenStore`（全异步 SPI）+ `TokenStoreBackedTokenCache<T>` 桥接 | 仅注册 store 无效（启动期 EventId 191 提示）；桥接器负责镜像 / 写穿 / 水合 |
+| store 已加密 | store 层实现 `IEncryptedTokenStore`（如下游自建加密装饰器） | 桥接器构造期检测并告警；**不得**再套 `EncryptedTokenCache<T>`（密文套密文） |
+| store 未加密但需要静态加密 | 缓存层套 `EncryptedTokenCache<T>`（`ITokenCache<string>` 为内层） | 仅适用于"无持久化"的纯内存链路 |
+| 多实例强一致（2.2+） | 实现桥接器的 `IAsyncTokenCache<T>` 真穿透路径 | 方案 B 的镜像在多实例下有滞后，异步契约是根治路径 |
+
+两个进程内缓存的差异（防 C9 静默失效）：
+
+| 能力 | `ConcurrentDictionaryTokenCache<T>` | `MemoryCacheTokenCache<T>` |
+|---|---|---|
+| 绝对 / 滑动过期 | ❌ no-op（S1-5 起带一次性 Debug 诊断） | ✅ |
+| 驱逐回调 | ❌ no-op | ✅ |
+| Compact | ✅ LRU（按最后访问） | ✅（BCL Compact + 影子索引对账） |
+| 过期判定 | 归管理器管线（`TokenExpiryPolicy`） | 缓存自身 + 管线双重 |
 
 // 实现自定义令牌管理器
 public class MyTokenManager : TokenManagerBase

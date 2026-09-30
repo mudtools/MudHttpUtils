@@ -13,13 +13,17 @@ namespace Mud.HttpUtils;
 /// 用户级令牌持久化存储契约，支持按用户标识隔离令牌数据。
 /// </summary>
 /// <remarks>
-/// <b>TMR-12 契约定性</b>：此接口为独立持久化契约，当前<b>不被</b> <see cref="ITokenManager"/> 管线消费
-/// （管理器使用 <see cref="ITokenCache{T}"/> 进行内存级缓存）。如需多实例共享令牌，
-/// 请实现 <see cref="ITokenCache{T}"/> 并注入管理器。异步令牌缓存契约列入 v2 提案。
+/// <b>分层定位</b>：此接口为用户级持久化契约（持久化 SPI，支持按用户隔离），与进程内缓存契约
+/// <see cref="ITokenCache{T}"/>（管理器直接消费）互补；持久化能力经桥接器
+/// <c>TokenStoreBackedTokenCache&lt;T&gt;</c>（Client 程序集）接入管理器管线。
+/// <para>
+/// <b>调用方规则</b>：判定对象为 <see cref="IUserTokenStore"/> 后，<b>只允许</b>使用带
+/// <c>userId</c> 参数的成员 —— 继承自 <see cref="ITokenStore"/> 的 7 个无 <c>userId</c> 成员
+/// <b>语义未定义</b>（合法实现可抛 <see cref="NotSupportedException"/>，也可委托内层租户存储，
+/// 两种口径在生态中并存）。通用代码必须先经 <c>is</c> 探测并遵守本规则。
+/// </para>
 /// </remarks>
-#pragma warning disable CS0618 // R-P3-04：本类型刻意继续支持已废弃的存储契约（废弃只针对新代码引用）。
 public interface IUserTokenStore : ITokenStore
-#pragma warning restore CS0618
 {
     /// <summary>
     /// 异步获取指定用户和令牌类型的访问令牌。

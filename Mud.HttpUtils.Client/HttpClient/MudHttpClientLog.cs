@@ -844,9 +844,21 @@ internal static partial class MudHttpClientLog
 
     private static readonly Action<ILogger, string, Exception?> s_tokenStoreRegistrationIgnored =
         LoggerMessage.Define<string>(LogLevel.Warning, new EventId(191, nameof(TokenStoreRegistrationIgnored)),
-            "已注册 {Store}，但 ITokenStore / IEncryptedTokenStore 不参与令牌管线（管理器只消费 ITokenCache<T>）—— 该注册不会让令牌获得持久化或跨实例共享能力；如需持久化请实现 ITokenCache<T> 并注入管理器。");
+            "已注册 {Store}（令牌持久化 SPI），但其尚未接入管理器管线 —— 仅注册存储不会让令牌获得持久化或跨实例共享能力；持久化能力须经 TokenStoreBackedTokenCache<T> 桥接进入管理器，进程内缓存请实现 ITokenCache<T> 并注入管理器。");
     public static void TokenStoreRegistrationIgnored(ILogger logger, string store)
         => s_tokenStoreRegistrationIgnored(logger, store, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_tokenStoreBridgeDoubleEncryptionDetected =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(192, nameof(TokenStoreBridgeDoubleEncryptionDetected)),
+            "TokenStoreBackedTokenCache 检测到内层存储 {Store} 已启用加密（IEncryptedTokenStore.IsEncryptionEnabled = true）—— 同一读写链路只允许一层加密，请勿再叠加 EncryptedTokenCache<T>，否则将形成密文套密文（解密顺序耦合、失败面翻倍）。");
+    public static void TokenStoreBridgeDoubleEncryptionDetected(ILogger logger, string store)
+        => s_tokenStoreBridgeDoubleEncryptionDetected(logger, store, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_tokenStoreBridgeWriteSkippedForMissingTtl =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(193, nameof(TokenStoreBridgeWriteSkippedForMissingTtl)),
+            "令牌写穿跳过访问令牌写入（StoreKey={Key}）：值适配器与 Set 均未提供过期时长 —— 为防止 store 以无界 TTL 滞留令牌（过期口径唯一判定点在管线），本次仅刷新令牌字段被写穿。请检查值适配器是否从令牌过期字段推导 ExpiresInSeconds。");
+    public static void TokenStoreBridgeWriteSkippedForMissingTtl(ILogger logger, string key)
+        => s_tokenStoreBridgeWriteSkippedForMissingTtl(logger, key, null);
 
     private static readonly Action<ILogger, string, Exception?> s_tokenRecoverySkippedDuringRefresh =
         LoggerMessage.Define<string>(LogLevel.Debug, new EventId(186, nameof(TokenRecoverySkippedDuringRefresh)),

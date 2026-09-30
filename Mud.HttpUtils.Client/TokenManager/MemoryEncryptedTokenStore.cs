@@ -25,19 +25,18 @@ namespace Mud.HttpUtils;
 /// </remarks>
 /// <example>
 /// <code>
-/// // 注册到依赖注入容器
+/// // 注册到依赖注入容器（持久化 SPI 的加密装饰 —— 同一读写链路只允许一层加密：
+/// // 已用本类时，缓存层不要再套 EncryptedTokenCache&lt;T&gt;，反之亦然）
 /// services.AddSingleton&lt;IEncryptionProvider, AesEncryptionProvider&gt;();
 /// services.AddSingleton&lt;IEncryptedTokenStore, MemoryEncryptedTokenStore&gt;();
-/// 
+///
 /// // 使用存储（加密/解密完全透明）
 /// var store = serviceProvider.GetRequiredService&lt;IEncryptedTokenStore&gt;();
 /// await store.SetAccessTokenAsync("TenantAccessToken", "sensitive_token", 3600);
 /// var token = await store.GetAccessTokenAsync("TenantAccessToken"); // 自动解密返回
 /// </code>
 /// </example>
-#pragma warning disable CS0618 // R-P3-04：本类型刻意继续支持已废弃的存储契约（废弃只针对新代码引用）。
 public class MemoryEncryptedTokenStore : MemoryTokenStore, IEncryptedTokenStore
-#pragma warning restore CS0618
 {
     private readonly IEncryptionProvider _encryptionProvider;
 

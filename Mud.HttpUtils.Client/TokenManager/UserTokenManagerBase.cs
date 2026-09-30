@@ -303,6 +303,13 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
         var cacheKey = cacheKeyOverride ?? userId!;
 
+        // S2-2（治理方案）：异步读穿透探测（镜像未命中直达 store），与租户路径同构；非异步缓存零影响
+        var probedInfo = await GetUserTokenValidThroughAsync(cacheKey, cancellationToken).ConfigureAwait(false);
+        if (probedInfo != null)
+        {
+            return probedInfo.AccessToken;
+        }
+
         var cachedInfo = GetUserTokenFromCache(cacheKey);
         if (IsUserTokenValid(cachedInfo))
         {
@@ -316,6 +323,11 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         // P2.2（TK-05/09/24）从键控锁表获取用户锁，retire 协议保证互斥（SR-M1 后按复合键隔离）。
         using (var releaser = await _userLockTable.AcquireAsync(cacheKey, cancellationToken).ConfigureAwait(false))
         {
+            // S2-2：锁内二次探测 —— 等待锁期间其他实例写入 store 的新令牌经读穿透直接命中
+            probedInfo = await GetUserTokenValidThroughAsync(cacheKey, cancellationToken).ConfigureAwait(false);
+            if (probedInfo != null)
+                return probedInfo.AccessToken;
+
             cachedInfo = GetUserTokenFromCache(cacheKey);
             if (IsUserTokenValid(cachedInfo))
                 return cachedInfo!.AccessToken;
@@ -948,6 +960,20 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     {
         _userTokenCache.TryGet(userId, out var tokenInfo);
         return tokenInfo;
+    }
+
+    /// <summary>
+    /// S2-2（治理方案）：用户级异步读穿透探测 —— 缓存实现 <see cref="IAsyncTokenCache{UserTokenInfo}"/>
+    /// 时经 <see cref="IAsyncTokenCache{UserTokenInfo}.GetAsync"/> 读取（桥接器实现下：镜像未命中直达 store），
+    /// 经 <see cref="IsUserTokenValid"/> 判定后返回；非异步缓存同步返回 null（ValueTask 同步路径）。
+    /// </summary>
+    private async ValueTask<UserTokenInfo?> GetUserTokenValidThroughAsync(string cacheKey, CancellationToken cancellationToken)
+    {
+        if (_userTokenCache is not IAsyncTokenCache<UserTokenInfo> asyncCache)
+            return null;
+
+        var info = await asyncCache.GetAsync(cacheKey, cancellationToken).ConfigureAwait(false);
+        return IsUserTokenValid(info) ? info : null;
     }
 
     /// <summary>

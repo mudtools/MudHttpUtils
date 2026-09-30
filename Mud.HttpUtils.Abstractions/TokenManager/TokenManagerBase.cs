@@ -227,6 +227,15 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
         var scopeKey = GetScopeKey(scopes);
 
+        // S2-2（治理方案）：异步缓存能力探测 —— 命中 IAsyncTokenCache<T>（如 TokenStoreBackedTokenCache<T> 桥接器）
+        // 时经 GetAsync 读穿透（镜像未命中时直达 store），消除"冷启动必须先水合"的限制与多实例镜像滞后。
+        // 非异步缓存：探测同步返回 null（ValueTask 同步路径），行为与此前完全一致。
+        var probedToken = await TryGetValidTokenThroughAsync(scopeKey, cancellationToken).ConfigureAwait(false);
+        if (probedToken != null)
+        {
+            return probedToken.AccessToken!;
+        }
+
         // TM-02 修复：使用 TryGetValidToken 合并 IsTokenValid + TryGet 为单次查找，避免冗余的双字典访问
         if (TryGetValidToken(scopeKey, out var fastToken))
         {
@@ -238,6 +247,13 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         {
             if (_disposed)
                 throw new ObjectDisposedException(GetType().Name);
+
+            // S2-2：锁内二次探测 —— 等待锁期间其他实例/其他作用域写入 store 的新令牌经读穿透直接命中
+            probedToken = await TryGetValidTokenThroughAsync(scopeKey, cancellationToken).ConfigureAwait(false);
+            if (probedToken != null)
+            {
+                return probedToken.AccessToken!;
+            }
 
             if (TryGetValidToken(scopeKey, out var lockedToken))
             {
@@ -307,7 +323,17 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
             if (_disposed)
                 throw new ObjectDisposedException(GetType().Name);
 
-            _tokenCache.TryRemove(scopeKey, out var removed);
+            // S2-2：异步缓存经 RemoveAsync 穿透删除（桥接器实现下失效同步落到持久层，防 C6）
+            CredentialToken? removed;
+            if (_tokenCache is IAsyncTokenCache<CredentialToken> asyncCache)
+            {
+                removed = await asyncCache.RemoveAsync(scopeKey, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                _tokenCache.TryRemove(scopeKey, out removed);
+            }
+
             if (removed == null || string.IsNullOrEmpty(removed.AccessToken))
                 return TokenResult.Empty;
 
@@ -721,18 +747,39 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         if (!_tokenCache.TryGet(scopeKey, out var entry))
             return false;
 
+        if (!IsCredentialTokenUsable(entry))
+            return false;
+
+        token = entry;
+        return true;
+    }
+
+    /// <summary>
+    /// S2-2（治理方案）：异步读穿透探测 —— 当缓存实现 <see cref="IAsyncTokenCache{T}"/> 时，
+    /// 经 <see cref="IAsyncTokenCache{T}.GetAsync"/> 读取（桥接器实现下：镜像未命中直达 store），
+    /// 有效则返回；否则返回 null。非异步缓存同步返回 null（ValueTask 同步完成路径，无分配）。
+    /// 有效性判定与 <see cref="TryGetValidToken"/> 严格同源（P1.3/P2.4：TokenExpiryPolicy + TTL 感知阈值）。
+    /// </summary>
+    private async ValueTask<CredentialToken?> TryGetValidTokenThroughAsync(string scopeKey, CancellationToken cancellationToken)
+    {
+        if (_tokenCache is not IAsyncTokenCache<CredentialToken> asyncCache)
+            return null;
+
+        var entry = await asyncCache.GetAsync(scopeKey, cancellationToken).ConfigureAwait(false);
+        return IsCredentialTokenUsable(entry) ? entry : null;
+    }
+
+    /// <summary>
+    /// 凭据令牌可用性判定（TryGetValidToken 与 S2 异步探测共用的单一实现）。
+    /// P1.3（TK-04）有效期判定委托 TokenExpiryPolicy；P2.4 TTL 感知阈值钳位。
+    /// </summary>
+    private bool IsCredentialTokenUsable(CredentialToken? entry)
+    {
         if (entry == null || string.IsNullOrEmpty(entry.AccessToken) || entry.Expire <= 0)
             return false;
 
-        // P1.3（TK-04）收敛：有效期判定统一委托 TokenExpiryPolicy，保证与 CleanupExpiredTokens 严格一致
-        // P2.4（TK-04）TTL 感知阈值：短 TTL 令牌的有效提前量被钳位为 min(configuredThreshold, ttl/2)
         var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-        if (TokenExpiryPolicy.IsValid(entry.IssuedAt, entry.Expire, now, ExpireThresholdSeconds))
-        {
-            token = entry;
-            return true;
-        }
-        return false;
+        return TokenExpiryPolicy.IsValid(entry.IssuedAt, entry.Expire, now, ExpireThresholdSeconds);
     }
 
     private void CleanupExpiredTokens(object? state)

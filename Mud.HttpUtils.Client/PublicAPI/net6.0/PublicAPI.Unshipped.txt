@@ -5,3 +5,36 @@ Mud.HttpUtils.OAuth2Options.RestrictOAuth2EndpointsToPublicAddresses.get -> bool
 Mud.HttpUtils.OAuth2Options.RestrictOAuth2EndpointsToPublicAddresses.set -> void
 override Mud.HttpUtils.StandardOAuth2TokenManager.Dispose(bool disposing) -> void
 static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpOAuth2TokenManager(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Mud.HttpUtils.OAuth2Options!>? configureOptions = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.Clear() -> void
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.Compact(double percentage) -> void
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.Count.get -> int
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.Dispose() -> void
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.DroppedCompensationCount.get -> int
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.HydrateAsync(System.Func<string!, string!>? storeKeyToCacheKey = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.HydrateEntryAsync(string! cacheKey, string! tokenType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.HydrateUserAsync(string! userId, System.Func<string!, string!>? tokenTypeToCacheKey = null, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.HydrateUserEntryAsync(string! cacheKey, string! userId, string! tokenType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<bool>!
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.IsInnerStoreEncrypted.get -> bool
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.Keys.get -> System.Collections.Generic.IEnumerable<string!>!
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.PendingCompensationCount.get -> int
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.PendingWriteThroughCount.get -> int
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.RetryFailedWritesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<int>!
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.Set(string! key, T? value) -> void
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.Set(string! key, T? value, System.TimeSpan? absoluteExpirationRelativeToNow, System.TimeSpan? slidingExpiration, System.Action<string!>? postEvictionCallback = null) -> void
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.TokenStoreBackedTokenCache(Mud.HttpUtils.ITokenStore! innerStore, System.Func<T?, Mud.HttpUtils.TokenStoreValue?>! valueAdapter, System.Func<Mud.HttpUtils.TokenStoreValue, T?>! valueFactory, System.Func<string!, string!>? storeKeyMapper = null, bool ownsInnerStore = false, Microsoft.Extensions.Logging.ILogger? logger = null) -> void
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.TokenStoreBackedTokenCache(Mud.HttpUtils.IUserTokenStore! innerUserStore, System.Func<string!, (string! UserId, string! TokenType)>! userKeyMapper, System.Func<T?, Mud.HttpUtils.TokenStoreValue?>! valueAdapter, System.Func<Mud.HttpUtils.TokenStoreValue, T?>! valueFactory, bool ownsInnerStore = false, Microsoft.Extensions.Logging.ILogger? logger = null) -> void
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.TryGet(string! key, out T? value) -> bool
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.TryRemove(string! key, out T? removed) -> bool
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.WriteThroughFailures.get -> long
+Mud.HttpUtils.TokenStoreValue
+Mud.HttpUtils.TokenStoreValue.AccessToken.get -> string?
+Mud.HttpUtils.TokenStoreValue.ExpiresInSeconds.get -> long
+Mud.HttpUtils.TokenStoreValue.RefreshToken.get -> string?
+Mud.HttpUtils.TokenStoreValue.TokenStoreValue() -> void
+Mud.HttpUtils.TokenStoreValue.TokenStoreValue(string? accessToken, string? refreshToken, long expiresInSeconds = 0) -> void
+static Mud.HttpUtils.TokenStoreBackedTokenCache<T>.DefaultUserKeyMapper(string! cacheKey) -> (string! UserId, string! TokenType)
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.GetAsync(string! key, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<T?>
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.RemoveAsync(string! key, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<T?>
+Mud.HttpUtils.TokenStoreBackedTokenCache<T>.SetAsync(string! key, T? value, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask

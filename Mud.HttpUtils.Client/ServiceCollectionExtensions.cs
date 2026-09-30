@@ -1782,18 +1782,19 @@ public static class HttpClientServiceCollectionExtensions
                 "多应用管理接线不完整：\n" + string.Join("\n", errors.Select((e, i) => $"  {i + 1}. {e}")));
         }
 
-        // R-P3-04：已废弃的存储注册检查 —— 以 Warning 提示（不是错误：宿主可能确实在自建流水线中使用它）。
+        // 治理方案 S0-3：已注册但未接入管理器管线的存储注册检查 —— 以 Warning 提示（不是错误：宿主可能确实在自建流水线中使用它）。
         WarnIfUnusedTokenStoreRegistered(serviceProvider);
     }
 
     /// <summary>
-    /// R-P3-04：检测"注册了已废弃的令牌存储但令牌管线并不消费"的静默误解。
+    /// 检测"已注册令牌存储（持久化 SPI）但尚未接入管理器管线"的状态并给出接入指引。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <c>ITokenStore</c> / <c>IEncryptedTokenStore</c> / <c>IUserTokenStore</c> 均<b>不参与</b>
-    /// <see cref="ITokenManager"/> 管线（管理器只消费 <c>ITokenCache&lt;T&gt;</c>）。
-    /// 宿主注册它们通常是出于"让令牌持久化 / 跨实例共享"的期待，而实际效果为空转 ⇒ 必须显式告警。
+    /// <c>ITokenStore</c> / <c>IEncryptedTokenStore</c> / <c>IUserTokenStore</c> 是<b>持久化 SPI</b>，
+    /// 管理器管线直接消费的是 <c>ITokenCache&lt;T&gt;</c>；持久化能力须经桥接器
+    /// <c>TokenStoreBackedTokenCache&lt;T&gt;</c> 接入。宿主注册存储通常出于
+    /// "让令牌持久化 / 跨实例共享"的期待 —— 若只注册而未接入桥接器，实际效果为空转 ⇒ 必须显式提示。
     /// </para>
     /// <para>刻意不抛异常：该类型仍可能被宿主自己的代码或自建流水线使用，阻断启动属过度反应。</para>
     /// </remarks>
@@ -1802,10 +1803,8 @@ public static class HttpClientServiceCollectionExtensions
         string? registeredStoreName;
         try
         {
-#pragma warning disable CS0618 // R-P3-04：本检查的目的正是发现这两个已废弃契约的误注册，故必须引用它们。
             registeredStoreName = serviceProvider.GetService<ITokenStore>()?.GetType().Name
                 ?? serviceProvider.GetService<IEncryptedTokenStore>()?.GetType().Name;
-#pragma warning restore CS0618
             registeredStoreName ??= serviceProvider.GetService<IUserTokenStore>()?.GetType().Name;
         }
         catch

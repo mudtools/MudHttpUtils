@@ -7,6 +7,7 @@
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Mud.HttpUtils.Client.Tests;
 
@@ -243,6 +244,80 @@ public class AppManagementRegistrationTests
 
         // Assert — 全部注册时不抛异常
         act.Should().NotThrow();
+    }
+
+    #endregion
+
+    #region TokenStoreRegistrationWarning（治理方案 S0-3 / S1-4：EventId 191 路径此前 0 覆盖）
+
+    [Fact]
+    public void ValidateMudHttpAppManagement_TokenStoreRegisteredWithoutBridge_EmitsWarning191()
+    {
+        // Arrange —— 全部必需项就绪，但注册了未接入管线的 ITokenStore（持久化 SPI）
+        var services = new ServiceCollection();
+        services.AddMudHttpAppContextHolder();
+        services.AddSingleton<IAppManager<IMudAppContext>, DefaultAppManager<IMudAppContext>>();
+        services.AddSingleton<IAppAccessAuthorizer, TestAuthorizer>();
+        services.AddSingleton<ITokenStore, MemoryTokenStore>();
+        var capturingFactory = new CapturingLoggerFactory();
+        services.AddSingleton<ILoggerFactory>(capturingFactory);
+        var sp = services.BuildServiceProvider();
+
+        // Act
+        var act = () => sp.ValidateMudHttpAppManagement();
+
+        // Assert —— 不阻断启动，但给出"已注册但未接入管理器"的 Warning（EventId 191）
+        act.Should().NotThrow();
+        capturingFactory.Logger.Records.Should().Contain(r =>
+            r.EventId.Id == 191
+            && r.Level == LogLevel.Warning
+            && r.FormattedMessage.Contains("MemoryTokenStore")
+            && r.FormattedMessage.Contains("TokenStoreBackedTokenCache"), "告警语义必须指向接入指引而非'已废弃'");
+    }
+
+    [Fact]
+    public void ValidateMudHttpAppManagement_NoTokenStoreRegistered_DoesNotEmitWarning191()
+    {
+        var services = new ServiceCollection();
+        services.AddMudHttpAppContextHolder();
+        services.AddSingleton<IAppManager<IMudAppContext>, DefaultAppManager<IMudAppContext>>();
+        services.AddSingleton<IAppAccessAuthorizer, TestAuthorizer>();
+        var capturingFactory = new CapturingLoggerFactory();
+        services.AddSingleton<ILoggerFactory>(capturingFactory);
+        var sp = services.BuildServiceProvider();
+
+        sp.ValidateMudHttpAppManagement();
+
+        capturingFactory.Logger.Records.Should().NotContain(r => r.EventId.Id == 191);
+    }
+
+    private sealed record CapturedLogRecord(EventId EventId, LogLevel Level, string FormattedMessage);
+
+    private sealed class CapturingLogger : ILogger
+    {
+        public List<CapturedLogRecord> Records { get; } = new();
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            => Records.Add(new CapturedLogRecord(eventId, logLevel, formatter(state, exception)));
+    }
+
+    private sealed class CapturingLoggerFactory : ILoggerFactory
+    {
+        public CapturingLogger Logger { get; } = new();
+
+        public void AddProvider(ILoggerProvider provider)
+        {
+        }
+
+        public ILogger CreateLogger(string categoryName) => Logger;
+
+        public void Dispose()
+        {
+        }
     }
 
     #endregion

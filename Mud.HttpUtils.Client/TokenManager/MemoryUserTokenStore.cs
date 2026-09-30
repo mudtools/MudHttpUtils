@@ -31,10 +31,11 @@ namespace Mud.HttpUtils;
 /// </remarks>
 /// <example>
 /// <code>
-/// // 注册到依赖注入容器
+/// // 注册到依赖注入容器（用户级持久化 SPI；仅注册不会让管理器获得持久化能力，
+/// // 组合用法经 TokenStoreBackedTokenCache&lt;T&gt; 桥接进入管理器管线）
 /// services.AddSingleton&lt;IUserTokenStore, MemoryUserTokenStore&gt;();
-/// 
-/// // 使用存储
+///
+/// // 使用存储（必须使用带 userId 的重载 —— 无 userId 成员的语义未定义）
 /// var store = serviceProvider.GetRequiredService&lt;IUserTokenStore&gt;();
 /// await store.SetAccessTokenAsync("user123", "UserAccessToken", "access_token", 3600);
 /// var token = await store.GetAccessTokenAsync("user123", "UserAccessToken");

@@ -29,18 +29,17 @@ namespace Mud.HttpUtils;
 /// </remarks>
 /// <example>
 /// <code>
-/// // 注册到依赖注入容器
+/// // 注册到依赖注入容器（持久化 SPI —— 跨进程/跨实例场景；进程内缓存请实现 ITokenCache&lt;T&gt;，
+/// // 二者组合经 TokenStoreBackedTokenCache&lt;T&gt; 桥接进入管理器管线）
 /// services.AddSingleton&lt;ITokenStore, MemoryTokenStore&gt;();
-/// 
+///
 /// // 使用存储
 /// var store = serviceProvider.GetRequiredService&lt;ITokenStore&gt;();
 /// await store.SetAccessTokenAsync("TenantAccessToken", "access_token_value", 3600);
 /// var token = await store.GetAccessTokenAsync("TenantAccessToken");
 /// </code>
 /// </example>
-#pragma warning disable CS0618 // R-P3-04：本类型刻意继续支持已废弃的存储契约（废弃只针对新代码引用）。
 public class MemoryTokenStore : ITokenStore
-#pragma warning restore CS0618
 {
     private readonly ConcurrentDictionary<string, TokenEntry> _store = new(StringComparer.OrdinalIgnoreCase);
 

@@ -15,6 +15,9 @@
 	</PropertyGroup>
 	<ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
 		<PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="8.0.0" />
+		<!-- S2（治理方案）：IAsyncTokenCache<T> 契约使用 ValueTask —— ns2.0 无 in-box ValueTask，
+		     显式直参（不得依赖 M.E.* 的传递引用，防上游依赖图变化击穿公共 API） -->
+		<PackageReference Include="System.Threading.Tasks.Extensions" Version="4.5.4" />
 		<PackageReference Include="System.Diagnostics.DiagnosticSource" Version="8.0.1" />
 	</ItemGroup>
 	<ItemGroup Condition="'$(TargetFramework)' == 'net6.0' or '$(TargetFramework)' == 'net7.0'">

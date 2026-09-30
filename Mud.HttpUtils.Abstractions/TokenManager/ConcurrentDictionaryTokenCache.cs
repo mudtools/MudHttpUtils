@@ -26,6 +26,9 @@ public class ConcurrentDictionaryTokenCache<T> : ITokenCache<T> where T : class
     private readonly ConcurrentDictionary<string, CacheEntry> _cache = new();
     private volatile bool _disposed;
 
+    // S1-5（C9）：静默 no-op 诊断一次性标志（跨实例去重，静态即可）
+    private static int s_expirationDiagnosticEmitted;
+
     /// <summary>
     /// 缓存条目，包含值和最后访问时间。
     /// </summary>
@@ -80,10 +83,24 @@ public class ConcurrentDictionaryTokenCache<T> : ITokenCache<T> where T : class
 
     /// <inheritdoc />
     /// <remarks>
-    /// ConcurrentDictionary 实现不支持过期策略和驱逐回调，此方法等同于 <see cref="Set(string, T)"/>。
+    /// ConcurrentDictionary 实现不支持过期策略和驱逐回调，此方法等同于 <see cref="Set(string, T)"/>（S1-5：带诊断）。
+    /// 传入过期策略 / 驱逐回调时，本实现仍为 no-op，但会输出一次性 Debug 诊断，
+    /// 提示调用方"以为设了滑动/绝对过期、实际静默失效"的隐患（C9）——
+    /// 需要过期与回调语义的场景请改用 <see cref="MemoryCacheTokenCache{T}"/>。
     /// </remarks>
     public void Set(string key, T? value, TimeSpan? absoluteExpirationRelativeToNow, TimeSpan? slidingExpiration, Action<string>? postEvictionCallback = null)
     {
+        // S1-5（C9）：诊断静默 no-op —— 语义保持不变（仍为无过期写入），仅消除"静默失效面"。
+        // 一次性：static 标志去重，避免热路径刷屏；Debug 通道：库内不引入日志依赖，宿主调试期可见。
+        if (Volatile.Read(ref s_expirationDiagnosticEmitted) == 0
+            && (absoluteExpirationRelativeToNow.HasValue || slidingExpiration.HasValue || postEvictionCallback != null)
+            && Interlocked.CompareExchange(ref s_expirationDiagnosticEmitted, 1, 0) == 0)
+        {
+            System.Diagnostics.Debug.WriteLine(
+                $"[Mud.HttpUtils] {nameof(ConcurrentDictionaryTokenCache<T>)}.Set 收到过期策略 / 驱逐回调参数，" +
+                "该实现不支持（no-op）。需要过期与回调语义请改用 MemoryCacheTokenCache<T>（C9 / S1-5）。");
+        }
+
         // HC-04 修复：Dispose 后不再允许写入
         if (_disposed)
             return;

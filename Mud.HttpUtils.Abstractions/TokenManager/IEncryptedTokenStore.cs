@@ -16,23 +16,14 @@ namespace Mud.HttpUtils;
 /// 当安全要求较高时（如存储 OAuth2 令牌、用户访问令牌等），应使用此接口替代 <see cref="ITokenStore"/>。
 /// 实现类应使用 <see cref="IEncryptionProvider"/> 或其他加密机制确保令牌在存储介质中的安全性。
 /// <para>
-/// <b>TMR-12 契约定性</b>：此接口为独立持久化契约，当前<b>不被</b> <see cref="ITokenManager"/> 管线消费
-/// （管理器使用 <see cref="ITokenCache{T}"/> 进行内存级缓存，加密包装由 <c>EncryptedTokenCache&lt;T&gt;</c> 承担）。
-/// 如需多实例共享令牌，请实现 <see cref="ITokenCache{T}"/> 并注入管理器。异步令牌缓存契约列入 v2 提案。
-/// </para>
-/// <para>
-/// <b>R-P3-04（已废弃）</b>：与 <see cref="ITokenStore"/> 同理 —— 加密令牌缓存的现行能力由
-/// <c>EncryptedTokenCache&lt;T&gt;</c> + <see cref="IEncryptionProvider"/> 承担（见
-/// <c>UserTokenManagerBase</c> 的加密构造函数），本契约不参与管线。
+/// <b>分层定位</b>：本接口是持久化 SPI 的加密标记 —— <see cref="IsEncryptionEnabled"/> 供诊断
+/// 与组合校验观测，声明"存储介质上的数据已加密"。它与缓存层加密（<c>EncryptedTokenCache&lt;T&gt;</c>）
+/// 是两个层次，**同一读写链路只允许其中一层加密**：持久化场景经桥接器
+/// <c>TokenStoreBackedTokenCache&lt;T&gt;</c> 接入管理器时，桥接器会在构造期检测加密叠加并告警，
+/// 防止"密文套密文"（见 .docs/token-store-cache-architecture-review.md §5.4）。
 /// </para>
 /// </remarks>
-#pragma warning disable CS0618 // R-P3-04：派生接口刻意继续支持旧契约（废弃只针对新代码引用）。
-[Obsolete(
-    "IEncryptedTokenStore 不参与 ITokenManager 令牌管线；加密令牌缓存由 EncryptedTokenCache<T> + IEncryptionProvider 承担。" +
-    "如需持久化 / 跨实例共享令牌，请实现 ITokenCache<T> 并注入管理器。",
-    error: false)]
 public interface IEncryptedTokenStore : ITokenStore
-#pragma warning restore CS0618
 {
     /// <summary>
     /// 获取一个值，指示此存储实例是否已启用加密。
