@@ -180,7 +180,8 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 | 接口                  | 说明                                                                            |
 | --------------------- | ------------------------------------------------------------------------------- |
 | `IMudAppContext`      | 应用上下文，封装 `IEnhancedHttpClient`、Token 管理器和 `GetService<T>` 服务解析 |
-| `IAppContextSwitcher` | 多应用切换，继承 `IAppContextHolder`，自身成员 `UseApp(string)`、`UseDefaultApp()`、`BeginScope(string appKey)`、`GetTokenAsync()`（并经 `IAppContextHolder` 获得 `Current { get; init; }` / `SwitchTo` / `BeginScope(IMudAppContext)`） |
+| `IAppScopeSwitcher`   | **推荐入口（SW-01）**：不可信 appKey 面，继承 `IAppContextHolder`，自身成员 `UseAppScope(string appKey)`、`UseDefaultAppScope()`（均返回 `IDisposable`，`using` 自动归还上下文，且强制格式校验 + 授权判定 + 默认拒绝）。不含 `GetTokenAsync` ⇒ Default 与 TokenManager 模式均可用；**与 `IAppContextSwitcher` 平行为两面，不是继承关系** |
+| `IAppContextSwitcher` | 多应用切换（历史入口 + 令牌能力），继承 `IAppContextHolder`，自身成员 `UseApp(string)`、`UseDefaultApp()`、`BeginScope(string appKey)`、`GetTokenAsync()`（并经 `IAppContextHolder` 获得 `Current { get; init; }` / `SwitchTo` / `BeginScope(IMudAppContext)`）。**仅 TokenManager 模式可完整实现**（含 `GetTokenAsync`）；仅需作用域式切换时请改用 `IAppScopeSwitcher` |
 | `IAppContextHolder`   | 应用上下文持有器，提供 `Current` 属性（只读 + `SwitchTo` 方法运行时切换）和 `BeginScope(IMudAppContext)` 方法（如 `AsyncLocalAppContextSwitcher`） |
 | `IAsyncInitializable` | 异步初始化接口，`RegisterAppAsync` 等场景用于延迟初始化应用上下文              |
 | `IAppManager<T>`      | 多应用管理器，提供按 AppKey 获取上下文、注册/移除应用、配置变更通知、默认应用切换的能力        |
@@ -192,7 +193,7 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 >
 > **`IAppAccessAuthorizer` 为必注册项（MT-02 / BC-18）**：生成代码的 `UseApp(appKey)` / `BeginScope(appKey)` / `UseAppScope(appKey)` 在**未注册授权器时直接抛 `InvalidOperationException`**（默认拒绝，取代此前的静默放行——后者允许调用方凭请求参数中的 `appKey` 切换到任意租户应用并读取其令牌）。多租户宿主请注册业务授权器；单应用 / 完全受信 / 迁移过渡场景请**显式**注册 `AllowAllAppAccessAuthorizer` 以表明放行意图。可用 `AddMudHttpAppManagementStartupValidation()` 把该检查前移到启动期（`MudHttpAppManagementOptions.RequireAppAccessAuthorizer = true` 时缺失即阻断启动）。
 >
-> **上下文归还约束（MT-19）**：`UseApp(appKey)` / `SwitchTo(...)` 是**无作用域**切换，**不会自动归还**上下文。长生命周期宿主（后台服务、单例编排、`IAsyncEnumerable` 未逐段开作用域等）应优先使用 **`UseAppScope(appKey)`** / `BeginScope(appKey)` / `UseDefaultAppScope()` 并配合 `using`，否则后续请求可能串到错误的应用并读取到该应用的令牌。
+> **上下文归还约束（MT-19 / SW-01）**：`UseApp(appKey)` / `SwitchTo(...)` 是**无作用域**切换，**不会自动归还**上下文。长生命周期宿主（后台服务、单例编排、`IAsyncEnumerable` 未逐段开作用域等）应优先使用 **`UseAppScope(appKey)`** / `UseDefaultAppScope()`（经 `IAppScopeSwitcher`）并配合 `using`，否则后续请求可能串到错误的应用并读取到该应用的令牌。`BeginScope(appKey)` 与 `UseAppScope` 语义等价，属历史命名，团队应统一到 `UseAppScope`。
 >
 > **`IAppContextHolder.BeginScope` 归属约束**：返回的 `IDisposable` 必须在其创建的异步流程内释放。跨执行上下文释放（例如在别的 `Task.Run` 中释放）不会被识别为本作用域的还原点，以免覆盖其它流程的合法上下文写入。
 >

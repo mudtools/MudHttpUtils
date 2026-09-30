@@ -14,6 +14,14 @@ namespace Mud.HttpUtils;
 /// 通常由源码生成器生成的类实现。纯状态操作（<see cref="IAppContextHolder.Current"/>、
 /// <see cref="IAppContextHolder.BeginScope(IMudAppContext)"/>）由 <see cref="IAppContextHolder"/> 提供。
 /// </para>
+/// <para>
+/// <b>推荐替代（SW-01）</b>：若仅需"按 appKey 切换并自动归还上下文"，请改用
+/// <see cref="IAppScopeSwitcher"/>（声明 <c>UseAppScope</c> / <c>UseDefaultAppScope</c>，
+/// 不含 <c>GetTokenAsync</c>，在 Default 与 TokenManager 模式下均可用）。
+/// <see cref="UseApp"/> / <see cref="UseDefaultApp"/> / <see cref="BeginScope(string)"/> 为历史入口，
+/// 推荐一律改用 <see cref="IAppScopeSwitcher"/> 的对应方法（无作用域切换不会自动归还上下文，
+/// 长生命周期宿主下存在上下文残留风险）。
+/// </para>
 /// </summary>
 public interface IAppContextSwitcher : IAppContextHolder
 {

@@ -5,6 +5,8 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using System.Reflection;
+
 namespace Mud.HttpUtils.Generator.Tests;
 
 /// <summary>
@@ -77,6 +79,47 @@ internal static class GeneratorCompileAssert
             string.Join("\n", deadLocals.Select(d => d.ToString())));
 
         return output;
+    }
+
+    /// <summary>
+    /// [SW-01 / I-22] 在 <see cref="RunAndAssertNoErrors(string, IEnumerable{MetadataReference}?, NullableContextOptions, LanguageVersion, string?, bool)"/> 之上，
+    /// 把「输入 + 生成产物」发射为**内存程序集**并加载，供反射断言（例如"生成类实现了某接口"）使用。
+    /// </summary>
+    /// <param name="source">被测接口源代码。</param>
+    /// <param name="extraReferences">额外元数据引用（默认 null）。</param>
+    /// <param name="nullable">nullable 上下文。</param>
+    /// <param name="languageVersion">目标语言版本。</param>
+    /// <param name="description">用例描述（用于失败消息）。</param>
+    /// <returns>已加载的生成程序集（含生成类）。</returns>
+    public static Assembly EmitAndLoad(
+        string source,
+        IEnumerable<MetadataReference>? extraReferences = null,
+        NullableContextOptions nullable = NullableContextOptions.Disable,
+        LanguageVersion languageVersion = LanguageVersion.Latest,
+        string? description = null)
+    {
+        var output = RunAndAssertNoErrors(source, extraReferences, nullable, languageVersion, description);
+        return EmitAndLoad(output, description);
+    }
+
+    /// <summary>
+    /// [SW-01 / I-22] 把编译单元发射为内存程序集并加载（要求无 Error 级诊断）。
+    /// </summary>
+    /// <param name="compilation">待发射的编译单元（通常来自 <see cref="RunAndAssertNoErrors(string, IEnumerable{MetadataReference}?, NullableContextOptions, LanguageVersion, string?, bool)"/>）。</param>
+    /// <param name="description">用例描述（用于失败消息）。</param>
+    /// <returns>已加载的生成程序集。</returns>
+    public static Assembly EmitAndLoad(Compilation compilation, string? description = null)
+    {
+        using var stream = new MemoryStream();
+        var emitResult = compilation.Emit(stream);
+
+        emitResult.Success.Should().BeTrue(
+            $"{description ?? "生成代码"} 必须可发射为程序集；错误：" +
+            string.Join("\n", emitResult.Diagnostics
+                .Where(d => d.Severity == DiagnosticSeverity.Error)
+                .Select(d => d.ToString())));
+
+        return Assembly.Load(stream.ToArray());
     }
 
     /// <summary>

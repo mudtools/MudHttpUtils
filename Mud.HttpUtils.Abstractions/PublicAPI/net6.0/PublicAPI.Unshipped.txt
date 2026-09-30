@@ -11,6 +11,9 @@ Mud.HttpUtils.TokenRecoveryOptions.BufferingMode.get -> Mud.HttpUtils.RequestBod
 Mud.HttpUtils.TokenRecoveryOptions.BufferingMode.set -> void
 Mud.HttpUtils.TokenRecoveryOptions.RefreshWaitHardTimeoutSeconds.get -> double
 Mud.HttpUtils.TokenRecoveryOptions.RefreshWaitHardTimeoutSeconds.set -> void
+Mud.HttpUtils.IAppScopeSwitcher
+Mud.HttpUtils.IAppScopeSwitcher.UseAppScope(string! appKey) -> System.IDisposable!
+Mud.HttpUtils.IAppScopeSwitcher.UseDefaultAppScope() -> System.IDisposable!
 Mud.HttpUtils.IAsyncTokenCache<T>
 Mud.HttpUtils.IAsyncTokenCache<T>.GetAsync(string! key, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<T?>
 Mud.HttpUtils.IAsyncTokenCache<T>.RemoveAsync(string! key, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<T?>

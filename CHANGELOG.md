@@ -4,6 +4,81 @@
 
 ---
 
+## 2.0.11（多应用切换 API 收敛 S7-A，2026-09-30）
+
+> 本轮主题：**收敛"多应用切换"的抽象面与推荐入口**，并修正一处**不可编译的修复指引**。
+> 编号体系 `SW-01`/`SW-04`/`SW-05`/`SW-13`，批次 `S7-A`。**无破坏性变更**（纯 additive + 文案）。
+> 方案见 `.docs/多应用切换-API收敛-Bug修复与功能完善方案.md`（v1.1）。
+
+#### 新增（Added）
+
+- **`IAppScopeSwitcher` 接口（SW-01）**：新增 `public interface IAppScopeSwitcher : IAppContextHolder`，声明
+  `IDisposable UseAppScope(string appKey)` 与 `IDisposable UseDefaultAppScope()`。
+  - 补齐了一处**抽象面缺口**：这两个方法此前**只存在于生成类上**，不在任何接口上，导致按接口编程（含
+    `IAppManager.GetWebApi<IAppContextSwitcher>`）的调用者**只能拿到被文档标注"不推荐"的无作用域 `UseApp`**。
+  - 与 `IAppContextSwitcher` **平行**（都扩展 `IAppContextHolder`）而非继承：`IAppScopeSwitcher` 不含 `GetTokenAsync`，
+    因此在 **Default 模式与 TokenManager 模式都可用**；需要取令牌能力时仍用 `IAppContextSwitcher`（仅 TokenManager 模式）。
+  - 采用 additive 路线（不向既有接口增成员）：`PublicAPI.Shipped.txt` 已非空且 `netstandard2.0` 不支持默认接口方法，
+    向既有接口增成员会破坏第三方实现者。
+- **生成类自动附加实现 `IAppScopeSwitcher`（SW-01）**：当接口（含**间接**继承）已继承 `IAppContextSwitcher`
+  且**非 HttpClient 模式**时，生成类的继承列表追加 `global::Mud.HttpUtils.IAppScopeSwitcher`
+  （生成类本就无条件发射 `UseAppScope`/`UseDefaultAppScope`，签名一致，无需新增成员生成代码）。
+  门控刻意收窄，避免给全部生成类额外挂接口（接口膨胀）；HttpClient 模式不追加（该模式不发射任何切换成员）。
+
+#### 修复（Fixed）
+
+- **`DefaultAppManager` 的修复指引不可编译（SW-05）**：未注册切换器工厂时的异常文案原为
+  `请通过 appManager.RegisterSwitcherFactory<Xxx>(ctx => new Xxx(ctx)) 注册工厂委托。`
+  —— 工厂委托只有一个入参（`Func<TAppContext, TContextSwitcher>`），而生成类（默认模式）构造函数有 **3 个必需参数**
+  （`appContext` / `appContextHolder` / `executor`），照抄该示例**必然编译失败**。
+  现文案不再给出不可编译示例，改为指向推荐路径（DI 解析切换器 + `UseAppScope`/`IAppScopeSwitcher`），
+  并说明"仅当宿主自持该实例且能自行提供全部构造依赖时"才应使用工厂委托。
+
+#### 文档（Docs）
+
+- **"未注册 `IAppAccessAuthorizer`" 表述统一（SW-04/SW-13）**：`Client/README.md` 原写"为 `null` 时不执行授权判定
+  （仅存在性校验）"，与"默认拒绝"的既有实现（`MT-02`/`BC-18`）字面冲突。现统一为
+  "为 `null` 时生成代码按 appKey 切换**直接抛 `InvalidOperationException`**（默认拒绝，接线缺陷而非业务拒绝）"。
+  > 复核订正：`AppManagementStartupValidator` **早已**校验授权器缺失（含 fatal/warning 两级），本轮**不新增**任何校验机制。
+- **`Generator/README.md`「多应用切换与信任边界」**：把并列推荐的 `UseAppScope` / `BeginScope(appKey)`
+  收敛为**唯一推荐名 `UseAppScope`**，并补充 `IAppScopeSwitcher` 抽象面与"默认模式继承 `IAppContextSwitcher`
+  会落入占位并报 `HTTPCLIENT024`（Error）"的模式限制说明。
+- **`Client/README.md`「应用上下文」**：新增 `IAppScopeSwitcher` 用法示例（含 `using` 自动归还）。
+
+#### 待定（本轮未做，见方案 §4.5 / §4.8）
+
+- `UseApp` / `UseDefaultApp` / `BeginScope(string)` 的 `[Obsolete]` 标注（`S7-B`）：
+  ⚠️ **注意** `[Obsolete]` **不参与重载决议**，`BeginScope(null)` 的 CS0121 二义在标注后**依然存在**，
+  需等 `BC-27` 真正删除 `BeginScope(string)` 才消失。
+- `SW-10`（切换成员"按需发射"）**移出本轮**（与 `SW-01` 的附加实现条件冲突、属破坏性变更、
+  且会破坏"用户接口自行声明切换成员"的合法场景）。
+- `HTTPCLIENT038` / `MUD006` 两个新诊断**取消**（分别与既有 `HTTPCLIENT024`（Error）、编译器 `CS0618` 覆盖重叠）。
+
+---
+
+## 2.0.10（平台凭据脱敏词表补全，2026-09-30）
+
+> 单一改动：`SensitiveUrlRedactor` 脱敏词表补全**企业微信（Mud.Wechat）**凭据参数名（C-01）。无公开签名变化。
+
+#### 安全（Security）
+
+- **脱敏词表补全平台凭据参数名（C-01）**：`SensitiveUrlRedactor.SensitiveFieldNames` 新增
+  `corpsecret`、`suite_access_token`、`provider_access_token`、`suite_secret`、`provider_secret`、
+  `permanent_code`、`suite_ticket`。
+  企业微信官方契约把凭据**强制放在 Query**（非 Header），而这些键名既非通用 `token` / `secret` 变体、
+  也不含 `_token` 后缀 ⇒ 精确匹配词表原先未覆盖，会随 `ApiException.RequestUri`、日志与遥测 URL 明文外泄。
+  词表为单一事实源：URL query 脱敏、消息体脱敏（`MessageSanitizer`）、异常字段脱敏
+  （`DefaultSensitiveFieldExceptionRedactor`）三处同时生效。
+
+#### 兼容性（Compatibility）
+
+- 纯词表扩充：不改任何公开签名，不改变 `RedactUrlInTelemetry` 语义（该开关仍只作用于"词表外的未知参数"；
+  本次新增键属**词表命中**，故受该开关约束——其默认值为 `true`；`RegisterExtraSensitiveKey` 登记的键不受开关约束）。
+- 可观测差异仅一处：原本以明文出现在日志 / 遥测 / 异常 `RequestUri` 中的上述参数，现按 `***REDACTED***` 掩码。
+  新增回归用例 `PlatformCredentialRedactionTests`（含"不得误伤业务参数 `corp_id` / `suite_id` / `template_id` / `agentid`"）。
+
+---
+
 ## 2.0.9（安全 / 性能 / 功能完善与令牌存储架构治理，2026-09-30）
 
 > 本版本包含一轮全量安全审查的 31 项修复与完善、多项敏感信息脱敏增强、以业务错误码识别令牌失效的能力，以及令牌「存储栈 × 缓存栈」架构治理（分层定位 + 桥接器 + 异步缓存契约）。**含破坏性行为变更，升级前请先阅读「迁移说明」**。
@@ -132,6 +207,9 @@
 #### 修复（Fixed）
 
 - **继承客户端的应用切换必然抛异常**：继承自 `[HttpClientApi(IsAbstract = true)]` 基接口的生成客户端，即使已注册授权器，`UseApp` / `BeginScope` / `UseAppScope` 也必然失败（授权器未转发至基类）；现已正确传递（同时消除下游约 1184 条 CS0108）。
+  > **限定条件（SW-13 补充）**：该结论仅覆盖"两级 TokenManage 配置一致"的场景（派生类走 `override` 路径，切换来源同源）。
+  > **混合模式**（基类与派生类的 TokenManager 配置不一致）下派生类以 `public new` 隐藏基类切换成员，
+  > 经**基类引用**调用切换方法仍会走到基类实现 ⇒ 由 `HTTPCLIENT028`（Warning）警示，编译可通过但调用路径存在分叉。
 - **继承模式下的重复成员**：派生类不再重复声明基接口的 `[Header]` / `[Query]` / `[Path]` 属性（CS0108 / CS8618），`[Header]` 字符串属性改为初始化。
 - **AppContext 模式基类的派生客户端无法编译**（CS0100，构造参数重复）。
 - **生成代码其它告警**：值类型数组的恒真空过滤（CS0472）、可空路径实参判空（CS8604，保持「null 即抛异常」的运行期语义）。

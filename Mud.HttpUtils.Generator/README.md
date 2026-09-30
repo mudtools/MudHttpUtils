@@ -381,8 +381,11 @@ services.AddExternalWebApiHttpClient();
 因此：
 
 1. **受信边界**：宿主不得向不可信代码暴露 `IAppManager.GetApp` 或已解析的应用上下文——否则 `SwitchTo`/`Current` setter 成为越权旁路；
-2. **优先使用** `UseAppScope` / `BeginScope(appKey)`：`UseApp` 的无作用域切换（`SwitchTo`）在长生命周期宿主导航后**不会自动归还** AsyncLocal 上下文，后台任务 / `IAsyncEnumerable` 等场景可能串到错误应用（详见 Client README「上下文归还约束」）；
+2. **优先使用** `UseAppScope(appKey)` —— **唯一推荐入口**（抽象面：`IAppScopeSwitcher`）。`UseApp` / `UseDefaultApp` / `BeginScope(appKey)` 为历史入口，二者语义等价但取的名字不同，团队应统一到 `UseAppScope` / `UseDefaultAppScope`。`UseApp` 的无作用域切换（`SwitchTo`）在长生命周期宿主导航后**不会自动归还** AsyncLocal 上下文，后台任务 / `IAsyncEnumerable` 等场景可能串到错误应用（详见 Client README「上下文归还约束」）；
 3. **⚠️ 乱序释放警示**：不要把 `UseApp`（无作用域切换）与 `using`/`BeginScope` 作用域**混用**——作用域释放时的归属判定会跳过非自身环境的回滚，导致上下文残留到非预期应用（行为已由测试锁定，修复需作用域栈方案）；长生命周期/后台任务请使用 `UseAppScope` 显式包络，作用域请始终以 `using` 在**创建它的同一执行上下文**中释放。
+
+> **抽象面与模式限制（SW-01 / SW-08）**：`UseAppScope` / `UseDefaultAppScope` 由 `IAppScopeSwitcher` 声明（定义于 `Mud.HttpUtils.Abstractions`）。生成类在"接口已继承 `IAppContextSwitcher` 且非 HttpClient 模式"时**自动附带实现** `IAppScopeSwitcher`，使按接口编程（`IAppScopeSwitcher api = client;`）同样可以拿到安全入口；HttpClient 模式不发射任何切换成员，故不附加。
+> ⚠️ 接口在**默认模式**下继承 `IAppContextSwitcher` 时，其 `GetTokenAsync` 无法生成，将落入占位实现（运行期抛 `NotSupportedException`）并报 `HTTPCLIENT024`（Error）；该场景请改继承 `IAppScopeSwitcher`（默认模式可用），或声明 `TokenManage` 切换到 TokenManager 模式，抑或改用 `IAppContextHolder`。
 
 > **生成物注释同步（G8-10）**：上表的受信路径三入口（`Current` setter / `SwitchTo(IMudAppContext)` / `BeginScope(IMudAppContext)`）已在**生成的实现类 XML 注释**中显式声明信任边界（「直接接受 `IMudAppContext` 实例，**不执行** appKey 格式校验与 `IAppAccessAuthorizer` 授权判定」），并指向 `UseAppScope` / `BeginScope(string)` 作为不可信输入的正确入口。此前该结论只落在本文档与 `UseApp`/`UseAppScope` 的注释上，实例入口无任何提示（G7-11 的落地缺口）。契约由 `ApplicationSwitchGuardContractTests.ContextBasedSwitch_DocumentsTrustBoundary` 守卫。
 

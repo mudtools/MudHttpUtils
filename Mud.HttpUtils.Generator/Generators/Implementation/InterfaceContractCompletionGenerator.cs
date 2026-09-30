@@ -94,14 +94,16 @@ internal class InterfaceContractCompletionGenerator : ICodeFragmentGenerator
                         continue;
                     if (!EmitPropertyStub(codeBuilder, property))
                         continue;
-                    ContractPlaceholder.ReportUnsupportedMember(context, property, UnsupportedMemberReason);
+                    ContractPlaceholder.ReportUnsupportedMember(
+                        context, property, ContractPlaceholder.ResolveReason(context, property, UnsupportedMemberReason));
                     emitted = true;
                     break;
 
                 case IEventSymbol @event:
                     if (!EmitEventStub(codeBuilder, @event))
                         continue;
-                    ContractPlaceholder.ReportUnsupportedMember(context, @event, UnsupportedMemberReason);
+                    ContractPlaceholder.ReportUnsupportedMember(
+                        context, @event, ContractPlaceholder.ResolveReason(context, @event, UnsupportedMemberReason));
                     emitted = true;
                     break;
             }

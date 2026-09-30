@@ -447,7 +447,8 @@ internal class MethodGenerator : ICodeFragmentGenerator
         if (ContractPlaceholder.IsImplementedByUser(context, methodSymbol))
             return;
 
-        ContractPlaceholder.ReportUnsupportedMember(context, methodSymbol, reason);
+        ContractPlaceholder.ReportUnsupportedMember(
+            context, methodSymbol, ContractPlaceholder.ResolveReason(context, methodSymbol, reason));
         EmitUnsupportedMethodStub(codeBuilder, methodSymbol);
     }
 

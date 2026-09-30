@@ -56,7 +56,14 @@ internal static class SensitiveUrlRedactor
         // P3（M6 阶段五）：`code` / `nonce` / `address` 三个通用键名过于宽泛
         // （`code` 亦常为业务编码、`address` 亦常为网络地址），收窄为具体变体：
         "auth_code", "authorization_code", "verify_code", "sms_code", "captcha", "otp",
-        "home_address", "detail_address", "billing_address", "shipping_address"
+        "home_address", "detail_address", "billing_address", "shipping_address",
+        // C-01（Mud.Wechat 集成评审，P0-4）：企业微信把凭据强制放在 **Query**（官方契约，非 Header），
+        // 其参数名既非通用 `token`/`secret` 变体，也不含 `_token` 后缀，因此精确匹配词表必须显式列出，
+        // 否则 `corpsecret` / `suite_access_token` / `provider_access_token` 会随
+        // `ApiException.RequestUri`、日志与遥测 URL 明文外泄。本组同时被
+        // `MessageSanitizer`（消息体脱敏）与 `DefaultSensitiveFieldExceptionRedactor`（异常字段脱敏）复用。
+        "corpsecret", "suite_access_token", "provider_access_token",
+        "suite_secret", "provider_secret", "permanent_code", "suite_ticket"
     };
 
     /// <summary>

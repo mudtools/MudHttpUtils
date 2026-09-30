@@ -122,6 +122,55 @@ internal class GeneratorContext
     public void MarkMemberProvided(string memberName) => ProvidedMemberNames.Add(memberName);
 
     /// <summary>
+    /// [SW-01] 接口（含<b>间接</b>继承）是否已声明应用切换契约（<c>IAppContextSwitcher</c> 或 <c>IAppScopeSwitcher</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 生成器属 analyzer，<b>不引用</b> Mud.HttpUtils.Abstractions 程序集，故按<b>完全限定显示名</b>（含 <c>global::</c> 前缀）比对，
+    /// 避免与其它命名空间下的同名接口误匹配。判定含 <c>AllInterfaces</c>（间接继承），与 <c>SW-09</c>/令牌链路的既有口径一致。
+    /// </remarks>
+    public bool HasAppSwitchContract =>
+        HasInterfaceNamed(GlobalLegacyAppContextSwitcher) || HasAppScopeSwitcherContract;
+
+    /// <summary>
+    /// [SW-01] 接口（含间接继承）是否已声明作用域面契约 <c>IAppScopeSwitcher</c>。
+    /// </summary>
+    /// <remarks>
+    /// 为 <c>true</c> 时生成类已通过接口<b>传递</b>获得该契约，无需在继承列表重复追加（避免冗余接口项）。
+    /// </remarks>
+    public bool HasAppScopeSwitcherContract => HasInterfaceNamed(GlobalAppScopeSwitcher);
+
+    /// <summary>
+    /// [SW-08] 接口（含间接继承）是否继承了<b>旧</b>切换契约 <c>IAppContextSwitcher</c>。
+    /// </summary>
+    /// <remarks>
+    /// 该契约含 <c>GetTokenAsync</c>，<b>仅</b> TokenManager 模式能完整生成；Default / HttpClient 模式下缺失成员会落入契约补全（<c>HTTPCLIENT024</c>）。
+    /// 用于生成"请改继承 <c>IAppScopeSwitcher</c>"的场景化失败指引。
+    /// </remarks>
+    public bool HasLegacyAppContextSwitcherContract => HasInterfaceNamed(GlobalLegacyAppContextSwitcher);
+
+    /// <summary><c>global::Mud.HttpUtils.IAppContextSwitcher</c> 的完全限定显示名常量。</summary>
+    private const string GlobalLegacyAppContextSwitcher = "global::Mud.HttpUtils.IAppContextSwitcher";
+
+    /// <summary><c>global::Mud.HttpUtils.IAppScopeSwitcher</c> 的完全限定显示名常量。</summary>
+    private const string GlobalAppScopeSwitcher = "global::Mud.HttpUtils.IAppScopeSwitcher";
+
+    /// <summary>
+    /// 判定接口（含间接继承）是否继承指定完全限定名的接口。
+    /// </summary>
+    /// <param name="fullyQualifiedName">接口的完全限定显示名（含 <c>global::</c> 前缀）。</param>
+    /// <returns>存在该基接口时返回 <c>true</c>。</returns>
+    private bool HasInterfaceNamed(string fullyQualifiedName)
+    {
+        foreach (var candidate in InterfaceSymbol.AllInterfaces)
+        {
+            if (candidate.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == fullyQualifiedName)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// 接口符号的特性列表，在构造函数中一次性计算并缓存。
     /// 避免在 <see cref="GetOrAnalyzeMethod"/> 和 <see cref="DetectFeatures"/> 中重复调用
     /// <c>INamedTypeSymbol.GetAttributes()</c> 产生多次分配。

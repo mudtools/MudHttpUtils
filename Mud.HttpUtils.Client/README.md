@@ -84,7 +84,7 @@ var file = await httpClient.DownloadLargeAsync(request, "download.bin",
 | `RequestInterceptors` | `IEnumerable<IHttpRequestInterceptor>?` | `null` | 请求拦截器集合 |
 | `ResponseInterceptors` | `IEnumerable<IHttpResponseInterceptor>?` | `null` | 响应拦截器集合 |
 | `SensitiveDataMasker` | `ISensitiveDataMasker?` | `null` | 敏感数据掩码器 |
-| `AppAccessAuthorizer` | `IAppAccessAuthorizer?` | `null` | 应用切换授权器；为 `null` 时不执行授权判定（仅存在性校验）。多租户场景**必须注册**（MT-02 / BC-18），否则 `UseApp`/`BeginScope` 默认拒绝 |
+| `AppAccessAuthorizer` | `IAppAccessAuthorizer?` | `null` | 应用切换授权器。**为 `null` 时生成代码按 appKey 切换直接抛 `InvalidOperationException`（默认拒绝）** —— 属接线缺陷而非业务拒绝；多租户场景**必须注册**（MT-02 / BC-18），单应用/受信场景请显式注册 `AllowAllAppAccessAuthorizer` |
 | `AllowCustomBaseUrls` | `bool` | `false` | 是否允许自定义基础 URL（可能带来 SSRF 风险，谨慎使用） |
 | `RequestBodySerialization` | `RequestBodySerializationMode` | `Default` | 请求体序列化模式（`Buffered`/`Streamed` 需 `ISynchronousContentSerializer`；条件不满足时**回退默认路径**并记一次 `Debug` 日志，EventId 166） |
 | `ExceptionRedactor` | `IExceptionRedactor?` | `null` | 异常擦除器（在异常传播前清除敏感数据） |
@@ -648,7 +648,20 @@ if (refreshService.IsStopped)
 
 ### 应用上下文
 
-> 应用上下文的接口（`IMudAppContext`、`IAppManager<T>`、`IAppContextSwitcher`）与默认管理器实现（`DefaultAppManager<T>`）定义于 `Mud.HttpUtils.Abstractions` 包。本包提供基于 `AsyncLocal` 的上下文持有器实现。
+> 应用上下文的接口（`IMudAppContext`、`IAppManager<T>`、`IAppContextHolder`、`IAppScopeSwitcher`、`IAppContextSwitcher`）与默认管理器实现（`DefaultAppManager<T>`）定义于 `Mud.HttpUtils.Abstractions` 包。本包提供基于 `AsyncLocal` 的上下文持有器实现。
+>
+> **按 appKey 切换的推荐入口是 `IAppScopeSwitcher`（SW-01）**：声明 `UseAppScope(string)` / `UseDefaultAppScope()` 并返回 `IDisposable`（`using` 自动归还上下文），且不依赖 `GetTokenAsync`，因此在 **Default 模式与 TokenManager 模式都可用**。
+> 生成类在"接口已继承 `IAppContextSwitcher`"时会自动附带实现 `IAppScopeSwitcher`，因此 `IAppScopeSwitcher api = client;` 可直接使用：
+>
+> ```csharp
+> IAppScopeSwitcher api = serviceProvider.GetRequiredService<IYourApi>();
+> using (api.UseAppScope("app-a"))
+> {
+>     await /* 该 appKey 上下文下发起请求 */;
+> }
+> ```
+>
+> 受信实例面（`IAppContextHolder.SwitchTo` / `BeginScope(IMudAppContext)`）不做授权校验，仅适用于实例来源可信的场景。
 
 | 类                          | 说明                                                                       |
 | --------------------------- | -------------------------------------------------------------------------- |
@@ -675,7 +688,7 @@ appManager.ConfigurationChanged += (sender, args) =>
 | 隔离机制 | 对应服务/Key | 注册 API | 缺失时的症状 |
 | --- | --- | --- | --- |
 | 应用上下文持有器 | `IAppContextHolder` | `AddMudHttpAppContextHolder()` | per-app 弹性隔离不可用；`DefaultHttpRequestExecutor` 无法解析当前 AppKey |
-| 应用管理器 | `IAppManager<IMudAppContext>` | `services.AddSingleton<IAppManager<IMudAppContext>, DefaultAppManager<IMudAppContext>>()` | `UseApp`/`BeginScope(appKey)` 不可用；生成代码抛 `InvalidOperationException` |
+| 应用管理器 | `IAppManager<IMudAppContext>` | `services.AddSingleton<IAppManager<IMudAppContext>, DefaultAppManager<IMudAppContext>>()` | `UseAppScope`/`BeginScope(appKey)`/`UseApp` 不可用；生成代码抛 `InvalidOperationException` |
 | per-app 弹性策略 | `IAppResiliencePolicyResolver` | `AddMudHttpAppResilience(perAppOptionsFactory)` | per-app 策略退化为全局策略 |
 | 应用切换授权器 | `IAppAccessAuthorizer` | `services.AddSingleton<IAppAccessAuthorizer, YourAuthorizer>()`；单应用/受信场景用 `AllowAllAppAccessAuthorizer` 显式放行 | **必须注册**（MT-02 / BC-18）：未注册时 `UseApp` / `BeginScope(appKey)` / `UseAppScope(appKey)` 直接抛 `InvalidOperationException`（默认拒绝） |
 | URL 验证器 | `IUrlValidator` | `AddMudHttpUrlValidator()` | 静态调用与既有行为等价；DI 注册后可按应用隔离白名单 |

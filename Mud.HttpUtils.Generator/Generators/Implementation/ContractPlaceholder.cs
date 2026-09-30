@@ -47,6 +47,63 @@ internal static class ContractPlaceholder
     }
 
     /// <summary>
+    /// [SW-08] 解析占位成员的失败原因：对"接口继承了应用切换契约，但当前模式无法完整生成其成员"的场景，
+    /// 用<b>精确的迁移指引</b>替换通用原因，避免用户只看到"生成器不支持该成员形态"而无从下手。
+    /// </summary>
+    /// <param name="context">生成上下文。</param>
+    /// <param name="member">未被实现的接口成员。</param>
+    /// <param name="defaultReason">通用原因（非切换契约场景原样返回）。</param>
+    /// <returns>用于 <c>HTTPCLIENT024</c> 消息的原因文本。</returns>
+    /// <remarks>
+    /// <para>
+    /// 仅当<b>被补全成员确实来自切换契约接口</b>（<c>IAppContextSwitcher</c> / <c>IAppScopeSwitcher</c> /
+    /// <c>IAppContextHolder</c>）时才给出切换相关的指引 —— 否则接口自身声明的其它不可生成成员（如事件）
+    /// 会被误导为该契约问题。
+    /// </para>
+    /// <para>
+    /// 不新增诊断 ID：该场景本已由既有 <c>HTTPCLIENT024</c>（Error）拦截，新增描述符会带来同处双 Error 噪音，
+    /// 且需要额外的发布跟踪（<c>RS2008</c>）与 README 诊断表同步。
+    /// </para>
+    /// </remarks>
+    public static string ResolveReason(GeneratorContext context, ISymbol member, string defaultReason)
+    {
+        var declaringName = member.ContainingType
+            ?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+        var fromSwitchContract = declaringName is GlobalLegacyAppContextSwitcher
+            or GlobalAppScopeSwitcher
+            or GlobalAppContextHolder;
+
+        if (!fromSwitchContract)
+            return defaultReason;
+
+        if (context.HasHttpClient)
+        {
+            return "接口继承了应用切换契约，但 HttpClient 模式不生成任何应用切换成员。" +
+                   "请移除 HttpClient 模式参数（改用 Default 模式并继承 IAppScopeSwitcher），" +
+                   "或改继承 IAppContextHolder 仅承载上下文持有能力";
+        }
+
+        if (!context.HasTokenManager)
+        {
+            return "接口继承了 IAppContextSwitcher，但 Default 模式不生成 GetTokenAsync。" +
+                   "请改继承 IAppScopeSwitcher（Default 模式可用），或声明 TokenManage 切换到 TokenManager 模式；" +
+                   "如仅需上下文持有能力，可改用 IAppContextHolder";
+        }
+
+        return defaultReason;
+    }
+
+    /// <summary><c>global::Mud.HttpUtils.IAppContextSwitcher</c> 的完全限定显示名。</summary>
+    private const string GlobalLegacyAppContextSwitcher = "global::Mud.HttpUtils.IAppContextSwitcher";
+
+    /// <summary><c>global::Mud.HttpUtils.IAppScopeSwitcher</c> 的完全限定显示名。</summary>
+    private const string GlobalAppScopeSwitcher = "global::Mud.HttpUtils.IAppScopeSwitcher";
+
+    /// <summary><c>global::Mud.HttpUtils.IAppContextHolder</c> 的完全限定显示名。</summary>
+    private const string GlobalAppContextHolder = "global::Mud.HttpUtils.IAppContextHolder";
+
+    /// <summary>
     /// 判断接口成员是否<b>已由使用方在 partial 实现类中手写实现</b>。
     /// </summary>
     /// <param name="context">生成上下文。</param>

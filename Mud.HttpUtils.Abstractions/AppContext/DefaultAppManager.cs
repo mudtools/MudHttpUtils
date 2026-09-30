@@ -359,10 +359,18 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
             return (TContextSwitcher)factory(context);
         }
 
+        // [SW-05] 原文案给出的「单参构造 lambda」示例必然编译失败：
+        // 生成的实现类（默认模式）构造函数有 3 个必需参数（appContext / appContextHolder / executor），
+        // 而工厂委托只有 1 个入参（Func<TAppContext, TContextSwitcher>）。
+        // 此处不再给出不可编译示例，改为指向推荐路径（DI 注入 + 作用域式切换），
+        // 并说明仅当宿主能自行提供全部构造依赖时才应使用工厂委托（本 API 为 AOT 友好替代反射的低层接缝）。
         throw new InvalidOperationException(
             $"无法创建类型 {switcherType.Name} 的实例，因为未注册对应的工厂委托。" +
-            $"请通过 appManager.RegisterSwitcherFactory<{switcherType.Name}>(ctx => new {switcherType.Name}(ctx)) 注册工厂委托。" +
-            $"使用工厂委托而非反射可以提升性能并支持 AOT 兼容。");
+            $"推荐做法：直接从 DI 解析该切换器（serviceProvider.GetRequiredService<{switcherType.Name}>()），" +
+            $"并使用 UseAppScope(appKey) / UseDefaultAppScope()（或 IAppScopeSwitcher）进行作用域式切换。" +
+            $"仅当宿主自持该切换器实例且能自行提供其全部构造依赖时，才使用 " +
+            $"RegisterSwitcherFactory<{switcherType.Name}>(context => ...) 注册工厂委托" +
+            $"（委托只有一个入参 TAppContext，须自行补齐其余依赖；使用工厂委托可避免反射并支持 AOT）。");
     }
 
     /// <inheritdoc/>
