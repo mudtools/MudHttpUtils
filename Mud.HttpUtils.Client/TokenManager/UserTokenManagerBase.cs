@@ -789,6 +789,52 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     }
 
     /// <summary>
+    /// TR-02（受保护入口）仅失效指定用户（与作用域）条目的<b>访问令牌字段</b>，
+    /// 保留 RefreshToken 等其余字段 —— 供派生类实现"失效但不撤销 IdP 侧凭据"的语义使用。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 与 <see cref="InvalidateUserTokenAsync(string, CancellationToken)"/> 的"整条移除"语义<b>相对</b>：
+    /// 整条移除会把 refresh_token 一并销毁，迫使恢复降级为重新授权（本仓 401 恢复链路
+    /// <see cref="TokenRecoveryExecutor"/> 亦持同一设计原则，见 TR-02 注释）。
+    /// 与 <see cref="InvalidateCachedUserAccessToken"/> 语义一致（字段置空 + 保序写回 + 代际作废），
+    /// 差别仅在<b>镜像未命中</b>时的处置，见下。
+    /// </para>
+    /// <para>
+    /// <b>镜像未命中时仍植入"空访问令牌墓碑"</b>（这与 <see cref="InvalidateCachedUserAccessToken"/>
+    /// 的"空条目为 no-op"刻意不同）：当缓存实现具备异步读穿透能力（如
+    /// <c>TokenStoreBackedTokenCache&lt;T&gt;</c>，镜像未命中时直达持久层）时，
+    /// 不落墓碑会使持久层中<b>已被拒绝的访问令牌</b>在下一次读取时被重新复活 —— 失效实际被撤销。
+    /// 墓碑（<see cref="UserTokenInfo.AccessToken"/> 与 <see cref="UserTokenInfo.RefreshToken"/> 皆为空）
+    /// 经桥接器写穿时对持久层<b>零变更</b>（既不清 access，也不清 refresh），仅使读路径判定为无效。
+    /// </para>
+    /// </remarks>
+    /// <param name="userId">用户标识。</param>
+    /// <param name="scopes">作用域集合。空或 null 时作用于默认作用域条目（裸 userId 键）。</param>
+    protected void InvalidateUserAccessTokenInCache(string userId, string[]? scopes = null)
+    {
+        EnsureValidUserId(userId);                  // I1（R-P0-04）
+        var key = scopes is { Length: > 0 } ? GetUserCacheKey(userId, scopes) : userId;
+
+        if (_userTokenCache.TryGet(key, out var existing) && existing != null)
+        {
+            existing.AccessToken = null;
+            existing.AccessTokenExpireTime = 0;
+            existing.IssuedAt = 0;
+            UpdateUserTokenCachePreservingExpiry(key, existing);
+        }
+        else
+        {
+            // 镜像未命中：落空访问令牌墓碑，阻断读穿透把持久层中的旧访问令牌重新带回镜像。
+            // 墓碑的 RefreshToken 为空 ⇒ 桥接器不产生任何持久层写入（refresh 槽位完好）。
+            UpdateUserTokenCachePreservingExpiry(key, new UserTokenInfo { UserId = userId, OpenId = userId });
+        }
+
+        // 访问令牌已失效 ⇒ 该键任何在途刷新结果都不得写回（与租户路径 InvalidateCachedAccessToken 语义对齐）
+        BumpWriteGeneration(key);
+    }
+
+    /// <summary>
     /// TR-02 内部写入：与 <see cref="UpdateUserTokenCache"/> 相同的过期语义（绝对过期 = 剩余有效期），
     /// 但写入方为本管理器的失效操作（非刷新结果），不重置 LastRefreshedAt。
     /// </summary>

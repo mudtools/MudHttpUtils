@@ -38,3 +38,4 @@ static Mud.HttpUtils.TokenStoreBackedTokenCache<T>.DefaultUserKeyMapper(string! 
 Mud.HttpUtils.TokenStoreBackedTokenCache<T>.GetAsync(string! key, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<T?>
 Mud.HttpUtils.TokenStoreBackedTokenCache<T>.RemoveAsync(string! key, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<T?>
 Mud.HttpUtils.TokenStoreBackedTokenCache<T>.SetAsync(string! key, T? value, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+Mud.HttpUtils.UserTokenManagerBase.InvalidateUserAccessTokenInCache(string! userId, string![]? scopes = null) -> void

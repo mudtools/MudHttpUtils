@@ -4,12 +4,22 @@
 
 ---
 
-## 2.0.9（安全 / 性能 / 功能完善，2026-09-29）
+## 2.0.9（安全 / 性能 / 功能完善与令牌存储架构治理，2026-09-30）
 
-> 本版本包含一轮全量安全审查的 31 项修复与完善、多项敏感信息脱敏增强，并新增以业务错误码识别令牌失效的能力。**含破坏性行为变更，升级前请先阅读「迁移说明」**。
+> 本版本包含一轮全量安全审查的 31 项修复与完善、多项敏感信息脱敏增强、以业务错误码识别令牌失效的能力，以及令牌「存储栈 × 缓存栈」架构治理（分层定位 + 桥接器 + 异步缓存契约）。**含破坏性行为变更，升级前请先阅读「迁移说明」**。
 
 #### 新增（Added）
 
+- **存储/缓存分层定位**：`ITokenStore` / `IUserTokenStore` / `IEncryptedTokenStore` 正式定位为**持久化 SPI**（跨进程/跨实例、全异步），`ITokenCache<T>` 为**进程内缓存契约**（全同步、管理器直接消费）；三层契约的 XML 文档统一改写为分层口径，消除契约层"空转/已废弃"与实现类 `<example>` 注册示例、README 接口清单之间的自相矛盾。
+- **桥接器 `TokenStoreBackedTokenCache<T>`**：以 `ITokenCache<T>` 门面包装 `ITokenStore`（租户）/ `IUserTokenStore`（用户），让持久化能力进入管理器管线，从根上消除"宿主在管理器之外自建叠层"的结构性重复（下游的恢复 / 写穿 / 清库门控等手写桥接代码因此可裁撤）。
+  - 内存镜像（同步读，零 I/O 零阻塞）+ 异步写穿；写穿失败进入有界补偿队列（上限 1024），可经 `RetryFailedWritesAsync` 周期重放；`WriteThroughFailures` / `PendingCompensationCount` / `DroppedCompensationCount` 计数可观测。
+  - 显式水合：租户 `HydrateAsync()`（经 `GetTokenTypesAsync` 全量）、用户 `HydrateUserAsync(userId)`（`IUserTokenStore` 无枚举所有用户契约，用户维度只能按 userId 水合）、单条 `HydrateEntryAsync` / `HydrateUserEntryAsync`。
+  - 键映射显式注入且必须单射（用户维度提供 `DefaultUserKeyMapper` 处理 `userId\u001Fscope` 复合键；映射不单射 = 登出前缀扫描覆盖缺口）；值适配为显式委托（`TokenStoreValue` 字符串三元组 ↔ 强类型），零反射零序列化，AOT 安全。
+  - 写穿 TTL 从令牌自身过期字段推导（与管线判定同源，消解"store TTL 与管线阈值双重口径"），两者皆缺省则跳过访问令牌写穿（宁缺勿滥，EventId 193 提示）；`Set(key, null)` / 适配器返回 null 均为"删除该键"写穿，登出/失效同步落到持久层（防漏删）。
+  - 构造期检测内层 store 已启用加密并告警（EventId 192，防密文套密文）；`Dispose` 默认不释放容器管理的 store（如 Redis 连接，`ownsInnerStore: true` 显式开启才代管）；用户维度绝不调用 `IUserTokenStore` 继承的无 userId 成员（语义未定义，防 LSP 突变），`Clear()` 逐键删除而非清空全部用户。
+- **异步缓存契约 `IAsyncTokenCache<T>`**：派生自 `ITokenCache<T>`（netstandard2.0 无默认接口实现，纯加法），`ValueTask` 读/写/删；管理器在异步管线路径上按 `is` 能力探测（锁前 + 锁内双探测点，有效性判定与同步路径同源），命中即**真穿透**（镜像未命中直达 store 并回填，消除"必须先水合"限制与多实例镜像滞后），未命中走既有同步路径（零行为变化）。桥接器同步实现该契约；`InvalidateTokenAsync` 对异步缓存穿透删除持久层条目。
+- **启动期存储注册提示**（EventId 191）：检测"已注册（持久化 SPI）但未接入管理器管线"并给出桥接接入指引。
+- **README「令牌存储与缓存选型指南」**：场景选型决策表（纯内存 / 跨实例持久化 / 加密层选择 / 多实例强一致）+ `ConcurrentDictionaryTokenCache<T>` / `MemoryCacheTokenCache<T>` 能力对照（后者的过期参数为静默 no-op——语义不变，新增一次性 Debug 诊断防静默失效）。
 - **令牌失效判定器 `ITokenInvalidationDetector`**：注册到 `TokenRecoveryOptions.TokenInvalidationDetector` 后，令牌恢复链路在 HTTP 401 之外，还能识别以业务错误码表达令牌失效的响应（如企业微信恒返 HTTP 200 + `errcode ∈ {40014, 42001, 42007, 42009, 42011}`），识别为失效即进入与 401 一致的「失效缓存令牌 → 去重刷新 → 重试」流程，并完整继承跨主机重定向守卫、userId 一致性校验、租户绑定守卫等既有安全防线。
   - 两阶段签名：`ShouldInspect(request)` 同步预过滤（无关请求零开销）+ `IsTokenInvalidAsync(response, body, ct)` 异步判定。
   - 响应体按需捕获：仅当响应声明 Content-Length 且 ≤ `TokenRecoveryOptions.MaxCapturedResponseBodyBytes`（默认 4KB，0 = 禁用）时读流，读毕以等价可读内容替换原内容，调用方无感；声明超限 / chunked / 空体不读流，判定退化为仅 401 语义。
@@ -19,7 +29,7 @@
 - **公共观测门控 `MudHttpMeter.HasListeners`**：零监听时短路指标 tags 数组分配。
 - **新增生成器诊断**：`HTTPCLIENT037`（参数名含 "header" 但无 Header 特性，Info）、`MUDGEN301`（AOT 下流式反序列化静默降级，Warning）。
 - **`IResiliencePolicyResolver`**：解耦执行器与 Resilience 项目。
-- **新增日志事件**：`TokenRecoveryTriggeredByDetector`（EventId 184，判定器触发恢复）、`TokenInvalidationDetectionFailed`（EventId 185，判定器故障降级）。
+- **新增日志事件**：`TokenRecoveryTriggeredByDetector`（EventId 184，判定器触发恢复）、`TokenInvalidationDetectionFailed`（EventId 185，判定器故障降级）、`TokenStoreRegistrationIgnored`（EventId 191，已注册令牌存储未接入管理器的启动期提示）、`TokenStoreBridgeDoubleEncryptionDetected`（EventId 192，桥接器检测到内层 store 已启用加密）、`TokenStoreBridgeWriteSkippedForMissingTtl`（EventId 193，写穿缺 TTL 时跳过访问令牌）。
 
 #### 安全（Security）
 
@@ -58,6 +68,8 @@
 
 - 未注册判定器时，401 短路判定先于一切响应体读取，非 401 响应零额外工作——既有调用方行为不变。
 - `TokenRecoveryOptions` 新增的两个属性为非破坏性变更（引用类型属性不参与配置绑定）。
+- 令牌存储 / 缓存治理为纯加法：`ITokenStore` / `IUserTokenStore` / `IEncryptedTokenStore` 保留且不标废弃（开发态误加、未发布的 `[Obsolete]` 已于发布前撤销，实测下游升级 CS0618 由 190 条 / 13 文件归零）；`IUserTokenStore` 继承成员的语义规则（"只允许使用带 userId 重载"）已写入契约文档，无编译期影响。
+- `ConcurrentDictionaryTokenCache<T>` 的过期 / 回调 no-op 语义不变，仅新增一次性 Debug 诊断输出。
 
 #### 迁移说明（升级前必读）
 
@@ -72,6 +84,7 @@
 #### 测试（Tests）
 
 - 修复 10 处契约 / 守卫测试的仓库路径解析：改以程序集位置为锚点向上查找 `Mud.HttpUtils.slnx` 哨兵文件，不再依赖 testhost 工作目录的固定层级。
+- 新增 4 个令牌存储 / 缓存契约测试文件共 55 个测试方法 + EventId 191 守卫用例 2 个：桥接器六条契约不变量逐条固化（Keys/Count 镜像同源防登出漏删、Dispose 所有权、加密叠加检测、TTL 同源推导、失败可观测 + 补偿重放、AOT 零序列化）+ 管线端到端（刷新写穿 / 失效落 store / 免水合冷启动读穿透·租户与用户双维度）；`ConcurrentDictionaryTokenCache` / `EncryptedTokenCache` 专项契约测试（含 C9 no-op 行为锁定、密文损坏按 miss、加密失败写路径 fail-fast / 读路径 fail-open 的非对称语义）。
 
 ---
 

@@ -79,6 +79,7 @@ public class ConcurrentDictionaryTokenCacheContractTests
 
         cache.TryGet("k1", out var value).Should().BeTrue("no-op 指的是过期策略，不是写入本身");
         value!.Name.Should().Be("v1");
+        callbackInvoked.Should().BeFalse("普通写入不触发驱逐回调（回调仅在 Compact / TryRemove 驱逐时触发）");
     }
 
     [Fact]

@@ -113,6 +113,20 @@ public class EncryptedTokenCacheContractTests
         cache.Count.Should().Be(0);
     }
 
+    [Fact]
+    public void Set_EncryptFailure_Propagates_InnerCacheUntouched()
+    {
+        var (cache, inner, encryption) = Create();
+        encryption.FailEncrypt = true;   // 加密引擎故障（如密钥配置缺失）
+
+        var act = () => cache.Set("k1", new Payload { Token = "secret-1" });
+
+        // 刻意与序列化失败不同：加密故障属配置性故障，快速失败暴露问题（明文绝不落入内层缓存）；
+        // 解密侧（TryGet）仍按 miss 降级 —— 读路径 fail-open、写路径 fail-fast 的非对称语义由本用例锁定。
+        act.Should().Throw<CryptographicException>();
+        inner.Count.Should().Be(0, "明文不得在加密失败时写入内层缓存");
+    }
+
     private sealed class ThrowingJsonConverter : JsonConverter<Payload>
     {
         public override Payload? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)

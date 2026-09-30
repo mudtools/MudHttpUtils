@@ -383,6 +383,29 @@ public class TokenStoreBackedTokenCacheTests
     }
 
     [Fact]
+    public async Task UserBridge_WriteThroughFailure_IsCountedAndCompensated()
+    {
+        var userStore = new CapturingUserStore { FailWrites = true };
+        var bridge = new TokenStoreBackedTokenCache<CredentialToken>(
+            userStore,
+            TokenStoreBackedTokenCache<CredentialToken>.DefaultUserKeyMapper,
+            TenantAdapter, TenantFactory);
+
+        var act = () => bridge.Set("u1", MakeToken("u1-access", 3600));
+
+        act.Should().NotThrow("用户维度写穿失败同样不得打断管线（不变量 #5）");
+        bridge.WriteThroughFailures.Should().Be(1);
+        bridge.PendingCompensationCount.Should().Be(1);
+
+        userStore.FailWrites = false;
+        var replayed = await bridge.RetryFailedWritesAsync();
+
+        replayed.Should().Be(1);
+        bridge.PendingCompensationCount.Should().Be(0);
+        (await userStore.GetAccessTokenAsync("u1", "u1")).Should().Be("u1-access", "重放成功后持久层补齐");
+    }
+
+    [Fact]
     public async Task BackgroundWriteFault_LandsInCompensationQueue()
     {
         var store = new SlowFaultingStore();
@@ -594,6 +617,29 @@ public class TokenStoreBackedTokenCacheTests
 
         store.AccessWrites.Should().ContainSingle().Which.AccessToken.Should().Be("async-written");
         (await store.GetAccessTokenAsync("default")).Should().Be("async-written");
+    }
+
+    [Fact]
+    public async Task SetAsync_AdapterReturnsNull_DeletesStoreKey_LikeSyncSet()
+    {
+        var store = new CapturingTenantStore();
+        // 值适配器对"空访问令牌"返回 null（= 删除该键，§5.3.1 ②）
+        var bridge = new TokenStoreBackedTokenCache<CredentialToken>(
+            store,
+            token => token == null || string.IsNullOrEmpty(token.AccessToken) ? null : TenantAdapter(token),
+            TenantFactory);
+
+        // 同步路径基准：适配器 null → 写穿删除持久层
+        await store.SetAccessTokenAsync("default", "stale-1", 3600);
+        bridge.Set("default", MakeToken(string.Empty, 0));
+        store.Removes.Should().Contain("default", "同步 Set 的适配器 null = 删除该键");
+
+        // 回归（评审修正）：异步路径此前对适配器 null 静默 no-op，与同步语义分歧
+        await store.SetAccessTokenAsync("default", "stale-2", 3600);
+        await bridge.SetAsync("default", MakeToken(string.Empty, 0));
+
+        store.Removes.Should().Contain("default");
+        (await store.GetAccessTokenAsync("default")).Should().BeNull("异步路径必须同样落到持久层删除，防失效条目残留 store");
     }
 
     [Fact]

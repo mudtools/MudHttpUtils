@@ -465,7 +465,8 @@ public class TokenStoreBackedTokenCache<T> : ITokenCache<T>, IAsyncTokenCache<T>
             if (!_mirror.TryGetValue(key, out var entry))
                 continue;   // 镜像已无此键：删除意图已由删除路径自行写穿，无东西可补发
 
-            var storeValue = AdaptValue(key, entry.Value);
+            // 镜像条目仅以非 null 值创建（Set/SetAsync 的 null 分支走删除路径），此处恒非空
+            var storeValue = AdaptValue(key, entry.Value!);
             if (storeValue == null)
                 continue;
 
@@ -535,7 +536,8 @@ public class TokenStoreBackedTokenCache<T> : ITokenCache<T>, IAsyncTokenCache<T>
 
     /// <inheritdoc />
     /// <remarks>与同步 <see cref="Set(string,T,System.TimeSpan?,System.TimeSpan?,System.Action{string}?)"/> 相同的
-    /// 失效 / TTL 推导语义，但<b>等待</b>写穿完成（await 而非后台续体）；失败仍走补偿队列，不抛出。</remarks>
+    /// 失效 / TTL 推导语义（value 为 null 或值适配器返回 null 均按<b>删除该键</b>写穿），但<b>等待</b>写穿完成
+    /// （await 而非后台续体）；任何写穿失败（含删除）均走补偿队列，不抛出。</remarks>
     public async ValueTask SetAsync(string key, T? value, CancellationToken cancellationToken = default)
     {
         if (_disposed)
@@ -544,14 +546,33 @@ public class TokenStoreBackedTokenCache<T> : ITokenCache<T>, IAsyncTokenCache<T>
         if (value == null)
         {
             _mirror.TryRemove(key, out _);
-            await WriteThroughCoreAsync(key, storeValue: null, absoluteExpirationRelativeToNow: null).ConfigureAwait(false);
+            try
+            {
+                await WriteThroughCoreAsync(key, storeValue: null, absoluteExpirationRelativeToNow: null).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                HandleWriteFailure(key, ex);
+            }
             return;
         }
 
         _mirror[key] = new CacheEntry(value);
         var storeValue = AdaptValue(key, value);
         if (storeValue == null)
+        {
+            // 与同步 Set 一致（§5.3.1 ②）：值适配器返回 null = 删除该键的持久层状态，
+            // 而非静默 no-op —— 否则异步路径会让已失效条目残留在 store 中（登出/失效覆盖缺口）。
+            try
+            {
+                await WriteThroughCoreAsync(key, storeValue: null, absoluteExpirationRelativeToNow: null).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                HandleWriteFailure(key, ex);
+            }
             return;
+        }
 
         try
         {
