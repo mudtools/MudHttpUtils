@@ -498,6 +498,19 @@ Task<User> GetUserAsync([Header("X-Custom-Header")] string customValue);
 
 > **平台差异（CRLF 校验，GEN-18）**：.NET Core / .NET 5+ 的 `HttpRequestHeaders.Add` 会校验头值并拒绝含回车/换行（`\r`/`\n`）的值；但 net4x / netstandard2.0 编译的 `HttpClient` 不校验，直接透传 → 存在**头部注入**风险。为收敛平台差异，生成器对每个 Header（参数级与接口属性级、字符串型）额外发射运行期守卫 `Mud.HttpUtils.HttpHeaderValueValidator.IsValid(...)`，遇 CR/LF 立即抛 `ArgumentException`（带参数名）。该守卫对所有目标框架统一生效，与运行时 TFM 无关。
 
+> **CR/LF 防护的"三态"统一表（R-P3-05）**：同一类"值含 CR/LF"的问题在不同数据来源上采用**不同**处置策略，这是**刻意设计**而非不一致 —— 判据是"该值是否由调用方直接提供"（直接提供 ⇒ 快速失败最可诊断）与"单点脏值是否配得上让整个请求失败"（批量/派生值 ⇒ 跳过以免放大故障）。所有"跳过"分支均输出 `Debug.WriteLine` 诊断（只记头名，**不记值**，防敏感信息落日志）。
+>
+> | 数据来源 | 处分策略 | 诊断 | 理由 |
+> |---|---|---|---|
+> | `[Header]` 参数（`string`） | **抛 `ArgumentException`**（带 `nameof(参数)`） | 异常消息 | 调用方直接提供非法值 → 快速失败，附带精确参数名便于定位 |
+> | `[Header]` 参数（非 `string`） | **跳过该项** | `Debug.WriteLine`（头名） | 值由 `ToString()` / `string.Format` 派生，非法源于类型/格式；不应因派生值使请求失败 |
+> | `[Header]` 接口属性（`string`） | **抛 `ArgumentException`** | 异常消息 | 同"调用方直接提供" |
+> | `[Header]` 接口属性（非 `string`） | **跳过该头** | `Debug.WriteLine`（头名） | 同"派生值" |
+> | `[HeaderCollection]` 字典项 | **跳过该项**（不发射、不 Remove） | `Debug.WriteLine`（键名） | 批量数据来自运行期字典；单个脏项不应让整体请求失败 |
+> | 401 恢复链路的令牌注入（`TokenRecoveryExecutor`） | **返回 `false` + Warning** | 结构化日志 | 恢复链路**不得抛**（否则 401 会变成未处理异常）；由调用方返回服务端真实 401 |
+>
+> 回归护栏：`GeneratedCodeEscapeTests`、`GeneratorSnapshotCompileTests`、`HeaderCollectionBindingTests`（生成器侧）与 `TokenRecoveryDelegatingHandlerTests`（恢复链路侧）。
+
 #### Body 参数
 
 ```csharp

@@ -70,4 +70,47 @@ public sealed class TokenRecoveryContext
     /// 与取令牌路径共用模型访问器，不再两处内联同一表达式）。</para>
     /// </summary>
     public string[]? Scopes { get; set; }
+
+    /// <summary>
+    /// R-P1-04：契约级显式放行"该请求可安全重放（幂等）"。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 默认 <c>false</c>。401 恢复对非幂等方法（POST/PATCH）默认不重放，以避免重复下单 / 重复扣款等副作用；
+    /// 生成器可按接口 / 方法级声明（如具备幂等 upsert 语义的 POST）把本值写入请求属性，从而精确开洞。
+    /// </para>
+    /// <para>本标志优先级高于全局 <see cref="TokenRecoveryOptions.AllowNonIdempotentRecovery"/> 的<b>关闭</b>语义
+    /// （即：全局关闭时，逐契约放行的请求仍可重放）。</para>
+    /// </remarks>
+    public bool IsRetryAllowedExplicitly { get; set; }
+
+    /// <summary>
+    /// 从请求中读取恢复上下文（netstandard2.0 走 <c>Properties</c>；其余 TFM 走 <c>Options</c> 并兼容回读 <c>Properties</c>）。
+    /// </summary>
+    /// <remarks>
+    /// R-P1-05②：作为<b>单一实现点</b>供恢复执行器与 URL 脱敏共用，避免两处读取口径分裂。
+    /// </remarks>
+    /// <param name="request">HTTP 请求。</param>
+    /// <returns>恢复上下文；未附加时返回 null。</returns>
+    internal static TokenRecoveryContext? FromRequest(HttpRequestMessage request)
+    {
+        if (request is null)
+            return null;
+
+#if NETSTANDARD2_0
+        return request.Properties.TryGetValue(PropertyKey, out var value)
+            ? value as TokenRecoveryContext
+            : null;
+#else
+        if (request.Options.TryGetValue(new HttpRequestOptionsKey<TokenRecoveryContext>(PropertyKey), out var value))
+            return value;
+
+        // 兼容历史写入路径：旧代码可能把上下文写在已过时的 Properties 上，此处刻意保留回读。
+#pragma warning disable CS0618 // HttpRequestMessage.Properties 已过时
+        if (request.Properties.TryGetValue(PropertyKey, out var legacyValue))
+            return legacyValue as TokenRecoveryContext;
+#pragma warning restore CS0618 // HttpRequestMessage.Properties 已过时
+        return null;
+#endif
+    }
 }

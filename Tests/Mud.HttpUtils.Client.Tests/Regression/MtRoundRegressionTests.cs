@@ -113,12 +113,12 @@ public class MtRoundRegressionTests
         var table = new RefreshDedupTable(64);
 
         var tasks = Enumerable.Range(0, 16)
-            .Select(_ => table.GetOrRefreshAsync("k", async () =>
+            .Select(_ => table.GetOrRefreshAsync("k", async _ =>
             {
                 Interlocked.Increment(ref calls);
                 await Task.Delay(30);
                 return "token";
-            }, dedupWindowSeconds: 5))
+            }, dedupWindowSeconds: 5, hardTimeout: TimeSpan.FromSeconds(10)))
             .ToArray();
 
         var results = await Task.WhenAll(tasks);
@@ -135,10 +135,16 @@ public class MtRoundRegressionTests
     [Fact]
     public async Task RefreshDedupTable_FailureWithoutWaiters_ShouldNotRaiseUnobservedException()
     {
+        // 只统计**本用例**产生的未观察异常（以 sentinel 匹配）。
+        // 全局计数会被并行执行的其它用例或其它组件的任务干扰，导致与主题无关的偶发失败。
+        const string sentinel = "MT-05-unobserved-sentinel";
         var unobserved = 0;
         void Handler(object? _, UnobservedTaskExceptionEventArgs e)
         {
-            Interlocked.Increment(ref unobserved);
+            if (e.Exception?.InnerException?.Message == sentinel || e.Exception?.Message == sentinel)
+            {
+                Interlocked.Increment(ref unobserved);
+            }
             e.SetObserved();
         }
 
@@ -147,7 +153,11 @@ public class MtRoundRegressionTests
         {
             var table = new RefreshDedupTable(64);
 
-            var act = () => table.GetOrRefreshAsync("k", () => throw new InvalidOperationException("boom"), 5);
+            var act = () => table.GetOrRefreshAsync(
+                "k",
+                _ => throw new InvalidOperationException(sentinel),
+                dedupWindowSeconds: 5,
+                hardTimeout: TimeSpan.FromSeconds(10));
             await act.Should().ThrowAsync<InvalidOperationException>();
 
             // 强制回收：未被观察的任务异常会在此触发 UnobservedTaskException。
@@ -177,8 +187,9 @@ public class MtRoundRegressionTests
         {
             await table.GetOrRefreshAsync(
                 "user-" + i,
-                () => Task.FromResult<string?>("t"),
-                dedupWindowSeconds: 600);   // 窗口很长，条目不会自然过期
+                _ => Task.FromResult<string?>("t"),
+                dedupWindowSeconds: 600,    // 窗口很长，条目不会自然过期
+                hardTimeout: TimeSpan.FromSeconds(10));
         }
 
         table.Count.Should().BeLessThanOrEqualTo(limit, "MT-06：去重表必须有界（原实现无界增长）");

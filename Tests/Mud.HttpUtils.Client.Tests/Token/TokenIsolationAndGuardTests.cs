@@ -298,19 +298,49 @@ public class TokenIsolationAndGuardTests
             => await GetOrRefreshTokenAsync(new[] { scope });
     }
 
+    /// <summary>
+    /// SR-M5 + R-P2-03：常态超限（≤ 软上限 2 倍）<b>不在锁内</b>收敛，改由维护回调在锁外完成。
+    /// </summary>
     [Fact]
-    public async Task ScopeCache_OverHardLimit_ShouldCompactLru()
+    public async Task ScopeCache_OverHardLimit_ShouldDeferCompactionToMaintenance()
     {
         using var manager = new SmallCacheManager();
 
-        // 灌入 20 个未过期 scope（MaxScopeCacheSize=8）
+        // 灌入 12 个未过期 scope（MaxScopeCacheSize=8，12 ≤ 8*2 ⇒ 常态区）
+        for (var i = 0; i < 12; i++)
+        {
+            await manager.GetTokenForScopeAsync($"scope-{i}");
+        }
+
+        manager.CacheCountForTest.Should().Be(12,
+            "R-P2-03：常态超限不得在锁内做 O(n log n) 收敛（否则锁持有时间与缓存规模成正比）");
+        manager.CompactRequestedForTest.Should().BeTrue("应置下待收敛脏标记");
+
+        manager.RunMaintenanceForTest();
+
+        manager.CacheCountForTest.Should().BeLessThanOrEqualTo(8,
+            "维护回调（锁外）应把条目收敛到 ≤ MaxScopeCacheSize");
+    }
+
+    /// <summary>
+    /// R-P2-03 硬安全网：超过软上限 2 倍时（突发/滥用）仍在锁内立即收敛，防单租户打爆内存。
+    /// </summary>
+    [Fact]
+    public async Task ScopeCache_WayOverHardLimit_ShouldCompactInsideLock()
+    {
+        using var manager = new SmallCacheManager();
+
+        // 全程灌入 20 个（远超软上限 8 的 2 倍）
         for (var i = 0; i < 20; i++)
         {
             await manager.GetTokenForScopeAsync($"scope-{i}");
         }
 
-        manager.CacheCountForTest.Should().BeLessThanOrEqualTo(8,
-            "超限后清过期（全部未过期，无效）→ 强制 LRU Compact 收敛到 ≤ MaxScopeCacheSize");
+        // 硬安全网保证"锁内收敛"确实发生过：若只在锁内置脏标记（无安全网），最终计数会是 20。
+        manager.CacheCountForTest.Should().BeLessThan(20,
+            "超过软上限 2 倍时必须触发锁内收敛（否则计数会一路累到 20）");
+        manager.CacheCountForTest.Should().BeLessThanOrEqualTo(16,
+            "任何时刻都不得让条目数超过软上限的 2 倍（内存硬上限）");
     }
 
     [Fact]

@@ -63,8 +63,8 @@ internal static class MudHttpObservability
             //  - true：记录完整 URL，仍受 RedactUrlInTelemetry 约束（敏感 query 值掩码）。
             // 排障可获取完整 URI 的渠道：ApiException.RequestUri（由 IExceptionRedactor 兜底）。
             var urlForTag = MudHttpObservabilityOptions.RecordFullUrlOnSuccess
-                ? SensitiveUrlRedactor.Redact(uri.ToString())
-                : SensitiveUrlRedactor.Redact(ToSchemeHostPath(uri));
+                ? SensitiveUrlRedactor.RedactForRequest(request, uri.ToString())
+                : SensitiveUrlRedactor.RedactForRequest(request, ToSchemeHostPath(uri));
             activity.SetTag(MudHttpActivitySource.Tags.HttpUrl, urlForTag);
             // 仅绝对 URI 才有 Scheme/Host（相对 URI 在 BaseAddress 设置后由 HttpClient 解析）
             if (uri.IsAbsoluteUri)
@@ -418,12 +418,12 @@ internal static class MudHttpObservability
         MudHttpActivitySource.AddActivityEvent(
             MudHttpDiagnosticNames.DownloadStarted,
             () => new DownloadDiagnosticPayload(
-                request.Method.Method, SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()), clientName, 0, 0),
+                request.Method.Method, SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()), clientName, 0, 0),
             MudHttpDiagnosticNames.DownloadStarted,
             () => new[]
             {
                 new KeyValuePair<string, object?>("method", request.Method.Method),
-                new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.Redact(request.RequestUri?.ToString())),
+                new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString())),
                 new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
             });
     }
@@ -440,12 +440,12 @@ internal static class MudHttpObservability
             MudHttpActivitySource.AddActivityEvent(
                 MudHttpDiagnosticNames.DownloadCompleted,
                 () => new DownloadDiagnosticPayload(
-                    request.Method.Method, SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()), clientName, bytes, elapsedMs),
+                    request.Method.Method, SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()), clientName, bytes, elapsedMs),
                 MudHttpDiagnosticNames.DownloadCompleted,
                 () => new[]
                 {
                     new KeyValuePair<string, object?>("method", request.Method.Method),
-                    new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.Redact(request.RequestUri?.ToString())),
+                    new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString())),
                     new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
                     new KeyValuePair<string, object?>("bytes", bytes),
                     new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
@@ -477,12 +477,12 @@ internal static class MudHttpObservability
             MudHttpActivitySource.AddActivityEvent(
                 MudHttpDiagnosticNames.DownloadFailed,
                 () => new DownloadErrorDiagnosticPayload(
-                    request.Method.Method, SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()), clientName, elapsedMs, ex),
+                    request.Method.Method, SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()), clientName, elapsedMs, ex),
                 MudHttpDiagnosticNames.DownloadFailed,
                 () => new[]
                 {
                     new KeyValuePair<string, object?>("method", request.Method.Method),
-                    new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.Redact(request.RequestUri?.ToString())),
+                    new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString())),
                     new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
                     new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
                     new KeyValuePair<string, object?>("exception_type", ex.GetType().Name),

@@ -12,6 +12,15 @@ namespace Mud.HttpUtils;
 /// </summary>
 public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 {
+    /// <summary>
+    /// R-P2-01：由 <c>AddMudHttpOAuth2TokenManager</c> 注册的<b>命名 HttpClient</b> 名称。
+    /// </summary>
+    /// <remarks>
+    /// 宿主可经 <c>IHttpClientFactory.CreateClient(StandardOAuth2TokenManager.HttpClientName)</c> 取到同一配置的客户端，
+    /// 或在该命名客户端上追加处理器（但**不得**挂载 <see cref="TokenRecoveryDelegatingHandler"/> —— 见架构不变式 I2）。
+    /// </remarks>
+    public const string HttpClientName = "MudHttpOAuth2Token";
+
     private readonly HttpClient _httpClient;
     private readonly OAuth2Options _options;
     private readonly IOptionsMonitor<OAuth2Options>? _optionsMonitor;
@@ -182,7 +191,8 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
-                MudHttpClientLog.SecretProviderFallback(_logger, ex);
+                // R-P2-05（C4）：只记异常类型名，不记异常对象（异常消息可能内嵌密钥服务的敏感报文）。
+                MudHttpClientLog.SecretProviderFallback(_logger, ex.GetType().Name);
             }
         }
 
@@ -668,6 +678,38 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
 
         return DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds();
     }
+
+    /// <summary>
+    /// R-P2-05（C3）：释放管理器 —— 先清除客户端密钥缓存中的明文，再委托基类释放（令牌缓存 / 定时器 / 锁表）。
+    /// </summary>
+    /// <param name="disposing">是否由 <see cref="IDisposable.Dispose"/> 调用（<c>false</c> 为终结器路径）。</param>
+    /// <remarks>
+    /// <para>
+    /// <b>契约（务必保持）</b>：基类 <c>TokenManagerBase.Dispose(bool)</c> <b>不以</b> <c>_disposed</c> 早退 ——
+    /// 派生类的任何清理都必须在调用 <c>base.Dispose(disposing)</c> <b>之前</b>完成，
+    /// 且<b>无论</b>标志状态都<b>必须</b>调用 base，否则基类的定时器 / 缓存 / 锁表释放会被整体跳过。
+    /// </para>
+    /// <para>
+    /// 该区域历史上出过三次回归（TK-08 / NEW-TM-11 / SR-H1），故由
+    /// <c>TokenManagerDisposeChainTests</c> 固定三条：密钥缓存已清零、基类资源已释放、重复 Dispose 安全。
+    /// </para>
+    /// </remarks>
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            // 解除 client_secret 明文引用（幂等）；ClientSecretCache.Dispose 刻意不 Dispose 内部闸门，
+            // 故在途 GetAsync 的 Release 仍然安全。
+            _clientSecretCache.Dispose();
+        }
+
+        base.Dispose(disposing);
+    }
+
+    /// <summary>
+    /// R-P2-05 测试观测钩子：客户端密钥缓存中是否仍持有明文（释放后应为 <c>false</c>）。
+    /// </summary>
+    internal bool ClientSecretCacheHasValueForTest => _clientSecretCache.HasCachedValueForTest;
 
     /// <summary>
     /// OAuth2 令牌响应 DTO。

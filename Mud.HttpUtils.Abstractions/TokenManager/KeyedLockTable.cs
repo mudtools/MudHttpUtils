@@ -28,8 +28,22 @@ namespace Mud.HttpUtils;
 /// </remarks>
 internal sealed class KeyedLockTable : IDisposable
 {
-    /// <summary>退休分支异步退避间隔（毫秒）。SR-C1（P1.1）：消除无让步忙等自旋。</summary>
+    /// <summary>退休分支异步退避基数（毫秒）。SR-C1（P1.1）：消除无让步忙等自旋。</summary>
     private const int RetryBackoffMilliseconds = 1;
+
+    /// <summary>
+    /// R-P2-02：退休分支退避上限（毫秒）。
+    /// </summary>
+    /// <remarks>
+    /// 缺陷（现状）：固定 1ms 退避在"清理 Timer 对<b>在途刷新</b>调用 <see cref="TryRetire"/>"
+    /// （<c>TokenManagerBase</c> 的维护回调）场景下会被放大 —— 刷新最长可达
+    /// <c>RefreshTimeoutSeconds</c>（默认 30s），期间<b>每个</b>等待者约产生 3 万次
+    /// <see cref="Task.Delay(int, CancellationToken)"/> 分配与线程池唤醒。
+    /// 指数退避（1→2→4→8→16→32→50ms）把该量级压到约 <b>600 次</b>（降幅 ≈ 98%），
+    /// 而<b>不改动 retire 协议与互斥不变式</b>（原"进入等待 + 取后校验"方案因会在
+    /// <c>Waiters &gt; 0</c> 时反复取到同一 retired 条目而形成比 1ms 退避更忙的紧循环，已评审否决）。
+    /// </remarks>
+    private const int MaxRetryBackoffMilliseconds = 50;
 
     internal sealed class Entry
     {
@@ -98,10 +112,33 @@ internal sealed class KeyedLockTable : IDisposable
             // 期间所有并发等待者持续烧 CPU（近似活锁）。retire 协议的正确性前提
             // （"取到退休条目必须放弃并重取新条目"，防孤儿竞态破坏互斥）不可移除，
             // 缺陷仅在于重试无退避。OCE 经 ct 自然传播，与既有取消语义一致。
-            Interlocked.Increment(ref SpinRetries);
-            await Task.Delay(RetryBackoffMilliseconds, cancellationToken).ConfigureAwait(false);
+            var retryIndex = Interlocked.Increment(ref SpinRetries);
+            await Task.Delay(BackoffFor(retryIndex), cancellationToken).ConfigureAwait(false);
         }
     }
+
+    /// <summary>
+    /// R-P2-02：退休分支的指数退避时长（毫秒）：1, 2, 4, 8, 16, 32, 50, 50, ...
+    /// </summary>
+    /// <param name="retryIndex">累计重试序号（由 <see cref="SpinRetries"/> 提供，恒 ≥ 1）。</param>
+    /// <returns>本次退避毫秒数，上界为 <see cref="MaxRetryBackoffMilliseconds"/>。</returns>
+    /// <remarks>
+    /// 移位量封顶 6（1 &lt;&lt; 6 = 64 已超过上限），既保证上界正确也规避 <c>&gt;&gt;</c> 的溢出语义依赖。
+    /// 单次退避有界 ⇒ 与既有 <c>KeyedLockTableBackoffTests</c> 的"退避存在且有界"断言一致。
+    /// <para>internal（而非 private）：使退避<b>序列</b>可被精确断言，避免只能依赖计时推断的脆弱测试。</para>
+    /// </remarks>
+    internal static int BackoffFor(long retryIndex)
+    {
+        var shift = (int)Math.Min(retryIndex - 1, 6);
+        if (shift < 0)
+            shift = 0;
+        return Math.Min(RetryBackoffMilliseconds << shift, MaxRetryBackoffMilliseconds);
+    }
+
+    /// <summary>
+    /// R-P2-02 测试观测钩子：当前配置下的最大单次退避（毫秒），供测试断言"退避有界"而无需硬编码常量。
+    /// </summary>
+    internal static int MaxBackoffMillisecondsForTest => MaxRetryBackoffMilliseconds;
 
     /// <summary>
     /// 仅在无等待者时退休并移除；否则标记 Retired，交由最后一个 <see cref="Releaser"/> 完成移除。

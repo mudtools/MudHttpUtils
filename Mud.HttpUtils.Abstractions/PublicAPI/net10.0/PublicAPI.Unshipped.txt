@@ -1,1 +1,13 @@
 #nullable enable
+
+Mud.HttpUtils.RequestBodyBufferingMode
+Mud.HttpUtils.RequestBodyBufferingMode.Auto = 0 -> Mud.HttpUtils.RequestBodyBufferingMode
+Mud.HttpUtils.RequestBodyBufferingMode.MemoryOnly = 1 -> Mud.HttpUtils.RequestBodyBufferingMode
+Mud.HttpUtils.TokenRecoveryContext.IsRetryAllowedExplicitly.get -> bool
+Mud.HttpUtils.TokenRecoveryContext.IsRetryAllowedExplicitly.set -> void
+Mud.HttpUtils.TokenRecoveryOptions.AllowNonIdempotentRecovery.get -> bool
+Mud.HttpUtils.TokenRecoveryOptions.AllowNonIdempotentRecovery.set -> void
+Mud.HttpUtils.TokenRecoveryOptions.BufferingMode.get -> Mud.HttpUtils.RequestBodyBufferingMode
+Mud.HttpUtils.TokenRecoveryOptions.BufferingMode.set -> void
+Mud.HttpUtils.TokenRecoveryOptions.RefreshWaitHardTimeoutSeconds.get -> double
+Mud.HttpUtils.TokenRecoveryOptions.RefreshWaitHardTimeoutSeconds.set -> void

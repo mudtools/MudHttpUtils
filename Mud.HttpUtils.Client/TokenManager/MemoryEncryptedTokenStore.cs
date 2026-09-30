@@ -35,7 +35,9 @@ namespace Mud.HttpUtils;
 /// var token = await store.GetAccessTokenAsync("TenantAccessToken"); // 自动解密返回
 /// </code>
 /// </example>
+#pragma warning disable CS0618 // R-P3-04：本类型刻意继续支持已废弃的存储契约（废弃只针对新代码引用）。
 public class MemoryEncryptedTokenStore : MemoryTokenStore, IEncryptedTokenStore
+#pragma warning restore CS0618
 {
     private readonly IEncryptionProvider _encryptionProvider;
 

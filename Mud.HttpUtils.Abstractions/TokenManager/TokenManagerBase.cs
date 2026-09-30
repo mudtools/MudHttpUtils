@@ -115,7 +115,29 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// <summary>
     /// 获取作用域缓存的最大容量，默认 64。超过此容量时将清理过期条目。
     /// </summary>
-    protected virtual int MaxScopeCacheSize => 64;
+    /// <summary>
+    /// 作用域缓存条目软上限（超出后由维护定时器触发 LRU 收敛；超出 2 倍时在锁内立即收敛）。默认 <c>512</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>R-P2-03：默认值由 64 调整为 512。</b>原值 64 与 <see cref="UserTokenCacheOptions.SizeLimit"/>（默认 10000）
+    /// 相差两个数量级，在正常的多租户/多作用域负载下会持续触发收敛，使"保护机制"变成"常态开销"；
+    /// 同时 64 也未与任何真实容量预算对齐（<c>MemoryCache</c> 的条目大小按对象引用计，64 条远低于任何合理预算）。
+    /// </para>
+    /// <para>
+    /// <b>可配置方式</b>：本属性为 <c>protected virtual</c>（既有扩展点），派生类覆写即完成定制，
+    /// 例如 <c>protected override int MaxScopeCacheSize =&gt; 4096;</c>。
+    /// 刻意<b>不</b>新增公共可写属性：在热路径基类上再引入一个与覆写点语义重复的配置面，
+    /// 只会带来"两处均可设定、优先级不明"的困惑（见修复方案 §0.3.2 修订 13）。
+    /// </para>
+    /// </remarks>
+    protected virtual int MaxScopeCacheSize => 512;
+
+    /// <summary>
+    /// R-P2-03：LRU 收敛"脏标记" —— 由 <see cref="UpdateToken"/> 在<b>持锁</b>期间置位，
+    /// 由维护定时器在<b>锁外</b>（其回调自身持 <c>_cleanupLock</c>，但不持 scope 锁）消费。
+    /// </summary>
+    private int _compactRequested;
 
     /// <summary>
     /// 获取缓存令牌的最大存活时间（秒），默认 86400 秒（24 小时）。
@@ -230,9 +252,21 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                 && _recentFailures.TryGetValue(scopeKey, out var failed)
                 && failed.UntilMs > nowMs)
             {
+                // R-P3-03：抑制同样计入标准刷新指标（outcome=failure），
+                // 使"被负缓存吞掉的失败"在通用监控视图（失败率/刷新次数）中可见 ——
+                // 此前仅增专用抑制计数器，聚合面板看不到这部分失败。
+                RecordTokenRefresh(success: false, MetricsKey, elapsedMs: 0, isFallback: false);
+
                 MudHttpMeter.TokenRefreshSuppressedCounter.Add(1,
                     MudHttpMeter.FilterTags(new KeyValuePair<string, object?>[] { new("token_manager_key", MetricsKey) }));
-                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failed.Exception).Throw();
+
+                // R-P3-03：**不复用同一异常实例**。原实现用 ExceptionDispatchInfo 重抛缓存中的同一对象，
+                // 并发等待者会共享一个 Exception：其 StackTrace / Data / 内部可变状态被多方同时读写，
+                // 且栈信息指向"首次抛出的位置"，无法区分"真正失败点"与"被负缓存抑制的复用点"。
+                // 改为每次构造新异常、把原异常作为 InnerException 保留完整因果链。
+                throw new InvalidOperationException(
+                    $"令牌刷新在负缓存窗口内被抑制（ScopeKey={scopeKey}）：{failed.Exception.Message}",
+                    failed.Exception);
             }
 
             CredentialToken token;
@@ -368,9 +402,8 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     {
         if (_tokenCache.TryGet(scopeKey, out var existing) && existing != null)
         {
-            existing.RefreshToken = null;
-            existing.RefreshTokenExpire = 0;
-            _tokenCache.Set(scopeKey, existing);
+            // R-P1-07：写时复制 —— 不得原地改写已分发的实例（并发读取方可能看到 RefreshToken == null）。
+            _tokenCache.Set(scopeKey, existing.WithRefreshTokenInvalidated());
         }
     }
 
@@ -386,10 +419,9 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     {
         if (_tokenCache.TryGet(scopeKey, out var existing) && existing != null)
         {
-            existing.AccessToken = null;
-            existing.Expire = 0;
-            existing.IssuedAt = 0;
-            _tokenCache.Set(scopeKey, existing);   // 字段级保留 refresh_token
+            // R-P1-07：写时复制（字段级保留 refresh_token），避免与锁内刷新交错时
+            // 让派生类读到 RefreshToken == null 而静默降级为 client_credentials。
+            _tokenCache.Set(scopeKey, existing.WithAccessTokenInvalidated());
         }
     }
 
@@ -500,19 +532,43 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
 
         _tokenCache.Set(scopeKey, token);
 
-        // SR-M5（P3.3，D11）硬上限 LRU 收敛：超限路径从"仅清过期"升级为
-        // "清过期 → 仍超限 → 强制 LRU Compact"，阻断攻击者/失控代码以海量 scope 组合
+        // SR-M5（P3.3，D11）硬上限 LRU 收敛：阻断攻击者/失控代码以海量 scope 组合
         // 制造无界缓存+锁表膨胀（有效期内 CleanupExpiredTokens 清不掉未过期条目）。
-        if (_tokenCache.Count > MaxScopeCacheSize)
+        // R-P2-03：常态收敛<b>移出锁内</b> —— 本方法处于【持有 scope 锁】的关键区内，而
+        // CleanupExpiredTokens（全表遍历）与 Compact（OrderBy 全排序）在条目多时是 O(n log n)，
+        // 会把锁持有时间放大到与缓存规模成正比，进而放大其它等待者的排队时间。
+        // 现在：常态只置脏标记（O(1)），由维护定时器在锁外完成；
+        // 仅在超过软上限 2 倍时（突发/滥用）才在锁内立即收敛 —— 宁可短暂拉长锁持有时间，也不让内存失控。
+        var limit = MaxScopeCacheSize;
+        if (_tokenCache.Count > limit)
         {
-            CleanupExpiredTokens(null);
-            if (_tokenCache.Count > MaxScopeCacheSize)                    // 清过期后仍超限 → 强制 LRU
+            if (_tokenCache.Count > (long)limit * 2)
             {
-                var excess = _tokenCache.Count - MaxScopeCacheSize;
-                var ratio = Math.Max(excess / (double)_tokenCache.Count, 0.05);   // 下限 5%，避免 0 取整
-                _tokenCache.Compact(ratio);
+                CleanupExpiredTokens(null);                               // 清过期（顺带消费脏标记）
+                if (_tokenCache.Count > limit)                            // 仍超限 → 强制 LRU
+                {
+                    CompactTo(limit);
+                }
+            }
+            else
+            {
+                Volatile.Write(ref _compactRequested, 1);                 // 交给维护定时器在锁外收敛
             }
         }
+    }
+
+    /// <summary>
+    /// R-P2-03：把缓存条目按 LRU 压缩到 <paramref name="limit"/> 以下。
+    /// </summary>
+    /// <param name="limit">目标条目上限（须 &gt; 0）。</param>
+    private void CompactTo(int limit)
+    {
+        var excess = _tokenCache.Count - limit;
+        if (excess <= 0)
+            return;
+
+        var ratio = Math.Max(excess / (double)_tokenCache.Count, 0.05);   // 下限 5%，避免 0 取整
+        _tokenCache.Compact(ratio);
     }
 
     private async Task<CredentialToken> RefreshTokenWithRetryCoreAsync(
@@ -717,6 +773,13 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                     if (kv.Value.UntilMs <= now)
                         _recentFailures.TryRemove(kv.Key, out _);
                 }
+
+                // R-P2-03：消费 UpdateToken 置下的 LRU 收敛脏标记。
+                // 此处由维护定时器驱动（不持有任何 scope 锁）⇒ 全表遍历与 Compact 的开销不再落在请求关键区。
+                if (Interlocked.Exchange(ref _compactRequested, 0) == 1 && _tokenCache.Count > MaxScopeCacheSize)
+                {
+                    CompactTo(MaxScopeCacheSize);
+                }
             }
         }
         catch (Exception ex)
@@ -819,6 +882,17 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// SR-M5（P3.3）测试观测钩子：作用域缓存当前条目数（供断言硬上限 LRU 收敛）。
     /// </summary>
     internal int CacheCountInternal => _tokenCache.Count;
+
+    /// <summary>
+    /// R-P2-03 测试观测钩子：当前是否已置下"待 LRU 收敛"脏标记（常态超限应置位、锁内不应已收敛）。
+    /// </summary>
+    internal bool CompactRequestedForTest => Volatile.Read(ref _compactRequested) == 1;
+
+    /// <summary>
+    /// R-P2-03 测试观测钩子：在<b>测试线程</b>上同步执行一次维护回调（等价于定时器触发一次），
+    /// 使"锁外收敛"可被确定性断言，而不必等待真实定时器周期。
+    /// </summary>
+    internal void RunMaintenanceForTest() => CleanupExpiredTokens(null);
 
     /// <inheritdoc />
     public virtual void Dispose()

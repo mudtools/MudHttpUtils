@@ -95,6 +95,7 @@ public class TokenRecoveryBodyLimitTests
 
     /// <summary>
     /// 带体请求但 MaxCachedRequestBodyBytes = 0（流式优先模式）：仍正常发送，返回真实 401，不重试。
+    /// 注：用 PUT（幂等）以隔离 R-P1-04 幂等门控，确保本条验证的是"缓冲关闭"这一逃生门。
     /// </summary>
     [Fact]
     public async Task Recovery_DisabledBodyCache_ShouldStillSend()
@@ -102,7 +103,7 @@ public class TokenRecoveryBodyLimitTests
         var manager = CreateAlwaysValidManager();
         var executor = CreateExecutor(manager.Object, new TokenRecoveryOptions { MaxCachedRequestBodyBytes = 0 });
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "https://api.example.com/items")
+        var request = new HttpRequestMessage(HttpMethod.Put, "https://api.example.com/items")
         {
             Content = new ByteArrayContent(Encoding.UTF8.GetBytes("payload")),
             Headers = { Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "stale") }
@@ -155,6 +156,8 @@ public class TokenRecoveryBodyLimitTests
 
     /// <summary>
     /// 小体积带体请求（未超限）：401 后携带原始请求体重试成功（正常恢复路径不回归）。
+    /// 注：用 PUT（幂等）以隔离 R-P1-04 幂等门控；POST 的默认拒绝与放行由
+    /// <c>TokenRecoveryIdempotencyGateTests</c> 单独覆盖。
     /// </summary>
     [Fact]
     public async Task Recovery_SmallBody_ShouldRetryWithOriginalContent()
@@ -162,7 +165,7 @@ public class TokenRecoveryBodyLimitTests
         var manager = CreateAlwaysValidManager();
         var executor = CreateExecutor(manager.Object);
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "https://api.example.com/items")
+        var request = new HttpRequestMessage(HttpMethod.Put, "https://api.example.com/items")
         {
             Content = new StringContent("small-payload"),
             Headers = { Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "stale") }
@@ -188,32 +191,143 @@ public class TokenRecoveryBodyLimitTests
     }
 
     /// <summary>
-    /// 无 Content-Length 的 chunked 内容，但体积小于上限：可正常缓冲并携带重试。
+    /// R-P1-02（破坏性变更）：<b>未声明长度</b>（chunked）的流式请求体不再预读 ——
+    /// 首次发送完整（修复 B8 首发送截断），但放弃 401 重放能力。
     /// </summary>
     [Fact]
-    public async Task Recovery_ChunkedSmallBody_ShouldBufferAndRetry()
+    public async Task Recovery_ChunkedUndeclaredBody_ShouldSendIntactButNotRetry()
     {
         var manager = CreateAlwaysValidManager();
         var executor = CreateExecutor(manager.Object);
 
-        var request = new HttpRequestMessage(HttpMethod.Post, "https://api.example.com/items")
+        var request = new HttpRequestMessage(HttpMethod.Put, "https://api.example.com/items")
         {
-            Content = new ChunkedStreamContent(64 * 1024),   // 64KB chunked
+            Content = new ChunkedStreamContent(64 * 1024),   // 64KB，无 Content-Length（chunked）
+            Headers = { Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "stale") }
+        };
+
+        var sendCount = 0;
+        long firstSendBodyBytes = -1;
+        var response = await executor.ExecuteAsync(
+            request,
+            async (req, ct) =>
+            {
+                Interlocked.Increment(ref sendCount);
+                firstSendBodyBytes = req.Content is null
+                    ? 0
+                    : (await req.Content.ReadAsByteArrayAsync(ct)).LongLength;
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            },
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+            "未声明长度的流式体不具备无损重放能力（R-P1-02 取舍）");
+        sendCount.Should().Be(1, "禁止重试 ≠ 禁止发送（TMR-01）");
+        firstSendBodyBytes.Should().Be(64 * 1024,
+            "首次发送体必须完整 —— 修复前预读失败（超限弃置）会让流被部分消费，首发送被截断（B8）");
+        manager.Verify(m => m.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()), Times.Never,
+            "不具备重放能力 ⇒ 不进入恢复链路");
+        response.Dispose();
+    }
+
+    /// <summary>
+    /// R-P1-02 回归保护：<b>已声明长度</b>的流式请求体（可寻址流）仍按上限缓冲并重放 ——
+    /// 只有"未声明长度"这一种情形被收窄。
+    /// </summary>
+    [Fact]
+    public async Task Recovery_DeclaredLengthStreamBody_ShouldBufferAndRetry()
+    {
+        var manager = CreateAlwaysValidManager();
+        var executor = CreateExecutor(manager.Object);
+
+        var payload = new byte[64 * 1024];
+        var request = new HttpRequestMessage(HttpMethod.Put, "https://api.example.com/items")
+        {
+            // 可寻址流 ⇒ StreamContent 能计算出 Content-Length
+            Content = new StreamContent(new MemoryStream(payload)),
             Headers = { Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "stale") }
         };
 
         var response = await executor.ExecuteAsync(
             request,
-            (req, ct) =>
+            async (req, ct) =>
             {
                 var auth = req.Headers.Authorization?.Parameter;
-                return Task.FromResult(auth == "refreshed-token"
-                    ? new HttpResponseMessage(HttpStatusCode.OK)
-                    : new HttpResponseMessage(HttpStatusCode.Unauthorized));
+                if (auth == "refreshed-token" && req.Content != null)
+                {
+                    var body = await req.Content.ReadAsByteArrayAsync(ct);
+                    if (body.Length == payload.Length)
+                        return new HttpResponseMessage(HttpStatusCode.OK);
+                }
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized);
             },
             CancellationToken.None);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK, "未超限 chunked 请求可正常缓冲重试");
+        response.StatusCode.Should().Be(HttpStatusCode.OK, "已声明长度的流式体仍可缓冲重放（Auto 模式语义不变）");
+        response.Dispose();
+    }
+
+    /// <summary>
+    /// R-P1-03：<see cref="RequestBodyBufferingMode.MemoryOnly"/> 下不触碰任何流式内容。
+    /// </summary>
+    [Fact]
+    public async Task Recovery_MemoryOnlyMode_ShouldNotBufferStreamBody()
+    {
+        var manager = CreateAlwaysValidManager();
+        var executor = CreateExecutor(manager.Object, new TokenRecoveryOptions
+        {
+            BufferingMode = RequestBodyBufferingMode.MemoryOnly,
+        });
+
+        var request = new HttpRequestMessage(HttpMethod.Put, "https://api.example.com/items")
+        {
+            Content = new StreamContent(new MemoryStream(new byte[1024])),
+            Headers = { Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "stale") }
+        };
+
+        var sendCount = 0;
+        var contentTypeObserved = new List<string>();
+        var response = await executor.ExecuteAsync(
+            request,
+            (req, ct) =>
+            {
+                Interlocked.Increment(ref sendCount);
+                contentTypeObserved.Add(req.Content?.GetType().Name ?? "(null)");
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
+            },
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        sendCount.Should().Be(1);
+        contentTypeObserved.Should().ContainSingle("MemoryOnly 不得把流式内容替换为缓冲体（避免流读取与拷贝）")
+            .Which.Should().Be("StreamContent");
+        response.Dispose();
+    }
+
+    /// <summary>
+    /// R-P1-03 回归保护：内存型内容不被替换（既不释放调用方内容，也不做额外拷贝）。
+    /// </summary>
+    [Fact]
+    public async Task Recovery_MemoryBackedContent_ShouldNotBeReplaced()
+    {
+        var manager = CreateAlwaysValidManager();
+        var executor = CreateExecutor(manager.Object);
+
+        var payload = new byte[256 * 1024];
+        var original = new ByteArrayContent(payload);
+        var request = new HttpRequestMessage(HttpMethod.Put, "https://api.example.com/items")
+        {
+            Content = original,
+            Headers = { Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "stale") }
+        };
+
+        var response = await executor.ExecuteAsync(
+            request,
+            (req, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)),
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        request.Content.Should().BeSameAs(original, "内存型内容无需回填缓冲体（原实例可重读）");
         response.Dispose();
     }
 

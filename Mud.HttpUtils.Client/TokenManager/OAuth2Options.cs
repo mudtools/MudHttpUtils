@@ -112,6 +112,24 @@ public class OAuth2Options
     public bool AllowDefaultScopeRefreshTokenFallback { get; set; }
 
     /// <summary>
+    /// R-P2-01：将 OAuth2 令牌端点限制为<b>公网地址</b>（拒绝私网 / 回环 / 链路本地 / 云元数据 / CGNAT）。默认 <c>false</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>默认 <c>false</c>（评审修订 7）</b>：令牌端点来自<b>宿主机配置</b>而非终端用户输入，
+    /// SSRF 的"攻击者可控 URL"前提不成立；而默认拒绝私网会<b>直接打断内网 IdP</b>（内网 https 端点是最常见部署形态）。
+    /// 故本属性是**新增的收紧能力**，而非默认安全策略。
+    /// </para>
+    /// <para>
+    /// 设为 <c>true</c> 时（仅在端点确为公网公共服务时开启）：
+    /// ① 端点字符串校验拒绝私网/元数据字面量地址；
+    /// ② <c>AddMudHttpOAuth2TokenManager</c> 额外安装连接期 IP 准入处理器，阻断 DNS 重绑定（TOCTOU）。
+    /// </para>
+    /// <para>注意：域名形式的端点由连接期 IP 准入兜底（字符串校验无法在解析前判定其解析结果）。</para>
+    /// </remarks>
+    public bool RestrictOAuth2EndpointsToPublicAddresses { get; set; }
+
+    /// <summary>
     /// P2.9（TK-22）安全的调试字符串：对 <see cref="ClientSecret"/> 做脱敏（保留前缀 + 长度），
     /// 防止结构化日志或配置转储中泄漏明文客户端密钥。
     /// </summary>
@@ -120,7 +138,8 @@ public class OAuth2Options
            $"ClientSecretProviderName={(string.IsNullOrEmpty(ClientSecretProviderName) ? "(none)" : ClientSecretProviderName)}, " +
            $"ClientSecretCacheTtlSeconds={ClientSecretCacheTtlSeconds}, TokenEndpoint={TokenEndpoint}, " +
            $"RevocationEndpoint={RevocationEndpoint}, IntrospectionEndpoint={IntrospectionEndpoint}, " +
-           $"RequireHttps={RequireHttps}, ExpirySafetyMarginSeconds={ExpirySafetyMarginSeconds} }}";
+           $"RequireHttps={RequireHttps}, ExpirySafetyMarginSeconds={ExpirySafetyMarginSeconds}, " +
+           $"RestrictOAuth2EndpointsToPublicAddresses={RestrictOAuth2EndpointsToPublicAddresses} }}";
 
     private static string RedactSecret(string value)
     {

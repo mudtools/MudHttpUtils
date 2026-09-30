@@ -18,7 +18,18 @@ namespace Mud.HttpUtils;
 /// （管理器使用 <see cref="ITokenCache{T}"/> 进行内存级缓存）。如需多实例共享令牌，
 /// 请实现 <see cref="ITokenCache{T}"/> 并注入管理器。异步令牌缓存契约列入 v2 提案。
 /// </para>
+/// <para>
+/// <b>R-P3-04（已废弃）</b>：该契约与令牌管线脱节 —— 注册一个 <c>ITokenStore</c> 实现
+/// <b>不会</b>让令牌获得持久化或跨实例共享能力（管理器只认 <see cref="ITokenCache{T}"/>），
+/// 这构成"看起来生效、实则空转"的静默误解。故标记 <see cref="ObsoleteAttribute"/>：
+/// 新代码请实现 <see cref="ITokenCache{T}"/>；已有实现的宿主可继续使用（属性为警告级），
+/// 并会由 <c>ValidateMudHttpAppManagement</c> 在启动期给出显式告警。
+/// </para>
 /// </remarks>
+[Obsolete(
+    "ITokenStore 不参与 ITokenManager 令牌管线（管理器只消费 ITokenCache<T>）。" +
+    "如需持久化 / 跨实例共享令牌，请实现 ITokenCache<T> 并注入管理器。",
+    error: false)]
 public interface ITokenStore
 {
     /// <summary>

@@ -17,7 +17,9 @@ namespace Mud.HttpUtils;
 /// （管理器使用 <see cref="ITokenCache{T}"/> 进行内存级缓存）。如需多实例共享令牌，
 /// 请实现 <see cref="ITokenCache{T}"/> 并注入管理器。异步令牌缓存契约列入 v2 提案。
 /// </remarks>
+#pragma warning disable CS0618 // R-P3-04：本类型刻意继续支持已废弃的存储契约（废弃只针对新代码引用）。
 public interface IUserTokenStore : ITokenStore
+#pragma warning restore CS0618
 {
     /// <summary>
     /// 异步获取指定用户和令牌类型的访问令牌。

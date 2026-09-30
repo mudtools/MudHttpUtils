@@ -123,6 +123,11 @@ public static class HttpClientServiceCollectionExtensions
         // TracingDelegatingHandler 本身无状态（所有数据从 request 参数获取），新实例不增加运行时开销。
         httpClientBuilder.AddHttpMessageHandler(() => new TracingDelegatingHandler());
 
+        // R-P2-05（C5）：默认注册敏感字段异常擦除器 —— 未注册时 ApiException 会长期持有
+        // 请求体 / 响应体明文（含 access_token、password、client_secret 等），随异常日志与 APM 外泄。
+        // TryAddSingleton 语义：宿主先显式注册 IExceptionRedactor 时以其为准。
+        services.TryAddSingleton<IExceptionRedactor, DefaultSensitiveFieldExceptionRedactor>();
+
         // HC-01 修复：将原硬编码的容量(1000)与 TTL(60秒)改为从 IOptions<MudHttpClientApplicationOptions> 读取，
         // 支持通过配置文件自定义。仍保持 TryAddSingleton 语义，用户可手动注册 IHttpResponseCache 抢占。
         services.TryAddSingleton<IHttpResponseCache>(sp =>
@@ -973,6 +978,10 @@ public static class HttpClientServiceCollectionExtensions
         options.ResponseInterceptors = sp.GetServices<IHttpResponseInterceptor>();
         options.SensitiveDataMasker = sp.GetService<ISensitiveDataMasker>();
         options.AppAccessAuthorizer = sp.GetService<IAppAccessAuthorizer>();
+        // R-P2-05（C5）：异常擦除器同样从容器解析，使 EnhancedHttpClient 路径与生成代码路径
+        // （DefaultHttpRequestExecutor）行为一致 —— 否则"默认擦除"只覆盖一半调用面。
+        // 与相邻行同口径：服务依赖来自容器，优先级高于编程式配置。
+        options.ExceptionRedactor = sp.GetService<IExceptionRedactor>();
 
         // CFG-08：强制解析白名单热更新订阅者（惰性单例），确保首个客户端创建时即建立订阅。
         _ = sp.GetService<AllowedDomainsReloader>();
@@ -1289,6 +1298,103 @@ public static class HttpClientServiceCollectionExtensions
     }
 
     /// <summary>
+    /// R-P2-01：注册 <see cref="StandardOAuth2TokenManager"/> 及其专用命名 <see cref="HttpClient"/>（安全默认接线）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为何需要本入口</b>：此前库内无 <see cref="StandardOAuth2TokenManager"/> 的注册入口，
+    /// 宿主只能自建 <see cref="HttpClient"/> 并手工 new 出管理器 —— 绕过了库的 SSRF 保护，
+    /// 且极易忘记"禁用自动重定向"（<c>client_secret</c> 位于 Basic 头，会随 30x 外发到第三方）。
+    /// </para>
+    /// <para><b>默认行为（安全但不收紧）</b>：</para>
+    /// <list type="bullet">
+    ///   <item><description>端点校验与 2.0.x <b>逐字节一致</b>（默认放行私网 HTTPS）—— 内部 IdP 零影响（评审修订 7）。</description></item>
+    ///   <item><description>强制 <c>AllowAutoRedirect = false</c>（<b>默认即生效</b>，防凭据随重定向外发）。</description></item>
+    ///   <item><description><b>不</b>挂载 <see cref="TokenRecoveryDelegatingHandler"/>：令牌端点的 401 不应进入恢复链路（架构不变式 I2）。</description></item>
+    ///   <item><description>启动期强制校验选项（<see cref="OAuth2OptionsStartupValidator"/>，fail-fast）。</description></item>
+    /// </list>
+    /// <para>
+    /// <b>可选收紧</b>：设置 <see cref="OAuth2Options.RestrictOAuth2EndpointsToPublicAddresses"/> = <c>true</c>
+    /// 后额外安装连接期 IP 准入处理器（阻断 DNS 重绑定）。<b>仅在端点确为公网公共服务时开启</b>，
+    /// 否则会直接打断内网 IdP。
+    /// </para>
+    /// <para>
+    /// <b>与本方法的关系</b>：内部复用 <see cref="AddMudHttpOAuth2"/> 完成"配置 + 后置配置 + 校验器"接线，
+    /// 不重复实现（避免两处口径分裂）。所有注册均用 <c>TryAdd*</c>，宿主既有注册优先。
+    /// </para>
+    /// </remarks>
+    /// <param name="services">服务集合。</param>
+    /// <param name="configureOptions">配置 OAuth2 选项的委托（可选；AOT 友好，不使用 IConfiguration 绑定）。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> 为 null 时抛出。</exception>
+    public static IServiceCollection AddMudHttpOAuth2TokenManager(
+        this IServiceCollection services,
+        Action<OAuth2Options>? configureOptions = null)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        // 复用既有接线（配置绑定 + 后置冲突告警 + 端点校验器），避免重复实现。
+        services.AddMudHttpOAuth2(configureOptions);
+
+        services.AddHttpClient(StandardOAuth2TokenManager.HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(CreateOAuth2PrimaryHandler);
+
+        services.TryAddSingleton<StandardOAuth2TokenManager>(sp => new StandardOAuth2TokenManager(
+            sp.GetRequiredService<IHttpClientFactory>().CreateClient(StandardOAuth2TokenManager.HttpClientName),
+            sp.GetRequiredService<IOptionsMonitor<OAuth2Options>>(),
+            sp.GetService<ILogger<StandardOAuth2TokenManager>>(),
+            sp.GetService<ISecretProvider>(),
+            sp.GetService<IHttpContentSerializer>()));
+
+        services.TryAddSingleton<ITokenManager>(sp => sp.GetRequiredService<StandardOAuth2TokenManager>());
+
+        // 启动期 fail-fast 校验端点配置；非 Host 场景不会启动，仍由懒校验兜底。
+        services.AddHostedService<OAuth2OptionsStartupValidator>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// R-P2-01：构造 OAuth2 令牌端点专用主处理器。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>默认</b>：普通 <see cref="HttpClientHandler"/> + <c>AllowAutoRedirect = false</c>。
+    /// 刻意<b>不</b>默认安装 <c>SsrfSafeSocketsHttpHandler</c> —— 其依赖的
+    /// <see cref="DefaultIpAddressPolicy"/> 为 <b>fail-closed（拒绝私网/回环/链路本地）</b>，
+    /// 默认安装会直接打断内网 IdP（评审修订 7）。
+    /// </para>
+    /// <para>
+    /// <b>收紧时</b>（<see cref="OAuth2Options.RestrictOAuth2EndpointsToPublicAddresses"/> = <c>true</c>）：
+    /// 安装 <c>SsrfSafeSocketsHttpHandler</c> 以获得连接期 IP 准入（防 DNS 重绑定）；
+    /// 该处理器为 <c>#if NET6_0_OR_GREATER</c> 门控，ns2.0 上退化为普通处理器（仅字符串校验生效）。
+    /// </para>
+    /// <para>
+    /// <b>超时策略（实施期记录）</b>：刻意<b>不</b>设置 <c>Timeout = Timeout.InfiniteTimeSpan</c> ——
+    /// <see cref="StandardOAuth2TokenManager"/> 自身不创建超时 CTS（仅透传调用方 CT），
+    /// 关闭框架级超时会让"后台刷新 + 无取消令牌"路径失去唯一的时间上界。
+    /// 需要定制超时的宿主可在命名客户端上自行设置。
+    /// </para>
+    /// </remarks>
+    private static HttpMessageHandler CreateOAuth2PrimaryHandler(IServiceProvider serviceProvider)
+    {
+        var restrict = serviceProvider.GetService<IOptions<OAuth2Options>>()?.Value
+            .RestrictOAuth2EndpointsToPublicAddresses == true;
+
+#if NET6_0_OR_GREATER
+        if (restrict)
+        {
+            return new SsrfSafeSocketsHttpHandler(
+                serviceProvider.GetService<IIpAddressPolicy>() ?? new DefaultIpAddressPolicy());
+        }
+#endif
+
+        _ = restrict;
+        return new HttpClientHandler { AllowAutoRedirect = false };
+    }
+
+    /// <summary>
     /// P2.9（TK-24）注册令牌管理器为单例生命周期。
     /// </summary>
     /// <typeparam name="TManager">令牌管理器实现类型，必须实现 <see cref="ITokenManager"/>（通常也应实现 <see cref="IUserTokenManager"/>）。</typeparam>
@@ -1325,15 +1431,76 @@ public static class HttpClientServiceCollectionExtensions
         // 修正：具体类型注册一次，两个接口经工厂转发到同一实例。
         services.Add(new Microsoft.Extensions.DependencyInjection.ServiceDescriptor(typeof(TManager), typeof(TManager), lifetime));
         services.Add(new Microsoft.Extensions.DependencyInjection.ServiceDescriptor(
-            typeof(ITokenManager), sp => sp.GetRequiredService<TManager>(), lifetime));
+            typeof(ITokenManager), sp =>
+            {
+                // 只解析一次：Transient 生命周期下二次解析会产生两个实例。
+                var manager = sp.GetRequiredService<TManager>();
+                // R-P1-06：解析即校验"用户令牌缓存是否真的启用了加密"，未启用则发一次性显式告警。
+                WarnIfUserTokenCacheIsPlaintext(sp, manager);
+                return manager;
+            }, lifetime));
 
         if (typeof(IUserTokenManager).IsAssignableFrom(typeof(TManager)))
         {
             services.Add(new Microsoft.Extensions.DependencyInjection.ServiceDescriptor(
-                typeof(IUserTokenManager), sp => sp.GetRequiredService<TManager>(), lifetime));
+                typeof(IUserTokenManager), sp =>
+                {
+                    // 同 ITokenManager 通道：两条注入路径都可能被宿主使用，故两处都挂告警（内部幂等，只发一次）。
+                    var manager = sp.GetRequiredService<TManager>();
+                    WarnIfUserTokenCacheIsPlaintext(sp, manager);
+                    return manager;
+                }, lifetime));
         }
 
         return services;
+    }
+
+    /// <summary>
+    /// R-P1-06：已发出告警的管理器类型（每类型仅告警一次，避免 Scoped / Transient 生命周期下刷屏）。
+    /// </summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, byte> UserTokenCacheWarningsEmitted = new();
+
+    /// <summary>
+    /// R-P1-06：用户令牌管理器回退到<b>明文缓存</b>时的显式告警。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>问题</b>：未注入 <c>IEncryptionProvider</c> 时用户令牌静默以明文驻留内存，且无任何日志；
+    /// 宿主即使注册了加密器，若其管理器的<b>公共</b>构造函数不接受 <c>IEncryptionProvider</c>，
+    /// 容器也无法注入（基类的加密构造函数为 <c>protected</c>，仅派生类可转发）⇒ 加密"看似启用实则未生效"。
+    /// </para>
+    /// <para>
+    /// <b>实现取舍</b>：以<b>实例状态</b>（<see cref="UserTokenManagerBase.UsesEncryptedCache"/>）判定，
+    /// 而非反射构造函数签名 —— 后者在 AOT / 裁剪下需额外的 <c>DynamicallyAccessedMembers</c> 标注链，
+    /// 且会产生"能接收但未注册"之类的误报。实例状态判定零误报且无反射。
+    /// </para>
+    /// <para>
+    /// <b>自动启用说明</b>：只要派生管理器的公共构造函数接受 <c>IEncryptionProvider</c>，
+    /// 容器的默认构造选择<b>本就会</b>注入它（基类已提供 <c>protected</c> 三元构造函数转发入口），
+    /// 故本方法只负责诊断，不改变激活路径（避免引入 <c>ActivatorUtilities</c> 带来的裁剪风险）。
+    /// </para>
+    /// </remarks>
+    private static void WarnIfUserTokenCacheIsPlaintext(IServiceProvider serviceProvider, ITokenManager manager)
+    {
+        // 仅对用户令牌管理器告警：租户令牌不走用户令牌缓存，加密与其无关（避免噪声）。
+        if (manager is not UserTokenManagerBase userTokenManager || userTokenManager.UsesEncryptedCache)
+            return;
+
+        if (!UserTokenCacheWarningsEmitted.TryAdd(manager.GetType(), 0))
+            return;
+
+        var logger = serviceProvider.GetService<ILoggerFactory>()?.CreateLogger(manager.GetType());
+        if (logger is null)
+            return;
+
+        if (serviceProvider.GetService<IEncryptionProvider>() is null)
+        {
+            MudHttpClientLog.UserTokenCachePlaintext(logger, manager.GetType().Name);
+        }
+        else
+        {
+            MudHttpClientLog.UserTokenCacheEncryptionIgnored(logger, manager.GetType().Name);
+        }
     }
 
     /// <summary>
@@ -1614,6 +1781,50 @@ public static class HttpClientServiceCollectionExtensions
             throw new InvalidOperationException(
                 "多应用管理接线不完整：\n" + string.Join("\n", errors.Select((e, i) => $"  {i + 1}. {e}")));
         }
+
+        // R-P3-04：已废弃的存储注册检查 —— 以 Warning 提示（不是错误：宿主可能确实在自建流水线中使用它）。
+        WarnIfUnusedTokenStoreRegistered(serviceProvider);
+    }
+
+    /// <summary>
+    /// R-P3-04：检测"注册了已废弃的令牌存储但令牌管线并不消费"的静默误解。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>ITokenStore</c> / <c>IEncryptedTokenStore</c> / <c>IUserTokenStore</c> 均<b>不参与</b>
+    /// <see cref="ITokenManager"/> 管线（管理器只消费 <c>ITokenCache&lt;T&gt;</c>）。
+    /// 宿主注册它们通常是出于"让令牌持久化 / 跨实例共享"的期待，而实际效果为空转 ⇒ 必须显式告警。
+    /// </para>
+    /// <para>刻意不抛异常：该类型仍可能被宿主自己的代码或自建流水线使用，阻断启动属过度反应。</para>
+    /// </remarks>
+    private static void WarnIfUnusedTokenStoreRegistered(IServiceProvider serviceProvider)
+    {
+        string? registeredStoreName;
+        try
+        {
+#pragma warning disable CS0618 // R-P3-04：本检查的目的正是发现这两个已废弃契约的误注册，故必须引用它们。
+            registeredStoreName = serviceProvider.GetService<ITokenStore>()?.GetType().Name
+                ?? serviceProvider.GetService<IEncryptedTokenStore>()?.GetType().Name;
+#pragma warning restore CS0618
+            registeredStoreName ??= serviceProvider.GetService<IUserTokenStore>()?.GetType().Name;
+        }
+        catch
+        {
+            // 存储解析失败不应让"接线自检"本身成为故障源。
+            return;
+        }
+
+        if (registeredStoreName is null)
+            return;
+
+        // 注意：HttpClientServiceCollectionExtensions 是静态类，不能作为泛型类型参数，故用字符串类别。
+        // 类别名沿用本扩展的命名空间（与其它库内日志口径一致）。
+        var logger = serviceProvider.GetService<ILoggerFactory>()
+            ?.CreateLogger("Mud.HttpUtils.HttpClientServiceCollectionExtensions");
+        if (logger is null)
+            return;
+
+        MudHttpClientLog.TokenStoreRegistrationIgnored(logger, registeredStoreName!);
     }
 
     /// <summary>

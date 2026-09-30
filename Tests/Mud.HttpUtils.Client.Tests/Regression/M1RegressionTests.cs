@@ -227,6 +227,102 @@ public class SensitiveUrlRedactorTests
         Mud.HttpUtils.Helpers.SensitiveUrlRedactor.Redact(url)
             .Should().Be("https://api.example.com/v1?access_token=***REDACTED***");
     }
+
+    // ---- R-P1-05：Query 注入模式的令牌脱敏（请求级精确 + 显式进程级登记）----
+    // 注：进程级登记是全局可变状态，故本组用例统一使用**专用探针键**（不与其它用例的 URL 相交），
+    // 并置于本类中以复用"同一测试类内串行执行"的隔离保证。
+
+    private const string QueryTokenProbeKey = "tk_probe_r1p05";
+
+    [Fact]
+    public void RedactForRequest_QueryModeToken_ShouldMaskEvenWhenSwitchOff()
+    {
+        MudHttpObservabilityOptions.RedactUrlInTelemetry = false;
+        try
+        {
+            var url = $"https://api.example.com/v1/data?{QueryTokenProbeKey}=SECRET-VALUE&page=2";
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Options.Set(
+                new HttpRequestOptionsKey<TokenRecoveryContext>(TokenRecoveryContext.PropertyKey),
+                new TokenRecoveryContext
+                {
+                    InjectionMode = TokenInjectionMode.Query,
+                    QueryParameterName = QueryTokenProbeKey,
+                });
+
+            var redacted = Mud.HttpUtils.Helpers.SensitiveUrlRedactor.RedactForRequest(request, url);
+
+            redacted.Should().NotContain("SECRET-VALUE",
+                "Query 注入模式的令牌参数名属强制掩码项，不受全局开关约束（R-P1-05）");
+            redacted.Should().Contain("page=2", "未登记的参数不得被误伤");
+        }
+        finally
+        {
+            MudHttpObservabilityOptions.RedactUrlInTelemetry = true;
+        }
+    }
+
+    [Fact]
+    public void RedactForRequest_HeaderModeToken_ShouldNotForceMaskCustomParam()
+    {
+        // 使用**从不登记**的专用键：进程级登记是全局状态，若与上方用例共用键，结果将依赖执行顺序。
+        const string neverRegisteredKey = "tk_probe_r1p05_header_only";
+
+        MudHttpObservabilityOptions.RedactUrlInTelemetry = false;
+        try
+        {
+            var url = $"https://api.example.com/v1/data?{neverRegisteredKey}=visible&page=2";
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Options.Set(
+                new HttpRequestOptionsKey<TokenRecoveryContext>(TokenRecoveryContext.PropertyKey),
+                new TokenRecoveryContext
+                {
+                    InjectionMode = TokenInjectionMode.Header,
+                    QueryParameterName = neverRegisteredKey,
+                });
+
+            var redacted = Mud.HttpUtils.Helpers.SensitiveUrlRedactor.RedactForRequest(request, url);
+
+            redacted.Should().Be(url,
+                "Header 模式下的同名 query 参数并非令牌载体，不应被强制掩码（避免误伤）");
+        }
+        finally
+        {
+            MudHttpObservabilityOptions.RedactUrlInTelemetry = true;
+        }
+    }
+
+    [Fact]
+    public void RegisterExtraSensitiveKey_ShouldForceMasking_EvenWhenSwitchOff()
+    {
+        Mud.HttpUtils.Helpers.SensitiveUrlRedactor.RegisterExtraSensitiveKey(QueryTokenProbeKey);
+
+        MudHttpObservabilityOptions.RedactUrlInTelemetry = false;
+        try
+        {
+            var url = $"https://api.example.com/v1/data?{QueryTokenProbeKey}=SECRET&page=2";
+            var redacted = Mud.HttpUtils.Helpers.SensitiveUrlRedactor.Redact(url);
+
+            redacted.Should().Contain($"{QueryTokenProbeKey}=***REDACTED***",
+                "显式登记键为强制掩码项，覆盖全部既有日志点（含拿不到请求对象的异常工厂）");
+            redacted.Should().Contain("page=2", "未登记的参数不得被误伤");
+        }
+        finally
+        {
+            MudHttpObservabilityOptions.RedactUrlInTelemetry = true;
+        }
+    }
+
+    [Fact]
+    public void RegisterExtraSensitiveKey_NullOrEmpty_IsIgnored()
+    {
+        // 空值忽略，且不得把空键变成"匹配一切"的规则
+        Mud.HttpUtils.Helpers.SensitiveUrlRedactor.RegisterExtraSensitiveKey(null);
+        Mud.HttpUtils.Helpers.SensitiveUrlRedactor.RegisterExtraSensitiveKey(string.Empty);
+
+        var url = "https://api.example.com/v1/data?page=2";
+        Mud.HttpUtils.Helpers.SensitiveUrlRedactor.Redact(url).Should().Be(url);
+    }
 }
 
 /// <summary>

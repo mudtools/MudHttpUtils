@@ -60,12 +60,12 @@ public sealed class TracingDelegatingHandler : DelegatingHandler
         {
             MudHttpActivitySource.AddActivityEvent(
                 MudHttpDiagnosticNames.RequestStarted,
-                () => new HttpRequestDiagnosticPayload(request.Method.Method, SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()), clientName),
+                () => new HttpRequestDiagnosticPayload(request.Method.Method, SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()), clientName),
                 MudHttpDiagnosticNames.RequestStarted,
                 () => new[]
                 {
                     new KeyValuePair<string, object?>("method", request.Method.Method),
-                    new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.Redact(request.RequestUri?.ToString())),
+                    new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString())),
                     new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
                 });
         }
@@ -84,7 +84,7 @@ public sealed class TracingDelegatingHandler : DelegatingHandler
                     MudHttpDiagnosticNames.RequestStopped,
                     () => new HttpResponseDiagnosticPayload(
                         request.Method.Method,
-                        SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()),
+                        SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()),
                         clientName,
                         (int)response.StatusCode,
                         elapsedMs),
@@ -92,7 +92,7 @@ public sealed class TracingDelegatingHandler : DelegatingHandler
                     () => new[]
                     {
                         new KeyValuePair<string, object?>("method", request.Method.Method),
-                        new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.Redact(request.RequestUri?.ToString())),
+                        new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString())),
                         new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
                         new KeyValuePair<string, object?>("status_code", (int)response.StatusCode),
                         new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
@@ -119,7 +119,7 @@ public sealed class TracingDelegatingHandler : DelegatingHandler
                     MudHttpDiagnosticNames.RequestFailed,
                     () => new HttpRequestErrorDiagnosticPayload(
                         request.Method.Method,
-                        SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()),
+                        SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()),
                         clientName,
                         elapsedMs,
                         ex),
@@ -127,7 +127,7 @@ public sealed class TracingDelegatingHandler : DelegatingHandler
                     () => new[]
                     {
                         new KeyValuePair<string, object?>("method", request.Method.Method),
-                        new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.Redact(request.RequestUri?.ToString())),
+                        new KeyValuePair<string, object?>("url", SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString())),
                         new KeyValuePair<string, object?>("client_name", clientName ?? "(default)"),
                         new KeyValuePair<string, object?>("elapsed_ms", elapsedMs),
                         new KeyValuePair<string, object?>("exception_type", ex.GetType().Name),

@@ -13,7 +13,7 @@ namespace Mud.HttpUtils;
 /// <remarks>
 /// <para>.NET 6+ 使用 <c>[LoggerMessage]</c> 源生成器（零分配、级别短路）；</para>
 /// <para>netstandard2.0 fallback 到 <c>LoggerMessage.Define</c>（同样零分配，但需要在运行时构建委托）。</para>
-/// <para>EventId 规划（M6-HC-13 纠偏为实际分配）：1-50 EnhancedHttpClient（已分配）；51-100 预留；101-120 Resilience；121-130 Cache；131-156 TokenManager（已分配，含 150-156）；157-165 SR 轮 Token 安全修复（157 TokenRecoveryBodyNotRecoverable、158 RefreshTokenRejected、159 PublicClientAuthUsed、160 TokenManagerUnresolved、161 UserTokenIdentityMismatch）；162-165 租户/作用域/退避（162 TenantBindingRejected、163 DefaultScopeRefreshFallbackUsed、164 UserRefreshBackoffActive、165 TokenManagerSkippedNoBackgroundRefresh）；166 RequestBodySerializationFastPathFallback（TMX-17 去重后落点）；167 AppResilienceCacheFull；168 SsrfGuidance；169 RetrySkippedNonReplayable（M5-HC-05）；170 PolicyCacheFull（M5-HC-06）；171-176 MT 轮（171 TokenRecoveryRedirectDetected、172 EmptyAppManagerAutoRegistered、173 MudHttpClientsSectionMissing、174 ClientNameCaseFallbackUsed、175 SwitcherFactoryOverwritten、176 MudHttpClientNameCaseCollision）；177-178 TR 轮（177 UserTokenScopeInvalidationFallback、178 AccessTokenInvalidationFallback）；179 未占用（TR-09 预留）；180 MissingAppContextRejected（FIX-09）；181-182 TMX 轮（181 TokenRefreshSuppressed、182 TokenCacheSerializationFailed，M6-HC-13 由原 170/171 迁移至此以消除撞号）；183 未占用（M6-HC-23 曾拟用于 TokenRefreshReturnedSameToken，最终改采 forceRefresh 方案未占用）；184-185 WX 轮（184 TokenRecoveryTriggeredByDetector、185 TokenInvalidationDetectionFailed，errcode 令牌失效恢复）。</para>
+/// <para>EventId 规划（M6-HC-13 纠偏为实际分配）：1-50 EnhancedHttpClient（已分配）；51-100 预留；101-120 Resilience；121-130 Cache；131-156 TokenManager（已分配，含 150-156）；157-165 SR 轮 Token 安全修复（157 TokenRecoveryBodyNotRecoverable、158 RefreshTokenRejected、159 PublicClientAuthUsed、160 TokenManagerUnresolved、161 UserTokenIdentityMismatch）；162-165 租户/作用域/退避（162 TenantBindingRejected、163 DefaultScopeRefreshFallbackUsed、164 UserRefreshBackoffActive、165 TokenManagerSkippedNoBackgroundRefresh）；166 RequestBodySerializationFastPathFallback（TMX-17 去重后落点）；167 AppResilienceCacheFull；168 SsrfGuidance；169 RetrySkippedNonReplayable（M5-HC-05）；170 PolicyCacheFull（M5-HC-06）；171-176 MT 轮（171 TokenRecoveryRedirectDetected、172 EmptyAppManagerAutoRegistered、173 MudHttpClientsSectionMissing、174 ClientNameCaseFallbackUsed、175 SwitcherFactoryOverwritten、176 MudHttpClientNameCaseCollision）；177-178 TR 轮（177 UserTokenScopeInvalidationFallback、178 AccessTokenInvalidationFallback）；179 未占用（TR-09 预留）；180 MissingAppContextRejected（FIX-09）；181-182 TMX 轮（181 TokenRefreshSuppressed、182 TokenCacheSerializationFailed，M6-HC-13 由原 170/171 迁移至此以消除撞号）；183 未占用（M6-HC-23 曾拟用于 TokenRefreshReturnedSameToken，最终改采 forceRefresh 方案未占用）；184-185 WX 轮（184 TokenRecoveryTriggeredByDetector、185 TokenInvalidationDetectionFailed，errcode 令牌失效恢复）；186-195 TMX 轮（令牌管理缺陷修复方案 2.1.0；186 TokenRecoverySkippedDuringRefresh、187 TokenRefreshWaitTimeout，其余预留）。</para>
 /// </remarks>
 internal static partial class MudHttpClientLog
 {
@@ -332,9 +332,11 @@ internal static partial class MudHttpClientLog
         Message = "令牌注入失败（不支持的 InjectionMode={InjectionMode}），返回 401")]
     public static partial void TokenInjectionUnsupported(ILogger logger, string injectionMode);
 
+    // R-P2-05（C4）：只记录异常**类型名**，不记录异常对象 —— ISecretProvider 的异常
+    // 可能内嵌密钥服务返回的敏感报文（如 vault 的 401 响应体），记对象会把明文带入日志与 APM。
     [LoggerMessage(EventId = 152, Level = LogLevel.Warning,
-        Message = "从 ISecretProvider 获取客户端密钥失败，回退到配置值")]
-    public static partial void SecretProviderFallback(ILogger logger, Exception exception);
+        Message = "从 ISecretProvider 获取客户端密钥失败（{ExceptionType}），回退到配置值")]
+    public static partial void SecretProviderFallback(ILogger logger, string exceptionType);
 
     [LoggerMessage(EventId = 153, Level = LogLevel.Error,
         Message = "令牌撤销失败")]
@@ -592,11 +594,12 @@ internal static partial class MudHttpClientLog
     public static void TokenInjectionUnsupported(ILogger logger, string injectionMode)
         => s_tokenInjectionUnsupported(logger, injectionMode, null);
 
-    private static readonly Action<ILogger, Exception> s_secretProviderFallback =
-        LoggerMessage.Define(LogLevel.Warning, new EventId(152, nameof(SecretProviderFallback)),
-            "从 ISecretProvider 获取客户端密钥失败，回退到配置值");
-    public static void SecretProviderFallback(ILogger logger, Exception exception)
-        => s_secretProviderFallback(logger, exception);
+    // R-P2-05（C4）：只记录异常**类型名**，不记录异常对象（同 net6+ 分支口径）。
+    private static readonly Action<ILogger, string, Exception?> s_secretProviderFallback =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(152, nameof(SecretProviderFallback)),
+            "从 ISecretProvider 获取客户端密钥失败（{ExceptionType}），回退到配置值");
+    public static void SecretProviderFallback(ILogger logger, string exceptionType)
+        => s_secretProviderFallback(logger, exceptionType, null);
 
     private static readonly Action<ILogger, Exception> s_tokenRevocationFailed =
         LoggerMessage.Define(LogLevel.Error, new EventId(153, nameof(TokenRevocationFailed)),
@@ -816,6 +819,46 @@ internal static partial class MudHttpClientLog
             "令牌失效判定器（{DetectorType}）执行失败，本次响应按「未失效」处理（退化为仅 HTTP 401 判定）。");
     public static void TokenInvalidationDetectionFailed(ILogger logger, string detectorType, Exception exception)
         => s_tokenInvalidationDetectionFailed(logger, detectorType, exception);
+
+    // ---- TMX 轮（令牌管理缺陷修复方案 2.1.0）新增事件（EventId 186+）----
+    // 规划：186 TokenRecoverySkippedDuringRefresh（I2 熔断）；187 TokenRefreshWaitTimeout（I3 硬超时）；
+    //       188 TokenRecoverySkippedNonIdempotent（R-P1-04 幂等门控）；189 TokenRecoveryKeyRegistered（R-P1-05 脱敏登记）。
+
+    private static readonly Action<ILogger, string, Exception?> s_tokenRecoverySkippedNonIdempotent =
+        LoggerMessage.Define<string>(LogLevel.Debug, new EventId(188, nameof(TokenRecoverySkippedNonIdempotent)),
+            "{Method} 为非幂等方法且未显式放行，跳过 401 恢复（R-P1-04 幂等门控）—— 如需重放请设置 AllowNonIdempotentRecovery 或契约级 IsRetryAllowedExplicitly。");
+    public static void TokenRecoverySkippedNonIdempotent(ILogger logger, string method)
+        => s_tokenRecoverySkippedNonIdempotent(logger, method, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_userTokenCachePlaintext =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(189, nameof(UserTokenCachePlaintext)),
+            "未注册 IEncryptionProvider，{Manager} 的用户令牌缓存将以明文形式驻留内存；生产环境建议注册加密提供程序。");
+    public static void UserTokenCachePlaintext(ILogger logger, string manager)
+        => s_userTokenCachePlaintext(logger, manager, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_userTokenCacheEncryptionIgnored =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(190, nameof(UserTokenCacheEncryptionIgnored)),
+            "容器中已注册 IEncryptionProvider，但 {Manager} 的公共构造函数未接受它，用户令牌缓存仍以明文驻留内存；请为其增加接受 IEncryptionProvider 的公共构造函数并转发到基类的加密构造函数。");
+    public static void UserTokenCacheEncryptionIgnored(ILogger logger, string manager)
+        => s_userTokenCacheEncryptionIgnored(logger, manager, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_tokenStoreRegistrationIgnored =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(191, nameof(TokenStoreRegistrationIgnored)),
+            "已注册 {Store}，但 ITokenStore / IEncryptedTokenStore 不参与令牌管线（管理器只消费 ITokenCache<T>）—— 该注册不会让令牌获得持久化或跨实例共享能力；如需持久化请实现 ITokenCache<T> 并注入管理器。");
+    public static void TokenStoreRegistrationIgnored(ILogger logger, string store)
+        => s_tokenStoreRegistrationIgnored(logger, store, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_tokenRecoverySkippedDuringRefresh =
+        LoggerMessage.Define<string>(LogLevel.Debug, new EventId(186, nameof(TokenRecoverySkippedDuringRefresh)),
+            "令牌刷新调用链上的 {Method} 请求被跳过 401 恢复（I2 熔断）—— 令牌端点不应挂载 TokenRecoveryDelegatingHandler。");
+    public static void TokenRecoverySkippedDuringRefresh(ILogger logger, string method)
+        => s_tokenRecoverySkippedDuringRefresh(logger, method, null);
+
+    private static readonly Action<ILogger, string, double, Exception?> s_tokenRefreshWaitTimeout =
+        LoggerMessage.Define<string, double>(LogLevel.Warning, new EventId(187, nameof(TokenRefreshWaitTimeout)),
+            "等待令牌刷新超时（去重键已脱敏 = {KeyHash}，预算 {HardTimeoutSeconds}s）：本等待者放弃等待，条目已出表/标记废弃。");
+    public static void TokenRefreshWaitTimeout(ILogger logger, string keyHash, double hardTimeoutSeconds)
+        => s_tokenRefreshWaitTimeout(logger, keyHash, hardTimeoutSeconds, null);
 
     #endregion
 }

@@ -18,14 +18,14 @@ public class RefreshDedupTableTests
     {
         var table = new RefreshDedupTable(maxEntries: 16);
         var calls = 0;
-        Func<Task<string?>> factory = () =>
+        Func<CancellationToken, Task<string?>> factory = _ =>
         {
             calls++;
             return Task.FromResult<string?>("token-1");
         };
 
-        var first = await table.GetOrRefreshAsync("key", factory, dedupWindowSeconds: 60);
-        var second = await table.GetOrRefreshAsync("key", factory, dedupWindowSeconds: 60);
+        var first = await table.GetOrRefreshAsync("key", factory, dedupWindowSeconds: 60, hardTimeout: TimeSpan.FromSeconds(10));
+        var second = await table.GetOrRefreshAsync("key", factory, dedupWindowSeconds: 60, hardTimeout: TimeSpan.FromSeconds(10));
 
         first.Should().Be("token-1");
         second.Should().Be("token-1");
@@ -37,10 +37,10 @@ public class RefreshDedupTableTests
     {
         var table = new RefreshDedupTable(maxEntries: 16);
         var calls = 0;
-        Func<Task<string?>> factory = () => Task.FromResult<string?>($"token-{++calls}");
+        Func<CancellationToken, Task<string?>> factory = _ => Task.FromResult<string?>($"token-{++calls}");
 
-        var first = await table.GetOrRefreshAsync("key", factory, dedupWindowSeconds: 60);
-        var second = await table.GetOrRefreshAsync("key", factory, dedupWindowSeconds: 60, forceRefresh: true);
+        var first = await table.GetOrRefreshAsync("key", factory, dedupWindowSeconds: 60, hardTimeout: TimeSpan.FromSeconds(10));
+        var second = await table.GetOrRefreshAsync("key", factory, dedupWindowSeconds: 60, hardTimeout: TimeSpan.FromSeconds(10), forceRefresh: true);
 
         first.Should().Be("token-1");
         second.Should().Be("token-2");
@@ -53,14 +53,14 @@ public class RefreshDedupTableTests
         var table = new RefreshDedupTable(maxEntries: 16);
         var calls = 0;
         var gate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        Func<Task<string?>> factory = () =>
+        Func<CancellationToken, Task<string?>> factory = _ =>
         {
             calls++;
             return gate.Task;
         };
 
-        var inFlight = table.GetOrRefreshAsync("key", factory, dedupWindowSeconds: 60);
-        var forced = table.GetOrRefreshAsync("key", factory, dedupWindowSeconds: 60, forceRefresh: true);
+        var inFlight = table.GetOrRefreshAsync("key", factory, dedupWindowSeconds: 60, hardTimeout: TimeSpan.FromSeconds(10));
+        var forced = table.GetOrRefreshAsync("key", factory, dedupWindowSeconds: 60, hardTimeout: TimeSpan.FromSeconds(10), forceRefresh: true);
 
         calls.Should().Be(1, "在途刷新仍应复用（单飞语义不受 forceRefresh 影响）");
 

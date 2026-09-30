@@ -191,7 +191,7 @@ public class DefaultHttpRequestExecutor(
             // M2-#18：日志路径统一脱敏（URL 走 SensitiveUrlRedactor，内容走 masker 回退 MessageSanitizer）
             _logger.LogError("HTTP 请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
                 (int)response.StatusCode,
-                Helpers.SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()),
+                Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()),
                 MessageSanitizer.SanitizeWith(_sensitiveDataMasker, errorContent, 500));
             throw CreateApiException(response.StatusCode, errorContent, request.RequestUri?.ToString(), capturedRequestContent);
         }
@@ -202,7 +202,7 @@ public class DefaultHttpRequestExecutor(
 
         // 4. 读取响应内容（N-2：成功响应体守卫）
         var rawContent = await ReadContentAsync(
-            response, Helpers.SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()), cancellationToken)
+            response, Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()), cancellationToken)
             .ConfigureAwait(false);
 
         // 5. string 返回类型特殊处理（不经过 JSON 反序列化）
@@ -286,7 +286,7 @@ public class DefaultHttpRequestExecutor(
         // 且与 SendAndDeserializeAsync / SendAsync 的错误体限量口径不一致。
         var rawContent = isSuccess
             ? await ReadContentAsync(
-                response, Helpers.SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()), cancellationToken)
+                response, Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()), cancellationToken)
                 .ConfigureAwait(false)
             : await ReadErrorContentLimitedAsync(response, cancellationToken).ConfigureAwait(false);
 
@@ -375,7 +375,7 @@ public class DefaultHttpRequestExecutor(
             // M2-#18：日志路径统一脱敏
             _logger.LogError("HTTP 请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
                 (int)response.StatusCode,
-                Helpers.SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()),
+                Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()),
                 MessageSanitizer.SanitizeWith(_sensitiveDataMasker, errorContent, 500));
             throw CreateApiException(response.StatusCode, errorContent, request.RequestUri?.ToString(), capturedRequestContent);
         }
@@ -412,7 +412,7 @@ public class DefaultHttpRequestExecutor(
             // M2-#18：日志路径统一脱敏
             _logger.LogError("HTTP 下载请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
                 (int)response.StatusCode,
-                Helpers.SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()),
+                Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()),
                 MessageSanitizer.SanitizeWith(_sensitiveDataMasker, errorContent, 500));
             throw CreateApiException(response.StatusCode, errorContent, request.RequestUri?.ToString(), capturedRequestContent);
         }
@@ -433,7 +433,7 @@ public class DefaultHttpRequestExecutor(
                 {
                     throw new ApiRequestException(
                         $"成功响应体大小 {contentLength.Value} 字节超过限制 {_maxSuccessResponseBytes} 字节",
-                        requestUri: Helpers.SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()));
+                        requestUri: Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()));
                 }
 
 #if NET6_0_OR_GREATER
@@ -443,7 +443,7 @@ public class DefaultHttpRequestExecutor(
 #endif
                 using var guardedContent = new StreamContent(
                     new Helpers.SuccessResponseGuardStream(contentStream, _maxSuccessResponseBytes,
-                        Helpers.SensitiveUrlRedactor.Redact(request.RequestUri?.ToString())));
+                        Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString())));
                 if (response.Content.Headers.ContentType != null)
                     guardedContent.Headers.ContentType = response.Content.Headers.ContentType;
 #if NET6_0_OR_GREATER
@@ -575,7 +575,7 @@ public class DefaultHttpRequestExecutor(
             // M2-#18：日志路径统一脱敏
             _logger.LogError("HTTP 大文件下载请求失败: 状态码={StatusCode}, URI={RequestUri}, 响应内容={ErrorContent}",
                 (int)response.StatusCode,
-                Helpers.SensitiveUrlRedactor.Redact(request.RequestUri?.ToString()),
+                Helpers.SensitiveUrlRedactor.RedactForRequest(request, request.RequestUri?.ToString()),
                 MessageSanitizer.SanitizeWith(_sensitiveDataMasker, errorContent, 500));
             throw CreateApiException(response.StatusCode, errorContent, request.RequestUri?.ToString(), capturedRequestContent);
         }

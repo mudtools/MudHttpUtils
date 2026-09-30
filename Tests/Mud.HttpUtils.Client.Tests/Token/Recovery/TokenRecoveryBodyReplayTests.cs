@@ -25,17 +25,18 @@ public class TokenRecoveryBodyReplayTests
         => new(manager, options);
 
     /// <summary>
-    /// 不可重放 StreamContent：首次发送应携带完整请求体（缓冲回填后首次发送体不丢失）。
+    /// 不可寻址流（无 Content-Length）+ 非幂等方法：R-P1-02 后<b>不预读</b>，首次发送体完整但放弃恢复。
+    /// 关键断言是"首次发送体不丢失/不截断"（修复 B8）；放弃恢复是本条已声明的取舍。
     /// </summary>
     [Fact]
-    public async Task Recovery_StreamContent_FirstSend_ShouldCarryFullBody()
+    public async Task Recovery_NonSeekableStreamContent_FirstSend_ShouldCarryFullBody()
     {
         var manager = CreateAlwaysValidManager();
         var executor = CreateExecutor(manager.Object);
 
         var originalBytes = Encoding.UTF8.GetBytes("hello-world-body-data");
         var nonSeekableStream = new NonSeekableStream(originalBytes);
-        var request = new HttpRequestMessage(HttpMethod.Post, "https://api.example.com/upload")
+        var request = new HttpRequestMessage(HttpMethod.Put, "https://api.example.com/upload")
         {
             Content = new StreamContent(nonSeekableStream),
             Headers = { Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "stale") }
@@ -48,21 +49,21 @@ public class TokenRecoveryBodyReplayTests
             {
                 if (req.Content != null)
                     firstSendBody = await req.Content.ReadAsByteArrayAsync(ct);
-                var auth = req.Headers.Authorization?.Parameter;
-                return auth == "refreshed-token"
-                    ? new HttpResponseMessage(HttpStatusCode.OK)
-                    : new HttpResponseMessage(HttpStatusCode.Unauthorized);
+                return new HttpResponseMessage(HttpStatusCode.Unauthorized);
             },
             CancellationToken.None);
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK, "恢复成功");
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+            "未声明长度的流式体不具备无损重放能力（R-P1-02）");
         firstSendBody.Should().NotBeNull("首次发送应读出请求体");
-        firstSendBody.Should().Equal(originalBytes, "首次发送体应与原始字节一致（TMR-02：缓冲回填）");
+        firstSendBody.Should().Equal(originalBytes,
+            "首次发送体必须完整（修复前预读会消费流，导致首发送截断）");
         response.Dispose();
     }
 
     /// <summary>
     /// 可重放内容（ByteArrayContent）：首次发送与重试发送体应一致。
+    /// 注：用 PUT（幂等）以隔离 R-P1-04 幂等门控。
     /// </summary>
     [Fact]
     public async Task Recovery_ByteArrayContent_FirstSendAndRetry_ShouldCarrySameBody()
@@ -71,7 +72,7 @@ public class TokenRecoveryBodyReplayTests
         var executor = CreateExecutor(manager.Object);
 
         var originalBytes = Encoding.UTF8.GetBytes("replay-test-payload");
-        var request = new HttpRequestMessage(HttpMethod.Post, "https://api.example.com/items")
+        var request = new HttpRequestMessage(HttpMethod.Put, "https://api.example.com/items")
         {
             Content = new ByteArrayContent(originalBytes),
             Headers = { Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", "stale") }

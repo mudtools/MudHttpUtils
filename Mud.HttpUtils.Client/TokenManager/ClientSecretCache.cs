@@ -21,7 +21,7 @@ namespace Mud.HttpUtils;
 /// 跨线程可见性。
 /// </para>
 /// </remarks>
-internal sealed class ClientSecretCache
+internal sealed class ClientSecretCache : IDisposable
 {
     // L-10：TTL 改为按需读取的委托，使 OAuth2Options.ClientSecretCacheTtlSeconds 的热更新真正生效。
     // 原实现把 TimeSpan 在构造时固化，配置变更必须重建管理器实例才生效（且重建管理器会丢失令牌缓存）。
@@ -79,8 +79,13 @@ internal sealed class ClientSecretCache
         var ttl = _ttlProvider();
 
         // TMX-01/MT-04：TTL <= 0 即"不缓存"——不读缓存、不进闸门、不写缓存，直接短路走工厂。
+        // R-P2-05（C3）：短路时同步解除<b>已驻留</b>的值 —— 否则"不缓存"只对新解析生效，
+        // 旧明文仍留在字段里直到进程退出（TTL 由 >0 热更新为 0 的场景）。
         if (ttl <= TimeSpan.Zero)
+        {
+            Clear();
             return await factory(ct).ConfigureAwait(false);
+        }
 
         var now = DateTimeOffset.UtcNow.UtcTicks;
         var cached = Volatile.Read(ref _value);
@@ -99,7 +104,13 @@ internal sealed class ClientSecretCache
             var resolved = await factory(ct).ConfigureAwait(false);
 
             // MT-04：空结果不缓存（解析出空串说明密钥源异常/未就绪，不应固化）。
-            if (!string.IsNullOrEmpty(resolved))
+            if (string.IsNullOrEmpty(resolved))
+            {
+                // R-P2-05（C3）：解析失败时**同时清除**上一次的陈旧值 —— 原实现只"不写入"，
+                // 已过期的旧密钥仍以明文形式驻留内存直到下次覆盖（本类承载的是 client_secret）。
+                Clear();
+            }
+            else
             {
                 // 用闸内重新读取的 TTL（配置可能在等待闸期间变化）；
                 // TMX-01：TTL 自"解析完成"起算（原实现用进闸门前时间，密钥服务慢时会"落位即过期"）。
@@ -108,6 +119,11 @@ internal sealed class ClientSecretCache
                 {
                     Volatile.Write(ref _value, resolved);
                     Volatile.Write(ref _expiresAtTicks, DateTimeOffset.UtcNow.UtcTicks + effectiveTtl.Ticks);
+                }
+                else
+                {
+                    // TTL 被热更新为"不缓存"：不得把上一次的值继续留在字段里。
+                    Clear();
                 }
             }
 
@@ -118,4 +134,37 @@ internal sealed class ClientSecretCache
             _gate.Release();
         }
     }
+
+    /// <summary>
+    /// R-P2-05（C3）：清除缓存中的密钥明文（幂等、线程安全）。
+    /// </summary>
+    /// <remarks>
+    /// 调用点：① 密钥解析失败（陈旧值不再有使用价值，继续驻留只是扩大泄漏面）；
+    /// ② TTL 被配置为"不缓存"；③ <see cref="Dispose"/>（管理器释放时）。
+    /// <para>
+    /// 说明：.NET 字符串不可变，本方法只能解除引用而无法擦除已分配的内存 ——
+    /// 这是"字符串承载密钥"的固有局限（真正零驻留需 <c>byte[]</c> + <c>CryptographicOperations.ZeroMemory</c>，
+    /// 属未来大版本议题，已在 <see cref="OAuth2Options.ClientSecret"/> 文档中标明）。
+    /// </para>
+    /// </remarks>
+    public void Clear()
+    {
+        Volatile.Write(ref _value, null);
+        Volatile.Write(ref _expiresAtTicks, 0);
+    }
+
+    /// <summary>
+    /// R-P2-05 测试观测钩子：缓存中是否仍持有密钥明文（经 <c>InternalsVisibleTo</c> 使用）。
+    /// </summary>
+    internal bool HasCachedValueForTest => Volatile.Read(ref _value) != null;
+
+    /// <summary>
+    /// R-P2-05（C3）：释放缓存 —— 清除密钥明文。
+    /// </summary>
+    /// <remarks>
+    /// 刻意<b>不</b> Dispose <see cref="_gate"/>：与 <c>KeyedLockTable.Dispose</c> 同一决策 ——
+    /// 在途 <see cref="GetAsync"/> 的 <c>Release()</c> 必须安全（否则抛 <see cref="ObjectDisposedException"/>）。
+    /// <see cref="SemaphoreSlim"/> 在未创建等待句柄时也不持有需要确定性释放的资源。
+    /// </remarks>
+    public void Dispose() => Clear();
 }

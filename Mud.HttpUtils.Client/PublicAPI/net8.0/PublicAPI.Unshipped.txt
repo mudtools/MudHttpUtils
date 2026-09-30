@@ -1,1 +1,7 @@
 #nullable enable
+
+const Mud.HttpUtils.StandardOAuth2TokenManager.HttpClientName = "MudHttpOAuth2Token" -> string!
+Mud.HttpUtils.OAuth2Options.RestrictOAuth2EndpointsToPublicAddresses.get -> bool
+Mud.HttpUtils.OAuth2Options.RestrictOAuth2EndpointsToPublicAddresses.set -> void
+override Mud.HttpUtils.StandardOAuth2TokenManager.Dispose(bool disposing) -> void
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddMudHttpOAuth2TokenManager(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Mud.HttpUtils.OAuth2Options!>? configureOptions = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

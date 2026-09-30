@@ -20,8 +20,19 @@ namespace Mud.HttpUtils;
 /// （管理器使用 <see cref="ITokenCache{T}"/> 进行内存级缓存，加密包装由 <c>EncryptedTokenCache&lt;T&gt;</c> 承担）。
 /// 如需多实例共享令牌，请实现 <see cref="ITokenCache{T}"/> 并注入管理器。异步令牌缓存契约列入 v2 提案。
 /// </para>
+/// <para>
+/// <b>R-P3-04（已废弃）</b>：与 <see cref="ITokenStore"/> 同理 —— 加密令牌缓存的现行能力由
+/// <c>EncryptedTokenCache&lt;T&gt;</c> + <see cref="IEncryptionProvider"/> 承担（见
+/// <c>UserTokenManagerBase</c> 的加密构造函数），本契约不参与管线。
+/// </para>
 /// </remarks>
+#pragma warning disable CS0618 // R-P3-04：派生接口刻意继续支持旧契约（废弃只针对新代码引用）。
+[Obsolete(
+    "IEncryptedTokenStore 不参与 ITokenManager 令牌管线；加密令牌缓存由 EncryptedTokenCache<T> + IEncryptionProvider 承担。" +
+    "如需持久化 / 跨实例共享令牌，请实现 ITokenCache<T> 并注入管理器。",
+    error: false)]
 public interface IEncryptedTokenStore : ITokenStore
+#pragma warning restore CS0618
 {
     /// <summary>
     /// 获取一个值，指示此存储实例是否已启用加密。

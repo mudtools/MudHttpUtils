@@ -54,6 +54,26 @@ public class TokenRecoveryOptions
     private double _refreshTimeoutSeconds = 30;
 
     /// <summary>
+    /// I3（R-P0-02）等待令牌刷新的硬墙钟（秒）。默认 <c>0</c> 表示<b>自动</b>：取
+    /// <see cref="RefreshTimeoutSeconds"/> + 5 秒余量（保证协作式超时先于硬墙钟生效）。
+    /// <para>
+    /// 语义：单个等待者对共享刷新的最长等待时间（超时抛 <see cref="TimeoutException"/>）；
+    /// 同时也是<b>共享刷新自身</b>的取消预算 —— 防止第三方 <c>ITokenManager</c> 不响应取消时
+    /// 刷新任务永久挂起。等待超时/取消后条目会出表或标记废弃，保证后续 401 可重新刷新。
+    /// </para>
+    /// <para>设为正数时以其为准（应大于 <see cref="RefreshTimeoutSeconds"/>，否则协作式超时不再有机会生效）。</para>
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">设置小于 0 的值时抛出。</exception>
+    public double RefreshWaitHardTimeoutSeconds
+    {
+        get => _refreshWaitHardTimeoutSeconds;
+        set => _refreshWaitHardTimeoutSeconds = value >= 0
+            ? value
+            : throw new ArgumentOutOfRangeException(nameof(RefreshWaitHardTimeoutSeconds), "等待硬超时秒数不能为负数。");
+    }
+    private double _refreshWaitHardTimeoutSeconds;
+
+    /// <summary>
     /// 401 恢复重试可缓冲的请求体最大字节数，默认 1MB（1 * 1024 * 1024）。
     /// <para>
     /// <b>三态体处理模型</b>（D1 修订）：
@@ -78,6 +98,38 @@ public class TokenRecoveryOptions
         set => _maxCachedRequestBodyBytes = value >= 0 ? value : throw new ArgumentOutOfRangeException(nameof(MaxCachedRequestBodyBytes), "请求体缓冲上限不能为负数。");
     }
     private long _maxCachedRequestBodyBytes = 1 * 1024 * 1024;
+
+    /// <summary>
+    /// R-P1-03：401 恢复链路的请求体缓冲策略，默认 <see cref="RequestBodyBufferingMode.Auto"/>。
+    /// </summary>
+    /// <remarks>
+    /// <para>"不缓冲"由 <see cref="MaxCachedRequestBodyBytes"/> = 0 表达（该值下本属性无实际作用）。</para>
+    /// <para>
+    /// 枚举/引用类型属性不参与 <c>IConfiguration</c> 绑定的既有约定保持不变 ——
+    /// 本属性通过<b>编程式配置</b>设置（<c>services.Configure&lt;TokenRecoveryOptions&gt;(o =&gt; ...)</c>）。
+    /// </para>
+    /// </remarks>
+    public RequestBodyBufferingMode BufferingMode { get; set; } = RequestBodyBufferingMode.Auto;
+
+    /// <summary>
+    /// R-P1-04：是否允许对<b>非幂等</b>方法（POST/PATCH 等）执行 401 重放。默认 <c>false</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>破坏性行为变更（2.1.0）</b>：2.0.x 对任意方法（含 POST）自动重放 401 请求。
+    /// 重放可能造成重复下单 / 重复扣款等业务副作用，故默认收窄为"仅幂等方法"
+    /// （GET/HEAD/OPTIONS/TRACE/PUT/DELETE），与 Resilience 侧的重试白名单语义对齐。
+    /// </para>
+    /// <para>
+    /// 置 <c>true</c> 可恢复 2.0.x 行为 —— <b>仅当服务端保证"401 必然未处理请求"</b>时才应开启
+    /// （例如网关在鉴权阶段即拒绝、请求未到达业务逻辑）。
+    /// </para>
+    /// <para>
+    /// 更精细的做法是契约级放行：在接口 / 方法上声明可安全重放（生成器写入
+    /// <see cref="TokenRecoveryContext.IsRetryAllowedExplicitly"/>），仅对确实幂等的 POST 开洞。
+    /// </para>
+    /// </remarks>
+    public bool AllowNonIdempotentRecovery { get; set; }
 
     /// <summary>
     /// TMR-12：令牌刷新去重窗口（秒），默认 2。

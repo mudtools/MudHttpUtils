@@ -131,6 +131,73 @@ public class KeyedLockTableBackoffTests
         manager.UserLockTableCountForTest.Should().Be(0, "纯缓存命中路径不应触碰锁表");
     }
 
+    // ---- R-P2-02：指数退避（1→2→4→8→16→32→50→50…）----
+
+    /// <summary>
+    /// R-P2-02：退避<b>序列</b>精确断言（不依赖计时推断）。
+    /// </summary>
+    [Fact]
+    public void BackoffFor_ShouldBeExponentialAndBounded()
+    {
+        var expected = new[] { 1, 2, 4, 8, 16, 32, 50, 50, 50, 50 };
+        for (var i = 0; i < expected.Length; i++)
+        {
+            KeyedLockTable.BackoffFor(i + 1).Should().Be(expected[i], $"第 {i + 1} 次退避");
+        }
+
+        KeyedLockTable.BackoffFor(long.MaxValue).Should().Be(
+            KeyedLockTable.MaxBackoffMillisecondsForTest, "极值输入不得位移溢出");
+        KeyedLockTable.BackoffFor(0).Should().Be(1, "越界输入须 clamp 为基数");
+        KeyedLockTable.MaxBackoffMillisecondsForTest.Should().Be(50, "单次退避上界");
+    }
+
+    /// <summary>
+    /// R-P2-02：长时间持锁（模拟 401 刷新）时等待者的重试次数相比固定 1ms 退避应下降 ≥ 95%。
+    /// </summary>
+    /// <remarks>
+    /// 固定 1ms 退避下，H 毫秒持锁窗口内每等待者约 H 次重试；指数退避后约
+    /// <c>log 级 + (H-63)/50</c> 次。以 500ms 窗口、4 个等待者计：
+    /// 修复前 ≈ 4 × 500 = 2000，修复后 ≈ 4 × 15 ≈ 60 ⇒ 阈值取 <c>2000 × 5% = 100</c>。
+    /// </remarks>
+    [Fact]
+    public async Task AcquireAsync_LongHeldRetiredLock_ShouldReduceSpinRetriesByOver95Percent()
+    {
+        using var table = new KeyedLockTable();
+        const string key = "long-held-key";
+        const int workers = 4;
+        const int holdMilliseconds = 500;
+
+        var retiredMarked = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var holder = Task.Run(async () =>
+        {
+            using (await table.AcquireAsync(key, CancellationToken.None))
+            {
+                table.TryRetire(key);
+                retiredMarked.TrySetResult(true);
+                await Task.Delay(holdMilliseconds);
+            }
+        });
+
+        await retiredMarked.Task;
+
+        var waiters = Enumerable.Range(0, workers)
+            .Select(_ => Task.Run(async () =>
+            {
+                using (await table.AcquireAsync(key, CancellationToken.None))
+                {
+                }
+            }))
+            .ToArray();
+
+        var all = Task.WhenAll(waiters.Append(holder));
+        (await Task.WhenAny(all, Task.Delay(10_000))).Should().BeSameAs(all, "退避修复后不应有活锁");
+
+        const long fixedBackoffBaseline = (long)workers * holdMilliseconds;   // 固定 1ms 退避的理论量级
+        table.SpinRetries.Should().BeLessThan(fixedBackoffBaseline / 20,
+            $"指数退避应把重试次数压到基线（{fixedBackoffBaseline}）的 5% 以下");
+    }
+
     private static void InterlockedExchangeMax(ref int location, int value)
     {
         int initial, computed;

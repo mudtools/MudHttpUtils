@@ -18,6 +18,13 @@ namespace Mud.HttpUtils;
 /// <remarks>
 /// <para>此处理器应添加到 HttpClient 的消息处理管道中，位于所有其他 DelegatingHandler 之后（最靠近网络层）。</para>
 /// <para>
+/// <b>硬性约束（架构不变式 I2，R-P0-01）</b>：<b>不得</b>把本处理器挂载到 OAuth2 令牌端点所使用的
+/// <see cref="System.Net.Http.HttpClient"/> 上。否则令牌端点的 401 会重新进入令牌恢复、
+/// 命中同一去重键的"在途刷新"条目并 <c>await</c> 自身 ⇒ <b>永久死锁</b>。
+/// 库已通过 <see cref="TokenRefreshAmbient"/>（刷新调用栈环境标记）在执行器入口建立熔断，
+/// 使该误配退化为"刷新期间的请求不再获得 401 恢复"，但正确做法仍是不要把本处理器接到令牌端点客户端上。
+/// </para>
+/// <para>
 /// 此类是 <see cref="TokenRecoveryExecutor"/> 的薄包装器，保留以支持通过
 /// <c>AddHttpMessageHandler</c> 注册的向后兼容场景。
 /// 新的代码应优先使用 <see cref="TokenRecoveryEnhancedClient"/>。

@@ -38,7 +38,9 @@ namespace Mud.HttpUtils;
 /// var token = await store.GetAccessTokenAsync("TenantAccessToken");
 /// </code>
 /// </example>
+#pragma warning disable CS0618 // R-P3-04：本类型刻意继续支持已废弃的存储契约（废弃只针对新代码引用）。
 public class MemoryTokenStore : ITokenStore
+#pragma warning restore CS0618
 {
     private readonly ConcurrentDictionary<string, TokenEntry> _store = new(StringComparer.OrdinalIgnoreCase);
 

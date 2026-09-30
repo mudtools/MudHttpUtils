@@ -29,6 +29,15 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     // KeyedLockTable（retire 协议 + 引用计数），与基类 TokenManagerBase 统一锁生命周期实现。
     // SR-M1（P2.2，D7）后锁键为 userId 或 userId + "\u001F" + scopeKey 复合键，按作用域隔离。
     private readonly KeyedLockTable _userLockTable = new();
+
+    // TR-06（R-P0-03）用户级刷新闸：锁键为**裸 userId**（跨作用域共享）。
+    // 缺陷（B3）：复合键锁只隔离到"用户 × 作用域"，而刷新调用 RefreshUserTokenAsync(userId) 是
+    // **用户级**的 —— 同一用户两个作用域并发时持有两把不同的复合键锁，却会并发使用同一个
+    // refresh_token，在轮换型 IdP 下触发 invalid_grant / 令牌丢失，
+    // 与 IUserTokenManager 承诺的"同一 userId 的并发调用只触发一次刷新"不一致。
+    // 锁序固定为"复合键锁 → 用户闸"（其它路径均只取其一，无成环）。
+    private readonly KeyedLockTable _userRefreshGate = new();
+
     private readonly ITokenCache<UserTokenInfo> _userTokenCache;
     private readonly UserTokenCacheOptions _cacheOptions;
 
@@ -45,6 +54,14 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     // 用 StrongBox<long> + Interlocked 保证递增原子性（直接对 ConcurrentDictionary<string,long> 的
     // 值做 Interlocked.Increment 不可行；读路径经 Volatile.Read 无锁）。
     private readonly ConcurrentDictionary<string, StrongBox<long>> _writeGenerations = new(StringComparer.Ordinal);
+
+    // R-P2-04：userId → 该用户全部缓存键（裸 userId 键 + userId + US + scopeKey 复合键）的反向索引。
+    // 动机：HasValidTokenAsync / CanRefreshTokenAsync 原先每次都要遍历**全体**用户的缓存键做前缀匹配，
+    // 在用户基数大时是 O(缓存总条目数) 的热路径开销；索引把"命中"情形降为 O(该用户条目数)。
+    // 定位（评审修订 14）：索引是**读侧快路径**，不是权威数据源 ——
+    // ① 未命中时仍回退前缀扫描，故"外部注入/预填充的 ITokenCache"（索引为空）不会产生误判；
+    // ② 移除路径（登出）保留前缀扫描作为权威手段，绝不因索引不完整而漏删（安全优先）。
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _userKeyIndex = new(StringComparer.Ordinal);
 
     // MT-06：用户侧维护定时器。
     // 原实现中 CleanupOrphanedLocks() 为 protected 且全仓无调用者，叠加
@@ -211,6 +228,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     public virtual Task<bool> RemoveTokenAsync(string userId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(userId)) return Task.FromResult(false);
+        EnsureValidUserId(userId);                  // I1（R-P0-04）：与写入路径同口径，避免"能写不能删"
         RemoveUserTokenFromCache(userId);           // 已含全部作用域 + TryRetire + 清退避
         return Task.FromResult(true);
     }
@@ -224,18 +242,9 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     public virtual Task<bool> HasValidTokenAsync(string userId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(userId)) return Task.FromResult(false);
-        if (IsUserTokenValid(GetUserTokenFromCache(userId))) return Task.FromResult(true);
 
-        var prefix = userId + UserScopeKeySeparator;
-        foreach (var key in _userTokenCache.Keys)
-        {
-            if (key.StartsWith(prefix, StringComparison.Ordinal)
-                && IsUserTokenValid(GetUserTokenFromCache(key)))
-            {
-                return Task.FromResult(true);
-            }
-        }
-        return Task.FromResult(false);
+        // R-P2-04：索引快路径（O(该用户条目数)）→ 未命中回退全量前缀扫描（语义不劣于引入索引前）。
+        return Task.FromResult(AnyUserEntrySatisfies(userId, IsUserTokenValid));
     }
 
     /// <inheritdoc />
@@ -246,18 +255,9 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     public virtual Task<bool> CanRefreshTokenAsync(string userId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(userId)) return Task.FromResult(false);
-        if (GetUserTokenFromCache(userId)?.RefreshToken != null) return Task.FromResult(true);
 
-        var prefix = userId + UserScopeKeySeparator;
-        foreach (var key in _userTokenCache.Keys)
-        {
-            if (key.StartsWith(prefix, StringComparison.Ordinal)
-                && GetUserTokenFromCache(key)?.RefreshToken != null)
-            {
-                return Task.FromResult(true);
-            }
-        }
-        return Task.FromResult(false);
+        // R-P2-04：同 HasValidTokenAsync，走索引快路径 + 前缀扫描兜底。
+        return Task.FromResult(AnyUserEntrySatisfies(userId, static info => info?.RefreshToken != null));
     }
 
     /// <inheritdoc />
@@ -296,6 +296,8 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         if (string.IsNullOrEmpty(userId))
             return null;
 
+        EnsureValidUserId(userId!);      // I1（R-P0-04）：裸键与复合键的空间隔离防线（B10）
+
         if (_disposed)
             throw new ObjectDisposedException(GetType().Name);
 
@@ -328,26 +330,50 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
             // TR-04：记录进入刷新前的代际；刷新期间若发生登出/失效（代际变化），
             // 本次刷新的结果必须被丢弃，否则用户已登出但令牌被写回（"令牌复活"）。
+            // 注：代际捕获刻意保留在**用户闸之前**（与既有语义一致，更保守）——
+            // 闸门等待期间发生的登出同样使本次写回被丢弃。
+            // R-P0-03 补强：先登记该键，使"刷新在途时登出"也能被作废（否则登出的前缀清扫扫不到未落缓存的键）。
+            EnsureWriteGeneration(cacheKey);
             var generationAtStart = CurrentWriteGeneration(cacheKey);
 
-            var refreshedInfo = await RefreshUserTokenAsync(userId!, cancellationToken).ConfigureAwait(false);
-            if (refreshedInfo != null)
+            // TR-06（R-P0-03）用户级刷新闸：同一 userId 的并发刷新串行化（refresh_token 轮换安全）。
+            // 签名零变化：RefreshUserTokenAsync(string, CancellationToken) 抽象签名不变，串行化由基类承担。
+            using (var userGate = await _userRefreshGate.AcquireAsync(userId!, cancellationToken).ConfigureAwait(false))
             {
-                if (CurrentWriteGeneration(cacheKey) != generationAtStart)
+                try
                 {
-                    // TR-04：写回被代际守卫丢弃 —— 调用方按"未取得令牌"处理（登出语义：最终一致）。
-                    _userLockTable.TryRetire(cacheKey);
+                    // 二次检查：同用户的另一作用域可能已在等待期间完成刷新并写入本键
+                    // （刷新是用户级的，返回的 UserTokenInfo 对同用户各作用域等价可复用）。
+                    cachedInfo = GetUserTokenFromCache(cacheKey);
+                    if (IsUserTokenValid(cachedInfo))
+                        return cachedInfo!.AccessToken;
+
+                    var refreshedInfo = await RefreshUserTokenAsync(userId!, cancellationToken).ConfigureAwait(false);
+                    if (refreshedInfo != null)
+                    {
+                        if (CurrentWriteGeneration(cacheKey) != generationAtStart)
+                        {
+                            // TR-04：写回被代际守卫丢弃 —— 调用方按"未取得令牌"处理（登出语义：最终一致）。
+                            _userLockTable.TryRetire(cacheKey);
+                            return null;
+                        }
+
+                        RecordUserRefreshSuccess(cacheKey);
+                        UpdateUserTokenCache(cacheKey, refreshedInfo);
+                        return refreshedInfo.AccessToken;
+                    }
+
+                    RecordUserRefreshFailure(cacheKey);
+                    _userLockTable.TryRetire(cacheKey);   // TMX-05：失败无条目 → 锁无复用价值
                     return null;
                 }
-
-                RecordUserRefreshSuccess(cacheKey);
-                UpdateUserTokenCache(cacheKey, refreshedInfo);
-                return refreshedInfo.AccessToken;
+                finally
+                {
+                    // TR-06（R-P0-03）回收用户闸条目，避免按 userId 的无界增长。
+                    // KeyedLockTable 的 retire 协议：若仍有等待者则仅标记，由最后一个 Releaser 完成移除。
+                    _userRefreshGate.TryRetire(userId!);
+                }
             }
-
-            RecordUserRefreshFailure(cacheKey);
-            _userLockTable.TryRetire(cacheKey);      // TMX-05：失败无条目 → 锁无复用价值
-            return null;
         }
     }
 
@@ -373,6 +399,8 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
 
         var slidingExpiration = TimeSpan.FromSeconds(_cacheOptions.SlidingExpirationSeconds);
 
+        // R-P2-04：登记到用户键索引（键可能是裸 userId，也可能是 userId + US + scopeKey 复合键）。
+        RegisterUserKey(userId);
         _userTokenCache.Set(userId, tokenInfo, absoluteExpiration, slidingExpiration, OnUserTokenEvicted);
     }
 
@@ -382,6 +410,9 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         // 仅当无等待者时移除；若锁正被占用则仅标记退休，由最后一个 Releaser 完成移除。
         // 彻底消除原实现中“缓存驱逐时移除在途锁导致互斥失效”的缺陷。
         _userLockTable.TryRetire(cacheKey);
+        // R-P2-04：驱逐回调是条目离开缓存的统一出口（TTL 过期 / LRU / 显式移除都会触发），
+        // 在此注销索引可保证索引不会残留已不存在的键。
+        UnregisterUserKey(cacheKey);
     }
 
     /// <summary>
@@ -404,10 +435,14 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         _userLockTable.TryRetire(userId);
         _userRefreshFailures.TryRemove(userId, out _);   // 登出重置退避（D10-B）
         BumpWriteGeneration(userId);                // TR-04：作废该键在途刷新的写回
+        UnregisterUserKey(userId);                  // R-P2-04
 
         if (!includeAllScopes)
             return;
 
+        // R-P2-04：此处**保留**前缀扫描作为权威移除手段（而非改用索引）——
+        // 索引是读侧快路径，可能不覆盖"外部注入/预填充的 ITokenCache"中的条目；
+        // 而登出漏删是安全问题，宁可承担一次 O(条目数) 扫描（登出属低频操作）。
         var prefix = userId + UserScopeKeySeparator;
         foreach (var key in _userTokenCache.Keys.ToList())
         {
@@ -417,9 +452,131 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
                 _userLockTable.TryRetire(key);
                 _userRefreshFailures.TryRemove(key, out _);
                 BumpWriteGeneration(key);           // TR-04：scope 化条目同样作废写回
+                UnregisterUserKey(key);             // R-P2-04
             }
         }
+
+        // TR-04 补强（R-P0-03）：同时扫描代际表 —— 刷新**在途**时其键尚未落入缓存，
+        // 仅靠上面的缓存键前缀扫描会漏掉它，导致登出后该次刷新仍写回（令牌复活）。
+        // 见 GetOrRefreshTokenCoreAsync 中的 EnsureWriteGeneration 登记点。
+        foreach (var kv in _writeGenerations.ToList())
+        {
+            if (kv.Key.StartsWith(prefix, StringComparison.Ordinal))
+                BumpWriteGeneration(kv.Key);
+        }
     }
+
+    #region R-P2-04 用户键索引
+
+    /// <summary>
+    /// R-P2-04：从缓存键解析所属 userId（裸键即 userId；复合键取 US 之前的分段）。
+    /// </summary>
+    /// <remarks>
+    /// 解析无歧义：<see cref="EnsureValidUserId"/> 已禁止 userId 内含控制字符，
+    /// 故 <see cref="UserScopeKeySeparator"/> 只可能出现在"分段边界"。
+    /// </remarks>
+    private static string ExtractUserId(string cacheKey)
+    {
+        var separatorIndex = cacheKey.IndexOf(UserScopeKeySeparator);
+        return separatorIndex < 0 ? cacheKey : cacheKey.Substring(0, separatorIndex);
+    }
+
+    /// <summary>R-P2-04：登记 cacheKey 到其 userId 的索引（幂等）。</summary>
+    private void RegisterUserKey(string cacheKey)
+    {
+        if (string.IsNullOrEmpty(cacheKey))
+            return;
+
+        var keys = _userKeyIndex.GetOrAdd(
+            ExtractUserId(cacheKey),
+            static _ => new ConcurrentDictionary<string, byte>(StringComparer.Ordinal));
+        keys.TryAdd(cacheKey, 0);
+    }
+
+    /// <summary>R-P2-04：注销 cacheKey；该用户已无任何键时移除索引项（避免按 userId 的无界增长）。</summary>
+    private void UnregisterUserKey(string cacheKey)
+    {
+        if (string.IsNullOrEmpty(cacheKey))
+            return;
+
+        var userId = ExtractUserId(cacheKey);
+        if (!_userKeyIndex.TryGetValue(userId, out var keys))
+            return;
+
+        keys.TryRemove(cacheKey, out _);
+
+        if (keys.IsEmpty)
+        {
+#if NET5_0_OR_GREATER
+            _userKeyIndex.TryRemove(new KeyValuePair<string, ConcurrentDictionary<string, byte>>(userId, keys));
+#else
+            ((ICollection<KeyValuePair<string, ConcurrentDictionary<string, byte>>>)_userKeyIndex)
+                .Remove(new KeyValuePair<string, ConcurrentDictionary<string, byte>>(userId, keys));
+#endif
+        }
+    }
+
+    /// <summary>
+    /// R-P2-04：索引命中时的候选键快照（未命中返回 null，由调用方回退前缀扫描）。
+    /// </summary>
+    private string[]? GetIndexedUserKeys(string userId)
+        => _userKeyIndex.TryGetValue(userId, out var keys) ? keys.Keys.ToArray() : null;
+
+    /// <summary>
+    /// R-P2-04：读侧统一的"该用户是否存在满足条件的条目"判定。
+    /// </summary>
+    /// <param name="userId">用户标识。</param>
+    /// <param name="predicate">条目满足条件判断（作用于缓存中的 <see cref="UserTokenInfo"/>）。</param>
+    /// <returns>存在满足条件的条目返回 true。</returns>
+    /// <remarks>
+    /// 两段式：① 索引快路径（仅检查该用户的条目）；② 索引未命中时回退全量前缀扫描。
+    /// 第 ② 段保证语义<b>绝不劣于</b>引入索引之前（外部预填充的缓存、或未来新增写入路径漏登记时，
+    /// 只会退化为原有性能，而不会漏报）。
+    /// </remarks>
+    private bool AnyUserEntrySatisfies(string userId, Func<UserTokenInfo?, bool> predicate)
+    {
+        if (predicate(GetUserTokenFromCache(userId)))
+            return true;
+
+        var indexedKeys = GetIndexedUserKeys(userId);
+        if (indexedKeys != null)
+        {
+            foreach (var key in indexedKeys)
+            {
+                if (predicate(GetUserTokenFromCache(key)))
+                    return true;
+            }
+        }
+
+        // 索引未命中（或索引尚未覆盖该用户的全部键）→ 回退权威的前缀扫描。
+        var prefix = userId + UserScopeKeySeparator;
+        foreach (var key in _userTokenCache.Keys)
+        {
+            if (key.StartsWith(prefix, StringComparison.Ordinal) && predicate(GetUserTokenFromCache(key)))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>R-P2-04 测试观测钩子：用户键索引的用户数。</summary>
+    internal int UserKeyIndexCountForTest => _userKeyIndex.Count;
+
+    /// <summary>R-P2-04 测试观测钩子：用户键索引登记的全部缓存键数。</summary>
+    internal int UserKeyIndexTotalKeysForTest
+    {
+        get
+        {
+            var total = 0;
+            foreach (var kv in _userKeyIndex)
+            {
+                total += kv.Value.Count;
+            }
+            return total;
+        }
+    }
+
+    #endregion
 
     #region TR-04 写入代际守卫
 
@@ -433,6 +590,17 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         var box = _writeGenerations.GetOrAdd(cacheKey, _ => new StrongBox<long>(0));
         Interlocked.Increment(ref box.Value);
     }
+
+    /// <summary>
+    /// TR-04 补强（R-P0-03）：确保 cacheKey 已在代际表中登记（不改变当前值）。
+    /// </summary>
+    /// <remarks>
+    /// 原实现仅在"移除缓存条目"时递增代际，而登出的 scoped 清扫是**按缓存键前缀**扫描的；
+    /// 若刷新仍<b>在途</b>（该键尚未写入缓存），清扫扫不到它 ⇒ 登出后这次刷新的结果仍会写回（令牌复活）。
+    /// 在此提前登记键，使 <see cref="RemoveUserCacheEntries"/> 能按代际表前缀扫描并作废在途写回。
+    /// </remarks>
+    private void EnsureWriteGeneration(string cacheKey)
+        => _writeGenerations.GetOrAdd(cacheKey, static _ => new StrongBox<long>(0));
 
     /// <summary>
     /// TR-04：测试观测钩子（经 InternalsVisibleTo）—— 写入代际表当前条目数，
@@ -482,6 +650,20 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
             if (!_userTokenCache.TryGet(kv.Key, out _) && !lockKeys.Contains(kv.Key))
                 _writeGenerations.TryRemove(kv.Key, out _);
         }
+
+        // R-P2-04：索引随缓存同步收敛 —— 移除已不在缓存中的键（含"外部缓存被清理"的情形），
+        // 用户已无任何键时移除其索引项，避免按 userId 的无界增长。
+        foreach (var kv in _userKeyIndex.ToList())
+        {
+            foreach (var cacheKey in kv.Value.Keys.ToArray())
+            {
+                if (!_userTokenCache.TryGet(cacheKey, out _))
+                    UnregisterUserKey(cacheKey);
+            }
+
+            if (kv.Value.IsEmpty)
+                UnregisterUserKey(kv.Key);
+        }
     }
 
     /// <summary>
@@ -494,17 +676,37 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// </summary>
     internal int UserLockTableCountForTest => _userLockTable.Count;
 
+    /// <summary>
+    /// TR-06（R-P0-03）测试观测钩子：用户级刷新闸当前条目数（断言闸条目在刷新结束后被退休回收，不无界增长）。
+    /// </summary>
+    internal int UserRefreshGateCountForTest => _userRefreshGate.Count;
+
+    /// <summary>
+    /// R-P1-06 诊断/测试观测钩子：用户令牌缓存是否<b>实际</b>启用了加密包装。
+    /// </summary>
+    /// <remarks>
+    /// DI 层据此在"管理器回退到明文缓存"时发出显式告警 —— 以实例状态判定，不做构造函数签名反射
+    /// （AOT / 裁剪友好且零误报）。详见 <c>AddMudHttpTokenManager</c> 的接线说明。
+    /// </remarks>
+    internal bool UsesEncryptedCache => _userTokenCache is EncryptedTokenCache<UserTokenInfo>;
+
     /// <inheritdoc />
     public override Task<TokenResult> InvalidateTokenAsync(string[]? scopes = null, CancellationToken cancellationToken = default)
     {
         // P2.8（TK-14）语义收敛：用户令牌管理器无法仅凭 scopes 定位到具体用户，租户级
         // InvalidateTokenAsync 对用户令牌无意义。若实现静默调用 base（清空共享凭据缓存）或
         // 紧凑用户缓存，会产生"调用方以为用户令牌已失效，实则其他用户令牌也被连带影响"的歧义。
-        // 故明确抛出 NotSupportedException，引导调用方改用按用户定位的 InvalidateUserTokenAsync(userId) /
-        // RemoveTokenAsync(userId)。
-        throw new NotSupportedException(
-            "UserTokenManagerBase 不支持租户级 InvalidateTokenAsync。请使用 InvalidateUserTokenAsync(userId) " +
-            "或 RemoveTokenAsync(userId) 使指定用户的令牌失效。");
+        //
+        // R-P3-01（评审修订 3）：**不再抛 NotSupportedException** —— 接口
+        // <see cref="ITokenManager.InvalidateTokenAsync"/> 的契约是"返回失效前的令牌信息"，
+        // 抛异常会破坏契约，使"统一遍历所有管理器使其失效"这类通用调用方（登出编排、运维脚本）
+        // 必须在调用点分支处理异常类型。改为返回 TokenResult.Empty + 引导日志：
+        // 语义上"没有可失效的租户级令牌"与"返回空结果"一致，且**零公共 API 变更**。
+        // 结构化日志不可用的原因：用户管理器按设计不带 ILogger（见 CleanupOrphanedLocks 的同类注释）。
+        System.Diagnostics.Debug.WriteLine(
+            $"[Mud.HttpUtils] {GetType().Name}: 收到租户级 InvalidateTokenAsync 调用并已忽略（返回 TokenResult.Empty）。" +
+            "用户令牌必须按用户定位失效：请改用 InvalidateUserTokenAsync(userId) 或 RemoveTokenAsync(userId)。");
+        return Task.FromResult(TokenResult.Empty);
     }
 
     /// <summary>
@@ -517,6 +719,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         if (string.IsNullOrEmpty(userId))
             return Task.CompletedTask;
 
+        EnsureValidUserId(userId);                  // I1（R-P0-04）
         RemoveUserTokenFromCache(userId);
         return Task.CompletedTask;
     }
@@ -532,6 +735,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         if (string.IsNullOrEmpty(userId))
             return Task.CompletedTask;
 
+        EnsureValidUserId(userId);                  // I1（R-P0-04）
         if (scopes is not { Length: > 0 })
         {
             RemoveUserTokenFromCache(userId);
@@ -557,6 +761,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// <param name="scopes">作用域集合。空或 null 时作用于默认作用域条目（裸 userId 键）。</param>
     internal void InvalidateCachedUserAccessToken(string userId, string[]? scopes)
     {
+        EnsureValidUserId(userId);                  // I1（R-P0-04）
         var key = scopes is { Length: > 0 } ? GetUserCacheKey(userId, scopes) : userId;
 
         if (_userTokenCache.TryGet(key, out var existing) && existing != null)
@@ -583,6 +788,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
             absoluteExpiration = TimeSpan.FromMilliseconds(remainingMs);
 
         var slidingExpiration = TimeSpan.FromSeconds(_cacheOptions.SlidingExpirationSeconds);
+        RegisterUserKey(key);       // R-P2-04
         _userTokenCache.Set(key, tokenInfo, absoluteExpiration, slidingExpiration, OnUserTokenEvicted);
     }
 
@@ -606,7 +812,46 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// 无 scopes 时不经此方法（键 = 裸 userId，保持既有键）。
     /// </summary>
     private static string GetUserCacheKey(string userId, string[] scopes)
-        => userId + UserScopeKeySeparator + ScopeKeyBuilder.Build(scopes);
+    {
+        EnsureValidUserId(userId);      // I1（R-P0-04）
+        return userId + UserScopeKeySeparator + ScopeKeyBuilder.Build(scopes);
+    }
+
+    /// <summary>
+    /// I1（R-P0-04）纵深防御：拒绝含控制字符（尤其是复合键分隔符 <c>U+001F</c>）的 <paramref name="userId"/>。
+    /// </summary>
+    /// <param name="userId">用户标识（调用方已保证非 null / 非空）。</param>
+    /// <exception cref="ArgumentException"><paramref name="userId"/> 含 C0 控制字符（U+0000–U+001F）或 DEL（U+007F）。</exception>
+    /// <remarks>
+    /// <para>
+    /// <b>缺陷（B10）</b>：用户复合键为 <c>userId + U+001F + scopeKey</c>，而<b>空 scopes 走裸 <c>userId</c> 键</b>。
+    /// 若 <paramref name="userId"/> 内嵌 <c>U+001F</c>，则
+    /// <c>userId="victim\u001Fread:admin"</c>（裸键）会与
+    /// <c>userId="victim"</c> + <c>scopes=["read:admin"]</c>（复合键）<b>碰撞</b>
+    /// → 跨用户读取 / 覆盖令牌。
+    /// </para>
+    /// <para>
+    /// <b>为何拒绝而非转义 / 改用长度前缀</b>：合法用户标识不可能含 C0 控制字符；
+    /// 拒绝可保持键形态 <b>100% 不变</b> —— 分布式 <see cref="ITokenCache{T}"/> 的既有条目继续命中，
+    /// 且 <see cref="RemoveUserCacheEntries"/> 的 <c>userId + U+001F</c> 前缀扫描（登出语义）不受影响。
+    /// 若改为长度前缀编码，则必须同步引入用户键索引，否则登出会静默失效（见修复方案 §0.3.2 修订 1）。
+    /// </para>
+    /// <para>异常消息刻意<b>不回显</b> <paramref name="userId"/> 内容（防日志注入），仅给出码位与位置。</para>
+    /// </remarks>
+    private static void EnsureValidUserId(string userId)
+    {
+        for (var i = 0; i < userId.Length; i++)
+        {
+            var c = userId[i];
+            if (c < 0x20 || c == 0x7F)
+            {
+                throw new ArgumentException(
+                    $"用户标识包含不允许的控制字符（码位 U+{(int)c:X4}，位置 {i}），无法参与复合键编码。" +
+                    "请使用不含 C0 控制字符的用户标识。",
+                    nameof(userId));
+            }
+        }
+    }
 
     /// <summary>SR-M3（P3.1，D10-B）退避序列：30s → 60s → 120s → 240s → 300s（封顶）。</summary>
     private static int UserBackoffSeconds(int n)
@@ -737,6 +982,9 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
                 // P2.2（TK-05/09/24）KeyedLockTable.Dispose 不 Dispose SemaphoreSlim，
                 // 保证在途 Releaser 的 Release 安全（修复 TK-08）。
                 _userLockTable.Dispose();
+
+                // TR-06（R-P0-03）用户级刷新闸同为 KeyedLockTable，需一并释放。
+                _userRefreshGate.Dispose();
             }
         }
 
