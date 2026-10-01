@@ -33,6 +33,21 @@
 
 #### 新增（Added）
 
+- **不可信 appKey 的「无作用域切换」扩展（`SW-15`）**：新增 `Mud.HttpUtils.AppKeySwitchExtensions` ——
+  `IAppContextHolder.SwitchToApp(appKey, appManager, authorizer)` / `SwitchToApp(…, IServiceProvider)` / `SwitchToDefaultApp(appManager)`。
+  补齐 `BC-27` 移除 `UseApp` 后的**能力缺口**：「不可信 appKey + 完整守卫 + **无作用域**（切换并保持）+ 返回上下文」——
+  `UseAppScope` 是**作用域式**（释放即回滚）、`SwitchTo` 是**受信路径**（无守卫），二者均无法表达该语义，
+  导致需要它的下游（如 `IAppManager.GetWebApi` 类场景）只能保留已废弃的 `UseApp`。
+  - 守卫与生成代码**逐字一致**（格式校验 → 授权器默认拒绝 → 业务判定，且拒绝路径**不解析应用**），
+    由 `AppKeyGuardConsistencyTests`（跨项目消息一致性）与 `AppKeySwitchExtensionsTests`（行为）双重钉死。
+  - **不产生任何生成产物变更** ⇒ 不影响生成类、既有快照与下游生成代码。
+  - **三个重载均对应用上下文类型泛型化**（`SwitchToApp<TAppContext>(…, IAppManager<TAppContext>, …) -> TAppContext`）：
+    SDK（`Mud.Feishu` / `Mud.Wechat`）以**自有上下文接口**声明应用管理器（`IAppManager<IFeishuAppContext>`），
+    而 `IAppManager<T>` 是**不变**的（类型参数同时出现在入参与返回值，无法协变）⇒ 参数若固定为 `IMudAppContext`，
+    这类管理器**无法传入**（`CS1503`），恰是本扩展的目标用户（该缺口由下游改造实测发现并回写：`MudFeishu` §2.2 的迁移代码最初不可编译）。
+    泛型化后返回值即 SDK 自有上下文类型（**无需向下转型**）；以 `IAppManager<IMudAppContext>` 调用的既有代码
+    类型推断结果与返回值**完全不变**（源兼容）。由 `AppKeySwitchExtensionsTests.SwitchToApp_WithSdkOwnContextType_IsAcceptedAndReturnsTypedContext` 钉死。
+  - ⚠️ **不自动归还**上下文（这正是它与 `UseAppScope` 的区别）；长生命周期宿主须显式切回。
 - **`IAppScopeSwitcher` 接口（SW-01）**：新增 `public interface IAppScopeSwitcher : IAppContextHolder`，声明
   `IDisposable UseAppScope(string appKey)` 与 `IDisposable UseDefaultAppScope()`。
   - 补齐了一处**抽象面缺口**：这两个方法此前**只存在于生成类上**，不在任何接口上，导致按接口编程（含

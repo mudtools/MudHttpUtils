@@ -11,6 +11,10 @@ Mud.HttpUtils.TokenRecoveryOptions.BufferingMode.get -> Mud.HttpUtils.RequestBod
 Mud.HttpUtils.TokenRecoveryOptions.BufferingMode.set -> void
 Mud.HttpUtils.TokenRecoveryOptions.RefreshWaitHardTimeoutSeconds.get -> double
 Mud.HttpUtils.TokenRecoveryOptions.RefreshWaitHardTimeoutSeconds.set -> void
+Mud.HttpUtils.AppKeySwitchExtensions
+static Mud.HttpUtils.AppKeySwitchExtensions.SwitchToApp<TAppContext>(this Mud.HttpUtils.IAppContextHolder! holder, string! appKey, Mud.HttpUtils.IAppManager<TAppContext>! appManager, Mud.HttpUtils.IAppAccessAuthorizer? authorizer) -> TAppContext
+static Mud.HttpUtils.AppKeySwitchExtensions.SwitchToApp<TAppContext>(this Mud.HttpUtils.IAppContextHolder! holder, string! appKey, Mud.HttpUtils.IAppManager<TAppContext>! appManager, System.IServiceProvider! serviceProvider) -> TAppContext
+static Mud.HttpUtils.AppKeySwitchExtensions.SwitchToDefaultApp<TAppContext>(this Mud.HttpUtils.IAppContextHolder! holder, Mud.HttpUtils.IAppManager<TAppContext>! appManager) -> TAppContext
 Mud.HttpUtils.IAppScopeSwitcher
 Mud.HttpUtils.IAppScopeSwitcher.UseAppScope(string! appKey) -> System.IDisposable!
 Mud.HttpUtils.IAppScopeSwitcher.UseDefaultAppScope() -> System.IDisposable!

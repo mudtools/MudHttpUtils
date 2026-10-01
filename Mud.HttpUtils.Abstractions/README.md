@@ -210,6 +210,26 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 > ✅ 附带收益：`BeginScope(null)` 的 `CS0121` 重载二义**已随之消失**。
 > 残留废弃面只有 `GetTokenAsync()`：经接口调用得到 `CS0618` 提示（生成类成员不标 `[Obsolete]`，经具体类型调用无噪音）。
 >
+> **三个切换面如何选（`SW-15`，3.0.0 补缺）**：
+>
+> | 场景 | 入口 | 守卫 | 上下文归还 |
+> | --- | --- | --- | --- |
+> | **默认选择**：作用域内切换（请求级 / `using`） | `IAppScopeSwitcher.UseAppScope(appKey)` / `UseDefaultAppScope()` | ✅ 完整 | ✅ 自动 |
+> | **需要"切换并保持"**：返回一个已绑定目标应用的实例、长生命周期编排 | `holder.SwitchToApp(appKey, appManager, authorizer)`（`AppKeySwitchExtensions`） | ✅ 完整（与生成代码逐字一致） | ❌ **不归还**（需显式切回） |
+> | **实例来源可信**：由 DI 或已授权的应用管理器提供 `IMudAppContext` | `IAppContextHolder.SwitchTo(context)` | ❌ 无 | ❌ 不归还 |
+>
+> `AppKeySwitchExtensions.SwitchToApp` 是 3.0.0 的**补缺**：`BC-27` 移除 `UseApp` 后，"不可信 appKey + 完整守卫 +
+> **无作用域**"这一组合一度无任何入口（`UseAppScope` 是作用域式、`SwitchTo` 是受信路径），
+> 需要使用该语义的下游（如 `IAppManager.GetWebApi` 类场景）只能保留已废弃的 `UseApp`。
+> 该扩展用「受控的 `SwitchTo`」补齐，**不产生任何生成产物变更**，因此不影响生成类与既有快照。
+> ⚠️ 它**不会自动归还**上下文 —— 长生命周期宿主必须显式切回，否则后续请求会沿用该应用上下文。
+>
+> **泛型形态（3.0.0 订正）**：三个重载为 `SwitchToApp<TAppContext>(…, IAppManager<TAppContext>, …) -> TAppContext`
+> （约束 `TAppContext : IMudAppContext`）。原因：SDK（`Mud.Feishu` / `Mud.Wechat`）以**自有上下文接口**声明管理器
+> （`IAppManager<IFeishuAppContext>`），而 `IAppManager<T>` **不变**（类型参数同时出现在入参与返回值），
+> 参数若固定为 `IMudAppContext` 则这类管理器**无法传入**（`CS1503`）。泛型化后返回值即 SDK 自有上下文类型（无需向下转型）；
+> 以 `IAppManager<IMudAppContext>` 调用的既有代码类型推断结果与返回值**完全不变**。
+>
 > **`IAppContextHolder.BeginScope` 归属约束**：返回的 `IDisposable` 必须在其创建的异步流程内释放。跨执行上下文释放（例如在别的 `Task.Run` 中释放）不会被识别为本作用域的还原点，以免覆盖其它流程的合法上下文写入。
 >
 > **`IAppContextHolder.Current` 写入约束**：`Current` 属性的 setter 为 `init`，仅允许在对象初始化阶段设置。运行时切换应用上下文请使用 `SwitchTo` 方法或 `BeginScope` 方法。

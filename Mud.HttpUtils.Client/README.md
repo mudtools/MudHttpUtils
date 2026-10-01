@@ -673,6 +673,18 @@ if (refreshService.IsStopped)
 > ✅ 附带收益：`BeginScope(null)` 的 `CS0121` 重载二义**已随之消失**。
 > 例外：若你的接口**自行声明**了这些成员，生成器仍会为其发射实现，该写法不受影响。
 > 残留的废弃面只有 `GetTokenAsync()`（`[Obsolete(Warning)]`，经接口调用得 `CS0618`）。
+>
+> **需要"切换并保持"时用 `SwitchToApp`（`SW-15`）**：`UseAppScope` 是**作用域式**（释放即回滚），
+> 无法表达"切换后长期保持"（如返回一个已绑定目标应用的实例）。
+> 此类场景请用扩展方法 `IAppContextHolder.SwitchToApp(appKey, appManager, authorizer)` ——
+> 守卫与生成代码**完全一致**（格式校验 + 授权判定 + 未注册授权器默认拒绝），且**不自动归还**：
+>
+> ```csharp
+> // 完整守卫 + 立即切换 + 保持（等价于 3.0.0 之前的 UseApp 语义）
+> holder.SwitchToApp("app-a", appManager, serviceProvider);
+> ```
+>
+> ⚠️ 它不做自动归还 —— 长生命周期宿主在导航后必须显式切回（或改用 `UseAppScope` 包络）。
 
 | 类                          | 说明                                                                       |
 | --------------------------- | -------------------------------------------------------------------------- |

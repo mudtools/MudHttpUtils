@@ -390,6 +390,7 @@ services.AddExternalWebApiHttpClient();
 | --- | --- | --- |
 | `Current` 访问器形态（`SW-06`） | 接口**自行声明** `Current { get; set; }` ⇒ 生成 `set`；声明 `{ get; init; }` ⇒ 生成 `init`；**接口未声明** ⇒ 生成 `init` | 判定口径为 `ConstructorGenerator.ResolveCurrentAccessor` 与 `InterfaceContractCompletionGenerator` 共用（单一事实源）。`init` 是默认语义：`Current` 仅允许在对象初始化期赋值，运行时切换请用 `SwitchTo` / `UseAppScope`。若是为满足接口声明而生成 `set`，其效果**等价于** `SwitchTo`（非作用域、不自动归还） |
 | 缺少 `IAppManager` 时的语义（`SW-07`） | `UseApp` / `UseAppScope` / `BeginScope(appKey)` ⇒ **fail-closed**：Default 模式下 `_appManager == null` 时直接抛 `InvalidOperationException`（「请注册 `IAppManager<IMudAppContext>` 服务」）。`UseDefaultApp` / `UseDefaultAppScope` ⇒ **单应用回退**：`_appManager?.GetDefaultApp() ?? _defaultAppContext` | 两条路径**刻意不同**：默认应用在单应用宿主下仍应可用（回退到构造注入的默认上下文），而"按 appKey 切换"在缺少管理器时**无正确结果**，静默回退会读错应用 ⇒ 必须直接失败 |
+| 需要"切换并保持"（非作用域）时的入口（`SW-15`） | **生成器不发射该入口** —— 请用 `Mud.HttpUtils.Abstractions` 的扩展方法 `IAppContextHolder.SwitchToApp(appKey, appManager, authorizer)` | 3.0.0 的 `BC-27` 移除 `UseApp` 后该组合一度无入口；扩展方法以「受控的 `SwitchTo`」补齐，守卫与生成代码**逐字一致**（由 `AppKeyGuardConsistencyTests` 跨项目守卫）。**不自动归还**上下文；默认应用对应 `SwitchToDefaultApp` |
 
 > **调用路径分叉提示（`SW-09`）**：混合模式继承（基类 Default + 派生 TokenManager，或反向）时，派生类的切换成员以 `public new` **隐藏**基类同名成员；此时生成产物会在该成员的 XML 注释中发射 `[HTTPCLIENT028]` 提示——经**基类引用**调用将走到基类实现（切换来源与派生类不同），请经具体类型或其接口调用。该提示只在此形态发射（无继承或模式一致的继承不发射，避免噪音），并由 `AppSwitchMemberNamesTests.HiddenAppMember_EmitsCallPathNotice` 双向守卫。
 > `HTTPCLIENT028` 的级别**保持 Warning**（`SW-09`）：升 `Error` 属破坏性变更，且与"混合模式仍可编译"的既有文档化定位冲突，须与 `BC-29` 一并评估。
