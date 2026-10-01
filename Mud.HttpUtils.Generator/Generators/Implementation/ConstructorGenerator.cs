@@ -850,7 +850,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     {
         codeBuilder.AppendLine("        /// <b>信任边界</b>：本重载直接接受 <see cref=\"IMudAppContext\"/> 实例，<b>不执行</b> appKey 格式校验与");
         codeBuilder.AppendLine("        /// <see cref=\"IAppAccessAuthorizer\"/> 授权判定 —— 仅当实例来源本身可信（由 DI 或已授权的应用管理器提供）时使用。");
-        codeBuilder.AppendLine("        /// 若 appKey 来自请求参数等不可信输入，请改用 <see cref=\"UseAppScope\"/> / <see cref=\"BeginScope(string)\"/>（含默认拒绝守卫）。");
+        codeBuilder.AppendLine("        /// 若 appKey 来自请求参数等不可信输入，请改用 <see cref=\"UseAppScope\"/>（含默认拒绝守卫）。");
     }
 
     /// <summary>
@@ -893,6 +893,14 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         // GEN-01 修复：TokenManager 模式下字段名为 _tokenManager，Default 模式下为 _appManager。
         var managerField = isDefaultMode ? "_appManager" : "_tokenManager";
 
+        // [BC-27] 旧入口 UseApp / UseDefaultApp 不再**默认发射**（唯一推荐入口是 UseAppScope / UseDefaultAppScope）。
+        // 唯一例外：使用方接口（自身或基接口）**自行声明**了同名成员 —— 此时必须继续发射实现，
+        // 否则该成员会落入契约补全（占位 + HTTPCLIENT024（Error）），把原本可编译的代码变为编译失败。
+        var emitUseApp = _context.DeclaresUseAppMember;
+        var emitUseDefaultApp = _context.DeclaresUseDefaultAppMember;
+
+        if (emitUseApp)
+        {
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine("        /// 切换到指定的应用上下文。");
         codeBuilder.AppendLine("        /// </summary>");
@@ -902,8 +910,15 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// 长生命周期/后台任务请使用 <see cref=\"UseAppScope\"/> 显式包络。");
         codeBuilder.AppendLine("        /// </remarks>");
         codeBuilder.AppendLine("        /// <returns>返回切换后的应用上下文。</returns>");
-        // GEN-02 修复：移除 [Obsolete] 标记。UseApp 仍是 GetWebApi 模式下的有效路径，
-        // BeginScope 用于需要自动恢复的作用域场景，两者并非替代关系而是互补关系。
+        // [SW-09] 混合模式继承（public new 隐藏基类成员）时补发「调用路径分叉」提示。
+        if (HiddenAppMemberCallPathNotice() is { } useAppHiddenNotice)
+            codeBuilder.AppendLine(useAppHiddenNotice);
+        // GEN-02 修复（仍然有效）：**生成类成员不标 [Obsolete]** —— 生成类必须实现抽象接口成员，
+        // 在成员上标 [Obsolete] 只会给"实现接口"这一必然行为制造噪音（且 SR-11 的消费者会看到 CS0618）。
+        // [S7-B 订正] 废弃标注放在**抽象层**（IAppContextSwitcher.UseApp / UseDefaultApp / BeginScope(string)）：
+        // 经接口调用即得 CS0618 迁移提示，经具体类型调用无噪音。
+        // 同时订正 GEN-02 的"互补关系"结论：IAppScopeSwitcher 落地后，UseAppScope / UseDefaultAppScope
+        // 与旧入口的格式校验 + 授权判定**完全相同**，且额外自动归还上下文 ⇒ 已构成等价替代。
         codeBuilder.AppendLine($"        {ResolveAppMemberModifier()}IMudAppContext UseApp(string appKey)");
         codeBuilder.AppendLine("        {");
         if (isDefaultMode)
@@ -923,6 +938,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("            return context;");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
+        } // [BC-27] end of emitUseApp
 
         // MT-19：与无作用域的 UseApp 对称，提供「按 appKey 切换 + 作用域自动归还」的安全入口。
         // UseApp 依赖 AsyncLocal，异常路径或长生命周期宿主（后台任务 / 单例编排）下会残留上下文，
@@ -931,7 +947,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// 切换到指定的应用上下文，并返回作用域以在结束时自动恢复。");
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine("        /// <remarks>");
-        codeBuilder.AppendLine("        /// <b>推荐使用本方法替代 <see cref=\"UseApp\"/></b>：<c>UseApp</c> 的无作用域切换（<c>SwitchTo</c>）");
+        codeBuilder.AppendLine("        /// <b>本方法是按 appKey 切换的唯一推荐入口</b>：无作用域切换（<c>SwitchTo</c>）");
         codeBuilder.AppendLine("        /// 不会自动归还上下文，若调用方未显式切回，后续请求（尤其是后台任务、长生命周期单例编排、");
         codeBuilder.AppendLine("        /// <c>IAsyncEnumerable</c> 未逐段开作用域等场景）可能串到错误的应用并读取到错误应用的令牌。");
         codeBuilder.AppendLine("        /// <b>警告</b>：请勿在 using 之外手动 Dispose 或跨执行上下文乱序释放——");
@@ -939,6 +955,9 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// </remarks>");
         codeBuilder.AppendLine("        /// <param name=\"appKey\">应用的唯一标识符。</param>");
         codeBuilder.AppendLine("        /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。建议配合 <c>using</c> 使用。</returns>");
+        // [SW-09] 混合模式继承时补发「调用路径分叉」提示。
+        if (HiddenAppMemberCallPathNotice() is { } useAppScopeHiddenNotice)
+            codeBuilder.AppendLine(useAppScopeHiddenNotice);
         codeBuilder.AppendLine($"        {ResolveAppMemberModifier()}IDisposable UseAppScope(string appKey)");
         codeBuilder.AppendLine("        {");
         if (isDefaultMode)
@@ -952,10 +971,15 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
 
+        if (emitUseDefaultApp)
+        {
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine("        /// 切换到默认的应用上下文。");
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine("        /// <returns>返回默认的应用上下文。</returns>");
+        // [SW-09] 混合模式继承时补发「调用路径分叉」提示。
+        if (HiddenAppMemberCallPathNotice() is { } useDefaultAppHiddenNotice)
+            codeBuilder.AppendLine(useDefaultAppHiddenNotice);
         // GEN-02 修复：移除 [Obsolete] 标记，理由同上。
         codeBuilder.AppendLine($"        {ResolveAppMemberModifier()}IMudAppContext UseDefaultApp()");
         codeBuilder.AppendLine("        {");
@@ -971,13 +995,17 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("            return context;");
         codeBuilder.AppendLine("        }");
         codeBuilder.AppendLine();
+        } // [BC-27] end of emitUseDefaultApp
 
         // 新增 UseDefaultAppScope 方法
         codeBuilder.AppendLine("        /// <summary>");
         codeBuilder.AppendLine("        /// 切换到默认应用上下文，并返回作用域以在结束时自动恢复。");
-        codeBuilder.AppendLine("        /// 推荐使用此方法替代 UseDefaultApp()，确保上下文自动恢复。");
+        codeBuilder.AppendLine("        /// 本方法是默认应用作用域切换的推荐入口，确保上下文自动恢复。");
         codeBuilder.AppendLine("        /// </summary>");
         codeBuilder.AppendLine("        /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>");
+        // [SW-09] 混合模式继承时补发「调用路径分叉」提示。
+        if (HiddenAppMemberCallPathNotice() is { } useDefaultAppScopeHiddenNotice)
+            codeBuilder.AppendLine(useDefaultAppScopeHiddenNotice);
         codeBuilder.AppendLine($"        {ResolveAppMemberModifier()}IDisposable UseDefaultAppScope()");
         codeBuilder.AppendLine("        {");
         if (isDefaultMode)
@@ -1011,6 +1039,33 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     }
 
     /// <summary>
+    /// [SW-09] 成员以 <c>public new</c> 隐藏基类同名成员时，返回追加到 XML 文档注释的「调用路径分叉」提示行（含缩进）；否则返回 <c>null</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 触发条件与 <see cref="ResolveAppMemberModifier"/> 的 <c>new</c> 分支<b>严格一致</b>
+    /// （已继承基类 且 基类非 TokenManager 模式 ⇒ 派生侧与基类的切换来源不同）。
+    /// </para>
+    /// <para>
+    /// <b>为什么需要</b>：<see cref="ResolveAppMemberModifier"/> 的注释声称"配合 XML 警告宿主不要通过基类引用调用切换方法"，
+    /// 但生成产物中**从未发射**该警告（只有"乱序释放"提示）—— 本次补齐。这是<b>静默行为分叉</b>：
+    /// 经基类引用调用会走到基类实现，宿主难以察觉。<c>HTTPCLIENT028</c>（Warning）仍是权威诊断，本注释让 IDE 悬停即见。
+    /// </para>
+    /// <para>
+    /// 备注：插入为<b>独立的 <c>&lt;remarks&gt;</c> 元素</b>（若该成员已有 <c>&lt;remarks&gt;</c>，两者会并存并由文档工具合并）——
+    /// 避免为插入一行而重构既有注释块。
+    /// </para>
+    /// </remarks>
+    private string? HiddenAppMemberCallPathNotice()
+    {
+        if (!_context.HasInheritedFrom || _context.Configuration.BaseHasTokenManager)
+            return null;
+
+        return "        /// <remarks>[HTTPCLIENT028] 本成员以 <c>new</c> 隐藏了基类的同名成员（派生侧与基类的切换来源不同）。"
+            + "经<b>基类引用</b>调用将走到基类实现，可能切换到与预期不同的应用上下文 —— 请经具体类型或其接口调用。</remarks>";
+    }
+
+    /// <summary>
     /// FIX-02: 解析 Current 属性的访问器形态（init/set），与接口声明保持一致。
     /// 接口显式声明 Current { get; set; } 时，实现必须用 set 而非 init（CS8854）。
     /// 接口显式声明 Current { get; init; } 时，实现必须用 init。
@@ -1035,6 +1090,12 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         if (_context.HasHttpClient)
             return;
 
+        // [BC-27] BeginScope(string appKey) 不再**默认发射**（与 UseAppScope(appKey) 逐行等价的旧命名，见方案 §4.5）。
+        // 仅当使用方接口自行声明该重载时发射 —— 且必须按**签名**判定：Holder 面的
+        // BeginScope(IMudAppContext) 由 GenerateAppContextMembers 无条件发射，不受本门控影响。
+        if (!_context.DeclaresBeginScopeStringMember)
+            return;
+
         var isDefaultMode = !_context.HasTokenManager;
         // GEN-01 修复：TokenManager 模式下字段名为 _tokenManager，Default 模式下为 _appManager。
         var managerField = isDefaultMode ? "_appManager" : "_tokenManager";
@@ -1048,6 +1109,9 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         codeBuilder.AppendLine("        /// </remarks>");
         codeBuilder.AppendLine("        /// <param name=\"appKey\">应用的唯一标识符。</param>");
         codeBuilder.AppendLine("        /// <returns>一个 IDisposable 对象，释放时恢复之前的上下文。</returns>");
+        // [SW-09] 混合模式继承时补发「调用路径分叉」提示。
+        if (HiddenAppMemberCallPathNotice() is { } beginScopeHiddenNotice)
+            codeBuilder.AppendLine(beginScopeHiddenNotice);
         codeBuilder.AppendLine($"        {ResolveAppMemberModifier()}IDisposable BeginScope(string appKey)");
         codeBuilder.AppendLine("        {");
         if (isDefaultMode)

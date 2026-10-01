@@ -183,10 +183,7 @@ Mud.HttpUtils.IAppContextHolder.Current.get -> Mud.HttpUtils.IMudAppContext?
 Mud.HttpUtils.IAppContextHolder.Current.init -> void
 Mud.HttpUtils.IAppContextHolder.SwitchTo(Mud.HttpUtils.IMudAppContext? context) -> void
 Mud.HttpUtils.IAppContextSwitcher
-Mud.HttpUtils.IAppContextSwitcher.BeginScope(string! appKey) -> System.IDisposable!
 Mud.HttpUtils.IAppContextSwitcher.GetTokenAsync() -> System.Threading.Tasks.Task<string!>!
-Mud.HttpUtils.IAppContextSwitcher.UseApp(string! appKey) -> Mud.HttpUtils.IMudAppContext!
-Mud.HttpUtils.IAppContextSwitcher.UseDefaultApp() -> Mud.HttpUtils.IMudAppContext!
 Mud.HttpUtils.IAppManager<TAppContext>
 Mud.HttpUtils.IAppManager<TAppContext>.ConfigurationChanged -> System.EventHandler<Mud.HttpUtils.AppConfigurationChangedEventArgs!>!
 Mud.HttpUtils.IAppManager<TAppContext>.DefaultAppKey.get -> string?

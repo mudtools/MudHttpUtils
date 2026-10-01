@@ -662,6 +662,17 @@ if (refreshService.IsStopped)
 > ```
 >
 > 受信实例面（`IAppContextHolder.SwitchTo` / `BeginScope(IMudAppContext)`）不做授权校验，仅适用于实例来源可信的场景。
+>
+> ⚠️ **3.0.0 破坏性变更（`BC-27`）：三个旧入口已移除** —— `UseApp(appKey)` / `UseDefaultApp()` / `BeginScope(appKey)`
+> 不再存在于 `IAppContextSwitcher`，生成类（非 HttpClient 模式）也不再发射 ⇒ 调用它们将**编译失败**
+> （`UseApp`/`UseDefaultApp` ⇒ `CS1061`；`BeginScope("...")` ⇒ `CS1503`）。
+> 迁移：`UseApp(k)` → `UseAppScope(k)`（配合 `using`）、`UseDefaultApp()` → `UseDefaultAppScope()`、`BeginScope(k)` → `UseAppScope(k)`
+> （完整迁移表见 [`Mud.HttpUtils.Abstractions` README](../Mud.HttpUtils.Abstractions/README.md)）。
+> 其中 `BeginScope(appKey)` → `UseAppScope(appKey)` 属**纯命名收敛**（两者生成体逐行等价），**不是**安全缺陷修复；
+> 而 `UseApp` → `UseAppScope` 是真实改进（后者自动归还上下文）。
+> ✅ 附带收益：`BeginScope(null)` 的 `CS0121` 重载二义**已随之消失**。
+> 例外：若你的接口**自行声明**了这些成员，生成器仍会为其发射实现，该写法不受影响。
+> 残留的废弃面只有 `GetTokenAsync()`（`[Obsolete(Warning)]`，经接口调用得 `CS0618`）。
 
 | 类                          | 说明                                                                       |
 | --------------------------- | -------------------------------------------------------------------------- |

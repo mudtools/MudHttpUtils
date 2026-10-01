@@ -115,13 +115,19 @@ public class ApplicationSwitchGuardContractTests
     {
         var code = Generate();
 
-        // UseApp / BeginScope / UseAppScope 三个入口共用同一守卫；数量 = 入口数
+        // BC-27：默认模式且接口未声明旧入口时，按 appKey 切换的**唯一**入口是 UseAppScope（其余两个旧入口已移除）。
         var guardCount = System.Text.RegularExpressions.Regex
             .Matches(code, System.Text.RegularExpressions.Regex.Escape("_appAuthorizer == null")).Count;
 
-        guardCount.Should().BeGreaterThanOrEqualTo(3,
-            "三个应用切换入口（UseApp / BeginScope / UseAppScope）都必须带授权器守卫，" +
-            $"实际守卫数 {guardCount} —— 漏掉任一个都会成为越权旁路");
+        guardCount.Should().Be(1,
+            "BC-27 后默认模式的 appKey 入口只剩 UseAppScope 一个，它必须带授权器守卫；" +
+            $"实际守卫数 {guardCount} —— 为 0 说明守卫丢失（越权旁路），大于 1 说明旧入口被误复活");
+
+        code.Should().Contain("public IDisposable UseAppScope(string appKey)");
+        code.Should().NotContain("IMudAppContext UseApp(string appKey)",
+            "BC-27：旧入口 UseApp 不再默认发射（仅在接口自行声明该成员时才发射）");
+        code.Should().NotContain("IDisposable BeginScope(string appKey)",
+            "BC-27：旧入口 BeginScope(string) 不再默认发射");
     }
 
     #region G7-01 继承默认模式 appManager 透传契约

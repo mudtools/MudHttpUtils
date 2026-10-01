@@ -7,6 +7,7 @@
 
 using System.Diagnostics;
 using Mud.HttpUtils.Analyzers;
+using Mud.HttpUtils.Generator.Consts;
 
 namespace Mud.HttpUtils.Generators.Context;
 
@@ -165,6 +166,69 @@ internal class GeneratorContext
         {
             if (candidate.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat) == fullyQualifiedName)
                 return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// [BC-27] 接口（自身或任一基接口）是否声明了 <c>UseApp(string appKey)</c>。
+    /// </summary>
+    /// <remarks>
+    /// <b>用途</b>：<c>BC-27</c> 移除了三个旧切换入口的<b>默认发射</b>；但当使用方接口<b>自行声明</b>同名成员时仍须发射实现 ——
+    /// 否则该成员会落入契约补全（<c>NotSupportedException</c> 占位 + <c>HTTPCLIENT024</c>（Error）），
+    /// 使原本可编译的代码变成编译失败（与 <c>SW-10</c> 被移出本轮是同一类风险）。
+    /// </remarks>
+    public bool DeclaresUseAppMember =>
+        DeclaresMethod(AppSwitchMemberNames.UseApp, IsSingleStringParameter);
+
+    /// <summary>
+    /// [BC-27] 接口（自身或任一基接口）是否声明了 <c>UseDefaultApp()</c>。见 <see cref="DeclaresUseAppMember"/>。
+    /// </summary>
+    public bool DeclaresUseDefaultAppMember =>
+        DeclaresMethod(AppSwitchMemberNames.UseDefaultApp, IsParameterless);
+
+    /// <summary>
+    /// [BC-27] 接口（自身或任一基接口）是否声明了 <c>BeginScope(string appKey)</c>。见 <see cref="DeclaresUseAppMember"/>。
+    /// </summary>
+    /// <remarks>
+    /// ⚠️ 必须按<b>签名</b>而非仅按名字判定：<see cref="IAppContextHolder.BeginScope"/> 的实例重载
+    /// （<c>BeginScope(IMudAppContext)</c>）属 Holder 面且<b>继续无条件发射</b>；
+    /// 若只按名字判定，「接口继承 <c>IAppContextHolder</c>」会被误判为「声明了 <c>BeginScope(string)</c>」，
+    /// 从而让退化的旧入口悄悄复活。
+    /// </remarks>
+    public bool DeclaresBeginScopeStringMember =>
+        DeclaresMethod(AppSwitchMemberNames.BeginScope, IsSingleStringParameter);
+
+    /// <summary>无参方法判定。</summary>
+    private static bool IsParameterless(IMethodSymbol method) => method.Parameters.Length == 0;
+
+    /// <summary>单 <see cref="string"/> 参数方法判定。</summary>
+    private static bool IsSingleStringParameter(IMethodSymbol method)
+        => method.Parameters.Length == 1
+           && method.Parameters[0].Type.SpecialType == SpecialType.System_String;
+
+    /// <summary>
+    /// 判定接口（含全部基接口）是否声明了满足条件的同名方法（按<b>名字 + 签名谓词</b>匹配）。
+    /// </summary>
+    /// <param name="methodName">方法名。</param>
+    /// <param name="predicate">签名判定谓词。</param>
+    /// <returns>存在匹配方法时返回 <c>true</c>。</returns>
+    private bool DeclaresMethod(string methodName, Func<IMethodSymbol, bool> predicate)
+    {
+        foreach (var candidate in InterfaceSymbol.GetMembers(methodName).OfType<IMethodSymbol>())
+        {
+            if (predicate(candidate))
+                return true;
+        }
+
+        foreach (var baseInterface in InterfaceSymbol.AllInterfaces)
+        {
+            foreach (var candidate in baseInterface.GetMembers(methodName).OfType<IMethodSymbol>())
+            {
+                if (predicate(candidate))
+                    return true;
+            }
         }
 
         return false;

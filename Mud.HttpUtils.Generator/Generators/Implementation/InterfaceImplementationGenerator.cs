@@ -8,6 +8,7 @@
 using System.Collections.Concurrent;
 using Mud.HttpUtils;
 using Mud.HttpUtils.Analyzers;
+using Mud.HttpUtils.Generator.Consts;
 using Mud.HttpUtils.Generators.Base;
 using Mud.HttpUtils.Generators.Context;
 
@@ -555,18 +556,27 @@ internal class InterfaceImplementationGenerator
             context.MarkMemberProvided("CurrentUserId");
 
         // AppContext 相关成员 → ConstructorGenerator.GenerateAppContextMembers / GenerateUseAppMethod
+        // [SW-11] 成员名取自 AppSwitchMemberNames（单一事实源）：此前为散落的字符串字面量，
+        // 任一侧改名/改门控而另一侧未跟进即产生「登记了没发射」（CS0535）或「发射了没登记」（CS0111/CS0102）
+        // —— G8-15 的 UseAppScope 漏登记即为真实案例。守卫见 AppSwitchMemberNamesTests（生成产物成员 ⊇ 本表）。
         if (!context.HasHttpClient)
         {
-            context.MarkMemberProvided("Current");
-            context.MarkMemberProvided("SwitchTo");
-            context.MarkMemberProvided("BeginScope");
-            context.MarkMemberProvided("UseApp");
-            // G8-15：UseAppScope 同样由 GenerateUseAppMethod 无条件发射
-            // （`$"{ResolveAppMemberModifier()}IDisposable UseAppScope(string appKey)"`），
-            // 此前漏登记 ⇒ 接口声明同名成员时契约补全会发射重复成员（CS0111/CS0102）。
-            context.MarkMemberProvided("UseAppScope");
-            context.MarkMemberProvided("UseDefaultApp");
-            context.MarkMemberProvided("UseDefaultAppScope");
+            // Holder 面（Current / SwitchTo / BeginScope(IMudAppContext)）【无条件】：被 DefaultHttpRequestExecutor 等链路依赖，
+            //   注意 BeginScope 的登记覆盖两个重载（契约补全按名字避让）。
+            // 作用域面（UseAppScope / UseDefaultAppScope）【无条件】：是 IAppScopeSwitcher 的实现物（SW-01）。
+            context.MarkMemberProvided(AppSwitchMemberNames.Current);
+            context.MarkMemberProvided(AppSwitchMemberNames.SwitchTo);
+            context.MarkMemberProvided(AppSwitchMemberNames.BeginScope);
+            context.MarkMemberProvided(AppSwitchMemberNames.UseAppScope);
+            context.MarkMemberProvided(AppSwitchMemberNames.UseDefaultAppScope);
+
+            // [BC-27] 旧入口（UseApp / UseDefaultApp）仅在使用方接口自行声明时发射 ⇒
+            // 登记必须与发射**同门控**：多登记会「登记了没发射」（契约补全避让一个并不存在的成员 ⇒ 静默缺失 ⇒ CS0535），
+            // 少登记会「发射了没登记」（契约补全重复发射 ⇒ CS0111/CS0102）。
+            if (context.DeclaresUseAppMember)
+                context.MarkMemberProvided(AppSwitchMemberNames.UseApp);
+            if (context.DeclaresUseDefaultAppMember)
+                context.MarkMemberProvided(AppSwitchMemberNames.UseDefaultApp);
         }
 
         // 令牌辅助成员 → AccessTokenGenerator / TokenMethodHelper

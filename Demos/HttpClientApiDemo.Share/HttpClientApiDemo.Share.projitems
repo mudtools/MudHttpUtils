@@ -15,6 +15,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)Api\IFeishuAuthenticationApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Api\IFeishuUserApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Api\IFileUploadTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)Api\IMultiAppSwitchSampleApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Api\Internal\DingTalkDeptApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Api\ISingleTestApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)Api\IWeixinApi.cs" />

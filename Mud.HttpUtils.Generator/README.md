@@ -381,13 +381,25 @@ services.AddExternalWebApiHttpClient();
 因此：
 
 1. **受信边界**：宿主不得向不可信代码暴露 `IAppManager.GetApp` 或已解析的应用上下文——否则 `SwitchTo`/`Current` setter 成为越权旁路；
-2. **优先使用** `UseAppScope(appKey)` —— **唯一推荐入口**（抽象面：`IAppScopeSwitcher`）。`UseApp` / `UseDefaultApp` / `BeginScope(appKey)` 为历史入口，二者语义等价但取的名字不同，团队应统一到 `UseAppScope` / `UseDefaultAppScope`。`UseApp` 的无作用域切换（`SwitchTo`）在长生命周期宿主导航后**不会自动归还** AsyncLocal 上下文，后台任务 / `IAsyncEnumerable` 等场景可能串到错误应用（详见 Client README「上下文归还约束」）；
+2. **按 appKey 切换的唯一入口是** `UseAppScope(appKey)`（抽象面：`IAppScopeSwitcher`）。⚠️ **3.0.0 已移除三个旧入口**（`UseApp` / `UseDefaultApp` / `BeginScope(appKey)`，`BC-27`）：生成类默认**不再发射**它们，调用旧入口将编译失败（`UseApp`/`UseDefaultApp` ⇒ `CS1061`；`BeginScope("...")` ⇒ `CS1503`）。其中 `BeginScope(appKey)` → `UseAppScope(appKey)` 属**纯命名收敛**（生成体逐行等价），而 `UseApp` → `UseAppScope` 是真实改进（后者自动归还上下文）。无作用域切换（`SwitchTo`）在长生命周期宿主导航后**不会自动归还** AsyncLocal 上下文，后台任务 / `IAsyncEnumerable` 等场景可能串到错误应用（详见 Client README「上下文归还约束」）；
 3. **⚠️ 乱序释放警示**：不要把 `UseApp`（无作用域切换）与 `using`/`BeginScope` 作用域**混用**——作用域释放时的归属判定会跳过非自身环境的回滚，导致上下文残留到非预期应用（行为已由测试锁定，修复需作用域栈方案）；长生命周期/后台任务请使用 `UseAppScope` 显式包络，作用域请始终以 `using` 在**创建它的同一执行上下文**中释放。
+
+**形态与失败语义（`SW-06` / `SW-07`，零生成产物变更）**：
+
+| 话题 | 生成规则 | 要点 |
+| --- | --- | --- |
+| `Current` 访问器形态（`SW-06`） | 接口**自行声明** `Current { get; set; }` ⇒ 生成 `set`；声明 `{ get; init; }` ⇒ 生成 `init`；**接口未声明** ⇒ 生成 `init` | 判定口径为 `ConstructorGenerator.ResolveCurrentAccessor` 与 `InterfaceContractCompletionGenerator` 共用（单一事实源）。`init` 是默认语义：`Current` 仅允许在对象初始化期赋值，运行时切换请用 `SwitchTo` / `UseAppScope`。若是为满足接口声明而生成 `set`，其效果**等价于** `SwitchTo`（非作用域、不自动归还） |
+| 缺少 `IAppManager` 时的语义（`SW-07`） | `UseApp` / `UseAppScope` / `BeginScope(appKey)` ⇒ **fail-closed**：Default 模式下 `_appManager == null` 时直接抛 `InvalidOperationException`（「请注册 `IAppManager<IMudAppContext>` 服务」）。`UseDefaultApp` / `UseDefaultAppScope` ⇒ **单应用回退**：`_appManager?.GetDefaultApp() ?? _defaultAppContext` | 两条路径**刻意不同**：默认应用在单应用宿主下仍应可用（回退到构造注入的默认上下文），而"按 appKey 切换"在缺少管理器时**无正确结果**，静默回退会读错应用 ⇒ 必须直接失败 |
+
+> **调用路径分叉提示（`SW-09`）**：混合模式继承（基类 Default + 派生 TokenManager，或反向）时，派生类的切换成员以 `public new` **隐藏**基类同名成员；此时生成产物会在该成员的 XML 注释中发射 `[HTTPCLIENT028]` 提示——经**基类引用**调用将走到基类实现（切换来源与派生类不同），请经具体类型或其接口调用。该提示只在此形态发射（无继承或模式一致的继承不发射，避免噪音），并由 `AppSwitchMemberNamesTests.HiddenAppMember_EmitsCallPathNotice` 双向守卫。
+> `HTTPCLIENT028` 的级别**保持 Warning**（`SW-09`）：升 `Error` 属破坏性变更，且与"混合模式仍可编译"的既有文档化定位冲突，须与 `BC-29` 一并评估。
+
+> **成员名单一事实源（`SW-11`）**：生成器无条件发射的切换成员名集中在 `Consts/AppSwitchMemberNames.cs`，登记表（`RegisterInfrastructureMembers`）与发射点共同引用。守卫 `AppSwitchMemberNamesTests.GeneratedClass_PublicMembers_SupersetOfSsotConstants` 以真编译 + 反射断言"生成类 public 成员 ⊇ 常量表"（防 G8-15 式的"发射了没登记 ⇒ CS0111"与"登记了没发射 ⇒ CS0535"）。
 
 > **抽象面与模式限制（SW-01 / SW-08）**：`UseAppScope` / `UseDefaultAppScope` 由 `IAppScopeSwitcher` 声明（定义于 `Mud.HttpUtils.Abstractions`）。生成类在"接口已继承 `IAppContextSwitcher` 且非 HttpClient 模式"时**自动附带实现** `IAppScopeSwitcher`，使按接口编程（`IAppScopeSwitcher api = client;`）同样可以拿到安全入口；HttpClient 模式不发射任何切换成员，故不附加。
 > ⚠️ 接口在**默认模式**下继承 `IAppContextSwitcher` 时，其 `GetTokenAsync` 无法生成，将落入占位实现（运行期抛 `NotSupportedException`）并报 `HTTPCLIENT024`（Error）；该场景请改继承 `IAppScopeSwitcher`（默认模式可用），或声明 `TokenManage` 切换到 TokenManager 模式，抑或改用 `IAppContextHolder`。
 
-> **生成物注释同步（G8-10）**：上表的受信路径三入口（`Current` setter / `SwitchTo(IMudAppContext)` / `BeginScope(IMudAppContext)`）已在**生成的实现类 XML 注释**中显式声明信任边界（「直接接受 `IMudAppContext` 实例，**不执行** appKey 格式校验与 `IAppAccessAuthorizer` 授权判定」），并指向 `UseAppScope` / `BeginScope(string)` 作为不可信输入的正确入口。此前该结论只落在本文档与 `UseApp`/`UseAppScope` 的注释上，实例入口无任何提示（G7-11 的落地缺口）。契约由 `ApplicationSwitchGuardContractTests.ContextBasedSwitch_DocumentsTrustBoundary` 守卫。
+> **生成物注释同步（G8-10）**：上表的受信路径三入口（`Current` setter / `SwitchTo(IMudAppContext)` / `BeginScope(IMudAppContext)`）已在**生成的实现类 XML 注释**中显式声明信任边界（「直接接受 `IMudAppContext` 实例，**不执行** appKey 格式校验与 `IAppAccessAuthorizer` 授权判定」），并指向 `UseAppScope` 作为不可信输入的正确入口（`BeginScope(string)` 已标 `[Obsolete]`，仅在旧代码中作为等价别名存在）。此前该结论只落在本文档与 `UseApp`/`UseAppScope` 的注释上，实例入口无任何提示（G7-11 的落地缺口）。契约由 `ApplicationSwitchGuardContractTests.ContextBasedSwitch_DocumentsTrustBoundary` 守卫。
 
 > **威胁模型：实例即凭据（G9-10）**：`IMudAppContext` 实例本身就是应用身份的载体——**任何持有该实例的代码等价于已通过授权**。宿主不得向不可信代码暴露 `IAppManager.GetApp` 的返回值或已解析的应用上下文（否则受信路径三入口即成越权旁路）；不可信 appKey 输入一律走 `UseApp` / `UseAppScope` / `BeginScope(string)`（默认拒绝守卫）。
 

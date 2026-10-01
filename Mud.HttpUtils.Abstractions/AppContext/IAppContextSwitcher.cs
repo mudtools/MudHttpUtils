@@ -8,56 +8,33 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// 应用上下文切换器接口，扩展 <see cref="IAppContextHolder"/>，提供应用切换和令牌获取能力。
+/// 应用上下文切换器接口，扩展 <see cref="IAppContextHolder"/>，提供应用上下文持有与<b>令牌获取</b>能力。
 /// <para>
 /// 此接口的运行时实现需要 <see cref="IAppManager{TAppContext}"/> 和 <see cref="ITokenProvider"/> 依赖，
 /// 通常由源码生成器生成的类实现。纯状态操作（<see cref="IAppContextHolder.Current"/>、
 /// <see cref="IAppContextHolder.BeginScope(IMudAppContext)"/>）由 <see cref="IAppContextHolder"/> 提供。
 /// </para>
 /// <para>
-/// <b>推荐替代（SW-01）</b>：若仅需"按 appKey 切换并自动归还上下文"，请改用
-/// <see cref="IAppScopeSwitcher"/>（声明 <c>UseAppScope</c> / <c>UseDefaultAppScope</c>，
-/// 不含 <c>GetTokenAsync</c>，在 Default 与 TokenManager 模式下均可用）。
-/// <see cref="UseApp"/> / <see cref="UseDefaultApp"/> / <see cref="BeginScope(string)"/> 为历史入口，
-/// 推荐一律改用 <see cref="IAppScopeSwitcher"/> 的对应方法（无作用域切换不会自动归还上下文，
-/// 长生命周期宿主下存在上下文残留风险）。
+/// <b>按 appKey 切换应用请使用 <see cref="IAppScopeSwitcher"/></b>（<c>UseAppScope</c> / <c>UseDefaultAppScope</c>）：
+/// 二者守卫完全相同，且返回 <see cref="IDisposable"/> 并在释放时<b>自动归还</b>上下文。
+/// </para>
+/// <para>
+/// <b>3.0.0 已移除三个旧入口</b>（<c>BC-27</c>）：<c>UseApp(string)</c> / <c>UseDefaultApp()</c> / <c>BeginScope(string)</c>。
+/// 迁移：<c>UseApp(k)</c> → <c>UseAppScope(k)</c>（配合 <c>using</c>）、<c>UseDefaultApp()</c> → <c>UseDefaultAppScope()</c>、
+/// <c>BeginScope(k)</c> → <c>UseAppScope(k)</c>。
+/// </para>
+/// <para>
+/// <b>模式限制</b>：仅 TokenManager 模式可完整实现本接口（含 <c>GetTokenAsync</c>）。
+/// 默认模式下接口若继承本接口，<c>GetTokenAsync</c> 无法生成，将由契约补全报 <c>HTTPCLIENT024</c>（Error）——
+/// 此时请改用 <see cref="IAppScopeSwitcher"/>（默认与 TokenManager 模式均可用）。
 /// </para>
 /// </summary>
 public interface IAppContextSwitcher : IAppContextHolder
 {
     /// <summary>
-    /// 切换到指定的应用上下文。
-    /// </summary>
-    /// <param name="appKey">应用的唯一标识符。</param>
-    /// <returns>切换后的应用上下文实例。</returns>
-    IMudAppContext UseApp(string appKey);
-
-    /// <summary>
-    /// 切换到默认的应用上下文。
-    /// </summary>
-    /// <returns>默认的应用上下文实例。</returns>
-    IMudAppContext UseDefaultApp();
-
-    /// <summary>
-    /// 创建一个应用上下文作用域，切换到指定应用标识对应的应用上下文，并在作用域结束时自动恢复之前的上下文。
-    /// 使用 <c>using</c> 语句确保上下文恢复，避免 <see cref="UseApp"/> 导致的 <see cref="AsyncLocal{T}"/> 上下文泄漏。
-    /// </summary>
-    /// <param name="appKey">应用的唯一标识符。</param>
-    /// <returns>一个 <see cref="IDisposable"/> 对象，释放时恢复之前的上下文。</returns>
-    /// <example>
-    /// <code>
-    /// using (api.BeginScope("AppA"))
-    /// {
-    ///     // 在此作用域内，所有请求使用 AppA 的上下文
-    ///     await api.GetDataAsync();
-    /// } // 作用域结束，自动恢复之前的上下文
-    /// </code>
-    /// </example>
-    IDisposable BeginScope(string appKey);
-
-    /// <summary>
     /// 异步获取当前应用上下文的访问令牌。
     /// </summary>
     /// <returns>包含访问令牌的字符串任务。</returns>
+    [Obsolete("请改用 ITokenProvider.GetTokenAsync(...) 直接获取令牌：IAppContextSwitcher.GetTokenAsync 仅转发当前应用的令牌提供器，且仅在 TokenManager 模式下可用。")]
     Task<string> GetTokenAsync();
 }

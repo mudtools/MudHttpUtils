@@ -72,9 +72,12 @@ public class AppSwitchDocsContractTests
     {
         var readme = File.ReadAllText(GeneratorReadme);
 
-        readme.Should().Contain("唯一推荐入口",
-            "SW-02：`UseAppScope` 与 `BeginScope(appKey)` 语义等价，README 必须收敛到唯一推荐名，避免团队无法判定正确写法");
+        readme.Should().Contain("唯一入口",
+            "SW-02 / BC-27：`UseAppScope` 必须是按 appKey 切换的唯一入口（三个旧入口已于 3.0.0 移除），"
+            + "避免团队无法判定正确写法");
         readme.Should().Contain("IAppScopeSwitcher",
             "SW-01：文档必须说明作用域式切换的抽象面（IAppScopeSwitcher），否则按接口编程者仍找不到安全入口");
+        readme.Should().Contain("BC-27",
+            "BC-27：README 必须显式声明三个旧入口已被移除（破坏性变更 + 迁移目标），否则升级者无从上手");
     }
 }

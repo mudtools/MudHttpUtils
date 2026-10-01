@@ -23,7 +23,7 @@ public interface IAppContextHolder
     /// <b>写入约束（4.5/P3 收敛）</b>：本属性的 setter 已改为 <c>init</c>，
     /// 仅允许在对象初始化阶段设置。运行时切换应用上下文请使用 
     /// <see cref="SwitchTo"/> 或 <see cref="BeginScope"/> 方法，
-    /// 或生成代码中的 <c>UseApp</c>/<c>UseDefaultApp</c> 方法。
+    /// 或生成代码中的 <c>UseAppScope</c>/<c>UseDefaultAppScope</c> 方法（推荐，自动归还上下文）。
     /// </remarks>
     IMudAppContext? Current { get; init; }
 
@@ -37,7 +37,8 @@ public interface IAppContextHolder
     /// 与 <see cref="BeginScope"/> 的区别：本方法不返回 <see cref="IDisposable"/>，不自动恢复前值。
     /// </para>
     /// <para>
-    /// 适用于生成代码中的 <c>UseApp</c>/<c>UseDefaultApp</c> 方法。
+    /// 适用于生成代码中的作用域式入口 <c>UseAppScope</c>/<c>UseDefaultAppScope</c>
+    /// （历史入口 <c>UseApp</c>/<c>UseDefaultApp</c> 已标记 <c>[Obsolete]</c>）。
     /// 如需自动恢复，请使用 <see cref="BeginScope"/>。
     /// </para>
     /// </remarks>

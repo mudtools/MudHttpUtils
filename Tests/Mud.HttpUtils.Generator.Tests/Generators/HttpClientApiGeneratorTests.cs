@@ -526,8 +526,10 @@ namespace TestNamespace
 
         generatedCode.Should().Contain("_appContextHolder.BeginScope(context)",
             "AppContextScope 作用域切换应委托给 _appContextHolder 以保证线程安全");
-        generatedCode.Should().Contain("public IMudAppContext UseApp(string appKey)",
-            "AppContextScope 应用切换应生成 UseApp 方法");
+        generatedCode.Should().Contain("public IDisposable UseAppScope(string appKey)",
+            "按 appKey 切换的唯一入口（BC-27 后旧入口 UseApp 不再默认发射）");
+        generatedCode.Should().NotContain("public IMudAppContext UseApp(string appKey)",
+            "BC-27：旧入口 UseApp 不再默认发射（仅在接口自行声明该成员时才发射）");
         generatedCode.Should().Contain("public IDisposable UseDefaultAppScope()",
             "应生成 UseDefaultAppScope 自动恢复作用域方法");
     }
@@ -1199,10 +1201,10 @@ namespace TestNamespace
     }
 
     [Fact]
-    public void Generator_WithDefaultMode_GeneratesUseAppWithoutObsolete()
+    public void Generator_WithDefaultMode_DoesNotEmitLegacyUseApp()
     {
-        // GEN-02 修复：UseApp(string) 不再标记 [Obsolete]，
-        // 因为它与 BeginScope 是互补关系而非替代关系
+        // BC-27：旧入口 UseApp(string) 不再**默认发射**（唯一推荐入口是 UseAppScope）。
+        // 它仅在「接口自行声明 UseApp(string)」时才发射（豁免，见 AppSwitchMemberNamesTests）。
         var source = @"
 using Mud.HttpUtils;
 using Mud.HttpUtils.Attributes;
@@ -1221,17 +1223,16 @@ namespace TestNamespace
         var generatedCode = GetGeneratedCode(outputCompilation);
 
         generatedCode.Should().NotBeNull();
-        generatedCode.Should().Contain("public IMudAppContext UseApp(string appKey)",
-            "默认模式下应生成 UseApp(string) 方法");
-        generatedCode.Should().NotContain("[Obsolete",
-            "GEN-02 修复后 UseApp 不再标记 [Obsolete]");
+        generatedCode.Should().NotContain("public IMudAppContext UseApp(string appKey)",
+            "BC-27：默认模式下旧入口 UseApp 不再发射");
+        generatedCode.Should().Contain("public IDisposable UseAppScope(string appKey)",
+            "UseAppScope 是无条件发射的推荐入口");
     }
 
     [Fact]
-    public void Generator_WithDefaultMode_GeneratesUseDefaultAppWithoutObsolete()
+    public void Generator_WithDefaultMode_DoesNotEmitLegacyUseDefaultApp()
     {
-        // GEN-02 修复：UseDefaultApp() 不再标记 [Obsolete]，
-        // 因为它与 UseDefaultAppScope() 是互补关系而非替代关系
+        // BC-27：旧入口 UseDefaultApp() 不再**默认发射**（推荐入口是 UseDefaultAppScope）。
         var source = @"
 using Mud.HttpUtils;
 using Mud.HttpUtils.Attributes;
@@ -1250,16 +1251,17 @@ namespace TestNamespace
         var generatedCode = GetGeneratedCode(outputCompilation);
 
         generatedCode.Should().NotBeNull();
-        generatedCode.Should().Contain("public IMudAppContext UseDefaultApp()",
-            "默认模式下应生成 UseDefaultApp() 方法");
-        generatedCode.Should().NotContain("[Obsolete",
-            "GEN-02 修复后 UseDefaultApp 不再标记 [Obsolete]");
+        generatedCode.Should().NotContain("public IMudAppContext UseDefaultApp()",
+            "BC-27：默认模式下旧入口 UseDefaultApp 不再发射");
+        generatedCode.Should().Contain("public IDisposable UseDefaultAppScope()",
+            "UseDefaultAppScope 是无条件发射的推荐入口");
     }
 
     [Fact]
-    public void Generator_WithDefaultMode_GeneratesBeginScopeWithString()
+    public void Generator_WithDefaultMode_DoesNotEmitLegacyBeginScopeString()
     {
-        // 验证默认模式下生成 BeginScope(string appKey) 方法
+        // BC-27：旧入口 BeginScope(string appKey) 不再默认发射（与 UseAppScope 逐行等价的旧命名）。
+        // 保留的 `if (_appManager == null)` fail-closed 检查随 UseAppScope 一起仍然存在。
         var source = @"
 using Mud.HttpUtils;
 using Mud.HttpUtils.Attributes;
@@ -1278,10 +1280,12 @@ namespace TestNamespace
         var generatedCode = GetGeneratedCode(outputCompilation);
 
         generatedCode.Should().NotBeNull();
-        generatedCode.Should().Contain("public IDisposable BeginScope(string appKey)",
-            "默认模式下应生成 BeginScope(string appKey) 方法");
+        generatedCode.Should().NotContain("public IDisposable BeginScope(string appKey)",
+            "BC-27：默认模式下旧入口 BeginScope(string) 不再发射");
+        generatedCode.Should().Contain("public IDisposable UseAppScope(string appKey)",
+            "UseAppScope 是无条件发射的推荐入口");
         generatedCode.Should().Contain("if (_appManager == null)",
-            "默认模式下 BeginScope(string) 应检查 _appManager 是否为 null");
+            "缺少 IAppManager 时的 fail-closed 检查随 UseAppScope 保留");
     }
 
     [Fact]

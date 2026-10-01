@@ -4,11 +4,32 @@
 
 ---
 
-## 2.0.11（多应用切换 API 收敛 S7-A，2026-09-30）
+## 3.0.0（多应用切换 API 收敛：S7-A / S7-B / S7-C / S7-D，2026-10-01）
 
 > 本轮主题：**收敛"多应用切换"的抽象面与推荐入口**，并修正一处**不可编译的修复指引**。
-> 编号体系 `SW-01`/`SW-04`/`SW-05`/`SW-13`，批次 `S7-A`。**无破坏性变更**（纯 additive + 文案）。
-> 方案见 `.docs/多应用切换-API收敛-Bug修复与功能完善方案.md`（v1.1）。
+> 编号体系 `SW-01` ~ `SW-09`、`SW-11`、`SW-13`、`SW-14`，批次 `S7-A` / `S7-B` / `S7-C` / `S7-D`。
+> ⚠️ **含破坏性变更（`BC-27`）**：移除三个旧应用切换入口 —— 升级前请先阅读「破坏性变更」。
+> 方案见 `.docs/多应用切换-API收敛-Bug修复与功能完善方案.md`（v1.2，§12 为破坏性登记）。
+
+#### 破坏性变更（Breaking）
+
+**移除三个旧的应用切换入口（`BC-27`）**：`IAppContextSwitcher` 不再声明下列成员，生成类（非 HttpClient 模式）也不再发射它们。
+
+| 已移除成员 | 迁移目标 | 差异 |
+| --- | --- | --- |
+| `IAppContextSwitcher.UseApp(string appKey)` | `IAppScopeSwitcher.UseAppScope(appKey)`（配合 `using`） | 守卫完全相同；新入口额外**自动归还**上下文 |
+| `IAppContextSwitcher.UseDefaultApp()` | `IAppScopeSwitcher.UseDefaultAppScope()` | 同上 |
+| `IAppContextSwitcher.BeginScope(string appKey)` | `IAppScopeSwitcher.UseAppScope(appKey)` | **纯命名收敛**：生成体逐行等价，能力与安全性**完全一致** |
+
+- **影响面**：① 调用上述三个成员的代码将**编译失败**（`UseApp` / `UseDefaultApp` ⇒ `CS1061`；
+  `BeginScope("...")` ⇒ `CS1503` 参数类型不匹配，因为只剩 Holder 面的 `BeginScope(IMudAppContext)`）；
+  ② 所有非 HttpClient 模式生成类的 API 面**少三个成员**；③ 直接实现 `IAppContextSwitcher` 的第三方类型需移除这三个成员。
+- **不受影响**：Holder 面（`Current` / `SwitchTo` / `BeginScope(IMudAppContext)`）与作用域面（`UseAppScope` / `UseDefaultAppScope`）**保持不变**。
+- **豁免（重要）**：若使用方接口**自行声明**了上述任一成员（要求生成器实现），生成器**仍然会为其发射实现** ——
+  该既有写法不受影响（否则会落入契约补全并报 `HTTPCLIENT024`（Error），把原本可编译的代码变为编译失败）。
+- ✅ **附带根治**：`BeginScope(null)` 的 `CS0121` 重载二义**随本次移除消失**
+  （此前 `[Obsolete]` **不参与重载决议**，故 2.0.11 仅标注时该二义依然存在）。
+- **升级路径**：从 **2.0.10 及更早**升级 ⇒ 请直接按上表迁移；从 **2.0.11** 升级 ⇒ 若已消除全部 `CS0618` 警告，则无需任何改动。
 
 #### 新增（Added）
 
@@ -45,14 +66,59 @@
   会落入占位并报 `HTTPCLIENT024`（Error）"的模式限制说明。
 - **`Client/README.md`「应用上下文」**：新增 `IAppScopeSwitcher` 用法示例（含 `using` 自动归还）。
 
-#### 待定（本轮未做，见方案 §4.5 / §4.8）
+#### 废弃（Obsolete，残留）
 
-- `UseApp` / `UseDefaultApp` / `BeginScope(string)` 的 `[Obsolete]` 标注（`S7-B`）：
-  ⚠️ **注意** `[Obsolete]` **不参与重载决议**，`BeginScope(null)` 的 CS0121 二义在标注后**依然存在**，
-  需等 `BC-27` 真正删除 `BeginScope(string)` 才消失。
-- `SW-10`（切换成员"按需发射"）**移出本轮**（与 `SW-01` 的附加实现条件冲突、属破坏性变更、
-  且会破坏"用户接口自行声明切换成员"的合法场景）。
-- `HTTPCLIENT038` / `MUD006` 两个新诊断**取消**（分别与既有 `HTTPCLIENT024`（Error）、编译器 `CS0618` 覆盖重叠）。
+本版的三个旧入口已**移除**（见上方「破坏性变更」）。`IAppContextSwitcher` 仅剩一个仍标 `[Obsolete]`（Warning）的成员：
+
+| 已废弃成员 | 迁移目标 | 说明 |
+| --- | --- | --- |
+| `IAppContextSwitcher.GetTokenAsync()` | `ITokenProvider.GetTokenAsync(...)` | 原方法仅转发当前应用的令牌提供器，且仅 TokenManager 模式下可用（迁出为候选 `BC-28`） |
+
+- **只标抽象层**：生成类成员**不**标 `[Obsolete]`（生成类必须实现接口成员，标注只会给"实现接口"制造噪音）。
+  因此经**接口**调用会得到 `CS0618` 迁移提示，经具体生成类调用无噪音 —— 无需分析器、无需 CodeFix。
+- 覆盖度由 `AppSwitchObsoleteMigrationTests` 钉死（`GetTokenAsync` ⇒ 恰好 1 条 `CS0618` 且消息含 `ITokenProvider`；
+  迁移目标（`UseAppScope` / `UseDefaultAppScope`）⇒ **零诊断**）。
+
+#### 已解决（相对 2.0.11 开发中间态）
+
+- ✅ **`BeginScope(null)` 的 `CS0121` 重载二义已消除**：`BeginScope(string)` 重载已被移除，只剩 Holder 面的
+  `BeginScope(IMudAppContext)`（2.0.11 阶段仅加 `[Obsolete]`，而 `[Obsolete]` **不参与重载决议**，故当时该二义仍在）。
+
+#### 完善（可维护性，`S7-C`）
+
+- **调用路径分叉提示（`SW-09`）**：混合模式继承（基类与派生类的 TokenManager 配置不一致）时，派生类的切换成员以
+  `public new` **隐藏**基类同名成员 —— 经**基类引用**调用会走到基类实现，属**静默行为分叉**。
+  现生成产物在该成员的 XML 文档注释中发射 `[HTTPCLIENT028]` 提示（IDE 悬停即见）。该提示**只在此形态发射**，
+  无继承或模式一致的继承不发射（避免常态噪音）。
+  > `HTTPCLIENT028` 的级别**维持 `Warning`**：触发面实测为 **0**（测试集内无用例含 `public new`），
+  > 升 `Error` 属破坏性变更且与"混合模式仍可编译"的既有定位冲突 —— 已登记为候选 `BC-29`。
+- **切换成员名单一事实源（`SW-11`）**：新增 `Mud.HttpUtils.Generator/Consts/AppSwitchMemberNames.cs`，
+  登记表（`RegisterInfrastructureMembers`）改用常量，并以真编译 + 反射守卫"生成类 public 成员 ⊇ 常量表"，
+  杜绝历史上 `UseAppScope` 漏登记（G8-15）那类"发射了没登记 ⇒ CS0111 / 登记了没发射 ⇒ CS0535"的漂移。
+- **形态与失败语义文档化（`SW-06` / `SW-07`）**：`Current` 访问器形态的判定口径（`set` / `init` / 未声明⇒`init`），
+  以及"缺少 `IAppManager` 时 `UseAppScope` 类入口 **fail-closed**、`UseDefaultAppScope` 类入口**单应用回退**"
+  这一**刻意的不对称**，已完整写入 `Generator/README.md`「多应用切换与信任边界」（生成产物零变更）。
+
+#### 明确不做（避免过度设计，见方案 §4.4 / §4.8）
+
+- **`IAppManager<T>` 三成员不废弃**：`GetWebApi<T>` / `GetDefaultWebApi<T>` 返回的是**新的切换器实例**，
+  与 `IAppScopeSwitcher`（在当前实例上切上下文）**语义不等价**；`RegisterSwitcherFactory<T>` 是
+  AOT 友好实例创建的**唯一接缝**（无等价替代）。
+- **`SW-10`（切换成员"按需发射"）移出本轮**：与 `SW-01` 的附加实现条件冲突、属破坏性变更，
+  且会破坏"用户接口自行声明切换成员"的合法场景（`UnconditionalMemberAvoidanceTests` 覆盖）。
+- **不新增 `HTTPCLIENT038` / `MUD006` 诊断**：分别与既有 `HTTPCLIENT024`（**Error**）、编译器 `CS0618` 覆盖重叠，
+  新增只会造成同处双告警与额外的诊断发布跟踪成本。
+- **不新增 CodeFix**：`CS0618` 已提供等效且更可靠的迁移提示。
+
+#### 已评估但不采纳（下一轮候选）
+
+1. **（候选 `BC-28`）`GetTokenAsync()` 迁出 `IAppContextSwitcher`**：迁至独立的令牌访问面，
+   迁移到 `ITokenProvider.GetTokenAsync(...)`（本轮保留以缩小破坏面）。
+2. **（候选 `BC-29`）`HTTPCLIENT028` 由 `Warning` 升 `Error`**：适用于混合模式继承（两级 TokenManager 配置不一致）的项目；
+   过渡期请统一两级配置或显式抑制诊断。
+3. **`SW-10`（切换成员"按需发射"）** 的完整形态（Holder 面也门控）不采纳 ——
+   该面被请求执行链路依赖，门控会让生成类无法满足 `IAppContextHolder` 契约。
+   本轮已用"**只门控旧入口 + 接口自行声明即豁免**"的**更窄**方案达成同等目标（见「破坏性变更」）。
 
 ---
 
