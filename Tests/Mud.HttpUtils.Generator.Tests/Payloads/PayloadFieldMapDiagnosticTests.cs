@@ -64,6 +64,85 @@ public class PayloadFieldMapDiagnosticTests
         generatedTreeCount.Should().Be(1);
     }
 
+    /// <summary>
+    /// 正向对照（v2.2）：隐式默认构造函数必须被识别为「公共无参构造」（否则 <c>new()</c> 形态守卫会全线误报）。
+    /// </summary>
+    [Fact]
+    public void ClassWithImplicitDefaultConstructor_IsValid()
+    {
+        var (diagnostics, generatedTreeCount) = RunGenerator("""
+            namespace PayloadTests
+            {
+                [PayloadContract(Converter = typeof(PayloadConverter))]
+                public sealed partial class ImplicitCtorPayload
+                {
+                    [PayloadField("UserID")] public string? UserId { get; set; }
+                }
+            }
+            """);
+
+        diagnostics.Should().BeEmpty();
+        generatedTreeCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// 正向对照（v2.2）：基类<b>不含</b> <c>[PayloadField]</c> 时派生载荷合法（只有「继承映射字段」才是形态问题）。
+    /// </summary>
+    [Fact]
+    public void DerivedPayloadWithUnmappedBase_IsValid()
+    {
+        var (diagnostics, generatedTreeCount) = RunGenerator("""
+            namespace PayloadTests
+            {
+                public class PlainBase
+                {
+                    public string? Unmapped { get; set; }
+                }
+
+                [PayloadContract(Converter = typeof(PayloadConverter))]
+                public sealed partial class DerivedPlainPayload : PlainBase
+                {
+                    [PayloadField("Name")] public string? Name { get; set; }
+                }
+            }
+            """);
+
+        diagnostics.Should().BeEmpty();
+        generatedTreeCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// 正向对照（v2.2）：转换器的类型参数约束<b>被满足</b>时不得误报（<c>struct</c> / <c>new()</c> 两种）。
+    /// </summary>
+    [Fact]
+    public void GenericHelperWithSatisfiedConstraint_IsValid()
+    {
+        var (diagnostics, generatedTreeCount) = RunGenerator("""
+            namespace PayloadTests
+            {
+                [PayloadContract(Converter = typeof(ConstrainedOkConverter))]
+                public sealed partial class ConstraintOkPayload
+                {
+                    [PayloadField("Ids")] public List<long> Ids { get; set; } = new List<long>();
+
+                    [PayloadField("Flags")] public List<int> Flags { get; set; } = new List<int>();
+                }
+
+                public static class ConstrainedOkConverter
+                {
+                    public static List<T> Delimited<T>(PayloadNode? node, char separator) where T : struct
+                        => new List<T>();
+
+                    public static List<T> Items<T>(PayloadNode? node, string itemName) where T : new()
+                        => new List<T>();
+                }
+            }
+            """);
+
+        diagnostics.Should().BeEmpty();
+        generatedTreeCount.Should().Be(1);
+    }
+
     [Fact]
     public void NonPartialPayload_ReportsPayload002() => AssertSingleError("""
         namespace PayloadTests
@@ -293,6 +372,200 @@ public class PayloadFieldMapDiagnosticTests
             }
         }
         """, "PAYLOAD009");
+
+    // —— v2.2 新增：可实例化性（否则生成物必然无法编译，且错误指向生成文件）——
+
+    [Fact]
+    public void StaticClassPayload_ReportsPayload009() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            [PayloadContract]
+            public static partial class StaticPayload
+            {
+            }
+        }
+        """, "PAYLOAD009");
+
+    [Fact]
+    public void AbstractClassPayload_ReportsPayload009() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            [PayloadContract]
+            public abstract partial class AbstractPayload
+            {
+            }
+        }
+        """, "PAYLOAD009");
+
+    [Fact]
+    public void ClassWithoutPublicParameterlessConstructor_ReportsPayload009() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class NoCtorPayload
+            {
+                private NoCtorPayload() { }
+
+                [PayloadField("UserID")] public string? UserId { get; set; }
+            }
+        }
+        """, "PAYLOAD009");
+
+    [Fact]
+    public void ClassWithOnlyParameterizedConstructor_ReportsPayload009() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class ArgsCtorPayload
+            {
+                public ArgsCtorPayload(int seed) { }
+
+                [PayloadField("UserID")] public string? UserId { get; set; }
+            }
+        }
+        """, "PAYLOAD009");
+
+    // —— v2.2 新增：继承映射字段（否则基类的 [PayloadField] 被静默丢弃）——
+
+    [Fact]
+    public void InheritedFieldDeclaration_ReportsPayload009() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            public class BasePayload
+            {
+                [PayloadField("UserID")] public string? UserId { get; set; }
+            }
+
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class DerivedPayload : BasePayload
+            {
+                [PayloadField("Name")] public string? Name { get; set; }
+            }
+        }
+        """, "PAYLOAD009");
+
+    // —— v2.2 新增：属性形态（索引器 / 显式接口实现无法以 t.<名> = … 引用）——
+
+    [Fact]
+    public void IndexerProperty_ReportsPayload006() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class IndexerPayload
+            {
+                [PayloadField("UserID")] public string? this[int index] { get { return null; } set { } }
+            }
+        }
+        """, "PAYLOAD006");
+
+    [Fact]
+    public void ExplicitInterfaceImplementationProperty_ReportsPayload006() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            public interface IHasUserId { string? UserId { get; set; } }
+
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class ExplicitImplPayload : IHasUserId
+            {
+                [PayloadField("UserID")] string? IHasUserId.UserId { get; set; }
+            }
+        }
+        """, "PAYLOAD006");
+
+    // —— v2.2 新增：声明静默失效类（Format 取值无效 / Separator 落空）——
+
+    [Fact]
+    public void InvalidFormatEnumValue_ReportsPayload006() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class InvalidFormatPayload
+            {
+                [PayloadField("UserID", Format = (PayloadFieldFormat)99)] public string? UserId { get; set; }
+            }
+        }
+        """, "PAYLOAD006");
+
+    [Fact]
+    public void ExplicitSeparatorOnNonDelimitedShape_ReportsPayload006() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class SeparatorOnScalarPayload
+            {
+                [PayloadField("UserID", Separator = '|')] public string? UserId { get; set; }
+            }
+        }
+        """, "PAYLOAD006");
+
+    [Fact]
+    public void ExplicitSeparatorWithItemsShape_ReportsPayload006() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class SeparatorWithItemsPayload
+            {
+                [PayloadField("Names", ItemName = "Name", Separator = '|')]
+                public List<string> Names { get; set; } = new List<string>();
+            }
+        }
+        """, "PAYLOAD006");
+
+    // —— v2.2 新增：转换器契约方法的形参类型与泛型约束（否则生成物报 CS1503/CS0315）——
+
+    [Fact]
+    public void HelperWithNonNodeFirstParameter_ReportsPayload004() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            [PayloadContract(Converter = typeof(BadFirstParameterConverter))]
+            public sealed partial class BadFirstParameterPayload
+            {
+                [PayloadField("Count")] public int? Count { get; set; }
+            }
+
+            public static class BadFirstParameterConverter
+            {
+                public static T? Number<T>(string text) where T : struct => null;
+            }
+        }
+        """, "PAYLOAD004");
+
+    [Fact]
+    public void HelperWithWrongSeparatorParameter_ReportsPayload004() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            [PayloadContract(Converter = typeof(BadSeparatorConverter))]
+            public sealed partial class BadSeparatorPayload
+            {
+                [PayloadField("Ids")] public List<long> Ids { get; set; } = new List<long>();
+            }
+
+            public static class BadSeparatorConverter
+            {
+                public static List<T> Delimited<T>(PayloadNode? node, string separator) => new List<T>();
+            }
+        }
+        """, "PAYLOAD004");
+
+    [Fact]
+    public void HelperWithUnsatisfiedGenericConstraint_ReportsPayload007() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            [PayloadContract(Converter = typeof(ConstrainedConverter))]
+            public sealed partial class UnsatisfiedConstraintPayload
+            {
+                [PayloadField("Ids")] public List<long> Ids { get; set; } = new List<long>();
+            }
+
+            public interface IShape { }
+
+            public static class ConstrainedConverter
+            {
+                public static List<T> Delimited<T>(PayloadNode? node, char separator) where T : IShape
+                    => new List<T>();
+            }
+        }
+        """, "PAYLOAD007");
 
     [Fact]
     public void InterfaceOrStructTarget_IsRejectedByCscItself()

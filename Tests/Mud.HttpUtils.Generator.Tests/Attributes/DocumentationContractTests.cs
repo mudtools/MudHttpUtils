@@ -41,9 +41,28 @@ public class DocumentationContractTests
         "HTTPCLIENT002", "HTTPCLIENT006", "HTTPCLIENT010", "HTTPCLIENT019",
     };
 
+    /// <summary>
+    /// 诊断表行匹配：<b>ID 必须位于行的第一个单元格</b>（文档约定），且**级别不得跨行捕获**。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 原正则 <c>\|[ \t]*`(?&lt;id&gt;…\d{3})`[ \t]*\|[ \t]*(?&lt;severity&gt;[^|]+?)…</c> 只要求
+    /// 「`|` + 反引号 ID + `|`」，不要求 ID 是**首个**单元格，且 <c>[^|]+?</c> 可跨行匹配。
+    /// </para>
+    /// <para>
+    /// 后果（v2.2 实测命中）：任何新增的 README 表格若在**非首列**出现带反引号的诊断 ID
+    /// （如「形态 / 编译错误 / 现报告」三列表的末列），该单元格会被解析成
+    /// 「id = 该 ID、severity = 其后到**下一行首个 `|`** 之间的换行与空白（Trim 后为空串）」，
+    /// 并以**后出现者覆盖**的方式写坏 <c>Dictionary</c> ⇒
+    /// <see cref="ReadmeDiagnosticIds_AllExistInDiagnostics_WithConsistentSeverity"/> 报
+    /// 「README 声明的级别与 Diagnostics.cs 不一致」这种**指向错误位置**的失败。
+    /// 收紧后：只有「行首单元格即诊断 ID」的行参与解析，其余位置出现的 ID 一律不参与
+    /// （避免「文档里写个 ID 就被当成诊断表声明」这一脆弱的隐式约定）。
+    /// </para>
+    /// </remarks>
     private static readonly Regex DiagnosticRowRegex =
-        new(@"\|[ \t]*`(?<id>[A-Z][A-Z0-9]*\d{3})`[ \t]*\|[ \t]*(?<severity>[^|]+?)[ \t]*\|",
-            RegexOptions.Compiled | RegexOptions.CultureInvariant);
+        new(@"^[ \t]*\|[ \t]*`(?<id>[A-Z][A-Z0-9]*\d{3})`[ \t]*\|[ \t]*(?<severity>[^|\r\n]+?)[ \t]*\|",
+            RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.Multiline);
 
     /// <summary>生成器源码中 build_property.&lt;key&gt; 引用的键提取（键仅由字母 / 数字 / 下划线 / 点组成）。</summary>
     private static readonly Regex PropertyKeyRegex =

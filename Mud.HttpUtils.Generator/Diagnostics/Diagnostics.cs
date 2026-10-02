@@ -831,11 +831,16 @@ internal static class Diagnostics
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
-    /// <summary>PAYLOAD009：载荷契约类形态不受支持（泛型 / 嵌套 / record / 非 class）。</summary>
+    /// <summary>PAYLOAD009：载荷契约类形态不受支持（非 class / 泛型 / 嵌套 / record / static / abstract / 无公共无参构造 / 继承映射字段）。</summary>
+    /// <remarks>
+    /// 生成物恒以 <c>PayloadFieldMap&lt;T&gt;</c>（约束 <c>T : class, new()</c>）构造映射表，
+    /// 故 static / abstract / 无公共无参构造函数的类会让生成物无法编译（CS0718 / CS0310）；
+    /// 继承链上带 <c>[PayloadField]</c> 的基类则会让继承字段被静默丢弃（生成器只映射本类声明的属性）。
+    /// </remarks>
     public static readonly DiagnosticDescriptor PayloadContractTypeShapeUnsupported = new(
         id: DiagnosticIds.PayloadContractTypeShapeUnsupported,
         title: "载荷契约类形态不受支持",
-        messageFormat: "载荷契约类 {0} 的形态不受支持：{1}。支持的形态为非泛型、非嵌套的顶层 partial class（不含 record —— 消费面含 netstandard2.0 时无 IsExternalInit，且 record 的位置参数属性为 init-only，生成代码无法赋值）。",
+        messageFormat: "载荷契约类 {0} 的形态不受支持：{1}。支持的形态为「非泛型、非嵌套、非 static、非 abstract、具公共无参构造函数的顶层 partial class，且不继承带 [PayloadField] 成员的基类」（不含 record —— 消费面含 netstandard2.0 时无 IsExternalInit，且 record 的位置参数属性为 init-only，生成代码无法赋值）。",
         category: "代码生成",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);

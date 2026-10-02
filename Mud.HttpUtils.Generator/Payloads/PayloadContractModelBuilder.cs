@@ -85,6 +85,21 @@ internal static class PayloadContractModelBuilder
     /// <summary><c>List&lt;T&gt;</c> 原始定义的完全限定显示名（Roslyn <c>SpecialType</c> 不含泛型集合）。</summary>
     private const string ListOfTDisplay = "global::System.Collections.Generic.List<T>";
 
+    /// <summary>
+    /// 生成代码中的类型显示格式：全限定 + 特殊类型关键字 + <b>可空引用类型标注</b>。
+    /// </summary>
+    /// <remarks>
+    /// <b>为什么必须含 <c>IncludeNullableReferenceTypeModifier</c></b>：<see cref="SymbolDisplayFormat.FullyQualifiedFormat"/>
+    /// 会丢弃 <c>?</c> 标注，于是 <c>List&lt;string?&gt;</c> 属性会渲染成
+    /// <c>Delimited&lt;string&gt;</c>（返回 <c>List&lt;string&gt;</c>）⇒ 赋给 <c>List&lt;string?&gt;</c> 时报
+    /// <c>CS8619</c>（可空性不匹配，错误指向生成文件；消费方开 <c>TreatWarningsAsErrors</c> 即失败）。
+    /// 既有生成器（<c>MethodGenerator</c> / <c>ReturnTypeSupport</c> / <c>ParameterSignatureBuilder</c>）统一采用本格式。
+    /// </remarks>
+    private static readonly SymbolDisplayFormat GeneratedTypeFormat = SymbolDisplayFormat.FullyQualifiedFormat
+        .WithMiscellaneousOptions(
+            SymbolDisplayMiscellaneousOptions.UseSpecialTypes |
+            SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
+
     /// <summary>解析结果分类（映射到 <c>PAYLOAD004</c>~<c>PAYLOAD007</c>）。</summary>
     private enum ResolutionFailure
     {
@@ -249,7 +264,31 @@ internal static class PayloadContractModelBuilder
                 continue;
             }
 
-            var formatName = ReadEnumMemberName(attribute, FormatProperty) ?? AutoFormatName;
+            // 索引器（this[]）与显式接口实现（IFoo.Bar）的「成员名」都不是可直接书写的属性名，
+            // 生成物以 t.<属性名> = … 赋值会产出语法/语义错误（CS1001/CS1061 等）且错误指向生成文件。
+            if (property.IsIndexer || property.ExplicitInterfaceImplementations.Length > 0)
+            {
+                diagnostics.Add(new PayloadDiagnostic(
+                    Diagnostics.PayloadFieldDeclarationInvalid, location, className,
+                    "属性 " + property.Name + " 是索引器或显式接口实现：生成物以 t.<属性名> = … 的形式赋值，" +
+                    "二者都无法被这样引用（请改为普通可写属性）。"));
+                continue;
+            }
+
+            // Format 显式给出时必须能反解为枚举成员名：`(PayloadFieldFormat)99` 之类会让
+            // GetEnumMemberName 返回 null，若不拦截会被静默当作 Auto 走类型推断（看似生效实则丢弃声明）。
+            var hasFormatArgument = TryGetNamed(attribute, FormatProperty, out var formatConstant);
+            var formatName = hasFormatArgument ? AttributeArgumentReader.GetEnumMemberName(formatConstant) : null;
+
+            if (hasFormatArgument && formatName == null)
+            {
+                diagnostics.Add(new PayloadDiagnostic(
+                    Diagnostics.PayloadFieldDeclarationInvalid, location, className,
+                    "属性 " + property.Name + " 的 " + FormatProperty +
+                    " 取值无法反解为 PayloadFieldFormat 的成员名（请书写枚举成员名，而非强制转换的数值）。"));
+                continue;
+            }
+
             var hasExplicitSeparator = TryGetNamed(attribute, SeparatorProperty, out var separatorConstant);
             var separator = separatorConstant.Value is char separatorChar ? separatorChar : ',';
             var itemName = ReadString(attribute, ItemNameProperty);
@@ -262,7 +301,7 @@ internal static class PayloadContractModelBuilder
                 converterDisplay,
                 compilation,
                 property,
-                formatName,
+                formatName ?? AutoFormatName,
                 hasExplicitSeparator,
                 separator,
                 itemName,
@@ -283,7 +322,10 @@ internal static class PayloadContractModelBuilder
             fields.Add(new PayloadFieldModel(
                 element,
                 property.Name,
-                property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                // 用 GeneratedTypeFormat（含可空标注）而非 FullyQualifiedFormat：属性类型的可空标注会改变
+                // 渲染产物（如 Delimited<string> 与 Delimited<string?>），必须进入指纹，否则「仅补一个 ?」
+                // 的编辑会因指纹相同而命中增量缓存，产出过期（可空性不符）的生成文件。
+                property.Type.ToDisplayString(GeneratedTypeFormat),
                 resolvedCall,
                 location));
         }
@@ -350,6 +392,15 @@ internal static class PayloadContractModelBuilder
             return ResolutionFailure.DeclarationInvalid;
         }
 
+        // Separator 只对 Delimited 生效（PAYLOAD006）：显式给出却落在其它形态上时，
+        // 静默忽略会产出「看似生效实则丢弃配置」的映射（与「Separator + ItemName 互斥」同一口径）。
+        if (hasExplicitSeparator && !string.Equals(effectiveFormat, DelimitedFormatName, StringComparison.Ordinal))
+        {
+            detail = "属性 " + property.Name + " 显式给出了 " + SeparatorProperty + "，但生效形态是 " + effectiveFormat +
+                     "：分隔符只对 Format = " + DelimitedFormatName + " 生效，静默忽略会让该声明看似生效实则被丢弃。";
+            return ResolutionFailure.DeclarationInvalid;
+        }
+
         // 形态 → 转换器契约方法 + 泛型实参。
         string helperName;
         ITypeSymbol? typeArgument;
@@ -409,12 +460,36 @@ internal static class PayloadContractModelBuilder
             return ResolutionFailure.MethodNotFound;
         }
 
+        // 形参「个数」已由 FindContractMethod 校验，此处补齐**类型**校验：契约签名恒以
+        // PayloadNode 为首参（Delimited 次参 char、Items/ItemsWithAttributes 次参 string…），
+        // 否则生成物会在消费方编译期报 CS1503（错误指向生成文件）。
+        if (!HasContractParameterTypes(method, helperName))
+        {
+            detail = "转换器 " + converterType.Name + " 的 " + helperName + " 形参类型不符合契约签名：" +
+                     "首参必须是 " + PayloadNodeMetadataName +
+                     (string.Equals(helperName, DelimitedMethodName, StringComparison.Ordinal)
+                         ? "、次参必须是 char。"
+                         : (string.Equals(helperName, TextMethodName, StringComparison.Ordinal)
+                             ? "。"
+                             : "、其余形参必须是 string。"));
+            return ResolutionFailure.MethodNotFound;
+        }
+
         var constructed = TryConstruct(method, typeArguments);
         if (constructed == null)
         {
             detail = "转换器 " + converterType.Name + " 的 " + helperName + "<" +
                      string.Join(", ", typeArguments.Select(argument => argument.ToDisplayString())) +
-                     "> 无法按该类型实参构造（泛型约束不满足）。";
+                     "> 无法按该类型实参构造（泛型元数不匹配）。";
+            return ResolutionFailure.NotInferable;
+        }
+
+        if (!AreTypeArgumentsSatisfied(method, typeArguments, compilation, out var constraintDetail))
+        {
+            detail = "转换器 " + converterType.Name + " 的 " + helperName + "<" +
+                     string.Join(", ", typeArguments.Select(argument => argument.ToDisplayString())) +
+                     "> 无法按该类型实参构造：" + constraintDetail +
+                     "（请调整属性元素类型，或为该字段显式指定 Method）。";
             return ResolutionFailure.NotInferable;
         }
 
@@ -633,7 +708,7 @@ internal static class PayloadContractModelBuilder
                 if (i > 0)
                     call.Append(", ");
 
-                call.Append(typeArguments[i].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+                call.Append(typeArguments[i].ToDisplayString(GeneratedTypeFormat));
             }
 
             call.Append('>');
@@ -700,6 +775,136 @@ internal static class PayloadContractModelBuilder
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// 转换器契约方法的<b>形参类型</b>是否与 §5.4 的签名表一致。
+    /// </summary>
+    /// <remarks>
+    /// <c>Text</c>/<c>Number&lt;T&gt;</c>/<c>Flag&lt;T&gt;</c>：<c>(PayloadNode?)</c>；
+    /// <c>Delimited&lt;T&gt;</c>：<c>(PayloadNode?, char)</c>；<c>Items&lt;T&gt;</c>：<c>(PayloadNode?, string)</c>；
+    /// <c>ItemsWithAttributes&lt;TItem&gt;</c>：<c>(PayloadNode?, string, string, string)</c>。
+    /// </remarks>
+    private static bool HasContractParameterTypes(IMethodSymbol method, string helperName)
+    {
+        if (method.Parameters.Length == 0 || !IsPayloadNode(method.Parameters[0].Type))
+            return false;
+
+        if (string.Equals(helperName, DelimitedMethodName, StringComparison.Ordinal))
+        {
+            return method.Parameters.Length == 2
+                && method.Parameters[1].Type.SpecialType == SpecialType.System_Char;
+        }
+
+        if (string.Equals(helperName, ItemsWithAttributesMethodName, StringComparison.Ordinal))
+        {
+            return method.Parameters.Length == 4
+                && method.Parameters[1].Type.SpecialType == SpecialType.System_String
+                && method.Parameters[2].Type.SpecialType == SpecialType.System_String
+                && method.Parameters[3].Type.SpecialType == SpecialType.System_String;
+        }
+
+        if (string.Equals(helperName, ItemsMethodName, StringComparison.Ordinal))
+        {
+            return method.Parameters.Length == 2
+                && method.Parameters[1].Type.SpecialType == SpecialType.System_String;
+        }
+
+        return method.Parameters.Length == 1;
+    }
+
+    /// <summary>
+    /// 校验「泛型类型实参是否满足契约方法的类型参数约束」。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么需要</b>：<see cref="IMethodSymbol.Construct(ITypeSymbol[])"/> <b>不校验约束</b>——
+    /// 约束违约时会返回一个「看似可用」的构造方法，生成物里的调用则在消费方编译期报
+    /// <c>CS0315</c>/<c>CS0314</c>（错误指向生成文件，可读性极差）。
+    /// </para>
+    /// <para>
+    /// 覆盖范围：<c>struct</c> / <c>class</c> / <c>unmanaged</c> / <c>new()</c> 与
+    /// <see cref="ITypeParameterSymbol.ConstraintTypes"/>（逐项按隐式转换判定）。
+    /// 约束项本身是类型参数（<c>where T : U</c>）时跳过 —— 该情形在「载荷类非泛型」的前提下不可达。
+    /// </para>
+    /// </remarks>
+    private static bool AreTypeArgumentsSatisfied(
+        IMethodSymbol method,
+        ImmutableArray<ITypeSymbol> typeArguments,
+        Compilation? compilation,
+        out string detail)
+    {
+        detail = string.Empty;
+        if (typeArguments.Length == 0)
+            return true;
+
+        var count = typeArguments.Length < method.TypeParameters.Length
+            ? typeArguments.Length
+            : method.TypeParameters.Length;
+
+        for (var i = 0; i < count; i++)
+        {
+            var typeParameter = method.TypeParameters[i];
+            var argument = typeArguments[i];
+
+            if (typeParameter.HasValueTypeConstraint && !IsNonNullableValueType(argument))
+            {
+                detail = "类型实参 " + argument.ToDisplayString() + " 不满足 struct 约束。";
+                return false;
+            }
+
+            if (typeParameter.HasReferenceTypeConstraint && !argument.IsReferenceType)
+            {
+                detail = "类型实参 " + argument.ToDisplayString() + " 不满足 class 约束。";
+                return false;
+            }
+
+            if (typeParameter.HasUnmanagedTypeConstraint && !argument.IsUnmanagedType)
+            {
+                detail = "类型实参 " + argument.ToDisplayString() + " 不满足 unmanaged 约束。";
+                return false;
+            }
+
+            if (typeParameter.HasConstructorConstraint && !HasAccessibleParameterlessConstructor(argument))
+            {
+                detail = "类型实参 " + argument.ToDisplayString() + " 不满足 new() 约束（缺少公共无参构造函数）。";
+                return false;
+            }
+
+            foreach (var constraintType in typeParameter.ConstraintTypes)
+            {
+                // 约束项为类型参数（where T : U）时无法用转换判定，且本生成器的类型实参恒为具体类型 ⇒ 跳过。
+                if (constraintType.TypeKind == TypeKind.TypeParameter || compilation == null)
+                    continue;
+
+                if (!compilation.ClassifyCommonConversion(argument, constraintType).IsImplicit)
+                {
+                    detail = "类型实参 " + argument.ToDisplayString() +
+                             " 不满足约束 " + constraintType.ToDisplayString() + "。";
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>是否为「非可空的值类型」（<c>where T : struct</c> 不接受 <c>T?</c>）。</summary>
+    private static bool IsNonNullableValueType(ITypeSymbol type) =>
+        type.IsValueType && type.OriginalDefinition.SpecialType != SpecialType.System_Nullable_T;
+
+    /// <summary>类型实参是否具备 <c>new()</c> 约束所需的条件（具体类 + 公共无参构造函数）。</summary>
+    private static bool HasAccessibleParameterlessConstructor(ITypeSymbol type)
+    {
+        // 值类型（含 T?）恒满足 new()：结构体总有可用的默认构造函数
+        // （Roslyn 的 InstanceConstructors 不含隐式结构体默认构造，故必须在此短路，否则误报）。
+        if (type.IsValueType)
+            return true;
+
+        if (type is not INamedTypeSymbol named || named.IsAbstract)
+            return false;
+
+        return HasPublicParameterlessConstructor(named);
     }
 
     /// <summary>
@@ -823,6 +1028,63 @@ internal static class PayloadContractModelBuilder
         if (typeSymbol.ContainingType != null)
             return "当前为嵌套类（嵌套类的 partial 成员需转发容器链，当前不支持）。";
 
+        // —— v2.2 新增：可实例化性（否则生成物必然无法编译，且错误指向生成文件）——
+        // 生成物恒以 PayloadFieldMap<T>（约束 T : class, new()）构造映射表，
+        // 故 static / abstract / 无公共无参构造函数的类型会让消费方看到 CS0718 / CS0310。
+        if (typeSymbol.IsStatic)
+            return "当前为 static 类（生成物以 PayloadFieldMap<T>（T : class, new()）构造映射表，静态类型不能用作类型参数 ⇒ CS0718）。";
+
+        if (typeSymbol.IsAbstract)
+            return "当前为 abstract 类（生成物以 PayloadFieldMap<T>（T : class, new()）构造映射表，抽象类型无法满足 new() ⇒ CS0310）。";
+
+        if (!HasPublicParameterlessConstructor(typeSymbol))
+            return "当前类没有公共无参构造函数（生成物以 PayloadFieldMap<T>（T : class, new()）构造映射表 ⇒ CS0310）。";
+
+        // —— v2.2 新增：继承映射字段（否则基类上的 [PayloadField] 会被静默丢弃）——
+        var mappedBase = FindBaseTypeWithMappedFields(typeSymbol);
+        if (mappedBase != null)
+            return "当前类继承自 " + mappedBase.ToDisplayString() +
+                   "，而其上声明了 [PayloadField] 成员 —— 生成器只映射本类声明的属性，" +
+                   "继承字段会被静默丢弃（本能力的故障模式正是「静默丢字段」，故直接拒绝）。" +
+                   "请把字段声明移到本类，或对派生类改用不标注 [PayloadContract] 的手写映射表。";
+
+        return null;
+    }
+
+    /// <summary>类型是否具备可供 <c>new T()</c> 使用的公共无参构造函数（含隐式默认构造）。</summary>
+    private static bool HasPublicParameterlessConstructor(INamedTypeSymbol typeSymbol)
+    {
+        foreach (var constructor in typeSymbol.InstanceConstructors)
+        {
+            if (constructor.Parameters.Length == 0 && constructor.DeclaredAccessibility == Accessibility.Public)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// 查找继承链上（不含自身）首个声明了 <c>[PayloadField]</c> 成员的类型。
+    /// </summary>
+    /// <remarks>
+    /// <c>[PayloadField]</c> 的 <c>Inherited = false</c> 且 <c>INamedTypeSymbol.GetMembers()</c> 只返回
+    /// <b>本类</b>声明的成员 ⇒ 基类上的映射声明不会被收集；若不拦截，消费方会拿到「少几个字段」的映射表
+    /// 而编译完全通过（静默丢字段）。故此处 fail-fast。
+    /// </remarks>
+    private static INamedTypeSymbol? FindBaseTypeWithMappedFields(INamedTypeSymbol typeSymbol)
+    {
+        for (var baseType = typeSymbol.BaseType; baseType != null; baseType = baseType.BaseType)
+        {
+            if (baseType.SpecialType == SpecialType.System_Object)
+                break;
+
+            foreach (var member in baseType.GetMembers())
+            {
+                if (member is IPropertySymbol property && FindFieldAttribute(property) != null)
+                    return baseType;
+            }
+        }
+
         return null;
     }
 
@@ -870,11 +1132,6 @@ internal static class PayloadContractModelBuilder
 
         return TryGetNamed(attribute, propertyName, out var constant) ? constant.Value as INamedTypeSymbol : null;
     }
-
-    private static string? ReadEnumMemberName(AttributeData attribute, string propertyName) =>
-        TryGetNamed(attribute, propertyName, out var constant)
-            ? AttributeArgumentReader.GetEnumMemberName(constant)
-            : null;
 
     private static bool TryGetNamed(AttributeData attribute, string propertyName, out TypedConstant value)
     {

@@ -973,16 +973,37 @@ var user = await api.GetUserAsync(1);
 | `PAYLOAD001` | Error    | 生成载荷字段映射时发生内部错误（内部/环境类错误）                                                                               | 查看内部异常信息；通常为生成器版本与上游契约不匹配                                                                                                                           | 否         | 否     |
 | `PAYLOAD002` | Error    | 载荷契约类未声明 `partial`                                                                                                     | 为类声明补 `partial`（生成物为该类的 `partial` 成员）                                                                                                                        | 否         | 是     |
 | `PAYLOAD003` | Error    | 类上存在 `[PayloadField]` 属性但未指定 `Converter`                                                                             | 声明 `[PayloadContract(Converter = typeof(转换器类型))]`                                                                                                                     | 否         | 是     |
-| `PAYLOAD004` | Error    | 转换器上找不到契约要求的方法（`Method` 指定名不存在/签名不符，或推断所需的 `Text`/`Number<T>`/`Flag<T>`/`Delimited<T>`/`Items<T>`/`ItemsWithAttributes<T>` 缺失） | 按 §5.4 的转换器签名契约补齐静态方法；`Method` 须为 static、非泛型、恰一个首参为 `PayloadNode` 或 `string` 的参数                                                             | 否         | 是     |
+| `PAYLOAD004` | Error    | 转换器上找不到契约要求的方法（`Method` 指定名不存在/签名不符，或推断所需的 `Text`/`Number<T>`/`Flag<T>`/`Delimited<T>`/`Items<T>`/`ItemsWithAttributes<T>` 缺失，或契约方法的**形参类型**不符：首参必须是 `PayloadNode`，`Delimited` 次参 `char`，`Items`/`ItemsWithAttributes` 其余形参 `string`） | 按 §5.4 的转换器签名契约补齐静态方法；`Method` 须为 static、非泛型、恰一个首参为 `PayloadNode` 或 `string` 的参数                                                             | 否         | 是     |
 | `PAYLOAD005` | Error    | 转换方法返回值不可隐式转换为目标属性类型                                                                                       | 使返回类型与属性类型一致（或改为可空形态）                                                                                                                                   | 否         | 是     |
-| `PAYLOAD006` | Error    | 字段映射声明非法：元素名为空 / 同名重复；`Separator` 与 `ItemName` 并存；形态与 `ItemName`/`NameAttribute`/`ValueElement` 不匹配；属性为 static / 只读 / init-only | 按提示修正声明；同一契约内元素名必须唯一；init-only 与只读属性无法由生成代码赋值                                                                                             | 否         | 是     |
-| `PAYLOAD007` | Error    | 无法按属性类型推断字段形态（枚举、自定义类型、非空值类型、非 `string?` 的非空引用类型、非 `List<T>` 集合、`List<T>` 元素为自定义类且未给 `ItemName` 等） | 显式声明 `Format`，或改用可空形态（`string?`/`int?`/`bool?`），或指定 `Method = nameof(转换方法)`                                                                            | 否         | 是     |
+| `PAYLOAD006` | Error    | 字段映射声明非法：元素名为空 / 同名重复；`Separator` 与 `ItemName` 并存，或显式 `Separator` 落在**非** `Delimited` 形态上（静默忽略等于丢弃配置）；`Format` 取值不是 `PayloadFieldFormat` 的有效成员（如 `(PayloadFieldFormat)99`）；形态与 `ItemName`/`NameAttribute`/`ValueElement` 不匹配；属性为 static / 只读 / init-only；属性为**索引器**或**显式接口实现**（生成物以 `t.<属性名> = …` 赋值，二者无法这样引用） | 按提示修正声明；同一契约内元素名必须唯一；init-only 与只读属性无法由生成代码赋值；索引器/显式接口实现请改为普通可写属性 | 否         | 是     |
+| `PAYLOAD007` | Error    | 无法按属性类型推断字段形态（枚举、自定义类型、非空值类型、非 `string?` 的非空引用类型、非 `List<T>` 集合、`List<T>` 元素为自定义类且未给 `ItemName` 等）；或推断出的契约方法**泛型约束不满足**（如 `Delimited<T> where T : IShape` 而元素类型为 `long` ⇒ 否则生成物报 CS0315） | 显式声明 `Format`，或改用可空形态（`string?`/`int?`/`bool?`），或指定 `Method = nameof(转换方法)`                                                                            | 否         | 是     |
 | `PAYLOAD008` | Error    | 同一类型既声明手写 `PayloadFieldMap` 成员又标注 `[PayloadContract]`（并存将导致 CS0102）                                       | 在同一提交内「删除手写成员 + 添加特性」完成迁移                                                                                                                                | 否         | 是     |
-| `PAYLOAD009` | Error    | 载荷契约类形态不受支持：泛型类 / 嵌套类 / `record` / 非 `class`                                                                | 改为非泛型、非嵌套的顶层 `partial class`                                                                                                                                     | 否         | 是     |
+| `PAYLOAD009` | Error    | 载荷契约类形态不受支持：非 `class` / 泛型类 / 嵌套类 / `record` / **`static` 类** / **`abstract` 类** / **无公共无参构造函数** / **继承链上存在带 `[PayloadField]` 成员的基类**（前四种与 partial 成员渲染、`new()` 约束互斥；后三种分别会让生成物报 CS0718 / CS0310，或让继承字段被静默丢弃） | 改为非泛型、非嵌套、非 static、非 abstract、具公共无参构造函数的顶层 `partial class`；继承字段请下沉到本类声明 | 否         | 是     |
 
 > **`PAYLOAD*` 的设计口径**：004~009 全部为 **Error**（不降级为 Warning）。原因：字段映射的故障模式是
 > 「静默丢字段」，而**有 Error 即不产出生成文件**——降级为 Warning 只会让消费方拿到缺字段的映射表。
 > 全部 004~009 均**不**带 `NotConfigurable`（使用者改一行即可修复），以免连坐抑制同编译中的 `MUD*`/`AOT*` 诊断。
+
+**生成物卫生（v2.2 收紧 — 生成期即拒绝「会报编译错误的形态」）**
+
+以下形态此前会**静默产出**无法编译的生成代码（错误指向生成文件，可读性极差），现已改为生成期报错、不产出：
+
+- `static` 载荷类 ⇒ 生成物报 `CS0718`（静态类型不能用作类型参数）⇒ 现报告 `PAYLOAD009`（不产出）。
+- `abstract` 载荷类 / 无公共无参构造函数 ⇒ 生成物报 `CS0310`（不满足 `new()`）⇒ `PAYLOAD009`（不产出）。
+- 继承链上存在带 `[PayloadField]` 的基类 ⇒ **无编译错误，但基类字段被静默丢弃** ⇒ `PAYLOAD009`（不产出）。
+- 属性为索引器 / 显式接口实现 ⇒ 生成物报 `CS1001`/`CS1061`（`t.this[]` / `t.Ns.IFoo.X`）⇒ `PAYLOAD006`（不产出）。
+- 契约方法形参类型不符（如 `Number<T>(string)`）⇒ 生成物报 `CS1503`（`PayloadNode` → `string`）⇒ `PAYLOAD004`（不产出）。
+- 契约方法泛型约束不满足（如 `Delimited<T> where T : IShape` 配 `long`）⇒ 生成物报 `CS0315` ⇒ `PAYLOAD007`（不产出）。
+- `List<string?>` 等可空元素类型 ⇒ 生成物报 `CS8619`（`List<string>` 与 `List<string?>` 可空性不匹配）
+  ⇒ **已修正渲染**：类型实参保留可空标注（渲染为 `Delimited<string?>`），不再泄漏告警。
+- `Format = (PayloadFieldFormat)99` ⇒ 此前被静默当作 `Auto` 走推断 ⇒ `PAYLOAD006`（不产出）。
+- 显式 `Separator` 落在非 `Delimited` 形态上 ⇒ 此前被静默忽略（看似生效实则丢弃）⇒ `PAYLOAD006`（不产出）。
+
+> 其中「可空标注渲染」由 `PayloadNullabilityGuardTests` 守卫：该用例对比「输入编译」与「生成后编译」的
+> 告警集合，要求**新增为空**，并正向钉住生成文本中的 `Delimited<string?>`（防用例退化后空转变绿）。
+> 其余各项的守卫为 `PayloadFieldMapDiagnosticTests` 的负向用例（每个用例同时断言「有 Error ⇒ 零生成文件」），
+> 并各配正向对照（隐式默认构造、无映射字段的基类、满足约束的 `struct`/`new()` 约束）防止误报。
+
 
 **使用约束（映射表无状态性 — 必读）**
 
