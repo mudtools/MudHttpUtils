@@ -142,9 +142,12 @@ internal static partial class MudHttpClientLog
     #region Config 模块 (EventId: 113-120)
 
 #if NET6_0_OR_GREATER
+    // R-1（MT-12 收尾）：MT-12 起「缺 BaseAddress」的客户端**仍会被注册**（超时/默认头/自定义 URL 开关照常生效），
+    // 原文案「该客户端不会被注册，…配置将被忽略」与实际行为相反，会把宿主引向错误的修复方向。
+    // 方法名同步去掉 Skipped（EventId 113 保持不变，避免日志消费方的 EventId 映射断裂）。
     [LoggerMessage(EventId = 113, Level = LogLevel.Warning,
-        Message = "MudHttpClients:Clients:{ClientName} 未配置 BaseAddress，该客户端不会被注册，其 TimeoutSeconds/DefaultHeaders/AllowCustomBaseUrls 配置将被忽略。")]
-    public static partial void ClientSkippedMissingBaseAddress(ILogger logger, string clientName);
+        Message = "MudHttpClients:Clients:{ClientName} 未配置 BaseAddress。该客户端仍会注册，TimeoutSeconds/DefaultHeaders/AllowCustomBaseUrls 均生效，但仅能接受绝对 URL 请求（相对 URL 将按 HttpClient 语义失败）。若该客户端本不应存在，请从配置节中移除。")]
+    public static partial void ClientMissingBaseAddress(ILogger logger, string clientName);
 
     [LoggerMessage(EventId = 114, Level = LogLevel.Information,
         Message = "已应用 UrlValidator 域名白名单（{Count} 项）。")]
@@ -169,11 +172,11 @@ internal static partial class MudHttpClientLog
         Message = "客户端 {ClientName} 的 AllowCustomBaseUrls 被覆盖为 {NewValue}（原值 {OldValue}）。")]
     public static partial void AllowCustomBaseUrlsOverridden(ILogger logger, string clientName, bool newValue, bool oldValue);
 #else
-    private static readonly Action<ILogger, string, Exception?> s_clientSkippedMissingBaseAddress =
-        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(113, nameof(ClientSkippedMissingBaseAddress)),
-            "MudHttpClients:Clients:{ClientName} 未配置 BaseAddress，该客户端不会被注册，其 TimeoutSeconds/DefaultHeaders/AllowCustomBaseUrls 配置将被忽略。");
-    public static void ClientSkippedMissingBaseAddress(ILogger logger, string clientName)
-        => s_clientSkippedMissingBaseAddress(logger, clientName, null);
+    private static readonly Action<ILogger, string, Exception?> s_clientMissingBaseAddress =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(113, nameof(ClientMissingBaseAddress)),
+            "MudHttpClients:Clients:{ClientName} 未配置 BaseAddress。该客户端仍会注册，TimeoutSeconds/DefaultHeaders/AllowCustomBaseUrls 均生效，但仅能接受绝对 URL 请求（相对 URL 将按 HttpClient 语义失败）。若该客户端本不应存在，请从配置节中移除。");
+    public static void ClientMissingBaseAddress(ILogger logger, string clientName)
+        => s_clientMissingBaseAddress(logger, clientName, null);
 
     private static readonly Action<ILogger, int, Exception?> s_allowedDomainsApplied =
         LoggerMessage.Define<int>(LogLevel.Information, new EventId(114, nameof(AllowedDomainsApplied)),

@@ -5,6 +5,8 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -13,7 +15,7 @@ using Mud.HttpUtils.Client.Tests;   // CollectingLoggerProvider
 namespace Mud.HttpUtils.Tests;
 
 /// <summary>
-/// L-7：MT-06 / MT-08 / MT-09 / MT-13 四项修复的回归用例。
+/// L-7：MT-06 / MT-08 / MT-09 / MT-13 四项修复的回归用例；并承载 R-1（MT-12 收尾）的文案—行为一致性护栏。
 /// </summary>
 /// <remarks>
 /// <list type="bullet">
@@ -24,6 +26,9 @@ namespace Mud.HttpUtils.Tests;
 ///   <item><description><b>MT-09</b>：revoke / introspect 端点仅在选项绑定期校验 HTTPS，
 ///     编程式构造 <c>OAuth2Options</c> 时 <c>client_secret</c> 与令牌可经明文 HTTP 发出。</description></item>
 ///   <item><description><b>MT-13</b>：客户端名区分大小写（Ordinal）；仅大小写不同的键是误配高发区。</description></item>
+///   <item><description><b>R-1</b>：MT-12 把"缺 <c>BaseAddress</c> ⇒ 跳过注册"改为"仍注册"，
+///     但 EventId 113 的文案与 <c>MudHttpClientApplicationOptionsPostConfigure</c> 类注释未同步，
+///     会把宿主引向错误的修复方向。日志是宿主排查配置问题的第一手依据，**文案与行为不一致等同缺陷**。</description></item>
 /// </list>
 /// </remarks>
 public class MtRoundSevenRegressionTests
@@ -274,6 +279,63 @@ public class MtRoundSevenRegressionTests
         logProvider.GetLogRecords(LogLevel.Warning)
             .Should().NotContain(r => r.Message.Contains("大小写", StringComparison.Ordinal),
                 "无大小写碰撞时不得产生噪音告警");
+    }
+
+    // ---------------------------------------------------------------- R-1（MT-12 收尾）
+
+    [Fact]
+    public void PostConfigure_MissingBaseAddress_ShouldNotClaimClientIsSkipped()
+    {
+        var logProvider = new CollectingLoggerProvider();
+        var logger = new TypedCollectingLogger<MudHttpClientApplicationOptionsPostConfigure>(logProvider);
+
+        var options = new MudHttpClientApplicationOptions();
+        options.Clients["noBase"] = new MudHttpClientOptions();
+
+        new MudHttpClientApplicationOptionsPostConfigure(logger)
+            .PostConfigure(null, options);
+
+        var warning = logProvider.GetLogRecords(LogLevel.Warning)
+            .Should().ContainSingle(r => r.Message.Contains("noBase", StringComparison.Ordinal)).Subject;
+
+        // MT-12 起「缺 BaseAddress」的客户端**仍会被注册**（超时/默认头/自定义 URL 开关均生效）。
+        // 原文案宣称"该客户端不会被注册，…配置将被忽略"，与实际行为相反 ⇒ 会把宿主引向错误的修复方向。
+        warning.Message.Should().NotContain("不会被注册",
+            "R-1：MT-12 已改为『仍注册』，EventId 113 的文案必须与实际行为一致");
+        warning.Message.Should().NotContain("将被忽略",
+            "R-1：TimeoutSeconds / DefaultHeaders / AllowCustomBaseUrls 在无 BaseAddress 时仍然生效");
+        warning.Message.Should().Contain("仍会注册",
+            "R-1：文案需明确说明客户端仍会注册，仅相对 URL 请求会失败");
+        warning.Message.Should().Contain("绝对 URL",
+            "R-1：需指出真正的限制是『仅支持绝对 URL』，避免宿主误判为配置整体失效");
+    }
+
+    [Fact]
+    public void PostConfigure_MissingBaseAddress_ThenClientIsActuallyRegistered()
+    {
+        // 回归护栏：文案修正不得掩盖行为回退 —— 缺 BaseAddress 的客户端必须**真的**能被解析到，
+        // 且其 TimeoutSeconds 真的生效（MT-12 的核心断言）。
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                // 刻意不配 DefaultClientName：MT-12 保留了「默认客户端必须有 BaseAddress」的 Fail 语义
+                // （MudHttpClientApplicationOptionsValidator），此处只验证「命名客户端仍被注册」。
+                ["MudHttpClients:Clients:noBase:TimeoutSeconds"] = "37",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+        services.AddMudHttpClientsFromConfiguration(config);
+
+        using var provider = services.BuildServiceProvider();
+
+        // 能解析即证明"仍会注册"；若 MT-12 语义回退为 continue，此处会抛 InvalidOperationException。
+        var factory = provider.GetRequiredService<IHttpClientFactory>();
+        var client = factory.CreateClient("noBase");
+
+        client.BaseAddress.Should().BeNull("R-1：未配置 BaseAddress 时不应凭空设置基地址");
+        client.Timeout.Should().Be(TimeSpan.FromSeconds(37),
+            "R-1：TimeoutSeconds 必须生效 —— EventId 113 文案正是以此为前提");
     }
 
     /// <summary>把既有 <see cref="CollectingLoggerProvider"/> 适配为类型化 <see cref="ILogger{T}"/>。</summary>

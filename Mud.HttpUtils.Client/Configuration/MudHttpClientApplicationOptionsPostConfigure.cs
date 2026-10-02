@@ -15,8 +15,11 @@ namespace Mud.HttpUtils;
 /// <see cref="MudHttpClientApplicationOptions"/> 的后置配置器（CFG-02）。
 /// </summary>
 /// <remarks>
-/// 对「未配置 <see cref="MudHttpClientOptions.BaseAddress"/> 因而被跳过注册」的客户端记录警告，
-/// 使「已配置但不生效」不再静默。仅在 <c>AddMudHttpClientsFromConfiguration</c> 路径注册。
+/// 对「未配置 <see cref="MudHttpClientOptions.BaseAddress"/>」的客户端记录警告，使「已配置但不生效」不再静默。
+/// <para><b>MT-12 语义</b>：缺 <c>BaseAddress</c> 的客户端<b>仍会被注册</b>（<c>TimeoutSeconds</c> /
+/// <c>DefaultHeaders</c> / <c>AllowCustomBaseUrls</c> 均生效），仅不支持相对 URL 请求。
+/// 早期版本在此处 <c>continue</c> 跳过注册，R-1 已修正与之矛盾的日志文案与本类注释。</para>
+/// 仅在 <c>AddMudHttpClientsFromConfiguration</c> 路径注册。
 /// </remarks>
 internal sealed class MudHttpClientApplicationOptionsPostConfigure
     : IPostConfigureOptions<MudHttpClientApplicationOptions>
@@ -42,7 +45,8 @@ internal sealed class MudHttpClientApplicationOptionsPostConfigure
         {
             if (string.IsNullOrWhiteSpace(kvp.Value.BaseAddress))
             {
-                MudHttpClientLog.ClientSkippedMissingBaseAddress(_logger, kvp.Key);
+                // R-1：日志文案已与 MT-12 后的实际行为对齐（客户端仍注册，仅不支持相对 URL）。
+                MudHttpClientLog.ClientMissingBaseAddress(_logger, kvp.Key);
             }
         }
 

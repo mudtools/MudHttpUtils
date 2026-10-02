@@ -138,7 +138,7 @@ sequenceDiagram
 >
 > - **零运行时反射**：生成代码直接调用 `IHttpRequestExecutor` 与 `IEnhancedHttpClient`，核心路径无反射（仅 `FormUrlEncoded` Body、`QueryMap` 复杂类型、XML 序列化等少数场景保留反射）。
 > - **装饰器叠加**：`ResilientHttpClient` 实现 `IEnhancedHttpClient` 并包装内层客户端，因此弹性策略、令牌恢复、追踪等能力可逐层叠加而不侵入业务接口。
-> - **多租户隔离**：`IAppContextHolder` / `IAppManager<T>` / `AppResiliencePolicyResolver` 为不同 App 维护独立的上下文与弹性策略。多租户场景**必须**调用 `AddMudHttpAppContextHolder()`（或使用配置入口 `AddMudHttpClientsFromConfiguration` 自动补齐）+ `AddMudHttpAppResilience(...)` 才能获得 per-app 弹性隔离；多租户场景**必须**注册 `IAppAccessAuthorizer` 防止跨租户越权。
+> - **多租户隔离**：`IAppContextHolder` / `IAppManager<T>` / `AppResiliencePolicyResolver` 为不同 App 维护独立的上下文与弹性策略。多租户场景**必须**调用 `AddMudHttpAppContextHolder()`（或使用配置入口 `AddMudHttpClientsFromConfiguration` 自动补齐）+ `AddMudHttpAppResilience(...)` 才能获得 per-app 弹性隔离；多租户场景**必须**注册 `IAppAccessAuthorizer` 防止跨租户越权。应用切换必须走**作用域式**入口（`IAppScopeSwitcher.UseAppScope`）并确保归还，详见「多应用与租户隔离」。
 
 ### 🚀 快速开始
 
@@ -545,6 +545,52 @@ public class MultiApiService
     }
 }
 ```
+
+> **客户端名区分大小写（Ordinal）**：`AddMudHttpClient` / 配置节 `Clients` / keyed DI 三者统一按 `Ordinal` 比较，
+> `userApi` 与 `UserApi` 是**两个不同客户端**。未命中时 `IHttpClientResolver.GetClient` 的异常消息会显式提示该点；
+> 配置节中若存在仅大小写不同的多个键，启动后会输出 EventId 176 告警。
+
+#### 多应用与租户隔离
+
+多应用（多租户）场景通过 `IAppContextHolder` / `IAppManager<T>` / `IAppScopeSwitcher` 隔离**应用上下文**，
+并由 `AppResiliencePolicyResolver` 提供 per-app 弹性策略隔离。
+
+```csharp
+// 1) 注册：Holder 承载"当前应用"，AppManager 承载"可用应用集合"
+services.AddMudHttpAppContextHolder();
+services.AddMudHttpAppResilience();
+services.AddSingleton<IAppAccessAuthorizer, PrincipalBoundAppAuthorizer>(); // 多租户必注册
+
+// 2) 切换应用：作用域式入口，释放即自动归还
+using (client.UseAppScope("app-a"))
+{
+    await client.GetAsync<User>("/users/1");   // 此请求绑定 app-a
+}                                              // 此处自动切回原应用
+```
+
+> ⚠️ **上下文归还约束（重要）**
+>
+> - 生成的切换成员是**作用域式**的：`UseAppScope(appKey)` / `UseDefaultAppScope()` 必须在 `using`（或 `try/finally`）内使用，
+>   否则应用上下文会**泄漏到后续请求**，导致本应发往 app-a 的请求被发往 app-b。
+> - **后台任务 / `Task.Run` / `Parallel.ForEach` 中不要沿用外层作用域**：`AsyncLocal` 上下文会随任务捕获，
+>   一旦后台任务未进入作用域就可能落到"默认应用"。请在任务体**内部**重新进入作用域：
+>
+>   ```csharp
+>   await Task.Run(async () =>
+>   {
+>       using var _ = client.UseAppScope("app-a");   // 作用域建在任务内，而非外层
+>       await client.GetAsync<User>("/users/1");
+>   });
+>   ```
+>
+> - 若确实需要"切换并保持"（不自动归还，如长生命周期后台轮询），使用
+>   `IAppContextHolder.SwitchToApp(appKey, appManager, authorizer)`，并**自行负责**在结束时切回。
+> - **未注册 `IAppAccessAuthorizer` 时按 appKey 切换将直接抛 `InvalidOperationException`**（默认拒绝，接线缺陷而非业务拒绝）。
+>   单应用 / 完全受信场景请显式注册 `AllowAllAppAccessAuthorizer` 以表明放行意图。
+> - 客户端名、appKey 均为**大小写敏感**；appKey 会进入缓存键与弹性策略键。
+
+> 完整清单（`AddMudHttpAppManagementOptions` 自检开关、`RegisteredAppKeys` 闭合校验、启动期 Fail/Warn 行为、
+> 命名客户端与 HostedService 生命周期）见 `Mud.HttpUtils.Client/README.md` 的「应用上下文」与「多应用接线清单」章节。
 
 #### 流式响应（.NET 6+）
 

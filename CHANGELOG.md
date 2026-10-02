@@ -4,6 +4,57 @@
 
 ---
 
+## 未发布（MT 多应用与令牌管理方案 v2.0 收尾，2026-10-02）
+
+> 本节为 `.docs/多应用与令牌管理-Bug修复与功能完善方案.md` 第三轮复核（§15）的落地记录。
+> 均为**无破坏性**的收尾修复；`MT-01` ~ `MT-28` 与遗留项 `L-1` ~ `L-10` 的整体完成情况见该文档。
+
+#### 修复（Fixed）
+
+- **EventId 113 日志文案与实际行为相反**：`MT-12` 已把「未配置 `BaseAddress` 的客户端**跳过注册**」改为「**仍注册**，仅不设 `BaseAddress`」，
+  但 `ClientSkippedMissingBaseAddress` 的文案仍宣称「该客户端不会被注册，其 `TimeoutSeconds` / `DefaultHeaders` / `AllowCustomBaseUrls` 配置将被忽略」。
+  该Warning 是宿主排查「配置了但不生效」的第一手依据，错误文案会把排查方向**完全带偏**（去查注册路径，而真因是没配基地址）。
+  文案已改为「未配置 `BaseAddress`。该客户端**仍会注册**，`TimeoutSeconds` / `DefaultHeaders` / `AllowCustomBaseUrls` 均生效，
+  但**仅能接受绝对 URL 请求**（相对 URL 将按 `HttpClient` 语义失败）。若该客户端本不应存在，请从配置节中移除。」；
+  `MudHttpClientApplicationOptionsPostConfigure` 的类级注释同步更正。
+  **非破坏性**：该类型为 `internal`，不属公开API；**EventId 保持 113 不变**，日志消费方无需改动。
+  新增 2 条回归护栏（文案断言 + 「客户端真的仍被解析且 `TimeoutSeconds` 生效」的行为断言，防止未来有人为让文案成立而回退行为）。
+- **`TokenManagerBase.RefreshTokenCoreAsync` 缺锁内实现约定**：`MT-27` 只在 `GetOrRefreshTokenAsync` 写了「持`KeyedLockTable` 锁期间不得重入取令牌方法」，
+  而**真正写刷新逻辑的 `RefreshTokenCoreAsync`** 只有一句「由子类实现具体的刷新逻辑」。
+  该锁基于 `SemaphoreSlim`，**不可重入** ⇒ 子类若在刷新实现内回调 `GetTokenAsync` / `GetOrRefreshTokenAsync` / `InvalidateTokenAsync`
+  会**同线程永久自锁死**，且表现为挂起而非异常（最难排查的一类缺陷）。现补齐 4 条约定：持锁期间被调用、明确的不可重入清单、
+  应改用不加锁的 `GetCachedCredentialToken()`、以及异常与负缓存的语义。仅 XML 变更，**零代码改动**。
+
+#### 文档（Docs）
+
+- **根`README.md` 新增「多应用与租户隔离」章节**：此前根README **根本没有**多应用章节（只有「多命名客户端」/「令牌管理」），
+  导致「多租户越权」与「应用上下文泄漏」这两类最高危的使用错误只能靠子包 README 兜底。
+  新增内容：注册 + `using (client.UseAppScope("app-a"))` 最小示例；**⚠️ 上下文归还约束**警示块
+  （必须 `using` / `try-finally`；**后台任务示例** —— 作用域须建在 `Task.Run` 任务体内部，因 `AsyncLocal` 会随任务捕获；
+  需要「切换并保持」时用 `IAppContextHolder.SwitchToApp` 并自行切回；未注册 `IAppAccessAuthorizer` 时**默认拒绝**，
+  单应用场景显式注册 `AllowAllAppAccessAuthorizer`；appKey / 客户端名大小写敏感）；
+  以及指向 `Client/README.md`「应用上下文」/「多应用接线清单」的完整清单交叉引用。
+  「多命名客户端」章节补客户端名**区分大小写（Ordinal）**约定与 EventId 176碰撞告警说明；
+  「系统架构 · 关键设计 · 多租户隔离」条目追加指向新章节的链接。
+
+#### 明确不做（避免过度设计）
+
+- **不补做MT-13 的迁移期 `OrdinalIgnoreCase` 回退**：`HttpClientResolver` 维持「未命中直接抛异常 + 消息显式提示大小写」。
+  当前是 `3.0.0` 大版本，补做回退等于**主动重新引入**本轮正在消除的歧义（同进程内 `Default` / `default` 解析结果依赖调用方传入的大小写），
+  且会在 `Clients` / `AddHttpClient` / keyed DI / `_clientCache` / `HttpClientResolver` 五处一致语义之外**新增第 6 处**比较。
+  可发现性已由「启动期 EventId 176 碰撞告警」+「运行期失败消息显式提示」两条覆盖。
+- **不补做 `[HttpClientApi(ClientName = "...")]`**：客户端名属**宿主接线职责**（同一接口在测试 / 生产指向不同端点），
+  不应进**声明式契约**（接口形态）。实际接缝为 `AddMudHttpGeneratedClient<T>(clientName)`（宿主运行时指定）
+  + `HttpClientNamedClientBindingMismatch` 诊断（出现 ≥2 个 `[HttpClientApi]` 时**编译期报错**）。
+- **不新增 `MUD008` 分析器**（锁内重入检测）：`RefreshTokenCoreAsync` 是 `protected abstract`，
+  分析器只能看到「某类里调用了 `GetTokenAsync`」，**无法证明该方法从刷新路径可达**。
+  要做需全程序集调用图 + 继承可达性分析，误报率与维护成本远超收益。契约由XML + 文档 + Review 保证
+  （与 `KeyedLockTable` 不 Dispose、`AsyncLocal` 不回滚等同属"设计意图 + 文档"类约定）。
+- **不把MT-23 的重复注册提示升为 `Warning`**：维持 `Debug.WriteLine`。§13.3 已把该需求整体降级为「可发现性」，
+  Warning 与该定位自相矛盾，且 §11 已把它列为"命中大量宿主"的风险面；真实频次极低（`TryAdd*` 下仅宿主显式重复调用时发生）。
+
+---
+
 ## 3.0.0（多应用切换 API 收敛与凭据脱敏补全，2026-10-01）
 
 > 本版本主题：**收敛"多应用切换"的抽象面与推荐入口**，修正一处**不可编译的修复指引**，并补全**企业微信凭据的脱敏词表**。

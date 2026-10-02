@@ -346,6 +346,21 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// </summary>
     /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
     /// <returns>刷新后的凭证令牌。</returns>
+    /// <remarks>
+    /// <para><b>MT-27 实现约定（子类必读）</b>：</para>
+    /// <list type="bullet">
+    /// <item><description>本方法在<b>持有作用域键控锁（<see cref="KeyedLockTable"/>）期间</b>被调用
+    /// （<c>RefreshTokenWithScopesAsync</c> 的默认实现亦然）。</description></item>
+    /// <item><description>该锁基于 <see cref="SemaphoreSlim"/>，<b>不可重入</b>：
+    /// 本实现内部<b>不得</b>回调本管理器的 <see cref="GetOrRefreshTokenAsync(string[], CancellationToken)"/> /
+    /// <see cref="GetOrRefreshTokenAsync(CancellationToken)"/> / <see cref="GetTokenAsync(string[], CancellationToken)"/> /
+    /// <see cref="InvalidateTokenAsync(string[], CancellationToken)"/>，否则将<b>自锁死</b>。</description></item>
+    /// <item><description>需要复用已缓存令牌时，请使用<b>不加锁</b>的读取入口：
+    /// <see cref="GetCachedCredentialToken()"/> / <see cref="GetCachedCredentialToken(string)"/>。</description></item>
+    /// <item><description>本方法抛出的异常会被基类记入负缓存窗口（<c>NegativeCacheSeconds</c>）并向调用方传播；
+    /// <see cref="OperationCanceledException"/> 除外（取消不计为刷新失败）。</description></item>
+    /// </list>
+    /// </remarks>
     protected abstract Task<CredentialToken> RefreshTokenCoreAsync(CancellationToken cancellationToken);
 
     /// <summary>
