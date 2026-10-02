@@ -22,3 +22,36 @@ Mud.HttpUtils.IAsyncTokenCache<T>
 Mud.HttpUtils.IAsyncTokenCache<T>.GetAsync(string! key, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<T?>
 Mud.HttpUtils.IAsyncTokenCache<T>.RemoveAsync(string! key, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<T?>
 Mud.HttpUtils.IAsyncTokenCache<T>.SetAsync(string! key, T? value, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+Mud.HttpUtils.Payloads.IPayloadContractAccessor
+Mud.HttpUtils.Payloads.IPayloadContractAccessor.Bind(Mud.HttpUtils.Payloads.PayloadNode! root, object! target) -> object!
+Mud.HttpUtils.Payloads.IPayloadContractAccessor.ContractId.get -> string!
+Mud.HttpUtils.Payloads.IPayloadContractAccessor.CreateInstance() -> object!
+Mud.HttpUtils.Payloads.IPayloadContractAccessor.Elements.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Mud.HttpUtils.Payloads.IPayloadContractAccessor.PayloadType.get -> System.Type!
+Mud.HttpUtils.Payloads.IPayloadContractAccessor.ResolveScope(Mud.HttpUtils.Payloads.PayloadNode! root) -> Mud.HttpUtils.Payloads.PayloadNode?
+Mud.HttpUtils.Payloads.IPayloadContractAccessor.ScopeFallback.get -> string?
+Mud.HttpUtils.Payloads.IPayloadFieldMap<T>
+Mud.HttpUtils.Payloads.IPayloadFieldMap<T>.Bind(Mud.HttpUtils.Payloads.PayloadNode! root, T! target) -> void
+Mud.HttpUtils.Payloads.IPayloadFieldMap<T>.ContractId.get -> string!
+Mud.HttpUtils.Payloads.IPayloadFieldMap<T>.Elements.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Mud.HttpUtils.Payloads.IPayloadFieldMap<T>.ResolveScope(Mud.HttpUtils.Payloads.PayloadNode! root) -> Mud.HttpUtils.Payloads.PayloadNode?
+Mud.HttpUtils.Payloads.IPayloadFieldMap<T>.ScopeFallback.get -> string?
+Mud.HttpUtils.Payloads.PayloadFieldBinder<T>
+Mud.HttpUtils.Payloads.PayloadFieldMap<T>
+Mud.HttpUtils.Payloads.PayloadFieldMap<T>.Bind(Mud.HttpUtils.Payloads.PayloadNode! root, T! target) -> void
+Mud.HttpUtils.Payloads.PayloadFieldMap<T>.ContractId.get -> string!
+Mud.HttpUtils.Payloads.PayloadFieldMap<T>.Elements.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Mud.HttpUtils.Payloads.PayloadFieldMap<T>.Map(string! element, Mud.HttpUtils.Payloads.PayloadFieldBinder<T!>! binder) -> Mud.HttpUtils.Payloads.PayloadFieldMap<T!>!
+Mud.HttpUtils.Payloads.PayloadFieldMap<T>.ResolveScope(Mud.HttpUtils.Payloads.PayloadNode! root) -> Mud.HttpUtils.Payloads.PayloadNode?
+Mud.HttpUtils.Payloads.PayloadFieldMap<T>.ScopeFallback.get -> string?
+Mud.HttpUtils.Payloads.PayloadNode
+Mud.HttpUtils.Payloads.PayloadNode.Attributes.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
+Mud.HttpUtils.Payloads.PayloadNode.Child(string! name) -> Mud.HttpUtils.Payloads.PayloadNode?
+Mud.HttpUtils.Payloads.PayloadNode.Children.get -> System.Collections.Generic.IReadOnlyList<Mud.HttpUtils.Payloads.PayloadNode!>!
+Mud.HttpUtils.Payloads.PayloadNode.Has(string! name) -> bool
+Mud.HttpUtils.Payloads.PayloadNode.Name.get -> string!
+Mud.HttpUtils.Payloads.PayloadNode.PayloadNode(string! name, string? value = null, System.Collections.Generic.IReadOnlyList<Mud.HttpUtils.Payloads.PayloadNode!>? children = null, System.Collections.Generic.IReadOnlyDictionary<string!, string!>? attributes = null) -> void
+Mud.HttpUtils.Payloads.PayloadNode.Value.get -> string?
+static Mud.HttpUtils.Payloads.PayloadFieldMap<T>.Create(string! contractId, string? scopeFallback = null) -> Mud.HttpUtils.Payloads.PayloadFieldMap<T!>!
+static Mud.HttpUtils.Payloads.PayloadNode.Leaf(string! name, string? value = null) -> Mud.HttpUtils.Payloads.PayloadNode!
+virtual Mud.HttpUtils.Payloads.PayloadFieldBinder<T>.Invoke(T! target, Mud.HttpUtils.Payloads.PayloadNode? node) -> void

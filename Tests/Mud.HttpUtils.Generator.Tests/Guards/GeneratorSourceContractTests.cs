@@ -6,6 +6,7 @@
 // -----------------------------------------------------------------------
 
 using System.Reflection;
+using System.Text;
 using System.Text.RegularExpressions;
 using Mud.HttpUtils.Attributes;
 
@@ -113,5 +114,144 @@ public class GeneratorSourceContractTests
             "I-17：枚举型特性参数必须经 AttributeArgumentReader.GetEnumMemberName（序号→成员名）再参与比较，禁止" +
             " ConstructorArguments[…].Value?.ToString() 直出整数进入语义分支。命中（文件:行号）：\n  - " +
             string.Join("\n  - ", violations.Select(v => Path.GetFileName(v.File) + ":" + v.Line + "  " + v.Text)));
+    }
+
+    // ------------------------------------------------------------------ 载荷契约零 LINQ-to-XML 守卫（D6）
+
+    /// <summary>
+    /// 上游「载荷字段映射」契约边界：不得引入 <b>LINQ to XML</b>（<c>System.Xml.Linq</c> 家族）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为何要守</b>：<c>PayloadNode</c> 是 XML-free 的通用源节点，其设计前提是「上游对 XML 零依赖」
+    /// —— 报文（XML / JSON / 任意格式）到节点的适配由<b>消费方</b>提供。一旦上游自己引入 <c>XDocument</c>，
+    /// 适配职责会隐式回流到上游，同时把 AOT/裁剪面与 <c>System.Xml.Linq</c> 绑定。
+    /// </para>
+    /// <para>
+    /// <b>允许 vs 禁止（关键区分）</b>：本守卫只拦 <b>LINQ to XML</b>
+    /// （<c>XDocument</c>/<c>XElement</c>/<c>XAttribute</c>/<c>XName</c>/<c>XNamespace</c>/<c>System.Xml.Linq</c>）。
+    /// HttpClient 生成器<b>合法</b>产出 <c>System.Xml.Serialization.XmlSerializer</c> 与
+    /// <c>System.Xml.XmlWriter</c> 代码（<c>[SerializationMethod(Xml)]</c> 特性的实现路径，见
+    /// <c>RequestBuilder</c>/<c>ConstructorGenerator</c>），故 <c>XmlSerializer</c>/<c>XmlWriter</c>/
+    /// <c>XmlSerializerNamespaces</c>/<c>System.Xml.Serialization</c> <b>不在</b>拦截面内。
+    /// </para>
+    /// <para>
+    /// <b>必须剥离注释</b>：<c>PayloadNode.cs</c> 的 XML 文档注释中即出现「<c>XElement</c>」「<c>System.Xml</c>」
+    /// 字样（用于说明「对应 <c>XElement.Value</c> 的全后代文本语义」）。若按物理行朴素匹配，这些<b>说明性注释</b>
+    /// 会被误判为违规实现 —— 故本守卫先做<b>字符串感知</b>的注释剥离（含 <c>//</c>、<c>/* */</c>、
+    /// 普通/逐字字符串与字符字面量），再在纯代码文本上匹配。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void UpstreamPayloadSurface_MustNotDependOnLinqToXml()
+    {
+        var scannedProjects = new[]
+        {
+            "Mud.HttpUtils",              // 元包（当前无源码，纳入以防未来回填）
+            "Mud.HttpUtils.Abstractions", // 载荷运行时契约（PayloadNode / PayloadFieldMap / IPayloadContractAccessor）
+            "Mud.HttpUtils.Attributes",   // 载荷特性（[PayloadContract] / [PayloadField]）
+            "Mud.HttpUtils.Generator",    // PayloadFieldMapGenerator 与其模型构建器
+        };
+
+        var violations = new List<string>();
+        foreach (var project in scannedProjects)
+        {
+            var root = Path.GetFullPath(TestRepoRoot.PathOf(project));
+            if (!Directory.Exists(root))
+                continue;
+
+            var files = Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories)
+                .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)
+                            && !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase));
+
+            foreach (var file in files)
+            {
+                var lines = StripComments(File.ReadAllText(file)).Split('\n');
+                for (var i = 0; i < lines.Length; i++)
+                {
+                    foreach (var marker in LinqToXmlMarkers)
+                    {
+                        if (lines[i].Contains(marker, StringComparison.Ordinal))
+                        {
+                            violations.Add($"{project}/{Path.GetFileName(file)}:{i + 1}  命中 {marker}  →  {lines[i].Trim()}");
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        violations.Should().BeEmpty(
+            "载荷契约边界：上游不得引入 LINQ to XML（PayloadNode 必须保持 XML-free，报文的 XML 适配由消费方提供）；" +
+            "XmlSerializer / XmlWriter 属既有 [SerializationMethod(Xml)] 特性路径，不在拦截面内。命中（工程/文件:行号）：\n  - " +
+            string.Join("\n  - ", violations));
+    }
+
+    /// <summary>LINQ to XML 标记（仅这些；<c>XmlSerializer</c>/<c>XmlWriter</c> 为既有合法用法）。</summary>
+    private static readonly string[] LinqToXmlMarkers =
+    {
+        "System.Xml.Linq", "XDocument", "XElement", "XAttribute", "XNamespace", "XName",
+    };
+
+    /// <summary>
+    /// 字符串感知的注释剥离：把 <c>//</c> 行注释与 <c>/* */</c> 块注释替换为空白（保留换行以维持行号），
+    /// 同时正确跳过普通字符串、逐字字符串（<c>@"…"</c>，含 <c>""</c> 转义）与字符字面量中的
+    /// <c>//</c>（如 <c>"https://…"</c>）。
+    /// </summary>
+    private static string StripComments(string text)
+    {
+        var builder = new StringBuilder(text.Length);
+        bool inBlockComment = false, inLineComment = false, inString = false, inChar = false, inVerbatim = false;
+
+        for (var i = 0; i < text.Length; i++)
+        {
+            var current = text[i];
+            var next = i + 1 < text.Length ? text[i + 1] : '\0';
+
+            if (inLineComment)
+            {
+                if (current == '\n') { inLineComment = false; builder.Append(current); }
+                else builder.Append(' ');
+                continue;
+            }
+
+            if (inBlockComment)
+            {
+                if (current == '*' && next == '/') { inBlockComment = false; builder.Append("  "); i++; }
+                else builder.Append(current == '\n' ? '\n' : ' ');
+                continue;
+            }
+
+            if (inString)
+            {
+                builder.Append(current);
+                if (inVerbatim)
+                {
+                    if (current == '"' && next == '"') { builder.Append(next); i++; }
+                    else if (current == '"') inString = false;
+                }
+                else if (current == '\\' && next != '\0') { builder.Append(next); i++; }
+                else if (current == '"') inString = false;
+                continue;
+            }
+
+            if (inChar)
+            {
+                builder.Append(current);
+                if (current == '\\' && next != '\0') { builder.Append(next); i++; }
+                else if (current == '\'') inChar = false;
+                continue;
+            }
+
+            if (current == '/' && next == '/') { inLineComment = true; builder.Append("  "); i++; continue; }
+            if (current == '/' && next == '*') { inBlockComment = true; builder.Append("  "); i++; continue; }
+            if (current == '@' && next == '"') { inString = true; inVerbatim = true; builder.Append("@\""); i++; continue; }
+            if (current == '"') { inString = true; inVerbatim = false; builder.Append(current); continue; }
+            if (current == '\'') { inChar = true; builder.Append(current); continue; }
+
+            builder.Append(current);
+        }
+
+        return builder.ToString();
     }
 }

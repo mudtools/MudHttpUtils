@@ -65,3 +65,12 @@ MUD002 | Mud.HttpUtils.Interface | Error | HttpClientApi 方法返回类型无�
 MUD004 | Mud.HttpUtils.DependencyInjection | Warning | ITokenManager 实现应注册为 Singleton
 MUD005 | Mud.HttpUtils.Security | Warning | Query / Path 令牌注入模式存在泄露面（MT-21：Info 升为 Warning，覆盖范围扩展至 Path）
 MUDGEN301 | AOT | Warning | IAsyncEnumerable 流式方法的生成代码不携带 JsonTypeInfo（M6-HC-29：AOT 下需接入 JsonSerializerContext）
+PAYLOAD001 | 代码生成 | Error | 载荷字段映射生成错误（生成器内部兜底；带 NotConfigurable）
+PAYLOAD002 | 代码生成 | Error | 载荷契约类必须为 partial
+PAYLOAD003 | 代码生成 | Error | 未指定 Converter 类型
+PAYLOAD004 | 代码生成 | Error | 转换器上找不到指定的转换方法
+PAYLOAD005 | 代码生成 | Error | 转换方法返回值不可赋给目标属性
+PAYLOAD006 | 代码生成 | Error | 字段映射声明非法
+PAYLOAD007 | 代码生成 | Error | 无法按属性类型推断字段形态
+PAYLOAD008 | 代码生成 | Error | 手写 PayloadFieldMap 与 [PayloadContract] 冲突
+PAYLOAD009 | 代码生成 | Error | 载荷契约类形态不受支持（泛型 / 嵌套 / record / 非 class）

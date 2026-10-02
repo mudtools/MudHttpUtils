@@ -75,4 +75,33 @@ internal static class DiagnosticIds
 
     /// <summary>MUD005：Token 注入模式使用 Query（令牌进入 URL，代理/访问日志/浏览器历史不可控）。</summary>
     public const string MudQueryTokenInjectionMode = "MUD005";
+
+    // ── 载荷字段映射生成器（PAYLOAD*，由 PayloadFieldMapGenerator 报告） ──
+
+    /// <summary>PAYLOAD001：载荷字段映射生成内部错误（生成器兜底，带 NotConfigurable）。</summary>
+    public const string PayloadGenerationError = "PAYLOAD001";
+
+    /// <summary>PAYLOAD002：载荷契约类必须为 partial。</summary>
+    public const string PayloadContractTypeNotPartial = "PAYLOAD002";
+
+    /// <summary>PAYLOAD003：未指定 Converter 类型。</summary>
+    public const string PayloadConverterNotSpecified = "PAYLOAD003";
+
+    /// <summary>PAYLOAD004：转换器上找不到指定的转换方法。</summary>
+    public const string PayloadConverterMethodNotFound = "PAYLOAD004";
+
+    /// <summary>PAYLOAD005：转换方法返回值不可赋给目标属性。</summary>
+    public const string PayloadConverterReturnTypeMismatch = "PAYLOAD005";
+
+    /// <summary>PAYLOAD006：字段映射声明非法。</summary>
+    public const string PayloadFieldDeclarationInvalid = "PAYLOAD006";
+
+    /// <summary>PAYLOAD007：无法按属性类型推断字段形态。</summary>
+    public const string PayloadFieldFormatNotInferable = "PAYLOAD007";
+
+    /// <summary>PAYLOAD008：手写 PayloadFieldMap 与 [PayloadContract] 冲突。</summary>
+    public const string PayloadHandwrittenMapConflict = "PAYLOAD008";
+
+    /// <summary>PAYLOAD009：载荷契约类形态不受支持（泛型 / 嵌套 / record / 非 class）。</summary>
+    public const string PayloadContractTypeShapeUnsupported = "PAYLOAD009";
 }

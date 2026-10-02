@@ -102,10 +102,12 @@ public static class VerifyFixture
     /// </summary>
     /// <param name="source">源代码。</param>
     /// <param name="additionalReferences">额外的元数据引用。</param>
+    /// <param name="generator">被测生成器；为 <see langword="null"/> 时使用 <c>HttpInvokeClassSourceGenerator</c>（既有默认行为）。</param>
     /// <returns>已运行生成器的驱动程序。</returns>
     public static (CSharpGeneratorDriver driver, Compilation outputCompilation) RunGeneratorDriver(
         string source,
-        IEnumerable<MetadataReference>? additionalReferences = null)
+        IEnumerable<MetadataReference>? additionalReferences = null,
+        IIncrementalGenerator? generator = null)
     {
         var references = BasicReferenceAssemblies.GetReferences();
         if (additionalReferences != null)
@@ -126,8 +128,8 @@ public static class VerifyFixture
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
-        var generator = new HttpInvokeClassSourceGenerator();
-        CSharpGeneratorDriver driver = CSharpGeneratorDriver.Create(generator);
+        CSharpGeneratorDriver driver = CSharpGeneratorDriver.Create(
+            generator ?? new HttpInvokeClassSourceGenerator());
         driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
         return (driver, outputCompilation);
     }

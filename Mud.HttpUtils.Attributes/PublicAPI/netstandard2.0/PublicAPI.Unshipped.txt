@@ -1,1 +1,30 @@
 #nullable enable
+Mud.HttpUtils.Attributes.PayloadContractAttribute
+Mud.HttpUtils.Attributes.PayloadContractAttribute.ContractId.get -> string?
+Mud.HttpUtils.Attributes.PayloadContractAttribute.ContractId.set -> void
+Mud.HttpUtils.Attributes.PayloadContractAttribute.Converter.get -> System.Type?
+Mud.HttpUtils.Attributes.PayloadContractAttribute.Converter.set -> void
+Mud.HttpUtils.Attributes.PayloadContractAttribute.PayloadContractAttribute() -> void
+Mud.HttpUtils.Attributes.PayloadContractAttribute.ScopeFallback.get -> string?
+Mud.HttpUtils.Attributes.PayloadContractAttribute.ScopeFallback.set -> void
+Mud.HttpUtils.Attributes.PayloadFieldAttribute
+Mud.HttpUtils.Attributes.PayloadFieldAttribute.Element.get -> string!
+Mud.HttpUtils.Attributes.PayloadFieldAttribute.Format.get -> Mud.HttpUtils.Attributes.PayloadFieldFormat
+Mud.HttpUtils.Attributes.PayloadFieldAttribute.Format.set -> void
+Mud.HttpUtils.Attributes.PayloadFieldAttribute.ItemName.get -> string?
+Mud.HttpUtils.Attributes.PayloadFieldAttribute.ItemName.set -> void
+Mud.HttpUtils.Attributes.PayloadFieldAttribute.Method.get -> string?
+Mud.HttpUtils.Attributes.PayloadFieldAttribute.Method.set -> void
+Mud.HttpUtils.Attributes.PayloadFieldAttribute.NameAttribute.get -> string?
+Mud.HttpUtils.Attributes.PayloadFieldAttribute.NameAttribute.set -> void
+Mud.HttpUtils.Attributes.PayloadFieldAttribute.PayloadFieldAttribute(string! element) -> void
+Mud.HttpUtils.Attributes.PayloadFieldAttribute.Separator.get -> char
+Mud.HttpUtils.Attributes.PayloadFieldAttribute.Separator.set -> void
+Mud.HttpUtils.Attributes.PayloadFieldAttribute.ValueElement.get -> string?
+Mud.HttpUtils.Attributes.PayloadFieldAttribute.ValueElement.set -> void
+Mud.HttpUtils.Attributes.PayloadFieldFormat
+Mud.HttpUtils.Attributes.PayloadFieldFormat.Auto = 0 -> Mud.HttpUtils.Attributes.PayloadFieldFormat
+Mud.HttpUtils.Attributes.PayloadFieldFormat.Delimited = 2 -> Mud.HttpUtils.Attributes.PayloadFieldFormat
+Mud.HttpUtils.Attributes.PayloadFieldFormat.Items = 3 -> Mud.HttpUtils.Attributes.PayloadFieldFormat
+Mud.HttpUtils.Attributes.PayloadFieldFormat.ItemsWithAttributes = 4 -> Mud.HttpUtils.Attributes.PayloadFieldFormat
+Mud.HttpUtils.Attributes.PayloadFieldFormat.Text = 1 -> Mud.HttpUtils.Attributes.PayloadFieldFormat

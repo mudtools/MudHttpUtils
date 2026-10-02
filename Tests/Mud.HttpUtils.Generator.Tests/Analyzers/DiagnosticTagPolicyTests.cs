@@ -32,6 +32,8 @@ public class DiagnosticTagPolicyTests
     [
         // 生成器兜底/内部异常、语法损坏、注册阶段内部失败、事件/表单生成内部错误。
         "HTTPCLIENT001", "HTTPCLIENT003", "HTTPCLIENTREG001", "EHSG001", "FORM001",
+        // 载荷字段映射生成器的内部兜底（异常逸出防护）。
+        "PAYLOAD001",
     ];
 
     /// <summary>「用户可修复」诊断：级别必须保持 Error（仍阻断构建），但不得带 NotConfigurable。</summary>
@@ -40,6 +42,9 @@ public class DiagnosticTagPolicyTests
         "HTTPCLIENT004", "HTTPCLIENT005", "HTTPCLIENT007", "HTTPCLIENT008",
         "HTTPCLIENT013", "HTTPCLIENT015", "HTTPCLIENT016", "HTTPCLIENTREG002",
         "FORM002", "FORM003",
+        // 载荷字段映射生成器：002~009 全部为「改一行即可修复」的 Error。
+        "PAYLOAD002", "PAYLOAD003", "PAYLOAD004", "PAYLOAD005",
+        "PAYLOAD006", "PAYLOAD007", "PAYLOAD008", "PAYLOAD009",
     ];
 
     private static List<DiagnosticDescriptor> AllDescriptors()

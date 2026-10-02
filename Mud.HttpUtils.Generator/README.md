@@ -962,6 +962,52 @@ var user = await api.GetUserAsync(1);
 | `FORM002` | Error    | FormContent 缺少 `[FilePath]` 属性     | 必须且只能有一个属性标记 `[FilePath]` | 否         | 是     |
 | `FORM003` | Error    | FormContent 存在多个 `[FilePath]` 属性 | 只保留一个 `[FilePath]` 属性          | 否         | 是     |
 
+#### 载荷字段映射生成（PAYLOAD\*）
+
+为「外部报文 → 强类型载荷」生成字段映射委托表（`[PayloadContract]` / `[PayloadField]`）。生成物是
+`public static IPayloadFieldMap<T> PayloadFieldMap`（fluent `Map` 链），只被消费方手写运行时引擎消费；
+`PayloadNode` / `IPayloadFieldMap<T>` / `PayloadContractAccessor` 等运行时契约位于 `Mud.HttpUtils.Abstractions`（`Mud.HttpUtils.Payloads` 命名空间）。
+
+| 诊断 ID      | 严重级别 | 触发条件                                                                                                                       | 解决方案                                                                                                                                                                     | 可自动修复 | 可抑制 |
+| ------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ------ |
+| `PAYLOAD001` | Error    | 生成载荷字段映射时发生内部错误（内部/环境类错误）                                                                               | 查看内部异常信息；通常为生成器版本与上游契约不匹配                                                                                                                           | 否         | 否     |
+| `PAYLOAD002` | Error    | 载荷契约类未声明 `partial`                                                                                                     | 为类声明补 `partial`（生成物为该类的 `partial` 成员）                                                                                                                        | 否         | 是     |
+| `PAYLOAD003` | Error    | 类上存在 `[PayloadField]` 属性但未指定 `Converter`                                                                             | 声明 `[PayloadContract(Converter = typeof(转换器类型))]`                                                                                                                     | 否         | 是     |
+| `PAYLOAD004` | Error    | 转换器上找不到契约要求的方法（`Method` 指定名不存在/签名不符，或推断所需的 `Text`/`Number<T>`/`Flag<T>`/`Delimited<T>`/`Items<T>`/`ItemsWithAttributes<T>` 缺失） | 按 §5.4 的转换器签名契约补齐静态方法；`Method` 须为 static、非泛型、恰一个首参为 `PayloadNode` 或 `string` 的参数                                                             | 否         | 是     |
+| `PAYLOAD005` | Error    | 转换方法返回值不可隐式转换为目标属性类型                                                                                       | 使返回类型与属性类型一致（或改为可空形态）                                                                                                                                   | 否         | 是     |
+| `PAYLOAD006` | Error    | 字段映射声明非法：元素名为空 / 同名重复；`Separator` 与 `ItemName` 并存；形态与 `ItemName`/`NameAttribute`/`ValueElement` 不匹配；属性为 static / 只读 / init-only | 按提示修正声明；同一契约内元素名必须唯一；init-only 与只读属性无法由生成代码赋值                                                                                             | 否         | 是     |
+| `PAYLOAD007` | Error    | 无法按属性类型推断字段形态（枚举、自定义类型、非空值类型、非 `string?` 的非空引用类型、非 `List<T>` 集合、`List<T>` 元素为自定义类且未给 `ItemName` 等） | 显式声明 `Format`，或改用可空形态（`string?`/`int?`/`bool?`），或指定 `Method = nameof(转换方法)`                                                                            | 否         | 是     |
+| `PAYLOAD008` | Error    | 同一类型既声明手写 `PayloadFieldMap` 成员又标注 `[PayloadContract]`（并存将导致 CS0102）                                       | 在同一提交内「删除手写成员 + 添加特性」完成迁移                                                                                                                                | 否         | 是     |
+| `PAYLOAD009` | Error    | 载荷契约类形态不受支持：泛型类 / 嵌套类 / `record` / 非 `class`                                                                | 改为非泛型、非嵌套的顶层 `partial class`                                                                                                                                     | 否         | 是     |
+
+> **`PAYLOAD*` 的设计口径**：004~009 全部为 **Error**（不降级为 Warning）。原因：字段映射的故障模式是
+> 「静默丢字段」，而**有 Error 即不产出生成文件**——降级为 Warning 只会让消费方拿到缺字段的映射表。
+> 全部 004~009 均**不**带 `NotConfigurable`（使用者改一行即可修复），以免连坐抑制同编译中的 `MUD*`/`AOT*` 诊断。
+
+**使用约束（映射表无状态性 — 必读）**
+
+生成物 `PayloadFieldMap` 与其 `Map` 委托列表是**无状态、可多线程共享**的静态单例。
+**运行期上下文一律不得进入 `Map` 委托** —— 包括「当前应用模式 / 应用类型 / 租户 / 用户 / 请求对象 / `CancellationToken`」：
+
+```csharp
+// ✗ 禁止：捕获可变请求态 ⇒ 跨请求串扰（A 应用的事件按 B 应用模式解析），且单线程测试全绿、难以察觉
+.Map("Status", (t, n) => { t.Status = Converter.ParseStatus(n?.Value, currentAppMode); })
+```
+
+需要按上下文分支时，请在**读取器 / 处理器层**先按上下文选定契约再取无状态映射表
+（`IPayloadContractAccessor` 即为此提供「按类型擦除视图注册多个契约」的能力），
+例如把模式判定放在处理器内：`if (evt.AppType == …) { … }`。
+
+> **本约束的强制力度（如实说明）**：生成的委托形态为 **`(t, n) => { t.X = Converter.Y(n); }`**
+> （**不是** `static` lambda —— 生成物按「C# 7.3 + netstandard2.0」基线书写，
+> 而 `static` 匿名函数是 **C# 9** 语法，未声明 `LangVersion` 的 netstandard2.0 消费工程默认即 7.3，
+> 使用会以 `CS8370` 指向生成文件；基线由 `PayloadLanguageVersionGuardTests` 守卫）。
+> ⇒ **生成物本身天然无捕获**（渲染内容恒为「转换器静态方法调用 + 属性赋值」，无捕获点），
+> 但本约束**没有编译期强制**；它对以下两类写法是**契约性约束**，需开发者自觉遵守：
+> ① **手写链**（`PayloadFieldMap<T>` fluent API 是可以手写的公共 API）；
+> ② **转换方法本身**——生成器要求其为 `static`（非 static 报 `PAYLOAD004`），
+>    故无法捕获实例状态，但仍可能经**静态可变字段**引入请求态，**应当避免**。
+
 #### AOT JSON 序列化诊断（AOT\*）
 
 `AOT*` 系列诊断用于保障 Native AOT 场景下的 JSON 序列化可用性。其中 `AOT004`/`AOT005`/`AOT006` 由 `Mud.HttpUtils.Generator` 中的 `AotDtoCoverageAnalyzer` 报告（`AOT006` 经独立诊断分析器承载，见下），`AOT007` 由 `AotXmlRejectionAnalyzer` 报告（仅在 AOT 上下文下）。**段位隔离**：`AOT001~AOT099` 归生成器/分析器，`AOT1xx` 归脚手架工具——`HttpJsonContextScaffolder` 在生成期报告 `AOT001`/`AOT002`/`AOT003`/`AOT104`；其中的 `AOT104`（Info，接口扫描发现信息）即旧版的脚手架侧 `AOT004`（Info），已更名以与本表 `AOT004`（Warning，DTO 未被 `JsonSerializerContext` 覆盖）区分。

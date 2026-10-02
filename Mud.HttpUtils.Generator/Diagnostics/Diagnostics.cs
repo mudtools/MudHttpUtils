@@ -749,4 +749,95 @@ internal static class Diagnostics
         isEnabledByDefault: true,
         description: "Query / Path 注入模式令牌进入 URL，存在日志/历史泄露面；建议生产环境使用 Header 模式.");
     #endregion
+
+    #region 载荷字段映射生成器诊断信息 (PAYLOAD001-009)
+    // 由 PayloadFieldMapGenerator（Mud.HttpUtils.Generator/Payloads/）报告。
+    // 编号约定：001 为「生成器内部错误」兜底（唯一允许带 NotConfigurable 的一条，
+    // 见 DiagnosticTagPolicyTests.InternalOnlyErrorIds）；002~009 全部为「使用者改一行即可修复」
+    // 的 Error —— 一律 NOT 带 NotConfigurable，以免连坐抑制同编译中的 MUD*/AOT* 诊断。
+    // 设计口径：本生成器不产出「半成品」（有 Error 即不生成源文件），且不降级为 Warning ——
+    // 「字段静默丢失」正是本生成器要消除的故障模式。
+
+    /// <summary>PAYLOAD001：生成器的兜底/环境类错误（内部异常、语法损坏等）。</summary>
+    public static readonly DiagnosticDescriptor PayloadGenerationError = new(
+        id: DiagnosticIds.PayloadGenerationError,
+        title: "载荷字段映射生成错误",
+        messageFormat: "为类 {0} 生成载荷字段映射时发生错误: {1}",
+        category: "代码生成",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        customTags: WellKnownDiagnosticTags.NotConfigurable);
+
+    /// <summary>PAYLOAD002：载荷契约类未声明 <c>partial</c>。</summary>
+    public static readonly DiagnosticDescriptor PayloadContractTypeNotPartial = new(
+        id: DiagnosticIds.PayloadContractTypeNotPartial,
+        title: "载荷契约类必须为 partial",
+        messageFormat: "载荷契约类 {0} 必须声明为 partial：生成物是该类的 partial 成员（public static IPayloadFieldMap<T> PayloadFieldMap），类未标 partial 时无法与生成物合并。{1}",
+        category: "代码生成",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    /// <summary>PAYLOAD003：类上标注了 <c>[PayloadField]</c> 属性但未指定 <c>Converter</c>。</summary>
+    public static readonly DiagnosticDescriptor PayloadConverterNotSpecified = new(
+        id: DiagnosticIds.PayloadConverterNotSpecified,
+        title: "未指定 Converter 类型",
+        messageFormat: "载荷契约类 {0} 未指定转换器类型：类上存在 [PayloadField] 属性时必须在 [PayloadContract(Converter = typeof(…))] 中声明转换器。{1}",
+        category: "代码生成",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    /// <summary>PAYLOAD004：转换器上找不到签名可用的转换方法。</summary>
+    public static readonly DiagnosticDescriptor PayloadConverterMethodNotFound = new(
+        id: DiagnosticIds.PayloadConverterMethodNotFound,
+        title: "转换器上找不到指定的转换方法",
+        messageFormat: "载荷契约类 {0} 的转换方法无法解析：{1}",
+        category: "代码生成",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    /// <summary>PAYLOAD005：转换方法返回类型不可隐式转换为目标属性类型。</summary>
+    public static readonly DiagnosticDescriptor PayloadConverterReturnTypeMismatch = new(
+        id: DiagnosticIds.PayloadConverterReturnTypeMismatch,
+        title: "转换方法返回值不可赋给目标属性",
+        messageFormat: "载荷契约类 {0} 的转换方法返回值与目标属性类型不匹配：{1}",
+        category: "代码生成",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    /// <summary>PAYLOAD006：字段映射声明非法（元素名为空/重复、Format 与附加参数冲突、属性不可写等）。</summary>
+    public static readonly DiagnosticDescriptor PayloadFieldDeclarationInvalid = new(
+        id: DiagnosticIds.PayloadFieldDeclarationInvalid,
+        title: "字段映射声明非法",
+        messageFormat: "载荷契约类 {0} 的字段映射声明非法：{1}",
+        category: "代码生成",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    /// <summary>PAYLOAD007：无法按属性类型推断字段形态（须显式给出 Format 或 Method）。</summary>
+    public static readonly DiagnosticDescriptor PayloadFieldFormatNotInferable = new(
+        id: DiagnosticIds.PayloadFieldFormatNotInferable,
+        title: "无法按属性类型推断字段形态",
+        messageFormat: "载荷契约类 {0} 的字段无法按属性类型推断形态：{1}。请显式声明 [PayloadField(…, Format = PayloadFieldFormat.…)] 或 Method = nameof(转换方法)。",
+        category: "代码生成",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    /// <summary>PAYLOAD008：同一类型既声明手写 <c>PayloadFieldMap</c> 又标注 <c>[PayloadContract]</c>。</summary>
+    public static readonly DiagnosticDescriptor PayloadHandwrittenMapConflict = new(
+        id: DiagnosticIds.PayloadHandwrittenMapConflict,
+        title: "手写 PayloadFieldMap 与 [PayloadContract] 冲突",
+        messageFormat: "载荷契约类 {0} 同时声明了手写成员与 [PayloadContract]：{1}。生成物是同名 partial 成员，二者并存将导致 CS0102；迁移应在同一提交内「删除手写成员 + 添加特性」。",
+        category: "代码生成",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    /// <summary>PAYLOAD009：载荷契约类形态不受支持（泛型 / 嵌套 / record / 非 class）。</summary>
+    public static readonly DiagnosticDescriptor PayloadContractTypeShapeUnsupported = new(
+        id: DiagnosticIds.PayloadContractTypeShapeUnsupported,
+        title: "载荷契约类形态不受支持",
+        messageFormat: "载荷契约类 {0} 的形态不受支持：{1}。支持的形态为非泛型、非嵌套的顶层 partial class（不含 record —— 消费面含 netstandard2.0 时无 IsExternalInit，且 record 的位置参数属性为 init-only，生成代码无法赋值）。",
+        category: "代码生成",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+    #endregion
 }

@@ -1,0 +1,985 @@
+// -----------------------------------------------------------------------
+//  作者：Mud Studio  版权所有 (c) Mud Studio 2026
+//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// -----------------------------------------------------------------------
+
+using System;
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Linq;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Mud.HttpUtils.Helpers;
+
+namespace Mud.HttpUtils.Models.Payloads;
+
+/// <summary>
+/// 载荷契约模型构建器：把「带 <c>[PayloadContract]</c> 的类」语义化为 <see cref="PayloadContractModel"/>。
+/// </summary>
+/// <remarks>
+/// <para>
+/// 全部语义解析（转换器方法查找、返回值可赋值性、形态推断）均在此完成，使用
+/// <see cref="GeneratorAttributeSyntaxContext.SemanticModel"/>（及其 <c>Compilation</c>）——
+/// 而<b>不</b>把 <c>CompilationProvider</c> 引入增量管线（避免编译级粒度重执行）。
+/// </para>
+/// <para>
+/// <b>异常纪律</b>：本类的解析路径均为「符号为空即返回诊断」的显式分支，
+/// 不做防御性 null 断言；任何未预期异常由生成器执行体的 try/catch 兜底为 <c>PAYLOAD001</c>。
+/// </para>
+/// </remarks>
+internal static class PayloadContractModelBuilder
+{
+    /// <summary>
+    /// <c>[PayloadContract]</c> 的元数据名（生成器不引用特性程序集，按名匹配）。
+    /// </summary>
+    /// <remarks>
+    /// 命名空间与其它全部特性一致（<c>Mud.HttpUtils.Attributes</c>，见 Guards/AttributeNamespaceConsistencyTests 的 G8-13 守卫：
+    /// 该程序集的公开面命名空间白名单为空，消费方的 <c>using</c> 组合必须可预期）。
+    /// </remarks>
+    internal const string ContractAttributeMetadataName = "Mud.HttpUtils.Attributes.PayloadContractAttribute";
+
+    /// <summary><c>[PayloadField]</c> 的元数据名。</summary>
+    internal const string FieldAttributeMetadataName = "Mud.HttpUtils.Attributes.PayloadFieldAttribute";
+
+    /// <summary>生成成员名（契约的一部分，非配置项：消费方注册入口直接书写该名）。</summary>
+    internal const string GeneratedMemberName = "PayloadFieldMap";
+
+    /// <summary>上游节点类型的元数据名（用于 <c>Method</c> 首参绑定判定）。</summary>
+    internal const string PayloadNodeMetadataName = "Mud.HttpUtils.Payloads.PayloadNode";
+
+    // —— 特性参数名 ——
+    // 常量化的动机：AttributeParameterContractTests 以「属性名字符串是否出现在生成器源码中」
+    // 判定「特性新增了可写属性但生成器未同步读取」这一类回归（CFG-28 根因），故必须保留字面量。
+    private const string ContractIdProperty = "ContractId";
+    private const string ConverterProperty = "Converter";
+    private const string ScopeFallbackProperty = "ScopeFallback";
+    private const string ElementProperty = "Element";
+    private const string FormatProperty = "Format";
+    private const string SeparatorProperty = "Separator";
+    private const string ItemNameProperty = "ItemName";
+    private const string NameAttributeProperty = "NameAttribute";
+    private const string ValueElementProperty = "ValueElement";
+    private const string MethodProperty = "Method";
+
+    // —— 形态成员名（PayloadFieldFormat） ——
+    private const string AutoFormatName = "Auto";
+    private const string TextFormatName = "Text";
+    private const string DelimitedFormatName = "Delimited";
+    private const string ItemsFormatName = "Items";
+    private const string ItemsWithAttributesFormatName = "ItemsWithAttributes";
+
+    // —— 转换器契约方法名 ——
+    private const string TextMethodName = "Text";
+    private const string NumberMethodName = "Number";
+    private const string FlagMethodName = "Flag";
+    private const string DelimitedMethodName = "Delimited";
+    private const string ItemsMethodName = "Items";
+    private const string ItemsWithAttributesMethodName = "ItemsWithAttributes";
+
+    private const string NodeArgument = "n";
+    private const string NodeTextArgument = "n?.Value";
+
+    /// <summary><c>List&lt;T&gt;</c> 原始定义的完全限定显示名（Roslyn <c>SpecialType</c> 不含泛型集合）。</summary>
+    private const string ListOfTDisplay = "global::System.Collections.Generic.List<T>";
+
+    /// <summary>解析结果分类（映射到 <c>PAYLOAD004</c>~<c>PAYLOAD007</c>）。</summary>
+    private enum ResolutionFailure
+    {
+        None = 0,
+        MethodNotFound,
+        ReturnTypeMismatch,
+        DeclarationInvalid,
+        NotInferable,
+    }
+
+    /// <summary>
+    /// 构建模型（在 <c>Transform</c> 阶段执行；不做任何 IO）。
+    /// </summary>
+    /// <param name="context">特性语法上下文（提供目标符号、语法节点、特性数据与语义模型）。</param>
+    /// <returns>模型（含全部诊断；<see cref="PayloadContractModel.HasErrors"/> 为真时不产出源文件）。</returns>
+    internal static PayloadContractModel Build(GeneratorAttributeSyntaxContext context)
+    {
+        if (context.TargetSymbol is not INamedTypeSymbol typeSymbol)
+        {
+            var fallbackName = context.TargetSymbol?.Name ?? "<unknown>";
+            var fallbackLocation = context.TargetNode?.GetLocation() ?? Location.None;
+            var fallbackDiagnostics = ImmutableArray.Create(new PayloadDiagnostic(
+                Diagnostics.PayloadGenerationError,
+                fallbackLocation,
+                fallbackName,
+                "无法解析 [PayloadContract] 目标类型符号（语法可能不完整）。"));
+
+            return new PayloadContractModel(
+                ns: null,
+                typeName: fallbackName,
+                typeDisplay: "global::" + fallbackName,
+                hintName: fallbackName + ".PayloadFieldMap.g.cs",
+                contractId: null,
+                scopeFallback: null,
+                converterDisplay: null,
+                fields: ImmutableArray<PayloadFieldModel>.Empty,
+                diagnostics: fallbackDiagnostics,
+                location: fallbackLocation,
+                fingerprint: "invalid|" + fallbackName);
+        }
+
+        var className = typeSymbol.Name;
+        var typeDisplay = typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var ns = typeSymbol.ContainingNamespace.IsGlobalNamespace
+            ? null
+            : typeSymbol.ContainingNamespace.ToDisplayString();
+        var hintName = (ns == null ? string.Empty : ns + ".") + className + ".PayloadFieldMap.g.cs";
+        var typeLocation = GetLocation(typeSymbol);
+        var diagnostics = new List<PayloadDiagnostic>();
+
+        // ① 形态检查：泛型 / 嵌套 / record / 非 class —— 这些形态与 new() 约束、partial 成员渲染
+        //    或 netstandard2.0 消费面互斥，直接判定为不受支持（避免后续渲染出不可编译产物）。
+        var shapeProblem = DescribeUnsupportedShape(typeSymbol);
+        if (shapeProblem != null)
+        {
+            diagnostics.Add(new PayloadDiagnostic(
+                Diagnostics.PayloadContractTypeShapeUnsupported, typeLocation, className, shapeProblem));
+
+            return CreateModel(ns, className, typeDisplay, hintName, null, null, null,
+                ImmutableArray<PayloadFieldModel>.Empty, diagnostics, typeLocation);
+        }
+
+        // ② 手写 / 生成互斥（PAYLOAD008）：源码声明的同名成员会让生成物产生 CS0102。
+        var handwritten = typeSymbol.GetMembers(GeneratedMemberName)
+            .Where(m => !m.IsImplicitlyDeclared && m.DeclaringSyntaxReferences.Length > 0)
+            .ToArray();
+
+        if (handwritten.Length > 0)
+        {
+            diagnostics.Add(new PayloadDiagnostic(
+                Diagnostics.PayloadHandwrittenMapConflict,
+                GetLocation(handwritten[0]),
+                className,
+                "已存在源码声明成员 " + handwritten[0].ToDisplayString()));
+
+            return CreateModel(ns, className, typeDisplay, hintName, null, null, null,
+                ImmutableArray<PayloadFieldModel>.Empty, diagnostics, typeLocation);
+        }
+
+        // ③ partial 检查（PAYLOAD002）。
+        var declarations = typeSymbol.DeclaringSyntaxReferences
+            .Select(reference => reference.GetSyntax())
+            .OfType<ClassDeclarationSyntax>()
+            .ToArray();
+
+        var allPartial = declarations.Length > 0
+            && declarations.All(declaration => declaration.Modifiers.Any(SyntaxKind.PartialKeyword));
+
+        if (!allPartial)
+        {
+            diagnostics.Add(new PayloadDiagnostic(
+                Diagnostics.PayloadContractTypeNotPartial, typeLocation, className,
+                "请为类声明添加 partial 修饰符。"));
+
+            return CreateModel(ns, className, typeDisplay, hintName, null, null, null,
+                ImmutableArray<PayloadFieldModel>.Empty, diagnostics, typeLocation);
+        }
+
+        // ④ 读取 [PayloadContract] 参数。
+        var contractAttribute = context.Attributes.FirstOrDefault(
+            attribute => IsAttribute(attribute, ContractAttributeMetadataName));
+
+        var contractId = ReadString(contractAttribute, ContractIdProperty);
+        var scopeFallback = ReadString(contractAttribute, ScopeFallbackProperty);
+        var converterType = ReadType(contractAttribute, ConverterProperty);
+        var converterDisplay = converterType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+        // ⑤ 收集带 [PayloadField] 的属性（跨 partial 文件按「文件路径 → 声明位置」稳定排序 ⇒ 声明序）。
+        var orderedFields = typeSymbol.GetMembers()
+            .OfType<IPropertySymbol>()
+            .Select(property => (Property: property, Attribute: FindFieldAttribute(property)))
+            .Where(pair => pair.Attribute != null)
+            .Select(pair => (pair.Property, Attribute: pair.Attribute!, Location: GetLocation(pair.Property)))
+            .OrderBy(entry => entry.Location.SourceTree?.FilePath ?? string.Empty, StringComparer.Ordinal)
+            .ThenBy(entry => entry.Location.SourceSpan.Start)
+            .ToArray();
+
+        if (orderedFields.Length > 0 && converterType == null)
+        {
+            diagnostics.Add(new PayloadDiagnostic(
+                Diagnostics.PayloadConverterNotSpecified, typeLocation, className,
+                "请声明 [PayloadContract(Converter = typeof(转换器类型))]。"));
+
+            return CreateModel(ns, className, typeDisplay, hintName, contractId, scopeFallback, null,
+                ImmutableArray<PayloadFieldModel>.Empty, diagnostics, typeLocation);
+        }
+
+        // ⑥ 逐字段解析（元素名唯一性 + 形态推断 + 转换方法语义校验）。
+        var fields = ImmutableArray.CreateBuilder<PayloadFieldModel>(orderedFields.Length);
+        var seenElements = new HashSet<string>(StringComparer.Ordinal);
+        var compilation = context.SemanticModel?.Compilation;
+
+        foreach (var entry in orderedFields)
+        {
+            var property = entry.Property;
+            var attribute = entry.Attribute;
+            var location = entry.Location;
+            var element = ReadConstructorString(attribute, 0) ?? string.Empty;
+
+            if (element.Length == 0)
+            {
+                diagnostics.Add(new PayloadDiagnostic(
+                    Diagnostics.PayloadFieldDeclarationInvalid, location, className,
+                    "属性 " + property.Name + " 的 [PayloadField] 未给出 " + ElementProperty + " 构造参数（元素名）。"));
+                continue;
+            }
+
+            if (!seenElements.Add(element))
+            {
+                diagnostics.Add(new PayloadDiagnostic(
+                    Diagnostics.PayloadFieldDeclarationInvalid, location, className,
+                    "元素名 \"" + element + "\" 被重复映射（属性 " + property.Name +
+                    "）。同一契约内元素名必须唯一，否则后者会覆盖前者。"));
+                continue;
+            }
+
+            if (property.IsStatic || property.SetMethod == null || property.SetMethod.IsInitOnly)
+            {
+                diagnostics.Add(new PayloadDiagnostic(
+                    Diagnostics.PayloadFieldDeclarationInvalid, location, className,
+                    "属性 " + property.Name + " 必须是非 static 的可写属性（init-only 与只读属性无法由生成代码赋值）。"));
+                continue;
+            }
+
+            var formatName = ReadEnumMemberName(attribute, FormatProperty) ?? AutoFormatName;
+            var hasExplicitSeparator = TryGetNamed(attribute, SeparatorProperty, out var separatorConstant);
+            var separator = separatorConstant.Value is char separatorChar ? separatorChar : ',';
+            var itemName = ReadString(attribute, ItemNameProperty);
+            var nameAttribute = ReadString(attribute, NameAttributeProperty);
+            var valueElement = ReadString(attribute, ValueElementProperty);
+            var methodName = ReadString(attribute, MethodProperty);
+
+            var failure = TryResolveField(
+                converterType,
+                converterDisplay,
+                compilation,
+                property,
+                formatName,
+                hasExplicitSeparator,
+                separator,
+                itemName,
+                nameAttribute,
+                valueElement,
+                methodName,
+                out var resolvedCall,
+                out var detail);
+
+            if (failure != ResolutionFailure.None || resolvedCall == null)
+            {
+                diagnostics.Add(new PayloadDiagnostic(
+                    MapFailureToDescriptor(failure), location, className, detail ?? "无法解析该字段的转换方法。"));
+
+                continue;
+            }
+
+            fields.Add(new PayloadFieldModel(
+                element,
+                property.Name,
+                property.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                resolvedCall,
+                location));
+        }
+
+        return CreateModel(ns, className, typeDisplay, hintName, contractId, scopeFallback, converterDisplay,
+            fields.ToImmutable(), diagnostics, typeLocation);
+    }
+
+    /// <summary>
+    /// 解析单个字段的转换调用（显式 <c>Method</c> 优先，否则按属性类型推断）。
+    /// </summary>
+    private static ResolutionFailure TryResolveField(
+        INamedTypeSymbol? converterType,
+        string? converterDisplay,
+        Compilation? compilation,
+        IPropertySymbol property,
+        string formatName,
+        bool hasExplicitSeparator,
+        char separator,
+        string? itemName,
+        string? nameAttribute,
+        string? valueElement,
+        string? methodName,
+        out string? resolvedCall,
+        out string? detail)
+    {
+        resolvedCall = null;
+        detail = null;
+
+        if (converterType == null || converterDisplay == null)
+        {
+            detail = "未声明转换器类型。";
+            return ResolutionFailure.MethodNotFound;
+        }
+
+        // 组合合法性（PAYLOAD006）：显式 Separator 与 ItemName 互斥 —— 静默忽略会产出
+        // 「看似生效实则丢弃配置」的映射，是本生成器要消除的故障模式之一。
+        if (hasExplicitSeparator && itemName != null)
+        {
+            detail = "属性 " + property.Name + " 同时给出了 Separator 与 ItemName：分隔符串与嵌套项是两种互斥的字段形态。";
+            return ResolutionFailure.DeclarationInvalid;
+        }
+
+        // —— 路径 A：显式 Method（优先于类型推断）——
+        if (!string.IsNullOrEmpty(methodName))
+        {
+            return ResolveExplicitMethod(converterType, converterDisplay, compilation, property, methodName!, out resolvedCall, out detail);
+        }
+
+        // —— 路径 B：按声明的 Format 或属性类型推断 ——
+        var effectiveFormat = formatName;
+
+        if (string.IsNullOrEmpty(effectiveFormat) || string.Equals(effectiveFormat, AutoFormatName, StringComparison.Ordinal))
+        {
+            if (!InferFormat(property, itemName, nameAttribute, valueElement, out effectiveFormat, out detail))
+                return ResolutionFailure.NotInferable;
+        }
+
+        // 形态与附加参数的匹配校验（PAYLOAD006）。
+        var combinationValid = ValidateFormatCombination(property, effectiveFormat, itemName, nameAttribute, valueElement, out var combinationDetail);
+        if (!combinationValid)
+        {
+            detail = combinationDetail;
+            return ResolutionFailure.DeclarationInvalid;
+        }
+
+        // 形态 → 转换器契约方法 + 泛型实参。
+        string helperName;
+        ITypeSymbol? typeArgument;
+
+        if (string.Equals(effectiveFormat, TextFormatName, StringComparison.Ordinal))
+        {
+            if (IsStringScalar(property.Type))
+            {
+                helperName = TextMethodName;
+                typeArgument = null;
+            }
+            else if (IsNullableScalar(property.Type, out var underlying) && IsInferableScalarValueType(underlying))
+            {
+                typeArgument = underlying;
+                helperName = underlying.SpecialType == SpecialType.System_Boolean ? FlagMethodName : NumberMethodName;
+            }
+            else
+            {
+                detail = "属性 " + property.Name + " 的 Format = Text 需要可空形态：string?、int?/long?（Number<T>）或 bool?（Flag<bool>），" +
+                         "当前为 " + property.Type.ToDisplayString() + "。非空值类型无「缺失 ⇒ null」语义，" +
+                         "非空引用类型会在 nullable 启用的消费项目中产生 CS8601；枚举等值域类型请改用 Method。";
+                return ResolutionFailure.NotInferable;
+            }
+        }
+        else
+        {
+            var elementType = GetListElementType(property.Type);
+            if (elementType == null)
+            {
+                detail = "属性 " + property.Name + " 的类型 " + property.Type.ToDisplayString() +
+                         " 不是 List<T>，无法按 Format = " + effectiveFormat + " 生成映射。";
+                return ResolutionFailure.NotInferable;
+            }
+
+            typeArgument = elementType;
+            helperName = string.Equals(effectiveFormat, DelimitedFormatName, StringComparison.Ordinal)
+                ? DelimitedMethodName
+                : (string.Equals(effectiveFormat, ItemsFormatName, StringComparison.Ordinal)
+                    ? ItemsMethodName
+                    : ItemsWithAttributesMethodName);
+        }
+
+        var typeArguments = typeArgument == null
+            ? ImmutableArray<ITypeSymbol>.Empty
+            : ImmutableArray.Create(typeArgument);
+
+        var parameterCount = string.Equals(effectiveFormat, ItemsWithAttributesFormatName, StringComparison.Ordinal)
+            ? 4
+            : (string.Equals(effectiveFormat, TextFormatName, StringComparison.Ordinal) ? 1 : 2);
+
+        var method = FindContractMethod(converterType, helperName, parameterCount, typeArguments.Length);
+        if (method == null)
+        {
+            detail = "转换器 " + converterType.Name + " 上未找到契约要求的静态方法 " + helperName +
+                     "（形参个数 " + parameterCount +
+                     (typeArguments.Length == 0 ? "、非泛型" : "、泛型元数 " + typeArguments.Length) + "）。";
+            return ResolutionFailure.MethodNotFound;
+        }
+
+        var constructed = TryConstruct(method, typeArguments);
+        if (constructed == null)
+        {
+            detail = "转换器 " + converterType.Name + " 的 " + helperName + "<" +
+                     string.Join(", ", typeArguments.Select(argument => argument.ToDisplayString())) +
+                     "> 无法按该类型实参构造（泛型约束不满足）。";
+            return ResolutionFailure.NotInferable;
+        }
+
+        var assignable = TryCheckAssignable(compilation, constructed.ReturnType, property.Type, out var returnDetail);
+        if (assignable == false)
+        {
+            detail = "转换方法 " + helperName + " 返回 " + constructed.ReturnType.ToDisplayString() +
+                     "，无法隐式转换为属性 " + property.Name + "（" + property.Type.ToDisplayString() + "）。" + returnDetail;
+            return ResolutionFailure.ReturnTypeMismatch;
+        }
+
+        resolvedCall = BuildHelperCall(converterDisplay, helperName, typeArguments, effectiveFormat, separator, itemName, nameAttribute, valueElement);
+        return ResolutionFailure.None;
+    }
+
+    private static bool ValidateFormatCombination(
+        IPropertySymbol property,
+        string formatName,
+        string? itemName,
+        string? nameAttribute,
+        string? valueElement,
+        out string detail)
+    {
+        switch (formatName)
+        {
+            case TextFormatName:
+                if (itemName != null || nameAttribute != null || valueElement != null)
+                {
+                    detail = "属性 " + property.Name + " 的 Format = Text 不接受 ItemName/NameAttribute/ValueElement。";
+                    return false;
+                }
+
+                break;
+
+            case DelimitedFormatName:
+                if (itemName != null || nameAttribute != null || valueElement != null)
+                {
+                    detail = "属性 " + property.Name + " 的 Format = Delimited 不接受 ItemName/NameAttribute/ValueElement（自带分隔符的标量序列）。";
+                    return false;
+                }
+
+                break;
+
+            case ItemsFormatName:
+                if (itemName == null)
+                {
+                    detail = "属性 " + property.Name + " 的 Format = Items 必须给出 ItemName（嵌套项元素名）。";
+                    return false;
+                }
+
+                if (nameAttribute != null || valueElement != null)
+                {
+                    detail = "属性 " + property.Name + " 的 Format = Items 不接受 NameAttribute/ValueElement（请改用 ItemsWithAttributes）。";
+                    return false;
+                }
+
+                break;
+
+            case ItemsWithAttributesFormatName:
+                if (itemName == null || nameAttribute == null || valueElement == null)
+                {
+                    detail = "属性 " + property.Name + " 的 Format = ItemsWithAttributes 必须同时给出 ItemName / NameAttribute / ValueElement。";
+                    return false;
+                }
+
+                break;
+
+            default:
+                detail = "属性 " + property.Name + " 声明了未知的 Format 成员名 \"" + formatName + "\"。";
+                return false;
+        }
+
+        detail = string.Empty;
+        return true;
+    }
+
+    private static bool InferFormat(
+        IPropertySymbol property,
+        string? itemName,
+        string? nameAttribute,
+        string? valueElement,
+        out string formatName,
+        out string? detail)
+    {
+        formatName = string.Empty;
+        detail = null;
+
+        var propertyType = property.Type;
+
+        if (IsStringScalar(propertyType)
+            || (IsNullableScalar(propertyType, out var nullableScalar) && IsInferableScalarValueType(nullableScalar)))
+        {
+            formatName = TextFormatName;
+            return true;
+        }
+
+        var elementType = GetListElementType(propertyType);
+        if (elementType != null)
+        {
+            if (itemName != null && nameAttribute != null && valueElement != null)
+            {
+                formatName = ItemsWithAttributesFormatName;
+                return true;
+            }
+
+            if (itemName != null)
+            {
+                formatName = ItemsFormatName;
+                return true;
+            }
+
+            if (IsSupportedScalar(elementType))
+            {
+                formatName = DelimitedFormatName;
+                return true;
+            }
+
+            detail = "属性 " + property.Name + " 的 List 元素类型 " + elementType.ToDisplayString() +
+                     " 无法按分隔符串推断（仅支持 string / 数值 / 布尔 / 枚举）";
+            return false;
+        }
+
+        detail = "属性 " + property.Name + " 的类型 " + propertyType.ToDisplayString() +
+                 " 无标准的字段形态（推断支持：string?、可空数值/bool、List<标量>、List<T> + ItemName）";
+        return false;
+    }
+
+    private static ResolutionFailure ResolveExplicitMethod(
+        INamedTypeSymbol converterType,
+        string converterDisplay,
+        Compilation? compilation,
+        IPropertySymbol property,
+        string methodName,
+        out string? resolvedCall,
+        out string? detail)
+    {
+        resolvedCall = null;
+        detail = null;
+
+        // 首参为 PayloadNode 的重载优先（可拿节点结构）；否则退到 string 重载（只拿标量文本）。
+        // CA1508 误报抑制：分析器无法透过 IsPayloadNode 辅助方法推断「第一参数类型命中」这一分支，
+        // 因而误判 nodeParameterOverload 恒为 null、resolved == null 恒真。该分支的实际可达性由
+        // PayloadFieldMapGeneratorTests.AllFormatsPayload_Snapshot（两种首参重载各一）与
+        // PayloadFieldMapDiagnosticTests.ReturnTypeMismatch_ReportsPayload005 覆盖证明。
+#pragma warning disable CA1508
+        IMethodSymbol? nodeParameterOverload = null;
+        IMethodSymbol? textParameterOverload = null;
+        var anyNamedMember = false;
+
+        foreach (var member in converterType.GetMembers(methodName))
+        {
+            if (member is not IMethodSymbol method)
+                continue;
+
+            anyNamedMember = true;
+
+            if (!method.IsStatic || method.IsGenericMethod || method.Parameters.Length != 1)
+                continue;
+
+            var firstParameter = method.Parameters[0].Type;
+            if (IsPayloadNode(firstParameter))
+            {
+                nodeParameterOverload = method;
+                break;
+            }
+
+            if (firstParameter.SpecialType == SpecialType.System_String && textParameterOverload == null)
+                textParameterOverload = method;
+        }
+
+        var resolved = nodeParameterOverload ?? textParameterOverload;
+
+        // CA1508 的误报点落在本判定行（分析器认为 resolved 恒为 null），故 restore 必须置于本 if 之后，
+        // 而非 resolved 赋值之后 —— 否则抑制区间不覆盖告警行，构建仍报 CA1508。
+        if (resolved == null)
+        {
+            detail = anyNamedMember
+                ? "转换器 " + converterType.Name + " 上的方法 " + methodName +
+                  " 签名不符合契约：须为 static、非泛型、恰有一个首参为 PayloadNode 或 string 的参数。"
+                : "转换器 " + converterType.Name + " 上不存在方法 " + methodName + "。";
+            return ResolutionFailure.MethodNotFound;
+        }
+#pragma warning restore CA1508
+
+        var assignable = TryCheckAssignable(compilation, resolved.ReturnType, property.Type, out var returnDetail);
+        if (assignable == false)
+        {
+            detail = "转换方法 " + methodName + " 返回 " + resolved.ReturnType.ToDisplayString() +
+                     "，无法隐式转换为属性 " + property.Name + "（" + property.Type.ToDisplayString() + "）。" + returnDetail;
+            return ResolutionFailure.ReturnTypeMismatch;
+        }
+
+        var argument = ReferenceEquals(resolved, nodeParameterOverload) ? NodeArgument : NodeTextArgument;
+        resolvedCall = converterDisplay + "." + methodName + "(" + argument + ")";
+        return ResolutionFailure.None;
+    }
+
+    private static string BuildHelperCall(
+        string converterDisplay,
+        string helperName,
+        ImmutableArray<ITypeSymbol> typeArguments,
+        string formatName,
+        char separator,
+        string? itemName,
+        string? nameAttribute,
+        string? valueElement)
+    {
+        var call = new System.Text.StringBuilder(converterDisplay.Length + 32);
+        call.Append(converterDisplay).Append('.').Append(helperName);
+
+        if (typeArguments.Length > 0)
+        {
+            call.Append('<');
+            for (var i = 0; i < typeArguments.Length; i++)
+            {
+                if (i > 0)
+                    call.Append(", ");
+
+                call.Append(typeArguments[i].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+            }
+
+            call.Append('>');
+        }
+
+        // CA1834 抑制：NodeArgument 是「单字符常量字符串」，分析器建议改用 Append('n')；
+        // 但该字面量与其它渲染点共用同一常量（单一事实源），在此处另写 'n' 会在将来改名时静默分叉。
+#pragma warning disable CA1834
+        call.Append('(').Append(NodeArgument);
+#pragma warning restore CA1834
+
+        if (string.Equals(formatName, DelimitedFormatName, StringComparison.Ordinal))
+        {
+            call.Append(", '").Append(StringEscapeHelper.EscapeChar(separator)).Append('\'');
+        }
+        else if (string.Equals(formatName, ItemsFormatName, StringComparison.Ordinal))
+        {
+            call.Append(", \"").Append(StringEscapeHelper.EscapeString(itemName)).Append('"');
+        }
+        else if (string.Equals(formatName, ItemsWithAttributesFormatName, StringComparison.Ordinal))
+        {
+            call.Append(", \"").Append(StringEscapeHelper.EscapeString(itemName)).Append('"');
+            call.Append(", \"").Append(StringEscapeHelper.EscapeString(nameAttribute)).Append('"');
+            call.Append(", \"").Append(StringEscapeHelper.EscapeString(valueElement)).Append('"');
+        }
+
+        call.Append(')');
+        return call.ToString();
+    }
+
+    private static IMethodSymbol? FindContractMethod(
+        INamedTypeSymbol converterType,
+        string methodName,
+        int parameterCount,
+        int typeArgumentCount)
+    {
+        foreach (var member in converterType.GetMembers(methodName))
+        {
+            if (member is not IMethodSymbol method)
+                continue;
+
+            if (!method.IsStatic || method.Parameters.Length != parameterCount)
+                continue;
+
+            if (method.TypeParameters.Length != typeArgumentCount)
+                continue;
+
+            return method;
+        }
+
+        return null;
+    }
+
+    private static IMethodSymbol? TryConstruct(IMethodSymbol method, ImmutableArray<ITypeSymbol> typeArguments)
+    {
+        if (typeArguments.Length == 0)
+            return method;
+
+        try
+        {
+            return method.Construct(typeArguments.ToArray());
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 校验「转换方法返回值 → 目标属性」是否可隐式转换。
+    /// </summary>
+    /// <returns><see langword="true"/> 可赋值；<see langword="false"/> 不可赋值；<see langword="null"/> 无法判定（无编译单元，容忍）。</returns>
+    private static bool? TryCheckAssignable(Compilation? compilation, ITypeSymbol from, ITypeSymbol to, out string detail)
+    {
+        detail = string.Empty;
+        if (compilation == null)
+            return null;
+
+        if (compilation.ClassifyCommonConversion(from, to).IsImplicit)
+            return true;
+
+        detail = "（请使返回类型与属性类型一致，或为属性添加 Method 以实现显式转换。）";
+        return false;
+    }
+
+    private static DiagnosticDescriptor MapFailureToDescriptor(ResolutionFailure failure)
+    {
+        switch (failure)
+        {
+            case ResolutionFailure.MethodNotFound:
+                return Diagnostics.PayloadConverterMethodNotFound;
+            case ResolutionFailure.ReturnTypeMismatch:
+                return Diagnostics.PayloadConverterReturnTypeMismatch;
+            case ResolutionFailure.DeclarationInvalid:
+                return Diagnostics.PayloadFieldDeclarationInvalid;
+            default:
+                return Diagnostics.PayloadFieldFormatNotInferable;
+        }
+    }
+
+    private static PayloadContractModel CreateModel(
+        string? ns,
+        string typeName,
+        string typeDisplay,
+        string hintName,
+        string? contractId,
+        string? scopeFallback,
+        string? converterDisplay,
+        ImmutableArray<PayloadFieldModel> fields,
+        List<PayloadDiagnostic> diagnostics,
+        Location location)
+    {
+        var fingerprint = BuildFingerprint(typeDisplay, contractId, scopeFallback, converterDisplay, fields, diagnostics);
+
+        return new PayloadContractModel(
+            ns, typeName, typeDisplay, hintName, contractId, scopeFallback, converterDisplay,
+            fields, diagnostics.ToImmutableArray(), location, fingerprint);
+    }
+
+    /// <summary>
+    /// 构建值相等指纹：覆盖渲染产物所依赖的全部输入（含诊断），
+    /// 故「指纹相同 ⇒ 渲染结果相同」这一等价性成立（照 <c>InterfaceModel</c> 的既有范式）。
+    /// </summary>
+    private static string BuildFingerprint(
+        string typeDisplay,
+        string? contractId,
+        string? scopeFallback,
+        string? converterDisplay,
+        ImmutableArray<PayloadFieldModel> fields,
+        List<PayloadDiagnostic> diagnostics)
+    {
+        var sb = new ValueStringBuilder(512);
+        try
+        {
+            sb.Append(typeDisplay);
+            AppendFingerprintPart(ref sb, "Ci:", contractId);
+            AppendFingerprintPart(ref sb, "Sf:", scopeFallback);
+            AppendFingerprintPart(ref sb, "Cv:", converterDisplay);
+
+            for (var i = 0; i < fields.Length; i++)
+            {
+                sb.Append("|F:");
+                sb.Append(fields[i].Element);
+                sb.Append('>');
+                sb.Append(fields[i].PropertyName);
+                sb.Append('>');
+                sb.Append(fields[i].PropertyTypeDisplay);
+                sb.Append('>');
+                sb.Append(fields[i].ResolvedCall);
+            }
+
+            for (var i = 0; i < diagnostics.Count; i++)
+            {
+                sb.Append("|D:");
+                sb.Append(diagnostics[i].Descriptor.Id);
+                sb.Append('>');
+                sb.Append(diagnostics[i].Message);
+            }
+
+            return sb.ToString();
+        }
+        finally
+        {
+            sb.Dispose();
+        }
+    }
+
+    private static void AppendFingerprintPart(ref ValueStringBuilder sb, string prefix, string? value)
+    {
+        sb.Append('|');
+        sb.Append(prefix);
+        sb.Append(value ?? string.Empty);
+    }
+
+    private static string? DescribeUnsupportedShape(INamedTypeSymbol typeSymbol)
+    {
+        if (typeSymbol.TypeKind != TypeKind.Class)
+            return "当前为 " + typeSymbol.TypeKind + "，仅支持 class。";
+
+        if (typeSymbol.IsRecord)
+            return "当前为 record（位置参数属性为 init-only，且 netstandard2.0 消费面无 IsExternalInit）。";
+
+        if (typeSymbol.IsGenericType)
+            return "当前为泛型类 " + typeSymbol.ToDisplayString() +
+                   "（映射表构造要求 T : class, new()，泛型载荷无法在编译期满足该约束）。";
+
+        if (typeSymbol.ContainingType != null)
+            return "当前为嵌套类（嵌套类的 partial 成员需转发容器链，当前不支持）。";
+
+        return null;
+    }
+
+    private static AttributeData? FindFieldAttribute(IPropertySymbol property)
+    {
+        foreach (var attribute in property.GetAttributes())
+        {
+            if (IsAttribute(attribute, FieldAttributeMetadataName))
+                return attribute;
+        }
+
+        return null;
+    }
+
+    private static bool IsAttribute(AttributeData attribute, string metadataName) =>
+        string.Equals(attribute.AttributeClass?.ToDisplayString(), metadataName, StringComparison.Ordinal);
+
+    /// <summary>
+    /// 是否为上游节点类型（按「名称 + 命名空间」判定，<b>不</b>用显示字符串 ——
+    /// <c>PayloadNode?</c> 的可空标注是否出现在显示结果里取决于显示格式，字符串比较会漏判）。
+    /// </summary>
+    private static bool IsPayloadNode(ITypeSymbol type) =>
+        string.Equals(type.Name, "PayloadNode", StringComparison.Ordinal)
+        && string.Equals(type.ContainingNamespace?.ToDisplayString(), "Mud.HttpUtils.Payloads", StringComparison.Ordinal);
+
+    private static string? ReadConstructorString(AttributeData attribute, int index) =>
+        attribute.ConstructorArguments.Length > index
+            ? attribute.ConstructorArguments[index].Value as string
+            : null;
+
+    private static string? ReadString(AttributeData? attribute, string propertyName)
+    {
+        if (attribute == null)
+            return null;
+
+        return TryGetNamed(attribute, propertyName, out var constant) && constant.Value is string value && value.Length > 0
+            ? value
+            : null;
+    }
+
+    private static INamedTypeSymbol? ReadType(AttributeData? attribute, string propertyName)
+    {
+        if (attribute == null)
+            return null;
+
+        return TryGetNamed(attribute, propertyName, out var constant) ? constant.Value as INamedTypeSymbol : null;
+    }
+
+    private static string? ReadEnumMemberName(AttributeData attribute, string propertyName) =>
+        TryGetNamed(attribute, propertyName, out var constant)
+            ? AttributeArgumentReader.GetEnumMemberName(constant)
+            : null;
+
+    private static bool TryGetNamed(AttributeData attribute, string propertyName, out TypedConstant value)
+    {
+        foreach (var pair in attribute.NamedArguments)
+        {
+            if (string.Equals(pair.Key, propertyName, StringComparison.Ordinal))
+            {
+                value = pair.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static Location GetLocation(ISymbol symbol)
+    {
+        foreach (var location in symbol.Locations)
+        {
+            if (location.IsInSource)
+                return location;
+        }
+
+        return Location.None;
+    }
+
+    /// <summary>
+    /// <c>string</c> 是否可安全承载「缺失 ⇒ null」语义。
+    /// </summary>
+    /// <remarks>
+    /// 仅接受<b>可空标注</b>的 <c>string?</c> 与<b>未标注</b>（nullable 未启用 ⇒ 无 CS8601 风险）的 <c>string</c>；
+    /// 在 nullable 启用的消费项目中，非空的 <c>string</c> 属性会被判定为「无法推断」（<c>PAYLOAD007</c>），
+    /// 从而避免生成代码把 <c>string?</c> 赋给 <c>string</c> 而泄漏 CS8601 到消费方构建
+    /// （<c>// &lt;auto-generated/&gt;</c> 头<b>不</b>抑制该编译器告警，消费方开 TreatWarningsAsErrors 即失败）。
+    /// </remarks>
+    private static bool IsStringScalar(ITypeSymbol type) =>
+        type.SpecialType == SpecialType.System_String
+        && type.NullableAnnotation != NullableAnnotation.NotAnnotated;
+
+    private static bool IsNullableScalar(ITypeSymbol type, out ITypeSymbol underlying)
+    {
+        if (type is INamedTypeSymbol named
+            && named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
+            && named.TypeArguments.Length == 1)
+        {
+            underlying = named.TypeArguments[0];
+            return true;
+        }
+
+        underlying = type;
+        return false;
+    }
+
+    /// <summary>
+    /// 是否可<b>按类型推断</b>为标量转换（<c>Number&lt;T&gt;</c> / <c>Flag&lt;bool&gt;</c>）。
+    /// </summary>
+    /// <remarks>
+    /// <b>刻意排除枚举</b>：枚举的值域语义（如 <c>"1"/"2"</c> 的性别码、未知码的兜底）属消费方领域知识，
+    /// 静默走数值解析会把「未知码」变成非法枚举值。故枚举必须显式给出 <c>Method</c>（报 <c>PAYLOAD007</c>），
+    /// 而枚举仍可作为 <c>Delimited</c> / <c>Items</c> 的<b>元素</b>类型（元素级由消费方转换器统一处理）。
+    /// </remarks>
+    private static bool IsInferableScalarValueType(ITypeSymbol type)
+    {
+        switch (type.SpecialType)
+        {
+            case SpecialType.System_SByte:
+            case SpecialType.System_Byte:
+            case SpecialType.System_Int16:
+            case SpecialType.System_UInt16:
+            case SpecialType.System_Int32:
+            case SpecialType.System_UInt32:
+            case SpecialType.System_Int64:
+            case SpecialType.System_UInt64:
+            case SpecialType.System_Single:
+            case SpecialType.System_Double:
+            case SpecialType.System_Decimal:
+            case SpecialType.System_Boolean:
+            case SpecialType.System_Char:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>分隔符串 / 嵌套项的元素类型是否受支持（string / 数值 / 布尔 / 枚举）。</summary>
+    private static bool IsSupportedScalar(ITypeSymbol type) =>
+        type.SpecialType == SpecialType.System_String
+        || type.TypeKind == TypeKind.Enum
+        || IsInferableScalarValueType(type);
+
+    private static ITypeSymbol? GetListElementType(ITypeSymbol type)
+    {
+        // Roslyn 的 SpecialType 不含 List<T>，故按「原始定义的完全限定显示名」判定
+        // （不引入 Compilation 查询，保持本方法可被推断路径直接调用）。
+        if (type is INamedTypeSymbol named
+            && named.TypeArguments.Length == 1
+            && string.Equals(
+                named.OriginalDefinition.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                ListOfTDisplay,
+                StringComparison.Ordinal))
+        {
+            return named.TypeArguments[0];
+        }
+
+        return null;
+    }
+}
