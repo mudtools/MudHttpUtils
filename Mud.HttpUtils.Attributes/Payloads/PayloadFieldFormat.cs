@@ -29,4 +29,24 @@ public enum PayloadFieldFormat
 
     /// <summary>带属性的嵌套项 → 列表（<c>&lt;ExtAttr&gt;&lt;Item Name="…"&gt;&lt;Text/&gt;&lt;/Item&gt;&lt;/ExtAttr&gt;</c>）。</summary>
     ItemsWithAttributes = 4,
+
+    /// <summary>
+    /// 单对象嵌套 → 内层契约递归 Bind（<c>TSingle?</c>，<c>TSingle</c> 标注 <c>[PayloadContract]</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 元素缺失 ⇒ <c>null</c>；否则由生成器引用 <c>TSingle.PayloadFieldMap</c> 的非泛型桥
+    /// （<c>CreateInstance</c> + <c>Bind</c>）构造内层实例。属性形态要求：引用类型且可空标注
+    /// 非「非可空」（与 <c>Text</c> 的 <c>string?</c> 同口径，oblivious 接受），违反报 <c>PAYLOAD007</c>。
+    /// </remarks>
+    Object = 5,
+
+    /// <summary>
+    /// 契约化对象项 → 列表（<c>List&lt;TNested&gt;</c> + <c>ItemName</c>，<c>TNested</c> 标注 <c>[PayloadContract]</c>）。
+    /// </summary>
+    /// <remarks>
+    /// 逐项由内层 <c>TNested.PayloadFieldMap</c> 的非泛型桥新建并绑定；元素缺失 ⇒ 空列表。
+    /// 内层类型的 <c>PayloadFieldMap</c> 成员由其自身的 <c>[PayloadContract]</c> 生成链负责，
+    /// 本生成器不验证该成员存在（缺失由消费方编译期 <c>CS0117</c> 暴露）。
+    /// </remarks>
+    ItemsObject = 6,
 }

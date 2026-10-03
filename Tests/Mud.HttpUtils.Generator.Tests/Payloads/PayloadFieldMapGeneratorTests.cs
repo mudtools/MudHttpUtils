@@ -50,4 +50,20 @@ public class PayloadFieldMapGeneratorTests
     /// <summary>显式 <c>ContractId</c> 覆盖类名。</summary>
     [Fact]
     public Task CustomContractIdPayload_Snapshot() => VerifyPayloadAsync(PayloadTestData.CustomContractIdPayload);
+
+    /// <summary>
+    /// 嵌套单对象（<c>Object</c> 形态，v2.5 / G-ADR-17）：内层契约 + 外层 <c>TSingle?</c> 字段
+    /// 生成 <c>Object&lt;…NestedScanCode?&gt;(n, (IPayloadContractAccessor)…NestedScanCode.PayloadFieldMap)</c>；
+    /// 内层与外层同编译（同工程嵌套可编译，G-ADR-17b），故快照含 2 个生成文件。
+    /// </summary>
+    [Fact]
+    public Task NestedObjectPayload_Snapshot() => VerifyPayloadAsync(PayloadTestData.NestedObjectPayload);
+
+    /// <summary>
+    /// 嵌套对象列表（<c>ItemsObject</c> 形态，v2.5 / G-ADR-17）：外层
+    /// <c>ItemsObject&lt;…NestedSelectedItem&gt;(n, "SelectedItem", (IPayloadContractAccessor)…NestedSelectedItem.PayloadFieldMap)</c>，
+    /// 内层复用既有 <c>Items&lt;string&gt;</c>（既有能力嵌套组合）。
+    /// </summary>
+    [Fact]
+    public Task NestedItemsObjectPayload_Snapshot() => VerifyPayloadAsync(PayloadTestData.NestedItemsObjectPayload);
 }

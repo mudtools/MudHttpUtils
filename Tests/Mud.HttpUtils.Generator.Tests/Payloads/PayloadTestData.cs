@@ -58,6 +58,14 @@ internal static class PayloadTestData
                 public static List<T> ItemsWithAttributes<T>(PayloadNode? node, string itemName, string nameAttribute, string valueElement)
                     where T : new() => new List<T>();
 
+                public static TSingle? Object<TSingle>(PayloadNode? node, IPayloadContractAccessor accessor)
+                    where TSingle : class => null;
+
+                // class? 约束（nullable 启用消费方的推荐契约）：接受可空元素实参（List<TItem?> 形态），
+                // 非 可空 class 约束会与可空实参构成生成期不可调和组合（CS8634/CS8619，见生成器拦截）。
+                public static List<TItem> ItemsObject<TItem>(PayloadNode? node, string itemName, IPayloadContractAccessor itemAccessor)
+                    where TItem : class? => new List<TItem>();
+
                 public static WechatUserGender? ParseGender(string? text) => null;
 
                 public static List<string> Flatten(PayloadNode? node) => new List<string>();
@@ -165,12 +173,64 @@ internal static class PayloadTestData
         """;
 
     /// <summary>
+    /// 嵌套单对象（<c>Object</c> 形态，v2.5 / G-ADR-17）：内层契约 + 外层 <c>TSingle?</c> 字段。
+    /// </summary>
+    /// <remarks>
+    /// 内层与外层在同一源内（同编译）：外层生成物对 <c>NestedScanCode.PayloadFieldMap</c> 的交叉引用
+    /// 由最终编译解析 —— 正面钉住 G-ADR-17b 的「同工程嵌套可编译」结论（跨工程并非必要条件）。
+    /// </remarks>
+    internal const string NestedObjectPayload = """
+        namespace PayloadTests
+        {
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class NestedScanCode
+            {
+                [PayloadField("ScanType")] public string? ScanType { get; set; }
+
+                [PayloadField("ScanResult")] public string? ScanResult { get; set; }
+            }
+
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class NestedObjectPayload
+            {
+                [PayloadField("ScanCodeInfo")] public NestedScanCode? ScanCodeInfo { get; set; }
+            }
+        }
+        """;
+
+    /// <summary>
+    /// 嵌套对象列表（<c>ItemsObject</c> 形态，v2.5 / G-ADR-17）：内层契约含 <c>Text</c> 与
+    /// <c>Items</c>（既有能力）字段，外层 <c>List&lt;TNested&gt; + ItemName</c>。
+    /// </summary>
+    internal const string NestedItemsObjectPayload = """
+        namespace PayloadTests
+        {
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class NestedSelectedItem
+            {
+                [PayloadField("QuestionKey")] public string? QuestionKey { get; set; }
+
+                [PayloadField("OptionIds", ItemName = "OptionId")] public List<string> OptionIds { get; set; } = new List<string>();
+            }
+
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class NestedItemsObjectPayload
+            {
+                [PayloadField("SelectedItems", ItemName = "SelectedItem")]
+                public List<NestedSelectedItem> SelectedItems { get; set; } = new List<NestedSelectedItem>();
+            }
+        }
+        """;
+
+    /// <summary>
     /// 最低消费面源（C# 7.3 / 无 nullable 标注）：用于语言版本与 netstandard2.0 基线守卫。
     /// </summary>
     /// <remarks>
     /// 刻意不含 <c>#nullable enable</c> 与 <c>string?</c> 形式 ——
     /// <c>netstandard2.0</c> 外部消费工程的默认 <c>LangVersion</c> 是 7.3，
     /// 该版本既无 nullable 指令（CS8630）也无 <c>static</c> lambda（CS8370）。
+    /// 嵌套形态（v2.5 / T5）以 oblivious 声明覆盖：转换器的 <c>Object</c>/<c>ItemsObject</c>
+    /// 返回 <c>TSingle</c>/<c>List&lt;TItem&gt;</c>（7.3 无 <c>TSingle?</c> 可空标注语法，以 <c>default</c> 代 null）。
     /// </remarks>
     internal const string LegacySource = """
         using System.Collections.Generic;
@@ -188,6 +248,28 @@ internal static class PayloadTestData
                 public static T? Flag<T>(PayloadNode node) where T : struct => null;
 
                 public static List<T> Delimited<T>(PayloadNode node, char separator) => new List<T>();
+
+                public static List<T> Items<T>(PayloadNode node, string itemName) => new List<T>();
+
+                public static TSingle Object<TSingle>(PayloadNode node, IPayloadContractAccessor accessor)
+                    where TSingle : class => default;
+
+                public static List<TItem> ItemsObject<TItem>(PayloadNode node, string itemName, IPayloadContractAccessor itemAccessor)
+                    where TItem : class => new List<TItem>();
+            }
+
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class LegacyScanCode
+            {
+                [PayloadField("ScanType")] public string ScanType { get; set; }
+            }
+
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class LegacySelectedItem
+            {
+                [PayloadField("QuestionKey")] public string QuestionKey { get; set; }
+
+                [PayloadField("OptionIds", ItemName = "OptionId")] public List<string> OptionIds { get; set; }
             }
 
             [PayloadContract(Converter = typeof(PayloadConverter))]
@@ -198,6 +280,10 @@ internal static class PayloadTestData
                 [PayloadField("Count")] public int? Count { get; set; }
 
                 [PayloadField("Ids")] public List<long> Ids { get; set; }
+
+                [PayloadField("ScanCodeInfo")] public LegacyScanCode ScanCodeInfo { get; set; }
+
+                [PayloadField("SelectedItems", ItemName = "SelectedItem")] public List<LegacySelectedItem> SelectedItems { get; set; }
             }
         }
         """;

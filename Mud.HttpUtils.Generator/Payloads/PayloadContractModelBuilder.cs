@@ -50,6 +50,9 @@ internal static class PayloadContractModelBuilder
     /// <summary>上游节点类型的元数据名（用于 <c>Method</c> 首参绑定判定）。</summary>
     internal const string PayloadNodeMetadataName = "Mud.HttpUtils.Payloads.PayloadNode";
 
+    /// <summary>上游非泛型桥的元数据名（用于 <c>Object</c>/<c>ItemsObject</c> 形参判定，与 <see cref="PayloadNodeMetadataName"/> 同口径）。</summary>
+    internal const string PayloadContractAccessorMetadataName = "Mud.HttpUtils.Payloads.IPayloadContractAccessor";
+
     // —— 特性参数名 ——
     // 常量化的动机：AttributeParameterContractTests 以「属性名字符串是否出现在生成器源码中」
     // 判定「特性新增了可写属性但生成器未同步读取」这一类回归（CFG-28 根因），故必须保留字面量。
@@ -70,6 +73,8 @@ internal static class PayloadContractModelBuilder
     private const string DelimitedFormatName = "Delimited";
     private const string ItemsFormatName = "Items";
     private const string ItemsWithAttributesFormatName = "ItemsWithAttributes";
+    private const string ObjectFormatName = "Object";
+    private const string ItemsObjectFormatName = "ItemsObject";
 
     // —— 转换器契约方法名 ——
     private const string TextMethodName = "Text";
@@ -78,6 +83,8 @@ internal static class PayloadContractModelBuilder
     private const string DelimitedMethodName = "Delimited";
     private const string ItemsMethodName = "Items";
     private const string ItemsWithAttributesMethodName = "ItemsWithAttributes";
+    private const string ObjectMethodName = "Object";
+    private const string ItemsObjectMethodName = "ItemsObject";
 
     private const string NodeArgument = "n";
     private const string NodeTextArgument = "n?.Value";
@@ -460,6 +467,24 @@ internal static class PayloadContractModelBuilder
                 return ResolutionFailure.NotInferable;
             }
         }
+        else if (string.Equals(effectiveFormat, ObjectFormatName, StringComparison.Ordinal))
+        {
+            // 单对象嵌套（G-ADR-17）：与 Text 同口径的可空形态校验——否则值类型实参不满足
+            // Object<T> where T : class（生成物报 CS0311，指向生成文件），非空引用类型会在
+            // nullable 启用的消费工程泄漏 CS8600（「元素缺失 ⇒ null」要求属性可空）。
+            if (property.Type is not INamedTypeSymbol singleType
+                || !singleType.IsReferenceType
+                || property.Type.NullableAnnotation == NullableAnnotation.NotAnnotated)
+            {
+                detail = "属性 " + property.Name + " 的 Format = " + ObjectFormatName +
+                         " 需要 TSingle? 可空引用类型（TSingle 标注 [PayloadContract]）：元素缺失 ⇒ null 的语义要求属性可空，" +
+                         "当前为 " + property.Type.ToDisplayString() + "。";
+                return ResolutionFailure.NotInferable;
+            }
+
+            helperName = ObjectMethodName;
+            typeArgument = singleType;
+        }
         else
         {
             var elementType = GetListElementType(property.Type);
@@ -475,7 +500,9 @@ internal static class PayloadContractModelBuilder
                 ? DelimitedMethodName
                 : (string.Equals(effectiveFormat, ItemsFormatName, StringComparison.Ordinal)
                     ? ItemsMethodName
-                    : ItemsWithAttributesMethodName);
+                    : (string.Equals(effectiveFormat, ItemsObjectFormatName, StringComparison.Ordinal)
+                        ? ItemsObjectMethodName
+                        : ItemsWithAttributesMethodName));
         }
 
         var typeArguments = typeArgument == null
@@ -484,7 +511,9 @@ internal static class PayloadContractModelBuilder
 
         var parameterCount = string.Equals(effectiveFormat, ItemsWithAttributesFormatName, StringComparison.Ordinal)
             ? 4
-            : (string.Equals(effectiveFormat, TextFormatName, StringComparison.Ordinal) ? 1 : 2);
+            : (string.Equals(effectiveFormat, TextFormatName, StringComparison.Ordinal)
+                ? 1
+                : (string.Equals(effectiveFormat, ItemsObjectFormatName, StringComparison.Ordinal) ? 3 : 2));
 
         var candidates = FindContractMethods(converterType, helperName, parameterCount, typeArguments.Length);
         if (candidates.Length == 0)
@@ -524,9 +553,13 @@ internal static class PayloadContractModelBuilder
                   "首参必须是 " + PayloadNodeMetadataName +
                   (string.Equals(helperName, DelimitedMethodName, StringComparison.Ordinal)
                       ? "、次参必须是 char。"
-                      : (string.Equals(helperName, TextMethodName, StringComparison.Ordinal)
-                          ? "。"
-                          : "、其余形参必须是 string。"));
+                      : (string.Equals(helperName, ObjectMethodName, StringComparison.Ordinal)
+                          ? "、次参必须是 " + PayloadContractAccessorMetadataName + "。"
+                          : (string.Equals(helperName, ItemsObjectMethodName, StringComparison.Ordinal)
+                              ? "、次参必须是 string、三参必须是 " + PayloadContractAccessorMetadataName + "。"
+                              : (string.Equals(helperName, TextMethodName, StringComparison.Ordinal)
+                                  ? "。"
+                                  : "、其余形参必须是 string。"))));
             return ResolutionFailure.MethodNotFound;
         }
 
@@ -546,6 +579,24 @@ internal static class PayloadContractModelBuilder
                      "> 无法按该类型实参构造：" + constraintDetail +
                      "（请调整属性元素类型，或为该字段显式指定 Method）。";
             return ResolutionFailure.NotInferable;
+        }
+
+        // v2.5（G-ADR-17）：ItemsObject 的「可空元素实参 × 非可空 class 约束」是**生成期不可调和**的组合——
+        // 带标注实参违反 class 约束（CS8634），去标注实参又让返回的 List<TItem> 与 List<TItem?> 属性
+        // 触发 CS8619（两个方向的 List 可空性赋值均告警，实测）。两种渲染都泄漏告警 ⇒ 按 G-ADR-15 拦截，
+        // 指向消费方可操作的修复（class? 约束 / 去约束 / 返回类型承载可空性）。
+        if (string.Equals(effectiveFormat, ItemsObjectFormatName, StringComparison.Ordinal)
+            && typeArgument != null
+            && typeArgument.NullableAnnotation == NullableAnnotation.Annotated
+            && method.TypeParameters.Length > 0
+            && method.TypeParameters[0].HasReferenceTypeConstraint
+            && method.TypeParameters[0].ReferenceTypeConstraintNullableAnnotation == NullableAnnotation.NotAnnotated)
+        {
+            detail = "转换器 " + converterType.Name + " 的 " + ItemsObjectMethodName +
+                     "<TItem> 以非可空 class 约束声明，而属性 " + property.Name + " 的 List<TItem?> 可空元素实参必然触发 " +
+                     "CS8634（带标注实参违反约束）或 CS8619（去标注后返回值可空性不匹配）：请把约束改为 class?、" +
+                     "去掉引用约束，或让返回类型以 List<TItem?> 承载可空性。";
+            return ResolutionFailure.MethodNotFound;
         }
 
         var assignable = TryCheckAssignable(compilation, constructed.ReturnType, property.Type, out var returnDetail);
@@ -612,6 +663,30 @@ internal static class PayloadContractModelBuilder
 
                 break;
 
+            case ObjectFormatName:
+                if (itemName != null || nameAttribute != null || valueElement != null)
+                {
+                    detail = "属性 " + property.Name + " 的 Format = Object 不接受 ItemName/NameAttribute/ValueElement（单对象形态无嵌套项，内层字段映射由内层 [PayloadContract] 声明）。";
+                    return false;
+                }
+
+                break;
+
+            case ItemsObjectFormatName:
+                if (itemName == null)
+                {
+                    detail = "属性 " + property.Name + " 的 Format = ItemsObject 必须给出 ItemName（嵌套项元素名）。";
+                    return false;
+                }
+
+                if (nameAttribute != null || valueElement != null)
+                {
+                    detail = "属性 " + property.Name + " 的 Format = ItemsObject 不接受 NameAttribute/ValueElement（内层字段映射由内层 [PayloadContract] 声明）。";
+                    return false;
+                }
+
+                break;
+
             default:
                 detail = "属性 " + property.Name + " 声明了未知的 Format 成员名 \"" + formatName + "\"。";
                 return false;
@@ -634,6 +709,17 @@ internal static class PayloadContractModelBuilder
 
         var propertyType = property.Type;
 
+        // ① 单对象嵌套（v2.5 / G-ADR-17，优先于一切列表推断）：引用类型 + 可空标注 ≠ NotAnnotated
+        //    （与 IsStringScalar 同口径，oblivious 接受）+ 内层类型标注 [PayloadContract]。
+        if (propertyType is INamedTypeSymbol singleType
+            && singleType.IsReferenceType
+            && propertyType.NullableAnnotation != NullableAnnotation.NotAnnotated
+            && IsPayloadContractType(singleType))
+        {
+            formatName = ObjectFormatName;
+            return true;
+        }
+
         if (IsStringScalar(propertyType)
             || (IsNullableScalar(propertyType, out var nullableScalar) && IsInferableScalarValueType(nullableScalar)))
         {
@@ -652,8 +738,24 @@ internal static class PayloadContractModelBuilder
 
             if (itemName != null)
             {
-                formatName = ItemsFormatName;
-                return true;
+                // ② v2.5 收紧（G-ADR-17）：ItemName 形态的元素类型三分——带契约 ⇒ ItemsObject、
+                //    标量 ⇒ Items（既有）、其它 ⇒ PAYLOAD007。v2.4 对任意元素类型都推断 Items，
+                //    其「项取 child.Value 文本」的语义对对象元素必然静默产出空结果。
+                if (IsPayloadContractType(elementType))
+                {
+                    formatName = ItemsObjectFormatName;
+                    return true;
+                }
+
+                if (IsSupportedScalar(elementType))
+                {
+                    formatName = ItemsFormatName;
+                    return true;
+                }
+
+                detail = "属性 " + property.Name + " 的 List 元素类型 " + elementType.ToDisplayString() +
+                         " 既非标量、也未标注 [PayloadContract]：可改用标量项、给元素类型标注 [PayloadContract]（ItemsObject），或改用 Method。";
+                return false;
             }
 
             if (IsSupportedScalar(elementType))
@@ -668,7 +770,7 @@ internal static class PayloadContractModelBuilder
         }
 
         detail = "属性 " + property.Name + " 的类型 " + propertyType.ToDisplayString() +
-                 " 无标准的字段形态（推断支持：string?、可空数值/bool、List<标量>、List<T> + ItemName）";
+                 " 无标准的字段形态（推断支持：string?、可空数值/bool、List<标量>、List<T> + ItemName、嵌套契约（Object/ItemsObject））";
         return false;
     }
 
@@ -783,13 +885,21 @@ internal static class PayloadContractModelBuilder
 
         if (typeArguments.Length > 0)
         {
+            // Object（v2.5 / G-ADR-17）：泛型实参**不含**可空标注——可空实参会违反消费方以
+            // `class` 约束声明的方法（CS8634，指向生成文件）；「元素缺失 ⇒ null」的可空性由
+            // 方法声明的返回类型（TSingle?）承载，故丢弃 ? 恒安全（G-ADR-15：凡生成物必然
+            // 告警的形态一律生成期消解）。其余形态沿用 G-ADR-16 的 GeneratedTypeFormat。
+            var typeArgumentFormat = string.Equals(formatName, ObjectFormatName, StringComparison.Ordinal)
+                ? SymbolDisplayFormat.FullyQualifiedFormat
+                : GeneratedTypeFormat;
+
             call.Append('<');
             for (var i = 0; i < typeArguments.Length; i++)
             {
                 if (i > 0)
                     call.Append(", ");
 
-                call.Append(typeArguments[i].ToDisplayString(GeneratedTypeFormat));
+                call.Append(typeArguments[i].ToDisplayString(typeArgumentFormat));
             }
 
             call.Append('>');
@@ -815,9 +925,41 @@ internal static class PayloadContractModelBuilder
             call.Append(", \"").Append(StringEscapeHelper.EscapeString(nameAttribute)).Append('"');
             call.Append(", \"").Append(StringEscapeHelper.EscapeString(valueElement)).Append('"');
         }
+        else if (string.Equals(formatName, ObjectFormatName, StringComparison.Ordinal))
+        {
+            AppendContractAccessorCast(call, typeArguments[0]);
+        }
+        else if (string.Equals(formatName, ItemsObjectFormatName, StringComparison.Ordinal))
+        {
+            call.Append(", \"").Append(StringEscapeHelper.EscapeString(itemName)).Append('"');
+            AppendContractAccessorCast(call, typeArguments[0]);
+        }
 
         call.Append(')');
         return call.ToString();
+    }
+
+    /// <summary>
+    /// 渲染 <c>(IPayloadContractAccessor)TInner.PayloadFieldMap</c> 强转实参（v2.5 / G-ADR-17）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 强转的**静态成员访问**必须用 <see cref="SymbolDisplayFormat.FullyQualifiedFormat"/>（不含可空标注）：
+    /// 内层类型经泛型实参渲染（<c>GeneratedTypeFormat</c>）会带 <c>?</c>，而 <c>global::NS.Foo?.PayloadFieldMap</c>
+    /// 会被解析为条件访问（语法错误）——静态成员访问不区分可空标注（标注非类型同一性的一部分），
+    /// 丢弃 <c>?</c> 恰好正确。泛型实参侧仍用 <c>GeneratedTypeFormat</c>（G-ADR-16）。
+    /// </para>
+    /// <para>
+    /// 显式接口间强转的依据：<c>PayloadFieldMap&lt;T&gt;</c> 同时实现 <c>IPayloadFieldMap&lt;T&gt;</c>（生成成员的
+    /// 声明类型）与 <c>IPayloadContractAccessor</c>（非泛型桥，F2）——与消费方注册入口的取值语义同源。
+    /// 内层「手写映射 + 特性并存」会被 <c>PAYLOAD008</c> 编译期拦截，不存在带病进入运行期强转的路径。
+    /// </para>
+    /// </remarks>
+    private static void AppendContractAccessorCast(System.Text.StringBuilder call, ITypeSymbol innerType)
+    {
+        call.Append(", (global::").Append(PayloadContractAccessorMetadataName).Append(')')
+            .Append(innerType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
+            .Append('.').Append(GeneratedMemberName);
     }
 
     /// <summary>
@@ -901,7 +1043,9 @@ internal static class PayloadContractModelBuilder
     /// <remarks>
     /// <c>Text</c>/<c>Number&lt;T&gt;</c>/<c>Flag&lt;T&gt;</c>：<c>(PayloadNode?)</c>；
     /// <c>Delimited&lt;T&gt;</c>：<c>(PayloadNode?, char)</c>；<c>Items&lt;T&gt;</c>：<c>(PayloadNode?, string)</c>；
-    /// <c>ItemsWithAttributes&lt;TItem&gt;</c>：<c>(PayloadNode?, string, string, string)</c>。
+    /// <c>ItemsWithAttributes&lt;TItem&gt;</c>：<c>(PayloadNode?, string, string, string)</c>；
+    /// <c>Object&lt;TSingle&gt;</c>（v2.5）：<c>(PayloadNode?, IPayloadContractAccessor)</c>；
+    /// <c>ItemsObject&lt;TItem&gt;</c>（v2.5）：<c>(PayloadNode?, string, IPayloadContractAccessor)</c>。
     /// </remarks>
     private static bool HasContractParameterTypes(IMethodSymbol method, string helperName)
     {
@@ -926,6 +1070,19 @@ internal static class PayloadContractModelBuilder
         {
             return method.Parameters.Length == 2
                 && method.Parameters[1].Type.SpecialType == SpecialType.System_String;
+        }
+
+        if (string.Equals(helperName, ObjectMethodName, StringComparison.Ordinal))
+        {
+            return method.Parameters.Length == 2
+                && IsPayloadContractAccessor(method.Parameters[1].Type);
+        }
+
+        if (string.Equals(helperName, ItemsObjectMethodName, StringComparison.Ordinal))
+        {
+            return method.Parameters.Length == 3
+                && method.Parameters[1].Type.SpecialType == SpecialType.System_String
+                && IsPayloadContractAccessor(method.Parameters[2].Type);
         }
 
         return method.Parameters.Length == 1;
@@ -1252,6 +1409,39 @@ internal static class PayloadContractModelBuilder
     private static bool IsPayloadNode(ITypeSymbol type) =>
         string.Equals(type.Name, "PayloadNode", StringComparison.Ordinal)
         && string.Equals(type.ContainingNamespace?.ToDisplayString(), "Mud.HttpUtils.Payloads", StringComparison.Ordinal);
+
+    /// <summary>
+    /// 是否为上游非泛型桥（按「名称 + 命名空间」判定，与 <see cref="IsPayloadNode"/> 同口径；
+    /// 接口非泛型，无需核对泛型元数）。
+    /// </summary>
+    private static bool IsPayloadContractAccessor(ITypeSymbol type) =>
+        string.Equals(type.Name, "IPayloadContractAccessor", StringComparison.Ordinal)
+        && string.Equals(type.ContainingNamespace?.ToDisplayString(), "Mud.HttpUtils.Payloads", StringComparison.Ordinal);
+
+    /// <summary>
+    /// 类型是否标注了 <c>[PayloadContract]</c>（嵌套递归 Bind 的内层判定，G-ADR-17）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 按 <see cref="ContractAttributeMetadataName"/> 元数据名匹配（复用 <see cref="IsAttribute"/>，
+    /// 无需 <c>Compilation</c>）；特性为 <c>sealed</c>，不存在派生类型漏判。
+    /// </para>
+    /// <para>
+    /// <b>只判标注、不验证 <c>PayloadFieldMap</c> 成员存在</b>（G-ADR-17b）：<c>Transform</c> 阶段的语义模型
+    /// 看不到任何生成源（含同工程其它契约刚生成的成员），验证不可实现；生成源加入最终编译后交叉引用可解析，
+    /// 成员缺失由消费方编译期 <c>CS0117</c> 暴露（触发面：内层契约自身构建失败 / 内层生成器被禁用）。
+    /// </para>
+    /// </remarks>
+    private static bool IsPayloadContractType(ITypeSymbol type)
+    {
+        foreach (var attribute in type.GetAttributes())
+        {
+            if (IsAttribute(attribute, ContractAttributeMetadataName))
+                return true;
+        }
+
+        return false;
+    }
 
     private static string? ReadConstructorString(AttributeData attribute, int index) =>
         attribute.ConstructorArguments.Length > index

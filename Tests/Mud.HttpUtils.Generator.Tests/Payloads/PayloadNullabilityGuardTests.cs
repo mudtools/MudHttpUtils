@@ -44,6 +44,26 @@ public class PayloadNullabilityGuardTests
         }
         """;
 
+    /// <summary>嵌套形态的可空变体（v2.5 / T6 / R3）：<c>TSingle?</c> 单对象 + <c>List&lt;TNested?&gt;</c> 可空元素。</summary>
+    private const string NullableNestedPayload = """
+        namespace PayloadTests
+        {
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class NestedChoice
+            {
+                [PayloadField("Label")] public string? Label { get; set; }
+            }
+
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class NullableNestedPayload
+            {
+                [PayloadField("Choice")] public NestedChoice? Choice { get; set; }
+
+                [PayloadField("Choices", ItemName = "Choice")] public List<NestedChoice?> Choices { get; set; } = new List<NestedChoice?>();
+            }
+        }
+        """;
+
     [Fact]
     public void GeneratedCode_DoesNotIntroduceNullableWarnings_WhenConsumerEnablesNullable()
     {
@@ -86,5 +106,60 @@ public class PayloadNullabilityGuardTests
         generatedText.Should().Contain(
             "Delimited<string?>(n, ',')",
             "可空元素类型必须以带标注的实参渲染，否则返回的 List<string> 与属性 List<string?> 可空性不匹配");
+    }
+
+    /// <summary>
+    /// 嵌套形态的可空性卫生（v2.5 / T6 / R3）：<c>Object&lt;…NestedChoice?&gt;</c> 与
+    /// <c>ItemsObject&lt;…NestedChoice?&gt;</c> 的泛型实参必须保留可空标注（G-ADR-16），
+    /// 且强转的静态成员访问<b>不含</b> <c>?</c>（<c>Foo?.PayloadFieldMap</c> 是条件访问语法错误）。
+    /// </summary>
+    [Fact]
+    public void NestedObject_DoesNotIntroduceNullableWarnings_AndRendersAnnotatedTypeArguments()
+    {
+        var parseOptions = new CSharpParseOptions(LanguageVersion.Latest);
+        var compilation = CSharpCompilation.Create(
+            "PayloadNullabilityGuard",
+            new[] { CSharpSyntaxTree.ParseText(PayloadTestData.Source(NullableNestedPayload), parseOptions) },
+            BasicReferenceAssemblies.GetReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var buildProperties = new Dictionary<string, string> { ["build_property.Nullable"] = "enable" };
+        var driver = CSharpGeneratorDriver.Create(
+            new[] { new PayloadFieldMapGenerator().AsSourceGenerator() },
+            additionalTexts: null,
+            parseOptions: parseOptions,
+            optionsProvider: new TestAnalyzerConfigOptionsProvider(buildProperties));
+
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var diagnostics);
+
+        diagnostics.Should().BeEmpty("本用例的载荷声明本身合法，生成器不应报告任何诊断");
+
+        var baseline = compilation.GetDiagnostics()
+            .Select(d => d.Id + "|" + d.GetMessage())
+            .ToHashSet();
+
+        var introduced = output.GetDiagnostics()
+            .Where(d => d.Severity == DiagnosticSeverity.Warning || d.Severity == DiagnosticSeverity.Error)
+            .Where(d => !baseline.Contains(d.Id + "|" + d.GetMessage()))
+            .Select(d => d.Id + ": " + d.GetMessage())
+            .ToArray();
+
+        introduced.Should().BeEmpty(
+            "嵌套生成代码必须自带正确的可空性，不得把 CS8619/CS8600 泄漏到消费方构建；新增：" +
+            string.Join(" | ", introduced));
+
+        var generatedText = string.Join("\n", output.SyntaxTrees.Skip(1).Select(tree => tree.ToString()));
+
+        generatedText.Should().Contain(
+            "Object<global::PayloadTests.NestedChoice>",
+            "单对象嵌套的泛型实参不含 ?（可空实参违反 class 约束 ⇒ CS8634；可空性由方法返回类型 TSingle? 承载）");
+
+        generatedText.Should().Contain(
+            "ItemsObject<global::PayloadTests.NestedChoice?>",
+            "对象列表嵌套的泛型实参必须保留可空标注（G-ADR-16 / R3；探针以 class? 约束接受）");
+
+        generatedText.Should().Contain(
+            "(global::Mud.HttpUtils.Payloads.IPayloadContractAccessor)global::PayloadTests.NestedChoice.PayloadFieldMap",
+            "强转的静态成员访问不得带 ?（GeneratedTypeFormat 的 ? 只用于泛型实参）");
     }
 }

@@ -7,7 +7,7 @@
 ## 未发布（载荷字段映射生成器，2026-10-02）
 
 > 主题：新增**第 4 个生成器族** `PayloadFieldMapGenerator` —— 为「外部报文 → 强类型载荷」生成字段映射委托表。
-> 设计文档：`.docs/PayloadFieldMapGenerator-详细设计-v1.md`（**v2.4**，含验证结论与修正总表）。
+> 设计文档：`.docs/PayloadFieldMapGenerator-详细设计-v1.md`（**v2.5**，含验证结论与修正总表）。
 
 #### 新增（Added）
 
@@ -182,6 +182,34 @@
 - ~~「上游无 XML 依赖」机器化守卫测试~~：**已于 v2.1 实施**（见上「补强（v2.1 收口）」）。
 - 「新增告警数纳入门禁」：本轮缺陷 8（`#pragma` 抑制失效）说明「抑制注释写了但没生效」无任何测试可感知，
   建议后续把「生成器工程 Rebuild 的新增告警数」纳入 CI（列为候选，需先建立基线清单）。
+
+#### 补强（v2.5 — 嵌套对象递归 Bind，G-ADR-17）
+
+> 按《`.docs/PayloadFieldMapGenerator-嵌套对象递归Bind改造方案-v2.md`》实施（三维评审 + 6 处逻辑链修正 + 6 项测试补齐），
+> 设计文档同步升级 **v2.5**（§0.9 增补总表）。落地口径：**项目未发布，无兼容负担，一步到位**。
+
+- **新增**：`PayloadFieldFormat` 增加两形态——`Object = 5`（单对象嵌套：`TSingle?`，`TSingle` 标注
+  `[PayloadContract]`；节点缺失 ⇒ `null`）与 `ItemsObject = 6`（契约化对象项：`List<TNested>` + `ItemName`；
+  节点缺失 ⇒ 空列表）。生成器对两形态**递归引用内层类型的 `PayloadFieldMap`**（经既有非泛型桥
+  `IPayloadContractAccessor.CreateInstance/Bind`，运行时**零改动**），消除消费方 `Method` 逃生舱手写遍历的
+  「元素名字符串零编译器防护」整类故障面（如微信回调的 `ScanCodeInfo` / `SelectedItems/SelectedItem` /
+  `ApprovalNodes/ApprovalNode` 三层嵌套）。`PublicAPI.Unshipped.txt` 已登记两个枚举成员。
+- **收紧（行为变更）**：`List<非契约复杂类型> + ItemName` 在 v2.4 会生成 `Items<T>` 调用（编译通过、
+  运行期静默产出空结果——「项取 child.Value 文本」语义对对象元素必然失败），v2.5 起报 `PAYLOAD007`
+  （提示三种出路：改标量 / 给元素类型标注 `[PayloadContract]` / 改用 `Method`）。
+- **生成物卫生（沿用 G-ADR-15 口径）**：① `Object` 形态要求属性为可空（或 oblivious）引用类型，
+  否则 `PAYLOAD007`（值类型实参会让生成物报 `CS0311`、非空引用类型泄漏 `CS8600`）；
+  ② `Object` 泛型实参**不含** `?`（可空实参违反消费方 `class` 约束 ⇒ `CS8634`；可空性由方法声明的
+  返回类型 `TSingle?` 承载），强转的静态成员访问亦不含 `?`（`Foo?.PayloadFieldMap` 是条件访问语法错误）；
+  ③ `ItemsObject` 泛型实参沿用 G-ADR-16 保留 `?`（`List<T>` 可空性双向赋值均告警 `CS8619`，实测），
+  「可空元素实参 × 非可空 `class` 约束」的生成期不可调和组合报 `PAYLOAD004` 拦截。
+- **边界（G-ADR-17b 精确化）**：生成器只判内层标注、不验证 `TInner.PayloadFieldMap` 成员存在
+  （`Transform` 阶段语义模型看不到生成源，验证不可实现）；生成源加入最终编译 ⇒ **同工程嵌套可编译**
+  （跨工程非必要条件）；成员缺失由消费方编译期 `CS0117` 暴露（触发面：内层契约自身构建失败 / 内层生成器被禁用）。
+- **不做**：循环引用、多态子类型分派、同一属性多分支可选布局（官方报文无此形态，避免抓通用对象图）。
+- **测试**：Generator 测试从 985 增至 **999 个**（14 个净新增：2 快照 + 1 同编译双文件正向对照 +
+  1 可空性卫生守卫 + 10 诊断/推断用例），含「同工程内层 + 外层」端到端编译性用例与
+  C# 7.3 oblivious 嵌套基线扩展。
 
 ---
 

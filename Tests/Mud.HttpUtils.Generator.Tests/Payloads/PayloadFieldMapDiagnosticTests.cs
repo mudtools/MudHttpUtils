@@ -36,15 +36,28 @@ public class PayloadFieldMapDiagnosticTests
         return (diagnostics, output.SyntaxTrees.Count() - 1);
     }
 
-    private static void AssertSingleError(string payloadDeclaration, string expectedId)
+    private static void AssertSingleError(
+        string payloadDeclaration,
+        string expectedId,
+        int otherGeneratedFiles = 0,
+        string? messageFragment = null)
     {
         var (diagnostics, generatedTreeCount) = RunGenerator(payloadDeclaration);
 
         diagnostics.Should().ContainSingle(
             "用例应恰好报告一条诊断，实际：" + string.Join(" | ", diagnostics.Select(d => d.Id + " " + d.GetMessage())));
         diagnostics[0].Id.Should().Be(expectedId);
+
+        // messageFragment 为空时断言退化为恒真，保持无 if 的断言形态（I-21）；失败时带出全文便于定位。
+        var actualMessage = diagnostics[0].GetMessage();
+        (messageFragment == null || actualMessage.Contains(messageFragment, System.StringComparison.Ordinal))
+            .Should().BeTrue("诊断文案必须指向可操作的修复信息，实际文案：" + actualMessage);
+
         diagnostics[0].Severity.Should().Be(DiagnosticSeverity.Error);
-        generatedTreeCount.Should().Be(0, "存在 Error 诊断时不得产出生成文件（避免半成品）");
+
+        // otherGeneratedFiles：同源内其它**合法**契约的产出数（如嵌套用例的内层契约）——
+        // 「有错不产出」只约束报错的那一个契约，不牵连其它契约的生成。
+        generatedTreeCount.Should().Be(otherGeneratedFiles, "存在 Error 诊断的契约不得产出生成文件（避免半成品）");
     }
 
     /// <summary>
@@ -58,7 +71,11 @@ public class PayloadFieldMapDiagnosticTests
     /// 「零诊断 + 静默产出无法编译或带告警的代码」这一类缺陷（v2.4 的 <c>@</c> 关键字标识符、
     /// 继承同名成员的 <c>CS0108</c> 就是这样被捕获的）。
     /// </remarks>
-    private static string AssertProducesCompilableOutput(string payloadDeclaration, string? nullableProperty = "enable")
+    /// <param name="payloadDeclaration">载荷声明块（拼在 <see cref="PayloadTestData.Source"/> 之后）。</param>
+    /// <param name="nullableProperty"><c>build_property.Nullable</c> 的值。</param>
+    /// <param name="expectedFiles">期望的生成文件数（同源多契约时大于 1，如嵌套用例的内层 + 外层）。</param>
+    /// <returns>生成文件全文（供调用方正向钉住关键渲染片段，防用例空转）。</returns>
+    private static string AssertProducesCompilableOutput(string payloadDeclaration, string? nullableProperty = "enable", int expectedFiles = 1)
     {
         var parseOptions = new CSharpParseOptions(LanguageVersion.Latest);
         var compilation = CSharpCompilation.Create(
@@ -81,7 +98,7 @@ public class PayloadFieldMapDiagnosticTests
 
         diagnostics.Should().BeEmpty(
             "正向对照用例的输入必须合法，实际：" + string.Join(" | ", diagnostics.Select(d => d.Id + " " + d.GetMessage())));
-        (output.SyntaxTrees.Count() - 1).Should().Be(1, "合法载荷必须产出恰一个映射表文件");
+        (output.SyntaxTrees.Count() - 1).Should().Be(expectedFiles, "合法载荷必须产出期望个数的映射表文件");
 
         var baseline = compilation.GetDiagnostics().Select(d => d.Id + "|" + d.GetMessage()).ToHashSet();
         var introduced = output.GetDiagnostics()
@@ -864,4 +881,225 @@ public class PayloadFieldMapDiagnosticTests
 
         generated.Should().Contain("ObliviousConverter.Text(n)", "oblivious 首参不得被误判为「缺可空标注」");
     }
+
+    // —— v2.5 新增：嵌套对象递归 Bind（Object / ItemsObject，G-ADR-17）——
+
+    /// <summary>
+    /// 正向对照（v2.5 / T1）：内层与外层契约**同源同编译**时，外层生成物对
+    /// <c>NestedScanCode.PayloadFieldMap</c> 的交叉引用可编译（生成源加入最终编译，
+    /// 跨工程并非必要条件 —— G-ADR-17b），且生成物零新增错误/告警。
+    /// </summary>
+    [Fact]
+    public void SameCompilationNestedContracts_ProduceTwoCompilableFiles()
+    {
+        var generated = AssertProducesCompilableOutput(PayloadTestData.NestedObjectPayload, expectedFiles: 2);
+
+        generated.Should().Contain(
+            "global::PayloadTests.NestedScanCode.PayloadFieldMap",
+            "外层生成物必须引用内层契约的 PayloadFieldMap（同编译交叉引用）");
+
+        generated.Should().Contain(
+            "Object<global::PayloadTests.NestedScanCode>(n, (global::Mud.HttpUtils.Payloads.IPayloadContractAccessor)global::PayloadTests.NestedScanCode.PayloadFieldMap)",
+            "Object 形态的完整渲染：泛型实参不含 ?（可空实参会违反 class 约束 ⇒ CS8634，可空性由方法返回类型 TSingle? 承载），强转访问不含 ?");
+    }
+
+    /// <summary>推断（v2.5）：引用类型 + 带 <c>[PayloadContract]</c> ⇒ <c>Object</c> 的完整链路由上一用例正向钉住；
+    /// 此处钉住其可空形态渲染（<c>TSingle?</c> 实参进指纹，G-ADR-16 / R3）。</summary>
+    [Fact]
+    public void InferredObjectFormat_RendersNullableTypeArgument()
+    {
+        var generated = AssertProducesCompilableOutput(PayloadTestData.NestedItemsObjectPayload, expectedFiles: 2);
+
+        generated.Should().Contain(
+            "ItemsObject<global::PayloadTests.NestedSelectedItem>(n, \"SelectedItem\", (global::Mud.HttpUtils.Payloads.IPayloadContractAccessor)global::PayloadTests.NestedSelectedItem.PayloadFieldMap)",
+            "ItemsObject 形态的完整渲染：元素名 + 内层映射表强转");
+
+        generated.Should().Contain(
+            "Items<string>(n, \"OptionId\")",
+            "内层的标量嵌套项仍走既有 Items 能力（嵌套组合不新增机制）");
+    }
+
+    /// <summary>收紧（v2.5 / T4 行为变更钉）：List&lt;非契约复杂类型&gt; + ItemName 在 v2.4 会生成 Items&lt;T&gt;
+    /// （编译通过、运行期静默空结果），v2.5 起报 PAYLOAD007。</summary>
+    [Fact]
+    public void NonContractListWithItemName_ReportsPayload007() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            public sealed class PlainItem
+            {
+                public string? Name { get; set; }
+            }
+
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class NonContractItemsPayload
+            {
+                [PayloadField("Items", ItemName = "Item")] public List<PlainItem> Items { get; set; } = new List<PlainItem>();
+            }
+        }
+        """, "PAYLOAD007", messageFragment: "既非标量、也未标注 [PayloadContract]");
+
+    /// <summary>推断（v2.5）：非契约单对象引用类型仍报 PAYLOAD007（Object 推断只认内层契约）。</summary>
+    [Fact]
+    public void NonContractSingleObject_ReportsPayload007() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            public sealed class PlainItem
+            {
+                public string? Name { get; set; }
+            }
+
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class NonContractSinglePayload
+            {
+                [PayloadField("Nested")] public PlainItem Nested { get; set; }
+            }
+        }
+        """, "PAYLOAD007");
+
+    /// <summary>声明（v2.5）：ItemsObject 缺 ItemName ⇒ PAYLOAD006。</summary>
+    [Fact]
+    public void ItemsObjectWithoutItemName_ReportsPayload006() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            public sealed class PlainItem
+            {
+                public string? Name { get; set; }
+            }
+
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class MissingItemNamePayload
+            {
+                [PayloadField("Items", Format = PayloadFieldFormat.ItemsObject)]
+                public List<PlainItem> Items { get; set; } = new List<PlainItem>();
+            }
+        }
+        """, "PAYLOAD006");
+
+    /// <summary>声明（v2.5）：Object 带 ItemName ⇒ PAYLOAD006（单对象形态无嵌套项）。</summary>
+    [Fact]
+    public void ObjectWithItemName_ReportsPayload006() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            public sealed class PlainItem
+            {
+                public string? Name { get; set; }
+            }
+
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class ObjectWithItemNamePayload
+            {
+                [PayloadField("Nested", Format = PayloadFieldFormat.Object, ItemName = "Item")]
+                public PlainItem? Nested { get; set; }
+            }
+        }
+        """, "PAYLOAD006");
+
+    /// <summary>签名契约（v2.5 / T3）：Converter 缺 Object 方法 ⇒ PAYLOAD004；内层契约合法 ⇒ 产出 1 个文件
+    /// （「有错不产出」只约束报错契约）。</summary>
+    [Fact]
+    public void MissingObjectConverterMethod_ReportsPayload004() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            public static class PartialConverter
+            {
+                public static string? Text(PayloadNode? node) => node?.Value;
+            }
+
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class NestedScanCode
+            {
+                [PayloadField("ScanType")] public string? ScanType { get; set; }
+            }
+
+            [PayloadContract(Converter = typeof(PartialConverter))]
+            public sealed partial class MissingMethodPayload
+            {
+                [PayloadField("ScanCodeInfo")] public NestedScanCode? ScanCodeInfo { get; set; }
+            }
+        }
+        """, "PAYLOAD004", otherGeneratedFiles: 1);
+
+    /// <summary>签名契约（v2.5 / T3 + G2）：Object 次参非 IPayloadContractAccessor ⇒ PAYLOAD004，
+    /// 且文案指向正确形参（而非「其余形参必须是 string」的兜底）。</summary>
+    [Fact]
+    public void ObjectAccessorParameterTypeMismatch_ReportsPayload004() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            public sealed class PlainItem
+            {
+                public string? Name { get; set; }
+            }
+
+            public static class BadAccessorConverter
+            {
+                public static TSingle? Object<TSingle>(PayloadNode? node, string accessor) where TSingle : class => null;
+            }
+
+            [PayloadContract(Converter = typeof(BadAccessorConverter))]
+            public sealed partial class BadAccessorPayload
+            {
+                [PayloadField("Nested", Format = PayloadFieldFormat.Object)] public PlainItem? Nested { get; set; }
+            }
+        }
+        """, "PAYLOAD004", messageFragment: "次参必须是 Mud.HttpUtils.Payloads.IPayloadContractAccessor");
+
+    /// <summary>属性形态（v2.5 / T2 + G1）：显式 Format = Object 配值类型 ⇒ PAYLOAD007
+    /// （否则 Object&lt;T&gt; where T : class 的值类型实参让生成物报 CS0311）。</summary>
+    [Fact]
+    public void ExplicitObjectOnValueType_ReportsPayload007() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class ObjectOnValueTypePayload
+            {
+                [PayloadField("Count", Format = PayloadFieldFormat.Object)] public int? Count { get; set; }
+            }
+        }
+        """, "PAYLOAD007");
+
+    /// <summary>属性形态（v2.5 / T2 + G1）：显式 Format = Object 配非可空引用类型（nullable 已启用）⇒ PAYLOAD007
+    /// （「元素缺失 ⇒ null」要求属性可空，否则生成物泄漏 CS8600）。</summary>
+    [Fact]
+    public void ExplicitObjectOnNonNullableReference_ReportsPayload007() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            public sealed class PlainItem
+            {
+                public string? Name { get; set; }
+            }
+
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class ObjectOnNonNullablePayload
+            {
+                [PayloadField("Nested", Format = PayloadFieldFormat.Object)] public PlainItem Nested { get; set; }
+            }
+        }
+        """, "PAYLOAD007");
+
+    /// <summary>签名契约（v2.5 / 不可调和组合拦截）：ItemsObject 以非可空 class 约束声明 + 属性为
+    /// List&lt;TItem?&gt; 可空元素 ⇒ PAYLOAD004（带标注实参违反约束 ⇒ CS8634；去标注 ⇒ 返回值与属性
+    /// CS8619 —— 两种渲染都泄漏告警，按 G-ADR-15 生成期拦截）；内层契约合法 ⇒ 产出 1 个文件。</summary>
+    [Fact]
+    public void ItemsObjectNullableElementWithPlainClassConstraint_ReportsPayload004() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            public static class NonNullableConstrainedConverter
+            {
+                public static List<TItem> ItemsObject<TItem>(PayloadNode? node, string itemName, IPayloadContractAccessor itemAccessor)
+                    where TItem : class => new List<TItem>();
+            }
+
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class NullableChoice
+            {
+                [PayloadField("Label")] public string? Label { get; set; }
+            }
+
+            [PayloadContract(Converter = typeof(NonNullableConstrainedConverter))]
+            public sealed partial class UnreconcilableNullablePayload
+            {
+                [PayloadField("Choices", ItemName = "Choice")] public List<NullableChoice?> Choices { get; set; } = new List<NullableChoice?>();
+            }
+        }
+        """, "PAYLOAD004", otherGeneratedFiles: 1, messageFragment: "CS8634");
 }

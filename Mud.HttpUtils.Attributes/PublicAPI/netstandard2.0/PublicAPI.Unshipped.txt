@@ -28,3 +28,5 @@ Mud.HttpUtils.Attributes.PayloadFieldFormat.Delimited = 2 -> Mud.HttpUtils.Attri
 Mud.HttpUtils.Attributes.PayloadFieldFormat.Items = 3 -> Mud.HttpUtils.Attributes.PayloadFieldFormat
 Mud.HttpUtils.Attributes.PayloadFieldFormat.ItemsWithAttributes = 4 -> Mud.HttpUtils.Attributes.PayloadFieldFormat
 Mud.HttpUtils.Attributes.PayloadFieldFormat.Text = 1 -> Mud.HttpUtils.Attributes.PayloadFieldFormat
+Mud.HttpUtils.Attributes.PayloadFieldFormat.Object = 5 -> Mud.HttpUtils.Attributes.PayloadFieldFormat
+Mud.HttpUtils.Attributes.PayloadFieldFormat.ItemsObject = 6 -> Mud.HttpUtils.Attributes.PayloadFieldFormat
