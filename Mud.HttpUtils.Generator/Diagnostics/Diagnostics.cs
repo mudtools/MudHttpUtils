@@ -822,11 +822,16 @@ internal static class Diagnostics
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
 
-    /// <summary>PAYLOAD008：同一类型既声明手写 <c>PayloadFieldMap</c> 又标注 <c>[PayloadContract]</c>。</summary>
+    /// <summary>PAYLOAD008：生成物 <c>PayloadFieldMap</c> 与本类（CS0102）或继承链（CS0108）上的同名成员冲突。</summary>
+    /// <remarks>
+    /// v2.4 扩面：除「本类已声明同名成员」（并存 ⇒ <c>CS0102</c>）外，还覆盖
+    /// 「继承链上已有同名成员」——生成物是 <c>public static</c> 成员，会**隐藏**基类同名成员（<c>CS0108</c>），
+    /// 该告警同样会泄漏到消费方构建（<c>TreatWarningsAsErrors</c> 下即失败），且 <c>// &lt;auto-generated/&gt;</c> 不抑制。
+    /// </remarks>
     public static readonly DiagnosticDescriptor PayloadHandwrittenMapConflict = new(
         id: DiagnosticIds.PayloadHandwrittenMapConflict,
         title: "手写 PayloadFieldMap 与 [PayloadContract] 冲突",
-        messageFormat: "载荷契约类 {0} 同时声明了手写成员与 [PayloadContract]：{1}。生成物是同名 partial 成员，二者并存将导致 CS0102；迁移应在同一提交内「删除手写成员 + 添加特性」。",
+        messageFormat: "载荷契约类 {0} 与手写 PayloadFieldMap 成员冲突：{1}",
         category: "代码生成",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);

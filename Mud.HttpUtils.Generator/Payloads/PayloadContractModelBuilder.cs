@@ -143,10 +143,20 @@ internal static class PayloadContractModelBuilder
 
         var className = typeSymbol.Name;
         var typeDisplay = typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+        // ns 用于**渲染** `namespace` 声明：命名空间段为 C# 保留字时 ToDisplayString() 自带 `@` 转义
+        // （如 `namespace @class.Sub`），正是渲染所需，故此处**保持**转义。
         var ns = typeSymbol.ContainingNamespace.IsGlobalNamespace
             ? null
             : typeSymbol.ContainingNamespace.ToDisplayString();
-        var hintName = (ns == null ? string.Empty : ns + ".") + className + ".PayloadFieldMap.g.cs";
+
+        // hintName 是**文件路径**，不得含 `@`（`context.AddSource` 校验 hintName 合法性）：
+        // 直接用 ns 会让「命名空间段为保留字」的载荷抛 ArgumentException
+        // （实测报文：hintName"@class.Sub.NsPayload.PayloadFieldMap.g.cs"在位置 0 处包含无效字符"@"），
+        // 该异常被 Execute 的兜底捕获后表现为 PAYLOAD001「生成器内部错误」—— 用户无法从文案定位到命名空间，
+        // 故必须在此剥离标识符转义前缀。
+        var hintNamespace = ns?.Replace("@", string.Empty);
+        var hintName = (hintNamespace == null ? string.Empty : hintNamespace + ".") + className + ".PayloadFieldMap.g.cs";
         var typeLocation = GetLocation(typeSymbol);
         var diagnostics = new List<PayloadDiagnostic>();
 
@@ -173,7 +183,32 @@ internal static class PayloadContractModelBuilder
                 Diagnostics.PayloadHandwrittenMapConflict,
                 GetLocation(handwritten[0]),
                 className,
-                "已存在源码声明成员 " + handwritten[0].ToDisplayString()));
+                "本类已声明成员 " + handwritten[0].ToDisplayString() +
+                "。生成物是同名 partial 成员，二者并存将导致 CS0102；" +
+                "迁移应在同一提交内「删除手写成员 + 添加 [PayloadContract]」。"));
+
+            return CreateModel(ns, className, typeDisplay, hintName, null, null, null,
+                ImmutableArray<PayloadFieldModel>.Empty, diagnostics, typeLocation);
+        }
+
+        // ②' 继承链上的同名成员（v2.4，PAYLOAD008 扩面）：生成物是 public static 成员，
+        //     会**隐藏**基类同名成员 ⇒ 消费方收到 CS0108（开启 TreatWarningsAsErrors 即构建失败；
+        //     实测「零诊断 + 1 个生成文件 + CS0108 告警泄漏到消费方」）。与本类同名成员同源（G-ADR-15）。
+        var inheritedMapMember = FindInheritedMember(typeSymbol, GeneratedMemberName);
+        if (inheritedMapMember != null)
+        {
+            var inheritedLocation = GetLocation(inheritedMapMember);
+            if (inheritedLocation == Location.None)
+                inheritedLocation = typeLocation;
+
+            diagnostics.Add(new PayloadDiagnostic(
+                Diagnostics.PayloadHandwrittenMapConflict,
+                inheritedLocation,
+                className,
+                "基类 " + inheritedMapMember.ContainingType.ToDisplayString() + " 已声明同名成员 " +
+                inheritedMapMember.ToDisplayString() +
+                "。生成物是同名 public static 成员，会隐藏继承成员（CS0108）⇒ " +
+                "请重命名或移除基类成员，或对该类型改用手写映射表（不标注 [PayloadContract]）。"));
 
             return CreateModel(ns, className, typeDisplay, hintName, null, null, null,
                 ImmutableArray<PayloadFieldModel>.Empty, diagnostics, typeLocation);
@@ -451,8 +486,8 @@ internal static class PayloadContractModelBuilder
             ? 4
             : (string.Equals(effectiveFormat, TextFormatName, StringComparison.Ordinal) ? 1 : 2);
 
-        var method = FindContractMethod(converterType, helperName, parameterCount, typeArguments.Length);
-        if (method == null)
+        var candidates = FindContractMethods(converterType, helperName, parameterCount, typeArguments.Length);
+        if (candidates.Length == 0)
         {
             detail = "转换器 " + converterType.Name + " 上未找到契约要求的静态方法 " + helperName +
                      "（形参个数 " + parameterCount +
@@ -460,18 +495,38 @@ internal static class PayloadContractModelBuilder
             return ResolutionFailure.MethodNotFound;
         }
 
-        // 形参「个数」已由 FindContractMethod 校验，此处补齐**类型**校验：契约签名恒以
-        // PayloadNode 为首参（Delimited 次参 char、Items/ItemsWithAttributes 次参 string…），
+        // 形参「个数 / 泛型元数」已由 FindContractMethods 筛出候选，此处补齐**类型 + 可空标注**校验：
+        // 契约签名恒以 PayloadNode 为首参（Delimited 次参 char、Items/ItemsWithAttributes 次参 string…），
         // 否则生成物会在消费方编译期报 CS1503（错误指向生成文件）。
-        if (!HasContractParameterTypes(method, helperName))
+        //
+        // **必须遍历全部候选**：同名重载并存时（如 Delimited<T>(string, char) 与 Delimited<T>(PayloadNode?, char)），
+        // GetMembers 的返回顺序不保证契约签名在前 —— 只看首个候选会误报 PAYLOAD004（实测）。
+        IMethodSymbol? method = null;
+        var anyTypeConforming = false;
+        for (var i = 0; i < candidates.Length; i++)
         {
-            detail = "转换器 " + converterType.Name + " 的 " + helperName + " 形参类型不符合契约签名：" +
-                     "首参必须是 " + PayloadNodeMetadataName +
-                     (string.Equals(helperName, DelimitedMethodName, StringComparison.Ordinal)
-                         ? "、次参必须是 char。"
-                         : (string.Equals(helperName, TextMethodName, StringComparison.Ordinal)
-                             ? "。"
-                             : "、其余形参必须是 string。"));
+            if (!HasContractParameterTypes(candidates[i], helperName))
+                continue;
+
+            anyTypeConforming = true;
+            if (HasNullableNodeParameter(candidates[i]))
+            {
+                method = candidates[i];
+                break;
+            }
+        }
+
+        if (method == null)
+        {
+            detail = anyTypeConforming
+                ? NullableFirstParameterDetail(converterType, helperName)
+                : "转换器 " + converterType.Name + " 的 " + helperName + " 形参类型不符合契约签名：" +
+                  "首参必须是 " + PayloadNodeMetadataName +
+                  (string.Equals(helperName, DelimitedMethodName, StringComparison.Ordinal)
+                      ? "、次参必须是 char。"
+                      : (string.Equals(helperName, TextMethodName, StringComparison.Ordinal)
+                          ? "。"
+                          : "、其余形参必须是 string。"));
             return ResolutionFailure.MethodNotFound;
         }
 
@@ -630,6 +685,8 @@ internal static class PayloadContractModelBuilder
         detail = null;
 
         // 首参为 PayloadNode 的重载优先（可拿节点结构）；否则退到 string 重载（只拿标量文本）。
+        // 同级内**必须**优先取「首参带可空标注」的重载：非可空标注会让生成物在 nullable 启用的
+        // 消费工程里报 CS8604（生成物传入的是可能为 null 的 n / n?.Value），详见 HasNullableNodeParameter。
         // CA1508 误报抑制：分析器无法透过 IsPayloadNode 辅助方法推断「第一参数类型命中」这一分支，
         // 因而误判 nodeParameterOverload 恒为 null、resolved == null 恒真。该分支的实际可达性由
         // PayloadFieldMapGeneratorTests.AllFormatsPayload_Snapshot（两种首参重载各一）与
@@ -637,6 +694,8 @@ internal static class PayloadContractModelBuilder
 #pragma warning disable CA1508
         IMethodSymbol? nodeParameterOverload = null;
         IMethodSymbol? textParameterOverload = null;
+        IMethodSymbol? nonNullableNodeOverload = null;
+        IMethodSymbol? nonNullableTextOverload = null;
         var anyNamedMember = false;
 
         foreach (var member in converterType.GetMembers(methodName))
@@ -650,14 +709,34 @@ internal static class PayloadContractModelBuilder
                 continue;
 
             var firstParameter = method.Parameters[0].Type;
+            var nullableAnnotated = HasNullableNodeParameter(method);
+
             if (IsPayloadNode(firstParameter))
             {
-                nodeParameterOverload = method;
-                break;
+                if (nullableAnnotated)
+                {
+                    nodeParameterOverload = method;
+                    break;
+                }
+
+                if (nonNullableNodeOverload == null)
+                    nonNullableNodeOverload = method;
+
+                continue;
             }
 
-            if (firstParameter.SpecialType == SpecialType.System_String && textParameterOverload == null)
-                textParameterOverload = method;
+            if (firstParameter.SpecialType == SpecialType.System_String)
+            {
+                if (nullableAnnotated)
+                {
+                    if (textParameterOverload == null)
+                        textParameterOverload = method;
+                }
+                else if (nonNullableTextOverload == null)
+                {
+                    nonNullableTextOverload = method;
+                }
+            }
         }
 
         var resolved = nodeParameterOverload ?? textParameterOverload;
@@ -666,10 +745,12 @@ internal static class PayloadContractModelBuilder
         // 而非 resolved 赋值之后 —— 否则抑制区间不覆盖告警行，构建仍报 CA1508。
         if (resolved == null)
         {
-            detail = anyNamedMember
-                ? "转换器 " + converterType.Name + " 上的方法 " + methodName +
-                  " 签名不符合契约：须为 static、非泛型、恰有一个首参为 PayloadNode 或 string 的参数。"
-                : "转换器 " + converterType.Name + " 上不存在方法 " + methodName + "。";
+            detail = nonNullableNodeOverload != null || nonNullableTextOverload != null
+                ? NullableFirstParameterDetail(converterType, methodName)
+                : (anyNamedMember
+                    ? "转换器 " + converterType.Name + " 上的方法 " + methodName +
+                      " 签名不符合契约：须为 static、非泛型、恰有一个首参为 PayloadNode 或 string 的参数。"
+                    : "转换器 " + converterType.Name + " 上不存在方法 " + methodName + "。");
             return ResolutionFailure.MethodNotFound;
         }
 #pragma warning restore CA1508
@@ -739,12 +820,22 @@ internal static class PayloadContractModelBuilder
         return call.ToString();
     }
 
-    private static IMethodSymbol? FindContractMethod(
+    /// <summary>
+    /// 收集<b>结构匹配</b>的契约方法候选（名称 + <c>static</c> + 形参个数 + 泛型元数）。
+    /// </summary>
+    /// <remarks>
+    /// 返回<b>全部</b>候选而非首个：同名重载并存时（<c>Delimited&lt;T&gt;(string, char)</c> 与
+    /// <c>Delimited&lt;T&gt;(PayloadNode?, char)</c>），<c>GetMembers</c> 的顺序不保证契约签名在前，
+    /// 取首个会误报 <c>PAYLOAD004</c>（实测）。形参类型由调用方用 <see cref="HasContractParameterTypes"/> 筛选。
+    /// </remarks>
+    private static ImmutableArray<IMethodSymbol> FindContractMethods(
         INamedTypeSymbol converterType,
         string methodName,
         int parameterCount,
         int typeArgumentCount)
     {
+        var builder = ImmutableArray.CreateBuilder<IMethodSymbol>();
+
         foreach (var member in converterType.GetMembers(methodName))
         {
             if (member is not IMethodSymbol method)
@@ -756,11 +847,38 @@ internal static class PayloadContractModelBuilder
             if (method.TypeParameters.Length != typeArgumentCount)
                 continue;
 
-            return method;
+            builder.Add(method);
         }
 
-        return null;
+        return builder.ToImmutable();
     }
+
+    /// <summary>
+    /// 契约方法的首参是否<b>带可空标注</b>（<c>PayloadNode?</c> / <c>string?</c>）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 生成物交给转换器的是<b>可能为 null</b> 的值：辅助方法路径传形参 <c>n</c>（声明类型
+    /// <c>PayloadNode?</c>，如元素缺失即为 <see langword="null"/>），<c>Method</c> 路径传 <c>n?.Value</c>
+    /// （<c>string?</c>）。若首参被标注为<b>非可空</b>（<c>NullableAnnotation.NotAnnotated</c>），
+    /// <c>Nullable=enable</c> 的消费工程会在<b>生成文件</b>里收到 <c>CS8604</c>
+    /// （可能传入 null 引用实参；<c>// &lt;auto-generated/&gt;</c> <b>不</b>抑制该告警，
+    /// <c>TreatWarningsAsErrors</c> 下即构建失败）⇒ 与 G-ADR-15 同源，改为生成期拦截。
+    /// </para>
+    /// <para>
+    /// <b>未标注（oblivious）仍接受</b>：<c>NullableAnnotation.None</c> 只在 nullable 未启用的声明处出现，
+    /// 此时生成文件同样处于 oblivious 上下文、不会有该告警；若强行要求 <c>?</c> 反而会给消费方引入 <c>CS8632</c>。
+    /// </para>
+    /// </remarks>
+    private static bool HasNullableNodeParameter(IMethodSymbol method) =>
+        method.Parameters.Length > 0
+        && method.Parameters[0].Type.NullableAnnotation != NullableAnnotation.NotAnnotated;
+
+    /// <summary>「首参缺可空标注」的统一诊断文案（辅助方法与 <c>Method</c> 两条路径共用）。</summary>
+    private static string NullableFirstParameterDetail(INamedTypeSymbol converterType, string methodName) =>
+        "转换器 " + converterType.Name + " 的方法 " + methodName +
+        " 首参必须带可空标注（" + PayloadNodeMetadataName + "? 或 string?）：元素缺失时生成物传入的正是 null，" +
+        "非可空标注会让 nullable 启用的消费工程在生成文件里收到 CS8604（自动生成头不抑制该告警）。";
 
     private static IMethodSymbol? TryConstruct(IMethodSymbol method, ImmutableArray<ITypeSymbol> typeArguments)
     {
@@ -1082,6 +1200,31 @@ internal static class PayloadContractModelBuilder
             {
                 if (member is IPropertySymbol property && FindFieldAttribute(property) != null)
                     return baseType;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 在继承链（不含自身，含元数据类型）上查找指定名称的成员。
+    /// </summary>
+    /// <remarks>
+    /// 用于 <c>PAYLOAD008</c> 的「继承同名成员」判定：生成物是 <c>public static</c> 成员，
+    /// 基类（含引用程序集里的基类）已有同名成员时会**隐藏**它 ⇒ 消费方收到 <c>CS0108</c>。
+    /// 此处不过滤 <c>DeclaringSyntaxReferences</c>（元数据成员没有语法引用，但同样会触发 CS0108）。
+    /// </remarks>
+    private static ISymbol? FindInheritedMember(INamedTypeSymbol typeSymbol, string memberName)
+    {
+        for (var baseType = typeSymbol.BaseType; baseType != null; baseType = baseType.BaseType)
+        {
+            if (baseType.SpecialType == SpecialType.System_Object)
+                break;
+
+            foreach (var member in baseType.GetMembers(memberName))
+            {
+                if (!member.IsImplicitlyDeclared)
+                    return member;
             }
         }
 

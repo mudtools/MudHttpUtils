@@ -34,6 +34,20 @@ internal static class PayloadFieldMapRenderer
     private const string PayloadsNamespace = "global::Mud.HttpUtils.Payloads.";
 
     /// <summary>
+    /// 把标识符渲染为「可安全写进生成文件」的形式：C# 保留字（<c>class</c> / <c>event</c> / <c>string</c> …）
+    /// 需补 <c>@</c> 前缀。
+    /// </summary>
+    /// <remarks>
+    /// <b>为什么必需</b>：消费方可以把类名 / 属性名写成 <c>@class</c> / <c>@event</c>（XML 载荷里
+    /// <c>event</c>、<c>default</c>、<c>class</c> 都是常见元素名），而 <c>ISymbol.Name</c> <b>不含</b> <c>@</c>
+    /// （取到的是 <c>"event"</c>）⇒ 直接拼接会产出 <c>t.event = …</c> 或 <c>partial class class</c>，
+    /// 让**生成文件**报一堆语法错误（实测 <c>CS1001</c> / <c>CS1519</c> / <c>CS1513</c> / <c>CS0260</c>，
+    /// 且 <c>[PayloadContract]</c> 类会连带报 CS0260「缺少 partial 修饰符」这种指向错误位置的失败）。
+    /// </remarks>
+    private static string EscapeIdentifier(string identifier) =>
+        SyntaxFacts.GetKeywordKind(identifier) != SyntaxKind.None ? "@" + identifier : identifier;
+
+    /// <summary>
     /// 渲染生成代码。
     /// </summary>
     /// <param name="model">已解析的契约模型（保证无 Error 诊断）。</param>
@@ -48,11 +62,13 @@ internal static class PayloadFieldMapRenderer
         var indent = model.Namespace == null ? string.Empty : "    ";
         if (model.Namespace != null)
         {
+            // 注意：Namespace 来自 INamespaceSymbol.ToDisplayString()，**已**自带保留字 `@` 转义
+            // （如 `@class.Sub`），此处**不得**再调 EscapeIdentifier（会得到 `@@class`）。
             sb.Append("namespace ").Append(model.Namespace).Append('\n');
             sb.Append("{\n");
         }
 
-        sb.Append(indent).Append("partial class ").Append(model.TypeName).Append('\n');
+        sb.Append(indent).Append("partial class ").Append(EscapeIdentifier(model.TypeName)).Append('\n');
         sb.Append(indent).Append("{\n");
 
         var memberIndent = indent + "    ";
@@ -100,7 +116,7 @@ internal static class PayloadFieldMapRenderer
                 var field = model.Fields[i];
                 sb.Append(bodyIndent).Append("    ")
                     .Append(".Map(\"").Append(StringEscapeHelper.EscapeString(field.Element))
-                    .Append("\", (t, n) => { t.").Append(field.PropertyName)
+                    .Append("\", (t, n) => { t.").Append(EscapeIdentifier(field.PropertyName))
                     .Append(" = ").Append(field.ResolvedCall).Append("; })")
                     .Append(i == model.Fields.Length - 1 ? ";\n" : "\n");
             }
