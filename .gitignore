@@ -94,6 +94,8 @@
 /Demos/AotPackageRefDemo/obj
 /Demos/AotFullTrimVerificationDemo/bin
 /Demos/AotFullTrimVerificationDemo/obj
+/Demos/PayloadDemo/bin
+/Demos/PayloadDemo/obj
 /Tools/Mud.HttpUtils.JsonContextScaffolder/bin
 /Tools/Mud.HttpUtils.JsonContextScaffolder/obj
 /Tools/bin

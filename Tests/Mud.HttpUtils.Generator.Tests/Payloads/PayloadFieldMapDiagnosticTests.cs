@@ -1102,4 +1102,75 @@ public class PayloadFieldMapDiagnosticTests
             }
         }
         """, "PAYLOAD004", otherGeneratedFiles: 1, messageFragment: "CS8634");
+
+    /// <summary>推断（v2.5 回归钉，方案 §5 推断行）：List&lt;long&gt; + ItemName 仍推断为既有 Items 形态
+    /// —— v2.5 收紧只对「既非标量、也非 [PayloadContract]」报 PAYLOAD007，不得误伤标量项。</summary>
+    [Fact]
+    public void ScalarListWithItemName_StillInfersItems()
+    {
+        var generated = AssertProducesCompilableOutput("""
+            namespace PayloadTests
+            {
+                [PayloadContract(Converter = typeof(PayloadConverter))]
+                public sealed partial class ScalarItemsPayload
+                {
+                    [PayloadField("Ids", ItemName = "Id")] public List<long> Ids { get; set; } = new List<long>();
+                }
+            }
+            """);
+
+        generated.Should().Contain(
+            "Items<long>(n, \"Id\")",
+            "标量元素 + ItemName 必须仍走既有 Items 能力（收紧只针对非标量且非契约的元素类型）");
+    }
+
+    /// <summary>签名契约（v2.5 / T3）：Converter 缺 ItemsObject 方法 ⇒ PAYLOAD004；内层契约合法 ⇒ 产出 1 个文件
+    /// （「有错不产出」只约束报错契约）。</summary>
+    [Fact]
+    public void MissingItemsObjectConverterMethod_ReportsPayload004() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            public static class PartialConverter
+            {
+                public static string? Text(PayloadNode? node) => node?.Value;
+            }
+
+            [PayloadContract(Converter = typeof(PayloadConverter))]
+            public sealed partial class NestedChoice
+            {
+                [PayloadField("Label")] public string? Label { get; set; }
+            }
+
+            [PayloadContract(Converter = typeof(PartialConverter))]
+            public sealed partial class MissingItemsObjectPayload
+            {
+                [PayloadField("Choices", ItemName = "Choice")] public List<NestedChoice> Choices { get; set; } = new List<NestedChoice>();
+            }
+        }
+        """, "PAYLOAD004", otherGeneratedFiles: 1);
+
+    /// <summary>签名契约（v2.5 / T3 + G2）：ItemsObject 三参非 IPayloadContractAccessor ⇒ PAYLOAD004，
+    /// 且文案指向三参形参（而非「其余形参必须是 string」的错误兜底）。</summary>
+    [Fact]
+    public void ItemsObjectAccessorParameterTypeMismatch_ReportsPayload004() => AssertSingleError("""
+        namespace PayloadTests
+        {
+            public sealed class PlainItem
+            {
+                public string? Name { get; set; }
+            }
+
+            public static class BadItemsObjectConverter
+            {
+                public static List<TItem> ItemsObject<TItem>(PayloadNode? node, string itemName, string itemAccessor)
+                    where TItem : class => new List<TItem>();
+            }
+
+            [PayloadContract(Converter = typeof(BadItemsObjectConverter))]
+            public sealed partial class BadItemsObjectPayload
+            {
+                [PayloadField("Items", Format = PayloadFieldFormat.ItemsObject, ItemName = "Item")] public List<PlainItem> Items { get; set; } = new List<PlainItem>();
+            }
+        }
+        """, "PAYLOAD004", messageFragment: "三参必须是 Mud.HttpUtils.Payloads.IPayloadContractAccessor");
 }

@@ -53,7 +53,8 @@ public class PayloadFieldMapGeneratorTests
 
     /// <summary>
     /// 嵌套单对象（<c>Object</c> 形态，v2.5 / G-ADR-17）：内层契约 + 外层 <c>TSingle?</c> 字段
-    /// 生成 <c>Object&lt;…NestedScanCode?&gt;(n, (IPayloadContractAccessor)…NestedScanCode.PayloadFieldMap)</c>；
+    /// 生成 <c>Object&lt;…NestedScanCode&gt;(n, (IPayloadContractAccessor)…NestedScanCode.PayloadFieldMap)</c>
+    /// （泛型实参<b>不含</b> <c>?</c> —— 可空实参违反消费方 <c>class</c> 约束 ⇒ CS8634，可空性由方法返回类型承载，G7）；
     /// 内层与外层同编译（同工程嵌套可编译，G-ADR-17b），故快照含 2 个生成文件。
     /// </summary>
     [Fact]

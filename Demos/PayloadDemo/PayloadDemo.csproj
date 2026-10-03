@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<OutputType>Exe</OutputType>
+		<!-- 把生成的 *.PayloadFieldMap.g.cs 落盘到 obj/<配置>/<TFM>/generated/…，
+		     便于逐一对照「声明 → 生成物」。本演示工程的载荷类全部由生成器产出映射表，
+		     关闭该开关不影响编译结果（生成物仍会参与编译，只是不落盘）。 -->
+		<EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!-- 运行时契约（PayloadNode / PayloadFieldMap<T> / IPayloadFieldMap<T> / IPayloadContractAccessor）
+		     落位在 Abstractions（命名空间 Mud.HttpUtils.Payloads）。 -->
+		<ProjectReference Include="..\..\Mud.HttpUtils.Abstractions\Mud.HttpUtils.Abstractions.csproj" />
+		<!-- 特性（PayloadContractAttribute / PayloadFieldAttribute / PayloadFieldFormat）
+		     落位在 Attributes（命名空间 Mud.HttpUtils.Attributes）。 -->
+		<ProjectReference Include="..\..\Mud.HttpUtils.Attributes\Mud.HttpUtils.Attributes.csproj" />
+		<!-- ⭐ 生成器必须由「声明载荷类的工程」显式引用。
+		     Mud.HttpUtils 元包只把生成器传给直接引用它的工程，而生成器包以
+		     PrivateAssets="all" + OutputItemType="Analyzer" 引用，不会流向间接引用工程。
+		     缺失时的症状极具误导性：该工程根本不运行生成器 ⇒ 载荷类缺少 PayloadFieldMap 成员
+		     ⇒ csc 报 CS0117，且没有任何 PAYLOAD* 诊断（看起来像「生成器坏了」）。 -->
+		<ProjectReference Include="..\..\Mud.HttpUtils.Generator\Mud.HttpUtils.Generator.csproj" OutputItemType="Analyzer" />
+	</ItemGroup>
+
+</Project>
