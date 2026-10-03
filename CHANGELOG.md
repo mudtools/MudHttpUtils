@@ -4,265 +4,82 @@
 
 ---
 
-## 未发布（载荷字段映射生成器，2026-10-02）
+## 3.0.1（载荷字段映射生成器，2026-10-03）
 
-> 主题：新增**第 4 个生成器族** `PayloadFieldMapGenerator` —— 为「外部报文 → 强类型载荷」生成字段映射委托表。
-> 设计文档：`.docs/PayloadFieldMapGenerator-详细设计-v1.md`（**v2.5**，含验证结论与修正总表）。
+> 为「外部报文 → 强类型载荷」新增声明式源生成器 `PayloadFieldMapGenerator`：字段名映射与类型转换改由**编译器校验**——
+> 元素名写错、转换器改名、形态不合法都在**编译期**报错，而不是运行期静默丢字段。
+> **无破坏性变更、无新增配置开关、无新增包**，可直接升级。
 
-#### 新增（Added）
+### 新增
 
-**`PayloadFieldMapGenerator`**：把「元素名 ↔ 属性名」的配对从两处并列书写提升为**编译期校验**，
-并把转换方法引用从字符串提升为**语义解析**（改错/改名立即编译报错，而非运行期静默丢字段）。
+- **3 个特性**（`Mud.HttpUtils.Attributes`）：`[PayloadContract]`（类级：契约 ID / 转换器 / 作用域回退）、
+  `[PayloadField]`（属性级：元素名 / 形态 / 分隔符 / 项名 / 属性名 / 值元素 / 自定义转换方法）、
+  `PayloadFieldFormat`（`Auto` / `Text` / `Delimited` / `Items` / `ItemsWithAttributes` / `Object` / `ItemsObject`）。
+- **5 个运行时类型**（`Mud.HttpUtils.Payloads`）：`PayloadNode`（XML/JSON-free 的不可变节点投影，公开构造器便于脱离报文做单测）、
+  `IPayloadFieldMap<T>` / `PayloadFieldMap<T>`（映射表契约与实现）、`PayloadFieldBinder<T>`、
+  `IPayloadContractAccessor`（嵌套内层契约的非泛型桥）。
+- **嵌套对象递归绑定**：新增 `Object`（单对象 ⇒ 可空属性，元素缺失为 `null`）与
+  `ItemsObject`（`List<T>` + `ItemName`，元素缺失为空列表）两种形态，生成器自动引用内层类型的映射表，
+  无需再用自定义方法手写遍历。
+- **零配置接入**：复用既有生成器开关，未新增任何配置项；生成代码按 C# 7.3 基线书写，
+  `netstandard2.0` / 未声明 `LangVersion` 的工程可直接消费。
 
-- **特性**（`Mud.HttpUtils.Attributes`，folder `Payloads/`）：`PayloadContractAttribute`
-  （类级：`ContractId` / `Converter` / `ScopeFallback`）、`PayloadFieldAttribute`
-  （属性级：`Element` / `Format` / `Separator` / `ItemName` / `NameAttribute` / `ValueElement` / `Method`）、
-  `PayloadFieldFormat` 枚举。命名空间与既有全部特性一致（满足既有守卫 `AttributeNamespaceConsistencyTests`）。
-- **运行时契约**（`Mud.HttpUtils.Abstractions/Payloads/`）：`PayloadNode`（XML-free 通用源节点，不可变）、
-  `PayloadFieldBinder<T>` 委托、`IPayloadFieldMap<T>` / `PayloadFieldMap<T>`（fluent `Map` 链 + `ResolveScope`
-  三级作用域判定，支撑「同一事件键多种报文布局」）、`IPayloadContractAccessor`（非泛型桥，供泛型/注册表上下文无反射取值）。
-- **诊断**：`PAYLOAD001`~`PAYLOAD009`（**全部 Error**）。其中仅 `PAYLOAD001`（生成器内部兜底）带
-  `WellKnownDiagnosticTags.NotConfigurable`，其余均**不加该标签**，不影响 `MUD*`/`AOT*` 诊断呈现
-  （守卫：`DiagnosticTagPolicyTests`，本版已同步扩展白名单）。
-  **口径**：有 Error 即**不产出**生成文件 —— 「缺字段的映射表」比「编译失败」危险得多。
-- **配置**：**零新增开关**。复用 `DisableMudSourceGenerator` / `MudEmitGeneratedCodeMarkers` / `Nullable`
-  与既有 `GeneratorConfigSnapshot`（`build/*.props` 与快照源码均无改动）。
-- **测试**：新增 41 个用例（5 个 Verify 快照基线 + 21 个诊断/形态用例 + 13 个运行时契约用例 +
-  2 个语言版本守卫），并扩展 `DiagnosticTagPolicyTests` 与 `VerifyFixture.RunGeneratorDriver`
-  （其中「18 个诊断用例」为 v2.0 文档的笔误，实际为 21 个；v2.2 复核时校正）。
+```csharp
+[PayloadContract(Converter = typeof(PayloadConverter))]   // Converter：你的静态转换方法集合
+public sealed partial class BasicPayload
+{
+    [PayloadField("UserID")] public string? UserId { get; set; }
 
-- **影响面**：新增 3 个公共特性类型（`Mud.HttpUtils.Attributes`，`netstandard2.0` 的 `PublicAPI.Unshipped.txt` 已登记）
-  与 5 个公共运行时类型（`Mud.HttpUtils.Abstractions`，`netstandard2.0/net6.0/net7.0/net8.0/net10.0` 五个 TFM 的
-  `PublicAPI.Unshipped.txt` 均已登记）。**无破坏性变更**；`pack.ps1` 的 10 个 nupkg 断言不变
-  （复用现有 `Mud.HttpUtils.Generator` 工程，未新增工程/包）。
+    [PayloadField("Department")] public List<long> DepartmentIds { get; set; } = new List<long>();
 
-#### 补强（v2.1 收口）
+    [PayloadField("DirectLeader", Separator = '|')] public List<string> DirectLeaderIds { get; set; } = new List<string>();
 
-- **新增守卫 `UpstreamPayloadSurface_MustNotDependOnLinqToXml`**：机器化「上游载荷契约零 LINQ-to-XML」边界
-  （扫描 `Mud.HttpUtils` / `Abstractions` / `Attributes` / `Generator` 四工程的 `.cs`，排除 `obj`/`bin`）。
-  **拦截面为 LINQ to XML**（`System.Xml.Linq`/`XDocument`/`XElement`/`XAttribute`/`XName`/`XNamespace`）；
-  `XmlSerializer`/`XmlWriter`/`System.Xml.Serialization` 属既有 `[SerializationMethod(Xml)]` 特性路径，
-  **不在**拦截面内。守卫做**字符串感知的注释剥离**（否则 `PayloadNode.cs` 文档注释中的 `XElement` 字样会误报）。
-  **非空转已验证**：注入 `System.Xml.Linq.XElement` 探针 ⇒ 守卫失败并精确定位；移除后恢复绿。
-- **修复 `PayloadContractModelBuilder` 的 CA1508 抑制失效**：`#pragma warning restore CA1508` 原位置早于告警行
-  （`if (resolved == null)` 判定行），抑制区间不覆盖 ⇒ Rebuild 仍报死代码告警。restore 已移至该 `if` 之后。
-- **README 新增「使用约束（映射表无状态性 — 必读）」**：映射表 `PayloadFieldMap` 与其 `Map` 委托是
-  **无状态、可多线程共享**的静态单例，「应用模式 / 租户 / 用户 / 请求对象」等运行期上下文**不得**进入委托
-  （否则跨请求串扰且单线程测试全绿）。注意强制手段并非「渲染 `static` lambda」（生成物按 C# 7.3 基线书写，
-  见下「生成物兼容性」），而是「生成器只渲染形参与转换器静态方法调用 ⇒ 结构上无捕获点」
-  + `PayloadLanguageVersionGuardTests` 断言生成文本**不含** `static (`。
-- **文档表述更正**：「不引入 `System.Xml`」→**「不引入 LINQ to XML」**（见上；原表述与既有 XML 序列化特性实现冲突）。
-- **实测证据**：`--filter Payload|DocumentationContract|GeneratorSourceContract|DiagnosticTagPolicy|DiagnosticCoverageGap`
-  → **59 通过 / 0 失败**；生成器工程 `-t:Rebuild` → `CA1508` 命中 **0**。
+    [PayloadField("ScanCodeInfo")] public ScanCode? ScanCodeInfo { get; set; }   // 内层类型亦标注 [PayloadContract]
+}
 
-#### 补强（v2.2 复核收口 — 生成期拒绝「会报编译错误的形态」）
+// 绑定：PayloadNode 由消费方从原始报文一次性适配（XML / JSON / 私有格式均可）
+var payload = new BasicPayload();
+BasicPayload.PayloadFieldMap.Bind(root, payload);
+```
 
-> 复核方式与 v2.1 同源：**逐条实测**（写探针用例真实编译生成物，读取 `output.GetDiagnostics()`），
-> 而非纸面评审。共捕获 **8 个缺陷**，其中 6 个的共同特征是「生成器**静默产出无法编译的代码**，
-> 错误指向生成文件（`CS0718`/`CS0310`/`CS1001`/`CS1061`/`CS1503`/`CS0315`/`CS8619`）」。
+- **诊断 `PAYLOAD001`~`PAYLOAD009`（全部 Error）**：元素名 / 转换方法 / 载荷类形态不合法即报错且**不产出生成文件** ——
+  「缺字段的映射表」比编译失败危险得多。清单与解决方案见 `Mud.HttpUtils.Generator/README.md`。
 
-| # | 缺陷 | 现状（修复前） | 修复 |
-| - | ---- | -------------- | ---- |
-| 1 | `static` 载荷类 | 零诊断 + 产出 2 处 `CS0718` | `PAYLOAD009`，不产出 |
-| 2 | `abstract` 载荷类 / 无公共无参构造函数 | 零诊断 + `CS0310` | `PAYLOAD009`，不产出 |
-| 3 | 继承链上带 `[PayloadField]` 的基类 | **无任何错误**，但基类字段被**静默丢弃** | `PAYLOAD009`，不产出 |
-| 4 | 属性为索引器 / 显式接口实现 | 零诊断 + `CS1001`/`CS1061`（`t.this[]` / `t.Ns.IFoo.X`） | `PAYLOAD006`，不产出 |
-| 5 | 契约方法形参**类型**不符（如 `Number<T>(string)`、`Delimited<T>(…, string)`） | 零诊断 + `CS1503` | `PAYLOAD004`，不产出 |
-| 6 | 契约方法泛型约束不满足（如 `Delimited<T> where T : IShape` 而元素为 `long`） | 零诊断 + `CS0315` | `PAYLOAD007`，不产出 |
-| 7 | `List<string?>` 等可空元素类型 | 渲染成 `Delimited<string>` ⇒ `CS8619`（可空性不匹配） | 类型实参改用**含可空标注**的显示格式（`Delimited<string?>`）；同时纳入指纹（避免「只补一个 `?`」命中增量缓存） |
-| 8 | `Format = (PayloadFieldFormat)99` | 反解失败被静默当作 `Auto` 走推断 | `PAYLOAD006`，不产出 |
+### 行为变更
 
-- **新增 17 个用例**（`PayloadFieldMapDiagnosticTests` 13 个负向 + 3 个正向对照，
-  `PayloadNullabilityGuardTests` 1 个可空性卫生守卫）。正向对照专治「误报」：
-  隐式默认构造函数、无映射字段的基类、满足约束的 `struct`/`new()` 约束。
-- **`PAYLOAD009` 的表述随之扩展**：新增 static / abstract / 无公共无参构造 / 继承映射字段四类形态
-  （README 诊断表与描述符 `messageFormat` 同步）。
-- **实测证据**：生成器测试工程 `-t:Rebuild` → **0 错误 / 2 个存量告警**（无新增告警，含 `CA1508` 命中 0）；
-  全量 `dotnet test Tests/Mud.HttpUtils.Generator.Tests -c Release -f net10.0` → **976 通过 / 0 失败**；
-  全解决方案 `dotnet build Mud.HttpUtils.slnx -c Release -p:PublicApiStrictMode=true` → **0 错误**。
-- **顺带清理**：仓库上一提交误将复核用的临时探针 `Payloads/ZZTempProbeTests.cs`（文件头自带「验证后删除」）
-  一并提交；本次复核已将其从工作区移除（**未跟踪的删除，需随本次提交一并落库**）。
-- **修复文档一致性守卫的过松正则**（缺陷 20）：`DocumentationContractTests.DiagnosticRowRegex` 原只要求
-  「`|` + 反引号诊断 ID + `|`」，不要求 ID 位于**行首单元格**，且级别捕获可**跨行** ⇒ 任何在非首列写了
-  带反引号诊断 ID 的 README 表格都会被解析成「severity = 后续跨行空白（Trim 后为空串）」并以**后写覆盖**
-  污染解析结果，报出「README 与 Diagnostics.cs 级别不一致」这种**指向错误位置**的失败（本次新增 README
-  表格时被它拦下，报错文案完全没提示真因）。已收紧为行首锚定 + 级别不跨行，并把陷阱写进该守卫的 XML 注释。
+- **仅 1 项收紧**：`List<非契约复杂类型>` + `ItemName` 此前编译通过但**运行期必然产出空列表**，现报 `PAYLOAD007`；
+  三条出路：改标量形态 / 给元素类型加 `[PayloadContract]` / 用 `Method` 自定义转换。
+- 除此之外，既有行为、诊断级别与公共 API 面均无变化（公共 API 仅新增：3 个特性 + 5 个运行时类型 + 2 个枚举成员）。
 
-#### 补强（v2.3 消费方反查收口 — 修正「文档/用例本身错」）
+### 修复
 
-> 复核方式：在真实消费方 `Mud.Wechat` 完整走通接入路径后反查上游，捕获 **3 个缺陷**。
-> 与 v2.1（守卫/文档错）、v2.2（未拦截形态）不同，本轮三个缺陷的共同点是
-> **「文档或用例本身错」**——上游单元测试**不可能**发现（示例不参与编译、空转断言恒真）。
-> 详见附录 C 缺陷 21~23。
+- **多应用**：未配置 `BaseAddress` 的客户端，其启动 Warning 文案与实际行为相反（实际**仍会注册**，只是不能接受相对 URL）已纠正；
+  `TokenManagerBase` 派生类补齐「刷新锁内不可重入取令牌」的 XML 约定（该锁不可重入，误用会同线程永久自锁死）。
+- **生成器**：13 类「会产出不可编译代码 / 运行期空转 / 误报合法写法」的输入形态改为**生成期拦截**，
+  覆盖保留字标识符、转换器同名重载并存误报、契约方法首参缺可空标注、载荷类形态非法等；
+  命名空间含 C# 关键字时不再触发内部兜底诊断。
 
-| # | 缺陷 | 表现 | 修复 |
-| - | ---- | ---- | ---- |
-| 1 | 设计文档 §3.4 示例 ② 不可编译 | `IPayloadContractAccessor accessor = XxxPayload.PayloadFieldMap;` ⇒ `CS0266` | 改为 `is` 模式显式转换 + 明确异常；并说明根因（`IPayloadFieldMap<T>` 与 `IPayloadContractAccessor` 是两条独立接口，同时实现两者的是具体类 `PayloadFieldMap<T>`） |
-| 2 | 设计文档 §9.2 漏写关键接入步骤 | 生成器包以 `PrivateAssets="all"` 引用 ⇒ 不流向间接引用工程；「声明载荷类的工程」未显式再挂生成器 ⇒ 该工程不运行生成器、`CS0117` 且**无任何诊断** | §9.2 新增「⭐ 关键接入步骤」（含症状、误判陷阱、自检方法） |
-| 3 | 用例空转 + 文档断言错 | `InterfaceOrStructTarget_IsRejectedByCscItself` 的测试源**漏写 `[PayloadContract]`** ⇒ 生成器匹配不到节点、断言「零诊断」恒真；文档 §7.2 据此称「`struct` 目标 ⇒ 生成器不可达」，**实测证伪**（生成器可达并报 `PAYLOAD009`） | 拆为 `StructTarget_ReportsPayload009_AndProducesNothing` / `InterfaceTarget_ReportsPayload009_AndProducesNothing`，断言「恰一条 `PAYLOAD009` + 零产出」；§7.2 同步更正 |
+### 升级注意
 
-- **无产品代码（生成器/运行时/特性）改动**：本轮仅修正文档与测试；`PAYLOAD001~009` 行为、渲染产物、公共 API 面均不变。
-- **实测证据**：全量 `dotnet test Tests/Mud.HttpUtils.Generator.Tests -c Release -f net10.0` → **977 通过 / 0 失败**
-  （v2.2 的 976 含 1 个空转用例；本轮拆为 2 个有效用例 ⇒ +1）。
-- **教训（已写入设计文档附录 C）**：对每条「断言零诊断 / 零产出」的用例，必须**先确认输入确实会命中被测路径**，
-  否则断言恒真、门禁全绿与结论正确性之间没有必然联系。
+1. **声明载荷类的工程要显式引用生成器包**（生成器以 `PrivateAssets="all"` 引用，不流向间接引用工程）。
+   否则该工程不运行生成器：表现为 `CS0117`（`PayloadFieldMap` 不存在）且**没有任何 PAYLOAD 诊断**。
+   自检：确认能编译出 `XxxPayload.g.cs`。
+2. 载荷类须为 `partial`、非 `static` / 非 `abstract`、有公共无参构造，且继承链上不得带 `[PayloadField]`。
+3. 自定义转换方法的**首参须带可空标注**（`PayloadNode?` / `string?`），否则 `PAYLOAD004`。
+4. **映射表是无状态、可多线程共享的 `static` 单例**：不得把租户 / 用户 / 应用模式等运行期上下文写进委托，否则跨请求串扰。
+5. 最低 SDK：VS2022 17.11 或 .NET SDK 8.0.400+。
 
-#### 补强（v2.4 生成物卫生收口 — 5 个缺陷）
+### 不支持（避免误用）
 
-> 复核方式：沿用 v2.2 的方法论 —— 对「语义上合法但此前未被拦截」的输入形态写探针，
-> 断言的不是诊断 ID，而是 **`output.GetDiagnostics()` 的新增项必须为空**（扣除输入侧基线）。
-> 5 项中 3 项命中「零诊断 + 静默产出带诊断的生成物」，1 项命中「生成器抛内部异常（`PAYLOAD001`）」，
-> 1 项是**误报**。详见设计文档 §0.8（P23~P27）与附录 C 缺陷 24~28。
+- 泛型 / 嵌套 / `record` / `init` 载荷类；`static` / `abstract` / 无公共无参构造的载荷类；继承链上的 `[PayloadField]`。
+- 循环引用、多态子类型分派、同一属性的多分支可选布局。
+- 字段级必填 / 范围校验生成（属运行期契约）；`JsonSerializerContext` 生成；`System.Xml.Linq` 依赖。
 
-| # | 缺陷 | 修复前实测 | 修复 |
-| - | ---- | ---------- | ---- |
-| 24 | 契约方法**首参缺可空标注**（`static string Text(PayloadNode node)`、`Method` 路径的 `static string Parse(string text)`） | 零诊断 + 1 个生成文件 + 生成文件报 **`CS8604`**（可能传入 null 引用实参；生成物交出的正是可能为 null 的 `n` / `n?.Value`） | `PAYLOAD004` 拦截（`HasNullableNodeParameter`）；**oblivious（nullable 未启用）仍接受**，否则会给消费方引入 `CS8632` |
-| 25 | **类名 / 属性名是 C# 保留字**（`partial class @class`、`[PayloadField("event")] string? @event`） | 零诊断 + 1 个生成文件 + 生成文件报 `CS1001`/`CS1519`/`CS1513`/`CS1026`，且消费方的类被连带报 **`CS0260`**「缺少 partial 修饰符」（指向完全错误的位置） | 渲染器新增 `EscapeIdentifier`（`SyntaxFacts.GetKeywordKind` ⇒ 保留字补 `@`）；`ISymbol.Name` 不含 `@` |
-| 26 | **基类已有同名 `PayloadFieldMap` 成员** | 零诊断 + 1 个生成文件 + 生成文件报 **`CS0108`**（隐藏继承成员） | `PAYLOAD008` 扩面到继承链（`FindInheritedMember`，含元数据基类）；`messageFormat` 改为兼容「并存/隐藏」两类冲突的中性文案 |
-| 27 | **转换器同名同元数重载并存**（`Delimited<T>(string, char)` 与 `Delimited<T>(PayloadNode?, char)`） | **误报 `PAYLOAD004`**（合法声明被判非法；`FindContractMethod` 只取 `GetMembers` 顺序里的首个结构候选） | `FindContractMethod` → `FindContractMethods`（收集全部候选）+ 优选「形参类型**且**可空标注」双符合者，无符合者时才按「类型不符 / 缺可空标注 / 不存在」分别给出可操作文案 |
-| 28 | **命名空间段是 C# 保留字**（`namespace @class.Sub`） | **零产出 + `PAYLOAD001`「生成器内部错误」**：同一份 `ns`（`ToDisplayString()` 自带 `@` 转义）既用于渲染 `namespace`（需要 `@`）又被拼进 **hintName**（文件路径不得含 `@`）⇒ `context.AddSource` 抛 `ArgumentException`，被兜底捕获取代 | 拆出 `hintNamespace = ns.Replace("@", "")` 专供 hintName；渲染器加注释禁止对 `Namespace` 二次转义（否则 `@@class`） |
+### 文档
 
-- **产品代码改动**：`PayloadContractModelBuilder`（首参可空标注、继承同名成员、重载优选、hintName 剥转义）、
-  `PayloadFieldMapRenderer`（保留字标识符转义）、`Diagnostics.cs`（`PAYLOAD008` 文案）。
-  **无新增诊断 ID**、无新增配置开关、无公共 API 面变化 ⇒ `AnalyzerReleases` / `PublicAPI` / `pack.ps1` 均无需改动。
-- **新增 8 个用例**（3 负向 + 5 正向对照，含可复用断言 `AssertProducesCompilableOutput`：
-  「零诊断 + 恰 1 个生成文件 + **生成物零新增错误/告警**」，并正向钉住渲染片段防用例空转）。
-- **实测证据**：全量 `dotnet test Tests/Mud.HttpUtils.Generator.Tests -c Release -f net10.0` → **985 通过 / 0 失败**；
-  `powershell -File ./test.ps1 Release` → **8 个测试工程全绿**；
-  全解决方案 `dotnet build Mud.HttpUtils.slnx -c Release -p:PublicApiStrictMode=true` → **0 错误**
-  （全量 Rebuild 下仅剩 2 个存量 `CS1574`，位于既有生成器代码，与本生成器无关）；
-  生成器工程 `-t:Rebuild` → **0 新增告警**（仅剩既有 2 处 `CS1574`）；5 个 Verify 快照**零变更**。
-- **教训（已写入设计文档附录 C）**：收紧拦截必须**成对**验证 —— 每加一条拦截就配一条正向对照
-  （误报不会被「零新增诊断」断言发现，只会表现为「合法用例直接失败」）；
-  另：**内部兜底诊断（`PAYLOAD001`）的可达性本身是一条不变量** —— 合法输入触发它即等价于「生成器坏了」，
-  故正向断言里必须包含「不得以内部兜底收场」。
-
-#### 生成物兼容性（Important）
-
-
-- **生成代码按「C# 7.3 + netstandard2.0」基线书写**：不使用 `static` 匿名函数（C# 9）、集合表达式（C# 12）、
-  `init`/`record`/目标类型 `new`。原因：`netstandard2.0` 消费工程若未显式声明 `LangVersion`，默认即 **7.3**，
-  上述语法会以 `CS8370`/`CS8630` 指向**生成文件**。
-  守卫：`PayloadLanguageVersionGuardTests`（`CSharpParseOptions(LanguageVersion.CSharp7_3)` + `Nullable=disable`）。
-- **生成成员带 XML 文档注释**：`// <auto-generated/>` 文件头**不**抑制 `CS1591`/`CS8601`（实测），
-  故生成物自带注释，且生成器**拒绝**会产生 `CS8601` 的属性形态（非空 `string` / 非空值类型 ⇒ `PAYLOAD007`）。
-  v2.2 追加：`CS8619`（可空性不匹配）不再靠「拒绝形态」而由**渲染格式**消除（泛型实参保留可空标注）。
-- **不做单例缓存**：`PayloadFieldMap` 属性每次读取构造新映射表（`get { return …; }`），
-  避免静态初始化顺序陷阱；映射表本身无状态、可多线程共享。
-
-#### 文档（Docs）
-
-- `Mud.HttpUtils.Generator/README.md`：新增「载荷字段映射生成（PAYLOAD\*）」诊断表（含「全 Error 且不产出」口径说明）；
-  v2.2 追加「生成物卫生（生成期即拒绝会报编译错误的形态）」小节；
-  v2.4 该小节再追加 5 条（首参可空标注 `CS8604`、保留字标识符 `CS1001`/`CS0260`、继承同名成员 `CS0108`、
-  关键字命名空间触发 `PAYLOAD001`、重载优选），并同步 `PAYLOAD004`/`PAYLOAD008` 的触发条件与解决方案列。
-- `.docs/PayloadFieldMapGenerator-详细设计-v1.md`：设计文档升级为 **v2.4**
-  （v2.0 的 14 项修正 + v2.1 收口 + v2.2 复核的 8 项修正 + v2.3 消费方反查的 3 项修正 + v2.4 生成物卫生的 5 项修正，
-  含实施记录与证据留档）。
-- 最低 SDK 要求：VS2022 17.11 / .NET SDK 8.0.400+（生成器以 `Microsoft.CodeAnalysis.CSharp 4.11.0` 编译）。
-
-#### 明确不做（避免过度设计）
-
-- **不**生成 `System.Text.Json` 的 `JsonSerializerContext`：Roslyn 生成器互不可见（dotnet/roslyn#57239）会产出**静默空 Context**。
-- **不**引入 **LINQ to XML**（`System.Xml.Linq` 家族）：`PayloadNode` 为 XML-free 纯数据投影，XML 适配器由消费方提供。
-  （注意：既有 `[SerializationMethod(Xml)]` 路径**合法**生成 `XmlSerializer`/`XmlWriter` 代码，不在拦截范围。）
-- **不**支持泛型 / 嵌套 / `record` / `init` 载荷类（`PAYLOAD009`/`PAYLOAD006`）：与 `PayloadFieldMap<T>` 的
-  `class, new()` 约束、`partial` 成员渲染、`netstandard2.0` 消费面互斥。
-  v2.2 同理**不**支持 `static` / `abstract` / 无公共无参构造函数的载荷类，以及**继承链上带 `[PayloadField]` 的基类**
-  （前者生成物必报 `CS0718`/`CS0310`，后者会让继承字段被静默丢弃）—— 全部 `PAYLOAD009`。
-- **不**做字段级必填/范围校验生成：属消费方运行期契约。
-- **不**新增配置开关/配置快照/独立生成器工程（既有开关与快照已覆盖全部需求）。
-
-#### 已评估但不采纳（后续候选）
-
-- `PAYLOAD101`（Info：建议显式指定 `Method`）：为纯风格建议引入编译级 `DiagnosticAnalyzer` 属过度设计，可操作场景由 `PAYLOAD007` 覆盖。
-- 为映射表注入「应用模式 / 租户」上下文参数：映射表必须保持**无状态**才能安全地多线程共享，否则会诱发跨请求串扰（详见设计文档 §3.7）。
-- 生成 `Values` 全量袋填充代码（依赖消费方敏感节点策略，留在运行期）。
-- `PayloadFieldMap` 改为 `static readonly` 缓存（待消费方热路径实测）。
-- ~~「上游无 XML 依赖」机器化守卫测试~~：**已于 v2.1 实施**（见上「补强（v2.1 收口）」）。
-- 「新增告警数纳入门禁」：本轮缺陷 8（`#pragma` 抑制失效）说明「抑制注释写了但没生效」无任何测试可感知，
-  建议后续把「生成器工程 Rebuild 的新增告警数」纳入 CI（列为候选，需先建立基线清单）。
-
-#### 补强（v2.5 — 嵌套对象递归 Bind，G-ADR-17）
-
-> 按《`.docs/PayloadFieldMapGenerator-嵌套对象递归Bind改造方案-v1.md`》实施（文件名保留 v1 历史遗留，内容为 v2 评审定稿：
-> 三维评审 + 7 处逻辑链缺口修正 G1~G7 + 7 项测试缺口补齐 T1~T7），
-> 设计文档同步升级 **v2.5**（§0.9 增补总表）。落地口径：**项目未发布，无兼容负担，一步到位**。
-
-- **新增**：`PayloadFieldFormat` 增加两形态——`Object = 5`（单对象嵌套：`TSingle?`，`TSingle` 标注
-  `[PayloadContract]`；节点缺失 ⇒ `null`）与 `ItemsObject = 6`（契约化对象项：`List<TNested>` + `ItemName`；
-  节点缺失 ⇒ 空列表）。生成器对两形态**递归引用内层类型的 `PayloadFieldMap`**（经既有非泛型桥
-  `IPayloadContractAccessor.CreateInstance/Bind`，运行时**零改动**），消除消费方 `Method` 逃生舱手写遍历的
-  「元素名字符串零编译器防护」整类故障面（如微信回调的 `ScanCodeInfo` / `SelectedItems/SelectedItem` /
-  `ApprovalNodes/ApprovalNode` 三层嵌套）。`PublicAPI.Unshipped.txt` 已登记两个枚举成员。
-- **收紧（行为变更）**：`List<非契约复杂类型> + ItemName` 在 v2.4 会生成 `Items<T>` 调用（编译通过、
-  运行期静默产出空结果——「项取 child.Value 文本」语义对对象元素必然失败），v2.5 起报 `PAYLOAD007`
-  （提示三种出路：改标量 / 给元素类型标注 `[PayloadContract]` / 改用 `Method`）。
-- **生成物卫生（沿用 G-ADR-15 口径）**：① `Object` 形态要求属性为可空（或 oblivious）引用类型，
-  否则 `PAYLOAD007`（值类型实参会让生成物报 `CS0311`、非空引用类型泄漏 `CS8600`）；
-  ② `Object` 泛型实参**不含** `?`（可空实参违反消费方 `class` 约束 ⇒ `CS8634`；可空性由方法声明的
-  返回类型 `TSingle?` 承载），强转的静态成员访问亦不含 `?`（`Foo?.PayloadFieldMap` 是条件访问语法错误）；
-  ③ `ItemsObject` 泛型实参沿用 G-ADR-16 保留 `?`（`List<T>` 可空性双向赋值均告警 `CS8619`，实测），
-  「可空元素实参 × 非可空 `class` 约束」的生成期不可调和组合报 `PAYLOAD004` 拦截。
-- **边界（G-ADR-17b 精确化）**：生成器只判内层标注、不验证 `TInner.PayloadFieldMap` 成员存在
-  （`Transform` 阶段语义模型看不到生成源，验证不可实现）；生成源加入最终编译 ⇒ **同工程嵌套可编译**
-  （跨工程非必要条件）；成员缺失由消费方编译期 `CS0117` 暴露（触发面：内层契约自身构建失败 / 内层生成器被禁用）。
-- **不做**：循环引用、多态子类型分派、同一属性多分支可选布局（官方报文无此形态，避免抓通用对象图）。
-- **测试**：Generator 测试从 985 增至 **1002 个**（17 个净新增：2 快照 + 1 同编译双文件正向对照 +
-  1 可空性卫生守卫 + 13 诊断/推断用例），含「同工程内层 + 外层」端到端编译性用例、
-  推断回归钉（`List<long>` + `ItemName` 仍走既有 `Items`）、缺 `Object`/`ItemsObject` 方法与
-  形参不符的文案钉（指向 `IPayloadContractAccessor`）以及 C# 7.3 oblivious 嵌套基线扩展。
-
----
-
-## 未发布（MT 多应用与令牌管理方案 v2.0 收尾，2026-10-02）
-
-> 本节为 `.docs/多应用与令牌管理-Bug修复与功能完善方案.md` 第三轮复核（§15）的落地记录。
-> 均为**无破坏性**的收尾修复；`MT-01` ~ `MT-28` 与遗留项 `L-1` ~ `L-10` 的整体完成情况见该文档。
-
-#### 修复（Fixed）
-
-- **EventId 113 日志文案与实际行为相反**：`MT-12` 已把「未配置 `BaseAddress` 的客户端**跳过注册**」改为「**仍注册**，仅不设 `BaseAddress`」，
-  但 `ClientSkippedMissingBaseAddress` 的文案仍宣称「该客户端不会被注册，其 `TimeoutSeconds` / `DefaultHeaders` / `AllowCustomBaseUrls` 配置将被忽略」。
-  该Warning 是宿主排查「配置了但不生效」的第一手依据，错误文案会把排查方向**完全带偏**（去查注册路径，而真因是没配基地址）。
-  文案已改为「未配置 `BaseAddress`。该客户端**仍会注册**，`TimeoutSeconds` / `DefaultHeaders` / `AllowCustomBaseUrls` 均生效，
-  但**仅能接受绝对 URL 请求**（相对 URL 将按 `HttpClient` 语义失败）。若该客户端本不应存在，请从配置节中移除。」；
-  `MudHttpClientApplicationOptionsPostConfigure` 的类级注释同步更正。
-  **非破坏性**：该类型为 `internal`，不属公开API；**EventId 保持 113 不变**，日志消费方无需改动。
-  新增 2 条回归护栏（文案断言 + 「客户端真的仍被解析且 `TimeoutSeconds` 生效」的行为断言，防止未来有人为让文案成立而回退行为）。
-- **`TokenManagerBase.RefreshTokenCoreAsync` 缺锁内实现约定**：`MT-27` 只在 `GetOrRefreshTokenAsync` 写了「持`KeyedLockTable` 锁期间不得重入取令牌方法」，
-  而**真正写刷新逻辑的 `RefreshTokenCoreAsync`** 只有一句「由子类实现具体的刷新逻辑」。
-  该锁基于 `SemaphoreSlim`，**不可重入** ⇒ 子类若在刷新实现内回调 `GetTokenAsync` / `GetOrRefreshTokenAsync` / `InvalidateTokenAsync`
-  会**同线程永久自锁死**，且表现为挂起而非异常（最难排查的一类缺陷）。现补齐 4 条约定：持锁期间被调用、明确的不可重入清单、
-  应改用不加锁的 `GetCachedCredentialToken()`、以及异常与负缓存的语义。仅 XML 变更，**零代码改动**。
-
-#### 文档（Docs）
-
-- **根`README.md` 新增「多应用与租户隔离」章节**：此前根README **根本没有**多应用章节（只有「多命名客户端」/「令牌管理」），
-  导致「多租户越权」与「应用上下文泄漏」这两类最高危的使用错误只能靠子包 README 兜底。
-  新增内容：注册 + `using (client.UseAppScope("app-a"))` 最小示例；**⚠️ 上下文归还约束**警示块
-  （必须 `using` / `try-finally`；**后台任务示例** —— 作用域须建在 `Task.Run` 任务体内部，因 `AsyncLocal` 会随任务捕获；
-  需要「切换并保持」时用 `IAppContextHolder.SwitchToApp` 并自行切回；未注册 `IAppAccessAuthorizer` 时**默认拒绝**，
-  单应用场景显式注册 `AllowAllAppAccessAuthorizer`；appKey / 客户端名大小写敏感）；
-  以及指向 `Client/README.md`「应用上下文」/「多应用接线清单」的完整清单交叉引用。
-  「多命名客户端」章节补客户端名**区分大小写（Ordinal）**约定与 EventId 176碰撞告警说明；
-  「系统架构 · 关键设计 · 多租户隔离」条目追加指向新章节的链接。
-
-#### 明确不做（避免过度设计）
-
-- **不补做MT-13 的迁移期 `OrdinalIgnoreCase` 回退**：`HttpClientResolver` 维持「未命中直接抛异常 + 消息显式提示大小写」。
-  当前是 `3.0.0` 大版本，补做回退等于**主动重新引入**本轮正在消除的歧义（同进程内 `Default` / `default` 解析结果依赖调用方传入的大小写），
-  且会在 `Clients` / `AddHttpClient` / keyed DI / `_clientCache` / `HttpClientResolver` 五处一致语义之外**新增第 6 处**比较。
-  可发现性已由「启动期 EventId 176 碰撞告警」+「运行期失败消息显式提示」两条覆盖。
-- **不补做 `[HttpClientApi(ClientName = "...")]`**：客户端名属**宿主接线职责**（同一接口在测试 / 生产指向不同端点），
-  不应进**声明式契约**（接口形态）。实际接缝为 `AddMudHttpGeneratedClient<T>(clientName)`（宿主运行时指定）
-  + `HttpClientNamedClientBindingMismatch` 诊断（出现 ≥2 个 `[HttpClientApi]` 时**编译期报错**）。
-- **不新增 `MUD008` 分析器**（锁内重入检测）：`RefreshTokenCoreAsync` 是 `protected abstract`，
-  分析器只能看到「某类里调用了 `GetTokenAsync`」，**无法证明该方法从刷新路径可达**。
-  要做需全程序集调用图 + 继承可达性分析，误报率与维护成本远超收益。契约由XML + 文档 + Review 保证
-  （与 `KeyedLockTable` 不 Dispose、`AsyncLocal` 不回滚等同属"设计意图 + 文档"类约定）。
-- **不把MT-23 的重复注册提示升为 `Warning`**：维持 `Debug.WriteLine`。§13.3 已把该需求整体降级为「可发现性」，
-  Warning 与该定位自相矛盾，且 §11 已把它列为"命中大量宿主"的风险面；真实频次极低（`TryAdd*` 下仅宿主显式重复调用时发生）。
+- `Mud.HttpUtils.Generator/README.md`：新增 PAYLOAD 诊断表、生成物卫生说明、映射表无状态性使用约束。
+- 根 `README.md`：新增「多应用与租户隔离」章节 —— 作用域归还约束、后台任务中的 `AsyncLocal` 捕获陷阱、
+  未注册授权器时默认拒绝、单应用场景的显式放行方式。
 
 ---
 
@@ -275,11 +92,11 @@
 
 **移除三个旧的应用切换入口**：`IAppContextSwitcher` 不再声明下列成员，生成类（非 HttpClient 模式）也不再发射它们。
 
-| 已移除成员 | 迁移目标 | 差异 |
-| --- | --- | --- |
-| `IAppContextSwitcher.UseApp(string appKey)` | `IAppScopeSwitcher.UseAppScope(appKey)`（配合 `using`） | 守卫完全相同；新入口额外**自动归还**上下文 |
-| `IAppContextSwitcher.UseDefaultApp()` | `IAppScopeSwitcher.UseDefaultAppScope()` | 同上 |
-| `IAppContextSwitcher.BeginScope(string appKey)` | `IAppScopeSwitcher.UseAppScope(appKey)` | **纯命名收敛**：生成体逐行等价，能力与安全性完全一致 |
+| 已移除成员                                      | 迁移目标                                                | 差异                                                 |
+| ----------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------- |
+| `IAppContextSwitcher.UseApp(string appKey)`     | `IAppScopeSwitcher.UseAppScope(appKey)`（配合 `using`） | 守卫完全相同；新入口额外**自动归还**上下文           |
+| `IAppContextSwitcher.UseDefaultApp()`           | `IAppScopeSwitcher.UseDefaultAppScope()`                | 同上                                                 |
+| `IAppContextSwitcher.BeginScope(string appKey)` | `IAppScopeSwitcher.UseAppScope(appKey)`                 | **纯命名收敛**：生成体逐行等价，能力与安全性完全一致 |
 
 - **影响面**：① 调用上述三个成员的代码将**编译失败**（`UseApp` / `UseDefaultApp` 报 `CS1061`；`BeginScope("...")` 报 `CS1503` 参数类型不匹配，因为只剩 Holder 面的 `BeginScope(IMudAppContext)`）；② 所有非 HttpClient 模式生成类的 API 面**少三个成员**；③ 直接实现 `IAppContextSwitcher` 的第三方类型需移除这三个成员。
 - **不受影响**：Holder 面（`Current` / `SwitchTo` / `BeginScope(IMudAppContext)`）与作用域面（`UseAppScope` / `UseDefaultAppScope`）**保持不变**。
@@ -323,8 +140,8 @@
 
 `IAppContextSwitcher` 仅剩一个仍标 `[Obsolete]`（Warning）的成员：
 
-| 已废弃成员 | 迁移目标 | 说明 |
-| --- | --- | --- |
+| 已废弃成员                            | 迁移目标                            | 说明                                                           |
+| ------------------------------------- | ----------------------------------- | -------------------------------------------------------------- |
 | `IAppContextSwitcher.GetTokenAsync()` | `ITokenProvider.GetTokenAsync(...)` | 原方法仅转发当前应用的令牌提供器，且仅 TokenManager 模式下可用 |
 
 - **只标抽象层**：生成类成员**不**标 `[Obsolete]`（生成类必须实现接口成员，标注只会给"实现接口"制造噪音）。因此经**接口**调用会得到 `CS0618` 迁移提示，经具体生成类调用无噪音 —— 无需分析器、无需 CodeFix。
