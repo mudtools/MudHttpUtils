@@ -55,3 +55,6 @@ Mud.HttpUtils.Payloads.PayloadNode.Value.get -> string?
 static Mud.HttpUtils.Payloads.PayloadFieldMap<T>.Create(string! contractId, string? scopeFallback = null) -> Mud.HttpUtils.Payloads.PayloadFieldMap<T!>!
 static Mud.HttpUtils.Payloads.PayloadNode.Leaf(string! name, string? value = null) -> Mud.HttpUtils.Payloads.PayloadNode!
 virtual Mud.HttpUtils.Payloads.PayloadFieldBinder<T>.Invoke(T! target, Mud.HttpUtils.Payloads.PayloadNode? node) -> void
+Mud.HttpUtils.SensitiveUrlKeys
+static Mud.HttpUtils.SensitiveUrlKeys.Register(string? name) -> void
+static Mud.HttpUtils.SensitiveUrlKeys.RegisterAll(System.Collections.Generic.IEnumerable<string?>! names) -> void

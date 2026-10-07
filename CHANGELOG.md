@@ -4,6 +4,26 @@
 
 ---
 
+## 3.0.2（敏感 URL 键下游登记门面，2026-10-07）
+
+### 新增
+
+- `Mud.HttpUtils.SensitiveUrlKeys`（public static）：把词表外的自定义凭据参数名登记进
+  进程级强制掩码集合（R-P1-05① 的下游可达形态）。此前 `RegisterExtraSensitiveKey` 落在
+  internal 类上、下游编译期不可达，属设计缺口。
+  - `Register(string?)`：登记单个键（幂等、线程安全、空值与空白项忽略）。
+  - `RegisterAll(IEnumerable<string?>)`：批量登记（逐项幂等；集合为 null 直接返回）。
+  - 登记后的键**无论 `MudHttpObservabilityOptions.RedactUrlInTelemetry` 开关为何都强制掩码**；
+    仅作用于 URL query 脱敏，JSON 消息体脱敏（`MessageSanitizer`）仍以静态词表为准。
+- 无破坏性变更、无行为变更、无新增配置开关。
+
+### 升级注意
+
+- 仅登记**确认为凭据**的参数名：登记为进程级生效，过于宽泛的键名（如 `id`、`name`）
+  会造成大面积脱敏影响排障；组件侧不做语义校验（保持机制中立）。
+
+---
+
 ## 3.0.1（载荷字段映射生成器，2026-10-03）
 
 > 为「外部报文 → 强类型载荷」新增声明式源生成器 `PayloadFieldMapGenerator`：字段名映射与类型转换改由**编译器校验**——
