@@ -218,7 +218,10 @@ else {
             try {
                 # 类型名在元数据里以 ASCII/UTF-8 明文存放，按「1 字节 = 1 字符」的 Latin1 解码后
                 # 直接做子串匹配即可，无需把程序集加载进进程（避免宿主 TFM 不兼容）。
-                $buffer = New-Object byte[] $analyzerEntry.Length
+                # 注意：Windows PowerShell 5.1 跑在 .NET Framework 上，没有 Encoding.Latin1 静态属性
+                #（.NET 5+ 才有），访问它会静默得到 $null，必须用 ISO-8859-1 的编码编号获取。
+                $latin1 = [System.Text.Encoding]::GetEncoding(28591)
+                $buffer = New-Object byte[] ([int]$analyzerEntry.Length)
                 $read = 0
                 while ($read -lt $buffer.Length) {
                     $chunk = $stream.Read($buffer, $read, $buffer.Length - $read)
@@ -226,7 +229,7 @@ else {
                     $read += $chunk
                 }
 
-                $text = [System.Text.Encoding]::Latin1.GetString($buffer, 0, $read)
+                $text = $latin1.GetString($buffer, 0, $read)
                 if ($text.IndexOf("ToolSurfaceSourceGenerator", [System.StringComparison]::Ordinal) -lt 0) {
                     $ValidationFailures += "Mud.HttpUtils.Generator.dll 不含 ToolSurfaceSourceGenerator 符号（工具面生成器家族在打包时丢失）"
                     Write-Host "  [FAIL] Generator DLL 不含 ToolSurfaceSourceGenerator（工具面生成器被遗漏）" -ForegroundColor Red
