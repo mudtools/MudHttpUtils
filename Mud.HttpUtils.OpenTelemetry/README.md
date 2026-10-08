@@ -256,3 +256,49 @@ service:
       receivers: [otlp]
       exporters: [otlp]  # 转发至 Jaeger
 ```
+
+## 作为其他 Mud SDK 的 OTel 基座
+
+自 3.1.0 起，本包暴露了共享装配内核，其他 Mud SDK（如 `Mud.Feishu`、`Mud.Wechat`）可基于本包实现 OTel 可观测性，无需各自重复装配剧本。
+
+### 核心类型
+
+| 类型 | 说明 |
+|------|------|
+| `MudObservabilityContribution` | 产品线贡献描述（源名/Meter 名/默认服务名等） |
+| `MudObservabilityOptions` | 三包共有的运行期开关与导出配置 |
+| `MudObservabilityDefaults` | 细粒度可复用件（Sampler/Resource/OTLP 应用/校验） |
+| `MudObservabilityBootstrap` | 唯一装配入口 + 重复入口守卫 |
+
+### 用法示例（下游 SDK 薄壳）
+
+```csharp
+// 下游 SDK 定义自己的 Contribution
+var contribution = new MudObservabilityContribution
+{
+    ProductName = "Mud.Feishu",
+    ActivitySourceName = "Mud.Feishu",
+    MeterName = "Mud.Feishu",
+    DefaultServiceName = "Mud.Feishu.Application",
+    DefaultServiceVersion = "1.0.0",
+    IncludeMudHttpSources = true,  // 同时采集 Mud.HttpUtils 的源与 Meter
+};
+
+// 映射自己的 options → MudObservabilityOptions，然后委托内核装配
+var coreOptions = new MudObservabilityOptions
+{
+    ServiceName = "my-feishu-app",
+    OtlpEndpoint = new Uri("http://otel-collector:4317"),
+    // ... 其他属性映射
+};
+
+services.AddMudObservability(contribution, coreOptions);
+```
+
+### 双重入口禁令
+
+> **同一个宿主只应调用一个产品的 OTel 入口。**
+>
+> 如果宿主已调用 `AddMudHttpOpenTelemetry()`，则**不可**再调用 `AddMudObservability()` 注册其他产品——内核的重复入口守卫会抛出 `InvalidOperationException`。
+>
+> 如需同时采集多个产品的源与 Meter，请使用 `MudObservabilityContribution.IncludeMudHttpSources = true`，或通过 `AddMudObservabilitySources()` 向既有 builder 追加源。

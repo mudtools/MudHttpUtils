@@ -7,17 +7,8 @@
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using OpenTelemetry;
-using OpenTelemetry.Exporter;
-using OpenTelemetry.Logs;
-using OpenTelemetry.Metrics;
-using OpenTelemetry.Resources;
-using OpenTelemetry.Trace;
-using System.Diagnostics;
-// 别名避免与我方定义的 OtlpExportProtocol 枚举冲突
-using OtelOtlpExportProtocol = OpenTelemetry.Exporter.OtlpExportProtocol;
 
 namespace Mud.HttpUtils.OpenTelemetry;
 
@@ -31,9 +22,29 @@ namespace Mud.HttpUtils.OpenTelemetry;
 /// 通过 <see cref="MudHttpOpenTelemetryOptions.OtlpEndpoint"/> 自定义。</para>
 /// <para>生产级配置：自动配置 Resource（service.name/version/deployment.environment）、
 /// Sampler（ParentBased + TraceIdRatioBased）、可选 Logs 导出、批量导出、自定义 OTLP Headers。</para>
+/// <para>本类型为薄壳：实际装配逻辑由 <see cref="MudObservabilityBootstrap"/> 内核承担，
+/// 本类型仅负责 <see cref="MudHttpOpenTelemetryOptions"/> → <see cref="MudObservabilityOptions"/> 的逐属性映射。</para>
 /// </remarks>
 public static class MudHttpOpenTelemetryExtensions
 {
+    /// <summary>
+    /// Mud.HttpUtils 自身的可观测性贡献描述。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="MudObservabilityContribution.IncludeMudHttpSources"/> 为 <c>false</c>：
+    /// 自身即 Mud.HttpUtils，ActivitySourceName 与 MeterName 已是 Mud.HttpUtils 的源，
+    /// 无需通过 IncludeMudHttpSources 再次注册（否则会被去重逻辑合并，虽然不会翻倍但语义不正确）。
+    /// </remarks>
+    private static readonly MudObservabilityContribution MudHttpContribution = new()
+    {
+        ProductName = "Mud.HttpUtils",
+        ActivitySourceName = MudHttpActivitySource.Name,
+        MeterName = MudHttpMeter.MeterName,
+        DefaultServiceName = "Mud.HttpUtils.Application",
+        DefaultServiceVersion = MudHttpActivitySource.Version,
+        IncludeMudHttpSources = false,
+    };
+
     /// <summary>
     /// 一键开启 Mud.HttpUtils 的 OpenTelemetry 追踪与指标采集，从 <see cref="IConfiguration"/> 绑定选项。
     /// </summary>
@@ -131,12 +142,14 @@ public static class MudHttpOpenTelemetryExtensions
         MudHttpOpenTelemetryOptions options)
     {
         // 校验 SamplingRatio 范围（保留 ArgumentOutOfRangeException 语义，向后兼容既有调用方与测试）
+        // 保留与既有行为一致的异常类型与消息，在映射到共享 options 之前拦截。
         if (options.SamplingRatio < 0 || options.SamplingRatio > 1)
             throw new ArgumentOutOfRangeException(nameof(options.SamplingRatio),
                 $"SamplingRatio 必须在 0.0~1.0 范围内，当前值为 {options.SamplingRatio}。");
 
         // CFG-10：显式运行完整校验器（ServiceName/ServiceVersion/DeploymentEnvironment/ExportBatchSize/
         // ExportIntervalMilliseconds 此前完全无校验），使非法配置在启动期即失败而非静默。
+        // 在映射前校验，确保异常类型与既有行为一致（OptionsValidationException）。
         var validationResult = new MudHttpOpenTelemetryOptionsValidator()
             .Validate(Options.DefaultName, options);
         if (validationResult.Failed)
@@ -145,140 +158,42 @@ public static class MudHttpOpenTelemetryExtensions
                 Options.DefaultName, typeof(MudHttpOpenTelemetryOptions), validationResult.Failures!);
         }
 
-        // 配置 Resource：service.name / service.version / deployment.environment（OTel 规范必需）
-        var builder = services.AddOpenTelemetry()
-            .ConfigureResource(r => r
-                .AddService(serviceName: options.ServiceName, serviceVersion: options.ServiceVersion)
-                .AddAttributes(new[]
-                {
-                    new KeyValuePair<string, object>("deployment.environment", options.DeploymentEnvironment)
-                }));
+        // 映射 MudHttpOpenTelemetryOptions → MudObservabilityOptions（逐属性）
+        var coreOptions = MapToCoreOptions(options);
 
-        // 批量导出配置：通过 DI 注册 BatchExportProcessorOptions，对所有 Provider 生效
-        ConfigureBatchExportOptions(services, options);
-
-        if (options.EnableTracing)
-        {
-            builder.WithTracing(tp =>
-            {
-                // 采样器：ParentBased + TraceIdRatioBased（继承父采样决策 + 按比率采样）
-                tp.SetSampler(new ParentBasedSampler(
-                    new TraceIdRatioBasedSampler(options.SamplingRatio)));
-
-                // Mud.HttpUtils 自身的 ActivitySource
-                tp.AddSource(MudHttpActivitySource.Name);
-
-                if (options.EnableHttpClientInstrumentation)
-                {
-                    // .NET HttpClient 内置 ActivitySource，关联下游 HTTP span
-                    tp.AddHttpClientInstrumentation();
-                }
-
-                if (options.EnableAspNetCoreInstrumentation)
-                {
-                    tp.AddAspNetCoreInstrumentation();
-                }
-
-                ConfigureOtlpExporter(tp, options);
-                options.ConfigureTracing?.Invoke(tp);
-            });
-        }
-
-        if (options.EnableMetrics)
-        {
-            builder.WithMetrics(mp =>
-            {
-                // Mud.HttpUtils 自身的 Meter
-                mp.AddMeter(MudHttpMeter.MeterName);
-
-                if (options.EnableHttpClientInstrumentation)
-                {
-                    mp.AddHttpClientInstrumentation();
-                }
-
-                ConfigureOtlpExporter(mp, options);
-                options.ConfigureMetrics?.Invoke(mp);
-            });
-        }
-
-        if (options.EnableLogging)
-        {
-            builder.WithLogging(lp =>
-            {
-                ConfigureOtlpExporter(lp, options);
-                options.ConfigureLogging?.Invoke(lp);
-            });
-        }
-
-        return builder;
+        // 委托共享装配内核
+        return services.AddMudObservability(MudHttpContribution, coreOptions);
     }
 
     /// <summary>
-    /// 通过 DI 注册批量导出处理器选项，使 <see cref="MudHttpOpenTelemetryOptions.ExportBatchSize"/>
-    /// 和 <see cref="MudHttpOpenTelemetryOptions.ExportIntervalMilliseconds"/> 生效。
+    /// 将 <see cref="MudHttpOpenTelemetryOptions"/> 逐属性映射为 <see cref="MudObservabilityOptions"/>。
     /// </summary>
-    private static void ConfigureBatchExportOptions(IServiceCollection services, MudHttpOpenTelemetryOptions options)
+    /// <remarks>
+    /// 映射后由 <see cref="MudObservabilityBootstrap"/> 负责默认值回填、ns2.0 兜底、完整校验与装配。
+    /// 本方法不做任何校验或回填——校验已在调用方完成（保留既有异常类型与消息）。
+    /// </remarks>
+    private static MudObservabilityOptions MapToCoreOptions(MudHttpOpenTelemetryOptions options)
     {
-        // 批量导出配置：仅当值 > 0 时生效，null 使用 SDK 默认值
-        if (options.ExportBatchSize.HasValue && options.ExportBatchSize.Value > 0)
+        return new MudObservabilityOptions
         {
-            services.Configure<BatchExportProcessorOptions<Activity>>(b =>
-                b.MaxExportBatchSize = options.ExportBatchSize.Value);
-        }
-        if (options.ExportIntervalMilliseconds.HasValue && options.ExportIntervalMilliseconds.Value > 0)
-        {
-            services.Configure<BatchExportProcessorOptions<Activity>>(b =>
-                b.ScheduledDelayMilliseconds = options.ExportIntervalMilliseconds.Value);
-        }
-    }
-
-    private static void ConfigureOtlpExporter(TracerProviderBuilder builder, MudHttpOpenTelemetryOptions options)
-    {
-        if (options.OtlpEndpoint is null) return;
-
-        builder.AddOtlpExporter(o => ApplyOtlpExporterOptions(o, options));
-    }
-
-    private static void ConfigureOtlpExporter(MeterProviderBuilder builder, MudHttpOpenTelemetryOptions options)
-    {
-        if (options.OtlpEndpoint is null) return;
-
-        builder.AddOtlpExporter(o => ApplyOtlpExporterOptions(o, options));
-    }
-
-    private static void ConfigureOtlpExporter(LoggerProviderBuilder builder, MudHttpOpenTelemetryOptions options)
-    {
-        if (options.OtlpEndpoint is null) return;
-
-        builder.AddOtlpExporter(o => ApplyOtlpExporterOptions(o, options));
-    }
-
-    private static void ApplyOtlpExporterOptions(OtlpExporterOptions o, MudHttpOpenTelemetryOptions options)
-    {
-        o.Endpoint = options.OtlpEndpoint!;
-        o.Protocol = MapProtocol(options.OtlpExportProtocol);
-        if (options.UseShortExporterTimeout)
-        {
-            o.TimeoutMilliseconds = 5000;
-        }
-        if (options.OtlpHeaders != null && options.OtlpHeaders.Count > 0)
-        {
-            // OtlpExporterOptions.Headers 接受 "key1=value1,key2=value2" 格式的字符串
-            o.Headers = string.Join(",", options.OtlpHeaders.Select(kv => $"{kv.Key}={kv.Value}"));
-        }
-    }
-
-    private static OtelOtlpExportProtocol MapProtocol(OtlpExportProtocol protocol)
-    {
-        return protocol switch
-        {
-            OtlpExportProtocol.HttpProtobuf => OtelOtlpExportProtocol.HttpProtobuf,
-            // OTel SDK 将 OtlpExportProtocol.Grpc 标记为过时（其 .NET Standard / .NET Framework
-            // 资产缺少配套 HttpClientFactory 时不受支持），但并未提供等价的替代常量。
-            // 本库默认导出端点 http://localhost:4317 即 gRPC，映射关系必须保留以维持既有行为。
-#pragma warning disable CS0618 // 类型或成员已过时
-            _ => OtelOtlpExportProtocol.Grpc
-#pragma warning restore CS0618 // 类型或成员已过时
+            EnableTracing = options.EnableTracing,
+            EnableMetrics = options.EnableMetrics,
+            EnableLogging = options.EnableLogging,
+            EnableHttpClientInstrumentation = options.EnableHttpClientInstrumentation,
+            EnableAspNetCoreInstrumentation = options.EnableAspNetCoreInstrumentation,
+            OtlpEndpoint = options.OtlpEndpoint,
+            OtlpExportProtocol = options.OtlpExportProtocol,
+            OtlpHeaders = options.OtlpHeaders,
+            UseShortExporterTimeout = options.UseShortExporterTimeout,
+            ExportBatchSize = options.ExportBatchSize,
+            ExportIntervalMilliseconds = options.ExportIntervalMilliseconds,
+            ServiceName = options.ServiceName,
+            ServiceVersion = options.ServiceVersion,
+            DeploymentEnvironment = options.DeploymentEnvironment,
+            SamplingRatio = options.SamplingRatio,
+            ConfigureTracing = options.ConfigureTracing,
+            ConfigureMetrics = options.ConfigureMetrics,
+            ConfigureLogging = options.ConfigureLogging,
         };
     }
 }
