@@ -9,10 +9,10 @@ using System.Collections.Concurrent;
 using Mud.HttpUtils;
 using Mud.HttpUtils.Analyzers;
 using Mud.HttpUtils.Generator.Consts;
-using Mud.HttpUtils.Generators.Base;
-using Mud.HttpUtils.Generators.Context;
+using Mud.HttpUtils.HttpInvoke.Base;
+using Mud.HttpUtils.HttpInvoke.Context;
 
-namespace Mud.HttpUtils.Generators.Implementation;
+namespace Mud.HttpUtils.HttpInvoke.Implementation;
 
 /// <summary>
 /// 接口实现生成器（流程编排器）

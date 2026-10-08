@@ -6,10 +6,10 @@
 // -----------------------------------------------------------------------
 
 using Mud.HttpUtils.Analyzers;
-using Mud.HttpUtils.Generators.Base;
-using Mud.HttpUtils.Generators.Context;
+using Mud.HttpUtils.HttpInvoke.Base;
+using Mud.HttpUtils.HttpInvoke.Context;
 
-namespace Mud.HttpUtils.Generators.Implementation;
+namespace Mud.HttpUtils.HttpInvoke.Implementation;
 
 /// <summary>
 /// 接口契约补全生成器：为「生成器未实现」的接口成员发射占位实现，保证实现类满足接口契约。

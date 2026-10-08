@@ -9,7 +9,7 @@ using System.Diagnostics;
 using Mud.HttpUtils.Analyzers;
 using Mud.HttpUtils.Generator.Consts;
 
-namespace Mud.HttpUtils.Generators.Context;
+namespace Mud.HttpUtils.HttpInvoke.Context;
 
 /// <summary>
 /// 生成上下文
@@ -102,7 +102,7 @@ internal class GeneratorContext
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 用途：契约补全（<see cref="Mud.HttpUtils.Generators.Implementation.InterfaceContractCompletionGenerator"/>
+    /// 用途：契约补全（<see cref="Mud.HttpUtils.HttpInvoke.Implementation.InterfaceContractCompletionGenerator"/>
     /// 与 <c>MethodGenerator</c> 的占位实现）必须避开生成器<b>按模式无条件发射</b>的成员，
     /// 否则会产生重复成员（CS0111/CS0102）。
     /// </para>

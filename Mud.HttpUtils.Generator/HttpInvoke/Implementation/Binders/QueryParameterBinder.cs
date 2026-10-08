@@ -7,7 +7,7 @@ using Mud.HttpUtils.Models;
 // 故按方案 5.1 的「显式 #pragma + 理由」方式就地抑制，而非全局 NoWarn。
 #pragma warning disable CA1308
 
-namespace Mud.HttpUtils.Generators.Implementation;
+namespace Mud.HttpUtils.HttpInvoke.Implementation;
 
 internal class QueryParameterBinder : IParameterBinder
 {

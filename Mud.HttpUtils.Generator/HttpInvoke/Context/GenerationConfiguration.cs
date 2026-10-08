@@ -7,7 +7,7 @@
 
 using System.Diagnostics;
 
-namespace Mud.HttpUtils.Generators.Context;
+namespace Mud.HttpUtils.HttpInvoke.Context;
 
 /// <summary>
 /// 基类（<c>InheritedFrom</c> 指向的生成器产出抽象类）的运行模式。

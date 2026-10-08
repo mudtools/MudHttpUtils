@@ -1,7 +1,7 @@
 using Mud.HttpUtils;
 using Mud.HttpUtils.Models;
 
-namespace Mud.HttpUtils.Generators.Implementation;
+namespace Mud.HttpUtils.HttpInvoke.Implementation;
 
 internal class HeaderParameterBinder : IParameterBinder
 {

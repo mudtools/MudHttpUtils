@@ -1,6 +1,6 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using Mud.HttpUtils.Generators.Implementation;
+using Mud.HttpUtils.HttpInvoke.Implementation;
 using Mud.HttpUtils.Models.Analysis;
 
 namespace Mud.HttpUtils.Generator.Tests;

@@ -1388,7 +1388,7 @@ Mud.HttpUtils.Generator/
 │   └── EventHandlerSourceGenerator.cs
 ├── Extensions/
 │   └── StringExtensions.cs
-├── Generators/                   # 代码生成器
+├── HttpInvoke/                   # [HttpClientApi] 接口的实现类代码生成
 │   ├── Base/                     # 生成器接口
 │   │   └── ICodeFragmentGenerator.cs
 │   ├── Context/                  # 生成上下文与配置快照

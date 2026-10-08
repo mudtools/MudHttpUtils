@@ -1,6 +1,6 @@
 using Mud.HttpUtils.Models;
 
-namespace Mud.HttpUtils.Generators.Implementation;
+namespace Mud.HttpUtils.HttpInvoke.Implementation;
 
 /// <summary>
 /// 参数绑定器：处理 [HeaderCollection] 标记的字典参数，将字典键值对作为 HTTP 请求头批量添加。
