@@ -99,7 +99,7 @@ public class ToolSurfaceEmissionTests
             public interface ITestTenantV1BitableRecord
             {
                 [Delete("/bitable/records/{recordId}")]
-                Task<TestPayload> DeleteRecordAsync(string recordId, CancellationToken cancellationToken = default);
+                Task<TestPayload> DeleteRecordAsync([Path] string recordId, CancellationToken cancellationToken = default);
             }
         }
         """;
@@ -358,7 +358,8 @@ public class ToolSurfaceEmissionTests
             "TestToolsServiceCollectionCoreExtensions.g.cs",
             "TestToolGuidance.g.cs",
             "TestToolCapabilityCatalog.g.cs",
-        ], "§5.1 的 8 条输出路径必须全部参与（漏任何一条都属「漏搬 Emitter 分支」的 R-2b 缺陷）");
+            "TestToolMethodCatalog.g.cs",
+        ], "§5.1 的 8 条输出路径 + 方法级目录必须全部参与（漏任何一条都属「漏搬 Emitter 分支」的 R-2b 缺陷）");
 
         run.Result.Diagnostics.Should().NotContain(
             d => d.Severity == DiagnosticSeverity.Error || d.Severity == DiagnosticSeverity.Warning,
@@ -421,7 +422,61 @@ public class ToolSurfaceEmissionTests
 
         var disabled = Run([ProfileSource, ConsumerSource, CuratedToolsSource]);
         HintNames(disabled).Should().NotContain("TestToolCapabilityCatalog.g.cs");
+        HintNames(disabled).Should().NotContain("TestToolMethodCatalog.g.cs");
         disabled.Result.Diagnostics.Should().NotContain(d => d.Id == "MUDTT018");
+    }
+
+    // ────────── 方法级目录（MethodCatalog）──────────
+
+    /// <summary>
+    /// 方法目录逐方法发射结构化事实（接口名 / HTTP / 路由 / 令牌 / 域 / 风险 / 参数位置 / 策展标记），
+    /// 是运行时 schema 自省（<c>schema_read</c>）与万能兜底（<c>api_call</c>）的唯一事实源。
+    /// </summary>
+    [Fact]
+    public void MethodCatalog_EmitsEntryPerSdkMethod_WithHttpAndRouteFacts()
+    {
+        var run = Run(
+            [ProfileSource, ConsumerSource, CuratedToolsSource, WriteToolSource],
+            buildProperties: new Dictionary<string, string> { ["build_property.TestToolCatalog"] = "true" });
+
+        var catalog = Normalize(Source(run, "TestToolMethodCatalog.g.cs"));
+
+        // SDK 有 2 个接口 × 各 1 方法 = 2 条目（与 CapabilityCatalog 的 SdkMethodCount 同源）。
+        catalog.Should().Contain("public const int SdkMethodCount = 2");
+
+        // ITestTenantV1Bitable.ListAsync → GET /bitable/apps，tenant 令牌，Bitable 域，risk=read(0)，已策展。
+        catalog.Should().Contain("\"ITestTenantV1Bitable.ListAsync\"")
+            .And.Contain("\"GET\"")
+            .And.Contain("\"/bitable/apps\"")
+            .And.Contain("\"tenant\"")
+            .And.Contain("\"Bitable\"");
+
+        // ITestTenantV1BitableRecord.DeleteRecordAsync → DELETE /bitable/records/{recordId}，risk=high-risk-write(2)。
+        catalog.Should().Contain("\"ITestTenantV1BitableRecord.DeleteRecordAsync\"")
+            .And.Contain("\"DELETE\"")
+            .And.Contain("\"/bitable/records/{recordId}\"")
+            .And.Contain("\"BitableRecord\"");
+
+        // 路径参数提取：DeleteRecordAsync 的 recordId 是 [Path] 参数。
+        catalog.Should().Contain("\"recordId\"");
+
+        // 策展标记：ListAsync 被 bitable.list 工具策展，DeleteRecordAsync 被 bitable.delete_record 策展。
+        // 渲染形态：构造器末尾两实参 = (curated, curatedTool)，策展方法为 (true, "tool.name")。
+        catalog.Should().Contain("true, \"bitable.list\"")
+            .And.Contain("true, \"bitable.delete_record\"");
+
+        // ByQualifiedName 字典必须包含两个键。
+        catalog.Should().Contain("ByQualifiedName");
+    }
+
+    /// <summary>
+    /// 未开启 CapabilityCatalog 开关时方法目录同样不发射（与方法目录共享同一开关）。
+    /// </summary>
+    [Fact]
+    public void MethodCatalog_NotEmitted_WhenCatalogDisabled()
+    {
+        var run = Run([ProfileSource, ConsumerSource, CuratedToolsSource]);
+        HintNames(run).Should().NotContain("TestToolMethodCatalog.g.cs");
     }
 
     // ────────── golden（槽位 014）──────────

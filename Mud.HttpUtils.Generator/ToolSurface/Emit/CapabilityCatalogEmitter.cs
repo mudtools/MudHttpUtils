@@ -76,7 +76,10 @@ internal static class CapabilityCatalogEmitter
                 return;
             }
 
+            var curatedToolByMethod = BuildCuratedToolIndex(curatedModels);
+
             var methodsByModule = new SortedDictionary<string, int>(StringComparer.Ordinal);
+            var methodEntries = new List<MethodCatalogEntryData>();
             var totalMethods = 0;
 
             foreach (var type in EnumerateInterfaces(sdkAssembly.GlobalNamespace, profile))
@@ -92,20 +95,25 @@ internal static class CapabilityCatalogEmitter
 
                 totalMethods += declared.Length;
 
-                var module = "Unparsed";
-                if (InterfaceIdentityParser.TryParse(type.Name, profile, out var identity) && identity is not null)
-                {
-                    module = identity.Domain;
-                }
+                InterfaceIdentityParser.TryParse(type.Name, profile, out var identity);
+                var module = identity?.Domain ?? "Unparsed";
+                var tokenKind = identity?.Kind ?? ToolSurfaceTokenKind.Unspecified;
 
                 methodsByModule[module] = methodsByModule.TryGetValue(module, out var count)
                     ? count + declared.Length
                     : declared.Length;
+
+                foreach (var method in declared)
+                {
+                    methodEntries.Add(MethodCatalogEmitter.CreateEntry(
+                        type, method, module, tokenKind, profile, curatedToolByMethod));
+                }
             }
 
             var coverage = DescriptorValidator.ComputeCoverage(curatedModels.Select(static m => m.Entry), totalMethods);
 
             EmitSource(context, methodsByModule, totalMethods, coverage, profile);
+            MethodCatalogEmitter.Emit(context, methodEntries, profile);
 
             // 槽位 018 上报点：聚合单条（避免逐方法刷屏）。
             factory.Report(
@@ -122,6 +130,31 @@ internal static class CapabilityCatalogEmitter
         {
             GeneratorDebugLogger.LogError(nameof(CapabilityCatalogEmitter), ex);
         }
+    }
+
+    /// <summary>
+    /// 构建「SDK 方法名 → 策展工具名」索引（方法目录的 <c>curated</c> 判定依据）。
+    /// </summary>
+    /// <remarks>
+    /// 按键取 <see cref="CapabilityEntry.MethodName"/>：策展工具的 <c>Source</c> 常写派生接口名
+    /// （如 <c>IFeishuTenantV2OkrObjective.GetObjectiveAsync</c>），而方法在基接口上声明——
+    /// 按接口名精确匹配会因基/派生不一致而失效；方法名在 SDK 内高度唯一，按方法名匹配即可满足
+    /// 「引导优先用已策展工具」的启发式语义。同名方法多重策展时取首个（低频，可接受）。
+    /// </remarks>
+    private static Dictionary<string, string> BuildCuratedToolIndex(ImmutableArray<ToolSchemaModel> curatedModels)
+    {
+        var index = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var model in curatedModels)
+        {
+            var entry = model.Entry;
+            if (entry.MethodName.Length > 0 && entry.ToolName.Length > 0
+                && !index.ContainsKey(entry.MethodName))
+            {
+                index.Add(entry.MethodName, entry.ToolName);
+            }
+        }
+
+        return index;
     }
 
     private static void EmitSource(
