@@ -259,7 +259,7 @@ service:
 
 ## 作为其他 Mud SDK 的 OTel 基座
 
-自 3.1.0 起，本包暴露了共享装配内核，其他 Mud SDK（如 `Mud.Feishu`、`Mud.Wechat`）可基于本包实现 OTel 可观测性，无需各自重复装配剧本。
+自 3.0.3 起，本包暴露了共享装配内核，其他 Mud SDK（如 `Mud.Feishu`、`Mud.Wechat`）可基于本包实现 OTel 可观测性，无需各自重复装配剧本。
 
 ### 核心类型
 

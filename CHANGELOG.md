@@ -4,10 +4,10 @@
 
 ---
 
-## 3.1.0（OpenTelemetry 共享装配内核抽取，2026-10-08）
+## 3.0.3（OpenTelemetry 共享装配内核抽取，2026-10-08）
 
 > 把三仓（`Mud.HttpUtils` / `Mud.Feishu` / `Mud.Wechat`）重复的 OTel 装配剧本（Resource + Sampler + 源/Meter 注册 + Instrumentation 开关 + OTLP 导出 + Configure* 回调）收敛为本包内的**唯一实现**，并暴露共享装配内核供下游 SDK 退化为「贡献描述 + options 映射」的薄壳。
-> **`AddMudHttpOpenTelemetry` 自身无行为变更**（既有 56 例零修改全绿即证明），下游 SDK 将在各自同版本中改为薄壳。
+> **`AddMudHttpOpenTelemetry` 自身无行为变更**（既有 56 例零修改全绿即证明），下游 SDK 将在各自下一版本中改为薄壳。
 
 ### 新增
 
@@ -28,13 +28,14 @@
 
 - **`AddMudHttpOpenTelemetry` 无行为变更**：两个公开重载的签名、默认值、异常类型与消息**逐字不变**。内部改为映射到 `MudObservabilityOptions` 后委托 `AddMudObservability` 装配，既有 56 用例零修改全绿即证明行为等价。
 - **`OtlpEndpoint` 相对 URI 改为启动期拦截**：`MudHttpOpenTelemetryOptionsValidator` 补上与共享内核同口径的「必须为绝对 URI」校验。此前相对 URI 会静默通过并在导出期失败（CFG-10 修复遗留的空白项）；现在启动期即抛 `OptionsValidationException`（消息指向 `MudHttpOpenTelemetryOptions`）。此变更只影响**本就无法工作**的非法配置。
-- **下游 SDK 将改为薄壳**：`Mud.Feishu.OpenTelemetry`（3.1.0）与 `Mud.Wechat.OpenTelemetry`（1.1.0）将在各自同版本中改为 `Contribution` + `Options` 映射 → `AddMudObservability`，消除各自 ~200 行重复装配剧本。下游获得 OTLP 导出增强面（`OtlpHeaders` / `OtlpExportProtocol` / `UseShortExporterTimeout` / `ExportBatchSize` / `ExportIntervalMilliseconds`）、启动期真校验、ns2.0 兜底。
+- **下游 SDK 将改为薄壳**：`Mud.Feishu.OpenTelemetry` 与 `Mud.Wechat.OpenTelemetry` 将在各自下一版本中改为 `Contribution` + `Options` 映射 → `AddMudObservability`，消除各自 ~200 行重复装配剧本。下游获得 OTLP 导出增强面（`OtlpHeaders` / `OtlpExportProtocol` / `UseShortExporterTimeout` / `ExportBatchSize` / `ExportIntervalMilliseconds`）、启动期真校验、ns2.0 兜底。
 
 ### 升级注意
 
-- **`Mud.HttpUtils*` 全家桶同版本升级**：本包 3.1.0 发布后，下游 `Mud.Feishu`（3.1.0）与 `Mud.Wechat`（1.1.0）同步升级。联调期下游可用 CLI `--source` 指向 `artifacts` 目录（不得修改下游 `nuget.config`）。
+- **本包先发布，下游跟随**：本包 **3.0.3** 发布至 nuget.org 后，下游 `Mud.Feishu` / `Mud.Wechat` 再升级（**下游版本号由各自仓库决定**，与本包不同版本线）。联调期下游可用 CLI `--source` 指向 `artifacts` 目录（不得修改下游 `nuget.config`）。
 - **双重入口禁令**：同一宿主只应调用一个产品的 OTel 入口。若已调用 `AddMudHttpOpenTelemetry()`，不可再调用 `AddMudObservability()` 注册其他产品——内核的重复入口守卫会抛 `InvalidOperationException`。如需同时采集多个产品的源，请使用 `MudObservabilityContribution.IncludeMudHttpSources = true` 或 `AddMudObservabilitySources()`。
 - **共享类型约束**：`MudObservabilityContribution` / `MudObservabilityOptions` 均为普通 `class` + 普通 `set`（禁 `init` / `record` / `required`），公共签名不含可选参数——这是为了在下游 `netstandard2.0` TFM 下零障碍使用。
+- **发行号说明**：本段内容曾以 `3.1.0` 为规划版本（见提交 `accb7b2` 的信息），正式发行号定为 **3.0.3**；该规划版本从未发布到 nuget.org，故无版本号位被占用，升级无额外注意事项。
 
 ---
 
