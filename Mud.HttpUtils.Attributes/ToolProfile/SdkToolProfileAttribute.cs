@@ -23,6 +23,19 @@ namespace Mud.HttpUtils.Attributes;
 /// 槽位完备性判据（设计文档 §4.2）：上游引擎源码中任何 <c>"Mud.Feishu…"</c> / <c>"Feishu…"</c> /
 /// <c>"IFeishu…"</c> 字符串字面量都必须对应本特性的某个槽，遗漏即表现为 golden 漂移或 CS0246/CS0103。
 /// </para>
+/// <para>
+/// <b>有意<b>不</b>入槽的派生名</b>（设计文档 §5.1 的推导规则）：产物名中凡是能由
+/// <see cref="ProductPrefix"/> / <see cref="ProductPluralPrefix"/> 完全推导的，都不设槽
+/// （与 <c>I{P}DomainRegistrar</c> 同理）：
+/// <c>{P}Schemas</c>、<c>{P}Names</c>、<c>{P}Contracts</c>、<c>{P}Args/*</c>、
+/// <c>{P}DomainRegistrars/*</c>、<c>{P}Guidance</c>、<c>{Plural}ServiceCollectionCoreExtensions</c>、
+/// <b><c>{P}CapabilityCatalog</c></b>。
+/// ⇒ <c>ProductPrefix = "FeishuTool"</c> 时能力目录产物类型是 <c>FeishuToolCapabilityCatalog</c>
+/// （<b>不是</b> <c>FeishuCapabilityCatalog</c>）。消费方若在源码中<b>硬引用</b>这些类型
+/// （如能力查询工具引用 <c>{P}CapabilityCatalog.MethodsByDomain</c>），必须按派生名书写，否则
+/// <c>CS0103</c>；从<b>旧版下游自带引擎</b>迁移过来的消费方尤其要逐名核对——旧引擎曾用
+/// <c>Feishu</c> + <c>CapabilityCatalog</c> 拼接，与本契约不同名（实测踩点，见设计文档 §14）。
+/// </para>
 /// </remarks>
 /// <example>
 /// <code>
@@ -106,6 +119,20 @@ public sealed class SdkToolProfileAttribute : Attribute
     /// 例：飞书 <c>"IFeishuTenant=Tenant;IFeishuUser=User"</c>；
     /// 微信 <c>"_Provider=ThirdParty;_ThirdParty=ThirdParty;_Internal=Internal"</c>。
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>适用面（引擎对两侧都查）</b>：标记表既用于 ①<b>SDK 接口</b>（<c>Source</c> 挂钩的目标），
+    /// 也用于 ②<b>工具的承载接口</b>（声明 <c>[Tool]</c> 方法的那个接口，槽位 016：
+    /// 把「工具声明的 <c>identity</c>」与「承载接口名按本表推导出的令牌类型」比对，不一致即 Error）。
+    /// </para>
+    /// <para>
+    /// ⇒ <b>承载接口名自身必须携带标记串</b>（如 <c>IFeishuTenant*Tool</c> / <c>IFeishuUser*Tool</c>）。
+    /// 该约定不在槽位表里（它是引擎的校验规则，不是可配置的字面量），但它是接入时最常见的构建期失败点：
+    /// 本仓样例剖面的工具接口本身即 SDK 命名形状（<c>ITestTenantV1Bitable</c>），故这一约束只在
+    /// 真实消费方（策展面用自定义命名，如 <c>IFeishu{Biz}{Verb}Tool</c>）接入时才会暴露
+    /// （实测：下游一次接入报出 87 条 <c>MUDFT016</c>，见设计文档 §14）。
+    /// </para>
+    /// </remarks>
     public string TokenKindMarkers { get; set; } = string.Empty;
 
     // ────────── 5-7. 产物前缀 / 诊断 / 危险词 ──────────
