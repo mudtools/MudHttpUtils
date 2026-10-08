@@ -4,6 +4,41 @@
 
 ---
 
+## 3.0.3（OpenTelemetry 共享装配内核抽取，2026-10-08）
+
+> 把三仓（`Mud.HttpUtils` / `Mud.Feishu` / `Mud.Wechat`）重复的 OTel 装配剧本（Resource + Sampler + 源/Meter 注册 + Instrumentation 开关 + OTLP 导出 + Configure* 回调）收敛为本包内的**唯一实现**，并暴露共享装配内核供下游 SDK 退化为「贡献描述 + options 映射」的薄壳。
+> **`AddMudHttpOpenTelemetry` 自身无行为变更**（既有 56 例零修改全绿即证明），下游 SDK 将在各自下一版本中改为薄壳。
+
+### 新增
+
+- **4 个公共类型**（`Mud.HttpUtils.OpenTelemetry` 命名空间）：
+  - `MudObservabilityContribution`：产品线贡献描述（`ProductName` / `ActivitySourceName` / `MeterName` / `MeterWildcard` / `DefaultServiceName` / `DefaultServiceVersion` / `IncludeMudHttpSources`）。全部属性为普通 `set`（非 `init`），下游 `netstandard2.0` 可直接用对象初始化器。
+  - `MudObservabilityOptions`：三包共有的运行期开关与导出配置，实现 `IValidateOptions<MudObservabilityOptions>`（仅复用 `Validate` 方法签名，不注册到 DI 管道）。属性集与 `MudHttpOpenTelemetryOptions` 逐字段对应（19 属性）。
+  - `MudObservabilityDefaults`：细粒度可复用件（`CreateSampler` / `ConfigureResource` / `ApplyOtlpExporter` ×3 重载 / `ConfigureBatchExportOptions` / `Validate`），供不使用 kernel 的自建管道场景与单测。
+  - `MudObservabilityBootstrap`：唯一装配入口。两个 `AddMudObservability` 重载（均不用可选参数，规避 RS0026）+ `AddMudObservabilitySources`（向既有 builder 追加源与 Meter，不创建新 Provider）。`internal sealed class MudObservabilityBootstrapMarker` 作为重复入口守卫标记（不进公共面）。
+- **重复入口守卫**：同一 `ServiceCollection` 先后注册不同 `ProductName` 的贡献 → 抛 `InvalidOperationException`（消息含两个产品名）；同产品重复注册 → 幂等短路（不再装配，原样返回首次装配的 `OpenTelemetryBuilder`，**首次注册的配置生效**）。守卫标记在装配成功之后才登记，装配中途失败不会留下标记把后续重试静默短路。
+- **源/Meter 去重**：`AddSource` / `AddMeter` 使用 `HashSet<string>(StringComparer.Ordinal)` 收集后统一注册，防止 `IncludeMudHttpSources = true` 且贡献源名与 Mud.HttpUtils 源名相同时重复采集（Span 翻倍）。
+- **ns2.0 AspNetCore 兜底**：`#if NETSTANDARD2_0` 下强制 `EnableAspNetCoreInstrumentation = false`（上收 Wechat 既有兜底，与本包 csproj 无 `FrameworkReference` 的事实一致）。
+- **默认值回填**：`ServiceName` / `ServiceVersion` 为空时回填 `contribution.DefaultServiceName` / `DefaultServiceVersion`，回填后仍空白 → 抛 `OptionsValidationException`（修复下游 P3「死校验器」问题）。
+- **新增内核单测**：`MudObservabilityBootstrapTests.cs`（覆盖贡献校验 / null 参数 / 重复入口守卫 / **同产品重复注册不得重复装配** / 采样越界 / 服务名回填 / 源去重（真实 Activity 计数）/ Meter 精确名与通配名（真实 Metric 采集）/ IncludeMudHttpSources 双向 / OTLP null / Action 重载顺序 / AddMudObservabilitySources 追加语义与贡献校验）+ `MudObservabilityDefaultsTests.cs`（Sampler 类型与比率、Validate 全字段矩阵、OTLP 选项映射 Endpoint/Protocol/Timeout/Headers、ConfigureBatchExportOptions 正数/零/null/负数四态）。
+- 三个 TFM 的 `PublicAPI.Unshipped.txt` 同批登记新公共类型与成员（RS0016 逐 TFM 独立校验）。
+- `Mud.HttpUtils.OpenTelemetry/README.md` 新增「作为其他 Mud SDK 的 OTel 基座」章节（`MudObservabilityContribution` / `AddMudObservability` 用法示例）与「双重入口禁令」说明。
+
+### 行为变更
+
+- **`AddMudHttpOpenTelemetry` 无行为变更**：两个公开重载的签名、默认值、异常类型与消息**逐字不变**。内部改为映射到 `MudObservabilityOptions` 后委托 `AddMudObservability` 装配，既有 56 用例零修改全绿即证明行为等价。
+- **`OtlpEndpoint` 相对 URI 改为启动期拦截**：`MudHttpOpenTelemetryOptionsValidator` 补上与共享内核同口径的「必须为绝对 URI」校验。此前相对 URI 会静默通过并在导出期失败（CFG-10 修复遗留的空白项）；现在启动期即抛 `OptionsValidationException`（消息指向 `MudHttpOpenTelemetryOptions`）。此变更只影响**本就无法工作**的非法配置。
+- **下游 SDK 将改为薄壳**：`Mud.Feishu.OpenTelemetry` 与 `Mud.Wechat.OpenTelemetry` 将在各自下一版本中改为 `Contribution` + `Options` 映射 → `AddMudObservability`，消除各自 ~200 行重复装配剧本。下游获得 OTLP 导出增强面（`OtlpHeaders` / `OtlpExportProtocol` / `UseShortExporterTimeout` / `ExportBatchSize` / `ExportIntervalMilliseconds`）、启动期真校验、ns2.0 兜底。
+
+### 升级注意
+
+- **本包先发布，下游跟随**：本包 **3.0.3** 发布至 nuget.org 后，下游 `Mud.Feishu` / `Mud.Wechat` 再升级（**下游版本号由各自仓库决定**，与本包不同版本线）。联调期下游可用 CLI `--source` 指向 `artifacts` 目录（不得修改下游 `nuget.config`）。
+- **双重入口禁令**：同一宿主只应调用一个产品的 OTel 入口。若已调用 `AddMudHttpOpenTelemetry()`，不可再调用 `AddMudObservability()` 注册其他产品——内核的重复入口守卫会抛 `InvalidOperationException`。如需同时采集多个产品的源，请使用 `MudObservabilityContribution.IncludeMudHttpSources = true` 或 `AddMudObservabilitySources()`。
+- **共享类型约束**：`MudObservabilityContribution` / `MudObservabilityOptions` 均为普通 `class` + 普通 `set`（禁 `init` / `record` / `required`），公共签名不含可选参数——这是为了在下游 `netstandard2.0` TFM 下零障碍使用。
+- **发行号说明**：本段内容曾以 `3.1.0` 为规划版本（见提交 `accb7b2` 的信息），正式发行号定为 **3.0.3**；该规划版本从未发布到 nuget.org，故无版本号位被占用，升级无额外注意事项。
+
+---
+
 ## 3.0.2（敏感 URL 键下游登记门面，2026-10-07）
 
 ### 新增
