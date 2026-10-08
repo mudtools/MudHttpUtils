@@ -53,8 +53,14 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
         // Extraction ↔ Schema 层接缝注册（幂等赋值；工厂签名携带 profile，注册点与剖面无关——扇出安全）。
         ToolSurfaceSchemaResolver.Factory = static (compilation, profile) => new TypeSchemaResolver(compilation, profile);
 
+        // 追踪名（§10「引擎增量」门禁的断言锚点）：
+        // 与 HTTP 生成器同体例——无追踪名时 IncrementalStepRunReason 无法归属到具体步骤，
+        // 「无关文件编辑 ⇒ Cached/Unchanged」只能靠整体结果反推，粒度不足以定位回归。
+        // 剖面集合经 SdkToolProfileSet 值相等包装：ImmutableArray 的相等性是数组引用比较，
+        // 直接投图会让「编译变了但剖面未变」（IDE 每次击键）把整条工具面扇出判为 Modified。
         var profiles = context.CompilationProvider
-            .Select(static (compilation, _) => ProfileDiscovery.ResolveProfiles(compilation));
+            .Select(static (compilation, _) => SdkToolProfileSet.Create(ProfileDiscovery.ResolveProfiles(compilation)))
+            .WithTrackingName("ToolSurface_Profiles");
         var assemblyName = context.CompilationProvider
             .Select(static (compilation, _) => compilation.AssemblyName);
         var additionalTexts = context.AdditionalTextsProvider.Collect();
@@ -63,13 +69,15 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
         var scanned = context.SyntaxProvider
             .CreateSyntaxProvider(IsToolCandidate, ScanTool)
             .Where(static result => result is not null)
-            .Select(static (result, _) => result!);
+            .Select(static (result, _) => result!)
+            .WithTrackingName("ToolSurface_ToolScan");
 
         // ── L1：执行器绑定扫描（handler 特性 → 工具名 + 执行器构造签名）──
         var handlers = context.SyntaxProvider
             .CreateSyntaxProvider(IsHandlerCandidate, ScanHandler)
             .Where(static result => result is not null)
-            .Select(static (result, _) => result!);
+            .Select(static (result, _) => result!)
+            .WithTrackingName("ToolSurface_HandlerScan");
 
         // ── 诊断出口（与模型同源一次扫描；PendingDiagnostic 自带所属剖面的描述符，混合流无需 factory）──
         context.RegisterSourceOutput(
@@ -83,41 +91,43 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
         // ── SDKT002：必填槽缺失的剖面（静态描述符上报，并从一切扇出中排除）──
         context.RegisterSourceOutput(
             profiles,
-            Guard.WrapUnchecked<ImmutableArray<SdkToolProfileModel>>("ToolSurfaceProfiles(槽位守卫)", ReportInvalidProfiles));
+            Guard.WrapUnchecked<SdkToolProfileSet>("ToolSurfaceProfiles(槽位守卫)", ReportInvalidProfiles));
 
         // ── 按剖面分组的模型/绑定流（元组元素全为值相等类型，增量缓存安全）──
         var modelsByProfile = scanned
             .Where(static result => result.Scan.Model is not null)
             .Select(static (result, _) => (result.Profile, Model: result.Scan.Model!))
-            .Collect();
+            .Collect()
+            .WithTrackingName("ToolSurface_ModelsByProfile");
 
         var handlersByProfile = handlers
             .Select(static (result, _) => (result.Profile, result.Scan))
-            .Collect();
+            .Collect()
+            .WithTrackingName("ToolSurface_HandlersByProfile");
 
         // ── L2/L4 + golden：Schema 常量 / 名字契约表 / 类型化契约表 ──
         // 注：WrapUnchecked 的 T 必须显式指定——方法组实参不参与泛型推断（CS0411）。
         context.RegisterSourceOutput(
             modelsByProfile.Combine(assemblyName).Combine(profiles).Combine(additionalTexts),
-            Guard.WrapUnchecked<(((ImmutableArray<(SdkToolProfileModel, ToolSchemaModel)>, string?), ImmutableArray<SdkToolProfileModel>), ImmutableArray<AdditionalText>)>(
+            Guard.WrapUnchecked<(((ImmutableArray<(SdkToolProfileModel, ToolSchemaModel)>, string?), SdkToolProfileSet), ImmutableArray<AdditionalText>)>(
                 "ToolSurfaceSchemas", EmitToolSurface));
 
         // ── L2：参数解包器（{P}Args/{Tool}Args.g.cs，每类型一文件）──
         context.RegisterSourceOutput(
             modelsByProfile.Combine(assemblyName).Combine(profiles),
-            Guard.WrapUnchecked<((ImmutableArray<(SdkToolProfileModel, ToolSchemaModel)>, string?), ImmutableArray<SdkToolProfileModel>)>(
+            Guard.WrapUnchecked<((ImmutableArray<(SdkToolProfileModel, ToolSchemaModel)>, string?), SdkToolProfileSet)>(
                 "ToolSurfaceArgs", EmitToolArgs));
 
         // ── L2：域注册器 + DI 装配 ──
         context.RegisterSourceOutput(
             modelsByProfile.Combine(handlersByProfile).Combine(assemblyName).Combine(profiles),
-            Guard.WrapUnchecked<(((ImmutableArray<(SdkToolProfileModel, ToolSchemaModel)>, ImmutableArray<(SdkToolProfileModel, ScannedHandler)>), string?), ImmutableArray<SdkToolProfileModel>)>(
+            Guard.WrapUnchecked<(((ImmutableArray<(SdkToolProfileModel, ToolSchemaModel)>, ImmutableArray<(SdkToolProfileModel, ScannedHandler)>), string?), SdkToolProfileSet)>(
                 "ToolSurfaceDomainRegistrars", EmitRegistrars));
 
         // ── 域级 guidance 资产（{GuidanceDirectory}{domain}.md → {P}Guidance.g.cs）──
         context.RegisterSourceOutput(
             assemblyName.Combine(profiles).Combine(additionalTexts),
-            Guard.WrapUnchecked<((string?, ImmutableArray<SdkToolProfileModel>), ImmutableArray<AdditionalText>)>(
+            Guard.WrapUnchecked<((string?, SdkToolProfileSet), ImmutableArray<AdditionalText>)>(
                 "ToolSurfaceGuidance", EmitGuidance));
 
         // ── Tier R：能力目录（开关 = build_property.{CapabilityCatalogPropertyName}，剖面槽动态键）──
@@ -127,7 +137,7 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
             .Select(static (pair, _) =>
             {
                 var flags = ImmutableArray.CreateBuilder<bool>();
-                foreach (var profile in pair.Left)
+                foreach (var profile in pair.Left.Items)
                 {
                     var key = profile.CapabilityCatalogPropertyName;
                     flags.Add(key.Length > 0
@@ -146,7 +156,7 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
 
         context.RegisterSourceOutput(
             catalogCompilation.Combine(modelsByProfile).Combine(profiles).Combine(catalogFlags),
-            Guard.WrapUnchecked<(((Compilation?, ImmutableArray<(SdkToolProfileModel, ToolSchemaModel)>), ImmutableArray<SdkToolProfileModel>), ImmutableArray<bool>)>(
+            Guard.WrapUnchecked<(((Compilation?, ImmutableArray<(SdkToolProfileModel, ToolSchemaModel)>), SdkToolProfileSet), ImmutableArray<bool>)>(
                 "ToolSurfaceCapabilityCatalog", EmitCapabilityCatalog));
     }
 
@@ -248,9 +258,9 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
         }
     }
 
-    private static void ReportInvalidProfiles(SourceProductionContext context, ImmutableArray<SdkToolProfileModel> profiles)
+    private static void ReportInvalidProfiles(SourceProductionContext context, SdkToolProfileSet profiles)
     {
-        foreach (var profile in profiles)
+        foreach (var profile in profiles.Items)
         {
             if (profile.MissingRequiredSlots.Length == 0)
             {
@@ -271,7 +281,7 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
     private static void EmitToolSurface(
         SourceProductionContext context,
         (((ImmutableArray<(SdkToolProfileModel Profile, ToolSchemaModel Model)> Models, string? AssemblyName) WithName,
-          ImmutableArray<SdkToolProfileModel> Profiles) Grouped,
+          SdkToolProfileSet Profiles) Grouped,
          ImmutableArray<AdditionalText> Texts) input)
         => ForEachProfile(
             context,
@@ -300,14 +310,14 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
                 if (drift is not null)
                 {
                     // 槽位 014 上报点：描述符静默漂移（golden 快照不一致）。
-                    factory.Report(ctx, ToolSurfaceDiagnostics.SlotGoldenDrift, null, drift, profile.GoldenUpdatePropertyName);
+                    factory.Report(ctx, ToolSurfaceDiagnostics.SlotGoldenDrift, null, drift, GoldenUpdateHint(profile));
                 }
             });
 
     private static void EmitToolArgs(
         SourceProductionContext context,
         ((ImmutableArray<(SdkToolProfileModel Profile, ToolSchemaModel Model)> Models, string? AssemblyName) WithName,
-         ImmutableArray<SdkToolProfileModel> Profiles) input)
+         SdkToolProfileSet Profiles) input)
         => ForEachProfile(
             context,
             "ToolSurfaceArgs",
@@ -321,7 +331,7 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
         (((ImmutableArray<(SdkToolProfileModel Profile, ToolSchemaModel Model)> Models,
            ImmutableArray<(SdkToolProfileModel Profile, ScannedHandler Handler)> Handlers) WithBindings,
           string? AssemblyName) Outer,
-         ImmutableArray<SdkToolProfileModel> Profiles) input)
+         SdkToolProfileSet Profiles) input)
         => ForEachProfile(
             context,
             "ToolSurfaceDomainRegistrars",
@@ -343,7 +353,7 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
 
     private static void EmitGuidance(
         SourceProductionContext context,
-        ((string? AssemblyName, ImmutableArray<SdkToolProfileModel> Profiles) WithName,
+        ((string? AssemblyName, SdkToolProfileSet Profiles) WithName,
          ImmutableArray<AdditionalText> Texts) input)
         => ForEachProfile(
             context,
@@ -361,7 +371,7 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
     private static void EmitCapabilityCatalog(
         SourceProductionContext context,
         (((Compilation? Compilation, ImmutableArray<(SdkToolProfileModel Profile, ToolSchemaModel Model)> Models) WithModels,
-          ImmutableArray<SdkToolProfileModel> Profiles) Grouped,
+          SdkToolProfileSet Profiles) Grouped,
          ImmutableArray<bool> Flags) input)
     {
         // 全剖面关闭时上游投影为 null，此处直接返回（增量缓存已判定「无变化」）。
@@ -371,7 +381,7 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
         }
 
         var profiles = input.Grouped.Profiles;
-        for (var i = 0; i < profiles.Length; i++)
+        for (var i = 0; i < profiles.Count; i++)
         {
             var profile = profiles[i];
             if (profile.MissingRequiredSlots.Length > 0)
@@ -415,11 +425,11 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
     private static void ForEachProfile<T>(
         SourceProductionContext context,
         string product,
-        ImmutableArray<SdkToolProfileModel> profiles,
+        SdkToolProfileSet profiles,
         T data,
         Action<SourceProductionContext, SdkToolProfileModel, ToolSurfaceDiagnostics.Factory, T> action)
     {
-        foreach (var profile in profiles)
+        foreach (var profile in profiles.Items)
         {
             if (profile.MissingRequiredSlots.Length > 0)
             {
@@ -459,6 +469,18 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
 
         return builder.ToImmutable();
     }
+
+    /// <summary>
+    /// 槽位 014 的「重新固化」提示（消息第二实参）。
+    /// </summary>
+    /// <remarks>
+    /// <c>GoldenUpdatePropertyName</c> 是<b>非必填槽</b>：未声明时直接拼串会产出 <c>-p:=true</c> 这种
+    /// 不可执行的提示文本，故缺槽时改为明确话术，避免用户照抄一个空属性名。
+    /// </remarks>
+    private static string GoldenUpdateHint(SdkToolProfileModel profile)
+        => profile.GoldenUpdatePropertyName.Length > 0
+            ? "-p:" + profile.GoldenUpdatePropertyName + "=true"
+            : "剖面未声明 GoldenUpdatePropertyName 槽，请手动更新快照文件";
 
     /// <summary>读取该剖面的 golden 快照（<see cref="SchemaEmitter.IsGoldenFile"/> 全名匹配，§5.2-3）。</summary>
     private static string? ReadGolden(ImmutableArray<AdditionalText> texts, SdkToolProfileModel profile, CancellationToken cancellationToken)

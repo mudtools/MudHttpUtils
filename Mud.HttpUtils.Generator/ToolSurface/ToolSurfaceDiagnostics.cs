@@ -155,7 +155,7 @@ internal static class ToolSurfaceDiagnostics
         new(SlotOutputSchemaTruncation, "输出 Schema 深度截断或循环引用", "OutputSchema 截断（深度超限或循环引用）：{0}。样本：{1}", DiagnosticSeverity.Warning, false),
         new(SlotQueryExpansionFailure, "查询参数对象展开失败", "方法 {0}.{1} 的参数 {2}（类型 {3}）为复合查询参数但展开后无任何可序列化属性——模型无法得知可传字段", DiagnosticSeverity.Error, true),
         new(SlotAnyOfUnknownParameter, "条件必填组引用了不存在的参数", "工具 {0} 的 AnyOf 组 \"{1}\" 引用了签名中不存在的参数 \"{2}\"（可用参数：{3}）——该约束不会生效，请修正参数名", DiagnosticSeverity.Error, true),
-        new(SlotGoldenDrift, "Golden 快照 diff", "工具描述符与 golden 快照不一致：{0}（使用 -p:{1}=true 重新固化）", DiagnosticSeverity.Error, true),
+        new(SlotGoldenDrift, "Golden 快照 diff", "工具描述符与 golden 快照不一致：{0}（重新固化：{1}）", DiagnosticSeverity.Error, true),
         new(SlotSchemaInconsistency, "Schema 内部不一致", "工具 '{0}' 的 Schema 内部不一致：{1}", DiagnosticSeverity.Error, true),
         new(SlotTokenKindMismatch, "工具身份与接口令牌类型不一致", "工具 '{0}' 声明身份 {1}，但承载接口 {2} 的令牌类型不符", DiagnosticSeverity.Error, true),
         new(SlotReadWriteDecoupling, "读写分类与 SDK 事实脱钩", "工具 '{0}' 未标记为写工具，但其 SDK 源 {1} 为 {2}（风险 {3}）——写面必须经授权门禁，不得归类为只读", DiagnosticSeverity.Error, true),

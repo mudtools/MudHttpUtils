@@ -9,6 +9,7 @@ using System.Collections.Immutable;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Mud.HttpUtils.Attributes;
 using Mud.HttpUtils.ToolSurface;
+using Mud.HttpUtils.ToolSurface.Extraction;
 
 namespace Mud.HttpUtils.Generator.Tests;
 
@@ -57,6 +58,38 @@ public class ToolSurfaceContractTests
                     $"令牌身份 {kind} 的渲染字面量必须与运行时契约同表（进 golden 与 x-{{sdk}} 扩展块）");
         }
     }
+
+    /// <summary>
+    /// <c>InterfaceIdentity</c> 的<b>逐字段镜像</b>守卫（设计文档 §4.3）：引擎侧
+    /// <see cref="ToolSurfaceInterfaceIdentity"/> 的属性名与类型必须与运行时契约逐项一致——
+    /// 镜像漂移不会编译报错（两份类型各自独立），只会在接线时表现为字段读错/丢失。
+    /// </summary>
+    [Fact]
+    public void InterfaceIdentityMirror_MustMatchRuntimeContract_MemberNamesAndTypes()
+    {
+        var runtime = typeof(InterfaceIdentity).GetProperties()
+            .ToDictionary(static p => p.Name, static p => DescribeMirroredType(p.PropertyType), StringComparer.Ordinal);
+        var mirror = typeof(ToolSurfaceInterfaceIdentity).GetProperties()
+            .ToDictionary(static p => p.Name, static p => DescribeMirroredType(p.PropertyType), StringComparer.Ordinal);
+
+        runtime.Should().NotBeEmpty("守卫自身必须能反射到运行时契约，否则比对失效");
+        mirror.Keys.Should().BeEquivalentTo(runtime.Keys,
+            "引擎侧 InterfaceIdentity 镜像的字段集必须与 Mud.HttpUtils.InterfaceIdentity 完全一致");
+
+        foreach (var name in runtime.Keys)
+        {
+            mirror[name].Should().Be(runtime[name],
+                $"镜像字段 {name} 的类型必须与运行时契约一致（Version 是 int?，不是 string）");
+        }
+    }
+
+    /// <summary>
+    /// 类型描述归一：令牌身份枚举在两侧是<b>两个程序集内的镜像枚举</b>，按「同一身份轴」折算。
+    /// </summary>
+    private static string DescribeMirroredType(System.Type type)
+        => type == typeof(SdkTokenKind) || type == typeof(ToolSurfaceTokenKind)
+            ? "SdkTokenKind"
+            : type.FullName ?? type.Name;
 
     [Fact]
     public void TokenKindStrategyMirror_MustMatchRuntimeEnum()

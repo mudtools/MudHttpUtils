@@ -502,6 +502,97 @@ internal sealed class SdkToolProfileModel : IEquatable<SdkToolProfileModel>
 }
 
 /// <summary>
+/// 剖面集合的<b>值相等</b>载体（增量管线的剖面扇出入口）。
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>为什么不能直接用 <see cref="ImmutableArray{T}"/></b>：它的相等性实现是<b>底层数组引用比较</b>。
+/// 一旦把剖面数组直接投进增量图，任何一次编译变更（哪怕只是新增一个无关类）都会让
+/// <c>CompilationProvider.Select</c> 的产出被判定为 <c>Modified</c>，进而让整条工具面扇出
+/// （Schemas/Names/Contracts/Args/Registrars/Guidance/Catalog）在每个击键上重跑。
+/// 本类型按元素逐项比较 + 缓存哈希，使「剖面未变但编译变了」退化为 <c>Unchanged</c>，下游保持 Cached。
+/// </para>
+/// <para>顺序敏感比较：<see cref="ProfileDiscovery.ResolveProfiles"/> 已按 <c>Name</c> 排序，故顺序稳定。</para>
+/// </remarks>
+internal sealed class SdkToolProfileSet : IEquatable<SdkToolProfileSet>
+{
+    private int _hashCode;
+    private bool _hashCodeComputed;
+
+    private SdkToolProfileSet(ImmutableArray<SdkToolProfileModel> items) => Items = items;
+
+    /// <summary>空集合（纯 HTTP 消费方的典型路径）。</summary>
+    public static SdkToolProfileSet Empty { get; } = new(ImmutableArray<SdkToolProfileModel>.Empty);
+
+    /// <summary>剖面数组（按 Name 排序）。</summary>
+    public ImmutableArray<SdkToolProfileModel> Items { get; }
+
+    /// <summary>剖面数量。</summary>
+    public int Count => Items.Length;
+
+    /// <summary>按序取剖面。</summary>
+    public SdkToolProfileModel this[int index] => Items[index];
+
+    /// <summary>由剖面数组构造（解析失败的空结果统一走 <see cref="Empty"/>）。</summary>
+    public static SdkToolProfileSet Create(ImmutableArray<SdkToolProfileModel> items)
+        => items.IsDefaultOrEmpty ? Empty : new SdkToolProfileSet(items);
+
+    /// <inheritdoc />
+    public bool Equals(SdkToolProfileSet? other)
+    {
+        if (other is null)
+        {
+            return false;
+        }
+
+        if (ReferenceEquals(this, other))
+        {
+            return true;
+        }
+
+        if (Items.Length != other.Items.Length)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < Items.Length; i++)
+        {
+            if (!Items[i].Equals(other.Items[i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <inheritdoc />
+    public override bool Equals(object? obj) => Equals(obj as SdkToolProfileSet);
+
+    /// <inheritdoc />
+    public override int GetHashCode()
+    {
+        if (!_hashCodeComputed)
+        {
+            unchecked
+            {
+                var hash = 17;
+                foreach (var profile in Items)
+                {
+                    hash = (hash * 31) + profile.GetHashCode();
+                }
+
+                _hashCode = hash;
+            }
+
+            _hashCodeComputed = true;
+        }
+
+        return _hashCode;
+    }
+}
+
+/// <summary>
 /// 剖面发现（设计文档 §5.3）：在编译中找出「实现 <c>ISdkToolProfile</c> 且标注 <c>[SdkToolProfile]</c>」
 /// 的类，产出按 <see cref="SdkToolProfileModel.Name"/> 排序的剖面数组（确定性扇出顺序）。
 /// </summary>

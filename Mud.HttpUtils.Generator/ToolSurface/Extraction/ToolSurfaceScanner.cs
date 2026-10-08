@@ -74,7 +74,7 @@ internal static class ToolSurfaceScanner
             var source = GetNamedString(attribute, "Source");
 
             var parameters = ParameterSchemaRenderer.RenderParameters(symbol, compilation, profile);
-            var anyOfGroups = ReadAnyOfGroups(symbol, toolName, parameters, profile, factory, out var anyOfDiagnostics);
+            var anyOfGroups = ReadAnyOfGroups(attribute, toolName, parameters, factory, out var anyOfDiagnostics);
             var diagnostics = new List<PendingDiagnostic>(anyOfDiagnostics);
 
             // 源挂钩交叉校验（工具面消费 SDK 符号）。
@@ -174,7 +174,8 @@ internal static class ToolSurfaceScanner
                 outputSchemaTruncations: outputSchemaTruncations,
                 anyOfGroups: anyOfGroups);
 
-            var model = new ToolSchemaModel(entry, BuildConstName(toolName), description, isWrite, source);
+            // 注：isWrite 只参与 risk 推导（见上），不进入模型——读写分类的唯一事实源是 entry.Risk。
+            var model = new ToolSchemaModel(entry, BuildConstName(toolName), description, source);
             return diagnostics.Count == 0
                 ? ScannedTool.Ok(symbol.Name, model)
                 : ScannedTool.OkWithDiagnostics(symbol.Name, model, diagnostics.ToArray());
@@ -204,17 +205,15 @@ internal static class ToolSurfaceScanner
     /// </para>
     /// </remarks>
     private static IReadOnlyList<IReadOnlyList<string>> ReadAnyOfGroups(
-        INamedTypeSymbol symbol,
+        AttributeData attribute,
         string toolName,
         IReadOnlyList<CapabilityParameter> parameters,
-        SdkToolProfileModel profile,
         ToolSurfaceDiagnostics.Factory factory,
         out List<PendingDiagnostic> diagnostics)
     {
         diagnostics = [];
         var groups = new List<IReadOnlyList<string>>();
 
-        var attribute = Extractors.GetToolAttribute(symbol, profile);
         var declarations = GetNamedArray(attribute, "AnyOf");
         if (declarations.Count == 0)
         {
@@ -316,8 +315,7 @@ internal static class ToolSurfaceScanner
 
         // 截断样本由解析器记录、随条目流转，最终由生成器聚合为**单条**槽位 009
         // （逐处上报会被 SDK 中大量深层 DTO 淹没）。
-        // Schema 层（TypeSchemaResolver）尚未移植：resolver 缺席时降级为不推导 output schema，
-        // 入口生成器接线时必须先注册 ToolSurfaceSchemaResolver.Factory。
+        // resolver 由入口生成器注册（Schema 层 <c>TypeSchemaResolver</c>）；缺席时降级为不推导 output schema。
         var resolver = ToolSurfaceSchemaResolver.TryCreate(compilation, profile);
         if (resolver is not null)
         {

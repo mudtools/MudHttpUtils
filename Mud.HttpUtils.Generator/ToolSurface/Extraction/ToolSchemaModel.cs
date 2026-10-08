@@ -25,17 +25,20 @@ internal sealed class ToolSchemaModel : IEquatable<ToolSchemaModel?>
         CapabilityEntry entry,
         string constName,
         string description,
-        bool isWrite,
         string? source)
     {
         Entry = entry;
         ConstName = constName;
         Description = description;
-        IsWrite = isWrite;
         Source = source;
     }
 
     /// <summary>能力条目（方法级结构化事实，含已推导的参数 Schema 片段）。</summary>
+    /// <remarks>
+    /// 读写分类的<b>唯一</b>事实源是 <see cref="CapabilityEntry.Risk"/>（已含特性声明与 SDK 源推导的
+    /// 升级结果）——本类型不再另设 <c>IsWrite</c> 字段，避免"声明标志 vs 风险派生"两处口径
+    /// 在 <c>{P}Names</c> 与 <c>{P}Contracts</c> 之间漂移（设计文档 §2 的"单一真相源"纪律）。
+    /// </remarks>
     public CapabilityEntry Entry { get; }
 
     /// <summary>生成的 C# 常量名（如 <c>bitable_list_tablesSchemaJson</c>）。</summary>
@@ -43,9 +46,6 @@ internal sealed class ToolSchemaModel : IEquatable<ToolSchemaModel?>
 
     /// <summary>工具描述（模型侧，来自工具特性的 <c>Description=...</c>）。</summary>
     public string Description { get; }
-
-    /// <summary>是否写类工具（白名单读写分离与授权门禁的事实来源）。</summary>
-    public bool IsWrite { get; }
 
     /// <summary>声明的 SDK 能力来源（可空；非空时已通过交叉校验）。</summary>
     public string? Source { get; }
@@ -55,7 +55,6 @@ internal sealed class ToolSchemaModel : IEquatable<ToolSchemaModel?>
             && Entry.Equals(other.Entry)
             && string.Equals(ConstName, other.ConstName, StringComparison.Ordinal)
             && string.Equals(Description, other.Description, StringComparison.Ordinal)
-            && IsWrite == other.IsWrite
             && string.Equals(Source ?? string.Empty, other.Source ?? string.Empty, StringComparison.Ordinal);
 
     public override bool Equals(object? obj) => Equals(obj as ToolSchemaModel);
@@ -70,7 +69,6 @@ internal sealed class ToolSchemaModel : IEquatable<ToolSchemaModel?>
             hash = (hash * 31) + Entry.GetHashCode();
             hash = (hash * 31) + comparer.GetHashCode(ConstName);
             hash = (hash * 31) + comparer.GetHashCode(Description);
-            hash = (hash * 31) + (IsWrite ? 1 : 0);
             hash = (hash * 31) + comparer.GetHashCode(Source ?? string.Empty);
             return hash;
         }

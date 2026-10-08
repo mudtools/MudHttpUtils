@@ -46,8 +46,15 @@ internal static class SchemaEmitter
     /// 判断 AdditionalFile 是否为该剖面的 golden 快照（由入口生成器在
     /// <c>AdditionalTextsProvider</c> 过滤时消费；<b>全文件名</b>匹配，§5.2-3 v2.1）。
     /// </summary>
+    /// <remarks>
+    /// <see cref="SdkToolProfileModel.GoldenFileName"/> 是<b>非必填槽</b>（如剖面尚未固化快照时）：
+    /// 未声明（空串）时本方法恒为 <see langword="false"/>。否则 <c>EndsWith("")</c> 恒为 true，
+    /// 消费方工程里任意一个 AdditionalFile（appsettings.json / 任意 .txt）都会被当作
+    /// golden 快照参与逐字节比对，凭空产出零容忍的槽位 014 并使构建失败。
+    /// </remarks>
     public static bool IsGoldenFile(string path, SdkToolProfileModel profile)
-        => path.Replace('\\', '/').EndsWith(profile.GoldenFileName, StringComparison.OrdinalIgnoreCase);
+        => profile.GoldenFileName.Length > 0
+            && path.Replace('\\', '/').EndsWith(profile.GoldenFileName, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// 发射 Schema 常量与工具名契约表；返回 golden 漂移描述（<see langword="null"/> 表示一致）。
@@ -153,7 +160,7 @@ internal static class SchemaEmitter
         source.Line("    }");
         source.Line("}");
 
-        context.AddSource($"{profile.ProductPrefix}Schemas.g.cs", SourceText.From(source.ToString(), Encoding.UTF8));
+        TransitiveCodeGenerator.AddSourceValidated(context, $"{profile.ProductPrefix}Schemas.g.cs", source.ToString());
     }
 
     // ────────── {P}Names.g.cs ──────────
@@ -176,20 +183,20 @@ internal static class SchemaEmitter
         }
 
         source.Line();
-        source.Line($"        /// <summary>只读工具契约名（全部 [{profile.ToolAttributeName}(IsWrite=false)] 接口）。</summary>");
+        source.Line($"        /// <summary>只读工具契约名（risk = read 的全部 [{profile.ToolAttributeName}] 接口）。</summary>");
         source.Line("        public static readonly string[] ReadonlyAll =");
         source.Line("        [");
-        foreach (var model in ordered.Where(static m => !m.IsWrite))
+        foreach (var model in ordered.Where(static m => m.Entry.Risk == ToolSurfaceRisk.Read))
         {
             source.Line($"            {BuildNameConstant(model.Entry.ToolName)},");
         }
 
         source.Line("        ];");
         source.Line();
-        source.Line($"        /// <summary>写类工具契约名（全部 [{profile.ToolAttributeName}(IsWrite=true)] 接口；白名单单独键控）。</summary>");
+        source.Line($"        /// <summary>写类工具契约名（risk ≠ read 的全部 [{profile.ToolAttributeName}] 接口；白名单单独键控）。</summary>");
         source.Line("        public static readonly string[] WriteAll =");
         source.Line("        [");
-        foreach (var model in ordered.Where(static m => m.IsWrite))
+        foreach (var model in ordered.Where(static m => m.Entry.Risk != ToolSurfaceRisk.Read))
         {
             source.Line($"            {BuildNameConstant(model.Entry.ToolName)},");
         }
@@ -218,7 +225,7 @@ internal static class SchemaEmitter
         source.Line("    }");
         source.Line("}");
 
-        context.AddSource($"{profile.ProductPrefix}Names.g.cs", SourceText.From(source.ToString(), Encoding.UTF8));
+        TransitiveCodeGenerator.AddSourceValidated(context, $"{profile.ProductPrefix}Names.g.cs", source.ToString());
     }
 
     // ────────── {P}Contracts.g.cs ──────────
@@ -320,7 +327,7 @@ internal static class SchemaEmitter
         source.Line("    }");
         source.Line("}");
 
-        context.AddSource($"{profile.ProductPrefix}Contracts.g.cs", SourceText.From(source.ToString(), Encoding.UTF8));
+        TransitiveCodeGenerator.AddSourceValidated(context, $"{profile.ProductPrefix}Contracts.g.cs", source.ToString());
     }
 
     /// <summary>文件头（FIX-16：换行符固定 <c>\n</c>）。</summary>

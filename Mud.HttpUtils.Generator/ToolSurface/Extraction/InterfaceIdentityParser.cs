@@ -6,6 +6,7 @@
 // -----------------------------------------------------------------------
 
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace Mud.HttpUtils.ToolSurface.Extraction;
@@ -29,7 +30,7 @@ internal sealed class ToolSurfaceInterfaceIdentity : IEquatable<ToolSurfaceInter
         ToolSurfaceTokenKind kind,
         string domain,
         string resource,
-        string? version,
+        int? version,
         string? rawTokenMarker)
     {
         InterfaceName = interfaceName;
@@ -52,8 +53,8 @@ internal sealed class ToolSurfaceInterfaceIdentity : IEquatable<ToolSurfaceInter
     /// <summary>资源段（可为空串，如 <c>V3User</c> 只有 Domain）。</summary>
     public string Resource { get; }
 
-    /// <summary>版本段（<c>V{n}</c>；正则无 <c>version</c> 组或无版本时 <see langword="null"/>）。仅作 profile 本地诊断，引擎不强制消费。</summary>
-    public string? Version { get; }
+    /// <summary>版本号（<c>V{n}</c> 的 <c>n</c>；正则无 <c>version</c> 组或非数字时 <see langword="null"/>）。仅作 profile 本地诊断，引擎不强制消费。</summary>
+    public int? Version { get; }
 
     /// <summary>命中的原始命名标记串（如 <c>IFeishuTenant</c> / <c>_Provider</c>；无标记命中时 <see langword="null"/>）。供生态本地授权链读取精细语义（设计文档 §3）。</summary>
     public string? RawTokenMarker { get; }
@@ -64,7 +65,7 @@ internal sealed class ToolSurfaceInterfaceIdentity : IEquatable<ToolSurfaceInter
             && Kind == other.Kind
             && string.Equals(Domain, other.Domain, StringComparison.Ordinal)
             && string.Equals(Resource, other.Resource, StringComparison.Ordinal)
-            && string.Equals(Version ?? string.Empty, other.Version ?? string.Empty, StringComparison.Ordinal)
+            && Version == other.Version
             && string.Equals(RawTokenMarker ?? string.Empty, other.RawTokenMarker ?? string.Empty, StringComparison.Ordinal);
 
     public override bool Equals(object? obj) => Equals(obj as ToolSurfaceInterfaceIdentity);
@@ -79,7 +80,7 @@ internal sealed class ToolSurfaceInterfaceIdentity : IEquatable<ToolSurfaceInter
             hash = (hash * 31) + (int)Kind;
             hash = (hash * 31) + comparer.GetHashCode(Domain);
             hash = (hash * 31) + comparer.GetHashCode(Resource);
-            hash = (hash * 31) + comparer.GetHashCode(Version ?? string.Empty);
+            hash = (hash * 31) + Version.GetHashCode();
             hash = (hash * 31) + comparer.GetHashCode(RawTokenMarker ?? string.Empty);
             return hash;
         }
@@ -135,8 +136,16 @@ internal static class InterfaceIdentityParser
 
             var domain = GetGroupValue(match, "domain");
             var resource = GetGroupValue(match, "resource");
+
+            // 版本段与运行时契约 InterfaceIdentity.Version 同类型（int?）：非数字版本视为无版本，
+            // 不把字符串形态泄漏进镜像（版本只作 profile 本地诊断，不参与任何产物渲染）。
             var versionGroup = match.Groups["version"];
-            var version = versionGroup.Success && versionGroup.Length > 0 ? versionGroup.Value : null;
+            int? version = null;
+            if (versionGroup.Success
+                && int.TryParse(versionGroup.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var parsedVersion))
+            {
+                version = parsedVersion;
+            }
 
             var kind = DeriveTokenKind(interfaceName, profile, out var rawMarker);
             identity = new ToolSurfaceInterfaceIdentity(interfaceName, kind, domain, resource, version, rawMarker);

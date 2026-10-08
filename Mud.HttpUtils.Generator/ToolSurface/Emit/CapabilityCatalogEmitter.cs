@@ -172,7 +172,7 @@ internal static class CapabilityCatalogEmitter
         source.Line("    }");
         source.Line("}");
 
-        context.AddSource($"{profile.ProductPrefix}CapabilityCatalog.g.cs", SourceText.From(source.ToString(), Encoding.UTF8));
+        TransitiveCodeGenerator.AddSourceValidated(context, $"{profile.ProductPrefix}CapabilityCatalog.g.cs", source.ToString());
     }
 
     private static IEnumerable<INamedTypeSymbol> EnumerateInterfaces(INamespaceSymbol ns, SdkToolProfileModel profile)

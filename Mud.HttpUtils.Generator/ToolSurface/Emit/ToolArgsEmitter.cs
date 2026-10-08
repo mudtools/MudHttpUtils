@@ -90,9 +90,10 @@ internal static class ToolArgsEmitter
                     continue;
                 }
 
-                context.AddSource(
+                TransitiveCodeGenerator.AddSourceValidated(
+                    context,
                     HintName(plan.TypeName, profile),
-                    SourceText.From(RenderArgsType(plan, profile), Encoding.UTF8));
+                    RenderArgsType(plan, profile));
             }
         }
         catch (Exception ex)

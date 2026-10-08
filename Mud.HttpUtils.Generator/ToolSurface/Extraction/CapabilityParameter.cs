@@ -17,7 +17,7 @@ namespace Mud.HttpUtils.ToolSurface.Extraction;
 /// <para>
 /// <see cref="SchemaFragmentJson"/> 是<b>类型系统已完成推导</b>的 JSON Schema 片段
 /// （由 <see cref="ParameterSchemaRenderer"/> 从 Roslyn 符号产出）——下游
-/// <c>SchemaWriter</c>（Emit/Schema 层，尚未移植）直接拼装，<b>不再</b>做「C# 类型字符串 → JSON 类型」的二次猜测。
+/// <c>SchemaWriter</c>（Schema 层）直接拼装，<b>不再</b>做「C# 类型字符串 → JSON 类型」的二次猜测。
 /// </para>
 /// <para>
 /// 旧设计把 <c>CsharpType</c> 字符串交给 SchemaWriter 的 MapJsonType 解析，

@@ -43,12 +43,26 @@ namespace Mud.HttpUtils.ToolSurface.Emit;
 /// </remarks>
 internal static class GuidanceEmitter
 {
-    /// <summary>判断 AdditionalFile 是否为该剖面的域 guidance 资产（正斜杠归一后按目录片段匹配）。</summary>
+    /// <summary>
+    /// 判断 AdditionalFile 是否为该剖面的域 guidance 资产（正斜杠归一后按目录片段匹配）。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="SdkToolProfileModel.GuidanceDirectory"/> 是<b>非必填槽</b>：未声明（空串）时本方法恒为
+    /// <see langword="false"/>。否则 <c>IndexOf("")</c> 恒为 0，任何 <c>.md</c> AdditionalFile
+    /// （README、CHANGELOG、docs 下的任意片段）都会被吸收成"域名资产"，
+    /// 进而在 <c>{P}Guidance</c> 产物里生成以路径前缀为键的垃圾条目。
+    /// </remarks>
     public static bool IsGuidanceFile(string path, SdkToolProfileModel profile)
     {
+        var directory = profile.GuidanceDirectory;
+        if (directory.Length == 0)
+        {
+            return false;
+        }
+
         var normalized = path.Replace('\\', '/');
         return normalized.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
-            && normalized.IndexOf(profile.GuidanceDirectory, StringComparison.OrdinalIgnoreCase) >= 0;
+            && normalized.IndexOf(directory, StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
     /// <summary>发射域 guidance 表（无资产或非工具面实现包时静默跳过）。</summary>
@@ -112,7 +126,10 @@ internal static class GuidanceEmitter
                 }
             }
 
-            if (blocks.Count == 0)
+            // 只有 L2 资产（{dir}/{domain}/{topic}.md）而没有 L1 域文件时也必须产出：
+            // References / ReferenceKeys 是 guidance_read 元工具的唯一数据源，
+            // 「无 L1 即整体丢弃」会让 L2 素材静默消失（与 F-9 修掉的静默覆盖同类）。
+            if (blocks.Count == 0 && references.Count == 0)
             {
                 return;
             }
@@ -179,7 +196,7 @@ internal static class GuidanceEmitter
             source.Line("    }");
             source.Line("}");
 
-            context.AddSource($"{profile.ProductPrefix}Guidance.g.cs", SourceText.From(source.ToString(), Encoding.UTF8));
+            TransitiveCodeGenerator.AddSourceValidated(context, $"{profile.ProductPrefix}Guidance.g.cs", source.ToString());
         }
         catch (Exception ex) when (ex is not InvalidOperationException)
         {
@@ -203,11 +220,23 @@ internal static class GuidanceEmitter
     /// 相对路径去扩展名——无子目录 ⇒ L1 键 <c>{domain}</c>（保持既有键不变，向后兼容）；
     /// 有子目录 ⇒ L2 键 <c>{domain}/{topic}</c>。
     /// </para>
+    /// <para>
+    /// <b>去扩展名必须换算到 relative 的下标</b>：<c>dot</c> 是相对 <c>tail</c>（末段文件名）的下标，
+    /// 直接 <c>relative.Substring(0, dot)</c> 会在有子目录时截错位置
+    /// （<c>bitable/faq.md</c> ⇒ <c>"bit"</c>，既污染 L1 的 ByDomain 又丢掉真正的 L2 引用）。
+    /// 正确下标为 <c>relative.Length - tail.Length + dot</c>。
+    /// </para>
     /// </remarks>
     private static string? AssetKeyOf(string path, SdkToolProfileModel profile)
     {
+        var directory = profile.GuidanceDirectory;
+        if (directory.Length == 0)
+        {
+            return null;
+        }
+
         var normalized = path.Replace('\\', '/');
-        var root = profile.GuidanceDirectory.Trim('/') + "/";
+        var root = directory.Trim('/') + "/";
         var start = normalized.IndexOf(root, StringComparison.OrdinalIgnoreCase);
         var relative = start >= 0
             ? normalized.Substring(start + root.Length)
@@ -221,7 +250,7 @@ internal static class GuidanceEmitter
             return null;
         }
 
-        var key = relative.Substring(0, dot);
+        var key = relative.Substring(0, relative.Length - tail.Length + dot);
         return key.Length == 0 ? null : key;
     }
 }

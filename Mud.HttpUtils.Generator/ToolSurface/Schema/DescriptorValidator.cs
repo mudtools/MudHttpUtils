@@ -24,7 +24,7 @@ namespace Mud.HttpUtils.ToolSurface.Schema;
 /// <b>泛化点</b>（上游硬编码 → 剖面槽/委托）：
 /// ① L3 的 <c>StartsWith("IFeishuUser")</c> → 经 <see cref="InterfaceIdentityParser.DeriveTokenKind"/>
 /// 用剖面标记表（<c>TokenKindStrategy</c> + <c>TokenKindMarkers</c>）推导承载接口的令牌身份再比对；
-/// ② L1 的派生常量名规则 <c>SchemaEmitter.BuildNameConstant</c> 属 Emit 层（尚未移植），
+/// ② L1 的派生常量名规则属 Emit 层（<c>SchemaEmitter.BuildNameConstant</c>），
 /// 经 <c>ValidateAll</c> 的可选委托参数 <c>nameConstantBuilder</c> 注入——为 <see langword="null"/> 时跳过槽位 027
 /// 检查（该检查的产物派生规则必须与产物同源，Schema 层不复刻）。
 /// </para>
@@ -49,7 +49,7 @@ internal static class DescriptorValidator
             var results = new List<ValidationResult>();
             var entryList = entries.ToList();
 
-            ValidateL1Structure(entryList, results, factory, nameConstantBuilder);
+            ValidateL1Structure(entryList, profile, results, factory, nameConstantBuilder);
             ValidateL2TypeConsistency(entryList, results, factory);
             ValidateL3CrossFieldConsistency(entryList, profile, results, factory);
 
@@ -109,6 +109,7 @@ internal static class DescriptorValidator
 
     private static void ValidateL1Structure(
         List<CapabilityEntry> entries,
+        SdkToolProfileModel profile,
         List<ValidationResult> results,
         ToolSurfaceDiagnostics.Factory factory,
         Func<string, string>? nameConstantBuilder)
@@ -120,8 +121,9 @@ internal static class DescriptorValidator
         {
             if (string.IsNullOrWhiteSpace(entry.ToolName))
             {
+                // 槽位 001 要求两个实参（工具特性名 + 承载接口名）——少传会让消息格式化期抛 FormatException。
                 results.Add(ValidationResult.Error(factory[ToolSurfaceDiagnostics.SlotMissingToolName],
-                    entry.InterfaceName, entry.InterfaceName));
+                    profile.ToolAttributeName, entry.InterfaceName));
             }
 
             // 工具名全仓唯一（跨 Tier 合并后仍须唯一）。
@@ -130,7 +132,7 @@ internal static class DescriptorValidator
                 if (seenNames.TryGetValue(entry.ToolName, out var existing))
                 {
                     results.Add(ValidationResult.Error(factory[ToolSurfaceDiagnostics.SlotToolNameConflict],
-                        entry.InterfaceName, entry.ToolName, existing));
+                        entry.ToolName, existing));
                 }
                 else
                 {
@@ -147,7 +149,7 @@ internal static class DescriptorValidator
                     {
                         results.Add(ValidationResult.Error(
                             factory[ToolSurfaceDiagnostics.SlotDerivedConstantNameConflict],
-                            entry.InterfaceName, entry.ToolName, sameConstantName, constantName));
+                            entry.ToolName, sameConstantName, constantName));
                     }
                     else
                     {
@@ -193,7 +195,7 @@ internal static class DescriptorValidator
             if (!RenderedPropertiesKeys.TryExtract(renderedJson, out var renderedKeys, out var parseFailure))
             {
                 results.Add(ValidationResult.Error(
-                    factory[ToolSurfaceDiagnostics.SlotSchemaInconsistency], entry.InterfaceName, entry.ToolName,
+                    factory[ToolSurfaceDiagnostics.SlotSchemaInconsistency], entry.ToolName,
                     $"无法从渲染产物中提取 properties 键集（{parseFailure}）——门禁无法验证，按失败处理"));
                 continue;
             }
@@ -202,7 +204,7 @@ internal static class DescriptorValidator
             if (renderedKeys.Count != entry.Parameters.Count)
             {
                 results.Add(ValidationResult.Error(
-                    factory[ToolSurfaceDiagnostics.SlotSchemaInconsistency], entry.InterfaceName, entry.ToolName,
+                    factory[ToolSurfaceDiagnostics.SlotSchemaInconsistency], entry.ToolName,
                     $"渲染出的 properties 键数 {renderedKeys.Count} 与参数数 {entry.Parameters.Count} 不一致"
                     + "（通常是参数名归一后重名，导致 JSON 重复键被覆盖）"));
             }
@@ -213,7 +215,7 @@ internal static class DescriptorValidator
                 if (!renderedKeys.Contains(required))
                 {
                     results.Add(ValidationResult.Error(
-                        factory[ToolSurfaceDiagnostics.SlotSchemaInconsistency], entry.InterfaceName, entry.ToolName,
+                        factory[ToolSurfaceDiagnostics.SlotSchemaInconsistency], entry.ToolName,
                         $"required 参数 '{required}' 不在渲染出的 properties 键集中"));
                 }
             }
@@ -227,7 +229,7 @@ internal static class DescriptorValidator
                     && !string.Equals(parameter.DeclaredToolParameterName, parameter.Name, StringComparison.Ordinal))
                 {
                     results.Add(ValidationResult.Error(
-                        factory[ToolSurfaceDiagnostics.SlotSchemaInconsistency], entry.InterfaceName, entry.ToolName,
+                        factory[ToolSurfaceDiagnostics.SlotSchemaInconsistency], entry.ToolName,
                         $"参数的 [ToolParameter] 名 '{parameter.DeclaredToolParameterName}' 与渲染出的 properties 键 '{parameter.Name}' 不一致"
                         + "——模型看到的键以渲染产物为准，请让二者一致（工具参数键 = C# 参数名）"));
                 }
@@ -260,7 +262,6 @@ internal static class DescriptorValidator
             {
                 results.Add(ValidationResult.Error(
                     factory[ToolSurfaceDiagnostics.SlotTokenKindMismatch],
-                    entry.InterfaceName,
                     entry.ToolName,
                     ToolSurfaceTokenKindContract.ToLiteral(entry.Identity),
                     entry.InterfaceName));
@@ -271,7 +272,6 @@ internal static class DescriptorValidator
             {
                 results.Add(ValidationResult.Error(
                     factory[ToolSurfaceDiagnostics.SlotTokenKindMismatch],
-                    entry.InterfaceName,
                     entry.ToolName,
                     ToolSurfaceTokenKindContract.ToLiteral(entry.Identity),
                     entry.InterfaceName));
@@ -283,32 +283,26 @@ internal static class DescriptorValidator
 /// <summary>验证结果（携带诊断描述符与实参，供生成器直接 <c>ReportDiagnostic</c>）。</summary>
 internal sealed class ValidationResult
 {
-    private ValidationResult(
-        DiagnosticDescriptor descriptor,
-        string interfaceName,
-        object[] arguments)
+    private ValidationResult(DiagnosticDescriptor descriptor, object[] arguments)
     {
         Descriptor = descriptor;
-        InterfaceName = interfaceName;
         Arguments = arguments;
     }
 
     /// <summary>诊断描述符（与 <see cref="ToolSurfaceDiagnostics"/> 槽位表同源）。</summary>
     public DiagnosticDescriptor Descriptor { get; }
 
-    /// <summary>承载接口名（供定位与消息上下文）。</summary>
-    public string InterfaceName { get; }
-
-    /// <summary>诊断消息实参。</summary>
+    /// <summary>诊断消息实参（个数必须与槽位消息模板的占位符个数一致，否则格式化期抛 <c>FormatException</c>）。</summary>
     public object[] Arguments { get; }
 
     /// <summary>构造校验结果（级别由 <see cref="Descriptor"/> 自身的 <c>DefaultSeverity</c> 表达）。</summary>
     /// <remarks>
     /// R2-10：此处原有 <c>IsError</c> 属性与 <c>Warning(...)</c> 工厂——二者<b>均无读取方</b>
     /// （全部校验项都走 <c>Error(...)</c>，且严重级已在描述符里定义），留下会诱使"再加一个不生效的级别开关"。
+    /// 另有 <c>InterfaceName</c> 属性同样无读取方（接口名已作为消息实参之一），一并移除。
     /// </remarks>
-    public static ValidationResult Error(DiagnosticDescriptor descriptor, string iface, params object[] arguments)
-        => new(descriptor, iface, arguments);
+    public static ValidationResult Error(DiagnosticDescriptor descriptor, params object[] arguments)
+        => new(descriptor, arguments);
 }
 
 /// <summary>覆盖率度量报告。</summary>

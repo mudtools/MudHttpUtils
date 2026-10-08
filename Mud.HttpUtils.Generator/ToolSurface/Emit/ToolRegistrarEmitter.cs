@@ -153,14 +153,16 @@ internal static class ToolRegistrarEmitter
                     suffixByExecutor.TryGetValue(executor.Key, out var suffix) ? suffix : string.Empty,
                     RegistrarTypeSuffix);
 
-                context.AddSource(
+                TransitiveCodeGenerator.AddSourceValidated(
+                    context,
                     RegistrarHintName(registrarName, profile),
-                    SourceText.From(EmitRegistrar(executor, registrarName, profile), Encoding.UTF8));
+                    EmitRegistrar(executor, registrarName, profile));
             }
 
-            context.AddSource(
+            TransitiveCodeGenerator.AddSourceValidated(
+                context,
                 $"{profile.ProductPluralPrefix}ServiceCollectionCoreExtensions.g.cs",
-                SourceText.From(EmitCoreExtensions(executors, suffixByExecutor, profile), Encoding.UTF8));
+                EmitCoreExtensions(executors, suffixByExecutor, profile));
         }
         catch (Exception ex)
         {

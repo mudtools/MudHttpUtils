@@ -11,9 +11,9 @@ namespace Mud.HttpUtils.ToolSurface.Extraction;
 /// 类型 → JSON Schema 推导器的<b>引擎侧接缝接口</b>。
 /// </summary>
 /// <remarks>
-/// 上游 <c>Schema.TypeSchemaResolver</c> 属 Schema 层（本批未移植）；Extraction 层经本接口消费其能力，
-/// 由 Schema 层移植时以 <see cref="ToolSurfaceSchemaResolver"/> 注册实现（设计文档 §1.2 的
-/// <c>Schema/TypeSchemaResolver.cs</c>）。成员形状与上游公开面一一对应。
+/// Schema 层实现为 <c>Schema/TypeSchemaResolver.cs</c>（设计文档 §1.2）；Extraction 层只经本接口消费其能力，
+/// 由入口生成器在 <c>Initialize</c> 中以 <see cref="ToolSurfaceSchemaResolver"/> 注册工厂（解耦接缝）。
+/// 成员形状与上游公开面一一对应。
 /// </remarks>
 internal interface IToolSurfaceTypeSchemaResolver
 {
@@ -34,8 +34,8 @@ internal interface IToolSurfaceTypeSchemaResolver
 /// <b>为什么是静态注册而非参数透传</b>：扫描入口签名已由设计文档锁定为
 /// <c>Scan(symbol, compilation, profile, factory)</c>，resolver 不占形参位；Schema 层在生成器
 /// 入口组装时注册工厂一次即可。未注册时 Extraction 层<b>降级</b>（复合 DTO 渲染为 string、
-/// output schema 不推导）——该状态只应存在于 Schema 层移植完成前的过渡期，
-/// 入口生成器接线前必须完成注册。
+/// output schema 不推导）——该降级分支只是兜底（注册由 <c>ToolSurfaceSourceGenerator.Initialize</c>
+/// 无条件完成），出现降级即意味着入口接线被改动。
 /// <para>
 /// <b>工厂签名必须携带 profile</b>（R-2b-5 修正）：<c>TypeSchemaResolver</c> 的解包表读
 /// <see cref="SdkToolProfileModel.OutputWrapperNamespace"/>/<see cref="SdkToolProfileModel.OutputWrapperTypeNames"/>
@@ -47,9 +47,6 @@ internal static class ToolSurfaceSchemaResolver
 {
     /// <summary>Schema 层注册的工厂（<c>(Compilation, profile) → resolver 实例</c>）。</summary>
     public static Func<Compilation, SdkToolProfileModel, IToolSurfaceTypeSchemaResolver>? Factory { get; set; }
-
-    /// <summary>是否已有可用实现（入口接线守卫的断言点）。</summary>
-    public static bool IsAvailable => Factory is not null;
 
     /// <summary>安全创建；未注册或工厂抛异常时返回 <see langword="null"/>（调用方走降级路径）。</summary>
     public static IToolSurfaceTypeSchemaResolver? TryCreate(Compilation compilation, SdkToolProfileModel profile)

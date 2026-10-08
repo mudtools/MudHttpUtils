@@ -258,24 +258,6 @@ internal static class Extractors
         return false;
     }
 
-    /// <summary>检测方法是否返回二进制（Task&lt;byte[]?&gt;）。</summary>
-    public static bool ReturnsBinary(IMethodSymbol method)
-    {
-        try
-        {
-            var unwrapped = UnwrapTaskType(method.ReturnType);
-            if (unwrapped is null) return false;
-
-            var typeName = unwrapped.ToDisplayString();
-            return typeName == "byte[]" || typeName == "byte[]?" || typeName == "System.Byte[]" || typeName == "System.Byte[]?";
-        }
-        catch (Exception ex)
-        {
-            GeneratorDebugLogger.LogError(nameof(Extractors), ex);
-            return false;
-        }
-    }
-
     // ────────── 私有工具方法 ──────────
 
     /// <summary>
