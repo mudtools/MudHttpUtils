@@ -1079,6 +1079,15 @@ var user = await api.GetUserAsync(1);
 | `MUD004` | Warning  | `ITokenManager` 的实现以 `AddScoped`/`AddTransient`/`TryAddScoped`/`TryAddTransient` 注册（该实现内部维护令牌缓存与并发锁，非 Singleton 会令并发安全机制失效并重复刷新令牌）                                                                                             | 改用 `AddSingleton`/`TryAddSingleton`                                                                                                                                                                                                                           | 否         | 是     |
 | `MUD005` | Warning  | `[HttpClientApi]` 接口（方法级或接口级）使用 `[Token(InjectionMode = Query)]` 或 `[Token(InjectionMode = Path)]` 注入模式：令牌进入请求 URL / 路径，可能被代理 / 访问日志 / 浏览器历史等不受控的外部系统记录（库内遥测已由 `SensitiveUrlRedactor` 脱敏，外部系统不受控） | 生产环境改用 Header 注入模式（`InjectionMode.Header`）或确认目标环境的日志治理覆盖令牌参数                                                                                                                                                                      | 否         | 是     |
 
+#### 工具面引擎剖面契约诊断（SDKT\*）
+
+下述诊断由本包内的 `ProfileContractGuardAnalyzer` 报告（`Mud.HttpUtils.ToolSurface` 类别，与通用工具 Schema 生成引擎的剖面契约配套）：
+
+| 诊断 ID   | 严重级别 | 触发条件                                                                                                     | 解决方案                                                                                              | 可自动修复 | 可抑制 |
+| --------- | -------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- | ---------- | ------ |
+| `SDKT001` | Error    | 类实现了 `ISdkToolProfile` 但未标注 `[SdkToolProfile]`，或标注了 `[SdkToolProfile]` 但未实现 `ISdkToolProfile`（剖面契约必须成对出现） | 补上缺失的一半：实现 `Mud.HttpUtils.ISdkToolProfile` 并标注 `[SdkToolProfile("name")]`，二者同时具备 | 否         | 是     |
+| `SDKT002` | Error    | 剖面 `[SdkToolProfile]` 缺少引擎必需槽位（Name / ToolAttributeName / ToolAttributeNamespace / SdkNamespaceRoot / ProductPrefix / DiagnosticPrefix / DiagnosticCategory） | 按诊断消息列出的槽名补全，缺失期间该剖面不产出任何工具面产物 | 否         | 是     |
+
 #### 诊断排查顺序与可抑制性
 
 1. **先修生成器诊断**（`HTTPCLIENT*` / `FORM*` / `EHSG*`），再看接口规范诊断（`MUD*`）。

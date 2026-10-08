@@ -20,7 +20,8 @@ namespace Mud.HttpUtils.Generator.Tests;
 /// <para>
 /// <b>实现手法</b>：与 <c>DocumentationContractTests</c> 保持一致 —— 反射枚举
 /// <c>Mud.HttpUtils.Attributes</c> 的公共可写属性，再对生成器源码目录做文本扫描，
-/// 断言属性名以字符串字面量形式出现（或命中豁免清单）。不引入 Roslyn 语义分析，避免守卫自身成为脆弱点。
+/// 断言属性名以字符串字面量或 <c>nameof</c> 形式出现（或命中豁免清单）。
+/// 不引入 Roslyn 语义分析，避免守卫自身成为脆弱点。
 /// </para>
 /// <para>
 /// <b>已知局限（有意接受）</b>：文本扫描按「属性名字符串是否出现」判定，
@@ -118,8 +119,11 @@ public class AttributeParameterContractTests
             if (Exempt.ContainsKey(key))
                 continue;
 
-            // 生成器以字符串字面量读取命名参数（含常量化定义，如 CacheDurationSecondsProperty = "DurationSeconds"）
-            if (!generatorText.Contains($"\"{property.Name}\"", StringComparison.Ordinal))
+            // 生成器以字符串字面量读取命名参数（含常量化定义，如 CacheDurationSecondsProperty = "DurationSeconds"）；
+            // nameof(X) 编译期即展开为 "X"，与字面量等价（SdkToolProfileModel.FromAttributeData 按 switch(nameof) 消费），
+            // 两种形态都算「生成器知情」。
+            if (!generatorText.Contains($"\"{property.Name}\"", StringComparison.Ordinal)
+                && !generatorText.Contains($"nameof({property.Name})", StringComparison.Ordinal))
                 unread.Add($"{key}（声明于 {property.DeclaringType?.FullName}）");
         }
 

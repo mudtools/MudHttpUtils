@@ -104,4 +104,12 @@ internal static class DiagnosticIds
 
     /// <summary>PAYLOAD009：载荷契约类形态不受支持（泛型 / 嵌套 / record / 非 class）。</summary>
     public const string PayloadContractTypeShapeUnsupported = "PAYLOAD009";
+
+    // ── 工具面引擎固定诊断（SDKT*，profile 无关；见 ToolSurface 设计文档 §6.1） ──
+
+    /// <summary>SDKT001：<c>ISdkToolProfile</c> ↔ <c>[SdkToolProfile]</c> 未成对出现（剖面契约守卫）。</summary>
+    public const string SdkToolProfileContractViolation = "SDKT001";
+
+    /// <summary>SDKT002：剖面 <c>[SdkToolProfile]</c> 缺少引擎必需槽位（剖面被跳过）。</summary>
+    public const string SdkToolProfileMissingRequiredSlots = "SDKT002";
 }

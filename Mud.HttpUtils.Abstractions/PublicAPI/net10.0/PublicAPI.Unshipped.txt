@@ -58,3 +58,24 @@ virtual Mud.HttpUtils.Payloads.PayloadFieldBinder<T>.Invoke(T! target, Mud.HttpU
 Mud.HttpUtils.SensitiveUrlKeys
 static Mud.HttpUtils.SensitiveUrlKeys.Register(string? name) -> void
 static Mud.HttpUtils.SensitiveUrlKeys.RegisterAll(System.Collections.Generic.IEnumerable<string?>! names) -> void
+Mud.HttpUtils.ISdkToolProfile
+Mud.HttpUtils.InterfaceIdentity
+Mud.HttpUtils.InterfaceIdentity.InterfaceIdentity(string! interfaceName, Mud.HttpUtils.SdkTokenKind kind, string! domain, string! resource, int? version, string! rawTokenMarker = "") -> void
+Mud.HttpUtils.InterfaceIdentity.Equals(Mud.HttpUtils.InterfaceIdentity? other) -> bool
+override Mud.HttpUtils.InterfaceIdentity.Equals(object? obj) -> bool
+override Mud.HttpUtils.InterfaceIdentity.GetHashCode() -> int
+Mud.HttpUtils.InterfaceIdentity.Domain.get -> string!
+Mud.HttpUtils.InterfaceIdentity.InterfaceName.get -> string!
+Mud.HttpUtils.InterfaceIdentity.Kind.get -> Mud.HttpUtils.SdkTokenKind
+Mud.HttpUtils.InterfaceIdentity.RawTokenMarker.get -> string!
+Mud.HttpUtils.InterfaceIdentity.Resource.get -> string!
+Mud.HttpUtils.InterfaceIdentity.Version.get -> int?
+Mud.HttpUtils.SdkTokenKind
+Mud.HttpUtils.SdkTokenKind.Both = 5 -> Mud.HttpUtils.SdkTokenKind
+Mud.HttpUtils.SdkTokenKind.Internal = 4 -> Mud.HttpUtils.SdkTokenKind
+Mud.HttpUtils.SdkTokenKind.Tenant = 1 -> Mud.HttpUtils.SdkTokenKind
+Mud.HttpUtils.SdkTokenKind.ThirdParty = 3 -> Mud.HttpUtils.SdkTokenKind
+Mud.HttpUtils.SdkTokenKind.Unspecified = 0 -> Mud.HttpUtils.SdkTokenKind
+Mud.HttpUtils.SdkTokenKind.User = 2 -> Mud.HttpUtils.SdkTokenKind
+Mud.HttpUtils.SdkTokenKindContract
+static Mud.HttpUtils.SdkTokenKindContract.ToLiteral(Mud.HttpUtils.SdkTokenKind kind) -> string!

@@ -74,3 +74,5 @@ PAYLOAD006 | 代码生成 | Error | 字段映射声明非法
 PAYLOAD007 | 代码生成 | Error | 无法按属性类型推断字段形态
 PAYLOAD008 | 代码生成 | Error | 手写 PayloadFieldMap 与 [PayloadContract] 冲突
 PAYLOAD009 | 代码生成 | Error | 载荷契约类形态不受支持（泛型 / 嵌套 / record / 非 class）
+SDKT001 | Mud.HttpUtils.ToolSurface | Error | ISdkToolProfile ↔ [SdkToolProfile] 剖面契约成对守卫
+SDKT002 | Mud.HttpUtils.ToolSurface | Error | 剖面 [SdkToolProfile] 缺少引擎必需槽位

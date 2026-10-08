@@ -850,4 +850,33 @@ internal static class Diagnostics
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
     #endregion
+
+    #region 工具面引擎固定诊断 (SDKT001)
+    // 由 ToolSurface/ProfileContractGuardAnalyzer（Mud.HttpUtils.Generator/ToolSurface/）报告。
+    // 编号约定（ToolSurface 设计文档 §6.1）：SDKT* 是**引擎固定**档位——ID 与 category 均不随 profile 变化，
+    // 因此进入本静态表（区别于 profile 注入的动态 {prefix}{slot} ID，后者由 ToolSurfaceDiagnostics 槽位表管理）。
+    // 级别为 Error 但**不带** NotConfigurable：本诊断属「使用者改一行即可修复」（补特性或补接口实现），
+    // 加标签会连坐抑制同编译中的 MUD*/AOT* 诊断（见本文件 §诊断标签分层准则）。
+
+    /// <summary>SDKT001：<c>ISdkToolProfile</c> 与 <c>[SdkToolProfile]</c> 未成对出现。</summary>
+    public static readonly DiagnosticDescriptor SdkToolProfileContractViolation = new(
+        id: DiagnosticIds.SdkToolProfileContractViolation,
+        title: "工具剖面契约不成对：接口与特性必须同时出现",
+        messageFormat: "类型 {0} {1}——ISdkToolProfile 与 [SdkToolProfile] 必须成对出现：实现接口即声明剖面，其全部数据由特性承载（生成器无法执行属性 getter）。请{2}。",
+        category: "Mud.HttpUtils.ToolSurface",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "工具 Schema 生成引擎的剖面接缝契约：标记接口 ISdkToolProfile 声明「本类型是剖面」，"
+            + "[SdkToolProfile] 承载全部编译期命名事实常量。二者缺一即剖面无法被引擎读取.");
+
+    /// <summary>SDKT002：剖面特性缺少引擎运行必需的槽位（该剖面被跳过，不产出任何工具面）。</summary>
+    public static readonly DiagnosticDescriptor SdkToolProfileMissingRequiredSlots = new(
+        id: DiagnosticIds.SdkToolProfileMissingRequiredSlots,
+        title: "工具剖面缺少必需槽位",
+        messageFormat: "剖面 {0} 的 [SdkToolProfile] 缺少必需槽位：{1}——该剖面本次编译被跳过，不产出任何工具面产物。请补全上述槽位。",
+        category: "Mud.HttpUtils.ToolSurface",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "引擎固定档位：剖面数据完整性守卫。缺失槽位清单由 SdkToolProfileModel.RequiredSlotNames 定义.");
+    #endregion
 }
