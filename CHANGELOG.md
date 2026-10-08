@@ -1,41 +1,40 @@
 # CHANGELOG
 
-首个 NuGet 正式版本为 **2.0.5**（此前的 2.0.4 及更早版本仅限本地验证迭代，未发布到 NuGet；所有 `PublicAPI.Shipped.txt` 为空）。本文件记录首个正式版本的行为基线，作为 Release Notes 依据。
+首个 NuGet 正式版本为 **2.0.5**（此前的 2.0.4 及更早版本仅限本地验证迭代，未发布到 NuGet）。本文件记录首个正式版本的行为基线，作为 Release Notes 依据。
 
 ---
 
 ## 3.0.3（OpenTelemetry 共享装配内核抽取，2026-10-08）
 
-> 把三仓（`Mud.HttpUtils` / `Mud.Feishu` / `Mud.Wechat`）重复的 OTel 装配剧本（Resource + Sampler + 源/Meter 注册 + Instrumentation 开关 + OTLP 导出 + Configure* 回调）收敛为本包内的**唯一实现**，并暴露共享装配内核供下游 SDK 退化为「贡献描述 + options 映射」的薄壳。
-> **`AddMudHttpOpenTelemetry` 自身无行为变更**（既有 56 例零修改全绿即证明），下游 SDK 将在各自下一版本中改为薄壳。
+> 把 `Mud.HttpUtils` / `Mud.Feishu` / `Mud.Wechat` 三个包重复的 OTel 装配剧本（Resource + Sampler + 源/Meter 注册 + Instrumentation 开关 + OTLP 导出 + Configure* 回调）收敛为本包内的**唯一实现**，并暴露共享装配内核供下游 SDK 退化为「贡献描述 + options 映射」的薄壳。
+> **`AddMudHttpOpenTelemetry` 自身无行为变更**，下游 SDK 将在各自下一版本中改为薄壳。
 
 ### 新增
 
 - **4 个公共类型**（`Mud.HttpUtils.OpenTelemetry` 命名空间）：
   - `MudObservabilityContribution`：产品线贡献描述（`ProductName` / `ActivitySourceName` / `MeterName` / `MeterWildcard` / `DefaultServiceName` / `DefaultServiceVersion` / `IncludeMudHttpSources`）。全部属性为普通 `set`（非 `init`），下游 `netstandard2.0` 可直接用对象初始化器。
-  - `MudObservabilityOptions`：三包共有的运行期开关与导出配置，实现 `IValidateOptions<MudObservabilityOptions>`（仅复用 `Validate` 方法签名，不注册到 DI 管道）。属性集与 `MudHttpOpenTelemetryOptions` 逐字段对应（19 属性）。
-  - `MudObservabilityDefaults`：细粒度可复用件（`CreateSampler` / `ConfigureResource` / `ApplyOtlpExporter` ×3 重载 / `ConfigureBatchExportOptions` / `Validate`），供不使用 kernel 的自建管道场景与单测。
-  - `MudObservabilityBootstrap`：唯一装配入口。两个 `AddMudObservability` 重载（均不用可选参数，规避 RS0026）+ `AddMudObservabilitySources`（向既有 builder 追加源与 Meter，不创建新 Provider）。`internal sealed class MudObservabilityBootstrapMarker` 作为重复入口守卫标记（不进公共面）。
+  - `MudObservabilityOptions`：各 SDK 包共有的运行期开关与导出配置，实现 `IValidateOptions<MudObservabilityOptions>`（仅复用 `Validate` 方法签名，不注册到 DI 管道）。属性集与 `MudHttpOpenTelemetryOptions` 逐字段对应。
+  - `MudObservabilityDefaults`：细粒度可复用件（`CreateSampler` / `ConfigureResource` / `ApplyOtlpExporter` ×3 重载 / `ConfigureBatchExportOptions` / `Validate`），供不使用共享内核的自建管道场景与单测。
+  - `MudObservabilityBootstrap`：唯一装配入口。两个 `AddMudObservability` 重载 + `AddMudObservabilitySources`（向既有 builder 追加源与 Meter，不创建新 Provider）。
 - **重复入口守卫**：同一 `ServiceCollection` 先后注册不同 `ProductName` 的贡献 → 抛 `InvalidOperationException`（消息含两个产品名）；同产品重复注册 → 幂等短路（不再装配，原样返回首次装配的 `OpenTelemetryBuilder`，**首次注册的配置生效**）。守卫标记在装配成功之后才登记，装配中途失败不会留下标记把后续重试静默短路。
 - **源/Meter 去重**：`AddSource` / `AddMeter` 使用 `HashSet<string>(StringComparer.Ordinal)` 收集后统一注册，防止 `IncludeMudHttpSources = true` 且贡献源名与 Mud.HttpUtils 源名相同时重复采集（Span 翻倍）。
-- **ns2.0 AspNetCore 兜底**：`#if NETSTANDARD2_0` 下强制 `EnableAspNetCoreInstrumentation = false`（上收 Wechat 既有兜底，与本包 csproj 无 `FrameworkReference` 的事实一致）。
-- **默认值回填**：`ServiceName` / `ServiceVersion` 为空时回填 `contribution.DefaultServiceName` / `DefaultServiceVersion`，回填后仍空白 → 抛 `OptionsValidationException`（修复下游 P3「死校验器」问题）。
-- **新增内核单测**：`MudObservabilityBootstrapTests.cs`（覆盖贡献校验 / null 参数 / 重复入口守卫 / **同产品重复注册不得重复装配** / 采样越界 / 服务名回填 / 源去重（真实 Activity 计数）/ Meter 精确名与通配名（真实 Metric 采集）/ IncludeMudHttpSources 双向 / OTLP null / Action 重载顺序 / AddMudObservabilitySources 追加语义与贡献校验）+ `MudObservabilityDefaultsTests.cs`（Sampler 类型与比率、Validate 全字段矩阵、OTLP 选项映射 Endpoint/Protocol/Timeout/Headers、ConfigureBatchExportOptions 正数/零/null/负数四态）。
-- 三个 TFM 的 `PublicAPI.Unshipped.txt` 同批登记新公共类型与成员（RS0016 逐 TFM 独立校验）。
+- **netstandard2.0 AspNetCore 兜底**：`#if NETSTANDARD2_0` 下强制 `EnableAspNetCoreInstrumentation = false`（与 `Mud.Wechat` 既有兜底一致，本包不引用 ASP.NET Core 框架）。
+- **默认值回填**：`ServiceName` / `ServiceVersion` 为空时回填 `contribution.DefaultServiceName` / `DefaultServiceVersion`，回填后仍空白 → 抛 `OptionsValidationException`（修复服务名为空时校验器不生效的问题）。
+- **新增内核单测**：覆盖装配入口（贡献校验 / null 参数 / 重复入口守卫 / 同产品重复注册幂等 / 采样越界 / 服务名回填 / 源去重 / Meter 精确名与通配名采集 / OTLP null / 追加语义）与细粒度件（Sampler 类型与比率、`Validate` 全字段矩阵、OTLP 选项映射、`ConfigureBatchExportOptions` 四态）。
+- 三个 TFM 的 `PublicAPI.Unshipped.txt` 同批登记新公共类型与成员。
 - `Mud.HttpUtils.OpenTelemetry/README.md` 新增「作为其他 Mud SDK 的 OTel 基座」章节（`MudObservabilityContribution` / `AddMudObservability` 用法示例）与「双重入口禁令」说明。
 
 ### 行为变更
 
-- **`AddMudHttpOpenTelemetry` 无行为变更**：两个公开重载的签名、默认值、异常类型与消息**逐字不变**。内部改为映射到 `MudObservabilityOptions` 后委托 `AddMudObservability` 装配，既有 56 用例零修改全绿即证明行为等价。
-- **`OtlpEndpoint` 相对 URI 改为启动期拦截**：`MudHttpOpenTelemetryOptionsValidator` 补上与共享内核同口径的「必须为绝对 URI」校验。此前相对 URI 会静默通过并在导出期失败（CFG-10 修复遗留的空白项）；现在启动期即抛 `OptionsValidationException`（消息指向 `MudHttpOpenTelemetryOptions`）。此变更只影响**本就无法工作**的非法配置。
-- **下游 SDK 将改为薄壳**：`Mud.Feishu.OpenTelemetry` 与 `Mud.Wechat.OpenTelemetry` 将在各自下一版本中改为 `Contribution` + `Options` 映射 → `AddMudObservability`，消除各自 ~200 行重复装配剧本。下游获得 OTLP 导出增强面（`OtlpHeaders` / `OtlpExportProtocol` / `UseShortExporterTimeout` / `ExportBatchSize` / `ExportIntervalMilliseconds`）、启动期真校验、ns2.0 兜底。
+- **`AddMudHttpOpenTelemetry` 无行为变更**：两个公开重载的签名、默认值、异常类型与消息**逐字不变**。内部改为映射到 `MudObservabilityOptions` 后委托 `AddMudObservability` 装配。
+- **`OtlpEndpoint` 相对 URI 改为启动期拦截**：`MudHttpOpenTelemetryOptionsValidator` 补上与共享内核同口径的「必须为绝对 URI」校验。此前相对 URI 会静默通过并在导出期失败；现在启动期即抛 `OptionsValidationException`（消息指向 `MudHttpOpenTelemetryOptions`）。此变更只影响**本就无法工作**的非法配置。
+- **下游 SDK 将改为薄壳**：`Mud.Feishu.OpenTelemetry` 与 `Mud.Wechat.OpenTelemetry` 将在各自下一版本中改为 `Contribution` + `Options` 映射 → `AddMudObservability`，消除各自重复的装配剧本。下游获得 OTLP 导出增强面（`OtlpHeaders` / `OtlpExportProtocol` / `UseShortExporterTimeout` / `ExportBatchSize` / `ExportIntervalMilliseconds`）、启动期真校验、netstandard2.0 兜底。
 
 ### 升级注意
 
-- **本包先发布，下游跟随**：本包 **3.0.3** 发布至 nuget.org 后，下游 `Mud.Feishu` / `Mud.Wechat` 再升级（**下游版本号由各自仓库决定**，与本包不同版本线）。联调期下游可用 CLI `--source` 指向 `artifacts` 目录（不得修改下游 `nuget.config`）。
+- **本包先发布，下游跟随**：本包 **3.0.3** 发布至 nuget.org 后，下游 `Mud.Feishu` / `Mud.Wechat` 再升级（**下游版本号由各自仓库决定**，与本包不同版本线）。
 - **双重入口禁令**：同一宿主只应调用一个产品的 OTel 入口。若已调用 `AddMudHttpOpenTelemetry()`，不可再调用 `AddMudObservability()` 注册其他产品——内核的重复入口守卫会抛 `InvalidOperationException`。如需同时采集多个产品的源，请使用 `MudObservabilityContribution.IncludeMudHttpSources = true` 或 `AddMudObservabilitySources()`。
 - **共享类型约束**：`MudObservabilityContribution` / `MudObservabilityOptions` 均为普通 `class` + 普通 `set`（禁 `init` / `record` / `required`），公共签名不含可选参数——这是为了在下游 `netstandard2.0` TFM 下零障碍使用。
-- **发行号说明**：本段内容曾以 `3.1.0` 为规划版本（见提交 `accb7b2` 的信息），正式发行号定为 **3.0.3**；该规划版本从未发布到 nuget.org，故无版本号位被占用，升级无额外注意事项。
 
 ---
 
@@ -44,7 +43,7 @@
 ### 新增
 
 - `Mud.HttpUtils.SensitiveUrlKeys`（public static）：把词表外的自定义凭据参数名登记进
-  进程级强制掩码集合（R-P1-05① 的下游可达形态）。此前 `RegisterExtraSensitiveKey` 落在
+  进程级强制掩码集合。此前 `RegisterExtraSensitiveKey` 落在
   internal 类上、下游编译期不可达，属设计缺口。
   - `Register(string?)`：登记单个键（幂等、线程安全、空值与空白项忽略）。
   - `RegisterAll(IEnumerable<string?>)`：批量登记（逐项幂等；集合为 null 直接返回）。
@@ -55,7 +54,7 @@
 ### 升级注意
 
 - 仅登记**确认为凭据**的参数名：登记为进程级生效，过于宽泛的键名（如 `id`、`name`）
-  会造成大面积脱敏影响排障；组件侧不做语义校验（保持机制中立）。
+  会造成大面积脱敏影响排障；本包不做语义校验（保持机制中立）。
 
 ---
 
@@ -157,7 +156,7 @@ BasicPayload.PayloadFieldMap.Bind(root, payload);
 - **不受影响**：Holder 面（`Current` / `SwitchTo` / `BeginScope(IMudAppContext)`）与作用域面（`UseAppScope` / `UseDefaultAppScope`）**保持不变**。
 - **豁免（重要）**：若使用方接口**自行声明**了上述任一成员（要求生成器实现），生成器**仍然会为其发射实现** —— 该既有写法不受影响（否则会落入契约补全并报 `HTTPCLIENT024`（Error），把原本可编译的代码变为编译失败）。
 - ✅ **附带根治**：`BeginScope(null)` 的 `CS0121` 重载二义**随本次移除消失**（`[Obsolete]` 不参与重载决议，仅标注废弃时该二义依然存在）。
-- **升级路径**：从 **2.0.10 及更早**升级 ⇒ 请直接按上表迁移；从 **2.0.11 开发中间态**升级 ⇒ 若已消除全部 `CS0618` 警告，则无需任何改动。
+- **升级路径**：从 **2.0.10 及更早**升级 ⇒ 请直接按上表迁移；若已在过渡版本中消除全部 `CS0618` 警告 ⇒ 无需任何改动。
 
 #### 新增（Added）
 
@@ -167,9 +166,9 @@ BasicPayload.PayloadFieldMap.Bind(root, payload);
   - 采用 additive 路线（不向既有接口增成员）：`netstandard2.0` 不支持默认接口方法，向既有接口增成员会破坏第三方实现者。
 - **生成类自动附加实现 `IAppScopeSwitcher`**：当接口（含**间接**继承）已继承 `IAppContextSwitcher` 且**非 HttpClient 模式**时，生成类的继承列表追加 `global::Mud.HttpUtils.IAppScopeSwitcher`（生成类本就无条件发射 `UseAppScope`/`UseDefaultAppScope`，签名一致，无需新增成员生成代码）。门控刻意收窄，避免给全部生成类额外挂接口（接口膨胀）；HttpClient 模式不追加（该模式不发射任何切换成员）。
 - **不可信 appKey 的「无作用域切换」扩展**：新增 `Mud.HttpUtils.AppKeySwitchExtensions` —— `IAppContextHolder.SwitchToApp(appKey, appManager, authorizer)` / `SwitchToApp(…, IServiceProvider)` / `SwitchToDefaultApp(appManager)`。补齐移除 `UseApp` 后的**能力缺口**：「不可信 appKey + 完整守卫 + **无作用域**（切换并保持）+ 返回上下文」—— `UseAppScope` 是**作用域式**（释放即回滚）、`SwitchTo` 是**受信路径**（无守卫），二者均无法表达该语义，导致需要它的下游（如 `IAppManager.GetWebApi` 类场景）只能保留旧入口。
-  - 守卫与生成代码**逐字一致**（格式校验 → 授权器默认拒绝 → 业务判定，且拒绝路径**不解析应用**），由 `AppKeyGuardConsistencyTests`（跨项目消息一致性）与 `AppKeySwitchExtensionsTests`（行为）双重钉死。
+  - 守卫与生成代码**逐字一致**（格式校验 → 授权器默认拒绝 → 业务判定，且拒绝路径**不解析应用**），并有跨项目消息一致性与行为测试双重固化。
   - **不产生任何生成产物变更**，不影响生成类、既有快照与下游生成代码。
-  - **三个重载均对应用上下文类型泛型化**（`SwitchToApp<TAppContext>(…, IAppManager<TAppContext>, …) -> TAppContext`）：SDK（`Mud.Feishu` / `Mud.Wechat`）以**自有上下文接口**声明应用管理器（如 `IAppManager<IFeishuAppContext>`），而 `IAppManager<T>` 是**不变**的（类型参数同时出现在入参与返回值，无法协变）⇒ 参数若固定为 `IMudAppContext`，这类管理器**无法传入**（`CS1503`），恰是本扩展的目标用户。泛型化后返回值即 SDK 自有上下文类型（**无需向下转型**）；以 `IAppManager<IMudAppContext>` 调用的既有代码类型推断结果与返回值**完全不变**（源兼容）。由 `AppKeySwitchExtensionsTests.SwitchToApp_WithSdkOwnContextType_IsAcceptedAndReturnsTypedContext` 钉死。
+  - **三个重载均对应用上下文类型泛型化**（`SwitchToApp<TAppContext>(…, IAppManager<TAppContext>, …) -> TAppContext`）：SDK（`Mud.Feishu` / `Mud.Wechat`）以**自有上下文接口**声明应用管理器（如 `IAppManager<IFeishuAppContext>`），而 `IAppManager<T>` 是**不变**的（类型参数同时出现在入参与返回值，无法协变）⇒ 参数若固定为 `IMudAppContext`，这类管理器**无法传入**（`CS1503`），恰是本扩展的目标用户。泛型化后返回值即 SDK 自有上下文类型（**无需向下转型**）；以 `IAppManager<IMudAppContext>` 调用的既有代码类型推断结果与返回值**完全不变**（源兼容）。
   - ⚠️ **不自动归还**上下文（这正是它与 `UseAppScope` 的区别）；长生命周期宿主须显式切回。
 
 #### 修复（Fixed）
@@ -183,11 +182,11 @@ BasicPayload.PayloadFieldMap.Bind(root, payload);
 #### 兼容性（Compatibility）
 
 - 纯词表扩充：不改任何公开签名，不改变 `RedactUrlInTelemetry` 语义（该开关仍只作用于"词表外的未知参数"；本次新增键属**词表命中**，故受该开关约束 —— 其默认值为 `true`；`RegisterExtraSensitiveKey` 登记的键不受开关约束）。
-- 可观测差异仅一处：原本以明文出现在日志 / 遥测 / 异常 `RequestUri` 中的上述参数，现按 `***REDACTED***` 掩码。新增回归用例 `PlatformCredentialRedactionTests`（含"不得误伤业务参数 `corp_id` / `suite_id` / `template_id` / `agentid`"）。
+- 可观测差异仅一处：原本以明文出现在日志 / 遥测 / 异常 `RequestUri` 中的上述参数，现按 `***REDACTED***` 掩码。新增回归用例覆盖（含"不得误伤业务参数 `corp_id` / `suite_id` / `template_id` / `agentid`"）。
 
 #### 文档（Docs）
 
-- **"未注册 `IAppAccessAuthorizer`" 表述统一**：`Client/README.md` 原写"为 `null` 时不执行授权判定（仅存在性校验）"，与"默认拒绝"的既有实现字面冲突。现统一为"为 `null` 时生成代码按 appKey 切换**直接抛 `InvalidOperationException`**（默认拒绝，接线缺陷而非业务拒绝）"。`AppManagementStartupValidator` **早已**校验授权器缺失（含 fatal/warning 两级），本轮**不新增**任何校验机制。
+- **"未注册 `IAppAccessAuthorizer`" 表述统一**：`Client/README.md` 原写"为 `null` 时不执行授权判定（仅存在性校验）"，与"默认拒绝"的既有实现字面冲突。现统一为"为 `null` 时生成代码按 appKey 切换**直接抛 `InvalidOperationException`**（默认拒绝，接线缺陷而非业务拒绝）"。`AppManagementStartupValidator` **早已**校验授权器缺失（含 fatal/warning 两级），**未新增**任何校验机制。
 - **`Generator/README.md`「多应用切换与信任边界」**：把并列推荐的 `UseAppScope` / `BeginScope(appKey)` 收敛为**唯一推荐名 `UseAppScope`**，并补充 `IAppScopeSwitcher` 抽象面与"默认模式继承 `IAppContextSwitcher` 会落入占位并报 `HTTPCLIENT024`（Error）"的模式限制说明。
 - **`Client/README.md`「应用上下文」**：新增 `IAppScopeSwitcher` 用法示例（含 `using` 自动归还）。
 
@@ -200,32 +199,32 @@ BasicPayload.PayloadFieldMap.Bind(root, payload);
 | `IAppContextSwitcher.GetTokenAsync()` | `ITokenProvider.GetTokenAsync(...)` | 原方法仅转发当前应用的令牌提供器，且仅 TokenManager 模式下可用 |
 
 - **只标抽象层**：生成类成员**不**标 `[Obsolete]`（生成类必须实现接口成员，标注只会给"实现接口"制造噪音）。因此经**接口**调用会得到 `CS0618` 迁移提示，经具体生成类调用无噪音 —— 无需分析器、无需 CodeFix。
-- 覆盖度由 `AppSwitchObsoleteMigrationTests` 钉死（`GetTokenAsync` ⇒ 恰好 1 条 `CS0618` 且消息含 `ITokenProvider`；迁移目标 `UseAppScope` / `UseDefaultAppScope` ⇒ **零诊断**）。
+- 覆盖度由迁移回归测试固化（`GetTokenAsync` ⇒ 恰好 1 条 `CS0618` 且消息含 `ITokenProvider`；迁移目标 `UseAppScope` / `UseDefaultAppScope` ⇒ **零诊断**）。
 
 #### 完善（可维护性）
 
-- **调用路径分叉提示**：混合模式继承（基类与派生类的 TokenManager 配置不一致）时，派生类的切换成员以 `public new` **隐藏**基类同名成员 —— 经**基类引用**调用会走到基类实现，属**静默行为分叉**。现生成产物在该成员的 XML 文档注释中发射 `[HTTPCLIENT028]` 提示（IDE 悬停即见）。该提示**只在此形态发射**，无继承或模式一致的继承不发射（避免常态噪音）。`HTTPCLIENT028` 的级别**维持 `Warning`**：触发面实测为 0，升 `Error` 属破坏性变更且与"混合模式仍可编译"的既有定位冲突。
+- **调用路径分叉提示**：混合模式继承（基类与派生类的 TokenManager 配置不一致）时，派生类的切换成员以 `public new` **隐藏**基类同名成员 —— 经**基类引用**调用会走到基类实现，属**静默行为分叉**。现生成产物在该成员的 XML 文档注释中发射 `[HTTPCLIENT028]` 提示（IDE 悬停即见）。该提示**只在此形态发射**，无继承或模式一致的继承不发射（避免常态噪音）。`HTTPCLIENT028` 的级别**维持 `Warning`**：触发面极小，升 `Error` 属破坏性变更且与"混合模式仍可编译"的既有定位冲突。
 - **切换成员名单一事实源**：新增 `Mud.HttpUtils.Generator/Consts/AppSwitchMemberNames.cs`，登记表（`RegisterInfrastructureMembers`）改用常量，并以真编译 + 反射守卫"生成类 public 成员 ⊇ 常量表"，杜绝 `UseAppScope` 漏登记那类"发射了没登记 ⇒ CS0111 / 登记了没发射 ⇒ CS0535"的漂移。
 - **形态与失败语义文档化**：`Current` 访问器形态的判定口径（`set` / `init` / 未声明 ⇒ `init`），以及"缺少 `IAppManager` 时 `UseAppScope` 类入口 **fail-closed**、`UseDefaultAppScope` 类入口**单应用回退**"这一**刻意的不对称**，已完整写入 `Generator/README.md`「多应用切换与信任边界」（生成产物零变更）。
 
 #### 明确不做（避免过度设计）
 
 - **`IAppManager<T>` 三成员不废弃**：`GetWebApi<T>` / `GetDefaultWebApi<T>` 返回的是**新的切换器实例**，与 `IAppScopeSwitcher`（在当前实例上切上下文）**语义不等价**；`RegisterSwitcherFactory<T>` 是 AOT 友好实例创建的**唯一接缝**（无等价替代）。
-- **切换成员"按需发射"移出本轮**：与 `IAppScopeSwitcher` 的附加实现条件冲突、属破坏性变更，且会破坏"用户接口自行声明切换成员"的合法场景（`UnconditionalMemberAvoidanceTests` 覆盖）。
+- **切换成员"按需发射"不在本版本**：与 `IAppScopeSwitcher` 的附加实现条件冲突、属破坏性变更，且会破坏"用户接口自行声明切换成员"的合法场景（有回归测试覆盖）。
 - **不新增 `HTTPCLIENT038` / `MUD006` 诊断**：分别与既有 `HTTPCLIENT024`（**Error**）、编译器 `CS0618` 覆盖重叠，新增只会造成同处双告警与额外的诊断发布跟踪成本。
 - **不新增 CodeFix**：`CS0618` 已提供等效且更可靠的迁移提示。
 
 #### 已评估但不采纳（后续候选）
 
-1. **`GetTokenAsync()` 迁出 `IAppContextSwitcher`**：迁至独立的令牌访问面，迁移到 `ITokenProvider.GetTokenAsync(...)`（本轮保留以缩小破坏面）。
+1. **`GetTokenAsync()` 迁出 `IAppContextSwitcher`**：迁至独立的令牌访问面，迁移到 `ITokenProvider.GetTokenAsync(...)`（本版本保留以缩小破坏面）。
 2. **`HTTPCLIENT028` 由 `Warning` 升 `Error`**：适用于混合模式继承（两级 TokenManager 配置不一致）的项目；过渡期请统一两级配置或显式抑制诊断。
-3. **切换成员"按需发射"**的完整形态（Holder 面也门控）不采纳 —— 该面被请求执行链路依赖，门控会让生成类无法满足 `IAppContextHolder` 契约。本轮已用"**只门控旧入口 + 接口自行声明即豁免**"的**更窄**方案达成同等目标（见「破坏性变更」）。
+3. **切换成员"按需发射"**的完整形态（Holder 面也门控）不采纳 —— 该面被请求执行链路依赖，门控会让生成类无法满足 `IAppContextHolder` 契约。本版本已用"**只门控旧入口 + 接口自行声明即豁免**"的**更窄**方案达成同等目标（见「破坏性变更」）。
 
 ---
 
 ## 2.0.9（安全 / 性能 / 功能完善与令牌存储架构治理，2026-09-30）
 
-> 本版本包含一轮全量安全审查的 31 项修复与完善、多项敏感信息脱敏增强、以业务错误码识别令牌失效的能力，以及令牌「存储栈 × 缓存栈」架构治理（分层定位 + 桥接器 + 异步缓存契约）。**含破坏性行为变更，升级前请先阅读「迁移说明」**。
+> 本版本包含一轮全量安全审查的修复与完善、多项敏感信息脱敏增强、以业务错误码识别令牌失效的能力，以及令牌「存储栈 × 缓存栈」架构治理（分层定位 + 桥接器 + 异步缓存契约）。**含破坏性行为变更，升级前请先阅读「迁移说明」**。
 
 #### 新增（Added）
 
@@ -287,12 +286,12 @@ BasicPayload.PayloadFieldMap.Bind(root, payload);
 
 - 未注册判定器时，401 短路判定先于一切响应体读取，非 401 响应零额外工作——既有调用方行为不变。
 - `TokenRecoveryOptions` 新增的两个属性为非破坏性变更（引用类型属性不参与配置绑定）。
-- 令牌存储 / 缓存治理为纯加法：`ITokenStore` / `IUserTokenStore` / `IEncryptedTokenStore` 保留且不标废弃（开发态误加、未发布的 `[Obsolete]` 已于发布前撤销，实测下游升级 CS0618 由 190 条 / 13 文件归零）；`IUserTokenStore` 继承成员的语义规则（"只允许使用带 userId 重载"）已写入契约文档，无编译期影响。
+- 令牌存储 / 缓存治理为纯加法：`ITokenStore` / `IUserTokenStore` / `IEncryptedTokenStore` 保留且不标废弃（未发布的 `[Obsolete]` 标注已于发布前撤销，不会给下游带来 CS0618）；`IUserTokenStore` 继承成员的语义规则（"只允许使用带 userId 重载"）已写入契约文档，无编译期影响。
 - `ConcurrentDictionaryTokenCache<T>` 的过期 / 回调 no-op 语义不变，仅新增一次性 Debug 诊断输出。
 
 #### 迁移说明（升级前必读）
 
-- **重定向**：自动重定向已关闭 ⇒ 依赖 3xx 自动跟随的调用需自行在 primary handler 上开启 `AllowAutoRedirect`（此时跨主机跳不再复验，SSRF 风险自负）。详见 README「破坏性变更」第 1 节。
+- **重定向**：自动重定向已关闭 ⇒ 依赖 3xx 自动跟随的调用需自行在 primary handler 上开启 `AllowAutoRedirect`（此时跨主机跳不再复验，SSRF 风险自负）。详见 README「破坏性变更」一节。
 - **序列化**：注入的 `JsonSerializerOptions` 现生效 ⇒ 此前"注入但不生效"的用法改为显式传 `null`。
 - **脱敏词表**：通用键 `code` / `nonce` / `address` / `name` 不再掩码 ⇒ 依赖其掩码的场景改用具体变体键名；同时新增 20+ 个凭据 / 地址 / 姓名键。
 - **头值校验**：含 C0 / DEL 控制字符的头值现被拒绝或跳过。
@@ -302,8 +301,7 @@ BasicPayload.PayloadFieldMap.Bind(root, payload);
 
 #### 测试（Tests）
 
-- 修复 10 处契约 / 守卫测试的仓库路径解析：改以程序集位置为锚点向上查找 `Mud.HttpUtils.slnx` 哨兵文件，不再依赖 testhost 工作目录的固定层级。
-- 新增 4 个令牌存储 / 缓存契约测试文件共 55 个测试方法 + EventId 191 守卫用例 2 个：桥接器六条契约不变量逐条固化（Keys/Count 镜像同源防登出漏删、Dispose 所有权、加密叠加检测、TTL 同源推导、失败可观测 + 补偿重放、AOT 零序列化）+ 管线端到端（刷新写穿 / 失效落 store / 免水合冷启动读穿透·租户与用户双维度）；`ConcurrentDictionaryTokenCache` / `EncryptedTokenCache` 专项契约测试（含 C9 no-op 行为锁定、密文损坏按 miss、加密失败写路径 fail-fast / 读路径 fail-open 的非对称语义）。
+- 新增令牌存储 / 缓存契约测试（桥接器契约不变量、管线端到端读写穿透、加密缓存 fail-fast / fail-open 非对称语义等），并修复契约 / 守卫测试的仓库路径解析（改以程序集位置为锚点向上查找解决方案哨兵文件，不再依赖 testhost 工作目录层级）。
 
 ---
 
@@ -346,12 +344,12 @@ BasicPayload.PayloadFieldMap.Bind(root, payload);
 
 ## 2.0.6（生成器警告治理与继承客户端修复，2026-09-17）
 
-> 依据第三方项目 MudFeishu 的全量编译警告治理（2758 → 12 条）过程中的实机发现修复。
+> 依据第三方项目全量编译警告治理过程中的实机发现修复。
 
 #### 修复（Fixed）
 
-- **继承客户端的应用切换必然抛异常**：继承自 `[HttpClientApi(IsAbstract = true)]` 基接口的生成客户端，即使已注册授权器，`UseApp` / `BeginScope` / `UseAppScope` 也必然失败（授权器未转发至基类）；现已正确传递（同时消除下游约 1184 条 CS0108）。
-  > **限定条件（SW-13 补充）**：该结论仅覆盖"两级 TokenManage 配置一致"的场景（派生类走 `override` 路径，切换来源同源）。
+- **继承客户端的应用切换必然抛异常**：继承自 `[HttpClientApi(IsAbstract = true)]` 基接口的生成客户端，即使已注册授权器，`UseApp` / `BeginScope` / `UseAppScope` 也必然失败（授权器未转发至基类）；现已正确传递（同时消除下游大量 CS0108 警告）。
+  > **限定条件**：该结论仅覆盖"两级 TokenManage 配置一致"的场景（派生类走 `override` 路径，切换来源同源）。
   > **混合模式**（基类与派生类的 TokenManager 配置不一致）下派生类以 `public new` 隐藏基类切换成员，
   > 经**基类引用**调用切换方法仍会走到基类实现 ⇒ 由 `HTTPCLIENT028`（Warning）警示，编译可通过但调用路径存在分叉。
 - **继承模式下的重复成员**：派生类不再重复声明基接口的 `[Header]` / `[Query]` / `[Path]` 属性（CS0108 / CS8618），`[Header]` 字符串属性改为初始化。
