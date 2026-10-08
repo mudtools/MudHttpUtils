@@ -151,7 +151,13 @@ public static class MudObservabilityDefaults
             : ValidateOptionsResult.Success;
     }
 
-    private static void ApplyOtlpExporterOptions(OtlpExporterOptions o, MudObservabilityOptions options)
+    /// <summary>
+    /// OTLP 导出器选项映射（Endpoint / Protocol / Timeout / Headers）。
+    /// </summary>
+    /// <param name="o">目标 OTLP 导出器选项。</param>
+    /// <param name="options">Mud 可观测性选项。</param>
+    /// <remarks>internal 而非 private：供 <c>Mud.HttpUtils.OpenTelemetry.Tests</c>（经 <c>InternalsVisibleTo</c>）直测映射结果。</remarks>
+    internal static void ApplyOtlpExporterOptions(OtlpExporterOptions o, MudObservabilityOptions options)
     {
         o.Endpoint = options.OtlpEndpoint!;
         o.Protocol = MapProtocol(options.OtlpExportProtocol);
@@ -166,7 +172,13 @@ public static class MudObservabilityDefaults
         }
     }
 
-    private static OtelOtlpExportProtocol MapProtocol(OtlpExportProtocol protocol)
+    /// <summary>
+    /// 本包 <see cref="OtlpExportProtocol"/> → OTel SDK <c>OtlpExportProtocol</c> 的映射。
+    /// </summary>
+    /// <param name="protocol">本包协议枚举。</param>
+    /// <returns>OTel SDK 协议枚举。</returns>
+    /// <remarks>internal 而非 private：供 <c>Mud.HttpUtils.OpenTelemetry.Tests</c>（经 <c>InternalsVisibleTo</c>）直测映射结果。</remarks>
+    internal static OtelOtlpExportProtocol MapProtocol(OtlpExportProtocol protocol)
     {
         return protocol switch
         {

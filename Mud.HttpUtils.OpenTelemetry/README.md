@@ -67,7 +67,7 @@ using var provider = services.BuildServiceProvider();
 | `EnableLogging` | `bool` | `false` | 是否启用 OTLP 日志导出（向后兼容；依赖 .NET 8+ 的 ILogger 集成） |
 | `EnableHttpClientInstrumentation` | `bool` | `true` | 关联 .NET HttpClient 内置 ActivitySource |
 | `EnableAspNetCoreInstrumentation` | `bool` | `true` | 启用 ASP.NET Core 入站请求 Instrumentation（控制台应用无效） |
-| `OtlpEndpoint` | `Uri?` | `http://localhost:4317` | OTLP 导出端点，`null` 表示不配置 OTLP 导出器 |
+| `OtlpEndpoint` | `Uri?` | `http://localhost:4317` | OTLP 导出端点，`null` 表示不配置 OTLP 导出器；**必须是绝对 URI**（相对 URI 在启动期抛 `OptionsValidationException`） |
 | `OtlpExportProtocol` | `OtlpExportProtocol` | `Grpc` | OTLP 导出协议（`Grpc` 或 `HttpProtobuf`） |
 | `UseShortExporterTimeout` | `bool` | `false` | 是否使用 5 秒短超时（开发调试用） |
 | `ServiceName` | `string` | `"Mud.HttpUtils.Application"` | OTel Resource 属性 `service.name` |
@@ -302,3 +302,5 @@ services.AddMudObservability(contribution, coreOptions);
 > 如果宿主已调用 `AddMudHttpOpenTelemetry()`，则**不可**再调用 `AddMudObservability()` 注册其他产品——内核的重复入口守卫会抛出 `InvalidOperationException`。
 >
 > 如需同时采集多个产品的源与 Meter，请使用 `MudObservabilityContribution.IncludeMudHttpSources = true`，或通过 `AddMudObservabilitySources()` 向既有 builder 追加源。
+
+> **同一产品重复注册是幂等的**：第二次及以后的调用**不重复装配**，原样返回首次装配的 `OpenTelemetryBuilder`（即首次注册的配置生效）。这避免了把同一份剧本（源 / Instrumentation / OTLP 导出器）叠加到同一 Provider 上——否则每个 Span 会被导出两次。

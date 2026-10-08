@@ -20,6 +20,12 @@
 		<ProjectReference Include="..\Mud.HttpUtils.Abstractions\Mud.HttpUtils.Abstractions.csproj" />
 	</ItemGroup>
 	<ItemGroup>
+		<!-- 内核的 OTLP 选项映射（ApplyOtlpExporterOptions / MapProtocol）为 internal：
+		     映射结果是纯函数语义，直测比经 Provider 反射反推更稳（OTel 导出器在注册时即固化选项，
+		     不落 DI 的 IOptions<OtlpExporterOptions>）。 -->
+		<InternalsVisibleTo Include="Mud.HttpUtils.OpenTelemetry.Tests" />
+	</ItemGroup>
+	<ItemGroup>
 		<PackageReference Include="OpenTelemetry" Version="1.16.0" />
 		<PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
 		<PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.16.0" />

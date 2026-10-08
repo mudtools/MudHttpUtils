@@ -38,6 +38,10 @@ public static class MudObservabilityBootstrap
     /// <exception cref="InvalidOperationException">重复入口守卫：已有不同产品注册。</exception>
     /// <exception cref="ArgumentOutOfRangeException"><see cref="MudObservabilityOptions.SamplingRatio"/> 越界。</exception>
     /// <exception cref="OptionsValidationException">完整校验失败。</exception>
+    /// <remarks>
+    /// <para>同一 <paramref name="services"/> 内注册不同产品的贡献 → 抛 <see cref="InvalidOperationException"/>（双重入口禁令）。</para>
+    /// <para>同一产品重复注册 → 幂等短路：不重复装配，原样返回首次装配的 <see cref="OpenTelemetryBuilder"/>（首次注册的配置生效）。</para>
+    /// </remarks>
     public static OpenTelemetryBuilder AddMudObservability(
         this IServiceCollection services,
         MudObservabilityContribution contribution,
@@ -49,34 +53,18 @@ public static class MudObservabilityBootstrap
         if (options is null) throw new ArgumentNullException(nameof(options));
 
         // 2. 贡献校验
-        if (string.IsNullOrWhiteSpace(contribution.ProductName))
-            throw new ArgumentException("MudObservabilityContribution.ProductName 不能为空白。", nameof(contribution));
-        if (string.IsNullOrWhiteSpace(contribution.ActivitySourceName))
-            throw new ArgumentException("MudObservabilityContribution.ActivitySourceName 不能为空白。", nameof(contribution));
-        if (string.IsNullOrWhiteSpace(contribution.MeterName) && string.IsNullOrWhiteSpace(contribution.MeterWildcard))
-            throw new ArgumentException("MudObservabilityContribution.MeterName 与 MeterWildcard 至少填一个。", nameof(contribution));
+        ValidateContribution(contribution);
 
         // 3. 重复入口守卫
         var existingMarker = services.FirstOrDefault(s => s.ServiceType == typeof(MudObservabilityBootstrapMarker))
             ?.ImplementationInstance as MudObservabilityBootstrapMarker;
-        if (existingMarker is not null)
+        if (existingMarker is not null
+            && !string.Equals(existingMarker.ProductName, contribution.ProductName, StringComparison.Ordinal))
         {
-            if (!string.Equals(existingMarker.ProductName, contribution.ProductName, StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException(
-                    $"MudObservabilityBootstrap 已注册产品 '{existingMarker.ProductName}'，" +
-                    $"不允许重复注册不同产品 '{contribution.ProductName}'。" +
-                    "同一宿主只应调用一个产品的 AddMudObservability/AddXxxOpenTelemetry 入口。");
-            }
-            // 同产品幂等放行（不重复写标记，不重复装配）
-            // 此时直接调用 AddOpenTelemetry 会因重复注册而出错，因此幂等场景返回已有 builder
-            // 但 OTel SDK 不支持从 ServiceCollection 取回已有 builder，故幂等时直接重新装配
-            // （OTel SDK 内部对重复 AddOpenTelemetry 是安全的——返回同一 builder 单例）
-        }
-        else
-        {
-            services.TryAdd(new ServiceDescriptor(typeof(MudObservabilityBootstrapMarker),
-                new MudObservabilityBootstrapMarker(contribution.ProductName)));
+            throw new InvalidOperationException(
+                $"MudObservabilityBootstrap 已注册产品 '{existingMarker.ProductName}'，" +
+                $"不允许重复注册不同产品 '{contribution.ProductName}'。" +
+                "同一宿主只应调用一个产品的 AddMudObservability/AddXxxOpenTelemetry 入口。");
         }
 
         // 4. SamplingRatio 越界校验（保留既有语义与优先级：先于完整校验）
@@ -98,6 +86,16 @@ public static class MudObservabilityBootstrap
                 Options.DefaultName, typeof(MudObservabilityOptions), validationResult.Failures!);
         }
 
+        // 6.1 同产品重复注册 → 幂等短路：不再装配，原样返回首次装配的 builder。
+        //     绝不可「放行继续装配」：OTel SDK 的 AddOpenTelemetry() 每次返回**新的** builder 实例，
+        //     重复 WithTracing/WithMetrics 会把同一份剧本（AddSource / Instrumentation / OTLP 导出器）
+        //     叠加注册到同一个 Provider 上——实测 TracerProvider 会挂载 2 个 OtlpTraceExporter，
+        //     每次导出被发送两次（Span/RPS 翻倍）。
+        if (existingMarker is not null)
+        {
+            return existingMarker.Builder;
+        }
+
         // 7. ns2.0 兜底：强制关闭 AspNetCore Instrumentation（本包 csproj 无 FrameworkReference）
 #if NETSTANDARD2_0
         options.EnableAspNetCoreInstrumentation = false;
@@ -106,11 +104,11 @@ public static class MudObservabilityBootstrap
         // 8. 批量导出配置
         MudObservabilityDefaults.ConfigureBatchExportOptions(services, options);
 
-        // 9. AddOpenTelemetry + ConfigureResource
+        // 10. AddOpenTelemetry + ConfigureResource
         var builder = services.AddOpenTelemetry()
             .ConfigureResource(r => MudObservabilityDefaults.ConfigureResource(r, options));
 
-        // 10. Tracing
+        // 11. Tracing
         if (options.EnableTracing)
         {
             builder.WithTracing(tp =>
@@ -139,7 +137,7 @@ public static class MudObservabilityBootstrap
             });
         }
 
-        // 11. Metrics
+        // 12. Metrics
         if (options.EnableMetrics)
         {
             builder.WithMetrics(mp =>
@@ -164,7 +162,7 @@ public static class MudObservabilityBootstrap
             });
         }
 
-        // 12. Logging
+        // 13. Logging
         if (options.EnableLogging)
         {
             builder.WithLogging(lp =>
@@ -174,8 +172,28 @@ public static class MudObservabilityBootstrap
             });
         }
 
-        // 13. 返回 builder
+        // 14. 登记重复入口守卫标记（含 builder）：此后同产品重复注册幂等短路，异产品注册抛异常。
+        //     标记在装配成功之后才登记 —— 若首次装配中途抛异常（配置委托/Provider 构建失败等），
+        //     不留下「无 builder 的标记」把后续重试静默短路掉。
+        services.TryAdd(new ServiceDescriptor(typeof(MudObservabilityBootstrapMarker),
+            new MudObservabilityBootstrapMarker(contribution.ProductName, builder)));
+
         return builder;
+    }
+
+    /// <summary>
+    /// 校验贡献描述的必填字段。
+    /// </summary>
+    /// <param name="contribution">产品线贡献描述。</param>
+    /// <exception cref="ArgumentException">必填字段缺失。</exception>
+    private static void ValidateContribution(MudObservabilityContribution contribution)
+    {
+        if (string.IsNullOrWhiteSpace(contribution.ProductName))
+            throw new ArgumentException("MudObservabilityContribution.ProductName 不能为空白。", nameof(contribution));
+        if (string.IsNullOrWhiteSpace(contribution.ActivitySourceName))
+            throw new ArgumentException("MudObservabilityContribution.ActivitySourceName 不能为空白。", nameof(contribution));
+        if (string.IsNullOrWhiteSpace(contribution.MeterName) && string.IsNullOrWhiteSpace(contribution.MeterWildcard))
+            throw new ArgumentException("MudObservabilityContribution.MeterName 与 MeterWildcard 至少填一个。", nameof(contribution));
     }
 
     /// <summary>
@@ -205,9 +223,14 @@ public static class MudObservabilityBootstrap
     /// <param name="builder">已有的 OpenTelemetry 构建器。</param>
     /// <param name="contribution">产品线贡献描述。</param>
     /// <returns>返回同一 <see cref="OpenTelemetryBuilder"/> 实例，便于链式调用。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> 或 <paramref name="contribution"/> 为 <c>null</c>。</exception>
+    /// <exception cref="ArgumentException">贡献校验失败（必填字段缺失）。</exception>
     /// <remarks>
-    /// 本方法仅追加 <c>WithTracing(AddSource)</c> 与 <c>WithMetrics(AddMeter)</c>，
-    /// 不配置 Resource / Sampler / OTLP 导出器 / Instrumentation 开关——这些由宿主自建管道负责。
+    /// <para>本方法仅追加 <c>WithTracing(AddSource)</c> 与 <c>WithMetrics(AddMeter)</c>，
+    /// 不配置 Resource / Sampler / OTLP 导出器 / Instrumentation 开关——这些由宿主自建管道负责。</para>
+    /// <para>贡献校验与 <see cref="AddMudObservability(IServiceCollection, MudObservabilityContribution, MudObservabilityOptions)"/> 同口径
+    /// （<c>ProductName</c> / <c>ActivitySourceName</c> 非空白，<c>MeterName</c> 与 <c>MeterWildcard</c> 至少一个非空白），
+    /// 避免空白源名被静默注册。</para>
     /// </remarks>
     public static OpenTelemetryBuilder AddMudObservabilitySources(
         this OpenTelemetryBuilder builder,
@@ -215,6 +238,8 @@ public static class MudObservabilityBootstrap
     {
         if (builder is null) throw new ArgumentNullException(nameof(builder));
         if (contribution is null) throw new ArgumentNullException(nameof(contribution));
+
+        ValidateContribution(contribution);
 
         // 源集合去重
         var sources = new HashSet<string>(StringComparer.Ordinal)
@@ -254,10 +279,18 @@ public static class MudObservabilityBootstrap
 /// </summary>
 internal sealed class MudObservabilityBootstrapMarker
 {
-    public string ProductName { get; }
-
-    public MudObservabilityBootstrapMarker(string productName)
+    public MudObservabilityBootstrapMarker(string productName, OpenTelemetryBuilder builder)
     {
         ProductName = productName;
+        Builder = builder;
     }
+
+    /// <summary>已注册的产品名（重复入口守卫比对用）。</summary>
+    public string ProductName { get; }
+
+    /// <summary>
+    /// 首次装配返回的 <see cref="OpenTelemetryBuilder"/>。
+    /// 同产品重复注册时由 <see cref="MudObservabilityBootstrap"/> 原样返回，实现真正的幂等（不再重复装配）。
+    /// </summary>
+    internal OpenTelemetryBuilder Builder { get; }
 }

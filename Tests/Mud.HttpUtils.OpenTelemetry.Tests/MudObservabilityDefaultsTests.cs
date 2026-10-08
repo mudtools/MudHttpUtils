@@ -7,8 +7,11 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using OpenTelemetry;
+using OpenTelemetry.Exporter;
 using OpenTelemetry.Trace;
 using System.Diagnostics;
+// 别名避免与我方定义的 OtlpExportProtocol 枚举冲突
+using OtelOtlpExportProtocol = OpenTelemetry.Exporter.OtlpExportProtocol;
 
 namespace Mud.HttpUtils.OpenTelemetry.Tests;
 
@@ -28,13 +31,16 @@ public class MudObservabilityDefaultsTests
     }
 
     [Theory]
-    [InlineData(0.0)]
-    [InlineData(0.5)]
-    [InlineData(1.0)]
-    public void CreateSampler_AcceptsValidRatios(double ratio)
+    [InlineData(0.0, "0.000000")]
+    [InlineData(0.5, "0.500000")]
+    [InlineData(1.0, "1.000000")]
+    public void CreateSampler_ShouldWrapRatioBasedSampler_WithGivenRatio(double ratio, string expectedRatioText)
     {
-        var act = () => MudObservabilityDefaults.CreateSampler(ratio);
-        act.Should().NotThrow();
+        var sampler = MudObservabilityDefaults.CreateSampler(ratio);
+
+        // ParentBased{TraceIdRatioBasedSampler{ratio}}：比率必须原样传递（而非被默认值吞掉）
+        sampler.Description.Should().Contain("TraceIdRatioBasedSampler");
+        sampler.Description.Should().Contain(expectedRatioText);
     }
 
     // ============ Validate ============
@@ -270,6 +276,97 @@ public class MudObservabilityDefaultsTests
         result.FailureMessage.Should().Contain("DeploymentEnvironment");
     }
 
+    [Fact]
+    public void Validate_AndPackageValidator_ShouldShareRuleSet_OnRelativeOtlpEndpoint()
+    {
+        // 共享校验集与包级校验器（MudHttpOpenTelemetryOptionsValidator）必须同口径：
+        // 相对 URI 端点在两处都要在启动期拦截（否则下游/本包会静默导出失败）
+        var sharedOptions = new MudObservabilityOptions
+        {
+            ServiceName = "test",
+            ServiceVersion = "1.0",
+            OtlpEndpoint = new Uri("/relative/path", UriKind.Relative),
+        };
+        var packageOptions = new MudHttpOpenTelemetryOptions
+        {
+            OtlpEndpoint = new Uri("/relative/path", UriKind.Relative),
+        };
+
+        MudObservabilityDefaults.Validate(sharedOptions).Failed.Should().BeTrue();
+        new MudHttpOpenTelemetryOptionsValidator()
+            .Validate(Options.DefaultName, packageOptions)
+            .Failed.Should().BeTrue();
+    }
+
+    // ============ ApplyOtlpExporterOptions / MapProtocol ============
+
+    [Fact]
+    public void ApplyOtlpExporterOptions_ShouldMapEndpointProtocolTimeoutAndHeaders()
+    {
+        var options = new MudObservabilityOptions
+        {
+            OtlpEndpoint = new Uri("http://otel-collector:4318"),
+            OtlpExportProtocol = OtlpExportProtocol.HttpProtobuf,
+            UseShortExporterTimeout = true,
+            OtlpHeaders = new Dictionary<string, string>
+            {
+                ["Authorization"] = "Bearer my-token",
+                ["X-Api-Key"] = "k1",
+            },
+        };
+        var target = new OtlpExporterOptions();
+
+        MudObservabilityDefaults.ApplyOtlpExporterOptions(target, options);
+
+        target.Endpoint.Should().Be(new Uri("http://otel-collector:4318"));
+        target.Protocol.Should().Be(OtelOtlpExportProtocol.HttpProtobuf);
+        target.TimeoutMilliseconds.Should().Be(5000);
+        target.Headers.Should().NotBeNull();
+        target.Headers!.Split(',').Should().BeEquivalentTo("Authorization=Bearer my-token", "X-Api-Key=k1");
+    }
+
+    [Fact]
+    public void ApplyOtlpExporterOptions_ShouldKeepSdkDefaults_WhenOptionalValuesUnset()
+    {
+        var options = new MudObservabilityOptions
+        {
+            OtlpEndpoint = new Uri("http://otel-collector:4317"),
+            UseShortExporterTimeout = false,
+            OtlpHeaders = null,
+        };
+        var target = new OtlpExporterOptions();
+        var defaultTimeout = target.TimeoutMilliseconds;
+
+        MudObservabilityDefaults.ApplyOtlpExporterOptions(target, options);
+
+        target.Endpoint.Should().Be(new Uri("http://otel-collector:4317"));
+        target.TimeoutMilliseconds.Should().Be(defaultTimeout, "UseShortExporterTimeout = false 不得改写超时");
+        target.Headers.Should().BeNullOrEmpty("OtlpHeaders 为空时不设置额外头");
+    }
+
+    [Fact]
+    public void ApplyOtlpExporterOptions_ShouldIgnoreEmptyHeadersDictionary()
+    {
+        var options = new MudObservabilityOptions
+        {
+            OtlpEndpoint = new Uri("http://otel-collector:4317"),
+            OtlpHeaders = new Dictionary<string, string>(),
+        };
+        var target = new OtlpExporterOptions();
+
+        MudObservabilityDefaults.ApplyOtlpExporterOptions(target, options);
+
+        target.Headers.Should().BeNullOrEmpty();
+    }
+
+    [Theory]
+    [InlineData(OtlpExportProtocol.Grpc, OtelOtlpExportProtocol.Grpc)]
+    [InlineData(OtlpExportProtocol.HttpProtobuf, OtelOtlpExportProtocol.HttpProtobuf)]
+    public void MapProtocol_ShouldMapToSdkEnum(OtlpExportProtocol source, OtelOtlpExportProtocol expected)
+    {
+        MudObservabilityDefaults.MapProtocol(source).Should().Be(expected);
+    }
+
     // ============ ConfigureBatchExportOptions ============
 
     [Fact]
@@ -312,10 +409,9 @@ public class MudObservabilityDefaultsTests
 
         MudObservabilityDefaults.ConfigureBatchExportOptions(services, options);
 
-        // 不应注册自定义 BatchExportProcessorOptions（不抛异常即可）
+        // null → 不得注册任何自定义 BatchExportProcessorOptions 覆盖项（SDK 默认值生效）
         var provider = services.BuildServiceProvider();
-        // SDK 默认值应保持不变
-        _ = provider.GetService<BatchExportProcessorOptions<Activity>>();
+        provider.GetService<IConfigureOptions<BatchExportProcessorOptions<Activity>>>().Should().BeNull();
     }
 
     [Fact]
@@ -330,9 +426,28 @@ public class MudObservabilityDefaultsTests
 
         MudObservabilityDefaults.ConfigureBatchExportOptions(services, options);
 
-        // 不抛异常，使用 SDK 默认值
+        // 0 与 null 等价（不覆盖 SDK 默认值）
         var provider = services.BuildServiceProvider();
-        _ = provider.GetService<BatchExportProcessorOptions<Activity>>();
+        provider.GetService<IConfigureOptions<BatchExportProcessorOptions<Activity>>>().Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(-100)]
+    public void ConfigureBatchExportOptions_WithNegativeValues_DoesNotOverride(int invalid)
+    {
+        var services = new ServiceCollection();
+        var options = new MudObservabilityOptions
+        {
+            ExportBatchSize = invalid,
+            ExportIntervalMilliseconds = invalid,
+        };
+
+        // 负数由 Validate 在装配期拦截；即便直达本方法也不得写出非法覆盖项
+        MudObservabilityDefaults.ConfigureBatchExportOptions(services, options);
+
+        var provider = services.BuildServiceProvider();
+        provider.GetService<IConfigureOptions<BatchExportProcessorOptions<Activity>>>().Should().BeNull();
     }
 
     [Fact]
