@@ -4,6 +4,35 @@
 
 ---
 
+## 3.0.4（应用级弹性隔离与 AOT 体系加固，2026-10-09）
+
+> 两条主线：① **应用级弹性策略隔离**——多应用共享宿主时熔断/重试策略按 AppKey 维度隔离，并修复跨应用熔断失效；② **AOT 体系加固**——补齐 AOT004/005/007 三处分析器漏报（继承方法 DTO 覆盖、请求端多态派生校验、继承方法 Xml 拦截），脚手架分组隔离与 AOT001 噪音消除，封堵未知对象类型序列化的信息泄漏旁路。**无破坏性变更**，可直接升级。
+
+### 新增
+
+- **应用级弹性策略隔离**：`ResiliencePolicyScopeResolver` 的策略作用域增加 **AppKey 维度**——多个应用注册在同一宿主（共享 `IHttpClientFactory`）时，各应用的熔断器/重试计数互不干扰；此前共享键会让一个应用的故障熔断波及其他应用。
+- **生成客户端工厂接线应用级组件**：`GeneratedClientOptions`（Abstractions）新增 `AppResilienceResolver` 与 `AppManager` 两个公共属性，生成的客户端工厂不再硬编码 `null`，可按应用解析弹性策略与应用上下文。
+- **ToolSurface 工具面生成引擎核心**：`SdkToolProfile` 扫描与诊断增强，`GetDocSummary` / `GetParamDoc` 优先语义文档提取、缺失时回退 `///` trivia 解析（`/doc` 未开启的编译下摘要不再恒为空）。
+- **AOT 分析器补漏报**（三个 P0，全部为"生成器真实行为 ↔ 分析器判定口径"对齐）：
+  - **AOT004/005 覆盖继承方法**：`[HttpClientApi]` 接口从基接口（含跨程序集、无 `[HttpClientApi]` 标注的基接口）**继承的方法**，其请求/响应 DTO 的 `JsonSerializerContext` 覆盖校验此前完全缺失——AOT 下会运行时 `NotSupportedException` 静默放行；现与声明成员同口径检查（菱形继承去重、基接口自身带 `[HttpClientApi]` 时不重复报）。
+  - **AOT004 请求端多态派生校验**：`[Body]` 参数类型带 `[JsonDerivedType]` 多态标注时，派生类型同样必须被 Context 覆盖（此前仅响应端校验，请求端序列化漏报）。
+  - **AOT007 覆盖继承方法**：继承方法携带方法级 `[SerializationMethod(Xml)]` 时同样报 AOT007（AOT 下 `XmlSerializer` 不可用）。
+- **脚手架分组隔离**：`[HttpJsonSerializable]` 标注组带显式 `NamingPolicy` 时，`[HttpClientApi]` 扫描发现的类型**独立成组**（策略自动推导），不再被显式策略"传染"导致字段名错配；AOT104 消息指向实际去向。
+- **AOT001 噪音消除**：同一 `SerializerClassName` 下 `Default`（自动推导）与**单一**显式 `NamingPolicy` 混排不再误报冲突，仅"两个及以上不同显式策略"才告警。
+
+### 修复
+
+- **未知对象类型序列化泄漏旁路**：`ObjectToInferredTypesConverter` 兜底分支此前输出对象 `ToString()`（可能带出内部状态/敏感字段），现改为固定类型占位符 `[unserializable:{类型名}]`。
+- **跨应用熔断失效**：兼容历史 AppKey 写入路径（`AsyncLocalAppContextSwitcher`），避免旧写入方式下熔断计数跨应用串扰。
+- **pack.ps1 符号校验静默失效**：Windows PowerShell 5.1 下 Latin1 编码不可用时不再静默跳过校验。
+
+### 升级注意
+
+- **可能出现新诊断**：AOT004/005/007 属漏报修复，升级后原本"干净"的项目可能开始报诊断——均为真实缺口，请为对应 DTO 补 `[HttpJsonSerializable]` 标注（或确认豁免语义）。
+- 弹性策略作用域新增 AppKey 维度后，跨应用共享熔断状态的自定义扩展点（若有）需按新作用域键对齐。
+
+---
+
 ## 3.0.3（OpenTelemetry 共享装配内核抽取，2026-10-08）
 
 > 把 `Mud.HttpUtils` / `Mud.Feishu` / `Mud.Wechat` 三个包重复的 OTel 装配剧本（Resource + Sampler + 源/Meter 注册 + Instrumentation 开关 + OTLP 导出 + Configure* 回调）收敛为本包内的**唯一实现**，并暴露共享装配内核供下游 SDK 退化为「贡献描述 + options 映射」的薄壳。
