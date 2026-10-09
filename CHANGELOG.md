@@ -31,6 +31,34 @@
 - **可能出现新诊断**：AOT004/005/007 属漏报修复，升级后原本"干净"的项目可能开始报诊断——均为真实缺口，请为对应 DTO 补 `[HttpJsonSerializable]` 标注（或确认豁免语义）。
 - 弹性策略作用域新增 AppKey 维度后，跨应用共享熔断状态的自定义扩展点（若有）需按新作用域键对齐。
 
+### 下游消费分析驱动的修复与完善（批次 A + 批次 B 部分）
+
+> 依据 `.docs/2026-10-09-下游消费分析-Bug修复与功能完善方案.md`（第 4 版）实施。本组为**行为级修复 + 纯加法 API**，无破坏性变更。
+
+#### 新增
+
+- **`EnhancedHttpClientOptions.Clone()`**（Client）：**全字段浅拷贝**，含 `Logger` / 请求-响应拦截器 / `SensitiveDataMasker` / `AppAccessAuthorizer` 这批"由 DI 解析后覆盖"的属性。**与 internal `EnhancedHttpClientOptionsCloner.Clone` 刻意不同**（后者为 DI 路径保持"每客户端独立实例"，刻意不拷贝上述属性），请勿混用。
+- **`TokenRecoveryOptions.AdditionalTokenInvalidationDetectors`**（Abstractions）：**追加式**令牌失效判定器集合（只读集合 + `Add`），与单槽 `TokenInvalidationDetector` 为**并集**语义，解决"多产品线各自在 `PostConfigure` 赋值互相覆盖"的问题。
+- **`CompositeTokenInvalidationDetector`**（Abstractions）：把多个判定器组合为单实例（按序短路；**单个判定器故障降级为"未失效"并继续**，不影响其它产品线判定）。
+- **`TokenManagerBase.IsTenantBindingEnforced`**（Abstractions）：租户绑定守卫的**公开只读**判定入口，消费方/测试无需反射即可确认"该管理器是否按租户键隔离"。
+
+#### 行为变更（均为修复性，无新增配置要求）
+
+- **`AddTokenRefreshBackgroundService` 现在幂等**：重复调用（如多产品线各调一次）只注册一份服务，不再把同一实例注册为多个 `IHostedService`（此前会导致宿主对同一实例重复 `StartAsync` ⇒ 多个刷新循环并发）。`IHostedService` 与 `ITokenRefreshBackgroundService` 解析到同一实例的既有不变量保持不变；`netstandard2.0` 分支同样幂等化。
+- **`AddMudHttpAppContextHolder` 的默认注册改为"委托式适配器"**（`DelegatingAppContextHolder`）：框架不再抢先注册**具体**持有器类型（`AsyncLocalAppContextSwitcher`），而是注册一个转发到"容器中最后注册的其它 `IAppContextHolder`"的适配器；无其它实现时回退内部 `AsyncLocalAppContextSwitcher`（单应用零配置行为不变）。
+  ⇒ 消费方注册自定义持有器/切换器的**顺序不再影响语义**，也消除了"框架默认持有器与消费方切换器各持一个 `AsyncLocal`、互不可见（多应用静默失效）"的根因。
+
+#### 修复
+
+- **用户维度登出/失效在冷启动下不落持久层（C6 类）**：`UserTokenManagerBase.RemoveTokenAsync` / `InvalidateUserTokenAsync` 在既有同步镜像清理之外**补齐异步写穿**（仅当缓存实现 `IAsyncTokenCache<UserTokenInfo>` 时生效，与租户维度既有做法对齐）。此前桥接式缓存（`TokenStoreBackedTokenCache<T>`）在**镜像未命中**（冷启动/重启/多实例）时不写穿持久层，导致登出后持久层残留旧令牌、下次读穿透把已失效令牌"复活"。非异步缓存实现下行为与旧版逐字节等价；校验失败仍**同步抛出**。
+- **公共 API 基线补登记**：`HttpExecutionConstants.AppKeyPropertyKey` 与 `ResilienceConstants.AppKeyPropertyKey`（均为 `public const` 但未登记）已补入各 TFM 的 `PublicAPI.Unshipped.txt` —— 否则 `-p:PublicApiStrictMode=true` 下 4 个 TFM 全部报 RS0016。
+
+#### 升级注意
+
+- **`Clone()` vs `EnhancedHttpClientOptionsCloner`**：需要"复用整份配置（含 DI 解析面）"用 `Clone()`；DI 路径的每客户端克隆仍由内部 Cloner 承担。新增 `EnhancedHttpClientOptions` 可写属性时，**必须同时同步 `Clone()`、`Cloner`，并归入 `CFG01_Cloner_CoversAllWritableProperties` 的两份清单之一**。
+- **委托式持有器不支持 `init` 写入**：`IAppContextHolder.Current` 的访问器是 `init`，无法转发；适配器的该访问器**显式抛 `NotSupportedException`**（不静默丢弃）。运行时切换请使用 `SwitchTo` / `BeginScope`（或生成代码的 `UseAppScope`）。自定义持有器应在**首次访问上下文之前**（通常为首次创建客户端 / 首个请求）完成注册；目标须为**单例**。
+- 若宿主此前依赖"`AddMudHttpClient` 之后注册 `IAppContextHolder` 也能被框架读取"的**具名/枚举**解析行为，请改为直接依赖 `IAppContextHolder`（现在无论经哪个解析结果读写，都是同一声明源）。
+
 ---
 
 ## 3.0.3（OpenTelemetry 共享装配内核抽取，2026-10-08）

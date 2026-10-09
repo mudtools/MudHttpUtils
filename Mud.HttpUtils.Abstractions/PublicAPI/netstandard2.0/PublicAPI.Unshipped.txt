@@ -83,3 +83,10 @@ Mud.HttpUtils.GeneratedClientOptions.AppResilienceResolver.get -> Mud.HttpUtils.
 Mud.HttpUtils.GeneratedClientOptions.AppResilienceResolver.set -> void
 Mud.HttpUtils.GeneratedClientOptions.AppManager.get -> Mud.HttpUtils.IAppManager<Mud.HttpUtils.IMudAppContext!>?
 Mud.HttpUtils.GeneratedClientOptions.AppManager.set -> void
+Mud.HttpUtils.CompositeTokenInvalidationDetector
+Mud.HttpUtils.CompositeTokenInvalidationDetector.CompositeTokenInvalidationDetector(params Mud.HttpUtils.ITokenInvalidationDetector![]! detectors) -> void
+Mud.HttpUtils.CompositeTokenInvalidationDetector.IsTokenInvalidAsync(System.Net.Http.HttpResponseMessage! response, System.ReadOnlyMemory<byte>? body, System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.ValueTask<bool>
+Mud.HttpUtils.CompositeTokenInvalidationDetector.ShouldInspect(System.Net.Http.HttpRequestMessage! request) -> bool
+Mud.HttpUtils.TokenRecoveryOptions.AdditionalTokenInvalidationDetectors.get -> System.Collections.Generic.IList<Mud.HttpUtils.ITokenInvalidationDetector!>!
+const Mud.HttpUtils.HttpExecutionConstants.AppKeyPropertyKey = "__Mud_HttpUtils_AppKey" -> string!
+Mud.HttpUtils.TokenManagerBase.IsTenantBindingEnforced.get -> bool

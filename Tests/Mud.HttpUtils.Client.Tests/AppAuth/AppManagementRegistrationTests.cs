@@ -33,7 +33,9 @@ public class AppManagementRegistrationTests
         var sp = services.BuildServiceProvider();
         var holder = sp.GetService<IAppContextHolder>();
         holder.Should().NotBeNull();
-        holder.Should().BeOfType<AsyncLocalAppContextSwitcher>();
+        // G7：框架默认注册由"自持 AsyncLocal 的具体类型"改为"委托式适配器"（DelegatingAppContextHolder），
+        // 故此处断言**行为契约**（可用、可切换、可作用域式恢复）而非具体类型 —— 类型是内部实现细节。
+        AssertHolderBehaviour(holder!);
     }
 
     [Fact]
@@ -84,7 +86,9 @@ public class AppManagementRegistrationTests
         var sp = services.BuildServiceProvider();
         var holder = sp.GetService<IAppContextHolder>();
         holder.Should().NotBeNull();
-        holder.Should().BeOfType<AsyncLocalAppContextSwitcher>();
+        // G7：框架默认注册由"自持 AsyncLocal 的具体类型"改为"委托式适配器"（DelegatingAppContextHolder），
+        // 故此处断言**行为契约**（可用、可切换、可作用域式恢复）而非具体类型 —— 类型是内部实现细节。
+        AssertHolderBehaviour(holder!);
     }
 
     #endregion
@@ -111,7 +115,9 @@ public class AppManagementRegistrationTests
         var sp = services.BuildServiceProvider();
         var holder = sp.GetService<IAppContextHolder>();
         holder.Should().NotBeNull();
-        holder.Should().BeOfType<AsyncLocalAppContextSwitcher>();
+        // G7：框架默认注册由"自持 AsyncLocal 的具体类型"改为"委托式适配器"（DelegatingAppContextHolder），
+        // 故此处断言**行为契约**（可用、可切换、可作用域式恢复）而非具体类型 —— 类型是内部实现细节。
+        AssertHolderBehaviour(holder!);
     }
 
     [Fact]
@@ -322,7 +328,148 @@ public class AppManagementRegistrationTests
 
     #endregion
 
+    #region G7：IAppContextHolder 注册顺序无关（委托式适配器）
+
+    /// <summary>
+    /// G7：框架只注册**一条** <c>IAppContextHolder</c>，且<b>不再抢占具体持有器类型</b>
+    /// （<see cref="AsyncLocalAppContextSwitcher"/>）。否则容器内会同时存在两个自持
+    /// <c>AsyncLocal</c> 的持有器 —— 消费方写入的那个与框架读取的那个互不可见（多应用静默失效）。
+    /// </summary>
+    [Fact]
+    public void AddMudHttpAppContextHolder_ShouldNotClaimConcreteHolderType()
+    {
+        var services = new ServiceCollection();
+        services.AddMudHttpAppContextHolder();
+        services.AddMudHttpAppContextHolder();
+
+        services.Count(d => d.ServiceType == typeof(IAppContextHolder)).Should().Be(1);
+        services.Should().NotContain(
+            d => d.ServiceType == typeof(AsyncLocalAppContextSwitcher),
+            "G7：不得再注册具体持有器类型（否则出现第二个 AsyncLocal）");
+    }
+
+    /// <summary>
+    /// G7 核心：消费方在 <c>AddMudHttpClient</c> <b>之后</b>注册自定义持有器时，
+    /// 框架侧（委托适配器）必须<b>转发到</b>消费方实现 —— 即无论通过哪个
+    /// <c>IAppContextHolder</c> 解析结果读写上下文，看到的都是同一个当前应用。
+    /// </summary>
+    [Fact]
+    public void DownstreamHolder_RegisteredAfterAddMudHttpClient_ShouldBeSingleSourceOfTruth()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddMudHttpClient("api", client => client.BaseAddress = new Uri("https://api.example.com"));
+
+        var downstream = new ProbeHolder();
+        services.AddSingleton<IAppContextHolder>(downstream);   // 晚注册（非 TryAdd ⇒ 最后注册者胜）
+
+        using var sp = services.BuildServiceProvider();
+        var all = sp.GetServices<IAppContextHolder>().ToList();
+        var frameworkHolder = all.First();
+        var appA = new ProbeAppContext("app-A");
+        var appB = new ProbeAppContext("app-B");
+
+        // Assert —— 框架侧必须是"委托适配器"而不是另一个自持 AsyncLocal 的持有器
+        all.Should().HaveCount(2);
+        frameworkHolder.Should().NotBeSameAs(downstream);
+        sp.GetService<AsyncLocalAppContextSwitcher>().Should().BeNull(
+            "G7：容器内不得再注册具体持有器类型");
+
+        // 消费方写入 → 框架侧读得到（修复前：两个 AsyncLocal 互不可见）
+        downstream.SwitchTo(appA);
+        frameworkHolder.Current.Should().BeSameAs(appA, "框架侧持有器必须转发到消费方实现（读）");
+
+        // 框架侧写入 → 消费方读得到（转发写）
+        frameworkHolder.SwitchTo(appB);
+        downstream.Current.Should().BeSameAs(appB, "框架侧持有器必须转发到消费方实现（写）");
+    }
+
+    /// <summary>
+    /// G7：消费方在 <c>AddMudHttpClient</c> <b>之前</b>注册时，框架的 <c>TryAdd</c> 为 no-op，
+    /// 解析结果直接就是消费方实现（"先注册者胜"契约保持）。
+    /// </summary>
+    [Fact]
+    public void DownstreamHolder_RegisteredBeforeAddMudHttpClient_ShouldWin()
+    {
+        var services = new ServiceCollection();
+        var downstream = new ProbeHolder();
+        services.AddSingleton<IAppContextHolder>(downstream);
+        services.AddMudHttpClient("api", client => client.BaseAddress = new Uri("https://api.example.com"));
+
+        using var sp = services.BuildServiceProvider();
+
+        sp.GetRequiredService<IAppContextHolder>().Should().BeSameAs(downstream);
+        sp.GetServices<IAppContextHolder>().Should().HaveCount(1, "TryAdd 保证框架不重复占用槽位");
+    }
+
+    private sealed class ProbeHolder : IAppContextHolder
+    {
+        private readonly AsyncLocal<IMudAppContext?> _context = new();
+
+        public IMudAppContext? Current
+        {
+            get => _context.Value;
+            init => _context.Value = value;
+        }
+
+        public void SwitchTo(IMudAppContext? context) => _context.Value = context;
+
+        public IDisposable BeginScope(IMudAppContext context)
+        {
+            var previous = _context.Value;
+            _context.Value = context;
+            return new Scope(() =>
+            {
+                if (ReferenceEquals(_context.Value, context))
+                    _context.Value = previous;
+            });
+        }
+
+        private sealed class Scope(Action onDispose) : IDisposable
+        {
+            private int _disposed;
+
+            public void Dispose()
+            {
+                if (Interlocked.Exchange(ref _disposed, 1) == 0)
+                    onDispose();
+            }
+        }
+    }
+
+    #endregion
+
     #region 辅助
+
+    /// <summary>G7：断言持有器的<b>行为契约</b>（不依赖具体实现类型）。</summary>
+    private static void AssertHolderBehaviour(IAppContextHolder holder)
+    {
+        var appA = new ProbeAppContext("app-A");
+        var appB = new ProbeAppContext("app-B");
+
+        holder.SwitchTo(appA);
+        holder.Current.Should().BeSameAs(appA, "SwitchTo 必须生效");
+
+        using (holder.BeginScope(appB))
+        {
+            holder.Current.Should().BeSameAs(appB, "BeginScope 必须生效");
+        }
+
+        holder.Current.Should().BeSameAs(appA, "作用域释放后必须恢复前值");
+    }
+
+    private sealed class ProbeAppContext(string appKey) : IMudAppContext
+    {
+        public string AppKey { get; } = appKey;
+
+        public IEnhancedHttpClient HttpClient => throw new NotSupportedException();
+
+        public ITokenManager GetTokenManager(string tokenType) => throw new NotSupportedException();
+
+        public T GetTokenManager<T>() where T : class, ITokenManager => throw new NotSupportedException();
+
+        public T? GetService<T>() where T : class => null;
+    }
 
     private sealed class TestAuthorizer : IAppAccessAuthorizer
     {

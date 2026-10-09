@@ -545,10 +545,26 @@ public static class HttpClientServiceCollectionExtensions
     /// 此前仅注册为 IHostedService，导致无法通过 ITokenRefreshBackgroundService 直接注入，
     /// 消费方不得不使用 <c>GetServices&lt;IHostedService&gt;().OfType&lt;ITokenRefreshBackgroundService&gt;()</c> 变通方案。
     /// </para>
+    /// <para>
+    /// <b>B4 修复（幂等）</b>：以「具体实现类型是否已注册」作为守卫判据，重复调用本方法只生效一次。
+    /// 此前使用 <c>AddSingleton</c> + <c>AddHostedService(工厂委托)</c> 均为非幂等注册，
+    /// 多产品线各调用一次 <see cref="AddTokenRefreshBackgroundService(IServiceCollection, Action{TokenRefreshBackgroundOptions}?)"/>
+    /// 会把同一个 <c>TokenRefreshHostedService</c> 注册为<b>多个</b> <c>IHostedService</c>，
+    /// 宿主对同一实例重复 StartAsync ⇒ 多个刷新循环并发运行。
+    /// </para>
+    /// <para>
+    /// 守卫必须落在「具体实现类型」上而非 <c>IHostedService</c> 上：后者无法区分"本服务"与宿主/其它组件注册的托管服务；
+    /// 且守卫后仍以工厂委托解析同一单例，保持 <c>IHostedService</c> 与 <c>ITokenRefreshBackgroundService</c>
+    /// 解析到同一实例的既有不变量。
+    /// </para>
     /// </remarks>
     private static void RegisterTokenRefreshService(IServiceCollection services)
     {
 #if NET6_0_OR_GREATER
+        // B4：幂等守卫（同一容器内只注册一次；多产品线各自调用不会叠加多个 IHostedService）。
+        if (services.Any(d => d.ServiceType == typeof(TokenRefreshHostedService)))
+            return;
+
         // 先注册为单例，确保 IHostedService 和 ITokenRefreshBackgroundService 解析到同一实例
         services.AddSingleton<TokenRefreshHostedService>();
         // 注册为 IHostedService（生命周期由主机管理）
@@ -556,7 +572,13 @@ public static class HttpClientServiceCollectionExtensions
         // 同时暴露为 ITokenRefreshBackgroundService，供消费方直接注入
         services.AddSingleton<ITokenRefreshBackgroundService>(sp => sp.GetRequiredService<TokenRefreshHostedService>());
 #else
-        services.AddSingleton<ITokenRefreshBackgroundService, TokenRefreshBackgroundService>();
+        // B4：netstandard2.0 分支此前为 AddSingleton<TService, TImpl>（同样非幂等，枚举 IEnumerable 时会产生多个 Timer 实例）。
+        // 改为「具体类型单例 + 接口工厂委托」，既幂等又保证接口与具体类型解析到同一实例。
+        if (services.Any(d => d.ServiceType == typeof(TokenRefreshBackgroundService)))
+            return;
+
+        services.AddSingleton<TokenRefreshBackgroundService>();
+        services.AddSingleton<ITokenRefreshBackgroundService>(sp => sp.GetRequiredService<TokenRefreshBackgroundService>());
 #endif
     }
 
@@ -920,7 +942,7 @@ public static class HttpClientServiceCollectionExtensions
     }
 
     /// <summary>
-    /// 注册默认的应用上下文持有器（<see cref="AsyncLocalAppContextSwitcher"/>，单例）。
+    /// 注册默认的应用上下文持有器（<b>委托式适配器</b><see cref="DelegatingAppContextHolder"/>，单例）。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -928,7 +950,18 @@ public static class HttpClientServiceCollectionExtensions
     /// AppKey 并启用 per-app 弹性策略；生成的 API 客户端实现类也需要它才能切换应用上下文。
     /// </para>
     /// <para>
-    /// 使用 <c>TryAddSingleton</c>，不会覆盖宿主已注册的自定义实现。
+    /// <b>G7（F3/G8-A 顺序不变量的治本项）</b>：注册的是<b>委托式适配器</b>而非具体持有器类型。
+    /// 适配器在首次访问时解析容器中<b>最后注册的其它 <see cref="IAppContextHolder"/></b> 并转发
+    /// <see cref="IAppContextHolder.Current"/>（get）/ <c>SwitchTo</c> / <c>BeginScope</c>；
+    /// 无其它实现时回退为内部的 <see cref="AsyncLocalAppContextSwitcher"/>（单应用零配置行为不变）。
+    /// </para>
+    /// <para>
+    /// ⇒ 消费方注册自定义持有器/切换器的<b>顺序不再影响语义</b>：在其<b>之后</b>注册（非 <c>TryAdd</c>，即"最后注册者胜"）
+    /// 同样会被转发到；框架也不再抢先占用容器内唯一的持有器槽位（消除了"两个 <c>AsyncLocal</c> 互不可见"的根因）。
+    /// </para>
+    /// <para>
+    /// 使用 <c>TryAddSingleton</c>，不会覆盖宿主已注册的自定义实现（宿主<b>先</b>注册时本方法为 no-op）。
+    /// 目标在首次访问时解析并缓存 ⇒ 宿主注册须在首次访问上下文（通常为首次创建客户端/首个请求）之前完成。
     /// </para>
     /// </remarks>
     /// <param name="services">服务集合。</param>
@@ -938,7 +971,7 @@ public static class HttpClientServiceCollectionExtensions
         if (services == null)
             throw new ArgumentNullException(nameof(services));
 
-        services.TryAddSingleton<IAppContextHolder, AsyncLocalAppContextSwitcher>();
+        services.TryAddSingleton<IAppContextHolder>(sp => new DelegatingAppContextHolder(sp));
         return services;
     }
 

@@ -174,8 +174,40 @@ public class TokenRecoveryOptions
     /// 本属性为编程式注入（委托 / 接口实例不可经配置绑定），典型落点是平台 SDK 在命名客户端 /
     /// 全局注册时的 <c>PostConfigure</c> 中赋值。为 null 时行为与既有版本逐字节等价（仅认 401）。
     /// </para>
+    /// <para>
+    /// <b>多产品线共存请优先使用 <see cref="AdditionalTokenInvalidationDetectors"/></b>：
+    /// 本属性为<b>单槽</b>，多个产品线各自在 <c>PostConfigure</c> 赋值会互相覆盖（后者胜），
+    /// 导致某一产品线的恢复静默失效。
+    /// </para>
     /// </summary>
     public ITokenInvalidationDetector? TokenInvalidationDetector { get; set; }
+
+    /// <summary>
+    /// B5（WX-01 扩展）：<b>追加式</b>令牌失效判定器集合（编程式注入；与
+    /// <see cref="TokenInvalidationDetector"/> 为<b>并集</b>语义，任一命中即判定为失效）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为何是"只读集合属性 + Add"而非可写属性</b>：多产品线各自 <c>Add</c> 时互不覆盖；
+    /// 若为可写属性则退化为单槽覆盖问题（等价于 <see cref="TokenInvalidationDetector"/>）。
+    /// </para>
+    /// <para>
+    /// 求值顺序固定为「先 <see cref="TokenInvalidationDetector"/>（若存在），再按本集合的 Add 顺序」，
+    /// 短路返回首个判定为失效者；<see cref="ITokenInvalidationDetector.ShouldInspect"/> 为 <c>false</c> 者跳过
+    /// （响应体捕获仅在首个需要检查的判定器处发生一次）。
+    /// </para>
+    /// <para>
+    /// 本集合为编程式注入（<c>IConfiguration</c> 反射绑定器对「接口元素集合」会静默跳过），
+    /// 与 <see cref="TokenInvalidationDetector"/> 同约定：请在 <c>Configure</c>/<c>PostConfigure</c>
+    /// 或命名客户端的编程式配置中 <c>Add</c>。集合为空且单槽为 null 时行为与既有版本逐字节等价（仅认 401）。
+    /// </para>
+    /// <para>
+    /// 需要组合多个判定器为一个实例（例如经 DI 单例统一注册）时，可用
+    /// <see cref="CompositeTokenInvalidationDetector"/> 包装后赋给 <see cref="TokenInvalidationDetector"/>。
+    /// </para>
+    /// </remarks>
+    public IList<ITokenInvalidationDetector> AdditionalTokenInvalidationDetectors { get; }
+        = new List<ITokenInvalidationDetector>();
 
     /// <summary>
     /// WX-01（Phase A）：判定器检查响应时可捕获的响应体最大字节数，默认 4096（4KB）。

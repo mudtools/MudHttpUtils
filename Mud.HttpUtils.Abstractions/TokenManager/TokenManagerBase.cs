@@ -486,6 +486,21 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     protected virtual bool EnforceTenantBinding => this is not ISharedTokenManager;
 
     /// <summary>
+    /// F4：当前实例是否启用租户绑定守卫（即未实现 <see cref="ISharedTokenManager"/>，且未被派生类覆写为 false）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 供消费方/测试<b>无需反射</b>即可判定"该管理器是否按租户键隔离"。语义与
+    /// <see cref="EnforceTenantBinding"/>（protected virtual）完全一致，仅作可见性放宽。
+    /// </para>
+    /// <para>
+    /// 注意：<see cref="EnforceTenantBinding"/> 为 <c>virtual</c> 且可在实例化后被覆写判定，
+    /// 本属性每次读取都会重新求值（非缓存），保持与守卫调用点同口径。
+    /// </para>
+    /// </remarks>
+    public bool IsTenantBindingEnforced => EnforceTenantBinding;
+
+    /// <summary>
     /// SR-H5（P2.1，D6）bind-once 租户绑定守卫：首个租户键绑定后，不同租户键的请求被拒绝。
     /// 同键重复绑定幂等通过。internal：仅框架调用点（<c>DefaultTokenProvider</c>）触发，不进公共 API。
     /// </summary>

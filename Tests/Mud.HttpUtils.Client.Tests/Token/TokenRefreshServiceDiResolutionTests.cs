@@ -63,6 +63,62 @@ public class TokenRefreshServiceDiResolutionTests
 #endif
     }
 
+    // ============================================================
+    // B4：注册幂等（多产品线各调一次不得叠加多个 IHostedService）
+    // ============================================================
+
+    /// <summary>
+    /// B4：<c>AddTokenRefreshBackgroundService</c> 重复调用必须只产生一份注册 ——
+    /// 修复前 <c>AddSingleton</c> + <c>AddHostedService(工厂委托)</c> 均为非幂等，
+    /// 同一实例会被注册为多个 <c>IHostedService</c>（宿主重复 StartAsync ⇒ 多个刷新循环并发）。
+    /// </summary>
+    [Fact]
+    public void AddTokenRefreshBackgroundService_CalledTwice_ShouldRegisterExactlyOnce()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // Act：模拟多产品线各调一次（微信自建"已注册即跳过"守卫的动因）
+        services.AddTokenRefreshBackgroundService();
+        services.AddTokenRefreshBackgroundService();
+
+        // Assert
+        services.Count(d => d.ServiceType == typeof(TokenRefreshHostedService))
+            .Should().Be(1, "具体实现类型只应有一条注册（幂等守卫判据）");
+        services.Count(d => d.ServiceType == typeof(ITokenRefreshBackgroundService))
+            .Should().Be(1, "接口只应有一条注册（不叠加双实例）");
+        services.Count(d => d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService))
+            .Should().Be(1, "IHostedService 只应有一条注册（否则宿主对同一实例重复 StartAsync）");
+    }
+
+    /// <summary>
+    /// B4：重复调用后，<c>IHostedService</c> 与 <c>ITokenRefreshBackgroundService</c> 仍解析到<b>同一实例</b>
+    /// （保持 :542-547 明确的既有不变量），且 <c>IHostedService</c> 集合中只有一个本服务实例。
+    /// </summary>
+    [Fact]
+    public void AddTokenRefreshBackgroundService_CalledTwice_ShouldKeepSingleInstanceInvariant()
+    {
+        // Arrange
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddTokenRefreshBackgroundService();
+        services.AddTokenRefreshBackgroundService();
+
+        // Act
+        using var provider = services.BuildServiceProvider();
+        var concrete = provider.GetRequiredService<TokenRefreshHostedService>();
+        var iface = provider.GetRequiredService<ITokenRefreshBackgroundService>();
+        var hostedServices = provider.GetServices<Microsoft.Extensions.Hosting.IHostedService>()
+            .OfType<TokenRefreshHostedService>()
+            .ToList();
+
+        // Assert
+        hostedServices.Should().HaveCount(1, "重复注册不得把同一实例塞入托管服务集合两次");
+        hostedServices[0].Should().BeSameAs(concrete);
+        iface.Should().BeSameAs(concrete);
+    }
+
     [Fact]
     public void GetRequiredService_TimerBasedService_ShouldResolve_WithoutAmbiguousConstructors()
     {
