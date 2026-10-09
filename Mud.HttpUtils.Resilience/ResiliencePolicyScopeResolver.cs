@@ -48,7 +48,12 @@ internal static class ResiliencePolicyScopeResolver
 #else
         if (request.Options.TryGetValue(new HttpRequestOptionsKey<string>(AppKeyPropertyKey), out var appKey))
             return appKey;
-        return null;
+        // 兼容历史写入路径：AppKey 可能仍写在已过时的 Properties 上（netstandard2.0 资产的
+        // StampResilienceAppKey / 旧版本库均写 Properties；混合 TFM 场景下若不回退，
+        // 应用维度将静默丢失 → 跨应用熔断隔离失效）。与 GetClientName 同口径。
+#pragma warning disable CS0618 // HttpRequestMessage.Properties 已过时
+        return request.Properties.TryGetValue(AppKeyPropertyKey, out var v) ? v as string : null;
+#pragma warning restore CS0618 // HttpRequestMessage.Properties 已过时
 #endif
     }
 

@@ -24,6 +24,23 @@ public class ResiliencePolicyScopeAppIsolationTests
     }
 
     [Fact]
+    public void Resolve_AppKeyWrittenToLegacyProperties_IsStillHonored()
+    {
+        // 兼容历史写入路径：netstandard2.0 资产的 StampResilienceAppKey（或旧版本库）经
+        // request.Properties 写入 AppKey，运行在 .NET 5+ 时读取方必须经 Properties 回退兜底
+        // （与 GetClientName 同口径），否则应用维度静默丢失 → 跨应用熔断隔离失效。
+        var request = new HttpRequestMessage(HttpMethod.Get, TestUri);
+#pragma warning disable CS0618 // HttpRequestMessage.Properties 已过时
+        request.Properties[ResilienceConstants.AppKeyPropertyKey] = "appA";
+#pragma warning restore CS0618 // HttpRequestMessage.Properties 已过时
+
+        var scope = ResiliencePolicyScopeResolver.Resolve(request, ResiliencePolicyScope.PerHost);
+
+        scope.Should().Be("(default)|gateway.example.com|app:appA",
+            "Properties 历史写入路径必须与 Options 同等生效");
+    }
+
+    [Fact]
     public void Resolve_WithoutAppKey_KeepsLegacyFormat()
     {
         // 无应用上下文的既有消费方：作用域键与历史格式逐字节一致（缓存键零漂移）。
