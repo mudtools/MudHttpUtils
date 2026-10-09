@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<!-- 程序集名必须等于工具面剖面（[SdkToolProfile]）的 SdkNamespaceRoot 槽：
+		     Tier R 能力目录按「程序集名 == SdkNamespaceRoot」定位 SDK 程序集。 -->
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!-- 只引用特性元数据：本程序集是「被工具面扫描的 SDK 形状」，不接入 HTTP 客户端生成器。
+		     [Get]/[Delete]/[Path]/[Query] 在此仅作为方法目录（MethodCatalog）的编译期事实来源。 -->
+		<ProjectReference Include="..\..\Mud.HttpUtils.Attributes\Mud.HttpUtils.Attributes.csproj" />
+	</ItemGroup>
+
+</Project>

@@ -136,7 +136,7 @@ internal static class Extractors
     {
         try
         {
-            var xml = method.GetDocumentationCommentXml();
+            var xml = GetDocXmlWithSyntaxFallback(method);
             if (string.IsNullOrWhiteSpace(xml)) return null;
 
             return ExtractXmlTag(xml!, "summary");
@@ -153,7 +153,7 @@ internal static class Extractors
     {
         try
         {
-            var xml = method.GetDocumentationCommentXml();
+            var xml = GetDocXmlWithSyntaxFallback(method);
             if (string.IsNullOrWhiteSpace(xml)) return null;
 
             // 简易提取：<param name="paramName">描述</param>
@@ -168,6 +168,65 @@ internal static class Extractors
             GeneratorDebugLogger.LogError(nameof(Extractors), ex);
             return null;
         }
+    }
+
+    /// <summary>
+    /// 取方法的文档注释文本：<b>语义途径优先</b>（<see cref="ISymbol.GetDocumentationCommentXml"/>，
+    /// 支持 <c>inheritdoc</c> 展开与正式 XML 转义），语义结果为空时<b>回退语法树</b>。
+    /// </summary>
+    /// <remarks>
+    /// <b>为什么需要回退</b>：csc 在未开启 <c>/doc</c>（消费方 <c>GenerateDocumentationFile=false</c>，
+    /// 如本仓库 Demos）时把 <see cref="CSharpCompilationOptions.DocumentationMode"/> 置为
+    /// <see cref="DocumentationMode.None"/>——语义模型不解析文档注释，<c>GetDocumentationCommentXml()</c>
+    /// 恒返回空。而文档注释作为普通注释 trivia 仍完整保留在语法树里，不回退会让
+    /// 槽位 005（summary 缺失）/006（param 缺失）在此类消费方编译中全部误报。
+    /// 回退产物是<b>伪 XML 文本</b>（原始注释体），上层的标签提取本就是正则匹配，两途共用。
+    /// </remarks>
+    private static string? GetDocXmlWithSyntaxFallback(IMethodSymbol method)
+    {
+        var xml = method.GetDocumentationCommentXml();
+        if (!string.IsNullOrWhiteSpace(xml))
+        {
+            return xml;
+        }
+
+        foreach (var reference in method.DeclaringSyntaxReferences)
+        {
+            var text = ExtractRawDocCommentText(reference.GetSyntax());
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                return text;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>从声明节点的先行 trivia 收集 <c>///</c> 单行与 <c>/** */</c> 块状文档注释（逐行拼为伪 XML 文本）。</summary>
+    /// <remarks>
+    /// 文档注释无论 <see cref="DocumentationMode"/> 如何都附着在声明<b>首 token</b> 的先行 trivia 上
+    /// （注释与方法之间隔着特性列表时同样成立——trivia 附着于 <c>[</c>，它是节点首 token）。
+    /// </remarks>
+    private static string? ExtractRawDocCommentText(SyntaxNode node)
+    {
+        var lines = new List<string>();
+        foreach (var trivia in node.GetLeadingTrivia())
+        {
+            var text = trivia.ToString();
+            if (trivia.IsKind(SyntaxKind.SingleLineCommentTrivia)
+                && text.StartsWith("///", StringComparison.Ordinal))
+            {
+                lines.Add(text.Length > 3 && text[3] == ' ' ? text.Substring(4) : text.Substring(3));
+            }
+            else if (trivia.IsKind(SyntaxKind.MultiLineCommentTrivia)
+                && text.StartsWith("/**", StringComparison.Ordinal)
+                && text.EndsWith("*/", StringComparison.Ordinal))
+            {
+                lines.Add(text.Substring(3, text.Length - 5).Trim());
+            }
+        }
+
+        return lines.Count == 0 ? null : string.Join("\n", lines);
     }
 
     // ────────── HTTP 方法与路由 ──────────

@@ -1,15 +1,21 @@
 <Solution>
   <Folder Name="/Demos/">
+    <!-- 三类定位（勿混淆）：
+         1) 可运行演示：HttpClientDemo（Client 基础+OTel）、ResilienceDemo（弹性策略+OTel）、
+            PayloadDemo（PayloadFieldMap）、ToolSurfaceDemo + Mud.Demo.Sdk（工具面引擎与 SDK 样本程序集，
+            SdkNamespaceRoot="Mud.Demo.Sdk" 为引擎契约，程序集名不可改）；
+         2) 编译期夹具验证：HttpClientApiDemo.Share（生成器功能夹具库）→ HttpClientApiDemo（本地源码路径验证
+            HEAD）与 HttpClientApiPublicDemo（已发布 2.0.9 包路径验证消费方体验）；
+         3) CI 专属：AotVerificationDemo（AOT+裁剪发布验证，TrimMode 由 CI 矩阵驱动），不在解决方案内。 -->
     <Project Path="Demos/AotVerificationDemo/AotVerificationDemo.csproj" />
-    <Project Path="Demos/CommonClassLibrary.Share/CommonClassLibrary.Share.shproj" Id="53f9a9c3-3728-41b9-afe9-51ff9194496b" />
-    <Project Path="Demos/CommonClassLibrary/CommonClassLibrary.csproj" />
-    <Project Path="Demos/CommonClassPubliceLibrary/CommonClassPubliceLibrary.csproj" Id="228e153e-0ac6-4d1d-a34c-38a35d1d40ba" />
     <Project Path="Demos/HttpClientApiDemo.Share/HttpClientApiDemo.Share.shproj" Id="f07dbdd5-6caf-4d8a-aa39-bfaffb6a4f13" />
     <Project Path="Demos/HttpClientApiDemo/HttpClientApiDemo.csproj" />
     <Project Path="Demos/HttpClientApiPublicDemo/HttpClientApiPublicDemo.csproj" Id="fd484f33-9086-4c78-825f-9ac1a9fb9502" />
     <Project Path="Demos/HttpClientDemo/HttpClientDemo.csproj" />
+    <Project Path="Demos/Mud.Demo.Sdk/Mud.Demo.Sdk.csproj" />
     <Project Path="Demos/PayloadDemo/PayloadDemo.csproj" />
     <Project Path="Demos/ResilienceDemo/ResilienceDemo.csproj" />
+    <Project Path="Demos/ToolSurfaceDemo/ToolSurfaceDemo.csproj" />
   </Folder>
   <Folder Name="/Src/">
     <Project Path="Mud.HttpUtils.Abstractions/Mud.HttpUtils.Abstractions.csproj" />

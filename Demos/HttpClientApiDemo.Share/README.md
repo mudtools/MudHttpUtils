@@ -2,6 +2,12 @@
 
 本项目用于测试和验证 Mud.HttpUtils.Generator 的各项功能，包括 ContentType 处理、参数推断、Token 注入、继承体系等。
 
+> **公共库合并说明（2026-10）**：原 `CommonClassLibrary.Share` / `CommonClassLibrary`（本地 Client 引用）/
+> `CommonClassPubliceLibrary`（Abstractions 2.0.7 包引用）三个工程壳已删除，其 4 个夹具接口
+> （`IFeishuAppManager`/`IDingDingAppManager`/`ITenantTokenManager`/`IAppTokenManager`/`IUserManager`/`IUserService`/
+> `IFeishuEventDeduplicator`）并入 `TokenManage/` 目录（命名空间统一为 `HttpClientApiTest.TokenManage`）。
+> "本地源码 vs 已发布包"的依赖路径对照由消费方工程承载：HttpClientApiDemo（本地）与 HttpClientApiPublicDemo（2.0.9 包）。
+
 ## 项目概述
 
 这是一个共享的测试接口项目，专门用于测试 HTTP 代码生成器的各类功能。该项目包含了全面的测试用例，覆盖了各种使用场景、边界情况和真实世界的应用案例。
@@ -133,7 +139,8 @@ HttpClientApiDemo.Share/
 │   └── ResponseTypeTestApi.cs           # Response<T>测试
 ├── InheritanceTestApi/                 # 继承体系测试
 ├── RefactorTests/                      # 重构测试
-├── TokenManage/                        # Token注入测试
+├── TokenManage/                        # Token注入测试（含原 CommonClassLibrary 公共库并入的
+│                                       #   应用管理器/令牌管理器/用户管理器/事件去重器夹具接口）
 ├── Models/                             # 数据模型
 └── README.md                           # 本文档
 ```
