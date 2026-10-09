@@ -377,9 +377,12 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         sb.AppendLine("                    executorLogger,");
         sb.AppendLine("                    options?.CacheProvider,");
         sb.AppendLine("                    options?.ResilienceResolver,");
-        sb.AppendLine("                    appResilienceResolver: null,");
+        // P3-7：接线 options.AppResilienceResolver / options.AppManager（无 DI 工厂路径此前
+        // 硬编码 null ⇒ 应用级弹性策略隔离与 UseApp/BeginScope 能力缺失）；两者均可选，
+        // 为 null 时行为与既往一致。
+        sb.AppendLine("                    appResilienceResolver: options?.AppResilienceResolver,");
         sb.AppendLine("                    appContextHolder: appContextHolder,");
-        sb.AppendLine("                    appManager: null,");
+        sb.AppendLine("                    appManager: options?.AppManager,");
         sb.AppendLine("                    contentSerializer: options?.ContentSerializer,");
         sb.AppendLine("                    exceptionRedactor: options?.ExceptionRedactor,");
         sb.AppendLine("                    maxExceptionContentLength: options?.MaxExceptionContentLength,");
@@ -399,7 +402,8 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         sb.AppendLine("                    appContext,");
         sb.AppendLine("                    appContextHolder,");
         sb.AppendLine("                    executor,");
-        sb.AppendLine("                    appManager: null,");
+        // P3-7：接线 options.AppManager（此前硬编码 null）。
+        sb.AppendLine("                    appManager: options?.AppManager,");
         sb.AppendLine("                    appAuthorizer: options?.AppAccessAuthorizer,");
         sb.AppendLine("                    cacheProvider: options?.CacheProvider,");
         sb.AppendLine("                    resilienceResolver: options?.ResilienceResolver,");
@@ -516,7 +520,14 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         // 验证 RegistryGroupName 是否为合法的 C# 标识符
         if (!CSharpCodeValidator.IsValidCSharpIdentifier(groupName))
         {
-            CSharpCodeValidator.ValidateAndReportRegistryGroupName(context, Location.None, groupName);
+            // P3-4：分组名来自接口特性，校验失败时携带首个归属接口的 Location 就地定位，
+            // 而非退化到 Location.None（首个归属接口未携带 Location 时才回退）。
+            // 注：标准管线中非法组名已在 ProcessInterface 入口被过滤并按接口 Location 上报，
+            // 本分支为防御性兜底。
+            CSharpCodeValidator.ValidateAndReportRegistryGroupName(
+                context,
+                apiInfos.Select(static a => a.Location).FirstOrDefault(static l => l is not null) ?? Location.None,
+                groupName);
             return;
         }
 

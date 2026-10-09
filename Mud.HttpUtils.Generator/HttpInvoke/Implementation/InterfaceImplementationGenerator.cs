@@ -1245,14 +1245,22 @@ internal class InterfaceImplementationGenerator
     }
 
     /// <summary>
-    /// FIX-03: 构建接口的嵌套类型路径后缀（如 "Outer+Inner+_"），用于 hintName 唯一化。
-    /// 顶级接口返回空字符串；嵌套接口返回从外到内的类型名用 "+" 连接。
+    /// FIX-03: 构建接口的嵌套类型路径后缀（如 "Outer`1+Inner+_"），用于 hintName 唯一化。
+    /// 顶级接口返回空字符串；嵌套接口返回从外到内的类型名（含泛型元数）用 "+" 连接。
     /// </summary>
     /// <remarks>
+    /// <para>
     /// [GEN-17][§8.5] 旧实现用 "_" 连接，导致「A{class B_C{IFoo}}」与「A{class B{class C{IFoo}}}」
     /// 平铺后均得到 "B_C_" 后缀 → hintName 冲突（CS8785/产物覆盖）。
     /// 改用元数据名风格的分隔符 "+"（在文件路径中合法、且与用户类型名中的 "_" 可区分），消除平铺歧义：
     ///   B_C 嵌套链 → "B_C+_IFoo"；B→C 两层嵌套 → "B+C+_IFoo"。
+    /// </para>
+    /// <para>
+    /// [P3-8] 包含类型链进一步纳入各自泛型元数（元数据名风格 <c>A`1+B</c>）：仅用名称时，
+    /// <c>class A&lt;T&gt;{class B{interface IFoo}}</c> 与 <c>class A{class B&lt;T&gt;{interface IFoo}}</c>
+    /// 同命名空间共存的跨链场景，两条链的 parts 均为 ["A","B"] ⇒ hintName 同为 A+B_IFoo ⇒ 产物覆盖。
+    /// 纳入元数后二者分别为 "A`1+B_" 与 "A+B`1_"，可区分。
+    /// </para>
     /// </remarks>
     private static string BuildNestingSuffix(INamedTypeSymbol interfaceSymbol)
     {
@@ -1263,9 +1271,9 @@ internal class InterfaceImplementationGenerator
         var current = interfaceSymbol.ContainingType;
         while (current is not null)
         {
-            // 嵌套类型的 Name 也不含元数，但嵌套接口本身已有 Arity 后缀，
-            // 包含类型链只需用名称（不含元数），因为同一嵌套链中不会出现同名不同元数的包含类型。
-            parts.Insert(0, current.Name);
+            // P3-8：包含类型名一并带上泛型元数（如 A`1），与接口自身的 Arity 后缀同风格——
+            // 仅用名称无法区分跨链同名包含类型（见方法 remarks）。
+            parts.Insert(0, current.Arity > 0 ? $"{current.Name}`{current.Arity}" : current.Name);
             current = current.ContainingType;
         }
 

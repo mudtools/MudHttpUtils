@@ -79,3 +79,7 @@ Mud.HttpUtils.SdkTokenKind.Unspecified = 0 -> Mud.HttpUtils.SdkTokenKind
 Mud.HttpUtils.SdkTokenKind.User = 2 -> Mud.HttpUtils.SdkTokenKind
 Mud.HttpUtils.SdkTokenKindContract
 static Mud.HttpUtils.SdkTokenKindContract.ToLiteral(Mud.HttpUtils.SdkTokenKind kind) -> string!
+Mud.HttpUtils.GeneratedClientOptions.AppResilienceResolver.get -> Mud.HttpUtils.IAppResiliencePolicyResolver?
+Mud.HttpUtils.GeneratedClientOptions.AppResilienceResolver.set -> void
+Mud.HttpUtils.GeneratedClientOptions.AppManager.get -> Mud.HttpUtils.IAppManager<Mud.HttpUtils.IMudAppContext!>?
+Mud.HttpUtils.GeneratedClientOptions.AppManager.set -> void

@@ -7,6 +7,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -604,9 +605,12 @@ internal sealed class SdkToolProfileSet : IEquatable<SdkToolProfileSet>
 /// （上游 R4-2 已确立「变换携带 compilation、随编译失效」的粒度纪律，编辑剖面类同样触发重扫）。
 /// </para>
 /// <para>
-/// <b>空剖面短路（§5.3/§7.2 硬性前提）</b>：编译中不存在 <c>ISdkToolProfile</c> 接口
-/// （纯 HTTP 消费方的典型情形）时，<c>GetTypeByMetadataName</c> 一次查找即返回空数组，
-/// 不做任何类型遍历；扫描变换拿到空数组后在进入 <c>ToolSurface*</c> 逻辑前直接返回。
+/// <b>空剖面短路（§5.3/§7.2 硬性前提）</b>：编译中不存在任何 <c>ISdkToolProfile</c> 实现时
+/// 返回空数组，扫描变换拿到空数组后在进入 <c>ToolSurface*</c> 逻辑前直接返回。
+/// 注意 <c>ISdkToolProfile</c> 定义于 Abstractions、所有消费方恒引用该程序集，
+/// 接口存在性判定无法借 <c>GetTypeByMetadataName</c> 早退——故解析结果按
+/// <see cref="Compilation"/> 实例缓存（见 <see cref="ResolveProfiles"/>），
+/// 全程序集类型枚举每编译至多支付一次。
 /// </para>
 /// <para>
 /// 只消费「成对合法」的剖面；不成对的半边由 <see cref="ProfileContractGuardAnalyzer"/>（SDKT001）
@@ -621,7 +625,27 @@ internal static class ProfileDiscovery
     internal const string ProfileAttributeNamespace = "Mud.HttpUtils.Attributes";
 
     /// <summary>解析当前编译中的全部合法剖面（按 Name 排序；同名去重取首个，防 hintName 撞名）。</summary>
+    /// <remarks>
+    /// <para>
+    /// 结果按 <see cref="Compilation"/> 实例经 <see cref="ConditionalWeakTable{TKey, TValue}"/> 缓存：
+    /// 同一编译内的 profiles 节点（<c>CompilationProvider</c>）与全部 ScanTool/ScanHandler 变换
+    /// 共享一次全程序集枚举，消除「每候选接口/方法重复枚举」的成本乘数。
+    /// <see cref="Compilation"/> 不可变；缓存值（全字符串槽位的 <see cref="SdkToolProfileModel"/>）
+    /// 不持有符号引用，条目随编译实例一并被 GC 回收。
+    /// </para>
+    /// <para>
+    /// <see cref="Lazy{T}"/> 保证并发变换下工厂体只执行一次（<c>ConditionalWeakTable</c> 本身
+    /// 不承诺工厂单次执行）；同一编译内解析异常同样只支付一次代价。
+    /// </para>
+    /// </remarks>
     public static ImmutableArray<SdkToolProfileModel> ResolveProfiles(Compilation compilation)
+        => ResolutionCache
+            .GetValue(compilation, static c => new Lazy<ImmutableArray<SdkToolProfileModel>>(() => ResolveProfilesCore(c)))
+            .Value;
+
+    private static readonly ConditionalWeakTable<Compilation, Lazy<ImmutableArray<SdkToolProfileModel>>> ResolutionCache = new();
+
+    private static ImmutableArray<SdkToolProfileModel> ResolveProfilesCore(Compilation compilation)
     {
         try
         {

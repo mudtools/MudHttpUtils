@@ -783,7 +783,7 @@ foreach (var appKey in appKeys)
 }
 ```
 
-> 跨执行上下文的 `using` 释放**不会回滚**（`AsyncLocal` 语义使然）：作用域必须在**建立它的同一个异步流**内释放。若把 `BeginScope` 的返回值传递给另一个 `Task.Run` 去 `Dispose`，回滚不会生效，且可能把陈旧上下文写回。
+> 跨执行上下文的 `using` 释放**不会回滚**（`AsyncLocal` 语义使然）：作用域必须在**建立它的同一个异步流**内释放。若把 `BeginScope` 的返回值传递给另一个 `Task.Run` 去 `Dispose`，回滚不会生效，也**不会把陈旧上下文写回**目标流（多租户隔离 fail-closed：目标流上下文保持原样——为 `null` 时保持 `null`），该场景下由宿主显式 `UseDefaultApp` / `BeginScope` 收敛。
 
 ### 工具类
 

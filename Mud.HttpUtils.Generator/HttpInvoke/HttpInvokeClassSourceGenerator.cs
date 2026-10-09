@@ -71,8 +71,11 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
         var compilation = semanticModel.Compilation;
 
         // 使用 InterfaceModel 中预解析的 Symbol，避免重复调用 GetDeclaredSymbol
+        // P2-5：符号解析失败时不再静默 return（实现类整体消失、CS0535 不指向根因），
+        // 上报 Info 级 HTTPCLIENT038，修复语法后自动消失。
         if (model.Symbol is not INamedTypeSymbol interfaceSymbol)
         {
+            context.ReportDiagnostic(InterfaceSymbolUnresolvedDiagnostic(interfaceDecl));
             return;
         }
 
@@ -86,6 +89,28 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
             HandleInterfaceProcessingException(ex, interfaceDecl, context);
         }
     }
+
+    /// <summary>
+    /// 构造「接口符号解析失败」的 HTTPCLIENT038 诊断（internal 供单测直验）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// P2-5：触发分支（<c>model.Symbol is not INamedTypeSymbol</c>）在标准 FAWM 管线下不可达——
+    /// <c>ForAttributeWithMetadataName</c> 在 transform 前要求声明符号非 null（null 声明被直接
+    /// 跳过，不产出 <c>InterfaceModel</c>），且驱动级实测缺接口名/缺右括号等畸形声明均得到
+    /// Roslyn 合成的错误符号。保留该 fail-closed 契约：分支一旦触发（管线演化或模型被外部
+    /// 构造），绝不静默丢失实现类。
+    /// </para>
+    /// <para>
+    /// 因 <c>GeneratorAttributeSyntaxContext</c> 为密封类、<c>SourceProductionContext</c> 不可
+    /// 外部构造，驱动级测试无法注入 null-Symbol 输入；故以纯函数形态供单测直接断言。
+    /// </para>
+    /// </remarks>
+    internal static Diagnostic InterfaceSymbolUnresolvedDiagnostic(InterfaceDeclarationSyntax interfaceDecl)
+        => Diagnostic.Create(
+            Diagnostics.HttpClientInterfaceSymbolUnresolved,
+            interfaceDecl.GetLocation(),
+            interfaceDecl.Identifier.ValueText);
 
     /// <summary>
     /// 全局生成逻辑：本生成器的逐接口产物已由 <see cref="ExecuteInterfaceGenerator"/> 产出，

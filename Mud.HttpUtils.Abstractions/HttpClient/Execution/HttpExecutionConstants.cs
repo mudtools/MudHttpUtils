@@ -36,4 +36,21 @@ public static class HttpExecutionConstants
     /// <c>RetryOptions.AllowNonIdempotentRetry</c> 使用，详见重试与幂等性文档）。
     /// </summary>
     public const string AllowNonIdempotentRetryPropertyKey = "__Mud_HttpUtils_AllowNonIdempotentRetry";
+
+    /// <summary>
+    /// 应用维度属性键：把当前应用上下文的 AppKey 随请求传递给策略作用域解析器。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 执行器（<c>DefaultHttpRequestExecutor</c>）在把请求交给方法级弹性包装前写入该键；
+    /// 弹性策略作用域解析器读取后把 AppKey 追加进作用域键（<c>{client}|{host}|app:{appKey}</c>），
+    /// 使多应用共用同名客户端与同一 host 时熔断/超时计数不跨应用共享
+    /// （与 F-01 层B 缓存键的应用维度同口径）。此常量与
+    /// Mud.HttpUtils.Resilience.ResilienceConstants.AppKeyPropertyKey 保持一致。
+    /// </para>
+    /// <para>
+    /// 无应用上下文时不写入，作用域键与历史格式逐字节一致（既有消费方缓存键零漂移）。
+    /// </para>
+    /// </remarks>
+    public const string AppKeyPropertyKey = "__Mud_HttpUtils_AppKey";
 }

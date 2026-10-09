@@ -6,6 +6,7 @@
 // -----------------------------------------------------------------------
 
 using Mud.HttpUtils.ToolSurface;
+using Mud.HttpUtils.ToolSurface.Extraction;
 
 namespace Mud.HttpUtils.Generator.Tests;
 
@@ -124,5 +125,184 @@ public class ToolSurfaceSourceGeneratorTests
         GeneratorDriver driver = CSharpGeneratorDriver.Create(new ToolSurfaceSourceGenerator());
         driver = driver.RunGenerators(compilation);
         return driver.GetRunResult().Results.Single();
+    }
+
+    // ────────── P2-2：变换/扫描异常折算为 {prefix}026 随流上报（错误可诊断） ──────────
+
+    /// <summary>两个剖面 + 各自的工具接口（P2-2 跨剖面隔离断言的输入面）。</summary>
+    private const string TwoProfilesWithTools = """
+        using Mud.HttpUtils;
+        using Mud.HttpUtils.Attributes;
+
+        [SdkToolProfile("Test",
+            ToolAttributeName = "TestTool",
+            ToolAttributeNamespace = "Test.Tools",
+            SdkNamespaceRoot = "Test.Sdk",
+            ProductPrefix = "TestTool",
+            DiagnosticPrefix = "MUDTT",
+            DiagnosticCategory = "Test.AI",
+            TokenKindMarkers = "ITest=Tenant")]
+        sealed class TestProfile : ISdkToolProfile { }
+
+        [SdkToolProfile("Other",
+            ToolAttributeName = "OtherTool",
+            ToolAttributeNamespace = "Other.Tools",
+            SdkNamespaceRoot = "Other.Sdk",
+            ProductPrefix = "OtherTool",
+            DiagnosticPrefix = "MUDDD",
+            DiagnosticCategory = "Other.AI",
+            TokenKindMarkers = "IOther=Tenant")]
+        sealed class OtherProfile : ISdkToolProfile { }
+
+        namespace Test.Tools
+        {
+            [System.AttributeUsage(System.AttributeTargets.Interface)]
+            public sealed class TestToolAttribute : System.Attribute
+            {
+                public TestToolAttribute(string name) => Name = name;
+                public string Name { get; }
+            }
+
+            /// <summary>测试工具。</summary>
+            [TestTool("test_echo")]
+            public interface ITestToolApi
+            {
+                /// <summary>回显消息。</summary>
+                /// <param name="message">消息。</param>
+                string Echo(string message);
+            }
+        }
+
+        namespace Other.Tools
+        {
+            [System.AttributeUsage(System.AttributeTargets.Interface)]
+            public sealed class OtherToolAttribute : System.Attribute
+            {
+                public OtherToolAttribute(string name) => Name = name;
+                public string Name { get; }
+            }
+
+            /// <summary>其他工具。</summary>
+            [OtherTool("other_echo")]
+            public interface IOtherToolApi
+            {
+                /// <summary>回显消息。</summary>
+                /// <param name="message">消息。</param>
+                string Echo(string message);
+            }
+        }
+        """;
+
+    [Fact]
+    public void ToolScanFault_ReportsPrefix026_AndKeepsOtherProfileProducts()
+    {
+        // P2-2 验证方式：注入异常源 → 断言收到 {prefix}026 且其余剖面产物不受影响。
+        // 注入只命中 "Test" 剖面的工具扫描；"Other" 剖面必须照常扫描与发射。
+        try
+        {
+            ToolSurfaceScanner.FaultInjectionForTests =
+                profileName => profileName == "Test" ? new InvalidOperationException("boom-scan") : null;
+
+            var result = RunToolSurface(TwoProfilesWithTools);
+
+            var fault = result.Diagnostics.Where(static d => d.Id == "MUDTT026").ToList();
+            fault.Should().HaveCount(1, "扫描体异常必须折算为恰好一条 {prefix}026，而非静默吞掉");
+            fault[0].Severity.Should().Be(DiagnosticSeverity.Error);
+            fault[0].GetMessage().Should().Contain("InvalidOperationException")
+                .And.Contain("boom-scan", "026 消息必须携带异常类型与消息，否则无法定位生成器缺陷");
+
+            result.Diagnostics.Where(static d => d.Id.StartsWith("MUDDD", StringComparison.Ordinal)).Should().BeEmpty(
+                "单剖面异常不得污染其余剖面的诊断");
+
+            var hintNames = result.GeneratedSources.Select(static s => s.HintName).ToList();
+            hintNames.Should().Contain("OtherToolSchemas.g.cs", "其余剖面的产物必须照常发射");
+            hintNames.Should().NotContain("TestToolSchemas.g.cs", "故障剖面的产物必须缺席（模型为 null）");
+        }
+        finally
+        {
+            ToolSurfaceScanner.FaultInjectionForTests = null;
+        }
+    }
+
+    [Fact]
+    public void HandlerScanFault_ReportsPrefix026_AndKeepsToolProducts()
+    {
+        // 执行器扫描异常：折算为 {prefix}026，且工具 Schema 产物不受执行器扫描异常影响
+        // （faulted handler 的 ToolName/Binding 均为 null，对发射路径惰性）。
+        const string source = """
+            using Mud.HttpUtils;
+            using Mud.HttpUtils.Attributes;
+
+            [SdkToolProfile("Test",
+                ToolAttributeName = "TestTool",
+                ToolAttributeNamespace = "Test.Tools",
+                ToolHandlerAttributeName = "TestToolHandler",
+                ToolHandlerAttributeNamespace = "Test.Tools",
+                SdkNamespaceRoot = "Test.Sdk",
+                ProductPrefix = "TestTool",
+                DiagnosticPrefix = "MUDTT",
+                DiagnosticCategory = "Test.AI",
+                TokenKindMarkers = "ITest=Tenant")]
+            sealed class TestProfile : ISdkToolProfile { }
+
+            namespace Test.Tools
+            {
+                [System.AttributeUsage(System.AttributeTargets.Interface)]
+                public sealed class TestToolAttribute : System.Attribute
+                {
+                    public TestToolAttribute(string name) => Name = name;
+                    public string Name { get; }
+                }
+
+                [System.AttributeUsage(System.AttributeTargets.Method)]
+                public sealed class TestToolHandlerAttribute : System.Attribute
+                {
+                    public TestToolHandlerAttribute(System.Type toolInterface) => ToolInterface = toolInterface;
+                    public System.Type ToolInterface { get; }
+                }
+
+                /// <summary>测试工具。</summary>
+                [TestTool("test_echo")]
+                public interface ITestToolApi
+                {
+                    /// <summary>回显消息。</summary>
+                    /// <param name="message">消息。</param>
+                    string Echo(string message);
+                }
+            }
+
+            public sealed class TestToolResult { }
+
+            public static class TestExecutor
+            {
+                /// <summary>执行器。</summary>
+                [Test.Tools.TestToolHandler(typeof(Test.Tools.ITestToolApi))]
+                public System.Threading.Tasks.Task<TestToolResult> RunAsync(
+                    System.Collections.Generic.IReadOnlyDictionary<string, object?> args,
+                    System.Threading.CancellationToken cancellationToken)
+                    => System.Threading.Tasks.Task.FromResult(new TestToolResult());
+            }
+            """;
+
+        try
+        {
+            ToolHandlerScanner.FaultInjectionForTests =
+                profileName => profileName == "Test" ? new InvalidOperationException("boom-handler") : null;
+
+            var result = RunToolSurface(source);
+
+            var fault = result.Diagnostics.Where(static d => d.Id == "MUDTT026").ToList();
+            fault.Should().HaveCount(1, "执行器扫描体异常必须折算为恰好一条 {prefix}026");
+            fault[0].Severity.Should().Be(DiagnosticSeverity.Error);
+            fault[0].GetMessage().Should().Contain("InvalidOperationException").And.Contain("boom-handler");
+
+            result.GeneratedSources.Select(static s => s.HintName).Should().Contain(
+                "TestToolSchemas.g.cs",
+                "工具 Schema 产物不受执行器扫描异常影响");
+        }
+        finally
+        {
+            ToolHandlerScanner.FaultInjectionForTests = null;
+        }
     }
 }

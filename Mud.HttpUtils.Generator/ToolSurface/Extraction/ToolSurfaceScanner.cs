@@ -35,6 +35,12 @@ namespace Mud.HttpUtils.ToolSurface.Extraction;
 /// </remarks>
 internal static class ToolSurfaceScanner
 {
+    /// <summary>
+    /// P2-2 验证钩子：仅供测试程序集（<c>InternalsVisibleTo</c>）注入异常源，驱动 <c>{prefix}026</c>
+    /// 兜底路径——实参为剖面名，返回非空异常即在扫描体起点抛出。常态为 <see langword="null"/>，零开销。
+    /// </summary>
+    internal static Func<string, Exception?>? FaultInjectionForTests;
+
     /// <summary>扫描单个接口符号。</summary>
     /// <param name="symbol">标注工具特性的接口。</param>
     /// <param name="compilation">当前编译（<c>Source</c> 解析与类型推导用）。</param>
@@ -49,6 +55,11 @@ internal static class ToolSurfaceScanner
     {
         try
         {
+            if (FaultInjectionForTests?.Invoke(profile.Name) is { } fault)
+            {
+                throw fault;
+            }
+
             var attribute = Extractors.GetToolAttribute(symbol, profile);
             if (attribute is null)
             {
@@ -180,10 +191,18 @@ internal static class ToolSurfaceScanner
                 ? ScannedTool.Ok(symbol.Name, model)
                 : ScannedTool.OkWithDiagnostics(symbol.Name, model, diagnostics.ToArray());
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             GeneratorDebugLogger.LogError(nameof(ToolSurfaceScanner), ex);
-            return ScannedTool.Faulted(symbol.Name);
+            // P2-2：扫描体异常折算为 {prefix}026 随流上报——此前返回无诊断的 Faulted，
+            // 产物静默缺席而构建全绿（错误不可诊断）。OCE 是宿主取消语义，必须继续上抛。
+            return ScannedTool.Faulted(
+                symbol.Name,
+                PendingDiagnostic.Create(
+                    factory[ToolSurfaceDiagnostics.SlotGeneratorInternalError],
+                    profile.Name + ":" + nameof(ToolSurfaceScanner),
+                    ex.GetType().Name,
+                    ex.Message));
         }
     }
 

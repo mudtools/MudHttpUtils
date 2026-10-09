@@ -58,6 +58,7 @@ HTTPCLIENT034 | 代码生成 | Warning | [Cache(VaryByUser=true)] 但接口无�
 HTTPCLIENT035 | 代码生成 | Error | 继承组合的运行模式不匹配（G8-04：base(...) 实参类型必然错位）
 HTTPCLIENT036 | 代码生成 | Warning | [FilePath(BufferSize)] 超出支持上界，已夹取（G8-06）
 HTTPCLIENT037 | 代码生成 | Info | 参数疑似 HTTP 头但未标注 [Header]/[HeaderCollection]（M6-HC-02）
+HTTPCLIENT038 | 代码生成 | Info | 接口符号解析失败，已跳过实现类生成（P2-5）
 HTTPCLIENTREG001 | 代码生成 | Error | HttpClient API 注册生成错误
 HTTPCLIENTREG002 | 代码生成 | Error | RegistryGroupName 不是有效 C# 标识符
 MUD001 | Mud.HttpUtils.Interface | Error | HttpClientApi 方法缺少 HTTP 方法特性

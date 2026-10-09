@@ -382,9 +382,55 @@ public class ToolSurfaceContractTests
     [Fact]
     public void ResolveProfiles_WithoutInterfaceReference_ReturnsEmpty()
     {
-        // 空剖面短路的成本断言：编译中不存在 ISdkToolProfile 时一次查找即返回。
+        // 无 Abstractions 引用时接口查找即返回空（不进入类型枚举）。
         var compilation = Compile("public class Plain { }");
         ProfileDiscovery.ResolveProfiles(compilation).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ResolveProfiles_SameCompilationInstance_SharesSingleResolution()
+    {
+        // P2-1 回归：同一 Compilation 实例上 profiles 节点与全部 ScanTool/ScanHandler 变换
+        // 必须共享一次全程序集枚举——缓存命中时返回同一底层数组实例（ImmutableArray 引用相等）。
+        const string source = """
+            [SdkToolProfile("CacheProbe",
+                ToolAttributeName = "CacheProbeTool",
+                ToolAttributeNamespace = "C",
+                SdkNamespaceRoot = "C",
+                ProductPrefix = "CacheProbeTool",
+                DiagnosticPrefix = "MUDCP",
+                DiagnosticCategory = "C.AI")]
+            sealed class CacheProbeProfile : ISdkToolProfile { }
+            """;
+
+        var compilation = Compile(ProfileHeader + source);
+        var first = ProfileDiscovery.ResolveProfiles(compilation);
+        var second = ProfileDiscovery.ResolveProfiles(compilation);
+
+        first.Should().NotBeEmpty();
+        second.Equals(first).Should().BeTrue("同一 Compilation 的重复解析必须命中缓存（共享一次枚举）");
+    }
+
+    [Fact]
+    public void ResolveProfiles_DifferentCompilationInstances_ResolveIndependently()
+    {
+        // 增量失效语义：不同 Compilation（IDE 每次击键）必须重新解析，不得跨编译复用陈旧剖面。
+        const string source = """
+            [SdkToolProfile("CacheProbe",
+                ToolAttributeName = "CacheProbeTool",
+                ToolAttributeNamespace = "C",
+                SdkNamespaceRoot = "C",
+                ProductPrefix = "CacheProbeTool",
+                DiagnosticPrefix = "MUDCP",
+                DiagnosticCategory = "C.AI")]
+            sealed class CacheProbeProfile : ISdkToolProfile { }
+            """;
+
+        var first = ProfileDiscovery.ResolveProfiles(Compile(ProfileHeader + source));
+        var second = ProfileDiscovery.ResolveProfiles(Compile(ProfileHeader + source));
+
+        first.Should().NotBeEmpty();
+        second.Equals(first).Should().BeFalse("不同 Compilation 必须独立解析（不得复用陈旧结果）");
     }
 
     [Fact]

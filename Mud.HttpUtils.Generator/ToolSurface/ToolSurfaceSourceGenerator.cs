@@ -31,10 +31,13 @@ namespace Mud.HttpUtils.ToolSurface;
 /// </para>
 /// <para>
 /// <b>空剖面短路（§5.3/§7.2 硬性前提）</b>：纯 HTTP 消费方（无 <c>ISdkToolProfile</c> 实现）下，
-/// 候选谓词是 O(1) 语法判定，语义变换在 <see cref="ProfileDiscovery.ResolveProfiles"/> 一次
-/// <c>GetTypeByMetadataName</c> 查找后即返回 <see langword="null"/>——不进入任何扫描/发射逻辑，
-/// 0 工具诊断、0 工具 AddSource。注：<c>IIncrementalGenerator.Initialize</c> 无法在注册前拿到编译，
-/// 故「不注册任何 SyntaxProvider」的表述落地为「注册最廉价的语法谓词 + 语义变换零成本短路」；
+/// 候选谓词是 O(1) 语法判定，语义变换在 <see cref="ProfileDiscovery.ResolveProfiles"/> 返回空集合后
+/// 即返回 <see langword="null"/>——不进入任何扫描/发射逻辑，0 工具诊断、0 工具 AddSource。
+/// 注：<c>ISdkToolProfile</c> 定义于 Abstractions、所有消费方恒引用该程序集，剖面存在性判定
+/// 无法借 <c>GetTypeByMetadataName</c> 早退；解析结果按 Compilation 缓存（见
+/// <see cref="ProfileDiscovery"/>），全程序集类型枚举每编译至多支付一次、由 profiles 节点
+/// 与全部变换共享。另：<c>IIncrementalGenerator.Initialize</c> 无法在注册前拿到编译，
+/// 故「不注册任何 SyntaxProvider」的表述落地为「注册最廉价的语法谓词 + 语义变换零产物短路」；
 /// §10 测试门禁断言的「语法树步进不进 ToolSurface（扫描/发射逻辑）」由此满足。
 /// </para>
 /// <para>
@@ -174,18 +177,22 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
     /// </summary>
     private static ProfiledScan? ScanTool(GeneratorSyntaxContext context, CancellationToken cancellationToken)
     {
+        // P2-2：符号与剖面归属提升到 try 外——catch 据此把可归属异常折算为 {prefix}026 随流上报。
+        INamedTypeSymbol? symbol = null;
+        SdkToolProfileModel? attributedProfile = null;
         try
         {
-            if (context.SemanticModel.GetDeclaredSymbol(context.Node, cancellationToken) is not INamedTypeSymbol symbol)
+            if (context.SemanticModel.GetDeclaredSymbol(context.Node, cancellationToken) is not INamedTypeSymbol resolved)
             {
                 return null;
             }
 
+            symbol = resolved;
             var compilation = context.SemanticModel.Compilation;
             var profiles = ProfileDiscovery.ResolveProfiles(compilation);
             if (profiles.IsDefaultOrEmpty)
             {
-                // 空剖面短路：纯 HTTP 消费方的典型路径（一次 GetTypeByMetadataName 查找即返回）。
+                // 空剖面短路：不进入任何扫描/发射逻辑（解析结果按 Compilation 缓存，重复调用零枚举成本）。
                 return null;
             }
 
@@ -196,6 +203,7 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
                     continue;
                 }
 
+                attributedProfile = profile;
                 if (Extractors.GetToolAttribute(symbol, profile) is null)
                 {
                     continue;
@@ -209,13 +217,31 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             GeneratorDebugLogger.LogError(nameof(ScanTool), ex);
-            return null;
+            // P2-2：异常可归属剖面时，构造「引擎内部错误」{prefix}026 随流上报——否则产物静默缺席而构建全绿。
+            // 归属未知（符号/剖面解析阶段抛出）时无法拼动态 ID，退化为仅日志（profile 必填槽保证前缀非空，
+            // 故 attributedProfile 非 null 即可安全拼 {prefix}026；此时 symbol 也必已解析，"!" 断言成立）。
+            if (attributedProfile is null)
+            {
+                return null;
+            }
+
+            return new ProfiledScan(
+                attributedProfile,
+                ScannedTool.Faulted(
+                    symbol!.Name,
+                    PendingDiagnostic.Create(
+                        ToolSurfaceDiagnostics.For(attributedProfile)[ToolSurfaceDiagnostics.SlotGeneratorInternalError],
+                        attributedProfile.Name + ":" + nameof(ScanTool),
+                        ex.GetType().Name,
+                        ex.Message)));
         }
     }
 
     /// <summary>执行器方法扫描（按 handler 特性槽归属剖面；同 ScanTool 的短路纪律）。</summary>
     private static ProfiledHandler? ScanHandler(GeneratorSyntaxContext context, CancellationToken cancellationToken)
     {
+        // P2-2：剖面归属提升到 try 外（同 ScanTool）。
+        SdkToolProfileModel? attributedProfile = null;
         try
         {
             var compilation = context.SemanticModel.Compilation;
@@ -232,6 +258,7 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
                     continue;
                 }
 
+                attributedProfile = profile;
                 var scan = ToolHandlerScanner.Scan(context, profile, ToolSurfaceDiagnostics.For(profile), cancellationToken);
                 if (scan is not null)
                 {
@@ -244,7 +271,21 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             GeneratorDebugLogger.LogError(nameof(ScanHandler), ex);
-            return null;
+            // P2-2：异常可归属剖面时折算为 {prefix}026 随流上报；归属未知时退化为仅日志。
+            if (attributedProfile is null)
+            {
+                return null;
+            }
+
+            return new ProfiledHandler(
+                attributedProfile,
+                ScannedHandler.Faulted(
+                    null,
+                    PendingDiagnostic.Create(
+                        ToolSurfaceDiagnostics.For(attributedProfile)[ToolSurfaceDiagnostics.SlotGeneratorInternalError],
+                        attributedProfile.Name + ":" + nameof(ScanHandler),
+                        ex.GetType().Name,
+                        ex.Message)));
         }
     }
 

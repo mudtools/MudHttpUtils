@@ -122,6 +122,8 @@ internal class FormContentGenerator : TransitiveCodeGenerator
                 // 生成代码（G9-07：nullable 配置显式下传）
                 var generatedCode = GenerateFormContentCode(classDecl, classSymbol, properties, byteArrayPropertyName, configSnapshot.NullableEnable);
 
+                // P2-5 核验结论：空串分支不可达——GenerateFormContentCode 无条件返回至少含
+                // 文件头与类声明的文本（审查报告 2026-10-09 §3 P2-5④「先证实可达性再决定」）。
                 if (!string.IsNullOrEmpty(generatedCode))
                 {
                     // 将命名空间编入文件名，避免跨命名空间同名类冲突

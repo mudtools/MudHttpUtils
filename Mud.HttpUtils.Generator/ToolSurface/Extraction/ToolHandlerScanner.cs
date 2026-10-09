@@ -39,6 +39,12 @@ namespace Mud.HttpUtils.ToolSurface.Extraction;
 /// </remarks>
 internal static class ToolHandlerScanner
 {
+    /// <summary>
+    /// P2-2 验证钩子：仅供测试程序集（<c>InternalsVisibleTo</c>）注入异常源，驱动 <c>{prefix}026</c>
+    /// 兜底路径——实参为剖面名，返回非空异常即在扫描体起点抛出。常态为 <see langword="null"/>，零开销。
+    /// </summary>
+    internal static Func<string, Exception?>? FaultInjectionForTests;
+
     /// <summary>扫描一个候选方法；非 handler 特性标注的方法返回 <see langword="null"/>。</summary>
     public static ScannedHandler? Scan(
         GeneratorSyntaxContext context,
@@ -48,6 +54,11 @@ internal static class ToolHandlerScanner
     {
         try
         {
+            if (FaultInjectionForTests?.Invoke(profile.Name) is { } fault)
+            {
+                throw fault;
+            }
+
             if (context.SemanticModel.GetDeclaredSymbol(context.Node, cancellationToken) is not IMethodSymbol method)
             {
                 return null;
@@ -150,10 +161,19 @@ internal static class ToolHandlerScanner
                     methodName: method.Name,
                     dependencies: dependencies));
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             GeneratorDebugLogger.LogError(nameof(ToolHandlerScanner), ex);
-            return null;
+            // P2-2：扫描体异常折算为 {prefix}026 随流上报——此前返回 null，执行器绑定静默消失且不可诊断。
+            // ToolName 记 null：绑定缺失，不参与「未绑定」误报抑制（发射器对 null 工具名惰性）。
+            // OCE 是宿主取消语义，必须继续上抛。
+            return ScannedHandler.Faulted(
+                null,
+                PendingDiagnostic.Create(
+                    factory[ToolSurfaceDiagnostics.SlotGeneratorInternalError],
+                    profile.Name + ":" + nameof(ToolHandlerScanner),
+                    ex.GetType().Name,
+                    ex.Message));
         }
     }
 
@@ -161,35 +181,31 @@ internal static class ToolHandlerScanner
     /// 取 handler 特性数据（按「简单名 + 命名空间」双重判定，防同名特性误命中；
     /// 简单名匹配 <c>{ToolHandlerAttributeName}</c> 与 <c>…Attribute</c> 双形态）。
     /// </summary>
+    /// <remarks>
+    /// P2-2：此处不再就地吞异常——吞掉会让 handler 以「非 handler」身份静默消失（不可诊断）；
+    /// 异常上抛给 <see cref="Scan"/> 的 catch，折算为 <c>{prefix}026</c> 随流上报。
+    /// </remarks>
     public static AttributeData? GetHandlerAttribute(IMethodSymbol method, SdkToolProfileModel profile)
     {
-        try
+        var bare = profile.ToolHandlerAttributeName;
+        if (bare.Length == 0)
         {
-            var bare = profile.ToolHandlerAttributeName;
-            if (bare.Length == 0)
-            {
-                return null;
-            }
-
-            var full = bare + "Attribute";
-            foreach (var attribute in method.GetAttributes())
-            {
-                var attributeClass = attribute.AttributeClass;
-                if (attributeClass is not null
-                    && (attributeClass.Name == bare || attributeClass.Name == full)
-                    && string.Equals(attributeClass.ContainingNamespace?.ToDisplayString(), profile.ToolHandlerAttributeNamespace, StringComparison.Ordinal))
-                {
-                    return attribute;
-                }
-            }
-
             return null;
         }
-        catch (Exception ex)
+
+        var full = bare + "Attribute";
+        foreach (var attribute in method.GetAttributes())
         {
-            GeneratorDebugLogger.LogError(nameof(ToolHandlerScanner), ex);
-            return null;
+            var attributeClass = attribute.AttributeClass;
+            if (attributeClass is not null
+                && (attributeClass.Name == bare || attributeClass.Name == full)
+                && string.Equals(attributeClass.ContainingNamespace?.ToDisplayString(), profile.ToolHandlerAttributeNamespace, StringComparison.Ordinal))
+            {
+                return attribute;
+            }
         }
+
+        return null;
     }
 
     // ────────── 依赖分类（唯一的判定点） ──────────

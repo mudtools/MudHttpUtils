@@ -42,9 +42,10 @@ internal static class Diagnostics
      * 4. 去标签**不降级**：被去标签的诊断级别仍保持 Error（默认行为不变，仍阻断构建），
      *    只是"允许"使用者显式抑制。请勿顺手降级为 Warning —— 那会把编译期失败变成运行期故障。
      *
-     * 守卫：Tests/Mud.HttpUtils.Generator.Tests/DiagnosticTagPolicyTests.cs 断言
+     * 守卫：Tests/Mud.HttpUtils.Generator.Tests/Analyzers/DiagnosticTagPolicyTests.cs 断言
      * "Error + NotConfigurable" 的集合恰好等于内部/环境类错误白名单（本文件中即为
-     * HTTPCLIENT001、HTTPCLIENT003、HTTPCLIENTREG001、EHSG001、FORM001）。
+     * HTTPCLIENT001、HTTPCLIENT003、HTTPCLIENTREG001、EHSG001、FORM001；
+     * Payloads 侧 PAYLOAD001 亦属该白名单——同为引擎内部异常兜底，[P3-2] 补记）。
      *
      * 详见 .docs/生成器诊断治理与返回类型完善方案v1.md §1.2 / §3.3。
      */
@@ -557,6 +558,26 @@ internal static class Diagnostics
         id: "HTTPCLIENT037",
         title: "参数疑似 HTTP 头但未标注 Header 特性",
         messageFormat: "接口 {0} 的方法 {1} 的参数 {2} 名称疑似 HTTP 头参数，但未标注 [Header] 或 [HeaderCollection] 特性，该参数不会写入请求头。若为拼写错误请修正特性名；若该参数确非请求头可忽略本提示。",
+        category: "代码生成",
+        DiagnosticSeverity.Info,
+        isEnabledByDefault: true);
+
+    /// <summary>
+    /// P2-5：接口声明的语义符号无法解析（<c>InterfaceModel.Symbol</c> 为 null，常见于接口声明
+    /// 语法不完整，如 IDE 输入中途）。此前该分支完全静默 return——实现类整体消失，接口未实现
+    /// 成员将以 CS0535 呈现，但编译错误不指向根因。低噪音 Info 提示，修复语法后自动消失。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// FAWM（<c>ForAttributeWithMetadataName</c>）在 transform 前会跳过 <c>GetDeclaredSymbol</c>
+    /// 为 null 的声明，故本诊断经标准管线通常不可达；保留该 fail-closed 契约以确保
+    /// 「符号解析失败 ⇒ 必有编译期提示」不因管线演化而失效。
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor HttpClientInterfaceSymbolUnresolved = new(
+        id: "HTTPCLIENT038",
+        title: "接口符号解析失败，已跳过实现类生成",
+        messageFormat: "接口 {0} 的声明符号无法解析（常见于接口声明语法不完整，如 IDE 输入中途）——本次生成跳过该接口的实现类，修复语法后本提示自动消失。",
         category: "代码生成",
         DiagnosticSeverity.Info,
         isEnabledByDefault: true);

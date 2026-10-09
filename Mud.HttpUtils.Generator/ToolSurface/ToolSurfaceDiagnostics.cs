@@ -217,6 +217,12 @@ internal static class ToolSurfaceDiagnostics
                     ? _profile.ToolingDiagnosticCategory
                     : _profile.DiagnosticCategory;
 
+                // [P3-3] 兜底槽 026 与 PAYLOAD001 同为「引擎内部异常」语义，但刻意**不加**
+                // WellKnownDiagnosticTags.NotConfigurable（与 PAYLOAD001 不同待遇的显式取舍）：
+                // 该标签会封死 #pragma/NoWarn/.editorconfig 全部抑制通道，而 026 报告的是剖面引擎
+                // 内部异常，消费方可能需先经 .editorconfig 降级恢复构建再排查根因；且无标签不会触发
+                // csc 对「不可抑制 Error」的提前 return，避免同编译中其他分析器诊断被连坐隐藏
+                // （见 Diagnostics.cs 诊断治理说明 / DiagnosticTagPolicyTests）。
                 var descriptor = new DiagnosticDescriptor(
                     id: _profile.DiagnosticId(slot),
                     title: definition.Title,
