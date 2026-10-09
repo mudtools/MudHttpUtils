@@ -68,6 +68,32 @@ internal static class AotDtoCoverageAnalyzer
     }
 
     /// <summary>
+    /// [F-5 修复] 继承方法的 SerializationMethod 判定——与生成器语义对齐（G-1 勘误）：
+    /// 生成器的 <c>GeneratorContext.InterfaceAttributes</c> 仅取派生接口自身特性，接口级
+    /// <c>[SerializationMethod]</c> 不随继承生效，取值顺序为「方法级 → 派生接口级 → 默认 Json」。
+    /// </summary>
+    /// <remarks>
+    /// 不能直接复用 <see cref="GetMethodSerializationMethod"/>：它读取 <c>method.ContainingType</c>
+    ///（对继承方法即<b>基接口</b>）的接口级特性，会把基接口的接口级 Xml 当作 JSON 豁免依据，
+    /// 而生成器对继承方法实际走 Json 管线 → AOT004 漏报。
+    /// </remarks>
+    private static string GetInheritedMethodSerializationMethod(IMethodSymbol baseMethod, INamedTypeSymbol derivedInterface)
+    {
+        var methodAttr = baseMethod.GetAttributes().FirstOrDefault(IsSerializationMethodAttribute);
+        var methodLevel = methodAttr != null ? MethodAnalyzer.ReadSerializationMethodName(methodAttr) : null;
+        if (!string.IsNullOrEmpty(methodLevel))
+            return methodLevel!;
+
+        var interfaceAttr = derivedInterface.GetAttributes().FirstOrDefault(IsSerializationMethodAttribute);
+        var interfaceLevel = interfaceAttr != null ? MethodAnalyzer.ReadSerializationMethodName(interfaceAttr) : null;
+
+        return string.IsNullOrEmpty(interfaceLevel) ? "Json" : interfaceLevel!;
+
+        static bool IsSerializationMethodAttribute(AttributeData a)
+            => a.AttributeClass?.Name == "SerializationMethodAttribute";
+    }
+
+    /// <summary>
     /// 构造用于 CodeFix 的诊断属性，携带待覆盖类型的完全限定名，
     /// 使 <c>Mud.HttpUtils.CodeFixes</c> 中的修复器能精确获知需要加入 JsonSerializerContext 的类型。
     /// </summary>
@@ -154,6 +180,9 @@ internal static class AotDtoCoverageAnalyzer
                 if (GeneratorAttributeFilters.HasIgnoreGenerator(interfaceSymbol))
                     continue;
 
+                // [F-5 修复] 元数据继承方法无语法时的定位回退（派生接口声明）。
+                var interfaceFallbackLocation = interfaceDecl.GetLocation();
+
                 // 4. 检查每个方法的 DTO 覆盖情况
                 foreach (var method in interfaceSymbol.GetMembers().OfType<IMethodSymbol>())
                 {
@@ -165,7 +194,46 @@ internal static class AotDtoCoverageAnalyzer
                     if (method.MethodKind != MethodKind.Ordinary || method.IsImplicitlyDeclared)
                         continue;
 
-                    CheckMethodDtoCoverage(compilation, diagnostics, interfaceSymbol, method, coveredTypes, analysisContext);
+                    CheckMethodDtoCoverage(compilation, diagnostics, interfaceSymbol, method, coveredTypes, analysisContext, interfaceFallbackLocation);
+                }
+
+                // [F-5 修复] 基接口继承方法的 DTO 覆盖补扫：生成器经 TypeSymbolHelper.GetAllMethods
+                // (includeParentInterfaces: true) 为继承方法生成调用代码（经 AllInterfaces 收集，含跨程序集、
+                // 无 [HttpClientApi] 过滤），而上方循环仅遍历声明成员 → 继承方法的请求/响应 DTO 完全不检
+                // 覆盖，AOT 下运行时 NotSupportedException 静默放行。与 F-2 同一扫描骨架（跳过规则、
+                // 菱形去重一致），复用 CheckMethodDtoCoverage 全逻辑（含 F-1 派生类型校验、AOT005）。
+                var visited = new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default);   // 防菱形继承重复诊断
+                try
+                {
+                    foreach (var baseIface in interfaceSymbol.AllInterfaces)
+                    {
+                        if (cancellationToken.IsCancellationRequested)
+                            return diagnostics.ToImmutable();
+
+                        // 与 F-2 同款跳过规则：本编译且自身带 [HttpClientApi] 的基接口已被独立访问，跳过避免重复诊断
+                        if (SymbolEqualityComparer.Default.Equals(baseIface.ContainingAssembly, compilation.Assembly)
+                            && baseIface.GetAttributes().Any(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, httpClientApiAttr)))
+                            continue;
+
+                        foreach (var baseMethod in baseIface.GetMembers().OfType<IMethodSymbol>())
+                        {
+                            if (baseMethod.MethodKind != MethodKind.Ordinary || baseMethod.IsImplicitlyDeclared)
+                                continue;
+                            if (!visited.Add(baseMethod))
+                                continue;
+
+                            // 与生成器语义对齐（G-1 勘误）的 SerializationMethod 判定。
+                            var serializationMethodOverride = GetInheritedMethodSerializationMethod(baseMethod, interfaceSymbol);
+
+                            CheckMethodDtoCoverage(compilation, diagnostics, interfaceSymbol, baseMethod,
+                                coveredTypes, analysisContext, interfaceFallbackLocation, serializationMethodOverride);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // [F-5 修复] 异常护栏：宁少报不可抛；异常时保留已收集诊断返回。
+                    GeneratorDebugLogger.LogError("AOT004_InheritedDtoCoverage", ex);
                 }
             }
         }
@@ -294,6 +362,14 @@ internal static class AotDtoCoverageAnalyzer
     }
 
     /// <summary>
+    /// [P2-P1] NET8_0_OR_GREATER 判定的编译级缓存：增量生成场景下同一 <see cref="Compilation"/>
+    /// 会被多条诊断管线重复询问，语法树遍历 + defines 检查按 Compilation 缓存
+    /// （ConditionalWeakTable 弱引用，不延长 Compilation 生命周期；GetValue 并发下工厂体可能
+    /// 重复执行但结果幂等）。
+    /// </summary>
+    private static readonly ConditionalWeakTable<Compilation, StrongBox<bool>> _net8DefineCache = new();
+
+    /// <summary>
     /// 判定编译单元是否面向 net8.0+（任一语法树携带 NET8_0_OR_GREATER 预处理符号）。
     /// </summary>
     /// <remarks>
@@ -303,8 +379,14 @@ internal static class AotDtoCoverageAnalyzer
     /// 由于脚手架生成的 Context 在 #if NET8_0_OR_GREATER 中（net8.0 以下反射兜底），
     /// 低版本 TFM 编译里 Context 缺席属预期，AOT006 应整体跳过。
     /// 无法判定（无语法树 / ParseOptions 缺失，如部分测试构造）时返回 true，保持原行为继续分析。
+    /// 结果按 <see cref="Compilation"/> 缓存（见 <see cref="_net8DefineCache"/>）。
     /// </remarks>
     private static bool HasNet8OrGreaterDefine(Compilation compilation)
+        => _net8DefineCache
+            .GetValue(compilation, static c => new StrongBox<bool>(ComputeHasNet8OrGreaterDefine(c)))
+            .Value;
+
+    private static bool ComputeHasNet8OrGreaterDefine(Compilation compilation)
     {
         foreach (var syntaxTree in compilation.SyntaxTrees)
         {
@@ -531,12 +613,13 @@ internal static class AotDtoCoverageAnalyzer
     /// <remarks>
     /// 使 AOT004 响应端诊断的 <c>Location.Span</c> 落在返回类型节点上（而非整个方法/接口）。
     /// </remarks>
-    private static Location GetResponseLocation(IMethodSymbol method)
+    private static Location GetResponseLocation(IMethodSymbol method, Location? interfaceFallbackLocation = null)
     {
         var syntax = method.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
         if (syntax is MethodDeclarationSyntax methodDecl && methodDecl.ReturnType is { } returnType)
             return returnType.GetLocation();
-        return method.Locations.FirstOrDefault() ?? Location.None;
+        // [F-5 修复] 元数据继承方法无语法 → 回退派生接口声明，再退 Location.None。
+        return method.Locations.FirstOrDefault() ?? interfaceFallbackLocation ?? Location.None;
     }
 
     /// <summary>
@@ -548,14 +631,19 @@ internal static class AotDtoCoverageAnalyzer
         INamedTypeSymbol interfaceSymbol,
         IMethodSymbol method,
         HashSet<INamedTypeSymbol> coveredTypes,
-        DtoCoverageAnalysisContext analysisContext)
+        DtoCoverageAnalysisContext analysisContext,
+        Location interfaceFallbackLocation,
+        string? serializationMethodOverride = null)
     {
         var bodyAttr = analysisContext.BodyAttribute;
         var queryAttr = analysisContext.QueryAttribute;
         var queryMapAttr = analysisContext.QueryMapAttribute;
 
         // [P1-5 修复] 每方法只调用一次 GetMethodSerializationMethod，存局部变量复用。
-        var serializationMethod = GetMethodSerializationMethod(method);
+        // [F-5 修复] serializationMethodOverride：继承方法由调用方传入与生成器语义对齐的判定值
+        //（见 GetInheritedMethodSerializationMethod），不能用 GetMethodSerializationMethod——
+        // 其读取 method.ContainingType（对继承方法即基接口）的接口级特性，会误把基接口级 Xml 当豁免依据。
+        var serializationMethod = serializationMethodOverride ?? GetMethodSerializationMethod(method);
 
         foreach (var param in method.Parameters)
         {
@@ -565,7 +653,8 @@ internal static class AotDtoCoverageAnalyzer
             if (param.Type is IArrayTypeSymbol arrayType)
             {
                 var paramLocation = param.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax().GetLocation()
-                    ?? method.Locations.FirstOrDefault();
+                    ?? method.Locations.FirstOrDefault()
+                    ?? interfaceFallbackLocation;   // [F-5 修复] 元数据继承方法无语法 → 回退派生接口声明
 
                 // 仅对 [Body] 数组做 AOT004 检查（[Query] 数组走逐元素 ToString，不走 JSON 序列化）
                 if (bodyAttr != null && param.GetAttributes()
@@ -574,17 +663,35 @@ internal static class AotDtoCoverageAnalyzer
                     if (serializationMethod is "FormUrlEncoded" or "Xml")
                         continue;
 
-                    if (arrayType.ElementType is INamedTypeSymbol arrayElem &&
-                        !IsCovered(arrayElem, coveredTypes) &&
-                        !QuerySerializationClassifier.IsSimple(arrayElem))
+                    if (arrayType.ElementType is INamedTypeSymbol arrayElem)
                     {
-                        diagnostics.Add(Diagnostic.Create(
-                            Diagnostics.AotDtoNotCoveredByContext,
-                            paramLocation,
-                            TypeProps(arrayElem),
-                            interfaceSymbol.Name,
-                            method.Name,
-                            arrayElem.ToDisplayString()));
+                        if (!IsCovered(arrayElem, coveredTypes) &&
+                            !QuerySerializationClassifier.IsSimple(arrayElem))
+                        {
+                            diagnostics.Add(Diagnostic.Create(
+                                Diagnostics.AotDtoNotCoveredByContext,
+                                paramLocation,
+                                TypeProps(arrayElem),
+                                interfaceSymbol.Name,
+                                method.Name,
+                                arrayElem.ToDisplayString()));
+                        }
+                        // [F-1 修复] 与响应端 [P0-2] 同源：请求体序列化派生实例同样需要派生类型元数据。
+                        // 守卫为 else if：IsSimple 参数即使未覆盖也走查询管线、不进 STJ 多态管线，避免空跑。
+                        else if (IsCovered(arrayElem, coveredTypes))
+                        {
+                            var uncoveredDerived = GetUncoveredDerivedTypes(arrayElem, coveredTypes);
+                            if (uncoveredDerived.Count > 0)
+                            {
+                                diagnostics.Add(Diagnostic.Create(
+                                    Diagnostics.AotDtoNotCoveredByContext,
+                                    paramLocation,
+                                    TypeProps(arrayElem),
+                                    interfaceSymbol.Name,
+                                    method.Name,
+                                    arrayElem.ToDisplayString() + $"（声明了 [JsonDerivedType] 但其派生类型 [{string.Join(", ", uncoveredDerived.Select(t => t.Name))}] 未被 Context 覆盖，AOT 下序列化派生实例将抛 NotSupportedException）"));
+                            }
+                        }
                     }
                 }
                 continue;
@@ -594,7 +701,8 @@ internal static class AotDtoCoverageAnalyzer
                 continue;
 
             var paramLocation2 = param.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax().GetLocation()
-                ?? method.Locations.FirstOrDefault();
+                ?? method.Locations.FirstOrDefault()
+                ?? interfaceFallbackLocation;   // [F-5 修复] 元数据继承方法无语法 → 回退派生接口声明
 
             // 检查 [Body] 请求体 DTO — AOT004
             if (bodyAttr != null && param.GetAttributes()
@@ -614,6 +722,22 @@ internal static class AotDtoCoverageAnalyzer
                         interfaceSymbol.Name,
                         method.Name,
                         paramType.ToDisplayString()));
+                }
+                // [F-1 修复] 与响应端 [P0-2] 同源：请求体序列化派生实例同样需要派生类型元数据。
+                // 守卫为 else if：IsSimple 参数即使未覆盖也走查询管线、不进 STJ 多态管线，避免空跑。
+                else if (IsCovered(paramType, coveredTypes))
+                {
+                    var uncoveredDerived = GetUncoveredDerivedTypes(paramType, coveredTypes);
+                    if (uncoveredDerived.Count > 0)
+                    {
+                        diagnostics.Add(Diagnostic.Create(
+                            Diagnostics.AotDtoNotCoveredByContext,
+                            paramLocation2,
+                            TypeProps(paramType),
+                            interfaceSymbol.Name,
+                            method.Name,
+                            paramType.ToDisplayString() + $"（声明了 [JsonDerivedType] 但其派生类型 [{string.Join(", ", uncoveredDerived.Select(t => t.Name))}] 未被 Context 覆盖，AOT 下序列化派生实例将抛 NotSupportedException）"));
+                    }
                 }
                 continue; // [Body] 参数不会同时是 [Query]
             }
@@ -703,7 +827,7 @@ internal static class AotDtoCoverageAnalyzer
                     {
                         diagnostics.Add(Diagnostic.Create(
                             Diagnostics.AotDtoNotCoveredByContext,
-                            GetResponseLocation(method),
+                            GetResponseLocation(method, interfaceFallbackLocation),
                             TypeProps(responseElemNamed),
                             interfaceSymbol.Name,
                             method.Name,
@@ -742,7 +866,7 @@ internal static class AotDtoCoverageAnalyzer
             {
                 diagnostics.Add(Diagnostic.Create(
                     Diagnostics.AotDtoNotCoveredByContext,
-                    GetResponseLocation(method),
+                    GetResponseLocation(method, interfaceFallbackLocation),
                     TypeProps(responseType),
                     interfaceSymbol.Name,
                     method.Name,
@@ -758,7 +882,7 @@ internal static class AotDtoCoverageAnalyzer
                 {
                     diagnostics.Add(Diagnostic.Create(
                         Diagnostics.AotDtoNotCoveredByContext,
-                        GetResponseLocation(method),
+                        GetResponseLocation(method, interfaceFallbackLocation),
                         TypeProps(responseType),
                         interfaceSymbol.Name,
                         method.Name,

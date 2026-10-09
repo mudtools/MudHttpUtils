@@ -180,6 +180,65 @@ internal static class AotXmlRejectionAnalyzer
                         interfaceSymbol.Name,
                         method.Name));
                 }
+
+                // [F-2 修复] 基接口继承方法的方法级 [SerializationMethod(Xml)] 补扫：
+                // 生成器经 TypeSymbolHelper.GetAllMethods(includeParentInterfaces: true) 将继承方法纳入
+                // 生成管线并真实走 XML 管线（AOT 下 XmlSerializer 字段构造抛 PlatformNotSupportedException），
+                // 而上方循环仅遍历声明成员（GetMembers）→ 继承方法编译期静默放行。
+                // 只读方法级特性（接口级特性不被生成器继承——G-1 勘误：运行时实际走 Json，
+                // 此处若报 AOT007 即误导性误报，故刻意不读接口级）；
+                // 不进入重型 MethodAnalyzer.AnalyzeMethod，符合 [P1-2] 预门控精神。
+                var visited = new HashSet<IMethodSymbol>(SymbolEqualityComparer.Default);   // 防菱形继承重复诊断
+                try
+                {
+                    foreach (var baseIface in interfaceSymbol.AllInterfaces)
+                    {
+                        if (cancellationToken.IsCancellationRequested)
+                            return diagnostics.ToImmutable();
+
+                        // 跳过「本编译 且 自身带 [HttpClientApi]」的基接口：它会被外层循环独立访问
+                        //（其方法级特性已在那一轮报告），重复扫描会产生重复诊断。其余基接口
+                        //（引用程序集、或同编译但未标注 [HttpClientApi]）外层循环不可达，必须在此补扫。
+                        if (SymbolEqualityComparer.Default.Equals(baseIface.ContainingAssembly, compilation.Assembly)
+                            && baseIface.GetAttributes().Any(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, httpClientApiAttr)))
+                            continue;
+
+                        foreach (var baseMethod in baseIface.GetMembers().OfType<IMethodSymbol>())
+                        {
+                            if (baseMethod.MethodKind != MethodKind.Ordinary || baseMethod.IsImplicitlyDeclared)
+                                continue;
+                            if (!visited.Add(baseMethod))
+                                continue;
+
+                            var methodAttr = baseMethod.GetAttributes().FirstOrDefault(a =>
+                                serializationMethodAttr != null
+                                && SymbolEqualityComparer.Default.Equals(a.AttributeClass, serializationMethodAttr));
+                            if (methodAttr == null)
+                                continue;
+
+                            var methodName = MethodAnalyzer.ReadSerializationMethodName(methodAttr);
+                            if (!string.Equals(methodName, "Xml", StringComparison.Ordinal))
+                                continue;
+
+                            // 定位契约：基接口在本编译且有语法 → 方法声明（CodeFix 补写路径可用）；
+                            // 跨程序集（元数据符号无语法）→ 回退接口声明（CodeFix 无操作，由消息引导——
+                            // 与既有「跨程序集 content-type 来源」回退行为一致）。
+                            var inheritedLocation = baseMethod.DeclaringSyntaxReferences.Length > 0
+                                ? baseMethod.Locations.FirstOrDefault()
+                                : interfaceDecl.GetLocation();
+                            diagnostics.Add(Diagnostic.Create(
+                                effectiveDescriptor,
+                                inheritedLocation,
+                                interfaceSymbol.Name,
+                                baseMethod.Name));
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // [F-2 修复] 异常护栏：宁少报不可抛；异常时保留已收集诊断返回。
+                    GeneratorDebugLogger.LogError("AOT007_InheritedXml", ex);
+                }
             }
         }
 

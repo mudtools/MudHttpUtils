@@ -19,10 +19,11 @@ namespace Mud.HttpUtils;
 /// "可选能力接口" 范式：实现者通常同时实现 <see cref="IHttpContentSerializer"/>，但本接口不强制继承。
 /// </para>
 /// <para>
-/// <b>接线状态</b>：默认实现 <c>SystemTextJsonContentSerializer</c> 已实现本接口，
-/// 生成器产出的调用点经 <c>IHttpContentSerializer</c> 的 options 槽位传入 <c>JsonTypeInfo&lt;T&gt;</c>
-/// （见 <c>ToHttpContent&lt;T&gt;(T, object?)</c> 和 <c>Deserialize&lt;T&gt;(string, object?)</c> 的
-/// <c>JsonTypeInfo&lt;T&gt;</c> 分支），运行时接线已存在。
+/// <b>接线状态</b>：默认实现 <c>SystemTextJsonContentSerializer</c> 已实现本接口。
+/// 生成代码运行时 AOT 安全依赖 <c>HttpContentSerializerFactory.BuildOptions</c> 的 resolver 合并
+///（AOT 分支仅源生成、无反射兜底），<b>不依赖本接口</b>；本接口面向<b>消费方手写调用点</b>
+/// 提供 <c>JsonTypeInfo&lt;T&gt;</c> 显式直通的快车道。生成代码接入快车道为规划项
+///（见 AOT 方案 v1 §3.1，P2 评审项）。
 /// 自定义 <see cref="IHttpContentSerializer"/> 实现者可选实现本接口以获得快车道能力。
 /// </para>
 /// <para>

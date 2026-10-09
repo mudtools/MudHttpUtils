@@ -76,8 +76,9 @@ internal sealed class ObjectToInferredTypesConverter : JsonConverter<object?>
                 je.WriteTo(writer);
                 break;
             default:
-                // 兜底：不引入反射，退化为字符串表示（与转换器"类型推断"语义一致）
-                writer.WriteStringValue(value.ToString());
+                // [S-1] 不引入反射（AOT 安全）；未知类型退化为类型占位而非 ToString 全文，
+                // 防止对象内部状态经 ProblemDetails.Extensions 旁路输出（可能绕过脱敏管线）。
+                writer.WriteStringValue($"[unserializable:{value.GetType().Name}]");
                 break;
         }
     }

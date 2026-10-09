@@ -672,6 +672,51 @@ jobs:
             exit 1
           fi
 
+      # [T-1] 脚手架在真实 PackageRef 消费方端到端激活验证（正常 restore，非 --no-restore）
+      # [T-1 勘误] 版本从本作业 artifacts 实际 nupkg 提取注入（勿用 Version="*"，与 §4 风险注记一致）
+      - name: End-to-end scaffolder activation (PackageRef)
+        shell: bash
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          TEST_DIR="$WORKSPACE/.tmp-scaffolder-e2e"
+          rm -rf "$TEST_DIR"; mkdir -p "$TEST_DIR"
+          ATTRS_VERSION="$(ls "$WORKSPACE"/artifacts/Mud.HttpUtils.Attributes.*.nupkg | head -1 | sed 's/.*Attributes\.\(.*\)\.nupkg/\1/')"
+          GEN_VERSION="$(ls "$WORKSPACE"/artifacts/Mud.HttpUtils.Generator.*.nupkg | head -1 | sed 's/.*Generator\.\(.*\)\.nupkg/\1/')"
+          TOOL_VERSION="$(ls "$WORKSPACE"/artifacts/Mud.HttpUtils.JsonContextScaffolder.*.nupkg | head -1 | sed 's/.*Scaffolder\.\(.*\)\.nupkg/\1/')"
+          cat > "$TEST_DIR/E2E.csproj" << EOF
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net8.0</TargetFramework>
+              <PublishAot>true</PublishAot>   <!-- Attributes 包内 build props 据此置 MudEnableJsonContextScaffolder=true（targets L41） -->
+            </PropertyGroup>
+            <ItemGroup>
+              <!-- [T-1 勘误] Generator 用普通 PackageReference（对齐 AotPackageRefDemo.csproj）：
+                   包内 build props 自动接线分析器，勿用 OutputItemType="Analyzer" -->
+              <PackageReference Include="Mud.HttpUtils.Attributes" Version="$ATTRS_VERSION" />
+              <PackageReference Include="Mud.HttpUtils.Generator" Version="$GEN_VERSION" />
+              <DotNetToolReference Include="Mud.HttpUtils.JsonContextScaffolder" Version="$TOOL_VERSION" />
+            </ItemGroup>
+          </Project>
+          EOF
+          cat > "$TEST_DIR/Program.cs" << 'EOF'
+          namespace E2EProbe;
+          [Mud.HttpUtils.Attributes.HttpJsonSerializable]
+          public class ProbeDto { public string Name { get; set; } = ""; }
+          internal static class Program { private static void Main() { } }
+          EOF
+          dotnet restore "$TEST_DIR/E2E.csproj"
+          dotnet build "$TEST_DIR/E2E.csproj" -c Release
+          # 产物路径 obj/{conf}/GeneratedJsonContext/*.g.cs；targets 内工具 Exec 为 ContinueOnError=true 软失败，
+          # 故「断言产物存在且包含探测类型」是必要检查（软失败不得静默通过）
+          GCS=$(find "$TEST_DIR/obj" -name "*.g.cs" -path "*GeneratedJsonContext*")
+          if [ -z "$GCS" ] || ! grep -q "ProbeDto" $GCS; then
+            echo "::error::脚手架未在 PackageRef 模式下真实产出 Context"
+            exit 1
+          fi
+          rm -rf "$TEST_DIR"
+
   # ──────────────────────────────────────────────
   # 主项目及子包构建与发布
   # ──────────────────────────────────────────────

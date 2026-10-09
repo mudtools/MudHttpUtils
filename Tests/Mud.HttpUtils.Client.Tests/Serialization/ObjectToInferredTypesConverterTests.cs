@@ -84,4 +84,37 @@ public class ObjectToInferredTypesConverterTests
         json.Should().Contain("\"flag\":true");
         json.Should().Contain("\"nothing\":null");
     }
+
+    /// <summary>
+    /// [S-1] 未知 object 值退化为 <c>[unserializable:类型名]</c> 占位，不得经
+    /// <c>ToString()</c> 全文带出对象内部状态（可能绕过脱敏管线）。
+    /// </summary>
+    [Fact]
+    public void Extensions_UnknownObjectType_WritesTypePlaceholderWithoutInternalState()
+    {
+        var secret = new SecretPayload { Token = "s3cr3t-value", Count = 7 };
+
+        var details = new ProblemDetails
+        {
+            Extensions = new Dictionary<string, object?>
+            {
+                ["mystery"] = secret
+            }
+        };
+
+        var json = JsonSerializer.Serialize(details, ProblemDetailsJsonContext.Default.ProblemDetails);
+
+        json.Should().Contain("[unserializable:SecretPayload]",
+            "未知类型应退化为类型占位（保留可诊断性）");
+        json.Should().NotContain("s3cr3t-value", "对象内部字段值不得旁路输出");
+        json.Should().NotContain("Count", "不得带出字段名/结构原文");
+    }
+
+    private sealed class SecretPayload
+    {
+        public string Token { get; set; } = "";
+        public int Count { get; set; }
+
+        public override string ToString() => $"Token={Token}, Count={Count}";
+    }
 }
