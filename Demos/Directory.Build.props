@@ -5,10 +5,17 @@
 
 	<PropertyGroup>
 		<!-- 示例工程不是交付物：不生成 XML 文档。
-		     此前仅 HttpClientApiDemo / HttpClientApiPublicDemo / CommonClassLibrary 等
-		     逐个在 csproj 中设置 GenerateDocumentationFile=false，其余示例（含共享项工程
-		     CommonClassPubliceLibrary）继承根属性 true 并产生 CS1591。此处统一收敛。 -->
+		     此前各示例（含已合并删除的 CommonClassLibrary 族公共库壳工程）逐个或继承根属性
+		     true 产生 CS1591。此处统一收敛。ToolSurface 消费方的文档注释由生成器语法树回退
+	     读取（Extractors.GetDocSummary），不依赖此开关。 -->
 		<GenerateDocumentationFile>false</GenerateDocumentationFile>
+
+		<!-- 示例工程不是交付物：关闭 AOT/裁剪分析器（与 Tests/Directory.Build.props 同一先例）。
+		     示例常用反射式 JsonSerializer.Serialize(匿名对象)，在根属性全局 IsAotCompatible=true
+		     下必然产生 IL2026/IL3050，但对 demo 而言是噪音。 -->
+		<IsAotCompatible>false</IsAotCompatible>
+		<EnableAotAnalyzer>false</EnableAotAnalyzer>
+		<EnableTrimAnalyzer>false</EnableTrimAnalyzer>
 	</PropertyGroup>
 
 </Project>

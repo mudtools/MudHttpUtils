@@ -24,6 +24,13 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public class XmlContentSerializer : IHttpContentSerializer
 {
+    // P3-1：按类型缓存 XmlSerializer 实例。单参 new XmlSerializer(Type) 虽命中 .NET 运行时
+    // 内部的按类型缓存，但每调用仍付一次哈希查找、每类型首次仍生成动态序列化程序集
+    // （冷启动毫秒级毛刺）。实例级缓存与 SystemTextJsonContentSerializer 的 options
+    // 实例字段同口径——同一序列化器实例复用同一份缓存。
+    // 线程安全：XmlSerializer 的 Serialize/Deserialize 本身可并发调用，实例可跨线程复用。
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Type, XmlSerializer> _serializerCache = new();
+
     private readonly XmlContentSerializerSettings _settings;
 
     /// <summary>
@@ -39,6 +46,14 @@ public class XmlContentSerializer : IHttpContentSerializer
     {
         _settings = settings ?? new XmlContentSerializerSettings();
     }
+
+    /// <summary>
+    /// 取类型对应的 <see cref="XmlSerializer"/>（实例级缓存，P3-1）。
+    /// 全部使用单参 <c>new XmlSerializer(Type)</c> 构造（无 XmlRootAttribute 重载），
+    /// 按 Type 缓存语义安全。
+    /// </summary>
+    private XmlSerializer GetOrAddSerializer(Type type)
+        => _serializerCache.GetOrAdd(type, static t => new XmlSerializer(t));
 
     /// <inheritdoc/>
 #if NET7_0_OR_GREATER
@@ -65,7 +80,7 @@ public class XmlContentSerializer : IHttpContentSerializer
     /// </summary>
     private byte[] SerializeToBytes(object? item, Type type)
     {
-        var serializer = new XmlSerializer(type);
+        var serializer = GetOrAddSerializer(type);
         using var ms = new System.IO.MemoryStream();
         using var xmlWriter = XmlWriter.Create(ms, _settings.WriterSettings);
         serializer.Serialize(xmlWriter, item);
@@ -82,7 +97,7 @@ public class XmlContentSerializer : IHttpContentSerializer
     /// </summary>
     private string SerializeToString(object? item, Type type)
     {
-        var serializer = new XmlSerializer(type);
+        var serializer = GetOrAddSerializer(type);
         // [跨平台] StringWriter.NewLine 显式对齐 WriterSettings.NewLineChars，
         // 确保 XmlWriter 缩进换行（取自 NewLineChars）与编码感知 StringWriter 的行为一致。
         using var sw = new EncodingAwareStringWriter(_settings.WriterSettings.Encoding)
@@ -121,7 +136,7 @@ public class XmlContentSerializer : IHttpContentSerializer
 #else
         using var stream = await content.ReadAsStreamAsync().ConfigureAwait(false);
 #endif
-        var serializer = new XmlSerializer(typeof(T));
+        var serializer = GetOrAddSerializer(typeof(T));
         return (T?)serializer.Deserialize(stream);
     }
 
@@ -158,7 +173,7 @@ public class XmlContentSerializer : IHttpContentSerializer
 #endif
     public T? Deserialize<T>(string xml, object? options = null)
     {
-        var serializer = new XmlSerializer(typeof(T));
+        var serializer = GetOrAddSerializer(typeof(T));
         using var reader = new System.IO.StringReader(xml);
         return (T?)serializer.Deserialize(reader);
     }

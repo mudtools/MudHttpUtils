@@ -30,3 +30,71 @@ Mud.HttpUtils.Attributes.PayloadFieldFormat.ItemsWithAttributes = 4 -> Mud.HttpU
 Mud.HttpUtils.Attributes.PayloadFieldFormat.Text = 1 -> Mud.HttpUtils.Attributes.PayloadFieldFormat
 Mud.HttpUtils.Attributes.PayloadFieldFormat.Object = 5 -> Mud.HttpUtils.Attributes.PayloadFieldFormat
 Mud.HttpUtils.Attributes.PayloadFieldFormat.ItemsObject = 6 -> Mud.HttpUtils.Attributes.PayloadFieldFormat
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.SdkToolProfileAttribute(string! name) -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.BindingTypeName.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.BindingTypeName.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.CapabilityCatalogPropertyName.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.CapabilityCatalogPropertyName.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.ContractNamespace.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.ContractNamespace.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.DiagnosticCategory.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.DiagnosticCategory.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.DiagnosticPrefix.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.DiagnosticPrefix.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.GeneratedNamespace.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.GeneratedNamespace.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.GoldenFileName.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.GoldenFileName.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.GoldenUpdatePropertyName.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.GoldenUpdatePropertyName.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.GuidanceDirectory.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.GuidanceDirectory.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.InterfaceNameRegex.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.InterfaceNameRegex.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.Name.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.OutputWrapperNamespace.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.OutputWrapperNamespace.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.OutputWrapperTypeNames.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.OutputWrapperTypeNames.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.OwnerAssembly.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.OwnerAssembly.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.ParameterAttributeName.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.ParameterAttributeName.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.ProductPluralPrefix.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.ProductPluralPrefix.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.ProductPrefix.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.ProductPrefix.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.RegistrationNamespace.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.RegistrationNamespace.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.ResultTypeName.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.ResultTypeName.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.RiskEnumFullName.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.RiskEnumFullName.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.SchemaExtensionKey.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.SchemaExtensionKey.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.SdkInterfacePrefix.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.SdkInterfacePrefix.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.SdkNamespaceRoot.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.SdkNamespaceRoot.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.TokenKindMarkers.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.TokenKindMarkers.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.TokenKindStrategy.get -> Mud.HttpUtils.Attributes.TokenKindDerivationStrategy
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.TokenKindStrategy.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.ToolAttributeName.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.ToolAttributeName.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.ToolAttributeNamespace.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.ToolAttributeNamespace.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.ToolHandlerAttributeName.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.ToolHandlerAttributeName.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.ToolHandlerAttributeNamespace.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.ToolHandlerAttributeNamespace.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.ToolingDiagnosticCategory.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.ToolingDiagnosticCategory.set -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.WriteVerbKeywords.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.WriteVerbKeywords.set -> void
+Mud.HttpUtils.Attributes.TokenKindDerivationStrategy
+Mud.HttpUtils.Attributes.TokenKindDerivationStrategy.InfixMarker = 3 -> Mud.HttpUtils.Attributes.TokenKindDerivationStrategy
+Mud.HttpUtils.Attributes.TokenKindDerivationStrategy.NamePrefix = 1 -> Mud.HttpUtils.Attributes.TokenKindDerivationStrategy
+Mud.HttpUtils.Attributes.TokenKindDerivationStrategy.SuffixMarker = 2 -> Mud.HttpUtils.Attributes.TokenKindDerivationStrategy
+Mud.HttpUtils.Attributes.TokenKindDerivationStrategy.Unspecified = 0 -> Mud.HttpUtils.Attributes.TokenKindDerivationStrategy

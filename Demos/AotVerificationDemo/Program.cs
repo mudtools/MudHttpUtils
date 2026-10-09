@@ -75,6 +75,20 @@ public class Program
         Console.WriteLine($"[SCENE] {nameof(DemoOAuth2EndToEnd)}");
         await DemoOAuth2EndToEnd();
 
+        // ── TrimMode=full 专项验证场景（原 AotFullTrimVerificationDemo 并入）──
+        // 离线断言场景：任何失败均为非预期（断言内部直接抛出，经 RunFullTrimScenarioAsync 计入失败）。
+        // CI 在 TrimMode=full 矩阵维度下用 [SCENE] 标记断言这些场景确实执行（CI 场景清单含以下 5 项）。
+        Console.WriteLine($"[SCENE] JsonSerialization");
+        await RunFullTrimScenarioAsync("JsonSerialization", FullTrimScenarios.VerifyJsonSerializationAsync);
+        Console.WriteLine($"[SCENE] AotSafeMasker");
+        RunFullTrimScenario("AotSafeMasker", FullTrimScenarios.VerifyAotSafeMasker);
+        Console.WriteLine($"[SCENE] EncryptContent");
+        RunFullTrimScenario("EncryptContent", FullTrimScenarios.VerifyEncryptContent);
+        Console.WriteLine($"[SCENE] QueryParameters");
+        RunFullTrimScenario("QueryParameters", FullTrimScenarios.VerifyQueryParameters);
+        Console.WriteLine($"[SCENE] GeneratedContext");
+        await RunFullTrimScenarioAsync("GeneratedContext", FullTrimScenarios.VerifyGeneratedContextAsync);
+
         Console.WriteLine("\n=== AOT 验证示例完成 ===");
 
         // AOT_OK 门槛化：仅当所有非预期异常/断言失败计数为 0 时才输出成功标记，否则以退出码 1 结束。
@@ -91,6 +105,36 @@ public class Program
 
     /// <summary>非预期失败计数（0 才输出 AOT_OK）。</summary>
     private static int s_failed;
+
+    /// <summary>
+    /// 运行 FullTrim 离线场景（异步）：异常一律计入失败（离线断言无"无真实服务器"豁免）。
+    /// </summary>
+    private static async Task RunFullTrimScenarioAsync(string name, Func<Task> scenario)
+    {
+        try
+        {
+            await scenario().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            s_failed++;
+            Console.WriteLine($"  [FAIL] {name}: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>运行 FullTrim 离线场景（同步）：语义同 <see cref="RunFullTrimScenarioAsync"/>。</summary>
+    private static void RunFullTrimScenario(string name, Action scenario)
+    {
+        try
+        {
+            scenario();
+        }
+        catch (Exception ex)
+        {
+            s_failed++;
+            Console.WriteLine($"  [FAIL] {name}: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
 
     /// <summary>
     /// 处理场景中的异常：网络类异常（无真实服务器）属预期，不计入失败；

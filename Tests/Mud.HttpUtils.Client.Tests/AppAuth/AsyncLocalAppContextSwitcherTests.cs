@@ -230,6 +230,39 @@ public class AsyncLocalAppContextSwitcherTests
     }
 
     /// <summary>
+    /// 场景四（P2-3 回归，跨流释放 + 目标流 Current 为 null）：作用域逃逸到一个从未设置过
+    /// 应用上下文的异步流中释放时，不得把 previous 注入该流——否则该流后续请求会串到
+    /// previous 的应用（令牌、per-app 策略、缓存 scope 随之错位）。fail-closed：宁可残留 null。
+    /// </summary>
+    [Fact]
+    public async Task DisposeInForeignFlowWithNullCurrent_DoesNotInjectPrevious()
+    {
+        var appB = CreateTestContext("appB");
+        var appA = CreateTestContext("appA");
+
+        // 流 X：SwitchTo(appB) 后建立作用域（previous=appB），作用域逃逸给流 Y 释放。
+        IDisposable? escaped = null;
+        var flowX = Task.Run(() =>
+        {
+            _switcher.SwitchTo(appB);
+            escaped = _switcher.BeginScope(appA); // previous=appB
+        });
+        flowX.Wait();
+
+        // 流 Y：由测试主线程调度且主线程从未写入 _context（流 X 的写入不回流），
+        // 故流 Y 的 Current 为 null——正是「无关异步流」场景。
+        var observedAfterDispose = await Task.Run(() =>
+        {
+            _switcher.Current.Should().BeNull("流 Y 从未设置过应用上下文");
+            escaped!.Dispose();
+            return _switcher.Current;
+        });
+
+        observedAfterDispose.Should().BeNull(
+            "跨流释放不得向 Current 为 null 的无关异步流注入 previous 上下文（P2-3 fail-closed）");
+    }
+
+    /// <summary>
     /// 场景三：fire-and-forget 任务继承发起时的应用上下文（G7-11 声明行为，AsyncLocal 随 EC 流动）。
     /// </summary>
     [Fact]

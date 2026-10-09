@@ -481,6 +481,102 @@ namespace TestNamespace
 
     #endregion
 
+    #region P3-7 - 无 DI 工厂路径 AppResilienceResolver/AppManager 接线
+
+    [Fact]
+    public void Registration_WiresAppResilienceResolverAndAppManager()
+    {
+        // P3-7：无 DI 工厂路径此前硬编码 appResilienceResolver: null / appManager: null，
+        // 导致应用级弹性隔离与 UseApp/BeginScope 能力在 ForGenerated 下缺失。
+        // 生成工厂必须从 options 透传这两个可选服务（appManager 在 executor 与实现类构造共两处）。
+        var source = """
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi]
+                public interface IApi
+                {
+                    [Get("/users")]
+                    System.Threading.Tasks.Task<string> GetUsersAsync();
+                }
+            }
+            """;
+
+        var compilation = CSharpCompilation.Create(
+            "TestAssembly",
+            [CSharpSyntaxTree.ParseText(source)],
+            BasicReferenceAssemblies.GetReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var generator = new HttpInvokeRegistrationGenerator();
+        CSharpGeneratorDriver.Create(generator)
+            .RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
+
+        var generated = string.Join(
+            "\n",
+            outputCompilation.SyntaxTrees.Skip(1).Select(t => t.ToString()));
+
+        generated.Should().Contain("appResilienceResolver: options?.AppResilienceResolver",
+            "无 DI 工厂必须从 options 透传应用级弹性策略解析器");
+
+        // 生成文本同时包含 #if NET5_0_OR_GREATER 的 [ModuleInitializer] 与 #else 的
+        // RegisterAllFactories 两个注册路径（预处理指令保留在生成源码文本中），每条路径在
+        // executor 与实现类构造各接线一次 ⇒ 单接口共 4 处 appManager 接线。
+        var appManagerWires = generated.Split("appManager: options?.AppManager").Length - 1;
+        appManagerWires.Should().Be(4, "ModuleInitializer 与 RegisterAllFactories 两条注册路径 × executor/实现类两处构造均需接线 AppManager");
+    }
+
+    #endregion
+
+    #region P3-4 - REG002 诊断定位（分组名非法时携带接口 Location）
+
+    /// <summary>
+    /// P3-4：RegistryGroupName 非法时 HTTPCLIENTREG002 必须定位到接口声明（而非 Location.None）。
+    /// <para>
+    /// 可达路径为管线入口 ProcessInterface 的接口级校验（携带 interfaceSyntax.GetLocation()）；
+    /// 分组注册方法内的防御性再校验（原以 Location.None 上报）经本次修复同样携带首个归属接口的
+    /// Location——该分支在标准管线不可达（入口已过滤非法名），故经可达路径钉住「REG002 必带接口定位」契约。
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Registration_InvalidRegistryGroupName_LocatesAtInterfaceDeclaration()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi(RegistryGroupName = "1Bad-Group")]
+                public interface IOrderApi
+                {
+                    [Get("/orders")]
+                    System.Threading.Tasks.Task<string> GetOrdersAsync();
+                }
+            }
+            """;
+
+        var compilation = CSharpCompilation.Create(
+            "TestAssembly",
+            [CSharpSyntaxTree.ParseText(source)],
+            BasicReferenceAssemblies.GetReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var generator = new HttpInvokeRegistrationGenerator();
+        var driver = CSharpGeneratorDriver.Create(generator).RunGenerators(compilation);
+
+        var reg002 = driver.GetRunResult().Diagnostics
+            .Where(d => d.Id == "HTTPCLIENTREG002").ToList();
+
+        reg002.Should().ContainSingle("非法 RegistryGroupName 必须上报 HTTPCLIENTREG002");
+        var location = reg002.Single().Location;
+        location.IsInSource.Should().BeTrue("REG002 应携带接口声明的源码定位，而非 Location.None");
+        location.SourceTree!.GetText().ToString(location.SourceSpan)
+            .Should().Contain("IOrderApi", "REG002 应定位到问题接口声明，便于就地修复");
+    }
+
+    #endregion
+
     #region F14 - ref/out/params/指针参数校验
 
     [Theory]
@@ -785,6 +881,116 @@ namespace TestNamespace
         hintNames.Count(h => h.Contains("Foo", StringComparison.Ordinal)).Should().Be(2,
             "两个 IFoo 嵌套接口（B_C 内与 B→C 内）必须各自生成一次，不得其一被覆盖");
     }
+
+    /// <summary>
+    /// [P3-8] 嵌套接口 hintName 跨链元数碰撞守卫。
+    /// <para>
+    /// <c>class A&lt;T&gt;{class B{interface IFoo}}</c> 与 <c>class A{class B&lt;T&gt;{interface IFoo}}</c>
+    /// 同命名空间共存时，仅用名称的包含链 parts 均为 ["A","B"] ⇒ 旧实现 hintName 同为 "A+B_Foo"
+    /// ⇒ CS8785 产物覆盖。修复后包含类型名纳入各自泛型元数（元数据名风格），
+    /// 二者分别为 "A`1+B_Foo" 与 "A+B`1_Foo"。
+    /// </para>
+    /// <para>
+    /// 注：两接口的生成实现类名同为 Foo（{ns}.Generated 平铺命名空间）⇒ CS0101 类名重复。
+    /// 此为比元数更宽的存量问题（同一命名空间下任意不同包含类型中的同名嵌套接口均碰撞，与元数无关，
+    /// GEN-17 场景亦然），不在本项（hintName 唯一化）修复范围；故不做全量编译零错断言，
+    /// 以 hintName 双份完整且可区分为本项守卫目标。
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void NestedInterface_CrossChainArityCollision()
+    {
+        var source = @"
+using Mud.HttpUtils;
+using Mud.HttpUtils.Attributes;
+using System.Threading.Tasks;
+
+namespace TestNamespace
+{
+    // 链一：泛型包含类型 A<T>，非泛型 B
+    public class A<T>
+    {
+        public class B
+        {
+            [HttpClientApi]
+            public interface IFoo { [Get(""/x"")] Task<string> X(); }
+        }
+    }
+
+    // 链二：非泛型 A，泛型包含类型 B<T>——与链一同名共存即构成跨链碰撞
+    public class A
+    {
+        public class B<T>
+        {
+            [HttpClientApi]
+            public interface IFoo { [Get(""/y"")] Task<string> Y(); }
+        }
+    }
+}";
+
+        var driver = RunGenerator(source);
+        var diagnostics = driver.GetRunResult().Diagnostics;
+
+        diagnostics.Should().NotContain(d => d.Id == "CS8785",
+            "跨链同名包含类型不得令 hintName 冲突（否则 CS8785 全量产物消失）");
+
+        var hintNames = driver.GetRunResult().Results
+            .SelectMany(r => r.GeneratedSources.Select(s => s.HintName))
+            .ToArray();
+
+        hintNames.Should().Contain(h => h.Contains("A`1+B_Foo", StringComparison.Ordinal),
+            "链一（A<T>{B{IFoo}}）应产出带 A`1+B_Foo 的 hintName（包含类型元数入名）");
+        hintNames.Should().Contain(h => h.Contains("A+B`1_Foo", StringComparison.Ordinal),
+            "链二（A{B<T>{IFoo}}）应产出带 A+B`1_Foo 的 hintName，与链一区分");
+        hintNames.Count(h => h.Contains("Foo", StringComparison.Ordinal)).Should().Be(2,
+            "两条链的 IFoo 必须各自生成一次，不得其一被覆盖");
+    }
+
+    #region HTTPCLIENT038 - 接口符号解析失败兜底提示（P2-5）
+
+    /// <summary>
+    /// P2-5：HTTPCLIENT038 发射契约。
+    /// <para>
+    /// 触发分支（<c>model.Symbol is not INamedTypeSymbol</c>）在标准 FAWM 管线下不可达：
+    /// FAWM 对 GetDeclaredSymbol 为 null 的声明在 transform 前即跳过，且驱动级实测缺接口名、
+    /// 缺右括号等畸形声明均得到 Roslyn 合成的错误符号（如缺名接口生成 NullOrEmptyInterfaceName）。
+    /// 又因 GeneratorAttributeSyntaxContext 密封、SourceProductionContext 不可外部构造，
+    /// 无法注入 null-Symbol 输入跑驱动级测试——故按报告验证方式「单测构造 model.Symbol == null
+    /// 输入」的单元级等价物，直接断言发射点纯函数的 ID / 级别 / 消息与定位。
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void InterfaceSymbolUnresolved_ReportsInfoDiagnosticWithInterfaceName()
+    {
+        var decl = CSharpSyntaxTree.ParseText("""
+            using Mud.HttpUtils.Attributes;
+            namespace TestNamespace
+            {
+                [HttpClientApi]
+                public interface ITestApi
+                {
+                    [Get("/ping")]
+                    Task<string> PingAsync();
+                }
+            }
+            """).GetRoot().DescendantNodes().OfType<InterfaceDeclarationSyntax>().Single();
+
+        var diagnostic = HttpInvokeClassSourceGenerator.InterfaceSymbolUnresolvedDiagnostic(decl);
+
+        diagnostic.Id.Should().Be("HTTPCLIENT038");
+        diagnostic.Severity.Should().Be(DiagnosticSeverity.Info,
+            "语法不完整属瞬时状态，自愈后提示自动消失，不应阻断构建");
+        diagnostic.GetMessage().Should().Contain("ITestApi",
+            "报告修复方向要求消息含接口名");
+        diagnostic.GetMessage().Should().Contain("无法解析",
+            "报告修复方向要求消息说明根因（符号解析失败）");
+        diagnostic.Location.SourceTree.Should().NotBeNull();
+        diagnostic.Location.SourceTree!.GetText().ToString(diagnostic.Location.SourceSpan)
+            .Should().Contain("interface ITestApi",
+                "报告点须定位到接口声明，便于用户就地定位语法缺口");
+    }
+
+    #endregion
 
     /// <summary>
     /// 捕获 Trace.WriteLine 的输出内容，用于验证 GeneratorDebugLogger.LogError 的行为。

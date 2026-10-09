@@ -58,6 +58,26 @@ public class XmlContentSerializerTests
     }
 
     [Fact]
+    public void SerializerCache_ReusesInstancePerType()
+    {
+        // P3-1：XmlSerializer 实例级缓存契约——同类型复用同一实例，不同类型各占一项。
+        // 2 个类型各经历 Serialize + Deserialize 两次 GetOrAddSerializer 调用，缓存应恰有 2 项。
+        var serializer = new XmlContentSerializer();
+
+        var orderXml = serializer.Serialize(new Order { Id = 1, Name = "a" });
+        var itemXml = serializer.Serialize(new AliasedItem { ProductCode = "b" });
+        serializer.Deserialize<Order>(orderXml);
+        serializer.Deserialize<AliasedItem>(itemXml);
+
+        var cacheField = typeof(XmlContentSerializer).GetField("_serializerCache", BindingFlags.NonPublic | BindingFlags.Instance);
+        cacheField.Should().NotBeNull("P3-1 缓存字段是性能契约的一部分（字段名变更须同步本测试）");
+        var cache = cacheField!.GetValue(serializer)
+            .Should().BeAssignableTo<System.Collections.Concurrent.ConcurrentDictionary<Type, XmlSerializer>>().Subject;
+        cache.Count.Should().Be(2,
+            "Order 与 AliasedItem 各缓存一个 XmlSerializer 实例——4 次调用只应构造 2 个实例");
+    }
+
+    [Fact]
     public void ToHttpContent_NullItem_ReturnsNull()
     {
         var serializer = new XmlContentSerializer();

@@ -56,12 +56,11 @@ public class AsyncLocalAppContextSwitcher : IAppContextHolder
                 return;
 
             // B8：仅当环境上下文仍等于本作用域写入的值时才回滚。
-            // 跨执行上下文释放（如 Task.Run(() => scope.Dispose())）时不会把"他人的当前值"改写成陈旧值，
-            // 同时避免把 ctxA 的 previous 写入 ctxB。代价是该场景下 ctxA 的值不再被自动还原，
-            // 由宿主显式 UseDefaultApp/BeginScope 收敛。
+            // 跨执行上下文释放（如 Task.Run(() => scope.Dispose())）时不会把"他人的当前值"改写成陈旧值；
+            // 目标流 Current 为 null（从未设置过上下文）时同样不回写——把 previous 注入无关异步流
+            // 会让其后续请求串到 previous 的应用（令牌、per-app 策略、缓存 scope 随之错位），
+            // 多租户隔离一律 fail-closed：宁可残留 null，由宿主显式 UseDefaultApp/BeginScope 收敛。
             if (ReferenceEquals(_switcher._context.Value, _owner))
-                _switcher._context.Value = _previous;
-            else if (_switcher._context.Value is null)
                 _switcher._context.Value = _previous;
         }
     }

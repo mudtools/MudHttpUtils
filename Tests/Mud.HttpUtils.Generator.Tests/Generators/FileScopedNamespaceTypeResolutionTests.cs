@@ -136,7 +136,7 @@ public class FileScopedNamespaceTypeResolutionTests
     public void FindTypeInSourceNamespaces_MustEnumerateBaseNamespaceDeclarations()
     {
         var source = File.ReadAllText(TestRepoRoot.PathOf(
-            "Mud.HttpUtils.Generator", "Generators", "Implementation", "InterfaceImplementationGenerator.cs"));
+            "Mud.HttpUtils.Generator", "HttpInvoke", "Implementation", "InterfaceImplementationGenerator.cs"));
 
         source.Should().Contain("BaseNamespaceDeclarationSyntax",
             "快速路径命名空间枚举必须使用 BaseNamespaceDeclarationSyntax（块级 + 文件级），" +

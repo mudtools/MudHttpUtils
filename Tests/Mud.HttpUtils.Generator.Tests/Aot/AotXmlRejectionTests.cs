@@ -443,4 +443,204 @@ public class AotXmlRejectionTests
         stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(30),
             $"预门控后 100 个纯 JSON 方法的分析应保持轻量，实际耗时 {stopwatch.Elapsed}");
     }
+
+    // ───────────────────────── F-2：基接口继承方法的方法级 Xml 补扫 ─────────────────────────
+
+    /// <summary>
+    /// [F-2 双编译夹具] 创建辅助编译（被主编译以引用程序集形态引用），声明含方法级 Xml 的基接口。
+    /// </summary>
+    private static Compilation CreateAuxCompilationWithXmlBaseApi()
+    {
+        const string auxSource = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace AuxNamespace
+            {
+                public interface IXmlBaseApi
+                {
+                    [Post("/api/base")]
+                    [SerializationMethod(SerializationMethod.Xml)]
+                    Task<string> PostBaseAsync();
+                }
+            }
+            """;
+        var syntaxTree = CSharpSyntaxTree.ParseText(auxSource);
+        return CSharpCompilation.Create(
+            "AuxAssembly",
+            new[] { syntaxTree },
+            BasicReferenceAssemblies.GetReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    private static Compilation CreateCompilationReferencing(string source, Compilation referenced)
+    {
+        var references = BasicReferenceAssemblies.GetReferences();
+        references.Add(referenced.ToMetadataReference());
+        var syntaxTree = CSharpSyntaxTree.ParseText(source);
+        return CSharpCompilation.Create(
+            "TestAssembly",
+            new[] { syntaxTree },
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    /// <summary>
+    /// [F-2 正例] 基接口位于<b>引用程序集</b>、方法级 <c>[SerializationMethod(Xml)]</c> 被派生
+    /// [HttpClientApi] 接口继承：生成器经 GetAllMethods(includeParentInterfaces: true) 纳入继承方法
+    /// 并真实走 XML 管线（AOT 下运行即抛 PlatformNotSupportedException），分析器必须报 AOT007。
+    /// </summary>
+    [Fact]
+    public void InheritedXmlMethod_FromReferencedAssembly_ReportsAot007()
+    {
+        var aux = CreateAuxCompilationWithXmlBaseApi();
+        const string mainSource = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi("https://api.example.com")]
+                public interface IXmlApi : AuxNamespace.IXmlBaseApi
+                {
+                }
+            }
+            """;
+        var compilation = CreateCompilationReferencing(mainSource, aux);
+
+        var aot007 = Mud.HttpUtils.Analyzers.AotXmlRejectionAnalyzer
+            .Analyze(compilation, isAotContext: true, CancellationToken.None)
+            .Where(d => d.Id == "AOT007").ToList();
+
+        aot007.Should().ContainSingle("跨程序集继承方法外层循环不可达，必须由 F-2 补扫捕获");
+        aot007[0].GetMessage().Should().Contain("IXmlApi").And.Contain("PostBaseAsync",
+            "诊断消息需指名派生接口与继承方法（两参数消息格式）");
+    }
+
+    /// <summary>
+    /// [F-2 正例·同编译] 基接口与派生接口同编译、基接口<b>未标注</b> [HttpClientApi]：
+    /// 外层循环不会访问基接口（锁定勘误 ①），F-2 补扫必须报 AOT007。
+    /// </summary>
+    [Fact]
+    public void InheritedXmlMethod_SameCompilationBaseWithoutHttpClientApi_ReportsAot007()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                public interface IXmlBaseApi
+                {
+                    [Post("/api/base")]
+                    [SerializationMethod(SerializationMethod.Xml)]
+                    Task<string> PostBaseAsync();
+                }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface IXmlApi : IXmlBaseApi
+                {
+                }
+            }
+            """;
+
+        var aot007 = AnalyzeAot007(source);
+
+        aot007.Should().ContainSingle("同编译但未标注 [HttpClientApi] 的基接口外层循环不可达，补扫必须捕获");
+        aot007[0].GetMessage().Should().Contain("IXmlApi").And.Contain("PostBaseAsync");
+        aot007[0].Location.Should().NotBe(Location.None);
+    }
+
+    /// <summary>
+    /// [F-2 反例·防误报回归锁] 基接口为<b>接口级</b> <c>[SerializationMethod(Xml)]</c>、方法无方法级特性
+    /// → 不报。生成器不继承接口级特性（G-1 勘误），继承方法运行时实际走 Json、无崩溃风险，
+    /// 此处若报 AOT007 即误导性误报。
+    /// </summary>
+    [Fact]
+    public void InheritedInterfaceLevelXml_DoesNotReport()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [SerializationMethod(SerializationMethod.Xml)]
+                public interface IXmlBaseApi
+                {
+                    [Post("/api/base")]
+                    Task<string> PostBaseAsync();
+                }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface IXmlApi : IXmlBaseApi
+                {
+                }
+            }
+            """;
+
+        AnalyzeAot007(source).Should().BeEmpty(
+            "接口级 Xml 不被生成器继承（G-1），继承方法运行时走 Json，不应报 AOT007");
+    }
+
+    /// <summary>[F-2 反例] 基接口方法级 <c>[SerializationMethod(Json)]</c> → 不报。</summary>
+    [Fact]
+    public void InheritedJsonMethod_DoesNotReport()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                public interface IBaseApi
+                {
+                    [Post("/api/base")]
+                    [SerializationMethod(SerializationMethod.Json)]
+                    Task<string> PostBaseAsync();
+                }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface IXmlApi : IBaseApi
+                {
+                }
+            }
+            """;
+
+        AnalyzeAot007(source).Should().BeEmpty("Json 方法在 AOT 下安全，不应报 AOT007");
+    }
+
+    /// <summary>
+    /// [F-2 反例·防重复] 基接口自身带 [HttpClientApi] 且方法级 Xml：基接口被外层循环独立访问并
+    /// 报告一轮，F-2 补扫必须跳过（同编译 + 自身带 [HttpClientApi]），全程仅一条 AOT007。
+    /// </summary>
+    [Fact]
+    public void SameCompilationBaseWithHttpClientApi_NoDuplicate()
+    {
+        const string source = """
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi("https://api.example.com")]
+                public interface IXmlBaseApi
+                {
+                    [Post("/api/base")]
+                    [SerializationMethod(SerializationMethod.Xml)]
+                    Task<string> PostBaseAsync();
+                }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface IXmlApi : IXmlBaseApi
+                {
+                }
+            }
+            """;
+
+        var aot007 = AnalyzeAot007(source);
+
+        aot007.Should().ContainSingle("基接口自身一轮报告，派生接口补扫跳过，不得重复");
+        aot007[0].GetMessage().Should().Contain("IXmlBaseApi", "唯一一条诊断应来自基接口自身的声明成员循环");
+    }
 }

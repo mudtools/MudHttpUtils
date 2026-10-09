@@ -185,4 +185,47 @@ public sealed class EnhancedHttpClientOptions : IEnhancedClientConfig
     /// </remarks>
     public System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver? JsonTypeInfoResolver { get; set; }
 #endif
+
+    /// <summary>
+    /// F1：<b>全字段浅拷贝</b>（含 <see cref="Logger"/>、拦截器、<see cref="SensitiveDataMasker"/>、
+    /// <see cref="AppAccessAuthorizer"/> 等接口属性），供消费方在包装既有客户端时复制配置。
+    /// </summary>
+    /// <returns>新的 <see cref="EnhancedHttpClientOptions"/> 实例；集合/接口属性与原实例<b>共享同一引用</b>（浅拷贝）。</returns>
+    /// <remarks>
+    /// <para>
+    /// <b>与 internal <c>EnhancedHttpClientOptionsCloner.Clone</c> 刻意不同，勿混用</b>：
+    /// 后者的用途是 DI 路径的"每客户端独立实例"，因此<b>刻意不拷贝</b>那 5 个"由 DI 解析后覆盖"的属性
+    /// （见 <c>EnhancedHttpClientOptionsCloner</c> 的维护约束注释）。
+    /// 本方法的用途是消费方**复用既有配置**，必须<b>全字段</b>拷贝，故为独立实现。
+    /// </para>
+    /// <para>
+    /// <b>维护约束</b>：本类新增可写属性时，必须同步更新本方法<b>与</b>
+    /// <c>EnhancedHttpClientOptionsCloner</c>（并归入 <c>CFG01_Cloner_CoversAllWritableProperties</c> 的两份清单之一）。
+    /// </para>
+    /// </remarks>
+    public EnhancedHttpClientOptions Clone() => new()
+    {
+        // DI 解析面（Cloner 刻意不拷贝，本方法必须拷贝）
+        Logger = Logger,
+        RequestInterceptors = RequestInterceptors,
+        ResponseInterceptors = ResponseInterceptors,
+        SensitiveDataMasker = SensitiveDataMasker,
+        AppAccessAuthorizer = AppAccessAuthorizer,
+        // 运行期配置面
+        AllowCustomBaseUrls = AllowCustomBaseUrls,
+        RequestBodySerialization = RequestBodySerialization,
+        ExceptionRedactor = ExceptionRedactor,
+        MaxExceptionContentLength = MaxExceptionContentLength,
+        CaptureRequestContent = CaptureRequestContent,
+        UrlResolution = UrlResolution,
+        MaxSuccessResponseBytes = MaxSuccessResponseBytes,
+        HttpRequestMessageOptions = HttpRequestMessageOptions,
+#if NET6_0_OR_GREATER
+        HttpVersion = HttpVersion,
+        HttpVersionPolicy = HttpVersionPolicy,
+#endif
+#if NET8_0_OR_GREATER
+        JsonTypeInfoResolver = JsonTypeInfoResolver,
+#endif
+    };
 }

@@ -185,8 +185,6 @@ jobs:
           - Demos/HttpClientApiPublicDemo/HttpClientApiPublicDemo.csproj
           - Demos/HttpClientDemo/HttpClientDemo.csproj
           - Demos/ResilienceDemo/ResilienceDemo.csproj
-          - Demos/CommonClassLibrary/CommonClassLibrary.csproj
-          - Demos/CommonClassPubliceLibrary/CommonClassPubliceLibrary.csproj
 
     steps:
       - name: Checkout
@@ -209,15 +207,29 @@ jobs:
   # Native AOT 发布验证
   # ──────────────────────────────────────────────
   aot-publish:
-    name: AOT 发布验证 (${{ matrix.rid }})
+    name: AOT 发布验证 (${{ matrix.rid }}-${{ matrix.trim_mode }})
     strategy:
       fail-fast: false
       matrix:
+        # TrimMode 是矩阵维度：partial 覆盖真实 HTTP 端到端场景的默认裁剪路径；
+        # full（[T9]）验证完整裁剪下无遗漏反射依赖，并关闭 TrimmerSingleWarn 暴露全部裁剪告警。
+        # FullTrim 专项离线场景已并入 AotVerificationDemo（FullTrimScenarios.cs），
+        # 两种 trim 模式都运行全部场景。
         include:
           - os: ubuntu-latest
             rid: linux-x64
+            trim_mode: partial
+          - os: ubuntu-latest
+            rid: linux-x64
+            trim_mode: full
+            trimmer_args: -p:TrimMode=full -p:TrimmerSingleWarn=false
           - os: windows-latest
             rid: win-x64
+            trim_mode: partial
+          - os: windows-latest
+            rid: win-x64
+            trim_mode: full
+            trimmer_args: -p:TrimMode=full -p:TrimmerSingleWarn=false
 
     runs-on: ${{ matrix.os }}
 
@@ -242,18 +254,10 @@ jobs:
           sudo apt-get install -y clang zlib1g-dev
 
       - name: Publish AOT (net10.0)
-        run: dotnet publish Demos/AotVerificationDemo/AotVerificationDemo.csproj -c Release -f net10.0 -r ${{ matrix.rid }} -p:AotStrictMode=true
+        run: dotnet publish Demos/AotVerificationDemo/AotVerificationDemo.csproj -c Release -f net10.0 -r ${{ matrix.rid }} -p:AotStrictMode=true ${{ matrix.trimmer_args }}
 
       - name: Publish AOT (net8.0)
-        run: dotnet publish Demos/AotVerificationDemo/AotVerificationDemo.csproj -c Release -f net8.0 -r ${{ matrix.rid }} -p:AotStrictMode=true
-
-      # [T9 修复] TrimMode=full 纳入 CI 硬门禁：验证完整裁剪模式下无遗漏的反射依赖。
-      - name: Publish AOT FullTrim (net10.0)
-        run: dotnet publish Demos/AotFullTrimVerificationDemo/AotFullTrimVerificationDemo.csproj -c Release -f net10.0 -r ${{ matrix.rid }} -p:AotStrictMode=true
-
-      # [P2-4] FullTrim 补 net8.0：net8/net10 裁剪器行为有差异，net8 是当前 LTS 主力。
-      - name: Publish AOT FullTrim (net8.0)
-        run: dotnet publish Demos/AotFullTrimVerificationDemo/AotFullTrimVerificationDemo.csproj -c Release -f net8.0 -r ${{ matrix.rid }} -p:AotStrictMode=true
+        run: dotnet publish Demos/AotVerificationDemo/AotVerificationDemo.csproj -c Release -f net8.0 -r ${{ matrix.rid }} -p:AotStrictMode=true ${{ matrix.trimmer_args }}
 
       - name: Run AOT binary (net10.0) and verify AOT_OK
         shell: bash
@@ -273,11 +277,12 @@ jobs:
             # [修复] 原断言使用 Program.cs 中的方法名（Demo*），但 Demo 输出从未打印方法名 →
             # 断言恒失败。现 Demo 在每个场景前打印 ASCII 标记行 "[SCENE] {方法名}"，此处按其断言
             # （grep -F 逐字匹配，避免 [QueryMap] 之类被当作正则字符类）。
-            for SCENE in "DemoResponseTypeWrapping" "DemoComplexQueryJsonSerialization" "DemoQueryMapFeatureCoverage" "DemoSensitiveDataMasker" "DemoPolymorphismRoundTrip"; do
+            # 清单含 FullTrim 专项离线场景（FullTrimScenarios.cs，工程合并后两种 trim 模式都运行）。
+            for SCENE in "DemoResponseTypeWrapping" "DemoComplexQueryJsonSerialization" "DemoQueryMapFeatureCoverage" "DemoSensitiveDataMasker" "DemoPolymorphismRoundTrip" "JsonSerialization" "AotSafeMasker" "EncryptContent" "QueryParameters" "GeneratedContext"; do
               if grep -Fq "[SCENE] $SCENE" <<< "$OUTPUT"; then
-                echo "✓ Scene $SCENE executed (net10.0)"
+                echo "✓ Scene $SCENE executed (net10.0, ${{ matrix.trim_mode }})"
               else
-                echo "✗ Scene $SCENE NOT found in output (net10.0)"
+                echo "✗ Scene $SCENE NOT found in output (net10.0, ${{ matrix.trim_mode }})"
                 exit 1
               fi
             done
@@ -300,68 +305,11 @@ jobs:
               exit 1
             fi
             # [v2.4 §1.4 + AOT 体系修复] 关键场景硬门禁断言（说明见 net10.0 步骤）
-            for SCENE in "DemoResponseTypeWrapping" "DemoComplexQueryJsonSerialization" "DemoQueryMapFeatureCoverage" "DemoSensitiveDataMasker" "DemoPolymorphismRoundTrip"; do
+            for SCENE in "DemoResponseTypeWrapping" "DemoComplexQueryJsonSerialization" "DemoQueryMapFeatureCoverage" "DemoSensitiveDataMasker" "DemoPolymorphismRoundTrip" "JsonSerialization" "AotSafeMasker" "EncryptContent" "QueryParameters" "GeneratedContext"; do
               if grep -Fq "[SCENE] $SCENE" <<< "$OUTPUT"; then
-                echo "✓ Scene $SCENE executed (net8.0)"
+                echo "✓ Scene $SCENE executed (net8.0, ${{ matrix.trim_mode }})"
               else
-                echo "✗ Scene $SCENE NOT found in output (net8.0)"
-                exit 1
-              fi
-            done
-          else
-            echo "Binary not found at $BIN_PATH"
-            exit 1
-          fi
-
-      # [T9 修复] 运行 FullTrim 验证二进制并断言 AOT_OK
-      - name: Run AOT FullTrim binary and verify AOT_OK
-        shell: bash
-        run: |
-          BIN_PATH="Demos/bin/Release/net10.0/${{ matrix.rid }}/publish/AotFullTrimVerificationDemo"
-          if [ -f "$BIN_PATH" ]; then
-            OUTPUT=$("$BIN_PATH" 2>&1 || true)
-            echo "$OUTPUT"
-            if grep -q "AOT_OK" <<< "$OUTPUT"; then
-              echo "✓ AOT FullTrim verification passed (net10.0)"
-            else
-              echo "✗ FullTrim verification FAILED - AOT_OK not found in output"
-              exit 1
-            fi
-            # [T10 修复 + AOT 体系修复] 关键场景硬门禁断言（含场景 3 去虚化后的 EncryptContent round-trip）。
-            # 场景标识已改为 ASCII（RunScenarioAsync 打印 "[SCENE] {id}"）：原断言用中文场景名且
-            # 只是在失败分支才打印，断言方向与实现相反 → 门禁必然红。
-            for SCENE in "JsonSerialization" "AotSafeMasker" "EncryptContent" "QueryParameters" "GeneratedContext"; do
-              if grep -Fq "[SCENE] $SCENE" <<< "$OUTPUT"; then
-                echo "✓ Scene $SCENE executed (FullTrim)"
-              else
-                echo "✗ Scene $SCENE NOT found in output (FullTrim)"
-                exit 1
-              fi
-            done
-          else
-            echo "Binary not found at $BIN_PATH"
-            exit 1
-          fi
-
-      # [P2-4] 运行 FullTrim net8.0 验证二进制并断言 AOT_OK
-      - name: Run AOT FullTrim binary (net8.0) and verify AOT_OK
-        shell: bash
-        run: |
-          BIN_PATH="Demos/bin/Release/net8.0/${{ matrix.rid }}/publish/AotFullTrimVerificationDemo"
-          if [ -f "$BIN_PATH" ]; then
-            OUTPUT=$("$BIN_PATH" 2>&1 || true)
-            echo "$OUTPUT"
-            if grep -q "AOT_OK" <<< "$OUTPUT"; then
-              echo "✓ AOT FullTrim verification passed (net8.0)"
-            else
-              echo "✗ FullTrim verification FAILED (net8.0) - AOT_OK not found in output"
-              exit 1
-            fi
-            for SCENE in "JsonSerialization" "AotSafeMasker" "EncryptContent" "QueryParameters" "GeneratedContext"; do
-              if grep -Fq "[SCENE] $SCENE" <<< "$OUTPUT"; then
-                echo "✓ Scene $SCENE executed (FullTrim net8.0)"
-              else
-                echo "✗ Scene $SCENE NOT found in output (FullTrim net8.0)"
+                echo "✗ Scene $SCENE NOT found in output (net8.0, ${{ matrix.trim_mode }})"
                 exit 1
               fi
             done
@@ -723,6 +671,51 @@ jobs:
             echo "Binary not found at $BIN_PATH"
             exit 1
           fi
+
+      # [T-1] 脚手架在真实 PackageRef 消费方端到端激活验证（正常 restore，非 --no-restore）
+      # [T-1 勘误] 版本从本作业 artifacts 实际 nupkg 提取注入（勿用 Version="*"，与 §4 风险注记一致）
+      - name: End-to-end scaffolder activation (PackageRef)
+        shell: bash
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          TEST_DIR="$WORKSPACE/.tmp-scaffolder-e2e"
+          rm -rf "$TEST_DIR"; mkdir -p "$TEST_DIR"
+          ATTRS_VERSION="$(ls "$WORKSPACE"/artifacts/Mud.HttpUtils.Attributes.*.nupkg | head -1 | sed 's/.*Attributes\.\(.*\)\.nupkg/\1/')"
+          GEN_VERSION="$(ls "$WORKSPACE"/artifacts/Mud.HttpUtils.Generator.*.nupkg | head -1 | sed 's/.*Generator\.\(.*\)\.nupkg/\1/')"
+          TOOL_VERSION="$(ls "$WORKSPACE"/artifacts/Mud.HttpUtils.JsonContextScaffolder.*.nupkg | head -1 | sed 's/.*Scaffolder\.\(.*\)\.nupkg/\1/')"
+          cat > "$TEST_DIR/E2E.csproj" << EOF
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net8.0</TargetFramework>
+              <PublishAot>true</PublishAot>   <!-- Attributes 包内 build props 据此置 MudEnableJsonContextScaffolder=true（targets L41） -->
+            </PropertyGroup>
+            <ItemGroup>
+              <!-- [T-1 勘误] Generator 用普通 PackageReference（对齐 AotPackageRefDemo.csproj）：
+                   包内 build props 自动接线分析器，勿用 OutputItemType="Analyzer" -->
+              <PackageReference Include="Mud.HttpUtils.Attributes" Version="$ATTRS_VERSION" />
+              <PackageReference Include="Mud.HttpUtils.Generator" Version="$GEN_VERSION" />
+              <DotNetToolReference Include="Mud.HttpUtils.JsonContextScaffolder" Version="$TOOL_VERSION" />
+            </ItemGroup>
+          </Project>
+          EOF
+          cat > "$TEST_DIR/Program.cs" << 'EOF'
+          namespace E2EProbe;
+          [Mud.HttpUtils.Attributes.HttpJsonSerializable]
+          public class ProbeDto { public string Name { get; set; } = ""; }
+          internal static class Program { private static void Main() { } }
+          EOF
+          dotnet restore "$TEST_DIR/E2E.csproj"
+          dotnet build "$TEST_DIR/E2E.csproj" -c Release
+          # 产物路径 obj/{conf}/GeneratedJsonContext/*.g.cs；targets 内工具 Exec 为 ContinueOnError=true 软失败，
+          # 故「断言产物存在且包含探测类型」是必要检查（软失败不得静默通过）
+          GCS=$(find "$TEST_DIR/obj" -name "*.g.cs" -path "*GeneratedJsonContext*")
+          if [ -z "$GCS" ] || ! grep -q "ProbeDto" $GCS; then
+            echo "::error::脚手架未在 PackageRef 模式下真实产出 Context"
+            exit 1
+          fi
+          rm -rf "$TEST_DIR"
 
   # ──────────────────────────────────────────────
   # 主项目及子包构建与发布

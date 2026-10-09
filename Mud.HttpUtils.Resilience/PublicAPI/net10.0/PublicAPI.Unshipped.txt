@@ -1,3 +1,5 @@
-﻿#nullable enable
+#nullable enable
 Mud.HttpUtils.Resilience.ResilienceOptions.TimeoutStrategy.get -> Polly.Timeout.TimeoutStrategy
 Mud.HttpUtils.Resilience.ResilienceOptions.TimeoutStrategy.set -> void
+#nullable enable
+const Mud.HttpUtils.Resilience.ResilienceConstants.AppKeyPropertyKey = "__Mud_HttpUtils_AppKey" -> string!

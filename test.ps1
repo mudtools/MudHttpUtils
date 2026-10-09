@@ -1,4 +1,4 @@
-﻿# -----------------------------------------------------------------------
+# -----------------------------------------------------------------------
 #  Mud.HttpUtils 测试脚本
 #  用法: .\test.ps1 [配置] [过滤器] [-AOT] [-AotStrictMode] [-FullTrim] [-PackageRef]
 #  示例: .\test.ps1 Debug
@@ -129,7 +129,9 @@ if ($AOT) {
         @{ Name = "AotVerificationDemo"; Path = "Demos/AotVerificationDemo/AotVerificationDemo.csproj" }
     )
     if ($FullTrim) {
-        $demoList += @{ Name = "AotFullTrimVerificationDemo"; Path = "Demos/AotFullTrimVerificationDemo/AotFullTrimVerificationDemo.csproj" }
+        # [T9] TrimMode=full 验证：FullTrim 专项离线场景已并入 AotVerificationDemo（FullTrimScenarios.cs），
+        #     此处以 -p:TrimMode=full -p:TrimmerSingleWarn=false 再次发布并运行同一 Demo。
+        $demoList += @{ Name = "AotVerificationDemo"; Path = "Demos/AotVerificationDemo/AotVerificationDemo.csproj"; ExtraProps = @("-p:TrimMode=full", "-p:TrimmerSingleWarn=false"); Label = "TrimMode=full" }
     }
     if ($PackageRef) {
         Write-Host "[INFO] -PackageRef 需先执行 dotnet pack 生成 NuGet 包到 artifacts/。" -ForegroundColor DarkGray
@@ -156,13 +158,15 @@ if ($AOT) {
         }
 
         foreach ($tfm in $tfmList) {
-            Write-Host "发布 AOT: $demoName ($tfm)..." -ForegroundColor Yellow
+            $label = if ($demo.Label) { " [$($demo.Label)]" } else { "" }
+            Write-Host "发布 AOT: $demoName$label ($tfm)..." -ForegroundColor Yellow
 
             $publishArgs = @("publish", $demoCsproj, "-c", "Release", "-f", $tfm, "-r", $Rid) + $extraArgs
+            if ($demo.ExtraProps) { $publishArgs += $demo.ExtraProps }
             & dotnet @publishArgs
 
             if ($LASTEXITCODE -ne 0) {
-                Write-Host "  AOT 发布失败: $demoName ($tfm)！" -ForegroundColor Red
+                Write-Host "  AOT 发布失败: $demoName$label ($tfm)！" -ForegroundColor Red
                 exit 1
             }
 
@@ -176,15 +180,15 @@ if ($AOT) {
                 exit 1
             }
 
-            Write-Host "运行 AOT 二进制: $demoName ($tfm)..." -ForegroundColor Yellow
+            Write-Host "运行 AOT 二进制: $demoName$label ($tfm)..." -ForegroundColor Yellow
             $output = & $binPath 2>&1
             $outputStr = $output -join "`n"
             Write-Host $outputStr
 
             if ($outputStr -match "AOT_OK") {
-                Write-Host "  AOT 运行时验证通过: $demoName ($tfm)" -ForegroundColor Green
+                Write-Host "  AOT 运行时验证通过: $demoName$label ($tfm)" -ForegroundColor Green
             } else {
-                Write-Host "  AOT 运行时验证失败: $demoName ($tfm) - 未找到 AOT_OK" -ForegroundColor Red
+                Write-Host "  AOT 运行时验证失败: $demoName$label ($tfm) - 未找到 AOT_OK" -ForegroundColor Red
                 exit 1
             }
             Write-Host ""

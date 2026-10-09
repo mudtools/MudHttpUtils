@@ -225,12 +225,32 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// TMX-14：默认实现按登出语义清除该用户全部作用域条目（含锁与退避），
     /// 派生类如需额外动作（如调用 IdP revoke）应覆写并调用 base。
     /// </summary>
+    /// <remarks>
+    /// <b>B3 修复</b>：在既有同步镜像清理之后，补齐<b>异步写穿</b>（仅当缓存实现
+    /// <see cref="IAsyncTokenCache{UserTokenInfo}"/> 时生效，对齐租户路径
+    /// <see cref="TokenManagerBase.RemoveTokenAsync(string[], CancellationToken)"/>）——
+    /// 桥接式缓存（<c>TokenStoreBackedTokenCache&lt;T&gt;</c>）的同步 <c>TryRemove</c> 在
+    /// <b>镜像未命中</b>（冷启动 / 多实例 / 重启）时不会写穿持久层，导致登出后持久层仍遗留旧令牌、
+    /// 下次读穿透会把已失效令牌"复活"。
+    /// <para>
+    /// 非异步缓存实现下行为与旧版<b>逐字节等价</b>（无额外调用）。
+    /// 校验失败仍<b>同步抛出</b>（保持既有契约，不因改为异步而把异常搬进返回的 Task）。
+    /// </para>
+    /// </remarks>
     public virtual Task<bool> RemoveTokenAsync(string userId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(userId)) return Task.FromResult(false);
         EnsureValidUserId(userId);                  // I1（R-P0-04）：与写入路径同口径，避免"能写不能删"
+        var scopeKeys = SnapshotUserScopeKeysForWriteThrough(userId);   // B3：必须在同步清理"之前"取快照
         RemoveUserTokenFromCache(userId);           // 已含全部作用域 + TryRetire + 清退避
-        return Task.FromResult(true);
+        return WriteThroughRemoveAndReturnTrueAsync(userId, scopeKeys, cancellationToken);
+    }
+
+    /// <summary>B3：登出（整条移除）异步写穿的 <c>Task&lt;bool&gt;</c> 包装（返回值恒为 true，与旧实现一致）。</summary>
+    private async Task<bool> WriteThroughRemoveAndReturnTrueAsync(string userId, List<string>? scopeKeys, CancellationToken cancellationToken)
+    {
+        await WriteThroughRemoveAsync(userId, scopeKeys, cancellationToken).ConfigureAwait(false);
+        return true;
     }
 
     /// <inheritdoc />
@@ -726,14 +746,76 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// </summary>
     /// <param name="userId">用户标识。</param>
     /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+    /// <remarks>
+    /// <b>B3 修复</b>：登出（整条移除）语义不变，同步镜像清理后补齐异步写穿（见
+    /// <see cref="RemoveTokenAsync(string, CancellationToken)"/> 的说明）；
+    /// 非异步缓存实现下行为与旧版逐字节等价。
+    /// </remarks>
     public virtual Task InvalidateUserTokenAsync(string userId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(userId))
             return Task.CompletedTask;
 
         EnsureValidUserId(userId);                  // I1（R-P0-04）
+        var scopeKeys = SnapshotUserScopeKeysForWriteThrough(userId);   // B3：必须在同步清理"之前"取快照
         RemoveUserTokenFromCache(userId);
-        return Task.CompletedTask;
+        return WriteThroughRemoveAsync(userId, scopeKeys, cancellationToken);
+    }
+
+    /// <summary>
+    /// B3：采集该用户全部 scope 化复合键的快照，供异步写穿使用。
+    /// </summary>
+    /// <remarks>
+    /// <b>必须在同步清理之前调用</b>：<c>RemoveUserTokenFromCache</c> 会把镜像条目清空，
+    /// 事后再按前缀扫描将扫不到任何复合键（持久层残留 scope 化令牌 ⇒ 读穿透复活）。
+    /// 仅当缓存实现 <see cref="IAsyncTokenCache{UserTokenInfo}"/>（异步写穿能力）时才扫描，
+    /// 否则直接返回 null（非异步缓存零额外开销，行为与旧版逐字节等价）。
+    /// </remarks>
+    private List<string>? SnapshotUserScopeKeysForWriteThrough(string userId)
+    {
+        if (_userTokenCache is not IAsyncTokenCache<UserTokenInfo>)
+            return null;
+
+        var prefix = userId + UserScopeKeySeparator;
+        List<string>? scopeKeys = null;
+        foreach (var key in _userTokenCache.Keys)
+        {
+            if (key.StartsWith(prefix, StringComparison.Ordinal))
+                (scopeKeys ??= new List<string>()).Add(key);
+        }
+
+        return scopeKeys;
+    }
+
+    /// <summary>
+    /// B3：用户侧异步写穿（对齐租户路径 <c>TokenManagerBase</c> 的
+    /// <c>IAsyncTokenCache&lt;CredentialToken&gt;.RemoveAsync</c> 用法）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 仅当缓存实现 <see cref="IAsyncTokenCache{UserTokenInfo}"/> 时生效；
+    /// <c>RemoveAsync</c> 对"键不存在"是幂等 no-op，故与同步 <c>TryRemove</c> 的镜像命中写穿<b>不冲突</b>
+    /// （镜像命中路径已写过一次，此处为无条件兜底，语义为"持久层必须不存在该键"）。
+    /// </para>
+    /// <para>
+    /// 裸键（登出语义）与 <paramref name="scopeKeys"/> 快照中的复合键逐个写穿；快照由调用方在
+    /// 同步清理前采集，避免"边遍历边删"。
+    /// </para>
+    /// </remarks>
+    private async Task WriteThroughRemoveAsync(string userId, List<string>? scopeKeys, CancellationToken cancellationToken)
+    {
+        if (_userTokenCache is not IAsyncTokenCache<UserTokenInfo> asyncCache)
+            return;
+
+        await asyncCache.RemoveAsync(userId, cancellationToken).ConfigureAwait(false);
+
+        if (scopeKeys is null)
+            return;
+
+        foreach (var key in scopeKeys)
+        {
+            await asyncCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <summary>

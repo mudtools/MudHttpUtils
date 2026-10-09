@@ -787,7 +787,7 @@ foreach (var appKey in appKeys)
 }
 ```
 
-> 跨执行上下文的 `using` 释放**不会回滚**（`AsyncLocal` 语义使然）：作用域必须在**建立它的同一个异步流**内释放。若把 `BeginScope` 的返回值传递给另一个 `Task.Run` 去 `Dispose`，回滚不会生效，且可能把陈旧上下文写回。
+> 跨执行上下文的 `using` 释放**不会回滚**（`AsyncLocal` 语义使然）：作用域必须在**建立它的同一个异步流**内释放。若把 `BeginScope` 的返回值传递给另一个 `Task.Run` 去 `Dispose`，回滚不会生效，也**不会把陈旧上下文写回**目标流（多租户隔离 fail-closed：目标流上下文保持原样——为 `null` 时保持 `null`），该场景下由宿主显式 `UseDefaultApp` / `BeginScope` 收敛。
 
 ### 工具类
 
@@ -1144,7 +1144,7 @@ services.AddSensitiveDataMasker<DefaultSensitiveDataMasker>(); // 反射读取 [
 - 通过 `AddMudHttpClientJsonContext(...)`（.NET 8+）注册消费方 `JsonSerializerContext`，由 `HttpContentSerializerFactory.BuildOptions` 自动与库内置 `MudHttpJsonContext.Default` 合并。
 - 配合 `Mud.HttpUtils.JsonContextScaffolder` 脚手架自动生成包含闭合泛型（如 `FeishuApiResult<T>`）的 `JsonSerializerContext`，或手动将 `[HttpJsonSerializable]` 标注类型加入 `JsonSerializerContext`。
 - `SystemTextJsonContentSerializer` 在 AOT 环境下仅使用源生成元数据，不在运行时反射。
-- `SystemTextJsonContentSerializer` 已实现 `IAotJsonContentSerializer` 接口（.NET 8+），生成器产出的调用点经 `IHttpContentSerializer` 的 options 槽位传入 `JsonTypeInfo<T>` 走快车道（`SerializeToUtf8Bytes → ByteArrayContent`）。AOT 下 `ToHttpContent<T>` 默认路径也走 Utf8Bytes 纵深防御（P1-4）。
+- `SystemTextJsonContentSerializer` 已实现 `IAotJsonContentSerializer` 接口（.NET 8+）。生成代码运行时 AOT 安全依赖 `HttpContentSerializerFactory.BuildOptions` 的 resolver 合并（AOT 分支仅源生成、无反射兜底），不依赖该接口；该接口面向消费方手写调用点提供 `JsonTypeInfo<T>` 显式直通的快车道，生成代码接入快车道为规划项。AOT 下 `ToHttpContent<T>` 默认路径走 Utf8Bytes 纵深防御（P1-4）。
 
 > 详见 [`Mud.HttpUtils.JsonContextScaffolder` 工具文档](../Tools/Mud.HttpUtils.JsonContextScaffolder/README.md) 与 [`Mud.HttpUtils.Abstractions` 文档](../Mud.HttpUtils.Abstractions/README.md#native-aot-支持) 的 AOT 章节。
 

@@ -42,9 +42,10 @@ internal static class Diagnostics
      * 4. 去标签**不降级**：被去标签的诊断级别仍保持 Error（默认行为不变，仍阻断构建），
      *    只是"允许"使用者显式抑制。请勿顺手降级为 Warning —— 那会把编译期失败变成运行期故障。
      *
-     * 守卫：Tests/Mud.HttpUtils.Generator.Tests/DiagnosticTagPolicyTests.cs 断言
+     * 守卫：Tests/Mud.HttpUtils.Generator.Tests/Analyzers/DiagnosticTagPolicyTests.cs 断言
      * "Error + NotConfigurable" 的集合恰好等于内部/环境类错误白名单（本文件中即为
-     * HTTPCLIENT001、HTTPCLIENT003、HTTPCLIENTREG001、EHSG001、FORM001）。
+     * HTTPCLIENT001、HTTPCLIENT003、HTTPCLIENTREG001、EHSG001、FORM001；
+     * Payloads 侧 PAYLOAD001 亦属该白名单——同为引擎内部异常兜底，[P3-2] 补记）。
      *
      * 详见 .docs/生成器诊断治理与返回类型完善方案v1.md §1.2 / §3.3。
      */
@@ -560,6 +561,26 @@ internal static class Diagnostics
         category: "代码生成",
         DiagnosticSeverity.Info,
         isEnabledByDefault: true);
+
+    /// <summary>
+    /// P2-5：接口声明的语义符号无法解析（<c>InterfaceModel.Symbol</c> 为 null，常见于接口声明
+    /// 语法不完整，如 IDE 输入中途）。此前该分支完全静默 return——实现类整体消失，接口未实现
+    /// 成员将以 CS0535 呈现，但编译错误不指向根因。低噪音 Info 提示，修复语法后自动消失。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// FAWM（<c>ForAttributeWithMetadataName</c>）在 transform 前会跳过 <c>GetDeclaredSymbol</c>
+    /// 为 null 的声明，故本诊断经标准管线通常不可达；保留该 fail-closed 契约以确保
+    /// 「符号解析失败 ⇒ 必有编译期提示」不因管线演化而失效。
+    /// </para>
+    /// </remarks>
+    public static readonly DiagnosticDescriptor HttpClientInterfaceSymbolUnresolved = new(
+        id: "HTTPCLIENT038",
+        title: "接口符号解析失败，已跳过实现类生成",
+        messageFormat: "接口 {0} 的声明符号无法解析（常见于接口声明语法不完整，如 IDE 输入中途）——本次生成跳过该接口的实现类，修复语法后本提示自动消失。",
+        category: "代码生成",
+        DiagnosticSeverity.Info,
+        isEnabledByDefault: true);
     #endregion
 
     #region HttpClient注册生成器诊断信息 (HTTPCLIENTREG001-002)
@@ -849,5 +870,34 @@ internal static class Diagnostics
         category: "代码生成",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+    #endregion
+
+    #region 工具面引擎固定诊断 (SDKT001)
+    // 由 ToolSurface/ProfileContractGuardAnalyzer（Mud.HttpUtils.Generator/ToolSurface/）报告。
+    // 编号约定（ToolSurface 设计文档 §6.1）：SDKT* 是**引擎固定**档位——ID 与 category 均不随 profile 变化，
+    // 因此进入本静态表（区别于 profile 注入的动态 {prefix}{slot} ID，后者由 ToolSurfaceDiagnostics 槽位表管理）。
+    // 级别为 Error 但**不带** NotConfigurable：本诊断属「使用者改一行即可修复」（补特性或补接口实现），
+    // 加标签会连坐抑制同编译中的 MUD*/AOT* 诊断（见本文件 §诊断标签分层准则）。
+
+    /// <summary>SDKT001：<c>ISdkToolProfile</c> 与 <c>[SdkToolProfile]</c> 未成对出现。</summary>
+    public static readonly DiagnosticDescriptor SdkToolProfileContractViolation = new(
+        id: DiagnosticIds.SdkToolProfileContractViolation,
+        title: "工具剖面契约不成对：接口与特性必须同时出现",
+        messageFormat: "类型 {0} {1}——ISdkToolProfile 与 [SdkToolProfile] 必须成对出现：实现接口即声明剖面，其全部数据由特性承载（生成器无法执行属性 getter）。请{2}。",
+        category: "Mud.HttpUtils.ToolSurface",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "工具 Schema 生成引擎的剖面接缝契约：标记接口 ISdkToolProfile 声明「本类型是剖面」，"
+            + "[SdkToolProfile] 承载全部编译期命名事实常量。二者缺一即剖面无法被引擎读取.");
+
+    /// <summary>SDKT002：剖面特性缺少引擎运行必需的槽位（该剖面被跳过，不产出任何工具面）。</summary>
+    public static readonly DiagnosticDescriptor SdkToolProfileMissingRequiredSlots = new(
+        id: DiagnosticIds.SdkToolProfileMissingRequiredSlots,
+        title: "工具剖面缺少必需槽位",
+        messageFormat: "剖面 {0} 的 [SdkToolProfile] 缺少必需槽位：{1}——该剖面本次编译被跳过，不产出任何工具面产物。请补全上述槽位。",
+        category: "Mud.HttpUtils.ToolSurface",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "引擎固定档位：剖面数据完整性守卫。缺失槽位清单由 SdkToolProfileModel.RequiredSlotNames 定义.");
     #endregion
 }

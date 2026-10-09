@@ -142,23 +142,31 @@ public class JsonContextGenerator
 
         // 5b. [D25] [HttpClientApi] 发现类型（闭合泛型等）合并到第一个标注类型分组中。
         // 避免创建单独的 JsonSerializerContext，防止 STJ 源生成器因 partial class 重复定义导致 hintName 冲突。
+        TypeGroup? discoveredMergeTarget = null;
         if (discoveredTypes.Count > 0)
         {
-            if (groups.Count > 0)
+            // [F-3] 分组隔离：仅当第一个标注分组策略为 Default（自动推导）时发现类型才并入；
+            // 非 Default 标注组与未标注发现类型合并会把显式命名策略"传染"给发现类型（字段名错配），
+            // 此时发现类型独立成组（策略 Default → 自动推导）。
+            if (groups.Count > 0 && groups[0].NamingPolicy == JsonNamingPolicyHint.Default)
             {
-                // 将发现类型添加到第一个标注类型分组
+                // 将发现类型添加到第一个标注类型分组（Default 组不受影响）
                 groups[0].Types.AddRange(discoveredTypes);
+                discoveredMergeTarget = groups[0];
             }
             else
             {
-                // 无标注类型时，创建独立分组（回退逻辑）
-                groups.Add(CreateDiscoveredTypeGroup(discoveredTypes, compilation, defaultNamespace));
+                // 无标注类型，或第一个标注组已显式/推导出非 Default 策略 → 发现类型独立分组
+                var discoveredGroup = CreateDiscoveredTypeGroup(discoveredTypes, compilation, defaultNamespace);
+                groups.Add(discoveredGroup);
+                discoveredMergeTarget = discoveredGroup;
             }
 
+            // AOT104 消息按实际去向描述
             Diagnostics.Add(new ScaffolderDiagnostic(
                 "AOT104",
                 ScaffolderDiagnosticSeverity.Info,
-                $"[HttpClientApi] 接口扫描发现 {discoveredTypes.Count} 个类型（含闭合泛型），已自动纳入 {groups[0].SerializerClassName}JsonContext。",
+                $"[HttpClientApi] 接口扫描发现 {discoveredTypes.Count} 个类型（含闭合泛型），已自动纳入 {discoveredMergeTarget.SerializerClassName}JsonContext。",
                 null));
         }
 
@@ -196,12 +204,15 @@ public class JsonContextGenerator
     /// </summary>
     private void CheckDuplicateSerializerClassNameConflicts(List<AnnotatedType> annotatedTypes)
     {
+        // [F-4] 收紧：仅当同一 SerializerClassName 下出现「两个及以上不同的显式策略」才冲突。
+        // Default 只是"未显式指定"（自动推导），与单一显式策略混排不构成错配，
+        // 原判定（Distinct 含 Default）会对 Default + 显式混合产生噪音告警。
         var conflictGroups = annotatedTypes
             .Where(t => !string.IsNullOrEmpty(t.SerializerClassName))
             .GroupBy(t => t.SerializerClassName!)
-            .Where(g => g.Select(t => t.NamingPolicy).Distinct().Count() > 1
-                        && g.Any(t => t.NamingPolicy != JsonNamingPolicyHint.Default));
-        ;
+            .Where(g => g.Select(t => t.NamingPolicy)
+                         .Where(p => p != JsonNamingPolicyHint.Default)
+                         .Distinct().Count() > 1);
 
         foreach (var group in conflictGroups)
         {
@@ -210,7 +221,7 @@ public class JsonContextGenerator
             Diagnostics.Add(new ScaffolderDiagnostic(
                 aot001.Id,
                 ScaffolderAotDiagnostics.ToScaffolderSeverity(aot001.DefaultSeverity),
-                $"SerializerClassName '{group.Key}' 存在冲突的 NamingPolicy 配置：{policies}。同一 Context 内只能使用一个命名策略，当前采用第一个非 Default 值。建议统一配置或拆分为不同分组。",
+                $"SerializerClassName '{group.Key}' 存在多个不同的显式 NamingPolicy 配置：{policies}。同一 Context 内只能使用一个命名策略，建议统一配置或拆分为不同分组。",
                 group.Key));
         }
     }
@@ -559,15 +570,12 @@ public class JsonContextGenerator
 
         // 枚举值在 Roslyn 中可能以 int 或 TypedConstant 形式存储
         var value = attr.ConstructorArguments[0].Value;
+        // [A-2] 名称映射收敛为 SerializationMethodMapper.ToSerializationMethodName（工具内部唯一映射，
+        // 枚举成员名锚定），消除硬编码 int 表与枚举声明顺序的耦合；value 直接携带枚举值时同样先转枚举再映射。
         return value switch
         {
-            int n => n switch
-            {
-                0 => "Json",
-                1 => "Xml",
-                2 => "FormUrlEncoded",
-                _ => null
-            },
+            int n => ((SerializationMethod)n).ToSerializationMethodName(),
+            SerializationMethod m => m.ToSerializationMethodName(),
             _ => value?.ToString()
         };
     }

@@ -26,7 +26,7 @@
     <Compile Include="$(MSBuildThisFileDirectory)ContentTypeTestApis\IContentTypeUsageTestApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)EventHandlerTestClasses.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)GlobalUsings.cs" />
-    <Compile Include="$(MSBuildThisFileDirectory)IFeishuAppManager.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)FeishuAppContext.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)InheritanceTestApi\IAbstractClassInheritanceTestApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)InheritanceTestApi\IBaseInheritanceTestApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)InheritanceTestApi\IClassInheritanceTestApi.cs" />
@@ -56,12 +56,16 @@
     <Compile Include="$(MSBuildThisFileDirectory)RefactorTests\RequestResponseTypeTestApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)RefactorTests\TokenInjectionModeTestApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)TestTokenManager.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)TokenManage\IFeishuAppManager.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)TokenManage\IFeishuEventDeduplicator.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)TokenManage\IHeaderFeatureTestApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)TokenManage\ITestTokenApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)TokenManage\ITestTokenQueryApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)TokenManage\ITokenFeatureTestApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)TokenManage\ITokenHeaderCombinationTestApi.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)TokenManage\ITokenHeaderHttpMethodsTestApi.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)TokenManage\ITokenManager.cs" />
+    <Compile Include="$(MSBuildThisFileDirectory)TokenManage\IUserManager.cs" />
     <Compile Include="$(MSBuildThisFileDirectory)TokenManage\TokenTestApi.cs" />
   </ItemGroup>
   <ItemGroup>

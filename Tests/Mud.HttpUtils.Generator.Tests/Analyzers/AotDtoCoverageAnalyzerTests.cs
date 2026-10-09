@@ -486,6 +486,386 @@ public class AotDtoCoverageAnalyzerTests
             "sealed 类与接口响应没有 [JsonDerivedType] 声明，不应报多态覆盖缺失");
     }
 
+    // ───────────────────────── AOT004 请求端多态覆盖校验（F-1） ─────────────────────────
+
+    /// <summary>
+    /// [F-1 正例] [Body] 参数以多态基类声明、基类自身已被 Context 覆盖，但其 <c>[JsonDerivedType]</c>
+    /// 声明的派生类型未被覆盖 → 仍报 AOT004（AOT 下序列化派生实例会抛 NotSupportedException）。
+    /// </summary>
+    [Fact]
+    public void Body_PolymorphicType_UncoveredDerived_ReportsAot004()
+    {
+        var source = $$"""
+            using System.Text.Json.Serialization;
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [JsonDerivedType(typeof(Dog))]
+                public class Animal { public string Name { get; set; } }
+
+                public class Dog : Animal { public string Breed { get; set; } }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Post("/animal")]
+                    Task PostAsync([Body] Animal body);
+                }
+
+                [JsonSerializable(typeof(Animal))]
+                {{EmptyContextBoilerplate}}
+            }
+            """;
+
+        var aot004 = AnalyzeAot004(source);
+
+        aot004.Should().ContainSingle("Animal 已覆盖但派生类型 Dog 未覆盖，多态序列化在 AOT 下会失败");
+        aot004[0].GetMessage().Should().Contain("Dog", "诊断需指名未覆盖的派生类型");
+        aot004[0].GetMessage().Should().Contain("序列化", "请求端措辞应为「序列化」（与响应端「反序列化」同构）");
+        aot004[0].Location.Should().NotBe(Location.None, "诊断需定位到参数（与既有 AOT004 定位契约一致）");
+    }
+
+    /// <summary>[F-1 正例·数组] [Body] 数组元素类型多态、派生类型未覆盖 → 报 AOT004。</summary>
+    [Fact]
+    public void Body_ArrayPolymorphicType_UncoveredDerived_ReportsAot004()
+    {
+        var source = $$"""
+            using System.Text.Json.Serialization;
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [JsonDerivedType(typeof(Dog))]
+                public class Animal { public string Name { get; set; } }
+
+                public class Dog : Animal { public string Breed { get; set; } }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Post("/animals")]
+                    Task PostAsync([Body] Animal[] bodies);
+                }
+
+                [JsonSerializable(typeof(Animal))]
+                {{EmptyContextBoilerplate}}
+            }
+            """;
+
+        var aot004 = AnalyzeAot004(source);
+
+        aot004.Should().ContainSingle("数组元素 Animal 已覆盖但派生类型 Dog 未覆盖，序列化 Dog 元素在 AOT 下会失败");
+        aot004[0].GetMessage().Should().Contain("Dog", "诊断需指名未覆盖的派生类型");
+    }
+
+    /// <summary>[F-1 反例] 基类与其 <c>[JsonDerivedType]</c> 派生类型均被 Context 覆盖 → 不报。</summary>
+    [Fact]
+    public void Body_PolymorphicType_AllDerivedCovered_DoesNotReportAot004()
+    {
+        var source = $$"""
+            using System.Text.Json.Serialization;
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [JsonDerivedType(typeof(Dog))]
+                public class Animal { public string Name { get; set; } }
+
+                public class Dog : Animal { public string Breed { get; set; } }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Post("/animal")]
+                    Task PostAsync([Body] Animal body);
+                }
+
+                [JsonSerializable(typeof(Animal))]
+                [JsonSerializable(typeof(Dog))]
+                {{EmptyContextBoilerplate}}
+            }
+            """;
+
+        AnalyzeAot004(source).Should().BeEmpty("基类与全部派生类型均已覆盖时不应报 AOT004");
+    }
+
+    /// <summary>
+    /// [F-1 反例] [Body] 参数为非 sealed 类但<b>未声明</b> <c>[JsonDerivedType]</c>（即便存在派生类）→ 不报。
+    /// STJ 未启用多态时按声明类型静态序列化，派生实例不会抛 NotSupportedException。
+    /// </summary>
+    [Fact]
+    public void Body_NonPolymorphicNonSealedType_DoesNotReportAot004()
+    {
+        var source = $$"""
+            using System.Text.Json.Serialization;
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                // 非 sealed 且无 [JsonDerivedType]，存在派生类但 STJ 不做多态处理
+                public class Animal { public string Name { get; set; } }
+
+                public class Dog : Animal { public string Breed { get; set; } }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface ITestApi
+                {
+                    [Post("/animal")]
+                    Task PostAsync([Body] Animal body);
+                }
+
+                [JsonSerializable(typeof(Animal))]
+                {{EmptyContextBoilerplate}}
+            }
+            """;
+
+        AnalyzeAot004(source).Should().BeEmpty(
+            "未声明 [JsonDerivedType] 的类型不参与 STJ 多态序列化，不应报多态覆盖缺失");
+    }
+
+    // ───────────────────────── AOT004 继承方法 DTO 覆盖补扫（F-5） ─────────────────────────
+
+    /// <summary>[F-5 夹具] 创建辅助编译（被主编译以引用程序集形态引用），声明含未覆盖 DTO 的基接口。</summary>
+    private static Compilation CreateAuxCompilation(string source)
+    {
+        var syntaxTree = CSharpSyntaxTree.ParseText(source);
+        return CSharpCompilation.Create(
+            "AuxAssembly",
+            new[] { syntaxTree },
+            BasicReferenceAssemblies.GetReferences(),
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+    }
+
+    /// <summary>
+    /// [F-5 正例] 基接口位于<b>引用程序集</b>：生成器经 GetAllMethods(includeParentInterfaces: true)
+    /// 为继承方法生成调用代码并真实序列化 <c>[Body] OrderDto</c>；若 OrderDto 未被 Context 覆盖，
+    /// AOT 下运行时抛 NotSupportedException——分析器必须报 AOT004（v1 方案遗漏的扫描盲区）。
+    /// </summary>
+    [Fact]
+    public void InheritedMethodBodyDto_FromReferencedAssembly_ReportsAot004()
+    {
+        var aux = CreateAuxCompilation("""
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace AuxNamespace
+            {
+                public interface IBaseApi
+                {
+                    [Post("/orders")]
+                    Task<string> CreateAsync([Body] OrderDto dto);
+                }
+
+                public class OrderDto { public int Id { get; set; } }
+            }
+            """);
+
+        var source = $$"""
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi("https://api.example.com")]
+                public interface IOrderApi : AuxNamespace.IBaseApi
+                {
+                }
+
+                {{EmptyContextBoilerplate}}
+            }
+            """;
+
+        var aot004 = Analyze(source, aux.ToMetadataReference())
+            .Where(d => d.Id == "AOT004").ToImmutableArray();
+
+        aot004.Should().ContainSingle("继承方法的 [Body] DTO 跨程序集不可达于声明成员循环，补扫必须捕获");
+        aot004[0].GetMessage().Should().Contain("OrderDto");
+    }
+
+    /// <summary>[F-5 正例·同编译] 基接口与派生接口同编译、基接口未标注 [HttpClientApi] → 仍须报。</summary>
+    [Fact]
+    public void InheritedMethodBodyDto_SameCompilationBaseWithoutHttpClientApi_ReportsAot004()
+    {
+        var source = $$"""
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                public interface IBaseApi
+                {
+                    [Post("/orders")]
+                    Task<string> CreateAsync([Body] OrderDto dto);
+                }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface IOrderApi : IBaseApi
+                {
+                }
+
+                public class OrderDto { public int Id { get; set; } }
+
+                {{EmptyContextBoilerplate}}
+            }
+            """;
+
+        var aot004 = AnalyzeAot004(source);
+
+        aot004.Should().ContainSingle("同编译但未标注 [HttpClientApi] 的基接口外层循环不可达，补扫必须捕获");
+        aot004[0].GetMessage().Should().Contain("OrderDto");
+    }
+
+    /// <summary>[F-5 正例·响应端] 继承方法的响应 DTO 未覆盖 → 报 AOT004（请求/响应双侧补扫）。</summary>
+    [Fact]
+    public void InheritedMethodResponseDto_SameCompilationBase_ReportsAot004()
+    {
+        var source = $$"""
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                public interface IBaseApi
+                {
+                    [Get("/orders/{id}")]
+                    Task<OrderDto> GetAsync(int id);
+                }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface IOrderApi : IBaseApi
+                {
+                }
+
+                public class OrderDto { public int Id { get; set; } }
+
+                {{EmptyContextBoilerplate}}
+            }
+            """;
+
+        var aot004 = AnalyzeAot004(source);
+
+        aot004.Should().ContainSingle("继承方法的响应 DTO 同样不检覆盖（F-5 修复前漏报）");
+        aot004[0].GetMessage().Should().Contain("OrderDto");
+    }
+
+    /// <summary>[F-1 × F-5 交叉] 继承方法的 [Body] 参数多态、派生类型未覆盖 → 报 AOT004（序列化措辞）。</summary>
+    [Fact]
+    public void InheritedMethodPolymorphicBody_UncoveredDerived_ReportsAot004()
+    {
+        var source = $$"""
+            using System.Text.Json.Serialization;
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [JsonDerivedType(typeof(Dog))]
+                public class Animal { public string Name { get; set; } }
+
+                public class Dog : Animal { public string Breed { get; set; } }
+
+                public interface IBaseApi
+                {
+                    [Post("/animal")]
+                    Task PostAsync([Body] Animal body);
+                }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface IAnimalApi : IBaseApi
+                {
+                }
+
+                [JsonSerializable(typeof(Animal))]
+                {{EmptyContextBoilerplate}}
+            }
+            """;
+
+        var aot004 = AnalyzeAot004(source);
+
+        aot004.Should().ContainSingle("F-1 派生类型校验经继承方法入口（CheckMethodDtoCoverage）自动生效");
+        aot004[0].GetMessage().Should().Contain("Dog");
+        aot004[0].GetMessage().Should().Contain("序列化");
+    }
+
+    /// <summary>[F-5 反例·防重复] 基接口自身带 [HttpClientApi]：基接口声明成员循环报告一轮，
+    /// 派生接口补扫必须跳过，全程仅一条 AOT004。</summary>
+    [Fact]
+    public void InheritedMethod_BaseWithHttpClientApi_NoDuplicate()
+    {
+        var source = $$"""
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [HttpClientApi("https://api.example.com")]
+                public interface IBaseApi
+                {
+                    [Post("/orders")]
+                    Task<string> CreateAsync([Body] OrderDto dto);
+                }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface IOrderApi : IBaseApi
+                {
+                }
+
+                public class OrderDto { public int Id { get; set; } }
+
+                {{EmptyContextBoilerplate}}
+            }
+            """;
+
+        var aot004 = AnalyzeAot004(source);
+
+        aot004.Should().ContainSingle("基接口自身一轮报告，派生接口补扫跳过，不得重复");
+        aot004[0].GetMessage().Should().Contain("IBaseApi", "唯一一条诊断应来自基接口自身的声明成员循环");
+    }
+
+    /// <summary>
+    /// [F-5 语义锁定] 基接口为<b>接口级</b> <c>[SerializationMethod(Xml)]</c>：生成器不继承接口级
+    /// 特性（G-1），继承方法实际走 Json 管线并序列化 OrderDto——AOT004 必须照报，
+    /// 不得把基接口级 Xml 当作 JSON 覆盖豁免依据（GetInheritedMethodSerializationMethod 语义）。
+    /// </summary>
+    [Fact]
+    public void InheritedMethod_InterfaceLevelXmlOnBase_DoesNotExemptDtoCoverage()
+    {
+        var source = $$"""
+            using System.Threading.Tasks;
+            using Mud.HttpUtils.Attributes;
+
+            namespace TestNamespace
+            {
+                [SerializationMethod(SerializationMethod.Xml)]
+                public interface IXmlBaseApi
+                {
+                    [Post("/orders")]
+                    Task<string> CreateAsync([Body] OrderDto dto);
+                }
+
+                [HttpClientApi("https://api.example.com")]
+                public interface IOrderApi : IXmlBaseApi
+                {
+                }
+
+                public class OrderDto { public int Id { get; set; } }
+
+                {{EmptyContextBoilerplate}}
+            }
+            """;
+
+        var aot004 = AnalyzeAot004(source);
+
+        aot004.Should().ContainSingle(
+            "接口级 Xml 不被生成器继承（G-1），继承方法实际走 Json 管线，DTO 未覆盖必须照报");
+        aot004[0].GetMessage().Should().Contain("OrderDto");
+    }
+
     // ───────────────────────── AOT004：响应类型解包（Task/ValueTask/Nullable/List） ─────────────────────────
 
     /// <summary>

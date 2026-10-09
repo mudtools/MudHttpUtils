@@ -15,7 +15,8 @@ namespace Mud.HttpUtils.OpenTelemetry;
 /// <see cref="MudHttpOpenTelemetryOptions.SamplingRatio"/> 范围检查提前到配置绑定阶段，
 /// 并补充对 <see cref="MudHttpOpenTelemetryOptions.ExportBatchSize"/>、
 /// <see cref="MudHttpOpenTelemetryOptions.ExportIntervalMilliseconds"/>、
-/// <see cref="MudHttpOpenTelemetryOptions.ServiceName"/> 等属性的校验。
+/// <see cref="MudHttpOpenTelemetryOptions.ServiceName"/>、
+/// <see cref="MudHttpOpenTelemetryOptions.OtlpEndpoint"/> 等属性的校验。
 /// </remarks>
 public class MudHttpOpenTelemetryOptionsValidator : IValidateOptions<MudHttpOpenTelemetryOptions>
 {
@@ -46,6 +47,11 @@ public class MudHttpOpenTelemetryOptionsValidator : IValidateOptions<MudHttpOpen
 
         if (string.IsNullOrWhiteSpace(options.DeploymentEnvironment))
             failures.Add("MudHttpOpenTelemetryOptions: DeploymentEnvironment 不能为 null 或空白字符串。");
+
+        // 与共享内核 MudObservabilityDefaults.Validate 同口径：相对 URI 端点会在启动期静默失败
+        // （OTLP 导出器无法解析），必须显式拦截。此处校验可让异常消息指向调用方真正配置的类型。
+        if (options.OtlpEndpoint is not null && !options.OtlpEndpoint.IsAbsoluteUri)
+            failures.Add($"MudHttpOpenTelemetryOptions: OtlpEndpoint 必须为绝对 URI，当前值为 '{options.OtlpEndpoint}'。");
 
         return failures.Count > 0
             ? ValidateOptionsResult.Fail(failures)

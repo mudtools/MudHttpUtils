@@ -23,6 +23,16 @@ public class Program
 
         Console.WriteLine("=== Mud.HttpUtils.Client 功能演示 ===\n");
 
+        // 演示域名全部为 *.example.com 假想域：库的 URL 白名单安全校验默认拒绝任意域名，
+        // 演示入口需先登记允许域（生产代码应收敛为精确域名清单，勿开 allowCustomBaseUrls）。
+        UrlValidator.ConfigureAllowedDomains(
+        [
+            "api.example.com",
+            "secure-api.example.com",
+            "order-api.example.com",
+            "httpbin.org",
+        ]);
+
         await DemoBasicHttpClient(host.Services);
         await DemoEncryption(host.Services);
         await DemoMultiNamedClients(host.Services);

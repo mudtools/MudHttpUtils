@@ -34,6 +34,16 @@ public class Program
 
         Console.WriteLine("=== Mud.HttpUtils.Resilience 功能演示 ===\n");
 
+        // 演示域名全部为 *.example.com 假想域：库的 URL 白名单安全校验默认拒绝任意域名，
+        // 演示入口需先登记允许域（生产代码应收敛为精确域名清单，勿开 allowCustomBaseUrls）。
+        UrlValidator.ConfigureAllowedDomains(
+        [
+            "api.example.com",
+            "protected-api.example.com",
+            "config-api.example.com",
+            "custom-api.example.com",
+        ]);
+
         await DemoResilienceOptions(host.Services);
         await DemoRetryBehavior(host.Services);
         await DemoCircuitBreaker(host.Services);
@@ -253,7 +263,12 @@ public class Program
             }
             catch (IsolatedCircuitException ex)
             {
-                Console.WriteLine($"  第 {i} 次请求: 熔断器已开启 - {ex.Message}");
+                Console.WriteLine($"  第 {i} 次请求: 熔断器已隔离 - {ex.Message}");
+            }
+            catch (BrokenCircuitException ex)
+            {
+                // 熔断器开路态：Polly 抛 BrokenCircuitException（隔离态是其子类，须先于父类捕获）
+                Console.WriteLine($"  第 {i} 次请求: 熔断器已开启（快速失败）- {ex.Message}");
             }
         }
 

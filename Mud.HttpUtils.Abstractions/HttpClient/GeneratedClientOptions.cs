@@ -35,6 +35,7 @@ namespace Mud.HttpUtils;
 ///   不产生任何日志。如需日志，请使用 DI 路径。</description></item>
 ///   <item><description><b>RequestInterceptor / ResponseInterceptor</b>：无 DI 路径<b>不生效</b>（见对应属性说明）。</description></item>
 ///   <item><description><b>SensitiveDataMasker</b>：已接线生效。</description></item>
+///   <item><description><b>AppResilienceResolver / AppManager</b>：已接线生效（P3-7 补齐无 DI 工厂路径缺口）。</description></item>
 ///   <item><description><b>JsonTypeInfoResolver</b>：通过 <see cref="ContentSerializer"/> 承载；
 ///   若仅设置本属性而未提供序列化器，AOT 下 JSON 元数据可能不可用。</description></item>
 /// </list>
@@ -82,6 +83,19 @@ public sealed class GeneratedClientOptions : IEnhancedClientConfig
     public IResiliencePolicyResolver? ResilienceResolver { get; set; }
 
     /// <summary>
+    /// 获取或设置应用级弹性策略解析器（按应用键维度提供弹性策略隔离）。
+    /// </summary>
+    /// <value>默认为 <c>null</c>（不启用应用级弹性隔离，仅使用 <see cref="ResilienceResolver"/>）。</value>
+    /// <remarks>
+    /// <para>
+    /// P3-7：无 DI 工厂路径（<c>RestService.ForGenerated&lt;T&gt;(HttpClient, GeneratedClientOptions)</c>）
+    /// 此前无法提供该服务（生成工厂硬编码 <c>appResilienceResolver: null</c>），现经本属性贯通，
+    /// 由生成工厂透传给 <c>DefaultHttpRequestExecutor(appResilienceResolver: …)</c>，与 DI 路径语义一致。
+    /// </para>
+    /// </remarks>
+    public IAppResiliencePolicyResolver? AppResilienceResolver { get; set; }
+
+    /// <summary>
     /// 获取或设置敏感数据掩码器。
     /// </summary>
     /// <remarks>
@@ -121,6 +135,18 @@ public sealed class GeneratedClientOptions : IEnhancedClientConfig
     /// 仅用于源生成的默认模式接口。为 null 时由工厂委托内部创建 <c>AsyncLocalAppContextSwitcher</c>（位于 <c>Mud.HttpUtils.Client</c>）。
     /// </remarks>
     public IAppContextHolder? AppContextHolder { get; set; }
+
+    /// <summary>
+    /// 获取或设置应用管理器（承载全部应用上下文注册表，支撑 UseApp / BeginScope 等应用切换能力）。
+    /// </summary>
+    /// <value>默认为 <c>null</c>（不启用应用切换能力）。</value>
+    /// <remarks>
+    /// <para>
+    /// P3-7：无 DI 工厂路径此前硬编码 <c>appManager: null</c>（executor 与生成实现类构造两处），
+    /// 现经本属性贯通，由生成工厂透传，与 DI 路径语义一致。
+    /// </para>
+    /// </remarks>
+    public IAppManager<IMudAppContext>? AppManager { get; set; }
 
     /// <summary>
     /// 获取或设置异常擦除器（在异常传播前清除敏感数据）。

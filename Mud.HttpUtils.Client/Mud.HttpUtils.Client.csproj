@@ -20,6 +20,18 @@
 	<ItemGroup>
 		<ProjectReference Include="..\Mud.HttpUtils.Abstractions\Mud.HttpUtils.Abstractions.csproj" />
 	</ItemGroup>
+	<ItemGroup>
+		<!-- [A-3] Polyfill 单一来源化：链接编译 Abstractions 的 internal Polyfill（内部裁剪注解类型），
+		     消除 Client 内部的重复定义。仅链接 internal 4 个：
+		     - public 3 个（IsExternalInit / RequiresUnreferencedCode / RequiresDynamicCode）不链接：
+		       会进入 Client 公共 API 面（PublicAPI 门禁 RS0016）且与 M.E.L.Abstractions 转递类型产生 CS0436；
+		     - internal 类型仅在源内编译，不跨程序集可见，无冲突。
+		     文件内部自带 #if !NET7_0_OR_GREATER guard，高版本 TFM 编译为空。 -->
+		<Compile Include="..\Mud.HttpUtils.Abstractions\Polyfills\UnconditionalSuppressMessageAttribute.cs" Link="Polyfills\UnconditionalSuppressMessageAttribute.cs" Visible="false" />
+		<Compile Include="..\Mud.HttpUtils.Abstractions\Polyfills\DynamicDependencyAttribute.cs" Link="Polyfills\DynamicDependencyAttribute.cs" Visible="false" />
+		<Compile Include="..\Mud.HttpUtils.Abstractions\Polyfills\DynamicallyAccessedMemberTypes.cs" Link="Polyfills\DynamicallyAccessedMemberTypes.cs" Visible="false" />
+		<Compile Include="..\Mud.HttpUtils.Abstractions\Polyfills\DynamicallyAccessedMembersAttribute.cs" Link="Polyfills\DynamicallyAccessedMembersAttribute.cs" Visible="false" />
+	</ItemGroup>
 	<ItemGroup Condition="'$(TargetFramework)' == 'net10.0' or '$(TargetFramework)' == 'net8.0'">
 		<PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
 		<PackageReference Include="Microsoft.Extensions.Http" Version="10.0.9" />

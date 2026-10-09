@@ -506,6 +506,7 @@ public class DefaultHttpRequestExecutor(
         {
             // 设置 SkipResilience 标记，避免全局 ResilientHttpClient 双重包装弹性策略
             SetSkipResilienceFlag(request);
+            StampResilienceAppKey(request); // P2-4：作用域键携带应用维度（跨应用隔离熔断计数）
             var policyWrapper = effectiveResolver.ResolvePolicyWrapper<object>(
                 executionDescriptor.Resilience, request);
 
@@ -834,6 +835,7 @@ public class DefaultHttpRequestExecutor(
         if (descriptor.Resilience != null && effectiveResolver != null)
         {
             SetSkipResilienceFlag(request);
+            StampResilienceAppKey(request); // P2-4：作用域键携带应用维度（跨应用隔离熔断计数）
             var policyWrapper = effectiveResolver.ResolvePolicyWrapper<object>(
                 descriptor.Resilience, request);
 
@@ -891,6 +893,7 @@ public class DefaultHttpRequestExecutor(
         {
             // 设置 SkipResilience 标记，避免全局弹性策略双重包装
             SetSkipResilienceFlag(request);
+            StampResilienceAppKey(request); // P2-4：作用域键携带应用维度（跨应用隔离熔断计数）
 
             var policyWrapper = effectiveResolver.ResolvePolicyWrapper<TResult>(
                 descriptor.Resilience, request);
@@ -948,6 +951,38 @@ public class DefaultHttpRequestExecutor(
         request.Properties[HttpExecutionConstants.SkipResiliencePropertyKey] = true;
 #else
         request.Options.TryAdd(HttpExecutionConstants.SkipResiliencePropertyKey, true);
+#endif
+    }
+
+    /// <summary>
+    /// P2-4：把当前应用上下文的 AppKey 写入请求选项（<see cref="HttpExecutionConstants.AppKeyPropertyKey"/>），
+    /// 供弹性策略作用域解析器追加进作用域键——多应用共用同名客户端与同一 host 时
+    /// 熔断/超时计数不跨应用共享（与 F-01 层B 缓存键的应用维度同口径）。
+    /// 键解析口径与 <see cref="ResolveEffectiveResilienceResolver"/> 一致（显式上下文 → 默认应用）；
+    /// 均不可得时不写入（作用域键保持历史格式，无应用消费方零漂移）。
+    /// </summary>
+    private void StampResilienceAppKey(HttpRequestMessage request)
+    {
+        var appKey = _appContextHolder?.Current?.AppKey;
+        if (string.IsNullOrEmpty(appKey) && _appManager != null)
+        {
+            try
+            {
+                appKey = _appManager.GetDefaultApp().AppKey;
+            }
+            catch
+            {
+                // 默认应用未设置时不阻断请求，作用域键保持无应用维度
+            }
+        }
+
+        if (string.IsNullOrEmpty(appKey))
+            return;
+
+#if NETSTANDARD2_0
+        request.Properties[HttpExecutionConstants.AppKeyPropertyKey] = appKey!;
+#else
+        request.Options.Set(new HttpRequestOptionsKey<string>(HttpExecutionConstants.AppKeyPropertyKey), appKey!);
 #endif
     }
 

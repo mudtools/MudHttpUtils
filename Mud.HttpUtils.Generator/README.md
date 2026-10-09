@@ -892,6 +892,88 @@ var api = RestService.ForGenerated<IUserApi>(httpClient,
 var user = await api.GetUserAsync(1);
 ```
 
+## 工具面引擎（通用工具 Schema 生成）
+
+本包并入了一台**通用工具 Schema 生成引擎**：把「标注 SDK 自有工具特性的接口」编译为 AI 工具调用所需的
+Schema / 常量 / 契约产物。引擎由**剖面（profile）**驱动——剖面声明 SDK 的全部编译期命名事实（工具特性名、
+SDK 根命名空间、诊断前缀等），引擎按剖面扇出生成，**不内置任何 SDK 专名**。
+设计契约详见设计文档《通用工具 Schema 生成引擎——组件详细设计方案》（`.docs/` 目录）。
+
+### 定义剖面
+
+实现 `ISdkToolProfile`（`Mud.HttpUtils`）并标注 `[SdkToolProfile]`（`Mud.HttpUtils.Attributes`），
+二者必须成对出现（由 `SDKT001` 强制）；必需槽位缺失期间该剖面不产出任何产物（`SDKT002`）：
+
+```csharp
+[SdkToolProfile("Feishu",
+    SdkNamespaceRoot = "Mud.Feishu",
+    ProductPrefix = "FeishuTool",
+    DiagnosticPrefix = "MUDFT",
+    DiagnosticCategory = "MudFeishu.AI",
+    ToolAttributeName = "FeishuTool",
+    ToolAttributeNamespace = "Mud.Feishu.AI.Tools",
+    TokenKindStrategy = TokenKindDerivationStrategy.NamePrefix,
+    TokenKindMarkers = "IFeishuTenant=Tenant;IFeishuUser=User",
+    /* 其余槽见 [SdkToolProfile] 特性的 XML 文档（共 17 组命名事实槽） */)]
+sealed class FeishuToolProfile : ISdkToolProfile { }
+```
+
+标注 `[{ToolAttributeName}]` 的接口（及执行器绑定）即被引擎扫描。产物 hintName 均以
+`{ProductPrefix}` 前缀派生（如 `FeishuTool` → `FeishuToolSchemas.g.cs`）：
+
+| 产物                                | 内容                                 | 发射门槛                                             |
+| ----------------------------------- | ------------------------------------ | ---------------------------------------------------- |
+| `{P}Schemas.g.cs`                   | 每个工具的 JSON Schema 描述符        | 无（恒发射）                                         |
+| `{P}Names.g.cs`                     | 工具名编译期常量（名字契约所有者唯一） | 仅 `OwnerAssembly` 匹配的程序集                     |
+| `{P}Contracts.g.cs`                 | 工具契约（读写分类、令牌身份等）     | 仅 `OwnerAssembly` 匹配的程序集                      |
+| `{P}Args/*` / `{P}DomainRegistrars/*` | 参数解包 helper / DI 注册器        | 仅 `OwnerAssembly` 匹配的程序集                      |
+| `{P}Guidance.g.cs`                  | 使用指引                             | 仅 `OwnerAssembly` 匹配的程序集                      |
+| `{P}MethodCatalog.g.cs`             | SDK 能力方法目录（轻量元数据）       | 见 `MethodCatalog` 槽配置                            |
+
+- **空剖面零开销**：编译内没有任何 `ISdkToolProfile` 实现时，引擎管线 O(1) 短路、不产出任何文件（HTTP 用户零感知）。
+- **多剖面扇出**：同一编译可并存多个剖面，产物按 `{ProductPrefix}` / `{DiagnosticPrefix}` 天然隔离，互不撞名。
+
+### 工具面诊断（`{DiagnosticPrefix}NNN`）
+
+引擎诊断 ID 按 `{DiagnosticPrefix}{槽位:D3}` 动态组装（如 `MUDFT026`），共 27 个规范槽位
+（007/012/013 为上游已清理的历史僵尸位，不复活）。**零容忍列** = Error 且默认阻断构建
+（与上游 zero-tolerance 基线一致：005/006/009/021 为 Warning、018 为 Info，均不阻断）：
+
+| 槽位    | 语义                                                          | 级别    | 零容忍 |
+| ------- | ------------------------------------------------------------- | ------- | ------ |
+| 001     | 工具特性缺少工具名                                            | Error   | 是     |
+| 002     | 接口命名不符合 SDK 范式                                       | Error   | 是     |
+| 003     | 工具名冲突                                                    | Error   | 是     |
+| 004     | 返回类型不可映射为 OutputSchema                               | Error   | 是     |
+| 005/006 | XML `<summary>` / `<param>` 文档注释缺失                      | Warning | 否     |
+| 008     | 上传/下载参数类型无法映射 `format:binary`                     | Error   | 是     |
+| 009     | 输出 Schema 深度截断 / 循环引用（聚合单条）                   | Warning | 否     |
+| 010/011 | 查询参数展开失败 / AnyOf 组引用未知参数                       | Error   | 是     |
+| 014     | Golden 快照 diff（描述符漂移）                                | Error   | 是     |
+| 015     | Schema 内部不一致（required 不在 properties 键集等）          | Error   | 是     |
+| 016/017 | 工具身份与接口令牌类型不符 / 读写分类与 SDK 事实脱钩          | Error   | 是     |
+| 018     | AI 能力覆盖报告（聚合单条，开启能力目录时产出）               | Info    | 否     |
+| 019     | `Source` 源挂钩无法解析                                       | Error   | 是     |
+| 020     | 参数 C# 类型不在解包映射表内                                  | Error   | 是     |
+| 021     | 必填参数被声明为可空                                          | Warning | 否     |
+| 022-025 | 执行器未绑定 / 绑定不成立 / 签名不符 / 构造参数不可 DI 解析   | Error   | 是     |
+| 026     | 生成器内部异常兜底（类别固定用 Tooling 类别，其余槽用 `DiagnosticCategory`） | Error | 是 |
+| 027     | 工具名派生常量名冲突                                          | Error   | 是     |
+
+剖面契约守卫诊断 `SDKT001`/`SDKT002` 见下方「编译诊断」章节的工具面小节。
+
+### Golden 快照与能力目录（Tier R）
+
+- **Golden 快照**：剖面可将 golden 快照文件（AdditionalText）提供给引擎；工具描述符与快照不一致时报告
+  014（Error，零容忍），消息内含重新固化方式——将剖面 `GoldenUpdatePropertyName` 槽声明的 MSBuild 属性
+  设为 `true` 重新构建即可重写快照（如 `-p:FeishuToolsGoldenUpdate=true`；未声明该槽时提示手动更新快照文件）。
+- **能力目录（Tier R，可选）**：将剖面 `CapabilityCatalogPropertyName` 槽声明的 MSBuild 属性设为 `true`，
+  额外产出 `{ProductPrefix}CapabilityCatalog.g.cs`（SDK 能力全景 + 已策展覆盖率），并附一条 018 覆盖率报告
+  （Info，不进构建输出）。
+
+> **消费方注册义务**：以上两个属性名由**剖面作者自定义**，消费方工程须在自己的 csproj 中注册
+> `<CompilerVisibleProperty Include="该属性名" />`，否则生成器读不到开关值（组件侧 props 不预知剖面属性名）。
+
 ## 编译诊断
 
 源代码生成器在编译时会对不合理的 API 定义产生警告或错误，帮助开发者在编译阶段发现问题。
@@ -935,6 +1017,7 @@ var user = await api.GetUserAsync(1);
 | `HTTPCLIENT035`     | Error    | 继承组合的运行模式不匹配（G8-04）：基接口为 `HttpClient`/`TokenManage`/默认模式，而派生接口为另一模式 ⇒ 生成的 `base(...)` 位置实参类型与基类构造函数不匹配（必然编译失败）                                                          | 二选一：① 统一两级配置（令基接口与派生接口使用一致的 `HttpClient` / `TokenManage` 设置）；② 改用 `[HttpClientApi(InheritedFrom = "…")]` 指向宿主自维护的抽象基类。**支持的组合**：基/派生同为 `Default`、同为 `TokenManage`、同为 `HttpClient`，以及「基 `Default` × 派生 `TokenManage`」 | 否                                                                         | 是     |
 | `HTTPCLIENT036`     | Warning  | `[FilePath(BufferSize = …)]` 超过支持上界（4 MiB），生成器已夹取到上界（G8-06）                                                                                                                                                      | 调小 `BufferSize`（4 MiB 已远超任何合理下载缓冲：默认 81920 字节）；不修改即按上界运行，不会 OOM                                                                                                                                                                                          | 否                                                                         | 是     |
 | `HTTPCLIENT037`     | Info     | 方法参数名含 "header"（大小写不敏感）但未标注 `[Header]` 或 `[HeaderCollection]`，该参数不会写入请求头（M6-HC-02）                                                                                                                   | 检查特性名拼写（如误写成 `[Headers]`/`[HeaderMap]`）；若参数确非请求头可忽略本提示                                                                                                                                                                                                        | 否                                                                         | 是     |
+| `HTTPCLIENT038`     | Info     | 接口声明的语义符号无法解析（常见于接口声明语法不完整，如 IDE 输入中途），本次已跳过该接口的实现类生成                                                                                                                                | 修复接口声明的语法错误（如补全接口名），修复后本提示自动消失                                                                                                                                                                                                                              | 否                                                                         | 是     |
 
 > **注**：`HTTPCLIENT002`、`HTTPCLIENT006`、`HTTPCLIENT010`、`HTTPCLIENT019` 当前**未使用**（ID 保留为占位，不重新分配）。
 >
@@ -1078,6 +1161,15 @@ var user = await api.GetUserAsync(1);
 | `MUD002` | Error    | `[HttpClientApi]` 接口方法返回类型不受生成器支持                                                                                                                                                                                                                         | 返回**异步形态**：`Task`/`Task<T>`/`ValueTask`/`ValueTask<T>`/`IAsyncEnumerable<T>`（响应体 `T` 可为任意类型，含 `byte[]`/`Stream`/`HttpResponseMessage`/自定义类型）。裸 `byte[]`/`Stream`/`HttpResponseMessage`/`void` 均不受支持（生成器会产出不可编译代码） | 否         | 是     | <!-- supported-return-shapes: Task, Task<T>, ValueTask, ValueTask<T>, IAsyncEnumerable<T> --> |
 | `MUD004` | Warning  | `ITokenManager` 的实现以 `AddScoped`/`AddTransient`/`TryAddScoped`/`TryAddTransient` 注册（该实现内部维护令牌缓存与并发锁，非 Singleton 会令并发安全机制失效并重复刷新令牌）                                                                                             | 改用 `AddSingleton`/`TryAddSingleton`                                                                                                                                                                                                                           | 否         | 是     |
 | `MUD005` | Warning  | `[HttpClientApi]` 接口（方法级或接口级）使用 `[Token(InjectionMode = Query)]` 或 `[Token(InjectionMode = Path)]` 注入模式：令牌进入请求 URL / 路径，可能被代理 / 访问日志 / 浏览器历史等不受控的外部系统记录（库内遥测已由 `SensitiveUrlRedactor` 脱敏，外部系统不受控） | 生产环境改用 Header 注入模式（`InjectionMode.Header`）或确认目标环境的日志治理覆盖令牌参数                                                                                                                                                                      | 否         | 是     |
+
+#### 工具面引擎剖面契约诊断（SDKT\*）
+
+下述诊断由本包内的 `ProfileContractGuardAnalyzer` 报告（`Mud.HttpUtils.ToolSurface` 类别，与通用工具 Schema 生成引擎的剖面契约配套）：
+
+| 诊断 ID   | 严重级别 | 触发条件                                                                                                     | 解决方案                                                                                              | 可自动修复 | 可抑制 |
+| --------- | -------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- | ---------- | ------ |
+| `SDKT001` | Error    | 类实现了 `ISdkToolProfile` 但未标注 `[SdkToolProfile]`，或标注了 `[SdkToolProfile]` 但未实现 `ISdkToolProfile`（剖面契约必须成对出现） | 补上缺失的一半：实现 `Mud.HttpUtils.ISdkToolProfile` 并标注 `[SdkToolProfile("name")]`，二者同时具备 | 否         | 是     |
+| `SDKT002` | Error    | 剖面 `[SdkToolProfile]` 缺少引擎必需槽位（Name / ToolAttributeName / ToolAttributeNamespace / SdkNamespaceRoot / ProductPrefix / DiagnosticPrefix / DiagnosticCategory） | 按诊断消息列出的槽名补全，缺失期间该剖面不产出任何工具面产物 | 否         | 是     |
 
 #### 诊断排查顺序与可抑制性
 
@@ -1379,7 +1471,7 @@ Mud.HttpUtils.Generator/
 │   └── EventHandlerSourceGenerator.cs
 ├── Extensions/
 │   └── StringExtensions.cs
-├── Generators/                   # 代码生成器
+├── HttpInvoke/                   # [HttpClientApi] 接口的实现类代码生成
 │   ├── Base/                     # 生成器接口
 │   │   └── ICodeFragmentGenerator.cs
 │   ├── Context/                  # 生成上下文与配置快照

@@ -483,6 +483,129 @@ public class JsonContextGeneratorTests
         generator.Diagnostics.Should().NotContain(d => d.Id == "AOT001");
     }
 
+    /// <summary>
+    /// [F-4 反例] Default（未显式指定）+ 单一显式策略混排不构成错配，不得报 AOT001（噪音消除）。
+    /// </summary>
+    [Fact]
+    public void Generate_DefaultMixedWithSingleExplicitPolicy_NoAOT001()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            namespace TestApp;
+            [HttpJsonSerializable(SerializerClassName = "App", NamingPolicy = JsonNamingPolicyHint.CamelCase)]
+            public class DtoA { }
+            [HttpJsonSerializable(SerializerClassName = "App")]
+            public class DtoB { }
+            """;
+        var compilation = CreateCompilation(source);
+        var generator = new JsonContextGenerator();
+
+        generator.Generate(compilation);
+
+        generator.Diagnostics.Should().NotContain(d => d.Id == "AOT001",
+            "Default 只是未显式指定，与单一显式策略混排不构成命名策略冲突");
+    }
+
+    /// <summary>
+    /// [F-4 正例] 两个不同的<b>显式</b>策略 → 仍报 AOT001（收紧不得放走真实错配）。
+    /// </summary>
+    [Fact]
+    public void Generate_TwoDistinctExplicitPolicies_ReportsAOT001()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            namespace TestApp;
+            [HttpJsonSerializable(SerializerClassName = "App", NamingPolicy = JsonNamingPolicyHint.SnakeCaseLower)]
+            public class DtoA { }
+            [HttpJsonSerializable(SerializerClassName = "App", NamingPolicy = JsonNamingPolicyHint.CamelCase)]
+            public class DtoB { }
+            """;
+        var compilation = CreateCompilation(source);
+        var generator = new JsonContextGenerator();
+
+        generator.Generate(compilation);
+
+        generator.Diagnostics.Should().Contain(d => d.Id == "AOT001",
+            "两个不同的显式命名策略仍为真实错配，必须告警");
+    }
+
+    #region F-3：发现类型与标注类型分组隔离
+
+    /// <summary>
+    /// [F-3 正例] 标注类型显式 SnakeCaseLower + HttpClientApi 发现 CamelCase 可推导 DTO：
+    /// 产出两个 Context 文件，命名策略各自正确（显式策略不得传染给发现类型）。
+    /// </summary>
+    [Fact]
+    public void Generate_ExplicitPolicyAnnotated_WithDiscoveredTypes_ProducesIsolatedGroups()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            using System.Threading.Tasks;
+            namespace TestApp;
+
+            [HttpJsonSerializable(SerializerClassName = "App", NamingPolicy = JsonNamingPolicyHint.SnakeCaseLower)]
+            public class AnnotatedDto { public string SomeProperty { get; set; } }
+
+            public class MyData { public string Name { get; set; } }
+
+            [HttpClientApi]
+            public interface IMyApi
+            {
+                [Get("/api/data")]
+                Task<MyData> GetDataAsync();
+            }
+            """;
+        var compilation = CreateCompilation(source, assemblyName: "TestApp");
+        var generator = new JsonContextGenerator();
+
+        var files = generator.Generate(compilation);
+
+        files.Should().HaveCount(2, "非 Default 标注组与发现类型必须分组隔离");
+        var annotatedFile = files.Single(f => f.ContextClassName == "AppJsonContext");
+        var discoveredFile = files.Single(f => f.ContextClassName == "TestAppHttpClientApiJsonContext");
+        annotatedFile.SourceCode.Should().Contain("PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower");
+        annotatedFile.SourceCode.Should().Contain("AnnotatedDto");
+        annotatedFile.SourceCode.Should().NotContain("MyData", "发现类型不得混入显式策略组");
+        discoveredFile.SourceCode.Should().Contain("MyData");
+        generator.Diagnostics.Should().Contain(d => d.Id == "AOT104"
+            && d.Message.Contains("TestAppHttpClientApiJsonContext"),
+            "AOT104 消息需按发现类型的实际去向描述");
+    }
+
+    /// <summary>
+    /// [F-3 反例·现状保护] 标注类型为 Default 策略时，发现类型仍并入同组（单文件，不回归 D25 行为）。
+    /// </summary>
+    [Fact]
+    public void Generate_DefaultPolicyAnnotated_WithDiscoveredTypes_MergesIntoSameGroup()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            using System.Threading.Tasks;
+            namespace TestApp;
+
+            [HttpJsonSerializable(SerializerClassName = "App")]
+            public class AnnotatedDto { public string SomeProperty { get; set; } }
+
+            public class MyData { public string Name { get; set; } }
+
+            [HttpClientApi]
+            public interface IMyApi
+            {
+                [Get("/api/data")]
+                Task<MyData> GetDataAsync();
+            }
+            """;
+        var compilation = CreateCompilation(source, assemblyName: "TestApp");
+        var generator = new JsonContextGenerator();
+
+        var files = generator.Generate(compilation);
+
+        files.Should().HaveCount(1, "Default 标注组与发现类型合并不受 F-3 影响");
+        files[0].SourceCode.Should().Contain("AnnotatedDto").And.Contain("MyData");
+    }
+
+    #endregion
+
     [Fact]
     public void Generate_OpenGeneric_ReportsAOT002()
     {

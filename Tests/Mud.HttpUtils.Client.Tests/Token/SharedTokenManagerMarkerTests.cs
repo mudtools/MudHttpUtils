@@ -76,6 +76,42 @@ public class SharedTokenManagerMarkerTests
         act.Should().NotThrow("实现 ISharedTokenManager 即声明凭据无租户属性，守卫默认豁免");
     }
 
+    // ── F4：租户绑定判定的公开可读入口（IsTenantBindingEnforced） ──────
+
+    /// <summary>
+    /// F4：公开属性 <see cref="TokenManagerBase.IsTenantBindingEnforced"/> 必须与 protected
+    /// <c>EnforceTenantBinding</c> 取值完全一致（消费方/测试无需反射即可判定）。
+    /// </summary>
+    [Fact]
+    public void IsTenantBindingEnforced_ShouldMirrorProtectedHook()
+    {
+        using var tenantManager = new ProbeTenantTokenManager();
+        using var sharedManager = new ProbeSharedTokenManager();
+        using var explicitManager = new ProbeSharedButExplicitlyBoundTokenManager();
+
+        tenantManager.IsTenantBindingEnforced.Should().BeTrue("非标记派生类默认启用租户绑定守卫");
+        sharedManager.IsTenantBindingEnforced.Should().BeFalse("实现 ISharedTokenManager 时守卫默认豁免");
+        explicitManager.IsTenantBindingEnforced.Should().BeTrue("显式覆写优先于接口标记");
+    }
+
+    /// <summary>
+    /// F4：公开属性必须与守卫<b>实际行为</b>同口径（不是独立的第二真相源）——
+    /// 取值 false 的实例恰好就是"多租户复用不抛异常"的实例。
+    /// </summary>
+    [Fact]
+    public void IsTenantBindingEnforced_ShouldAgreeWithGuardBehaviour()
+    {
+        using var manager = new ProbeSharedTokenManager();
+
+        manager.IsTenantBindingEnforced.Should().BeFalse();
+        var act = () =>
+        {
+            manager.BindTenantGuard("corp-a");
+            manager.BindTenantGuard("corp-b");
+        };
+        act.Should().NotThrow("IsTenantBindingEnforced=false ⇔ 守卫实际豁免");
+    }
+
     [Fact]
     public void Marker_ExplicitOverride_ShouldStillTakePrecedence()
     {

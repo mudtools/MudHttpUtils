@@ -610,6 +610,12 @@ public class TokenRecoveryExecutor
     /// 同步预过滤（在读取响应体之前调用，无关请求零捕获开销），再按需限量捕获响应体并交判定器判定。
     /// 判定器链路中除取消外的任何异常一律降级为「未失效」（记 Warning）——检测故障不得放大为调用失败。
     /// </summary>
+    /// <remarks>
+    /// B5（多产品线）：判定源由「单槽属性」扩展为「单槽 ∪ <see cref="TokenRecoveryOptions.AdditionalTokenInvalidationDetectors"/>」
+    /// 的并集。求值顺序固定为「单槽优先，再按集合 Add 顺序」，任一命中即短路返回；
+    /// 响应体捕获仅在首个 <c>ShouldInspect</c> 为 true 的判定器处发生一次（不重复读流）。
+    /// 两类来源皆空时与旧实现逐字节等价（仅认 401）。
+    /// </remarks>
     private async ValueTask<bool> IsTokenInvalidAsync(
         HttpResponseMessage response,
         HttpRequestMessage request,
@@ -618,20 +624,36 @@ public class TokenRecoveryExecutor
         if (response.StatusCode == HttpStatusCode.Unauthorized)
             return true;
 
-        var detector = Options.TokenInvalidationDetector;
-        if (detector is null)
+        var detectors = GetEffectiveTokenInvalidationDetectors();
+        if (detectors.Count == 0)
             return false;
 
         try
         {
-            if (!detector.ShouldInspect(request))
-                return false;
+            ReadOnlyMemory<byte>? body = null;
+            var bodyCaptured = false;
 
-            var body = await TryCaptureResponseBodyAsync(response, cancellationToken).ConfigureAwait(false);
-            var invalid = await detector.IsTokenInvalidAsync(response, body, cancellationToken).ConfigureAwait(false);
-            if (invalid)
-                MudHttpClientLog.TokenRecoveryTriggeredByDetector(_logger, (int)response.StatusCode);
-            return invalid;
+            foreach (var detector in detectors)
+            {
+                // 预过滤在读取响应体之前：无关请求零捕获开销（与既有单槽语义一致）。
+                if (!detector.ShouldInspect(request))
+                    continue;
+
+                if (!bodyCaptured)
+                {
+                    body = await TryCaptureResponseBodyAsync(response, cancellationToken).ConfigureAwait(false);
+                    bodyCaptured = true;
+                }
+
+                var invalid = await detector.IsTokenInvalidAsync(response, body, cancellationToken).ConfigureAwait(false);
+                if (invalid)
+                {
+                    MudHttpClientLog.TokenRecoveryTriggeredByDetector(_logger, (int)response.StatusCode);
+                    return true;
+                }
+            }
+
+            return false;
         }
         catch (OperationCanceledException)
         {
@@ -639,10 +661,47 @@ public class TokenRecoveryExecutor
         }
         catch (Exception ex)
         {
-            MudHttpClientLog.TokenInvalidationDetectionFailed(_logger, detector.GetType().Name, ex);
+            // B5：异常判定器标识为"首个参与判定的判定器类型"（链路故障归因，与既有日志字段兼容）。
+            MudHttpClientLog.TokenInvalidationDetectionFailed(_logger, detectors[0].GetType().Name, ex);
             return false;
         }
     }
+
+    /// <summary>
+    /// B5：汇总本次判定参与的全部判定器（单槽属性优先 + 追加式集合），保持稳定顺序。
+    /// </summary>
+    /// <remarks>
+    /// 无任何判定器时返回空列表（非 null）—— 使调用点可用 <c>Count == 0</c> 做零开销短路，
+    /// 并保证"两类来源皆空 ⇒ 仅认 401"的回归等价。
+    /// </remarks>
+    private List<ITokenInvalidationDetector> GetEffectiveTokenInvalidationDetectors()
+    {
+        var primary = Options.TokenInvalidationDetector;
+        var additional = Options.AdditionalTokenInvalidationDetectors;
+        var additionalCount = additional?.Count ?? 0;
+
+        if (primary is null && additionalCount == 0)
+            return s_noDetectors;
+
+        var detectors = new List<ITokenInvalidationDetector>(additionalCount + (primary is null ? 0 : 1));
+        if (primary is not null)
+            detectors.Add(primary);
+
+        if (additionalCount > 0)
+        {
+            for (var i = 0; i < additionalCount; i++)
+            {
+                var detector = additional![i];
+                if (detector is not null)
+                    detectors.Add(detector);
+            }
+        }
+
+        return detectors;
+    }
+
+    /// <summary>B5：空判定器集合的共享只读快照（避免"无判定器"热路径每次分配）。</summary>
+    private static readonly List<ITokenInvalidationDetector> s_noDetectors = new(0);
 
     /// <summary>
     /// WX-01：按需限量捕获响应体，供失效判定器读取业务错误码。

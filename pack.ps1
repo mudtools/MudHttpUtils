@@ -193,6 +193,60 @@ foreach ($pkg in $nupkgs) {
 if ($ValidationFailures.Count -eq 0) {
     Write-Host "  [ OK ] 包集合 $($producedPackages.Count) 个，DLL 与 bin\$Configuration 逐字节一致（校验 $checkedDllCount 个）" -ForegroundColor Green
 }
+
+# -------------------------------------------------------------------------
+# ③ 工具面生成器符号校验（ToolSurface 设计文档 §7.3）：
+#    Mud.HttpUtils.Generator 的 DLL 必须同时包含 HTTP 生成器与工具面生成器家族。
+#    反证「并入既有包的工具生成器在打包/裁剪时被遗漏」——该遗漏不会表现为构建失败，
+#    只会让消费方的 [SdkToolProfile] 静默不产任何工具面产物。
+# -------------------------------------------------------------------------
+$generatorPackage = $nupkgs | Where-Object { $_.BaseName -like "Mud.HttpUtils.Generator.*" } | Select-Object -First 1
+if (-not $generatorPackage) {
+    $ValidationFailures += "缺少 Mud.HttpUtils.Generator 包，无法校验工具面生成器符号"
+    Write-Host "  [FAIL] 缺少 Mud.HttpUtils.Generator 包" -ForegroundColor Red
+}
+else {
+    $zip = [System.IO.Compression.ZipFile]::OpenRead($generatorPackage.FullName)
+    try {
+        $analyzerEntry = $zip.Entries | Where-Object { $_.FullName -match '^analyzers/.*/Mud\.HttpUtils\.Generator\.dll$' } | Select-Object -First 1
+        if (-not $analyzerEntry) {
+            $ValidationFailures += "Mud.HttpUtils.Generator 包内未找到 analyzers/…/Mud.HttpUtils.Generator.dll"
+            Write-Host "  [FAIL] Generator 包内未找到 analyzers 下的生成器 DLL" -ForegroundColor Red
+        }
+        else {
+            $stream = $analyzerEntry.Open()
+            try {
+                # 类型名在元数据里以 ASCII/UTF-8 明文存放，按「1 字节 = 1 字符」的 Latin1 解码后
+                # 直接做子串匹配即可，无需把程序集加载进进程（避免宿主 TFM 不兼容）。
+                # 注意：Windows PowerShell 5.1 跑在 .NET Framework 上，没有 Encoding.Latin1 静态属性
+                #（.NET 5+ 才有），访问它会静默得到 $null，必须用 ISO-8859-1 的编码编号获取。
+                $latin1 = [System.Text.Encoding]::GetEncoding(28591)
+                $buffer = New-Object byte[] ([int]$analyzerEntry.Length)
+                $read = 0
+                while ($read -lt $buffer.Length) {
+                    $chunk = $stream.Read($buffer, $read, $buffer.Length - $read)
+                    if ($chunk -le 0) { break }
+                    $read += $chunk
+                }
+
+                $text = $latin1.GetString($buffer, 0, $read)
+                if ($text.IndexOf("ToolSurfaceSourceGenerator", [System.StringComparison]::Ordinal) -lt 0) {
+                    $ValidationFailures += "Mud.HttpUtils.Generator.dll 不含 ToolSurfaceSourceGenerator 符号（工具面生成器家族在打包时丢失）"
+                    Write-Host "  [FAIL] Generator DLL 不含 ToolSurfaceSourceGenerator（工具面生成器被遗漏）" -ForegroundColor Red
+                }
+                else {
+                    Write-Host "  [ OK ] Generator DLL 含工具面生成器符号 ToolSurfaceSourceGenerator" -ForegroundColor Green
+                }
+            }
+            finally {
+                $stream.Dispose()
+            }
+        }
+    }
+    finally {
+        $zip.Dispose()
+    }
+}
 Write-Host ""
 
 Write-Host "========================================" -ForegroundColor Cyan
