@@ -166,6 +166,7 @@ flowchart TD
 | `MaxCloneContentSize` | `long` | `10485760` (10MB) | 请求克隆的最大内容大小（字节），-1 表示不限制 |
 | `PolicyScope` | `ResiliencePolicyScope` | `PerHost` | **M5-HC-06**：熔断等策略隔离作用域（PerHost / PerClient / Global） |
 | `MaxPolicyCacheSize` | `int` | `512` | **M5-HC-06**：策略缓存容量上限（软上限），超限按插入序淘汰最旧条目（每轮 max/8，至少 1 条）并打 Warning；熔断/超时共享策略缓存下限为 max(256, `MaxPolicyCacheSize`) |
+| `TimeoutStrategy` | `Polly.Timeout.TimeoutStrategy` | `Optimistic` | **M7-HC-03**：Polly 超时策略类型。`Optimistic`（默认）：超时即向底层请求下发取消，要求全程协作观察取消令牌；`Pessimistic`：到点即抛、不等待内层确认取消，被放弃的在途请求可能与重试重叠。可经 `MudHttpResilience:TimeoutStrategy` 配置绑定 |
 
 ### RetryOptions
 
@@ -188,7 +189,7 @@ flowchart TD
 | 属性 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `Enabled` | `bool` | `true` | 是否启用超时策略 |
-| `TimeoutSeconds` | `int` | `30` | 超时时间（秒），默认 30 秒，采用 Polly 悲观超时策略（`TimeoutStrategy.Pessimistic`） |
+| `TimeoutSeconds` | `int` | `30` | 超时时间（秒），默认 30 秒；超时策略类型由 `ResilienceOptions.TimeoutStrategy` 控制（**M7-HC-03 起默认乐观 `Optimistic`**，超时会真正取消底层请求，可回退 `Pessimistic`） |
 | `StreamConnectTimeoutSeconds` | `int` | `0`（禁用） | 流式枚举（SSE/NDJSON）首次 `MoveNextAsync` 连接期超时（秒）：仅约束连接建立 + 首元素产出，首元素产出后解除 |
 
 ### 超时层级与单位对照表（CFG-13）

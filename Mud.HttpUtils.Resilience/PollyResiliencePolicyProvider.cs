@@ -354,9 +354,10 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 
         var policyKey = scope == "global" ? PolicyKeyGlobalTimeout : $"{scope}:timeout";
 
+        // M7-HC-03：超时策略可配置（默认 Optimistic），经共享策略缓存 —— 策略为全局单例配置，缓存键不变
         return Policy.TimeoutAsync(
             TimeSpan.FromSeconds(timeoutOptions.TimeoutSeconds),
-            TimeoutStrategy.Pessimistic,
+            _options.TimeoutStrategy,
             onTimeoutAsync: (context, timespan, task) =>
             {
                 MudHttpClientLog.RequestTimeout(_logger, timespan.TotalSeconds);
@@ -524,9 +525,10 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 
         if (timeoutEnabled)
         {
+            // M7-HC-03：方法级超时与全局超时共用同一策略配置（泛型构造点与非泛型一致）
             var timeoutPolicy = Policy.TimeoutAsync<TResult>(
                 TimeSpan.FromMilliseconds(timeoutMilliseconds),
-                TimeoutStrategy.Pessimistic,
+                _options.TimeoutStrategy,
                 onTimeoutAsync: (context, timespan, task) =>
                 {
                     MudHttpClientLog.RequestTimeoutMs(_logger, timespan.TotalMilliseconds);

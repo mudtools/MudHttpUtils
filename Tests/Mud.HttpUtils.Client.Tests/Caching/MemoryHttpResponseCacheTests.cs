@@ -141,6 +141,29 @@ public class MemoryHttpResponseCacheTests
         act.Should().Throw<ArgumentNullException>().WithParameterName("key");
     }
 
+    // T10（M7-HC-05）：缓存共享实例契约 —— 命中按引用返回同一实例（防回归）。
+    // 注：ICacheValueCloner（M5-HC-08 预留扩展点）当前无任何接线
+    // （MemoryHttpResponseCache / CacheResponseInterceptor / DI 注册均不解析，
+    //   CacheValueSharing 枚举不存在），故不作"注入后返回克隆"断言 —— 无实现可测。
+    // 详见 M7 方案文档 §11.7。
+    [Fact]
+    public void T10_命中返回同一引用_共享实例契约()
+    {
+        var cache = new MemoryHttpResponseCache();
+        var stored = new List<int> { 1, 2, 3 };
+        cache.Set("shared", stored, TimeSpan.FromMinutes(5));
+
+        var hit = cache.TryGet<List<int>>("shared", out var fromTryGet);
+        hit.Should().BeTrue();
+        fromTryGet.Should().BeSameAs(stored, "缓存命中须按引用返回同一实例（零拷贝共享契约）");
+
+        var fetched = cache.GetOrFetchAsync(
+            "shared",
+            () => Task.FromResult(new List<int> { 9 }),
+            TimeSpan.FromMinutes(5));
+        fetched.Result.Should().BeSameAs(stored, "GetOrFetchAsync 命中路径须返回缓存中的同一实例");
+    }
+
     [Fact]
     public void Dispose_CalledTwice_DoesNotThrow()
     {

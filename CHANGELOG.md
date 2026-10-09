@@ -144,6 +144,38 @@
 
 ---
 
+## 3.1.0（HttpClient 审查修复与超时策略治理，2026-10-09）
+
+> 本版本为 M7 审查方案（`.docs/HttpClient审查修复与功能完善方案-M7.md`）的四阶段实施成果：**3 项缺陷修复 + 1 项超时策略治理 + 2 项契约文档化**。
+> ⚠️ **含行为变更**：Polly 超时策略默认由悲观改为乐观，超时后底层请求将被**真正取消**——如依赖旧行为，见下方迁移说明。
+
+### 修复（Fixed）
+
+- **Trace 级大响应反序列化必然失败（HC-01）**：日志分支不再截断反序列化数据源——新增 internal `ConcatReadOnlyStream` 组合流，日志读取前缀（`MaxDebugLogBodyLength`）与反序列化全量输入解耦；Trace 日志含截断标记，chunked（无 Content-Length）大响应在 Trace 级同样可观察且反序列化完整。日志失败口径（脱敏限量 `LogBodyMaxLength`）不变。
+- **下载取消被错误包装为 `HttpRequestException`（HC-02）**：下载路径取消/超时现原样抛出 `OperationCanceledException` / `TaskCanceledException`（含内层 `TimeoutException`），与执行器 `DownloadLargeCoreAsync` 口径对齐；`.mudtmp` 半写文件清理与最终路径原子性不变。**连带**：下载失败指标 `outcome` 对"调用方取消"分流为 `cancelled`（平台超时仍记 `error`，与请求路径三态口径一致）。
+- **后台令牌刷新 Dispose 不取消在途刷新（HC-04）**：`TokenRefreshBackgroundService` 改用实例级 CTS（构造期捕获令牌，避免读取已释放 CTS），`Dispose` 顺序为 置位 → Cancel → 停表 → Dispose CTS；`TokenRefreshHelper` 对操作取消原样上抛，不再吞成 `TokenRefreshUnhandledException` Error 日志。
+
+### 新增（Added）
+
+- **`ResilienceOptions.TimeoutStrategy`（HC-03）**：Polly 超时策略类型可配置（`Optimistic` / `Pessimistic`），泛型与非泛型双构造点均生效，可经 `MudHttpResilience:TimeoutStrategy` 配置绑定；公共 API 已登记基线（RS0016/17 门禁）。
+
+### 行为变更
+
+- **超时策略默认值由 `Pessimistic` 改为 `Optimistic`**：超时后框架会向底层请求下发取消，要求请求路径全程协作观察 `CancellationToken`（本仓 `SendAsync`、下载复制循环等主路径均已协作）。
+  **迁移**：若需回退旧行为（到点即抛、不等待内层确认取消），配置 `MudHttpResilience:TimeoutStrategy=Pessimistic` 即可单点回滚，无需发版。
+  注意：流式路径（SSE/NDJSON 枚举）不经 Polly 超时，不受本次变更影响。
+
+### 文档
+
+- **缓存共享实例契约（HC-05）**：`MemoryHttpResponseCache` 命中按引用返回同一实例的责任边界，在 Client/Abstractions README 与 `ICacheValueCloner` / `IHttpResponseCache` XML 中显式声明。**实测修正**：`ICacheValueCloner` 为**尚未接线**的预留扩展点（全仓无消费点），原"注册 `CacheValueSharing = Clone` 即生效"文案与实现不符，已改为如实口径（见 M7 方案 §11.7）。
+- **`JsonSerializerOptions` 所有权（HC-06）**：注入的 options 所有权归调用方——直构 `SystemTextJsonContentSerializer` 按引用持有，DI 路径按 `new JsonSerializerOptions(injected)` 副本合并，两路径所有权语义不同，已在构造 XML 与 README 声明。
+
+### 测试
+
+- 新增 T1~T12 对应用例：Trace 大响应组合流（红转绿）、下载取消 OCE + 临时文件清理、平台超时分类、超时策略双构造点与内层取消、后台刷新 Dispose 取消（三 TFM）、`TimeoutStrategy` 配置绑定、缓存共享引用契约、下载取消指标 `outcome=cancelled`。
+
+---
+
 ## 3.0.1（载荷字段映射生成器，2026-10-03）
 
 > 为「外部报文 → 强类型载荷」新增声明式源生成器 `PayloadFieldMapGenerator`：字段名映射与类型转换改由**编译器校验**——

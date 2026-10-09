@@ -66,6 +66,57 @@ public class ResilienceConfigurationBindingTests
         options.MaxCloneContentSize.Should().Be(52428800);
     }
 
+    /// <summary>
+    /// T11（M7-HC-03）：<c>MudHttpResilience:TimeoutStrategy</c> 配置节可绑定为 Pessimistic 回退值。
+    /// </summary>
+    [Fact]
+    public void AddMudHttpResilience_FromConfiguration_BindsTimeoutStrategy()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["MudHttpResilience:TimeoutStrategy"] = "Pessimistic",
+            })
+            .Build();
+
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddMudHttpResilience(config);
+
+        // Assert
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<ResilienceOptions>>().Value;
+
+        options.TimeoutStrategy.Should().Be(TimeoutStrategy.Pessimistic,
+            "配置节须能将超时策略回退为 Pessimistic（M7-HC-03）");
+    }
+
+    /// <summary>
+    /// T11（M7-HC-03）：未配置时 TimeoutStrategy 须为默认 Optimistic。
+    /// </summary>
+    [Fact]
+    public void AddMudHttpResilience_EmptySection_TimeoutStrategyDefaultsToOptimistic()
+    {
+        // Arrange
+        var config = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>())
+            .Build();
+
+        var services = new ServiceCollection();
+
+        // Act
+        services.AddMudHttpResilience(config);
+
+        // Assert
+        var provider = services.BuildServiceProvider();
+        var options = provider.GetRequiredService<IOptions<ResilienceOptions>>().Value;
+
+        options.TimeoutStrategy.Should().Be(TimeoutStrategy.Optimistic,
+            "未显式配置时默认 Optimistic，使超时经 linked token 下发给内层（M7-HC-03）");
+    }
+
     [Fact]
     public void AddMudHttpResilience_FromConfiguration_WithCustomSectionPath_Works()
     {

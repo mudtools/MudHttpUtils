@@ -1516,7 +1516,11 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
                     try
                     {
-                        using var responseContent = new StreamContent(memoryStream);
+                        // M7-HC-01：截断日志照旧（:1511 之前已写入），但反序列化必须读全量 ——
+                        // 以"32KB 截断缓冲 + 原始流剩余"顺序拼接（组合流），杜绝以截断 JSON 做业务反序列化
+                        //（>32KB 合法响应在 Trace 开启时必然 JsonException，日志级别改变业务行为）。
+                        using var responseContent = new StreamContent(
+                            new ConcatReadOnlyStream(memoryStream, stream, leaveOpen: true));
                         var result = await _contentSerializer.FromHttpContentAsync<TResult>(responseContent, options, cancellationToken).ConfigureAwait(false);
                         _logger.JsonDeserializeSuccess(requestUri!, typeof(TResult).Name);
                         return result;
@@ -1820,7 +1824,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             catch (Exception ex)
             {
                 MudHttpObservability.RecordDownloadFailed(
-                    httpRequestMessage, ClientName, downloadSw.GetElapsedTime().TotalMilliseconds, ex);
+                    httpRequestMessage, ClientName, downloadSw.GetElapsedTime().TotalMilliseconds, ex, cancellationToken);
                 throw;
             }
         }, requestUri!, cancellationToken);
@@ -1973,7 +1977,7 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
             if (downloadStarted)
             {
                 MudHttpObservability.RecordDownloadFailed(
-                    httpRequestMessage, ClientName, downloadSw.GetElapsedTime().TotalMilliseconds, ex);
+                    httpRequestMessage, ClientName, downloadSw.GetElapsedTime().TotalMilliseconds, ex, cancellationToken);
             }
 
             // M6-HC-14：清理半写临时文件（最终路径永不出现半写文件）
@@ -1989,7 +1993,11 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
 
             _logger.LargeFileDownloadFailed(requestUri!, filePath, ex);
 
-            if (ex is HttpRequestException)
+            // M7-HC-02：取消/超时原样透传 —— 与 byte[] 下载路径（:1821-1826）及执行器
+            // DownloadLargeCoreAsync 口径一致；包装为 HttpRequestException 会使外层
+            // ExecuteWithObservabilityAsync 三态判定失去 cancelled 态、TaskCancellationClassifier
+            // 无法归类平台超时、使用者无法以 catch (OperationCanceledException) 识别自身取消。
+            if (ex is HttpRequestException || ex is OperationCanceledException)
                 throw;
 
             throw new HttpRequestException($"大文件下载失败: {ex.Message}", ex);

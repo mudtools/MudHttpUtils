@@ -5,6 +5,8 @@
 //  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
+using Polly.Timeout;
+
 namespace Mud.HttpUtils.Resilience;
 
 /// <summary>
@@ -26,6 +28,25 @@ public class ResilienceOptions
     /// 超时策略配置。
     /// </summary>
     public TimeoutOptions Timeout { get; set; } = new();
+
+    /// <summary>
+    /// M7-HC-03：Polly 超时策略实现方式，默认 <see cref="TimeoutStrategy.Optimistic"/>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Optimistic（默认）</b>：超时经 linked token 下发给内层，被放弃的请求立即收到取消信号，
+    /// 与紧随其后的重试不产生在途重叠窗口（非幂等接口更安全）。前提是内层执行路径全程观察
+    /// <see cref="System.Threading.CancellationToken"/>——本仓协作路径（<c>SendAsync(..., ct)</c>、
+    /// 下载复制循环）已满足；<c>ResilientHttpClient.ExecuteStreamCoreAsync</c> 流式路径不经 Polly 超时，不受影响。
+    /// </para>
+    /// <para>
+    /// <b>Pessimistic（回退）</b>：到点即抛、不等待内层确认取消；不观察 CT 的自定义执行路径会悬挂至
+    /// <see cref="HttpClient.Timeout"/>。若自定义执行路径内部忽略 CT 导致 Optimistic 超时不生效
+    /// （挂到 HttpClient.Timeout 才终止），请回退本配置为 Pessimistic。
+    /// </para>
+    /// <para>两种策略超时均抛 <see cref="TimeoutRejectedException"/>，既有重试/熔断判定无需改动。</para>
+    /// </remarks>
+    public TimeoutStrategy TimeoutStrategy { get; set; } = TimeoutStrategy.Optimistic;
 
     /// <summary>
     /// 熔断策略配置。

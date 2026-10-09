@@ -468,7 +468,7 @@ public class DefaultHttpRequestExecutor(
         catch (Exception ex)
         {
             var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
-            MudHttpObservability.RecordDownloadFailed(request, clientName, elapsedMs, ex);
+            MudHttpObservability.RecordDownloadFailed(request, clientName, elapsedMs, ex, cancellationToken);
             throw;
         }
     }
@@ -677,7 +677,7 @@ public class DefaultHttpRequestExecutor(
                 System.Diagnostics.Debug.WriteLine($"[Mud.HttpUtils] 下载失败后清理临时文件失败: {tmpPath}");
             }
             var elapsedMs = sw.GetElapsedTime().TotalMilliseconds;
-            MudHttpObservability.RecordDownloadFailed(request, clientName, elapsedMs, ex);
+            MudHttpObservability.RecordDownloadFailed(request, clientName, elapsedMs, ex, cancellationToken);
             throw;
         }
     }

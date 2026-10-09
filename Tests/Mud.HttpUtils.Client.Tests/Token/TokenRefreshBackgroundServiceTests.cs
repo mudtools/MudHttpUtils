@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
+using Mud.HttpUtils.Client.Tests.Infrastructure;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -684,6 +685,79 @@ public class TokenRefreshBackgroundServiceTests
             if (Interlocked.CompareExchange(ref max, candidate, current) == current)
                 return;
         }
+    }
+
+    #endregion
+
+    #region M7-HC-04（T9）：Dispose 取消在途刷新
+
+    /// <summary>
+    /// T9（M7-HC-04 / D3-A）验收：
+    /// ① Dispose 须通过 _disposeCts 取消在途刷新（协作桩观察到取消信号）；
+    /// ② 被取消的刷新属优雅关闭 —— 不得落 Error/Critical 日志
+    /// （TokenRefreshFailed / TokenRefreshUnhandledException / TokenRefreshFailedAndStopped）；
+    /// ③ 取消经 TokenRefreshServiceStopping（EventId 150，Info）记录。
+    /// </summary>
+    [Fact]
+    public async Task Dispose_在途刷新被取消_且无Error日志()
+    {
+        var recording = new RecordingLoggerProvider();
+        using var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(recording));
+        var logger = loggerFactory.CreateLogger<TokenRefreshBackgroundService>();
+
+        var options = new TokenRefreshBackgroundOptions
+        {
+            Enabled = true,
+            RefreshIntervalSeconds = 1,
+            RetryDelaySeconds = 1
+        };
+        var service = new TokenRefreshBackgroundService(options, logger);
+
+        var refreshStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var innerCancelled = false;
+        var manager = new Mock<ITokenManager>();
+        manager.SetupGet(t => t.SupportsBackgroundRefresh).Returns(true);
+        manager.Setup(t => t.GetOrRefreshTokenAsync(It.IsAny<CancellationToken>()))
+            .Returns(async (CancellationToken ct) =>
+            {
+                refreshStarted.TrySetResult(true);
+                try
+                {
+                    // 协作桩：挂起至取消 —— 模拟等待远端响应的在途刷新
+                    await Task.Delay(Timeout.Infinite, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    innerCancelled = true;
+                    throw;
+                }
+                return "token";
+            });
+        service.RegisterTokenManager(manager.Object, "inflight-manager");
+
+        await service.StartAsync();
+
+        var startAwaiter = await Task.WhenAny(refreshStarted.Task, Task.Delay(TimeSpan.FromSeconds(10)));
+        startAwaiter.Should().BeSameAs(refreshStarted.Task, "前置条件：1s 定时器须触发首轮在途刷新");
+
+        service.Dispose();
+
+        // 等待在途刷新观察到取消信号
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (!innerCancelled && DateTime.UtcNow < deadline)
+            await Task.Delay(50);
+
+        innerCancelled.Should().BeTrue(
+            "M7-HC-04：Dispose 须取消在途刷新（_disposeCts → 传递给管理器的 CancellationToken）");
+
+        // 给回调收尾日志留出落地时间
+        await Task.Delay(300);
+
+        recording.Entries.Should().NotContain(
+            e => e.Level >= LogLevel.Error,
+            "M7-HC-04（D3-A）：Dispose 取消属优雅关闭，不得记 TokenRefreshFailed/Error 或 Critical 级日志");
+        recording.HasEventId(150).Should().BeTrue(
+            "取消应经 TokenRefreshServiceStopping（EventId 150，Info 级）记录");
     }
 
     #endregion
