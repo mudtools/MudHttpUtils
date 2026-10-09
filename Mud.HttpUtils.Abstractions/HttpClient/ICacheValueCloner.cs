@@ -8,10 +8,19 @@ namespace Mud.HttpUtils;
 /// M5-HC-08：缓存值可插拔克隆器。
 /// </summary>
 /// <remarks>
-/// 默认缓存按引用存储并返回调用方提供的值（<c>ByReference</c>，零拷贝）。
-/// 注册本接口后，<c>CacheValueSharing = Clone</c> 模式下命中时返回克隆实例，
+/// 默认缓存按引用存储并返回调用方提供的值（零拷贝）。
+/// 本接口为预留的克隆扩展点：设计意图是在 Clone 共享模式下于命中时返回克隆实例，
 /// 避免多个调用方共享同一可变对象导致跨请求数据串扰。
-/// 未注册时回退 <c>ByReference</c> 语义。
+/// <para>
+/// <b>当前状态（M7-HC-05 实测）</b>：本接口尚未在默认缓存路径接线
+/// （<c>MemoryHttpResponseCache</c> / <c>CacheResponseInterceptor</c> / DI 注册均不解析），
+/// 注册实现暂不生效，命中仍按引用共享。
+/// </para>
+/// <para>
+/// 典型误用后果：按引用共享模式下，调用方若原地修改命中返回的对象
+/// （如反序列化结果的属性赋值），修改会直接作用于缓存条目，
+/// 导致后续其他调用方命中时读到被污染的数据（跨请求数据串扰）。
+/// </para>
 /// </remarks>
 public interface ICacheValueCloner
 {

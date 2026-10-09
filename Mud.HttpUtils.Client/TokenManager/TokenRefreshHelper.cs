@@ -88,6 +88,14 @@ internal static class TokenRefreshHelper
                     MudHttpClientLog.TokenRefreshCompleted(logger, kvp.Key);
                 }
             }
+            // M7-HC-04：调用方取消（BackgroundService Dispose / 宿主 stoppingToken）不是"刷新失败"——
+            // 原样上抛交由调用方按优雅关闭口径处理（Background 回调与 Hosted RunLoopAsync 均已单独 catch OCE），
+            // 不得落入下方通用 catch 被记为 Error（TokenRefreshFailed）或在 StopOnError 下误触发停止调度。
+            // when 过滤确保管理器内部超时等"自身取消"（本 CT 未触发）仍按普通失败计数。
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (ObjectDisposedException ex)
             {
                 // MT-15：原实现把任何 ObjectDisposedException 都当作"管理器已释放"并<b>永久反注册</b>，

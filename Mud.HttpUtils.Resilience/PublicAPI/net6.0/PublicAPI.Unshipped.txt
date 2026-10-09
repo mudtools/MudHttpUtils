@@ -1,1 +1,3 @@
-#nullable enable
+﻿#nullable enable
+Mud.HttpUtils.Resilience.ResilienceOptions.TimeoutStrategy.get -> Polly.Timeout.TimeoutStrategy
+Mud.HttpUtils.Resilience.ResilienceOptions.TimeoutStrategy.set -> void

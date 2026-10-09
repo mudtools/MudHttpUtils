@@ -469,8 +469,16 @@ internal static class MudHttpObservability
     /// <summary>
     /// G33：发出下载失败事件并记录耗时指标（字节数无法确定，不记录；双路径共享）。
     /// </summary>
+    /// <param name="request">请求消息。</param>
+    /// <param name="clientName">客户端名称。</param>
+    /// <param name="elapsedMs">下载阶段耗时。</param>
+    /// <param name="ex">失败异常。</param>
+    /// <param name="cancellationToken">调用方取消令牌 —— M7-HC-02（T12）三态口径：
+    /// OCE 且调用方令牌已触发记 <c>outcome=cancelled</c>（与 ExecuteWithObservabilityAsync 一致）；
+    /// 平台超时 TCE（调用方令牌未触发）仍记 <c>error</c>。</param>
     internal static void RecordDownloadFailed(
-        HttpRequestMessage request, string? clientName, double elapsedMs, Exception ex)
+        HttpRequestMessage request, string? clientName, double elapsedMs, Exception ex,
+        CancellationToken cancellationToken = default)
     {
         if (MudHttpActivitySource.EventsEnabled)
         {
@@ -494,10 +502,14 @@ internal static class MudHttpObservability
             return;
 
         // R-1：指标 tag 白名单过滤
+        // M7-HC-02（T12）：与 ExecuteWithObservabilityAsync 三态口径对齐 ——
+        // OCE 且调用方令牌已触发 → outcome=cancelled；平台超时 TCE（令牌未触发）→ error。
         var tags = MudHttpMeter.FilterTags(new KeyValuePair<string, object?>[]
         {
             new("client_name", clientName ?? "(default)"),
-            new("outcome", "error"),
+            new("outcome", ex is OperationCanceledException && cancellationToken.IsCancellationRequested
+                ? "cancelled"
+                : "error"),
         });
         MudHttpMeter.DownloadDuration.Record(elapsedMs, tags);
     }

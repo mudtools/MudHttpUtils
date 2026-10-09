@@ -381,6 +381,8 @@ public class CustomHmacProvider : IHmacSignatureProvider
 
 当你需要将缓存替换为分布式实现时：
 
+> **共享实例契约（M7-HC-05）**：默认实现 `MemoryHttpResponseCache` 命中时**按引用返回同一实例**——调用方不得原地修改命中返回的对象，否则会污染其他读取同一键的调用方。需要隔离时自行拷贝或以自定义 `IHttpResponseCache` 实现共享/克隆语义（`ICacheValueCloner` 为预留的克隆扩展点，**当前尚未在默认缓存路径接线**）。自定义缓存实现应显式声明自己的共享/克隆语义。
+
 ```csharp
 public class RedisHttpResponseCache : IHttpResponseCache
 {

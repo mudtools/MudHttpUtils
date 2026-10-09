@@ -26,6 +26,11 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
     private readonly TimeSpan _refreshInterval;
     private readonly TimeSpan _retryDelay;
     private readonly TokenRefreshLoopState _loopState = new();
+    // M7-HC-04：释放取消通道 —— Dispose 时取消在途刷新的 HTTP 调用（优雅关闭拖尾）。
+    // Token 于构造期一次性捕获：回调读取的是已捕获的 CancellationToken 值，
+    // 即使 CTS 已 Dispose 也不会因访问 .Token 抛 ObjectDisposedException（消除竞态窗口）。
+    private readonly CancellationTokenSource _disposeCts = new();
+    private readonly CancellationToken _disposeToken;
     // SR-L3（P3.6，D14）：Timer 交换加锁；_timer 读取处 Volatile.Read。
     private readonly object _timerLock = new();
     private Timer? _timer;
@@ -58,6 +63,7 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
         _refreshInterval = TimeSpan.FromSeconds(_options.RefreshIntervalSeconds);
         _retryDelay = TimeSpan.FromSeconds(_options.RetryDelaySeconds);
         _logger = logger ?? NullLogger<TokenRefreshBackgroundService>.Instance;
+        _disposeToken = _disposeCts.Token;
     }
 
     /// <summary>
@@ -211,7 +217,7 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
                 return;
 
             var shouldContinue = await TokenRefreshHelper.RefreshAllTokenManagersAsync(
-                _tokenManagers, _logger, _options, CancellationToken.None, _loopState).ConfigureAwait(false);
+                _tokenManagers, _logger, _options, _disposeToken, _loopState).ConfigureAwait(false);
             if (!shouldContinue)
             {
                 // L-9：置位 IsStopped，使运维侧可探测"已停止调度"并可通过 RestartAsync 恢复。
@@ -219,6 +225,12 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
                 // SR-L3（P3.6）：回调读 Timer 引用经 Volatile.Read（锁外安全读）
                 Volatile.Read(ref _timer)?.Change(Timeout.Infinite, Timeout.Infinite);
             }
+        }
+        catch (OperationCanceledException)
+        {
+            // M7-HC-04（D3-A）：Dispose 取消的在途刷新属优雅关闭，Info 级记录，
+            // 不落 Critical 的 TokenRefreshUnhandledException。
+            MudHttpClientLog.TokenRefreshServiceStopping(_logger);
         }
         catch (Exception ex)
         {
@@ -239,10 +251,15 @@ public sealed class TokenRefreshBackgroundService : ITokenRefreshBackgroundServi
             return;
 
         _disposed = true;
+        // M7-HC-04：顺序为 置位 → Cancel（取消在途刷新的 HTTP 调用）→ 停表 → Dispose CTS。
+        // Cancel 先于 CTS.Dispose：在途回调持有的 _disposeToken（构造期捕获）在 CTS 释放后
+        // 读取 IsCancellationRequested 仍安全；若反序则取消信号丢失，拖尾请求无法被中断。
+        _disposeCts.Cancel();
         lock (_timerLock)
         {
             _timer?.Change(Timeout.Infinite, Timeout.Infinite);
             _timer?.Dispose();
         }
+        _disposeCts.Dispose();
     }
 }

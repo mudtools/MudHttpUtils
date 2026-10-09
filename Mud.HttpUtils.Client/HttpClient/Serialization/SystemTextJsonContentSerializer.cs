@@ -46,6 +46,13 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
     /// <summary>
     /// 初始化 <see cref="SystemTextJsonContentSerializer"/> 实例。
     /// </summary>
+    /// <remarks>
+    /// <b>options 所有权（M7-HC-06）</b>：本构造按<b>引用</b>持有 <paramref name="options"/>
+    /// （<see cref="Options"/> 暴露同一实例），所有权归调用方——注入后请勿修改，
+    /// 否则首次序列化前的修改会作用于所有使用点，首次序列化后 options 变只读再修改会抛
+    /// <see cref="InvalidOperationException"/>。注意与 DI 路径语义不同：<c>IHttpContentSerializer</c>
+    /// 的 DI 注册路径按 <c>new JsonSerializerOptions(injected)</c> <b>副本合并</b>，注入后修改原实例不影响已构建的序列化器。
+    /// </remarks>
     /// <param name="options">JSON 序列化选项。为 null 时使用 <see cref="HttpContentSerializerFactory.BuildOptions"/> 合并库内置上下文后的默认选项。</param>
     /// <exception cref="InvalidOperationException">
     /// 在 Native AOT 运行时而 <paramref name="options"/> 未携带 <c>TypeInfoResolver</c> 时抛出，

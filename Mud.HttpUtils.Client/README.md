@@ -236,6 +236,8 @@ services.AddSingleton<IHttpResponseCache, MemoryHttpResponseCache>();
 services.AddSingleton<IHttpResponseInterceptor, CacheResponseInterceptor>();
 ```
 
+> **共享实例契约（M7-HC-05）**：`MemoryHttpResponseCache` 命中时**按引用返回同一实例**（零拷贝）——请勿修改命中返回的对象，原地修改会污染其他读取该键的调用方。需要可变副本时请自行拷贝，或以自定义 `IHttpResponseCache` 实现隔离语义（`ICacheValueCloner` 为预留的克隆扩展点，**当前尚未在默认缓存路径接线**，注册后暂不生效）。
+
 > `CacheResponseInterceptor` 的 `Order` 为 100，确保在其他拦截器之后执行。`MemoryHttpResponseCache` 使用 `IMemoryCache` 作为底层存储，支持绝对过期和滑动过期。
 
 > **注意**：不建议将 `Response<T>` 返回类型与 `[Cache]` 特性组合使用。缓存会存储整个 `Response<T>` 对象（包括 StatusCode 和 ResponseHeaders），可能导致后续请求返回过期的状态码和响应头。源代码生成器会对此组合发出 HTTPCLIENT011 编译警告。
@@ -303,6 +305,8 @@ services.AddSingleton<IHmacSignatureProvider, DefaultHmacSignatureProvider>();
 | `HttpContentSerializerFactory`    | 序列化选项合并工厂，集中构建 `JsonSerializerOptions`，自动合并消费方 resolver（`IOptions`/编程式）+ 库内置 `MudHttpJsonContext.Default` +（JIT）反射兜底 |
 
 > 所有 JSON 序列化/反序列化（请求体、响应、`NDJSON` 流式解析、加密内容等）均通过 `IHttpContentSerializer` 抽象进行，不再直接调用 `JsonSerializer`。默认实现 `SystemTextJsonContentSerializer` 可在 DI 中替换为自定义实现以切换序列化引擎（如 Newtonsoft.Json / XML）。`HttpContentSerializerFactory.BuildOptions` 会自动把消费方 resolver 与库内置 `MudHttpJsonContext.Default` 合并：AOT 环境下仅保留源生成上下文、杜绝静默回退反射；JIT 环境下额外 `Combine` `DefaultJsonTypeInfoResolver` 兼容未声明类型。
+>
+> **`JsonSerializerOptions` 所有权（M7-HC-06）**：注入的 `JsonSerializerOptions` 所有权归调用方，注入后请勿修改。两条路径语义不同——① **直构** `new SystemTextJsonContentSerializer(options)` 按**引用**持有，注入后再修改原实例会直接影响序列化行为（首次序列化后 options 变只读，再修改抛异常）；② **DI 路径**按 `new JsonSerializerOptions(injected)` **副本合并**，注入后修改原实例不影响已构建的序列化器。序列化器实例复用是项目既定约定，请勿依赖运行期热改 options。
 
 ### 日志脱敏
 
