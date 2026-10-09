@@ -56,8 +56,19 @@ internal sealed class RefreshDedupTable
     /// 最大条目数（去重键基数上限）。小于等于 0 时回退到 <c>1</c>，保证任何配置下都是有界的。
     /// </param>
     public RefreshDedupTable(int maxEntries)
-        : this(() => maxEntries)
+        : this(() => maxEntries, SystemClock.Instance)
     {
+    }
+
+    /// <summary>
+    /// G1：以**可替换时钟**初始化（确定性时间测试用）。
+    /// </summary>
+    /// <param name="maxEntriesProvider">条目上限委托（支持配置热更新）。</param>
+    /// <param name="clock">时钟实现；传 <see cref="SystemClock.Instance"/> 即等价默认行为。</param>
+    public RefreshDedupTable(Func<int> maxEntriesProvider, ISystemClock clock)
+    {
+        _maxEntriesProvider = maxEntriesProvider ?? throw new ArgumentNullException(nameof(maxEntriesProvider));
+        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
     }
 
     /// <summary>
@@ -67,9 +78,12 @@ internal sealed class RefreshDedupTable
     /// <param name="maxEntriesProvider">返回当前生效上限的委托（每次收缩时读取）。小于等于 0 视为 <c>1</c>。</param>
     /// <exception cref="ArgumentNullException"><paramref name="maxEntriesProvider"/> 为 null。</exception>
     public RefreshDedupTable(Func<int> maxEntriesProvider)
+        : this(maxEntriesProvider, SystemClock.Instance)
     {
-        _maxEntriesProvider = maxEntriesProvider ?? throw new ArgumentNullException(nameof(maxEntriesProvider));
     }
+
+    /// <summary>G1：时钟接缝（默认真实系统时钟）。</summary>
+    private readonly ISystemClock _clock;
 
     /// <summary>R-P3-02②：当前生效的条目上限（读热值，恒 ≥ 1）。</summary>
     private int MaxEntries
@@ -106,9 +120,13 @@ internal sealed class RefreshDedupTable
         private long _expiresAtTicks = long.MaxValue;
         private int _abandoned;
 
-        public Entry(Func<CancellationToken, Task<string?>> factory, TimeSpan hardTimeout)
+        // G1：条目自身持有时钟（嵌套类型无法访问外层实例成员），由外层在创建时传入。
+        private readonly ISystemClock _clock;
+
+        public Entry(Func<CancellationToken, Task<string?>> factory, TimeSpan hardTimeout, ISystemClock clock)
         {
             _hardTimeout = hardTimeout;
+            _clock = clock ?? throw new ArgumentNullException(nameof(clock));
             _task = new Lazy<Task<string?>>(() => Start(factory), LazyThreadSafetyMode.ExecutionAndPublication);
         }
 
@@ -118,7 +136,7 @@ internal sealed class RefreshDedupTable
         /// <summary>刷新是否已完成（无论成功失败）。</summary>
         public bool IsCompleted => _task.IsValueCreated && _task.Value.IsCompleted;
 
-        public bool IsExpired => DateTimeOffset.UtcNow.UtcTicks > Volatile.Read(ref _expiresAtTicks);
+        public bool IsExpired => _clock.UtcNow.UtcTicks > Volatile.Read(ref _expiresAtTicks);
 
         /// <summary>R-P0-02：是否已被等待者标记废弃（仅用于收缩优先级与观测）。</summary>
         public bool IsAbandoned => Volatile.Read(ref _abandoned) == 1;
@@ -148,7 +166,7 @@ internal sealed class RefreshDedupTable
                 return;
             }
             Volatile.Write(ref _expiresAtTicks,
-                DateTimeOffset.UtcNow.AddSeconds(windowSeconds).UtcTicks);
+                _clock.UtcNow.AddSeconds(windowSeconds).UtcTicks);
         }
 
         private Task<string?> Start(Func<CancellationToken, Task<string?>> factory)
@@ -236,7 +254,7 @@ internal sealed class RefreshDedupTable
                 _entries.TryRemove(key, out _);
             }
 
-            var entry = new Entry(factory, hardTimeout);
+            var entry = new Entry(factory, hardTimeout, _clock);
             if (!_entries.TryAdd(key, entry))
             {
                 continue;   // 他方抢先登记，下一轮复用 / 重新登记

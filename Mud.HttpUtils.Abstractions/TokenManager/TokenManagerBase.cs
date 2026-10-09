@@ -260,7 +260,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                 return lockedToken!.AccessToken!;
             }
 
-            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var nowMs = UtcNow.ToUnixTimeMilliseconds();
             var negativeCacheSeconds = NegativeCacheSeconds;
 
             // TMX-04：窗口内复用上次失败，阻断"等待者串行各刷一次"
@@ -478,6 +478,23 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     private string? _tenantBinding;
 
     /// <summary>
+    /// G1：<b>时钟接缝</b>——当前 UTC 时间。默认取真实系统时钟
+    /// （<see cref="UtcNow"/>），派生类可覆写以注入确定性时间（测试用）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 令牌链路中<b>所有</b>时间读取（过期判定、退避窗口、去重窗口、宽限期、签发时间回填）
+    /// 都应经本属性，禁止直取 <see cref="UtcNow"/>，否则无法做确定性时间测试。
+    /// </para>
+    /// <para>
+    /// 需要"进程级统一替换"时可定义 <see cref="ISystemClock"/> 实现并在覆写中委派
+    /// （本库不新增依赖，接口位于 Abstractions 且语义与 <c>System.TimeProvider</c> 对齐）。
+    /// </para>
+    /// </remarks>
+    // 注意：此处必须直取 DateTimeOffset.UtcNow（接缝自身的默认实现），不得写成 UtcNow（会无限递归）。
+    protected virtual DateTimeOffset UtcNow => DateTimeOffset.UtcNow;
+
+    /// <summary>
     /// SR-H5（P2.1，D6）是否启用租户绑定守卫（防止单实例跨租户共享导致凭据错配）。
     /// 默认 true；派生类实现 <see cref="ISharedTokenManager"/>（WX-02：全租户共享凭据标记，
     /// 如服务商 / 套件令牌）时默认 false。其余特殊场景可覆写为 false（需自证凭据无租户属性）；
@@ -578,7 +595,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         if (token.Expire > 0)
         {
             var maxLifetimeMs = MaxCacheLifetimeSeconds * 1000L;
-            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var now = UtcNow.ToUnixTimeMilliseconds();
             var effectiveMaxExpire = now + maxLifetimeMs;
             if (token.Expire > effectiveMaxExpire)
             {
@@ -680,7 +697,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                     return new CredentialToken
                     {
                         AccessToken = eventArgs.FallbackToken,
-                        Expire = DateTimeOffset.UtcNow
+                        Expire = UtcNow
                             .AddSeconds(ExpireThresholdSeconds + backoff)
                             .ToUnixTimeMilliseconds()
                     };
@@ -808,7 +825,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         if (entry == null || string.IsNullOrEmpty(entry.AccessToken) || entry.Expire <= 0)
             return false;
 
-        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var now = UtcNow.ToUnixTimeMilliseconds();
         return TokenExpiryPolicy.IsValid(entry.IssuedAt, entry.Expire, now, ExpireThresholdSeconds);
     }
 
@@ -825,7 +842,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                 if (_disposed)
                     return;
 
-                var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                var now = UtcNow.ToUnixTimeMilliseconds();
 
                 foreach (var key in _tokenCache.Keys.ToList())
                 {

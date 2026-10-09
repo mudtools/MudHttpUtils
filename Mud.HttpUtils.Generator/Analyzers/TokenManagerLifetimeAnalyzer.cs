@@ -127,6 +127,16 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
             if (urlBorneMode == null)
                 return;
 
+            // F6(b) 一等豁免：① 成员级显式理由（随代码可审计，优先）；
+            //              ② 项目/目录级声明式开关（MSBuild 属性或 .editorconfig）。
+            // 二者皆"显式声明"，默认（未声明）仍照常告警 —— 安全告警不得默认静音。
+            if (HasJustification(tokenAttribute))
+                return;
+
+            if (MudHttpAnalyzerConfig.IsQueryTokenInjectionSuppressed(
+                    context.Options.AnalyzerConfigOptionsProvider.GlobalOptions))
+                return;
+
             context.ReportDiagnostic(Diagnostic.Create(
                 Diagnostics.MudQueryTokenInjectionMode,
                 tokenAttribute.GetLocation(),
@@ -137,6 +147,27 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
         {
             GeneratorDebugLogger.LogError(nameof(TokenManagerLifetimeAnalyzer), ex);
         }
+    }
+
+    /// <summary>
+    /// F6(b)：判定 <c>[Token]</c> 是否带有<b>非空</b> <c>Justification</c> 理由
+    /// （成员级一等豁免；空值/空白不构成豁免，仍告警）。
+    /// </summary>
+    private static bool HasJustification(AttributeSyntax tokenAttribute)
+    {
+        foreach (var arg in tokenAttribute.ArgumentList?.Arguments ?? default(SeparatedSyntaxList<AttributeArgumentSyntax>))
+        {
+            if (arg.NameEquals == null
+                || !arg.NameEquals.Name.ToString().Equals("Justification", StringComparison.Ordinal))
+                continue;
+
+            // 仅接受字符串字面量形式；非字面量（如常量引用）保守视为未提供理由。
+            if (arg.Expression is LiteralExpressionSyntax literal
+                && !string.IsNullOrWhiteSpace(literal.Token.ValueText))
+                return true;
+        }
+
+        return false;
     }
 
     private static void AnalyzeInvocation(SyntaxNodeAnalysisContext context)

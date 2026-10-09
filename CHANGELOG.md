@@ -31,7 +31,7 @@
 - **可能出现新诊断**：AOT004/005/007 属漏报修复，升级后原本"干净"的项目可能开始报诊断——均为真实缺口，请为对应 DTO 补 `[HttpJsonSerializable]` 标注（或确认豁免语义）。
 - 弹性策略作用域新增 AppKey 维度后，跨应用共享熔断状态的自定义扩展点（若有）需按新作用域键对齐。
 
-### 下游消费分析驱动的修复与完善（批次 A + 批次 B 部分）
+### 下游消费分析驱动的修复与完善（批次 A / A′ / B / C / D）
 
 > 依据 `.docs/2026-10-09-下游消费分析-Bug修复与功能完善方案.md`（第 4 版）实施。本组为**行为级修复 + 纯加法 API**，无破坏性变更。
 
@@ -53,11 +53,40 @@
 - **用户维度登出/失效在冷启动下不落持久层（C6 类）**：`UserTokenManagerBase.RemoveTokenAsync` / `InvalidateUserTokenAsync` 在既有同步镜像清理之外**补齐异步写穿**（仅当缓存实现 `IAsyncTokenCache<UserTokenInfo>` 时生效，与租户维度既有做法对齐）。此前桥接式缓存（`TokenStoreBackedTokenCache<T>`）在**镜像未命中**（冷启动/重启/多实例）时不写穿持久层，导致登出后持久层残留旧令牌、下次读穿透把已失效令牌"复活"。非异步缓存实现下行为与旧版逐字节等价；校验失败仍**同步抛出**。
 - **公共 API 基线补登记**：`HttpExecutionConstants.AppKeyPropertyKey` 与 `ResilienceConstants.AppKeyPropertyKey`（均为 `public const` 但未登记）已补入各 TFM 的 `PublicAPI.Unshipped.txt` —— 否则 `-p:PublicApiStrictMode=true` 下 4 个 TFM 全部报 RS0016。
 
+#### 新增（批次 A′ / B / C / D-a）
+
+- **`AppKeyAllowListAuthorizer`**（Abstractions）：库内首个 `IAppAccessAuthorizer` 内建实现 —— 按 appKey 白名单授权（`FromPredicate(Func<string,bool>)` 用于动态名单）。**刻意不提供"无条件放行"实现**（会重新引入 BC-18 修复前的越权面）。
+- **`TokenRecoveryConfiguration` + `TokenRecoveryOptionsExtensions.Apply`**（Abstractions）：`TokenRecoveryOptions` 的**纯 DTO 投影**（仅基元/字符串/枚举），可被配置绑定源生成器完整支持 —— 下游改为"绑定本类型 + `Apply`"即可消除 `SYSLIB1100/1101`，且不再依赖运行时反射绑定（AOT 友好）。
+- **`ISystemClock` / `SystemClock` + `TokenManagerBase.UtcNow`**（Abstractions）：令牌链路的**可替换时钟接缝**（`protected virtual DateTimeOffset UtcNow`）。默认取真实系统时钟，派生类可覆写以做确定性时间测试（无需 `Thread.Sleep`）。`ClientSecretCache` / `RefreshDedupTable` 新增"传入 `ISystemClock`"的构造重载。
+- **`ITokenStoreCodec` / `DefaultTokenStoreCodec`**（Abstractions）：把"过期戳 + 令牌"这一事实契约上收为正式抽象（默认 `{expiresInSeconds}|{token}`）；**`TokenStoreBackedTokenCache<T>` 新增便捷工厂** `CreateForCredentialToken` / `CreateForUserTokenInfo`。
+- **`DefaultAppManager<TAppContext>` 入口虚化 + 懒加载**：`RegisterApp` / `RegisterAppAsync` / `UpdateAppAsync` / `TrySetDefaultApp` / `DefaultAppKey` 改为 **virtual**（消除"查询虚、写入不虚"导致的**影子注册表**）；新增 `protected virtual TrySetDefaultAppKeyCore(appKey, requireRegistered)` 与 `public virtual RegisterLazy(appKey, factory, isDefault)`。
+- **`TokenRecoveryRegistrationExtensions`**（Client）：`AddTokenRecoveryExecutor`（TryAdd + 工厂委托）、`AddTokenRecoveryHandler`（Handler 形态，单应用）、`AddTokenRecoveryClient`（EnhancedClient 形态，多应用主推）、`CreateTokenRecoveryClient`（Client 侧扩展方法）。**未改动 `IEnhancedHttpClientFactory` 公共面**。
+- **`AddMudHttpClientInfrastructure` 公开化**（Client）：此前为 private；公开后消费方可显式控制"框架基础设施先行"，并附 `TryAdd`（先注册者胜）语义说明。
+- **`AddAppScopedTokenManagerRegistry<TAppContext>()`**（Client）：从 `IAppManager<T>` 派生 per-app 令牌管理器注册表（TryAdd，与宿主注册表共存）。
+
+#### 行为变更（续）
+
+- **SSRF 白名单种子改为并集**：`AddMudHttpClientInfrastructure` 由 `ConfigureAllowedDomains`（进程级整体替换 + 清空运行期桶）改为逐项 `AddAllowedDomain` ⇒ 多产品线/多宿主各自注册不再互相清空。
+  ⚠️ **能力收窄**：随之"通过配置删除某个域名"不再有增量式公开路径（`SetConfigurationDomains` 为 internal），如需完全替换请显式调用 `UrlValidator.ConfigureAllowedDomains`。
+- **配置变更时逐客户端失效**：`EnhancedHttpClientFactoryChangeNotifier` 由"变更即 `InvalidateAll()`"改为按 per-client 指纹 diff **只对变更的客户端 `Invalidate(name)`**。
+  ⚠️ 语义边界：`BaseAddress` / `TimeoutSeconds` / `DefaultHeaders` 在**注册期**固化于命名 HttpClient（`IHttpClientFactory` 语义），**仅失效缓存不能使其变更生效**（需重建命名客户端或经 `WithBaseAddress` 派生）。
+- **脚手架生成的预处理指令按 TFM 判定**：由硬编码 `#if NET8_0_OR_GREATER` 改为按项目 `TargetFramework(s)` 判定 —— 纯 `net6.0` 工程输出 `#if NET6_0_OR_GREATER`（此前这类工程的生成文件恒为空）。
+- **依赖版本对齐（由新的 CI 一致性作业检出）**：`System.Threading.Tasks.Extensions` 4.5.4 → 4.6.3（Abstractions，与 Client/Resilience 同组对齐）；`Tests/Mud.HttpUtils.OpenTelemetry.Tests` 的 `Microsoft.Extensions.DependencyInjection` 9.0.0（全仓唯一 9.x）→ 10.0.9。
+
+#### 新增（批次 D：发布治理）
+
+- **`[Token(Justification = "…")]`**（Attributes）：**诊断一等豁免理由** —— 为 `URL 承载令牌` 类诊断（`MUD005`：`InjectionMode` 为 `Query`/`Path`）提供**显式、可审计**的成员级豁免，免去逐文件 `#pragma warning disable` 与项目级 `NoWarn`（后者会把"默认仍报"的安全告警整体静音）。**空/空白理由不构成豁免**。
+- **声明式豁免开关**：`MudHttpSuppressQueryTokenInjection` / `MudHttpSuppressTokenManagerKeyInference`（MSBuild 属性，对应 `.editorconfig` 键 `mud_suppress_query_token_injection` / `mud_suppress_token_manager_key_inference`），取值 `true`/`allow`/`1` 生效；**默认仍报**。
+- **`tools/check-package-version-consistency.ps1`** + CI 作业 `dependency-consistency`：按「包名 × TFM 组」聚合校验 `PackageReference` 版本，同组多版本即失败（不 restore、不联网）。
+
 #### 升级注意
 
 - **`Clone()` vs `EnhancedHttpClientOptionsCloner`**：需要"复用整份配置（含 DI 解析面）"用 `Clone()`；DI 路径的每客户端克隆仍由内部 Cloner 承担。新增 `EnhancedHttpClientOptions` 可写属性时，**必须同时同步 `Clone()`、`Cloner`，并归入 `CFG01_Cloner_CoversAllWritableProperties` 的两份清单之一**。
 - **委托式持有器不支持 `init` 写入**：`IAppContextHolder.Current` 的访问器是 `init`，无法转发；适配器的该访问器**显式抛 `NotSupportedException`**（不静默丢弃）。运行时切换请使用 `SwitchTo` / `BeginScope`（或生成代码的 `UseAppScope`）。自定义持有器应在**首次访问上下文之前**（通常为首次创建客户端 / 首个请求）完成注册；目标须为**单例**。
 - 若宿主此前依赖"`AddMudHttpClient` 之后注册 `IAppContextHolder` 也能被框架读取"的**具名/枚举**解析行为，请改为直接依赖 `IAppContextHolder`（现在无论经哪个解析结果读写，都是同一声明源）。
+- **`DefaultAppManager<TAppContext>` 的 5 个成员改为 `virtual`**：属二进制兼容加法（仅扩展 vtable），已编译派生类行为不变；但 `PublicAPI` 基线文本随之变化（已从 Shipped 迁移到 Unshipped）。新增可写/可覆写成员时请同步基线。
+- **`RegisterLazy` 的语义已明确定义**：重复注册替换工厂（已实例化项保留现值直至 `RemoveApp`）；`RemoveApp` 同时移除懒加载声明；**`GetAllApps` 只返回已实例化项**（枚举不触发实例化）。
+- **`UtcNow` 接缝**：派生类若覆写，请确保**本库内所有**时间相关判定都经该接缝（已改造 `TokenManagerBase` / `UserTokenManagerBase` / `StandardOAuth2TokenManager` / `ClientSecretCache` / `RefreshDedupTable` 共 25 处）；`MemoryTokenStore` / `MemoryUserTokenStore` / `TokenStoreBackedTokenCache` 的时钟注入列入后续增量。
 
 ---
 

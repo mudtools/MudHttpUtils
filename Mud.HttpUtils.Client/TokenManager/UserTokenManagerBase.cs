@@ -423,7 +423,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         tokenInfo.LastRefreshedAt ??= DateTime.UtcNow;
 
         TimeSpan? absoluteExpiration = null;
-        var remainingMs = tokenInfo.AccessTokenExpireTime - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var remainingMs = tokenInfo.AccessTokenExpireTime - UtcNow.ToUnixTimeMilliseconds();
         if (remainingMs > 0)
         {
             absoluteExpiration = TimeSpan.FromMilliseconds(remainingMs);
@@ -667,7 +667,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         }
 
         // SR-M3（P3.1，D10-B）顺带清扫退避表：已无缓存条目或窗口已过期的条目移除，防无界增长。
-        var nowTicks = DateTimeOffset.UtcNow.UtcTicks;
+        var nowTicks = UtcNow.UtcTicks;
         foreach (var kvp in _userRefreshFailures.ToList())
         {
             if (nowTicks >= kvp.Value.UntilTicks || !_userTokenCache.TryGet(kvp.Key, out _))
@@ -923,7 +923,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     private void UpdateUserTokenCachePreservingExpiry(string key, UserTokenInfo tokenInfo)
     {
         TimeSpan? absoluteExpiration = null;
-        var remainingMs = tokenInfo.AccessTokenExpireTime - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var remainingMs = tokenInfo.AccessTokenExpireTime - UtcNow.ToUnixTimeMilliseconds();
         if (remainingMs > 0)
             absoluteExpiration = TimeSpan.FromMilliseconds(remainingMs);
 
@@ -943,7 +943,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         // TMX-22（P1）：直接透传 IdP 填充的 IssuedAt，缺失（<=0）时由 EffectiveThresholdSeconds
         // 退化为配置阈值。此前回退 LastRefreshedAt/CreatedAt 的代理语义错误（CreatedAt 是记录
         // 创建时间且自动初始化为 UtcNow，并非令牌签发时间），会把临近过期令牌误判为有效。
-        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var now = UtcNow.ToUnixTimeMilliseconds();
         return TokenExpiryPolicy.IsValid(tokenInfo.IssuedAt, tokenInfo.AccessTokenExpireTime, now, UserExpireThresholdSeconds);
     }
 
@@ -1001,7 +1001,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     private bool IsInUserRefreshBackoff(string cacheKey)
     {
         return _userRefreshFailures.TryGetValue(cacheKey, out var s)
-            && DateTimeOffset.UtcNow.UtcTicks < s.UntilTicks;
+            && UtcNow.UtcTicks < s.UntilTicks;
     }
 
     /// <summary>SR-M3：刷新成功即清除退避条目。</summary>
@@ -1013,11 +1013,11 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     {
         // TMX-06：AddOrUpdate 用 prev.Count + 1 推进，使 UserBackoffSeconds(n) 的指数能力生效
         _userRefreshFailures.AddOrUpdate(cacheKey,
-            _ => new BackoffState(1, DateTimeOffset.UtcNow.AddSeconds(UserBackoffSeconds(1)).UtcTicks),
+            _ => new BackoffState(1, UtcNow.AddSeconds(UserBackoffSeconds(1)).UtcTicks),
             (_, prev) =>
             {
                 var next = prev.Count + 1;
-                return new BackoffState(next, DateTimeOffset.UtcNow.AddSeconds(UserBackoffSeconds(next)).UtcTicks);
+                return new BackoffState(next, UtcNow.AddSeconds(UserBackoffSeconds(next)).UtcTicks);
             });
 
         // TMX-05：机会式清扫（不新增定时器）；
@@ -1031,7 +1031,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     /// </summary>
     private void SweepExpiredBackoffEntries()
     {
-        var nowTicks = DateTimeOffset.UtcNow.UtcTicks;
+        var nowTicks = UtcNow.UtcTicks;
         foreach (var kv in _userRefreshFailures)
             if (kv.Value.UntilTicks <= nowTicks)
                 _userRefreshFailures.TryRemove(kv.Key, out _);
@@ -1051,7 +1051,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         if (_userRefreshFailures.Count <= limit)
             return;
 
-        var nowTicks = DateTimeOffset.UtcNow.UtcTicks;
+        var nowTicks = UtcNow.UtcTicks;
         foreach (var kvp in _userRefreshFailures)
         {
             if (_userRefreshFailures.Count <= limit)

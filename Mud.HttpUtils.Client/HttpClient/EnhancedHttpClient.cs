@@ -209,14 +209,16 @@ public abstract class EnhancedHttpClient : IEnhancedHttpClient, IEncryptableHttp
         _httpRequestMessageOptions = options.HttpRequestMessageOptions;
         // 阶段 B3：序列化器自持 options，基类不再持有 _jsonOptions。
         // 未注入序列化器时经由工厂 CreateDefault 合并 MudHttpJsonContext.Default。
+        // B7：JsonEncoder 按客户端粒度生效（优先级高于消费方注入的 JsonSerializerOptions.Encoder）。
         _contentSerializer = contentSerializer
             ?? HttpContentSerializerFactory.CreateDefault(
                 jsonOptions?.Value,
 #if NET8_0_OR_GREATER
-                options.JsonTypeInfoResolver);
+                options.JsonTypeInfoResolver,
 #else
-                null);
+                null,
 #endif
+                options.JsonEncoder);
     }
 
     /// <summary>

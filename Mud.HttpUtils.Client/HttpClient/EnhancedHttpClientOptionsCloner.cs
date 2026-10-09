@@ -45,6 +45,7 @@ internal static class EnhancedHttpClientOptionsCloner
             MaxSuccessResponseBytes = source.MaxSuccessResponseBytes,
             HttpRequestMessageOptions = source.HttpRequestMessageOptions,
             AllowCustomBaseUrls = source.AllowCustomBaseUrls,
+            JsonEncoder = source.JsonEncoder,
 #if NET6_0_OR_GREATER
             HttpVersion = source.HttpVersion,
             HttpVersionPolicy = source.HttpVersionPolicy,

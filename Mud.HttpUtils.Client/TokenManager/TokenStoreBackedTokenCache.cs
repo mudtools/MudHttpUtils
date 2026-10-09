@@ -181,6 +181,84 @@ public class TokenStoreBackedTokenCache<T> : ITokenCache<T>, IAsyncTokenCache<T>
     }
 
     /// <summary>
+    /// G2 便捷工厂：为 <see cref="CredentialToken"/>（租户维度）装配桥接器 ——
+    /// 内部完成 valueAdapter / valueFactory 的样板代码，消费方只需提供存储实现。
+    /// </summary>
+    /// <param name="store">租户维度持久化存储。</param>
+    /// <param name="storeKeyMapper">cacheKey → store tokenType 映射；null = 恒等映射。</param>
+    /// <param name="ownsInnerStore">Dispose 时是否释放内层 store。</param>
+    /// <param name="logger">日志（可选）。</param>
+    /// <returns>桥接后的 <see cref="ITokenCache{T}"/>（同时实现 <see cref="IAsyncTokenCache{T}"/>）。</returns>
+    /// <remarks>
+    /// 与直接调用构造签名等价（零新语义），仅省去"手写值适配/工厂委托"的接线成本。
+    /// 若持久化侧把"过期戳 + 令牌"存为<b>单个字符串</b>，请在自己的 <see cref="ITokenStore"/> 实现内
+    /// 使用 <see cref="ITokenStoreCodec"/>（默认实现 <see cref="DefaultTokenStoreCodec"/>）编解码，
+    /// 避免各下游重复发明私有格式。
+    /// </remarks>
+    public static TokenStoreBackedTokenCache<CredentialToken> CreateForCredentialToken(
+        ITokenStore store,
+        Func<string, string>? storeKeyMapper = null,
+        bool ownsInnerStore = false,
+        ILogger? logger = null)
+        => new(
+            store,
+            token => token is null
+                ? null
+                : new TokenStoreValue(token.AccessToken, token.RefreshToken, RemainingSeconds(token.Expire)),
+            value => new CredentialToken
+            {
+                AccessToken = value.AccessToken,
+                RefreshToken = value.RefreshToken,
+                Expire = value.ExpiresInSeconds > 0
+                    ? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + (value.ExpiresInSeconds * 1000)
+                    : 0
+            },
+            storeKeyMapper,
+            ownsInnerStore,
+            logger);
+
+    /// <summary>
+    /// G2 便捷工厂：为 <see cref="UserTokenInfo"/>（用户维度）装配桥接器。
+    /// </summary>
+    /// <param name="userStore">用户维度持久化存储。</param>
+    /// <param name="userKeyMapper">cacheKey → (userId, tokenType) 映射；null 时使用
+    /// <see cref="DefaultUserKeyMapper"/>（与本仓复合键约定一致）。</param>
+    /// <param name="ownsInnerStore">Dispose 时是否释放内层 store。</param>
+    /// <param name="logger">日志（可选）。</param>
+    /// <returns>桥接后的用户维度缓存。</returns>
+    public static TokenStoreBackedTokenCache<UserTokenInfo> CreateForUserTokenInfo(
+        IUserTokenStore userStore,
+        Func<string, (string UserId, string TokenType)>? userKeyMapper = null,
+        bool ownsInnerStore = false,
+        ILogger? logger = null)
+        => new(
+            userStore,
+            userKeyMapper ?? DefaultUserKeyMapper,
+            token => token is null
+                ? null
+                : new TokenStoreValue(token.AccessToken, token.RefreshToken, RemainingSeconds(token.AccessTokenExpireTime)),
+            value => new UserTokenInfo
+            {
+                AccessToken = value.AccessToken,
+                RefreshToken = value.RefreshToken,
+                AccessTokenExpireTime = value.ExpiresInSeconds > 0
+                    ? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + (value.ExpiresInSeconds * 1000)
+                    : 0
+            },
+            ownsInnerStore,
+            logger);
+
+    /// <summary>由绝对过期毫秒推导剩余秒数（&lt;= 0 表示无 TTL 信息）。</summary>
+    private static long RemainingSeconds(long expireMs)
+    {
+        if (expireMs <= 0)
+            return 0;
+
+        var remaining = (expireMs - DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()) / 1000;
+        return remaining > 0 ? remaining : 0;
+    }
+
+    /// <summary>
     /// 获取一个值，指示内层 store 是否已启用加密（<see cref="IEncryptedTokenStore.IsEncryptionEnabled"/>）。
     /// 为 true 时同一读写链路<b>不得</b>再叠加缓存层加密（<c>EncryptedTokenCache&lt;T&gt;</c>）。
     /// </summary>

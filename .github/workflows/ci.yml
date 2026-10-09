@@ -110,6 +110,26 @@ jobs:
           exit $status
 
   # ──────────────────────────────────────────────
+  # F7：依赖版本一致性（同 TFM 组内同一包不得出现多个版本）
+  # ──────────────────────────────────────────────
+  # 纯静态校验：扫描全部 csproj/props 的 PackageReference，按「包名 × TFM 组」聚合，
+  # 组内出现 >1 个不同版本即失败（既有实例：某测试工程单点 9.0.0，其余同组为 10.0.9；
+  # 以及 System.Threading.Tasks.Extensions 4.5.4 vs 4.6.3 的补丁号漂移）。
+  # 不 restore、不联网，故可独立于 test 矩阵快速执行。
+  # 修复建议：统一为同组单一版本；确需偏离请显式使用 VersionOverride 并注明理由。
+  dependency-consistency:
+    name: 依赖版本一致性
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check package version consistency
+        shell: pwsh
+        run: ./tools/check-package-version-consistency.ps1
+
+  # ──────────────────────────────────────────────
   # PublicAPI 契约门禁（H-4）
   # ──────────────────────────────────────────────
   # 以 -p:PublicApiStrictMode=true 构建全部发布库 × 各自 TFM。

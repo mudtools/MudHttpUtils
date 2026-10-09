@@ -187,6 +187,27 @@ public sealed class EnhancedHttpClientOptions : IEnhancedClientConfig
 #endif
 
     /// <summary>
+    /// B7：JSON 编码器（按客户端粒度覆盖）。为 <c>null</c> 时保持 STJ 默认转义（安全默认不变）。
+    /// </summary>
+    /// <value>默认为 <c>null</c>。</value>
+    /// <remarks>
+    /// <para>
+    /// 用于需要"非 ASCII 不被全转义"的场景（如微信部分接口要求中文原样传输）：
+    /// 设为 <see cref="System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping"/> 即可。
+    /// </para>
+    /// <para>
+    /// <b>优先级</b>：本属性（编程式、按客户端）→ 消费方 <c>IOptions&lt;JsonSerializerOptions&gt;.Encoder</c>（DI、全局）→ 库默认模板。
+    /// 二者区别：本属性可按客户端设置，不影响同进程内其它客户端；全局 <c>Configure&lt;JsonSerializerOptions&gt;</c> 会影响所有客户端。
+    /// </para>
+    /// <para>
+    /// <b>生效范围提示</b>：本属性经 <c>HttpContentSerializerFactory</c> 的合并链在<b>合并基座之后</b>写入，
+    /// 因此不会被消费方注入的 <c>JsonSerializerOptions</c> 反向覆盖。
+    /// 无 DI 路径（<c>GeneratedClientOptions</c> / 生成器执行器）是否接入本开关见方案文档的实施前核对清单。
+    /// </para>
+    /// </remarks>
+    public System.Text.Encodings.Web.JavaScriptEncoder? JsonEncoder { get; set; }
+
+    /// <summary>
     /// F1：<b>全字段浅拷贝</b>（含 <see cref="Logger"/>、拦截器、<see cref="SensitiveDataMasker"/>、
     /// <see cref="AppAccessAuthorizer"/> 等接口属性），供消费方在包装既有客户端时复制配置。
     /// </summary>
@@ -227,5 +248,6 @@ public sealed class EnhancedHttpClientOptions : IEnhancedClientConfig
 #if NET8_0_OR_GREATER
         JsonTypeInfoResolver = JsonTypeInfoResolver,
 #endif
+        JsonEncoder = JsonEncoder,
     };
 }

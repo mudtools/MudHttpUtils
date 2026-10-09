@@ -98,3 +98,5 @@ Mud.HttpUtils.Attributes.TokenKindDerivationStrategy.InfixMarker = 3 -> Mud.Http
 Mud.HttpUtils.Attributes.TokenKindDerivationStrategy.NamePrefix = 1 -> Mud.HttpUtils.Attributes.TokenKindDerivationStrategy
 Mud.HttpUtils.Attributes.TokenKindDerivationStrategy.SuffixMarker = 2 -> Mud.HttpUtils.Attributes.TokenKindDerivationStrategy
 Mud.HttpUtils.Attributes.TokenKindDerivationStrategy.Unspecified = 0 -> Mud.HttpUtils.Attributes.TokenKindDerivationStrategy
+Mud.HttpUtils.Attributes.TokenAttribute.Justification.get -> string?
+Mud.HttpUtils.Attributes.TokenAttribute.Justification.set -> void

@@ -94,6 +94,7 @@ public class ConfigP0FixTests
         nameof(EnhancedHttpClientOptions.HttpVersionPolicy),
         nameof(EnhancedHttpClientOptions.HttpRequestMessageOptions),
         nameof(EnhancedHttpClientOptions.JsonTypeInfoResolver),
+        nameof(EnhancedHttpClientOptions.JsonEncoder),
     };
 
     [Fact]

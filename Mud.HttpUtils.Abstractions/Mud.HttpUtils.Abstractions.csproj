@@ -17,7 +17,9 @@
 		<PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="8.0.0" />
 		<!-- S2（治理方案）：IAsyncTokenCache<T> 契约使用 ValueTask —— ns2.0 无 in-box ValueTask，
 		     显式直参（不得依赖 M.E.* 的传递引用，防上游依赖图变化击穿公共 API） -->
-		<PackageReference Include="System.Threading.Tasks.Extensions" Version="4.5.4" />
+		<!-- F7：与 Client / Resilience 对齐为 4.6.3（此前为 4.5.4，属同 TFM 组内的补丁号漂移，
+		     由 tools/check-package-version-consistency.ps1 检出）。 -->
+		<PackageReference Include="System.Threading.Tasks.Extensions" Version="4.6.3" />
 		<PackageReference Include="System.Diagnostics.DiagnosticSource" Version="8.0.1" />
 	</ItemGroup>
 	<ItemGroup Condition="'$(TargetFramework)' == 'net6.0' or '$(TargetFramework)' == 'net7.0'">

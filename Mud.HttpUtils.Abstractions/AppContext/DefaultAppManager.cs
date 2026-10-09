@@ -19,6 +19,9 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
 {
     private readonly ConcurrentDictionary<string, TAppContext> _apps = new();
     private readonly ConcurrentDictionary<Type, Func<TAppContext, IAppContextSwitcher>> _switcherFactories = new();
+    // G3/B8：懒加载注册表（appKey → 一次性实例化工厂）。与 _apps 互补：
+    // _apps = 已实例化（已可见）的上下文；_lazyApps = 已声明但尚未实例化的上下文。
+    private readonly ConcurrentDictionary<string, Lazy<TAppContext>> _lazyApps = new();
     private string? _defaultAppKey;
     // MT-08：默认应用键的读-改-写（RemoveApp 回退）与 GetDefaultApp 的重试均在此锁内完成。
     private readonly object _defaultKeyLock = new();
@@ -29,6 +32,10 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     public event EventHandler<AppConfigurationChangedEventArgs>? ConfigurationChanged;
 
     /// <inheritdoc />
+    /// <remarks>
+    /// G3/B8：命中懒加载项时<b>首次访问才实例化</b>工厂（线程安全、仅调用一次），
+    /// 实例化后并入 <c>_apps</c>（后续查询走已实例化视图，语义与直接注册一致）。
+    /// </remarks>
     public virtual TAppContext GetApp(string appKey)
     {
         AppKeyValidator.Validate(appKey, nameof(appKey));
@@ -36,10 +43,14 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
         if (_apps.TryGetValue(appKey, out var context))
             return context;
 
+        if (TryMaterializeLazy(appKey, out var lazyContext))
+            return lazyContext;
+
         throw new InvalidOperationException($"未找到应用标识为 '{AppKeyValidator.ToSafeText(appKey)}' 的应用上下文。请先调用 RegisterApp 注册应用。");
     }
 
     /// <inheritdoc />
+    /// <remarks>G3/B8：懒加载项同样可被 <c>TryGetApp</c> 命中（首次命中即实例化）。</remarks>
     public virtual bool TryGetApp(string appKey, out TAppContext? appContext)
     {
         if (string.IsNullOrWhiteSpace(appKey))
@@ -58,11 +69,48 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
             return false;
         }
 
-        return _apps.TryGetValue(appKey, out appContext);
+        if (_apps.TryGetValue(appKey, out appContext))
+            return true;
+
+        if (TryMaterializeLazy(appKey, out var lazyContext))
+        {
+            appContext = lazyContext;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// G3/B8：把懒加载项实例化并并入 <c>_apps</c>（一次且仅一次）。
+    /// </summary>
+    /// <remarks>
+    /// 并发安全：<see cref="Lazy{T}"/> 以 <see cref="LazyThreadSafetyMode.ExecutionAndPublication"/> 创建，
+    /// 保证工厂在并发下只被调用一次；<c>_apps</c> 的写入用 <c>TryAdd</c>（并发重复写入无害，值为同一实例）。
+    /// 工厂抛异常时不吞异常（由调用方决定是否重试），且不写入 <c>_apps</c>。
+    /// </remarks>
+    private bool TryMaterializeLazy(string appKey, out TAppContext context)
+    {
+        if (_lazyApps.TryGetValue(appKey, out var lazy))
+        {
+            var materialized = lazy.Value;      // 首次调用触发工厂；后续返回缓存值
+            _apps.TryAdd(appKey, materialized);
+            context = materialized;
+            return true;
+        }
+
+        context = default!;
+        return false;
     }
 
     /// <inheritdoc />
-    public void RegisterApp(string appKey, TAppContext appContext, bool isDefault = false)
+    /// <remarks>
+    /// G3：<b>改为 <c>virtual</c></b>（二进制兼容加法，仅扩展 vtable）。
+    /// 此前"查询入口是 virtual、注册入口不是"的不对称，使派生类覆盖查询入口后
+    /// <c>RegisterApp</c> 仍写入基类私有 <c>_apps</c> ⇒ 形成<b>影子注册表</b>，
+    /// 派生类的查询视图看不到基类注册项，只能整体弃用基类继承。
+    /// </remarks>
+    public virtual void RegisterApp(string appKey, TAppContext appContext, bool isDefault = false)
     {
         AppKeyValidator.Validate(appKey, nameof(appKey));
         if (appContext == null)
@@ -75,15 +123,60 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
         if (changeType == AppConfigurationChangeType.Updated)
             _apps[appKey] = appContext;
 
+        // G3/B8：已注册 ⇒ 默认键合法性校验必然通过（保持既有语义）。
         if (isDefault)
-            Volatile.Write(ref _defaultAppKey, appKey);
+            TrySetDefaultAppKeyCore(appKey, requireRegistered: true);
 
         OnConfigurationChanged(new AppConfigurationChangedEventArgs(
             appKey, changeType));
     }
 
+    /// <summary>
+    /// G3/B8：注册<b>懒加载</b>应用 —— 仅登记工厂，首次 <see cref="GetApp"/> /
+    /// <see cref="TryGetApp"/> / <see cref="GetDefaultApp"/> 命中时才实例化。
+    /// </summary>
+    /// <param name="appKey">应用标识。</param>
+    /// <param name="factory">上下文工厂（首次命中时调用一次）。</param>
+    /// <param name="isDefault">是否同时设为默认应用。为 <c>true</c> 时<b>跳过"必须已注册"校验</b>
+    /// （这正是"先声明默认键、应用稍后才实例化"场景所需，见 <see cref="TrySetDefaultAppKeyCore"/>）。</param>
+    /// <remarks>
+    /// <para>
+    /// 用于"默认键/配置在启动期已知，但上下文构造昂贵或依赖尚未就绪"的场景；
+    /// 与 <see cref="RegisterApp"/> 的区别仅在实例化时机，后续视图（<c>GetApp</c>/<c>TryGetApp</c>/<c>HasApp</c>/
+    /// 默认键合法性）与该键一致。
+    /// </para>
+    /// <para>
+    /// <b>已定义语义（避免歧义）</b>：
+    /// <list type="bullet">
+    /// <item>重复以同一 appKey 调用会<b>替换</b>工厂（未实例化的项直接替换；已实例化的项：替换工厂但保留已实例化值，
+    /// 直至下次 <see cref="RemoveApp"/> + 重新命中 —— 不产生"静默重建"导致的在途请求失效）。</item>
+    /// <item><see cref="RemoveApp"/> 同时移除已实例化项与懒加载声明（保证"移除后 GetApp 不再复活"）。</item>
+    /// <item><see cref="GetAllApps"/> <b>只</b>返回已实例化项 —— 枚举<b>不</b>触发实例化（避免把"声明"变成副作用）。</item>
+    /// </list>
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="factory"/> 为 null。</exception>
+    /// <exception cref="ArgumentException"><paramref name="appKey"/> 为 null/空白或格式不合法。</exception>
+    public virtual void RegisterLazy(string appKey, Func<TAppContext> factory, bool isDefault = false)
+    {
+        AppKeyValidator.Validate(appKey, nameof(appKey));
+        if (factory == null)
+            throw new ArgumentNullException(nameof(factory));
+
+        var isNew = !_lazyApps.ContainsKey(appKey) && !_apps.ContainsKey(appKey);
+
+        _lazyApps[appKey] = new Lazy<TAppContext>(factory, LazyThreadSafetyMode.ExecutionAndPublication);
+
+        if (isDefault)
+            TrySetDefaultAppKeyCore(appKey, requireRegistered: false);
+
+        OnConfigurationChanged(new AppConfigurationChangedEventArgs(
+            appKey, isNew ? AppConfigurationChangeType.Added : AppConfigurationChangeType.Updated));
+    }
+
     /// <inheritdoc />
-    public async Task RegisterAppAsync(string appKey, TAppContext appContext, bool isDefault = false, CancellationToken cancellationToken = default)
+    /// <remarks>G3：改为 <c>virtual</c>（同 <see cref="RegisterApp"/> 的说明）。</remarks>
+    public virtual async Task RegisterAppAsync(string appKey, TAppContext appContext, bool isDefault = false, CancellationToken cancellationToken = default)
     {
         AppKeyValidator.Validate(appKey, nameof(appKey));
         if (appContext == null)
@@ -118,7 +211,8 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     }
 
     /// <inheritdoc />
-    public async Task UpdateAppAsync(string appKey, TAppContext appContext, CancellationToken cancellationToken = default)
+    /// <remarks>G3：改为 <c>virtual</c>（与 <see cref="RegisterAppAsync"/> 同，消除"查询虚、写入不虚"的不对称）。</remarks>
+    public virtual async Task UpdateAppAsync(string appKey, TAppContext appContext, CancellationToken cancellationToken = default)
     {
         AppKeyValidator.Validate(appKey, nameof(appKey));
         if (appContext == null)
@@ -179,7 +273,12 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
 
         var removed = _apps.TryRemove(appKey, out var context);
 
-        if (removed)
+        // G3/B8：懒加载声明同样移除 —— 否则"移除后再次 GetApp"会把该应用复活（语义漏洞）。
+        // 返回值纳入懒加载项：只声明未实例化的应用同样算"被移除"。
+        var lazyRemoved = _lazyApps.TryRemove(appKey, out _);
+        var changed = removed || lazyRemoved;
+
+        if (changed)
         {
             // NEW-MA-01 修复：不立即 Dispose 上下文，避免在途请求抛 ObjectDisposedException。
             // 上下文由 GC 回收。若需立即释放，应用应显式调用 context.Dispose()。
@@ -213,7 +312,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
                 appKey, AppConfigurationChangeType.Removed));
         }
 
-        return removed;
+        return changed;
     }
 
     /// <inheritdoc />
@@ -231,6 +330,10 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
 
         if (_apps.TryGetValue(defaultKey!, out var context))
             return context;
+
+        // G3/B8：默认键指向懒加载项时，首次 GetDefaultApp 才实例化（与 GetApp 同口径）。
+        if (TryMaterializeLazy(defaultKey!, out var lazyDefault))
+            return lazyDefault;
 
         // MT-08：原"二次读取"循环两次迭代读取同一组变量（除外部改写外行为完全一致），
         // 并不能容忍"默认应用刚被移除"的窗口。改为锁内收敛：从仍存在的应用里选一个作为新默认值，
@@ -269,7 +372,8 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
             return false;
         }
 
-        return _apps.ContainsKey(appKey);
+        // G3/B8：懒加载项虽然尚未实例化，但"已声明"即视为存在（与 GetApp 命中后可见一致）。
+        return _apps.ContainsKey(appKey) || _lazyApps.ContainsKey(appKey);
     }
 
     /// <inheritdoc />
@@ -317,10 +421,30 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     }
 
     /// <inheritdoc />
-    public string? DefaultAppKey => Volatile.Read(ref _defaultAppKey);
+    /// <remarks>G3：改为 <c>virtual</c> —— 此前派生类无法拦截"默认键读取"，是影子注册表的另一半。</remarks>
+    public virtual string? DefaultAppKey => Volatile.Read(ref _defaultAppKey);
 
     /// <inheritdoc />
-    public bool TrySetDefaultApp(string appKey)
+    /// <remarks>
+    /// G3：改为 <c>virtual</c>；默认实现委托给 <see cref="TrySetDefaultAppKeyCore"/>（保持既有"必须已注册"语义）。
+    /// </remarks>
+    public virtual bool TrySetDefaultApp(string appKey)
+        => TrySetDefaultAppKeyCore(appKey, requireRegistered: true);
+
+    /// <summary>
+    /// G3/B8：默认应用键的<b>原子写入</b>入口，可按需跳过"必须已注册"校验。
+    /// </summary>
+    /// <param name="appKey">应用标识。</param>
+    /// <param name="requireRegistered">
+    /// 为 <c>true</c>（默认）时保持既有语义：应用未注册（含未声明懒加载）即返回 <c>false</c>；
+    /// 为 <c>false</c> 时跳过该校验 —— 供派生类/懒加载场景"先声明默认键、应用稍后才实例化"使用。
+    /// </param>
+    /// <returns>写入成功返回 <c>true</c>；appKey 非法、或 <paramref name="requireRegistered"/> 为真但未注册时返回 <c>false</c>。</returns>
+    /// <remarks>
+    /// 写入以 <see cref="Volatile.Write(ref string)"/> 完成（与既有读写口径一致），
+    /// 读-改-写序列请在 <c>_defaultKeyLock</c> 内完成（见 <see cref="RemoveApp"/> / <see cref="GetDefaultApp"/>）。
+    /// </remarks>
+    protected virtual bool TrySetDefaultAppKeyCore(string appKey, bool requireRegistered = true)
     {
         if (string.IsNullOrWhiteSpace(appKey))
             return false;
@@ -334,7 +458,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
             return false;
         }
 
-        if (!_apps.ContainsKey(appKey))
+        if (requireRegistered && !_apps.ContainsKey(appKey) && !_lazyApps.ContainsKey(appKey))
             return false;
 
         Volatile.Write(ref _defaultAppKey, appKey);

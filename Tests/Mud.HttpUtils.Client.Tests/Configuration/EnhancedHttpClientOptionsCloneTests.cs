@@ -6,6 +6,7 @@
 // -----------------------------------------------------------------------
 
 using System.Reflection;
+using System.Text.Encodings.Web;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 #if NET8_0_OR_GREATER
@@ -135,6 +136,7 @@ public class EnhancedHttpClientOptionsCloneTests
         if (propertyType == typeof(ISensitiveDataMasker)) return Mock.Of<ISensitiveDataMasker>();
         if (propertyType == typeof(IAppAccessAuthorizer)) return Mock.Of<IAppAccessAuthorizer>();
         if (propertyType == typeof(IExceptionRedactor)) return Mock.Of<IExceptionRedactor>();
+        if (propertyType == typeof(JavaScriptEncoder)) return JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
 #if NET8_0_OR_GREATER
         if (propertyType == typeof(IJsonTypeInfoResolver)) return new DefaultJsonTypeInfoResolver();
 #endif

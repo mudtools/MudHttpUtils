@@ -137,8 +137,8 @@ DI 服务依赖（ILogger / IHttpRequestInterceptor / IHttpResponseInterceptor /
 | 配置项 | 载体 | 热更新 | 生效时机 | 说明 |
 | :--- | :--- | :---: | :--- | :--- |
 | `MudHttpClients:Clients:<name>.AllowCustomBaseUrls` | `MudHttpClientApplicationOptions` | ✅ | 下一次创建/解析客户端 | `CreateEnhancedClient` 每次读取 `IOptionsMonitor.CurrentValue` |
-| `MudHttpClients:AllowedDomains` | `MudHttpClientApplicationOptions` → `UrlValidator` | ✅ | `OnChange` 立即重放 | 只替换「配置桶」，**不清除**运行期 `UrlValidator.AddAllowedDomain` 新增的域名（CFG-34） |
-| `MudHttpClients:Clients:<name>.BaseAddress` / `TimeoutSeconds` / `DefaultHeaders` | 注册期快照 | ❌ | 需重启 | 注册期由 `section.Bind` 生成局部快照并被 `ConfigureHttpClient` 委托闭包捕获；`IOptionsMonitor` 会更新，但已注册的 `HttpClient` 配置不会（CFG-36） |
+| `MudHttpClients:AllowedDomains` | `MudHttpClientApplicationOptions` → `UrlValidator` | ✅ | `OnChange` 立即重放 | 只替换「配置桶」，**不清除**运行期 `UrlValidator.AddAllowedDomain` 新增的域名（CFG-34）；**G6**：注册期种子化已改为**并集**（多入口不互相清空），语义矩阵见「白名单入口语义矩阵」 |
+| `MudHttpClients:Clients:<name>.BaseAddress` / `TimeoutSeconds` / `DefaultHeaders` | 注册期快照 | ❌ | 需重启 | 注册期由 `section.Bind` 生成局部快照并被 `ConfigureHttpClient` 委托闭包捕获；`IOptionsMonitor` 会更新，但已注册的 `HttpClient` 配置不会（CFG-36）。**G5**：配置变更会触发**逐客户端** `IEnhancedHttpClientFactory.Invalidate(name)`（原先为 `InvalidateAll()`），但**失效缓存不会使这三项生效** —— 需要重建命名客户端 |
 | `EnhancedHttpClientOptions.*`（编程式） | `IOptions<EnhancedHttpClientOptions>` | ❌ | 需重启 | 客户端创建时克隆单例值 |
 | `TokenRefreshBackground:*` | `TokenRefreshBackgroundOptions` | ✅ (TMX-10) | 下一轮刷新周期 | `TokenRefreshHostedService` 改用 `IOptionsMonitor<T>`，每轮循环读取 `CurrentValue`。ns2.0 Timer 版（`TokenRefreshBackgroundService`）仍为快照，不支持热更新 |
 | `MudHttpOpenTelemetry:*` | 局部实例绑定 | ❌ | 需重启 | OTel SDK 的 `TracerProvider`/`MeterProvider` 构建后不可变；该重载亦不把选项注册进 DI 选项管道 |
@@ -934,6 +934,17 @@ UrlValidator.ConfigureAllowedDomains(["api.example.com", "cdn.example.com"]);
 UrlValidator.AddAllowedDomain("new-api.example.com");
 UrlValidator.RemoveAllowedDomain("old-api.example.com");
 ```
+
+> **白名单入口语义矩阵（G6，两个公开入口，禁止混用）**
+>
+> | 入口 | 语义 | 对「运行期桶」的影响 | 适用场景 |
+> | :--- | :--- | :--- | :--- |
+> | `UrlValidator.ConfigureAllowedDomains(IEnumerable<string>)` | **完全替换**（进程级） | **清空** | 仅当你就是该进程白名单的**唯一真相源**（如独立部署的单产品线宿主） |
+> | `UrlValidator.AddAllowedDomain(string)` | **追加**（增量） | 保留 | **多产品线 / 多宿主共存必须走这条**（各线各自追加，互不覆盖） |
+>
+> - **行为变更（G6）**：`AddMudHttpClientInfrastructure`（及各 `AddMudHttpClient*` 入口）对 `MudHttpClients:AllowedDomains` 的种子化已由「替换」改为「**并集**」（逐项 `AddAllowedDomain`）—— 多入口注册不再互相清空。
+> - **能力收窄**：并集化后，「通过配置**删除**某个域名」不再有增量式公开路径（只替换配置桶的 `SetConfigurationDomains` 为 **internal**）。若确需完全替换，请显式调用 `ConfigureAllowedDomains` 并自行承担"清空其它产品线已登记域名"的后果。
+> - 支持按应用隔离的容器级实现为 `IUrlValidator`（`DefaultUrlValidator` 为 internal）；需要 per-app 白名单时注册自定义 `IUrlValidator`。
 
 ## 客户端执行逻辑
 

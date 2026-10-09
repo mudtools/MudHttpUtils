@@ -35,8 +35,19 @@ internal sealed class ClientSecretCache : IDisposable
     /// </summary>
     /// <param name="ttl">缓存有效期。<see cref="TimeSpan.Zero"/> 表示不缓存（每次重新解析）。</param>
     public ClientSecretCache(TimeSpan ttl)
-        : this(() => ttl)
+        : this(() => ttl, SystemClock.Instance)
     {
+    }
+
+    /// <summary>
+    /// G1：以**可替换时钟**初始化（确定性时间测试用）。
+    /// </summary>
+    /// <param name="ttlProvider">TTL 委托（支持配置热更新）。</param>
+    /// <param name="clock">时钟实现；传 <see cref="SystemClock.Instance"/> 即等价默认行为。</param>
+    public ClientSecretCache(Func<TimeSpan> ttlProvider, ISystemClock clock)
+    {
+        _ttlProvider = ttlProvider ?? throw new ArgumentNullException(nameof(ttlProvider));
+        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
     }
 
     /// <summary>
@@ -48,9 +59,12 @@ internal sealed class ClientSecretCache : IDisposable
     /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="ttlProvider"/> 为 null。</exception>
     public ClientSecretCache(Func<TimeSpan> ttlProvider)
+        : this(ttlProvider, SystemClock.Instance)
     {
-        _ttlProvider = ttlProvider ?? throw new ArgumentNullException(nameof(ttlProvider));
     }
+
+    /// <summary>G1：时钟接缝（默认真实系统时钟）。</summary>
+    private readonly ISystemClock _clock;
 
     /// <summary>
     /// 获取缓存的密钥；未命中或已过期时通过 <paramref name="factory"/> 解析并写入缓存。
@@ -87,7 +101,7 @@ internal sealed class ClientSecretCache : IDisposable
             return await factory(ct).ConfigureAwait(false);
         }
 
-        var now = DateTimeOffset.UtcNow.UtcTicks;
+        var now = _clock.UtcNow.UtcTicks;
         var cached = Volatile.Read(ref _value);
         if (cached != null && now < Volatile.Read(ref _expiresAtTicks))
             return cached;
@@ -96,7 +110,7 @@ internal sealed class ClientSecretCache : IDisposable
         try
         {
             // 双重检查：等待闸期间可能有其他线程已写入有效缓存
-            now = DateTimeOffset.UtcNow.UtcTicks;
+            now = _clock.UtcNow.UtcTicks;
             cached = Volatile.Read(ref _value);
             if (cached != null && now < Volatile.Read(ref _expiresAtTicks))
                 return cached;
@@ -118,7 +132,7 @@ internal sealed class ClientSecretCache : IDisposable
                 if (effectiveTtl > TimeSpan.Zero)
                 {
                     Volatile.Write(ref _value, resolved);
-                    Volatile.Write(ref _expiresAtTicks, DateTimeOffset.UtcNow.UtcTicks + effectiveTtl.Ticks);
+                    Volatile.Write(ref _expiresAtTicks, _clock.UtcNow.UtcTicks + effectiveTtl.Ticks);
                 }
                 else
                 {

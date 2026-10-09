@@ -117,4 +117,24 @@ public sealed class TokenAttribute(string tokenType = TokenTypes.AccessToken) : 
     /// TokenType 为 "UserAccessToken" 时默认为 true，否则默认为 false。
     /// </remarks>
     public bool RequiresUserId { get; set; }
+
+    /// <summary>
+    /// F6(b)：<b>诊断豁免理由</b>——为"URL 承载令牌"类诊断（如 <c>MUD005</c>：
+    /// <see cref="InjectionMode"/> 为 <c>Query</c>/<c>Path</c>）提供<b>显式、可审计</b>的一等豁免。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 填写<b>非空</b>理由即视为"已确认该接口必须走 URL 承载令牌（如平台官方契约要求）"，
+    /// 分析器不再重复告警 —— 免去逐文件 <c>#pragma warning disable</c> 与项目级 <c>NoWarn</c>
+    /// （后者会把"默认仍报"的安全告警整体静音）。空值 / 空白值<b>不</b>构成豁免（仍告警）。
+    /// </para>
+    /// <para>
+    /// 理由文本应写明**为何必须**（如"企业微信官方契约：凭据强制置于 Query"），供审计与后续复查。
+    /// </para>
+    /// </remarks>
+    /// <example>
+    /// [Token(TokenType = "TenantAccessToken", InjectionMode = TokenInjectionMode.Query,
+    ///        Justification = "企业微信官方契约：access_token 必须置于 Query")]
+    /// </example>
+    public string? Justification { get; set; }
 }

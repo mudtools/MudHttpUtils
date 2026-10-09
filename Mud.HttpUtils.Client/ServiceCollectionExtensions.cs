@@ -1182,14 +1182,85 @@ public static class HttpClientServiceCollectionExtensions
     }
 
     /// <summary>
-    /// 多客户端注册的共用基础设施与逐客户端注册逻辑（配置入口 / 委托入口共用，保证两条路径行为一致）。
+    /// G9：注册"由 <see cref="IAppManager{TAppContext}"/> 派生"的令牌管理器注册表 ——
+    /// 解析键（tokenManagerKey）时按<b>当前应用上下文的 AppKey</b> 定位应用，再由应用上下文解析令牌管理器。
     /// </summary>
+    /// <typeparam name="TAppContext">应用上下文类型。</typeparam>
+    /// <param name="services">服务集合。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> 为 null。</exception>
+    /// <remarks>
+    /// <para>
+    /// 上游已有 <see cref="ITokenManagerRegistry"/> 与 <see cref="DelegateTokenManagerRegistry"/>；
+    /// 缺的正是这条"从 AppManager 派生"的接线助手（此前各下游只能各自内嵌一个私有注册表实现，
+    /// 且多为单槽 ⇒ 新增独立令牌类型时 <c>Resolve</c> 返回 null，errcode 自愈静默失效）。
+    /// </para>
+    /// <para>
+    /// 解析结果为 <c>null</c> 时调用方应保持既有回落（不抛异常）：无当前应用上下文、
+    /// 应用未注册或该应用不提供该令牌类型均返回 <c>null</c>。
+    /// </para>
+    /// <para>内部以 <see cref="AddTokenManagerRegistry(Func{string, ITokenManager?})"/>（<c>TryAdd</c>）注册，与宿主自定义注册表共存。</para>
+    /// </remarks>
+    public static IServiceCollection AddAppScopedTokenManagerRegistry<TAppContext>(
+        this IServiceCollection services)
+        where TAppContext : IMudAppContext
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        // 委托签名只接受 tokenManagerKey（无 IServiceProvider），故以工厂委托捕获 sp；
+        // TryAddSingleton 与 AddTokenManagerRegistry 的既有语义一致（不覆盖宿主注册）。
+        services.TryAddSingleton<ITokenManagerRegistry>(sp =>
+            new DelegateTokenManagerRegistry(tokenManagerKey =>
+            {
+                var holder = sp.GetService<IAppContextHolder>();
+                var appManager = sp.GetService<IAppManager<TAppContext>>();
+
+                var appKey = holder?.Current?.AppKey;
+                if (string.IsNullOrEmpty(appKey) || appManager is null)
+                    return null;
+
+                // TryGetApp 而非 GetApp：应用不存在时返回 null（由调用方回落），不得抛异常。
+                return appManager.TryGetApp(appKey!, out var context) && context is not null
+                    ? context.GetTokenManager(tokenManagerKey)
+                    : null;
+            }));
+
+        return services;
+    }
+
+    /// <summary>
+    /// F3：显式注册多客户端的<b>共用基础设施</b>与逐客户端注册逻辑
+    /// （配置入口 / 委托入口共用，保证两条路径行为一致）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为何公开（F3）</b>：此前本方法为 <c>private</c>，仅由
+    /// <c>AddMudHttpClientsFromConfiguration</c> / <c>AddMudHttpClients</c> 内部调用。
+    /// 消费方若需在"注册自定义服务"之前先行建立框架基础设施，此前<b>只能依赖调用顺序</b>这一隐性契约。
+    /// </para>
+    /// <para>
+    /// <b><c>TryAdd</c> 语义（务必阅读）</b>：本方法内的服务均通过 <c>TryAdd*</c> 注册 ——
+    /// <b>"先注册者胜"，不会覆盖消费方已显式注册的实现</b>。本方法<b>不</b>把该语义反转为"后注册者胜"
+    /// （那会静默覆盖消费方的有意注册）。推荐调用序：① 消费方自定义实现 → ② 本方法 → ③ 命名客户端注册。
+    /// </para>
+    /// <para>
+    /// 幂等：内部注册全部为 <c>TryAdd</c>，多次调用不会叠加重复注册。
+    /// </para>
+    /// </remarks>
     /// <param name="services">服务集合。</param>
     /// <param name="options">多客户端选项快照。</param>
-    private static void AddMudHttpClientInfrastructure(
-        IServiceCollection services,
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> 或 <paramref name="options"/> 为 null。</exception>
+    public static IServiceCollection AddMudHttpClientInfrastructure(
+        this IServiceCollection services,
         MudHttpClientApplicationOptions options)
     {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+        if (options == null)
+            throw new ArgumentNullException(nameof(options));
+
         // A1 修复：配置入口即隐式声明"多应用/多租户"意图，自动补齐上下文持有器，
         // 避免 per-app 能力因缺少一次 AddCurrentUserContext 调用而静默失效。
         services.AddMudHttpAppContextHolder();
@@ -1217,10 +1288,18 @@ public static class HttpClientServiceCollectionExtensions
         // C4-P2：注册 URL 验证器到 DI，支持按应用隔离白名单与配置热更新。
         services.TryAddSingleton<IUrlValidator, DefaultUrlValidator>();
 
-        // 自动配置全局域名白名单（种子值）
+        // 自动配置全局域名白名单（种子值）。
+        // G6：由"整体替换"改为**并集**——此前用 ConfigureAllowedDomains（进程级整体替换，并清空运行期桶），
+        // 多产品线/多宿主各自注册时**后者清空前者**，SSRF 放行静默丢失。
+        // 改为逐项 AddAllowedDomain（仅写运行期桶、不清理既有项）⇒ 多次注册为并集、且幂等。
+        // ⚠️ 能力收窄（必须文档化）：SetConfigurationDomains 是 internal，消费方可用的完全替换入口只剩
+        // UrlValidator.ConfigureAllowedDomains —— "通过配置删除某个域名"不再有公开的增量式路径。
         if (options.AllowedDomains.Count > 0)
         {
-            UrlValidator.ConfigureAllowedDomains(options.AllowedDomains);
+            foreach (var domain in options.AllowedDomains)
+            {
+                UrlValidator.AddAllowedDomain(domain);
+            }
         }
 
         // MT-10：同步「白名单是否允许非 HTTPS」种子值（热更新路径由 AllowedDomainsReloader 重放）。
@@ -1262,6 +1341,8 @@ public static class HttpClientServiceCollectionExtensions
                 }
             }, setAsDefault: isDefault);
         }
+
+        return services;
     }
 
     /// <summary>

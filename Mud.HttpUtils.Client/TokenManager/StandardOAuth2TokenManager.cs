@@ -616,7 +616,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
             AccessToken = tokenResponse.AccessToken ?? string.Empty,
             RefreshToken = tokenResponse.RefreshToken,
             // P2.4（TK-04）记录签发时间，供 TTL 感知阈值的有效提前量钳位
-            IssuedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            IssuedAt = UtcNow.ToUnixTimeMilliseconds(),
             Expire = CalculateExpire(tokenResponse.ExpiresIn)
         };
 
@@ -673,10 +673,10 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
         if (expiresIn.HasValue && expiresIn.Value > 0)
         {
             var safetyMargin = Math.Max(0, Options.ExpirySafetyMarginSeconds);
-            return DateTimeOffset.UtcNow.AddSeconds(expiresIn.Value - safetyMargin).ToUnixTimeMilliseconds();
+            return UtcNow.AddSeconds(expiresIn.Value - safetyMargin).ToUnixTimeMilliseconds();
         }
 
-        return DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds();
+        return UtcNow.AddHours(1).ToUnixTimeMilliseconds();
     }
 
     /// <summary>

@@ -67,6 +67,17 @@ public static class HttpContentSerializerFactory
 #else
         object? explicitResolver = null)
 #endif
+        => BuildOptionsCore(injected, explicitResolver, null);
+
+    /// <summary>
+    /// B7：完整合并实现。与 <see cref="BuildOptions"/> 的唯一差异是接受一个<b>显式编码器</b>
+    /// （来自 <c>EnhancedHttpClientOptions.JsonEncoder</c>），在<b>合并基座之后</b>写入，
+    /// 因此不会被消费方注入的 <c>JsonSerializerOptions</c> 反向覆盖。
+    /// </summary>
+    private static JsonSerializerOptions BuildOptionsCore(
+        JsonSerializerOptions? injected,
+        object? explicitResolver,
+        System.Text.Encodings.Web.JavaScriptEncoder? encoder)
     {
         // 优先使用 EnhancedHttpClientOptions.JsonTypeInfoResolver（编程式注入）
         // 其次使用 IOptions<JsonSerializerOptions>.TypeInfoResolver（DI 注入）。
@@ -87,6 +98,10 @@ public static class HttpContentSerializerFactory
         JsonSerializerOptions mergeBase = injected is null
             ? new JsonSerializerOptions(s_defaultJsonSerializerOptions)
             : new JsonSerializerOptions(injected);
+
+        // B7：显式编码器在合并基座之后写入（优先级高于消费方注入的 Encoder）。
+        if (encoder != null)
+            mergeBase.Encoder = encoder;
 
         if (resolver != null)
         {
@@ -155,5 +170,22 @@ public static class HttpContentSerializerFactory
 #else
         object? explicitResolver = null)
 #endif
-        => new SystemTextJsonContentSerializer(BuildOptions(injected, explicitResolver));
+        => new SystemTextJsonContentSerializer(BuildOptionsCore(injected, explicitResolver, null));
+
+    /// <summary>
+    /// B7：带显式编码器的重载（供 <c>EnhancedHttpClientOptions.JsonEncoder</c> 按客户端粒度生效）。
+    /// </summary>
+    /// <param name="injected">消费方通过 DI 注入的选项。</param>
+    /// <param name="explicitResolver">编程式注入的类型解析器。</param>
+    /// <param name="encoder">显式编码器；为 <c>null</c> 时保持既有优先级（消费方注入 → 库默认）。</param>
+    /// <returns>带合并 options 的 <see cref="SystemTextJsonContentSerializer"/> 实例。</returns>
+    public static IHttpContentSerializer CreateDefault(
+        JsonSerializerOptions? injected,
+#if NET8_0_OR_GREATER
+        System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver? explicitResolver,
+#else
+        object? explicitResolver,
+#endif
+        System.Text.Encodings.Web.JavaScriptEncoder? encoder)
+        => new SystemTextJsonContentSerializer(BuildOptionsCore(injected, explicitResolver, encoder));
 }

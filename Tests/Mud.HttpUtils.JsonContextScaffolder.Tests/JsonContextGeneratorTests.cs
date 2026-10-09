@@ -207,6 +207,62 @@ public class JsonContextGeneratorTests
         files[0].SourceCode.Should().Contain("#endif");
     }
 
+    // ── F6：Guard 按"项目实际 TFM"条件输出（此前硬编码 NET8_0_OR_GREATER） ──
+
+    [Fact]
+    public void Generate_AllNet6Targets_ShouldEmitNet6Guard()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            namespace TestApp;
+            [HttpJsonSerializable(SerializerClassName = "App")]
+            public class Dto { }
+            """;
+        var compilation = CreateCompilation(source);
+        var generator = new JsonContextGenerator();
+
+        var files = generator.Generate(compilation, targetFrameworks: ["net6.0"]);
+
+        files[0].SourceCode.Should().Contain("#if NET6_0_OR_GREATER",
+            "JsonSerializerContext 自 .NET 6 起 in-box；硬编码 net8 guard 会让纯 net6 工程的生成文件恒为空");
+        files[0].SourceCode.Should().NotContain("#if NET8_0_OR_GREATER");
+    }
+
+    [Fact]
+    public void Generate_MixedTargetsIncludingLegacy_ShouldKeepNet8Guard()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            namespace TestApp;
+            [HttpJsonSerializable(SerializerClassName = "App")]
+            public class Dto { }
+            """;
+        var compilation = CreateCompilation(source);
+        var generator = new JsonContextGenerator();
+
+        // 含 netstandard2.0（低于 net6）⇒ 回落保守 guard
+        var files = generator.Generate(compilation, targetFrameworks: ["net6.0", "netstandard2.0"]);
+
+        files[0].SourceCode.Should().Contain("#if NET8_0_OR_GREATER");
+    }
+
+    [Fact]
+    public void Generate_Net8Targets_ShouldKeepNet8Guard()
+    {
+        var source = """
+            using Mud.HttpUtils.Attributes;
+            namespace TestApp;
+            [HttpJsonSerializable(SerializerClassName = "App")]
+            public class Dto { }
+            """;
+        var compilation = CreateCompilation(source);
+        var generator = new JsonContextGenerator();
+
+        var files = generator.Generate(compilation, targetFrameworks: ["net8.0", "net10.0"]);
+
+        files[0].SourceCode.Should().Contain("#if NET8_0_OR_GREATER", "net8+ 工程行为不变（既有 golden 断言）");
+    }
+
     [Fact]
     public void Generate_WritesDefaultIgnoreConditionAndWriteIndented()
     {

@@ -90,3 +90,56 @@ Mud.HttpUtils.CompositeTokenInvalidationDetector.ShouldInspect(System.Net.Http.H
 Mud.HttpUtils.TokenRecoveryOptions.AdditionalTokenInvalidationDetectors.get -> System.Collections.Generic.IList<Mud.HttpUtils.ITokenInvalidationDetector!>!
 const Mud.HttpUtils.HttpExecutionConstants.AppKeyPropertyKey = "__Mud_HttpUtils_AppKey" -> string!
 Mud.HttpUtils.TokenManagerBase.IsTenantBindingEnforced.get -> bool
+Mud.HttpUtils.AppKeyAllowListAuthorizer
+Mud.HttpUtils.AppKeyAllowListAuthorizer.AppKeyAllowListAuthorizer(System.Collections.Generic.IEnumerable<string!>? allowedAppKeys) -> void
+Mud.HttpUtils.AppKeyAllowListAuthorizer.CanSwitchTo(string! appKey) -> bool
+static Mud.HttpUtils.AppKeyAllowListAuthorizer.FromPredicate(System.Func<string!, bool>! predicate) -> Mud.HttpUtils.AppKeyAllowListAuthorizer!
+virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.DefaultAppKey.get -> string?
+virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.RegisterApp(string! appKey, TAppContext appContext, bool isDefault = false) -> void
+virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.RegisterAppAsync(string! appKey, TAppContext appContext, bool isDefault = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.RegisterLazy(string! appKey, System.Func<TAppContext>! factory, bool isDefault = false) -> void
+virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.TrySetDefaultApp(string! appKey) -> bool
+virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.TrySetDefaultAppKeyCore(string! appKey, bool requireRegistered = true) -> bool
+virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.UpdateAppAsync(string! appKey, TAppContext appContext, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.TokenRecoveryConfiguration
+Mud.HttpUtils.TokenRecoveryConfiguration.AllowNonIdempotentRecovery.get -> bool
+Mud.HttpUtils.TokenRecoveryConfiguration.AllowNonIdempotentRecovery.set -> void
+Mud.HttpUtils.TokenRecoveryConfiguration.BufferingMode.get -> Mud.HttpUtils.RequestBodyBufferingMode
+Mud.HttpUtils.TokenRecoveryConfiguration.BufferingMode.set -> void
+Mud.HttpUtils.TokenRecoveryConfiguration.Enabled.get -> bool
+Mud.HttpUtils.TokenRecoveryConfiguration.Enabled.set -> void
+Mud.HttpUtils.TokenRecoveryConfiguration.MaxCachedRequestBodyBytes.get -> long
+Mud.HttpUtils.TokenRecoveryConfiguration.MaxCachedRequestBodyBytes.set -> void
+Mud.HttpUtils.TokenRecoveryConfiguration.MaxCapturedResponseBodyBytes.get -> int
+Mud.HttpUtils.TokenRecoveryConfiguration.MaxCapturedResponseBodyBytes.set -> void
+Mud.HttpUtils.TokenRecoveryConfiguration.MaxDedupEntries.get -> int
+Mud.HttpUtils.TokenRecoveryConfiguration.MaxDedupEntries.set -> void
+Mud.HttpUtils.TokenRecoveryConfiguration.RecoveryMaxRetries.get -> int
+Mud.HttpUtils.TokenRecoveryConfiguration.RecoveryMaxRetries.set -> void
+Mud.HttpUtils.TokenRecoveryConfiguration.RefreshDedupWindowSeconds.get -> double
+Mud.HttpUtils.TokenRecoveryConfiguration.RefreshDedupWindowSeconds.set -> void
+Mud.HttpUtils.TokenRecoveryConfiguration.RefreshTimeoutSeconds.get -> double
+Mud.HttpUtils.TokenRecoveryConfiguration.RefreshTimeoutSeconds.set -> void
+Mud.HttpUtils.TokenRecoveryConfiguration.RefreshWaitHardTimeoutSeconds.get -> double
+Mud.HttpUtils.TokenRecoveryConfiguration.RefreshWaitHardTimeoutSeconds.set -> void
+Mud.HttpUtils.TokenRecoveryConfiguration.TokenRecoveryConfiguration() -> void
+Mud.HttpUtils.TokenRecoveryConfiguration.TokenScheme.get -> string!
+Mud.HttpUtils.TokenRecoveryConfiguration.TokenScheme.set -> void
+Mud.HttpUtils.TokenRecoveryOptionsExtensions
+static Mud.HttpUtils.TokenRecoveryOptionsExtensions.Apply(this Mud.HttpUtils.TokenRecoveryOptions! options, Mud.HttpUtils.TokenRecoveryConfiguration! configuration) -> Mud.HttpUtils.TokenRecoveryOptions!
+const Mud.HttpUtils.DefaultTokenStoreCodec.Separator = '|' -> char
+Mud.HttpUtils.DefaultTokenStoreCodec
+Mud.HttpUtils.DefaultTokenStoreCodec.Decode(string? encoded) -> (string? Token, long ExpiresInSeconds)?
+Mud.HttpUtils.DefaultTokenStoreCodec.DefaultTokenStoreCodec() -> void
+Mud.HttpUtils.DefaultTokenStoreCodec.Encode(string? token, long expiresInSeconds) -> string?
+Mud.HttpUtils.ITokenStoreCodec
+Mud.HttpUtils.ITokenStoreCodec.Decode(string? encoded) -> (string? Token, long ExpiresInSeconds)?
+Mud.HttpUtils.ITokenStoreCodec.Encode(string? token, long expiresInSeconds) -> string?
+static Mud.HttpUtils.DefaultTokenStoreCodec.Instance.get -> Mud.HttpUtils.DefaultTokenStoreCodec!
+Mud.HttpUtils.ISystemClock
+Mud.HttpUtils.ISystemClock.UtcNow.get -> System.DateTimeOffset
+Mud.HttpUtils.SystemClock
+Mud.HttpUtils.SystemClock.SystemClock() -> void
+Mud.HttpUtils.SystemClock.UtcNow.get -> System.DateTimeOffset
+static Mud.HttpUtils.SystemClock.Instance.get -> Mud.HttpUtils.SystemClock!
+virtual Mud.HttpUtils.TokenManagerBase.UtcNow.get -> System.DateTimeOffset

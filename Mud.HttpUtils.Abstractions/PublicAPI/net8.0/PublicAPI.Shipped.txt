@@ -99,13 +99,8 @@ Mud.HttpUtils.CurrentUserInfo.UserId.get -> string!
 Mud.HttpUtils.CurrentUserInfo.UserId.set -> void
 Mud.HttpUtils.DefaultAppManager<TAppContext>
 Mud.HttpUtils.DefaultAppManager<TAppContext>.ConfigurationChanged -> System.EventHandler<Mud.HttpUtils.AppConfigurationChangedEventArgs!>?
-Mud.HttpUtils.DefaultAppManager<TAppContext>.DefaultAppKey.get -> string?
 Mud.HttpUtils.DefaultAppManager<TAppContext>.DefaultAppManager() -> void
-Mud.HttpUtils.DefaultAppManager<TAppContext>.RegisterApp(string! appKey, TAppContext appContext, bool isDefault = false) -> void
-Mud.HttpUtils.DefaultAppManager<TAppContext>.RegisterAppAsync(string! appKey, TAppContext appContext, bool isDefault = false, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Mud.HttpUtils.DefaultAppManager<TAppContext>.RegisterSwitcherFactory<TContextSwitcher>(System.Func<TAppContext, TContextSwitcher>! factory) -> void
-Mud.HttpUtils.DefaultAppManager<TAppContext>.TrySetDefaultApp(string! appKey) -> bool
-Mud.HttpUtils.DefaultAppManager<TAppContext>.UpdateAppAsync(string! appKey, TAppContext appContext, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Mud.HttpUtils.DefaultExceptionFactory
 Mud.HttpUtils.DefaultExceptionFactory.CreateApiException(System.Net.Http.HttpResponseMessage! response, string? content, string? requestUri) -> System.Exception?
 Mud.HttpUtils.DefaultExceptionFactory.CreateDeserializationException(string? content, System.Type! targetType, System.Exception! deserializationException, string? requestUri) -> System.Exception!
