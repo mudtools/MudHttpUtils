@@ -34,13 +34,23 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public static class MudHttpAnalyzerConfig
 {
-    /// <summary>MSBuild 属性：豁免 MUD005（Query/Path 令牌注入）。</summary>
+    /// <summary>
+    /// MSBuild 属性名：豁免 MUD005（Query/Path 令牌注入）。
+    /// </summary>
+    /// <remarks>
+    /// 必须在 <c>build/Mud.HttpUtils.Generator.props</c> 注册为 <c>CompilerVisibleProperty</c>
+    /// （已注册），否则 MSBuild 属性不会进入 <c>build_property.*</c> 通道、开关静默失效。
+    /// 判定代码使用<b>字面量</b>键（见 <see cref="IsSuppressed"/> 的备注）。
+    /// </remarks>
     public const string QueryTokenInjectionMsBuildProperty = "MudHttpSuppressQueryTokenInjection";
 
     /// <summary>.editorconfig 键：豁免 MUD005（Query/Path 令牌注入）。</summary>
     public const string QueryTokenInjectionEditorConfigKey = "mud_suppress_query_token_injection";
 
-    /// <summary>MSBuild 属性：豁免 HTTPCLIENT018（TokenManagerKey 默认推断）。</summary>
+    /// <summary>
+    /// MSBuild 属性名：豁免 HTTPCLIENT018（TokenManagerKey 默认推断）。
+    /// </summary>
+    /// <remarks>同 <see cref="QueryTokenInjectionMsBuildProperty"/>：须注册 <c>CompilerVisibleProperty</c>（已注册）。</remarks>
     public const string TokenManagerKeyInferenceMsBuildProperty = "MudHttpSuppressTokenManagerKeyInference";
 
     /// <summary>.editorconfig 键：豁免 HTTPCLIENT018（TokenManagerKey 默认推断）。</summary>
@@ -49,36 +59,59 @@ public static class MudHttpAnalyzerConfig
     /// <summary>
     /// 是否豁免 <b>MUD005</b>（URL 承载令牌告警）。
     /// </summary>
-    /// <param name="options">分析器配置（<c>context.Options.AnalyzerConfigOptionsProvider.GlobalOptions</c>）。</param>
+    /// <param name="globalOptions">全局分析器配置（<c>context.Options.AnalyzerConfigOptionsProvider.GlobalOptions</c>）。</param>
+    /// <param name="treeOptions">
+    /// 语法树粒度配置（<c>GetOptions(node.SyntaxTree)</c>）；仅 <b>.editorconfig 键</b>需要它 ——
+    /// 普通 <c>.editorconfig</c> 的键<b>不会</b>出现在 <c>GlobalOptions</c> 中（后者只含 <c>.globalconfig</c>
+    /// 与 <c>build_property.*</c>），传入 null 时退化为只认 MSBuild 属性（调用方若可拿到语法树应传入）。
+    /// </param>
     /// <returns>已显式声明豁免返回 <c>true</c>；配置不可用时返回 <c>false</c>（保守：仍告警）。</returns>
-    public static bool IsQueryTokenInjectionSuppressed(AnalyzerConfigOptions options)
-        => IsSuppressed(options, QueryTokenInjectionMsBuildProperty, QueryTokenInjectionEditorConfigKey);
+    public static bool IsQueryTokenInjectionSuppressed(
+        AnalyzerConfigOptions globalOptions,
+        AnalyzerConfigOptions? treeOptions = null)
+        => IsSuppressed(globalOptions, treeOptions,
+            "build_property.MudHttpSuppressQueryTokenInjection", QueryTokenInjectionEditorConfigKey);
 
     /// <summary>
     /// 是否豁免 <b>HTTPCLIENT018</b>（TokenManagerKey 使用默认推断值）。
     /// </summary>
-    /// <param name="options">分析器配置。</param>
+    /// <param name="globalOptions">全局分析器配置。</param>
+    /// <param name="treeOptions">语法树粒度配置（仅 .editorconfig 键需要，语义同 <see cref="IsQueryTokenInjectionSuppressed"/>）。</param>
     /// <returns>已显式声明豁免返回 <c>true</c>；配置不可用时返回 <c>false</c>。</returns>
-    public static bool IsTokenManagerKeyInferenceSuppressed(AnalyzerConfigOptions options)
-        => IsSuppressed(options, TokenManagerKeyInferenceMsBuildProperty, TokenManagerKeyInferenceEditorConfigKey);
+    public static bool IsTokenManagerKeyInferenceSuppressed(
+        AnalyzerConfigOptions globalOptions,
+        AnalyzerConfigOptions? treeOptions = null)
+        => IsSuppressed(globalOptions, treeOptions,
+            "build_property.MudHttpSuppressTokenManagerKeyInference", TokenManagerKeyInferenceEditorConfigKey);
 
-    private static bool IsSuppressed(AnalyzerConfigOptions options, string msBuildProperty, string editorConfigKey)
+    /// <summary>
+    /// 声明式豁免判定。
+    /// </summary>
+    /// <remarks>
+    /// MSBuild 键以<b>字面量</b>传入（而非 <c>"build_property." + const</c> 拼接）：仓库存在守卫测试
+    /// <c>RegisteredCompilerVisibleProperties_AllHaveReadPoints</c> / <c>GeneratorReadsNoUnregisteredBuildProperties</c>，
+    /// 二者按字面量扫描源码 —— 拼接写法会让"props 未注册 CompilerVisibleProperty"的静默失效绕过守卫
+    /// （F6(b) 实测即因此漏注册）。
+    /// </remarks>
+    private static bool IsSuppressed(
+        AnalyzerConfigOptions globalOptions,
+        AnalyzerConfigOptions? treeOptions,
+        string msBuildKey,
+        string editorConfigKey)
     {
-        if (options is null)
-            return false;
-
-        // ① MSBuild 属性（编译器以 build_property.<PropertyName> 键透传给分析器）。
-        if (options.TryGetValue("build_property." + msBuildProperty, out var fromMsBuild)
-            && IsTrueLike(fromMsBuild))
+        // ① MSBuild 属性（编译器以 build_property.<PropertyName> 键透传；同时存在于全局与树粒度配置）。
+        if (TryGetTrueLike(globalOptions, msBuildKey) || TryGetTrueLike(treeOptions, msBuildKey))
             return true;
 
-        // ② .editorconfig / global AnalyzerConfig（键名小写）。
-        if (options.TryGetValue(editorConfigKey, out var fromEditorConfig)
-            && IsTrueLike(fromEditorConfig))
+        // ② .editorconfig / .globalconfig 键（普通 .editorconfig 仅体现在树粒度配置中）。
+        if (TryGetTrueLike(treeOptions, editorConfigKey) || TryGetTrueLike(globalOptions, editorConfigKey))
             return true;
 
         return false;
     }
+
+    private static bool TryGetTrueLike(AnalyzerConfigOptions? options, string key)
+        => options is not null && options.TryGetValue(key, out var value) && IsTrueLike(value);
 
     private static bool IsTrueLike(string? value)
         => value is not null

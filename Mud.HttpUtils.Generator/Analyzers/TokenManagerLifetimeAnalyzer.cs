@@ -133,8 +133,11 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
             if (HasJustification(tokenAttribute))
                 return;
 
+            // 传入树粒度配置：普通 .editorconfig 的键不会出现在 GlobalOptions 中（F6(b) 实测），
+            // 只有 GetOptions(语法树) 才能读到"按目录生效"的 mud_suppress_query_token_injection。
             if (MudHttpAnalyzerConfig.IsQueryTokenInjectionSuppressed(
-                    context.Options.AnalyzerConfigOptionsProvider.GlobalOptions))
+                    context.Options.AnalyzerConfigOptionsProvider.GlobalOptions,
+                    context.Options.AnalyzerConfigOptionsProvider.GetOptions(method.SyntaxTree)))
                 return;
 
             context.ReportDiagnostic(Diagnostic.Create(

@@ -54,12 +54,6 @@ public static class HttpContentSerializerFactory
     /// 该参数为 null 时使用库默认模板（CamelCase、大小写不敏感、忽略 null）。
     /// </para>
     /// </remarks>
-#if NET6_0_OR_GREATER
-    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
-        Justification = "DefaultJsonTypeInfoResolver 仅在 RuntimeFeature.IsDynamicCodeSupported==true 的 JIT 分支实例化；AOT 分支只组合源生成 context，永不执行该行。")]
-    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
-        Justification = "同上：JIT 专属分支，Native AOT 运行时不可达。")]
-#endif
     public static JsonSerializerOptions BuildOptions(
         JsonSerializerOptions? injected,
 #if NET8_0_OR_GREATER
@@ -74,6 +68,18 @@ public static class HttpContentSerializerFactory
     /// （来自 <c>EnhancedHttpClientOptions.JsonEncoder</c>），在<b>合并基座之后</b>写入，
     /// 因此不会被消费方注入的 <c>JsonSerializerOptions</c> 反向覆盖。
     /// </summary>
+    /// <remarks>
+    /// <b>IL2026 / IL3050 压制必须挂在本方法上</b>：B7 重构把原先位于 <c>BuildOptions</c> 方法体内的
+    /// 合并逻辑（含 JIT 分支的 <c>new DefaultJsonTypeInfoResolver()</c>）下沉到本方法，若压制仍留在
+    /// 仅剩一行转发的 <c>BuildOptions</c> 上，压制范围便不再覆盖实际告警位置 ⇒
+    /// <c>-p:AotStrictMode=true</c>（CI 的 AOT 发布作业）会把这两条告警升级为错误。
+    /// </remarks>
+#if NET6_0_OR_GREATER
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2026",
+        Justification = "DefaultJsonTypeInfoResolver 仅在 RuntimeFeature.IsDynamicCodeSupported==true 的 JIT 分支实例化；AOT 分支只组合源生成 context，永不执行该行。")]
+    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("AotAnalysis", "IL3050",
+        Justification = "同上：JIT 专属分支，Native AOT 运行时不可达。")]
+#endif
     private static JsonSerializerOptions BuildOptionsCore(
         JsonSerializerOptions? injected,
         object? explicitResolver,

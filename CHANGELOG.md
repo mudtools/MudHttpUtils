@@ -4,6 +4,41 @@
 
 ---
 
+## 3.0.5（下游消费分析方案的第 5 版复核与缺陷修复，2026-10-10）
+
+> 对 `.docs/2026-10-09-下游消费分析-Bug修复与功能完善方案.md` 第 4 版所列批次的**实施结果复核**，
+> 发现并修复 **4 处实现缺陷**（其中 3 处会使 CI 门禁变红或使已发布开关静默失效）。
+> 均为修复性变更，**无公共 API 签名变化、无新增公共成员**。
+
+### 修复
+
+- **AOT 严格门禁（`-p:AotStrictMode=true`）两处回归**（CI 的 `aot-publish` 作业会直接失败）：
+  - **B7（编码器开关）重构使 `IL2026`/`IL3050` 压制失效**：把合并逻辑从 `BuildOptions` 下沉到新方法
+    `BuildOptionsCore` 时，`UnconditionalSuppressMessage` 仍留在只剩一行转发的 `BuildOptions` 上，
+    压制范围不再覆盖实际告警位置 ⇒ `Client` 在 net8.0/net10.0 各报 3 条 IL2026/IL3050 错误。
+    已将压制移到 `BuildOptionsCore`（并注明"压制必须与实际告警位置同体"）。
+  - **G3/B8（`RegisterLazy`）触发 `IL2091`**：懒加载以 `Lazy<TAppContext>` 承载，而 `System.Lazy<T>` 的
+    类型参数带 `PublicParameterlessConstructor` 标注（服务于其无参构造）；本实现只使用
+    `Lazy<T>(Func<T>)` ⇒ 属分析器误报，已按既有口径（`OptionsWrapperMonitor<T>`）显式压制并注明理由。
+- **F6(b) 声明式豁免开关在真实工程中静默失效**：`MudHttpSuppressQueryTokenInjection` /
+  `MudHttpSuppressTokenManagerKeyInference` **未注册** `CompilerVisibleProperty`（`build/*.props`）⇒ MSBuild
+  属性不会进入 `build_property.*` 通道。同时读取代码用 `"build_property." + const` 拼接，绕过了仓库既有的
+  「props 注册 ↔ 生成器读取点」契约测试。已注册两个属性，并把读取键改为**字面量**使守卫可覆盖。
+- **HTTPCLIENT018 的声明式豁免是死代码**：`MudHttpAnalyzerConfig.IsTokenManagerKeyInferenceSuppressed`
+  此前**无任何调用点**。现经 `GeneratorConfigSnapshot.SuppressTokenManagerKeyInference` 接入
+  `HTTPCLIENT018` 的上报点（默认仍报；快照只读全局配置，目录粒度请用 `[Token(Justification=…)]` 等显式手段）。
+- **MUD005 的 `.editorconfig` 豁免实测无效**：分析器只读 `GlobalOptions`，而普通 `.editorconfig` 的键
+  **不进入**全局配置（只含 `.globalconfig` 与 `build_property.*`）⇒ 「按目录生效」的声明式豁免恒不命中。
+  现同时读取 `GetOptions(语法树)`，两类来源（MSBuild / editorconfig）均生效。
+
+### 测试
+
+- 新增 `TokenManagerKeyInferenceExemptionTests`（HTTPCLIENT018 默认报 / MSBuild 与全局 config 键豁免 /
+  非真值仍报 / 接口级 `[Token]` 的既有语义固定）；
+- `TokenManagerQueryInjectionExemptionTests` 补充"仅树粒度（.editorconfig）命中"与"仅全局 MSBuild 命中"两类用例。
+
+---
+
 ## 3.0.4（应用级弹性隔离与 AOT 体系加固，2026-10-09）
 
 > 两条主线：① **应用级弹性策略隔离**——多应用共享宿主时熔断/重试策略按 AppKey 维度隔离，并修复跨应用熔断失效；② **AOT 体系加固**——补齐 AOT004/005/007 三处分析器漏报（继承方法 DTO 覆盖、请求端多态派生校验、继承方法 Xml 拦截），脚手架分组隔离与 AOT001 噪音消除，封堵未知对象类型序列化的信息泄漏旁路。**无破坏性变更**，可直接升级。

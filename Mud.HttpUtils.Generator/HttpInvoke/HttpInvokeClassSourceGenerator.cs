@@ -82,7 +82,7 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
         try
         {
             // G9-07：nullable 配置以实参显式传递（原实例可变属性 EmitNullableEnable 已移除）
-            ProcessInterface(compilation, interfaceDecl, interfaceSymbol, semanticModel, context, httpClientOptionsName, isAotEnabled, configSnapshot.NullableEnable, emitGeneratedCodeMarkers);
+            ProcessInterface(compilation, interfaceDecl, interfaceSymbol, semanticModel, context, httpClientOptionsName, isAotEnabled, configSnapshot.NullableEnable, emitGeneratedCodeMarkers, configSnapshot.SuppressTokenManagerKeyInference);
         }
         catch (Exception ex)
         {
@@ -148,7 +148,7 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
         // 迁移后生成器只负责产出源码，职责单一，诊断随编译变化自然重算。
     }
 
-    private void ProcessInterface(Compilation compilation, InterfaceDeclarationSyntax interfaceDecl, INamedTypeSymbol interfaceSymbol, SemanticModel semanticModel, SourceProductionContext context, string httpClientOptionsName, bool isAotEnabled, bool emitNullableEnable, bool emitGeneratedCodeMarkers)
+    private void ProcessInterface(Compilation compilation, InterfaceDeclarationSyntax interfaceDecl, INamedTypeSymbol interfaceSymbol, SemanticModel semanticModel, SourceProductionContext context, string httpClientOptionsName, bool isAotEnabled, bool emitNullableEnable, bool emitGeneratedCodeMarkers, bool suppressTokenManagerKeyInference = false)
     {
         var interfaceCodeGenerator = new InterfaceImplementationGenerator(
             compilation,
@@ -159,7 +159,8 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
             httpClientOptionsName,
             isAotEnabled,
             emitNullableEnable,
-            emitGeneratedCodeMarkers);
+            emitGeneratedCodeMarkers,
+            suppressTokenManagerKeyInference);
 
         interfaceCodeGenerator.GenerateCode();
     }

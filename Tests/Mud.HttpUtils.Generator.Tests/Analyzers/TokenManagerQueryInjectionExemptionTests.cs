@@ -122,6 +122,45 @@ public class TokenManagerQueryInjectionExemptionTests
         RunAnalyzer(BuildSource(), options).Should().NotContain(d => d.Id == "MUD005");
     }
 
+    /// <summary>
+    /// 真实 <c>.editorconfig</c> 语义：键<b>只</b>出现在树粒度配置中
+    /// （普通 <c>.editorconfig</c> 不进入 <c>GlobalOptions</c>，后者只含 <c>.globalconfig</c> 与 <c>build_property.*</c>）。
+    /// 修复前分析器只读 <c>GlobalOptions</c> ⇒ "按目录生效的 editorconfig 豁免"实测无效。
+    /// </summary>
+    [Fact]
+    public void QueryInjection_WithPerTreeOnlyEditorConfigKey_ShouldNotReportMUD005()
+    {
+        var options = new AnalyzerOptions(
+            ImmutableArray<AdditionalText>.Empty,
+            new TreeScopedAnalyzerConfigOptionsProvider(
+                global: new Dictionary<string, string>(),
+                perTree: new Dictionary<string, string>
+                {
+                    ["mud_suppress_query_token_injection"] = "true",
+                }));
+
+        RunAnalyzer(BuildSource(), options).Should().NotContain(d => d.Id == "MUD005",
+            "树粒度（.editorconfig）声明同样构成豁免 —— 分析器必须读取 GetOptions(语法树)");
+    }
+
+    /// <summary>
+    /// 反向护栏：MSBuild 属性（全局）仍在<b>树粒度配置缺失</b>时生效。
+    /// </summary>
+    [Fact]
+    public void QueryInjection_WithGlobalMsBuildPropertyAndEmptyTreeOptions_ShouldNotReportMUD005()
+    {
+        var options = new AnalyzerOptions(
+            ImmutableArray<AdditionalText>.Empty,
+            new TreeScopedAnalyzerConfigOptionsProvider(
+                global: new Dictionary<string, string>
+                {
+                    ["build_property.MudHttpSuppressQueryTokenInjection"] = "true",
+                },
+                perTree: new Dictionary<string, string>()));
+
+        RunAnalyzer(BuildSource(), options).Should().NotContain(d => d.Id == "MUD005");
+    }
+
     [Theory]
     [InlineData("false")]
     [InlineData("")]
@@ -149,5 +188,17 @@ public class TokenManagerQueryInjectionExemptionTests
     private sealed class TestAnalyzerConfigOptions(Dictionary<string, string> values) : AnalyzerConfigOptions
     {
         public override bool TryGetValue(string key, out string value) => values.TryGetValue(key, out value!);
+    }
+
+    /// <summary>全局与树粒度配置分离的提供器：模拟"仅 .editorconfig 命中"与"仅 MSBuild 属性命中"两类真实场景。</summary>
+    private sealed class TreeScopedAnalyzerConfigOptionsProvider(
+        Dictionary<string, string> global,
+        Dictionary<string, string> perTree) : AnalyzerConfigOptionsProvider
+    {
+        public override AnalyzerConfigOptions GlobalOptions { get; } = new TestAnalyzerConfigOptions(global);
+
+        public override AnalyzerConfigOptions GetOptions(SyntaxTree tree) => new TestAnalyzerConfigOptions(perTree);
+
+        public override AnalyzerConfigOptions GetOptions(AdditionalText textFile) => GlobalOptions;
     }
 }

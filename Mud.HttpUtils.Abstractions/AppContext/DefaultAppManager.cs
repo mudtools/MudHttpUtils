@@ -14,6 +14,14 @@ namespace Mud.HttpUtils;
 /// 应用管理器的默认实现，提供线程安全的应用上下文管理。
 /// </summary>
 /// <typeparam name="TAppContext">应用上下文类型。</typeparam>
+// G3/B8：懒加载（RegisterLazy）以 Lazy<TAppContext> 承载"一次性实例化"。System.Lazy<T> 的类型参数
+// 带 DynamicallyAccessedMemberTypes.PublicParameterlessConstructor 标注（服务于其无参构造
+// Lazy() → Activator.CreateInstance），而本类型**只**使用 Lazy(Func<T>) 构造，从不走该路径。
+// 若不压制，`-p:AotStrictMode=true`（CI 的 AOT 发布作业）会把 IL2091 升级为 Error ⇒ 构建失败。
+// 压制范围限定在本类型内（与 OptionsWrapperMonitor<T> 的同名压制同口径）。
+[System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2091",
+    Justification = "本类型仅使用 Lazy<T>(Func<T>) 构造（工厂委托），从不使用 Lazy<T>() 无参构造，" +
+                    "故 TAppContext 无需满足 PublicParameterlessConstructor 约束。")]
 public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     where TAppContext : IMudAppContext
 {
