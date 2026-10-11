@@ -6,6 +6,7 @@
 // -----------------------------------------------------------------------
 
 using System.Collections.Immutable;
+using System.Reflection;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Mud.HttpUtils.Attributes;
 using Mud.HttpUtils.ToolSurface;
@@ -105,6 +106,145 @@ public class ToolSurfaceContractTests
         mirrorMembers.Should().Equal(runtimeMembers);
     }
 
+    // ────────── 剖面槽位面契约（"加了槽但没进值对象/值相等"的静默漂移） ──────────
+
+    /// <summary>
+    /// 剖面的公开槽位面必须在「<c>[SdkToolProfile]</c> 特性」与「引擎值对象 <see cref="SdkToolProfileModel"/>」两侧同构。
+    /// </summary>
+    /// <remarks>
+    /// <b>失败模式是静默的</b>：只在一侧加槽不会编译失败——值对象读不到该槽 ⇒ 该槽永远不会影响产物
+    /// （特性里写了、golden 里看不出），且没有其它守卫覆盖这条缝。故按<b>属性名集合</b>镜像锁定
+    /// （类型刻意不比对：值对象侧集合槽用 <c>ImmutableArray</c> 承载、特性侧是分隔串）。
+    /// </remarks>
+    [Fact]
+    public void ProfileSlotSurface_AttributeProperties_ShouldMirrorModelProperties()
+    {
+        // DeclaredOnly：排除 System.Attribute 继承来的 TypeId（它不是剖面槽）。
+        var attributeSlots = typeof(SdkToolProfileAttribute)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Select(static property => property.Name)
+            .OrderBy(static name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        var modelSlots = typeof(SdkToolProfileModel)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Select(static property => property.Name)
+            // MissingRequiredSlots 是引擎的派生诊断事实（不属于剖面作者声明的槽位面）。
+            .Where(static name => name != nameof(SdkToolProfileModel.MissingRequiredSlots))
+            .OrderBy(static name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        modelSlots.Should().Equal(
+            attributeSlots,
+            "槽位面必须在特性与值对象两侧同构——单侧加槽/改名不会编译失败，只表现为「槽位静默读不到」");
+    }
+
+    /// <summary>
+    /// <see cref="SdkToolProfileModel"/> 的<b>每个槽</b>都必须参与 <c>Equals</c> 与 <c>GetHashCode</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么必须补这条守卫</b>：本类型是<b>整条工具面扇出的增量管线入口</b>
+    /// （<c>CompilationProvider.Select(ProfileDiscovery.ResolveProfiles)</c> → 全部发射路径）。
+    /// 某个槽漏进值相等 ⇒「改了该槽但编译产物未变」被判定为 <c>Unchanged</c> ⇒
+    /// <b>产物静默过期</b>（schema/golden 与实际剖面不一致，构建全绿）。
+    /// </para>
+    /// <para>
+    /// 既有 <c>ToolSurfaceEqualityFieldCoverageTests</c> 只覆盖 <c>Extraction/</c> 下三个值键
+    /// （<c>CapabilityEntry</c>/<c>CapabilityParameter</c>/<c>ToolSchemaModel</c>），
+    /// 本类型此前<b>无守卫</b>——本用例关闭该缺口（与 AT-B16 同类失效通道）。
+    /// </para>
+    /// <para>
+    /// 判据取"槽名出现在方法体文本中"（对标量槽与集合槽两种形态都成立：集合槽走
+    /// <c>xxx.SequenceEqual(other.xxx)</c>，标量槽走 <c>xxx == other.xxx</c> /
+    /// <c>GetHashCode(xxx)</c>）。源码扫描而非反射：字段是否入哈希是<b>方法体</b>事实。
+    /// </para>
+    /// </remarks>
+    [Fact]
+    public void ProfileSlots_EverySlot_ShouldParticipateInEqualityAndHash()
+    {
+        var path = TestRepoRoot.PathOf("Mud.HttpUtils.Generator", "ToolSurface", "SdkToolProfileModel.cs");
+        var source = File.ReadAllText(path);
+
+        // 只取 SdkToolProfileModel 自身的方法体：本文件还包含 TokenKindMarker 与 SdkToolProfileSet 的
+        // 同名签名方法（`public override int GetHashCode()` 在文件里出现 3 次），不裁剪就会读到别的类型的体
+        // ⇒ 槽名全部"未参与"（假红）。
+        var modelTypeIndex = source.IndexOf("internal sealed class SdkToolProfileModel", StringComparison.Ordinal);
+        modelTypeIndex.Should().BeGreaterThan(0, "未找到 SdkToolProfileModel 类型声明（解析面已变，请先修守卫）");
+        var setTypeIndex = source.IndexOf("internal sealed class SdkToolProfileSet", StringComparison.Ordinal);
+        setTypeIndex.Should().BeGreaterThan(modelTypeIndex, "SdkToolProfileSet 应声明在 SdkToolProfileModel 之后（解析面已变，请先修守卫）");
+        var modelSource = source.Substring(modelTypeIndex, setTypeIndex - modelTypeIndex);
+
+        var equalsBody = ReadMethodBody(modelSource, "public bool Equals(SdkToolProfileModel? other)");
+        var hashBody = ReadMethodBody(modelSource, "public override int GetHashCode()");
+        equalsBody.Should().NotBeNullOrEmpty("未找到 SdkToolProfileModel.Equals 方法体（守卫解析失效 ⇒ 假绿）");
+        hashBody.Should().NotBeNullOrEmpty("未找到 SdkToolProfileModel.GetHashCode 方法体（守卫解析失效 ⇒ 假绿）");
+
+        // 金丝雀：确认读到的是"对的方法体"而不是同名的其它类型的体（否则判据退化为必红/假绿）。
+        equalsBody.Should().Contain("other.", "读到的不是 SdkToolProfileModel.Equals 的体");
+        hashBody.Should().Contain("_hashCodeComputed", "读到的不是 SdkToolProfileModel.GetHashCode 的体");
+
+        var slots = typeof(SdkToolProfileAttribute)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Select(static property => property.Name)
+            .ToArray();
+        slots.Should().NotBeEmpty("守卫自身必须能反射到槽位面，否则比对失效");
+
+        var missingFromEquals = slots
+            .Where(slot => !equalsBody.Contains(slot, StringComparison.Ordinal)).ToArray();
+        var missingFromHash = slots
+            .Where(slot => !hashBody.Contains(slot, StringComparison.Ordinal)).ToArray();
+
+        missingFromEquals.Should().BeEmpty(
+            "以下槽未参与 Equals —— 改动它们不会让增量管线重算，产物静默过期：{0}",
+            string.Join(", ", missingFromEquals));
+
+        missingFromHash.Should().BeEmpty(
+            "以下槽未参与 GetHashCode —— 仅在该槽上不同的两个剖面会得到相同哈希：{0}",
+            string.Join(", ", missingFromHash));
+    }
+
+    /// <summary>按签名定位方法并返回其方法体（花括号配平；支持表达式体成员）。</summary>
+    private static string ReadMethodBody(string source, string signaturePrefix)
+    {
+        var start = source.IndexOf(signaturePrefix, StringComparison.Ordinal);
+        if (start < 0)
+        {
+            return string.Empty;
+        }
+
+        var open = source.IndexOf('{', start);
+        var semicolon = source.IndexOf(';', start);
+        if (semicolon >= 0 && (open < 0 || semicolon < open))
+        {
+            return source.Substring(start, semicolon - start + 1);
+        }
+
+        if (open < 0)
+        {
+            return string.Empty;
+        }
+
+        var depth = 0;
+        for (var i = open; i < source.Length; i++)
+        {
+            if (source[i] == '{')
+            {
+                depth++;
+            }
+            else if (source[i] == '}')
+            {
+                depth--;
+                if (depth == 0)
+                {
+                    return source.Substring(open, i - open + 1);
+                }
+            }
+        }
+
+        return string.Empty;
+    }
+
     // ────────── 诊断槽位表契约 ──────────
 
     [Fact]
@@ -121,6 +261,12 @@ public class ToolSurfaceContractTests
         slots.Should().NotContain(13, "013 已在上游清理，本表不复活");
         slots.Should().Contain(ToolSurfaceDiagnostics.SlotGeneratorInternalError);
         slots.Should().Contain(ToolSurfaceDiagnostics.SlotDerivedConstantNameConflict);
+
+        // per-tool affordance 四槽（F-7）：028/029/030（Error 零容忍）+ 031（Warning 基线）。
+        slots.Should().Contain(ToolSurfaceDiagnostics.SlotAffordanceStructure);
+        slots.Should().Contain(ToolSurfaceDiagnostics.SlotAffordanceOrphan);
+        slots.Should().Contain(ToolSurfaceDiagnostics.SlotAffordanceDanglingReference);
+        slots.Should().Contain(ToolSurfaceDiagnostics.SlotAffordanceBudget);
     }
 
     [Fact]
@@ -132,6 +278,13 @@ public class ToolSurfaceContractTests
         zero.Should().NotContain(ToolSurfaceDiagnostics.SlotOutputSchemaTruncation);
         zero.Should().NotContain(ToolSurfaceDiagnostics.SlotCapabilityCoverageReport);
         zero.Should().NotContain(ToolSurfaceDiagnostics.SlotRequiredNullableConflict);
+
+        // affordance 的结构/归属/引用是"策展错误"（零容忍），预算是"内容偏胖"（Warning，走基线拦增量）。
+        zero.Should().Contain(ToolSurfaceDiagnostics.SlotAffordanceStructure);
+        zero.Should().Contain(ToolSurfaceDiagnostics.SlotAffordanceOrphan);
+        zero.Should().Contain(ToolSurfaceDiagnostics.SlotAffordanceDanglingReference);
+        zero.Should().NotContain(ToolSurfaceDiagnostics.SlotAffordanceBudget,
+            "把 token 预算告警升级为构建阻断会使消费方无法发布（与 009/021 同口径）");
 
         foreach (var slot in zero)
         {

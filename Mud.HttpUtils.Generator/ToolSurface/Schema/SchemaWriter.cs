@@ -53,7 +53,12 @@ internal static class SchemaWriter
     /// <param name="entry">能力条目。</param>
     /// <param name="profile">当前剖面（提供信封扩展键槽）。</param>
     /// <param name="sourceMember">声明的 SDK 源成员（<c>接口.方法</c>，可空）。</param>
-    public static string WriteToolSchema(CapabilityEntry entry, SdkToolProfileModel profile, string? sourceMember = null)
+    /// <param name="affordance">该工具的 per-tool affordance（无资产时为 <see langword="null"/>，不发射子块）。</param>
+    public static string WriteToolSchema(
+        CapabilityEntry entry,
+        SdkToolProfileModel profile,
+        string? sourceMember = null,
+        AffordanceEntry? affordance = null)
     {
         try
         {
@@ -67,7 +72,7 @@ internal static class SchemaWriter
             }
 
             json.Append(",\"parameters\":").Append(WriteInputSchema(entry));
-            json.Append(",\"").Append(profile.SchemaExtensionKey).Append("\":").Append(WriteExtension(entry, sourceMember));
+            json.Append(",\"").Append(profile.SchemaExtensionKey).Append("\":").Append(WriteExtension(entry, sourceMember, affordance));
             json.Append('}');
             return json.ToString();
         }
@@ -165,7 +170,12 @@ internal static class SchemaWriter
     /// <summary>
     /// 渲染厂商扩展块（不占用 JSON Schema 关键字空间）。
     /// </summary>
-    private static string WriteExtension(CapabilityEntry entry, string? sourceMember)
+    /// <remarks>
+    /// <b>可选子块的位置即契约</b>：<c>risk</c>/<c>is_write</c>/<c>identity</c>/<c>required_scopes</c> 恒出现，
+    /// <c>source</c> / <c>affordance</c> / <c>output_schema</c> 为可选且按固定顺序追加——
+    /// 顺序决定 golden 逐字节形态，调整即一次显式的契约变更。
+    /// </remarks>
+    private static string WriteExtension(CapabilityEntry entry, string? sourceMember, AffordanceEntry? affordance)
     {
         var json = new StringBuilder();
         json.Append('{');
@@ -197,6 +207,13 @@ internal static class SchemaWriter
             json.Append(",\"http\":").Append(JsonText.Quote(entry.HttpMethod));
             json.Append(",\"route\":").Append(JsonText.Quote(entry.RouteTemplate));
             json.Append('}');
+        }
+
+        // per-tool affordance（决策指导）：仅在该工具有资产时出现 ⇒ 既有剖面（未声明 AffordanceDirectory
+        // 或无资产）的描述符逐字节不变。四键恒出现（结构校验保证四节均非空）。
+        if (affordance is not null)
+        {
+            json.Append(",\"affordance\":").Append(affordance.ToJson());
         }
 
         // 返回值形状（宿主 ReturnJsonSchema 的数据源）。

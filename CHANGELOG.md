@@ -4,6 +4,47 @@
 
 ---
 
+## 3.1.0（工具面引擎新增 per-tool affordance，2026-10-11）
+
+> 新增**可选**剖面槽 `AffordanceDirectory` 与四条 affordance 诊断：把 `AdditionalFiles` 中的
+> `{工具名}.md` 资产解析为工具的**决策指导**，随描述符同 pass 发射进 `x-{sdk}.affordance`。
+> **非破坏**：槽默认空串（未声明即有既有行为），既有消费方**不改代码、golden 逐字节不变**。
+
+### 新增
+
+- **剖面槽 `AffordanceDirectory`**（`SdkToolProfileAttribute`，默认 `string.Empty` = 不启用）：
+  资产约定为 `{AffordanceDirectory}{契约工具名}.md`，文件名去 `.md` 后必须逐字符等于工具名契约表内的名字。
+- **`x-{sdk}.affordance` 发射**：四键 `when` / `avoid_when` / `prerequisites` / `tips`（值均为字符串数组，
+  四键恒出现），插在扩展块内 `source` 之后、`output_schema` 之前；无资产时**整键不出现**。
+  与 `risk` / `is_write` / `identity` / `required_scopes` 同一扩展块，随 `{P}Schemas.g.cs` 与 golden 逐字节固化。
+- **资产词法**：固定四小节 `WHEN` / `Avoid when` / `Prerequisites` / `Tips`（标题大小写不敏感）；
+  项目符号行各成一条，普通行合并为一条；首节之前的抬头忽略。
+- **四条诊断**（`{DiagnosticPrefix}{槽位:D3}`，规范序号 **028–031**）：
+  - `028` 结构非法（缺节 / 未知节 / 空节 / 同工具名被两份资产占用）—— Error，零容忍；
+  - `029` 资产文件名不命中任何已策展工具名 —— Error，零容忍；
+  - `030` 资产内反引号包裹的 `域.工具` 引用不存在 —— Error，零容忍（裸文本不参与校验，防假红）；
+  - `031` 资产超字符预算（单资产 ≤ 1024 / 单小节 ≤ 320）—— Warning，**聚合单条**且消息含份数
+    （便于消费方按 `MUDFT009-tools` 同款建立语义量基线）。
+
+### 测试
+
+- `ToolSurfaceEmissionTests` 新增 8 条：四数组发射与键序、**空串槽 vs 有槽无资产逐字节相同**（回归锚）、
+  空目录不吞无关 markdown、结构非法（缺/未知/空节）、孤儿资产、悬空引用（含"非工具名形态不参与"负例）、
+  超预算聚合单条与未超界静默、合法资产零诊断；
+- `ToolSurfaceContractTests` 新增 2 条剖面槽位面守卫（**关闭既有缺口**）：
+  `ProfileSlotSurface_AttributeProperties_ShouldMirrorModelProperties`（特性 ↔ 值对象同构）与
+  `ProfileSlots_EverySlot_ShouldParticipateInEqualityAndHash`（每槽必须参与 `Equals`/`GetHashCode`，
+  否则"改了槽但产物不重生成"的静默漂移无人拦）。两条均带金丝雀断言防"读到别的方法体导致假绿"。
+
+### 文档
+
+- `Mud.HttpUtils.Generator/README.md`：槽位表 `27 → 31`，诊断表补 `028–031`，
+  新增「per-tool affordance 资产」小节（资产约定 / 词法 / 校验 / 预算 / 与 `GuidanceDirectory` 的分工 /
+  模型可见性边界）；
+- `Demos/ToolSurfaceDemo`：剖面加槽 + `Affordance/doc.list.md` / `doc.delete.md` 两份示例资产。
+
+---
+
 ## 3.0.5（下游消费分析方案的第 5 版复核与缺陷修复，2026-10-10）
 
 > 对 `.docs/2026-10-09-下游消费分析-Bug修复与功能完善方案.md` 第 4 版所列批次的**实施结果复核**，

@@ -208,4 +208,27 @@ public sealed class SdkToolProfileAttribute : Attribute
 
     /// <summary>guidance 资产目录片段（如 <c>/Guidance/</c>，AdditionalFiles 路径匹配）。</summary>
     public string GuidanceDirectory { get; set; } = string.Empty;
+
+    /// <summary>
+    /// per-tool affordance 资产目录片段（如 <c>/Affordance/</c>，AdditionalFiles 路径匹配）。
+    /// 空串（默认）= 该剖面<b>不启用</b>本特性 ⇒ 描述符不发射 affordance 子块，既有 golden 逐字节不变。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>资产形态</b>：<c>{AffordanceDirectory}{契约工具名}.md</c>（如 <c>/Affordance/bitable.list_tables.md</c>），
+    /// 文件名去掉 <c>.md</c> 后必须<b>逐字符等于</b>契约工具名（与 <c>{P}Names</c> 同源），
+    /// 否则资产不会生效——由 <c>{DiagnosticPrefix}</c> 归属槽（Error）机械拦下。
+    /// </para>
+    /// <para>
+    /// <b>与 <see cref="GuidanceDirectory"/> 的分工</b>（两者不得互相替代）：
+    /// guidance 是<b>域级/跨工具</b>的工作流与路由（L1 键 <c>{domain}</c>、L2 键 <c>{domain}/{topic}</c>）；
+    /// affordance 是<b>单工具</b>的选型与前置条件（<c>when</c> / <c>avoid_when</c> / <c>prerequisites</c> / <c>tips</c>）。
+    /// 同一结论不得在两处给出互斥表述。
+    /// </para>
+    /// <para>
+    /// <b>为什么不是必填槽</b>：组件是多消费方产品，必填会让既有剖面直接 <c>SDKT002</c>；
+    /// 空串槽把本次升级变成 opt-in 的增量能力。
+    /// </para>
+    /// </remarks>
+    public string AffordanceDirectory { get; set; } = string.Empty;
 }

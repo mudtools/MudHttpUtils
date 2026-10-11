@@ -37,6 +37,9 @@
 	<ItemGroup>
 		<!-- Guidance 资产：AdditionalFiles 进入编译，剖面 GuidanceDirectory 槽（/Guidance/）按路径归属 -->
 		<AdditionalFiles Include="Guidance\**\*.md" />
+		<!-- per-tool affordance 资产：剖面 AffordanceDirectory 槽（/Affordance/）按路径归属；
+		     文件名必须逐字符等于契约工具名（doc.list.md / doc.delete.md） -->
+		<AdditionalFiles Include="Affordance\**\*.md" />
 	</ItemGroup>
 
 </Project>

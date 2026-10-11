@@ -935,9 +935,9 @@ sealed class FeishuToolProfile : ISdkToolProfile { }
 
 ### 工具面诊断（`{DiagnosticPrefix}NNN`）
 
-引擎诊断 ID 按 `{DiagnosticPrefix}{槽位:D3}` 动态组装（如 `MUDFT026`），共 27 个规范槽位
+引擎诊断 ID 按 `{DiagnosticPrefix}{槽位:D3}` 动态组装（如 `MUDFT026`），共 31 个规范槽位
 （007/012/013 为上游已清理的历史僵尸位，不复活）。**零容忍列** = Error 且默认阻断构建
-（与上游 zero-tolerance 基线一致：005/006/009/021 为 Warning、018 为 Info，均不阻断）：
+（005/006/009/021/031 为 Warning、018 为 Info，均不阻断）：
 
 | 槽位    | 语义                                                          | 级别    | 零容忍 |
 | ------- | ------------------------------------------------------------- | ------- | ------ |
@@ -959,6 +959,10 @@ sealed class FeishuToolProfile : ISdkToolProfile { }
 | 022-025 | 执行器未绑定 / 绑定不成立 / 签名不符 / 构造参数不可 DI 解析   | Error   | 是     |
 | 026     | 生成器内部异常兜底（类别固定用 Tooling 类别，其余槽用 `DiagnosticCategory`） | Error | 是 |
 | 027     | 工具名派生常量名冲突                                          | Error   | 是     |
+| 028     | per-tool affordance 资产结构非法（缺节/未知节/空节/同工具名重复占用） | Error | 是 |
+| 029     | per-tool affordance 资产文件名不命中已策展工具名（资产不会生效） | Error | 是 |
+| 030     | per-tool affordance 资产引用了不存在的工具名（反引号包裹的 `域.工具`） | Error | 是 |
+| 031     | per-tool affordance 资产超字符预算（**聚合单条**，消息含"份数"） | Warning | 否 |
 
 剖面契约守卫诊断 `SDKT001`/`SDKT002` 见下方「编译诊断」章节的工具面小节。
 
@@ -973,6 +977,55 @@ sealed class FeishuToolProfile : ISdkToolProfile { }
 
 > **消费方注册义务**：以上两个属性名由**剖面作者自定义**，消费方工程须在自己的 csproj 中注册
 > `<CompilerVisibleProperty Include="该属性名" />`，否则生成器读不到开关值（组件侧 props 不预知剖面属性名）。
+
+### per-tool affordance 资产（`AffordanceDirectory` 槽，可选）
+
+剖面声明 `AffordanceDirectory = "/Affordance/"`（默认空串 = **不启用**，对既有消费方零影响）后，
+引擎把 `AdditionalFiles` 中匹配该目录的 `.md` 解析为工具的**决策指导**，随描述符<b>同 pass</b>发射进
+`x-{sdk}.affordance`（与 `risk` / `is_write` / `identity` / `required_scopes` 同一扩展块）：
+
+```markdown
+<!-- Affordance/bitable.list_tables.md  ← 文件名（去 .md）必须逐字符等于契约工具名 -->
+## WHEN
+需要列举多维表格时。
+
+## Avoid when
+- 已知 app_token 且只要一张表 → 改用更省 token 的单表读取。
+
+## Prerequisites
+- 需要目标空间的权限（先用 `bitable.list_apps` 确认可见范围）。
+
+## Tips
+- 翻页只用 page_token；返回被截断时看 truncated 字段，不要重复拉第一页。
+```
+
+```json
+"x-feishu": {
+  "risk": "read",
+  "is_write": false,
+  "identity": "tenant",
+  "required_scopes": ["bitable:app:readonly"],
+  "affordance": {
+    "when": ["需要列举多维表格时。"],
+    "avoid_when": ["已知 app_token 且只要一张表 → 改用更省 token 的单表读取。"],
+    "prerequisites": ["需要目标空间的权限（先用 `bitable.list_apps` 确认可见范围）。"],
+    "tips": ["翻页只用 page_token；返回被截断时看 truncated 字段，不要重复拉第一页。"]
+  }
+}
+```
+
+- **四节固定且各节非空**：`WHEN` / `Avoid when` / `Prerequisites` / `Tips`（标题大小写不敏感；
+  未知小节、缺节、空节、同工具名被两份资产占用 → **028**）；JSON 侧四键**恒出现**（值均为字符串数组）。
+- **文件名词法**：`{AffordanceDirectory}{契约工具名}.md`；不命中任何已策展工具名 → **029**（资产静默不生效）。
+- **引用校验**：资产内**反引号包裹**且形如 `域.工具` 的引用必须命中工具名契约表 → 否则 **030**
+  （裸文本不参与校验，避免散文里的伪 `a.b` 造成假红）。
+- **预算**：单资产 ≤ 1024 字符、单小节 ≤ 320 字符，超限 → **031**（Warning，**聚合单条**且消息含份数，
+  便于消费方按 `009-tools` 同款建立语义量基线）。
+- **与 `GuidanceDirectory` 的分工**：guidance = 域级/跨工具的流程与路由；affordance = 单工具的选型与前置条件。
+  同一结论不得在两处给出互斥表述。
+- **模型可见性**：`x-{sdk}.affordance` 是**结构化**出口；是否/如何进入模型上下文由宿主决定
+  （MCP 的 `_meta` 属**机器可读**通道，标准客户端不会注入模型上下文）。
+- **golden**：affordance 内容随 `{P}Schemas.g.cs` / golden 快照逐字节固化 ⇒ 改一个字即 **014**。
 
 ## 编译诊断
 

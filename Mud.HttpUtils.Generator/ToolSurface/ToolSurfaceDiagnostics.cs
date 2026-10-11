@@ -110,6 +110,18 @@ internal static class ToolSurfaceDiagnostics
     /// <summary>027：工具名归一后的派生常量名冲突。</summary>
     public const int SlotDerivedConstantNameConflict = 27;
 
+    /// <summary>028：per-tool affordance 资产结构非法（缺节 / 未知节 / 空节 / 同工具名重复占用）。</summary>
+    public const int SlotAffordanceStructure = 28;
+
+    /// <summary>029：per-tool affordance 资产文件名不命中任何已策展工具名（资产不会生效）。</summary>
+    public const int SlotAffordanceOrphan = 29;
+
+    /// <summary>030：per-tool affordance 资产引用了不存在的工具名（反引号包裹的 <c>域.工具</c>）。</summary>
+    public const int SlotAffordanceDanglingReference = 30;
+
+    /// <summary>031：per-tool affordance 资产超字符预算（聚合单条）。Warning，非零容忍。</summary>
+    public const int SlotAffordanceBudget = 31;
+
     /// <summary>槽位定义：序号 + 标题 + 消息模板 + 级别 + 是否零容忍。</summary>
     /// <remarks>不采用 <c>record</c>（netstandard2.0 无 <c>IsExternalInit</c>，仓库纪律）。</remarks>
     internal sealed class SlotDefinition
@@ -169,6 +181,10 @@ internal static class ToolSurfaceDiagnostics
         new(SlotHandlerConstructorUnresolvable, "执行器构造参数无法解析", "工具 '{0}' 的执行器 {1} 的构造参数 {2}（类型 {3}）无法作为 DI 服务类型解析——仅支持类/接口（非开放泛型、非元组、非值类型）", DiagnosticSeverity.Error, true),
         new(SlotGeneratorInternalError, "工具面生成器内部异常", "生成器内部异常（程序集 {0}）：{1}: {2}——已兜底，工具面本次不完整，请按堆栈修复生成器", DiagnosticSeverity.Error, true),
         new(SlotDerivedConstantNameConflict, "工具名派生常量名冲突", "工具名 '{0}' 与 '{1}' 归一为同一编译期常量名 '{2}'——请改名使派生常量唯一", DiagnosticSeverity.Error, true),
+        new(SlotAffordanceStructure, "per-tool affordance 资产结构非法", "工具 '{0}' 的 affordance 资产 {1} 结构非法：{2}（固定四节且各节非空：WHEN / Avoid when / Prerequisites / Tips）", DiagnosticSeverity.Error, true),
+        new(SlotAffordanceOrphan, "per-tool affordance 资产不属于任何工具", "affordance 资产 {0} 的文件名 '{1}' 不命中任何已策展工具名——该资产不会被发射进描述符（请改名或删除）", DiagnosticSeverity.Error, true),
+        new(SlotAffordanceDanglingReference, "per-tool affordance 资产引用了不存在的工具", "工具 '{0}' 的 affordance 资产 {1} 引用了工具名契约表中不存在的 {2}——反引号包裹的 '域.工具' 会被机械校验，请核对工具名", DiagnosticSeverity.Error, true),
+        new(SlotAffordanceBudget, "per-tool affordance 资产超预算", "per-tool affordance 资产超预算：{0} 份（单资产上界 {1} 字符 / 单小节上界 {2} 字符）。样本：{3}", DiagnosticSeverity.Warning, false),
     ];
 
     /// <summary>
@@ -188,7 +204,7 @@ internal static class ToolSurfaceDiagnostics
             _profile = profile ?? throw new ArgumentNullException(nameof(profile));
         }
 
-        private const int MaxSlot = 27;
+        private const int MaxSlot = 31;
 
         /// <summary>取槽位描述符（槽位号必须存在于 <see cref="Slots"/>，否则 <c>ArgumentOutOfRangeException</c>）。</summary>
         public DiagnosticDescriptor this[int slot]

@@ -64,13 +64,17 @@ internal static class SchemaEmitter
     /// <param name="profile">当前剖面（owner 门槛 / 命名空间 / 前缀槽的唯一来源）。</param>
     /// <param name="assemblyName">当前编译的程序集名（决定是否发射名字契约表）。</param>
     /// <param name="goldenText">golden 快照内容（未声明 AdditionalFile 时为 <see langword="null"/>）。</param>
+    /// <param name="affordance">
+    /// 工具名 → per-tool affordance（<see cref="SdkToolProfileModel.AffordanceDirectory"/> 未声明或无资产时为空）。
+    /// </param>
     /// <returns>golden 漂移描述（供入口以槽位 014 上报；本发射器只返回、不直接报）。</returns>
     public static string? Emit(
         SourceProductionContext context,
         ImmutableArray<ToolSchemaModel> models,
         SdkToolProfileModel profile,
         string? assemblyName,
-        string? goldenText)
+        string? goldenText,
+        IReadOnlyDictionary<string, AffordanceEntry>? affordance = null)
     {
         try
         {
@@ -83,7 +87,7 @@ internal static class SchemaEmitter
                 .OrderBy(static m => m.Entry.ToolName, StringComparer.Ordinal)
                 .ToArray();
 
-            EmitSchemas(context, ordered, profile);
+            EmitSchemas(context, ordered, profile, affordance);
 
             if (string.Equals(assemblyName, profile.OwnerAssembly, StringComparison.Ordinal))
             {
@@ -91,7 +95,7 @@ internal static class SchemaEmitter
                 EmitContracts(context, ordered, profile);
             }
 
-            var golden = BuildGolden(ordered, profile);
+            var golden = BuildGolden(ordered, profile, affordance);
             if (goldenText is null)
             {
                 return null;
@@ -109,14 +113,17 @@ internal static class SchemaEmitter
     }
 
     /// <summary>构造 golden 快照文本（确定性：按工具名排序，一行一工具）。</summary>
-    public static string BuildGolden(IReadOnlyList<ToolSchemaModel> ordered, SdkToolProfileModel profile)
+    public static string BuildGolden(
+        IReadOnlyList<ToolSchemaModel> ordered,
+        SdkToolProfileModel profile,
+        IReadOnlyDictionary<string, AffordanceEntry>? affordance = null)
     {
         var sb = new StringBuilder();
         foreach (var model in ordered)
         {
             sb.Append(model.Entry.ToolName)
                 .Append('\t')
-                .Append(WriteSchema(model, profile))
+                .Append(WriteSchema(model, profile, affordance))
                 .Append('\n');
         }
 
@@ -124,12 +131,25 @@ internal static class SchemaEmitter
     }
 
     /// <summary>渲染单个工具的描述符（唯一入口，保证常量与 golden 出自同一调用）。</summary>
-    private static string WriteSchema(ToolSchemaModel model, SdkToolProfileModel profile)
-        => SchemaWriter.WriteToolSchema(model.Entry, profile, model.Source);
+    private static string WriteSchema(
+        ToolSchemaModel model,
+        SdkToolProfileModel profile,
+        IReadOnlyDictionary<string, AffordanceEntry>? affordance)
+        => SchemaWriter.WriteToolSchema(model.Entry, profile, model.Source, AffordanceOf(affordance, model.Entry.ToolName));
+
+    /// <summary>取该工具的 affordance（无资产返回 <see langword="null"/> ⇒ 描述符不发射子块）。</summary>
+    private static AffordanceEntry? AffordanceOf(
+        IReadOnlyDictionary<string, AffordanceEntry>? affordance,
+        string toolName)
+        => affordance is not null && affordance.TryGetValue(toolName, out var entry) ? entry : null;
 
     // ────────── {P}Schemas.g.cs ──────────
 
-    private static void EmitSchemas(SourceProductionContext context, ToolSchemaModel[] ordered, SdkToolProfileModel profile)
+    private static void EmitSchemas(
+        SourceProductionContext context,
+        ToolSchemaModel[] ordered,
+        SdkToolProfileModel profile,
+        IReadOnlyDictionary<string, AffordanceEntry>? affordance)
     {
         var source = new StringBuilder();
         AppendFileHeader(source, profile);
@@ -142,7 +162,7 @@ internal static class SchemaEmitter
 
         foreach (var model in ordered)
         {
-            source.Line($"        public const string {model.ConstName} = {JsonText.ToCSharpLiteral(WriteSchema(model, profile))};");
+            source.Line($"        public const string {model.ConstName} = {JsonText.ToCSharpLiteral(WriteSchema(model, profile, affordance))};");
             source.Line();
         }
 

@@ -72,6 +72,7 @@ public class ToolSurfaceEmissionTests
             GoldenFileName = "TestToolSchemas.golden.txt",
             GoldenUpdatePropertyName = "TestToolGoldenUpdate",
             GuidanceDirectory = "/Guidance/",
+            AffordanceDirectory = "/Affordance/",
             WriteVerbKeywords = "delete|create")]
         sealed class TestToolProfile : ISdkToolProfile { }
         """;
@@ -586,6 +587,178 @@ public class ToolSurfaceEmissionTests
 
         HintNames(run).Should().NotContain("TestToolGuidance.g.cs",
             "GuidanceDirectory 为空时不得吸收任何 markdown 资产");
+    }
+
+    // ────────── per-tool affordance（F-7）──────────
+
+    /// <summary>一份结构合法的 affordance 资产（四节齐备且非空）。</summary>
+    private const string AffordanceAsset = """
+        ## WHEN
+        需要按条件筛选/排序读取多维表格时。
+
+        ## Avoid when
+        - 已知 record_id 且只要一条记录时，改用更省 token 的单条读取工具。
+
+        ## Prerequisites
+        - 需要目标表的 app_token 与 table_id（先调用列表类工具拿到）。
+
+        ## Tips
+        - page_size 不由模型控制（平台默认），翻页只用 page_token。
+        """;
+
+    [Fact]
+    public void Affordance_ShouldFlowIntoDescriptorExtension_WithFourArrays()
+    {
+        var run = Run(
+            [ProfileSource, ConsumerSource, CuratedToolsSource],
+            additionalTexts: [new InMemoryAdditionalText("/proj/Affordance/bitable.list.md", AffordanceAsset)]);
+
+        var schemas = Normalize(Source(run, "TestToolSchemas.g.cs"));
+
+        schemas.Should().Contain("\"affordance\":{\"when\":[",
+            "工具级 affordance 必须落在 x-<sdk> 扩展块内（模型可见面与 golden 同源）");
+        schemas.Should().Contain("\"avoid_when\":[")
+            .And.Contain("\"prerequisites\":[")
+            .And.Contain("\"tips\":[")
+            .And.Contain("page_size 不由模型控制");
+
+        // 键顺序即契约（golden 逐字节可比）：when → avoid_when → prerequisites → tips。
+        schemas.IndexOf("\"avoid_when\"", StringComparison.Ordinal)
+            .Should().BeGreaterThan(schemas.IndexOf("\"when\"", StringComparison.Ordinal));
+        schemas.IndexOf("\"prerequisites\"", StringComparison.Ordinal)
+            .Should().BeGreaterThan(schemas.IndexOf("\"avoid_when\"", StringComparison.Ordinal));
+        schemas.IndexOf("\"tips\"", StringComparison.Ordinal)
+            .Should().BeGreaterThan(schemas.IndexOf("\"prerequisites\"", StringComparison.Ordinal));
+
+        // 项目符号行各成一条、普通行合并为一条（词法确定性）。
+        schemas.Should().Contain("\"when\":[\"需要按条件筛选/排序读取多维表格时。\"]");
+        run.Result.Diagnostics.Should().NotContain(d => d.Id.StartsWith("MUDTT02", StringComparison.Ordinal)
+            || d.Id.StartsWith("MUDTT03", StringComparison.Ordinal),
+            "合法资产不得产出任何 affordance 诊断");
+    }
+
+    [Fact]
+    public void WithoutAffordanceDirectory_DescriptorIsByteIdenticalToEnabledButAssetless()
+    {
+        // 回归锚（本仓 FeishuToolSchemas.golden.txt 的同款自证）：
+        // 「未声明槽（空串）」与「声明了槽但无任何资产」必须产出逐字节相同的描述符 ——
+        // 这是「可空槽 ⇒ 组件升级对既有消费方零影响」的机械证据。
+        var disabled = Run([WithoutSlot(ProfileSource, "AffordanceDirectory"), ConsumerSource, CuratedToolsSource]);
+        var enabled = Run([ProfileSource, ConsumerSource, CuratedToolsSource]);
+
+        var enabledGolden = GoldenText(enabled);
+        enabledGolden.Should().Be(GoldenText(disabled));
+        enabledGolden.Should().NotContain("affordance", "无资产时不得发射 affordance 子块");
+    }
+
+    [Fact]
+    public void EmptyAffordanceDirectory_DoesNotCaptureUnrelatedMarkdown()
+    {
+        // 空串槽（非必填）时，任意 .md 都不得被当作 affordance 资产——否则描述符会被
+        // 以"文件名不是工具名"批量产出零容忍的 029，升级即构建失败。
+        var run = Run(
+            [WithoutSlot(ProfileSource, "AffordanceDirectory"), ConsumerSource, CuratedToolsSource],
+            additionalTexts:
+            [
+                new InMemoryAdditionalText("/proj/Affordance/bitable.list.md", AffordanceAsset),
+                new InMemoryAdditionalText("/proj/readme.md", "# 无关文档"),
+            ]);
+
+        GoldenText(run).Should().NotContain("affordance",
+            "AffordanceDirectory 为空时不得吸收任何 markdown 资产");
+        run.Result.Diagnostics.Should().NotContain(d => d.Id == "MUDTT028"
+            || d.Id == "MUDTT029"
+            || d.Id == "MUDTT030"
+            || d.Id == "MUDTT031");
+    }
+
+    [Fact]
+    public void Affordance_MissingSectionAndEmptySection_ReportStructureError()
+    {
+        // 缺 Tips 节 → 028。
+        var missing = Run(
+            [ProfileSource, ConsumerSource, CuratedToolsSource],
+            additionalTexts: [new InMemoryAdditionalText(
+                "/proj/Affordance/bitable.list.md",
+                "## WHEN\n列出表格时。\n\n## Avoid when\n- 只要一条时改用单条读取。\n\n## Prerequisites\n- 需要 app_token。\n")]);
+
+        var missingDiagnostic = missing.Result.Diagnostics.First(d => d.Id == "MUDTT028");
+        missingDiagnostic.Severity.Should().Be(DiagnosticSeverity.Error);
+        missingDiagnostic.GetMessage().Should().Contain("Tips", "必须点名缺失的小节");
+
+        // 未知小节 → 028；空小节 → 028。
+        var unknown = Run(
+            [ProfileSource, ConsumerSource, CuratedToolsSource],
+            additionalTexts: [new InMemoryAdditionalText(
+                "/proj/Affordance/bitable.list.md",
+                "## WHEN\n列出表格时。\n\n## Examples\n- 例子。\n")]);
+        unknown.Result.Diagnostics.First(d => d.Id == "MUDTT028").GetMessage().Should().Contain("Examples");
+
+        var empty = Run(
+            [ProfileSource, ConsumerSource, CuratedToolsSource],
+            additionalTexts: [new InMemoryAdditionalText(
+                "/proj/Affordance/bitable.list.md",
+                "## WHEN\n\n## Avoid when\n- 只要一条时改用单条读取。\n\n## Prerequisites\n- 需要 app_token。\n\n## Tips\n- 翻页只用 page_token。\n")]);
+        empty.Result.Diagnostics.First(d => d.Id == "MUDTT028").GetMessage().Should().Contain("为空");
+
+        // 结构非法 ⇒ 该工具不得发射半成品 affordance（宁缺勿错）。
+        GoldenText(missing).Should().NotContain("affordance");
+    }
+
+    [Fact]
+    public void Affordance_OrphanAsset_ReportsOrphanError()
+    {
+        var run = Run(
+            [ProfileSource, ConsumerSource, CuratedToolsSource],
+            additionalTexts:
+            [
+                new InMemoryAdditionalText("/proj/Affordance/bitable.list.md", AffordanceAsset),
+                new InMemoryAdditionalText("/proj/Affordance/bitable.list_records.md", AffordanceAsset),
+            ]);
+
+        var orphan = run.Result.Diagnostics.Where(d => d.Id == "MUDTT029").ToList();
+        orphan.Should().ContainSingle("文件名不命中工具名契约表的资产必须被点名");
+        orphan[0].Severity.Should().Be(DiagnosticSeverity.Error);
+        orphan[0].GetMessage().Should().Contain("bitable.list_records");
+
+        GoldenText(run).Should().Contain("\"affordance\"", "合法资产仍须正常发射（单份坏资产不得连坐）");
+    }
+
+    [Fact]
+    public void Affordance_DanglingToolReference_ReportsReferenceError()
+    {
+        var run = Run(
+            [ProfileSource, ConsumerSource, CuratedToolsSource],
+            additionalTexts: [new InMemoryAdditionalText(
+                "/proj/Affordance/bitable.list.md",
+                "## WHEN\n列出表格时。\n\n## Avoid when\n- 只要一条时改用 `im.not_a_tool`。\n\n## Prerequisites\n- 需要 `bitable.list` 已可用。\n\n## Tips\n- 见 `docs/guide`（非工具名形态，不参与校验）。\n")]);
+
+        var dangling = run.Result.Diagnostics.Where(d => d.Id == "MUDTT030").ToList();
+        dangling.Should().ContainSingle("反引号包裹的 '域.工具' 引用不存在时必须报红");
+        dangling[0].GetMessage().Should().Contain("im.not_a_tool");
+        dangling[0].GetMessage().Should().NotContain("docs/guide", "非 '域.工具' 形态不得参与校验（防假红）");
+    }
+
+    [Fact]
+    public void Affordance_OverBudget_ReportsSingleAggregatedWarning_AndQuietWhenWithinBudget()
+    {
+        var longTips = new string('x', 400);
+        var overBudget = Run(
+            [ProfileSource, ConsumerSource, CuratedToolsSource],
+            additionalTexts: [new InMemoryAdditionalText(
+                "/proj/Affordance/bitable.list.md",
+                $"## WHEN\n列出表格时。\n\n## Avoid when\n- 只要一条时改用单条读取。\n\n## Prerequisites\n- 需要 app_token。\n\n## Tips\n- {longTips}\n")]);
+
+        var budget = overBudget.Result.Diagnostics.Where(d => d.Id == "MUDTT031").ToList();
+        budget.Should().ContainSingle("031 必须是聚合单条（逐资产报会随资产数放大日志）");
+        budget[0].Severity.Should().Be(DiagnosticSeverity.Warning, "超预算是内容偏胖，不得阻断构建");
+        budget[0].GetMessage().Should().Contain("1 份", "消息必须携带份数，供消费方建立语义量基线（同 009-tools 口径）");
+        budget[0].GetMessage().Should().Contain("bitable.list(");
+
+        var within = Run(
+            [ProfileSource, ConsumerSource, CuratedToolsSource],
+            additionalTexts: [new InMemoryAdditionalText("/proj/Affordance/bitable.list.md", AffordanceAsset)]);
+        within.Result.Diagnostics.Should().NotContain(d => d.Id == "MUDTT031", "未超界不得报预算");
     }
 
     // ────────── 读写分类的单一真相源 ──────────
