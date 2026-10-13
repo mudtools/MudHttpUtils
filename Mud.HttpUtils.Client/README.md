@@ -676,7 +676,7 @@ if (refreshService.IsStopped)
 > 而 `UseApp` → `UseAppScope` 是真实改进（后者自动归还上下文）。
 > ✅ 附带收益：`BeginScope(null)` 的 `CS0121` 重载二义**已随之消失**。
 > 例外：若你的接口**自行声明**了这些成员，生成器仍会为其发射实现，该写法不受影响。
-> 残留的废弃面只有 `GetTokenAsync()`（`[Obsolete(Warning)]`，经接口调用得 `CS0618`）。
+> 残留的废弃面只有 `GetTokenAsync()`（`BC-28`，`[Obsolete(Warning)]`，经接口调用得 `CS0618`；3.x 保留告警，计划 4.0 移除）。
 >
 > **需要"切换并保持"时用 `SwitchToApp`（`SW-15`）**：`UseAppScope` 是**作用域式**（释放即回滚），
 > 无法表达"切换后长期保持"（如返回一个已绑定目标应用的实例）。

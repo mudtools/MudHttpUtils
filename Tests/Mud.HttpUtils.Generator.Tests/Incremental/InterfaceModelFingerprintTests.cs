@@ -206,6 +206,88 @@ public class InterfaceModelFingerprintTests
             "partial 兄弟声明仅注释变更不应改变指纹(同主声明排除 trivia 的既有权衡)。");
     }
 
+    // F-1(模型指纹红线): [Token(Disabled = ...)] 是免令牌 opt-out 的生成语义,
+    // 取值变更必须进入指纹,否则宿主改 Disabled 不触发重新生成(生成代码与声明不一致)。
+    private const string TokenDisabledMethodSource = """
+        using Mud.HttpUtils;
+        using Mud.HttpUtils.Attributes;
+
+        [HttpClientApi(HttpClient = "IEnhancedHttpClient")]
+        [Token]
+        public interface IApi
+        {
+            [Get("/users")]
+            Task<string> ListAsync();
+
+            [Get("/clear")]
+            [Token(Disabled = true)]
+            Task<string> ClearAsync();
+        }
+        """;
+
+    private const string TokenDisabledMethodChangedSource = """
+        using Mud.HttpUtils;
+        using Mud.HttpUtils.Attributes;
+
+        [HttpClientApi(HttpClient = "IEnhancedHttpClient")]
+        [Token]
+        public interface IApi
+        {
+            [Get("/users")]
+            Task<string> ListAsync();
+
+            [Get("/clear")]
+            [Token(Disabled = false)]
+            Task<string> ClearAsync();
+        }
+        """;
+
+    [Fact]
+    public void TokenDisabledMethodAttributeChange_ShouldRegenerate()
+    {
+        var before = BuildModel(TokenDisabledMethodSource);
+        var after = BuildModel(TokenDisabledMethodChangedSource);
+
+        Assert.False(before.Equals(after),
+            "方法级 [Token(Disabled)] 取值变更应改变指纹(应触发重新生成),否则免令牌 opt-out 配置静默失效。");
+    }
+
+    private const string TokenDisabledInterfaceSource = """
+        using Mud.HttpUtils;
+        using Mud.HttpUtils.Attributes;
+
+        [HttpClientApi(HttpClient = "IEnhancedHttpClient")]
+        [Token(Disabled = true)]
+        public interface IApi
+        {
+            [Get("/users")]
+            Task<string> ListAsync();
+        }
+        """;
+
+    private const string TokenDisabledInterfaceChangedSource = """
+        using Mud.HttpUtils;
+        using Mud.HttpUtils.Attributes;
+
+        [HttpClientApi(HttpClient = "IEnhancedHttpClient")]
+        [Token(Disabled = false)]
+        public interface IApi
+        {
+            [Get("/users")]
+            Task<string> ListAsync();
+        }
+        """;
+
+    [Fact]
+    public void TokenDisabledInterfaceAttributeChange_ShouldRegenerate()
+    {
+        var before = BuildModel(TokenDisabledInterfaceSource);
+        var after = BuildModel(TokenDisabledInterfaceChangedSource);
+
+        Assert.False(before.Equals(after),
+            "接口级 [Token(Disabled)] 取值变更应改变指纹(应触发重新生成)。");
+    }
+
     private static Mud.HttpUtils.Models.InterfaceModel BuildModel(string source)
     {
         var compilation = CreateCompilation(source);

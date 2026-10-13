@@ -104,6 +104,11 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
             if (tokenAttribute == null)
                 return;
 
+            // F-1（G-1）：免令牌方法（[Token(Disabled = true)]，有效级：方法级 > 接口级）不取令牌、
+            // 不注入 —— URL 承载面不存在，豁免 MUD005。
+            if (IsTokenDisabled(method, interfaceDecl))
+                return;
+
             string? urlBorneMode = null;
             foreach (var arg in tokenAttribute.ArgumentList?.Arguments ?? default(SeparatedSyntaxList<AttributeArgumentSyntax>))
             {
@@ -150,6 +155,42 @@ public class TokenManagerLifetimeAnalyzer : DiagnosticAnalyzer
         {
             GeneratorDebugLogger.LogError(nameof(TokenManagerLifetimeAnalyzer), ex);
         }
+    }
+
+    /// <summary>
+    /// F-1（G-1）：判定方法的有效 <c>[Token(Disabled = ...)]</c> 是否为 <c>true</c>（免令牌 opt-out）。
+    /// 有效级与生成器一致（MT-21「方法级覆盖接口级」）：方法级显式取值优先，未标注时取接口级。
+    /// 仅认布尔字面量 —— 非字面量保守视为未禁用（安全告警不得默认静音，与 <see cref="HasJustification"/> 同口径）。
+    /// </summary>
+    private static bool IsTokenDisabled(MethodDeclarationSyntax method, InterfaceDeclarationSyntax interfaceDecl)
+    {
+        var methodToken = method.AttributeLists.SelectMany(al => al.Attributes)
+            .FirstOrDefault(a => a.Name.ToString() is "Token" or "TokenAttribute");
+        var interfaceToken = interfaceDecl.AttributeLists.SelectMany(al => al.Attributes)
+            .FirstOrDefault(a => a.Name.ToString() is "Token" or "TokenAttribute");
+
+        return TryGetDisabledLiteral(methodToken) ?? TryGetDisabledLiteral(interfaceToken) ?? false;
+    }
+
+    /// <summary>
+    /// F-1：读取 <c>[Token]</c> 上 <c>Disabled = …</c> 的布尔字面量取值；未标注或非字面量返回 null。
+    /// </summary>
+    private static bool? TryGetDisabledLiteral(AttributeSyntax? tokenAttribute)
+    {
+        foreach (var arg in tokenAttribute?.ArgumentList?.Arguments ?? default(SeparatedSyntaxList<AttributeArgumentSyntax>))
+        {
+            if (arg.NameEquals == null
+                || !arg.NameEquals.Name.ToString().Equals("Disabled", StringComparison.Ordinal))
+                continue;
+
+            // 仅接受布尔字面量形式；非字面量（如常量引用）保守视为未提供。
+            if (arg.Expression is LiteralExpressionSyntax literal && literal.Token.Value is bool value)
+                return value;
+
+            return null;
+        }
+
+        return null;
     }
 
     /// <summary>

@@ -45,4 +45,14 @@ internal static class AppManagerDiagnostics
     /// </para>
     /// </remarks>
     internal static Action<string>? SwitcherFactoryOverwritten { get; set; }
+
+    /// <summary>
+    /// F-4：外部标识反查索引登记时发现<b>映射歧义</b>（同名键 + 同值被两个不同 appKey 声明）的诊断委托。
+    /// 默认 null（静默）。
+    /// </summary>
+    /// <remarks>
+    /// 委托签名为 <c>(string externalIdKey, string? externalIdValue, string incomingAppKey, string existingAppKey)</c>。
+    /// 歧义项按 fail-closed 处理：该键的反查一律返回 <c>false</c>（宁可不可查，不可查错）。
+    /// </remarks>
+    internal static Action<string, string?, string, string>? ExternalIdConflict { get; set; }
 }

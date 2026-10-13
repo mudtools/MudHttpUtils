@@ -27,6 +27,8 @@
 /Mud.HttpUtils.Analyzers/bin
 /Mud.HttpUtils.Xml/obj
 /Mud.HttpUtils.Xml/bin
+/Mud.HttpUtils.Redis/obj
+/Mud.HttpUtils.Redis/bin
 /bin
 /Tests/bin
 /Tests/Mud.HttpUtils.Testing/obj

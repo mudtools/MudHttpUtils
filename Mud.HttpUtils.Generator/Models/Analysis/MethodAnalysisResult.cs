@@ -240,6 +240,37 @@ internal class MethodAnalysisResult
     public bool? MethodRequiresUserId { get; set; }
 
     /// <summary>
+    /// 方法级 [Token(Disabled = ...)] 显式取值（F-1，三态：null = 方法级未标注）。
+    /// </summary>
+    public bool? MethodTokenDisabled { get; set; }
+
+    /// <summary>
+    /// 接口级 [Token(Disabled = ...)] 显式取值（F-1，三态：null = 接口级未标注）。
+    /// </summary>
+    public bool? InterfaceTokenDisabled { get; set; }
+
+    /// <summary>
+    /// 获取有效的免令牌阻断标志（F-1）：方法级 &gt; 接口级 &gt; 默认 false（三态回退，
+    /// 与 <see cref="EffectiveTokenName"/> / <see cref="EffectiveTokenScopes"/> 同一「有效级」口径；
+    /// 接口级 Disabled = true 时方法级 <c>[Token(Disabled = false)]</c> 可重新启用）。
+    /// 为 true 时方法不取令牌、不注入、不参与令牌恢复。
+    /// </summary>
+    public bool EffectiveTokenDisabled => MethodTokenDisabled ?? InterfaceTokenDisabled ?? false;
+
+    /// <summary>
+    /// F-1：免令牌方法上被忽略的令牌注入参数名列表（HTTPCLIENT039 的消息实参来源）。
+    /// 仅当 <see cref="EffectiveTokenDisabled"/> 为 true 且方法级 [Token] 显式设置了
+    /// TokenType/TokenManagerKey/InjectionMode/Name/Scopes/Scheme/RequiresUserId 时非空。
+    /// </summary>
+    public IReadOnlyList<string> TokenDisabledIgnoredParameters { get; set; } = [];
+
+    /// <summary>
+    /// F-1：参数级 <c>[Token(Disabled = true)]</c> 的参数名列表（HTTPCLIENT040 的消息实参来源）。
+    /// 参数级设置无意义并被忽略（参数仍按令牌参数语义处理），仅用于诊断上报。
+    /// </summary>
+    public IReadOnlyList<string> ParameterTokenDisabledNames { get; set; } = [];
+
+    /// <summary>
     /// 是否允许任何状态码（不抛出异常）。
     /// 从 [AllowAnyStatusCode] 特性获取，方法级优先于接口级。
     /// </summary>

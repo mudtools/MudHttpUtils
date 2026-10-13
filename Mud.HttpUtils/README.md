@@ -7,7 +7,10 @@ Mud.HttpUtils 是 Mud.HttpUtils 生态的**元包（Metapackage）**，自动引
 - **Mud.HttpUtils.Abstractions** — 接口定义（`IEnhancedHttpClient`、`ITokenManager`、`IEncryptionProvider`、`ITokenStore`、`IHttpClientResolver`、`IApiKeyProvider`、`IHmacSignatureProvider`、`ISecretProvider`、`ISensitiveDataMasker`、`IHttpResponseCache`、`IFormContent` 等）
 - **Mud.HttpUtils.Attributes** — 特性标注（`[HttpClientApi]`、`[Get]`、`[Body]`、`[Token]`、`[Cache]`、`[SensitiveData]`、`[Form]`、`[MultipartForm]`、`[Upload]`、`[QueryMap]`、`[RawQueryString]`、`[BasePath]` 等）
 - **Mud.HttpUtils.Client** — 客户端实现（`EnhancedHttpClient`、`HttpClientFactoryEnhancedClient`、`DefaultAesEncryptionProvider`、`DefaultApiKeyProvider`、`DefaultHmacSignatureProvider`、`DefaultSensitiveDataMasker`、`CacheResponseInterceptor`、`MemoryHttpResponseCache`、`TokenRefreshHostedService`）
-- **Mud.HttpUtils.Resilience** — 弹性策略（重试、超时、熔断，基于 Polly，支持请求克隆大小限制和重试回调）
+
+> ⚠️ **可选包（F-9）**：**Mud.HttpUtils.Resilience**（弹性策略：重试、超时、熔断，基于 Polly）**不再是元包的硬依赖** ——
+> 需要弹性策略的宿主请**显式安装**：`dotnet add package Mud.HttpUtils.Resilience`（一站式注册 `AddMudHttpUtils` 位于该包）。
+> 不需要重试/熔断/超时治理的宿主由此免于引入 Polly 依赖（体积更小、无 Polly 版本冲突面）。
 
 同时提供**一站式 DI 服务注册**扩展方法 `AddMudHttpUtils`（位于 `Mud.HttpUtils.Resilience` 包），一步完成 Client + Resilience 注册。
 

@@ -170,13 +170,17 @@ if ($AOT) {
                 exit 1
             }
 
-            $binPath = Join-Path $demoDir "bin/Release/$tfm/$Rid/publish/$demoName"
-            if ($Rid -eq "win-x64") {
-                $binPath += ".exe"
-            }
+            # 产物路径对齐根 Directory.Build.props 的 BaseOutputPath=..\bin 约定：
+            # 非 .Tests 项目输出到「项目父目录\bin」（Demo → Demos\bin\...），项目本地 bin 作为兼容回退。
+            $binName = if ($Rid -eq "win-x64") { "$demoName.exe" } else { $demoName }
+            $binCandidates = @(
+                (Join-Path (Split-Path -Parent $demoDir) "bin/Release/$tfm/$Rid/publish/$binName"),
+                (Join-Path $demoDir "bin/Release/$tfm/$Rid/publish/$binName")
+            )
+            $binPath = $binCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 
-            if (-not (Test-Path $binPath)) {
-                Write-Host "  二进制未找到: $binPath" -ForegroundColor Red
+            if (-not $binPath) {
+                Write-Host "  二进制未找到: $($binCandidates -join ' 或 ')" -ForegroundColor Red
                 exit 1
             }
 

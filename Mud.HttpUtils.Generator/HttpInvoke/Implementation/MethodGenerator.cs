@@ -249,6 +249,35 @@ internal class MethodGenerator : ICodeFragmentGenerator
             ReportCacheKeyDiagnostics(context, methodInfo, methodSymbol);
         }
 
+        // F-1：免令牌方法（[Token(Disabled = true)]，有效级：方法级 > 接口级）与注入参数同用 →
+        // 注入参数不写入生成代码，编译期以 Warning 提示（HTTPCLIENT039）。
+        if (methodInfo.EffectiveTokenDisabled && methodInfo.TokenDisabledIgnoredParameters.Count > 0)
+        {
+            var disabledMethodSyntax = methodSymbol.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
+            context.ProductionContext.ReportDiagnostic(
+                Diagnostic.Create(
+                    Diagnostics.TokenDisabledWithInjectionParameters,
+                    disabledMethodSyntax?.GetLocation() ?? context.InterfaceDeclaration.GetLocation(),
+                    context.InterfaceSymbol.Name,
+                    methodSymbol.Name,
+                    string.Join(", ", methodInfo.TokenDisabledIgnoredParameters)));
+        }
+
+        // F-1：参数级 [Token(Disabled = true)] 无意义（参数级 [Token] 是「令牌参数」标记，不涉及继承），
+        // 设置被忽略并以 Warning 提示（HTTPCLIENT040）；参数仍按令牌参数语义处理。
+        foreach (var disabledParamName in methodInfo.ParameterTokenDisabledNames)
+        {
+            var parameterSymbol = methodSymbol.Parameters
+                .FirstOrDefault(p => p.Name == disabledParamName);
+            context.ProductionContext.ReportDiagnostic(
+                Diagnostic.Create(
+                    Diagnostics.TokenDisabledOnParameter,
+                    parameterSymbol?.Locations.FirstOrDefault() ?? context.InterfaceDeclaration.GetLocation(),
+                    context.InterfaceSymbol.Name,
+                    methodSymbol.Name,
+                    disabledParamName));
+        }
+
         var hasTokenManager = !string.IsNullOrEmpty(context.Configuration.TokenManager);
         var hasHttpClient = !string.IsNullOrEmpty(context.Configuration.HttpClient);
         var needsTokenInjection = ShouldInjectToken(methodInfo, hasTokenManager, hasHttpClient);
@@ -1327,6 +1356,11 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
     private bool ShouldInjectToken(MethodAnalysisResult methodInfo, bool hasTokenManager, bool hasHttpClient)
     {
+        // F-1：免令牌 opt-out（[Token(Disabled = true)]，有效级：方法级 > 接口级）——
+        // 方法不取令牌、不注入、不参与令牌恢复，直接短路（连注入语义也不写入生成代码）。
+        if (methodInfo.EffectiveTokenDisabled)
+            return false;
+
         // HttpClient 模式下不注入 Token
         if (hasHttpClient)
             return false;
@@ -1462,6 +1496,10 @@ internal class MethodGenerator : ICodeFragmentGenerator
     /// </summary>
     private bool ShouldGenerateTokenRecoveryContext(GeneratorContext context, MethodAnalysisResult methodInfo)
     {
+        // F-1：免令牌方法不参与令牌恢复，不建恢复上下文（与 ShouldInjectToken 短路双保险）。
+        if (methodInfo.EffectiveTokenDisabled)
+            return false;
+
         var injectionMode = methodInfo.EffectiveTokenInjectionMode;
 
         // Path 和 HmacSignature 模式不被恢复处理器支持，生成上下文无意义

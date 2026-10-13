@@ -152,12 +152,16 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 | `TokenManagerBase`               | 令牌管理器抽象基类，提供并发安全的令牌刷新实现，支持绝对过期保护（`MaxCacheLifetimeSeconds`）。TMX-04：刷新失败后 5s 负缓存窗口（`protected virtual int NegativeCacheSeconds => 5`，覆写为 0 可关闭）。TMX-07：`GetTokenAsync(scopes)` 默认走 scope 感知路径，不支持 scope 的派生类应覆写并抛 `NotSupportedException` |
 | `OAuth2TokenManagerBase`         | OAuth2 标准流程抽象基类，继承 `TokenManagerBase`，内置 Authorization Code / Client Credentials / ROPC / Refresh Token 流程 |
 | `TokenTypes`                     | 令牌类型常量类，提供标准化的令牌类型标识符                                                           |
+| `TokenScopeKey`                  | 令牌归属键公开契约（tokenType + appKey + scopeKey 三段式），命名工厂 `ForApp` / `ForScope` / `ForShared`；`scopeKey` 是归属键（如 `authCorpId`）而非 OAuth scope |
+| `TokenBindingMode`               | 令牌归属绑定模式枚举（`PerApp` / `PerScope` / `Shared`），由 `TokenManagerBase.BindingMode` 消费并驱动租户绑定守卫分档 |
 | `ITokenCache<T>`                 | 令牌缓存契约（TryGet、Set、TryRemove、Count、Keys、Clear、Compact），`TokenManagerBase` 的核心依赖   |
 | `ConcurrentDictionaryTokenCache<T>` | `ITokenCache<T>` 默认实现，基于 `ConcurrentDictionary`                                          |
 | `TokenResult`                    | 只读令牌结果结构（AccessToken、ExpireTime、Scope、IsExpiringSoon 等）                               |
 | `CurrentUserInfo`                | 当前用户基本信息基类（`UserId`），`UserTokenInfo` 继承自此类型                                      |
 
 > `ITokenProvider` 是 Token 获取逻辑的统一抽象层，将 Token 的查找、获取、刷新逻辑从代码生成的类中剥离到运行时服务。默认实现为 `DefaultTokenProvider`，通过 `IMudAppContext` 获取令牌管理器。`ICurrentUserContext` 用于在生成的 API 实现类中获取当前用户 ID，替代原有的 `CurrentUserId` 公共属性，解决并发场景下的线程安全问题。`TokenManagerBase` 使用 `SemaphoreSlim` 实现并发安全的令牌刷新，避免多线程同时触发刷新。`UserTokenManagerBase`（位于 `Mud.HttpUtils.Client` 包）为每个用户维护独立的锁和缓存，并支持过期清理。`ITokenRefreshBackgroundService` 支持后台定时刷新令牌，避免请求时令牌过期导致的延迟。
+
+> **令牌归属（F-2）**：`TokenScopeKey` 双形态——**定位符形态**（`TokenManagerBase.GetOrRefreshTokenAsync(TokenScopeKey)` / `InvalidateTokenAsync(TokenScopeKey)` 重载）按段映射到既有 `string[] scopes` 路径（`ForScope` → `[scopeKey]`，`ForApp` / `ForShared` → `null`（`"default"`）），与 `ScopeKeyBuilder` 旧路径**单缓存互通**；`tokenType` / `appKey` 段仅做一致性校验，绝不参与缓存键。**编码键形态**（`ToCompositeKey()` / `ToString()`）输出长度前缀三段式文本（编码委托 internal `CompositeKey`），仅供下游作字典 / 分布式键，不进缓存键。`TokenBindingMode` 三档：`Shared` 跳过租户绑定守卫、`PerScope` 以 AppKey + ScopeKey 归属对绑定（bind-once）、`PerApp` 维持既有按 AppKey 绑定行为；`TokenManagerBase.BindingMode` 默认由 `ISharedTokenManager` / `EnforceTenantBinding` 推导（标记或 `false` ⇒ `Shared`，否则 `PerApp`），覆写 `BindingMode` 可显式接管归属语义。
 
 ### 令牌管理配置模型
 
@@ -202,13 +206,13 @@ Mud.HttpUtils.Abstractions 是 Mud.HttpUtils 的抽象接口层，提供 HTTP �
 > | `IAppContextSwitcher.UseApp(appKey)` | ❌ 已移除 | `IAppScopeSwitcher.UseAppScope(appKey)` | 守卫完全相同；新入口额外**自动归还上下文** |
 > | `IAppContextSwitcher.UseDefaultApp()` | ❌ 已移除 | `IAppScopeSwitcher.UseDefaultAppScope()` | 同上 |
 > | `IAppContextSwitcher.BeginScope(string appKey)` | ❌ 已移除 | `IAppScopeSwitcher.UseAppScope(appKey)` | **纯命名收敛**：生成体逐行等价，能力与安全性**完全一致**（不必视为安全缺陷） |
-> | `IAppContextSwitcher.GetTokenAsync()` | ⛔ 已废弃（Warning） | `ITokenProvider.GetTokenAsync(...)` | 原方法仅转发当前应用的令牌提供器 |
+> | `IAppContextSwitcher.GetTokenAsync()` | ⛔ 已废弃（Warning，`BC-28`，**4.0 移除**） | `ITokenProvider.GetTokenAsync(...)` | 原方法仅转发当前应用的令牌提供器 |
 >
 > ⚠️ **3.0.0 破坏性变更（`BC-27`）**：上表前三个成员已从 `IAppContextSwitcher` **移除**，生成类（非 HttpClient 模式）也不再发射 ——
 > 调用它们将**编译失败**（`UseApp`/`UseDefaultApp` ⇒ `CS1061`；`BeginScope("...")` ⇒ `CS1503`，因为只剩 Holder 面的 `BeginScope(IMudAppContext)`）。
 > 例外：若你的接口**自行声明**了这些成员（要求生成器实现），生成器仍会为其发射实现，该写法不受影响。
 > ✅ 附带收益：`BeginScope(null)` 的 `CS0121` 重载二义**已随之消失**。
-> 残留废弃面只有 `GetTokenAsync()`：经接口调用得到 `CS0618` 提示（生成类成员不标 `[Obsolete]`，经具体类型调用无噪音）。
+> 残留废弃面只有 `GetTokenAsync()`（`BC-28`）：经接口调用得到 `CS0618` 提示（生成类成员不标 `[Obsolete]`，经具体类型调用无噪音）；**3.x 保留告警，计划 4.0 移除**。
 >
 > **三个切换面如何选（`SW-15`，3.0.0 补缺）**：
 >

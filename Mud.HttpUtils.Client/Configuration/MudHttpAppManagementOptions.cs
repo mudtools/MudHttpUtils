@@ -32,11 +32,25 @@ public sealed class MudHttpAppManagementOptions
     /// <summary>已注册应用（用于校验 DefaultClientName/AppKey 映射闭合）。默认为空。</summary>
     public IList<string> RegisteredAppKeys { get; } = new List<string>();
 
-    /// <summary>
-    /// MT-02：是否要求 <see cref="RegisteredAppKeys"/> 中的应用必须已在
-    /// <see cref="IAppManager{IMudAppContext}"/> 中注册。默认 <c>false</c>（仅告警不阻断）。
-    /// </summary>
+    /// <summary>是否要求 <see cref="RegisteredAppKeys"/> 中的应用必须已在
+    /// <see cref="IAppManager{IMudAppContext}"/> 中注册。默认 <c>false</c>（仅告警不阻断）。</summary>
     public bool RequireRegisteredAppKeys { get; set; }
+
+    /// <summary>
+    /// B-1：是否允许令牌管理器键重复注册（<see cref="TokenManagerKeyRegistry"/> 的逃生开关）。默认 <c>false</c>。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// 默认（<c>false</c>）：<see cref="TokenManagerKeyRegistry"/> 中出现重复键（序数比较）时，
+    /// 启动期校验（<c>AppManagementStartupValidator</c>）按 <b>Error</b> 处理并抛出异常阻断启动 ——
+    /// 重复键会让 <c>Resolve</c> 命中错误的管理器，errcode 令牌自愈静默失效。
+    /// </para>
+    /// <para>
+    /// 逃生开关（<c>true</c>）：降级为 Warning，且<b>后注册的键覆盖</b>先前注册（后键胜）。
+    /// 仅在宿主有意以"后注册覆盖"方式复用键时开启。
+    /// </para>
+    /// </remarks>
+    public bool AllowDuplicateTokenManagerKeys { get; set; }
 }
 
 /// <summary>

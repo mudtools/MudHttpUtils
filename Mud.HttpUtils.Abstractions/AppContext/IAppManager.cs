@@ -34,6 +34,11 @@ public interface IAppManager<TAppContext>
     /// <typeparam name="TContextSwitcher">上下文切换器的类型，必须实现 <see cref="IAppContextSwitcher"/> 接口。</typeparam>
     /// <param name="appKey">应用的唯一标识符。</param>
     /// <returns>指定应用的上下文切换器实例。</returns>
+    /// <remarks>
+    /// BC-30：本成员的工厂委托为 1 参（<c>Func&lt;TAppContext, TContextSwitcher&gt;</c>），
+    /// 与源生成器切换器的 3 参构造不对齐，注册的工厂对生成器切换器<b>不生效</b>（SW-05）。
+    /// </remarks>
+    [Obsolete("BC-30：已弃用（3.x 保留，计划 4.0 移除）。生成器切换器场景请改用 DI 解析切换器 + UseAppScope(appKey)/UseDefaultAppScope()；本入口与生成器 3 参构造不对齐，注册的工厂对生成器切换器不生效。")]
     TContextSwitcher GetWebApi<TContextSwitcher>(string appKey)
         where TContextSwitcher : IAppContextSwitcher;
 
@@ -42,6 +47,10 @@ public interface IAppManager<TAppContext>
     /// </summary>
     /// <typeparam name="TContextSwitcher">上下文切换器的类型，必须实现 <see cref="IAppContextSwitcher"/> 接口。</typeparam>
     /// <returns>默认应用的上下文切换器实例。</returns>
+    /// <remarks>
+    /// BC-30：与 <see cref="GetWebApi{TContextSwitcher}(string)"/> 同因弃用（SW-05）。
+    /// </remarks>
+    [Obsolete("BC-30：已弃用（3.x 保留，计划 4.0 移除）。生成器切换器场景请改用 DI 解析切换器 + UseDefaultAppScope()；本入口与生成器 3 参构造不对齐，注册的工厂对生成器切换器不生效。")]
     TContextSwitcher GetDefaultWebApi<TContextSwitcher>()
         where TContextSwitcher : IAppContextSwitcher;
 
@@ -154,6 +163,11 @@ public interface IAppManager<TAppContext>
     /// </summary>
     /// <typeparam name="TContextSwitcher">上下文切换器类型。</typeparam>
     /// <param name="factory">工厂委托。</param>
+    /// <remarks>
+    /// BC-30（SW-05 裁决）：本成员是「替代反射的 AOT 低层接缝」，与生成器切换器场景并存两套语义 ——
+    /// 3.x 保留（仅告警），4.0 是否保留该低层接缝届时重评估，不在本次锁死删除承诺。
+    /// </remarks>
+    [Obsolete("BC-30：已弃用（3.x 保留仅告警）。生成器切换器场景请改用 DI 解析切换器 + UseAppScope/UseDefaultAppScope（本工厂 1 参委托与生成器 3 参构造不对齐，对其不生效）；若作为替代反射的 AOT 低层接缝使用，3.x 继续可用，4.0 是否保留该接缝届时重评估。")]
     void RegisterSwitcherFactory<TContextSwitcher>(Func<TAppContext, TContextSwitcher> factory)
         where TContextSwitcher : IAppContextSwitcher;
 }

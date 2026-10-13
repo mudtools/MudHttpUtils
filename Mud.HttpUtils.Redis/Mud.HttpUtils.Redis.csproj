@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFrameworks>netstandard2.0;net6.0;net8.0;net10.0</TargetFrameworks>
+		<PackageId>Mud.HttpUtils.Redis</PackageId>
+		<Description>Mud.HttpUtils 官方分布式令牌存储（F-3）：基于 StackExchange.Redis 的 ITokenStore 实现，键前缀 mud:httputils:{tokenType}:{appKey}，序列化经 ITokenStoreCodec；注册后经 B-2 自动桥接接入令牌管理器管线（跨实例令牌共享与进程重启不丢）。独立可选包，不进元包硬依赖。</Description>
+		<PackageTags>HttpUtils;Redis;TokenStore;分布式;令牌;持久化;Mud HttpUtils</PackageTags>
+		<Product>Mud Http Utils</Product>
+		<PackageLicenseExpression>MIT</PackageLicenseExpression>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
+		<GenerateDocumentationFile>True</GenerateDocumentationFile>
+	</PropertyGroup>
+	<!-- StackExchange.Redis 运行期含反射/动态转换路径（RedisValue 转换、连接配置绑定），
+	     不具备完整 Native AOT/裁剪安全标注。与 Mud.HttpUtils.Xml / Mud.HttpUtils.Newtonsoft.Json
+	     同口径：关闭 AOT/裁剪分析器并退出 AOT 严格模式，避免"已知且预期"的 IL3050/IL2026 噪声。
+	     本包定位为服务器端可选依赖（Redis 宿主本就非 AOT 场景），不承诺 AOT 兼容。 -->
+	<PropertyGroup>
+		<IsAotCompatible>false</IsAotCompatible>
+		<EnableAotAnalyzer>false</EnableAotAnalyzer>
+		<EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+		<MudExcludeFromAotStrictMode>true</MudExcludeFromAotStrictMode>
+		<!-- RS0026（PublicApiAnalyzers）：AddMudHttpRedisTokenStore 刻意提供两个首参不同
+		     （IConnectionMultiplexer / string）的重载，且均带可选 configureOptions，与
+		     Mud.HttpUtils.Client 的既有 DI 扩展面形态一致。按 RS0026 建议去掉可选参数会造成
+		     消费方源码破坏性变更（显式传 null 才能复用默认配置），故显式登记该权衡。 -->
+		<NoWarn>$(NoWarn);RS0026</NoWarn>
+	</PropertyGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\Mud.HttpUtils.Abstractions\Mud.HttpUtils.Abstractions.csproj" />
+	</ItemGroup>
+	<ItemGroup>
+		<!-- 8.0.x 支持 netstandard2.0~net8.0；net10.0 回落 net8.0 资产（向上可用）。
+		     消费方若统一到 10.x 会自动收敛（向后兼容）。 -->
+		<PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
+		<PackageReference Include="StackExchange.Redis" Version="2.8.24" />
+	</ItemGroup>
+	<ItemGroup>
+		<None Include="README.md" Pack="true" PackagePath="\" />
+		<None Include="..\Icon.png" Pack="true" PackagePath="\" />
+	</ItemGroup>
+</Project>

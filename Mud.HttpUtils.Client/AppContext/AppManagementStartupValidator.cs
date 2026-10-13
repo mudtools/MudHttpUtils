@@ -94,6 +94,33 @@ internal sealed class AppManagementStartupValidator : IHostedService
             }
         }
 
+        // B-1（诊断 A）：ITokenManagerRegistry 后注册被 TryAdd 静默忽略 —— EventId 194 告警（注册期无日志器，延迟至此输出）。
+        var registrationDiagnostics = _serviceProvider.GetService<TokenManagerRegistrationDiagnostics>();
+        if (registrationDiagnostics != null && registrationDiagnostics.RegistryRegistrationSuppressed)
+        {
+            var registeredTypeName = _serviceProvider.GetService<ITokenManagerRegistry>()?.GetType().Name ?? "ITokenManagerRegistry";
+            MudHttpClientLog.TokenManagerRegistryRegistrationSuppressed(_logger, registeredTypeName);
+        }
+
+        // B-1（诊断 B）：同一管理器类型重复注册（描述符叠加）—— EventId 195 告警（每类型一条）。
+        if (registrationDiagnostics != null)
+        {
+            foreach (var managerType in registrationDiagnostics.DuplicatedManagerTypes)
+            {
+                MudHttpClientLog.TokenManagerTypeRegisteredTwice(_logger, managerType.Name);
+            }
+        }
+
+        // B-1（诊断 C）：TokenManagerKeyRegistry 重复键 —— 默认 Error 抛出，逃生开关降级 Warning。
+        if (_serviceProvider.GetService<ITokenManagerRegistry>() is TokenManagerKeyRegistry keyRegistry && keyRegistry.DuplicateKeys.Count > 0)
+        {
+            var keys = string.Join(", ", keyRegistry.DuplicateKeys.OrderBy(k => k, StringComparer.Ordinal).Select(k => AppKeyValidator.ToSafeText(k)));
+            Add(fatal, warnings, !_options.AllowDuplicateTokenManagerKeys,
+                $"TokenManagerKeyRegistry 存在重复令牌管理器键（序数比较）：{keys}。" +
+                "重复键会让 Resolve 命中错误的管理器、errcode 令牌自愈静默失效；请改用唯一键，" +
+                "或有意按「后键覆盖」复用键时设置 MudHttpAppManagementOptions.AllowDuplicateTokenManagerKeys = true。");
+        }
+
         foreach (var message in warnings)
         {
             _logger.LogWarning("多应用管理接线不完整（告警）：{Message}", message);

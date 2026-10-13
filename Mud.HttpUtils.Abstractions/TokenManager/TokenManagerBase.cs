@@ -69,6 +69,38 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     public event EventHandler<TokenRefreshFailedEventArgs>? RefreshFailed;
 
     /// <summary>
+    /// F-7：令牌失效通知（<see cref="InvalidateTokenAsync(string[], CancellationToken)"/> 完成移除后触发）。
+    /// </summary>
+    public event EventHandler<TokenInvalidatedEventArgs>? TokenInvalidated;
+
+    // F-7 级联重入抑制：级联传播（本管理器失效 → 依赖管理器失效）期间置位，
+    // 依赖管理器的 InvalidateTokenAsync 不再二次传播，防互相依赖图（A↔B）无限递归。
+    private static readonly AsyncLocal<bool> s_cascadeInProgress = new();
+
+    /// <summary>
+    /// F-7（G-7/TK-1）链式令牌依赖图（默认 <see cref="TokenDependencyGraph.Empty"/>，即无依赖）。
+    /// 声明"本管理器的令牌由谁派生"（<c>Add("corp_access_token", "suite_access_token")</c>）；
+    /// 传播方向：被依赖者失效 ⇒ 依赖者连带失效。
+    /// </summary>
+    public virtual TokenDependencyGraph DependencyGraph => TokenDependencyGraph.Empty;
+
+    /// <summary>
+    /// F-7 级联失效开关（<b>默认 false</b>，独立开关：不声明依赖图/不开开关即零行为变化）。
+    /// 开启后 <see cref="InvalidateTokenAsync(string[], CancellationToken)"/> 会把失效沿
+    /// <see cref="DependencyGraph"/> 传播到依赖令牌的管理器（解析经
+    /// <see cref="ResolveTokenManagerForType(string)"/>）。
+    /// </summary>
+    protected virtual bool EnableTokenDependencyCascade => false;
+
+    /// <summary>
+    /// F-7：按令牌类型解析其管理器（级联传播用）。默认返回 null（未接线 = 不传播，fail-safe）；
+    /// 宿主可覆写为 <c>ITokenManagerRegistry.Resolve(tokenManagerKey)</c> 或 per-app 注册表查询。
+    /// </summary>
+    /// <param name="tokenType">依赖图中的令牌类型。</param>
+    /// <returns>对应管理器；未注册返回 null。</returns>
+    protected virtual ITokenManager? ResolveTokenManagerForType(string tokenType) => null;
+
+    /// <summary>
     /// 获取令牌刷新失败时的最大重试次数，默认 0（不重试）。
     /// P2.10（TK-20）重试语义显式化：此值是重试的唯一主控门，
     /// ShouldRetry（TokenRefreshFailedEventArgs）默认为 true 仅用于提前取消；
@@ -334,10 +366,145 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
                 _tokenCache.TryRemove(scopeKey, out removed);
             }
 
-            if (removed == null || string.IsNullOrEmpty(removed.AccessToken))
-                return TokenResult.Empty;
+            var result = removed == null || string.IsNullOrEmpty(removed.AccessToken)
+                ? TokenResult.Empty
+                : new TokenResult(removed.AccessToken!, removed.Expire, scopeKey);
 
-            return new TokenResult(removed.AccessToken!, removed.Expire, scopeKey);
+            // F-7：失效通知 + 级联传播（独立开关，默认关；事件恒触发，不受开关影响）。
+            NotifyAndCascadeInvalidated(scopes, result, cancellationToken);
+
+            return result;
+        }
+    }
+
+    /// <summary>
+    /// F-7：<see cref="InvalidateTokenAsync(string[], CancellationToken)"/> 的收尾钩子 ——
+    /// ① 触发 <see cref="TokenInvalidated"/>（订阅者异常隔离，不阻断返回）；
+    /// ② 若 <see cref="EnableTokenDependencyCascade"/> 且 <see cref="DependencyGraph"/> 非空，
+    /// 把失效沿依赖图传播到依赖令牌的管理器（<see cref="ResolveTokenManagerForType(string)"/>）。
+    /// 级联期间经 <c>AsyncLocal</c> 重入抑制防互相依赖图（A↔B）无限递归；
+    /// 级联为 fire-and-forget（不阻塞调用方、级联失败不抛出）。
+    /// </summary>
+    private void NotifyAndCascadeInvalidated(string[]? scopes, TokenResult removed, CancellationToken cancellationToken)
+    {
+        var handlers = TokenInvalidated;
+        if (handlers != null)
+        {
+            var args = new TokenInvalidatedEventArgs(TokenType, scopes, removed);
+            foreach (EventHandler<TokenInvalidatedEventArgs> subscriber in handlers.GetInvocationList())
+            {
+                try
+                {
+                    subscriber(this, args);
+                }
+                catch
+                {
+                    // 事件订阅者故障不得阻断失效主流程（与 DefaultAppManager 事件隔离口径一致）。
+                }
+            }
+        }
+
+        if (!EnableTokenDependencyCascade || s_cascadeInProgress.Value)
+            return;
+
+        var graph = DependencyGraph;
+        if (graph.IsEmpty || string.IsNullOrEmpty(TokenType))
+            return;
+
+        var dependents = graph.GetDependentsOf(TokenType!);
+        if (dependents.Count == 0)
+            return;
+
+        s_cascadeInProgress.Value = true;
+        try
+        {
+            foreach (var dependent in dependents)
+            {
+                var manager = ResolveTokenManagerForType(dependent);
+                if (manager == null)
+                    continue;   // 未接线/未注册：fail-safe 跳过，不抛。
+
+                // 依赖令牌沿同一 scopes 归属失效（企业级链式场景下 scope 即 authCorpId）。
+                _ = manager.InvalidateTokenAsync(scopes, cancellationToken);
+            }
+        }
+        finally
+        {
+            s_cascadeInProgress.Value = false;
+        }
+    }
+
+    // F-2：以下两个 TokenScopeKey 重载刻意携带与既有重载同形的可选 CancellationToken（保持调用形态一致，
+    // 且不得改动既有 string[] scopes 签名）。RS0026 建议"去掉可选参数"反而会造成新旧重载调用形态分裂，
+    // 与 Mud.HttpUtils.Client 对同一权衡的登记口径一致，此处局部豁免。
+#pragma warning disable RS0026 // 请勿添加具有可选参数的多个重载：F-2 定位符重载刻意保留可选 CancellationToken
+    /// <summary>
+    /// F-2（TK-1）按<b>定位符形态</b>的 <see cref="TokenScopeKey"/> 获取有效令牌（未命中则刷新）。
+    /// 与既有 <see cref="GetOrRefreshTokenAsync(string[], CancellationToken)"/> <b>单缓存互通</b>：
+    /// 按段映射到旧路径（<c>ForScope(t,a,s)</c> → <c>scopes = [s]</c>；<c>ForApp(t,a)</c> /
+    /// <c>ForShared(t)</c> → <c>scopes = null</c>），同一归属键命中同一缓存条目。
+    /// </summary>
+    /// <param name="scopeKey">
+    /// 归属键（tokenType + appKey + scopeKey 三段式）。其中 <c>scopeKey</c> 段是<b>归属键</b>
+    /// （如 <c>authCorpId</c>）而非 OAuth scope；<c>tokenType</c> / <c>appKey</c> 段仅做一致性校验，
+    /// <b>绝不参与缓存键</b>。
+    /// </param>
+    /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+    /// <returns>包含有效访问令牌的字符串。</returns>
+    /// <exception cref="ArgumentException">tokenType / appKey 段与本管理器声明的令牌类型 / 上下文 AppKey 不一致。</exception>
+    public virtual Task<string> GetOrRefreshTokenAsync(TokenScopeKey scopeKey, CancellationToken cancellationToken = default)
+    {
+        ValidateScopeKeyLocator(scopeKey);
+        return GetOrRefreshTokenAsync(scopeKey.ToScopes(), cancellationToken);
+    }
+
+    /// <summary>
+    /// F-2（TK-1）按<b>定位符形态</b>的 <see cref="TokenScopeKey"/> 使缓存令牌失效。
+    /// 与既有 <see cref="InvalidateTokenAsync(string[], CancellationToken)"/> <b>单缓存互通</b>（段映射规则同上）。
+    /// </summary>
+    /// <param name="scopeKey">归属键（tokenType / appKey 段仅做一致性校验，绝不参与缓存键）。</param>
+    /// <param name="cancellationToken">用于取消异步操作的取消令牌。</param>
+    /// <returns>失效前的令牌信息，如果缓存中没有令牌则返回 <see cref="TokenResult.Empty"/>。</returns>
+    /// <exception cref="ArgumentException">tokenType / appKey 段与本管理器声明的令牌类型 / 上下文 AppKey 不一致。</exception>
+    public virtual Task<TokenResult> InvalidateTokenAsync(TokenScopeKey scopeKey, CancellationToken cancellationToken = default)
+    {
+        ValidateScopeKeyLocator(scopeKey);
+        return InvalidateTokenAsync(scopeKey.ToScopes(), cancellationToken);
+    }
+#pragma warning restore RS0026
+
+    /// <summary>
+    /// F-2：定位符形态的一致性校验——<c>tokenType</c> 段对照本管理器声明的
+    /// <see cref="TokenType"/>（未声明则跳过）；<c>appKey</c> 段对照上下文 AppKey（即
+    /// <see cref="BindTenantGuard(string, string?)"/> 绑定的租户键；尚未绑定 / 该段为空则跳过）。
+    /// 两段<b>只做校验</b>：不绑定、不参与缓存键（缓存键仍由 scopeKey 段经既有路径生成）。
+    /// </summary>
+    /// <param name="scopeKey">待校验的归属键定位符。</param>
+    /// <exception cref="ArgumentException">任一段与当前已知取值不一致。</exception>
+    private void ValidateScopeKeyLocator(TokenScopeKey scopeKey)
+    {
+        var declaredTokenType = TokenType;
+        if (declaredTokenType != null
+            && !string.Equals(declaredTokenType, scopeKey.TokenType, StringComparison.Ordinal))
+        {
+            // G9-02：异常消息经 ToSafeText 文本化（截断 128 + 控制字符过滤），防日志注入面。
+            throw new ArgumentException(
+                $"令牌类型不一致：TokenScopeKey 声明 tokenType '{AppKeyValidator.ToSafeText(scopeKey.TokenType)}'，" +
+                $"本管理器声明 '{AppKeyValidator.ToSafeText(declaredTokenType)}'。" +
+                "tokenType / appKey 段仅做一致性校验，不参与缓存键。",
+                nameof(scopeKey));
+        }
+
+        var bound = Volatile.Read(ref _tenantBinding);
+        if (bound != null
+            && scopeKey.AppKey != null
+            && !string.Equals(bound.AppKey, scopeKey.AppKey, StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                $"应用归属不一致：TokenScopeKey 声明 AppKey '{AppKeyValidator.ToSafeText(scopeKey.AppKey)}'，" +
+                $"当前上下文 AppKey '{AppKeyValidator.ToSafeText(bound.AppKey)}'。" +
+                "tokenType / appKey 段仅做一致性校验，不参与缓存键。",
+                nameof(scopeKey));
         }
     }
 
@@ -474,8 +641,25 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// <summary>
     /// SR-H5（P2.1，D6）租户绑定键（bind-once）。null = 尚未绑定。
     /// 绑定键 = <c>IMudAppContext.AppKey</c>（多租户在本框架的投影即多 App）。
+    /// F-2：<c>PerScope</c> 档的绑定键为「AppKey + ScopeKey」归属对，故绑定记录携带两段；
+    /// <c>PerApp</c> 档只比对 AppKey 段（行为与既有实现逐位一致）。
     /// </summary>
-    private string? _tenantBinding;
+    private TenantBindingRecord? _tenantBinding;
+
+    /// <summary>
+    /// F-2：租户绑定记录（不可变，单字段 CAS 保证 bind-once 的原子性）。
+    /// </summary>
+    private sealed class TenantBindingRecord
+    {
+        public TenantBindingRecord(string appKey, string? scopeKey)
+        {
+            AppKey = appKey;
+            ScopeKey = scopeKey;
+        }
+
+        public string AppKey { get; }
+        public string? ScopeKey { get; }
+    }
 
     /// <summary>
     /// G1：<b>时钟接缝</b>——当前 UTC 时间。默认取真实系统时钟
@@ -500,48 +684,132 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     /// 如服务商 / 套件令牌）时默认 false。其余特殊场景可覆写为 false（需自证凭据无租户属性）；
     /// 显式覆写优先于接口标记。
     /// </summary>
+    /// <remarks>
+    /// F-2 后本属性为 <see cref="BindingMode"/> 默认值的<b>推导来源</b>（不再直接驱动守卫）：
+    /// 未覆写 <see cref="BindingMode"/> 时，false ⇒ <see cref="TokenBindingMode.Shared"/>、
+    /// true ⇒ <see cref="TokenBindingMode.PerApp"/>，守卫行为与此前逐位一致。
+    /// 归属语义请以覆写 <see cref="BindingMode"/> 为准（单一真源），勿双向覆写。
+    /// </remarks>
     protected virtual bool EnforceTenantBinding => this is not ISharedTokenManager;
 
     /// <summary>
-    /// F4：当前实例是否启用租户绑定守卫（即未实现 <see cref="ISharedTokenManager"/>，且未被派生类覆写为 false）。
+    /// F-2（TK-1）令牌归属绑定模式（归属语义的<b>单一真源</b>），驱动租户绑定守卫分档：
+    /// <see cref="TokenBindingMode.Shared"/> 跳过绑定；<see cref="TokenBindingMode.PerScope"/>
+    /// 以 AppKey + ScopeKey 归属对绑定；<see cref="TokenBindingMode.PerApp"/> 维持既有按 AppKey 绑定行为。
+    /// </summary>
+    /// <remarks>
+    /// <para><b>默认推导（评审修订 #3）</b>：<see cref="EnforceTenantBinding"/> 为 false（含实现
+    /// <see cref="ISharedTokenManager"/> 的默认情形）⇒ <see cref="TokenBindingMode.Shared"/>；
+    /// 否则 ⇒ <see cref="TokenBindingMode.PerApp"/>。<see cref="ISharedTokenManager"/> /
+    /// <see cref="EnforceTenantBinding"/> 保留为推导来源；显式覆写 <see cref="EnforceTenantBinding"/>
+    /// 优先于接口标记（既有语义），故「实现标记但覆写 EnforceTenantBinding=true」推导为
+    /// <see cref="TokenBindingMode.PerApp"/>。</para>
+    /// <para>覆写本属性即接管归属语义（旧入口降为纯推导来源，守卫只读本属性）；
+    /// 请勿同时覆写本属性与 <see cref="EnforceTenantBinding"/> 造成分歧。</para>
+    /// </remarks>
+    protected virtual TokenBindingMode BindingMode =>
+        EnforceTenantBinding ? TokenBindingMode.PerApp : TokenBindingMode.Shared;
+
+    /// <summary>
+    /// F-2（TK-1）本管理器声明的令牌类型标识（与 <c>IMudAppContext.GetTokenManager(tokenType)</c>
+    /// 注册键同口径）。默认 null = 未声明：此时 <see cref="TokenScopeKey"/> 定位符形态跳过
+    /// tokenType 段的一致性校验。该段<b>绝不参与缓存键</b>，仅供定位符校验。
+    /// </summary>
+    protected virtual string? TokenType => null;
+
+    /// <summary>
+    /// F4：当前实例是否启用租户绑定守卫（即 <see cref="BindingMode"/> 非
+    /// <see cref="TokenBindingMode.Shared"/>）。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// 供消费方/测试<b>无需反射</b>即可判定"该管理器是否按租户键隔离"。语义与
-    /// <see cref="EnforceTenantBinding"/>（protected virtual）完全一致，仅作可见性放宽。
+    /// 供消费方/测试<b>无需反射</b>即可判定"该管理器是否按归属键隔离"。语义与守卫<b>实际行为</b>
+    /// 同口径（不是独立的第二真相源）：<see cref="BindingMode"/> 未被覆写时与
+    /// <see cref="EnforceTenantBinding"/>（protected virtual）取值完全一致。
     /// </para>
     /// <para>
-    /// 注意：<see cref="EnforceTenantBinding"/> 为 <c>virtual</c> 且可在实例化后被覆写判定，
+    /// 注意：<see cref="BindingMode"/> 为 <c>virtual</c> 且可在实例化后被覆写判定，
     /// 本属性每次读取都会重新求值（非缓存），保持与守卫调用点同口径。
     /// </para>
     /// </remarks>
-    public bool IsTenantBindingEnforced => EnforceTenantBinding;
+    public bool IsTenantBindingEnforced => BindingMode != TokenBindingMode.Shared;
 
     /// <summary>
     /// SR-H5（P2.1，D6）bind-once 租户绑定守卫：首个租户键绑定后，不同租户键的请求被拒绝。
     /// 同键重复绑定幂等通过。internal：仅框架调用点（<c>DefaultTokenProvider</c>）触发，不进公共 API。
+    /// F-2：按 <see cref="BindingMode"/> 分档（本重载无 scopeKey，PerScope 档以「AppKey + 空归属键」绑定）。
     /// </summary>
     /// <param name="tenantKey">租户键（AppKey）。</param>
     /// <exception cref="InvalidOperationException">已绑定其他租户且守卫启用时抛出。</exception>
-    internal void BindTenantGuard(string tenantKey)
+    internal void BindTenantGuard(string tenantKey) => BindTenantGuard(tenantKey, scopeKey: null);
+
+    /// <summary>
+    /// SR-H5 + F-2：bind-once 租户绑定守卫（带归属键）。按 <see cref="BindingMode"/> 分档：
+    /// <see cref="TokenBindingMode.Shared"/> 跳过绑定；<see cref="TokenBindingMode.PerScope"/>
+    /// 以 AppKey + ScopeKey 归属对绑定（同对幂等、任一段不同即拒绝）；
+    /// <see cref="TokenBindingMode.PerApp"/> 只以 AppKey 绑定（与既有行为逐位一致，scopeKey 不参与）。
+    /// </summary>
+    /// <param name="tenantKey">租户键（AppKey）。</param>
+    /// <param name="scopeKey">归属键（如 authCorpId），仅 PerScope 档参与绑定。</param>
+    /// <exception cref="InvalidOperationException">已绑定其他归属且守卫启用时抛出。</exception>
+    internal void BindTenantGuard(string tenantKey, string? scopeKey)
     {
-        if (!EnforceTenantBinding || string.IsNullOrEmpty(tenantKey))
+        switch (BindingMode)
+        {
+            case TokenBindingMode.Shared:
+                // 共享凭据（服务商 / 套件令牌）：无归属属性，跳过绑定。
+                return;
+            case TokenBindingMode.PerScope:
+                BindTenantGuardCore(tenantKey, scopeKey ?? string.Empty, bindScope: true);
+                return;
+            default: // TokenBindingMode.PerApp：维持现行行为（scopeKey 不参与绑定）
+                BindTenantGuardCore(tenantKey, scopeKey: null, bindScope: false);
+                return;
+        }
+    }
+
+    /// <summary>
+    /// bind-once 绑定核心：单字段 CAS（<see cref="TenantBindingRecord"/> 不可变记录）保证原子性。
+    /// </summary>
+    private void BindTenantGuardCore(string tenantKey, string? scopeKey, bool bindScope)
+    {
+        if (string.IsNullOrEmpty(tenantKey))
             return;
-        var existing = Interlocked.CompareExchange(ref _tenantBinding, tenantKey, null);
-        if (existing != null && !string.Equals(existing, tenantKey, StringComparison.Ordinal))
-            // G9-02：租户键经 AppKeyValidator.ToSafeText 文本化（截断 128 + 控制字符过滤）——
-            // 与 DefaultAppManager 同口径。tenantKey 来自用户实现的 IMudAppContext.AppKey（框架不强制
-            // 再校验），原文插值进异常消息会构成日志注入面（与生成侧「静态消息」纪律对齐）。
+
+        var incoming = new TenantBindingRecord(tenantKey, bindScope ? scopeKey : null);
+        var existing = Interlocked.CompareExchange(ref _tenantBinding, incoming, null);
+        if (existing == null)
+            return;
+
+        var tenantConflict = !string.Equals(existing.AppKey, tenantKey, StringComparison.Ordinal);
+        var scopeConflict = bindScope
+            && !string.Equals(existing.ScopeKey ?? string.Empty, scopeKey ?? string.Empty, StringComparison.Ordinal);
+        if (!tenantConflict && !scopeConflict)
+            return;
+
+        // G9-02：租户键经 AppKeyValidator.ToSafeText 文本化（截断 128 + 控制字符过滤）——
+        // 与 DefaultAppManager 同口径。tenantKey 来自用户实现的 IMudAppContext.AppKey（框架不强制
+        // 再校验），原文插值进异常消息会构成日志注入面（与生成侧「静态消息」纪律对齐）。
+        if (!bindScope)
+        {
             throw new InvalidOperationException(
-                $"令牌管理器（{MetricsKey}）已绑定租户 '{AppKeyValidator.ToSafeText(existing)}'，" +
+                $"令牌管理器（{MetricsKey}）已绑定租户 '{AppKeyValidator.ToSafeText(existing.AppKey)}'，" +
                 $"不能用于租户 '{AppKeyValidator.ToSafeText(tenantKey)}' 的请求。" +
                 "跨租户复用同一管理器实例会导致令牌/凭据错配；若确属共享凭据设计，请覆写 EnforceTenantBinding 返回 false。");
+        }
+
+        throw new InvalidOperationException(
+            $"令牌管理器（{MetricsKey}）已绑定归属 '{AppKeyValidator.ToSafeText(existing.AppKey)}'/'{AppKeyValidator.ToSafeText(existing.ScopeKey)}'，" +
+            $"不能用于归属 '{AppKeyValidator.ToSafeText(tenantKey)}'/'{AppKeyValidator.ToSafeText(scopeKey)}' 的请求。" +
+            "PerScope 档以 AppKey + ScopeKey 归属对 bind-once 绑定，跨归属复用同一管理器实例会导致令牌/凭据错配；" +
+            "若确属共享凭据设计，请覆写 BindingMode 返回 Shared。");
     }
 
     /// <summary>
     /// L-1：当前已绑定的租户键（null = 尚未绑定）。供恢复链路在守卫拒绝时输出结构化告警。
+    /// F-2：PerScope 档绑定记录含归属键，此处仍只回传 AppKey 段（告警口径不变）。
     /// </summary>
-    internal string? BoundTenant => Volatile.Read(ref _tenantBinding);
+    internal string? BoundTenant => Volatile.Read(ref _tenantBinding)?.AppKey;
 
     /// <summary>
     /// SR-L9（P3.10，D14-V5）是否启动租户层维护 Timer（过期清理 300s / 锁清理 600s）。默认 true。

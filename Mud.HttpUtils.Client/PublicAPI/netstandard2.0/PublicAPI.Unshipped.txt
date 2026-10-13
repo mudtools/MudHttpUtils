@@ -53,3 +53,15 @@ static Mud.HttpUtils.TokenRecoveryRegistrationExtensions.CreateTokenRecoveryClie
 static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddAppScopedTokenManagerRegistry<TAppContext>(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static Mud.HttpUtils.TokenStoreBackedTokenCache<T>.CreateForCredentialToken(Mud.HttpUtils.ITokenStore! store, System.Func<string!, string!>? storeKeyMapper = null, bool ownsInnerStore = false, Microsoft.Extensions.Logging.ILogger? logger = null) -> Mud.HttpUtils.TokenStoreBackedTokenCache<Mud.HttpUtils.CredentialToken!>!
 static Mud.HttpUtils.TokenStoreBackedTokenCache<T>.CreateForUserTokenInfo(Mud.HttpUtils.IUserTokenStore! userStore, System.Func<string!, (string! UserId, string! TokenType)>? userKeyMapper = null, bool ownsInnerStore = false, Microsoft.Extensions.Logging.ILogger? logger = null) -> Mud.HttpUtils.TokenStoreBackedTokenCache<Mud.HttpUtils.UserTokenInfo!>!
+
+Mud.HttpUtils.MudHttpAppManagementOptions.AllowDuplicateTokenManagerKeys.get -> bool
+Mud.HttpUtils.MudHttpAppManagementOptions.AllowDuplicateTokenManagerKeys.set -> void
+Mud.HttpUtils.TokenManagerKeyRegistry
+Mud.HttpUtils.TokenManagerKeyRegistry.DuplicateKeys.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+Mud.HttpUtils.TokenManagerKeyRegistry.Register(string! tokenManagerKey, Mud.HttpUtils.ITokenManager! manager) -> void
+Mud.HttpUtils.TokenManagerKeyRegistry.Resolve(string! tokenManagerKey) -> Mud.HttpUtils.ITokenManager?
+Mud.HttpUtils.TokenManagerKeyRegistry.TokenManagerKeyRegistry(bool throwOnDuplicateKey = true, System.Action<string!>? duplicateKeyDiagnostics = null) -> void
+static Mud.HttpUtils.HttpClientServiceCollectionExtensions.AddTokenManagerKeyRegistry(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Mud.HttpUtils.TokenManagerKeyRegistry!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+Mud.HttpUtils.AppContextFactoryExtensions
+static Mud.HttpUtils.AppContextFactoryExtensions.CreateAppScope(this System.IServiceProvider! services) -> Microsoft.Extensions.DependencyInjection.IServiceScope!
+static Mud.HttpUtils.AppContextFactoryExtensions.GetRequiredNamedClient(this System.IServiceProvider! services, string! clientName) -> Mud.HttpUtils.IEnhancedHttpClient!

@@ -79,7 +79,10 @@ internal class RequestBuilder
             // G8-01/G8-02：令牌占位符的「模式」与「名称」统一取有效级（方法级 > 接口级）；
             // 替换值为 URI 编码后的令牌（与下方 [Path] 参数的 Uri.EscapeDataString 同口径，
             // 防止令牌中的 ?/#/&// 改写请求目标）。
-            var isTokenPathMode = methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModePath;
+            // F-1：免令牌方法（EffectiveTokenDisabled）不取令牌，占位符不替换
+            //（保留 {{name}} 转义形态，发射后为 {name} 字面量，同 CFG-18 未匹配占位符的字面量语义）。
+            var isTokenPathMode = !methodInfo.EffectiveTokenDisabled
+                && methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModePath;
             if (isTokenPathMode && !string.IsNullOrEmpty(methodInfo.EffectiveTokenName))
             {
                 var tokenPlaceholder = $"{{{methodInfo.EffectiveTokenName}}}";
@@ -888,6 +891,11 @@ internal class RequestBuilder
 
     private bool ShouldGenerateTokenQuery(MethodAnalysisResult methodInfo)
     {
+        // F-1：免令牌方法（EffectiveTokenDisabled）零令牌代码 —— 不发射 access_token 查询参数，
+        // 否则会引用未声明的 access_token 局部变量（CS0103）。
+        if (methodInfo.EffectiveTokenDisabled)
+            return false;
+
         // G8-01：与 ShouldInjectToken / GenerateTokenInjection 统一按「有效级」解析
         //（方法级 > 接口级）。原实现只认接口级，导致方法级 [Token(InjectionMode = Query)]
         // 取到 access_token 后因无注入语句而被静默丢弃（请求无令牌）。

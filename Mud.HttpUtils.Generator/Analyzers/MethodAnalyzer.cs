@@ -83,7 +83,7 @@ internal static class MethodAnalyzer
             interfaceAttrs = cachedInterfaceAttributes;
         }
 
-        var (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName, interfaceTokenScopes, interfaceTokenScheme) = AnalyzeInterfaceAttributes(interfaceAttrs);
+        var (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName, interfaceTokenScopes, interfaceTokenScheme, interfaceTokenDisabled) = AnalyzeInterfaceAttributes(interfaceAttrs);
 
         var (cacheEnabled, cacheDurationSeconds, cacheKeyTemplate, cacheVaryByUser, cacheUseSlidingExpiration) = AnalyzeCacheAttribute(methodAttributes);
 
@@ -93,7 +93,28 @@ internal static class MethodAnalyzer
 
         var methodTokenScopes = AnalyzeMethodTokenScopes(methodAttributes);
 
-        var (methodTokenManagerKey, methodRequiresUserId, methodTokenInjectionMode, methodTokenScheme, methodTokenName) = AnalyzeMethodTokenExtended(methodAttributes);
+        var (methodTokenManagerKey, methodRequiresUserId, methodTokenInjectionMode, methodTokenScheme, methodTokenName, methodTokenDisabled) = AnalyzeMethodTokenExtended(methodAttributes);
+
+        // F-1：免令牌 opt-out 的「有效级」取值（方法级 > 接口级 > 默认 false）。
+        // 有效 Disabled = true 时注入语义一律不写入生成代码，被忽略的显式注入参数收集起来供 HTTPCLIENT039 上报。
+        var effectiveTokenDisabled = methodTokenDisabled ?? interfaceTokenDisabled ?? false;
+        List<string> tokenDisabledIgnoredParameters = [];
+        if (effectiveTokenDisabled)
+        {
+            var methodTokenAttr = methodAttributes
+                .FirstOrDefault(attr => HasAttributeWithName(attr, "TokenAttribute"));
+            if (methodTokenAttr != null)
+                tokenDisabledIgnoredParameters = GetExplicitTokenInjectionParameterNames(methodTokenAttr);
+        }
+
+        // F-1：参数级 [Token(Disabled = true)] 无意义（参数级 [Token] 是「令牌参数」标记，不涉及继承），
+        // 收集参数名供 HTTPCLIENT040 上报；Disabled 设置被忽略，参数仍按令牌参数语义处理。
+        var parameterTokenDisabledNames = parameters
+            .Where(p => p.Attributes.Any(attr =>
+                HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.Name) &&
+                attr.NamedArguments.TryGetValue("Disabled", out var disabled) && disabled is true))
+            .Select(p => p.Name)
+            .ToList();
 
         var tokenParameterName = parameters
             .FirstOrDefault(p => p.Attributes.Any(attr => HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.Name)))?
@@ -147,6 +168,10 @@ internal static class MethodAnalyzer
             TokenParameterName = tokenParameterName,
             MethodTokenManagerKey = methodTokenManagerKey,
             MethodRequiresUserId = methodRequiresUserId,
+            MethodTokenDisabled = methodTokenDisabled,
+            InterfaceTokenDisabled = interfaceTokenDisabled,
+            TokenDisabledIgnoredParameters = tokenDisabledIgnoredParameters,
+            ParameterTokenDisabledNames = parameterTokenDisabledNames,
             AllowAnyStatusCode = allowAnyStatusCode,
             InterfaceQueryParameters = interfaceQueryParams,
             InterfacePathParameters = interfacePathParams,
@@ -1141,7 +1166,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
     /// <summary>
     /// 分析接口特性
     /// </summary>
-    private static (HashSet<string> interfaceAttributes, List<InterfaceHeaderAttributeInfo> interfaceHeaderAttributes, string? interfaceTokenInjectionMode, string? interfaceTokenName, string? interfaceTokenScopes, string? interfaceTokenScheme)
+    private static (HashSet<string> interfaceAttributes, List<InterfaceHeaderAttributeInfo> interfaceHeaderAttributes, string? interfaceTokenInjectionMode, string? interfaceTokenName, string? interfaceTokenScopes, string? interfaceTokenScheme, bool? interfaceTokenDisabled)
         AnalyzeInterfaceAttributes(ImmutableArray<AttributeData> interfaceAttrs)
     {
         var interfaceAttributes = new HashSet<string>();
@@ -1150,6 +1175,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         string? interfaceTokenName = null;
         string? interfaceTokenScopes = null;
         string? interfaceTokenScheme = null;
+        bool? interfaceTokenDisabled = null;
 
         if (!interfaceAttrs.IsDefault)
         {
@@ -1197,6 +1223,8 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
                 var tokenName = GetTokenName(tokenAttr);
                 var tokenScopes = GetTokenScopes(tokenAttr);
                 var tokenScheme = GetTokenScheme(tokenAttr);
+                // F-1：接口级 [Token(Disabled = ...)]（方法级未标注时按「有效级」回退到此处）
+                interfaceTokenDisabled = GetTokenDisabled(tokenAttr);
                 if (!string.IsNullOrEmpty(injectionMode))
                 {
                     interfaceTokenInjectionMode = injectionMode;
@@ -1209,7 +1237,7 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
             }
         }
 
-        return (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName, interfaceTokenScopes, interfaceTokenScheme);
+        return (interfaceAttributes, interfaceHeaderAttributes, interfaceTokenInjectionMode, interfaceTokenName, interfaceTokenScopes, interfaceTokenScheme, interfaceTokenDisabled);
     }
 
     /// <summary>
@@ -1309,15 +1337,15 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
     }
 
     /// <summary>
-    /// 从已缓存的特性列表中分析方法级别 Token 特性的 TokenManagerKey 和 RequiresUserId
+    /// 从已缓存的特性列表中分析方法级别 Token 特性的 TokenManagerKey、RequiresUserId 与 Disabled（F-1）
     /// </summary>
-    private static (string? tokenManagerKey, bool? requiresUserId, string? injectionMode, string? scheme, string? tokenName) AnalyzeMethodTokenExtended(ImmutableArray<AttributeData> attributes)
+    private static (string? tokenManagerKey, bool? requiresUserId, string? injectionMode, string? scheme, string? tokenName, bool? disabled) AnalyzeMethodTokenExtended(ImmutableArray<AttributeData> attributes)
     {
         var tokenAttr = attributes
             .FirstOrDefault(attr => HasAttributeWithName(attr, "TokenAttribute"));
 
         if (tokenAttr == null)
-            return (null, null, null, null, null);
+            return (null, null, null, null, null, null);
 
         var tokenManagerKey = TokenHelper.GetTokenManagerKeyFromAttribute(tokenAttr);
         var requiresUserIdValue = tokenAttr.NamedArguments
@@ -1329,8 +1357,86 @@ internal static AttributeData? FindHttpMethodAttributeFromAttributes(ImmutableAr
         // GEN-09：方法级 [Token(Name = "...")] 名称提取（与接口级 GetInterfaceTokenName 同口径，
         // 仅读 NamedArguments["Name"]）。
         var tokenName = AttributeDataHelper.GetStringValueFromAttribute(tokenAttr, ["Name"]);
+        // F-1：方法级 [Token(Disabled = ...)]（三态：null = 未显式标注，回退到接口级）
+        var disabled = GetTokenDisabled(tokenAttr);
 
-        return (tokenManagerKey, requiresUserId, injectionMode, scheme, tokenName);
+        return (tokenManagerKey, requiresUserId, injectionMode, scheme, tokenName, disabled);
+    }
+
+    /// <summary>
+    /// F-1：读取 <c>[Token(Disabled = ...)]</c> 的显式取值（仅认命名参数字面量；未标注返回 null）。
+    /// </summary>
+    private static bool? GetTokenDisabled(AttributeData tokenAttr)
+    {
+        foreach (var namedArg in tokenAttr.NamedArguments)
+        {
+            if (namedArg.Key == "Disabled")
+                return namedArg.Value.Value is bool b ? b : (bool?)null;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// F-1：收集 <c>[Token]</c> 上显式设置的「令牌注入语义」参数名（HTTPCLIENT039 消息实参）。
+    /// 仅统计注入语义（TokenType/TokenManagerKey/InjectionMode/Name/Scopes/Scheme/RequiresUserId）；
+    /// <c>Disabled</c> 本身与 <c>Justification</c>（诊断豁免理由）不属注入语义，不计。
+    /// 位置构造参数（<c>[Token("UserAccessToken")]</c>）即显式 TokenType。
+    /// </summary>
+    private static List<string> GetExplicitTokenInjectionParameterNames(AttributeData tokenAttr)
+    {
+        var names = new List<string>();
+
+        if (HasExplicitPositionalConstructorArgument(tokenAttr))
+            names.Add("TokenType");
+
+        foreach (var namedArg in tokenAttr.NamedArguments)
+        {
+            switch (namedArg.Key)
+            {
+                case "TokenType":
+                case "TokenManagerKey":
+                case "InjectionMode":
+                case "Name":
+                case "Scopes":
+                case "Scheme":
+                case "RequiresUserId":
+                    names.Add(namedArg.Key);
+                    break;
+            }
+        }
+
+        return names;
+    }
+
+    /// <summary>
+    /// F-1：判定 <c>[Token]</c> 是否<b>显式</b>传入了位置构造参数（即显式 TokenType）。
+    /// </summary>
+    /// <remarks>
+    /// 不能用 <c>AttributeData.ConstructorArguments.Length</c> 判定：主构造参数带默认值
+    /// （<c>TokenAttribute(string tokenType = TokenTypes.AccessToken)</c>），Roslyn 会把默认值
+    /// 填充进 <c>ConstructorArguments</c>，导致 <c>[Token(Disabled = true)]</c> 与
+    /// <c>[Token("UserAccessToken", Disabled = true)]</c> 在 AttributeData 上不可区分
+    /// （前者被误判为显式 TokenType ⇒ HTTPCLIENT039 误报）。
+    /// 因此优先走语法判定：仅 <c>ArgumentList</c> 中 <c>NameEquals == null</c> 的实参才算显式位置参数。
+    /// 元数据来源（无语法）时保守回退：仅当构造实参与形参默认值不同才视为显式设置。
+    /// </remarks>
+    private static bool HasExplicitPositionalConstructorArgument(AttributeData tokenAttr)
+    {
+        if (tokenAttr.ApplicationSyntaxReference?.GetSyntax() is AttributeSyntax attributeSyntax)
+            return attributeSyntax.ArgumentList?.Arguments.Any(arg => arg.NameEquals == null) == true;
+
+        var constructor = tokenAttr.AttributeConstructor;
+        if (constructor is null)
+            return tokenAttr.ConstructorArguments.Length > 0;
+
+        for (var i = 0; i < tokenAttr.ConstructorArguments.Length && i < constructor.Parameters.Length; i++)
+        {
+            if (!Equals(tokenAttr.ConstructorArguments[i].Value, constructor.Parameters[i].ExplicitDefaultValue))
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>

@@ -17,237 +17,6 @@ namespace Mud.HttpUtils;
 /// </remarks>
 internal static partial class MudHttpClientLog
 {
-    #region Resilience 模块 (EventId: 101-120)
-
-#if NET6_0_OR_GREATER
-    [LoggerMessage(EventId = 101, Level = LogLevel.Warning,
-        Message = "HTTP 请求失败，将在 {DelayMs}ms 后进行第 {RetryCount}/{MaxRetries} 次重试。")]
-    public static partial void RetryAttempting(ILogger logger, double delayMs, int retryCount, int maxRetries, Exception? exception);
-
-    [LoggerMessage(EventId = 102, Level = LogLevel.Warning,
-        Message = "HTTP 请求超时：操作在 {TimeoutSeconds}s 内未完成。")]
-    public static partial void RequestTimeout(ILogger logger, double timeoutSeconds);
-
-    [LoggerMessage(EventId = 103, Level = LogLevel.Warning,
-        Message = "熔断器开启：连续失败 {FailureThreshold} 次，将在 {BreakDuration}s 内快速拒绝请求。")]
-    public static partial void CircuitBreakerOpenedSimple(ILogger logger, int failureThreshold, double breakDuration, Exception? exception);
-
-    [LoggerMessage(EventId = 104, Level = LogLevel.Warning,
-        Message = "熔断器开启：采样窗口 {SamplingDuration}s 内失败率达 {FailureRate:P0}（至少 {MinimumThroughput} 次请求），将在 {BreakDuration}s 内快速拒绝请求。")]
-    public static partial void CircuitBreakerOpenedAdvanced(ILogger logger, int samplingDuration, double failureRate, int minimumThroughput, double breakDuration, Exception? exception);
-
-    [LoggerMessage(EventId = 105, Level = LogLevel.Information,
-        Message = "熔断器关闭：服务恢复正常。")]
-    public static partial void CircuitBreakerClosed(ILogger logger);
-
-    [LoggerMessage(EventId = 106, Level = LogLevel.Information,
-        Message = "熔断器进入半开状态：允许试探请求。")]
-    public static partial void CircuitBreakerHalfOpen(ILogger logger);
-
-    [LoggerMessage(EventId = 107, Level = LogLevel.Warning,
-        Message = "OnRetry 回调执行失败。")]
-    public static partial void RetryCallbackFailed(ILogger logger, Exception exception);
-
-    [LoggerMessage(EventId = 108, Level = LogLevel.Warning,
-        Message = "请求体大小 ({ContentLength} 字节) 超过克隆限制 ({MaxSize} 字节)，跳过重试策略（保留超时和熔断）")]
-    public static partial void RequestExceedsCloneLimit(ILogger logger, long contentLength, long maxSize);
-
-    [LoggerMessage(EventId = 109, Level = LogLevel.Debug,
-        Message = "请求已标记跳过全局弹性策略（方法级弹性策略已激活）")]
-    public static partial void SkipGlobalResilience(ILogger logger);
-
-    [LoggerMessage(EventId = 110, Level = LogLevel.Warning,
-        Message = "HTTP 请求超时：操作在 {TimeoutMs}ms 内未完成。")]
-    public static partial void RequestTimeoutMs(ILogger logger, double timeoutMs);
-
-    [LoggerMessage(EventId = 111, Level = LogLevel.Warning,
-        Message = "RetryStatusCodes 配置为空数组，仅 HttpRequestException（无 StatusCode）/TimeoutRejectedException/TaskCanceledException 会触发重试。如需使用默认状态码 [408,429,500,502,503,504]，请移除该配置项或设为 null。")]
-    public static partial void RetryStatusCodesEmptyArray(ILogger logger);
-
-    [LoggerMessage(EventId = 112, Level = LogLevel.Information,
-        Message = "HTTP 方法 {Method} 为非幂等方法，默认跳过重试（保留超时和熔断）。如需重试请设置 [Retry(AllowNonIdempotent = true)] 或 RetryOptions.AllowNonIdempotentRetry = true。")]
-    public static partial void RetrySkippedNonIdempotent(ILogger logger, string method);
-#else
-    private static readonly Action<ILogger, double, int, int, Exception?> s_retryAttempting =
-        LoggerMessage.Define<double, int, int>(LogLevel.Warning, new EventId(101, nameof(RetryAttempting)),
-            "HTTP 请求失败，将在 {DelayMs}ms 后进行第 {RetryCount}/{MaxRetries} 次重试。");
-    public static void RetryAttempting(ILogger logger, double delayMs, int retryCount, int maxRetries, Exception? exception)
-        => s_retryAttempting(logger, delayMs, retryCount, maxRetries, exception);
-
-    private static readonly Action<ILogger, double, Exception?> s_requestTimeout =
-        LoggerMessage.Define<double>(LogLevel.Warning, new EventId(102, nameof(RequestTimeout)),
-            "HTTP 请求超时：操作在 {TimeoutSeconds}s 内未完成。");
-    public static void RequestTimeout(ILogger logger, double timeoutSeconds)
-        => s_requestTimeout(logger, timeoutSeconds, null);
-
-    private static readonly Action<ILogger, int, double, Exception?> s_circuitBreakerOpenedSimple =
-        LoggerMessage.Define<int, double>(LogLevel.Warning, new EventId(103, nameof(CircuitBreakerOpenedSimple)),
-            "熔断器开启：连续失败 {FailureThreshold} 次，将在 {BreakDuration}s 内快速拒绝请求。");
-    public static void CircuitBreakerOpenedSimple(ILogger logger, int failureThreshold, double breakDuration, Exception? exception)
-        => s_circuitBreakerOpenedSimple(logger, failureThreshold, breakDuration, exception);
-
-    private static readonly Action<ILogger, int, double, int, double, Exception?> s_circuitBreakerOpenedAdvanced =
-        LoggerMessage.Define<int, double, int, double>(LogLevel.Warning, new EventId(104, nameof(CircuitBreakerOpenedAdvanced)),
-            "熔断器开启：采样窗口 {SamplingDuration}s 内失败率达 {FailureRate:P0}（至少 {MinimumThroughput} 次请求），将在 {BreakDuration}s 内快速拒绝请求。");
-    public static void CircuitBreakerOpenedAdvanced(ILogger logger, int samplingDuration, double failureRate, int minimumThroughput, double breakDuration, Exception? exception)
-        => s_circuitBreakerOpenedAdvanced(logger, samplingDuration, failureRate, minimumThroughput, breakDuration, exception);
-
-    private static readonly Action<ILogger, Exception?> s_circuitBreakerClosed =
-        LoggerMessage.Define(LogLevel.Information, new EventId(105, nameof(CircuitBreakerClosed)),
-            "熔断器关闭：服务恢复正常。");
-    public static void CircuitBreakerClosed(ILogger logger) => s_circuitBreakerClosed(logger, null);
-
-    private static readonly Action<ILogger, Exception?> s_circuitBreakerHalfOpen =
-        LoggerMessage.Define(LogLevel.Information, new EventId(106, nameof(CircuitBreakerHalfOpen)),
-            "熔断器进入半开状态：允许试探请求。");
-    public static void CircuitBreakerHalfOpen(ILogger logger) => s_circuitBreakerHalfOpen(logger, null);
-
-    private static readonly Action<ILogger, Exception> s_retryCallbackFailed =
-        LoggerMessage.Define(LogLevel.Warning, new EventId(107, nameof(RetryCallbackFailed)),
-            "OnRetry 回调执行失败。");
-    public static void RetryCallbackFailed(ILogger logger, Exception exception)
-        => s_retryCallbackFailed(logger, exception);
-
-    private static readonly Action<ILogger, long, long, Exception?> s_requestExceedsCloneLimit =
-        LoggerMessage.Define<long, long>(LogLevel.Warning, new EventId(108, nameof(RequestExceedsCloneLimit)),
-            "请求体大小 ({ContentLength} 字节) 超过克隆限制 ({MaxSize} 字节)，跳过重试策略（保留超时和熔断）");
-    public static void RequestExceedsCloneLimit(ILogger logger, long contentLength, long maxSize)
-        => s_requestExceedsCloneLimit(logger, contentLength, maxSize, null);
-
-    private static readonly Action<ILogger, Exception?> s_skipGlobalResilience =
-        LoggerMessage.Define(LogLevel.Debug, new EventId(109, nameof(SkipGlobalResilience)),
-            "请求已标记跳过全局弹性策略（方法级弹性策略已激活）");
-    public static void SkipGlobalResilience(ILogger logger) => s_skipGlobalResilience(logger, null);
-
-    private static readonly Action<ILogger, double, Exception?> s_requestTimeoutMs =
-        LoggerMessage.Define<double>(LogLevel.Warning, new EventId(110, nameof(RequestTimeoutMs)),
-            "HTTP 请求超时：操作在 {TimeoutMs}ms 内未完成。");
-    public static void RequestTimeoutMs(ILogger logger, double timeoutMs)
-        => s_requestTimeoutMs(logger, timeoutMs, null);
-
-    private static readonly Action<ILogger, Exception?> s_retryStatusCodesEmptyArray =
-        LoggerMessage.Define(LogLevel.Warning, new EventId(111, nameof(RetryStatusCodesEmptyArray)),
-            "RetryStatusCodes 配置为空数组，仅 HttpRequestException（无 StatusCode）/TimeoutRejectedException/TaskCanceledException 会触发重试。如需使用默认状态码 [408,429,500,502,503,504]，请移除该配置项或设为 null。");
-    public static void RetryStatusCodesEmptyArray(ILogger logger) => s_retryStatusCodesEmptyArray(logger, null);
-
-    private static readonly Action<ILogger, string, Exception?> s_retrySkippedNonIdempotent =
-        LoggerMessage.Define<string>(LogLevel.Information, new EventId(112, nameof(RetrySkippedNonIdempotent)),
-            "HTTP 方法 {Method} 为非幂等方法，默认跳过重试（保留超时和熔断）。如需重试请设置 [Retry(AllowNonIdempotent = true)] 或 RetryOptions.AllowNonIdempotentRetry = true。");
-    public static void RetrySkippedNonIdempotent(ILogger logger, string method)
-        => s_retrySkippedNonIdempotent(logger, method, null);
-#endif
-
-    #endregion
-
-    #region Config 模块 (EventId: 113-120)
-
-#if NET6_0_OR_GREATER
-    // R-1（MT-12 收尾）：MT-12 起「缺 BaseAddress」的客户端**仍会被注册**（超时/默认头/自定义 URL 开关照常生效），
-    // 原文案「该客户端不会被注册，…配置将被忽略」与实际行为相反，会把宿主引向错误的修复方向。
-    // 方法名同步去掉 Skipped（EventId 113 保持不变，避免日志消费方的 EventId 映射断裂）。
-    [LoggerMessage(EventId = 113, Level = LogLevel.Warning,
-        Message = "MudHttpClients:Clients:{ClientName} 未配置 BaseAddress。该客户端仍会注册，TimeoutSeconds/DefaultHeaders/AllowCustomBaseUrls 均生效，但仅能接受绝对 URL 请求（相对 URL 将按 HttpClient 语义失败）。若该客户端本不应存在，请从配置节中移除。")]
-    public static partial void ClientMissingBaseAddress(ILogger logger, string clientName);
-
-    [LoggerMessage(EventId = 114, Level = LogLevel.Information,
-        Message = "已应用 UrlValidator 域名白名单（{Count} 项）。")]
-    public static partial void AllowedDomainsApplied(ILogger logger, int count);
-
-    [LoggerMessage(EventId = 115, Level = LogLevel.Warning,
-        Message = "Retry.AllowNonIdempotentRetry = true，RetryableHttpMethods 将被忽略（所有 HTTP 方法均允许重试）。如需仅重试幂等方法，请将其设为 false。")]
-    public static partial void RetryableHttpMethodsIgnored(ILogger logger);
-
-    // EventId 116 已废弃：原 AesEncryptionOptions.EnableAuthenticatedEncryption=false 安全警告，
-    // 触发点随「AES 信封版本前缀歧义消除方案（OPT-C，移除裸 CBC 路径）」一并移除。编号冻结，不再复用。
-
-    [LoggerMessage(EventId = 119, Level = LogLevel.Information,
-        Message = "AesEncryptionProvider：当前运行时不支持 AesGcm，已使用 CBC + HMAC-SHA256（信封版本 0x03）进行认证加密。如需密文可跨 netstandard2.0/net6.0 运行时解密，可显式设置 AesEncryptionOptions.RequireCrossRuntimePortable = true。")]
-    public static partial void AesGcmUnavailableFallbackToCbcHmac(ILogger logger);
-
-    [LoggerMessage(EventId = 117, Level = LogLevel.Warning,
-        Message = "检测到响应缓存双入口同时配置：AddHttpResponseCache 已显式注册 IHttpResponseCache，配置节 MudHttpClients:ResponseCache 将被忽略（TryAddSingleton 先注册者生效）。")]
-    public static partial void ResponseCacheConfigurationIgnored(ILogger logger);
-
-    [LoggerMessage(EventId = 118, Level = LogLevel.Debug,
-        Message = "客户端 {ClientName} 的 AllowCustomBaseUrls 被覆盖为 {NewValue}（原值 {OldValue}）。")]
-    public static partial void AllowCustomBaseUrlsOverridden(ILogger logger, string clientName, bool newValue, bool oldValue);
-#else
-    private static readonly Action<ILogger, string, Exception?> s_clientMissingBaseAddress =
-        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(113, nameof(ClientMissingBaseAddress)),
-            "MudHttpClients:Clients:{ClientName} 未配置 BaseAddress。该客户端仍会注册，TimeoutSeconds/DefaultHeaders/AllowCustomBaseUrls 均生效，但仅能接受绝对 URL 请求（相对 URL 将按 HttpClient 语义失败）。若该客户端本不应存在，请从配置节中移除。");
-    public static void ClientMissingBaseAddress(ILogger logger, string clientName)
-        => s_clientMissingBaseAddress(logger, clientName, null);
-
-    private static readonly Action<ILogger, int, Exception?> s_allowedDomainsApplied =
-        LoggerMessage.Define<int>(LogLevel.Information, new EventId(114, nameof(AllowedDomainsApplied)),
-            "已应用 UrlValidator 域名白名单（{Count} 项）。");
-    public static void AllowedDomainsApplied(ILogger logger, int count)
-        => s_allowedDomainsApplied(logger, count, null);
-
-    private static readonly Action<ILogger, Exception?> s_retryableHttpMethodsIgnored =
-        LoggerMessage.Define(LogLevel.Warning, new EventId(115, nameof(RetryableHttpMethodsIgnored)),
-            "Retry.AllowNonIdempotentRetry = true，RetryableHttpMethods 将被忽略（所有 HTTP 方法均允许重试）。如需仅重试幂等方法，请将其设为 false。");
-    public static void RetryableHttpMethodsIgnored(ILogger logger)
-        => s_retryableHttpMethodsIgnored(logger, null);
-
-    // EventId 116 已废弃：原 AesEncryptionOptions.EnableAuthenticatedEncryption=false 安全警告，
-    // 触发点随「AES 信封版本前缀歧义消除方案（OPT-C，移除裸 CBC 路径）」一并移除。编号冻结，不再复用。
-
-    private static readonly Action<ILogger, Exception?> s_aesGcmUnavailableFallbackToCbcHmac =
-        LoggerMessage.Define(LogLevel.Information, new EventId(119, nameof(AesGcmUnavailableFallbackToCbcHmac)),
-            "AesEncryptionProvider：当前运行时不支持 AesGcm，已使用 CBC + HMAC-SHA256（信封版本 0x03）进行认证加密。如需密文可跨 netstandard2.0/net6.0 运行时解密，可显式设置 AesEncryptionOptions.RequireCrossRuntimePortable = true。");
-    public static void AesGcmUnavailableFallbackToCbcHmac(ILogger logger)
-        => s_aesGcmUnavailableFallbackToCbcHmac(logger, null);
-
-    private static readonly Action<ILogger, Exception?> s_responseCacheConfigurationIgnored =
-        LoggerMessage.Define(LogLevel.Warning, new EventId(117, nameof(ResponseCacheConfigurationIgnored)),
-            "检测到响应缓存双入口同时配置：AddHttpResponseCache 已显式注册 IHttpResponseCache，配置节 MudHttpClients:ResponseCache 将被忽略（TryAddSingleton 先注册者生效）。");
-    public static void ResponseCacheConfigurationIgnored(ILogger logger)
-        => s_responseCacheConfigurationIgnored(logger, null);
-
-    private static readonly Action<ILogger, string, bool, bool, Exception?> s_allowCustomBaseUrlsOverridden =
-        LoggerMessage.Define<string, bool, bool>(LogLevel.Debug, new EventId(118, nameof(AllowCustomBaseUrlsOverridden)),
-            "客户端 {ClientName} 的 AllowCustomBaseUrls 被覆盖为 {NewValue}（原值 {OldValue}）。");
-    public static void AllowCustomBaseUrlsOverridden(ILogger logger, string clientName, bool newValue, bool oldValue)
-        => s_allowCustomBaseUrlsOverridden(logger, clientName, newValue, oldValue, null);
-#endif
-
-    #endregion
-
-    #region Cache 模块 (EventId: 121-130)
-
-#if NET6_0_OR_GREATER
-    [LoggerMessage(EventId = 121, Level = LogLevel.Debug,
-        Message = "从缓存返回: {CacheKey}")]
-    public static partial void CacheHit(ILogger logger, string cacheKey);
-
-    [LoggerMessage(EventId = 122, Level = LogLevel.Debug,
-        Message = "已缓存: {CacheKey}, 持续 {Duration} 秒, 滑动过期: {UseSliding}")]
-    public static partial void CacheSet(ILogger logger, string cacheKey, double duration, bool useSliding);
-
-    [LoggerMessage(EventId = 123, Level = LogLevel.Debug,
-        Message = "已移除缓存: {CacheKey}")]
-    public static partial void CacheRemoved(ILogger logger, string cacheKey);
-#else
-    private static readonly Action<ILogger, string, Exception?> s_cacheHit =
-        LoggerMessage.Define<string>(LogLevel.Debug, new EventId(121, nameof(CacheHit)),
-            "从缓存返回: {CacheKey}");
-    public static void CacheHit(ILogger logger, string cacheKey) => s_cacheHit(logger, cacheKey, null);
-
-    private static readonly Action<ILogger, string, double, bool, Exception?> s_cacheSet =
-        LoggerMessage.Define<string, double, bool>(LogLevel.Debug, new EventId(122, nameof(CacheSet)),
-            "已缓存: {CacheKey}, 持续 {Duration} 秒, 滑动过期: {UseSliding}");
-    public static void CacheSet(ILogger logger, string cacheKey, double duration, bool useSliding)
-        => s_cacheSet(logger, cacheKey, duration, useSliding, null);
-
-    private static readonly Action<ILogger, string, Exception?> s_cacheRemoved =
-        LoggerMessage.Define<string>(LogLevel.Debug, new EventId(123, nameof(CacheRemoved)),
-            "已移除缓存: {CacheKey}");
-    public static void CacheRemoved(ILogger logger, string cacheKey) => s_cacheRemoved(logger, cacheKey, null);
-#endif
-
-    #endregion
-
     #region TokenManager 模块 (EventId: 131-150)
 
 #if NET6_0_OR_GREATER
@@ -845,9 +614,11 @@ internal static partial class MudHttpClientLog
     public static void UserTokenCacheEncryptionIgnored(ILogger logger, string manager)
         => s_userTokenCacheEncryptionIgnored(logger, manager, null);
 
+    // B-2（2026-10-13）：自动桥接落地后 EventId 191 语义改写 —— 由「存储未接入管线」的 Warning
+    // 降为「store 未接入自动桥接、由宿主自理」的 Information（原 RegistrationIgnored 文案同步改写）。
     private static readonly Action<ILogger, string, Exception?> s_tokenStoreRegistrationIgnored =
-        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(191, nameof(TokenStoreRegistrationIgnored)),
-            "已注册 {Store}（令牌持久化 SPI），但其尚未接入管理器管线 —— 仅注册存储不会让令牌获得持久化或跨实例共享能力；持久化能力须经 TokenStoreBackedTokenCache<T> 桥接进入管理器，进程内缓存请实现 ITokenCache<T> 并注入管理器。");
+        LoggerMessage.Define<string>(LogLevel.Information, new EventId(191, nameof(TokenStoreRegistrationIgnored)),
+            "已注册 {Store}（令牌持久化 SPI）但未接入自动桥接 —— 宿主显式注册了 ITokenCache<T>（显式注册优先，自动桥接不生效），或尚未注册令牌管理器消费方。store 由宿主自理：若期望自动持久化，请移除显式 ITokenCache 注册并调用 AddMudHttpTokenManager 注册管理器（自动桥接接管），或自行将其桥接为 TokenStoreBackedTokenCache<T>。");
     public static void TokenStoreRegistrationIgnored(ILogger logger, string store)
         => s_tokenStoreRegistrationIgnored(logger, store, null);
 
@@ -862,6 +633,26 @@ internal static partial class MudHttpClientLog
             "令牌写穿跳过访问令牌写入（StoreKey={Key}）：值适配器与 Set 均未提供过期时长 —— 为防止 store 以无界 TTL 滞留令牌（过期口径唯一判定点在管线），本次仅刷新令牌字段被写穿。请检查值适配器是否从令牌过期字段推导 ExpiresInSeconds。");
     public static void TokenStoreBridgeWriteSkippedForMissingTtl(ILogger logger, string key)
         => s_tokenStoreBridgeWriteSkippedForMissingTtl(logger, key, null);
+
+    // ---- B-2（2026-10-13）：ITokenStore 自动桥接（EventId 194-196）----
+
+    private static readonly Action<ILogger, string, Exception?> s_tokenManagerRegistryRegistrationSuppressed =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(194, nameof(TokenManagerRegistryRegistrationSuppressed)),
+            "ITokenManagerRegistry 已注册（{RegisteredType}），本次注册的注册表被忽略（TryAdd 先注册者胜）。若需替换注册表，请在首次注册前完成，或移除先前注册。");
+    public static void TokenManagerRegistryRegistrationSuppressed(ILogger logger, string registeredType)
+        => s_tokenManagerRegistryRegistrationSuppressed(logger, registeredType, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_tokenManagerTypeRegisteredTwice =
+        LoggerMessage.Define<string>(LogLevel.Warning, new EventId(195, nameof(TokenManagerTypeRegisteredTwice)),
+            "令牌管理器 {ManagerType} 被重复注册（AddMudHttpTokenManager 非 TryAdd，描述符会叠加）。解析将命中最后一次注册；请移除重复调用，避免实例/生命周期混淆。");
+    public static void TokenManagerTypeRegisteredTwice(ILogger logger, string managerType)
+        => s_tokenManagerTypeRegisteredTwice(logger, managerType, null);
+
+    private static readonly Action<ILogger, string, Exception?> s_tokenStoreAutoBridged =
+        LoggerMessage.Define<string>(LogLevel.Information, new EventId(196, nameof(TokenStoreAutoBridged)),
+            "已自动桥接令牌持久化存储 {Store} → ITokenCache<T>（TokenStoreBackedTokenCache）：令牌将写穿/读穿透至该存储。");
+    public static void TokenStoreAutoBridged(ILogger logger, string store)
+        => s_tokenStoreAutoBridged(logger, store, null);
 
     private static readonly Action<ILogger, string, Exception?> s_tokenRecoverySkippedDuringRefresh =
         LoggerMessage.Define<string>(LogLevel.Debug, new EventId(186, nameof(TokenRecoverySkippedDuringRefresh)),

@@ -1,0 +1,33 @@
+#nullable enable
+Mud.HttpUtils.Redis.RedisTokenStoreOptions
+Mud.HttpUtils.Redis.RedisTokenStoreOptions.RedisTokenStoreOptions() -> void
+const Mud.HttpUtils.Redis.RedisTokenStoreOptions.SectionName = "MudHttpRedisTokenStore" -> string!
+const Mud.HttpUtils.Redis.RedisTokenStoreOptions.SharedAppKeySegment = "shared" -> string!
+Mud.HttpUtils.Redis.RedisTokenStoreOptions.KeyPrefix.get -> string!
+Mud.HttpUtils.Redis.RedisTokenStoreOptions.KeyPrefix.set -> void
+Mud.HttpUtils.Redis.RedisTokenStoreOptions.AppKey.get -> string?
+Mud.HttpUtils.Redis.RedisTokenStoreOptions.AppKey.set -> void
+Mud.HttpUtils.Redis.RedisTokenStoreOptions.DefaultTtl.get -> System.TimeSpan?
+Mud.HttpUtils.Redis.RedisTokenStoreOptions.DefaultTtl.set -> void
+Mud.HttpUtils.Redis.RedisTokenStoreOptions.Database.get -> int
+Mud.HttpUtils.Redis.RedisTokenStoreOptions.Database.set -> void
+Mud.HttpUtils.Redis.RedisTokenStoreKeyBuilder
+const Mud.HttpUtils.Redis.RedisTokenStoreKeyBuilder.AccessField = "access" -> string!
+const Mud.HttpUtils.Redis.RedisTokenStoreKeyBuilder.RefreshField = "refresh" -> string!
+static Mud.HttpUtils.Redis.RedisTokenStoreKeyBuilder.BuildAccessKey(string! prefix, string! tokenType, string? appKey) -> string!
+static Mud.HttpUtils.Redis.RedisTokenStoreKeyBuilder.BuildRefreshKey(string! prefix, string! tokenType, string? appKey) -> string!
+static Mud.HttpUtils.Redis.RedisTokenStoreKeyBuilder.BuildAccessPattern(string! prefix, string? appKey) -> string!
+static Mud.HttpUtils.Redis.RedisTokenStoreKeyBuilder.BuildAllPattern(string! prefix) -> string!
+static Mud.HttpUtils.Redis.RedisTokenStoreKeyBuilder.TryParseTokenType(string! prefix, string? appKey, string! key) -> string?
+Mud.HttpUtils.Redis.RedisTokenStore
+Mud.HttpUtils.Redis.RedisTokenStore.RedisTokenStore(StackExchange.Redis.IConnectionMultiplexer! connection, Mud.HttpUtils.Redis.RedisTokenStoreOptions? options = null, Mud.HttpUtils.ITokenStoreCodec? codec = null) -> void
+Mud.HttpUtils.Redis.RedisTokenStore.GetAccessTokenAsync(string! tokenType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string?>!
+Mud.HttpUtils.Redis.RedisTokenStore.SetAccessTokenAsync(string! tokenType, string! accessToken, long expiresInSeconds, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.Redis.RedisTokenStore.GetRefreshTokenAsync(string! tokenType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string?>!
+Mud.HttpUtils.Redis.RedisTokenStore.SetRefreshTokenAsync(string! tokenType, string! refreshToken, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.Redis.RedisTokenStore.RemoveAsync(string! tokenType, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.Redis.RedisTokenStore.GetTokenTypesAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.Collections.Generic.IEnumerable<string!>!>!
+Mud.HttpUtils.Redis.RedisTokenStore.ClearAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Mud.HttpUtils.Redis.ServiceCollectionExtensions
+static Mud.HttpUtils.Redis.ServiceCollectionExtensions.AddMudHttpRedisTokenStore(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, StackExchange.Redis.IConnectionMultiplexer! connection, System.Action<Mud.HttpUtils.Redis.RedisTokenStoreOptions!>? configureOptions = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Mud.HttpUtils.Redis.ServiceCollectionExtensions.AddMudHttpRedisTokenStore(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, string! connectionString, System.Action<Mud.HttpUtils.Redis.RedisTokenStoreOptions!>? configureOptions = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

@@ -137,4 +137,46 @@ public sealed class TokenAttribute(string tokenType = TokenTypes.AccessToken) : 
     ///        Justification = "企业微信官方契约：access_token 必须置于 Query")]
     /// </example>
     public string? Justification { get; set; }
+
+    /// <summary>
+    /// F-1（G-1）：获取或设置一个值，该值指示<b>显式阻断接口级 <c>[Token]</c> 继承</b>（方法级免令牌 opt-out）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>语义</b>：方法级 <c>[Token(Disabled = true)]</c> 使该方法<b>不取令牌、不注入、不参与令牌恢复</b> ——
+    /// 即使接口级标注了 <c>[Token]</c>，本方法也不生成任何令牌代码。适用于同一接口内的
+    /// 免令牌应急端点（如 <c>clear_quota/v2</c>），免去把它们拆成独立接口。
+    /// </para>
+    /// <para>
+    /// <b>优先级</b>：沿用「方法级覆盖接口级」语义 —— 方法级显式设置的 <see cref="Disabled"/> 优先；
+    /// 方法级未标注时取接口级 <c>[Token]</c> 的 <see cref="Disabled"/>；均未标注默认 <c>false</c>。
+    /// </para>
+    /// <para>
+    /// <b>Disabled = true 时忽略注入语义</b>：<see cref="TokenType"/>、<see cref="TokenManagerKey"/>、
+    /// <see cref="InjectionMode"/>、<see cref="Name"/>、<see cref="Scopes"/>、<see cref="Scheme"/>、
+    /// <see cref="RequiresUserId"/> 等注入参数一律不写入生成代码，并触发编译警告（参数被忽略）。
+    /// </para>
+    /// <para>
+    /// <b>仅接口/方法级有意义</b>：本特性可用于参数（标记「令牌参数」），但参数级设置
+    /// <see cref="Disabled"/> 无意义（参数级 <c>[Token]</c> 不涉及接口级继承），生成器将忽略并告警。
+    /// </para>
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// [HttpClientApi]
+    /// [Token]
+    /// public interface IChannelsApi
+    /// {
+    ///     [Get("/cgi-bin/gettoken")]
+    ///     Task&lt;TokenData&gt; GetTokenAsync();
+    ///
+    ///     // 逃生端点：显式免令牌（不继承接口级 [Token]）
+    ///     [Get("/cgi-bin/clear_quota/v2")]
+    ///     [Token(Disabled = true)]
+    ///     Task&lt;Result&gt; ClearQuotaAsync();
+    /// }
+    /// </code>
+    /// </example>
+    /// <value>默认为 <c>false</c>（正常继承接口级 <c>[Token]</c> 语义）。</value>
+    public bool Disabled { get; set; }
 }

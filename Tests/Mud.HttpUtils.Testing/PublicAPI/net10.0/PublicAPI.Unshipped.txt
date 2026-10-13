@@ -1,1 +1,18 @@
 #nullable enable
+Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>
+Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.AppManagerCompliance() -> void
+abstract Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.CreateManager() -> Mud.HttpUtils.IAppManager<TAppContext>!
+abstract Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.CreateContext(string! appKey) -> TAppContext
+virtual Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.Fail(string! message) -> void
+virtual Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.TryRegisterLazy(Mud.HttpUtils.IAppManager<TAppContext>! manager, string! appKey, System.Func<TAppContext>! factory, bool isDefault = false) -> bool
+Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.VerifyAll() -> void
+Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.Verify_RegisterAndGetRoundtrip() -> void
+Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.Verify_AppKeyIsCaseSensitive() -> void
+Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.Verify_TryGetAppAndHasApp() -> void
+Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.Verify_UpdateReplacesContext() -> void
+Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.Verify_RemoveAppSemantics() -> void
+Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.Verify_DefaultAppAssignment() -> void
+Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.Verify_DefaultAppFallbackOnRemoval() -> void
+Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.Verify_SetDefaultAppGuard() -> void
+Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.Verify_EventIsolation() -> void
+Mud.HttpUtils.Testing.AppManagerCompliance<TAppContext>.Verify_LazyRegistrationSemantics() -> void

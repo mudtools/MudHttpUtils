@@ -1199,7 +1199,7 @@ public static class HttpClientServiceCollectionExtensions
     /// 解析结果为 <c>null</c> 时调用方应保持既有回落（不抛异常）：无当前应用上下文、
     /// 应用未注册或该应用不提供该令牌类型均返回 <c>null</c>。
     /// </para>
-    /// <para>内部以 <see cref="AddTokenManagerRegistry(Func{string, ITokenManager?})"/>（<c>TryAdd</c>）注册，与宿主自定义注册表共存。</para>
+    /// <para>内部以 <see cref="AddTokenManagerRegistry"/>（<c>TryAdd</c>）注册，与宿主自定义注册表共存。</para>
     /// </remarks>
     public static IServiceCollection AddAppScopedTokenManagerRegistry<TAppContext>(
         this IServiceCollection services)
@@ -1210,6 +1210,8 @@ public static class HttpClientServiceCollectionExtensions
 
         // 委托签名只接受 tokenManagerKey（无 IServiceProvider），故以工厂委托捕获 sp；
         // TryAddSingleton 与 AddTokenManagerRegistry 的既有语义一致（不覆盖宿主注册）。
+        // B-1 诊断 A：TryAdd 会静默丢弃后注册者，此处登记"被忽略"事实，由启动期校验告警（EventId 194）。
+        NoteTokenManagerRegistryRegistrationSuppressed(services);
         services.TryAddSingleton<ITokenManagerRegistry>(sp =>
             new DelegateTokenManagerRegistry(tokenManagerKey =>
             {
@@ -1277,6 +1279,9 @@ public static class HttpClientServiceCollectionExtensions
         // MT-02：挂接真正的启动期接线自检（消费三个 Require* 开关与 RegisteredAppKeys）。
         // 默认全部为「仅告警」，不阻断既有宿主的启动。
         services.AddMudHttpAppManagementStartupValidation();
+
+        // B-2：ITokenCache<T> 的 DI 回退注册（ITokenStore 自动桥接；显式注册优先，见方法 remarks）。
+        services.TryAddTokenCacheStoreFallback();
 
         // D4：注册配置变更通知器，使 keyed Singleton 客户端在配置变更时失效缓存。
         // MT-03：订阅的建立由 CreateEnhancedClient 中的强制解析驱动（与 AllowedDomainsReloader 同惯例），
@@ -1537,6 +1542,13 @@ public static class HttpClientServiceCollectionExtensions
         if (services == null)
             throw new ArgumentNullException(nameof(services));
 
+        // B-2：ITokenCache<T> 的 DI 回退注册（显式注册优先，自动桥接 ITokenStore）。
+        services.TryAddTokenCacheStoreFallback();
+
+        // B-1（诊断 B）：同类型重复注册会静默叠加（services.Add 非 TryAdd），登记后由启动期校验告警（EventId 195）。
+        if (services.Any(d => d.ServiceType == typeof(TManager)))
+            GetOrCreateTokenRegistrationDiagnostics(services).DuplicatedManagerTypes.Add(typeof(TManager));
+
         // TR-01：令牌管理器是有状态组件（持有令牌缓存、单飞行锁、后台刷新登记），
         // 三个服务类型必须解析到**同一实例**。此前三条注册均以 implementationType 描述，
         // MS.DI 的单例缓存键为 ServiceIdentifier（含 ServiceType），三条注册即三个独立实例，
@@ -1635,9 +1647,183 @@ public static class HttpClientServiceCollectionExtensions
         if (resolver == null)
             throw new ArgumentNullException(nameof(resolver));
 
+        // B-1 诊断 A：TryAdd 会静默丢弃后注册者，此处登记"被忽略"事实，由启动期校验告警（EventId 194）。
+        NoteTokenManagerRegistryRegistrationSuppressed(services);
         services.TryAddSingleton<ITokenManagerRegistry>(new DelegateTokenManagerRegistry(resolver));
         return services;
     }
+
+    /// <summary>
+    /// B-1（诊断 C）：注册字典式 <see cref="TokenManagerKeyRegistry"/> 作为 <see cref="ITokenManagerRegistry"/>（下游私有注册表的官方替代）。
+    /// </summary>
+    /// <param name="services">服务集合。</param>
+    /// <param name="configure">注册键 → 管理器映射的配置委托（可选；重复键在此阶段检出）。</param>
+    /// <returns>服务集合（链式调用）。</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="services"/> 为 null。</exception>
+    /// <remarks>
+    /// <para>
+    /// 注册表以 <see cref="TokenManagerKeyRegistry"/>（TryAdd）单例暴露，可直接解析后调用
+    /// <see cref="TokenManagerKeyRegistry.Register(string, ITokenManager)"/>；
+    /// <see cref="ITokenManagerRegistry"/> 经工厂转发到同一实例（两种解析路径同一对象）。
+    /// </para>
+    /// <para>
+    /// 重复键按「记录 + 诊断 + 后键覆盖」处理（不在此处抛出），并自动挂接
+    /// <see cref="AddMudHttpAppManagementStartupValidation"/> —— 启动期把重复键升级为
+    /// Error 抛出（<c>MudHttpAppManagementOptions.AllowDuplicateTokenManagerKeys = false</c>，默认）
+    /// 或降级 Warning（逃生开关）。
+    /// </para>
+    /// </remarks>
+    public static IServiceCollection AddTokenManagerKeyRegistry(
+        this IServiceCollection services,
+        Action<TokenManagerKeyRegistry>? configure = null)
+    {
+        if (services == null)
+            throw new ArgumentNullException(nameof(services));
+
+        NoteTokenManagerRegistryRegistrationSuppressed(services);
+        services.TryAddSingleton(sp =>
+        {
+            var logger = sp.GetService<ILoggerFactory>()?.CreateLogger("Mud.HttpUtils.TokenManagerKeyRegistry");
+            var registry = new TokenManagerKeyRegistry(
+                throwOnDuplicateKey: false,
+                duplicateKeyDiagnostics: message => logger?.LogWarning("{Message}", message));
+            configure?.Invoke(registry);
+            return registry;
+        });
+        services.TryAddSingleton<ITokenManagerRegistry>(sp => sp.GetRequiredService<TokenManagerKeyRegistry>());
+
+        // 启动期升级出口（默认 Error 抛出 / 逃生开关 Warning）。
+        services.AddMudHttpAppManagementStartupValidation();
+        return services;
+    }
+
+    /// <summary>
+    /// B-1（诊断 A）：登记「<see cref="ITokenManagerRegistry"/> 已注册、本次注册被 TryAdd 忽略」的事实
+    /// （注册期无日志器，交由启动期校验输出 EventId 194 告警）。
+    /// </summary>
+    private static void NoteTokenManagerRegistryRegistrationSuppressed(IServiceCollection services)
+    {
+        if (!services.Any(d => d.ServiceType == typeof(ITokenManagerRegistry)))
+            return;
+
+        GetOrCreateTokenRegistrationDiagnostics(services).RegistryRegistrationSuppressed = true;
+    }
+
+    /// <summary>
+    /// B-1（诊断 A/B）：注册期诊断事实的按容器暂存（随 <see cref="IServiceCollection"/> 隔离，不跨容器污染）。
+    /// </summary>
+    private static TokenManagerRegistrationDiagnostics GetOrCreateTokenRegistrationDiagnostics(IServiceCollection services)
+    {
+        foreach (var descriptor in services)
+        {
+            if (descriptor.ImplementationInstance is TokenManagerRegistrationDiagnostics existing)
+                return existing;
+        }
+
+        var created = new TokenManagerRegistrationDiagnostics();
+        services.AddSingleton(created);
+        return created;
+    }
+
+    /// <summary>
+    /// B-2：<see cref="ITokenCache{T}"/> 的 DI 回退注册（<b>ITokenStore 自动桥接</b>，消除"手动桥接"暗门）。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>装配语义（评审修订，2026-10-13）</b>：<c>AddMudHttpTokenManager&lt;T&gt;</c> 只注册管理器本身，
+    /// 缓存经构造注入 <see cref="ITokenCache{T}"/>（<c>TokenManagerBase</c> 的缓存构造函数）——
+    /// 因此自动桥接的落点是 <b>DI 回退注册</b>，而非"装配链内部包装"。
+    /// </para>
+    /// <para>
+    /// <b>解析期决策（TryAdd 保证显式注册优先、与顺序无关）</b>：
+    /// <list type="number">
+    /// <item><description>宿主显式注册 <see cref="ITokenCache{T}"/> → 本回退不生效（显式优先，行为不变）；</description></item>
+    /// <item><description>未显式注册缓存但注册了 store
+    /// （<see cref="ITokenStore"/> / <see cref="IEncryptedTokenStore"/> → 租户维度，
+    /// <see cref="IUserTokenStore"/> → 用户维度）→ 用既有便捷工厂
+    /// <c>TokenStoreBackedTokenCache&lt;T&gt;.CreateForCredentialToken / CreateForUserTokenInfo</c> 自动桥接；</description></item>
+    /// <item><description>两者皆无 → 维持现状语义：租户维度给 <c>ConcurrentDictionaryTokenCache</c>、
+    /// 用户维度给 <c>MemoryCacheTokenCache</c>（有 <c>IEncryptionProvider</c> 时按
+    /// <c>UserTokenManagerBase</c> 内建口径包 <c>EncryptedTokenCache</c>），
+    /// 与管理器"内建内存缓存"行为一致。</description></item>
+    /// </list>
+    /// </para>
+    /// <para>
+    /// <b>生命周期 = Transient（实施修正，与评审修订的 TryAddSingleton 的差异）</b>：
+    /// <see cref="ITokenCache{T}"/> 的缓存键为作用域键（<c>ScopeKeyBuilder</c>），<b>不含管理器身份</b> ——
+    /// 若以 Singleton 产出单个共享实例，多个令牌管理器会共写同一键（如 <c>"default"</c>），
+    /// 造成跨管理器令牌串扰（安全问题）。Transient 使<b>每个管理器实例持各自缓存</b>，
+    /// 与"内建缓存"的隔离语义一致；store 侧的键命名空间由 storeKeyMapper / 各自 store 负责
+    /// （与手动桥接路径的既有约定相同）。
+    /// </para>
+    /// <para>
+    /// 自动桥接仅作用于<b>经构造注入</b> <see cref="ITokenCache{T}"/> 的管理器；
+    /// 使用内建缓存（公共构造函数不接受缓存）的管理器不会消费本回退。
+    /// </para>
+    /// </remarks>
+    private static void TryAddTokenCacheStoreFallback(this IServiceCollection services)
+    {
+        services.TryAdd(ServiceDescriptor.Describe(
+            typeof(ITokenCache<CredentialToken>),
+            sp => ResolveCredentialTokenCacheFallback(sp),
+            ServiceLifetime.Transient));
+
+        services.TryAdd(ServiceDescriptor.Describe(
+            typeof(ITokenCache<UserTokenInfo>),
+            sp => ResolveUserTokenCacheFallback(sp),
+            ServiceLifetime.Transient));
+    }
+
+    /// <summary>
+    /// B-2：租户维度（<see cref="CredentialToken"/>）回退缓存的解析期决策。
+    /// </summary>
+    private static ITokenCache<CredentialToken> ResolveCredentialTokenCacheFallback(IServiceProvider serviceProvider)
+    {
+        // IUserTokenStore 的无 userId 成员语义未定义（IUserTokenStore 契约规则 / C7），不得用于租户维度。
+        var store = serviceProvider.GetService<ITokenStore>() ?? serviceProvider.GetService<IEncryptedTokenStore>();
+        if (store != null && store is not IUserTokenStore)
+        {
+            var logger = CreateTokenStoreAutoBridgeLogger(serviceProvider);
+            if (logger != null)
+                MudHttpClientLog.TokenStoreAutoBridged(logger, store.GetType().Name);
+            return TokenStoreBackedTokenCache<CredentialToken>.CreateForCredentialToken(store, logger: logger);
+        }
+
+        // 两者皆无：维持现状（管理器内建内存缓存同款实现）。
+        return new ConcurrentDictionaryTokenCache<CredentialToken>();
+    }
+
+    /// <summary>
+    /// B-2：用户维度（<see cref="UserTokenInfo"/>）回退缓存的解析期决策。
+    /// </summary>
+    private static ITokenCache<UserTokenInfo> ResolveUserTokenCacheFallback(IServiceProvider serviceProvider)
+    {
+        var userStore = serviceProvider.GetService<IUserTokenStore>();
+        if (userStore != null)
+        {
+            var logger = CreateTokenStoreAutoBridgeLogger(serviceProvider);
+            if (logger != null)
+                MudHttpClientLog.TokenStoreAutoBridged(logger, userStore.GetType().Name);
+            return TokenStoreBackedTokenCache<UserTokenInfo>.CreateForUserTokenInfo(userStore, logger: logger);
+        }
+
+        // 两者皆无：维持现状 —— 与 UserTokenManagerBase 内建口径一致
+        //（MemoryCacheTokenCache；有 IEncryptionProvider 时包 EncryptedTokenCache）。
+        var options = serviceProvider.GetService<IOptions<UserTokenCacheOptions>>()?.Value ?? new UserTokenCacheOptions();
+        var encryption = serviceProvider.GetService<IEncryptionProvider>();
+        if (encryption != null)
+        {
+            var stringCache = new MemoryCacheTokenCache<string>(
+                options.SizeLimit, options.CleanupIntervalSeconds, options.CompactionPercentage);
+            return new EncryptedTokenCache<UserTokenInfo>(stringCache, encryption);
+        }
+
+        return new MemoryCacheTokenCache<UserTokenInfo>(
+            options.SizeLimit, options.CleanupIntervalSeconds, options.CompactionPercentage);
+    }
+
+    private static ILogger? CreateTokenStoreAutoBridgeLogger(IServiceProvider serviceProvider)
+        => serviceProvider.GetService<ILoggerFactory>()?.CreateLogger("Mud.HttpUtils.TokenStoreAutoBridge");
 
     /// <summary>
     /// 从 IConfiguration 绑定令牌恢复配置。
@@ -1890,6 +2076,29 @@ public static class HttpClientServiceCollectionExtensions
                 "请调用 services.AddSingleton<IAppAccessAuthorizer, YourAuthorizer>()。");
         }
 
+        // B-1（诊断 C）：TokenManagerKeyRegistry 重复键检查 —— 默认 Error（随本次校验一起抛出），
+        // 逃生开关（AllowDuplicateTokenManagerKeys = true）降级为 Warning。
+        if (serviceProvider.GetService<ITokenManagerRegistry>() is TokenManagerKeyRegistry keyRegistry && keyRegistry.DuplicateKeys.Count > 0)
+        {
+            var duplicateKeyMessage =
+                "TokenManagerKeyRegistry 存在重复令牌管理器键（序数比较）：" +
+                string.Join(", ", keyRegistry.DuplicateKeys.OrderBy(k => k, StringComparer.Ordinal).Select(k => AppKeyValidator.ToSafeText(k))) +
+                "。重复键会让 Resolve 命中错误的管理器、errcode 令牌自愈静默失效；请改用唯一键，" +
+                "或有意按「后键覆盖」复用键时设置 MudHttpAppManagementOptions.AllowDuplicateTokenManagerKeys = true。";
+
+            var allowDuplicates = serviceProvider.GetService<IOptions<MudHttpAppManagementOptions>>()?.Value?.AllowDuplicateTokenManagerKeys == true;
+            if (allowDuplicates)
+            {
+                serviceProvider.GetService<ILoggerFactory>()
+                    ?.CreateLogger("Mud.HttpUtils.HttpClientServiceCollectionExtensions")
+                    ?.LogWarning("{Message}", duplicateKeyMessage);
+            }
+            else
+            {
+                errors.Add(duplicateKeyMessage);
+            }
+        }
+
         if (errors.Count > 0)
         {
             throw new InvalidOperationException(
@@ -1901,16 +2110,17 @@ public static class HttpClientServiceCollectionExtensions
     }
 
     /// <summary>
-    /// 检测"已注册令牌存储（持久化 SPI）但尚未接入管理器管线"的状态并给出接入指引。
+    /// B-2 语义（2026-10-13）：检测「已注册令牌存储（持久化 SPI）但因显式 <c>ITokenCache&lt;T&gt;</c>
+    /// 覆盖而未自动桥接」的状态并给出指引（EventId 191，信息级）。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <c>ITokenStore</c> / <c>IEncryptedTokenStore</c> / <c>IUserTokenStore</c> 是<b>持久化 SPI</b>，
-    /// 管理器管线直接消费的是 <c>ITokenCache&lt;T&gt;</c>；持久化能力须经桥接器
-    /// <c>TokenStoreBackedTokenCache&lt;T&gt;</c> 接入。宿主注册存储通常出于
-    /// "让令牌持久化 / 跨实例共享"的期待 —— 若只注册而未接入桥接器，实际效果为空转 ⇒ 必须显式提示。
+    /// 自动桥接（<see cref="TryAddTokenCacheStoreFallback"/>）落地后，"注册了 store 但未桥接"
+    /// 只剩一种情形：宿主<b>显式</b>注册了 <c>ITokenCache&lt;T&gt;</c>（显式优先，覆盖自动桥接），
+    /// 此时 store 由宿主自理 ⇒ 由原 Warning（RegistrationIgnored）降为<b>信息级</b>提示。
+    /// 若解析到的缓存已是 <c>TokenStoreBackedTokenCache&lt;T&gt;</c>（自动/手动桥接均已接入）则不提示。
     /// </para>
-    /// <para>刻意不抛异常：该类型仍可能被宿主自己的代码或自建流水线使用，阻断启动属过度反应。</para>
+    /// <para>刻意不抛异常：显式注册是宿主的有意行为。</para>
     /// </remarks>
     private static void WarnIfUnusedTokenStoreRegistered(IServiceProvider serviceProvider)
     {
@@ -1920,15 +2130,20 @@ public static class HttpClientServiceCollectionExtensions
             registeredStoreName = serviceProvider.GetService<ITokenStore>()?.GetType().Name
                 ?? serviceProvider.GetService<IEncryptedTokenStore>()?.GetType().Name;
             registeredStoreName ??= serviceProvider.GetService<IUserTokenStore>()?.GetType().Name;
+
+            if (registeredStoreName is null)
+                return;
+
+            // 已桥接（自动桥接 / 手动桥接）⇒ 无需提示。
+            if (serviceProvider.GetService<ITokenCache<CredentialToken>>() is TokenStoreBackedTokenCache<CredentialToken>
+                || serviceProvider.GetService<ITokenCache<UserTokenInfo>>() is TokenStoreBackedTokenCache<UserTokenInfo>)
+                return;
         }
         catch
         {
             // 存储解析失败不应让"接线自检"本身成为故障源。
             return;
         }
-
-        if (registeredStoreName is null)
-            return;
 
         // 注意：HttpClientServiceCollectionExtensions 是静态类，不能作为泛型类型参数，故用字符串类别。
         // 类别名沿用本扩展的命名空间（与其它库内日志口径一致）。

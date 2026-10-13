@@ -581,6 +581,33 @@ internal static class Diagnostics
         category: "代码生成",
         DiagnosticSeverity.Info,
         isEnabledByDefault: true);
+
+    /// <summary>
+    /// F-1（G-1）：方法级 <c>[Token(Disabled = true)]</c>（有效级：方法级 &gt; 接口级）与令牌注入参数同用。
+    /// 免令牌方法不取令牌、不注入、不参与令牌恢复，<c>TokenType</c>/<c>TokenManagerKey</c>/<c>InjectionMode</c>/
+    /// <c>Name</c>/<c>Scopes</c>/<c>Scheme</c>/<c>RequiresUserId</c> 等注入参数一律不写入生成代码 ——
+    /// 静默忽略会让「配置以为生效、实际被丢弃」不可见，故以 Warning 提示参数被忽略。
+    /// </summary>
+    public static readonly DiagnosticDescriptor TokenDisabledWithInjectionParameters = new(
+        id: "HTTPCLIENT039",
+        title: "免令牌方法同时设置了令牌注入参数",
+        messageFormat: "接口 {0} 的方法 {1} 同时设置了 [Token(Disabled = true)] 与令牌注入参数（{2}）；免令牌方法不取令牌、不注入、不参与令牌恢复，这些注入参数将被忽略。请移除注入参数，或将 Disabled 设为 false。",
+        category: "代码生成",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    /// <summary>
+    /// F-1（G-1）：参数级 <c>[Token(Disabled = true)]</c>。<c>Disabled</c> 语义是「阻断接口级 <c>[Token]</c> 继承」，
+    /// 仅在方法级/接口级有意义；参数级 <c>[Token]</c> 是「令牌参数」标记，不涉及继承，
+    /// 该设置无意义并被忽略（参数仍按令牌参数语义处理），故告警并指引改到方法级标注。
+    /// </summary>
+    public static readonly DiagnosticDescriptor TokenDisabledOnParameter = new(
+        id: "HTTPCLIENT040",
+        title: "参数级 [Token(Disabled = true)] 无意义，已忽略",
+        messageFormat: "接口 {0} 的方法 {1} 的参数 {2} 设置了 [Token(Disabled = true)]；Disabled 仅在方法级/接口级有意义，参数级设置已忽略（该参数仍按令牌参数语义处理）。如需免令牌请在方法上标注 [Token(Disabled = true)]。",
+        category: "代码生成",
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
     #endregion
 
     #region HttpClient注册生成器诊断信息 (HTTPCLIENTREG001-002)

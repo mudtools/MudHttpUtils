@@ -43,12 +43,16 @@ public class DefaultAppManagerVirtualizationTests
     [InlineData("RegisterLazy")]
     public void RegistrationEntryPoints_ShouldBeVirtual(string methodName)
     {
-        typeof(DefaultAppManager<IMudAppContext>)
-            .GetMethod(methodName)
-            .Should().NotBeNull($"{methodName} 必须存在");
-        typeof(DefaultAppManager<IMudAppContext>)
-            .GetMethod(methodName)!.IsVirtual
-            .Should().BeTrue($"G3：{methodName} 必须可覆写（否则派生类只能造影子注册表）");
+        // F-10 后 RegisterLazy 有多个重载（无参工厂 / Func<IServiceProvider, TAppContext>），
+        // GetMethod(name) 会 AmbiguousMatchException —— 断言升级为"全部重载均为 virtual"（意图不变、覆盖面更强）。
+        var overloads = typeof(DefaultAppManager<IMudAppContext>)
+            .GetMethods()
+            .Where(m => m.Name == methodName)
+            .ToList();
+
+        overloads.Should().NotBeEmpty($"{methodName} 必须存在");
+        overloads.Should().OnlyContain(m => m.IsVirtual,
+            $"G3：{methodName} 的每个重载都必须可覆写（否则派生类只能造影子注册表）");
     }
 
     [Fact]

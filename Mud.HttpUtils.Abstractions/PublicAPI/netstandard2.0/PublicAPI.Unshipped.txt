@@ -143,3 +143,64 @@ Mud.HttpUtils.SystemClock.SystemClock() -> void
 Mud.HttpUtils.SystemClock.UtcNow.get -> System.DateTimeOffset
 static Mud.HttpUtils.SystemClock.Instance.get -> Mud.HttpUtils.SystemClock!
 virtual Mud.HttpUtils.TokenManagerBase.UtcNow.get -> System.DateTimeOffset
+Mud.HttpUtils.TokenBindingMode
+Mud.HttpUtils.TokenBindingMode.PerApp = 0 -> Mud.HttpUtils.TokenBindingMode
+Mud.HttpUtils.TokenBindingMode.PerScope = 1 -> Mud.HttpUtils.TokenBindingMode
+Mud.HttpUtils.TokenBindingMode.Shared = 2 -> Mud.HttpUtils.TokenBindingMode
+Mud.HttpUtils.TokenScopeKey
+Mud.HttpUtils.TokenScopeKey.TokenScopeKey() -> void
+Mud.HttpUtils.TokenScopeKey.TokenType.get -> string!
+Mud.HttpUtils.TokenScopeKey.AppKey.get -> string?
+Mud.HttpUtils.TokenScopeKey.ScopeKey.get -> string?
+Mud.HttpUtils.TokenScopeKey.ToCompositeKey() -> string!
+Mud.HttpUtils.TokenScopeKey.Equals(Mud.HttpUtils.TokenScopeKey other) -> bool
+override Mud.HttpUtils.TokenScopeKey.ToString() -> string!
+override Mud.HttpUtils.TokenScopeKey.Equals(object? obj) -> bool
+override Mud.HttpUtils.TokenScopeKey.GetHashCode() -> int
+static Mud.HttpUtils.TokenScopeKey.ForApp(string! tokenType, string! appKey) -> Mud.HttpUtils.TokenScopeKey
+static Mud.HttpUtils.TokenScopeKey.ForScope(string! tokenType, string! appKey, string! scopeKey) -> Mud.HttpUtils.TokenScopeKey
+static Mud.HttpUtils.TokenScopeKey.ForShared(string! tokenType) -> Mud.HttpUtils.TokenScopeKey
+static Mud.HttpUtils.TokenScopeKey.operator ==(Mud.HttpUtils.TokenScopeKey left, Mud.HttpUtils.TokenScopeKey right) -> bool
+static Mud.HttpUtils.TokenScopeKey.operator !=(Mud.HttpUtils.TokenScopeKey left, Mud.HttpUtils.TokenScopeKey right) -> bool
+virtual Mud.HttpUtils.TokenManagerBase.GetOrRefreshTokenAsync(Mud.HttpUtils.TokenScopeKey scopeKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string!>!
+virtual Mud.HttpUtils.TokenManagerBase.InvalidateTokenAsync(Mud.HttpUtils.TokenScopeKey scopeKey, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Mud.HttpUtils.TokenResult>!
+virtual Mud.HttpUtils.TokenManagerBase.BindingMode.get -> Mud.HttpUtils.TokenBindingMode
+virtual Mud.HttpUtils.TokenManagerBase.TokenType.get -> string?
+Mud.HttpUtils.IAppLookupProvider
+Mud.HttpUtils.IAppLookupProvider.TryResolveAppKey(System.Collections.Generic.IReadOnlyDictionary<string!, string!>! externalIds, out string? appKey) -> bool
+Mud.HttpUtils.IAppExternalIds
+Mud.HttpUtils.IAppExternalIds.ExternalIds.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>!
+Mud.HttpUtils.DefaultAppManager<TAppContext>.DefaultAppManager(Mud.HttpUtils.IAppLookupProvider? externalLookupProvider) -> void
+virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.TryResolveAppKey(System.Collections.Generic.IReadOnlyDictionary<string!, string!>! externalIds, out string? appKey) -> bool
+Mud.HttpUtils.DefaultAppManager<TAppContext>.DefaultAppManager(System.IServiceProvider? services, Mud.HttpUtils.IAppLookupProvider? externalLookupProvider) -> void
+virtual Mud.HttpUtils.DefaultAppManager<TAppContext>.RegisterLazy(string! appKey, System.Func<System.IServiceProvider!, TAppContext>! factory, bool isDefault = false) -> void
+Mud.HttpUtils.IAppRegistry<TAppContext>
+Mud.HttpUtils.IAppRegistry<TAppContext>.TryGet(string! appKey, out TAppContext? appContext) -> bool
+Mud.HttpUtils.IAppRegistry<TAppContext>.Add(string! appKey, TAppContext appContext) -> bool
+Mud.HttpUtils.IAppRegistry<TAppContext>.TryUpdate(string! appKey, TAppContext appContext, TAppContext comparisonValue) -> bool
+Mud.HttpUtils.IAppRegistry<TAppContext>.TryRemove(string! appKey, out TAppContext? removed) -> bool
+Mud.HttpUtils.IAppRegistry<TAppContext>.EnumerateKeys() -> System.Collections.Generic.IEnumerable<string!>!
+Mud.HttpUtils.ConcurrentDictionaryAppRegistry<TAppContext>
+Mud.HttpUtils.ConcurrentDictionaryAppRegistry<TAppContext>.ConcurrentDictionaryAppRegistry() -> void
+Mud.HttpUtils.ConcurrentDictionaryAppRegistry<TAppContext>.TryGet(string! appKey, out TAppContext? appContext) -> bool
+Mud.HttpUtils.ConcurrentDictionaryAppRegistry<TAppContext>.Add(string! appKey, TAppContext appContext) -> bool
+Mud.HttpUtils.ConcurrentDictionaryAppRegistry<TAppContext>.TryUpdate(string! appKey, TAppContext appContext, TAppContext comparisonValue) -> bool
+Mud.HttpUtils.ConcurrentDictionaryAppRegistry<TAppContext>.TryRemove(string! appKey, out TAppContext? removed) -> bool
+Mud.HttpUtils.ConcurrentDictionaryAppRegistry<TAppContext>.EnumerateKeys() -> System.Collections.Generic.IEnumerable<string!>!
+Mud.HttpUtils.DefaultAppManager<TAppContext>.DefaultAppManager(Mud.HttpUtils.IAppRegistry<TAppContext>? registry, System.IServiceProvider? services, Mud.HttpUtils.IAppLookupProvider? externalLookupProvider) -> void
+Mud.HttpUtils.TokenDependencyGraph
+Mud.HttpUtils.TokenDependencyGraph.TokenDependencyGraph() -> void
+Mud.HttpUtils.TokenDependencyGraph.Add(string! tokenType, params string![]! dependsOn) -> Mud.HttpUtils.TokenDependencyGraph!
+Mud.HttpUtils.TokenDependencyGraph.DeclaredTokenTypes.get -> System.Collections.Generic.IReadOnlyCollection<string!>!
+Mud.HttpUtils.TokenDependencyGraph.GetDependentsOf(string! tokenType) -> System.Collections.Generic.IReadOnlyList<string!>!
+Mud.HttpUtils.TokenDependencyGraph.IsEmpty.get -> bool
+static Mud.HttpUtils.TokenDependencyGraph.Empty.get -> Mud.HttpUtils.TokenDependencyGraph!
+Mud.HttpUtils.TokenInvalidatedEventArgs
+Mud.HttpUtils.TokenInvalidatedEventArgs.TokenInvalidatedEventArgs(string? tokenType, string![]? scopes, Mud.HttpUtils.TokenResult removed) -> void
+Mud.HttpUtils.TokenInvalidatedEventArgs.TokenType.get -> string?
+Mud.HttpUtils.TokenInvalidatedEventArgs.Scopes.get -> string![]?
+Mud.HttpUtils.TokenInvalidatedEventArgs.Removed.get -> Mud.HttpUtils.TokenResult
+Mud.HttpUtils.TokenManagerBase.TokenInvalidated -> System.EventHandler<Mud.HttpUtils.TokenInvalidatedEventArgs!>?
+virtual Mud.HttpUtils.TokenManagerBase.DependencyGraph.get -> Mud.HttpUtils.TokenDependencyGraph!
+virtual Mud.HttpUtils.TokenManagerBase.EnableTokenDependencyCascade.get -> bool
+virtual Mud.HttpUtils.TokenManagerBase.ResolveTokenManagerForType(string! tokenType) -> Mud.HttpUtils.ITokenManager?

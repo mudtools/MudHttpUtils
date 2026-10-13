@@ -128,7 +128,14 @@ public class N5ConvenienceMethodRetryTests
         var mockInner = new Mock<IEnhancedHttpClient>();
         mockInner
             .Setup(c => c.GetAsync<string>(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Returns<string, CancellationToken>((uri, ct) => new TaskCompletionSource<string?>().Task);
+            // M7-HC-03 对齐：默认超时策略为 Optimistic（协作式取消，超时后真正取消底层请求），
+            // mock 必须像真实 HttpClient 一样观察 CancellationToken —— 永不完成且不理会令牌的任务
+            // 会使超时无法生效（Optimistic 下永久挂起，原 Pessimistic 下被放弃故未暴露）。
+            .Returns<string, CancellationToken>(async (uri, ct) =>
+            {
+                await Task.Delay(System.Threading.Timeout.Infinite, ct).ConfigureAwait(false);
+                return null!; // 正常路径不可达：仅取消可结束此任务
+            });
 
         var options = new ResilienceOptions
         {

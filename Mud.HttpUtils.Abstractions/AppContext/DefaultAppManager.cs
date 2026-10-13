@@ -22,17 +22,91 @@ namespace Mud.HttpUtils;
 [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2091",
     Justification = "本类型仅使用 Lazy<T>(Func<T>) 构造（工厂委托），从不使用 Lazy<T>() 无参构造，" +
                     "故 TAppContext 无需满足 PublicParameterlessConstructor 约束。")]
-public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
+public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLookupProvider
     where TAppContext : IMudAppContext
 {
-    private readonly ConcurrentDictionary<string, TAppContext> _apps = new();
+    // F-5：应用存储经 IAppRegistry SPI（默认 ConcurrentDictionaryAppRegistry，行为基线不变）；
+    // 自定义存储（分片/外置/加密）经受保护构造注入，守卫逻辑（大小写语义、默认键回退、CAS 更新）仍由本类提供。
+    private readonly IAppRegistry<TAppContext> _registry;
     private readonly ConcurrentDictionary<Type, Func<TAppContext, IAppContextSwitcher>> _switcherFactories = new();
-    // G3/B8：懒加载注册表（appKey → 一次性实例化工厂）。与 _apps 互补：
-    // _apps = 已实例化（已可见）的上下文；_lazyApps = 已声明但尚未实例化的上下文。
+    // G3/B8：懒加载注册表（appKey → 一次性实例化工厂）。与 _registry 互补：
+    // _registry = 已实例化（已可见）的上下文；_lazyApps = 已声明但尚未实例化的上下文。
     private readonly ConcurrentDictionary<string, Lazy<TAppContext>> _lazyApps = new();
     private string? _defaultAppKey;
     // MT-08：默认应用键的读-改-写（RemoveApp 回退）与 GetDefaultApp 的重试均在此锁内完成。
     private readonly object _defaultKeyLock = new();
+
+    // F-4：外部标识反查索引（CompositeKey(键, 值) → appKey）与歧义键集合。
+    // 注册/更新/移除/懒加载实例化后整体重建（注册路径低频，O(n·m) 可接受；
+    // 全量重建天然保证"歧义在冲突方移除/更新后自动消除"，避免增量维护的状态漂移）。
+    private readonly object _externalIndexSync = new();
+    private Dictionary<string, string> _externalIndex = new(StringComparer.Ordinal);
+    private HashSet<string> _conflictedExternalKeys = new(StringComparer.Ordinal);
+    private readonly IAppLookupProvider? _externalLookupProvider;
+    // F-10：服务提供者（通常为根容器），供 RegisterLazy(Func<IServiceProvider, TAppContext>) 重载
+    // 在<b>实例化时</b>传入工厂 —— 使"per-app DI scope + 命名 HttpClient"组合可延迟到首次命中时构建。
+    private readonly IServiceProvider? _services;
+
+    /// <summary>
+    /// 创建应用管理器（默认 <see cref="ConcurrentDictionaryAppRegistry{TAppContext}"/> 存储）。
+    /// </summary>
+    public DefaultAppManager()
+        : this(new ConcurrentDictionaryAppRegistry<TAppContext>(), null, null)
+    {
+    }
+
+    /// <summary>
+    /// F-4：创建应用管理器并指定<b>外部</b>标识反查提供者（宿主自实现，如从配置/数据库解析）。
+    /// </summary>
+    /// <param name="externalLookupProvider">
+    /// 外部反查提供者；为 <c>null</c> 时仅使用内置反查索引（上下文实现 <see cref="IAppExternalIds"/> 时自动建立）。
+    /// </param>
+    /// <remarks>
+    /// 反查顺序：<b>先内置索引后外部提供者</b> —— 内置索引与注册视图（<see cref="GetApp"/>）同源一致，
+    /// 优先命中；内置未命中（fail-closed 返回 <c>false</c>）时才委托外部提供者兜底。
+    /// </remarks>
+    public DefaultAppManager(IAppLookupProvider? externalLookupProvider)
+        : this(null, externalLookupProvider)
+    {
+    }
+
+    /// <summary>
+    /// F-4 + F-10：创建应用管理器，指定服务提供者与外部标识反查提供者。
+    /// </summary>
+    /// <param name="services">
+    /// 服务提供者（通常为根容器）；供 <see cref="RegisterLazy(string, Func{IServiceProvider, TAppContext}, bool)"/>
+    /// 的工厂在实例化时取用（per-app DI scope / 命名 HttpClient 组合）。为 <c>null</c> 时该重载在实例化期抛出
+    /// <see cref="InvalidOperationException"/>（fail-closed，不静默传 null）。
+    /// </param>
+    /// <param name="externalLookupProvider">外部反查提供者；为 <c>null</c> 时仅用内置反查索引。</param>
+    /// <remarks>
+    /// 两参（非可选参数）设计刻意保持：单参构造在 <c>null</c> 字面量调用处的二义性（CS0121）
+    /// 与 MS.DI 构造选择歧义均可免；需要其一时传 <c>null</c> 显式占位。
+    /// </remarks>
+    public DefaultAppManager(IServiceProvider? services, IAppLookupProvider? externalLookupProvider)
+        : this(new ConcurrentDictionaryAppRegistry<TAppContext>(), services, externalLookupProvider)
+    {
+    }
+
+    /// <summary>
+    /// F-5：创建应用管理器并注入<b>自定义注册表存储</b>（SPI 接线的受保护接缝）。
+    /// </summary>
+    /// <param name="registry">
+    /// 应用存储实现；为 <c>null</c> 时回退 <see cref="ConcurrentDictionaryAppRegistry{TAppContext}"/>（行为基线）。
+    /// 语义契约见 <see cref="IAppRegistry{TAppContext}"/>（含 CAS 更新，MT-08"复活已删除应用"防护的前提）。
+    /// </param>
+    /// <param name="services">服务提供者（F-10 惰性工厂用）；可为 <c>null</c>。</param>
+    /// <param name="externalLookupProvider">外部标识反查提供者（F-4）；可为 <c>null</c>。</param>
+    /// <remarks>
+    /// <b>受保护</b>而非公开：SPI 是"派生类换存储"的接缝（宿主经 <c>DefaultAppManager</c> 派生注入），
+    /// 不改变 <c>DefaultAppManager</c> 的既有公开构造面（兼容性红线：接口/构造签名不破坏）。
+    /// </remarks>
+    protected DefaultAppManager(IAppRegistry<TAppContext>? registry, IServiceProvider? services, IAppLookupProvider? externalLookupProvider)
+    {
+        _registry = registry ?? new ConcurrentDictionaryAppRegistry<TAppContext>();
+        _services = services;
+        _externalLookupProvider = externalLookupProvider;
+    }
 
     /// <summary>
     /// 应用配置变更事件。
@@ -42,13 +116,13 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     /// <inheritdoc />
     /// <remarks>
     /// G3/B8：命中懒加载项时<b>首次访问才实例化</b>工厂（线程安全、仅调用一次），
-    /// 实例化后并入 <c>_apps</c>（后续查询走已实例化视图，语义与直接注册一致）。
+    /// 实例化后并入注册表（<c>_registry</c>，后续查询走已实例化视图，语义与直接注册一致）。
     /// </remarks>
     public virtual TAppContext GetApp(string appKey)
     {
         AppKeyValidator.Validate(appKey, nameof(appKey));
 
-        if (_apps.TryGetValue(appKey, out var context))
+        if (_registry.TryGet(appKey, out var context))
             return context;
 
         if (TryMaterializeLazy(appKey, out var lazyContext))
@@ -77,7 +151,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
             return false;
         }
 
-        if (_apps.TryGetValue(appKey, out appContext))
+        if (_registry.TryGet(appKey, out appContext))
             return true;
 
         if (TryMaterializeLazy(appKey, out var lazyContext))
@@ -90,19 +164,21 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     }
 
     /// <summary>
-    /// G3/B8：把懒加载项实例化并并入 <c>_apps</c>（一次且仅一次）。
+    /// G3/B8：把懒加载项实例化并并入注册表（<c>_registry</c>，一次且仅一次）。
     /// </summary>
     /// <remarks>
     /// 并发安全：<see cref="Lazy{T}"/> 以 <see cref="LazyThreadSafetyMode.ExecutionAndPublication"/> 创建，
-    /// 保证工厂在并发下只被调用一次；<c>_apps</c> 的写入用 <c>TryAdd</c>（并发重复写入无害，值为同一实例）。
-    /// 工厂抛异常时不吞异常（由调用方决定是否重试），且不写入 <c>_apps</c>。
+    /// 保证工厂在并发下只被调用一次；<c>_registry</c> 的写入用 <c>Add</c>（并发重复写入无害，值为同一实例）。
+    /// 工厂抛异常时不吞异常（由调用方决定是否重试），且不写入 <c>_registry</c>。
     /// </remarks>
     private bool TryMaterializeLazy(string appKey, out TAppContext context)
     {
         if (_lazyApps.TryGetValue(appKey, out var lazy))
         {
             var materialized = lazy.Value;      // 首次调用触发工厂；后续返回缓存值
-            _apps.TryAdd(appKey, materialized);
+            _registry.Add(appKey, materialized);
+            // F-4：懒加载项实例化后，其外部标识（若实现 IAppExternalIds）才可见，需重建反查索引。
+            RebuildExternalIndex();
             context = materialized;
             return true;
         }
@@ -115,7 +191,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     /// <remarks>
     /// G3：<b>改为 <c>virtual</c></b>（二进制兼容加法，仅扩展 vtable）。
     /// 此前"查询入口是 virtual、注册入口不是"的不对称，使派生类覆盖查询入口后
-    /// <c>RegisterApp</c> 仍写入基类私有 <c>_apps</c> ⇒ 形成<b>影子注册表</b>，
+    /// <c>RegisterApp</c> 仍写入基类私有注册表 ⇒ 形成<b>影子注册表</b>，
     /// 派生类的查询视图看不到基类注册项，只能整体弃用基类继承。
     /// </remarks>
     public virtual void RegisterApp(string appKey, TAppContext appContext, bool isDefault = false)
@@ -125,15 +201,33 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
             throw new ArgumentNullException(nameof(appContext));
 
         // B4：以 TryAdd 的返回值判定变更类型，消除 ContainsKey + 索引器赋值的 check-then-act 竞态。
-        var changeType = _apps.TryAdd(appKey, appContext)
+        var changeType = _registry.Add(appKey, appContext)
             ? AppConfigurationChangeType.Added
             : AppConfigurationChangeType.Updated;
         if (changeType == AppConfigurationChangeType.Updated)
-            _apps[appKey] = appContext;
+        {
+            // F-5：SPI 无索引器，覆盖语义经 CAS 循环达成（与原索引器赋值的"最终覆盖"一致）；
+            // 并发移除窗口内回退 TryAdd，保证覆盖不因竞态丢失。
+            while (true)
+            {
+                if (_registry.TryGet(appKey, out var existing))
+                {
+                    if (_registry.TryUpdate(appKey, appContext, existing!))
+                        break;
+                }
+                else if (_registry.Add(appKey, appContext))
+                {
+                    break;
+                }
+            }
+        }
 
         // G3/B8：已注册 ⇒ 默认键合法性校验必然通过（保持既有语义）。
         if (isDefault)
             TrySetDefaultAppKeyCore(appKey, requireRegistered: true);
+
+        // F-4：注册/更新后重建外部标识反查索引（在事件触发前完成，订阅者看到的索引与注册视图一致）。
+        RebuildExternalIndex();
 
         OnConfigurationChanged(new AppConfigurationChangedEventArgs(
             appKey, changeType));
@@ -171,7 +265,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
         if (factory == null)
             throw new ArgumentNullException(nameof(factory));
 
-        var isNew = !_lazyApps.ContainsKey(appKey) && !_apps.ContainsKey(appKey);
+        var isNew = !_lazyApps.ContainsKey(appKey) && !_registry.TryGet(appKey, out _);
 
         _lazyApps[appKey] = new Lazy<TAppContext>(factory, LazyThreadSafetyMode.ExecutionAndPublication);
 
@@ -180,6 +274,52 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
 
         OnConfigurationChanged(new AppConfigurationChangedEventArgs(
             appKey, isNew ? AppConfigurationChangeType.Added : AppConfigurationChangeType.Updated));
+    }
+
+    /// <summary>
+    /// F-10：注册<b>懒加载</b>应用，工厂在实例化时接收服务提供者（per-app DI scope / 命名 HttpClient 组合）。
+    /// </summary>
+    /// <param name="appKey">应用标识。</param>
+    /// <param name="factory">
+    /// 上下文工厂：<b>首次命中</b>（<see cref="GetApp"/> / <see cref="TryGetApp"/> / <see cref="GetDefaultApp"/>）时调用一次，
+    /// 收到构造本管理器时注入的服务提供者（见 <see cref="DefaultAppManager{TAppContext}(IServiceProvider?, IAppLookupProvider?)"/>）。
+    /// </param>
+    /// <param name="isDefault">是否同时设为默认应用（语义与 <see cref="RegisterLazy(string, Func{TAppContext}, bool)"/> 一致）。</param>
+    /// <remarks>
+    /// <para>
+    /// <b>为什么工厂要拿 <see cref="IServiceProvider"/></b>：per-app 场景需要在实例化时才解析命名
+    /// HttpClient / 创建 per-app DI scope（如 <c>sp.CreateScope()</c> + <c>GetRequiredService</c>），
+    /// 而闭包捕获 <c>IServiceProvider</c> 需要调用方自行在注册期拿到它；本重载把"拿到服务提供者"与
+    /// "实例化时机"统一在库内 —— 服务提供者在<b>实例化时</b>传入，工厂内可安全解析。
+    /// </para>
+    /// <para>
+    /// <b>服务提供者缺失（fail-closed）</b>：本管理器未注入服务提供者时，首次实例化抛
+    /// <see cref="InvalidOperationException"/> —— 不静默传 <c>null</c>（工厂内 <c>GetRequiredService</c>
+    /// 会以 <see cref="NullReferenceException"/> 形式炸在更深处，难排查）。
+    /// </para>
+    /// <para>
+    /// 其余语义（重复注册替换工厂、<see cref="RemoveApp"/> 同步移除、<see cref="GetAllApps"/> 不触发实例化、
+    /// 实例化后并入注册表并重建外部标识反查索引）与无参工厂重载<b>逐位一致</b>。
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="factory"/> 为 null。</exception>
+    /// <exception cref="ArgumentException"><paramref name="appKey"/> 为 null/空白或格式不合法。</exception>
+    /// <exception cref="InvalidOperationException">本管理器未注入服务提供者（构造时未传 <c>services</c>）。</exception>
+    public virtual void RegisterLazy(string appKey, Func<IServiceProvider, TAppContext> factory, bool isDefault = false)
+    {
+        AppKeyValidator.Validate(appKey, nameof(appKey));
+        if (factory == null)
+            throw new ArgumentNullException(nameof(factory));
+
+        // fail-closed：服务提供者缺失在<b>注册期</b>即报（早失败优于实例化期深炸）。
+        if (_services is null)
+            throw new InvalidOperationException(
+                "RegisterLazy(Func<IServiceProvider, TAppContext>) 需要服务提供者：请使用 " +
+                "new DefaultAppManager<TAppContext>(serviceProvider, externalLookupProvider) 构造管理器，" +
+                "或改用无参工厂重载 RegisterLazy(appKey, () => ...)。");
+
+        var services = _services;
+        RegisterLazy(appKey, () => factory(services), isDefault);
     }
 
     /// <inheritdoc />
@@ -208,11 +348,14 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
         // MT-08：原实现为 TryGetValue（判存在）+ 索引器赋值，属典型 check-then-act。
         // 并发窗口内若 RemoveApp 抢先执行，索引器赋值会"复活"一个已被删除的应用
         // （已撤销的凭据重新可被取用）。TryUpdate 以旧值为 CAS 条件原子替换。
-        if (!_apps.TryGetValue(appKey, out var existing))
+        if (!_registry.TryGet(appKey, out var existing))
             throw new InvalidOperationException($"未找到应用标识为 '{AppKeyValidator.ToSafeText(appKey)}' 的应用上下文，无法更新。请先调用 RegisterApp 注册应用。");
 
-        if (!_apps.TryUpdate(appKey, appContext, existing))
+        if (!_registry.TryUpdate(appKey, appContext, existing!))
             throw new InvalidOperationException($"应用标识为 '{AppKeyValidator.ToSafeText(appKey)}' 的应用上下文在更新期间被移除或替换，更新已放弃。");
+
+        // F-4：更新后重建外部标识反查索引（旧上下文的外部标识随之失效）。
+        RebuildExternalIndex();
 
         OnConfigurationChanged(new AppConfigurationChangedEventArgs(
             appKey, AppConfigurationChangeType.Updated));
@@ -226,7 +369,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
         if (appContext == null)
             throw new ArgumentNullException(nameof(appContext));
 
-        if (!_apps.TryGetValue(appKey, out var existing))
+        if (!_registry.TryGet(appKey, out var existing))
             throw new InvalidOperationException(
                 $"未找到应用标识为 '{AppKeyValidator.ToSafeText(appKey)}' 的应用上下文，无法更新。请先调用 RegisterApp 注册应用。");
 
@@ -235,12 +378,15 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
 
         // MT-08：初始化期间旧上下文可能已被 RemoveApp 移除（或已被他人替换）。
         // 原子 CAS 替换；失败时释放新上下文并抛出，避免"复活已删除应用"与上下文泄漏。
-        if (!_apps.TryUpdate(appKey, appContext, existing))
+        if (!_registry.TryUpdate(appKey, appContext, existing!))
         {
             (appContext as IDisposable)?.Dispose();
             throw new InvalidOperationException(
                 $"应用标识为 '{AppKeyValidator.ToSafeText(appKey)}' 的应用上下文在异步初始化期间被移除或替换，更新已放弃。");
         }
+
+        // F-4：更新后重建外部标识反查索引（旧上下文的外部标识随之失效）。
+        RebuildExternalIndex();
 
         OnConfigurationChanged(new AppConfigurationChangedEventArgs(appKey, AppConfigurationChangeType.Updated));
     }
@@ -279,7 +425,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
             return false;
         }
 
-        var removed = _apps.TryRemove(appKey, out var context);
+        var removed = _registry.TryRemove(appKey, out _);
 
         // G3/B8：懒加载声明同样移除 —— 否则"移除后再次 GetApp"会把该应用复活（语义漏洞）。
         // 返回值纳入懒加载项：只声明未实例化的应用同样算"被移除"。
@@ -303,9 +449,9 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
                     if (Volatile.Read(ref _defaultAppKey) == appKey)
                     {
                         string? fallback = null;
-                        foreach (var candidate in _apps.Keys)
+                        foreach (var candidate in _registry.EnumerateKeys())
                         {
-                            if (_apps.ContainsKey(candidate))
+                            if (_registry.TryGet(candidate, out _))
                             {
                                 fallback = candidate;
                                 break;
@@ -319,6 +465,11 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
             OnConfigurationChanged(new AppConfigurationChangedEventArgs(
                 appKey, AppConfigurationChangeType.Removed));
         }
+
+        // F-4：移除后重建反查索引 —— 歧义键可能因冲突方移除而消除、孤立项随之摘除，
+        // 保证"RemoveApp 后外部标识不再反查到该应用"。
+        if (changed)
+            RebuildExternalIndex();
 
         return changed;
     }
@@ -336,8 +487,8 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
         if (string.IsNullOrEmpty(defaultKey))
             throw new InvalidOperationException("未设置默认应用。请在注册应用时设置 isDefault = true。");
 
-        if (_apps.TryGetValue(defaultKey!, out var context))
-            return context;
+        if (_registry.TryGet(defaultKey!, out var context))
+            return context!;
 
         // G3/B8：默认键指向懒加载项时，首次 GetDefaultApp 才实例化（与 GetApp 同口径）。
         if (TryMaterializeLazy(defaultKey!, out var lazyDefault))
@@ -348,12 +499,12 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
         // 只在确实无任何应用时才抛出。
         lock (_defaultKeyLock)
         {
-            foreach (var candidate in _apps.Keys)
+            foreach (var candidate in _registry.EnumerateKeys())
             {
-                if (_apps.TryGetValue(candidate, out var fallbackContext))
+                if (_registry.TryGet(candidate, out var fallbackContext))
                 {
                     Volatile.Write(ref _defaultAppKey, candidate);
-                    return fallbackContext;
+                    return fallbackContext!;
                 }
             }
         }
@@ -362,8 +513,18 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     }
 
     /// <inheritdoc />
-    /// <remarks>B7：返回快照数组，保证事件回调/缓存重建期间视图稳定。</remarks>
-    public virtual IEnumerable<TAppContext> GetAllApps() => _apps.Values.ToArray();
+    /// <remarks>B7：返回快照数组，保证事件回调/缓存重建期间视图稳定。F-5：经 <see cref="IAppRegistry{TAppContext}.EnumerateKeys"/> 快照 + <c>TryGet</c> 收集（SPI 不暴露值枚举）。</remarks>
+    public virtual IEnumerable<TAppContext> GetAllApps()
+    {
+        var snapshot = new List<TAppContext>();
+        foreach (var key in _registry.EnumerateKeys())
+        {
+            if (_registry.TryGet(key, out var appContext))
+                snapshot.Add(appContext!);
+        }
+
+        return snapshot.ToArray();
+    }
 
     /// <inheritdoc />
     public virtual bool HasApp(string appKey)
@@ -381,10 +542,11 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
         }
 
         // G3/B8：懒加载项虽然尚未实例化，但"已声明"即视为存在（与 GetApp 命中后可见一致）。
-        return _apps.ContainsKey(appKey) || _lazyApps.ContainsKey(appKey);
+        return _registry.TryGet(appKey, out _) || _lazyApps.ContainsKey(appKey);
     }
 
     /// <inheritdoc />
+    [Obsolete("BC-30：已弃用（3.x 保留，计划 4.0 移除）。生成器切换器场景请改用 DI 解析切换器 + UseAppScope(appKey)/UseDefaultAppScope()；本入口与生成器 3 参构造不对齐，注册的工厂对生成器切换器不生效。")]
     public virtual TContextSwitcher GetWebApi<TContextSwitcher>(string appKey)
         where TContextSwitcher : IAppContextSwitcher
     {
@@ -393,6 +555,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     }
 
     /// <inheritdoc />
+    [Obsolete("BC-30：已弃用（3.x 保留，计划 4.0 移除）。生成器切换器场景请改用 DI 解析切换器 + UseDefaultAppScope()；本入口与生成器 3 参构造不对齐，注册的工厂对生成器切换器不生效。")]
     public virtual TContextSwitcher GetDefaultWebApi<TContextSwitcher>()
         where TContextSwitcher : IAppContextSwitcher
     {
@@ -466,7 +629,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
             return false;
         }
 
-        if (requireRegistered && !_apps.ContainsKey(appKey) && !_lazyApps.ContainsKey(appKey))
+        if (requireRegistered && !_registry.TryGet(appKey, out _) && !_lazyApps.ContainsKey(appKey))
             return false;
 
         Volatile.Write(ref _defaultAppKey, appKey);
@@ -506,6 +669,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
     }
 
     /// <inheritdoc/>
+    [Obsolete("BC-30：已弃用（3.x 保留仅告警）。生成器切换器场景请改用 DI 解析切换器 + UseAppScope/UseDefaultAppScope（本工厂 1 参委托与生成器 3 参构造不对齐，对其不生效）；若作为替代反射的 AOT 低层接缝使用，3.x 继续可用，4.0 是否保留该接缝届时重评估。")]
     public void RegisterSwitcherFactory<TContextSwitcher>(Func<TAppContext, TContextSwitcher> factory)
         where TContextSwitcher : IAppContextSwitcher
     {
@@ -522,5 +686,154 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>
         }
 
         _switcherFactories[switcherType] = ctx => factory(ctx);
+    }
+
+    // ──────────────────────────────────────────────
+    //  F-4：外部标识反查（IAppLookupProvider）
+    // ──────────────────────────────────────────────
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// F-4：反查顺序为「内置索引 → 外部提供者」；未命中 / 输入非法 / 映射歧义一律 fail-closed
+    /// （返回 <c>false</c>，不猜测）。<b>不做</b>授权判定，不做上下文物化副作用。
+    /// </remarks>
+    public virtual bool TryResolveAppKey(IReadOnlyDictionary<string, string> externalIds, out string? appKey)
+    {
+        appKey = null;
+
+        if (externalIds is null || externalIds.Count == 0)
+            return false;
+
+        // 快照内部索引引用（重建是整体替换引用，读侧无锁）。
+        var index = Volatile.Read(ref _externalIndex);
+        var conflicted = Volatile.Read(ref _conflictedExternalKeys);
+
+        string? resolved = null;
+        var sawAny = false;
+        var completeHit = true;
+
+        foreach (var pair in externalIds)
+        {
+            if (string.IsNullOrEmpty(pair.Key) || string.IsNullOrEmpty(pair.Value))
+                continue;   // 空/null 项忽略（与 IAppExternalIds 登记口径一致）
+
+            sawAny = true;
+
+            // 映射歧义键：fail-closed，宁可不可查，不可查错（外部提供者同样不救）。
+            if (conflicted.Contains(pair.Key))
+                return false;
+
+            var lookupKey = CompositeKey.Combine(pair.Key, pair.Value);
+            if (!index.TryGetValue(lookupKey, out var candidate))
+            {
+                // 内置未命中：先不下结论，交给外部提供者兜底（若有）。
+                completeHit = false;
+                continue;
+            }
+
+            if (resolved is null)
+                resolved = candidate;
+            else if (!string.Equals(resolved, candidate, StringComparison.Ordinal))
+                return false;   // 多键指向不同应用 → 映射歧义，fail-closed
+        }
+
+        if (!sawAny)
+            return false;       // 全部为空值项或未提供任何有效键
+
+        // 内置索引完整命中（多键互证：全部键解析成功且指向同一 appKey）。
+        if (completeHit && resolved is not null)
+        {
+            appKey = resolved;
+            return true;
+        }
+
+        // 内置索引未完整命中 → 委托外部提供者兜底（同样以 fail-closed 语义约定）。
+        if (_externalLookupProvider is null)
+            return false;
+
+        if (!_externalLookupProvider.TryResolveAppKey(externalIds, out var externalResolved)
+            || string.IsNullOrEmpty(externalResolved))
+            return false;
+
+        // 与内置部分命中结果不一致 → 映射歧义，fail-closed。
+        if (resolved is not null && !string.Equals(resolved, externalResolved, StringComparison.Ordinal))
+            return false;
+
+        // 外部提供者解析结果仍须落在已注册应用上（防止外部标识被误路由到不存在/错误的应用）。
+        if (!HasApp(externalResolved!))
+            return false;
+
+        appKey = externalResolved;
+        return true;
+    }
+
+    /// <summary>
+    /// F-4：从已实例化应用（注册表）整体重建外部标识反查索引。
+    /// </summary>
+    /// <remarks>
+    /// <list type="bullet">
+    /// <item>只扫描<b>已实例化</b>的上下文（懒加载未实例化项不参与，避免实例化副作用）；
+    /// 懒加载项在 <see cref="TryMaterializeLazy"/> 实例化后自动纳入。</item>
+    /// <item>歧义规则：同一「键 + 值」被两个不同 appKey 声明 → 该<b>键</b>进入歧义集合，
+    /// 其所有反查一律 fail-closed（含此前单独可查的其它值），并经
+    /// <see cref="AppManagerDiagnostics.ExternalIdConflict"/> 报告。</item>
+    /// <item>整体重建保证"冲突方移除/更新后歧义自动消除"（无需增量维护的状态机）。</item>
+    /// </list>
+    /// </remarks>
+    private void RebuildExternalIndex()
+    {
+        var index = new Dictionary<string, string>(StringComparer.Ordinal);
+        var conflicted = new HashSet<string>(StringComparer.Ordinal);
+        // 冲突明细先收集、重建完成后只报告「新增歧义键」（避免每次重建对同一歧义重复刷诊断）。
+        var conflictReports = new List<(string Key, string? Value, string IncomingAppKey, string ExistingAppKey)>();
+
+        // F-5：SPI 不暴露值枚举，经 EnumerateKeys 快照 + TryGet 收集。
+        foreach (var registeredKey in _registry.EnumerateKeys())
+        {
+            if (!_registry.TryGet(registeredKey, out var registeredContext) || registeredContext is null)
+                continue;
+
+            if (registeredContext is not IAppExternalIds externalIdsHolder)
+                continue;
+
+            var externalIds = externalIdsHolder.ExternalIds;
+            if (externalIds is null)
+                continue;
+
+            foreach (var id in externalIds)
+            {
+                if (string.IsNullOrEmpty(id.Key) || string.IsNullOrEmpty(id.Value))
+                    continue;
+
+                if (conflicted.Contains(id.Key))
+                    continue;   // 该键已歧义：不再收任何值（整键 fail-closed），冲突已收集过
+
+                var lookupKey = CompositeKey.Combine(id.Key, id.Value);
+
+                if (index.TryGetValue(lookupKey, out var existingAppKey))
+                {
+                    if (!string.Equals(existingAppKey, registeredKey, StringComparison.Ordinal))
+                    {
+                        // 映射歧义：同键同值 → 两个不同 appKey。整键 fail-closed。
+                        conflicted.Add(id.Key);
+                        conflictReports.Add((id.Key, id.Value, registeredKey, existingAppKey));
+                    }
+                    continue;   // 同应用重复声明同一（键,值）→ 幂等
+                }
+
+                index[lookupKey] = registeredKey;
+            }
+        }
+
+        var previousConflicted = Volatile.Read(ref _conflictedExternalKeys);
+        Volatile.Write(ref _externalIndex, index);
+        Volatile.Write(ref _conflictedExternalKeys, conflicted);
+
+        foreach (var report in conflictReports)
+        {
+            if (!previousConflicted.Contains(report.Key))
+                AppManagerDiagnostics.ExternalIdConflict?.Invoke(
+                    report.Key, report.Value, report.IncomingAppKey, report.ExistingAppKey);
+        }
     }
 }
