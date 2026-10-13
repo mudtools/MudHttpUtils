@@ -82,6 +82,11 @@ internal static class AotXmlRejectionAnalyzer
         if (!isAotContext)
             return diagnostics.ToImmutable();
 
+        // [F-2c 修复·B-4] 语法级预筛前移：无 [HttpClientApi] 文本的项目直接返回（保守不漏报，
+        // 详见 SyntaxPrefilter）。AOT007 的分析对象就是 [HttpClientApi] 接口方法，命中后才付全树遍历。
+        if (!SyntaxPrefilter.MayContain(compilation, "HttpClientApi"))
+            return diagnostics.ToImmutable();
+
         var httpClientApiAttr = compilation.GetTypeByMetadataName(HttpClientApiAttributeFullName);
         if (httpClientApiAttr == null)
             return diagnostics.ToImmutable();
@@ -107,8 +112,10 @@ internal static class AotXmlRejectionAnalyzer
                 if (interfaceSymbol == null)
                     continue;
 
+                // [F-2c] 两段式属性判定：先比对属性名字符串（廉价），命中再走符号精确比较（语义不变）。
                 var hasHttpClientApi = interfaceSymbol.GetAttributes()
-                    .Any(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, httpClientApiAttr));
+                    .Any(a => a.AttributeClass?.Name == "HttpClientApiAttribute"
+                        && SymbolEqualityComparer.Default.Equals(a.AttributeClass, httpClientApiAttr));
                 if (!hasHttpClientApi)
                     continue;
 

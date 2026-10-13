@@ -144,13 +144,35 @@ public abstract class TransitiveCodeGenerator : IIncrementalGenerator
     }
 
     /// <summary>
+    /// 生成代码语法验证的跳过开关（F-6）：环境变量 <c>MudHttpSkipGeneratedValidation=true|1</c> 时跳过。
+    /// </summary>
+    /// <remarks>
+    /// 用环境变量而非 build_property 的原因：本验证方法标 <c>[Conditional("DEBUG")]</c>，
+    /// Release 编译时调用点被整体剥离，MSBuild 编译期属性无消费点；而 DEBUG 下需要在
+    /// 运行于编译器进程内的验证执行时机做运行时判定，环境变量是唯一稳定通道。
+    /// 每次调用读取（而非静态缓存）以保持可测试性；读取开销远小于被跳过的 ParseText 全量解析。
+    /// </remarks>
+    internal static bool ShouldSkipGeneratedValidation()
+    {
+        var value = Environment.GetEnvironmentVariable("MudHttpSkipGeneratedValidation");
+        return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "1", StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// 在 DEBUG 构建下验证生成代码的语法正确性（S1 优化建议）。
     /// 使用 <c>CSharpSyntaxTree.ParseText</c> 解析生成代码，发现语法错误时记录日志。
-    /// Release 构建下此方法被 [Conditional("DEBUG")] 移除，零开销。
+    /// Release 构建下此方法被 [Conditional("DEBUG")] 移除，零开销；
+    /// DEBUG 下可经 <c>MudHttpSkipGeneratedValidation=true</c> 环境变量跳过（F-6）。
     /// </summary>
     [Conditional("DEBUG")]
     internal static void ValidateGeneratedCode(string hintName, string code)
     {
+        if (ShouldSkipGeneratedValidation())
+        {
+            return;
+        }
+
         try
         {
             var tree = CSharpSyntaxTree.ParseText(SourceText.From(code, Encoding.UTF8));

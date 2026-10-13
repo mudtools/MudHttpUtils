@@ -42,7 +42,7 @@ internal static class AotModeResolver
     /// <summary>
     /// 判定「运行期是否为 Native AOT」。
     /// </summary>
-    public static AotRuntimeMode Resolve(AnalyzerConfigOptions globalOptions)
+    public static AotRuntimeMode Resolve(AnalyzerConfigOptions? globalOptions)
     {
         var explicitMode = ProjectConfigHelper.ReadConfigValue(globalOptions, BuildPropertyMudAotRuntimeMode);
         if (string.Equals(explicitMode, "aot", StringComparison.OrdinalIgnoreCase)) return AotRuntimeMode.Aot;
@@ -69,7 +69,7 @@ internal static class AotModeResolver
     /// 与 <see cref="Resolve"/> 中「显式 jit 否决 PublishAot」的既有口径对齐。
     /// </para>
     /// </remarks>
-    public static bool IsAotAnalyzerOnly(AnalyzerConfigOptions globalOptions)
+    public static bool IsAotAnalyzerOnly(AnalyzerConfigOptions? globalOptions)
     {
         if (!ProjectConfigHelper.ReadConfigValueAsBool(globalOptions, BuildPropertyIsAotCompatible, false))
             return false;

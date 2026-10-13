@@ -1204,6 +1204,22 @@ sealed class FeishuToolProfile : ISdkToolProfile { }
 | `AOT007`    | Error / Warning（F10/F11 分级，同一 ID） | AOT 相关上下文下使用 XML 序列化                                                                                                                                                                                                                                                                                                             | 改用 `[SerializationMethod(SerializationMethod.Json)]`，或在非 AOT 部署场景使用 XML。级别分级：确认 Native AOT（`PublishAot=true` / `MudAotRuntimeMode=aot`）→ Error；仅 `IsAotCompatible=true`（未声明运行期 AOT）→ Warning；显式 `MudAotRuntimeMode=jit` 或关闭 `IsAotCompatible` → 不报告                                                                                                                                                    | 是（`AotXmlCodeFixProvider`，将方法改为 JSON 序列化）                                                                                           | 是     |
 | `MUDGEN301` | Warning                                  | `[HttpClientApi]` 方法返回 `IAsyncEnumerable<T>`：生成代码调用流式重载时传入的 `JsonTypeInfo` 恒为 `null`（源生成器不可见消费方的 `JsonSerializerContext`，无法自动注入）。JIT 下无影响；Native AOT/裁剪下若元素类型 `T` 未被任何 `JsonSerializerContext` 覆盖，反序列化会**静默**返回 `default`（无异常、无日志）。**M6-HC-29 起默认报告** | 三选一：① 将 `T` 标注 `[HttpJsonSerializable]` 并运行 `dotnet mud-jsonctx` 生成上下文（推荐）；② 若需在生成方法内直接携带 `JsonTypeInfo`，改为自行声明非生成方法并调用 `IBaseHttpClient.SendAsAsyncEnumerable<T>(request, JsonTypeInfo<T>, ct)`（或 `AsyncEnumerableExtensions` 的 `JsonTypeInfo` 重载），再以 `[IgnoreGenerator]` 排除生成；③ 若已确认 `T` 在上下文中（或仅 JIT 部署），用 `#pragma warning disable MUDGEN301` / `NoWarn` 抑制 | 否                                                                                                                                              | 是     |
 
+#### AOT 诊断开关矩阵与性能说明
+
+AOT\* 诊断支持两级开关与一条环境变量旁路（编译期性能修复 v1，F-5/F-6）。开关为 MSBuild 属性，已在本包 `build/Mud.HttpUtils.Generator.props` 注册为 `CompilerVisibleProperty`，消费工程直接在 csproj / `Directory.Build.props` 中设置即可生效：
+
+| 开关（MSBuild 属性） | 默认值 | 作用 |
+| --- | --- | --- |
+| `MudEnableAotDiagnostics` | `true` | **总闸**：`false` 时 AOT004~AOT007 全部静默（分析器直接短路，不做任何覆盖扫描）。为无关项目提供编译期性能兜底 |
+| `MudEnableAotCoverageAnalysis` | `false` | 覆盖分析 opt-in：共享 `JsonSerializerContext` 包场景下，消费工程自身不声明 Context 时默认不检查；`true` 时强制运行覆盖分析（forceRun）。**总闸优先**：`MudEnableAotDiagnostics=false` 时此项无效 |
+| `MudAotRuntimeMode` | （未设置） | 三态分流（`aot` / `jit` / 未设置），配合 `PublishAot` / `IsAotCompatible` 决定 AOT007 的级别与是否报告（见 AOT007 行） |
+
+| 环境变量 | 默认值 | 作用 |
+| --- | --- | --- |
+| `MudHttpSkipGeneratedValidation` | （未设置，不跳过） | `true`/`1` 时跳过 DEBUG 构建下生成代码的语法验证（`CSharpSyntaxTree.ParseText` 全量解析）。仅 DEBUG 构建有此验证（Release 零开销，`[Conditional("DEBUG")]` 剥离）；**IDE 场景需重启 IDE 进程后生效**（环境变量在进程启动时读取） |
+
+**性能说明**：AOT\* 分析器已按「语法预筛 → 门控 → 语义绑定」重排，并对引用程序集覆盖集合做两级缓存（SyntaxTree 级预筛缓存 + Display+MVID 键控的进程级名字缓存）。无 `[HttpClientApi]`/`[HttpJsonSerializable]` 标注的项目，分析器在纯语法扫描后即短路，成本趋近于零；仍可进一步用 `MudEnableAotDiagnostics=false` 整体关闭。
+
 #### 接口规范 / DI 生命周期分析器诊断（MUD\*）
 
 下述诊断由本包内的诊断分析器（`MudHttpInterfaceAnalyzer` / `TokenManagerLifetimeAnalyzer`，与源生成器同程序集，F9 对齐）报告：

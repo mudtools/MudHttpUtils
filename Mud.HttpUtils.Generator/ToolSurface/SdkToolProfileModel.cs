@@ -654,6 +654,16 @@ internal static class ProfileDiscovery
     {
         try
         {
+            // [F-4 修复·B-5] 语法级预筛：纯 HTTP / 纯 DTO 消费方（无任何剖面文本）直接短路，
+            // 不再对编译内全部源类型求 AllInterfaces 传递闭包（0.1~0.3s × 每项目 × 每 TFM）。
+            // 保守性：被消费的剖面必须同时「实现 ISdkToolProfile」且「标注 [SdkToolProfile]」，
+            // 两者都必然在源文本以标识符出现（"ISdkToolProfile" 含子串 "SdkToolProfile"，任一命中即疑似）。
+            // 生成文件同样在 SyntaxTrees 内被扫描，不漏报。
+            if (!SyntaxPrefilter.MayContain(compilation, "ISdkToolProfile", "SdkToolProfile"))
+            {
+                return ImmutableArray<SdkToolProfileModel>.Empty;
+            }
+
             var profileInterface = compilation.GetTypeByMetadataName(ProfileInterfaceFullName);
             if (profileInterface is null)
             {
