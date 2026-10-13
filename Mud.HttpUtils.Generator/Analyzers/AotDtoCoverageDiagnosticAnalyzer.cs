@@ -53,10 +53,17 @@ internal sealed class AotDtoCoverageDiagnosticAnalyzer : DiagnosticAnalyzer
             // [Phase2 修复 2.2] 异常护栏：分析器宁少报不可抛，避免 AD0001 整轮禁用。
             try
             {
+                var globalOptions = ctx.Options.AnalyzerConfigOptionsProvider?.GlobalOptions;
+
+                // [F-5 修复·B-6] AOT 诊断总开关（默认 true 不破坏现有行为）：为 false 时
+                // 全部 AOT 诊断（AOT004/005/006/007）整体退出，为无关项目提供性能兜底。
+                // 层级：总闸优先于 MudEnableAotCoverageAnalysis（见 README AOT 章节开关矩阵）。
+                if (!ProjectConfigHelper.ReadConfigValueAsBool(globalOptions, "build_property.MudEnableAotDiagnostics", true))
+                    return;
+
                 // [T6 修复] 读取 MudEnableAotCoverageAnalysis opt-in 属性：
                 // 共享 Context 包场景下消费工程不声明 Context 时默认不检查；
                 // 设为 true 时强制运行覆盖分析（forceRun）。
-                var globalOptions = ctx.Options.AnalyzerConfigOptionsProvider.GlobalOptions;
                 var forceRun = ProjectConfigHelper.ReadConfigValueAsBool(
                     globalOptions, "build_property.MudEnableAotCoverageAnalysis", false);
 

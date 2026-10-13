@@ -61,7 +61,11 @@ internal sealed class AotXmlRejectionDiagnosticAnalyzer : DiagnosticAnalyzer
             // [Phase2 修复 2.2] 异常护栏：分析器宁少报不可抛，避免 AD0001 整轮禁用。
             try
             {
-                var globalOptions = ctx.Options.AnalyzerConfigOptionsProvider.GlobalOptions;
+                var globalOptions = ctx.Options.AnalyzerConfigOptionsProvider?.GlobalOptions;
+
+                // [F-5 修复·B-6] AOT 诊断总开关（默认 true 不破坏现有行为），为 false 时整体退出。
+                if (!ProjectConfigHelper.ReadConfigValueAsBool(globalOptions, "build_property.MudEnableAotDiagnostics", true))
+                    return;
 
                 // [F11 修复] 三态分流（详见类型注释）：确认 AOT → Error；模糊态 → Warning；其余不运行。
                 var isAotConfirmed = AotModeResolver.Resolve(globalOptions) == AotRuntimeMode.Aot;

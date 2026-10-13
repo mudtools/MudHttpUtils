@@ -131,6 +131,20 @@ internal static class AotDtoCoverageAnalyzer
     {
         var diagnostics = ImmutableArray.CreateBuilder<Diagnostic>();
 
+        // [F-2c 修复·B-4] 语法级预筛前移：无 [HttpClientApi] 文本的项目（如纯 DTO 项目）
+        // 直接返回，成本 O(文本 token) 且按 SyntaxTree 缓存（见 SyntaxPrefilter）。
+        // 保守性：目标接口必然在源文本中以标识符形式出现特性名，别名/完全限定/生成文件均含目标 token。
+        if (!SyntaxPrefilter.MayContain(compilation, "HttpClientApi"))
+            return diagnostics.ToImmutable();
+
+        // [评审补充] 属性符号解析（O(1) 元数据查找）先于任何扫描：无 Attributes 引用时
+        // 覆盖集合与全树遍历都不可能产出诊断（精确比较恒 false），提前否决白付成本。
+        // （原实现在 CollectCoveredTypes 之后才检查，纯 Context 项目白付全引用程序集扫描。）
+        // 2. 查找 HttpClientApiAttribute 符号
+        var httpClientApiAttr = compilation.GetTypeByMetadataName(HttpClientApiAttributeFullName);
+        if (httpClientApiAttr == null)
+            return diagnostics.ToImmutable();
+
         // [T7 修复] 门控前移：先做轻量探测（仅遍历本编译语法树，不触引用程序集），
         // 避免无本地 Context 的 JIT 消费方每次编译都付出全量引用程序集扫描成本。
         // 探测结果按 Compilation 缓存，后续覆盖集合计算直接复用（本编译语法树只遍历一次）。
@@ -144,11 +158,6 @@ internal static class AotDtoCoverageAnalyzer
         // [P0-4 修复] 删除 coveredTypes.Count == 0 门控：空 Context（骨架刚创建、无 [JsonSerializable]）
         // 时 IsCovered 恒 false，所有 DTO 正确报 AOT004——正是期望行为（引导用户补注册）。
         // 保留第一门控 HasLocalJsonSerializerContext（JIT 零配置消费方零噪音，T7 语义不变）。
-
-        // 2. 查找 HttpClientApiAttribute 符号
-        var httpClientApiAttr = compilation.GetTypeByMetadataName(HttpClientApiAttributeFullName);
-        if (httpClientApiAttr == null)
-            return diagnostics.ToImmutable();
 
         // [T8 修复] 方法级特性符号一次性解析，避免在 CheckMethodDtoCoverage 中逐方法重复 GetTypeByMetadataName
         var bodyAttr = compilation.GetTypeByMetadataName(BodyAttributeFullName);
@@ -171,8 +180,11 @@ internal static class AotDtoCoverageAnalyzer
                 if (interfaceSymbol == null)
                     continue;
 
+                // [F-2c] 两段式属性判定：先比对属性名字符串（廉价），命中再走符号精确比较。
+                // 语义与原全量符号比较逐条一致（名字不匹配的属性精确比较必为 false）。
                 var hasHttpClientApi = interfaceSymbol.GetAttributes()
-                    .Any(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, httpClientApiAttr));
+                    .Any(a => a.AttributeClass?.Name == "HttpClientApiAttribute"
+                        && SymbolEqualityComparer.Default.Equals(a.AttributeClass, httpClientApiAttr));
                 if (!hasHttpClientApi)
                     continue;
 
@@ -212,7 +224,8 @@ internal static class AotDtoCoverageAnalyzer
 
                         // 与 F-2 同款跳过规则：本编译且自身带 [HttpClientApi] 的基接口已被独立访问，跳过避免重复诊断
                         if (SymbolEqualityComparer.Default.Equals(baseIface.ContainingAssembly, compilation.Assembly)
-                            && baseIface.GetAttributes().Any(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, httpClientApiAttr)))
+                            && baseIface.GetAttributes().Any(a => a.AttributeClass?.Name == "HttpClientApiAttribute"
+                                && SymbolEqualityComparer.Default.Equals(a.AttributeClass, httpClientApiAttr)))
                             continue;
 
                         foreach (var baseMethod in baseIface.GetMembers().OfType<IMethodSymbol>())
@@ -298,17 +311,20 @@ internal static class AotDtoCoverageAnalyzer
         if (httpJsonSerializableAttr == null)
             return diagnostics.ToImmutable();
 
-        // [P1-3 修复] 先做 O(语法树) 探测收集本编译标注类型列表，空则直接返回；
-        // 非空才计算覆盖集合（避免无标注类型的项目白付全量引用程序集扫描），对齐 T7 范式。
-        var annotatedTypes = GetLocalAnnotatedTypes(compilation, httpJsonSerializableAttr);
-        if (annotatedTypes.Count == 0)
-            return diagnostics.ToImmutable();
-
+        // [F-3 修复·B-3] 门控顺序对调：TFM 判定（CWT+StrongBox 已缓存的 defines 检查）最便宜，
+        // 放最前；netstandard2.0 / net6.0 编译直接归零成本，不再白付全类型扫描后丢弃结果。
         // [AOT006 误报修复] 低版本 TFM 门控：脚手架生成的 Context 整体包裹在 #if NET8_0_OR_GREATER 中
         // （见 Tools/Mud.HttpUtils.JsonContextScaffolder/JsonContextGenerator.cs——net8.0 以下走反射兜底，
         // 不做源生成），因此 netstandard2.0 / net6.0 等 TFM 的编译里 Context 缺席是【预期行为】，
         // 原实现一律报 AOT006 属误报 → 按 TFM 跳过。net8.0+ 编译与既有一切行为不变。
         if (!HasNet8OrGreaterDefine(compilation))
+            return diagnostics.ToImmutable();
+
+        // [P1-3 修复] 先做 O(语法树) 探测收集本编译标注类型列表，空则直接返回；
+        // 非空才计算覆盖集合（避免无标注类型的项目白付全量引用程序集扫描），对齐 T7 范式。
+        // [F-2b 修复·B-2] 收集内部在符号绑定前加纯语法属性名预检，未标注类型跳过 GetDeclaredSymbol。
+        var annotatedTypes = GetLocalAnnotatedTypes(compilation, httpJsonSerializableAttr);
+        if (annotatedTypes.Count == 0)
             return diagnostics.ToImmutable();
 
         // [T7 修复] 覆盖集合内部会复用按 Compilation 缓存的本地 Context 探测结果，
@@ -351,6 +367,11 @@ internal static class AotDtoCoverageAnalyzer
             var root = syntaxTree.GetRoot();
             foreach (var typeDecl in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
             {
+                // [F-2b 修复·B-2] 纯语法属性名预检：特性名文本不含目标标记的类型声明
+                // 跳过 GetDeclaredSymbol（昂贵）。2000+ 类型的项目 >99% 在文本层即被跳过。
+                if (!SyntaxPrefilter.MayHaveAttribute(typeDecl, "HttpJsonSerializable"))
+                    continue;
+
                 if (semanticModel.GetDeclaredSymbol(typeDecl) is INamedTypeSymbol typeSymbol &&
                     typeSymbol.GetAttributes().Any(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, attrSymbol)))
                 {
@@ -460,6 +481,14 @@ internal static class AotDtoCoverageAnalyzer
 
             foreach (var typeDecl in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
             {
+                // [F-2b 同源预检] 无基类子句的类型声明不可能继承 JsonSerializerContext，跳过符号绑定。
+                // 注意此处刻意不用 token 标记预筛（MayContain("JsonSerializerContext")）：
+                // 本地 Context 子类可经【引用程序集中的中间基类】传递继承（如 class MyCtx : ExternalBase），
+                // 源文本可完全不含 "JsonSerializerContext" 标记，token 预筛会漏报。
+                // BaseList 存在性是纯语法结构事实：任何继承链都必须有基类子句（partial 分部任一有即被绑定）。
+                if (typeDecl.BaseList == null)
+                    continue;
+
                 if (semanticModel.GetDeclaredSymbol(typeDecl) is INamedTypeSymbol typeSymbol &&
                     InheritsFromJsonSerializerContext(typeSymbol, jsonSerializerContext))
                 {
@@ -492,20 +521,42 @@ internal static class AotDtoCoverageAnalyzer
     /// （触发门控见 <see cref="HasLocalJsonSerializerContext"/>）。
     /// </para>
     /// </remarks>
-    private static HashSet<INamedTypeSymbol> CollectCoveredTypes(Compilation compilation)
+    private static HashSet<string> CollectCoveredTypes(Compilation compilation)
         => _coveredTypesCache.GetValue(compilation, static c => ComputeCoveredTypes(c));
 
     /// <summary>
-    /// 编译级覆盖集合缓存：<see cref="Compilation"/> 生命周期结束即自动失效。
+    /// 编译级覆盖集合缓存（聚合结果）：<see cref="Compilation"/> 生命周期结束即自动失效。
+    /// 缓存值只含名字键（见 <see cref="GetCoverageKey"/>），不持有符号，可安全共享。
     /// </summary>
-    private static readonly ConditionalWeakTable<Compilation, HashSet<INamedTypeSymbol>> _coveredTypesCache = new();
+    private static readonly ConditionalWeakTable<Compilation, HashSet<string>> _coveredTypesCache = new();
+
+    /// <summary>
+    /// [F-1 修复·B-1] 引用程序集级静态缓存：被引用元数据程序集 → 覆盖类型名字键集合。
+    /// 「全引用程序集递归 GlobalNamespace」只在首次见到某程序集内容时执行一次，
+    /// IDE 稳态与多 TFM 编译近零成本。
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>键 = Display + MVID（评审修正）</b>：常驻编译服务（VBCSCompiler / IDE）生命周期内，
+    /// ProjectReference 在 CLI 下解析为 PE 路径引用，兄弟项目重编后同一路径、同一 AssemblyIdentity
+    /// 的 PE 内容可变——仅按 Display 缓存会返回陈旧覆盖集合（AOT004/005/006 误报/漏报）。
+    /// MVID 随内容变化，键含 MVID 后内容变即天然未命中重扫。
+    /// </para>
+    /// <para>
+    /// <b>缓存值纪律</b>：只存名字键字符串，不持 <see cref="ISymbol"/>（符号身份不可跨编译比较）；
+    /// <see cref="CompilationReference"/>（IDE 项目引用）不入缓存，回落按编译扫描。
+    /// 内存驻留为已知权衡（条目数 ≈ 引用程序集数 × 历史版本数），本期不做 LRU。
+    /// </para>
+    /// </remarks>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, HashSet<string>> _assemblyCoveredNames
+        = new(StringComparer.Ordinal);
 
     /// <summary>
     /// 计算覆盖集合（缓存未命中时的实际扫描，O(本编译 Context 数 + 引用程序集)）。
     /// </summary>
-    private static HashSet<INamedTypeSymbol> ComputeCoveredTypes(Compilation compilation)
+    private static HashSet<string> ComputeCoveredTypes(Compilation compilation)
     {
-        var result = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+        var result = new HashSet<string>(StringComparer.Ordinal);
 
         var jsonSerializableAttr = compilation.GetTypeByMetadataName(JsonSerializableAttributeFullName);
         var jsonSerializerContext = compilation.GetTypeByMetadataName(JsonSerializerContextFullName);
@@ -520,26 +571,92 @@ internal static class AotDtoCoverageAnalyzer
         // 扫描引用程序集中的 JsonSerializerContext 子类
         foreach (var reference in compilation.References)
         {
-            // IDE: CompilationReference 直接可用；CLI: PortableExecutableReference 经符号解析
-            var asm = reference is CompilationReference compRef
-                ? compRef.Compilation.Assembly
-                : compilation.GetAssemblyOrModuleSymbol(reference) as IAssemblySymbol;
-            if (asm is null)
+            // [F-1] CompilationReference（IDE 项目引用，内容随击键变化）不入静态缓存，直接扫描；
+            // PortableExecutableReference 走「Display + MVID」键控的静态缓存，仅首次付费。
+            if (reference is CompilationReference compRef)
+            {
+                CollectCoveredNamesFromNamespace(compRef.Compilation.Assembly.GlobalNamespace, jsonSerializerContext, jsonSerializableAttr, result);
+                continue;
+            }
+
+            if (compilation.GetAssemblyOrModuleSymbol(reference) is not IAssemblySymbol asm)
                 continue;
 
-            CollectCoveredTypesFromNamespace(asm.GlobalNamespace, jsonSerializerContext, jsonSerializableAttr, result);
+            var names = GetAssemblyCoveredNames(reference, asm, jsonSerializerContext, jsonSerializableAttr);
+            result.UnionWith(names);
         }
 
         return result;
     }
 
     /// <summary>
-    /// 从 Context 类型收集其 [JsonSerializable] 标注的类型。
+    /// 获取（或计算并缓存）某被引用程序集贡献的覆盖类型名字键集合。
+    /// </summary>
+    private static HashSet<string> GetAssemblyCoveredNames(
+        MetadataReference reference,
+        IAssemblySymbol asm,
+        INamedTypeSymbol jsonSerializerContext,
+        INamedTypeSymbol jsonSerializableAttr)
+    {
+        var cacheKey = BuildAssemblyCoveredNamesCacheKey(reference, asm);
+        if (cacheKey != null)
+        {
+            return _assemblyCoveredNames.GetOrAdd(
+                cacheKey,
+                _ => ScanAssemblyCoveredNames(asm, jsonSerializerContext, jsonSerializableAttr));
+        }
+
+        // 防御路径：拿不到 MVID（无模块元数据）时不入缓存，直接扫描。
+        return ScanAssemblyCoveredNames(asm, jsonSerializerContext, jsonSerializableAttr);
+    }
+
+    /// <summary>
+    /// 构造静态缓存键：Display（路径/显示名）+ MVID（内容指纹）。
+    /// 任一要素不可得时返回 null（调用方回落不缓存）。
+    /// </summary>
+    private static string? BuildAssemblyCoveredNamesCacheKey(MetadataReference reference, IAssemblySymbol asm)
+    {
+        var display = reference.Display ?? asm.Identity.GetDisplayName();
+        if (string.IsNullOrEmpty(display))
+            return null;
+
+        // IAssemblySymbol.Modules 在此 Roslyn 版本为 IEnumerable<IModuleSymbol>，取主模块拿 MVID。
+        // MVID 由 ModuleMetadata.GetModuleVersionId() 提供（IModuleSymbol 上无此成员）；
+        // 不对返回的 ModuleMetadata 调用 Dispose——元数据由编译服务持有，释放会破坏编译。
+        IModuleSymbol? mainModule = null;
+        foreach (var module in asm.Modules)
+        {
+            mainModule = module;
+            break;
+        }
+
+        if (mainModule == null)
+            return null;
+
+        var metadata = mainModule.GetMetadata();
+        if (metadata == null)
+            return null;
+
+        return display + "|" + metadata.GetModuleVersionId().ToString("N");
+    }
+
+    private static HashSet<string> ScanAssemblyCoveredNames(
+        IAssemblySymbol asm,
+        INamedTypeSymbol jsonSerializerContext,
+        INamedTypeSymbol jsonSerializableAttr)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        CollectCoveredNamesFromNamespace(asm.GlobalNamespace, jsonSerializerContext, jsonSerializableAttr, names);
+        return names;
+    }
+
+    /// <summary>
+    /// 从 Context 类型收集其 [JsonSerializable] 标注的类型名字键。
     /// </summary>
     private static void CollectFromContextType(
         INamedTypeSymbol contextType,
         INamedTypeSymbol jsonSerializableAttr,
-        HashSet<INamedTypeSymbol> result)
+        HashSet<string> result)
     {
         foreach (var attr in contextType.GetAttributes())
         {
@@ -549,7 +666,7 @@ internal static class AotDtoCoverageAnalyzer
             if (attr.ConstructorArguments.Length > 0 &&
                 attr.ConstructorArguments[0].Value is INamedTypeSymbol coveredType)
             {
-                result.Add(coveredType);
+                result.Add(GetCoverageKey(coveredType));
             }
         }
     }
@@ -557,38 +674,38 @@ internal static class AotDtoCoverageAnalyzer
     /// <summary>
     /// 递归扫描命名空间（含子命名空间与嵌套类型）中的 JsonSerializerContext 子类。
     /// </summary>
-    private static void CollectCoveredTypesFromNamespace(
+    private static void CollectCoveredNamesFromNamespace(
         INamespaceSymbol namespaceSymbol,
         INamedTypeSymbol jsonSerializerContext,
         INamedTypeSymbol jsonSerializableAttr,
-        HashSet<INamedTypeSymbol> result)
+        HashSet<string> result)
     {
         foreach (var type in namespaceSymbol.GetTypeMembers())
         {
-            CollectCoveredTypesFromType(type, jsonSerializerContext, jsonSerializableAttr, result);
+            CollectCoveredNamesFromType(type, jsonSerializerContext, jsonSerializableAttr, result);
         }
 
         foreach (var child in namespaceSymbol.GetNamespaceMembers())
         {
-            CollectCoveredTypesFromNamespace(child, jsonSerializerContext, jsonSerializableAttr, result);
+            CollectCoveredNamesFromNamespace(child, jsonSerializerContext, jsonSerializableAttr, result);
         }
     }
 
     /// <summary>
     /// 递归处理类型及其嵌套类型。
     /// </summary>
-    private static void CollectCoveredTypesFromType(
+    private static void CollectCoveredNamesFromType(
         INamedTypeSymbol type,
         INamedTypeSymbol jsonSerializerContext,
         INamedTypeSymbol jsonSerializableAttr,
-        HashSet<INamedTypeSymbol> result)
+        HashSet<string> result)
     {
         if (InheritsFromJsonSerializerContext(type, jsonSerializerContext))
             CollectFromContextType(type, jsonSerializableAttr, result);
 
         foreach (var nested in type.GetTypeMembers())
         {
-            CollectCoveredTypesFromType(nested, jsonSerializerContext, jsonSerializableAttr, result);
+            CollectCoveredNamesFromType(nested, jsonSerializerContext, jsonSerializableAttr, result);
         }
     }
 
@@ -630,7 +747,7 @@ internal static class AotDtoCoverageAnalyzer
         ImmutableArray<Diagnostic>.Builder diagnostics,
         INamedTypeSymbol interfaceSymbol,
         IMethodSymbol method,
-        HashSet<INamedTypeSymbol> coveredTypes,
+        HashSet<string> coveredTypes,
         DtoCoverageAnalysisContext analysisContext,
         Location interfaceFallbackLocation,
         string? serializationMethodOverride = null)
@@ -934,21 +1051,51 @@ internal static class AotDtoCoverageAnalyzer
         && CollectionTypeNames.Contains(type.Name);
 
     /// <summary>
+    /// [F-1 修复] 覆盖集合的名字键生成格式（写入与查询必须走同一格式，见 <see cref="GetCoverageKey"/>）。
+    /// </summary>
+    /// <remarks>
+    /// 在 <see cref="SymbolDisplayFormat.FullyQualifiedFormat"/> 基础上：
+    /// <list type="bullet">
+    /// <item>去除 <c>IncludeNullableReferenceTypeModifier</c>——可空注解不参与类型身份
+    /// （现行 IsCovered 用 SymbolEqualityComparer.Default，同样忽略注解），否则 <c>Dto?</c> 与
+    /// <c>typeof(Dto)</c> 键不同 → 误报；</item>
+    /// <item>追加 <c>ExpandValueTuple</c>——元组元素名不参与类型身份（符号比较视为相等），
+    /// 展开为 ValueTuple&lt;...&gt; 后 <c>(int a, string)</c> 与 <c>(int, string)</c> 键恒同，避免误报。</item>
+    /// </list>
+    /// </remarks>
+    private static readonly SymbolDisplayFormat CoverageKeyFormat =
+        SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(
+            (SymbolDisplayFormat.FullyQualifiedFormat.MiscellaneousOptions
+             & ~SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier)
+            | SymbolDisplayMiscellaneousOptions.ExpandValueTuple);
+
+    /// <summary>
+    /// [F-1 修复] 覆盖判定的名字键：<b>符号原样</b>显示名（不做 OriginalDefinition 归一——
+    /// 那会把构造泛型 <c>List&lt;Foo&gt;</c> 与 <c>List&lt;Bar&gt;</c> 坍缩到同一键，
+    /// 破坏现行符号比较区分构造泛型实例的语义）。开放泛型归一保留在查询侧
+    /// （见 <see cref="IsCovered(INamedTypeSymbol, HashSet{string})"/> 的 unbound 分支）。
+    /// </summary>
+    // internal 供单测直接锚定名字键语义（构造泛型区分/unbound/嵌套/元组/Nullable 等边界），
+    // 测试程序集经 InternalsVisibleTo 访问，不反射撕开。
+    internal static string GetCoverageKey(ITypeSymbol type)
+        => type.ToDisplayString(CoverageKeyFormat);
+
+    /// <summary>
     /// 检查类型是否被 Context 覆盖（包括集合类型解包）。
     /// </summary>
-    private static bool IsCovered(INamedTypeSymbol type, HashSet<INamedTypeSymbol> coveredTypes)
+    internal static bool IsCovered(INamedTypeSymbol type, HashSet<string> coveredTypes)
     {
         // 直接匹配
-        if (coveredTypes.Contains(type))
+        if (coveredTypes.Contains(GetCoverageKey(type)))
             return true;
 
         // [开放泛型覆盖] 开放泛型声明（如 WidgetBase<T>）已由 Scaffolder 以 unbound 形态（typeof(WidgetBase<>)）
         // 注册于 Context（README「开放泛型：<T> 类型以 <> 写入 context，仅在 NET8_0_OR_GREATER 下源生成」）。
-        // 但 SymbolEqualityComparer 无法把「类型定义符号」与「unbound 泛型符号」判为相等，导致此类类型被误报 AOT006。
-        // 故对开放泛型定义做一次 ConstructUnboundGenericType 归一化匹配，消除该误报。
+        // 但类型定义与 unbound 泛型的键不同，导致此类类型被误报 AOT006。
+        // 故对开放泛型定义做一次 ConstructUnboundGenericType 归一化匹配（与注册侧 unbound 形态同键），消除该误报。
         if (type.IsGenericType && type.IsDefinition && type.TypeParameters.Length > 0)
         {
-            return coveredTypes.Contains(type.ConstructUnboundGenericType());
+            return coveredTypes.Contains(GetCoverageKey(type.ConstructUnboundGenericType()));
         }
 
         // 解包 Nullable<T>
@@ -956,7 +1103,7 @@ internal static class AotDtoCoverageAnalyzer
             type.TypeArguments.Length > 0 &&
             type.TypeArguments[0] is INamedTypeSymbol inner)
         {
-            return coveredTypes.Contains(inner);
+            return coveredTypes.Contains(GetCoverageKey(inner));
         }
 
         // 解包集合类型：List<T>, IEnumerable<T>, etc.
@@ -966,7 +1113,7 @@ internal static class AotDtoCoverageAnalyzer
             IsCollectionLike(type) &&
             type.TypeArguments[0] is INamedTypeSymbol elementType)
         {
-            if (coveredTypes.Contains(elementType))
+            if (coveredTypes.Contains(GetCoverageKey(elementType)))
                 return true;
         }
 
@@ -977,7 +1124,7 @@ internal static class AotDtoCoverageAnalyzer
     /// 检查 ITypeSymbol（含数组）是否被 Context 覆盖。
     /// 数组类型的元素类型已被覆盖时视为覆盖。
     /// </summary>
-    private static bool IsCovered(ITypeSymbol type, HashSet<INamedTypeSymbol> coveredTypes)
+    internal static bool IsCovered(ITypeSymbol type, HashSet<string> coveredTypes)
     {
         if (type is INamedTypeSymbol named)
             return IsCovered(named, coveredTypes);
@@ -986,7 +1133,7 @@ internal static class AotDtoCoverageAnalyzer
         if (type is IArrayTypeSymbol array &&
             array.ElementType is INamedTypeSymbol elem)
         {
-            return coveredTypes.Contains(elem);
+            return coveredTypes.Contains(GetCoverageKey(elem));
         }
 
         return false;
@@ -1034,7 +1181,7 @@ internal static class AotDtoCoverageAnalyzer
     /// （按声明类型静态序列化，不会抛 <c>NotSupportedException</c>），返回空集合即不报诊断。
     /// </para>
     /// </remarks>
-    private static List<INamedTypeSymbol> GetUncoveredDerivedTypes(INamedTypeSymbol type, HashSet<INamedTypeSymbol> coveredTypes)
+    private static List<INamedTypeSymbol> GetUncoveredDerivedTypes(INamedTypeSymbol type, HashSet<string> coveredTypes)
     {
         var result = new List<INamedTypeSymbol>();
         foreach (var attr in type.GetAttributes())
