@@ -332,6 +332,22 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
             static (ctx, profile, factory, data) =>
             {
                 var models = ModelsFor(data.Models, profile);
+
+                // per-tool affordance（F-7）：解析 / 校验 / 发射同 pass，零新增注册、零新增遍历
+                // （AdditionalTexts 已在输入元组里）。**必须在 models.IsEmpty 早退之前**：
+                // 孤儿资产（文件名不命中任何工具名）的诊断不依赖"本剖面是否存在工具"。
+                var affordance = AffordanceAssets.Collect(
+                    data.Texts.Where(text => AffordanceAssets.IsAffordanceFile(text.Path, profile)).ToImmutableArray(),
+                    models,
+                    profile,
+                    factory,
+                    ctx.CancellationToken);
+
+                foreach (var pending in affordance.Diagnostics)
+                {
+                    ctx.ReportDiagnostic(Diagnostic.Create(pending.Descriptor, Location.None, pending.Arguments));
+                }
+
                 if (models.IsEmpty)
                 {
                     return;
@@ -347,7 +363,13 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
                 ReportOutputSchemaTruncations(ctx, models, factory);
 
                 var goldenText = ReadGolden(data.Texts, profile, ctx.CancellationToken);
-                var drift = SchemaEmitter.Emit(ctx, models, profile, data.AssemblyName, goldenText);
+                var drift = SchemaEmitter.Emit(
+                    ctx,
+                    models,
+                    profile,
+                    data.AssemblyName,
+                    goldenText,
+                    ToLookup(affordance.Entries));
                 if (drift is not null)
                 {
                     // 槽位 014 上报点：描述符静默漂移（golden 快照不一致）。
@@ -493,6 +515,24 @@ public sealed class ToolSurfaceSourceGenerator : TransitiveCodeGenerator
                     ex.Message);
             }
         }
+    }
+
+    /// <summary>
+    /// 把 affordance 条目按工具名归为查找表（供 <see cref="SchemaEmitter"/> 逐工具取用）。
+    /// </summary>
+    /// <remarks>
+    /// 空集合返回空字典（非 <see langword="null"/>）：<c>SchemaWriter</c> 只需"取不到即不发射"，
+    /// 不需要区分"未启用本特性"与"启用了但没写资产"——两者对描述符的影响完全一致（都不发射）。
+    /// </remarks>
+    private static IReadOnlyDictionary<string, AffordanceEntry> ToLookup(ImmutableArray<AffordanceEntry> entries)
+    {
+        var lookup = new Dictionary<string, AffordanceEntry>(entries.Length, StringComparer.Ordinal);
+        foreach (var entry in entries)
+        {
+            lookup[entry.ToolName] = entry;
+        }
+
+        return lookup;
     }
 
     private static ImmutableArray<ToolSchemaModel> ModelsFor(

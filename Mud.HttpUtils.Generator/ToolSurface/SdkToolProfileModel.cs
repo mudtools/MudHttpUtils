@@ -173,6 +173,7 @@ internal sealed class SdkToolProfileModel : IEquatable<SdkToolProfileModel>
         GoldenFileName = string.Empty;
         GoldenUpdatePropertyName = string.Empty;
         GuidanceDirectory = string.Empty;
+        AffordanceDirectory = string.Empty;
         MissingRequiredSlots = ImmutableArray<string>.Empty;
     }
 
@@ -226,6 +227,7 @@ internal sealed class SdkToolProfileModel : IEquatable<SdkToolProfileModel>
     public string GoldenFileName { get; private set; }
     public string GoldenUpdatePropertyName { get; private set; }
     public string GuidanceDirectory { get; private set; }
+    public string AffordanceDirectory { get; private set; }
 
     /// <summary>缺失的必填槽名清单；非空即该剖面不可用（入口报 <c>SDKT002</c>）。</summary>
     public ImmutableArray<string> MissingRequiredSlots { get; private set; }
@@ -293,6 +295,7 @@ internal sealed class SdkToolProfileModel : IEquatable<SdkToolProfileModel>
                 case nameof(GoldenFileName): model.GoldenFileName = value ?? string.Empty; break;
                 case nameof(GoldenUpdatePropertyName): model.GoldenUpdatePropertyName = value ?? string.Empty; break;
                 case nameof(GuidanceDirectory): model.GuidanceDirectory = value ?? string.Empty; break;
+                case nameof(AffordanceDirectory): model.AffordanceDirectory = value ?? string.Empty; break;
             }
         }
 
@@ -435,6 +438,7 @@ internal sealed class SdkToolProfileModel : IEquatable<SdkToolProfileModel>
             && GoldenFileName == other.GoldenFileName
             && GoldenUpdatePropertyName == other.GoldenUpdatePropertyName
             && GuidanceDirectory == other.GuidanceDirectory
+            && AffordanceDirectory == other.AffordanceDirectory
             && MissingRequiredSlots.SequenceEqual(other.MissingRequiredSlots);
     }
 
@@ -492,6 +496,7 @@ internal sealed class SdkToolProfileModel : IEquatable<SdkToolProfileModel>
                 hash = (hash * 31) + StringComparer.Ordinal.GetHashCode(GoldenFileName);
                 hash = (hash * 31) + StringComparer.Ordinal.GetHashCode(GoldenUpdatePropertyName);
                 hash = (hash * 31) + StringComparer.Ordinal.GetHashCode(GuidanceDirectory);
+                hash = (hash * 31) + StringComparer.Ordinal.GetHashCode(AffordanceDirectory);
                 _hashCode = hash;
             }
 

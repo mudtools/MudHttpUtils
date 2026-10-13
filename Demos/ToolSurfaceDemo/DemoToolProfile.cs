@@ -72,7 +72,10 @@ namespace ToolSurfaceDemo;
     CapabilityCatalogPropertyName = "DemoToolCatalog",
     GoldenFileName = "DemoToolSchemas.golden.txt",
     GoldenUpdatePropertyName = "DemoToolGoldenUpdate",
-    GuidanceDirectory = "/Guidance/")]
+    GuidanceDirectory = "/Guidance/",
+    // per-tool affordance：文件名 = 契约工具名（doc.list.md / doc.delete.md），
+    // 内容进 x-demo.affordance（含 risk/is_write/identity 的同一扩展块）。
+    AffordanceDirectory = "/Affordance/")]
 sealed class DemoToolProfile : ISdkToolProfile
 {
 }

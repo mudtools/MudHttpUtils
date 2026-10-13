@@ -32,6 +32,8 @@ Mud.HttpUtils.Attributes.PayloadFieldFormat.Object = 5 -> Mud.HttpUtils.Attribut
 Mud.HttpUtils.Attributes.PayloadFieldFormat.ItemsObject = 6 -> Mud.HttpUtils.Attributes.PayloadFieldFormat
 Mud.HttpUtils.Attributes.SdkToolProfileAttribute
 Mud.HttpUtils.Attributes.SdkToolProfileAttribute.SdkToolProfileAttribute(string! name) -> void
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.AffordanceDirectory.get -> string!
+Mud.HttpUtils.Attributes.SdkToolProfileAttribute.AffordanceDirectory.set -> void
 Mud.HttpUtils.Attributes.SdkToolProfileAttribute.BindingTypeName.get -> string!
 Mud.HttpUtils.Attributes.SdkToolProfileAttribute.BindingTypeName.set -> void
 Mud.HttpUtils.Attributes.SdkToolProfileAttribute.CapabilityCatalogPropertyName.get -> string!
