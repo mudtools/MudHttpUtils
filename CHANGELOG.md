@@ -10,7 +10,7 @@
 > 每项含四段：**旧行为 → 新行为 → 已失效的下游约束 → 迁移代码**。
 > 配套清单见 `.docs/下游约束对账清单.md`（逐条标注下游 workaround 的仍有效/已失效/待裁决状态）。
 
-### C-1 `ITokenStore` 自动桥接（B-2，3.1.1）
+### C-1 `ITokenStore` 自动桥接（B-2，3.0.7）
 
 - **旧行为**：注册 `ITokenStore` 不产生任何效果 —— 令牌管理器只消费 `ITokenCache<T>`，宿主须在管理器之外自建"cache + store 写穿"叠层（下游飞书 `TokenStoreHelper`、微信 `WechatTokenBridgeCodec` 均为此类私有发明）。
 - **新行为**：`ITokenCache<T>` 改为 DI **回退注册**（TryAdd，显式注册优先、与顺序无关）。注册了 store 而未显式注册缓存时，自动桥接为 `TokenStoreBackedTokenCache<T>`（租户维度 `ITokenStore`/`IEncryptedTokenStore`、用户维度 `IUserTokenStore`；`IUserTokenStore` 实现不参与租户维度）。两者皆无则维持内建内存缓存。回退生命周期 **Transient**。
@@ -25,7 +25,7 @@
   // services.AddSingleton<ITokenCache<CredentialToken>>(new TokenStoreBackedTokenCache<CredentialToken>(...));
   ```
 
-### C-2 影子注册表消除（G3，3.1.1）
+### C-2 影子注册表消除（G3，3.0.7）
 
 - **旧行为**：`DefaultAppManager<TAppContext>` 查询入口 virtual、注册/写入入口**非** virtual —— 派生类覆写查询后 `RegisterApp` 仍写基类私有表，形成**影子注册表**（注册读不到）。下游微信因此整体弃用基类、自实现 `IAppManager`。
 - **新行为**：注册/写入入口全部 virtual（`RegisterApp`/`RegisterAppAsync`/`UpdateAppAsync`/`TrySetDefaultApp`/`DefaultAppKey` + `protected virtual TrySetDefaultAppKeyCore` + `public virtual RegisterLazy`）；F-5 又将存储抽为 `IAppRegistry<TAppContext>` SPI（TryGet/Add/**TryUpdate CAS**/TryRemove/EnumerateKeys），受保护 3 参构造注入，`ConcurrentDictionaryAppRegistry` 为默认实现。
@@ -42,21 +42,21 @@
   // 语义合规验证：继承 AppManagerCompliance<IWechatAppContext> 跑 VerifyAll()
   ```
 
-### C-3 双 `AsyncLocal` 顺序不变量消除（G7，3.1.0+）
+### C-3 双 `AsyncLocal` 顺序不变量消除（G7，3.0.4 批次）
 
 - **旧行为**：框架默认 `IAppContextHolder` 自持私有 `AsyncLocal`，与下游切换器各持一个 —— 注册顺序不对即两个 `AsyncLocal` 互不可见，声明式 `[Token]` 客户端上下文恒 `null`，形成永久顺序不变量（下游须"后注册 `AddSingleton` 抢占"并钉死顺序）。
 - **新行为**：默认注册改为 internal `DelegatingAppContextHolder`（转发到容器中**最后注册**的其它 `IAppContextHolder`，无下游时回退内部 `AsyncLocalAppContextSwitcher`），框架不再占用具体持有器类型槽位。
 - **已失效的下游约束**："必须在 `AddMudHttpClient` 之后注册切换器"的顺序要求失效；**仍有效**："`IAppContextHolder`/`IAppContextSwitcher`/`IWechatAppContextSwitcher` 必须是同一实例"以及"`IAppContextHolder` 用 `AddSingleton`（最后注册者胜）不得改回 `TryAdd`"（TryAdd 会让适配器回退内部 switcher，双 AsyncLocal 以更隐蔽形态复现）。
 - **迁移代码**：删除顺序依赖的注释性 workaround，保留 `services.AddSingleton<IAppContextHolder>(wechatSwitcher)` 注册形态不变。
 
-### C-4 BC-30 死 API 出清（3.1.1）
+### C-4 BC-30 死 API 出清（3.0.7）
 
 - **旧行为**：`IAppManager<TAppContext>` 的 `GetWebApi`/`GetDefaultWebApi`/`RegisterSwitcherFactory` 无弃用提示。
 - **新行为**：三成员标 `[Obsolete]`（3.x 保留并出 CS0618 编译告警，4.0 移除），消息给出迁移指引（DI 解析切换器 + `UseAppScope`/`UseDefaultAppScope`）。
 - **已失效的下游约束**：无（下游实现类不产生实现告警，仅调用点告警）。
 - **迁移代码**：调用点改 DI 解析 `IAppContextSwitcher` + `UseAppScope`/`UseDefaultAppScope`；实现类无需改动。
 
-### C-5 令牌归属键三段式上收（F-2，3.1.1）
+### C-5 令牌归属键三段式上收（F-2，3.0.7）
 
 - **旧行为**：下游自拼 `{tokenType}:{appKey}:{scopeKey}` 三段式作归属键（微信 `TokenKey`、飞书 `TokenKeyBuilder`），键构建契约不公开（`CompositeKey` 为 internal）。
 - **新行为**：公开 `TokenScopeKey`（`ForApp`/`ForScope`/`ForShared`）+ `TokenManagerBase` 定位符重载（映射既有 `scopes` 路径，**单缓存互通**）+ `TokenBindingMode { PerApp, PerScope, Shared }`（`BindingMode` 虚属性，默认 `EnforceTenantBinding ? PerApp : Shared`）。
@@ -97,7 +97,7 @@
 
 ---
 
-## 3.2.0（三大核心 Phase 2/3：Redis 令牌存储 / 多应用 SPI / 链式令牌依赖 / 巨型类拆分，2026-10-13）
+## 3.0.8（三大核心 Phase 2/3：Redis 令牌存储 / 多应用 SPI / 链式令牌依赖 / 巨型类拆分，2026-10-13）
 
 ### 新增
 
@@ -125,10 +125,11 @@
 
 - 新增 `RedisTokenStoreTests`（15）、`RedisTokenStoreRegistrationTests`（6）、`AppRegistrySpiTests`、`AppManagerComplianceTests`、`TokenDependencyGraphTests`、`TokenDependencyCascadeTests`（合计 29 个 F-7 用例，含 42001 链式场景钉死）。
 
-## 3.1.1（三大核心 Bug 修复与功能完善 Phase 0/1，2026-10-13）
+## 3.0.7（三大核心 Bug 修复与功能完善 Phase 0/1，2026-10-13）
 
 > 对 `.docs/Bug修复与功能完善方案-三大核心-2026-10-13.md` 评审后 Phase 0（B-1/B-2/B-3）与 Phase 1（F-1/F-2）的落地。
 > **兼容性**：全部为新增面 + 诊断面 + Obsolete 警告面，无接口签名破坏；B-2 装配默认值变化被"显式 `ITokenCache` 优先"护栏保护。
+> **版本口径**：延续 3.0.x patch 发布线（`3.1.0` 已被占用不可复用，见 3.0.6 段「版本口径说明」）。
 
 ### 修复
 
@@ -164,11 +165,15 @@
 
 ---
 
-## 3.1.0（工具面引擎新增 per-tool affordance，2026-10-11）
+## 3.0.6（工具面引擎新增 per-tool affordance，2026-10-11）
 
 > 新增**可选**剖面槽 `AffordanceDirectory` 与四条 affordance 诊断：把 `AdditionalFiles` 中的
 > `{工具名}.md` 资产解析为工具的**决策指导**，随描述符同 pass 发射进 `x-{sdk}.affordance`。
 > **非破坏**：槽默认空串（未声明即有既有行为），既有消费方**不改代码、golden 逐字节不变**。
+>
+> **版本口径说明**：本次虽新增了一个公开特性属性成员，仍按组件仓库的既有发布排期以 **patch（3.0.5 → 3.0.6）**
+> 发布——**`3.1.0` 已在历史中被占用**（见下方 2026-10-09 的《HttpClient 审查修复与超时策略治理》），
+> 不得复用；消费方按"存在新增可选成员"理解即可，无迁移成本。
 
 ### 新增
 
@@ -326,6 +331,45 @@
 
 ---
 
+## 3.1.0（HttpClient 审查修复与超时策略治理，2026-10-09）
+
+> ⚠️ **编号说明（请勿据此判断存在 3.1.0 产物）**：本节的工作（M7 批次）**从未以 `3.1.0` 发布** ——
+> nuget.org 上 `Mud.HttpUtils` 的 3.x 发布线为 `3.0.0 … 3.0.5`，**没有 `3.1.0`**；`3.1.0` 是当时**预备**
+> 的版本号，实际随 **3.0.x** 发布线交付（本节在文件中的位置也是历史遗留——按日期它属于 2026-10-09，
+> 与 `3.0.4` 同日，故已移至 `3.0.4` 之后）。
+> **后续任何版本都不得复用 `3.1.0`**（详见 `3.0.6` 段的「版本口径说明」）。
+> 本节仅作为**批次内容记录**保留，版本归属以 `git log` 与各 `3.0.x` 段为准。
+
+> 本版本为 M7 审查方案（`.docs/HttpClient审查修复与功能完善方案-M7.md`）的四阶段实施成果：**3 项缺陷修复 + 1 项超时策略治理 + 2 项契约文档化**。
+> ⚠️ **含行为变更**：Polly 超时策略默认由悲观改为乐观，超时后底层请求将被**真正取消**——如依赖旧行为，见下方迁移说明。
+
+### 修复（Fixed）
+
+- **Trace 级大响应反序列化必然失败（HC-01）**：日志分支不再截断反序列化数据源——新增 internal `ConcatReadOnlyStream` 组合流，日志读取前缀（`MaxDebugLogBodyLength`）与反序列化全量输入解耦；Trace 日志含截断标记，chunked（无 Content-Length）大响应在 Trace 级同样可观察且反序列化完整。日志失败口径（脱敏限量 `LogBodyMaxLength`）不变。
+- **下载取消被错误包装为 `HttpRequestException`（HC-02）**：下载路径取消/超时现原样抛出 `OperationCanceledException` / `TaskCanceledException`（含内层 `TimeoutException`），与执行器 `DownloadLargeCoreAsync` 口径对齐；`.mudtmp` 半写文件清理与最终路径原子性不变。**连带**：下载失败指标 `outcome` 对"调用方取消"分流为 `cancelled`（平台超时仍记 `error`，与请求路径三态口径一致）。
+- **后台令牌刷新 Dispose 不取消在途刷新（HC-04）**：`TokenRefreshBackgroundService` 改用实例级 CTS（构造期捕获令牌，避免读取已释放 CTS），`Dispose` 顺序为 置位 → Cancel → 停表 → Dispose CTS；`TokenRefreshHelper` 对操作取消原样上抛，不再吞成 `TokenRefreshUnhandledException` Error 日志。
+
+### 新增（Added）
+
+- **`ResilienceOptions.TimeoutStrategy`（HC-03）**：Polly 超时策略类型可配置（`Optimistic` / `Pessimistic`），泛型与非泛型双构造点均生效，可经 `MudHttpResilience:TimeoutStrategy` 配置绑定；公共 API 已登记基线（RS0016/17 门禁）。
+
+### 行为变更
+
+- **超时策略默认值由 `Pessimistic` 改为 `Optimistic`**：超时后框架会向底层请求下发取消，要求请求路径全程协作观察 `CancellationToken`（本仓 `SendAsync`、下载复制循环等主路径均已协作）。
+  **迁移**：若需回退旧行为（到点即抛、不等待内层确认取消），配置 `MudHttpResilience:TimeoutStrategy=Pessimistic` 即可单点回滚，无需发版。
+  注意：流式路径（SSE/NDJSON 枚举）不经 Polly 超时，不受本次变更影响。
+
+### 文档
+
+- **缓存共享实例契约（HC-05）**：`MemoryHttpResponseCache` 命中按引用返回同一实例的责任边界，在 Client/Abstractions README 与 `ICacheValueCloner` / `IHttpResponseCache` XML 中显式声明。**实测修正**：`ICacheValueCloner` 为**尚未接线**的预留扩展点（全仓无消费点），原"注册 `CacheValueSharing = Clone` 即生效"文案与实现不符，已改为如实口径（见 M7 方案 §11.7）。
+- **`JsonSerializerOptions` 所有权（HC-06）**：注入的 options 所有权归调用方——直构 `SystemTextJsonContentSerializer` 按引用持有，DI 路径按 `new JsonSerializerOptions(injected)` 副本合并，两路径所有权语义不同，已在构造 XML 与 README 声明。
+
+### 测试
+
+- 新增 T1~T12 对应用例：Trace 大响应组合流（红转绿）、下载取消 OCE + 临时文件清理、平台超时分类、超时策略双构造点与内层取消、后台刷新 Dispose 取消（三 TFM）、`TimeoutStrategy` 配置绑定、缓存共享引用契约、下载取消指标 `outcome=cancelled`。
+
+---
+
 ## 3.0.3（OpenTelemetry 共享装配内核抽取，2026-10-08）
 
 > 把 `Mud.HttpUtils` / `Mud.Feishu` / `Mud.Wechat` 三个包重复的 OTel 装配剧本（Resource + Sampler + 源/Meter 注册 + Instrumentation 开关 + OTLP 导出 + Configure* 回调）收敛为本包内的**唯一实现**，并暴露共享装配内核供下游 SDK 退化为「贡献描述 + options 映射」的薄壳。
@@ -377,38 +421,6 @@
 
 - 仅登记**确认为凭据**的参数名：登记为进程级生效，过于宽泛的键名（如 `id`、`name`）
   会造成大面积脱敏影响排障；本包不做语义校验（保持机制中立）。
-
----
-
-## 3.1.0（HttpClient 审查修复与超时策略治理，2026-10-09）
-
-> 本版本为 M7 审查方案（`.docs/HttpClient审查修复与功能完善方案-M7.md`）的四阶段实施成果：**3 项缺陷修复 + 1 项超时策略治理 + 2 项契约文档化**。
-> ⚠️ **含行为变更**：Polly 超时策略默认由悲观改为乐观，超时后底层请求将被**真正取消**——如依赖旧行为，见下方迁移说明。
-
-### 修复（Fixed）
-
-- **Trace 级大响应反序列化必然失败（HC-01）**：日志分支不再截断反序列化数据源——新增 internal `ConcatReadOnlyStream` 组合流，日志读取前缀（`MaxDebugLogBodyLength`）与反序列化全量输入解耦；Trace 日志含截断标记，chunked（无 Content-Length）大响应在 Trace 级同样可观察且反序列化完整。日志失败口径（脱敏限量 `LogBodyMaxLength`）不变。
-- **下载取消被错误包装为 `HttpRequestException`（HC-02）**：下载路径取消/超时现原样抛出 `OperationCanceledException` / `TaskCanceledException`（含内层 `TimeoutException`），与执行器 `DownloadLargeCoreAsync` 口径对齐；`.mudtmp` 半写文件清理与最终路径原子性不变。**连带**：下载失败指标 `outcome` 对"调用方取消"分流为 `cancelled`（平台超时仍记 `error`，与请求路径三态口径一致）。
-- **后台令牌刷新 Dispose 不取消在途刷新（HC-04）**：`TokenRefreshBackgroundService` 改用实例级 CTS（构造期捕获令牌，避免读取已释放 CTS），`Dispose` 顺序为 置位 → Cancel → 停表 → Dispose CTS；`TokenRefreshHelper` 对操作取消原样上抛，不再吞成 `TokenRefreshUnhandledException` Error 日志。
-
-### 新增（Added）
-
-- **`ResilienceOptions.TimeoutStrategy`（HC-03）**：Polly 超时策略类型可配置（`Optimistic` / `Pessimistic`），泛型与非泛型双构造点均生效，可经 `MudHttpResilience:TimeoutStrategy` 配置绑定；公共 API 已登记基线（RS0016/17 门禁）。
-
-### 行为变更
-
-- **超时策略默认值由 `Pessimistic` 改为 `Optimistic`**：超时后框架会向底层请求下发取消，要求请求路径全程协作观察 `CancellationToken`（本仓 `SendAsync`、下载复制循环等主路径均已协作）。
-  **迁移**：若需回退旧行为（到点即抛、不等待内层确认取消），配置 `MudHttpResilience:TimeoutStrategy=Pessimistic` 即可单点回滚，无需发版。
-  注意：流式路径（SSE/NDJSON 枚举）不经 Polly 超时，不受本次变更影响。
-
-### 文档
-
-- **缓存共享实例契约（HC-05）**：`MemoryHttpResponseCache` 命中按引用返回同一实例的责任边界，在 Client/Abstractions README 与 `ICacheValueCloner` / `IHttpResponseCache` XML 中显式声明。**实测修正**：`ICacheValueCloner` 为**尚未接线**的预留扩展点（全仓无消费点），原"注册 `CacheValueSharing = Clone` 即生效"文案与实现不符，已改为如实口径（见 M7 方案 §11.7）。
-- **`JsonSerializerOptions` 所有权（HC-06）**：注入的 options 所有权归调用方——直构 `SystemTextJsonContentSerializer` 按引用持有，DI 路径按 `new JsonSerializerOptions(injected)` 副本合并，两路径所有权语义不同，已在构造 XML 与 README 声明。
-
-### 测试
-
-- 新增 T1~T12 对应用例：Trace 大响应组合流（红转绿）、下载取消 OCE + 临时文件清理、平台超时分类、超时策略双构造点与内层取消、后台刷新 Dispose 取消（三 TFM）、`TimeoutStrategy` 配置绑定、缓存共享引用契约、下载取消指标 `outcome=cancelled`。
 
 ---
 
