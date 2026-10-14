@@ -137,6 +137,7 @@
 ### 新增
 
 - **F-3 `Mud.HttpUtils.Redis` 独立可选包**：官方分布式令牌存储（`RedisTokenStore : ITokenStore` + `ITokenStoreCodec` 值编解码，键形态 `{prefix}:{tokenType}:{appKey}:access|refresh`，tokenType 含 `:` 免转义，墓碑删键，TTL 宁缺勿滥）；`AddMudHttpRedisTokenStore` 注册帮助器衔接 B-2 自动桥接。**不进元包硬依赖**；跨进程刷新去重（`SET NX PX` 租约）为增强项未实现。
+- **打包清单修正（C2 同类缺陷复发防护）**：`pack.ps1` 的 `$Projects` / `$ExpectedPackages` 清单补齐 `Mud.HttpUtils.Redis`——该包落地时漏登记（清单仍为 10 个），表现为「打出来的包集合校验缺一失败」或「漏发静默少一个包」（2.0.5 的同款缺陷类）。现预期包集合为 11 个，与 slnx 实际可打包集一致。
 - **F-4 `IAppLookupProvider` 外部标识反查应用**：`TryResolveAppKey(externalIds, out appKey)` 纯反查（SuiteId → appKey），`DefaultAppManager<TAppContext>` 提供 `virtual TryResolveAppKey` 消费入口，不做上下文物化副作用。
 - **F-5 多应用注册表 SPI**：`IAppRegistry<TAppContext>`（TryGet/Add/TryUpdate CAS/TryRemove/EnumerateKeys）+ 默认实现 `ConcurrentDictionaryAppRegistry`；合规测试套件 `AppManagerCompliance<T>` 供下游自实现 `IAppManager` 对照语义契约（见契约变更 C-7）。
 - **F-7 链式令牌依赖图**：`TokenDependencyGraph`（"A 由 B 派生" ⇒ 被依赖者失效连带依赖者失效，反向 BFS 传递闭包、互依环终止）+ `TokenManagerBase` 级联钩子（`TokenInvalidated` 事件恒触发 + `EnableTokenDependencyCascade` 独立开关**默认关** + `ResolveTokenManagerForType` fail-safe 解析；`42001 → suite_access_token → corp 重取` 场景入库）。

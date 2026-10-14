@@ -791,6 +791,9 @@ jobs:
       - name: Pack Xml
         run: dotnet pack Mud.HttpUtils.Xml/Mud.HttpUtils.Xml.csproj --no-build --configuration Release --output artifacts
 
+      - name: Pack Redis (F-3, optional standalone package)
+        run: dotnet pack Mud.HttpUtils.Redis/Mud.HttpUtils.Redis.csproj --no-build --configuration Release --output artifacts
+
       - name: Pack Testing
         run: dotnet pack Tests/Mud.HttpUtils.Testing/Mud.HttpUtils.Testing.csproj --no-build --configuration Release --output artifacts
 

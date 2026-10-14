@@ -58,6 +58,7 @@ Mud.HttpUtils 是一个基于 Roslyn 源代码生成器的声明式 HTTP 客户�
 | **Mud.HttpUtils.OpenTelemetry**         | OpenTelemetry 可观测性适配（亦可作为其他 Mud SDK 的 OTel 基座） | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.OpenTelemetry.svg)](https://www.nuget.org/packages/Mud.HttpUtils.OpenTelemetry/)                 | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.OpenTelemetry.svg)         |
 | **Mud.HttpUtils.Newtonsoft.Json**       | Newtonsoft.Json 序列化器适配                          | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Newtonsoft.Json.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Newtonsoft.Json/)             | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Newtonsoft.Json.svg)       |
 | **Mud.HttpUtils.Xml**                   | XML 序列化器适配                                      | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Xml.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Xml/)                                     | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Xml.svg)                   |
+| **Mud.HttpUtils.Redis**                 | 分布式令牌存储（StackExchange.Redis，可选独立包）      | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.Redis.svg)](https://www.nuget.org/packages/Mud.HttpUtils.Redis/)                                 | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.Redis.svg)                 |
 | **Mud.HttpUtils.JsonContextScaffolder** | JsonSerializerContext 脚手架工具                      | [![Nuget](https://img.shields.io/nuget/v/Mud.HttpUtils.JsonContextScaffolder.svg)](https://www.nuget.org/packages/Mud.HttpUtils.JsonContextScaffolder/) | ![Nuget](https://img.shields.io/nuget/dt/Mud.HttpUtils.JsonContextScaffolder.svg) |
 
 > 说明：上表仅列出已发布到 NuGet 的包。`Mud.HttpUtils.Testing` 为测试辅助库，**不随版本发布**；`Mud.HttpUtils.Analyzers` 与 `Mud.HttpUtils.CodeFixes` **已合并进 `Mud.HttpUtils.Generator`**，随源生成器包一并发布，无需单独安装。
@@ -793,6 +794,7 @@ MudHttpUtils/
 │   └── MudHttpOpenTelemetryOptions       # 配置选项
 ├── Mud.HttpUtils.Newtonsoft.Json/   # Newtonsoft.Json 序列化器适配
 ├── Mud.HttpUtils.Xml/              # XML 序列化器适配
+├── Mud.HttpUtils.Redis/           # 分布式令牌存储（可选独立包，StackExchange.Redis）
 ├── Mud.HttpUtils.CodeFixes/         # 代码修复提供器（打包进 Generator，不单独发布）
 ├── Mud.HttpUtils.JsonContextScaffolder/ # JsonSerializerContext 脚手架
 ├── Demos/                            # 示例项目
@@ -812,6 +814,7 @@ MudHttpUtils/
 | Mud.HttpUtils.OpenTelemetry         | OpenTelemetry 可观测性             | [README](Mud.HttpUtils.OpenTelemetry/README.md)               |
 | Mud.HttpUtils.Newtonsoft.Json       | Newtonsoft.Json 序列化器适配       | [README](Mud.HttpUtils.Newtonsoft.Json/README.md)             |
 | Mud.HttpUtils.Xml                   | XML 序列化器适配                   | [README](Mud.HttpUtils.Xml/README.md)                         |
+| Mud.HttpUtils.Redis                 | 分布式令牌存储（可选独立包）       | [README](Mud.HttpUtils.Redis/README.md)                       |
 | Mud.HttpUtils.JsonContextScaffolder | JsonContext 脚手架                 | [README](Tools/Mud.HttpUtils.JsonContextScaffolder/README.md) |
 | 变更记录                            | 行为基线与版本说明                 | [CHANGELOG](CHANGELOG.md)                                     |
 

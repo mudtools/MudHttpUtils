@@ -40,6 +40,7 @@ $Projects = @(
     "Mud.HttpUtils.Generator",
     "Mud.HttpUtils.Newtonsoft.Json",
     "Mud.HttpUtils.Xml",
+    "Mud.HttpUtils.Redis",
     "Tools/Mud.HttpUtils.JsonContextScaffolder",
     "Mud.HttpUtils.OpenTelemetry"
 )
@@ -54,6 +55,7 @@ $ExpectedPackages = @(
     "Mud.HttpUtils.JsonContextScaffolder",
     "Mud.HttpUtils.Newtonsoft.Json",
     "Mud.HttpUtils.OpenTelemetry",
+    "Mud.HttpUtils.Redis",
     "Mud.HttpUtils.Resilience",
     "Mud.HttpUtils.Xml"
 )
