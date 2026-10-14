@@ -64,3 +64,4 @@ services.AddMudHttpRedisTokenStore("localhost:6379");
 - **非 AOT 交付物**：StackExchange.Redis 含反射/动态转换路径，本包退出 AOT 严格模式（与 `Mud.HttpUtils.Xml` 同口径），定位为服务器端可选依赖
 - 目标框架：`netstandard2.0` / `net6.0` / `net8.0` / `net10.0`
 - 依赖 `StackExchange.Redis` 2.8.x + `Microsoft.Extensions.DependencyInjection.Abstractions`
+- **SE.Redis 3.x 升级注意**：本包按 SE.Redis 2.8.x 编译，实际异常类型随最终宿主解析的版本漂移。3.x 中 `RedisTimeoutException` **不再继承** `TimeoutException`（2.x 继承）——宿主升级 SE.Redis 3.x 后，`catch (TimeoutException)` 形式的超时处理会**失配漏接**，须改 catch `RedisTimeoutException`（或 `RedisException` 基类）。`StringSetAsync` 等方法在 3.x 有重载集变化，本包内调用已钉死形态不受影响。
