@@ -120,7 +120,7 @@ public class AttributeParameterContractTests
                 continue;
 
             // 生成器以字符串字面量读取命名参数（含常量化定义，如 CacheDurationSecondsProperty = "DurationSeconds"）；
-            // nameof(X) 编译期即展开为 "X"，与字面量等价（SdkToolProfileModel.FromAttributeData 按 switch(nameof) 消费），
+            // nameof(X) 编译期即展开为 "X"，与字面量等价（模型构建按 switch(nameof) 消费），
             // 两种形态都算「生成器知情」。
             if (!generatorText.Contains($"\"{property.Name}\"", StringComparison.Ordinal)
                 && !generatorText.Contains($"nameof({property.Name})", StringComparison.Ordinal))

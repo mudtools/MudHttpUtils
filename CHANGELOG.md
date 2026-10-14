@@ -97,6 +97,41 @@
 
 ---
 
+## 3.0.9（工具面竖井整体出清，Mud.HttpUtils 回归纯 HTTP，2026-10-14）
+
+> 对应《Mud.AI 包族详细设计 v2.2/§六 P2》：工具面（ToolSurface）生成引擎已随 P1 迁入飞书仓
+> `Mud.AI.Generator`，组件侧副本同批删除；组件包回归纯 HTTP 定位。**破坏性变更**（公开 API 删除）。
+
+### 删除
+
+- **ToolSurface 工具面生成引擎整竖井**（`Mud.HttpUtils.Generator/ToolSurface/`，27 文件）：
+  剖面发现（`SdkToolProfileModel`/`ProfileDiscovery`）、扫描（`ToolSurfaceScanner`/`ToolHandlerScanner`/`SourceResolver`/`InterfaceIdentityParser`），
+  发射器族（`Schema`/`ToolArgs`/`ToolRegistrar`/`MethodCatalog`/`CapabilityCatalog`/`Guidance`/`GeneratedCodeMarker`），
+  Schema 渲染（`Schema/*`）与守卫（`Guard`/`ProfileContractGuard`）。
+- **引导契约（公开 API 破坏）**：
+  - `Mud.HttpUtils.Abstractions/ToolProfile/`：`ISdkToolProfile`、`InterfaceIdentity`、`SdkTokenKind`（含 `SdkTokenKindContract`）；
+  - `Mud.HttpUtils.Attributes/ToolProfile/`：`SdkToolProfileAttribute`（17 组命名事实槽）、`TokenKindDerivationStrategy`。
+  - 对应 `PublicAPI.Unshipped.txt` 各 TFM 台账条目同批摘除（RS0016/RS0017 = 0）。
+- **引擎固定诊断 SDKT001/SDKT002**（`DiagnosticIds`、`Diagnostics`、`AnalyzerReleases.Unshipped.md` 台账同批摘除）。
+- **Demo 与测试**：`Demos/ToolSurfaceDemo`（含 Affordance/Guidance 示例资产）、`Demos/Mud.Demo.Sdk`（引擎 SDK 样本程序集）、
+  `Tests/Mud.HttpUtils.Generator.Tests/ToolSurface/*`（4 文件）与 `Guards/ToolSurfaceEqualityFieldCoverageTests.cs`。
+- **打包校验**：`pack.ps1` 的「工具面生成器符号」校验段（随生成器退役）。
+
+### 保留（非竖井范围）
+
+- HTTP 客户端生成族（Analyzers/HttpInvoke/Models/EventHandler/Payloads/Validators/Diagnostics）原样保留。
+- 共享底座（`TransitiveCodeGenerator`、`Helper/*`、`Consts/GeneratedCodeConsts.cs`）为 HTTP 生成族所用，保留。
+- `SyntaxPrefilter`/`GeneratedCodeGuards` 等 Helper 仅注释中提及工具面的示例已同步清理。
+
+### 升级注意
+
+- 消费方若直接引用 `ISdkToolProfile`/`[SdkToolProfile]`/`SdkTokenKind`/`InterfaceIdentity`/`TokenKindDerivationStrategy`
+  声明工具面剖面，将无法编译。新家为飞书仓 `Mud.AI.Abstractions`（引导契约）与 `Mud.AI.Generator`（引擎），
+  按《Mud.AI 包族详细设计》§三/§五 中立命名（`Mud.AI.ISdkToolProfile` / `Mud.AI.Attributes.SdkToolProfileAttribute`）迁移。
+- `Mud.HttpUtils.Generator` 不再含 `ToolSurfaceSourceGenerator`，纯 HTTP 消费方行为零变化（无 `[SdkToolProfile]` 时引擎本就短路）。
+
+---
+
 ## 3.0.8（三大核心 Phase 2/3：Redis 令牌存储 / 多应用 SPI / 链式令牌依赖 / 巨型类拆分，2026-10-13）
 
 ### 新增

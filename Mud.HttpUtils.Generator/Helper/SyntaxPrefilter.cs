@@ -32,7 +32,7 @@ namespace Mud.HttpUtils;
 /// </para>
 /// <para>
 /// <b>适用边界</b>：只可用于「目标声明必然在本编译源文本中出现目标标识符」的判定
-/// （如 [HttpClientApi] / [HttpJsonSerializable] / [SdkToolProfile] 标注面）。
+/// （如 [HttpClientApi] / [HttpJsonSerializable] 标注面）。
 /// <b>不可</b>用于「经引用程序集中转的继承链」判定（如 JsonSerializerContext 子类的传递基类），
 /// 该场景须用语法结构预检（BaseList 存在性），见 AotDtoCoverageAnalyzer.ComputeLocalContexts。
 /// </para>
