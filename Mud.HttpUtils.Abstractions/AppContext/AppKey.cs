@@ -8,23 +8,16 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// MT-18：应用标识（appKey）校验与安全文本化的公开门面。
+/// 应用标识（appKey）校验与安全文本化的公开门面。
 /// </summary>
 /// <remarks>
-/// <para>
 /// 内部实现为 <c>AppKeyValidator</c>（<c>internal</c>，零正则手写字符判断，AOT 安全）。
-/// 由于 <b>源生成器产物位于消费方程序集</b>，生成代码无法访问 <c>internal</c> 成员 ——
-/// 而生成代码需要在调用 <see cref="IAppAccessAuthorizer.CanSwitchTo"/> 之前先做格式校验
-/// （授权器不应承担格式校验职责），并在异常消息中安全地回显 appKey（防日志注入）。
-/// 故在此暴露只读门面。
-/// </para>
+/// 由于源生成器产物位于消费方程序集，生成代码无法访问 <c>internal</c> 成员，
+/// 故在此暴露只读门面供调用方在授权前进行格式校验与日志安全回显。
 /// <para>本类型为纯函数式工具，无状态、无分配（除 <see cref="ToSafeText"/> 的必要输出外）。</para>
-/// <para>
-/// <b>大小写语义（G8-11）</b>：appKey <b>区分大小写</b>，且本类<b>不做</b>任何大小写归一化 ——
+/// <para><b>大小写语义</b>：appKey <b>区分大小写</b>，且本类<b>不做</b>任何大小写归一化 ——
 /// <c>"Tenant"</c> 与 <c>"tenant"</c> 是两个不同的应用。宿主注册与查询必须使用完全一致的文本
-/// （应用管理器内部以序数语义的字典存储）。该行为属<b>有意契约</b>，由
-/// <c>AppManagerCaseSensitivityTests</c>（Client.Tests）钉死。
-/// </para>
+/// （应用管理器内部以序数语义的字典存储）。</para>
 /// </remarks>
 public static class AppKey
 {
@@ -35,7 +28,7 @@ public static class AppKey
     /// 判断应用标识是否合法：非空、长度不超过 <see cref="MaxLength"/>，
     /// 且仅由字母、数字、<c>'.'</c>、<c>'_'</c>、<c>'-'</c> 组成（首字符必须是字母或数字）。
     /// </summary>
-    /// <remarks>大小写敏感，不做归一化（见类型备注 G8-11）。</remarks>
+    /// <remarks>大小写敏感，不做归一化。</remarks>
     /// <param name="value">待校验的应用标识。</param>
     /// <returns>合法返回 <c>true</c>，否则 <c>false</c>。</returns>
     public static bool IsValid(string? value)
