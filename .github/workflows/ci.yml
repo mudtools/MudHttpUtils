@@ -3,7 +3,9 @@ name: CI
 on:
   push:
     branches: [master, main, develop]
-    tags: ["v*"]
+    # 收紧为 v + 数字：'v*' 会连带匹配 vNext / verify / version-2 等任意 v 开头 tag，
+    # 而发布门禁仅断言 'refs/tags/v' 前缀 —— 畸形 tag 会静默触发完整发布链路。
+    tags: ["v[0-9]*"]
   pull_request:
     branches: [master, main, develop]
   workflow_dispatch:
@@ -877,6 +879,28 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+
+      # 包版本来自 Directory.Build.props 的 <Version>，并不从 tag 推导 —— 二者不同步会
+      # 静默发布错误版本号（叠加 --skip-duplicate 时错误更难察觉），故在此前置断言。
+      # 版本取自已下载产物中的元包文件名（Mud.HttpUtils.<version>.nupkg），无需 checkout、
+      # 不额外消耗 contents: read 权限；置于 login 之前，失败即止、不浪费一次性 OIDC 令牌。
+      - name: Verify tag matches packed version
+        shell: bash
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          pkg="$(ls artifacts/ | grep -E '^Mud\.HttpUtils\.[0-9][^/]*\.nupkg$' | head -1)"
+          if [ -z "$pkg" ]; then
+            echo "::error::artifacts/ 中未找到元包 Mud.HttpUtils.<version>.nupkg"
+            ls -1 artifacts/
+            exit 1
+          fi
+          pkg_version="${pkg#Mud.HttpUtils.}"
+          pkg_version="${pkg_version%.nupkg}"
+          if [ "$tag_version" != "$pkg_version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME 与打包版本 $pkg_version 不一致（Directory.Build.props 的 <Version> 未同步？）"
+            exit 1
+          fi
+          echo "✓ tag $GITHUB_REF_NAME 与打包版本 $pkg_version 一致"
 
       # 临时密钥有效期 1 小时，紧邻 push 步骤请求；user 为 nuget.org 用户名（非邮箱）。
       - name: NuGet login (OIDC → temp API key)
