@@ -974,12 +974,18 @@ jobs:
           fi
           echo "✓ tag $GITHUB_REF_NAME 与打包版本 $pkg_version 一致"
 
-      # 临时密钥有效期 1 小时，紧邻 push 步骤请求；user 为 nuget.org 用户名（非邮箱）。
+      # 临时密钥有效期 1 小时，紧邻 push 步骤请求；user 为 nuget.org 账户用户名
+      # （非邮箱、非 GitHub 账号）—— 该输入在 NuGet/login@v1 中为必填且无默认值。
+      # 取值 = 包页 About → Owners 的用户名（Mud.HttpUtils 为 xlq5520）：属公开信息，
+      # 但受信发布策略要求与策略侧声明逐字一致，故保留 secret 覆盖能力，
+      # secret 未配置时回落到公开值。历史故障：仅写 secrets.NUGET_USER 而 secret 不存在时，
+      # 表达式求值为空串 → action 只报 "Input required and not supplied: user"，
+      # 该消息指向 action 输入而非配置来源，排查需翻到仓库/Environment secret 设置页。
       - name: NuGet login (OIDC → temp API key)
         uses: NuGet/login@v1
         id: nuget-login
         with:
-          user: ${{ secrets.NUGET_USER }}
+          user: ${{ secrets.NUGET_USER || 'xlq5520' }}
 
       - name: Publish to NuGet (trusted publishing)
         run: dotnet nuget push artifacts/*.nupkg --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
