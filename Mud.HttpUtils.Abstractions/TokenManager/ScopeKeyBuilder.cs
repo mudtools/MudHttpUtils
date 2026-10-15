@@ -10,55 +10,40 @@ using System.Collections.Concurrent;
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// SR-M5/M9（P2.2/P3.3，D11）scope 缓存键构建的单一实现（Single Source of Truth）。
+/// scope 缓存键构建的单一实现（Single Source of Truth）。
 /// </summary>
 /// <remarks>
-/// <para>
-/// 规范化规则：<c>Distinct(Ordinal) → OrderBy(Ordinal) → 转义 → Join(US)</c>；null / 空数组 → <c>"default"</c>。
-/// </para>
-/// <para>
-/// 修复 SR-M5：原 <c>TokenManagerBase.GetScopeKey</c> 不去重且大小写敏感
-/// （<c>{"a","A"}</c> 两个键；<c>{"a","a"}</c> → <c>"a,a"</c>），攻击者传入海量 scope 组合时
-/// 缓存与锁表无界增长。规范化后等价 scope 集合命中同一键，配合硬上限 LRU 收敛（见 UpdateToken 超限路径）。
-/// </para>
-/// <para>
-/// <b>MT-16</b>：分隔符由 <c>","</c> 改为不可见分隔符 U+001F（Unit Separator），并对元素内出现的
-/// U+001F / U+001E 做可逆转义 —— 修复 <c>["a,b"]</c> 与 <c>["a","b"]</c> 都产出 <c>"a,b"</c> 的键碰撞
-/// （碰撞会令两个语义不同的作用域共享同一缓存条目与同一把锁，构成作用域越权面）。
-/// 采用与用户复合键（<c>userId + U+001F + scopeKey</c>）一致的约定，避免引入第二种分隔风格。
-/// </para>
+/// <para>规范化规则：<c>Distinct(Ordinal) → OrderBy(Ordinal) → 转义 → Join(US)</c>；null / 空数组 → <c>"default"</c>。</para>
+/// <para>修复：原 <c>TokenManagerBase.GetScopeKey</c> 不去重且大小写敏感（<c>{"a","A"}</c> 两个键；<c>{"a","a"}</c> → <c>"a,a"</c>），攻击者传入海量 scope 组合时缓存与锁表无界增长。规范化后等价 scope 集合命中同一键，配合硬上限 LRU 收敛。</para>
+/// <para>分隔符由 <c>","</c> 改为不可见分隔符 U+001F（Unit Separator），并对元素内出现的 U+001F / U+001E 做可逆转义 —— 修复 <c>["a,b"]</c> 与 <c>["a","b"]</c> 都产出 <c>"a,b"</c> 的键碰撞（碰撞会令两个语义不同的作用域共享同一缓存条目与同一把锁，构成作用域越权面）。</para>
 /// <para>D7 用户复合键（userId + U+001F + scopeKey）亦委托本实现，保证两套键语义一致。</para>
-/// <para>
-/// TMR-11：对规范化结果做记忆化（<see cref="ConcurrentDictionary{TKey,TValue}"/>），
-/// 热路径上等价 scope 数组复用同一 string 实例，消除重复字符串分配。
-/// 缓存上限与 <c>MaxScopeCacheSize</c> 联动，超出时清空重建（无界保护）。
-/// </para>
+/// <para>对规范化结果做记忆化（<see cref="ConcurrentDictionary{TKey,TValue}"/>），热路径上等价 scope 数组复用同一 string 实例，消除重复字符串分配。缓存上限与 <c>MaxScopeCacheSize</c> 联动，超出时清空重建（无界保护）。</para>
 /// </remarks>
 internal static class ScopeKeyBuilder
 {
     /// <summary>空 / null scope 集合的规范化键。</summary>
     internal const string DefaultKey = "default";
 
-    /// <summary>MT-16：scope 元素之间的分隔符（Unit Separator，不可见控制字符）。</summary>
+    /// <summary>scope 元素之间的分隔符（Unit Separator，不可见控制字符）。</summary>
     internal const char ScopeSeparator = '\u001F';
 
-    /// <summary>MT-16：转义前缀（Record Separator），在元素内出现 U+001F / U+001E 时使用。</summary>
+    /// <summary>转义前缀（Record Separator），在元素内出现 U+001F / U+001E 时使用。</summary>
     private const char Escape = '\u001E';
 
-    /// <summary>MT-16：元素内 U+001E 的转义形式。</summary>
+    /// <summary>元素内 U+001E 的转义形式。</summary>
     private const string EscapedEscape = "\u001E\u001E";
 
-    /// <summary>MT-16：元素内 U+001F 的转义形式。</summary>
+    /// <summary>元素内 U+001F 的转义形式。</summary>
     private const string EscapedSeparator = "\u001E\u001F";
 
-    /// <summary>TMR-11：记忆化缓存上限（与 TokenManagerBase.MaxScopeCacheSize 对齐）。</summary>
+    /// <summary>记忆化缓存上限（与 TokenManagerBase.MaxScopeCacheSize 对齐）。</summary>
     private const int MemoCacheLimit = 1024;
 
-    /// <summary>TMR-11：scope 数组 → 规范化键的记忆化缓存。键为内容哈希，值为规范化字符串。</summary>
+    /// <summary>scope 数组 → 规范化键的记忆化缓存。键为内容哈希，值为规范化字符串。</summary>
     private static readonly ConcurrentDictionary<string, string> s_memoCache = new();
 
     /// <summary>
-    /// MT-16：对单个 scope 元素做可逆转义，保证「转义 → 拼接」是单射：
+    /// 对单个 scope 元素做可逆转义，保证「转义 → 拼接」是单射：
     /// <c>Escape(x) + US + Escape(y)</c> 的解析结果唯一，不会因元素内含分隔符而产生歧义。
     /// </summary>
     private static string EscapeElement(string value)
@@ -74,7 +59,7 @@ internal static class ScopeKeyBuilder
             .Replace(ScopeSeparator.ToString(), EscapedSeparator);
     }
 
-    /// <summary>TMR-11：构建廉价的缓存键（长度 + 内容拼接），保证等价数组产生同一键。</summary>
+    /// <summary>构建廉价的缓存键（长度 + 内容拼接），保证等价数组产生同一键。</summary>
     private static string BuildMemoKey(string[] sorted)
     {
         var builder = new System.Text.StringBuilder();
@@ -91,8 +76,8 @@ internal static class ScopeKeyBuilder
 
     /// <summary>
     /// 构建 scope 缓存键：Distinct(Ordinal) → OrderBy(Ordinal) → 转义 → Join(US)；null / 空数组 → "default"。
-    /// TMR-11：结果记忆化，等价 scope 数组复用同一 string 实例。
-    /// TMX-15-7 (D2)：BuildMemoKey 与值工厂共享一次 Distinct/OrderBy，消除命中路径的重复分配；
+    /// 结果记忆化，等价 scope 数组复用同一 string 实例。
+    /// BuildMemoKey 与值工厂共享一次 Distinct/OrderBy，消除命中路径的重复分配；
     /// Clear 改为按容量触发的批量淘汰（仅当超限时执行，且用 TryAdd 原子性保证）。
     /// </summary>
     internal static string Build(string[]? scopes)
