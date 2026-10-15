@@ -9,9 +9,6 @@ namespace Mud.HttpUtils;
 
 /// <summary>
 /// 令牌过期判定的单一真相（Single Source of Truth）。
-/// P1.3（TK-04）修复：收敛 <c>TokenManagerBase</c> 与用户令牌管理器（<c>UserTokenManagerBase</c>）中
-/// 分散的"过期判定 / 有效性判定"逻辑，避免各处实现因微妙的取反或比较边界不一致而引发
-/// "降级令牌刷新风暴"或"短 TTL 令牌永不命中缓存"等行为差异。
 /// </summary>
 /// <remarks>
 /// 语义约定（Unix 时间戳毫秒）：
@@ -50,7 +47,7 @@ internal static class TokenExpiryPolicy
         => !IsExpired(expireMs, nowMs, thresholdSeconds);
 
     /// <summary>
-    /// P2.4（TK-04）TTL 感知阈值。对短 TTL 令牌，有效阈值被钳位为 <c>min(configuredThreshold, ttl/2)</c>，
+    /// TTL 感知阈值。对短 TTL 令牌，有效阈值被钳位为 <c>min(configuredThreshold, ttl/2)</c>，
     /// 避免"提前量过大导致 token 刚签发即被判为需刷新（短 TTL 令牌永不命中缓存）"。
     /// 当 <paramref name="issuedAtMs"/> 未提供（&lt;= 0）时回退到配置阈值，保持与旧行为一致。
     /// </summary>
@@ -72,7 +69,7 @@ internal static class TokenExpiryPolicy
     }
 
     /// <summary>
-    /// P2.4（TK-04）TTL 感知的过期判定。当 <c>expire - effectiveThreshold &lt;= now</c> 时为 true。
+    /// TTL 感知的过期判定。当 <c>expire - effectiveThreshold &lt;= now</c> 时为 true。
     /// </summary>
     /// <param name="issuedAtMs">令牌签发时间（Unix 时间戳，毫秒）。</param>
     /// <param name="expireMs">令牌过期时间（Unix 时间戳，毫秒）。</param>
@@ -89,7 +86,7 @@ internal static class TokenExpiryPolicy
     }
 
     /// <summary>
-    /// P2.4（TK-04）TTL 感知的有效性判定。当 <c>expire - effectiveThreshold &gt; now</c> 时为 true。
+    /// TTL 感知的有效性判定。当 <c>expire - effectiveThreshold &gt; now</c> 时为 true。
     /// </summary>
     /// <param name="issuedAtMs">令牌签发时间（Unix 时间戳，毫秒）。</param>
     /// <param name="expireMs">令牌过期时间（Unix 时间戳，毫秒）。</param>
