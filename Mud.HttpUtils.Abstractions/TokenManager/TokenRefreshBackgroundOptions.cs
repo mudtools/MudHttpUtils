@@ -67,7 +67,7 @@ public class TokenRefreshBackgroundOptions
     public bool StopOnError { get; set; } = false;
 
     /// <summary>
-    /// P1.6（TK-10-max）连续失败的刷新周期数达到该阈值时停止服务，默认 0 表示不因连续失败次数停止（无限重试）。
+    /// 连续失败的刷新周期数达到该阈值时停止服务，默认 0 表示不因连续失败次数停止（无限重试）。
     /// 与 <see cref="StopOnError"/> 正交：<see cref="StopOnError"/> 为 true 时任一周期内首个失败即停止；
     /// 本属性用于在 <see cref="StopOnError"/> 为 false 时提供"连续失败 N 次后停止"的可选语义。
     /// 必须大于等于 0。
