@@ -14,6 +14,14 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_NOLOGO: true
   NUGET_XML_DOC_MODE: skip
+  # ── MSB4166 防护（run #259 / job 116359606780 实证）─────────────────────
+  # 现象：`Run tests` 步骤以 MSB4166（Child node "2" exited prematurely）中断，
+  #       步骤结论为 cancelled 而非 failure，随后 `if: always()` 的 trx 上传步骤被跳过。
+  # 归因：MSB4166 的语义是「MSBuild 工作节点进程被外部终止（内存压力/实例回收）后未回话」，
+  #       不是编译错误；节点复用（含 MSBuild Server）会把上一个 step 的常驻节点带进下一个 step，
+  #       使一次外部终止跨 step 传染。CI 单次构建以秒计，复用收益可忽略 → 一律关闭。
+  MSBUILDDISABLENODEREUSE: 1
+  DOTNET_CLI_USE_MSBUILD_SERVER: false
 
 jobs:
   # ──────────────────────────────────────────────
@@ -36,6 +44,13 @@ jobs:
           - Tests/Mud.HttpUtils.CodeFixes.Tests/Mud.HttpUtils.CodeFixes.Tests.csproj
           - Tests/Mud.HttpUtils.Integration.Tests/Mud.HttpUtils.Integration.Tests.csproj
 
+    env:
+      # MSB4166 的根因转储（MSBuild_*.failure.txt）默认写在 /tmp/MSBuildTemp*/ 下，
+      # 而托管运行器是一次性的：故障随实例销毁而永久不可归因。改写到工作区内固定目录后，
+      # 由「Run tests」步骤在自己的退出路径上读取（见该步骤的 trap 取证）。
+      # 用 github.workspace 而非 runner.temp：job 级 env 的可用上下文不含 runner。
+      MSBUILDDEBUGPATH: ${{ github.workspace }}/msbuild-failure-logs
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,10 +67,42 @@ jobs:
         run: dotnet restore ${{ matrix.test_project }}
 
       - name: Build
-        run: dotnet build ${{ matrix.test_project }} --no-restore --configuration Release
+        shell: bash
+        run: |
+          # 预建转储目录：MSBuild 子节点崩溃/被杀的转储写向 MSBUILDDEBUGPATH，
+          # 目录不存在时该证据会静默丢失（本步正是节点死亡的高发点）。
+          mkdir -p "$MSBUILDDEBUGPATH"
+          dotnet build ${{ matrix.test_project }} --no-restore --configuration Release
 
+      # MSB4166 取证：错误语义是「MSBuild 工作节点进程被外部终止（内存压力/实例回收）后未回话」，
+      # 与业务断言无关，但日志尾部只剩一行 MSB4166 → 无法区分「代码缺陷」与「运行器资源问题」。
+      # 为什么取证挂在本步骤内部而非后续步骤：run #259 实证——job 被取消时运行器会跳过全部剩余
+      # 步骤，连 `if: always()` 的 trx 上传都被跳过，故证据必须在本步骤退出前落到日志。
+      # EXIT/INT/TERM 三路统一：内核 OOM/kill 记录（外部止损证据）+ MSBuild_*.failure.txt
+      # （子节点崩溃的确切异常）。仅非零退出时打印，成功运行日志不受影响。
       - name: Run tests
-        run: dotnet test ${{ matrix.test_project }} --no-build --configuration Release --logger "console;verbosity=detailed" --logger "trx;LogFilePrefix=results"
+        shell: bash
+        run: |
+          diag_file="$MSBUILDDEBUGPATH/runner-diagnostics.txt"
+          mkdir -p "$MSBUILDDEBUGPATH"
+          dump_diag() {
+            local code=$?
+            if [ "$code" -ne 0 ]; then
+              {
+                echo "=== dotnet test exit code: $code ==="
+                free -m
+                echo "--- kernel OOM / kill events ---"
+                sudo dmesg -T 2>/dev/null | grep -iE "oom|killed process" | tail -20 || echo "(dmesg 不可用或无匹配)"
+                echo "--- MSBuild failure dumps ($MSBUILDDEBUGPATH) ---"
+                ls -l "$MSBUILDDEBUGPATH"
+                find "$MSBUILDDEBUGPATH" -name 'MSBuild_*.failure.txt' -exec sh -c 'echo "== $1 =="; head -60 "$1"' _ {} \;
+              } 2>&1 | tee -a "$diag_file"
+            fi
+            exit "$code"
+          }
+          trap dump_diag EXIT
+          trap 'exit 130' INT TERM
+          dotnet test ${{ matrix.test_project }} --no-build --configuration Release --logger "console;verbosity=detailed" --logger "trx;LogFilePrefix=results"
 
       # 失败自诊断：trx 内含精确失败用例名 + 错误消息/堆栈，无需翻 console 日志
       - name: Upload test results (trx)
