@@ -23,7 +23,7 @@ namespace Mud.HttpUtils;
 /// 采集方（EnhancedHttpClient 外层观察窗口或本 Handler）通过 IsObserved 检查后立即 MarkObserved 再采集，
 /// 后到者短路。组合路径（AddMudHttpClient + EnhancedHttpClient）上外层先标记，本 Handler 整体短路；
 /// 工厂裸用 HttpClient（无 Enhanced 包装）时无标记，由本 Handler 照常采集；
-/// 令牌恢复克隆剥离 __mud_* 标记，恢复尝试由本 Handler 独立采集（NEW-HC-10 语义）。</para>
+/// 令牌恢复克隆剥离 __mud_* 标记，恢复尝试由本 Handler 独立采集（NEW-语义）。</para>
 /// </remarks>
 public sealed class TracingDelegatingHandler : DelegatingHandler
 {
@@ -34,7 +34,7 @@ public sealed class TracingDelegatingHandler : DelegatingHandler
     public const string ObservedPropertyKey = MudHttpObservability.ObservedPropertyKey;
 
     /// <summary>
-    /// NEW-HC-01：共享的无状态单例实例。
+    /// NEW-共享的无状态单例实例。
     /// </summary>
     /// <remarks>
     /// 仅供测试使用。生产路径由 IHttpClientFactory 池化 DelegatingHandler，不应使用此静态字段。

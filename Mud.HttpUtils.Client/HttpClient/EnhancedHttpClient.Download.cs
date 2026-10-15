@@ -149,7 +149,7 @@ public abstract partial class EnhancedHttpClient
         if (string.IsNullOrWhiteSpace(filePath))
             throw new ArgumentException("文件路径不能为空", nameof(filePath));
 
-        // M6-HC-14：bufferSize 上下界钳制 —— 与 DefaultHttpRequestExecutor（G8-06）同口径防御。
+        // bufferSize 上下界钳制 —— 与 DefaultHttpRequestExecutor（G8-06）同口径防御。
         // 原实现仅拒绝 <= 0；超大值会直接进入 new byte[bufferSize] / new FileStream(…, bufferSize) 触发 OOM。
         // 越界（< 4 KiB 或 > 4 MiB）一律归一回默认值 81920。
         const int MaxDownloadBufferSize = 4 * 1024 * 1024;
@@ -161,7 +161,7 @@ public abstract partial class EnhancedHttpClient
         string? requestUri = SafeUrl(httpRequestMessage.RequestUri) is var safe && safe.Length > 0 ? safe : null;
         string directoryPath = Path.GetDirectoryName(filePath)!;
 
-        // M6-HC-12/HC-14：临时文件 + 原子落盘（对齐执行器 G7-03 模板）。
+        // 临时文件 + 原子落盘（对齐执行器 模板）。
         // fileStreamOpened 区分「构造期 IOException」（如 overwrite=false 且目标已存在 —— 尚未触碰任何
         // 文件，维持既有语义：不清理、不记失败、直接重抛）与「写入期 IOException」（需清理半写 tmp 并记失败）。
         var tmpPath = filePath + ".mudtmp";
@@ -202,7 +202,7 @@ public abstract partial class EnhancedHttpClient
             downloadStarted = true;
 
 #if NETSTANDARD2_0
-            // M6-HC-14：落盘改为 .mudtmp 临时文件，流关闭后再原子 Move，最终路径永不出现半写文件
+            // 落盘改为 .mudtmp 临时文件，流关闭后再原子 Move，最终路径永不出现半写文件
             using (var fileStream = new FileStream(
                 tmpPath,
                 FileMode.Create,
@@ -272,7 +272,7 @@ public abstract partial class EnhancedHttpClient
         }
         catch (Exception ex)
         {
-            // M6-HC-12：构造期 IOException（目标已存在等）尚未写入任何文件 → 维持既有语义直接重抛
+            // 构造期 IOException（目标已存在等）尚未写入任何文件 → 维持既有语义直接重抛
             if (ex is IOException && !fileStreamOpened)
             {
                 throw;
@@ -285,7 +285,7 @@ public abstract partial class EnhancedHttpClient
                     httpRequestMessage, ClientName, downloadSw.GetElapsedTime().TotalMilliseconds, ex, cancellationToken);
             }
 
-            // M6-HC-14：清理半写临时文件（最终路径永不出现半写文件）
+            // 清理半写临时文件（最终路径永不出现半写文件）
             try
             {
                 if (File.Exists(tmpPath))
@@ -298,7 +298,7 @@ public abstract partial class EnhancedHttpClient
 
             _logger.LargeFileDownloadFailed(requestUri!, filePath, ex);
 
-            // M7-HC-02：取消/超时原样透传 —— 与 byte[] 下载路径（:1821-1826）及执行器
+            // 取消/超时原样透传 —— 与 byte[] 下载路径（:1821-1826）及执行器
             // DownloadLargeCoreAsync 口径一致；包装为 HttpRequestException 会使外层
             // ExecuteWithObservabilityAsync 三态判定失去 cancelled 态、TaskCancellationClassifier
             // 无法归类平台超时、使用者无法以 catch (OperationCanceledException) 识别自身取消。
@@ -310,12 +310,12 @@ public abstract partial class EnhancedHttpClient
     }
 
     /// <summary>
-    /// M6-HC-12/HC-14：抽出带时间节流的进度复制（行为与 NEW-HC-09 一致：100ms 节流 + 收尾必报）。
+    /// 抽出带时间节流的进度复制（行为与 NEW-一致：100ms 节流 + 收尾必报）。
     /// </summary>
     /// <remarks>
-    /// NEW-HC-09 修复：进度回调按时间节流，避免大文件下载时每 buffer（默认 81920 字节）触发一次回调。
+    /// NEW-进度回调按时间节流，避免大文件下载时每 buffer（默认 81920 字节）触发一次回调。
     /// GB 级文件每秒可能触发数百到数千次回调，造成 UI 线程高频刷新、IProgress.Post 排队堆积、日志海量输出。
-    /// M6-HC-15：实现下沉至 <see cref="ThrottledStreamCopier"/>，与生成器执行路径、上传路径共用同一口径。
+    /// 实现下沉至 <see cref="ThrottledStreamCopier"/>，与生成器执行路径、上传路径共用同一口径。
     /// </remarks>
     private static Task CopyToWithThrottledProgressAsync(
         Stream source,

@@ -31,7 +31,7 @@ namespace Mud.HttpUtils;
 /// <seealso cref="IProgress{T}"/>
 public class ProgressableStreamContent : HttpContent, IRequestContentReplayHint
 {
-    // M6-HC-15：默认缓冲由 4096 提升至 81920，与下载/执行器路径一致，减少读调用次数
+    // 默认缓冲由 4096 提升至 81920，与下载/执行器路径一致，减少读调用次数
     private const int DefaultBufferSize = 81920;
 
     private readonly HttpContent _content;
@@ -39,7 +39,7 @@ public class ProgressableStreamContent : HttpContent, IRequestContentReplayHint
     private readonly IProgress<long>? _progress;
 
     /// <summary>
-    /// M4-H-2：不可重放 —— 读取本内容会经 <c>SerializeToStreamAsync</c> 消耗底层源流（一次性），
+    /// 不可重放 —— 读取本内容会经 <c>SerializeToStreamAsync</c> 消耗底层源流（一次性），
     /// 捕获请求体时须跳过以免发送空/截断请求体。
     /// </summary>
     bool IRequestContentReplayHint.IsReplayable => false;
@@ -76,8 +76,8 @@ public class ProgressableStreamContent : HttpContent, IRequestContentReplayHint
     /// 此方法通过缓冲区读取内部内容的流,并在每次写入目标流后报告累计已传输的字节数。
     /// 进度报告通过 <see cref="IProgress{T}.Report"/> 方法实现。
     /// 仅 netstandard2.0 / 旧重载路径可达，故使用 <see cref="CancellationToken.None"/>（#28 同理）。
-    /// M6-HC-15：无进度回调时走 <see cref="Stream.CopyToAsync(Stream)"/> 快路径，避免每缓冲区的进度开销。
-    /// M6-HC-31：不再 dispose 内容流（其生命周期归 <c>_content</c> 所有），与 net5+ 分支一致。
+    /// 无进度回调时走 <see cref="Stream.CopyToAsync(Stream)"/> 快路径，避免每缓冲区的进度开销。
+    /// 不再 dispose 内容流（其生命周期归 <c>_content</c> 所有），与 net5+ 分支一致。
     /// </remarks>
     protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
         => SerializeToStreamCoreAsync(stream, CancellationToken.None);

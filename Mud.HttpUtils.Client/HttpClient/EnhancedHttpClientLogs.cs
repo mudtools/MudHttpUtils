@@ -30,7 +30,7 @@ internal static class EnhancedHttpClientLogs
 
     private static readonly Action<ILogger, string, string, Exception?> s_jsonResponseBodyRaw =
         LoggerMessage.Define<string, string>(
-            // M5-HC-03：降为 Trace —— 默认生产级别（Information/Warning）不输出原始响应体
+            // 降为 Trace —— 默认生产级别（Information/Warning）不输出原始响应体
             LogLevel.Trace,
             new EventId(2, nameof(JsonResponseBodyRaw)),
             "原始JSON响应内容（已脱敏）: {Url}\n{Response}");
@@ -49,7 +49,7 @@ internal static class EnhancedHttpClientLogs
 
     private static readonly Action<ILogger, string, string, Exception?> s_xmlResponseBodyRaw =
         LoggerMessage.Define<string, string>(
-            // M5-HC-03：降为 Trace —— 默认生产级别不输出原始响应体
+            // 降为 Trace —— 默认生产级别不输出原始响应体
             LogLevel.Trace,
             new EventId(5, nameof(XmlResponseBodyRaw)),
             "原始XML响应内容（已脱敏）: {Url}\n{XmlResponse}");

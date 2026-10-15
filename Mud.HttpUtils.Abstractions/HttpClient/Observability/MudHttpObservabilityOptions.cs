@@ -30,7 +30,7 @@ public static class MudHttpObservabilityOptions
     /// <para>
     /// 设为 <c>false</c> 时保留完整 URL，仅供已自行治理日志下游、明确需要完整 URL 排障的场景。
     /// 关闭后不影响 URL 安全校验（始终使用原始 URL）。
-    /// M6-HC-21：<see cref="ApiException.RequestUri"/> 同样经由本脱敏器处理（剥离 userinfo、掩码敏感 query 值），
+    /// <see cref="ApiException.RequestUri"/> 同样经由本脱敏器处理（剥离 userinfo、掩码敏感 query 值），
     /// 故该开关会一并影响异常对象中的 URI；需要完整 URI 的调用方可自定义 <c>IExceptionRedactor</c> 或直接读取请求对象。
     /// </para>
     /// <para>

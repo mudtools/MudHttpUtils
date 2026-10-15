@@ -26,7 +26,7 @@ namespace Mud.HttpUtils;
 /// <b>实现契约</b>（语义与 <see cref="System.Collections.Concurrent.ConcurrentDictionary{TKey, TValue}"/>
 /// 对应成员逐位一致，<c>DefaultAppManager</c> 的行为等价性以此为前提）：
 /// <list type="bullet">
-/// <item>键为 <c>appKey</c>，<b>序数、区分大小写</b>（G8-11 有意契约）；线程安全。</item>
+/// <item>键为 <c>appKey</c>，<b>序数、区分大小写</b>（有意契约）；线程安全。</item>
 /// <item><c>Add</c>：键不存在则插入并返回 <c>true</c>；已存在返回 <c>false</c> 且<b>不修改</b>现值。</item>
 /// <item><c>TryUpdate</c>：<b>CAS 语义</b> —— 当前值与 <c>comparisonValue</c> 引用相等时替换为新值并返回
 /// <c>true</c>；否则返回 <c>false</c>（防止"复活已被并发移除的应用"，MT-08 修复的前提）。</item>

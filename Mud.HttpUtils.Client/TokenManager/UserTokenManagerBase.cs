@@ -58,7 +58,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
     // R-P2-04：userId → 该用户全部缓存键（裸 userId 键 + userId + US + scopeKey 复合键）的反向索引。
     // 动机：HasValidTokenAsync / CanRefreshTokenAsync 原先每次都要遍历**全体**用户的缓存键做前缀匹配，
     // 在用户基数大时是 O(缓存总条目数) 的热路径开销；索引把"命中"情形降为 O(该用户条目数)。
-    // 定位（评审修订 14）：索引是**读侧快路径**，不是权威数据源 ——
+    // 定位索引是**读侧快路径**，不是权威数据源 ——
     // ① 未命中时仍回退前缀扫描，故"外部注入/预填充的 ITokenCache"（索引为空）不会产生误判；
     // ② 移除路径（登出）保留前缀扫描作为权威手段，绝不因索引不完整而漏删（安全优先）。
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _userKeyIndex = new(StringComparer.Ordinal);
@@ -729,7 +729,7 @@ public abstract class UserTokenManagerBase : TokenManagerBase, IUserTokenManager
         // InvalidateTokenAsync 对用户令牌无意义。若实现静默调用 base（清空共享凭据缓存）或
         // 紧凑用户缓存，会产生"调用方以为用户令牌已失效，实则其他用户令牌也被连带影响"的歧义。
         //
-        // R-P3-01（评审修订 3）：**不再抛 NotSupportedException** —— 接口
+        // R-P3-01**不再抛 NotSupportedException** —— 接口
         // <see cref="ITokenManager.InvalidateTokenAsync"/> 的契约是"返回失效前的令牌信息"，
         // 抛异常会破坏契约，使"统一遍历所有管理器使其失效"这类通用调用方（登出编排、运维脚本）
         // 必须在调用点分支处理异常类型。改为返回 TokenResult.Empty + 引导日志：

@@ -248,7 +248,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
             ["client_id"] = Options.ClientId
         };
 
-        // M6-HC-10（RFC 6749 §4.1.3）：授权码换令牌同样必须对机密客户端做客户端认证。
+        // 授权码换令牌同样必须对机密客户端做客户端认证。
         // 原实现固定走 RequestTokenAsync（无认证），机密客户端在此流下丢失 client_secret 认证。
         // 配置了 client_secret（含安全提供程序）时改走 Password/Refresh 同款的
         // RequestTokenWithClientAuthAsync（Basic 头优先、体兜底）；公共客户端维持现状。
@@ -690,7 +690,7 @@ public class StandardOAuth2TokenManager : OAuth2TokenManagerBase
     /// 且<b>无论</b>标志状态都<b>必须</b>调用 base，否则基类的定时器 / 缓存 / 锁表释放会被整体跳过。
     /// </para>
     /// <para>
-    /// 该区域历史上出过三次回归（TK-08 / NEW-TM-11 / SR-H1），故由
+    /// 该区域历史上出过三次回归（/ NEW-TM-11 / SR-H1），故由
     /// <c>TokenManagerDisposeChainTests</c> 固定三条：密钥缓存已清零、基类资源已释放、重复 Dispose 安全。
     /// </para>
     /// </remarks>

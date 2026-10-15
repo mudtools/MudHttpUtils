@@ -156,7 +156,7 @@ internal class MethodAnalysisResult
     /// <see cref="EffectiveTokenInjectionMode"/> / <see cref="EffectiveTokenScheme"/> 同一「有效级」口径）。
     /// </summary>
     /// <remarks>
-    /// G8-21：原表达式 <c>MethodTokenScopes ?? InterfaceTokenScopes</c> 在
+    /// 原表达式 <c>MethodTokenScopes ?? InterfaceTokenScopes</c> 在
     /// <c>MethodGenerator</c> 中出现两次（令牌取用与 <c>TokenRecoveryContext</c> 生成），
     /// 属「同一规则两处内联」的漂移面；收敛为本属性后与其余 Effective* 访问器一致。
     /// </remarks>
@@ -178,7 +178,7 @@ internal class MethodAnalysisResult
     /// （<c>MethodGenerator.ShouldInjectToken</c>），必须保持「未声明 ⇒ false」语义。
     /// </para>
     /// <para>
-    /// G8-20 附带收敛：本属性把「原始接口级字段」的最后两个消费点（ShouldInjectToken）也收进模型，
+    /// 附带收敛：本属性把「原始接口级字段」的最后两个消费点（ShouldInjectToken）也收进模型，
     /// 使 <c>InterfaceToken*</c> 字段仅存在于模型与解析器中 —— 由
     /// <c>EffectiveTokenFieldUsageGuardTests</c> 强制（其余文件必须走 Effective*/HasExplicit* 访问器）。
     /// </para>

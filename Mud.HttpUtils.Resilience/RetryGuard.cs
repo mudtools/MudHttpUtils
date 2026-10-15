@@ -74,7 +74,7 @@ internal static class PollyExceptionNormalizer
 {
     /// <summary>
     /// 尝试把 Polly 内部异常归一化为 <see cref="ApiRequestException"/>；无需包装时返回 null。
-    /// M4-H-3：平台超时（<see cref="HttpClient.Timeout"/>，TCE 特征 inner 为 TimeoutException）漏出时归一为
+    /// 平台超时（<see cref="HttpClient.Timeout"/>，TCE 特征 inner 为 TimeoutException）漏出时归一为
     /// <c>isTimeout:true</c>；用户取消（调用方 token 已触发）与其余 TCE 不归一（原样重抛，保持取消语义）。
     /// </summary>
     public static ApiRequestException? TryNormalize(Exception ex, string? requestUri, CancellationToken userToken = default)

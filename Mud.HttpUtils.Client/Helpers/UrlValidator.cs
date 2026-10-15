@@ -69,7 +69,7 @@ public static class UrlValidator
     }
 
     /// <summary>
-    /// M6-HC-08：白名单命中后传输安全校验的异步版 —— 回环判定经
+    /// 白名单命中后传输安全校验的异步版 —— 回环判定经
     /// <see cref="IsLoopbackAddressAsync"/> 走异步 DNS，消除发送路径的 sync-over-async 阻塞。
     /// </summary>
     /// <remarks>语义与同步版 <see cref="EnsureWhitelistedHostIsSecure"/> 逐项一致。</remarks>
@@ -100,7 +100,7 @@ public static class UrlValidator
     private const int DnsCacheCapacity = 10_000;
     private const int DnsStripeCount = 32;
 
-    // M5-HC-07：条带锁改为 SemaphoreSlim —— 支持异步等待，消除 sync-over-async 线程阻塞
+    // 条带锁改为 SemaphoreSlim —— 支持异步等待，消除 sync-over-async 线程阻塞
     private static readonly SemaphoreSlim[] DnsStripes =
         Enumerable.Range(0, DnsStripeCount).Select(_ => new SemaphoreSlim(1, 1)).ToArray();
 
@@ -145,7 +145,7 @@ public static class UrlValidator
         }
     }
 
-    /// <summary>M5-HC-07：异步 DNS 解析（SemaphoreSlim 条带锁 + await，无 sync-over-async）。</summary>
+    /// <summary>异步 DNS 解析（SemaphoreSlim 条带锁 + await，无 sync-over-async）。</summary>
     private static async Task<IPAddress[]> ResolveWithCacheAsync(string host, CancellationToken cancellationToken = default)
     {
         if (DnsCache.Get(host) is IPAddress[] cached)
@@ -345,7 +345,7 @@ public static class UrlValidator
     }
 
     /// <summary>
-    /// M5-HC-07：异步版 URL 安全校验 —— DNS 解析走 await，消除 sync-over-async 线程阻塞。
+    /// 异步版 URL 安全校验 —— DNS 解析走 await，消除 sync-over-async 线程阻塞。
     /// </summary>
     /// <remarks>
     /// 与 <see cref="ValidateUrl"/> 逐项语义一致；<c>AllowCustomBaseUrls = false</c> 路径零 DNS 调用。
@@ -365,7 +365,7 @@ public static class UrlValidator
         var host = uri.Host;
 
         // 白名单域名跳过 IP / 内网域名检查（与同步版一致）；MT-10：仍强制 HTTPS。
-        // M6-HC-08：异步版走异步回环判定，发送路径零 sync-over-async DNS。
+        // 异步版走异步回环判定，发送路径零 sync-over-async DNS。
         if (IsDomainAllowedByAnySnapshot(host))
         {
             await EnsureWhitelistedHostIsSecureAsync(uri, host, cancellationToken).ConfigureAwait(false);
@@ -444,7 +444,7 @@ public static class UrlValidator
         try
         {
             var addresses = await ResolveWithCacheAsync(host, cancellationToken).ConfigureAwait(false);
-            // M6-HC-04：回环豁免改「全部地址为回环」。混合记录 [回环, 私网] 下 Any 语义会把
+            // 回环豁免改「全部地址为回环」。混合记录 [回环, 私网] 下 Any 语义会把
             // 私网地址一并豁免（isPrivate=Any=true、isLoopback=Any=true → 不抛出）——绕过私网校验。
             return addresses.Length > 0 && addresses.All(IPAddress.IsLoopback);
         }
@@ -526,7 +526,7 @@ public static class UrlValidator
         }
     }
 
-    // M6-HC-01：IPv4 映射型 IPv6（::ffff:a.b.c.d）必须先归一为 IPv4 再判定。
+    // IPv4 映射型 IPv6（::ffff:a.b.c.d）必须先归一为 IPv4 再判定。
     // 否则恶意 DNS 返回映射 AAAA 记录时，::ffff:10.0.0.1 不命中 IPv4 网段
     // （IPNetwork.Contains 按 AddressFamily 短路），且 IsLoopback(::ffff:127.0.0.1)=False，
     // URL 层与连接期 DefaultIpAddressPolicy 两道 SSRF 防线同时被绕过。
@@ -566,7 +566,7 @@ public static class UrlValidator
         try
         {
             var addresses = ResolveWithCache(host);
-            // M6-HC-04：与异步版同口径 —— 回环豁免要求「全部地址为回环」，
+            // 与异步版同口径 —— 回环豁免要求「全部地址为回环」，
             // 混合记录 [回环, 私网] 不再豁免（同步 ValidateUrl 与 EnsureWhitelistedHostIsSecure 同源受益）。
             return addresses.Length > 0 && addresses.All(IPAddress.IsLoopback);
         }

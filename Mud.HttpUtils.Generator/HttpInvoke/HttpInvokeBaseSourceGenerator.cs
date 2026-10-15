@@ -112,7 +112,7 @@ internal abstract class HttpInvokeBaseSourceGenerator : TransitiveCodeGenerator
             .Select(static (provider, _) => BuildSalt(provider.GlobalOptions))
             .WithTrackingName("HttpInvokeBase_GenerationSalt");
 
-        // G7-06：配置值快照——把引用型 Provider 中影响生成内容的配置值抽为值相等输入，
+        // 配置值快照——把引用型 Provider 中影响生成内容的配置值抽为值相等输入，
         // IDE 重建 Provider 实例但配置值不变时下游命中缓存（原 Combine(provider) 会使全量 Modified）。
         var configSnapshot = context.AnalyzerConfigOptionsProvider
             .Select(static (provider, _) => GeneratorConfigSnapshot.Create(provider))
@@ -168,7 +168,7 @@ internal abstract class HttpInvokeBaseSourceGenerator : TransitiveCodeGenerator
     /// <param name="model">单个接口模型。通过 <see cref="InterfaceModel.Context"/> 携带
     /// <see cref="SemanticModel"/>（含 <see cref="Compilation"/>）。</param>
     /// <param name="context">源码生成上下文</param>
-    /// <param name="configSnapshot">配置值快照（G7-06：值相等增量输入，替代原引用型 Provider）。</param>
+    /// <param name="configSnapshot">配置值快照（值相等增量输入，替代原引用型 Provider）。</param>
     /// <param name="generationSalt">增量失效信号（F4/E-3）。仅用于强制重生成，不参与生成内容。</param>
     /// <remarks>
     /// 默认空实现：仅产出全局产物（如 DI 注册扩展方法）的生成器无需重写本方法。
@@ -189,7 +189,7 @@ internal abstract class HttpInvokeBaseSourceGenerator : TransitiveCodeGenerator
     /// <param name="interfaces">所有标记目标特性的接口模型。每个 <see cref="InterfaceModel"/> 通过
     /// <see cref="InterfaceModel.Context"/> 携带 <see cref="SemanticModel"/>（含 <see cref="Compilation"/>）。</param>
     /// <param name="context">源码生成上下文</param>
-    /// <param name="configSnapshot">配置值快照（G7-06：值相等增量输入，替代原引用型 Provider）。</param>
+    /// <param name="configSnapshot">配置值快照（值相等增量输入，替代原引用型 Provider）。</param>
     /// <param name="generationSalt">增量失效信号（F4/E-3）。仅用于强制重生成，不参与生成内容。</param>
     /// <remarks>
     /// 默认空实现：仅产出逐接口产物的生成器无需重写本方法。

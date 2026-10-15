@@ -17,7 +17,7 @@ namespace Mud.HttpUtils.Helpers;
 /// 兼顾排障可用性。
 /// </para>
 /// <para>
-/// M6-HC-27：<c>scheme://user:pass@host</c> 形式的内嵌凭据（userinfo）在 query 处理之前先行剥离为
+/// <c>scheme://user:pass@host</c> 形式的内嵌凭据（userinfo）在 query 处理之前先行剥离为
 /// <c>scheme://***@host</c>，避免 Basic 凭据等随 URL 泄漏。
 /// </para>
 /// <para>
@@ -213,7 +213,7 @@ internal static class SensitiveUrlRedactor
     }
 
     /// <summary>
-    /// M6-HC-27：剥离 URL 中的 userinfo（<c>scheme://user:pass@host</c> → <c>scheme://***@host</c>）。
+    /// 剥离 URL 中的 userinfo（<c>scheme://user:pass@host</c> → <c>scheme://***@host</c>）。
     /// 仅处理 scheme 之后、首个 path/query/fragment 分隔符之前的 authority 段，避免误伤 path 中的 '@'。
     /// </summary>
     private static string RedactUserInfo(string url)

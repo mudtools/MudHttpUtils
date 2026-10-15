@@ -93,7 +93,7 @@ public class MudHttpClientApplicationOptions
     /// HTTP 响应缓存配置
     /// </summary>
     /// <remarks>
-    /// <para>HC-01 修复：将原硬编码的 <see cref="MemoryHttpResponseCache"/> 容量(1000)与清理间隔(60秒)抽为可配置项。</para>
+    /// <para>将原硬编码的 <see cref="MemoryHttpResponseCache"/> 容量(1000)与清理间隔(60秒)抽为可配置项。</para>
     /// <para>仅在未手动注册 <see cref="IHttpResponseCache"/> 实现时生效（TryAddSingleton 语义）。</para>
     /// <para>配置示例：</para>
     /// <code>

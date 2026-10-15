@@ -28,7 +28,7 @@ public interface IApiResponse
     /// <summary>
     /// 原始 HttpResponseMessage。
     /// </summary>
-    /// <remarks>M5-HC-14：框架默认执行器恒返回 null（响应已在方法内释放）。</remarks>
+    /// <remarks>框架默认执行器恒返回 null（响应已在方法内释放）。</remarks>
     [System.Obsolete("框架默认执行器恒返回 null。如需原始响应，请改用直达返回类型 HttpResponseMessage。")]
     HttpResponseMessage? ResponseMessage { get; }
 }

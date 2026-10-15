@@ -10,7 +10,7 @@ using System.Diagnostics;
 namespace Mud.HttpUtils.Helpers;
 
 /// <summary>
-/// M6-HC-15：带时间节流的流复制 —— 下载/上传进度回调的统一实现。
+/// 带时间节流的流复制 —— 下载/上传进度回调的统一实现。
 /// </summary>
 /// <remarks>
 /// <para>

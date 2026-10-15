@@ -242,7 +242,7 @@ internal sealed class RefreshDedupTable
                 existing = found;
 
                 // 窗口内（含在途刷新）复用同一任务：并发等待者共享单次刷新，且异常被多方观察。
-                // HC-23：仅「已完成 + forceRefresh」例外——该结果已被证明无效，必须重新刷新。
+                // 仅「已完成 + forceRefresh」例外——该结果已被证明无效，必须重新刷新。
                 if (!forceRefresh || !existing.IsCompleted)
                 {
                     return await AwaitWithBudgetAsync(existing, key, hardTimeout, cancellationToken).ConfigureAwait(false);

@@ -6,7 +6,7 @@ namespace Mud.HttpUtils.Resilience;
 /// 弹性策略提供器接口，负责创建和管理 Polly 弹性策略。
 /// </summary>
 /// <remarks>
-/// M5-HC-06：各 Get* 方法接受 <c>scope</c> 参数，
+/// 各 Get* 方法接受 <c>scope</c> 参数，
 /// 用于按 host / Named Client 隔离熔断器等策略实例，避免跨服务故障放大。
 /// 不关心隔离时传 <c>"global"</c>。
 /// </remarks>

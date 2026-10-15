@@ -68,7 +68,7 @@ public sealed class ResiliencePolicyResolver : IResiliencePolicyResolver
             retryEnabled = false;
         }
 
-        // M5-HC-06：按端点解析作用域
+        // 按端点解析作用域
         var policyScope = _resilienceOptions?.PolicyScope ?? ResiliencePolicyScope.PerHost;
         var scope = ResiliencePolicyScopeResolver.Resolve(requestTemplate, policyScope);
 
@@ -104,7 +104,7 @@ public sealed class ResiliencePolicyResolver : IResiliencePolicyResolver
                         bool ownsRequest;
                         if (isRetry)
                         {
-                            // M5-HC-05 (3)：改用 TryCloneAsync —— 克隆不可行时抛出原始故障
+                            // (3)：改用 TryCloneAsync —— 克隆不可行时抛出原始故障
                             var cloned = await HttpRequestMessageCloner
                                 .TryCloneAsync(requestTemplate, _maxCloneContentSize, ct).ConfigureAwait(false);
                             if (cloned == null)

@@ -17,7 +17,7 @@ namespace Mud.HttpUtils;
 /// 由生成器在 Header 发射处调用本校验器快速失败，收敛平台差异。
 /// </para>
 /// <para>
-/// M6-HC-24：校验口径扩展为「拒绝全部 C0 控制字符（U+0000-U+001F）与 DEL（U+007F），仅保留 HTAB（<c>\t</c>）」。
+/// 校验口径扩展为「拒绝全部 C0 控制字符（U+0000-U+001F）与 DEL（U+007F），仅保留 HTAB（<c>\t</c>）」。
 /// 依据 RFC 7230 <c>field-value</c>：CR/LF 属头部注入，其余 C0 控制字符亦不被允许；HTAB 可作为可选空白保留，
 /// 故不拒绝（.NET 5+ 的实现同样放行 HTAB）。本类**无 TFM 分支**（单一实现），各目标框架行为一致。
 /// </para>
@@ -31,13 +31,13 @@ public static class HttpHeaderValueValidator
     /// <returns>
     /// <c>true</c> 表示合法（含 null / 空白）；<c>false</c> 表示含 CR/LF、其它 C0 控制字符或 DEL。
     /// </returns>
-    /// <remarks>M6-HC-24：HTAB（<c>\t</c>）视为合法，与 RFC 7230 及 .NET 5+ 实现一致。</remarks>
+    /// <remarks>HTAB（<c>\t</c>）视为合法，与 RFC 7230 及 .NET 5+ 实现一致。</remarks>
     public static bool IsValid(string? value)
     {
         if (value is null || value.Length == 0)
             return true;
 
-        // M6-HC-24：逐字符核对，避免分配 char[]（原实现仅查 CR/LF，漏检 \0 等其它控制字符）。
+        // 逐字符核对，避免分配 char[]（原实现仅查 CR/LF，漏检 \0 等其它控制字符）。
         foreach (var c in value)
         {
             if ((c < 0x20 && c != '\t') || c == 0x7F)

@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// M7-HC-01：只读顺序组合流 —— 先读尽 <c>first</c>，随后顺序读取 <c>second</c>。
+/// 只读顺序组合流 —— 先读尽 <c>first</c>，随后顺序读取 <c>second</c>。
 /// </summary>
 /// <remarks>
 /// 用于 Trace 日志路径：日志只需前 <c>MaxDebugLogBodyLength</c> 字节的截断缓冲（memoryStream），

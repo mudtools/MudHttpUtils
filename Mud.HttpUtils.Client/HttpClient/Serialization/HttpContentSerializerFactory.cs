@@ -98,7 +98,7 @@ public static class HttpContentSerializerFactory
         // 库内置兜底上下文（始终包含，保证内部类型可用）
         System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver builtIn = MudHttpJsonContext.Default;
 
-        // M6-HC-20（D3-A）：合并基座。消费方注入的 options 非 null 时以其副本为基座，
+        // 合并基座。消费方注入的 options 非 null 时以其副本为基座，
         // 保留 camelCase/枚举字符串化/自定义 converter 等全量设置（此前仅取 resolver，其余设置被静默丢弃）；
         // injected 为 null 时维持库默认模板。始终返回新实例，避免改写消费方或库级共享状态。
         JsonSerializerOptions mergeBase = injected is null

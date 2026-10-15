@@ -17,7 +17,7 @@ internal static class TokenMethodHelper
     }
 
     /// <summary>
-    /// 解析「令牌头名」（G8-20 · 单一事实源）。
+    /// 解析「令牌头名」（· 单一事实源）。
     /// </summary>
     /// <param name="methodInfo">方法分析结果。</param>
     /// <returns>令牌头名；无法解析时返回 <c>null</c>（由调用方按场景回退 <c>Authorization</c>）。</returns>

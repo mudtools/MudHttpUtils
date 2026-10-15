@@ -13,7 +13,7 @@ namespace Mud.HttpUtils;
 /// 基于内存的 HTTP 响应缓存默认实现，支持 LRU 淘汰策略。
 /// </summary>
 /// <remarks>
-/// M5-HC-08：条目元数据不可变 + CAS（M2-#14）；值对象按引用共享 —— 命中返回同一实例，请勿修改。
+/// 条目元数据不可变 + CAS（M2-#14）；值对象按引用共享 —— 命中返回同一实例，请勿修改。
 /// </remarks>
 public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
 {
@@ -126,7 +126,7 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
         if (TryGet<T>(key, out var cachedValue))
             return cachedValue;
 
-        // M6-HC-07：单飞锁获取改为"自旋校验"。
+        // 单飞锁获取改为"自旋校验"。
         // 原实现在 GetOrAdd 与 WaitAsync 之间的窗口内，锁可能被 PruneFetchLocks 回收
         // （回收条件仅判 !_cache.ContainsKey，而回源中的键必然不在 _cache），
         // 使同 key 的并发调用各自拿到不同锁并重复回源 —— 单飞语义失效。
@@ -221,11 +221,11 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
     }
 
     /// <summary>
-    /// M3-#24 / M6-HC-07：fetch 锁超限回收 —— 移除"缓存条目已不存在<b>且当前无人持锁</b>"的锁。
+    /// M3-#24 / fetch 锁超限回收 —— 移除"缓存条目已不存在<b>且当前无人持锁</b>"的锁。
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>M6-HC-07 修正</b>：回收条件原仅判 <c>!_cache.ContainsKey(key)</c>，而"正在回源"的键必然不在
+    /// <b>修正</b>：回收条件原仅判 <c>!_cache.ContainsKey(key)</c>，而"正在回源"的键必然不在
     /// <see cref="_cache"/> 中（回源完成后才经 <c>Set</c> 写入），故回源中的锁会被误回收，
     /// 使同 key 的并发调用各自取到不同锁并重复回源 —— 破坏单飞语义。
     /// 追加"无人持锁"条件可保证活跃回源中的锁不被回收。
@@ -280,7 +280,7 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
             }
 
             // NEW-CA-03 修复：仅从字典移除 fetchLock，不立即 Dispose，避免在途操作抛异常。
-            // M6-HC-07：与 GetOrFetchAsync 共用同一回收方法（含"无人持锁"判定）。
+            // 与 GetOrFetchAsync 共用同一回收方法（含"无人持锁"判定）。
             PruneFetchLocks();
         }
         catch (Exception ex)
@@ -309,7 +309,7 @@ public sealed class MemoryHttpResponseCache : IHttpResponseCache, IDisposable
         {
             var evictCount = _cache.Count - _maxCacheSize + 1;
 
-            // M6-HC-16：已满时需淘汰"最久未访问"条目。严格容量语义下 evictCount 恒为 1，
+            // 已满时需淘汰"最久未访问"条目。严格容量语义下 evictCount 恒为 1，
             // 用单次 O(N) 扫描取最小 LastAccessTime 即可，避免每次 Set 都付出 O(N log N) 全量排序；
             // 仅在并发导致单次溢出多条（evictCount > 1）时回退到排序选择。
             if (evictCount == 1)

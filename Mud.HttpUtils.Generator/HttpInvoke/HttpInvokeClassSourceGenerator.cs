@@ -49,7 +49,7 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
         if (configSnapshot == null)
             return;
 
-        // T5.3: 全局禁用开关（调试与渐进迁移）；G7-06 起从配置值快照读取
+        // T5.3: 全局禁用开关（调试与渐进迁移）；起从配置值快照读取
         if (configSnapshot.Disable)
             return;
 
@@ -81,7 +81,7 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
 
         try
         {
-            // G9-07：nullable 配置以实参显式传递（原实例可变属性 EmitNullableEnable 已移除）
+            // nullable 配置以实参显式传递（原实例可变属性 EmitNullableEnable 已移除）
             ProcessInterface(compilation, interfaceDecl, interfaceSymbol, semanticModel, context, httpClientOptionsName, isAotEnabled, configSnapshot.NullableEnable, emitGeneratedCodeMarkers, configSnapshot.SuppressTokenManagerKeyInference);
         }
         catch (Exception ex)
@@ -126,7 +126,7 @@ internal class HttpInvokeClassSourceGenerator : HttpInvokeBaseSourceGenerator
         if (interfaces.IsDefaultOrEmpty || configSnapshot == null)
             return;
 
-        // T5.3: 全局禁用开关（调试与渐进迁移）；G7-06 起从配置值快照读取
+        // T5.3: 全局禁用开关（调试与渐进迁移）；起从配置值快照读取
         if (configSnapshot.Disable)
             return;
 

@@ -36,7 +36,7 @@ internal static class PayloadContractModelBuilder
     /// <c>[PayloadContract]</c> 的元数据名（生成器不引用特性程序集，按名匹配）。
     /// </summary>
     /// <remarks>
-    /// 命名空间与其它全部特性一致（<c>Mud.HttpUtils.Attributes</c>，见 Guards/AttributeNamespaceConsistencyTests 的 G8-13 守卫：
+    /// 命名空间与其它全部特性一致（<c>Mud.HttpUtils.Attributes</c>，见 Guards/AttributeNamespaceConsistencyTests 的 守卫：
     /// 该程序集的公开面命名空间白名单为空，消费方的 <c>using</c> 组合必须可预期）。
     /// </remarks>
     internal const string ContractAttributeMetadataName = "Mud.HttpUtils.Attributes.PayloadContractAttribute";

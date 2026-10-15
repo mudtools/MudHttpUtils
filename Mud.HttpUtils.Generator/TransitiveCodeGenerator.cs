@@ -94,7 +94,7 @@ public abstract class TransitiveCodeGenerator : IIncrementalGenerator
     /// 生成通用的文件头部（使用子类提供的命名空间）。
     /// </summary>
     /// <remarks>
-    /// G9-07：<paramref name="emitNullableEnable"/> 由调用方显式传入（参数化），移除原实例可变属性
+    /// <paramref name="emitNullableEnable"/> 由调用方显式传入（参数化），移除原实例可变属性
     /// <c>EmitNullableEnable</c>——增量生成器实例跨编译代复用，可变属性依赖「每次 ExecuteGenerator
     /// 先赋值后生成」的顺序纪律，属脆弱的隐式契约；实现类文件路径（ClassStructureGenerator）已是参数传递，
     /// 此处对齐为同一机制。

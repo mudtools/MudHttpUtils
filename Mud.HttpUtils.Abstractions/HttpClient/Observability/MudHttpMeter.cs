@@ -37,7 +37,7 @@ public static class MudHttpMeter
     public static readonly Meter Instance = new(MeterName, Version);
 
     /// <summary>
-    /// M6-HC-17：是否存在 Meter 监听器（任一内建 instrument 处于 Enabled 状态）。
+    /// 是否存在 Meter 监听器（任一内建 instrument 处于 Enabled 状态）。
     /// </summary>
     /// <remarks>
     /// <para>

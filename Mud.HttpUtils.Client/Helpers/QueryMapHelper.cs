@@ -60,7 +60,7 @@ public static class QueryMapHelper
         if (depth > MaxFlattenRecursionDepth) throw new InvalidOperationException("Maximum recursion depth exceeded while flattening object of type " + obj.GetType().Name + ". This may be caused by a circular reference.");
 
         var serializer = contentSerializer ?? s_defaultSerializer;
-        // M6-HC-19：过滤索引器属性，避免 prop.GetValue(obj) 因缺少索引实参抛 TargetParameterCountException。
+        // 过滤索引器属性，避免 prop.GetValue(obj) 因缺少索引实参抛 TargetParameterCountException。
         var properties = PropertyCache.GetOrAdd(obj.GetType(), t => t.GetProperties().Where(static p => p.GetIndexParameters().Length == 0).ToArray());
         foreach (var prop in properties)
         {

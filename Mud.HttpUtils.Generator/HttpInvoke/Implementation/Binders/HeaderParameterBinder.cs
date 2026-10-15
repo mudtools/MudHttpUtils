@@ -25,7 +25,7 @@ internal class HeaderParameterBinder : IParameterBinder
         var isTokenParam = parameter.Attributes.Any(attr =>
             HttpClientGeneratorConstants.TokenAttributeNames.Contains(attr.Name));
 
-        // G8-20：令牌参数（[Token] + [Header]，且未显式给头名）的默认头名 = **令牌注入头名**
+        // 令牌参数（[Token] + [Header]，且未显式给头名）的默认头名 = **令牌注入头名**
         //（与注入路径共享 TokenMethodHelper.GetTokenHeaderName —— 有效级 Name，仅 Header/ApiKey 模式消费；
         // 未声明时回退 Authorization）。
         // 修复前：本分支读接口级 InterfaceTokenName 并把 Name 与 Scheme 字面量（"Bearer"/"Basic"）比对 ⇒
@@ -94,7 +94,7 @@ internal class HeaderParameterBinder : IParameterBinder
                 ? $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{escapedFormat}}}\", {parameter.Name})"
                 : $"{parameter.Name}.ToString()";
 
-            // M6-HC-30：非 string 头值同样经 CR/LF 校验（ToString/Format 结果运行期才确定，
+            // 非 string 头值同样经 CR/LF 校验（ToString/Format 结果运行期才确定，
             // ns2.0 的 Headers.Add 不拦截）。不合格跳过（不发射、不 Remove）；
             // Debug 仅输出头名（不输出值，防敏感信息落日志）。与 string 分支 GEN-18 同源收敛平台差异。
             var headerValueLocal = $"__headerValue_{parameter.Name}";
@@ -117,7 +117,7 @@ internal class HeaderParameterBinder : IParameterBinder
         }
     }
 
-    // G8-20：原私有 GetTokenHeaderName（读接口级 Name 并与 Scheme 字面量 "Bearer"/"Basic" 比对）已删除，
+    // 原私有 GetTokenHeaderName（读接口级 Name 并与 Scheme 字面量 "Bearer"/"Basic" 比对）已删除，
     // 统一改用 TokenMethodHelper.GetTokenHeaderName —— 单一事实源，与令牌注入路径同口径。
 
     private static string? GetFormatString(ParameterAttributeInfo attr)

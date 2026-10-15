@@ -8,7 +8,7 @@
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// EL-9：多租户场景下"应用上下文缺失"时的策略。
+/// 多租户场景下"应用上下文缺失"时的策略。
 /// 统一控制四条路径的 fail-open/fail-closed 决策：
 /// ① 生成代码（编译期保持 ?? throw，不依赖运行期选项）；
 /// ② 缓存作用域键解析；
@@ -29,7 +29,7 @@ public enum MissingAppContextPolicy
 }
 
 /// <summary>
-/// EL-9：多租户选项，控制上下文缺失时的行为。
+/// 多租户选项，控制上下文缺失时的行为。
 /// 默认 <see cref="MissingContextPolicy"/> 为 <see cref="MissingAppContextPolicy.Reject"/>（fail-closed）。
 /// </summary>
 public sealed class MudMultiTenantOptions

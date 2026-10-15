@@ -295,7 +295,7 @@ internal class QueryParameterBinder : IParameterBinder
             ? ".Where(__item => __item != null)"
             : string.Empty;
 
-        // GEN-06（B-2）/M6-HC-18：元素格式化的统一口径 —— 非可空值类型显式 Invariant，
+        // GEN-06（B-2）/元素格式化的统一口径 —— 非可空值类型显式 Invariant，
         // 避免按 CurrentCulture 生成区域敏感串（TimeSpan[]、DateTimeOffset[] 等）；非可格式化类型保持 .ToString()。
         var elementIsFormattable = TypeDetectionHelper.IsValueType(elementType)
                                    && !TypeDetectionHelper.IsNullableType(elementType);
@@ -579,7 +579,7 @@ internal class QueryParameterBinder : IParameterBinder
             if (urlEncode)
                 codeBuilder.AppendLine($"{indent}__queryParams.Add(\"{escapedKey}\", {valueExpr});");
             else
-                // M6-HC-19：rawPairs 模式语义收敛为「key/value 均不转义」，与 QueryMapHelper 保持一致。
+                // rawPairs 模式语义收敛为「key/value 均不转义」，与 QueryMapHelper 保持一致。
                 codeBuilder.AppendLine($"{indent}__rawQueryPairs.Add(\"{escapedKey}\" + \"=\" + {valueExpr});");
         }
         else

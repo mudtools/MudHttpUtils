@@ -12,7 +12,7 @@ namespace Mud.HttpUtils;
 /// IBaseHttpClient 的 NDJSON 流式扩展方法。
 /// </summary>
 /// <remarks>
-/// M5-HC-10：原名 <c>SendAsAsyncEnumerable</c> 与 <see cref="IBaseHttpClient"/> 实例方法同名同形参，
+/// 原名 <c>SendAsAsyncEnumerable</c> 与 <see cref="IBaseHttpClient"/> 实例方法同名同形参，
 /// 被实例方法遮蔽（扩展方法不可达）。重命名为语义化名称后 null 守卫恢复可达。
 /// </remarks>
 public static class AsyncEnumerableExtensions
@@ -48,7 +48,7 @@ public static class AsyncEnumerableExtensions
         await using (stream.ConfigureAwait(false))
         {
             var options = jsonSerializerOptions as System.Text.Json.JsonSerializerOptions;
-            // M6-HC-31：优先复用客户端注入的序列化器（其 options 承载消费方的 JsonSerializerContext resolver 与自定义设置），
+            // 优先复用客户端注入的序列化器（其 options 承载消费方的 JsonSerializerContext resolver 与自定义设置），
             // 仅当客户端非 EnhancedHttpClient（如第三方实现 / 测试替身）时才按入参另建默认序列化器。
             var contentSerializer = client is EnhancedHttpClient enhancedClient
                 ? enhancedClient.ContentSerializer
@@ -86,7 +86,7 @@ public static class AsyncEnumerableExtensions
 
         await using (stream.ConfigureAwait(false))
         {
-            // M6-HC-31：同开放泛型重载 —— 复用客户端注入的序列化器，避免另建默认实例导致
+            // 同开放泛型重载 —— 复用客户端注入的序列化器，避免另建默认实例导致
             // 与客户端配置（含 JsonSerializerContext resolver、命名策略）不一致。
             var contentSerializer = client is EnhancedHttpClient enhancedClient
                 ? enhancedClient.ContentSerializer

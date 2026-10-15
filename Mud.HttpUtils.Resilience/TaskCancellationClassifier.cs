@@ -7,7 +7,7 @@
 namespace Mud.HttpUtils.Resilience
 {
     /// <summary>
-    /// M4-H-3：<see cref="TaskCanceledException"/> 三态判定（多 TFM 统一入口）。
+    /// <see cref="TaskCanceledException"/> 三态判定（多 TFM 统一入口）。
     /// </summary>
     /// <remarks>
     /// <para>

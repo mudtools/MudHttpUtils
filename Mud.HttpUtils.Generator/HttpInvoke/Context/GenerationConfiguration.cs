@@ -13,7 +13,7 @@ namespace Mud.HttpUtils.HttpInvoke.Context;
 /// 基类（<c>InheritedFrom</c> 指向的生成器产出抽象类）的运行模式。
 /// </summary>
 /// <remarks>
-/// G8-04：仅用于 <c>base(...)</c> 位置实参分派。<b>不是</b>新的可写状态 ——
+/// 仅用于 <c>base(...)</c> 位置实参分派。<b>不是</b>新的可写状态 ——
 /// 由 <see cref="GenerationConfiguration.BaseRuntimeMode"/> 从三个既有 <c>BaseHas*</c> 旗标唯一推导。
 /// </remarks>
 internal enum BaseRuntimeMode

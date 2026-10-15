@@ -47,7 +47,7 @@ public sealed class SsrfSafeSocketsHttpHandler : HttpMessageHandler
         _inner = new SocketsHttpHandler
         {
             ConnectCallback = ConnectAsyncCallback,
-            // M6-HC-05（D2-A）：主链路关闭自动重定向 —— 重定向逐跳复验由 EnhancedHttpClient.SendCoreAsync
+            // 主链路关闭自动重定向 —— 重定向逐跳复验由 EnhancedHttpClient.SendCoreAsync
             // 的手动循环承接（自动重定向跨主机不做白名单/私网复验，属 SSRF 绕过面）。
             AllowAutoRedirect = false,
         };

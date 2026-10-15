@@ -14,9 +14,9 @@ namespace Mud.HttpUtils;
 /// 统一为：<c>Uri.TryCreate</c> + DNS 主机名解析 + <c>IsLoopback</c>。
 /// </summary>
 /// <remarks>
-/// <para>TK-17：HTTPS 配置不一致——校验器仅做前缀匹配（拒绝合法的 localhost 开发端点），
+/// <para>HTTPS 配置不一致——校验器仅做前缀匹配（拒绝合法的 localhost 开发端点），
 /// 运行期却额外允许 localhost/127.0.0.1，两处判定不一致导致"启动期报错、运行期放行"的矛盾。</para>
-/// <para>TK-19：前缀校验可绕过——<c>"https://foo"</c> 这类畸形字符串可通过 <c>StartsWith("https://")</c>，
+/// <para>前缀校验可绕过——<c>"https://foo"</c> 这类畸形字符串可通过 <c>StartsWith("https://")</c>，
 /// 但实际不会被 HttpClient 正常解析；本实现以 <c>Uri.TryCreate</c> 严格解析。</para>
 /// </remarks>
 internal static class OAuth2EndpointValidator
@@ -35,7 +35,7 @@ internal static class OAuth2EndpointValidator
     /// <param name="endpoint">端点 URL 字符串。</param>
     /// <param name="restrictToPublicEndpoints">
     /// <c>true</c> 时额外拒绝私网 / 回环 / 链路本地 / 云元数据 / CGNAT 的<b>字面量 IP</b> 主机。
-    /// <b>默认 <c>false</c></b>（评审修订 7）：与 2.0.x 逐字节等价，内部 IdP 不受影响。
+    /// <b>默认 <c>false</c></b>与 2.0.x 逐字节等价，内部 IdP 不受影响。
     /// </param>
     /// <returns>安全返回 true；非安全、格式非法或解析失败返回 false。</returns>
     /// <remarks>
@@ -47,7 +47,7 @@ internal static class OAuth2EndpointValidator
         if (string.IsNullOrWhiteSpace(endpoint))
             return false;
 
-        // TK-19 修复：以 Uri.TryCreate 严格解析，替代 StartsWith("https://") 前缀匹配——
+        // 以 Uri.TryCreate 严格解析，替代 StartsWith("https://") 前缀匹配——
         // "https://foo" 这类可通过前缀检查但无法被 HttpClient 正常解析的畸形字符串被正确拒绝。
         if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri) ||
             !uri.IsWellFormedOriginalString())

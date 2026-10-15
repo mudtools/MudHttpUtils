@@ -82,7 +82,7 @@ public class DefaultHmacSignatureProvider : IHmacSignatureProvider
     /// 初始化签名提供者，并指定是否启用防重放签名。
     /// </summary>
     /// <param name="requireAntiReplay">
-    /// M6-HC-25（D4-A）：为 <c>true</c> 时把 <c>X-Timestamp</c>（Unix 秒）与 <c>X-Nonce</c>（8 字节随机十六进制）
+    /// 为 <c>true</c> 时把 <c>X-Timestamp</c>（Unix 秒）与 <c>X-Nonce</c>（8 字节随机十六进制）
     /// 固定置于签名串首两行，并写入请求头；为 <c>false</c>（默认）时维持原有确定性签名串。
     /// </param>
     /// <remarks>
@@ -94,7 +94,7 @@ public class DefaultHmacSignatureProvider : IHmacSignatureProvider
     }
 
     /// <summary>
-    /// M6-HC-25：是否启用防重放签名（时间戳 + 随机数入签）。默认 <c>false</c>。
+    /// 是否启用防重放签名（时间戳 + 随机数入签）。默认 <c>false</c>。
     /// </summary>
     public bool RequireAntiReplay { get; }
 
@@ -207,7 +207,7 @@ public class DefaultHmacSignatureProvider : IHmacSignatureProvider
     {
         var sb = new StringBuilder();
 
-        // M6-HC-25：防重放要素固定置于签名串首两行（服务端重建签名串时按同一顺序解析）。
+        // 防重放要素固定置于签名串首两行（服务端重建签名串时按同一顺序解析）。
         if (RequireAntiReplay)
         {
             sb.Append(TimestampHeaderName);
@@ -276,7 +276,7 @@ public class DefaultHmacSignatureProvider : IHmacSignatureProvider
     }
 
     /// <summary>
-    /// M6-HC-25：读取请求上已有的防重放头值；缺失时按 <paramref name="factory"/> 生成并写回请求头。
+    /// 读取请求上已有的防重放头值；缺失时按 <paramref name="factory"/> 生成并写回请求头。
     /// </summary>
     /// <remarks>
     /// 复用已有值是<b>验证</b>路径成立的前提：<see cref="VerifySignatureAsync"/> 在同一请求对象上复算签名，
@@ -299,11 +299,11 @@ public class DefaultHmacSignatureProvider : IHmacSignatureProvider
         return created;
     }
 
-    /// <summary>M6-HC-25：当前 Unix 时间戳（秒，InvariantCulture，跨区域一致）。</summary>
+    /// <summary>当前 Unix 时间戳（秒，InvariantCulture，跨区域一致）。</summary>
     private static string CreateTimestamp()
         => DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
 
-    /// <summary>M6-HC-25：8 字节加密安全随机数的十六进制小写表示（16 个字符）。</summary>
+    /// <summary>8 字节加密安全随机数的十六进制小写表示（16 个字符）。</summary>
     private static string CreateNonce()
     {
         var bytes = new byte[8];

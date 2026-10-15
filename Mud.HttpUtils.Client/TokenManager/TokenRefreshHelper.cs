@@ -52,7 +52,7 @@ internal static class TokenRefreshHelper
     /// 刷新所有已注册的令牌管理器，返回是否应继续后台刷新调度。
     /// </summary>
     /// <remarks>
-    /// P1.6（TK-10 / TK-10-max）停止语义：
+    /// P1.6（/ TK-10-max）停止语义：
     /// <list type="bullet">
     ///   <item><see cref="TokenRefreshBackgroundOptions.StopOnError"/> 为 <c>true</c>：任一管理器失败即停止（返回 <c>false</c>）。</item>
     ///   <item><see cref="TokenRefreshBackgroundOptions.MaxConsecutiveFailures"/> 大于 0：连续失败达到该阈值即停止（返回 <c>false</c>），
@@ -88,7 +88,7 @@ internal static class TokenRefreshHelper
                     MudHttpClientLog.TokenRefreshCompleted(logger, kvp.Key);
                 }
             }
-            // M7-HC-04：调用方取消（BackgroundService Dispose / 宿主 stoppingToken）不是"刷新失败"——
+            // 调用方取消（BackgroundService Dispose / 宿主 stoppingToken）不是"刷新失败"——
             // 原样上抛交由调用方按优雅关闭口径处理（Background 回调与 Hosted RunLoopAsync 均已单独 catch OCE），
             // 不得落入下方通用 catch 被记为 Error（TokenRefreshFailed）或在 StopOnError 下误触发停止调度。
             // when 过滤确保管理器内部超时等"自身取消"（本 CT 未触发）仍按普通失败计数。

@@ -35,12 +35,12 @@ public abstract partial class EnhancedHttpClient
         HttpCompletionOption completionOption,
         CancellationToken cancellationToken)
     {
-        // M6-HC-05（D2-A）：主链路 handler 已关闭自动重定向（AllowAutoRedirect=false，见
+        // 主链路 handler 已关闭自动重定向（AllowAutoRedirect=false，见
         // ServiceCollectionExtensions / SsrfSafeSocketsHttpHandler），此处以手动逐跳循环承接重定向语义，
         // 并对每个目标执行全套 URL 复验（UrlValidator.ValidateUrlAsync：白名单 / HTTPS / 私网 / 内网域名），
         // 根治「自动重定向跨主机不复验」的 SSRF 绕过面。
         // 语义对齐 .NET RedirectHandler：301/302/303 非幂等方法降级为 GET 并丢弃请求体；
-        // 307/308 保留方法与请求体（仅内存型白名单内容可重放，与 M6-HC-11 克隆白名单同口径，
+        // 307/308 保留方法与请求体（仅内存型白名单内容可重放，与 克隆白名单同口径，
         // 不可重放则中止抛出 —— 失败快于静默空体）；每跳剥离 Authorization / Cookie；
         // 跳数上限 10，超限抛 InvalidOperationException。
         var currentUri = request.RequestUri ?? _httpClient.BaseAddress;
@@ -144,7 +144,7 @@ public abstract partial class EnhancedHttpClient
         }
     }
 
-    /// <summary>M6-HC-05：重定向跳数上限。</summary>
+    /// <summary>重定向跳数上限。</summary>
     private const int MaxRedirectHops = 10;
 
     private static bool IsRedirectStatus(HttpStatusCode statusCode)
@@ -159,14 +159,14 @@ public abstract partial class EnhancedHttpClient
         => statusCode == HttpStatusCode.TemporaryRedirect || (int)statusCode == 308;
 
     /// <summary>
-    /// M6-HC-05：请求内容可重放判定 —— 与 M6-HC-11 克隆白名单同口径：
+    /// 请求内容可重放判定 —— 与 克隆白名单同口径：
     /// 仅内存型内容（ByteArray/String/FormUrlEncoded 家族、Multipart）可安全重放
     /// （ByteArray 家族每次发送生成新流）；StreamContent/自定义内容发送即消费，不可重放。
     /// </summary>
     private static bool IsReplayableRequestContent(HttpContent? content)
         => content == null || content is ByteArrayContent || content is MultipartContent;
 
-    /// <summary>M6-HC-05：跨 TFM 复制请求级状态（Options/Properties），保持可观测性去重标记等随跳传递。</summary>
+    /// <summary>跨 TFM 复制请求级状态（Options/Properties），保持可观测性去重标记等随跳传递。</summary>
     private static void CopyRequestState(HttpRequestMessage source, HttpRequestMessage target)
     {
 #if NET5_0_OR_GREATER
@@ -251,7 +251,7 @@ public abstract partial class EnhancedHttpClient
             {
                 var response = await SendCoreAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
 
-                // M5-HC-02：校验/读流失败时必须释放响应，否则连接泄漏且调用方无引用可释放
+                // 校验/读流失败时必须释放响应，否则连接泄漏且调用方无引用可释放
                 try
                 {
                     await EnsureSuccessStatusCodeAsync(response, cancellationToken).ConfigureAwait(false);
@@ -548,7 +548,7 @@ public abstract partial class EnhancedHttpClient
         string? capturedRequestContent = null;
         if (_captureRequestContent && content != null)
         {
-            // M4-H-2：不可重放内容跳过捕获，避免读取耗尽一次性源流
+            // 不可重放内容跳过捕获，避免读取耗尽一次性源流
             if (RequestContentCaptureUtils.CanCapture(content, _logger))
             {
                 try
@@ -684,7 +684,7 @@ public abstract partial class EnhancedHttpClient
             _logger.HttpRequestCancelled(requestUri!, ex);
             throw;
         }
-        // HC-02 修复：在 catch-all 之前捕获 JsonException 和 InvalidOperationException，保留原始异常类型。
+        // 在 catch-all 之前捕获 JsonException 和 InvalidOperationException，保留原始异常类型。
         // 此前所有非 HttpRequestException / OperationCanceledException 的异常被统一包装为 HttpRequestException，
         // 调用方无法按 JsonException 等具体类型 catch，只能通过 InnerException 检查。
         catch (JsonException ex)
@@ -716,7 +716,7 @@ public abstract partial class EnhancedHttpClient
             HttpCompletionOption.ResponseHeadersRead,
             cancellationToken).ConfigureAwait(false);
 
-        // M5-HC-01：失败/拦截器异常路径必须释放响应，否则连接不归还连接池。
+        // 失败/拦截器异常路径必须释放响应，否则连接不归还连接池。
         // EnsureSuccessStatusCodeAsync 已在抛异常前读完错误内容写入 ApiException，此处释放不影响诊断信息。
         try
         {
@@ -804,14 +804,14 @@ public abstract partial class EnhancedHttpClient
                         rawResponse = await reader.ReadToEndAsync().ConfigureAwait(false);
 #endif
                     }
-                    // M5-HC-03：Trace 级原始体同样脱敏 + 限量，与错误响应体路径同口径
+                    // Trace 级原始体同样脱敏 + 限量，与错误响应体路径同口径
                     _logger.JsonResponseBodyRaw(requestUri!, SanitizeContent(rawResponse, LogBodyMaxLength));
 
                     memoryStream.Position = 0;
 
                     try
                     {
-                        // M7-HC-01：截断日志照旧（:1511 之前已写入），但反序列化必须读全量 ——
+                        // 截断日志照旧（:1511 之前已写入），但反序列化必须读全量 ——
                         // 以"32KB 截断缓冲 + 原始流剩余"顺序拼接（组合流），杜绝以截断 JSON 做业务反序列化
                         //（>32KB 合法响应在 Trace 开启时必然 JsonException，日志级别改变业务行为）。
                         using var responseContent = new StreamContent(
@@ -822,7 +822,7 @@ public abstract partial class EnhancedHttpClient
                     }
                     catch (JsonException jsonEx)
                     {
-                        // M5-HC-03：Error 日志写入前统一脱敏 + 限量（masker 回退 MessageSanitizer）
+                        // Error 日志写入前统一脱敏 + 限量（masker 回退 MessageSanitizer）
                         _logger.JsonDeserializeFailedDetailed(requestUri!, typeof(TResult).Name,
                             SanitizeContent(rawResponse, LogBodyMaxLength), jsonEx.Path, jsonEx);
                         throw new JsonException($"反序列化到类型 {typeof(TResult).Name} 失败: {jsonEx.Message}", jsonEx);
@@ -881,7 +881,7 @@ public abstract partial class EnhancedHttpClient
 
                 if (_logger.IsEnabled(LogLevel.Trace))
                 {
-                    // M5-HC-03：Trace 级原始体脱敏 + 限量
+                    // Trace 级原始体脱敏 + 限量
                     _logger.XmlResponseBodyRaw(requestUri!, SanitizeContent(xmlContent, LogBodyMaxLength));
                 }
 
@@ -899,7 +899,7 @@ public abstract partial class EnhancedHttpClient
                 }
                 catch (InvalidOperationException xmlEx)
                 {
-                    // M5-HC-03：Error 日志写入前统一脱敏 + 限量
+                    // Error 日志写入前统一脱敏 + 限量
                     _logger.XmlDeserializeFailed(requestUri!, typeof(TResult).Name,
                         SanitizeContent(xmlContent, LogBodyMaxLength), xmlEx);
                     throw new InvalidOperationException($"XML反序列化到类型 {typeof(TResult).Name} 失败: {xmlEx.Message}", xmlEx);

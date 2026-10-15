@@ -29,7 +29,7 @@ internal class InterfaceImplementationGenerator
     private static readonly ConditionalWeakTable<Compilation, ConcurrentDictionary<string, INamedTypeSymbol?>> _typeResolveCache = new();
 
     /// <summary>
-    /// G9-05：源码命名空间名单缓存（块级 + 文件级）——以 Compilation 为主键的 ConditionalWeakTable，
+    /// 源码命名空间名单缓存（块级 + 文件级）——以 Compilation 为主键的 ConditionalWeakTable，
     /// 键亡即释（与 <see cref="_typeResolveCache"/> 同失效语义）。避免 N 个未命中快速路径的简单类型名
     /// 各自重复执行全 SyntaxTrees 枚举。
     /// </summary>
@@ -270,7 +270,7 @@ internal class InterfaceImplementationGenerator
             }
         }
 
-        // G8-04：继承组合的「运行模式」一致性 —— base(...) 位置实参只能按基类模式分派，
+        // 继承组合的「运行模式」一致性 —— base(...) 位置实参只能按基类模式分派，
         // 故基类要求的「源」必须在派生侧可得。仅当基类确为生成的抽象类
         // （InheritedFromInterfaceName 非空）时可判定；InheritedFrom 指向宿主自维护基类时
         // 三旗标皆 false（无法推知真实契约），不得据此判错。
@@ -304,7 +304,7 @@ internal class InterfaceImplementationGenerator
     }
 
     /// <summary>
-    /// G8-04：把 <see cref="BaseRuntimeMode"/> 转为诊断文案用的模式名（与 <c>[HttpClientApi]</c> 术语一致）。
+    /// 把 <see cref="BaseRuntimeMode"/> 转为诊断文案用的模式名（与 <c>[HttpClientApi]</c> 术语一致）。
     /// </summary>
     private static string DescribeBaseRuntimeMode(BaseRuntimeMode mode) => mode switch
     {
@@ -460,7 +460,7 @@ internal class InterfaceImplementationGenerator
         if (typeName.Contains('.'))
             return null;
 
-        // G7-07：全树回退扫描收敛——优先扫描「当前编译 SyntaxTrees 涉及的命名空间」，
+        // 全树回退扫描收敛——优先扫描「当前编译 SyntaxTrees 涉及的命名空间」，
         // 避免新 Compilation 冷启动时遍历引用程序集（BCL）整棵命名空间树的重复付费。
         // 覆盖主场景：TokenManage/InheritedFrom/HttpClient 中引用的自定义类型几乎总是
         // 声明在消费方源码（该命名空间必然出现在 SyntaxTrees 中）。
@@ -481,7 +481,7 @@ internal class InterfaceImplementationGenerator
     }
 
     /// <summary>
-    /// G7-07：在「当前编译 SyntaxTrees 已声明/引用的命名空间」中查找简单类型名。
+    /// 在「当前编译 SyntaxTrees 已声明/引用的命名空间」中查找简单类型名。
     /// </summary>
     /// <remarks>
     /// 收敛策略：仅对出现在语法树 <c>namespace</c> 声明中的命名空间执行
@@ -489,7 +489,7 @@ internal class InterfaceImplementationGenerator
     /// 递归遍历命名空间成员；且源码中实际使用的自定义类型所在命名空间必然出现在 SyntaxTrees 中。
     /// 未命中时由调用方保底回退原全树递归，语义不变。
     /// <para>
-    /// G9-05：命名空间名单按 Compilation 弱引用缓存（键亡即释，与 <see cref="_typeResolveCache"/> /
+    /// 命名空间名单按 Compilation 弱引用缓存（键亡即释，与 <see cref="_typeResolveCache"/> /
     /// SemanticModelCache 同失效语义），修复两点——① N 个未命中快速路径的简单类型名原本各触发一次
     /// 全 SyntaxTrees 扫描，现共享同一份名单；② 原枚举只识别块级
     /// <see cref="NamespaceDeclarationSyntax"/>，文件级（C# 10 起主流写法 <c>namespace X;</c>）被漏掉，
@@ -510,7 +510,7 @@ internal class InterfaceImplementationGenerator
     }
 
     /// <summary>
-    /// G9-05：收集当前编译全部 SyntaxTrees 声明的命名空间名（块级 + 文件级，按树序去重）。
+    /// 收集当前编译全部 SyntaxTrees 声明的命名空间名（块级 + 文件级，按树序去重）。
     /// </summary>
     private static IReadOnlyList<string> GetSourceNamespaceNames(Compilation compilation)
         => _sourceNamespacesCache.GetValue(compilation, static c =>
@@ -575,7 +575,7 @@ internal class InterfaceImplementationGenerator
         // AppContext 相关成员 → ConstructorGenerator.GenerateAppContextMembers / GenerateUseAppMethod
         // [SW-11] 成员名取自 AppSwitchMemberNames（单一事实源）：此前为散落的字符串字面量，
         // 任一侧改名/改门控而另一侧未跟进即产生「登记了没发射」（CS0535）或「发射了没登记」（CS0111/CS0102）
-        // —— G8-15 的 UseAppScope 漏登记即为真实案例。守卫见 AppSwitchMemberNamesTests（生成产物成员 ⊇ 本表）。
+        // —— 的 UseAppScope 漏登记即为真实案例。守卫见 AppSwitchMemberNamesTests（生成产物成员 ⊇ 本表）。
         if (!context.HasHttpClient)
         {
             // Holder 面（Current / SwitchTo / BeginScope(IMudAppContext)）【无条件】：被 DefaultHttpRequestExecutor 等链路依赖，
@@ -671,7 +671,7 @@ internal class InterfaceImplementationGenerator
         // 自动检测 InheritedFrom：如果未显式指定，检查是否有带 [HttpClientApi(IsAbstract = true)] 的基接口
         var baseHasTokenManager = false;
         var baseHasAppAuthorizer = false;
-        // G7-01：基类是否为默认（AppContext）模式——既未设 HttpClient 亦未设 TokenManage。
+        // 基类是否为默认（AppContext）模式——既未设 HttpClient 亦未设 TokenManage。
         var baseHasAppManager = false;
         // FIX-06：基类是否需要 currentUserContext 参数，按与 ComputeAnyMethodRequiresUserId 同口径求值。
         var baseRequiresUserId = false;
@@ -945,7 +945,7 @@ internal class InterfaceImplementationGenerator
     /// </summary>
     private void DetectICurrentUserId(GeneratorContext context)
     {
-        // G9-06：收紧为「元数据名精确匹配」（与 ValidateTokenManager 的 IMudAppContext 校验同口径）。
+        // 收紧为「元数据名精确匹配」（与 ValidateTokenManager 的 IMudAppContext 校验同口径）。
         // 原简单名匹配（i.Name == "ICurrentUserId"）会把消费方自定义同名异源接口误判为库契约实现，
         // 触发 CurrentUserId 成员发射，成员形态不一致时产生 CS0737 / 可空性告警等下游噪音。
         var currentUserIdType = _compilation.GetTypeByMetadataName(HttpClientGeneratorConstants.CurrentUserIdMetadataName);

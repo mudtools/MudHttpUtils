@@ -103,7 +103,7 @@ public partial class TokenRecoveryExecutor
         switch (context.InjectionMode)
         {
             case TokenInjectionMode.Header:
-                // M6-HC-24：注入前经共享校验器复核（netstandard2.0 的 HttpClient 不校验头值，
+                // 注入前经共享校验器复核（netstandard2.0 的 HttpClient 不校验头值，
                 // 直接 Add 会把控制字符写入报文）。不合格返回 false → 调用方记 TokenInjectionUnsupported 并返回真实 401。
                 if (!HttpHeaderValueValidator.IsValid(token)) return false;
                 request.Headers.Remove(context.HeaderName);
@@ -118,7 +118,7 @@ public partial class TokenRecoveryExecutor
                 return true;
 
             case TokenInjectionMode.ApiKey:
-                // M6-HC-24：同 Header 路径，注入前复核头值合法性。
+                // 同 Header 路径，注入前复核头值合法性。
                 if (!HttpHeaderValueValidator.IsValid(token)) return false;
                 request.Headers.Remove(context.HeaderName);
                 request.Headers.Add(context.HeaderName, token);
@@ -309,7 +309,7 @@ public partial class TokenRecoveryExecutor
     {
         var clone = new HttpRequestMessage(original.Method, original.RequestUri);
 
-        // NEW-HC-04 修复：复制 Version 和 VersionPolicy
+        // NEW-复制 Version 和 VersionPolicy
         clone.Version = original.Version;
 #if !NETSTANDARD2_0
         clone.VersionPolicy = original.VersionPolicy;
@@ -344,7 +344,7 @@ public partial class TokenRecoveryExecutor
             clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
         }
 
-        // NEW-HC-10 修复：跳过 __mud_* 可观测性内部属性，让重试请求被独立采集为新的 Trace/Metric。
+        // NEW-跳过 __mud_* 可观测性内部属性，让重试请求被独立采集为新的 Trace/Metric。
         // 原实现复制所有 Properties/Options，导致：
         //   1. TracingDelegatingHandler 检测到 __mud_observed=true 跳过 Activity 创建，重试请求无独立 Trace
         //   2. ExecuteWithObservabilityAsync 检测到已 observed 跳过指标采集，重试耗时与状态码不计入指标

@@ -50,7 +50,7 @@ public class ConcurrentDictionaryTokenCache<T> : ITokenCache<T> where T : class
     /// <inheritdoc />
     public bool TryGet(string key, out T? value)
     {
-        // HC-04 修复：Dispose 后不再允许读取，避免并发 Dispose 与 TryGet 竞态
+        // Dispose 后不再允许读取，避免并发 Dispose 与 TryGet 竞态
         if (_disposed)
         {
             value = default;
@@ -74,7 +74,7 @@ public class ConcurrentDictionaryTokenCache<T> : ITokenCache<T> where T : class
     /// <inheritdoc />
     public void Set(string key, T? value)
     {
-        // HC-04 修复：Dispose 后不再允许写入
+        // Dispose 后不再允许写入
         if (_disposed)
             return;
 
@@ -101,7 +101,7 @@ public class ConcurrentDictionaryTokenCache<T> : ITokenCache<T> where T : class
                 "该实现不支持（no-op）。需要过期与回调语义请改用 MemoryCacheTokenCache<T>（C9 / S1-5）。");
         }
 
-        // HC-04 修复：Dispose 后不再允许写入
+        // Dispose 后不再允许写入
         if (_disposed)
             return;
 
@@ -111,7 +111,7 @@ public class ConcurrentDictionaryTokenCache<T> : ITokenCache<T> where T : class
     /// <inheritdoc />
     public bool TryRemove(string key, out T? removed)
     {
-        // HC-04 修复：Dispose 后不再允许操作
+        // Dispose 后不再允许操作
         if (_disposed)
         {
             removed = default;

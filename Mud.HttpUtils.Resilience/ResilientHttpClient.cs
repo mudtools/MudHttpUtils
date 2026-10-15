@@ -55,14 +55,14 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
 
     private long MaxCloneContentSize => _options?.MaxCloneContentSize ?? HttpRequestMessageCloner.DefaultMaxContentSize;
 
-    /// <summary>M5-HC-06：按配置解析当前请求的策略作用域键。</summary>
+    /// <summary>按配置解析当前请求的策略作用域键。</summary>
     private string ResolvePolicyScope(HttpRequestMessage request)
     {
         var scope = _options?.PolicyScope ?? ResiliencePolicyScope.PerHost;
         return ResiliencePolicyScopeResolver.Resolve(request, scope);
     }
 
-    /// <summary>M5-HC-06：从 URI 字符串解析作用域（便捷方法路径无 HttpRequestMessage）。</summary>
+    /// <summary>从 URI 字符串解析作用域（便捷方法路径无 HttpRequestMessage）。</summary>
     private string ResolveScopeFromUri(string requestUri)
     {
         var scope = _options?.PolicyScope ?? ResiliencePolicyScope.PerHost;
@@ -93,7 +93,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
     /// </summary>
     private bool ShouldSkipRetry(HttpRequestMessage request)
     {
-        // M5-HC-05：统一预判（声明超限 / 不可重放 chunked）
+        // 统一预判（声明超限 / 不可重放 chunked）
         if (HttpRequestMessageCloner.ShouldSkipRetryForContent(request, MaxCloneContentSize, out var reason))
         {
             if (reason == "declared-length-exceeds-limit")
@@ -126,7 +126,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         Func<IEnhancedHttpClient, HttpRequestMessage, CancellationToken, Task<TResult>> executeFunc,
         CancellationToken cancellationToken)
     {
-        // M5-HC-06：按端点隔离熔断/超时
+        // 按端点隔离熔断/超时
         var policy = _policyProvider.GetTimeoutAndCircuitBreakerPolicy<TResult>(ResolvePolicyScope(request));
 
         // M2-#10：Polly 异常（超时/熔断）在策略边界外汇一为 ApiRequestException
@@ -146,7 +146,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         Func<IEnhancedHttpClient, HttpRequestMessage, CancellationToken, Task<TResult>> executeFunc,
         CancellationToken cancellationToken)
     {
-        // M5-HC-06：按端点隔离
+        // 按端点隔离
         var policy = _policyProvider.GetCombinedPolicy<TResult>(ResolvePolicyScope(request));
 
         // 通过 Polly Context 传递 retry_count，在每次克隆请求时写入请求属性，
@@ -167,7 +167,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
                     bool ownsRequest;
                     if (isRetry)
                     {
-                        // M5-HC-05 (3)：改用 TryCloneAsync —— 克隆不可行时抛出原始故障，避免掩盖根因
+                        // (3)：改用 TryCloneAsync —— 克隆不可行时抛出原始故障，避免掩盖根因
                         var cloned = await HttpRequestMessageCloner
                             .TryCloneAsync(request, MaxCloneContentSize, ct).ConfigureAwait(false);
                         if (cloned == null)
@@ -206,7 +206,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         Func<IEnhancedHttpClient, HttpRequestMessage, CancellationToken, Task<TResult>> executeFunc,
         CancellationToken cancellationToken)
     {
-        // M5-HC-06：按端点隔离
+        // 按端点隔离
         var policy = _policyProvider.GetCombinedPolicy<TResult>(ResolvePolicyScope(request));
 
         var context = new Context();
@@ -275,7 +275,7 @@ public sealed class ResilientHttpClient : IEnhancedHttpClient, IEncryptableHttpC
         if (!retryAllowed)
             MudHttpClientLog.RetrySkippedNonIdempotent(_logger, httpMethod);
 
-        // M5-HC-06：从 requestUri 尽量提取 host 做作用域隔离
+        // 从 requestUri 尽量提取 host 做作用域隔离
         var scope = ResolveScopeFromUri(requestUri);
         var policy = retryAllowed
             ? _policyProvider.GetCombinedPolicy<TResult>(scope)

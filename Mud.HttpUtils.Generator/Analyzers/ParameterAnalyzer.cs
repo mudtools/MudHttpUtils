@@ -20,7 +20,7 @@ internal static class ParameterAnalyzer
     /// 简单类型使用 [Query]，复杂类型使用 [Body]。
     /// </summary>
     /// <remarks>
-    /// G8-12：原实现在此维护**第三份副本**（另有 <c>PathAttributes</c> 与各 <c>*Attribute</c> 常量），
+    /// 原实现在此维护**第三份副本**（另有 <c>PathAttributes</c> 与各 <c>*Attribute</c> 常量），
     /// 且含 <c>RouteAttribute</c>/<c>Route</c> 幻影条目。现改为引用常量类，消除漂移面。
     /// </remarks>
     private static HashSet<string> KnownHttpParameterAttributes => HttpClientGeneratorConstants.HttpParameterAttributeNames;

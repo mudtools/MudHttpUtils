@@ -76,7 +76,7 @@ internal class RequestBuilder
 
         if (methodInfo != null)
         {
-            // G8-01/G8-02：令牌占位符的「模式」与「名称」统一取有效级（方法级 > 接口级）；
+            // 令牌占位符的「模式」与「名称」统一取有效级（方法级 > 接口级）；
             // 替换值为 URI 编码后的令牌（与下方 [Path] 参数的 Uri.EscapeDataString 同口径，
             // 防止令牌中的 ?/#/&// 改写请求目标）。
             // F-1：免令牌方法（EffectiveTokenDisabled）不取令牌，占位符不替换
@@ -334,7 +334,7 @@ internal class RequestBuilder
     /// 生成 Header 参数
     /// </summary>
     /// <remarks>
-    /// M6-HC-02：此前只接线 <see cref="HeaderParameterBinder"/>，[HeaderCollection] 字典参数
+    /// 此前只接线 <see cref="HeaderParameterBinder"/>，[HeaderCollection] 字典参数
     /// 被 <see cref="HeaderCollectionParameterBinder"/> 完全忽略（零调用点）——鉴权/租户头静默丢失。
     /// 现按 CanBind 优先级分派：先 [Header]（单值），否则 [HeaderCollection]（字典批量）。
     /// 两者均不匹配且参数名含 "header" 时报告 HTTPCLIENT037（Info，低噪音拼写/遗漏提示）。
@@ -358,7 +358,7 @@ internal class RequestBuilder
             else if (context != null && methodSymbol != null &&
                      param.Name.Contains("header", StringComparison.OrdinalIgnoreCase))
             {
-                // M6-HC-02：接线后仍无诊断盲区——名字像 Header 参数却没有任何 Header 特性时给出提示
+                // 接线后仍无诊断盲区——名字像 Header 参数却没有任何 Header 特性时给出提示
                 var paramSyntax = methodSymbol.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
                 var location = paramSyntax?.GetLocation() ?? context.InterfaceDeclaration.GetLocation();
                 context.ProductionContext.ReportDiagnostic(Diagnostic.Create(
@@ -706,8 +706,8 @@ internal class RequestBuilder
                 {
                     codeBuilder.AppendLine($"            if (!string.IsNullOrWhiteSpace({formProp.Name}))");
                     codeBuilder.AppendLine("            {");
-                    // G8-05：构造 + Add 之间必须有异常路径释放（Add 的 name/fileName 头部校验会抛
-                    // FormatException/ArgumentException），与 G7-19 的 StreamContent 分支同构。
+                    // 构造 + Add 之间必须有异常路径释放（Add 的 name/fileName 头部校验会抛
+                    // FormatException/ArgumentException），与 的 StreamContent 分支同构。
                     EmitAddContent(codeBuilder, "                ",
                         $"new System.Net.Http.StringContent({formProp.Name})",
                         $"__{formProp.Name}Content", fieldName, fileName: null);
@@ -777,7 +777,7 @@ internal class RequestBuilder
 
             if (!string.IsNullOrEmpty(contentType))
             {
-                // G7-19：不能使用 `using var` —— 其作用域为 if 块，会在请求构造完成（发送）前 Dispose，
+                // 不能使用 `using var` —— 其作用域为 if 块，会在请求构造完成（发送）前 Dispose，
                 // 底层流被提前释放 → MultipartFormDataContent 发送时抛 ObjectDisposedException。
                 // 正确形态：仅异常路径 Dispose（MediaTypeHeaderValue 构造/Add 抛异常时回收包装对象），
                 // 成功路径所有权已转移给 __multipartContent。
@@ -803,7 +803,7 @@ internal class RequestBuilder
             {
                 codeBuilder.AppendLine($"            if ({uploadParam.Name} != null)");
                 codeBuilder.AppendLine("            {");
-                // G8-05：无 ContentType 的 StreamContent 同样需要异常路径释放（与上方 G7-19 分支同构）。
+                // 无 ContentType 的 StreamContent 同样需要异常路径释放（与上方 分支同构）。
                 EmitAddContent(codeBuilder, "                ",
                     $"new System.Net.Http.StreamContent({uploadParam.Name})",
                     $"__{uploadParam.Name}Content", fieldName, fileName);
@@ -815,8 +815,8 @@ internal class RequestBuilder
     }
 
     /// <summary>
-    /// G8-05：发射「构造 <see cref="System.Net.Http.HttpContent"/> + 加入 multipart」的**受保护形态**
-    /// （与 G7-19 的带 ContentType 分支同构）：局部变量 → try → Add → catch → 仅异常路径 <c>Dispose()</c> → <c>throw</c>。
+    /// 发射「构造 <see cref="System.Net.Http.HttpContent"/> + 加入 multipart」的**受保护形态**
+    /// （与 的带 ContentType 分支同构）：局部变量 → try → Add → catch → 仅异常路径 <c>Dispose()</c> → <c>throw</c>。
     /// </summary>
     /// <param name="codeBuilder">代码缓冲区。</param>
     /// <param name="indent">当前语句缩进（站点缩进分 12/16 空格两类，故必须传入）。</param>
@@ -832,7 +832,7 @@ internal class RequestBuilder
     /// </para>
     /// <para>
     /// <b>副作用（有意为之）</b>：对 <c>StreamContent</c> 而言 <c>Dispose()</c> 会**关闭调用方传入的流**。
-    /// 带 ContentType 的 G7-19 分支早已是此语义，本方法仅消除分支间不一致；此时请求构造已失败、不会再发送。
+    /// 带 ContentType 的 分支早已是此语义，本方法仅消除分支间不一致；此时请求构造已失败、不会再发送。
     /// </para>
     /// </remarks>
     private static void EmitAddContent(StringBuilder codeBuilder, string indent, string contentExpr,
@@ -896,7 +896,7 @@ internal class RequestBuilder
         if (methodInfo.EffectiveTokenDisabled)
             return false;
 
-        // G8-01：与 ShouldInjectToken / GenerateTokenInjection 统一按「有效级」解析
+        // 与 ShouldInjectToken / GenerateTokenInjection 统一按「有效级」解析
         //（方法级 > 接口级）。原实现只认接口级，导致方法级 [Token(InjectionMode = Query)]
         // 取到 access_token 后因无注入语句而被静默丢弃（请求无令牌）。
         if (methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModeQuery)
@@ -922,12 +922,12 @@ internal class RequestBuilder
     internal string? GetTokenHeaderName(MethodAnalysisResult methodInfo)
     {
         // GEN-09：方法级 Token(Name) > 接口级。
-        // G8-01：门控「模式」取有效级 —— 原实现用 InterfaceTokenInjectionMode，
+        // 门控「模式」取有效级 —— 原实现用 InterfaceTokenInjectionMode，
         // 使方法级 [Token(InjectionMode = Header, Name = "X-Custom")] 落回调用方的
         // "Authorization" 兜底（静默写错头名，且 TokenRecoveryContext.HeaderName 一并错误）。
-        // G8-19：ApiKey 模式同样必须消费 Name（README 示例 Name = "X-API-Key"），
+        // ApiKey 模式同样必须消费 Name（README 示例 Name = "X-API-Key"），
         // 原实现只对 Header 模式返回 Name，使密钥被写到 Authorization 头。
-        // G8-20：规则已抽为 TokenMethodHelper.GetTokenHeaderName —— 与 HeaderParameterBinder
+        // 规则已抽为 TokenMethodHelper.GetTokenHeaderName —— 与 HeaderParameterBinder
         //（参数绑定路径）共享同一份，避免两处口径再次漂移（此前 binder 侧把 Name 与 Scheme 字面量比对）。
         return TokenMethodHelper.GetTokenHeaderName(methodInfo);
     }
@@ -1018,7 +1018,7 @@ internal class RequestBuilder
             else if (TypeDetectionHelper.IsValueType(property.Type) && !TypeDetectionHelper.IsNullableType(property.Type))
             {
                 // 非可空值类型（无专用重载，如 byte, char 等）：使用 ToString()
-                // M6-HC-18：显式 Invariant，避免按 CurrentCulture 生成区域敏感串
+                // 显式 Invariant，避免按 CurrentCulture 生成区域敏感串
                 var invariantProvider = "global::System.Globalization.CultureInfo.InvariantCulture";
                 var formatExpression = !string.IsNullOrEmpty(property.Format)
                     ? $".ToString(\"{StringEscapeHelper.EscapeString(property.Format)}\", {invariantProvider})"
@@ -1028,7 +1028,7 @@ internal class RequestBuilder
             else
             {
                 // 可空值类型和引用类型（无专用重载）：使用 ?.ToString()，Add() 会跳过 null 值
-                // M6-HC-18：仅可格式化值类型追加 Invariant（引用类型无 ToString(string, IFormatProvider) 重载）
+                // 仅可格式化值类型追加 Invariant（引用类型无 ToString(string, IFormatProvider) 重载）
                 var formatLiteral = !string.IsNullOrEmpty(property.Format)
                     ? $"\"{StringEscapeHelper.EscapeString(property.Format)}\""
                     : null;
@@ -1115,7 +1115,7 @@ internal class RequestBuilder
                     ? $"string.Format(System.Globalization.CultureInfo.InvariantCulture, \"{{0:{escapedPropertyFormat}}}\", {property.Name})"
                     : $"{property.Name}.ToString()";
 
-                // M6-HC-30：非 string 头值同样经 CR/LF 校验（ToString/Format 结果运行期才确定，
+                // 非 string 头值同样经 CR/LF 校验（ToString/Format 结果运行期才确定，
                 // ns2.0 的 Headers.Add 不拦截）。不合格跳过；Debug 仅输出头名（不输出值，防敏感信息落日志）。
                 var headerValueLocal = $"__ifaceHeaderValue_{property.Name}";
 

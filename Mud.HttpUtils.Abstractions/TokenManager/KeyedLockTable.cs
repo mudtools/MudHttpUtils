@@ -21,7 +21,7 @@ namespace Mud.HttpUtils;
 /// <item><description><c>Retired</c> <b>先于</b>移除设置：使 <c>AcquireAsync</c> 取到"已退休条目"的窗口无害（递减计数后重试）。</description></item>
 /// <item><description><c>Waiters == 0</c> 才允许从字典移除，消除 <c>RemoveUserTokenFromCache</c> 类"移除在途锁"缺陷。</description></item>
 /// <item><description><b>不 Dispose <c>SemaphoreSlim</c></b> 是刻意决策：在途 <c>Dispose</c> 与 <c>Release</c> 并存会抛
-/// <c>ObjectDisposedException</c>，破坏"Dispose 后允许在途请求完成、其 Release 不抛异常"的契约（修复 TK-08 的 Release 竞态）。</description></item>
+/// <c>ObjectDisposedException</c>，破坏"Dispose 后允许在途请求完成、其 Release 不抛异常"的契约（修复 的 Release 竞态）。</description></item>
 /// <item><description>删除 <c>Lazy</c> 后不再需要 <c>LazyThreadSafetyMode</c> 论证；
 /// <c>GetOrAdd</c> 的工厂多执行安全（仅多分配临时 <c>Entry</c> 实例，互斥不受影响）。</description></item>
 /// </list>

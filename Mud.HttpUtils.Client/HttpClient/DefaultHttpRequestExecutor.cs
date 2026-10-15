@@ -280,7 +280,7 @@ public class DefaultHttpRequestExecutor(
 
         var isSuccess = (int)statusCode >= 200 && (int)statusCode <= 299;
 
-        // M6-HC-09：读取路径按状态码分流 —— 2xx 维持成功体守卫语义（SuccessResponseGuardStream），
+        // 读取路径按状态码分流 —— 2xx 维持成功体守卫语义（SuccessResponseGuardStream），
         // 非 2xx 改走 ReadErrorContentLimitedAsync（受 MaxExceptionContentLength 三态约束）。
         // 原实现无条件 ReadContentAsync：在 maxSuccessResponseBytes=0（不限长）时错误体可被无限读取，
         // 且与 SendAndDeserializeAsync / SendAsync 的错误体限量口径不一致。
@@ -528,11 +528,11 @@ public class DefaultHttpRequestExecutor(
             executionDescriptor.Response, progress, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>G8-06：下载缓冲区默认值（与 <c>DownloadLargeAsync</c> 的默认形参一致）。</summary>
+    /// <summary>下载缓冲区默认值（与 <c>DownloadLargeAsync</c> 的默认形参一致）。</summary>
     private const int DefaultDownloadBufferSize = 81920;
 
     /// <summary>
-    /// G8-06：下载缓冲区上界（4 MiB）。
+    /// 下载缓冲区上界（4 MiB）。
     /// 与生成器侧 <c>HttpClientGeneratorConstants.MaxSupportedDownloadBufferSize</c> **必须一致**，
     /// 由 <c>DownloadBufferSizeContractTests</c>（Client.Tests）守护。
     /// </summary>
@@ -552,7 +552,7 @@ public class DefaultHttpRequestExecutor(
         IProgress<long>? progress,
         CancellationToken cancellationToken)
     {
-        // G8-06（纵深防御）：bufferSize 来自 [FilePath(BufferSize = …)]，生成器侧已夹取到上界并报
+        // bufferSize 来自 [FilePath(BufferSize = …)]，生成器侧已夹取到上界并报
         // HTTPCLIENT036；此处对**任何调用方**（含绕过生成器手写调用本 API 的场景）再夹取一次，
         // 避免 new byte[bufferSize] / new FileStream(…, bufferSize, …) 直接 OOM 或抛
         // ArgumentOutOfRangeException。<= 0 归一回默认值（保持既有语义）。
@@ -586,15 +586,15 @@ public class DefaultHttpRequestExecutor(
         MudHttpObservability.RecordDownloadStarted(request, clientName);
         var sw = ValueStopwatch.StartNew();
 
-        // G7-02：Overwrite 语义与特性声明对齐（同 EnhancedHttpClient 口径）——
+        // Overwrite 语义与特性声明对齐（同 EnhancedHttpClient 口径）——
         //   overwrite=true  → 允许覆盖（FileMode.Create 截断）；
         //   overwrite=false → 目标已存在时抛 IOException，原文件字节保持不变。
-        // G7-03：半写防护——先写同目录临时文件，复制完成并关闭流后原子落盘：
+        // 半写防护——先写同目录临时文件，复制完成并关闭流后原子落盘：
         //   下载失败/取消仅可能残留 tmp（由 catch 尽力清理），最终路径永不出现半写文件。
         var tmpPath = filePath + ".mudtmp";
         var tmpMode = FileMode.Create; // tmp 为本组件自有残留文件，可安全复用/回收
 
-        // G8-06（纵深防御）：源生成器已对 [FilePath(BufferSize)] 做上界夹取并报 HTTPCLIENT036，
+        // 源生成器已对 [FilePath(BufferSize)] 做上界夹取并报 HTTPCLIENT036，
         // 但手写调用方可能直接调用 DownloadLargeAsync 传入任意 bufferSize。
         // 该值最终用于 new byte[bufferSize]（进度路径）与 FileStream(…, bufferSize, …) /
         // CopyToAsync(stream, bufferSize)，超大值会立即 OOM 或抛 ArgumentOutOfRangeException。
@@ -642,7 +642,7 @@ public class DefaultHttpRequestExecutor(
 
                 if (progress == null)
                 {
-                    // G9-01：ns2.0 快速路径改为分块拷贝（逐块携带 CT）。原 CopyToAsync(stream, bufferSize)
+                    // ns2.0 快速路径改为分块拷贝（逐块携带 CT）。原 CopyToAsync(stream, bufferSize)
                     // 无 CT 重载，取消令牌在大文件 body 拷贝主耗时段不被观察——取消要等下载完成才生效，
                     // 与 NET6+ 分支（CopyToAsync(ct)）构成跨 TFM 语义差异。
                     bytesWritten = await CopyToWithCancellationAsync(contentStream, fileStream, effectiveBufferSize, cancellationToken).ConfigureAwait(false);
@@ -666,7 +666,7 @@ public class DefaultHttpRequestExecutor(
         }
         catch (Exception ex)
         {
-            // G7-03：尽力清理临时文件；删除失败仅记录到调试输出，不掩盖原始异常。
+            // 尽力清理临时文件；删除失败仅记录到调试输出，不掩盖原始异常。
             try
             {
                 if (File.Exists(tmpPath))
@@ -683,7 +683,7 @@ public class DefaultHttpRequestExecutor(
     }
 
     /// <summary>
-    /// M6-HC-15：将源流复制到目标流，并按 100ms 节流上报进度（与 <see cref="EnhancedHttpClient"/> 下载口径一致）。
+    /// 将源流复制到目标流，并按 100ms 节流上报进度（与 <see cref="EnhancedHttpClient"/> 下载口径一致）。
     /// </summary>
     private static Task CopyToWithProgressAsync(
         Stream source,
@@ -696,7 +696,7 @@ public class DefaultHttpRequestExecutor(
             source, destination, bufferSize, progress, totalBytesWritten, cancellationToken);
 
     /// <summary>
-    /// G9-01：ns2.0 快速路径的分块拷贝——Read/Write 均携带 CT，逐块前置取消检查，
+    /// ns2.0 快速路径的分块拷贝——Read/Write 均携带 CT，逐块前置取消检查，
     /// 使取消时延上限为一个缓冲区周期（与 NET6+ <see cref="Stream.CopyToAsync(Stream, int, CancellationToken)"/> 语义对齐）。
     /// </summary>
     /// <remarks>
@@ -1042,15 +1042,15 @@ public class DefaultHttpRequestExecutor(
     /// <summary>
     /// Phase 2 (T2.3)：捕获请求体字符串（发送前调用）。
     /// 读取失败不影响请求发送，返回 null。捕获长度受 MaxExceptionContentLength 约束（#16）。
-    /// M4-H-2：非可重放内容（<see cref="IRequestContentReplayHint.IsReplayable"/> == false）自动跳过捕获。
-    /// M4-H-8：取消令牌透传（原 <see cref="CancellationToken.None"/> 改为外层 token）。
+    /// 非可重放内容（<see cref="IRequestContentReplayHint.IsReplayable"/> == false）自动跳过捕获。
+    /// 取消令牌透传（原 <see cref="CancellationToken.None"/> 改为外层 token）。
     /// </summary>
     private async Task<string?> CaptureRequestContentAsync(
         HttpRequestMessage? request, CancellationToken cancellationToken)
     {
         if (request?.Content == null) return null;
 
-        // M4-H-2：不可重放内容跳过捕获 —— 读取会耗尽一次性源流，随后发送将得到空/截断请求体
+        // 不可重放内容跳过捕获 —— 读取会耗尽一次性源流，随后发送将得到空/截断请求体
         if (!RequestContentCaptureUtils.CanCapture(request.Content, _logger))
             return null;
 
@@ -1107,7 +1107,7 @@ public class DefaultHttpRequestExecutor(
         string? requestUri,
         string? capturedRequestContent = null)
     {
-        // M6-HC-21：异常对象中的 RequestUri 与 ApiRequestException 口径统一，剥离 userinfo 并掩码敏感 query 值。
+        // 异常对象中的 RequestUri 与 ApiRequestException 口径统一，剥离 userinfo 并掩码敏感 query 值。
         var ex = new ApiException(statusCode, errorContent ?? string.Empty, Helpers.SensitiveUrlRedactor.Redact(requestUri));
 
         // Phase 2 (T2.3)：设置捕获的请求体

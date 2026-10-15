@@ -104,7 +104,7 @@ public abstract partial class EnhancedHttpClient : IEnhancedHttpClient, IEncrypt
 
     private const int DefaultBufferSize = 81920;
     private const int MaxDebugLogBodyLength = 32768;
-    /// <summary>M5-HC-03：日志侧响应体窗口（与 DefaultHttpRequestExecutor 日志口径一致为 500；错误响应体落日志用 200，进 ApiException 用 EffectiveMaxErrorContentLength）。</summary>
+    /// <summary>日志侧响应体窗口（与 DefaultHttpRequestExecutor 日志口径一致为 500；错误响应体落日志用 200，进 ApiException 用 EffectiveMaxErrorContentLength）。</summary>
     private const int LogBodyMaxLength = 500;
     // N-1：默认上限统一至 HttpExecutionConstants（单一真相源），与 DefaultHttpRequestExecutor 路径一致
     private const int MaxErrorContentLength = HttpExecutionConstants.DefaultMaxExceptionContentLength;
@@ -187,7 +187,7 @@ public abstract partial class EnhancedHttpClient : IEnhancedHttpClient, IEncrypt
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
         options ??= new EnhancedHttpClientOptions();
         _logger = options.Logger ?? NullLogger.Instance;
-        // M5-HC-11：NullLogger.Instance 与 NullLogger<T>.Instance 对所有级别 IsEnabled 恒为 false。
+        // NullLogger.Instance 与 NullLogger<T>.Instance 对所有级别 IsEnabled 恒为 false。
         // 用 Critical（最高级别）零反射判定「有真实日志」，替代原先对 NullLogger.Instance 的引用比较。
         _enableLogging = _logger.IsEnabled(LogLevel.Critical);
         _requestInterceptors = options.RequestInterceptors?.OrderBy(i => i.Order).ToArray() ?? Array.Empty<IHttpRequestInterceptor>();
@@ -223,7 +223,7 @@ public abstract partial class EnhancedHttpClient : IEnhancedHttpClient, IEncrypt
 
     #region 辅助方法
 
-    /// <summary>M5-HC-07：异步请求校验 —— DNS 相关判定 await，消除 sync-over-async。</summary>
+    /// <summary>异步请求校验 —— DNS 相关判定 await，消除 sync-over-async。</summary>
     private async ValueTask<string> ValidateRequestAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         request.ThrowIfNull();
@@ -354,7 +354,7 @@ public abstract partial class EnhancedHttpClient : IEnhancedHttpClient, IEncrypt
         _logger.HttpRequestFailedWithResponse(statusCode, sanitizedContent);
 
         // Phase 2 (T2.1/T2.3)：创建 ApiException，应用 ExceptionRedactor 擦除敏感数据，设置 RequestContent
-        // M6-HC-21：RequestUri 与 ApiRequestException / 执行器路径口径统一（剥离 userinfo、掩码敏感 query 值）。
+        // RequestUri 与 ApiRequestException / 执行器路径口径统一（剥离 userinfo、掩码敏感 query 值）。
         var failedUri = response.RequestMessage?.RequestUri;
         var apiEx = new ApiException(response.StatusCode, errorContent,
             failedUri is null ? null : SensitiveUrlRedactor.Redact(failedUri.ToString()));
@@ -475,7 +475,7 @@ public abstract partial class EnhancedHttpClient : IEnhancedHttpClient, IEncrypt
     private string SanitizeContent(string content, int maxLength = 200)
     {
         // M2-#18：统一脱敏入口（masker 回退 MessageSanitizer），与生成代码路径共用
-        // M5-HC-03：自定义 masker 缺陷不得影响请求/日志路径
+        // 自定义 masker 缺陷不得影响请求/日志路径
         try
         {
             return MessageSanitizer.SanitizeWith(_sensitiveDataMasker, content, maxLength);
@@ -488,7 +488,7 @@ public abstract partial class EnhancedHttpClient : IEnhancedHttpClient, IEncrypt
 
     private void LogOperation(string operation, string uri)
     {
-        // M5-HC-11：NullLogger.IsEnabled 恒 false，无需再与 _enableLogging 组合
+        // NullLogger.IsEnabled 恒 false，无需再与 _enableLogging 组合
         if (_logger.IsEnabled(LogLevel.Debug))
         {
             _logger.HttpClientOperation(operation, uri);
@@ -696,7 +696,7 @@ public abstract partial class EnhancedHttpClient : IEnhancedHttpClient, IEncrypt
         if (string.IsNullOrWhiteSpace(baseAddress))
             throw new ArgumentException("基地址不能为空", nameof(baseAddress));
 
-        // M5-HC-12：显式 Absolute —— 拒绝相对地址，避免延迟到 ValidateUrl 阶段才失败
+        // 显式 Absolute —— 拒绝相对地址，避免延迟到 ValidateUrl 阶段才失败
         return WithBaseAddress(new Uri(baseAddress, UriKind.Absolute));
     }
 
@@ -755,7 +755,7 @@ public abstract partial class EnhancedHttpClient : IEnhancedHttpClient, IEncrypt
         public override void SetLength(long value) => _innerStream.SetLength(value);
         public override void Write(byte[] buffer, int offset, int count) => _innerStream.Write(buffer, offset, count);
 
-        // M5-HC-09：ns2.0 补齐 ReadAsync(byte[],int,int,CT) —— Stream 基类默认实现退化为同步 Read
+        // ns2.0 补齐 ReadAsync(byte[],int,int,CT) —— Stream 基类默认实现退化为同步 Read
         public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
             => _innerStream.ReadAsync(buffer, offset, count, cancellationToken);
 #if !NETSTANDARD2_0

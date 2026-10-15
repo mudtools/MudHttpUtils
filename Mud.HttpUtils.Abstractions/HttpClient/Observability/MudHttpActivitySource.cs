@@ -54,7 +54,7 @@ public static class MudHttpActivitySource
     /// 以保证无消费方时事件路径零分配。
     /// </para>
     /// <para>
-    /// M6-HC-17：在 <see cref="MudHttpObservabilityOptions.EmitDiagnosticEvents"/> 之外，
+    /// 在 <see cref="MudHttpObservabilityOptions.EmitDiagnosticEvents"/> 之外，
     /// 叠加"是否存在消费方"判定 —— 既无 <see cref="MudHttpDiagnosticListener"/> 订阅者、
     /// 又无当前 <see cref="Activity"/> 时，事件不可能被任何一方观察到，调用点直接短路，
     /// 避免闭包与 tags 数组的无谓分配。

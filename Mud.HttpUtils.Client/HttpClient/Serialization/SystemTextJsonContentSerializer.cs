@@ -501,7 +501,7 @@ public class SystemTextJsonContentSerializer : IHttpContentSerializer,
         }
 
         /// <summary>
-        /// M4-H-2：可重放 —— 本内容持有 item 引用，每次发送重新序列化，读取捕获不会耗尽源流。
+        /// 可重放 —— 本内容持有 item 引用，每次发送重新序列化，读取捕获不会耗尽源流。
         /// </summary>
         bool IRequestContentReplayHint.IsReplayable => true;
 

@@ -15,7 +15,7 @@ namespace Mud.HttpUtils.Generator.Consts;
 /// <b>为什么需要</b>：这些成员名此前散落在 <c>InterfaceImplementationGenerator.RegisterInfrastructureMembers</c> 与
 /// <c>ConstructorGenerator</c> 的字符串字面量中，两侧必须手工保持一致 —— 任一处的成员名或门控条件改动而另一处未跟进，
 /// 就会出现「登记了但没发射」（占位实现缺失 → CS0535）或「发射了但没登记」（契约补全重复发射 → CS0111/CS0102）。
-/// G8-15 的 <c>UseAppScope</c> 漏登记即为该缺陷的真实案例。
+/// 的 <c>UseAppScope</c> 漏登记即为该缺陷的真实案例。
 /// </para>
 /// <para>
 /// <b>范围</b>：本清单是<b>非 HttpClient 模式</b>下 <c>GenerateAppContextMembers</c> / <c>GenerateUseAppMethod</c> 发射的全部实例成员。

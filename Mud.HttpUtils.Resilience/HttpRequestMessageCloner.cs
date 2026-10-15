@@ -4,7 +4,7 @@ internal static class HttpRequestMessageCloner
 {
     public const long DefaultMaxContentSize = 10 * 1024 * 1024;
 
-    /// <summary>M5-HC-05：克隆快照在请求属性袋中的键（仅 Resilience 内部使用，CopyMetadata 会排除）。</summary>
+    /// <summary>克隆快照在请求属性袋中的键（仅 Resilience 内部使用，CopyMetadata 会排除）。</summary>
     internal const string CloneSnapshotPropertyKey = "__mud_clone_snapshot";
 
     public static Task<HttpRequestMessage> CloneAsync(HttpRequestMessage request)
@@ -26,7 +26,7 @@ internal static class HttpRequestMessageCloner
 
         if (request.Content != null)
         {
-            // M5-HC-05 (2)：已有快照 → 直接复用（不再触碰源内容，消除"第 N 次克隆空体"）
+            // (2)：已有快照 → 直接复用（不再触碰源内容，消除"第 N 次克隆空体"）
             if (TryGetSnapshot(request, out var snapshot))
             {
                 clone.Content = new ByteArrayContent(snapshot);
@@ -55,7 +55,7 @@ internal static class HttpRequestMessageCloner
                             $"请求体大小超过最大克隆限制 ({maxContentSize:N0} 字节)。" +
                             "大文件上传场景建议禁用重试策略或调整 MaxCloneContentSize 限制。");
                     }
-                    // M6-HC-11：无声明长度且读得 0 字节 —— 无法区分"合法空体"与"源流已耗尽"，
+                    // 无声明长度且读得 0 字节 —— 无法区分"合法空体"与"源流已耗尽"，
                     // 缓存空快照会让重试静默发送空体，故显式拒绝克隆（TryCloneAsync 据此降级为不重试）。
                     if (failed)
                     {
@@ -66,7 +66,7 @@ internal static class HttpRequestMessageCloner
                     contentBytes = bytes;
                 }
 
-                // M5-HC-05：首次克隆成功后写入源请求快照，后续重试直接复用
+                // 首次克隆成功后写入源请求快照，后续重试直接复用
                 SetSnapshot(request, contentBytes);
 
                 clone.Content = new ByteArrayContent(contentBytes);
@@ -84,7 +84,7 @@ internal static class HttpRequestMessageCloner
     }
 
     /// <summary>
-    /// M5-HC-05 (1)：重试不可行性预判（声明超限 / 不可重放且无长度）。
+    /// (1)：重试不可行性预判（声明超限 / 不可重放且无长度）。
     /// 命中时调用方应走 ExecuteWithoutRetryAsync（保留超时/熔断）。
     /// </summary>
     internal static bool ShouldSkipRetryForContent(HttpRequestMessage request, long maxCloneContentSize, out string reason)
@@ -110,10 +110,10 @@ internal static class HttpRequestMessageCloner
             return true;
         }
 
-        // M6-HC-11：无声明长度 + 非内存型白名单内容 → 同样不可重放。
+        // 无声明长度 + 非内存型白名单内容 → 同样不可重放。
         // 原预判仅覆盖显式实现 IRequestContentReplayHint 的内容，普通 StreamContent /
         // 未知自定义 HttpContent 被漏判：克隆阶段读取会耗尽一次性源流，重试时静默发送空体。
-        // 采用"类型白名单"（零消耗，不探测流），与 M6-HC-05 的重定向可重放口径一致。
+        // 采用"类型白名单"（零消耗，不探测流），与 的重定向可重放口径一致。
         if (!declared.HasValue && !IsKnownReplayableContent(content))
         {
             reason = "undeclared-non-replayable-content";
@@ -125,7 +125,7 @@ internal static class HttpRequestMessageCloner
     }
 
     /// <summary>
-    /// M6-HC-11：可安全重放的内容白名单 —— 与 <c>EnhancedHttpClient.IsReplayableRequestContent</c>（M6-HC-05）同口径。
+    /// 可安全重放的内容白名单 —— 与 <c>EnhancedHttpClient.IsReplayableRequestContent</c>（M6-HC-05）同口径。
     /// </summary>
     /// <remarks>
     /// <see cref="StringContent"/> 与 <see cref="FormUrlEncodedContent"/> 均派生自 <see cref="ByteArrayContent"/>，
@@ -168,7 +168,7 @@ internal static class HttpRequestMessageCloner
     /// 把源请求的元数据（Version / VersionPolicy / Properties / Options / 请求头）复制到目标请求。
     /// 供 <c>CloneAsync</c> 与 <see cref="ResilientHttpClient"/> 的下载路径克隆共用，避免多处漂移。
     /// </summary>
-    /// <remarks>M5-HC-05：排除 <see cref="CloneSnapshotPropertyKey"/>，避免克隆体携带无用大数组引用。</remarks>
+    /// <remarks>排除 <see cref="CloneSnapshotPropertyKey"/>，避免克隆体携带无用大数组引用。</remarks>
     internal static void CopyMetadata(HttpRequestMessage source, HttpRequestMessage target)
     {
         target.Version = source.Version;
@@ -259,7 +259,7 @@ internal static class HttpRequestMessageCloner
         if (total > maxBytes)
             return (ms.ToArray(), true, false);
 
-        // M6-HC-11 兜底守卫：无声明长度且读得 0 字节 —— 无法区分"合法空体"与"一次性源流已耗尽"，
+        // 兜底守卫：无声明长度且读得 0 字节 —— 无法区分"合法空体"与"一次性源流已耗尽"，
         // 返回失败以阻止缓存空快照（避免重试静默发送空体）。
         if (total == 0 && !declared.HasValue)
             return (Array.Empty<byte>(), false, true);

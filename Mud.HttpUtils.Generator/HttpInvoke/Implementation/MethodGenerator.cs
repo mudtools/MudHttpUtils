@@ -36,7 +36,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         foreach (var methodSymbol in methodsToGenerate)
         {
-            // G8-17（承接 G7-08）：方法级特性统一走上下文缓存（GeneratorContext.GetMethodAttributes），
+            // 方法级特性统一走上下文缓存（GeneratorContext.GetMethodAttributes），
             // 避免同一方法的 GetAttributes() 在本循环内被调用 2 次以上（每次都会分配新的 ImmutableArray）。
             var methodAttrs = context.GetMethodAttributes(methodSymbol);
 
@@ -225,7 +225,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     methodSymbol.Name));
         }
 
-        // M6-HC-29（D5-A）：IAsyncEnumerable<T> 流式方法的生成调用恒传 null JsonTypeInfo
+        // IAsyncEnumerable<T> 流式方法的生成调用恒传 null JsonTypeInfo
         // （源生成器不可见消费方 JsonSerializerContext，无法自动注入；见 MethodGenerator 流式发射点的 v4 Phase 1 注释）。
         // JIT 下无害；Native AOT/裁剪下元素类型未进 JsonSerializerContext 时会静默反序列化为 default
         // （无异常、无日志、流枚举出空元素），属"静默失败"，故以 Warning 默认可见；
@@ -243,7 +243,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
                     methodInfo.AsyncEnumerableElementType));
         }
 
-        // M5-HC-04：缓存键安全门禁
+        // 缓存键安全门禁
         if (methodInfo.CacheEnabled)
         {
             ReportCacheKeyDiagnostics(context, methodInfo, methodSymbol);
@@ -575,7 +575,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
 
         _requestBuilder.GenerateQueryParameters(codeBuilder, methodInfo);
         _requestBuilder.GenerateRequestSetup(codeBuilder, methodInfo);
-        // M6-HC-02：传入 context/methodSymbol 以分派 [HeaderCollection] 并发射 HTTPCLIENT037 提示
+        // 传入 context/methodSymbol 以分派 [HeaderCollection] 并发射 HTTPCLIENT037 提示
         _requestBuilder.GenerateHeaderParameters(codeBuilder, methodInfo, context, methodSymbol);
 
         // 生成接口属性级 Header（动态值，运行时由属性提供）
@@ -635,10 +635,10 @@ internal class MethodGenerator : ICodeFragmentGenerator
                 .FirstOrDefault(p => TypeDetectionHelper.IsCancellationToken(p.Type));
             var cancellationTokenName = cancellationTokenParam?.Name ?? "default";
 
-            // G7-16：C# 的 foreach 表达式不支持 ConfigureAwait，故改用手动 IAsyncEnumerator 形态以
+            // C# 的 foreach 表达式不支持 ConfigureAwait，故改用手动 IAsyncEnumerator 形态以
             // 应用 ConfigureAwait(false)（与库内 await 一致性约定）。
             // try/finally 承担 `await foreach` 编译器在正常/异常路径自动 Dispose 枚举器的同等职责
-            // （与 G7-09 所有权文档一致：完整枚举或异常均释放枚举器，提前 break 由 finally 兜底）。
+            // （与 所有权文档一致：完整枚举或异常均释放枚举器，提前 break 由 finally 兜底）。
             codeBuilder.AppendLine($"            var __enumerator = {executor}.SendAsAsyncEnumerable<{elementType}>(__httpRequest, {httpClientExpr}, null, {cancellationTokenName}).GetAsyncEnumerator({cancellationTokenName});");
             codeBuilder.AppendLine("            try");
             codeBuilder.AppendLine("            {");
@@ -664,7 +664,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             var bufferSize = HttpClientGeneratorConstants.DefaultDownloadBufferSize;
             if (filePathAttr.NamedArguments.TryGetValue("BufferSize", out var bsVal) && bsVal is int bs)
             {
-                // G8-06：BufferSize 最终用于 new byte[bufferSize]（进度路径）与
+                // BufferSize 最终用于 new byte[bufferSize]（进度路径）与
                 // new FileStream(…, bufferSize, …) / CopyToAsync(stream, bufferSize)；
                 // 特性 setter 不会被 Roslyn 实例化 ⇒ 运行期无拦截点，生成器是唯一防线。
                 // 策略：<= 0 保持既有归一语义（回退默认值，静默，见 07 §G7-B）；
@@ -963,7 +963,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
     }
 
     /// <summary>
-    /// M5-HC-04：[Cache] 缓存键安全门禁 —— Unsafe 参数无模板报 Error；模板未覆盖 Unsafe 参数报 Warning。
+    /// [Cache] 缓存键安全门禁 —— Unsafe 参数无模板报 Error；模板未覆盖 Unsafe 参数报 Warning。
     /// </summary>
     private static void ReportCacheKeyDiagnostics(
         GeneratorContext context,
@@ -1036,7 +1036,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
     /// 生成缓存键表达式（仅当 Cache 启用时调用）。
     /// </summary>
     /// <remarks>
-    /// M5-HC-04：默认键按参数安全分级生成 —— 标量走 InvariantCulture，
+    /// 默认键按参数安全分级生成 —— 标量走 InvariantCulture，
     /// 简单数组走 string.Join + InvariantCulture；Unsafe 参数不生成默认键（由诊断拦截）。
     /// </remarks>
     private string GenerateCacheKeyExpression(GeneratorContext context, MethodAnalysisResult methodInfo)
@@ -1076,7 +1076,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             return $"{varyPrefix}$\"{resolvedTemplate}\"";
         }
 
-        // M5-HC-04：按安全分级生成键片段
+        // 按安全分级生成键片段
         var segments = new List<string>();
         foreach (var param in methodInfo.Parameters)
         {
@@ -1141,7 +1141,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
     }
 
     /// <summary>
-    /// G7-09：为直达/流式返回类型追加所有权 remarks（XML 文档注释），避免调用方误用导致响应泄漏。
+    /// 为直达/流式返回类型追加所有权 remarks（XML 文档注释），避免调用方误用导致响应泄漏。
     /// 执行器拥有响应生命周期的普通返回类型（<c>byte[]</c>/<c>Task&lt;T&gt;</c> 等）不追加，保持生成面精简。
     /// 与 G7-16（手动枚举器 + ConfigureAwait(false)）联动：流式所有权文档在此有正确落点。
     /// </summary>
@@ -1368,7 +1368,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         if (!hasTokenManager)
             return false;
 
-        // G8-20：改走模型访问器（原始接口级字段只允许出现在模型/解析器中，见
+        // 改走模型访问器（原始接口级字段只允许出现在模型/解析器中，见
         // EffectiveTokenFieldUsageGuardTests）；语义不变 —— 未显式声明模式时返回 false
         //（不能用 EffectiveTokenInjectionMode，它带 "Header" 默认值）。
         if (methodInfo.HasExplicitTokenInjectionMode)
@@ -1738,7 +1738,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
     }
 
     /// <summary>
-    /// G8-17：改收「已缓存的方法特性数组」（<see cref="GeneratorContext.GetMethodAttributes"/>），
+    /// 改收「已缓存的方法特性数组」（<see cref="GeneratorContext.GetMethodAttributes"/>），
     /// 不再自行调用 <c>methodSymbol.GetAttributes()</c>（每次调用都会分配新的 <c>ImmutableArray</c>）。
     /// </summary>
     private static bool HasCacheAttribute(ImmutableArray<AttributeData> methodAttributes)
@@ -1748,7 +1748,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
     }
 
     /// <summary>
-    /// G8-17：同 <see cref="HasCacheAttribute"/>，改收已缓存的方法特性数组。
+    /// 同 <see cref="HasCacheAttribute"/>，改收已缓存的方法特性数组。
     /// </summary>
     private static bool HasResilienceAttribute(ImmutableArray<AttributeData> methodAttributes)
     {
@@ -1806,7 +1806,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         // FIX-05：接口级 Path 来源（[InterfacePath] 特性 + 接口属性 [Path]）**仅供「缺失」判定**，
         // 防止接口声明了路径占位符但方法参数未标注 [Path] 时误报 HTTPCLIENT013 Error。
         //
-        // G8-18（构建红基线修复）：接口级 Path **不得**参与「多余」判定 ——
+        // 接口级 Path **不得**参与「多余」判定 ——
         // 接口 [Path] 属性/ [InterfacePath] 常服务于接口级 [BasePath("…/{name}/…")] 的占位符
         // （如 [BasePath("{tenantId}/api/v1")] + 属性 [Path("tenantId")]），
         // 而本校验只比对方法级 UrlTemplate（不含 BasePath）⇒ 若复用同一集合，
@@ -1821,7 +1821,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
         // 当 Token 使用 Path 注入模式时，URL 模板中的 Token 占位符应由 Token 注入机制替换，
         // 不需要对应的 [Path] 参数，因此将 Token 占位符从缺失列表中排除
         // 使用已缓存的 methodInfo，避免重复调用 AnalyzeMethod
-        // G8-01：模式与名称均取「有效级」（方法级 > 接口级），否则方法级 Path 模式会被误报。
+        // 模式与名称均取「有效级」（方法级 > 接口级），否则方法级 Path 模式会被误报。
         var tokenPathPlaceholders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (methodInfo.IsValid && methodInfo.EffectiveTokenInjectionMode == HttpClientGeneratorConstants.TokenInjectionModePath
             && !string.IsNullOrEmpty(methodInfo.EffectiveTokenName))
@@ -1893,7 +1893,7 @@ internal class MethodGenerator : ICodeFragmentGenerator
             context.Compilation, methodSymbol, context.InterfaceDeclaration, context.SemanticModel);
 
     /// <summary>
-    /// G8-06：定位方法上 <c>[FilePath(…)]</c> 特性的语法位置（优先特性节点，无法命中时由调用方回退方法/接口）。
+    /// 定位方法上 <c>[FilePath(…)]</c> 特性的语法位置（优先特性节点，无法命中时由调用方回退方法/接口）。
     /// </summary>
     private static Location? GetFilePathAttributeLocation(IMethodSymbol methodSymbol, GeneratorContext context)
     {

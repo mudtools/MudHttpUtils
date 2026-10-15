@@ -165,7 +165,7 @@ public sealed class GeneratedClientOptions : IEnhancedClientConfig
     /// </summary>
     /// <value>默认为 <c>0</c>（不限制）。</value>
     /// <remarks>
-    /// G8-08：无 DI 工厂路径此前<b>无法</b>配置该守卫（DI 路径早已接线），现经共享契约
+    /// 无 DI 工厂路径此前<b>无法</b>配置该守卫（DI 路径早已接线），现经共享契约
     /// <see cref="IEnhancedClientConfig"/> 贯通；生成工厂将其透传给
     /// <c>DefaultHttpRequestExecutor(maxSuccessResponseBytes: …)</c>，与 DI 路径语义一致。
     /// </remarks>

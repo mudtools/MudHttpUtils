@@ -48,7 +48,7 @@ internal sealed class PayloadFieldMapGenerator : TransitiveCodeGenerator
             .WithComparer(EqualityComparer<PayloadContractModel>.Default)
             .WithTrackingName("PayloadFieldMap_SyntaxProvider");
 
-        // ② 配置值快照（复用 G7-06 既有快照：Disable / EmitMarkers / NullableEnable / Version 均为本生成器所需）
+        // ② 配置值快照（复用 既有快照：Disable / EmitMarkers / NullableEnable / Version 均为本生成器所需）
         var configSnapshot = context.AnalyzerConfigOptionsProvider
             .Select(static (provider, _) => GeneratorConfigSnapshot.Create(provider))
             .WithComparer(GeneratorConfigSnapshot.Comparer)

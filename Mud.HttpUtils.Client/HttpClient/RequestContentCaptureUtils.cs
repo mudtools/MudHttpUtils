@@ -10,7 +10,7 @@ using System.Net.Http;
 namespace Mud.HttpUtils
 {
     /// <summary>
-    /// M4-H-2：请求体捕获的可重放性守卫。供 <see cref="DefaultHttpRequestExecutor.CaptureRequestContentAsync"/>
+    /// 请求体捕获的可重放性守卫。供 <see cref="DefaultHttpRequestExecutor.CaptureRequestContentAsync"/>
     /// 与 <c>EnhancedHttpClient</c> 两条捕获路径共用，确保"非可重放内容自动跳过"语义一致。
     /// </summary>
     /// <remarks>
@@ -19,7 +19,7 @@ namespace Mud.HttpUtils
     /// <list type="number">
     /// <item>内容显式声明 <c>IRequestContentReplayHint.IsReplayable == false</c>；</item>
     /// <item>
-    /// M6-HC-31：<b>无声明长度且非内存型内容</b> —— 即底层为一次性（不可 seek）源流。
+    /// <b>无声明长度且非内存型内容</b> —— 即底层为一次性（不可 seek）源流。
     /// 捕获需读取内容流，而 <c>LimitedContentReader</c> 只能对 <c>CanSeek</c> 的流复位；
     /// 一次性流读完即耗尽，随后发送得到空/截断请求体。判定采用"类型白名单"（零消耗，不探测流）。
     /// </item>
@@ -55,7 +55,7 @@ namespace Mud.HttpUtils
                 return false;
             }
 
-            // M6-HC-31：无声明长度 + 非内存型 + 未显式声明可重放 ⇒ 视为不可 seek 的一次性源流。
+            // 无声明长度 + 非内存型 + 未显式声明可重放 ⇒ 视为不可 seek 的一次性源流。
             // 声明长度本身即"长度可预知"的证明（StreamContent 仅在流可 seek 时才能算出长度），
             // 故有声明长度时无需再探测。
             if (!content.Headers.ContentLength.HasValue

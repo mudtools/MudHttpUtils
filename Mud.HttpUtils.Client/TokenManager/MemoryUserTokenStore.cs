@@ -50,7 +50,7 @@ public class MemoryUserTokenStore : IUserTokenStore, IUserTokenStoreCompareExcha
     // 内层（tokenType）保留 OrdinalIgnoreCase：tokenType 语义不区分大小写，与 MemoryTokenStore 一致。
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, MemoryTokenStore.TokenEntry>> _userStore = new(StringComparer.Ordinal);
 
-    // M6-HC-28：用户桶数上限。超过该值后，下一次写入会顺带触发一次全量空壳桶清扫。
+    // 用户桶数上限。超过该值后，下一次写入会顺带触发一次全量空壳桶清扫。
     // 取 1 万：单个空 ConcurrentDictionary 壳约百字节级，1 万个壳的内存占用仍在可接受范围，
     // 而全量扫描（1 万次 IsEmpty 判定，无分配）在命中阈值时的一次性成本可忽略。
     internal const int UserBucketSweepThreshold = 10000;
@@ -59,12 +59,12 @@ public class MemoryUserTokenStore : IUserTokenStore, IUserTokenStoreCompareExcha
     private int _bucketSweepInProgress;
 
     /// <summary>
-    /// M6-HC-28：测试观测钩子（经 <c>InternalsVisibleTo</c>）—— 当前用户桶数量，用于断言「桶数有界」。
+    /// 测试观测钩子（经 <c>InternalsVisibleTo</c>）—— 当前用户桶数量，用于断言「桶数有界」。
     /// </summary>
     internal int UserBucketCount => _userStore.Count;
 
     /// <summary>
-    /// M6-HC-28：惰性空壳桶清扫 —— 仅在桶数超过 <see cref="UserBucketSweepThreshold"/> 时触发全量扫描，
+    /// 惰性空壳桶清扫 —— 仅在桶数超过 <see cref="UserBucketSweepThreshold"/> 时触发全量扫描，
     /// 移除并发 <see cref="RemoveAsync"/> 与过期移除后残留的空内层字典（这些正是桶数无界增长的唯一来源）。
     /// </summary>
     /// <remarks>
@@ -271,7 +271,7 @@ public class MemoryUserTokenStore : IUserTokenStore, IUserTokenStoreCompareExcha
             _ => new MemoryTokenStore.TokenEntry(accessToken, null, DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds)),
             (_, existing) => existing.WithAccessToken(accessToken, DateTimeOffset.UtcNow.AddSeconds(expiresInSeconds)));
 
-        // M6-HC-28：写入路径顺带做惰性空壳桶清扫。必须放在本次 AddOrUpdate 之后 ——
+        // 写入路径顺带做惰性空壳桶清扫。必须放在本次 AddOrUpdate 之后 ——
         // 此时自身桶已非空，扫描不会回收自身刚创建的空桶（否则 AddOrUpdate 会写入已脱离 _userStore 的孤儿字典，
         // 令牌静默丢失）。桶数未超阈值时为一次 int 比较，不产生扫描。
         SweepEmptyBucketsIfNeeded();
@@ -305,7 +305,7 @@ public class MemoryUserTokenStore : IUserTokenStore, IUserTokenStoreCompareExcha
             _ => new MemoryTokenStore.TokenEntry(null, refreshToken, DateTimeOffset.MaxValue),
             (_, existing) => existing.WithRefreshToken(refreshToken));
 
-        // M6-HC-28：同 SetAccessTokenAsync，写入后顺带惰性清扫空壳桶
+        // 同 SetAccessTokenAsync，写入后顺带惰性清扫空壳桶
         SweepEmptyBucketsIfNeeded();
 
         return Task.CompletedTask;

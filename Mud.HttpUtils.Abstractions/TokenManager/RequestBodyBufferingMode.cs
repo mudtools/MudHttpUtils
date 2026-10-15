@@ -16,7 +16,7 @@ namespace Mud.HttpUtils;
 /// 并改变流式上传的语义），而 401 是低频事件，代价却由<b>全部正常请求</b>承担 —— 故提供本开关。
 /// </para>
 /// <para>
-/// <b>不设 <c>Disabled</c> 态（评审修订 5）</b>：既有 <see cref="TokenRecoveryOptions.MaxCachedRequestBodyBytes"/> == 0
+/// <b>不设 <c>Disabled</c> 态</b>：既有 <see cref="TokenRecoveryOptions.MaxCachedRequestBodyBytes"/> == 0
 /// 已表达"流式优先 / 不缓冲"（该值下不做任何预读，带体请求放弃 401 重试但正常发送）。
 /// 增设第三个枚举态属功能冗余。
 /// </para>

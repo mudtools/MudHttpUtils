@@ -64,7 +64,7 @@ public class DefaultUrlParameterFormatter : IUrlParameterFormatter
                     return formattable.ToString(format, CultureInfo.InvariantCulture);
             }
 
-            // M6-HC-18：无显式 format 时同样固定 InvariantCulture，
+            // 无显式 format 时同样固定 InvariantCulture，
             // 避免 DateTime/decimal 等按 CurrentCulture 生成区域敏感串（如 ar-SA 的历法/小数分隔符分叉）。
             return formattable.ToString(null, CultureInfo.InvariantCulture);
         }

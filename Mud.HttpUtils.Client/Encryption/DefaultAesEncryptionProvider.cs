@@ -65,9 +65,9 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
     private const int MinCbcHmacLength = 1 + IvSizeBytes + HmacTagSize + CipherBlockSizeBytes; // 65
 
     private byte[] _key;
-    /// <summary>M5-HC-13：HKDF 派生的 AES 加密子密钥（EnableKeySeparation 时使用）。</summary>
+    /// <summary>HKDF 派生的 AES 加密子密钥（EnableKeySeparation 时使用）。</summary>
     private byte[]? _encKey;
-    /// <summary>M5-HC-13：HKDF 派生的 HMAC 子密钥（EnableKeySeparation 时使用）。</summary>
+    /// <summary>HKDF 派生的 HMAC 子密钥（EnableKeySeparation 时使用）。</summary>
     private byte[]? _macKey;
     private readonly bool _enableKeySeparation;
     private bool _disposed;
@@ -109,7 +109,7 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
         var requireCrossRuntimePortable = options.Value.RequireCrossRuntimePortable;
         _enableKeySeparation = options.Value.EnableKeySeparation;
 
-        // M5-HC-13：HKDF 派生 enc/mac 子密钥（纯托管，全 TFM 可用）
+        // HKDF 派生 enc/mac 子密钥（纯托管，全 TFM 可用）
         if (_enableKeySeparation)
         {
             _encKey = HkdfExpand(_key, "Mud.HttpUtils:AES:enc", _key.Length);
@@ -264,7 +264,7 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
                 return DecryptCbcThenHmac(fullBytes, keySeparated: false);
 
             case EnvelopeVersionCbcHmacKeySep:
-                // M6-HC-26：0x04 的 enc/mac 子密钥由 HKDF 从主密钥派生，未启用密钥分离的实例无此子密钥
+                // 0x04 的 enc/mac 子密钥由 HKDF 从主密钥派生，未启用密钥分离的实例无此子密钥
                 // （_encKey/_macKey 为 null）。此前会退化用主密钥验 MAC → 抛"密文完整性校验失败"，
                 // 把配置不匹配误报为篡改；此处显式拒绝并给出可操作的修复指引。
                 if (!_enableKeySeparation)
@@ -339,7 +339,7 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
     private byte[] EncryptCbcThenHmac(byte[] plainBytes)
     {
         var key = KeyForCrypto;  // TMX-15-6
-        // M5-HC-13：启用密钥分离时产出 0x04，否则回退 0x03
+        // 启用密钥分离时产出 0x04，否则回退 0x03
         var version = _enableKeySeparation ? EnvelopeVersionCbcHmacKeySep : EnvelopeVersionCbcHmac;
         var aesKey = _enableKeySeparation ? Volatile.Read(ref _encKey)! : key;
 
@@ -400,7 +400,7 @@ public sealed class DefaultAesEncryptionProvider : IEncryptionProvider, IDisposa
         return hmac.Hash!;
     }
 
-    /// <summary>M5-HC-13：HKDF-Expand（RFC 5869）—— 以主密钥为 PRK，info 区分用途，产出指定长度子密钥。</summary>
+    /// <summary>HKDF-Expand（RFC 5869）—— 以主密钥为 PRK，info 区分用途，产出指定长度子密钥。</summary>
     private static byte[] HkdfExpand(byte[] prk, string info, int length)
     {
         var infoBytes = System.Text.Encoding.UTF8.GetBytes(info);

@@ -27,7 +27,7 @@ public partial class TokenRecoveryExecutor
         // MT-05/MT-06：去重与有界收敛统一委托 RefreshDedupTable。
         // 刷新工厂本身即为共享任务（不再经 TaskCompletionSource 转发），
         // 因此失败时不存在"无人 await 的任务"，根除未观察任务异常。
-        // M6-HC-23：forceRefresh=true（恢复循环第 2..N 轮）跳过窗口内的已完成结果，避免复用已被拒绝的令牌。
+        // forceRefresh=true（恢复循环第 2..N 轮）跳过窗口内的已完成结果，避免复用已被拒绝的令牌。
         // I3（R-P0-02）：等待可取消 + 硬预算；工厂入参为共享刷新的 CT（仅受硬预算约束，取消隔离语义保持）。
         return GetOrRefreshWithBudgetAsync(
             _credentialRefreshTasks,
@@ -196,7 +196,7 @@ public partial class TokenRecoveryExecutor
     /// <summary>
     /// SR-M6（P2.4，D9）用户级恢复的管理器解析：与 <see cref="ResolveManager"/> 同语义，但要求
     /// 解析结果实现 <see cref="IUserTokenManager"/>——解析失败或解析到非用户管理器（租户实例）时
-    /// 一律回退构造注入实例并记 Warning（TK-06：绝不用租户管理器执行用户级恢复，凭据错配防线）。
+    /// 一律回退构造注入实例并记 Warning（绝不用租户管理器执行用户级恢复，凭据错配防线）。
     /// </summary>
     private IUserTokenManager? ResolveUserManager(TokenRecoveryContext? ctx)
     {
@@ -278,7 +278,7 @@ public partial class TokenRecoveryExecutor
         var dedupKey = BuildTenantScopedDedupKey(managerKey, userId, scopeKey);
 
         // MT-05/MT-06：同租户级路径，统一委托 RefreshDedupTable（含 userId 的高基数键受条目上限约束）。
-        // M6-HC-23：forceRefresh 语义与租户级路径一致。
+        // forceRefresh 语义与租户级路径一致。
         // I3（R-P0-02）：等待可取消 + 硬预算，与租户级路径同一入口。
         return GetOrRefreshWithBudgetAsync(
             _userRefreshTasks,

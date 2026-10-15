@@ -38,13 +38,13 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     private readonly ConcurrentDictionary<PolicyCacheKey, object> _policyCache = new();
 
     /// <summary>
-    /// M6-HC-22：策略缓存插入序队列。超限时按此顺序淘汰最旧条目（FIFO 近似的 LRU），
+    /// 策略缓存插入序队列。超限时按此顺序淘汰最旧条目（FIFO 近似的 LRU），
     /// 替代原"超限即放弃缓存"（后者会使熔断器状态随每次调用重置而失效）。
     /// </summary>
     private readonly ConcurrentQueue<PolicyCacheKey> _policyCacheOrder = new();
 
     /// <summary>
-    /// M6-HC-22：与结果类型无关的共享策略缓存（键的 <see cref="PolicyCacheKey.ResultType"/> 为 null）。
+    /// 与结果类型无关的共享策略缓存（键的 <see cref="PolicyCacheKey.ResultType"/> 为 null）。
     /// 熔断/超时策略实例本身不含 <c>TResult</c>，同一作用域下所有结果类型共用一个实例，
     /// 失败计数 / 半开状态因此得以合并；按结果类型暴露的 <c>IAsyncPolicy&lt;TResult&gt;</c>
     /// 由该共享实例经 <c>AsAsyncPolicy&lt;TResult&gt;()</c> 适配。
@@ -53,8 +53,8 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     /// <para>
     /// <b>为何与 <see cref="_policyCache"/> 分册</b>：共享策略承载熔断器状态（失败计数 / 半开），
     /// 而适配器缓存承载的是无状态的包装实例。二者共用淘汰队列会导致「适配器被淘汰 → 重新解析」
-    /// 时把仍在使用的熔断器状态一并丢弃，使 HC-22 想修的"计数随调用重置"从另一条路径复发
-    /// （方案 §五 HC-22 验收：「超限后第 2 次失败仍计入同一 CB」）。
+    /// 时把仍在使用的熔断器状态一并丢弃，使 想修的"计数随调用重置"从另一条路径复发
+    /// （方案 §五 验收：「超限后第 2 次失败仍计入同一 CB」）。
     /// </para>
     /// <para>
     /// <b>为何仍需上限</b>：scope 取自 host / Named Client 名，基数受部署约束但并非严格有界，
@@ -65,11 +65,11 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     /// </remarks>
     private readonly ConcurrentDictionary<PolicyCacheKey, AsyncPolicy> _sharedPolicyCache = new();
 
-    /// <summary>M6-HC-22：共享策略缓存的插入序队列（见 <see cref="_sharedPolicyCache"/> 备注）。</summary>
+    /// <summary>共享策略缓存的插入序队列（见 <see cref="_sharedPolicyCache"/> 备注）。</summary>
     private readonly ConcurrentQueue<PolicyCacheKey> _sharedPolicyCacheOrder = new();
 
     /// <summary>
-    /// M6-HC-22：共享策略缓存的下限容量。共享条目数 = 作用域数 × 2（熔断 + 超时），
+    /// 共享策略缓存的下限容量。共享条目数 = 作用域数 × 2（熔断 + 超时），
     /// 该下限远高于典型部署的 host 数，确保正常负载下共享熔断器状态永不被淘汰。
     /// </summary>
     private const int SharedPolicyCacheFloor = 256;
@@ -92,7 +92,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     internal const string RetryCountContextKey = "__mud_retry_count";
 
     /// <summary>
-    /// M5-HC-05：Polly Context 中存储触发本次重试的原始异常的键。
+    /// Polly Context 中存储触发本次重试的原始异常的键。
     /// 克隆失败时回填该异常，避免根因被 InvalidOperationException 掩盖。
     /// </summary>
     internal const string LastExceptionContextKey = "__mud_last_exception";
@@ -133,13 +133,13 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     private sealed class PolicyCacheKey
     {
         /// <summary>
-        /// 结果类型。<c>null</c> 表示"与结果类型无关"的共享策略键（M6-HC-22：
+        /// 结果类型。<c>null</c> 表示"与结果类型无关"的共享策略键（
         /// 熔断/超时策略本身与 <c>TResult</c> 无关，跨结果类型共享同一实例，
         /// 使同一作用域内的失败计数得以合并）。
         /// </summary>
         public Type? ResultType { get; }
         public string PolicyKind { get; }
-        /// <summary>M5-HC-06：路由作用域键（host/client/global）。</summary>
+        /// <summary>路由作用域键（host/client/global）。</summary>
         public string Scope { get; }
 
         public PolicyCacheKey(Type? resultType, string policyKind, string scope = "global")
@@ -191,13 +191,13 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             // 空数组表示用户有意禁用状态码重试（仅异常触发重试），记录警告
             MudHttpClientLog.RetryStatusCodesEmptyArray(_logger);
         }
-        // M5-HC-06：policyKey 携带作用域，便于日志/事件定位
+        // policyKey 携带作用域，便于日志/事件定位
         var policyKey = scope == "global" ? PolicyKeyGlobalRetry : $"{scope}:retry";
 
         return Policy<TResult>
             .Handle<HttpRequestException>(ex => ShouldRetry(ex, retryStatusCodes))
             .Or<TimeoutRejectedException>()
-            // M4-H-3：平台超时（HttpClient.Timeout）计入重试；用户取消（inner 为 TCE 而非 TimeoutException）排除
+            // 平台超时（HttpClient.Timeout）计入重试；用户取消（inner 为 TCE 而非 TimeoutException）排除
             .Or<TaskCanceledException>(TaskCancellationClassifier.IsPlatformTimeout)
             .WaitAndRetryAsync(
                 retryOptions.MaxRetryAttempts,
@@ -213,7 +213,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 
                     // 将重试次数写入 Polly Context，供 ResilientHttpClient 在克隆请求时读取并写入请求属性
                     context[RetryCountContextKey] = retryCount;
-                    // M5-HC-05：保存原始异常，供克隆失败时回填根因
+                    // 保存原始异常，供克隆失败时回填根因
                     if (outcome.Exception != null)
                         context[LastExceptionContextKey] = outcome.Exception;
 
@@ -250,7 +250,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 });
     }
 
-    /// <summary>M5-HC-06：带容量上限的策略缓存写入；M6-HC-22：超限时按插入序淘汰最旧条目（不再放弃缓存）。</summary>
+    /// <summary>带容量上限的策略缓存写入；超限时按插入序淘汰最旧条目（不再放弃缓存）。</summary>
     private object GetOrAddPolicy(PolicyCacheKey key, Func<object> factory)
     {
         if (_policyCache.TryGetValue(key, out var existing))
@@ -276,7 +276,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     }
 
     /// <summary>
-    /// M6-HC-22：获取（或创建）与结果类型无关的共享策略（熔断 / 超时）。
+    /// 获取（或创建）与结果类型无关的共享策略（熔断 / 超时）。
     /// 容量为 <see cref="SharedPolicyCacheFloor"/> 与 <see cref="ResilienceOptions.MaxPolicyCacheSize"/> 的较大者，
     /// 仅作 scope 基数异常膨胀时的内存兜底（见 <see cref="_sharedPolicyCache"/> 备注）。
     /// </summary>
@@ -306,7 +306,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     }
 
     /// <summary>
-    /// M6-HC-22：按插入序淘汰最旧条目（每轮淘汰 <c>max/8</c>，至少 1 条），使缓存容量成为软上限，
+    /// 按插入序淘汰最旧条目（每轮淘汰 <c>max/8</c>，至少 1 条），使缓存容量成为软上限，
     /// 避免原实现"超限即完全放弃缓存"导致的熔断计数丢失与策略实例每次重建。
     /// </summary>
     /// <param name="cache">目标缓存。</param>
@@ -354,7 +354,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 
         var policyKey = scope == "global" ? PolicyKeyGlobalTimeout : $"{scope}:timeout";
 
-        // M7-HC-03：超时策略可配置（默认 Optimistic），经共享策略缓存 —— 策略为全局单例配置，缓存键不变
+        // 超时策略可配置（默认 Optimistic），经共享策略缓存 —— 策略为全局单例配置，缓存键不变
         return Policy.TimeoutAsync(
             TimeSpan.FromSeconds(timeoutOptions.TimeoutSeconds),
             _options.TimeoutStrategy,
@@ -386,7 +386,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
     /// <inheritdoc />
     public IAsyncPolicy<TResult> GetCircuitBreakerPolicy<TResult>(string scope)
     {
-        // M6-HC-22：同 GetTimeoutPolicy —— 按结果类型缓存适配后的实例以保证引用标识，
+        // 同 GetTimeoutPolicy —— 按结果类型缓存适配后的实例以保证引用标识，
         // 底层熔断器实例跨结果类型共享，使同一作用域的失败计数真正合并。
         var key = new PolicyCacheKey(typeof(TResult), "circuitBreaker", scope);
         return (IAsyncPolicy<TResult>)GetOrAddPolicy(key, () => BuildCircuitBreakerPolicy<TResult>(scope));
@@ -417,7 +417,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             return Policy
                 .Handle<HttpRequestException>()
                 .Or<TimeoutRejectedException>()
-                // M4-H-3：平台超时计入熔断失败；用户取消排除
+                // 平台超时计入熔断失败；用户取消排除
                 .Or<TaskCanceledException>(TaskCancellationClassifier.IsPlatformTimeout)
                 .AdvancedCircuitBreakerAsync(
                     failureThreshold: failureRate,
@@ -445,7 +445,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
         return Policy
             .Handle<HttpRequestException>()
             .Or<TimeoutRejectedException>()
-            // M4-H-3：平台超时计入熔断失败；用户取消排除
+            // 平台超时计入熔断失败；用户取消排除
             .Or<TaskCanceledException>(TaskCancellationClassifier.IsPlatformTimeout)
             .CircuitBreakerAsync(
                 exceptionsAllowedBeforeBreaking: cbOptions.FailureThreshold,
@@ -525,7 +525,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 
         if (timeoutEnabled)
         {
-            // M7-HC-03：方法级超时与全局超时共用同一策略配置（泛型构造点与非泛型一致）
+            // 方法级超时与全局超时共用同一策略配置（泛型构造点与非泛型一致）
             var timeoutPolicy = Policy.TimeoutAsync<TResult>(
                 TimeSpan.FromMilliseconds(timeoutMilliseconds),
                 _options.TimeoutStrategy,
@@ -551,7 +551,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 var cbPolicy = Policy
                     .Handle<HttpRequestException>()
                     .Or<TimeoutRejectedException>()
-                    // M4-H-3：平台超时计入熔断失败；用户取消排除
+                    // 平台超时计入熔断失败；用户取消排除
                     .Or<TaskCanceledException>(TaskCancellationClassifier.IsPlatformTimeout)
                     .AdvancedCircuitBreakerAsync(
                         failureThreshold: failureRate,
@@ -583,7 +583,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
                 var cbPolicy = Policy
                     .Handle<HttpRequestException>()
                     .Or<TimeoutRejectedException>()
-                    // M4-H-3：平台超时计入熔断失败；用户取消排除
+                    // 平台超时计入熔断失败；用户取消排除
                     .Or<TaskCanceledException>(TaskCancellationClassifier.IsPlatformTimeout)
                     .CircuitBreakerAsync(
                         exceptionsAllowedBeforeBreaking: failureThreshold,
@@ -625,7 +625,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
             var retryPolicy = Policy<TResult>
                 .Handle<HttpRequestException>(ex => ShouldRetry(ex, retryStatusCodes))
                 .Or<TimeoutRejectedException>()
-                // M4-H-3：平台超时计入重试；用户取消排除
+                // 平台超时计入重试；用户取消排除
                 .Or<TaskCanceledException>(TaskCancellationClassifier.IsPlatformTimeout)
                 .WaitAndRetryAsync(
                     maxRetries,
@@ -640,7 +640,7 @@ public sealed class PollyResiliencePolicyProvider : IResiliencePolicyProvider
 
                         // 将重试次数写入 Polly Context，供 ResilientHttpClient 在克隆请求时读取并写入请求属性
                         context[RetryCountContextKey] = retryCount;
-                        // M5-HC-05：保存原始异常，供克隆失败时回填根因
+                        // 保存原始异常，供克隆失败时回填根因
                         if (outcome.Exception != null)
                             context[LastExceptionContextKey] = outcome.Exception;
 

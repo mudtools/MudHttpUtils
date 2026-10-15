@@ -15,7 +15,7 @@ namespace Mud.HttpUtils;
 /// </summary>
 /// <remarks>
 /// <c>DefaultAppManager{TAppContext}</c> 在未注入自定义注册表时使用本实现；
-/// 其行为即 <c>DefaultAppManager</c> 历史行为的<b>逐位基线</b>（G8-11 大小写敏感、MT-08 CAS 更新语义
+/// 其行为即 <c>DefaultAppManager</c> 历史行为的<b>逐位基线</b>（大小写敏感、MT-08 CAS 更新语义
 /// 均由底层字典原生成语义保证），既有语义钉死测试在默认实现下应零变化通过。
 /// </remarks>
 /// <typeparam name="TAppContext">应用上下文类型。</typeparam>

@@ -572,7 +572,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         if (declaredTokenType != null
             && !string.Equals(declaredTokenType, scopeKey.TokenType, StringComparison.Ordinal))
         {
-            // G9-02：异常消息经 ToSafeText 文本化（截断 128 + 控制字符过滤），防日志注入面。
+            // 异常消息经 ToSafeText 文本化（截断 128 + 控制字符过滤），防日志注入面。
             throw new ArgumentException(
                 $"令牌类型不一致：TokenScopeKey 声明 tokenType '{AppKeyValidator.ToSafeText(scopeKey.TokenType)}'，" +
                 $"本管理器声明 '{AppKeyValidator.ToSafeText(declaredTokenType)}'。" +
@@ -872,7 +872,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
         if (!tenantConflict && !scopeConflict)
             return;
 
-        // G9-02：租户键经 AppKeyValidator.ToSafeText 文本化（截断 128 + 控制字符过滤）——
+        // 租户键经 AppKeyValidator.ToSafeText 文本化（截断 128 + 控制字符过滤）——
         // 与 DefaultAppManager 同口径。tenantKey 来自用户实现的 IMudAppContext.AppKey（框架不强制
         // 再校验），原文插值进异常消息会构成日志注入面（与生成侧「静态消息」纪律对齐）。
         if (!bindScope)
@@ -1276,7 +1276,7 @@ public abstract class TokenManagerBase : ITokenManager, IDisposable
     //    破坏"Dispose 后允许在途请求完成、其 Release 不抛异常"的契约。
     // SR-H1（P1.3，D3）Dispose 链重构：可重入 + 每步幂等。
     // 原实现第一行 if (_disposed) return; 在派生类（如 UserTokenManagerBase）先行置位 _disposed 后
-    // 调 base.Dispose 时直接早退，导致基类维护 Timer / 锁表 / 缓存永不释放（TK-08 / NEW-TM-11 修复引入的回归）。
+    // 调 base.Dispose 时直接早退，导致基类维护 Timer / 锁表 / 缓存永不释放（/ NEW-TM-11 修复引入的回归）。
     // 新契约（写入基类 XML 文档，见本类 remarks）：
     //   1) Dispose(bool) 可重入、幂等；不以 _disposed 早退（派生类置位后仍须执行基类释放）。
     //   2) 派生类覆写时应在开头自行检查/置位 _disposed（保留 NEW-TM-11 快速感知语义），

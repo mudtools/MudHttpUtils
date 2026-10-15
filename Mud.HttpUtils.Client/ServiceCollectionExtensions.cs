@@ -32,7 +32,7 @@ public static class HttpClientServiceCollectionExtensions
     private static int _ssrfGuidanceLogged;
 
 #if NET6_0_OR_GREATER
-    // M6-HC-03：显式 opt-in（AddMudHttpClientSsrfProtection(builder)）登记表。
+    // 显式 opt-in（AddMudHttpClientSsrfProtection(builder)）登记表。
     // 以 IServiceCollection（容器）为弱键、客户端名为值 —— 与 builder 实例解耦
     //（同一名称重复 AddMudHttpClient 会产生新 builder 实例，但容器与名称不变），
     // 且不跨容器污染（不同 ServiceCollection 互不影响）。
@@ -42,7 +42,7 @@ public static class HttpClientServiceCollectionExtensions
         => _ssrfExplicitOptInClients.GetValue(services, _ => new HashSet<string>(StringComparer.Ordinal));
 
     /// <summary>
-    /// M6-HC-03（D1-A）：严格模式（<see cref="MudHttpClientOptions.AllowCustomBaseUrls"/>=false）下
+    /// 严格模式（<see cref="MudHttpClientOptions.AllowCustomBaseUrls"/>=false）下
     /// 为命名客户端自动接线连接期 SSRF 校验 primary handler。
     /// </summary>
     /// <remarks>
@@ -61,7 +61,7 @@ public static class HttpClientServiceCollectionExtensions
 
         builder.ConfigurePrimaryHttpMessageHandler(sp =>
         {
-            // M6-HC-05：非严格模式同样关闭自动重定向（重定向逐跳复验统一由
+            // 非严格模式同样关闭自动重定向（重定向逐跳复验统一由
             // EnhancedHttpClient.SendCoreAsync 手动循环承接），并保持与工厂默认 handler 等价。
             if (!IsStrictModeForClient(sp, clientName))
                 return new HttpClientHandler { AllowAutoRedirect = false };
@@ -72,7 +72,7 @@ public static class HttpClientServiceCollectionExtensions
     }
 
     /// <summary>
-    /// M6-HC-03：与 <see cref="CreateEnhancedClient"/> 同源的「严格模式」判定 ——
+    /// 与 <see cref="CreateEnhancedClient"/> 同源的「严格模式」判定 ——
     /// 客户端配置节覆盖优先，未配置时回退编程式基线（默认严格）。
     /// </summary>
     private static bool IsStrictModeForClient(IServiceProvider sp, string clientName)
@@ -117,8 +117,8 @@ public static class HttpClientServiceCollectionExtensions
         // 去重协议（标记先行）：EnhancedHttpClient 外层观察窗口通过 IsObserved 检查后立即 MarkObserved，
         // 因此组合路径上本 Handler 判定 __mud_observed 已存在而整体短路，单次请求仅外层采集一次；
         // 工厂裸用 HttpClient（无 Enhanced 包装）时无标记，由本 Handler 照常采集。
-        // HC-02 修复：TracingDelegatingHandler 为无状态设计，使用单例实例避免每次请求创建新对象，降低 GC 压力。
-        // HC-03 修复：IHttpClientFactory 要求每个 handler 管道使用独立的 DelegatingHandler 实例（InnerHandler 不可重复设置）。
+        // TracingDelegatingHandler 为无状态设计，使用单例实例避免每次请求创建新对象，降低 GC 压力。
+        // IHttpClientFactory 要求每个 handler 管道使用独立的 DelegatingHandler 实例（InnerHandler 不可重复设置）。
         // 使用工厂委托每次创建新实例，Handler 管道生命周期由 IHttpClientFactory 管理（默认 2 分钟）。
         // TracingDelegatingHandler 本身无状态（所有数据从 request 参数获取），新实例不增加运行时开销。
         httpClientBuilder.AddHttpMessageHandler(() => new TracingDelegatingHandler());
@@ -128,7 +128,7 @@ public static class HttpClientServiceCollectionExtensions
         // TryAddSingleton 语义：宿主先显式注册 IExceptionRedactor 时以其为准。
         services.TryAddSingleton<IExceptionRedactor, DefaultSensitiveFieldExceptionRedactor>();
 
-        // HC-01 修复：将原硬编码的容量(1000)与 TTL(60秒)改为从 IOptions<MudHttpClientApplicationOptions> 读取，
+        // 将原硬编码的容量(1000)与 TTL(60秒)改为从 IOptions<MudHttpClientApplicationOptions> 读取，
         // 支持通过配置文件自定义。仍保持 TryAddSingleton 语义，用户可手动注册 IHttpResponseCache 抢占。
         services.TryAddSingleton<IHttpResponseCache>(sp =>
         {
@@ -145,13 +145,13 @@ public static class HttpClientServiceCollectionExtensions
         RegisterNamedClient(services, clientName, setAsDefault);
 
 #if NET6_0_OR_GREATER
-        // M6-HC-03（D1-A）：严格模式（AllowCustomBaseUrls=false）下默认启用连接期 SSRF 校验，
+        // 严格模式（AllowCustomBaseUrls=false）下默认启用连接期 SSRF 校验，
         // 补齐纵深防御：URL 层校验期与建连期解析结果可能不一致（DNS rebinding TOCTOU）。
         // 幂等：该 builder 所属容器 + 客户端名已显式调用 AddMudHttpClientSsrfProtection(builder) 时跳过；
         // 非严格模式在 handler 构建期回落工厂默认 handler，行为不变。
         ConfigureSsrfPrimaryHandlerInStrictMode(httpClientBuilder, clientName);
 #else
-        // M6-HC-05（D2-A）：netstandard2.0 同样关闭主链路自动重定向，
+        // netstandard2.0 同样关闭主链路自动重定向，
         // 重定向逐跳复验由 EnhancedHttpClient.SendCoreAsync 手动循环承接（跨 TFM 行为一致）。
         httpClientBuilder.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
         {
@@ -198,7 +198,7 @@ public static class HttpClientServiceCollectionExtensions
         if (builder == null)
             throw new ArgumentNullException(nameof(builder));
 
-        // M6-HC-03：登记显式 opt-in（按容器 + 客户端名），使严格模式自动接线跳过该客户端；
+        // 登记显式 opt-in（按容器 + 客户端名），使严格模式自动接线跳过该客户端；
         // 本调用的 ConfigurePrimaryHttpMessageHandler 追加在自动配置之后（后者胜出），双保险幂等。
         lock (SsrfExplicitOptInFor(builder.Services))
         {
@@ -273,7 +273,7 @@ public static class HttpClientServiceCollectionExtensions
             return HttpContentSerializerFactory.CreateDefault(jsonOptions?.Value);
         });
         // 注册 IHttpRequestExecutor：执行器为无状态设计，IBaseHttpClient 通过方法参数逐次传递。
-        // HC-04 修复：从 Transient 升级为 Singleton，避免无状态服务在每次解析时重复创建实例。
+        // 从 Transient 升级为 Singleton，避免无状态服务在每次解析时重复创建实例。
         // 依赖项（IHttpResponseCache、IResiliencePolicyResolver 等）均为 Singleton，生命周期匹配。
         services.TryAddSingleton<IHttpRequestExecutor>(sp =>
         {
@@ -743,7 +743,7 @@ public static class HttpClientServiceCollectionExtensions
     /// </summary>
     /// <param name="services">服务集合。</param>
     /// <param name="requireAntiReplay">
-    /// M6-HC-25（D4-A）：为 <c>true</c> 时把 <c>X-Timestamp</c>（Unix 秒）与 <c>X-Nonce</c> 固定置于签名串首两行并写入请求头；
+    /// 为 <c>true</c> 时把 <c>X-Timestamp</c>（Unix 秒）与 <c>X-Nonce</c> 固定置于签名串首两行并写入请求头；
     /// 为 <c>false</c>（等效于无参重载）时维持原有确定性签名串。
     /// </param>
     /// <returns>服务集合（链式调用）。</returns>
@@ -1054,7 +1054,7 @@ public static class HttpClientServiceCollectionExtensions
         // 已注册 IIpAddressPolicy（AddMudHttpClientSsrfProtection(IServiceCollection)）但命名客户端未
         // 在 builder 上启用 handler 级连接期校验（AddMudHttpClientSsrfProtection(builder)）时，提示启用，
         // 以对实际建连 IP 执行准入校验、根治 DNS rebinding TOCTOU。
-        // M6-HC-03：严格模式客户端已由注册路径自动接线（ConfigureSsrfPrimaryHandlerInStrictMode），
+        // 严格模式客户端已由注册路径自动接线（ConfigureSsrfPrimaryHandlerInStrictMode），
         // 不再提示；仅非严格模式（AllowCustomBaseUrls=true）客户端维持引导。
         if (options.Logger != null
             && _ssrfGuidanceLogged == 0
@@ -1427,7 +1427,7 @@ public static class HttpClientServiceCollectionExtensions
     /// </para>
     /// <para><b>默认行为（安全但不收紧）</b>：</para>
     /// <list type="bullet">
-    ///   <item><description>端点校验与 2.0.x <b>逐字节一致</b>（默认放行私网 HTTPS）—— 内部 IdP 零影响（评审修订 7）。</description></item>
+    /// <item><description>端点校验与 2.0.x <b>逐字节一致</b>（默认放行私网 HTTPS）—— 内部 IdP 零影响。</description></item>
     ///   <item><description>强制 <c>AllowAutoRedirect = false</c>（<b>默认即生效</b>，防凭据随重定向外发）。</description></item>
     ///   <item><description><b>不</b>挂载 <see cref="TokenRecoveryDelegatingHandler"/>：令牌端点的 401 不应进入恢复链路（架构不变式 I2）。</description></item>
     ///   <item><description>启动期强制校验选项（<see cref="OAuth2OptionsStartupValidator"/>，fail-fast）。</description></item>
@@ -1482,7 +1482,7 @@ public static class HttpClientServiceCollectionExtensions
     /// <b>默认</b>：普通 <see cref="HttpClientHandler"/> + <c>AllowAutoRedirect = false</c>。
     /// 刻意<b>不</b>默认安装 <c>SsrfSafeSocketsHttpHandler</c> —— 其依赖的
     /// <see cref="DefaultIpAddressPolicy"/> 为 <b>fail-closed（拒绝私网/回环/链路本地）</b>，
-    /// 默认安装会直接打断内网 IdP（评审修订 7）。
+    /// 默认安装会直接打断内网 IdP。
     /// </para>
     /// <para>
     /// <b>收紧时</b>（<see cref="OAuth2Options.RestrictOAuth2EndpointsToPublicAddresses"/> = <c>true</c>）：
@@ -1855,7 +1855,7 @@ public static class HttpClientServiceCollectionExtensions
         // TMR-07：注册 TokenRecoveryOptions 为可解析服务（使旧构造函数兼容），
         // 但 TokenRecoveryDelegatingHandler / TokenRecoveryExecutor 的 IOptionsMonitor 重载
         // 直接从 DI 解析 IOptionsMonitor<TokenRecoveryOptions>，实现热更新。
-        // NEW-HC-05 修复：使用 TryAddSingleton 避免覆盖已注册的 TokenRecoveryOptions
+        // NEW-使用 TryAddSingleton 避免覆盖已注册的 TokenRecoveryOptions
         services.TryAddSingleton(resolver => resolver.GetRequiredService<IOptions<TokenRecoveryOptions>>().Value);
         return services;
     }

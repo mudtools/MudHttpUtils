@@ -30,7 +30,7 @@ public class ResilienceOptions
     public TimeoutOptions Timeout { get; set; } = new();
 
     /// <summary>
-    /// M7-HC-03：Polly 超时策略实现方式，默认 <see cref="TimeoutStrategy.Optimistic"/>。
+    /// Polly 超时策略实现方式，默认 <see cref="TimeoutStrategy.Optimistic"/>。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -63,7 +63,7 @@ public class ResilienceOptions
     public long MaxCloneContentSize { get; set; } = HttpRequestMessageCloner.DefaultMaxContentSize;
 
     /// <summary>
-    /// M5-HC-06：弹性策略（熔断器等）的作用域，默认 <see cref="ResiliencePolicyScope.PerHost"/>。
+    /// 弹性策略（熔断器等）的作用域，默认 <see cref="ResiliencePolicyScope.PerHost"/>。
     /// </summary>
     /// <remarks>
     /// <see cref="ResiliencePolicyScope.PerHost"/>：不同 host / Named Client 各自独立熔断，避免跨服务故障放大。
@@ -72,7 +72,7 @@ public class ResilienceOptions
     public ResiliencePolicyScope PolicyScope { get; set; } = ResiliencePolicyScope.PerHost;
 
     /// <summary>
-    /// M5-HC-06：策略缓存容量上限，默认 512。超限时按插入序淘汰最旧条目（M6-HC-22 起为软上限，
+    /// 策略缓存容量上限，默认 512。超限时按插入序淘汰最旧条目（起为软上限，
     /// 每轮淘汰 <c>max/8</c>，至少 1 条）并打 Warning，不再"超限即放弃缓存"。
     /// </summary>
     public int MaxPolicyCacheSize { get; set; } = 512;

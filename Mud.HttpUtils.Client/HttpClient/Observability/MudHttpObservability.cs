@@ -152,7 +152,7 @@ internal static class MudHttpObservability
                 activity.SetStatus(ActivityStatusCode.Ok);
         }
 
-        // M6-HC-17：无 Meter 监听器时指标写入为空操作，提前短路以避免 tags 数组分配
+        // 无 Meter 监听器时指标写入为空操作，提前短路以避免 tags 数组分配
         if (!MudHttpMeter.HasListeners)
             return;
 
@@ -200,7 +200,7 @@ internal static class MudHttpObservability
 #endif
         }
 
-        // M6-HC-17：无监听器时短路（tags 构造为真正的开销点）
+        // 无监听器时短路（tags 构造为真正的开销点）
         if (!MudHttpMeter.HasListeners)
             return;
 
@@ -222,7 +222,7 @@ internal static class MudHttpObservability
         HttpRequestMessage? request = null)
     {
         // Span 不设置 Error 状态（保持未设置，符合 OTel 取消语义）
-        // M6-HC-17：无 Meter 监听器时短路
+        // 无 Meter 监听器时短路
         if (!MudHttpMeter.HasListeners)
             return;
 
@@ -452,7 +452,7 @@ internal static class MudHttpObservability
                 });
         }
 
-        // M6-HC-17：无 Meter 监听器时短路
+        // 无 Meter 监听器时短路
         if (!MudHttpMeter.HasListeners)
             return;
 
@@ -497,12 +497,12 @@ internal static class MudHttpObservability
                 });
         }
 
-        // M6-HC-17：无 Meter 监听器时短路
+        // 无 Meter 监听器时短路
         if (!MudHttpMeter.HasListeners)
             return;
 
         // R-1：指标 tag 白名单过滤
-        // M7-HC-02（T12）：与 ExecuteWithObservabilityAsync 三态口径对齐 ——
+        // 与 ExecuteWithObservabilityAsync 三态口径对齐 ——
         // OCE 且调用方令牌已触发 → outcome=cancelled；平台超时 TCE（令牌未触发）→ error。
         var tags = MudHttpMeter.FilterTags(new KeyValuePair<string, object?>[]
         {

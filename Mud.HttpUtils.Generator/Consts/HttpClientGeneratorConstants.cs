@@ -36,7 +36,7 @@ internal static class HttpClientGeneratorConstants
     /// 路径参数特性名（长名 + 短名）。
     /// </summary>
     /// <remarks>
-    /// G8-12：原集合含 <c>"RouteAttribute"</c>/<c>"Route"</c> 两个**幻影条目** ——
+    /// 原集合含 <c>"RouteAttribute"</c>/<c>"Route"</c> 两个**幻影条目** ——
     /// <c>Mud.HttpUtils.Attributes</c> 中不存在 <c>RouteAttribute</c> 类型（全仓无 <c>class RouteAttribute</c>），
     /// 「早期文档的别名」从来不可能命中，属纯负债。已删除（`Generator/README.md` 已自认不存在 <c>[Route]</c>）。
     /// </remarks>
@@ -55,7 +55,7 @@ internal static class HttpClientGeneratorConstants
     public const string RawQueryStringAttribute = "RawQueryStringAttribute";
 
     /// <summary>
-    /// G9-06：库契约 <c>ICurrentUserId</c> 的元数据全名（Abstractions 内定义，非泛型）。
+    /// 库契约 <c>ICurrentUserId</c> 的元数据全名（Abstractions 内定义，非泛型）。
     /// 供 <c>DetectICurrentUserId</c> 做 <see cref="Compilation.GetTypeByMetadataName(string)"/> 精确匹配——
     /// 简单名匹配会把消费方自定义同名异源接口误判为库契约实现（触发 CurrentUserId 成员发射）。
     /// </summary>
@@ -93,7 +93,7 @@ internal static class HttpClientGeneratorConstants
     // CFG-22：BaseAddressProperty 为死常量（全仓仅定义、无读取），已删除。
     // [HttpClientApi(BaseAddress = …)] 使用处会直接产生编译错误 CS0619（属性标注 [Obsolete(error: true)]）。
 
-    // G8-12：原 BasePathAttributeNames 常量已删除（全仓零引用；真实判定为硬编码，
+    // 原 BasePathAttributeNames 常量已删除（全仓零引用；真实判定为硬编码，
     // 见 InterfaceImplementationGenerator.ExtractBasePath：「BasePathAttribute」/「BasePath」）。
 
     public static readonly string[] AllowAnyStatusCodeAttributeNames = ["AllowAnyStatusCodeAttribute", "AllowAnyStatusCode"];
@@ -118,7 +118,7 @@ internal static class HttpClientGeneratorConstants
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>G8-12 单一事实源</b>：原集合私有于 <c>ParameterAnalyzer</c>，与 <see cref="PathAttributes"/>、
+    /// <b>单一事实源</b>：原集合私有于 <c>ParameterAnalyzer</c>，与 <see cref="PathAttributes"/>、
     /// <see cref="QueryAttribute"/> 等常量形成**第三份副本**（三处独立维护同一批特性名 ⇒ 改名/新增时静默失配）。
     /// 现收敛到本类，由 <c>ConstantUsageGuardTests</c> 与 <c>ParameterAttributeNamesTests</c> 双向钉死成员集合。
     /// </para>
@@ -130,7 +130,7 @@ internal static class HttpClientGeneratorConstants
     /// </remarks>
     public static readonly HashSet<string> HttpParameterAttributeNames = new(StringComparer.Ordinal)
     {
-        // Path（与 PathAttributes 保持同源；G8-12 已移除 Route* 幻影条目）
+        // Path（与 PathAttributes 保持同源；已移除 Route* 幻影条目）
         "PathAttribute", "Path",
         // Query 系列
         "QueryAttribute", "Query",
@@ -174,7 +174,7 @@ internal static class HttpClientGeneratorConstants
     /// </summary>
     public const int DefaultHttpClientTimeoutSeconds = 50;
 
-    // G8-12：以下 3 个死常量已删除（全仓词边界检索确认「仅定义处命中」，属纯负债）：
+    // 以下 3 个死常量已删除（全仓词边界检索确认「仅定义处命中」，属纯负债）：
     //   · BasePathAttributeNames —— 真实判定为硬编码（InterfaceImplementationGenerator.ExtractBasePath）
     //   · DefaultTokenManageInterface = "ITokenManage" —— 无消费且**值错误**（真实约定见 BaseClassValidator：「ITokenManager」）
     //   · DefaultWrapSuffix = "Wrap" —— 真实判定为硬编码（BaseClassValidator.IsGeneratedClass）
@@ -182,12 +182,12 @@ internal static class HttpClientGeneratorConstants
     public const string ImplementationNamespaceSuffix = "Internal";
 
     /// <summary>
-    /// G8-06：文件下载默认缓冲区大小（字节），与 <c>DefaultHttpRequestExecutor.DownloadLargeAsync</c> 的默认值一致。
+    /// 文件下载默认缓冲区大小（字节），与 <c>DefaultHttpRequestExecutor.DownloadLargeAsync</c> 的默认值一致。
     /// </summary>
     public const int DefaultDownloadBufferSize = 81920;
 
     /// <summary>
-    /// G8-06：<c>[FilePath(BufferSize = …)]</c> 的支持上界（4 MiB）。
+    /// <c>[FilePath(BufferSize = …)]</c> 的支持上界（4 MiB）。
     /// </summary>
     /// <remarks>
     /// BufferSize 最终用于 <c>new byte[bufferSize]</c> 与

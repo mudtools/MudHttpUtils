@@ -81,7 +81,7 @@ public static class MessageSanitizer
     [GeneratedRegex(@"(?i)(token|password|secret|key)\s*[:=]\s*['""]?([^'""\s]{6,})['""]?", RegexOptions.Compiled)]
     private static partial Regex SensitiveKeyValuePattern();
 
-    // M6-HC-06：PII 模式由 ^...$ 锚点（仅整串匹配才掩码）改为查找式 + 边界断言，
+    // PII 模式由 ^...$ 锚点（仅整串匹配才掩码）改为查找式 + 边界断言，
     // 嵌入在任意文本中的 PII（"手机号13812345678已注册"、"a@b.com 主体"）同样被掩码。
     // 各边界均为单字符类的前/后行断言，无嵌套量词，维持无 ReDoS 结论。
     [GeneratedRegex(@"(?<![0-9])1[3-9]\d{9}(?![0-9])")]
@@ -103,7 +103,7 @@ public static class MessageSanitizer
         @"(?i)(token|password|secret|key)\s*[:=]\s*['""]?([^'""\s]{6,})['""]?",
         RegexOptions.Compiled);
 
-    // M6-HC-06：与 NET7+ GeneratedRegex 分支同步（查找式 + 边界断言）。
+    // 与 NET7+ GeneratedRegex 分支同步（查找式 + 边界断言）。
     private static readonly Regex PhonePatternField = new Regex(@"(?<![0-9])1[3-9]\d{9}(?![0-9])", RegexOptions.Compiled);
     private static readonly Regex EmailPatternField = new Regex(@"(?<![\w.+-])[\w.+-]+@[\w-]+\.[\w.-]+(?<!\.)", RegexOptions.Compiled);
     private static readonly Regex IdCardPatternField = new Regex(@"(?<![0-9Xx])\d{17}[\dXx](?![0-9Xx])", RegexOptions.Compiled);

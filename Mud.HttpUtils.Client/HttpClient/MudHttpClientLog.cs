@@ -13,7 +13,7 @@ namespace Mud.HttpUtils;
 /// <remarks>
 /// <para>.NET 6+ 使用 <c>[LoggerMessage]</c> 源生成器（零分配、级别短路）；</para>
 /// <para>netstandard2.0 fallback 到 <c>LoggerMessage.Define</c>（同样零分配，但需要在运行时构建委托）。</para>
-/// <para>EventId 规划（M6-HC-13 纠偏为实际分配）：1-50 EnhancedHttpClient（已分配）；51-100 预留；101-120 Resilience；121-130 Cache；131-156 TokenManager（已分配，含 150-156）；157-165 SR 轮 Token 安全修复（157 TokenRecoveryBodyNotRecoverable、158 RefreshTokenRejected、159 PublicClientAuthUsed、160 TokenManagerUnresolved、161 UserTokenIdentityMismatch）；162-165 租户/作用域/退避（162 TenantBindingRejected、163 DefaultScopeRefreshFallbackUsed、164 UserRefreshBackoffActive、165 TokenManagerSkippedNoBackgroundRefresh）；166 RequestBodySerializationFastPathFallback（TMX-17 去重后落点）；167 AppResilienceCacheFull；168 SsrfGuidance；169 RetrySkippedNonReplayable（M5-HC-05）；170 PolicyCacheFull（M5-HC-06）；171-176 MT 轮（171 TokenRecoveryRedirectDetected、172 EmptyAppManagerAutoRegistered、173 MudHttpClientsSectionMissing、174 ClientNameCaseFallbackUsed、175 SwitcherFactoryOverwritten、176 MudHttpClientNameCaseCollision）；177-178 TR 轮（177 UserTokenScopeInvalidationFallback、178 AccessTokenInvalidationFallback）；179 未占用（TR-09 预留）；180 MissingAppContextRejected（FIX-09）；181-182 TMX 轮（181 TokenRefreshSuppressed、182 TokenCacheSerializationFailed，M6-HC-13 由原 170/171 迁移至此以消除撞号）；183 未占用（M6-HC-23 曾拟用于 TokenRefreshReturnedSameToken，最终改采 forceRefresh 方案未占用）；184-185 WX 轮（184 TokenRecoveryTriggeredByDetector、185 TokenInvalidationDetectionFailed，errcode 令牌失效恢复）；186-195 TMX 轮（令牌管理缺陷修复方案 2.1.0；186 TokenRecoverySkippedDuringRefresh、187 TokenRefreshWaitTimeout，其余预留）。</para>
+/// <para>EventId 规划（纠偏为实际分配）：1-50 EnhancedHttpClient（已分配）；51-100 预留；101-120 Resilience；121-130 Cache；131-156 TokenManager（已分配，含 150-156）；157-165 SR 轮 Token 安全修复（157 TokenRecoveryBodyNotRecoverable、158 RefreshTokenRejected、159 PublicClientAuthUsed、160 TokenManagerUnresolved、161 UserTokenIdentityMismatch）；162-165 租户/作用域/退避（162 TenantBindingRejected、163 DefaultScopeRefreshFallbackUsed、164 UserRefreshBackoffActive、165 TokenManagerSkippedNoBackgroundRefresh）；166 RequestBodySerializationFastPathFallback（TMX-17 去重后落点）；167 AppResilienceCacheFull；168 SsrfGuidance；169 RetrySkippedNonReplayable（M5-HC-05）；170 PolicyCacheFull（M5-HC-06）；171-176 MT 轮（171 TokenRecoveryRedirectDetected、172 EmptyAppManagerAutoRegistered、173 MudHttpClientsSectionMissing、174 ClientNameCaseFallbackUsed、175 SwitcherFactoryOverwritten、176 MudHttpClientNameCaseCollision）；177-178 TR 轮（177 UserTokenScopeInvalidationFallback、178 AccessTokenInvalidationFallback）；179 未占用（TR-09 预留）；180 MissingAppContextRejected（FIX-09）；181-182 TMX 轮（181 TokenRefreshSuppressed、182 TokenCacheSerializationFailed，由原 170/171 迁移至此以消除撞号）；183 未占用（曾拟用于 TokenRefreshReturnedSameToken，最终改采 forceRefresh 方案未占用）；184-185 WX 轮（184 TokenRecoveryTriggeredByDetector、185 TokenInvalidationDetectionFailed，errcode 令牌失效恢复）；186-195 TMX 轮（令牌管理缺陷修复方案 2.1.0；186 TokenRecoverySkippedDuringRefresh、187 TokenRefreshWaitTimeout，其余预留）。</para>
 /// </remarks>
 internal static partial class MudHttpClientLog
 {
@@ -196,13 +196,13 @@ internal static partial class MudHttpClientLog
                   "IHttpClientBuilder 上调用 AddMudHttpClientSsrfProtection(builder)（net6.0+）启用连接建立时的 IP 准入校验。")]
     public static partial void SsrfGuidance(ILogger logger);
 
-    // ---- M5-HC-05：不可重放内容跳过重试（EventId 169）----
+    // ---- 不可重放内容跳过重试（EventId 169）----
 
     [LoggerMessage(EventId = 169, Level = LogLevel.Warning,
         Message = "请求体不可安全重放（原因: {Reason}），已跳过重试（超时/熔断仍生效）。")]
     public static partial void RetrySkippedNonReplayable(ILogger logger, string reason);
 
-    // ---- M5-HC-06：策略缓存超限（EventId 170）；M6-HC-22：语义由"不缓存"改为"按插入序淘汰" ----
+    // ---- 策略缓存超限（EventId 170）；语义由"不缓存"改为"按插入序淘汰" ----
 
     [LoggerMessage(EventId = 170, Level = LogLevel.Warning,
         Message = "弹性策略缓存已达上限 ({MaxPolicyCacheSize})，已按插入序淘汰最旧策略实例。")]
@@ -237,7 +237,7 @@ internal static partial class MudHttpClientLog
                   "它们会被视为不同客户端，请合并为同一个键，否则其中一个配置不会生效。")]
     public static partial void MudHttpClientNameCaseCollision(ILogger logger, string collisionNames);
 
-    // ---- FIX-09：401 恢复守卫改读 EL-9 策略 ----
+    // ---- FIX-09：401 恢复守卫改读 策略 ----
 
     [LoggerMessage(EventId = 180, Level = LogLevel.Warning,
         Message = "401 令牌恢复被拒绝：当前无应用上下文且 MissingAppContextPolicy=Reject（{ManagerTypeName}）。" +
@@ -498,7 +498,7 @@ internal static partial class MudHttpClientLog
     public static void SsrfGuidance(ILogger logger)
         => s_ssrfGuidance(logger, null);
 
-    // ---- M5-HC-05：不可重放内容跳过重试（EventId 169）----
+    // ---- 不可重放内容跳过重试（EventId 169）----
 
     private static readonly Action<ILogger, string, Exception?> s_retrySkippedNonReplayable =
         LoggerMessage.Define<string>(LogLevel.Warning, new EventId(169, nameof(RetrySkippedNonReplayable)),
@@ -506,7 +506,7 @@ internal static partial class MudHttpClientLog
     public static void RetrySkippedNonReplayable(ILogger logger, string reason)
         => s_retrySkippedNonReplayable(logger, reason, null);
 
-    // ---- M5-HC-06：策略缓存超限（EventId 170）；M6-HC-22：语义由"不缓存"改为"按插入序淘汰" ----
+    // ---- 策略缓存超限（EventId 170）；语义由"不缓存"改为"按插入序淘汰" ----
 
     private static readonly Action<ILogger, int, Exception?> s_policyCacheFull =
         LoggerMessage.Define<int>(LogLevel.Warning, new EventId(170, nameof(PolicyCacheFull)),
@@ -552,7 +552,7 @@ internal static partial class MudHttpClientLog
     public static void MudHttpClientNameCaseCollision(ILogger logger, string collisionNames)
         => s_mudHttpClientNameCaseCollision(logger, collisionNames, null);
 
-    // ---- FIX-09：401 恢复守卫改读 EL-9 策略 ----
+    // ---- FIX-09：401 恢复守卫改读 策略 ----
 
     private static readonly Action<ILogger, string, Exception?> s_missingAppContextRejected =
         LoggerMessage.Define<string>(LogLevel.Warning, new EventId(180, nameof(MissingAppContextRejected)),
@@ -563,7 +563,7 @@ internal static partial class MudHttpClientLog
 #endif
 
     // ---- TMX-04 / TMX-11：新增可观测性日志（EventId 181/182）----
-    // M6-HC-13：原分配 170/171 与 PolicyCacheFull(170)、TokenRecoveryRedirectDetected(171) 撞号，
+    // 原分配 170/171 与 PolicyCacheFull(170)、TokenRecoveryRedirectDetected(171) 撞号，
     // 跨分支日志聚合错位；迁移至未占用号段 181+（179 仍未占用，180 = MissingAppContextRejected）。
 
     private static readonly Action<ILogger, Exception?> s_tokenRefreshSuppressed =

@@ -531,7 +531,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
         {
             var baseParameters = new List<string>();
 
-            // G8-04：位置实参必须按「**基类**运行模式」分派，而不是按派生侧模式猜。
+            // 位置实参必须按「**基类**运行模式」分派，而不是按派生侧模式猜。
             // 原实现只读派生侧字段（HasTokenManager/HasHttpClient），使 9 种「基类 × 派生」组合中
             // 5 种产出与基类构造函数形参不匹配的 base(...)（CS1503/CS1729），且因 BaseClassValidator
             // 对生成类名短路而**无任何诊断**。
@@ -587,7 +587,7 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
             // 位置约束：C# 命名实参后不得跟按位置实参（CS8323），故本命名实参必须位于全部位置实参之后
             // （与 appAuthorizer 同为命名实参，顺序无关）。仅基类为默认模式时透传；
             // 基类为 TokenManager/HttpClient 模式时派生 appManager 形参类型不匹配，不得传。
-            // G8-04（第 5 处修复点）：条件必须**对称**收窄为 `BaseHasAppManager && 派生为默认模式`。
+            // 条件必须**对称**收窄为 `BaseHasAppManager && 派生为默认模式`。
             // 仅凭 BaseHasAppManager 不够：当「基 Default × 派生 TokenManager」时基类确为默认模式，
             // 但派生侧名为 appManager 的形参类型是 **TokenManagerType**（非 IAppManager<IMudAppContext>）
             // ⇒ 透传产生 CS1503「参数 4: 无法从 ITestTokenManager 转换为 IAppManager<IMudAppContext>?」。
@@ -828,10 +828,10 @@ internal class ConstructorGenerator : ICodeFragmentGenerator
     }
 
     /// <summary>
-    /// G8-10（承接 G7-11）：为「直接接受 <see cref="IMudAppContext"/> 实例」的实例入口追加<b>信任边界</b> <c>&lt;remarks&gt;</c>。
+    /// 为「直接接受 <see cref="IMudAppContext"/> 实例」的实例入口追加<b>信任边界</b> <c>&lt;remarks&gt;</c>。
     /// </summary>
     /// <remarks>
-    /// 07 G7-11 + DP-7 已定论：这些入口<b>不做</b>授权校验（调用方已持有上下文实例时上游即已越权，
+    /// 07 + DP-7 已定论：这些入口<b>不做</b>授权校验（调用方已持有上下文实例时上游即已越权，
     /// 校验无法证明实例归属），只需明确信任边界。本方法把该结论落到<b>生成物 XML 注释</b> ——
     /// 07 的落点覆盖了 README 与 <c>UseApp</c>/<c>UseAppScope</c>，但这三处实例入口没有。
     /// </remarks>

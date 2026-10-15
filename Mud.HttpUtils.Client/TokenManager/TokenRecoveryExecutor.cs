@@ -432,7 +432,7 @@ public partial class TokenRecoveryExecutor
 
         // SR-M6（P2.4，D9）注册表路由：解析一次、全链路复用（失效+刷新+重试走同一管理器实例）。
         // 解析失败回退注入实例 + Warning（不 fail-fast——生成器默认键场景的 401 恢复可用性优先）；
-        // 用户级恢复解析到非 IUserTokenManager 时同样回退（TK-06：绝不用租户管理器执行用户级恢复）。
+        // 用户级恢复解析到非 IUserTokenManager 时同样回退（绝不用租户管理器执行用户级恢复）。
         // L-1：解析结果若被租户绑定守卫拒绝则返回 null（已记结构化告警）→ 与其它恢复失败分支一致返回真实 401。
         var resolvedCredentialManager = ResolveManager(recoveryContext);
         if (resolvedCredentialManager == null)
@@ -459,7 +459,7 @@ public partial class TokenRecoveryExecutor
                 // P1.4（TK-03）URI 脱敏：防止 Path/Query 注入模式令牌随日志泄漏
                 MudHttpClientLog.TokenRecoveryAttempting(_logger, retry + 1, Options.RecoveryMaxRetries, request.Method.Method, RedactForLog(request, recoveryContext));  // TMX-12
 
-                // M6-HC-23：首轮之后的刷新必须绕过「结果复用窗口」——首轮所得的令牌已被服务端判为无效，
+                // 首轮之后的刷新必须绕过「结果复用窗口」——首轮所得的令牌已被服务端判为无效，
                 // 窗口内复用同一结果不会产生任何新令牌（TMR-12 的窗口语义仅适用于并发 401 去重）。
                 var forceRefresh = retry > 0;
                 string? newToken = null;
@@ -539,7 +539,7 @@ public partial class TokenRecoveryExecutor
                 }
                 catch
                 {
-                    // M6-HC-23：重试发送抛出（含取消 / 连接失败）时，调用方只能拿到异常而无法归还资源，
+                    // 重试发送抛出（含取消 / 连接失败）时，调用方只能拿到异常而无法归还资源，
                     // 故在此显式释放原始 401 响应与克隆请求（原实现两者均泄漏，取消路径尤为明显），再上抛原异常。
                     if (retryRequest != request) retryRequest.Dispose();
                     response.Dispose();

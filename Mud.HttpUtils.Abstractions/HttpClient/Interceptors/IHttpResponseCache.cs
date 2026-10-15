@@ -11,7 +11,7 @@ namespace Mud.HttpUtils;
 /// HTTP 响应缓存接口，提供请求结果的缓存功能。
 /// </summary>
 /// <remarks>
-/// <para><b>M5-HC-08 契约</b>：缓存<b>按引用</b>存储并返回调用方提供的值；命中返回同一实例。
+/// <para><b>契约</b>：缓存<b>按引用</b>存储并返回调用方提供的值；命中返回同一实例。
 /// 请勿修改缓存命中的对象，或使用不可变/仅读类型。如需隔离可变对象，可注册 <see cref="ICacheValueCloner"/>（预留扩展点，暂未接线，见其 remarks）。</para>
 /// </remarks>
 public interface IHttpResponseCache

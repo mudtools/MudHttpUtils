@@ -166,7 +166,7 @@ internal static class Diagnostics
         isEnabledByDefault: true);
 
     /// <summary>
-    /// M6-HC-29（D5-A）：<c>IAsyncEnumerable&lt;T&gt;</c> 流式方法的生成代码恒传 <c>null</c> JsonTypeInfo
+    /// <c>IAsyncEnumerable&lt;T&gt;</c> 流式方法的生成代码恒传 <c>null</c> JsonTypeInfo
     /// （源生成器不可见消费方的 <c>JsonSerializerContext</c> 类型，无法自动注入）。
     /// </summary>
     /// <remarks>
@@ -218,7 +218,7 @@ internal static class Diagnostics
         isEnabledByDefault: true);
 
     /// <summary>
-    /// M5-HC-04：[Cache] 方法的默认缓存键包含无法稳定表达的参数（复杂对象/[Body]/数组元素非标量等）。
+    /// [Cache] 方法的默认缓存键包含无法稳定表达的参数（复杂对象/[Body]/数组元素非标量等）。
     /// 无 CacheKeyTemplate 时报告 Error —— 静默串键比编译失败更危险。
     /// </summary>
     public static readonly DiagnosticDescriptor CacheKeyUnsafeParameterError = new(
@@ -230,7 +230,7 @@ internal static class Diagnostics
         isEnabledByDefault: true);
 
     /// <summary>
-    /// M5-HC-04：CacheKeyTemplate 未引用某 Unsafe 参数，可能串键（尽力而为的字面检查）。
+    /// CacheKeyTemplate 未引用某 Unsafe 参数，可能串键（尽力而为的字面检查）。
     /// </summary>
     public static readonly DiagnosticDescriptor CacheKeyTemplateMissingParameterWarning = new(
         id: "HTTPCLIENT032",
@@ -373,7 +373,7 @@ internal static class Diagnostics
 
     // [F4] 强制失效逃生舱提示：-p:ForceHttpGenerator=true 时下游增量步骤必然 Modified，产出一行可观测提示。
     // 合并注记：本诊断原与 P3.3(TK-18) 的 TokenRecoveryUnsupportedInjectionMode 争用 HTTPCLIENT022；
-    // TK-18 先落库并占用 022，故 [F4] 让位改用 023（ID 一经分配即保留，不再回收复用）。
+    // 先落库并占用 022，故 [F4] 让位改用 023（ID 一经分配即保留，不再回收复用）。
     public static readonly DiagnosticDescriptor IncrementalCacheForcedInvalidation = new(
         id: "HTTPCLIENT023",
         title: "增量缓存已被 ForceHttpGenerator 强制失效",
@@ -500,7 +500,7 @@ internal static class Diagnostics
         isEnabledByDefault: true);
 
     /// <summary>
-    /// G8-04：继承链上「基类运行模式」与「派生类运行模式」不匹配，生成的 <c>base(...)</c> 位置实参
+    /// 继承链上「基类运行模式」与「派生类运行模式」不匹配，生成的 <c>base(...)</c> 位置实参
     /// 类型必然错位（CS1503/CS1729 指向生成文件），而 <c>BaseClassValidator</c> 对生成类名（无命名空间点）
     /// 会短路跳过校验 ⇒ 此前是「无诊断的不可编译产物」。
     /// </summary>
@@ -527,7 +527,7 @@ internal static class Diagnostics
         isEnabledByDefault: true);
 
     /// <summary>
-    /// G8-06：<c>[FilePath(BufferSize = …)]</c> 超出支持上界，生成器已夹取到上界并提示。
+    /// <c>[FilePath(BufferSize = …)]</c> 超出支持上界，生成器已夹取到上界并提示。
     /// </summary>
     /// <remarks>
     /// <para>
@@ -550,7 +550,7 @@ internal static class Diagnostics
         isEnabledByDefault: true);
 
     /// <summary>
-    /// M6-HC-02：参数名疑似 HTTP 头参数（名字含 "header"），但既未匹配 [Header] 也未匹配
+    /// 参数名疑似 HTTP 头参数（名字含 "header"），但既未匹配 [Header] 也未匹配
     /// [HeaderCollection]，生成代码不会将其发射到请求头。低噪音 Info 提示——常见根因是
     /// 特性名拼写错误或遗漏标注。接线修复前的旧行为是完全静默（无任何编译期提示）。
     /// </summary>

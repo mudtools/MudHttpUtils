@@ -30,7 +30,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         if (interfaces.IsDefaultOrEmpty || configSnapshot == null)
             return;
 
-        // T5.3: 全局禁用开关（调试与渐进迁移）；G7-06 起从配置值快照读取
+        // T5.3: 全局禁用开关（调试与渐进迁移）；起从配置值快照读取
         if (configSnapshot.Disable)
             return;
 
@@ -42,7 +42,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         // G7-04a：同一编译 ≥2 个 [HttpClientApi] 接口共存时提示命名客户端绑定脱节。
         // 实现类构造函数注入类型级 IEnhancedHttpClient/IHttpRequestExecutor（不按命名客户端解析），
         // 各接口的命名客户端与 [HttpClientApi(Timeout)] 配置仅在对应名称成为默认 IEnhancedHttpClient 时生效。
-        // 级别 Info + 仅多接口报告，避免单接口工程的构建噪音（与 G7-13 降噪口径一致）。
+        // 级别 Info + 仅多接口报告，避免单接口工程的构建噪音（与 降噪口径一致）。
         if (httpClientApis.Count >= 2)
         {
             context.ReportDiagnostic(Diagnostic.Create(
@@ -51,7 +51,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
                 httpClientApis.Count));
         }
 
-        // G8-14：此处 Compilation 可能来自**上一轮编译**（InterfaceModel 的等价性由源码指纹决定，
+        // 此处 Compilation 可能来自**上一轮编译**（InterfaceModel 的等价性由源码指纹决定，
         // 仅当接口声明变化时才会重新 transform）。因此它**只允许**用于跨编译稳定的信息：
         //   · _compilation.AssemblyName（ResolveRegistrationNamespace，:242-252）
         //   · 生成注释中的类型全名（TypeSymbolHelper.GetTypeAllDisplayString）
@@ -62,7 +62,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         var compilation = interfaces[0].Context.SemanticModel.Compilation;
 
         // 1. 生成 HttpClientApiExtensions.g.cs（DI 注册扩展方法）
-        // G9-07：nullable 配置以参数显式下传（原实例可变属性 EmitNullableEnable 已移除）
+        // nullable 配置以参数显式下传（原实例可变属性 EmitNullableEnable 已移除）
         var extensionSourceCode = GenerateExtensionClassCode(compilation, httpClientApis, context, configSnapshot.NullableEnable);
         AddSourceValidated(context, "HttpClientApiExtensions.g.cs", extensionSourceCode);
 
@@ -386,7 +386,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
         sb.AppendLine("                    contentSerializer: options?.ContentSerializer,");
         sb.AppendLine("                    exceptionRedactor: options?.ExceptionRedactor,");
         sb.AppendLine("                    maxExceptionContentLength: options?.MaxExceptionContentLength,");
-        // G8-08：接线成功响应体守卫（DI 路径早已接通；无 DI 工厂此前遗漏 ⇒ 能力缺口）。
+        // 接线成功响应体守卫（DI 路径早已接通；无 DI 工厂此前遗漏 ⇒ 能力缺口）。
         // 语义与 DI 路径一致：0 = 不限制。
         sb.AppendLine("                    maxSuccessResponseBytes: options?.MaxSuccessResponseBytes ?? 0,");
         sb.AppendLine("                    captureRequestContent: options?.CaptureRequestContent ?? false,");
@@ -563,7 +563,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
             // FIX-07：移除生成器对 IBaseHttpClient / IHttpRequestExecutor 的自动注册。
             // 原实现在此发射 TryAddTransient，早于宿主 AddMudHttpClient 内部的 TryAddSingleton，
             // 导致后者的 cacheProvider/resilienceResolver/exceptionRedactor/sensitiveDataMasker 全被抢占为 null。
-            // 基础设施注册所有权收敛至 AddMudHttpClient（EL-4 落地）。
+            // 基础设施注册所有权收敛至 AddMudHttpClient（落地）。
         }
         else if (!string.IsNullOrEmpty(api.TokenManagerType))
         {
@@ -619,7 +619,7 @@ internal class HttpInvokeRegistrationGenerator : HttpInvokeBaseSourceGenerator
             codeBuilder.AppendLine($"            services.AddTransient<{fullyQualifiedInterface}>(sp =>");
             codeBuilder.AppendLine("            {");
             codeBuilder.AppendLine("                var appManager = sp.GetRequiredService<global::Mud.HttpUtils.IAppManager<global::Mud.HttpUtils.IMudAppContext>>();");
-            // G8-09（DP-6 方案 A）：解析期的「空管理器」失败必须自带根因与修复步骤。
+            // 解析期的「空管理器」失败必须自带根因与修复步骤。
             // 背景：TryAddSingleton 自动注册的 DefaultAppManager 不含任何应用，其 LogWarning 依赖
             // ILoggerFactory（AddMudHttpClient 不注册日志基础设施 ⇒ 裸容器下完全静默），
             // 而 GetDefaultApp() 抛出的原始消息只说明"未设置默认应用"，不指向真因。

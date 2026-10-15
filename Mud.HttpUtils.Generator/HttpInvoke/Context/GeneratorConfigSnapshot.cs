@@ -12,7 +12,7 @@ using Microsoft.CodeAnalysis.Diagnostics;
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// G7-06：生成器的「配置值快照」。
+/// 生成器的「配置值快照」。
 /// </summary>
 /// <remarks>
 /// <para>

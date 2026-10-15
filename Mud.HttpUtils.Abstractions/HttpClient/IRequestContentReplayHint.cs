@@ -7,7 +7,7 @@
 namespace Mud.HttpUtils
 {
     /// <summary>
-    /// M4-H-2：内容可重放性提示 —— 标记 <see cref="System.Net.Http.HttpContent"/> 的请求体能否被安全地"读取后再次发送"。
+    /// 内容可重放性提示 —— 标记 <see cref="System.Net.Http.HttpContent"/> 的请求体能否被安全地"读取后再次发送"。
     /// </summary>
     /// <remarks>
     /// <para>
