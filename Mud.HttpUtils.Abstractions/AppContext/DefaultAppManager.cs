@@ -14,41 +14,26 @@ namespace Mud.HttpUtils;
 /// 应用管理器的默认实现，提供线程安全的应用上下文管理。
 /// </summary>
 /// <typeparam name="TAppContext">应用上下文类型。</typeparam>
-// G3/B8：懒加载（RegisterLazy）以 Lazy<TAppContext> 承载"一次性实例化"。System.Lazy<T> 的类型参数
-// 带 DynamicallyAccessedMemberTypes.PublicParameterlessConstructor 标注（服务于其无参构造
-// Lazy() → Activator.CreateInstance），而本类型**只**使用 Lazy(Func<T>) 构造，从不走该路径。
-// 若不压制，`-p:AotStrictMode=true`（CI 的 AOT 发布作业）会把 IL2091 升级为 Error ⇒ 构建失败。
-// 压制范围限定在本类型内（与 OptionsWrapperMonitor<T> 的同名压制同口径）。
 [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2091",
-    Justification = "本类型仅使用 Lazy<T>(Func<T>) 构造（工厂委托），从不使用 Lazy<T>() 无参构造，" +
-                    "故 TAppContext 无需满足 PublicParameterlessConstructor 约束。")]
+    Justification = "本类型仅使用 Lazy<T>(Func<T>) 构造，从不使用 Lazy<T>() 无参构造。")]
 public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLookupProvider
     where TAppContext : IMudAppContext
 {
-    // F-5：应用存储经 IAppRegistry SPI（默认 ConcurrentDictionaryAppRegistry，行为基线不变）；
-    // 自定义存储（分片/外置/加密）经受保护构造注入，守卫逻辑（大小写语义、默认键回退、CAS 更新）仍由本类提供。
     private readonly IAppRegistry<TAppContext> _registry;
     private readonly ConcurrentDictionary<Type, Func<TAppContext, IAppContextSwitcher>> _switcherFactories = new();
-    // G3/B8：懒加载注册表（appKey → 一次性实例化工厂）。与 _registry 互补：
-    // _registry = 已实例化（已可见）的上下文；_lazyApps = 已声明但尚未实例化的上下文。
     private readonly ConcurrentDictionary<string, Lazy<TAppContext>> _lazyApps = new();
     private string? _defaultAppKey;
-    // MT-08：默认应用键的读-改-写（RemoveApp 回退）与 GetDefaultApp 的重试均在此锁内完成。
     private readonly object _defaultKeyLock = new();
 
-    // F-4：外部标识反查索引（CompositeKey(键, 值) → appKey）与歧义键集合。
-    // 注册/更新/移除/懒加载实例化后整体重建（注册路径低频，O(n·m) 可接受；
-    // 全量重建天然保证"歧义在冲突方移除/更新后自动消除"，避免增量维护的状态漂移）。
+    // F-4：外部标识反查索引与歧义键集合
     private readonly object _externalIndexSync = new();
     private Dictionary<string, string> _externalIndex = new(StringComparer.Ordinal);
     private HashSet<string> _conflictedExternalKeys = new(StringComparer.Ordinal);
     private readonly IAppLookupProvider? _externalLookupProvider;
-    // F-10：服务提供者（通常为根容器），供 RegisterLazy(Func<IServiceProvider, TAppContext>) 重载
-    // 在<b>实例化时</b>传入工厂 —— 使"per-app DI scope + 命名 HttpClient"组合可延迟到首次命中时构建。
     private readonly IServiceProvider? _services;
 
     /// <summary>
-    /// 创建应用管理器（默认 <see cref="ConcurrentDictionaryAppRegistry{TAppContext}"/> 存储）。
+    /// 创建应用管理器（默认存储实现）。
     /// </summary>
     public DefaultAppManager()
         : this(new ConcurrentDictionaryAppRegistry<TAppContext>(), null, null)
@@ -56,14 +41,13 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
     }
 
     /// <summary>
-    /// F-4：创建应用管理器并指定<b>外部</b>标识反查提供者（宿主自实现，如从配置/数据库解析）。
+    /// 创建应用管理器并指定外部标识反查提供者。
     /// </summary>
     /// <param name="externalLookupProvider">
-    /// 外部反查提供者；为 <c>null</c> 时仅使用内置反查索引（上下文实现 <see cref="IAppExternalIds"/> 时自动建立）。
+    /// 外部反查提供者；为 <c>null</c> 时仅使用内置反查索引。
     /// </param>
     /// <remarks>
-    /// 反查顺序：<b>先内置索引后外部提供者</b> —— 内置索引与注册视图（<see cref="GetApp"/>）同源一致，
-    /// 优先命中；内置未命中（fail-closed 返回 <c>false</c>）时才委托外部提供者兜底。
+    /// 反查顺序：先内置索引后外部提供者 —— 内置索引与注册视图同源一致，优先命中。
     /// </remarks>
     public DefaultAppManager(IAppLookupProvider? externalLookupProvider)
         : this(null, externalLookupProvider)
@@ -71,36 +55,23 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
     }
 
     /// <summary>
-    /// F-4 + F-10：创建应用管理器，指定服务提供者与外部标识反查提供者。
+    /// 创建应用管理器，指定服务提供者与外部标识反查提供者。
     /// </summary>
     /// <param name="services">
-    /// 服务提供者（通常为根容器）；供 <see cref="RegisterLazy(string, Func{IServiceProvider, TAppContext}, bool)"/>
-    /// 的工厂在实例化时取用（per-app DI scope / 命名 HttpClient 组合）。为 <c>null</c> 时该重载在实例化期抛出
-    /// <see cref="InvalidOperationException"/>（fail-closed，不静默传 null）。
+    /// 服务提供者；供 RegisterLazy 的工厂在实例化时取用。
     /// </param>
-    /// <param name="externalLookupProvider">外部反查提供者；为 <c>null</c> 时仅用内置反查索引。</param>
-    /// <remarks>
-    /// 两参（非可选参数）设计刻意保持：单参构造在 <c>null</c> 字面量调用处的二义性（CS0121）
-    /// 与 MS.DI 构造选择歧义均可免；需要其一时传 <c>null</c> 显式占位。
-    /// </remarks>
+    /// <param name="externalLookupProvider">外部反查提供者；可为 <c>null</c>。</param>
     public DefaultAppManager(IServiceProvider? services, IAppLookupProvider? externalLookupProvider)
         : this(new ConcurrentDictionaryAppRegistry<TAppContext>(), services, externalLookupProvider)
     {
     }
 
     /// <summary>
-    /// F-5：创建应用管理器并注入<b>自定义注册表存储</b>（SPI 接线的受保护接缝）。
+    /// 创建应用管理器并注入自定义注册表存储（受保护构造）。
     /// </summary>
-    /// <param name="registry">
-    /// 应用存储实现；为 <c>null</c> 时回退 <see cref="ConcurrentDictionaryAppRegistry{TAppContext}"/>（行为基线）。
-    /// 语义契约见 <see cref="IAppRegistry{TAppContext}"/>（含 CAS 更新，MT-08"复活已删除应用"防护的前提）。
-    /// </param>
-    /// <param name="services">服务提供者（F-10 惰性工厂用）；可为 <c>null</c>。</param>
-    /// <param name="externalLookupProvider">外部标识反查提供者（F-4）；可为 <c>null</c>。</param>
-    /// <remarks>
-    /// <b>受保护</b>而非公开：SPI 是"派生类换存储"的接缝（宿主经 <c>DefaultAppManager</c> 派生注入），
-    /// 不改变 <c>DefaultAppManager</c> 的既有公开构造面（兼容性红线：接口/构造签名不破坏）。
-    /// </remarks>
+    /// <param name="registry">应用存储实现；为 <c>null</c> 时回退默认实现。</param>
+    /// <param name="services">服务提供者；可为 <c>null</c>。</param>
+    /// <param name="externalLookupProvider">外部标识反查提供者；可为 <c>null</c>。</param>
     protected DefaultAppManager(IAppRegistry<TAppContext>? registry, IServiceProvider? services, IAppLookupProvider? externalLookupProvider)
     {
         _registry = registry ?? new ConcurrentDictionaryAppRegistry<TAppContext>();
@@ -114,10 +85,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
     public event EventHandler<AppConfigurationChangedEventArgs>? ConfigurationChanged;
 
     /// <inheritdoc />
-    /// <remarks>
-    /// G3/B8：命中懒加载项时<b>首次访问才实例化</b>工厂（线程安全、仅调用一次），
-    /// 实例化后并入注册表（<c>_registry</c>，后续查询走已实例化视图，语义与直接注册一致）。
-    /// </remarks>
+    /// <remarks>命中懒加载项时首次访问才实例化（线程安全、仅调用一次）。</remarks>
     public virtual TAppContext GetApp(string appKey)
     {
         AppKeyValidator.Validate(appKey, nameof(appKey));
@@ -132,7 +100,7 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
     }
 
     /// <inheritdoc />
-    /// <remarks>G3/B8：懒加载项同样可被 <c>TryGetApp</c> 命中（首次命中即实例化）。</remarks>
+    /// <remarks>懒加载项同样可被 TryGetApp 命中（首次命中即实例化）。</remarks>
     public virtual bool TryGetApp(string appKey, out TAppContext? appContext)
     {
         if (string.IsNullOrWhiteSpace(appKey))
@@ -164,23 +132,19 @@ public class DefaultAppManager<TAppContext> : IAppManager<TAppContext>, IAppLook
     }
 
     /// <summary>
-    /// G3/B8：把懒加载项实例化并并入注册表（<c>_registry</c>，一次且仅一次）。
+    /// 把懒加载项实例化并并入注册表（一次且仅一次）。
     /// </summary>
     /// <remarks>
-    /// 并发安全：<see cref="Lazy{T}"/> 以 <see cref="LazyThreadSafetyMode.ExecutionAndPublication"/> 创建，
-    /// 保证工厂在并发下只被调用一次；<c>_registry</c> 的写入用 <c>Add</c>（并发重复写入无害，值为同一实例）。
-    /// 工厂抛异常时不吞异常（由调用方决定是否重试），且不写入 <c>_registry</c>。
+    /// 并发安全：Lazy<T> 保证工厂在并发下只被调用一次；
+    /// 工厂抛异常时不吞异常，且不写入注册表。
     /// </remarks>
     private bool TryMaterializeLazy(string appKey, out TAppContext context)
     {
         if (_lazyApps.TryGetValue(appKey, out var lazy))
         {
-            var materialized = lazy.Value;      // 首次调用触发工厂；后续返回缓存值
+            var materialized = lazy.Value;
             _registry.Add(appKey, materialized);
-            // F-4：懒加载项实例化后，其外部标识（若实现 IAppExternalIds）才可见，需重建反查索引。
             RebuildExternalIndex();
-            // U-8：惰性工厂首滚事件（严格后于实例化成功；重注册同名键的新 Lazy 首滚同样发布——
-            // 语义为「该 appKey 的上下文新实例诞生」，与 ConfigurationChanged 的注册面事件互补）。
             OnAppInstantiated(appKey, materialized);
             context = materialized;
             return true;
