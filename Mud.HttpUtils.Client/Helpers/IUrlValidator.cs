@@ -1,6 +1,6 @@
 // -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2026
-//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+// 作者：Mud Studio 版权所有 (c) Mud Studio 2026
+// 本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
 // -----------------------------------------------------------------------
 
 using System.Collections.Generic;
@@ -23,30 +23,30 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public interface IUrlValidator
 {
-    /// <summary>配置允许的域名集合（整体替换语义：调用后白名单恰好等于传入集合）。</summary>
-    void ConfigureAllowedDomains(IEnumerable<string> domains);
+/// <summary>配置允许的域名集合（整体替换语义：调用后白名单恰好等于传入集合）。</summary>
+ void ConfigureAllowedDomains(IEnumerable<string> domains);
 
-    /// <summary>仅替换配置来源白名单桶，保留运行期新增域名。</summary>
-    void SetConfigurationDomains(IEnumerable<string> domains);
+/// <summary>仅替换配置来源白名单桶，保留运行期新增域名。</summary>
+ void SetConfigurationDomains(IEnumerable<string> domains);
 
-    /// <summary>获取当前允许的域名集合快照。</summary>
-    IReadOnlyCollection<string> GetAllowedDomains();
+/// <summary>获取当前允许的域名集合快照。</summary>
+ IReadOnlyCollection<string> GetAllowedDomains();
 
-    /// <summary>添加一个运行期允许的域名。</summary>
-    void AddAllowedDomain(string domain);
+/// <summary>添加一个运行期允许的域名。</summary>
+ void AddAllowedDomain(string domain);
 
-    /// <summary>移除一个运行期允许的域名。</summary>
-    void RemoveAllowedDomain(string domain);
+/// <summary>移除一个运行期允许的域名。</summary>
+ void RemoveAllowedDomain(string domain);
 
-    /// <summary>验证 URL 是否安全（在白名单域名内且不包含私有 IP 地址）。</summary>
-    void ValidateUrl(string? url, bool allowCustomBaseUrls = false);
+/// <summary>验证 URL 是否安全（在白名单域名内且不包含私有 IP 地址）。</summary>
+ void ValidateUrl(string? url, bool allowCustomBaseUrls = false);
 
-    /// <summary>异步验证 URL 是否安全（DNS 解析不阻塞调用线程）。</summary>
-    System.Threading.Tasks.ValueTask ValidateUrlAsync(string? url, bool allowCustomBaseUrls = false, System.Threading.CancellationToken cancellationToken = default);
+/// <summary>异步验证 URL 是否安全（DNS 解析不阻塞调用线程）。</summary>
+ System.Threading.Tasks.ValueTask ValidateUrlAsync(string? url, bool allowCustomBaseUrls = false, System.Threading.CancellationToken cancellationToken = default);
 
-    /// <summary>验证基础 URL 是否安全。</summary>
-    void ValidateBaseUrl(string? baseUrl, bool allowCustomBaseUrls = false);
+/// <summary>验证基础 URL 是否安全。</summary>
+ void ValidateBaseUrl(string? baseUrl, bool allowCustomBaseUrls = false);
 
-    /// <summary>清空 DNS 缓存。</summary>
-    void ClearDnsCache();
+/// <summary>清空 DNS 缓存。</summary>
+ void ClearDnsCache();
 }

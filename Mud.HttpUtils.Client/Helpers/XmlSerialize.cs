@@ -1,8 +1,8 @@
 // -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
-//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规的要求。
-//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
-//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// 作者：Mud Studio 版权所有 (c) Mud Studio 2026 
+// Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规的要求。
+// 本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+// 不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
 using System.Xml;
@@ -19,145 +19,145 @@ namespace Mud.HttpUtils;
 /// </summary>
 public sealed class XmlSerialize
 {
-    /// <summary>
-    /// 将对象序列化为XML字符串
-    /// </summary>
-    /// <typeparam name="T">对象类型</typeparam>
-    /// <param name="obj">要序列化的对象</param>
-    /// <returns>XML字符串</returns>
+/// <summary>
+/// 将对象序列化为XML字符串
+/// </summary>
+/// <typeparam name="T">对象类型</typeparam>
+/// <param name="obj">要序列化的对象</param>
+/// <returns>XML字符串</returns>
 // [P2-1] 删除冗余内层 guard：NET7_0_OR_GREATER 隐含 NET6_0_OR_GREATER，
 // RequiresUnreferencedCode/DynamicallyAccessedMembers/RequiresDynamicCode 在 NET7+ 均为 in-box。
 #if NET7_0_OR_GREATER
-    [RequiresUnreferencedCode("XML 序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
-    [RequiresDynamicCode("XML 序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
-    public static string Serialize<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
-        T>(T obj)
+ [RequiresUnreferencedCode("XML 序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
+ [RequiresDynamicCode("XML 序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
+ public static string Serialize<
+ [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
+ T>(T obj)
 #else
-    public static string Serialize<T>(T obj)
+ public static string Serialize<T>(T obj)
 #endif
-    {
-        return Serialize(obj, Encoding.UTF8);
-    }
+ {
+ return Serialize(obj, Encoding.UTF8);
+ }
 
-    /// <summary>
-    /// 将对象序列化为XML字符串（指定编码）
-    /// </summary>
-    /// <typeparam name="T">对象类型</typeparam>
-    /// <param name="obj">要序列化的对象</param>
-    /// <param name="encoding">编码方式</param>
-    /// <returns>XML字符串</returns>
+/// <summary>
+/// 将对象序列化为XML字符串（指定编码）
+/// </summary>
+/// <typeparam name="T">对象类型</typeparam>
+/// <param name="obj">要序列化的对象</param>
+/// <param name="encoding">编码方式</param>
+/// <returns>XML字符串</returns>
 #if NET7_0_OR_GREATER
-    [RequiresUnreferencedCode("XML 序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
-    [RequiresDynamicCode("XML 序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
-    public static string Serialize<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
-        T>(T obj, Encoding encoding)
+ [RequiresUnreferencedCode("XML 序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
+ [RequiresDynamicCode("XML 序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
+ public static string Serialize<
+ [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
+ T>(T obj, Encoding encoding)
 #else
-    public static string Serialize<T>(T obj, Encoding encoding)
+ public static string Serialize<T>(T obj, Encoding encoding)
 #endif
-    {
-        if (obj == null)
-            throw new ArgumentNullException(nameof(obj));
+ {
+ if (obj == null)
+ throw new ArgumentNullException(nameof(obj));
 
-        if (encoding == null)
-            throw new ArgumentNullException(nameof(encoding));
+ if (encoding == null)
+ throw new ArgumentNullException(nameof(encoding));
 
-        try
-        {
-            var serializer = new XmlSerializer(typeof(T));
+ try
+ {
+ var serializer = new XmlSerializer(typeof(T));
 
-            var settings = new XmlWriterSettings
-            {
-                Encoding = encoding,
-                Indent = true,
-                IndentChars = "  ",
-                OmitXmlDeclaration = false
-            };
+ var settings = new XmlWriterSettings
+ {
+ Encoding = encoding,
+ Indent = true,
+ IndentChars = " ",
+ OmitXmlDeclaration = false
+ };
 
-            using var stream = new MemoryStream();
-            using var writer = XmlWriter.Create(stream, settings);
-            var namespaces = new XmlSerializerNamespaces();
-            namespaces.Add("", "");
+ using var stream = new MemoryStream();
+ using var writer = XmlWriter.Create(stream, settings);
+ var namespaces = new XmlSerializerNamespaces();
+ namespaces.Add("", "");
 
-            serializer.Serialize(writer, obj, namespaces);
-            return encoding.GetString(stream.ToArray());
-        }
-        catch (InvalidOperationException ex)
-        {
-            throw new InvalidOperationException($"XML序列化失败: 类型 {typeof(T).Name} 可能没有无参构造函数或属性设置器", ex);
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException($"XML序列化失败: {ex.Message}", ex);
-        }
-    }
+ serializer.Serialize(writer, obj, namespaces);
+ return encoding.GetString(stream.ToArray());
+ }
+ catch (InvalidOperationException ex)
+ {
+ throw new InvalidOperationException($"XML序列化失败: 类型 {typeof(T).Name} 可能没有无参构造函数或属性设置器", ex);
+ }
+ catch (Exception ex)
+ {
+ throw new InvalidOperationException($"XML序列化失败: {ex.Message}", ex);
+ }
+ }
 
-    /// <summary>
-    /// 从XML字符串反序列化为对象
-    /// </summary>
-    /// <typeparam name="T">对象类型</typeparam>
-    /// <param name="xml">XML字符串</param>
-    /// <returns>反序列化后的对象</returns>
+/// <summary>
+/// 从XML字符串反序列化为对象
+/// </summary>
+/// <typeparam name="T">对象类型</typeparam>
+/// <param name="xml">XML字符串</param>
+/// <returns>反序列化后的对象</returns>
 #if NET7_0_OR_GREATER
-    [RequiresUnreferencedCode("XML 反序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
-    [RequiresDynamicCode("XML 反序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
-    public static T Deserialize<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
-        T>(string xml)
+ [RequiresUnreferencedCode("XML 反序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
+ [RequiresDynamicCode("XML 反序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
+ public static T Deserialize<
+ [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
+ T>(string xml)
 #else
-    public static T Deserialize<T>(string xml)
+ public static T Deserialize<T>(string xml)
 #endif
-    {
-        return Deserialize<T>(xml, Encoding.UTF8);
-    }
+ {
+ return Deserialize<T>(xml, Encoding.UTF8);
+ }
 
-    /// <summary>
-    /// 从XML字符串反序列化为对象（指定编码）
-    /// </summary>
-    /// <typeparam name="T">对象类型</typeparam>
-    /// <param name="xml">XML字符串</param>
-    /// <param name="encoding">编码方式</param>
-    /// <returns>反序列化后的对象</returns>
+/// <summary>
+/// 从XML字符串反序列化为对象（指定编码）
+/// </summary>
+/// <typeparam name="T">对象类型</typeparam>
+/// <param name="xml">XML字符串</param>
+/// <param name="encoding">编码方式</param>
+/// <returns>反序列化后的对象</returns>
 #if NET7_0_OR_GREATER
-    [RequiresUnreferencedCode("XML 反序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
-    [RequiresDynamicCode("XML 反序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
-    public static T Deserialize<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
-        T>(string xml, Encoding encoding)
+ [RequiresUnreferencedCode("XML 反序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
+ [RequiresDynamicCode("XML 反序列化使用 XmlSerializer 运行时生成程序集，Native AOT 不支持。请改用 [SerializationMethod(Json)] 或 System.Text.Json。")]
+ public static T Deserialize<
+ [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicProperties | DynamicallyAccessedMemberTypes.PublicParameterlessConstructor)]
+ T>(string xml, Encoding encoding)
 #else
-    public static T Deserialize<T>(string xml, Encoding encoding)
+ public static T Deserialize<T>(string xml, Encoding encoding)
 #endif
-    {
-        if (string.IsNullOrEmpty(xml))
-            throw new ArgumentNullException(nameof(xml));
+ {
+ if (string.IsNullOrEmpty(xml))
+ throw new ArgumentNullException(nameof(xml));
 
-        if (encoding == null)
-            throw new ArgumentNullException(nameof(encoding));
+ if (encoding == null)
+ throw new ArgumentNullException(nameof(encoding));
 
-        try
-        {
-            var serializer = new XmlSerializer(typeof(T));
+ try
+ {
+ var serializer = new XmlSerializer(typeof(T));
 
-            var settings = new XmlReaderSettings
-            {
-                IgnoreComments = true,
-                IgnoreWhitespace = true
-            };
+ var settings = new XmlReaderSettings
+ {
+ IgnoreComments = true,
+ IgnoreWhitespace = true
+ };
 
-            using var stream = new MemoryStream(encoding.GetBytes(xml));
-            using var reader = XmlReader.Create(stream, settings);
-            // XmlSerializer.Deserialize 返回 object?；契约上调用方已保证 xml 非空且类型匹配，
-            // 此处显式声明非空以保持既有返回值语义（null 时行为与修复前一致）。
-            return (T)serializer.Deserialize(reader)!;
-        }
-        catch (InvalidOperationException ex)
-        {
-            throw new InvalidOperationException($"XML反序列化失败: XML格式可能不正确或与类型 {typeof(T).Name} 不匹配", ex);
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException($"XML反序列化失败: {ex.Message}", ex);
-        }
-    }
+ using var stream = new MemoryStream(encoding.GetBytes(xml));
+ using var reader = XmlReader.Create(stream, settings);
+// XmlSerializer.Deserialize 返回 object?；契约上调用方已保证 xml 非空且类型匹配，
+// 此处显式声明非空以保持既有返回值语义（null 时行为与修复前一致）。
+ return (T)serializer.Deserialize(reader)!;
+ }
+ catch (InvalidOperationException ex)
+ {
+ throw new InvalidOperationException($"XML反序列化失败: XML格式可能不正确或与类型 {typeof(T).Name} 不匹配", ex);
+ }
+ catch (Exception ex)
+ {
+ throw new InvalidOperationException($"XML反序列化失败: {ex.Message}", ex);
+ }
+ }
 }

@@ -10,16 +10,16 @@ namespace Mud.HttpUtils;
 /// 并在数据上传过程中提供进度报告功能。</para>
 /// <para>主要用途:</para>
 /// <list type="bullet">
-///   <item>大文件上传时显示进度条</item>
-///   <item>监控HTTP请求体的上传进度</item>
-///   <item>实现上传速度计算和预计剩余时间</item>
+/// <item>大文件上传时显示进度条</item>
+/// <item>监控HTTP请求体的上传进度</item>
+/// <item>实现上传速度计算和预计剩余时间</item>
 /// </list>
 /// <para>此类通过读取内部内容的流,并在每次写入时报告已传输的字节数来实现进度跟踪。</para>
 /// </remarks>
 /// <example>
 /// <code>
 /// var progress = new Progress&lt;long&gt;(bytes =&gt; 
-///     Console.WriteLine($"已上传: {bytes} 字节"));
+/// Console.WriteLine($"已上传: {bytes} 字节"));
 /// 
 /// using var fileContent = new StreamContent(File.OpenRead("largefile.zip"));
 /// using var progressContent = new ProgressableStreamContent(fileContent, progress);
@@ -31,124 +31,124 @@ namespace Mud.HttpUtils;
 /// <seealso cref="IProgress{T}"/>
 public class ProgressableStreamContent : HttpContent, IRequestContentReplayHint
 {
-    // 默认缓冲由 4096 提升至 81920，与下载/执行器路径一致，减少读调用次数
-    private const int DefaultBufferSize = 81920;
+// 默认缓冲由 4096 提升至 81920，与下载/执行器路径一致，减少读调用次数
+ private const int DefaultBufferSize = 81920;
 
-    private readonly HttpContent _content;
-    private readonly int _bufferSize;
-    private readonly IProgress<long>? _progress;
+ private readonly HttpContent _content;
+ private readonly int _bufferSize;
+ private readonly IProgress<long>? _progress;
 
-    /// <summary>
-    /// 不可重放 —— 读取本内容会经 <c>SerializeToStreamAsync</c> 消耗底层源流（一次性），
-    /// 捕获请求体时须跳过以免发送空/截断请求体。
-    /// </summary>
-    bool IRequestContentReplayHint.IsReplayable => false;
+/// <summary>
+/// 不可重放 —— 读取本内容会经 <c>SerializeToStreamAsync</c> 消耗底层源流（一次性），
+/// 捕获请求体时须跳过以免发送空/截断请求体。
+/// </summary>
+ bool IRequestContentReplayHint.IsReplayable => false;
 
-    /// <summary>
-    /// 初始化 <see cref="ProgressableStreamContent"/> 类的新实例。
-    /// </summary>
-    /// <param name="content">要包装的HTTP内容。</param>
-    /// <param name="progress">进度报告回调。如果为 null,则不报告进度。</param>
-    /// <param name="bufferSize">缓冲区大小(字节),默认为81920。</param>
-    /// <exception cref="ArgumentNullException"><paramref name="content"/> 为 null。</exception>
-    /// <remarks>
-    /// 构造函数会复制原始内容的所有头部信息到包装器中。
-    /// </remarks>
-    public ProgressableStreamContent(HttpContent content, IProgress<long>? progress, int bufferSize = DefaultBufferSize)
-    {
-        _content = content ?? throw new ArgumentNullException(nameof(content));
-        _progress = progress;
-        _bufferSize = bufferSize;
+/// <summary>
+/// 初始化 <see cref="ProgressableStreamContent"/> 类的新实例。
+/// </summary>
+/// <param name="content">要包装的HTTP内容。</param>
+/// <param name="progress">进度报告回调。如果为 null,则不报告进度。</param>
+/// <param name="bufferSize">缓冲区大小(字节),默认为81920。</param>
+/// <exception cref="ArgumentNullException"><paramref name="content"/> 为 null。</exception>
+/// <remarks>
+/// 构造函数会复制原始内容的所有头部信息到包装器中。
+/// </remarks>
+ public ProgressableStreamContent(HttpContent content, IProgress<long>? progress, int bufferSize = DefaultBufferSize)
+ {
+ _content = content ?? throw new ArgumentNullException(nameof(content));
+ _progress = progress;
+ _bufferSize = bufferSize;
 
-        foreach (var header in _content.Headers)
-        {
-            Headers.TryAddWithoutValidation(header.Key, header.Value);
-        }
-    }
+ foreach (var header in _content.Headers)
+ {
+ Headers.TryAddWithoutValidation(header.Key, header.Value);
+ }
+ }
 
-    /// <summary>
-    /// 将HTTP内容序列化到流中,并在传输过程中报告进度。
-    /// </summary>
-    /// <param name="stream">目标流,内容将被写入此流。</param>
-    /// <param name="context">传输上下文。</param>
-    /// <returns>表示异步序列化操作的任务。</returns>
-    /// <remarks>
-    /// 此方法通过缓冲区读取内部内容的流,并在每次写入目标流后报告累计已传输的字节数。
-    /// 进度报告通过 <see cref="IProgress{T}.Report"/> 方法实现。
-    /// 仅 netstandard2.0 / 旧重载路径可达，故使用 <see cref="CancellationToken.None"/>（#28 同理）。
-    /// 无进度回调时走 <see cref="Stream.CopyToAsync(Stream)"/> 快路径，避免每缓冲区的进度开销。
-    /// 不再 dispose 内容流（其生命周期归 <c>_content</c> 所有），与 net5+ 分支一致。
-    /// </remarks>
-    protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
-        => SerializeToStreamCoreAsync(stream, CancellationToken.None);
+/// <summary>
+/// 将HTTP内容序列化到流中,并在传输过程中报告进度。
+/// </summary>
+/// <param name="stream">目标流,内容将被写入此流。</param>
+/// <param name="context">传输上下文。</param>
+/// <returns>表示异步序列化操作的任务。</returns>
+/// <remarks>
+/// 此方法通过缓冲区读取内部内容的流,并在每次写入目标流后报告累计已传输的字节数。
+/// 进度报告通过 <see cref="IProgress{T}.Report"/> 方法实现。
+/// 仅 netstandard2.0 / 旧重载路径可达，故使用 <see cref="CancellationToken.None"/>（#28 同理）。
+/// 无进度回调时走 <see cref="Stream.CopyToAsync(Stream)"/> 快路径，避免每缓冲区的进度开销。
+/// 不再 dispose 内容流（其生命周期归 <c>_content</c> 所有），与 net5+ 分支一致。
+/// </remarks>
+ protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+ => SerializeToStreamCoreAsync(stream, CancellationToken.None);
 
 #if NET5_0_OR_GREATER
-    /// <summary>
-    /// M2-#17：带取消令牌的序列化重载 —— .NET 5+ 的 <see cref="HttpContent"/> 优先调用本重载，
-    /// 使上传期间的取消（连接关闭 / 请求取消）能中断内部流读取与写出，而非等待传输完成。
-    /// </summary>
-    protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context, CancellationToken cancellationToken)
-        => SerializeToStreamCoreAsync(stream, cancellationToken);
+/// <summary>
+/// M2-#17：带取消令牌的序列化重载 —— .NET 5+ 的 <see cref="HttpContent"/> 优先调用本重载，
+/// 使上传期间的取消（连接关闭 / 请求取消）能中断内部流读取与写出，而非等待传输完成。
+/// </summary>
+ protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context, CancellationToken cancellationToken)
+ => SerializeToStreamCoreAsync(stream, cancellationToken);
 #endif
 
-    private async Task SerializeToStreamCoreAsync(Stream stream, CancellationToken cancellationToken)
-    {
-        // 不 dispose 内容流（HttpContent 自有流，生命周期归 _content 所有）
-        var contentStream = await _content.ReadAsStreamAsync().ConfigureAwait(false);
+ private async Task SerializeToStreamCoreAsync(Stream stream, CancellationToken cancellationToken)
+ {
+// 不 dispose 内容流（HttpContent 自有流，生命周期归 _content 所有）
+ var contentStream = await _content.ReadAsStreamAsync().ConfigureAwait(false);
 
-        if (_progress is null)
-        {
-            await contentStream.CopyToAsync(stream, _bufferSize, cancellationToken).ConfigureAwait(false);
-            return;
-        }
+ if (_progress is null)
+ {
+ await contentStream.CopyToAsync(stream, _bufferSize, cancellationToken).ConfigureAwait(false);
+ return;
+ }
 
-        await ThrottledStreamCopier
-            .CopyWithThrottledProgressAsync(contentStream, stream, _bufferSize, _progress, 0, cancellationToken)
-            .ConfigureAwait(false);
-    }
+ await ThrottledStreamCopier
+ .CopyWithThrottledProgressAsync(contentStream, stream, _bufferSize, _progress, 0, cancellationToken)
+ .ConfigureAwait(false);
+ }
 
-    /// <summary>
-    /// 尝试计算内容的长度。
-    /// </summary>
-    /// <param name="length">当返回时,包含内容的长度(如果可计算);否则为 -1。</param>
-    /// <returns>如果可以计算内容长度,则为 <c>true</c>;否则为 <c>false</c>。</returns>
-    /// <remarks>
-    /// 此方法从内部内容的 <c>ContentLength</c> 头部获取长度信息。
-    /// 如果内部内容未指定 Content-Length,则返回 <c>false</c>。
-    /// </remarks>
-    protected override bool TryComputeLength(out long length)
-    {
-        length = _content.Headers.ContentLength ?? -1;
-        return length != -1;
-    }
+/// <summary>
+/// 尝试计算内容的长度。
+/// </summary>
+/// <param name="length">当返回时,包含内容的长度(如果可计算);否则为 -1。</param>
+/// <returns>如果可以计算内容长度,则为 <c>true</c>;否则为 <c>false</c>。</returns>
+/// <remarks>
+/// 此方法从内部内容的 <c>ContentLength</c> 头部获取长度信息。
+/// 如果内部内容未指定 Content-Length,则返回 <c>false</c>。
+/// </remarks>
+ protected override bool TryComputeLength(out long length)
+ {
+ length = _content.Headers.ContentLength ?? -1;
+ return length != -1;
+ }
 
-    /// <summary>
-    /// 释放由 <see cref="HttpContent"/> 使用的非托管资源,并可选择释放托管资源。
-    /// </summary>
-    /// <param name="disposing">如果为 <c>true</c>,则释放托管和非托管资源;如果为 <c>false</c>,则仅释放非托管资源。</param>
-    /// <remarks>
-    /// 此方法会处置内部包装的 <see cref="HttpContent"/> 实例。
-    /// </remarks>
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing)
-        {
-            _content.Dispose();
-        }
-        base.Dispose(disposing);
-    }
+/// <summary>
+/// 释放由 <see cref="HttpContent"/> 使用的非托管资源,并可选择释放托管资源。
+/// </summary>
+/// <param name="disposing">如果为 <c>true</c>,则释放托管和非托管资源;如果为 <c>false</c>,则仅释放非托管资源。</param>
+/// <remarks>
+/// 此方法会处置内部包装的 <see cref="HttpContent"/> 实例。
+/// </remarks>
+ protected override void Dispose(bool disposing)
+ {
+ if (disposing)
+ {
+ _content.Dispose();
+ }
+ base.Dispose(disposing);
+ }
 
-    // TMX-13：内部访问器，供 Rebind 使用
+// 内部访问器，供 Rebind 使用
 
-    internal HttpContent InnerContent => _content;
-    internal IProgress<long>? Progress => _progress;
-    internal int BufferSize => _bufferSize;
+ internal HttpContent InnerContent => _content;
+ internal IProgress<long>? Progress => _progress;
+ internal int BufferSize => _bufferSize;
 
-    /// <summary>
-    /// TMX-13：以同一进度回调与缓冲尺寸重新包装新的底层内容（令牌恢复体回填用）。
-    /// </summary>
-    /// <param name="content">新的底层内容（如缓冲后的 ByteArrayContent）。</param>
-    /// <returns>新的 <see cref="ProgressableStreamContent"/> 实例，复用原进度回调与缓冲尺寸。</returns>
-    internal ProgressableStreamContent Rebind(HttpContent content)
-        => new(content ?? throw new ArgumentNullException(nameof(content)), _progress, _bufferSize);
+/// <summary>
+/// 以同一进度回调与缓冲尺寸重新包装新的底层内容（令牌恢复体回填用）。
+/// </summary>
+/// <param name="content">新的底层内容（如缓冲后的 ByteArrayContent）。</param>
+/// <returns>新的 <see cref="ProgressableStreamContent"/> 实例，复用原进度回调与缓冲尺寸。</returns>
+ internal ProgressableStreamContent Rebind(HttpContent content)
+ => new(content ?? throw new ArgumentNullException(nameof(content)), _progress, _bufferSize);
 }

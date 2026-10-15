@@ -1,8 +1,8 @@
 // -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2026
-//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
-//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
-//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// 作者：Mud Studio 版权所有 (c) Mud Studio 2026
+// Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+// 本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+// 不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
 using Microsoft.Extensions.Logging;
@@ -24,41 +24,41 @@ namespace Mud.HttpUtils;
 /// 生命周期：单例，随容器释放取消订阅。
 /// </para>
 /// <para>
-/// 上位方案：<c>03-P2</c> Roadmap R-3（引入 <c>IUrlValidator</c> 实例 + DI 注入，去除静态可变状态）落地后，
+/// 上位方案：<c>03-P2</c> Roadmap 引入 <c>IUrlValidator</c> 实例 + DI 注入，去除静态可变状态）落地后，
 /// 删除本组件。
 /// </para>
 /// </remarks>
 internal sealed class AllowedDomainsReloader : IDisposable
 {
-    private readonly ILogger<AllowedDomainsReloader> _logger;
-    private readonly IDisposable? _subscription;
+ private readonly ILogger<AllowedDomainsReloader> _logger;
+ private readonly IDisposable? _subscription;
 
-    public AllowedDomainsReloader(
-        IOptionsMonitor<MudHttpClientApplicationOptions> monitor,
-        ILogger<AllowedDomainsReloader>? logger = null)
-    {
-        _logger = logger ?? NullLogger<AllowedDomainsReloader>.Instance;
+ public AllowedDomainsReloader(
+ IOptionsMonitor<MudHttpClientApplicationOptions> monitor,
+ ILogger<AllowedDomainsReloader>? logger = null)
+ {
+ _logger = logger ?? NullLogger<AllowedDomainsReloader>.Instance;
 
-        // 首次立即应用（幂等：与注册期的一次性应用结果一致）
-        Apply(monitor.CurrentValue);
-        // 变更重放
-        _subscription = monitor.OnChange(Apply);
-    }
+// 首次立即应用（幂等：与注册期的一次性应用结果一致）
+ Apply(monitor.CurrentValue);
+// 变更重放
+ _subscription = monitor.OnChange(Apply);
+ }
 
-    private void Apply(MudHttpClientApplicationOptions? options)
-    {
-        var domains = options?.AllowedDomains ?? new List<string>();
+ private void Apply(MudHttpClientApplicationOptions? options)
+ {
+ var domains = options?.AllowedDomains ?? new List<string>();
 
-        // CFG-34：只替换「配置来源」桶，保留运行期经 UrlValidator.AddAllowedDomain 新增的域名；
-        // 若改用 ConfigureAllowedDomains（整体替换两桶），运行期增量会在每次 Reload 后消失（不变量 I-13）。
-        UrlValidator.SetConfigurationDomains(domains);
+// 只替换「配置来源」桶，保留运行期经 UrlValidator.AddAllowedDomain 新增的域名；
+// 若改用 ConfigureAllowedDomains（整体替换两桶），运行期增量会在每次 Reload 后消失（不变量 I-13）。
+ UrlValidator.SetConfigurationDomains(domains);
 
-        // MT-10：同步「白名单是否允许非 HTTPS」逃生门（首次应用 + 热更新重放均生效）。
-        UrlValidator.SetAllowInsecureWhitelistedDomains(options?.AllowInsecureWhitelistedDomains ?? false);
+// 同步「白名单是否允许非 HTTPS」逃生门（首次应用 + 热更新重放均生效）。
+ UrlValidator.SetAllowInsecureWhitelistedDomains(options?.AllowInsecureWhitelistedDomains ?? false);
 
-        MudHttpClientLog.AllowedDomainsApplied(_logger, domains.Count);
-    }
+ MudHttpClientLog.AllowedDomainsApplied(_logger, domains.Count);
+ }
 
-    /// <inheritdoc />
-    public void Dispose() => _subscription?.Dispose();
+/// <inheritdoc />
+ public void Dispose() => _subscription?.Dispose();
 }

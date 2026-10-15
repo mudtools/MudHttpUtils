@@ -1,8 +1,8 @@
 // -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
-//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
-//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
-//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// 作者：Mud Studio 版权所有 (c) Mud Studio 2026 
+// Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+// 本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+// 不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
 using Microsoft.Extensions.Logging;
@@ -23,231 +23,231 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public sealed class EnhancedHttpClientOptions : IEnhancedClientConfig
 {
-    /// <summary>
-    /// 获取或设置日志记录器。
-    /// </summary>
-    /// <value>日志记录器实例,默认为 <c>null</c>。</value>
-    public ILogger? Logger { get; set; }
+/// <summary>
+/// 获取或设置日志记录器。
+/// </summary>
+/// <value>日志记录器实例,默认为 <c>null</c>。</value>
+ public ILogger? Logger { get; set; }
 
-    /// <summary>
-    /// 获取或设置请求拦截器集合。
-    /// </summary>
-    /// <value>请求拦截器集合,默认为 <c>null</c>。</value>
-    public IEnumerable<IHttpRequestInterceptor>? RequestInterceptors { get; set; }
+/// <summary>
+/// 获取或设置请求拦截器集合。
+/// </summary>
+/// <value>请求拦截器集合,默认为 <c>null</c>。</value>
+ public IEnumerable<IHttpRequestInterceptor>? RequestInterceptors { get; set; }
 
-    /// <summary>
-    /// 获取或设置响应拦截器集合。
-    /// </summary>
-    /// <value>响应拦截器集合,默认为 <c>null</c>。</value>
-    public IEnumerable<IHttpResponseInterceptor>? ResponseInterceptors { get; set; }
+/// <summary>
+/// 获取或设置响应拦截器集合。
+/// </summary>
+/// <value>响应拦截器集合,默认为 <c>null</c>。</value>
+ public IEnumerable<IHttpResponseInterceptor>? ResponseInterceptors { get; set; }
 
-    /// <summary>
-    /// 获取或设置敏感数据掩码器。
-    /// </summary>
-    /// <value>敏感数据掩码器实例,默认为 <c>null</c>。</value>
-    public ISensitiveDataMasker? SensitiveDataMasker { get; set; }
+/// <summary>
+/// 获取或设置敏感数据掩码器。
+/// </summary>
+/// <value>敏感数据掩码器实例,默认为 <c>null</c>。</value>
+ public ISensitiveDataMasker? SensitiveDataMasker { get; set; }
 
-    /// <summary>
-    /// 获取或设置应用切换授权器。为 null 时不执行授权判定（仅存在性校验）。
-    /// </summary>
-    /// <remarks>
-    /// 多租户场景下必须注册，否则外部传入的 appKey 可跨租户读取他人应用上下文。
-    /// </remarks>
-    public IAppAccessAuthorizer? AppAccessAuthorizer { get; set; }
+/// <summary>
+/// 获取或设置应用切换授权器。为 null 时不执行授权判定（仅存在性校验）。
+/// </summary>
+/// <remarks>
+/// 多租户场景下必须注册，否则外部传入的 appKey 可跨租户读取他人应用上下文。
+/// </remarks>
+ public IAppAccessAuthorizer? AppAccessAuthorizer { get; set; }
 
-    /// <summary>
-    /// 获取或设置是否允许自定义基础URL。
-    /// </summary>
-    /// <value>如果允许自定义基础URL则为 <c>true</c>;否则为 <c>false</c>。默认为 <c>false</c>。</value>
-    /// <remarks>
-    /// 启用此选项允许请求使用与 <see cref="HttpClient.BaseAddress"/> 不同的域名,
-    /// 但可能带来安全风险(如SSRF攻击),请谨慎使用。
-    /// </remarks>
-    public bool AllowCustomBaseUrls { get; set; }
+/// <summary>
+/// 获取或设置是否允许自定义基础URL。
+/// </summary>
+/// <value>如果允许自定义基础URL则为 <c>true</c>;否则为 <c>false</c>。默认为 <c>false</c>。</value>
+/// <remarks>
+/// 启用此选项允许请求使用与 <see cref="HttpClient.BaseAddress"/> 不同的域名,
+/// 但可能带来安全风险(如SSRF攻击),请谨慎使用。
+/// </remarks>
+ public bool AllowCustomBaseUrls { get; set; }
 
-    /// <summary>
-    /// 获取或设置请求体序列化模式。
-    /// </summary>
-    /// <value>默认为 <see cref="RequestBodySerializationMode.Default"/>（现有同步行为，向后兼容）。</value>
-    /// <remarks>
-    /// <para>
-    /// 设置为 <see cref="RequestBodySerializationMode.Buffered"/> 或 <see cref="RequestBodySerializationMode.Streamed"/>
-    /// 时，要求配置的 <see cref="IHttpContentSerializer"/> 实现 <see cref="ISynchronousContentSerializer"/>，
-    /// 以启用 STJ 源生成 fast-path。
-    /// </para>
-    /// </remarks>
-    public RequestBodySerializationMode RequestBodySerialization { get; set; } = RequestBodySerializationMode.Default;
+/// <summary>
+/// 获取或设置请求体序列化模式。
+/// </summary>
+/// <value>默认为 <see cref="RequestBodySerializationMode.Default"/>（现有同步行为，向后兼容）。</value>
+/// <remarks>
+/// <para>
+/// 设置为 <see cref="RequestBodySerializationMode.Buffered"/> 或 <see cref="RequestBodySerializationMode.Streamed"/>
+/// 时，要求配置的 <see cref="IHttpContentSerializer"/> 实现 <see cref="ISynchronousContentSerializer"/>，
+/// 以启用 STJ 源生成 fast-path。
+/// </para>
+/// </remarks>
+ public RequestBodySerializationMode RequestBodySerialization { get; set; } = RequestBodySerializationMode.Default;
 
-    /// <summary>
-    /// 获取或设置异常擦除器（在异常传播前清除敏感数据）。
-    /// </summary>
-    /// <value>默认为 <c>null</c>（不执行擦除）。</value>
-    public IExceptionRedactor? ExceptionRedactor { get; set; }
+/// <summary>
+/// 获取或设置异常擦除器（在异常传播前清除敏感数据）。
+/// </summary>
+/// <value>默认为 <c>null</c>（不执行擦除）。</value>
+ public IExceptionRedactor? ExceptionRedactor { get; set; }
 
-    /// <summary>
-    /// 获取或设置错误响应体最大读取字符数（防止恶意/超大错误响应导致 OOM）。
-    /// </summary>
-    /// <value>默认为 <c>null</c>（使用默认值 10240 字符）。设为 <c>0</c> 或负数表示不限制。</value>
-    /// <remarks>
-    /// <para>
-    /// 上限在<b>读取阶段</b>生效（限量读取），无论响应是否携带 <c>Content-Length</c> 均不会超读；
-    /// 截断的内容末尾带 <c>...[已截断]</c> 标记。
-    /// </para>
-    /// <para>
-    /// 该上限同时约束 <see cref="CaptureRequestContent"/> 开启时捕获的请求体长度。
-    /// 与生成代码路径（<c>DefaultHttpRequestExecutor</c>）行为一致。
-    /// </para>
-    /// </remarks>
-    public int? MaxExceptionContentLength { get; set; }
+/// <summary>
+/// 获取或设置错误响应体最大读取字符数（防止恶意/超大错误响应导致 OOM）。
+/// </summary>
+/// <value>默认为 <c>null</c>（使用默认值 10240 字符）。设为 <c>0</c> 或负数表示不限制。</value>
+/// <remarks>
+/// <para>
+/// 上限在<b>读取阶段</b>生效（限量读取），无论响应是否携带 <c>Content-Length</c> 均不会超读；
+/// 截断的内容末尾带 <c>...[已截断]</c> 标记。
+/// </para>
+/// <para>
+/// 该上限同时约束 <see cref="CaptureRequestContent"/> 开启时捕获的请求体长度。
+/// 与生成代码路径（<c>DefaultHttpRequestExecutor</c>）行为一致。
+/// </para>
+/// </remarks>
+ public int? MaxExceptionContentLength { get; set; }
 
-    /// <summary>
-    /// 获取或设置是否在发送前捕获请求体字符串（用于异常调试）。
-    /// </summary>
-    /// <value>默认为 <c>false</c>（不捕获）。</value>
-    /// <remarks>
-    /// 捕获的请求体长度受 <see cref="MaxExceptionContentLength"/> 约束（0/负数 = 不限制）。
-    /// </remarks>
-    public bool CaptureRequestContent { get; set; }
+/// <summary>
+/// 获取或设置是否在发送前捕获请求体字符串（用于异常调试）。
+/// </summary>
+/// <value>默认为 <c>false</c>（不捕获）。</value>
+/// <remarks>
+/// 捕获的请求体长度受 <see cref="MaxExceptionContentLength"/> 约束（0/负数 = 不限制）。
+/// </remarks>
+ public bool CaptureRequestContent { get; set; }
 
-    /// <summary>
-    /// 获取或设置 URL 解析模式。
-    /// </summary>
-    /// <value>默认为 <see cref="UrlResolutionMode.Default"/>（向后兼容）。</value>
-    public UrlResolutionMode UrlResolution { get; set; } = UrlResolutionMode.Default;
+/// <summary>
+/// 获取或设置 URL 解析模式。
+/// </summary>
+/// <value>默认为 <see cref="UrlResolutionMode.Default"/>（向后兼容）。</value>
+ public UrlResolutionMode UrlResolution { get; set; } = UrlResolutionMode.Default;
 
-    /// <summary>
-    /// 获取或设置成功响应体的最大字节数（可选守卫，N-2）。
-    /// </summary>
-    /// <value>默认为 <c>0</c>（不限制，保持反序列化/下载语义不变）。</value>
-    /// <remarks>
-    /// <para>
-    /// 设为正数后，成功响应体超过该字节数时抛出 <see cref="ApiRequestException"/>
-    /// （在读取阶段按 Content-Length 预判 + 读取过程校验，不缓冲超限内容）。
-    /// 用于防止异常大的响应导致 OOM。
-    /// </para>
-    /// <para>
-    /// 大文件下载请使用 <c>DownloadLargeAsync</c>（流式落盘），不受本守卫约束。
-    /// </para>
-    /// </remarks>
-    public long MaxSuccessResponseBytes { get; set; }
+/// <summary>
+/// 获取或设置成功响应体的最大字节数（可选守卫，N-2）。
+/// </summary>
+/// <value>默认为 <c>0</c>（不限制，保持反序列化/下载语义不变）。</value>
+/// <remarks>
+/// <para>
+/// 设为正数后，成功响应体超过该字节数时抛出 <see cref="ApiRequestException"/>
+/// （在读取阶段按 Content-Length 预判 + 读取过程校验，不缓冲超限内容）。
+/// 用于防止异常大的响应导致 OOM。
+/// </para>
+/// <para>
+/// 大文件下载请使用 <c>DownloadLargeAsync</c>（流式落盘），不受本守卫约束。
+/// </para>
+/// </remarks>
+ public long MaxSuccessResponseBytes { get; set; }
 
 #if NET6_0_OR_GREATER
-    /// <summary>
-    /// 获取或设置 HTTP 版本。
-    /// </summary>
-    /// <value>默认为 <c>null</c>（不干预请求版本，保持 <see cref="System.Net.Http.HttpRequestMessage"/> 的构造默认值 1.1）。</value>
-    /// <remarks>
-    /// <para>
-    /// <b>CFG-30（v3.1）</b>：默认值由 <c>Version11</c> 调整为 <c>null</c>，与无 DI 路径的
-    /// <c>GeneratedClientOptions.HttpVersion</c>「未配置即不干预」语义对齐。该调整<b>不产生可观察行为差异</b>——
-    /// <see cref="System.Net.Http.HttpRequestMessage"/> 的 <c>Version</c> 构造默认值本就是 1.1。
-    /// </para>
-    /// <para>
-    /// <b>注意</b>：本库（<see cref="EnhancedHttpClient"/> 与 <c>DefaultHttpRequestExecutor</c>）均<b>自建</b>
-    /// <see cref="System.Net.Http.HttpRequestMessage"/> 后调用 <c>HttpClient.SendAsync</c>；
-    /// 而 <c>HttpClient.DefaultRequestVersion</c> / <c>DefaultVersionPolicy</c> 官方文档明确
-    /// <b>不适用于 <c>SendAsync</c></b>（仅作用于 <c>GetAsync</c>/<c>PostAsync</c> 等内部创建请求的便捷重载）。
-    /// 因此如需 HTTP/2、HTTP/3，请通过本属性显式配置。
-    /// </para>
-    /// </remarks>
-    public Version? HttpVersion { get; set; }
+/// <summary>
+/// 获取或设置 HTTP 版本。
+/// </summary>
+/// <value>默认为 <c>null</c>（不干预请求版本，保持 <see cref="System.Net.Http.HttpRequestMessage"/> 的构造默认值 1.1）。</value>
+/// <remarks>
+/// <para>
+/// <b>v3.1）</b>：默认值由 <c>Version11</c> 调整为 <c>null</c>，与无 DI 路径的
+/// <c>GeneratedClientOptions.HttpVersion</c>「未配置即不干预」语义对齐。该调整<b>不产生可观察行为差异</b>——
+/// <see cref="System.Net.Http.HttpRequestMessage"/> 的 <c>Version</c> 构造默认值本就是 1.1。
+/// </para>
+/// <para>
+/// <b>注意</b>：本库（<see cref="EnhancedHttpClient"/> 与 <c>DefaultHttpRequestExecutor</c>）均<b>自建</b>
+/// <see cref="System.Net.Http.HttpRequestMessage"/> 后调用 <c>HttpClient.SendAsync</c>；
+/// 而 <c>HttpClient.DefaultRequestVersion</c> / <c>DefaultVersionPolicy</c> 官方文档明确
+/// <b>不适用于 <c>SendAsync</c></b>（仅作用于 <c>GetAsync</c>/<c>PostAsync</c> 等内部创建请求的便捷重载）。
+/// 因此如需 HTTP/2、HTTP/3，请通过本属性显式配置。
+/// </para>
+/// </remarks>
+ public Version? HttpVersion { get; set; }
 
-    /// <summary>
-    /// 获取或设置 HTTP 版本策略。
-    /// </summary>
-    /// <value>默认为 <c>null</c>（不干预，保持 <see cref="System.Net.Http.HttpRequestMessage"/> 的构造默认值 <c>RequestVersionOrLower</c>）。</value>
-    /// <remarks>语义与 <see cref="HttpVersion"/> 一致（CFG-30），见其备注。</remarks>
-    public System.Net.Http.HttpVersionPolicy? HttpVersionPolicy { get; set; }
+/// <summary>
+/// 获取或设置 HTTP 版本策略。
+/// </summary>
+/// <value>默认为 <c>null</c>（不干预，保持 <see cref="System.Net.Http.HttpRequestMessage"/> 的构造默认值 <c>RequestVersionOrLower</c>）。</value>
+/// <remarks>语义与 <see cref="HttpVersion"/> 一致，见其备注。</remarks>
+ public System.Net.Http.HttpVersionPolicy? HttpVersionPolicy { get; set; }
 #endif
 
-    /// <summary>
-    /// 获取或设置写入 <see cref="System.Net.Http.HttpRequestMessage"/> 的键值对预设。
-    /// </summary>
-    /// <value>默认为 <c>null</c>（不预设）。</value>
-    /// <remarks>
-    /// 在构建请求时将这些键值对写入 <c>HttpRequestMessage.Options</c>（net6+）或 <c>HttpRequestMessage.Properties</c>（netstandard2.0）。
-    /// </remarks>
-    public Dictionary<string, object?>? HttpRequestMessageOptions { get; set; }
+/// <summary>
+/// 获取或设置写入 <see cref="System.Net.Http.HttpRequestMessage"/> 的键值对预设。
+/// </summary>
+/// <value>默认为 <c>null</c>（不预设）。</value>
+/// <remarks>
+/// 在构建请求时将这些键值对写入 <c>HttpRequestMessage.Options</c>（net6+）或 <c>HttpRequestMessage.Properties</c>（netstandard2.0）。
+/// </remarks>
+ public Dictionary<string, object?>? HttpRequestMessageOptions { get; set; }
 
 #if NET8_0_OR_GREATER
-    /// <summary>
-    /// Native AOT 下用于 JSON 源生成的类型解析器（JsonSerializerContext）。
-    /// </summary>
-    /// <value>
-    /// 消费方可通过此属性编程式注入 <see cref="JsonSerializerContext"/>，
-    /// 使 <see cref="EnhancedHttpClient"/> 内置 JSON 方法在 Native AOT 下使用源生成元数据。
-    /// 若不设置，将回退到通过 DI 注入的 <c>IOptions&lt;JsonSerializerOptions&gt;</c> 中的 <c>TypeInfoResolver</c>；
-    /// 二者皆无则退回反射（非 AOT 安全）。
-    /// </value>
-    /// <remarks>
-    /// 此属性与 <c>IOptions&lt;JsonSerializerOptions&gt;</c> 二选一即可。
-    /// 优先级：<see cref="JsonTypeInfoResolver"/> → <c>IOptions&lt;JsonSerializerOptions&gt;.TypeInfoResolver</c> → 静态默认。
-    /// </remarks>
-    public System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver? JsonTypeInfoResolver { get; set; }
+/// <summary>
+/// Native AOT 下用于 JSON 源生成的类型解析器（JsonSerializerContext）。
+/// </summary>
+/// <value>
+/// 消费方可通过此属性编程式注入 <see cref="JsonSerializerContext"/>，
+/// 使 <see cref="EnhancedHttpClient"/> 内置 JSON 方法在 Native AOT 下使用源生成元数据。
+/// 若不设置，将回退到通过 DI 注入的 <c>IOptions&lt;JsonSerializerOptions&gt;</c> 中的 <c>TypeInfoResolver</c>；
+/// 二者皆无则退回反射（非 AOT 安全）。
+/// </value>
+/// <remarks>
+/// 此属性与 <c>IOptions&lt;JsonSerializerOptions&gt;</c> 二选一即可。
+/// 优先级：<see cref="JsonTypeInfoResolver"/> → <c>IOptions&lt;JsonSerializerOptions&gt;.TypeInfoResolver</c> → 静态默认。
+/// </remarks>
+ public System.Text.Json.Serialization.Metadata.IJsonTypeInfoResolver? JsonTypeInfoResolver { get; set; }
 #endif
 
-    /// <summary>
-    /// B7：JSON 编码器（按客户端粒度覆盖）。为 <c>null</c> 时保持 STJ 默认转义（安全默认不变）。
-    /// </summary>
-    /// <value>默认为 <c>null</c>。</value>
-    /// <remarks>
-    /// <para>
-    /// 用于需要"非 ASCII 不被全转义"的场景（如微信部分接口要求中文原样传输）：
-    /// 设为 <see cref="System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping"/> 即可。
-    /// </para>
-    /// <para>
-    /// <b>优先级</b>：本属性（编程式、按客户端）→ 消费方 <c>IOptions&lt;JsonSerializerOptions&gt;.Encoder</c>（DI、全局）→ 库默认模板。
-    /// 二者区别：本属性可按客户端设置，不影响同进程内其它客户端；全局 <c>Configure&lt;JsonSerializerOptions&gt;</c> 会影响所有客户端。
-    /// </para>
-    /// <para>
-    /// <b>生效范围提示</b>：本属性经 <c>HttpContentSerializerFactory</c> 的合并链在<b>合并基座之后</b>写入，
-    /// 因此不会被消费方注入的 <c>JsonSerializerOptions</c> 反向覆盖。
-    /// 无 DI 路径（<c>GeneratedClientOptions</c> / 生成器执行器）是否接入本开关见方案文档的实施前核对清单。
-    /// </para>
-    /// </remarks>
-    public System.Text.Encodings.Web.JavaScriptEncoder? JsonEncoder { get; set; }
+/// <summary>
+/// B7：JSON 编码器（按客户端粒度覆盖）。为 <c>null</c> 时保持 STJ 默认转义（安全默认不变）。
+/// </summary>
+/// <value>默认为 <c>null</c>。</value>
+/// <remarks>
+/// <para>
+/// 用于需要"非 ASCII 不被全转义"的场景（如微信部分接口要求中文原样传输）：
+/// 设为 <see cref="System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping"/> 即可。
+/// </para>
+/// <para>
+/// <b>优先级</b>：本属性（编程式、按客户端）→ 消费方 <c>IOptions&lt;JsonSerializerOptions&gt;.Encoder</c>（DI、全局）→ 库默认模板。
+/// 二者区别：本属性可按客户端设置，不影响同进程内其它客户端；全局 <c>Configure&lt;JsonSerializerOptions&gt;</c> 会影响所有客户端。
+/// </para>
+/// <para>
+/// <b>生效范围提示</b>：本属性经 <c>HttpContentSerializerFactory</c> 的合并链在<b>合并基座之后</b>写入，
+/// 因此不会被消费方注入的 <c>JsonSerializerOptions</c> 反向覆盖。
+/// 无 DI 路径（<c>GeneratedClientOptions</c> / 生成器执行器）是否接入本开关见方案文档的实施前核对清单。
+/// </para>
+/// </remarks>
+ public System.Text.Encodings.Web.JavaScriptEncoder? JsonEncoder { get; set; }
 
-    /// <summary>
-    /// F1：<b>全字段浅拷贝</b>（含 <see cref="Logger"/>、拦截器、<see cref="SensitiveDataMasker"/>、
-    /// <see cref="AppAccessAuthorizer"/> 等接口属性），供消费方在包装既有客户端时复制配置。
-    /// </summary>
-    /// <returns>新的 <see cref="EnhancedHttpClientOptions"/> 实例；集合/接口属性与原实例<b>共享同一引用</b>（浅拷贝）。</returns>
-    /// <remarks>
-    /// <para>
-    /// <b>与 internal <c>EnhancedHttpClientOptionsCloner.Clone</c> 刻意不同，勿混用</b>：
-    /// 后者的用途是 DI 路径的"每客户端独立实例"，因此<b>刻意不拷贝</b>那 5 个"由 DI 解析后覆盖"的属性
-    /// （见 <c>EnhancedHttpClientOptionsCloner</c> 的维护约束注释）。
-    /// 本方法的用途是消费方**复用既有配置**，必须<b>全字段</b>拷贝，故为独立实现。
-    /// </para>
-    /// <para>
-    /// <b>维护约束</b>：本类新增可写属性时，必须同步更新本方法<b>与</b>
-    /// <c>EnhancedHttpClientOptionsCloner</c>（并归入 <c>CFG01_Cloner_CoversAllWritableProperties</c> 的两份清单之一）。
-    /// </para>
-    /// </remarks>
-    public EnhancedHttpClientOptions Clone() => new()
-    {
-        // DI 解析面（Cloner 刻意不拷贝，本方法必须拷贝）
-        Logger = Logger,
-        RequestInterceptors = RequestInterceptors,
-        ResponseInterceptors = ResponseInterceptors,
-        SensitiveDataMasker = SensitiveDataMasker,
-        AppAccessAuthorizer = AppAccessAuthorizer,
-        // 运行期配置面
-        AllowCustomBaseUrls = AllowCustomBaseUrls,
-        RequestBodySerialization = RequestBodySerialization,
-        ExceptionRedactor = ExceptionRedactor,
-        MaxExceptionContentLength = MaxExceptionContentLength,
-        CaptureRequestContent = CaptureRequestContent,
-        UrlResolution = UrlResolution,
-        MaxSuccessResponseBytes = MaxSuccessResponseBytes,
-        HttpRequestMessageOptions = HttpRequestMessageOptions,
+/// <summary>
+/// F1：<b>全字段浅拷贝</b>（含 <see cref="Logger"/>、拦截器、<see cref="SensitiveDataMasker"/>、
+/// <see cref="AppAccessAuthorizer"/> 等接口属性），供消费方在包装既有客户端时复制配置。
+/// </summary>
+/// <returns>新的 <see cref="EnhancedHttpClientOptions"/> 实例；集合/接口属性与原实例<b>共享同一引用</b>（浅拷贝）。</returns>
+/// <remarks>
+/// <para>
+/// <b>与 internal <c>EnhancedHttpClientOptionsCloner.Clone</c> 刻意不同，勿混用</b>：
+/// 后者的用途是 DI 路径的"每客户端独立实例"，因此<b>刻意不拷贝</b>那 5 个"由 DI 解析后覆盖"的属性
+/// （见 <c>EnhancedHttpClientOptionsCloner</c> 的维护约束注释）。
+/// 本方法的用途是消费方**复用既有配置**，必须<b>全字段</b>拷贝，故为独立实现。
+/// </para>
+/// <para>
+/// <b>维护约束</b>：本类新增可写属性时，必须同步更新本方法<b>与</b>
+/// <c>EnhancedHttpClientOptionsCloner</c>（并归入 <c>CFG01_Cloner_CoversAllWritableProperties</c> 的两份清单之一）。
+/// </para>
+/// </remarks>
+ public EnhancedHttpClientOptions Clone() => new()
+ {
+// DI 解析面（Cloner 刻意不拷贝，本方法必须拷贝）
+ Logger = Logger,
+ RequestInterceptors = RequestInterceptors,
+ ResponseInterceptors = ResponseInterceptors,
+ SensitiveDataMasker = SensitiveDataMasker,
+ AppAccessAuthorizer = AppAccessAuthorizer,
+// 运行期配置面
+ AllowCustomBaseUrls = AllowCustomBaseUrls,
+ RequestBodySerialization = RequestBodySerialization,
+ ExceptionRedactor = ExceptionRedactor,
+ MaxExceptionContentLength = MaxExceptionContentLength,
+ CaptureRequestContent = CaptureRequestContent,
+ UrlResolution = UrlResolution,
+ MaxSuccessResponseBytes = MaxSuccessResponseBytes,
+ HttpRequestMessageOptions = HttpRequestMessageOptions,
 #if NET6_0_OR_GREATER
-        HttpVersion = HttpVersion,
-        HttpVersionPolicy = HttpVersionPolicy,
+ HttpVersion = HttpVersion,
+ HttpVersionPolicy = HttpVersionPolicy,
 #endif
 #if NET8_0_OR_GREATER
-        JsonTypeInfoResolver = JsonTypeInfoResolver,
+ JsonTypeInfoResolver = JsonTypeInfoResolver,
 #endif
-        JsonEncoder = JsonEncoder,
-    };
+ JsonEncoder = JsonEncoder,
+ };
 }

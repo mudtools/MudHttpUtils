@@ -1,8 +1,8 @@
 // -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
-//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
-//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
-//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// 作者：Mud Studio 版权所有 (c) Mud Studio 2026 
+// Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+// 本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+// 不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
 namespace Mud.HttpUtils;
@@ -24,26 +24,26 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public static class HttpHeaderValueValidator
 {
-    /// <summary>
-    /// 校验指定 HTTP 头值（或头名）是否合法。
-    /// </summary>
-    /// <param name="value">要校验的值。</param>
-    /// <returns>
-    /// <c>true</c> 表示合法（含 null / 空白）；<c>false</c> 表示含 CR/LF、其它 C0 控制字符或 DEL。
-    /// </returns>
-    /// <remarks>HTAB（<c>\t</c>）视为合法，与 RFC 7230 及 .NET 5+ 实现一致。</remarks>
-    public static bool IsValid(string? value)
-    {
-        if (value is null || value.Length == 0)
-            return true;
+/// <summary>
+/// 校验指定 HTTP 头值（或头名）是否合法。
+/// </summary>
+/// <param name="value">要校验的值。</param>
+/// <returns>
+/// <c>true</c> 表示合法（含 null / 空白）；<c>false</c> 表示含 CR/LF、其它 C0 控制字符或 DEL。
+/// </returns>
+/// <remarks>HTAB（<c>\t</c>）视为合法，与 RFC 7230 及 .NET 5+ 实现一致。</remarks>
+ public static bool IsValid(string? value)
+ {
+ if (value is null || value.Length == 0)
+ return true;
 
-        // 逐字符核对，避免分配 char[]（原实现仅查 CR/LF，漏检 \0 等其它控制字符）。
-        foreach (var c in value)
-        {
-            if ((c < 0x20 && c != '\t') || c == 0x7F)
-                return false;
-        }
+// 逐字符核对，避免分配 char[]（原实现仅查 CR/LF，漏检 \0 等其它控制字符）。
+ foreach (var c in value)
+ {
+ if ((c < 0x20 && c != '\t') || c == 0x7F)
+ return false;
+ }
 
-        return true;
-    }
+ return true;
+ }
 }

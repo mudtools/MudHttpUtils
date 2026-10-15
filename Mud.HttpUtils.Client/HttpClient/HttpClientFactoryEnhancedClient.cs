@@ -1,8 +1,8 @@
 // -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2025   
-//  Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。
-//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
-//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// 作者：Mud Studio 版权所有 (c) Mud Studio 2025 
+// Mud.CodeGenerator 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。
+// 本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+// 不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
 using Microsoft.Extensions.Logging;
@@ -21,7 +21,7 @@ namespace Mud.HttpUtils;
 /// 如果需要刷新 DNS 或更新 HttpClient 配置，请通过 IHttpClientFactory 的配置重新注册。
 /// </para>
 /// <para>
-/// M-4 验证结果：基类 <see cref="EnhancedHttpClient"/> 不实现 <c>IDisposable</c>，
+/验证结果：基类 <see cref="EnhancedHttpClient"/> 不实现 <c>IDisposable</c>，
 /// 因此 <see cref="HttpClientFactoryEnhancedClient"/> 不会调用 <c>HttpClient.Dispose()</c>，
 /// 不会破坏 IHttpClientFactory 的池化复用机制。此行为正确，无需修复。
 /// </para>
@@ -29,128 +29,128 @@ namespace Mud.HttpUtils;
 /// </remarks>
 public class HttpClientFactoryEnhancedClient : EnhancedHttpClient
 {
-    private readonly IHttpClientFactory _factory;
-    private readonly string _clientName;
-    private readonly IEncryptionProvider? _encryptionProvider;
-    private readonly EnhancedHttpClientOptions _options;
-    private readonly Uri? _overrideBaseAddress;
-    private readonly IOptions<JsonSerializerOptions>? _jsonOptions;
-    private readonly IHttpContentSerializer? _contentSerializer;
+ private readonly IHttpClientFactory _factory;
+ private readonly string _clientName;
+ private readonly IEncryptionProvider? _encryptionProvider;
+ private readonly EnhancedHttpClientOptions _options;
+ private readonly Uri? _overrideBaseAddress;
+ private readonly IOptions<JsonSerializerOptions>? _jsonOptions;
+ private readonly IHttpContentSerializer? _contentSerializer;
 
-    /// <summary>
-    /// 获取本客户端使用的加密提供程序（未注入时为 <c>null</c>）。
-    /// </summary>
-    protected override IEncryptionProvider? EncryptionProvider => _encryptionProvider;
+/// <summary>
+/// 获取本客户端使用的加密提供程序（未注入时为 <c>null</c>）。
+/// </summary>
+ protected override IEncryptionProvider? EncryptionProvider => _encryptionProvider;
 
-    // [COMP-2 修复] 供**同程序集内**派生类构造同类型克隆使用（如 TokenRecoveryEnhancedClient 的
-    // CreateWithBaseAddress 重写）。声明为 internal 而非 protected：仅程序集内的派生类需要，
-    // 避免扩大公开 API 面（外部派生类仍可直接重写 WithBaseAddress）。
+// [修复] 供**同程序集内**派生类构造同类型克隆使用（如 TokenRecoveryEnhancedClient 的
+// CreateWithBaseAddress 重写）。声明为 internal 而非 protected：仅程序集内的派生类需要，
+// 避免扩大公开 API 面（外部派生类仍可直接重写 WithBaseAddress）。
 
-    /// <summary>本客户端使用的 <see cref="IHttpClientFactory"/>。</summary>
-    internal IHttpClientFactory Factory => _factory;
+/// <summary>本客户端使用的 <see cref="IHttpClientFactory"/>。</summary>
+ internal IHttpClientFactory Factory => _factory;
 
-    /// <summary>本客户端使用的配置选项。</summary>
-    internal EnhancedHttpClientOptions ClientOptions => _options;
+/// <summary>本客户端使用的配置选项。</summary>
+ internal EnhancedHttpClientOptions ClientOptions => _options;
 
-    /// <summary>覆盖的基地址（未覆盖时为 <c>null</c>）。</summary>
-    internal Uri? OverrideBaseAddress => _overrideBaseAddress;
+/// <summary>覆盖的基地址（未覆盖时为 <c>null</c>）。</summary>
+ internal Uri? OverrideBaseAddress => _overrideBaseAddress;
 
-    /// <summary>注入的 JSON 序列化选项（未注入时为 <c>null</c>）。</summary>
-    /// <remarks>
-    /// 内容序列化器无需在此暴露：基类 <see cref="EnhancedHttpClient.ContentSerializer"/> 已公开
-    /// （且永不返回 <c>null</c>，未注入时回退默认实现）。
-    /// </remarks>
-    internal IOptions<JsonSerializerOptions>? JsonOptions => _jsonOptions;
+/// <summary>注入的 JSON 序列化选项（未注入时为 <c>null</c>）。</summary>
+/// <remarks>
+/// 内容序列化器无需在此暴露：基类 <see cref="EnhancedHttpClient.ContentSerializer"/> 已公开
+/// （且永不返回 <c>null</c>，未注入时回退默认实现）。
+/// </remarks>
+ internal IOptions<JsonSerializerOptions>? JsonOptions => _jsonOptions;
 
-    /// <summary>
-    /// 初始化 HttpClientFactoryEnhancedClient 实例
-    /// </summary>
-    /// <param name="factory">IHttpClientFactory 实例</param>
-    /// <param name="clientName">Named HttpClient 名称</param>
-    /// <param name="encryptionProvider">加密提供器（可选）</param>
-    /// <param name="options">配置选项（可选）。</param>
-    /// <param name="overrideBaseAddress">覆盖的基地址（可选）。</param>
-    /// <param name="jsonOptions">JSON 序列化选项（可选，用于 Native AOT 场景注入 JsonSerializerContext）。</param>
-    /// <param name="contentSerializer">HTTP 内容序列化器（可选，未注入时由基类回退到默认 SystemTextJsonContentSerializer）。</param>
-    /// <exception cref="ArgumentNullException">factory 或 clientName 为 null</exception>
-    public HttpClientFactoryEnhancedClient(
-        IHttpClientFactory factory,
-        string clientName,
-        IEncryptionProvider? encryptionProvider = null,
-        EnhancedHttpClientOptions? options = null,
-        Uri? overrideBaseAddress = null,
-        IOptions<JsonSerializerOptions>? jsonOptions = null,
-        IHttpContentSerializer? contentSerializer = null)
-        : base(CreateClient(factory, clientName, overrideBaseAddress), options, jsonOptions, contentSerializer)
-    {
-        _factory = factory ?? throw new ArgumentNullException(nameof(factory));
-        _clientName = clientName ?? throw new ArgumentNullException(nameof(clientName));
-        _encryptionProvider = encryptionProvider;
-        _options = options ?? new EnhancedHttpClientOptions();
-        _overrideBaseAddress = overrideBaseAddress;
-        _jsonOptions = jsonOptions;
-        _contentSerializer = contentSerializer;
-    }
+/// <summary>
+/// 初始化 HttpClientFactoryEnhancedClient 实例
+/// </summary>
+/// <param name="factory">IHttpClientFactory 实例</param>
+/// <param name="clientName">Named HttpClient 名称</param>
+/// <param name="encryptionProvider">加密提供器（可选）</param>
+/// <param name="options">配置选项（可选）。</param>
+/// <param name="overrideBaseAddress">覆盖的基地址（可选）。</param>
+/// <param name="jsonOptions">JSON 序列化选项（可选，用于 Native AOT 场景注入 JsonSerializerContext）。</param>
+/// <param name="contentSerializer">HTTP 内容序列化器（可选，未注入时由基类回退到默认 SystemTextJsonContentSerializer）。</param>
+/// <exception cref="ArgumentNullException">factory 或 clientName 为 null</exception>
+ public HttpClientFactoryEnhancedClient(
+ IHttpClientFactory factory,
+ string clientName,
+ IEncryptionProvider? encryptionProvider = null,
+ EnhancedHttpClientOptions? options = null,
+ Uri? overrideBaseAddress = null,
+ IOptions<JsonSerializerOptions>? jsonOptions = null,
+ IHttpContentSerializer? contentSerializer = null)
+ : base(CreateClient(factory, clientName, overrideBaseAddress), options, jsonOptions, contentSerializer)
+ {
+ _factory = factory ?? throw new ArgumentNullException(nameof(factory));
+ _clientName = clientName ?? throw new ArgumentNullException(nameof(clientName));
+ _encryptionProvider = encryptionProvider;
+ _options = options ?? new EnhancedHttpClientOptions();
+ _overrideBaseAddress = overrideBaseAddress;
+ _jsonOptions = jsonOptions;
+ _contentSerializer = contentSerializer;
+ }
 
-    private static HttpClient CreateClient(IHttpClientFactory factory, string name, Uri? overrideBaseAddress)
-    {
-        if (factory == null)
-            throw new ArgumentNullException(nameof(factory));
-        if (string.IsNullOrEmpty(name))
-            throw new ArgumentNullException(nameof(name));
+ private static HttpClient CreateClient(IHttpClientFactory factory, string name, Uri? overrideBaseAddress)
+ {
+ if (factory == null)
+ throw new ArgumentNullException(nameof(factory));
+ if (string.IsNullOrEmpty(name))
+ throw new ArgumentNullException(nameof(name));
 
-        var httpClient = factory.CreateClient(name);
+ var httpClient = factory.CreateClient(name);
 
-        if (overrideBaseAddress != null)
-        {
-            httpClient.BaseAddress = overrideBaseAddress;
-        }
+ if (overrideBaseAddress != null)
+ {
+ httpClient.BaseAddress = overrideBaseAddress;
+ }
 
-        return httpClient;
-    }
+ return httpClient;
+ }
 
-    /// <summary>
-    /// 获取当前使用的 HttpClient 名称
-    /// </summary>
-    public override string? ClientName => _clientName;
+/// <summary>
+/// 获取当前使用的 HttpClient 名称
+/// </summary>
+ public override string? ClientName => _clientName;
 
-    /// <inheritdoc />
-    public override Uri? BaseAddress => _overrideBaseAddress ?? base.BaseAddress;
+/// <inheritdoc />
+ public override Uri? BaseAddress => _overrideBaseAddress ?? base.BaseAddress;
 
-    /// <inheritdoc />
-    public override IEnhancedHttpClient WithBaseAddress(Uri baseAddress)
-    {
-        if (baseAddress == null)
-            throw new ArgumentNullException(nameof(baseAddress));
+/// <inheritdoc />
+ public override IEnhancedHttpClient WithBaseAddress(Uri baseAddress)
+ {
+ if (baseAddress == null)
+ throw new ArgumentNullException(nameof(baseAddress));
 
-        return CreateWithBaseAddress(baseAddress);
-    }
+ return CreateWithBaseAddress(baseAddress);
+ }
 
-    /// <summary>
-    /// 以新的基地址构造<b>与本实例同类型</b>的克隆。
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// [COMP-2 修复] 原 <see cref="WithBaseAddress(Uri)"/> 直接 <c>new HttpClientFactoryEnhancedClient(...)</c>，
-    /// 派生类调用该公开方法后会**静默丢失派生能力** —— 最典型的是
-    /// <see cref="TokenRecoveryEnhancedClient"/>（sealed）失去 401 令牌自动恢复，
-    /// 且调用点无任何编译期/运行期提示。抽出本钩子后，派生类可重写以保留自身能力。
-    /// </para>
-    /// <para>
-    /// 声明为 <c>internal virtual</c>：仅同程序集内的派生类需要重写（本类为 DI 可解析的公开类型，
-    /// 不为此扩大公开 API 面）；外部派生类仍可直接重写 <see cref="WithBaseAddress(Uri)"/>。
-    /// </para>
-    /// </remarks>
-    /// <param name="baseAddress">新的基地址（不可为 null，由调用方校验）。</param>
-    /// <returns>指向新基地址的同类型克隆。</returns>
-    internal virtual HttpClientFactoryEnhancedClient CreateWithBaseAddress(Uri baseAddress)
-        => new HttpClientFactoryEnhancedClient(
-            _factory,
-            _clientName,
-            _encryptionProvider,
-            _options,
-            baseAddress,
-            _jsonOptions,
-            _contentSerializer);
+/// <summary>
+/// 以新的基地址构造<b>与本实例同类型</b>的克隆。
+/// </summary>
+/// <remarks>
+/// <para>
+/// [修复] 原 <see cref="WithBaseAddress(Uri)"/> 直接 <c>new HttpClientFactoryEnhancedClient(...)</c>，
+/// 派生类调用该公开方法后会**静默丢失派生能力** —— 最典型的是
+/// <see cref="TokenRecoveryEnhancedClient"/>（sealed）失去 401 令牌自动恢复，
+/// 且调用点无任何编译期/运行期提示。抽出本钩子后，派生类可重写以保留自身能力。
+/// </para>
+/// <para>
+/// 声明为 <c>internal virtual</c>：仅同程序集内的派生类需要重写（本类为 DI 可解析的公开类型，
+/// 不为此扩大公开 API 面）；外部派生类仍可直接重写 <see cref="WithBaseAddress(Uri)"/>。
+/// </para>
+/// </remarks>
+/// <param name="baseAddress">新的基地址（不可为 null，由调用方校验）。</param>
+/// <returns>指向新基地址的同类型克隆。</returns>
+ internal virtual HttpClientFactoryEnhancedClient CreateWithBaseAddress(Uri baseAddress)
+ => new HttpClientFactoryEnhancedClient(
+ _factory,
+ _clientName,
+ _encryptionProvider,
+ _options,
+ baseAddress,
+ _jsonOptions,
+ _contentSerializer);
 
 }

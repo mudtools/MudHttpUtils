@@ -1,6 +1,6 @@
 // -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2026
-//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+// 作者：Mud Studio 版权所有 (c) Mud Studio 2026
+// 本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
 // -----------------------------------------------------------------------
 
 using Microsoft.Extensions.Options;
@@ -18,28 +18,28 @@ namespace Mud.HttpUtils;
 /// 返回 <c>ValidateOptionsResult.Fail</c>（<b>会抛出 <see cref="OptionsValidationException"/>，阻止应用启动</b>），
 /// 避免重试延迟吞掉整个刷新周期导致服务实际停摆。
 /// </para>
-/// <para>CFG-12：原注释误述为「记录警告但不阻止启动」，与实现相反，现已按实现语义修正。</para>
+/// <para>原注释误述为「记录警告但不阻止启动」，与实现相反，现已按实现语义修正。</para>
 /// </remarks>
 public class TokenRefreshBackgroundOptionsValidator : IValidateOptions<TokenRefreshBackgroundOptions>
 {
-    /// <inheritdoc />
-    public ValidateOptionsResult Validate(string? name, TokenRefreshBackgroundOptions? options)
-    {
-        if (options == null)
-            return ValidateOptionsResult.Success;
+/// <inheritdoc />
+ public ValidateOptionsResult Validate(string? name, TokenRefreshBackgroundOptions? options)
+ {
+ if (options == null)
+ return ValidateOptionsResult.Success;
 
-        var failures = new List<string>();
+ var failures = new List<string>();
 
-        // 交叉校验：重试延迟不应超过刷新间隔
-        if (options.Enabled && options.RetryDelaySeconds >= options.RefreshIntervalSeconds)
-        {
-            failures.Add(
-                $"TokenRefreshBackgroundOptions: RetryDelaySeconds（{options.RetryDelaySeconds} 秒）大于等于 RefreshIntervalSeconds（{options.RefreshIntervalSeconds} 秒）。" +
-                "重试延迟会跨越下一个刷新周期，可能导致刷新逻辑混乱。建议将 RetryDelaySeconds 设置为小于 RefreshIntervalSeconds 的值。");
-        }
+// 交叉校验：重试延迟不应超过刷新间隔
+ if (options.Enabled && options.RetryDelaySeconds >= options.RefreshIntervalSeconds)
+ {
+ failures.Add(
+ $"TokenRefreshBackgroundOptions: RetryDelaySeconds（{options.RetryDelaySeconds} 秒）大于等于 RefreshIntervalSeconds（{options.RefreshIntervalSeconds} 秒）。" +
+ "重试延迟会跨越下一个刷新周期，可能导致刷新逻辑混乱。建议将 RetryDelaySeconds 设置为小于 RefreshIntervalSeconds 的值。");
+ }
 
-        return failures.Count > 0
-            ? ValidateOptionsResult.Fail(failures)
-            : ValidateOptionsResult.Success;
-    }
+ return failures.Count > 0
+ ? ValidateOptionsResult.Fail(failures)
+ : ValidateOptionsResult.Success;
+ }
 }

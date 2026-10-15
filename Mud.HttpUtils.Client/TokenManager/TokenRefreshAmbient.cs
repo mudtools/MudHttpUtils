@@ -1,14 +1,14 @@
 // -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2026
-//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。
-//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
-//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// 作者：Mud Studio 版权所有 (c) Mud Studio 2026
+// Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。
+// 本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+// 不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
 namespace Mud.HttpUtils;
 
 /// <summary>
-/// 架构不变式 I2（R-P0-01）：令牌刷新环境标记 —— 刷新的 HTTP 调用链上禁止再次进入令牌恢复。
+/// 架构不变式 I2：令牌刷新环境标记 —— 刷新的 HTTP 调用链上禁止再次进入令牌恢复。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -34,33 +34,33 @@ namespace Mud.HttpUtils;
 /// </remarks>
 internal static class TokenRefreshAmbient
 {
-    private static readonly AsyncLocal<int> s_depth = new();
+ private static readonly AsyncLocal<int> s_depth = new();
 
-    /// <summary>当前异步流是否处于令牌刷新调用栈内。</summary>
-    internal static bool InRefresh => s_depth.Value > 0;
+/// <summary>当前异步流是否处于令牌刷新调用栈内。</summary>
+ internal static bool InRefresh => s_depth.Value > 0;
 
-    /// <summary>
-    /// 进入一次刷新作用域；<see cref="Scope"/> 释放后恢复进入前的深度。
-    /// </summary>
-    /// <returns>应在刷新全程（含失效 + 刷新）以 <c>using</c> 持有的作用域句柄。</returns>
-    internal static Scope Enter()
-    {
-        var previous = s_depth.Value;
-        s_depth.Value = previous + 1;
-        return new Scope(previous);
-    }
+/// <summary>
+/// 进入一次刷新作用域；<see cref="Scope"/> 释放后恢复进入前的深度。
+/// </summary>
+/// <returns>应在刷新全程（含失效 + 刷新）以 <c>using</c> 持有的作用域句柄。</returns>
+ internal static Scope Enter()
+ {
+ var previous = s_depth.Value;
+ s_depth.Value = previous + 1;
+ return new Scope(previous);
+ }
 
-    /// <summary>
-    /// 刷新作用域句柄。<see cref="Dispose"/> 恢复<b>捕获的</b>先前深度（而非无条件递减），
-    /// 保证父上下文与并行子分支的深度互不污染。
-    /// </summary>
-    internal readonly struct Scope : IDisposable
-    {
-        private readonly int _previous;
+/// <summary>
+/// 刷新作用域句柄。<see cref="Dispose"/> 恢复<b>捕获的</b>先前深度（而非无条件递减），
+/// 保证父上下文与并行子分支的深度互不污染。
+/// </summary>
+ internal readonly struct Scope : IDisposable
+ {
+ private readonly int _previous;
 
-        internal Scope(int previous) => _previous = previous;
+ internal Scope(int previous) => _previous = previous;
 
-        /// <inheritdoc />
-        public void Dispose() => s_depth.Value = _previous;
-    }
+/// <inheritdoc />
+ public void Dispose() => s_depth.Value = _previous;
+ }
 }

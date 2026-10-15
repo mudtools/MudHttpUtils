@@ -1,8 +1,8 @@
 // -----------------------------------------------------------------------
-//  作者：Mud Studio  版权所有 (c) Mud Studio 2026   
-//  Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
-//  本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
-//  不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
+// 作者：Mud Studio 版权所有 (c) Mud Studio 2026 
+// Mud.HttpUtils 项目的版权、商标、专利和其他相关权利均受相应法律法规的保护。使用本项目应遵守相关法律法规和许可证的要求。
+// 本项目主要遵循 MIT 许可证进行分发和使用。许可证位于源代码树根目录中的 LICENSE-MIT 文件。
+// 不得利用本项目从事危害国家安全、扰乱社会秩序、侵犯他人合法权益等法律法规禁止的活动！任何基于本项目开发而产生的一切法律纠纷和责任，我们不承担任何责任！
 // -----------------------------------------------------------------------
 
 namespace Mud.HttpUtils.Client;
@@ -18,54 +18,54 @@ namespace Mud.HttpUtils.Client;
 /// 如需跨实例共享用户上下文，请在 DI 容器中注册为 Singleton。</para>
 /// </remarks>
 public class DefaultCurrentUserContext<TUser> : ICurrentUserContext
-    where TUser : CurrentUserInfo, new()
+ where TUser : CurrentUserInfo, new()
 {
-    private readonly AsyncLocal<TUser?> _user = new();
+ private readonly AsyncLocal<TUser?> _user = new();
 
-    /// <summary>
-    /// 获取当前用户信息对象。
-    /// </summary>
-    public TUser? User => _user.Value;
+/// <summary>
+/// 获取当前用户信息对象。
+/// </summary>
+ public TUser? User => _user.Value;
 
-    /// <inheritdoc />
-    public string? UserId => _user.Value?.UserId;
+/// <inheritdoc />
+ public string? UserId => _user.Value?.UserId;
 
-    /// <inheritdoc />
-    /// <remarks>
-    /// SR-L4（P3.7，D14）副本语义：每次派生新实例而非就地突变共享实例。
-    /// AsyncLocal 值在异步分叉（fork）的兄弟分支间共享同一引用，就地突变会跨分支可见；
-    /// 派生副本使各分支的 SetUserId 互不影响（CurrentUserInfo 字段拷贝成本可忽略）。
-    /// </remarks>
-    public void SetUserId(string? userId)
-    {
-        if (userId != null)
-        {
-            var current = _user.Value;
-            // SR-L4：派生新实例（不突变 AsyncLocal 分叉分支间共享的原引用）
-            var user = current == null ? new TUser() : CopyWithUserId();
-            user.UserId = userId;
-            _user.Value = user;
-        }
-        else
-        {
-            _user.Value = default;
-        }
-    }
+/// <inheritdoc />
+/// <remarks>
+副本语义：每次派生新实例而非就地突变共享实例。
+/// AsyncLocal 值在异步分叉（fork）的兄弟分支间共享同一引用，就地突变会跨分支可见；
+/// 派生副本使各分支的 SetUserId 互不影响（CurrentUserInfo 字段拷贝成本可忽略）。
+/// </remarks>
+ public void SetUserId(string? userId)
+ {
+ if (userId != null)
+ {
+ var current = _user.Value;
+派生新实例（不突变 AsyncLocal 分叉分支间共享的原引用）
+ var user = current == null ? new TUser() : CopyWithUserId();
+ user.UserId = userId;
+ _user.Value = user;
+ }
+ else
+ {
+ _user.Value = default;
+ }
+ }
 
-    /// <summary>
-    /// SR-L4：派生携带新 UserId 的新实例（不突变原实例，AsyncLocal 兄弟分支互不可见）。
-    /// <para>当前契约下 <see cref="CurrentUserInfo"/> 仅有 <see cref="CurrentUserInfo.UserId"/> 一个关键字段
-    /// （由调用方在返回的副本上统一赋值）；派生类若新增状态字段，应改用 <see cref="SetUser"/> 整体替换。</para>
-    /// </summary>
-    private static TUser CopyWithUserId()
-        => new();
+/// <summary>
+/派生携带新 UserId 的新实例（不突变原实例，AsyncLocal 兄弟分支互不可见）。
+/// <para>当前契约下 <see cref="CurrentUserInfo"/> 仅有 <see cref="CurrentUserInfo.UserId"/> 一个关键字段
+/// （由调用方在返回的副本上统一赋值）；派生类若新增状态字段，应改用 <see cref="SetUser"/> 整体替换。</para>
+/// </summary>
+ private static TUser CopyWithUserId()
+ => new();
 
-    /// <summary>
-    /// 设置当前用户信息。
-    /// </summary>
-    /// <param name="user">用户信息对象。</param>
-    public void SetUser(TUser? user)
-    {
-        _user.Value = user;
-    }
+/// <summary>
+/// 设置当前用户信息。
+/// </summary>
+/// <param name="user">用户信息对象。</param>
+ public void SetUser(TUser? user)
+ {
+ _user.Value = user;
+ }
 }
