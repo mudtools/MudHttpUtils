@@ -48,9 +48,8 @@ public class TokenRefreshFailedEventArgs : EventArgs
 
     /// <summary>
     /// 是否应该重试（由事件处理器设置，默认 true）。
-    /// P2.10（TK-20）重试语义显式化：默认 true 表示 MaxRefreshRetryCount 是重试的唯一主控门；
-    /// 设为 false 可提前取消剩余重试。
     /// </summary>
+    /// <remarks>默认 true 表示 MaxRefreshRetryCount 是重试的唯一主控门；设为 false 可提前取消剩余重试。</remarks>
     public bool ShouldRetry { get; set; } = true;
 
     /// <summary>
