@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Mud.HttpUtils.Redis;
 using StackExchange.Redis;
 
-namespace Mud.HttpUtils.Tests.Redis;
+namespace Mud.HttpUtils.Redis.Tests;
 
 /// <summary>
 /// F-3：<c>AddMudHttpRedisTokenStore</c> 的 DI 注册钉死测试（幂等 / 守卫 / B-2 自动桥接衔接）。

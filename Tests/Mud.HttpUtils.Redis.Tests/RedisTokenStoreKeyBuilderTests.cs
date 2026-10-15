@@ -7,7 +7,7 @@
 
 using Mud.HttpUtils.Redis;
 
-namespace Mud.HttpUtils.Tests.Redis;
+namespace Mud.HttpUtils.Redis.Tests;
 
 /// <summary>
 /// F-3：Redis 令牌键布局（<see cref="RedisTokenStoreKeyBuilder"/>）的钉死测试。

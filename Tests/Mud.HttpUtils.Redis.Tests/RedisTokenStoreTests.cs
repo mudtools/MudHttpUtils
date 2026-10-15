@@ -9,7 +9,7 @@ using System.Net;
 using Mud.HttpUtils.Redis;
 using StackExchange.Redis;
 
-namespace Mud.HttpUtils.Tests.Redis;
+namespace Mud.HttpUtils.Redis.Tests;
 
 /// <summary>
 /// F-3：<see cref="RedisTokenStore"/> 读写行为的钉死测试（mock IConnectionMultiplexer/IDatabase/IServer）。

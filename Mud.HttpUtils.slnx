@@ -35,6 +35,7 @@
     <Project Path="Tests/Mud.HttpUtils.Integration.Tests/Mud.HttpUtils.Integration.Tests.csproj" />
     <Project Path="Tests/Mud.HttpUtils.JsonContextScaffolder.Tests/Mud.HttpUtils.JsonContextScaffolder.Tests.csproj" />
     <Project Path="Tests/Mud.HttpUtils.OpenTelemetry.Tests/Mud.HttpUtils.OpenTelemetry.Tests.csproj" />
+    <Project Path="Tests/Mud.HttpUtils.Redis.Tests/Mud.HttpUtils.Redis.Tests.csproj" />
     <Project Path="Tests/Mud.HttpUtils.Resilience.Tests/Mud.HttpUtils.Resilience.Tests.csproj" />
     <Project Path="Tests/Mud.HttpUtils.Testing/Mud.HttpUtils.Testing.csproj" />
   </Folder>

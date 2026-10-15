@@ -91,7 +91,9 @@ public sealed class RedisTokenStore : ITokenStore, ITokenStoreAppPurge, ITokenSt
         }
 
         var ttl = expiresInSeconds > 0 ? TimeSpan.FromSeconds(expiresInSeconds) : _options.DefaultTtl;
-        await Database.StringSetAsync(key, encoded, ttl).ConfigureAwait(false);
+        // SE.Redis 3.x：显式 6 参形态（TimeSpan? 为 null = 无过期，宁缺勿滥语义与 2.x 延续一致）；
+        // 不用 3 参糖重载（其绑定到 Expiration 原生成员，且「无 TTL」需经 default(Expiration) 表达）。
+        await Database.StringSetAsync(key, encoded, ttl, false, When.Always, CommandFlags.None).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -121,7 +123,8 @@ public sealed class RedisTokenStore : ITokenStore, ITokenStoreAppPurge, ITokenSt
             return;
         }
 
-        await Database.StringSetAsync(key, encoded, _options.DefaultTtl).ConfigureAwait(false);
+        // SE.Redis 3.x：显式 6 参形态（DefaultTtl 未配置 = null = 无过期，宁缺勿滥）。
+        await Database.StringSetAsync(key, encoded, _options.DefaultTtl, false, When.Always, CommandFlags.None).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -341,7 +344,8 @@ public sealed class RedisTokenStore : ITokenStore, ITokenStoreAppPurge, ITokenSt
             return true;
         }
 
-        await Database.StringSetAsync(key, encoded, ttlSelector(encoded)).ConfigureAwait(false);
+        // SE.Redis 3.x：显式 6 参形态（ttl 为 null = 无过期，宁缺勿滥）。
+        await Database.StringSetAsync(key, encoded, ttlSelector(encoded), false, When.Always, CommandFlags.None).ConfigureAwait(false);
         return true;
     }
 
